@@ -1,0 +1,24 @@
+{
+  "name": "athena-studio",
+  "productName": "Athena Studio",
+  "version": "0.1.0",
+  "private": true,
+  "description": "아테나(AI 에이전트 개발팀) 데스크톱 앱 — 작업 창(herdr) · 현황판을 한 창에",
+  "main": "src/main.js",
+  "scripts": {
+    "start": "electron .",
+    "postinstall": "node scripts/fix-spawn-helper.js",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/renderer.js && node --check scripts/fix-spawn-helper.js",
+    "test": "node --test test/*.test.js"
+  },
+  "dependencies": {
+    "@xterm/addon-fit": "0.11.0",
+    "@xterm/addon-unicode11": "0.9.0",
+    "@xterm/addon-web-links": "0.12.0",
+    "@xterm/xterm": "6.0.0",
+    "node-pty": "1.1.0"
+  },
+  "devDependencies": {
+    "electron": "44.5.1"
+  }
+}
