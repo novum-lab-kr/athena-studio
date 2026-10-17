@@ -145,8 +145,13 @@ function renderTabs() {
     .map((tab, index) => {
       const button = document.createElement('button')
       button.className = 'studio-tab'
-      button.setAttribute('aria-selected', String(Boolean(current) && tab.id === current.id))
-      button.addEventListener('click', () => studio.tabSelect(tab.id))
+      const selected = Boolean(current) && tab.id === current.id
+      button.setAttribute('aria-selected', String(selected))
+      button.addEventListener('click', (event) => {
+        // 이미 고른 탭은 데몬에 다시 묻지 않는다 — 다시 물으면 상태가 새로 와 더블클릭 직후 글자 칸이 포커스를 잃는다
+        if (!selected) studio.tabSelect(tab.id)
+        else if (event.detail === 1) focusCurrentTerminal()
+      })
       const name = document.createElement('span')
       name.textContent = tab.label || `탭 ${index + 1}`
       const close = document.createElement('span')
@@ -166,6 +171,7 @@ function renderTabs() {
   add.className = 'studio-tab add'
   add.textContent = '＋'
   add.title = `새 탭 (${state.tabKey}T)`
+  add.setAttribute('aria-label', '새 탭') // ＋ 글자는 아이콘으로 가려져 있어 읽기용 이름을 따로
   add.addEventListener('click', newTab)
   bar.replaceChildren(...buttons, add)
 }
@@ -669,6 +675,11 @@ function layoutPanes() {
     }
   }
   reportTabSize(tab, container)
+  if (!renamingTab) focusCurrentTerminal() // 탭 이름을 고치는 중이면 글자 칸 포커스를 뺏지 않는다
+}
+
+// 지금 pane 의 터미널로 입력을 돌려준다(작업 창이 보이고 옆 브라우저를 쓰지 않을 때)
+function focusCurrentTerminal() {
   const focused = views.get(screen.focused)
   if (focused && !focused.el.hidden && currentTab === 'work' && !usingBrowser()) focused.term.focus()
 }
