@@ -946,6 +946,15 @@ ipcMain.on('tab:size', (_event, tabId, size) => {
   const cells = cellSize(size)
   if (daemon && cells.cols) daemon.notify('tab size', { tab: String(tabId), ...cells })
 })
+// pane 경계를 끈 결과를 데몬 탭 트리에 — 옛 데몬은 이 동작을 몰라 usage 로 답한다(그땐 화면이 임시로 기억한다)
+ipcMain.handle('tab:ratio', async (_event, tabId, path, ratio) => {
+  if (typeof tabId !== 'string' || !Array.isArray(path) || !path.every((step) => step === 'first' || step === 'second') || typeof ratio !== 'number') {
+    return { error: '잘못된 경계 값' }
+  }
+  const reply = await daemonCall('tab ratio', { tab: tabId, path, ratio })
+  if (reply.error && reply.code === 'usage' && /모르는 동작/.test(reply.error)) return { unsupported: true }
+  return reply
+})
 ipcMain.handle('board:ensure', () => ensureBoard())
 ipcMain.handle('open:url', (_event, url) => openUrl(String(url)))
 // 옆 브라우저 IPC 는 앱 화면(메인 창의 맨 위 프레임)에서 온 것만 받는다 — 현황판 iframe · 서랍 안 페이지는 못 부른다

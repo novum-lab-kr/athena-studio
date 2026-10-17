@@ -26,6 +26,7 @@ contextBridge.exposeInMainWorld('studio', {
   explorerStatus: (workspaceId) => ipcRenderer.invoke('explorer:status', workspaceId),
   explorerOpen: (workspaceId, relative) => ipcRenderer.invoke('explorer:open', workspaceId, relative),
   tabSize: (tabId, size) => ipcRenderer.send('tab:size', tabId, size),
+  tabRatio: (tabId, path, ratio) => ipcRenderer.invoke('tab:ratio', tabId, path, ratio),
   paneSplit: (paneId, direction) => ipcRenderer.invoke('pane:split', paneId, direction),
   paneClose: (paneId) => ipcRenderer.invoke('pane:close', paneId),
   paneFocus: (paneId) => ipcRenderer.send('pane:focus', paneId),

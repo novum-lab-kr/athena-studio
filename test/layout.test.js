@@ -75,3 +75,28 @@ test('이웃: 방향으로 맞닿은 가장 가까운 pane', () => {
   assert.equal(layout.neighbor(tree, area, 'p9', 'left'), null)
   assert.throws(() => layout.neighbor(tree, area, 'p1', 'sideways'), /방향/)
 })
+
+test('경계: 가지마다 하나 · 비율 바꾸기 · 끈 위치 → 비율', () => {
+  let tree = layout.splitPane(layout.leaf('p1'), 'p1', 'p2', 'right')
+  tree = layout.splitPane(tree, 'p2', 'p3', 'down', 0.3)
+  const area = { x: 0, y: 0, width: 102, height: 52 }
+  const found = layout.dividers(tree, area, 2)
+  assert.deepEqual(found.map((entry) => [entry.path.join('.'), entry.split]), [['', 'right'], ['second', 'down']])
+  // 가운데 경계 자리는 gap(2) — 첫째 50칸 뒤
+  assert.deepEqual(found[0].line, { x: 50, y: 0, width: 2, height: 52 })
+
+  const moved = layout.setRatio(tree, ['second'], 0.7)
+  assert.equal(moved.second.ratio, 0.7)
+  assert.equal(tree.second.ratio, 0.3) // 원래 트리는 그대로
+  assert.equal(layout.setRatio(tree, [], 0.99).ratio, layout.MAX_RATIO)
+  assert.equal(layout.setRatio(tree, [], 0).ratio, layout.MIN_RATIO)
+  assert.equal(layout.setRatio(tree, ['first'], 0.5), null) // 잎
+  assert.equal(layout.setRatio(tree, ['third'], 0.5), null) // 이상한 길
+  assert.equal(layout.setRatio(tree, [], Number.NaN), null)
+  for (const bad of ['0.5', null, true, [], Infinity]) assert.equal(layout.setRatio(tree, [], bad), null)
+
+  // 첫 경계를 x=26 으로 끌면 (26 - 1) / 100 = 0.25
+  assert.equal(layout.ratioAt(found[0], 26, 2), 0.25)
+  assert.equal(layout.ratioAt(found[0], -50, 2), layout.MIN_RATIO)
+  assert.equal(layout.ratioAt(found[0], 500, 2), layout.MAX_RATIO)
+})

@@ -94,6 +94,56 @@
     return rects
   }
 
+  // 경계 드래그 — 비율은 이 범위 안으로(한쪽이 사라지지 않게)
+  const MIN_RATIO = 0.05
+  const MAX_RATIO = 0.95
+  const SIDES = ['first', 'second']
+
+  // 가지마다 경계 하나: { path, split, box(그 가지 전체), line(사이 gap 자리) }. path 는 뿌리에서 'first' · 'second' 로 내려가는 길
+  function dividers(node, area, gap = 0) {
+    const found = []
+    const walk = (current, box, path) => {
+      if (!current || isLeaf(current)) return
+      const ratio = normalizeRatio(current.ratio)
+      if (current.split === 'right') {
+        const [firstWidth, secondWidth] = divide(box.width, ratio, gap)
+        found.push({ path, split: 'right', box, line: { x: box.x + firstWidth, y: box.y, width: gap, height: box.height } })
+        walk(current.first, { x: box.x, y: box.y, width: firstWidth, height: box.height }, [...path, 'first'])
+        walk(current.second, { x: box.x + firstWidth + gap, y: box.y, width: secondWidth, height: box.height }, [...path, 'second'])
+      } else {
+        const [firstHeight, secondHeight] = divide(box.height, ratio, gap)
+        found.push({ path, split: 'down', box, line: { x: box.x, y: box.y + firstHeight, width: box.width, height: gap } })
+        walk(current.first, { x: box.x, y: box.y, width: box.width, height: firstHeight }, [...path, 'first'])
+        walk(current.second, { x: box.x, y: box.y + firstHeight + gap, width: box.width, height: secondHeight }, [...path, 'second'])
+      }
+    }
+    walk(node, { x: area.x || 0, y: area.y || 0, width: area.width, height: area.height }, [])
+    return found
+  }
+
+  function isValidPath(path) {
+    return Array.isArray(path) && path.length <= 64 && path.every((step) => SIDES.includes(step))
+  }
+
+  // path 의 가지 비율을 바꾼 새 트리. 길이 잎이나 없는 곳이면 null(원래 트리는 바꾸지 않는다)
+  function setRatio(node, path, ratio) {
+    // 숫자(문자열 · null · true 아님)이고 유한해야 한다 — 소켓으로 바로 오는 값도 있다
+    if (!isValidPath(path) || !node || isLeaf(node) || typeof ratio !== 'number' || !Number.isFinite(ratio)) return null
+    const value = Math.min(MAX_RATIO, Math.max(MIN_RATIO, ratio))
+    if (path.length === 0) return { ...node, ratio: value }
+    const [step, ...rest] = path
+    const child = setRatio(node[step], rest, value)
+    return child ? { ...node, [step]: child } : null
+  }
+
+  // 경계를 끈 위치(pos — right 면 x, down 이면 y) → 그 가지의 비율
+  function ratioAt(divider, pos, gap = 0) {
+    const horizontal = divider.split === 'right'
+    const start = horizontal ? divider.box.x : divider.box.y
+    const usable = Math.max(1, (horizontal ? divider.box.width : divider.box.height) - gap)
+    return Math.min(MAX_RATIO, Math.max(MIN_RATIO, (pos - start - gap / 2) / usable))
+  }
+
   // 방향(left · right · up · down)으로 맞닿은 pane 중 가장 가까운 것. 없으면 null
   function neighbor(node, area, paneId, direction) {
     const rects = computeRects(node, area)
@@ -136,5 +186,5 @@
     return rect.y - (from.y + from.height)
   }
 
-  return { DIRECTIONS, DEFAULT_RATIO, leaf, isLeaf, paneIds, hasPane, splitPane, removePane, computeRects, neighbor }
+  return { DIRECTIONS, DEFAULT_RATIO, MIN_RATIO, MAX_RATIO, leaf, isLeaf, paneIds, hasPane, splitPane, removePane, computeRects, dividers, setRatio, ratioAt, neighbor }
 })

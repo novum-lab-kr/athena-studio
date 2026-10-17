@@ -162,6 +162,11 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
     assert.equal(JSON.parse((await cli(daemon.socket, ['pane', 'send-keys', 'p2', 'Nope'])).stderr).error, 'usage')
     assert.equal(JSON.parse((await cli(daemon.socket, ['pane', 'wait-output', 'p2', '--match', 'never-printed-xyz', '--timeout', '300'])).stderr).error, 'timeout')
 
+    // 앱에서 경계를 끈 결과 — 탭 트리 비율이 바뀌고, 잎이나 없는 경계는 usage
+    assert.equal((await again.call('tab ratio', { tab: 't1', path: [], ratio: 0.6 })).ok, true)
+    assert.equal((await again.call('attach')).result.state.tabs[0].tree.ratio, 0.6)
+    assert.equal((await again.call('tab ratio', { tab: 't1', path: ['first'], ratio: 0.5 })).error.code, 'usage')
+
     // 닫으면 트리에서 빠지고 형제가 자리를 차지 · 앱에 exit 알림
     assert.equal((await cli(daemon.socket, ['pane', 'close', 'p2'])).code, 0)
     await waitFor(() => again.events.some((event) => event.event === 'exit' && event.pane === 'p2'), 'p2 exit 알림')

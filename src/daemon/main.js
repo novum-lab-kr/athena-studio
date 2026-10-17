@@ -182,6 +182,8 @@ class Daemon {
         return this.selectWorkspace(args.workspace)
       case 'dock ensure':
         return this.ensureDock(args)
+      case 'tab ratio':
+        return this.setTabRatio(args.tab, args.path, args.ratio)
       case 'tab size':
         return this.setTabSize(args.tab, args.cols | 0, args.rows | 0)
       case 'shutdown':
@@ -361,6 +363,16 @@ class Daemon {
   closeTab(tabId) {
     const tab = this.tabOf(tabId)
     for (const paneId of layout.paneIds(tab.tree)) this.panes.get(paneId)?.close()
+    return undefined
+  }
+
+  // 앱에서 pane 경계를 끈 결과 — path 의 가지 비율을 바꾼다
+  setTabRatio(tabId, path, ratio) {
+    const tab = this.tabOf(tabId)
+    const tree = layout.setRatio(tab.tree, path, ratio)
+    if (!tree) throw failure('usage', `없는 경계: ${JSON.stringify(path)}`)
+    tab.tree = tree
+    this.broadcastState()
     return undefined
   }
 

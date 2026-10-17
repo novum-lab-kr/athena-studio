@@ -602,7 +602,10 @@ function layoutPanes() {
   if (!showDock && $('dock').contains(document.activeElement)) document.activeElement.blur()
   const container = $('panes')
   const tab = activeTab()
-  const rects = tab ? StudioLayout.computeRects(tab.tree, { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }, PANE_GAP) : {}
+  const tree = tab ? treeForLayout(tab) : null
+  const area = { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }
+  const rects = tree ? StudioLayout.computeRects(tree, area, PANE_GAP) : {}
+  renderDividers(tab, tree, area)
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]
@@ -622,6 +625,8 @@ function layoutPanes() {
       view.fit.fit()
     } catch {}
     const { cols, rows } = view.term
+    // 경계를 끄는 동안은 셸에 크기를 알리지 않는다(놓을 때 한 번)
+    if (dividerDrag) continue
     if (!view.sent || view.sent.cols !== cols || view.sent.rows !== rows) {
       view.sent = { cols, rows }
       studio.paneResize(paneId, cols, rows)
@@ -635,6 +640,165 @@ function layoutPanes() {
 // 옆 브라우저를 쓰는 중인가 — 주소창에 치는 중이거나 서랍 안 페이지(앱 화면 밖이라 문서가 포커스를 잃는다)를 보는 중이면 터미널로 포커스를 뺏지 않는다
 function usingBrowser() {
   return browserOpen && (!document.hasFocus() || $('browser').contains(document.activeElement))
+}
+
+// ── pane 경계 끌기 ───────────────────────────────────────
+// 비율은 데몬 탭 트리에 저장한다(tab ratio). 끄는 동안과, 옛 데몬이 그 동작을 모를 때는 화면이 임시로 기억한다(ratioOverrides).
+// 임시 비율은 트리 모양(비율 뺀)이 같을 때만 쓴다 — 나누거나 닫아 모양이 바뀌면 버린다
+const ratioOverrides = new Map() // `${tabId}|${path}` → { ratio, shape }
+let dividerDrag = null // { tabId, shape, element, pointerId, ratio, cancel }
+let ratioUnsupportedNoticed = false
+
+const treeShape = (tree) => JSON.stringify(tree, (key, value) => (key === 'ratio' ? undefined : value))
+
+function treeForLayout(tab) {
+  let tree = tab.tree
+  const shape = treeShape(tab.tree)
+  for (const [key, override] of ratioOverrides) {
+    const [tabId, path] = key.split('|')
+    if (tabId !== tab.id) continue
+    if (override.shape !== shape) {
+      ratioOverrides.delete(key)
+      continue
+    }
+    tree = StudioLayout.setRatio(tree, path ? path.split('.') : [], override.ratio) || tree
+  }
+  return tree
+}
+
+// 경계 요소는 경로마다 하나를 계속 쓴다(새로 만들면 더블클릭 · 끌기 중 포인터 캡처가 끊긴다)
+const dividerElements = new Map() // path → element(element.divider 가 지금 경계)
+
+function renderDividers(tab, tree, area) {
+  const container = $('panes')
+  // 닫힌 탭의 임시 비율은 버린다
+  const tabIds = new Set(screen.tabs.map((entry) => entry.id))
+  for (const key of ratioOverrides.keys()) if (!tabIds.has(key.split('|')[0])) ratioOverrides.delete(key)
+  // 끄는 중에 탭이 바뀌었거나 pane 이 생기고 닫혀 트리 모양이 바뀌면 끌기를 취소한다(다른 경계에 저장되지 않게)
+  if (dividerDrag && (!tab || tab.id !== dividerDrag.tabId || treeShape(tab.tree) !== dividerDrag.shape)) cancelDividerDrag()
+  const found = tab && tree ? StudioLayout.dividers(tree, area, PANE_GAP) : []
+  const alive = new Set()
+  for (const divider of found) {
+    const key = divider.path.join('.')
+    alive.add(key)
+    let element = dividerElements.get(key)
+    if (!element) {
+      element = document.createElement('div')
+      element.title = '끌어서 크기 바꾸기 · 더블클릭하면 반반'
+      element.addEventListener('pointerdown', (event) => startDividerDrag(event, element))
+      element.addEventListener('dblclick', () => {
+        const current = activeTab()
+        if (current && element.divider) commitRatio(current, element.divider.path, StudioLayout.DEFAULT_RATIO)
+      })
+      dividerElements.set(key, element)
+      container.append(element)
+    }
+    element.className = `pane-divider ${divider.split}${dividerDrag && dividerDrag.element === element ? ' dragging' : ''}`
+    element.divider = divider
+    placeDivider(element, divider)
+  }
+  for (const [key, element] of dividerElements) {
+    if (alive.has(key)) continue
+    element.remove()
+    dividerElements.delete(key)
+  }
+}
+
+// 잡기 쉽게 gap 양옆으로 3px 씩 넓힌다
+function placeDivider(element, divider) {
+  const { line } = divider
+  const grab = 3
+  const box = divider.split === 'right'
+    ? { left: line.x - grab, top: line.y, width: line.width + grab * 2, height: line.height }
+    : { left: line.x, top: line.y - grab, width: line.width, height: line.height + grab * 2 }
+  Object.assign(element.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` })
+}
+
+function startDividerDrag(event, element) {
+  const tab = activeTab()
+  if (event.button !== 0 || !tab || !element.divider || dividerDrag) return
+  event.preventDefault()
+  element.setPointerCapture(event.pointerId)
+  element.classList.add('dragging')
+  const path = element.divider.path
+  const key = `${tab.id}|${path.join('.')}`
+  const shape = treeShape(tab.tree)
+  let frame = 0
+  const move = (moveEvent) => {
+    if (!dividerDrag || moveEvent.pointerId !== dividerDrag.pointerId) return
+    const origin = $('panes').getBoundingClientRect()
+    const divider = element.divider
+    const pos = divider.split === 'right' ? moveEvent.clientX - origin.left : moveEvent.clientY - origin.top
+    dividerDrag.ratio = StudioLayout.ratioAt(divider, pos, PANE_GAP)
+    ratioOverrides.set(key, { ratio: dividerDrag.ratio, shape })
+    if (!frame) frame = requestAnimationFrame(() => {
+      frame = 0
+      layoutPanes()
+    })
+  }
+  const abort = (cancelEvent) => {
+    if (dividerDrag && dividerDrag.element === element && cancelEvent.pointerId === dividerDrag.pointerId) cancelDividerDrag()
+    layoutPanes()
+  }
+  const detach = () => {
+    element.removeEventListener('pointermove', move)
+    element.removeEventListener('pointerup', finish)
+    element.removeEventListener('pointercancel', abort)
+    element.removeEventListener('lostpointercapture', abort)
+    if (frame) cancelAnimationFrame(frame)
+    element.classList.remove('dragging')
+  }
+  // 같은 포인터를 놓았을 때만 저장 — 취소 · 캡처를 잃음은 저장 없이 원래대로
+  const finish = (upEvent) => {
+    if (!dividerDrag || dividerDrag.element !== element || upEvent.pointerId !== dividerDrag.pointerId) return
+    const { ratio } = dividerDrag
+    dividerDrag = null
+    detach()
+    if (ratio === null) return layoutPanes()
+    commitRatio(tab, path, ratio)
+  }
+  dividerDrag = {
+    tabId: tab.id,
+    shape,
+    element,
+    pointerId: event.pointerId,
+    ratio: null,
+    // 취소 — 임시 비율을 버리고 원래대로(저장하지 않는다)
+    cancel: () => {
+      dividerDrag = null
+      detach()
+      ratioOverrides.delete(key)
+      if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
+    },
+  }
+  element.addEventListener('pointermove', move)
+  element.addEventListener('pointerup', finish)
+  element.addEventListener('pointercancel', abort)
+  element.addEventListener('lostpointercapture', abort)
+}
+
+function cancelDividerDrag() {
+  if (dividerDrag) dividerDrag.cancel()
+}
+
+// 데몬에 저장 — 되면 임시 비율을 지우고(데몬 상태에 들어 있다), 옛 데몬이면 임시로 두고 한 번 알린다
+async function commitRatio(tab, path, ratio) {
+  const key = `${tab.id}|${path.join('.')}`
+  ratioOverrides.set(key, { ratio, shape: treeShape(tab.tree) })
+  layoutPanes()
+  const result = await studio.tabRatio(tab.id, path, ratio)
+  if (result.unsupported) {
+    if (!ratioUnsupportedNoticed) showToast('지금 데몬이 예전 버전이라 이 크기는 앱을 다시 켜면 돌아가요 — [보기 → 작업 창 데몬 다시 띄우기] 뒤로는 저장돼요')
+    ratioUnsupportedNoticed = true
+    return
+  }
+  if (result.error) {
+    ratioOverrides.delete(key)
+    showToast(`크기를 저장하지 못했어요: ${result.error}`)
+  } else if (ratioOverrides.get(key) && ratioOverrides.get(key).ratio === ratio) {
+    ratioOverrides.delete(key)
+  }
+  layoutPanes()
 }
 
 // 탭 전체 크기(칸) — 앱이 없을 때 CLI 로 나눠도 데몬이 크기를 맞게 나누도록

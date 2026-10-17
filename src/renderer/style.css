@@ -148,6 +148,11 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .panes { position: relative; flex: 1; min-width: 0; min-height: 0; margin: 4px 0 0 4px; }
 .pane { position: absolute; display: flex; flex-direction: column; border: 1px solid transparent; }
 .pane[hidden] { display: none; }
+/* pane 사이 경계 — 끌어서 크기 바꾸기(더블클릭 반반) */
+.pane-divider { position: absolute; z-index: 5; }
+.pane-divider.right { cursor: col-resize; }
+.pane-divider.down { cursor: row-resize; }
+.pane-divider:hover, .pane-divider.dragging { background: var(--accent); opacity: 0.45; }
 .pane.focused { border-color: #3b4a6b; }
 .pane-head {
   height: 18px;
