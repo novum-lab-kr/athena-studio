@@ -36,7 +36,7 @@ function columnCounts(cards) {
 }
 
 // 메뉴 · 아이콘 제목에 쓸 요약
-function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardUp = false } = {}) {
+function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardUp = false, now = Date.now() } = {}) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.label]))
   const agents = panes
     .filter((pane) => pane && pane.agent)
@@ -64,7 +64,8 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
     // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
     attention,
     agents,
-    usageItems: usageItems(usage),
+    usageItems: usageItems(usage, now),
+    done24: doneByHour(cards, now),
     columns,
     idleAgents: idle,
     blockedAgents: agents.filter((agent) => agent.status === 'blocked').length,
@@ -72,20 +73,46 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
   }
 }
 
-function resetText(resetsAt) {
+const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
+const HOUR_MS = 3600000
+
+// 리셋 시각 — 오늘이면 'HH:MM', 내일이면 '내일 HH:MM', 그 뒤면 '월 HH:MM'(없거나 못 읽으면 '')
+function resetClock(resetsAt, now = Date.now()) {
   const date = resetsAt ? new Date(typeof resetsAt === 'number' && resetsAt < 1e12 ? resetsAt * 1000 : resetsAt) : null
   if (!date || Number.isNaN(date.getTime())) return ''
-  return ` · ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')} 리셋`
+  const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  const today = new Date(now)
+  today.setHours(0, 0, 0, 0)
+  const day = new Date(date)
+  day.setHours(0, 0, 0, 0)
+  const days = Math.round((day.getTime() - today.getTime()) / (24 * HOUR_MS))
+  if (days <= 0) return time
+  if (days === 1) return `내일 ${time}`
+  return `${WEEKDAYS[date.getDay()]} ${time}`
+}
+
+// 최근 24시간 완료 — 완료 칸 카드를 마지막으로 바뀐 시각(mtime)으로 한 시간씩 24칸(마지막 칸이 지금)
+function doneByHour(cards, now = Date.now()) {
+  const hours = new Array(24).fill(0)
+  let total = 0
+  for (const card of Array.isArray(cards) ? cards : []) {
+    if (!card || card.archived || card.column !== 'done' || typeof card.mtime !== 'number') continue
+    const age = now - card.mtime
+    if (age < 0 || age >= 24 * HOUR_MS) continue
+    hours[23 - Math.floor(age / HOUR_MS)] += 1
+    total += 1
+  }
+  return { hours, total }
 }
 
 // 현황판 header.usage → [{ tool, window, percent, reset }] — 패널 막대용
-function usageItems(usage) {
+function usageItems(usage, now = Date.now()) {
   const items = []
   for (const tool of Array.isArray(usage) ? usage : []) {
     const label = tool.label || tool.id
     for (const window of tool.windows || []) {
       if (typeof window.percent !== 'number') continue
-      items.push({ tool: label, window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetText(window.resetsAt).replace(/^ · /, '') })
+      items.push({ tool: label, window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now) })
     }
   }
   return items
@@ -158,4 +185,4 @@ function bundle(found) {
   )
 }
 
-module.exports = { BLOCKED_HOLD_MS, IDLE_HOLD_MS, agentName, liveCards, summarize, usageItems, Notifier, bundle }
+module.exports = { BLOCKED_HOLD_MS, IDLE_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, Notifier, bundle }

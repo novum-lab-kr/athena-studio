@@ -1,9 +1,9 @@
-// 메뉴 막대 패널(★ Claude 추천) — 확인 필요 배너 → 작업 공간별 에이전트 → 사용량 링 → 칸반 숫자.
-// 많으면: 배너 3줄 + 'n개 더' · 에이전트 칸 안 스크롤 · 패널 최대 높이 넘으면 스크롤. 없으면: ✓ 한 줄 · 안내 문구.
+// 메뉴 막대 패널(★ Codex 추천 · 상태 목록형) — 확인 필요 → 에이전트(두 줄 행) → 사용량(창마다 얇은 막대) → 칸반 숫자 → 최근 24시간 완료 막대그래프.
+// 많으면: 확인 필요 3줄 + 'n개 더' · 에이전트 칸 안 스크롤 · 패널 최대 높이 넘으면 스크롤. 없으면: 한 줄 안내.
 // 글자는 모두 textContent(HTML 로 넣지 않는다)
 /* global trayPanel */
 const $ = (id) => document.getElementById(id)
-const BANNER_ROWS = 3
+const ATTENTION_ROWS = 3
 const STATUS = { working: '작업 중', blocked: '입력 대기', idle: '대기' }
 const COLUMNS = [
   ['issue', '이슈'],
@@ -12,9 +12,7 @@ const COLUMNS = [
   ['review', '리뷰'],
   ['done', '완료'],
 ]
-// 접은 칸 — 앱을 다시 켜도 기억
-const folded = new Set(JSON.parse(localStorage.getItem('tray.folded') || '[]'))
-let last = null
+const USAGE_HIGH = 80 // 이 % 넘으면 막대를 주황으로
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -29,69 +27,40 @@ function clock(ms) {
   return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-// 머리줄 그래프 — 최근 30분 일하는 에이전트 수
-function drawSpark(history) {
-  const values = history && history.length ? history : [0]
-  const peak = Math.max(1, ...values)
-  const step = values.length > 1 ? 100 / (values.length - 1) : 100
-  const points = values.map((value, index) => `${(index * step).toFixed(2)},${(14 - (value / peak) * 12).toFixed(2)}`)
-  $('spark-path').setAttribute('d', `M0,14 L${points.join(' L')} L100,14 Z`)
+// 칸 제목 — 위에 가는 선 · 오른쪽에 짧은 요약
+function title(text, summaryText) {
+  const row = el('div', 't', text)
+  if (summaryText) row.append(el('span', 'sum', summaryText))
+  return row
 }
 
-// 칸 제목(누르면 접기)
-function section(key, title, summaryText) {
-  const button = el('button', `sec${folded.has(key) ? ' folded' : ''}`)
-  button.append(el('span', 'chev', '▾'), el('span', '', title))
-  if (summaryText) button.append(el('span', 'sum', summaryText))
-  button.addEventListener('click', () => {
-    if (folded.has(key)) folded.delete(key)
-    else folded.add(key)
-    localStorage.setItem('tray.folded', JSON.stringify([...folded]))
-    if (last) render(last)
-  })
-  return button
-}
-
-function banner(summary) {
+// 확인 필요 — 제목에 수, 아래 한 줄씩(누르면 그 pane · 결정 콘솔)
+function attention(summary) {
   const items = summary.attention
-  if (!items.length) return el('div', 'clear', '✓ 확인할 일 없음')
-  const box = el('div', 'banner')
-  for (const item of items.slice(0, BANNER_ROWS)) {
-    const row = el('button', 'it')
+  if (!items.length) return el('div', 'att clear', '확인할 일 없음')
+  const box = el('div', 'att')
+  box.append(el('b', '', `확인 필요 ${items.length}`))
+  for (const item of items.slice(0, ATTENTION_ROWS)) {
+    const row = el('button', `it ${item.mark === '!' ? 'b' : 'r'}`)
     row.title = item.text
-    row.append(el('span', `mark ${item.mark === '!' ? 'b' : 'r'}`, item.mark), el('span', 'tx', item.text), el('span', 'go', '↗'))
+    row.append(el('span', 'tx', item.text), el('span', 'go', '›'))
+    if (item.mark === '?') row.append(el('em', '', '리뷰'))
     row.addEventListener('click', () => (item.kind === 'pane' ? trayPanel.action('focus-pane', item.id) : trayPanel.action('open-card', item.html)))
     box.append(row)
   }
-  if (items.length > BANNER_ROWS) {
+  if (items.length > ATTENTION_ROWS) {
     const more = el('button', 'it')
-    more.append(el('span', 'mark', '…'), el('span', 'tx', `${items.length - BANNER_ROWS}개 더 — 현황판에서`))
+    more.append(el('span', 'tx', `${items.length - ATTENTION_ROWS}개 더 — 현황판에서`), el('span', 'go', '›'))
     more.addEventListener('click', () => trayPanel.action('show', 'board'))
     box.append(more)
   }
   return box
 }
 
-// 작업 공간별 묶음 — 막힌 쪽이 있는 묶음 먼저, 그 안은 막힘 · 작업 중 · 대기 순(요약이 이미 그 순서)
-function agentGroups(agents) {
-  const groups = new Map()
-  for (const agent of agents) {
-    const key = agent.workspace || '작업 공간 없음'
-    if (!groups.has(key)) groups.set(key, [])
-    groups.get(key).push(agent)
-  }
-  const rank = (list) => {
-    if (list.some((agent) => agent.status === 'blocked')) return 0
-    if (list.some((agent) => agent.status === 'working')) return 1
-    return 2
-  }
-  return [...groups.entries()].sort((left, right) => rank(left[1]) - rank(right[1]))
-}
-
+// 에이전트 — 두 줄 행(이름 / 작업 공간) · 오른쪽 상태 · 누르면 그 pane
 function agentsBlock(summary) {
-  const agents = summary.agents
   const wrap = el('div', 'agents')
-  if (!agents.length) {
+  if (!summary.agents.length) {
     const empty = el('div', 'empty', '돌고 있는 에이전트가 없어요')
     const open = el('button', '', 'Athena 열기')
     open.addEventListener('click', () => trayPanel.action('show', 'work'))
@@ -99,20 +68,19 @@ function agentsBlock(summary) {
     wrap.append(empty)
     return wrap
   }
-  for (const [workspace, list] of agentGroups(agents)) {
-    wrap.append(el('div', 'grp', workspace))
-    for (const agent of list) {
-      const row = el('button', 'row')
-      row.title = `${agent.name} · ${workspace} — 누르면 그 pane 으로`
-      row.append(el('span', `dot ${agent.status}`), el('span', 'tx', agent.name), el('span', 'st', STATUS[agent.status] || agent.status))
-      row.addEventListener('click', () => trayPanel.action('focus-pane', agent.id))
-      wrap.append(row)
-    }
+  for (const agent of summary.agents) {
+    const row = el('button', 'ag')
+    row.title = `${agent.name}${agent.workspace ? ` · ${agent.workspace}` : ''} — 누르면 그 pane 으로`
+    const name = el('div', 'nm', agent.name)
+    name.append(el('small', '', agent.workspace || '작업 공간 없음'))
+    row.append(el('span', `dot ${agent.status}`), name, el('i', '', STATUS[agent.status] || agent.status))
+    row.addEventListener('click', () => trayPanel.action('focus-pane', agent.id))
+    wrap.append(row)
   }
   return wrap
 }
 
-// 도구마다 링 하나(가장 높은 창) + 창별 작은 글씨
+// 사용량 — 도구마다 묶고, 창마다 '<창> <%> ▬ · <리셋>'
 function usageBlock(summary) {
   const box = el('div', 'usage')
   const tools = new Map()
@@ -125,21 +93,25 @@ function usageBlock(summary) {
     return box
   }
   for (const [tool, windows] of tools) {
-    const top = windows.reduce((best, item) => (item.percent > best.percent ? item : best))
-    const ring = el('div', `ring${top.percent >= 80 ? ' hi' : ''}`)
-    ring.style.setProperty('--p', String(top.percent))
-    ring.append(el('span', '', String(top.percent)))
-    const text = el('div', '', tool)
-    for (const item of windows) text.append(el('small', '', `${item.window} ${item.percent}%${item.reset ? ` · ${item.reset}` : ''}`))
-    const unit = el('div', 'u')
-    unit.append(ring, text)
-    box.append(unit)
+    const prov = el('div', 'prov')
+    prov.append(el('b', '', tool))
+    for (const item of windows) {
+      const line = el('div', 'win')
+      const bar = el('span', 'bar')
+      const fill = el('span', item.percent >= USAGE_HIGH ? 'hi' : '')
+      fill.style.width = `${item.percent}%`
+      bar.append(fill)
+      line.append(el('span', 'wl', `${item.window} ${item.percent}%`), bar)
+      if (item.reset) line.append(el('span', 'rs', `· ${item.reset}`))
+      prov.append(line)
+    }
+    box.append(prov)
   }
   return box
 }
 
 function kanbanBlock(summary) {
-  const box = el('div', 'nums')
+  const box = el('div', 'kb')
   for (const [key, label] of COLUMNS) {
     const cell = el('button')
     cell.title = '현황판에서 보기'
@@ -150,34 +122,45 @@ function kanbanBlock(summary) {
   return box
 }
 
+// 최근 24시간 완료 — 한 시간씩 24칸 막대(마지막 칸이 지금)
+function historyBlock(summary) {
+  const done = summary.done24 || { hours: [], total: 0 }
+  const box = el('div', 'hist', `최근 24시간 · 완료 작업 ${done.total}`)
+  const bars = el('div', 'bars')
+  const peak = Math.max(1, ...done.hours)
+  done.hours.forEach((count, index) => {
+    const bar = el('span', count ? '' : 'zero')
+    bar.style.height = `${Math.round((count / peak) * 100)}%`
+    bar.title = `${24 - index}시간 전 ~ ${23 - index ? `${23 - index}시간 전` : '지금'} · ${count}개`
+    bars.append(bar)
+  })
+  const axis = el('small')
+  axis.append(el('span', '', '24시간 전'), el('span', '', '지금'))
+  box.append(bars, axis)
+  return box
+}
+
 function render(data) {
-  last = data
   const { summary } = data
-  drawSpark(data.history)
   const conn = $('conn')
   conn.textContent = summary.boardUp ? '● 연결됨' : '● 연결 안 됨'
   conn.classList.toggle('off', !summary.boardUp)
   conn.title = `현황판 마지막 확인 ${clock(data.boardAt)}`
 
-  const parts = [banner(summary)]
-  const working = summary.counts.working
-  parts.push(section('agents', '에이전트', `작업 중 ${working} · 대기 ${summary.idleAgents}${summary.blockedAgents ? ` · 막힘 ${summary.blockedAgents}` : ''}`))
-  if (!folded.has('agents')) parts.push(agentsBlock(summary))
-  parts.push(section('usage', '사용량'))
-  if (!folded.has('usage')) parts.push(usageBlock(summary))
-  // 현황판이 꺼져 있으면 칸반은 숨긴다(0 으로 보이지 않게)
-  if (summary.boardUp) {
-    parts.push(section('kanban', '칸반', `진행 ${summary.columns.doing || 0} · 리뷰 ${summary.columns.review || 0}`))
-    if (!folded.has('kanban')) parts.push(kanbanBlock(summary))
-  }
+  const parts = [attention(summary)]
+  parts.push(title('에이전트', `작업 중 ${summary.counts.working} · 대기 ${summary.idleAgents}${summary.blockedAgents ? ` · 막힘 ${summary.blockedAgents}` : ''}`))
+  parts.push(agentsBlock(summary))
+  parts.push(title('사용량'))
+  parts.push(usageBlock(summary))
+  // 현황판이 꺼져 있으면 칸반 · 완료 그래프는 숨긴다(0 으로 보이지 않게)
+  if (summary.boardUp) parts.push(kanbanBlock(summary), historyBlock(summary))
   $('body').replaceChildren(...parts)
 
   // 알림을 일시 중지했을 때만 머리줄에 🔕(언제까지는 마우스를 올리면)
   const paused = data.pausedUntil > Date.now()
   $('bell').hidden = !paused
   $('bell').title = paused ? `${clock(data.pausedUntil)}까지 알림 끔 — ☰ 에서 다시 켜기` : ''
-  // 내용 높이에 맞춰 창을(최대는 main 이 화면 높이로 자른다)
-  // 머리줄 + 본문의 실제 높이 그대로(어림 여백을 더하지 않는다 — 남는 자리가 띠로 보인다)
+  // 머리줄 + 본문의 실제 높이 그대로(어림 여백을 더하지 않는다 — 남는 자리가 띠로 보인다 · 최대는 main 이 화면 높이로 자른다)
   requestAnimationFrame(() => trayPanel.reportHeight(Math.ceil($('hd').getBoundingClientRect().height + $('body').scrollHeight)))
 }
 
