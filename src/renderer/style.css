@@ -18,9 +18,9 @@
   --warning: #dbb579;
   --error: #e58c99;
 
-  /* 글꼴 — 네이버 D2Coding(무료 · OFL). 없는 컴퓨터는 시스템 글꼴로 */
-  --font-ui: "D2Coding", -apple-system, BlinkMacSystemFont,
-    "Apple SD Gothic Neo", sans-serif;
+  /* 글꼴 — 화면 글자는 시스템 글꼴(D2Coding 은 보통·굵게 두 굵기뿐이라 작은 화면 글자가 두꺼워 보인다) ·
+     터미널·코드는 네이버 D2Coding(무료 · OFL · 없는 컴퓨터는 시스템 글꼴로) */
+  --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
   --font-mono: "D2Coding", "SF Mono", Menlo, monospace;
 
   --radius: 6px;
