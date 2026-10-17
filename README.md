@@ -4,8 +4,9 @@ Athena Studio — 아테나(AI 에이전트 개발팀) 데스크톱 앱. 작업 
 ## 켜기 (맥)
 ```sh
 npm install   # node-pty 는 맥 prebuild 를 쓴다(Xcode 빌드 필요 없음)
-npm start
+npm start     # 맥은 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — 메뉴 막대 · Dock · ⌘Tab 이름이 Athena
 ```
+`npm install`(postinstall)이 `node_modules` 의 Electron.app 을 `.dev-app/Athena.app` 으로 복제(APFS)해 이름(Athena) · 앱 아이콘을 바꾸고 이 컴퓨터용으로 다시 서명한다(`scripts/dev-app.js` — Electron 버전 · 아이콘이 바뀌면 `npm start` 때 다시 만든다, 못 만들면 Electron 이름 그대로 켠다). 앱 데이터 폴더 이름(`Athena Studio`)은 그대로다.
 스튜디오는 앱 껍데기만 관리하고, 아테나 코드는 아테나 레포(`novum-lab-kr/athena`)가 관리한다.
 처음 켜면 묻지 않고 **스튜디오 전용 아테나**를 앱 데이터 폴더(`~/Library/Application Support/Athena Studio/athena`)에 clone 하고 바로 연결한다
 (이미 아테나가 있으면 그대로 쓰고, 아테나가 아닌 것이 있으면 건드리지 않는다). herdr 용 아테나(`~/athena`)와 따로 두고 찾아 쓰지도 않는다 —
@@ -47,8 +48,8 @@ npm start
 - `src/lib/` — Electron 없이 도는 순수 로직(`npm test`) — `core.js` · `layout.js`(분할 트리 — 화면도 `<script>` 로 쓴다) · `screen-model.js` · `protocol.js` · `explorer.js` · `file-icons.js`(Explorer 아이콘 고르기 — main) · `viewer.js`(뷰어 줄·diff·언어)
 - `src/renderer/assets/logo/` — 로고. 앱은 **화이트판**을 쓴다
   - 화면: `athena-logo-white.png`(탭 줄 왼쪽 · 처음 켤 때 화면)
-  - 앱 아이콘: `athena-white-512.png`(`npm start` 때 Dock · 윈도우·리눅스 창 아이콘 — `src/main.js` `APP_ICON`)
-  - 패키징용: `athena-white.icns`(맥 앱 번들 아이콘) · `favicon-white.ico`(윈도우) — 아직 패키징 설정이 없어 쓰는 곳 없음
+  - 앱 아이콘: `athena-app-icon.png`(1024 · 둥근 사각형 — Dock · 윈도우·리눅스 창 아이콘 `src/main.js` `APP_ICON` · 개발용 Athena.app 번들 아이콘은 이걸로 .icns 를 만든다) · 크기별 `athena-app-{32,64,128,256,512}.png`
+  - 패키징용: `athena.ico`(윈도우 앱 아이콘) · `athena-white.icns` · `favicon-white.ico` — 아직 패키징 설정이 없어 쓰는 곳 없음
   - 화이트가 아닌 판(`athena-*.png` · `athena.icns` · `favicon.ico` · `athena-logo.png`)은 지금 안 쓴다
 
 ## 검사

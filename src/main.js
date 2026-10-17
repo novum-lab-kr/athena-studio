@@ -12,8 +12,8 @@ const fileIcons = require('./lib/file-icons')
 const viewer = require('./lib/viewer')
 
 const isMac = process.platform === 'darwin'
-// 앱 아이콘(화이트 로고) — Dock(맥) · 창 아이콘(그 밖)
-const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-white-512.png')
+// 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
+const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-app-icon.png')
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
 
@@ -1018,7 +1018,7 @@ function createWindow() {
     height: 900,
     minWidth: 720,
     minHeight: 480,
-    title: 'Athena Studio',
+    title: 'Athena',
     titleBarStyle: isMac ? 'hiddenInset' : 'default', // 맥은 탭 줄이 제목 줄을 겸한다
     backgroundColor: '#14161a',
     icon: APP_ICON, // 맥은 무시한다(Dock 은 whenReady 에서) — 윈도우·리눅스 창 아이콘
@@ -1164,8 +1164,10 @@ ipcMain.handle('browser:command', (event, name, value) => {
 })
 
 app.whenReady().then(async () => {
-  app.setName('Athena Studio')
-  // npm start 로 켜도 Dock 에 Electron 대신 아테나 로고(화이트) — 패키징하면 .icns 가 맡는다
+  app.setName('Athena Studio') // 앱 데이터 폴더 이름 — 바꾸면 설정 · 데몬 · 스튜디오 아테나가 옮겨진다
+  // 보이는 이름은 Athena(메뉴 막대 · Dock 은 개발용 Athena.app — scripts/dev-app.js)
+  app.setAboutPanelOptions({ applicationName: 'Athena' })
+  // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   config = core.loadConfig(configFile())
   await offerStudioAthena()

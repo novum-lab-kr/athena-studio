@@ -6,9 +6,9 @@
   "description": "아테나(AI 에이전트 개발팀) 데스크톱 앱 — 작업 창(자체 터미널) · 현황판을 한 창에",
   "main": "src/main.js",
   "scripts": {
-    "start": "electron .",
-    "postinstall": "node scripts/fix-spawn-helper.js",
-    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/renderer.js && node --check scripts/fix-spawn-helper.js && node --check src/lib/core.js && node --check src/lib/layout.js && node --check src/lib/screen-model.js && node --check src/lib/protocol.js && node --check src/lib/explorer.js && node --check src/lib/file-icons.js && node --check src/lib/viewer.js && node --check src/lib/agent-feed.js && node --check src/daemon/main.js && node --check src/daemon/pane.js && node --check src/daemon/cli.js && node --check src/daemon-client.js",
+    "start": "node scripts/dev-app.js start",
+    "postinstall": "node scripts/fix-spawn-helper.js && node scripts/dev-app.js make",
+    "check": "node --check src/main.js && node --check src/preload.js && node --check src/renderer/renderer.js && node --check scripts/fix-spawn-helper.js && node --check scripts/dev-app.js && node --check src/lib/core.js && node --check src/lib/layout.js && node --check src/lib/screen-model.js && node --check src/lib/protocol.js && node --check src/lib/explorer.js && node --check src/lib/file-icons.js && node --check src/lib/viewer.js && node --check src/lib/agent-feed.js && node --check src/daemon/main.js && node --check src/daemon/pane.js && node --check src/daemon/cli.js && node --check src/daemon-client.js",
     "test": "node --test test/*.test.js"
   },
   "dependencies": {
