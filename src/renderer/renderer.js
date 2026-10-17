@@ -216,12 +216,18 @@ function startTabRename(button, tab, shown) {
 }
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
-// 접기·펴기 버튼(« ») — 칸 머리에 붙는다
-function foldButton(text, title, onClick) {
+// 접기·펴기 버튼 — 칸 머리에 붙는다. 패널 아이콘(네모 + 세로선)만, 접기·펴기 같은 모양(사용자가 시안 5 를 고름)
+const PANEL_ICONS = {
+  left: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M9 3v18'],
+  right: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M15 3v18'],
+}
+
+function foldButton(side, title, onClick) {
   const button = document.createElement('button')
   button.className = 'fold-button'
-  button.textContent = text
+  button.append(lineIcon(PANEL_ICONS[side]))
   button.title = title
+  button.setAttribute('aria-label', title)
   button.addEventListener('click', onClick)
   return button
 }
@@ -261,7 +267,7 @@ function spaceRail() {
   add.textContent = '＋'
   add.title = `새 작업 공간 (${state.tabKey}⇧T)`
   add.addEventListener('click', () => runCommand('new-workspace'))
-  return [foldButton('»', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false)), ...rows, add]
+  return [foldButton('left', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false)), ...rows, add]
 }
 
 function renderSides() {
@@ -276,7 +282,7 @@ function renderSides() {
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
   titleText.textContent = 'spaces'
-  title.append(titleText, foldButton('«', `작업 공간 접기 (${state.tabKey}B)`, () => setSpacesCollapsed(true)))
+  title.append(titleText, foldButton('left', `작업 공간 접기 (${state.tabKey}B)`, () => setSpacesCollapsed(true)))
   const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
     button.className = 'space'
@@ -485,7 +491,7 @@ function renderExplorer() {
     return button
   }
   const count = explorerView.changes.length
-  head.append(name, viewButton('files', '파일'), viewButton('changes', count ? `변경 ${count}` : '변경', count), foldButton('»', `Explorer 접기 (${state.tabKey}⌥B)`, () => setPanelHidden(true)))
+  head.append(name, viewButton('files', '파일'), viewButton('changes', count ? `변경 ${count}` : '변경', count), foldButton('right', `Explorer 접기 (${state.tabKey}⌥B)`, () => setPanelHidden(true)))
   const scroll = panel.scrollTop
   panel.replaceChildren(head, ...(explorerView.mode === 'files' ? fileRows() : changeRows()))
   panel.scrollTop = scroll
