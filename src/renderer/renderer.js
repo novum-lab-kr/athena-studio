@@ -275,7 +275,7 @@ function renderSides() {
   const title = document.createElement('div')
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
-  titleText.textContent = '작업 공간'
+  titleText.textContent = 'spaces'
   title.append(titleText, foldButton('«', `작업 공간 접기 (${state.tabKey}B)`, () => setSpacesCollapsed(true)))
   const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
@@ -469,10 +469,14 @@ function renderExplorer() {
   name.className = 'explorer-name'
   name.textContent = workspace.label
   name.title = `${workspace.cwd} (${state.tabKey}⌥B 접기)`
-  const viewButton = (mode, label) => {
+  // 파일 · 변경 — 글자 없이 아이콘만(이름은 마우스를 올리면 · 변경 수는 작은 숫자)
+  const viewButton = (mode, label, badge) => {
     const button = document.createElement('button')
-    button.className = 'view-button'
-    button.textContent = label
+    button.className = 'view-button icon'
+    button.title = label
+    button.setAttribute('aria-label', label)
+    button.append(lineIcon(VIEW_ICONS[mode]))
+    if (badge) button.append(Object.assign(document.createElement('span'), { className: 'view-badge', textContent: String(badge) }))
     button.setAttribute('aria-pressed', String(explorerView.mode === mode))
     button.addEventListener('click', () => {
       explorerView.mode = mode
@@ -481,10 +485,29 @@ function renderExplorer() {
     return button
   }
   const count = explorerView.changes.length
-  head.append(name, viewButton('files', '파일'), viewButton('changes', count ? `변경 ${count}` : '변경'), foldButton('»', `Explorer 접기 (${state.tabKey}⌥B)`, () => setPanelHidden(true)))
+  head.append(name, viewButton('files', '파일'), viewButton('changes', count ? `변경 ${count}` : '변경', count), foldButton('»', `Explorer 접기 (${state.tabKey}⌥B)`, () => setPanelHidden(true)))
   const scroll = panel.scrollTop
   panel.replaceChildren(head, ...(explorerView.mode === 'files' ? fileRows() : changeRows()))
   panel.scrollTop = scroll
+}
+
+// 선 아이콘(24 격자 · 글자색을 따름) — 파일은 겹친 문서, 변경은 git 갈래
+const VIEW_ICONS = {
+  files: ['M15 2H9a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7z', 'M15 2v5h5', 'M4 7v13a2 2 0 0 0 2 2h9'],
+  changes: ['M6 3v12', 'M18 9a9 9 0 0 1-9 9', 'M21 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0', 'M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0'],
+}
+
+function lineIcon(paths) {
+  const svgNs = 'http://www.w3.org/2000/svg'
+  const svg = document.createElementNS(svgNs, 'svg')
+  svg.setAttribute('viewBox', '0 0 24 24')
+  svg.setAttribute('aria-hidden', 'true')
+  for (const shape of paths) {
+    const path = document.createElementNS(svgNs, 'path')
+    path.setAttribute('d', shape)
+    svg.append(path)
+  }
+  return svg
 }
 
 // 미리보기(뷰어) — VSCode 처럼 확장자에 맞는 색(Dark+)과 줄 번호. 바뀐 파일은 diff(옛·새 번호 · 추가 초록 · 삭제 빨강), 이미지는 그림.

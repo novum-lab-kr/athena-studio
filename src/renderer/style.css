@@ -612,6 +612,11 @@ body[data-platform="darwin"] .tabbar {
   font-size: 12px;
 }
 
+/* 파일 · 변경 아이콘 버튼 — 선 아이콘 + 변경 수 작은 숫자 */
+.view-button.icon { display: inline-flex; align-items: center; gap: 3px; min-width: 26px; justify-content: center; padding: 0 5px; }
+.view-button.icon svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.view-badge { font-size: 10px; line-height: 1; color: var(--accent); }
+
 .tree-row {
   min-height: 24px; /* Codex 안 28 → 24: 파일이 한 화면에 더 많이 보이게(VSCode 22 에 가깝게) */
   gap: 6px;
