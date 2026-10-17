@@ -10,8 +10,11 @@ const listen = (channel) => (callback) => {
 contextBridge.exposeInMainWorld('studio', {
   athenaState: () => ipcRenderer.invoke('athena:state'),
   pickAthenaDir: () => ipcRenderer.invoke('athena:pick'),
+  installAthena: () => ipcRenderer.invoke('athena:install'),
+  onInstallProgress: listen('athena:install-progress'),
   termStart: (cols, rows) => ipcRenderer.invoke('term:start', cols, rows),
   termStop: () => ipcRenderer.invoke('term:stop'),
+  openAgent: (chosen) => ipcRenderer.invoke('agent:open', chosen),
   termInput: (data) => ipcRenderer.send('term:input', data),
   termResize: (cols, rows) => ipcRenderer.send('term:resize', cols, rows),
   ensureBoard: () => ipcRenderer.invoke('board:ensure'),

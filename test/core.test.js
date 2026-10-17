@@ -43,6 +43,39 @@ test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한
   assert.equal(core.checkAthenaDir(path.join(dir, 'nope')).ok, false)
 })
 
+test('아테나 받기: 없거나 빈 폴더는 clone, 아테나면 그대로, 다른 것이 있으면 멈춤', () => {
+  const parent = tmp()
+  const dir = path.join(parent, 'athena')
+  assert.deepEqual(core.installTarget(parent), { dir, action: 'clone' })
+  fs.mkdirSync(dir)
+  assert.equal(core.installTarget(parent).action, 'clone')
+  fs.writeFileSync(path.join(dir, 'notes.txt'), '')
+  assert.equal(core.installTarget(parent).action, 'conflict')
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '')
+  fs.mkdirSync(path.join(dir, 'scripts', 'board'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'scripts', 'board', 'server.mjs'), '')
+  assert.equal(core.installTarget(parent).action, 'use')
+  // athena 라는 이름의 파일이 있으면 건드리지 않는다
+  const other = tmp()
+  fs.writeFileSync(path.join(other, 'athena'), '')
+  assert.equal(core.installTarget(other).action, 'conflict')
+})
+
+test('아테나 설정: 없으면 팩 없는 최소 설정을 만들고, 있으면 건드리지 않는다', () => {
+  const dir = tmp()
+  const file = path.join(dir, 'athena.config.json')
+  assert.equal(core.ensureAthenaConfig(dir), true)
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { reposRoot: '..' })
+  fs.writeFileSync(file, '{"pack":"packs/acme"}')
+  assert.equal(core.ensureAthenaConfig(dir), false)
+  assert.equal(fs.readFileSync(file, 'utf8'), '{"pack":"packs/acme"}')
+})
+
+test('clone 진행: \\r 로 고쳐 쓴 줄 중 마지막만', () => {
+  assert.equal(core.lastProgressLine("Cloning into 'athena'...\nReceiving objects:  10% (1/10)\rReceiving objects:  50% (5/10)\r"), 'Receiving objects:  50% (5/10)')
+  assert.equal(core.lastProgressLine('\r\n'), null)
+})
+
 test('로그인 셸 PATH: rc 가 찍은 글자를 버리고 표시 사이만', () => {
   const M = core.PATH_MARK
   assert.equal(core.parseMarkedPath(`welcome!\n${M}/opt/homebrew/bin:/usr/bin${M}bye`), '/opt/homebrew/bin:/usr/bin')
@@ -93,6 +126,23 @@ test('작업 창 명령: herdr 가 있으면 herdr, 없으면 로그인 셸 + �
   assert.deepEqual(fallback.args, ['-l'])
   assert.match(fallback.notice, /herdr 를 찾지 못했어요/)
   assert.equal(core.terminalLaunch({ herdrPath: null }).file, '/bin/zsh')
+})
+
+test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 · 없으면 none', () => {
+  const seen = new Set(['/a/claude', '/b/codex'])
+  assert.deepEqual(core.availableAgents('/a:/b', (f) => seen.has(f)), ['claude', 'codex'])
+  assert.deepEqual(core.availableAgents('/b', (f) => seen.has(f)), ['codex'])
+  assert.deepEqual(core.agentDecision(['claude', 'codex']), { choose: ['claude', 'codex'] })
+  assert.deepEqual(core.agentDecision(['codex']), { agent: 'codex' })
+  assert.deepEqual(core.agentDecision([]), { none: true })
+  assert.deepEqual(core.agentDecision(['claude', 'codex'], 'codex'), { agent: 'codex' })
+  assert.match(core.agentDecision(['claude'], 'codex').error, /codex/)
+})
+
+test('athena 작업 공간: 이름이 athena 인 것', () => {
+  assert.equal(core.findAthenaWorkspace([{ label: '~', workspace_id: 'w1' }]), null)
+  assert.equal(core.findAthenaWorkspace([{ label: '~' }, { label: 'athena', workspace_id: 'w4' }]).workspace_id, 'w4')
+  assert.equal(core.findAthenaWorkspace(undefined), null)
 })
 
 test('새 창 분류: 현황판 주소는 앱 안, 그 밖 http(s) 는 브라우저, 나머지는 막기', () => {

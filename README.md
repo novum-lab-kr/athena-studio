@@ -6,8 +6,11 @@ Athena Studio — 아테나(AI 에이전트 개발팀) 데스크톱 앱. 작업 
 npm install   # node-pty 는 맥 prebuild 를 쓴다(Xcode 빌드 필요 없음)
 npm start
 ```
-처음 켜면 아테나 폴더(`CLAUDE.md` · `scripts/board/server.mjs` 가 있는 폴더)를 고른다. 고른 폴더는
-`~/Library/Application Support/Athena Studio/config.json` 에 기억한다. 바꾸려면 [파일 → 아테나 폴더 바꾸기…].
+스튜디오는 앱 껍데기만 관리하고, 아테나 코드는 아테나 레포(`novum-lab-kr/athena`)가 관리한다.
+처음 켜면 [아테나 받기…] 로 받을 곳을 고른다 — 그 안의 `athena/` 에 아테나 레포를 clone 하고 바로 연결한다
+(이미 아테나가 있으면 그대로 쓰고, 아테나가 아닌 것이 있으면 건드리지 않는다).
+이미 받아 둔 폴더(`CLAUDE.md` · `scripts/board/server.mjs` 가 있는 폴더)는 [이미 받은 아테나 폴더 고르기…].
+고른 폴더는 `~/Library/Application Support/Athena Studio/config.json` 에 기억한다. 바꾸려면 [파일 → 아테나 폴더 바꾸기…].
 
 ## 화면
 | 탭 | 단축키 | 하는 일 |

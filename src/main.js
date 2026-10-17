@@ -38,6 +38,7 @@ function athenaState() {
     valid: check.ok,
     missing: check.missing,
     boardUrl: core.boardUrl(config.boardPort),
+    installDir: core.installTarget(app.getPath('home')).dir,
     tabKey: isMac ? '⌘' : 'Alt+',
     platform: process.platform,
   }
@@ -86,6 +87,56 @@ function stopTerminal() {
   try {
     current.kill()
   } catch {}
+}
+
+// ── 아테나 에이전트 ────────────────────────────────────────
+// herdr 에 athena 작업 공간(아테나 폴더)을 만들고 claude · codex 를 켠다. 이미 있으면 그리로 옮기기만 한다
+function herdrCall(herdrPath, args) {
+  return new Promise((resolve) => {
+    execFile(herdrPath, args, { timeout: 5000, encoding: 'utf8', env: core.childEnv(process.env) }, (error, stdout) => {
+      if (error) return resolve(null)
+      if (!stdout.trim()) return resolve({}) // pane run 같은 명령은 성공해도 아무것도 찍지 않는다
+      try {
+        resolve(JSON.parse(stdout).result || null)
+      } catch {
+        resolve(null)
+      }
+    })
+  })
+}
+
+async function openAthenaAgent(chosen) {
+  const herdrPath = core.findExecutable('herdr', process.env.PATH)
+  if (!herdrPath || !core.checkAthenaDir(config.athenaDir).ok) return { skipped: true }
+
+  // 작업 창의 herdr 가 서버를 띄우거나 붙을 때까지 기다린다
+  let list = null
+  for (let i = 0; i < 40 && !list; i++) {
+    list = await herdrCall(herdrPath, ['workspace', 'list'])
+    if (!list) await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  if (!list) return { error: 'herdr 에 연결하지 못했어요' }
+
+  const existing = core.findAthenaWorkspace(list.workspaces)
+  if (existing) {
+    await herdrCall(herdrPath, ['workspace', 'focus', existing.workspace_id])
+    return { focused: true }
+  }
+
+  const decision = core.agentDecision(core.availableAgents(process.env.PATH), chosen)
+  if (decision.error) return { error: decision.error }
+  if (decision.none) return { error: 'claude · codex 를 찾지 못했어요 — 설치한 뒤 [보기 → 작업 창 다시 시작] 을 눌러 주세요' }
+  if (decision.choose) return { choose: decision.choose }
+
+  const created = await herdrCall(herdrPath, [
+    'workspace', 'create', '--cwd', config.athenaDir, '--label', core.ATHENA_WORKSPACE, '--focus',
+  ])
+  const paneId = created && created.root_pane && created.root_pane.pane_id
+  if (!paneId) return { error: 'herdr 에 athena 작업 공간을 만들지 못했어요' }
+  if (!(await herdrCall(herdrPath, ['pane', 'run', paneId, decision.agent]))) {
+    return { error: `${decision.agent} 을 켜지 못했어요` }
+  }
+  return { started: decision.agent }
 }
 
 // ── 현황판 ────────────────────────────────────────────────
@@ -161,14 +212,65 @@ async function pickAthenaDir() {
     defaultPath: config.athenaDir || app.getPath('home'),
   })
   if (result.canceled || !result.filePaths[0]) return { canceled: true, ...athenaState() }
-  const dir = result.filePaths[0]
+  return useAthenaDir(result.filePaths[0])
+}
+
+function useAthenaDir(dir) {
   const check = core.checkAthenaDir(dir)
   if (!check.ok) return { ...athenaState(), error: `아테나 폴더가 아니에요 — 없는 파일: ${check.missing.join(', ')}`, picked: dir }
+  try {
+    core.ensureAthenaConfig(dir)
+  } catch (error) {
+    return { ...athenaState(), error: `athena.config.json 을 만들지 못했어요: ${error.message}`, picked: dir }
+  }
   const changed = dir !== config.athenaDir
   config = { ...config, athenaDir: dir }
   core.saveConfig(configFile(), config)
   if (changed) stopTerminal()
   return { ...athenaState(), changed }
+}
+
+// 아테나 받기 — 묻지 않고 홈의 athena/ 에 코어 레포를 clone 하고 바로 쓴다
+let installing = false
+
+async function installAthena() {
+  if (installing) return { ...athenaState(), error: '이미 받는 중이에요' }
+  const target = core.installTarget(app.getPath('home'))
+  if (target.action === 'use') return useAthenaDir(target.dir)
+  if (target.action === 'conflict') {
+    return { ...athenaState(), error: `${target.dir} 에 아테나가 아닌 것이 있어서 받지 않았어요 — 그 폴더를 치우고 다시 받거나, 받아 둔 아테나 폴더를 골라 주세요` }
+  }
+  const gitPath = core.findExecutable('git', process.env.PATH)
+  if (!gitPath) return { ...athenaState(), error: 'git 이 없어요 — 터미널에서 xcode-select --install 로 설치한 뒤 다시 눌러 주세요' }
+
+  installing = true
+  try {
+    const failure = await cloneAthena(gitPath, target.dir)
+    if (failure) return { ...athenaState(), error: `아테나를 받지 못했어요 — ${failure}` }
+    return useAthenaDir(target.dir)
+  } finally {
+    installing = false
+  }
+}
+
+// 성공하면 null, 실패하면 이유
+function cloneAthena(gitPath, dir) {
+  return new Promise((resolve) => {
+    let tail = ''
+    const child = spawn(gitPath, ['clone', '--progress', core.ATHENA_REPO, dir], {
+      env: core.childEnv(process.env, { GIT_TERMINAL_PROMPT: '0' }),
+      stdio: ['ignore', 'pipe', 'pipe'],
+    })
+    const onData = (chunk) => {
+      tail = (tail + chunk).slice(-2000)
+      const line = core.lastProgressLine(chunk)
+      if (line) send('athena:install-progress', line)
+    }
+    child.stdout.on('data', onData)
+    child.stderr.on('data', onData)
+    child.on('error', (error) => resolve(error.message))
+    child.on('close', (code) => resolve(code === 0 ? null : core.lastProgressLine(tail) || `git 이 ${code} 로 끝났어요`))
+  })
 }
 
 // ── 새 창 · 링크 ──────────────────────────────────────────
@@ -269,8 +371,10 @@ function buildMenu() {
 // ── IPC ──────────────────────────────────────────────────
 ipcMain.handle('athena:state', () => athenaState())
 ipcMain.handle('athena:pick', () => pickAthenaDir())
+ipcMain.handle('athena:install', () => installAthena())
 ipcMain.handle('term:start', (_event, cols, rows) => startTerminal(cols, rows))
 ipcMain.handle('term:stop', () => stopTerminal())
+ipcMain.handle('agent:open', (_event, chosen) => openAthenaAgent(typeof chosen === 'string' ? chosen : null))
 ipcMain.on('term:input', (_event, data) => {
   if (term && typeof data === 'string') term.write(data)
 })
@@ -287,6 +391,11 @@ ipcMain.handle('open:url', (_event, url) => openUrl(url))
 app.whenReady().then(async () => {
   app.setName('Athena Studio')
   config = core.loadConfig(configFile())
+  if (core.checkAthenaDir(config.athenaDir).ok) {
+    try {
+      core.ensureAthenaConfig(config.athenaDir)
+    } catch {}
+  }
   const loginPath = await loadLoginPath()
   if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
   buildMenu()

@@ -1,4 +1,4 @@
-// 앱 화면 — 탭 두 개(작업 창 · 현황판)와 처음 켤 때 아테나 폴더 고르기
+// 앱 화면 — 탭 두 개(작업 창 · 현황판) · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
 // studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
 /* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon */
 const $ = (id) => document.getElementById(id)
@@ -77,6 +77,44 @@ async function startTerminal() {
   // pty 를 띄운 뒤 크기를 한 번 더 알려 herdr 가 맞게 다시 그리게 한다
   studio.termResize(term.cols, term.rows)
   if (currentTab === 'work') term.focus()
+  if (result.herdr) openAgent()
+}
+
+// herdr 의 athena 작업 공간에서 claude · codex 를 켠다. 둘 다 깔려 있으면 고르게 한다
+async function openAgent(chosen) {
+  const result = await studio.openAgent(chosen)
+  if (result.choose) return showAgentPicker(result.choose)
+  if (result.error) showToast(result.error)
+}
+
+// herdr 화면 위에 글자를 쓰면 화면이 깨진다 — 알림은 따로 띄운다(누르면 닫힘)
+function showToast(message) {
+  const toast = $('toast')
+  toast.textContent = message
+  toast.hidden = false
+  toast.onclick = () => (toast.hidden = true)
+}
+
+const AGENT_LABELS = { claude: 'Claude', codex: 'Codex' }
+
+function showAgentPicker(agents) {
+  const picker = $('agent-picker')
+  const options = $('agent-options')
+  options.replaceChildren(
+    ...agents.map((agent) => {
+      const button = document.createElement('button')
+      button.className = 'primary'
+      button.textContent = AGENT_LABELS[agent] || agent
+      button.addEventListener('click', () => {
+        picker.hidden = true
+        term.focus()
+        openAgent(agent)
+      })
+      return button
+    }),
+  )
+  picker.hidden = false
+  options.firstChild.focus()
 }
 
 async function restartTerminal() {
@@ -140,7 +178,9 @@ function switchTab(name) {
 // ── 아테나 폴더 ────────────────────────────────────────────
 function renderState() {
   document.body.dataset.platform = state.platform
-  $('athena-dir').textContent = state.athenaDir || ''
+  // rtl 로 앞을 줄이는 칸이라 맨 앞 / 가 뒤로 붙지 않게 LRM 을 앞에 둔다
+  $('athena-dir').textContent = state.athenaDir ? `‎${state.athenaDir}` : ''
+  $('install-dir').textContent = state.installDir || ''
   for (const kbd of document.querySelectorAll('kbd[data-key]')) kbd.textContent = `${state.tabKey}${kbd.dataset.key}`
   const ready = state.valid
   panels.setup.hidden = ready
@@ -151,8 +191,34 @@ function renderState() {
   }
 }
 
-async function pickAthenaDir() {
-  const result = await studio.pickAthenaDir()
+const pickAthenaDir = () => applyAthenaResult(studio.pickAthenaDir())
+
+// 처음 켤 때 아테나가 없으면 묻지 않고 받는다. 실패했을 때만 [다시 받기] · [폴더 고르기] 를 보여 준다
+async function installAthena() {
+  const buttons = [$('install'), $('pick')]
+  const progress = $('setup-progress')
+  for (const button of buttons) button.hidden = true
+  $('setup-error').hidden = true
+  $('spinner').hidden = false
+  $('setup-title').textContent = '아테나 설치 중…'
+  $('setup-note').hidden = false
+  progress.textContent = ''
+  progress.hidden = false
+  try {
+    await applyAthenaResult(studio.installAthena())
+  } finally {
+    $('spinner').hidden = true
+    progress.hidden = true
+    if (!state.valid) {
+      $('setup-title').textContent = '아테나를 설치하지 못했어요'
+      $('setup-note').hidden = true
+      for (const button of buttons) button.hidden = false
+    }
+  }
+}
+
+async function applyAthenaResult(pending) {
+  const result = await pending
   const error = $('setup-error')
   if (result.canceled) return
   if (result.error) {
@@ -184,6 +250,8 @@ async function init() {
   renderState()
   for (const tab of tabs) tab.addEventListener('click', () => switchTab(tab.dataset.tab))
   $('pick').addEventListener('click', pickAthenaDir)
+  $('install').addEventListener('click', installAthena)
+  studio.onInstallProgress((line) => ($('setup-progress').textContent = line))
   studio.onTabSwitch(switchTab)
   studio.onPickRequest(pickAthenaDir)
   studio.onTermRestart(() => state.valid && restartTerminal())
@@ -191,6 +259,8 @@ async function init() {
   if (state.valid) {
     switchTab('work')
     startTerminal()
+  } else {
+    installAthena()
   }
 }
 

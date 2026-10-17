@@ -17,15 +17,25 @@
 
   <main>
     <section id="setup" class="panel setup" hidden>
-      <h1>Athena Studio</h1>
-      <p>처음 한 번, 아테나 폴더를 골라 주세요.<br>
-        <code>CLAUDE.md</code> 와 <code>scripts/board/server.mjs</code> 가 있는 폴더예요.</p>
-      <button id="pick" class="primary">아테나 폴더 고르기…</button>
+      <div id="spinner" class="spinner" hidden></div>
+      <h1 id="setup-title">Athena Studio</h1>
+      <p id="setup-note" hidden>끝나면 바로 작업 창이 열려요.<br>
+        <code id="install-dir"></code></p>
+      <p id="setup-progress" class="progress" hidden></p>
       <p id="setup-error" class="error" hidden></p>
+      <button id="install" class="primary" hidden>다시 받기</button>
+      <button id="pick" class="link" hidden>이미 받은 아테나 폴더 고르기…</button>
     </section>
 
     <section id="work" class="panel">
       <div id="terminal"></div>
+      <div id="toast" class="toast" hidden></div>
+      <div id="agent-picker" class="picker" hidden>
+        <div class="picker-box">
+          <h2>어떤 에이전트로 아테나를 켤까요?</h2>
+          <div id="agent-options" class="picker-options"></div>
+        </div>
+      </div>
     </section>
 
     <section id="board" class="panel" hidden>
