@@ -662,6 +662,8 @@ async function installAthena() {
 // ~/athena 와 거기서 도는 작업 공간 · 에이전트는 건드리지 않는다
 async function offerStudioAthena() {
   if (!core.shouldOfferStudioAthena(config, app.getPath('home'))) return
+  // 창을 만들기 전이라 대화상자가 다른 앱 뒤에 숨는다(터미널 · Dock 에서 켠 직후) — 앱을 앞으로 가져온다
+  app.focus({ steal: true })
   const { response } = await dialog.showMessageBox({
     type: 'question',
     message: '스튜디오 전용 아테나를 받을까요?',
