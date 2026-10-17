@@ -1,0 +1,9 @@
+#!/usr/bin/env python3
+"""화면 계층 CLI — bash·node 가 pane·탭·workspace 를 다룰 때 부르는 유일한 입구. 구현은 scripts/lib/screen.py (사용: scripts/screen --help)"""
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.realpath(__file__)), 'lib'))
+from screen import main  # noqa: E402 — 경로를 넣은 뒤에 읽는다
+
+sys.exit(main(sys.argv[1:]))

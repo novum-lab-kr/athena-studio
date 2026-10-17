@@ -1,0 +1,24 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/delegate.sh fe 버튼 고쳐 줘 (긴급) --plan plans/task/20261001-fe-test.md
+--- exit 0
+--- stdout
+w3:p1  (fe — 계획서 plans/task/20261001-fe-test.md · 새 workspace 'shop-web' · cwd: <ATHENA>)
+--- stderr
+--- herdr
+["workspace", "list"]
+["workspace", "create", "--label", "shop-web", "--cwd", "<ATHENA>", "--no-focus"]
+["tab", "rename", "w3:t1", "shop-web"]
+["pane", "list"]
+["pane", "run", "w3:p1", "<TMP>/hermes-runner.X"]
+["pane", "rename", "w3:p1", "🤖 fe · main"]
+# 검사 작업
+
+## Checkpoint
+- Updated: 2026-10-01
+- Status: in_progress
+- Owner: t
+- Agent: fe
+- Issue: 
+- Work ref: <ATHENA> · 🌿 main · pane w3:p1 (fe)
+
+## 지시
+검사

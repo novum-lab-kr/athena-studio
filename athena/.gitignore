@@ -1,0 +1,54 @@
+# Claude Code 로컬 전용
+.claude/settings.local.json
+.mcp.json
+
+# IDE / OS
+.idea/
+.vscode/
+.DS_Store
+
+# 이슈 (로컬 산출물 — 각자 갖는다. 끝나면 [아카이브]로 archive/ 에 묶여 커밋된다)
+issues/*.md
+!issues/README.md
+
+# 작업계획서 (로컬 산출물)
+plans/**/*.md
+plans/**/*.html
+!plans/**/.gitkeep
+
+# sync 임시 파일 (baseline인 .sync/snapshots/ 는 유지)
+.sync/pending/
+.sync/last-report.md
+
+# 팀원별 로컬 레포 링크 (scripts/setup.sh 가 생성)
+repos/
+
+# 작업 워크트리 (scripts/new-branch.sh 가 생성)
+.worktrees/
+
+# 현황판 휴지통 (삭제한 이슈·계획서 — 되살릴 수 있게 지우지 않는다)
+.board-trash/
+
+# 현황판 AI 사용량 (scripts/board/statusline.sh 가 쓴다)
+.board-usage.json
+.board-learn-stats.json
+.board-usage.json.*
+# Jev 판정 캐시·호출 기록 (scripts/lib/jev.mjs — 보낸 글은 기록하지 않는다)
+.board-jev-qa.json
+.board-jev-learn.json
+.jev-log.jsonl
+
+# QA 시뮬레이션 (scripts/qa) — 의존성·런 결과·로그인 세션(쿠키, 절대 커밋 금지)
+scripts/qa/node_modules/
+.qa-runs/
+.qa-auth/
+.qa-baselines/
+
+# 회사 팩 — 별도 레포를 packs/<회사> 에 clone 한다. 링크(pack · .claude/agents/<팩 에이전트> …)는 athena pack link 가 .git/info/exclude 에 적는다
+/packs/
+/pack
+# 이 컴퓨터 설정(팩 경로) — athena.config.example.json 을 복사해 쓴다
+/athena.config.json
+
+# 파이썬 바이트코드 — scripts/lib 의 athena_config·plan_update 를 불러오면 생긴다
+__pycache__/

@@ -1,0 +1,590 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "아테나 작업 흐름 · 정식",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "요청에서 보고까지",
+        "focus": [
+          "req",
+          "route",
+          "plan",
+          "approve",
+          "branch",
+          "pane",
+          "agent",
+          "review",
+          "report"
+        ],
+        "note": "정식 계획서의 결정을 html 결정 콘솔의 [이대로 진행] 으로 확정한 뒤, 공유 패키지부터 순서대로 디스패치하고 아테나가 교차 리뷰·PR 순서를 챙깁니다."
+      },
+      {
+        "id": "safety",
+        "label": "멈추는 지점",
+        "focus": [
+          "route",
+          "outofscope",
+          "approve",
+          "branch",
+          "skipped",
+          "agent",
+          "commitstop"
+        ],
+        "note": "레포가 모호하거나, 확정 전이거나, 브랜치가 이미 있거나, 커밋·PR 이 거부되면 멈추고 사용자에게 묻습니다."
+      },
+      {
+        "id": "records",
+        "label": "기록과 현황판",
+        "focus": [
+          "issues",
+          "req",
+          "plan",
+          "planfile",
+          "agent",
+          "board"
+        ],
+        "note": "이슈 → 계획서(만들어지면 현황판 카드) → Checkpoint·Commits 가 쌓이며 카드가 Status 를 따라 움직입니다."
+      },
+      {
+        "id": "knowledge",
+        "label": "무엇을 읽는가",
+        "focus": [
+          "config",
+          "route",
+          "rules",
+          "know",
+          "agent"
+        ],
+        "note": "필수 규칙과 gotchas 는 항상, 나머지는 작업 유형에 따라 고릅니다."
+      }
+    ],
+    "output": "docs/diagrams/athena-flow-formal.html",
+    "subtitle": "새 기능 · 여러 레포 · API · 구조 변경. 정식 계획서(md + 결정 콘솔) → [이대로 진행] 으로 승인 → 순차 디스패치 → 아테나가 교차 리뷰·PR 순서 (원본: CLAUDE.md · 대부분의 작업은 athena-flow-light)"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "사용자"
+    },
+    {
+      "id": "lead",
+      "label": "아테나 (팀리드)"
+    },
+    {
+      "id": "stop",
+      "label": "멈춤 · 확인 필요",
+      "variant": "exception"
+    },
+    {
+      "id": "fe",
+      "label": "FE 에이전트 (pane)"
+    },
+    {
+      "id": "src",
+      "label": "정본 · 기록 · 현황판"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-plan",
+      "label": "요청 · 계획 · 승인",
+      "fromCol": 0,
+      "toCol": 3
+    },
+    {
+      "id": "p-prep",
+      "label": "브랜치 · 디스패치",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-work",
+      "label": "작업 · 커밋 · 보고",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-route",
+      "label": "라우팅",
+      "lane": "lead",
+      "fromCol": 1,
+      "toCol": 1
+    },
+    {
+      "id": "g-plan",
+      "label": "Plan-First",
+      "lane": "lead",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-disp",
+      "label": "브랜치 · 디스패치",
+      "lane": "lead",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-verify",
+      "label": "교차 검증",
+      "lane": "lead",
+      "fromCol": 5,
+      "toCol": 5
+    },
+    {
+      "id": "g-stop",
+      "label": "여기서 멈추고 묻는다",
+      "lane": "stop",
+      "fromCol": 1,
+      "toCol": 5,
+      "variant": "security"
+    },
+    {
+      "id": "g-wt",
+      "label": "워크트리 격리",
+      "lane": "fe",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    },
+    {
+      "id": "g-record",
+      "label": "기록",
+      "lane": "src",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "g-always",
+      "label": "항상 읽는다",
+      "lane": "src",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-live",
+      "label": "실시간",
+      "lane": "src",
+      "fromCol": 4,
+      "toCol": 4,
+      "variant": "emphasis"
+    },
+    {
+      "id": "g-pick",
+      "label": "골라 읽는다",
+      "lane": "src",
+      "fromCol": 5,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "mainPath": [
+    "req",
+    "route",
+    "plan",
+    "approve",
+    "branch",
+    "pane",
+    "agent"
+  ],
+  "nodes": [
+    {
+      "id": "req",
+      "lane": "user",
+      "col": 0,
+      "type": "frontend",
+      "label": "요청",
+      "sublabel": "대화 · 이슈 [처리 시작]",
+      "width": 138,
+      "tag": "같은 이름이 여러 레포면 묻는다"
+    },
+    {
+      "id": "approve",
+      "lane": "user",
+      "col": 3,
+      "type": "frontend",
+      "label": "승인",
+      "sublabel": "결정 콘솔 · [이대로 진행]",
+      "width": 138,
+      "tag": "확정 전엔 디스패치 없음"
+    },
+    {
+      "id": "report",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "보고 · 다음 요청",
+      "sublabel": "PR 링크 · Commits · 위험",
+      "width": 138,
+      "tag": "배지 뜨면 아테나가 완료로"
+    },
+    {
+      "id": "route",
+      "lane": "lead",
+      "col": 1,
+      "type": "backend",
+      "label": "라우팅 · 판단",
+      "sublabel": "📋 정식으로 진행 — 한 줄",
+      "width": 138,
+      "tag": "콘솔 ≠ 사용자 웹"
+    },
+    {
+      "id": "plan",
+      "lane": "lead",
+      "col": 2,
+      "type": "backend",
+      "label": "정식 계획서",
+      "sublabel": "md + html 결정 콘솔",
+      "width": 138,
+      "tag": "계획서 없이 디스패치 없음"
+    },
+    {
+      "id": "branch",
+      "lane": "lead",
+      "col": 4,
+      "type": "backend",
+      "label": "브랜치 · 디스패치",
+      "sublabel": "new-branch → delegate",
+      "width": 138,
+      "tag": "공유 패키지 먼저 · 독립은 동시"
+    },
+    {
+      "id": "review",
+      "lane": "lead",
+      "col": 5,
+      "type": "backend",
+      "label": "교차 리뷰 · PR",
+      "sublabel": "여러 레포: ship --repo-agent",
+      "width": 138,
+      "tag": "레포 하나면 pane 에서"
+    },
+    {
+      "id": "outofscope",
+      "lane": "stop",
+      "col": 1,
+      "type": "security",
+      "label": "범위 밖 · 모호",
+      "sublabel": "백엔드 · 레포 불명",
+      "width": 138,
+      "tag": "멈추고 사용자에게"
+    },
+    {
+      "id": "skipped",
+      "lane": "stop",
+      "col": 4,
+      "type": "security",
+      "label": "브랜치 있음 · 건너뜀",
+      "sublabel": "이어 쓸지 묻는다",
+      "width": 138,
+      "tag": "건너뛴 레포엔 디스패치 금지"
+    },
+    {
+      "id": "commitstop",
+      "lane": "stop",
+      "col": 5,
+      "type": "security",
+      "label": "커밋 · PR 거부",
+      "sublabel": "메인·보호·미기록 커밋",
+      "width": 138,
+      "tag": "이유를 전하고 묻는다"
+    },
+    {
+      "id": "pane",
+      "lane": "fe",
+      "col": 4,
+      "type": "backend",
+      "label": "레포별 pane",
+      "sublabel": "워크트리 · 보호 훅",
+      "width": 138,
+      "tag": "workspace = 레포"
+    },
+    {
+      "id": "agent",
+      "lane": "fe",
+      "col": 5,
+      "type": "backend",
+      "label": "작업 · 커밋",
+      "sublabel": "요청 반복 · commit.sh",
+      "width": 138,
+      "tag": "진행 중 ↔ 리뷰"
+    },
+    {
+      "id": "issues",
+      "lane": "src",
+      "col": 0,
+      "type": "database",
+      "label": "issues/",
+      "sublabel": "고치지 않은 발견",
+      "width": 138,
+      "tag": "sync·리뷰에서 등록"
+    },
+    {
+      "id": "config",
+      "lane": "src",
+      "col": 1,
+      "type": "database",
+      "label": "athena.config",
+      "sublabel": "레포 · 브랜치 · 에이전트",
+      "width": 138,
+      "tag": "매핑 정본"
+    },
+    {
+      "id": "planfile",
+      "lane": "src",
+      "col": 2,
+      "type": "database",
+      "label": "plans/",
+      "sublabel": "Checkpoint · Commits",
+      "width": 138,
+      "tag": "재개 근거"
+    },
+    {
+      "id": "rules",
+      "lane": "src",
+      "col": 3,
+      "type": "database",
+      "label": "rules · gotchas",
+      "sublabel": "작업 크기와 무관",
+      "width": 138,
+      "tag": "항상 읽는다"
+    },
+    {
+      "id": "board",
+      "lane": "src",
+      "col": 4,
+      "type": "database",
+      "label": "현황판 /board",
+      "sublabel": "계획서가 생기면 카드",
+      "width": 138,
+      "tag": "Status 따라 칸 이동"
+    },
+    {
+      "id": "know",
+      "lane": "src",
+      "col": 5,
+      "type": "database",
+      "label": "knowledge",
+      "sublabel": "작업 유형별 선택",
+      "width": 138,
+      "tag": "필요한 절만"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "req",
+      "to": "route",
+      "label": "요청",
+      "variant": "default"
+    },
+    {
+      "id": "e2",
+      "from": "route",
+      "to": "plan",
+      "label": "대상 확정",
+      "variant": "default"
+    },
+    {
+      "id": "e3",
+      "from": "plan",
+      "to": "approve",
+      "label": "결정 콘솔",
+      "variant": "default"
+    },
+    {
+      "id": "e4",
+      "from": "approve",
+      "to": "branch",
+      "label": "확정",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e5",
+      "from": "branch",
+      "to": "pane",
+      "label": "워크트리",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e6",
+      "from": "pane",
+      "to": "agent",
+      "label": "지시",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e7",
+      "from": "agent",
+      "to": "review",
+      "label": "결과",
+      "variant": "default"
+    },
+    {
+      "id": "e8",
+      "from": "review",
+      "to": "report",
+      "label": "보고",
+      "variant": "default"
+    },
+    {
+      "id": "x1",
+      "from": "route",
+      "to": "outofscope",
+      "label": "모호",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "x2",
+      "from": "branch",
+      "to": "skipped",
+      "label": "이미 있음",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "x3",
+      "from": "agent",
+      "to": "commitstop",
+      "label": "거부",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "s1",
+      "from": "issues",
+      "to": "req",
+      "variant": "dashed"
+    },
+    {
+      "id": "s2",
+      "from": "config",
+      "to": "route",
+      "variant": "dashed"
+    },
+    {
+      "id": "s3",
+      "from": "plan",
+      "to": "planfile",
+      "variant": "dashed"
+    },
+    {
+      "id": "s4",
+      "from": "rules",
+      "to": "agent",
+      "variant": "dashed"
+    },
+    {
+      "id": "s5",
+      "from": "agent",
+      "to": "board",
+      "variant": "dashed",
+      "label": "Status"
+    },
+    {
+      "id": "s6",
+      "from": "know",
+      "to": "agent",
+      "variant": "dashed"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "1단계 · 요청 · 계획서",
+      "items": [
+        "요청은 대화 · 현황판 이슈 [처리 시작] 으로 들어온다 — 여러 레포·기능·버그 원인 찾기. 경량으로 시작했다가 범위가 커져 옮겨 오기도 한다",
+        "그 자리에서 고치지 않은 발견은 등록 기준(issues/README.md)대로 — 보안·버그만 바로 등록, 나머지는 이슈 후보로",
+        "대상 서비스를 정하고 관련 코드를 탐색한다. 같은 이름의 화면이 여러 레포(운영 콘솔·사용자 웹 등)에 있으면 어느 쪽인지 묻는다",
+        "지식은 작업 유형에 필요한 절만 읽는다 — rules 필수 절과 gotchas 는 항상",
+        "아테나가 정하고 한 줄로 알린다: 📋 정식으로 진행합니다 — 이유 · 결정 N개 · 경로",
+        "정식 계획서는 md + 같은 이름 html 결정 콘솔(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs). PLAN.leadPane 에 계획서를 만든 아테나 pane"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "2단계 · 사용자 승인",
+      "items": [
+        "결정 콘솔을 현황판 주소로 연다(scripts/board.sh open <md>). 대화에는 경로와 결정마다 제목·추천 한 줄",
+        "콘솔에서 고르고 [이대로 진행] → 결정이 그 아테나 pane 에 입력된다(대화로 답해도 같다) → md·html 에 기록 → ✅ 확정",
+        "정식 대상이어도 \"바로 고쳐\" 면 경량으로 바로 — 보고에 그 사실을 적는다",
+        "수정 요청이면 md·html 을 고치고 콘솔을 다시 열어 재승인",
+        "확정 전에는 디스패치하지 않는다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "3단계 · 브랜치 → 디스패치",
+      "items": [
+        "디스패치 전에 prBase 에서 워크트리를 딴다(.worktrees/<레포>/<슬러그>). 메인 체크아웃은 건드리지 않는다",
+        "브랜치가 이미 있으면 상태를 알려 주고 \"그대로 이어 쓸까요?\" — 건너뛴 레포엔 디스패치하지 않는다",
+        "delegate.sh --plan 없이는 띄우지 않는다. Work ref 에 워크트리·브랜치·pane 이 적힌다",
+        "FE 세션엔 보호 훅 — git commit·push·gh pr create 직접, add -A 차단(commit.sh·ship.sh 로)",
+        "workspace = 레포, 한 탭에 pane 을 나란히. 공유 패키지 → 소비 레포는 순차로, 서로 독립인 서비스는 동시에",
+        "기본은 프롬프트 없이 pane 을 열고 그 안에서 지시한다",
+        "reviewer · 단발 조사는 --here 로 지금 탭에",
+        "같은 기능을 여러 서비스에 넣으면 계획서에 공통 스펙(문구·동작·env 키)을 적는다"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "4단계 · 레포별 pane 에서 작업 · 커밋",
+      "items": [
+        "요청을 여러 번 주고받는다. 요청마다 Status in_progress → ready_for_review, 계획서에 지시·진행·결과가 쌓인다",
+        "현황판 카드는 진행 중 ↔ 리뷰 를 오간다(에이전트가 작업 중이면 진행 중)",
+        "작업 뒤 같은 검증 스크립트를 돌리고 출력 표를 그대로 보고한다",
+        "\"커밋해줘\" 일 때만 scripts/commit.sh — 지정 파일만 · 엄격 검증 · 계획서 ## Commits",
+        "메인 체크아웃·보호 브랜치·남의 스테이징·검증 실패면 거부하고 사용자에게 묻는다",
+        "정식이어도 레포 하나짜리면 경량과 같이 pane 에서 PR 까지 간다",
+        "코드를 바꾼 요청을 보고하면 에이전트가 묻지 않고 리뷰를 띄운다(자동 리뷰). 결정 필요(선택지가 갈림)는 같은 계획서 결정 콘솔에 덧붙여 보여 준다(plan-html.mjs --add · [이대로 진행] 은 그 에이전트 pane 으로)"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "5단계 · 교차 리뷰 · 보고 · PR",
+      "items": [
+        "(여러 레포·아테나 작업) reviewer 에게 계획서 + 대상 레포(워크트리면 --cwd)를 넘긴다. 수정 필요 항목은 사용자 확인 뒤 그 FE pane 에서 이어서 지시. 결정 필요(선택지가 갈림)는 같은 계획서 결정 콘솔에 덧붙여 보여 준다(plan-html.mjs --add)",
+        "검증 결과를 그대로 확인한다 — 실패를 숨기지 않는다",
+        "변경 파일·검증·## Commits·남은 위험을 요약해 보고한다",
+        "여러 레포 작업의 push·PR 은 아테나가 순서·공개 범위를 확인하고 레포마다 ship.sh --repo-agent 로(레포 하나면 에이전트가 pane 에서)",
+        "📚 배운 것 — 끝내는 보고(PR 미리보기 · 여러 레포면 아테나에 넘기는 마지막 보고) · 사용자 교정 · 같은 오류 3회 때 learn 이슈(repo: athena · kind: knowledge). 기록 금지 목록·중복이면 기존 규칙 강화, 반복 절차는 스킬 후보. PR 이 머지되면 배우기 검토자(별도 Claude · pane 하나)가 계획서·대화·바뀐 코드·리뷰 댓글을 읽고 빠진 것을 보탠다",
+        "Checkpoint 를 단계 완료·차단·리뷰 반영·/new 직전에 갱신한다"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "6단계 · 정리 / 끊겼을 때 재개",
+      "items": [
+        "끝난 카드는 현황판 [아카이브] — archive/<이름>/ 에 이슈·계획서를 묶어 커밋, 지나간 일은 [아카이브] 탭",
+        "현황판 [학습] 탭 — 학습 후보 [넣기]·[고쳐서 넣기]·[버리기](넣으면 공책 gotchas 에 한 줄), 학습한 내용 수정·삭제, 스킬 후보는 아테나에게 맡기기. /sync 끝에 learn-curator 가 30일 안 쓴 스킬을, gotchas-check 가 사라진 파일을 가리키는 공책 줄·나눌 때가 된 공책(공통 2만 자·같은 화면 5줄 → gotchas/<폴더>.md)을 정리 후보로(지우지 않음)",
+        "이슈 완료 가능 배지 = 확인 결과·후속·fix·계획 done+PR MERGED. 배지가 뜨면 아테나가 옮긴다 (이슈·계획서는 로컬 — git 엔 archive/ 만)",
+        "계획서 PR 줄의 PR 이 모두 머지되면(GitHub MERGED, base 무관) 현황판이 계획서를 자동으로 done 으로 옮긴다. 머지 없이 닫힌 PR 은 판정에서 뺀다",
+        "끊기면 계획서 하나를 읽고, 현재 브랜치·diff 가 Work ref 와 같은지부터 본다",
+        "Next 가 현재 코드에서도 유효한지 확인하고 진행한다",
+        "바뀐 ref 에서 과거 검증 결과를 재사용하지 않는다"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "어디서 멈추고 묻는가",
+      "items": [
+        "레포가 모호하면 묻는다 — 같은 서비스라도 운영 콘솔과 사용자 웹이 다른 레포일 수 있다",
+        "백엔드·범위 밖 변경이 필요하면 멈추고 알린다",
+        "브랜치가 이미 있거나 워크트리를 못 만들면 묻는다 — 건너뛴 레포엔 디스패치하지 않는다",
+        "커밋·PR 이 거부되면 이유를 그대로 전하고 묻는다. 아테나는 코드를 쓰지 않는다"
+      ]
+    }
+  ]
+}

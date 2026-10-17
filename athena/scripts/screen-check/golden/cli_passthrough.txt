@@ -1,0 +1,29 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --format id
+--- exit 0
+--- stdout
+w1:p1
+--- stderr
+warning: 검사용 경고
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 python3 -c import sys; sys.path.insert(0, "scripts/lib"); import screen; print(len(screen.list_panes()))
+--- exit 0
+--- stdout
+4
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane read w1:p2 --source visible --lines 5 --read-format ansi --ansi --raw
+--- exit 0
+--- stdout
+{"id": "fake:pane_read", "result": {"type": "ok"}}
+--- stderr
+--- herdr
+["pane", "read", "--source", "visible", "--lines", "5", "--format", "ansi", "--ansi", "--raw", "w1:p2"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane wait-output w1:p2 --regex done$ --raw --timeout 500
+--- exit 0
+--- stdout
+{"id": "fake:pane_wait-output", "result": {"type": "ok"}}
+--- stderr
+--- herdr
+["pane", "wait-output", "--regex", "done$", "--timeout", "500", "--raw", "w1:p2"]

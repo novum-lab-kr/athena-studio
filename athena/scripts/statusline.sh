@@ -1,0 +1,92 @@
+#!/bin/sh
+# Claude Code 하단 상태바. 지금 어느 레포의 어느 브랜치를 보고 있는지 항상 보이게 한다.
+#
+#   📁 my-web  🌿 feature/PROJ-1234  ✎2 +1 -1  ⇡3  ⧉worktree
+#
+# **기호·색의 뜻은 docs/playbook.html 의 "작업 흐름 → pane 하단 상태바" 가 정본이다.**
+# 여기에 같은 표를 다시 적지 않는다. 표시를 바꾸면 그쪽도 같이 고친다.
+#
+# 대상 레포는 delegate.sh 가 넣어준 ATHENA_REPO_DIR 을 먼저 보고, 없으면 payload 의 cwd 로 찾는다.
+# 에이전트→레포 매핑의 정본은 athena.config.json 이며 여기서 다시 적지 않는다.
+
+payload=$(cat)
+
+# 현황판 AI 사용량 — 아테나 폴더의 세션은 프로젝트 설정 때문에 이 파일이 statusline 이라
+# 사용자 설정의 래퍼(scripts/board/statusline.sh)가 돌지 않는다. 여기서 기록만 시킨다(실패해도 상태바는 그대로)
+printf '%s' "$payload" | ATHENA_USAGE_ONLY=1 /bin/sh "$(dirname "$0")/board/statusline.sh" >/dev/null 2>&1
+
+dir="${ATHENA_REPO_DIR:-}"
+if [ -z "$dir" ]; then
+  dir=$(printf '%s' "$payload" | sed -n 's/.*"cwd"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+fi
+[ -n "$dir" ] && [ -d "$dir" ] || dir="$PWD"
+
+toplevel=$(git -C "$dir" rev-parse --show-toplevel 2>/dev/null) || exit 0
+branch=$(git -C "$dir" rev-parse --abbrev-ref HEAD 2>/dev/null)
+[ -n "$branch" ] || exit 0
+
+# 워크트리 안이면 toplevel 이 워크트리 폴더명이라 어느 레포인지 알 수 없다.
+# git-common-dir 은 항상 메인 체크아웃의 .git 을 가리키므로 그 부모가 진짜 레포 이름이다.
+common=$(git -C "$dir" rev-parse --git-common-dir 2>/dev/null)
+gitdir=$(git -C "$dir" rev-parse --git-dir 2>/dev/null)
+case "$common" in /*) abs_common="$common" ;; *) abs_common="$dir/$common" ;; esac
+if [ -n "$common" ] && [ "$common" != "$gitdir" ]; then
+  is_worktree=1
+  name=$(basename "$(dirname "$abs_common")")
+else
+  is_worktree=0
+  name=$(basename "$toplevel")
+fi
+
+# ANSI 색 (Claude Code 상태바는 ANSI 를 그대로 렌더한다)
+R='\033[0m'; DIM='\033[2m'; BOLD='\033[1m'
+CYAN='\033[36m'; GREEN='\033[32m'; YELLOW='\033[33m'; RED='\033[31m'; MAGENTA='\033[35m'
+
+# 변경 내역을 종류별로 센다 (porcelain 은 "XY 경로", X=인덱스 Y=워크트리)
+counts=$(git -C "$dir" status --porcelain 2>/dev/null | awk '
+  /^\?\?/            { add++;  next }
+  /^(U.|.U|AA|DD)/   { conf++; next }
+  /^(A.|.A)/         { add++;  next }
+  /^(D.|.D)/         { del++;  next }
+  /^(R.|.R)/         { ren++;  next }
+                     { mod++ }
+  END { printf "%d %d %d %d %d", mod+0, add+0, del+0, conf+0, ren+0 }')
+set -- $counts
+mod=$1; add=$2; del=$3; conf=$4; ren=$5
+
+ahead=$(git -C "$dir" rev-list --count '@{upstream}..HEAD' 2>/dev/null || echo 0)
+
+# 보호 브랜치에서 작업 중이면 경고한다. FE 레포에서 여기에 코드를 쓰면 안 된다.
+# 단 hermes 워크스페이스 자체는 main 이 정상 작업 브랜치라 제외한다
+# (athena.config.json 이 있으면 워크스페이스로 본다 — 이름 하드코딩을 피한다).
+if [ -f "$toplevel/athena.config.json" ]; then
+  protected=0
+else
+  case "$branch" in
+    # dev-ecs 는 폐기된 브랜치지만, 혹시 거기 서 있으면 경고가 뜨는 편이 낫다
+    prd|main|master|dev|dev-ecs|prd-*|release/*) protected=1 ;;
+    *) protected=0 ;;
+  esac
+fi
+
+out="${DIM}📁${R} ${CYAN}${name}${R}  "
+if [ "$protected" = 1 ]; then
+  out="${out}${RED}${BOLD}⚠️  ${branch}${R}"
+else
+  out="${out}${DIM}🌿${R} ${GREEN}${branch}${R}"
+fi
+
+[ "$mod"  -gt 0 ] && out="${out}  ${YELLOW}✎${mod}${R}"
+[ "$add"  -gt 0 ] && out="${out}  ${GREEN}+${add}${R}"
+[ "$del"  -gt 0 ] && out="${out}  ${RED}-${del}${R}"
+[ "$ren"  -gt 0 ] && out="${out}  ${MAGENTA}⇄${ren}${R}"
+[ "$conf" -gt 0 ] && out="${out}  ${RED}${BOLD}✗${conf}${R}"
+[ "${ahead:-0}" -gt 0 ] && out="${out}  ${CYAN}⇡${ahead}${R}"
+
+[ "$is_worktree" = 1 ] && out="${out}  ${MAGENTA}⧉worktree${R}"
+
+# 지금 이 세션이 쓰는 모델 — payload 의 model.display_name (예: Opus 5.5)
+model=$(printf '%s' "$payload" | sed -n 's/.*"display_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)
+[ -n "$model" ] && out="${out}  ${DIM}🧠${R} ${model}"
+
+printf '%b' "$out"

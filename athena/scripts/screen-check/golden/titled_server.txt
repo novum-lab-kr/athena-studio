@@ -1,0 +1,79 @@
+--- state
+{
+ "available": true,
+ "panes": [
+  {
+   "kind": "pane",
+   "id": "w1:p1",
+   "tool": "claude",
+   "status": "idle",
+   "agent": "아테나",
+   "role": "hermes",
+   "branch": "",
+   "title": "claude",
+   "cwd": "<ATHENA>",
+   "focused": true
+  },
+  {
+   "kind": "pane",
+   "id": "w1:p2",
+   "tool": "claude",
+   "status": "working",
+   "agent": "fe",
+   "role": "agent",
+   "branch": "feat/x",
+   "title": "✳ fe",
+   "cwd": "<ATHENA>/repos/shop-web",
+   "focused": false
+  },
+  {
+   "kind": "pane",
+   "id": "w1:pA",
+   "tool": "claude",
+   "status": "working",
+   "agent": "qa",
+   "role": "agent",
+   "branch": "fix/z",
+   "title": "zsh",
+   "cwd": "<ATHENA>",
+   "focused": false
+  },
+  {
+   "kind": "pane",
+   "id": "w1:pC",
+   "tool": "codex",
+   "status": "idle",
+   "agent": "codex",
+   "role": "other",
+   "branch": "",
+   "title": "zsh",
+   "cwd": "/tmp/other-repo",
+   "focused": false
+  },
+  {
+   "kind": "pane",
+   "id": "w2:p1",
+   "tool": "codex",
+   "status": "idle",
+   "agent": "codex",
+   "role": "other",
+   "branch": "",
+   "title": "zsh",
+   "cwd": "/tmp/other-repo",
+   "focused": false
+  }
+ ]
+}
+--- action
+{"ok":true}
+--- action(없는 pane)
+{"error":"보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)"}
+--- hermes-new
+{"ok":true,"pane":"w1:p9"}
+--- herdr (pane list 뺌)
+["pane", "send-text", "w1:p2", "첫 줄 둘째 줄"]
+["pane", "send-keys", "w1:p2", "Enter"]
+["pane", "split", "w1:p1", "--direction", "right", "--ratio", "0.5", "--cwd", "<ATHENA>", "--no-focus"]
+["pane", "rename", "w1:p9", "🧭 아테나 · 검사 이슈"]
+["pane", "run", "w1:p9", "<WORK>/tmp/hermes-issue-runner-X"]
+--- pane list 불림: 예

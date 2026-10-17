@@ -1,0 +1,17 @@
+$ HERDR_ENV=1 HERDR_TAB_ID=w1:t1 ATHENA_BOARD_PORT=47999 ATHENA_BOARD_NO_BROWSER=1 scripts/board.sh
+--- exit 1
+--- stdout
+--- stderr
+⚠️  서버가 뜨지 않았다 — pane w1:p9 확인
+--- herdr
+["pane", "list"]
+["pane", "split", "--current", "--direction", "down", "--ratio", "0.25", "--cwd", "<ATHENA>", "--no-focus"]
+["pane", "run", "w1:p9", "env", "ATHENA_BOARD_PORT=47999", "node", "<ATHENA>/scripts/board/server.mjs"]
+["pane", "rename", "w1:p9", "📋 현황판"]
+["pane", "list"]
+["pane", "list"]
+["pane", "layout", "--pane", "w1:p1"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]

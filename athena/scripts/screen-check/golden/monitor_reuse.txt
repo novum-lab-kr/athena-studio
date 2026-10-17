@@ -1,0 +1,9 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/monitor-pane.sh
+--- exit 0
+--- stdout
+w1:p5 (재사용)
+--- stderr
+--- herdr
+["pane", "list"]
+["pane", "send-keys", "w1:p5", "C-c"]
+["pane", "run", "w1:p5", "<ATHENA>/scripts/agent-monitor.py", "--stay", "--recent"]

@@ -1,0 +1,80 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list
+--- exit 0
+--- stdout
+{"panes": [{"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}, {"id": "w1:p2", "tab_id": "w1:t1", "workspace_id": "w1", "label": "🤖 fe · feat/x", "name": null, "pane_title": null, "cwd": "<ATHENA>/repos/shop-web", "foreground_cwd": "<ATHENA>/repos/shop-web", "focused": false, "agent": "claude", "agent_status": "working", "title": "✳ fe"}, {"id": "w1:pE", "tab_id": "w1:t1", "workspace_id": "w1", "label": "Explorer", "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "herdr-sidebar"}, {"id": "w2:p1", "tab_id": "w2:t1", "workspace_id": "w2", "label": null, "name": null, "pane_title": null, "cwd": "/tmp/other-repo", "foreground_cwd": "/tmp/other-repo", "focused": false, "agent": "codex", "agent_status": "idle", "title": "zsh"}]}
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --label 🛰 에이전트 모니터 --format id
+--- exit 0
+--- stdout
+w2:p5
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --label 🛰 에이전트 모니터 --prefer-workspace self --format ids
+--- exit 0
+--- stdout
+w1:p5
+w2:p5
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 scripts/screen pane list --label 🛰 에이전트 모니터 --prefer-workspace self --format id
+--- exit 0
+--- stdout
+w2:p5
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --tab self --label 가이드 메뉴 --format id
+--- exit 0
+--- stdout
+w1:p4
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 scripts/screen pane list --tab self --label 가이드 메뉴 --format id
+--- exit 0
+--- stdout
+
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --label 📚 배우기 검토 --cwd <ATHENA> --format ids
+--- exit 0
+--- stdout
+w1:p6
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --agent-only --format ids
+--- exit 0
+--- stdout
+w1:p1
+w1:p2
+w2:p1
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --workspace w2 --format ids
+--- exit 0
+--- stdout
+w2:p1
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --label 가이드 메뉴 --workspace w2 --prefer-tab self --format id
+--- exit 0
+--- stdout
+w2:p4
+--- stderr
+--- herdr
+["pane", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane list --label nothing --format id
+--- exit 0
+--- stdout
+
+--- stderr
+--- herdr
+["pane", "list"]

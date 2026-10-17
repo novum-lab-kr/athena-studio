@@ -1,0 +1,7 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli node scripts/plan-html.mjs plans/refactor/20261003-lead.md --add <WORK>/decisions.json
+--- exit 0
+--- stdout
+plans/refactor/20261003-lead.html · 결정 0/1 확정 · 보낼 pane p1
+--- stderr
+--- herdr
+["@studio", "pane", "current"]

@@ -1,0 +1,32 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/guide-pane.sh
+--- exit 0
+--- stdout
+w1:p4 (재사용)
+--- stderr
+--- herdr
+["pane", "list"]
+["pane", "process-info", "--pane", "w1:p4"]
+["pane", "send-text", "w1:p4", "q"]
+["pane", "run", "w1:p4", "env", "ATHENA_CLAUDE_PANE=w1:p1", "<ATHENA>/scripts/guide-menu.sh"]
+["pane", "list"]
+["pane", "list"]
+["pane", "layout", "--pane", "w1:p1"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "move", "w1:p4", "--new-tab", "--no-focus"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "layout", "--pane", "w1:p1"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["pane", "layout", "--pane", "w1:p1"]
+["pane", "list"]
+["pane", "list"]
+["pane", "list"]
+["tab", "close", "w1:t9"]

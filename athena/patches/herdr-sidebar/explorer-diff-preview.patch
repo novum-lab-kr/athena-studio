@@ -1,0 +1,129 @@
+diff --git a/plugins/herdr-sidebar/src/explorer_app.rs b/plugins/herdr-sidebar/src/explorer_app.rs
+index 7d68386..456c886 100644
+--- a/plugins/herdr-sidebar/src/explorer_app.rs
++++ b/plugins/herdr-sidebar/src/explorer_app.rs
+@@ -593,8 +593,7 @@ impl App {
+             self.notice = Some("preview needs a herdr pane".into());
+             return;
+         };
+-        let payload = herdr_sidebar::viewer::file_request(path);
+-        let doc_key = herdr_sidebar::viewer::doc_key_for_file(path);
++        let (payload, doc_key) = self.preview_request(path);
+         match herdr_sidebar::viewer::open_in_pane(
+             &pane_id,
+             &self.tree.root_path(),
+@@ -608,6 +607,21 @@ impl App {
+         }
+     }
+ 
++    /// What a click on `path` previews: a changed file (git decorations on)
++    /// opens its diff like Source Control; anything else opens the file.
++    fn preview_request(&self, path: &Path) -> (String, String) {
++        match self.deco.diff_target(path) {
++            Some((root, rel, kind)) => (
++                herdr_sidebar::viewer::diff_request(root, rel, kind),
++                herdr_sidebar::viewer::doc_key_for_diff(root, rel, kind),
++            ),
++            None => (
++                herdr_sidebar::viewer::file_request(path),
++                herdr_sidebar::viewer::doc_key_for_file(path),
++            ),
++        }
++    }
++
+     /// Hide the sidebar: snooze this tab (so the quiet ensure hook doesn't
+     /// immediately re-dock a fresh one) and close our own pane. The herdr
+     /// prefix+b keybinding (→ the toggle action) brings it back.
+@@ -843,7 +857,7 @@ impl App {
+                     // Pin the tab the first click just opened. Re-opening
+                     // here would race the viewer's first token stamp and
+                     // spawn a second tab for the same file.
+-                    let doc_key = herdr_sidebar::viewer::doc_key_for_file(&path);
++                    let (_, doc_key) = self.preview_request(&path);
+                     match self.last_preview.as_ref() {
+                         Some((key, target)) if *key == doc_key => {
+                             if !herdr_sidebar::viewer::pin_target(target, &doc_key) {
+diff --git a/plugins/herdr-sidebar/src/gitdeco.rs b/plugins/herdr-sidebar/src/gitdeco.rs
+index e3593d7..1219250 100644
+--- a/plugins/herdr-sidebar/src/gitdeco.rs
++++ b/plugins/herdr-sidebar/src/gitdeco.rs
+@@ -62,6 +62,9 @@ pub struct Decorations {
+     dirs: HashMap<PathBuf, char>,
+     /// Ignored roots: a path is ignored when it IS one or lives under one.
+     ignored: Vec<PathBuf>,
++    /// Changed FILES → (repo root, repo-relative path, diff kind) so the
++    /// Explorer can open the same diff preview Source Control does.
++    diffs: HashMap<PathBuf, (PathBuf, String, &'static str)>,
+ }
+ 
+ impl Decorations {
+@@ -71,7 +74,7 @@ impl Decorations {
+     }
+ 
+     pub fn is_empty(&self) -> bool {
+-        self.files.is_empty() && self.dirs.is_empty() && self.ignored.is_empty()
++        self.files.is_empty() && self.dirs.is_empty() && self.ignored.is_empty() && self.diffs.is_empty()
+     }
+ 
+     /// Build the index from every repository the Explorer can see. Staged
+@@ -80,9 +83,20 @@ impl Decorations {
+     pub fn build(repos: &[RepoStatus]) -> Self {
+         let mut deco = Self::default();
+         for repo in repos {
+-            for side in [&repo.status.staged, &repo.status.unstaged] {
++            for (side, staged) in [(&repo.status.staged, true), (&repo.status.unstaged, false)] {
+                 for entry in side {
+                     deco.add(&repo.root, &entry.path, entry.letter);
++                    // Working tree side comes second, so it wins the click —
++                    // the diff matches what the user sees on disk.
++                    let kind = match (staged, entry.letter) {
++                        (true, _) => "staged",
++                        (false, 'U') => "untracked",
++                        _ => "worktree",
++                    };
++                    deco.diffs.insert(
++                        abs(&repo.root, &entry.path),
++                        (repo.root.clone(), entry.path.clone(), kind),
++                    );
+                     // A rename's source is gone from its old location.
+                     if let Some(orig) = &entry.orig {
+                         deco.add(&repo.root, orig, 'D');
+@@ -139,6 +153,14 @@ impl Decorations {
+         letter.or_else(|| self.is_ignored(path).then_some('I'))
+     }
+ 
++    /// The diff a click on this changed FILE should preview, if any:
++    /// (repo root, repo-relative path, `staged` | `worktree` | `untracked`).
++    pub fn diff_target(&self, path: &Path) -> Option<(&Path, &str, &'static str)> {
++        self.diffs
++            .get(path)
++            .map(|(root, rel, kind)| (root.as_path(), rel.as_str(), *kind))
++    }
++
+     fn is_ignored(&self, path: &Path) -> bool {
+         self.ignored.iter().any(|root| path.starts_with(root))
+     }
+@@ -191,6 +213,23 @@ mod tests {
+         assert_eq!(at(&deco, "later.rs", false), Some('D'));
+     }
+ 
++    #[test]
++    fn changed_files_carry_the_diff_a_click_opens() {
++        let deco = Decorations::build(&[repo(
++            "/ws",
++            "## main\0M  staged.rs\0MM both.rs\0 M work.rs\0?? new.rs\0",
++            &[],
++        )]);
++        let kind = |rel: &str| deco.diff_target(&root().join(rel)).map(|(_, _, k)| k);
++        assert_eq!(kind("staged.rs"), Some("staged"));
++        assert_eq!(kind("both.rs"), Some("worktree"), "working tree wins");
++        assert_eq!(kind("work.rs"), Some("worktree"));
++        assert_eq!(kind("new.rs"), Some("untracked"));
++        assert_eq!(kind("clean.rs"), None, "unchanged files open as files");
++        let (root_path, rel, _) = deco.diff_target(&root().join("work.rs")).unwrap();
++        assert_eq!((root_path, rel), (root().as_path(), "work.rs"));
++    }
++
+     #[test]
+     fn directories_aggregate_their_descendants() {
+         let deco = Decorations::build(&[repo("/ws", "## main\0 M src/api/routes.rs\0", &[])]);

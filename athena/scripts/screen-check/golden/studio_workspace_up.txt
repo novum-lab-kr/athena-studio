@@ -1,0 +1,12 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli python3 scripts/hooks/workspace-up.py
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["@studio", "pane", "list"]
+["#athena-up", "FIRST_RUN="]
+$ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json python3 scripts/hooks/workspace-up.py
+--- exit 0
+--- stdout
+--- stderr
+--- herdr

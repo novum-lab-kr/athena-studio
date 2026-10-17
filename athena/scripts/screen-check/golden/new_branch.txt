@@ -1,0 +1,14 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ROOT=<ATHENA> ATHENA_AGENT=fe bash -c created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?" _ <WORK>/rename.sh
+--- exit 0
+--- stdout
+🏷  pane 이름: 🤖 fe · feat/x
+rc=0
+--- stderr
+--- herdr
+["pane", "rename", "w1:p1", "🤖 fe · feat/x"]
+$ ROOT=<ATHENA> ATHENA_AGENT=fe bash -c created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?" _ <WORK>/rename.sh
+--- exit 0
+--- stdout
+rc=0
+--- stderr
+--- herdr

@@ -1,0 +1,19 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_DIR=<ATHENA> bash -c . "$1"; ask_claude "/board 열어 줘"; echo "rc=$?" _ <WORK>/ask.sh
+--- exit 0
+--- stdout
+✔ 새 pane(w1:p9)에 아테나 세션을 띄워 실행했습니다: /board 열어 줘
+rc=0
+--- stderr
+--- herdr
+["pane", "split", "--current", "--direction", "down", "--ratio", "0.5", "--cwd", "<ATHENA>", "--focus"]
+["pane", "run", "w1:p9", "claude", "/board 열어 줘"]
+["pane", "rename", "w1:p9", "아테나 작업"]
+$ ATHENA_DIR=<ATHENA> bash -c . "$1"; ask_claude "/board 열어 줘"; echo "rc=$?" _ <WORK>/ask.sh
+--- exit 0
+--- stdout
+herdr 밖이거나 claude 명령이 없습니다. 채팅에 직접 붙여넣으세요:
+
+  /board 열어 줘
+rc=0
+--- stderr
+--- herdr

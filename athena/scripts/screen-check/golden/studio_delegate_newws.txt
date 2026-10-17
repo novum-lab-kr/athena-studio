@@ -1,0 +1,24 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/delegate.sh fe 버튼 고쳐 줘 (긴급) --plan plans/task/20261001-fe-test.md
+--- exit 0
+--- stdout
+p7  (fe — 계획서 plans/task/20261001-fe-test.md · 새 workspace 'shop-web' · cwd: <ATHENA>)
+--- stderr
+--- herdr
+["@studio", "workspace", "list"]
+["@studio", "workspace", "create", "--label", "shop-web", "--cwd", "<ATHENA>", "--no-focus"]
+["@studio", "tab", "rename", "t3", "shop-web"]
+["@studio", "pane", "list"]
+["@studio", "pane", "run", "p7", "<TMP>/hermes-runner.X"]
+["@studio", "pane", "rename", "p7", "🤖 fe · main"]
+# 검사 작업
+
+## Checkpoint
+- Updated: 2026-10-01
+- Status: in_progress
+- Owner: t
+- Agent: fe
+- Issue: 
+- Work ref: <ATHENA> · 🌿 main · pane p7 (fe)
+
+## 지시
+검사

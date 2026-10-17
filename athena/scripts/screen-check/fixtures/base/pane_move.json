@@ -1,0 +1,21 @@
+{
+ "id": "cli:pane:move",
+ "result": {
+  "type": "pane_move",
+  "move_result": {
+   "pane": {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:pM",
+    "revision": 1,
+    "tab_id": "w1:t9",
+    "terminal_id": "term_w1_pM",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w1"
+   }
+  }
+ }
+}

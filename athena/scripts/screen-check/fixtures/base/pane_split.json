@@ -1,0 +1,19 @@
+{
+ "id": "cli:pane:split",
+ "result": {
+  "type": "pane_info",
+  "pane": {
+   "agent_status": "unknown",
+   "cwd": "@ATHENA@",
+   "focused": false,
+   "foreground_cwd": "@ATHENA@",
+   "pane_id": "w1:p9",
+   "revision": 1,
+   "tab_id": "w1:t1",
+   "terminal_id": "term_w1_p9",
+   "terminal_title": "zsh",
+   "terminal_title_stripped": "zsh",
+   "workspace_id": "w1"
+  }
+ }
+}

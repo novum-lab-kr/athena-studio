@@ -1,0 +1,5 @@
+{
+  "$comment": "이 컴퓨터 설정 — athena.config.json 으로 복사해 쓴다(git 무시). pack: 회사 팩 폴더(packs/<회사> 에 팩 레포를 clone) · reposRoot: 담당 레포 클론이 있는 폴더. 팩이 없으면 claude 를 켜고 /setup",
+  "pack": "packs/<회사>",
+  "reposRoot": ".."
+}

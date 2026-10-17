@@ -1,0 +1,20 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/setup-check.py\" --tool codex",
+            "timeout": 40
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/workspace-up.py\" --tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

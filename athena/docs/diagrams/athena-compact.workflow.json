@@ -1,0 +1,399 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "대화 압축 전후 자동 저장",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "압축 전후 흐름",
+        "focus": [
+          "work",
+          "trigger",
+          "find",
+          "memo",
+          "compress",
+          "post",
+          "resume"
+        ],
+        "note": "압축은 Claude Code 가 원래대로 합니다. 훅은 그 앞에서 계획서에 메모 한 줄, 뒤에서 대화에 안내 한 줄을 더할 뿐 요약 내용은 고치지 않습니다. 사용자는 아무것도 하지 않아도 됩니다."
+      },
+      {
+        "id": "without-hook",
+        "label": "훅이 없으면",
+        "focus": [
+          "compress",
+          "loss",
+          "drift"
+        ],
+        "note": "요약에서 '다음 할 일'·'이미 고친 파일' 같은 세부가 빠질 수 있습니다. 압축은 대화가 이어지는 느낌이라 계획서를 다시 볼 계기가 없고, 단계 중간이면 계획서에도 마지막 상태가 없습니다. 긴 작업일수록 가끔 엇나갑니다."
+      },
+      {
+        "id": "records",
+        "label": "무엇을 남기고 읽는가",
+        "focus": [
+          "find",
+          "memo",
+          "planfile",
+          "post",
+          "resume",
+          "notfound"
+        ],
+        "note": "이 pane 번호가 적힌 계획서(Work ref·leadPane)에 '- Auto snapshot:' 한 줄을 덮어쓰고, 압축 뒤 그 Checkpoint 부터 다시 읽습니다. 못 찾으면 메모 없이 후보만 알립니다."
+      }
+    ],
+    "output": "docs/diagrams/athena-compact.html",
+    "subtitle": "대화가 길어져 압축될 때 하던 일을 잃지 않게 — 압축 직전 계획서에 상태 한 줄, 압축 직후 '계획서부터 다시 읽어라' 안내 (원본: scripts/hooks/compact-checkpoint.py · AGENTS.md 2.6)"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "사용자"
+    },
+    {
+      "id": "session",
+      "label": "Claude Code 세션"
+    },
+    {
+      "id": "hook",
+      "label": "훅 · compact-checkpoint.py"
+    },
+    {
+      "id": "src",
+      "label": "계획서 · 기록"
+    },
+    {
+      "id": "stop",
+      "label": "훅이 없으면",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-before",
+      "label": "압축 직전",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "p-compact",
+      "label": "압축 (Claude Code 원래 동작)",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-after",
+      "label": "압축 직후",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-pre",
+      "label": "PreCompact 훅",
+      "lane": "hook",
+      "fromCol": 1,
+      "toCol": 2
+    },
+    {
+      "id": "g-post",
+      "label": "SessionStart(compact) 훅",
+      "lane": "hook",
+      "fromCol": 4,
+      "toCol": 4
+    },
+    {
+      "id": "g-stop",
+      "label": "훅이 없을 때 생길 수 있는 일",
+      "lane": "stop",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "work",
+    "trigger",
+    "find",
+    "memo",
+    "compress",
+    "post",
+    "resume"
+  ],
+  "nodes": [
+    {
+      "id": "manual",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "/compact",
+      "sublabel": "직접 압축 (선택)",
+      "width": 138,
+      "tag": "보통은 할 일 없음"
+    },
+    {
+      "id": "work",
+      "lane": "session",
+      "col": 0,
+      "type": "backend",
+      "label": "긴 작업",
+      "sublabel": "대화가 쌓임",
+      "width": 138,
+      "tag": "아테나 · 에이전트 pane"
+    },
+    {
+      "id": "trigger",
+      "lane": "session",
+      "col": 1,
+      "type": "backend",
+      "label": "압축 시작",
+      "sublabel": "한도 근처 자동 · /compact",
+      "width": 138,
+      "tag": "PreCompact 이벤트"
+    },
+    {
+      "id": "find",
+      "lane": "hook",
+      "col": 1,
+      "type": "backend",
+      "label": "계획서 찾기",
+      "sublabel": "이 pane 번호로",
+      "width": 138,
+      "tag": "Work ref · leadPane"
+    },
+    {
+      "id": "memo",
+      "lane": "hook",
+      "col": 2,
+      "type": "backend",
+      "label": "압축 직전 메모",
+      "sublabel": "상태 한 줄 덮어쓰기",
+      "width": 138,
+      "tag": "Claude 가 안 써도 남는다"
+    },
+    {
+      "id": "compress",
+      "lane": "session",
+      "col": 3,
+      "type": "backend",
+      "label": "요약본으로 압축",
+      "sublabel": "훅은 관여 안 함",
+      "width": 138,
+      "tag": "세부가 빠질 수 있다"
+    },
+    {
+      "id": "post",
+      "lane": "hook",
+      "col": 4,
+      "type": "backend",
+      "label": "압축 직후 안내",
+      "sublabel": "대화에 한 줄 덧붙임",
+      "width": 138,
+      "tag": "계획서부터 다시 읽어라"
+    },
+    {
+      "id": "resume",
+      "lane": "session",
+      "col": 5,
+      "type": "backend",
+      "label": "이어서 작업",
+      "sublabel": "Checkpoint → git status → Next",
+      "width": 138,
+      "tag": "AGENTS.md 2.6"
+    },
+    {
+      "id": "notfound",
+      "lane": "stop",
+      "col": 1,
+      "type": "security",
+      "label": "계획서 못 찾음",
+      "sublabel": "메모 건너뜀",
+      "width": 138,
+      "tag": "직후에 후보만 알림"
+    },
+    {
+      "id": "loss",
+      "lane": "stop",
+      "col": 4,
+      "type": "security",
+      "label": "세부 누락",
+      "sublabel": "다음 할 일 · 고친 파일",
+      "width": 138,
+      "tag": "요약에만 의존"
+    },
+    {
+      "id": "drift",
+      "lane": "stop",
+      "col": 5,
+      "type": "security",
+      "label": "엇나감",
+      "sublabel": "되묻기 · 중복 · 건너뜀",
+      "width": 138,
+      "tag": "계획서를 다시 안 봄"
+    },
+    {
+      "id": "planfile",
+      "lane": "src",
+      "col": 2,
+      "type": "database",
+      "label": "계획서 Checkpoint",
+      "sublabel": "- Auto snapshot: 한 줄",
+      "width": 138,
+      "tag": "시각 · 브랜치 · HEAD · 미커밋"
+    },
+    {
+      "id": "progress",
+      "lane": "src",
+      "col": 5,
+      "type": "database",
+      "label": "Progress · Next",
+      "sublabel": "에이전트가 적은 진행",
+      "width": 138,
+      "tag": "스냅샷이 대신하지 않음"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "work",
+      "to": "trigger",
+      "label": "한도 근처",
+      "variant": "default"
+    },
+    {
+      "id": "e2",
+      "from": "trigger",
+      "to": "find",
+      "label": "PreCompact",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e3",
+      "from": "find",
+      "to": "memo",
+      "label": "찾음",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e4",
+      "from": "memo",
+      "to": "compress",
+      "label": "압축 진행",
+      "variant": "default"
+    },
+    {
+      "id": "e5",
+      "from": "compress",
+      "to": "post",
+      "label": "SessionStart",
+      "variant": "emphasis"
+    },
+    {
+      "id": "e6",
+      "from": "post",
+      "to": "resume",
+      "label": "안내",
+      "variant": "emphasis"
+    },
+    {
+      "id": "u1",
+      "from": "manual",
+      "to": "trigger",
+      "label": "직접",
+      "variant": "dashed"
+    },
+    {
+      "id": "s1",
+      "from": "memo",
+      "to": "planfile",
+      "label": "기록",
+      "variant": "dashed"
+    },
+    {
+      "id": "s2",
+      "from": "planfile",
+      "to": "progress",
+      "label": "같은 계획서",
+      "variant": "dashed"
+    },
+    {
+      "id": "s3",
+      "from": "progress",
+      "to": "resume",
+      "variant": "dashed",
+      "label": "다시 읽기"
+    },
+    {
+      "id": "x1",
+      "from": "find",
+      "to": "notfound",
+      "label": "없음",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "x2",
+      "from": "compress",
+      "to": "loss",
+      "label": "훅 없이",
+      "variant": "security",
+      "role": "error"
+    },
+    {
+      "id": "x3",
+      "from": "loss",
+      "to": "drift",
+      "label": "요약만 믿음",
+      "variant": "security",
+      "role": "error"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "순서",
+      "items": [
+        "① 긴 작업 — 대화가 쌓여 한도에 가까워지면 Claude Code 가 스스로 압축한다(사용자가 /compact 로 직접 할 수도 있다)",
+        "② 압축 직전 — 훅이 이 pane 번호가 적힌 계획서를 찾아 Checkpoint 에 '- Auto snapshot: 시각 · 브랜치 · HEAD · 미커밋 파일' 한 줄을 덮어쓴다",
+        "③ 압축 — Claude Code 가 대화를 요약본으로 줄인다. 훅은 요약 내용을 고치지 않는다",
+        "④ 압축 직후 — 훅이 '요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라' 를 계획서 경로·스냅샷과 함께 대화에 덧붙인다",
+        "⑤ 이어서 — 에이전트가 계획서를 읽고 git status 로 현재 상태를 맞춰 본 뒤 Next 부터 이어 간다"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "훅이 없으면",
+      "items": [
+        "요약에서 '다음은 A 방식으로' 같은 결정이 빠지면 다른 방식으로 하거나 다시 묻는다",
+        "이미 고친 파일이 흐려지면 같은 수정을 또 하거나 고쳤다고 착각하고 넘어간다",
+        "압축은 대화가 이어지는 느낌이라 계획서를 다시 읽을 계기가 없다(/new·세션 끊김과 다르다)",
+        "Checkpoint 는 단계가 끝날 때 적으므로, 단계 중간에 압축되면 계획서에 마지막 상태가 없다"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "어디에 걸려 있나",
+      "items": [
+        "아테나 세션 · athena 루트에서 뜬 pane — .claude/settings.json (PreCompact · SessionStart matcher compact)",
+        "워크트리에서 뜬 FE 에이전트 · reviewer pane — scripts/agent-context.py 가 만드는 임시 settings",
+        "이미 떠 있는 pane 은 띄울 때의 설정을 쓴다 — 새로 띄운 pane 부터 적용",
+        "압축·세션 시작을 막지 않는다 — 계획서를 못 찾거나 입력이 깨져도 조용히 넘어간다(항상 exit 0)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "확인한 것 (2026-10-12)",
+      "items": [
+        "실제 Claude Code 에서 /compact — 계획서에 스냅샷 한 줄이 생겼고, 압축 뒤 세션이 계획서 경로·스냅샷을 그대로 전달받았다",
+        "같은 접두의 다른 pane(tt:p9 · tt:p99)은 섞이지 않는다 · 두 번 압축해도 한 줄만 유지",
+        "워크트리 FE pane 의 실제 압축은 훅 등록까지만 확인 — 같은 스크립트라 동작은 같을 것(추측)"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+{
+ "id": "cli:workspace:get",
+ "result": {
+  "type": "workspace_info",
+  "workspace": {
+   "workspace_id": "w2",
+   "label": "shop-web",
+   "active_tab_id": "w2:t1"
+  }
+ }
+}

@@ -1,0 +1,44 @@
+# 지식 베이스 (docs/knowledge)
+
+> 진입점은 레포 루트 `AGENTS.md`다. 어느 에이전트(Claude Code·Codex 등)든 거기서 출발해 이 폴더로 온다.
+
+에이전트가 참조하는 규칙과 레포 지식. **세 층**으로 나뉘고, 충돌하면 **아래 층이 우선**한다.
+
+> ⚠️ **전체를 미리 읽지 않는다.** 항상 읽는 것은 `AGENTS.md` 5절(작업 규칙), 대상 레포 `rules.md`의 "필수" 절, 대상 레포 `gotchas.md` **전체**다(공통 코드 규칙이 자동 주입되지 않는 도구는 `common/coding.md` 도). 나머지는 작업 유형에 따라 필요한 절만 읽는다 — 기준은 `AGENTS.md` 2.2~2.3.
+
+| 층 | 위치 | 내용 | 누가 갱신 |
+|---|---|---|---|
+| 1. 팀 공통 | `common/` | 모든 레포에 적용되는 코드·Git·보고·검증 규칙 | 사람 (팀 합의) |
+| 2. 레포 규칙 | `<레포>/rules.md` | 그 레포에서 공통과 **다른 점**과 레포 고유 규칙. 원문 문서가 있으면 링크 | 사람 + `/sync`(사실 부분) |
+| 3. 레포 원문 | 각 레포 안 (`.ai/basic-rule.md`, `CLAUDE.md`, `frontend/README.md` 등) | 레포 개발자 전체를 위한 문서. hermes는 복제하지 않고 가리킨다 | 레포 소유자 |
+
+레포 폴더에는 규칙 외에 지식 파일이 들어간다 (레포마다 순차 확장 중):
+
+| 파일 | 내용 |
+|---|---|
+| `rules.md` | 레포 규칙 (2층) |
+| `structure.md` | 디렉토리·라우트·주요 파일 맵 (`/sync`가 사실 부분 갱신) |
+| `patterns.md` | "이런 건 이 파일을 보고 따라라" 대표 예시 경로 모음 |
+| `gotchas.md` | 알려진 함정·이력. 작업 후 발견한 것을 사람과 아테나가 추가 |
+| `workflows.md` | 반복 작업 절차 체크리스트 (새 화면 추가, 훅 추가 등) |
+
+검증은 `scripts/verify/<레포>.sh`가 표준이다. 에이전트와 reviewer가 같은 스크립트를 돌려 같은 표 형식으로 보고한다. 실행 전 확인 사항과 결과 해석은 `common/verify.md`.
+
+폴더 배치:
+```
+docs/knowledge/
+  common/                       팀 공통 규칙 (coding · git · reporting · verify)
+  <레포>/                       rules · structure · patterns · workflows · gotchas — 회사 팩 knowledge/ 의 링크
+  <모노레포>/                    rules.md · common.md · gotchas.md(레포 공통) + <앱>/ · packages/ 마다 같은 4종
+  company/                      회사 관례(git · verify · review) — 팩. common/ 과 함께 읽는다
+  learned/                      학습 기록 — 팩
+                                (회사별 실제 배치는 company/README.md)
+  hermes/                       gotchas — 아테나 자체(스크립트·현황판·규칙) 작업의 함정. 학습 루프 learn 이슈로만 채운다
+```
+레포마다 패턴은 다르다. hub의 항목을 복제하지 않고 **각 레포 코드에서 반복되는 것**만 patterns.md 에 적는다. "설치만 되어 있고 사용처가 없는" 라이브러리는 관례로 적지 않고 gotchas 에 기록한다.
+
+에이전트 md(`.claude/agents/*.md`)는 **역할·담당 범위·지식 진입점**이고 기술 사실의 정본이 아니다. 같은 사실을 여기와 에이전트 md에 각각 보관하지 않는다 — 정본은 이 폴더(또는 레포 코드)이고 에이전트 md는 가리키기만 한다.
+
+## 검증 기록
+
+현재 문서의 기준 커밋은 레포마다 `.sync/snapshots/<레포>.json` 의 `sha` 가 정본이다(운영 기준 브랜치). [verification-20260916.md](verification-20260916.md)는 2026-09-16 `dev` 기준 인계 검증의 **과거 기록**이며 현재 기준이 아니다. 패턴의 사용 횟수는 조사 시점의 스냅샷이며, 사용 빈도만으로 팀 규칙을 새로 만들지 않는다.

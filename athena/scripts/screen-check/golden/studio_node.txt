@@ -1,0 +1,24 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli node <WORK>/studio-node.mjs <ATHENA>/scripts/lib/screen.mjs
+--- exit 0
+--- stdout
+["p1","p2","p3"]
+{}
+p1
+Athena Studio
+--- stderr
+--- herdr
+["@studio", "pane", "list"]
+["@studio", "pane", "send-text", "p2", "hi"]
+["@studio", "pane", "current"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli node <WORK>/studio-node.mjs <ATHENA>/scripts/lib/screen.mjs
+--- exit 0
+--- stdout
+null
+null
+screenSync 예외 1
+Athena Studio
+--- stderr
+--- herdr
+["@studio", "pane", "list"]
+["@studio", "pane", "send-text", "p2", "hi"]
+["@studio", "pane", "current"]

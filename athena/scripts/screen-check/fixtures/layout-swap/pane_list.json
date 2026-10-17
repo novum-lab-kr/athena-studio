@@ -1,0 +1,92 @@
+{
+ "id": "cli:pane:list",
+ "result": {
+  "type": "pane_list",
+  "panes": [
+   {
+    "agent_status": "idle",
+    "cwd": "@ATHENA@",
+    "focused": true,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:p1",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_p1",
+    "terminal_title": "claude",
+    "terminal_title_stripped": "claude",
+    "workspace_id": "w1",
+    "agent": "claude"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:pE",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_pE",
+    "terminal_title": "herdr-sidebar",
+    "terminal_title_stripped": "herdr-sidebar",
+    "workspace_id": "w1",
+    "label": "Explorer"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:p3",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_p3",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w1",
+    "label": "📋 현황판"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:p5",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_p5",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w1",
+    "label": "🛰 에이전트 모니터"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w2:p4",
+    "revision": 1,
+    "tab_id": "w2:t2",
+    "terminal_id": "term_w2_p4",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w2",
+    "label": "가이드 메뉴"
+   },
+   {
+    "agent_status": "idle",
+    "cwd": "/tmp/other-repo",
+    "focused": false,
+    "foreground_cwd": "/tmp/other-repo",
+    "pane_id": "w2:p1",
+    "revision": 1,
+    "tab_id": "w2:t1",
+    "terminal_id": "term_w2_p1",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w2",
+    "agent": "codex"
+   }
+  ]
+ }
+}

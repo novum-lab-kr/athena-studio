@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+# athena 명령 — 본체는 scripts/athena.mjs (PATH 에 <athena>/bin 을 넣으면 어디서나 athena)
+exec node "$(cd "$(dirname "$(readlink -f "$0" 2>/dev/null || echo "$0")")/.." && pwd)/scripts/athena.mjs" "$@"

@@ -1,0 +1,6 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/athena-layout.sh
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "list"]

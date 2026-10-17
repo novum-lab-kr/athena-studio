@@ -1,0 +1,452 @@
+<title>아테나 시작 가이드</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+  /* 레이아웃: 왼쪽 고정 목차 + 오른쪽 본문 한 열(65자 안팎). 좁으면 목차가 위로 접힌다. 토큰은 docs/playbook.html 과 같다 */
+  :root {
+    --bg: #f3f5f8;
+    --surface: #ffffff;
+    --surface-2: #e9edf3;
+    --ink: #171c26;
+    --ink-2: #4a5468;
+    --ink-3: #7b8497;
+    --line: #d5dbe5;
+    --accent: #0e6f68;
+    --accent-ink: #ffffff;
+    --accent-soft: #d9efec;
+    --warn: #a86a08;
+    --warn-soft: #fbefd6;
+    --code-bg: #eaeef4;
+    --sans: 'IBM Plex Sans KR', 'Apple SD Gothic Neo', 'Noto Sans KR', system-ui, sans-serif;
+    --mono: 'IBM Plex Mono', 'SF Mono', Menlo, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #12161d; --surface: #1a1f28; --surface-2: #232a36;
+      --ink: #e8ecf2; --ink-2: #b3bccb; --ink-3: #7f8a9c; --line: #2f3745;
+      --accent: #4fc0b3; --accent-ink: #0f1a18; --accent-soft: #163632;
+      --warn: #e2a83b; --warn-soft: #3a2c10; --code-bg: #232a36;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #12161d; --surface: #1a1f28; --surface-2: #232a36;
+    --ink: #e8ecf2; --ink-2: #b3bccb; --ink-3: #7f8a9c; --line: #2f3745;
+    --accent: #4fc0b3; --accent-ink: #0f1a18; --accent-soft: #163632;
+    --warn: #e2a83b; --warn-soft: #3a2c10; --code-bg: #232a36;
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    background: var(--bg); color: var(--ink);
+    font: 15px/1.7 var(--sans);
+    padding-inline: 16px; padding-block: 0 64px;
+  }
+  .wrap {
+    max-width: 1080px; margin: 0 auto;
+    display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 48px;
+  }
+  @media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+  /* 목차 */
+  nav.toc { position: sticky; top: env(safe-area-inset-top, 0px); align-self: start; padding-block: 40px; }
+  nav.toc .label { font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 10px; }
+  nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; counter-reset: toc; }
+  nav.toc a {
+    display: flex; gap: 10px; padding: 5px 8px; border-radius: 6px;
+    color: var(--ink-2); text-decoration: none; font-size: 13.5px;
+  }
+  nav.toc a::before { counter-increment: toc; content: counter(toc); font: 500 12px/1.9 var(--mono); color: var(--ink-3); min-width: 1ch; }
+  nav.toc a:hover, nav.toc a:focus-visible { background: var(--surface-2); color: var(--ink); outline: none; }
+  @media (max-width: 860px) {
+    nav.toc { position: static; padding-block: 24px 0; }
+    nav.toc ol { grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+  }
+
+  main { min-width: 0; padding-block: 40px 0; max-width: 720px; }
+  header.hero { padding-bottom: 28px; border-bottom: 1px solid var(--line); margin-bottom: 8px; }
+  .eyebrow { font: 500 12px var(--mono); color: var(--accent); letter-spacing: .04em; }
+  h1 { font-size: 34px; line-height: 1.25; margin: 8px 0 12px; font-weight: 700; text-wrap: balance; letter-spacing: -.01em; }
+  .lede { font-size: 16.5px; color: var(--ink-2); margin: 0; }
+  .lede b { color: var(--ink); }
+
+  section { padding-top: 40px; scroll-margin-top: 16px; }
+  h2 { font-size: 22px; line-height: 1.35; margin: 0 0 6px; text-wrap: balance; display: flex; gap: 12px; align-items: baseline; }
+  h2 .no { font: 500 14px var(--mono); color: var(--accent); }
+  h3 { font-size: 16px; margin: 26px 0 6px; }
+  p { margin: 0 0 12px; }
+  .sub { color: var(--ink-2); margin-bottom: 18px; }
+  a { color: var(--accent); }
+  ul.plain, ol.plain { margin: 0 0 12px; padding-left: 20px; }
+  ul.plain li + li, ol.plain li + li { margin-top: 4px; }
+
+  code { font: 13px var(--mono); background: var(--code-bg); padding: 1px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+  .code {
+    position: relative; background: var(--code-bg); border-radius: 8px;
+    margin: 10px 0 16px; overflow-x: auto;
+  }
+  .code pre { margin: 0; padding: 14px 16px; font: 13px/1.65 var(--mono); color: var(--ink); }
+  .code pre .c { color: var(--ink-3); }
+  .copy {
+    position: absolute; top: 8px; right: 8px;
+    font: 500 12px var(--sans); color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px;
+    padding: 3px 10px; cursor: pointer;
+  }
+  .copy:hover { color: var(--ink); border-color: var(--ink-3); }
+  .copy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* 표 */
+  .tbl { overflow-x: auto; margin: 10px 0 16px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; padding: 9px 14px; vertical-align: top; border-bottom: 1px solid var(--line); }
+  tr:last-child td { border-bottom: 0; }
+  th { font-size: 12px; font-weight: 600; color: var(--ink-3); letter-spacing: .03em; background: var(--surface-2); }
+  td:first-child { white-space: nowrap; font-weight: 500; }
+
+  /* 설치 단계 — 실제 순서라 번호를 붙인다 */
+  ol.steps { list-style: none; margin: 16px 0 0; padding: 0; counter-reset: step; display: grid; gap: 0; }
+  ol.steps > li { position: relative; padding: 0 0 22px 44px; counter-increment: step; }
+  ol.steps > li::before {
+    content: counter(step); position: absolute; left: 0; top: 0;
+    width: 28px; height: 28px; border-radius: 50%;
+    background: var(--accent); color: var(--accent-ink);
+    font: 600 13px/28px var(--mono); text-align: center;
+  }
+  ol.steps > li::after { content: ""; position: absolute; left: 13.5px; top: 32px; bottom: 4px; width: 1px; background: var(--line); }
+  ol.steps > li:last-child::after { display: none; }
+  ol.steps h3 { margin: 2px 0 6px; }
+
+  .tree { font: 13px/1.6 var(--mono); }
+  .tree .me { color: var(--accent); font-weight: 500; }
+
+  .note {
+    background: var(--accent-soft); border-radius: 8px; padding: 12px 16px; margin: 12px 0;
+    font-size: 14px; color: var(--ink);
+  }
+  .warn { background: var(--warn-soft); }
+  .warn strong { color: var(--warn); }
+
+  /* 대화 예시 */
+  .say {
+    border-left: 3px solid var(--accent); background: var(--surface);
+    padding: 10px 16px; margin: 8px 0; border-radius: 0 8px 8px 0; font-size: 14.5px;
+  }
+  .say::before { content: "나 "; font: 500 11px var(--mono); color: var(--ink-3); margin-right: 6px; }
+
+  /* 흐름 칩 */
+  .flow { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 12px 0 16px; font-size: 13px; }
+  .flow span { background: var(--surface); border: 1px solid var(--line); border-radius: 99px; padding: 3px 12px; }
+  .flow i { color: var(--ink-3); font-style: normal; }
+
+  .rules { display: grid; gap: 10px; margin-top: 14px; }
+  .rule { background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 12px 16px; }
+  .rule b { display: block; margin-bottom: 2px; }
+  .rule span { color: var(--ink-2); font-size: 14px; }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+  @media (max-width: 520px) { h1 { font-size: 27px; } td:first-child { white-space: normal; } }
+  @media (prefers-reduced-motion: reduce) { html { scroll-behavior: auto; } }
+  html { scroll-behavior: smooth; }
+</style>
+
+<div class="wrap">
+  <nav class="toc" aria-label="목차">
+    <div class="label">목차</div>
+    <ol>
+      <li><a href="#prep">준비물</a></li>
+      <li><a href="#install">설치</a></li>
+      <li><a href="#first">처음 써 보기</a></li>
+      <li><a href="#board">현황판</a></li>
+      <li><a href="#knows">아테나가 아는 것</a></li>
+      <li><a href="#learn">학습</a></li>
+      <li><a href="#cmds">자주 쓰는 명령</a></li>
+      <li><a href="#rules">꼭 지킬 것</a></li>
+      <li><a href="#trouble">막힐 때</a></li>
+    </ol>
+  </nav>
+
+  <main>
+    <header class="hero">
+      <div class="eyebrow">athena · 팀원용</div>
+      <h1>아테나 시작 가이드</h1>
+      <p class="lede">아테나는 프론트엔드 레포 여러 개를 한 곳에서 다루는 <b>Claude Code 워크스페이스</b>입니다. 이 폴더에서 <code>claude</code> 를 켜면 팀 리드 <b>아테나</b>가 되어, 요청을 받아 어느 레포 일인지 고르고 계획서를 쓴 뒤 담당 FE 에이전트에게 맡기고 리뷰까지 받아 보고합니다.</p>
+      <p class="lede" style="margin-top:10px">레포마다 정리해 둔 지식 노트로 일하고, 작업하면서 알게 된 레포 함정은 <b>학습</b>해서 다음 작업에 씁니다. 이 문서는 <b>받아서 쓰기 시작할 때까지</b>만 다룹니다.</p>
+      <div class="note">Nous Research 의 오픈소스 <b>Hermes Agent</b> 와는 다른 것입니다(예전 이름 "헤르메스"가 같았을 뿐). 따로 설치하지 않습니다 — Claude Code 위에 우리가 만든 규칙·스크립트 묶음입니다.</div>
+    </header>
+
+    <section id="prep">
+      <h2><span class="no">01</span>준비물</h2>
+      <p class="sub">아래 도구가 필요합니다. 없는 것만 먼저 설치하세요.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>도구</th><th>쓰는 곳</th><th>없으면</th></tr></thead>
+        <tbody>
+          <tr><td>Claude Code</td><td>아테나·에이전트 본체 (<code>claude</code>)</td><td>동작하지 않음</td></tr>
+          <tr><td>git · python3</td><td>셋업·훅·스크립트</td><td>동작하지 않음</td></tr>
+          <tr><td>Node + nvm</td><td>검증·현황판·QA. 레포마다 <code>.nvmrc</code> 버전이 다릅니다</td><td>검증이 경고·실패</td></tr>
+          <tr><td>pnpm</td><td>레포 설치·빌드</td><td>검증·빌드 불가</td></tr>
+          <tr><td>gh</td><td>push·draft PR, 현황판의 PR 머지 감지. <code>gh auth login</code> 까지</td><td>PR 을 못 올림</td></tr>
+          <tr><td>herdr</td><td>에이전트를 옆 pane 에 띄워 일하는 모습을 보여 줍니다</td><td>pane 대신 "직접 실행하세요" 안내만 나옴</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>권한과 로컬 파일</h3>
+      <ul class="plain">
+        <li>맡을 레포들의 GitHub 접근 권한</li>
+        <li>(회사에 사내 발행 패키지가 있으면) <b>패키지 레지스트리 읽기 토큰</b>. 회사 팩 안내(<code>pack/ROUTING.md</code>)를 따릅니다. 레포 <code>.npmrc</code> 가 아니라 <b><code>~/.npmrc</code></b> 에 넣습니다</li>
+        <li><b>claude.ai 계정에 Atlassian 커넥터 연결</b>(설정 → Connectors). 아테나와 모든 FE 에이전트·reviewer 가 Jira 티켓·Confluence 기획서를 <b>읽습니다</b>(쓰기는 없음 — 이슈 생성·댓글은 사람이)</li>
+        <li>레포마다 <code>.env</code>. 레포 안내대로 만듭니다(일부는 <code>pnpm gen:env</code>, AWS 자격 필요). 작업 워크트리를 만들 때 메인 체크아웃의 <code>.env*</code> 가 자동으로 복사됩니다</li>
+        <li>(선택) <b>TypeSafe Jev 키 — 각자 본인 키</b>(<code>console.typesafe.ai/keys</code>, 유료 · 사용량은 키 주인에게 청구). 첫 실행 때 아테나가 묻고, 키가 나중에 생기면 아테나에게 "Jev 키 등록해줘" 라고 하면 됩니다. 옆에 뜨는 입력 창에 직접 붙여 넣습니다(대화창에 넣지 않습니다 · 터미널에서 <code>node scripts/jev-key.mjs</code> 도 같습니다). 넣으면 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정이 켜집니다. <b>없으면 지금처럼 Jev 없이 그대로 돕니다.</b> 남의 키를 빌려 쓰거나 나눠 주지 않습니다. 잠깐 끄려면 <code>ATHENA_JEV=off</code></li>
+      </ul>
+      <div class="note warn"><strong>토큰 값은 어디에도 붙여 넣지 마세요.</strong> 대화창, 슬랙, 계획서, 커밋 모두 해당합니다.</div>
+    </section>
+
+    <section id="install">
+      <h2><span class="no">02</span>설치</h2>
+      <p class="sub">대략 10분. 레포를 이미 받아 두었다면 더 짧습니다.</p>
+      <ol class="steps">
+        <li>
+          <h3>레포를 한 폴더에 나란히 받기</h3>
+          <p>아테나는 <b>자기 상위 폴더에 담당 레포들이 나란히 있다</b>고 봅니다(<code>athena.config.json</code> 의 <code>reposRoot: ".."</code>). 담당 레포 목록은 <b>회사 팩</b>의 <code>pack.json</code>(사람이 읽는 표는 <code>pack/ROUTING.md</code>)에 있습니다. 맡지 않는 레포는 없어도 됩니다. 그 레포 담당 에이전트만 쉬게 됩니다.</p>
+          <div class="code"><pre class="tree">~/work/
+├── <span class="me">athena/</span>                <span class="c"># 코어 (이 레포, 폴더 이름은 자유)</span>
+│   └── packs/&lt;회사&gt;/      <span class="c"># 회사 팩 (별도 레포를 여기에 clone)</span>
+├── &lt;레포 A&gt;/              <span class="c"># 담당 레포들 — 팩 pack.json 의 repos[].name</span>
+├── &lt;레포 B&gt;/
+└── …</pre></div>
+          <div class="code"><button class="copy" type="button">복사</button><pre>cd ~/work
+git clone &lt;코어 레포 주소&gt; athena
+git clone &lt;회사 팩 레포 주소&gt; athena/packs/&lt;회사&gt;
+<span class="c"># 팩이 없는 새 회사는 위 줄을 건너뛴다 — claude 에서 /setup</span>
+<span class="c"># 담당 레포도 같은 폴더에 clone (이미 있으면 그대로 둔다)</span></pre></div>
+        </li>
+        <li>
+          <h3>아테나 켜기</h3>
+          <div class="code"><button class="copy" type="button">복사</button><pre><span class="c"># herdr 를 쓰면 herdr 터미널 안에서</span>
+cd athena
+claude</pre></div>
+          <p>첫 화면에서 <b>"현황 알려줘"</b> 라고 해 보세요. 레포별 브랜치와 변경 상태가 나오면 준비가 끝난 겁니다.</p>
+          <div class="note">따로 셋업하지 않아도 됩니다. <code>claude</code> 를 켜면 옆 폴더의 담당 레포를 찾아 <code>repos/&lt;레포&gt;</code> 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻습니다. 팩이 없는 새 회사라면 <code>/setup</code> 이 레포 찾기부터 안내합니다.</div>
+          <p><b>herdr 안에서 켜면 athena workspace 가 늘 같은 모양으로 잡힙니다.</b> 왼쪽 위는 아테나·에이전트 대화, 오른쪽 끝은 Explorer(위)·가이드 메뉴(아래), 하단 한 줄은 🛰 에이전트 모니터 | 📋 현황판 | 📚 배우기 검토. 없는 것만 띄우고 흐트러졌으면 제자리로 돌립니다. 사이드바 패치판(바뀐 파일 클릭 → diff)도 이때 없으면 넣습니다 — 레포에 미리 빌드해 둔 실행 파일을 쓰므로 따로 설치할 것은 없습니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. herdr 에서는 레포마다 <b>workspace</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
+          <p><b>QA 시뮬레이션을 쓸 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·herdr…)도 점검해 줍니다(사이드바 패치판도 같이 확인합니다).</p>
+          <div class="code"><button class="copy" type="button">복사</button><pre>scripts/setup.sh</pre></div>
+        </li>
+      </ol>
+    </section>
+
+    <section id="first">
+      <h2><span class="no">03</span>처음 써 보기</h2>
+
+      <h3>그냥 말하기</h3>
+      <p>담당 레포를 몰라도, 여러 레포에 걸쳐도, 버그 원인 찾기여도 평소 말투로 요청하면 됩니다.</p>
+      <div class="say">주문 목록 페이지네이션이 두 번째 페이지에서 비어 보여. 원인 찾아줘</div>
+      <div class="say">관리자 콘솔·사용자 웹 두 곳에 공지 배너 똑같이 넣어줘</div>
+      <div class="flow"><span>레포 고르기</span><i>→</i><span>계획서</span><i>→</i><span>승인</span><i>→</i><span>작업 브랜치</span><i>→</i><span>에이전트 pane</span><i>→</i><span>리뷰</span><i>→</i><span>보고</span></div>
+      <ul class="plain">
+        <li><b>어느 레포인지</b>는 회사 팩 라우팅(<code>pack/ROUTING.md</code>)으로 고릅니다. 같은 말이 여러 레포를 가리키면 아테나가 되묻습니다</li>
+        <li>시작할 때 규모를 한 줄로 알려 줍니다
+          <ul class="plain" style="margin-top:4px">
+            <li><b>경량</b> — 문구 수정, 버그 하나, 조사. 요청이 곧 승인이라 바로 진행합니다</li>
+            <li><b>정식</b> — 새 기능, 여러 레포, API·구조 변경. 브라우저에 <b>결정 콘솔</b>이 열립니다. 선택지를 고르고 <b>[이대로 진행]</b> 을 누르면 시작합니다. "추천대로" 처럼 말로 답해도 됩니다</li>
+          </ul>
+        </li>
+        <li>급하면 <b>"바로 고쳐"</b>. 정식 대상이어도 경량으로 바로 진행합니다</li>
+        <li>작업은 별도 워크트리(<code>.worktrees/</code>)에서 하므로 메인 체크아웃의 미커밋 변경은 건드리지 않습니다</li>
+      </ul>
+
+      <h3>담당을 알면 <code>/call</code></h3>
+      <div class="code"><button class="copy" type="button">복사</button><pre>/call &lt;에이전트&gt;</pre></div>
+      <p>아테나가 브랜치(기존 작업을 이어 쓸지, 새로 딸지)를 묻고 워크트리를 만든 뒤, 그 레포 workspace 에 <code>🤖 에이전트 · 브랜치</code> 이름의 pane 을 띄웁니다. 이후 요청은 <b>그 pane 에서 직접</b> 합니다.</p>
+
+      <h3>커밋과 PR 은 말했을 때만</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>pane 에서 하는 말</th><th>일어나는 일</th></tr></thead>
+        <tbody>
+          <tr><td>(작업 요청)</td><td>작업 → 검증 결과 표 보고 → 옆에 reviewer pane 이 떠서 자동 리뷰</td></tr>
+          <tr><td>"커밋해줘"</td><td>지정 파일만, 엄격 검증을 통과해야 커밋. 계획서에 기록</td></tr>
+          <tr><td>"PR 올려줘"</td><td>base·제목·본문 미리보기 → 확인하면 <b>draft PR</b></td></tr>
+        </tbody>
+      </table></div>
+      <p>에이전트는 직접 커밋·push 할 수 없도록 막혀 있습니다. 여러 레포에 걸친 작업은 아테나가 순서를 정해 올립니다.</p>
+    </section>
+
+    <section id="board">
+      <h2><span class="no">04</span>현황판</h2>
+      <div class="code"><button class="copy" type="button">복사</button><pre>/board          <span class="c"># 브라우저에 localhost:4700 이 열린다</span>
+/board stop     <span class="c"># 끄기</span></pre></div>
+      <div class="tbl"><table>
+        <thead><tr><th>칸</th><th>보는 것</th></tr></thead>
+        <tbody>
+          <tr><td>에이전트</td><td>지금 일하고 있는 pane</td></tr>
+          <tr><td>계획서 칸반</td><td>계획 · 진행 중 · 리뷰 · 완료. 카드를 끌어 상태를 바꾸고, 버튼으로 지시를 보냅니다. 계획서의 PR 이 모두 머지되면 자동으로 완료로 갑니다</td></tr>
+          <tr><td>이슈</td><td>작업 중 찾았지만 그 자리에서 고치지 않은 것. [처리 시작] 으로 맡깁니다</td></tr>
+          <tr><td>QA</td><td>웹 화면 시뮬레이션(대상은 팩 <code>qa</code> 설정). 처음 한 번 QA 탭 로그인 세션 줄의 [로그인] 으로 테스트 계정 로그인을 저장합니다(로컬 서버가 꺼져 있으면 잠깐 띄워 1~3분. 터미널이면 <code>node scripts/qa/login.mjs</code>)</td></tr>
+          <tr><td>[서비스] 탭</td><td>위의 에이전트·계획서 칸반·이슈 — 서비스 레포 작업</td></tr>
+          <tr><td>[정비] 탭</td><td>아테나 자체(스크립트·현황판·규칙)를 고치는 일. 아테나가 직접 고치고 main 에 커밋·push 하면 끝</td></tr>
+          <tr><td>[학습] 탭</td><td><b>아테나 학습</b> — 작업하며 알게 된 레포 함정을 서비스별 공책에 넣기(후보 [넣기]·[버리기], 학습한 내용 수정·삭제) / <b>클로드 학습</b> — Claude Code 메모리(대화에서 기억한 일하는 방식, 이 컴퓨터에만 있음, 읽기 전용)</td></tr>
+          <tr><td>[아카이브] 탭</td><td>끝난 카드는 [아카이브] 버튼으로 보관하고, 지난 일은 이 탭에서 찾습니다</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <section id="knows">
+      <h2><span class="no">05</span>아테나가 아는 것</h2>
+      <p>아테나는 일할 때마다 레포 코드를 처음부터 다 읽지 않습니다. <b>레포마다 미리 정리해 둔 지식 노트를 먼저 보고, 필요한 코드만 골라 읽습니다.</b> 노트가 정확할수록 빠르고 정확해집니다.</p>
+      <h3>무엇을 어디에 알고 있나</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>아는 것</th><th>적혀 있는 곳</th><th>누가·언제 채우나</th><th>팀 공유</th></tr></thead>
+        <tbody>
+          <tr><td>레포 폴더·화면(라우트) 지도</td><td><code>docs/knowledge/&lt;레포&gt;/structure.md</code></td><td><code>/sync</code> — 운영에 배포된 코드 기준</td><td>✅</td></tr>
+          <tr><td>레포 규칙("이건 꼭 지켜")</td><td><code>…/rules.md</code></td><td><code>/sync</code> — 레포 안 규칙 문서가 바뀔 때</td><td>✅</td></tr>
+          <tr><td>함정("모르면 당한다")</td><td><code>…/gotchas.md</code></td><td><b>학습</b> — 작업하다 알게 된 걸 [학습] 탭에서 [넣기] + <code>/sync</code></td><td>✅</td></tr>
+          <tr><td>따라 할 예시 파일·작업 절차</td><td><code>…/patterns.md</code> · <code>workflows.md</code></td><td>처음 만들 때 + <code>/sync</code></td><td>✅</td></tr>
+          <tr><td>나의 일하는 방식("표로 보여 줘")</td><td>Claude 메모리(<code>~/.claude/…</code>)</td><td>Claude 가 대화에서 알아서</td><td>❌ 나만</td></tr>
+          <tr><td>진행 중인 일</td><td>계획서(<code>plans/</code>)·이슈(<code>issues/</code>)</td><td>작업하면서</td><td>❌ 나만<br>(끝나면 [아카이브]로 팀에)</td></tr>
+        </tbody>
+      </table></div>
+      <h3>어떻게 꺼내 쓰나 — 예: "결제 페이지 프로모션 배너 고쳐줘"</h3>
+      <div class="flow"><span>어느 레포인지</span><i>→</i><span>어느 화면인지</span><i>→</i><span>담당 에이전트에게</span></div>
+      <ol class="plain">
+        <li><b>어느 레포인지</b> — 팩 라우팅 규칙(<code>pack/ROUTING.md</code>)으로 레포·에이전트를 고릅니다. 갈리면 되묻습니다</li>
+        <li><b>어느 화면인지</b> — <code>structure.md</code> 의 화면 지도 → 실제 코드 → 화면 문구로 검색. 후보가 여럿이면 되묻습니다</li>
+        <li><b>맡깁니다</b> — 찾은 파일 경로를 계획서에 적어 담당 에이전트에게. 에이전트는 시작 전에 그 레포의 <code>rules.md</code> 필수 절과 <code>gotchas.md</code> 를 전부 읽습니다</li>
+      </ol>
+      <div class="note"><b>문서와 코드가 다르면 코드를 믿습니다.</b> 노트는 길잡이이고, 정답은 언제나 지금 코드입니다.</div>
+      <h3>언제 최신이 되나 — <code>/sync</code></h3>
+      <ul class="plain">
+        <li><b>운영에 배포된 코드</b>(팩 <code>pack.json</code> 의 레포별 <code>branch</code>)를 읽어 <b>지난번 이후 바뀐 것만</b> 노트에 반영합니다</li>
+        <li>자동으로 돌지 않습니다 — 누군가 <code>/sync</code> 를 돌릴 때(가끔, 한 사람이)</li>
+        <li><b>확인되는 사실만 고치고</b>(새 화면·버전·명령), 판단이 필요한 문장은 고치지 않고 "확인 필요" 이슈로 묻습니다</li>
+        <li>그래서 <b>아직 배포 안 된 화면은 노트에 없습니다</b> — 그런 화면은 작업할 때 코드에서 직접 찾습니다</li>
+      </ul>
+      <h3>아테나가 혼자서는 알 수 없는 것 — 사람이 채워 줍니다</h3>
+      <ul class="plain">
+        <li><b>화면의 업무 용도</b> — "이 페이지는 영업팀이 제휴사 고객 번호를 한꺼번에 조회할 때 쓴다" 같은 건 코드에 없습니다</li>
+        <li><b>코드 밖의 운영 규칙</b> — 어느 팀이 쓰는지, 언제 쓰면 안 되는지 같은 것</li>
+      </ul>
+      <div class="note">알려 주는 법: 아테나에게 <b>"○○ 페이지는 △△ 용도야. 지식 문서에 적어줘"</b> — <code>structure.md</code> 화면 설명에 "사용자 확인" 표시와 함께 들어가고, 커밋하면 팀 전체가 압니다. 학습 기능은 근거가 "사용자가 말했다"뿐인 후보를 취향일 수 있다고 보고 거르므로, 이런 업무 지식은 이렇게 직접 적어 달라고 하는 게 확실합니다.</div>
+    </section>
+
+    <section id="learn">
+      <h2><span class="no">06</span>학습 — 아테나가 배우는 방법</h2>
+      <p>작업하다 밟은 함정을 다음 작업이 또 밟지 않게, 아테나가 <b>배운 것을 서비스별 공책(<code>gotchas.md</code>)에 적어 둡니다.</b> 에이전트는 작업 전에 이 공책을 읽습니다.</p>
+      <div class="flow"><span>작업 중·작업 끝</span><i>→</i><span>학습 후보</span><i>→</i><span>[학습] 탭에서 고르기</span><i>→</i><span>공책에 한 줄</span><i>→</i><span>다음 작업이 읽음</span></div>
+
+      <h3>누가 배우나 — 셋이 나눠 맡습니다</h3>
+      <div class="tbl"><table>
+        <thead><tr><th>누가</th><th>언제</th><th>하는 일</th></tr></thead>
+        <tbody>
+          <tr><td>작업한 에이전트</td><td>작업을 끝낼 때(PR 미리보기) · 사용자가 바로잡을 때 · 같은 오류가 3번 날 때</td><td>그 자리에서 "다음에도 밟을 것"을 학습 후보로 올립니다. 맥락을 가장 잘 압니다</td></tr>
+          <tr><td>배우기 검토자<br>(별도 Claude · 역할 문서 <code>.claude/agents/learn-reviewer.md</code>)</td><td><b>내 작업의 PR 이 머지되면</b> 자동으로(어느 브랜치로든)</td><td>그 작업의 <b>계획서(요청·결정·결과) · 대화 · 최종으로 바뀐 코드 · PR 리뷰 댓글</b>을 읽고 에이전트가 빠뜨린 것을 보탭니다. 팀이 받아들인 결과로 배우고, 머지 안 된 시도는 배우지 않습니다. "📚 배우기 검토" pane 이 하나 뜹니다(끝나면 닫아도 됩니다 · 한 번에 약 $0.1~0.4, 구독이면 사용량에서)</td></tr>
+          <tr><td><b>사람(나)</b></td><td>아무 때나</td><td>현황판 <b>[학습] 탭 → 🧭 아테나 학습</b>에서 후보를 읽고 <b>[넣기]·[고쳐서 넣기]·[버리기]</b>. 넣어야만 공책에 들어갑니다</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3>무엇을 기준으로 고르나 — 셋을 모두 만족할 때만</h3>
+      <ol class="plain">
+        <li><b>다시 마주친다</b> — 그 레포에서 평범한 다음 작업을 하다가 또 만날 것</li>
+        <li><b>모르면 실제로 잘못된다</b> — 잘못 고치거나, 사고를 내거나, 시간을 크게 버린다. "모르면 무엇이 잘못되나"를 구체적으로 쓸 수 있어야 합니다</li>
+        <li><b>코드만 봐서는 바로 알기 어렵다</b></li>
+      </ol>
+      <p>그리고 <b>근거가 코드나 실행 결과로 확인돼야 합니다.</b> "사용자가 그렇게 말했다"뿐이면 취향일 수 있으니 공용 공책에 넣지 않습니다 — 이건 사람의 판단이 아니라 스크립트가 기계적으로 거릅니다.</p>
+      <p><b>학습하지 않는 것</b>: 이번 작업에서 이미 코드로 고친 버그 · 한 번 있었던 문의·장애 · 원인이 서버·인프라인 것 · 일하는 스타일·취향(→ 각자 Claude 메모리, <b>클로드 학습</b>) · 일반 상식</p>
+      <p>예: ✅ "이 앱의 QA 씬은 실제 요청을 직접 막아야 한다"(근거: QA 러너 코드가 GraphQL 만 막는다) / ❌ "결정은 표로 보여 줘"(근거: 사용자 말뿐 — 취향)</p>
+      <div class="note">대부분의 작업은 학습할 게 0개입니다. 후보가 적은 게 정상입니다. 후보에는 무엇을 배웠나 · 왜 중요한가 · 공책에 들어갈 문장 · 어디서 배웠나가 <b>쉬운 말로</b> 적혀 옵니다. 넣은 것은 [학습] 탭 "학습한 내용"에서 언제든 고치거나 지웁니다. 팀과 나누려면 아테나에게 "커밋해줘". 기준 전체: <code>docs/knowledge/common/learning.md</code></div>
+
+      <h3>공책이 길어지면 — 정리하고 나눈다</h3>
+      <ul>
+        <li><b>낡은 줄</b> — <code>/sync</code> 끝에 공책 줄이 가리키는 파일이 운영 코드에 아직 있는지 확인합니다. 사라졌으면 [학습] 탭에 "🧹 공책 정리 후보"로 올라오고, 줄마다 <b>[지우기]·[그대로 두기]</b>를 고릅니다(파일 이름만 바뀌었을 수 있으니 읽고 고릅니다)</li>
+        <li><b>화면별로 나누기</b> — 함정은 "어디에 걸리나"로 나눕니다. 레포 어디서든 밟으면 <b>공통</b>(항상 읽음), 특정 화면 폴더를 만질 때만 걸리면 <b>화면</b>(그 폴더 작업 때만 읽음). 공통 공책이 <b>2만 자</b>를 넘거나 같은 화면 줄이 <b>5개</b> 모이면 "나눌까요?" — [아테나에게 나누기 맡기기]를 누르면 그 화면 줄만 <code>gotchas/&lt;폴더&gt;.md</code> 로 옮깁니다</li>
+        <li>둘 다 <b>지우지 않고 후보만</b> 올립니다. 지금은 기준을 넘는 공책이 없습니다</li>
+      </ul>
+
+      <h3>Nous Research 의 Hermes Agent 와 무엇이 다른가</h3>
+      <p>"스스로 배우는" 아이디어는 오픈소스 Hermes Agent 의 학습 구조를 조사해 가져왔습니다. 코드는 가져오지 않았고, 팀이 같이 쓰는 공책이라는 점에 맞춰 다르게 만들었습니다.</p>
+      <div class="tbl"><table>
+        <thead><tr><th></th><th>Hermes Agent</th><th>우리 아테나</th></tr></thead>
+        <tbody>
+          <tr><td>누가 배우나</td><td>배우기 전용 에이전트가 뒤에서</td><td>작업한 에이전트 + 배우기 검토자, <b>최종은 사람</b></td></tr>
+          <tr><td>언제</td><td>대화 10번·도구 10번마다 자동</td><td>작업 끝 · 사용자 교정 · 같은 오류 3회 · <b>PR 머지 뒤</b>(리뷰 댓글까지 보고)</td></tr>
+          <tr><td>저장</td><td><b>바로 저장</b>(사람 확인 없음)</td><td><b>[넣기]를 누른 것만</b></td></tr>
+          <tr><td>무엇을</td><td>스킬·기억</td><td>레포 함정(공책). 반복 절차는 "스킬로 만들까요?"라고 묻습니다</td></tr>
+          <tr><td>취향</td><td>같이 기억</td><td>공용 공책엔 안 넣고 각자 Claude 메모리로</td></tr>
+          <tr><td>근거 확인</td><td>LLM 이 판단</td><td>코드·실행 결과로 확인된 것만(스크립트가 거릅니다)</td></tr>
+          <tr><td>공유</td><td>내 컴퓨터</td><td>git 으로 팀 전체</td></tr>
+          <tr><td>지난 대화 검색</td><td>있음</td><td>없음</td></tr>
+        </tbody>
+      </table></div>
+      <p><b>왜 사람이 승인하나</b> — 공책(<code>gotchas.md</code>)은 모든 작업이 매번 다 읽는 팀 공용 문서입니다. 잘못 배운 한 줄이 들어가면 그 뒤 모든 작업이 그걸 믿고, 쓸데없는 줄이 쌓이면 정말 중요한 함정이 묻힙니다. 넣기·버리기 비율을 세고 있으니, 믿을 만하다는 숫자가 나오면 자동으로 넣는 쪽으로 다시 정할 수 있습니다.</p>
+    </section>
+
+    <section id="cmds">
+      <h2><span class="no">07</span>자주 쓰는 명령</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>명령</th><th>용도</th></tr></thead>
+        <tbody>
+          <tr><td><code>/call &lt;에이전트&gt;</code></td><td>담당 에이전트 pane 바로 띄우기</td></tr>
+          <tr><td><code>/board</code></td><td>현황판</td></tr>
+          <tr><td><code>/guide</code></td><td>가이드 메뉴(문서·스킬·에이전트·라우팅). <code>/guide 설명</code> 은 아테나 구조 설명, <code>/guide 시작하기</code> 는 이 가이드, <code>/guide 열기</code> 는 플레이북, <code>/guide 그림</code> 은 서비스 다이어그램</td></tr>
+          <tr><td><code>/monitor</code></td><td>백그라운드 서브에이전트·<code>/call</code>·디스패치로 띄운 pane 에이전트 로그</td></tr>
+          <tr><td>(회사 스킬)</td><td>팩 <code>pack/ROUTING.md</code> "회사 스킬"</td></tr>
+          <tr><td><code>/sync</code></td><td>운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이)</td></tr>
+          <tr><td><code>/diagram</code></td><td>서비스 다이어그램 다시 그리기</td></tr>
+        </tbody>
+      </table></div>
+      <p>명령 없이 말로 하는 것: <b>"현황 알려줘"</b> · <b>"리뷰해줘"</b> · <b>"&lt;앱&gt; 전체 검수 돌려줘"</b></p>
+      <p>에이전트 이름과 담당 레포 → 회사 팩 <code>pack/ROUTING.md</code>, 또는 <code>/guide</code>.</p>
+    </section>
+
+    <section id="rules">
+      <h2><span class="no">08</span>꼭 지킬 것</h2>
+      <div class="rules">
+        <div class="rule"><b>비밀값은 출력하지 않습니다</b><span><code>.npmrc</code>·<code>.env*</code> 내용, <code>printenv</code>, <code>ps aux</code> 결과를 보여 달라고 하지 마세요. 실수로 노출되면 바로 폐기하고 재발급합니다.</span></div>
+        <div class="rule"><b>무거운 명령은 한 번에 하나</b><span>install·build·dev·tsc·test 는 <code>scripts/heavy.sh</code> 로 줄을 섭니다. 에이전트는 알아서 씁니다. 직접 돌릴 때도 앞에 붙이세요. 동시 빌드로 컴퓨터가 멈춘 적이 있습니다.</span></div>
+        <div class="rule"><b>모든 작업은 계획서 하나에</b><span>아테나와 <code>/call</code> 이 알아서 만듭니다. 계획서(<code>plans/</code>)는 각자 로컬에만 있고, 공유되는 것은 <code>issues/</code>·<code>archive/</code> 입니다.</span></div>
+        <div class="rule"><b>담당 범위 밖은 수정하지 않습니다</b><span>팩 <code>pack.json</code> 에 없는 레포 등은 범위 밖입니다.</span></div>
+        <div class="rule"><b>학습은 [넣기]를 눌러야 들어갑니다</b><span>학습 후보는 [학습] 탭에서 골라야 공책에 들어갑니다. 취향이 섞인 후보는 [버리기].</span></div>
+        <div class="rule"><b>아테나 자체를 고치면 main 에 커밋·push</b><span>에이전트나 스킬을 추가했다면 <code>docs/extending.md</code> 의 "같이 갱신할 곳"을 따릅니다.</span></div>
+      </div>
+    </section>
+
+    <section id="trouble">
+      <h2><span class="no">09</span>막힐 때</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>증상</th><th>확인할 것</th></tr></thead>
+        <tbody>
+          <tr><td>레포가 연결되지 않았다고 나옴</td><td><code>ls -l repos/</code> 로 링크 대상 확인 → <code>scripts/setup.sh --root &lt;경로&gt;</code></td></tr>
+          <tr><td>"herdr 밖입니다"</td><td>herdr 터미널 안에서 <code>claude</code> 를 켰는지</td></tr>
+          <tr><td>Node 버전 경고</td><td>그 레포 폴더에서 <code>nvm use</code></td></tr>
+          <tr><td><code>pnpm install</code> 401·403</td><td><code>~/.npmrc</code> 의 패키지 레지스트리 토큰 권한(GitHub Packages 면 <code>read:packages</code>)과 만료일</td></tr>
+          <tr><td>타입 검사가 "건너뜀"</td><td>Orval·Relay 생성물이 없음. 레포의 생성 명령을 먼저</td></tr>
+          <tr><td>"PR 올려줘" 거부</td><td><code>gh auth status</code>. 여러 레포에 걸친 작업이면 아테나에게 맡깁니다</td></tr>
+          <tr><td>명령이 137 로 끝남</td><td>프로세스·메모리 폭주로 감시가 끊은 것. 다시 돌리기 전에 원인부터</td></tr>
+          <tr><td>세션이 끊김</td><td>다시 켜고 "○○ 작업 이어서". 진행 상황은 계획서 Checkpoint 에 남아 있습니다</td></tr>
+          <tr><td>대화가 길어져 압축됨</td><td>할 일 없음. 압축 직전 상태가 계획서에 자동으로 한 줄 남고, 압축 뒤 에이전트가 계획서부터 다시 읽고 이어 갑니다</td></tr>
+          <tr><td>"📚 배우기 검토" pane 이 떠 있음</td><td>머지된 내 PR 에서 배운 것을 뽑는 중입니다. 끝나면 닫아도 됩니다(다음에 PR 이 머지되면 다시 뜹니다)</td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <footer>
+      더 볼 것 — 레포의 <code>README.md</code>(전체 구조) · <code>docs/playbook.html</code>(그림으로 보는 사용법, <code>/guide 열기</code>) · <code>docs/knowledge/README.md</code>(레포 지식) · <code>docs/extending.md</code>(스킬·에이전트 추가)
+    </footer>
+  </main>
+</div>
+
+<script>
+  // 코드 블록 복사 — 주석 줄(# …)은 빼고 복사한다
+  document.querySelectorAll('.copy').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var pre = button.parentElement.querySelector('pre');
+      var text = pre.innerText.split('\n').filter(function (line) { return !/^\s*#/.test(line); }).join('\n').trim();
+      var done = function () { button.textContent = '복사됨'; setTimeout(function () { button.textContent = '복사'; }, 1400); };
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { selectText(pre); });
+      } else { selectText(pre); }
+    });
+  });
+  function selectText(node) {
+    var range = document.createRange(); range.selectNodeContents(node);
+    var selection = window.getSelection(); selection.removeAllRanges(); selection.addRange(range);
+  }
+</script>

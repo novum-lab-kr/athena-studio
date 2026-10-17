@@ -1,0 +1,168 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane current
+--- exit 0
+--- stdout
+{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
+--- stderr
+--- herdr
+["pane", "current"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane current --format id
+--- exit 0
+--- stdout
+w1:p1
+--- stderr
+--- herdr
+["pane", "current"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane get w1:p1
+--- exit 0
+--- stdout
+{"pane": {"id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "claude"}}
+--- stderr
+--- herdr
+["pane", "get", "w1:p1"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane layout --pane w1:p1
+--- exit 0
+--- stdout
+{"area": {"x": 0, "y": 0, "width": 200, "height": 50}, "panes": [{"id": "w1:p1", "rect": {"x": 0, "y": 0, "width": 100, "height": 50}}, {"id": "w1:p2", "rect": {"x": 100, "y": 0, "width": 50, "height": 50}}, {"id": "w1:pE", "rect": {"x": 150, "y": 0, "width": 50, "height": 50}}]}
+--- stderr
+--- herdr
+["pane", "layout", "--pane", "w1:p1"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane is-shell w1:p4
+--- exit 1
+--- stdout
+--- stderr
+--- herdr
+["pane", "process-info", "--pane", "w1:p4"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane is-shell w1:p4
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "process-info", "--pane", "w1:p4"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane is-shell 
+--- exit 1
+--- stdout
+--- stderr
+--- herdr
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane run w1:p9 bash -c /x/agent-monitor.py --stay --recent 
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "run", "w1:p9", "bash", "-c", "/x/agent-monitor.py --stay --recent "]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane run w1:p9 less -R --format x
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "run", "w1:p9", "less", "-R", "--format", "x"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane send-text w1:p2 첫 줄 --no-focus
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "send-text", "w1:p2", "첫 줄 --no-focus"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane send-keys w1:p2 C-c
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "send-keys", "w1:p2", "C-c"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane rename w1:p9 📋 현황판
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "rename", "w1:p9", "📋 현황판"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane swap w1:p3 w1:p5
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "swap", "--source-pane", "w1:p3", "--target-pane", "w1:p5"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane move w1:p5 --new-tab --no-focus
+--- exit 0
+--- stdout
+{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
+--- stderr
+--- herdr
+["pane", "move", "w1:p5", "--new-tab", "--no-focus"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane move w1:p5 --tab w1:t9 --target  --split right --no-focus
+--- exit 0
+--- stdout
+{"pane": {"id": "w1:pM", "tab_id": "w1:t9", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
+--- stderr
+--- herdr
+["pane", "move", "w1:p5", "--tab", "w1:t9", "--target-pane", "", "--split", "right", "--no-focus"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane move w1:p5 --tab w1:t1 --target w1:p1 --split down --ratio 0.8 --no-focus --format id
+--- exit 0
+--- stdout
+w1:pM
+--- stderr
+--- herdr
+["pane", "move", "w1:p5", "--tab", "w1:t1", "--target-pane", "w1:p1", "--split", "down", "--ratio", "0.8", "--no-focus"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane close w1:p9
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["pane", "close", "w1:p9"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane read w1:p2 --lines 20
+--- exit 0
+--- stdout
+{"id": "fake:pane_read", "result": {"type": "ok"}}
+--- stderr
+--- herdr
+["pane", "read", "--lines", "20", "w1:p2"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen pane wait-output w1:p2 --match done --timeout 1000
+--- exit 0
+--- stdout
+{"id": "fake:pane_wait-output", "result": {"type": "ok"}}
+--- stderr
+--- herdr
+["pane", "wait-output", "--match", "done", "--timeout", "1000", "w1:p2"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen tab list --workspace w1
+--- exit 0
+--- stdout
+{"tabs": [{"id": "w1:t1", "workspace_id": "w1", "label": "athena"}]}
+--- stderr
+--- herdr
+["tab", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen tab get w7:t3
+--- exit 0
+--- stdout
+{"tab": {"id": "w7:t3", "workspace_id": "w7", "label": null}}
+--- stderr
+--- herdr
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen tab rename w3:t1 shop-web
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["tab", "rename", "w3:t1", "shop-web"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen tab close w1:t9
+--- exit 0
+--- stdout
+--- stderr
+--- herdr
+["tab", "close", "w1:t9"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen workspace list
+--- exit 0
+--- stdout
+{"workspaces": [{"id": "w1", "label": "athena", "active_tab_id": "w1:t1", "focused": true}, {"id": "w2", "label": "other", "active_tab_id": "w2:t1", "focused": false}]}
+--- stderr
+--- herdr
+["workspace", "list"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen workspace get w2
+--- exit 0
+--- stdout
+{"workspace": {"id": "w2", "label": "shop-web", "active_tab_id": "w2:t1", "focused": false}}
+--- stderr
+--- herdr
+["workspace", "get", "w2"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen workspace create --label shop-web --cwd /tmp/x --no-focus
+--- exit 0
+--- stdout
+{"workspace": {"id": "w3", "label": "shop-web", "active_tab_id": "w3:t1", "focused": false}}
+--- stderr
+--- herdr
+["workspace", "create", "--label", "shop-web", "--cwd", "/tmp/x", "--no-focus"]

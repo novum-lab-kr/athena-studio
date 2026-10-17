@@ -1,0 +1,78 @@
+{
+ "id": "cli:pane:list",
+ "result": {
+  "type": "pane_list",
+  "panes": [
+   {
+    "agent_status": "idle",
+    "cwd": "@ATHENA@",
+    "focused": true,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:p1",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_p1",
+    "terminal_title": "claude",
+    "terminal_title_stripped": "claude",
+    "workspace_id": "w1",
+    "agent": "claude"
+   },
+   {
+    "agent_status": "working",
+    "cwd": "@ATHENA@/repos/shop-web",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@/repos/shop-web",
+    "pane_id": "w1:p2",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_p2",
+    "terminal_title": "✳ fe",
+    "terminal_title_stripped": "✳ fe",
+    "workspace_id": "w1",
+    "label": "🤖 fe · feat/x",
+    "agent": "claude"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w1:pE",
+    "revision": 1,
+    "tab_id": "w1:t1",
+    "terminal_id": "term_w1_pE",
+    "terminal_title": "herdr-sidebar",
+    "terminal_title_stripped": "herdr-sidebar",
+    "workspace_id": "w1",
+    "label": "Explorer"
+   },
+   {
+    "agent_status": "idle",
+    "cwd": "/tmp/other-repo",
+    "focused": false,
+    "foreground_cwd": "/tmp/other-repo",
+    "pane_id": "w2:p1",
+    "revision": 1,
+    "tab_id": "w2:t1",
+    "terminal_id": "term_w2_p1",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w2",
+    "agent": "codex"
+   },
+   {
+    "agent_status": "unknown",
+    "cwd": "@ATHENA@",
+    "focused": false,
+    "foreground_cwd": "@ATHENA@",
+    "pane_id": "w3:p1",
+    "revision": 1,
+    "tab_id": "w3:t1",
+    "terminal_id": "term_w3_p1",
+    "terminal_title": "zsh",
+    "terminal_title_stripped": "zsh",
+    "workspace_id": "w3"
+   }
+  ]
+ }
+}
