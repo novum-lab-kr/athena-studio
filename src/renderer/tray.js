@@ -12,7 +12,7 @@ const COLUMNS = [
   ['review', '리뷰'],
   ['done', '완료'],
 ]
-const USAGE_HIGH = 80 // 이 % 넘으면 막대를 주황으로
+const USAGE_HIGH = 80 // 이 % 넘으면 % 글자를 빨갛게(막대는 도구 색 그대로)
 
 function el(tag, className, text) {
   const node = document.createElement(tag)
@@ -80,7 +80,7 @@ function agentsBlock(summary) {
   return wrap
 }
 
-// 사용량 — 도구마다 묶고, 창마다 '<창> <%> ▬ · <리셋>'
+// 사용량 — 도구마다 묶고, 창마다 '<창> <%> ▬ · <리셋>' · 막대는 도구 색(Claude 주황 · Codex 파랑)
 function usageBlock(summary) {
   const box = el('div', 'usage')
   const tools = new Map()
@@ -94,11 +94,12 @@ function usageBlock(summary) {
   }
   for (const [tool, windows] of tools) {
     const prov = el('div', 'prov')
+    prov.dataset.tool = windows[0].toolId || ''
     prov.append(el('b', '', tool))
     for (const item of windows) {
-      const line = el('div', 'win')
+      const line = el('div', `win${item.percent >= USAGE_HIGH ? ' hi' : ''}`)
       const bar = el('span', 'bar')
-      const fill = el('span', item.percent >= USAGE_HIGH ? 'hi' : '')
+      const fill = el('span')
       fill.style.width = `${item.percent}%`
       bar.append(fill)
       line.append(el('span', 'wl', `${item.window} ${item.percent}%`), bar)

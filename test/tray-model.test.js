@@ -17,7 +17,7 @@ test('요약: 확인 필요(막힘 · 리뷰 대기) · 에이전트(막힘 먼�
   assert.deepEqual(summary.counts, { working: 1, blocked: 2, review: 1 })
   assert.deepEqual(summary.attention.map((item) => `${item.mark} ${item.text}`), ['! claude — 입력을 기다려요', '! 로그인 — 막힘', '? 버튼 — 리뷰 대기'])
   assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['claude', 'athena', 'blocked'], ['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle']])
-  assert.deepEqual(summary.usageItems, [{ tool: 'Codex', window: '주간', percent: 42, reset: '09:30' }])
+  assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
   assert.deepEqual([summary.idleAgents, summary.blockedAgents], [1, 1])
   assert.equal(summary.columns.done, 1)
   // 많아도 자르지 않는다(패널이 칸 안에서 스크롤)

@@ -105,14 +105,14 @@ function doneByHour(cards, now = Date.now()) {
   return { hours, total }
 }
 
-// 현황판 header.usage → [{ tool, window, percent, reset }] — 패널 막대용
+// 현황판 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
 function usageItems(usage, now = Date.now()) {
   const items = []
   for (const tool of Array.isArray(usage) ? usage : []) {
     const label = tool.label || tool.id
     for (const window of tool.windows || []) {
       if (typeof window.percent !== 'number') continue
-      items.push({ tool: label, window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now) })
+      items.push({ tool: label, toolId: String(tool.id || ''), window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now) })
     }
   }
   return items
