@@ -641,6 +641,30 @@ body[data-platform="darwin"] .tabbar {
 
 .tree-row.dotfile .file-icon { opacity: 0.8; }
 
+/* 폴더 열기·닫기 — 둥근 단추 꺾쇠(시안 5). 열리면 아래로 돌고, 줄에 마우스를 올리면 동그란 바탕 · 파일 줄은 같은 폭의 빈 자리 */
+.twisty {
+  display: inline-grid;
+  flex: none;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  color: var(--muted);
+  transition: background-color var(--motion), color var(--motion);
+}
+.twisty svg {
+  width: 10px;
+  height: 10px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.6;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  transition: transform var(--motion);
+}
+.twisty.open svg { transform: rotate(90deg); }
+.tree-row:hover .twisty:not(.none) { background: var(--surface-active); color: var(--text); } /* 줄 hover 바탕(--hover)보다 한 단계 밝게 — 원이 보이게 */
+
 .fold-button,
 .preview-close {
   display: inline-flex;

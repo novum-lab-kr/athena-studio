@@ -388,18 +388,34 @@ function iconElement(entry, open) {
   return image
 }
 
-function treeRow({ depth, label, mark, markClass, dotfile, onClick, title, icon }) {
+// 폴더 열기·닫기 표시 — 둥근 단추 꺾쇠(›, 열리면 아래로 돈다 · 마우스를 올리면 동그란 바탕) · 'none' 은 파일 줄의 빈 자리(이름 줄 맞춤)
+function twistyElement(state) {
+  const twisty = document.createElement('span')
+  twisty.className = `twisty${state === 'open' ? ' open' : ''}${state === 'none' ? ' none' : ''}`
+  if (state === 'none') return twisty
+  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  svg.setAttribute('viewBox', '0 0 10 10')
+  svg.setAttribute('aria-hidden', 'true')
+  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+  path.setAttribute('d', 'M3.5 1.5L7 5L3.5 8.5')
+  svg.append(path)
+  twisty.append(svg)
+  return twisty
+}
+
+function treeRow({ depth, label, mark, markClass, dotfile, onClick, title, icon, twisty }) {
   const row = document.createElement('button')
   row.className = `tree-row${dotfile ? ' dotfile' : ''}`
   row.style.paddingLeft = `${6 + depth * 12}px`
   row.title = title || label
+  if (twisty === 'open' || twisty === 'closed') row.setAttribute('aria-expanded', String(twisty === 'open'))
   const name = document.createElement('span')
   name.className = 'label'
   name.textContent = label
   const tail = document.createElement('span')
   tail.className = `mark ${markClass || ''}`
   tail.textContent = mark || ''
-  row.append(...(icon ? [icon] : []), name, tail)
+  row.append(...(twisty ? [twistyElement(twisty)] : []), ...(icon ? [icon] : []), name, tail)
   row.addEventListener('click', onClick)
   return row
 }
@@ -419,11 +435,11 @@ function fileRows() {
   const walk = (folder, depth) => {
     const entries = explorerView.children.get(folder)
     if (!entries) {
-      rows.push(treeRow({ depth, label: '읽는 중…', onClick: () => {} }))
+      rows.push(treeRow({ depth, twisty: 'none', label: '읽는 중…', onClick: () => {} }))
       return
     }
     if (entries.error) {
-      rows.push(treeRow({ depth, label: entries.error, onClick: () => {} }))
+      rows.push(treeRow({ depth, twisty: 'none', label: entries.error, onClick: () => {} }))
       return
     }
     for (const entry of entries) {
@@ -433,6 +449,7 @@ function fileRows() {
         rows.push(
           treeRow({
             depth,
+            twisty: open ? 'open' : 'closed',
             icon: iconElement(entry, open),
             label: entry.name,
             mark: folders.has(relative) ? '●' : '',
@@ -445,7 +462,7 @@ function fileRows() {
       } else {
         const code = codes.get(relative)
         rows.push(
-          treeRow({ depth, icon: iconElement(entry), label: entry.name, mark: code, markClass: code ? `code-${code}` : '', dotfile: entry.name.startsWith('.'), onClick: () => openPreview(relative) }),
+          treeRow({ depth, twisty: 'none', icon: iconElement(entry), label: entry.name, mark: code, markClass: code ? `code-${code}` : '', dotfile: entry.name.startsWith('.'), onClick: () => openPreview(relative) }),
         )
       }
     }
