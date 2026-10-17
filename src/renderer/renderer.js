@@ -13,7 +13,7 @@ let currentTab = 'work'
 // pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.js)
 const PANE_GAP = 2
 const HEAD_HEIGHT = 18
-const views = new Map() // paneId → { term, fit, el, head, sent: {cols, rows} }
+const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows}, dock }
 let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 let paneInfo = new Map() // paneId → 납작한 Pane(agent · agent_status) — main 이 2초마다 보낸다
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
@@ -62,9 +62,22 @@ function ensureView(paneId, dock = false) {
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
-  const view = { term, fit, el, head, sent: null, dock }
+  const view = { term, fit, el, head, shown: false, sent: null, dock }
   views.set(paneId, view)
   return view
+}
+
+// 숨었던 칸이 다시 보일 때 — xterm DOM 렌더러는 글자 폭을 DOM 으로 재서 글자 간격(셀 폭 − 글자 폭)을 정하는데,
+// 숨은 칸(display:none — 다른 작업 공간의 하단 칸 · 현황판 탭)에서는 0 으로 재져 간격이 셀 폭만큼 벌어진다.
+// (A) 숨은 채 열면 기본 간격이 그렇게 굳고 (B) 숨는 순간의 한 프레임에 그려진 줄도 그대로 남는다.
+// 옵션이 바뀌면 렌더러가 기본 간격을 다시 정하고(같은 값은 무시돼서 바꿨다 되돌린다) 0 으로 잰 글자 폭은 캐시에 남지 않으니, 보일 때 다시 재고 전부 다시 그린다.
+// open 을 미루면 그 전에 온 OSC 색 설정이 버려져서(테마 서비스가 open 때 생긴다) 열기는 그대로 둔다
+function redrawAfterHidden(view) {
+  const { term } = view
+  const sensitivity = term.options.scrollSensitivity
+  term.options.scrollSensitivity = sensitivity + 1
+  term.options.scrollSensitivity = sensitivity
+  term.refresh(0, term.rows - 1)
 }
 
 function disposeView(paneId) {
@@ -586,11 +599,16 @@ function layoutPanes() {
     const rect = rects[paneId]
     // 고정 칸은 배치 트리 밖 — athena 작업 공간에서만 보이고 칸을 꽉 채운다. 숨긴 동안은 크기를 맞추지 않는다(모니터는 데몬에서 계속 돈다)
     view.el.hidden = view.dock ? !showDock : !rect
-    if (view.el.hidden) continue
+    if (view.el.hidden) {
+      view.shown = false
+      continue
+    }
     if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
     view.el.classList.toggle('focused', paneId === screen.focused)
     const info = meta.get(paneId) || {}
     view.head.textContent = info.label || info.title || paneId
+    if (!view.shown) redrawAfterHidden(view)
+    view.shown = true
     try {
       view.fit.fit()
     } catch {}
@@ -825,6 +843,8 @@ function switchTab(name) {
   if (name === 'work') {
     requestAnimationFrame(layoutPanes)
   } else {
+    // 작업 창이 숨으면 모든 칸이 안 보이는 것 — 돌아올 때 다시 그리도록(layoutPanes) 표시만 해 둔다
+    for (const view of views.values()) view.shown = false
     loadBoard()
     $('board-frame').focus()
   }
