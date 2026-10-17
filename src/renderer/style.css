@@ -1,14 +1,14 @@
 :root {
   color-scheme: dark;
 
-  --bg: #14161a;
-  --bar: #1a1d22;
-  --hover: #23272e;
-  --surface-active: #2b3039;
-  --line: #292d35;
+  --bg: #16171a;
+  --bar: #1f2125;
+  --hover: #28292d;
+  --surface-active: #313338;
+  --line: #2e3137;
 
-  --text: #d8dbe0;
-  --muted: #9aa3b2;
+  --text: #e8e6e1;
+  --muted: #9a968e;
   --accent: #8baaf2;
   --selected: #263247;
   --selected-hover: #2c3b52;
@@ -239,7 +239,7 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(10, 11, 14, 0.7);
+  background: rgba(12, 12, 13, 0.7);
 }
 .picker[hidden] { display: none; }
 .picker-box {
@@ -297,7 +297,7 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   flex-direction: column;
   min-width: 0;
   margin-top: 4px;
-  background: #101216;
+  background: #121315;
   border-left: 1px solid var(--line);
   outline: none;
 }
@@ -438,7 +438,7 @@ body[data-platform="darwin"] .tabbar {
   height: 34px;
   gap: 4px;
   padding: 0 6px;
-  border-bottom: 1px solid #353f50;
+  border-bottom: 1px solid #383a3f;
   background: var(--bar);
 }
 
@@ -760,7 +760,7 @@ button:focus-visible {
   font-size: 11px;
   font-weight: 700;
 }
-.agent-avatar::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border: 2px solid var(--bg); border-radius: 50%; background: #5b6270; }
+.agent-avatar::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border: 2px solid var(--bg); border-radius: 50%; background: #6d6a64; }
 .agent-avatar.working::after { background: var(--success); }
 .agent-text { display: flex; flex-direction: column; min-width: 0; }
 .agent-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
@@ -856,7 +856,7 @@ button:focus-visible {
   padding: 0 8px;
   border: 1px solid var(--line);
   border-radius: 5px;
-  background: #0f1114;
+  background: #121315;
   color: var(--text);
   font: 12px ui-monospace, monospace;
   outline: none;

@@ -1319,7 +1319,7 @@ function createWindow() {
     minHeight: 480,
     title: 'Athena',
     titleBarStyle: isMac ? 'hiddenInset' : 'default', // 맥은 탭 줄이 제목 줄을 겸한다
-    backgroundColor: '#14161a',
+    backgroundColor: '#16171a',
     icon: APP_ICON, // 맥은 무시한다(Dock 은 whenReady 에서) — 윈도우·리눅스 창 아이콘
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),

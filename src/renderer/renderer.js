@@ -32,7 +32,7 @@ function makeTerminal() {
     scrollback: 5000,
     macOptionIsMeta: true,
     macOptionClickForcesSelection: true, // 안의 프로그램이 마우스를 잡아도 Option+드래그로 고를 수 있게
-    theme: { background: '#14161a', foreground: '#d8dbe0' },
+    theme: { background: '#16171a', foreground: '#e8e6e1' },
   })
   const fit = new FitAddon.FitAddon()
   term.loadAddon(fit)
