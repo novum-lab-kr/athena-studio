@@ -86,7 +86,7 @@ main { position: relative; flex: 1; min-height: 0; }
 .side-panel { width: 230px; border-left: 1px solid var(--line); }
 .side-panel[hidden] { display: none; }
 .side-title { margin: 4px 6px 6px; color: var(--muted); font-size: 11px; letter-spacing: 0.04em; }
-.space, .agent-row {
+.space {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -100,7 +100,7 @@ main { position: relative; flex: 1; min-height: 0; }
   text-align: left;
   cursor: pointer;
 }
-.space:hover, .agent-row:hover { background: var(--line); }
+.space:hover { background: var(--line); }
 .space[aria-current="true"] { background: var(--line); font-weight: 600; }
 .space .dot { color: var(--muted); }
 /* 이름 · 브랜치를 한 줄에 — 이름이 길면 이름부터 줄이고 브랜치는 오른쪽에 */
@@ -108,11 +108,6 @@ main { position: relative; flex: 1; min-height: 0; }
 .space-label { overflow: hidden; flex: 0 1 auto; text-overflow: ellipsis; white-space: nowrap; }
 .space-branch { overflow: hidden; flex: 0 1 auto; max-width: 55%; margin-left: auto; color: var(--muted); font: 11px ui-monospace, monospace; font-weight: normal; text-overflow: ellipsis; white-space: nowrap; }
 .space[aria-current="true"] .dot { color: var(--accent); }
-.space-agents { margin: 0 0 6px 14px; }
-.agent-row { padding: 2px 6px; color: var(--muted); }
-.agent-row .name { overflow: hidden; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
-.status-working { color: #9ece6a; }
-.status-idle { color: var(--muted); }
 .side-empty { margin: 4px 6px; color: var(--muted); }
 .add-space { margin-top: 6px; color: var(--muted); }
 /* 작업 창 안의 탭 줄(데몬 탭) */
@@ -331,20 +326,6 @@ main { position: relative; flex: 1; min-height: 0; }
 .space-icon[aria-current="true"] { border-color: var(--space-color, var(--accent)); }
 .space-icon.add { background: transparent; color: var(--muted); font-size: 16px; }
 .space-icon.add:hover { background: var(--line); }
-.space-badge {
-  position: absolute;
-  right: -5px;
-  bottom: -5px;
-  min-width: 15px;
-  height: 15px;
-  padding: 0 3px;
-  border: 2px solid var(--bar);
-  border-radius: 8px;
-  background: #565f73;
-  color: #fff;
-  font-family: inherit; font-size: 9px; font-weight: 600; line-height: 11px;
-}
-.space-badge.working { background: #5d9a3a; }
 /* 접힌 오른쪽 — 좁은 줄 */
 .side-rail { flex: none; display: flex; flex-direction: column; align-items: center; width: 30px; padding-top: 8px; border-left: 1px solid var(--line); background: var(--bar); }
 .side-rail[hidden] { display: none; }
@@ -404,8 +385,7 @@ body[data-platform="darwin"] .tabbar {
   letter-spacing: 0;
 }
 
-.space,
-.agent-row {
+.space {
   gap: 8px;
   border-radius: var(--radius);
 }
@@ -421,28 +401,16 @@ body[data-platform="darwin"] .tabbar {
   font: 11px var(--font-mono);
 }
 
-.space-agents {
-  margin: 2px 0 8px 16px;
-}
-
-.agent-row {
-  min-height: 28px;
-  padding: 4px 8px;
-  font-size: 12px;
-}
-
 .add-space {
   margin-top: 8px;
   font-size: 12px;
 }
 
-.status-working,
 .code-U,
 .code-A {
   color: var(--success);
 }
 
-.status-idle { color: var(--muted); }
 .code-M { color: var(--warning); }
 
 .studio-tabs {
@@ -598,18 +566,6 @@ body[data-platform="darwin"] .tabbar {
   border-color: var(--accent);
 }
 
-.space-badge {
-  right: -4px;
-  bottom: -4px;
-  background: var(--surface-active);
-  color: var(--text);
-}
-
-.space-badge.working {
-  background: var(--success);
-  color: var(--bg);
-}
-
 .side-rail {
   width: 48px;
   padding-top: 8px;
@@ -632,7 +588,7 @@ body[data-platform="darwin"] .tabbar {
 
 /* hover → 선택 → 키보드 포커스 순서 */
 :where(
-  .tab, .space, .agent-row, .studio-tab, .agent-card,
+  .tab, .space, .studio-tab, .agent-card,
   .tree-row, .view-button, .fold-button, .rail-button,
   .space-icon, .preview-close
 ) {
@@ -643,7 +599,7 @@ body[data-platform="darwin"] .tabbar {
 }
 
 :is(
-  .tab, .space, .agent-row, .studio-tab, .agent-card,
+  .tab, .space, .studio-tab, .agent-card,
   .tree-row, .view-button, .fold-button, .rail-button,
   .space-icon, .preview-close
 ):hover {
@@ -716,7 +672,7 @@ button:focus-visible {
 .agent-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
 .agent-sub { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 
-/* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · 늘 보임) */
+/* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · athena 작업 공간에서만 보임) */
 .dock { flex: none; display: flex; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
-.dock:empty { display: none; }
+.dock:empty, .dock[hidden] { display: none; }
 .dock .pane { position: relative; flex: 1; min-width: 0; border: 0; border-radius: 0; }

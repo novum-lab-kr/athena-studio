@@ -43,6 +43,7 @@ function athenaState() {
     installDir: core.installTarget(app.getPath('home')).dir,
     tabKey: isMac ? '⌘' : 'Alt+',
     platform: process.platform,
+    athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름의 작업 공간에서만 보인다
   }
 }
 

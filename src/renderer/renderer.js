@@ -79,6 +79,11 @@ function activeWorkspace() {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
 }
 
+// 아테나 폴더의 작업 공간인가 — 이름 기준(main 의 core.findAthenaWorkspace 와 같은 규칙)
+function isAthenaWorkspace(workspace) {
+  return Boolean(workspace && state && workspace.label === state.athenaWorkspace)
+}
+
 function activeTab() {
   const workspace = activeWorkspace()
   return (workspace && screen.tabs.find((tab) => tab.id === workspace.activeTab)) || null
@@ -147,31 +152,6 @@ function renderTabs() {
 }
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
-const STATUS_TEXT = { working: '● 일하는 중', idle: '○ 대기' }
-
-function agentRow(pane, withWorkspace) {
-  const row = document.createElement('button')
-  row.className = 'agent-row'
-  const name = document.createElement('span')
-  name.className = 'name'
-  const workspace = screen.workspaces.find((entry) => entry.id === pane.workspace_id)
-  // delegate 이름표 '🤖 <에이전트> · <브랜치>' 는 에이전트 이름만(브랜치는 작업 공간 줄에 있다 — 현황판 server.mjs 와 같은 읽기)
-  const delegated = (pane.label || '').match(/^🤖\s*(\S+)/)
-  name.textContent = (delegated ? delegated[1] : pane.label || pane.agent) + (withWorkspace && workspace ? ` · ${workspace.label}` : '')
-  name.title = pane.label || pane.agent
-  const status = document.createElement('span')
-  status.className = `status-${pane.agent_status}`
-  status.textContent = STATUS_TEXT[pane.agent_status] || '·'
-  row.append(name, status)
-  row.title = `${pane.agent} · ${pane.id}`
-  // 누르면 그 pane 으로(데몬이 작업 공간·탭까지 옮긴다)
-  row.addEventListener('click', () => {
-    if (currentTab !== 'work') switchTab('work')
-    studio.paneFocus(pane.id)
-  })
-  return row
-}
-
 function agentPanes() {
   return screen.panes.map((pane) => paneInfo.get(pane.id)).filter((pane) => pane && pane.agent)
 }
@@ -201,24 +181,15 @@ function spaceInitials(label) {
   return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()
 }
 
-// 접힌 왼쪽 — 작업 공간마다 아이콘 하나. 에이전트가 일하면 초록 점, 쉬면 회색 점, 숫자는 에이전트 수
-function spaceRail(agents) {
+// 접힌 왼쪽 — 작업 공간마다 아이콘 하나(에이전트는 가운데 맨 위 카드에서 보여 준다)
+function spaceRail() {
   const rows = screen.workspaces.map((workspace) => {
-    const mine = agents.filter((pane) => pane.workspace_id === workspace.id)
-    const working = mine.some((pane) => pane.agent_status === 'working')
     const button = document.createElement('button')
     button.className = 'space-icon'
     button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
     button.style.setProperty('--space-color', spaceColor(workspace.label))
     button.textContent = spaceInitials(workspace.label)
-    const status = mine.map((pane) => `${pane.label || pane.agent} ${STATUS_TEXT[pane.agent_status] || ''}`).join('\n')
-    button.title = [workspace.label, branches[workspace.id], status].filter(Boolean).join('\n')
-    if (mine.length) {
-      const badge = document.createElement('span')
-      badge.className = `space-badge ${working ? 'working' : 'idle'}`
-      badge.textContent = String(mine.length)
-      button.append(badge)
-    }
+    button.title = [workspace.label, branches[workspace.id]].filter(Boolean).join('\n')
     button.addEventListener('click', () => {
       if (currentTab !== 'work') switchTab('work')
       studio.workspaceSelect(workspace.id)
@@ -281,21 +252,20 @@ function workspacePlace(workspace) {
 }
 
 function renderSides() {
-  const agents = agentPanes()
-  renderAgentList(agents)
+  renderAgentList(agentPanes())
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
-    spaces.replaceChildren(...spaceRail(agents))
+    spaces.replaceChildren(...spaceRail())
     if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
     return
   }
-  // 왼쪽: 작업 공간마다 그 안의 에이전트
+  // 왼쪽: 작업 공간(레포)만 — 에이전트는 가운데 맨 위 카드에서 보여 준다
   const title = document.createElement('div')
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
   titleText.textContent = '작업 공간'
   title.append(titleText, foldButton('«', `작업 공간 접기 (${state.tabKey}B)`, () => setSpacesCollapsed(true)))
-  const rows = screen.workspaces.flatMap((workspace) => {
+  const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
     button.className = 'space'
     button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
@@ -321,10 +291,7 @@ function renderSides() {
       if (currentTab !== 'work') switchTab('work')
       studio.workspaceSelect(workspace.id)
     })
-    const list = document.createElement('div')
-    list.className = 'space-agents'
-    list.append(...agents.filter((pane) => pane.workspace_id === workspace.id).map((pane) => agentRow(pane, false)))
-    return [button, list]
+    return button
   })
   const add = document.createElement('button')
   add.className = 'space add-space'
@@ -606,14 +573,19 @@ function setSpacesCollapsed(collapsed) {
 // 트리 → 픽셀 사각형. 보이는 pane 만 fit 하고, 칸 수가 바뀐 것만 데몬에 알린다
 function layoutPanes() {
   if (panels.work.hidden) return
+  // 하단 칸(에이전트 모니터)은 athena 작업 공간에서만 — 다른 공간은 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
+  const showDock = isAthenaWorkspace(activeWorkspace())
+  $('dock').hidden = !showDock
+  // 숨긴 칸의 터미널에 키 입력이 남지 않게 — 커서를 뺀다(그 뒤 pane 을 누르면 다시 잡힌다)
+  if (!showDock && $('dock').contains(document.activeElement)) document.activeElement.blur()
   const container = $('panes')
   const tab = activeTab()
   const rects = tab ? StudioLayout.computeRects(tab.tree, { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }, PANE_GAP) : {}
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]
-    // 고정 칸은 배치 트리 밖 — 늘 보이고 칸을 꽉 채운다
-    view.el.hidden = !rect && !view.dock
+    // 고정 칸은 배치 트리 밖 — athena 작업 공간에서만 보이고 칸을 꽉 채운다. 숨긴 동안은 크기를 맞추지 않는다(모니터는 데몬에서 계속 돈다)
+    view.el.hidden = view.dock ? !showDock : !rect
     if (view.el.hidden) continue
     if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
     view.el.classList.toggle('focused', paneId === screen.focused)
