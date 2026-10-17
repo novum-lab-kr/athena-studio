@@ -49,7 +49,6 @@ contextBridge.exposeInMainWorld('studio', {
   onPaneData: listen('pane:data'),
   onPaneExit: listen('pane:exit'),
   onScreenState: listen('screen:state'),
-  onScreenPanes: listen('screen:panes'),
   onScreenBranches: listen('screen:branches'),
   onScreenResync: listen('screen:resync'),
   onScreenDisconnected: listen('screen:disconnected'),

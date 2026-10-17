@@ -15,7 +15,6 @@ const PANE_GAP = 2
 const HEAD_HEIGHT = 18
 const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
 let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
-let paneInfo = new Map() // paneId → 납작한 Pane(agent · agent_status) — main 이 2초마다 보낸다
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 let attached = false
 let attaching = null
@@ -217,10 +216,6 @@ function startTabRename(button, tab, shown) {
 }
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
-function agentPanes() {
-  return screen.panes.map((pane) => paneInfo.get(pane.id)).filter((pane) => pane && pane.agent)
-}
-
 // 접기·펴기 버튼(« ») — 칸 머리에 붙는다
 function foldButton(text, title, onClick) {
   const button = document.createElement('button')
@@ -246,7 +241,7 @@ function spaceInitials(label) {
   return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()
 }
 
-// 접힌 왼쪽 — 작업 공간마다 아이콘 하나(에이전트는 가운데 맨 위 카드에서 보여 준다)
+// 접힌 왼쪽 — 작업 공간마다 아이콘 하나
 function spaceRail() {
   const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
@@ -269,62 +264,14 @@ function spaceRail() {
   return [foldButton('»', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false)), ...rows, add]
 }
 
-// 가운데 맨 위 에이전트 — 아바타 카드를 옆으로(사용자가 시안 3 을 고름). 일하는 것 먼저, 그다음 작업 공간 순
-function renderAgentList(agents) {
-  const order = new Map(screen.workspaces.map((workspace, index) => [workspace.id, index]))
-  const sorted = [...agents].sort((left, right) => {
-    const working = Number(right.agent_status === 'working') - Number(left.agent_status === 'working')
-    return working || (order.get(left.workspace_id) ?? 99) - (order.get(right.workspace_id) ?? 99)
-  })
-  const rows = sorted.map((pane) => {
-    const card = document.createElement('button')
-    card.className = `agent-card${pane.id === screen.focused ? ' current' : ''}`
-    const workspace = screen.workspaces.find((entry) => entry.id === pane.workspace_id)
-    const delegated = (pane.label || '').match(/^🤖\s*(\S+)/)
-    const working = pane.agent_status === 'working'
-    // 아바타 — 작업 공간 색 동그라미 + 이름 두 글자(접힌 왼쪽 아이콘과 같은 규칙) · 오른쪽 아래 상태 점
-    const avatar = document.createElement('span')
-    avatar.className = `agent-avatar${working ? ' working' : ''}`
-    avatar.style.setProperty('--space-color', spaceColor(workspace ? workspace.label : pane.agent))
-    avatar.textContent = spaceInitials(workspace ? workspace.label : pane.agent)
-    const text = document.createElement('span')
-    text.className = 'agent-text'
-    const name = document.createElement('span')
-    name.className = 'agent-name'
-    name.textContent = delegated ? delegated[1] : pane.label || pane.agent
-    const sub = document.createElement('span')
-    sub.className = 'agent-sub'
-    const status = working ? '일하는 중' : '대기'
-    sub.textContent = workspace ? `${workspace.label} · ${status}` : status
-    text.append(name, sub)
-    card.append(avatar, text)
-    // 브랜치·주제(지금 하는 일)는 마우스를 올리면
-    card.title = [pane.label || pane.agent, workspacePlace(workspace), pane.title].filter(Boolean).join('\n')
-    card.addEventListener('click', () => {
-      if (currentTab !== 'work') switchTab('work')
-      studio.paneFocus(pane.id)
-    })
-    return card
-  })
-  if (!rows.length) rows.push(Object.assign(document.createElement('div'), { className: 'side-empty', textContent: '돌고 있는 에이전트가 없어요' }))
-  $('agent-list-rows').replaceChildren(...rows)
-}
-
-// '작업 공간 · 브랜치'(브랜치를 모르면 이름만)
-function workspacePlace(workspace) {
-  if (!workspace) return ''
-  return branches[workspace.id] ? `${workspace.label} · ${branches[workspace.id]}` : workspace.label
-}
-
 function renderSides() {
-  renderAgentList(agentPanes())
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
     spaces.replaceChildren(...spaceRail())
     if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
     return
   }
-  // 왼쪽: 작업 공간(레포)만 — 에이전트는 가운데 맨 위 카드에서 보여 준다
+  // 왼쪽: 작업 공간(레포)만
   const title = document.createElement('div')
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
@@ -1480,10 +1427,6 @@ async function init() {
   studio.onScreenBranches((next) => {
     if (JSON.stringify(next) === JSON.stringify(branches)) return
     branches = next
-    if (attached) renderSides()
-  })
-  studio.onScreenPanes((panes) => {
-    paneInfo = new Map(panes.map((pane) => [pane.id, pane]))
     if (attached) renderSides()
   })
   const panelHidden = localStorage.getItem('studio.panelHidden') === '1'

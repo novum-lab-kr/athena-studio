@@ -468,7 +468,7 @@ async function newWorkspace(size) {
   return daemonCall('workspace create', { label: path.basename(dir), cwd: dir, focus: true, ...size })
 }
 
-// 에이전트 상태(agent · agent_status) — 보일 때만 2초마다 pane 목록을 받아 사이드바에 보낸다
+// 보일 때만 2초마다 pane 목록(에이전트가 도는 폴더 → 모니터)과 작업 공간 브랜치를 갱신한다
 let panesTimer = null
 function startPanesPolling() {
   clearInterval(panesTimer)
@@ -476,7 +476,6 @@ function startPanesPolling() {
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized() || !daemon) return
     const listed = await daemonCall('pane list')
     if (listed.result) {
-      send('screen:panes', listed.result.panes)
       monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean)
     }
     const branches = await workspaceBranches()

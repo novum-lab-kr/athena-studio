@@ -429,18 +429,19 @@ body[data-platform="darwin"] .tabbar {
 
 .code-M { color: var(--warning); }
 
-/* 터미널 위 탭 — 사이드 커서(N1) + 같은 바탕(⑤). 선택 탭은 금빛 면 + 왼쪽 짧은 커서,
-   작업 칸도 탭 줄과 같은 바탕이라 탭 줄 → 터미널이 한 덩어리로 이어진다 */
+/* 터미널 위 탭 — 칸 나눔 + 위 강조선(C3 · 촘촘 VS Code). 줄 32px · 탭마다 오른쪽 구분선 ·
+   선택 탭은 터미널 바탕 + 위 2px 강조선 · ✕·＋ 는 얇은 선 아이콘 · ✕ 는 오른쪽 고정 자리 */
 .studio-tabs {
   --tab-x: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 10 10'%3E%3Cpath d='M2 2l6 6M8 2l-6 6' stroke='%23000' stroke-width='1.3' stroke-linecap='round'/%3E%3C/svg%3E");
   --tab-plus: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M6 1.5v9M1.5 6h9' stroke='%23000' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
   flex: none;
-  align-items: center;
-  height: 34px;
-  gap: 4px;
-  padding: 0 6px;
-  border-bottom: 1px solid #383a3f;
+  align-items: stretch;
+  height: 32px;
+  gap: 0;
+  padding: 0;
+  border-bottom: 0;
   background: var(--bar);
+  box-shadow: inset 0 -1px var(--line);
 }
 
 .studio-tab:not(.add) {
@@ -450,23 +451,22 @@ body[data-platform="darwin"] .tabbar {
   flex: 0 0 auto;
   min-width: 76px;
   max-width: 200px;
-  height: 28px;
+  height: auto;
   padding: 0 28px 0 12px; /* 오른쪽 28px 는 ✕ 자리 — 나타나도 폭이 흔들리지 않게 */
-  border-radius: 5px;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
   font-size: 12.5px;
 }
 
-/* 선택 탭 왼쪽 짧은 커서 */
-.studio-tab[aria-selected="true"]::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 8px;
-  width: 2px;
-  height: 12px;
-  border-radius: 1px;
-  background: var(--accent);
+/* 고른 탭 — 터미널 바탕 + 위 강조선(공통 선택 면 규칙보다 세게) */
+.studio-tabs .studio-tab[aria-selected="true"],
+.studio-tabs .studio-tab[aria-selected="true"]:hover {
+  background: var(--bg);
+  color: var(--text);
+  box-shadow: inset 0 2px 0 var(--accent);
 }
+
+.studio-tab:not(.add):not([aria-selected="true"]):hover { color: var(--text); }
 
 /* 긴 이름은 이름만 말줄임 */
 .studio-tab:not(.add) > span:first-child {
@@ -510,13 +510,14 @@ body[data-platform="darwin"] .tabbar {
 
 .studio-tab.add {
   position: relative;
+  align-self: center;
   flex: none;
   width: 26px;
   height: 26px;
-  margin-left: 2px;
+  margin-left: 4px;
   padding: 0;
   border-radius: 6px;
-  color: var(--accent);
+  color: var(--muted);
   font-size: 0;
 }
 
@@ -528,16 +529,20 @@ body[data-platform="darwin"] .tabbar {
   -webkit-mask: var(--tab-plus) center / 11px no-repeat;
 }
 
+.studio-tab.add:hover { color: var(--text); }
+
 /* 이름 바꾸기 — 탭 자리에 같은 모양의 글자 칸(.studio-tab:not(.add) 보다 세게) */
 .studio-tabs .studio-tab-input {
   flex: none;
   width: 180px;
-  height: 28px;
+  height: auto;
   padding: 0 12px;
-  border: 1px solid var(--accent);
-  border-radius: 5px;
+  border: 0;
+  border-right: 1px solid var(--line);
+  border-radius: 0;
   outline: none;
   background: var(--bg);
+  box-shadow: inset 0 2px 0 var(--accent), inset 0 0 0 1px var(--accent);
   color: var(--text);
   font: 12.5px var(--font-ui);
   cursor: text;
@@ -546,9 +551,7 @@ body[data-platform="darwin"] .tabbar {
 /* 공통 :hover 회색 면이 글자 칸에 씌지 않게 */
 .studio-tabs .studio-tab-input:hover { background: var(--bg); }
 
-/* 작업 칸도 탭 줄과 같은 바탕 — 위 2px 만 띄워 탭 줄과 한 덩어리로 */
-.work-area { background: var(--bar); }
-.panes { margin: 2px 6px 6px; }
+.panes { margin: 6px; }
 
 .pane {
   background: var(--bg);
@@ -570,13 +573,12 @@ body[data-platform="darwin"] .tabbar {
   font: 11px/18px var(--font-ui);
 }
 
-/* 포커스 pane 머리줄 — 선택 탭과 같은 금빛 면 + 같은 커서(커서 메아리) */
 .pane.focused .pane-head {
-  background: var(--selected);
+  background: var(--bar);
   color: var(--text);
 }
 
-.pane.focused .pane-head::before {
+.pane.focused:focus-within .pane-head::before {
   content: "";
   position: absolute;
   left: 0;
@@ -673,7 +675,7 @@ body[data-platform="darwin"] .tabbar {
   border-radius: var(--radius-lg);
 }
 
-.preview { margin-top: 2px; } /* 터미널(.panes 위 2px)과 윗선을 맞춘다 */
+.preview { margin-top: 6px; } /* 터미널(.panes 위 6px)과 윗선을 맞춘다 */
 
 .preview-head {
   flex: 0 0 32px;
@@ -683,7 +685,7 @@ body[data-platform="darwin"] .tabbar {
 
 /* hover → 선택 → 키보드 포커스 순서 */
 :where(
-  .tab, .space, .studio-tab, .agent-card,
+  .tab, .space, .studio-tab,
   .tree-row, .view-button, .fold-button, .rail-button,
   .space-icon, .preview-close
 ) {
@@ -694,7 +696,7 @@ body[data-platform="darwin"] .tabbar {
 }
 
 :is(
-  .tab, .space, .studio-tab, .agent-card,
+  .tab, .space, .studio-tab,
   .tree-row, .view-button, .fold-button, .rail-button,
   .space-icon, .preview-close
 ):hover {
@@ -707,7 +709,6 @@ body[data-platform="darwin"] .tabbar {
 
 .space[aria-current="true"],
 .studio-tab[aria-selected="true"],
-.agent-card.current,
 .view-button[aria-pressed="true"] {
   background: var(--selected);
   color: var(--text);
@@ -715,7 +716,6 @@ body[data-platform="darwin"] .tabbar {
 
 .space[aria-current="true"]:hover,
 .studio-tab[aria-selected="true"]:hover,
-.agent-card.current:hover,
 .view-button[aria-pressed="true"]:hover {
   background: var(--selected-hover);
 }
@@ -728,44 +728,6 @@ button:focus-visible {
 @media (prefers-reduced-motion: reduce) {
   button { transition: none; }
 }
-
-/* 가운데 맨 위 에이전트 — 아바타 카드를 옆으로 한 줄, 넘치면 가로 스크롤(머리줄·접기 없음). 이름 · 작업 공간 · 상태만 */
-.agent-list { flex: none; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); background: var(--bar); }
-.agent-list-rows { display: grid; grid-auto-flow: column; grid-auto-columns: 180px; gap: 8px; overflow-x: auto; padding: 8px 10px; scroll-snap-type: x proximity; }
-.agent-card {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 10px;
-  border: 1px solid transparent;
-  border-radius: 10px;
-  background: var(--bg);
-  color: var(--text);
-  font-family: inherit;
-  text-align: left;
-  scroll-snap-align: start;
-  cursor: pointer;
-}
-.agent-card.current { border-color: var(--focus-line); }
-/* 작업 공간 색 동그라미 + 오른쪽 아래 상태 점(일하면 초록) */
-.agent-avatar {
-  position: relative;
-  display: grid;
-  flex: none;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  background: var(--space-color, var(--muted));
-  color: #111;
-  font-size: 11px;
-  font-weight: 700;
-}
-.agent-avatar::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border: 2px solid var(--bg); border-radius: 50%; background: #6d6a64; }
-.agent-avatar.working::after { background: var(--success); }
-.agent-text { display: flex; flex-direction: column; min-width: 0; }
-.agent-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
-.agent-sub { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · athena 작업 공간에서만 보임) */
 .dock { flex: none; display: flex; flex-direction: column; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
