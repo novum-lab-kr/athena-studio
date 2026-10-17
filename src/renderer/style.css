@@ -797,10 +797,11 @@ button:focus-visible {
 .dock { flex: none; display: flex; flex-direction: column; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
 .dock[hidden] { display: none; }
 /* 에이전트 모니터 — 머리줄(세션 칩) + 활동 피드. 접으면 머리줄만 */
-.dock.collapsed { height: 28px; }
+.dock.collapsed { height: 29px; } /* 접힘 — 머리줄 아래 1px 여백 */
 .dock.collapsed .monitor-feed { display: none; }
 /* 머리줄 — 내용과 같은 바탕(경계선 없음) · 선 아이콘 + 대문자 작은 제목(사용자가 시안 5 를 고름) */
 .monitor-head { display: flex; flex: none; align-items: center; gap: 8px; height: 28px; padding: 0 8px; font-size: 12px; }
+.dock:not(.collapsed) .monitor-head { border-bottom: 1px solid var(--line); } /* 열렸을 때만 머리줄 아랫선 */
 .monitor-title { display: inline-flex; flex: none; align-items: center; gap: 6px; color: var(--muted); font-size: 11px; letter-spacing: 0.06em; }
 .monitor-icon { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
 .monitor-sessions { display: flex; flex: 1; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
