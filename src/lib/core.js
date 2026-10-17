@@ -44,23 +44,12 @@ function checkAthenaDir(dir) {
   return { ok: missing.length === 0, missing }
 }
 
-// 아테나 받기 — 앱 데이터 폴더(userData) 안의 athena/ 에 코어 레포를 clone 한다(코드는 아테나 레포가 관리한다).
-// herdr 용 아테나(~/athena)와 섞이지 않게 스튜디오는 자기 아테나를 따로 갖는다
-const ATHENA_REPO = 'https://github.com/novum-lab-kr/athena.git'
+// 스튜디오용 아테나 — 스튜디오 레포 안 athena/(git subtree · 정본은 아테나 레포 novum-lab-kr/athena). 앱은 그 폴더를 바로 쓴다.
+// herdr 용 아테나(~/athena)와 섞이지 않는다
 const ATHENA_DIR_NAME = 'athena'
 
-// 받을 자리: 없거나 빈 폴더면 clone, 이미 아테나면 그대로 쓰고, 다른 것이 있으면 건드리지 않는다
-function installTarget(parent) {
-  const dir = path.join(parent, ATHENA_DIR_NAME)
-  let entries
-  try {
-    entries = fs.readdirSync(dir)
-  } catch (error) {
-    if (error.code === 'ENOENT') return { dir, action: 'clone' }
-    return { dir, action: 'conflict' }
-  }
-  if (entries.length === 0) return { dir, action: 'clone' }
-  return { dir, action: checkAthenaDir(dir).ok ? 'use' : 'conflict' }
+function studioAthenaDir(appRoot) {
+  return path.join(appRoot, ATHENA_DIR_NAME)
 }
 
 // 같은 폴더인지 — 심볼릭 링크(/tmp → /private/tmp 등)까지 풀어 본다. 없는 폴더는 표기만 정리해 비교
@@ -83,7 +72,7 @@ function shouldOfferStudioAthena(config, home) {
   return sameDir(config.athenaDir, path.join(home, ATHENA_DIR_NAME))
 }
 
-// 옮기기로 했으면 — 아테나 폴더를 비워 처음 켤 때처럼 앱 데이터 폴더에 받게 하고, 현황판도 예전 기본(4700)이면 새 기본으로
+// 옮기기로 했으면 — 아테나 폴더를 비워 처음 켤 때처럼 레포의 athena/ 를 쓰게 하고, 현황판도 예전 기본(4700)이면 새 기본으로
 function moveToStudioAthena(config) {
   const boardPort = config.boardPort === LEGACY_BOARD_PORT ? DEFAULT_CONFIG.boardPort : config.boardPort
   return { ...config, athenaDir: null, boardPort, studioAthenaAsked: true }
@@ -100,10 +89,10 @@ function ensureAthenaConfig(dir, reposRoot = '..') {
   return true
 }
 
-// 앱 데이터 폴더에 받은 아테나의 상위는 앱 데이터 폴더라 레포가 없다 — 예전(~/athena/..)과 같은 홈을 절대 경로로.
+// 스튜디오 레포의 athena/ 는 상위가 스튜디오 레포라 담당 레포가 없다 — 예전(~/athena/..)과 같은 홈을 절대 경로로.
 // 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
-function reposRootFor(dir, { userData, home }) {
-  return sameDir(dir, installTarget(userData).dir) ? home : '..'
+function reposRootFor(dir, { studioAthena, home }) {
+  return sameDir(dir, studioAthena) ? home : '..'
 }
 
 // 현황판 포트 고르기 — 저장된 포트부터 차례로 본다(다른 아테나 현황판 등이 쥐고 있으면 다음 번호)
@@ -140,12 +129,6 @@ function setAthenaBoardPort(dir, port) {
   fs.writeFileSync(tmp, JSON.stringify({ ...current, boardPort: port }, null, 2) + '\n')
   fs.renameSync(tmp, file)
   return true
-}
-
-// git clone --progress 는 \r 로 같은 줄을 고쳐 쓴다 — 마지막 줄만 보여 준다
-function lastProgressLine(chunk) {
-  const lines = String(chunk).split(/[\r\n]+/).map((line) => line.trim()).filter(Boolean)
-  return lines.length ? lines[lines.length - 1] : null
 }
 
 // 로그인 셸이 찍은 PATH 를 표시 사이에서 꺼낸다(rc 파일이 찍는 다른 글자는 버린다)
@@ -288,8 +271,7 @@ module.exports = {
   loadConfig,
   saveConfig,
   checkAthenaDir,
-  ATHENA_REPO,
-  installTarget,
+  studioAthenaDir,
   shouldOfferStudioAthena,
   sameDir,
   realDir,
@@ -299,7 +281,6 @@ module.exports = {
   setAthenaBoardPort,
   moveToStudioAthena,
   ensureAthenaConfig,
-  lastProgressLine,
   parseMarkedPath,
   mergePath,
   findExecutable,

@@ -209,7 +209,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   cursor: pointer;
 }
 .link:disabled { opacity: 0.5; cursor: default; }
-.progress { font: 11px ui-monospace, monospace; }
 .spinner {
   width: 28px;
   height: 28px;

@@ -1416,24 +1416,20 @@ function renderState() {
 
 const pickAthenaDir = () => applyAthenaResult(studio.pickAthenaDir())
 
-// 처음 켤 때 아테나가 없으면 묻지 않고 받는다. 실패했을 때만 [다시 받기] · [폴더 고르기] 를 보여 준다
+// 처음 켤 때 아테나 폴더가 안 정해졌으면 묻지 않고 레포의 athena/ 를 쓴다. 안 됐을 때만 [다시 시도] · [폴더 고르기] 를 보여 준다
 async function installAthena() {
   const buttons = [$('install'), $('pick')]
-  const progress = $('setup-progress')
   for (const button of buttons) button.hidden = true
   $('setup-error').hidden = true
   $('spinner').hidden = false
-  $('setup-title').textContent = '아테나 설치 중…'
+  $('setup-title').textContent = '아테나 준비 중…'
   $('setup-note').hidden = false
-  progress.textContent = ''
-  progress.hidden = false
   try {
     await applyAthenaResult(studio.installAthena())
   } finally {
     $('spinner').hidden = true
-    progress.hidden = true
     if (!state.valid) {
-      $('setup-title').textContent = '아테나를 설치하지 못했어요'
+      $('setup-title').textContent = '아테나를 찾지 못했어요'
       $('setup-note').hidden = true
       for (const button of buttons) button.hidden = false
     }
@@ -1473,7 +1469,6 @@ async function init() {
   initMonitor()
   $('pick').addEventListener('click', pickAthenaDir)
   $('install').addEventListener('click', installAthena)
-  studio.onInstallProgress((line) => ($('setup-progress').textContent = line))
   studio.onTabSwitch(switchTab)
   studio.onPickRequest(pickAthenaDir)
   studio.onBoardReload(() => state.valid && loadBoard(true))

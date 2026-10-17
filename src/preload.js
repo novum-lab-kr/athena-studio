@@ -11,7 +11,6 @@ contextBridge.exposeInMainWorld('studio', {
   athenaState: () => ipcRenderer.invoke('athena:state'),
   pickAthenaDir: () => ipcRenderer.invoke('athena:pick'),
   installAthena: () => ipcRenderer.invoke('athena:install'),
-  onInstallProgress: listen('athena:install-progress'),
   // 작업 창 — 데몬의 탭·pane(모든 함수가 pane id 를 단다)
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
   openAgent: (chosen, size) => ipcRenderer.invoke('agent:open', chosen, size),

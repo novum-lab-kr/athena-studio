@@ -7,12 +7,20 @@ npm install   # node-pty 는 맥 prebuild 를 쓴다(Xcode 빌드 필요 없음)
 npm start     # 맥은 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — 메뉴 막대 · Dock · ⌘Tab 이름이 Athena
 ```
 `npm install`(postinstall)이 `node_modules` 의 Electron.app 을 `.dev-app/Athena.app` 으로 복제(APFS)해 이름(Athena) · 앱 아이콘을 바꾸고 이 컴퓨터용으로 다시 서명한다(`scripts/dev-app.js` — Electron 버전 · 아이콘이 바뀌면 `npm start` 때 다시 만든다, 못 만들면 Electron 이름 그대로 켠다). 앱 데이터 폴더 이름(`Athena Studio`)은 그대로다.
-스튜디오는 앱 껍데기만 관리하고, 아테나 코드는 아테나 레포(`novum-lab-kr/athena`)가 관리한다.
-처음 켜면 묻지 않고 **스튜디오 전용 아테나**를 앱 데이터 폴더(`~/Library/Application Support/Athena Studio/athena`)에 clone 하고 바로 연결한다
-(이미 아테나가 있으면 그대로 쓰고, 아테나가 아닌 것이 있으면 건드리지 않는다). herdr 용 아테나(`~/athena`)와 따로 두고 찾아 쓰지도 않는다 —
-팩도 따로라 처음 claude · codex 를 켜면 `/setup` 이 시작된다(받을 때 만드는 `athena.config.json` 은 `{ "reposRoot": "<홈>", "screen": "studio" }` — 레포는 예전처럼 홈 아래에서 찾고, 화면은 스튜디오 데몬으로 다루게 고정한다. 직접 고른 아테나 폴더면 `reposRoot` 는 `..`. 이미 있으면 건드리지 않는다). 받기에 실패하면 [이미 받은 아테나 폴더 고르기…].
-예전 스튜디오처럼 `~/athena` 를 쓰고 있었으면 처음 켤 때 한 번 "스튜디오 전용 아테나를 받을까요?" 를 묻는다
-([받기] — 앱 데이터 폴더에 새로 받아 그 폴더로 `athena` 작업 공간을 새로 만들고, 하단 모니터 칸도 새 폴더로 다시 띄운다 · `~/athena` 와 그 작업 공간 · 에이전트는 그대로 / [지금 그대로] — 다시 묻지 않는다).
+**스튜디오용 아테나는 이 레포의 `athena/`** 다(아테나 레포 `novum-lab-kr/athena` 를 git subtree 로 넣었다 — 여기서 보고 고치고 커밋한다). 앱은 그 폴더를 바로 쓴다(받아 오지 않는다).
+herdr 용 아테나(`~/athena`)와 따로이고 찾아 쓰지도 않는다. 팩(`athena/packs/`) · 계획서 · 이슈 · `athena/athena.config.json`(`screen: studio` · `boardPort` · `reposRoot: <홈>`) 같은 실행 산출물은 아테나 `.gitignore` 가 빼서 이 레포 git 에 올라가지 않는다.
+팩이 없으면 처음 claude · codex 를 켤 때 `/setup` 이 시작된다(설정이 없으면 `{ "reposRoot": "<홈>", "screen": "studio" }` 로 만든다 — 직접 고른 아테나 폴더면 `reposRoot` 는 `..`. 이미 있으면 건드리지 않는다). `athena/` 가 없으면 [이미 받은 아테나 폴더 고르기…].
+예전 스튜디오처럼 `~/athena` 를 쓰고 있었으면 처음 켤 때 한 번 "스튜디오 전용 아테나를 쓸까요?" 를 묻는다
+([쓰기] — 이 레포의 `athena/` 로 `athena` 작업 공간을 새로 만들고, 현황판은 따로 뜬다 · `~/athena` 와 그 작업 공간 · 에이전트는 그대로 / [지금 그대로] — 다시 묻지 않는다).
+
+### 아테나 받기 · 보내기 (git subtree — 자동으로 하지 않는다)
+정본은 아테나 레포다. 스튜디오에서 고친 아테나는 아테나 레포로 보내고, 아테나 레포가 바뀌면 받아 온다(작업 트리가 깨끗할 때).
+```sh
+# 아테나 레포의 새 변경 받기
+git subtree pull --prefix athena https://github.com/novum-lab-kr/athena.git main
+# 여기서 고친 athena/ 커밋을 아테나 레포로 보내기(아테나 레포 main 에 바로 — 권한 · 리뷰는 아테나 규칙대로)
+git subtree push --prefix athena https://github.com/novum-lab-kr/athena.git main
+```
 고른 폴더는 `~/Library/Application Support/Athena Studio/config.json` 에 기억한다. 바꾸려면 [파일 → 아테나 폴더 바꾸기…].
 
 ## 화면
@@ -36,11 +44,12 @@ npm start     # 맥은 개발용 Athena.app(.dev-app/ · git 무시)으로 켠�
 ## 설정 (`config.json`)
 | 키 | 기본 | 뜻 |
 |---|---|---|
-| `athenaDir` | 없음 | 아테나 폴더 |
+| `athenaDir` | 없음 | 아테나 폴더(처음 켜면 이 레포의 `athena/`) |
 | `boardPort` | 4701 | 현황판 포트를 고르기 시작하는 번호 — 고른 포트를 다시 적는다(앱을 켤 때 · 아테나 폴더를 정할 때 미리 고른다). 현황판 서버에는 `ATHENA_BOARD_PORT` 로 넘기고, 스튜디오가 만든 아테나 설정(`screen: studio`)의 `athena.config.json` `boardPort` 에도 적는다 — pane 안의 아테나가 그 값을 읽어야 맞는 현황판에 콘솔이 뜬다(아테나 쪽 지원 필요). 스튜디오 전용 아테나로 옮길 때 예전 기본(4700)이면 4701 부터 |
 | `studioAthenaAsked` | false | `~/athena` → 스튜디오 전용 아테나로 옮길지 이미 물었는지 |
 
 ## 구조
+- `athena/` — 스튜디오용 아테나(아테나 레포 git subtree · 앱이 바로 쓴다 · 위 '아테나 받기 · 보내기')
 - `src/main.js` — 창 · 메뉴(단축키) · 데몬에 붙어 화면에 중계 · 현황판 서버 · 폴더 설정
 - `src/daemon-client.js` — 데몬 띄우기 · 붙기 · 버전 확인
 - `src/daemon/` — 데몬(`main.js` 소켓 서버 · `pane.js` pty + 화면 버퍼 · `cli.js` 데몬 CLI) · `bin/athena-studio-cli`

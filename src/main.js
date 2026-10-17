@@ -15,6 +15,8 @@ const viewer = require('./lib/viewer')
 
 const isMac = process.platform === 'darwin'
 // 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
+// 스튜디오용 아테나 — 이 레포의 athena/(git subtree)
+const STUDIO_ATHENA = core.studioAthenaDir(path.join(__dirname, '..'))
 const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-app-icon.png')
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
@@ -45,7 +47,7 @@ function athenaState() {
     valid: check.ok,
     missing: check.missing,
     boardUrl: core.boardUrl(config.boardPort),
-    installDir: core.installTarget(app.getPath('userData')).dir,
+    installDir: STUDIO_ATHENA,
     tabKey: isMac ? '⌘' : 'Alt+',
     platform: process.platform,
     athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름이고 아테나 폴더인 작업 공간에서만 보인다
@@ -830,72 +832,40 @@ function useAthenaDir(dir) {
   return { ...athenaState(), changed }
 }
 
-// 새로 만드는 athena.config.json 의 reposRoot — 앱 데이터 폴더에 받은 아테나면 홈, 직접 고른 폴더면 ..
-const athenaReposRoot = (dir) => core.reposRootFor(dir, { userData: app.getPath('userData'), home: app.getPath('home') })
+// 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
+const athenaReposRoot = (dir) => core.reposRootFor(dir, { studioAthena: STUDIO_ATHENA, home: app.getPath('home') })
 
-// 아테나 받기 — 묻지 않고 앱 데이터 폴더의 athena/ 에 코어 레포를 clone 하고 바로 쓴다(herdr 용 ~/athena 는 찾지 않는다)
-let installing = false
-
+// 아테나 쓰기 — 받지 않고 스튜디오 레포의 athena/ 를 바로 쓴다(git subtree · README '아테나 받기/보내기')
 async function installAthena() {
-  if (installing) return { ...athenaState(), error: '이미 받는 중이에요' }
-  const target = core.installTarget(app.getPath('userData'))
-  if (target.action === 'use') return useAthenaDir(target.dir)
-  if (target.action === 'conflict') {
-    return { ...athenaState(), error: `${target.dir} 에 아테나가 아닌 것이 있어서 받지 않았어요 — 그 폴더를 치우고 다시 받거나, 받아 둔 아테나 폴더를 골라 주세요` }
+  const check = core.checkAthenaDir(STUDIO_ATHENA)
+  if (!check.ok) {
+    return { ...athenaState(), error: `스튜디오 레포에 아테나(${STUDIO_ATHENA})가 없어요 — README 의 '아테나 받기' 로 넣거나, 받아 둔 아테나 폴더를 골라 주세요(없는 파일: ${check.missing.join(', ')})` }
   }
-  const gitPath = core.findExecutable('git', process.env.PATH)
-  if (!gitPath) return { ...athenaState(), error: 'git 이 없어요 — 터미널에서 xcode-select --install 로 설치한 뒤 다시 눌러 주세요' }
-
-  installing = true
-  try {
-    const failure = await cloneAthena(gitPath, target.dir)
-    if (failure) return { ...athenaState(), error: `아테나를 받지 못했어요 — ${failure}` }
-    return useAthenaDir(target.dir)
-  } finally {
-    installing = false
-  }
+  return useAthenaDir(STUDIO_ATHENA)
 }
 
-// 예전처럼 herdr 용 ~/athena 를 쓰고 있으면 한 번 묻는다 — 받기로 하면 아테나 폴더를 비워 화면이 앱 데이터 폴더에 받게 한다.
+// 예전처럼 herdr 용 ~/athena 를 쓰고 있으면 한 번 묻는다 — 쓰기로 하면 아테나 폴더를 비워 화면이 레포의 athena/ 를 쓰게 한다.
 // ~/athena 와 거기서 도는 작업 공간 · 에이전트는 건드리지 않는다
 async function offerStudioAthena() {
   if (!core.shouldOfferStudioAthena(config, app.getPath('home'))) return
+  // 레포에 athena/ 가 없으면 묻지 않는다(옮기기로 하면 지금 연결을 비우니 — 갈 곳이 있을 때만)
+  if (!core.checkAthenaDir(STUDIO_ATHENA).ok) return
   // 창을 만들기 전이라 대화상자가 다른 앱 뒤에 숨는다(터미널 · Dock 에서 켠 직후) — 앱을 앞으로 가져온다
   app.focus({ steal: true })
   const { response } = await dialog.showMessageBox({
     type: 'question',
-    message: '스튜디오 전용 아테나를 받을까요?',
+    message: '스튜디오 전용 아테나를 쓸까요?',
     detail: [
       `지금은 herdr 용 아테나(${config.athenaDir})를 같이 쓰고 있어요.`,
-      `받으면 스튜디오는 앱 데이터 폴더(${core.installTarget(app.getPath('userData')).dir})의 아테나를 따로 쓰고, 팩은 처음 켤 때 /setup 으로 새로 등록해요. 현황판은 ${core.moveToStudioAthena(config).boardPort} 포트로 따로 떠요.`,
+      `쓰면 스튜디오는 레포 안 아테나(${STUDIO_ATHENA})를 따로 쓰고, 팩은 처음 켤 때 /setup 으로 새로 등록해요. 현황판은 ${core.moveToStudioAthena(config).boardPort} 포트로 따로 떠요.`,
       '~/athena 와 그 작업 공간 · 에이전트는 그대로 둬요. [지금 그대로] 를 고르면 다시 묻지 않아요(바꾸려면 [파일 → 아테나 폴더 바꾸기…]).',
     ].join('\n\n'),
-    buttons: ['받기', '지금 그대로'],
+    buttons: ['쓰기', '지금 그대로'],
     defaultId: 0,
     cancelId: 1,
   })
   config = response === 0 ? core.moveToStudioAthena(config) : { ...config, studioAthenaAsked: true }
   core.saveConfig(configFile(), config)
-}
-
-// 성공하면 null, 실패하면 이유
-function cloneAthena(gitPath, dir) {
-  return new Promise((resolve) => {
-    let tail = ''
-    const child = spawn(gitPath, ['clone', '--progress', core.ATHENA_REPO, dir], {
-      env: core.childEnv(process.env, { GIT_TERMINAL_PROMPT: '0' }),
-      stdio: ['ignore', 'pipe', 'pipe'],
-    })
-    const onData = (chunk) => {
-      tail = (tail + chunk).slice(-2000)
-      const line = core.lastProgressLine(chunk)
-      if (line) send('athena:install-progress', line)
-    }
-    child.stdout.on('data', onData)
-    child.stderr.on('data', onData)
-    child.on('error', (error) => resolve(error.message))
-    child.on('close', (code) => resolve(code === 0 ? null : core.lastProgressLine(tail) || `git 이 ${code} 로 끝났어요`))
-  })
 }
 
 // ── 새 창 · 링크 ──────────────────────────────────────────

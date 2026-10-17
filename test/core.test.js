@@ -56,9 +56,11 @@ test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데�
   // ~/athena 를 링크로 적어 두었어도 묻는다
   assert.equal(core.shouldOfferStudioAthena({ athenaDir: linked, studioAthenaAsked: false }, path.join(base, 'real')), true)
   assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w1', cwd: real }], linked).id, 'w1')
-  const userData = path.join(base, 'App Support', 'Athena Studio')
-  assert.equal(core.reposRootFor(path.join(userData, 'athena'), { userData, home: '/Users/me' }), '/Users/me')
-  assert.equal(core.reposRootFor(real, { userData, home: '/Users/me' }), '..')
+  // 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
+  const studioAthena = core.studioAthenaDir(path.join(base, 'athena-studio'))
+  assert.equal(studioAthena, path.join(base, 'athena-studio', 'athena'))
+  assert.equal(core.reposRootFor(studioAthena, { studioAthena, home: '/Users/me' }), '/Users/me')
+  assert.equal(core.reposRootFor(real, { studioAthena, home: '/Users/me' }), '..')
 })
 
 test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한다', () => {
@@ -76,44 +78,18 @@ test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한
   assert.equal(core.checkAthenaDir(path.join(dir, 'nope')).ok, false)
 })
 
-test('아테나 받기(앱 데이터 폴더): 없거나 빈 폴더는 clone, 아테나면 그대로, 다른 것이 있으면 멈춤', () => {
-  const parent = tmp()
-  const dir = path.join(parent, 'athena')
-  assert.deepEqual(core.installTarget(parent), { dir, action: 'clone' })
-  fs.mkdirSync(dir)
-  assert.equal(core.installTarget(parent).action, 'clone')
-  fs.writeFileSync(path.join(dir, 'notes.txt'), '')
-  assert.equal(core.installTarget(parent).action, 'conflict')
-  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), '')
-  fs.mkdirSync(path.join(dir, 'scripts', 'board'), { recursive: true })
-  fs.writeFileSync(path.join(dir, 'scripts', 'board', 'server.mjs'), '')
-  assert.equal(core.installTarget(parent).action, 'use')
-  // athena 라는 이름의 파일이 있으면 건드리지 않는다
-  const other = tmp()
-  fs.writeFileSync(path.join(other, 'athena'), '')
-  assert.equal(core.installTarget(other).action, 'conflict')
-  // 앱 데이터 폴더처럼 띄어쓰기가 있는 자리에도 받는다
-  const spaced = path.join(tmp(), 'Application Support', 'Athena Studio')
-  assert.deepEqual(core.installTarget(spaced), { dir: path.join(spaced, 'athena'), action: 'clone' })
-})
-
 test('아테나 설정: 없으면 팩 없는 최소 설정을 만들고, 있으면 건드리지 않는다', () => {
   const dir = tmp()
   const file = path.join(dir, 'athena.config.json')
   assert.equal(core.ensureAthenaConfig(dir), true)
   assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { reposRoot: '..', screen: 'studio' })
-  // 앱 데이터 폴더에 받은 아테나는 reposRoot 를 홈 절대 경로로
+  // 스튜디오 레포의 athena/ 는 reposRoot 를 홈 절대 경로로
   const other = tmp()
   core.ensureAthenaConfig(other, '/Users/me')
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(other, 'athena.config.json'), 'utf8')), { reposRoot: '/Users/me', screen: 'studio' })
   fs.writeFileSync(file, '{"pack":"packs/acme"}')
   assert.equal(core.ensureAthenaConfig(dir), false)
   assert.equal(fs.readFileSync(file, 'utf8'), '{"pack":"packs/acme"}')
-})
-
-test('clone 진행: \\r 로 고쳐 쓴 줄 중 마지막만', () => {
-  assert.equal(core.lastProgressLine("Cloning into 'athena'...\nReceiving objects:  10% (1/10)\rReceiving objects:  50% (5/10)\r"), 'Receiving objects:  50% (5/10)')
-  assert.equal(core.lastProgressLine('\r\n'), null)
 })
 
 test('로그인 셸 PATH: rc 가 찍은 글자를 버리고 표시 사이만', () => {
