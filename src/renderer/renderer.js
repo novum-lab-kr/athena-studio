@@ -216,16 +216,28 @@ function startTabRename(button, tab, shown) {
 }
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
-// 접기·펴기 버튼 — 칸 머리에 붙는다. 패널 아이콘(네모 + 세로선)만, 접기·펴기 같은 모양(사용자가 시안 5 를 고름)
+// 접기·펴기 버튼 — 칸 머리에 붙는다. 패널 아이콘(네모 + 세로선 · 사용자가 시안 5 를 고름) · 접힌 칸은 그쪽을 칠한다
 const PANEL_ICONS = {
   left: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M9 3v18'],
   right: ['M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z', 'M15 3v18'],
 }
 
-function foldButton(side, title, onClick) {
+const PANEL_FILLS = {
+  left: 'M5 3h4v18H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z',
+  right: 'M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z',
+}
+
+function foldButton(side, title, onClick, collapsed = false) {
   const button = document.createElement('button')
   button.className = 'fold-button'
-  button.append(lineIcon(PANEL_ICONS[side]))
+  const icon = lineIcon(PANEL_ICONS[side])
+  if (collapsed) {
+    const fill = document.createElementNS('http://www.w3.org/2000/svg', 'path')
+    fill.setAttribute('class', 'panel-fill')
+    fill.setAttribute('d', PANEL_FILLS[side])
+    icon.prepend(fill)
+  }
+  button.append(icon)
   button.title = title
   button.setAttribute('aria-label', title)
   button.addEventListener('click', onClick)
@@ -267,7 +279,7 @@ function spaceRail() {
   add.textContent = '＋'
   add.title = `새 작업 공간 (${state.tabKey}⇧T)`
   add.addEventListener('click', () => runCommand('new-workspace'))
-  return [foldButton('left', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false)), ...rows, add]
+  return [foldButton('left', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false), true), ...rows, add]
 }
 
 function renderSides() {

@@ -331,6 +331,8 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .fold-button:hover { background: var(--line); color: var(--text); }
 /* 접기·펴기 패널 아이콘(선) — 글자색을 따른다 */
 .fold-button svg, .rail-panel { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+/* 접힌 칸 — 그쪽 칸을 칠한다 */
+.fold-button .panel-fill, .rail-panel .panel-fill { fill: currentColor; stroke: none; opacity: 0.55; }
 /* 접힌 왼쪽 — 아이콘 줄 */
 .spaces.collapsed { display: flex; flex-direction: column; align-items: center; gap: 6px; width: 52px; padding: 8px 0; }
 .space-icon {
@@ -352,7 +354,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .side-rail[hidden] { display: none; }
 .rail-button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .rail-button:hover { background: var(--line); color: var(--text); }
-.rail-icon { width: 16px; height: 16px; }
 
 /* ── 디자인 다듬기(2026-10-17 · Codex 와 논의) — 차분한 차콜 · 여유 있는 줄 간격 · 선택한 곳에만 옅은 금빛 ──
    hover 는 중립 회색, 선택은 금빛 면, 키보드 포커스는 2px 선으로 셋을 구분한다. pane 머리줄 18px 는 renderer HEAD_HEIGHT 와 맞물려 그대로 */
