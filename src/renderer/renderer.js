@@ -26,7 +26,7 @@ function makeTerminal() {
   const term = new Terminal({
     allowProposedApi: true, // unicode11 에 필요
     // Nerd Font 는 아이콘(사이드바 Explorer 등)용 — 기본 글꼴에 없는 글자만 그 글꼴로 그린다
-    fontFamily: '"SF Mono", Menlo, "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", "D2Coding", monospace',
+    fontFamily: '"D2Coding", "SF Mono", Menlo, "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", monospace',
     fontSize: 13,
     cursorBlink: true,
     scrollback: 5000,
