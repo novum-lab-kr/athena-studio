@@ -134,9 +134,11 @@ function ensureSomeTab() {
   newTab().finally(() => (openingTab = false))
 }
 
-// 가운데 탭 줄 — 지금 작업 공간의 탭만. ✕ 로 닫는다(에이전트가 돌면 main 이 묻는다)
+// 가운데 탭 줄 — 지금 작업 공간의 탭만. ✕ 로 닫는다(에이전트가 돌면 main 이 묻는다) · 더블클릭하면 이름 바꾸기
+let renamingTab = null // 이름을 고치는 중인 탭 id — 그동안은 탭 줄을 다시 그리지 않는다(글자 칸이 사라지지 않게)
 function renderTabs() {
   const bar = $('studio-tabs')
+  if (renamingTab && bar.querySelector('.studio-tab-input')) return
   const current = activeTab()
   const buttons = screen.tabs
     .filter((tab) => tab.workspace === screen.activeWorkspace)
@@ -156,6 +158,8 @@ function renderTabs() {
         studio.tabClose(tab.id)
       })
       button.append(name, close)
+      button.title = '더블클릭하면 이름 바꾸기'
+      button.addEventListener('dblclick', () => startTabRename(button, tab, name.textContent))
       return button
     })
   const add = document.createElement('button')
@@ -164,6 +168,46 @@ function renderTabs() {
   add.title = `새 탭 (${state.tabKey}T)`
   add.addEventListener('click', newTab)
   bar.replaceChildren(...buttons, add)
+}
+
+// 탭 자리에 글자 칸을 띄운다 — Enter·칸 밖 누르기 저장 · Esc 취소 · 비우면 기본 이름으로
+function startTabRename(button, tab, shown) {
+  const input = document.createElement('input')
+  input.className = 'studio-tab studio-tab-input'
+  input.value = tab.label || ''
+  input.placeholder = shown
+  input.maxLength = 60
+  input.spellcheck = false
+  input.setAttribute('aria-label', '탭 이름')
+  renamingTab = tab.id
+  let done = false
+  const finish = (save) => {
+    if (done) return
+    done = true
+    renamingTab = null
+    const label = input.value.trim()
+    if (save && label !== (tab.label || '')) {
+      const before = tab.label
+      tab.label = label || null // 데몬이 새 상태를 보내기 전에도 바로 보이게
+      studio.tabRename(tab.id, label).then((result) => {
+        if (!result || !result.error) return
+        // 못 바꿨으면 원래 이름으로 되돌리고 알린다
+        tab.label = before
+        renderTabs()
+        showToast(`탭 이름을 바꾸지 못했어요 — ${result.error}`)
+      })
+    }
+    renderTabs()
+  }
+  input.addEventListener('keydown', (event) => {
+    if (event.isComposing) return // 한글 조합 중 Enter 는 글자 확정용
+    if (event.key === 'Enter') finish(true)
+    if (event.key === 'Escape') finish(false)
+  })
+  input.addEventListener('blur', () => finish(true))
+  button.replaceWith(input)
+  input.focus()
+  input.select()
 }
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
@@ -1329,6 +1373,7 @@ function initBrowser() {
 function switchTab(name) {
   if (!state || !state.valid) return
   currentTab = name
+  studio.reportTab(name)
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === name))
   panels.work.hidden = name !== 'work'
   panels.board.hidden = name !== 'board'

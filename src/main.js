@@ -1,11 +1,13 @@
 // Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 현황판 서버 · 아테나 폴더 설정
-const { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, Notification, Tray, WebContentsView, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const { execFile, spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
 const core = require('./lib/core')
 const agentFeed = require('./lib/agent-feed')
+const trayModel = require('./lib/tray-model')
+const trayBadge = require('./lib/tray-icon')
 const daemonClient = require('./daemon-client')
 const explorer = require('./lib/explorer')
 const fileIcons = require('./lib/file-icons')
@@ -90,8 +92,10 @@ function flushOutput() {
 }
 
 // 연결이 끊기면 화면에 알린다(앱이 스스로 끊은 detachScreen 은 daemon 을 먼저 비운다)
+let screenDetached = false
 function onDaemonClosed() {
   daemon = null
+  screenDetached = true
   send('screen:disconnected')
 }
 
@@ -140,6 +144,7 @@ async function attachScreen() {
         dropOutput = false
         outputQueue.clear()
       })
+      screenDetached = false
       // 예전 터미널 모니터 칸이 남아 있으면 닫는다(이제 모니터는 앱 화면)
       closeMonitorDock().catch(() => {})
       return attached
@@ -370,7 +375,8 @@ function monitorSessions() {
 }
 
 async function monitorTick() {
-  if (!monitor.watching || monitor.ticking) return
+  // 창이 숨었으면(메뉴 막대로 내려감) 기록을 읽지 않는다
+  if (!monitor.watching || monitor.ticking || !mainWindow || !mainWindow.isVisible()) return
   monitor.ticking = true
   try {
     const fresh = []
@@ -1011,6 +1017,329 @@ function browserCommand(name, value) {
   return {}
 }
 
+// ── 메뉴 막대(Tray) ─────────────────────────────────────────
+// 맥 상단 메뉴 막대 아이콘 — 누르면 확인 필요 · 에이전트 · 사용량 · 바로가기. 막힘 · 응답 끝 · 리뷰 대기 · 완료는 맥 알림.
+// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
+// 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
+const TRAY_ICON_DIR = path.join(__dirname, 'renderer', 'assets', 'logo')
+const trayState = { panes: [], workspaces: [], focused: null, uiTab: 'work', boardOkAt: 0, cards: null, usage: [], boardUp: false, boardAt: 0, pausedUntil: 0, polling: false }
+const trayNotifier = new trayModel.Notifier()
+let tray = null
+let trayWindow = null
+const TRAY_WIDTH = 340
+const trayHistory = [] // 최근 30분 일하는 에이전트 수(4초마다) — 패널 그래프
+
+function trayIcon() {
+  // 흰 로고를 템플릿으로 — 맥이 밝은 · 어두운 메뉴 막대에 맞춰 칠한다
+  const image = nativeImage.createFromPath(path.join(TRAY_ICON_DIR, 'athena-white-16.png'))
+  const retina = path.join(TRAY_ICON_DIR, 'athena-white-32.png')
+  if (fs.existsSync(retina)) image.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(retina) })
+  image.setTemplateImage(true)
+  return image
+}
+
+// 막힘이 있으면 빨간 점 — 템플릿은 색을 못 써서, 메뉴 막대 색(어두우면 흰색 · 밝으면 검정)으로 칠한 로고에 점을 그린다
+let badgeCache = { dark: null, image: null }
+function blockedIcon() {
+  const dark = nativeTheme.shouldUseDarkColors
+  if (badgeCache.image && badgeCache.dark === dark) return badgeCache.image
+  const tint = dark ? [255, 255, 255] : [0, 0, 0]
+  const image = nativeImage.createEmpty()
+  for (const [file, scaleFactor] of [['athena-white-16.png', 1], ['athena-white-32.png', 2]]) {
+    const source = nativeImage.createFromPath(path.join(TRAY_ICON_DIR, file))
+    if (source.isEmpty()) continue
+    const { width, height } = source.getSize()
+    image.addRepresentation({ scaleFactor, width, height, buffer: trayBadge.badgeBitmap(source.toBitmap(), width, height, tint) })
+  }
+  badgeCache = { dark, image }
+  return image
+}
+
+let trayBlocked = null
+function setTrayIcon(blocked) {
+  if (!tray || trayBlocked === blocked) return
+  trayBlocked = blocked
+  tray.setImage(blocked ? blockedIcon() : trayIcon())
+}
+
+function createTray() {
+  if (tray) return
+  // 메뉴 막대가 밝음 · 어두움으로 바뀌면 빨간 점 아이콘을 다시 칠한다
+  nativeTheme.on('updated', () => {
+    if (!trayBlocked) return
+    trayBlocked = null
+    setTrayIcon(true)
+  })
+  tray = new Tray(trayIcon())
+  tray.setToolTip('Athena')
+  // 누르면 아이콘 아래로 패널(RunCat 처럼). 오른쪽 클릭은 짧은 메뉴
+  tray.on('click', toggleTrayWindow)
+  tray.on('right-click', () => tray.popUpContextMenu(Menu.buildFromTemplate(trayShortMenu())))
+  // 패널은 미리 만들어 둔다(처음 열 때 빈 화면이 잠깐 보이지 않게)
+  createTrayWindow()
+  pollTray()
+  setInterval(pollTray, 4000)
+}
+
+function createTrayWindow() {
+  trayWindow = new BrowserWindow({
+    width: TRAY_WIDTH,
+    height: 520,
+    show: false,
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    skipTaskbar: true,
+    alwaysOnTop: true,
+    // 배경 없이 맥 반투명 재질만(어두운 HUD) — 둥근 모서리도 창이 맡는다
+    vibrancy: 'hud',
+    visualEffectState: 'active',
+    roundedCorners: true,
+    webPreferences: { preload: path.join(__dirname, 'preload-tray.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
+  })
+  trayWindow.loadFile(path.join(__dirname, 'renderer', 'tray.html'))
+  // 로드가 끝나야 받는 쪽이 생긴다 — 그때 한 번 보낸다(다시 만든 직후 비어 보이지 않게)
+  trayWindow.webContents.on('did-finish-load', sendTrayUpdate)
+  // 다른 곳을 누르면 닫힌다(메뉴처럼)
+  trayWindow.on('blur', () => trayWindow && !trayWindow.webContents.isDevToolsOpened() && trayWindow.hide())
+  trayWindow.on('closed', () => (trayWindow = null))
+  // 패널 안 링크 · 이동은 막는다
+  trayWindow.webContents.on('will-navigate', (event) => event.preventDefault())
+}
+
+function toggleTrayWindow() {
+  if (!trayWindow) createTrayWindow()
+  if (trayWindow.isVisible()) return trayWindow.hide()
+  placeTrayWindow()
+  sendTrayUpdate()
+  trayWindow.show()
+  trayWindow.focus()
+  return undefined
+}
+
+// 아이콘 바로 아래 가운데 — 화면 밖으로 나가지 않게
+function placeTrayWindow() {
+  const icon = tray.getBounds()
+  const { screen: displays } = require('electron')
+  const area = displays.getDisplayNearestPoint({ x: icon.x, y: icon.y }).workArea
+  const [width, height] = trayWindow.getSize()
+  const x = Math.round(Math.min(Math.max(icon.x + icon.width / 2 - width / 2, area.x + 6), area.x + area.width - width - 6))
+  const y = Math.round(icon.y + icon.height + 4)
+  trayWindow.setPosition(x, Math.max(y, area.y + 4))
+  trayWindow.setSize(width, Math.min(height, area.height - 12))
+}
+
+function sendTrayUpdate() {
+  if (!trayWindow || trayWindow.isDestroyed()) return
+  trayWindow.webContents.send('tray:update', {
+    summary: traySummary(),
+    history: trayHistory.map((entry) => entry.working),
+    boardAt: trayState.boardOkAt,
+    pausedUntil: trayState.pausedUntil,
+  })
+}
+
+// 패널에서 온 것만 받는다
+const fromTrayPanel = (event) => Boolean(trayWindow) && event.sender === trayWindow.webContents && event.senderFrame === event.sender.mainFrame
+ipcMain.on('tray:height', (event, height) => {
+  if (!fromTrayPanel(event) || typeof height !== 'number' || !Number.isFinite(height)) return
+  const area = require('electron').screen.getDisplayNearestPoint(trayWindow.getBounds()).workArea
+  trayWindow.setSize(TRAY_WIDTH, Math.round(Math.min(Math.max(height, 120), area.height - 12)))
+})
+ipcMain.on('tray:action', (event, name, value) => {
+  if (!fromTrayPanel(event)) return
+  if (name === 'focus-pane' && typeof value === 'string') focusPaneFromTray(value)
+  if (name === 'open-card') openCardFromTray(typeof value === 'string' ? value : null)
+  if (name === 'show') showWindow(value === 'work' || value === 'board' ? value : undefined)
+  if (name === 'menu') tray.popUpContextMenu(Menu.buildFromTemplate(trayShortMenu()))
+  if (name !== 'menu' && trayWindow) trayWindow.hide()
+})
+
+function trayNames() {
+  return new Map(trayState.workspaces.map((workspace) => [workspace.id, workspace.label]))
+}
+
+async function pollTray() {
+  // 이미 붙은 데몬만 읽는다 — 끊겼을 때 숨은 채로 데몬을 띄우거나 버전 확인 대화상자를 띄우지 않게(화면이 다시 붙으면 이어서)
+  if (trayState.polling || !daemon || !core.checkAthenaDir(config.athenaDir).ok) return
+  trayState.polling = true
+  try {
+    const listed = await trayCall('pane list')
+    const state = await trayCall('state')
+    // 못 읽었으면 이번엔 알림 판단을 건너뛴다(예전 목록으로 시간을 재지 않게)
+    const panesOk = Boolean(listed.result && state.result)
+    if (panesOk) {
+      trayState.panes = listed.result.panes
+      trayState.workspaces = state.result.workspaces
+      trayState.focused = state.result.focused
+      trayHistory.push({ at: Date.now(), working: trayState.panes.filter((pane) => pane.agent && pane.agent_status === 'working').length })
+      while (trayHistory.length && Date.now() - trayHistory[0].at > 30 * 60000) trayHistory.shift()
+    }
+    let cards = null
+    if (Date.now() - trayState.boardAt > 15000) {
+      trayState.boardAt = Date.now()
+      const board = await fetchBoardState()
+      trayState.boardUp = Boolean(board)
+      if (board) {
+        trayState.boardOkAt = Date.now()
+        trayState.cards = board.cards || []
+        trayState.usage = (board.header && board.header.usage) || []
+        cards = trayState.cards
+      } else {
+        // 꺼졌으면 예전 카드 · 사용량을 지금 값처럼 보이지 않게
+        trayState.cards = null
+        trayState.usage = []
+      }
+    }
+    refreshTray()
+    if (panesOk) {
+      const due = trayNotifier.update({ panes: trayState.panes, cards, names: trayNames() }, Date.now())
+      // 지금 보고 있는 pane 은 빼고 묶는다
+      for (const item of trayModel.bundle(due.filter((entry) => !lookingAt(entry)))) notify(item)
+    }
+    if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
+  } catch {
+  } finally {
+    trayState.polling = false
+  }
+}
+
+// 메뉴 막대 폴링 전용 — 이미 붙은 연결로만 묻는다(daemonCall 은 끊겼으면 데몬을 다시 띄우거나 버전 확인창을 띄운다)
+async function trayCall(op) {
+  const connection = daemon
+  if (!connection) return { error: '데몬 연결 없음' }
+  try {
+    return { result: await connection.call(op, {}) }
+  } catch (error) {
+    return { error: error.message }
+  }
+}
+
+// 현황판이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
+function fetchBoardState() {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    const request = http.get({ host: '127.0.0.1', port: config.boardPort, path: '/api/state', timeout: 2000 }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => {
+        body += chunk
+        if (body.length > 5 * 1024 * 1024) {
+          request.destroy()
+          finish(null)
+        }
+      })
+      response.on('end', () => {
+        try {
+          finish(response.statusCode === 200 ? JSON.parse(body) : null)
+        } catch {
+          finish(null)
+        }
+      })
+      response.on('aborted', () => finish(null))
+      response.on('error', () => finish(null))
+      response.on('close', () => finish(null))
+    })
+    request.on('timeout', () => {
+      request.destroy()
+      finish(null)
+    })
+    request.on('error', () => finish(null))
+  })
+}
+
+function traySummary() {
+  return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], usage: trayState.usage, boardUp: trayState.boardUp })
+}
+
+function refreshTray() {
+  if (!tray) return
+  const summary = traySummary()
+  // 아이콘 옆 숫자는 두지 않는다(사용자) — 막힘이 있으면 빨간 점만
+  setTrayIcon(summary.counts.blocked > 0)
+  const { working, blocked, review } = summary.counts
+  tray.setToolTip(`Athena — 작업 중 ${working} · 막힘 ${blocked} · 리뷰 대기 ${review}`)
+}
+
+// ☰ · 오른쪽 클릭 — 짧은 메뉴
+function trayShortMenu() {
+  const paused = trayState.pausedUntil > Date.now()
+  return [
+    { label: 'Athena 열기', click: () => showWindow() },
+    { label: '현황판 열기', click: () => showWindow('board') },
+    { type: 'separator' },
+    {
+      label: paused ? '알림 일시 중지됨' : '알림 일시 중지',
+      submenu: [
+        { label: '1시간', click: () => setTrayPause(Date.now() + 3600000) },
+        { label: '내일 아침(9시)까지', click: () => setTrayPause(nextMorning()) },
+        { type: 'separator' },
+        { label: '다시 켜기', enabled: paused, click: () => setTrayPause(0) },
+      ],
+    },
+    { type: 'separator' },
+    { label: 'Athena 종료', click: () => app.quit() },
+  ]
+}
+
+function setTrayPause(until) {
+  trayState.pausedUntil = until
+  sendTrayUpdate()
+}
+
+function nextMorning() {
+  const morning = new Date()
+  morning.setHours(9, 0, 0, 0)
+  if (morning.getTime() <= Date.now()) morning.setDate(morning.getDate() + 1)
+  return morning.getTime()
+}
+
+// 창을 다시 보이게 — tab 을 주면 그 탭으로(work · board)
+function showWindow(tab) {
+  if (!mainWindow) createWindow()
+  if (mainWindow.isMinimized()) mainWindow.restore()
+  mainWindow.show()
+  mainWindow.focus()
+  if (tab) send('tab:switch', tab)
+}
+
+async function focusPaneFromTray(paneId) {
+  showWindow('work')
+  // 데몬과 화면 연결이 끊겨 있었으면 다시 붙인다
+  if (screenDetached) send('screen:resync')
+  await daemonCall('focus', { pane: String(paneId) })
+}
+
+// 계획서 결정 콘솔이 있으면 옆 브라우저로, 없으면 현황판 탭
+function openCardFromTray(html) {
+  if (html) {
+    showWindow()
+    openInBrowser(`${core.boardUrl(config.boardPort).replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
+  } else {
+    showWindow('board')
+  }
+}
+
+// 지금 보고 있는 pane 이면(앱이 앞에 있고 작업 창 탭 · 그 pane 포커스) 알리지 않는다
+function lookingAt(item) {
+  return Boolean(item.target.pane) && Boolean(mainWindow) && mainWindow.isVisible() && mainWindow.isFocused() && trayState.uiTab === 'work' && trayState.focused === item.target.pane
+}
+
+function notify(item) {
+  if (trayState.pausedUntil > Date.now() || !Notification.isSupported()) return
+  const notification = new Notification({ title: item.title, body: item.body, silent: true })
+  notification.on('click', () => (item.target.pane ? focusPaneFromTray(item.target.pane) : openCardFromTray(item.target.html)))
+  notification.show()
+}
+
 // ── 창 · 메뉴 ─────────────────────────────────────────────
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -1034,6 +1363,12 @@ function createWindow() {
   mainWindow.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()
     openUrl(url)
+  })
+  // 맥은 창을 닫아도 메뉴 막대에 남는다(숨기기) — 완전히 끄는 것은 [Athena 종료] · ⌘Q
+  mainWindow.on('close', (event) => {
+    if (!isMac || quitting) return
+    event.preventDefault()
+    mainWindow.hide()
   })
   mainWindow.on('closed', () => {
     mainWindow = null
@@ -1120,6 +1455,8 @@ ipcMain.handle('agent:open', (_event, chosen, size) => openAthenaAgent(typeof ch
 ipcMain.handle('tab:new', (_event, size) => daemonCall('tab new', { defaultCwd: config.athenaDir, ...cellSize(size) }))
 ipcMain.handle('tab:select', (_event, tabId) => daemonCall('tab select', { tab: String(tabId) }))
 ipcMain.handle('tab:close', (_event, tabId) => closeTab(String(tabId)))
+// 탭 이름 바꾸기 — 비우면 데몬이 이름을 지워 화면이 기본 이름(탭 N)을 쓴다
+ipcMain.handle('tab:rename', (_event, tabId, label) => daemonCall('tab rename', { tab: String(tabId), label: typeof label === 'string' ? label.trim().slice(0, 60) : '' }))
 ipcMain.handle('workspace:select', (_event, workspaceId) => daemonCall('workspace select', { workspace: String(workspaceId) }))
 ipcMain.handle('workspace:new', (_event, size) => newWorkspace(cellSize(size)))
 ipcMain.on('monitor:watch', (_event, on) => setMonitorWatch(on === true))
@@ -1149,6 +1486,7 @@ ipcMain.handle('tab:ratio', async (_event, tabId, path, ratio) => {
   return reply
 })
 ipcMain.handle('board:ensure', () => ensureBoard())
+ipcMain.on('ui:tab', (_event, tab) => (trayState.uiTab = tab === 'board' ? 'board' : 'work'))
 ipcMain.handle('open:url', (_event, url) => openUrl(String(url)))
 // 옆 브라우저 IPC 는 앱 화면(메인 창의 맨 위 프레임)에서 온 것만 받는다 — 현황판 iframe · 서랍 안 페이지는 못 부른다
 const fromAppScreen = (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents && event.senderFrame === event.sender.mainFrame
@@ -1182,13 +1520,19 @@ app.whenReady().then(async () => {
   buildMenu()
   createWindow()
   startPanesPolling()
-  app.on('activate', () => {
-    if (!mainWindow) createWindow()
-  })
+  // 메뉴 막대는 맥에서만(다른 OS 는 숨은 패널 창이 남아 창을 닫아도 앱이 안 꺼진다)
+  if (isMac) createTray()
+  app.on('activate', () => showWindow())
 })
 
-app.on('window-all-closed', () => app.quit())
-app.on('before-quit', () => detachScreen())
+let quitting = false
+app.on('window-all-closed', () => {
+  if (!isMac) app.quit()
+})
+app.on('before-quit', () => {
+  quitting = true
+  detachScreen()
+})
 
 // 화면이 준 서랍 자리 — 숫자(문자열 아님)이고 화면 크기쯤(0~100000)이 아니면 버린다
 function browserRect(rect) {

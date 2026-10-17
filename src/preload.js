@@ -18,6 +18,7 @@ contextBridge.exposeInMainWorld('studio', {
   tabNew: (size) => ipcRenderer.invoke('tab:new', size),
   tabSelect: (tabId) => ipcRenderer.invoke('tab:select', tabId),
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),
+  tabRename: (tabId, label) => ipcRenderer.invoke('tab:rename', tabId, label),
   workspaceSelect: (workspaceId) => ipcRenderer.invoke('workspace:select', workspaceId),
   workspaceNew: (size) => ipcRenderer.invoke('workspace:new', size),
   // 가운데 맨 아래 에이전트 모니터 — 보일 때만 main 이 Claude 기록을 따라 읽는다
@@ -36,6 +37,8 @@ contextBridge.exposeInMainWorld('studio', {
   paneResize: (paneId, cols, rows) => ipcRenderer.send('pane:resize', paneId, cols, rows),
   ensureBoard: () => ipcRenderer.invoke('board:ensure'),
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
+  // 지금 탭(work · board) — 메뉴 막대 알림이 보고 있는 pane 을 건너뛸 때 쓴다
+  reportTab: (tab) => ipcRenderer.send('ui:tab', tab),
   // 옆 브라우저 — 페이지는 main 이 그리고 화면은 서랍 자리만 알린다
   browserPlace: (rect) => ipcRenderer.send('browser:place', rect),
   browserHide: () => ipcRenderer.send('browser:hide'),
