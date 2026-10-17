@@ -1,6 +1,6 @@
 // 앱 화면 — 탭 두 개(작업 창 · 현황판)와 처음 켤 때 아테나 폴더 고르기
-/* global Terminal, FitAddon, WebLinksAddon, Unicode11Addon */
-const studio = window.studio
+// studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
+/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon */
 const $ = (id) => document.getElementById(id)
 
 const panels = { setup: $('setup'), work: $('work'), board: $('board') }
