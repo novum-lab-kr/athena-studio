@@ -471,6 +471,7 @@ body[data-platform="darwin"] .tabbar {
 
 .pane {
   background: var(--bg);
+  border-color: var(--line); /* 포커스 안 된 pane 도 경계가 보이게 — 포커스되면 아래 focus-line */
   border-radius: var(--radius);
   /* xterm 보조 화면이 잘리지 않게 overflow 는 건드리지 않는다 */
 }
