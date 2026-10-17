@@ -35,6 +35,8 @@ body {
   background: var(--bg);
   color: var(--text);
   font: 13px var(--font-ui);
+  /* 어두운 바탕에서 맥 기본 렌더링은 글자를 두껍게 그린다 — 다른 다크 앱처럼 회색조로 얇게 */
+  -webkit-font-smoothing: antialiased;
 }
 .tabbar {
   display: flex;

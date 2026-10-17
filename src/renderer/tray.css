@@ -9,7 +9,7 @@
   --ok: #4ade80;
 }
 * { box-sizing: border-box; }
-html, body { height: 100%; margin: 0; background: transparent; color: var(--text); font: 12.5px/1.4 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; user-select: none; -webkit-user-select: none; }
+html, body { height: 100%; margin: 0; background: transparent; color: var(--text); font: 12.5px/1.4 -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif; user-select: none; -webkit-user-select: none; -webkit-font-smoothing: antialiased; }
 body { padding: 0; }
 button { font: inherit; color: inherit; }
 /* 반투명 — 창의 맥 재질(vibrancy hud)이 뒤를 흐리게 비추고, 창 전체에 어두운 막을 한 겹 깐다(뒤가 밝은 바탕화면이어도 흰 글자가 읽히게 ·
