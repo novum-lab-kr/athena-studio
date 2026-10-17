@@ -20,6 +20,7 @@ contextBridge.exposeInMainWorld('studio', {
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   workspaceSelect: (workspaceId) => ipcRenderer.invoke('workspace:select', workspaceId),
   workspaceNew: (size) => ipcRenderer.invoke('workspace:new', size),
+  dockMonitor: (size) => ipcRenderer.invoke('dock:monitor', size),
   // 오른쪽 Explorer — 작업 공간 폴더 안만(main 이 루트를 정한다)
   explorerList: (workspaceId, relative) => ipcRenderer.invoke('explorer:list', workspaceId, relative),
   explorerStatus: (workspaceId) => ipcRenderer.invoke('explorer:status', workspaceId),

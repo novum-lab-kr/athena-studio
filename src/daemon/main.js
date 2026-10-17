@@ -48,6 +48,7 @@ class Daemon {
     this.panes = new Map()
     this.workspaces = [] // {id, label, cwd, activeTab} — 레포마다 하나(코어 delegate 가 만든다)
     this.tabs = [] // {id, workspaceId, label, tree, size: {cols, rows}}
+    this.docks = new Map() // 이름 → pane id — 탭 밖에 늘 붙어 있는 칸(앱 하단 에이전트 모니터 등)
     this.activeWorkspace = null
     this.focusedPane = null
     this.clients = new Set()
@@ -179,6 +180,8 @@ class Daemon {
         return this.selectTab(args.tab)
       case 'workspace select':
         return this.selectWorkspace(args.workspace)
+      case 'dock ensure':
+        return this.ensureDock(args)
       case 'tab size':
         return this.setTabSize(args.tab, args.cols | 0, args.rows | 0)
       case 'shutdown':
@@ -256,7 +259,7 @@ class Daemon {
       activeWorkspace: this.activeWorkspace,
       tabs: this.tabs.map((tab) => ({ id: tab.id, workspace: tab.workspaceId, label: tab.label, tree: tab.tree })),
       focused: this.focusedPane,
-      panes: [...this.panes.values()].map((pane) => ({ id: pane.id, tab: pane.tabId, label: pane.label, title: pane.title, cols: pane.size.cols, rows: pane.size.rows })),
+      panes: [...this.panes.values()].map((pane) => ({ id: pane.id, tab: pane.tabId, dock: pane.dock || null, label: pane.label, title: pane.title, cols: pane.size.cols, rows: pane.size.rows })),
     }
   }
 
@@ -281,7 +284,9 @@ class Daemon {
 
   focus(paneId) {
     const pane = this.paneOf(paneId)
-    this.activate(this.tabOf(pane.tabId), pane.id)
+    // 고정 칸은 탭이 없다 — 포커스만 옮긴다(보고 있던 작업 공간·탭은 그대로)
+    if (pane.dock) this.focusedPane = pane.id
+    else this.activate(this.tabOf(pane.tabId), pane.id)
     this.broadcastState()
     return undefined
   }
@@ -377,6 +382,7 @@ class Daemon {
     if (target === 'self') targetId = caller && this.panes.has(caller) ? caller : this.focusedPane
     if (target === 'focused') targetId = this.focusedPane
     const base = this.paneOf(targetId)
+    if (base.dock) throw failure('usage', `고정 칸(${base.dock})은 나눌 수 없다 — 탭의 pane 을 주세요`)
     const tab = this.tabOf(base.tabId)
     const pane = this.spawnPane({ tabId: tab.id, cwd: cwd || base.cwd, env, ...base.size })
     tab.tree = layout.splitPane(tab.tree, base.id, pane.id, direction, ratio)
@@ -421,7 +427,7 @@ class Daemon {
       ...core.terminalEnv(process.env),
       ATHENA_STUDIO: '1',
       ATHENA_STUDIO_PANE_ID: paneId,
-      ATHENA_STUDIO_TAB_ID: tabId,
+      ATHENA_STUDIO_TAB_ID: tabId || '', // 고정 칸(dock)은 탭이 없다
       ATHENA_STUDIO_WORKSPACE_ID: tab ? tab.workspaceId : '',
       ATHENA_STUDIO_SOCKET: this.socketPath,
       ATHENA_STUDIO_CLI: this.cliPath,
@@ -434,6 +440,7 @@ class Daemon {
     const pane = this.panes.get(paneId)
     if (!pane) return
     this.panes.delete(paneId)
+    if (pane.dock && this.docks.get(pane.dock) === paneId) this.docks.delete(pane.dock)
     log(`pane ${paneId} 끝 (${code})`)
     const tab = this.tabs.find((entry) => entry.id === pane.tabId)
     if (tab) {
@@ -444,6 +451,21 @@ class Daemon {
     if (this.focusedPane === paneId || !this.panes.has(this.focusedPane)) this.refocus()
     this.broadcast({ event: 'exit', pane: paneId, code })
     this.broadcastState()
+  }
+
+  // 탭 밖 고정 칸 — 이름마다 하나. 없으면 셸을 띄우고 그 셸에서 command 를 실행한다(명령이 끝나도 칸은 남는다)
+  ensureDock({ name, cwd, command, label, cols, rows }) {
+    if (!name || typeof name !== 'string') throw failure('usage', 'dock 이름이 없다')
+    const existing = this.panes.get(this.docks.get(name))
+    if (existing) return { pane: existing.id, created: false }
+    const size = sizeOr({ cols, rows })
+    const pane = this.spawnPane({ tabId: null, cwd, cols: size.cols, rows: size.rows })
+    pane.dock = name
+    pane.label = label || null
+    this.docks.set(name, pane.id)
+    if (command) pane.write(`${command}\r`)
+    this.broadcastState()
+    return { pane: pane.id, created: true }
   }
 
   // 빈 탭을 빼고, 탭이 없어진 작업 공간도 뺀다

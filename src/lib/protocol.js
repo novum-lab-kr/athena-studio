@@ -6,7 +6,7 @@
 // 첫 요청은 hello {protocol, appVersion} — 프로토콜 번호만 비교한다(S3)
 
 // 데몬과 앱(·CLI)이 서로 알아듣는 형식이 바뀌면 올린다. 앱 버전이 아니다
-const PROTOCOL = 2
+const PROTOCOL = 3
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

@@ -1,11 +1,30 @@
 :root {
+  color-scheme: dark;
+
   --bg: #14161a;
-  --bar: #1c1f24;
-  --line: #2a2e35;
+  --bar: #1a1d22;
+  --hover: #23272e;
+  --surface-active: #2b3039;
+  --line: #292d35;
+
   --text: #d8dbe0;
-  --muted: #8b919b;
-  --accent: #7aa2f7;
-  --error: #f7768e;
+  --muted: #9aa3b2;
+  --accent: #8baaf2;
+  --selected: #263247;
+  --selected-hover: #2c3b52;
+  --focus-line: #495f85;
+
+  --success: #86c7a3;
+  --warning: #dbb579;
+  --error: #e58c99;
+
+  --font-ui: -apple-system, BlinkMacSystemFont,
+    "Apple SD Gothic Neo", sans-serif;
+  --font-mono: "SF Mono", Menlo, "D2Coding", monospace;
+
+  --radius: 6px;
+  --radius-lg: 8px;
+  --motion: 120ms ease;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -332,3 +351,372 @@ main { position: relative; flex: 1; min-height: 0; }
 .rail-button { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 4px 2px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .rail-button:hover { background: var(--line); color: var(--text); }
 .rail-icon { width: 16px; height: 16px; }
+
+/* ── 디자인 다듬기(2026-10-17 · Codex 와 논의) — 차분한 차콜 · 여유 있는 줄 간격 · 선택한 곳에만 옅은 파랑 ──
+   hover 는 중립 회색, 선택은 파랑 면, 키보드 포커스는 2px 선으로 셋을 구분한다. pane 머리줄 18px 는 renderer HEAD_HEIGHT 와 맞물려 그대로 */
+
+body {
+  font: 13px/1.45 var(--font-ui);
+}
+
+.tabbar {
+  flex: none;
+  height: 44px;
+  gap: 4px;
+  padding: 0 12px;
+}
+
+body[data-platform="darwin"] .tabbar {
+  padding-left: 80px;
+}
+
+.tab {
+  height: 30px;
+  padding: 0 12px;
+  border-radius: 7px;
+}
+
+.tab[aria-selected="true"] {
+  background: var(--surface-active);
+  color: var(--text);
+  font-weight: 600;
+}
+
+.dir,
+.tab kbd {
+  font: 11px var(--font-mono);
+}
+
+.spaces,
+.side-panel {
+  padding: 8px;
+  font-size: 13px;
+}
+
+.spaces { width: 224px; }
+.side-panel { width: 248px; }
+
+.side-title {
+  margin: 0 4px 8px;
+  min-height: 28px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+}
+
+.space,
+.agent-row {
+  gap: 8px;
+  border-radius: var(--radius);
+}
+
+.space {
+  min-height: 32px;
+  padding: 5px 8px;
+}
+
+.space .dot { font-size: 10px; }
+
+.space-branch {
+  font: 11px var(--font-mono);
+}
+
+.space-agents {
+  margin: 2px 0 8px 16px;
+}
+
+.agent-row {
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.add-space {
+  margin-top: 8px;
+  font-size: 12px;
+}
+
+.status-working,
+.code-U,
+.code-A {
+  color: var(--success);
+}
+
+.status-idle { color: var(--muted); }
+.code-M { color: var(--warning); }
+
+.studio-tabs {
+  flex: none;
+  align-items: center;
+  height: 38px;
+  gap: 4px;
+  padding: 0 6px;
+  background: var(--bg);
+}
+
+.studio-tab {
+  flex: 0 0 auto;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: var(--radius);
+  font-size: 12px;
+}
+
+.studio-tab.add {
+  width: 28px;
+  padding: 0;
+}
+
+.studio-tab .close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-left: 8px;
+  border-radius: 4px;
+  opacity: 0;
+}
+
+.studio-tab:is(:hover, :focus-visible, [aria-selected="true"]) .close {
+  opacity: 1;
+}
+
+.studio-tab .close:hover {
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.panes { margin: 6px; }
+
+.pane {
+  background: var(--bg);
+  border-radius: var(--radius);
+  /* xterm 보조 화면이 잘리지 않게 overflow 는 건드리지 않는다 */
+}
+
+.pane.focused {
+  border-color: var(--focus-line);
+}
+
+.pane-head {
+  position: relative;
+  flex: 0 0 18px;
+  height: 18px;
+  padding: 0 8px;
+  border-radius: 5px 5px 0 0;
+  font: 11px/18px var(--font-ui);
+}
+
+.pane.focused .pane-head {
+  background: var(--bar);
+  color: var(--text);
+}
+
+.pane.focused:focus-within .pane-head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+
+/* 기존 터미널 크기 계산에 맞춰 body 여백은 유지 */
+.pane-body { padding-left: 4px; }
+
+.explorer-head {
+  min-height: 30px;
+  margin: 0 0 6px;
+  gap: 4px;
+}
+
+.explorer-name {
+  min-width: 0;
+  padding-left: 4px;
+  font-size: 13px;
+}
+
+.view-button {
+  flex: none;
+  min-height: 26px;
+  padding: 0 7px;
+  border-radius: 5px;
+  font-size: 12px;
+}
+
+.tree-row {
+  min-height: 24px; /* Codex 안 28 → 24: 파일이 한 화면에 더 많이 보이게(VSCode 22 에 가깝게) */
+  gap: 6px;
+  padding-top: 2px;
+  padding-right: 6px;
+  padding-bottom: 2px;
+  border-radius: 5px;
+  font: 13px/20px var(--font-ui);
+  /* padding-left 는 renderer 가 깊이마다 넣는 값을 그대로 쓴다 */
+}
+
+.file-icon {
+  width: 16px;
+  height: 16px;
+  margin-right: 0;
+}
+
+.tree-row.dotfile .file-icon { opacity: 0.8; }
+
+.fold-button,
+.preview-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border-radius: 5px;
+}
+
+.spaces.collapsed {
+  width: 48px;
+  gap: 8px;
+  padding: 8px 0;
+}
+
+.space-icon {
+  width: 32px;
+  height: 32px;
+  border-width: 1px;
+  border-radius: var(--radius-lg);
+  background: color-mix(
+    in srgb, var(--space-color, var(--muted)) 12%, var(--bar)
+  );
+}
+
+.space-icon[aria-current="true"] {
+  border-color: var(--accent);
+}
+
+.space-badge {
+  right: -4px;
+  bottom: -4px;
+  background: var(--surface-active);
+  color: var(--text);
+}
+
+.space-badge.working {
+  background: var(--success);
+  color: var(--bg);
+}
+
+.side-rail {
+  width: 48px;
+  padding-top: 8px;
+}
+
+.rail-button {
+  width: 32px;
+  min-height: 32px;
+  padding: 5px;
+  border-radius: var(--radius-lg);
+}
+
+.preview { margin-top: 6px; }
+
+.preview-head {
+  flex: 0 0 32px;
+  height: 32px;
+  background: var(--bar);
+}
+
+/* hover → 선택 → 키보드 포커스 순서 */
+:where(
+  .tab, .space, .agent-row, .studio-tab, .agent-card,
+  .tree-row, .view-button, .fold-button, .rail-button,
+  .space-icon, .preview-close
+) {
+  transition:
+    background-color var(--motion),
+    color var(--motion),
+    border-color var(--motion);
+}
+
+:is(
+  .tab, .space, .agent-row, .studio-tab, .agent-card,
+  .tree-row, .view-button, .fold-button, .rail-button,
+  .space-icon, .preview-close
+):hover {
+  background: var(--hover);
+}
+
+.tab[aria-selected="true"]:hover {
+  background: var(--surface-active);
+}
+
+.space[aria-current="true"],
+.studio-tab[aria-selected="true"],
+.agent-card.current,
+.view-button[aria-pressed="true"] {
+  background: var(--selected);
+  color: var(--text);
+}
+
+.space[aria-current="true"]:hover,
+.studio-tab[aria-selected="true"]:hover,
+.agent-card.current:hover,
+.view-button[aria-pressed="true"]:hover {
+  background: var(--selected-hover);
+}
+
+button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  button { transition: none; }
+}
+
+/* 가운데 맨 위 에이전트 — 아바타 카드를 옆으로 한 줄, 넘치면 가로 스크롤(머리줄·접기 없음). 이름 · 작업 공간 · 상태만 */
+.agent-list { flex: none; display: flex; flex-direction: column; border-bottom: 1px solid var(--line); background: var(--bar); }
+.agent-list-rows { display: grid; grid-auto-flow: column; grid-auto-columns: 180px; gap: 8px; overflow-x: auto; padding: 8px 10px; scroll-snap-type: x proximity; }
+.agent-card {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  background: var(--bg);
+  color: var(--text);
+  font-family: inherit;
+  text-align: left;
+  scroll-snap-align: start;
+  cursor: pointer;
+}
+.agent-card.current { border-color: var(--focus-line); }
+/* 작업 공간 색 동그라미 + 오른쪽 아래 상태 점(일하면 초록) */
+.agent-avatar {
+  position: relative;
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: var(--space-color, var(--muted));
+  color: #111;
+  font-size: 11px;
+  font-weight: 700;
+}
+.agent-avatar::after { content: ""; position: absolute; right: -1px; bottom: -1px; width: 9px; height: 9px; border: 2px solid var(--bg); border-radius: 50%; background: #5b6270; }
+.agent-avatar.working::after { background: var(--success); }
+.agent-text { display: flex; flex-direction: column; min-width: 0; }
+.agent-name { overflow: hidden; font-size: 13px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.agent-sub { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
+
+/* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · 늘 보임) */
+.dock { flex: none; display: flex; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
+.dock:empty { display: none; }
+.dock .pane { position: relative; flex: 1; min-width: 0; border: 0; border-radius: 0; }

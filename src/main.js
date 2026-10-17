@@ -198,6 +198,16 @@ async function closePane(paneId) {
   return daemonCall('pane close', { pane: paneId })
 }
 
+// 가운데 맨 아래 고정 칸 — 아테나 에이전트 모니터(scripts/agent-monitor.py · herdr 의 '🛰 에이전트 모니터' 와 같은 명령)
+const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
+
+function ensureMonitorDock(size) {
+  if (!core.checkAthenaDir(config.athenaDir).ok) return Promise.resolve({ skipped: true })
+  const script = path.join(config.athenaDir, 'scripts', 'agent-monitor.py')
+  if (!fs.existsSync(script)) return Promise.resolve({ skipped: true })
+  return daemonCall('dock ensure', { name: 'monitor', label: '🛰 에이전트 모니터', cwd: config.athenaDir, command: `${shellQuote(script)} --stay --recent`, ...size })
+}
+
 // 탭 닫기 — 안에 에이전트가 돌고 있으면 묻는다
 async function closeTab(tabId) {
   const listed = await daemonCall('pane list')
@@ -680,6 +690,7 @@ ipcMain.handle('tab:select', (_event, tabId) => daemonCall('tab select', { tab: 
 ipcMain.handle('tab:close', (_event, tabId) => closeTab(String(tabId)))
 ipcMain.handle('workspace:select', (_event, workspaceId) => daemonCall('workspace select', { workspace: String(workspaceId) }))
 ipcMain.handle('workspace:new', (_event, size) => newWorkspace(cellSize(size)))
+ipcMain.handle('dock:monitor', (_event, size) => ensureMonitorDock(cellSize(size)))
 ipcMain.handle('explorer:list', (_event, workspaceId, relative) => guarded(() => explorerList(workspaceId, relative)))
 ipcMain.handle('explorer:status', (_event, workspaceId) => guarded(() => explorerStatus(workspaceId)))
 ipcMain.handle('explorer:open', (_event, workspaceId, relative) => guarded(() => explorerOpen(workspaceId, relative)))

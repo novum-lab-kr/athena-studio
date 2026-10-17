@@ -112,13 +112,17 @@ function defaultIsExecutable(file) {
 // 자식 프로세스 환경. 앱을 herdr 안에서 켰을 때 물려받은 HERDR_* 를 지워야
 // 작업 창 pane 셸(·그 안의 아테나)이 herdr pane 안이라고 착각하지 않는다
 // 앱을 에이전트(claude) 세션 안에서 켰을 때 물려받은 표시도 지운다 — 남으면 pane 의 claude 가
-// 자기를 하위 세션으로 알고(대화 기록 저장 꺼짐) 아테나가 관리 창(ATHENA_AGENT)으로 알아 첫 실행·화면 세팅을 건너뛴다
-const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AGENT']
+// 자기를 하위 세션으로 알고(대화 기록 저장 꺼짐) 아테나가 관리 창(ATHENA_AGENT)으로 알아 첫 실행·화면 세팅을 건너뛴다.
+// 아테나 delegate.sh 실행기가 에이전트 pane 에 넣는 값(ATHENA_REPO_DIR · ATHENA_VERIFY_DIR)도 — 남으면 상태줄(statusline.sh)이
+// cwd 보다 그 레포를 먼저 보고, 검증 스크립트가 그 워크트리를 본다
+const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AGENT', 'ATHENA_REPO_DIR', 'ATHENA_VERIFY_DIR']
 
 function childEnv(baseEnv, extra = {}) {
   const env = {}
   for (const [key, value] of Object.entries(baseEnv)) {
     if (key.startsWith('HERDR_') || key.startsWith('CLAUDE_CODE_')) continue
+    // 스튜디오 pane 안에서 앱을 켰을 때의 표시 — pane 셸·현황판에는 데몬·main 이 새 값을 다시 넣는다
+    if (key === 'ATHENA_STUDIO' || key.startsWith('ATHENA_STUDIO_')) continue
     if (INHERITED_SESSION_KEYS.includes(key)) continue
     env[key] = value
   }

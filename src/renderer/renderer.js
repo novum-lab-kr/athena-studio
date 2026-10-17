@@ -43,7 +43,7 @@ function makeTerminal() {
   return { term, fit }
 }
 
-function ensureView(paneId) {
+function ensureView(paneId, dock = false) {
   if (views.has(paneId)) return views.get(paneId)
   const el = document.createElement('div')
   el.className = 'pane'
@@ -52,7 +52,8 @@ function ensureView(paneId) {
   const body = document.createElement('div')
   body.className = 'pane-body'
   el.append(head, body)
-  $('panes').append(el)
+  // 고정 칸(dock)은 가운데 맨 아래에, 나머지는 분할 영역에
+  $(dock ? 'dock' : 'panes').append(el)
   const { term, fit } = makeTerminal()
   term.open(body)
   term.onData((data) => {
@@ -61,7 +62,7 @@ function ensureView(paneId) {
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
-  const view = { term, fit, el, head, sent: null }
+  const view = { term, fit, el, head, sent: null, dock }
   views.set(paneId, view)
   return view
 }
@@ -88,11 +89,20 @@ function applyState(next) {
   screen = next
   const alive = new Set(screen.panes.map((pane) => pane.id))
   for (const paneId of [...views.keys()]) if (!alive.has(paneId)) disposeView(paneId)
-  for (const pane of screen.panes) ensureView(pane.id)
+  for (const pane of screen.panes) ensureView(pane.id, Boolean(pane.dock))
   renderTabs()
   renderSides()
   layoutPanes()
   ensureSomeTab()
+  ensureMonitor()
+}
+
+// 모니터 칸이 없어졌으면(셸에서 exit 등) 다시 띄운다 — 처음 켤 때는 startScreen 이 띄운다
+let openingMonitor = false
+function ensureMonitor() {
+  if (starting || openingMonitor || !attached || screen.panes.some((pane) => pane.dock === 'monitor')) return
+  openingMonitor = true
+  studio.dockMonitor().finally(() => (openingMonitor = false))
 }
 
 // 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나 — 에이전트를 고르는 중이면 고른 뒤 athena 탭이 생긴다
@@ -223,8 +233,56 @@ function spaceRail(agents) {
   return [foldButton('»', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false)), ...rows, add]
 }
 
+// 가운데 맨 위 에이전트 — 아바타 카드를 옆으로(사용자가 시안 3 을 고름). 일하는 것 먼저, 그다음 작업 공간 순
+function renderAgentList(agents) {
+  const order = new Map(screen.workspaces.map((workspace, index) => [workspace.id, index]))
+  const sorted = [...agents].sort((left, right) => {
+    const working = Number(right.agent_status === 'working') - Number(left.agent_status === 'working')
+    return working || (order.get(left.workspace_id) ?? 99) - (order.get(right.workspace_id) ?? 99)
+  })
+  const rows = sorted.map((pane) => {
+    const card = document.createElement('button')
+    card.className = `agent-card${pane.id === screen.focused ? ' current' : ''}`
+    const workspace = screen.workspaces.find((entry) => entry.id === pane.workspace_id)
+    const delegated = (pane.label || '').match(/^🤖\s*(\S+)/)
+    const working = pane.agent_status === 'working'
+    // 아바타 — 작업 공간 색 동그라미 + 이름 두 글자(접힌 왼쪽 아이콘과 같은 규칙) · 오른쪽 아래 상태 점
+    const avatar = document.createElement('span')
+    avatar.className = `agent-avatar${working ? ' working' : ''}`
+    avatar.style.setProperty('--space-color', spaceColor(workspace ? workspace.label : pane.agent))
+    avatar.textContent = spaceInitials(workspace ? workspace.label : pane.agent)
+    const text = document.createElement('span')
+    text.className = 'agent-text'
+    const name = document.createElement('span')
+    name.className = 'agent-name'
+    name.textContent = delegated ? delegated[1] : pane.label || pane.agent
+    const sub = document.createElement('span')
+    sub.className = 'agent-sub'
+    const status = working ? '일하는 중' : '대기'
+    sub.textContent = workspace ? `${workspace.label} · ${status}` : status
+    text.append(name, sub)
+    card.append(avatar, text)
+    // 브랜치·주제(지금 하는 일)는 마우스를 올리면
+    card.title = [pane.label || pane.agent, workspacePlace(workspace), pane.title].filter(Boolean).join('\n')
+    card.addEventListener('click', () => {
+      if (currentTab !== 'work') switchTab('work')
+      studio.paneFocus(pane.id)
+    })
+    return card
+  })
+  if (!rows.length) rows.push(Object.assign(document.createElement('div'), { className: 'side-empty', textContent: '돌고 있는 에이전트가 없어요' }))
+  $('agent-list-rows').replaceChildren(...rows)
+}
+
+// '작업 공간 · 브랜치'(브랜치를 모르면 이름만)
+function workspacePlace(workspace) {
+  if (!workspace) return ''
+  return branches[workspace.id] ? `${workspace.label} · ${branches[workspace.id]}` : workspace.label
+}
+
 function renderSides() {
   const agents = agentPanes()
+  renderAgentList(agents)
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
     spaces.replaceChildren(...spaceRail(agents))
@@ -554,9 +612,10 @@ function layoutPanes() {
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]
-    view.el.hidden = !rect
-    if (!rect) continue
-    Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
+    // 고정 칸은 배치 트리 밖 — 늘 보이고 칸을 꽉 채운다
+    view.el.hidden = !rect && !view.dock
+    if (view.el.hidden) continue
+    if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
     view.el.classList.toggle('focused', paneId === screen.focused)
     const info = meta.get(paneId) || {}
     view.head.textContent = info.label || info.title || paneId
@@ -585,7 +644,7 @@ function reportTabSize(tab, container) {
 
 // 보이는 터미널 하나로 글자 칸 크기를 재서 영역을 칸으로. 아직 없으면 대략(13px 글꼴)
 function estimateCells(container) {
-  const sample = [...views.values()].find((view) => !view.el.hidden && view.term.cols > 1)
+  const sample = [...views.values()].find((view) => !view.el.hidden && !view.dock && view.term.cols > 1)
   const cellWidth = sample ? sample.term.element.querySelector('.xterm-screen').clientWidth / sample.term.cols : 7.8
   const cellHeight = sample ? sample.term.element.querySelector('.xterm-screen').clientHeight / sample.term.rows : 17
   if (!cellWidth || !cellHeight) return null
@@ -613,7 +672,7 @@ async function attach() {
     // 되살릴 화면은 데몬이 가진 크기로 직렬화됐다 — 그 크기로 먼저 쓰고, 그다음 창에 맞춰 다시 맞춘다(먼저 맞추면 줄이 다른 폭에서 꺾여 깨진다)
     screen = result.state
     for (const pane of screen.panes) {
-      const view = ensureView(pane.id)
+      const view = ensureView(pane.id, Boolean(pane.dock))
       if (pane.cols > 1 && pane.rows > 1) view.term.resize(pane.cols, pane.rows)
       if (result.snapshots[pane.id]) view.term.write(result.snapshots[pane.id])
     }
@@ -646,7 +705,8 @@ async function newTab() {
 async function runCommand(name) {
   if (!state || !state.valid || !attached) return
   if (currentTab !== 'work') switchTab('work')
-  const focused = screen.focused
+  // 나누기·닫기·이동의 기준은 지금 탭의 pane — 모니터 칸(dock)에 포커스가 있으면 탭의 첫 pane
+  const focused = tabPaneForCommand()
   if (name === 'new-tab') return newTab()
   if (name === 'split-right' || name === 'split-down') {
     if (!focused) return newTab()
@@ -694,11 +754,19 @@ async function runCommand(name) {
   return undefined
 }
 
+function tabPaneForCommand() {
+  const tab = activeTab()
+  if (!tab) return null
+  const ids = StudioLayout.paneIds(tab.tree)
+  return ids.includes(screen.focused) ? screen.focused : ids[0] || null
+}
+
 async function startScreen() {
   starting = true
   try {
     if (!(await attach())) return
     await openAgent()
+    await studio.dockMonitor()
   } finally {
     starting = false
   }
@@ -900,6 +968,7 @@ async function init() {
   })
   studio.onScreenCommand(runCommand)
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
+  new ResizeObserver(() => layoutPanes()).observe($('dock'))
   if (state.valid) {
     switchTab('work')
     startScreen()

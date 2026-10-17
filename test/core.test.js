@@ -124,6 +124,23 @@ test('자식 환경: 앱을 에이전트 세션 안에서 켜도 세션 표시�
   assert.deepEqual(env, { PATH: '/bin', CLAUDE_CONFIG_DIR: '/c' })
 })
 
+test('자식 환경: delegate 실행기 값 · 스튜디오 pane 표시도 넘기지 않는다(상태줄이 엉뚱한 레포를 보지 않게)', () => {
+  const env = core.childEnv({
+    PATH: '/bin',
+    ATHENA_REPO_DIR: '/w/athena-studio',
+    ATHENA_VERIFY_DIR: '/w/athena/.worktrees/x',
+    ATHENA_STUDIO: '1',
+    ATHENA_STUDIO_PANE_ID: 'p3',
+    ATHENA_STUDIO_SOCKET: '/s',
+    ATHENA_BOARD_PORT: '4700',
+    ATHENA_DIR: '/w/athena',
+  })
+  // 아테나 설정값(ATHENA_BOARD_PORT · ATHENA_DIR)은 남긴다 — 세션 표시만 지운다
+  assert.deepEqual(env, { PATH: '/bin', ATHENA_BOARD_PORT: '4700', ATHENA_DIR: '/w/athena' })
+  // 새로 넣는 값은 그대로 들어간다(main 이 현황판에 소켓을 넘길 때)
+  assert.equal(core.childEnv({ ATHENA_STUDIO_SOCKET: '/old' }, { ATHENA_STUDIO_SOCKET: '/new' }).ATHENA_STUDIO_SOCKET, '/new')
+})
+
 test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 · 없으면 none', () => {
   const seen = new Set(['/a/claude', '/b/codex'])
   assert.deepEqual(core.availableAgents('/a:/b', (f) => seen.has(f)), ['claude', 'codex'])

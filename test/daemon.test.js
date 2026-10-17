@@ -168,6 +168,19 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
     const after = await again.call('attach')
     assert.deepEqual(after.result.state.tabs[0].tree, { pane: 'p1' })
 
+    // 고정 칸(dock) — 탭 밖 · 이름마다 하나(다시 불러도 같은 pane) · 그 셸에서 명령 실행 · 탭 목록·배치에는 안 들어간다
+    const dock = await again.call('dock ensure', { name: 'monitor', cwd: dir, command: 'echo dock=$ATHENA_STUDIO_PANE_ID' })
+    assert.equal(dock.result.created, true)
+    assert.equal((await again.call('dock ensure', { name: 'monitor', cwd: dir })).result.pane, dock.result.pane)
+    assert.equal((await cli(daemon.socket, ['pane', 'wait-output', dock.result.pane, '--regex', `^dock=${dock.result.pane}$`, '--timeout', '8000'])).code, 0)
+    const docked = (await again.call('attach')).result.state
+    assert.equal(docked.panes.find((pane) => pane.id === dock.result.pane).dock, 'monitor')
+    assert.equal(docked.tabs.some((tab) => JSON.stringify(tab.tree).includes(dock.result.pane)), false)
+    assert.equal((await again.call('focus', { pane: dock.result.pane })).ok, true) // 탭이 없어도 포커스는 된다
+    // 고정 칸은 나눌 수 없다 — 탭이 없어서(분명한 usage 오류로)
+    const splitDock = await cli(daemon.socket, ['pane', 'split', '--target', dock.result.pane, '--direction', 'right'])
+    assert.equal(JSON.parse(splitDock.stderr).error, 'usage')
+
     await again.call('shutdown')
     again.close()
     await waitFor(() => !alive(daemon.pid), '데몬 종료')
