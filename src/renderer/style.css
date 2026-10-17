@@ -561,7 +561,7 @@ body[data-platform="darwin"] .tabbar {
 .pane {
   background: var(--bg);
   border-color: var(--line); /* 포커스 안 된 pane 도 경계가 보이게 — 포커스되면 아래 focus-line */
-  border-radius: var(--radius);
+  border-radius: 0; /* 각진 상자 — 미리보기 상자와 같은 모양 */
   /* xterm 보조 화면이 잘리지 않게 overflow 는 건드리지 않는다 */
 }
 
@@ -574,7 +574,7 @@ body[data-platform="darwin"] .tabbar {
   flex: 0 0 18px;
   height: 18px;
   padding: 0 8px;
-  border-radius: 5px 5px 0 0;
+  border-radius: 0;
   font: 11px/18px var(--font-ui);
 }
 
@@ -709,13 +709,43 @@ body[data-platform="darwin"] .tabbar {
   border-radius: var(--radius-lg);
 }
 
-.preview { margin-top: 6px; } /* 터미널(.panes 위 6px)과 윗선을 맞춘다 */
-
-.preview-head {
-  flex: 0 0 32px;
-  height: 32px;
-  background: var(--bar);
+/* 파일 미리보기 — 터미널 pane 과 같은 상자(6px 띄움 · 1px 테두리 · 각진 모서리 · 터미널 바탕 · 18px 머리줄) ·
+   미리보기에 입력이 있으면(포커스) 테두리를 포커스 색으로 */
+.preview {
+  margin: 6px 6px 6px 0;
+  border: 1px solid var(--line);
+  background: var(--bg);
 }
+.preview:focus-within { border-color: var(--focus-line); }
+/* 미리보기에 입력이 있는 동안은 터미널 테두리를 보통으로 — 포커스 테두리는 한 상자만 */
+.work-area:has(.preview:focus-within) .pane.focused { border-color: var(--line); }
+.work-area:has(.preview:focus-within) .pane.focused .pane-head { background: transparent; color: var(--muted); }
+
+/* 머리줄은 터미널 pane 머리줄과 같다 — 보통은 바탕 없이 흐린 글자, 포커스면 막대 바탕 + 밝은 글자 + 왼쪽 강조 커서 */
+.preview-head {
+  position: relative;
+  flex: 0 0 18px;
+  height: 18px;
+  padding: 0 0 0 8px;
+  border-bottom: 0;
+  background: transparent;
+  color: var(--muted);
+  font: 11px/18px var(--font-ui);
+}
+.preview:focus-within .preview-head { background: var(--bar); color: var(--text); }
+.preview:focus-within .preview-head::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 3px;
+  bottom: 3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--accent);
+}
+.preview-title { color: inherit; font: inherit; }
+.preview .preview-close { width: 18px; height: 18px; border-radius: 0; font-size: 10px; }
+.preview-body { background: var(--bg); }
 
 /* hover → 선택 → 키보드 포커스 순서 */
 :where(

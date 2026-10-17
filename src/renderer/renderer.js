@@ -606,7 +606,7 @@ async function openPreview(relative) {
     body.replaceChildren(image)
   } else {
     const diff = result.kind === 'diff'
-    if (result.bg) body.style.background = result.bg
+    // 바탕은 터미널과 같게(CSS --bg) — 글자색만 테마(Shiki)를 따른다
     if (result.fg) body.style.color = result.fg
     body.replaceChildren(...result.rows.map((row) => viewerLine(row, diff)))
     if (result.untracked) body.prepend(note('새 파일(git 에 아직 없음)'))
