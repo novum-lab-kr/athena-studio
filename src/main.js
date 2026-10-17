@@ -40,10 +40,11 @@ function athenaState() {
     valid: check.ok,
     missing: check.missing,
     boardUrl: core.boardUrl(config.boardPort),
-    installDir: core.installTarget(app.getPath('home')).dir,
+    installDir: core.installTarget(app.getPath('userData')).dir,
     tabKey: isMac ? '⌘' : 'Alt+',
     platform: process.platform,
-    athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름의 작업 공간에서만 보인다
+    athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름이고 아테나 폴더인 작업 공간에서만 보인다
+    athenaRealDir: config.athenaDir ? core.realDir(config.athenaDir) : null, // 화면은 심볼릭 링크를 못 풀어서 main 이 푼 경로도 준다
   }
 }
 
@@ -202,11 +203,42 @@ async function closePane(paneId) {
 // 가운데 맨 아래 고정 칸 — 아테나 에이전트 모니터(scripts/agent-monitor.py · herdr 의 '🛰 에이전트 모니터' 와 같은 명령)
 const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
 
+const MONITOR_LABEL = '🛰 에이전트 모니터'
+
+// 교체(예전 모니터 닫기 → 새로 띄우기)가 겹치지 않게 한 줄로 세운다
+let monitorQueue = Promise.resolve()
 function ensureMonitorDock(size) {
-  if (!core.checkAthenaDir(config.athenaDir).ok) return Promise.resolve({ skipped: true })
-  const script = path.join(config.athenaDir, 'scripts', 'agent-monitor.py')
-  if (!fs.existsSync(script)) return Promise.resolve({ skipped: true })
-  return daemonCall('dock ensure', { name: 'monitor', label: '🛰 에이전트 모니터', cwd: config.athenaDir, command: `${shellQuote(script)} --stay --recent`, ...size })
+  const run = monitorQueue.then(() => ensureMonitorDockNow(size))
+  monitorQueue = run.catch(() => {})
+  return run
+}
+
+async function ensureMonitorDockNow(size) {
+  // 기다리는 동안 아테나 폴더가 또 바뀌어도 한 폴더의 스크립트 · cwd 로 띄우게 처음에 고정한다
+  const athenaDir = config.athenaDir
+  if (!core.checkAthenaDir(athenaDir).ok) return { skipped: true }
+  const script = path.join(athenaDir, 'scripts', 'agent-monitor.py')
+  if (!fs.existsSync(script)) return { skipped: true }
+  // 예전 폴더의 모니터가 아직 안 닫혔으면 이번엔 띄우지 않는다 — 닫히면 화면(ensureMonitor)이 다시 부른다
+  if (!(await closeStaleMonitor(athenaDir))) return { skipped: true, waiting: true }
+  return daemonCall('dock ensure', { name: 'monitor', label: MONITOR_LABEL, cwd: athenaDir, command: `${shellQuote(script)} --stay --recent`, ...size })
+}
+
+// 데몬의 모니터 칸은 이름(monitor)으로 하나만 만든다 — 아테나 폴더를 바꿨으면(~/athena → 앱 데이터 폴더 등) 예전 폴더의 모니터를 닫아 새 폴더로 다시 띄운다.
+// 모니터는 보기만 하는 칸이라 닫아도 잃는 것이 없다. 예전 모니터가 없거나 사라졌으면 true
+async function closeStaleMonitor(athenaDir) {
+  const isStale = (pane) => !pane.tab_id && pane.label === MONITOR_LABEL && pane.cwd && !core.sameDir(pane.cwd, athenaDir)
+  const listed = await daemonCall('pane list')
+  const stale = ((listed.result && listed.result.panes) || []).find(isStale)
+  if (!stale) return true
+  await daemonCall('pane close', { pane: stale.id })
+  // 닫기는 SIGHUP 뒤 셸이 끝나야 데몬에서 빠진다 — 그 전에 dock ensure 하면 예전 칸을 돌려준다. 잠깐(최대 2초) 기다린다
+  for (let attempt = 0; attempt < 20; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    const again = await daemonCall('pane list')
+    if (!((again.result && again.result.panes) || []).some((pane) => pane.id === stale.id)) return true
+  }
+  return false
 }
 
 // 탭 닫기 — 안에 에이전트가 돌고 있으면 묻는다
@@ -231,7 +263,8 @@ async function newWorkspace(size) {
   const result = await dialog.showOpenDialog(mainWindow, {
     title: '새 작업 공간 — 폴더 고르기',
     properties: ['openDirectory'],
-    defaultPath: path.dirname(config.athenaDir || app.getPath('home')),
+    // 아테나는 앱 데이터 폴더에 있으니 레포 고르기는 홈에서 시작한다
+    defaultPath: app.getPath('home'),
   })
   if (result.canceled || !result.filePaths[0]) return { canceled: true }
   const dir = result.filePaths[0]
@@ -404,7 +437,7 @@ async function openAthenaAgent(chosen, size) {
   if (!core.checkAthenaDir(config.athenaDir).ok) return { skipped: true }
   const state = await daemonCall('state')
   if (state.error) return { error: state.error }
-  const existing = core.findAthenaWorkspace(state.result.workspaces)
+  const existing = core.findAthenaWorkspace(state.result.workspaces, config.athenaDir)
   if (existing) {
     await daemonCall('workspace select', { workspace: existing.id })
     return { focused: true }
@@ -436,18 +469,98 @@ function isBoardUp(port) {
 
 // scripts/board.sh 는 브라우저를 열고 herdr pane 을 가르므로 쓰지 않고 server.mjs 를 직접 띄운다.
 // 앱을 닫아도 현황판은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
-let boardStarting = null
-
-async function ensureBoard() {
-  const port = config.boardPort
-  const url = core.boardUrl(port)
-  if (await isBoardUp(port)) return { ok: true, url, started: false }
-  if (!core.checkAthenaDir(config.athenaDir).ok) return { ok: false, url, error: '아테나 폴더가 정해지지 않았어요' }
-  if (!boardStarting) boardStarting = startBoard(port).finally(() => (boardStarting = null))
-  return boardStarting
+// 포트 정하기 · 띄우기가 겹치지 않게 한 줄로 세운다(아테나 폴더를 바꾸는 사이 결과가 섞이지 않게)
+let boardQueue = Promise.resolve()
+function queueBoard(work) {
+  const run = boardQueue.then(work)
+  boardQueue = run.catch(() => {})
+  return run
 }
 
-async function startBoard(port) {
+function ensureBoard() {
+  if (!core.checkAthenaDir(config.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(config.boardPort), error: '아테나 폴더가 정해지지 않았어요' })
+  return queueBoard(() => findOrStartBoard(config.athenaDir))
+}
+
+// 현황판은 띄우지 않고 포트만 미리 정해 적는다(앱 시작 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게
+function prepareBoardPort() {
+  if (!core.checkAthenaDir(config.athenaDir).ok) return
+  const athenaDir = config.athenaDir
+  queueBoard(() => findBoardPort(athenaDir)).catch(() => {})
+}
+
+// 저장된 포트부터 차례로 — 이 아테나 폴더에서 도는 현황판이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것(herdr 용 ~/athena 현황판 등)이나
+// 주인을 모르는 것(lsof 실패)이 쥐고 있으면 다음 번호. 고른 포트는 스튜디오 아테나 설정(boardPort)과 앱 설정에 적는다 — pane 안의 아테나가 그 값으로 현황판을 찾는다
+async function findBoardPort(athenaDir) {
+  const ports = core.boardPortCandidates(config.boardPort)
+  for (const port of ports) {
+    const owner = await boardOwner(port, athenaDir)
+    if (owner === 'other') continue
+    // 찾는 사이 아테나 폴더가 바뀌었으면 이 결과는 버린다
+    if (config.athenaDir !== athenaDir) return { error: '아테나 폴더가 바뀌었어요 — 다시 시도해요' }
+    const saved = rememberBoardPort(port, athenaDir)
+    if (saved.error) return saved
+    return { port, owner }
+  }
+  return { error: `현황판 포트 ${ports[0]}~${ports[ports.length - 1]} 가 모두 쓰이고 있어요` }
+}
+
+async function findOrStartBoard(athenaDir) {
+  const result = await findOrStartBoardFor(athenaDir)
+  // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 현황판을 보여 주지 않는다
+  if (config.athenaDir !== athenaDir) return { ok: false, url: core.boardUrl(config.boardPort), error: `아테나 폴더가 바뀌었어요 — ${isMac ? '⌘' : 'Alt+'}R 로 다시 열어요` }
+  return result
+}
+
+async function findOrStartBoardFor(athenaDir) {
+  const found = await findBoardPort(athenaDir)
+  if (found.error) return { ok: false, url: core.boardUrl(config.boardPort), error: found.error }
+  if (found.owner === 'free') return startBoard(found.port, athenaDir)
+  const url = core.boardUrl(found.port)
+  if (await isBoardUp(found.port)) return { ok: true, url, started: false }
+  return { ok: false, url, error: `현황판(포트 ${found.port})이 떠 있지만 답하지 않아요` }
+}
+
+// 그 포트를 쥔 프로세스가 이 아테나 폴더에서 돌면 ours, 아무도 없으면 free, 다른 폴더이거나 알아볼 수 없으면 other(쓰지 않는다).
+// 맥은 lsof 로 그 프로세스의 작업 폴더를 본다
+const LSOF = '/usr/sbin/lsof'
+
+async function boardOwner(port, athenaDir) {
+  const listening = await runLsof(['-nP', `-iTCP:${port}`, '-sTCP:LISTEN', '-t'])
+  if (listening.failed) return 'other'
+  const pid = listening.stdout.split('\n').find(Boolean)
+  if (!pid) return 'free'
+  const where = await runLsof(['-a', '-p', pid, '-d', 'cwd', '-Fn'])
+  const cwd = where.failed ? null : core.parseLsofPath(where.stdout)
+  return cwd && core.sameDir(cwd, athenaDir) ? 'ours' : 'other'
+}
+
+// lsof 는 찾은 것이 없으면 종료 1 + 빈 출력이다 — 그건 '없음', 그 밖의 실패(lsof 없음 · 시간 초과 등)는 failed
+function runLsof(args) {
+  return new Promise((resolve) =>
+    execFile(LSOF, args, { encoding: 'utf8', timeout: 3000 }, (error, stdout) => {
+      const empty = !String(stdout || '').trim()
+      if (error && !(error.code === 1 && empty)) return resolve({ failed: true, stdout: '' })
+      resolve({ failed: false, stdout: stdout || '' })
+    }),
+  )
+}
+
+// 아테나 설정에 먼저 적고, 되면 앱 설정에 — 둘이 다른 포트를 가리키지 않게
+function rememberBoardPort(port, athenaDir) {
+  try {
+    core.setAthenaBoardPort(athenaDir, port)
+  } catch (error) {
+    return { error: `아테나 설정(athena.config.json)에 현황판 포트를 적지 못했어요: ${error.message}` }
+  }
+  if (config.boardPort !== port) {
+    config = { ...config, boardPort: port }
+    core.saveConfig(configFile(), config)
+  }
+  return {}
+}
+
+async function startBoard(port, athenaDir) {
   const url = core.boardUrl(port)
   const logFile = boardLogFile()
   fs.mkdirSync(path.dirname(logFile), { recursive: true })
@@ -464,8 +577,8 @@ async function startBoard(port) {
 
   let exited = null
   try {
-    const child = spawn(nodePath || process.execPath, [path.join(config.athenaDir, 'scripts', 'board', 'server.mjs')], {
-      cwd: config.athenaDir,
+    const child = spawn(nodePath || process.execPath, [path.join(athenaDir, 'scripts', 'board', 'server.mjs')], {
+      cwd: athenaDir,
       env,
       detached: true,
       stdio: ['ignore', log, log],
@@ -480,8 +593,12 @@ async function startBoard(port) {
   }
 
   for (let i = 0; i < 40; i++) {
-    if (await isBoardUp(port)) return { ok: true, url, started: true }
     if (exited !== null) break
+    // 답하는 서버가 방금 띄운 이 아테나의 것인지까지 본다(그사이 다른 것이 그 포트를 잡았을 수 있다)
+    if (await isBoardUp(port)) {
+      if ((await boardOwner(port, athenaDir)) === 'ours') return { ok: true, url, started: true }
+      return { ok: false, url, error: `포트 ${port} 를 다른 프로그램이 먼저 잡았어요`, log: logFile }
+    }
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
   const why = exited !== null ? `서버가 바로 끝났어요(${exited})` : '10초 안에 뜨지 않았어요'
@@ -504,22 +621,26 @@ function useAthenaDir(dir) {
   const check = core.checkAthenaDir(dir)
   if (!check.ok) return { ...athenaState(), error: `아테나 폴더가 아니에요 — 없는 파일: ${check.missing.join(', ')}`, picked: dir }
   try {
-    core.ensureAthenaConfig(dir)
+    core.ensureAthenaConfig(dir, athenaReposRoot(dir))
   } catch (error) {
     return { ...athenaState(), error: `athena.config.json 을 만들지 못했어요: ${error.message}`, picked: dir }
   }
   const changed = dir !== config.athenaDir
   config = { ...config, athenaDir: dir }
   core.saveConfig(configFile(), config)
+  prepareBoardPort()
   return { ...athenaState(), changed }
 }
 
-// 아테나 받기 — 묻지 않고 홈의 athena/ 에 코어 레포를 clone 하고 바로 쓴다
+// 새로 만드는 athena.config.json 의 reposRoot — 앱 데이터 폴더에 받은 아테나면 홈, 직접 고른 폴더면 ..
+const athenaReposRoot = (dir) => core.reposRootFor(dir, { userData: app.getPath('userData'), home: app.getPath('home') })
+
+// 아테나 받기 — 묻지 않고 앱 데이터 폴더의 athena/ 에 코어 레포를 clone 하고 바로 쓴다(herdr 용 ~/athena 는 찾지 않는다)
 let installing = false
 
 async function installAthena() {
   if (installing) return { ...athenaState(), error: '이미 받는 중이에요' }
-  const target = core.installTarget(app.getPath('home'))
+  const target = core.installTarget(app.getPath('userData'))
   if (target.action === 'use') return useAthenaDir(target.dir)
   if (target.action === 'conflict') {
     return { ...athenaState(), error: `${target.dir} 에 아테나가 아닌 것이 있어서 받지 않았어요 — 그 폴더를 치우고 다시 받거나, 받아 둔 아테나 폴더를 골라 주세요` }
@@ -535,6 +656,26 @@ async function installAthena() {
   } finally {
     installing = false
   }
+}
+
+// 예전처럼 herdr 용 ~/athena 를 쓰고 있으면 한 번 묻는다 — 받기로 하면 아테나 폴더를 비워 화면이 앱 데이터 폴더에 받게 한다.
+// ~/athena 와 거기서 도는 작업 공간 · 에이전트는 건드리지 않는다
+async function offerStudioAthena() {
+  if (!core.shouldOfferStudioAthena(config, app.getPath('home'))) return
+  const { response } = await dialog.showMessageBox({
+    type: 'question',
+    message: '스튜디오 전용 아테나를 받을까요?',
+    detail: [
+      `지금은 herdr 용 아테나(${config.athenaDir})를 같이 쓰고 있어요.`,
+      `받으면 스튜디오는 앱 데이터 폴더(${core.installTarget(app.getPath('userData')).dir})의 아테나를 따로 쓰고, 팩은 처음 켤 때 /setup 으로 새로 등록해요. 현황판은 ${core.moveToStudioAthena(config).boardPort} 포트로 따로 떠요.`,
+      '~/athena 와 그 작업 공간 · 에이전트는 그대로 둬요. [지금 그대로] 를 고르면 다시 묻지 않아요(바꾸려면 [파일 → 아테나 폴더 바꾸기…]).',
+    ].join('\n\n'),
+    buttons: ['받기', '지금 그대로'],
+    defaultId: 0,
+    cancelId: 1,
+  })
+  config = response === 0 ? core.moveToStudioAthena(config) : { ...config, studioAthenaAsked: true }
+  core.saveConfig(configFile(), config)
 }
 
 // 성공하면 null, 실패하면 이유
@@ -714,13 +855,15 @@ ipcMain.handle('open:url', (_event, url) => openUrl(url))
 app.whenReady().then(async () => {
   app.setName('Athena Studio')
   config = core.loadConfig(configFile())
+  await offerStudioAthena()
   if (core.checkAthenaDir(config.athenaDir).ok) {
     try {
-      core.ensureAthenaConfig(config.athenaDir)
+      core.ensureAthenaConfig(config.athenaDir, athenaReposRoot(config.athenaDir))
     } catch {}
   }
   const loginPath = await loadLoginPath()
   if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
+  prepareBoardPort()
   buildMenu()
   createWindow()
   startPanesPolling()

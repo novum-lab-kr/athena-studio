@@ -20,12 +20,45 @@ test('설정: 없거나 깨진 파일은 기본값', () => {
 test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', () => {
   const file = path.join(tmp(), 'sub', 'config.json')
   core.saveConfig(file, { athenaDir: '/a/b', boardPort: 4711 })
-  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711 })
+  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711, studioAthenaAsked: false })
   assert.equal(fs.existsSync(`${file}.tmp`), false)
   core.saveConfig(file, { athenaDir: 3, boardPort: 'x' })
   assert.deepEqual(core.loadConfig(file), core.DEFAULT_CONFIG)
   core.saveConfig(file, { boardPort: 70000 })
-  assert.equal(core.loadConfig(file).boardPort, 4700)
+  assert.equal(core.loadConfig(file).boardPort, 4701)
+  // 현황판 기본은 4701 — herdr 용 아테나 현황판(4700)과 나란히
+  assert.equal(core.DEFAULT_CONFIG.boardPort, 4701)
+})
+
+test('스튜디오 전용 아테나: 홈의 ~/athena 를 쓰고 있으면 한 번만 묻고, 받기로 하면 폴더를 비우고 예전 기본 포트를 옮긴다', () => {
+  const home = '/Users/me'
+  const config = { athenaDir: '/Users/me/athena', boardPort: 4700, studioAthenaAsked: false }
+  assert.equal(core.shouldOfferStudioAthena(config, home), true)
+  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: '/Users/me/athena/' }, home), true)
+  assert.equal(core.shouldOfferStudioAthena({ ...config, studioAthenaAsked: true }, home), false)
+  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: '/Users/me/work/athena' }, home), false)
+  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: null }, home), false)
+  assert.deepEqual(core.moveToStudioAthena(config), { athenaDir: null, boardPort: 4701, studioAthenaAsked: true })
+  // 직접 바꾼 포트는 그대로
+  assert.equal(core.moveToStudioAthena({ ...config, boardPort: 4800 }).boardPort, 4800)
+})
+
+test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데이터 폴더 아테나면 홈, 아니면 ..', () => {
+  const base = tmp()
+  const real = path.join(base, 'real', 'athena')
+  fs.mkdirSync(real, { recursive: true })
+  fs.symlinkSync(path.join(base, 'real'), path.join(base, 'link'))
+  const linked = path.join(base, 'link', 'athena')
+  assert.equal(core.sameDir(linked, real), true)
+  assert.equal(core.sameDir(`${real}/`, real), true)
+  assert.equal(core.sameDir(real, path.join(base, 'real')), false)
+  assert.equal(core.sameDir(null, real), false)
+  // ~/athena 를 링크로 적어 두었어도 묻는다
+  assert.equal(core.shouldOfferStudioAthena({ athenaDir: linked, studioAthenaAsked: false }, path.join(base, 'real')), true)
+  assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w1', cwd: real }], linked).id, 'w1')
+  const userData = path.join(base, 'App Support', 'Athena Studio')
+  assert.equal(core.reposRootFor(path.join(userData, 'athena'), { userData, home: '/Users/me' }), '/Users/me')
+  assert.equal(core.reposRootFor(real, { userData, home: '/Users/me' }), '..')
 })
 
 test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한다', () => {
@@ -43,7 +76,7 @@ test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한
   assert.equal(core.checkAthenaDir(path.join(dir, 'nope')).ok, false)
 })
 
-test('아테나 받기: 없거나 빈 폴더는 clone, 아테나면 그대로, 다른 것이 있으면 멈춤', () => {
+test('아테나 받기(앱 데이터 폴더): 없거나 빈 폴더는 clone, 아테나면 그대로, 다른 것이 있으면 멈춤', () => {
   const parent = tmp()
   const dir = path.join(parent, 'athena')
   assert.deepEqual(core.installTarget(parent), { dir, action: 'clone' })
@@ -59,13 +92,20 @@ test('아테나 받기: 없거나 빈 폴더는 clone, 아테나면 그대로, �
   const other = tmp()
   fs.writeFileSync(path.join(other, 'athena'), '')
   assert.equal(core.installTarget(other).action, 'conflict')
+  // 앱 데이터 폴더처럼 띄어쓰기가 있는 자리에도 받는다
+  const spaced = path.join(tmp(), 'Application Support', 'Athena Studio')
+  assert.deepEqual(core.installTarget(spaced), { dir: path.join(spaced, 'athena'), action: 'clone' })
 })
 
 test('아테나 설정: 없으면 팩 없는 최소 설정을 만들고, 있으면 건드리지 않는다', () => {
   const dir = tmp()
   const file = path.join(dir, 'athena.config.json')
   assert.equal(core.ensureAthenaConfig(dir), true)
-  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { reposRoot: '..' })
+  assert.deepEqual(JSON.parse(fs.readFileSync(file, 'utf8')), { reposRoot: '..', screen: 'studio' })
+  // 앱 데이터 폴더에 받은 아테나는 reposRoot 를 홈 절대 경로로
+  const other = tmp()
+  core.ensureAthenaConfig(other, '/Users/me')
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(other, 'athena.config.json'), 'utf8')), { reposRoot: '/Users/me', screen: 'studio' })
   fs.writeFileSync(file, '{"pack":"packs/acme"}')
   assert.equal(core.ensureAthenaConfig(dir), false)
   assert.equal(fs.readFileSync(file, 'utf8'), '{"pack":"packs/acme"}')
@@ -152,10 +192,13 @@ test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 ·
   assert.match(core.agentDecision(['claude'], 'codex').error, /codex/)
 })
 
-test('athena 작업 공간: 이름이 athena 인 것', () => {
-  assert.equal(core.findAthenaWorkspace([{ label: 'web', id: 'w1' }]), null)
-  assert.equal(core.findAthenaWorkspace([{ label: '~' }, { label: 'athena', id: 'w4' }]).id, 'w4')
-  assert.equal(core.findAthenaWorkspace(undefined), null)
+test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 것', () => {
+  const dir = '/Users/me/Library/Application Support/Athena Studio/athena'
+  assert.equal(core.findAthenaWorkspace([{ label: 'web', id: 'w1', cwd: dir }], dir), null)
+  assert.equal(core.findAthenaWorkspace([{ label: '~', cwd: '/Users/me' }, { label: 'athena', id: 'w4', cwd: dir }], dir).id, 'w4')
+  // 예전 아테나 폴더(herdr 용 ~/athena)의 athena 작업 공간은 고르지 않는다
+  assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w2', cwd: '/Users/me/athena' }], dir), null)
+  assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
 
 test('새 창 분류: 현황판 주소는 앱 안, 그 밖 http(s) 는 브라우저, 나머지는 막기', () => {
@@ -188,4 +231,28 @@ test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으�
   assert.equal(core.daemonPaths({ userData: korean, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
   // 대체 자리도 길면 분명한 오류
   assert.throws(() => core.daemonPaths({ userData: longDir, home: '/h', tmpdir: `/${'t'.repeat(100)}`, uid: 1 }), /103바이트/)
+})
+
+test('현황판 포트: 저장된 포트부터 20개 · lsof 경로 · 스튜디오 아테나 설정에만 적는다', () => {
+  assert.deepEqual(core.boardPortCandidates(4701).slice(0, 3), [4701, 4702, 4703])
+  assert.equal(core.boardPortCandidates(4701).length, 20)
+  assert.equal(core.boardPortCandidates(65530).length, 6)
+  assert.equal(core.boardPortCandidates(undefined)[0], 4701)
+  assert.equal(core.parseLsofPath('p123\nfcwd\nn/Users/me/Library/Application Support/Athena Studio/athena\n'), '/Users/me/Library/Application Support/Athena Studio/athena')
+  assert.equal(core.parseLsofPath(''), null)
+  const studioDir = tmp()
+  core.ensureAthenaConfig(studioDir, '/Users/me')
+  assert.equal(core.setAthenaBoardPort(studioDir, 4702), true)
+  assert.equal(core.setAthenaBoardPort(studioDir, 4702), false)
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(studioDir, 'athena.config.json'), 'utf8')), { reposRoot: '/Users/me', screen: 'studio', boardPort: 4702 })
+  // herdr 용 설정(screen 없음)과 설정이 없는 폴더는 건드리지 않는다
+  const herdrDir = tmp()
+  fs.writeFileSync(path.join(herdrDir, 'athena.config.json'), '{"pack":"packs/acme"}')
+  assert.equal(core.setAthenaBoardPort(herdrDir, 4702), false)
+  assert.equal(fs.readFileSync(path.join(herdrDir, 'athena.config.json'), 'utf8'), '{"pack":"packs/acme"}')
+  assert.equal(core.setAthenaBoardPort(tmp(), 4702), false)
+  // 깨진 설정은 숨기지 않는다(앱 설정만 바뀌어 포트가 어긋나지 않게)
+  const broken = tmp()
+  fs.writeFileSync(path.join(broken, 'athena.config.json'), '{ 깨짐')
+  assert.throws(() => core.setAthenaBoardPort(broken, 4702))
 })

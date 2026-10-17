@@ -2,7 +2,9 @@
 const fs = require('fs')
 const path = require('path')
 
-const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4700 }
+// 현황판 기본 포트는 4701 — herdr 용 아테나(~/athena)의 현황판(4700)과 나란히 돈다
+const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701, studioAthenaAsked: false }
+const LEGACY_BOARD_PORT = 4700
 
 // 앱 설정(userData/config.json). 깨졌거나 없으면 기본값
 function loadConfig(file) {
@@ -15,6 +17,7 @@ function loadConfig(file) {
   const port = Number(config.boardPort)
   config.boardPort = Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_CONFIG.boardPort
   if (typeof config.athenaDir !== 'string' || !config.athenaDir) config.athenaDir = null
+  config.studioAthenaAsked = config.studioAthenaAsked === true
   return config
 }
 
@@ -41,7 +44,8 @@ function checkAthenaDir(dir) {
   return { ok: missing.length === 0, missing }
 }
 
-// 아테나 받기 — 고른 폴더 안의 athena/ 에 코어 레포를 clone 한다(코드는 아테나 레포가 관리한다)
+// 아테나 받기 — 앱 데이터 폴더(userData) 안의 athena/ 에 코어 레포를 clone 한다(코드는 아테나 레포가 관리한다).
+// herdr 용 아테나(~/athena)와 섞이지 않게 스튜디오는 자기 아테나를 따로 갖는다
 const ATHENA_REPO = 'https://github.com/novum-lab-kr/athena.git'
 const ATHENA_DIR_NAME = 'athena'
 
@@ -59,12 +63,82 @@ function installTarget(parent) {
   return { dir, action: checkAthenaDir(dir).ok ? 'use' : 'conflict' }
 }
 
+// 같은 폴더인지 — 심볼릭 링크(/tmp → /private/tmp 등)까지 풀어 본다. 없는 폴더는 표기만 정리해 비교
+function realDir(dir) {
+  try {
+    return fs.realpathSync(dir)
+  } catch {
+    return path.resolve(dir)
+  }
+}
+
+function sameDir(left, right) {
+  if (!left || !right) return false
+  return realDir(left) === realDir(right)
+}
+
+// 예전 스튜디오처럼 홈의 ~/athena(herdr 용)를 쓰고 있으면 스튜디오 전용 아테나로 옮길지 한 번 묻는다
+function shouldOfferStudioAthena(config, home) {
+  if (config.studioAthenaAsked || !config.athenaDir) return false
+  return sameDir(config.athenaDir, path.join(home, ATHENA_DIR_NAME))
+}
+
+// 옮기기로 했으면 — 아테나 폴더를 비워 처음 켤 때처럼 앱 데이터 폴더에 받게 하고, 현황판도 예전 기본(4700)이면 새 기본으로
+function moveToStudioAthena(config) {
+  const boardPort = config.boardPort === LEGACY_BOARD_PORT ? DEFAULT_CONFIG.boardPort : config.boardPort
+  return { ...config, athenaDir: null, boardPort, studioAthenaAsked: true }
+}
+
 // 이 컴퓨터 설정(athena.config.json · git 무시)이 없으면 팩 없는 최소 설정을 만든다.
-// 아테나는 이 파일이 없으면 현황판이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다
-function ensureAthenaConfig(dir) {
+// 아테나는 이 파일이 없으면 현황판이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다.
+// screen: 'studio' — 아테나가 화면(pane · 탭)을 herdr 가 아니라 스튜디오 데몬으로 다루게 고정한다(아테나 쪽 키 · herdr | studio | none).
+// reposRoot(레포 클론이 있는 폴더)는 reposRootFor 가 정한다. 이미 있는 설정(herdr 용 ~/athena 등)은 건드리지 않는다
+function ensureAthenaConfig(dir, reposRoot = '..') {
   const file = path.join(dir, 'athena.config.json')
   if (fs.existsSync(file)) return false
-  fs.writeFileSync(file, JSON.stringify({ reposRoot: '..' }, null, 2) + '\n')
+  fs.writeFileSync(file, JSON.stringify({ reposRoot, screen: 'studio' }, null, 2) + '\n')
+  return true
+}
+
+// 앱 데이터 폴더에 받은 아테나의 상위는 앱 데이터 폴더라 레포가 없다 — 예전(~/athena/..)과 같은 홈을 절대 경로로.
+// 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
+function reposRootFor(dir, { userData, home }) {
+  return sameDir(dir, installTarget(userData).dir) ? home : '..'
+}
+
+// 현황판 포트 고르기 — 저장된 포트부터 차례로 본다(다른 아테나 현황판 등이 쥐고 있으면 다음 번호)
+const BOARD_PORT_SPAN = 20
+
+function boardPortCandidates(start) {
+  const first = Number.isInteger(start) && start > 0 && start < 65536 ? start : DEFAULT_CONFIG.boardPort
+  const ports = []
+  for (let port = first; port < Math.min(first + BOARD_PORT_SPAN, 65536); port++) ports.push(port)
+  return ports
+}
+
+// lsof -Fn 출력에서 경로(n 으로 시작하는 줄)를 꺼낸다
+function parseLsofPath(output) {
+  const line = String(output || '').split('\n').find((entry) => entry.startsWith('n'))
+  return line ? line.slice(1) : null
+}
+
+// 스튜디오가 만든 아테나 설정(screen: studio)에만 고른 현황판 포트를 적는다 — pane 안의 아테나가 이 값으로 현황판을 찾는다.
+// herdr 용 ~/athena 등 스튜디오가 만들지 않은 설정은 건드리지 않는다. 바꿨으면 true · 없으면 false · 읽거나 쓰지 못하면 throw
+function setAthenaBoardPort(dir, port) {
+  const file = path.join(dir, 'athena.config.json')
+  let text
+  try {
+    text = fs.readFileSync(file, 'utf8')
+  } catch (error) {
+    if (error.code === 'ENOENT') return false
+    throw error
+  }
+  const current = JSON.parse(text)
+  if (!current || typeof current !== 'object' || Array.isArray(current) || current.screen !== 'studio') return false
+  if (current.boardPort === port) return false
+  const tmp = `${file}.tmp`
+  fs.writeFileSync(tmp, JSON.stringify({ ...current, boardPort: port }, null, 2) + '\n')
+  fs.renameSync(tmp, file)
   return true
 }
 
@@ -154,9 +228,9 @@ function agentDecision(available, chosen) {
   return { choose: available }
 }
 
-// 데몬 상태의 작업 공간 중 이름이 athena 인 것
-function findAthenaWorkspace(workspaces) {
-  return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE) || null
+// 데몬 상태의 작업 공간 중 이름이 athena 이고 그 아테나 폴더인 것 — 아테나 폴더를 바꿨으면 예전 폴더의 athena 작업 공간은 건드리지 않는다
+function findAthenaWorkspace(workspaces, athenaDir) {
+  return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
 }
 
 // 새 창 요청 분류: 현황판 주소(결정 콘솔 등)는 앱 안 새 창, 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
@@ -203,6 +277,14 @@ module.exports = {
   checkAthenaDir,
   ATHENA_REPO,
   installTarget,
+  shouldOfferStudioAthena,
+  sameDir,
+  realDir,
+  reposRootFor,
+  boardPortCandidates,
+  parseLsofPath,
+  setAthenaBoardPort,
+  moveToStudioAthena,
   ensureAthenaConfig,
   lastProgressLine,
   parseMarkedPath,

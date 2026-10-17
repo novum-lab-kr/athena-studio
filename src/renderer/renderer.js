@@ -92,9 +92,18 @@ function activeWorkspace() {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
 }
 
-// 아테나 폴더의 작업 공간인가 — 이름 기준(main 의 core.findAthenaWorkspace 와 같은 규칙)
+// 아테나 폴더의 작업 공간인가 — 이름이 athena 이고 지금 아테나 폴더인 것(main 의 core.findAthenaWorkspace 와 같은 규칙).
+// 아테나 폴더를 바꿔 예전 폴더의 athena 작업 공간이 남아 있으면 그쪽엔 모니터를 안 보인다.
+// 화면은 심볼릭 링크를 못 풀어서 적어 둔 경로 · main 이 푼 경로(athenaRealDir) 둘 중 하나와 글자로 맞춰 본다.
+// 폴더가 맞는 것이 하나도 없으면(새 작업 공간을 만들기 전 잠깐 등) 예전처럼 이름만 본다
+const trimSlash = (dir) => String(dir || '').replace(/\/+$/, '')
+
 function isAthenaWorkspace(workspace) {
-  return Boolean(workspace && state && workspace.label === state.athenaWorkspace)
+  if (!workspace || !state || workspace.label !== state.athenaWorkspace) return false
+  const wanted = [state.athenaDir, state.athenaRealDir].filter(Boolean).map(trimSlash)
+  const sameFolder = (entry) => wanted.includes(trimSlash(entry.cwd))
+  const anyMatch = screen.workspaces.some((entry) => entry.label === state.athenaWorkspace && sameFolder(entry))
+  return anyMatch ? sameFolder(workspace) : true
 }
 
 function activeTab() {
