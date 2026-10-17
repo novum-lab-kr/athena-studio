@@ -629,7 +629,12 @@ function layoutPanes() {
   }
   reportTabSize(tab, container)
   const focused = views.get(screen.focused)
-  if (focused && !focused.el.hidden && currentTab === 'work') focused.term.focus()
+  if (focused && !focused.el.hidden && currentTab === 'work' && !usingBrowser()) focused.term.focus()
+}
+
+// 옆 브라우저를 쓰는 중인가 — 주소창에 치는 중이거나 서랍 안 페이지(앱 화면 밖이라 문서가 포커스를 잃는다)를 보는 중이면 터미널로 포커스를 뺏지 않는다
+function usingBrowser() {
+  return browserOpen && (!document.hasFocus() || $('browser').contains(document.activeElement))
 }
 
 // 탭 전체 크기(칸) — 앱이 없을 때 CLI 로 나눠도 데몬이 크기를 맞게 나누도록
@@ -842,6 +847,109 @@ async function loadBoard(force = false) {
   }
 }
 
+// ── 옆 브라우저 ──────────────────────────────────────────
+// 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그린다 — 화면 위에 따로 떠 있어서
+// 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다
+const BROWSER_SLIDE_MS = 240
+let browserOpen = false
+let browserTimer = null
+
+function openBrowserPanel() {
+  const panel = $('browser')
+  if (browserOpen) return placeBrowserView()
+  browserOpen = true
+  clearTimeout(browserTimer)
+  panel.hidden = false
+  void panel.offsetWidth // 숨김을 푼 뒤 한 번 그려야 transform 이 스르륵 움직인다
+  panel.classList.add('open')
+  browserTimer = setTimeout(() => {
+    browserTimer = null
+    placeBrowserView()
+  }, BROWSER_SLIDE_MS)
+}
+
+function closeBrowserPanel() {
+  const panel = $('browser')
+  if (!browserOpen) return
+  browserOpen = false
+  clearTimeout(browserTimer)
+  studio.browserHide()
+  panel.classList.remove('open')
+  // 닫으면 작업 창 터미널로 입력을 돌려준다
+  const focused = views.get(screen.focused)
+  if (currentTab === 'work' && focused && !focused.el.hidden) focused.term.focus()
+  browserTimer = setTimeout(() => {
+    browserTimer = null
+    panel.hidden = true
+  }, BROWSER_SLIDE_MS)
+}
+
+// 다 나온 서랍의 자리 — 슬라이드 중(transform)이면 아직 붙이지 않는다
+function placeBrowserView() {
+  if (!browserOpen || browserTimer || $('browser').hidden) return
+  const rect = $('browser-slot').getBoundingClientRect()
+  if (rect.width < 1 || rect.height < 1) return
+  studio.browserPlace({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+}
+
+function toggleBrowserPanel() {
+  if (browserOpen) return closeBrowserPanel()
+  openBrowserPanel()
+  // 처음이면 주소창부터
+  if (!$('browser-url').value) $('browser-url').focus()
+}
+
+async function browserNavigate() {
+  const input = $('browser-url')
+  const result = await studio.browserCommand('navigate', input.value)
+  showBrowserError(result.error || '')
+  if (!result.error) input.blur()
+}
+
+function showBrowserError(message) {
+  const error = $('browser-error')
+  error.textContent = message
+  error.hidden = !message
+  // 알림 줄이 생기거나 없어지면 페이지 자리가 바뀐다
+  requestAnimationFrame(placeBrowserView)
+}
+
+function applyBrowserState(next) {
+  const input = $('browser-url')
+  if (document.activeElement !== input) input.value = next.url || ''
+  $('browser-back').disabled = !next.canGoBack
+  $('browser-forward').disabled = !next.canGoForward
+  $('browser-reload').textContent = next.loading ? '✕' : '⟳'
+  $('browser-reload').title = next.loading ? '멈추기' : '새로고침'
+  $('browser').classList.toggle('loading', Boolean(next.loading))
+  $('browser').title = next.title || ''
+  if (next.loading) showBrowserError('')
+}
+
+function initBrowser() {
+  $('browser-toggle').addEventListener('click', toggleBrowserPanel)
+  $('browser-close').addEventListener('click', closeBrowserPanel)
+  $('browser-back').addEventListener('click', () => studio.browserCommand('back'))
+  $('browser-forward').addEventListener('click', () => studio.browserCommand('forward'))
+  $('browser-reload').addEventListener('click', () => studio.browserCommand($('browser').classList.contains('loading') ? 'stop' : 'reload'))
+  $('browser-external').addEventListener('click', () => studio.browserCommand('external'))
+  $('browser-url').addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') browserNavigate()
+    if (event.key === 'Escape') closeBrowserPanel()
+  })
+  $('browser-url').addEventListener('focus', () => $('browser-url').select())
+  studio.onBrowserOpen((url) => {
+    $('browser-url').value = url
+    showBrowserError('')
+    openBrowserPanel()
+  })
+  studio.onBrowserToggle(toggleBrowserPanel)
+  studio.onBrowserState(applyBrowserState)
+  studio.onBrowserError(showBrowserError)
+  // 창 크기가 바뀌면 서랍(너비 46%)도 바뀐다 — 다 나와 있을 때만 다시 붙인다
+  new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
+}
+
 // ── 탭 ──────────────────────────────────────────────────
 function switchTab(name) {
   if (!state || !state.valid) return
@@ -930,6 +1038,7 @@ async function init() {
   state = await studio.athenaState()
   renderState()
   for (const tab of tabs) tab.addEventListener('click', () => switchTab(tab.dataset.tab))
+  initBrowser()
   $('pick').addEventListener('click', pickAthenaDir)
   $('install').addEventListener('click', installAthena)
   studio.onInstallProgress((line) => ($('setup-progress').textContent = line))

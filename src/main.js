@@ -1,5 +1,5 @@
 // Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 현황판 서버 · 아테나 폴더 설정
-const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron')
+const { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, session, shell } = require('electron')
 const { execFile, spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
@@ -701,33 +701,123 @@ function cloneAthena(gitPath, dir) {
 }
 
 // ── 새 창 · 링크 ──────────────────────────────────────────
-function openUrl(url) {
-  const kind = core.classifyOpen(url, config.boardPort)
-  if (kind === 'external') shell.openExternal(url)
-  if (kind === 'app') new BrowserWindow(childWindowOptions()).loadURL(url)
-  return kind
+// 터미널 링크 · 맨 위 페이지 이동 — localhost(계획서 · 테스트 화면)는 옆 브라우저, 그 밖 http(s) 는 기본 브라우저
+function openUrl(url, { fromBoard = false } = {}) {
+  const target = core.openTarget(url, { fromBoard })
+  if (target === 'external') shell.openExternal(url)
+  if (target === 'panel') openInBrowser(url)
+  return target
 }
 
-function childWindowOptions() {
-  return {
-    width: 1200,
-    height: 860,
-    autoHideMenuBar: true,
-    webPreferences: { contextIsolation: true, sandbox: true, nodeIntegration: false },
-  }
-}
-
-// 결정 콘솔 같은 현황판 주소는 앱 안 새 창, 그 밖은 기본 브라우저
+// 새 창 요청 — 메인 창에서 온 것은 현황판 iframe 이 연 것이라 http(s) 면 모두 옆 브라우저.
+// 옆 브라우저 안에서 연 새 창은 같은 뷰로. 새 BrowserWindow 는 만들지 않는다
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
-    if (core.classifyOpen(url, config.boardPort) === 'app') {
-      return { action: 'allow', overrideBrowserWindowOptions: childWindowOptions() }
+    if (browserView && contents === browserView.webContents) {
+      if (core.isWebUrl(url)) contents.loadURL(url)
+    } else {
+      openUrl(url, { fromBoard: Boolean(mainWindow) && contents === mainWindow.webContents })
     }
-    openUrl(url)
     return { action: 'deny' }
   })
   contents.on('will-attach-webview', (event) => event.preventDefault())
 })
+
+// ── 옆 브라우저 ───────────────────────────────────────────
+// 작업 창 · 현황판 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지),
+// 화면은 서랍 안 자리(#browser-slot)의 사각형만 알려 준다. 페이지에는 preload · Node 를 넘기지 않는다
+const BROWSER_PARTITION = 'persist:studio-browser'
+let browserView = null
+let browserAttached = false
+
+function ensureBrowserView() {
+  if (browserView && !browserView.webContents.isDestroyed()) return browserView
+  const browserSession = session.fromPartition(BROWSER_PARTITION)
+  // 카메라 · 마이크 · 알림 · 위치 같은 권한은 묻지 않고 거절한다
+  browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
+  browserSession.setPermissionCheckHandler(() => false)
+  browserView = new WebContentsView({
+    webPreferences: { partition: BROWSER_PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
+  })
+  browserView.setBackgroundColor('#ffffff')
+  const contents = browserView.webContents
+  // http(s) 밖으로는 움직이지 않는다 — 안쪽 프레임까지
+  contents.on('will-frame-navigate', (event) => {
+    if (!core.isWebUrl(event.url)) event.preventDefault()
+  })
+  contents.on('will-redirect', (event, url) => {
+    if (!core.isWebUrl(url)) event.preventDefault()
+  })
+  for (const name of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
+    contents.on(name, sendBrowserState)
+  }
+  contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
+    // -3 은 이동이 취소된 것(새 주소로 바로 넘어감) — 알리지 않는다
+    if (isMainFrame && code !== -3) send('browser:error', `${description} (${code}) — ${url}`)
+  })
+  return browserView
+}
+
+function sendBrowserState() {
+  if (!browserView || browserView.webContents.isDestroyed()) return
+  const contents = browserView.webContents
+  const history = contents.navigationHistory
+  send('browser:state', {
+    url: contents.getURL(),
+    title: contents.getTitle(),
+    canGoBack: history.canGoBack(),
+    canGoForward: history.canGoForward(),
+    loading: contents.isLoading(),
+  })
+}
+
+// 화면이 서랍을 열고, 다 나오면 browser:place 로 자리를 알려 준다
+function openInBrowser(url) {
+  ensureBrowserView().webContents.loadURL(url)
+  send('browser:open', url)
+  if (mainWindow) mainWindow.show()
+}
+
+// 화면 좌표(CSS 픽셀)는 확대·축소 비율을 곱해야 창 좌표가 된다. 창 안으로 자른다
+function placeBrowser(rect) {
+  if (!mainWindow || !rect) return
+  const view = ensureBrowserView()
+  const zoom = mainWindow.webContents.getZoomFactor()
+  const [contentWidth, contentHeight] = mainWindow.getContentSize()
+  const x = Math.min(Math.max(0, Math.round(rect.x * zoom)), contentWidth)
+  const y = Math.min(Math.max(0, Math.round(rect.y * zoom)), contentHeight)
+  const width = Math.min(Math.max(0, Math.round(rect.width * zoom)), contentWidth - x)
+  const height = Math.min(Math.max(0, Math.round(rect.height * zoom)), contentHeight - y)
+  view.setBounds({ x, y, width, height })
+  if (!browserAttached) {
+    mainWindow.contentView.addChildView(view)
+    browserAttached = true
+  }
+}
+
+// 서랍을 닫기 시작할 때 먼저 뗀다(페이지가 화면 위에 떠 있으니 슬라이드 전에 치운다). 페이지는 그대로 두어 다시 열면 이어 본다
+function hideBrowser() {
+  if (!mainWindow || !browserView || !browserAttached) return
+  mainWindow.contentView.removeChildView(browserView)
+  browserAttached = false
+}
+
+function browserCommand(name, value) {
+  if (name === 'navigate') {
+    const url = core.normalizeAddress(value)
+    if (!url) return { error: '열 수 없는 주소예요 — http(s) 주소만 열어요' }
+    ensureBrowserView().webContents.loadURL(url)
+    return { url }
+  }
+  if (!browserView || browserView.webContents.isDestroyed()) return {}
+  const contents = browserView.webContents
+  if (name === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
+  if (name === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward()
+  if (name === 'reload') contents.reload()
+  if (name === 'stop') contents.stop()
+  if (name === 'external' && core.isWebUrl(contents.getURL())) shell.openExternal(contents.getURL())
+  return {}
+}
 
 // ── 창 · 메뉴 ─────────────────────────────────────────────
 function createWindow() {
@@ -754,6 +844,10 @@ function createWindow() {
   })
   mainWindow.on('closed', () => {
     mainWindow = null
+    // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
+    if (browserView && !browserView.webContents.isDestroyed()) browserView.webContents.close()
+    browserView = null
+    browserAttached = false
     detachScreen()
   })
 }
@@ -786,6 +880,7 @@ function buildMenu() {
         { label: '📋 현황판', accelerator: `${TAB_KEY}+2`, click: () => send('tab:switch', 'board') },
         { type: 'separator' },
         { label: '현황판 새로고침', accelerator: 'CmdOrCtrl+R', click: () => send('board:reload') },
+        { label: '🌐 옆 브라우저 열기·닫기', accelerator: `${TAB_KEY}+Shift+B`, click: () => send('browser:toggle') },
         { label: '작업 창 다시 붙기', click: () => send('screen:resync') },
         { label: '작업 창 데몬 다시 띄우기(pane 모두 닫힘)…', click: () => restartDaemon() },
         { type: 'separator' },
@@ -852,7 +947,19 @@ ipcMain.on('tab:size', (_event, tabId, size) => {
   if (daemon && cells.cols) daemon.notify('tab size', { tab: String(tabId), ...cells })
 })
 ipcMain.handle('board:ensure', () => ensureBoard())
-ipcMain.handle('open:url', (_event, url) => openUrl(url))
+ipcMain.handle('open:url', (_event, url) => openUrl(String(url)))
+// 옆 브라우저 IPC 는 앱 화면(메인 창의 맨 위 프레임)에서 온 것만 받는다 — 현황판 iframe · 서랍 안 페이지는 못 부른다
+const fromAppScreen = (event) => Boolean(mainWindow) && event.sender === mainWindow.webContents && event.senderFrame === event.sender.mainFrame
+ipcMain.on('browser:place', (event, rect) => {
+  if (fromAppScreen(event)) placeBrowser(browserRect(rect))
+})
+ipcMain.on('browser:hide', (event) => {
+  if (fromAppScreen(event)) hideBrowser()
+})
+ipcMain.handle('browser:command', (event, name, value) => {
+  if (!fromAppScreen(event)) return { error: '앱 화면에서만 부를 수 있어요' }
+  return browserCommand(String(name), typeof value === 'string' ? value : '')
+})
 
 app.whenReady().then(async () => {
   app.setName('Athena Studio')
@@ -876,6 +983,15 @@ app.whenReady().then(async () => {
 
 app.on('window-all-closed', () => app.quit())
 app.on('before-quit', () => detachScreen())
+
+// 화면이 준 서랍 자리 — 숫자(문자열 아님)이고 화면 크기쯤(0~100000)이 아니면 버린다
+function browserRect(rect) {
+  if (!rect || typeof rect !== 'object') return null
+  const values = ['x', 'y', 'width', 'height'].map((key) => rect[key])
+  if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100000)) return null
+  const [x, y, width, height] = values
+  return { x, y, width, height }
+}
 
 // 화면이 준 크기(칸) — 숫자가 아니면 버린다(데몬 기본 크기를 쓴다)
 function cellSize(size) {

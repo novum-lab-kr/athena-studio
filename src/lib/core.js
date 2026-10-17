@@ -233,20 +233,33 @@ function findAthenaWorkspace(workspaces, athenaDir) {
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
 }
 
-// 새 창 요청 분류: 현황판 주소(결정 콘솔 등)는 앱 안 새 창, 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
-function classifyOpen(rawUrl, boardPort) {
-  let url
+// 링크를 어디서 열지: 현황판에서 누른 것 · localhost(계획서 · 테스트 화면)는 옆 브라우저(panel), 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
+const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]']
+
+function openTarget(rawUrl, { fromBoard = false } = {}) {
+  if (!isWebUrl(rawUrl)) return 'deny'
+  if (fromBoard) return 'panel'
+  return LOCAL_HOSTS.includes(new URL(rawUrl).hostname) ? 'panel' : 'external'
+}
+
+// 옆 브라우저가 열 수 있는 주소 — http(s) 만
+function isWebUrl(rawUrl) {
   try {
-    url = new URL(rawUrl)
+    const { protocol } = new URL(rawUrl)
+    return protocol === 'http:' || protocol === 'https:'
   } catch {
-    return 'deny'
+    return false
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return 'deny'
-  const isBoard =
-    url.protocol === 'http:' &&
-    (url.hostname === 'localhost' || url.hostname === '127.0.0.1') &&
-    Number(url.port || 80) === Number(boardPort)
-  return isBoard ? 'app' : 'external'
+}
+
+// 주소창에 친 글자 → 주소. 스킴이 없으면 localhost:3000 · 127.0.0.1 은 http, 그 밖은 https 를 붙인다. 열 수 없으면 null
+function normalizeAddress(input) {
+  const text = String(input || '').trim()
+  if (!text) return null
+  if (/^[a-z][a-z0-9+.-]*:\/\//i.test(text)) return isWebUrl(text) ? text : null
+  const local = /^(localhost|127\.0\.0\.1|\[::1\])(:|\/|$)/i.test(text)
+  const candidate = `${local ? 'http' : 'https'}://${text}`
+  return isWebUrl(candidate) ? candidate : null
 }
 
 function boardUrl(port) {
@@ -296,7 +309,9 @@ module.exports = {
   availableAgents,
   agentDecision,
   findAthenaWorkspace,
-  classifyOpen,
+  openTarget,
+  isWebUrl,
+  normalizeAddress,
   boardUrl,
   SOCKET_PATH_MAX,
   daemonPaths,

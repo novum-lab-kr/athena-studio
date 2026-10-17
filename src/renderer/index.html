@@ -13,6 +13,7 @@
     <button class="tab" data-tab="board" aria-selected="false">📋 현황판 <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
     <span id="athena-dir" class="dir" title="아테나 폴더"></span>
+    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기">🌐 브라우저 <kbd data-key="⇧B"></kbd></button>
   </header>
 
   <main>
@@ -71,6 +72,20 @@
       <div id="board-status" class="status">현황판을 여는 중…</div>
       <iframe id="board-frame" title="현황판" hidden></iframe>
     </section>
+
+    <!-- 오른쪽에서 스르륵 나오는 옆 브라우저 — 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
+    <aside id="browser" class="browser" hidden>
+      <div class="browser-bar">
+        <button id="browser-back" title="뒤로" disabled>◀</button>
+        <button id="browser-forward" title="앞으로" disabled>▶</button>
+        <button id="browser-reload" title="새로고침">⟳</button>
+        <input id="browser-url" class="browser-url" spellcheck="false" autocomplete="off" placeholder="주소 — localhost:3000 · 계획서 링크 · https://…">
+        <button id="browser-external" title="기본 브라우저로 열기">↗</button>
+        <button id="browser-close" title="닫기">✕</button>
+      </div>
+      <div id="browser-error" class="browser-error" hidden></div>
+      <div id="browser-slot" class="browser-slot"></div>
+    </aside>
   </main>
 
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>

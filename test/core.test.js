@@ -201,15 +201,23 @@ test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 �
   assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
 
-test('새 창 분류: 현황판 주소는 앱 안, 그 밖 http(s) 는 브라우저, 나머지는 막기', () => {
-  assert.equal(core.classifyOpen('http://localhost:4700/plans/a/plan.html', 4700), 'app')
-  assert.equal(core.classifyOpen('http://127.0.0.1:4700/qa-live?id=1', 4700), 'app')
-  assert.equal(core.classifyOpen('http://localhost:4701/', 4700), 'external')
-  assert.equal(core.classifyOpen('https://localhost:4700/', 4700), 'external')
-  assert.equal(core.classifyOpen('https://github.com/novum-lab-kr', 4700), 'external')
-  assert.equal(core.classifyOpen('file:///etc/passwd', 4700), 'deny')
-  assert.equal(core.classifyOpen('javascript:alert(1)', 4700), 'deny')
-  assert.equal(core.classifyOpen('not a url', 4700), 'deny')
+test('링크 열 곳: 현황판에서 누른 것 · localhost 는 옆 브라우저, 그 밖 http(s) 는 기본 브라우저, 나머지는 막기 · 주소창', () => {
+  // 현황판에서 누른 http(s) 는 모두 옆 브라우저, 그 밖은 localhost 만 옆 브라우저
+  assert.equal(core.openTarget('https://github.com/novum-lab-kr', { fromBoard: true }), 'panel')
+  assert.equal(core.openTarget('http://localhost:4701/plans/a/plan.html'), 'panel')
+  assert.equal(core.openTarget('http://127.0.0.1:3000/'), 'panel')
+  assert.equal(core.openTarget('http://[::1]:5173/'), 'panel')
+  assert.equal(core.openTarget('https://github.com/novum-lab-kr'), 'external')
+  assert.equal(core.openTarget('file:///etc/passwd', { fromBoard: true }), 'deny')
+  assert.equal(core.openTarget('javascript:alert(1)'), 'deny')
+  assert.equal(core.openTarget('not a url'), 'deny')
+  // 주소창
+  assert.equal(core.normalizeAddress('localhost:3000/login'), 'http://localhost:3000/login')
+  assert.equal(core.normalizeAddress('127.0.0.1:4701'), 'http://127.0.0.1:4701')
+  assert.equal(core.normalizeAddress('example.com/a'), 'https://example.com/a')
+  assert.equal(core.normalizeAddress('http://localhost:4701/'), 'http://localhost:4701/')
+  assert.equal(core.normalizeAddress('file:///etc/passwd'), null)
+  assert.equal(core.normalizeAddress('  '), null)
 })
 
 test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으면 tmpdir 로', () => {
