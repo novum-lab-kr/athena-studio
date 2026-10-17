@@ -20,6 +20,7 @@ else
 fi
 
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 if "$SCREEN" inside; then
   eval "$("$SCREEN" self --format sh)"   # SCREEN_PANE_ID(부른 pane) · SCREEN_TAB_ID
   # 이 탭에 이미 같은 이름의 pane 이 있으면 새로 쪼개지 않고 그 자리에서 다시 띄운다
@@ -27,7 +28,7 @@ if "$SCREEN" inside; then
   if [ -n "$EXISTING" ]; then
     # 떠 있는 메뉴·뷰어를 닫는다 — 빈 셸(herdr 재시작으로 복원된 pane)이면 q 가 명령줄에 남아 "qenv …" 가 되므로 보내지 않는다
     "$SCREEN" pane is-shell "$EXISTING" || { "$SCREEN" pane send-text "$EXISTING" q >/dev/null 2>&1; sleep 0.5; }
-    "$SCREEN" pane run "$EXISTING" env "ATHENA_CLAUDE_PANE=${SCREEN_PANE_ID:-}" "${CMD[@]}" >/dev/null
+    "$SCREEN" pane run "$EXISTING" "$(shell_line env "ATHENA_CLAUDE_PANE=${SCREEN_PANE_ID:-}" "${CMD[@]}")" >/dev/null
     "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true
     echo "$EXISTING (재사용)"
     exit 0
@@ -38,7 +39,7 @@ if "$SCREEN" inside; then
     echo "⚠️  $("$SCREEN" name) pane split 실패: $OUT" >&2; exit 1; }
   NEW_PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
   sleep 1
-  "$SCREEN" pane run "$NEW_PANE" "${CMD[@]}" >/dev/null
+  "$SCREEN" pane run "$NEW_PANE" "$(shell_line "${CMD[@]}")" >/dev/null
   "$SCREEN" pane rename "$NEW_PANE" "$LABEL" >/dev/null 2>&1 || true
   "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
   echo "$NEW_PANE"

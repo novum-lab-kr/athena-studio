@@ -7,7 +7,7 @@ w1:p4 (재사용)
 ["pane", "list"]
 ["pane", "process-info", "--pane", "w1:p4"]
 ["pane", "send-text", "w1:p4", "q"]
-["pane", "run", "w1:p4", "env", "ATHENA_CLAUDE_PANE=w1:p1", "<ATHENA>/scripts/guide-menu.sh"]
+["pane", "run", "w1:p4", "'env' 'ATHENA_CLAUDE_PANE=w1:p1' '<ATHENA>/scripts/guide-menu.sh'"]
 ["pane", "list"]
 ["pane", "list"]
 ["pane", "layout", "--pane", "w1:p1"]

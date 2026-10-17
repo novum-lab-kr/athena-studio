@@ -122,7 +122,8 @@ sc_guide_nopane()   { step - HERDR_ENV=1 HERDR_TAB_ID=w1:t1 -- scripts/guide-pan
 sc_guide_busy()     { step guide-reuse "${IN[@]}" -- scripts/guide-pane.sh; }
 sc_guide_shell()    { step guide-reuse,shell "${IN[@]}" -- scripts/guide-pane.sh; }
 sc_guide_menu() {
-  extract scripts/guide-menu.sh '^ask_claude\\(\\)' '^}' > "$WORK/ask.sh"
+  # ask_claude 는 shell_line(scripts/lib/shell-line.sh)을 쓴다 — 함수만 잘라 내니 도우미도 같이 싣는다
+  { cat "$COPY/scripts/lib/shell-line.sh"; extract scripts/guide-menu.sh '^ask_claude\\(\\)' '^}'; } > "$WORK/ask.sh"
   step - "${IN[@]}" ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_claude "/board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
   step - ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_claude "/board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
 }

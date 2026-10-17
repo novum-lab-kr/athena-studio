@@ -110,11 +110,21 @@ export const commitArchive = (results) => {
     // archive/ 는 회사 팩 링크일 수 있다 — 경로를 실제 레포(코어·팩)별로 나눠 각자 커밋한다(lib/git.mjs)
     const sources = done.flatMap((result) => result.paths.slice(1))
     const tracked = new Set(sources.length ? execFileSync('git', ['-C', ROOT, 'ls-files', '--', ...sources], { encoding: 'utf8' }).split('\n').filter(Boolean) : [])
-    const paths = [...new Set(done.flatMap((result) => [result.dir, ...result.paths.slice(1).filter((path) => tracked.has(path))]))]
+    const all = [...new Set(done.flatMap((result) => [result.dir, ...result.paths.slice(1).filter((path) => tracked.has(path))]))]
+    // 팩이 git 레포가 아니면(로컬만 — 사용자 결정 2026-10-17) archive/ 의 실제 자리가 바깥 레포가 무시하는 packs/ 안이다 — 커밋하지 않고 로컬에만 둔다
+    const ignored = (path) => {
+      let found
+      try { found = realRepoPath(ROOT, path) } catch { return true }   // 어느 git 레포에도 없다(바깥에 둔 로컬 팩) — 로컬에만
+      try { execFileSync('git', ['-C', found.top, 'check-ignore', '-q', '--', found.rel], { stdio: 'ignore' }); return true } catch { return false }
+    }
+    const local = all.filter(ignored)
+    const paths = all.filter((path) => !local.includes(path))
+    const note = local.length ? '팩이 git 레포가 아니라 로컬에만 보관했다 — 백업은 bin/athena pack backup' : ''
+    if (!paths.length) return { skipped: true, note }
     const title = done.length === 1 ? done[0].title || done[0].dir : `${done.length}건`
     gitEach(ROOT, paths, ['add', '-A', '--', '{paths}'])
     gitEach(ROOT, paths, ['commit', '-q', '-m', `docs: 아카이브 — ${title}`, '--', '{paths}'])
-    return { sha: gitEach(ROOT, paths, ['rev-parse', '--short', 'HEAD']).map((repo) => repo.out).join(',') }
+    return { sha: gitEach(ROOT, paths, ['rev-parse', '--short', 'HEAD']).map((repo) => repo.out).join(','), note }
   } catch (error) {
     return { error: String(error.stderr || error.message).trim().split('\n').slice(-2).join(' ') }
   }
@@ -264,6 +274,7 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
   if (!dryRun && !args.includes('--no-commit')) {
     const committed = commitArchive(results)
     if (committed.sha) console.log(`커밋 ${committed.sha} (push 는 하지 않음)`)
+    if (committed.note) console.log(`ℹ️ ${committed.note}`)
     if (committed.error) console.error(`⚠️ 커밋하지 못했어요: ${committed.error}`)
   }
   for (const result of results) {

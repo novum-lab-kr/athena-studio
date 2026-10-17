@@ -4,6 +4,7 @@
 # 아래에 새 pane 을 열어 별도 아테나 세션으로 /<스킬> 을 돌린다.
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 cd "$ATHENA_DIR"
 CLAUDE_PANE="${ATHENA_CLAUDE_PANE:-}"
 
@@ -30,7 +31,7 @@ ask_claude() { # ask_claude <프롬프트>  — 기존 아테나 pane 을 건드
       printf '%s⚠️ pane 분할 실패:%s %s\n' "$YELLOW" "$RESET" "$out"; return 1; }
     new_pane="$(printf '%s' "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
     sleep 1
-    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" claude "$1" >/dev/null
+    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" "$(shell_line claude "$1")" >/dev/null   # 셸 한 줄 — '/guide 설명' 이 낱말 둘로 쪼개지지 않게
     "$ATHENA_DIR/scripts/screen" pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
     printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$1"
   else

@@ -9,7 +9,7 @@ p8  (fe — 계획서 plans/task/20261001-fe-test.md · workspace 'shop-web' (pa
 ["@studio", "pane", "list"]
 ["@studio", "pane", "split", "--target", "p3", "--direction", "down", "--ratio", "0.5", "--cwd", "<ATHENA>", "--no-focus"]
 ["@studio", "pane", "list"]
-["@studio", "pane", "run", "p8", "<TMP>/hermes-runner.X"]
+["@studio", "pane", "run", "p8", "'<TMP>/hermes-runner.X'"]
 ["@studio", "pane", "rename", "p8", "🤖 fe · main"]
 # 검사 작업
 

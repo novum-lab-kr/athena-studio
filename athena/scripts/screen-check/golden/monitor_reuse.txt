@@ -6,4 +6,4 @@ w1:p5 (재사용)
 --- herdr
 ["pane", "list"]
 ["pane", "send-keys", "w1:p5", "C-c"]
-["pane", "run", "w1:p5", "<ATHENA>/scripts/agent-monitor.py", "--stay", "--recent"]
+["pane", "run", "w1:p5", "'<ATHENA>/scripts/agent-monitor.py' '--stay' '--recent'"]

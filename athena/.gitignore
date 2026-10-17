@@ -52,3 +52,7 @@ scripts/qa/node_modules/
 
 # 파이썬 바이트코드 — scripts/lib 의 athena_config·plan_update 를 불러오면 생긴다
 __pycache__/
+
+# oh-my-claudecode 세션 상태(어느 폴더에든 생긴다) · 팩에서 만드는 다이어그램 목록(회사 이름이 들어간다 — scripts/build-diagram-index.mjs)
+.omc/
+docs/diagrams/index.html

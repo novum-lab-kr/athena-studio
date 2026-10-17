@@ -5,6 +5,10 @@
  *   athena pack link      팩 파일을 코어의 정해진 자리에 링크로 건다(이미 건 것은 다시 맞춘다)
  *   athena pack unlink    팩을 가리키는 링크를 모두 지운다
  *   athena pack check     코어 파일에 팩의 회사 이름(pack.json names)이 있는지 찾는다 — 있으면 1
+ *   athena pack backup [--out <폴더>]
+ *                         팩 폴더를 날짜 붙은 압축 파일 하나로(기본 ~/athena-pack-backups · .env*·키 파일·node_modules 는 뺀다)
+ *   athena pack restore <파일>
+ *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
  *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
@@ -18,8 +22,9 @@
  * 스크립트가 고정 경로로 읽는 것(docs/knowledge/<레포>·scripts/verify/<레포>.sh·archive …)을 링크로 잇는다.
  */
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
-import { dirname, join, relative, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { homedir } from 'node:os'
+import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, loadConfig } from './lib/config.mjs'
 import { initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { maskText } from './qa/live.mjs'
@@ -81,13 +86,15 @@ const writeExclude = (paths) => {
   let gitDir
   try { gitDir = execFileSync('git', ['-C', ROOT, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return }   // git 레포가 아니면(복사본) 건너뛴다
   const file = resolve(ROOT, gitDir, 'info', 'exclude')
+  // 무시 경로는 git 루트 기준이다 — 아테나가 다른 레포 안(예: 스튜디오 레포의 athena/ subtree)이면 그 앞자리를 붙인다
+  const prefix = execFileSync('git', ['-C', ROOT, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   mkdirSync(dirname(file), { recursive: true })
   const before = existsSync(file) ? readFileSync(file, 'utf8') : ''
   // 표시 문자열의 괄호를 정규식으로 escape 한다
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
   const section = new RegExp(`\\n?${escape(EXCLUDE_START)}( · (.+))?\\n[\\s\\S]*?${escape(EXCLUDE_END)}\\n?`, 'g')
   const kept = before.replace(section, (whole, _, owner) => (owner && owner !== ROOT && existsSync(owner) ? whole : '\n')).replace(/\n+$/, '')
-  const block = paths.length ? `\n${EXCLUDE_START} · ${ROOT}\n${paths.map((path) => `/${path}`).join('\n')}\n${EXCLUDE_END}\n` : '\n'
+  const block = paths.length ? `\n${EXCLUDE_START} · ${ROOT}\n${paths.map((path) => `/${prefix}${path}`).join('\n')}\n${EXCLUDE_END}\n` : '\n'
   writeFileSync(file, `${kept}${block}`)
 }
 
@@ -224,11 +231,59 @@ const runScaffold = () => {
   link()
 }
 
+// ── 팩 백업 · 되살리기 — 팩은 git 이 아닐 수 있다(로컬만 · 사용자 결정 2026-10-17). tar 로 한 파일 ─────────────
+// 비밀값이 들 수 있는 파일은 담지 않는다 — 팩에 원래 두지 않는 것들이지만 실수로 있어도 백업 파일로 새지 않게.
+// .git 도 뺀다(팩이 git 레포면 설정의 인증 정보·과거 커밋의 값이 남을 수 있다 — 그런 팩은 원격으로 백업한다). Codex 리뷰 2026-10-17
+const BACKUP_EXCLUDES = ['.env*', '*.key', '*.pem', '*.p12', '.npmrc', '.netrc', '.git', 'node_modules', '.DS_Store', '.omc']
+const backup = () => {
+  const dir = packDir()
+  const out = resolve(flag('out') || join(homedir(), 'athena-pack-backups'))
+  mkdirSync(out, { recursive: true })
+  const now = new Date()   // 이 컴퓨터 시각으로 — YYYYMMDD-HHMMSS
+  const pad = (value) => String(value).padStart(2, '0')
+  const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
+  // 같은 초에 다시 하면 앞 백업을 덮지 않게 -2 · -3 … 을 붙인다
+  let file = join(out, `${basename(dir)}-pack-${stamp}.tar.gz`)
+  for (let index = 2; existsSync(file); index += 1) file = join(out, `${basename(dir)}-pack-${stamp}-${index}.tar.gz`)
+  execFileSync('tar', ['-czf', file, ...BACKUP_EXCLUDES.flatMap((pattern) => ['--exclude', pattern]), '-C', dirname(dir), basename(dir)], { stdio: ['ignore', 'ignore', 'inherit'] })
+  const count = execFileSync('tar', ['-tzf', file], { encoding: 'utf8' }).split('\n').filter((line) => line && !line.endsWith('/')).length
+  console.log(`📦 팩 백업 ${basename(dir)} — 파일 ${count}개 · ${(statSync(file).size / 1024).toFixed(0)}KB`)
+  console.log(`   ${file}`)
+  console.log('   되살리기: bin/athena pack restore <이 파일>')
+}
+const restore = () => {
+  const file = resolve(process.argv[4] || fail('사용: athena pack restore <백업 파일>'))
+  if (!existsSync(file)) fail(`백업 파일이 없다: ${file}`)
+  const entries = execFileSync('tar', ['-tzf', file], { encoding: 'utf8' }).split('\n').filter(Boolean)
+  // packs/ 밖에 쓰지 않게 — 절대 경로·.. 가 든 항목이 있으면 풀지 않는다(bsdtar 기본 방어에만 기대지 않는다)
+  const unsafe = entries.find((entry) => entry.startsWith('/') || entry.split('/').includes('..'))
+  if (unsafe) fail(`백업 안에 packs/ 밖을 가리키는 경로가 있다 — 풀지 않는다: ${unsafe}`)
+  const tops = [...new Set(entries.map((line) => line.split('/')[0]))]
+  if (tops.length !== 1 || !tops[0] || tops[0].startsWith('.')) fail(`팩 백업이 아니다(맨 위 폴더가 하나여야 한다): ${tops.join(', ')}`)
+  const name = tops[0]
+  const target = join(ROOT, 'packs', name)
+  if (existsSync(target)) fail(`이미 있다: packs/${name} — 덮지 않는다. 지금 것을 옮기거나(예: packs/${name}.old) 지운 뒤 다시`)
+  mkdirSync(join(ROOT, 'packs'), { recursive: true })
+  execFileSync('tar', ['-xzf', file, '-C', join(ROOT, 'packs')], { stdio: ['ignore', 'ignore', 'inherit'] })
+  if (!existsSync(join(target, 'pack.json'))) fail(`되살렸지만 pack.json 이 없다: packs/${name}`)
+  console.log(`📦 되살림: packs/${name}`)
+  if (!local.pack) {
+    writeFileSync(join(ROOT, 'athena.config.json'), JSON.stringify({ ...local, pack: `packs/${name}` }, null, 2) + '\n')
+    local.pack = `packs/${name}`
+    console.log('   athena.config.json 의 pack 을 이 팩으로 — 링크를 건다')
+    link()
+  } else if (local.pack !== `packs/${name}`) {
+    console.log(`   지금 쓰는 팩은 ${local.pack} — 바꾸려면 athena.config.json 의 pack 을 packs/${name} 로 고치고 bin/athena pack link`)
+  }
+}
+
 if (command === 'init') init()
 else if (command === 'scaffold') runScaffold()
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()
 else if (command === 'pack' && sub === 'check') check()
+else if (command === 'pack' && sub === 'backup') backup()
+else if (command === 'pack' && sub === 'restore') restore()
 else {
   console.log(readFileSync(new URL(import.meta.url), 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1].replace(/^ \* ?/gm, '').trim())
   process.exit(command ? 2 : 0)

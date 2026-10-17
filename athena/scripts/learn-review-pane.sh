@@ -12,6 +12,7 @@ LABEL="📚 배우기 검토"
 CMD=(node "$ATHENA_DIR/scripts/learn-review.mjs" --watch)
 
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 if ! "$SCREEN" inside; then
   exit 1
 fi
@@ -21,7 +22,7 @@ eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘�
 # 이 이름이고 cwd(또는 지금 셸의 폴더)가 이 체크아웃인 pane
 PANE="$("$SCREEN" pane list --label "$LABEL" --cwd "$ATHENA_DIR" --format id 2>/dev/null)"
 
-RUN="$(printf '%q ' "${CMD[@]}")"   # pane run 은 명령을 한 줄 문자열로 받는다(단어를 따옴표 없이 이어 붙인다)
+RUN="$(shell_line "${CMD[@]}")"   # pane run 은 명령을 한 줄 문자열로 받는다(단어를 따옴표 없이 이어 붙인다)
 if [ -n "$PANE" ]; then
   # 이미 돌고 있으면 그대로 둔다 — 돌고 있는 프로그램에 명령줄을 쳐 넣지 않는다. 빈 셸(herdr 재시작으로 복원된 pane)일 때만 다시 띄운다
   if "$SCREEN" pane is-shell "$PANE"; then

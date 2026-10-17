@@ -6,7 +6,7 @@ w1:p9
 --- herdr
 ["pane", "list"]
 ["pane", "split", "--pane", "w1:p1", "--direction", "down", "--ratio", "0.3", "--cwd", "<ATHENA>", "--no-focus"]
-["pane", "run", "w1:p9", "node <ATHENA>/scripts/learn-review.mjs --watch "]
+["pane", "run", "w1:p9", "'node' '<ATHENA>/scripts/learn-review.mjs' '--watch'"]
 ["pane", "rename", "w1:p9", "📚 배우기 검토"]
 ["pane", "list"]
 ["pane", "list"]

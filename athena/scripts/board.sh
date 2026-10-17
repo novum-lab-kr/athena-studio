@@ -10,6 +10,7 @@
 # herdr 밖이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log.
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 PORT="${ATHENA_BOARD_PORT:-4700}"
 URL="http://localhost:$PORT"
 LABEL="📋 현황판"
@@ -49,7 +50,7 @@ else
       sleep 1
     fi
     # pane run 은 인자를 따옴표 없이 이어 붙인다(bash -c "..." 가 깨진다) — env 로 바로 실행한다
-    "$SCREEN" pane run "$PANE" env "ATHENA_BOARD_PORT=$PORT" node "$ATHENA_DIR/scripts/board/server.mjs" >/dev/null
+    "$SCREEN" pane run "$PANE" "$(shell_line env "ATHENA_BOARD_PORT=$PORT" node "$ATHENA_DIR/scripts/board/server.mjs")" >/dev/null
     "$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
     "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
     PLACE="pane $PANE"

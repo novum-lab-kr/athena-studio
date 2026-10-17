@@ -6,7 +6,7 @@ $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_BOARD_PORT=47999 ATH
 --- herdr
 ["pane", "list"]
 ["pane", "split", "--pane", "w1:p1", "--direction", "down", "--ratio", "0.25", "--cwd", "<ATHENA>", "--no-focus"]
-["pane", "run", "w1:p9", "env", "ATHENA_BOARD_PORT=47999", "node", "<ATHENA>/scripts/board/server.mjs"]
+["pane", "run", "w1:p9", "'env' 'ATHENA_BOARD_PORT=47999' 'node' '<ATHENA>/scripts/board/server.mjs'"]
 ["pane", "rename", "w1:p9", "📋 현황판"]
 ["pane", "list"]
 ["pane", "list"]

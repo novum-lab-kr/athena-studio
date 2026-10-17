@@ -15,6 +15,7 @@ CMD=("$ATHENA_DIR/scripts/agent-monitor.py" --stay --recent)
 [ -n "$MINUTES" ] && CMD+=("$MINUTES")
 
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:  ${CMD[*]}" >&2
   exit 1
@@ -27,7 +28,7 @@ PANE="$("$SCREEN" pane list --label "$LABEL" --prefer-workspace self --format id
 if [ -n "$PANE" ]; then
   "$SCREEN" pane send-keys "$PANE" C-c >/dev/null 2>&1 || true   # 돌고 있던 모니터를 먼저 끊는다
   sleep 1
-  "$SCREEN" pane run "$PANE" "${CMD[@]}" >/dev/null
+  "$SCREEN" pane run "$PANE" "$(shell_line "${CMD[@]}")" >/dev/null   # 셸 한 줄 — 띄어쓰기 든 경로가 쪼개지지 않게
   echo "$PANE (재사용)"
   exit 0
 fi
@@ -39,7 +40,7 @@ PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.st
 sleep 1
 # pane run 은 단어를 따옴표 없이 이어 붙여 한 줄로 친다 — bash -c "<한 줄>" 로 넘기면 bash 가 첫 단어(스크립트)만 돌리고
 # --stay --recent 는 $0·$1 로 사라진다. 셸 따옴표를 붙인 한 줄 하나만 넘긴다(learn-review-pane.sh 와 같은 방식)
-RUN_SH="$(printf '%q ' "${CMD[@]}")"
+RUN_SH="$(shell_line "${CMD[@]}")"
 "$SCREEN" pane run "$PANE" "$RUN_SH" >/dev/null
 "$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
 "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치

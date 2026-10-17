@@ -8,7 +8,7 @@ w3:p1  (fe — 계획서 plans/task/20261001-fe-test.md · 새 workspace 'shop-w
 ["workspace", "create", "--label", "shop-web", "--cwd", "<ATHENA>", "--no-focus"]
 ["tab", "rename", "w3:t1", "shop-web"]
 ["pane", "list"]
-["pane", "run", "w3:p1", "<TMP>/hermes-runner.X"]
+["pane", "run", "w3:p1", "'<TMP>/hermes-runner.X'"]
 ["pane", "rename", "w3:p1", "🤖 fe · main"]
 # 검사 작업
 

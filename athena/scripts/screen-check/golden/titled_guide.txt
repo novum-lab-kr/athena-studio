@@ -6,7 +6,7 @@ w1:p9
 --- herdr
 ["pane", "list"]
 ["pane", "split", "--pane", "w1:p1", "--direction", "right", "--ratio", "0.6", "--cwd", "<ATHENA>", "--env", "ATHENA_CLAUDE_PANE=w1:p1", "--no-focus"]
-["pane", "run", "w1:p9", "<ATHENA>/scripts/guide-menu.sh"]
+["pane", "run", "w1:p9", "'<ATHENA>/scripts/guide-menu.sh'"]
 ["pane", "rename", "w1:p9", "가이드 메뉴"]
 ["pane", "list"]
 ["pane", "list"]

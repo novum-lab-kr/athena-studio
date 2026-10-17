@@ -6,4 +6,4 @@ w1:p6 (재사용)
 --- herdr
 ["pane", "list"]
 ["pane", "process-info", "--pane", "w1:p6"]
-["pane", "run", "w1:p6", "node <ATHENA>/scripts/learn-review.mjs --watch "]
+["pane", "run", "w1:p6", "'node' '<ATHENA>/scripts/learn-review.mjs' '--watch'"]

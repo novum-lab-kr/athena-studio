@@ -10,7 +10,8 @@
  * 레포를 고르는 일만 한다 — 회사 이름·추정 수정·에이전트 이름은 setup.md 2단계의 다른 질문으로 묻는다.
  */
 import { execFileSync } from 'node:child_process'
-import { mkdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -80,9 +81,14 @@ const plan = {
 
 mkdirSync(join(ROOT, 'plans/setup'), { recursive: true })
 writeFileSync(join(ROOT, mdFile), md)
-const dataFile = join(ROOT, mdFile.replace(/\.md$/, '.json'))
+// 콘솔 데이터는 임시 폴더에 — plans/ 에 남기면 git 에 샌다(plans/ 는 md·html 만 무시)
+const dataFile = join(mkdtempSync(join(tmpdir(), 'athena-setup-pick-')), 'plan.json')
 writeFileSync(dataFile, JSON.stringify(plan, null, 2))
 const htmlArgs = [join(ROOT, 'scripts/plan-html.mjs'), mdFile, '--data', dataFile]
 if (option('pane')) htmlArgs.push('--pane', option('pane'))
-process.stdout.write(execFileSync(process.execPath, htmlArgs, { cwd: ROOT, encoding: 'utf8' }))
+try {
+  process.stdout.write(execFileSync(process.execPath, htmlArgs, { cwd: ROOT, encoding: 'utf8' }))
+} finally {
+  rmSync(dirname(dataFile), { recursive: true, force: true })
+}
 console.log(`레포 ${repos.length}개 · ${mdFile} — 연다: scripts/board.sh open ${mdFile}`)

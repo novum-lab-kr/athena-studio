@@ -32,6 +32,13 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 코어에 같은 이름의 실제 파일이 있으면 링크하지 않고 실패한다(덮어쓰지 않는다).
 
+## 백업 · 되살리기
+
+팩은 git 레포가 아닐 수 있다(로컬에만 두는 회사 — 그러면 `archive/` 보관도 커밋되지 않고 로컬에만 남는다). 그래서 압축 파일 하나로 백업한다.
+- `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `~/athena-pack-backups/`). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
+- `bin/athena pack restore <파일>` — `packs/<팩>` 으로 되살린다. 같은 이름 팩이 있으면 **덮지 않고 멈춘다**(옮기거나 지운 뒤 다시). 팩 없이 쓰는 중이면 `athena.config.json` 의 `pack` 을 잡고 링크까지 건다
+- 말로: "팩 백업해줘" · "팩 되살려줘 <파일>"
+
 ## pack.json
 
 ```jsonc

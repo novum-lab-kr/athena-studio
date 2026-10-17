@@ -25,6 +25,7 @@
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
+. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
 AGENT=""; PROMPT=""; DIR="right"; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""
 while [ $# -gt 0 ]; do
@@ -297,7 +298,7 @@ PYEOF
 } > "$RUNNER"
 chmod +x "$RUNNER" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "chmod 실패"; exit 1; }
 
-if ! "$SCREEN" pane run "$PANE" "$RUNNER" >/dev/null; then
+if ! "$SCREEN" pane run "$PANE" "$(shell_line "$RUNNER")" >/dev/null; then   # 셸 한 줄 — TMPDIR 에 띄어쓰기가 있어도
   rm -f "$PROMPT_FILE" "$RUNNER"
   echo "pane 실행 실패 (pane $PANE)"; exit 1
 fi

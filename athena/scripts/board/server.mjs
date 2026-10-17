@@ -895,7 +895,8 @@ const openHermesPane = async (issueId, text) => {
     `cd '${ROOT}' || exit 1`,
     `claude "$(cat '${promptFile}')"`,
   ].join('\n') + '\n', { mode: 0o755 })
-  if ((await screen(['pane', 'run', pane, runner])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
+  // pane run 은 한 줄로 친다 — 경로를 셸 작은따옴표로 감싼다(TMPDIR 에 띄어쓰기가 있어도 · 경로에 ' 는 없다)
+  if ((await screen(['pane', 'run', pane, `'${runner}'`])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
   return { pane }
 }
 
@@ -1044,6 +1045,7 @@ const archiveCard = async (id) => {
   const committed = commitArchive([lastBundle])
   if (committed.sha) moved.push(`커밋 ${committed.sha}`)
   if (committed.error) notes.push(`커밋하지 못했어요 — ${committed.error}`)
+  if (committed.note) notes.push(committed.note)
   return { moved: moved.filter(Boolean), notes }
 }
 
