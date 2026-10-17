@@ -119,13 +119,26 @@ test('터미널 환경: TERM · COLORTERM', () => {
   assert.equal(core.terminalEnv({ LANG: 'en_US.UTF-8' }).LANG, 'en_US.UTF-8')
 })
 
-test('작업 창 명령: herdr 가 있으면 herdr, 없으면 로그인 셸 + 안내', () => {
-  assert.deepEqual(core.terminalLaunch({ herdrPath: '/b/herdr', shell: '/bin/zsh' }), { file: '/b/herdr', args: [], notice: null })
-  const fallback = core.terminalLaunch({ herdrPath: null, shell: '/bin/bash' })
-  assert.equal(fallback.file, '/bin/bash')
-  assert.deepEqual(fallback.args, ['-l'])
-  assert.match(fallback.notice, /herdr 를 찾지 못했어요/)
-  assert.equal(core.terminalLaunch({ herdrPath: null }).file, '/bin/zsh')
+test('자식 환경: 앱을 에이전트 세션 안에서 켜도 세션 표시는 넘기지 않는다', () => {
+  const env = core.childEnv({ PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', ATHENA_AGENT: 'x', CLAUDE_CONFIG_DIR: '/c' })
+  assert.deepEqual(env, { PATH: '/bin', CLAUDE_CONFIG_DIR: '/c' })
+})
+
+test('자식 환경: delegate 실행기 값 · 스튜디오 pane 표시도 넘기지 않는다(상태줄이 엉뚱한 레포를 보지 않게)', () => {
+  const env = core.childEnv({
+    PATH: '/bin',
+    ATHENA_REPO_DIR: '/w/athena-studio',
+    ATHENA_VERIFY_DIR: '/w/athena/.worktrees/x',
+    ATHENA_STUDIO: '1',
+    ATHENA_STUDIO_PANE_ID: 'p3',
+    ATHENA_STUDIO_SOCKET: '/s',
+    ATHENA_BOARD_PORT: '4700',
+    ATHENA_DIR: '/w/athena',
+  })
+  // 아테나 설정값(ATHENA_BOARD_PORT · ATHENA_DIR)은 남긴다 — 세션 표시만 지운다
+  assert.deepEqual(env, { PATH: '/bin', ATHENA_BOARD_PORT: '4700', ATHENA_DIR: '/w/athena' })
+  // 새로 넣는 값은 그대로 들어간다(main 이 현황판에 소켓을 넘길 때)
+  assert.equal(core.childEnv({ ATHENA_STUDIO_SOCKET: '/old' }, { ATHENA_STUDIO_SOCKET: '/new' }).ATHENA_STUDIO_SOCKET, '/new')
 })
 
 test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 · 없으면 none', () => {
@@ -140,8 +153,8 @@ test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 ·
 })
 
 test('athena 작업 공간: 이름이 athena 인 것', () => {
-  assert.equal(core.findAthenaWorkspace([{ label: '~', workspace_id: 'w1' }]), null)
-  assert.equal(core.findAthenaWorkspace([{ label: '~' }, { label: 'athena', workspace_id: 'w4' }]).workspace_id, 'w4')
+  assert.equal(core.findAthenaWorkspace([{ label: 'web', id: 'w1' }]), null)
+  assert.equal(core.findAthenaWorkspace([{ label: '~' }, { label: 'athena', id: 'w4' }]).id, 'w4')
   assert.equal(core.findAthenaWorkspace(undefined), null)
 })
 
@@ -154,4 +167,25 @@ test('새 창 분류: 현황판 주소는 앱 안, 그 밖 http(s) 는 브라우
   assert.equal(core.classifyOpen('file:///etc/passwd', 4700), 'deny')
   assert.equal(core.classifyOpen('javascript:alert(1)', 4700), 'deny')
   assert.equal(core.classifyOpen('not a url', 4700), 'deny')
+})
+
+test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으면 tmpdir 로', () => {
+  const short = core.daemonPaths({ userData: '/Users/me/Library/Application Support/Athena Studio', home: '/Users/me', tmpdir: '/tmp', uid: 501 })
+  assert.deepEqual(short, {
+    socket: '/Users/me/Library/Application Support/Athena Studio/daemon.sock',
+    log: '/Users/me/Library/Application Support/Athena Studio/daemon.log',
+    endpoint: '/Users/me/.athena-studio/daemon.json',
+  })
+  const longDir = `/Users/${'x'.repeat(80)}/Library/Application Support/Athena Studio`
+  const long = core.daemonPaths({ userData: longDir, home: '/h', tmpdir: '/var/tmp', uid: 501 })
+  assert.equal(long.socket, '/var/tmp/athena-studio-501/daemon.sock')
+  assert.equal(long.log, `${longDir}/daemon.log`)
+  // 경계: 103바이트까지는 그대로 — 한글처럼 여러 바이트 글자는 바이트로 센다
+  const exact = '/' + 'a'.repeat(core.SOCKET_PATH_MAX - '/daemon.sock'.length - 1)
+  assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1 }).socket, `${exact}/daemon.sock`)
+  assert.equal(core.daemonPaths({ userData: `${exact}a`, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
+  const korean = '/' + '가'.repeat(31) // 소켓 경로가 글자로는 44개지만 바이트로는 106
+  assert.equal(core.daemonPaths({ userData: korean, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
+  // 대체 자리도 길면 분명한 오류
+  assert.throws(() => core.daemonPaths({ userData: longDir, home: '/h', tmpdir: `/${'t'.repeat(100)}`, uid: 1 }), /103바이트/)
 })

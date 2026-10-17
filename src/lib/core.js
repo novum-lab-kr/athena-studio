@@ -110,12 +110,20 @@ function defaultIsExecutable(file) {
 }
 
 // 자식 프로세스 환경. 앱을 herdr 안에서 켰을 때 물려받은 HERDR_* 를 지워야
-// 앱 안의 herdr 가 "herdr 안의 herdr" 로 착각하지 않는다
+// 작업 창 pane 셸(·그 안의 아테나)이 herdr pane 안이라고 착각하지 않는다
+// 앱을 에이전트(claude) 세션 안에서 켰을 때 물려받은 표시도 지운다 — 남으면 pane 의 claude 가
+// 자기를 하위 세션으로 알고(대화 기록 저장 꺼짐) 아테나가 관리 창(ATHENA_AGENT)으로 알아 첫 실행·화면 세팅을 건너뛴다.
+// 아테나 delegate.sh 실행기가 에이전트 pane 에 넣는 값(ATHENA_REPO_DIR · ATHENA_VERIFY_DIR)도 — 남으면 상태줄(statusline.sh)이
+// cwd 보다 그 레포를 먼저 보고, 검증 스크립트가 그 워크트리를 본다
+const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AGENT', 'ATHENA_REPO_DIR', 'ATHENA_VERIFY_DIR']
+
 function childEnv(baseEnv, extra = {}) {
   const env = {}
   for (const [key, value] of Object.entries(baseEnv)) {
-    if (key.startsWith('HERDR_')) continue
-    if (key === 'ELECTRON_RUN_AS_NODE') continue
+    if (key.startsWith('HERDR_') || key.startsWith('CLAUDE_CODE_')) continue
+    // 스튜디오 pane 안에서 앱을 켰을 때의 표시 — pane 셸·현황판에는 데몬·main 이 새 값을 다시 넣는다
+    if (key === 'ATHENA_STUDIO' || key.startsWith('ATHENA_STUDIO_')) continue
+    if (INHERITED_SESSION_KEYS.includes(key)) continue
     env[key] = value
   }
   return { ...env, ...extra }
@@ -130,22 +138,7 @@ function terminalEnv(baseEnv) {
   })
 }
 
-// 작업 창에서 띄울 명령. herdr 가 있으면 herdr, 없으면 로그인 셸과 설치 안내
-function terminalLaunch({ herdrPath, shell }) {
-  const loginShell = shell || '/bin/zsh'
-  if (herdrPath) return { file: herdrPath, args: [], notice: null }
-  return {
-    file: loginShell,
-    args: ['-l'],
-    notice: [
-      '\x1b[33mherdr 를 찾지 못했어요.\x1b[0m 아래 셸에서 설치한 뒤 메뉴 [보기 → 작업 창 다시 시작] 을 눌러 주세요.',
-      '설치 방법은 아테나 폴더의 README.md · ONBOARDING.md 를 보세요.',
-      '',
-    ].join('\r\n'),
-  }
-}
-
-// 아테나 에이전트 — herdr 안 athena 작업 공간에서 켠다(화면 세팅 · 첫 실행은 아테나 훅이 맡는다)
+// 아테나 에이전트 — 작업 창의 athena 작업 공간(아테나 폴더)에서 켠다(화면 세팅 · 첫 실행은 아테나 훅이 맡는다)
 const AGENTS = ['claude', 'codex']
 const ATHENA_WORKSPACE = 'athena'
 
@@ -161,6 +154,7 @@ function agentDecision(available, chosen) {
   return { choose: available }
 }
 
+// 데몬 상태의 작업 공간 중 이름이 athena 인 것
 function findAthenaWorkspace(workspaces) {
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE) || null
 }
@@ -185,6 +179,22 @@ function boardUrl(port) {
   return `http://localhost:${port}`
 }
 
+// 데몬 파일 자리. 맥 유닉스 소켓 경로는 104바이트(끝 NUL 포함)를 넘으면 connect 가 EINVAL 이다(2026-10-17 실측) —
+// userData 경로가 길면 소켓만 tmpdir/athena-studio-<uid>/ 로 옮긴다. endpoint 는 pane 밖에서 데몬을 찾는 접속 파일(S4)
+const SOCKET_PATH_MAX = 103
+
+function daemonPaths({ userData, home, tmpdir, uid }) {
+  let socket = path.join(userData, 'daemon.sock')
+  if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) socket = path.join(tmpdir, `athena-studio-${uid}`, 'daemon.sock')
+  // 대체 자리도 길면 여기서 알린다 — 데몬이 listen 하다 EINVAL 로 죽는 것보다 원인이 분명하다
+  if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) throw new Error(`데몬 소켓 경로가 ${SOCKET_PATH_MAX}바이트를 넘어요: ${socket}`)
+  return {
+    socket,
+    log: path.join(userData, 'daemon.log'),
+    endpoint: path.join(home, '.athena-studio', 'daemon.json'),
+  }
+}
+
 module.exports = {
   DEFAULT_CONFIG,
   PATH_MARK,
@@ -200,11 +210,12 @@ module.exports = {
   findExecutable,
   childEnv,
   terminalEnv,
-  terminalLaunch,
   ATHENA_WORKSPACE,
   availableAgents,
   agentDecision,
   findAthenaWorkspace,
   classifyOpen,
   boardUrl,
+  SOCKET_PATH_MAX,
+  daemonPaths,
 }

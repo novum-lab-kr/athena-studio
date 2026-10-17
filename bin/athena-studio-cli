@@ -1,0 +1,5 @@
+#!/bin/sh
+# Athena Studio 데몬 CLI — 아테나 화면 계층(studio 백엔드)이 부른다. 데몬을 띄운 node(앱이면 Electron)로 cli.js 를 돌린다.
+# ATHENA_STUDIO_NODE 는 pane 셸에 들어 있고, pane 밖이면 ~/.athena-studio/daemon.json 의 node 를 부르는 쪽이 넘긴다(없으면 PATH 의 node)
+dir=$(cd "$(dirname "$0")/.." && pwd)
+ELECTRON_RUN_AS_NODE=1 exec "${ATHENA_STUDIO_NODE:-node}" "$dir/src/daemon/cli.js" "$@"

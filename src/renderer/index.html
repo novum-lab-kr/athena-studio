@@ -28,7 +28,36 @@
     </section>
 
     <section id="work" class="panel">
-      <div id="terminal"></div>
+      <aside id="spaces" class="spaces" aria-label="작업 공간"></aside>
+      <div class="center">
+        <!-- 가운데 맨 위 에이전트 — 아바타 카드를 옆으로, 넘치면 가로 스크롤(머리줄·접기 없음) -->
+        <section id="agent-list" class="agent-list">
+          <div id="agent-list-rows" class="agent-list-rows"></div>
+        </section>
+        <nav id="studio-tabs" class="studio-tabs"></nav>
+        <div class="work-area">
+          <div id="panes" class="panes"></div>
+          <!-- 미리보기 — 터미널 옆에 나눠 띄운다(덮지 않는다) -->
+          <div id="preview" class="preview" tabindex="-1" hidden>
+            <header class="preview-head">
+              <span id="preview-title" class="preview-title"></span>
+              <button id="preview-close" class="preview-close" title="닫기 (Esc)">✕</button>
+            </header>
+            <pre id="preview-body" class="preview-body"></pre>
+          </div>
+        </div>
+        <div id="screen-status" class="screen-status" hidden></div>
+        <!-- 가운데 맨 아래 — 에이전트 모니터가 늘 떠 있는 고정 칸(데몬의 dock pane) -->
+        <section id="dock" class="dock"></section>
+      </div>
+      <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널"></aside>
+      <!-- 오른쪽을 접으면 남는 좁은 줄 — 누르면 다시 편다 -->
+      <aside id="side-rail" class="side-rail" hidden>
+        <button id="side-open" class="rail-button" title="Explorer 펴기">
+          <img class="rail-icon" src="../../node_modules/material-icon-theme/icons/folder-open.svg" alt="">
+          <span class="rail-arrow">«</span>
+        </button>
+      </aside>
       <div id="toast" class="toast" hidden></div>
       <div id="agent-picker" class="picker" hidden>
         <div class="picker-box">
@@ -48,6 +77,7 @@
   <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
   <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
+  <script src="../lib/layout.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>
