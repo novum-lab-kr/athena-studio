@@ -46,6 +46,8 @@ body {
   -webkit-app-region: drag;
 }
 body[data-platform="darwin"] .tabbar { padding-left: 80px; } /* 맥 신호등 버튼 자리 */
+/* 탭 줄 왼쪽 로고(화이트) — 창 끌기를 막지 않게 눌림은 받지 않는다 */
+.tabbar-logo { flex: none; width: 18px; height: 18px; margin: 0 6px 0 2px; opacity: 0.9; pointer-events: none; user-select: none; }
 .tab {
   -webkit-app-region: no-drag;
   height: 28px;
@@ -180,6 +182,8 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   gap: 8px;
   text-align: center;
 }
+/* 처음 켤 때 화면 맨 위 로고 */
+.setup-logo { width: 72px; height: 72px; margin-bottom: 8px; pointer-events: none; user-select: none; }
 .setup h1 { margin: 0 0 8px; font-size: 22px; }
 .setup p { margin: 0; color: var(--muted); line-height: 1.6; }
 .setup code { color: var(--text); }
@@ -686,9 +690,48 @@ button:focus-visible {
 .agent-sub { overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; white-space: nowrap; }
 
 /* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · athena 작업 공간에서만 보임) */
-.dock { flex: none; display: flex; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
-.dock:empty, .dock[hidden] { display: none; }
-.dock .pane { position: relative; flex: 1; min-width: 0; border: 0; border-radius: 0; }
+.dock { flex: none; display: flex; flex-direction: column; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
+.dock[hidden] { display: none; }
+/* 에이전트 모니터 — 머리줄(세션 칩) + 활동 피드. 접으면 머리줄만 */
+.dock.collapsed { height: 28px; }
+.dock.collapsed .monitor-feed { display: none; }
+.monitor-head { display: flex; flex: none; align-items: center; gap: 8px; height: 28px; padding: 0 8px; border-bottom: 1px solid var(--line); font-size: 12px; }
+.monitor-title { flex: none; color: var(--muted); }
+.monitor-sessions { display: flex; flex: 1; gap: 4px; min-width: 0; overflow-x: auto; scrollbar-width: none; }
+.monitor-sessions::-webkit-scrollbar { display: none; }
+.monitor-chip {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: transparent;
+  color: var(--muted);
+  font: 11px ui-monospace, monospace;
+  cursor: pointer;
+}
+.monitor-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--label-color, var(--muted)); }
+.monitor-chip.live { color: var(--text); }
+.monitor-chip.active { border-color: var(--accent); color: var(--text); }
+.monitor-chip .name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.monitor-chip .count { color: var(--muted); }
+.monitor-fold { flex: none; width: 22px; height: 20px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
+.monitor-fold:hover { background: var(--line); color: var(--text); }
+.dock.collapsed .monitor-fold { transform: rotate(180deg); }
+.monitor-feed { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 0; font: 12px/18px ui-monospace, "SF Mono", Menlo, monospace; }
+.monitor-row { display: flex; gap: 8px; padding: 0 10px; white-space: nowrap; }
+.monitor-row:hover { background: rgba(255, 255, 255, 0.03); }
+.monitor-time { flex: none; color: var(--muted); }
+.monitor-label { flex: none; max-width: 32%; overflow: hidden; color: var(--label-color, var(--text)); text-overflow: ellipsis; }
+.monitor-icon { flex: none; width: 18px; text-align: center; }
+.monitor-name { flex: none; min-width: 44px; color: var(--muted); }
+.monitor-text { flex: 1; min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; }
+.monitor-row.user .monitor-text { color: var(--accent); }
+.monitor-row.say .monitor-text { color: var(--muted); }
+.monitor-empty { padding: 6px 10px; color: var(--muted); }
 
 /* 옆 브라우저 — 오른쪽에서 스르륵. 페이지(WebContentsView)는 다 나온 뒤 #browser-slot 자리에 붙는다 */
 .browser {

@@ -20,7 +20,7 @@ npm start
 | 🖥 작업 창 | ⌘1 | 3칸 — 왼쪽 작업 공간(herdr spaces 처럼 레포마다 하나 · 이름 아래 브랜치 · 그 안 에이전트와 상태 — 아테나 delegate 가 만든다) · 가운데 탭 · 분할 터미널(xterm.js) · 오른쪽 Explorer. 셸은 데몬이 갖는다 — 처음엔 `athena` 작업 공간(아테나 폴더 — 이름과 폴더가 둘 다 맞는 것)에서 claude · codex 를 켠다 |
 | 📋 현황판 | ⌘2 | `http://localhost:<boardPort>`(기본 4701) — 포트는 알아서 고른다: 저장된 포트부터 20개를 차례로 보고, 이 아테나 폴더에서 도는 현황판이면 그대로 쓰고 · 비었으면 `scripts/board/server.mjs` 를 띄우고 · 다른 것(herdr 용 `~/athena` 현황판 4700 등)이나 주인을 알 수 없는 것이 쥐고 있으면 다음 번호(맥 `lsof` 로 그 프로세스의 작업 폴더를 본다) |
 
-- 작업 창 단축키 — ⌘⇧B 옆 브라우저 열기·닫기 · ⌘T 새 탭 · ⌘⇧T 새 작업 공간(폴더 고르기) · ⌘D 오른쪽으로 나누기 · ⌘⇧D 아래로 나누기(pane 사이 경계를 끌어 크기 바꾸기 · 더블클릭 반반 — 비율은 데몬 탭 트리에 저장) · ⌘W pane 닫기 · ⌘⌥W 탭 닫기(둘 다 에이전트가 돌면 묻는다) · ⌘⌥방향키 옆 pane · ⌘⇧[ / ⌘⇧] 이전·다음 탭 · ⌘⇧↑ / ⌘⇧↓ 이전·다음 작업 공간 · ⌘B 왼쪽 작업 공간 접기(아이콘 줄) · ⌘⌥B 오른쪽 Explorer 접기(칸 머리의 « » 로도) · 가운데 맨 아래는 🛰 에이전트 모니터가 늘 떠 있다(아테나 `scripts/agent-monitor.py --stay --recent` — 데몬의 고정 칸이라 앱을 닫아도 돈다) · 가운데 맨 위 에이전트는 아바타 카드를 옆으로(작업 공간 색 동그라미 · 상태 점 · 이름 · 작업 공간, 넘치면 가로 스크롤, 누르면 그 pane). 창 닫기는 ⌘⇧W
+- 작업 창 단축키 — ⌘⇧B 옆 브라우저 열기·닫기 · ⌘T 새 탭 · ⌘⇧T 새 작업 공간(폴더 고르기) · ⌘D 오른쪽으로 나누기 · ⌘⇧D 아래로 나누기(pane 사이 경계를 끌어 크기 바꾸기 · 더블클릭 반반 — 비율은 데몬 탭 트리에 저장) · ⌘W pane 닫기 · ⌘⌥W 탭 닫기(둘 다 에이전트가 돌면 묻는다) · ⌘⌥방향키 옆 pane · ⌘⇧[ / ⌘⇧] 이전·다음 탭 · ⌘⇧↑ / ⌘⇧↓ 이전·다음 작업 공간 · ⌘B 왼쪽 작업 공간 접기(아이콘 줄) · ⌘⌥B 오른쪽 Explorer 접기(칸 머리의 « » 로도) · 가운데 맨 아래는 🛰 에이전트 모니터(athena 작업 공간에서만 · 앱 화면) — main 이 Claude 기록(`~/.claude/projects` 의 JSONL — 아테나 `agent-monitor.py` 와 같은 대상: 서브에이전트 · 워크트리 세션 · 에이전트 pane 폴더 세션, 최근 120분)을 보일 때만 따라 읽어 머리줄에 세션 칩(레포·브랜치 / 🤖 서브에이전트 설명 · 도구 수 · 마지막 활동, 누르면 그 세션만), 아래에 시각 · 도구 · 요약 피드를 보여 준다. ⌄ 로 접기(기억함). 예전 터미널 모니터 칸(데몬 dock)은 붙을 때 닫는다 · 가운데 맨 위 에이전트는 아바타 카드를 옆으로(작업 공간 색 동그라미 · 상태 점 · 이름 · 작업 공간, 넘치면 가로 스크롤, 누르면 그 pane). 창 닫기는 ⌘⇧W
 - 오른쪽 Explorer — 지금 작업 공간 폴더의 [파일] 트리(VSCode Material Icon Theme 아이콘 — `material-icon-theme` MIT · 바뀐 파일 글자 M·U·A·D·R · 그 폴더 ●) / [변경] git 목록. 누르면 터미널 옆에 뷰어 — VSCode 처럼 확장자에 맞는 색(Shiki · Dark+ 테마)과 줄 번호, 바뀐 파일은 diff(옛·새 번호), 이미지는 그림(Esc 로 닫기). 파일은 main 이 그 작업 공간 폴더 안만 읽고 색도 main 이 칠한다
 - Ctrl 조합은 모두 pane 안(셸 · 에이전트)으로 간다. 앱 단축키는 ⌘ 만 쓴다(⌘R = 현황판 새로고침).
 - 앱을 닫아도 데몬 · 셸 · 에이전트 · 현황판은 계속 돈다. 다시 켜면 같은 탭 · 배치 · 화면으로 다시 붙는다.
@@ -45,6 +45,11 @@ npm start
 - `src/preload.js` — 화면에 열어 주는 IPC 함수
 - `src/renderer/` — 작업 공간 · 탭 · 분할 pane · Explorer · 현황판 iframe · 처음 켤 때 폴더 고르기
 - `src/lib/` — Electron 없이 도는 순수 로직(`npm test`) — `core.js` · `layout.js`(분할 트리 — 화면도 `<script>` 로 쓴다) · `screen-model.js` · `protocol.js` · `explorer.js` · `file-icons.js`(Explorer 아이콘 고르기 — main) · `viewer.js`(뷰어 줄·diff·언어)
+- `src/renderer/assets/logo/` — 로고. 앱은 **화이트판**을 쓴다
+  - 화면: `athena-logo-white.png`(탭 줄 왼쪽 · 처음 켤 때 화면)
+  - 앱 아이콘: `athena-white-512.png`(`npm start` 때 Dock · 윈도우·리눅스 창 아이콘 — `src/main.js` `APP_ICON`)
+  - 패키징용: `athena-white.icns`(맥 앱 번들 아이콘) · `favicon-white.ico`(윈도우) — 아직 패키징 설정이 없어 쓰는 곳 없음
+  - 화이트가 아닌 판(`athena-*.png` · `athena.icns` · `favicon.ico` · `athena-logo.png`)은 지금 안 쓴다
 
 ## 검사
 ```sh

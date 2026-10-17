@@ -20,7 +20,9 @@ contextBridge.exposeInMainWorld('studio', {
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),
   workspaceSelect: (workspaceId) => ipcRenderer.invoke('workspace:select', workspaceId),
   workspaceNew: (size) => ipcRenderer.invoke('workspace:new', size),
-  dockMonitor: (size) => ipcRenderer.invoke('dock:monitor', size),
+  // 가운데 맨 아래 에이전트 모니터 — 보일 때만 main 이 Claude 기록을 따라 읽는다
+  monitorWatch: (on) => ipcRenderer.send('monitor:watch', on),
+  onMonitorUpdate: listen('monitor:update'),
   // 오른쪽 Explorer — 작업 공간 폴더 안만(main 이 루트를 정한다)
   explorerList: (workspaceId, relative) => ipcRenderer.invoke('explorer:list', workspaceId, relative),
   explorerStatus: (workspaceId) => ipcRenderer.invoke('explorer:status', workspaceId),

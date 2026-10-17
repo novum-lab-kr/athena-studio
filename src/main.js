@@ -5,12 +5,15 @@ const fs = require('fs')
 const http = require('http')
 const path = require('path')
 const core = require('./lib/core')
+const agentFeed = require('./lib/agent-feed')
 const daemonClient = require('./daemon-client')
 const explorer = require('./lib/explorer')
 const fileIcons = require('./lib/file-icons')
 const viewer = require('./lib/viewer')
 
 const isMac = process.platform === 'darwin'
+// 앱 아이콘(화이트 로고) — Dock(맥) · 창 아이콘(그 밖)
+const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-white-512.png')
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
 
@@ -133,10 +136,13 @@ async function attachScreen() {
     flushOutput()
     dropOutput = true
     try {
-      return await connection.call('attach', {}, () => {
+      const attached = await connection.call('attach', {}, () => {
         dropOutput = false
         outputQueue.clear()
       })
+      // 예전 터미널 모니터 칸이 남아 있으면 닫는다(이제 모니터는 앱 화면)
+      closeMonitorDock().catch(() => {})
+      return attached
     } finally {
       dropOutput = false
     }
@@ -200,45 +206,228 @@ async function closePane(paneId) {
   return daemonCall('pane close', { pane: paneId })
 }
 
-// 가운데 맨 아래 고정 칸 — 아테나 에이전트 모니터(scripts/agent-monitor.py · herdr 의 '🛰 에이전트 모니터' 와 같은 명령)
-const shellQuote = (value) => `'${String(value).replace(/'/g, `'\\''`)}'`
-
+// ── 에이전트 모니터(가운데 맨 아래 · 앱 화면) ─────────────
+// Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl)을 따라 읽어 화면에 이벤트로 보낸다 — 아테나 agent-monitor.py 와 같은 대상:
+// 서브에이전트(<세션>/subagents/agent-*.jsonl) · 워크트리 세션 · 지금 에이전트가 도는 pane 폴더의 세션. 최근 120분 안에 바뀐 것만.
+// 화면에 모니터가 보일 때(monitor:watch)만 읽는다
 const MONITOR_LABEL = '🛰 에이전트 모니터'
+const MONITOR_MINUTES = 120
+const MONITOR_BACKLOG = 5 // 처음 붙을 때 세션마다 마지막 몇 개만
+const MONITOR_HEAD_BYTES = 64 * 1024 // 처음 붙을 때 파일 끝에서 이만큼만 읽는다
+const MONITOR_CHUNK_BYTES = 4 * 1024 * 1024
+const MONITOR_KEEP = 300
+const MONITOR_TEXT_MAX = 300
+const monitor = { watching: false, timer: null, ticking: false, lastScan: 0, lastFullScan: 0, tails: new Map(), tailSeq: 0, events: [], seq: 0, agentCwds: [] }
 
-// 교체(예전 모니터 닫기 → 새로 띄우기)가 겹치지 않게 한 줄로 세운다
-let monitorQueue = Promise.resolve()
-function ensureMonitorDock(size) {
-  const run = monitorQueue.then(() => ensureMonitorDockNow(size))
-  monitorQueue = run.catch(() => {})
-  return run
-}
-
-async function ensureMonitorDockNow(size) {
-  // 기다리는 동안 아테나 폴더가 또 바뀌어도 한 폴더의 스크립트 · cwd 로 띄우게 처음에 고정한다
-  const athenaDir = config.athenaDir
-  if (!core.checkAthenaDir(athenaDir).ok) return { skipped: true }
-  const script = path.join(athenaDir, 'scripts', 'agent-monitor.py')
-  if (!fs.existsSync(script)) return { skipped: true }
-  // 예전 폴더의 모니터가 아직 안 닫혔으면 이번엔 띄우지 않는다 — 닫히면 화면(ensureMonitor)이 다시 부른다
-  if (!(await closeStaleMonitor(athenaDir))) return { skipped: true, waiting: true }
-  return daemonCall('dock ensure', { name: 'monitor', label: MONITOR_LABEL, cwd: athenaDir, command: `${shellQuote(script)} --stay --recent`, ...size })
-}
-
-// 데몬의 모니터 칸은 이름(monitor)으로 하나만 만든다 — 아테나 폴더를 바꿨으면(~/athena → 앱 데이터 폴더 등) 예전 폴더의 모니터를 닫아 새 폴더로 다시 띄운다.
-// 모니터는 보기만 하는 칸이라 닫아도 잃는 것이 없다. 예전 모니터가 없거나 사라졌으면 true
-async function closeStaleMonitor(athenaDir) {
-  const isStale = (pane) => !pane.tab_id && pane.label === MONITOR_LABEL && pane.cwd && !core.sameDir(pane.cwd, athenaDir)
+// 예전엔 데몬 고정 칸에서 agent-monitor.py 를 돌렸다 — 남아 있으면 닫는다(보기만 하는 칸이라 잃는 것이 없다)
+async function closeMonitorDock() {
   const listed = await daemonCall('pane list')
-  const stale = ((listed.result && listed.result.panes) || []).find(isStale)
-  if (!stale) return true
-  await daemonCall('pane close', { pane: stale.id })
-  // 닫기는 SIGHUP 뒤 셸이 끝나야 데몬에서 빠진다 — 그 전에 dock ensure 하면 예전 칸을 돌려준다. 잠깐(최대 2초) 기다린다
-  for (let attempt = 0; attempt < 20; attempt++) {
-    await new Promise((resolve) => setTimeout(resolve, 100))
-    const again = await daemonCall('pane list')
-    if (!((again.result && again.result.panes) || []).some((pane) => pane.id === stale.id)) return true
+  for (const pane of (listed.result && listed.result.panes) || []) {
+    if (!pane.tab_id && pane.label === MONITOR_LABEL) await daemonCall('pane close', { pane: pane.id })
   }
-  return false
+}
+
+async function readDir(dir) {
+  try {
+    return await fs.promises.readdir(dir, { withFileTypes: true })
+  } catch {
+    return []
+  }
+}
+
+async function recentFile(file, since) {
+  try {
+    const stat = await fs.promises.stat(file)
+    return stat.isFile() && stat.mtimeMs >= since ? stat : null
+  } catch {
+    return null
+  }
+}
+
+// allSessions — 부모 세션이 조용해도 서브에이전트는 오래 돌 수 있어서, 가끔(1분)은 모든 세션의 서브에이전트를 자기 수정 시각으로 본다
+async function findMonitorLogs(allSessions) {
+  const root = path.join(app.getPath('home'), '.claude', 'projects')
+  const since = Date.now() - MONITOR_MINUTES * 60000
+  const wanted = new Set(monitor.agentCwds.map(agentFeed.projectDirName))
+  const found = []
+  for (const project of await readDir(root)) {
+    if (!project.isDirectory()) continue
+    const dir = path.join(root, project.name)
+    const paneSessions = wanted.has(project.name) || project.name.includes('--worktrees-')
+    for (const entry of await readDir(dir)) {
+      if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
+      const file = path.join(dir, entry.name)
+      const stat = await recentFile(file, since)
+      if (stat && paneSessions) found.push({ file, pane: true, stat })
+      // 서브에이전트 — 평소엔 최근에 움직인 세션만(모든 세션 폴더를 자주 뒤지지 않게)
+      if (!stat && !allSessions) continue
+      const subDir = path.join(dir, entry.name.replace(/\.jsonl$/, ''), 'subagents')
+      for (const sub of await readDir(subDir)) {
+        if (!sub.isFile() || !/^agent-.*\.jsonl$/.test(sub.name)) continue
+        const subFile = path.join(subDir, sub.name)
+        const subStat = await recentFile(subFile, since)
+        if (subStat) found.push({ file: subFile, pane: false, stat: subStat })
+      }
+    }
+  }
+  return found
+}
+
+// 새로 붙은 줄들 — 줄바꿈 바이트에서 끊어 한글이 반쪽으로 잘리지 않게 한다.
+// 파일이 바뀌었으면(inode) 처음 붙을 때처럼 끝부분부터, 줄바꿈 없이 너무 긴 줄은 버린다(메모리가 끝없이 늘지 않게)
+const MONITOR_LINE_MAX = 1024 * 1024
+
+async function readNewLines(tail) {
+  const stat = await fs.promises.stat(tail.file)
+  tail.mtime = stat.mtimeMs
+  if (tail.ino !== undefined && stat.ino !== tail.ino) {
+    tail.offset = Math.max(0, stat.size - MONITOR_HEAD_BYTES)
+    tail.rest = Buffer.alloc(0)
+    tail.skipPartial = tail.offset > 0
+  } else if (stat.size < tail.offset) {
+    tail.offset = 0
+    tail.rest = Buffer.alloc(0)
+    tail.skipPartial = false
+  }
+  tail.ino = stat.ino
+  if (stat.size === tail.offset) return []
+  const length = Math.min(stat.size - tail.offset, MONITOR_CHUNK_BYTES)
+  const buffer = Buffer.alloc(length)
+  const handle = await fs.promises.open(tail.file, 'r')
+  let bytesRead = 0
+  try {
+    ;({ bytesRead } = await handle.read(buffer, 0, length, tail.offset))
+  } finally {
+    await handle.close()
+  }
+  tail.offset += bytesRead
+  const combined = Buffer.concat([tail.rest, buffer.subarray(0, bytesRead)])
+  const cut = combined.lastIndexOf(10)
+  if (cut < 0) {
+    // 줄바꿈 없이 너무 길면 그 줄은 버리고 다음 줄바꿈부터
+    if (combined.length > MONITOR_LINE_MAX) {
+      tail.rest = Buffer.alloc(0)
+      tail.skipPartial = true
+    } else {
+      tail.rest = Buffer.from(combined)
+    }
+    return []
+  }
+  // 남은 조각은 복사해 둔다(큰 읽기 버퍼를 붙잡지 않게)
+  tail.rest = Buffer.from(combined.subarray(cut + 1))
+  let lines = combined.subarray(0, cut).toString('utf8').split('\n')
+  if (tail.skipPartial) {
+    lines = lines.slice(1)
+    tail.skipPartial = false
+  }
+  return lines.filter((line) => line.trim() && line.length <= MONITOR_LINE_MAX)
+}
+
+function tailEvents(tail, lines) {
+  const events = []
+  for (const line of lines) {
+    const record = agentFeed.parseLine(line)
+    if (!record) continue
+    if (!tail.label) tail.label = agentFeed.sessionLabel(record)
+    for (const event of agentFeed.eventsFromRecord(record)) {
+      if (event.kind === 'tool') tail.tools += 1
+      // 서브에이전트는 사용자 지시 대신 아테나가 보낸 지시라 빼고, 도구 · 말만
+      if (!tail.pane && event.kind === 'user') continue
+      events.push({
+        id: ++monitor.seq,
+        session: tail.id,
+        ...event,
+        text: event.text.length > MONITOR_TEXT_MAX ? `${event.text.slice(0, MONITOR_TEXT_MAX)}…` : event.text,
+      })
+    }
+  }
+  return events
+}
+
+// 서브에이전트는 옆의 meta.json 으로 이름 · 끝남을 안다(없거나 깨졌으면 그냥 둔다)
+async function readSubagentMeta(tail) {
+  if (tail.pane) return
+  try {
+    const info = agentFeed.subagentInfo(JSON.parse(await fs.promises.readFile(tail.file.replace(/\.jsonl$/, '.meta.json'), 'utf8')))
+    if (info.label) tail.label = info.label
+    tail.finished = info.finished
+  } catch {}
+}
+
+async function openTail(item) {
+  const tail = { id: `s${++monitor.tailSeq}`, file: item.file, pane: item.pane, label: null, finished: false, tools: 0, mtime: item.stat.mtimeMs, offset: Math.max(0, item.stat.size - MONITOR_HEAD_BYTES), rest: Buffer.alloc(0), skipPartial: item.stat.size > MONITOR_HEAD_BYTES }
+  await readSubagentMeta(tail)
+  const lines = await readNewLines(tail).catch(() => [])
+  const events = tailEvents(tail, lines).slice(-MONITOR_BACKLOG)
+  monitor.tails.set(item.file, tail)
+  return events
+}
+
+function monitorSessions() {
+  return [...monitor.tails.values()]
+    .sort((left, right) => right.mtime - left.mtime)
+    .map((tail) => ({ id: tail.id, label: tail.label || (tail.pane ? 'pane' : 'agent'), pane: tail.pane, finished: tail.finished, tools: tail.tools, lastAt: tail.mtime }))
+}
+
+async function monitorTick() {
+  if (!monitor.watching || monitor.ticking) return
+  monitor.ticking = true
+  try {
+    const fresh = []
+    let changed = false
+    // 10초마다 새 세션을 찾고, 120분 넘게 조용한 세션은 뺀다
+    if (Date.now() - monitor.lastScan > 10000) {
+      monitor.lastScan = Date.now()
+      const allSessions = Date.now() - monitor.lastFullScan > 60000
+      if (allSessions) monitor.lastFullScan = Date.now()
+      const found = await findMonitorLogs(allSessions)
+      for (const item of found) {
+        if (monitor.tails.has(item.file)) continue
+        fresh.push(...(await openTail(item)))
+        changed = true
+      }
+      for (const tail of monitor.tails.values()) {
+        const before = tail.finished
+        await readSubagentMeta(tail)
+        if (tail.finished !== before) changed = true
+      }
+      const since = Date.now() - MONITOR_MINUTES * 60000
+      for (const [file, tail] of monitor.tails) {
+        if (tail.mtime < since) {
+          monitor.tails.delete(file)
+          changed = true
+        }
+      }
+    }
+    for (const tail of monitor.tails.values()) {
+      // 한 파일이 사라지거나 못 읽어도 다른 세션은 계속
+      try {
+        fresh.push(...tailEvents(tail, await readNewLines(tail)))
+      } catch {}
+    }
+    const events = fresh.sort((left, right) => String(left.at).localeCompare(String(right.at)))
+    if (events.length) {
+      monitor.events = [...monitor.events, ...events].sort((left, right) => String(left.at).localeCompare(String(right.at)) || left.id - right.id).slice(-MONITOR_KEEP)
+      changed = true
+    }
+    if (changed) send('monitor:update', { sessions: monitorSessions(), events })
+  } catch (error) {
+    send('monitor:update', { sessions: monitorSessions(), events: [], error: error.message })
+  } finally {
+    monitor.ticking = false
+  }
+}
+
+function setMonitorWatch(on) {
+  monitor.watching = Boolean(on)
+  clearInterval(monitor.timer)
+  if (!monitor.watching) return
+  monitor.lastScan = 0
+  monitor.lastFullScan = 0
+  // 다시 보이면 지금까지 모은 것을 한 번에 보내고 이어서 따라간다
+  send('monitor:update', { reset: true, sessions: monitorSessions(), events: monitor.events })
+  monitorTick()
+  monitor.timer = setInterval(monitorTick, 1000)
 }
 
 // 탭 닫기 — 안에 에이전트가 돌고 있으면 묻는다
@@ -278,7 +467,10 @@ function startPanesPolling() {
   panesTimer = setInterval(async () => {
     if (!mainWindow || mainWindow.isDestroyed() || !mainWindow.isVisible() || mainWindow.isMinimized() || !daemon) return
     const listed = await daemonCall('pane list')
-    if (listed.result) send('screen:panes', listed.result.panes)
+    if (listed.result) {
+      send('screen:panes', listed.result.panes)
+      monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean)
+    }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)
   }, 2000)
@@ -829,6 +1021,7 @@ function createWindow() {
     title: 'Athena Studio',
     titleBarStyle: isMac ? 'hiddenInset' : 'default', // 맥은 탭 줄이 제목 줄을 겸한다
     backgroundColor: '#14161a',
+    icon: APP_ICON, // 맥은 무시한다(Dock 은 whenReady 에서) — 윈도우·리눅스 창 아이콘
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
@@ -929,7 +1122,7 @@ ipcMain.handle('tab:select', (_event, tabId) => daemonCall('tab select', { tab: 
 ipcMain.handle('tab:close', (_event, tabId) => closeTab(String(tabId)))
 ipcMain.handle('workspace:select', (_event, workspaceId) => daemonCall('workspace select', { workspace: String(workspaceId) }))
 ipcMain.handle('workspace:new', (_event, size) => newWorkspace(cellSize(size)))
-ipcMain.handle('dock:monitor', (_event, size) => ensureMonitorDock(cellSize(size)))
+ipcMain.on('monitor:watch', (_event, on) => setMonitorWatch(on === true))
 ipcMain.handle('explorer:list', (_event, workspaceId, relative) => guarded(() => explorerList(workspaceId, relative)))
 ipcMain.handle('explorer:status', (_event, workspaceId) => guarded(() => explorerStatus(workspaceId)))
 ipcMain.handle('explorer:open', (_event, workspaceId, relative) => guarded(() => explorerOpen(workspaceId, relative)))
@@ -972,6 +1165,8 @@ ipcMain.handle('browser:command', (event, name, value) => {
 
 app.whenReady().then(async () => {
   app.setName('Athena Studio')
+  // npm start 로 켜도 Dock 에 Electron 대신 아테나 로고(화이트) — 패키징하면 .icns 가 맡는다
+  if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   config = core.loadConfig(configFile())
   await offerStudioAthena()
   if (core.checkAthenaDir(config.athenaDir).ok) {

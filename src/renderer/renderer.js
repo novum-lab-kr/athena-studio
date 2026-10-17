@@ -13,7 +13,7 @@ let currentTab = 'work'
 // pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.js)
 const PANE_GAP = 2
 const HEAD_HEIGHT = 18
-const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows}, dock }
+const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
 let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 let paneInfo = new Map() // paneId → 납작한 Pane(agent · agent_status) — main 이 2초마다 보낸다
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
@@ -43,7 +43,10 @@ function makeTerminal() {
   return { term, fit }
 }
 
-function ensureView(paneId, dock = false) {
+// 탭 밖 고정 칸(dock — 예전 터미널 모니터)은 그리지 않는다. 모니터는 이제 앱 화면(#dock)이다
+const isTabPane = (pane) => Boolean(pane.tab)
+
+function ensureView(paneId) {
   if (views.has(paneId)) return views.get(paneId)
   const el = document.createElement('div')
   el.className = 'pane'
@@ -52,8 +55,7 @@ function ensureView(paneId, dock = false) {
   const body = document.createElement('div')
   body.className = 'pane-body'
   el.append(head, body)
-  // 고정 칸(dock)은 가운데 맨 아래에, 나머지는 분할 영역에
-  $(dock ? 'dock' : 'panes').append(el)
+  $('panes').append(el)
   const { term, fit } = makeTerminal()
   term.open(body)
   term.onData((data) => {
@@ -62,7 +64,7 @@ function ensureView(paneId, dock = false) {
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
-  const view = { term, fit, el, head, shown: false, sent: null, dock }
+  const view = { term, fit, el, head, shown: false, sent: null }
   views.set(paneId, view)
   return view
 }
@@ -114,22 +116,13 @@ function activeTab() {
 // 데몬이 준 상태로 탭 줄 · pane 을 다시 그린다
 function applyState(next) {
   screen = next
-  const alive = new Set(screen.panes.map((pane) => pane.id))
+  const alive = new Set(screen.panes.filter(isTabPane).map((pane) => pane.id))
   for (const paneId of [...views.keys()]) if (!alive.has(paneId)) disposeView(paneId)
-  for (const pane of screen.panes) ensureView(pane.id, Boolean(pane.dock))
+  for (const pane of screen.panes.filter(isTabPane)) ensureView(pane.id)
   renderTabs()
   renderSides()
   layoutPanes()
   ensureSomeTab()
-  ensureMonitor()
-}
-
-// 모니터 칸이 없어졌으면(셸에서 exit 등) 다시 띄운다 — 처음 켤 때는 startScreen 이 띄운다
-let openingMonitor = false
-function ensureMonitor() {
-  if (starting || openingMonitor || !attached || screen.panes.some((pane) => pane.dock === 'monitor')) return
-  openingMonitor = true
-  studio.dockMonitor().finally(() => (openingMonitor = false))
 }
 
 // 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나 — 에이전트를 고르는 중이면 고른 뒤 athena 탭이 생긴다
@@ -598,8 +591,8 @@ function layoutPanes() {
   // 하단 칸(에이전트 모니터)은 athena 작업 공간에서만 — 다른 공간은 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
   const showDock = isAthenaWorkspace(activeWorkspace())
   $('dock').hidden = !showDock
-  // 숨긴 칸의 터미널에 키 입력이 남지 않게 — 커서를 뺀다(그 뒤 pane 을 누르면 다시 잡힌다)
   if (!showDock && $('dock').contains(document.activeElement)) document.activeElement.blur()
+  setMonitorVisible(showDock)
   const container = $('panes')
   const tab = activeTab()
   const tree = tab ? treeForLayout(tab) : null
@@ -609,8 +602,7 @@ function layoutPanes() {
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]
-    // 고정 칸은 배치 트리 밖 — athena 작업 공간에서만 보이고 칸을 꽉 채운다. 숨긴 동안은 크기를 맞추지 않는다(모니터는 데몬에서 계속 돈다)
-    view.el.hidden = view.dock ? !showDock : !rect
+    view.el.hidden = !rect
     if (view.el.hidden) {
       view.shown = false
       continue
@@ -640,6 +632,146 @@ function layoutPanes() {
 // 옆 브라우저를 쓰는 중인가 — 주소창에 치는 중이거나 서랍 안 페이지(앱 화면 밖이라 문서가 포커스를 잃는다)를 보는 중이면 터미널로 포커스를 뺏지 않는다
 function usingBrowser() {
   return browserOpen && (!document.hasFocus() || $('browser').contains(document.activeElement))
+}
+
+// ── 에이전트 모니터(가운데 맨 아래) ─────────────────────────
+// main 이 Claude 기록을 따라 읽어 세션 · 이벤트를 보낸다(보일 때만). 칩을 누르면 그 세션만 걸러 본다
+const MONITOR_ROWS = 300
+const monitorView = { visible: null, sessions: [], events: [], filter: null }
+
+function setMonitorVisible(visible) {
+  if (monitorView.visible === visible) return
+  monitorView.visible = visible
+  studio.monitorWatch(visible)
+}
+
+function monitorTime(at) {
+  const date = at ? new Date(at) : null
+  if (!date || Number.isNaN(date.getTime())) return '--:--'
+  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function sinceText(ms) {
+  const minutes = Math.floor((Date.now() - ms) / 60000)
+  if (minutes < 1) return '방금'
+  if (minutes < 60) return `${minutes}분 전`
+  return `${Math.floor(minutes / 60)}시간 전`
+}
+
+function sessionLabelOf(sessionId) {
+  const session = monitorView.sessions.find((entry) => entry.id === sessionId)
+  return session ? session.label : '?'
+}
+
+function monitorRow(event) {
+  const row = document.createElement('div')
+  row.className = `monitor-row ${event.kind}`
+  const label = sessionLabelOf(event.session)
+  row.style.setProperty('--label-color', spaceColor(label))
+  const cells = [
+    ['monitor-time', monitorTime(event.at)],
+    ['monitor-label', `[${label}]`],
+    ['monitor-icon', event.icon],
+    ['monitor-name', event.name],
+    ['monitor-text', event.text],
+  ]
+  for (const [className, text] of cells) {
+    const cell = document.createElement('span')
+    cell.className = className
+    cell.textContent = text
+    row.append(cell)
+  }
+  row.title = `${label} · ${event.name ? `${event.name} · ` : ''}${event.text}`
+  return row
+}
+
+function renderMonitorSessions() {
+  const chips = monitorView.sessions.map((session) => {
+    const chip = document.createElement('button')
+    const live = !session.finished && Date.now() - session.lastAt < 2 * 60000
+    chip.className = `monitor-chip${live ? ' live' : ''}${monitorView.filter === session.id ? ' active' : ''}`
+    chip.style.setProperty('--label-color', spaceColor(session.label))
+    const name = document.createElement('span')
+    name.className = 'name'
+    name.textContent = session.label
+    chip.append(name)
+    const count = document.createElement('span')
+    count.className = 'count'
+    count.textContent = `${session.tools} · ${sinceText(session.lastAt)}`
+    chip.append(count)
+    chip.title = `${session.label}\n${session.pane ? 'pane 세션' : session.finished ? '서브에이전트 · 끝남' : '서브에이전트'} · 도구 ${session.tools}개 · 마지막 ${sinceText(session.lastAt)}\n누르면 이 세션만 보기`
+    chip.addEventListener('click', () => {
+      monitorView.filter = monitorView.filter === session.id ? null : session.id
+      renderMonitorSessions()
+      renderMonitorFeed()
+    })
+    return chip
+  })
+  $('monitor-sessions').replaceChildren(...chips)
+}
+
+function shownEvents() {
+  return monitorView.filter ? monitorView.events.filter((event) => event.session === monitorView.filter) : monitorView.events
+}
+
+// keepScroll — 위쪽을 읽던 중이면 그 자리를 지킨다(맨 아래였으면 따라 내려간다)
+function renderMonitorFeed(keepScroll = false) {
+  const feed = $('monitor-feed')
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24
+  const scrollTop = feed.scrollTop
+  const events = shownEvents()
+  if (!events.length) {
+    const empty = Object.assign(document.createElement('div'), { className: 'monitor-empty', textContent: monitorView.sessions.length ? '아직 보일 활동이 없어요' : '돌고 있는 에이전트가 없어요 — 뜨면 여기에 붙어요' })
+    feed.replaceChildren(empty)
+    return
+  }
+  feed.replaceChildren(...events.map(monitorRow))
+  feed.scrollTop = keepScroll && !atBottom ? scrollTop : feed.scrollHeight
+}
+
+const byEventTime = (left, right) => String(left.at).localeCompare(String(right.at)) || left.id - right.id
+
+// 새 이벤트는 덧붙인다 — 맨 아래를 보고 있을 때만 따라 내려간다
+function applyMonitorUpdate(update) {
+  const feed = $('monitor-feed')
+  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24
+  monitorView.sessions = update.sessions || []
+  // 고른 세션이 빠졌으면 필터를 풀고 전체를 다시 그린다
+  const filterGone = monitorView.filter && !monitorView.sessions.some((session) => session.id === monitorView.filter)
+  if (filterGone) monitorView.filter = null
+  if (update.reset) {
+    monitorView.events = [...(update.events || [])].sort(byEventTime).slice(-MONITOR_ROWS)
+    renderMonitorSessions()
+    return renderMonitorFeed()
+  }
+  const fresh = update.events || []
+  const last = monitorView.events[monitorView.events.length - 1]
+  // 늦게 찾은 세션의 이전 줄이 섞이면 시각 순으로 다시 세워 전부 다시 그린다
+  const outOfOrder = last && fresh.some((event) => String(event.at) < String(last.at))
+  monitorView.events = [...monitorView.events, ...fresh].sort(byEventTime).slice(-MONITOR_ROWS)
+  renderMonitorSessions()
+  if (outOfOrder || filterGone) return renderMonitorFeed(true)
+  const visible = monitorView.filter ? fresh.filter((event) => event.session === monitorView.filter) : fresh
+  if (!visible.length) return undefined
+  if (feed.querySelector('.monitor-empty')) return renderMonitorFeed()
+  feed.append(...visible.map(monitorRow))
+  while (feed.childElementCount > MONITOR_ROWS) feed.firstElementChild.remove()
+  if (atBottom) feed.scrollTop = feed.scrollHeight
+  return undefined
+}
+
+function initMonitor() {
+  const dock = $('dock')
+  dock.classList.toggle('collapsed', localStorage.getItem('studio.monitorCollapsed') === '1')
+  $('monitor-fold').addEventListener('click', () => {
+    const collapsed = !dock.classList.contains('collapsed')
+    dock.classList.toggle('collapsed', collapsed)
+    localStorage.setItem('studio.monitorCollapsed', collapsed ? '1' : '0')
+  })
+  studio.onMonitorUpdate(applyMonitorUpdate)
+  renderMonitorFeed()
+  // 'n분 전' 을 새로 쓴다
+  setInterval(() => monitorView.visible && renderMonitorSessions(), 30000)
 }
 
 // ── pane 경계 끌기 ───────────────────────────────────────
@@ -812,7 +944,7 @@ function reportTabSize(tab, container) {
 
 // 보이는 터미널 하나로 글자 칸 크기를 재서 영역을 칸으로. 아직 없으면 대략(13px 글꼴)
 function estimateCells(container) {
-  const sample = [...views.values()].find((view) => !view.el.hidden && !view.dock && view.term.cols > 1)
+  const sample = [...views.values()].find((view) => !view.el.hidden && view.term.cols > 1)
   const cellWidth = sample ? sample.term.element.querySelector('.xterm-screen').clientWidth / sample.term.cols : 7.8
   const cellHeight = sample ? sample.term.element.querySelector('.xterm-screen').clientHeight / sample.term.rows : 17
   if (!cellWidth || !cellHeight) return null
@@ -839,8 +971,8 @@ async function attach() {
     for (const paneId of [...views.keys()]) disposeView(paneId)
     // 되살릴 화면은 데몬이 가진 크기로 직렬화됐다 — 그 크기로 먼저 쓰고, 그다음 창에 맞춰 다시 맞춘다(먼저 맞추면 줄이 다른 폭에서 꺾여 깨진다)
     screen = result.state
-    for (const pane of screen.panes) {
-      const view = ensureView(pane.id, Boolean(pane.dock))
+    for (const pane of screen.panes.filter(isTabPane)) {
+      const view = ensureView(pane.id)
       if (pane.cols > 1 && pane.rows > 1) view.term.resize(pane.cols, pane.rows)
       if (result.snapshots[pane.id]) view.term.write(result.snapshots[pane.id])
     }
@@ -873,7 +1005,7 @@ async function newTab() {
 async function runCommand(name) {
   if (!state || !state.valid || !attached) return
   if (currentTab !== 'work') switchTab('work')
-  // 나누기·닫기·이동의 기준은 지금 탭의 pane — 모니터 칸(dock)에 포커스가 있으면 탭의 첫 pane
+  // 나누기·닫기·이동의 기준은 지금 탭의 pane — 포커스가 탭 밖이면 탭의 첫 pane
   const focused = tabPaneForCommand()
   if (name === 'new-tab') return newTab()
   if (name === 'split-right' || name === 'split-down') {
@@ -934,7 +1066,6 @@ async function startScreen() {
   try {
     if (!(await attach())) return
     await openAgent()
-    await studio.dockMonitor()
   } finally {
     starting = false
   }
@@ -1206,6 +1337,7 @@ function switchTab(name) {
   } else {
     // 작업 창이 숨으면 모든 칸이 안 보이는 것 — 돌아올 때 다시 그리도록(layoutPanes) 표시만 해 둔다
     for (const view of views.values()) view.shown = false
+    setMonitorVisible(false)
     loadBoard()
     $('board-frame').focus()
   }
@@ -1282,6 +1414,7 @@ async function init() {
   renderState()
   for (const tab of tabs) tab.addEventListener('click', () => switchTab(tab.dataset.tab))
   initBrowser()
+  initMonitor()
   $('pick').addEventListener('click', pickAthenaDir)
   $('install').addEventListener('click', installAthena)
   studio.onInstallProgress((line) => ($('setup-progress').textContent = line))

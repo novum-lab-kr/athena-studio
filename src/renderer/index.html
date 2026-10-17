@@ -9,6 +9,7 @@
 </head>
 <body>
   <header class="tabbar">
+    <img class="tabbar-logo" src="assets/logo/athena-logo-white.png" alt="Athena Studio" draggable="false">
     <button class="tab" data-tab="work" aria-selected="true">🖥 작업 창 <kbd data-key="1"></kbd></button>
     <button class="tab" data-tab="board" aria-selected="false">📋 현황판 <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
@@ -19,6 +20,7 @@
 
   <main>
     <section id="setup" class="panel setup" hidden>
+      <img class="setup-logo" src="assets/logo/athena-logo-white.png" alt="" draggable="false">
       <div id="spinner" class="spinner" hidden></div>
       <h1 id="setup-title">Athena Studio</h1>
       <p id="setup-note" hidden>끝나면 바로 작업 창이 열려요.<br>
@@ -49,8 +51,15 @@
           </div>
         </div>
         <div id="screen-status" class="screen-status" hidden></div>
-        <!-- 가운데 맨 아래 — 에이전트 모니터 고정 칸(데몬의 dock pane · athena 작업 공간에서만 보임) -->
-        <section id="dock" class="dock"></section>
+        <!-- 가운데 맨 아래 — 에이전트 모니터(앱 화면 · Claude 기록을 main 이 따라 읽는다 · athena 작업 공간에서만 보임) -->
+        <section id="dock" class="dock monitor">
+          <div class="monitor-head">
+            <span class="monitor-title">🛰 에이전트 모니터</span>
+            <div id="monitor-sessions" class="monitor-sessions"></div>
+            <button id="monitor-fold" class="monitor-fold" title="접기·펴기">⌄</button>
+          </div>
+          <div id="monitor-feed" class="monitor-feed"></div>
+        </section>
       </div>
       <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널"></aside>
       <!-- 오른쪽을 접으면 남는 좁은 줄 — 누르면 다시 편다 -->
