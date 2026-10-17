@@ -27,7 +27,7 @@ npm start
 - 데몬: 앱이 없으면 떼어 띄운다(Electron 을 node 로). 소켓 `~/Library/Application Support/Athena Studio/daemon.sock` · 로그 `daemon.log` · pane 밖에서 찾는 접속 파일 `~/.athena-studio/daemon.json`. 아테나 화면 계층은 `bin/athena-studio-cli` 로 pane 을 다룬다
 - pane 셸에는 `ATHENA_STUDIO=1` · `ATHENA_STUDIO_PANE_ID` · `ATHENA_STUDIO_TAB_ID` · `ATHENA_STUDIO_WORKSPACE_ID` · `ATHENA_STUDIO_SOCKET` · `ATHENA_STUDIO_CLI` · `ATHENA_STUDIO_NODE` 가 들어 있다
 - 연결이 끊기면 [보기 → 작업 창 다시 붙기]. 데몬 파일을 고쳤으면 [보기 → 작업 창 데몬 다시 띄우기(pane 모두 닫힘)…]
-- 🌐 옆 브라우저(⌘⇧B · 탭 줄 오른쪽 🌐) — 오른쪽에서 스르륵 나오는 서랍. 계획서 · 테스트 화면을 띄운다(◀ ▶ ⟳ · 주소창 — `localhost:3000` 처럼 치면 http · Esc 닫기 · ↗ 기본 브라우저로). 페이지는 main 의 WebContentsView(아무 사이트 · 로그인 쿠키는 앱 전용 저장소 `persist:studio-browser` · 샌드박스 · 권한 요청 거절 · http(s) 만)
+- 🌐 옆 브라우저(⌘⇧B · 탭 줄 오른쪽 지구본 아이콘) — 오른쪽에서 스르륵 나오는 서랍(왼쪽 가장자리를 끌어 너비 바꾸기 · 기억함 · 더블클릭 기본 너비). 계획서 · 테스트 화면을 띄운다(◀ ▶ ⟳ · 주소창 — `localhost:3000` 처럼 치면 http · Esc 닫기 · ↗ 기본 브라우저로). 페이지는 main 의 WebContentsView(아무 사이트 · 로그인 쿠키는 앱 전용 저장소 `persist:studio-browser` · 샌드박스 · 권한 요청 거절 · http(s) 만)
 - 링크 — 현황판에서 누른 http(s) 링크(결정 콘솔 등)는 모두 옆 브라우저, 터미널에서 누른 링크는 localhost 면 옆 브라우저 · 그 밖은 기본 브라우저. 앱이 새 창을 따로 만들지는 않는다.
 - 현황판 로그: `~/Library/Application Support/Athena Studio/board.log`
 

@@ -12,8 +12,9 @@
     <button class="tab" data-tab="work" aria-selected="true">🖥 작업 창 <kbd data-key="1"></kbd></button>
     <button class="tab" data-tab="board" aria-selected="false">📋 현황판 <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
-    <span id="athena-dir" class="dir" title="아테나 폴더"></span>
-    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기">🌐 브라우저 <kbd data-key="⇧B"></kbd></button>
+    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기" aria-label="옆 브라우저 열기·닫기" aria-controls="browser" aria-expanded="false">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.75" ry="6.25"/><path d="M1.9 6h12.2M1.9 10h12.2"/></svg>
+    </button>
   </header>
 
   <main>
@@ -75,6 +76,7 @@
 
     <!-- 오른쪽에서 스르륵 나오는 옆 브라우저 — 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
     <aside id="browser" class="browser" hidden>
+      <div id="browser-resize" class="browser-resize" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비"></div>
       <div class="browser-bar">
         <button id="browser-back" title="뒤로" disabled>◀</button>
         <button id="browser-forward" title="앞으로" disabled>▶</button>

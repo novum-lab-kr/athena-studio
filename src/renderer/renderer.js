@@ -853,6 +853,7 @@ async function loadBoard(force = false) {
 const BROWSER_SLIDE_MS = 240
 let browserOpen = false
 let browserTimer = null
+let urlFocusTimer = null
 
 function openBrowserPanel() {
   const panel = $('browser')
@@ -860,6 +861,8 @@ function openBrowserPanel() {
   browserOpen = true
   clearTimeout(browserTimer)
   panel.hidden = false
+  $('browser-toggle').classList.add('active')
+  $('browser-toggle').setAttribute('aria-expanded', 'true')
   void panel.offsetWidth // 숨김을 푼 뒤 한 번 그려야 transform 이 스르륵 움직인다
   panel.classList.add('open')
   browserTimer = setTimeout(() => {
@@ -873,8 +876,11 @@ function closeBrowserPanel() {
   if (!browserOpen) return
   browserOpen = false
   clearTimeout(browserTimer)
+  clearTimeout(urlFocusTimer)
   studio.browserHide()
-  panel.classList.remove('open')
+  panel.classList.remove('open', 'resizing')
+  $('browser-toggle').classList.remove('active')
+  $('browser-toggle').setAttribute('aria-expanded', 'false')
   // 닫으면 작업 창 터미널로 입력을 돌려준다
   const focused = views.get(screen.focused)
   if (currentTab === 'work' && focused && !focused.el.hidden) focused.term.focus()
@@ -886,7 +892,7 @@ function closeBrowserPanel() {
 
 // 다 나온 서랍의 자리 — 슬라이드 중(transform)이면 아직 붙이지 않는다
 function placeBrowserView() {
-  if (!browserOpen || browserTimer || $('browser').hidden) return
+  if (!browserOpen || browserTimer || $('browser').hidden || $('browser').classList.contains('resizing')) return
   const rect = $('browser-slot').getBoundingClientRect()
   if (rect.width < 1 || rect.height < 1) return
   studio.browserPlace({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
@@ -895,8 +901,14 @@ function placeBrowserView() {
 function toggleBrowserPanel() {
   if (browserOpen) return closeBrowserPanel()
   openBrowserPanel()
-  // 처음이면 주소창부터
-  if (!$('browser-url').value) $('browser-url').focus()
+  // 처음이면 주소창부터 — 다 나온 뒤에, 스크롤 없이(나오는 중에 포커스를 주면 뒤 화면이 밀린다).
+  // 그사이 닫았거나 다른 곳을 눌렀으면 하지 않는다
+  if ($('browser-url').value) return
+  clearTimeout(urlFocusTimer)
+  const before = document.activeElement
+  urlFocusTimer = setTimeout(() => {
+    if (browserOpen && document.activeElement === before) $('browser-url').focus({ preventScroll: true })
+  }, BROWSER_SLIDE_MS)
 }
 
 async function browserNavigate() {
@@ -926,7 +938,75 @@ function applyBrowserState(next) {
   if (next.loading) showBrowserError('')
 }
 
+// 너비 끌기 — 끄는 동안은 페이지(화면 위에 떠 있는 뷰)를 떼어 둔다. 마우스가 페이지 위로 지나가도 끌기가 이어지게
+const BROWSER_MIN_WIDTH = 320
+const BROWSER_EDGE_GAP = 120 // 왼쪽에 이만큼은 남긴다
+
+function clampBrowserWidth(width) {
+  return Math.round(Math.min(Math.max(width, BROWSER_MIN_WIDTH), Math.max(BROWSER_MIN_WIDTH, window.innerWidth - BROWSER_EDGE_GAP)))
+}
+
+function setBrowserWidth(width) {
+  const panel = $('browser')
+  if (width === null) {
+    panel.style.width = ''
+    localStorage.removeItem('studio.browserWidth')
+  } else {
+    panel.style.width = `${clampBrowserWidth(width)}px`
+    localStorage.setItem('studio.browserWidth', String(clampBrowserWidth(width)))
+  }
+}
+
+function initBrowserResize() {
+  const panel = $('browser')
+  const handle = $('browser-resize')
+  // 저장된 너비(없으면 기본 46%)
+  const applySaved = () => {
+    const saved = Number(localStorage.getItem('studio.browserWidth'))
+    panel.style.width = saved > 0 ? `${clampBrowserWidth(saved)}px` : ''
+  }
+  applySaved()
+  let dragging = false
+  handle.addEventListener('pointerdown', (event) => {
+    if (event.button !== 0 || !browserOpen) return
+    dragging = true
+    handle.setPointerCapture(event.pointerId)
+    panel.classList.add('resizing')
+    studio.browserHide()
+    event.preventDefault()
+  })
+  handle.addEventListener('pointermove', (event) => {
+    // 끄는 중에 서랍을 닫으면(resizing 이 지워짐) 끌기도 끝난 것
+    if (dragging && panel.classList.contains('resizing')) panel.style.width = `${clampBrowserWidth(window.innerWidth - event.clientX)}px`
+  })
+  // 놓기 · 취소 · 캡처를 잃음 모두 여기로. 그사이 서랍을 닫았으면 너비는 저장하지 않는다
+  const finish = (event) => {
+    if (!dragging) return
+    dragging = false
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId)
+    const stillResizing = panel.classList.contains('resizing')
+    panel.classList.remove('resizing')
+    // 끄다가 서랍을 닫았으면 끌던 너비는 버리고 저장된 너비로
+    if (!browserOpen || !stillResizing) return applySaved()
+    setBrowserWidth(panel.getBoundingClientRect().width)
+    placeBrowserView()
+  }
+  handle.addEventListener('pointerup', finish)
+  handle.addEventListener('pointercancel', finish)
+  handle.addEventListener('lostpointercapture', finish)
+  // 너비를 px 로 정해 두면 창을 늘려도 서랍 크기는 그대로라 ResizeObserver 가 안 불린다 — 창 크기가 바뀌면 다시 맞춰 붙인다
+  window.addEventListener('resize', () => {
+    if (panel.style.width) panel.style.width = `${clampBrowserWidth(parseFloat(panel.style.width))}px`
+    placeBrowserView()
+  })
+  handle.addEventListener('dblclick', () => {
+    setBrowserWidth(null)
+    requestAnimationFrame(placeBrowserView)
+  })
+}
+
 function initBrowser() {
+  initBrowserResize()
   $('browser-toggle').addEventListener('click', toggleBrowserPanel)
   $('browser-close').addEventListener('click', closeBrowserPanel)
   $('browser-back').addEventListener('click', () => studio.browserCommand('back'))
@@ -970,10 +1050,9 @@ function switchTab(name) {
 // ── 아테나 폴더 ────────────────────────────────────────────
 function renderState() {
   document.body.dataset.platform = state.platform
-  // rtl 로 앞을 줄이는 칸이라 맨 앞 / 가 뒤로 붙지 않게 LRM 을 앞에 둔다
-  $('athena-dir').textContent = state.athenaDir ? `‎${state.athenaDir}` : ''
   $('install-dir').textContent = state.installDir || ''
   for (const kbd of document.querySelectorAll('kbd[data-key]')) kbd.textContent = `${state.tabKey}${kbd.dataset.key}`
+  $('browser-toggle').title = `옆 브라우저 열기·닫기 (${state.tabKey}⇧B)`
   const ready = state.valid
   panels.setup.hidden = ready
   for (const tab of tabs) tab.disabled = !ready
