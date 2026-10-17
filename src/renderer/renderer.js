@@ -12,7 +12,7 @@ let currentTab = 'work'
 // ── 작업 창 (데몬의 탭 · pane) ───────────────────────────────
 // pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.js)
 const PANE_GAP = 2
-const HEAD_HEIGHT = 18
+const HEAD_HEIGHT = 22 // pane 머리줄 높이(style.css .pane-head 와 같은 값)
 const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
 let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
