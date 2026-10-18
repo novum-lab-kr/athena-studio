@@ -270,7 +270,7 @@ function addSpaceButton() {
   return button
 }
 
-// 툴팁 — data-tip 버튼 위에 잠깐 머물면 버튼 아래 가운데에 띄운다(화면 밖으로 나가면 안쪽으로 당기고, 아래가 모자라면 위로)
+// 툴팁 — data-tip 버튼 위에 잠깐 머물면 버튼 아래 가운데에 띄운다(화면 밖으로 나가면 안쪽으로 당기고, 아래가 모자라면 위로 · 세로 아이콘 줄은 오른쪽)
 // 아이콘 버튼(글자가 거의 없는 button)의 title 도 여기로 옮겨 같은 툴팁으로 — 기본 title 툴팁은 탭 줄 등에서 안 뜬다
 const TIP_SELECTOR = '[data-tip], button[title], .studio-tab .close[title]' // 탭의 ✕ 는 button 이 아니라 span
 const ICON_TEXT_MAX = 2 // ＋ · ✕ · 접힌 작업 공간 머리글자(두 글자)까지
@@ -304,6 +304,12 @@ function initTips() {
     tip.hidden = false
     const rect = node.getBoundingClientRect()
     const box = tip.getBoundingClientRect()
+    // 세로 아이콘 줄(팩 줄 · 접힌 spaces)은 아래로 띄우면 다음 아이콘을 가려서 오른쪽에
+    if (node.closest('.pack-rail, .spaces.collapsed')) {
+      tip.style.left = `${rect.right + TIP_GAP}px`
+      tip.style.top = `${Math.max(4, Math.min(rect.top + rect.height / 2 - box.height / 2, innerHeight - box.height - 4))}px`
+      return
+    }
     const left = rect.left + rect.width / 2 - box.width / 2
     tip.style.left = `${Math.max(4, Math.min(left, innerWidth - box.width - 4))}px`
     // 아래 자리가 모자라면(맨 아래 접힌 에이전트 모니터 등) 버튼 위로
@@ -1523,6 +1529,8 @@ function packDialog({ title, body = [], actions = [], input = null }) {
   if (input) {
     field = el('input', 'pack-input')
     field.placeholder = input.placeholder || ''
+    field.value = input.value || ''
+    if (input.maxLength) field.maxLength = input.maxLength
     field.spellcheck = false
     field.autocomplete = 'off'
     bodyNode.append(field)
@@ -1571,22 +1579,123 @@ const hidePackProgress = () => ($('pack-progress').hidden = true)
 function packCurrentLabel() {
   if (!packs.current) return say('pack.none')
   if (packs.current.empty) return say('pack.newSetup')
-  return packs.current.name || packs.current.id
+  return packLabel(packs.current)
 }
 
-function renderPackChip() {
+const PACK_NAME_MAX = 40 // 표시 이름 1~40자(본체가 다시 검사한다)
+
+// 화면에 보일 팩 이름 — 표시 이름(팩 안에 저장 · 팀과 같이) → 이름 → id
+const packLabel = (pack) => (pack && (pack.displayName || pack.name || pack.id)) || ''
+
+// 팩 이미지 — main 이 iconPath 를 읽어 data URL 로 준다. iconUpdatedAt 이 바뀌면 다시 받는다(캐시 깨기)
+const packIconCache = new Map() // id → { stamp, dataUrl }
+const packIconPending = new Set()
+function packIconImage(item) {
+  if (!item.iconPath) return null
+  const stamp = `${item.iconPath}|${item.iconUpdatedAt || ''}`
+  const cached = packIconCache.get(item.id)
+  if (cached && cached.stamp === stamp) {
+    if (!cached.dataUrl) return null
+    const image = el('img', 'pack-icon-image')
+    image.src = cached.dataUrl
+    image.alt = ''
+    image.draggable = false
+    return image
+  }
+  if (!packIconPending.has(item.id)) {
+    packIconPending.add(item.id)
+    studio
+      .packIcon(item.id)
+      .then((result) => packIconCache.set(item.id, { stamp, dataUrl: (result && result.dataUrl) || null }))
+      .catch(() => packIconCache.set(item.id, { stamp, dataUrl: null })) // 실패도 적어 둔다 — 안 그러면 다시 그릴 때마다 또 요청한다
+      .finally(() => {
+        packIconPending.delete(item.id)
+        renderPackRail()
+      })
+  }
+  return null // 받는 동안은 두 글자
+}
+
+// 팩 아이콘 우클릭 — main 메뉴(이름 바꾸기 · 원래 이름으로 · 이미지 고르기 · 이미지 지우기)에서 고른 것을 한다
+async function editPackLook(id) {
+  const action = await studio.packContextMenu(id)
+  if (!action) return
+  let result = null
+  if (action === 'rename') {
+    const pack = [...packs.packs, packs.current].find((item) => item && item.id === id)
+    const answer = await packDialog({
+      title: say('pack.rename.title'),
+      body: [say('pack.rename.body', { id })],
+      input: { value: packLabel(pack), placeholder: (pack && pack.name) || id, maxLength: PACK_NAME_MAX },
+      actions: [
+        { label: say('common.ok'), value: 'ok', kind: 'primary' },
+        { label: say('common.cancel'), value: null },
+      ],
+    })
+    if (!answer || !answer.text.trim()) return
+    result = await studio.packSetName(id, answer.text.trim())
+  }
+  if (action === 'reset-name') result = await studio.packSetName(id, null)
+  if (action === 'icon' || action === 'clear-icon') result = await studio.packSetIcon(id, action === 'clear-icon')
+  if (result && !result.ok && !result.canceled) return packAlert(say('pack.look.failed'), result.text || result.message)
+}
+
+// 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기
+function renderPackRail() {
   renderPackWelcome()
-  const chip = $('pack-chip')
-  chip.hidden = !packs.supported || !state || !state.valid
-  if (chip.hidden) return
-  $('pack-name').textContent = packCurrentLabel() // 아이콘(카트리지) · ▾ 는 마크업
+  const rail = $('pack-rail')
+  rail.hidden = !packs.supported || !state || !state.valid || hasNoPacks()
+  if (rail.hidden) return
+  // 옛 구조 본체는 목록이 비고 지금 팩만 있다 — 그 하나라도 보이게
+  const rows = packs.packs.length ? packs.packs : [packs.current].filter(Boolean)
+  const icons = rows.map((item) => {
+    const isCurrent = Boolean(packs.current) && packs.current.id === item.id
+    const name = isCurrent ? packCurrentLabel() : packLabel(item)
+    const button = el('button', 'space-icon pack-icon')
+    const image = packIconImage(item)
+    if (image) button.append(image)
+    else button.textContent = spaceInitials(packLabel(item))
+    button.style.setProperty('--space-color', spaceColor(item.id)) // 색은 id 로 — 이름을 바꿔도 그대로
+    button.setAttribute('aria-current', String(isCurrent))
+    button.setAttribute('aria-label', name)
+    const meta = [isCurrent ? say('pack.meta.current') : '', Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
+    button.dataset.tip = meta ? `${name}\n${meta}` : name
+    if (!isCurrent) button.addEventListener('click', () => runPackFlow(() => choosePack(item.id)))
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      runPackFlow(() => editPackLook(item.id))
+    })
+    return button
+  })
+  const add = el('button', 'space-icon add pack-add', '＋')
+  add.dataset.tip = say('pack.rail.add')
+  add.setAttribute('aria-label', add.dataset.tip)
+  add.addEventListener('click', () => runPackFlow(openPackActions))
+  rail.replaceChildren(...icons, add)
 }
 
 async function refreshPackList() {
   if (!state || !state.valid) return packs
   packs = await studio.packList()
-  renderPackChip()
+  renderPackRail()
   return packs
+}
+
+// 팩 대화상자 아래 줄 — 새로 만들기 · 가져오기 · 내보내기 · 내 백업
+function packLinks() {
+  const links = el('div', 'pack-links')
+  for (const value of ['new', 'import', 'export', 'backup']) {
+    const link = el('button', 'link', say(`pack.link.${value}`))
+    link.dataset.value = value
+    links.append(link)
+  }
+  return links
+}
+
+// 팩 세로 줄의 + — 목록 없이 만들기 · 가져오기 · 내보내기 · 내 백업만
+async function openPackActions() {
+  const choice = await packDialog({ title: say('pack.title'), body: [packLinks()], actions: [{ label: say('common.close'), value: null }] })
+  if (choice) return packCommand(choice)
 }
 
 // 회사 팩 고르기 — 목록 + 새로 만들기 · 가져오기 · 내보내기 · 내 백업
@@ -1603,16 +1712,10 @@ async function openPackPicker() {
     row.setAttribute('aria-current', String(isCurrent))
     row.dataset.value = `pack:${item.id}`
     const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
-    row.append(el('span', null, `${isCurrent ? '● ' : '○ '}${item.name || item.id}`), el('span', 'meta', meta))
+    row.append(el('span', null, `${isCurrent ? '● ' : '○ '}${packLabel(item)}`), el('span', 'meta', meta))
     list.append(row)
   }
-  const links = el('div', 'pack-links')
-  for (const value of ['new', 'import', 'export', 'backup']) {
-    const link = el('button', 'link', say(`pack.link.${value}`))
-    link.dataset.value = value
-    links.append(link)
-  }
-  const choice = await packDialog({ title: say('pack.title'), body: [list, links], actions: [{ label: say('common.close'), value: null }] })
+  const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], actions: [{ label: say('common.close'), value: null }] })
   if (!choice) return
   if (choice.startsWith('pack:')) return choosePack(choice.slice(5))
   return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
@@ -1667,7 +1770,7 @@ function renderPackWelcome() {
 function renderWelcomeRecent() {
   const recent = (!hasNoPacks() && Array.isArray(packs.recent) && packs.recent) || []
   $('pack-welcome-recent').hidden = !recent.length
-  const cartridge = document.querySelector('#pack-chip .pack-chip-icon svg')
+  const cartridge = $('cartridge-icon').content.querySelector('svg')
   const rows = recent.map((item) => {
     const row = el('button', 'pack-welcome-recent-row')
     row.dataset.packId = item.id
@@ -1742,7 +1845,7 @@ async function askQuiesce(title, verb) {
 async function choosePack(id) {
   if (packs.current && packs.current.id === id) return
   const target = packs.packs.find((item) => item.id === id)
-  const name = target ? target.name || target.id : id
+  const name = target ? packLabel(target) : id
   const mode = await askQuiesce(say('pack.switch.title', { name }), 'switch')
   if (!mode) return
   showPackProgress(say('pack.switch.progress', { name }), true)
@@ -1889,7 +1992,7 @@ function onPackChanged(change) {
 async function initPacks() {
   studio.onPackState((next) => {
     packs = next
-    renderPackChip()
+    renderPackRail()
   })
   studio.onPackProgress((step) => {
     $('pack-progress-step').textContent = step.text || ''
@@ -1898,7 +2001,6 @@ async function initPacks() {
   })
   studio.onPackChanged(onPackChanged)
   studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
-  $('pack-chip').addEventListener('click', () => runPackCommand('picker'))
   for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))
   await afterAthenaReady()
 }
@@ -1922,7 +2024,7 @@ function renderState() {
   const ready = state.valid
   panels.setup.hidden = ready
   for (const tab of tabs) tab.disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
-  renderPackChip()
+  renderPackRail()
   if (!ready) {
     panels.work.hidden = true
     panels.board.hidden = true

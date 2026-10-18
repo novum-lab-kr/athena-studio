@@ -95,6 +95,28 @@ test('내 팩 목록: 지금 팩 맨 위 · 나머지 updatedAt 최근 순 · �
   assert.equal(recent[0].name, 'B')
   assert.deepEqual(pack.recentPacks({ packs: [{ id: 'x' }], current: null }).map((item) => item.updatedAt), [null])
   assert.deepEqual(pack.recentPacks(null), [])
+  // 표시 이름이 있으면 그걸로
+  assert.equal(pack.recentPacks({ packs: [{ id: 'x', name: 'x', displayName: '엑스 회사' }], current: null })[0].name, '엑스 회사')
+})
+
+test('팩 표시 이름 · 이미지: displayName → name → id · 본체가 준 iconPath 만 · 앞 바이트로 형식', () => {
+  assert.equal(pack.packLabel({ id: 'a', name: 'acme', displayName: '에이크미' }), '에이크미')
+  assert.equal(pack.packLabel({ id: 'a', name: 'acme', displayName: null }), 'acme')
+  assert.equal(pack.packLabel({ id: 'a' }), 'a')
+  assert.equal(pack.packLabel(null), '')
+  const list = { current: { id: 'a', iconPath: '/d/packs/a/assets/icon.png' }, packs: [{ id: 'b', iconPath: '/d/packs/b/assets/icon.svg' }, { id: 'c', iconPath: 'rel/icon.png' }, { id: 'd', iconPath: '/d/packs/d/assets/icon.WEBP' }] }
+  assert.equal(pack.packIconPath(list, 'a'), '/d/packs/a/assets/icon.png')
+  assert.equal(pack.packIconPath(list, 'b'), null) // svg 거부
+  assert.equal(pack.packIconPath(list, 'c'), null) // 상대 경로 거부
+  assert.equal(pack.packIconPath(list, 'd'), '/d/packs/d/assets/icon.WEBP')
+  assert.equal(pack.packIconPath(list, 'zz'), null)
+  const pad = (bytes) => Buffer.concat([Buffer.from(bytes), Buffer.alloc(12)])
+  assert.equal(pack.iconMime(pad([0x89, 0x50, 0x4e, 0x47])), 'image/png')
+  assert.equal(pack.iconMime(pad([0xff, 0xd8, 0xff, 0xe0])), 'image/jpeg')
+  assert.equal(pack.iconMime(Buffer.from('RIFF0000WEBPVP8 ', 'latin1')), 'image/webp')
+  assert.equal(pack.iconMime(Buffer.from('GIF89a000000', 'latin1')), null)
+  assert.equal(pack.iconMime(Buffer.from('<svg xmlns="', 'latin1')), null)
+  assert.equal(pack.ICON_MAX_BYTES, 1024 * 1024)
 })
 
 test('현황판 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 current (A→B→A 의 옛 A 는 stale)', () => {

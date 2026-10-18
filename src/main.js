@@ -1264,6 +1264,68 @@ function packReveal() {
   if (lastPackFile && fs.existsSync(lastPackFile)) shell.showItemInFolder(lastPackFile)
 }
 
+// ── 팩 표시 이름 · 이미지(아테나 계획서 20261018-팩마다-본체 5.7) ─────────────────
+// 이미지는 본체가 준 iconPath(마지막 pack list)만 읽어 data URL 로 넘긴다 — 화면이 경로를 정하지 않고, CSP(img-src 'self' data:)와 맞는다
+async function packIcon(id) {
+  const iconPath = packModel.packIconPath(packState, id)
+  if (!iconPath) return { dataUrl: null }
+  try {
+    const stat = await fs.promises.stat(iconPath)
+    if (!stat.isFile() || stat.size > packModel.ICON_MAX_BYTES) return { dataUrl: null }
+    const bytes = await fs.promises.readFile(iconPath)
+    const mime = packModel.iconMime(bytes.subarray(0, 12))
+    return { dataUrl: mime ? `data:${mime};base64,${bytes.toString('base64')}` : null }
+  } catch {
+    return { dataUrl: null }
+  }
+}
+
+// 이름 바꾸기 — name 이 없으면 원래 이름으로(--clear). 끝나면 목록을 새로 받아 화면에 보낸다
+async function packSetName(id, name) {
+  const result = await runPack(name === null ? ['set-name', '--clear', '--id', id] : ['set-name', name, '--id', id])
+  if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+  await refreshPacks()
+  return result
+}
+
+// 이미지 고르기 — 파일 대화상자는 main 이 연다(png · jpg · webp 만 보이게). clear 면 지우기
+async function packSetIcon(id, clear) {
+  let args = ['set-icon', '--clear', '--id', id]
+  if (!clear) {
+    const picked = await dialog.showOpenDialog(mainWindow, {
+      title: say('pack.icon.title'),
+      properties: ['openFile'],
+      filters: [{ name: say('pack.icon.filter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      defaultPath: app.getPath('pictures'),
+    })
+    if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
+    args = ['set-icon', picked.filePaths[0], '--id', id]
+  }
+  const result = await runPack(args)
+  if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+  await refreshPacks()
+  return result
+}
+
+// 팩 아이콘 우클릭 메뉴 — 고른 동작 이름을 돌려준다(이름 입력은 화면이 받는다). 아무것도 안 고르면 null
+function packContextMenu(id) {
+  const pack = [...(packState.packs || []), packState.current].find((item) => item && item.id === id)
+  if (!pack || !mainWindow) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    let chosen = null
+    const pick = (action) => () => {
+      chosen = action
+      resolve(action)
+    }
+    const items = [{ label: say('pack.menu.rename'), click: pick('rename') }]
+    if (pack.displayName) items.push({ label: say('pack.menu.resetName'), click: pick('reset-name') })
+    items.push({ type: 'separator' }, { label: say('pack.menu.icon'), click: pick('icon') })
+    if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
+    // 메뉴가 닫힌 뒤 click 이 늦게 올 수 있어 잠깐 기다렸다 null
+    Menu.buildFromTemplate(items).popup({ window: mainWindow, callback: () => setTimeout(() => resolve(chosen), 100) })
+  })
+}
+
 // 현황판이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
 function boardJson(port, pathName, { method = 'GET', headers = {} } = {}) {
   return new Promise((resolve) => {
@@ -1912,6 +1974,10 @@ ipcMain.handle('pack:inspect', (_event, kind, source) => packInspect(String(kind
 ipcMain.handle('pack:import', (_event, token, choice, mode) => packImport(String(token), String(choice), mode === 'wait' || mode === 'stop' ? mode : null))
 ipcMain.handle('pack:export', (_event, kind) => packExport(kind === 'backup' ? 'backup' : 'share'))
 ipcMain.handle('pack:reveal', () => packReveal())
+ipcMain.handle('pack:icon', (_event, id) => packIcon(String(id)))
+ipcMain.handle('pack:set-name', (_event, id, name) => packSetName(String(id), typeof name === 'string' ? name : null))
+ipcMain.handle('pack:set-icon', (_event, id, clear) => packSetIcon(String(id), clear === true))
+ipcMain.handle('pack:context-menu', (_event, id) => packContextMenu(String(id)))
 // 시작할 때 "옮기기" 를 골랐으면 화면이 붙은 뒤 기존 아테나 가져오기를 이어서 연다
 ipcMain.handle('pack:pending-import', () => pendingAthenaImport)
 ipcMain.handle('screen:attach', () => attachScreen())

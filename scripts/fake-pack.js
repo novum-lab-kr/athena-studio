@@ -62,6 +62,43 @@ async function main() {
     }
     case 'busy':
       return done({ ok: true, busy: state.busy || [] })
+    // 팩 표시 이름 · 이미지(아테나 계획서 20261018-팩마다-본체 5.7) — 가짜는 상태 파일에만 적는다(이미지는 복사하지 않고 고른 파일 경로를 그대로)
+    case 'set-name':
+    case 'set-icon': {
+      const target = findPack(flag('--id') || (state.current && state.current.id))
+      if (!target) fail('not-found', '그 팩이 없어요')
+      const clear = process.argv.includes('--clear')
+      const sameAsCurrent = (patch) => {
+        Object.assign(target, patch)
+        if (state.current && state.current.id === target.id) Object.assign(state.current, patch)
+        save(state)
+      }
+      if (sub === 'set-name') {
+        const name = clear ? null : String(arg || '').trim()
+        if (!clear && (name.length < 1 || name.length > 40)) fail('invalid-name', '이름은 1~40자')
+        sameAsCurrent({ displayName: name })
+        return done({ ok: true, id: target.id, displayName: name })
+      }
+      if (clear) {
+        sameAsCurrent({ iconPath: null, iconUpdatedAt: new Date().toISOString() })
+        return done({ ok: true, id: target.id, iconPath: null })
+      }
+      let bytes
+      try {
+        bytes = fs.readFileSync(arg)
+      } catch {
+        fail('invalid-image', '이미지 파일을 읽지 못했어요')
+      }
+      const head = bytes.subarray(0, 12)
+      const isPng = head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
+      const isJpeg = head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
+      const isWebp = head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP'
+      if (!isPng && !isJpeg && !isWebp) fail('invalid-image', 'png · jpeg · webp 만')
+      if (bytes.length > 1024 * 1024) fail('image-too-large', '1MB 이하만')
+      const iconPath = path.resolve(arg)
+      sameAsCurrent({ iconPath, iconUpdatedAt: new Date().toISOString() })
+      return done({ ok: true, id: target.id, iconPath })
+    }
     case 'board-token':
       return done({ ok: false, error: 'not-found', message: '가짜 모드에는 현황판 토큰이 없어요' }, 1)
     case 'use': {

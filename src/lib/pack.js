@@ -12,7 +12,7 @@ const koreanSay = i18n.translator(KOREAN, KOREAN)
 // 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
 const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'studio-wait', 'studio-stop', 'studio-close', 'studio-busy', 'studio-board', 'slow']
 // 본체 오류 코드(사전 pack.errorCode.<코드>)
-const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict']
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large']
 // 남은 작업 종류(사전 pack.busy.<종류>)
 const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside']
 
@@ -99,6 +99,31 @@ function normalizePackList(result) {
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
 }
 
+// 화면에 보일 팩 이름 — 표시 이름(pack set-name) → 이름 → id (아테나 계획서 20261018-팩마다-본체 5.7)
+function packLabel(pack) {
+  return (pack && (pack.displayName || pack.name || pack.id)) || ''
+}
+
+// 팩 이미지 — 본체가 준 iconPath 만 읽는다(화면이 경로를 정하지 않게). 절대 경로 · png/jpg/jpeg/webp · 크기 제한은 읽는 쪽(main)이 한 번 더
+const ICON_MAX_BYTES = 1024 * 1024
+const ICON_EXTENSIONS = ['.png', '.jpg', '.jpeg', '.webp']
+function packIconPath(list, id) {
+  if (!list || typeof id !== 'string') return null
+  const pack = [...(Array.isArray(list.packs) ? list.packs : []), list.current].find((item) => item && item.id === id)
+  const iconPath = pack && pack.iconPath
+  if (typeof iconPath !== 'string' || !path.isAbsolute(iconPath)) return null
+  return ICON_EXTENSIONS.includes(path.extname(iconPath).toLowerCase()) ? iconPath : null
+}
+
+// 이미지 앞 바이트로 형식 — png · jpeg · webp 만(SVG · GIF 등은 null)
+function iconMime(head) {
+  if (!Buffer.isBuffer(head) || head.length < 12) return null
+  if (head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) return 'image/png'
+  if (head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
+  if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
+  return null
+}
+
 // pack status 의 데이터 폴더(R1 — 코어가 정한 실제 경로). 없거나(옛 응답) 절대 경로가 아니면 null
 function statusDataDir(result) {
   const dir = result && result.ok === true ? result.dataDir : null
@@ -134,7 +159,7 @@ function recentPacks(list, limit = 5) {
     if (right.id === currentId) return 1
     return time(right) - time(left)
   })
-  return sorted.slice(0, limit).map((pack) => ({ id: pack.id, name: pack.name || pack.id, repos: pack.repos, updatedAt: pack.updatedAt || null, current: pack.id === currentId }))
+  return sorted.slice(0, limit).map((pack) => ({ id: pack.id, name: packLabel(pack), repos: pack.repos, updatedAt: pack.updatedAt || null, current: pack.id === currentId }))
 }
 
 // 현황판 /api/state 의 pack 이 지금 팩 · 세대와 같은가 — legacy(옛 본체 · pack 없음) · current · stale
@@ -258,6 +283,10 @@ module.exports = {
   showPackWelcome,
   welcomeOnLaunch,
   recentPacks,
+  packLabel,
+  ICON_MAX_BYTES,
+  packIconPath,
+  iconMime,
   statusBoardPort,
   statusDataDir,
   switchCheck,
