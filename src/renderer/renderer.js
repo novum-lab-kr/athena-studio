@@ -18,7 +18,7 @@ function applyStaticTexts() {
 applyStaticTexts()
 
 const panels = { setup: $('setup'), work: $('work'), board: $('board') }
-const tabs = [...document.querySelectorAll('.tab')]
+const tabs = [...document.querySelectorAll('[data-tab]')] // 오른쪽 현황판 토글 아이콘 하나(작업 창은 그 아이콘을 다시 누르거나 ⌘1)
 
 let state = null
 let currentTab = 'work'
@@ -1816,8 +1816,8 @@ async function afterAthenaReady() {
 function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
-  for (const kbd of document.querySelectorAll('kbd[data-key]')) kbd.textContent = `${state.tabKey}${kbd.dataset.key}`
   $('browser-toggle').title = say('browser.toggleTitle', { key: state.tabKey })
+  $('board-tab').title = `${say('board.title')} (${state.tabKey}2)`
   const ready = state.valid
   panels.setup.hidden = ready
   for (const tab of tabs) tab.disabled = !ready
@@ -1902,7 +1902,8 @@ function applyLanguage(next) {
 async function init() {
   state = await studio.athenaState()
   renderState()
-  for (const tab of tabs) tab.addEventListener('click', () => switchTab(tab.dataset.tab))
+  // 현황판 아이콘은 토글 — 현황판이면 작업 창으로 돌아간다
+  $('board-tab').addEventListener('click', () => switchTab(currentTab === 'board' ? 'work' : 'board'))
   initBrowser()
   initMonitor()
   $('pick').addEventListener('click', pickAthenaDir)
