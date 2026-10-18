@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # athena workspace 를 늘 같은 모양으로 — 도구 pane 을 (없는 것만) 띄우고 고정 배치로 정리한다.
 #   오른쪽 끝: Explorer(사이드바 플러그인이 띄움) · 가이드 메뉴 / 하단 한 줄: 🛰 에이전트 모니터 | 📋 현황판 | 📚 배우기 검토
-#   (Studio 화면이면 에이전트 모니터·배우기 검토·가이드 메뉴는 띄우지 않는다 — 모니터는 Studio 앱 가운데 맨 아래 칸이 보여 준다)
+#   (Studio 화면이면 현황판·에이전트 모니터·배우기 검토·가이드 메뉴는 띄우지 않는다 — 모니터는 Studio 앱 가운데 맨 아래 칸이 보여 준다)
 #   + herdr-sidebar 패치판(scripts/herdr-sidebar-ensure.sh → patch.sh — 없으면 고정 버전 설치 + 미리 빌드한 패치판 실행 파일, Rust 필요 없음)
 #   pane 은 화면 계층(scripts/screen)으로만 다룬다. 사이드바는 herdr 플러그인이라 그 기능이 있는 백엔드에서만(capabilities herdr-sidebar)
 # 아테나 세션이 켜질 때 SessionStart 훅(scripts/hooks/workspace-up.py)이 뒤에서 부른다. 손으로: scripts/athena-up.sh
@@ -16,11 +16,11 @@ eval "$("$SCREEN" self --format sh)"   # SCREEN_PANE_ID(이 아테나 pane) · S
 TAB="${SCREEN_TAB_ID:-}"; [ -n "$TAB" ] || exit 0
 HAS_SIDEBAR=0; "$SCREEN" capabilities --has herdr-sidebar && HAS_SIDEBAR=1
 
-# 현황판을 먼저 — 본 영역 아래를 통째로 차지해 하단 줄의 기준 칸이 된다. 세션 시작 때는 브라우저를 새로 열지 않는다
-ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1
-# Studio 화면에는 에이전트 모니터·배우기 검토·가이드 메뉴 pane 을 두지 않는다(사용자 결정 2026-10-17 · 모니터는 2026-10-18) —
-# 모니터는 앱이 가운데 맨 아래 칸으로 보여 주고, 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드는 /guide 로 부를 때만
+# Studio 화면에는 현황판·에이전트 모니터·배우기 검토·가이드 메뉴 pane 을 두지 않는다(사용자 결정 2026-10-17 · 모니터는 2026-10-18 · 현황판은 2026-10-18) —
+# 현황판은 앱이 현황판 탭을 열 때 pane 없이 뒤에서 띄우고, 모니터는 앱이 가운데 맨 아래 칸으로 보여 주고, 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드는 /guide 로 부를 때만
 if [ "${SCREEN_BACKEND:-}" != studio ]; then
+  # 현황판을 먼저 — 본 영역 아래를 통째로 차지해 하단 줄의 기준 칸이 된다. 세션 시작 때는 브라우저를 새로 열지 않는다
+  ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1
   "$ATHENA_DIR/scripts/monitor-pane.sh" >/dev/null 2>&1
   "$ATHENA_DIR/scripts/learn-review-pane.sh" >/dev/null 2>&1
   "$ATHENA_DIR/scripts/guide-pane.sh" >/dev/null 2>&1
