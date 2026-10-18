@@ -1282,6 +1282,7 @@ async function loadBoard(force = false) {
   status.className = 'status'
   status.textContent = say('board.opening')
   status.hidden = false
+  frame.hidden = true // 새 주소를 받기 전까지 숨긴다 — 팩을 바꾸면 옛 팩 현황판이 잠깐 보였다(팩마다 포트가 달라 옛 서버가 살아 있다)
   try {
     const result = await studio.ensureBoard()
     if (!result.ok) {
@@ -1727,22 +1728,12 @@ function renderPackRail() {
     if (!isCurrent) {
       button.addEventListener('click', () => {
         clearTimeout(clickTimer)
-        // 선택 표시는 누르자마자 옮긴다 — 바꾸기(pack open · 다시 붙기 · 목록)가 끝날 때까지 기다리지 않게
-        if (!packFlow) {
-          packPendingId = item.id
-          markPackSelection()
-        }
         clickTimer = setTimeout(() => runPackFlow(() => switchPack(item.id)), DOUBLE_CLICK_MS)
       })
     }
     button.addEventListener('dblclick', (event) => {
       event.preventDefault()
       clearTimeout(clickTimer)
-      // 더블클릭이면 바꾸지 않는다 — 먼저 옮긴 선택 표시를 되돌린다
-      if (packPendingId === item.id) {
-        packPendingId = null
-        markPackSelection()
-      }
       runPackFlow(() => editPackLookDialog(item.id))
     })
     button.addEventListener('contextmenu', async (event) => {
@@ -1761,7 +1752,7 @@ function renderPackRail() {
   rail.replaceChildren(...icons, add)
 }
 
-// 팩 줄 선택 표시 — 바꾸는 중인 팩이 있으면 그 팩(누르자마자), 없으면 지금 팩
+// 팩 줄 선택 표시 — 바꾸는 중인 팩이 있으면 그 팩(진행 팝업이 닫히면), 없으면 지금 팩
 let packPendingId = null
 const selectedPackId = () => packPendingId || (packs.current && packs.current.id) || null
 // 버튼을 다시 그리지 않고 표시만 바꾼다(다시 그리면 두 번째 클릭이 다른 버튼에 떨어져 더블클릭이 안 된다)
@@ -1914,10 +1905,6 @@ async function switchPack(id, { newWindow = false } = {}) {
   if (packs.current && packs.current.id === id) return { ok: true, same: true }
   const target = (packs.packs || []).find((item) => item.id === id)
   const name = target ? packLabel(target) : id
-  if (!newWindow) {
-    packPendingId = id
-    markPackSelection()
-  }
   try {
     return await openOrSwitchPack(id, { newWindow, name })
   } finally {
@@ -1933,9 +1920,9 @@ async function openOrSwitchPack(id, { newWindow, name }) {
   showPackProgress(say(newWindow ? 'pack.open.progress' : 'pack.switch.progress', { name }), true)
   const result = await studio.packOpen(id, { newWindow })
   hidePackProgress()
-  // 바뀌지 않았으면 선택 표시를 바로 되돌린다(알림을 띄우기 전에)
-  if (!result.switched && packPendingId === id) {
-    packPendingId = null
+  // 선택 표시는 진행 팝업이 닫힐 때 옮긴다 — 다시 붙기 · 목록 읽기가 끝날 때까지 기다리지 않게
+  if (result.switched) {
+    packPendingId = id
     markPackSelection()
   }
   if (result.same || result.canceled || result.error === 'canceled') return result
