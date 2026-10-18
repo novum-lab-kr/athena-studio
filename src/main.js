@@ -1662,49 +1662,7 @@ function startPanesPolling() {
   clearInterval(panesTimer)
   panesTimer = setInterval(() => {
     for (const ctx of packWindows) ctx.pollPanes().catch(() => {})
-    pollRunning().catch(() => {})
   }, 2000)
-}
-
-// 팩 줄 '도는 중' — 팩마다(본체마다) 에이전트가 도는 pane 수(D4 바꿈 · 바꿔 둔 팩에서도 에이전트는 계속 돈다).
-// 창 연결은 자기 본체만 보므로 묶이지 않은 연결 하나로 모든 본체를 본다. 데몬이 없거나 옛 데몬이면 읽지 않는다(띄우지도 묻지도 않는다)
-let runningPeek = null
-let runningPeeking = false
-const RUNNING_LIMIT_MS = 5000 // pane list 는 ps 를 읽어 조금 걸릴 수 있다
-const runningSent = new WeakMap() // 창 → 마지막으로 보낸 값(같으면 다시 보내지 않는다)
-async function pollRunning() {
-  if (runningPeeking || daemonOld || ![...packWindows].some((ctx) => ctx.win && !ctx.win.isDestroyed() && ctx.win.isVisible())) return
-  runningPeeking = true
-  try {
-    if (!runningPeek) {
-      // 닫힘 알림은 늦게 올 수 있다 — 지금 연결이 그 연결일 때만 비운다(새로 만든 연결을 덮지 않게)
-      let fresh = null
-      fresh = await daemonClient.connectExisting({
-        paths: daemonPaths(),
-        onClose: () => {
-          if (fresh && runningPeek === fresh) runningPeek = null
-        },
-      })
-      runningPeek = fresh
-    }
-    if (!runningPeek) return
-    // 답이 없으면 끊고 다음에 다시 붙는다(catch) — 묶인 채 '도는 중' 이 멈추지 않게(리뷰 제안)
-    const state = await daemonClient.withTimeout(runningPeek.call('state'), RUNNING_LIMIT_MS)
-    const listed = await daemonClient.withTimeout(runningPeek.call('pane list'), RUNNING_LIMIT_MS)
-    const byBody = core.agentsByBody(state.workspaces, listed.panes)
-    for (const ctx of packWindows) {
-      const running = core.runningByPack(ctx.packState.packs, byBody, core.realDir)
-      const text = JSON.stringify(running)
-      if (runningSent.get(ctx) === text) continue
-      runningSent.set(ctx, text)
-      ctx.send('pack:running', running)
-    }
-  } catch {
-    if (runningPeek) runningPeek.destroy() // 답이 없었을 수 있다 — 바로 끊는다
-    runningPeek = null
-  } finally {
-    runningPeeking = false
-  }
 }
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만(결정 Q1 B) ───────────────────

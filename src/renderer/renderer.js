@@ -1714,24 +1714,13 @@ function renderPackRail() {
     const button = el('button', 'space-icon pack-icon')
     // 다른 창에 열려 있는 팩 — 작은 점(누르면 그 창이 앞으로)
     if (!isCurrent && Array.isArray(packs.openIds) && packs.openIds.includes(item.id)) button.classList.add('open-elsewhere')
-    // 그 팩에서 에이전트가 도는 중 — 바꿔 둔 팩에서도 계속 돈다(D4 바꿈)
-    const running = packRunning[item.id]
-    if (running && running.agents) button.classList.add('running')
     const image = packIconImage(item)
     if (image) button.append(image)
     else button.textContent = spaceInitials(packLabel(item))
     button.style.setProperty('--space-color', spaceColor(item.id)) // 색은 id 로 — 이름을 바꿔도 그대로
     button.setAttribute('aria-current', String(isCurrent))
     button.setAttribute('aria-label', name)
-    const meta = [
-      isCurrent ? say('pack.meta.current') : '',
-      Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '',
-      item.hasWork ? say('pack.meta.hasWork') : '',
-      running && running.agents ? say('pack.meta.running', { count: running.agents }) : '',
-    ]
-      .filter(Boolean)
-      .join(' · ')
-    button.dataset.tip = [name, meta, say('pack.look.hint')].filter(Boolean).join('\n')
+    button.dataset.tip = name // 툴팁은 팩 이름만
     // 한 번 누르면 이 창에서 그 팩으로 바꾼다(조금 기다렸다 — 더블클릭이면 이름 · 이미지 바꾸기로)
     let clickTimer = null
     if (!isCurrent) {
@@ -1832,7 +1821,6 @@ function packCommand(name) {
 //   welcome — 팩이 하나도 없을 때(만들기 · 가져오기만) · launchWelcome — 앱을 켤 때마다(팩이 있어도 · 도는 에이전트가 없으면) + '내 팩' 목록
 // 켤 때 시작 화면은 팩을 고르거나 · 만들거나 · 가져와 들어가면(welcomeEntered) 닫힌다. 떠 있는 동안 에이전트 모니터는 접어 두고, 들어가면 펼친다
 const hasNoPacks = () => packs.welcome === true
-let packRunning = {} // 팩 id → { agents, working } — 팩 줄 '도는 중'(main 의 pollRunning)
 let welcomeEntered = false
 const welcomeShown = () => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
 let welcomeWasOn = false
@@ -2068,10 +2056,6 @@ function onPackChanged() {
 async function initPacks() {
   studio.onPackState((next) => {
     packs = next
-    renderPackRail()
-  })
-  studio.onPackRunning((next) => {
-    packRunning = next || {}
     renderPackRail()
   })
   studio.onPackProgress((step) => {

@@ -320,24 +320,3 @@ test('떼어 띄운 데몬은 띄운 쪽이 끝나도 셸과 함께 산다', { s
   }
 })
 
-test('보기만 하는 연결(connectExisting): 데몬이 없으면 띄우지 않고 null · 답이 없으면 시간 안에 끊고 null', async () => {
-  const daemonClient = require('../src/daemon-client')
-  const dir = workDir()
-  const socket = path.join(dir, 'silent.sock')
-  try {
-    assert.equal(await daemonClient.connectExisting({ paths: { socket } }), null)
-    assert.equal(fs.existsSync(socket), false) // 띄우지 않는다
-    // 소켓은 받지만 아무 답도 하지 않는 데몬
-    const held = []
-    const server = net.createServer((connection) => held.push(connection))
-    await new Promise((resolve) => server.listen(socket, resolve))
-    const started = Date.now()
-    assert.equal(await daemonClient.connectExisting({ paths: { socket }, limitMs: 200 }), null)
-    assert.ok(Date.now() - started < 2000)
-    await assert.rejects(daemonClient.withTimeout(new Promise(() => {}), 50), { code: 'timeout' })
-    for (const connection of held) connection.destroy()
-    await new Promise((resolve) => server.close(resolve))
-  } finally {
-    fs.rmSync(dir, { recursive: true, force: true })
-  }
-})

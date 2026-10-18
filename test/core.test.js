@@ -240,26 +240,3 @@ test('창마다 팩: 켤 때 열 본체 목록 · 예전 설정(athenaDir 하나
   assert.deepEqual(core.withWindows({ athenaDir: '/old' }, []), { athenaDir: '/old', windows: [] })
 })
 
-test('팩 줄 도는 중: 본체마다 에이전트 pane 수 → 팩 id 로(본체 모르는 작업 공간 · 고정 칸은 안 셈)', () => {
-  const workspaces = [
-    { id: 'w1', body: '/real/athena' },
-    { id: 'w2', body: '/real/athena-globex' },
-    { id: 'w3', body: null },
-  ]
-  const panes = [
-    { id: 'p1', workspace_id: 'w1', agent: 'claude', agent_status: 'working' },
-    { id: 'p2', workspace_id: 'w1', agent: 'codex', agent_status: 'idle' },
-    { id: 'p3', workspace_id: 'w1', agent: null },
-    { id: 'p4', workspace_id: 'w2', agent: 'claude', agent_status: 'blocked' },
-    { id: 'p5', workspace_id: 'w3', agent: 'claude' },
-    { id: 'p6', workspace_id: null, agent: 'claude' },
-  ]
-  const byBody = core.agentsByBody(workspaces, panes)
-  assert.deepEqual(byBody, { '/real/athena': { agents: 2, working: 1 }, '/real/athena-globex': { agents: 1, working: 0 } })
-  // 팩 목록의 body 는 링크일 수 있다 — real 로 맞춘다 · 도는 게 없거나 본체가 없는 팩은 빠진다
-  const real = (dir) => dir.replace('/home/', '/real/')
-  const packs = [{ id: 'acme', body: '/home/athena' }, { id: 'globex', body: '/real/athena-globex' }, { id: 'idle', body: '/real/athena-idle' }, { id: 'none', body: null }]
-  assert.deepEqual(core.runningByPack(packs, byBody, real), { acme: { agents: 2, working: 1 }, globex: { agents: 1, working: 0 } })
-  assert.deepEqual(core.runningByPack(undefined, byBody), {})
-  assert.deepEqual(core.agentsByBody(undefined, undefined), {})
-})

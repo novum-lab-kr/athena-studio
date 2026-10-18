@@ -68,7 +68,6 @@ contextBridge.exposeInMainWorld('studio', {
   browserCommand: (name, value) => ipcRenderer.invoke('browser:command', name, value),
   onBrowserOpen: listen('browser:open'),
   onBrowserReset: listen('browser:reset'),
-  onPackRunning: listen('pack:running'),
   onBrowserToggle: listen('browser:toggle'),
   onBrowserState: listen('browser:state'),
   onBrowserError: listen('browser:error'),
