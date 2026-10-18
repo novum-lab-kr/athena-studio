@@ -24,7 +24,7 @@ function fail(code, message) {
   process.exitCode = protocol.exitCodeFor(code)
 }
 
-function request(socket, op, args, caller) {
+function request(socket, op, args, caller, body) {
   return new Promise((resolve, reject) => {
     const connection = net.connect(socket)
     connection.setEncoding('utf8')
@@ -38,7 +38,7 @@ function request(socket, op, args, caller) {
         else reject(Object.assign(new Error(message.error.message), { code: message.error.code }))
       }),
     )
-    connection.once('connect', () => connection.write(protocol.encode({ id: 1, op, args, caller })))
+    connection.once('connect', () => connection.write(protocol.encode({ id: 1, op, args, caller, body })))
     connection.once('close', () => reject(Object.assign(new Error('데몬이 답하지 않고 연결을 닫았다'), { code: 'unavailable' })))
   })
 }
@@ -66,7 +66,8 @@ async function main(argv, env) {
   if (!socket) return fail('unavailable', 'Athena Studio 데몬을 찾지 못했다(ATHENA_STUDIO_SOCKET · ~/.athena-studio/daemon.json 없음)')
   let result
   try {
-    result = await request(socket, parsed.op, parsed.args, env.ATHENA_STUDIO_PANE_ID || null)
+    // 부른 pane 이 없을 때(현황판 등 pane 밖) 어느 본체(팩) 것인지 — 앱이 현황판 환경에 넣는다(protocol 5)
+    result = await request(socket, parsed.op, parsed.args, env.ATHENA_STUDIO_PANE_ID || null, env.ATHENA_STUDIO_BODY || null)
   } catch (error) {
     return fail(error.code || 'internal', error.message)
   }

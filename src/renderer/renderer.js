@@ -1245,7 +1245,7 @@ async function startScreen() {
   starting = true
   try {
     if (!(await attach())) return
-    // 시작 화면이 떠 있으면 팩을 고를 때까지 아테나를 켜지 않는다(enterPack · onPackChanged 가 켠다)
+    // 시작 화면이 떠 있으면 팩을 고를 때까지 아테나를 켜지 않는다(enterPack 이 켠다)
     if (!welcomeShown()) await openAgent()
   } finally {
     starting = false
@@ -1650,6 +1650,8 @@ function renderPackRail() {
     const isCurrent = Boolean(packs.current) && packs.current.id === item.id
     const name = isCurrent ? packCurrentLabel() : packLabel(item)
     const button = el('button', 'space-icon pack-icon')
+    // 다른 창에 열려 있는 팩 — 작은 점(누르면 그 창이 앞으로)
+    if (!isCurrent && Array.isArray(packs.openIds) && packs.openIds.includes(item.id)) button.classList.add('open-elsewhere')
     const image = packIconImage(item)
     if (image) button.append(image)
     else button.textContent = spaceInitials(packLabel(item))
@@ -1658,7 +1660,7 @@ function renderPackRail() {
     button.setAttribute('aria-label', name)
     const meta = [isCurrent ? say('pack.meta.current') : '', Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
     button.dataset.tip = meta ? `${name}\n${meta}` : name
-    if (!isCurrent) button.addEventListener('click', () => runPackFlow(() => choosePack(item.id)))
+    if (!isCurrent) button.addEventListener('click', () => runPackFlow(() => openPackWindow(item.id)))
     button.addEventListener('contextmenu', async (event) => {
       event.preventDefault()
       // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
@@ -1717,7 +1719,7 @@ async function openPackPicker() {
   }
   const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], actions: [{ label: say('common.close'), value: null }] })
   if (!choice) return
-  if (choice.startsWith('pack:')) return choosePack(choice.slice(5))
+  if (choice.startsWith('pack:')) return openPackWindow(choice.slice(5))
   return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
 }
 
@@ -1796,77 +1798,51 @@ function enterWelcome() {
   renderPackWelcome()
 }
 
-// 목록에서 고름 — 지금 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 갈아 끼운다(성공하면 onPackChanged 가 들어간다)
+// 목록에서 고름 — 이 창의 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 그 팩 창을 열고 이 시작 화면 창은 접는다(창 하나 = 팩 하나)
 async function enterPack(id) {
   if (packs.current && packs.current.id === id) {
     enterWelcome()
     await openAgent()
     return
   }
-  await choosePack(id)
+  const result = await openPackWindow(id)
+  if (result && result.ok && welcomeShown()) studio.closeWindow()
 }
 function openNoPacks() {
   renderPackWelcome()
   if (currentTab !== 'work') switchTab('work')
 }
 
-// 바꾸기 · 새로 만들기 전 — 닫힐 pane 과 일하는 에이전트를 보여 주고 [끝나면] · [멈추고] · [취소]. 막는 작업이 있으면 목록만.
-// verb — 버튼 문구 사전 이름(switch · start · replace → pack.verb.<verb> · <verb>Wait · <verb>Stop)
-async function askQuiesce(title, verb) {
-  const check = await studio.packCheck()
-  if (!check.ok) {
-    await packAlert(title, check.text || check.message || say('pack.checkFailed'))
-    return null
-  }
-  if (!check.canProceed) {
-    const again = await packDialog({
-      title,
-      body: [say('pack.quiesce.blocked'), check.blockers.join('\n')],
-      actions: [{ label: say('pack.quiesce.recheck'), value: 'again', kind: 'primary' }, { label: say('common.close'), value: null }],
-    })
-    return again ? askQuiesce(title, verb) : null
-  }
-  // 닫을 pane 도 일하는 에이전트도 없으면(막 켠 상태 등) 묻지 않고 바로
-  if (!check.working && !check.closing) return 'wait'
-  const body = [say('pack.quiesce.closing', { count: check.closing })]
-  if (!check.working) {
-    const ok = await packDialog({ title, body, actions: [{ label: say(`pack.verb.${verb}`), value: 'wait', kind: 'primary' }, { label: say('common.cancel'), value: null }] })
-    return ok
-  }
-  body.push(say('pack.quiesce.working', { count: check.working }))
-  body.push(el('p', 'muted', say('pack.quiesce.stopNote')))
-  return packDialog({
-    title,
-    body,
-    actions: [{ label: say(`pack.verb.${verb}Wait`), value: 'wait', kind: 'primary' }, { label: say(`pack.verb.${verb}Stop`), value: 'stop', kind: 'danger' }, { label: say('common.cancel'), value: null }],
-  })
-}
-
-async function choosePack(id) {
-  if (packs.current && packs.current.id === id) return
-  const target = packs.packs.find((item) => item.id === id)
+// 팩 열기 — 그 팩 본체를 준비하고(처음이면 본체를 만든다) 그 팩 창을 연다. 이 창의 팩 · pane 은 그대로(창마다 팩 — 갈아 끼우기 없음)
+async function openPackWindow(id) {
+  if (packs.current && packs.current.id === id) return { ok: true, same: true }
+  const target = (packs.packs || []).find((item) => item.id === id)
   const name = target ? packLabel(target) : id
-  const mode = await askQuiesce(say('pack.switch.title', { name }), 'switch')
-  if (!mode) return
-  showPackProgress(say('pack.switch.progress', { name }), true)
-  const result = await studio.packSwitch(id, mode)
+  showPackProgress(say('pack.open.progress', { name }), true)
+  const result = await studio.packOpen(id)
   hidePackProgress()
-  if (result.same || result.unchanged) return
-  if (!result.ok) return packAlert(say('pack.switch.failed'), result.text || result.message)
+  if (result.same || result.canceled || result.error === 'canceled') return result
+  if (!result.ok) {
+    await packAlert(say('pack.open.failed'), result.text || result.message)
+    return result
+  }
   const notes = []
   if (result.unlinkedRepos && result.unlinkedRepos.length) notes.push(say('pack.switch.unlinked', { repos: result.unlinkedRepos.join(', ') }))
-  if (result.board) notes.push(say('pack.switch.board', { message: result.board }))
-  if (notes.length) packAlert(say('pack.switch.done'), notes.join('\n'))
+  if (result.repair) notes.push(say('pack.open.repair'))
+  if (notes.length) packAlert(say('pack.open.done', { name }), notes.join('\n'))
+  return result
 }
 
+// 새 팩 — 빈 자리 + 본체를 만들고 새 창으로 연다(그 창에서 /setup). 시작 화면에서 만들었으면 이 창은 접는다
 async function newPack() {
-  const mode = await askQuiesce(say('pack.new.title'), 'start')
-  if (!mode) return
   showPackProgress(say('pack.new.progress'), true)
-  const result = await studio.packNew(mode)
+  const wasWelcome = welcomeShown()
+  const result = await studio.packNew()
   hidePackProgress()
+  if (result.canceled || result.error === 'canceled') return
   if (!result.ok) return packAlert(say('pack.new.failed'), result.text || result.message)
-  showToast([say('pack.new.started'), result.previous ? say('pack.new.revert', { previous: result.previous }) : ''].filter(Boolean).join(' '))
+  if (wasWelcome) studio.closeWindow()
+  else showToast(say('pack.new.opened'))
 }
 
 // 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
@@ -1907,13 +1883,9 @@ async function importPack(kind = null, source = null) {
   if (!inspected.ok) return packAlert(say('pack.import.failed'), inspected.text || inspected.message)
   const choice = await chooseImport(inspected, chosen)
   if (!choice) return studio.packImport(inspected.token, 'keep')
-  let mode = null
-  if (choice === 'replace' && inspected.current) {
-    mode = await askQuiesce(say('pack.import.replaceCurrent'), 'replace')
-    if (!mode) return studio.packImport(inspected.token, 'keep')
-  }
+  // 교체는 본체가 그 팩 본체 기준으로 판단한다(일하는 중이면 busy 로 막는다) — pane 을 닫지 않는다
   showPackProgress(say('pack.import.registering'), false)
-  const result = await studio.packImport(inspected.token, choice, mode)
+  const result = await studio.packImport(inspected.token, choice)
   hidePackProgress()
   if (!result.ok) return packAlert(say('pack.import.failed'), result.text || result.message)
   if (choice === 'keep') return
@@ -1922,12 +1894,12 @@ async function importPack(kind = null, source = null) {
   const gitNote = inspected.gitRemoved ? `\n${say('pack.import.gitRemoved')}` : ''
   const backupNote = `${result.backup ? `\n${say('pack.import.backedUp', { path: result.backup })}` : ''}${gitNote}`
   if (!imported || (packs.current && packs.current.id === imported.id)) return packAlert(say('pack.import.done'), `${say('pack.import.intoCurrent')}${backupNote}`)
-  const switchNow = await packDialog({
+  const openNow = await packDialog({
     title: say('pack.import.done'),
-    body: [`${say('pack.import.registered', { name: imported.name || imported.id })}${backupNote}`, say('pack.import.switchNow')],
-    actions: [{ label: say('pack.verb.switch'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
+    body: [`${say('pack.import.registered', { name: imported.name || imported.id })}${backupNote}`, say('pack.import.openNow')],
+    actions: [{ label: say('pack.verb.open'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
   })
-  if (switchNow) return choosePack(imported.id)
+  if (openNow) return openPackWindow(imported.id)
 }
 
 // 같은 이름이면 나란히(사용자 결정 3) · 기존 아테나면 가져올 작업 기록도 보여 준다. 반환: new · replace · keep(null 은 취소)
@@ -1979,14 +1951,11 @@ async function exportPack(kind) {
   if (reveal) studio.packReveal()
 }
 
-// 바꾼 뒤 — 현황판 · 작업 창을 새 팩으로(닫힌 pane 대신 아테나 탭을 다시 켠다)
-function onPackChanged(change) {
-  // 팩을 갈아 끼웠거나 · 새로 만들었거나 · 지금 팩을 가져온 것으로 바꿨으면 시작 화면에서 들어간 것
-  if (change && change.ok) enterWelcome()
+// 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
+function onPackChanged() {
   refreshPackList()
   boardLoaded = false
   if (currentTab === 'board') loadBoard(true)
-  startScreen()
 }
 
 async function initPacks() {

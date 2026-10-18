@@ -16,12 +16,12 @@ contextBridge.exposeInMainWorld('studio', {
   installAthena: () => ipcRenderer.invoke('athena:install'),
   // 회사 팩 — 본체 명령 결과만(파일 · 폴더 고르기는 main 의 대화상자)
   packList: () => ipcRenderer.invoke('pack:list'),
-  packCheck: () => ipcRenderer.invoke('pack:check'),
-  packSwitch: (id, mode) => ipcRenderer.invoke('pack:switch', id, mode),
-  packNew: (mode) => ipcRenderer.invoke('pack:new', mode),
+  // 팩 열기 — 그 팩 본체 창을 연다(이미 열려 있으면 앞으로) · 이 창의 팩은 그대로(창마다 팩)
+  packOpen: (id) => ipcRenderer.invoke('pack:open', id),
+  packNew: () => ipcRenderer.invoke('pack:new'),
   packCancel: () => ipcRenderer.invoke('pack:cancel'),
   packInspect: (kind, source) => ipcRenderer.invoke('pack:inspect', kind, source),
-  packImport: (token, choice, mode) => ipcRenderer.invoke('pack:import', token, choice, mode),
+  packImport: (token, choice) => ipcRenderer.invoke('pack:import', token, choice),
   packExport: (kind) => ipcRenderer.invoke('pack:export', kind),
   packReveal: () => ipcRenderer.invoke('pack:reveal'),
   packIcon: (id) => ipcRenderer.invoke('pack:icon', id),
@@ -29,6 +29,8 @@ contextBridge.exposeInMainWorld('studio', {
   packSetIcon: (id, clear) => ipcRenderer.invoke('pack:set-icon', id, clear),
   packContextMenu: (id, point) => ipcRenderer.invoke('pack:context-menu', id, point),
   packPendingImport: () => ipcRenderer.invoke('pack:pending-import'),
+  // 이 창 닫기 — 시작 화면에서 다른 팩 창을 연 뒤(창이 하나뿐이면 닫지 않는다)
+  closeWindow: () => ipcRenderer.invoke('window:close'),
   onPackState: listen('pack:state'),
   onPackProgress: listen('pack:progress'),
   onPackChanged: listen('pack:changed'),

@@ -196,6 +196,74 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
   }
 })
 
+test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 공간 · 출력 · 포커스 · 고정 칸 · CLI 는 부른 pane 의 본체만', { skip: ptyMissing || false, timeout: 30000 }, async () => {
+  const dir = workDir()
+  const daemon = startDaemon(dir)
+  const bodyA = path.join(dir, 'athena-a')
+  const bodyB = path.join(dir, 'athena-b')
+  try {
+    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    const appA = await connect(daemon.socket)
+    const appB = await connect(daemon.socket)
+    await appA.call('attach', { body: bodyA })
+    await appB.call('attach', { body: bodyB })
+    const tabA = (await appA.call('tab new', { cwd: dir })).result
+    const tabB = (await appB.call('tab new', { cwd: dir })).result
+    assert.notEqual(tabA.workspace, tabB.workspace) // B 의 '지금 작업 공간'은 A 것이 아니다 — 새로 만든다
+
+    // 상태는 자기 본체 것만
+    const stateA = (await appA.call('state')).result
+    const stateB = (await appB.call('state')).result
+    assert.deepEqual(stateA.workspaces.map((workspace) => [workspace.id, workspace.body]), [[tabA.workspace, bodyA]])
+    assert.deepEqual(stateB.panes.map((pane) => pane.id), [tabB.pane])
+    assert.equal(stateA.focused, tabA.pane)
+    assert.equal(stateB.focused, tabB.pane) // 포커스는 본체마다
+
+    // 다른 본체 pane 은 없는 것처럼
+    assert.equal((await appB.call('input', { pane: tabA.pane, data: 'x' })).error.code, 'not_found')
+
+    // 출력은 그 본체 연결에만
+    await cli(daemon.socket, ['pane', 'run', tabB.pane, 'echo', 'only-b'])
+    await waitFor(() => appB.events.some((event) => event.event === 'data' && event.pane === tabB.pane && event.data.includes('only-b')), 'B 출력')
+    assert.equal(appA.events.some((event) => event.event === 'data' && event.pane === tabB.pane), false)
+
+    // 묶이지 않은 CLI 는 전부 · 부른 pane 이 있으면 그 본체만 — delegate 가 다른 팩 작업 공간을 이름으로 찾지 않게
+    assert.equal(JSON.parse((await cli(daemon.socket, ['workspace', 'list'])).stdout).workspaces.length, 2)
+    const fromA = { ATHENA_STUDIO_PANE_ID: tabA.pane }
+    assert.deepEqual(JSON.parse((await cli(daemon.socket, ['workspace', 'list'], fromA)).stdout).workspaces.map((workspace) => workspace.id), [tabA.workspace])
+    assert.equal(JSON.parse((await cli(daemon.socket, ['pane', 'read', tabB.pane], fromA)).stderr).error, 'not_found')
+    // 부른 pane 의 본체에 새 작업 공간 — A 창에만 보인다
+    const made = JSON.parse((await cli(daemon.socket, ['workspace', 'create', '--label', 'web', '--cwd', dir, '--no-focus'], fromA)).stdout)
+    assert.ok((await appA.call('state')).result.workspaces.some((workspace) => workspace.id === made.workspace.id && workspace.body === bodyA))
+    assert.equal((await appB.call('state')).result.workspaces.some((workspace) => workspace.id === made.workspace.id), false)
+    assert.equal((await appA.call('state')).result.focused, tabA.pane) // --no-focus 면 A 의 보던 곳 그대로
+
+    // pane 밖(현황판)에서 부른 CLI 는 ATHENA_STUDIO_BODY 의 본체 — 만든 작업 공간이 그 창에만
+    const fromBoard = JSON.parse((await cli(daemon.socket, ['workspace', 'create', '--label', 'qa', '--cwd', dir, '--no-focus'], { ATHENA_STUDIO_BODY: bodyB })).stdout)
+    assert.ok((await appB.call('state')).result.workspaces.some((workspace) => workspace.id === fromBoard.workspace.id))
+    assert.equal((await appA.call('state')).result.workspaces.some((workspace) => workspace.id === fromBoard.workspace.id), false)
+
+    // 고정 칸도 본체마다 하나
+    const dockA = (await appA.call('dock ensure', { name: 'monitor', cwd: dir })).result
+    const dockB = (await appB.call('dock ensure', { name: 'monitor', cwd: dir })).result
+    assert.notEqual(dockA.pane, dockB.pane)
+    assert.equal((await appA.call('state')).result.panes.some((pane) => pane.id === dockB.pane), false)
+
+    // 다시 붙을 때 되살릴 화면도 자기 본체 pane 만
+    const again = await connect(daemon.socket)
+    const attached = (await again.call('attach', { body: bodyA })).result
+    assert.equal(Object.keys(attached.snapshots).includes(tabB.pane), false)
+    assert.ok(Object.keys(attached.snapshots).includes(tabA.pane))
+
+    await appA.call('shutdown')
+    for (const connection of [appA, appB, again]) connection.close()
+    await waitFor(() => !alive(daemon.pid), '데몬 종료')
+  } finally {
+    if (alive(daemon.pid)) process.kill(daemon.pid, 'SIGTERM')
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('데몬에 못 붙으면 CLI 는 종료 3 · unavailable', async () => {
   const result = await cli('/tmp/asd-no-such-daemon.sock', ['pane', 'list'])
   assert.equal(result.code, 3)

@@ -27,6 +27,50 @@ function load() {
 }
 
 const save = (state) => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
+
+// 팩마다 본체(5.7 · contract 2) 흉내 — 가짜 본체는 ATHENA_FAKE_BODIES(없으면 임시 폴더) 아래 <id>/ 에 아테나 폴더 모양만(CLAUDE.md · 현황판 서버) 만든다.
+// 처음 부른 본체(가짜 본체가 아닌 cwd)는 지금 팩의 '주 본체'로 기억한다. 현황판 포트는 ATHENA_BOARD_PORT(없으면 4701) 부터 본체마다 2씩
+const BODIES_DIR = process.env.ATHENA_FAKE_BODIES || path.join(os.tmpdir(), 'athena-studio-fake-bodies')
+const FAKE_BOARD = `import http from 'node:http'
+const pack = JSON.parse(process.env.FAKE_PACK_JSON || '{}')
+http.createServer((request, response) => {
+  if (request.url.startsWith('/api/state')) { response.setHeader('content-type', 'application/json'); return response.end(JSON.stringify({ pack })) }
+  response.setHeader('content-type', 'text/html; charset=utf-8')
+  response.end('<body style="background:#1b1c20;color:#ddd;font:14px sans-serif;padding:24px">가짜 현황판 — ' + (pack.id || '?') + '</body>')
+}).listen(Number(process.env.ATHENA_BOARD_PORT), '127.0.0.1')
+`
+function ensureFakeBody(id) {
+  const dir = path.join(BODIES_DIR, id)
+  fs.mkdirSync(path.join(dir, 'scripts', 'board'), { recursive: true })
+  fs.writeFileSync(path.join(dir, 'CLAUDE.md'), `# 가짜 본체 — ${id}\n`)
+  // 현황판은 /api/state 에 이 본체 팩을 답한다(스튜디오가 '다른 팩 현황판' 으로 보고 끄지 않게)
+  fs.writeFileSync(path.join(dir, 'scripts', 'board', 'server.mjs'), FAKE_BOARD.replace("process.env.FAKE_PACK_JSON || '{}'", `'${JSON.stringify({ id, generation: 1 })}'`))
+  return dir
+}
+const realDir = (dir) => {
+  try {
+    return fs.realpathSync(dir)
+  } catch {
+    return path.resolve(dir)
+  }
+}
+// 부른 본체의 팩 — 가짜 본체 폴더면 그 id, 아니면 상태의 지금 팩(주 본체)
+function callerPack(state) {
+  const cwd = realDir(process.cwd())
+  for (const [id, body] of Object.entries(state.bodies || {})) {
+    if (realDir(body) !== cwd) continue
+    if (state.current && id === state.current.id) return state.current
+    const pack = state.packs.find((item) => item.id === id)
+    return pack ? { ...pack, generation: 1 } : state.current // 가짜 본체 현황판도 세대 1 로 답한다
+  }
+  return state.current
+}
+function bodyPort(state, id) {
+  const base = Number(process.env.ATHENA_BOARD_PORT) || 4701
+  const order = Object.keys(state.bodies || {})
+  const index = order.indexOf(id)
+  return base + 2 * Math.max(0, index)
+}
 const json = process.argv.includes('--json')
 const progress = (step, text) => json && console.log(`progress: ${step} ${text}`)
 // 파이프(앱)로 받을 때 process.exit 를 바로 부르면 마지막 줄이 잘린다 — 다 쓴 뒤에 끝낸다
@@ -47,18 +91,40 @@ const flag = (name) => {
 
 async function main() {
   const [command, sub, arg] = process.argv.slice(2)
-  if (command !== 'pack') fail('usage', '사용: fake-pack.js pack <명령>')
+  // 약속 번호(아테나 계획서 20261018-팩마다-본체 5.7) — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
+  const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 2
+  if (command === 'version') {
+    if (fakeContract === 1) fail('usage', '모르는 명령: version')
+    return done({ ok: true, core: 'fake', contract: fakeContract, dirty: false, dataFormats: [1, 1], capabilities: ['open', 'contract'], body: process.cwd(), bodyId: 'fake', deploy: null })
+  }
+  if (command !== 'pack') fail('usage', '사용: fake-pack.js pack <명령> · version')
+  // 새 코어처럼 — --json 인데 약속 번호가 다르거나(있으면) pack use · new 에 없으면 거부
+  const contract = process.env.ATHENA_CONTRACT || ''
+  if (fakeContract !== 1 && json && ((contract && contract !== String(fakeContract)) || (!contract && ['use', 'new'].includes(sub)))) {
+    fail('contract-mismatch', `약속이 다르다(${contract || '없음'}) — 이 코어는 약속 ${fakeContract}`, { contract: fakeContract })
+  }
   const state = load()
+  // 주 본체 = 처음 불린 본체(가짜 본체 폴더가 아니면)
+  state.bodies = state.bodies || {}
+  const here = realDir(process.cwd())
+  if (state.current && !state.bodies[state.current.id] && !here.startsWith(realDir(BODIES_DIR))) {
+    state.bodies[state.current.id] = here
+    save(state)
+  }
+  const mine = callerPack(state)
   const findPack = (id) => state.packs.find((pack) => pack.id === id)
   switch (sub) {
-    case 'list':
-      return done({ ok: true, current: state.current, switching: false, packs: state.packs })
+    case 'list': {
+      // 팩마다 본체 · 열린 본체 표시(5.7) — current 는 부른 본체의 팩
+      const packs = state.packs.map((pack) => ({ ...pack, body: state.bodies[pack.id] || null, bodyState: state.bodies[pack.id] ? 'ready' : 'none' }))
+      return done({ ok: true, current: mine ? { ...mine, ...(mine.id === (state.current && state.current.id) ? state.current : {}) } : null, switching: false, packs })
+    }
     case 'status': {
       // 현황판 포트는 본체가 정한다(5.3) — 가짜는 ATHENA_BOARD_PORT → 4701(스튜디오 기본과 같게)
       const boardPort = Number(process.env.ATHENA_BOARD_PORT) || 4701
       // 데이터 폴더(R1) — 가짜는 ATHENA_DATA_DIR → 임시 폴더(파일은 만들지 않는다)
       const dataDir = process.env.ATHENA_DATA_DIR || path.join(os.tmpdir(), 'athena-studio-fake-data')
-      return done({ ok: true, current: state.current, switching: false, boardPort, dataDir })
+      return done({ ok: true, current: mine, switching: false, boardPort: mine ? bodyPort(state, mine.id) : boardPort, dataDir, body: here })
     }
     case 'busy':
       return done({ ok: true, busy: state.busy || [] })
@@ -174,13 +240,28 @@ async function main() {
       const file = path.join(out, `${state.current.id}-${sub === 'backup' ? 'backup' : 'pack'}-fake.tar.gz`)
       return done({ ok: true, file, files: sub === 'backup' ? 88 : 41, bytes: sub === 'backup' ? 512000 : 210000 })
     }
+    // 팩 열기(5.7) — 본체가 없으면 만든다(가짜는 아테나 폴더 모양만). 이미 있으면 경로만
+    case 'open': {
+      const target = findPack(arg)
+      if (!target) fail('not-found', `팩 ${arg} 이 없어요`)
+      const created = !state.bodies[target.id]
+      if (created) {
+        progress('body', '본체 만들기')
+        await sleep(400)
+        state.bodies[target.id] = ensureFakeBody(target.id)
+        save(state)
+      }
+      progress('done', '끝')
+      return done({ ok: true, id: target.id, packId: target.packId, body: state.bodies[target.id], boardPort: bodyPort(state, target.id), contract: 2, state: 'ready', created, unlinkedRepos: target.id === 'globex' ? ['globex-api'] : [] })
+    }
+    // 새 팩 — 빈 자리 + 그 본체(5.7)
     case 'new': {
-      if ((state.busy || []).length) fail('busy', '작업이 남아 있어요', { busy: state.busy })
-      const previous = state.current && state.current.id
+      const previous = mine && mine.id
       const id = `new-${Date.now() % 100000}`
-      state.current = { id, packId: id, name: '(새 팩 — /setup 중)', generation: (state.current ? state.current.generation : 0) + 1 }
+      state.packs.push({ id, packId: id, name: '(새 팩 — /setup 중)', repos: 0, updatedAt: new Date().toISOString(), hasWork: false, source: 'local' })
+      state.bodies[id] = ensureFakeBody(id)
       save(state)
-      return done({ ok: true, id, previous })
+      return done({ ok: true, id, previous, body: state.bodies[id], boardPort: bodyPort(state, id), created: true, contract: 2 })
     }
     default:
       fail('usage', `모르는 명령: ${sub}`)

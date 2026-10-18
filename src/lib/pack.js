@@ -10,21 +10,13 @@ const KOREAN = require('../i18n/ko.json')
 const koreanSay = i18n.translator(KOREAN, KOREAN)
 
 // 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
-const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'studio-wait', 'studio-stop', 'studio-close', 'studio-busy', 'studio-board', 'slow']
+const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'body', 'port', 'slow'] // body · port — 5.7 pack open 단계
 // 본체 오류 코드(사전 pack.errorCode.<코드>)
-const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large']
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch']
 // 남은 작업 종류(사전 pack.busy.<종류>)
 const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside']
 
 const stepLabel = (step, say = koreanSay) => (STEP_IDS.includes(step) ? say(`pack.step.${step}`) : null)
-
-// 스튜디오가 끌 수 없고 코어도 끄지 않는 것 — 남아 있으면 pane 을 닫기 전에 멈춘다.
-// QA · 배우기 검토는 코어가 pack use 때 끈다(5.2 · Q7) — 막지 않는다. 밖의 에이전트는 switchCheck 가 따로 가린다
-const BLOCKING_KINDS = ['heavy', 'switch']
-// 바꾸기 전 '다 끝났나' 확인에서 기다릴 것 — 코어가 끄는 QA · 배우기 검토는 빼고 본다
-const STOPPED_BY_CORE = ['qa', 'learn-review']
-const remainingBusy = (busy) => (busy || []).filter((item) => !STOPPED_BY_CORE.includes(item.kind))
-const AGENT_KINDS = ['agent', 'athena']
 
 // 스트림을 줄 단위로 — 남은 반쪽 줄은 rest 로 돌려준다
 function splitLines(rest, chunk) {
@@ -99,6 +91,18 @@ function normalizePackList(result) {
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
 }
 
+// 스튜디오가 아는 코어 약속 번호(아테나 계획서 20261018-팩마다-본체 5.7 — 2 = 팩마다 본체)
+const CONTRACT = 2
+
+// `version --json` 결과 → { contract, core }. 명령이 없는 옛 코어(사용법 오류 · JSON 이 아닌 출력)는 contract 1,
+// 그 밖의 실패(시간 초과 · 실행 못 함 등 — 일시적일 수 있다)는 null(모름 — 기억하지 않고 다음에 다시 묻는다)
+const OLD_CORE_ERRORS = ['usage', 'bad-output']
+function contractOf(result) {
+  if (result && result.ok === true && Number.isInteger(result.contract)) return { contract: result.contract, core: typeof result.core === 'string' ? result.core : null }
+  if (result && result.ok === true) return { contract: 1, core: null }
+  return { contract: result && OLD_CORE_ERRORS.includes(result.error) ? 1 : null, core: null }
+}
+
 // 화면에 보일 팩 이름 — 표시 이름(pack set-name) → 이름 → id (아테나 계획서 20261018-팩마다-본체 5.7)
 function packLabel(pack) {
   return (pack && (pack.displayName || pack.name || pack.id)) || ''
@@ -122,12 +126,6 @@ function iconMime(head) {
   if (head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) return 'image/jpeg'
   if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') return 'image/webp'
   return null
-}
-
-// pack status 의 데이터 폴더(R1 — 코어가 정한 실제 경로). 없거나(옛 응답) 절대 경로가 아니면 null
-function statusDataDir(result) {
-  const dir = result && result.ok === true ? result.dataDir : null
-  return typeof dir === 'string' && path.isAbsolute(dir) ? dir : null
 }
 
 // pack status 의 현황판 포트 — 본체가 정한다(5.3: ATHENA_BOARD_PORT → 본체 설정 boardPort → 4700). 없거나 이상하면 null(옛 본체 — 앱 설정으로)
@@ -168,78 +166,6 @@ function boardIdentity(boardState, current) {
   if (!pack || typeof pack !== 'object') return 'legacy'
   if (!current) return 'stale'
   return pack.id === current.id && pack.generation === current.generation ? 'current' : 'stale'
-}
-
-// pid 가 어느 pane 안에서 도는지 — 조상을 따라가 pane 셸 pid 를 찾는다(없으면 null)
-function paneOfPid(pid, paneByPid, parentOf) {
-  let current = pid
-  for (let depth = 0; depth < 64 && Number.isInteger(current) && current > 1; depth++) {
-    if (paneByPid.has(current)) return paneByPid.get(current)
-    current = parentOf.get(current)
-  }
-  return null
-}
-
-// 본체 busy 의 에이전트를 스튜디오 pane 에 맞춘다 — { inside: 그 에이전트를 품은 pane id, outside: 밖에서 도는 수, unknown }.
-// 모든 pane 셸 pid 와 프로세스 부모 표(pid → ppid)가 있어야 가린다. 하나라도 모르면(옛 데몬 · busy 에 pid 없음)
-// unknown — 부르는 쪽은 아무것도 닫지 않고 멈춘다(닫은 뒤에 거절되면 pane 만 잃는다)
-function matchAgents({ agentItems, panes, parentOf }) {
-  if (!agentItems.length) return { inside: new Set(), outside: 0, unknown: false }
-  const known = parentOf instanceof Map && panes.every((pane) => Number.isInteger(pane.pid)) && agentItems.every((item) => Number.isInteger(item.pid))
-  if (!known) return { inside: new Set(), outside: 0, unknown: true }
-  const paneByPid = new Map(panes.map((pane) => [pane.pid, pane.id]))
-  const inside = new Set()
-  let outside = 0
-  for (const item of agentItems) {
-    const paneId = paneOfPid(item.pid, paneByPid, parentOf)
-    if (paneId) inside.add(paneId)
-    else outside += 1
-  }
-  return { inside, outside, unknown: false }
-}
-
-// 바꾸기 전 점검 — 스튜디오 pane 과 본체 busy 를 맞춰 닫을 pane 을 정하고, 스튜디오가 끌 수 없는 것이 있으면 막는다.
-// 기다리기 · 멈추기는 닫을 pane 안의 에이전트만 본다(다른 프로젝트에서 일하는 claude 때문에 기다리지 않게 — R2)
-function switchCheck({ panes, busy, parentOf = null, workspaces = [], athenaDirs = [], resolve = (dir) => dir }) {
-  const list = (panes || []).filter(Boolean)
-  const items = busy || []
-  const blockers = items.filter((item) => BLOCKING_KINDS.includes(item.kind))
-  const matched = matchAgents({ agentItems: items.filter((item) => AGENT_KINDS.includes(item.kind)), panes: list, parentOf })
-  const close = panesToClose({ panes: list, workspaces, athenaDirs, resolve, agentPanes: matched.inside })
-  const closing = new Set(close)
-  const working = list.filter((pane) => closing.has(pane.id) && pane.agent && pane.agent_status === 'working').map((pane) => pane.id)
-  return {
-    close,
-    working,
-    blockers,
-    externalAgents: matched.outside,
-    unknownAgents: matched.unknown,
-    canProceed: blockers.length === 0 && matched.outside === 0 && !matched.unknown,
-  }
-}
-
-// child 가 parent 안인가 — 링크는 부르는 쪽이 실제 경로로 풀어 넘긴다(realDir). `..cache` 같은 이름은 안쪽이다
-function insideDir(child, parent) {
-  if (!child || !parent) return false
-  const relative = path.relative(path.resolve(parent), path.resolve(child))
-  if (relative === '') return true
-  if (path.isAbsolute(relative)) return false
-  return relative !== '..' && !relative.startsWith(`..${path.sep}`)
-}
-
-// 바꿀 때 닫을 pane(R2) — 본체 busy 의 에이전트를 품은 pane + 아테나 작업 공간 + 아테나 본체 · 데이터 폴더 안 pane.
-// 다른 프로젝트에서 도는 claude · 다른 폴더 셸은 둔다 — 팩 상태를 들고 있지 않다. resolve 는 링크를 실제 경로로 푸는 함수(main 이 realDir)
-function panesToClose({ panes, workspaces, athenaDirs, resolve = (dir) => dir, agentPanes = new Set() }) {
-  const athenaWorkspaces = new Set((workspaces || []).filter((workspace) => workspace.label === 'athena').map((workspace) => workspace.id))
-  const dirs = (athenaDirs || []).filter(Boolean).map(resolve)
-  return (panes || [])
-    .filter((pane) => {
-      if (agentPanes.has(pane.id)) return true
-      if (athenaWorkspaces.has(pane.workspace_id)) return true
-      const cwd = pane.foreground_cwd || pane.cwd
-      return Boolean(cwd) && dirs.some((dir) => insideDir(resolve(cwd), dir))
-    })
-    .map((pane) => pane.id)
 }
 
 // 처음 켤 때 고를 기본 본체 — 저장된 것이 있으면 그것, 없으면 ~/athena(사용자 결정 1)
@@ -283,17 +209,13 @@ module.exports = {
   showPackWelcome,
   welcomeOnLaunch,
   recentPacks,
+  CONTRACT,
+  contractOf,
   packLabel,
   ICON_MAX_BYTES,
   packIconPath,
   iconMime,
   statusBoardPort,
-  statusDataDir,
-  switchCheck,
-  remainingBusy,
-  panesToClose,
-  insideDir,
-  matchAgents,
   defaultAthenaDir,
   shouldOfferMoveToHome,
   packSummary,

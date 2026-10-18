@@ -229,3 +229,13 @@ test('현황판 포트: 저장된 포트부터 20개 · lsof 경로 · 스튜디
   fs.writeFileSync(path.join(broken, 'athena.config.json'), '{ 깨짐')
   assert.throws(() => core.setAthenaBoardPort(broken, 4702))
 })
+
+test('창마다 팩: 켤 때 열 본체 목록 · 예전 설정(athenaDir 하나) · 중복 빼기 · 저장', () => {
+  assert.deepEqual(core.windowDirs({ athenaDir: '/a' }), ['/a'])
+  assert.deepEqual(core.windowDirs({ athenaDir: null }), [])
+  assert.deepEqual(core.windowDirs({ athenaDir: '/a', windows: [{ athenaDir: '/b' }, { athenaDir: '/c' }, { athenaDir: '/b' }, null, { athenaDir: 3 }] }), ['/b', '/c'])
+  assert.deepEqual(core.windowDirs({ athenaDir: '/a', windows: [] }), ['/a']) // 빈 목록이면 예전 값
+  assert.deepEqual(core.windowDirs({ windows: [{ athenaDir: '/x/' }, { athenaDir: '/x' }] }, (left, right) => left.replace(/\/$/, '') === right.replace(/\/$/, '')), ['/x/'])
+  assert.deepEqual(core.withWindows({ language: 'ko', athenaDir: '/old' }, ['/b', '/c']), { language: 'ko', athenaDir: '/b', windows: [{ athenaDir: '/b' }, { athenaDir: '/c' }] })
+  assert.deepEqual(core.withWindows({ athenaDir: '/old' }, []), { athenaDir: '/old', windows: [] })
+})

@@ -22,6 +22,20 @@ function loadConfig(file) {
   return config
 }
 
+// 켤 때 열 팩 창들의 본체 — 설정 windows:[{ athenaDir }] (창마다 팩 · 아테나 계획서 20261018-팩마다-본체 4.2).
+// 예전 설정(athenaDir 하나)이면 그 하나. 같은 본체는 한 번만(심볼릭 링크를 풀어 비교하는 것은 부르는 쪽 sameDir)
+function windowDirs(config, sameDir = (left, right) => left === right) {
+  const listed = Array.isArray(config && config.windows) ? config.windows.map((entry) => entry && entry.athenaDir).filter((dir) => typeof dir === 'string' && dir) : []
+  const dirs = listed.length ? listed : config && config.athenaDir ? [config.athenaDir] : []
+  return dirs.filter((dir, index) => dirs.findIndex((other) => sameDir(other, dir)) === index)
+}
+
+// 열린 창 목록을 설정에 — 첫 창의 본체는 athenaDir 에도 적는다(시작 화면 · 옮기기 묻기 같은 예전 규칙이 그 값을 본다)
+function withWindows(config, dirs) {
+  const clean = dirs.filter((dir) => typeof dir === 'string' && dir)
+  return { ...config, windows: clean.map((athenaDir) => ({ athenaDir })), athenaDir: clean[0] || config.athenaDir || null }
+}
+
 // 반쯤 쓴 파일이 남지 않게 임시 파일에 쓰고 바꿔 넣는다
 function saveConfig(file, config) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
@@ -284,4 +298,6 @@ module.exports = {
   boardUrl,
   SOCKET_PATH_MAX,
   daemonPaths,
+  windowDirs,
+  withWindows,
 }

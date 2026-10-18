@@ -136,60 +136,6 @@ test('현황판 포트: pack status 의 boardPort 만 · 실패 · 이상한 값
   assert.equal(pack.statusBoardPort({ ok: true, boardPort: 70000 }), null)
 })
 
-test('바꾸기 점검: 막는 작업 · 밖의 에이전트 · pid 를 모름', () => {
-  // 에이전트가 없으면 pid 없이도 진행
-  assert.equal(pack.switchCheck({ panes: [{ id: 'p1', agent: 'claude', agent_status: 'working' }], busy: [] }).canProceed, true)
-  // pid 를 모르면(옛 데몬 · busy 에 pid 없음) 가릴 수 없다 — 닫기 전에 멈춘다
-  const unknown = pack.switchCheck({ panes: [{ id: 'p1', agent: 'claude' }], busy: [{ kind: 'agent' }] })
-  assert.equal(unknown.unknownAgents, true)
-  assert.equal(unknown.canProceed, false)
-  // pid 조상으로 가린다 — 셸 pane(에이전트 없음)이 섞여 있어도 밖의 에이전트를 놓치지 않는다
-  const parentOf = new Map([[501, 101], [601, 1], [101, 1], [102, 1]])
-  const panes = [{ id: 'p1', pid: 101, agent: 'claude', agent_status: 'idle' }, { id: 'p2', pid: 102, agent: null }]
-  const mixed = pack.switchCheck({ panes, busy: [{ kind: 'athena', pid: 501 }, { kind: 'agent', pid: 601 }], parentOf })
-  assert.equal(mixed.externalAgents, 1)
-  assert.equal(mixed.canProceed, false)
-  assert.equal(pack.switchCheck({ panes, busy: [{ kind: 'athena', pid: 501 }], parentOf }).canProceed, true)
-  assert.equal(pack.switchCheck({ panes: [...panes, { id: 'p3', agent: null }], busy: [{ kind: 'agent', pid: 501 }], parentOf }).unknownAgents, true)
-  // QA · 배우기 검토는 코어가 끈다(5.2 · Q7) — 막지 않는다. 무거운 명령 · 바꾸기 중은 막는다
-  assert.equal(pack.switchCheck({ panes: [], busy: [{ kind: 'qa', what: 'x' }, { kind: 'learn-review' }] }).canProceed, true)
-  const heavy = pack.switchCheck({ panes: [], busy: [{ kind: 'heavy', what: 'next build' }] })
-  assert.equal(heavy.blockers.length, 1)
-  assert.equal(heavy.canProceed, false)
-  assert.deepEqual(pack.remainingBusy([{ kind: 'qa' }, { kind: 'learn-review' }, { kind: 'heavy' }]).map((item) => item.kind), ['heavy'])
-})
-
-test('닫을 pane(R2): busy 에이전트를 품은 pane · athena 작업 공간 · 본체 · 데이터 폴더 안만 — 다른 프로젝트 claude 는 둔다', () => {
-  const parentOf = new Map([[701, 201], [801, 206], [201, 1], [206, 1]])
-  const panes = [
-    { id: 'a', pid: 201, agent: 'claude', agent_status: 'working', workspace_id: 'w2', cwd: '/Users/me/work/x' }, // busy 에이전트(위임) 품음
-    { id: 'b', pid: 202, agent: null, workspace_id: 'w1', cwd: '/Users/me' }, // athena 작업 공간
-    { id: 'c', pid: 203, agent: null, workspace_id: 'w2', cwd: '/Users/me/athena/scripts' }, // 본체 안
-    { id: 'd', pid: 204, agent: null, workspace_id: 'w2', cwd: '/Users/me/athena-data/packs/acme' }, // 데이터 폴더 안
-    { id: 'e', pid: 205, agent: null, workspace_id: 'w2', cwd: '/Users/me/athena-other' }, // 이름만 비슷
-    { id: 'f', pid: 206, agent: 'claude', agent_status: 'working', workspace_id: 'w3', cwd: '/Users/me/project' }, // 다른 프로젝트 claude — busy 에 없음
-  ]
-  const workspaces = [{ id: 'w1', label: 'athena' }, { id: 'w2', label: 'x' }, { id: 'w3', label: 'project' }]
-  const check = pack.switchCheck({ panes, busy: [{ kind: 'agent', pid: 701 }], parentOf, workspaces, athenaDirs: ['/Users/me/athena', '/Users/me/athena-data'] })
-  assert.deepEqual(check.close, ['a', 'b', 'c', 'd'])
-  // 기다리기 · 멈추기는 닫을 pane 안의 에이전트만 — 다른 프로젝트에서 일하는 f 때문에 기다리지 않는다
-  assert.deepEqual(check.working, ['a'])
-  assert.equal(check.canProceed, true)
-  // 링크로 들어간 폴더도 실제 경로로 풀어 본다 · '..cache' 는 안쪽
-  const resolve = (dir) => dir.replace('/Users/me/link', '/Users/me/athena')
-  assert.deepEqual(pack.panesToClose({ panes: [{ id: 'g', cwd: '/Users/me/link/x' }], workspaces: [], athenaDirs: ['/Users/me/athena'], resolve }), ['g'])
-  assert.equal(pack.insideDir('/Users/me/athena/..cache', '/Users/me/athena'), true)
-  assert.equal(pack.insideDir('/Users/me/athena-x', '/Users/me/athena'), false)
-  assert.equal(pack.insideDir('/Users/me', '/Users/me/athena'), false)
-})
-
-test('데이터 폴더(R1): pack status 의 dataDir 절대 경로만 · 옛 응답이면 null', () => {
-  assert.equal(pack.statusDataDir({ ok: true, dataDir: '/Users/me/athena-data' }), '/Users/me/athena-data')
-  assert.equal(pack.statusDataDir({ ok: true }), null)
-  assert.equal(pack.statusDataDir({ ok: true, dataDir: 'relative/dir' }), null)
-  assert.equal(pack.statusDataDir({ ok: false, dataDir: '/x' }), null)
-})
-
 test('기본 본체: 저장된 것이 유효하면 그것, 아니면 ~/athena, 둘 다 없으면 null', () => {
   const valid = new Set(['/Users/me/athena', '/Users/me/other'])
   const isAthena = (dir) => valid.has(dir)
@@ -210,4 +156,17 @@ test('~/athena 로 옮기기: 스튜디오 레포 athena/ 를 쓰고 ~/athena �
 test('비교 줄: 있는 정보만 이어 쓴다', () => {
   assert.equal(pack.packSummary({ repos: 3, updatedAt: '2026-10-15T01:00:00Z', hasWork: true, source: 'git' }), '레포 3 · 마지막 변경 2026-10-15 · 작업 기록 있음 · git')
   assert.equal(pack.packSummary(null), '')
+})
+
+test('코어 약속 번호: version 결과 → contract · 옛 코어(명령 없음 · 실패)는 1', () => {
+  assert.equal(pack.CONTRACT, 2)
+  assert.deepEqual(pack.contractOf({ ok: true, core: 'abc', contract: 2 }), { contract: 2, core: 'abc' })
+  assert.deepEqual(pack.contractOf({ ok: true, contract: 3 }), { contract: 3, core: null })
+  assert.deepEqual(pack.contractOf({ ok: false, error: 'bad-output' }), { contract: 1, core: null })
+  assert.deepEqual(pack.contractOf({ ok: false, error: 'usage' }), { contract: 1, core: null })
+  assert.deepEqual(pack.contractOf({ ok: true }), { contract: 1, core: null })
+  // 일시 실패 · 본체 없음은 모름(null) — 옛 코어로 단정하지 않는다
+  assert.deepEqual(pack.contractOf({ ok: false, error: 'timeout' }), { contract: null, core: null })
+  assert.deepEqual(pack.contractOf({ ok: false, error: 'not-found' }), { contract: null, core: null })
+  assert.deepEqual(pack.contractOf(null), { contract: null, core: null })
 })

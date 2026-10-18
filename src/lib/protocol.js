@@ -8,7 +8,9 @@
 // 데몬과 앱(·CLI)이 서로 알아듣는 형식이 바뀌면 올린다(요청 하나를 더해도). 앱 버전이 아니다
 // 안 올리면 옛 데몬을 앱이 맞는 데몬으로 보고 붙어, 새 요청이 '모르는 동작' 으로 실패한다
 // 4 — 'pane pids'(팩 바꾸기 전 점검 · e23b039) · 3 까지의 데몬은 모른다
-const PROTOCOL = 4
+// 5 — 창-본체 묶음(아테나 계획서 20261018-팩마다-본체 C6): attach {body} · 작업 공간 body · 보는 자리(활성 작업 공간 · 포커스)가 본체마다 ·
+//     상태 · 출력 · 목록은 그 본체 것만 · CLI 는 부른 pane 의 본체만 본다
+const PROTOCOL = 5
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 
