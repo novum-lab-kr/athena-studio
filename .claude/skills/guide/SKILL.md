@@ -10,7 +10,7 @@ argument-hint: "(없음) | <파일> | 설명 | 열기 | 시작하기 | 그림"
 
 파일을 수정하지 않는다. 인자에 따라 하나만 한다.
 
-안내 HTML(`<athena-explained.html>`·`<playbook.html>`·`<onboarding.html>`)은 회사 팩 판 `pack/guide/<파일>` 이 있으면 그것, 없으면 코어 판 `docs/<파일>` 을 연다.
+안내 HTML(`<athena-explained.html>`·`<playbook.html>`·`<onboarding.html>`)은 팩 판 `pack/guide/<파일>` 이 있으면 그것, 없으면 코어 판 `docs/<파일>` 을 연다.
 
 | 인자 | 동작 |
 |---|---|

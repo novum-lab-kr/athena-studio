@@ -160,7 +160,7 @@
 
   <div class="flow">
     <div class="step"><div class="dot">💬</div><div class="body"><b>요청</b><span>그냥 말하기 · <code>/call 에이전트</code> · 현황판 이슈 카드 [처리 시작] — 세 갈래</span></div></div>
-    <div class="step"><div class="dot">🧭</div><div class="body"><b>아테나가 레포를 고른다</b><span>회사 팩 라우팅(<code>pack/ROUTING.md</code>) 규칙으로 고른다 · 같은 말이 여러 레포를 가리키면 되묻는다</span></div></div>
+    <div class="step"><div class="dot">🧭</div><div class="body"><b>아테나가 레포를 고른다</b><span>팩 라우팅(<code>pack/ROUTING.md</code>) 규칙으로 고른다 · 같은 말이 여러 레포를 가리키면 되묻는다</span></div></div>
     <div class="step"><div class="dot">📋</div><div class="body"><b>계획서</b><span>작은 일은 경량(바로 진행) · 큰 일은 정식(결정 콘솔에서 고르고 [이대로 진행]) — 모든 일이 계획서 하나에 묶인다</span></div></div>
     <div class="step"><div class="dot">🌿</div><div class="body"><b>작업 브랜치</b><span>개발 브랜치에서 워크트리로 새로 딴다 — 메인 체크아웃은 건드리지 않는다</span></div></div>
     <div class="step"><div class="dot">🤖</div><div class="body"><b>담당 에이전트가 옆 pane 에서 작업</b><span>작업 → 검증 스크립트 → 자동 리뷰(reviewer) → "커밋해줘" → "PR 올려줘"</span></div></div>
@@ -171,9 +171,9 @@
   <div class="grid g2" style="margin-top:18px">
     <div class="card">
       <h3>팀 — 레포마다 담당 에이전트</h3>
-      <p class="muted" style="margin-bottom:6px">레포 담당 (회사 팩)</p>
+      <p class="muted" style="margin-bottom:6px">레포 담당 (팩)</p>
       <div class="agents"><code>&lt;레포&gt;-fe</code><code>&lt;레포&gt;-be</code><code>&lt;앱&gt;-fe</code></div>
-      <p class="muted" style="margin:6px 0 0">레포마다(모노레포는 앱마다) 하나씩. 이름과 담당은 회사 팩 <code>pack/ROUTING.md</code> "에이전트" 표에 있다.</p>
+      <p class="muted" style="margin:6px 0 0">레포마다(모노레포는 앱마다) 하나씩. 이름과 담당은 팩 <code>pack/ROUTING.md</code> "에이전트" 표에 있다.</p>
       <p class="muted" style="margin:10px 0 6px">검토 (코어)</p>
       <div class="agents"><code>reviewer</code><code>learn-reviewer</code></div>
     </div>
@@ -194,7 +194,7 @@
   <h3 style="margin-top:22px">폴더</h3>
 <pre class="tree">hermes/
 ├── AGENTS.md · CLAUDE.md     <span class="c">규칙 — 아테나와 모든 에이전트가 읽는다</span>
-├── athena.config.json        <span class="c">회사 팩 위치 · reposRoot (레포 목록은 팩 pack.json)</span>
+├── athena.config.json        <span class="c">팩 위치 · reposRoot (레포 목록은 팩 pack.json)</span>
 ├── .claude/agents · skills   <span class="c">에이전트(팩에서 링크) · /call /board /sync /guide …</span>
 ├── docs/knowledge/           <span class="c">레포별 지식 노트 — 지도 · 규칙 · 예시 · 공책(gotchas)</span>
 │   └── learned/              <span class="c">학습한 내용의 쉬운 설명</span>

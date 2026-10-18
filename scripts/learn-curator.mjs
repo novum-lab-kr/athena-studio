@@ -60,7 +60,7 @@ walk(join(ROOT, 'docs/knowledge'))
 // 처음 들어온 날 — git 에 처음 추가된 날(없으면 오늘). 새로 생긴 것을 "안 쓴 것"으로 올리지 않으려고
 const addedOn = (path) => {
   try {
-    // 공책이 회사 팩 링크면 팩 레포에서 본다
+    // 공책이 팩 링크면 팩 레포에서 본다
     const { top, rel } = realRepoPath(ROOT, path)
     const dates = execFileSync('git', ['log', '--follow', '--diff-filter=A', '--format=%cs', '--', rel], { cwd: top, encoding: 'utf8' }).trim().split('\n').filter(Boolean)
     return dates.at(-1) || today

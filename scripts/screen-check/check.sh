@@ -46,6 +46,7 @@ IN=(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1)   # herdr pane w1:p1(아
 rsync -a --exclude .git --exclude .omc --exclude /repos --exclude /plans --exclude /issues --exclude /archive --exclude /.worktrees \
   --exclude node_modules --exclude '/.qa-*' --exclude '/.board-*' --exclude /.jev-log.jsonl --exclude /packs --exclude /pack \
   --exclude /patches/herdr-sidebar/bin --exclude __pycache__ --exclude /athena.config.json --exclude /.claude/settings.local.json \
+  --exclude /.pack-data --exclude '/.pack-data.*' --exclude /.sync --exclude '/.migrate-*' --exclude /test \
   --exclude /scripts/screen-check "$ATHENA_DIR/" "$TEMPLATE/"
 (
   cd "$TEMPLATE" || exit 1

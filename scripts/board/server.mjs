@@ -36,7 +36,7 @@
  * Origin 이 맞는 요청만 받는다.
  */
 import { createServer } from 'node:http'
-import { readFileSync, readdirSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync, renameSync, realpathSync } from 'node:fs'
+import { chmodSync, readFileSync, readdirSync, statSync, existsSync, writeFileSync, rmSync, mkdirSync, renameSync, realpathSync } from 'node:fs'
 import { join, dirname, relative, basename, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFile, execFileSync, spawn } from 'node:child_process'
@@ -51,11 +51,25 @@ import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
-import { githubOrg, loadConfig, prLinkPattern } from '../lib/config.mjs'
+import { boardPort, githubOrg, loadConfig, paths, prLinkPattern, readRegistry } from '../lib/config.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
-const PORT = Number(process.env.ATHENA_BOARD_PORT || 4700)
+const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
+// 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 갈아 끼운 뒤 남은 현황판이 다른 팩에 쓰지 않게)
+const BOOT_PATHS = paths(ROOT)
+const BOOT_PACK = BOOT_PATHS.mode === 'packs' ? (() => {
+  let pack = {}
+  try { pack = JSON.parse(readFileSync(join(BOOT_PATHS.packDir, 'pack.json'), 'utf8')) } catch { /* 빈 팩 자리(pack new 직후) */ }
+  return { id: BOOT_PATHS.packId, packId: pack.id ?? null, name: pack.name ?? BOOT_PATHS.packId, generation: BOOT_PATHS.generation }
+})() : null
+const staleGeneration = () => {
+  if (!BOOT_PACK) return false
+  const now = paths(ROOT)
+  return now.mode !== 'packs' || now.packId !== BOOT_PACK.id || (readRegistry(now.dataDir).generation ?? 0) !== BOOT_PACK.generation
+}
+// 워크트리 자리 — 본체 .worktrees(옛 구조 · 옮긴 본체의 기존 워크트리) + 여러 팩이면 지금 팩 데이터의 worktrees(새 워크트리)
+const WORKTREE_ROOTS = [...new Set([join(ROOT, '.worktrees'), BOOT_PATHS.worktrees].map((dir) => { try { return realpathSync(dir) } catch { return dir } }))]
 const POLL_MS = 3000
 const DONE_KEEP_DAYS = 14 // 완료 칸에 남겨 두는 기간
 const SUBAGENT_ACTIVE_SEC = 90 // 로그가 이 안에 바뀌었으면 "작업 중"
@@ -184,7 +198,8 @@ const createdAt = (path) => {
 
 // ── 이슈 ────────────────────────────────────────────────────────────────
 // repo 값(`<레포>`, 모노레포 `<레포>/<앱>`·`<레포>/packages`)으로 담당 에이전트를 찾는다. 정본은 설정(scripts/lib/config.mjs)
-const config = loadConfig(ROOT)
+// 빈 팩 자리(pack new 직후 · /setup 전)에도 뜬다 — 팩이 없으면 레포 없는 설정으로
+const config = (() => { try { return loadConfig(ROOT) } catch { return { repos: [] } } })()
 const ORG = githubOrg(config)
 const AGENT_NAMES = new Set(readdirSync(join(ROOT, '.claude/agents')).map((name) => name.replace(/\.md$/, '')))
 // 에이전트 → 담당 레포·운영 기준 브랜치 (워크트리를 어디서 어떤 ref 로 만들지)
@@ -200,7 +215,8 @@ const issueWorktree = (issueId, agent) => {
   const target = workspaceOf(agent)
   if (!target) return null
   const slug = `issue-${basename(issueId, '.md')}`
-  return { ...target, path: join(ROOT, '.worktrees', target.repo, slug), rel: `.worktrees/${target.repo}/${slug}` }
+  // 실제 경로로 — 여러 팩이면 <데이터>/packs/<id>/worktrees(Work ref 가 팩을 갈아 끼운 뒤에도 그 팩을 가리키게)
+  return { ...target, path: join(BOOT_PATHS.worktrees, target.repo, slug), rel: `.worktrees/${target.repo}/${slug}` }
 }
 const agentForRepo = (repoValue) => {
   const [repoName, app] = repoValue.split('/')
@@ -524,9 +540,9 @@ const readSubagents = () => {
 }
 
 const readWorktrees = async () => {
-  const dir = join(ROOT, '.worktrees')
-  if (!existsSync(dir)) return []
   const found = []
+  for (const dir of WORKTREE_ROOTS) {
+  if (!existsSync(dir)) continue
   for (const repo of readdirSync(dir)) {
     const repoDir = join(dir, repo)
     // 읽는 도중 워크트리 정리로 폴더가 사라질 수 있다(2026-10-14 현황판이 이걸로 죽음) — 없으면 건너뛴다
@@ -544,6 +560,7 @@ const readWorktrees = async () => {
       const dirty = ((await run('git', ['-C', path, 'status', '--porcelain'])) ?? '').split('\n').filter(Boolean).length
       found.push({ repo, slug, branch, dirty })
     }
+  }
   }
   return found
 }
@@ -689,7 +706,7 @@ const collect = async () => {
   await Promise.all([...plans, ...issues].map(async (card) => { card.owner = await ownerOf(card.owner, join(ROOT, card.id)) }))
   const subagents = readSubagents()
 
-  // 이슈마다 완료 가능 판정 (issues/README.md "완료 기준")
+  // 이슈마다 완료 가능 판정 (docs/issues.md "완료 기준")
   for (const issue of issues) {
     issue.doneCheck = await doneCheck(issue)
     delete issue.body
@@ -1135,7 +1152,9 @@ function startQaRun(planId) {
   const worktree = workRef.replace(/`/g, '')
   if (!worktree.startsWith('/') || !existsSync(worktree)) return { error: 'Work ref 에 워크트리 경로가 없어요 — 담당 에이전트가 브랜치를 만든 뒤에 돌릴 수 있어요' }
   const agent = text.match(/^- Agent:\s*(\S+)/m)?.[1] ?? ''
-  const repoOfTree = relative(join(ROOT, '.worktrees'), worktree).split(sep)[0]
+  const realTree = (() => { try { return realpathSync(worktree) } catch { return worktree } })()
+  const treeRoot = WORKTREE_ROOTS.find((dir) => realTree.startsWith(dir + sep)) ?? join(ROOT, '.worktrees')
+  const repoOfTree = relative(treeRoot, realTree).split(sep)[0]
   const sameRepo = listQaApps(config).filter((entry) => entry.repo === repoOfTree && entry.configured)
   const app = (appOfAgent(config, agent) ?? (sameRepo.length === 1 ? sameRepo[0] : null))?.app
   if (!app || !findQaApp(config, app)?.configured) return { error: `QA 시뮬레이션 설정이 있는 앱이 아니에요 (scripts/qa/routes/<앱>.json — 없으면 node scripts/qa/init-app.mjs --app <앱>)${agent ? ` — 이 계획서는 ${agent}` : ''}` }
@@ -1609,10 +1628,11 @@ const handleRequest = async (request, response) => {
   }
   if (url.pathname === '/api/state') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT }))
+    // pack — 이 현황판이 뜰 때의 팩·세대(옛 구조면 없다). 스튜디오가 지금 팩과 비교해 다시 띄울지 정한다
+    response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
-  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-start', '/api/qa-suite', '/api/qa-approve', '/api/qa-logout', '/api/qa-login', '/api/qa-stop', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy'].includes(url.pathname)) {
+  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-start', '/api/qa-suite', '/api/qa-approve', '/api/qa-logout', '/api/qa-login', '/api/qa-stop', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown'].includes(url.pathname)) {
     const reply = (code, body) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
@@ -1620,6 +1640,13 @@ const handleRequest = async (request, response) => {
     if (!allowed(request)) return reply(403, { error: '허용되지 않은 요청이에요 (토큰·Origin 확인)' })
     const body = await readBody(request)
     if (!body) return reply(400, { error: '요청 형식이 올바르지 않아요' })
+    // 끄기 — 스튜디오가 팩을 갈아 끼우기 전에(같은 출처 + 토큰 + JSON). 세대가 달라도 끌 수는 있다
+    if (url.pathname === '/api/shutdown') {
+      reply(200, { ok: true })
+      setTimeout(() => shutdown(0), 50)
+      return
+    }
+    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩을 갈아 끼웠어요 — 현황판을 다시 띄워 주세요' })
     if (url.pathname === '/api/dispatch') {
       // 바로 작업 번호를 돌려주고 뒤에서 돈다 — 진행은 SSE event: job
       const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map(([key, label]) => ({ key, label, state: 'wait' })) }
@@ -1726,6 +1753,24 @@ const handleRequest = async (request, response) => {
   response.end(url.pathname === '/' ? page : 'not found')
 }
 
+// 쓰기 토큰 파일 — 여러 팩이면 <팩 데이터>/state/board-token(권한 600). 스튜디오는 bin/athena pack board-token --json 으로 받는다
+const TOKEN_FILE = BOOT_PACK ? join(BOOT_PATHS.state, 'board-token') : null
+const writeTokenFile = () => {
+  if (!TOKEN_FILE) return
+  try {
+    mkdirSync(dirname(TOKEN_FILE), { recursive: true })
+    writeFileSync(TOKEN_FILE, JSON.stringify({ token: TOKEN, port: PORT, pid: process.pid, generation: BOOT_PACK.generation, packId: BOOT_PACK.id }), { mode: 0o600 })
+    chmodSync(TOKEN_FILE, 0o600)   // mode 는 새로 만들 때만 먹는다 — 이미 있던 파일(이전 현황판이 남긴 것)도 600 으로
+  } catch (error) { console.error(`⚠️ 현황판 토큰 파일을 쓰지 못했다: ${error.message}`) }
+}
+const shutdown = (code) => {
+  // 내 토큰 파일만 지운다(그 사이 다른 현황판이 새로 썼으면 그대로)
+  try { if (TOKEN_FILE && JSON.parse(readFileSync(TOKEN_FILE, 'utf8')).pid === process.pid) rmSync(TOKEN_FILE, { force: true }) } catch { /* 없다 */ }
+  process.exit(code)
+}
+process.on('SIGTERM', () => shutdown(0))
+process.on('SIGINT', () => shutdown(0))
+
 // 요청 처리 중 예외(사라진 파일·깨진 JSON·쓰기 오류)는 500 으로 답하고 서버는 계속 돈다
 createServer((request, response) => {
   handleRequest(request, response).catch((error) => {
@@ -1734,6 +1779,7 @@ createServer((request, response) => {
     if (!response.writableEnded) response.end(JSON.stringify({ error: `처리하지 못했어요 — ${error.message}` }))
   })
 }).listen(PORT, '127.0.0.1', async () => {
+  writeTokenFile()
   await refresh()
   setInterval(() => refresh(false), POLL_MS)
   console.log(`아테나 현황판: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)

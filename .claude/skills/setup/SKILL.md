@@ -1,6 +1,6 @@
 ---
 name: setup
-description: 새 회사 첫 실행 — 레포를 찾아 회사 팩을 만들고(athena init) 레포마다 에이전트·지식 뼈대·검증 스크립트를 만든 뒤(athena scaffold) 레포 코드를 읽어 뼈대와 서비스 문서를 채우고 QA 초안(앱별 routes·TC)·검증·지문 기준선·레포별 다이어그램까지 잡습니다. 팩이 없을 때 세션 시작 훅이 안내합니다.
+description: 새 회사 첫 실행 — 레포를 찾아 팩을 만들고(athena init) 레포마다 에이전트·지식 뼈대·검증 스크립트를 만든 뒤(athena scaffold) 레포 코드를 읽어 뼈대와 서비스 문서를 채우고 QA 초안(앱별 routes·TC)·검증·지문 기준선·레포별 다이어그램까지 잡습니다. 팩이 없을 때 세션 시작 훅이 안내합니다.
 argument-hint: "(선택) 레포 폴더 — 비우면 athena.config.json reposRoot 또는 상위 폴더"
 ---
 

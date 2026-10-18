@@ -19,7 +19,7 @@
 |---|---|
 | `reviewer` | 전체 (읽기 전용) |
 | `learn-reviewer` | 배우기 검토자 — 직접 부르지 않음(내 작업 PR 이 머지되면 `learn-review.mjs` 가) |
-| 레포 담당 에이전트 | 회사 팩 — 아래 `pack/ROUTING.md` "에이전트" |
+| 레포 담당 에이전트 | 팩 — 아래 `pack/ROUTING.md` "에이전트" |
 
 상세 프로필은 `.claude/agents/*.md`(레포 담당은 팩 링크). 담당 범위·기준 브랜치·라우팅 기준은 공통 문서 1절과 팩 라우팅을 따른다.
 
@@ -35,8 +35,8 @@
 > 이 절의 내용은 다이어그램 두 장 — **경량 흐름** `docs/diagrams/athena-flow-light.html` · **정식 흐름** `docs/diagrams/athena-flow-formal.html`(= `/guide 그림`) — 의 카드에도 들어 있다. **여기를 고치면 해당 `docs/diagrams/athena-flow-{light,formal}.workflow.json` 의 `cards`·노드도 같이 고치고 HTML 을 다시 만든다** (방법: `docs/diagrams/README.md`). 진행 상황은 현황판(`/board`)에서 실시간으로 본다.
 
 ### 1단계: 요청 · 계획서
-- **요청은 세 갈래로 들어온다.** ① 대화 — 담당자를 모르거나 여러 레포·기능·버그 원인 찾기면 그냥 말한다(아테나가 라우팅·계획서) ② `/call <에이전트>` — 담당자를 알 때. pane 을 먼저 띄우고 요청은 그 pane 에서 ③ 현황판 이슈 카드의 [처리 시작] — 기본은 아테나가 받아 처리한다(팝업에서 "담당 에이전트로 바로(조사만)" 도 고를 수 있다). sync·리뷰·다이어그램 작업에서 찾았지만 그 자리에서 고치지 않은 것은 `issues/README.md` "등록 기준"대로 — 보안·버그(high)만 바로 `issues/*.md`, 나머지는 "이슈 후보"로 보여 주고 사용자가 고른다
-- 요청을 파악하고 대상 서비스를 정한다(복수 가능). 회사 팩 `pack/ROUTING.md` 의 요청 해석 규칙으로 대상을 고르고, 해석이 둘 이상이면 묻는다
+- **요청은 세 갈래로 들어온다.** ① 대화 — 담당자를 모르거나 여러 레포·기능·버그 원인 찾기면 그냥 말한다(아테나가 라우팅·계획서) ② `/call <에이전트>` — 담당자를 알 때. pane 을 먼저 띄우고 요청은 그 pane 에서 ③ 현황판 이슈 카드의 [처리 시작] — 기본은 아테나가 받아 처리한다(팝업에서 "담당 에이전트로 바로(조사만)" 도 고를 수 있다). sync·리뷰·다이어그램 작업에서 찾았지만 그 자리에서 고치지 않은 것은 `docs/issues.md` "등록 기준"대로 — 보안·버그(high)만 바로 `issues/*.md`, 나머지는 "이슈 후보"로 보여 주고 사용자가 고른다
+- 요청을 파악하고 대상 서비스를 정한다(복수 가능). 팩 `pack/ROUTING.md` 의 요청 해석 규칙으로 대상을 고르고, 해석이 둘 이상이면 묻는다
 - 대상 레포의 관련 코드를 탐색한다(Explore 또는 직접 읽기). 지식은 **작업 유형에 필요한 절만** 읽는다(`AGENTS.md` 2.2~2.3)
 - **경량인지 정식인지 아테나가 정하고, 시작할 때 한 줄로 알린다** — `📋 경량으로 진행합니다 — <이유> · <계획서 경로>` (정식으로 하려면 "정식으로") / `📋 정식으로 진행합니다 — <이유> · 결정 N개 · <경로>`. 사용자가 "정식으로"·"바로 고쳐"로 바꿀 수 있다. `/call` 은 항상 경량이고 브랜치를 물을 때 같은 줄을 붙인다
 - **모든 작업은 계획서 하나에 묶인다. 예외 없다.**
@@ -71,9 +71,9 @@
 - **Checkpoint 를 갱신한다** — Status·Progress·Next·Validation. 시점은 단계 완료·차단 변화·리뷰 반영·세션 종료(`/new`) 직전(매 턴이 아니다). 정식이면 html `plan-md` 도 같은 턴에 맞춘다(`node scripts/plan-html.mjs <md>` · `commit.sh`·현황판도 맞춘다)
 
 ### 6단계: 정리
-- 끝난 카드는 현황판 완료 칸의 **[아카이브]** — 이슈·계획서를 **`archive/<이름>/` 한 폴더**(`issue.md` · `plan.md` · `meta.json`)로 묶어 보관하고 **git 에 커밋**한다(`archive/` 는 회사 팩 링크라 **팩 레포**에 커밋된다). **공유되는 건 `archive/` 뿐** — 진행 중·리뷰·완료의 이슈(`issues/*.md`)·계획서(`plans/**`)는 각자 로컬에 갖는다(`.gitignore`). 이슈 워크트리도 정리(미커밋·push 안 된 커밋이 있으면 남긴다). 지나간 일은 현황판 **[아카이브]** 탭에서 찾는다
+- 끝난 카드는 현황판 완료 칸의 **[아카이브]** — 이슈·계획서를 **`archive/<이름>/` 한 폴더**(`issue.md` · `plan.md` · `meta.json`)로 묶어 보관하고 **git 에 커밋**한다(`archive/` 는 팩 링크라 **팩 레포**에 커밋된다). **공유되는 건 `archive/` 뿐** — 진행 중·리뷰·완료의 이슈(`issues/*.md`)·계획서(`plans/**`)는 각자 로컬에 갖는다(`.gitignore`). 이슈 워크트리도 정리(미커밋·push 안 된 커밋이 있으면 남긴다). 지나간 일은 현황판 **[아카이브]** 탭에서 찾는다
 - **계획서 `PR:` 줄의 PR 이 모두 머지되면(어느 base 든 — GitHub `MERGED`) 현황판이 그 계획서를 자동으로 완료(`Status: done — 자동 — PR #N 이 <base> 에 머지됨`)로 옮긴다**(진행 중·리뷰 계획서만, 5분마다 `gh pr view` 로 확인). 머지 없이 닫힌 PR(`CLOSED` — 취소·다른 PR 로 대체)은 판정에서 빼고, 머지된 PR 이 하나도 없으면 옮기지 않는다
-- 이슈는 `issues/README.md` "완료 기준"(확인 결과·후속 정리·fix 커밋·계획 done+PR MERGED)이 채워지면 `완료 가능` 배지 → **아테나가 완료로 옮긴다**(사용자에게 넘기지 않는다). 조건이 덜 찼으면 남은 것을 알린다
+- 이슈는 `docs/issues.md` "완료 기준"(확인 결과·후속 정리·fix 커밋·계획 done+PR MERGED)이 채워지면 `완료 가능` 배지 → **아테나가 완료로 옮긴다**(사용자에게 넘기지 않는다). 조건이 덜 찼으면 남은 것을 알린다
 - **학습** — 에이전트(작업 끝·교정·같은 오류 3회)와 배우기 검토자(내 작업의 PR 이 머지되면 현황판이 감지해 계획서·대화·바뀐 코드·리뷰 댓글로)가 올린 학습 후보는 현황판 **[학습] 탭**에 뜬다(기준 `docs/knowledge/common/learning.md`). 사용자가 [넣기]·[고쳐서 넣기]·[버리기] — 넣으면 그 공책(`gotchas.md`) 끝 `## 학습` 절에 한 줄, 쉬운 설명은 `docs/knowledge/learned/`. 학습한 내용도 그 탭에서 수정·삭제. 스킬 후보는 [아테나에게 맡기기] → 아테나가 스킬을 만든다(`docs/extending.md` "학습으로 스킬 만들기"). 팀 공유는 사용자가 "커밋해줘" 할 때 main 에. `/sync` 끝에 `scripts/learn-curator.mjs --write` 가 30일 넘게 안 쓴 스킬을, `scripts/gotchas-check.mjs --write` 가 운영 코드에서 사라진 파일을 가리키는 공책 줄과 나눌 때가 된 공책(공통 2만 자 · 같은 화면 5줄 → 화면 파일 `gotchas/<폴더>.md`)을 정리 후보로 올린다(지우지 않는다 — [학습] 탭에서 줄마다 [지우기]·[그대로 두기], 나누기는 [아테나에게 맡기기])
 - 후속 작업이 남았으면 그대로 둔다. 안전망: `scripts/archive-plans.sh`(30일 이상 + 최근 git log 미언급 plan 일괄 이동)
 
@@ -102,7 +102,7 @@
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" 표 — 팩 `skills/` 가 `.claude/skills/` 에 링크된다 |
 | `/guide` | 오른쪽 pane 에 가이드 메뉴(문서 · 스킬 목록·실행 · 에이전트·라우팅). `/guide <파일>` 은 그 파일을 뷰어로, `/guide 설명`은 아테나 구조 설명 HTML, `/guide 열기`는 플레이북 HTML, `/guide 시작하기`는 시작하기 가이드 HTML, `/guide 그림`은 **다이어그램 목록**(작업 흐름 경량·정식 + 팩 서비스 × 구조·화면 맵·요청 흐름) 열기 |
 
-**커맨드가 없는 것은 말로 한다.** 전체 검수("<앱> 전체 검수 돌려줘" → `node scripts/qa/run.mjs --suite --app <앱>`, 요청할 때만 · 현황판 QA 탭 [전체 검수 시작] 도 같다 · `docs/knowledge/common/verify.md` "QA 시뮬레이션") · 기능·버그(1단계) · 리뷰("리뷰해줘" → 5단계, `delegate.sh reviewer`) · 현황("현황 알려줘" → `docs/knowledge/common/git.md` "현황 점검") · 브랜치(3단계, 같은 파일 "작업 브랜치 만들기") · 팩 백업("팩 백업해줘" → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — `docs/pack.md` "백업 · 되살리기") · Jev 키("Jev 키 등록해줘"·"바꿔줘"·"지워줘" → `docs/setup.md` 7-2 — 키는 옆 입력 창에 사용자가 직접, 대화로 받지 않는다).
+**커맨드가 없는 것은 말로 한다.** 전체 검수("<앱> 전체 검수 돌려줘" → `node scripts/qa/run.mjs --suite --app <앱>`, 요청할 때만 · 현황판 QA 탭 [전체 검수 시작] 도 같다 · `docs/knowledge/common/verify.md` "QA 시뮬레이션") · 기능·버그(1단계) · 리뷰("리뷰해줘" → 5단계, `delegate.sh reviewer`) · 현황("현황 알려줘" → `docs/knowledge/common/git.md` "현황 점검") · 브랜치(3단계, 같은 파일 "작업 브랜치 만들기") · 팩 백업("팩 백업해줘" → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — 여러 팩 구조면 `pack backup --with-work` · `pack restore --with-work <파일>`(팩만은 `pack export`) — `docs/pack.md` "백업 · 되살리기") · 여러 팩("팩 목록"·"팩 갈아 끼워줘 <id>" → `bin/athena pack list`·`pack use <id>` — 이 아테나 세션도 본체에서 도는 claude 라 갈아 끼우기는 사용자 터미널·스튜디오에서 한다. 이 세션에서는 상태만 본다 · `docs/pack.md` "여러 팩") · Jev 키("Jev 키 등록해줘"·"바꿔줘"·"지워줘" → `docs/setup.md` 7-2 — 키는 옆 입력 창에 사용자가 직접, 대화로 받지 않는다).
 
 ## 확장
 - 스킬: `.claude/skills/<이름>/SKILL.md` (frontmatter `name`/`description`/`argument-hint`, 본문 `$ARGUMENTS`). 에이전트: `.claude/agents/<이름>.md` (description이 라우팅 문장, 콜론+공백 금지)
@@ -112,6 +112,6 @@
 ## 참고 문서
 - **공통 규칙·지식 진입점: `AGENTS.md`** (도구 무관. Codex 등 다른 에이전트도 이걸 읽는다)
 - 지식 베이스: `docs/knowledge/README.md` — 공통 `common/`, 레포별 `<레포>/{rules,structure,patterns,workflows,gotchas}.md`
-- 서비스 맵: `docs/services.md`(회사 팩) · 팩 형식: `docs/pack.md` · 첫 실행(/setup 정본, 도구 무관): `docs/setup.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
+- 서비스 맵: `docs/services.md`(팩) · 팩 형식: `docs/pack.md` · 첫 실행(/setup 정본, 도구 무관): `docs/setup.md` · 계획서 템플릿: `docs/plan-template.{md,html}`
 - 에이전트 프로필: `.claude/agents/*.md` · 디스패치 프로토콜: `.claude/rules/dispatch-protocol.md`
 - 사용 가이드: `docs/playbook.html`(`/guide 열기`) · 시작하기 `ONBOARDING.md`·`docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)

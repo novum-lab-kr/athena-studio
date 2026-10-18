@@ -138,7 +138,7 @@ export function codeConventions(app, routes) {
   }
 }
 
-// 옛 설정 경고 — 회사 팩을 옮기다 빠뜨린 것. 지금 동작은 기본값으로 계속 돈다(막지 않는다). run.mjs 는 시작할 때 찍고 현황판 QA 탭은 앱 옆에 보인다
+// 옛 설정 경고 — 팩을 옮기다 빠뜨린 것. 지금 동작은 기본값으로 계속 돈다(막지 않는다). run.mjs 는 시작할 때 찍고 현황판 QA 탭은 앱 옆에 보인다
 //   팩 qa.repo 가 남음 · routes 에 server 블록이 없음 · server.tokenCookie 가 비어 있음
 export function packQaWarnings(config) {
   return config.qa?.repo ? [`팩 pack.json 의 qa.repo("${config.qa.repo}")는 더 읽지 않아요 — QA 대상은 등록한 레포에서 정해져요(지워도 돼요 · docs/pack.md)`] : []

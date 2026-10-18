@@ -17,7 +17,7 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdir
 import { join, dirname, basename, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
-import { loadConfig } from '../lib/config.mjs'
+import { loadConfig, paths } from '../lib/config.mjs'
 import { gitEach, realRepoPath } from '../lib/git.mjs'
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -107,7 +107,7 @@ export const commitArchive = (results) => {
   if (!done.length) return { skipped: true }
   try {
     // 원래 자리(이슈)는 추적 중이면 삭제로, plans/** 는 gitignore 라 무시된다.
-    // archive/ 는 회사 팩 링크일 수 있다 — 경로를 실제 레포(코어·팩)별로 나눠 각자 커밋한다(lib/git.mjs)
+    // archive/ 는 팩 링크일 수 있다 — 경로를 실제 레포(코어·팩)별로 나눠 각자 커밋한다(lib/git.mjs)
     const sources = done.flatMap((result) => result.paths.slice(1))
     const tracked = new Set(sources.length ? execFileSync('git', ['-C', ROOT, 'ls-files', '--', ...sources], { encoding: 'utf8' }).split('\n').filter(Boolean) : [])
     const all = [...new Set(done.flatMap((result) => [result.dir, ...result.paths.slice(1).filter((path) => tracked.has(path))]))]
@@ -119,7 +119,9 @@ export const commitArchive = (results) => {
     }
     const local = all.filter(ignored)
     const paths = all.filter((path) => !local.includes(path))
-    const note = local.length ? '팩이 git 레포가 아니라 로컬에만 보관했다 — 백업은 bin/athena pack backup' : ''
+    // 백업 안내 — 여러 팩 구조면 작업 기록까지 담는 backup --with-work(옛 pack backup 은 거부된다)
+    const backupHint = paths(ROOT).mode === 'packs' ? 'bin/athena pack backup --with-work' : 'bin/athena pack backup'
+    const note = local.length ? `팩이 git 레포가 아니라 로컬에만 보관했다 — 백업은 ${backupHint}` : ''
     if (!paths.length) return { skipped: true, note }
     const title = done.length === 1 ? done[0].title || done[0].dir : `${done.length}건`
     gitEach(ROOT, paths, ['add', '-A', '--', '{paths}'])

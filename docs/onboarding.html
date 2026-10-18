@@ -193,7 +193,7 @@
       <h3>권한과 로컬 파일</h3>
       <ul class="plain">
         <li>맡을 레포들의 GitHub 접근 권한</li>
-        <li>(회사에 사내 발행 패키지가 있으면) <b>패키지 레지스트리 읽기 토큰</b>. 회사 팩 안내(<code>pack/ROUTING.md</code>)를 따릅니다. 레포 <code>.npmrc</code> 가 아니라 <b><code>~/.npmrc</code></b> 에 넣습니다</li>
+        <li>(회사에 사내 발행 패키지가 있으면) <b>패키지 레지스트리 읽기 토큰</b>. 팩 안내(<code>pack/ROUTING.md</code>)를 따릅니다. 레포 <code>.npmrc</code> 가 아니라 <b><code>~/.npmrc</code></b> 에 넣습니다</li>
         <li><b>claude.ai 계정에 Atlassian 커넥터 연결</b>(설정 → Connectors). 아테나와 모든 FE 에이전트·reviewer 가 Jira 티켓·Confluence 기획서를 <b>읽습니다</b>(쓰기는 없음 — 이슈 생성·댓글은 사람이)</li>
         <li>레포마다 <code>.env</code>. 레포 안내대로 만듭니다(일부는 <code>pnpm gen:env</code>, AWS 자격 필요). 작업 워크트리를 만들 때 메인 체크아웃의 <code>.env*</code> 가 자동으로 복사됩니다</li>
         <li>(선택) <b>TypeSafe Jev 키 — 각자 본인 키</b>(<code>console.typesafe.ai/keys</code>, 유료 · 사용량은 키 주인에게 청구). 첫 실행 때 아테나가 묻고, 키가 나중에 생기면 아테나에게 "Jev 키 등록해줘" 라고 하면 됩니다. 옆에 뜨는 입력 창에 직접 붙여 넣습니다(대화창에 넣지 않습니다 · 터미널에서 <code>node scripts/jev-key.mjs</code> 도 같습니다). 넣으면 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정이 켜집니다. <b>없으면 지금처럼 Jev 없이 그대로 돕니다.</b> 남의 키를 빌려 쓰거나 나눠 주지 않습니다. 잠깐 끄려면 <code>ATHENA_JEV=off</code></li>
@@ -207,16 +207,16 @@
       <ol class="steps">
         <li>
           <h3>레포를 한 폴더에 나란히 받기</h3>
-          <p>아테나는 <b>자기 상위 폴더에 담당 레포들이 나란히 있다</b>고 봅니다(<code>athena.config.json</code> 의 <code>reposRoot: ".."</code>). 담당 레포 목록은 <b>회사 팩</b>의 <code>pack.json</code>(사람이 읽는 표는 <code>pack/ROUTING.md</code>)에 있습니다. 맡지 않는 레포는 없어도 됩니다. 그 레포 담당 에이전트만 쉬게 됩니다.</p>
+          <p>아테나는 <b>자기 상위 폴더에 담당 레포들이 나란히 있다</b>고 봅니다(<code>athena.config.json</code> 의 <code>reposRoot: ".."</code>). 담당 레포 목록은 <b>팩</b>의 <code>pack.json</code>(사람이 읽는 표는 <code>pack/ROUTING.md</code>)에 있습니다. 맡지 않는 레포는 없어도 됩니다. 그 레포 담당 에이전트만 쉬게 됩니다.</p>
           <div class="code"><pre class="tree">~/work/
 ├── <span class="me">athena/</span>                <span class="c"># 코어 (이 레포, 폴더 이름은 자유)</span>
-│   └── packs/&lt;회사&gt;/      <span class="c"># 회사 팩 (별도 레포를 여기에 clone)</span>
+│   └── packs/&lt;회사&gt;/      <span class="c"># 팩 (별도 레포를 여기에 clone)</span>
 ├── &lt;레포 A&gt;/              <span class="c"># 담당 레포들 — 팩 pack.json 의 repos[].name</span>
 ├── &lt;레포 B&gt;/
 └── …</pre></div>
           <div class="code"><button class="copy" type="button">복사</button><pre>cd ~/work
 git clone &lt;코어 레포 주소&gt; athena
-git clone &lt;회사 팩 레포 주소&gt; athena/packs/&lt;회사&gt;
+git clone &lt;팩 레포 주소&gt; athena/packs/&lt;회사&gt;
 <span class="c"># 팩이 없는 새 회사는 위 줄을 건너뛴다 — claude 에서 /setup</span>
 <span class="c"># 담당 레포도 같은 폴더에 clone (이미 있으면 그대로 둔다)</span></pre></div>
         </li>
@@ -243,7 +243,7 @@ claude</pre></div>
       <div class="say">관리자 콘솔·사용자 웹 두 곳에 공지 배너 똑같이 넣어줘</div>
       <div class="flow"><span>레포 고르기</span><i>→</i><span>계획서</span><i>→</i><span>승인</span><i>→</i><span>작업 브랜치</span><i>→</i><span>에이전트 pane</span><i>→</i><span>리뷰</span><i>→</i><span>보고</span></div>
       <ul class="plain">
-        <li><b>어느 레포인지</b>는 회사 팩 라우팅(<code>pack/ROUTING.md</code>)으로 고릅니다. 같은 말이 여러 레포를 가리키면 아테나가 되묻습니다</li>
+        <li><b>어느 레포인지</b>는 팩 라우팅(<code>pack/ROUTING.md</code>)으로 고릅니다. 같은 말이 여러 레포를 가리키면 아테나가 되묻습니다</li>
         <li>시작할 때 규모를 한 줄로 알려 줍니다
           <ul class="plain" style="margin-top:4px">
             <li><b>경량</b> — 문구 수정, 버그 하나, 조사. 요청이 곧 승인이라 바로 진행합니다</li>
@@ -393,7 +393,7 @@ claude</pre></div>
         </tbody>
       </table></div>
       <p>명령 없이 말로 하는 것: <b>"현황 알려줘"</b> · <b>"리뷰해줘"</b> · <b>"&lt;앱&gt; 전체 검수 돌려줘"</b></p>
-      <p>에이전트 이름과 담당 레포 → 회사 팩 <code>pack/ROUTING.md</code>, 또는 <code>/guide</code>.</p>
+      <p>에이전트 이름과 담당 레포 → 팩 <code>pack/ROUTING.md</code>, 또는 <code>/guide</code>.</p>
     </section>
 
     <section id="rules">

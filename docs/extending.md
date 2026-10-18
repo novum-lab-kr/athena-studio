@@ -82,12 +82,14 @@ argument-hint: "<인자 예시>"
 - `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다(herdr 계약 그대로). 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)
 - `--target self` 는 부른 pane(모르면 포커스된 pane), `focused` 는 포커스된 pane. 뒤에서 도는 스크립트는 self 를 쓴다 — 포커스된 pane 은 사용자가 보고 있는 엉뚱한 곳일 수 있다
 - 출력 형식: `--format json`(기본) · `id`(첫 대상의 id 한 줄) · `ids`(한 줄에 하나). id 는 불투명한 문자열 — 쪼개 읽지 않는다(workspace 는 `workspace_id`·`tab get` 으로)
-- 백엔드 고르기: `ATHENA_SCREEN=herdr|studio|none` 이 있으면 그것 → 없으면 이 아테나 폴더의 `athena.config.json` `"screen"`(같은 값 — 아테나를 화면마다 한 벌씩 둘 때 고정: herdr 용 `~/athena` 는 `herdr`, Studio 전용 아테나는 `studio`. 그 폴더는 다른 화면의 pane 안에서도 화면 밖으로 보고 건드리지 않는다). 없거나 `auto` 면 위에서부터
-  1. `HERDR_ENV=1` 이거나 `HERDR_PANE_ID` 가 있다(herdr pane 안) → herdr. Studio 데몬은 pane 셸에서 `HERDR_*` 를 지우므로, `ATHENA_STUDIO=1` 과 함께 있으면 Studio pane 안에서 켠 herdr 다 — 안쪽인 herdr 를 고른다
-  2. `ATHENA_STUDIO=1`(Studio pane 안 — 데몬이 pane 셸에 넣는다) → studio
-  3. Studio 데몬 접속 파일 `~/.athena-studio/daemon.json` 이 살아 있다(pid 가 살아 있고 소켓이 있다 — 낡은 파일은 없는 것으로) → studio. pane 밖(앱이 띄운 현황판 · 일반 터미널)용
-  4. `herdr` 명령이 있다 → herdr
-  5. 그 밖 → none. 바꾸는 동작이 실패하고 부르는 쪽이 원래 대체 동작(nohup · 새 창 · 직접 실행 안내)을 한다
+- 백엔드 고르기 — 위에서부터:
+  1. `ATHENA_SCREEN=herdr|studio|none` 이 있으면 그것(회귀 검사 · 한 번만 바꿀 때 · `auto` 면 다음으로)
+  2. `HERDR_ENV=1` 이거나 `HERDR_PANE_ID` 가 있다(herdr pane 안) → herdr. Studio 데몬은 pane 셸에서 `HERDR_*` 를 지우므로, `ATHENA_STUDIO=1` 과 함께 있으면 Studio pane 안에서 켠 herdr 다 — 안쪽인 herdr 를 고른다
+  3. `ATHENA_STUDIO=1`(Studio pane 안 — 데몬이 pane 셸에 넣는다) → studio
+  4. 이 아테나 폴더의 `athena.config.json` `"screen"`(`herdr`·`studio`·`none` — **pane 밖에서만** 쓰인다). pane 안 표시가 설정보다 먼저인 까닭: 본체 하나를 herdr·스튜디오가 같이 쓰면(여러 팩) `"screen":"herdr"` 고정 때문에 스튜디오 pane 안 아테나·delegate 가 herdr 에 pane 을 만들었다. `pack migrate` 는 이 고정값을 지운다
+  5. Studio 데몬 접속 파일 `~/.athena-studio/daemon.json` 이 살아 있다(pid 가 살아 있고 소켓이 있다 — 낡은 파일은 없는 것으로) → studio. pane 밖(앱이 띄운 현황판 · 일반 터미널)용
+  6. `herdr` 명령이 있다 → herdr
+  7. 그 밖 → none. 바꾸는 동작이 실패하고 부르는 쪽이 원래 대체 동작(nohup · 새 창 · 직접 실행 안내)을 한다
   - pane 안인가(`inside`)는 따로 — herdr 는 `HERDR_ENV=1` + 명령, studio 는 `ATHENA_STUDIO=1` + 데몬 CLI 를 찾음
 - 백엔드 기능(`capabilities`): `agent-status` · `process-info` · `layout-geometry` · `pane-move` · `workspaces` · `herdr-sidebar` — 고정 배치(`athena-layout.sh`)는 자리·옮기기가 있을 때만, 사이드바 단계(`athena-up.sh`)는 `herdr-sidebar` 가 있을 때만 돈다
 

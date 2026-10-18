@@ -23,7 +23,7 @@
 
 부득이 Agent 도구(백그라운드, `subagent_type`)를 쓸 때는 `scripts/monitor-pane.sh`(사용자는 `/monitor`) 로 실시간 로그 모니터를 pane 에 띄우고, 어느 pane 인지 사용자에게 한 줄 알린다. 이미 모니터 pane 이 있으면 새로 만들지 않고 그 pane 에서 다시 실행된다.
 
-레포 → `subagent_type` 표는 회사 팩 `pack/ROUTING.md` "에이전트"(기계 정본 `pack.json` repos[].agents · 모노레포 apps[].agent · packagesAgent). 교차 리뷰(읽기 전용)는 `reviewer`.
+레포 → `subagent_type` 표는 팩 `pack/ROUTING.md` "에이전트"(기계 정본 `pack.json` repos[].agents · 모노레포 apps[].agent · packagesAgent). 교차 리뷰(읽기 전용)는 `reviewer`.
 
 모노레포(`kind: monorepo`)는 한 레포지만 앱마다 에이전트가 다르다. 같은 레포의 두 앱을 동시에 디스패치할 때는 **서로 다른 파일만 만지는지**(공통 `packages/**` 는 packagesAgent 단독, 앱 작업용 루트 `package.json`·lockfile 은 그 앱 에이전트 — 앱마다 브랜치·워크트리가 다르면 겹치지 않는다. 한 워크트리에 두 앱이면 루트는 한 에이전트만) 계획서에서 확인한 뒤 병렬로 보낸다. 발행 패키지 레포(`kind: packages`) 변경이 소비 레포 작업과 함께 필요하면 그 담당을 **먼저** 끝내고 버전·스냅샷 태그를 소비 측 에이전트에 넘긴다(회사별 세부 순서는 팩 `ROUTING.md` "순서 규칙"). 백엔드와 프론트가 함께 바뀌면 `*-be` 를 **먼저** 끝내고 그 보고의 "계약 변경"(엔드포인트·필드·하위 호환)을 프론트 에이전트에 넘긴다.
 

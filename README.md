@@ -12,7 +12,7 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
    │
    ▼
  [아테나]
-   ① 어느 레포?  회사 팩 라우팅(pack/ROUTING.md) · 애매하면 되묻기
+   ① 어느 레포?  팩 라우팅(pack/ROUTING.md) · 애매하면 되묻기
    ② 계획서      경량(바로 진행) / 정식(결정 콘솔 → [이대로 진행])
    ③ 브랜치      prBase 에서 워크트리 .worktrees/<레포>/<브랜치>
    │
@@ -36,17 +36,17 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
 
 | 에이전트 | 담당 레포 | 서비스 |
 |---|---|---|
-| 레포 담당 에이전트 | 회사 팩 `pack.json` 의 레포마다(모노레포는 앱마다) | 회사 팩 `pack/ROUTING.md` "에이전트" 표 |
+| 레포 담당 에이전트 | 팩 `pack.json` 의 레포마다(모노레포는 앱마다) | 팩 `pack/ROUTING.md` "에이전트" 표 |
 | `reviewer` | 전체 (읽기 전용) | 계획서 대비 검증 · 교차 정합성 |
 | `learn-reviewer` | 끝난 작업 (읽기 전용) | 배우기 검토자 — 직접 부르지 않음, 내 PR 이 머지되면 돈다 |
 
-**코어와 회사 팩.** 이 레포(코어)는 흐름·훅·현황판·학습 루프·공통 규칙만 갖고 회사 이름을 모른다. 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅은 **회사 팩**(`packs/<회사>/`, 별도 레포)에 있고 `athena pack link` 가 코어의 정해진 자리에 링크로 건다. 레포 목록·기준 브랜치의 정본은 팩의 `pack.json`. 레포는 `repos/<레포>` 링크로 접근하고, `claude` 를 켤 때 옆 폴더에서 알아서 연결한다.
+**코어와 팩.** 이 레포(코어)는 흐름·훅·현황판·학습 루프·공통 규칙만 갖고 회사 이름을 모른다. 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅은 **팩**(`packs/<회사>/`, 별도 레포)에 있고 `athena pack link` 가 코어의 정해진 자리에 링크로 건다. 레포 목록·기준 브랜치의 정본은 팩의 `pack.json`. 레포는 `repos/<레포>` 링크로 접근하고, `claude` 를 켤 때 옆 폴더에서 알아서 연결한다.
 
 ## 시작하기
 
 ```bash
 git clone <코어 레포 주소> athena && cd athena
-git clone <회사 팩 레포 주소> packs/<회사>      # 팩이 있는 회사 — 없으면 건너뛰고 claude 에서 /setup
+git clone <팩 레포 주소> packs/<회사>      # 팩이 있는 회사 — 없으면 건너뛰고 claude 에서 /setup
 echo '{ "pack": "packs/<회사>", "reposRoot": ".." }' > athena.config.json
 bin/athena pack link                            # 팩 파일을 코어 자리에 링크로
 claude              # (또는 codex) herdr 안이면 화면 세팅 → 팩이 없으면 첫 실행(/setup)이 저절로 시작된다 · 레포 연결도 자동
@@ -75,7 +75,7 @@ claude              # (또는 codex) herdr 안이면 화면 세팅 → 팩이 �
                                          현황판 [학습] 탭 — 사람이 [넣기]
                                                   │
                                                   ▼
-                   레포 공책 gotchas.md (회사 팩 레포 — git 으로 팀 공유)
+                   레포 공책 gotchas.md (팩 레포 — git 으로 팀 공유)
                                                   │
                                                   ▼
                                        다음 작업이 시작 전에 읽는다
@@ -85,7 +85,7 @@ claude              # (또는 codex) herdr 안이면 화면 세팅 → 팩이 �
 
 ## 구조
 
-코어(이 레포)와 회사 팩(`packs/<회사>/`, 별도 레포)으로 나뉜다. 팩 파일은 `bin/athena pack link` 가 코어의 정해진 자리에 **링크**로 건다 — 아래 "(팩)" 표시가 그런 자리다. 팩 형식은 `docs/pack.md`.
+코어(이 레포)와 팩(`packs/<회사>/`, 별도 레포)으로 나뉜다. 팩 파일은 `bin/athena pack link` 가 코어의 정해진 자리에 **링크**로 건다 — 아래 "(팩)" 표시가 그런 자리다. 팩 형식은 `docs/pack.md`.
 
 ```
 athena/                        ← 코어
@@ -110,14 +110,17 @@ athena/                        ← 코어
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
 │   ├── diagrams/              작업 흐름 그림 + 서비스 다이어그램(팩) (/guide 그림)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
-│   ├── pack.md                회사 팩 형식
+│   ├── pack.md                팩 형식 · 여러 팩 · 여러 팩 테스트
+│   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준
 │   ├── extending.md           스킬·에이전트 추가 방법
 │   └── plan-template*         계획서 템플릿 (정식 md + 결정 콘솔 html · 경량 md)
 │
-├── plans/                     작업계획서 — 각자 로컬 (git 에 안 올라감)
-├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감)
+├── plans/                     작업계획서 — 각자 로컬 (git 에 안 올라감 · 형식 docs/plan-template*)
+├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감 · 형식 docs/issues.md)
 ├── repos/                     담당 레포 링크 (각자 로컬, scripts/setup.sh)
-├── packs/<회사>/              회사 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
+├── packs/<회사>/              (옛 구조) 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
+├── .pack-data → ~/athena-data/packs/<id>   (여러 팩 구조) 지금 팩 — pack·plans·issues·repos 는 이 아래를 가리키는 링크 (docs/pack.md "여러 팩")
+├── test/                      여러 팩 시험(packs-test.sh) · fixture 팩(acme·globex)
 │
 └── scripts/
     ├── 작업 흐름
@@ -155,7 +158,7 @@ athena/                        ← 코어
     └── setup.sh · archive-plans.sh · agent-context.py · branch-candidates.sh
 ```
 
-회사 팩(`packs/<회사>/`, 별도 레포):
+팩(`packs/<회사>/`, 별도 레포):
 
 ```
 packs/<회사>/
@@ -171,7 +174,7 @@ packs/<회사>/
 | 추가할 것 | 방법 |
 |---|---|
 | 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 `/<이름>` 으로 바로 뜬다 (`call/SKILL.md` 를 복사해 시작) |
-| 에이전트 | 레포 담당은 회사 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
+| 에이전트 | 레포 담당은 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
 | 같이 고칠 곳 | `CLAUDE.md` 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
 
 상세: `docs/extending.md`
