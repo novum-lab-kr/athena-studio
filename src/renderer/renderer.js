@@ -1617,9 +1617,7 @@ function packIconImage(item) {
 }
 
 // 팩 아이콘 우클릭 — main 메뉴(이름 바꾸기 · 원래 이름으로 · 이미지 고르기 · 이미지 지우기)에서 고른 것을 한다
-async function editPackLook(id) {
-  const action = await studio.packContextMenu(id)
-  if (!action) return
+async function editPackLook(id, action) {
   let result = null
   if (action === 'rename') {
     const pack = [...packs.packs, packs.current].find((item) => item && item.id === id)
@@ -1661,9 +1659,11 @@ function renderPackRail() {
     const meta = [isCurrent ? say('pack.meta.current') : '', Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
     button.dataset.tip = meta ? `${name}\n${meta}` : name
     if (!isCurrent) button.addEventListener('click', () => runPackFlow(() => choosePack(item.id)))
-    button.addEventListener('contextmenu', (event) => {
+    button.addEventListener('contextmenu', async (event) => {
       event.preventDefault()
-      runPackFlow(() => editPackLook(item.id))
+      // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
+      const action = await studio.packContextMenu(item.id, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
+      if (action) runPackFlow(() => editPackLook(item.id, action))
     })
     return button
   })

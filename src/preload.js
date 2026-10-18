@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('studio', {
   packIcon: (id) => ipcRenderer.invoke('pack:icon', id),
   packSetName: (id, name) => ipcRenderer.invoke('pack:set-name', id, name),
   packSetIcon: (id, clear) => ipcRenderer.invoke('pack:set-icon', id, clear),
-  packContextMenu: (id) => ipcRenderer.invoke('pack:context-menu', id),
+  packContextMenu: (id, point) => ipcRenderer.invoke('pack:context-menu', id, point),
   packPendingImport: () => ipcRenderer.invoke('pack:pending-import'),
   onPackState: listen('pack:state'),
   onPackProgress: listen('pack:progress'),

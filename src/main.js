@@ -1308,7 +1308,7 @@ async function packSetIcon(id, clear) {
 }
 
 // 팩 아이콘 우클릭 메뉴 — 고른 동작 이름을 돌려준다(이름 입력은 화면이 받는다). 아무것도 안 고르면 null
-function packContextMenu(id) {
+function packContextMenu(id, point) {
   const pack = [...(packState.packs || []), packState.current].find((item) => item && item.id === id)
   if (!pack || !mainWindow) return Promise.resolve(null)
   return new Promise((resolve) => {
@@ -1322,7 +1322,11 @@ function packContextMenu(id) {
     items.push({ type: 'separator' }, { label: say('pack.menu.icon'), click: pick('icon') })
     if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
     // 메뉴가 닫힌 뒤 click 이 늦게 올 수 있어 잠깐 기다렸다 null
-    Menu.buildFromTemplate(items).popup({ window: mainWindow, callback: () => setTimeout(() => resolve(chosen), 100) })
+    const menu = Menu.buildFromTemplate(items)
+    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
+    // 누른 자리에 — 안 주면 OS 커서 자리(다른 화면일 수도)에 뜬다
+    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
+    menu.popup({ window: mainWindow, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
   })
 }
 
@@ -1977,7 +1981,7 @@ ipcMain.handle('pack:reveal', () => packReveal())
 ipcMain.handle('pack:icon', (_event, id) => packIcon(String(id)))
 ipcMain.handle('pack:set-name', (_event, id, name) => packSetName(String(id), typeof name === 'string' ? name : null))
 ipcMain.handle('pack:set-icon', (_event, id, clear) => packSetIcon(String(id), clear === true))
-ipcMain.handle('pack:context-menu', (_event, id) => packContextMenu(String(id)))
+ipcMain.handle('pack:context-menu', (_event, id, point) => packContextMenu(String(id), point && typeof point === 'object' ? point : null))
 // 시작할 때 "옮기기" 를 골랐으면 화면이 붙은 뒤 기존 아테나 가져오기를 이어서 연다
 ipcMain.handle('pack:pending-import', () => pendingAthenaImport)
 ipcMain.handle('screen:attach', () => attachScreen())
