@@ -1718,7 +1718,8 @@ function renderPackRail() {
     if (image) button.append(image)
     else button.textContent = spaceInitials(packLabel(item))
     button.style.setProperty('--space-color', spaceColor(item.id)) // 색은 id 로 — 이름을 바꿔도 그대로
-    button.setAttribute('aria-current', String(isCurrent))
+    button.dataset.packId = item.id
+    button.setAttribute('aria-current', String(item.id === selectedPackId()))
     button.setAttribute('aria-label', name)
     button.dataset.tip = name // 툴팁은 팩 이름만
     // 한 번 누르면 이 창에서 그 팩으로 바꾼다(조금 기다렸다 — 더블클릭이면 이름 · 이미지 바꾸기로)
@@ -1726,12 +1727,22 @@ function renderPackRail() {
     if (!isCurrent) {
       button.addEventListener('click', () => {
         clearTimeout(clickTimer)
+        // 선택 표시는 누르자마자 옮긴다 — 바꾸기(pack open · 다시 붙기 · 목록)가 끝날 때까지 기다리지 않게
+        if (!packFlow) {
+          packPendingId = item.id
+          markPackSelection()
+        }
         clickTimer = setTimeout(() => runPackFlow(() => switchPack(item.id)), DOUBLE_CLICK_MS)
       })
     }
     button.addEventListener('dblclick', (event) => {
       event.preventDefault()
       clearTimeout(clickTimer)
+      // 더블클릭이면 바꾸지 않는다 — 먼저 옮긴 선택 표시를 되돌린다
+      if (packPendingId === item.id) {
+        packPendingId = null
+        markPackSelection()
+      }
       runPackFlow(() => editPackLookDialog(item.id))
     })
     button.addEventListener('contextmenu', async (event) => {
@@ -1748,6 +1759,15 @@ function renderPackRail() {
   add.setAttribute('aria-label', add.dataset.tip)
   add.addEventListener('click', () => runPackFlow(openPackActions))
   rail.replaceChildren(...icons, add)
+}
+
+// 팩 줄 선택 표시 — 바꾸는 중인 팩이 있으면 그 팩(누르자마자), 없으면 지금 팩
+let packPendingId = null
+const selectedPackId = () => packPendingId || (packs.current && packs.current.id) || null
+// 버튼을 다시 그리지 않고 표시만 바꾼다(다시 그리면 두 번째 클릭이 다른 버튼에 떨어져 더블클릭이 안 된다)
+function markPackSelection() {
+  const selected = selectedPackId()
+  for (const button of $('pack-rail').querySelectorAll('.pack-icon[data-pack-id]')) button.setAttribute('aria-current', String(button.dataset.packId === selected))
 }
 
 async function refreshPackList() {
@@ -1894,9 +1914,30 @@ async function switchPack(id, { newWindow = false } = {}) {
   if (packs.current && packs.current.id === id) return { ok: true, same: true }
   const target = (packs.packs || []).find((item) => item.id === id)
   const name = target ? packLabel(target) : id
+  if (!newWindow) {
+    packPendingId = id
+    markPackSelection()
+  }
+  try {
+    return await openOrSwitchPack(id, { newWindow, name })
+  } finally {
+    // 끝나면(실패 · 취소 · 다른 창으로 감 포함) 실제 지금 팩으로 맞춘다
+    if (packPendingId === id) {
+      packPendingId = null
+      markPackSelection()
+    }
+  }
+}
+
+async function openOrSwitchPack(id, { newWindow, name }) {
   showPackProgress(say(newWindow ? 'pack.open.progress' : 'pack.switch.progress', { name }), true)
   const result = await studio.packOpen(id, { newWindow })
   hidePackProgress()
+  // 바뀌지 않았으면 선택 표시를 바로 되돌린다(알림을 띄우기 전에)
+  if (!result.switched && packPendingId === id) {
+    packPendingId = null
+    markPackSelection()
+  }
   if (result.same || result.canceled || result.error === 'canceled') return result
   if (!result.ok) {
     await packAlert(say(newWindow ? 'pack.open.failed' : 'pack.switch.failed'), result.text || result.message)
