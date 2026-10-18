@@ -1,4 +1,4 @@
-// 팩 파일을 코어 자리에 거는 링크(OVERLAY) — athena pack link · pack use 가 같이 쓴다.
+// 팩 파일을 코어 자리에 거는 링크(OVERLAY) — athena pack link · pack attach · relink 가 같이 쓴다.
 //
 // 옛 구조: 링크가 팩 실제 폴더(packs/<회사>/…)를 가리킨다. pack · .sync · archive 도 여기서 건다
 // 여러 팩: 링크가 본체의 논리 경로 pack/…(= .pack-data/pack/…)를 가리킨다 → 팩을 갈아 끼워도 같은 이름 파일은 그대로 이어진다.
@@ -7,6 +7,7 @@ import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { ACTIVE_LINK, paths } from './config.mjs'
+import { takeLock } from './lock.mjs'
 
 // 팩 안 경로 → 코어 자리. each = 그 폴더의 항목마다 링크(코어 폴더에 코어 파일과 섞여 있다), whole = 폴더째 링크
 export const OVERLAY = [
@@ -73,7 +74,10 @@ export const packLinks = (root) => {
 }
 
 // .git/info/exclude 는 워크트리들이 같이 쓴다(git common dir) — 체크아웃마다 자기 구간(경로로 표시)만 바꾼다.
-// 남의 체크아웃 구간은 그대로 두고(그 체크아웃의 팩 링크 목록이다), 폴더가 사라진 체크아웃의 구간과 옛 표시(경로 없는 구간)는 치운다
+// 남의 체크아웃 구간은 그대로 두고(그 체크아웃의 팩 링크 목록이다), 폴더가 사라진 체크아웃의 구간과 옛 표시(경로 없는 구간)는 치운다.
+// 주의(팩마다 본체 · Codex C7 · 2026-10-18 git 2.50 실측): 링크된 워크트리도 공용 info/exclude 만 읽는다(워크트리별 info/exclude 는 무시).
+// 그래서 무시 규칙은 모든 본체 구간의 **합집합**이다 — 한 팩의 링크 이름이 다른 본체에서 같은 이름의 실제 파일을 숨길 수 있다.
+// 팩 링크 자리에 코어 실제 파일을 두지 않는 규칙(linkOverlay 의 clash)이 이걸 막는다. 쓰기는 잠금으로 한 번에 하나(구간 유실 방지)
 const EXCLUDE_START = '# >>> athena pack links (athena pack link 가 관리)'
 const EXCLUDE_END = '# <<< athena pack links'
 export const writeExclude = (root, linkPaths) => {
@@ -83,6 +87,10 @@ export const writeExclude = (root, linkPaths) => {
   // 무시 경로는 git 루트 기준이다 — 아테나가 다른 레포 안(예: 스튜디오 레포의 athena/ subtree)이면 그 앞자리를 붙인다
   const prefix = execFileSync('git', ['-C', root, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   mkdirSync(dirname(file), { recursive: true })
+  const release = takeLock(`${file}.athena-lock`, `exclude ${root}`, { waitMs: 10_000 })
+  try { writeExcludeLocked(root, file, prefix, linkPaths) } finally { release() }
+}
+const writeExcludeLocked = (root, file, prefix, linkPaths) => {
   const before = existsSync(file) ? readFileSync(file, 'utf8') : ''
   // 표시 문자열의 괄호를 정규식으로 escape 한다
   const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')

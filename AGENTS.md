@@ -18,7 +18,7 @@ Jev 키(선택 · 사람마다 본인 키)는 첫 실행 7-2단계가 묻고, �
 
 **담당 레포·에이전트·라우팅은 팩에 있다 — `pack/ROUTING.md` 를 먼저 읽는다**(Claude Code 는 `CLAUDE.md` 가 자동으로 불러온다). 기계 정본은 팩의 `pack.json`(코어 `athena.config.json` 의 `pack` 이 가리키는 폴더). 경로는 어디서나 `repos/<레포>`이며 `scripts/setup.sh`가 심볼릭 링크를 만든다. 팩 파일은 `athena pack link` 가 코어의 정해진 자리(`.claude/agents`·`docs/knowledge/<레포>`·`scripts/verify/<레포>.sh` …)에 링크로 건다.
 
-**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 본체 하나에서 팩을 골라 쓴다 — `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **지금 팩**의 데이터(`~/athena-data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 팩 갈아 끼우기·가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
+**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 **팩마다 본체가 따로**다 — 주 본체 `~/athena`(main 브랜치 · 정비는 여기서만)와 팩 본체 `~/athena-<id>`(같은 git 저장소의 워크트리 · 브랜치 없이 배포 커밋)가 각자 팩 하나에 고정되어 동시에 켜진다. 본체 안의 `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **그 본체 팩**의 데이터(`~/athena-data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 다른 팩은 `bin/athena pack open <id>` 로 그 본체를 열고(없으면 만든다) 그 폴더에서 켠다 · 코어 업데이트는 `bin/athena update`(모든 본체 한 번에 · 일하는 본체는 건너뜀) · 가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
 
 **기준 브랜치 = 운영 반영분.** 문서와 지식 베이스는 이 브랜치(`pack.json` 의 `branch`)를 읽어 만든 것이다. 로컬 작업 트리가 그보다 뒤처져 있으면 문서와 코드가 다를 수 있는데, **그건 문서 오류가 아니다.** 작업 전 `git status --short --branch`로 얼마나 벌어졌는지 확인하고 보고에 적는다.
 

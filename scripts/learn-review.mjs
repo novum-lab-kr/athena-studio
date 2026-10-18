@@ -32,7 +32,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
 // 체크아웃마다 따로 — 아테나를 두 곳에 받아 두면(회사별) 한 대기열을 섞어 쓰지 않게 체크아웃 경로의 해시를 이름에 붙인다
 const REAL_ROOT = realpathSync(ROOT)
-// 여러 팩 — 대기열은 팩마다(<팩 데이터>/state/learn-queue · 실제 경로). 팩을 갈아 끼우면 이 프로세스는 이전 팩의 일만 보고, 그걸 알면 끝낸다
+// 여러 팩 — 대기열은 팩마다(<팩 데이터>/state/learn-queue · 실제 경로). 이 팩의 세대가 바뀌면(팩 교체 등) 이 프로세스는 옛 설정이라 끝낸다
 const BOOT_PATHS = paths(ROOT)
 const PACK_KEY = BOOT_PATHS.mode === 'packs' ? `:${BOOT_PATHS.packId}` : ''
 const ROOT_KEY = createHash('sha1').update(REAL_ROOT + PACK_KEY).digest('hex').slice(0, 8)
@@ -616,8 +616,12 @@ const watch = async () => {
     let job = {}
     try {
       job = JSON.parse(readFileSync(working, 'utf8'))
-      // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다
-      if ((job.root && job.root !== REAL_ROOT) || (job.packId && BOOT_PATHS.packId && job.packId !== BOOT_PATHS.packId)) {
+      // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다.
+      // 여러 팩 구조는 대기열이 팩 데이터 안이라 팩이 같으면 내 일이다 — 팩을 새 본체로 옮겨도(팩마다-본체 · Codex C9) 이어서 한다
+      const foreign = BOOT_PATHS.packId && job.packId
+        ? job.packId !== BOOT_PATHS.packId
+        : Boolean(job.root && job.root !== REAL_ROOT)
+      if (foreign) {
         job.foreign = true
         throw new Error(`다른 체크아웃(${job.root})의 일이다`)
       }

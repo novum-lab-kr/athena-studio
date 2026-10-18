@@ -51,7 +51,8 @@ def paths(athena_dir):
         'packDir': os.path.join(athena_dir, 'pack'),
         'plans': os.path.join(athena_dir, 'plans'), 'issues': os.path.join(athena_dir, 'issues'), 'state': os.path.join(active, 'state'),
         'worktrees': os.environ.get('ATHENA_WORKTREE_ROOT') or os.path.join(real, 'worktrees'),
-        'packId': os.path.basename(real), 'generation': registry.get('generation', 0),
+        # 세대는 팩마다(config.mjs paths 와 같다)
+        'packId': os.path.basename(real), 'generation': ((registry.get('packs') or {}).get(os.path.basename(real)) or {}).get('generation', 0),
     }
 
 
@@ -99,18 +100,37 @@ def needs_first_run(athena_dir):
 
 
 def switching(athena_dir):
-    """팩을 갈아 끼우는 중인가 — <데이터>/switch.lock 이 있고 그 pid 가 살아 있으면 True(새 작업을 받지 않는다)."""
-    lock = os.path.join(data_dir(athena_dir), 'switch.lock')
+    """이 본체의 팩에 작업 잠금이 걸려 있나(열기·업데이트 중) — <데이터>/locks/<팩 id>.lock 의 pid 가 살아 있으면 True
+    (새 작업을 받지 않는다 · config.mjs isSwitching 과 같다). 다른 팩의 잠금은 이 본체를 막지 않는다."""
+    where = paths(athena_dir)
+    if where['mode'] != 'packs':
+        return False
+    lock = os.path.join(where['dataDir'], 'locks', f"{where['packId']}.lock")
     try:
         with open(os.path.join(lock, 'pid'), encoding='utf-8') as handle:
             pid = int(handle.read().strip() or 0)
     except (OSError, ValueError):
-        return os.path.isdir(lock)
+        return False
+    if not pid:
+        return False
     try:
         os.kill(pid, 0)
         return True
+    except PermissionError:
+        return True
     except OSError:
         return False
+
+
+def board_port(athena_dir):
+    """현황판 포트 — config.mjs boardPort 와 같다. 여러 팩: 레지스트리 packs.<id>.boardPort → 본체 설정 → ATHENA_BOARD_PORT → 4700.
+    옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700."""
+    where = paths(athena_dir)
+    if where['mode'] == 'packs':
+        registry = _read_json(os.path.join(where['dataDir'], 'config.json')) or {}
+        saved = ((registry.get('packs') or {}).get(where['packId']) or {}).get('boardPort')
+        return int(saved or body_config(athena_dir).get('boardPort') or os.environ.get('ATHENA_BOARD_PORT') or 4700)
+    return int(os.environ.get('ATHENA_BOARD_PORT') or body_config(athena_dir).get('boardPort') or 4700)
 
 
 # 보호 브랜치 — 커밋·push 하지 않는 브랜치. 흔한 운영·개발 브랜치 이름 + 팩에 적힌 그 레포의 운영 기준(branch)·작업 base(prBase·extraPrBases)

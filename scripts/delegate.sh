@@ -56,7 +56,7 @@ if [ ! -f "$ATHENA_DIR/.claude/agents/$AGENT.md" ]; then
   exit 2
 fi
 
-# 팩을 갈아 끼우는 중이면 새 작업을 받지 않는다(<데이터>/switch.lock — bin/athena pack use). 팩 ID·세대는 실행기에 넘긴다
+# 이 본체의 팩을 열거나 업데이트하는 중이면 새 작업을 받지 않는다(<데이터>/locks/<팩 id>.lock — bin/athena pack open·update). 팩 ID·세대는 실행기에 넘긴다
 PACK_STATE="$(python3 - "$ATHENA_DIR" <<'PYEOF'
 import sys
 sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import paths, switching
@@ -66,7 +66,7 @@ PYEOF
 )"
 IFS=$'\t' read -r PACK_SWITCH PACK_ID PACK_GEN <<< "$PACK_STATE"
 if [ "$PACK_SWITCH" = switching ]; then
-  echo "팩을 갈아 끼우는 중이라 에이전트를 띄우지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2
+  echo "이 팩을 열거나 업데이트하는 중이라 에이전트를 띄우지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2
   exit 1
 fi
 

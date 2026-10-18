@@ -5,8 +5,8 @@
 # 사용: test/packs-test.sh            → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #       KEEP=1 test/packs-test.sh     → 임시 폴더를 남긴다(경로를 마지막에 보여 준다)
 #
-# 보는 것(계획서 7절 "단계별 확인"): test-setup · 팩 갈아 끼우기 A→B→A(링크·repos·계획서·이슈가 그 팩 것만) · 일부러 실패시키면 이전 팩으로 ·
-# 잠금 · 일하는 claude 가 있으면 거부 · 나쁜 팩(형식·pack.json 없음·밖 링크·.env·../·ext::) · 같은 팩 충돌·교체 백업 ·
+# 보는 것(계획서 7절 "단계별 확인" · 팩마다 본체 이후): test-setup · 이 본체의 팩 열기·계약 확인 · 팩마다 잠금 · busy(claude·codex) ·
+# (본체 만들기·업데이트·되돌리기는 test/bodies-test.sh) · 나쁜 팩(형식·pack.json 없음·밖 링크·.env·../·ext::) · 같은 팩 충돌·교체 백업 ·
 # 내보내기 허용 목록 · 작업 기록 백업·되살리기 · 옛 아테나 가져오기(원본 그대로) · 옮기기(두 번 돌려도 같음) · 계획서 논리 경로 · 현황판(팩·세대·409·끄기)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -31,9 +31,12 @@ mkbody() { # mkbody <폴더> — git clone(코어 이력) + 작업 트리 덮기
 }
 B="$WORK/body"; mkbody "$B"; cd "$B" || exit 1
 A() { node scripts/athena.mjs "$@" --json 2>/dev/null | tail -1; }
+# field a.b.c — 목록이면 그 id 를 가진 항목(packs.acme.displayName)
 field() { python3 -c 'import json,sys
 d=json.loads(sys.stdin.read() or "{}")
-for k in sys.argv[1].split("."): d = d.get(k) if isinstance(d, dict) else None
+for k in sys.argv[1].split("."):
+    if isinstance(d, list): d = next((x for x in d if isinstance(x, dict) and x.get("id") == k), None)
+    else: d = d.get(k) if isinstance(d, dict) else None
 print("" if d is None else (json.dumps(d) if isinstance(d,(dict,list)) else d))' "$1"; }
 printf '{ "boardPort": %s }\n' "$PORT" > athena.config.json
 
@@ -47,40 +50,39 @@ check "설정에 dataDir·boardPort(screen 없음)" 'python3 -c "import json,sys
 check "status·list 에 dataDir(실제 데이터 폴더)" '[ "$(A pack status | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(A pack list | field dataDir)" = "$ATHENA_DATA_DIR" ]'
 check "~/athena-data 로는 거부" '[ "$(ATHENA_DATA_DIR="$HOME/athena-data" node scripts/athena.mjs pack test-setup --json | tail -1 | field error)" = unsafe ]'
 
-section "팩 갈아 끼우기 A→B→A"
-R="$(A pack use globex)"
-check "globex 로 바뀜(세대 2)" '[ "$(echo "$R" | field current.id)" = globex ] && [ "$(echo "$R" | field current.generation)" = 2 ]' "$R"
-check "acme 링크가 사라지고 globex 링크만" '[ ! -e .claude/agents/acme-web-fe.md ] && [ ! -L .claude/agents/acme-web-fe.md ] && [ -L .claude/agents/globex-shop-fe.md ]'
-check "repos 는 globex 것만" '[ "$(ls repos | tr "\n" " ")" = "globex-admin globex-shop " ]'
-check "계획서·이슈는 globex 것만" '[ "$(ls plans/task issues | grep -c acme)" = 0 ] && ls plans/task | grep -q globex && ls issues | grep -q globex'
-check "docs/services.md 가 globex 것" 'grep -q Globex docs/services.md'
-R="$(A pack use acme)"
-check "다시 acme(세대 3)" '[ "$(echo "$R" | field current.generation)" = 3 ] && ls issues | grep -q acme'
-R="$(A pack use acme)"
-check "같은 팩이면 그대로(unchanged)" '[ "$(echo "$R" | field unchanged)" = True ] || [ "$(echo "$R" | field unchanged)" = true ]' "$R"
-check "없는 팩 → not-found" '[ "$(A pack use nope | field error)" = not-found ]'
+section "이 본체의 팩 · 열기(같은 본체 — 본체 만들기는 test/bodies-test.sh)"
+R="$(A pack use acme --contract 2)"
+check "pack use 이 본체 팩 → unchanged · body 는 이 본체" '[ "$(echo "$R" | field unchanged)" = True ] && [ "$(echo "$R" | field body)" = "$B" ] && [ "$(echo "$R" | field bodyChanged)" = False ]' "$R"
+check "pack use --json 계약 없이 → contract-mismatch" '[ "$(A pack use acme | field error)" = contract-mismatch ]'
+check "pack new --json 계약 없이 → contract-mismatch" '[ "$(A pack new | field error)" = contract-mismatch ]'
+check "--contract 1 → contract-mismatch" '[ "$(A pack list --contract 1 | field error)" = contract-mismatch ]'
+R="$(A pack open acme)"
+check "pack open 이 본체 팩 → created false · 포트 $PORT · state ready" '[ "$(echo "$R" | field created)" = False ] && [ "$(echo "$R" | field boardPort)" = "$PORT" ] && [ "$(echo "$R" | field state)" = ready ] && [ "$(echo "$R" | field contract)" = 2 ]' "$R"
+check "레지스트리에 acme 본체·포트 등록" 'python3 -c "import json,sys; d=json.load(open(sys.argv[1]))[\"packs\"][\"acme\"]; sys.exit(0 if d.get(\"body\")==sys.argv[2] and d.get(\"boardPort\")=='"$PORT"' else 1)" "$ATHENA_DATA_DIR/config.json" "$B"'
+check "없는 팩 → not-found" '[ "$(A pack open nope | field error)" = not-found ]'
+check "이미 묶인 본체에 다른 팩 attach → body-mismatch" '[ "$(A pack attach globex | field error)" = body-mismatch ] && [ "$(basename "$(readlink .pack-data)")" = acme ]'
 
-section "실패하면 되돌림 · 잠금 · busy"
-for step in link repos verify; do
-  R="$(ATHENA_PACK_FAIL_AT=$step node scripts/athena.mjs pack use globex --json 2>/dev/null | tail -1)"
-  check "$step 단계 실패 → rollback · acme 그대로" '[ "$(echo "$R" | field error)" = rollback ] && [ "$(basename "$(readlink .pack-data)")" = acme ] && [ -L .claude/agents/acme-web-fe.md ] && ls repos | grep -q acme-web' "$R"
-done
-mkdir "$ATHENA_DATA_DIR/switch.lock"; sleep 60 & LOCKPID=$!; echo "$LOCKPID" > "$ATHENA_DATA_DIR/switch.lock/pid"
-check "잠금 중 → locked" '[ "$(A pack use globex | field error)" = locked ]'
+section "잠금(팩마다) · busy"
+mkdir -p "$ATHENA_DATA_DIR/locks/acme.lock"; sleep 60 & LOCKPID=$!; echo "$LOCKPID" > "$ATHENA_DATA_DIR/locks/acme.lock/pid"
+check "acme 잠금 중 → pack open acme locked" '[ "$(A pack open acme | field error)" = locked ]'
 check "잠금 중 status.switching" '[ "$(A pack status | field switching)" = True ]'
 check "잠금 중 delegate 거부" '! bash scripts/delegate.sh acme-web-fe --plan "$(ls plans/task/*.md | head -1)" --here >/dev/null 2>&1'
 check "잠금 중 new-branch 거부" '! bash scripts/new-branch.sh T-1 acme-web >/dev/null 2>&1'
-kill "$LOCKPID" 2>/dev/null; wait "$LOCKPID" 2>/dev/null; rm -rf "$ATHENA_DATA_DIR/switch.lock"
-check "주인이 죽은 잠금은 넘겨받음" 'mkdir "$ATHENA_DATA_DIR/switch.lock" && echo 999999 > "$ATHENA_DATA_DIR/switch.lock/pid" && [ "$(A pack use acme | field ok)" = True ]'
-FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude"
+check "다른 팩(globex) 잠금은 이 본체를 막지 않음" 'mv "$ATHENA_DATA_DIR/locks/acme.lock" "$ATHENA_DATA_DIR/locks/globex.lock" && [ "$(A pack status | field switching)" = False ]'
+kill "$LOCKPID" 2>/dev/null; wait "$LOCKPID" 2>/dev/null; rm -rf "$ATHENA_DATA_DIR/locks/globex.lock"
+check "주인이 죽은 잠금은 넘겨받음" 'mkdir -p "$ATHENA_DATA_DIR/locks/acme.lock" && echo 999999 > "$ATHENA_DATA_DIR/locks/acme.lock/pid" && [ "$(A pack open acme | field ok)" = True ] && [ ! -d "$ATHENA_DATA_DIR/locks/acme.lock" ]'
+check "pid 없는 부서진 잠금도 넘겨받음" 'mkdir -p "$ATHENA_DATA_DIR/locks/acme.lock" && [ "$(A pack open acme | field ok)" = True ]'
+FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude"; ln -s "$(command -v node)" "$FAKE/codex"
 (cd "$B" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)') & C1=$!
 (cd "$ATHENA_DATA_DIR/repos-src/acme-web" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)') & C2=$!
+(cd "$B" && exec "$FAKE/codex" -e 'setTimeout(() => {}, 60000)') & C3=$!
 sleep 0.5
 R="$(A pack busy)"
-check "busy: athena · agent" 'echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\""' "$R"
-check "busy 여도 지금 팩으로 use 는 unchanged" '[ "$(A pack use acme | field unchanged)" = True ]'
-check "busy 면 갈아 끼우지 않음" '[ "$(A pack use globex | field error)" = busy ] && [ "$(basename "$(readlink .pack-data)")" = acme ]'
-kill "$C1" "$C2" 2>/dev/null; wait "$C1" "$C2" 2>/dev/null
+check "busy: athena · agent · codex · busyKnown" 'echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\"" && echo "$R" | grep -q "\"kind\":\"codex\"" && [ "$(echo "$R" | field busyKnown)" = True ]' "$R"
+R="$(A pack list)"
+check "list: acme bodyBusy · busy[] 있음" '[ "$(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); p=[x for x in d[\"packs\"] if x[\"id\"]==\"acme\"][0]; print(p[\"bodyBusy\"], len(p[\"busy\"])>=3)")" = "True True" ]' "$R"
+check "busy 여도 이 본체 팩 use 는 unchanged" '[ "$(A pack use acme --contract 2 | field unchanged)" = True ]'
+kill "$C1" "$C2" "$C3" 2>/dev/null; wait "$C1" "$C2" "$C3" 2>/dev/null
 check "끝나면 busy 없음" '[ "$(A pack busy | field busy)" = "[]" ]'
 
 section "계획서 논리 경로(delegate·커밋·리뷰 결론·PR 스크립트)"
@@ -140,6 +142,58 @@ R="$(A pack backup --with-work --out "$O")"; WB="$(echo "$R" | field file)"
 check "작업 기록 백업 — 계획서·이슈 포함" 'tar -tzf "$WB" | grep -q "/plans/" && tar -tzf "$WB" | grep -q "/issues/" && tar -tzf "$WB" | grep -q athena-backup.json' "$R"
 check "되살리기(같은 팩) → conflict 안내" '[ "$(A pack restore --with-work "$WB" | field error)" = conflict ]'
 
+section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
+IMG="$WORK/img"; mkdir -p "$IMG"
+printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$IMG/a.png"
+printf '\xff\xd8\xff\xe0\x00\x10JFIF' > "$IMG/b-really-jpeg.png"
+printf 'RIFF\x10\x00\x00\x00WEBPVP8 ' > "$IMG/c.webp"
+printf 'GIF89a\x01\x00' > "$IMG/d.gif"
+printf '<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>' > "$IMG/e.svg"
+printf 'not an image' > "$IMG/f.png"
+{ printf '\x89PNG\r\n\x1a\n'; head -c 1100000 /dev/zero; } > "$IMG/big.png"
+R="$(A pack set-name "Acme 팀")"
+check "set-name → displayName · pack.json name 그대로" '[ "$(echo "$R" | field displayName)" = "Acme 팀" ] && [ "$(echo "$R" | field id)" = acme ] && [ "$(python3 -c "import json; d=json.load(open(\"pack/pack.json\")); print(d[\"displayName\"], d[\"name\"])")" = "Acme 팀 Acme" ]' "$R"
+check "list·status 에 displayName" '[ "$(A pack list | field packs.acme.displayName)" = "Acme 팀" ] && [ "$(A pack status | field current.displayName)" = "Acme 팀" ]'
+check "41자 → invalid-name" '[ "$(A pack set-name "$(printf "가%.0s" $(seq 41))" | field error)" = invalid-name ]'
+check "줄바꿈 → invalid-name" '[ "$(A pack set-name "$(printf "a\nb")" | field error)" = invalid-name ]'
+check "글자 방향 문자(U+202E) → invalid-name" '[ "$(A pack set-name "$(printf "abc\xe2\x80\xaedef")" | field error)" = invalid-name ]'
+check "set-name --clear → null" '[ "$(A pack set-name --clear | field displayName)" = "" ] && ! grep -q displayName pack/pack.json'
+R="$(A pack set-icon "$IMG/a.png")"
+check "set-icon png → assets/icon.png · pack.json icon" '[ "$(echo "$R" | field iconPath)" = "$ATHENA_DATA_DIR/packs/acme/pack/assets/icon.png" ] && grep -q "\"icon\": \"assets/icon.png\"" pack/pack.json' "$R"
+check "list 에 iconPath · iconUpdatedAt" '[ "$(A pack list | field packs.acme.iconPath)" = "$ATHENA_DATA_DIR/packs/acme/pack/assets/icon.png" ] && [ -n "$(A pack list | field packs.acme.iconUpdatedAt)" ]'
+R="$(A pack set-icon "$IMG/b-really-jpeg.png")"
+check "확장자 아닌 앞 바이트로 판별(jpeg) · 이전 icon.png 지움" '[ "$(basename "$(echo "$R" | field iconPath)")" = icon.jpg ] && [ ! -e pack/assets/icon.png ]' "$R"
+R="$(A pack set-icon "$IMG/c.webp" --id globex)"
+check "--id globex → globex 팩에 webp · acme 는 그대로" '[ "$(echo "$R" | field id)" = globex ] && [ -f "$ATHENA_DATA_DIR/packs/globex/pack/assets/icon.webp" ] && [ -f pack/assets/icon.jpg ]' "$R"
+check "GIF → invalid-image" '[ "$(A pack set-icon "$IMG/d.gif" | field error)" = invalid-image ]'
+check "SVG → invalid-image" '[ "$(A pack set-icon "$IMG/e.svg" | field error)" = invalid-image ]'
+check "이미지 아닌 .png → invalid-image" '[ "$(A pack set-icon "$IMG/f.png" | field error)" = invalid-image ]'
+check "1MB 넘음 → image-too-large · 기존 아이콘 그대로" '[ "$(A pack set-icon "$IMG/big.png" | field error)" = image-too-large ] && [ -f pack/assets/icon.jpg ]'
+check "없는 팩 --id → not-found" '[ "$(A pack set-name x --id nope | field error)" = not-found ]'
+A pack set-name "Acme 팀" >/dev/null
+R="$(A pack open acme)"
+check "open 응답에 displayName · iconPath" '[ "$(echo "$R" | field displayName)" = "Acme 팀" ] && [ "$(basename "$(echo "$R" | field iconPath)")" = icon.jpg ]' "$R"
+R="$(A pack export --out "$O")"; EXPORT2="$(echo "$R" | field file)"
+check "내보내기에 assets/icon.jpg 포함" 'tar -tzf "$EXPORT2" | grep -q "/assets/icon.jpg"' "$R"
+R="$(A pack backup --with-work --out "$O")"
+check "내 백업에 assets/ 포함" 'tar -tzf "$(echo "$R" | field file)" | grep -q "/pack/assets/icon.jpg"' "$R"
+R="$(A pack inspect "$EXPORT2")"
+check "아이콘 든 팩 가져오기 검사 통과(같은 팩 conflict)" '[ "$(echo "$R" | field ok)" = True ] && [ "$(echo "$R" | field conflict.reason)" = packId ]' "$R"
+A pack import "$(echo "$R" | field token)" --keep >/dev/null
+TMP_BEFORE="$(ls "$ATHENA_DATA_DIR/tmp" 2>/dev/null | sort | tr "\n" " ")"
+mkdir -p "$O/iconout" && cp -R "$F/packs/globex/." "$O/iconout/" && python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['icon']='../../../etc/hosts'; json.dump(d, open(p,'w'))" "$O/iconout/pack.json"
+check "나쁜 팩: icon 이 밖 경로 → invalid-pack" '[ "$(A pack inspect "$O/iconout" | field error)" = invalid-pack ]'
+mkdir -p "$O/icongif/assets" && cp -R "$F/packs/globex/." "$O/icongif/" && cp "$IMG/d.gif" "$O/icongif/assets/icon.png"
+check "나쁜 팩: assets 안 GIF → invalid-image" '[ "$(A pack inspect "$O/icongif" | field error)" = invalid-image ]'
+mkdir -p "$O/iconlink/assets" && cp -R "$F/packs/globex/." "$O/iconlink/" && ln -s ../pack.json "$O/iconlink/assets/icon.png"
+check "나쁜 팩: assets 안 링크 → unsafe" '[ "$(A pack inspect "$O/iconlink" | field error)" = unsafe ]'
+check "아이콘 나쁜 팩 뒤 새 임시본 없음" '[ "$(ls "$ATHENA_DATA_DIR/tmp" 2>/dev/null | sort | tr "\n" " ")" = "$TMP_BEFORE" ]'
+R="$(A pack set-icon --clear)"
+check "set-icon --clear → iconPath null · assets 지움" '[ "$(echo "$R" | field iconPath)" = "" ] && [ ! -e pack/assets ] && ! grep -q "\"icon\"" pack/pack.json' "$R"
+mkdir -p "$WORK/outside"; ln -s "$WORK/outside" pack/assets
+check "assets 가 링크면 set-icon → unsafe · 밖에 안 씀(git 으로 받은 팩)" '[ "$(A pack set-icon "$IMG/a.png" | field error)" = unsafe ] && [ -z "$(ls -A "$WORK/outside")" ] && ! grep -q "\"icon\"" pack/pack.json'
+rm pack/assets
+
 section "옛 아테나 가져오기 · 옮기기"
 OA="$WORK/oldathena"; mkdir -p "$OA/packs/umbrella" "$OA/plans/task" "$OA/issues"
 cp -R "$F/packs/acme/." "$OA/packs/umbrella/"; python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop('id'); d['name']='Umbrella'; json.dump(d, open(p,'w'))" "$OA/packs/umbrella/pack.json"
@@ -171,21 +225,21 @@ TOKEN="$(A pack board-token | field token)"
 check "board-token 은 포트 $PORT" '[ "$(A pack board-token | field port)" = "$PORT" ] && [ -n "$TOKEN" ]'
 check "토큰 파일 권한 600" '[ "$(stat -f %Lp "$ATHENA_DATA_DIR/packs/acme/state/board-token" 2>/dev/null || stat -c %a "$ATHENA_DATA_DIR/packs/acme/state/board-token")" = 600 ]'
 HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")
-python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['generation']+=1; json.dump(d, open(p,'w'))" "$ATHENA_DATA_DIR/config.json"
+check "/api/state.pack 에 bodyId · core · instance" '[ -n "$(echo "$STATE" | field pack.bodyId)" ] && [ -n "$(echo "$STATE" | field pack.instance)" ]'
+GEN() { python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); e=d['packs'][sys.argv[2]]; e['generation']=e.get('generation',0)+int(sys.argv[3]); json.dump(d, open(p,'w'))" "$ATHENA_DATA_DIR/config.json" "$1" "$2"; }
+GEN globex 1
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"id":"x","column":"done"}' "http://127.0.0.1:$PORT/api/move")"
-check "세대가 다르면 쓰기 409" '[ "$CODE" = 409 ]' "$CODE"
-python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['generation']-=1; json.dump(d, open(p,'w'))" "$ATHENA_DATA_DIR/config.json"
+check "다른 팩 세대가 바뀌어도 409 아님" '[ "$CODE" != 409 ]' "$CODE"
+GEN acme 1
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"id":"x","column":"done"}' "http://127.0.0.1:$PORT/api/move")"
+check "이 팩 세대가 다르면 쓰기 409" '[ "$CODE" = 409 ]' "$CODE"
+GEN acme -1
 check "같은 팩이면 board.sh 가 다시 안 띄움" 'bash scripts/board.sh 2>&1 | grep -q "이미 떠 있음"'
-R="$(A pack use globex --start-board)"
-check "pack use 가 현황판을 끄고(--start-board) 새 팩으로" '[ "$(echo "$R" | field boardStopped)" = "[$PORT]" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = globex ]' "$R"
+R="$(A pack use acme --contract 2 --start-board)"
+check "pack use --start-board → 이 본체 현황판(포트 $PORT)" '[ "$(echo "$R" | field boardStarted)" = "$PORT" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = acme ]' "$R"
+check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트(Codex C8)" '[ "$(ATHENA_BOARD_PORT=4999 node scripts/athena.mjs pack status --json | tail -1 | field boardPort)" = "$PORT" ]'
 TOKEN="$(A pack board-token | field token)"; HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")
-check "POST /api/shutdown → 꺼짐 · 토큰 파일 지움" '[ "$(curl -s -X POST "${HDR[@]}" -d "{}" "http://127.0.0.1:$PORT/api/shutdown" | field ok)" = True ] && sleep 0.5 && [ "$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/state")" = 000 ] && [ ! -f "$ATHENA_DATA_DIR/packs/globex/state/board-token" ]'
-
-section "pack new"
-R="$(A pack new)"; NEW="$(echo "$R" | field id)"
-check "빈 자리가 지금 팩(empty) · 목록(packs)에는 안 보임" '[ "$(basename "$(readlink .pack-data)")" = "$NEW" ] && [ "$(A pack list | field current.empty)" = True ] && ! A pack list | field packs | grep -q "$NEW"' "$R"
-R="$(A pack use "$(echo "$R" | field previous)")"
-check "취소(use previous) → 빈 자리 지움" '[ "$(echo "$R" | field ok)" = True ] && [ ! -d "$ATHENA_DATA_DIR/packs/$NEW" ]' "$R"
+check "POST /api/shutdown → 꺼짐 · 토큰 파일 지움" '[ "$(curl -s -X POST "${HDR[@]}" -d "{}" "http://127.0.0.1:$PORT/api/shutdown" | field ok)" = True ] && sleep 0.5 && [ "$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/state")" = 000 ] && [ ! -f "$ATHENA_DATA_DIR/packs/acme/state/board-token" ]'
 
 printf '\n통과 %d · 실패 %d%s\n' "$PASS" "$FAIL" "$([ "${KEEP:-}" = 1 ] && echo " · 임시 폴더 $WORK")"
 [ "$FAIL" = 0 ]

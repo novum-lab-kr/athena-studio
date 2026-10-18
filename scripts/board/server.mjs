@@ -51,7 +51,7 @@ import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
-import { boardPort, githubOrg, loadConfig, paths, prLinkPattern, readRegistry } from '../lib/config.mjs'
+import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -61,12 +61,16 @@ const BOOT_PATHS = paths(ROOT)
 const BOOT_PACK = BOOT_PATHS.mode === 'packs' ? (() => {
   let pack = {}
   try { pack = JSON.parse(readFileSync(join(BOOT_PATHS.packDir, 'pack.json'), 'utf8')) } catch { /* 빈 팩 자리(pack new 직후) */ }
-  return { id: BOOT_PATHS.packId, packId: pack.id ?? null, name: pack.name ?? BOOT_PATHS.packId, generation: BOOT_PATHS.generation }
+  // bodyId · core(뜰 때의 코어 커밋) · instance(뜰 때마다 새 값) — 스튜디오가 "어느 본체의 어느 코드로 뜬 현황판인지" 안다(팩마다-본체 5.7 · Codex C8)
+  let core = null
+  try { core = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { /* git 아님 */ }
+  return { id: BOOT_PATHS.packId, packId: pack.id ?? null, name: pack.name ?? BOOT_PATHS.packId, generation: BOOT_PATHS.generation, bodyId: bodyIdOf(ROOT), core, instance: randomBytes(6).toString('hex') }
 })() : null
+// 세대는 팩마다(paths().generation) — 다른 본체·다른 팩의 일로는 stale 이 되지 않는다
 const staleGeneration = () => {
   if (!BOOT_PACK) return false
   const now = paths(ROOT)
-  return now.mode !== 'packs' || now.packId !== BOOT_PACK.id || (readRegistry(now.dataDir).generation ?? 0) !== BOOT_PACK.generation
+  return now.mode !== 'packs' || now.packId !== BOOT_PACK.id || now.generation !== BOOT_PACK.generation
 }
 // 워크트리 자리 — 본체 .worktrees(옛 구조 · 옮긴 본체의 기존 워크트리) + 여러 팩이면 지금 팩 데이터의 worktrees(새 워크트리)
 const WORKTREE_ROOTS = [...new Set([join(ROOT, '.worktrees'), BOOT_PATHS.worktrees].map((dir) => { try { return realpathSync(dir) } catch { return dir } }))]

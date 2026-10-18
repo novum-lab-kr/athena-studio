@@ -33,7 +33,7 @@ sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import path
 print('switching' if switching(sys.argv[1]) else 'ok', paths(sys.argv[1])['worktrees'], sep='\t')
 PYEOF
 )"
-[ "${WT_STATE%%$'\t'*}" = switching ] && { echo "팩을 갈아 끼우는 중이라 브랜치·워크트리를 만들지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2; exit 1; }
+[ "${WT_STATE%%$'\t'*}" = switching ] && { echo "이 팩을 열거나 업데이트하는 중이라 브랜치·워크트리를 만들지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2; exit 1; }
 WT_ROOT="${WT_STATE#*$'\t'}"
 # 설정을 못 읽어 자리를 모르면 멈춘다 — 빈 값이면 "/<레포>/…" 처럼 파일 시스템 맨 위에 만들 뻔한다(리뷰 제안 2026-10-18)
 case "$WT_STATE" in ok$'\t'?*|switching$'\t'*) ;; *) echo "❌ 워크트리 자리를 정하지 못했다(설정·팩 확인 — scripts/lib/athena_config.py paths)" >&2; exit 1 ;; esac

@@ -1,13 +1,13 @@
-// 여러 팩 — 본체 하나에서 팩을 골라 쓰기(계획서 plans/feature/20261018-여러-회사-팩 · docs/pack.md "여러 팩").
+// 여러 팩 — 팩마다 본체(계획서 plans/feature/20261018-팩마다-본체 5.7 · 1단계 20261018-여러-회사-팩 · docs/pack.md "여러 팩").
 //
-//   <본체>/.pack-data → <데이터>/packs/<id>       활성 링크(팩 갈아 끼우기 = 이것 하나를 원자적으로 교체)
+//   <본체>/.pack-data → <데이터>/packs/<id>       그 본체의 팩(본체를 만들 때 한 번 걸고 바꾸지 않는다 — attachPack)
 //   <본체>/pack · plans · issues · repos · …     고정 링크(.pack-data/… — 설치 때 한 번)
-//   <데이터>/config.json                          팩 목록 · 지금 팩 · 전환 세대(generation)
-//   <데이터>/switch.lock · switch.log             갈아 끼우기 잠금 · 단계 기록
+//   <데이터>/config.json                          팩 목록(packs.<id>: 본체 body · 포트 boardPort · 세대 generation) · 배포(deploy)
+//   <데이터>/registry.lock · locks/<id>.lock      레지스트리 잠금(읽기→수정→저장) · 팩마다 작업 잠금(열기·업데이트) — scripts/lib/lock.mjs
+//   <데이터>/switch.log                            단계 기록
 //   <데이터>/packs/<id>/{pack,plans,issues,repos,worktrees,state,local.json}
 //
-// 명령 입구는 scripts/athena.mjs(pack list · busy · use · inspect · import · import-athena · export · backup --with-work ·
-// restore --with-work · new · status · board-token · migrate · test-setup). 실패는 PackError(code) — 코드는 계획서 5.1
+// 명령 입구는 scripts/athena.mjs. 본체 만들기·업데이트는 scripts/lib/bodies.mjs. 실패는 PackError(code) — 코드는 계획서 5.7
 import { execFileSync, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import {
@@ -16,16 +16,12 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { ACTIVE_LINK, PACK_FORMAT_VERSION, bodyConfig, boardPort, dataDir, paths, readRegistry } from './config.mjs'
-import { isLink, linkOverlay } from './overlay.mjs'
+import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, paths, readRegistry } from './config.mjs'
+import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLockDir, takeLock } from './lock.mjs'
+import { isLink, linkOverlay, unlinkOverlay } from './overlay.mjs'
+import { inspectLook, packLook } from './pack-look.mjs'
 
-export class PackError extends Error {
-  constructor(code, message, extra = {}) {
-    super(message)
-    this.code = code
-    this.extra = extra
-  }
-}
+export { PackError, alive }
 
 // ── 고정 링크 · 팩 자리 ─────────────────────────────────────────────────
 // 본체 이름 → 팩 데이터 안 자리. 상태 파일(현황판 휴지통·학습 수·Jev 캐시·QA 결과)도 팩마다 따로
@@ -85,40 +81,43 @@ const writeJsonAtomic = (path, value) => {
   renameSync(temp, path)
 }
 const saveRegistry = (data, registry) => writeJsonAtomic(join(data, 'config.json'), { formatVersion: 1, ...registry })
-const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
-export const alive = (pid) => { if (!pid) return false; try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' } }
+export const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
+
+// 데이터 폴더 형식이 이 코어가 다루는 범위인가 — 밖이면 쓰지 않는다(D10)
+export const checkDataFormat = (registry) => {
+  const version = registry.formatVersion ?? 1
+  if (version < DATA_FORMATS[0] || version > DATA_FORMATS[1]) throw new PackError('data-incompatible', `데이터 폴더 형식 ${version} 을 이 코어(${DATA_FORMATS.join('~')})가 다루지 못한다 — 본체를 업데이트한다(bin/athena update)`, { dataFormat: version, dataFormats: DATA_FORMATS })
+}
+// 레지스트리 고치기 — 잠금 안에서 읽기→수정→저장(동시에 고쳐도 잃지 않게 · Codex C2). mutate 의 반환값을 돌려준다
+export const updateRegistry = (data, mutate) => {
+  mkdirSync(data, { recursive: true })
+  const release = takeLock(registryLockDir(data), `registry ${process.pid}`, { waitMs: 10_000, message: (owner) => `레지스트리 잠금을 10초 안에 잡지 못했다(pid ${owner.pid})` })
+  try {
+    const registry = readRegistry(data)
+    checkDataFormat(registry)
+    registry.packs ??= {}
+    const result = mutate(registry)
+    saveRegistry(data, registry)
+    return result
+  } finally { release() }
+}
+// 그 팩의 세대 +1(팩에 링크를 처음 걸 때 · 팩이 바뀔 때) — 그 팩을 연 현황판·학습 검토만 stale 이 된다
+export const bumpGeneration = (registry, id) => {
+  registry.packs[id] = { ...(registry.packs[id] ?? {}) }
+  registry.packs[id].generation = (registry.packs[id].generation ?? 0) + 1
+  return registry.packs[id].generation
+}
 const stamp = () => new Date().toISOString()
 const fileStamp = () => {
   const now = new Date(); const pad = (value) => String(value).padStart(2, '0')
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
-const logSwitch = (data, text) => { try { mkdirSync(data, { recursive: true }); appendFileSync(join(data, 'switch.log'), `${stamp()} ${text}\n`) } catch { /* 기록 못 해도 갈아 끼우기는 계속 */ } }
+const logSwitch = (data, text) => { try { mkdirSync(data, { recursive: true }); appendFileSync(join(data, 'switch.log'), `${stamp()} ${text}\n`) } catch { /* 기록 못 해도 작업은 계속 */ } }
 
-const lockDir = (data) => join(data, 'switch.lock')
-export const lockOwner = (data) => {
-  const dir = lockDir(data)
-  if (!existsSync(dir)) return null
-  const pid = Number(readFileSync(join(dir, 'pid'), 'utf8').trim() || 0) || null
-  return { pid, alive: alive(pid), what: (() => { try { return readFileSync(join(dir, 'what'), 'utf8').trim() } catch { return '' } })() }
-}
-// 잠금 — mkdir 이 원자적이다. 주인이 죽었으면 넘겨받는다
-const takeLock = (data, what) => {
-  mkdirSync(data, { recursive: true })
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      mkdirSync(lockDir(data))
-      writeFileSync(join(lockDir(data), 'pid'), String(process.pid))
-      writeFileSync(join(lockDir(data), 'what'), what)
-      return () => rmSync(lockDir(data), { recursive: true, force: true })
-    } catch (error) {
-      if (error.code !== 'EEXIST') throw error
-      const owner = (() => { try { return lockOwner(data) } catch { return null } })()
-      if (owner?.alive) throw new PackError('locked', `다른 팩 갈아 끼우기가 진행 중이다(pid ${owner.pid}${owner.what ? ` · ${owner.what}` : ''})`)
-      rmSync(lockDir(data), { recursive: true, force: true })
-    }
-  }
-  throw new PackError('locked', '갈아 끼우기 잠금을 잡지 못했다')
-}
+// 팩 작업 잠금(팩마다) — 잡혀 있으면 바로 locked. allowParent: pack open 이 띄운 새 본체의 pack attach
+export const takePackLock = (data, id, what, { allowParent = false } = {}) => takeLock(packLockDir(data, id), what, {
+  allowParent, message: (owner) => `그 팩(${id})에 다른 작업이 진행 중이다(pid ${owner.pid}${owner.what ? ` · ${owner.what}` : ''})`,
+})
 
 // ── 팩 정보 ────────────────────────────────────────────────────────────
 const slug = (text) => String(text ?? '').toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
@@ -172,28 +171,75 @@ export const packInfo = (data, id, registry = readRegistry(data)) => {
     repos: (pack.repos ?? []).length, repoNames: (pack.repos ?? []).map((repo) => repo.name),
     updatedAt: updated ? new Date(updated).toISOString() : null,
     hasWork: work.plans + work.issues > 0,
+    // 표시 이름 · 아이콘(팩 안 · 5.7) — 화면은 displayName ?? name
+    ...packLook(join(slot, 'pack'), pack),
     source: remote ? 'git' : (entry.source === 'git' ? 'git' : 'local'),
     ...(remote ? { remote } : {}),
   }
 }
 
-// 지금 팩 — 활성 링크가 정본(레지스트리 current 는 따라 쓴다)
+// 지금 팩 — 부른 본체의 팩(활성 링크가 정본). 세대는 그 팩 것
 const currentOf = (root) => {
   const where = paths(root)
   if (where.mode !== 'packs') return null
-  const registry = readRegistry(where.dataDir)
   const json = readPackJson(join(where.packDataReal, 'pack'))
   const pack = json ?? {}
   // empty — pack new 로 만든 빈 자리(/setup 전)
-  return { id: where.packId, packId: pack.id ?? null, name: pack.name ?? where.packId, generation: registry.generation ?? 0, ...(json ? {} : { empty: true }) }
+  return { id: where.packId, packId: pack.id ?? null, name: pack.name ?? where.packId, ...packLook(join(where.packDataReal, 'pack'), pack), generation: where.generation, ...(json ? {} : { empty: true }) }
 }
 
-// pack list — 빈 자리(pack.json 이 아직 없는 pack new 자리)는 보이지 않는다
+// ── 팩마다 본체(계획서 20261018-팩마다-본체 5.7) ─────────────────────────
+// 본체 = 그 팩에 .pack-data 가 고정된 코어 체크아웃. 정본은 레지스트리 packs.<id>.body, 비어 있으면(주 본체 ~/athena 처음)
+// 부른 본체 → 같은 저장소의 체크아웃 목록(git worktree list)에서 .pack-data 가 그 팩인 것을 찾는다(레지스트리에 쓰지 않는다)
+export const realOr = (path) => { try { return realpathSync(path) } catch { return path } }
+export const bodyHasPack = (body, data, id) => isLink(join(body, ACTIVE_LINK)) && realOr(join(body, ACTIVE_LINK)) === realOr(join(data, 'packs', id))
+export const gitBodies = (root) => {
+  try {
+    return execFileSync('git', ['-C', root, 'worktree', 'list', '--porcelain'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split('\n').filter((line) => line.startsWith('worktree ')).map((line) => line.slice('worktree '.length))
+  } catch { return [] }   // git 체크아웃이 아닌 복사본
+}
+export const bodyOf = (root, data, id, registry = readRegistry(data), bodies = null) => {
+  const saved = registry.packs?.[id]?.body
+  if (saved && bodyHasPack(saved, data, id)) return saved
+  if (bodyHasPack(root, data, id)) return resolve(root)
+  return (bodies ?? gitBodies(root)).find((body) => bodyHasPack(body, data, id)) ?? null
+}
+export const headOf = (dir) => { try { return execFileSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { return null } }
+// 고정 링크가 모두 그 팩을 가리키나(읽기만 — pack list 용. 고치는 것은 relink)
+export const bodyLinksOk = (body) => isLink(join(body, ACTIVE_LINK)) && FIXED_LINKS.every(([name, inner]) => {
+  const path = join(body, name)
+  if (name === '.worktrees' && existsSync(path) && !isLink(path)) return true
+  return isLink(path) && readlinkSync(path) === join(ACTIVE_LINK, inner)
+})
+// 본체 현황판 포트 — 그 본체에서 boardPort() 가 돌려줄 값(레지스트리 정본 → 본체 설정 → 4700). 부른 본체는 env 까지
+const bodyBoardPort = (root, body, entry) => {
+  if (!body) return entry?.boardPort ?? null
+  if (realOr(body) === realOr(root)) return boardPort(root)
+  return Number(entry?.boardPort || bodyConfig(body).boardPort || 4700)
+}
+const bodyStateOf = (body, entry) => {
+  if (!body) return entry?.body && !existsSync(entry.body) ? 'missing' : 'none'
+  return bodyLinksOk(body) ? 'ready' : 'repair-required'
+}
+const withBody = (root, data, registry, scan, bodies) => (info) => {
+  const entry = registry.packs?.[info.id]
+  const body = bodyOf(root, data, info.id, registry, bodies)
+  const core = body ? headOf(body) : null
+  const targetCore = registry.deploy?.commit ?? null
+  const scanned = body ? busyScan(body, scan) : { busy: [], known: true }
+  return {
+    ...info, body, bodyId: body ? bodyIdOf(body) : null, bodyState: bodyStateOf(body, entry), boardPort: bodyBoardPort(root, body, entry),
+    core, targetCore, updatePending: Boolean(body && core && targetCore && core !== targetCore),
+    busy: scanned.busy, busyKnown: scanned.known, bodyBusy: scanned.busy.length > 0 || !scanned.known,
+  }
+}
+
+// pack list — pack.json 이 아직 없는 빈 자리(pack new · /setup 전)는 packs 에 넣지 않고 emptySlots 로
 export const listPacks = (root) => {
   const where = paths(root)
   const data = where.dataDir
-  const owner = lockOwner(data)
-  const switching = Boolean(owner?.alive)
+  const switching = where.mode === 'packs' ? Boolean(packLockOwner(data, where.packId)?.alive) : false
   if (where.mode === 'legacy') {
     // 옛 구조 본체 — 지금 팩 하나를 보여 준다(데이터 폴더에 등록된 것도 같이)
     const pack = where.packDir ? readPackJson(where.packDir) : null
@@ -202,25 +248,24 @@ export const listPacks = (root) => {
   }
   const registry = readRegistry(data)
   const ids = existsSync(join(data, 'packs')) ? readdirSync(join(data, 'packs')).filter((name) => !name.startsWith('.')) : []
+  const bodies = gitBodies(root)
+  const scan = scanProcesses()
+  const emptySlots = ids.filter((id) => !readPackJson(join(data, 'packs', id, 'pack'))).map((id) => ({ id, body: bodyOf(root, data, id, registry, bodies) }))
   // dataDir — 실제 데이터 폴더(ATHENA_DATA_DIR → 본체 설정 dataDir → ~/athena-data · 결정 R1 A)
-  return { ok: true, dataDir: data, current: currentOf(root), switching, packs: ids.map((id) => packInfo(data, id, registry)).filter(Boolean) }
+  return { ok: true, dataDir: data, current: currentOf(root), switching, packs: ids.map((id) => packInfo(data, id, registry)).filter(Boolean).map(withBody(root, data, registry, scan, bodies)), emptySlots }
 }
 
 export const packStatus = (root) => {
   const where = paths(root)
   const list = listPacks(root)
-  return { ok: true, current: list.current, switching: list.switching, boardPort: boardPort(root), dataDir: list.dataDir, ...(where.mode === 'legacy' ? { legacy: true } : {}) }
+  return { ok: true, current: list.current, switching: list.switching, boardPort: boardPort(root), dataDir: list.dataDir, body: resolve(root), bodyId: bodyIdOf(root), core: headOf(root), ...(where.mode === 'legacy' ? { legacy: true } : {}) }
 }
 
 // ── 지금 도는 것(busy) ─────────────────────────────────────────────────
 // ps 는 pid·부모·실행 파일 이름만 읽는다(인자 전체·환경 변수는 출력하지 않는다 — 비밀값이 섞일 수 있다).
 // 인자는 우리 스크립트를 찾을 때만 프로세스 하나씩 읽고 화면에는 내보내지 않는다
-const processTable = () => {
-  try {
-    return execFileSync('ps', ['-axo', 'pid=,ppid=,comm='], { encoding: 'utf8' }).split('\n').map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).filter(Boolean)
-      .map(([, pid, ppid, comm]) => ({ pid: Number(pid), ppid: Number(ppid), comm: basename(comm.trim()) }))
-  } catch { return [] }
-}
+const processTable = () => execFileSync('ps', ['-axo', 'pid=,ppid=,comm='], { encoding: 'utf8' }).split('\n').map((line) => line.trim().match(/^(\d+)\s+(\d+)\s+(.+)$/)).filter(Boolean)
+  .map(([, pid, ppid, comm]) => ({ pid: Number(pid), ppid: Number(ppid), comm: basename(comm.trim()) }))
 const ancestorsOf = (table, pid) => {
   const parent = new Map(table.map((row) => [row.pid, row.ppid]))
   const seen = new Set()
@@ -233,64 +278,93 @@ const cwdsOf = (pids) => {
   if (!pids.length) return map
   try {
     const out = execFileSync('lsof', ['-a', '-d', 'cwd', '-p', pids.join(','), '-Fpn'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
-    let pid = 0
-    for (const line of out.split('\n')) {
-      if (line.startsWith('p')) pid = Number(line.slice(1))
-      else if (line.startsWith('n') && pid) map.set(pid, line.slice(1))
-    }
-  } catch { /* lsof 가 일부 pid 를 못 읽으면 종료 코드 1 — 읽은 것만 쓴다 */ }
+    parseLsof(out, map)
+  } catch (error) { parseLsof(String(error.stdout ?? ''), map) }   // 일부 pid 를 못 읽으면 종료 코드 1 — 읽은 것만 쓴다(못 읽은 것은 unknown)
   return map
 }
-const realOr = (path) => { try { return realpathSync(path) } catch { return path } }
+const parseLsof = (out, map) => {
+  let pid = 0
+  for (const line of out.split('\n')) {
+    if (line.startsWith('p')) pid = Number(line.slice(1))
+    else if (line.startsWith('n') && pid) map.set(pid, line.slice(1))
+  }
+}
 const inside = (path, dir) => Boolean(dir) && (path === dir || path.startsWith(dir + sep))
+// 에이전트로 보는 실행 파일 — Claude Code · Codex(Codex C3)
+const AGENT_COMMS = new Set(['claude', 'codex'])
 
-// 이 본체 · 지금 팩에서 도는 것. 부른 프로세스의 조상(이 명령을 부른 셸·세션)은 뺀다
-export const busyList = (root) => {
-  const where = paths(root)
-  const table = processTable()
+// 프로세스 표 · 에이전트 작업 폴더를 한 번만 읽는다(pack list 가 본체 여럿의 busy 를 볼 때 같이 쓴다).
+// ps 를 못 읽으면 known:false — 비어 있다고 보지 않는다(Codex C3)
+export const scanProcesses = () => {
+  let table = []
+  let known = true
+  try { table = processTable() } catch { known = false }
   const mine = ancestorsOf(table, process.pid)
+  const agents = table.filter((row) => AGENT_COMMS.has(row.comm))
+  return { table, mine, agents, cwds: cwdsOf(agents.map((row) => row.pid)), known }
+}
+
+// 이 본체 · 그 팩에서 도는 것 → { busy:[{kind, what, pid}], known }. 다른 본체에서 도는 것은 이 본체를 막지 않는다.
+// includeSelf: 이 명령을 부른 조상(셸·세션)도 센다 — update 는 자기를 부른 아테나 세션의 본체도 일하는 중으로 본다(Codex C3)
+export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } = {}) => {
+  const where = paths(root)
+  const { table, mine, agents, cwds } = scan
+  let known = scan.known
   const busy = []
+  const skip = (pid) => pid === process.pid || (!includeSelf && mine.has(pid))
   const rootReal = realOr(root)
   const dataReal = where.packDataReal ? realOr(where.packDataReal) : null
   const legacyWorktrees = realOr(join(root, '.worktrees'))
   const repoMains = []
   const reposDir = join(root, 'repos')
   if (existsSync(reposDir)) for (const name of readdirSync(reposDir)) repoMains.push(realOr(join(reposDir, name)))
-  const claudes = table.filter((row) => row.comm === 'claude' && !mine.has(row.pid))
-  const cwds = cwdsOf(claudes.map((row) => row.pid))
-  for (const row of claudes) {
+  const ours = (real) => inside(real, rootReal) || inside(real, legacyWorktrees) || inside(real, dataReal) || repoMains.some((main) => inside(real, main))
+  for (const row of agents) {
+    if (skip(row.pid)) continue
     const cwd = cwds.get(row.pid)
-    if (!cwd) continue
+    if (!cwd) {
+      // 작업 폴더를 못 읽은 에이전트 — 이 본체 일인지 모른다
+      if (alive(row.pid)) { known = false; busy.push({ kind: 'unknown', what: `작업 폴더를 읽지 못한 ${row.comm}`, pid: row.pid }) }
+      continue
+    }
     const real = realOr(cwd)
-    if (inside(real, legacyWorktrees) || inside(real, dataReal) || repoMains.some((main) => inside(real, main))) busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
-    else if (inside(real, rootReal)) busy.push({ kind: 'athena', what: `본체에서 도는 아테나 세션(claude) — ${real}`, pid: row.pid })
+    if (!ours(real)) continue
+    if (row.comm === 'codex') busy.push({ kind: 'codex', what: `Codex 세션 — ${real}`, pid: row.pid })
+    else if (inside(real, rootReal) && !inside(real, legacyWorktrees)) busy.push({ kind: 'athena', what: `본체에서 도는 아테나 세션(claude) — ${real}`, pid: row.pid })
+    else busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
   }
-  // QA 런 — 지금 팩 상태의 run.json 이 running 이고 그 pid 가 살아 있으면
+  // QA 런 — 이 본체 팩 상태의 run.json 이 running 이고 그 pid 가 살아 있으면
   const runs = join(root, '.qa-runs')
   if (existsSync(runs)) {
     for (const name of readdirSync(runs)) {
       const run = readJson(join(runs, name, 'run.json')) ?? readJson(join(runs, name, 'group.json'))
-      if (run && !run.finishedAt && alive(run.pid) && !mine.has(run.pid)) busy.push({ kind: 'qa', what: `QA 실행 ${name}`, pid: run.pid })
+      if (run && !run.finishedAt && alive(run.pid) && !skip(run.pid)) busy.push({ kind: 'qa', what: `QA 실행 ${name}`, pid: run.pid })
     }
   }
   // 학습 검토 — 이 본체의 scripts/learn-review.mjs 를 도는 node
   const learnScript = join(rootReal, 'scripts', 'learn-review.mjs')
-  for (const row of table.filter((item) => item.comm === 'node' && !mine.has(item.pid))) {
+  for (const row of table.filter((item) => item.comm === 'node' && !skip(item.pid))) {
     const args = argsOf(row.pid)
     if (args.includes(learnScript) || args.includes(join(root, 'scripts', 'learn-review.mjs'))) busy.push({ kind: 'learn-review', what: '학습 검토(learn-review.mjs)', pid: row.pid })
   }
-  // 무거운 명령 잠금(scripts/heavy.sh — 한 대 공용)
+  // 무거운 명령 잠금(scripts/heavy.sh — 한 대 공용). 잠금에 적힌 본체(root)가 이 본체일 때만 이 본체 일 —
+  // root 가 없는 옛 잠금이면 주인의 작업 폴더로 본다(못 읽으면 보수적으로 이 본체 일 · Codex C10)
   const heavyLock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
-  if (existsSync(heavyLock)) {
-    const pid = Number((() => { try { return readFileSync(join(heavyLock, 'pid'), 'utf8').trim() } catch { return '' } })() || 0)
-    if (alive(pid) && !mine.has(pid)) busy.push({ kind: 'heavy', what: '무거운 명령 잠금(heavy.sh)', pid })
+  const heavy = lockOwnerAt(heavyLock)
+  if (heavy?.alive && !skip(heavy.pid)) {
+    let owner = ''
+    try { owner = readFileSync(join(heavyLock, 'root'), 'utf8').trim() } catch { /* 옛 잠금 */ }
+    const cwd = owner ? null : realOr(cwdsOf([heavy.pid]).get(heavy.pid) ?? '')
+    if (owner ? realOr(owner) === rootReal : (!cwd || ours(cwd))) busy.push({ kind: 'heavy', what: `무거운 명령 잠금(heavy.sh)${heavy.what ? ` — ${heavy.what}` : ''}`, pid: heavy.pid })
   }
-  const owner = lockOwner(where.dataDir)
-  if (owner?.alive && !mine.has(owner.pid)) busy.push({ kind: 'switch', what: `팩 갈아 끼우기 중${owner.what ? ` — ${owner.what}` : ''}`, pid: owner.pid })
-  return busy
+  // 이 본체 팩의 작업 잠금(열기·업데이트 중)
+  const owner = where.mode === 'packs' ? packLockOwner(where.dataDir, where.packId) : null
+  if (owner?.alive && !skip(owner.pid)) busy.push({ kind: 'switch', what: `팩 작업 중${owner.what ? ` — ${owner.what}` : ''}`, pid: owner.pid })
+  return { busy, known }
 }
-// 갈아 끼우기를 막는 것 — QA·학습 검토는 코어가 끈다(계획서 5.2 pack use)
-const BLOCKING = new Set(['agent', 'athena', 'heavy', 'switch'])
+export const busyList = (root, scan, options) => busyScan(root, scan, options).busy
+// 팩을 바꾸면(attach · import --replace) 안 되는 것 — QA·학습 검토는 코어가 끈다. 모르면(unknown) 막는다
+export const BLOCKING = new Set(['agent', 'athena', 'codex', 'heavy', 'switch', 'unknown'])
 
 // ── 현황판 · 학습 검토 · QA 끄기 ────────────────────────────────────────
 // 현황판은 포트로 찾되, 그 프로세스가 **이 본체**의 server.mjs 인지 인자로 확인한 뒤에만 끈다(다른 본체 현황판을 끄지 않게)
@@ -318,7 +392,7 @@ export const stopServices = async (root, busy) => {
   return stopped
 }
 
-export const busyNow = (root) => ({ ok: true, busy: busyList(root) })
+export const busyNow = (root) => { const { busy, known } = busyScan(root); return { ok: true, busy, busyKnown: known } }
 
 // ── 레포 링크(repos/) 맞추기 ────────────────────────────────────────────
 // 예상 목록(pack.json repos)과 실제 링크를 전부 대조 — 목록에 없는 링크는 지우고, 잇지 못한 레포는 unlinked 로 돌려준다
@@ -383,32 +457,18 @@ const rebuildDiagramIndex = (root) => {
   spawnSync(process.execPath, [join(root, 'scripts', 'build-diagram-index.mjs')], { cwd: root, stdio: 'ignore' })
 }
 
-// 빈 자리 정리 — pack new 로 만들었지만 pack.json 이 끝내 생기지 않은 자리(지금 팩이 아니면)
-const cleanEmptySlots = (data, keep) => {
-  const dir = join(data, 'packs')
-  if (!existsSync(dir)) return []
-  const removed = []
-  for (const id of readdirSync(dir)) {
-    if (id === keep || id.startsWith('.')) continue
-    const slot = join(dir, id)
-    if (existsSync(join(slot, 'pack', 'pack.json'))) continue
-    if (workCounts(slot).plans + workCounts(slot).issues > 0) continue   // 작업 기록이 있으면 남긴다
-    rmSync(slot, { recursive: true, force: true })
-    removed.push(id)
-  }
-  return removed
-}
-
-// ── pack use ───────────────────────────────────────────────────────────
-// 1 잠금 → 2 사전 검사(대상 팩 · 형식 버전 · 지금 도는 것) → 3 현황판·학습 검토·QA 끄기 → 4 활성 링크 교체 · OVERLAY
-// → 5 repos/ 대조 → 6 링크 확인 · 세대 +1 → 끝. 4 이후에 실패하면 이전 팩으로 되돌린다
-export const usePack = async (root, id, { report = () => {}, allowEmpty = false } = {}) => {
+// ── pack attach — 본체에 팩을 처음 건다(팩마다 본체 · 한 번 걸면 바꾸지 않는다) ─────────────────
+// 부르는 곳: pack open 이 새로 만든 본체(그 본체 코드로 `pack attach <id>`) · test-setup.
+// 1 팩 잠금(allowParent — open 이 쥔 잠금) → 2 검사(대상 팩 · 형식 · 이 본체가 다른 팩에 묶였나) → 3 활성 링크 · 고정 링크 · 팩 링크
+// → 4 repos/ 대조 → 5 확인 · 그 팩 세대 +1 → 끝. 3 이후 실패하면 걸던 링크를 걷는다(rollback)
+export const attachPack = async (root, id, { report = () => {}, allowEmpty = false } = {}) => {
   const where = paths(root)
   const data = where.dataDir
   if (where.dataMismatch) throw new PackError('unsafe', `활성 링크(${where.packDataReal})가 지금 데이터 폴더(${data}) 밖을 가리킨다 — ATHENA_DATA_DIR 확인`)
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id ?? '')) throw new PackError('not-found', `팩 id 가 올바르지 않다: ${id}`)
-  report('lock', '갈아 끼우기 잠금')
-  const release = takeLock(data, `pack use ${id}`)
+  checkDataFormat(readRegistry(data))
+  report('lock', '팩 잠금')
+  const release = takePackLock(data, id, `pack attach ${id} · ${root}`, { allowParent: true })
   try {
     report('check', `대상 팩 확인 — ${id}`)
     const slot = join(data, 'packs', id)
@@ -416,26 +476,20 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
     const pack = readPackJson(join(slot, 'pack'))
     if (!pack && !allowEmpty) throw new PackError('invalid-pack', `팩 자리에 pack.json 이 없다: ${id}`)
     if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`)
-    const previous = where.mode === 'packs' ? where.packId : null
-    // 옛 구조(팩이 걸린 본체)는 migrate 먼저 · 본체 자리에 옛 작업 기록이 있으면 갈아 끼우기 전에 멈춘다
     if (where.mode === 'legacy' && bodyConfig(root).pack) throw new PackError('unsafe', `옛 구조 본체(athena.config.json 의 pack = ${bodyConfig(root).pack}) — 먼저 bin/athena pack migrate`)
-    checkBodyLinks(root)
-    // 이미 지금 팩이면 아무것도 바꾸지 않는다 — 도는 작업이 있어도 막을 까닭이 없다(busy 검사 전에 · 리뷰 제안 2026-10-18)
-    if (previous === id) {
-      report('done', `이미 지금 팩이다 — ${id}`)
-      return { ok: true, current: { id, generation: readRegistry(data).generation ?? 0 }, unlinkedRepos: syncRepos(root).unlinked, boardStopped: [], unchanged: true }
+    if (where.mode === 'packs' && where.packId === id) {
+      report('done', `이미 이 본체의 팩이다 — ${id}`)
+      return { ok: true, id, current: { id, generation: where.generation }, unlinkedRepos: syncRepos(root).unlinked, unchanged: true }
     }
-    const busy = busyList(root).filter((item) => item.kind !== 'switch' || item.pid !== process.pid)
-    const blocking = busy.filter((item) => BLOCKING.has(item.kind))
-    if (blocking.length) throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
-
-    report('stop', '현황판·학습 검토·QA 끄기')
-    const stopped = await stopServices(root, busy)
-    logSwitch(data, `use ${previous ?? '(없음)'} → ${id} · 멈춤 board=${stopped.boardStopped.join(',') || '-'}`)
-
-    const previousTarget = where.mode === 'packs' ? readlinkSync(join(root, ACTIVE_LINK)) : null
+    // 팩마다 본체 — 이미 다른 팩에 묶인 본체는 바꾸지 않는다(그 팩은 pack open 으로 그 팩 본체에서)
+    if (where.mode === 'packs') throw new PackError('body-mismatch', `이 본체는 이미 팩 ${where.packId} 에 묶여 있다 — 팩 ${id} 는 bin/athena pack open ${id}`)
+    checkBodyLinks(root)
+    const scanned = busyScan(root)
+    const blocking = scanned.busy.filter((item) => BLOCKING.has(item.kind) && item.pid !== process.pid && item.pid !== process.ppid)
+    if (blocking.length) throw new PackError('busy', `이 본체에서 도는 작업이 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
+    logSwitch(data, `attach ${id} → ${root}`)
     try {
-      report('link', '활성 링크 교체 · 링크 다시 맞춤')
+      report('link', '활성 링크 · 고정 링크 · 팩 링크')
       ensureSlot(slot)
       swapActive(root, slot)
       ensureBodyLinks(root)
@@ -447,72 +501,70 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
       const repos = syncRepos(root)
       failAt('repos')
 
-      report('verify', '새 팩 준비 확인')
+      report('verify', '팩 준비 확인')
       const problems = verifyBody(root)
       failAt('verify')
       if (problems.length) throw new Error(problems.join(' · '))
 
-      const registry = readRegistry(data)
-      registry.generation = (registry.generation ?? 0) + 1
-      registry.current = id
-      registry.packs ??= {}
-      if (pack) registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: pack.id ?? null, name: pack.name ?? id }
-      saveRegistry(data, registry)
+      const generation = updateRegistry(data, (registry) => {
+        if (pack) registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: pack.id ?? null, name: pack.name ?? id }
+        registry.current = id   // 옛 읽기(1단계 스튜디오) 호환 — 정본은 각 본체의 .pack-data
+        return bumpGeneration(registry, id)
+      })
       rebuildDiagramIndex(root)
-      const cleaned = cleanEmptySlots(data, id)
-      logSwitch(data, `use 끝 → ${id} · 세대 ${registry.generation}${repos.unlinked.length ? ` · 못 이은 레포 ${repos.unlinked.join(',')}` : ''}`)
-      report('done', `지금 팩: ${id} (세대 ${registry.generation})`)
-      return { ok: true, current: { id, generation: registry.generation }, previous, unlinkedRepos: repos.unlinked, boardStopped: stopped.boardStopped, ...(cleaned.length ? { cleanedSlots: cleaned } : {}) }
+      logSwitch(data, `attach 끝 → ${id} · 세대 ${generation}${repos.unlinked.length ? ` · 못 이은 레포 ${repos.unlinked.join(',')}` : ''}`)
+      report('done', `이 본체의 팩: ${id} (세대 ${generation})`)
+      return { ok: true, id, current: { id, generation }, unlinkedRepos: repos.unlinked }
     } catch (error) {
-      report('rollback', `실패 — 이전 팩으로 되돌린다: ${error.message}`)
-      logSwitch(data, `use 실패(${error.message}) → 되돌림 ${previous ?? '(없음)'}`)
-      if (previousTarget) {
-        swapActive(root, previousTarget)
-        try { ensureBodyLinks(root); linkOverlay(root); syncRepos(root) } catch (inner) { logSwitch(data, `되돌리기 중 오류: ${inner.message}`) }
-      } else {
-        // 옛 구조·빈 본체에서 처음 갈아 끼우다 실패 — 활성 링크를 다시 없앤다(고정 링크는 남아도 무해: 가리킬 곳이 없다)
-        rmSync(join(root, ACTIVE_LINK), { force: true })
-      }
-      throw new PackError('rollback', `팩을 갈아 끼우지 못해 이전 팩으로 되돌렸다 — ${error.message}`, { rolledBack: true, current: previous ? { id: previous } : null })
+      report('rollback', `실패 — 걸던 링크를 걷는다: ${error.message}`)
+      logSwitch(data, `attach 실패(${error.message}) → 걷음`)
+      rmSync(join(root, ACTIVE_LINK), { force: true })
+      try { unlinkOverlay(root) } catch { /* 팩 링크 걷기 실패 — 본체를 지우면 같이 사라진다 */ }
+      throw new PackError('rollback', `팩을 걸지 못해 되돌렸다 — ${error.message}`, { rolledBack: true, current: null })
     }
   } finally {
     release()
   }
 }
 
-// ── pack new ───────────────────────────────────────────────────────────
-// 빈 팩 자리를 만들어 지금 팩으로 → 아테나를 켜면 /setup(새 회사 첫 실행). 취소는 pack use <previous>
-export const newPack = async (root, { report = () => {} } = {}) => {
+// 본체가 다시 맞춘다 — 고정 링크 · 팩 링크 · repos/ · 확인(update 뒤 새 코드로 · pack open 의 고치기). 팩은 바꾸지 않는다
+export const relinkBody = (root) => {
   const where = paths(root)
-  const data = where.dataDir
-  const id = uniqueId(data, `new-${fileStamp().toLowerCase()}`)
-  ensureSlot(join(data, 'packs', id))
-  writeJsonAtomic(join(data, 'packs', id, 'local.json'), { reposRoot: resolve(root, bodyConfig(root).reposRoot ?? '..') })
-  try {
-    const result = await usePack(root, id, { report, allowEmpty: true })
-    return { ok: true, id, previous: result.previous ?? (where.mode === 'packs' ? where.packId : null) }
-  } catch (error) {
-    rmSync(join(data, 'packs', id), { recursive: true, force: true })
-    throw error
-  }
+  if (where.mode !== 'packs') throw new PackError('not-found', '이 본체에 팩이 없다(.pack-data) — bin/athena pack open <id>')
+  ensureBodyLinks(root)
+  const overlay = linkOverlay(root)
+  if (overlay.clash.length) throw new PackError('verify-failed', `코어에 같은 이름의 실제 파일: ${overlay.clash.join(', ')}`)
+  const repos = syncRepos(root)
+  rebuildDiagramIndex(root)
+  const problems = verifyBody(root)
+  if (problems.length) throw new PackError('verify-failed', problems.join(' · '), { problems })
+  return { ok: true, id: where.packId, unlinkedRepos: repos.unlinked }
 }
 
-// /setup 의 athena init 이 빈 자리(new-…)에 팩을 만든 뒤 — 자리 이름을 회사 이름으로 바꾼다(작업 기록이 아직 없을 때만)
+// /setup 의 athena init 이 빈 자리(new-…)에 팩을 만든 뒤 — 자리 이름을 회사 이름으로 바꾼다(작업 기록이 아직 없을 때만).
+// 본체 폴더 이름(~/athena-new-…)은 그대로 둔다 — 그 본체에서 /setup 세션이 돌고 있다(정본은 레지스트리 body)
 export const renameNewSlot = (root, company) => {
   const where = paths(root)
   if (where.mode !== 'packs' || !where.packId.startsWith('new-')) return null
   const data = where.dataDir
-  const id = uniqueId(data, company)
-  renameSync(where.packDataReal, join(data, 'packs', id))
-  swapActive(root, join(data, 'packs', id))
-  const registry = readRegistry(data)
-  const pack = readPackJson(join(data, 'packs', id, 'pack')) ?? {}
-  registry.current = id
-  registry.packs ??= {}
-  delete registry.packs[where.packId]
-  registry.packs[id] = { packId: pack.id ?? null, name: pack.name ?? id, source: 'local', addedAt: stamp() }
-  saveRegistry(data, registry)
-  return id
+  const old = where.packId
+  // 그 자리 작업 잠금 — /setup 중에 같은 자리로 pack open 이 들어와 경쟁하지 않게(리뷰 1차)
+  const release = takePackLock(data, old, `rename ${old} → ${company}`)
+  try { return renameSlotLocked(root, where, data, old, company) } finally { release() }
+}
+const renameSlotLocked = (root, where, data, old, company) => {
+  return updateRegistry(data, (registry) => {
+    const id = uniqueId(data, company)
+    renameSync(where.packDataReal, join(data, 'packs', id))
+    swapActive(root, join(data, 'packs', id))
+    const pack = readPackJson(join(data, 'packs', id, 'pack')) ?? {}
+    const entry = registry.packs[old] ?? {}
+    delete registry.packs[old]
+    registry.packs[id] = { ...entry, packId: pack.id ?? null, name: pack.name ?? id, source: 'local', addedAt: stamp(), ...(entry.body ? { body: entry.body } : {}) }
+    bumpGeneration(registry, id)
+    if (registry.current === old) registry.current = id
+    return id
+  })
 }
 
 // ── 가져오기 검사(임시본) ──────────────────────────────────────────────
@@ -522,7 +574,7 @@ const MAX_FILES = 50_000
 const SECRET_NAME = /^(\.env(\..+)?|\.npmrc|\.netrc|\.pypirc|id_rsa.*|id_ed25519.*|.*\.(pem|key|p12|pfx))$/i
 const SECRET_OK = /^\.env\.(example|sample|template)$/i
 const STRIP_NAMES = new Set(['.DS_Store', '.omc', 'node_modules', '__pycache__'])
-const KNOWN_TOP = new Set(['pack.json', 'ROUTING.md', 'README.md', 'agents', 'skills', 'knowledge', 'docs', 'diagrams', 'verify', 'scripts', 'qa', 'sync', 'archive', 'hooks', '.git', '.gitignore', '.gitattributes', '.gitkeep', 'LICENSE'])
+const KNOWN_TOP = new Set(['pack.json', 'ROUTING.md', 'README.md', 'assets', 'agents', 'skills', 'knowledge', 'docs', 'diagrams', 'verify', 'scripts', 'qa', 'sync', 'archive', 'hooks', '.git', '.gitignore', '.gitattributes', '.gitkeep', 'LICENSE'])
 export const validGitUrl = (text) => /^(https:\/\/[\w.-]+(:\d+)?\/[\w./~-]+|ssh:\/\/([\w.-]+@)?[\w.-]+(:\d+)?\/[\w./~-]+|[\w.-]+@[\w.-]+:[\w./~-]+)$/.test(text) && !text.includes('..')
 
 const tmpRoot = (data) => join(data, 'tmp')
@@ -648,6 +700,8 @@ const finishInspect = (data, dir, token, meta, report) => {
   // .git 을 믿는 곳: git clone 으로 이 명령이 받은 폴더 · 내 옛 아테나(import-athena — 결정 R4 A). 압축·폴더에서 온 것은 지운다
   const trustGit = (meta.kind === 'git' && found.pack === join(dir, 'in')) || meta.kind === 'athena'
   const tree = inspectTree(found.pack, { trustGit, dropGit: !trustGit })
+  // 표시 이름 · 아이콘 — icon 경로 모양 · assets/ 이미지 형식·크기(링크 검사는 위 inspectTree 가 먼저 했다)
+  tree.warnings.push(...inspectLook(found.pack, pack))
   // 검사한 팩을 정해진 자리로 모은다 — <tmp>/pack (+ 작업 기록 <tmp>/work)
   renameSync(found.pack, join(dir, 'pack'))
   if (found.work) {
@@ -792,42 +846,39 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
     packJsonUpdated = { added, id: text.id }
     report('check', `pack.json 에 ${added.join('·')} 를 써 넣었다(${text.id})${gitRemote(join(dir, 'pack')) ? ' — 팩 레포에 미커밋 변경으로 보인다' : ''}`)
   }
-  const registry = readRegistry(data)
-  registry.packs ??= {}
   const source = meta.kind === 'git' ? 'git' : 'local'
   const remote = gitRemote(join(dir, 'pack'))
 
   if (mode === 'new') {
-    const id = uniqueId(data, pack.name ?? 'pack')
-    const slot = join(data, 'packs', id)
+    // 자리 잡기는 mkdir(원자적) — 동시에 가져와도 같은 id 를 두 번 쓰지 않는다(Codex C2)
+    const { id, slot } = claimSlot(data, pack.name ?? 'pack')
     report('copy', `등록 — ${id}`)
-    mkdirSync(slot, { recursive: true })
     renameSync(join(dir, 'pack'), join(slot, 'pack'))
     for (const sub of ['plans', 'issues']) if (existsSync(join(dir, 'work', sub))) renameSync(join(dir, 'work', sub), join(slot, sub))
     ensureSlot(slot)
     writeJsonAtomic(join(slot, 'local.json'), meta.local ?? { reposRoot: resolve(root, bodyConfig(root).reposRoot ?? '..') })
-    registry.packs[id] = { packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), addedAt: stamp(), ...(meta.kind === 'athena' ? { importedFrom: meta.source } : {}) }
-    saveRegistry(data, registry)
+    updateRegistry(data, (registry) => {
+      registry.packs[id] = { packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), addedAt: stamp(), ...(meta.kind === 'athena' ? { importedFrom: meta.source } : {}) }
+    })
     rmSync(dir, { recursive: true, force: true })
     report('done', `가져옴 — ${id}`)
     return { ok: true, imported: { id, name: pack.name ?? id }, ...(packJsonUpdated ? { packJsonUpdated } : {}) }
   }
 
-  // --replace — 기존 팩을 자동 백업한 뒤 팩 폴더만 바꾼다(작업 기록은 그대로 이어서)
+  // --replace — 기존 팩을 자동 백업한 뒤 팩 폴더만 바꾼다(작업 기록은 그대로 이어서).
+  // 그 팩의 본체(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy 검사·현황판 끄기·링크 다시(Codex C1)
   const id = conflict.id
   const slot = join(data, 'packs', id)
-  const where = paths(root)
-  const isCurrent = where.mode === 'packs' && where.packId === id
-  // 지금 팩이 아니어도 잠금을 잡는다 — 그 사이 다른 창의 pack use 가 옮기는 중인 pack/ 을 보지 않게(리뷰 2026-10-18)
-  const release = takeLock(data, `pack import --replace ${id}`)
-  if (isCurrent) {
-    const blocking = busyList(root).filter((item) => BLOCKING.has(item.kind) && item.pid !== process.pid)
-    if (blocking.length) { release(); throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking }) }
-  }
+  const release = takePackLock(data, id, `pack import --replace ${id}`)
   try {
+    const body = bodyOf(root, data, id)
+    if (body) {
+      const blocking = busyList(body).filter((item) => BLOCKING.has(item.kind) && item.pid !== process.pid)
+      if (blocking.length) throw new PackError('busy', `그 팩 본체(${body})에서 도는 작업이 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking, body })
+    }
     report('backup', `기존 팩 백업 — ${id}`)
     const backup = tarPack(join(slot, 'pack'), join(data, 'backups'), `${id}-pack-before-replace`)
-    if (isCurrent) await stopServices(root, [])
+    const stopped = body ? await stopServices(body, busyList(body)) : { boardStopped: [] }
     const old = join(slot, `pack.old-${process.pid}`)
     renameSync(join(slot, 'pack'), old)
     try {
@@ -848,27 +899,58 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
       // 작업 기록 백업을 되살리는 --replace — 기존 기록 위에 없는 파일만 더한다(덮지 않는다)
       if (existsSync(join(dir, 'work', sub))) cpSync(join(dir, 'work', sub), join(slot, sub), { recursive: true, force: false, errorOnExist: false })
     }
-    registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), replacedAt: stamp() }
-    if (isCurrent) {
-      registry.generation = (registry.generation ?? 0) + 1
-      const overlay = linkOverlay(root)
-      if (overlay.clash.length) report('verify', `⚠️ 코어에 같은 이름의 실제 파일 — ${overlay.clash.join(', ')}`)
-      syncRepos(root)
-      rebuildDiagramIndex(root)
-    }
-    saveRegistry(data, registry)
+    updateRegistry(data, (registry) => {
+      registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), replacedAt: stamp() }
+      bumpGeneration(registry, id)
+    })
+    // 그 본체의 코드로 링크를 다시 맞춘다(본체마다 코어 커밋이 다를 수 있다)
+    const relinked = body ? relinkIn(body, data) : null
+    if (relinked && !relinked.ok) report('verify', `⚠️ 그 팩 본체 링크를 다시 맞추지 못했다 — ${relinked.message ?? relinked.error}`)
     rmSync(dir, { recursive: true, force: true })
-    report('done', `바꿈 — ${id}${isCurrent ? ' (지금 팩 · 링크 다시 맞춤)' : ''}`)
-    return { ok: true, imported: { id, name: pack.name ?? id }, backup, ...(packJsonUpdated ? { packJsonUpdated } : {}) }
+    report('done', `바꿈 — ${id}${body ? ` (본체 ${body} · 링크 다시 맞춤)` : ''}`)
+    return {
+      ok: true, imported: { id, name: pack.name ?? id }, backup, ...(packJsonUpdated ? { packJsonUpdated } : {}),
+      ...(body ? { body, boardStopped: stopped.boardStopped, unlinkedRepos: relinked?.unlinkedRepos ?? [], ...(relinked && !relinked.ok ? { relinkError: relinked.error } : {}) } : {}),
+    }
   } finally {
     release()
   }
 }
 
+// 본체 자기 코드로 `pack relink` — 본체마다 코어 커밋이 다를 수 있어 그 본체의 링크 규칙을 쓴다.
+// 그 코드에 relink 가 없으면(옛 코어 — 사용법 오류 2) 이 프로세스 코드로 맞춘다
+export const relinkIn = (body, data) => {
+  const run = runInBody(body, ['pack', 'relink', '--json'], data)
+  if (run.status === 2) { try { return relinkBody(body) } catch (error) { return { ok: false, error: error.code ?? 'failed', message: error.message } } }
+  return run.json ?? { ok: false, error: 'failed', message: run.stderr || '본체 명령이 JSON 을 내지 않았다' }
+}
+// 본체의 bin/athena(scripts/athena.mjs)를 그 본체에서 돌린다 → { status, json(마지막 줄), stderr }
+export const runInBody = (body, args, data, { timeout = 120_000 } = {}) => {
+  const env = { ...process.env, ATHENA_DATA_DIR: data }
+  delete env.ATHENA_BOARD_PORT   // 포트는 본체·레지스트리가 정한다(Codex C8)
+  const run = spawnSync(process.execPath, [join(body, 'scripts', 'athena.mjs'), ...args], { cwd: body, encoding: 'utf8', env, timeout })
+  const last = String(run.stdout ?? '').trim().split('\n').pop() ?? ''
+  let json = null
+  try { json = JSON.parse(last) } catch { /* JSON 아님 */ }
+  return { status: run.status, json, stderr: String(run.stderr ?? '').trim().slice(0, 400) }
+}
+
+// 새 팩 자리 — 이름에서 id 를 만들고 mkdir(원자적)로 잡는다. 있으면 -2 · -3 …
+export const claimSlot = (data, base) => {
+  const start = slug(base) || 'pack'
+  mkdirSync(join(data, 'packs'), { recursive: true })
+  for (let index = 1; index < 1000; index += 1) {
+    const id = index === 1 ? start : `${start}-${index}`
+    const slot = join(data, 'packs', id)
+    try { mkdirSync(slot); return { id, slot } } catch (error) { if (error.code !== 'EEXIST') throw error }
+  }
+  throw new PackError('conflict', `팩 자리를 정하지 못했다: ${start}`)
+}
+
 // ── 내보내기 · 백업 ────────────────────────────────────────────────────
 // 내보내기 허용 목록(설계 ⑦-1 이 정본) — 회사 내용만. 작업 기록·결과물·비밀값·이 컴퓨터 설정은 뺀다
 // 다이어그램 html 은 넣는다 — archify(외부)가 있어야 다시 만들 수 있다(계획서 8절 S6). 목록 index.html 만 뺀다(다시 만든다)
-const EXPORT_ALLOW = ['pack.json', 'ROUTING.md', 'README.md', 'agents', 'knowledge', 'verify', 'skills', 'docs', 'scripts', 'qa', 'hooks', 'sync/snapshots', 'diagrams']
+const EXPORT_ALLOW = ['pack.json', 'ROUTING.md', 'README.md', 'assets', 'agents', 'knowledge', 'verify', 'skills', 'docs', 'scripts', 'qa', 'hooks', 'sync/snapshots', 'diagrams']
 const EXPORT_DENY = (rel) => {
   const name = basename(rel)
   if (STRIP_NAMES.has(name) || name === '.git') return true
@@ -1027,7 +1109,7 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
   if (!yes) return { ok: true, dryRun: true, id, planned }
 
   report('lock', '잠금')
-  const release = takeLock(data, `pack migrate ${root}`)
+  const release = takeLock(join(data, 'locks', '_migrate.lock'), `pack migrate ${root}`, { message: (owner) => `다른 옮기기가 진행 중이다(pid ${owner.pid})` })
   try {
     const blocking = busyList(root).filter((item) => ['agent', 'athena', 'heavy'].includes(item.kind))
     if (blocking.length) throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
@@ -1088,12 +1170,11 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
       delete nextConfig.repoPaths
       writeJsonAtomic(join(aside, 'athena.config.json'), config)
       writeJsonAtomic(join(root, 'athena.config.json'), nextConfig)
-      const registry = readRegistry(data)
-      registry.packs ??= {}
-      registry.packs[id] = { packId: packJson.id, name: packJson.name ?? id, source: 'local', addedAt: stamp(), migratedFrom: root }
-      registry.current = id
-      registry.generation = (registry.generation ?? 0) + 1
-      saveRegistry(data, registry)
+      updateRegistry(data, (registry) => {
+        registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: packJson.id, name: packJson.name ?? id, source: 'local', addedAt: stamp(), migratedFrom: root }
+        registry.current = id
+        bumpGeneration(registry, id)
+      })
       const overlay = linkOverlay(root)
       if (overlay.clash.length) throw new Error(`코어에 같은 이름의 실제 파일: ${overlay.clash.join(', ')}`)
       const repos = syncRepos(root)
@@ -1168,7 +1249,7 @@ export const testSetup = async (root, { report = () => {} } = {}) => {
   // 본체 설정 — 데이터 폴더 · 현황판 포트(4710). screen 은 넣지 않는다(pane 안 표시로 고른다)
   const config = bodyConfig(root)
   writeJsonAtomic(join(root, 'athena.config.json'), { $comment: '테스트 본체 설정 — pack test-setup 이 썼다(docs/pack.md "여러 팩 테스트")', ...config, dataDir: data, boardPort: config.boardPort ?? 4710 })
-  const result = await usePack(root, 'acme', { report })
+  const result = await attachPack(root, 'acme', { report })
   return { ok: true, dataDir: data, current: result.current, packs: ['acme', 'globex'], unlinkedRepos: result.unlinkedRepos }
 }
 const where0 = (root) => paths(root)

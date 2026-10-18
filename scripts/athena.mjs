@@ -10,10 +10,18 @@
  *   athena pack restore <파일>
  *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
  *
- *   여러 팩(본체 하나 · 팩은 <데이터>/packs/<id> · docs/pack.md "여러 팩") — --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON
- *   athena pack list|status|busy [--json]          팩 목록 · 지금 팩 · 갈아 끼우면 안 되는 작업
- *   athena pack use <id> [--start-board] [--json]  팩 갈아 끼우기(잠금 → 검사 → 현황판·학습 검토·QA 끄기 → 링크 교체 → repos 대조 → 확인, 실패하면 되돌림)
- *   athena pack new [--json]                       빈 팩 자리를 지금 팩으로 → claude 를 켜면 /setup
+ *   여러 팩 — 팩마다 본체(팩은 <데이터>/packs/<id> · 본체 ~/athena-<id> · docs/pack.md "여러 팩" · 약속은 계획서 팩마다-본체 5.7)
+ *   --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON. 스튜디오는 --contract 2 를 붙인다(다르면 contract-mismatch)
+ *   athena pack list|status|busy [--json]          팩 목록(본체·포트·busy) · 이 본체의 팩 · 이 본체에서 도는 작업
+ *   athena pack open <id> [--json]                 그 팩 본체를 준비(없으면 git 워크트리로 만들기)하고 경로·포트를 돌려준다
+ *   athena pack use <id> [--start-board] [--json]  = pack open(활성 링크는 바꾸지 않는다 · --json 이면 --contract 2 필요)
+ *   athena pack new [--json]                       빈 팩 자리 + 그 본체 → 그 본체에서 claude 를 켜면 /setup(--json 이면 --contract 2 필요)
+ *   athena pack discard <id> [--json]              /setup 전 빈 자리와 그 본체를 지운다
+ *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
+ *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
+ *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
+ *   athena update [--to <커밋>] [--json]           주 본체에서 fetch 한 번 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
+ *   athena update --rollback [<operationId>] [--json]  그 업데이트가 바꾼 본체만 이전 커밋으로
  *   athena pack inspect <파일|폴더|git 주소> --json  임시 위치에서 검사만 → token
  *   athena pack import <token> --new|--replace|--keep [--json]
  *   athena pack import-athena <옛 아테나 폴더> --json  팩 + 계획서·이슈를 임시본으로(원본은 그대로) → pack import <token>
@@ -22,6 +30,8 @@
  *   athena pack board-token --json                 떠 있는 현황판의 쓰기 토큰·포트
  *   athena pack migrate [--yes] [--json]           옛 구조 본체를 여러 팩 구조로(--yes 없으면 계획만)
  *   athena pack test-setup [--json]                테스트 데이터(ATHENA_DATA_DIR · 이름에 test)를 지우고 fixture 팩 acme·globex 등록
+ *
+ *   athena version [--json]                          이 본체 코어 커밋 · 약속 번호(contract) · 데이터 형식 범위 · 배포 커밋 — 스튜디오가 맞는지 본다
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
  *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
@@ -39,11 +49,13 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, boardPort, loadConfig, paths } from './lib/config.mjs'
+import { setDisplayName, setIcon } from './lib/pack-look.mjs'
+import { CONTRACT, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
-  PackError, backupWithWork, boardToken, busyNow, exportPack, importToken, inspectAthena, inspectSource, listPacks, migrate,
-  newPack, packStatus, renameNewSlot, restoreWithWork, testSetup, usePack,
+  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate,
+  packStatus, relinkBody, renameNewSlot, restoreWithWork, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
 
@@ -213,17 +225,35 @@ const restore = () => {
 const asJson = args.includes('--json')
 const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
-const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out'].includes(rest[index - 1])))
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id'].includes(rest[index - 1])))
+// 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
+// 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다(결정 D9 · Codex C5)
+const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
+const checkContract = (name) => {
+  const mismatch = (why) => new PackError('contract-mismatch', `스튜디오 약속이 다르다(${why}) — 이 코어는 약속 ${CONTRACT}. 스튜디오를 먼저 업데이트한다`, { contract: CONTRACT })
+  if (contractArg && Number(contractArg) !== CONTRACT) throw mismatch(`받은 약속 ${contractArg}`)
+  if (asJson && !contractArg && ['use', 'new'].includes(name)) throw mismatch('약속 번호 없음 — 팩마다 본체 전 스튜디오')
+}
 const human = {
   list: (result) => {
     if (result.legacy && result.current) console.log('옛 구조 본체(athena.config.json 의 pack) — 여러 팩으로 옮기려면 bin/athena pack migrate')
-    console.log(`지금 팩: ${result.current ? `${result.current.id} (${result.current.name} · 세대 ${result.current.generation})` : '없음'}${result.switching ? ' · ⏳ 갈아 끼우는 중' : ''}`)
-    for (const pack of result.packs) console.log(`  ${result.current?.id === pack.id ? '▶' : ' '} ${pack.id.padEnd(20)} ${pack.name} · 레포 ${pack.repos} · ${pack.hasWork ? '작업 기록 있음' : '작업 기록 없음'} · ${pack.source}${pack.remote ? ` ${pack.remote}` : ''}`)
+    console.log(`이 본체의 팩: ${result.current ? `${result.current.id} (${result.current.name} · 세대 ${result.current.generation})` : '없음'}${result.switching ? ' · ⏳ 작업 중' : ''}`)
+    for (const pack of result.packs) {
+      const where = pack.body ? `${pack.body} · :${pack.boardPort}${pack.bodyBusy ? ' · 🔨 일하는 중' : ''}${pack.updatePending ? ' · ⬆️ 업데이트 대기' : ''}${pack.bodyState === 'repair-required' ? ' · ⚠️ 링크 고치기 필요' : ''}` : (pack.bodyState === 'missing' ? '본체 폴더 없음' : '본체 없음(pack open)')
+      console.log(`  ${result.current?.id === pack.id ? '▶' : ' '} ${pack.id.padEnd(20)} ${pack.name} · 레포 ${pack.repos} · ${pack.hasWork ? '작업 기록 있음' : '작업 기록 없음'} · ${where}`)
+    }
+    for (const slot of result.emptySlots ?? []) console.log(`    ${slot.id.padEnd(20)} (빈 자리 · /setup 전${slot.body ? ` · ${slot.body}` : ''} — 버리려면 pack discard ${slot.id})`)
   },
-  busy: (result) => { if (!result.busy.length) console.log('갈아 끼우면 안 되는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
+  busy: (result) => { if (!result.busy.length) console.log(result.busyKnown === false ? '도는 작업을 다 읽지 못했다' : '이 본체에서 도는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
+  version: (result) => console.log(`코어 ${result.core ? result.core.slice(0, 7) : '(git 아님)'}${result.dirty ? ' (미커밋 변경)' : ''} · 약속 ${result.contract} · 데이터 형식 ${result.dataFormats.join('~')} · 본체 ${result.body}${result.deploy ? ` · 배포 ${result.deploy.commit.slice(0, 7)}` : ''}`),
+  update: (result) => {
+    console.log(`${result.status === 'complete' ? '✅' : '⚠️'} ${result.rollbackOf ? `되돌리기(${result.rollbackOf})` : `업데이트 → ${result.targetCore?.slice(0, 7)}`} · ${result.status} · ${result.operationId}`)
+    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}`)
+  },
 }
 const runPack = async (name, work) => {
   try {
+    checkContract(name)
     const result = await work()
     if (asJson) console.log(JSON.stringify(result))
     else if (human[name]) human[name](result)
@@ -238,8 +268,12 @@ const runPack = async (name, work) => {
     process.exit(1)
   }
 }
-// pack use --start-board · CLI 용 — 갈아 끼운 뒤 현황판을 다시 띄운다(스튜디오는 자기가 띄운다)
-const startBoard = () => spawnSync(join(ROOT, 'scripts', 'board.sh'), [], { stdio: asJson ? 'ignore' : 'inherit', env: { ...process.env, ATHENA_BOARD_NO_BROWSER: '1' } }).status === 0
+// pack use --start-board · CLI 용 — 연 본체의 현황판을 띄운다(스튜디오는 자기가 띄운다). 포트는 그 본체가 정한다
+const startBoard = (body) => {
+  const env = { ...process.env, ATHENA_BOARD_NO_BROWSER: '1' }
+  delete env.ATHENA_BOARD_PORT
+  return spawnSync(join(body, 'scripts', 'board.sh'), [], { stdio: asJson ? 'ignore' : 'inherit', env }).status === 0
+}
 
 const packCommands = {
   list: () => listPacks(ROOT),
@@ -248,11 +282,40 @@ const packCommands = {
   use: async () => {
     const id = positional()[0]
     if (!id) throw new PackError('usage', '사용: athena pack use <id> [--start-board] [--json]')
-    const result = await usePack(ROOT, id, { report })
-    if (args.includes('--start-board') && !result.unchanged) result.boardStarted = startBoard() ? boardPort(ROOT) : null
+    const result = await useAsOpen(ROOT, id, { report })
+    if (args.includes('--start-board')) result.boardStarted = startBoard(result.body) ? result.boardPort : null
     return result
   },
-  new: () => newPack(ROOT, { report }),
+  open: async () => {
+    const id = positional()[0]
+    if (!id) throw new PackError('usage', '사용: athena pack open <id> [--json]')
+    return openPack(ROOT, id, { report })
+  },
+  new: () => newPackBody(ROOT, { report }),
+  discard: () => {
+    if (!positional()[0]) throw new PackError('usage', '사용: athena pack discard <id> [--json]')
+    return discardPack(ROOT, positional()[0], { report })
+  },
+  // 본체 안에서 — update 뒤 새 코드로 · pack open 의 고치기. 시험용: ATHENA_RELINK_FAIL_AT=<커밋> 이면 그 커밋에서 실패
+  relink: () => {
+    const failAt = process.env.ATHENA_RELINK_FAIL_AT
+    if (failAt && (headOf(ROOT) ?? '').startsWith(failAt)) throw new PackError('verify-failed', `시험용 실패(ATHENA_RELINK_FAIL_AT=${failAt})`)
+    return relinkBody(ROOT)
+  },
+  'set-name': () => {
+    const clear = args.includes('--clear')
+    if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-name <이름>|--clear [--id <팩>] [--json]')
+    return setDisplayName(paths(ROOT), { id: flag('id'), name: positional().join(' '), clear })
+  },
+  'set-icon': () => {
+    const clear = args.includes('--clear')
+    if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-icon <이미지 파일>|--clear [--id <팩>] [--json]')
+    return setIcon(paths(ROOT), { id: flag('id'), file: clear ? '' : resolve(positional()[0]), clear })
+  },
+  attach: () => {
+    if (!positional()[0]) throw new PackError('usage', '사용: athena pack attach <id> [--json]')
+    return attachPack(ROOT, positional()[0], { report, allowEmpty: true })
+  },
   inspect: () => inspectSource(ROOT, positional()[0], { report }),
   import: () => {
     const mode = ['keep', 'replace', 'new'].find((name) => args.includes(`--${name}`))
@@ -267,6 +330,13 @@ const packCommands = {
 }
 
 if (command === 'init') init()
+else if (command === 'version') runPack('version', () => versionInfo(ROOT))
+else if (command === 'update') {
+  // update --rollback [<operationId>] — --rollback 바로 뒤가 --… 가 아니면 그 값이 operationId
+  const rollback = args.includes('--rollback')
+  const operationId = rollback ? (flag('rollback').startsWith('--') ? '' : flag('rollback')) : ''
+  runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), report })))
+}
 else if (command === 'scaffold') runScaffold()
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()
