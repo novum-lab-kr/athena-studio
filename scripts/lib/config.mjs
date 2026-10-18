@@ -1,6 +1,6 @@
 // 아테나 설정 읽기 — 코어 스크립트는 athena.config.json 을 직접 읽지 않고 이걸 쓴다.
 //   athena.config.json : 이 컴퓨터·이 본체 설정(현황판 포트 boardPort · 화면 screen · 데이터 폴더 dataDir · 옛 구조면 pack·reposRoot)
-//   <pack>/pack.json   : 회사 팩(레포 목록 · GitHub 조직 · QA · 추적 의존성 …)
+//   <pack>/pack.json   : 팩(레포 목록 · GitHub 조직 · QA · 추적 의존성 …)
 //   <팩 데이터>/local.json : (여러 팩 구조) 그 팩의 이 컴퓨터 설정(reposRoot · repoPaths)
 // 합치는 규칙: 팩 값 위에 이 컴퓨터 설정을 덮는다(같은 키면 이 컴퓨터가 이긴다). 단 repos 는 팩 것만.
 // pack 이 없으면 athena.config.json 하나가 전부다. 파이썬 쪽 같은 규칙: scripts/lib/athena_config.py
@@ -52,7 +52,7 @@ export const paths = (root = ATHENA_ROOT) => {
     root, mode: 'packs', dataDir: data, packData: active, packDataReal: real,
     packDir: join(root, 'pack'),
     plans: join(root, 'plans'), issues: join(root, 'issues'), state: join(active, 'state'),
-    // 새 워크트리는 팩 데이터 안 실제 경로로 — git 이 실제 경로를 기록하고, 팩을 바꿔도 그 팩 폴더에 남는다(D4)
+    // 새 워크트리는 팩 데이터 안 실제 경로로 — git 이 실제 경로를 기록하고, 팩을 갈아 끼워도 그 팩 폴더에 남는다(D4)
     worktrees: process.env.ATHENA_WORKTREE_ROOT || join(real, 'worktrees'),
     packId: basename(real),
     generation: registry.generation ?? 0,
@@ -81,7 +81,7 @@ export const loadConfig = (root = ATHENA_ROOT) => {
   return { ...pack, ...local, repos: pack.repos ?? [], packDir }
 }
 
-// 팩을 바꾸는 중인가 — <데이터>/switch.lock 의 pid 가 살아 있으면(새 작업을 받지 않는다 · athena_config.py switching 과 같다)
+// 팩을 갈아 끼우는 중인가 — <데이터>/switch.lock 의 pid 가 살아 있으면(새 작업을 받지 않는다 · athena_config.py switching 과 같다)
 export const isSwitching = (root = ATHENA_ROOT) => {
   const lock = join(dataDir(root), 'switch.lock')
   if (!existsSync(lock)) return false

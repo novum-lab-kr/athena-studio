@@ -56,7 +56,7 @@ import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
-// 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 바꾼 뒤 남은 현황판이 다른 팩에 쓰지 않게)
+// 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 갈아 끼운 뒤 남은 현황판이 다른 팩에 쓰지 않게)
 const BOOT_PATHS = paths(ROOT)
 const BOOT_PACK = BOOT_PATHS.mode === 'packs' ? (() => {
   let pack = {}
@@ -215,7 +215,7 @@ const issueWorktree = (issueId, agent) => {
   const target = workspaceOf(agent)
   if (!target) return null
   const slug = `issue-${basename(issueId, '.md')}`
-  // 실제 경로로 — 여러 팩이면 <데이터>/packs/<id>/worktrees(Work ref 가 팩을 바꾼 뒤에도 그 팩을 가리키게)
+  // 실제 경로로 — 여러 팩이면 <데이터>/packs/<id>/worktrees(Work ref 가 팩을 갈아 끼운 뒤에도 그 팩을 가리키게)
   return { ...target, path: join(BOOT_PATHS.worktrees, target.repo, slug), rel: `.worktrees/${target.repo}/${slug}` }
 }
 const agentForRepo = (repoValue) => {
@@ -1640,13 +1640,13 @@ const handleRequest = async (request, response) => {
     if (!allowed(request)) return reply(403, { error: '허용되지 않은 요청이에요 (토큰·Origin 확인)' })
     const body = await readBody(request)
     if (!body) return reply(400, { error: '요청 형식이 올바르지 않아요' })
-    // 끄기 — 스튜디오가 팩을 바꾸기 전에(같은 출처 + 토큰 + JSON). 세대가 달라도 끌 수는 있다
+    // 끄기 — 스튜디오가 팩을 갈아 끼우기 전에(같은 출처 + 토큰 + JSON). 세대가 달라도 끌 수는 있다
     if (url.pathname === '/api/shutdown') {
       reply(200, { ok: true })
       setTimeout(() => shutdown(0), 50)
       return
     }
-    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩이 바뀌었어요 — 현황판을 다시 띄워 주세요' })
+    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩을 갈아 끼웠어요 — 현황판을 다시 띄워 주세요' })
     if (url.pathname === '/api/dispatch') {
       // 바로 작업 번호를 돌려주고 뒤에서 돈다 — 진행은 SSE event: job
       const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map(([key, label]) => ({ key, label, state: 'wait' })) }

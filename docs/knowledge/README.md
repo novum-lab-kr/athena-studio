@@ -28,7 +28,7 @@
 ```
 docs/knowledge/
   common/                       팀 공통 규칙 (coding · git · reporting · verify)
-  <레포>/                       rules · structure · patterns · workflows · gotchas — 회사 팩 knowledge/ 의 링크
+  <레포>/                       rules · structure · patterns · workflows · gotchas — 팩 knowledge/ 의 링크
   <모노레포>/                    rules.md · common.md · gotchas.md(레포 공통) + <앱>/ · packages/ 마다 같은 4종
   company/                      회사 관례(git · verify · review) — 팩. common/ 과 함께 읽는다
   learned/                      학습 기록 — 팩

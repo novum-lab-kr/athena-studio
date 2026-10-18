@@ -7,7 +7,7 @@
 # 아테나 세션이 켜질 때 SessionStart 훅(scripts/hooks/workspace-up.py)이 뒤에서 부른다. 손으로: scripts/athena-up.sh
 # 조건은 "athena 폴더에서 켠 아테나 claude" 하나 — workspace 이름은 보지 않는다(훅이 cwd·에이전트 여부를 거른다)
 # 각 도구 스크립트는 같은 이름의 pane 이 있으면 새로 만들지 않는다 — 다시 돌려도 안전.
-# ATHENA_FIRST_RUN=claude|codex(회사 팩 없음 · 새로 켠 세션 — workspace-up 훅이 넘긴다)면 화면 세팅이 끝난 뒤 그 pane 에 첫 실행 지시를 입력한다
+# ATHENA_FIRST_RUN=claude|codex(팩 없음 · 새로 켠 세션 — workspace-up 훅이 넘긴다)면 화면 세팅이 끝난 뒤 그 pane 에 첫 실행 지시를 입력한다
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 SCREEN="$ATHENA_DIR/scripts/screen"
@@ -36,7 +36,7 @@ fi
 # 또는 90초 안에 idle 이 안 되면 보내지 않는다
 if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   case "$ATHENA_FIRST_RUN" in
-    codex) FIRST_PROMPT="아테나 첫 실행 — 회사 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘" ;;
+    codex) FIRST_PROMPT="아테나 첫 실행 — 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘" ;;
     *) FIRST_PROMPT="/setup" ;;
   esac
   pane_status() { "$SCREEN" pane get "$SCREEN_PANE_ID" 2>/dev/null | python3 -c "import sys,json;p=json.load(sys.stdin)['pane'];print(p.get('agent_status') or '')" 2>/dev/null; }

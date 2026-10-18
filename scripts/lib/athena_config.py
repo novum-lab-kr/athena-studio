@@ -1,6 +1,6 @@
 """아테나 설정 읽기 — scripts/lib/config.mjs 와 같은 규칙(파이썬·bash 안의 파이썬 조각용).
 
-athena.config.json(이 컴퓨터 설정) 에 pack 이 있으면 <pack>/pack.json(회사 팩) 위에 덮어 합친다.
+athena.config.json(이 컴퓨터 설정) 에 pack 이 있으면 <pack>/pack.json(팩) 위에 덮어 합친다.
 repos 는 팩 것만. pack 이 없으면 athena.config.json 하나가 전부다.
 
 bash 에서:  python3 - "$ATHENA_DIR" <<'PYEOF'
@@ -99,7 +99,7 @@ def needs_first_run(athena_dir):
 
 
 def switching(athena_dir):
-    """팩을 바꾸는 중인가 — <데이터>/switch.lock 이 있고 그 pid 가 살아 있으면 True(새 작업을 받지 않는다)."""
+    """팩을 갈아 끼우는 중인가 — <데이터>/switch.lock 이 있고 그 pid 가 살아 있으면 True(새 작업을 받지 않는다)."""
     lock = os.path.join(data_dir(athena_dir), 'switch.lock')
     try:
         with open(os.path.join(lock, 'pid'), encoding='utf-8') as handle:

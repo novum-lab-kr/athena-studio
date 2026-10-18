@@ -1,7 +1,7 @@
 // 팩 파일을 코어 자리에 거는 링크(OVERLAY) — athena pack link · pack use 가 같이 쓴다.
 //
 // 옛 구조: 링크가 팩 실제 폴더(packs/<회사>/…)를 가리킨다. pack · .sync · archive 도 여기서 건다
-// 여러 팩: 링크가 본체의 논리 경로 pack/…(= .pack-data/pack/…)를 가리킨다 → 팩을 바꿔도 같은 이름 파일은 그대로 이어진다.
+// 여러 팩: 링크가 본체의 논리 경로 pack/…(= .pack-data/pack/…)를 가리킨다 → 팩을 갈아 끼워도 같은 이름 파일은 그대로 이어진다.
 //          pack · plans · issues · archive · .sync · repos · 상태 파일은 고정 링크(scripts/lib/packs.mjs FIXED_LINKS)라 여기서 다루지 않는다
 import { execFileSync } from 'node:child_process'
 import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
@@ -112,7 +112,7 @@ export const linkOverlay = (root) => {
     symlinkSync(want, path)
     made.push(at)
   }
-  // 팩을 바꿨으면 옛 팩 링크가 남는다 — 이번 목록에 없는 팩 링크는 지운다
+  // 팩을 갈아 끼웠으면 옛 팩 링크가 남는다 — 이번 목록에 없는 팩 링크는 지운다
   const wanted = new Set(planned.map(({ at }) => at))
   const stale = packLinks(root).filter((at) => !wanted.has(at))
   for (const at of stale) rmSync(join(root, at))

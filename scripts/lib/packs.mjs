@@ -1,9 +1,9 @@
-// 여러 회사 팩 — 본체 하나에서 팩을 골라 쓰기(계획서 plans/feature/20261018-여러-회사-팩 · docs/pack.md "여러 팩").
+// 여러 팩 — 본체 하나에서 팩을 골라 쓰기(계획서 plans/feature/20261018-여러-회사-팩 · docs/pack.md "여러 팩").
 //
-//   <본체>/.pack-data → <데이터>/packs/<id>       활성 링크(팩 바꾸기 = 이것 하나를 원자적으로 교체)
+//   <본체>/.pack-data → <데이터>/packs/<id>       활성 링크(팩 갈아 끼우기 = 이것 하나를 원자적으로 교체)
 //   <본체>/pack · plans · issues · repos · …     고정 링크(.pack-data/… — 설치 때 한 번)
 //   <데이터>/config.json                          팩 목록 · 지금 팩 · 전환 세대(generation)
-//   <데이터>/switch.lock · switch.log             바꾸기 잠금 · 단계 기록
+//   <데이터>/switch.lock · switch.log             갈아 끼우기 잠금 · 단계 기록
 //   <데이터>/packs/<id>/{pack,plans,issues,repos,worktrees,state,local.json}
 //
 // 명령 입구는 scripts/athena.mjs(pack list · busy · use · inspect · import · import-athena · export · backup --with-work ·
@@ -92,7 +92,7 @@ const fileStamp = () => {
   const now = new Date(); const pad = (value) => String(value).padStart(2, '0')
   return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`
 }
-const logSwitch = (data, text) => { try { mkdirSync(data, { recursive: true }); appendFileSync(join(data, 'switch.log'), `${stamp()} ${text}\n`) } catch { /* 기록 못 해도 바꾸기는 계속 */ } }
+const logSwitch = (data, text) => { try { mkdirSync(data, { recursive: true }); appendFileSync(join(data, 'switch.log'), `${stamp()} ${text}\n`) } catch { /* 기록 못 해도 갈아 끼우기는 계속 */ } }
 
 const lockDir = (data) => join(data, 'switch.lock')
 export const lockOwner = (data) => {
@@ -113,11 +113,11 @@ const takeLock = (data, what) => {
     } catch (error) {
       if (error.code !== 'EEXIST') throw error
       const owner = (() => { try { return lockOwner(data) } catch { return null } })()
-      if (owner?.alive) throw new PackError('locked', `다른 팩 바꾸기가 진행 중이다(pid ${owner.pid}${owner.what ? ` · ${owner.what}` : ''})`)
+      if (owner?.alive) throw new PackError('locked', `다른 팩 갈아 끼우기가 진행 중이다(pid ${owner.pid}${owner.what ? ` · ${owner.what}` : ''})`)
       rmSync(lockDir(data), { recursive: true, force: true })
     }
   }
-  throw new PackError('locked', '바꾸기 잠금을 잡지 못했다')
+  throw new PackError('locked', '갈아 끼우기 잠금을 잡지 못했다')
 }
 
 // ── 팩 정보 ────────────────────────────────────────────────────────────
@@ -286,10 +286,10 @@ export const busyList = (root) => {
     if (alive(pid) && !mine.has(pid)) busy.push({ kind: 'heavy', what: '무거운 명령 잠금(heavy.sh)', pid })
   }
   const owner = lockOwner(where.dataDir)
-  if (owner?.alive && !mine.has(owner.pid)) busy.push({ kind: 'switch', what: `팩 바꾸기 중${owner.what ? ` — ${owner.what}` : ''}`, pid: owner.pid })
+  if (owner?.alive && !mine.has(owner.pid)) busy.push({ kind: 'switch', what: `팩 갈아 끼우기 중${owner.what ? ` — ${owner.what}` : ''}`, pid: owner.pid })
   return busy
 }
-// 바꾸기를 막는 것 — QA·학습 검토는 코어가 끈다(계획서 5.2 pack use)
+// 갈아 끼우기를 막는 것 — QA·학습 검토는 코어가 끈다(계획서 5.2 pack use)
 const BLOCKING = new Set(['agent', 'athena', 'heavy', 'switch'])
 
 // ── 현황판 · 학습 검토 · QA 끄기 ────────────────────────────────────────
@@ -407,7 +407,7 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
   const data = where.dataDir
   if (where.dataMismatch) throw new PackError('unsafe', `활성 링크(${where.packDataReal})가 지금 데이터 폴더(${data}) 밖을 가리킨다 — ATHENA_DATA_DIR 확인`)
   if (!/^[a-z0-9][a-z0-9-]*$/.test(id ?? '')) throw new PackError('not-found', `팩 id 가 올바르지 않다: ${id}`)
-  report('lock', '바꾸기 잠금')
+  report('lock', '갈아 끼우기 잠금')
   const release = takeLock(data, `pack use ${id}`)
   try {
     report('check', `대상 팩 확인 — ${id}`)
@@ -417,7 +417,7 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
     if (!pack && !allowEmpty) throw new PackError('invalid-pack', `팩 자리에 pack.json 이 없다: ${id}`)
     if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`)
     const previous = where.mode === 'packs' ? where.packId : null
-    // 옛 구조(팩이 걸린 본체)는 migrate 먼저 · 본체 자리에 옛 작업 기록이 있으면 바꾸기 전에 멈춘다
+    // 옛 구조(팩이 걸린 본체)는 migrate 먼저 · 본체 자리에 옛 작업 기록이 있으면 갈아 끼우기 전에 멈춘다
     if (where.mode === 'legacy' && bodyConfig(root).pack) throw new PackError('unsafe', `옛 구조 본체(athena.config.json 의 pack = ${bodyConfig(root).pack}) — 먼저 bin/athena pack migrate`)
     checkBodyLinks(root)
     // 이미 지금 팩이면 아무것도 바꾸지 않는다 — 도는 작업이 있어도 막을 까닭이 없다(busy 검사 전에 · 리뷰 제안 2026-10-18)
@@ -427,7 +427,7 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
     }
     const busy = busyList(root).filter((item) => item.kind !== 'switch' || item.pid !== process.pid)
     const blocking = busy.filter((item) => BLOCKING.has(item.kind))
-    if (blocking.length) throw new PackError('busy', `바꾸면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
+    if (blocking.length) throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
 
     report('stop', '현황판·학습 검토·QA 끄기')
     const stopped = await stopServices(root, busy)
@@ -470,10 +470,10 @@ export const usePack = async (root, id, { report = () => {}, allowEmpty = false 
         swapActive(root, previousTarget)
         try { ensureBodyLinks(root); linkOverlay(root); syncRepos(root) } catch (inner) { logSwitch(data, `되돌리기 중 오류: ${inner.message}`) }
       } else {
-        // 옛 구조·빈 본체에서 처음 바꾸다 실패 — 활성 링크를 다시 없앤다(고정 링크는 남아도 무해: 가리킬 곳이 없다)
+        // 옛 구조·빈 본체에서 처음 갈아 끼우다 실패 — 활성 링크를 다시 없앤다(고정 링크는 남아도 무해: 가리킬 곳이 없다)
         rmSync(join(root, ACTIVE_LINK), { force: true })
       }
-      throw new PackError('rollback', `팩을 바꾸지 못해 이전 팩으로 되돌렸다 — ${error.message}`, { rolledBack: true, current: previous ? { id: previous } : null })
+      throw new PackError('rollback', `팩을 갈아 끼우지 못해 이전 팩으로 되돌렸다 — ${error.message}`, { rolledBack: true, current: previous ? { id: previous } : null })
     }
   } finally {
     release()
@@ -822,7 +822,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
   const release = takeLock(data, `pack import --replace ${id}`)
   if (isCurrent) {
     const blocking = busyList(root).filter((item) => BLOCKING.has(item.kind) && item.pid !== process.pid)
-    if (blocking.length) { release(); throw new PackError('busy', `바꾸면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking }) }
+    if (blocking.length) { release(); throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking }) }
   }
   try {
     report('backup', `기존 팩 백업 — ${id}`)
@@ -1030,7 +1030,7 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
   const release = takeLock(data, `pack migrate ${root}`)
   try {
     const blocking = busyList(root).filter((item) => ['agent', 'athena', 'heavy'].includes(item.kind))
-    if (blocking.length) throw new PackError('busy', `바꾸면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
+    if (blocking.length) throw new PackError('busy', `갈아 끼우면 안 되는 작업이 돌고 있다 — ${blocking.map((item) => item.what).join(' · ')}`, { busy: blocking })
     report('backup', '자동 백업')
     const stampText = fileStamp()
     const backupDir = join(data, 'backups')
@@ -1158,7 +1158,7 @@ export const testSetup = async (root, { report = () => {} } = {}) => {
     writeJsonAtomic(join(slot, 'local.json'), { reposRoot: join(data, 'repos-src') })
     const pack = readPackJson(join(slot, 'pack'))
     registry.packs[id] = { packId: pack.id, name: pack.name, source: 'local', addedAt: stamp() }
-    // 팩마다 계획서·이슈 하나씩 — 바꿨을 때 다른 팩 것이 안 보이는지 확인용
+    // 팩마다 계획서·이슈 하나씩 — 갈아 끼웠을 때 다른 팩 것이 안 보이는지 확인용
     const today = new Date().toISOString().slice(0, 10).replace(/-/g, '')
     writeFileSync(join(slot, 'plans', 'task', `${today}-${id}-sample.md`), `# ${pack.name} 샘플 작업\n\n## Checkpoint\n- Updated: ${today}\n- Status: in_progress\n- Owner: test\n- Agent: ${pack.repos[0].agents[0]}\n- Work ref: (디스패치할 때 채운다)\n\n## 지시\n${pack.name} 팩에서만 보여야 하는 계획서\n`)
     writeFileSync(join(slot, 'issues', `${today}-${id}-sample.md`), `---\ntitle: ${pack.name} 샘플 이슈\nstatus: open\nrepo: ${pack.repos[0].name}\n---\n${pack.name} 팩에서만 보여야 하는 이슈\n`)

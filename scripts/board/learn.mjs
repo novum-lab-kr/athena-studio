@@ -94,7 +94,7 @@ const bumpStat = (key) => {
 // 공책·기록에 커밋 안 된 변경이 몇 개인지 — "커밋해줘" 안내용
 const uncommitted = () => {
   try {
-    // docs/knowledge 안의 레포 공책·learned 는 회사 팩 링크일 수 있다 — 코어와 팩 레포를 각각 본다
+    // docs/knowledge 안의 레포 공책·learned 는 팩 링크일 수 있다 — 코어와 팩 레포를 각각 본다
     const dirs = ['docs/knowledge', ...readdirSync(join(ROOT, 'docs/knowledge')).map((name) => `docs/knowledge/${name}`).filter((path) => lstatSync(join(ROOT, path)).isSymbolicLink())]
     const lines = gitEach(ROOT, dirs, ['status', '--porcelain', '-uall', '--', '{paths}']).flatMap((repo) => repo.out.split('\n'))
     return lines.filter((line) => /(^|\/)(learned\/|[^ ]*gotchas(\.md|\/[^/]+\.md))/.test(line)).length

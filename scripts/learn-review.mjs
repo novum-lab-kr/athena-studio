@@ -32,7 +32,7 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
 // 체크아웃마다 따로 — 아테나를 두 곳에 받아 두면(회사별) 한 대기열을 섞어 쓰지 않게 체크아웃 경로의 해시를 이름에 붙인다
 const REAL_ROOT = realpathSync(ROOT)
-// 여러 팩 — 대기열은 팩마다(<팩 데이터>/state/learn-queue · 실제 경로). 팩을 바꾸면 이 프로세스는 이전 팩의 일만 보고, 바뀐 걸 알면 끝낸다
+// 여러 팩 — 대기열은 팩마다(<팩 데이터>/state/learn-queue · 실제 경로). 팩을 갈아 끼우면 이 프로세스는 이전 팩의 일만 보고, 그걸 알면 끝낸다
 const BOOT_PATHS = paths(ROOT)
 const PACK_KEY = BOOT_PATHS.mode === 'packs' ? `:${BOOT_PATHS.packId}` : ''
 const ROOT_KEY = createHash('sha1').update(REAL_ROOT + PACK_KEY).digest('hex').slice(0, 8)
@@ -59,12 +59,12 @@ const option = (name) => {
 }
 const flag = (name) => argv.includes(`--${name}`)
 
-// 첫 실행 전(회사 팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
+// 첫 실행 전(팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
 // 설정이 생기면 같은 인자로 다시 시작한다(설정은 모듈을 읽을 때 한 번만 읽으므로)
 // (여러 팩 구조의 빈 팩 자리 — pack new 직후 — 도 같다: pack.json 이 생길 때까지)
 const configReady = () => { try { loadConfig(ROOT); return true } catch { return false } }
 if (flag('watch') && !configReady()) {
-  console.log('📚 배우기 검토 — 회사 팩이 아직 없다. 첫 실행(/setup)이 끝나면 저절로 시작한다')
+  console.log('📚 배우기 검토 — 팩이 아직 없다. 첫 실행(/setup)이 끝나면 저절로 시작한다')
   while (!configReady()) { if (packChanged()) process.exit(0); await new Promise((done) => setTimeout(done, 10_000)) }
   const child = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit' })
   process.exit(child.status ?? 1)
@@ -603,8 +603,8 @@ const watch = async () => {
   console.log('📚 배우기 검토 — 대기열을 기다린다(내 작업의 PR 이 머지되면 현황판이 넣는다). 끄려면 Ctrl-C')
   const readJob = (file) => { try { return JSON.parse(readFileSync(join(QUEUE_DIR, file), 'utf8')) } catch { return {} } }
   for (;;) {
-    // 팩을 바꿨으면 끝낸다 — 이 프로세스의 설정·계획서 읽기는 이전 팩 것이다(새 팩은 세션 시작·현황판이 다시 띄운다)
-    if (packChanged()) { console.log('📚 팩이 바뀌어 배우기 검토를 끝낸다'); process.exit(0) }
+    // 팩을 갈아 끼웠으면 끝낸다 — 이 프로세스의 설정·계획서 읽기는 이전 팩 것이다(새 팩은 세션 시작·현황판이 다시 띄운다)
+    if (packChanged()) { console.log('📚 팩을 갈아 끼워 배우기 검토를 끝낸다'); process.exit(0) }
     // 다시 해 볼 시각(notBefore)이 안 된 일은 건너뛴다
     const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort().find((file) => !(readJob(file).notBefore > Date.now()))
     if (!next) {

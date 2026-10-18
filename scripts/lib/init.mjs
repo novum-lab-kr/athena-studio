@@ -125,7 +125,7 @@ const routingDoc = (company, repos) => {
   })
   return `# ${company} 팩 — 담당 레포·에이전트·라우팅
 
-> 회사 팩의 라우팅 정본. 코어 문서는 회사 레포를 모르고 이 문서를 가리킨다(\`pack/ROUTING.md\`). 기계 정본은 \`pack.json\`.
+> 팩의 라우팅 정본. 코어 문서는 회사 레포를 모르고 이 문서를 가리킨다(\`pack/ROUTING.md\`). 기계 정본은 \`pack.json\`.
 > \`athena init\` 이 만든 뼈대 — "확인 필요" 는 /setup 이 레포 코드를 읽고 채운다.
 
 ## 1. 담당 레포와 기준 브랜치
@@ -196,7 +196,7 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
     makeDir(pack)
     for (const sub of ['agents', 'skills', 'knowledge', 'verify', 'docs', 'sync', 'archive']) makeDir(join(pack, sub))
     const packJson = {
-      $comment: `${company} 회사 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
+      $comment: `${company} 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
       formatVersion: 1,
       id: `${company}-${randomBytes(4).toString('hex')}`,
       name: company,
@@ -215,7 +215,7 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
       reposRoot: resolve(athenaRoot, reposRoot),
       ...(repoPaths(current, repos) ? { repoPaths: repoPaths(current, repos) } : {}),
     } : {
-      $comment: '이 컴퓨터 설정 — pack: 회사 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
+      $comment: '이 컴퓨터 설정 — pack: 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
       ...(current ?? {}),
       pack: packRel,
       reposRoot: current?.reposRoot ?? reposRoot,

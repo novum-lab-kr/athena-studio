@@ -6,7 +6,7 @@
 - Claude Code → `CLAUDE.md` (서브에이전트 위임, 슬래시 커맨드, Plan-First 흐름)
 - Codex 등 그 외 → 이 문서 하나로 충분하다. 위임 기능이 없으면 아테나 역할 없이 **직접** 작업하되 아래 규칙과 지식을 그대로 따른다
 
-## 0. 첫 실행 — 회사 팩이 없으면 이것부터
+## 0. 첫 실행 — 팩이 없으면 이것부터
 
 `athena.config.json` 이 없거나, 거기에 `pack` 이 없거나, 팩의 `pack.json` 에 `repos` 가 비었으면 **아직 회사가 등록되지 않은 아테나**다. 사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 **`docs/setup.md`** 절차(레포 찾기 → 팩 → 에이전트·지식 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램)를 돈다. herdr 에서 켜면 세션 시작 훅(Claude `.claude/settings.json` · Codex `.codex/hooks.json`)이 화면을 세팅한 뒤 첫 실행 지시를 pane 에 대신 입력한다(Claude `/setup` 이 같은 문서를 따른다).
 환경 변수 `ATHENA_AGENT` 가 있는 창(바깥 도구가 띄운 관리 창)에서는 하지 않는다.
@@ -16,9 +16,9 @@ Jev 키(선택 · 사람마다 본인 키)는 첫 실행 7-2단계가 묻고, �
 
 ## 1. 담당 레포와 기준 브랜치
 
-**담당 레포·에이전트·라우팅은 회사 팩에 있다 — `pack/ROUTING.md` 를 먼저 읽는다**(Claude Code 는 `CLAUDE.md` 가 자동으로 불러온다). 기계 정본은 팩의 `pack.json`(코어 `athena.config.json` 의 `pack` 이 가리키는 폴더). 경로는 어디서나 `repos/<레포>`이며 `scripts/setup.sh`가 심볼릭 링크를 만든다. 팩 파일은 `athena pack link` 가 코어의 정해진 자리(`.claude/agents`·`docs/knowledge/<레포>`·`scripts/verify/<레포>.sh` …)에 링크로 건다.
+**담당 레포·에이전트·라우팅은 팩에 있다 — `pack/ROUTING.md` 를 먼저 읽는다**(Claude Code 는 `CLAUDE.md` 가 자동으로 불러온다). 기계 정본은 팩의 `pack.json`(코어 `athena.config.json` 의 `pack` 이 가리키는 폴더). 경로는 어디서나 `repos/<레포>`이며 `scripts/setup.sh`가 심볼릭 링크를 만든다. 팩 파일은 `athena pack link` 가 코어의 정해진 자리(`.claude/agents`·`docs/knowledge/<레포>`·`scripts/verify/<레포>.sh` …)에 링크로 건다.
 
-**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 본체 하나에서 회사 팩을 골라 쓴다 — `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **지금 팩**의 데이터(`~/athena-data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 팩 바꾸기·가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
+**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 본체 하나에서 팩을 골라 쓴다 — `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **지금 팩**의 데이터(`~/athena-data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 팩 갈아 끼우기·가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
 
 **기준 브랜치 = 운영 반영분.** 문서와 지식 베이스는 이 브랜치(`pack.json` 의 `branch`)를 읽어 만든 것이다. 로컬 작업 트리가 그보다 뒤처져 있으면 문서와 코드가 다를 수 있는데, **그건 문서 오류가 아니다.** 작업 전 `git status --short --branch`로 얼마나 벌어졌는지 확인하고 보고에 적는다.
 

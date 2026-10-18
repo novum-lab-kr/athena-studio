@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * athena — 코어와 회사 팩을 잇는 명령
+ * athena — 코어와 팩을 잇는 명령
  *
  *   athena pack link      팩 파일을 코어의 정해진 자리에 링크로 건다(이미 건 것은 다시 맞춘다)
  *   athena pack unlink    팩을 가리키는 링크를 모두 지운다
@@ -11,8 +11,8 @@
  *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
  *
  *   여러 팩(본체 하나 · 팩은 <데이터>/packs/<id> · docs/pack.md "여러 팩") — --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON
- *   athena pack list|status|busy [--json]          팩 목록 · 지금 팩 · 바꾸면 안 되는 작업
- *   athena pack use <id> [--start-board] [--json]  팩 바꾸기(잠금 → 검사 → 현황판·학습 검토·QA 끄기 → 링크 교체 → repos 대조 → 확인, 실패하면 되돌림)
+ *   athena pack list|status|busy [--json]          팩 목록 · 지금 팩 · 갈아 끼우면 안 되는 작업
+ *   athena pack use <id> [--start-board] [--json]  팩 갈아 끼우기(잠금 → 검사 → 현황판·학습 검토·QA 끄기 → 링크 교체 → repos 대조 → 확인, 실패하면 되돌림)
  *   athena pack new [--json]                       빈 팩 자리를 지금 팩으로 → claude 를 켜면 /setup
  *   athena pack inspect <파일|폴더|git 주소> --json  임시 위치에서 검사만 → token
  *   athena pack import <token> --new|--replace|--keep [--json]
@@ -205,7 +205,7 @@ const restore = () => {
     console.log('   athena.config.json 의 pack 을 이 팩으로 — 링크를 건다')
     link()
   } else if (local.pack !== `packs/${name}`) {
-    console.log(`   지금 쓰는 팩은 ${local.pack} — 바꾸려면 athena.config.json 의 pack 을 packs/${name} 로 고치고 bin/athena pack link`)
+    console.log(`   지금 쓰는 팩은 ${local.pack} — 갈아 끼우려면 athena.config.json 의 pack 을 packs/${name} 로 고치고 bin/athena pack link`)
   }
 }
 
@@ -217,10 +217,10 @@ const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsW
 const human = {
   list: (result) => {
     if (result.legacy && result.current) console.log('옛 구조 본체(athena.config.json 의 pack) — 여러 팩으로 옮기려면 bin/athena pack migrate')
-    console.log(`지금 팩: ${result.current ? `${result.current.id} (${result.current.name} · 세대 ${result.current.generation})` : '없음'}${result.switching ? ' · ⏳ 바꾸는 중' : ''}`)
+    console.log(`지금 팩: ${result.current ? `${result.current.id} (${result.current.name} · 세대 ${result.current.generation})` : '없음'}${result.switching ? ' · ⏳ 갈아 끼우는 중' : ''}`)
     for (const pack of result.packs) console.log(`  ${result.current?.id === pack.id ? '▶' : ' '} ${pack.id.padEnd(20)} ${pack.name} · 레포 ${pack.repos} · ${pack.hasWork ? '작업 기록 있음' : '작업 기록 없음'} · ${pack.source}${pack.remote ? ` ${pack.remote}` : ''}`)
   },
-  busy: (result) => { if (!result.busy.length) console.log('바꾸면 안 되는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
+  busy: (result) => { if (!result.busy.length) console.log('갈아 끼우면 안 되는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
 }
 const runPack = async (name, work) => {
   try {
@@ -238,7 +238,7 @@ const runPack = async (name, work) => {
     process.exit(1)
   }
 }
-// pack use --start-board · CLI 용 — 바꾼 뒤 현황판을 다시 띄운다(스튜디오는 자기가 띄운다)
+// pack use --start-board · CLI 용 — 갈아 끼운 뒤 현황판을 다시 띄운다(스튜디오는 자기가 띄운다)
 const startBoard = () => spawnSync(join(ROOT, 'scripts', 'board.sh'), [], { stdio: asJson ? 'ignore' : 'inherit', env: { ...process.env, ATHENA_BOARD_NO_BROWSER: '1' } }).status === 0
 
 const packCommands = {

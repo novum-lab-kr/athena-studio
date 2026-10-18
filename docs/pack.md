@@ -1,6 +1,6 @@
-# 회사 팩 형식
+# 팩 형식
 
-아테나는 **코어**(이 레포 — 흐름·훅·현황판·학습 루프·공통 규칙)와 **회사 팩**(레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉜다. 코어는 회사 이름을 모르고, 필요한 값은 `scripts/lib/config.mjs`(파이썬은 `scripts/lib/athena_config.py`)로 읽는다.
+아테나는 **코어**(이 레포 — 흐름·훅·현황판·학습 루프·공통 규칙)와 **팩**(레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉜다. 코어는 회사 이름을 모르고, 필요한 값은 `scripts/lib/config.mjs`(파이썬은 `scripts/lib/athena_config.py`)로 읽는다.
 
 ## 연결
 
@@ -42,23 +42,23 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 - **여러 팩 구조**(아래)에서는 두 명령 모두 멈추고 안내만 한다 — 팩만은 `pack export --out <폴더>`, 팩 + 작업 기록은 `pack backup --with-work`, 되살리기는 `pack restore --with-work <파일>` 또는 `pack inspect <파일>` → `pack import <token> --new`
 - 말로: "팩 백업해줘" · "팩 되살려줘 <파일>"
 
-## 여러 팩 (본체 하나에서 회사 팩을 골라 쓰기)
+## 여러 팩 (본체 하나에서 팩을 골라 쓰기)
 
-본체(이 레포 클론 하나 — 보통 `~/athena`)에서 회사 팩 여럿을 등록해 두고 **한 번에 하나**를 쓴다. 팩과 그 팩의 작업 기록은 **사용자 데이터 폴더**에 있고, 본체에는 링크만 있다. 팩끼리 섞이지 않는다(가져오기는 복사 · 링크 금지). 계획서 `plans/feature/20261018-여러-회사-팩.md`.
+본체(이 레포 클론 하나 — 보통 `~/athena`)에서 팩 여럿을 등록해 두고 **한 번에 하나**를 쓴다. 쓰는 팩을 바꾸는 것을 **갈아 끼우기**라 한다(게임팩 갈아 끼우듯 — `pack use`). 팩과 그 팩의 작업 기록은 **사용자 데이터 폴더**에 있고, 본체에는 링크만 있다. 팩끼리 섞이지 않는다(가져오기는 복사 · 링크 금지). 계획서 `plans/feature/20261018-여러-회사-팩.md`.
 
 ```
 ~/athena/                       본체 — git, 업데이트만
-├─ .pack-data → <데이터>/packs/<id>     활성 링크 — 팩 바꾸기 = 이것 하나를 원자적으로 교체
+├─ .pack-data → <데이터>/packs/<id>     활성 링크 — 팩 갈아 끼우기 = 이것 하나를 원자적으로 교체
 ├─ pack · plans · issues · repos · .worktrees · archive · .sync      고정 링크(.pack-data/… — 처음 한 번)
 ├─ .board-trash · .board-learn-stats.json · .board-jev-*.json · .jev-log.jsonl · .qa-runs · .qa-auth · .qa-baselines → .pack-data/state/…
-└─ .claude/agents/<x>.md 등 팩 링크 → pack/agents/<x>.md   (논리 경로 pack/ 을 지나므로 같은 이름 파일은 바꿔도 이어진다)
+└─ .claude/agents/<x>.md 등 팩 링크 → pack/agents/<x>.md   (논리 경로 pack/ 을 지나므로 같은 이름 파일은 갈아 끼워도 이어진다)
 
 <데이터>/                       ATHENA_DATA_DIR → 본체 athena.config.json "dataDir" → ~/athena-data
 ├─ config.json                 팩 목록(packs) · 지금 팩(current) · 전환 세대(generation)
-├─ switch.lock · switch.log     바꾸기 잠금(주인 pid) · 단계 기록
+├─ switch.lock · switch.log     갈아 끼우기 잠금(주인 pid) · 단계 기록
 ├─ backups/ · tmp/              자동 백업(교체·옮기기 전) · 가져오기 검사 임시본(24시간)
 └─ packs/<id>/                  id = 이 컴퓨터의 등록 이름(폴더 이름 · 바뀌지 않음)
-   ├─ pack/                     회사 팩(pack.json 의 id = 공유 ID packId)
+   ├─ pack/                     팩(pack.json 의 id = 공유 ID packId)
    ├─ plans/ · issues/          작업 기록
    ├─ repos/                    레포 링크(local.json 의 reposRoot · repoPaths 로 만든다)
    ├─ worktrees/                새 워크트리(실제 경로 — 기존 본체 .worktrees 의 것은 제자리 · D4)
@@ -77,10 +77,10 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 | 명령 | 하는 일 |
 |---|---|
-| `list` · `status` | 팩 목록(빈 자리는 안 보임) · 지금 팩(`empty:true` 면 /setup 전) · 바꾸는 중인가 · 둘 다 `dataDir`(실제 데이터 폴더 절대 경로) · `status` 는 `boardPort` 도 |
-| `busy` | 바꾸면 안 되는 것 — 위임 에이전트·본체 아테나(claude 의 작업 폴더로 판별) · QA · 학습 검토 · 무거운 명령 잠금 · 다른 바꾸기. 부른 명령의 조상 프로세스는 뺀다 |
+| `list` · `status` | 팩 목록(빈 자리는 안 보임) · 지금 팩(`empty:true` 면 /setup 전) · 갈아 끼우는 중인가 · 둘 다 `dataDir`(실제 데이터 폴더 절대 경로) · `status` 는 `boardPort` 도 |
+| `busy` | 갈아 끼우면 안 되는 것 — 위임 에이전트·본체 아테나(claude 의 작업 폴더로 판별) · QA · 학습 검토 · 무거운 명령 잠금 · 다른 갈아 끼우기. 부른 명령의 조상 프로세스는 뺀다 |
 | `use <id> [--start-board]` | 잠금 → 검사(형식 버전 · busy) → 현황판·학습 검토·QA 끄기 → 활성 링크 교체·팩 링크 → `repos/` 대조 → 확인 → 세대 +1. 중간에 실패하면 이전 팩으로 되돌린다(`rollback`). 현황판은 다시 띄우지 않는다(CLI 는 `--start-board`) |
-| `new` | 빈 팩 자리(`new-<시각>`)를 지금 팩으로 → claude 를 켜면 /setup. `athena init` 이 자리 이름을 회사 이름으로 바꾼다. 취소는 `use <previous>`(빈 자리는 다음 바꾸기 때 지운다) |
+| `new` | 빈 팩 자리(`new-<시각>`)를 지금 팩으로 → claude 를 켜면 /setup. `athena init` 이 자리 이름을 회사 이름으로 바꾼다. 취소는 `use <previous>`(빈 자리는 다음 갈아 끼우기 때 지운다) |
 | `inspect <파일\|폴더\|git 주소>` | 임시 위치에서 검사만 → `token`(24시간). 압축의 절대 경로·`..` · 팩 밖을 가리키는 링크(링크 폴더를 거쳐도 — OS 실제 경로로 본다) · 최상위 `.git` — git clone 으로 받은 것·`import-athena`(내 옛 아테나)만 그대로 두고, 폴더·압축에서 온 것은 지운다(결과 `gitRemoved: true` — 팀과 git 으로 같이 쓰는 팩이면 git 주소로 가져오기) · `.git` 이 링크면 거부 · 비밀 파일(`.env*`·키·`.npmrc`) → `unsafe` · 모르는 형식 → `format-unknown`. git 은 `https://`·`ssh://`·`git@host:path` 만. 같은 `packId`(또는 같은 이름)가 있으면 `conflict` 를 같이 |
 | `import <token> --new\|--replace\|--keep` | (`pack.json` 에 `id`·`formatVersion` 이 없어 써 넣었으면 결과 `packJsonUpdated`) 등록 · 같은 팩 교체(기존 팩 자동 백업 · 작업 기록은 그대로 · 지금 팩이면 busy 검사 후 링크 다시) · 버림. 같은 `packId` 를 `--new` 로 두 번 등록하지 않는다 |
 | `import-athena <옛 아테나 폴더>` | 팩 + 계획서·이슈(·보관함)를 임시본으로 — 원본은 그대로. 워크트리는 목록만(제자리) → `import <token>` |
@@ -102,10 +102,10 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
    ```
    `~/athena-test-data` 를 **지우고** 가짜 레포 넷(`repos-src/` · 원격은 `remotes/`)과 테스트 팩 둘(`test/fixtures/packs/{acme,globex}` 복사 · 팩마다 샘플 계획서·이슈 하나)을 등록한 뒤 acme 를 지금 팩으로 한다. 본체 `athena.config.json` 에 `dataDir: ~/athena-test-data` · `boardPort: 4710` 을 적는다(`screen` 은 넣지 않는다) — 그 뒤로는 `ATHENA_DATA_DIR` 없이도 이 본체는 테스트 데이터를 본다. 데이터 폴더 이름에 `test` 가 없거나 본체가 `~/athena` 면 멈춘다
 2. 확인: `bin/athena pack list` → acme ▶ · globex. `ls -l plans issues repos` 가 `.pack-data/…` 링크
-3. 바꾸기: `bin/athena pack use globex --start-board` → 현황판 http://localhost:4710 에 globex 샘플만. 다시 `pack use acme`
+3. 갈아 끼우기: `bin/athena pack use globex --start-board` → 현황판 http://localhost:4710 에 globex 샘플만. 다시 `pack use acme`
 4. 막히는지: 다른 터미널에서 `cd <테스트 본체> && claude` 를 켜 둔 채 `pack use globex` → `busy`(끄면 통과)
 5. 가져오기·내보내기: `bin/athena pack export --out /tmp/x` → `bin/athena pack inspect /tmp/x/acme-pack-*.tar.gz` → 같은 팩이라 `conflict` → `bin/athena pack import <token> --keep`. 나쁜 팩: `bin/athena pack inspect test/fixtures/bad-packs/outside-link` → `unsafe`
-6. 스튜디오: 설정 `athenaDir` 를 `<테스트 본체>` 로 · 앱을 `ATHENA_DATA_DIR=~/athena-test-data` 로 띄운다(본체 설정에 `dataDir` 가 있어 없어도 같은 폴더를 본다) → 팩 고르기·바꾸기·가져오기·내보내기
+6. 스튜디오: 설정 `athenaDir` 를 `<테스트 본체>` 로 · 앱을 `ATHENA_DATA_DIR=~/athena-test-data` 로 띄운다(본체 설정에 `dataDir` 가 있어 없어도 같은 폴더를 본다) → 팩 고르기·갈아 끼우기·가져오기·내보내기
 7. 끝나면: `bin/athena pack status` 로 상태를 본 뒤 그대로 두거나, 테스트 데이터를 지운다(`rm -rf ~/athena-test-data` — 테스트 본체의 링크는 그때 깨진 링크가 되니 다시 `pack test-setup`)
 
 - 일부러 실패시키기(되돌리기 확인): `ATHENA_PACK_FAIL_AT=link|repos|verify bin/athena pack use globex` → `rollback` 과 함께 acme 그대로
@@ -116,7 +116,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 ```jsonc
 {
-  "formatVersion": 1,                     // 팩 형식 버전 — 이 코어가 모르는 버전이면 가져오기·바꾸기를 멈춘다(scripts/lib/config.mjs PACK_FORMAT_VERSION)
+  "formatVersion": 1,                     // 팩 형식 버전 — 이 코어가 모르는 버전이면 가져오기·갈아 끼우기를 멈춘다(scripts/lib/config.mjs PACK_FORMAT_VERSION)
   "id": "acme-5f0c1a2b",                  // 공유 ID(packId) — 복사한 팩끼리 같다. 없으면 가져오기·옮기기가 붙인다
   "name": "acme",
   "names": ["acme", "에이크미"],          // pack check 가 코어에서 찾을 회사 이름

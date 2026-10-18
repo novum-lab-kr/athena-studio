@@ -65,7 +65,7 @@ const md = [
 const plan = {
   title: '첫 실행 — 넣을 레포 고르기',
   type: 'feature',
-  scope: '회사 팩',
+  scope: '팩',
   summary: `찾은 레포 ${repos.length}개 — 넣을 레포를 고른다(전체 가능).`,
   decisions: [
     {

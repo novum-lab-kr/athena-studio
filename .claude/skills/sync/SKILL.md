@@ -1,6 +1,6 @@
 ---
 name: sync
-description: 회사 팩 pack.json 의 담당 레포 전체를 운영 기준 브랜치(레포별 branch · 모노레포는 앱별)로 훑어 지문을 만들고, 사실마다 정한 정본 문서(knowledge · config · 지문)만 갱신한 뒤 파생 문서를 스크립트로 생성합니다. 이전 sync 이후 바뀐 부분만 찾아 고칩니다.
+description: 팩 pack.json 의 담당 레포 전체를 운영 기준 브랜치(레포별 branch · 모노레포는 앱별)로 훑어 지문을 만들고, 사실마다 정한 정본 문서(knowledge · config · 지문)만 갱신한 뒤 파생 문서를 스크립트로 생성합니다. 이전 sync 이후 바뀐 부분만 찾아 고칩니다.
 argument-hint: "(선택) 레포 이름 일부 — 예: web, api. 비우면 전체"
 ---
 

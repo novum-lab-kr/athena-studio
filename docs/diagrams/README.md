@@ -22,7 +22,7 @@ open docs/diagrams/index.html
 | sequence | 한 화면이 뜰 때 무엇이 오가는가 | `<서비스>.sequence.json` |
 | lifecycle | 상태가 어디서 갈라지고 멈추는가 | `<서비스>.lifecycle.json` |
 
-서비스별 현황(그린 것 · 대표 화면)은 회사 팩 `docs/diagrams/SERVICES.md`.
+서비스별 현황(그린 것 · 대표 화면)은 팩 `docs/diagrams/SERVICES.md`.
 
 ⚠️ **sequence·lifecycle 은 대표 화면 하나를 정해 그 코드만 그린 것이다.** 같은 앱의 다른 화면은
 다르게 동작한다(예는 팩 `SERVICES.md`). 일반화해서 옮기지 않는다.

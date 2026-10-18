@@ -51,9 +51,9 @@ import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSet
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
-// 팩을 바꾸는 중이면 시작하지 않는다(bin/athena pack use — 바꾸는 동안 새 작업을 받지 않는다)
+// 팩을 갈아 끼우는 중이면 시작하지 않는다(bin/athena pack use — 갈아 끼우는 동안 새 작업을 받지 않는다)
 if (isSwitching(HERMES)) {
-  console.error('⚠️  팩을 바꾸는 중이라 QA 를 시작하지 않는다 — 끝난 뒤 다시(bin/athena pack status)')
+  console.error('⚠️  팩을 갈아 끼우는 중이라 QA 를 시작하지 않는다 — 끝난 뒤 다시(bin/athena pack status)')
   process.exit(1)
 }
 // 자기 요청 도메인·아이콘 글꼴 — 팩 설정 qa. QA 대상 앱은 팩에 등록한 레포에서(apps.mjs)

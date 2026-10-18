@@ -107,7 +107,7 @@ export const commitArchive = (results) => {
   if (!done.length) return { skipped: true }
   try {
     // 원래 자리(이슈)는 추적 중이면 삭제로, plans/** 는 gitignore 라 무시된다.
-    // archive/ 는 회사 팩 링크일 수 있다 — 경로를 실제 레포(코어·팩)별로 나눠 각자 커밋한다(lib/git.mjs)
+    // archive/ 는 팩 링크일 수 있다 — 경로를 실제 레포(코어·팩)별로 나눠 각자 커밋한다(lib/git.mjs)
     const sources = done.flatMap((result) => result.paths.slice(1))
     const tracked = new Set(sources.length ? execFileSync('git', ['-C', ROOT, 'ls-files', '--', ...sources], { encoding: 'utf8' }).split('\n').filter(Boolean) : [])
     const all = [...new Set(done.flatMap((result) => [result.dir, ...result.paths.slice(1).filter((path) => tracked.has(path))]))]

@@ -5,7 +5,7 @@
 # 사용: test/packs-test.sh            → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #       KEEP=1 test/packs-test.sh     → 임시 폴더를 남긴다(경로를 마지막에 보여 준다)
 #
-# 보는 것(계획서 7절 "단계별 확인"): test-setup · 팩 바꾸기 A→B→A(링크·repos·계획서·이슈가 그 팩 것만) · 일부러 실패시키면 이전 팩으로 ·
+# 보는 것(계획서 7절 "단계별 확인"): test-setup · 팩 갈아 끼우기 A→B→A(링크·repos·계획서·이슈가 그 팩 것만) · 일부러 실패시키면 이전 팩으로 ·
 # 잠금 · 일하는 claude 가 있으면 거부 · 나쁜 팩(형식·pack.json 없음·밖 링크·.env·../·ext::) · 같은 팩 충돌·교체 백업 ·
 # 내보내기 허용 목록 · 작업 기록 백업·되살리기 · 옛 아테나 가져오기(원본 그대로) · 옮기기(두 번 돌려도 같음) · 계획서 논리 경로 · 현황판(팩·세대·409·끄기)
 set -uo pipefail
@@ -47,7 +47,7 @@ check "설정에 dataDir·boardPort(screen 없음)" 'python3 -c "import json,sys
 check "status·list 에 dataDir(실제 데이터 폴더)" '[ "$(A pack status | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(A pack list | field dataDir)" = "$ATHENA_DATA_DIR" ]'
 check "~/athena-data 로는 거부" '[ "$(ATHENA_DATA_DIR="$HOME/athena-data" node scripts/athena.mjs pack test-setup --json | tail -1 | field error)" = unsafe ]'
 
-section "팩 바꾸기 A→B→A"
+section "팩 갈아 끼우기 A→B→A"
 R="$(A pack use globex)"
 check "globex 로 바뀜(세대 2)" '[ "$(echo "$R" | field current.id)" = globex ] && [ "$(echo "$R" | field current.generation)" = 2 ]' "$R"
 check "acme 링크가 사라지고 globex 링크만" '[ ! -e .claude/agents/acme-web-fe.md ] && [ ! -L .claude/agents/acme-web-fe.md ] && [ -L .claude/agents/globex-shop-fe.md ]'
@@ -79,7 +79,7 @@ sleep 0.5
 R="$(A pack busy)"
 check "busy: athena · agent" 'echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\""' "$R"
 check "busy 여도 지금 팩으로 use 는 unchanged" '[ "$(A pack use acme | field unchanged)" = True ]'
-check "busy 면 바꾸지 않음" '[ "$(A pack use globex | field error)" = busy ] && [ "$(basename "$(readlink .pack-data)")" = acme ]'
+check "busy 면 갈아 끼우지 않음" '[ "$(A pack use globex | field error)" = busy ] && [ "$(basename "$(readlink .pack-data)")" = acme ]'
 kill "$C1" "$C2" 2>/dev/null; wait "$C1" "$C2" 2>/dev/null
 check "끝나면 busy 없음" '[ "$(A pack busy | field busy)" = "[]" ]'
 

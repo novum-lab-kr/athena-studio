@@ -48,7 +48,7 @@ scripts/qa/node_modules/
 /.qa-auth
 /.qa-baselines
 
-# 회사 팩 — 별도 레포를 packs/<회사> 에 clone 한다. 링크(pack · .claude/agents/<팩 에이전트> …)는 athena pack link 가 .git/info/exclude 에 적는다
+# 팩 — 별도 레포를 packs/<회사> 에 clone 한다. 링크(pack · .claude/agents/<팩 에이전트> …)는 athena pack link 가 .git/info/exclude 에 적는다
 /packs/
 /pack
 # 이 컴퓨터 설정(팩 경로) — athena.config.example.json 을 복사해 쓴다

@@ -12,7 +12,7 @@ argument-hint: "(선택) 서비스 이름 일부 — 예: web, app. 비우면 �
 
 ## 서비스 표
 
-서비스 목록(서비스 · 레포 · 기준 ref · 가이드 · 심층 폴더)은 회사 팩 **`docs/diagrams/SERVICES.md`** 에 있다(팩 링크).
+서비스 목록(서비스 · 레포 · 기준 ref · 가이드 · 심층 폴더)은 팩 **`docs/diagrams/SERVICES.md`** 에 있다(팩 링크).
 
 기준 ref 의 정본은 팩 `pack.json`(`branch`, 모노레포는 앱별). 표와 다르면 pack.json 을 따르고 그 표를 고친다.
 
