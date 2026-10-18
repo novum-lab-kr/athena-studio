@@ -1048,9 +1048,6 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const created = await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
     if (decision.none) return { error: say('error.agentNotInstalled') }
-    // 현황판을 먼저 띄운다 — 없으면 아테나 세션 시작 훅(athena-up.sh → board.sh)이 herdr 처럼 '📋 현황판' pane 을 작업 창에 만든다
-    // (현황판 탭을 열기 전 · 팩을 바꾼 직후). 실패해도 아테나는 켠다
-    await ctx.ensureBoard().catch(() => null)
     const run = await daemonCall('pane run', { pane: created.result.root_pane.id, text: decision.agent })
     if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
     return { started: decision.agent }
