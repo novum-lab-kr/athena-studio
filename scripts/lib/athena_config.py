@@ -10,8 +10,67 @@ bash 에서:  python3 - "$ATHENA_DIR" <<'PYEOF'
 import json
 import os
 
+ACTIVE_LINK = '.pack-data'
+
+
+def _read_json(path):
+    try:
+        with open(path, encoding='utf-8') as handle:
+            return json.load(handle)
+    except (OSError, ValueError):
+        return None
+
+
+def body_config(athena_dir):
+    return _read_json(os.path.join(athena_dir, 'athena.config.json')) or {}
+
+
+def data_dir(athena_dir):
+    """사용자 데이터 폴더 — ATHENA_DATA_DIR → 본체 설정 dataDir → ~/athena-data (config.mjs dataDir 와 같다)."""
+    value = os.environ.get('ATHENA_DATA_DIR') or body_config(athena_dir).get('dataDir') or os.path.join(os.path.expanduser('~'), 'athena-data')
+    return os.path.normpath(os.path.join(athena_dir, os.path.expanduser(value)))
+
+
+def paths(athena_dir):
+    """경로 묶음 — config.mjs paths() 와 같은 모양(mode · packDir · plans · issues · state · worktrees · packId · generation)."""
+    active = os.path.join(athena_dir, ACTIVE_LINK)
+    data = data_dir(athena_dir)
+    if not os.path.islink(active):
+        local = body_config(athena_dir)
+        return {
+            'root': athena_dir, 'mode': 'legacy', 'dataDir': data, 'packData': None, 'packDataReal': None,
+            'packDir': os.path.normpath(os.path.join(athena_dir, local['pack'])) if local.get('pack') else None,
+            'plans': os.path.join(athena_dir, 'plans'), 'issues': os.path.join(athena_dir, 'issues'), 'state': athena_dir,
+            'worktrees': os.environ.get('ATHENA_WORKTREE_ROOT') or os.path.join(athena_dir, '.worktrees'),
+            'packId': None, 'generation': None,
+        }
+    real = os.path.normpath(os.path.join(athena_dir, os.readlink(active)))
+    registry = _read_json(os.path.join(data, 'config.json')) or {}
+    return {
+        'root': athena_dir, 'mode': 'packs', 'dataDir': data, 'packData': active, 'packDataReal': real,
+        'packDir': os.path.join(athena_dir, 'pack'),
+        'plans': os.path.join(athena_dir, 'plans'), 'issues': os.path.join(athena_dir, 'issues'), 'state': os.path.join(active, 'state'),
+        'worktrees': os.environ.get('ATHENA_WORKTREE_ROOT') or os.path.join(real, 'worktrees'),
+        'packId': os.path.basename(real), 'generation': registry.get('generation', 0),
+    }
+
 
 def load(athena_dir):
+    where = paths(athena_dir)
+    if where['mode'] == 'packs':
+        # 여러 팩 구조 — 본체 설정의 pack 은 쓰지 않는다(활성 링크가 정본). 팩의 이 컴퓨터 설정은 <팩 데이터>/local.json
+        local = {key: value for key, value in body_config(athena_dir).items() if key != 'pack'}
+        pack_file = os.path.join(where['packDir'], 'pack.json')
+        if not os.path.isfile(pack_file):
+            raise SystemExit(f'팩이 아직 없다: {pack_file} — 새 팩이면 claude 를 켜고 /setup')
+        with open(pack_file, encoding='utf-8') as pack_json:
+            pack = json.load(pack_json)
+        pack_local = _read_json(os.path.join(where['packData'], 'local.json')) or {}
+        merged = {**pack, **local, **pack_local}
+        merged['repos'] = pack.get('repos', [])
+        merged['packDir'] = where['packDir']
+        merged['packId'] = where['packId']
+        return merged
     with open(os.path.join(athena_dir, 'athena.config.json'), encoding='utf-8') as config_file:
         local = json.load(config_file)
     if not local.get('pack'):
@@ -29,13 +88,29 @@ def load(athena_dir):
 
 
 def needs_first_run(athena_dir):
-    """새 회사 첫 실행이 필요한가 — 설정·팩이 없거나 팩에 레포가 0개면 True (docs/setup.md)."""
-    if not os.path.isfile(os.path.join(athena_dir, 'athena.config.json')):
+    """새 회사 첫 실행이 필요한가 — 설정·팩이 없거나 팩에 레포가 0개면 True (docs/setup.md).
+    여러 팩 구조에서는 지금 팩 자리(pack/pack.json)가 없으면(pack new 직후) 첫 실행이다."""
+    if paths(athena_dir)['mode'] == 'legacy' and not os.path.isfile(os.path.join(athena_dir, 'athena.config.json')):
         return True
     try:
         return not load(athena_dir).get('repos')
     except (SystemExit, ValueError, OSError):
         return True
+
+
+def switching(athena_dir):
+    """팩을 바꾸는 중인가 — <데이터>/switch.lock 이 있고 그 pid 가 살아 있으면 True(새 작업을 받지 않는다)."""
+    lock = os.path.join(data_dir(athena_dir), 'switch.lock')
+    try:
+        with open(os.path.join(lock, 'pid'), encoding='utf-8') as handle:
+            pid = int(handle.read().strip() or 0)
+    except (OSError, ValueError):
+        return os.path.isdir(lock)
+    try:
+        os.kill(pid, 0)
+        return True
+    except OSError:
+        return False
 
 
 # 보호 브랜치 — 커밋·push 하지 않는 브랜치. 흔한 운영·개발 브랜치 이름 + 팩에 적힌 그 레포의 운영 기준(branch)·작업 base(prBase·extraPrBases)

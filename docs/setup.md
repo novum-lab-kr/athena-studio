@@ -19,8 +19,13 @@
 기계적인 일은 `bin/athena` 가, 코드를 읽고 판단하는 일은 아테나(와 작업자)가 한다. 환경 설정이라 계획서 없이 진행하고, 끝에 보고한다. **레포는 읽기만 한다**(fetch·체크아웃·설치도 사용자에게 묻고). 비밀값은 출력하지 않는다.
 
 ## 0. 이미 팩이 있는 회사인가
+**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다 — `docs/pack.md` "여러 팩")면 먼저 `bin/athena pack status --json` 을 본다. `current.empty: true` 는 `pack new` 로 만든 **빈 팩 자리**다 — 이 /setup 이 그 자리에 팩을 만든다(3단계 `athena init` 이 `pack/`·`<팩 데이터>/local.json` 에 쓰고 자리 이름을 회사 이름으로 바꾼다).
+- **빈 팩 자리면 0단계를 건너뛴다** — `pack new` 는 "새로 만들기" 를 고른 뒤에만 불린다(스튜디오 [새로 만들기] · CLI). 이미 있는 팩은 스튜디오 [가져오기]·`pack inspect`/`pack import` 가 맡는다. 1단계부터
+- 취소하려면(사용자가 그만두면) `bin/athena pack use <previous>` — 빈 자리는 다음 바꾸기 때 지워진다. previous 는 `pack new` 결과에 있다(모르면 `pack list`)
+
 사용자에게 묻는다 — "회사 팩 레포가 이미 있나요?" · 선택지 `있다 — 주소 입력`(clone 주소를 받는다) / `없다 — 새로 만든다`.
-- 있다: `git clone <주소> packs/<회사>` → `athena.config.json` 에 `{ "pack": "packs/<회사>", "reposRoot": ".." }` → `bin/athena pack link` → `scripts/setup.sh`(repos/ 링크) → 6단계(검증) → 7-2단계(Jev 키) → 보고하고 끝
+- 있다(옛 구조): `git clone <주소> packs/<회사>` → `athena.config.json` 에 `{ "pack": "packs/<회사>", "reposRoot": ".." }` → `bin/athena pack link` → `scripts/setup.sh`(repos/ 링크) → 6단계(검증) → 7-2단계(Jev 키) → 보고하고 끝
+- 있다(여러 팩 구조): `bin/athena pack inspect <주소> --json` → `bin/athena pack import <token> --new` → `bin/athena pack use <id>` → `scripts/setup.sh --links-only` → 6단계 → 7-2단계 → 보고하고 끝
 
 ## 1. 레포 찾기
 `bin/athena init --scan [--root <폴더>] [--depth <n>]` — 표를 그대로 보여 준다. 레포 폴더 아래 3단계(팀·회사 폴더로 묶여 있어도)까지 찾고, 같은 레포의 워크트리는 하나로 친다. 이름이 겹치면 위 폴더 이름을 붙인다(`teamA-web`). 추정(종류 single·monorepo·packages · 층 fe·be · 기준 브랜치 · 작업 base · 앱별 브랜치 · GitHub 조직)이다. 바로 아래가 아닌 레포의 위치는 3단계가 이 컴퓨터 설정(`athena.config.json` `repoPaths`)에 적는다.
@@ -36,7 +41,7 @@
 - **에이전트 이름** — 기본은 `<레포>-fe|be`, 모노레포는 `<앱>-fe` + `<레포>-packages-fe`. 바꾸려면 `--agent <레포>=<이름>` · `--agent <레포>/<앱>=<이름>`
 
 ## 3. 팩 만들기
-`bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크. 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 그다음 `scripts/setup.sh`(repos/ 링크).
+`bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 그다음 `scripts/setup.sh`(repos/ 링크).
 
 ## 4. 뼈대
 `bin/athena scaffold` — 레포마다 `agents/<에이전트>.md` · `knowledge/<레포>/{rules,structure,gotchas}.md` · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리) · `diagrams/SERVICES.md`(/diagram 서비스 표) · `diagrams/index.json`(다이어그램 목록 카드). 있는 파일은 건드리지 않는다.

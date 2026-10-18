@@ -1,0 +1,1 @@
+{ "$comment": "pack test-setup 이 테스트 데이터 폴더 안에 만드는 가짜 git 레포(원격은 같은 폴더의 bare 레포)", "repos": ["acme-web", "acme-api", "globex-shop", "globex-admin"] }

@@ -110,14 +110,17 @@ athena/                        ← 코어
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
 │   ├── diagrams/              작업 흐름 그림 + 서비스 다이어그램(팩) (/guide 그림)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
-│   ├── pack.md                회사 팩 형식
+│   ├── pack.md                회사 팩 형식 · 여러 팩 · 여러 팩 테스트
+│   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준
 │   ├── extending.md           스킬·에이전트 추가 방법
 │   └── plan-template*         계획서 템플릿 (정식 md + 결정 콘솔 html · 경량 md)
 │
-├── plans/                     작업계획서 — 각자 로컬 (git 에 안 올라감)
-├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감)
+├── plans/                     작업계획서 — 각자 로컬 (git 에 안 올라감 · 형식 docs/plan-template*)
+├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감 · 형식 docs/issues.md)
 ├── repos/                     담당 레포 링크 (각자 로컬, scripts/setup.sh)
-├── packs/<회사>/              회사 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
+├── packs/<회사>/              (옛 구조) 회사 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
+├── .pack-data → ~/athena-data/packs/<id>   (여러 팩 구조) 지금 팩 — pack·plans·issues·repos 는 이 아래를 가리키는 링크 (docs/pack.md "여러 팩")
+├── test/                      여러 팩 시험(packs-test.sh) · fixture 팩(acme·globex)
 │
 └── scripts/
     ├── 작업 흐름

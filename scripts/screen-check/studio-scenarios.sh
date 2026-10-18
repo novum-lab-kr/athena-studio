@@ -196,3 +196,18 @@ sc_studio_dock_server() {
   IN=("${saved[@]}")
 }
 SCENARIOS+=(studio_dock studio_dock_server)
+
+# 백엔드 고르기 — pane 안 표시가 athena.config.json "screen" 보다 먼저(본체 하나를 herdr·스튜디오가 같이 쓸 때 · 여러 팩 계획서)
+# 설정 herdr + Studio pane 안 → studio · 설정 studio + herdr pane 안 → herdr · pane 밖이면 설정이 데몬 접속 파일보다 먼저
+sc_studio_config_screen() {
+  local saved
+  saved="$(cat "$COPY/athena.config.json")"
+  python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["screen"]=sys.argv[2]; json.dump(d, open(p,"w"))' "$COPY/athena.config.json" herdr
+  step studio "${IN_STUDIO[@]}" -- $S self
+  step studio "${LIVE[@]}" -- $S capabilities
+  python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d["screen"]=sys.argv[2]; json.dump(d, open(p,"w"))' "$COPY/athena.config.json" studio
+  step studio "${IN[@]}" -- $S self
+  step studio "${LIVE[@]}" ATHENA_STUDIO_ENDPOINT="$WORK/studio/deadpid.json" -- $S capabilities
+  printf '%s\n' "$saved" > "$COPY/athena.config.json"
+}
+SCENARIOS+=(studio_config_screen)

@@ -109,7 +109,8 @@ $ scripts/screen
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
-  백엔드: ATHENA_SCREEN=herdr|studio|none → athena.config.json screen → auto
+  백엔드: ATHENA_SCREEN=herdr|studio|none → pane 안 표시(HERDR_ENV·HERDR_PANE_ID → herdr · ATHENA_STUDIO=1 → studio)
+         → athena.config.json screen → Studio 데몬 접속 파일 → herdr 명령 → none
 --- stderr
 --- herdr
 $ scripts/screen pane frobnicate

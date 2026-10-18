@@ -7,27 +7,31 @@
 .vscode/
 .DS_Store
 
-# 이슈 (로컬 산출물 — 각자 갖는다. 끝나면 [아카이브]로 archive/ 에 묶여 커밋된다)
-issues/*.md
-!issues/README.md
+# 이슈·작업계획서 (로컬 산출물 — 각자 갖는다. 끝나면 [아카이브]로 archive/ 에 묶여 커밋된다. 형식은 docs/issues.md)
+# 여러 팩 구조에서는 둘 다 지금 팩 데이터를 가리키는 링크다(scripts/lib/packs.mjs FIXED_LINKS) — 폴더·링크 둘 다 무시
+/issues
+/plans
 
-# 작업계획서 (로컬 산출물)
-plans/**/*.md
-plans/**/*.html
-!plans/**/.gitkeep
+# 여러 팩 — 활성 링크와 고정 링크(지금 팩 데이터 <데이터>/packs/<id>/… 를 가리킨다 · docs/pack.md "여러 팩")
+/.pack-data
+/.pack-data.tmp-*
+/archive
+/.sync
+# 옮기기(pack migrate)가 옛 작업 기록을 옮겨 두는 곳 — 확인 뒤에 지운다
+/.migrate-*
 
 # sync 임시 파일 (baseline인 .sync/snapshots/ 는 유지)
 .sync/pending/
 .sync/last-report.md
 
-# 팀원별 로컬 레포 링크 (scripts/setup.sh 가 생성)
-repos/
+# 팀원별 로컬 레포 링크 (scripts/setup.sh 가 생성 · 여러 팩이면 링크)
+/repos
 
-# 작업 워크트리 (scripts/new-branch.sh 가 생성)
-.worktrees/
+# 작업 워크트리 (scripts/new-branch.sh 가 생성 · 여러 팩이면 링크)
+/.worktrees
 
-# 현황판 휴지통 (삭제한 이슈·계획서 — 되살릴 수 있게 지우지 않는다)
-.board-trash/
+# 현황판 휴지통 (삭제한 이슈·계획서 — 되살릴 수 있게 지우지 않는다 · 여러 팩이면 링크)
+/.board-trash
 
 # 현황판 AI 사용량 (scripts/board/statusline.sh 가 쓴다)
 .board-usage.json
@@ -40,9 +44,9 @@ repos/
 
 # QA 시뮬레이션 (scripts/qa) — 의존성·런 결과·로그인 세션(쿠키, 절대 커밋 금지)
 scripts/qa/node_modules/
-.qa-runs/
-.qa-auth/
-.qa-baselines/
+/.qa-runs
+/.qa-auth
+/.qa-baselines
 
 # 회사 팩 — 별도 레포를 packs/<회사> 에 clone 한다. 링크(pack · .claude/agents/<팩 에이전트> …)는 athena pack link 가 .git/info/exclude 에 적는다
 /packs/

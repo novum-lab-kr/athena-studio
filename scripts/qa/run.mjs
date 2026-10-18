@@ -45,12 +45,17 @@ import { baselineDir, readBaselineProblems } from './baseline.mjs'
 import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from './tracking.mjs'
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
-import { loadConfig } from '../lib/config.mjs'
+import { boardPort, isSwitching, loadConfig } from '../lib/config.mjs'
 import { screenSync } from '../lib/screen.mjs'
 import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings, codeConventions } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
 const HERMES = join(QA_DIR, '..', '..')
+// 팩을 바꾸는 중이면 시작하지 않는다(bin/athena pack use — 바꾸는 동안 새 작업을 받지 않는다)
+if (isSwitching(HERMES)) {
+  console.error('⚠️  팩을 바꾸는 중이라 QA 를 시작하지 않는다 — 끝난 뒤 다시(bin/athena pack status)')
+  process.exit(1)
+}
 // 자기 요청 도메인·아이콘 글꼴 — 팩 설정 qa. QA 대상 앱은 팩에 등록한 레포에서(apps.mjs)
 const CONFIG = loadConfig(HERMES)
 const QA = CONFIG.qa ?? {}
@@ -208,7 +213,7 @@ if (flag('flow')) {
   logoutDone.then(() => { logoutEnded = true })
   // 라이브 화면은 바로 연다 — 로컬 dev 서버가 뜨는 몇 분 동안도 준비 단계가 보이게
   if (flag('live')) {
-    const board = `http://localhost:${process.env.ATHENA_BOARD_PORT || 4700}`
+    const board = `http://localhost:${boardPort(HERMES)}`
     const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
     if (up) spawn('open', [`${board}/qa-live?group=${groupId}`], { stdio: 'ignore', detached: true }).unref()
     console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
@@ -315,7 +320,7 @@ if (option('profiles')) {
   }
   if (ready) {
     if (flag('live')) {
-      const board = `http://localhost:${process.env.ATHENA_BOARD_PORT || 4700}`
+      const board = `http://localhost:${boardPort(HERMES)}`
       const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
       if (up) spawn('open', [`${board}/qa-live?group=${groupId}`], { stdio: 'ignore', detached: true }).unref()
       console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
@@ -438,7 +443,7 @@ const windowLefts = {}
 async function openLivePage() {
   // 묶음(--profiles)이면 부모가 묶음 화면을 연다
   if (option('group')) return
-  const board = `http://localhost:${process.env.ATHENA_BOARD_PORT || 4700}`
+  const board = `http://localhost:${boardPort(HERMES)}`
   const liveUrl = `${board}/qa-live?id=${runId}`
   const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
   if (up) spawn('open', [liveUrl], { stdio: 'ignore', detached: true }).unref()

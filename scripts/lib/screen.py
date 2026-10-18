@@ -5,15 +5,16 @@
 데몬 CLI(athena-studio-cli)·ATHENA_STUDIO_* 를 아는 건 StudioBackend 뿐이다
 (예외: herdr 플러그인 자체를 다루는 scripts/herdr-sidebar-*.sh — scripts/screen-lint.sh 허용 목록).
 
-백엔드 고르기 — ATHENA_SCREEN=herdr|studio|none → 없으면 이 아테나 폴더의 athena.config.json "screen"(같은 값 —
-  아테나를 화면마다 한 벌씩 둘 때 고정한다: herdr 용 ~/athena 는 herdr, Studio 전용 아테나는 studio) → 없거나 auto 면 위에서부터
-  (둘 다 켜 있어도 스크립트가 그대로 돈다 — 공존):
-  1. HERDR_ENV=1 이거나 HERDR_PANE_ID 가 있다(herdr pane 안) → herdr
+백엔드 고르기 — 위에서부터(둘 다 켜 있어도 스크립트가 그대로 돈다 — 공존):
+  1. ATHENA_SCREEN=herdr|studio|none                 → 그 값(회귀 검사 · 한 번만 바꿀 때 · auto 면 다음으로)
+  2. HERDR_ENV=1 이거나 HERDR_PANE_ID 가 있다(herdr pane 안) → herdr
      (Studio 데몬은 pane 셸에서 HERDR_* 를 지운다 — 둘 다 있으면 Studio pane 안에서 켠 herdr 이고 안쪽인 herdr 가 맞다)
-  2. ATHENA_STUDIO=1(Studio pane 안)                → studio
-  3. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
-  4. herdr 명령이 있다                                → herdr
-  5. 그 밖                                           → none
+  3. ATHENA_STUDIO=1(Studio pane 안)                → studio
+  4. 이 아테나 폴더의 athena.config.json "screen"(herdr·studio·none — pane 밖에서만 쓰인다. auto 면 다음으로)
+     pane 안 표시가 설정보다 먼저다 — 본체 하나를 herdr·스튜디오가 같이 쓰면 설정 고정값이 다른 화면의 pane 안까지 끌고 가지 않게
+  5. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
+  6. herdr 명령이 있다                                → herdr
+  7. 그 밖                                           → none
   pane 밖이어도 백엔드는 골라진다 — 원래 스크립트가 그 자리에서 herdr 를 바로 불렀다(plan-html 의 pane current · 현황판의 pane list).
   "pane 안인가" 는 inside() 가 따로 답한다(herdr: HERDR_ENV=1 + herdr 명령 · studio: ATHENA_STUDIO=1 + 데몬 CLI).
 
@@ -457,16 +458,21 @@ def _configured_screen():
 
 
 def backend_name():
-    # 환경 변수가 먼저(회귀 검사·한 번만 바꿀 때) → 이 아테나 폴더 설정(폴더마다 화면 고정) → 자동
-    name = os.environ.get('ATHENA_SCREEN', '') or _configured_screen() or 'auto'
-    if name != 'auto':
+    # 1) 환경 변수(회귀 검사·한 번만 바꿀 때) → 2) 화면 pane 안 표시(그 백엔드가 넣어 준 환경 변수) → 3) 이 아테나 폴더 설정 "screen"
+    # → 4) pane 밖이면 떠 있는 Studio 데몬(접속 파일) → 5) herdr 명령 → none.
+    # pane 안 표시가 설정보다 먼저다 — 본체 하나를 herdr·스튜디오가 같이 쓰면(여러 팩) 설정 "screen":"herdr" 고정 때문에
+    # 스튜디오 pane 안 아테나·delegate 가 herdr 에 pane 을 만들었다(계획서 20261018-여러-회사-팩 Decisions "화면 백엔드 고르기")
+    name = os.environ.get('ATHENA_SCREEN', '')
+    if name and name != 'auto':
         return name
-    # 1) 화면 pane 안(그 백엔드가 넣어 준 환경 변수) · 2) pane 밖이면 떠 있는 Studio 데몬(접속 파일) · 3) herdr 명령
     # 둘 다 있으면 herdr(R1) — Studio 데몬은 pane 셸에서 HERDR_* 를 지우므로, 둘 다 있다는 건 Studio pane 안에서 켠 herdr(안쪽)다
     if os.environ.get('HERDR_ENV') == '1' or os.environ.get('HERDR_PANE_ID'):
         return 'herdr'
     if os.environ.get('ATHENA_STUDIO') == '1':
         return 'studio'
+    configured = _configured_screen()
+    if configured and configured != 'auto':
+        return configured
     if _studio_endpoint():
         return 'studio'
     if shutil.which('herdr'):
@@ -513,7 +519,8 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
-  백엔드: ATHENA_SCREEN=herdr|studio|none → athena.config.json screen → auto"""
+  백엔드: ATHENA_SCREEN=herdr|studio|none → pane 안 표시(HERDR_ENV·HERDR_PANE_ID → herdr · ATHENA_STUDIO=1 → studio)
+         → athena.config.json screen → Studio 데몬 접속 파일 → herdr 명령 → none"""
 
 VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--label-or-name', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace', '--pane',
                '--target', '--direction', '--ratio', '--env', '--split', '--lines', '--source', '--match', '--regex', '--timeout'}

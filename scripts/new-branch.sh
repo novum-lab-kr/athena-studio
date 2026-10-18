@@ -18,13 +18,26 @@
 # (<별칭>:packages 는 안내하고 멈춘다 — 앱 워크트리에 packages/** 가 같이 있다).
 #
 # 워크트리 위치: <athena>/.worktrees/<레포>/<브랜치 슬러그>  (gitignore 대상)
+#   여러 팩 구조면 <데이터>/packs/<지금 팩>/worktrees/<레포>/<브랜치 슬러그> — 실제 경로(팩을 바꿔도 그 팩에 남는다)
 # 정리: git -C repos/<레포> worktree remove <경로>
 # 로컬 파일: 만든 워크트리에 메인 체크아웃의 git 무시 파일(.env·.aws 키 등, athena.config.json worktreeCopy)을
 #   scripts/wt-copy-local.sh 로 복사한다. 이미 있는 워크트리는 scripts/wt-copy-local.sh --all
 set -uo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-WT_ROOT="${ATHENA_WORKTREE_ROOT:-$ROOT/.worktrees}"
+# 워크트리 자리 — ATHENA_WORKTREE_ROOT → (여러 팩) 지금 팩 데이터의 실제 경로 <데이터>/packs/<id>/worktrees → <athena>/.worktrees
+# 여러 팩이면 실제 경로로 만든다: 본체의 .worktrees 링크로 만들면 팩을 바꾼 뒤 그 경로가 다른 팩을 가리킨다(D4 · scripts/lib/config.mjs paths)
+WT_STATE="$(python3 - "$ROOT" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import paths, switching
+print('switching' if switching(sys.argv[1]) else 'ok', paths(sys.argv[1])['worktrees'], sep='\t')
+PYEOF
+)"
+[ "${WT_STATE%%$'\t'*}" = switching ] && { echo "팩을 바꾸는 중이라 브랜치·워크트리를 만들지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2; exit 1; }
+WT_ROOT="${WT_STATE#*$'\t'}"
+# 설정을 못 읽어 자리를 모르면 멈춘다 — 빈 값이면 "/<레포>/…" 처럼 파일 시스템 맨 위에 만들 뻔한다(리뷰 제안 2026-10-18)
+case "$WT_STATE" in ok$'\t'?*|switching$'\t'*) ;; *) echo "❌ 워크트리 자리를 정하지 못했다(설정·팩 확인 — scripts/lib/athena_config.py paths)" >&2; exit 1 ;; esac
+[ -n "$WT_ROOT" ] || { echo "❌ 워크트리 자리가 비었다(설정·팩 확인)" >&2; exit 1; }
 DRY_RUN=0; IN_PLACE=0; REUSE=0
 TICKET=""; TARGETS=()
 
