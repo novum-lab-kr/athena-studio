@@ -64,7 +64,7 @@
   "menu.window.front": "모두 앞으로 가져오기",
   "menu.window.close": "닫기",
   "dialog.daemonVersion.message": "작업 창 데몬이 이 앱과 버전이 달라요",
-  "dialog.daemonVersion.detail": "데몬을 다시 띄우면 지금 열린 pane {count}개(그 안의 에이전트 포함)가 모두 닫혀요.\n나중에 하면 옛 데몬으로 계속 쓰고, 새 기능 일부가 동작하지 않을 수 있어요.",
+  "dialog.daemonVersion.detail": "데몬을 다시 띄우면 지금 열린 pane {count}개(그 안의 에이전트 포함)가 모두 닫혀요.\n나중에 하면 옛 데몬으로 계속 쓰고, 새 기능 일부(팩 바꾸기 전 점검 등)가 동작하지 않을 수 있어요 — 그때는 [보기 → 작업 창 데몬 다시 띄우기] 로 다시 띄우면 돼요.",
   "dialog.daemonVersion.restart": "지금 다시 띄우기",
   "dialog.daemonRestart.message": "작업 창 데몬을 다시 띄울까요?",
   "dialog.daemonRestart.detail": "지금 열린 pane 이 모두 닫혀요(그 안의 에이전트 포함).",

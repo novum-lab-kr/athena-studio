@@ -5,8 +5,10 @@
 // 알림  {event, ...}  (데몬 → 앱: 출력 · 배치 바뀜 · resync)
 // 첫 요청은 hello {protocol, appVersion} — 프로토콜 번호만 비교한다(S3)
 
-// 데몬과 앱(·CLI)이 서로 알아듣는 형식이 바뀌면 올린다. 앱 버전이 아니다
-const PROTOCOL = 3
+// 데몬과 앱(·CLI)이 서로 알아듣는 형식이 바뀌면 올린다(요청 하나를 더해도). 앱 버전이 아니다
+// 안 올리면 옛 데몬을 앱이 맞는 데몬으로 보고 붙어, 새 요청이 '모르는 동작' 으로 실패한다
+// 4 — 'pane pids'(팩 바꾸기 전 점검 · e23b039) · 3 까지의 데몬은 모른다
+const PROTOCOL = 4
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

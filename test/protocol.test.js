@@ -27,6 +27,13 @@ test('핸드셰이크: 프로토콜 번호만 비교', () => {
   assert.equal(protocol.checkHello(null), 'invalid')
 })
 
+// 옛 데몬 — 'pane pids' 를 더하며 4 로 올렸다. 3 이하로 뜬 데몬은 다시 띄우라는 확인창(mismatch)으로 가야 한다
+test('핸드셰이크: pane pids 전 데몬(protocol 3)은 mismatch', () => {
+  assert.ok(protocol.PROTOCOL >= 4)
+  const oldHello = { ok: true, result: { protocol: 3, daemonVersion: '0.1.0', pid: 54972, startedAt: '2026-10-17T00:00:00.000Z', panes: 2 } }
+  assert.equal(protocol.checkHello(oldHello), 'mismatch')
+})
+
 test('종료 코드: unavailable 은 3, 그 밖은 1', () => {
   assert.equal(protocol.exitCodeFor('unavailable'), 3)
   for (const code of ['usage', 'not_found', 'timeout', 'internal']) assert.equal(protocol.exitCodeFor(code), 1)

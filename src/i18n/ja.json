@@ -64,7 +64,7 @@
   "menu.window.front": "すべてを手前に移動",
   "menu.window.close": "閉じる",
   "dialog.daemonVersion.message": "作業ウィンドウのデーモンとアプリのバージョンが異なります",
-  "dialog.daemonVersion.detail": "デーモンを再起動すると、開いているペイン {count} 個(中のエージェントを含む)がすべて閉じます。\n後で行う場合は古いデーモンのまま使い続け、一部の新機能が動かないことがあります。",
+  "dialog.daemonVersion.detail": "デーモンを再起動すると、開いているペイン {count} 個(中のエージェントを含む)がすべて閉じます。\n後で行う場合は古いデーモンのまま使い続け、一部の新機能(パック切り替え前の確認など)が動かないことがあります — その場合は [表示 → 作業ウィンドウのデーモンを再起動] から再起動できます。",
   "dialog.daemonVersion.restart": "今すぐ再起動",
   "dialog.daemonRestart.message": "作業ウィンドウのデーモンを再起動しますか?",
   "dialog.daemonRestart.detail": "開いているペインがすべて閉じます(中のエージェントを含む)。",
