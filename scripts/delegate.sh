@@ -322,7 +322,9 @@ plan, cwd, branch, pane, agent = sys.argv[1:6]
 def record(text):
     if agent == 'reviewer':
         # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(현황판이 이 pane 도 카드에 붙인다)
-        line = f"- Review: {cwd} · 🌿 {branch} · pane {pane} (reviewer)"
+        # 띄운 시각 — review-wait.sh 가 "이 시각 뒤에 적힌 결론" 을 찾는다(기다리기를 늦게 시작해도 이미 끝난 결론을 놓치지 않게)
+        stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        line = f"- Review: {cwd} · 🌿 {branch} · pane {pane} (reviewer) · 띄움 {stamp}"
         if re.search(r'^- Review:', text, re.M):
             text = re.sub(r'^- Review:.*$', line, text, count=1, flags=re.M)
         elif re.search(r'^- Work ref:.*$', text, re.M):
@@ -344,3 +346,5 @@ update_plan(plan, record)
 PYEOF
 
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
+# reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
+if [ "$AGENT" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
