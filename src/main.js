@@ -5,6 +5,7 @@ const fs = require('fs')
 const http = require('http')
 const path = require('path')
 const core = require('./lib/core')
+const packModel = require('./lib/pack')
 const agentFeed = require('./lib/agent-feed')
 const trayModel = require('./lib/tray-model')
 const trayBadge = require('./lib/tray-icon')
@@ -46,8 +47,8 @@ function athenaState() {
     athenaDir: config.athenaDir,
     valid: check.ok,
     missing: check.missing,
-    boardUrl: core.boardUrl(config.boardPort),
-    installDir: STUDIO_ATHENA,
+    boardUrl: core.boardUrl(boardPortNow()),
+    installDir: homeAthena(), // 처음 켤 때 쓰는 본체(~/athena · 사용자 결정 1)
     tabKey: isMac ? '⌘' : 'Alt+',
     platform: process.platform,
     athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름이고 아테나 폴더인 작업 공간에서만 보인다
@@ -68,7 +69,7 @@ let flushTimer = null
 let dropOutput = false // attach 답이 오기 전 출력 — 되살릴 화면에 이미 들어 있다
 
 const daemonPaths = () =>
-  core.daemonPaths({ userData: app.getPath('userData'), home: app.getPath('home'), tmpdir: app.getPath('temp'), uid: process.getuid() })
+  core.daemonPaths({ userData: app.getPath('userData'), home: app.getPath('home'), tmpdir: app.getPath('temp'), uid: process.getuid(), endpoint: process.env.ATHENA_STUDIO_ENDPOINT || null })
 
 function onDaemonEvent(message) {
   if (message.event === 'data') {
@@ -224,7 +225,8 @@ const MONITOR_HEAD_BYTES = 64 * 1024 // 처음 붙을 때 파일 끝에서 이�
 const MONITOR_CHUNK_BYTES = 4 * 1024 * 1024
 const MONITOR_KEEP = 300
 const MONITOR_TEXT_MAX = 300
-const monitor = { watching: false, timer: null, ticking: false, lastScan: 0, lastFullScan: 0, tails: new Map(), tailSeq: 0, events: [], seq: 0, agentCwds: [] }
+// floor — 팩을 바꾼 시각. 그 전 세션은 다른 팩 것일 수 있어(본체 하나 · 같은 폴더) 읽지 않는다
+const monitor = { watching: false, timer: null, ticking: false, lastScan: 0, lastFullScan: 0, tails: new Map(), tailSeq: 0, events: [], seq: 0, agentCwds: [], floor: 0 }
 
 // 예전엔 데몬 고정 칸에서 agent-monitor.py 를 돌렸다 — 남아 있으면 닫는다(보기만 하는 칸이라 잃는 것이 없다)
 async function closeMonitorDock() {
@@ -254,7 +256,7 @@ async function recentFile(file, since) {
 // allSessions — 부모 세션이 조용해도 서브에이전트는 오래 돌 수 있어서, 가끔(1분)은 모든 세션의 서브에이전트를 자기 수정 시각으로 본다
 async function findMonitorLogs(allSessions) {
   const root = path.join(app.getPath('home'), '.claude', 'projects')
-  const since = Date.now() - MONITOR_MINUTES * 60000
+  const since = Math.max(Date.now() - MONITOR_MINUTES * 60000, monitor.floor)
   const wanted = new Set(monitor.agentCwds.map(agentFeed.projectDirName))
   const found = []
   for (const project of await readDir(root)) {
@@ -378,7 +380,7 @@ function monitorSessions() {
 
 async function monitorTick() {
   // 창이 숨었으면(메뉴 막대로 내려감) 기록을 읽지 않는다
-  if (!monitor.watching || monitor.ticking || !mainWindow || !mainWindow.isVisible()) return
+  if (!monitor.watching || monitor.ticking || packBusy || !mainWindow || !mainWindow.isVisible()) return
   monitor.ticking = true
   try {
     const fresh = []
@@ -677,15 +679,19 @@ function queueBoard(work) {
 }
 
 function ensureBoard() {
-  if (!core.checkAthenaDir(config.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(config.boardPort), error: '아테나 폴더가 정해지지 않았어요' })
+  if (!core.checkAthenaDir(config.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(boardPortNow()), error: '아테나 폴더가 정해지지 않았어요' })
   return queueBoard(() => findOrStartBoard(config.athenaDir))
 }
 
-// 현황판은 띄우지 않고 포트만 미리 정해 적는다(앱 시작 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게
+// 현황판은 띄우지 않고 포트만 미리 정해 적는다(앱 시작 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
+// 팩 지원 본체면 포트는 본체가 정하니 읽기만 하고 본체 설정에 쓰지 않는다(setAthenaBoardPort 는 옛 본체에서만)
 function prepareBoardPort() {
   if (!core.checkAthenaDir(config.athenaDir).ok) return
   const athenaDir = config.athenaDir
-  queueBoard(() => findBoardPort(athenaDir)).catch(() => {})
+  queueBoard(async () => {
+    if (await refreshPackStatus(athenaDir)) return null
+    return findBoardPort(athenaDir)
+  }).catch(() => {})
 }
 
 // 저장된 포트부터 차례로 — 이 아테나 폴더에서 도는 현황판이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것(herdr 용 ~/athena 현황판 등)이나
@@ -707,11 +713,43 @@ async function findBoardPort(athenaDir) {
 async function findOrStartBoard(athenaDir) {
   const result = await findOrStartBoardFor(athenaDir)
   // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 현황판을 보여 주지 않는다
-  if (config.athenaDir !== athenaDir) return { ok: false, url: core.boardUrl(config.boardPort), error: `아테나 폴더가 바뀌었어요 — ${isMac ? '⌘' : 'Alt+'}R 로 다시 열어요` }
+  if (config.athenaDir !== athenaDir) return { ok: false, url: core.boardUrl(boardPortNow()), error: `아테나 폴더가 바뀌었어요 — ${isMac ? '⌘' : 'Alt+'}R 로 다시 열어요` }
   return result
 }
 
+// 지금 현황판 포트 — 팩 지원 본체면 본체가 정한 값(pack status), 옛 본체면 앱 설정
+let packBoardPort = null
+let packDataDir = null // R1 — pack status 의 dataDir
+const boardPortNow = () => packBoardPort || config.boardPort
+
+// 팩 지원 본체인지 · 현황판 포트 — pack status(가볍다). 옛 본체면 null
+async function refreshPackStatus(athenaDir) {
+  const status = await runPack(['status'], { dir: athenaDir })
+  packBoardPort = packModel.statusBoardPort(status)
+  packDataDir = packModel.statusDataDir(status)
+  // current 도 같이 — 현황판 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 현황판을 끄지 않게)
+  return packBoardPort ? { boardPort: packBoardPort, current: status.current || null } : null
+}
+
+// 팩 지원 본체의 현황판 — 포트는 본체가 정한다(계획서 5.3 · 본체 하나에 현황판 하나). 떠 있는 현황판이 지금 팩 · 세대 것이면
+// 누가 띄웠든(herdr board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 현황판이 아닌 것이 쥐고 있으면 오류
+async function packBoard(port, athenaDir, current) {
+  const url = core.boardUrl(port)
+  if (await isBoardUp(port)) {
+    const reply = await boardJson(port, '/api/state')
+    if (reply.status !== 200 || !reply.body) return { ok: false, url, error: `현황판(포트 ${port}) 상태를 읽지 못해 지금 팩 것인지 모르겠어요 — ${isMac ? '⌘' : 'Alt+'}R 로 다시 시도해요` }
+    if (packModel.boardIdentity(reply.body, current) !== 'stale') return { ok: true, url, started: false }
+    if (await stopStaleBoard(port)) return startBoard(port, athenaDir)
+    return { ok: false, url, error: `현황판(포트 ${port})이 다른 팩 것인데 끄지 못했어요 — 앱을 다시 켜거나 그 현황판을 꺼 주세요` }
+  }
+  if ((await boardOwner(port, athenaDir)) === 'free') return startBoard(port, athenaDir)
+  return { ok: false, url, error: `본체가 정한 현황판 포트 ${port} 를 다른 프로그램이 쓰고 있거나 답하지 않아요` }
+}
+
 async function findOrStartBoardFor(athenaDir) {
+  const status = await refreshPackStatus(athenaDir)
+  if (status) return packBoard(status.boardPort, athenaDir, status.current)
+  // 옛 본체 — 지금까지처럼 앱 설정 boardPort 부터 비어 있는 포트를 골라 적는다
   const found = await findBoardPort(athenaDir)
   if (found.error) return { ok: false, url: core.boardUrl(config.boardPort), error: found.error }
   if (found.owner === 'free') return startBoard(found.port, athenaDir)
@@ -817,6 +855,8 @@ async function pickAthenaDir() {
 }
 
 function useAthenaDir(dir) {
+  // 회사 팩 작업 중에는 본체를 바꾸지 않는다(정리는 A 본체에서, 바꾸기는 B 본체에서 — 섞인다)
+  if (packBusy) return { ...athenaState(), error: `회사 팩 작업(${packBusy}) 중에는 아테나 본체를 바꿀 수 없어요` }
   const check = core.checkAthenaDir(dir)
   if (!check.ok) return { ...athenaState(), error: `아테나 폴더가 아니에요 — 없는 파일: ${check.missing.join(', ')}`, picked: dir }
   try {
@@ -834,37 +874,389 @@ function useAthenaDir(dir) {
 // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
 const athenaReposRoot = (dir) => core.reposRootFor(dir, { studioAthena: STUDIO_ATHENA, home: app.getPath('home') })
 
-// 아테나 쓰기 — 받지 않고 스튜디오 레포의 athena/ 를 바로 쓴다(git subtree · README '아테나 받기/보내기')
+// 처음 켤 때 — 받지 않고 ~/athena 를 본체로 쓴다(여러 회사 팩 · 사용자 결정 1). 없으면 폴더를 고르게 한다(본체 받기는 범위 밖)
 async function installAthena() {
-  const check = core.checkAthenaDir(STUDIO_ATHENA)
-  if (!check.ok) {
-    return { ...athenaState(), error: `스튜디오 레포에 아테나(${STUDIO_ATHENA})가 없어요 — README 의 '아테나 받기' 로 넣거나, 받아 둔 아테나 폴더를 골라 주세요(없는 파일: ${check.missing.join(', ')})` }
-  }
-  return useAthenaDir(STUDIO_ATHENA)
+  const found = packModel.defaultAthenaDir(config, homeAthena(), (dir) => core.checkAthenaDir(dir).ok)
+  if (!found) return { ...athenaState(), error: `아테나 본체(${homeAthena()})를 찾지 못했어요 — 받아 둔 아테나 폴더를 골라 주세요` }
+  return useAthenaDir(found)
 }
 
-// 예전처럼 herdr 용 ~/athena 를 쓰고 있으면 한 번 묻는다 — 쓰기로 하면 아테나 폴더를 비워 화면이 레포의 athena/ 를 쓰게 한다.
-// ~/athena 와 거기서 도는 작업 공간 · 에이전트는 건드리지 않는다
-async function offerStudioAthena() {
-  if (!core.shouldOfferStudioAthena(config, app.getPath('home'))) return
-  // 레포에 athena/ 가 없으면 묻지 않는다(옮기기로 하면 지금 연결을 비우니 — 갈 곳이 있을 때만)
-  if (!core.checkAthenaDir(STUDIO_ATHENA).ok) return
-  // 창을 만들기 전이라 대화상자가 다른 앱 뒤에 숨는다(터미널 · Dock 에서 켠 직후) — 앱을 앞으로 가져온다
+const homeAthena = () => path.join(app.getPath('home'), 'athena')
+
+// 스튜디오 레포 athena/ 를 쓰던 사람 — ~/athena 가 여러 팩을 지원하면 한 번 묻는다.
+// 옮기기로 하면 본체를 ~/athena 로 바꾸고, 화면이 뜬 뒤 그 폴더의 팩 · 작업 기록 가져오기(import-athena)를 이어서 연다. 옛 폴더는 건드리지 않는다
+let pendingAthenaImport = null
+async function offerMoveToHome() {
+  // 가짜 본체(화면 확인용)는 어느 폴더에 물어도 '여러 팩 지원' 이라 답한다 — 진짜 설정(athenaDir)을 바꾸지 않게 묻지 않는다
+  if (process.env.ATHENA_STUDIO_FAKE_PACK === '1') return
+  if (config.homeAthenaAsked || !core.checkAthenaDir(homeAthena()).ok || !core.sameDir(config.athenaDir, STUDIO_ATHENA)) return
+  const listed = packModel.normalizePackList(await runPack(['list'], { dir: homeAthena() }))
+  if (!packModel.shouldOfferMoveToHome({ config, studioAthena: STUDIO_ATHENA, homeSupportsPacks: listed.supported && !listed.legacy, sameDir: core.sameDir })) return
+  // 창을 만들기 전이라 대화상자가 다른 앱 뒤에 숨는다 — 앱을 앞으로 가져온다
   app.focus({ steal: true })
   const { response } = await dialog.showMessageBox({
     type: 'question',
-    message: '스튜디오 전용 아테나를 쓸까요?',
+    message: '이제 아테나 본체는 ~/athena 하나로 써요',
     detail: [
-      `지금은 herdr 용 아테나(${config.athenaDir})를 같이 쓰고 있어요.`,
-      `쓰면 스튜디오는 레포 안 아테나(${STUDIO_ATHENA})를 따로 쓰고, 팩은 처음 켤 때 /setup 으로 새로 등록해요. 현황판은 ${core.moveToStudioAthena(config).boardPort} 포트로 따로 떠요.`,
-      '~/athena 와 그 작업 공간 · 에이전트는 그대로 둬요. [지금 그대로] 를 고르면 다시 묻지 않아요(바꾸려면 [파일 → 아테나 폴더 바꾸기…]).',
+      `지금은 스튜디오 레포 안 아테나(${STUDIO_ATHENA})를 쓰고 있어요.`,
+      '옮기면 그 안의 회사 팩과 계획서 · 이슈를 ~/athena 로 가져와요(같은 이름 팩이 있으면 어느 쪽을 쓸지 골라요). 옛 폴더와 워크트리는 그대로 둬요.',
+      '[나중에] 를 고르면 다시 묻지 않아요(바꾸려면 [파일 → 회사 팩 → 가져오기 → 기존 아테나]).',
     ].join('\n\n'),
-    buttons: ['쓰기', '지금 그대로'],
+    buttons: ['옮기기', '나중에'],
     defaultId: 0,
     cancelId: 1,
   })
-  config = response === 0 ? core.moveToStudioAthena(config) : { ...config, studioAthenaAsked: true }
+  config = { ...config, homeAthenaAsked: true }
+  if (response === 0) {
+    config = { ...config, athenaDir: homeAthena() }
+    pendingAthenaImport = STUDIO_ATHENA
+  }
   core.saveConfig(configFile(), config)
+}
+
+// ── 회사 팩 ────────────────────────────────────────────────
+// 정본은 아테나 본체 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 화면을 정리하고, 결과를 보여 준다.
+// 약속: 아테나 계획서 plans/feature/20261018-여러-회사-팩.md "5. 공통 스펙". 팩 파일 · 링크는 직접 만지지 않는다.
+// ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 코어 명령이 나오기 전 화면 확인용
+const PACK_TIMEOUTS = { list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 60000, 'board-token': 15000 }
+const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
+let packState = { supported: false }
+let packBusy = null // 지금 하는 일(바꾸기 · 가져오기 …) — 한 번에 하나
+let packAbort = null // 기다리는 중 · 검사 중이면 취소할 수 있다
+
+function packScript(dir) {
+  if (process.env.ATHENA_STUDIO_FAKE_PACK === '1') return path.join(__dirname, '..', 'scripts', 'fake-pack.js')
+  return path.join(dir, 'scripts', 'athena.mjs')
+}
+
+// 셸을 거치지 않고 실행 · progress 줄은 그때그때 화면에 · 원문(stderr)은 화면에 넘기지 않고 pack.log 에만
+function runPack(args, { dir = config.athenaDir, onProgress = null, signal = null } = {}) {
+  return new Promise((resolve) => {
+    if (!dir) return resolve({ ok: false, error: 'not-found', message: '아테나 본체가 정해지지 않았어요' })
+    const nodePath = core.findExecutable('node', process.env.PATH)
+    const env = core.childEnv(process.env, nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' })
+    let child
+    try {
+      child = spawn(nodePath || process.execPath, [packScript(dir), 'pack', ...args, '--json'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] })
+    } catch (error) {
+      return resolve({ ok: false, error: 'bad-output', message: error.message })
+    }
+    let output = ''
+    let rest = ''
+    let errors = ''
+    let settled = false
+    const finish = (result) => {
+      if (settled) return
+      settled = true
+      clearTimeout(timer)
+      clearInterval(timer)
+      if (errors.trim()) fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} pack ${args[0]}\n${errors.slice(-20000)}`, () => {})
+      resolve(result)
+    }
+    // 시간 초과 · 취소는 SIGTERM — 본체가 임시본을 지우거나 되돌리고 끝낸다(5절). 결과는 프로세스가 실제로 끝난 뒤에(그 전에 다음 단계로 가지 않게).
+    // 15초 안에 안 끝나면 SIGKILL
+    let forced = null
+    const stop = (reason) => {
+      if (forced) return
+      forced = { ok: false, error: reason }
+      child.kill('SIGTERM')
+      setTimeout(() => child.exitCode === null && child.kill('SIGKILL'), 15000).unref()
+    }
+    // R3 — 팩을 바꾸는 명령(use · new · import --replace)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
+    const changesPack = ['use', 'new'].includes(args[0]) || (args[0] === 'import' && args.includes('--replace'))
+    const slow = () => onProgress && onProgress({ step: 'slow', text: '오래 걸려요 — 본체가 끝낼 때까지 기다려요(중간에 끊지 않아요)' })
+    const timer = changesPack ? setInterval(slow, PACK_TIMEOUTS[args[0]] || 60000) : setTimeout(() => stop('timeout'), PACK_TIMEOUTS[args[0]] || 60000)
+    if (signal) signal.addEventListener('abort', () => stop('canceled'), { once: true })
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      output += chunk
+      const split = packModel.splitLines(rest, chunk)
+      rest = split.rest
+      for (const line of split.lines) {
+        const step = packModel.parseProgressLine(line)
+        if (step && onProgress) onProgress(step)
+      }
+    })
+    child.stderr.setEncoding('utf8')
+    child.stderr.on('data', (chunk) => (errors += chunk))
+    child.on('error', (error) => finish({ ok: false, error: 'bad-output', message: error.message }))
+    child.on('close', () => {
+      const parsed = packModel.parsePackOutput(output)
+      if (!forced && parsed.result.error === 'bad-output' && parsed.raw) errors += `\n[JSON 이 아닌 마지막 줄] ${parsed.raw}`
+      finish(forced || parsed.result)
+    })
+  })
+}
+
+async function refreshPacks() {
+  if (!core.checkAthenaDir(config.athenaDir).ok) {
+    packState = { supported: false }
+  } else {
+    const listed = packModel.normalizePackList(await runPack(['list']))
+    // welcome — 시작 화면(회사 팩이 아직 없어요)을 띄울지. 규칙은 한 곳(pack.js showPackWelcome)에서만
+    packState = { ...listed, welcome: packModel.showPackWelcome(listed) }
+  }
+  send('pack:state', packState)
+  return packState
+}
+
+const packProgress = (step) => send('pack:progress', step)
+
+// 본체 busy 의 에이전트가 스튜디오 pane 안인지 가릴 재료 — pane 셸 pid(데몬 'pane pids' · 옛 데몬은 없음) + 프로세스 부모 표(ps 의 pid · ppid 만)
+async function packEvidence() {
+  const listed = await daemonCall('pane list')
+  const state = await daemonCall('state')
+  if (listed.error || state.error) return null
+  const pids = await daemonCall('pane pids')
+  const pidOf = (pids.result && pids.result.pids) || {}
+  const panes = (listed.result.panes || []).map((pane) => ({ ...pane, pid: Number.isInteger(pidOf[pane.id]) ? pidOf[pane.id] : null }))
+  const parentOf = await new Promise((resolve) =>
+    execFile('/bin/ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8', timeout: 5000, maxBuffer: 8 * 1024 * 1024 }, (error, stdout) => {
+      if (error) return resolve(null)
+      const table = new Map()
+      for (const line of stdout.split('\n')) {
+        const [pid, ppid] = line.trim().split(/\s+/).map(Number)
+        if (Number.isInteger(pid) && Number.isInteger(ppid)) table.set(pid, ppid)
+      }
+      resolve(table)
+    }),
+  )
+  return { panes, workspaces: state.result.workspaces || [], parentOf }
+}
+
+// 스튜디오가 끌 수 없는 에이전트 줄 — 밖에서 도는 것 · 가릴 수 없는 것(옛 데몬이면 pane pid 를 모른다)
+function outsideItems(check) {
+  if (check.unknownAgents) return [{ kind: 'outside', what: '에이전트가 스튜디오 pane 안인지 확인하지 못했어요 — [보기 → 작업 창 데몬 다시 띄우기] 뒤 다시 해 주세요' }]
+  return check.externalAgents ? [{ kind: 'outside', what: `${check.externalAgents}개 — 그 터미널에서 끝내 주세요` }] : []
+}
+
+// 닫을 pane 을 가리는 폴더 — 본체 + 데이터 폴더. 데이터 폴더는 코어 pack status 의 dataDir(R1), 옛 응답이면 ATHENA_DATA_DIR → ~/athena-data
+const packDirs = () => [config.athenaDir, packDataDir || process.env.ATHENA_DATA_DIR || path.join(app.getPath('home'), 'athena-data')]
+
+// 바꾸기 · 새로 만들기 · 지금 팩 교체 전에 — 일하는 에이전트를 기다리거나 멈추고, 팩에 묶인 pane 을 닫고, 남은 작업이 없는지 본체에 묻는다.
+// 화면의 working/idle 은 안내일 뿐 — 마지막 판단은 본체 busy(스튜디오 밖 에이전트 · 무거운 명령 · 바꾸기 중. QA · 배우기 검토는 코어가 끈다)
+async function quiesceForPack(mode, signal) {
+  const listPanes = packEvidence
+  await refreshPackStatus(config.athenaDir) // 데이터 폴더(R1)를 새로
+  const checkWith = (screenState, busy) => packModel.switchCheck({ panes: screenState.panes, busy, parentOf: screenState.parentOf, workspaces: screenState.workspaces, athenaDirs: packDirs(), resolve: core.realDir })
+  let screenNow = await listPanes()
+  if (!screenNow) return { ok: false, error: 'busy', message: '작업 창 데몬에서 pane 목록을 읽지 못했어요' }
+
+  // 1) 스튜디오도 코어도 끄지 않는 것(무거운 명령 · 바꾸기 중 · 밖에서 도는 에이전트)이 있으면 아무것도 닫지 않고 멈춘다
+  const busyFirst = await runPack(['busy'])
+  if (!busyFirst.ok) return busyFirst
+  const first = checkWith(screenNow, busyFirst.busy)
+  if (!first.canProceed) return { ok: false, error: 'busy', busy: [...first.blockers, ...outsideItems(first)] }
+
+  // 2) 일하는 에이전트 — 끝나길 기다리거나(Esc 로) 멈춘다
+  if (first.working.length && mode === 'stop') {
+    packProgress({ step: 'studio-stop', text: `에이전트 ${first.working.length}개를 멈추는 중` })
+    for (const paneId of first.working) await daemonCall('input', { pane: paneId, data: '\x1b' })
+  }
+  // 기다리기 · 멈추기는 닫을 pane 안의 에이전트만(R2 — 다른 프로젝트 claude 는 기다리지 않는다)
+  const targets = new Set(first.close)
+  const deadline = mode === 'stop' ? Date.now() + 30000 : Infinity
+  for (;;) {
+    if (signal && signal.aborted) return { ok: false, error: 'canceled' }
+    const working = screenNow.panes.filter((pane) => targets.has(pane.id) && pane.agent && pane.agent_status === 'working')
+    if (!working.length) break
+    if (Date.now() > deadline) return { ok: false, error: 'busy', message: `에이전트 ${working.length}개가 멈추지 않았어요 — 직접 멈춘 뒤 다시 해 주세요` }
+    if (mode !== 'stop') packProgress({ step: 'studio-wait', text: `일하는 에이전트 ${working.length}개가 끝나길 기다리는 중` })
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+    screenNow = (await listPanes()) || screenNow
+  }
+
+  // 3) 닫기 직전에 다시 — 기다리는 사이 무거운 명령 · 밖의 에이전트 같은 막는 작업이 생겼으면 아무것도 닫지 않고 멈춘다
+  const fresh = await listPanes()
+  const busyAgain = await runPack(['busy'])
+  if (!fresh || !busyAgain.ok) return busyAgain.ok ? { ok: false, error: 'busy', message: '작업 창 데몬에서 pane 목록을 읽지 못했어요' } : busyAgain
+  const again = checkWith(fresh, busyAgain.busy)
+  if (!again.canProceed) return { ok: false, error: 'busy', busy: [...again.blockers, ...outsideItems(again)] }
+  if (again.working.length) return { ok: false, error: 'busy', message: `에이전트 ${again.working.length}개가 다시 일을 시작했어요 — 다시 해 주세요` }
+  // 팩에 묶인 pane 닫기(1단계는 저장 없이 — 돌아오면 계획서 Checkpoint 로). 여기부터는 취소할 수 없다
+  if (signal && signal.aborted) return { ok: false, error: 'canceled' }
+  packProgress({ step: 'studio-close', text: 'pane 닫는 중', cancellable: false })
+  const closing = again.close
+  packProgress({ step: 'studio-close', text: `pane ${closing.length}개 닫는 중` })
+  for (const paneId of closing) await daemonCall('pane close', { pane: paneId })
+
+  // 4) 정말 끝났는지 — pane 이 사라지고 본체 busy 가 빌 때까지(최대 20초)
+  packProgress({ step: 'studio-busy', text: '남은 작업 확인' })
+  let lastBusy = []
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const now = await listPanes()
+    const remaining = now ? now.panes.filter((pane) => closing.includes(pane.id)).length : closing.length
+    const busy = await runPack(['busy'])
+    lastBusy = busy.ok ? packModel.remainingBusy(busy.busy) : lastBusy
+    // QA · 배우기 검토는 코어가 pack use 때 끈다(5.2 · Q7) — 기다리지 않는다
+    if (!remaining && busy.ok && !packModel.remainingBusy(busy.busy).length) return { ok: true, closed: closing.length }
+    await new Promise((resolve) => setTimeout(resolve, 1000))
+  }
+  return { ok: false, error: 'busy', message: 'pane 을 닫았지만 아직 끝나지 않은 작업이 있어요', busy: lastBusy }
+}
+
+// 바꾸는 동안 멈추는 것 — 트레이 폴링 · 에이전트 모니터. 끝나면 모니터 기록을 비우고 바꾼 뒤 시각부터 다시 읽는다
+function pausePackWatchers(on) {
+  trayState.packPaused = on
+  if (on) return
+  monitor.tails.clear()
+  monitor.events = []
+  monitor.floor = Date.now()
+  trayHistory.length = 0
+  send('monitor:update', { reset: true, sessions: [], events: [] })
+}
+
+// 한 번에 하나 — 같은 요청이 두 번 와도 두 번째는 busy
+async function packTask(name, work) {
+  if (packBusy) return { ok: false, error: 'locked', message: `${packBusy} 중이에요` }
+  packBusy = name
+  packAbort = new AbortController()
+  try {
+    return await work(packAbort.signal)
+  } finally {
+    packBusy = null
+    packAbort = null
+  }
+}
+
+// 바꾸기 전 점검 — 화면이 [끝나면 바꾸기] · [멈추고 바꾸기] 를 물을지 정하게
+async function packCheck() {
+  const evidence = await packEvidence()
+  if (!evidence) return { ok: false, error: 'busy', message: '작업 창 데몬에서 pane 목록을 읽지 못했어요' }
+  await refreshPackStatus(config.athenaDir)
+  const busy = await runPack(['busy'])
+  if (!busy.ok) return { ...busy, text: packModel.packErrorText(busy) }
+  const check = packModel.switchCheck({ panes: evidence.panes, busy: busy.busy, parentOf: evidence.parentOf, workspaces: evidence.workspaces, athenaDirs: packDirs(), resolve: core.realDir })
+  return { ok: true, working: check.working.length, closing: check.close.length, canProceed: check.canProceed, blockers: packModel.busyLines([...check.blockers, ...outsideItems(check)]) }
+}
+
+// 팩 바꾸기 · 새로 만들기 공통 — 정리(quiesce) → 본체 명령 → 현황판 다시 → 화면에 알림. 실패하면 본체가 되돌린 팩으로 다시 맞춘다
+async function packChange(command, mode, signal) {
+  const athenaDir = config.athenaDir
+  pausePackWatchers(true)
+  try {
+    const quiet = await quiesceForPack(mode, signal)
+    if (!quiet.ok) return { ...quiet, text: packModel.packErrorText(quiet) }
+    const result = await runPack(command, { dir: athenaDir, onProgress: packProgress })
+    await refreshPacks()
+    // 성공이든 되돌림이든 지금 팩의 현황판으로(코어는 끄기만 한다 — 다시 띄우는 건 스튜디오)
+    packProgress({ step: 'studio-board', text: '현황판 다시 띄우는 중' })
+    const board = await ensureBoard()
+    send('pack:changed', { ok: result.ok, current: packState.current })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result) }
+    return { ...result, board: board.ok ? null : board.error }
+  } finally {
+    pausePackWatchers(false)
+  }
+}
+
+const packSwitch = (id, mode) =>
+  packTask('팩 바꾸기', async (signal) => {
+    if (typeof id !== 'string' || !packState.packs || !packState.packs.some((item) => item.id === id)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }) }
+    if (packState.current && packState.current.id === id) return { ok: true, same: true }
+    return packChange(['use', id], mode === 'stop' ? 'stop' : 'wait', signal)
+  })
+
+const packNew = (mode) => packTask('새 팩 만들기', (signal) => packChange(['new'], mode === 'stop' ? 'stop' : 'wait', signal))
+
+// 가져오기 검사 — 파일 · 폴더 · 기존 아테나는 main 이 대화상자를 연다(화면이 경로를 만들지 않게), git 은 주소를 검사해 넘긴다
+async function packInspect(kind, source) {
+  let target = null
+  if (kind === 'git') {
+    target = packModel.validGitUrl(source)
+    if (!target) return { ok: false, error: 'invalid-url', text: 'git 주소는 https:// · ssh:// · git@호스트:경로 만 받아요(비밀번호가 든 주소는 안 돼요)' }
+  } else if (kind === 'athena' && typeof source === 'string' && source === pendingAthenaImport) {
+    target = source // 시작할 때 고른 "옮기기" — 대화상자 없이
+    pendingAthenaImport = null
+  } else {
+    const options = {
+      file: { title: '회사 팩 압축 파일 고르기', properties: ['openFile'], filters: [{ name: '팩 압축 파일', extensions: ['gz', 'tgz'] }] },
+      folder: { title: '회사 팩 폴더 고르기 (pack.json 이 있는 폴더)', properties: ['openDirectory'] },
+      athena: { title: '기존 아테나 폴더 고르기', properties: ['openDirectory'] },
+    }[kind]
+    if (!options) return { ok: false, error: 'invalid-pack', text: '모르는 가져오기 종류예요' }
+    const picked = await dialog.showOpenDialog(mainWindow, { ...options, defaultPath: app.getPath('home') })
+    if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
+    target = picked.filePaths[0]
+  }
+  return packTask('가져오기 검사', async (signal) => {
+    const result = await runPack([kind === 'athena' ? 'import-athena' : 'inspect', target], { onProgress: packProgress, signal })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result) }
+    return {
+      ...result,
+      source: kind === 'git' ? target : path.basename(target),
+      summary: { incoming: packModel.packSummary({ ...result.pack, source: kind === 'git' ? 'git' : null }), existing: packModel.packSummary(result.conflict) },
+      current: Boolean(result.conflict && packState.current && result.conflict.id === packState.current.id),
+    }
+  })
+}
+
+// 검사한 임시본 등록 — keep(버림) · replace(기존 자동 백업 후 교체) · new. 지금 켜진 팩을 교체하면 바꾸기와 같은 정리를 먼저
+async function packImport(token, choice, mode) {
+  if (typeof token !== 'string' || !['keep', 'replace', 'new'].includes(choice)) return { ok: false, error: 'invalid-pack', text: '가져오기 요청이 이상해요' }
+  return packTask('가져오기', async (signal) => {
+    if (choice === 'replace' && mode) return packChange(['import', token, '--replace'], mode, signal) // 지금 켜진 팩 교체 — 바꾸기와 같은 정리 먼저
+    const result = await runPack(['import', token, `--${choice}`], { onProgress: packProgress })
+    await refreshPacks()
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result) }
+    return result
+  })
+}
+
+// 내보내기(팀에 주는 것 — 허용 목록만) · 내 백업(팩 + 작업 기록) — 저장 폴더를 고르고 명령 → 결과
+async function packExport(kind) {
+  const picked = await dialog.showOpenDialog(mainWindow, {
+    title: kind === 'backup' ? '내 백업을 저장할 폴더' : '내보낸 팩을 저장할 폴더',
+    properties: ['openDirectory', 'createDirectory'],
+    defaultPath: app.getPath('downloads'),
+  })
+  if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
+  const args = kind === 'backup' ? ['backup', '--with-work', '--out', picked.filePaths[0]] : ['export', '--out', picked.filePaths[0]]
+  return packTask(kind === 'backup' ? '내 백업' : '내보내기', async () => {
+    const result = await runPack(args, { onProgress: packProgress })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result) }
+    lastPackFile = typeof result.file === 'string' ? result.file : null
+    return result
+  })
+}
+
+// [Finder 에서 보기] — 방금 만든 파일만
+let lastPackFile = null
+function packReveal() {
+  if (lastPackFile && fs.existsSync(lastPackFile)) shell.showItemInFolder(lastPackFile)
+}
+
+// 현황판이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
+function boardJson(port, pathName, { method = 'GET', headers = {} } = {}) {
+  return new Promise((resolve) => {
+    const request = http.request({ host: '127.0.0.1', port, path: pathName, method, headers, timeout: 3000 }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => (body += chunk))
+      response.on('end', () => {
+        try {
+          resolve({ status: response.statusCode, body: JSON.parse(body) })
+        } catch {
+          resolve({ status: response.statusCode, body: null })
+        }
+      })
+    })
+    request.on('timeout', () => request.destroy())
+    request.on('error', () => resolve({ status: 0, body: null }))
+    request.end(method === 'POST' ? '{}' : undefined)
+  })
+}
+
+async function stopStaleBoard(port) {
+  const token = await runPack(['board-token'])
+  if (!token.ok || typeof token.token !== 'string') return false
+  const origin = `http://localhost:${port}`
+  await boardJson(port, '/api/shutdown', { method: 'POST', headers: { 'content-type': 'application/json', origin, 'x-board-token': token.token } })
+  for (let attempt = 0; attempt < 20; attempt++) {
+    if (!(await isBoardUp(port))) return true
+    await new Promise((resolve) => setTimeout(resolve, 250))
+  }
+  return false
 }
 
 // ── 새 창 · 링크 ──────────────────────────────────────────
@@ -991,7 +1383,7 @@ function browserCommand(name, value) {
 // 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
 const TRAY_ICON_DIR = path.join(__dirname, 'renderer', 'assets', 'logo')
-const trayState = { panes: [], workspaces: [], focused: null, uiTab: 'work', boardOkAt: 0, cards: null, usage: [], boardUp: false, boardAt: 0, pausedUntil: 0, polling: false }
+const trayState = { panes: [], workspaces: [], focused: null, uiTab: 'work', boardOkAt: 0, cards: null, usage: [], boardUp: false, boardAt: 0, pausedUntil: 0, polling: false, packPaused: false }
 const trayNotifier = new trayModel.Notifier()
 let tray = null
 let trayWindow = null
@@ -1133,7 +1525,7 @@ function trayNames() {
 
 async function pollTray() {
   // 이미 붙은 데몬만 읽는다 — 끊겼을 때 숨은 채로 데몬을 띄우거나 버전 확인 대화상자를 띄우지 않게(화면이 다시 붙으면 이어서)
-  if (trayState.polling || !daemon || !core.checkAthenaDir(config.athenaDir).ok) return
+  if (trayState.polling || trayState.packPaused || !daemon || !core.checkAthenaDir(config.athenaDir).ok) return
   trayState.polling = true
   try {
     const listed = await trayCall('pane list')
@@ -1196,7 +1588,7 @@ function fetchBoardState() {
       settled = true
       resolve(value)
     }
-    const request = http.get({ host: '127.0.0.1', port: config.boardPort, path: '/api/state', timeout: 2000 }, (response) => {
+    const request = http.get({ host: '127.0.0.1', port: boardPortNow(), path: '/api/state', timeout: 2000 }, (response) => {
       let body = ''
       response.setEncoding('utf8')
       response.on('data', (chunk) => {
@@ -1291,7 +1683,7 @@ async function focusPaneFromTray(paneId) {
 function openCardFromTray(html) {
   if (html) {
     showWindow()
-    openInBrowser(`${core.boardUrl(config.boardPort).replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
+    openInBrowser(`${core.boardUrl(boardPortNow()).replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
   } else {
     showWindow('board')
   }
@@ -1355,7 +1747,12 @@ function buildMenu() {
     {
       label: '파일',
       submenu: [
-        { label: '아테나 폴더 바꾸기…', click: () => send('athena:pick') },
+        { label: '회사 팩…', accelerator: `${TAB_KEY}+Shift+P`, click: () => send('pack:command', 'picker') },
+        { label: '회사 팩 가져오기…', click: () => send('pack:command', 'import') },
+        { label: '회사 팩 내보내기…', click: () => send('pack:command', 'export') },
+        { label: '내 백업…', click: () => send('pack:command', 'backup') },
+        { type: 'separator' },
+        { label: '아테나 본체 폴더 바꾸기…', click: () => send('athena:pick') },
         { type: 'separator' },
         { label: '새 탭', accelerator: `${TAB_KEY}+T`, click: () => send('screen:command', 'new-tab') },
         { label: '새 작업 공간…', accelerator: `${TAB_KEY}+Shift+T`, click: () => send('screen:command', 'new-workspace') },
@@ -1419,6 +1816,21 @@ function buildMenu() {
 ipcMain.handle('athena:state', () => athenaState())
 ipcMain.handle('athena:pick', () => pickAthenaDir())
 ipcMain.handle('athena:install', () => installAthena())
+// 회사 팩 — 본체 명령을 부르고 결과만 화면에(5절 약속). 문자열 · 고른 값만 받는다
+ipcMain.handle('pack:list', () => refreshPacks())
+ipcMain.handle('pack:check', () => packCheck())
+ipcMain.handle('pack:switch', (_event, id, mode) => packSwitch(String(id), String(mode)))
+ipcMain.handle('pack:new', (_event, mode) => packNew(String(mode)))
+ipcMain.handle('pack:cancel', () => {
+  if (packAbort) packAbort.abort()
+  return { ok: true }
+})
+ipcMain.handle('pack:inspect', (_event, kind, source) => packInspect(String(kind), typeof source === 'string' ? source : null))
+ipcMain.handle('pack:import', (_event, token, choice, mode) => packImport(String(token), String(choice), mode === 'wait' || mode === 'stop' ? mode : null))
+ipcMain.handle('pack:export', (_event, kind) => packExport(kind === 'backup' ? 'backup' : 'share'))
+ipcMain.handle('pack:reveal', () => packReveal())
+// 시작할 때 "옮기기" 를 골랐으면 화면이 붙은 뒤 기존 아테나 가져오기를 이어서 연다
+ipcMain.handle('pack:pending-import', () => pendingAthenaImport)
 ipcMain.handle('screen:attach', () => attachScreen())
 ipcMain.handle('agent:open', (_event, chosen, size) => openAthenaAgent(typeof chosen === 'string' ? chosen : null, cellSize(size)))
 ipcMain.handle('tab:new', (_event, size) => daemonCall('tab new', { defaultCwd: config.athenaDir, ...cellSize(size) }))
@@ -1477,7 +1889,7 @@ app.whenReady().then(async () => {
   // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   config = core.loadConfig(configFile())
-  await offerStudioAthena()
+  await offerMoveToHome()
   if (core.checkAthenaDir(config.athenaDir).ok) {
     try {
       core.ensureAthenaConfig(config.athenaDir, athenaReposRoot(config.athenaDir))

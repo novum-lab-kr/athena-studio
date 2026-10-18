@@ -3,8 +3,8 @@ const fs = require('fs')
 const path = require('path')
 
 // 현황판 기본 포트는 4701 — herdr 용 아테나(~/athena)의 현황판(4700)과 나란히 돈다
-const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701, studioAthenaAsked: false }
-const LEGACY_BOARD_PORT = 4700
+// homeAthenaAsked — 스튜디오 레포 athena/ 를 쓰던 사람에게 ~/athena 로 옮기기를 물었는지(여러 회사 팩 · 사용자 결정 1)
+const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701, homeAthenaAsked: false }
 
 // 앱 설정(userData/config.json). 깨졌거나 없으면 기본값
 function loadConfig(file) {
@@ -17,7 +17,8 @@ function loadConfig(file) {
   const port = Number(config.boardPort)
   config.boardPort = Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_CONFIG.boardPort
   if (typeof config.athenaDir !== 'string' || !config.athenaDir) config.athenaDir = null
-  config.studioAthenaAsked = config.studioAthenaAsked === true
+  config.homeAthenaAsked = config.homeAthenaAsked === true
+  delete config.studioAthenaAsked // 예전 키(스튜디오 전용 아테나를 물었는지) — 이제 쓰지 않는다
   return config
 }
 
@@ -66,17 +67,6 @@ function sameDir(left, right) {
   return realDir(left) === realDir(right)
 }
 
-// 예전 스튜디오처럼 홈의 ~/athena(herdr 용)를 쓰고 있으면 스튜디오 전용 아테나로 옮길지 한 번 묻는다
-function shouldOfferStudioAthena(config, home) {
-  if (config.studioAthenaAsked || !config.athenaDir) return false
-  return sameDir(config.athenaDir, path.join(home, ATHENA_DIR_NAME))
-}
-
-// 옮기기로 했으면 — 아테나 폴더를 비워 처음 켤 때처럼 레포의 athena/ 를 쓰게 하고, 현황판도 예전 기본(4700)이면 새 기본으로
-function moveToStudioAthena(config) {
-  const boardPort = config.boardPort === LEGACY_BOARD_PORT ? DEFAULT_CONFIG.boardPort : config.boardPort
-  return { ...config, athenaDir: null, boardPort, studioAthenaAsked: true }
-}
 
 // 이 컴퓨터 설정(athena.config.json · git 무시)이 없으면 팩 없는 최소 설정을 만든다.
 // 아테나는 이 파일이 없으면 현황판이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다.
@@ -253,7 +243,9 @@ function boardUrl(port) {
 // userData 경로가 길면 소켓만 tmpdir/athena-studio-<uid>/ 로 옮긴다. endpoint 는 pane 밖에서 데몬을 찾는 접속 파일(S4)
 const SOCKET_PATH_MAX = 103
 
-function daemonPaths({ userData, home, tmpdir, uid }) {
+// endpoint — 데몬 접속 파일. ATHENA_STUDIO_ENDPOINT 가 있으면 그 자리(아테나 screen.py 와 같은 변수 · 개발 · 회귀 검사용 격리 —
+// Electron 은 HOME 을 바꿔도 홈 경로를 그대로 써서, 격리 실행이 사용자 앱의 접속 파일을 덮을 수 있다)
+function daemonPaths({ userData, home, tmpdir, uid, endpoint = null }) {
   let socket = path.join(userData, 'daemon.sock')
   if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) socket = path.join(tmpdir, `athena-studio-${uid}`, 'daemon.sock')
   // 대체 자리도 길면 여기서 알린다 — 데몬이 listen 하다 EINVAL 로 죽는 것보다 원인이 분명하다
@@ -261,7 +253,7 @@ function daemonPaths({ userData, home, tmpdir, uid }) {
   return {
     socket,
     log: path.join(userData, 'daemon.log'),
-    endpoint: path.join(home, '.athena-studio', 'daemon.json'),
+    endpoint: endpoint || path.join(home, '.athena-studio', 'daemon.json'),
   }
 }
 
@@ -272,14 +264,12 @@ module.exports = {
   saveConfig,
   checkAthenaDir,
   studioAthenaDir,
-  shouldOfferStudioAthena,
   sameDir,
   realDir,
   reposRootFor,
   boardPortCandidates,
   parseLsofPath,
   setAthenaBoardPort,
-  moveToStudioAthena,
   ensureAthenaConfig,
   parseMarkedPath,
   mergePath,

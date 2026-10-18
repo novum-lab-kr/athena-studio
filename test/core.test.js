@@ -20,7 +20,10 @@ test('설정: 없거나 깨진 파일은 기본값', () => {
 test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', () => {
   const file = path.join(tmp(), 'sub', 'config.json')
   core.saveConfig(file, { athenaDir: '/a/b', boardPort: 4711 })
-  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711, studioAthenaAsked: false })
+  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711, homeAthenaAsked: false })
+  // 예전 키(studioAthenaAsked)는 읽으면서 버린다
+  core.saveConfig(file, { athenaDir: '/a/b', studioAthenaAsked: true })
+  assert.equal('studioAthenaAsked' in core.loadConfig(file), false)
   assert.equal(fs.existsSync(`${file}.tmp`), false)
   core.saveConfig(file, { athenaDir: 3, boardPort: 'x' })
   assert.deepEqual(core.loadConfig(file), core.DEFAULT_CONFIG)
@@ -28,19 +31,6 @@ test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', ()
   assert.equal(core.loadConfig(file).boardPort, 4701)
   // 현황판 기본은 4701 — herdr 용 아테나 현황판(4700)과 나란히
   assert.equal(core.DEFAULT_CONFIG.boardPort, 4701)
-})
-
-test('스튜디오 전용 아테나: 홈의 ~/athena 를 쓰고 있으면 한 번만 묻고, 받기로 하면 폴더를 비우고 예전 기본 포트를 옮긴다', () => {
-  const home = '/Users/me'
-  const config = { athenaDir: '/Users/me/athena', boardPort: 4700, studioAthenaAsked: false }
-  assert.equal(core.shouldOfferStudioAthena(config, home), true)
-  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: '/Users/me/athena/' }, home), true)
-  assert.equal(core.shouldOfferStudioAthena({ ...config, studioAthenaAsked: true }, home), false)
-  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: '/Users/me/work/athena' }, home), false)
-  assert.equal(core.shouldOfferStudioAthena({ ...config, athenaDir: null }, home), false)
-  assert.deepEqual(core.moveToStudioAthena(config), { athenaDir: null, boardPort: 4701, studioAthenaAsked: true })
-  // 직접 바꾼 포트는 그대로
-  assert.equal(core.moveToStudioAthena({ ...config, boardPort: 4800 }).boardPort, 4800)
 })
 
 test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데이터 폴더 아테나면 홈, 아니면 ..', () => {
@@ -53,8 +43,6 @@ test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데�
   assert.equal(core.sameDir(`${real}/`, real), true)
   assert.equal(core.sameDir(real, path.join(base, 'real')), false)
   assert.equal(core.sameDir(null, real), false)
-  // ~/athena 를 링크로 적어 두었어도 묻는다
-  assert.equal(core.shouldOfferStudioAthena({ athenaDir: linked, studioAthenaAsked: false }, path.join(base, 'real')), true)
   assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w1', cwd: real }], linked).id, 'w1')
   // 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
   const studioAthena = core.studioAthenaDir(path.join(base, 'athena-studio'))
@@ -210,6 +198,9 @@ test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으�
   // 경계: 103바이트까지는 그대로 — 한글처럼 여러 바이트 글자는 바이트로 센다
   const exact = '/' + 'a'.repeat(core.SOCKET_PATH_MAX - '/daemon.sock'.length - 1)
   assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1 }).socket, `${exact}/daemon.sock`)
+  // 접속 파일 자리를 따로 주면(ATHENA_STUDIO_ENDPOINT) 그 자리 — 격리 실행이 사용자 앱 것을 덮지 않게
+  assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1, endpoint: '/x/daemon.json' }).endpoint, '/x/daemon.json')
+  assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1 }).endpoint, '/h/.athena-studio/daemon.json')
   assert.equal(core.daemonPaths({ userData: `${exact}a`, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
   const korean = '/' + '가'.repeat(31) // 소켓 경로가 글자로는 44개지만 바이트로는 106
   assert.equal(core.daemonPaths({ userData: korean, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')

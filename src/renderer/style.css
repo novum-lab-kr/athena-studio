@@ -898,3 +898,131 @@ button:focus-visible {
 .browser-error { flex: none; padding: 4px 10px; color: #f28b82; font-size: 12px; border-bottom: 1px solid var(--line); }
 .browser-error[hidden] { display: none; }
 .browser-slot { flex: 1; min-height: 0; background: #fff; }
+
+/* 회사 팩 — 탭 줄 칩 · 대화상자 · 진행 표시 */
+.pack-chip {
+  -webkit-app-region: no-drag;
+  height: 24px;
+  margin-right: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.pack-chip:hover { background: var(--hover); }
+.pack-chip[hidden] { display: none; }
+.pack-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(12, 12, 13, 0.72);
+}
+.pack-overlay[hidden] { display: none; }
+.pack-box {
+  width: min(520px, calc(100vw - 48px));
+  max-height: calc(100vh - 80px);
+  overflow-y: auto;
+  padding: 22px 24px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--bar);
+}
+#pack-progress .pack-box { text-align: center; }
+#pack-progress .spinner { margin: 0 auto 10px; }
+.pack-box h2 { margin: 0 0 12px; font-size: 15px; }
+.pack-body { color: var(--text); line-height: 1.6; white-space: pre-wrap; }
+.pack-body p { margin: 0 0 8px; }
+.pack-body .muted { color: var(--muted); font-size: 12px; }
+.pack-step { margin: 0; color: var(--muted); }
+.pack-actions { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+#pack-progress .pack-actions { justify-content: center; margin-top: 8px; }
+.pack-actions .primary { margin-top: 0; }
+.pack-button {
+  padding: 7px 14px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+}
+.pack-button:hover { background: var(--hover); }
+.pack-button.danger { border-color: var(--error); color: var(--error); }
+.pack-list { display: flex; flex-direction: column; gap: 2px; margin: 0 0 10px; }
+.pack-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pack-row:hover { background: var(--hover); }
+.pack-row[aria-current="true"] { background: var(--selected); }
+.pack-row .meta { color: var(--muted); font-size: 12px; white-space: nowrap; }
+.pack-links { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding-top: 8px; border-top: 1px solid var(--line); }
+.pack-links .link { text-decoration: none; color: var(--accent); }
+.pack-compare { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 4px 0 8px; }
+.pack-compare div { padding: 10px; border: 1px solid var(--line); border-radius: 8px; font-size: 12px; }
+.pack-compare b { display: block; margin-bottom: 4px; font-size: 13px; }
+.pack-input {
+  width: 100%;
+  margin-top: 6px;
+  padding: 7px 9px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  font: 12px var(--font-mono);
+}
+
+/* 회사 팩이 없을 때 시작 화면 — 작업 창 가운데(VS Code 시작 화면처럼) */
+.work-area { position: relative; }
+.pack-welcome {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow-y: auto;
+  background: var(--bg);
+}
+.pack-welcome[hidden] { display: none; }
+.pack-welcome-inner { width: min(520px, calc(100% - 48px)); }
+.pack-welcome-logo { width: 56px; height: 56px; margin-bottom: 10px; opacity: 0.9; pointer-events: none; user-select: none; }
+.pack-welcome h1 { margin: 0 0 6px; font-size: 26px; font-weight: 600; }
+.pack-welcome-lead { margin: 0 0 28px; color: var(--muted); font-size: 14px; line-height: 1.6; }
+.pack-welcome h2 { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
+.pack-welcome-action {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  width: 100%;
+  margin-bottom: 4px;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: var(--radius-lg);
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.pack-welcome-action:hover, .pack-welcome-action:focus-visible { background: var(--hover); outline: none; }
+.pack-welcome-action .icon { flex: none; width: 20px; color: var(--accent); font-size: 16px; line-height: 20px; text-align: center; }
+.pack-welcome-action b { display: block; color: var(--accent); font-size: 14px; font-weight: 600; }
+.pack-welcome-action small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
+/* 시작 화면일 때는 탭 줄도 숨긴다(셸 탭이 시작 화면 위에 떠 보이지 않게) */
+body.pack-welcome-on .studio-tabs { visibility: hidden; }

@@ -7,7 +7,8 @@ const os = require('os')
 const path = require('path')
 const protocol = require('../lib/protocol')
 
-const ENDPOINT = path.join(os.homedir(), '.athena-studio', 'daemon.json')
+// ATHENA_STUDIO_ENDPOINT — 격리 실행(개발 · 회귀 검사)의 접속 파일 자리(앱 · 아테나 screen.py 와 같은 변수)
+const ENDPOINT = process.env.ATHENA_STUDIO_ENDPOINT || path.join(os.homedir(), '.athena-studio', 'daemon.json')
 
 function socketPath(env) {
   if (env.ATHENA_STUDIO_SOCKET) return env.ATHENA_STUDIO_SOCKET

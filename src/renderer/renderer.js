@@ -1404,6 +1404,359 @@ function switchTab(name) {
   }
 }
 
+// ── 회사 팩 ────────────────────────────────────────────────
+// 본체가 여러 팩을 지원할 때만 보인다(packs.supported). 일은 main → 아테나 본체 명령이 하고, 화면은 묻고 · 기다리고 · 결과를 보여 준다
+let packs = { supported: false }
+
+function el(tag, className, text) {
+  const node = document.createElement(tag)
+  if (className) node.className = className
+  if (text !== undefined) node.textContent = text
+  return node
+}
+
+// 대화상자 하나 — actions: [{ label, value, kind: 'primary'|'danger'|'link' }] · Esc 는 null.
+// 이미 열린 것이 있으면 null 로 닫고 연다(앞 흐름이 영영 기다리지 않게)
+let closeOpenDialog = null
+function packDialog({ title, body = [], actions = [], input = null }) {
+  if (closeOpenDialog) closeOpenDialog(null)
+  const dialog = $('pack-dialog')
+  $('pack-dialog-title').textContent = title
+  const bodyNode = $('pack-dialog-body')
+  bodyNode.replaceChildren(...body.map((part) => (typeof part === 'string' ? el('p', null, part) : part)))
+  let field = null
+  if (input) {
+    field = el('input', 'pack-input')
+    field.placeholder = input.placeholder || ''
+    field.spellcheck = false
+    field.autocomplete = 'off'
+    bodyNode.append(field)
+  }
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      if (closeOpenDialog !== finish) return
+      closeOpenDialog = null
+      dialog.hidden = true
+      dialog.onkeydown = null
+      resolve(field && value !== null ? { value, text: field.value } : value)
+    }
+    const buttons = actions.map((action) => {
+      const button = el('button', action.kind === 'primary' ? 'primary' : `pack-button${action.kind === 'danger' ? ' danger' : ''}`, action.label)
+      button.addEventListener('click', () => finish(action.value))
+      return button
+    })
+    $('pack-dialog-actions').replaceChildren(...buttons)
+    // 목록 줄(팩 고르기)도 같은 끝내기로
+    for (const node of bodyNode.querySelectorAll('[data-value]')) node.addEventListener('click', () => finish(node.dataset.value))
+    closeOpenDialog = finish
+    dialog.onkeydown = (event) => {
+      if (event.key === 'Escape') finish(null)
+      if (event.key === 'Enter' && field && document.activeElement === field) finish(actions[0] && actions[0].value)
+    }
+    dialog.hidden = false
+    const focus = field || buttons.find((button) => button.classList.contains('primary')) || buttons[0]
+    if (focus) focus.focus()
+  })
+}
+
+const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: '확인', value: 'ok', kind: 'primary' }] })
+
+// 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다)
+function showPackProgress(title, cancellable) {
+  $('pack-progress-title').textContent = title
+  $('pack-progress-step').textContent = ''
+  const cancel = $('pack-progress-cancel')
+  cancel.hidden = !cancellable
+  cancel.onclick = () => studio.packCancel()
+  $('pack-progress').hidden = false
+}
+const hidePackProgress = () => ($('pack-progress').hidden = true)
+
+// 지금 팩 이름 — pack new 로 만든 빈 자리(5.4 current.empty)는 /setup 중
+function packCurrentLabel() {
+  if (!packs.current) return '팩 없음'
+  if (packs.current.empty) return '새 팩 — /setup 중'
+  return packs.current.name || packs.current.id
+}
+
+function renderPackChip() {
+  renderPackWelcome()
+  const chip = $('pack-chip')
+  chip.hidden = !packs.supported || !state || !state.valid
+  if (chip.hidden) return
+  $('pack-name').textContent = `🏢 ${packCurrentLabel()}`
+}
+
+async function refreshPackList() {
+  if (!state || !state.valid) return packs
+  packs = await studio.packList()
+  renderPackChip()
+  return packs
+}
+
+// 회사 팩 고르기 — 목록 + 새로 만들기 · 가져오기 · 내보내기 · 내 백업
+async function openPackPicker() {
+  await refreshPackList()
+  if (!packs.supported) return packAlert('회사 팩', '이 아테나 본체는 아직 여러 회사 팩을 지원하지 않아요.')
+  if (hasNoPacks()) return openNoPacks()
+  const list = el('div', 'pack-list')
+  // 옛 구조 본체는 목록이 비고 지금 팩만 있다 — 그 한 줄이라도 보이게
+  const rows = packs.packs.length ? packs.packs : [packs.current].filter(Boolean)
+  for (const item of rows) {
+    const row = el('button', 'pack-row')
+    const isCurrent = Boolean(packs.current) && packs.current.id === item.id
+    row.setAttribute('aria-current', String(isCurrent))
+    row.dataset.value = `pack:${item.id}`
+    const meta = [isCurrent ? '지금' : '', item.repos !== undefined ? `레포 ${item.repos}` : '', item.source === 'git' ? 'git' : '', item.hasWork ? '작업 기록 있음' : ''].filter(Boolean).join(' · ')
+    row.append(el('span', null, `${isCurrent ? '● ' : '○ '}${item.name || item.id}`), el('span', 'meta', meta))
+    list.append(row)
+  }
+  const links = el('div', 'pack-links')
+  for (const [label, value] of [['+ 새로 만들기', 'new'], ['↓ 가져오기… (압축 파일 · 팩 폴더 · git 레포 · 기존 아테나)', 'import'], ['↑ 내보내기… (팀에 줄 팩)', 'export'], ['⤓ 내 백업… (팩 + 내 작업 기록)', 'backup']]) {
+    const link = el('button', 'link', label)
+    link.dataset.value = value
+    links.append(link)
+  }
+  const choice = await packDialog({ title: '회사 팩', body: [list, links], actions: [{ label: '닫기', value: null }] })
+  if (!choice) return
+  if (choice.startsWith('pack:')) return choosePack(choice.slice(5))
+  return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
+}
+
+// 팩 흐름은 한 번에 하나 — 진행 중에 메뉴로 또 열면 알리기만
+let packFlow = false
+async function runPackFlow(work) {
+  if (packFlow) return showToast('회사 팩 작업이 진행 중이에요 — 끝난 뒤 다시 해 주세요')
+  packFlow = true
+  try {
+    return await work()
+  } finally {
+    packFlow = false
+  }
+}
+const runPackCommand = (name) => runPackFlow(() => packCommand(name))
+
+function packCommand(name) {
+  if (name === 'picker') return openPackPicker()
+  if (name === 'new') return newPack()
+  if (name === 'import') return importPack()
+  if (name === 'export' || name === 'backup') return exportPack(name)
+}
+
+// 팩이 하나도 없을 때 — 모달이 아니라 작업 창 가운데 시작 화면(VS Code 처럼) · 새로 만들기 · 가져오기 두 가지만(사용자 결정 2)
+// 목록도 비고 지금 팩도 없을 때만 — main 이 pack.js showPackWelcome 으로 계산해 넘긴다(규칙은 한 곳)
+const hasNoPacks = () => packs.welcome === true
+function renderPackWelcome() {
+  const on = Boolean(state && state.valid) && hasNoPacks()
+  $('pack-welcome').hidden = !on
+  document.body.classList.toggle('pack-welcome-on', on)
+}
+function openNoPacks() {
+  renderPackWelcome()
+  if (currentTab !== 'work') switchTab('work')
+}
+
+// 바꾸기 · 새로 만들기 전 — 닫힐 pane 과 일하는 에이전트를 보여 주고 [끝나면] · [멈추고] · [취소]. 막는 작업이 있으면 목록만
+async function askQuiesce(title, verb) {
+  const check = await studio.packCheck()
+  if (!check.ok) {
+    await packAlert(title, check.text || check.message || '확인하지 못했어요')
+    return null
+  }
+  if (!check.canProceed) {
+    const again = await packDialog({
+      title,
+      body: ['스튜디오가 끌 수 없는 작업이 있어서 지금은 바꿀 수 없어요. 끝낸 뒤 다시 해 주세요.', check.blockers.join('\n')],
+      actions: [{ label: '다시 확인', value: 'again', kind: 'primary' }, { label: '닫기', value: null }],
+    })
+    return again ? askQuiesce(title, verb) : null
+  }
+  const body = [`pane ${check.closing}개가 닫혀요. 돌아오면 계획서 Checkpoint 로 이어 가요.`]
+  if (!check.working) {
+    const ok = await packDialog({ title, body, actions: [{ label: verb, value: 'wait', kind: 'primary' }, { label: '취소', value: null }] })
+    return ok
+  }
+  body.push(`지금 일하는 에이전트가 ${check.working}개 있어요.`)
+  body.push(el('p', 'muted', '[멈추고] 는 Esc 를 누른 것과 같아요 — 돌던 명령은 끊기고 고치던 파일은 워크트리에 그대로 남아요.'))
+  return packDialog({
+    title,
+    body,
+    actions: [{ label: `끝나면 ${verb}`, value: 'wait', kind: 'primary' }, { label: `멈추고 ${verb}`, value: 'stop', kind: 'danger' }, { label: '취소', value: null }],
+  })
+}
+
+async function choosePack(id) {
+  if (packs.current && packs.current.id === id) return
+  const target = packs.packs.find((item) => item.id === id)
+  const title = `${target ? target.name || target.id : id} 으로 바꾸기`
+  const mode = await askQuiesce(title, '바꾸기')
+  if (!mode) return
+  showPackProgress(`${target ? target.name || target.id : id} 으로 바꾸는 중`, true)
+  const result = await studio.packSwitch(id, mode)
+  hidePackProgress()
+  if (result.same || result.unchanged) return
+  if (!result.ok) return packAlert('팩을 바꾸지 못했어요', result.text || result.message)
+  const notes = []
+  if (result.unlinkedRepos && result.unlinkedRepos.length) notes.push(`연결하지 못한 레포: ${result.unlinkedRepos.join(', ')} — 이 컴퓨터의 레포 위치를 잡아 주세요(아테나에게 "레포 위치 잡아줘").`)
+  if (result.board) notes.push(`현황판: ${result.board}`)
+  if (notes.length) packAlert('바꿨어요', notes.join('\n'))
+}
+
+async function newPack() {
+  const mode = await askQuiesce('새 회사 팩 만들기', '시작하기')
+  if (!mode) return
+  showPackProgress('새 팩 자리를 만드는 중', true)
+  const result = await studio.packNew(mode)
+  hidePackProgress()
+  if (!result.ok) return packAlert('새 팩을 시작하지 못했어요', result.text || result.message)
+  showToast(`새 팩 만들기를 시작했어요 — 아테나가 /setup 을 이어 가요.${result.previous ? ` 그만두려면 [파일 → 회사 팩…] 에서 ${result.previous} 로 바꿔요.` : ''}`)
+}
+
+// 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
+async function importPack(kind = null, source = null) {
+  let chosen = kind
+  let target = source
+  if (!chosen) {
+    chosen = await packDialog({
+      title: '회사 팩 가져오기',
+      body: ['어디서 가져올까요? 파일 · 폴더는 복사만 해요(원본과 이어지지 않아요).'],
+      actions: [{ label: '압축 파일', value: 'file' }, { label: '팩 폴더', value: 'folder' }, { label: 'git 레포', value: 'git' }, { label: '기존 아테나', value: 'athena' }, { label: '취소', value: null }],
+    })
+    if (!chosen) return
+  }
+  // 기존 아테나는 git 설정(.git)을 그대로 가져온다(R4 A) — 내 컴퓨터에서 쓰던 것만 고르게 먼저 알린다
+  if (chosen === 'athena' && !target) {
+    const ok = await packDialog({
+      title: '기존 아테나에서 가져오기',
+      body: ['내 컴퓨터에서 쓰던 아테나만 고르세요 — git 설정(.git)을 그대로 가져와요.', el('p', 'muted', '남에게 받은 팩은 [압축 파일] · [팩 폴더] · [git 레포] 로 가져와요(git 설정은 지우고 가져와요).')],
+      actions: [{ label: '폴더 고르기', value: 'go', kind: 'primary' }, { label: '취소', value: null }],
+    })
+    if (!ok) return
+  }
+  if (chosen === 'git' && !target) {
+    const answer = await packDialog({
+      title: 'git 레포에서 가져오기',
+      body: ['팀이 같이 쓰는 회사 팩 레포 주소 — https:// · ssh:// · git@호스트:경로'],
+      input: { placeholder: 'git@github.com:회사/athena-pack.git' },
+      actions: [{ label: '검사', value: 'go', kind: 'primary' }, { label: '취소', value: null }],
+    })
+    if (!answer || !answer.value) return
+    target = answer.text
+  }
+  showPackProgress('가져올 팩을 검사하는 중', true)
+  const inspected = await studio.packInspect(chosen, target)
+  hidePackProgress()
+  if (inspected.canceled || inspected.error === 'canceled') return
+  if (!inspected.ok) return packAlert('가져오지 못했어요', inspected.text || inspected.message)
+  const choice = await chooseImport(inspected, chosen)
+  if (!choice) return studio.packImport(inspected.token, 'keep')
+  let mode = null
+  if (choice === 'replace' && inspected.current) {
+    mode = await askQuiesce('지금 켜진 팩을 바꿔 넣기', '바꿔 넣기')
+    if (!mode) return studio.packImport(inspected.token, 'keep')
+  }
+  showPackProgress('팩을 등록하는 중', false)
+  const result = await studio.packImport(inspected.token, choice, mode)
+  hidePackProgress()
+  if (!result.ok) return packAlert('가져오지 못했어요', result.text || result.message)
+  if (choice === 'keep') return
+  const imported = result.imported
+  // R4 A — 폴더 · 압축에서 온 .git 은 코어가 지웠다(inspect 결과 gitRemoved)
+  const gitNote = inspected.gitRemoved ? '\ngit 정보는 지웠어요 — 팀과 git 으로 같이 쓰는 팩이면 [git 레포] 로 가져오세요.' : ''
+  const backupNote = `${result.backup ? `\n기존 팩은 자동 백업했어요: ${result.backup}` : ''}${gitNote}`
+  if (!imported || (packs.current && packs.current.id === imported.id)) return packAlert('가져왔어요', `지금 팩에 들어갔어요.${backupNote}`)
+  const switchNow = await packDialog({
+    title: '가져왔어요',
+    body: [`${imported.name || imported.id} 을 등록했어요.${backupNote}`, '지금 이 팩으로 바꿀까요?'],
+    actions: [{ label: '바꾸기', value: 'yes', kind: 'primary' }, { label: '나중에', value: null }],
+  })
+  if (switchNow) return choosePack(imported.id)
+}
+
+// 같은 이름이면 나란히(사용자 결정 3) · 기존 아테나면 가져올 작업 기록도 보여 준다. 반환: new · replace · keep(null 은 취소)
+async function chooseImport(inspected, kind) {
+  const name = (inspected.pack && inspected.pack.name) || '팩'
+  const body = []
+  if (inspected.work) {
+    const work = inspected.work
+    const worktrees = work.worktrees || []
+    const dirty = worktrees.filter((tree) => tree.dirty).length
+    body.push(`함께 가져올 작업 기록 — 계획서 ${work.plans || 0} · 이슈 ${work.issues || 0} · 보관함 ${work.archive || 0}`)
+    if (worktrees.length) body.push(el('p', 'muted', `워크트리 ${worktrees.length}개(미커밋 ${dirty}개)는 복사하지 않고 제자리에 둬요. 옛 폴더는 건드리지 않아요.`))
+  }
+  if (!inspected.conflict) {
+    if (kind !== 'athena') return 'new'
+    const ok = await packDialog({ title: `${name} 가져오기`, body, actions: [{ label: '가져오기', value: 'new', kind: 'primary' }, { label: '취소', value: null }] })
+    return ok
+  }
+  const compare = el('div', 'pack-compare')
+  const existing = el('div')
+  existing.append(el('b', null, '지금 있는 것'), el('span', null, inspected.summary.existing || '-'))
+  const incoming = el('div')
+  incoming.append(el('b', null, '가져온 것'), el('span', null, `${inspected.summary.incoming || '-'}${inspected.source ? ` · ${inspected.source}` : ''}`))
+  compare.append(existing, incoming)
+  body.unshift(compare)
+  body.push(el('p', 'muted', `바꾸면 지금 것은 자동 백업되고, 작업 기록은 그대로 이어서 써요.${inspected.current ? ' 지금 켜진 팩이라 pane 이 닫혀요.' : ''}`))
+  // reason: packId(같은 팩 — 하나만) · name(이름만 같은 다른 팩 — 둘 다 둘 수 있다 · 5.4)
+  const actions = [{ label: '가져온 것으로 바꾸기', value: 'replace', kind: 'primary' }, { label: '지금 것 계속 쓰기', value: 'keep' }]
+  if (inspected.conflict.reason === 'name') actions.splice(1, 0, { label: '둘 다 두기', value: 'new' })
+  actions.push({ label: '취소', value: null })
+  const sameTitle = inspected.conflict.reason === 'name' ? `이름이 같은 팩(${name})이 이미 있어요` : `${name} 이 이미 있어요`
+  return packDialog({ title: sameTitle, body, actions })
+}
+
+async function exportPack(kind) {
+  const title = kind === 'backup' ? '내 백업' : '회사 팩 내보내기'
+  showPackProgress(kind === 'backup' ? '백업을 만드는 중' : '팩 파일을 만드는 중', false)
+  const result = await studio.packExport(kind)
+  hidePackProgress()
+  if (result.canceled) return
+  if (!result.ok) return packAlert(`${title} — 실패`, result.text || result.message)
+  const size = result.bytes ? ` · ${Math.max(1, Math.round(result.bytes / 1024))}KB` : ''
+  const note = kind === 'backup' ? '미커밋 코드 · push 안 한 커밋은 담기지 않아요.' : '팀에 주면 [회사 팩 → 가져오기] 로 받아요.'
+  const reveal = await packDialog({
+    title: `${title} — 만들었어요`,
+    body: [`${result.file}`, `파일 ${result.files || 0}개${size}`, el('p', 'muted', note)],
+    actions: [{ label: 'Finder 에서 보기', value: 'reveal', kind: 'primary' }, { label: '닫기', value: null }],
+  })
+  if (reveal) studio.packReveal()
+}
+
+// 바꾼 뒤 — 현황판 · 작업 창을 새 팩으로(닫힌 pane 대신 아테나 탭을 다시 켠다)
+function onPackChanged() {
+  refreshPackList()
+  boardLoaded = false
+  if (currentTab === 'board') loadBoard(true)
+  startScreen()
+}
+
+async function initPacks() {
+  studio.onPackState((next) => {
+    packs = next
+    renderPackChip()
+  })
+  studio.onPackProgress((step) => {
+    $('pack-progress-step').textContent = step.text || ''
+    // 정리를 시작하면 더는 취소할 수 없다
+    if (step.cancellable === false) $('pack-progress-cancel').hidden = true
+  })
+  studio.onPackChanged(onPackChanged)
+  studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
+  $('pack-chip').addEventListener('click', () => runPackCommand('picker'))
+  for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))
+  await afterAthenaReady()
+}
+
+// 본체가 정해진 뒤 — 시작할 때 "옮기기" 를 골랐으면 기존 아테나 가져오기를 이어서, 팩이 하나도 없으면 두 가지만 보여 준다
+async function afterAthenaReady() {
+  if (!state || !state.valid) return
+  await refreshPackList()
+  if (!packs.supported) return
+  const pending = await studio.packPendingImport()
+  if (pending) return runPackFlow(() => importPack('athena', pending))
+  if (hasNoPacks()) openNoPacks()
+}
+
 // ── 아테나 폴더 ────────────────────────────────────────────
 function renderState() {
   document.body.dataset.platform = state.platform
@@ -1413,6 +1766,7 @@ function renderState() {
   const ready = state.valid
   panels.setup.hidden = ready
   for (const tab of tabs) tab.disabled = !ready
+  renderPackChip()
   if (!ready) {
     panels.work.hidden = true
     panels.board.hidden = true
@@ -1463,6 +1817,7 @@ async function applyAthenaResult(pending) {
     boardLoaded = false
     switchTab('work')
     startScreen()
+    afterAthenaReady()
   }
 }
 
@@ -1505,6 +1860,7 @@ async function init() {
     showScreenStatus('작업 창 데몬과 연결이 끊겼어요 — pane 을 누르고 아무 키나 누르면 다시 붙어요(메뉴 [보기 → 작업 창 다시 붙기])')
   })
   studio.onScreenCommand(runCommand)
+  initPacks()
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
   new ResizeObserver(() => layoutPanes()).observe($('dock'))
   if (state.valid) {

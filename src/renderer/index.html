@@ -10,6 +10,8 @@
 <body>
   <header class="tabbar">
     <img class="tabbar-logo" src="assets/logo/athena-logo-white.png" alt="Athena Studio" draggable="false">
+    <!-- 지금 회사 팩 — 누르면 고르기(본체가 여러 팩을 지원할 때만 보임) -->
+    <button id="pack-chip" class="pack-chip" hidden title="회사 팩 고르기"><span id="pack-name"></span> ▾</button>
     <button class="tab" data-tab="work" aria-selected="true">🖥 작업 창 <kbd data-key="1"></kbd></button>
     <button class="tab" data-tab="board" aria-selected="false">📋 현황판 <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
@@ -36,6 +38,17 @@
         <nav id="studio-tabs" class="studio-tabs"></nav>
         <div class="work-area">
           <div id="panes" class="panes"></div>
+          <!-- 회사 팩이 하나도 없을 때 — VS Code 시작 화면처럼 작업 창 가운데에(모달 아님) -->
+          <section id="pack-welcome" class="pack-welcome" hidden>
+            <div class="pack-welcome-inner">
+              <img class="pack-welcome-logo" src="assets/logo/athena-logo-white.png" alt="" draggable="false">
+              <h1>Athena</h1>
+              <p class="pack-welcome-lead">회사 팩이 아직 없어요 — 팩을 만들거나 가져오면 바로 시작해요.</p>
+              <h2>시작</h2>
+              <button class="pack-welcome-action" data-pack-command="new"><span class="icon">＋</span><span><b>새 회사 팩 만들기</b><small>아테나가 이 컴퓨터의 레포를 찾아 팩을 만들어요(/setup)</small></span></button>
+              <button class="pack-welcome-action" data-pack-command="import"><span class="icon">↓</span><span><b>가져오기…</b><small>팀원이 준 압축 파일 · 팩 폴더 · git 레포 주소 · 내 기존 아테나</small></span></button>
+            </div>
+          </section>
           <!-- 미리보기 — 터미널 옆에 나눠 띄운다(덮지 않는다) -->
           <div id="preview" class="preview" tabindex="-1" hidden>
             <header class="preview-head">
@@ -92,6 +105,22 @@
       <div id="browser-slot" class="browser-slot"></div>
     </aside>
   </main>
+  <!-- 회사 팩 대화상자 · 진행 표시 — 창 전체 위에(처음 켤 때 화면 포함) -->
+  <div id="pack-dialog" class="pack-overlay" hidden role="dialog" aria-modal="true">
+    <div class="pack-box">
+      <h2 id="pack-dialog-title"></h2>
+      <div id="pack-dialog-body" class="pack-body"></div>
+      <div id="pack-dialog-actions" class="pack-actions"></div>
+    </div>
+  </div>
+  <div id="pack-progress" class="pack-overlay" hidden>
+    <div class="pack-box">
+      <div class="spinner"></div>
+      <h2 id="pack-progress-title"></h2>
+      <p id="pack-progress-step" class="pack-step"></p>
+      <div class="pack-actions"><button id="pack-progress-cancel" class="link" hidden>취소</button></div>
+    </div>
+  </div>
 
   <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
   <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>

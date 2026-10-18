@@ -223,6 +223,9 @@ class Daemon {
         const pane = this.paneOf(args.pane)
         return { shell: model.isShellIdle(await this.processes(), pane.pid) }
       }
+      // 팩 바꾸기용(앱만 쓴다) — pane 셸 pid. 화면 계층 pane 모양(12개 키)은 그대로 두고 따로 준다
+      case 'pane pids':
+        return { pids: Object.fromEntries([...this.panes.values()].map((pane) => [pane.id, pane.pid])) }
       case 'pane close':
         this.paneOf(args.pane).close()
         return undefined
