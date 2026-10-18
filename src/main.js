@@ -93,11 +93,30 @@ function ctxOfBody(dir) {
 function saveWindows() {
   if (quitting) return
   const dirs = [...packWindows].map((ctx) => ctx.athenaDir).filter(Boolean)
+  // 옛 데몬이라 아직 열지 않은 창도 목록에 남긴다 — 데몬을 새로 띄우면 연다
+  for (const dir of heldDirs) if (!dirs.some((other) => core.sameDir(other, dir))) dirs.push(dir)
   config = core.withWindows(config, dirs)
   core.saveConfig(configFile(), config)
 }
 
 // ── 작업 창 (데몬) — 프로세스는 앱 전체에 하나 ───────────────────────
+// 옛 데몬(protocol 이 다른 데몬)에 [나중에] 로 그대로 붙어 쓰는 중 — 창을 본체로 묶지 못해 팩 창이 여럿이면 pane 이 섞인다.
+// 그동안은 새 팩 창을 열지 않는다(아테나 계획서 20261018-팩마다-본체 리뷰 R1 A). 창 하나일 때는 지금 그대로 쓴다
+let daemonOld = false
+const browserUrls = new Map() // 본체 실제 경로 → 옆 브라우저에서 마지막으로 보던 주소(팩을 바꿨다 돌아오면 — D4 바꿈)
+let heldDirs = [] // 옛 데몬이라 켤 때 다시 열지 않은 팩 창 본체 — 맞는 데몬에 붙으면 연다
+
+// 맞는 데몬에 붙었다 — 미뤄 둔 팩 창을 연다
+function releaseHeldWindows() {
+  if (!heldDirs.length) return
+  const dirs = heldDirs
+  heldDirs = []
+  setImmediate(() => {
+    for (const dir of dirs) if (core.checkAthenaDir(dir).ok) openBody(dir)
+    saveWindows()
+  })
+}
+
 // 셸 pane 은 데몬이 갖는다(src/daemon) — 앱은 붙어서 보여 주기만 한다. 앱을 닫아도 데몬·셸·에이전트는 계속 돈다
 const daemonPaths = () =>
   core.daemonPaths({ userData: app.getPath('userData'), home: app.getPath('home'), tmpdir: app.getPath('temp'), uid: process.getuid(), endpoint: process.env.ATHENA_STUDIO_ENDPOINT || null })
@@ -727,6 +746,10 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       const options = { paths, env: core.childEnv(process.env), onEvent: onDaemonEvent, onClose: onDaemonClosed }
       let result = await daemonClient.ensureDaemon(options)
       if (result.status === 'mismatch' && (await askRestartDaemon(result, ctx.win))) result = await daemonClient.ensureDaemon(options)
+      if (result.status === 'ok') {
+        daemonOld = false
+        releaseHeldWindows()
+      } else if (result.status === 'mismatch') daemonOld = true
       daemon = daemon || result.connection
       return daemon
     })().finally(() => (connecting = null))
@@ -1010,11 +1033,13 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // ── 아테나 에이전트 ──
   // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
-  ctx.openAthenaAgent = async (size) => {
+  // keepView — 팩을 바꿔 돌아왔을 때(D4 바꿈): 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
+  ctx.openAthenaAgent = async (size, { keepView = false } = {}) => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return { skipped: true }
     const state = await daemonCall('state')
     if (state.error) return { error: state.error }
     const existing = core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
+    if (existing && keepView) return { existing: true }
     if (existing) {
       await daemonCall('workspace select', { workspace: existing.id })
       return { focused: true }
@@ -1149,12 +1174,51 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       return { ...ctx.athenaState(), error: say('error.configCreate', { message: error.message }), picked: dir }
     }
     const changed = dir !== ctx.athenaDir
-    if (changed) ctx.detachScreen() // 새 본체로 다시 묶는다(화면이 다시 붙는다)
-    ctx.athenaDir = dir
-    packBoardPort = null
+    if (changed) return rebindBody(dir)
     saveWindows()
     ctx.prepareBoardPort()
     return { ...ctx.athenaState(), changed }
+  }
+
+  // 이 창을 다른 본체(팩)로 다시 묶는다(아테나 계획서 20261018-팩마다-본체 D4 바꿈 — 한 창에서 팩을 바꿔 본다).
+  // 이전 본체의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 오면 그 본체의 보던 자리 그대로). 화면은 돌려준 상태로 다시 붙는다(attach{body}) —
+  // 작업 공간 · 현황판 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
+  function rebindBody(dir) {
+    try {
+      core.ensureAthenaConfig(dir, athenaReposRoot(dir))
+    } catch {}
+    ctx.detachScreen() // 화면이 다시 붙을 때 새 본체로 묶인다
+    rememberBrowser()
+    ctx.athenaDir = dir
+    packBoardPort = null
+    branchCache = { at: 0, value: null }
+    resetMonitor()
+    saveWindows()
+    ctx.prepareBoardPort()
+    if (tray) pollTray()
+    return { ...ctx.athenaState(), changed: true }
+  }
+  ctx.rebindBody = rebindBody
+
+  // 옆 브라우저 — 지금 본체에서 보던 주소를 기억하고 뷰를 닫는다(새 본체에서 서랍을 열면 그 본체 주소로 · ensureBrowserView)
+  function rememberBrowser() {
+    if (browserView && !browserView.webContents.isDestroyed()) {
+      const url = browserView.webContents.getURL()
+      if (ctx.athenaDir && core.isWebUrl(url)) browserUrls.set(core.realDir(ctx.athenaDir), url)
+      if (browserAttached && ctx.win) ctx.win.contentView.removeChildView(browserView)
+      browserView.webContents.close()
+    }
+    browserView = null
+    browserAttached = false
+    send('browser:reset')
+  }
+
+  // 에이전트 모니터 — 새 본체 기록부터 다시 모은다(보고 있었으면 바로 이어서)
+  function resetMonitor() {
+    const watching = monitor.watching
+    clearInterval(monitor.timer)
+    Object.assign(monitor, newMonitor())
+    if (watching) ctx.setMonitorWatch(true)
   }
 
   // 처음 켤 때 — 받지 않고 ~/athena 를 본체로 쓴다(여러 회사 팩 · 사용자 결정 1). 없으면 폴더를 고르게 한다(본체 받기는 범위 밖)
@@ -1200,17 +1264,19 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
   }
 
-  // 새 팩 — 빈 자리 + 그 본체(5.7 pack new)를 만들고 새 창으로 연다. 그 창에서 claude 가 켜지면 /setup
+  // 새 팩 — 빈 자리 + 그 본체(5.7 pack new)를 만들고 이 창을 그 본체로 바꾼다(D4 바꿈). 그 본체에서 claude 가 켜지면 /setup.
+  // 옛 데몬이면 만들기 전에 막는다(바꿔 보면 팩끼리 pane 이 섞인다 — 리뷰 R1)
   ctx.packNew = async () => {
+    if (daemonOld) return { ok: false, error: 'old-daemon', text: say('pack.switch.oldDaemon') }
     const blocked = await contractBlock(ctx.athenaDir)
     if (blocked) return blocked
     return ctx.packTask(say('pack.task.new'), async (signal) => {
       const result = await runPack(['new'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      const opened = openBody(result.body)
+      if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
+      const state = rebindBody(result.body)
       refreshAllPacks()
-      if (opened.error) return { ok: false, error: 'invalid-pack', text: opened.error }
-      return { ok: true, id: result.id, body: result.body }
+      return { ok: true, id: result.id, body: result.body, switched: true, state }
     })
   }
 
@@ -1284,19 +1350,35 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
   }
 
-  // 팩 열기 — 그 팩 본체를 준비하고(5.7 pack open) 그 본체 창을 연다(이미 열려 있으면 앞으로). 이 창의 팩은 그대로(4.2 '열기만')
-  ctx.packOpen = async (id) => {
+  // 팩 열기 — 그 팩 본체를 준비하고(5.7 pack open) 이 창을 그 본체로 바꾼다(D4 바꿈 — 한 창에서 바꿔 보기).
+  // 다른 창이 이미 그 팩을 보고 있으면 그 창으로(한 팩을 두 창이 같이 보지 않게). newWindow 면 새 창으로(우클릭 [새 창으로 열기])
+  ctx.packOpen = async (id, { newWindow = false } = {}) => {
     if (typeof id !== 'string' || !id) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
     if (ctx.packState.current && ctx.packState.current.id === id) return { ok: true, same: true }
+    const elsewhere = [...packWindows].find((other) => other !== ctx && other.packState.current && other.packState.current.id === id)
+    if (elsewhere) {
+      elsewhere.show()
+      return { ok: true, id, existing: true }
+    }
+    // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다(리뷰 R1)
+    if (daemonOld) return { ok: false, error: 'old-daemon', text: say(newWindow ? 'pack.open.oldDaemon' : 'pack.switch.oldDaemon') }
     const blocked = await contractBlock(ctx.athenaDir)
     if (blocked) return blocked
     return ctx.packTask(say('pack.task.open'), async (signal) => {
       const result = await runPack(['open', id], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      const opened = openBody(result.body)
-      if (opened.error) return { ok: false, error: 'invalid-pack', text: opened.error }
       if (result.created) refreshAllPacks()
-      return { ok: true, id, created: result.created === true, existing: opened.existing, unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required' }
+      const notes = { unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required', created: result.created === true }
+      const other = typeof result.body === 'string' ? ctxOfBody(result.body) : null
+      if (newWindow || (other && other !== ctx)) {
+        const opened = openBody(result.body)
+        if (opened.error) return { ok: false, error: opened.code || 'invalid-pack', text: opened.error }
+        return { ok: true, id, existing: opened.existing, ...notes }
+      }
+      if (other === ctx) return { ok: true, same: true }
+      if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
+      const state = rebindBody(result.body)
+      return { ok: true, id, switched: true, state, ...notes }
     })
   }
 
@@ -1353,7 +1435,10 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
         chosen = action
         resolve(action)
       }
-      const items = [{ label: say('pack.menu.rename'), click: pick('rename') }]
+      const items = []
+      // 지금 팩이 아니면 — 따로 띄우고 싶을 때만 새 창으로(D4 바꿈 · 누르면 이 창에서 바꿔 본다)
+      if (!(ctx.packState.current && ctx.packState.current.id === id)) items.push({ label: say('pack.menu.newWindow'), click: pick('new-window') }, { type: 'separator' })
+      items.push({ label: say('pack.menu.rename'), click: pick('rename') })
       if (pack.displayName) items.push({ label: say('pack.menu.resetName'), click: pick('reset-name') })
       items.push({ type: 'separator' }, { label: say('pack.menu.icon'), click: pick('icon') })
       if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
@@ -1380,6 +1465,9 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
     browserView.setBackgroundColor('#ffffff')
     const contents = browserView.webContents
+    // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면 — D4 바꿈)
+    const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
+    if (remembered) contents.loadURL(remembered)
     // http(s) 밖으로는 움직이지 않는다 — 안쪽 프레임까지
     contents.on('will-frame-navigate', (event) => {
       if (!core.isWebUrl(event.url)) event.preventDefault()
@@ -1531,6 +1619,7 @@ function openBody(body) {
     existing.show()
     return { existing: true }
   }
+  if (daemonOld) return { error: say('pack.open.oldDaemon'), code: 'old-daemon' }
   try {
     core.ensureAthenaConfig(body, athenaReposRoot(body))
   } catch {}
@@ -1573,7 +1662,49 @@ function startPanesPolling() {
   clearInterval(panesTimer)
   panesTimer = setInterval(() => {
     for (const ctx of packWindows) ctx.pollPanes().catch(() => {})
+    pollRunning().catch(() => {})
   }, 2000)
+}
+
+// 팩 줄 '도는 중' — 팩마다(본체마다) 에이전트가 도는 pane 수(D4 바꿈 · 바꿔 둔 팩에서도 에이전트는 계속 돈다).
+// 창 연결은 자기 본체만 보므로 묶이지 않은 연결 하나로 모든 본체를 본다. 데몬이 없거나 옛 데몬이면 읽지 않는다(띄우지도 묻지도 않는다)
+let runningPeek = null
+let runningPeeking = false
+const RUNNING_LIMIT_MS = 5000 // pane list 는 ps 를 읽어 조금 걸릴 수 있다
+const runningSent = new WeakMap() // 창 → 마지막으로 보낸 값(같으면 다시 보내지 않는다)
+async function pollRunning() {
+  if (runningPeeking || daemonOld || ![...packWindows].some((ctx) => ctx.win && !ctx.win.isDestroyed() && ctx.win.isVisible())) return
+  runningPeeking = true
+  try {
+    if (!runningPeek) {
+      // 닫힘 알림은 늦게 올 수 있다 — 지금 연결이 그 연결일 때만 비운다(새로 만든 연결을 덮지 않게)
+      let fresh = null
+      fresh = await daemonClient.connectExisting({
+        paths: daemonPaths(),
+        onClose: () => {
+          if (fresh && runningPeek === fresh) runningPeek = null
+        },
+      })
+      runningPeek = fresh
+    }
+    if (!runningPeek) return
+    // 답이 없으면 끊고 다음에 다시 붙는다(catch) — 묶인 채 '도는 중' 이 멈추지 않게(리뷰 제안)
+    const state = await daemonClient.withTimeout(runningPeek.call('state'), RUNNING_LIMIT_MS)
+    const listed = await daemonClient.withTimeout(runningPeek.call('pane list'), RUNNING_LIMIT_MS)
+    const byBody = core.agentsByBody(state.workspaces, listed.panes)
+    for (const ctx of packWindows) {
+      const running = core.runningByPack(ctx.packState.packs, byBody, core.realDir)
+      const text = JSON.stringify(running)
+      if (runningSent.get(ctx) === text) continue
+      runningSent.set(ctx, text)
+      ctx.send('pack:running', running)
+    }
+  } catch {
+    if (runningPeek) runningPeek.destroy() // 답이 없었을 수 있다 — 바로 끊는다
+    runningPeek = null
+  } finally {
+    runningPeeking = false
+  }
 }
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만(결정 Q1 B) ───────────────────
@@ -1724,8 +1855,9 @@ function trayNames() {
 async function pollTray() {
   const ctx = frontCtx()
   // 앞 창이 바뀌면(다른 팩) 그 팩 기준으로 처음부터 — 알림 판단 · 그래프가 섞이지 않게
-  if (ctx !== trayState.ctx) {
+  if (ctx !== trayState.ctx || (ctx && ctx.athenaDir !== trayState.dir)) {
     trayState.ctx = ctx
+    trayState.dir = ctx ? ctx.athenaDir : null
     trayState.panes = []
     trayState.workspaces = []
     trayState.cards = null
@@ -1908,14 +2040,26 @@ function notify(item) {
 }
 
 // ── 창 · 메뉴 ─────────────────────────────────────────────
-// 지난번에 열려 있던 팩 창들을 다시 연다 — 첫 창만 시작 화면 규칙을 본다(결정 Q2 A). 본체가 없으면 처음 화면(아테나 폴더 고르기) 창 하나
+// 지난번에 열려 있던 팩 창들을 다시 연다 — 첫 창만 시작 화면 규칙을 본다(결정 Q2 A). 본체가 없으면 처음 화면(아테나 폴더 고르기) 창 하나.
+// 첫 창은 바로 만든다(showWindow 가 곧바로 찾는다). 두 번째 창부터는 데몬 버전을 본 뒤 — 옛 데몬이면 열지 않고 남겨 둔다(리뷰 R1 A)
 function openSavedWindows() {
   const dirs = core.windowDirs(config, core.sameDir).filter((dir) => core.checkAthenaDir(dir).ok)
   if (!dirs.length) {
     createPackWindow(config.athenaDir || null, { welcome: true })
     return
   }
-  dirs.forEach((dir, index) => createPackWindow(dir, { welcome: index === 0 }))
+  const first = createPackWindow(dirs[0], { welcome: true })
+  if (dirs.length === 1) return
+  heldDirs = dirs.slice(1)
+  first
+    .connectDaemon()
+    .catch(() => null)
+    .then(() => {
+      if (!daemonOld) return releaseHeldWindows()
+      if (!heldDirs.length) return undefined
+      const notice = { type: 'info', message: say('pack.open.heldWindows', { count: heldDirs.length }) }
+      return (first.win ? dialog.showMessageBox(first.win, notice) : dialog.showMessageBox(notice)).catch(() => null)
+    })
 }
 
 // 메뉴 [보기 → 언어] — 언어 이름은 그 언어로, 검수 전 사전은 그 언어의 '검수 전' 표시를 붙인다(D5)
@@ -2061,7 +2205,7 @@ handle('athena:pick', (ctx) => ctx.pickAthenaDir())
 handle('athena:install', (ctx) => ctx.installAthena())
 // 회사 팩 — 본체 명령을 부르고 결과만 화면에(5.7 약속). 문자열 · 고른 값만 받는다
 handle('pack:list', (ctx) => ctx.refreshPacks())
-handle('pack:open', (ctx, id) => ctx.packOpen(String(id)))
+handle('pack:open', (ctx, id, options) => ctx.packOpen(String(id), { newWindow: Boolean(options && options.newWindow) }))
 handle('pack:new', (ctx) => ctx.packNew())
 handle('pack:cancel', (ctx) => {
   if (ctx.packAbort) ctx.packAbort.abort()
@@ -2083,7 +2227,7 @@ handle('window:close', (ctx) => {
   return { closed: packWindows.size > 1 }
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
-handle('agent:open', (ctx, size) => ctx.openAthenaAgent(cellSize(size)))
+handle('agent:open', (ctx, size, options) => ctx.openAthenaAgent(cellSize(size), { keepView: Boolean(options && options.keepView) }))
 handle('tab:new', (ctx, size) => ctx.daemonCall('tab new', { defaultCwd: ctx.athenaDir, ...cellSize(size) }))
 handle('tab:select', (ctx, tabId) => ctx.daemonCall('tab select', { tab: String(tabId) }))
 handle('tab:close', (ctx, tabId) => ctx.closeTab(String(tabId)))

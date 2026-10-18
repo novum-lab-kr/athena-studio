@@ -61,6 +61,11 @@ class DaemonConnection {
   close() {
     this.socket.end()
   }
+
+  // 답 없는 데몬 — 상대가 닫아 주지 않아도 바로 끊는다(반쯤 열린 소켓이 쌓이지 않게)
+  destroy() {
+    this.socket.destroy()
+  }
 }
 
 function connectSocket(socketPath) {
@@ -112,6 +117,27 @@ async function ensureDaemon({ paths, env, onEvent, onClose }) {
   return { connection, hello: reply.result || null, status: protocol.checkHello(reply), launched }
 }
 
+// 답을 limitMs 안에 — 넘으면 Error(code timeout). 보기만 하는 연결이 답 없는 데몬에 묶여 멈추지 않게
+function withTimeout(promise, limitMs) {
+  let timer = null
+  const late = new Promise((_resolve, reject) => {
+    timer = setTimeout(() => reject(Object.assign(new Error('데몬이 답하지 않아요'), { code: 'timeout' })), limitMs)
+  })
+  return Promise.race([promise, late]).finally(() => clearTimeout(timer))
+}
+
+// 떠 있는 데몬에만 붙기 — 없으면 띄우지 않고, 프로토콜이 다르거나 답이 없으면 끊고 null(앱이 보기만 하는 연결 · 팩 줄 '도는 중')
+async function connectExisting({ paths, onEvent = () => {}, onClose = () => {}, limitMs = 3000 }) {
+  const socket = await connectSocket(paths.socket).catch(() => null)
+  if (!socket) return null
+  const connection = new DaemonConnection(socket, { onEvent, onClose })
+  const reply = await withTimeout(connection.request('hello', { protocol: protocol.PROTOCOL }), limitMs).catch(() => null)
+  if (protocol.checkHello(reply) === 'ok') return connection
+  if (reply) connection.close()
+  else connection.destroy() // 시간 초과
+  return null
+}
+
 // 소켓이 사라질 때까지(데몬이 끝날 때까지) 기다린다 — 다시 띄우기 전에
 async function waitDaemonGone(socketPath, limitMs = 5000) {
   const until = Date.now() + limitMs
@@ -124,4 +150,4 @@ async function waitDaemonGone(socketPath, limitMs = 5000) {
   return false
 }
 
-module.exports = { ensureDaemon, waitDaemonGone, CLI }
+module.exports = { ensureDaemon, connectExisting, withTimeout, waitDaemonGone, CLI }

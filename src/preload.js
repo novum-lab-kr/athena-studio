@@ -16,8 +16,8 @@ contextBridge.exposeInMainWorld('studio', {
   installAthena: () => ipcRenderer.invoke('athena:install'),
   // 회사 팩 — 본체 명령 결과만(파일 · 폴더 고르기는 main 의 대화상자)
   packList: () => ipcRenderer.invoke('pack:list'),
-  // 팩 열기 — 그 팩 본체 창을 연다(이미 열려 있으면 앞으로) · 이 창의 팩은 그대로(창마다 팩)
-  packOpen: (id) => ipcRenderer.invoke('pack:open', id),
+  // 팩 열기 — 이 창을 그 팩으로 바꾼다(D4 바꿈 · 다른 창이 보고 있으면 그 창이 앞으로) · options.newWindow 면 새 창으로
+  packOpen: (id, options) => ipcRenderer.invoke('pack:open', id, options),
   packNew: () => ipcRenderer.invoke('pack:new'),
   packCancel: () => ipcRenderer.invoke('pack:cancel'),
   packInspect: (kind, source) => ipcRenderer.invoke('pack:inspect', kind, source),
@@ -37,7 +37,7 @@ contextBridge.exposeInMainWorld('studio', {
   onPackCommand: listen('pack:command'),
   // 작업 창 — 데몬의 탭·pane(모든 함수가 pane id 를 단다)
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
-  openAgent: (size) => ipcRenderer.invoke('agent:open', size),
+  openAgent: (size, options) => ipcRenderer.invoke('agent:open', size, options),
   tabNew: (size) => ipcRenderer.invoke('tab:new', size),
   tabSelect: (tabId) => ipcRenderer.invoke('tab:select', tabId),
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),
@@ -67,6 +67,8 @@ contextBridge.exposeInMainWorld('studio', {
   browserHide: () => ipcRenderer.send('browser:hide'),
   browserCommand: (name, value) => ipcRenderer.invoke('browser:command', name, value),
   onBrowserOpen: listen('browser:open'),
+  onBrowserReset: listen('browser:reset'),
+  onPackRunning: listen('pack:running'),
   onBrowserToggle: listen('browser:toggle'),
   onBrowserState: listen('browser:state'),
   onBrowserError: listen('browser:error'),

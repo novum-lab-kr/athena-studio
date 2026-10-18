@@ -44,6 +44,13 @@ test('오류 문장: 코드별 안내 + 본체 설명 + busy 목록', () => {
   assert.match(pack.packErrorText({ ok: false, error: 'weird' }), /실패했어요/)
   assert.match(pack.packErrorText({ ok: false, error: 'failed', message: 'x' }), /예상하지 못한 오류가 났어요 — x/)
   assert.equal(pack.packErrorText({ ok: true }), '')
+  // 5.7 pack open 오류 · busy 종류 codex · unknown 도 사전 문구로(모르는 코드 '팩 명령이 실패했어요' 로 빠지지 않게)
+  assert.match(pack.packErrorText({ ok: false, error: 'port-in-use' }), /빈 포트가 없어요/)
+  assert.match(pack.packErrorText({ ok: false, error: 'body-conflict', message: 'x' }), /다른 폴더가 있어요.* — x/)
+  for (const code of ['body-mismatch', 'data-incompatible']) assert.doesNotMatch(pack.packErrorText({ ok: false, error: code }), /팩 명령이 실패했어요/)
+  const busyKinds = pack.packErrorText({ ok: false, error: 'busy', busy: [{ kind: 'codex', pid: 3 }, { kind: 'unknown', what: 'node' }] })
+  assert.match(busyKinds, /Codex 세션 \(pid 3\)/)
+  assert.match(busyKinds, /확인하지 못한 프로세스 — node/)
 })
 
 test('git 주소: https · ssh · git@ 만, 셸 문자 · 비밀번호 · 옵션 모양은 거절', () => {

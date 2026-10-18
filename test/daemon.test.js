@@ -221,6 +221,33 @@ test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 �
 
     // 다른 본체 pane 은 없는 것처럼
     assert.equal((await appB.call('input', { pane: tabA.pane, data: 'x' })).error.code, 'not_found')
+    // 크기 · 닫기 · 포커스 · 탭/작업 공간 고르기도 — 다른 본체 것은 건드리지 못한다(리뷰 제안 4)
+    const tabIdA = (await appA.call('state')).result.tabs[0].id
+    const otherBody = [
+      ['resize', { pane: tabA.pane, cols: 40, rows: 10 }],
+      ['pane close', { pane: tabA.pane }],
+      ['tab close', { tab: tabIdA }],
+      ['focus', { pane: tabA.pane }],
+      ['tab select', { tab: tabIdA }],
+      ['workspace select', { workspace: tabA.workspace }],
+    ]
+    for (const [op, args] of otherBody) assert.equal((await appB.call(op, args)).error?.code, 'not_found', op)
+    assert.ok((await appA.call('state')).result.panes.some((pane) => pane.id === tabA.pane)) // A 의 pane 은 그대로 살아 있다
+
+    // 묶이지 않은 연결이 B 의 탭 · pane 을 골라도 A 창의 보는 자리는 그대로 — lastKey(마지막으로 움직인 A)를 덮지 않는다(리뷰 제안 1)
+    await appA.call('focus', { pane: tabA.pane })
+    const unbound = await connect(daemon.socket)
+    const tabIdB = (await appB.call('state')).result.tabs[0].id
+    assert.equal((await unbound.call('tab select', { tab: tabIdB })).ok, true)
+    assert.equal((await unbound.call('focus', { pane: tabB.pane })).ok, true)
+    assert.equal((await unbound.call('workspace select', { workspace: tabB.workspace })).ok, true)
+    const afterA = (await appA.call('state')).result
+    assert.equal(afterA.activeWorkspace, tabA.workspace)
+    assert.equal(afterA.focused, tabA.pane)
+    const afterB = (await appB.call('state')).result
+    assert.equal(afterB.activeWorkspace, tabB.workspace)
+    assert.equal(afterB.focused, tabB.pane)
+    unbound.close()
 
     // 출력은 그 본체 연결에만
     await cli(daemon.socket, ['pane', 'run', tabB.pane, 'echo', 'only-b'])
@@ -289,6 +316,28 @@ test('떼어 띄운 데몬은 띄운 쪽이 끝나도 셸과 함께 산다', { s
     await waitFor(async () => (await cli(path.join(dir, 'd.sock'), ['pane', 'is-shell', 'p1'])).code === 0, '셸 프롬프트')
   } finally {
     process.kill(daemonPid, 'SIGTERM')
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('보기만 하는 연결(connectExisting): 데몬이 없으면 띄우지 않고 null · 답이 없으면 시간 안에 끊고 null', async () => {
+  const daemonClient = require('../src/daemon-client')
+  const dir = workDir()
+  const socket = path.join(dir, 'silent.sock')
+  try {
+    assert.equal(await daemonClient.connectExisting({ paths: { socket } }), null)
+    assert.equal(fs.existsSync(socket), false) // 띄우지 않는다
+    // 소켓은 받지만 아무 답도 하지 않는 데몬
+    const held = []
+    const server = net.createServer((connection) => held.push(connection))
+    await new Promise((resolve) => server.listen(socket, resolve))
+    const started = Date.now()
+    assert.equal(await daemonClient.connectExisting({ paths: { socket }, limitMs: 200 }), null)
+    assert.ok(Date.now() - started < 2000)
+    await assert.rejects(daemonClient.withTimeout(new Promise(() => {}), 50), { code: 'timeout' })
+    for (const connection of held) connection.destroy()
+    await new Promise((resolve) => server.close(resolve))
+  } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })

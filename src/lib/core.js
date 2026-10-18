@@ -269,6 +269,33 @@ function daemonPaths({ userData, home, tmpdir, uid, endpoint = null }) {
   }
 }
 
+// 본체마다 에이전트가 도는 pane 수 — 묶이지 않은 데몬 연결의 state.workspaces(body) + pane list(workspace_id · agent · agent_status).
+// 본체를 모르는 작업 공간(body null)은 어느 팩에도 세지 않는다. → { '<본체>': { agents, working } }
+function agentsByBody(workspaces, panes) {
+  const bodyOf = new Map((workspaces || []).filter((workspace) => workspace && workspace.body).map((workspace) => [workspace.id, workspace.body]))
+  const counts = {}
+  for (const pane of panes || []) {
+    const body = pane && pane.agent ? bodyOf.get(pane.workspace_id) : null
+    if (!body) continue
+    const entry = counts[body] || (counts[body] = { agents: 0, working: 0 })
+    entry.agents += 1
+    if (pane.agent_status === 'working') entry.working += 1
+  }
+  return counts
+}
+
+// 팩 목록(pack list 의 packs[].body)에 맞춰 팩 id → { agents, working } — 본체 경로는 realDir 로 맞춘다(~/athena 링크 등). 도는 게 없으면 빠진다
+function runningByPack(packs, byBody, real = (dir) => dir) {
+  const realCounts = new Map(Object.entries(byBody || {}).map(([body, count]) => [real(body), count]))
+  const running = {}
+  for (const pack of packs || []) {
+    if (!pack || typeof pack.id !== 'string' || typeof pack.body !== 'string' || !pack.body) continue
+    const count = realCounts.get(real(pack.body))
+    if (count && count.agents) running[pack.id] = count
+  }
+  return running
+}
+
 module.exports = {
   DEFAULT_CONFIG,
   PATH_MARK,
@@ -300,4 +327,6 @@ module.exports = {
   daemonPaths,
   windowDirs,
   withWindows,
+  agentsByBody,
+  runningByPack,
 }

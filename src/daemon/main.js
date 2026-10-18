@@ -198,6 +198,12 @@ class Daemon {
     return scope === null || scope === undefined ? this.lastKey : scope
   }
 
+  // 이미 있는 것(pane · 탭 · 작업 공간)을 고를 때의 자리 — 묶이지 않은 호출이면 그것이 속한 본체(모르면 마지막으로 움직인 본체).
+  // lastKey 로만 고르면 다른 본체 창의 활성 작업 공간 · 포커스를 덮는다(리뷰 제안 1)
+  viewKeyFor(scope, body) {
+    return scope === null || scope === undefined ? body || this.lastKey : scope
+  }
+
   // scope 가 보는 것만 — 목록 응답 · 상태
   visibleWorkspaces(scope) {
     return this.workspaces.filter((workspace) => this.sees(scope, workspace.body))
@@ -382,7 +388,7 @@ class Daemon {
 
   focus(scope, paneId) {
     const pane = this.paneIn(scope, paneId)
-    const key = this.viewKeyOf(scope)
+    const key = this.viewKeyFor(scope, this.paneBody(pane))
     // 고정 칸은 탭이 없다 — 포커스만 옮긴다(보고 있던 작업 공간·탭은 그대로)
     if (pane.dock) {
       this.view(key).focusedPane = pane.id
@@ -396,10 +402,12 @@ class Daemon {
   activate(key, tab, paneId) {
     const workspace = this.workspaceOf(tab.workspaceId)
     workspace.activeTab = tab.id
-    const view = this.view(key)
+    // 본체가 정해진 작업 공간은 그 본체 자리만 바꾼다 — 다른 본체 창의 화면을 덮지 않게
+    const viewKey = workspace.body || key
+    const view = this.view(viewKey)
     view.activeWorkspace = workspace.id
     view.focusedPane = paneId || layout.paneIds(tab.tree)[0] || null
-    this.lastKey = key || ''
+    this.lastKey = viewKey || ''
   }
 
   // ── 탭 · 분할 ──────────────────────────────────────────────
@@ -450,7 +458,7 @@ class Daemon {
 
   selectTab(scope, tabId) {
     const tab = this.tabIn(scope, tabId)
-    const key = this.viewKeyOf(scope)
+    const key = this.viewKeyFor(scope, this.workspaceBody(tab.workspaceId))
     const ids = layout.paneIds(tab.tree)
     const focused = this.view(key).focusedPane
     this.activate(key, tab, ids.includes(focused) ? focused : null)
@@ -460,7 +468,7 @@ class Daemon {
 
   selectWorkspace(scope, workspaceId) {
     const workspace = this.workspaceIn(scope, workspaceId)
-    const key = this.viewKeyOf(scope)
+    const key = this.viewKeyFor(scope, workspace.body)
     const tab = this.tabs.find((entry) => entry.id === workspace.activeTab) || this.tabs.find((entry) => entry.workspaceId === workspace.id)
     if (tab) this.activate(key, tab, null)
     else {
