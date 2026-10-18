@@ -3,51 +3,20 @@
 //   node scripts/athena.mjs pack <명령> … --json → `progress: <단계ID> <설명>` 줄들 + 마지막 줄 JSON · 실패 종료 1 + { ok:false, error, message }
 const path = require('path')
 
-// 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계
-const STEP_LABELS = {
-  lock: '잠금 잡는 중',
-  check: '사전 검사',
-  stop: '작업 · 현황판 끄는 중',
-  link: '링크 바꾸는 중',
-  repos: '레포 연결 맞추는 중',
-  verify: '새 팩 확인',
-  done: '끝',
-  rollback: '이전 팩으로 되돌리는 중',
-  'studio-wait': '일하는 에이전트가 끝나길 기다리는 중',
-  'studio-stop': '에이전트를 멈추는 중',
-  'studio-close': 'pane 닫는 중',
-  'studio-busy': '남은 작업 확인',
-  'studio-board': '현황판 다시 띄우는 중',
-  slow: '오래 걸려요 — 본체가 끝낼 때까지 기다려요',
-}
+const i18n = require('./i18n')
+const KOREAN = require('../i18n/ko.json')
 
-const ERROR_MESSAGES = {
-  locked: '다른 곳에서 팩을 바꾸는 중이에요 — 끝난 뒤 다시 해 주세요',
-  busy: '바꾸면 안 되는 작업이 아직 돌고 있어요',
-  'not-found': '그 팩을 찾지 못했어요',
-  'invalid-pack': '회사 팩이 아니에요 — pack.json 이 없거나 형식이 맞지 않아요',
-  unsafe: '안전하지 않은 파일이 들어 있어 가져오지 않았어요(밖을 가리키는 링크 · .. · 비밀 파일)',
-  'format-unknown': '이 아테나가 모르는 팩 형식이에요 — 아테나를 업데이트한 뒤 다시 해 주세요',
-  'token-expired': '검사한 지 오래됐어요 — 다시 가져오기를 해 주세요',
-  'clone-failed': 'git 레포를 받지 못했어요 — 주소와 권한을 확인해 주세요',
-  rollback: '바꾸다 실패해서 이전 팩으로 되돌렸어요',
-  'no-pack-support': '이 아테나는 아직 여러 회사 팩을 지원하지 않아요',
-  'bad-output': '아테나 본체가 알 수 없는 답을 했어요',
-  timeout: '아테나 본체가 제때 답하지 않았어요',
-  canceled: '취소했어요',
-  failed: '아테나 본체에서 예상하지 못한 오류가 났어요',
-  conflict: '같은 팩이 이미 있어요',
-}
+// 문구는 사전(src/i18n)에서 — 부르는 쪽이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
+const koreanSay = i18n.translator(KOREAN, KOREAN)
 
-const BUSY_LABELS = {
-  agent: '위임 에이전트',
-  athena: '아테나 세션',
-  qa: 'QA 실행',
-  'learn-review': '배우기 검토',
-  heavy: '무거운 명령',
-  switch: '팩 바꾸기',
-  outside: '스튜디오 밖 에이전트',
-}
+// 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
+const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'studio-wait', 'studio-stop', 'studio-close', 'studio-busy', 'studio-board', 'slow']
+// 본체 오류 코드(사전 pack.errorCode.<코드>)
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict']
+// 남은 작업 종류(사전 pack.busy.<종류>)
+const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside']
+
+const stepLabel = (step, say = koreanSay) => (STEP_IDS.includes(step) ? say(`pack.step.${step}`) : null)
 
 // 스튜디오가 끌 수 없고 코어도 끄지 않는 것 — 남아 있으면 pane 을 닫기 전에 멈춘다.
 // QA · 배우기 검토는 코어가 pack use 때 끈다(5.2 · Q7) — 막지 않는다. 밖의 에이전트는 switchCheck 가 따로 가린다
@@ -64,39 +33,42 @@ function splitLines(rest, chunk) {
 }
 
 // `progress: <단계ID> <설명>` 한 줄 → { step, text } (아니면 null)
-function parseProgressLine(line) {
+// 본체가 준 설명(한국어 · D4 범위 밖)이 있으면 그대로, 없으면 사전의 단계 이름
+function parseProgressLine(line, say = koreanSay) {
   const match = /^progress:\s+(\S+)\s*(.*)$/.exec(String(line).trim())
   if (!match) return null
-  return { step: match[1], text: match[2] || STEP_LABELS[match[1]] || match[1] }
+  return { step: match[1], text: match[2] || stepLabel(match[1], say) || match[1] }
 }
 
 // 명령 출력 전체 → { progress: [...], result } — 마지막 비지 않은 줄이 JSON 이어야 한다
-function parsePackOutput(text) {
+function parsePackOutput(text, say = koreanSay) {
   const lines = String(text || '').split('\n').map((line) => line.trim()).filter(Boolean)
-  const progress = lines.map(parseProgressLine).filter(Boolean)
+  const progress = lines.map((line) => parseProgressLine(line, say)).filter(Boolean)
   const last = lines[lines.length - 1]
-  if (!last) return { progress, raw: '', result: { ok: false, error: 'bad-output', message: '출력이 비었어요' } }
+  if (!last) return { progress, raw: '', result: { ok: false, error: 'bad-output', message: say('pack.error.emptyOutput') } }
   try {
     const result = JSON.parse(last)
     if (!result || typeof result !== 'object' || Array.isArray(result)) throw new Error('객체가 아님')
     return { progress, result }
   } catch {
     // 원문은 화면에 넣지 않는다(비밀값이 섞일 수 있다) — 부르는 쪽이 raw 를 pack.log 에만 남긴다
-    return { progress, raw: last.slice(0, 2000), result: { ok: false, error: 'bad-output', message: '마지막 줄이 JSON 이 아니에요(원문은 pack.log)' } }
+    return { progress, raw: last.slice(0, 2000), result: { ok: false, error: 'bad-output', message: say('pack.error.notJson') } }
   }
 }
 
 // 오류 결과 → 화면에 보일 한 문장(본체 message 가 있으면 뒤에 붙인다)
-function packErrorText(result) {
+// 본체 message 는 본체가 쓴 한국어 그대로(D4 범위 밖)
+function packErrorText(result, say = koreanSay) {
   if (!result || result.ok) return ''
-  const base = ERROR_MESSAGES[result.error] || '팩 명령이 실패했어요'
+  const base = ERROR_CODES.includes(result.error) ? say(`pack.errorCode.${result.error}`) : say('pack.error.unknown')
   const detail = result.message && result.message !== base ? ` — ${result.message}` : ''
-  const busy = Array.isArray(result.busy) && result.busy.length ? `\n${busyLines(result.busy).join('\n')}` : ''
+  const busy = Array.isArray(result.busy) && result.busy.length ? `\n${busyLines(result.busy, say).join('\n')}` : ''
   return `${base}${detail}${busy}`
 }
 
-function busyLines(busy) {
-  return (busy || []).map((item) => `· ${BUSY_LABELS[item.kind] || item.kind}${item.what ? ` — ${item.what}` : ''}${item.pid ? ` (pid ${item.pid})` : ''}`)
+function busyLines(busy, say = koreanSay) {
+  const kindLabel = (kind) => (BUSY_KINDS.includes(kind) ? say(`pack.busy.${kind}`) : kind)
+  return (busy || []).map((item) => `· ${kindLabel(item.kind)}${item.what ? ` — ${item.what}` : ''}${item.pid ? ` (pid ${item.pid})` : ''}`)
 }
 
 // git 주소 — https:// · ssh:// · git@host:path 만. 공백 · 셸 문자 · 옵션처럼 보이는 것 · 비밀번호가 든 주소는 받지 않는다
@@ -239,20 +211,22 @@ function shouldOfferMoveToHome({ config, studioAthena, homeSupportsPacks, sameDi
 }
 
 // 같은 이름 팩 비교 줄
-function packSummary(pack) {
+function packSummary(pack, say = koreanSay) {
   if (!pack) return ''
   const parts = []
-  if (Number.isFinite(pack.repos)) parts.push(`레포 ${pack.repos}`)
-  if (pack.updatedAt) parts.push(`마지막 변경 ${String(pack.updatedAt).slice(0, 10)}`)
-  if (pack.createdAt) parts.push(`만든 날 ${String(pack.createdAt).slice(0, 10)}`)
-  if (pack.hasWork) parts.push('작업 기록 있음')
-  if (pack.source) parts.push(pack.source === 'git' ? 'git' : '로컬')
+  if (Number.isFinite(pack.repos)) parts.push(say('pack.meta.repos', { count: pack.repos }))
+  if (pack.updatedAt) parts.push(say('pack.meta.updated', { date: String(pack.updatedAt).slice(0, 10) }))
+  if (pack.createdAt) parts.push(say('pack.meta.created', { date: String(pack.createdAt).slice(0, 10) }))
+  if (pack.hasWork) parts.push(say('pack.meta.hasWork'))
+  if (pack.source) parts.push(pack.source === 'git' ? 'git' : say('pack.meta.local'))
   return parts.join(' · ')
 }
 
 module.exports = {
-  STEP_LABELS,
-  BUSY_LABELS,
+  STEP_IDS,
+  ERROR_CODES,
+  BUSY_KINDS,
+  stepLabel,
   splitLines,
   parseProgressLine,
   parsePackOutput,

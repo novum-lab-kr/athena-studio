@@ -1,5 +1,10 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
 // 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage)
+const i18n = require('./i18n')
+const KOREAN = require('../i18n/ko.json')
+
+// 문구는 사전(src/i18n)에서 — main 이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
+const koreanSay = i18n.translator(KOREAN, KOREAN)
 const BLOCKED_HOLD_MS = 8000 // 막힘이 이만큼 이어져야 알린다(잠깐 묻고 바로 넘어가는 것은 빼고)
 const IDLE_HOLD_MS = 10000 // 일하다 멈춘 뒤 이만큼 조용해야 "응답이 끝났어요"
 
@@ -36,7 +41,7 @@ function columnCounts(cards) {
 }
 
 // 메뉴 · 아이콘 제목에 쓸 요약
-function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardUp = false, now = Date.now() } = {}) {
+function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardUp = false, now = Date.now(), say = koreanSay } = {}) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.label]))
   const agents = panes
     .filter((pane) => pane && pane.agent)
@@ -48,9 +53,9 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
   const blockedCards = plans.filter((card) => card.status === 'blocked')
   const reviewCards = plans.filter((card) => card.status === 'ready_for_review')
   const attention = [
-    ...agents.filter((agent) => agent.status === 'blocked').map((agent) => ({ kind: 'pane', mark: '!', id: agent.id, text: `${agent.name} — 입력을 기다려요` })),
-    ...blockedCards.map((card) => ({ kind: 'card', mark: '!', id: card.id, html: card.html || null, text: `${card.title} — 막힘` })),
-    ...reviewCards.map((card) => ({ kind: 'card', mark: '?', id: card.id, html: card.html || null, text: `${card.title} — 리뷰 대기` })),
+    ...agents.filter((agent) => agent.status === 'blocked').map((agent) => ({ kind: 'pane', mark: '!', id: agent.id, text: say('tray.attention.agentWaiting', { name: agent.name }) })),
+    ...blockedCards.map((card) => ({ kind: 'card', mark: '!', id: card.id, html: card.html || null, text: say('tray.attention.blocked', { title: card.title }) })),
+    ...reviewCards.map((card) => ({ kind: 'card', mark: '?', id: card.id, html: card.html || null, text: say('tray.attention.reviewWaiting', { title: card.title }) })),
   ]
   const counts = {
     working: agents.filter((agent) => agent.status === 'working').length,
@@ -64,7 +69,7 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
     // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
     attention,
     agents,
-    usageItems: usageItems(usage, now),
+    usageItems: usageItems(usage, now, say),
     done24: doneByHour(cards, now),
     columns,
     idleAgents: idle,
@@ -73,11 +78,10 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
   }
 }
 
-const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토']
 const HOUR_MS = 3600000
 
 // 리셋 시각 — 오늘이면 'HH:MM', 내일이면 '내일 HH:MM', 그 뒤면 '월 HH:MM'(없거나 못 읽으면 '')
-function resetClock(resetsAt, now = Date.now()) {
+function resetClock(resetsAt, now = Date.now(), say = koreanSay) {
   const date = resetsAt ? new Date(typeof resetsAt === 'number' && resetsAt < 1e12 ? resetsAt * 1000 : resetsAt) : null
   if (!date || Number.isNaN(date.getTime())) return ''
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
@@ -87,8 +91,8 @@ function resetClock(resetsAt, now = Date.now()) {
   day.setHours(0, 0, 0, 0)
   const days = Math.round((day.getTime() - today.getTime()) / (24 * HOUR_MS))
   if (days <= 0) return time
-  if (days === 1) return `내일 ${time}`
-  return `${WEEKDAYS[date.getDay()]} ${time}`
+  if (days === 1) return say('time.tomorrow', { time })
+  return `${say(`time.weekday.${date.getDay()}`)} ${time}`
 }
 
 // 최근 24시간 완료 — 완료 칸 카드를 마지막으로 바뀐 시각(mtime)으로 한 시간씩 24칸(마지막 칸이 지금)
@@ -106,13 +110,13 @@ function doneByHour(cards, now = Date.now()) {
 }
 
 // 현황판 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
-function usageItems(usage, now = Date.now()) {
+function usageItems(usage, now = Date.now(), say = koreanSay) {
   const items = []
   for (const tool of Array.isArray(usage) ? usage : []) {
     const label = tool.label || tool.id
     for (const window of tool.windows || []) {
       if (typeof window.percent !== 'number') continue
-      items.push({ tool: label, toolId: String(tool.id || ''), window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now) })
+      items.push({ tool: label, toolId: String(tool.id || ''), window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now, say) })
     }
   }
   return items
@@ -129,7 +133,7 @@ class Notifier {
 
   // 반환: [{ kind, title, body, target }] — target 은 { pane } 또는 { card, html }. 묶기(bundle)는 부르는 쪽이 거른 뒤에.
   // cards 가 없으면(현황판이 꺼졌거나 아직 못 받음) 카드는 비교하지 않고 기억도 그대로 둔다
-  update({ panes = [], cards = null, names = new Map() }, now) {
+  update({ panes = [], cards = null, names = new Map(), say = koreanSay }, now) {
     const found = []
     const seen = new Set()
     for (const pane of panes) {
@@ -146,10 +150,10 @@ class Notifier {
       const where = names.get(pane.workspace_id)
       const who = where ? `${name} · ${where}` : name
       if (status === 'blocked' && now - before.since >= BLOCKED_HOLD_MS) {
-        found.push({ kind: 'blocked', title: '확인이 필요해요', body: `${who} — 입력을 기다리고 있어요`, target: { pane: pane.id } })
+        found.push({ kind: 'blocked', title: say('notify.attention.title'), body: say('notify.attention.body', { who }), target: { pane: pane.id } })
         before.notified = true
       } else if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
-        found.push({ kind: 'idle', title: '응답이 끝났어요', body: `${who} — 결과를 확인해 주세요`, target: { pane: pane.id } })
+        found.push({ kind: 'idle', title: say('notify.idle.title'), body: say('notify.idle.body', { who }), target: { pane: pane.id } })
         before.notified = true
       } else if (status !== 'blocked' && status !== 'idle') {
         before.notified = true
@@ -167,8 +171,8 @@ class Notifier {
       const before = this.cards.get(card.id)
       this.cards.set(card.id, card.status)
       if (!this.ready || before === undefined || before === card.status) continue
-      if (card.status === 'ready_for_review') found.push({ kind: 'review', title: '리뷰를 기다려요', body: card.title, target: { card: card.id, html: card.html || null } })
-      if (card.status === 'done') found.push({ kind: 'done', title: '작업이 완료됐어요', body: card.title, target: { card: card.id, html: card.html || null } })
+      if (card.status === 'ready_for_review') found.push({ kind: 'review', title: say('notify.review.title'), body: card.title, target: { card: card.id, html: card.html || null } })
+      if (card.status === 'done') found.push({ kind: 'done', title: say('notify.done.title'), body: card.title, target: { card: card.id, html: card.html || null } })
     }
     for (const id of [...this.cards.keys()]) if (!alive.has(id)) this.cards.delete(id)
     this.ready = true
@@ -177,11 +181,12 @@ class Notifier {
 }
 
 // 같은 종류가 여러 건이면 하나로 — '응답이 끝났어요 (3건)'
-function bundle(found) {
+// 묶은 본문은 이름만 — 알림 본문은 사전에서 '<누구> — <내용>' 꼴이다(네 언어 모두 ' — ')
+function bundle(found, say = koreanSay) {
   const byKind = new Map()
   for (const item of found) byKind.set(item.kind, [...(byKind.get(item.kind) || []), item])
   return [...byKind.values()].map((items) =>
-    items.length === 1 ? items[0] : { ...items[0], title: `${items[0].title} (${items.length}건)`, body: items.map((item) => item.body.split(' — ')[0]).join(', ') },
+    items.length === 1 ? items[0] : { ...items[0], title: say('notify.bundle', { title: items[0].title, count: items.length }), body: items.map((item) => item.body.split(' — ')[0]).join(', ') },
   )
 }
 

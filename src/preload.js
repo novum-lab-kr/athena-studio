@@ -8,6 +8,9 @@ const listen = (channel) => (callback) => {
 }
 
 contextBridge.exposeInMainWorld('studio', {
+  // 언어 사전 { language, dictionary, fallback } — 동기로 받는다(첫 그림 전에) · 메뉴 [보기 → 언어] 로 바꾸면 onLanguage
+  i18n: () => ipcRenderer.sendSync('i18n:get'),
+  onLanguage: listen('i18n:changed'),
   athenaState: () => ipcRenderer.invoke('athena:state'),
   pickAthenaDir: () => ipcRenderer.invoke('athena:pick'),
   installAthena: () => ipcRenderer.invoke('athena:install'),

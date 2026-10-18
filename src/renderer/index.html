@@ -11,11 +11,11 @@
   <header class="tabbar">
     <img class="tabbar-logo" src="assets/logo/athena-logo-white.png" alt="Athena Studio" draggable="false">
     <!-- 지금 회사 팩 — 누르면 고르기(본체가 여러 팩을 지원할 때만 보임) -->
-    <button id="pack-chip" class="pack-chip" hidden title="회사 팩 고르기"><span id="pack-name"></span> ▾</button>
-    <button class="tab" data-tab="work" aria-selected="true">🖥 작업 창 <kbd data-key="1"></kbd></button>
-    <button class="tab" data-tab="board" aria-selected="false">📋 현황판 <kbd data-key="2"></kbd></button>
+    <button id="pack-chip" class="pack-chip" hidden title="팩 고르기" data-i18n-title="pack.chipTitle"><span id="pack-name"></span> ▾</button>
+    <button class="tab" data-tab="work" aria-selected="true"><span data-i18n="tabs.work">🖥 작업 창</span> <kbd data-key="1"></kbd></button>
+    <button class="tab" data-tab="board" aria-selected="false"><span data-i18n="tabs.board">📋 현황판</span> <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
-    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기" aria-label="옆 브라우저 열기·닫기" aria-controls="browser" aria-expanded="false">
+    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기" aria-label="옆 브라우저 열기·닫기" data-i18n-title="browser.toggle" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.75" ry="6.25"/><path d="M1.9 6h12.2M1.9 10h12.2"/></svg>
     </button>
   </header>
@@ -25,15 +25,15 @@
       <img class="setup-logo" src="assets/logo/athena-logo-white.png" alt="" draggable="false">
       <div id="spinner" class="spinner" hidden></div>
       <h1 id="setup-title">Athena Studio</h1>
-      <p id="setup-note" hidden>끝나면 바로 작업 창이 열려요.<br>
+      <p id="setup-note" hidden><span data-i18n="setup.note">끝나면 바로 작업 창이 열려요.</span><br>
         <code id="install-dir"></code></p>
       <p id="setup-error" class="error" hidden></p>
-      <button id="install" class="primary" hidden>다시 시도</button>
-      <button id="pick" class="link" hidden>이미 받은 아테나 폴더 고르기…</button>
+      <button id="install" class="primary" hidden data-i18n="common.retry">다시 시도</button>
+      <button id="pick" class="link" hidden data-i18n="setup.pick">이미 받은 아테나 폴더 고르기…</button>
     </section>
 
     <section id="work" class="panel">
-      <aside id="spaces" class="spaces" aria-label="작업 공간"></aside>
+      <aside id="spaces" class="spaces" aria-label="작업 공간" data-i18n-aria-label="spaces.label"></aside>
       <div class="center">
         <nav id="studio-tabs" class="studio-tabs"></nav>
         <div class="work-area">
@@ -43,17 +43,17 @@
             <div class="pack-welcome-inner">
               <img class="pack-welcome-logo" src="assets/logo/athena-logo-white.png" alt="" draggable="false">
               <h1>Athena</h1>
-              <p class="pack-welcome-lead">회사 팩이 아직 없어요 — 팩을 만들거나 가져오면 바로 시작해요.</p>
-              <h2>시작</h2>
-              <button class="pack-welcome-action" data-pack-command="new"><span class="icon">＋</span><span><b>새 회사 팩 만들기</b><small>아테나가 이 컴퓨터의 레포를 찾아 팩을 만들어요(/setup)</small></span></button>
-              <button class="pack-welcome-action" data-pack-command="import"><span class="icon">↓</span><span><b>가져오기…</b><small>팀원이 준 압축 파일 · 팩 폴더 · git 레포 주소 · 내 기존 아테나</small></span></button>
+              <p class="pack-welcome-lead" data-i18n="pack.welcome.lead">팩이 아직 없어요 — 팩을 만들거나 가져오면 바로 시작해요.</p>
+              <h2 data-i18n="pack.welcome.start">시작</h2>
+              <button class="pack-welcome-action" data-pack-command="new"><span class="icon">＋</span><span><b data-i18n="pack.welcome.new">새 팩 만들기</b><small data-i18n="pack.welcome.newNote">아테나가 이 컴퓨터의 레포를 찾아 팩을 만들어요(/setup)</small></span></button>
+              <button class="pack-welcome-action" data-pack-command="import"><span class="icon">↓</span><span><b data-i18n="pack.welcome.import">가져오기…</b><small data-i18n="pack.welcome.importNote">팀원이 준 압축 파일 · 팩 폴더 · git 레포 주소 · 내 기존 아테나</small></span></button>
             </div>
           </section>
           <!-- 미리보기 — 터미널 옆에 나눠 띄운다(덮지 않는다) -->
           <div id="preview" class="preview" tabindex="-1" hidden>
             <header class="preview-head">
               <span id="preview-title" class="preview-title"></span>
-              <button id="preview-close" class="preview-close" title="닫기 (Esc)">✕</button>
+              <button id="preview-close" class="preview-close" title="닫기 (Esc)" data-i18n-title="common.closeEsc">✕</button>
             </header>
             <pre id="preview-body" class="preview-body"></pre>
           </div>
@@ -64,42 +64,42 @@
           <div class="monitor-head">
             <span class="monitor-title"><svg class="monitor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg>AGENT MONITOR</span>
             <div id="monitor-sessions" class="monitor-sessions"></div>
-            <button id="monitor-fold" class="monitor-fold" title="에이전트 모니터 접기·펴기" aria-label="에이전트 모니터 접기·펴기"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="panel-fill" d="M3 15h18v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M3 15h18"/></svg></button>
+            <button id="monitor-fold" class="monitor-fold" title="에이전트 모니터 접기·펴기" aria-label="에이전트 모니터 접기·펴기" data-i18n-title="monitor.fold" data-i18n-aria-label="monitor.fold"><svg viewBox="0 0 24 24" aria-hidden="true"><path class="panel-fill" d="M3 15h18v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M3 15h18"/></svg></button>
           </div>
           <div id="monitor-feed" class="monitor-feed"></div>
         </section>
       </div>
-      <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널"></aside>
+      <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널" data-i18n-aria-label="side.label"></aside>
       <!-- 오른쪽을 접으면 남는 좁은 줄 — 누르면 다시 편다 -->
       <aside id="side-rail" class="side-rail" hidden>
-        <button id="side-open" class="rail-button" title="Explorer 펴기">
+        <button id="side-open" class="rail-button" title="Explorer 펴기" data-i18n-title="side.open">
           <svg class="rail-panel" viewBox="0 0 24 24" aria-hidden="true"><path class="panel-fill" d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z"/><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M15 3v18"/></svg>
         </button>
       </aside>
       <div id="toast" class="toast" hidden></div>
       <div id="agent-picker" class="picker" hidden>
         <div class="picker-box">
-          <h2>어떤 에이전트로 아테나를 켤까요?</h2>
+          <h2 data-i18n="picker.title">어떤 에이전트로 아테나를 켤까요?</h2>
           <div id="agent-options" class="picker-options"></div>
         </div>
       </div>
     </section>
 
     <section id="board" class="panel" hidden>
-      <div id="board-status" class="status">현황판을 여는 중…</div>
-      <iframe id="board-frame" title="현황판" hidden></iframe>
+      <div id="board-status" class="status"></div>
+      <iframe id="board-frame" title="현황판" data-i18n-title="board.title" hidden></iframe>
     </section>
 
     <!-- 오른쪽에서 스르륵 나오는 옆 브라우저 — 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
     <aside id="browser" class="browser" hidden>
-      <div id="browser-resize" class="browser-resize" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비"></div>
+      <div id="browser-resize" class="browser-resize" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비" data-i18n-title="browser.resizeHint"></div>
       <div class="browser-bar">
-        <button id="browser-back" title="뒤로" disabled>◀</button>
-        <button id="browser-forward" title="앞으로" disabled>▶</button>
-        <button id="browser-reload" title="새로고침">⟳</button>
-        <input id="browser-url" class="browser-url" spellcheck="false" autocomplete="off" placeholder="주소 — localhost:3000 · 계획서 링크 · https://…">
-        <button id="browser-external" title="기본 브라우저로 열기">↗</button>
-        <button id="browser-close" title="닫기">✕</button>
+        <button id="browser-back" title="뒤로" data-i18n-title="browser.back" disabled>◀</button>
+        <button id="browser-forward" title="앞으로" data-i18n-title="browser.forward" disabled>▶</button>
+        <button id="browser-reload" title="새로고침" data-i18n-title="common.reload">⟳</button>
+        <input id="browser-url" class="browser-url" spellcheck="false" autocomplete="off" placeholder="주소 — localhost:3000 · 계획서 링크 · https://…" data-i18n-placeholder="browser.urlPlaceholder">
+        <button id="browser-external" title="기본 브라우저로 열기" data-i18n-title="browser.external">↗</button>
+        <button id="browser-close" title="닫기" data-i18n-title="common.close">✕</button>
       </div>
       <div id="browser-error" class="browser-error" hidden></div>
       <div id="browser-slot" class="browser-slot"></div>
@@ -118,7 +118,7 @@
       <div class="spinner"></div>
       <h2 id="pack-progress-title"></h2>
       <p id="pack-progress-step" class="pack-step"></p>
-      <div class="pack-actions"><button id="pack-progress-cancel" class="link" hidden>취소</button></div>
+      <div class="pack-actions"><button id="pack-progress-cancel" class="link" hidden data-i18n="common.cancel">취소</button></div>
     </div>
   </div>
 
@@ -127,6 +127,7 @@
   <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
   <script src="../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
   <script src="../lib/layout.js"></script>
+  <script src="../lib/i18n.js"></script>
   <script src="renderer.js"></script>
 </body>
 </html>

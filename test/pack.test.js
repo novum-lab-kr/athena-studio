@@ -37,7 +37,7 @@ test('스트림 줄 나누기: 반쪽 줄은 다음 조각과 이어 붙인다',
 })
 
 test('오류 문장: 코드별 안내 + 본체 설명 + busy 목록', () => {
-  assert.match(pack.packErrorText({ ok: false, error: 'locked' }), /다른 곳에서 팩을 바꾸는 중/)
+  assert.match(pack.packErrorText({ ok: false, error: 'locked' }), /다른 곳에서 팩을 갈아 끼우는 중/)
   const busy = pack.packErrorText({ ok: false, error: 'busy', busy: [{ kind: 'qa', what: 'acme-web', pid: 12 }] })
   assert.match(busy, /QA 실행 — acme-web \(pid 12\)/)
   assert.match(pack.packErrorText({ ok: false, error: 'rollback', message: '링크 실패' }), /되돌렸어요 — 링크 실패/)

@@ -2,6 +2,13 @@
 const { contextBridge, ipcRenderer } = require('electron')
 
 contextBridge.exposeInMainWorld('trayPanel', {
+  // 언어 사전 { language, dictionary, fallback } — 메인 창과 같은 채널 · 바꾸면 onLanguage
+  i18n: () => ipcRenderer.sendSync('i18n:get'),
+  onLanguage: (callback) => {
+    const handler = (_event, payload) => callback(payload)
+    ipcRenderer.on('i18n:changed', handler)
+    return () => ipcRenderer.removeListener('i18n:changed', handler)
+  },
   // main 이 보내는 요약(에이전트 · 확인 필요 · 사용량 · 칸반 · 현황판)
   onUpdate: (callback) => {
     const handler = (_event, data) => callback(data)

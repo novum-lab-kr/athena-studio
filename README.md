@@ -45,10 +45,12 @@ git subtree push --prefix athena https://github.com/novum-lab-kr/athena.git main
 |---|---|---|
 | `athenaDir` | 없음 | 아테나 본체 폴더(처음 켜면 `~/athena`) |
 | `boardPort` | 4701 | (옛 본체에서만 — 팩 지원 본체는 본체가 정한 포트를 쓴다) 현황판 포트를 고르기 시작하는 번호 — 고른 포트를 다시 적는다(앱을 켤 때 · 아테나 폴더를 정할 때 미리 고른다). 현황판 서버에는 `ATHENA_BOARD_PORT` 로 넘기고, 스튜디오가 만든 아테나 설정(`screen: studio`)의 `athena.config.json` `boardPort` 에도 적는다 — pane 안의 아테나가 그 값을 읽어야 맞는 현황판에 콘솔이 뜬다(아테나 쪽 지원 필요). |
+| `language` | 없음 | 화면 언어 `ko` · `en` · `ja` · `zh` — [보기 → 언어] 로 고르면 적는다. 없으면 시스템 언어, 네 언어 밖이면 영어 |
 | `homeAthenaAsked` | false | 이 레포 `athena/` → `~/athena` 로 옮길지 이미 물었는지(예전 키 `studioAthenaAsked` 는 읽으면서 버린다) |
 
 ## 구조
 - `athena/` — 아테나 레포 git subtree(개발용 · 기본 본체는 `~/athena` · 위 '아테나 받기 · 보내기')
+- `src/i18n/<언어>.json` — 화면 문구 사전(평평한 키 · 자리는 `{이름}`) · `src/lib/i18n.js` — 언어 고르기 · `t()`(main 은 require, 화면 · 트레이는 `<script>` + preload `i18n()`). 문구를 더하면 네 사전에 같은 키로(테스트가 키 · 자리 · 남은 한국어를 본다 — `test/i18n*.test.js`). 일 · 중은 검수 전(`meta.status: draft`)
 - `src/lib/pack.js` — 회사 팩 순수 로직(본체 명령 출력 읽기 · git 주소 검사 · 바꾸기 점검 · 닫을 pane) · `scripts/fake-pack.js` — 개발용 가짜 본체(아래 '회사 팩 확인')
 - `src/main.js` — 창 · 메뉴(단축키) · 데몬에 붙어 화면에 중계 · 현황판 서버 · 폴더 설정
 - `src/daemon-client.js` — 데몬 띄우기 · 붙기 · 버전 확인

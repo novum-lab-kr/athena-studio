@@ -105,7 +105,8 @@ async function ensureDaemon({ paths, env, onEvent, onClose }) {
       socket = await connectSocket(paths.socket).catch(() => null)
     }
   }
-  if (!socket) throw new Error(`데몬에 붙지 못했어요 — 로그: ${paths.log}`)
+  // code · log 는 앱이 화면 문구(사전)를 고를 때 쓴다 — 글은 CLI · 로그용
+  if (!socket) throw Object.assign(new Error(`데몬에 붙지 못했어요 — 로그: ${paths.log}`), { code: 'attach-failed', log: paths.log })
   const connection = new DaemonConnection(socket, { onEvent, onClose })
   const reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
   return { connection, hello: reply.result || null, status: protocol.checkHello(reply), launched }

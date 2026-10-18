@@ -1,7 +1,21 @@
 // 앱 화면 — 탭 두 개(작업 창 · 현황판) · 작업 창 안의 데몬 탭·pane · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
 // studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
-/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout */
+/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout, StudioI18n */
 const $ = (id) => document.getElementById(id)
+
+// ── 언어 ──────────────────────────────────────────────────
+// 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.js). 정적 문구는 index.html 의 data-i18n* 속성
+let i18nState = studio.i18n()
+const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
+
+function applyStaticTexts() {
+  document.documentElement.lang = i18nState.language
+  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = say(node.dataset.i18n)
+  for (const node of document.querySelectorAll('[data-i18n-title]')) node.title = say(node.dataset.i18nTitle)
+  for (const node of document.querySelectorAll('[data-i18n-aria-label]')) node.setAttribute('aria-label', say(node.dataset.i18nAriaLabel))
+  for (const node of document.querySelectorAll('[data-i18n-placeholder]')) node.placeholder = say(node.dataset.i18nPlaceholder)
+}
+applyStaticTexts()
 
 const panels = { setup: $('setup'), work: $('work'), board: $('board') }
 const tabs = [...document.querySelectorAll('.tab')]
@@ -152,25 +166,25 @@ function renderTabs() {
         else if (event.detail === 1) focusCurrentTerminal()
       })
       const name = document.createElement('span')
-      name.textContent = tab.label || `탭 ${index + 1}`
+      name.textContent = tab.label || say('tab.default', { n: index + 1 })
       const close = document.createElement('span')
       close.className = 'close'
       close.textContent = '✕'
-      close.title = `탭 닫기 (${state.tabKey}⌥W)`
+      close.title = say('tab.closeTitle', { key: state.tabKey })
       close.addEventListener('click', (event) => {
         event.stopPropagation()
         studio.tabClose(tab.id)
       })
       button.append(name, close)
-      button.title = '더블클릭하면 이름 바꾸기'
+      button.title = say('tab.renameHint')
       button.addEventListener('dblclick', () => startTabRename(button, tab, name.textContent))
       return button
     })
   const add = document.createElement('button')
   add.className = 'studio-tab add'
   add.textContent = '＋'
-  add.title = `새 탭 (${state.tabKey}T)`
-  add.setAttribute('aria-label', '새 탭') // ＋ 글자는 아이콘으로 가려져 있어 읽기용 이름을 따로
+  add.title = say('tab.newTitle', { key: state.tabKey })
+  add.setAttribute('aria-label', say('tab.new')) // ＋ 글자는 아이콘으로 가려져 있어 읽기용 이름을 따로
   add.addEventListener('click', newTab)
   bar.replaceChildren(...buttons, add)
 }
@@ -183,7 +197,7 @@ function startTabRename(button, tab, shown) {
   input.placeholder = shown
   input.maxLength = 60
   input.spellcheck = false
-  input.setAttribute('aria-label', '탭 이름')
+  input.setAttribute('aria-label', say('tab.nameLabel'))
   renamingTab = tab.id
   let done = false
   const finish = (save) => {
@@ -199,7 +213,7 @@ function startTabRename(button, tab, shown) {
         // 못 바꿨으면 원래 이름으로 되돌리고 알린다
         tab.label = before
         renderTabs()
-        showToast(`탭 이름을 바꾸지 못했어요 — ${result.error}`)
+        showToast(say('tab.renameFailed', { message: result.error }))
       })
     }
     renderTabs()
@@ -277,9 +291,9 @@ function spaceRail() {
   const add = document.createElement('button')
   add.className = 'space-icon add'
   add.textContent = '＋'
-  add.title = `새 작업 공간 (${state.tabKey}⇧T)`
+  add.title = say('spaces.newTitle', { key: state.tabKey })
   add.addEventListener('click', () => runCommand('new-workspace'))
-  return [foldButton('left', `작업 공간 펴기 (${state.tabKey}B)`, () => setSpacesCollapsed(false), true), ...rows, add]
+  return [foldButton('left', say('spaces.expand', { key: state.tabKey }), () => setSpacesCollapsed(false), true), ...rows, add]
 }
 
 function renderSides() {
@@ -294,7 +308,7 @@ function renderSides() {
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
   titleText.textContent = 'spaces'
-  title.append(titleText, foldButton('left', `작업 공간 접기 (${state.tabKey}B)`, () => setSpacesCollapsed(true)))
+  title.append(titleText, foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
   const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
     button.className = 'space'
@@ -325,7 +339,7 @@ function renderSides() {
   })
   const add = document.createElement('button')
   add.className = 'space add-space'
-  add.textContent = `＋ 새 작업 공간 (${state.tabKey}⇧T)`
+  add.textContent = say('spaces.newButton', { key: state.tabKey })
   add.addEventListener('click', () => runCommand('new-workspace'))
   spaces.replaceChildren(title, ...rows, add)
 
@@ -435,7 +449,7 @@ function fileRows() {
   const walk = (folder, depth) => {
     const entries = explorerView.children.get(folder)
     if (!entries) {
-      rows.push(treeRow({ depth, twisty: 'none', label: '읽는 중…', onClick: () => {} }))
+      rows.push(treeRow({ depth, twisty: 'none', label: say('explorer.loading'), onClick: () => {} }))
       return
     }
     if (entries.error) {
@@ -472,8 +486,8 @@ function fileRows() {
 }
 
 function changeRows() {
-  if (!explorerView.git) return [treeRow({ depth: 0, label: 'git 레포가 아니에요', onClick: () => {} })]
-  if (!explorerView.changes.length) return [treeRow({ depth: 0, label: '바뀐 파일이 없어요', onClick: () => {} })]
+  if (!explorerView.git) return [treeRow({ depth: 0, label: say('explorer.notGit'), onClick: () => {} })]
+  if (!explorerView.changes.length) return [treeRow({ depth: 0, label: say('explorer.noChanges'), onClick: () => {} })]
   return explorerView.changes.map((change) =>
     treeRow({ depth: 0, icon: iconElement(change), label: change.path, mark: change.code, markClass: `code-${change.code}`, onClick: () => openPreview(change.path), title: change.path }),
   )
@@ -494,7 +508,7 @@ function renderExplorer() {
   if (!workspace) {
     const empty = document.createElement('div')
     empty.className = 'side-empty'
-    empty.textContent = '작업 공간이 없어요'
+    empty.textContent = say('explorer.noWorkspace')
     panel.replaceChildren(empty)
     return
   }
@@ -503,7 +517,7 @@ function renderExplorer() {
   const name = document.createElement('span')
   name.className = 'explorer-name'
   name.textContent = workspace.label
-  name.title = `${workspace.cwd} (${state.tabKey}⌥B 접기)`
+  name.title = say('explorer.cwdTitle', { path: workspace.cwd, key: state.tabKey })
   // 파일 · 변경 — 글자 없이 아이콘만(이름은 마우스를 올리면 · 변경 수는 작은 숫자)
   const viewButton = (mode, label, badge) => {
     const button = document.createElement('button')
@@ -520,7 +534,7 @@ function renderExplorer() {
     return button
   }
   const count = explorerView.changes.length
-  head.append(name, viewButton('files', '파일'), viewButton('changes', count ? `변경 ${count}` : '변경', count), foldButton('right', `Explorer 접기 (${state.tabKey}⌥B)`, () => setPanelHidden(true)))
+  head.append(name, viewButton('files', say('explorer.files')), viewButton('changes', count ? say('explorer.changesCount', { count }) : say('explorer.changes'), count), foldButton('right', say('explorer.collapse', { key: state.tabKey }), () => setPanelHidden(true)))
   const scroll = panel.scrollTop
   panel.replaceChildren(head, ...(explorerView.mode === 'files' ? fileRows() : changeRows()))
   panel.scrollTop = scroll
@@ -596,7 +610,7 @@ async function openPreview(relative) {
   body.style.background = ''
   body.style.color = ''
   if (result.error) body.replaceChildren(note(result.error))
-  else if (result.kind === 'binary') body.replaceChildren(note(`바이너리 파일이라 보여 주지 않아요 (${result.size} 바이트)`))
+  else if (result.kind === 'binary') body.replaceChildren(note(say('preview.binary', { size: result.size })))
   else if (result.kind === 'image') {
     const image = document.createElement('img')
     image.className = 'viewer-image'
@@ -609,8 +623,8 @@ async function openPreview(relative) {
     // 바탕은 터미널과 같게(CSS --bg) — 글자색만 테마(Shiki)를 따른다
     if (result.fg) body.style.color = result.fg
     body.replaceChildren(...result.rows.map((row) => viewerLine(row, diff)))
-    if (result.untracked) body.prepend(note('새 파일(git 에 아직 없음)'))
-    if (result.truncated) body.append(note('… 512KB 까지만 보여 줘요'))
+    if (result.untracked) body.prepend(note(say('preview.untracked')))
+    if (result.truncated) body.append(note(say('preview.truncated')))
   }
   preview.hidden = false
   body.scrollTop = 0
@@ -713,15 +727,18 @@ function monitorTime(at) {
 
 function sinceText(ms) {
   const minutes = Math.floor((Date.now() - ms) / 60000)
-  if (minutes < 1) return '방금'
-  if (minutes < 60) return `${minutes}분 전`
-  return `${Math.floor(minutes / 60)}시간 전`
+  if (minutes < 1) return say('time.justNow')
+  if (minutes < 60) return say('time.minutesAgo', { n: minutes })
+  return say('time.hoursAgo', { n: Math.floor(minutes / 60) })
 }
 
 function sessionLabelOf(sessionId) {
   const session = monitorView.sessions.find((entry) => entry.id === sessionId)
   return session ? session.label : '?'
 }
+
+// 서브에이전트 보고(SubagentHandback)는 입력이 없어 main(agent-feed)이 고정 문구를 준다 — 화면 언어로 바꿔 보인다
+const eventText = (event) => (event.kind === 'tool' && event.name === 'SubagentHandback' ? say('monitor.finalReport') : event.text)
 
 function monitorRow(event) {
   const row = document.createElement('div')
@@ -733,7 +750,7 @@ function monitorRow(event) {
     ['monitor-label', `[${label}]`],
     ['monitor-icon', event.icon],
     ['monitor-name', event.name],
-    ['monitor-text', event.text],
+    ['monitor-text', eventText(event)],
   ]
   for (const [className, text] of cells) {
     const cell = document.createElement('span')
@@ -741,8 +758,13 @@ function monitorRow(event) {
     cell.textContent = text
     row.append(cell)
   }
-  row.title = `${label} · ${event.name ? `${event.name} · ` : ''}${event.text}`
+  row.title = `${label} · ${event.name ? `${event.name} · ` : ''}${eventText(event)}`
   return row
+}
+
+function sessionKind(session) {
+  if (session.pane) return say('monitor.paneSession')
+  return session.finished ? say('monitor.subagentDone') : say('monitor.subagent')
 }
 
 function renderMonitorSessions() {
@@ -759,7 +781,7 @@ function renderMonitorSessions() {
     count.className = 'count'
     count.textContent = `${session.tools} · ${sinceText(session.lastAt)}`
     chip.append(count)
-    chip.title = `${session.label}\n${session.pane ? 'pane 세션' : session.finished ? '서브에이전트 · 끝남' : '서브에이전트'} · 도구 ${session.tools}개 · 마지막 ${sinceText(session.lastAt)}\n누르면 이 세션만 보기`
+    chip.title = say('monitor.sessionTitle', { label: session.label, kind: sessionKind(session), tools: session.tools, since: sinceText(session.lastAt) })
     chip.addEventListener('click', () => {
       monitorView.filter = monitorView.filter === session.id ? null : session.id
       renderMonitorSessions()
@@ -781,7 +803,7 @@ function renderMonitorFeed(keepScroll = false) {
   const scrollTop = feed.scrollTop
   const events = shownEvents()
   if (!events.length) {
-    const empty = Object.assign(document.createElement('div'), { className: 'monitor-empty', textContent: monitorView.sessions.length ? '아직 보일 활동이 없어요' : '돌고 있는 에이전트가 없어요 — 뜨면 여기에 붙어요' })
+    const empty = Object.assign(document.createElement('div'), { className: 'monitor-empty', textContent: monitorView.sessions.length ? say('monitor.empty') : say('monitor.noAgents') })
     feed.replaceChildren(empty)
     return
   }
@@ -876,7 +898,7 @@ function renderDividers(tab, tree, area) {
     let element = dividerElements.get(key)
     if (!element) {
       element = document.createElement('div')
-      element.title = '끌어서 크기 바꾸기 · 더블클릭하면 반반'
+      element.title = say('pane.resizeHint')
       element.addEventListener('pointerdown', (event) => startDividerDrag(event, element))
       element.addEventListener('dblclick', () => {
         const current = activeTab()
@@ -980,13 +1002,13 @@ async function commitRatio(tab, path, ratio) {
   layoutPanes()
   const result = await studio.tabRatio(tab.id, path, ratio)
   if (result.unsupported) {
-    if (!ratioUnsupportedNoticed) showToast('지금 데몬이 예전 버전이라 이 크기는 앱을 다시 켜면 돌아가요 — [보기 → 작업 창 데몬 다시 띄우기] 뒤로는 저장돼요')
+    if (!ratioUnsupportedNoticed) showToast(say('pane.sizeOldDaemon'))
     ratioUnsupportedNoticed = true
     return
   }
   if (result.error) {
     ratioOverrides.delete(key)
-    showToast(`크기를 저장하지 못했어요: ${result.error}`)
+    showToast(say('pane.sizeSaveFailed', { message: result.error }))
   } else if (ratioOverrides.get(key) && ratioOverrides.get(key).ratio === ratio) {
     ratioOverrides.delete(key)
   }
@@ -1058,7 +1080,7 @@ function showScreenStatus(message) {
 
 async function newTab() {
   const result = await studio.tabNew(estimateCells($('panes')))
-  if (result.error) showToast(`새 탭을 열지 못했어요: ${result.error}`)
+  if (result.error) showToast(say('tab.openFailed', { message: result.error }))
 }
 
 // 메뉴 단축키(⌘T · ⌘D · ⌘⇧D · ⌘W · ⌘⌥방향 · ⌘⇧[ ]) — Ctrl 은 pane 안으로 간다
@@ -1071,7 +1093,7 @@ async function runCommand(name) {
   if (name === 'split-right' || name === 'split-down') {
     if (!focused) return newTab()
     const result = await studio.paneSplit(focused, name === 'split-down' ? 'down' : 'right')
-    if (result.error) showToast(`나누지 못했어요: ${result.error}`)
+    if (result.error) showToast(say('pane.splitFailed', { message: result.error }))
     return undefined
   }
   if (name === 'close-pane') {
@@ -1106,7 +1128,7 @@ async function runCommand(name) {
   }
   if (name === 'new-workspace') {
     const result = await studio.workspaceNew(estimateCells($('panes')))
-    if (result.error) showToast(`작업 공간을 만들지 못했어요: ${result.error}`)
+    if (result.error) showToast(say('spaces.createFailed', { message: result.error }))
     return undefined
   }
   if (name === 'toggle-panel') return setPanelHidden(!$('side-panel').hidden)
@@ -1181,13 +1203,13 @@ async function loadBoard(force = false) {
   if (boardLoaded && !force) return
   boardLoading = true
   status.className = 'status'
-  status.textContent = '현황판을 여는 중…'
+  status.textContent = say('board.opening')
   status.hidden = false
   try {
     const result = await studio.ensureBoard()
     if (!result.ok) {
       status.className = 'status error'
-      status.textContent = `${result.error}${result.log ? `\n로그: ${result.log}` : ''}\n\n${state.tabKey}R 로 다시 시도해요.`
+      status.textContent = `${result.error}${result.log ? `\n${say('board.logLine', { log: result.log })}` : ''}\n\n${say('board.retryHint', { key: state.tabKey })}`
       frame.hidden = true
       boardLoaded = false
       return
@@ -1287,7 +1309,7 @@ function applyBrowserState(next) {
   $('browser-back').disabled = !next.canGoBack
   $('browser-forward').disabled = !next.canGoForward
   $('browser-reload').textContent = next.loading ? '✕' : '⟳'
-  $('browser-reload').title = next.loading ? '멈추기' : '새로고침'
+  $('browser-reload').title = next.loading ? say('browser.stop') : say('common.reload')
   $('browser').classList.toggle('loading', Boolean(next.loading))
   $('browser').title = next.title || ''
   if (next.loading) showBrowserError('')
@@ -1459,7 +1481,7 @@ function packDialog({ title, body = [], actions = [], input = null }) {
   })
 }
 
-const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: '확인', value: 'ok', kind: 'primary' }] })
+const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
 
 // 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다)
 function showPackProgress(title, cancellable) {
@@ -1474,8 +1496,8 @@ const hidePackProgress = () => ($('pack-progress').hidden = true)
 
 // 지금 팩 이름 — pack new 로 만든 빈 자리(5.4 current.empty)는 /setup 중
 function packCurrentLabel() {
-  if (!packs.current) return '팩 없음'
-  if (packs.current.empty) return '새 팩 — /setup 중'
+  if (!packs.current) return say('pack.none')
+  if (packs.current.empty) return say('pack.newSetup')
   return packs.current.name || packs.current.id
 }
 
@@ -1497,7 +1519,7 @@ async function refreshPackList() {
 // 회사 팩 고르기 — 목록 + 새로 만들기 · 가져오기 · 내보내기 · 내 백업
 async function openPackPicker() {
   await refreshPackList()
-  if (!packs.supported) return packAlert('회사 팩', '이 아테나 본체는 아직 여러 회사 팩을 지원하지 않아요.')
+  if (!packs.supported) return packAlert(say('pack.title'), say('pack.unsupported'))
   if (hasNoPacks()) return openNoPacks()
   const list = el('div', 'pack-list')
   // 옛 구조 본체는 목록이 비고 지금 팩만 있다 — 그 한 줄이라도 보이게
@@ -1507,17 +1529,17 @@ async function openPackPicker() {
     const isCurrent = Boolean(packs.current) && packs.current.id === item.id
     row.setAttribute('aria-current', String(isCurrent))
     row.dataset.value = `pack:${item.id}`
-    const meta = [isCurrent ? '지금' : '', item.repos !== undefined ? `레포 ${item.repos}` : '', item.source === 'git' ? 'git' : '', item.hasWork ? '작업 기록 있음' : ''].filter(Boolean).join(' · ')
+    const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
     row.append(el('span', null, `${isCurrent ? '● ' : '○ '}${item.name || item.id}`), el('span', 'meta', meta))
     list.append(row)
   }
   const links = el('div', 'pack-links')
-  for (const [label, value] of [['+ 새로 만들기', 'new'], ['↓ 가져오기… (압축 파일 · 팩 폴더 · git 레포 · 기존 아테나)', 'import'], ['↑ 내보내기… (팀에 줄 팩)', 'export'], ['⤓ 내 백업… (팩 + 내 작업 기록)', 'backup']]) {
-    const link = el('button', 'link', label)
+  for (const value of ['new', 'import', 'export', 'backup']) {
+    const link = el('button', 'link', say(`pack.link.${value}`))
     link.dataset.value = value
     links.append(link)
   }
-  const choice = await packDialog({ title: '회사 팩', body: [list, links], actions: [{ label: '닫기', value: null }] })
+  const choice = await packDialog({ title: say('pack.title'), body: [list, links], actions: [{ label: say('common.close'), value: null }] })
   if (!choice) return
   if (choice.startsWith('pack:')) return choosePack(choice.slice(5))
   return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
@@ -1526,7 +1548,7 @@ async function openPackPicker() {
 // 팩 흐름은 한 번에 하나 — 진행 중에 메뉴로 또 열면 알리기만
 let packFlow = false
 async function runPackFlow(work) {
-  if (packFlow) return showToast('회사 팩 작업이 진행 중이에요 — 끝난 뒤 다시 해 주세요')
+  if (packFlow) return showToast(say('pack.flowBusy'))
   packFlow = true
   try {
     return await work()
@@ -1556,60 +1578,61 @@ function openNoPacks() {
   if (currentTab !== 'work') switchTab('work')
 }
 
-// 바꾸기 · 새로 만들기 전 — 닫힐 pane 과 일하는 에이전트를 보여 주고 [끝나면] · [멈추고] · [취소]. 막는 작업이 있으면 목록만
+// 바꾸기 · 새로 만들기 전 — 닫힐 pane 과 일하는 에이전트를 보여 주고 [끝나면] · [멈추고] · [취소]. 막는 작업이 있으면 목록만.
+// verb — 버튼 문구 사전 이름(switch · start · replace → pack.verb.<verb> · <verb>Wait · <verb>Stop)
 async function askQuiesce(title, verb) {
   const check = await studio.packCheck()
   if (!check.ok) {
-    await packAlert(title, check.text || check.message || '확인하지 못했어요')
+    await packAlert(title, check.text || check.message || say('pack.checkFailed'))
     return null
   }
   if (!check.canProceed) {
     const again = await packDialog({
       title,
-      body: ['스튜디오가 끌 수 없는 작업이 있어서 지금은 바꿀 수 없어요. 끝낸 뒤 다시 해 주세요.', check.blockers.join('\n')],
-      actions: [{ label: '다시 확인', value: 'again', kind: 'primary' }, { label: '닫기', value: null }],
+      body: [say('pack.quiesce.blocked'), check.blockers.join('\n')],
+      actions: [{ label: say('pack.quiesce.recheck'), value: 'again', kind: 'primary' }, { label: say('common.close'), value: null }],
     })
     return again ? askQuiesce(title, verb) : null
   }
-  const body = [`pane ${check.closing}개가 닫혀요. 돌아오면 계획서 Checkpoint 로 이어 가요.`]
+  const body = [say('pack.quiesce.closing', { count: check.closing })]
   if (!check.working) {
-    const ok = await packDialog({ title, body, actions: [{ label: verb, value: 'wait', kind: 'primary' }, { label: '취소', value: null }] })
+    const ok = await packDialog({ title, body, actions: [{ label: say(`pack.verb.${verb}`), value: 'wait', kind: 'primary' }, { label: say('common.cancel'), value: null }] })
     return ok
   }
-  body.push(`지금 일하는 에이전트가 ${check.working}개 있어요.`)
-  body.push(el('p', 'muted', '[멈추고] 는 Esc 를 누른 것과 같아요 — 돌던 명령은 끊기고 고치던 파일은 워크트리에 그대로 남아요.'))
+  body.push(say('pack.quiesce.working', { count: check.working }))
+  body.push(el('p', 'muted', say('pack.quiesce.stopNote')))
   return packDialog({
     title,
     body,
-    actions: [{ label: `끝나면 ${verb}`, value: 'wait', kind: 'primary' }, { label: `멈추고 ${verb}`, value: 'stop', kind: 'danger' }, { label: '취소', value: null }],
+    actions: [{ label: say(`pack.verb.${verb}Wait`), value: 'wait', kind: 'primary' }, { label: say(`pack.verb.${verb}Stop`), value: 'stop', kind: 'danger' }, { label: say('common.cancel'), value: null }],
   })
 }
 
 async function choosePack(id) {
   if (packs.current && packs.current.id === id) return
   const target = packs.packs.find((item) => item.id === id)
-  const title = `${target ? target.name || target.id : id} 으로 바꾸기`
-  const mode = await askQuiesce(title, '바꾸기')
+  const name = target ? target.name || target.id : id
+  const mode = await askQuiesce(say('pack.switch.title', { name }), 'switch')
   if (!mode) return
-  showPackProgress(`${target ? target.name || target.id : id} 으로 바꾸는 중`, true)
+  showPackProgress(say('pack.switch.progress', { name }), true)
   const result = await studio.packSwitch(id, mode)
   hidePackProgress()
   if (result.same || result.unchanged) return
-  if (!result.ok) return packAlert('팩을 바꾸지 못했어요', result.text || result.message)
+  if (!result.ok) return packAlert(say('pack.switch.failed'), result.text || result.message)
   const notes = []
-  if (result.unlinkedRepos && result.unlinkedRepos.length) notes.push(`연결하지 못한 레포: ${result.unlinkedRepos.join(', ')} — 이 컴퓨터의 레포 위치를 잡아 주세요(아테나에게 "레포 위치 잡아줘").`)
-  if (result.board) notes.push(`현황판: ${result.board}`)
-  if (notes.length) packAlert('바꿨어요', notes.join('\n'))
+  if (result.unlinkedRepos && result.unlinkedRepos.length) notes.push(say('pack.switch.unlinked', { repos: result.unlinkedRepos.join(', ') }))
+  if (result.board) notes.push(say('pack.switch.board', { message: result.board }))
+  if (notes.length) packAlert(say('pack.switch.done'), notes.join('\n'))
 }
 
 async function newPack() {
-  const mode = await askQuiesce('새 회사 팩 만들기', '시작하기')
+  const mode = await askQuiesce(say('pack.new.title'), 'start')
   if (!mode) return
-  showPackProgress('새 팩 자리를 만드는 중', true)
+  showPackProgress(say('pack.new.progress'), true)
   const result = await studio.packNew(mode)
   hidePackProgress()
-  if (!result.ok) return packAlert('새 팩을 시작하지 못했어요', result.text || result.message)
-  showToast(`새 팩 만들기를 시작했어요 — 아테나가 /setup 을 이어 가요.${result.previous ? ` 그만두려면 [파일 → 회사 팩…] 에서 ${result.previous} 로 바꿔요.` : ''}`)
+  if (!result.ok) return packAlert(say('pack.new.failed'), result.text || result.message)
+  showToast([say('pack.new.started'), result.previous ? say('pack.new.revert', { previous: result.previous }) : ''].filter(Boolean).join(' '))
 }
 
 // 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
@@ -1618,106 +1641,106 @@ async function importPack(kind = null, source = null) {
   let target = source
   if (!chosen) {
     chosen = await packDialog({
-      title: '회사 팩 가져오기',
-      body: ['어디서 가져올까요? 파일 · 폴더는 복사만 해요(원본과 이어지지 않아요).'],
-      actions: [{ label: '압축 파일', value: 'file' }, { label: '팩 폴더', value: 'folder' }, { label: 'git 레포', value: 'git' }, { label: '기존 아테나', value: 'athena' }, { label: '취소', value: null }],
+      title: say('pack.import.title'),
+      body: [say('pack.import.where')],
+      actions: [...['file', 'folder', 'git', 'athena'].map((value) => ({ label: say(`pack.import.kind.${value}`), value })), { label: say('common.cancel'), value: null }],
     })
     if (!chosen) return
   }
   // 기존 아테나는 git 설정(.git)을 그대로 가져온다(R4 A) — 내 컴퓨터에서 쓰던 것만 고르게 먼저 알린다
   if (chosen === 'athena' && !target) {
     const ok = await packDialog({
-      title: '기존 아테나에서 가져오기',
-      body: ['내 컴퓨터에서 쓰던 아테나만 고르세요 — git 설정(.git)을 그대로 가져와요.', el('p', 'muted', '남에게 받은 팩은 [압축 파일] · [팩 폴더] · [git 레포] 로 가져와요(git 설정은 지우고 가져와요).')],
-      actions: [{ label: '폴더 고르기', value: 'go', kind: 'primary' }, { label: '취소', value: null }],
+      title: say('pack.import.athena.title'),
+      body: [say('pack.import.athena.body'), el('p', 'muted', say('pack.import.athena.note'))],
+      actions: [{ label: say('pack.import.athena.pick'), value: 'go', kind: 'primary' }, { label: say('common.cancel'), value: null }],
     })
     if (!ok) return
   }
   if (chosen === 'git' && !target) {
     const answer = await packDialog({
-      title: 'git 레포에서 가져오기',
-      body: ['팀이 같이 쓰는 회사 팩 레포 주소 — https:// · ssh:// · git@호스트:경로'],
-      input: { placeholder: 'git@github.com:회사/athena-pack.git' },
-      actions: [{ label: '검사', value: 'go', kind: 'primary' }, { label: '취소', value: null }],
+      title: say('pack.import.git.title'),
+      body: [say('pack.import.git.body')],
+      input: { placeholder: say('pack.import.git.placeholder') },
+      actions: [{ label: say('pack.import.git.inspect'), value: 'go', kind: 'primary' }, { label: say('common.cancel'), value: null }],
     })
     if (!answer || !answer.value) return
     target = answer.text
   }
-  showPackProgress('가져올 팩을 검사하는 중', true)
+  showPackProgress(say('pack.import.inspecting'), true)
   const inspected = await studio.packInspect(chosen, target)
   hidePackProgress()
   if (inspected.canceled || inspected.error === 'canceled') return
-  if (!inspected.ok) return packAlert('가져오지 못했어요', inspected.text || inspected.message)
+  if (!inspected.ok) return packAlert(say('pack.import.failed'), inspected.text || inspected.message)
   const choice = await chooseImport(inspected, chosen)
   if (!choice) return studio.packImport(inspected.token, 'keep')
   let mode = null
   if (choice === 'replace' && inspected.current) {
-    mode = await askQuiesce('지금 켜진 팩을 바꿔 넣기', '바꿔 넣기')
+    mode = await askQuiesce(say('pack.import.replaceCurrent'), 'replace')
     if (!mode) return studio.packImport(inspected.token, 'keep')
   }
-  showPackProgress('팩을 등록하는 중', false)
+  showPackProgress(say('pack.import.registering'), false)
   const result = await studio.packImport(inspected.token, choice, mode)
   hidePackProgress()
-  if (!result.ok) return packAlert('가져오지 못했어요', result.text || result.message)
+  if (!result.ok) return packAlert(say('pack.import.failed'), result.text || result.message)
   if (choice === 'keep') return
   const imported = result.imported
   // R4 A — 폴더 · 압축에서 온 .git 은 코어가 지웠다(inspect 결과 gitRemoved)
-  const gitNote = inspected.gitRemoved ? '\ngit 정보는 지웠어요 — 팀과 git 으로 같이 쓰는 팩이면 [git 레포] 로 가져오세요.' : ''
-  const backupNote = `${result.backup ? `\n기존 팩은 자동 백업했어요: ${result.backup}` : ''}${gitNote}`
-  if (!imported || (packs.current && packs.current.id === imported.id)) return packAlert('가져왔어요', `지금 팩에 들어갔어요.${backupNote}`)
+  const gitNote = inspected.gitRemoved ? `\n${say('pack.import.gitRemoved')}` : ''
+  const backupNote = `${result.backup ? `\n${say('pack.import.backedUp', { path: result.backup })}` : ''}${gitNote}`
+  if (!imported || (packs.current && packs.current.id === imported.id)) return packAlert(say('pack.import.done'), `${say('pack.import.intoCurrent')}${backupNote}`)
   const switchNow = await packDialog({
-    title: '가져왔어요',
-    body: [`${imported.name || imported.id} 을 등록했어요.${backupNote}`, '지금 이 팩으로 바꿀까요?'],
-    actions: [{ label: '바꾸기', value: 'yes', kind: 'primary' }, { label: '나중에', value: null }],
+    title: say('pack.import.done'),
+    body: [`${say('pack.import.registered', { name: imported.name || imported.id })}${backupNote}`, say('pack.import.switchNow')],
+    actions: [{ label: say('pack.verb.switch'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
   })
   if (switchNow) return choosePack(imported.id)
 }
 
 // 같은 이름이면 나란히(사용자 결정 3) · 기존 아테나면 가져올 작업 기록도 보여 준다. 반환: new · replace · keep(null 은 취소)
 async function chooseImport(inspected, kind) {
-  const name = (inspected.pack && inspected.pack.name) || '팩'
+  const name = (inspected.pack && inspected.pack.name) || say('pack.import.defaultName')
   const body = []
   if (inspected.work) {
     const work = inspected.work
     const worktrees = work.worktrees || []
     const dirty = worktrees.filter((tree) => tree.dirty).length
-    body.push(`함께 가져올 작업 기록 — 계획서 ${work.plans || 0} · 이슈 ${work.issues || 0} · 보관함 ${work.archive || 0}`)
-    if (worktrees.length) body.push(el('p', 'muted', `워크트리 ${worktrees.length}개(미커밋 ${dirty}개)는 복사하지 않고 제자리에 둬요. 옛 폴더는 건드리지 않아요.`))
+    body.push(say('pack.import.work', { plans: work.plans || 0, issues: work.issues || 0, archive: work.archive || 0 }))
+    if (worktrees.length) body.push(el('p', 'muted', say('pack.import.worktrees', { count: worktrees.length, dirty })))
   }
   if (!inspected.conflict) {
     if (kind !== 'athena') return 'new'
-    const ok = await packDialog({ title: `${name} 가져오기`, body, actions: [{ label: '가져오기', value: 'new', kind: 'primary' }, { label: '취소', value: null }] })
+    const ok = await packDialog({ title: say('pack.import.athenaTitle', { name }), body, actions: [{ label: say('pack.import.go'), value: 'new', kind: 'primary' }, { label: say('common.cancel'), value: null }] })
     return ok
   }
   const compare = el('div', 'pack-compare')
   const existing = el('div')
-  existing.append(el('b', null, '지금 있는 것'), el('span', null, inspected.summary.existing || '-'))
+  existing.append(el('b', null, say('pack.compare.existing')), el('span', null, inspected.summary.existing || '-'))
   const incoming = el('div')
-  incoming.append(el('b', null, '가져온 것'), el('span', null, `${inspected.summary.incoming || '-'}${inspected.source ? ` · ${inspected.source}` : ''}`))
+  incoming.append(el('b', null, say('pack.compare.incoming')), el('span', null, `${inspected.summary.incoming || '-'}${inspected.source ? ` · ${inspected.source}` : ''}`))
   compare.append(existing, incoming)
   body.unshift(compare)
-  body.push(el('p', 'muted', `바꾸면 지금 것은 자동 백업되고, 작업 기록은 그대로 이어서 써요.${inspected.current ? ' 지금 켜진 팩이라 pane 이 닫혀요.' : ''}`))
+  body.push(el('p', 'muted', [say('pack.compare.note'), inspected.current ? say('pack.compare.noteCurrent') : ''].filter(Boolean).join(' ')))
   // reason: packId(같은 팩 — 하나만) · name(이름만 같은 다른 팩 — 둘 다 둘 수 있다 · 5.4)
-  const actions = [{ label: '가져온 것으로 바꾸기', value: 'replace', kind: 'primary' }, { label: '지금 것 계속 쓰기', value: 'keep' }]
-  if (inspected.conflict.reason === 'name') actions.splice(1, 0, { label: '둘 다 두기', value: 'new' })
-  actions.push({ label: '취소', value: null })
-  const sameTitle = inspected.conflict.reason === 'name' ? `이름이 같은 팩(${name})이 이미 있어요` : `${name} 이 이미 있어요`
+  const actions = [{ label: say('pack.compare.replace'), value: 'replace', kind: 'primary' }, { label: say('pack.compare.keep'), value: 'keep' }]
+  if (inspected.conflict.reason === 'name') actions.splice(1, 0, { label: say('pack.compare.both'), value: 'new' })
+  actions.push({ label: say('common.cancel'), value: null })
+  const sameTitle = inspected.conflict.reason === 'name' ? say('pack.compare.sameName', { name }) : say('pack.compare.same', { name })
   return packDialog({ title: sameTitle, body, actions })
 }
 
 async function exportPack(kind) {
-  const title = kind === 'backup' ? '내 백업' : '회사 팩 내보내기'
-  showPackProgress(kind === 'backup' ? '백업을 만드는 중' : '팩 파일을 만드는 중', false)
+  const prefix = kind === 'backup' ? 'pack.backup' : 'pack.export'
+  const title = say(`${prefix}.title`)
+  showPackProgress(say(`${prefix}.progress`), false)
   const result = await studio.packExport(kind)
   hidePackProgress()
   if (result.canceled) return
-  if (!result.ok) return packAlert(`${title} — 실패`, result.text || result.message)
+  if (!result.ok) return packAlert(say('pack.result.failed', { title }), result.text || result.message)
   const size = result.bytes ? ` · ${Math.max(1, Math.round(result.bytes / 1024))}KB` : ''
-  const note = kind === 'backup' ? '미커밋 코드 · push 안 한 커밋은 담기지 않아요.' : '팀에 주면 [회사 팩 → 가져오기] 로 받아요.'
   const reveal = await packDialog({
-    title: `${title} — 만들었어요`,
-    body: [`${result.file}`, `파일 ${result.files || 0}개${size}`, el('p', 'muted', note)],
-    actions: [{ label: 'Finder 에서 보기', value: 'reveal', kind: 'primary' }, { label: '닫기', value: null }],
+    title: say('pack.result.done', { title }),
+    body: [`${result.file}`, `${say('pack.result.files', { count: result.files || 0 })}${size}`, el('p', 'muted', say(`${prefix}.note`))],
+    actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }, { label: say('common.close'), value: null }],
   })
   if (reveal) studio.packReveal()
 }
@@ -1762,7 +1785,7 @@ function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
   for (const kbd of document.querySelectorAll('kbd[data-key]')) kbd.textContent = `${state.tabKey}${kbd.dataset.key}`
-  $('browser-toggle').title = `옆 브라우저 열기·닫기 (${state.tabKey}⇧B)`
+  $('browser-toggle').title = say('browser.toggleTitle', { key: state.tabKey })
   const ready = state.valid
   panels.setup.hidden = ready
   for (const tab of tabs) tab.disabled = !ready
@@ -1775,20 +1798,27 @@ function renderState() {
 
 const pickAthenaDir = () => applyAthenaResult(studio.pickAthenaDir())
 
+// 처음 화면 제목 — 사전 키를 기억해 두어 언어를 바꾸면 다시 쓴다(키가 없으면 제품 이름 그대로)
+let setupTitleKey = null
+function setSetupTitle(key) {
+  setupTitleKey = key
+  $('setup-title').textContent = key ? say(key) : 'Athena Studio'
+}
+
 // 처음 켤 때 아테나 폴더가 안 정해졌으면 묻지 않고 레포의 athena/ 를 쓴다. 안 됐을 때만 [다시 시도] · [폴더 고르기] 를 보여 준다
 async function installAthena() {
   const buttons = [$('install'), $('pick')]
   for (const button of buttons) button.hidden = true
   $('setup-error').hidden = true
   $('spinner').hidden = false
-  $('setup-title').textContent = '아테나 준비 중…'
+  setSetupTitle('setup.preparing')
   $('setup-note').hidden = false
   try {
     await applyAthenaResult(studio.installAthena())
   } finally {
     $('spinner').hidden = true
     if (!state.valid) {
-      $('setup-title').textContent = '아테나를 찾지 못했어요'
+      setSetupTitle('setup.notFound')
       $('setup-note').hidden = true
       for (const button of buttons) button.hidden = false
     }
@@ -1819,6 +1849,22 @@ async function applyAthenaResult(pending) {
     startScreen()
     afterAthenaReady()
   }
+}
+
+// 메뉴 [보기 → 언어] — 정적 문구와 지금 보이는 것만 다시 그린다(열린 대화상자 · 토스트는 다음에 열 때부터)
+function applyLanguage(next) {
+  i18nState = next
+  applyStaticTexts()
+  if (setupTitleKey) setSetupTitle(setupTitleKey)
+  if (!state) return
+  renderState()
+  if (attached) {
+    renderTabs()
+    renderSides()
+    renderExplorer()
+  }
+  renderMonitorSessions()
+  renderMonitorFeed(true)
 }
 
 async function init() {
@@ -1857,9 +1903,10 @@ async function init() {
   studio.onScreenDisconnected(() => {
     attached = false
     reattachOnKey = true
-    showScreenStatus('작업 창 데몬과 연결이 끊겼어요 — pane 을 누르고 아무 키나 누르면 다시 붙어요(메뉴 [보기 → 작업 창 다시 붙기])')
+    showScreenStatus(say('screen.disconnected'))
   })
   studio.onScreenCommand(runCommand)
+  studio.onLanguage(applyLanguage)
   initPacks()
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
   new ResizeObserver(() => layoutPanes()).observe($('dock'))
