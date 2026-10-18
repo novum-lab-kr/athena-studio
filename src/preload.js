@@ -31,7 +31,7 @@ contextBridge.exposeInMainWorld('studio', {
   onPackCommand: listen('pack:command'),
   // 작업 창 — 데몬의 탭·pane(모든 함수가 pane id 를 단다)
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
-  openAgent: (chosen, size) => ipcRenderer.invoke('agent:open', chosen, size),
+  openAgent: (size) => ipcRenderer.invoke('agent:open', size),
   tabNew: (size) => ipcRenderer.invoke('tab:new', size),
   tabSelect: (tabId) => ipcRenderer.invoke('tab:select', tabId),
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),

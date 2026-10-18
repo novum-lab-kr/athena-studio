@@ -665,8 +665,8 @@ async function guarded(work) {
 }
 
 // ── 아테나 에이전트 ────────────────────────────────────────
-// athena 작업 공간(아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 claude · codex 를 켠다
-async function openAthenaAgent(chosen, size) {
+// athena 작업 공간(아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
+async function openAthenaAgent(size) {
   if (!core.checkAthenaDir(config.athenaDir).ok) return { skipped: true }
   const state = await daemonCall('state')
   if (state.error) return { error: state.error }
@@ -676,9 +676,7 @@ async function openAthenaAgent(chosen, size) {
     return { focused: true }
   }
 
-  const decision = core.agentDecision(core.availableAgents(process.env.PATH), chosen)
-  if (decision.error) return { error: say('error.agentMissing', { agent: chosen }) }
-  if (decision.choose) return { choose: decision.choose }
+  const decision = core.agentDecision(core.availableAgents(process.env.PATH))
 
   const created = await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: config.athenaDir, focus: true, ...size })
   if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
@@ -1917,7 +1915,7 @@ ipcMain.handle('pack:reveal', () => packReveal())
 // 시작할 때 "옮기기" 를 골랐으면 화면이 붙은 뒤 기존 아테나 가져오기를 이어서 연다
 ipcMain.handle('pack:pending-import', () => pendingAthenaImport)
 ipcMain.handle('screen:attach', () => attachScreen())
-ipcMain.handle('agent:open', (_event, chosen, size) => openAthenaAgent(typeof chosen === 'string' ? chosen : null, cellSize(size)))
+ipcMain.handle('agent:open', (_event, size) => openAthenaAgent(cellSize(size)))
 ipcMain.handle('tab:new', (_event, size) => daemonCall('tab new', { defaultCwd: config.athenaDir, ...cellSize(size) }))
 ipcMain.handle('tab:select', (_event, tabId) => daemonCall('tab select', { tab: String(tabId) }))
 ipcMain.handle('tab:close', (_event, tabId) => closeTab(String(tabId)))

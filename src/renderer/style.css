@@ -236,25 +236,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   cursor: pointer;
 }
 .toast[hidden] { display: none; }
-.picker {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(12, 12, 13, 0.7);
-}
-.picker[hidden] { display: none; }
-.picker-box {
-  padding: 24px 28px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  background: var(--bar);
-  text-align: center;
-}
-.picker-box h2 { margin: 0 0 16px; font-size: 15px; }
-.picker-options { display: flex; gap: 8px; justify-content: center; }
-.picker-options .primary { margin-top: 0; min-width: 96px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error { color: var(--error); }
 /* 오른쪽 Explorer */

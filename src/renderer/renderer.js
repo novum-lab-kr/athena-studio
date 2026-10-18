@@ -138,12 +138,12 @@ function applyState(next) {
   ensureSomeTab()
 }
 
-// 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나 — 에이전트를 고르는 중이면 고른 뒤 athena 탭이 생긴다
+// 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나
 let openingTab = false
 let starting = false // 처음 켤 때는 에이전트 판단(athena 탭)이 끝난 뒤에 본다
 function ensureSomeTab() {
   // 시작 화면이 떠 있으면 만들지 않는다 — 고를 때 닫을 pane 이 생겨 확인 창이 뜨지 않게(들어가면 아테나 탭이 생긴다)
-  if (screen.tabs.length || openingTab || starting || !state || !state.valid || !$('agent-picker').hidden || welcomeShown()) return
+  if (screen.tabs.length || openingTab || starting || !state || !state.valid || welcomeShown()) return
   openingTab = true
   newTab().finally(() => (openingTab = false))
 }
@@ -1153,15 +1153,14 @@ async function startScreen() {
   } finally {
     starting = false
   }
-  // 에이전트를 못 켰어도 셸 탭 하나는 있게(고르는 중이면 건너뛴다)
+  // 에이전트를 못 켰어도 셸 탭 하나는 있게
   ensureSomeTab()
 }
 
-// athena 탭에서 claude · codex 를 켠다(이미 있으면 그 탭으로). 둘 다 깔려 있으면 고르게 한다
-async function openAgent(chosen) {
-  const result = await studio.openAgent(chosen, estimateCells($('panes')))
-  if (result.choose) showAgentPicker(result.choose)
-  else if (result.error) showToast(result.error)
+// athena 탭에서 아테나 에이전트를 켠다(이미 있으면 그 탭으로) — 묻지 않고 claude, 없으면 깔린 것 중 첫 번째
+async function openAgent() {
+  const result = await studio.openAgent(estimateCells($('panes')))
+  if (result.error) showToast(result.error)
   return result
 }
 
@@ -1171,27 +1170,6 @@ function showToast(message) {
   toast.textContent = message
   toast.hidden = false
   toast.onclick = () => (toast.hidden = true)
-}
-
-const AGENT_LABELS = { claude: 'Claude', codex: 'Codex' }
-
-function showAgentPicker(agents) {
-  const picker = $('agent-picker')
-  const options = $('agent-options')
-  options.replaceChildren(
-    ...agents.map((agent) => {
-      const button = document.createElement('button')
-      button.className = 'primary'
-      button.textContent = AGENT_LABELS[agent] || agent
-      button.addEventListener('click', () => {
-        picker.hidden = true
-        openAgent(agent)
-      })
-      return button
-    }),
-  )
-  picker.hidden = false
-  options.firstChild.focus()
 }
 
 // ── 현황판 ────────────────────────────────────────────────

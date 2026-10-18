@@ -193,12 +193,10 @@ function availableAgents(pathValue, isExecutable = defaultIsExecutable) {
   return AGENTS.filter((name) => findExecutable(name, pathValue, isExecutable))
 }
 
-// 고른 것이 있으면 그것, 하나뿐이면 그것, 둘 이상이면 물어본다(choose), 없으면 none
-function agentDecision(available, chosen) {
-  if (chosen) return available.includes(chosen) ? { agent: chosen } : { error: `${chosen} 을 찾지 못했어요` }
-  if (available.length === 1) return { agent: available[0] }
+// 묻지 않고 깔린 것 중 첫 번째(AGENTS 순서라 claude 가 있으면 claude), 없으면 none — 다른 에이전트는 작업 창에서 직접 켠다
+function agentDecision(available) {
   if (available.length === 0) return { none: true }
-  return { choose: available }
+  return { agent: available[0] }
 }
 
 // 데몬 상태의 작업 공간 중 이름이 athena 이고 그 아테나 폴더인 것 — 아테나 폴더를 바꿨으면 예전 폴더의 athena 작업 공간은 건드리지 않는다

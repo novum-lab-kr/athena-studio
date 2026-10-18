@@ -145,15 +145,13 @@ test('자식 환경: delegate 실행기 값 · 스튜디오 pane 표시도 넘�
   assert.equal(core.childEnv({ ATHENA_STUDIO_SOCKET: '/old' }, { ATHENA_STUDIO_SOCKET: '/new' }).ATHENA_STUDIO_SOCKET, '/new')
 })
 
-test('에이전트: 깔린 것 찾기 · 하나면 그것 · 둘이면 묻기 · 없으면 none', () => {
+test('에이전트: 깔린 것 찾기 · 묻지 않고 claude 먼저 · 없으면 첫 번째 · 없으면 none', () => {
   const seen = new Set(['/a/claude', '/b/codex'])
   assert.deepEqual(core.availableAgents('/a:/b', (f) => seen.has(f)), ['claude', 'codex'])
   assert.deepEqual(core.availableAgents('/b', (f) => seen.has(f)), ['codex'])
-  assert.deepEqual(core.agentDecision(['claude', 'codex']), { choose: ['claude', 'codex'] })
+  assert.deepEqual(core.agentDecision(['claude', 'codex']), { agent: 'claude' })
   assert.deepEqual(core.agentDecision(['codex']), { agent: 'codex' })
   assert.deepEqual(core.agentDecision([]), { none: true })
-  assert.deepEqual(core.agentDecision(['claude', 'codex'], 'codex'), { agent: 'codex' })
-  assert.match(core.agentDecision(['claude'], 'codex').error, /codex/)
 })
 
 test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 것', () => {
