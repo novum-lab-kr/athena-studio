@@ -142,7 +142,8 @@ function applyState(next) {
 let openingTab = false
 let starting = false // 처음 켤 때는 에이전트 판단(athena 탭)이 끝난 뒤에 본다
 function ensureSomeTab() {
-  if (screen.tabs.length || openingTab || starting || !state || !state.valid || !$('agent-picker').hidden) return
+  // 시작 화면이 떠 있으면 만들지 않는다 — 고를 때 닫을 pane 이 생겨 확인 창이 뜨지 않게(들어가면 아테나 탭이 생긴다)
+  if (screen.tabs.length || openingTab || starting || !state || !state.valid || !$('agent-picker').hidden || welcomeShown()) return
   openingTab = true
   newTab().finally(() => (openingTab = false))
 }
@@ -1147,7 +1148,8 @@ async function startScreen() {
   starting = true
   try {
     if (!(await attach())) return
-    await openAgent()
+    // 시작 화면이 떠 있으면 팩을 고를 때까지 아테나를 켜지 않는다(enterPack · onPackChanged 가 켠다)
+    if (!welcomeShown()) await openAgent()
   } finally {
     starting = false
   }
@@ -1506,7 +1508,7 @@ function renderPackChip() {
   const chip = $('pack-chip')
   chip.hidden = !packs.supported || !state || !state.valid
   if (chip.hidden) return
-  $('pack-name').textContent = `🏢 ${packCurrentLabel()}`
+  $('pack-name').textContent = packCurrentLabel() // 아이콘(카트리지) · ▾ 는 마크업
 }
 
 async function refreshPackList() {
@@ -1565,13 +1567,61 @@ function packCommand(name) {
   if (name === 'export' || name === 'backup') return exportPack(name)
 }
 
-// 팩이 하나도 없을 때 — 모달이 아니라 작업 창 가운데 시작 화면(VS Code 처럼) · 새로 만들기 · 가져오기 두 가지만(사용자 결정 2)
-// 목록도 비고 지금 팩도 없을 때만 — main 이 pack.js showPackWelcome 으로 계산해 넘긴다(규칙은 한 곳)
+// 시작 화면 — 작업 창 가운데(VS Code 처럼). 두 경우(규칙은 main 이 pack.js 로 계산해 넘긴다):
+//   welcome — 팩이 하나도 없을 때(만들기 · 가져오기만) · launchWelcome — 앱을 켤 때마다(팩이 있어도 · 도는 에이전트가 없으면) + '내 팩' 목록
+// 켤 때 시작 화면은 팩을 고르거나 · 만들거나 · 가져와 들어가면(welcomeEntered) 닫힌다. 떠 있는 동안 에이전트 모니터는 접어 두고, 들어가면 펼친다
 const hasNoPacks = () => packs.welcome === true
+let welcomeEntered = false
+const welcomeShown = () => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
+let welcomeWasOn = false
 function renderPackWelcome() {
-  const on = Boolean(state && state.valid) && hasNoPacks()
+  const on = welcomeShown()
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
+  // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
+  if (on && !welcomeWasOn) $('dock').classList.add('collapsed')
+  welcomeWasOn = on
+  if (on) renderWelcomeRecent()
+}
+
+// '내 팩' — 지금 팩 맨 위 · 최근 순 · 최대 5개(main 의 packs.recent) · 고르면 그 팩으로 들어간다
+function renderWelcomeRecent() {
+  const recent = (!hasNoPacks() && Array.isArray(packs.recent) && packs.recent) || []
+  $('pack-welcome-recent').hidden = !recent.length
+  const cartridge = document.querySelector('#pack-chip .pack-chip-icon svg')
+  const rows = recent.map((item) => {
+    const row = el('button', 'pack-welcome-recent-row')
+    row.dataset.packId = item.id
+    if (item.current) row.setAttribute('aria-current', 'true')
+    const icon = el('span', 'icon')
+    icon.setAttribute('aria-hidden', 'true')
+    if (cartridge) icon.append(cartridge.cloneNode(true))
+    const date = item.updatedAt ? new Date(item.updatedAt) : null
+    const when = date && !Number.isNaN(date.getTime()) ? `${date.getMonth() + 1}/${date.getDate()}` : ''
+    const meta = [item.current ? say('pack.meta.current') : '', Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '', item.current ? '' : when].filter(Boolean).join(' · ')
+    row.append(icon, el('span', 'name', item.name), el('span', 'meta', meta))
+    row.addEventListener('click', () => runPackFlow(() => enterPack(item.id)))
+    return row
+  })
+  $('pack-welcome-recent-list').replaceChildren(...rows)
+}
+
+// 시작 화면에서 들어가기 — 시작 화면을 닫고 모니터를 펼친다. 시작 화면이 떠 있지 않았으면(칩으로 갈아 끼움) 모니터는 그대로
+function enterWelcome() {
+  const wasShown = welcomeShown()
+  welcomeEntered = true
+  if (wasShown) $('dock').classList.remove('collapsed')
+  renderPackWelcome()
+}
+
+// 목록에서 고름 — 지금 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 갈아 끼운다(성공하면 onPackChanged 가 들어간다)
+async function enterPack(id) {
+  if (packs.current && packs.current.id === id) {
+    enterWelcome()
+    await openAgent()
+    return
+  }
+  await choosePack(id)
 }
 function openNoPacks() {
   renderPackWelcome()
@@ -1594,6 +1644,8 @@ async function askQuiesce(title, verb) {
     })
     return again ? askQuiesce(title, verb) : null
   }
+  // 닫을 pane 도 일하는 에이전트도 없으면(막 켠 상태 등) 묻지 않고 바로
+  if (!check.working && !check.closing) return 'wait'
   const body = [say('pack.quiesce.closing', { count: check.closing })]
   if (!check.working) {
     const ok = await packDialog({ title, body, actions: [{ label: say(`pack.verb.${verb}`), value: 'wait', kind: 'primary' }, { label: say('common.cancel'), value: null }] })
@@ -1746,7 +1798,9 @@ async function exportPack(kind) {
 }
 
 // 바꾼 뒤 — 현황판 · 작업 창을 새 팩으로(닫힌 pane 대신 아테나 탭을 다시 켠다)
-function onPackChanged() {
+function onPackChanged(change) {
+  // 팩을 갈아 끼웠거나 · 새로 만들었거나 · 지금 팩을 가져온 것으로 바꿨으면 시작 화면에서 들어간 것
+  if (change && change.ok) enterWelcome()
   refreshPackList()
   boardLoaded = false
   if (currentTab === 'board') loadBoard(true)
@@ -1907,12 +1961,13 @@ async function init() {
   })
   studio.onScreenCommand(runCommand)
   studio.onLanguage(applyLanguage)
-  initPacks()
+  const packsReady = initPacks()
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
   new ResizeObserver(() => layoutPanes()).observe($('dock'))
   if (state.valid) {
     switchTab('work')
-    startScreen()
+    // 팩 목록(켤 때 시작 화면인지)을 먼저 — 시작 화면이면 고를 때까지 아테나 에이전트를 켜지 않는다(startScreen)
+    packsReady.finally(startScreen)
   } else {
     installAthena()
   }

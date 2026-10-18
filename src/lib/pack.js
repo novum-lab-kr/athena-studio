@@ -117,6 +117,26 @@ function showPackWelcome(list) {
   return Boolean(list && list.supported && Array.isArray(list.packs) && !list.packs.length && !list.current)
 }
 
+// 켤 때 시작 화면을 띄울까(팩이 있어도 — 사용자 결정 2026-10-18) — 팩 지원 본체 · 팩이 하나 이상 · 켤 때 도는 에이전트 pane 이 없을 때.
+// 에이전트가 돌고 있으면(앱만 다시 켬) 하던 일을 끊지 않게 건너뛴다. 옛 구조 본체(legacy)는 목록이 없어 띄우지 않는다
+function welcomeOnLaunch({ list, agentPanes }) {
+  if (!list || !list.supported || list.legacy || !Array.isArray(list.packs) || !list.packs.length) return false
+  return !(agentPanes > 0)
+}
+
+// 시작 화면 '내 팩' 목록 — 지금 팩 맨 위, 나머지는 updatedAt(그 팩 작업 기록 · pack.json 마지막 변경) 최근 순, 최대 limit 개
+function recentPacks(list, limit = 5) {
+  if (!list || !Array.isArray(list.packs)) return []
+  const currentId = list.current && list.current.id
+  const time = (pack) => Date.parse(pack.updatedAt) || 0
+  const sorted = [...list.packs].sort((left, right) => {
+    if (left.id === currentId) return -1
+    if (right.id === currentId) return 1
+    return time(right) - time(left)
+  })
+  return sorted.slice(0, limit).map((pack) => ({ id: pack.id, name: pack.name || pack.id, repos: pack.repos, updatedAt: pack.updatedAt || null, current: pack.id === currentId }))
+}
+
 // 현황판 /api/state 의 pack 이 지금 팩 · 세대와 같은가 — legacy(옛 본체 · pack 없음) · current · stale
 function boardIdentity(boardState, current) {
   const pack = boardState && boardState.pack
@@ -236,6 +256,8 @@ module.exports = {
   normalizePackList,
   boardIdentity,
   showPackWelcome,
+  welcomeOnLaunch,
+  recentPacks,
   statusBoardPort,
   statusDataDir,
   switchCheck,

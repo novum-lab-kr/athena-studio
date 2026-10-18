@@ -383,10 +383,10 @@
   "pack.result.done": "{title} — created",
   "pack.result.files": "files: {count}",
   "pack.reveal": "Show in Finder",
-  "pack.welcome.lead": "No pack yet — create or import one to get started.",
-  "pack.welcome.start": "Start",
-  "pack.welcome.new": "Create a New Pack",
-  "pack.welcome.newNote": "Athena finds the repos on this computer and builds a pack (/setup)",
-  "pack.welcome.import": "Import…",
-  "pack.welcome.importNote": "An archive or pack folder from a teammate · a git repo address · my existing Athena"
+  "pack.welcome.new": "Create a new pack",
+  "pack.welcome.newNote": "Find repos on this computer and build a pack",
+  "pack.welcome.import": "Import a pack",
+  "pack.welcome.importNote": "Archive · folder · Git URL · existing Athena",
+  "pack.welcome.recentTitle": "My packs",
+  "pack.welcome.recentAll": "Show all…"
 }

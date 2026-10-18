@@ -987,42 +987,152 @@ button:focus-visible {
   font: 12px var(--font-mono);
 }
 
-/* 회사 팩이 없을 때 시작 화면 — 작업 창 가운데(VS Code 시작 화면처럼) */
+/* 팩이 없을 때 시작 화면 — 작업 창 가운데(VS Code 시작 화면처럼) · 밤하늘(어두운 무채색 + 부엉이 달무리 + 깜빡이는 별) · 2026-10-18 확정 */
 .work-area { position: relative; }
 .pack-welcome {
   position: absolute;
   inset: 0;
   z-index: 6;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow-y: auto;
-  background: var(--bg);
+  background:
+    radial-gradient(900px 500px at 50% -15%, rgb(110 100 160 / 9%), transparent 65%),
+    linear-gradient(180deg, #131419 0%, #15161b 55%, #16171a 100%);
 }
 .pack-welcome[hidden] { display: none; }
-.pack-welcome-inner { width: min(520px, calc(100% - 48px)); }
-.pack-welcome-logo { width: 56px; height: 56px; margin-bottom: 10px; opacity: 0.9; pointer-events: none; user-select: none; }
-.pack-welcome h1 { margin: 0 0 6px; font-size: 26px; font-weight: 600; }
-.pack-welcome-lead { margin: 0 0 28px; color: var(--muted); font-size: 14px; line-height: 1.6; }
-.pack-welcome h2 { margin: 0 0 8px; color: var(--muted); font-size: 12px; font-weight: 600; letter-spacing: 0.04em; }
-.pack-welcome-action {
+/* 멈춰 있는 옅은 별 5개 */
+.pack-welcome::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: .28;
+  background-image:
+    radial-gradient(1px 1px at 12% 40%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 33% 92%, #fff 50%, transparent 51%),
+    radial-gradient(1.2px 1.2px at 52% 6%, #fff 50%, transparent 51%),
+    radial-gradient(1px 1px at 82% 86%, #e9d9b4 50%, transparent 51%),
+    radial-gradient(1px 1px at 96% 44%, #fff 50%, transparent 51%);
+}
+/* 깜빡이는 별 — 마크업 .night-stars 안 .star 6개(위치 · 박자는 인라인 변수 --d · --delay · --s) */
+.night-stars { position: absolute; inset: 0; z-index: -1; pointer-events: none; }
+.night-stars .star {
+  position: absolute;
+  width: var(--s);
+  height: var(--s);
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 4px rgb(255 240 210 / 45%);
+  opacity: .15;
+}
+.night-stars .star.bright { background: #fff7e4; }
+.pack-welcome-inner {
+  position: relative;
+  isolation: isolate;
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  flex-direction: column;
+  gap: 6px;
+  width: min(360px, calc(100% - 48px));
+  text-align: center;
+}
+/* 부엉이 달무리 — 빛의 중심은 부엉이(중심 실효 7~9% · 부엉이의 3.7배) */
+.pack-welcome-inner::before {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 34px;
+  width: 250px;
+  height: 250px;
+  z-index: -1;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgb(201 173 120 / 10%) 0%, rgb(201 173 120 / 5%) 25%, rgb(201 173 120 / 1.5%) 50%, rgb(201 173 120 / 0%) 72%);
+  transform: translate(-50%, -50%) scale(1);
+  opacity: .81;
+}
+.pack-welcome-logo {
+  display: block;
+  width: 68px;
+  height: 68px;
+  margin: 0 auto -2px; /* 부엉이 그림 아래 투명 여백을 당겨 제목에 붙인다 */
+  pointer-events: none;
+  user-select: none;
+  opacity: .98;
+  filter: drop-shadow(0 0 12px rgb(201 173 120 / 10%));
+}
+.pack-welcome h1 {
+  margin: 0 0 26px; /* 소개 문구 없음(사용자 결정) — 제목과 버튼 사이 */
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-indent: .06em; /* 자간이 오른쪽에만 남아 가운데가 밀리지 않게 */
+  text-transform: uppercase;
+  color: #efe6d2; /* 작은 크기에선 그라데이션이 뭉개져 단색 */
+}
+/* 버튼 두 개 — 평소엔 똑같고, 마우스를 올리거나 키보드로 고른 것만 금빛 */
+.pack-welcome-action {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
   width: 100%;
-  margin-bottom: 4px;
-  padding: 10px 12px;
-  border: 0;
-  border-radius: var(--radius-lg);
-  background: transparent;
+  padding: 8px 12px;
+  border: 1px solid rgb(255 255 255 / 8%);
+  border-radius: 9px;
+  background: rgb(255 255 255 / 2.5%);
   color: var(--text);
   font: inherit;
   text-align: left;
   cursor: pointer;
+  transition: border-color .14s, background-color .14s;
 }
-.pack-welcome-action:hover, .pack-welcome-action:focus-visible { background: var(--hover); outline: none; }
-.pack-welcome-action .icon { flex: none; width: 20px; color: var(--accent); font-size: 16px; line-height: 20px; text-align: center; }
-.pack-welcome-action b { display: block; color: var(--accent); font-size: 14px; font-weight: 600; }
-.pack-welcome-action small { display: block; margin-top: 2px; color: var(--muted); font-size: 12px; }
-/* 시작 화면일 때는 탭 줄도 숨긴다(셸 탭이 시작 화면 위에 떠 보이지 않게) */
-body.pack-welcome-on .studio-tabs { visibility: hidden; }
+.pack-welcome-action:hover,
+.pack-welcome-action:focus-visible {
+  outline: none;
+  border-color: rgb(201 173 120 / 38%);
+  background: linear-gradient(180deg, rgb(201 173 120 / 9%), rgb(201 173 120 / 3%));
+}
+.pack-welcome-action .icon { flex: none; display: grid; place-items: center; width: 18px; height: 18px; color: #e2c68f; }
+.pack-welcome-action .icon svg { display: block; width: 14px; height: 14px; }
+.pack-welcome-action > span:not(.icon) { flex: 1; min-width: 0; }
+.pack-welcome-action b { display: block; color: #f3ead6; font-size: 12.5px; font-weight: 600; }
+.pack-welcome-action small { display: block; margin-top: 1px; color: #9a968e; font-size: 11px; line-height: 1.5; }
+.pack-welcome-action::after { content: "›"; flex: none; color: #7f7c8f; font-size: 14px; line-height: 1; transition: transform .14s, color .14s; }
+.pack-welcome-action:hover::after,
+.pack-welcome-action:focus-visible::after { color: #e9d2a0; transform: translateX(2px); }
+/* 시작 화면일 때는 탭 줄을 숨긴다 */
+body.pack-welcome-on .studio-tabs { display: none; }
+/* 움직임 — 달무리 · 부엉이 숨 쉬기(8초) · 옅은 별(11초) · 깜빡이는 별(각자) · 동작 줄이기면 멈춤 */
+@media (prefers-reduced-motion: no-preference) {
+  .pack-welcome::before { animation: athena-twinkle 11s ease-in-out -3s infinite; }
+  .pack-welcome-inner::before { animation: athena-halo 8s ease-in-out infinite; }
+  .pack-welcome-logo { animation: athena-breathe 8s ease-in-out infinite; }
+  .night-stars .star { animation: athena-fade var(--d) ease-in-out var(--delay) infinite alternate; }
+}
+@keyframes athena-halo { 0%, 100% { transform: translate(-50%, -50%) scale(.98); opacity: .72; } 50% { transform: translate(-50%, -50%) scale(1.02); opacity: .9; } }
+@keyframes athena-breathe { 0%, 100% { transform: scale(1); opacity: .96; } 50% { transform: scale(1.008); opacity: 1; } }
+@keyframes athena-twinkle { 0%, 100% { opacity: .2; } 50% { opacity: .36; } }
+@keyframes athena-fade { from { opacity: .1; } to { opacity: .85; } }
+
+/* 탭 줄 팩 칩 — 건물 이모지 대신 카트리지(게임팩) 선 아이콘(팩을 갈아 끼우는 뜻) */
+.pack-chip { display: inline-flex; align-items: center; gap: 6px; }
+.pack-chip .pack-chip-icon { display: grid; place-items: center; width: 14px; height: 14px; color: var(--accent); }
+.pack-chip .pack-chip-icon svg { display: block; width: 14px; height: 14px; }
+.pack-chip .pack-chip-caret { color: var(--muted); font-size: 10px; }
+
+/* 내 팩 목록 — 버튼 아래(앱을 켤 때마다 · 고르면 그 팩으로 들어간다) */
+.pack-welcome-recent { margin-top: 22px; text-align: left; }
+.pack-welcome-recent-head { display: flex; align-items: baseline; justify-content: space-between; margin: 0 4px 6px; color: #8d8a83; font-size: 11px; letter-spacing: .04em; }
+.pack-welcome-recent-head .link { padding: 0; color: #8d8a83; font-size: 11px; text-decoration: none; }
+.pack-welcome-recent-head .link:hover { color: #e9d2a0; }
+.pack-welcome-recent-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 6px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.pack-welcome-recent-row:hover, .pack-welcome-recent-row:focus-visible { outline: none; background: rgb(201 173 120 / 7%); }
+.pack-welcome-recent-row .icon { flex: none; display: grid; place-items: center; width: 16px; height: 16px; color: #8d8a83; }
+.pack-welcome-recent-row .icon svg { width: 13px; height: 13px; }
+.pack-welcome-recent-row[aria-current="true"] .icon, .pack-welcome-recent-row:hover .icon { color: #e2c68f; }
+.pack-welcome-recent-row .name { flex: 1; min-width: 0; overflow: hidden; color: #e8e2d4; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.pack-welcome-recent-row .meta { flex: none; color: #8d8a83; font-size: 11px; }

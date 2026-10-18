@@ -383,10 +383,10 @@
   "pack.result.done": "{title} — 만들었어요",
   "pack.result.files": "파일 {count}개",
   "pack.reveal": "Finder 에서 보기",
-  "pack.welcome.lead": "팩이 아직 없어요 — 팩을 만들거나 가져오면 바로 시작해요.",
-  "pack.welcome.start": "시작",
   "pack.welcome.new": "새 팩 만들기",
-  "pack.welcome.newNote": "아테나가 이 컴퓨터의 레포를 찾아 팩을 만들어요(/setup)",
-  "pack.welcome.import": "가져오기…",
-  "pack.welcome.importNote": "팀원이 준 압축 파일 · 팩 폴더 · git 레포 주소 · 내 기존 아테나"
+  "pack.welcome.newNote": "이 컴퓨터의 레포를 찾아 팩을 만들어요",
+  "pack.welcome.import": "팩 가져오기",
+  "pack.welcome.importNote": "압축 파일 · 폴더 · Git 주소 · 기존 아테나",
+  "pack.welcome.recentTitle": "내 팩",
+  "pack.welcome.recentAll": "모두 보기…"
 }

@@ -383,10 +383,10 @@
   "pack.result.done": "{title} — 作成しました",
   "pack.result.files": "ファイル {count} 個",
   "pack.reveal": "Finder で表示",
-  "pack.welcome.lead": "パックがまだありません — パックを作るか取り込めばすぐに始められます。",
-  "pack.welcome.start": "はじめに",
-  "pack.welcome.new": "新しいパックを作る",
-  "pack.welcome.newNote": "アテナがこのコンピュータのリポジトリを探してパックを作ります(/setup)",
-  "pack.welcome.import": "取り込む…",
-  "pack.welcome.importNote": "チームメンバーからの圧縮ファイル・パックフォルダ・git リポジトリのアドレス・自分の既存のアテナ"
+  "pack.welcome.new": "新しいパックを作成",
+  "pack.welcome.newNote": "このコンピューターのリポジトリからパックを作ります",
+  "pack.welcome.import": "パックを読み込む",
+  "pack.welcome.importNote": "圧縮ファイル · フォルダ · Git URL · 既存の Athena",
+  "pack.welcome.recentTitle": "マイパック",
+  "pack.welcome.recentAll": "すべて表示…"
 }

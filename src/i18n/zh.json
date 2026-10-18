@@ -383,10 +383,10 @@
   "pack.result.done": "{title} — 已创建",
   "pack.result.files": "{count} 个文件",
   "pack.reveal": "在 Finder 中显示",
-  "pack.welcome.lead": "还没有包 — 新建或导入一个即可开始。",
-  "pack.welcome.start": "开始",
   "pack.welcome.new": "新建包",
-  "pack.welcome.newNote": "Athena 会查找这台电脑上的仓库并创建包(/setup)",
-  "pack.welcome.import": "导入…",
-  "pack.welcome.importNote": "队友提供的压缩文件 · 包文件夹 · git 仓库地址 · 我现有的 Athena"
+  "pack.welcome.newNote": "查找本机仓库并创建包",
+  "pack.welcome.import": "导入包",
+  "pack.welcome.importNote": "压缩文件 · 文件夹 · Git 地址 · 现有 Athena",
+  "pack.welcome.recentTitle": "我的包",
+  "pack.welcome.recentAll": "查看全部…"
 }

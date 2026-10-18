@@ -11,7 +11,7 @@
   <header class="tabbar">
     <img class="tabbar-logo" src="assets/logo/athena-logo-white.png" alt="Athena Studio" draggable="false">
     <!-- 지금 회사 팩 — 누르면 고르기(본체가 여러 팩을 지원할 때만 보임) -->
-    <button id="pack-chip" class="pack-chip" hidden title="팩 고르기" data-i18n-title="pack.chipTitle"><span id="pack-name"></span> ▾</button>
+    <button id="pack-chip" class="pack-chip" hidden title="팩 고르기" data-i18n-title="pack.chipTitle"><span class="pack-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h12a1 1 0 0 1 1 1v12.5l-2 2V21H7v-2.5l-2-2V4a1 1 0 0 1 1-1z"/><path d="M8.5 7h7v5h-7z"/><path d="M9 18.5v2M12 18.5v2M15 18.5v2"/></svg></span><span id="pack-name"></span><span class="pack-chip-caret" aria-hidden="true">▾</span></button>
     <button class="tab" data-tab="work" aria-selected="true"><span data-i18n="tabs.work">🖥 작업 창</span> <kbd data-key="1"></kbd></button>
     <button class="tab" data-tab="board" aria-selected="false"><span data-i18n="tabs.board">📋 현황판</span> <kbd data-key="2"></kbd></button>
     <span class="spacer"></span>
@@ -39,14 +39,19 @@
         <div class="work-area">
           <div id="panes" class="panes"></div>
           <!-- 회사 팩이 하나도 없을 때 — VS Code 시작 화면처럼 작업 창 가운데에(모달 아님) -->
+          <!-- 시작 화면 — 팩이 없을 때 · 켤 때마다(팩이 있어도 · 도는 에이전트가 없으면) · 작업 창 가운데(VS Code 처럼) · 밤하늘(2026-10-18 확정) -->
           <section id="pack-welcome" class="pack-welcome" hidden>
+            <div class="night-stars" aria-hidden="true"><i class="star" style="left:8%;top:14%;--d:3.24s;--delay:-0.68s;--s:2px"></i><i class="star" style="left:17%;top:72%;--d:4.09s;--delay:-0.33s;--s:2px"></i><i class="star bright" style="left:23%;top:30%;--d:3.79s;--delay:-1.65s;--s:3px"></i><i class="star bright" style="left:77%;top:12%;--d:2.58s;--delay:-0.41s;--s:3px"></i><i class="star bright" style="left:92%;top:66%;--d:2.72s;--delay:-1.0s;--s:3px"></i><i class="star" style="left:64%;top:20%;--d:3.9s;--delay:-1.79s;--s:2px"></i></div>
             <div class="pack-welcome-inner">
               <img class="pack-welcome-logo" src="assets/logo/athena-logo-white.png" alt="" draggable="false">
               <h1>Athena</h1>
-              <p class="pack-welcome-lead" data-i18n="pack.welcome.lead">팩이 아직 없어요 — 팩을 만들거나 가져오면 바로 시작해요.</p>
-              <h2 data-i18n="pack.welcome.start">시작</h2>
-              <button class="pack-welcome-action" data-pack-command="new"><span class="icon">＋</span><span><b data-i18n="pack.welcome.new">새 팩 만들기</b><small data-i18n="pack.welcome.newNote">아테나가 이 컴퓨터의 레포를 찾아 팩을 만들어요(/setup)</small></span></button>
-              <button class="pack-welcome-action" data-pack-command="import"><span class="icon">↓</span><span><b data-i18n="pack.welcome.import">가져오기…</b><small data-i18n="pack.welcome.importNote">팀원이 준 압축 파일 · 팩 폴더 · git 레포 주소 · 내 기존 아테나</small></span></button>
+              <button class="pack-welcome-action" data-pack-command="new"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h12a1 1 0 0 1 1 1v12.5l-2 2V21H7v-2.5l-2-2V4a1 1 0 0 1 1-1z"/><path d="M8.5 7h7v5h-7z"/><path d="M9 18.5v2M12 18.5v2M15 18.5v2"/></svg></span><span><b data-i18n="pack.welcome.new">새 팩 만들기</b><small data-i18n="pack.welcome.newNote">이 컴퓨터의 레포를 찾아 팩을 만들어요</small></span></button>
+              <button class="pack-welcome-action" data-pack-command="import"><span class="icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v10"/><path d="M8 9.5 12 13.5 16 9.5"/><path d="M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14"/></svg></span><span><b data-i18n="pack.welcome.import">팩 가져오기</b><small data-i18n="pack.welcome.importNote">압축 파일 · 폴더 · Git 주소 · 기존 아테나</small></span></button>
+              <!-- 내 팩 — 지금 팩 맨 위 · 최근 순 · 최대 5개(renderer renderWelcomeRecent) · 고르면 그 팩으로 들어간다 -->
+              <div id="pack-welcome-recent" class="pack-welcome-recent" hidden>
+                <div class="pack-welcome-recent-head"><span data-i18n="pack.welcome.recentTitle">내 팩</span><button class="link" data-pack-command="picker" data-i18n="pack.welcome.recentAll">모두 보기…</button></div>
+                <div id="pack-welcome-recent-list"></div>
+              </div>
             </div>
           </section>
           <!-- 미리보기 — 터미널 옆에 나눠 띄운다(덮지 않는다) -->

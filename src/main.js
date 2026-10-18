@@ -1018,13 +1018,23 @@ function runPack(args, { dir = config.athenaDir, onProgress = null, signal = nul
   })
 }
 
+// 켤 때 시작 화면을 띄울지 — 창을 만든 뒤 처음 목록을 읽을 때 한 번만 정한다(그 뒤로는 화면이 '들어갔음' 을 기억한다 · createWindow 가 비운다)
+let launchWelcome = null
+async function decideLaunchWelcome(listed) {
+  if (launchWelcome !== null || !listed.supported) return
+  const listedPanes = await daemonCall('pane list')
+  const agentPanes = ((listedPanes.result && listedPanes.result.panes) || []).filter((pane) => pane.agent).length
+  launchWelcome = packModel.welcomeOnLaunch({ list: listed, agentPanes })
+}
+
 async function refreshPacks() {
   if (!core.checkAthenaDir(config.athenaDir).ok) {
     packState = { supported: false }
   } else {
     const listed = packModel.normalizePackList(await runPack(['list']))
-    // welcome — 시작 화면(회사 팩이 아직 없어요)을 띄울지. 규칙은 한 곳(pack.js showPackWelcome)에서만
-    packState = { ...listed, welcome: packModel.showPackWelcome(listed) }
+    await decideLaunchWelcome(listed)
+    // welcome — 팩이 하나도 없을 때 시작 화면 · launchWelcome — 켤 때 시작 화면(팩이 있어도) · recent — 시작 화면 '내 팩' 목록. 규칙은 pack.js 한 곳에서만
+    packState = { ...listed, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome === true, recent: packModel.recentPacks(listed) }
   }
   send('pack:state', packState)
   return packState
@@ -1733,6 +1743,8 @@ function notify(item) {
 
 // ── 창 · 메뉴 ─────────────────────────────────────────────
 function createWindow() {
+  // 창을 새로 만들 때마다(맥에서 창만 닫았다 다시 열기 포함) 켤 때 시작 화면을 다시 정한다 — 그 사이 에이전트가 돌기 시작했으면 건너뛰게
+  launchWelcome = null
   mainWindow = new BrowserWindow({
     width: 1400,
     height: 900,

@@ -77,6 +77,26 @@ test('시작 화면: 목록도 비고 지금 팩도 없을 때만', () => {
   assert.equal(pack.showPackWelcome({ supported: false }), false)
 })
 
+test('켤 때 시작 화면: 팩이 있고 도는 에이전트가 없을 때만', () => {
+  const list = { supported: true, packs: [{ id: 'acme' }], current: { id: 'acme' } }
+  assert.equal(pack.welcomeOnLaunch({ list, agentPanes: 0 }), true)
+  assert.equal(pack.welcomeOnLaunch({ list, agentPanes: 2 }), false) // 앱만 다시 켬 — 하던 일을 끊지 않는다
+  assert.equal(pack.welcomeOnLaunch({ list: { ...list, packs: [] }, agentPanes: 0 }), false) // 팩이 없으면 원래 시작 화면(showPackWelcome)
+  assert.equal(pack.welcomeOnLaunch({ list: { ...list, legacy: true }, agentPanes: 0 }), false)
+  assert.equal(pack.welcomeOnLaunch({ list: { supported: false }, agentPanes: 0 }), false)
+})
+
+test('내 팩 목록: 지금 팩 맨 위 · 나머지 updatedAt 최근 순 · 최대 5개', () => {
+  const packs = ['a', 'b', 'c', 'd', 'e', 'f'].map((id, index) => ({ id, name: id.toUpperCase(), repos: index, updatedAt: `2026-10-1${index}T00:00:00Z` }))
+  const recent = pack.recentPacks({ packs, current: { id: 'b' } })
+  assert.deepEqual(recent.map((item) => item.id), ['b', 'f', 'e', 'd', 'c'])
+  assert.equal(recent[0].current, true)
+  assert.equal(recent[1].current, false)
+  assert.equal(recent[0].name, 'B')
+  assert.deepEqual(pack.recentPacks({ packs: [{ id: 'x' }], current: null }).map((item) => item.updatedAt), [null])
+  assert.deepEqual(pack.recentPacks(null), [])
+})
+
 test('현황판 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 current (A→B→A 의 옛 A 는 stale)', () => {
   const current = { id: 'acme', generation: 3 }
   assert.equal(pack.boardIdentity({ cards: [] }, current), 'legacy')
