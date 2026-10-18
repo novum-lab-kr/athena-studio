@@ -13,10 +13,10 @@
     <button id="pack-chip" class="pack-chip" hidden title="팩 고르기" data-i18n-title="pack.chipTitle"><span class="pack-chip-icon" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h12a1 1 0 0 1 1 1v12.5l-2 2V21H7v-2.5l-2-2V4a1 1 0 0 1 1-1z"/><path d="M8.5 7h7v5h-7z"/><path d="M9 18.5v2M12 18.5v2M15 18.5v2"/></svg></span><span id="pack-name"></span><span class="pack-chip-caret" aria-hidden="true">▾</span></button>
     <span class="spacer"></span>
     <!-- 현황판 토글 — 누르면 현황판, 다시 누르면 작업 창(작업 창 탭 버튼은 없다 · ⌘1/⌘2 는 메뉴) · 제목에 단축키(renderState) -->
-    <button id="board-tab" class="tabbar-tool" data-tab="board" aria-selected="false" title="현황판" aria-label="현황판" data-i18n-title="board.title" data-i18n-aria-label="board.title">
+    <button id="board-tab" class="tabbar-tool" data-tab="board" aria-selected="false" aria-label="현황판" data-i18n-aria-label="board.title">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
     </button>
-    <button id="browser-toggle" class="tabbar-tool" title="옆 브라우저 열기·닫기" aria-label="옆 브라우저 열기·닫기" data-i18n-title="browser.toggle" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
+    <button id="browser-toggle" class="tabbar-tool" aria-label="옆 브라우저 열기·닫기" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.75" ry="6.25"/><path d="M1.9 6h12.2M1.9 10h12.2"/></svg>
     </button>
   </header>
@@ -128,6 +128,8 @@
   <script src="../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
   <script src="../lib/layout.js"></script>
   <script src="../lib/i18n.js"></script>
+  <!-- 툴팁 — data-tip 이 있는 버튼에 마우스를 올리면(탭 줄은 기본 title 툴팁이 안 떠서 직접 그린다) -->
+  <div id="tip" class="tip" role="tooltip" hidden></div>
   <script src="renderer.js"></script>
 </body>
 </html>

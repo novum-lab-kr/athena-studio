@@ -64,6 +64,21 @@ body[data-platform="darwin"] .tabbar { padding-left: 80px; } /* 맥 신호등 �
   cursor: pointer;
 }
 .tabbar-tool:hover, .tabbar-tool.active { background: var(--line); color: var(--text); }
+.tip {
+  position: fixed;
+  z-index: 1000;
+  padding: 3px 8px;
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  background: #0b0c0e; /* 화면 바탕보다 진하게 — 어디 위에 떠도 글자가 보이게 */
+  color: var(--text);
+  font-size: 11px;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 35%);
+  white-space: pre; /* 여러 줄 title(접힌 작업 공간: 이름 · 브랜치)은 줄 그대로 */
+  pointer-events: none;
+}
+.tip[hidden] { display: none; }
+.tabbar-tool:disabled { opacity: 0.35; cursor: default; background: transparent; color: var(--muted); } /* 시작 화면 동안 현황판 · 브라우저 */
 .tabbar-tool svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
 .tabbar-tool[aria-selected="true"] { background: var(--surface-active); color: var(--text); } /* 현황판 아이콘이 열린 탭일 때 */
 .spacer { flex: 1; }
@@ -107,7 +122,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .space-branch { overflow: hidden; flex: 0 1 auto; max-width: 55%; margin-left: auto; color: var(--muted); font: 11px var(--font-mono); font-weight: normal; text-overflow: ellipsis; white-space: nowrap; }
 .space[aria-current="true"] .dot { color: var(--accent); }
 .side-empty { margin: 4px 6px; color: var(--muted); }
-.add-space { margin-top: 6px; color: var(--muted); }
 /* 작업 창 안의 탭 줄(데몬 탭) */
 .studio-tabs {
   display: flex;
@@ -294,6 +308,7 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .tree-row.dotfile .file-icon { opacity: 0.6; }
 /* 접기 · 펴기 */
 .side-title.with-fold { display: flex; align-items: center; justify-content: space-between; }
+.side-title-actions { display: inline-flex; align-items: center; gap: 2px; } /* spaces 머리줄 오른쪽 — ＋(새 작업 공간) · 접기 */
 .fold-button { padding: 0 6px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); font-family: inherit; font-size: 13px; cursor: pointer; }
 .fold-button:hover { background: var(--line); color: var(--text); }
 /* 접기·펴기 패널 아이콘(선) — 글자색을 따른다 */
@@ -371,11 +386,6 @@ body[data-platform="darwin"] .tabbar {
 
 .space-branch {
   font: 11px var(--font-mono);
-}
-
-.add-space {
-  margin-top: 8px;
-  font-size: 12px;
 }
 
 .code-U,

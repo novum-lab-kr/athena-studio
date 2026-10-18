@@ -259,6 +259,84 @@ function foldButton(side, title, onClick, collapsed = false) {
   return button
 }
 
+// spaces 머리줄의 + — 새 작업 공간(⌘⇧T · [파일] 메뉴와 같다)
+function addSpaceButton() {
+  const button = document.createElement('button')
+  button.className = 'fold-button'
+  button.append(lineIcon(['M12 5v14', 'M5 12h14']))
+  button.dataset.tip = say('spaces.newTitle', { key: state.tabKey })
+  button.setAttribute('aria-label', button.dataset.tip)
+  button.addEventListener('click', () => runCommand('new-workspace'))
+  return button
+}
+
+// 툴팁 — data-tip 버튼 위에 잠깐 머물면 버튼 아래 가운데에 띄운다(화면 밖으로 나가면 안쪽으로 당기고, 아래가 모자라면 위로)
+// 아이콘 버튼(글자가 거의 없는 button)의 title 도 여기로 옮겨 같은 툴팁으로 — 기본 title 툴팁은 탭 줄 등에서 안 뜬다
+const TIP_SELECTOR = '[data-tip], button[title], .studio-tab .close[title]' // 탭의 ✕ 는 button 이 아니라 span
+const ICON_TEXT_MAX = 2 // ＋ · ✕ · 접힌 작업 공간 머리글자(두 글자)까지
+function tipTarget(element) {
+  const node = element instanceof Element ? element.closest(TIP_SELECTOR) : null
+  if (!node) return null
+  if (node.hasAttribute('title')) {
+    if (!node.dataset.tip && node.textContent.trim().length > ICON_TEXT_MAX) return null // 글자 버튼은 기본 title 그대로
+    // 옆 브라우저 바는 기본 title 그대로(R1 A) — 아래로 띄우면 페이지 자리의 네이티브 뷰에 가려진다
+    if (node.closest('#browser')) return null
+    // 코드가 title 을 다시 넣었을 수도 있어(언어 바꿈 · 상태 바뀜) 볼 때마다 옮긴다
+    node.dataset.tip = node.title
+    if (!node.hasAttribute('aria-label')) node.setAttribute('aria-label', node.title)
+    node.removeAttribute('title')
+  }
+  return node.dataset.tip ? node : null
+}
+const TIP_DELAY_MS = 350
+const TIP_GAP = 6
+function initTips() {
+  const tip = $('tip')
+  let target = null
+  let timer = null
+  const hide = () => {
+    clearTimeout(timer)
+    tip.hidden = true
+    target = null
+  }
+  const show = (node) => {
+    tip.textContent = node.dataset.tip
+    tip.hidden = false
+    const rect = node.getBoundingClientRect()
+    const box = tip.getBoundingClientRect()
+    const left = rect.left + rect.width / 2 - box.width / 2
+    tip.style.left = `${Math.max(4, Math.min(left, innerWidth - box.width - 4))}px`
+    // 아래 자리가 모자라면(맨 아래 접힌 에이전트 모니터 등) 버튼 위로
+    const below = rect.bottom + TIP_GAP
+    tip.style.top = `${below + box.height > innerHeight - 4 ? rect.top - TIP_GAP - box.height : below}px`
+  }
+  // 띄울 때는 그 자리의 버튼을 다시 찾는다 — 왼쪽 spaces 는 데몬 상태마다 다시 그려져 기다리는 사이 버튼이 바뀐다
+  const tipAt = (point) => tipTarget(document.elementFromPoint(point.x, point.y))
+  document.addEventListener('mouseover', (event) => {
+    const node = tipTarget(event.target)
+    if (node === target) return
+    // 다시 그려져 같은 버튼이 새 요소로 바뀐 것뿐이면(탭 줄 · spaces) 툴팁을 그대로 둔다
+    if (node && target && node.dataset.tip === target.dataset.tip) {
+      target = node
+      return
+    }
+    hide()
+    if (!node) return
+    target = node
+    const point = { x: event.clientX, y: event.clientY }
+    timer = setTimeout(() => {
+      const now = node.isConnected ? node : tipAt(point)
+      if (!now) return
+      target = now
+      show(now)
+    }, TIP_DELAY_MS)
+  })
+  document.addEventListener('mousedown', hide)
+  window.addEventListener('blur', hide)
+  // 창 밖이나 옆 브라우저 화면(네이티브 뷰) 위로 바로 나가면 mouseover 가 안 온다 — 남지 않게
+  document.documentElement.addEventListener('mouseleave', hide)
+}
+
 // 작업 공간 아이콘 — 이름 앞 두 글자 + 이름으로 고른 색(같은 이름은 늘 같은 색)
 const SPACE_COLORS = ['#7aa2f7', '#9ece6a', '#e0af68', '#bb9af7', '#f7768e', '#7dcfff', '#ff9e64', '#73daca']
 
@@ -292,7 +370,8 @@ function spaceRail() {
   const add = document.createElement('button')
   add.className = 'space-icon add'
   add.textContent = '＋'
-  add.title = say('spaces.newTitle', { key: state.tabKey })
+  add.dataset.tip = say('spaces.newTitle', { key: state.tabKey })
+  add.setAttribute('aria-label', add.dataset.tip)
   add.addEventListener('click', () => runCommand('new-workspace'))
   return [foldButton('left', say('spaces.expand', { key: state.tabKey }), () => setSpacesCollapsed(false), true), ...rows, add]
 }
@@ -309,7 +388,10 @@ function renderSides() {
   title.className = 'side-title with-fold'
   const titleText = document.createElement('span')
   titleText.textContent = 'spaces'
-  title.append(titleText, foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
+  const actions = document.createElement('span')
+  actions.className = 'side-title-actions'
+  actions.append(addSpaceButton(), foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
+  title.append(titleText, actions)
   const rows = screen.workspaces.map((workspace) => {
     const button = document.createElement('button')
     button.className = 'space'
@@ -338,11 +420,7 @@ function renderSides() {
     })
     return button
   })
-  const add = document.createElement('button')
-  add.className = 'space add-space'
-  add.textContent = say('spaces.newButton', { key: state.tabKey })
-  add.addEventListener('click', () => runCommand('new-workspace'))
-  spaces.replaceChildren(title, ...rows, add)
+  spaces.replaceChildren(title, ...rows)
 
   // 오른쪽: 지금 작업 공간의 Explorer — 작업 공간이 바뀌면 따라간다
   if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
@@ -644,6 +722,19 @@ function setPanelHidden(hidden) {
   $('side-rail').hidden = !hidden
   localStorage.setItem('studio.panelHidden', hidden ? '1' : '0')
   if (!hidden) renderExplorer()
+  requestAnimationFrame(layoutPanes)
+}
+
+// 저장된 접기 설정대로 양쪽을 맞춘다 — 시작 화면(팩 고르기) 동안은 저장값과 상관없이 양쪽을 접는다(저장은 안 바꾼다 · 들어가면 원래대로)
+function applySideFolds() {
+  const welcome = welcomeShown()
+  const panelHidden = welcome || localStorage.getItem('studio.panelHidden') === '1'
+  $('spaces').classList.toggle('collapsed', welcome || localStorage.getItem('studio.spacesCollapsed') === '1')
+  $('side-panel').hidden = panelHidden
+  $('side-rail').hidden = !panelHidden
+  if (!attached) return
+  renderSides()
+  if (!panelHidden) renderExplorer()
   requestAnimationFrame(layoutPanes)
 }
 
@@ -1213,6 +1304,7 @@ let browserTimer = null
 let urlFocusTimer = null
 
 function openBrowserPanel() {
+  if (welcomeShown()) return // 팩을 고르기 전에는 옆 브라우저를 열지 않는다(⌘⇧B · 링크 열기 포함)
   const panel = $('browser')
   if (browserOpen) return placeBrowserView()
   browserOpen = true
@@ -1390,6 +1482,7 @@ function initBrowser() {
 // ── 탭 ──────────────────────────────────────────────────
 function switchTab(name) {
   if (!state || !state.valid) return
+  if (name === 'board' && welcomeShown()) return // 팩을 고르기 전에는 현황판을 열지 않는다(⌘2 · 트레이 포함)
   currentTab = name
   studio.reportTab(name)
   for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === name))
@@ -1556,9 +1649,17 @@ function renderPackWelcome() {
   const on = welcomeShown()
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
+  // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
+  for (const tab of tabs) tab.disabled = !state || !state.valid || on
+  $('browser-toggle').disabled = on
+  if (on && currentTab === 'board') switchTab('work')
+  if (on && browserOpen) closeBrowserPanel()
   // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
   if (on && !welcomeWasOn) $('dock').classList.add('collapsed')
-  welcomeWasOn = on
+  if (on !== welcomeWasOn) {
+    welcomeWasOn = on
+    applySideFolds() // 시작 화면이 뜨면 양쪽을 접고, 들어가면 저장된 대로
+  }
   if (on) renderWelcomeRecent()
 }
 
@@ -1816,11 +1917,11 @@ async function afterAthenaReady() {
 function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
-  $('browser-toggle').title = say('browser.toggleTitle', { key: state.tabKey })
-  $('board-tab').title = `${say('board.title')} (${state.tabKey}2)`
+  $('browser-toggle').dataset.tip = say('browser.toggleTitle', { key: state.tabKey })
+  $('board-tab').dataset.tip = `${say('board.title')} (${state.tabKey}2)`
   const ready = state.valid
   panels.setup.hidden = ready
-  for (const tab of tabs) tab.disabled = !ready
+  for (const tab of tabs) tab.disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
   renderPackChip()
   if (!ready) {
     panels.work.hidden = true
@@ -1904,6 +2005,7 @@ async function init() {
   renderState()
   // 현황판 아이콘은 토글 — 현황판이면 작업 창으로 돌아간다
   $('board-tab').addEventListener('click', () => switchTab(currentTab === 'board' ? 'work' : 'board'))
+  initTips()
   initBrowser()
   initMonitor()
   $('pick').addEventListener('click', pickAthenaDir)
@@ -1921,11 +2023,8 @@ async function init() {
     branches = next
     if (attached) renderSides()
   })
-  const panelHidden = localStorage.getItem('studio.panelHidden') === '1'
-  $('side-panel').hidden = panelHidden
-  $('side-rail').hidden = !panelHidden
+  applySideFolds()
   $('side-open').addEventListener('click', () => setPanelHidden(false))
-  $('spaces').classList.toggle('collapsed', localStorage.getItem('studio.spacesCollapsed') === '1')
   $('preview-close').addEventListener('click', closePreview)
   $('preview').addEventListener('keydown', (event) => event.key === 'Escape' && closePreview())
   // git 변경은 Explorer 가 보일 때만 3초마다
