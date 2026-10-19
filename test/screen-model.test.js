@@ -40,7 +40,7 @@ test('납작한 Pane: 화면 계층 screen.py _pane 과 같은 12개 키 · 빈 
   assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).workspace_id, null)
 })
 
-test('키 이름: herdr 와 같은 이름 · 대소문자 무시 · 모르면 null', () => {
+test('키 이름: Enter · C-c 같은 이름 · 대소문자 무시 · 모르면 null', () => {
   assert.equal(model.keyBytes('Enter'), '\r')
   assert.equal(model.keyBytes('enter'), '\r')
   assert.equal(model.keyBytes('esc'), '\x1b')

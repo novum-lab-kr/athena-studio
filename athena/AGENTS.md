@@ -8,7 +8,7 @@
 
 ## 0. 첫 실행 — 팩이 없으면 이것부터
 
-`athena.config.json` 이 없거나, 거기에 `pack` 이 없거나, 팩의 `pack.json` 에 `repos` 가 비었으면 **아직 회사가 등록되지 않은 아테나**다. 사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 **`docs/setup.md`** 절차(레포 찾기 → 팩 → 에이전트·지식 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램)를 돈다. herdr 에서 켜면 세션 시작 훅(Claude `.claude/settings.json` · Codex `.codex/hooks.json`)이 화면을 세팅한 뒤 첫 실행 지시를 pane 에 대신 입력한다(Claude `/setup` 이 같은 문서를 따른다).
+`athena.config.json` 이 없거나, 거기에 `pack` 이 없거나, 팩의 `pack.json` 에 `repos` 가 비었으면 **아직 회사가 등록되지 않은 아테나**다. 사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 **`docs/setup.md`** 절차(레포 찾기 → 팩 → 에이전트·지식 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램)를 돈다. Athena Studio pane 에서 켜면 세션 시작 훅(Claude `.claude/settings.json` · Codex `.codex/hooks.json`)이 화면을 세팅한 뒤 첫 실행 지시를 pane 에 대신 입력한다(Claude `/setup` 이 같은 문서를 따른다).
 환경 변수 `ATHENA_AGENT` 가 있는 창(바깥 도구가 띄운 관리 창)에서는 하지 않는다.
 Jev 키(선택 · 사람마다 본인 키)는 첫 실행 7-2단계가 묻고, 나중에 "Jev 키 등록해줘" 라고 해도 같은 절차다 — 키는 대화로 받지 않고 사용자가 입력 창(`node scripts/jev-key.mjs`)에 직접 넣는다.
 
@@ -18,7 +18,7 @@ Jev 키(선택 · 사람마다 본인 키)는 첫 실행 7-2단계가 묻고, �
 
 **담당 레포·에이전트·라우팅은 팩에 있다 — `pack/ROUTING.md` 를 먼저 읽는다**(Claude Code 는 `CLAUDE.md` 가 자동으로 불러온다). 기계 정본은 팩의 `pack.json`(코어 `athena.config.json` 의 `pack` 이 가리키는 폴더). 경로는 어디서나 `repos/<레포>`이며 `scripts/setup.sh`가 심볼릭 링크를 만든다. 팩 파일은 `athena pack link` 가 코어의 정해진 자리(`.claude/agents`·`docs/knowledge/<레포>`·`scripts/verify/<레포>.sh` …)에 링크로 건다.
 
-**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 **팩마다 본체가 따로**다 — 주 본체 `~/athena`(main 브랜치 · 정비는 여기서만)와 팩 본체 `~/athena-<id>`(같은 git 저장소의 워크트리 · 브랜치 없이 배포 커밋)가 각자 팩 하나에 고정되어 동시에 켜진다. 본체 안의 `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **그 본체 팩**의 데이터(`~/athena-data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 다른 팩은 `bin/athena pack open <id>` 로 그 본체를 열고(없으면 만든다) 그 폴더에서 켠다 · 코어 업데이트는 `bin/athena update`(모든 본체 한 번에 · 일하는 본체는 건너뜀) · 가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
+**여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다)면 **팩마다 본체가 따로**다 — 주 본체 `~/.athena-studio/core`(main 브랜치 · 정비는 여기서만)와 팩 본체 `~/.athena-studio/bodies/<id>`(같은 git 저장소의 워크트리 · 브랜치 없이 배포 커밋)가 각자 팩 하나에 고정되어 동시에 켜진다. 본체 안의 `pack`·`plans`·`issues`·`repos`·`.worktrees`·`archive` 는 **그 본체 팩**의 데이터(`~/.athena-studio/data/packs/<id>/…`)를 가리키는 링크다. 계획서·이슈는 언제나 본체 기준 논리 경로(`plans/…md`)로 다루고 실제 경로로 풀지 않는다. 아테나 세션은 본체에서만, 데이터 폴더에서는 세션을 켜지 않는다. 다른 팩은 `bin/athena pack open <id>` 로 그 본체를 열고(없으면 만든다) 그 폴더에서 켠다 · 코어 업데이트는 앱이 켜질 때 `bin/athena update --from <번들>`(앱이 들고 온 코어 · 모든 본체 한 번에 · 일하는 본체는 건너뜀) · 가져오기는 `bin/athena pack …`(`docs/pack.md` "여러 팩").
 
 **기준 브랜치 = 운영 반영분.** 문서와 지식 베이스는 이 브랜치(`pack.json` 의 `branch`)를 읽어 만든 것이다. 로컬 작업 트리가 그보다 뒤처져 있으면 문서와 코드가 다를 수 있는데, **그건 문서 오류가 아니다.** 작업 전 `git status --short --branch`로 얼마나 벌어졌는지 확인하고 보고에 적는다.
 
@@ -163,7 +163,7 @@ scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어·commit.sh 
 - **무거운 명령은 한 번에 하나씩, 컴퓨터가 버틸 때만** — `pnpm/npm install`·`next build`·`next dev`·`tsc`·테스트·`relay`·`pkg:link/unlink`·`docker build` 는 앞에 `<athena>/scripts/heavy.sh` 를 붙여 돌린다(한 대 공용 잠금 + 1분 부하가 코어×1.2 를 넘으면 내려갈 때까지 대기, 끝나거나 실패해도 잠금을 푼다). **도는 동안 감시해서** 자식 프로세스가 300개를 넘거나 메모리 여유가 15% 아래면 그 명령과 자식을 모두 끄고 137 로 끝낸다 — 그러면 폭주한 것이니 원인을 찾기 전에는 다시 돌리지 않고 알린다. 검증 스크립트(`scripts/verify/*.sh`)·`commit.sh` 검증은 스스로 줄을 선다. 기다리는 동안은 코드 작업을 먼저 하고, `next dev` 는 확인이 끝나면 바로 끈다(잠금을 쥐고 있다). 여러 에이전트를 동시에 띄워도 무거운 명령은 이걸로 자동 조절된다(2026-10-02 동시 빌드로 컴퓨터가 죽은 뒤)
 - **커밋은 사용자가 요청할 때만, `scripts/commit.sh` 로만 한다** — 지정 파일만·워크트리·보호 브랜치 제외·엄격 검증·계획서 `## Commits` 기록(`docs/knowledge/common/git.md`). **push·PR 도 사용자가 "PR 올려줘" 라고 할 때만, `scripts/ship.sh` 로만 한다** — 레포 하나짜리 작업만·미리보기를 보여 주고 base·제목을 확인받은 뒤 draft PR·제목·본문은 공통 형식(`git.md` "PR 제목·본문"). 여러 레포에 걸친 작업은 아테나가 순서를 정해 올린다
 - `.env*`, 토큰, 키 파일 내용은 출력·커밋하지 않는다. **토큰·키·비밀번호는 무조건 노출 금지.** 값은 어떤 경로로든 출력하지 않는다 — 파일 읽기(`.npmrc`·`.env*`·키 파일, `git show/diff/log` 포함), `npm/pnpm/yarn config get·list`, `printenv`·`env`, 프로세스 전체 인자(`pgrep -fl`·`ps aux`·`ps -ef` — 환경 변수가 섞여 나온다, `ps -axo pid=,comm=` 만), `echo $…TOKEN`, `gh auth token`, 로그·보고·커밋 메시지·계획서 모두. 확인이 필요하면 **있는지·참조 형태(`${…}`)·길이·HTTP 상태 코드만** 본다(`curl -s -o /dev/null -w '%{http_code}'`). 봐야 하면 `sed 's/_authToken=.*/_authToken=***/'` 로 가린 뒤. 실수로 노출되면 즉시 멈추고 사용자에게 알려 폐기·재발급을 권한다. 모든 세션(아테나·FE·reviewer)에 `scripts/hooks/secret-guard.py` 가 걸려 흔한 경로를 막는다(보안 경계는 아니다 — 규칙이 우선)
-- **아테나 스크립트에서 화면(pane·탭·workspace)은 `scripts/screen` 으로만 다룬다** — herdr 를 직접 부르지 않는다(화면 백엔드가 바뀌어도 스크립트가 그대로 돌게). 에이전트 pane 결과 읽기도 `scripts/screen pane read <id>`. 동작·백엔드·지킴이(`scripts/screen-lint.sh`)는 `docs/extending.md` "화면 계층"
+- **아테나 스크립트에서 화면(pane·탭·workspace)은 `scripts/screen` 으로만 다룬다** — Athena Studio 데몬 CLI 를 직접 부르지 않는다(화면 계층만 고치면 스크립트가 그대로 돌게). 에이전트 pane 결과 읽기도 `scripts/screen pane read <id>`. 동작·백엔드·지킴이(`scripts/screen-lint.sh`)는 `docs/extending.md` "화면 계층"
 
 ## 6. 보고 형식
 
@@ -180,7 +180,7 @@ scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어·commit.sh 
 - `done` **작업을 끝낼 때** — 보고 끝에 0~3줄. 끝낼 때는 **PR 미리보기를 보고할 때**(`ship.sh`), 여러 레포 작업(PR 은 아테나가 올린다)이면 아테나에 넘기는 마지막 결과 보고, PR 없이 끝나는 작업(조사·확인)은 마지막 결과를 보고할 때다. 요청마다 붙이지 않는다
 - `correction` **사용자가 바로잡을 때**("그거 아니야", "이렇게 해") — 가장 중요한 신호다. 그 레포·작업 방식에 대한 교정이면 그 자리에서 이슈를 만들고 한 줄로 알린다. 그 요청에만 해당하는 지시면 만들지 않는다
 - `repeat-error` **같은 오류가 3번 날 때**(코드 규칙 "오류 대응") — 원인이 레포 고유 함정이면
-- `review` **배우기 검토자** — **내 작업의 PR 이 모두 머지되면**(어느 브랜치로든 · 현황판이 5분마다 감지) 그 작업의 계획서(요청·결정·결과) · 대화 기록(줄여서 · 도구 결과 본문 빼고 · 비밀값 가림) · 머지된 PR 의 바뀐 코드 · 리뷰 댓글을 별도 Claude 가 읽고 빠진 것을 learn 이슈로 보탠다(`scripts/learn-review.mjs` — 역할은 `.claude/agents/learn-reviewer.md`, "📚 배우기 검토" pane 하나에서 차례로). 머지되지 않은 시도는 배우지 않는다. 에이전트가 이미 올린 것과 겹치면 덧붙이거나 건너뛴다 — 에이전트는 위 세 순간에 그대로 올린다
+- `review` **배우기 검토자** — **내 작업의 PR 이 모두 머지되면**(어느 브랜치로든 · 현황판이 5분마다 감지) 그 작업의 계획서(요청·결정·결과) · 대화 기록(줄여서 · 도구 결과 본문 빼고 · 비밀값 가림) · 머지된 PR 의 바뀐 코드 · 리뷰 댓글을 별도 Claude 가 읽고 빠진 것을 learn 이슈로 보탠다(`scripts/learn-review.mjs` — 역할은 `.claude/agents/learn-reviewer.md`, 뒤에서 도는 검토 하나가 차례로). 머지되지 않은 시도는 배우지 않는다. 에이전트가 이미 올린 것과 겹치면 덧붙이거나 건너뛴다 — 에이전트는 위 세 순간에 그대로 올린다
 
 무엇을 학습하고 어떻게 적나 — **정본 `docs/knowledge/common/learning.md`**(넣을 것 · 버릴 것 · 쉬운 말로 쓰는 법 · 중복이면 기존 줄 강화 · 스킬 후보). 학습 후보를 올리기 전에 읽는다. 요약: 다음 평범한 작업에서 다시 마주치고 모르면 실제로 잘못되는 것만, 대부분 0개가 정상, 이미 코드로 고친 버그·한 번 있었던 일·FE 밖 원인은 빼고, 대화 문장을 옮기지 말고 그 작업을 모르는 사람도 알게 쓴다
 

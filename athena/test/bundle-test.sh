@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 번들 코어 시험 — 앱이 코어를 git 번들로 들고 와 자기 데이터 폴더에서 도는 경우(스튜디오).
-# 계획서 plans/feature/20261019-스튜디오-코어-내장.md 4.1 · 5절. 진짜 ~/athena · ~/athena-data 는 건드리지 않는다
+# 진짜 스튜디오 집(~/.athena-studio)은 건드리지 않는다
 # (모든 것이 임시 폴더 안 · ATHENA_DATA_DIR 대신 주 본체 athena.config.json 의 dataDir · 끝나면 지운다).
 #
 # 사용: test/bundle-test.sh          → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -20,7 +20,7 @@ ok()   { PASS=$((PASS+1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ✖ %s\n' "$1"; [ -n "${2:-}" ] && printf '      %s\n' "$2" | head -c 900 && echo; }
 check() { if eval "$2"; then ok "$1"; else bad "$1" "${3:-}"; fi; }
 section() { printf '\n%s\n' "$1"; }
-unset ATHENA_AGENT HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_SOCKET ATHENA_STUDIO ATHENA_BOARD_PORT ATHENA_PACK_FAIL_AT ATHENA_CONTRACT ATHENA_RELINK_FAIL_AT ATHENA_DATA_DIR
+unset ATHENA_AGENT ATHENA_STUDIO ATHENA_BOARD_PORT ATHENA_PACK_FAIL_AT ATHENA_CONTRACT ATHENA_RELINK_FAIL_AT ATHENA_DATA_DIR
 export ATHENA_SCREEN=none ATHENA_BOARD_NO_BROWSER=1 ATHENA_HEAVY_LOCK="$WORK/heavy.lock"
 export GIT_AUTHOR_NAME=athena-test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=athena-test GIT_COMMITTER_EMAIL=test@example.invalid
 PORT_BASE=48600
@@ -137,10 +137,10 @@ kill "$CB" 2>/dev/null; wait "$CB" 2>/dev/null
 R="$(J "$CORE" pack open globex)"
 check "비면 열 때 따라잡음(C2)" '[ "$(echo "$R" | field updated.to)" = "$C2" ] && [ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C2" ]' "$R"
 
-section "백업 기본 자리 — 다른 데이터 폴더면 <데이터>/backups/packs"
+section "백업 기본 자리 — <데이터>/backups/packs"
 R="$(J "$BODY_G" pack backup --with-work)"
 check "pack backup --with-work(--out 없음) → <데이터>/backups/packs" 'case "$(echo "$R" | field file)" in "$DATA/backups/packs/"*) [ -f "$(echo "$R" | field file)" ] ;; *) false ;; esac' "$R"
-check "기본 데이터 폴더(~/athena-data)면 ~/athena-pack-backups 그대로" '[ "$(cd "$CORE" && node -e "import(\"./scripts/lib/config.mjs\").then((m) => console.log(m.defaultBackupDir(require(\"os\").homedir() + \"/athena-data\")))")" = "$HOME/athena-pack-backups" ]'
+check "기본 데이터 폴더(~/.athena-studio/data)도 <데이터>/backups/packs" '[ "$(cd "$CORE" && node -e "import(\"./scripts/lib/config.mjs\").then((m) => console.log(m.defaultBackupDir(m.DEFAULT_DATA_DIR)))")" = "$HOME/.athena-studio/data/backups/packs" ]'
 check "portBase 가 없거나 이상하면 4700(js · 파이썬 같은 판정)" '[ "$(cd "$CORE" && node -e "import(\"./scripts/lib/config.mjs\").then((m) => console.log([m.portBaseOf({}), m.portBaseOf({ portBase: \"4800\" }), m.portBaseOf({ portBase: 80 }), m.portBaseOf({ portBase: 4800 })].join(\" \")))")" = "4700 4700 4700 4800" ] && [ "$(python3 -c "import sys; sys.path.insert(0, sys.argv[1] + \"/scripts/lib\"); from athena_config import port_base; print(port_base({}), port_base({\"portBase\": \"4800\"}), port_base({\"portBase\": 80}), port_base({\"portBase\": 4800}))" "$CORE")" = "4700 4700 4700 4800" ]'
 
 printf '\n통과 %d · 실패 %d%s\n' "$PASS" "$FAIL" "$([ "${KEEP:-}" = 1 ] && echo " · 임시 폴더 $WORK")"

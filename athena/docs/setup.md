@@ -1,10 +1,10 @@
 # 새 회사 첫 실행 (정본 — 도구 무관)
 
 아테나 폴더에서 Claude Code 든 Codex 든 처음 켰는데 **팩이 없으면**(`athena.config.json` 이 없거나 `pack` 이 없거나, 팩 `pack.json` 의 `repos` 가 비었으면) 이 절차를 돈다.
-- **herdr 에서 athena 폴더로 `claude`·`codex` 를 켜기만 하면 된다** — 세션 시작 훅이 화면을 세팅하고(`scripts/hooks/workspace-up.py` → `athena-up.sh`), 끝나면 그 pane 에 첫 실행 지시를 대신 입력한다(Claude `/setup` · Codex "docs/setup.md 절차를 0단계부터"). 에이전트가 입력을 기다릴 때(herdr `agent_status` idle)만, 새로 켠 세션에서만 보내고, 사용자가 먼저 말을 걸었으면 보내지 않는다(결과는 `$TMPDIR/hermes-up.log`)
+- **Athena Studio 창의 pane 에서 아테나 본체 폴더로 `claude`·`codex` 를 켜기만 하면 된다** — 세션 시작 훅이 화면을 세팅하고(`scripts/hooks/workspace-up.py` → `athena-up.sh`), 끝나면 그 pane 에 첫 실행 지시를 대신 입력한다(Claude `/setup` · Codex "docs/setup.md 절차를 0단계부터"). 에이전트가 입력을 기다릴 때(화면이 본 `agent_status` idle)만, 새로 켠 세션에서만 보내고, 사용자가 먼저 말을 걸었으면 보내지 않는다(결과는 `$TMPDIR/hermes-up.log`)
 - Claude Code: 훅은 `.claude/settings.json`, 안내는 `scripts/hooks/setup-check.py`, `/setup` 스킬이 이 문서를 따른다
 - Codex: 훅은 `.codex/hooks.json`(같은 스크립트를 `--tool codex` 로 — 처음 켤 때 폴더·훅을 믿을지 한 번 묻는다). 훅이 안 돌면 `AGENTS.md` 맨 앞 "첫 실행" 이 이 문서로 보낸다
-- herdr 밖이면 화면 세팅·자동 입력 없이 안내만 한다 — 아무 말이나 입력하면 시작한다
+- Studio pane 밖(일반 터미널)이면 화면 세팅·자동 입력 없이 안내만 한다 — 아무 말이나 입력하면 시작한다
 - 바깥 도구가 띄운 창(환경 변수 `ATHENA_AGENT` 가 있음 — 예: 서버의 관리 창)에서는 돌지 않는다
 
 레포 폴더: 사용자가 준 폴더(없으면 `athena.config.json` 의 `reposRoot`, 그것도 없으면 `..`)
@@ -21,11 +21,11 @@
 ## 0. 이미 팩이 있는 회사인가
 **여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다 — `docs/pack.md` "여러 팩")면 먼저 `bin/athena pack status --json` 을 본다. `current.empty: true` 는 `pack new` 로 만든 **빈 팩 자리**다 — 이 /setup 이 그 자리에 팩을 만든다(3단계 `athena init` 이 `pack/`·`<팩 데이터>/local.json` 에 쓰고 자리 이름을 회사 이름으로 바꾼다).
 - **빈 팩 자리면 0단계를 건너뛴다** — `pack new` 는 "새로 만들기" 를 고른 뒤에만 불린다(스튜디오 [새로 만들기] · CLI). 이미 있는 팩은 스튜디오 [가져오기]·`pack inspect`/`pack import` 가 맡는다. 1단계부터
-- 취소하려면(사용자가 그만두면) 이 세션을 끝내고 **다른 본체**(보통 `~/athena`)에서 `bin/athena pack discard <이 자리 id>` — 빈 자리와 이 본체(`~/athena-new-…`)를 지운다(팩마다 본체 · `docs/pack.md` "여러 팩")
+- 취소하려면(사용자가 그만두면) 이 세션을 끝내고 **다른 본체**(보통 주 본체 `~/.athena-studio/core`)에서 `bin/athena pack discard <이 자리 id>` — 빈 자리와 이 본체(`~/.athena-studio/bodies/new-…`)를 지운다(스튜디오는 팩 메뉴에서 같은 일을 한다)(팩마다 본체 · `docs/pack.md` "여러 팩")
 
 사용자에게 묻는다 — "팩 레포가 이미 있나요?" · 선택지 `있다 — 주소 입력`(clone 주소를 받는다) / `없다 — 새로 만든다`.
 - 있다(옛 구조): `git clone <주소> packs/<회사>` → `athena.config.json` 에 `{ "pack": "packs/<회사>", "reposRoot": ".." }` → `bin/athena pack link` → `scripts/setup.sh`(repos/ 링크) → 6단계(검증) → 7-2단계(Jev 키) → 보고하고 끝
-- 있다(여러 팩 구조): `bin/athena pack inspect <주소> --json` → `bin/athena pack import <token> --new` → `bin/athena pack open <id>`(그 팩 본체 `~/athena-<id>` 를 만든다) → 6단계(그 본체에서 `scripts/verify/…`) → 7-2단계 → "그 본체 폴더에서 아테나를 켜세요" 로 보고하고 끝. 빈 자리에서 시작했으면 그 자리는 위 "취소" 처럼 지운다
+- 있다(여러 팩 구조): `bin/athena pack inspect <주소> --json` → `bin/athena pack import <token> --new` → `bin/athena pack open <id>`(그 팩 본체 `~/.athena-studio/bodies/<id>` 를 만든다) → 6단계(그 본체에서 `scripts/verify/…`) → 7-2단계 → "그 본체 폴더에서 아테나를 켜세요" 로 보고하고 끝. 빈 자리에서 시작했으면 그 자리는 위 "취소" 처럼 지운다
 
 ## 1. 레포 찾기
 `bin/athena init --scan [--root <폴더>] [--depth <n>]` — 표를 그대로 보여 준다. 레포 폴더 아래 3단계(팀·회사 폴더로 묶여 있어도)까지 찾고, 같은 레포의 워크트리는 하나로 친다. 이름이 겹치면 위 폴더 이름을 붙인다(`teamA-web`). 추정(종류 single·monorepo·packages · 층 fe·be · 기준 브랜치 · 작업 base · 앱별 브랜치 · GitHub 조직)이다. 바로 아래가 아닌 레포의 위치는 3단계가 이 컴퓨터 설정(`athena.config.json` `repoPaths`)에 적는다.
@@ -74,7 +74,7 @@
 ## 7-2. (선택) Jev 키 — 사람마다 본인 키
 Jev(TypeSafe 의 판정 모델)는 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정에 쓴다(`docs/knowledge/common/learning.md` 6절). **없어도 그대로 돈다.** 유료라 키는 사람마다 본인 것(사용량은 키 주인에게 청구 · 나눠 쓰지 않는다).
 사용자에게 묻는다 — "TypeSafe Jev 키가 있나요?" · 선택지 `있다 — 지금 등록`(description: 옆에 뜨는 입력 창에 직접 붙여 넣는다 · 대화창에는 넣지 않는다) / `없다 · 나중에`(description: 없어도 그대로 돈다 · 키가 생기면 "Jev 키 등록해줘").
-- 있다: **키를 대화로 받지 않는다.** herdr 면 `scripts/screen pane split --target focused --direction down --cwd <athena> --format id` 로 입력 창을 열고(나온 pane id) `scripts/screen pane run <id> node scripts/jev-key.mjs` — 사용자가 그 창에 붙여 넣고 Enter. 맞는 키인지 그 자리에서 확인하고(틀리면 저장 안 함) `~/.config/athena/typesafe.key`(이 컴퓨터에만 · 권한 600)에 저장한다. 끝나면 `node scripts/jev-key.mjs --status` 로 **있는지·길이만** 확인하고 그 창을 닫는다(`scripts/screen pane close <id>`). herdr 밖이면 새 터미널에서 `node scripts/jev-key.mjs` 를 직접 돌리라고 안내한다
+- 있다: **키를 대화로 받지 않는다.** Studio pane 안이면 `scripts/screen pane split --target focused --direction down --cwd <athena> --format id` 로 입력 창을 열고(나온 pane id) `scripts/screen pane run <id> node scripts/jev-key.mjs` — 사용자가 그 창에 붙여 넣고 Enter. 맞는 키인지 그 자리에서 확인하고(틀리면 저장 안 함) `~/.config/athena/typesafe.key`(이 컴퓨터에만 · 권한 600)에 저장한다. 끝나면 `node scripts/jev-key.mjs --status` 로 **있는지·길이만** 확인하고 그 창을 닫는다(`scripts/screen pane close <id>`). Studio pane 밖이면 새 터미널에서 `node scripts/jev-key.mjs` 를 직접 돌리라고 안내한다
 - 사용자가 키를 대화창에 붙여 넣었으면 노출로 본다 — 그 값은 쓰지 않고, 콘솔에서 폐기·재발급한 뒤 입력 창으로 다시 넣자고 알린다(AGENTS.md 5절)
 - 나중에 — **"Jev 키 등록해줘"·"Jev 키 바꿔줘"** 도 이 절 그대로(새 키를 넣으면 덮어쓴다). "Jev 키 지워줘" 는 `node scripts/jev-key.mjs --remove`. 등록·지우기는 현황판·배우기 검토를 다시 켜지 않아도 다음 판정부터 먹는다. 환경 변수 `TYPESAFE_API_KEY` 가 있으면 그게 먼저다
 

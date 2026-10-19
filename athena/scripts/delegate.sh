@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 에이전트를 **보이는 화면 pane**(herdr · Athena Studio — scripts/screen)에서 연다. 아테나가 Agent 도구(백그라운드) 대신 쓴다.
+# 에이전트를 **보이는 화면 pane**(Athena Studio — scripts/screen)에서 연다. 아테나가 Agent 도구(백그라운드) 대신 쓴다.
 #
 # **계획서 없이는 띄우지 않는다** — 모든 작업은 계획서 하나에 묶인다 (AGENTS.md 5절)
 #   --plan <plans/…md>          이미 있는 계획서(정식·경량)에 묶는다
@@ -80,7 +80,7 @@ fi
 PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 case "$PLAN" in plans/*.md) ;; *) echo "계획서는 plans/ 아래 .md 여야 한다: $PLAN" >&2; exit 2 ;; esac
 [ -f "$ATHENA_DIR/$PLAN" ] || { echo "계획서가 없다: $PLAN" >&2; exit 2; }
-# 자동 리뷰는 정식 계획서(plans/{feature,bugfix,refactor}/ — 여러 레포 작업도 정식이다)만. 경량(plans/task/)은 "리뷰할까요?" 한 줄 — 사용자가 "리뷰해줘" 할 때만(계획서 D3)
+# 자동 리뷰는 정식 계획서(plans/{feature,bugfix,refactor}/ — 여러 레포 작업도 정식이다)만. 경량(plans/task/)은 "리뷰할까요?" 한 줄 — 사용자가 "리뷰해줘" 할 때만
 case "$PLAN" in
   plans/task/*)
     REVIEW_RULE="코드를 바꾼 요청이 끝나 보고하면 리뷰를 띄우지 않고 보고 끝에 '리뷰할까요?' 한 줄만 붙인다(경량 계획서 — 자동 리뷰는 정식·여러 레포 작업만). 사용자가 '리뷰해줘' 라고 할 때만 띄운다. "
@@ -254,7 +254,7 @@ if [ -z "$PANE" ]; then
 fi
 sleep 1
 
-# `pane run`(화면 계층 — herdr 계약 그대로)은 인자를 따옴표 없이 셸 명령줄로 이어붙인다.
+# `pane run`(화면 계층)은 인자를 따옴표 없이 셸 명령줄로 이어붙인다.
 # 프롬프트를 그대로 넘기면 공백에서 단어가 쪼개지고 ( ) ! * 가 셸에 먹혀
 # 에이전트가 엉뚱한 프롬프트를 받는다(실제로 겪음). 그래서 러너 스크립트 한 개만 넘긴다.
 PROMPT_FILE="$(mktemp -t hermes-prompt)" || { echo "mktemp 실패"; exit 1; }

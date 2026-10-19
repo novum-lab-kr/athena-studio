@@ -26,8 +26,8 @@ def body_config(athena_dir):
 
 
 def data_dir(athena_dir):
-    """사용자 데이터 폴더 — ATHENA_DATA_DIR → 본체 설정 dataDir → ~/athena-data (config.mjs dataDir 와 같다)."""
-    value = os.environ.get('ATHENA_DATA_DIR') or body_config(athena_dir).get('dataDir') or os.path.join(os.path.expanduser('~'), 'athena-data')
+    """사용자 데이터 폴더 — ATHENA_DATA_DIR → 본체 설정 dataDir(스튜디오가 채운다) → ~/.athena-studio/data (config.mjs dataDir 와 같다)."""
+    value = os.environ.get('ATHENA_DATA_DIR') or body_config(athena_dir).get('dataDir') or os.path.join(os.path.expanduser('~'), '.athena-studio', 'data')
     return os.path.normpath(os.path.join(athena_dir, os.path.expanduser(value)))
 
 

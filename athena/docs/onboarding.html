@@ -186,7 +186,7 @@
           <tr><td>Node + nvm</td><td>검증·현황판·QA. 레포마다 <code>.nvmrc</code> 버전이 다릅니다</td><td>검증이 경고·실패</td></tr>
           <tr><td>pnpm</td><td>레포 설치·빌드</td><td>검증·빌드 불가</td></tr>
           <tr><td>gh</td><td>push·draft PR, 현황판의 PR 머지 감지. <code>gh auth login</code> 까지</td><td>PR 을 못 올림</td></tr>
-          <tr><td>herdr</td><td>에이전트를 옆 pane 에 띄워 일하는 모습을 보여 줍니다</td><td>pane 대신 "직접 실행하세요" 안내만 나옴</td></tr>
+          <tr><td>Athena Studio</td><td>아테나 코어를 들고 와 풀고, 에이전트를 옆 pane 에 띄워 일하는 모습을 보여 줍니다 · 현황판 · 에이전트 모니터</td><td>앱 밖 터미널이면 pane 대신 "직접 실행하세요" 안내만 나옴</td></tr>
         </tbody>
       </table></div>
 
@@ -203,32 +203,28 @@
 
     <section id="install">
       <h2><span class="no">02</span>설치</h2>
-      <p class="sub">대략 10분. 레포를 이미 받아 두었다면 더 짧습니다.</p>
+      <p class="sub">Athena Studio 앱을 켜면 대부분 끝납니다. 레포를 이미 받아 두었다면 더 짧습니다.</p>
       <ol class="steps">
         <li>
-          <h3>레포를 한 폴더에 나란히 받기</h3>
-          <p>아테나는 <b>자기 상위 폴더에 담당 레포들이 나란히 있다</b>고 봅니다(<code>athena.config.json</code> 의 <code>reposRoot: ".."</code>). 담당 레포 목록은 <b>팩</b>의 <code>pack.json</code>(사람이 읽는 표는 <code>pack/ROUTING.md</code>)에 있습니다. 맡지 않는 레포는 없어도 됩니다. 그 레포 담당 에이전트만 쉬게 됩니다.</p>
-          <div class="code"><pre class="tree">~/work/
-├── <span class="me">athena/</span>                <span class="c"># 코어 (이 레포, 폴더 이름은 자유)</span>
-│   └── packs/&lt;회사&gt;/      <span class="c"># 팩 (별도 레포를 여기에 clone)</span>
-├── &lt;레포 A&gt;/              <span class="c"># 담당 레포들 — 팩 pack.json 의 repos[].name</span>
-├── &lt;레포 B&gt;/
-└── …</pre></div>
-          <div class="code"><button class="copy" type="button">복사</button><pre>cd ~/work
-git clone &lt;코어 레포 주소&gt; athena
-git clone &lt;팩 레포 주소&gt; athena/packs/&lt;회사&gt;
-<span class="c"># 팩이 없는 새 회사는 위 줄을 건너뛴다 — claude 에서 /setup</span>
-<span class="c"># 담당 레포도 같은 폴더에 clone (이미 있으면 그대로 둔다)</span></pre></div>
+          <h3>Athena Studio 켜기</h3>
+          <p><b>아테나 코어는 Athena Studio 앱이 들고 옵니다</b> — 따로 받거나 설치할 것은 없습니다. 처음 켜면 앱이 코어를 스튜디오 집에 풀고 창을 엽니다. 코어 업데이트도 앱과 함께 옵니다(새 앱을 켜면 본체마다 맞춥니다 · 일하는 본체는 건너뛰고 다음에).</p>
+          <div class="code"><pre class="tree">~/.athena-studio/
+├── <span class="me">core/</span>                  <span class="c"># 주 본체 (아테나 코어 · git 저장소 · main)</span>
+├── bodies/&lt;id&gt;/           <span class="c"># 팩 본체 (팩마다 하나 — 코어가 만든다)</span>
+└── data/                  <span class="c"># 데이터 폴더 (팩 · 계획서 · 이슈 · 학습 대기열 · 백업)</span></pre></div>
+        </li>
+        <li>
+          <h3>팩 고르기 · 담당 레포</h3>
+          <p>담당 레포 목록은 <b>팩</b>의 <code>pack.json</code>(사람이 읽는 표는 <code>pack/ROUTING.md</code>)에 있습니다. 팩은 앱의 팩 메뉴(<code>▣ &lt;팩&gt; ▾</code>)·시작 화면에서 고릅니다 — 팩이 있는 회사는 <b>[팩 가져오기]</b>(압축 파일 · 팩 폴더 · git 레포), 새 회사는 <b>[새 팩 만들기]</b> 뒤 <code>/setup</code>. 담당 레포는 <code>reposRoot</code>(스튜디오는 홈 폴더) 아래에 clone 해 둡니다. 맡지 않는 레포는 없어도 됩니다. 그 레포 담당 에이전트만 쉬게 됩니다.</p>
         </li>
         <li>
           <h3>아테나 켜기</h3>
-          <div class="code"><button class="copy" type="button">복사</button><pre><span class="c"># herdr 를 쓰면 herdr 터미널 안에서</span>
-cd athena
+          <div class="code"><button class="copy" type="button">복사</button><pre><span class="c"># Studio 창의 athena 작업 공간 pane 에서</span>
 claude</pre></div>
           <p>첫 화면에서 <b>"현황 알려줘"</b> 라고 해 보세요. 레포별 브랜치와 변경 상태가 나오면 준비가 끝난 겁니다.</p>
-          <div class="note">따로 셋업하지 않아도 됩니다. <code>claude</code> 를 켜면 옆 폴더의 담당 레포를 찾아 <code>repos/&lt;레포&gt;</code> 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻습니다. 팩이 없는 새 회사라면 <code>/setup</code> 이 레포 찾기부터 안내합니다.</div>
-          <p><b>herdr 안에서 켜면 athena workspace 가 늘 같은 모양으로 잡힙니다.</b> 왼쪽 위는 아테나·에이전트 대화, 오른쪽 끝은 Explorer(위)·가이드 메뉴(아래), 하단 한 줄은 🛰 에이전트 모니터 | 📋 현황판 | 📚 배우기 검토. 없는 것만 띄우고 흐트러졌으면 제자리로 돌립니다. 사이드바 패치판(바뀐 파일 클릭 → diff)도 이때 없으면 넣습니다 — 레포에 미리 빌드해 둔 실행 파일을 쓰므로 따로 설치할 것은 없습니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. herdr 에서는 레포마다 <b>workspace</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
-          <p><b>QA 시뮬레이션을 쓸 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·herdr…)도 점검해 줍니다(사이드바 패치판도 같이 확인합니다).</p>
+          <div class="note">따로 셋업하지 않아도 됩니다. <code>claude</code> 를 켜면 <code>reposRoot</code> 아래의 담당 레포를 찾아 <code>repos/&lt;레포&gt;</code> 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻습니다. 팩이 없는 새 회사라면 <code>/setup</code> 이 레포 찾기부터 안내합니다.</div>
+          <p><b>Studio 창 안에서 켜면 화면이 저절로 잡힙니다.</b> 현황판은 뒤에서 뜨고(앱 📋 현황판 탭이 보여 줍니다), 에이전트 로그는 작업 창 가운데 맨 아래 🛰 AGENT MONITOR 칸이 보여 줍니다. 오른쪽 Explorer 에서 바뀐 파일을 누르면 diff 가 뜹니다. 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드 메뉴는 <code>/guide</code> 로 부를 때만 뜹니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. 작업 창에서는 레포마다 <b>작업 공간(workspace)</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
+          <p><b>QA 시뮬레이션을 쓸 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·claude…)도 점검해 줍니다.</p>
           <div class="code"><button class="copy" type="button">복사</button><pre>scripts/setup.sh</pre></div>
         </li>
       </ol>
@@ -414,7 +410,7 @@ claude</pre></div>
         <thead><tr><th>증상</th><th>확인할 것</th></tr></thead>
         <tbody>
           <tr><td>레포가 연결되지 않았다고 나옴</td><td><code>ls -l repos/</code> 로 링크 대상 확인 → <code>scripts/setup.sh --root &lt;경로&gt;</code></td></tr>
-          <tr><td>"herdr 밖입니다"</td><td>herdr 터미널 안에서 <code>claude</code> 를 켰는지</td></tr>
+          <tr><td>"Athena Studio 화면 밖입니다"</td><td>Studio 창의 pane 안에서 <code>claude</code> 를 켰는지</td></tr>
           <tr><td>Node 버전 경고</td><td>그 레포 폴더에서 <code>nvm use</code></td></tr>
           <tr><td><code>pnpm install</code> 401·403</td><td><code>~/.npmrc</code> 의 패키지 레지스트리 토큰 권한(GitHub Packages 면 <code>read:packages</code>)과 만료일</td></tr>
           <tr><td>타입 검사가 "건너뜀"</td><td>Orval·Relay 생성물이 없음. 레포의 생성 명령을 먼저</td></tr>
@@ -422,7 +418,7 @@ claude</pre></div>
           <tr><td>명령이 137 로 끝남</td><td>프로세스·메모리 폭주로 감시가 끊은 것. 다시 돌리기 전에 원인부터</td></tr>
           <tr><td>세션이 끊김</td><td>다시 켜고 "○○ 작업 이어서". 진행 상황은 계획서 Checkpoint 에 남아 있습니다</td></tr>
           <tr><td>대화가 길어져 압축됨</td><td>할 일 없음. 압축 직전 상태가 계획서에 자동으로 한 줄 남고, 압축 뒤 에이전트가 계획서부터 다시 읽고 이어 갑니다</td></tr>
-          <tr><td>"📚 배우기 검토" pane 이 떠 있음</td><td>머지된 내 PR 에서 배운 것을 뽑는 중입니다. 끝나면 닫아도 됩니다(다음에 PR 이 머지되면 다시 뜹니다)</td></tr>
+          <tr><td>배우기 검토가 돌고 있는지 궁금함</td><td>머지된 내 PR 에서 배운 것을 뒤에서 뽑습니다(pane 은 없습니다). 결과는 현황판 [학습] 탭에 뜹니다</td></tr>
         </tbody>
       </table></div>
     </section>

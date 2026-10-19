@@ -40,26 +40,30 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
 | `reviewer` | 전체 (읽기 전용) | 계획서 대비 검증 · 교차 정합성 |
 | `learn-reviewer` | 끝난 작업 (읽기 전용) | 배우기 검토자 — 직접 부르지 않음, 내 PR 이 머지되면 돈다 |
 
-**코어와 팩.** 이 레포(코어)는 흐름·훅·현황판·학습 루프·공통 규칙만 갖고 회사 이름을 모른다. 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅은 **팩**(`packs/<회사>/`, 별도 레포)에 있고 `athena pack link` 가 코어의 정해진 자리에 링크로 건다. 레포 목록·기준 브랜치의 정본은 팩의 `pack.json`. 레포는 `repos/<레포>` 링크로 접근하고, `claude` 를 켤 때 옆 폴더에서 알아서 연결한다.
+**코어와 팩.** 이 폴더(코어 — Athena Studio 앱이 들고 와 `~/.athena-studio/core` 에 푼다)는 흐름·훅·현황판·학습 루프·공통 규칙만 갖고 회사 이름을 모른다. 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅은 **팩**(`packs/<회사>/`, 별도 레포)에 있고 `athena pack link` 가 코어의 정해진 자리에 링크로 건다. 레포 목록·기준 브랜치의 정본은 팩의 `pack.json`. 레포는 `repos/<레포>` 링크로 접근하고, `claude` 를 켤 때 옆 폴더에서 알아서 연결한다.
 
 ## 시작하기
 
-```bash
-git clone <코어 레포 주소> athena && cd athena
-git clone <팩 레포 주소> packs/<회사>      # 팩이 있는 회사 — 없으면 건너뛰고 claude 에서 /setup
-echo '{ "pack": "packs/<회사>", "reposRoot": ".." }' > athena.config.json
-bin/athena pack link                            # 팩 파일을 코어 자리에 링크로
-claude              # (또는 codex) herdr 안이면 화면 세팅 → 팩이 없으면 첫 실행(/setup)이 저절로 시작된다 · 레포 연결도 자동
+**Athena Studio 앱을 켜면 끝이다.** 앱이 들고 온 코어를 스튜디오 집에 풀고 창을 연다 — 따로 받거나 설치할 것은 없다.
+
 ```
+~/.athena-studio/core          주 본체(이 코어 · git 저장소 · main)
+~/.athena-studio/bodies/<id>   팩 본체(팩마다 하나 — 코어가 만든다)
+~/.athena-studio/data          데이터 폴더(팩 · 계획서 · 이슈 · 학습 대기열 · 백업)
+```
+
+- 팩은 앱의 팩 메뉴(`▣ <팩> ▾`)·시작 화면에서 만들거나(새 회사) 가져온다(압축 파일 · 팩 폴더 · git 레포)
+- 창의 아테나 pane 에서 `claude`(또는 `codex`)를 켜면 화면 세팅 → 팩이 없으면 첫 실행(/setup)이 저절로 시작된다 · 레포 연결도 자동
+- 코어 업데이트는 앱과 함께 온다 — 새 앱을 켜면 `bin/athena update --from <번들>` 로 본체마다 맞춘다(일하는 본체는 건너뛴다)
 
 | 이렇게 하면 | 일어나는 일 |
 |---|---|
 | 그냥 말하기 — "목록 페이지네이션 버그 원인 찾아줘" | 아테나가 라우팅 → 계획서 → 디스패치 → 리뷰 → 보고 |
-| `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램 (팩이 없으면 herdr 에서 켤 때 저절로 시작된다) |
+| `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램 (팩이 없으면 Studio pane 에서 켤 때 저절로 시작된다) |
 | `/call <에이전트>` | 담당 에이전트를 pane 에 바로. 요청·"커밋해줘"·"PR 올려줘" 까지 그 pane 에서 |
 | `/board` | 현황판(`localhost:4700`) — 서비스 · 정비 · QA · 학습 · 아카이브 |
 | `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 플레이북 · 다이어그램 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
-| `/monitor` | 백그라운드·pane 에이전트 로그 실시간 |
+| `/monitor` | 백그라운드·pane 에이전트 로그 실시간 — Studio 는 앱 아래 AGENT MONITOR 칸 |
 | `/sync` | 운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이) |
 | `/diagram` | 서비스 다이어그램 다시 그리기 |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" |
@@ -85,7 +89,7 @@ claude              # (또는 codex) herdr 안이면 화면 세팅 → 팩이 �
 
 ## 구조
 
-코어(이 레포)와 팩(`packs/<회사>/`, 별도 레포)으로 나뉜다. 팩 파일은 `bin/athena pack link` 가 코어의 정해진 자리에 **링크**로 건다 — 아래 "(팩)" 표시가 그런 자리다. 팩 형식은 `docs/pack.md`.
+코어(이 폴더)와 팩(`packs/<회사>/` · 여러 팩 구조면 `<데이터>/packs/<id>/`, 별도 레포)으로 나뉜다. 팩 파일은 `bin/athena pack link` 가 코어의 정해진 자리에 **링크**로 건다 — 아래 "(팩)" 표시가 그런 자리다. 팩 형식은 `docs/pack.md`.
 
 ```
 athena/                        ← 코어
@@ -119,7 +123,7 @@ athena/                        ← 코어
 ├── issues/                    이슈·학습 후보 — 각자 로컬 (git 에 안 올라감 · 형식 docs/issues.md)
 ├── repos/                     담당 레포 링크 (각자 로컬, scripts/setup.sh)
 ├── packs/<회사>/              (옛 구조) 팩 레포 클론 (git 무시) — pack 링크가 가리킨다
-├── .pack-data → ~/athena-data/packs/<id>   (여러 팩 구조) 지금 팩 — pack·plans·issues·repos 는 이 아래를 가리키는 링크 (docs/pack.md "여러 팩")
+├── .pack-data → ~/.athena-studio/data/packs/<id>   (여러 팩 구조) 지금 팩 — pack·plans·issues·repos 는 이 아래를 가리키는 링크 (docs/pack.md "여러 팩")
 ├── test/                      여러 팩 시험(packs-test.sh) · fixture 팩(acme·globex)
 │
 └── scripts/
@@ -137,14 +141,13 @@ athena/                        ← 코어
     ├── 현황판 · 화면
     │   ├── board.sh · board/              현황판 서버·화면 (/board)
     │   ├── guide-menu.sh · guide-pane.sh  가이드 메뉴 (/guide)
-    │   ├── athena-up.sh · athena-layout.sh  athena workspace 고정 배치 — 세션 시작 때 도구 pane 띄우고 정리 · 사이드바 패치판
-    │   ├── monitor-pane.sh · agent-monitor.py  로그 모니터 (/monitor)
-    │   ├── screen · lib/screen.py · lib/screen.mjs  화면 계층 — pane·탭·workspace 는 여기로만 (지금 백엔드 herdr · ATHENA_SCREEN)
-    │   ├── screen-lint.sh · screen-check/  화면 계층 지킴이 · 가짜 herdr 회귀 검사
-    │   ├── herdr-sidebar-patch.sh · -build-bin.sh · -reopen.sh · -ensure.sh  herdr-sidebar 패치판 설치·빌드·Explorer 다시 띄우기 (patches/herdr-sidebar)
+    │   ├── athena-up.sh                   세션 시작 때 화면 세팅 — 현황판(뒤에서) · 첫 실행 지시 입력
+    │   ├── monitor-pane.sh · agent-monitor.py  로그 모니터 (/monitor — Studio 는 앱 AGENT MONITOR 칸)
+    │   ├── screen · lib/screen.py · lib/screen.mjs  화면 계층 — pane·탭·workspace 는 여기로만 (백엔드 studio · 밖이면 none · ATHENA_SCREEN)
+    │   ├── screen-lint.sh · screen-check/  화면 계층 지킴이 · 가짜 데몬 CLI 회귀 검사
     │   └── statusline.sh · mdview.py      상태바 · 터미널 마크다운 뷰어
     ├── 학습
-    │   ├── learn-review.mjs (+ -pane.sh)  배우기 검토자 — 머지된 내 PR 로 학습 후보
+    │   ├── learn-review.mjs               배우기 검토자 — 머지된 내 PR 로 학습 후보(뒤에서 돈다)
     │   ├── learn-curator.mjs              30일 안 쓴 스킬 정리 후보 (/sync 끝)
     │   ├── gotchas-check.mjs              낡은 공책 줄 · 나눌 때가 된 공책 정리 후보 (/sync 끝)
     │   └── learn-eval.mjs                 학습 품질 채점 (정답지는 팩)
@@ -154,11 +157,11 @@ athena/                        ← 코어
     │   └── check-diagrams.mjs · build-diagram-index.mjs · diagram-coverage.mjs
     ├── lib/                               설정 읽기(코어 + 팩 합치기) · 팩 링크 너머 git · init·scaffold
     ├── athena.mjs                         bin/athena 본체
-    ├── hooks/                             시작 점검(팩 없으면 /setup 안내) · workspace 배치 · 커밋·push 보호 · 비밀값 노출 막기 · 대화 압축 전후 계획서 저장
+    ├── hooks/                             시작 점검(팩 없으면 /setup 안내) · 화면 세팅 · 커밋·push 보호 · 비밀값 노출 막기 · 대화 압축 전후 계획서 저장
     └── setup.sh · archive-plans.sh · agent-context.py · branch-candidates.sh
 ```
 
-팩(`packs/<회사>/`, 별도 레포):
+팩(별도 레포 · 옛 구조는 `packs/<회사>/` · 여러 팩 구조는 `<데이터>/packs/<id>/pack`):
 
 ```
 packs/<회사>/

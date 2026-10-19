@@ -8,7 +8,7 @@
 // 두 가지 구조 (docs/pack.md "여러 팩")
 //   옛 구조(legacy) — athena.config.json 의 pack 이 본체 안 packs/<회사> 를 가리킨다. plans/·issues/ 는 본체의 실제 폴더
 //   여러 팩(packs)   — 본체의 활성 링크 .pack-data → <데이터>/packs/<id>. pack·plans·issues·repos·.worktrees … 는 그 아래를 가리키는 고정 링크
-// 문서 ID 는 두 구조 모두 본체 기준 논리 경로(plans/…md · issues/…md · archive/…) — 실제 경로(~/athena-data/…)로 풀지 않는다
+// 문서 ID 는 두 구조 모두 본체 기준 논리 경로(plans/…md · issues/…md · archive/…) — 실제 경로(<데이터>/packs/…)로 풀지 않는다
 import { createHash } from 'node:crypto'
 import { existsSync, lstatSync, readFileSync, readlinkSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
@@ -19,7 +19,7 @@ export const ATHENA_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../
 export const ACTIVE_LINK = '.pack-data'
 export const PACK_FORMAT_VERSION = 1   // 이 코어가 읽을 수 있는 pack.json formatVersion 최댓값
 // 이 코어가 읽고 쓸 수 있는 데이터 폴더 형식(<데이터>/config.json formatVersion) 범위 — 밖이면 쓰기 명령은 data-incompatible.
-// bin/athena update 는 대상 커밋의 이 줄을 읽어 형식이 바뀌는 업데이트인지 본다(글자 모양을 바꾸지 않는다 · 계획서 팩마다-본체 D10)
+// athena update --from 은 대상 커밋의 이 줄을 읽어 형식이 바뀌는 업데이트인지 본다(글자 모양을 바꾸지 않는다)
 export const DATA_FORMATS = [1, 1]
 
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
@@ -27,21 +27,22 @@ const isLink = (path) => { try { return lstatSync(path).isSymbolicLink() } catch
 const realOr = (path) => { try { return realpathSync(path) } catch { return path } }
 const expandHome = (path) => (path === '~' || path.startsWith('~/') ? join(homedir(), path.slice(2)) : path)
 
-// 본체 ID — 본체 실제 경로의 sha1 앞 12자(저장하지 않고 늘 같은 값 · 팩마다-본체 5.7)
+// 본체 ID — 본체 실제 경로의 sha1 앞 12자(저장하지 않고 늘 같은 값)
 export const bodyIdOf = (root = ATHENA_ROOT) => createHash('sha1').update(realOr(root)).digest('hex').slice(0, 12)
 
 // 본체 설정(athena.config.json) — 없으면 빈 값
 export const bodyConfig = (root = ATHENA_ROOT) => readJson(join(root, 'athena.config.json')) ?? {}
 
-// 사용자 데이터 폴더 — ATHENA_DATA_DIR → 본체 설정 dataDir → ~/athena-data (테스트는 ATHENA_DATA_DIR 로 따로)
-export const dataDir = (root = ATHENA_ROOT) => resolve(root, expandHome(process.env.ATHENA_DATA_DIR || bodyConfig(root).dataDir || join(homedir(), 'athena-data')))
+// 사용자 데이터 폴더 — ATHENA_DATA_DIR → 본체 설정 dataDir(스튜디오가 채운다) → ~/.athena-studio/data (테스트는 ATHENA_DATA_DIR 로 따로)
+export const DEFAULT_DATA_DIR = join(homedir(), '.athena-studio', 'data')
+export const dataDir = (root = ATHENA_ROOT) => resolve(root, expandHome(process.env.ATHENA_DATA_DIR || bodyConfig(root).dataDir || DEFAULT_DATA_DIR))
 
 // 데이터 폴더의 팩 목록·지금 팩·전환 세대(<데이터>/config.json)
 export const readRegistry = (data) => readJson(join(data, 'config.json')) ?? { formatVersion: 1, current: null, generation: 0, packs: {} }
 
-// ── 데이터 폴더마다 다른 손잡이(레지스트리 키 · 없으면 지금 동작 · 계획서 20261019-스튜디오-코어-내장 5절) ──
+// ── 데이터 폴더마다 다른 손잡이(레지스트리 키 · 없으면 지금 동작) ──
 // 현황판 포트 기준 — 레지스트리 portBase(주 본체 기본 포트 · 팩 본체는 +2 부터 2씩). 없거나 이상하면 4700
-// 두 앱(~/athena · 스튜디오)이 데이터 폴더를 따로 쓰면 포트 범위도 갈라 꺼진 상대 포트와 부딪히지 않게 한다
+// 데이터 폴더마다 포트 범위를 갈라 다른 데이터 폴더(시험 등)의 꺼진 포트와 부딪히지 않게 한다
 export const DEFAULT_PORT_BASE = 4700
 export const portBaseOf = (registry) => {
   const value = registry?.portBase   // 숫자만(파이썬 athena_config.port_base 와 같은 판정)
@@ -51,10 +52,8 @@ export const portBaseOf = (registry) => {
 export const bodiesDirOf = (data, registry) => (typeof registry?.bodiesDir === 'string' && registry.bodiesDir.trim()
   ? resolve(data, expandHome(registry.bodiesDir.trim()))
   : null)
-// 백업 기본 자리 — 기본 데이터 폴더(~/athena-data)면 지금처럼 ~/athena-pack-backups, 다른 데이터 폴더면 <데이터>/backups/packs
-export const defaultBackupDir = (data) => (realOr(data) === realOr(join(homedir(), 'athena-data'))
-  ? join(homedir(), 'athena-pack-backups')
-  : join(data, 'backups', 'packs'))
+// 백업 기본 자리 — <데이터>/backups/packs
+export const defaultBackupDir = (data) => join(data, 'backups', 'packs')
 
 // 경로 묶음 — 새 코드는 이걸 쓴다(옛 코드는 고정 링크 덕에 그대로 돈다)
 export const paths = (root = ATHENA_ROOT) => {
@@ -79,7 +78,7 @@ export const paths = (root = ATHENA_ROOT) => {
     // 새 워크트리는 팩 데이터 안 실제 경로로 — git 이 실제 경로를 기록하고, 팩을 갈아 끼워도 그 팩 폴더에 남는다(D4)
     worktrees: process.env.ATHENA_WORKTREE_ROOT || join(real, 'worktrees'),
     packId: basename(real),
-    // 세대는 팩마다(packs.<id>.generation · 팩마다-본체 5.7) — 다른 본체의 일이 이 본체 현황판을 stale 로 만들지 않게
+    // 세대는 팩마다(packs.<id>.generation) — 다른 본체의 일이 이 본체 현황판을 stale 로 만들지 않게
     generation: registry.packs?.[basename(real)]?.generation ?? 0,
     // 활성 링크가 지금 데이터 폴더 밖을 가리킨다(ATHENA_DATA_DIR 가 다른 값) — 쓰기 명령은 멈춘다
     dataMismatch: realOr(dirname(dirname(real))) !== realOr(data),
@@ -120,7 +119,7 @@ export const isSwitching = (root = ATHENA_ROOT) => {
 }
 
 // 현황판 포트 — 여러 팩 구조: 레지스트리 packs.<id>.boardPort(정본) → 본체 설정 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700
-// (앱이 물려준 환경 변수 하나가 모든 본체를 같은 포트로 만들지 않게 — Codex C8). 옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700
+// (앱이 물려준 환경 변수 하나가 모든 본체를 같은 포트로 만들지 않게). 옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700
 export const boardPort = (root = ATHENA_ROOT) => {
   const where = paths(root)
   if (where.mode === 'packs') {

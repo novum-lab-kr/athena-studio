@@ -2,7 +2,7 @@
 # 메인 체크아웃의 git 무시 로컬 파일(.env·.aws 키 등)을 워크트리로 복사한다.
 #
 # 왜: git worktree 는 추적 파일만 가져온다. .env·.aws/access-key.js 같은 무시 대상이 없으면
-# 워크트리에서 env 없이 빌드·dev 확인을 하게 된다(실제로 겪음 — issues/20261001-hermes-worktree-env-파일-미복사.md).
+# 워크트리에서 env 없이 빌드·dev 확인을 하게 된다(실제로 겪음).
 #
 # 사용:
 #   scripts/wt-copy-local.sh <메인 체크아웃> <워크트리>   new-branch.sh 가 워크트리를 만든 뒤 부른다

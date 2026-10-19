@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 공책(gotchas) 점검 — 낡은 줄과 길이·화면 몰림을 재서 "정리 후보"로 올린다. 공책 줄은 지우지 않는다.
- * 기준 정본: docs/knowledge/common/learning.md 7절 · 계획 plans/feature/20261012-공책-정리-낡은-줄-점검-화면별-나누기.md
+ * 기준 정본: docs/knowledge/common/learning.md 7절
  *
  *   node scripts/gotchas-check.mjs            # 미리보기 — 표만 출력, 아무것도 쓰지 않는다
  *   node scripts/gotchas-check.mjs --write    # 공책마다 정리 후보 이슈(issues/<날짜>-<영역>-learn-gotchas-tidy.md)를 만들거나 갱신

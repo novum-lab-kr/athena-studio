@@ -1,4 +1,4 @@
-// 여러 팩 — 팩마다 본체(계획서 plans/feature/20261018-팩마다-본체 5.7 · 1단계 20261018-여러-회사-팩 · docs/pack.md "여러 팩").
+// 여러 팩 — 팩마다 본체(docs/pack.md "여러 팩").
 //
 //   <본체>/.pack-data → <데이터>/packs/<id>       그 본체의 팩(본체를 만들 때 한 번 걸고 바꾸지 않는다 — attachPack)
 //   <본체>/pack · plans · issues · repos · …     고정 링크(.pack-data/… — 설치 때 한 번)
@@ -86,9 +86,9 @@ export const readJson = (path) => { try { return JSON.parse(readFileSync(path, '
 // 데이터 폴더 형식이 이 코어가 다루는 범위인가 — 밖이면 쓰지 않는다(D10)
 export const checkDataFormat = (registry) => {
   const version = registry.formatVersion ?? 1
-  if (version < DATA_FORMATS[0] || version > DATA_FORMATS[1]) throw new PackError('data-incompatible', `데이터 폴더 형식 ${version} 을 이 코어(${DATA_FORMATS.join('~')})가 다루지 못한다 — 본체를 업데이트한다(bin/athena update)`, { dataFormat: version, dataFormats: DATA_FORMATS })
+  if (version < DATA_FORMATS[0] || version > DATA_FORMATS[1]) throw new PackError('data-incompatible', `데이터 폴더 형식 ${version} 을 이 코어(${DATA_FORMATS.join('~')})가 다루지 못한다 — 앱을 업데이트해 코어를 맞춘다(update --from <번들>)`, { dataFormat: version, dataFormats: DATA_FORMATS })
 }
-// 레지스트리 고치기 — 잠금 안에서 읽기→수정→저장(동시에 고쳐도 잃지 않게 · Codex C2). mutate 의 반환값을 돌려준다
+// 레지스트리 고치기 — 잠금 안에서 읽기→수정→저장(동시에 고쳐도 잃지 않게). mutate 의 반환값을 돌려준다
 export const updateRegistry = (data, mutate) => {
   mkdirSync(data, { recursive: true })
   const release = takeLock(registryLockDir(data), `registry ${process.pid}`, { waitMs: 10_000, message: (owner) => `레지스트리 잠금을 10초 안에 잡지 못했다(pid ${owner.pid})` })
@@ -188,8 +188,8 @@ const currentOf = (root) => {
   return { id: where.packId, packId: pack.id ?? null, name: pack.name ?? where.packId, ...packLook(join(where.packDataReal, 'pack'), pack), generation: where.generation, ...(json ? {} : { empty: true }) }
 }
 
-// ── 팩마다 본체(계획서 20261018-팩마다-본체 5.7) ─────────────────────────
-// 본체 = 그 팩에 .pack-data 가 고정된 코어 체크아웃. 정본은 레지스트리 packs.<id>.body, 비어 있으면(주 본체 ~/athena 처음)
+// ── 팩마다 본체 ─────────────────────────
+// 본체 = 그 팩에 .pack-data 가 고정된 코어 체크아웃. 정본은 레지스트리 packs.<id>.body, 비어 있으면(주 본체 처음)
 // 부른 본체 → 같은 저장소의 체크아웃 목록(git worktree list)에서 .pack-data 가 그 팩인 것을 찾는다(레지스트리에 쓰지 않는다)
 export const realOr = (path) => { try { return realpathSync(path) } catch { return path } }
 export const bodyHasPack = (body, data, id) => isLink(join(body, ACTIVE_LINK)) && realOr(join(body, ACTIVE_LINK)) === realOr(join(data, 'packs', id))
@@ -251,7 +251,7 @@ export const listPacks = (root) => {
   const bodies = gitBodies(root)
   const scan = scanProcesses()
   const emptySlots = ids.filter((id) => !readPackJson(join(data, 'packs', id, 'pack'))).map((id) => ({ id, body: bodyOf(root, data, id, registry, bodies) }))
-  // dataDir — 실제 데이터 폴더(ATHENA_DATA_DIR → 본체 설정 dataDir → ~/athena-data · 결정 R1 A)
+  // dataDir — 실제 데이터 폴더(ATHENA_DATA_DIR → 본체 설정 dataDir → ~/.athena-studio/data)
   return { ok: true, dataDir: data, current: currentOf(root), switching, packs: ids.map((id) => packInfo(data, id, registry)).filter(Boolean).map(withBody(root, data, registry, scan, bodies)), emptySlots }
 }
 
@@ -290,11 +290,11 @@ const parseLsof = (out, map) => {
   }
 }
 const inside = (path, dir) => Boolean(dir) && (path === dir || path.startsWith(dir + sep))
-// 에이전트로 보는 실행 파일 — Claude Code · Codex(Codex C3)
+// 에이전트로 보는 실행 파일 — Claude Code · Codex
 const AGENT_COMMS = new Set(['claude', 'codex'])
 
 // 프로세스 표 · 에이전트 작업 폴더를 한 번만 읽는다(pack list 가 본체 여럿의 busy 를 볼 때 같이 쓴다).
-// ps 를 못 읽으면 known:false — 비어 있다고 보지 않는다(Codex C3)
+// ps 를 못 읽으면 known:false — 비어 있다고 보지 않는다
 export const scanProcesses = () => {
   let table = []
   let known = true
@@ -305,7 +305,7 @@ export const scanProcesses = () => {
 }
 
 // 이 본체 · 그 팩에서 도는 것 → { busy:[{kind, what, pid}], known }. 다른 본체에서 도는 것은 이 본체를 막지 않는다.
-// includeSelf: 이 명령을 부른 조상(셸·세션)도 센다 — update 는 자기를 부른 아테나 세션의 본체도 일하는 중으로 본다(Codex C3)
+// includeSelf: 이 명령을 부른 조상(셸·세션)도 센다 — update 는 자기를 부른 아테나 세션의 본체도 일하는 중으로 본다
 export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } = {}) => {
   const where = paths(root)
   const { table, mine, agents, cwds } = scan
@@ -348,7 +348,7 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
     if (args.includes(learnScript) || args.includes(join(root, 'scripts', 'learn-review.mjs'))) busy.push({ kind: 'learn-review', what: '학습 검토(learn-review.mjs)', pid: row.pid })
   }
   // 무거운 명령 잠금(scripts/heavy.sh — 한 대 공용). 잠금에 적힌 본체(root)가 이 본체일 때만 이 본체 일 —
-  // root 가 없는 옛 잠금이면 주인의 작업 폴더로 본다(못 읽으면 보수적으로 이 본체 일 · Codex C10)
+  // root 가 없는 옛 잠금이면 주인의 작업 폴더로 본다(못 읽으면 보수적으로 이 본체 일)
   const heavyLock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
   const heavy = lockOwnerAt(heavyLock)
   if (heavy?.alive && !skip(heavy.pid)) {
@@ -542,7 +542,7 @@ export const relinkBody = (root) => {
 }
 
 // /setup 의 athena init 이 빈 자리(new-…)에 팩을 만든 뒤 — 자리 이름을 회사 이름으로 바꾼다(작업 기록이 아직 없을 때만).
-// 본체 폴더 이름(~/athena-new-…)은 그대로 둔다 — 그 본체에서 /setup 세션이 돌고 있다(정본은 레지스트리 body)
+// 본체 폴더 이름(<bodiesDir>/new-…)은 그대로 둔다 — 그 본체에서 /setup 세션이 돌고 있다(정본은 레지스트리 body)
 export const renameNewSlot = (root, company) => {
   const where = paths(root)
   if (where.mode !== 'packs' || !where.packId.startsWith('new-')) return null
@@ -624,7 +624,7 @@ const inspectTree = (top, { trustGit = false, dropGit = false } = {}) => {
       // 최상위 .git 이 링크면 어디를 가리키든 거부 — 팩 안 폴더를 가리켜도 그 안의 config(core.fsmonitor)가 git 명령 때 실행된다(리뷰 5차 재현)
       if (name === '.git' && dir === top && stat.isSymbolicLink()) throw new PackError('unsafe', `최상위 .git 이 링크다 — 가져오지 않는다: .git → ${readlinkSync(path)}`)
       if (name === '.git' && dir === top && trustGit && stat.isDirectory()) continue
-      // 압축·폴더에서 온 .git 은 통째로 지운다 — .git/config(core.fsmonitor 등)·hooks 가 나중 git 명령(아카이브 커밋)에서 실행된다(리뷰 4차 재현 · 결정 R4 A).
+      // 압축·폴더에서 온 .git 은 통째로 지운다 — .git/config(core.fsmonitor 등)·hooks 가 나중 git 명령(아카이브 커밋)에서 실행된다(리뷰 4차 재현).
       // 압축은 잃는 것 없음(export·백업은 원래 .git 을 뺀다). 폴더의 git 팩은 원격·이력을 잃는다 → 결과 gitRemoved 로 알리고 "git 주소로 가져오기" 를 안내한다
       if (name === '.git' && dir === top && dropGit && !stat.isSymbolicLink()) { rmSync(path, { recursive: true, force: true }); gitRemoved = true; continue }
       if (name === '.git' && dir === top && stat.isFile()) { rmSync(path, { force: true }); gitRemoved = true; continue }
@@ -697,7 +697,7 @@ const finishInspect = (data, dir, token, meta, report) => {
   report('check', '팩 형식·파일 검사')
   const found = findPackRoot(join(dir, 'in'))
   const pack = validatePack(found.pack)
-  // .git 을 믿는 곳: git clone 으로 이 명령이 받은 폴더 · 내 옛 아테나(import-athena — 결정 R4 A). 압축·폴더에서 온 것은 지운다
+  // .git 을 믿는 곳: git clone 으로 이 명령이 받은 폴더 · 내 옛 아테나(import-athena). 압축·폴더에서 온 것은 지운다
   const trustGit = (meta.kind === 'git' && found.pack === join(dir, 'in')) || meta.kind === 'athena'
   const tree = inspectTree(found.pack, { trustGit, dropGit: !trustGit })
   // 표시 이름 · 아이콘 — icon 경로 모양 · assets/ 이미지 형식·크기(링크 검사는 위 inspectTree 가 먼저 했다)
@@ -720,7 +720,7 @@ const finishInspect = (data, dir, token, meta, report) => {
     ...(conflict ? { conflict } : {}),
     ...(work ? { work } : {}),
     files: tree.files, bytes: tree.bytes,
-    // gitRemoved — 가져온 폴더·압축의 .git 을 지웠다(팀과 git 으로 같이 쓰는 팩이면 git 주소로 가져오기 안내 · 결정 R4 A)
+    // gitRemoved — 가져온 폴더·압축의 .git 을 지웠다(팀과 git 으로 같이 쓰는 팩이면 git 주소로 가져오기 안내)
     ...(tree.gitRemoved ? { gitRemoved: true } : {}),
     ...(tree.warnings.length ? { warnings: tree.warnings } : {}),
   }
@@ -834,7 +834,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
   if (mode === 'replace' && !conflict) throw new PackError('not-found', '바꿀 같은 팩이 없다 — --new 로 등록')
 
   // 공유 ID 가 없는 옛 팩은 지금 붙인다(형식 버전도)
-  // 써 넣었으면 결과에 알린다(packJsonUpdated) — git 팩이면 그 팩 레포에 미커밋 변경으로 보인다(계획서 Q5)
+  // 써 넣었으면 결과에 알린다(packJsonUpdated) — git 팩이면 그 팩 레포에 미커밋 변경으로 보인다
   let packJsonUpdated = null
   if (!pack.id || !pack.formatVersion) {
     const text = JSON.parse(readFileSync(join(dir, 'pack', 'pack.json'), 'utf8'))
@@ -850,7 +850,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
   const remote = gitRemote(join(dir, 'pack'))
 
   if (mode === 'new') {
-    // 자리 잡기는 mkdir(원자적) — 동시에 가져와도 같은 id 를 두 번 쓰지 않는다(Codex C2)
+    // 자리 잡기는 mkdir(원자적) — 동시에 가져와도 같은 id 를 두 번 쓰지 않는다
     const { id, slot } = claimSlot(data, pack.name ?? 'pack')
     report('copy', `등록 — ${id}`)
     renameSync(join(dir, 'pack'), join(slot, 'pack'))
@@ -866,7 +866,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
   }
 
   // --replace — 기존 팩을 자동 백업한 뒤 팩 폴더만 바꾼다(작업 기록은 그대로 이어서).
-  // 그 팩의 본체(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy 검사·현황판 끄기·링크 다시(Codex C1)
+  // 그 팩의 본체(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy 검사·현황판 끄기·링크 다시
   const id = conflict.id
   const slot = join(data, 'packs', id)
   const release = takePackLock(data, id, `pack import --replace ${id}`)
@@ -927,7 +927,7 @@ export const relinkIn = (body, data) => {
 // 본체의 bin/athena(scripts/athena.mjs)를 그 본체에서 돌린다 → { status, json(마지막 줄), stderr }
 export const runInBody = (body, args, data, { timeout = 120_000 } = {}) => {
   const env = { ...process.env, ATHENA_DATA_DIR: data }
-  delete env.ATHENA_BOARD_PORT   // 포트는 본체·레지스트리가 정한다(Codex C8)
+  delete env.ATHENA_BOARD_PORT   // 포트는 본체·레지스트리가 정한다
   const run = spawnSync(process.execPath, [join(body, 'scripts', 'athena.mjs'), ...args], { cwd: body, encoding: 'utf8', env, timeout })
   const last = String(run.stdout ?? '').trim().split('\n').pop() ?? ''
   let json = null
@@ -1198,12 +1198,12 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
 }
 
 // ── 테스트 셋업 — 테스트 데이터 폴더를 지우고 fixture 팩 둘(acme · globex)을 등록 ─────────────
-// 진짜 ~/athena · ~/athena-data 는 절대 건드리지 않는다: 데이터 폴더 이름에 test 가 들어가야 하고 본체가 ~/athena 면 멈춘다
+// 진짜 스튜디오 집(~/.athena-studio/core · data)은 절대 건드리지 않는다: 데이터 폴더 이름에 test 가 들어가야 하고 본체가 스튜디오 코어면 멈춘다
 export const testSetup = async (root, { report = () => {} } = {}) => {
   const data = dataDir(root)
-  const home = homedir()
-  if (realOr(root) === realOr(join(home, 'athena'))) throw new PackError('unsafe', '본체가 ~/athena 다 — 테스트 셋업은 코어를 따로 받은 테스트 본체에서만')
-  if (realOr(data) === realOr(join(home, 'athena-data')) || !/test/i.test(basename(data))) throw new PackError('unsafe', `테스트 데이터 폴더가 아니다: ${data} — ATHENA_DATA_DIR=~/athena-test-data 처럼 이름에 test 가 든 폴더로`)
+  const studio = join(homedir(), '.athena-studio')
+  if (realOr(root) === realOr(join(studio, 'core'))) throw new PackError('unsafe', '본체가 ~/.athena-studio/core 다 — 테스트 셋업은 코어를 따로 받은 테스트 본체에서만')
+  if (realOr(data) === realOr(join(studio, 'data')) || !/test/i.test(basename(data))) throw new PackError('unsafe', `테스트 데이터 폴더가 아니다: ${data} — ATHENA_DATA_DIR=/tmp/athena-test-data 처럼 이름에 test 가 든 폴더로`)
   if (where0(root).mode === 'legacy' && bodyConfig(root).pack) throw new PackError('unsafe', '옛 구조 본체(팩이 걸린)에서는 테스트 셋업을 하지 않는다')
   const fixtures = join(root, 'test', 'fixtures')
   report('clean', `테스트 데이터 지우기 — ${data}`)

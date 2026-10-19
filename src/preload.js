@@ -16,7 +16,7 @@ contextBridge.exposeInMainWorld('studio', {
   installAthena: () => ipcRenderer.invoke('athena:install'),
   // 회사 팩 — 본체 명령 결과만(파일 · 폴더 고르기는 main 의 대화상자)
   packList: () => ipcRenderer.invoke('pack:list'),
-  // 팩 열기 — 이 창을 그 팩으로 바꾼다(D4 바꿈 · 다른 창이 보고 있으면 그 창이 앞으로) · options.newWindow 면 새 창으로
+  // 팩 열기 — 이 창을 그 팩으로 바꾼다(다른 창이 보고 있으면 그 창이 앞으로) · options.newWindow 면 새 창으로
   packOpen: (id, options) => ipcRenderer.invoke('pack:open', id, options),
   packNew: () => ipcRenderer.invoke('pack:new'),
   packCancel: () => ipcRenderer.invoke('pack:cancel'),

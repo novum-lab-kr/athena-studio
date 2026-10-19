@@ -1,14 +1,14 @@
 #!/usr/bin/env node
 /**
  * 학습 루프 3단계 — 배우기 전용 검토자. 작업 대화 기록을 Claude 가 따로 읽고 "다음 작업이 다시 밟을 것"을 뽑아 learn 이슈로 제안한다.
- * Hermes Agent 의 background review 를 승인 기반으로 옮긴 것 — plans/feature/20261008-학습-루프-3단계-배우기-전용-검토자.md
+ * 학습 루프 3단계 — 배우기 전용 검토자(승인 기반 background review)
  *
  *   node scripts/learn-review.mjs --plan <plans/…md> [--head <sha>] [--dry-run] [--force]
  *        한 계획서를 검토한다. --dry-run 은 줄인 기록 크기·LLM 답·만들 이슈만 보여 주고 파일은 쓰지 않는다
  *   node scripts/learn-review.mjs --enqueue --plan <plans/…md> [--head <표시>]
- *        대기열에 넣고 "📚 배우기 검토" pane 이 돌고 있게 한다(현황판이 내 계획서의 PR 이 모두 머지된 걸 보면 부른다 — 표시는 merged-<PR번호들>). 바로 끝난다
+ *        대기열에 넣고 배우기 검토가 뒤에서 돌고 있게 한다(현황판이 내 계획서의 PR 이 모두 머지된 걸 보면 부른다 — 표시는 merged-<PR번호들>). 바로 끝난다
  *   node scripts/learn-review.mjs --watch
- *        그 pane 에서 돈다 — 대기열을 차례로 꺼내 검토한다. pane 은 하나만(작업마다 늘리지 않는다)
+ *        뒤에서 돈다 — 대기열을 차례로 꺼내 검토한다. 검토 프로세스는 하나만(작업마다 늘리지 않는다)
  *
  * 안전
  *   - 검토자 Claude 는 도구 없이(--tools "") 줄인 기록만 읽고 JSON 으로만 답한다. 파일은 이 스크립트가 쓴다
@@ -42,7 +42,7 @@ const packChanged = () => {
   const now = paths(ROOT)
   return now.packId !== BOOT_PATHS.packId || now.generation !== BOOT_PATHS.generation
 }
-// 검토 pane 은 하나 — mkdir 잠금(안에 pid). 실패한 일은 지우지 않고 failed/ 에 남긴다(MAX_ATTEMPTS 번 다시 해 본 뒤)
+// 검토 프로세스는 하나 — mkdir 잠금(안에 pid). 실패한 일은 지우지 않고 failed/ 에 남긴다(MAX_ATTEMPTS 번 다시 해 본 뒤)
 const WATCHER_LOCK = join(QUEUE_DIR, '.watcher.lock')
 const FAILED_DIR = join(QUEUE_DIR, 'failed')
 const MAX_ATTEMPTS = 3
@@ -59,7 +59,7 @@ const option = (name) => {
 }
 const flag = (name) => argv.includes(`--${name}`)
 
-// 첫 실행 전(팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
+// 첫 실행 전(팩을 아직 안 만듦 — athena.config.json 없음)에 검토가 시작되면 죽지 말고 기다린다.
 // 설정이 생기면 같은 인자로 다시 시작한다(설정은 모듈을 읽을 때 한 번만 읽으므로)
 // (여러 팩 구조의 빈 팩 자리 — pack new 직후 — 도 같다: pack.json 이 생길 때까지)
 const configReady = () => { try { loadConfig(ROOT); return true } catch { return false } }
@@ -494,7 +494,7 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
   updatePlan(planPath, (current) => (/^- Learn review:.*$/m.test(current) ? current.replace(/^- Learn review:.*$/m, line) : current.replace(/^(- Work ref:.*)$/m, `$1\n${line}`)))
 }
 
-// ── 대기열 · pane ──────────────────────────────────────────────────────
+// ── 대기열 · 검토 ──────────────────────────────────────────────────────
 const lockOwner = () => {
   try {
     return Number(readFileSync(join(WATCHER_LOCK, 'pid'), 'utf8')) || 0
@@ -545,8 +545,8 @@ const enqueue = (planArg, head) => {
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('📚 이미 배우기 검토 대기열에 있다')
   const id = `${Date.now()}-${digest}`
   writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, ...(BOOT_PATHS.packId ? { packId: BOOT_PATHS.packId, generation: BOOT_PATHS.generation } : {}), attempts: 0 }))
-  if (watcherAlive()) return console.log('📚 배우기 검토 대기열에 넣었다 — "📚 배우기 검토" pane 이 차례로 처리한다')
-  // 방금(30초 안) 다른 요청이 pane 을 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 잠금이 생기기 전 틈.
+  if (watcherAlive()) return console.log('📚 배우기 검토 대기열에 넣었다 — 뒤에서 도는 검토가 차례로 처리한다')
+  // 방금(30초 안) 다른 요청이 검토를 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 잠금이 생기기 전 틈.
   // 표시 파일은 없을 때만 만든다(wx — 둘이 동시에 만들지 못한다). 오래된 표시는 치우고 다시
   const launching = join(QUEUE_DIR, '.launching')
   for (let attempt = 0; ; attempt += 1) {
@@ -556,17 +556,15 @@ const enqueue = (planArg, head) => {
     } catch {
       let age = Infinity
       try { age = Date.now() - statSync(launching).mtimeMs } catch { /* 그새 치워졌다 */ }
-      if (age < 30_000 || attempt > 0) return console.log('📚 배우기 검토 대기열에 넣었다 — pane 이 뜨는 중')
+      if (age < 30_000 || attempt > 0) return console.log('📚 배우기 검토 대기열에 넣었다 — 검토가 뜨는 중')
       rmSync(launching, { force: true })
     }
   }
-  // pane 하나 — 이미 있으면 그 pane 에서 다시 돌리고, 없으면 띄운다(화면 pane 밖이면 뒤에서)
-  const launched = spawnSync(join(ROOT, 'scripts/learn-review-pane.sh'), { encoding: 'utf8' })
-  if (launched.status === 0) return console.log(`📚 배우기 검토 대기열에 넣었다 — pane ${launched.stdout.trim()}`)
+  // 뒤에서 하나 — pane 은 띄우지 않는다(사용자 결정 2026-10-17: 스튜디오에는 배우기 검토 pane 을 두지 않는다)
   const logFd = openSync(LOG_FILE, 'a')
   const child = spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { detached: true, stdio: ['ignore', logFd, logFd] })
   child.unref()
-  console.log(`📚 배우기 검토를 뒤에서 시작했다(화면 pane 밖) — 기록 ${LOG_FILE}`)
+  console.log(`📚 배우기 검토를 뒤에서 시작했다 — 기록 ${LOG_FILE}`)
 }
 
 // 실패한 일 — 몇 번 다시 해 보고(일시적인 claude·파일 오류), 그래도 안 되면 failed/ 에 이유와 함께 남긴다(지우지 않는다)
@@ -586,14 +584,14 @@ function settleFailure(working, job, error) {
 const watch = async () => {
   mkdirSync(QUEUE_DIR, { recursive: true })
   if (!acquireWatcher()) {
-    console.log('이미 다른 검토 pane 이 돌고 있다 — 여기서는 끝낸다')
+    console.log('이미 다른 검토가 돌고 있다 — 여기서는 끝낸다')
     return
   }
   // 잠금은 내 것일 때만 치운다(다른 쪽이 주인 없는 잠금으로 보고 새로 잡았을 수 있다)
   const cleanup = () => releaseLock(WATCHER_LOCK)
   process.on('exit', cleanup)
   process.on('SIGINT', () => process.exit(130))
-  process.on('SIGHUP', () => process.exit(129))   // pane 을 닫으면 온다
+  process.on('SIGHUP', () => process.exit(129))   // 터미널을 닫으면 온다
   process.on('SIGTERM', () => process.exit(143))
   rmSync(join(QUEUE_DIR, '.launching'), { force: true })
   // 지난 검토 프로세스가 처리하다 끊긴 요청을 대기열로 되돌린다 — 잠금을 쥔 뒤라 살아 있는 다른 watcher 의 일이 아니다
@@ -617,7 +615,7 @@ const watch = async () => {
     try {
       job = JSON.parse(readFileSync(working, 'utf8'))
       // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다.
-      // 여러 팩 구조는 대기열이 팩 데이터 안이라 팩이 같으면 내 일이다 — 팩을 새 본체로 옮겨도(팩마다-본체 · Codex C9) 이어서 한다
+      // 여러 팩 구조는 대기열이 팩 데이터 안이라 팩이 같으면 내 일이다 — 팩을 새 본체로 옮겨도 이어서 한다
       const foreign = BOOT_PATHS.packId && job.packId
         ? job.packId !== BOOT_PATHS.packId
         : Boolean(job.root && job.root !== REAL_ROOT)

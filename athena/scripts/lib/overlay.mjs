@@ -75,7 +75,7 @@ export const packLinks = (root) => {
 
 // .git/info/exclude 는 워크트리들이 같이 쓴다(git common dir) — 체크아웃마다 자기 구간(경로로 표시)만 바꾼다.
 // 남의 체크아웃 구간은 그대로 두고(그 체크아웃의 팩 링크 목록이다), 폴더가 사라진 체크아웃의 구간과 옛 표시(경로 없는 구간)는 치운다.
-// 주의(팩마다 본체 · Codex C7 · 2026-10-18 git 2.50 실측): 링크된 워크트리도 공용 info/exclude 만 읽는다(워크트리별 info/exclude 는 무시).
+// 주의(팩마다 본체 · 2026-10-18 git 2.50 실측): 링크된 워크트리도 공용 info/exclude 만 읽는다(워크트리별 info/exclude 는 무시).
 // 그래서 무시 규칙은 모든 본체 구간의 **합집합**이다 — 한 팩의 링크 이름이 다른 본체에서 같은 이름의 실제 파일을 숨길 수 있다.
 // 팩 링크 자리에 코어 실제 파일을 두지 않는 규칙(linkOverlay 의 clash)이 이걸 막는다. 쓰기는 잠금으로 한 번에 하나(구간 유실 방지)
 const EXCLUDE_START = '# >>> athena pack links (athena pack link 가 관리)'
@@ -84,7 +84,7 @@ export const writeExclude = (root, linkPaths) => {
   let gitDir
   try { gitDir = execFileSync('git', ['-C', root, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return }   // git 레포가 아니면(복사본) 건너뛴다
   const file = resolve(root, gitDir, 'info', 'exclude')
-  // 무시 경로는 git 루트 기준이다 — 아테나가 다른 레포 안(예: 스튜디오 레포의 athena/ subtree)이면 그 앞자리를 붙인다
+  // 무시 경로는 git 루트 기준이다 — 아테나가 다른 레포 안(예: 스튜디오 레포의 athena/ 폴더)이면 그 앞자리를 붙인다
   const prefix = execFileSync('git', ['-C', root, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
   mkdirSync(dirname(file), { recursive: true })
   const release = takeLock(`${file}.athena-lock`, `exclude ${root}`, { waitMs: 10_000 })

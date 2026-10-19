@@ -1,6 +1,6 @@
 /**
  * 현황판 [학습] 탭 — 학습 후보(issues/*-learn-*.md)와 학습한 내용(docs/knowledge/learned/*.md)을 다룬다.
- * 기준·흐름 정본: docs/knowledge/common/learning.md · plans/feature/20261008-학습-루프-4단계-학습-탭-쉬운-기록.md
+ * 기준·흐름 정본: docs/knowledge/common/learning.md
  *
  *   넣기      후보 → 공책(target 파일) 끝 "## 학습" 절에 한 줄(<!-- learn:<id> -->) + 기록 docs/knowledge/learned/<id>.md
  *             strengthen(기존 줄 강화)이면 그 줄을 바꾸고 원래 줄을 기록에 남긴다(삭제하면 되돌린다)

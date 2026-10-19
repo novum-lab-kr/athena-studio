@@ -45,7 +45,7 @@ function flatPane(info) {
   }
 }
 
-// ── 키 이름 → pty 에 쓸 글자 (herdr send-keys 와 같은 이름) ─────────────
+// ── 키 이름 → pty 에 쓸 글자 (Enter · C-c 같은 이름) ─────────────
 const NAMED_KEYS = {
   enter: '\r',
   tab: '\t',

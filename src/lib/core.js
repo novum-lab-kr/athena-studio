@@ -2,7 +2,7 @@
 const fs = require('fs')
 const path = require('path')
 
-// 현황판 기본 포트는 4701 — herdr 용 아테나(~/athena)의 현황판(4700)과 나란히 돈다(옛 본체만 · 팩 본체는 코어가 정한다)
+// 현황판 기본 포트는 4701(옛 본체만 · 팩 본체는 코어가 정한다)
 const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701 }
 
 // 앱 설정(userData/config.json). 깨졌거나 없으면 기본값
@@ -16,13 +16,13 @@ function loadConfig(file) {
   const port = Number(config.boardPort)
   config.boardPort = Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_CONFIG.boardPort
   if (typeof config.athenaDir !== 'string' || !config.athenaDir) config.athenaDir = null
-  // 예전 키 — 스튜디오 전용 아테나 · ~/athena 로 옮기기를 물었는지. 스튜디오는 이제 자기 코어(~/.athena-studio)만 쓴다
+  // 예전 키 — 아테나 폴더 옮기기를 물었는지. 스튜디오는 이제 자기 코어(~/.athena-studio)만 쓴다
   delete config.studioAthenaAsked
   delete config.homeAthenaAsked
   return config
 }
 
-// 켤 때 열 팩 창들의 본체 — 설정 windows:[{ athenaDir }] (창마다 팩 · 아테나 계획서 20261018-팩마다-본체 4.2).
+// 켤 때 열 팩 창들의 본체 — 설정 windows:[{ athenaDir }] (창마다 팩).
 // 예전 설정(athenaDir 하나)이면 그 하나. 같은 본체는 한 번만(심볼릭 링크를 풀어 비교하는 것은 부르는 쪽 sameDir)
 function windowDirs(config, sameDir = (left, right) => left === right) {
   const listed = Array.isArray(config && config.windows) ? config.windows.map((entry) => entry && entry.athenaDir).filter((dir) => typeof dir === 'string' && dir) : []
@@ -76,8 +76,8 @@ function sameDir(left, right) {
 
 // 이 컴퓨터 설정(athena.config.json · git 무시)이 없으면 팩 없는 최소 설정을 만든다.
 // 아테나는 이 파일이 없으면 현황판이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다.
-// screen: 'studio' — 아테나가 화면(pane · 탭)을 herdr 가 아니라 스튜디오 데몬으로 다루게 고정한다(아테나 쪽 키 · herdr | studio | none).
-// reposRoot(레포 클론이 있는 폴더)는 reposRootFor 가 정한다. 이미 있는 설정(herdr 용 ~/athena 등)은 건드리지 않는다
+// screen: 'studio' — 아테나가 화면(pane · 탭)을 스튜디오 데몬으로 다루게 고정한다(아테나 쪽 키).
+// reposRoot(레포 클론이 있는 폴더)는 reposRootFor 가 정한다. 이미 있는 설정은 건드리지 않는다
 function ensureAthenaConfig(dir, reposRoot = '..') {
   const file = path.join(dir, 'athena.config.json')
   if (fs.existsSync(file)) return false
@@ -86,7 +86,7 @@ function ensureAthenaConfig(dir, reposRoot = '..') {
 }
 
 // 스튜디오 집(~/.athena-studio) 안의 본체는 상위가 스튜디오 집이라 담당 레포가 없다 — 회사 레포 클론이 있는 홈을 절대 경로로
-// (두 앱이 같은 클론을 같이 쓴다 · 결정 D6). 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
+// (두 앱이 같은 클론을 같이 쓴다). 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
 function reposRootFor(dir, { studioRoot, home }) {
   return isInside(dir, studioRoot) ? home : '..'
 }
@@ -130,7 +130,7 @@ function parseLsofPath(output) {
 }
 
 // 스튜디오가 만든 아테나 설정(screen: studio)에만 고른 현황판 포트를 적는다 — pane 안의 아테나가 이 값으로 현황판을 찾는다.
-// herdr 용 ~/athena 등 스튜디오가 만들지 않은 설정은 건드리지 않는다. 바꿨으면 true · 없으면 false · 읽거나 쓰지 못하면 throw
+// 스튜디오가 만들지 않은 설정은 건드리지 않는다. 바꿨으면 true · 없으면 false · 읽거나 쓰지 못하면 throw
 function setAthenaBoardPort(dir, port) {
   const file = path.join(dir, 'athena.config.json')
   let text
@@ -184,9 +184,7 @@ function defaultIsExecutable(file) {
   }
 }
 
-// 자식 프로세스 환경. 앱을 herdr 안에서 켰을 때 물려받은 HERDR_* 를 지워야
-// 작업 창 pane 셸(·그 안의 아테나)이 herdr pane 안이라고 착각하지 않는다
-// 앱을 에이전트(claude) 세션 안에서 켰을 때 물려받은 표시도 지운다 — 남으면 pane 의 claude 가
+// 자식 프로세스 환경. 앱을 에이전트(claude) 세션 안에서 켰을 때 물려받은 표시를 지운다 — 남으면 pane 의 claude 가
 // 자기를 하위 세션으로 알고(대화 기록 저장 꺼짐) 아테나가 관리 창(ATHENA_AGENT)으로 알아 첫 실행·화면 세팅을 건너뛴다.
 // 아테나 delegate.sh 실행기가 에이전트 pane 에 넣는 값(ATHENA_REPO_DIR · ATHENA_VERIFY_DIR)도 — 남으면 상태줄(statusline.sh)이
 // cwd 보다 그 레포를 먼저 보고, 검증 스크립트가 그 워크트리를 본다
@@ -195,7 +193,7 @@ const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AG
 function childEnv(baseEnv, extra = {}) {
   const env = {}
   for (const [key, value] of Object.entries(baseEnv)) {
-    if (key.startsWith('HERDR_') || key.startsWith('CLAUDE_CODE_')) continue
+    if (key.startsWith('CLAUDE_CODE_')) continue
     // 스튜디오 pane 안에서 앱을 켰을 때의 표시 — pane 셸·현황판에는 데몬·main 이 새 값을 다시 넣는다
     if (key === 'ATHENA_STUDIO' || key.startsWith('ATHENA_STUDIO_')) continue
     if (INHERITED_SESSION_KEYS.includes(key)) continue

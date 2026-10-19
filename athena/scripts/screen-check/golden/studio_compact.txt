@@ -3,10 +3,10 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stdout
 {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "🔄 방금 대화가 압축됐다. 이 pane 에 묶인 계획서를 찾지 못했다. 진행 중이던 작업이 있으면 그 계획서 Checkpoint 부터 다시 읽고 이어 간다(AGENTS.md 2.6). 어느 계획서인지 모르면 사용자에게 묻는다. 최근 진행 중 계획서: plans/task/20261004-fe-studio.md, plans/refactor/20261003-lead.md, plans/task/20261001-fe-test.md, plans/task/20261002-fe-compact.md"}}
 --- stderr
---- herdr
+--- screen
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_STUDIO_PANE_ID=p2 python3 scripts/hooks/compact-checkpoint.py post
 --- exit 0
 --- stdout
 {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "🔄 방금 대화가 압축됐다. 압축 요약만 믿지 말고 이 pane 의 계획서 <ATHENA>/plans/task/20261004-fe-studio.md 의 Checkpoint(Status · Progress · Next · Blocked · Validation)와 \"## 지시\" 절을 먼저 다시 읽는다. Work ref 의 트리에서 git status 로 현재 상태를 확인하고, Checkpoint 와 다르면 그 차이부터 평가한 뒤 Next 부터 이어 간다(AGENTS.md 2.6 — 바뀐 ref 에서 과거 검증 결과를 현재 통과로 재사용하지 않는다)."}}
 --- stderr
---- herdr
+--- screen

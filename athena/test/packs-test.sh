@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 여러 팩 회귀 시험 — 작업 트리를 임시 폴더에 복사한 본체 + 임시 데이터 폴더에서 bin/athena pack 명령을 끝까지 돌린다.
-# 진짜 ~/athena · ~/athena-data · 이 체크아웃의 링크·설정은 건드리지 않는다(임시 폴더만 · 끝나면 지운다).
+# 진짜 스튜디오 집(~/.athena-studio) · 이 체크아웃의 링크·설정은 건드리지 않는다(임시 폴더만 · 끝나면 지운다).
 #
 # 사용: test/packs-test.sh            → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #       KEEP=1 test/packs-test.sh     → 임시 폴더를 남긴다(경로를 마지막에 보여 준다)
@@ -18,7 +18,7 @@ bad()  { FAIL=$((FAIL+1)); printf '  ✖ %s\n' "$1"; [ -n "${2:-}" ] && printf '
 check() { if eval "$2"; then ok "$1"; else bad "$1" "${3:-}"; fi; }
 section() { printf '\n%s\n' "$1"; }
 # 화면·에이전트 환경을 비운다 — 이 시험이 부른 쪽의 pane 이름 등을 바꾸지 않게
-unset ATHENA_AGENT HERDR_ENV HERDR_PANE_ID HERDR_TAB_ID HERDR_SOCKET ATHENA_STUDIO ATHENA_BOARD_PORT ATHENA_PACK_FAIL_AT
+unset ATHENA_AGENT ATHENA_STUDIO ATHENA_BOARD_PORT ATHENA_PACK_FAIL_AT
 export ATHENA_SCREEN=none ATHENA_BOARD_NO_BROWSER=1 ATHENA_DATA_DIR="$WORK/test-data" ATHENA_HEAVY_LOCK="$WORK/heavy.lock"
 PORT=47710
 
@@ -48,7 +48,7 @@ check "acme 에이전트·검증 링크" '[ -L .claude/agents/acme-web-fe.md ] &
 check "acme 레포 링크 둘" '[ "$(ls repos | tr "\n" " ")" = "acme-api acme-web " ]'
 check "설정에 dataDir·boardPort(screen 없음)" 'python3 -c "import json,sys; d=json.load(open(\"athena.config.json\")); sys.exit(0 if d.get(\"dataDir\") and d.get(\"boardPort\")=='"$PORT"' and \"screen\" not in d else 1)"'
 check "status·list 에 dataDir(실제 데이터 폴더)" '[ "$(A pack status | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(A pack list | field dataDir)" = "$ATHENA_DATA_DIR" ]'
-check "~/athena-data 로는 거부" '[ "$(ATHENA_DATA_DIR="$HOME/athena-data" node scripts/athena.mjs pack test-setup --json | tail -1 | field error)" = unsafe ]'
+check "스튜디오 데이터 폴더(~/.athena-studio/data)로는 거부" '[ "$(ATHENA_DATA_DIR="$HOME/.athena-studio/data" node scripts/athena.mjs pack test-setup --json | tail -1 | field error)" = unsafe ]'
 
 section "이 본체의 팩 · 열기(같은 본체 — 본체 만들기는 test/bodies-test.sh)"
 R="$(A pack use acme --contract 2)"
@@ -134,7 +134,7 @@ R="$(A pack inspect "$O/gitarc.tar.gz")"
 check "압축 안 .git 폴더(core.fsmonitor) → 지워짐 · gitRemoved" '[ "$(echo "$R" | field ok)" = True ] && [ "$(echo "$R" | field gitRemoved)" = True ] && [ ! -e "$ATHENA_DATA_DIR/tmp/$(echo "$R" | field token)/pack/.git" ] && [ ! -e "$O/PWNED" ]' "$R"
 A pack import "$(echo "$R" | field token)" --keep >/dev/null
 R="$(A pack inspect "$O/gitarc/p")"
-check "폴더 안 .git 폴더 → 지워짐 · gitRemoved(결정 R4 A)" '[ "$(echo "$R" | field gitRemoved)" = True ] && [ ! -e "$ATHENA_DATA_DIR/tmp/$(echo "$R" | field token)/pack/.git" ]' "$R"
+check "폴더 안 .git 폴더 → 지워짐 · gitRemoved" '[ "$(echo "$R" | field gitRemoved)" = True ] && [ ! -e "$ATHENA_DATA_DIR/tmp/$(echo "$R" | field token)/pack/.git" ]' "$R"
 A pack import "$(echo "$R" | field token)" --keep >/dev/null
 check "git 특수 전송 ext:: → unsafe" '[ "$(A pack inspect "ext::sh -c id" | field error)" = unsafe ]'
 check "나쁜 팩 뒤 임시본 없음" '[ -z "$(ls "$ATHENA_DATA_DIR/tmp" 2>/dev/null)" ]'
@@ -197,9 +197,9 @@ rm pack/assets
 section "옛 아테나 가져오기 · 옮기기"
 OA="$WORK/oldathena"; mkdir -p "$OA/packs/umbrella" "$OA/plans/task" "$OA/issues"
 cp -R "$F/packs/acme/." "$OA/packs/umbrella/"; python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop('id'); d['name']='Umbrella'; json.dump(d, open(p,'w'))" "$OA/packs/umbrella/pack.json"
-printf '{ "pack": "packs/umbrella", "reposRoot": "..", "screen": "herdr" }\n' > "$OA/athena.config.json"
+printf '{ "pack": "packs/umbrella", "reposRoot": "..", "screen": "studio" }\n' > "$OA/athena.config.json"
 printf '# 옛 계획\n' > "$OA/plans/task/20261001-old.md"; printf '# 옛 이슈\n' > "$OA/issues/20261001-old.md"; printf 'x\n' > "$OA/issues/README.md"
-git init -q "$OA/packs/umbrella"   # 내 옛 아테나의 팩이 git 레포면 .git 을 그대로 가져온다(결정 R4 A)
+git init -q "$OA/packs/umbrella"   # 내 옛 아테나의 팩이 git 레포면 .git 을 그대로 가져온다
 BEFORE="$(cd "$OA" && find . -type f | sort | xargs shasum | shasum)"
 R="$(A pack import-athena "$OA")"
 check "import-athena → 계획서 1 · 이슈 1 · .git 남김" '[ -d "$ATHENA_DATA_DIR/tmp/$(echo "$R" | field token)/pack/.git" ] && [ -z "$(echo "$R" | field gitRemoved)" ] && [ "$(echo "$R" | field work.plans)" = 1 ] && [ "$(echo "$R" | field work.issues)" = 1 ]' "$R"
@@ -207,7 +207,7 @@ R="$(A pack import "$(echo "$R" | field token)" --new)"
 check "id 를 써 넣었으면 packJsonUpdated" '[ -n "$(echo "$R" | field packJsonUpdated.id)" ]' "$R"
 check "등록 · 원본 그대로" '[ "$(echo "$R" | field imported.id)" = umbrella ] && [ "$BEFORE" = "$(cd "$OA" && find . -type f | sort | xargs shasum | shasum)" ]' "$R"
 L="$WORK/legacy"; mkbody "$L"; mkdir -p "$L/packs/demo" "$L/plans/task" "$L/issues"; cp -R "$F/packs/globex/." "$L/packs/demo/"
-printf '{ "pack": "packs/demo", "reposRoot": "..", "screen": "herdr" }\n' > "$L/athena.config.json"; printf '# 계획\n' > "$L/plans/task/20261001-a.md"; printf '# 이슈\n' > "$L/issues/20261001-a.md"
+printf '{ "pack": "packs/demo", "reposRoot": "..", "screen": "studio" }\n' > "$L/athena.config.json"; printf '# 계획\n' > "$L/plans/task/20261001-a.md"; printf '# 이슈\n' > "$L/issues/20261001-a.md"
 R="$(cd "$L" && ATHENA_DATA_DIR="$WORK/mig-data" node scripts/athena.mjs pack migrate --json | tail -1)"
 check "migrate(계획만) — 바꾸지 않음" '[ "$(echo "$R" | field dryRun)" = True ] && [ ! -L "$L/plans" ]' "$R"
 R="$(cd "$L" && ATHENA_DATA_DIR="$WORK/mig-data" node scripts/athena.mjs pack migrate --yes --json | tail -1)"
@@ -237,7 +237,7 @@ GEN acme -1
 check "같은 팩이면 board.sh 가 다시 안 띄움" 'bash scripts/board.sh 2>&1 | grep -q "이미 떠 있음"'
 R="$(A pack use acme --contract 2 --start-board)"
 check "pack use --start-board → 이 본체 현황판(포트 $PORT)" '[ "$(echo "$R" | field boardStarted)" = "$PORT" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = acme ]' "$R"
-check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트(Codex C8)" '[ "$(ATHENA_BOARD_PORT=4999 node scripts/athena.mjs pack status --json | tail -1 | field boardPort)" = "$PORT" ]'
+check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트" '[ "$(ATHENA_BOARD_PORT=4999 node scripts/athena.mjs pack status --json | tail -1 | field boardPort)" = "$PORT" ]'
 TOKEN="$(A pack board-token | field token)"; HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")
 check "POST /api/shutdown → 꺼짐 · 토큰 파일 지움" '[ "$(curl -s -X POST "${HDR[@]}" -d "{}" "http://127.0.0.1:$PORT/api/shutdown" | field ok)" = True ] && sleep 0.5 && [ "$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/state")" = 000 ] && [ ! -f "$ATHENA_DATA_DIR/packs/acme/state/board-token" ]'
 

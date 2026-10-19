@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 /**
  * QA 시뮬레이션 실행 — 영향 화면을 실제 브라우저(Playwright)로 열어 검사하고, 기준 브랜치 화면과 비교한다.
- * 계획서: plans/feature/20261002-QA-시뮬레이션-영향-화면.md
  *
  *   node scripts/qa/run.mjs --cwd <워크트리> [--app <앱>] [--plan <계획서>] [옵션]
  *   앱 = 팩에 등록한 화면 레포(scripts/qa/apps.mjs). 설정 scripts/qa/routes/<앱>.json 이 있는 앱이 하나면 --app 생략 가능

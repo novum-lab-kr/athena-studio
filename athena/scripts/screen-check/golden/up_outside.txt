@@ -2,4 +2,4 @@ $ scripts/athena-up.sh
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen

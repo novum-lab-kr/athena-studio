@@ -70,7 +70,7 @@ scripts/ship.sh --plan <계획서> --dir <워크트리> --base dev \
 
 > **main 직접 레포**(팩 레포에 `"direct": true` — `docs/pack.md`)는 이 절을 건너뛴다. `new-branch.sh` 는 브랜치·워크트리를 만들지 않고 "main 직접" 과 메인 체크아웃 경로(디스패치 `--cwd`)만 알린다. 커밋은 `commit.sh`(메인 체크아웃·작업 브랜치 허용, 기록에 "main 직접"), 올리기는 `ship.sh`(미리보기 → `--yes` — PR 대신 `origin/<prBase>` 에 빨리 감기 push, 원격이 앞서 있으면 받으라고 멈춘다). 메인 체크아웃 하나를 여럿이 쓰므로 같은 레포에 에이전트를 둘 띄우지 않는다
 
-`/call` 은 아테나가 띄우기 전에 브랜치를 묻고 이 절대로 만든다(`scripts/call-branch-info.sh` 가 후보를 뽑는다). 계획서를 승인받고 디스패치할 때도 **디스패치 바로 앞에** 만든다. 어느 쪽이든 만든 워크트리에서 `delegate.sh --cwd` 로 띄운다 — athena 루트에서 띄우면 사이드바 Explorer 가 워크트리를 따라가지 못한다.
+`/call` 은 아테나가 띄우기 전에 브랜치를 묻고 이 절대로 만든다(`scripts/call-branch-info.sh` 가 후보를 뽑는다). 계획서를 승인받고 디스패치할 때도 **디스패치 바로 앞에** 만든다. 어느 쪽이든 만든 워크트리에서 `delegate.sh --cwd` 로 띄운다 — athena 루트에서 띄우면 pane 의 작업 폴더(Studio Explorer 가 따라가는 폴더)가 워크트리가 아니게 된다.
 
 ```bash
 scripts/new-branch.sh PROJ-3820 shop-web admin-web # 두 레포 (슬래시가 없으면 feature/ 를 붙인다)

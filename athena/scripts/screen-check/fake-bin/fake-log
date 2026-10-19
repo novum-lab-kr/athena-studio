@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
-"""가짜 명령·바꿔 끼운 스크립트가 불렸다는 기록을 가짜 herdr 와 같은 로그($FAKE_HERDR_LOG)에 남긴다 — 순서까지 비교되게.
+"""가짜 명령·바꿔 끼운 스크립트가 불렸다는 기록을 가짜 데몬 CLI 와 같은 로그($FAKE_SCREEN_LOG)에 남긴다 — 순서까지 비교되게.
 사용: fake-log <이름> [인자…]   → ["#<이름>", 인자…]
 """
 import json
 import os
 import sys
 
-log = os.environ.get('FAKE_HERDR_LOG')
+log = os.environ.get('FAKE_SCREEN_LOG')
 if log:
     with open(log, 'a', encoding='utf-8') as out:
         out.write(json.dumps(['#' + sys.argv[1]] + sys.argv[2:], ensure_ascii=False) + '\n')

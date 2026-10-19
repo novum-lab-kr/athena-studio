@@ -17,7 +17,7 @@
 | **Node** + `nvm` | 검증 스크립트·현황판·QA. 레포마다 `.nvmrc` 버전이 다르다 | 검증이 경고·실패 |
 | `pnpm` | 레포 설치·빌드 | 검증·빌드 불가 |
 | **`gh`** (GitHub CLI, `gh auth login` 완료) | `ship.sh` 의 push·draft PR, 현황판의 PR 머지 감지 | PR 을 못 올린다 |
-| **herdr** (터미널 멀티플렉서) | 에이전트를 옆 pane 에 띄워 보이게 일 시킨다 | `/call`·디스패치가 "직접 실행하세요" 안내만 한다. 현황판은 백그라운드로 뜬다 |
+| **Athena Studio** (데스크톱 앱) | 아테나 코어를 들고 와 풀고, 에이전트를 옆 pane 에 띄워 보이게 일 시킨다 · 현황판 · 에이전트 모니터 | 앱 밖 터미널이면 `/call`·디스패치가 "직접 실행하세요" 안내만 한다. 현황판은 백그라운드로 뜬다 |
 
 추가로 레포 쪽 권한이 필요하다.
 - 담당 레포들의 GitHub 접근 권한
@@ -28,42 +28,33 @@
 
 ## 2. 설치
 
-### 2-1. 레포를 나란히 받는다
-아테나는 **자기 상위 폴더에 담당 레포들이 나란히 있다**고 가정한다(`athena.config.json` 의 `reposRoot: ".."`). 담당 레포 목록은 **팩**의 `pack.json`(사람이 읽는 표는 `pack/ROUTING.md`)에 있다.
+### 2-1. Athena Studio 를 켠다
+**아테나 코어는 Athena Studio 앱이 들고 온다** — 따로 받거나 설치할 것은 없다. 처음 켜면 앱이 코어를 스튜디오 집에 풀고 창을 연다.
 
 ```
-~/work/
-├── athena/                 ← 코어 (이 레포, 폴더 이름은 자유)
-│   └── packs/<회사>/       ← 팩 (별도 레포를 여기에 clone)
-├── <레포 A>/               ← 담당 레포들 — 팩 pack.json 의 repos[].name
-├── <레포 B>/
-└── …
+~/.athena-studio/core          주 본체(아테나 코어 · git 저장소 · main)
+~/.athena-studio/bodies/<id>   팩 본체(팩마다 하나 — 코어가 만든다)
+~/.athena-studio/data          데이터 폴더(팩 · 계획서 · 이슈 · 학습 대기열 · 백업)
 ```
 
-```bash
-cd ~/work
-git clone <코어 레포 주소> athena
-git clone <팩 레포 주소> athena/packs/<회사>   # 팩이 없는 새 회사는 건너뛴다 — claude 에서 /setup
-# 담당 레포도 같은 폴더에 clone (이미 있으면 그대로 둔다)
-cd athena
-cp athena.config.example.json athena.config.json   # pack 에 packs/<회사> — 팩이 없는 새 회사는 이 두 줄을 건너뛴다
-bin/athena pack link                               # 팩 파일을 코어 자리에 링크로
-```
+코어 업데이트도 앱과 함께 온다 — 새 앱을 켜면 앱이 `bin/athena update --from <번들>` 로 본체마다 맞춘다(일하는 본체는 건너뛰고 다음에).
 
-자기가 맡지 않는 레포는 없어도 된다. 그 레포 담당 에이전트만 동작하지 않는다.
+### 2-2. 팩과 담당 레포
+담당 레포 목록은 **팩**의 `pack.json`(사람이 읽는 표는 `pack/ROUTING.md`)에 있다. 팩은 앱의 팩 메뉴(`▣ <팩> ▾`)·시작 화면에서 고른다.
+- **팩이 있는 회사** — [팩 가져오기](압축 파일 · 팩 폴더 · git 레포)
+- **새 회사** — [새 팩 만들기] → 그 본체에서 아테나를 켜면 `/setup` 이 레포 찾기부터 안내한다
 
-### 2-2. 켜기
-```bash
-cd athena      # herdr 를 쓰면 herdr 터미널 안에서
-claude                # 팩이 없으면 /setup 이 레포 찾기부터 안내한다
-```
+담당 레포는 `reposRoot`(스튜디오는 홈 폴더) 아래에 clone 해 둔다. 자기가 맡지 않는 레포는 없어도 된다. 그 레포 담당 에이전트만 동작하지 않는다.
+
+### 2-3. 켜기
+창의 `athena` 작업 공간 pane 에서 `claude`(또는 `codex`)를 켠다. 팩이 없으면 `/setup` 이 레포 찾기부터 안내한다.
 첫 화면에서 "현황 알려줘" 라고 해 보면 레포별 브랜치·변경 상태가 나온다. 여기까지 되면 준비 완료.
 
-> 따로 셋업하지 않아도 된다. `claude` 를 켜면 옆 폴더의 담당 레포를 찾아 `repos/<레포>` 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻는다.
+> 따로 셋업하지 않아도 된다. `claude` 를 켜면 `reposRoot` 아래의 담당 레포를 찾아 `repos/<레포>` 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻는다.
 
-**herdr 안에서 켜면 athena workspace 가 늘 같은 모양으로 잡힌다** — 왼쪽 위는 아테나·에이전트 대화, 오른쪽 끝은 Explorer(위)·가이드 메뉴(아래), 하단 한 줄은 🛰 에이전트 모니터 | 📋 현황판 | 📚 배우기 검토. 없는 것만 띄우고 흐트러졌으면 제자리로 돌린다. 사이드바 패치판(바뀐 파일 클릭 → diff)도 이때 없으면 넣는다 — 레포에 미리 빌드해 둔 실행 파일을 쓰므로 따로 설치할 것은 없다. `scripts/athena-up.sh` — 손으로 다시 돌려도 된다. herdr 에서는 레포마다 **workspace**, 그 안에 **탭**, 탭 안에 **pane** 이 있다.
+**Studio 창 안에서 켜면 화면이 저절로 잡힌다** — 현황판은 뒤에서 뜨고(앱 📋 현황판 탭이 보여 준다), 에이전트 로그는 작업 창 가운데 맨 아래 🛰 AGENT MONITOR 칸이 보여 준다. 오른쪽 Explorer 에서 바뀐 파일을 누르면 diff 가 뜬다. 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드 메뉴는 `/guide` 로 부를 때만 뜬다. `scripts/athena-up.sh` — 손으로 다시 돌려도 된다. 작업 창에서는 레포마다 **작업 공간(workspace)**, 그 안에 **탭**, 탭 안에 **pane** 이 있다.
 
-**QA 시뮬레이션을 쓸 때만** 한 번 `scripts/setup.sh` 를 돌린다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·herdr…)도 점검해 준다(사이드바 패치판도 같이 확인한다).
+**QA 시뮬레이션을 쓸 때만** 한 번 `scripts/setup.sh` 를 돌린다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·claude…)도 점검해 준다.
 
 ## 3. 처음 써 보기
 
@@ -232,7 +223,7 @@ claude                # 팩이 없으면 /setup 이 레포 찾기부터 안내�
 | 증상 | 확인 |
 |---|---|
 | "레포가 연결되지 않았습니다" | `ls -l repos/` — 링크 대상 확인 후 `scripts/setup.sh --root <경로>` |
-| 에이전트가 pane 에 안 뜨고 "herdr 밖입니다" | herdr 안에서 `claude` 를 켰는지 |
+| 에이전트가 pane 에 안 뜨고 "Athena Studio 화면 밖입니다" | Studio 창의 pane 안에서 `claude` 를 켰는지 |
 | 검증에서 Node 버전 경고 | 그 레포 폴더에서 `nvm use` |
 | `pnpm install` 401·403 | `~/.npmrc` 의 GitHub Packages 토큰(권한 `read:packages`, 만료) |
 | 타입 검사가 "건너뜀" | Orval·Relay 생성물이 없다 — 레포의 생성 명령을 먼저 |
@@ -240,6 +231,6 @@ claude                # 팩이 없으면 /setup 이 레포 찾기부터 안내�
 | 무거운 명령이 137 로 끝남 | 프로세스·메모리 폭주로 감시가 끊은 것. 다시 돌리기 전에 원인부터 |
 | 세션이 끊겼다 | 새로 켜고 "○○ 작업 이어서" — 진행 상황은 계획서 Checkpoint 에 있다 |
 | 대화가 길어져 압축됐다 | 할 일 없음 — 압축 직전 상태가 계획서에 자동으로 한 줄 남고, 압축 뒤 에이전트가 계획서부터 다시 읽고 이어 간다 |
-| "📚 배우기 검토" pane 이 떠 있다 | 머지된 내 PR 에서 배운 것을 뽑는 중. 끝나면 닫아도 된다(다음에 PR 이 머지되면 다시 뜬다) |
+| 배우기 검토가 돌고 있는지 궁금하다 | 머지된 내 PR 에서 배운 것을 뒤에서 뽑는다(pane 은 없다). 기록은 `/tmp/hermes-learn-review-*.log` — 결과는 현황판 [학습] 탭에 뜬다 |
 
 더 볼 것: `README.md`(전체 구조) · `docs/playbook.html`(그림으로 보는 사용법) · `docs/knowledge/README.md`(레포 지식) · `docs/extending.md`(스킬·에이전트 추가)

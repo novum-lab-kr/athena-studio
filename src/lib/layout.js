@@ -3,7 +3,7 @@
 //
 // 트리: 잎 { pane: '<id>' } · 가지 { split: 'right' | 'down', ratio, first, second }
 //   right = first 왼쪽 · second 오른쪽, down = first 위 · second 아래.
-//   ratio 는 first(원래 pane)가 가질 몫 — herdr `pane split --ratio` 와 같다(2026-10-17 실측: 0.25 → 원래 pane 이 1/4).
+//   ratio 는 first(원래 pane)가 가질 몫(0.25 → 원래 pane 이 1/4).
 ;(function (root, factory) {
   if (typeof module === 'object' && module.exports) module.exports = factory()
   else root.StudioLayout = factory()

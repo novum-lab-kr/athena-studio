@@ -1959,7 +1959,7 @@
     const agentsScroll = agentsBox.scrollLeft;
     agentsBox.innerHTML = agents.length
       ? agents.map(agentCard).join('')
-      : `<div class="empty">${state.screen ? '지금 돌고 있는 에이전트가 없어요' : '화면 터미널(herdr · Athena Studio)을 찾지 못했어요 — 그 안에서 현황판을 띄우면 pane 이 보여요'}</div>`;
+      : `<div class="empty">${state.screen ? '지금 돌고 있는 에이전트가 없어요' : 'Athena Studio 화면을 찾지 못했어요 — 앱을 켜면 pane 이 보여요'}</div>`;
     agentsBox.scrollLeft = agentsScroll;
 
     const cards = state.cards || [];

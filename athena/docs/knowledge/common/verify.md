@@ -50,7 +50,7 @@
 | `tracking.calls` · `tracking.section` · `tracking.pageView` | 트래킹 이벤트 목록(`impact --events`)용 — 이벤트 함수 이름 → 붙는 말(기본 `sendViewEvent`→`_viewed` · `sendClickEvent`→`_clicked` · `sendScrollEvent`→`_scrolled` · `sendRequestEvent`→`_request`), 스크롤 구간·화면 보기 컴포넌트 `{ "tag", "prop" }`(기본 `ScrollEventWrapper`·`sectionId` / `PageViewEventLogger`·`pageName`) |
 | `dataErrors` | 실패 리포트에서 "🗂 계정 데이터 없음"으로 묶을 문구 정규식(오류 문구·화면 `note`) — 기본 `데이터 필요\|계정 상태\|No data returned\|Cannot return null`. 업무 필드 이름(예 `orderHistoryId`)은 여기에 |
 | `devUrl` · `profiles` · `routes` · `viewports` · … | 서버 대상 기본 주소 · 세션 프로필 · 화면별 설정(`samples`·`entry`·`skip`·`expect`) · 뷰포트 |
-검증 스크립트(lint·타입·테스트)와 별개다. **화면을 URL 로 바로 여는 스모크**라 흐름(본인인증 끝까지 등)은 보지 않는다(2차 — 계획서 D10). 바꾼 파일에서 import 를 거꾸로 따라가 **영향받는 화면을 전부** 찾고, 작업 워크트리와 기준(`origin/<prBase>` merge-base) dev 서버를 함께 띄워 Playwright 로 화면마다 연다(데스크톱·모바일). 계획서 `plans/feature/20261002-QA-시뮬레이션-영향-화면.md`.
+검증 스크립트(lint·타입·테스트)와 별개다. **화면을 URL 로 바로 여는 스모크**라 흐름(본인인증 끝까지 등)은 보지 않는다(2차에서). 바꾼 파일에서 import 를 거꾸로 따라가 **영향받는 화면을 전부** 찾고, 작업 워크트리와 기준(`origin/<prBase>` merge-base) dev 서버를 함께 띄워 Playwright 로 화면마다 연다(데스크톱·모바일). 계획서 `plans/feature/20261002-QA-시뮬레이션-영향-화면.md`.
 
 ```bash
 node scripts/qa/impact.mjs --cwd <워크트리> --app <앱>          # 영향 화면만 본다 (빠름, 서버 안 띄움)

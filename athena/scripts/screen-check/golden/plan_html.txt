@@ -1,14 +1,7 @@
-$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 node scripts/plan-html.mjs plans/refactor/20261003-lead.md --add <WORK>/decisions.json
---- exit 0
---- stdout
-plans/refactor/20261003-lead.html · 결정 0/1 확정 · 보낼 pane w1:p1
---- stderr
---- herdr
-["pane", "current"]
 $ node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add <WORK>/decisions.json
 --- exit 0
 --- stdout
-plans/task/20261001-fe-test.html · 결정 0/1 확정 · 보낼 pane w1:p1
+plans/task/20261001-fe-test.html · 결정 0/1 확정 · 보낼 pane (없음 — 복사로만)
 --- stderr
---- herdr
-["pane", "current"]
+{"error": "not_inside", "message": "화면 계층 밖이다(ATHENA_SCREEN=none · Athena Studio 밖)"}
+--- screen

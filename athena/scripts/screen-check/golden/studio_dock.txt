@@ -4,7 +4,7 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 p1
 p2
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --workspace self --format ids
 --- exit 0
@@ -12,7 +12,7 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 p1
 p2
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --prefer-tab self --format ids
 --- exit 0
@@ -22,7 +22,7 @@ p2
 p20
 p3
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --agent-only --format ids
 --- exit 0
@@ -31,43 +31,43 @@ p1
 p2
 p3
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --label 🛰 에이전트 모니터 --prefer-workspace self --format id
 --- exit 0
 --- stdout
 p20
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json scripts/screen pane list --tab self --format ids
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json scripts/screen pane list --workspace self --format ids
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane split --target p20 --direction right
 --- exit 2
 --- stdout
 --- stderr
 {"error": "usage", "message": "studio pane split: 고정 칸(monitor)은 나눌 수 없다 — 탭의 pane 을 주세요"}
---- herdr
+--- screen
 ["@studio", "pane", "split", "--target", "p20", "--direction", "right"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/monitor-pane.sh
 --- exit 0
 --- stdout
 --- stderr
 Athena Studio 는 앱 아래 AGENT MONITOR 칸이 에이전트 로그를 보여 줍니다 — pane 을 띄우지 않습니다
---- herdr
+--- screen
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_BOARD_PORT=47999 scripts/athena-up.sh
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["#nohup", "bash", "-c", "ATHENA_BOARD_PORT=47999 node <ATHENA>/scripts/board/server.mjs"]

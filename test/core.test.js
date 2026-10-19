@@ -30,7 +30,7 @@ test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', ()
   assert.deepEqual(core.loadConfig(file), core.DEFAULT_CONFIG)
   core.saveConfig(file, { boardPort: 70000 })
   assert.equal(core.loadConfig(file).boardPort, 4701)
-  // 현황판 기본은 4701 — herdr 용 아테나 현황판(4700)과 나란히
+  // 현황판 기본은 4701
   assert.equal(core.DEFAULT_CONFIG.boardPort, 4701)
 })
 
@@ -100,19 +100,19 @@ test('PATH 합치기: 로그인 PATH 가 앞, 겹치면 한 번', () => {
 })
 
 test('실행 파일 찾기: PATH 앞쪽부터', () => {
-  const seen = new Set(['/b/herdr', '/c/herdr'])
-  assert.equal(core.findExecutable('herdr', '/a:/b:/c', (f) => seen.has(f)), '/b/herdr')
-  assert.equal(core.findExecutable('herdr', '/a', (f) => seen.has(f)), null)
-  assert.equal(core.findExecutable('herdr', '', () => true), null)
+  const seen = new Set(['/b/tool', '/c/tool'])
+  assert.equal(core.findExecutable('tool', '/a:/b:/c', (f) => seen.has(f)), '/b/tool')
+  assert.equal(core.findExecutable('tool', '/a', (f) => seen.has(f)), null)
+  assert.equal(core.findExecutable('tool', '', () => true), null)
 })
 
 test('실행 파일 찾기: 실제 파일 시스템', () => {
   const dir = tmp()
-  const exe = path.join(dir, 'herdr')
+  const exe = path.join(dir, 'tool')
   fs.writeFileSync(exe, '#!/bin/sh\n')
-  assert.equal(core.findExecutable('herdr', dir), null) // 실행 권한 없음
+  assert.equal(core.findExecutable('tool', dir), null) // 실행 권한 없음
   fs.chmodSync(exe, 0o755)
-  assert.equal(core.findExecutable('herdr', dir), exe)
+  assert.equal(core.findExecutable('tool', dir), exe)
 })
 
 test('자식 환경: HOME 은 그대로(pane 의 claude 가 진짜 홈의 로그인 · 키체인을 쓴다) · 격리용 ATHENA_STUDIO_HOME 은 넘기지 않는다', () => {
@@ -123,16 +123,15 @@ test('자식 환경: HOME 은 그대로(pane 의 claude 가 진짜 홈의 로그
   }
 })
 
-test('자식 환경: HERDR_* 와 ELECTRON_RUN_AS_NODE 는 물려주지 않는다', () => {
-  const env = core.childEnv({ PATH: '/x', HERDR_ENV: '1', HERDR_PANE_ID: 'p1', ELECTRON_RUN_AS_NODE: '1', HOME: '/h' }, { A: 'b' })
+test('자식 환경: ELECTRON_RUN_AS_NODE 는 물려주지 않는다', () => {
+  const env = core.childEnv({ PATH: '/x', ELECTRON_RUN_AS_NODE: '1', HOME: '/h' }, { A: 'b' })
   assert.deepEqual(env, { PATH: '/x', HOME: '/h', A: 'b' })
 })
 
 test('터미널 환경: TERM · COLORTERM', () => {
-  const env = core.terminalEnv({ PATH: '/x', TERM: 'dumb', HERDR_ENV: '1' })
+  const env = core.terminalEnv({ PATH: '/x', TERM: 'dumb' })
   assert.equal(env.TERM, 'xterm-256color')
   assert.equal(env.COLORTERM, 'truecolor')
-  assert.equal(env.HERDR_ENV, undefined)
   assert.equal(env.LANG, 'ko_KR.UTF-8')
   assert.equal(core.terminalEnv({ LANG: 'en_US.UTF-8' }).LANG, 'en_US.UTF-8')
 })
@@ -172,7 +171,7 @@ test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 �
   const dir = '/Users/me/Library/Application Support/Athena Studio/athena'
   assert.equal(core.findAthenaWorkspace([{ label: 'web', id: 'w1', cwd: dir }], dir), null)
   assert.equal(core.findAthenaWorkspace([{ label: '~', cwd: '/Users/me' }, { label: 'athena', id: 'w4', cwd: dir }], dir).id, 'w4')
-  // 예전 아테나 폴더(herdr 용 ~/athena)의 athena 작업 공간은 고르지 않는다
+  // 다른 아테나 폴더의 athena 작업 공간은 고르지 않는다
   assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w2', cwd: '/Users/me/athena' }], dir), null)
   assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
@@ -234,11 +233,11 @@ test('현황판 포트: 저장된 포트부터 20개 · lsof 경로 · 스튜디
   assert.equal(core.setAthenaBoardPort(studioDir, 4702), true)
   assert.equal(core.setAthenaBoardPort(studioDir, 4702), false)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(studioDir, 'athena.config.json'), 'utf8')), { reposRoot: '/Users/me', screen: 'studio', boardPort: 4702 })
-  // herdr 용 설정(screen 없음)과 설정이 없는 폴더는 건드리지 않는다
-  const herdrDir = tmp()
-  fs.writeFileSync(path.join(herdrDir, 'athena.config.json'), '{"pack":"packs/acme"}')
-  assert.equal(core.setAthenaBoardPort(herdrDir, 4702), false)
-  assert.equal(fs.readFileSync(path.join(herdrDir, 'athena.config.json'), 'utf8'), '{"pack":"packs/acme"}')
+  // 스튜디오가 만들지 않은 설정(screen 없음)과 설정이 없는 폴더는 건드리지 않는다
+  const foreignDir = tmp()
+  fs.writeFileSync(path.join(foreignDir, 'athena.config.json'), '{"pack":"packs/acme"}')
+  assert.equal(core.setAthenaBoardPort(foreignDir, 4702), false)
+  assert.equal(fs.readFileSync(path.join(foreignDir, 'athena.config.json'), 'utf8'), '{"pack":"packs/acme"}')
   assert.equal(core.setAthenaBoardPort(tmp(), 4702), false)
   // 깨진 설정은 숨기지 않는다(앱 설정만 바뀌어 포트가 어긋나지 않게)
   const broken = tmp()

@@ -3,7 +3,7 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stdout
 {"panes": [{"id": "p1", "tab_id": "t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "✳ Claude Code"}, {"id": "p2", "tab_id": "t1", "workspace_id": "w1", "label": "🤖 fe · feat/x", "name": null, "pane_title": null, "cwd": "<ATHENA>/repos/shop-web", "foreground_cwd": "<ATHENA>/repos/shop-web", "focused": false, "agent": "claude", "agent_status": "working", "title": "✳ fe"}, {"id": "p3", "tab_id": "t2", "workspace_id": "w2", "label": null, "name": null, "pane_title": null, "cwd": "/tmp/other-repo", "foreground_cwd": "/tmp/other-repo", "focused": false, "agent": "codex", "agent_status": "idle", "title": "zsh"}]}
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --agent-only --format ids
 --- exit 0
@@ -12,7 +12,7 @@ p1
 p2
 p3
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --tab self --format ids
 --- exit 0
@@ -20,116 +20,116 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 p1
 p2
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --label 🤖 fe · feat/x --format id
 --- exit 0
 --- stdout
 p2
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --workspace w2 --prefer-tab self --format ids
 --- exit 0
 --- stdout
 p3
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list --cwd <ATHENA> --format ids
 --- exit 0
 --- stdout
 p1
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane current --format id
 --- exit 0
 --- stdout
 p1
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "current"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane get p1
 --- exit 0
 --- stdout
 {"pane": {"id": "p1", "tab_id": "t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": true, "agent": "claude", "agent_status": "idle", "title": "✳ Claude Code"}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "get", "p1"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane is-shell p3
 --- exit 1
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "is-shell", "p3"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane is-shell p3
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "is-shell", "p3"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane is-shell 
 --- exit 1
 --- stdout
 --- stderr
---- herdr
+--- screen
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane split --target self --direction down --ratio 0.25 --cwd /tmp/x --env A=1 --env B=2 --no-focus
 --- exit 0
 --- stdout
 {"pane": {"id": "p9", "tab_id": "t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "split", "--target", "self", "--direction", "down", "--ratio", "0.25", "--cwd", "/tmp/x", "--env", "A=1", "--env", "B=2", "--no-focus"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane split --target focused --direction right --focus --format id
 --- exit 0
 --- stdout
 p9
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "split", "--target", "focused", "--direction", "right", "--focus"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane split --target p3 --direction right --ratio 0.5
 --- exit 0
 --- stdout
 {"pane": {"id": "p9", "tab_id": "t1", "workspace_id": "w1", "label": null, "name": null, "pane_title": null, "cwd": "<ATHENA>", "foreground_cwd": "<ATHENA>", "focused": false, "agent": null, "agent_status": "unknown", "title": "zsh"}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "split", "--target", "p3", "--direction", "right", "--ratio", "0.5"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane run p9 env ATHENA_BOARD_PORT=4700 node /x/server.mjs
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "run", "p9", "env", "ATHENA_BOARD_PORT=4700", "node", "/x/server.mjs"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane run p9 less -R --format x
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "run", "p9", "less", "-R", "--format", "x"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 첫 줄 --no-focus
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "send-text", "p2", "첫 줄 --no-focus"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-keys p2 C-c Enter
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "send-keys", "p2", "C-c", "Enter"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane rename p9 📋 현황판
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "rename", "p9", "📋 현황판"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane close p9
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "close", "p9"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane read p2 --lines 20 --source visible
 --- exit 0
@@ -137,91 +137,73 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 첫 줄
 둘째 줄 done
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "read", "p2", "--source", "visible", "--lines", "20"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane wait-output p2 --match done --timeout 1000
 --- exit 0
 --- stdout
 둘째 줄 done
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "wait-output", "p2", "--match", "done", "--timeout", "1000"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane wait-output p2 --regex done$ --lines 5
 --- exit 0
 --- stdout
 둘째 줄 done
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "wait-output", "p2", "--lines", "5", "--regex", "done$"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen tab list
 --- exit 0
 --- stdout
 {"tabs": [{"id": "t1", "workspace_id": "w1", "label": "athena"}, {"id": "t2", "workspace_id": "w2", "label": "other"}]}
 --- stderr
---- herdr
+--- screen
 ["@studio", "tab", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen tab list --workspace w1
 --- exit 0
 --- stdout
 {"tabs": [{"id": "t1", "workspace_id": "w1", "label": "athena"}]}
 --- stderr
---- herdr
+--- screen
 ["@studio", "tab", "list", "--workspace", "w1"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen tab get t1
 --- exit 0
 --- stdout
 {"tab": {"id": "t1", "workspace_id": "w1", "label": "athena"}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "tab", "get", "t1"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen tab rename t3 shop-web
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "tab", "rename", "t3", "shop-web"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen tab close t3
 --- exit 0
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "tab", "close", "t3"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen workspace list
 --- exit 0
 --- stdout
 {"workspaces": [{"id": "w1", "label": "athena", "active_tab_id": "t1", "focused": true}, {"id": "w2", "label": "other", "active_tab_id": "t2", "focused": false}]}
 --- stderr
---- herdr
+--- screen
 ["@studio", "workspace", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen workspace get w1
 --- exit 0
 --- stdout
 {"workspace": {"id": "w1", "label": "athena", "active_tab_id": "t1", "focused": true}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "workspace", "get", "w1"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen workspace create --label shop-web --cwd /tmp/x --no-focus
 --- exit 0
 --- stdout
 {"workspace": {"id": "w3", "label": "shop-web", "active_tab_id": "t3", "focused": false}}
 --- stderr
---- herdr
+--- screen
 ["@studio", "workspace", "create", "--label", "shop-web", "--cwd", "/tmp/x", "--no-focus"]
-$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane layout --pane p1
---- exit 1
---- stdout
---- stderr
-{"error": "unsupported", "message": "studio 화면 백엔드는 이 동작을 지원하지 않는다"}
---- herdr
-$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane swap p1 p2
---- exit 1
---- stdout
---- stderr
-{"error": "unsupported", "message": "studio 화면 백엔드는 이 동작을 지원하지 않는다"}
---- herdr
-$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane move p2 --new-tab
---- exit 1
---- stdout
---- stderr
-{"error": "unsupported", "message": "studio 화면 백엔드는 이 동작을 지원하지 않는다"}
---- herdr

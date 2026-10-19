@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""백그라운드 서브에이전트의 JSONL 로그를 실시간으로 압축해 보여준다 (herdr pane 용).
+"""백그라운드 서브에이전트의 JSONL 로그를 실시간으로 압축해 보여준다 (터미널 용 · Athena Studio 는 앱 AGENT MONITOR 칸).
 사용: scripts/agent-monitor.py <jsonl...>        지정 파일들을 tail
       scripts/agent-monitor.py --recent [분]      최근 N분(기본 120) 안에 수정된 로그 자동 선택 — 10초마다 새 로그도 찾는다
         · 백그라운드 서브에이전트(subagents/agent-*.jsonl)

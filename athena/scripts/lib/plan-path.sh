@@ -2,7 +2,7 @@
 # 사용: . "$ATHENA_DIR/scripts/lib/plan-path.sh"; PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")" || exit 2
 #
 # 문서 ID 는 본체 기준 논리 경로다(계획서 4.2). 실제 경로로 풀어 본체 접두를 자르면 여러 팩 구조에서 깨진다
-# (plans → .pack-data/plans → ~/athena-data/packs/<id>/plans 로 풀려 본체 밖이 된다 — 1-0 스파이크 S2).
+# (plans → .pack-data/plans → <데이터>/packs/<id>/plans 로 풀려 본체 밖이 된다 — 1-0 스파이크 S2).
 #   1) 상대 경로면 그대로
 #   2) 본체 경로(부른 쪽이 쓴 그대로 · 본체 실제 경로)로 시작하면 자른다
 #   3) 활성 팩 데이터의 실제 경로(<데이터>/packs/<id>/…)면 논리 경로로 되돌린다 — plans/… · issues/… · pack/archive/… → archive/…

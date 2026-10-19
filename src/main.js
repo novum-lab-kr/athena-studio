@@ -1,6 +1,6 @@
 // Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 현황판 서버 · 아테나 폴더 설정
-// 창마다 팩 하나(아테나 계획서 20261018-팩마다-본체 4.2 · D4 A) — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 현황판 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
-// 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만 · 결정 Q1 B)
+// 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 현황판 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
+// 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만)
 const { app, BrowserWindow, Menu, Notification, Tray, WebContentsView, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const { execFile, spawn } = require('child_process')
 const fs = require('fs')
@@ -19,7 +19,7 @@ const viewer = require('./lib/viewer')
 const i18n = require('./lib/i18n')
 
 const isMac = process.platform === 'darwin'
-// 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다(아테나 계획서 20261019-스튜디오-코어-내장 4.2).
+// 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
 // 앱 데이터 자리는 ready 전에 정해야 한다. ATHENA_STUDIO_HOME — 격리 실행(시험): 스튜디오 집 · 앱 데이터를 그 아래로
 const IDENTITY = studioHome.appIdentity({ packaged: app.isPackaged })
 const STUDIO_HOME_OVERRIDE = process.env.ATHENA_STUDIO_HOME || null
@@ -28,7 +28,7 @@ app.setName(IDENTITY.name)
 if (!app.commandLine.hasSwitch('user-data-dir')) {
   app.setPath('userData', studioHome.userDataDir({ appData: app.getPath('appData'), identity: IDENTITY, override: STUDIO_HOME_OVERRIDE }))
 }
-// 스튜디오 집 — ~/.athena-studio/{core,bodies,data,daemon.json}. ~/athena(herdr 용 아테나)와 본체 · 데이터 · 포트를 나누지 않는다
+// 스튜디오 집 — ~/.athena-studio/{core,bodies,data,daemon.json}. 본체 · 데이터 · 포트를 모두 이 아래에 둔다
 const STUDIO = studioHome.studioLayout({ home: app.getPath('home'), override: STUDIO_HOME_OVERRIDE, identity: IDENTITY })
 // 앱이 들고 온 아테나 코어(git 번들) — 앱 리소스 자리 하나(개발 앱은 npm start 가 레포 athena/ 에서 만든다)
 const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(__dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
@@ -42,7 +42,7 @@ const packWindows = new Set() // 열린 팩 창 — createPackWindow 의 문맥
 let lastFocused = null // 마지막으로 앞에 있던 팩 창(메뉴 · 메뉴 막대가 이 창 기준)
 
 // ── 언어 ──────────────────────────────────────────────────
-// 사전은 src/i18n/<언어>.json. 앱 설정 language → 없으면 시스템 언어(app.getLocale()) → 네 언어 밖이면 영어(D3).
+// 사전은 src/i18n/<언어>.json. 앱 설정 language → 없으면 시스템 언어(app.getLocale()) → 네 언어 밖이면 영어.
 // 화면 · 트레이 창은 preload 가 i18n:get 으로 사전을 받고, 바꾸면 i18n:changed 로 다시 받는다
 const DICTIONARIES = Object.fromEntries(i18n.LANGUAGES.map((lang) => [lang, require(`./i18n/${lang}.json`)]))
 let language = i18n.FALLBACK_LANGUAGE
@@ -81,7 +81,7 @@ function loadLoginPath() {
 }
 
 // ── 팩 창 찾기 ─────────────────────────────────────────────
-// IPC 는 보낸 창 기준(C6) — 맨 위 프레임(앱 화면)에서 온 것만. 현황판 iframe · 서랍 안 페이지는 창 문맥을 얻지 못한다
+// IPC 는 보낸 창 기준 — 맨 위 프레임(앱 화면)에서 온 것만. 현황판 iframe · 서랍 안 페이지는 창 문맥을 얻지 못한다
 function ctxOf(event) {
   for (const ctx of packWindows) {
     if (ctx.win && !ctx.win.isDestroyed() && event.sender === ctx.win.webContents && event.senderFrame === event.sender.mainFrame) return ctx
@@ -101,7 +101,7 @@ function ctxOfBody(dir) {
   return [...packWindows].find((ctx) => ctx.athenaDir && core.sameDir(ctx.athenaDir, dir)) || null
 }
 
-// 열린 창 목록을 앱 설정에 — 다음에 켤 때 다시 연다(결정 Q2 A). 끄는 중(⌘Q)에는 닫히는 창을 빼지 않는다
+// 열린 창 목록을 앱 설정에 — 다음에 켤 때 다시 연다. 끄는 중(⌘Q)에는 닫히는 창을 빼지 않는다
 function saveWindows() {
   if (quitting) return
   const dirs = [...packWindows].map((ctx) => ctx.athenaDir).filter(Boolean)
@@ -113,9 +113,9 @@ function saveWindows() {
 
 // ── 작업 창 (데몬) — 프로세스는 앱 전체에 하나 ───────────────────────
 // 옛 데몬(protocol 이 다른 데몬)에 [나중에] 로 그대로 붙어 쓰는 중 — 창을 본체로 묶지 못해 팩 창이 여럿이면 pane 이 섞인다.
-// 그동안은 새 팩 창을 열지 않는다(아테나 계획서 20261018-팩마다-본체 리뷰 R1 A). 창 하나일 때는 지금 그대로 쓴다
+// 그동안은 새 팩 창을 열지 않는다. 창 하나일 때는 지금 그대로 쓴다
 let daemonOld = false
-const browserUrls = new Map() // 본체 실제 경로 → 옆 브라우저에서 마지막으로 보던 주소(팩을 바꿨다 돌아오면 — D4 바꿈)
+const browserUrls = new Map() // 본체 실제 경로 → 옆 브라우저에서 마지막으로 보던 주소(팩을 바꿨다 돌아오면)
 let heldDirs = [] // 옛 데몬이라 켤 때 다시 열지 않은 팩 창 본체 — 맞는 데몬에 붙으면 연다
 
 // 맞는 데몬에 붙었다 — 미뤄 둔 팩 창을 연다
@@ -457,7 +457,7 @@ function isBoardUp(port) {
   })
 }
 
-// scripts/board.sh 는 브라우저를 열고 herdr pane 을 가르므로 쓰지 않고 server.mjs 를 직접 띄운다.
+// scripts/board.sh 는 브라우저를 열므로 쓰지 않고 server.mjs 를 직접 띄운다.
 // 앱을 닫아도 현황판은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
 // 포트 정하기 · 띄우기가 겹치지 않게 한 줄로 세운다(창이 여럿이어도 — 포트를 서로 고르다 겹치지 않게)
 let boardQueue = Promise.resolve()
@@ -630,8 +630,8 @@ function logCore(line) {
 }
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
-// 정본은 아테나 본체 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
-// 약속: 아테나 계획서 plans/feature/20261018-팩마다-본체.md 5.7(contract 2). 팩 파일 · 링크는 직접 만지지 않는다.
+// 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
+// 약속: 코어 `pack … --json` 출력(contract 2 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 const PACK_TIMEOUTS = { update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000 }
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
@@ -642,7 +642,7 @@ function packScript(dir) {
 }
 
 // 셸을 거치지 않고 실행 · progress 줄은 그때그때 화면에 · 원문(stderr)은 화면에 넘기지 않고 pack.log 에만
-// 본체 명령 — `athena.mjs <argv…> --json`. 늘 약속 번호를 알린다(ATHENA_CONTRACT · 5.7 '계약 확인' — 다르면 본체가 contract-mismatch).
+// 본체 명령 — `athena.mjs <argv…> --json`. 늘 약속 번호를 알린다(ATHENA_CONTRACT — 다르면 본체가 contract-mismatch).
 // dir = 그 명령을 부를 본체(창마다 다르다 — '지금 팩' 은 부른 본체의 팩)
 function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
   return new Promise((resolve) => {
@@ -667,7 +667,7 @@ function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
       if (errors.trim()) fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} ${argv.slice(0, 2).join(' ')}\n${errors.slice(-20000)}`, () => {})
       resolve(result)
     }
-    // 시간 초과 · 취소는 SIGTERM — 본체가 임시본을 지우거나 되돌리고 끝낸다(5절). 결과는 프로세스가 실제로 끝난 뒤에(그 전에 다음 단계로 가지 않게).
+    // 시간 초과 · 취소는 SIGTERM — 본체가 임시본을 지우거나 되돌리고 끝낸다. 결과는 프로세스가 실제로 끝난 뒤에(그 전에 다음 단계로 가지 않게).
     // 15초 안에 안 끝나면 SIGKILL
     let forced = null
     const stop = (reason) => {
@@ -689,7 +689,7 @@ function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
       rest = split.rest
       for (const line of split.lines) {
         const step = packModel.parseProgressLine(line, say)
-        // 본체 설명은 한국어(D4 밖) — 한국어가 아니면 아는 단계는 사전 이름으로 보인다
+        // 본체 설명은 한국어(번역 범위 밖) — 한국어가 아니면 아는 단계는 사전 이름으로 보인다
         if (step && language !== i18n.FALLBACK_LANGUAGE) step.text = packModel.stepLabel(step.step, say) || step.text
         if (step && onProgress) onProgress(step)
       }
@@ -707,15 +707,15 @@ function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
 
 const runPack = (args, options) => runCore(['pack', ...args], options)
 
-// 본체의 약속 번호 — `version --json`(5.7). 명령이 없으면(옛 코어 · 사용법 오류) 1 · 일시 실패면 null.
+// 본체의 약속 번호 — `version --json`. 명령이 없으면(옛 코어 · 사용법 오류) 1 · 일시 실패면 null.
 // 본체를 업데이트하면 바뀌므로 기억하지 않고 부를 때마다 묻는다(팩을 열거나 만들거나 가져올 때만 — 가볍다)
 async function coreContract(dir) {
   if (!dir) return { contract: null, core: null }
   return packModel.contractOf(await runCore(['version'], { dir }))
 }
 
-// 옛 코어(약속 1 · version 명령 없음)면 팩을 열거나 · 만들거나 · 가져오는 일은 막고 업데이트를 안내한다(결정 Q3 A · D9).
-// 본체를 바꾸는 명령보다 **먼저** 부른다(C5)
+// 옛 코어(약속 1 · version 명령 없음)면 팩을 열거나 · 만들거나 · 가져오는 일은 막고 업데이트를 안내한다.
+// 본체를 바꾸는 명령보다 **먼저** 부른다
 async function contractBlock(dir) {
   const known = await coreContract(dir)
   if (known.contract === packModel.CONTRACT) return null
@@ -738,7 +738,7 @@ function refreshAllPacks() {
 }
 
 // ── 팩 창 ─────────────────────────────────────────────────
-// 창 하나 = 팩 본체 하나. welcome — 앱을 켤 때 첫 창이면 시작 화면 규칙(launchWelcome)을 본다(결정 Q2 A)
+// 창 하나 = 팩 본체 하나. welcome — 앱을 켤 때 첫 창이면 시작 화면 규칙(launchWelcome)을 본다
 function createPackWindow(athenaDir, { welcome = false } = {}) {
   const ctx = {
     athenaDir: athenaDir || null,
@@ -1019,7 +1019,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (branches) send('screen:branches', branches)
   }
 
-  // 작업 공간마다 git 브랜치(herdr spaces 처럼 이름 아래에) — 5초에 한 번만 묻는다
+  // 작업 공간마다 git 브랜치(이름 아래에) — 5초에 한 번만 묻는다
   async function workspaceBranches() {
     if (branchCache.value && Date.now() - branchCache.at < 5000) return branchCache.value
     const state = await daemonCall('state')
@@ -1110,7 +1110,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // ── 아테나 에이전트 ──
   // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
-  // keepView — 팩을 바꿔 돌아왔을 때(D4 바꿈): 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
+  // keepView — 팩을 바꿔 돌아왔을 때: 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
   ctx.openAthenaAgent = async (size, { keepView = false } = {}) => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return { skipped: true }
     const state = await daemonCall('state')
@@ -1182,7 +1182,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
 
   // 팩 지원 본체의 현황판 — 포트는 본체가 정한다(본체 하나에 현황판 하나). 떠 있는 현황판이 이 본체 팩 · 세대 것이면
-  // 누가 띄웠든(herdr board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 현황판이 아닌 것이 쥐고 있으면 오류
+  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 현황판이 아닌 것이 쥐고 있으면 오류
   async function packBoard(port, dir, current) {
     const url = core.boardUrl(port)
     if (await isBoardUp(port)) {
@@ -1257,7 +1257,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return { ...ctx.athenaState(), changed }
   }
 
-  // 이 창을 다른 본체(팩)로 다시 묶는다(아테나 계획서 20261018-팩마다-본체 D4 바꿈 — 한 창에서 팩을 바꿔 본다).
+  // 이 창을 다른 본체(팩)로 다시 묶는다(한 창에서 팩을 바꿔 본다).
   // 이전 본체의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 오면 그 본체의 보던 자리 그대로). 화면은 돌려준 상태로 다시 붙는다(attach{body}) —
   // 작업 공간 · 현황판 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
   function rebindBody(dir) {
@@ -1298,7 +1298,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (watching) ctx.setMonitorWatch(true)
   }
 
-  // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다(~/athena 는 보지 않는다 — 다른 앱이다)
+  // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다
   ctx.installAthena = async () => {
     const prepared = await prepareStudioCore({ update: false })
     if (!prepared.ok) return { ...ctx.athenaState(), error: coreInstallError(prepared) }
@@ -1341,8 +1341,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
   }
 
-  // 새 팩 — 빈 자리 + 그 본체(5.7 pack new)를 만들고 이 창을 그 본체로 바꾼다(D4 바꿈). 그 본체에서 claude 가 켜지면 /setup.
-  // 옛 데몬이면 만들기 전에 막는다(바꿔 보면 팩끼리 pane 이 섞인다 — 리뷰 R1)
+  // 새 팩 — 빈 자리 + 그 본체(pack new)를 만들고 이 창을 그 본체로 바꾼다. 그 본체에서 claude 가 켜지면 /setup.
+  // 옛 데몬이면 만들기 전에 막는다(바꿔 보면 팩끼리 pane 이 섞인다)
   ctx.packNew = async () => {
     if (daemonOld) return { ok: false, error: 'old-daemon', text: say('pack.switch.oldDaemon') }
     const blocked = await contractBlock(ctx.athenaDir)
@@ -1392,7 +1392,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
 
   // 검사한 임시본 등록 — keep(버림) · replace(기존 자동 백업 후 교체) · new.
-  // 교체는 본체가 그 팩 본체 기준으로 막거나(일하는 중이면 busy) 링크를 다시 건다(C1) — 스튜디오는 pane 을 닫지 않는다
+  // 교체는 본체가 그 팩 본체 기준으로 막거나(일하는 중이면 busy) 링크를 다시 건다 — 스튜디오는 pane 을 닫지 않는다
   ctx.packImport = async (token, choice) => {
     if (typeof token !== 'string' || !['keep', 'replace', 'new'].includes(choice)) return { ok: false, error: 'invalid-pack', text: say('pack.error.badImportRequest') }
     if (choice !== 'keep') {
@@ -1427,7 +1427,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
   }
 
-  // 팩 열기 — 그 팩 본체를 준비하고(5.7 pack open) 이 창을 그 본체로 바꾼다(D4 바꿈 — 한 창에서 바꿔 보기).
+  // 팩 열기 — 그 팩 본체를 준비하고(pack open) 이 창을 그 본체로 바꾼다(한 창에서 바꿔 보기).
   // 다른 창이 이미 그 팩을 보고 있으면 그 창으로(한 팩을 두 창이 같이 보지 않게). newWindow 면 새 창으로(우클릭 [새 창으로 열기])
   ctx.packOpen = async (id, { newWindow = false } = {}) => {
     if (typeof id !== 'string' || !id) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
@@ -1437,7 +1437,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       elsewhere.show()
       return { ok: true, id, existing: true }
     }
-    // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다(리뷰 R1)
+    // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다
     if (daemonOld) return { ok: false, error: 'old-daemon', text: say(newWindow ? 'pack.open.oldDaemon' : 'pack.switch.oldDaemon') }
     const blocked = await contractBlock(ctx.athenaDir)
     if (blocked) return blocked
@@ -1459,7 +1459,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
   }
 
-  // ── 팩 표시 이름 · 이미지(아테나 계획서 20261018-팩마다-본체 5.7) ──
+  // ── 팩 표시 이름 · 이미지 ──
   // 이미지는 본체가 준 iconPath(마지막 pack list)만 읽어 data URL 로 넘긴다 — 화면이 경로를 정하지 않고, CSP(img-src 'self' data:)와 맞는다
   ctx.packIcon = async (id) => {
     const iconPath = packModel.packIconPath(ctx.packState, id)
@@ -1513,7 +1513,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
         resolve(action)
       }
       const items = []
-      // 지금 팩이 아니면 — 따로 띄우고 싶을 때만 새 창으로(D4 바꿈 · 누르면 이 창에서 바꿔 본다)
+      // 지금 팩이 아니면 — 따로 띄우고 싶을 때만 새 창으로(누르면 이 창에서 바꿔 본다)
       if (!(ctx.packState.current && ctx.packState.current.id === id)) items.push({ label: say('pack.menu.newWindow'), click: pick('new-window') }, { type: 'separator' })
       items.push({ label: say('pack.menu.rename'), click: pick('rename') })
       if (pack.displayName) items.push({ label: say('pack.menu.resetName'), click: pick('reset-name') })
@@ -1543,7 +1543,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     browserView.setBackgroundColor('#ffffff')
     watchConsoleSends(browserSession)
     const contents = browserView.webContents
-    // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면 — D4 바꿈)
+    // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면)
     const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
     if (remembered) contents.loadURL(remembered)
     // http(s) 밖으로는 움직이지 않는다 — 안쪽 프레임까지
@@ -1663,7 +1663,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   })
   ctx.win.on('focus', () => {
     lastFocused = ctx
-    if (tray) pollTray() // 메뉴 막대는 앞 창의 팩만(결정 Q1 B) — 창을 바꾸면 바로 다시 읽는다
+    if (tray) pollTray() // 메뉴 막대는 앞 창의 팩만 — 창을 바꾸면 바로 다시 읽는다
   })
   // 맥은 마지막 창을 닫아도 메뉴 막대에 남는다(숨기기) — 완전히 끄는 것은 [Athena 종료] · ⌘Q. 창이 여럿이면 그 창만 닫는다
   ctx.win.on('close', (event) => {
@@ -1759,7 +1759,7 @@ function startPanesPolling() {
   }, 2000)
 }
 
-// ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만(결정 Q1 B) ───────────────────
+// ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 ───────────────────
 // 맥 상단 메뉴 막대 아이콘 — 누르면 확인 필요 · 에이전트 · 사용량 · 바로가기. 막힘 · 응답 끝 · 리뷰 대기 · 완료는 맥 알림.
 // 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
@@ -2092,8 +2092,8 @@ function notify(item) {
 }
 
 // ── 창 · 메뉴 ─────────────────────────────────────────────
-// 지난번에 열려 있던 팩 창들을 다시 연다 — 첫 창만 시작 화면 규칙을 본다(결정 Q2 A). 본체가 없으면 처음 화면(아테나 폴더 고르기) 창 하나.
-// 첫 창은 바로 만든다(showWindow 가 곧바로 찾는다). 두 번째 창부터는 데몬 버전을 본 뒤 — 옛 데몬이면 열지 않고 남겨 둔다(리뷰 R1 A)
+// 지난번에 열려 있던 팩 창들을 다시 연다 — 첫 창만 시작 화면 규칙을 본다. 본체가 없으면 처음 화면(아테나 폴더 고르기) 창 하나.
+// 첫 창은 바로 만든다(showWindow 가 곧바로 찾는다). 두 번째 창부터는 데몬 버전을 본 뒤 — 옛 데몬이면 열지 않고 남겨 둔다
 function openSavedWindows() {
   const dirs = core.windowDirs(config, core.sameDir).filter((dir) => core.checkAthenaDir(dir).ok)
   if (!dirs.length) {
@@ -2114,7 +2114,7 @@ function openSavedWindows() {
     })
 }
 
-// 메뉴 [보기 → 언어] — 언어 이름은 그 언어로, 검수 전 사전은 그 언어의 '검수 전' 표시를 붙인다(D5)
+// 메뉴 [보기 → 언어] — 언어 이름은 그 언어로, 검수 전 사전은 그 언어의 '검수 전' 표시를 붙인다
 function languageMenu() {
   return i18n.LANGUAGES.map((lang) => {
     const dictionary = DICTIONARIES[lang]
@@ -2233,7 +2233,7 @@ function buildMenu() {
   Menu.setApplicationMenu(Menu.buildFromTemplate(template))
 }
 
-// ── IPC — 모두 보낸 창의 문맥으로(C6) ─────────────────────────────
+// ── IPC — 모두 보낸 창의 문맥으로 ─────────────────────────────
 // 언어 사전 — preload 가 처음 한 번 동기로 받는다(화면이 첫 글자를 그리기 전에). 읽기 전용 데이터
 ipcMain.on('i18n:get', (event) => (event.returnValue = i18nPayload()))
 
@@ -2256,7 +2256,7 @@ function listen(channel, work) {
 handle('athena:state', (ctx) => ctx.athenaState())
 handle('athena:pick', (ctx) => ctx.pickAthenaDir())
 handle('athena:install', (ctx) => ctx.installAthena())
-// 회사 팩 — 본체 명령을 부르고 결과만 화면에(5.7 약속). 문자열 · 고른 값만 받는다
+// 회사 팩 — 본체 명령을 부르고 결과만 화면에. 문자열 · 고른 값만 받는다
 handle('pack:list', (ctx) => ctx.refreshPacks())
 handle('pack:open', (ctx, id, options) => ctx.packOpen(String(id), { newWindow: Boolean(options && options.newWindow) }))
 handle('pack:new', (ctx) => ctx.packNew())
@@ -2327,7 +2327,7 @@ app.whenReady().then(async () => {
   // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   config = core.loadConfig(configFile())
-  // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 정본)
+  // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 기준)
   if (!Array.isArray(config.windows)) config = core.withWindows(config, core.windowDirs(config, core.sameDir))
   language = i18n.pickLanguage(config.language, app.getLocale())
   // 코어 준비 · 업데이트는 git · node 를 부르므로 로그인 셸 PATH 를 받은 뒤에

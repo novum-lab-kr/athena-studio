@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 팀원 최초 설정: athena.config.json 의 레포들을 repos/<name> 심볼릭 링크로 연결하고 도구를 점검한다.
 # 사용: scripts/setup.sh [--root <레포들이 있는 폴더>] [--links-only]   (기본: athena.config.json 의 reposRoot, 보통 hermes 상위 폴더)
-#   --links-only  레포 링크만 — 도구 점검·herdr-sidebar 패치·QA 의존성·Chromium 설치는 하지 않는다
+#   --links-only  레포 링크만 — 도구 점검·QA 의존성·Chromium 설치는 하지 않는다
 #                 (세션 시작 훅 setup-check.py 가 빠진 링크를 이어 줄 때 쓴다 — 공용 도구를 말없이 바꾸지 않게)
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -46,19 +46,15 @@ fi
 failed=0
 echo
 echo "도구 점검:"
-for tool in git node pnpm claude herdr; do
+for tool in git node pnpm claude; do
   if command -v "$tool" >/dev/null 2>&1; then
     ver="$("$tool" --version 2>/dev/null | head -1)"
     printf '  ✔ %-7s %s\n' "$tool" "$ver"
   else
-    if [ "$tool" = herdr ]; then printf '  · %-7s 없음 (선택 — /guide pane 은 새 창으로 대체됨)\n' "$tool"
-    else printf '  ✖ %-7s 없음\n' "$tool"; fi
+    printf '  ✖ %-7s 없음\n' "$tool"
   fi
 done
 
-echo
-echo "herdr-sidebar 패치 (Explorer 에서 바뀐 파일 클릭 → diff · patches/herdr-sidebar):"
-"$ATHENA_DIR/scripts/herdr-sidebar-patch.sh" || failed=$((failed+1))
 
 echo
 echo "QA 시뮬레이션 도구 (scripts/qa — Playwright·dependency-cruiser):"

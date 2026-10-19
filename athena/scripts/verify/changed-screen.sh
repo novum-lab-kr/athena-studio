@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 바뀐 파일에 화면 계층 파일이 있는지 — 화면 회귀 시험(screen-check, 약 2분)을 돌릴지 정한다(계획서 D1).
+# 바뀐 파일에 화면 계층 파일이 있는지 — 화면 회귀 시험(screen-check, 약 2분)을 돌릴지 정한다.
 # 팩 검증 스크립트가 부른다:
 #   if bash "$ATHENA_DIR/scripts/verify/changed-screen.sh" "$REPO_DIR" $FULL; then run_step "screen-check …" …
 #   else skip_step_rule "screen-check …" "화면 파일 변경 없음"; fi

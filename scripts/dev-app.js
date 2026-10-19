@@ -3,7 +3,7 @@
 // 앱 데이터 폴더는 main 이 정한다 — 개발 앱은 'Athena Studio Dev' · 데몬 접속 파일 daemon-dev.json(배포판과 겹치지 않게 · src/lib/studio-home.js appIdentity).
 //   node scripts/dev-app.js make    (postinstall) 없거나 Electron 버전 · 아이콘이 바뀌었으면 다시 만든다
 //   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
-//                                   켜기 전에 레포 athena/(git subtree)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
+//                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -148,7 +148,7 @@ function build() {
   }
 }
 
-// 앱이 들고 갈 아테나 코어 — 레포 athena/ 의 커밋된 기록(subtree split)을 git 번들로. 앱은 첫 실행 때 ~/.athena-studio/core 로 풀고,
+// 앱이 들고 갈 아테나 코어 — 레포 athena/ 의 커밋된 기록을 git 번들로. 앱은 첫 실행 때 ~/.athena-studio/core 로 풀고,
 // 새 커밋이면 켤 때 업데이트한다. 못 만들어도 켜기는 한다(이미 만든 번들 · 이미 푼 코어를 쓴다)
 function makeBundle() {
   const out = studioHome.coreBundlePath({ appRoot: ROOT, packaged: false })

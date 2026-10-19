@@ -239,7 +239,7 @@ test('켤 때 업데이트: 주 본체에 팩이 없어도 레지스트리에 �
   assert.equal(updated.state, 'updated')
   assert.equal(updated.mainMoved, true)
   assert.equal(run(coreDir, 'rev-parse', 'HEAD'), next.commit)
-  // 주 본체 코어 파일을 고쳐 뒀으면 <데이터>/backups/core-edits/ 에 사본을 두고 감는다(D4)
+  // 주 본체 코어 파일을 고쳐 뒀으면 <데이터>/backups/core-edits/ 에 사본을 두고 감는다
   commitCore(repo, 'F.md', 'f\n')
   const third = home.makeCoreBundle({ repoRoot: repo, out: bundle })
   fs.appendFileSync(path.join(coreDir, 'CLAUDE.md'), 'edit\n')

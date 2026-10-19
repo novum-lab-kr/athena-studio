@@ -1,11 +1,11 @@
 # 팩 형식
 
-아테나는 **코어**(이 레포 — 흐름·훅·현황판·학습 루프·공통 규칙)와 **팩**(레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉜다. 코어는 회사 이름을 모르고, 필요한 값은 `scripts/lib/config.mjs`(파이썬은 `scripts/lib/athena_config.py`)로 읽는다.
+아테나는 **코어**(이 폴더 — Athena Studio 가 들고 와 `~/.athena-studio/core` 에 푼다 · 흐름·훅·현황판·학습 루프·공통 규칙)와 **팩**(레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉜다. 코어는 회사 이름을 모르고, 필요한 값은 `scripts/lib/config.mjs`(파이썬은 `scripts/lib/athena_config.py`)로 읽는다.
 
 ## 연결
 
 ```
-athena.config.json   이 컴퓨터 설정 — { "pack": "packs/<회사>", "reposRoot": ".." }   (코어 레포에는 example 만)
+athena.config.json   이 컴퓨터 설정 — { "pack": "packs/<회사>", "reposRoot": ".." }   (코어에는 example 만 커밋된다)
 packs/<회사>/         팩 레포 클론 (코어는 packs/ 를 git 에서 무시)
 bin/athena pack link 팩 파일을 코어의 정해진 자리에 심볼릭 링크로 건다 — 목록은 .git/info/exclude 에 적힌다
 bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 — 있으면 실패
@@ -37,18 +37,18 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 ## 백업 · 되살리기
 
 팩은 git 레포가 아닐 수 있다(로컬에만 두는 회사 — 그러면 `archive/` 보관도 커밋되지 않고 로컬에만 남는다). 그래서 압축 파일 하나로 백업한다.
-- `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `~/athena-pack-backups/` — 데이터 폴더가 `~/athena-data` 가 아니면 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
+- `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
 - `bin/athena pack restore <파일>` — `packs/<팩>` 으로 되살린다. 같은 이름 팩이 있으면 **덮지 않고 멈춘다**(옮기거나 지운 뒤 다시). 팩 없이 쓰는 중이면 `athena.config.json` 의 `pack` 을 잡고 링크까지 건다
 - **여러 팩 구조**(아래)에서는 두 명령 모두 멈추고 안내만 한다 — 팩만은 `pack export --out <폴더>`, 팩 + 작업 기록은 `pack backup --with-work`, 되살리기는 `pack restore --with-work <파일>` 또는 `pack inspect <파일>` → `pack import <token> --new`
 - 말로: "팩 백업해줘" · "팩 되살려줘 <파일>"
 
 ## 여러 팩 (팩마다 본체 — 팩 여러 개를 동시에)
 
-팩 여럿을 등록해 두고 **팩마다 본체를 따로** 둔다. 본체는 코어 체크아웃이고, 본체 하나 = 팩 하나 = 현황판 하나다. 그래서 팩 여러 개를 **동시에** 켤 수 있다(한 팩에서 아테나·에이전트가 일해도 다른 팩은 그대로 열린다). 다른 팩으로 가는 것은 **열기**(`pack open`)다 — 본체의 팩을 바꾸지 않는다. 팩과 그 팩의 작업 기록은 **사용자 데이터 폴더**에 있고, 본체에는 링크만 있다. 팩끼리 섞이지 않는다(가져오기는 복사 · 링크 금지). 계획서 `plans/feature/20261018-팩마다-본체.md`(약속 5.7) · 1단계 `plans/feature/20261018-여러-회사-팩.md`.
+팩 여럿을 등록해 두고 **팩마다 본체를 따로** 둔다. 본체는 코어 체크아웃이고, 본체 하나 = 팩 하나 = 현황판 하나다. 그래서 팩 여러 개를 **동시에** 켤 수 있다(한 팩에서 아테나·에이전트가 일해도 다른 팩은 그대로 열린다). 다른 팩으로 가는 것은 **열기**(`pack open`)다 — 본체의 팩을 바꾸지 않는다. 팩과 그 팩의 작업 기록은 **사용자 데이터 폴더**에 있고, 본체에는 링크만 있다. 팩끼리 섞이지 않는다(가져오기는 복사 · 링크 금지).
 
 ```
-~/athena/                       주 본체 — git 저장소 주인 · main 브랜치 · 정비(코어 고치기·커밋)는 여기서만
-~/athena-<id>/                  팩 본체 — 같은 저장소의 git 워크트리 · 브랜치 없이(detached) 배포 커밋 · pack open 이 만든다
+~/.athena-studio/core/          주 본체 — git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 정비(코어 고치기·커밋)는 여기서만
+~/.athena-studio/bodies/<id>/   팩 본체 — 같은 저장소의 git 워크트리 · 브랜치 없이(detached) 배포 커밋 · pack open 이 만든다(레지스트리 bodiesDir)
   (각 본체 안)
 ├─ .pack-data → <데이터>/packs/<id>     그 본체의 팩 — 본체를 만들 때 한 번 걸고 바꾸지 않는다
 ├─ pack · plans · issues · repos · .worktrees · archive · .sync      고정 링크(.pack-data/…)
@@ -56,13 +56,13 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 ├─ .claude/agents/<x>.md 등 팩 링크 → pack/agents/<x>.md
 └─ athena.config.json            그 본체 설정(dataDir · boardPort)
 
-<데이터>/                       ATHENA_DATA_DIR → 본체 athena.config.json "dataDir" → ~/athena-data
-├─ config.json                 formatVersion(데이터 형식) · packs.<id>{ name · packId · body(본체 경로) · boardPort · generation(그 팩 세대) } · deploy{ commit · previous · operationId · source(origin|bundle) }
+<데이터>/                       ATHENA_DATA_DIR → 본체 athena.config.json "dataDir"(스튜디오가 채운다) → ~/.athena-studio/data
+├─ config.json                 formatVersion(데이터 형식) · packs.<id>{ name · packId · body(본체 경로) · boardPort · generation(그 팩 세대) } · deploy{ commit · previous · operationId · source(bundle · 옛 기록은 origin) }
 │                              · (선택) bodiesDir(팩 본체 자리 — <bodiesDir>/<id> · 상대 경로는 데이터 폴더 기준) · portBase(현황판 포트 기준 · 없으면 4700)
 ├─ registry.lock · locks/<id>.lock · locks/_git.lock    레지스트리 잠금(읽기→수정→저장) · 팩마다 작업 잠금(열기·업데이트) · git 공용(worktree·fetch)
 ├─ updates/<operationId>.json   업데이트·되돌리기 기록(본체마다 from·to·status)
 ├─ switch.log                   단계 기록
-├─ backups/ · tmp/              자동 백업(교체·옮기기 전) · packs/(기본 데이터 폴더가 아닐 때 pack backup 기본 자리) · core-edits/<operationId>/<id>/(update --backup-dirty 가 둔 고친 코어 파일 사본) · 가져오기 검사 임시본(24시간)
+├─ backups/ · tmp/              자동 백업(교체·옮기기 전) · packs/(pack backup 기본 자리) · core-edits/<operationId>/<id>/(update --backup-dirty 가 둔 고친 코어 파일 사본) · 가져오기 검사 임시본(24시간)
 └─ packs/<id>/                  id = 이 컴퓨터의 등록 이름(폴더 이름 · 바뀌지 않음)
    ├─ pack/                     팩(pack.json 의 id = 공유 ID packId)
    ├─ plans/ · issues/          작업 기록
@@ -76,18 +76,18 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 - **세션 자리**: 아테나(Claude·Codex)는 그 팩 본체에서 켠다 · 위임 에이전트는 워크트리에서(실행기 `delegate.sh` 가 규칙·훅을 넘기고 `ATHENA_PACK_ID`·`ATHENA_SWITCH_GEN` 을 export) · 데이터 폴더에서는 세션을 띄우지 않는다. 스크립트는 자기 위치로 본체를 찾는다 — 팩 링크로 걸린 스크립트(`scripts/verify/<레포>.sh` 등)는 **본체 경로로** 부른다(실제 경로 `<데이터>/packs/…` 로 부르면 본체를 못 찾는다)
 - **정비는 주 본체에서만**: 팩 본체는 브랜치가 없다(detached). 그 본체에서 직접 켠 claude 에는 루트 훅(secret-guard)만 걸리고 커밋 보호(commit-guard)는 위임(`delegate.sh`)이 넣는다 — 팩 본체에서 코어를 고치거나 커밋하지 않는다
 - **설정**: 본체 `athena.config.json` 은 본체 것만(`dataDir` · `boardPort` · 필요하면 `screen`) — `pack` 은 쓰지 않는다(활성 링크가 정본). 합치는 순서 `pack.json` < 본체 설정 < `local.json`
-- **현황판 포트**: 레지스트리 `packs.<id>.boardPort`(정본) → 본체 `boardPort` → `ATHENA_BOARD_PORT` → 레지스트리 `portBase` → 4700(옛 구조 본체는 env 가 먼저). 주 본체는 지금 값(없으면 `portBase` · 기본 4700), 새 본체는 `portBase`+2(기본 4702) 부터 2씩 — 두 앱이 데이터 폴더를 따로 쓰면 `portBase` 로 범위를 가른다(예: 스튜디오 4800). 백그라운드로 띄운 현황판 로그는 `/tmp/hermes-board.log`(포트 4700) · 다른 포트면 `/tmp/hermes-board-<포트>.log`. 현황판은 뜰 때의 팩·**그 팩 세대**·`bodyId`·`core`·`instance` 를 `/api/state.pack` 으로 알리고, 그 팩 세대가 바뀐 뒤의 쓰기는 `409 stale-generation`(다른 팩의 일로는 바뀌지 않는다). `POST /api/shutdown`(같은 출처 + 토큰) 으로 끈다
+- **현황판 포트**: 레지스트리 `packs.<id>.boardPort`(정본) → 본체 `boardPort` → `ATHENA_BOARD_PORT` → 레지스트리 `portBase` → 4700(옛 구조 본체는 env 가 먼저). 주 본체는 지금 값(없으면 `portBase` · 기본 4700), 새 본체는 `portBase`+2(기본 4702) 부터 2씩 — 데이터 폴더마다 `portBase` 로 범위를 가른다(스튜디오 4800). 백그라운드로 띄운 현황판 로그는 `/tmp/hermes-board.log`(포트 4700) · 다른 포트면 `/tmp/hermes-board-<포트>.log`. 현황판은 뜰 때의 팩·**그 팩 세대**·`bodyId`·`core`·`instance` 를 `/api/state.pack` 으로 알리고, 그 팩 세대가 바뀐 뒤의 쓰기는 `409 stale-generation`(다른 팩의 일로는 바뀌지 않는다). `POST /api/shutdown`(같은 출처 + 토큰) 으로 끈다
 - **git exclude**: 팩 링크 목록은 `.git/info/exclude` 에 본체마다 구간으로 적는다. 링크된 워크트리도 공용 exclude 만 읽으므로(2026-10-18 git 2.50 실측) 무시 규칙은 모든 본체의 **합집합**이다 — 팩 링크 자리에 코어 실제 파일을 두지 않는 규칙(링크 clash)이 이걸 막는다. 쓰기는 잠금으로 하나씩
 - **busy**: 그 본체·그 팩 데이터·그 팩 레포 안에서 도는 claude·codex · QA · 학습 검토 · 무거운 명령 잠금(잠금에 적힌 본체만 — `scripts/heavy.sh` 가 `root` 를 적는다) · 그 팩 작업 잠금. 프로세스·작업 폴더를 못 읽으면 `unknown`(비어 있다고 보지 않는다). 다른 본체의 일은 이 본체를 막지 않는다
 
-### 명령 (`bin/athena …` — 스튜디오 약속은 계획서 팩마다-본체 5.7 이 정본)
+### 명령 (`bin/athena …` — 스튜디오 앱이 부르는 약속은 이 절이 정본)
 
 `--json` 이면 진행은 `progress: <단계> <설명>` 줄, **마지막 줄 하나가 JSON**. 실패는 종료 1 + `{ ok:false, error, message }`, 일부만 성공은 종료 1 + `status:"partial"`, 사용법 오류는 2. 스튜디오는 `--contract 2` 를 붙인다(다르면 `contract-mismatch` · `pack use`·`pack new` 는 `--json` 인데 없으면 거부 — 1단계 스튜디오의 "갈아 끼우기"를 막는다). 오류 코드: 1단계(`locked` · `busy` · `not-found` · `invalid-pack` · `unsafe` · `format-unknown` · `conflict` · `token-expired` · `clone-failed` · `rollback`) + `body-conflict` · `body-mismatch` · `port-in-use` · `contract-mismatch` · `data-incompatible` · `fetch-failed` · `verify-failed` · `rollback-unavailable` · `rollback-failed` · `partial`.
 
 | 명령 | 하는 일 |
 |---|---|
 | `list` · `status` · `busy` | 팩 목록(팩마다 본체 · 포트 · `bodyState` · `core` · `updatePending` · `busy[]`·`busyKnown`) + `emptySlots`(/setup 전 빈 자리) · 이 본체의 팩·포트·코어 · 이 본체에서 도는 것 |
-| `open <id>` | 그 팩 본체를 준비하고 경로를 돌려준다. 없으면 `<주 본체>-<id>`(레지스트리 `bodiesDir` 가 있으면 `<bodiesDir>/<id>`)에 `git worktree add --detach <배포 커밋>`(레지스트리 `deploy.commit` → `origin/main` · 주 본체 로컬 HEAD 는 쓰지 않는다 · 그 커밋 코어가 팩마다 본체를 모르면 `contract-mismatch`) → 본체 설정 → **그 본체 코드로** 팩을 건다(`pack attach`) → 포트 배정. 있으면 링크를 검증·고친다(못 고치면 `state:"repair-required"`) · 배포 커밋보다 뒤처졌고(배포 커밋이 지금 커밋의 후손 — 앞으로만) 비어 있으면 그때 옮긴다(`updated` — 그 본체 현황판을 껐으면 `updated.boardStopped`). 만들다 실패하면 만들던 본체를 지운다. 그 자리에 다른 폴더가 있으면 `body-conflict` |
+| `open <id>` | 그 팩 본체를 준비하고 경로를 돌려준다. 없으면 `<bodiesDir>/<id>`(레지스트리 `bodiesDir` — 스튜디오는 `~/.athena-studio/bodies` · 없으면 `<주 본체>-<id>`)에 `git worktree add --detach <배포 커밋>`(레지스트리 `deploy.commit` → 주 본체의 `origin/main`(처음 clone 한 번들) · 주 본체 로컬 HEAD 는 쓰지 않는다 · 그 커밋 코어가 팩마다 본체를 모르면 `contract-mismatch`) → 본체 설정 → **그 본체 코드로** 팩을 건다(`pack attach`) → 포트 배정. 있으면 링크를 검증·고친다(못 고치면 `state:"repair-required"`) · 배포 커밋보다 뒤처졌고(배포 커밋이 지금 커밋의 후손 — 앞으로만) 비어 있으면 그때 옮긴다(`updated` — 그 본체 현황판을 껐으면 `updated.boardStopped`). 만들다 실패하면 만들던 본체를 지운다. 그 자리에 다른 폴더가 있으면 `body-conflict` |
 | `use <id> [--start-board]` | `open` 과 같다(+ 1단계 필드 `current`·`previous`·`unchanged`·`bodyChanged`·`opened`). 본체의 팩을 바꾸지 않는다 |
 | `new` | 빈 팩 자리(`new-<시각>`) + 그 본체 → 그 본체에서 claude 를 켜면 /setup(`athena init` 이 자리 이름만 회사 이름으로 · 본체 폴더는 그대로). 취소는 다른 본체에서 `discard <id>` |
 | `discard <id>` | 빈 자리(팩·작업 기록 없음)와 그 본체만 지운다 — 주 본체·부른 본체는 지우지 않는다. 서비스 레포·워크트리는 링크라 그대로 |
@@ -99,37 +99,36 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 | 명령 | 하는 일 |
 |---|---|
-| `update [--to <커밋>] [--from <git 번들>] [--backup-dirty]` | 주 본체에서 `git fetch origin` 한 번(`--from` 이면 그 번들의 `main` 을 `refs/athena/bundle/main` 으로 — 앱이 들고 온 코어 · 결과·`deploy.source` 는 `bundle`) → 배포 커밋 = `origin/main`(번들이면 그 `main` · 또는 `--to`) → 본체마다: 그 팩 잠금 → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → 추적 파일 미커밋이면 `dirty`(`--backup-dirty` 면 다른 검사를 다 통과한 뒤 `<데이터>/backups/core-edits/<operationId>/<id>/` 에 사본 — `files/` · `changes.patch` · `meta.json` — 을 두고 되돌려 계속 · 결과 `backedUp[{ id, dir, files }]` · 본체마다 `backedUp`·`backupDir`) → 이전 커밋을 `refs/athena/rollback/<operationId>/<id>` 로 보존 → 현황판 끄기 → 팩 본체는 `checkout --detach`, **주 본체는 깨끗하고 뒤에만 있으면 `merge --ff-only`**(로컬 커밋이 있으면 `diverged`) → 새 코드로 `relink` → 실패하면 **그 본체만** 이전 커밋으로(`rolledBack` · 그것도 안 되면 `recoveryRequired`). 일하는 본체는 `skipped`(`busy`) — 다음 `open` 때 따라잡는다. 모든 본체가 실패하면(`failed`) 배포 커밋은 그대로 둔다. 대상 커밋의 데이터 형식 범위(`DATA_FORMATS`)가 지금 데이터를 못 다루면 모든 본체가 비었을 때만. 현황판은 다시 띄우지 않는다 |
+| `update --from <git 번들> [--to <커밋>] [--backup-dirty]` | 앱이 들고 온 코어 번들의 `main` 을 주 본체의 `refs/athena/bundle/main` 으로 받는다(원격에서 받는 길은 없다 — `--from` 이 없으면 사용법 오류 · 결과·`deploy.source` 는 `bundle`) → 배포 커밋 = 그 `main`(또는 `--to`) → 본체마다: 그 팩 잠금 → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → 추적 파일 미커밋이면 `dirty`(`--backup-dirty` 면 다른 검사를 다 통과한 뒤 `<데이터>/backups/core-edits/<operationId>/<id>/` 에 사본 — `files/` · `changes.patch` · `meta.json` — 을 두고 되돌려 계속 · 결과 `backedUp[{ id, dir, files }]` · 본체마다 `backedUp`·`backupDir`) → 이전 커밋을 `refs/athena/rollback/<operationId>/<id>` 로 보존 → 현황판 끄기 → 팩 본체는 `checkout --detach`, **주 본체는 깨끗하고 뒤에만 있으면 `merge --ff-only`**(로컬 커밋이 있으면 `diverged`) → 새 코드로 `relink` → 실패하면 **그 본체만** 이전 커밋으로(`rolledBack` · 그것도 안 되면 `recoveryRequired`). 일하는 본체는 `skipped`(`busy`) — 다음 `open` 때 따라잡는다. 모든 본체가 실패하면(`failed`) 배포 커밋은 그대로 둔다. 대상 커밋의 데이터 형식 범위(`DATA_FORMATS`)가 지금 데이터를 못 다루면 모든 본체가 비었을 때만. 현황판은 다시 띄우지 않는다 |
 | `update --rollback [<operationId>]` | 그 업데이트(없으면 본체를 하나라도 바꾼 마지막 업데이트 — 실패·바꾼 것 없는 기록은 건너뛴다)가 **바꾼 본체만**, 지금도 그 실행의 커밋에 있을 때 보존 ref 로 되돌린다(아니면 `moved`). 주 본체는 되돌리지 않는다(`main` — 정비 체크아웃은 손으로). 배포 커밋은 본체를 하나라도 실제로 되돌렸고 지금 배포 커밋이 그 업데이트의 것일 때만 그 전으로(아니면 그대로) |
 | `version` | 이 본체 코어 커밋 · `contract`(2) · `dirty` · `dataFormats` · `capabilities`(`update-from-bundle` · `backup-dirty` · `bodies-dir` · `port-base` 가 있으면 위 손잡이를 안다) · `deploy`(`source` 포함). 스튜디오는 `contract` 가 다르면 안내한다 |
 
 - **데이터 형식**: `<데이터>/config.json` 의 `formatVersion` 이 이 코어의 `dataFormats` 밖이면 쓰기 명령은 `data-incompatible`(읽기는 된다) — 형식을 바꾸는 코어는 모든 본체를 함께 올린다
-- **진짜 `~/athena` 에서 처음 옮길 때**(정비 · 아테나): 이 코어가 main 에 머지된 뒤 `~/athena` 에서 `bin/athena pack open <다른 팩>` 이면 `~/athena-<id>` 가 생긴다. 그 팩의 작업 기록·워크트리·학습 대기열은 데이터 폴더에 있어 그대로 이어진다
 
-## 여러 팩 테스트 (진짜 `~/athena`·`~/athena-data` 를 건드리지 않고)
+## 여러 팩 테스트 (진짜 스튜디오 집 `~/.athena-studio` 를 건드리지 않고)
 
 **자동 시험** — 둘 다 임시 폴더에서 돌고 끝나면 지운다(`KEEP=1` 이면 남긴다). 진짜 본체·데이터·이 체크아웃의 링크는 건드리지 않는다.
 - `test/packs-test.sh`(약 1분) — 본체 하나: test-setup · 이 본체 팩 열기·계약 확인 · 팩마다 잠금 · busy · 계획서 논리 경로 · 가져오기·내보내기·백업 · 옮기기 · 현황판(팩 세대 409·포트 정본·끄기)
-- `test/bodies-test.sh`(약 2분) — 임시 bare 원격 + 주 본체 클론(지금 작업 트리를 커밋) + 워크트리 본체: `pack open`(동시 열기 · 실패하면 지움 · 자리 충돌) · `new`/`discard` · 한 본체가 일해도 다른 본체 열기 · `import --replace` 는 그 팩 본체 기준 · 경로 검증표 · `update`(일하는 본체 건너뜀 · 주 본체 ff·dirty·diverged · 링크 실패면 그 본체만 되돌림 · 멱등) · `--rollback` · 열 때 따라잡기 · 데이터 형식 게이트
+- `test/bodies-test.sh`(약 2분) — 임시 bare 원격 + 주 본체 클론(지금 작업 트리를 커밋) + 워크트리 본체(새 코어는 그 원격의 번들로): `pack open`(동시 열기 · 실패하면 지움 · 자리 충돌) · `new`/`discard` · 한 본체가 일해도 다른 본체 열기 · `import --replace` 는 그 팩 본체 기준 · 경로 검증표 · `update --from <번들>`(`--from` 없으면 사용법 오류 · 일하는 본체 건너뜀 · 주 본체 ff·dirty·diverged · 링크 실패면 그 본체만 되돌림 · 멱등) · `--rollback` · 열 때 따라잡기 · 데이터 형식 게이트
 - `test/bundle-test.sh`(약 1분) — 앱이 코어를 번들로 들고 오는 경우(스튜디오): 번들 → 주 본체 clone · 본체 설정 `dataDir` · `bodiesDir`·`portBase` · `update --from <번들>`(전체·얇은 번들 · `deploy.source`) · 업데이트 전후 `<데이터>/packs` 해시 동일 · 본체 안 진짜 파일(설정·상태 파일·`.migrate-*`) 그대로 · `dirty` 건너뜀 · `--backup-dirty` 사본 · 되돌리기 · 일하는 본체 · 백업 기본 자리
 
-**손으로 — 테스트 본체**(지금 쓰는 `~/athena` 가 아닌, 코어 레포를 따로 받은 클론을 주 본체로 — 아래 `<테스트 본체>`. `pack open` 은 그 옆에 `<테스트 본체>-<id>` 워크트리를 만든다):
+**손으로 — 테스트 본체**(스튜디오 주 본체 `~/.athena-studio/core` 가 아닌, 그것을 따로 clone 한 폴더를 주 본체로 — 아래 `<테스트 본체>`. `git clone ~/.athena-studio/core <테스트 본체>` · 레지스트리에 `bodiesDir` 가 없으니 `pack open` 은 그 옆에 `<테스트 본체>-<id>` 워크트리를 만든다):
 1. 터미널에서
    ```bash
    cd <테스트 본체>
-   ATHENA_DATA_DIR=~/athena-test-data bin/athena pack test-setup
+   ATHENA_DATA_DIR=/tmp/athena-test-data bin/athena pack test-setup
    ```
-   `~/athena-test-data` 를 **지우고** 가짜 레포 넷(`repos-src/` · 원격은 `remotes/`)과 테스트 팩 둘(`test/fixtures/packs/{acme,globex}` 복사 · 팩마다 샘플 계획서·이슈 하나)을 등록한 뒤 acme 를 이 본체 팩으로 건다. 본체 `athena.config.json` 에 `dataDir: ~/athena-test-data` · `boardPort: 4710` 을 적는다. 데이터 폴더 이름에 `test` 가 없거나 본체가 `~/athena` 면 멈춘다
+   `/tmp/athena-test-data` 를 **지우고** 가짜 레포 넷(`repos-src/` · 원격은 `remotes/`)과 테스트 팩 둘(`test/fixtures/packs/{acme,globex}` 복사 · 팩마다 샘플 계획서·이슈 하나)을 등록한 뒤 acme 를 이 본체 팩으로 건다. 본체 `athena.config.json` 에 `dataDir: /tmp/athena-test-data` · `boardPort: 4710` 을 적는다. 데이터 폴더 이름에 `test` 가 없거나 본체가 `~/.athena-studio/core` 거나 데이터 폴더가 `~/.athena-studio/data` 면 멈춘다
 2. 확인: `bin/athena pack list` → acme ▶(이 본체) · globex(본체 없음)
 3. 열기: `bin/athena pack open globex` → `<테스트 본체>-globex` 가 생기고 포트 4702. `cd <테스트 본체>-globex && bin/athena pack use globex --contract 2 --start-board` → 현황판 http://localhost:4702 에 globex 샘플만. 테스트 본체 현황판(4710)은 acme 그대로
 4. 동시에: 한 터미널에서 `cd <테스트 본체>-globex && claude` 를 켜 둔 채 `bin/athena pack list` → globex `bodyBusy` · acme 는 비어 있음 · acme 쪽 작업·열기는 그대로 된다
-5. 업데이트: 코어 레포에 커밋이 올라간 뒤 `bin/athena update` → claude 가 도는 globex 는 `skipped(busy)`, 나머지는 새 커밋. claude 를 끄고 `bin/athena pack open globex` → 따라잡음. `bin/athena update --rollback` → 그 업데이트가 바꾼 본체만 되돌림
-6. 스튜디오: 앱을 `ATHENA_DATA_DIR=~/athena-test-data` 로 띄워 창마다 팩(약속 5.7)
-7. 끝나면: `bin/athena pack discard <빈 자리>` 로 빈 자리를 지우거나, 본체째 지운다(`git -C <테스트 본체> worktree remove --force <테스트 본체>-globex` · `rm -rf ~/athena-test-data`)
+5. 업데이트: 다른 clone 에서 코어에 커밋을 만들고 번들로(`git -C <그 clone> bundle create /tmp/core.bundle main`) `bin/athena update --from /tmp/core.bundle` → claude 가 도는 globex 는 `skipped(busy)`, 나머지는 새 커밋. claude 를 끄고 `bin/athena pack open globex` → 따라잡음. `bin/athena update --rollback` → 그 업데이트가 바꾼 본체만 되돌림
+6. 스튜디오: 앱을 `ATHENA_STUDIO_HOME=<임시 폴더>` 로 띄우면 스튜디오 집(코어·본체·데이터·데몬 접속 파일)을 통째로 따로 쓴다 — 창마다 팩(약속 5.7)
+7. 끝나면: `bin/athena pack discard <빈 자리>` 로 빈 자리를 지우거나, 본체째 지운다(`git -C <테스트 본체> worktree remove --force <테스트 본체>-globex` · `rm -rf /tmp/athena-test-data`)
 
-- 일부러 실패시키기: `ATHENA_PACK_FAIL_AT=open bin/athena pack new` → `rollback` 과 함께 만들던 본체·자리 없음 · `ATHENA_RELINK_FAIL_AT=<커밋> bin/athena update` → 그 커밋으로 옮긴 본체마다 `rolledBack`
+- 일부러 실패시키기: `ATHENA_PACK_FAIL_AT=open bin/athena pack new` → `rollback` 과 함께 만들던 본체·자리 없음 · `ATHENA_RELINK_FAIL_AT=<커밋> bin/athena update --from <번들>` → 그 커밋으로 옮긴 본체마다 `rolledBack`
 - 테스트 본체에서 `athena pack check` 는 테스트 팩의 names 로 검사하고 `test/fixtures/` 는 뺀다
-- **금지**: 테스트 중 `~/athena` 의 설정·링크·`plans/`·`issues/` 를 바꾸지 않는다. `~/athena` 에서 `pack open`·`update` 를 시험 삼아 돌리지 않는다(진짜 워크트리·업데이트). `pack migrate` 는 `~/athena` 를 **복사한** 폴더에서만 시험한다(`test/packs-test.sh` 는 합성 옛 본체로)
+- **금지**: 테스트 중 `~/.athena-studio` 의 설정·링크·`plans/`·`issues/` 를 바꾸지 않는다. 스튜디오 본체에서 `pack open`·`update` 를 시험 삼아 돌리지 않는다(진짜 워크트리·업데이트). `pack migrate` 는 옛 본체를 **복사한** 폴더에서만 시험한다(`test/packs-test.sh` 는 합성 옛 본체로)
 
 ## pack.json
 

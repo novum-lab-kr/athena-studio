@@ -1,5 +1,0 @@
-$ scripts/learn-review-pane.sh
---- exit 1
---- stdout
---- stderr
---- herdr

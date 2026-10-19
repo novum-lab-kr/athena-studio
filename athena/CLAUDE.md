@@ -51,7 +51,7 @@
 
 ### 3단계: 작업 브랜치 → 디스패치
 - **디스패치 전에 작업 브랜치·워크트리.** 먼저 `docs/knowledge/common/git.md` "작업 브랜치 만들기" 절을 읽고, `scripts/new-branch.sh` 가 `prBase` 에서 `.worktrees/<레포>/<슬러그>` 로 딴다(메인 체크아웃은 건드리지 않는다). **브랜치가 이미 있으면**(로컬·원격) 상태를 알려 주고 "그대로 이어 쓸까요?" → `--reuse`. 건너뛴 레포에는 디스패치하지 않는다. **main 직접 레포**(팩 `"direct": true`)는 브랜치를 만들지 않고 메인 체크아웃으로 디스패치한다(같은 레포에 둘 띄우지 않는다)
-- `/call` 도 브랜치를 **띄우기 전에 아테나가 선택지로 묻고**(최근 작업 브랜치 후보 · 새 브랜치 — `scripts/call-branch-info.sh`) 워크트리를 만든 뒤 `--cwd` 로 띄운다. 에이전트를 athena 루트에서 띄우면 사이드바 Explorer 가 워크트리를 따라가지 못한다
+- `/call` 도 브랜치를 **띄우기 전에 아테나가 선택지로 묻고**(최근 작업 브랜치 후보 · 새 브랜치 — `scripts/call-branch-info.sh`) 워크트리를 만든 뒤 `--cwd` 로 띄운다. 에이전트를 athena 루트에서 띄우면 pane 의 작업 폴더가 워크트리를 따라가지 못한다
 - **`scripts/delegate.sh <에이전트> --cwd <워크트리> --plan <계획서>`** — `--plan` 없이는 띄우지 않는다. 계획서 경로가 지시 맨 앞에 들어가고, Work ref 에 워크트리·브랜치·pane 이 적힌다. FE 세션에는 **보호 훅**이 걸린다(git commit·push·`gh pr create` 직접, `add -A` 차단 — `commit.sh`·`ship.sh` 로만)
 - **배치는 workspace = 레포**, 그 한 탭에 pane 을 나란히(`🤖 <에이전트> · <브랜치>`). `reviewer`·단발 조사는 `--here`
 - **레포를 넘는 작업은 순차로** — 공유 패키지를 먼저 끝내고 소비 레포에 넘긴다. 서로 독립적인 서비스는 동시에. 같은 기능을 여러 서비스에 넣으면 계획서에 **공통 스펙**(문구·동작·env 키)을 적는다
@@ -95,14 +95,14 @@
 | 명령 | 용도 |
 |------|------|
 | `/call` | `/call <에이전트>` — 담당 에이전트를 그 레포 workspace 에 pane 으로 바로 띄운다. 브랜치를 먼저 물어 워크트리를 만들고 그 폴더에서 띄운다. 요청·커밋·리뷰·PR 은 pane 에서 직접 (빈 지시 경량 계획서) |
-| `/monitor` | 백그라운드 서브에이전트·워크트리 pane 에이전트 로그를 herdr pane 에 실시간 표시 (`/monitor 30` = 최근 30분) |
+| `/monitor` | 백그라운드 서브에이전트·워크트리 pane 에이전트 로그를 어디서 보는지 — Athena Studio 는 앱 아래 AGENT MONITOR 칸, 화면 밖이면 직접 실행할 명령 (`/monitor 30` = 최근 30분) |
 | `/board` | 현황판 — 로컬 서버를 띄워 브라우저에서 실시간으로 본다. 지금 동작 중인 에이전트 · 계획서 칸반(Checkpoint Status) · `issues/` 이슈 · **[정비] 탭**(아테나 자체 — `repo: athena` 이슈·`Agent: athena` 계획서, 아테나가 직접 고치고 main 커밋·push 로 끝) · **[학습] 탭**(아테나 학습: 학습 후보 넣기·버리기·학습한 내용 수정·삭제 / 클로드 학습: Claude Code 메모리) · **[아카이브] 탭**(보관한 일) · **[QA] 탭**(QA 시뮬레이션 런 — 영향 화면 카드가 실시간으로 바뀌고 작업·기준·차이 스크린샷. 계획서 카드 [QA 실행] 으로 `scripts/qa/run.mjs` 를 뒤에서 돌린다 · 대상은 팩 `qa` 설정). 카드를 끌어 상태를 바꾸고, 버튼으로 아테나 pane 에 지시를 보낸다 (`/board stop`) |
 | `/sync` | 담당 레포의 운영 기준 브랜치를 훑어 지문을 만들고, 사실마다 정한 정본(knowledge·config·지문)만 갱신. 파생 문서는 `node scripts/build-derived.mjs`가 생성. 다이어그램 근거가 운영 코드와 어긋났는지 `node scripts/check-diagrams.mjs`로 점검 |
 | `/diagram` | 다이어그램 다시 그리기 — 운영 기준 코드로 구조·화면 맵·요청 흐름(팩이 정한 서비스는 심층까지)을 그리고 검증·목록 갱신, 그리다 찾은 문제는 등록 기준대로 `issues/`(나머지는 이슈 후보). `/diagram brand` 처럼 서비스를 주거나, 비우면 전체. `/diagram 점검` 은 다시 그리지 않고 근거만 점검 |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" 표 — 팩 `skills/` 가 `.claude/skills/` 에 링크된다 |
 | `/guide` | 오른쪽 pane 에 가이드 메뉴(문서 · 스킬 목록·실행 · 에이전트·라우팅). `/guide <파일>` 은 그 파일을 뷰어로, `/guide 설명`은 아테나 구조 설명 HTML, `/guide 열기`는 플레이북 HTML, `/guide 시작하기`는 시작하기 가이드 HTML, `/guide 그림`은 **다이어그램 목록**(작업 흐름 경량·정식 + 팩 서비스 × 구조·화면 맵·요청 흐름) 열기 |
 
-**커맨드가 없는 것은 말로 한다.** 전체 검수("<앱> 전체 검수 돌려줘" → `node scripts/qa/run.mjs --suite --app <앱>`, 요청할 때만 · 현황판 QA 탭 [전체 검수 시작] 도 같다 · `docs/knowledge/common/verify.md` "QA 시뮬레이션") · 기능·버그(1단계) · 리뷰("리뷰해줘" → 5단계, `delegate.sh reviewer`) · 현황("현황 알려줘" → `docs/knowledge/common/git.md` "현황 점검") · 브랜치(3단계, 같은 파일 "작업 브랜치 만들기") · 팩 백업("팩 백업해줘" → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — 여러 팩 구조면 `pack backup --with-work` · `pack restore --with-work <파일>`(팩만은 `pack export`) — `docs/pack.md` "백업 · 되살리기") · 여러 팩("팩 목록"·"팩 열어줘 <id>" → `bin/athena pack list`·`pack open <id>` — 팩마다 본체(`~/athena-<id>`)가 따로라 팩 여러 개를 동시에 켠다. 열린 본체 폴더에서 아테나를 켠다(스튜디오는 창마다 팩) · 코어 업데이트("아테나 업데이트해줘" → `bin/athena update` — 일하는 본체는 건너뛰고 표시, 이 세션의 본체도 일하는 중이라 건너뛴다 · 되돌리기 `update --rollback`) · 정비(코어 고치기·커밋)는 주 본체 `~/athena`(main)에서만 — 팩 본체(detached)에서 정비 요청을 받으면 주 본체로 안내 · `docs/pack.md` "여러 팩") · Jev 키("Jev 키 등록해줘"·"바꿔줘"·"지워줘" → `docs/setup.md` 7-2 — 키는 옆 입력 창에 사용자가 직접, 대화로 받지 않는다).
+**커맨드가 없는 것은 말로 한다.** 전체 검수("<앱> 전체 검수 돌려줘" → `node scripts/qa/run.mjs --suite --app <앱>`, 요청할 때만 · 현황판 QA 탭 [전체 검수 시작] 도 같다 · `docs/knowledge/common/verify.md` "QA 시뮬레이션") · 기능·버그(1단계) · 리뷰("리뷰해줘" → 5단계, `delegate.sh reviewer`) · 현황("현황 알려줘" → `docs/knowledge/common/git.md` "현황 점검") · 브랜치(3단계, 같은 파일 "작업 브랜치 만들기") · 팩 백업("팩 백업해줘" → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — 여러 팩 구조면 `pack backup --with-work` · `pack restore --with-work <파일>`(팩만은 `pack export`) — `docs/pack.md` "백업 · 되살리기") · 여러 팩("팩 목록"·"팩 열어줘 <id>" → `bin/athena pack list`·`pack open <id>` — 팩마다 본체(`~/.athena-studio/bodies/<id>`)가 따로라 팩 여러 개를 동시에 켠다. 열린 본체 폴더에서 아테나를 켠다(스튜디오는 창마다 팩) · 코어 업데이트("아테나 업데이트해줘" → 코어는 Athena Studio 앱과 함께 온다 — 앱을 업데이트하면 앱이 켜질 때 `bin/athena update --from <번들>` 로 본체마다 맞춘다. 일하는 본체는 건너뛰고 표시 · 되돌리기 `update --rollback`) · 정비(코어 고치기·커밋)는 주 본체 `~/.athena-studio/core`(main)에서만 — 팩 본체(detached)에서 정비 요청을 받으면 주 본체로 안내 · `docs/pack.md` "여러 팩") · Jev 키("Jev 키 등록해줘"·"바꿔줘"·"지워줘" → `docs/setup.md` 7-2 — 키는 옆 입력 창에 사용자가 직접, 대화로 받지 않는다).
 
 ## 확장
 - 스킬: `.claude/skills/<이름>/SKILL.md` (frontmatter `name`/`description`/`argument-hint`, 본문 `$ARGUMENTS`). 에이전트: `.claude/agents/<이름>.md` (description이 라우팅 문장, 콜론+공백 금지)

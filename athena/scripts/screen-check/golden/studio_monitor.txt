@@ -3,10 +3,10 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stdout
 --- stderr
 Athena Studio 는 앱 아래 AGENT MONITOR 칸이 에이전트 로그를 보여 줍니다 — pane 을 띄우지 않습니다
---- herdr
+--- screen
 $ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json scripts/monitor-pane.sh
 --- exit 1
 --- stdout
 --- stderr
 Athena Studio 밖입니다. 직접 실행하세요:  <ATHENA>/scripts/agent-monitor.py --stay --recent
---- herdr
+--- screen

@@ -1,5 +1,5 @@
-// 스튜디오 집 — 앱이 들고 온 아테나 코어(git 번들)를 풀어 자기 자리에서 쓴다(아테나 계획서 20261019-스튜디오-코어-내장 4.2).
-// ~/athena(herdr 용 아테나)와는 완전히 다른 앱이다 — 본체 · 데이터 · 포트 · 레지스트리 · 데몬 접속 파일을 나누지 않는다.
+// 스튜디오 집 — 앱이 들고 온 아테나 코어(git 번들)를 풀어 자기 자리에서 쓴다.
+// 본체 · 데이터 · 포트 · 레지스트리 · 데몬 접속 파일을 모두 이 아래에 둔다.
 //   ~/.athena-studio/core          주 본체(번들에서 clone 한 git 저장소 · main)
 //   ~/.athena-studio/bodies/<id>   팩 본체(코어가 만든다 — 레지스트리 bodiesDir)
 //   ~/.athena-studio/data          데이터 폴더(본체 athena.config.json 의 dataDir · 레지스트리 <데이터>/config.json)
@@ -48,7 +48,7 @@ function coreBundlePath(options) {
   return path.join(resourcesDir(options), CORE_BUNDLE_NAME)
 }
 
-// 스튜디오 데이터의 현황판 포트 기준 — ~/athena(4700대)와 부딪히지 않게(코어 레지스트리 portBase)
+// 스튜디오 데이터의 현황판 포트 기준(코어 레지스트리 portBase)
 const STUDIO_PORT_BASE = 4800
 
 // ── git ──
@@ -131,7 +131,7 @@ function installCore({ bundle, coreDir, env = gitEnv() }) {
 // dataDir: ATHENA_DATA_DIR 대신 본체 설정 — pane 안 claude · 훅도 같은 데이터 폴더를 본다
 // screen: studio — 화면 계층을 스튜디오 데몬으로. reposRoot: 회사 레포 클론 자리(두 앱이 같이 쓴다 · 홈)
 // boardPort: 스튜디오 포트 기준 — 팩이 아직 없는(옛 구조) 본체는 코어가 레지스트리 portBase 를 보지 않고 본체 설정 → 4700 이라
-// ~/athena 현황판(4700)과 부딪힌다. 팩이 생기면 코어는 레지스트리 packs.<id>.boardPort 를 먼저 본다
+// 본체 설정에 적어 둔다. 팩이 생기면 코어는 레지스트리 packs.<id>.boardPort 를 먼저 본다
 function ensureCoreConfig(coreDir, { dataDir, reposRoot, boardPort }) {
   const file = path.join(coreDir, 'athena.config.json')
   const exists = fs.existsSync(file)
@@ -193,7 +193,7 @@ function isPackless(coreDir) {
   }
 }
 
-// 고쳐 둔 추적 파일 사본(D4 — 코어의 update --backup-dirty 와 같은 모양: files/ · changes.patch · meta.json). 사본을 확인한 뒤에만 ok
+// 고쳐 둔 추적 파일 사본(코어의 update --backup-dirty 와 같은 모양: files/ · changes.patch · meta.json). 사본을 확인한 뒤에만 ok
 function backupCoreEdits({ coreDir, backupRoot, env = gitEnv() }) {
   const files = git(['diff', '--name-only', 'HEAD'], { cwd: coreDir, env }).split('\n').filter(Boolean)
   const stamp = new Date().toISOString().replace(/[-:.]/g, '').replace('T', '-').slice(0, 15)
@@ -218,7 +218,7 @@ function backupCoreEdits({ coreDir, backupRoot, env = gitEnv() }) {
   }
 }
 
-// backupRoot 가 있으면 고쳐 둔 본체도 사본을 두고 되돌린 뒤 감는다(D4). 없으면 dirty 로 멈춘다
+// backupRoot 가 있으면 고쳐 둔 본체도 사본을 두고 되돌린 뒤 감는다. 없으면 dirty 로 멈춘다
 function fastForwardPackless({ coreDir, bundle, backupRoot = null, env = gitEnv() }) {
   if (!isPackless(coreDir)) return { ok: false, error: 'has-pack' }
   let branch = ''
@@ -334,8 +334,8 @@ async function prepareCore({ layout, bundle, home, runCore, update = true, env =
   return { ok: true, created: false, update: await updateCore({ coreDir: layout.core, dataDir: layout.data, bundle, runCore, env }) }
 }
 
-// ── 개발 앱 — 레포 athena/(git subtree)에서 번들 만들기(scripts/dev-app.js start) ──
-// subtree split 은 같은 기록이면 늘 같은 커밋을 낸다(코어 커밋의 후손 — 앞으로 감기가 된다). athena/ 트리가 그대로면 다시 만들지 않는다.
+// ── 개발 앱 — 레포 athena/(스튜디오 코어)의 커밋 기록으로 번들 만들기(scripts/dev-app.js start) ──
+// athena/ 폴더 기록만 뽑아(git subtree split) 같은 기록이면 늘 같은 커밋을 낸다(코어 커밋의 후손 — 앞으로 감기가 된다). athena/ 트리가 그대로면 다시 만들지 않는다.
 // 커밋하지 않은 athena/ 변경은 들어가지 않는다. 레포 ref 는 만들지 않는다(임시 bare 저장소 + alternates 에서 번들을 만든다)
 function makeCoreBundle({ repoRoot, out, prefix = 'athena', env = gitEnv(), log = () => {} }) {
   let tree

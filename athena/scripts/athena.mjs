@@ -6,11 +6,11 @@
  *   athena pack unlink    팩을 가리키는 링크를 모두 지운다
  *   athena pack check     코어 파일에 팩의 회사 이름(pack.json names)이 있는지 찾는다 — 있으면 1
  *   athena pack backup [--out <폴더>]
- *                         팩 폴더를 날짜 붙은 압축 파일 하나로(기본 ~/athena-pack-backups — 다른 데이터 폴더면 <데이터>/backups/packs · .env*·키 파일·node_modules 는 뺀다)
+ *                         팩 폴더를 날짜 붙은 압축 파일 하나로(기본 <데이터>/backups/packs · .env*·키 파일·node_modules 는 뺀다)
  *   athena pack restore <파일>
  *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
  *
- *   여러 팩 — 팩마다 본체(팩은 <데이터>/packs/<id> · 본체 ~/athena-<id> · docs/pack.md "여러 팩" · 약속은 계획서 팩마다-본체 5.7)
+ *   여러 팩 — 팩마다 본체(팩은 <데이터>/packs/<id> · 본체 <bodiesDir>/<id> · 약속은 docs/pack.md "여러 팩")
  *   --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON. 스튜디오는 --contract 2 를 붙인다(다르면 contract-mismatch)
  *   athena pack list|status|busy [--json]          팩 목록(본체·포트·busy) · 이 본체의 팩 · 이 본체에서 도는 작업
  *   athena pack open <id> [--json]                 그 팩 본체를 준비(없으면 git 워크트리로 만들기)하고 경로·포트를 돌려준다
@@ -20,8 +20,8 @@
  *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
  *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
- *   athena update [--to <커밋>] [--from <git 번들>] [--backup-dirty] [--json]
- *                                                  주 본체에서 fetch 한 번(--from 이면 그 번들에서) → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
+ *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--json]
+ *                                                  앱이 들고 온 코어 번들을 주 본체로 받아 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
  *                                                  --backup-dirty: 코어 파일을 고쳐 둔 본체는 <데이터>/backups/core-edits/<operationId>/ 에 사본을 두고 교체(결과 backedUp)
  *   athena update --rollback [<operationId>] [--json]  그 업데이트가 바꾼 본체만 이전 커밋으로
  *   athena pack inspect <파일|폴더|git 주소> --json  임시 위치에서 검사만 → token
@@ -228,7 +228,7 @@ const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${te
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
 const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from'].includes(rest[index - 1])))
 // 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
-// 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다(결정 D9 · Codex C5)
+// 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
 const checkContract = (name) => {
   const mismatch = (why) => new PackError('contract-mismatch', `스튜디오 약속이 다르다(${why}) — 이 코어는 약속 ${CONTRACT}. 스튜디오를 먼저 업데이트한다`, { contract: CONTRACT })

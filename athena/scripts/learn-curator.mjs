@@ -14,7 +14,7 @@
  *   - knowledge: 모든 세션의 도구 호출(Read·Bash cat/sed 등)에 <athena>/docs/knowledge/**.md 경로가 나온 횟수.
  *     FE 에이전트는 레포 폴더에서도 뜨므로 폴더를 가리지 않는다. `cd …/knowledge; cat x.md` 처럼 경로가 쪼개진 읽기는 못 센다(근삿값)
  * 대화 내용은 읽어 세기만 하고 이슈에 옮기지 않는다(이름·횟수·날짜만). 대화 기록은 사람마다 다르므로 결과도 이 컴퓨터 기준이다.
- * Hermes Agent 의 Curator(14일 stale · 30일 archive, 삭제 안 함)를 승인 기반으로 옮긴 것 — plans/feature/20261008-학습-루프-2단계-Hermes-Agent-이식.md
+ * 학습 루프 2단계 — 큐레이터(14일 stale · 30일 archive, 삭제 안 함 · 승인 기반)
  */
 import { createReadStream, existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { join, relative, resolve, dirname } from 'node:path'

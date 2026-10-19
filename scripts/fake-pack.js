@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// 개발용 가짜 팩 명령 — 아테나 본체의 `node scripts/athena.mjs pack …` 과 같은 약속(계획서 5절)으로 답한다.
+// 개발용 가짜 팩 명령 — 아테나 본체의 `node scripts/athena.mjs pack …` 과 같은 약속(`--json` 출력 모양)으로 답한다.
 // 앱을 ATHENA_STUDIO_FAKE_PACK=1 로 켜면 main 이 본체 대신 이걸 부른다(화면 · 흐름 확인용 — 파일 · 링크는 만지지 않는다).
 // 상태는 임시 폴더의 JSON 한 개(athena-studio-fake-pack.json). 팩 id 가 broken 이면 바꾸기가 실패해 되돌린다.
 const fs = require('fs')
@@ -28,7 +28,7 @@ function load() {
 
 const save = (state) => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
 
-// 팩마다 본체(5.7 · contract 2) 흉내 — 가짜 본체는 ATHENA_FAKE_BODIES(없으면 임시 폴더) 아래 <id>/ 에 아테나 폴더 모양만(CLAUDE.md · 현황판 서버) 만든다.
+// 팩마다 본체(contract 2) 흉내 — 가짜 본체는 ATHENA_FAKE_BODIES(없으면 임시 폴더) 아래 <id>/ 에 아테나 폴더 모양만(CLAUDE.md · 현황판 서버) 만든다.
 // 처음 부른 본체(가짜 본체가 아닌 cwd)는 지금 팩의 '주 본체'로 기억한다. 현황판 포트는 ATHENA_BOARD_PORT(없으면 4701) 부터 본체마다 2씩
 const BODIES_DIR = process.env.ATHENA_FAKE_BODIES || path.join(os.tmpdir(), 'athena-studio-fake-bodies')
 const FAKE_BOARD = `import http from 'node:http'
@@ -91,7 +91,7 @@ const flag = (name) => {
 
 async function main() {
   const [command, sub, arg] = process.argv.slice(2)
-  // 약속 번호(아테나 계획서 20261018-팩마다-본체 5.7) — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
+  // 약속 번호 — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
   const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 2
   if (command === 'version') {
     if (fakeContract === 1) fail('usage', '모르는 명령: version')
@@ -115,20 +115,20 @@ async function main() {
   const findPack = (id) => state.packs.find((pack) => pack.id === id)
   switch (sub) {
     case 'list': {
-      // 팩마다 본체 · 열린 본체 표시(5.7) — current 는 부른 본체의 팩
+      // 팩마다 본체 · 열린 본체 표시 — current 는 부른 본체의 팩
       const packs = state.packs.map((pack) => ({ ...pack, body: state.bodies[pack.id] || null, bodyState: state.bodies[pack.id] ? 'ready' : 'none' }))
       return done({ ok: true, current: mine ? { ...mine, ...(mine.id === (state.current && state.current.id) ? state.current : {}) } : null, switching: false, packs })
     }
     case 'status': {
       // 현황판 포트는 본체가 정한다(5.3) — 가짜는 ATHENA_BOARD_PORT → 4701(스튜디오 기본과 같게)
       const boardPort = Number(process.env.ATHENA_BOARD_PORT) || 4701
-      // 데이터 폴더(R1) — 가짜는 ATHENA_DATA_DIR → 임시 폴더(파일은 만들지 않는다)
+      // 데이터 폴더 — 가짜는 ATHENA_DATA_DIR → 임시 폴더(파일은 만들지 않는다)
       const dataDir = process.env.ATHENA_DATA_DIR || path.join(os.tmpdir(), 'athena-studio-fake-data')
       return done({ ok: true, current: mine, switching: false, boardPort: mine ? bodyPort(state, mine.id) : boardPort, dataDir, body: here })
     }
     case 'busy':
       return done({ ok: true, busy: state.busy || [] })
-    // 팩 표시 이름 · 이미지(아테나 계획서 20261018-팩마다-본체 5.7) — 가짜는 상태 파일에만 적는다(이미지는 복사하지 않고 고른 파일 경로를 그대로)
+    // 팩 표시 이름 · 이미지 — 가짜는 상태 파일에만 적는다(이미지는 복사하지 않고 고른 파일 경로를 그대로)
     case 'set-name':
     case 'set-icon': {
       const target = findPack(flag('--id') || (state.current && state.current.id))
@@ -240,7 +240,7 @@ async function main() {
       const file = path.join(out, `${state.current.id}-${sub === 'backup' ? 'backup' : 'pack'}-fake.tar.gz`)
       return done({ ok: true, file, files: sub === 'backup' ? 88 : 41, bytes: sub === 'backup' ? 512000 : 210000 })
     }
-    // 팩 열기(5.7) — 본체가 없으면 만든다(가짜는 아테나 폴더 모양만). 이미 있으면 경로만
+    // 팩 열기 — 본체가 없으면 만든다(가짜는 아테나 폴더 모양만). 이미 있으면 경로만
     case 'open': {
       const target = findPack(arg)
       if (!target) fail('not-found', `팩 ${arg} 이 없어요`)
@@ -254,7 +254,7 @@ async function main() {
       progress('done', '끝')
       return done({ ok: true, id: target.id, packId: target.packId, body: state.bodies[target.id], boardPort: bodyPort(state, target.id), contract: 2, state: 'ready', created, unlinkedRepos: target.id === 'globex' ? ['globex-api'] : [] })
     }
-    // 새 팩 — 빈 자리 + 그 본체(5.7)
+    // 새 팩 — 빈 자리 + 그 본체
     case 'new': {
       const previous = mine && mine.id
       const id = `new-${Date.now() % 100000}`

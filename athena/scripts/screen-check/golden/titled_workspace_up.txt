@@ -1,7 +1,0 @@
-$ HERDR_ENV=1 HERDR_PANE_ID=w1:pG HERDR_TAB_ID=w1:t1 python3 scripts/hooks/workspace-up.py
---- exit 0
---- stdout
---- stderr
---- herdr
-["pane", "list"]
-["#athena-up", "FIRST_RUN="]

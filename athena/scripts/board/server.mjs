@@ -3,11 +3,11 @@
  * 아테나 현황판 — 로컬 서버를 띄워 지금 무슨 일이 돌아가는지 브라우저에서 실시간으로 본다.
  *
  *   node scripts/board/server.mjs            # http://localhost:4700 (ATHENA_BOARD_PORT 로 변경)
- *   /board                                   # 아테나 세션에서 — herdr pane 에 띄우고 브라우저를 연다
+ *   /board                                   # 아테나 세션에서 — 뒤에서 띄우고 브라우저를 연다(scripts/board.sh)
  *
  * 보여주는 것 (로컬 파일·명령에서 읽는다)
  *   - 칸반: 이슈(issues/*.md) · 계획 · 진행 중 · 리뷰 · 완료(plans/**\/*.md 의 Checkpoint Status)
- *   - 지금 동작 중: herdr pane 의 에이전트(agent_status), 백그라운드 서브에이전트 로그, 워크트리
+ *   - 지금 동작 중: 화면(Athena Studio) pane 의 에이전트(agent_status), 백그라운드 서브에이전트 로그, 워크트리
  *   - 머리: 마지막 sync, 다이어그램 점검 결과는 /board 에서 따로 돌리지 않는다(무겁다)
  *
  * 3초마다 모아서 바뀐 게 있으면 SSE(/events)로 밀어 준다. 브라우저는 새로고침하지 않아도 된다.
@@ -61,7 +61,7 @@ const BOOT_PATHS = paths(ROOT)
 const BOOT_PACK = BOOT_PATHS.mode === 'packs' ? (() => {
   let pack = {}
   try { pack = JSON.parse(readFileSync(join(BOOT_PATHS.packDir, 'pack.json'), 'utf8')) } catch { /* 빈 팩 자리(pack new 직후) */ }
-  // bodyId · core(뜰 때의 코어 커밋) · instance(뜰 때마다 새 값) — 스튜디오가 "어느 본체의 어느 코드로 뜬 현황판인지" 안다(팩마다-본체 5.7 · Codex C8)
+  // bodyId · core(뜰 때의 코어 커밋) · instance(뜰 때마다 새 값) — 스튜디오가 "어느 본체의 어느 코드로 뜬 현황판인지" 안다
   let core = null
   try { core = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { /* git 아님 */ }
   return { id: BOOT_PATHS.packId, packId: pack.id ?? null, name: pack.name ?? BOOT_PATHS.packId, generation: BOOT_PATHS.generation, bodyId: bodyIdOf(ROOT), core, instance: randomBytes(6).toString('hex') }
@@ -472,7 +472,7 @@ const listMemory = () => {
   const index = existsSync(join(memoryDir, 'MEMORY.md')) ? readFileSync(join(memoryDir, 'MEMORY.md'), 'utf8') : ''
   const titles = new Map([...index.matchAll(/\[([^\]]+)\]\(([^)]+\.md)\)/g)].map((match) => [match[2], match[1]]))
   const order = [...titles.keys()]
-  // YAML 따옴표 값 — 큰따옴표 안의 \" · \\ 이스케이프도 푼다("\"herdr\"" 가 그대로 보이던 것)
+  // YAML 따옴표 값 — 큰따옴표 안의 \" · \\ 이스케이프도 푼다("\"이름\"" 이 그대로 보이던 것)
   const unquote = (value) => {
     const trimmed = value.trim()
     if (/^"[\s\S]*"$/.test(trimmed)) return trimmed.slice(1, -1).replace(/\\(["\\])/g, '$1')

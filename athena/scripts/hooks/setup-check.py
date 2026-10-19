@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """첫 실행 점검 훅 (SessionStart) — Claude Code 는 .claude/settings.json, Codex 는 .codex/hooks.json(--tool codex) 이 아테나 세션에 건다.
 
-팩이 없으면 첫 실행(docs/setup.md)을 안내한다. herdr 안에서 새로 켠 세션이면 화면 세팅 뒤 workspace-up 훅(athena-up.sh)이
+팩이 없으면 첫 실행(docs/setup.md)을 안내한다. Athena Studio pane 안에서 새로 켠 세션이면 화면 세팅 뒤 workspace-up 훅(athena-up.sh)이
 그 pane 에 첫 실행 지시(Claude `/setup` · Codex 문장)를 대신 입력하므로 사용자는 아무것도 치지 않아도 된다.
 
 repos/<레포> 링크가 athena.config.json 목록대로 다 있으면 아무것도 하지 않는다.
@@ -9,7 +9,7 @@ repos/<레포> 링크가 athena.config.json 목록대로 다 있으면 아무것
   - 기본 레포 루트(reposRoot, 보통 hermes 상위 폴더)에서 찾은 것은 묻지 않고 scripts/setup.sh 로 바로 연결한다
   - 거기에도 없는 레포가 남으면 터미널 안내(systemMessage) + 아테나 지시(additionalContext) — 첫 응답에서 폴더 위치를 묻는다
 FE 에이전트 세션(claude --agent), 바깥 도구가 띄운 세션(ATHENA_AGENT 가 있음 — 예: 서버의 nhm 창), athena 루트가 아닌 cwd(레포·워크트리)에서는 조용히 넘어간다.
-자동 연결은 링크만 한다(setup.sh --links-only) — 사이드바 패치·QA 의존성·Chromium 같은 공용 도구 설치는 사용자가 /setup·setup.sh 로 직접.
+자동 연결은 링크만 한다(setup.sh --links-only) — QA 의존성·Chromium 같은 공용 도구 설치는 사용자가 /setup·setup.sh 로 직접.
 어떤 오류가 나도 세션 시작을 막지 않는다(항상 exit 0).
 """
 import json
@@ -41,7 +41,7 @@ def main() -> None:
     if payload.get('source') not in (None, 'startup', 'clear'):
         return
 
-    # 새 회사 첫 실행 — 설정·팩이 없거나 레포가 0개면 첫 실행(레포 찾기부터). herdr 에서 새로 켰으면 지시가 자동으로 입력된다
+    # 새 회사 첫 실행 — 설정·팩이 없거나 레포가 0개면 첫 실행(레포 찾기부터). Studio pane 에서 새로 켰으면 지시가 자동으로 입력된다
     if needs_first_run(ATHENA_DIR):
         import screen  # 화면 pane 안에서 새로 켠 세션이면 workspace-up 훅이 첫 실행 지시를 대신 입력한다
         me = screen.self_info()

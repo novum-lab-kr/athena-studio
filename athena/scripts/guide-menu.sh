@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 아테나 가이드 메뉴 — ↑/↓ 또는 숫자로 고르고 Enter 로 실행. q 로 종료.
-# 외부 의존 없음(bash + tput + python3). herdr pane 안에서 띄우면 스킬 실행 항목이
+# 외부 의존 없음(bash + tput + python3). Athena Studio pane 안에서 띄우면 스킬 실행 항목이
 # 아래에 새 pane 을 열어 별도 아테나 세션으로 /<스킬> 을 돌린다.
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -213,7 +213,7 @@ PY
 cursor_hide() { printf '\e[?25l'; }
 cursor_show() { printf '\e[?25h'; }
 
-# 터미널 제목을 비운다 — 안 그러면 herdr 가 pane 이름 옆에 실행 중인 스크립트 경로를 붙여 보여 준다
+# 터미널 제목을 비운다 — 안 그러면 화면이 pane 이름 옆에 실행 중인 스크립트 경로를 붙여 보여 준다
 clear_title() { printf '\033]0;\007'; }
 
 draw() {
@@ -267,7 +267,7 @@ while :; do
   draw
   IFS= read -rsn1 key
   if [ "$key" = $'\x1b' ]; then
-    # 바이트가 나눠 들어와도(herdr send-keys 등) 시퀀스 끝까지 읽는다 (bash 3.2: 정수 타임아웃만 가능)
+    # 바이트가 나눠 들어와도(pane send-keys 등) 시퀀스 끝까지 읽는다 (bash 3.2: 정수 타임아웃만 가능)
     IFS= read -rsn1 -t 1 b1 || b1=""
     IFS= read -rsn1 -t 1 b2 || b2=""
     key=ignore

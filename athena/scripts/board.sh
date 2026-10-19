@@ -1,25 +1,23 @@
 #!/usr/bin/env bash
 # 아테나 현황판(scripts/board/server.mjs)을 띄우고 브라우저로 연다.
-# 사용: scripts/board.sh          → 서버가 없으면 herdr pane "📋 현황판" 에 띄우고 브라우저를 연다
+# 사용: scripts/board.sh          → 서버가 없으면 백그라운드로 띄우고 브라우저를 연다
 #       scripts/board.sh stop     → 서버를 끈다
 #       scripts/board.sh url      → 주소만 출력
 #       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 현황판 주소로 연다
 #                                  [이대로 진행] 이 아테나 pane 으로 보내려면 이 주소로 열어야 한다
-# 브라우저는 화면 계층 scripts/screen open-url 로 연다 — Athena Studio 면 그 창의 옆 브라우저, 그 밖(herdr 등)은 기본 브라우저(open)
+# 브라우저는 화면 계층 scripts/screen open-url 로 연다 — Athena Studio 면 그 창의 옆 브라우저, 그 밖은 기본 브라우저(open)
 #
 # 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
 # 여러 팩 — 떠 있는 현황판의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
-# herdr 밖이거나 Studio 화면이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log(포트 4700) · 다른 포트면 /tmp/hermes-board-<포트>.log
-# (포트는 본체마다 달라 — 두 앱·여러 본체의 현황판 로그가 서로 덮지 않는다).
+# 서버는 pane 없이 백그라운드(nohup)로 띄운다(사용자 결정 2026-10-18 — 앱 현황판 탭이 보여 준다). 로그는 /tmp/hermes-board.log(포트 4700) ·
+# 다른 포트면 /tmp/hermes-board-<포트>.log(포트는 본체마다 달라 — 여러 본체의 현황판 로그가 서로 덮지 않는다).
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
-. "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 # 포트 순서는 athena_config.board_port(여러 팩: 레지스트리 → 본체 설정 → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700 · 옛 구조: env 먼저)
 PORT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import board_port; print(board_port(sys.argv[1]))' "$ATHENA_DIR" 2>/dev/null || echo "${ATHENA_BOARD_PORT:-4700}")"
 URL="http://localhost:$PORT"
-# 백그라운드 로그 — 4700(~/athena 기본)은 지금 이름 그대로, 다른 포트는 포트별 이름
+# 백그라운드 로그 — 4700(기본 포트)은 지금 이름 그대로, 다른 포트는 포트별 이름
 if [ "$PORT" = 4700 ]; then LOG_FILE=/tmp/hermes-board.log; else LOG_FILE="/tmp/hermes-board-$PORT.log"; fi
-LABEL="📋 현황판"
 
 is_up() { curl -s -o /dev/null --max-time 1 "$URL/api/state"; }
 
@@ -61,32 +59,8 @@ if is_up; then
   echo "$URL (이미 떠 있음)"
 else
   CMD="ATHENA_BOARD_PORT=$PORT node $(printf '%q' "$ATHENA_DIR/scripts/board/server.mjs")"
-  SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
-  # Studio 화면이면 pane 없이 백그라운드로 띄운다(사용자 결정 2026-10-18 — 앱 현황판 탭이 보여 준다)
-  IN_PANE=0
-  if "$SCREEN" inside; then
-    eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다 · SCREEN_BACKEND
-    [ "${SCREEN_BACKEND:-}" = studio ] || IN_PANE=1
-  fi
-  if [ "$IN_PANE" = 1 ]; then
-    # 같은 이름의 pane 이 있으면(어느 workspace 든) 거기서 다시 띄운다
-    PANE="$("$SCREEN" pane list --label-or-name "$LABEL" --format id 2>/dev/null)"
-    if [ -z "$PANE" ]; then
-      # 부른 pane 옆을 나눈다(--target self) — 포커스된 pane 은 뒤에서 돌 때 엉뚱한 곳을 가른다
-      OUT="$("$SCREEN" pane split --target self --direction down --ratio 0.25 --cwd "$ATHENA_DIR" --no-focus)" || {
-        echo "⚠️  $("$SCREEN" name) pane split 실패: $OUT" >&2; exit 1; }
-      PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
-      sleep 1
-    fi
-    # pane run 은 인자를 따옴표 없이 이어 붙인다(bash -c "..." 가 깨진다) — env 로 바로 실행한다
-    "$SCREEN" pane run "$PANE" "$(shell_line env "ATHENA_BOARD_PORT=$PORT" node "$ATHENA_DIR/scripts/board/server.mjs")" >/dev/null
-    "$SCREEN" pane rename "$PANE" "$LABEL" >/dev/null 2>&1 || true
-    "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
-    PLACE="pane $PANE"
-  else
-    nohup bash -c "$CMD" >"$LOG_FILE" 2>&1 &
-    PLACE="백그라운드 (로그 $LOG_FILE)"
-  fi
+  nohup bash -c "$CMD" >"$LOG_FILE" 2>&1 &
+  PLACE="백그라운드 (로그 $LOG_FILE)"
   for _ in $(seq 1 20); do is_up && break; sleep 0.3; done
   is_up || { echo "⚠️  서버가 뜨지 않았다 — $PLACE 확인" >&2; exit 1; }
   echo "$URL ($PLACE)"

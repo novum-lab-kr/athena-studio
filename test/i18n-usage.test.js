@@ -1,5 +1,5 @@
 // 화면 문구가 사전(src/i18n)을 거치는지 — 코드가 부르는 키가 사전에 있고, 범위 안 파일에 한국어 글이 새로 남지 않는다.
-// 범위(D4 A): 스튜디오 화면 · 메뉴 · 대화상자 · 트레이. 코어 명령 출력 · 현황판 · 로그 · 내부 오류는 밖(아래 허용 목록)
+// 범위: 스튜디오 화면 · 메뉴 · 대화상자 · 트레이. 코어 명령 출력 · 현황판 · 로그 · 내부 오류는 밖(아래 허용 목록)
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')

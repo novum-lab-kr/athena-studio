@@ -50,7 +50,7 @@ class Daemon {
     this.workspaces = [] // {id, label, cwd, activeTab, body} — 레포마다 하나(코어 delegate 가 만든다) · body = 그 작업 공간이 속한 아테나 본체(팩) 실제 경로, 모르면 null(모든 본체에 보임)
     this.tabs = [] // {id, workspaceId, label, tree, size: {cols, rows}}
     this.docks = new Map() // '<본체>\0<이름>' → pane id — 탭 밖에 늘 붙어 있는 칸(앱 하단 에이전트 모니터 등) · 본체마다 따로
-    // 보는 자리(활성 작업 공간 · 포커스)는 본체마다 — 팩 창마다 따로 고른다(아테나 계획서 20261018-팩마다-본체 C6). 키 = 본체 경로('' = 본체 모름)
+    // 보는 자리(활성 작업 공간 · 포커스)는 본체마다 — 팩 창마다 따로 고른다. 키 = 본체 경로('' = 본체 모름)
     this.views = new Map()
     this.lastKey = '' // 마지막으로 포커스가 움직인 본체 — 묶이지 않은 CLI 의 '지금 포커스'
     this.clients = new Set()
@@ -576,7 +576,7 @@ class Daemon {
     return pane
   }
 
-  // pane 셸 환경 — 화면 계층 auto 감지가 herdr 보다 먼저 본다(ATHENA_STUDIO*). HERDR_* · ELECTRON_RUN_AS_NODE 는 지운다
+  // pane 셸 환경 — 아테나 화면 계층이 스튜디오 pane 인 것을 ATHENA_STUDIO* 로 안다. ELECTRON_RUN_AS_NODE 등 물려받은 세션 표시는 지운다
   paneEnv(paneId, tabId, extra) {
     const tab = this.tabs.find((entry) => entry.id === tabId)
     return {

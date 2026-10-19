@@ -1,39 +1,32 @@
 """화면 계층 — 아테나가 pane·탭·workspace 를 다루는 곳은 여기 하나다(scripts/screen CLI · node 쪽 scripts/lib/screen.mjs 가 이걸 부른다).
 
-화면 백엔드는 herdr 와 studio(Athena Studio 자체 터미널 데몬) 둘이다 — 둘 다 같은 계약(아래 동작 · 납작한 JSON)이라 아테나 스크립트는 그대로 쓴다.
-아테나 코드는 herdr·studio 를 직접 부르지 않는다 — herdr 명령·HERDR_* 환경 변수·herdr JSON 모양을 아는 건 HerdrBackend,
-데몬 CLI(athena-studio-cli)·ATHENA_STUDIO_* 를 아는 건 StudioBackend 뿐이다
-(예외: herdr 플러그인 자체를 다루는 scripts/herdr-sidebar-*.sh — scripts/screen-lint.sh 허용 목록).
+화면 백엔드는 studio(Athena Studio 자체 터미널 데몬) 하나다 — 그 밖이면 none(터미널 하나뿐). 아테나 스크립트는 아래 계약(동작 · 납작한 JSON)만 안다.
+데몬 CLI(athena-studio-cli)·ATHENA_STUDIO_* 를 아는 건 StudioBackend 뿐이다.
 
-백엔드 고르기 — 위에서부터(둘 다 켜 있어도 스크립트가 그대로 돈다 — 공존):
-  1. ATHENA_SCREEN=herdr|studio|none                 → 그 값(회귀 검사 · 한 번만 바꿀 때 · auto 면 다음으로)
-  2. HERDR_ENV=1 이거나 HERDR_PANE_ID 가 있다(herdr pane 안) → herdr
-     (Studio 데몬은 pane 셸에서 HERDR_* 를 지운다 — 둘 다 있으면 Studio pane 안에서 켠 herdr 이고 안쪽인 herdr 가 맞다)
-  3. ATHENA_STUDIO=1(Studio pane 안)                → studio
-  4. 이 아테나 폴더의 athena.config.json "screen"(herdr·studio·none — pane 밖에서만 쓰인다. auto 면 다음으로)
-     pane 안 표시가 설정보다 먼저다 — 본체 하나를 herdr·스튜디오가 같이 쓰면 설정 고정값이 다른 화면의 pane 안까지 끌고 가지 않게
-  5. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
-  6. herdr 명령이 있다                                → herdr
-  7. 그 밖                                           → none
-  pane 밖이어도 백엔드는 골라진다 — 원래 스크립트가 그 자리에서 herdr 를 바로 불렀다(plan-html 의 pane current · 현황판의 pane list).
-  "pane 안인가" 는 inside() 가 따로 답한다(herdr: HERDR_ENV=1 + herdr 명령 · studio: ATHENA_STUDIO=1 + 데몬 CLI).
+백엔드 고르기 — 위에서부터:
+  1. ATHENA_SCREEN=studio|none                      → 그 값(회귀 검사 · 한 번만 바꿀 때 · auto 면 다음으로)
+  2. ATHENA_STUDIO=1(Studio pane 안)                → studio
+  3. 이 아테나 폴더의 athena.config.json "screen"(studio·none — pane 밖에서만 쓰인다. auto · 모르는 값이면 다음으로)
+  4. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
+  5. 그 밖                                           → none
+  pane 밖이어도 백엔드는 골라진다(plan-html 의 pane current · 현황판의 pane list).
+  "pane 안인가" 는 inside() 가 따로 답한다(studio: ATHENA_STUDIO=1 + 데몬 CLI).
 
 납작한 JSON(백엔드 모양을 감춘다 — id 는 불투명한 문자열, 부르는 쪽이 id 를 쪼개 읽지 않는다):
   Pane      {id, tab_id, workspace_id, label, name, pane_title, cwd, foreground_cwd, focused, agent, agent_status, title}
             label 은 백엔드가 준 이름표 그대로(없으면 null) — name·pane_title 로 채우지 않는다(도구 pane 찾기가 이름표만 본다).
-            title 은 터미널 제목, pane_title 은 백엔드의 pane 제목 필드(herdr title)
+            title 은 터미널 제목, pane_title 은 백엔드의 pane 제목 필드
   Tab       {id, workspace_id, label}
   Workspace {id, label, active_tab_id, focused}
-  Layout    {area:{x,y,width,height}, panes:[{id, rect:{x,y,width,height}}]}
   Self      {inside, backend, pane_id, tab_id, workspace_id}
-            inside = 환경상 화면 pane 안에서 켜졌다(서버에 묻지 않음 — herdr 면 HERDR_ENV=1 · studio 면 ATHENA_STUDIO=1).
-            inside 동작(scripts/screen inside)은 그 위에 백엔드 명령까지 있어 지금 조작할 수 있는지다(herdr 면 + herdr 명령)
+            inside = 환경상 화면 pane 안에서 켜졌다(서버에 묻지 않음 — ATHENA_STUDIO=1).
+            inside 동작(scripts/screen inside)은 그 위에 데몬 CLI 까지 있어 지금 조작할 수 있는지다
 실패: 종료 코드 1 이상. 화면 계층이 낸 오류는 표준오류에 {"error": "<code>", "message": "…"}.
-      herdr 가 실패하면 그 출력·종료 코드를 그대로 흘려보낸다 — 원래 스크립트가 오류 안내에 넣던 글자가 그대로 남게.
-      studio 는 데몬 CLI 가 이미 {"error","message"} 로 말하므로 그 code(usage · not_found · timeout · unavailable · internal)를 그대로 옮긴다
+      데몬 CLI 가 이미 {"error","message"} 로 말하므로 그 code(usage · not_found · timeout · unavailable · internal)를 그대로 옮긴다.
+      약속 밖 출력(node 가 죽음 등)은 그 출력·종료 코드를 그대로 흘려보낸다
 
 주소 열기(open-url) — 화면이 브라우저를 품고 있으면 그 안에서 연다(studio: 그 본체 창의 옆 브라우저 · 데몬 op open-url → 앱).
-  못 하면(herdr · none · 옛 데몬 · 붙은 앱 창 없음 · http(s) 가 아님) 기본 브라우저(맥 open · 그 밖 xdg-open)로 떨어진다 — 부르는 쪽은 늘 이것 하나만 부른다.
+  못 하면(none · 옛 데몬 · 붙은 앱 창 없음 · http(s) 가 아님) 기본 브라우저(맥 open · 그 밖 xdg-open)로 떨어진다 — 부르는 쪽은 늘 이것 하나만 부른다.
   결과 {ok, target: "panel"|"external", via: "studio"|"open"|"xdg-open"}
 
 bash 에서:  "$ATHENA_DIR/scripts/screen" pane list --label "📋 현황판" --format id
@@ -47,16 +40,14 @@ import shutil
 import subprocess
 import sys
 
-FORWARD_STDERR = False   # CLI(main)만 켠다 — 성공해도 herdr 의 경고를 표준오류로(원래 bash 에서처럼). 파이썬 훅은 원래도 받아 버렸다
+FORWARD_STDERR = False   # CLI(main)만 켠다 — 성공해도 데몬 CLI 의 경고를 표준오류로. 파이썬 훅은 받아 버린다
 
-FEATURES_HERDR = ['agent-status', 'process-info', 'layout-geometry', 'pane-move', 'workspaces', 'herdr-sidebar']
-# studio — 고정 배치(layout-geometry · pane-move)·herdr 사이드바는 없다 → athena-layout · 사이드바는 저절로 건너뛴다
 FEATURES_STUDIO = ['agent-status', 'process-info', 'workspaces']
 
 
 class ScreenError(Exception):
     """code: usage · not_inside · unsupported · unavailable · backend.
-    backend 오류는 백엔드가 낸 출력(stdout · stderr · 종료 코드)을 그대로 들고 있다 — CLI 가 그대로 흘려보낸다(원래 스크립트가 받던 그 글자)."""
+    backend 오류는 백엔드가 낸 출력(stdout · stderr · 종료 코드)을 그대로 들고 있다 — CLI 가 그대로 흘려보낸다."""
 
     def __init__(self, code, message, stdout='', stderr='', returncode=1):
         super().__init__(message)
@@ -93,24 +84,24 @@ class Backend:
         """화면 안에서 주소를 열 수 있으면 {ok, target, via} · 못 하면 None(부르는 쪽이 기본 브라우저로)"""
         return None
 
-    pane_current = list_panes = get_pane = layout = is_shell = read = wait_output = _no
+    pane_current = list_panes = get_pane = is_shell = read = wait_output = _no
     list_tabs = get_tab = rename_tab = close_tab = list_workspaces = get_workspace = create_workspace = _no
-    split = run = send_text = send_keys = rename = swap = move = close = _no
+    split = run = send_text = send_keys = rename = close = _no
 
 
 class NoneBackend(Backend):
     """화면 계층 밖 — 터미널 하나뿐. 부르는 쪽이 원래 하던 대체 동작(nohup · 새 창 · 직접 실행 안내)을 한다."""
     name = 'none'
-    title = '화면 터미널(herdr · Athena Studio)'
+    title = 'Athena Studio 화면'
 
     def refusal(self):
-        return ScreenError('not_inside', '화면 계층 밖이다(ATHENA_SCREEN=none · herdr 없음)')
+        return ScreenError('not_inside', '화면 계층 밖이다(ATHENA_SCREEN=none · Athena Studio 밖)')
 
 
 def _studio_endpoint():
     """Athena Studio 데몬 접속 파일(~/.athena-studio/daemon.json — 데몬이 쓴다: socket · cli · node · pid).
     pane 밖(앱이 띄우지 않은 현황판 · 일반 터미널)에서 studio 를 알아보는 데 쓴다. 데몬이 죽고 파일만 남았으면 없는 것으로 친다
-    (pid 가 없거나 소켓이 없으면) — 낡은 파일 하나로 herdr 를 못 쓰게 되지 않게. ATHENA_STUDIO_ENDPOINT 로 자리를 바꿀 수 있다(회귀 검사용)"""
+    (pid 가 없거나 소켓이 없으면) — 낡은 파일 하나로 없는 데몬을 부르지 않게. ATHENA_STUDIO_ENDPOINT 로 자리를 바꿀 수 있다(회귀 검사용)"""
     path = os.environ.get('ATHENA_STUDIO_ENDPOINT') or os.path.join(os.path.expanduser('~'), '.athena-studio', 'daemon.json')
     try:
         with open(path, encoding='utf-8') as source:
@@ -140,7 +131,7 @@ class StudioBackend(Backend):
     탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡힌다(나눌 수는 없다 — 데몬이 usage). 지금 앱은 모니터를 앱 화면으로 그려 monitor-pane 은 studio 에서 띄우지 않는다
     CLI 실패: 종료 1 + 표준오류 {"error","message"} → 그 code 의 ScreenError · 데몬에 못 붙으면 종료 3 → unavailable.
     pane 안이면 데몬이 넣어 준 ATHENA_STUDIO=1 · ATHENA_STUDIO_PANE_ID · _TAB_ID · _WORKSPACE_ID · _SOCKET · _CLI · _NODE 를,
-    pane 밖이면 접속 파일의 socket · cli · node 를 쓴다. 고정 배치(layout · move · swap)·herdr 사이드바는 없다 — features 에서 끈다"""
+    pane 밖이면 접속 파일의 socket · cli · node 를 쓴다"""
     name = 'studio'
     title = 'Athena Studio'
 
@@ -248,7 +239,7 @@ class StudioBackend(Backend):
         return self._call(['pane', 'wait-output', pane, *options], parse=False)
 
     def list_tabs(self, workspace=None):
-        # 데몬이 거르지만 계약은 화면 계층이 지킨다(herdr 백엔드와 같게)
+        # 데몬이 거르지만 계약은 화면 계층이 지킨다
         tabs = self._call(['tab', 'list', *(['--workspace', workspace] if workspace is not None else [])])['tabs']
         return [tab for tab in tabs if workspace is None or tab.get('workspace_id') == workspace]
 
@@ -268,7 +259,7 @@ class StudioBackend(Backend):
         return self._call(['workspace', 'get', workspace])['workspace']
 
     def create_workspace(self, label, cwd, focus=None):
-        # 데몬은 빈 셸 탭 하나와 함께 만든다(root_pane) — 계약은 workspace 만 돌려준다(herdr 와 같게)
+        # 데몬은 빈 셸 탭 하나와 함께 만든다(root_pane) — 계약은 workspace 만 돌려준다
         args = ['workspace', 'create', '--label', label, '--cwd', cwd]
         if focus is not None:
             args.append('--focus' if focus else '--no-focus')
@@ -289,7 +280,7 @@ class StudioBackend(Backend):
         return self._call(args)['pane']
 
     def run(self, pane, words):
-        # herdr 계약 그대로 — 단어를 공백으로 이어 한 줄 + Enter(데몬이 \r)
+        # 단어를 따옴표 없이 공백으로 이어 한 줄 + Enter(데몬이 \r) — 따옴표가 필요하면 부르는 쪽이 한 줄로 만들어 넘긴다
         self._call(['pane', 'run', pane, *words], parse=False)
 
     def send_text(self, pane, text):
@@ -305,189 +296,27 @@ class StudioBackend(Backend):
         self._call(['pane', 'close', pane], parse=False)
 
 
-def _pane(raw):
-    # label·name·pane_title 은 따로 둔다 — 합치면 이름표 없는 pane 이 제목만으로 도구 pane 처럼 잡힌다(보여 줄 이름은 부르는 쪽이 고른다)
-    return {
-        'id': raw.get('pane_id'), 'tab_id': raw.get('tab_id'), 'workspace_id': raw.get('workspace_id'),
-        'label': raw.get('label') or None, 'name': raw.get('name') or None, 'pane_title': raw.get('title') or None,
-        'cwd': raw.get('cwd'), 'foreground_cwd': raw.get('foreground_cwd'), 'focused': bool(raw.get('focused')),
-        'agent': raw.get('agent') or None, 'agent_status': raw.get('agent_status') or None,
-        'title': raw.get('terminal_title_stripped') or None,
-    }
-
-
-def _workspace(raw):
-    return {'id': raw.get('workspace_id'), 'label': raw.get('label'), 'active_tab_id': raw.get('active_tab_id'), 'focused': bool(raw.get('focused'))}
-
-
-class HerdrBackend(Backend):
-    name = 'herdr'
-    title = 'herdr'
-
-    def features(self):
-        return list(FEATURES_HERDR)
-
-    def inside(self):
-        return os.environ.get('HERDR_ENV') == '1' and shutil.which('herdr') is not None
-
-    def self_info(self):
-        pane = os.environ.get('HERDR_PANE_ID', '')
-        # herdr id 는 "<workspace>:<pane>" — 쪼개 읽는 건 백엔드 몫이다(monitor-pane 이 하던 그대로: ':' 가 없으면 비움)
-        return {'inside': os.environ.get('HERDR_ENV') == '1', 'backend': 'herdr', 'pane_id': pane, 'tab_id': os.environ.get('HERDR_TAB_ID', ''),
-                'workspace_id': pane.split(':')[0] if ':' in pane else ''}
-
-    def _call(self, args, timeout=None, parse=True):
-        try:
-            done = subprocess.run(['herdr', *args], capture_output=True, text=True, timeout=timeout)
-        except FileNotFoundError:
-            raise ScreenError('unavailable', 'herdr 명령을 찾지 못했다')
-        if FORWARD_STDERR and done.returncode == 0 and done.stderr:
-            sys.stderr.write(done.stderr)
-        if done.returncode != 0:
-            raise ScreenError('backend', f'herdr {" ".join(args[:2])} 실패', done.stdout, done.stderr, done.returncode)
-        if not parse:
-            return done.stdout
-        try:
-            return json.loads(done.stdout)['result']
-        except (ValueError, KeyError, TypeError):
-            raise ScreenError('backend', f'herdr {" ".join(args[:2])} 응답을 읽지 못했다', done.stdout, done.stderr)
-
-    # 조회
-    def pane_current(self):
-        return _pane(self._call(['pane', 'current'])['pane'])
-
-    def list_panes(self, timeout=None):
-        return [_pane(raw) for raw in self._call(['pane', 'list'], timeout=timeout)['panes']]
-
-    def get_pane(self, pane):
-        return _pane(self._call(['pane', 'get', pane])['pane'])
-
-    def layout(self, pane):
-        lay = self._call(['pane', 'layout', '--pane', pane])['layout']
-        return {'area': lay['area'], 'panes': [{'id': rect['pane_id'], 'rect': rect['rect']} for rect in lay['panes']]}
-
-    def is_shell(self, pane):
-        # 빈 셸(프롬프트에서 대기 — 안에서 도는 프로그램 없음)이면 True. 확인 못 하면 False — 돌고 있는 것을 건드리지 않는 쪽으로
-        if not pane:
-            return False
-        try:
-            info = self._call(['pane', 'process-info', '--pane', pane])['process_info']
-        except (ScreenError, KeyError, TypeError):
-            return False
-        return info.get('foreground_process_group_id') == info.get('shell_pid')
-
-    def read(self, pane, options):
-        return self._call(['pane', 'read', *options, pane], parse=False)
-
-    def wait_output(self, pane, options):
-        return self._call(['pane', 'wait-output', *options, pane], parse=False)
-
-    def list_tabs(self, workspace=None):
-        tabs = [{'id': raw.get('tab_id'), 'workspace_id': raw.get('workspace_id'), 'label': raw.get('label')} for raw in self._call(['tab', 'list'])['tabs']]
-        return [tab for tab in tabs if workspace is None or tab['workspace_id'] == workspace]
-
-    def get_tab(self, tab):
-        # herdr 탭 id 는 "<workspace>:<tab>" — 서버에 묻지 않고 id 에서 읽는다(athena-layout 이 하던 ${TAB%%:*} 그대로 · herdr 를 더 부르지 않게)
-        return {'id': tab, 'workspace_id': tab.split(':', 1)[0], 'label': None}
-
-    def rename_tab(self, tab, label):
-        self._call(['tab', 'rename', tab, label], parse=False)
-
-    def close_tab(self, tab):
-        self._call(['tab', 'close', tab], parse=False)
-
-    def list_workspaces(self):
-        return [_workspace(raw) for raw in self._call(['workspace', 'list'])['workspaces']]
-
-    def get_workspace(self, workspace):
-        return _workspace(self._call(['workspace', 'get', workspace])['workspace'])
-
-    def create_workspace(self, label, cwd, focus=None):
-        args = ['workspace', 'create', '--label', label, '--cwd', cwd]
-        if focus is not None:
-            args.append('--focus' if focus else '--no-focus')
-        return _workspace(self._call(args)['workspace'])
-
-    # 바꾸기
-    def split(self, target, direction, ratio=None, cwd=None, env=(), focus=None):
-        # target: self = 부른 pane(모르면 포커스된 pane) · focused = 포커스된 pane · 그 밖 = pane id.
-        # herdr 인자는 원래 스크립트가 쓰던 그대로 — self 는 --pane <id>, id 는 자리 인자(둘 다 herdr 에서 같은 뜻)
-        if target == 'self':
-            pane = os.environ.get('HERDR_PANE_ID', '')
-            where = ['--pane', pane] if pane else ['--current']
-        elif target == 'focused':
-            where = ['--current']
-        else:
-            where = [target]
-        args = ['pane', 'split', *where, '--direction', direction]
-        if ratio is not None:
-            args += ['--ratio', ratio]
-        if cwd is not None:
-            args += ['--cwd', cwd]
-        for pair in env:
-            args += ['--env', pair]
-        if focus is not None:
-            args.append('--focus' if focus else '--no-focus')
-        return _pane(self._call(args)['pane'])
-
-    def run(self, pane, words):
-        # herdr 는 단어를 따옴표 없이 공백으로 이어 붙여 그 pane 의 셸에 한 줄로 친다 — 계약 그대로 둔다(따옴표가 필요하면 부르는 쪽이 한 줄로 만들어 넘긴다)
-        self._call(['pane', 'run', pane, *words], parse=False)
-
-    def send_text(self, pane, text):
-        self._call(['pane', 'send-text', pane, text], parse=False)
-
-    def send_keys(self, pane, keys):
-        self._call(['pane', 'send-keys', pane, *keys], parse=False)
-
-    def rename(self, pane, label):
-        self._call(['pane', 'rename', pane, label], parse=False)
-
-    def swap(self, source, target):
-        self._call(['pane', 'swap', '--source-pane', source, '--target-pane', target], parse=False)
-
-    def move(self, pane, new_tab=False, tab=None, target=None, split=None, ratio=None, focus=None):
-        # 옮기면 pane id 가 바뀐다(herdr) — 돌려준 id 를 쓴다. herdr 는 같은 탭 안 이동을 못 한다(reason same_tab)
-        args = ['pane', 'move', pane]
-        if new_tab:
-            args.append('--new-tab')
-        else:
-            args += ['--tab', tab, '--target-pane', target, '--split', split]
-            if ratio is not None:
-                args += ['--ratio', ratio]
-        if focus is not None:
-            args.append('--focus' if focus else '--no-focus')
-        return _pane(self._call(args)['move_result']['pane'])
-
-    def close(self, pane):
-        self._call(['pane', 'close', pane], parse=False)
-
-
-BACKENDS = {'herdr': HerdrBackend, 'studio': StudioBackend, 'none': NoneBackend}
+BACKENDS = {'studio': StudioBackend, 'none': NoneBackend}
 
 
 def _configured_screen():
-    """이 아테나 폴더의 athena.config.json(이 컴퓨터 설정) "screen" — herdr·studio·none·auto 문자열만. 없거나 읽지 못하거나 다른 값이면 ''(자동)."""
+    """이 아테나 폴더의 athena.config.json(이 컴퓨터 설정) "screen" — studio·none·auto 문자열만. 없거나 읽지 못하거나 다른 값(옛 설정에 남은 다른 백엔드 이름 등)이면 ''(자동)."""
     config = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), 'athena.config.json')
     try:
         with open(config, encoding='utf-8') as config_file:
             value = json.load(config_file).get('screen')
     except (OSError, ValueError, AttributeError):
         return ''
-    return value if value in ('herdr', 'studio', 'none', 'auto') else ''
+    return value if value in ('studio', 'none', 'auto') else ''
 
 
 def backend_name():
-    # 1) 환경 변수(회귀 검사·한 번만 바꿀 때) → 2) 화면 pane 안 표시(그 백엔드가 넣어 준 환경 변수) → 3) 이 아테나 폴더 설정 "screen"
-    # → 4) pane 밖이면 떠 있는 Studio 데몬(접속 파일) → 5) herdr 명령 → none.
-    # pane 안 표시가 설정보다 먼저다 — 본체 하나를 herdr·스튜디오가 같이 쓰면(여러 팩) 설정 "screen":"herdr" 고정 때문에
-    # 스튜디오 pane 안 아테나·delegate 가 herdr 에 pane 을 만들었다(계획서 20261018-여러-회사-팩 Decisions "화면 백엔드 고르기")
+    # 1) 환경 변수(회귀 검사·한 번만 바꿀 때) → 2) Studio pane 안 표시(데몬이 넣어 준 ATHENA_STUDIO=1) → 3) 이 아테나 폴더 설정 "screen"
+    # → 4) pane 밖이면 떠 있는 Studio 데몬(접속 파일) → none.
+    # pane 안 표시가 설정보다 먼저다 — 설정 "screen":"none" 이어도 Studio pane 안 아테나·delegate 는 그 화면에 pane 을 만든다
     name = os.environ.get('ATHENA_SCREEN', '')
     if name and name != 'auto':
         return name
-    # 둘 다 있으면 herdr(R1) — Studio 데몬은 pane 셸에서 HERDR_* 를 지우므로, 둘 다 있다는 건 Studio pane 안에서 켠 herdr(안쪽)다
-    if os.environ.get('HERDR_ENV') == '1' or os.environ.get('HERDR_PANE_ID'):
-        return 'herdr'
     if os.environ.get('ATHENA_STUDIO') == '1':
         return 'studio'
     configured = _configured_screen()
@@ -495,8 +324,6 @@ def backend_name():
         return configured
     if _studio_endpoint():
         return 'studio'
-    if shutil.which('herdr'):
-        return 'herdr'
     return 'none'
 
 
@@ -521,7 +348,7 @@ def open_url(url):
 def get_backend():
     name = backend_name()
     if name not in BACKENDS:
-        raise ScreenError('usage', f'모르는 화면 백엔드: ATHENA_SCREEN={name} (herdr · studio · none)')
+        raise ScreenError('usage', f'모르는 화면 백엔드: ATHENA_SCREEN={name} (studio · none)')
     return BACKENDS[name]()
 
 
@@ -542,28 +369,27 @@ def list_panes(timeout=None):
 USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · 실패면 종료 코드 1 이상)
   self [--format json|sh]                      부른 pane(환경에서 — 서버에 묻지 않음) · sh 는 eval 용 SCREEN_* 변수
   inside                                       화면 pane 안이면 0
-  name                                         안내 글에 쓸 화면 이름 한 줄(herdr · Athena Studio · 화면 터미널…)
+  name                                         안내 글에 쓸 화면 이름 한 줄(Athena Studio …)
   capabilities [--has <기능>[,<기능>…]]          백엔드 기능 목록 · --has 는 다 있으면 0
   pane current                                 서버가 정한 지금 pane(self 와 다르다 — 환경이 없으면 포커스된 pane)
-  pane list [--tab T] [--workspace W] [--label L] [--label-or-name L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
+  pane list [--tab T] [--workspace W] [--label L] [--cwd D] [--agent-only] [--prefer-tab T] [--prefer-workspace W]
                                                (T·W 에 self 를 쓰면 부른 pane 의 탭·workspace) · --cwd 는 cwd 나 foreground_cwd 의 실제 경로가 D 인 것
-  pane get <pane> · pane layout --pane <pane> · pane is-shell <pane>(빈 셸이면 0)
-  pane read <pane> [--lines N] [--source S] [--read-format text|ansi] [--ansi] [--raw]   출력 그대로(글자 · --read-format 은 herdr --format)
+  pane get <pane> · pane is-shell <pane>(빈 셸이면 0)
+  pane read <pane> [--lines N] [--source S]    출력 그대로(글자 · 데몬이 못 하는 옵션 --read-format · --ansi · --raw 는 usage)
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
-  pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음 — herdr 계약 그대로)
+  pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
   pane send-text <pane> <글> · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
-  pane swap <pane> <pane> · pane move <pane> (--new-tab | --tab T --target P --split right|down [--ratio R]) [--focus|--no-focus]
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
-  open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(herdr · none · 옛 데몬) 기본 브라우저(open)
+  open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(none · 옛 데몬) 기본 브라우저(open)
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
-  백엔드: ATHENA_SCREEN=herdr|studio|none → pane 안 표시(HERDR_ENV·HERDR_PANE_ID → herdr · ATHENA_STUDIO=1 → studio)
-         → athena.config.json screen → Studio 데몬 접속 파일 → herdr 명령 → none"""
+  백엔드: ATHENA_SCREEN=studio|none → pane 안 표시(ATHENA_STUDIO=1 → studio)
+         → athena.config.json screen → Studio 데몬 접속 파일 → none"""
 
-VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--label-or-name', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace', '--pane',
-               '--target', '--direction', '--ratio', '--env', '--split', '--lines', '--source', '--match', '--regex', '--timeout'}
-BOOL_FLAGS = {'--agent-only', '--focus', '--no-focus', '--new-tab', '--ansi', '--raw'}
+VALUE_FLAGS = {'--format', '--has', '--tab', '--workspace', '--label', '--read-format', '--cwd', '--prefer-tab', '--prefer-workspace',
+               '--target', '--direction', '--ratio', '--env', '--lines', '--source', '--match', '--regex', '--timeout'}
+BOOL_FLAGS = {'--agent-only', '--focus', '--no-focus', '--ansi', '--raw'}
 
 
 def _parse(args):
@@ -613,8 +439,6 @@ def _filter_panes(screen, panes, flags):
         panes = [p for p in panes if p['workspace_id'] == resolve(flags['--workspace'], 'workspace_id')]
     if '--label' in flags:
         panes = [p for p in panes if p['label'] == flags['--label']]
-    if '--label-or-name' in flags:   # board.sh 가 원래 보던 대로 — 이름표 또는 name
-        panes = [p for p in panes if flags['--label-or-name'] in (p['label'], p['name'])]
     if '--cwd' in flags:
         root = _realpath(flags['--cwd'])
         panes = [p for p in panes if (p['cwd'] and _realpath(p['cwd']) == root) or (p['foreground_cwd'] and _realpath(p['foreground_cwd']) == root)]
@@ -653,10 +477,6 @@ def _dispatch(screen, words, flags, positional, raw_rest):
         return {'panes': _filter_panes(screen, screen.list_panes(), flags)}, 0
     if op == 'pane get':
         return {'pane': screen.get_pane(_need(positional, 1, 'pane')[0])}, 0
-    if op == 'pane layout':
-        if '--pane' not in flags:
-            raise ScreenError('usage', 'pane layout --pane <pane>')
-        return screen.layout(flags['--pane']), 0
     if op == 'pane is-shell':
         try:
             return None, 0 if screen.is_shell(positional[0] if positional else '') else 1
@@ -664,7 +484,7 @@ def _dispatch(screen, words, flags, positional, raw_rest):
             return None, 1   # 확인 못 하면 1 — 돌고 있는 것을 건드리지 않는 쪽으로
     if op in ('pane read', 'pane wait-output'):
         pane = _need(positional, 1, 'pane')[0]
-        # herdr 의 읽기 옵션을 그대로 넘긴다 — --format 은 출력 형식(json·id)과 겹쳐 --read-format 으로 받는다
+        # 읽기 옵션을 그대로 넘긴다 — --format 은 출력 형식(json·id)과 겹쳐 --read-format 으로 받는다(데몬이 못 하면 usage)
         options = [item for key in ('--source', '--lines', '--match', '--regex', '--timeout') if key in flags for item in (key, flags[key])]
         if '--read-format' in flags:
             options += ['--format', flags['--read-format']]
@@ -691,17 +511,6 @@ def _dispatch(screen, words, flags, positional, raw_rest):
         _need(raw_rest, 2, 'pane 과 이름')
         screen.rename(raw_rest[0], raw_rest[1])
         return None, 0
-    if op == 'pane swap':
-        _need(positional, 2, '두 pane')
-        screen.swap(positional[0], positional[1])
-        return None, 0
-    if op == 'pane move':
-        pane = _need(positional, 1, 'pane')[0]
-        if flags.get('--new-tab'):
-            return {'pane': screen.move(pane, new_tab=True, focus=_focus(flags))}, 0
-        if not all(key in flags for key in ('--tab', '--target', '--split')):
-            raise ScreenError('usage', 'pane move <pane> (--new-tab | --tab T --target P --split right|down [--ratio R])')
-        return {'pane': screen.move(pane, tab=flags['--tab'], target=flags['--target'], split=flags['--split'], ratio=flags.get('--ratio'), focus=_focus(flags))}, 0
     if op == 'pane close':
         screen.close(_need(positional, 1, 'pane')[0])
         return None, 0
@@ -771,7 +580,7 @@ def main(argv):
         result, code = _dispatch(screen, words, flags, positional, raw_rest)
     except ScreenError as error:
         if error.code == 'backend':
-            # 백엔드가 낸 글자를 그대로 — 원래 스크립트가 받던 출력(json 일 때만 표준출력. id 는 비워 둔다 — 부르는 쪽이 오류 글을 id 로 읽지 않게)
+            # 백엔드가 낸 글자를 그대로(json 일 때만 표준출력. id 는 비워 둔다 — 부르는 쪽이 오류 글을 id 로 읽지 않게)
             (sys.stdout if fmt == 'json' else sys.stderr).write(error.stdout)
             sys.stderr.write(error.stderr)
             return error.returncode

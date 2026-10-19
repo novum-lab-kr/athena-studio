@@ -112,7 +112,7 @@ test('CLI: 모르는 동작', () => {
   assert.throws(() => protocol.parseCli(['pane']), { code: 'usage' })
 })
 
-test('CLI: workspace · tab (D3 확장 — delegate 가 레포마다 작업 공간)', () => {
+test('CLI: workspace · tab (delegate 가 레포마다 작업 공간)', () => {
   assert.deepEqual(protocol.parseCli(['workspace', 'list']), { op: 'workspace list', args: {} })
   assert.deepEqual(protocol.parseCli(['workspace', 'get', 'w2']), { op: 'workspace get', args: { workspace: 'w2' } })
   assert.deepEqual(protocol.parseCli(['workspace', 'create', '--label', 'web', '--cwd', '/r/web', '--no-focus']), {

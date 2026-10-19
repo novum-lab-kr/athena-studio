@@ -1,0 +1,62 @@
+$ scripts/screen self
+--- exit 0
+--- stdout
+{"inside": false, "backend": "none", "pane_id": "", "tab_id": "", "workspace_id": ""}
+--- stderr
+--- screen
+$ scripts/screen self --format sh
+--- exit 0
+--- stdout
+SCREEN_INSIDE=0
+SCREEN_BACKEND=none
+SCREEN_PANE_ID=''
+SCREEN_TAB_ID=''
+SCREEN_WORKSPACE_ID=''
+--- stderr
+--- screen
+$ scripts/screen inside
+--- exit 1
+--- stdout
+--- stderr
+--- screen
+$ scripts/screen name
+--- exit 0
+--- stdout
+Athena Studio 화면
+--- stderr
+--- screen
+$ scripts/screen capabilities
+--- exit 0
+--- stdout
+{"backend": "none", "features": []}
+--- stderr
+--- screen
+$ scripts/screen capabilities --has workspaces
+--- exit 1
+--- stdout
+--- stderr
+--- screen
+$ scripts/screen pane list
+--- exit 1
+--- stdout
+--- stderr
+{"error": "not_inside", "message": "화면 계층 밖이다(ATHENA_SCREEN=none · Athena Studio 밖)"}
+--- screen
+$ scripts/screen pane split --target self --direction down
+--- exit 1
+--- stdout
+--- stderr
+{"error": "not_inside", "message": "화면 계층 밖이다(ATHENA_SCREEN=none · Athena Studio 밖)"}
+--- screen
+$ ATHENA_SCREEN=none scripts/screen self
+--- exit 0
+--- stdout
+{"inside": false, "backend": "none", "pane_id": "", "tab_id": "", "workspace_id": ""}
+--- stderr
+--- screen
+$ ATHENA_SCREEN=bogus scripts/screen self
+--- exit 2
+--- stdout
+--- stderr
+{"error": "usage", "message": "모르는 화면 백엔드: ATHENA_SCREEN=bogus (studio · none)"}
+--- screen

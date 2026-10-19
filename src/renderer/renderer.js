@@ -279,7 +279,7 @@ function tipTarget(element) {
   if (!node) return null
   if (node.hasAttribute('title')) {
     if (!node.dataset.tip && node.textContent.trim().length > ICON_TEXT_MAX) return null // 글자 버튼은 기본 title 그대로
-    // 옆 브라우저 바는 기본 title 그대로(R1 A) — 아래로 띄우면 페이지 자리의 네이티브 뷰에 가려진다
+    // 옆 브라우저 바는 기본 title 그대로 — 아래로 띄우면 페이지 자리의 네이티브 뷰에 가려진다
     if (node.closest('#browser')) return null
     // 코드가 title 을 다시 넣었을 수도 있어(언어 바꿈 · 상태 바뀜) 볼 때마다 옮긴다
     node.dataset.tip = node.title
@@ -1648,7 +1648,7 @@ async function editPackLook(id, action) {
 }
 
 // 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — 미리보기 + [이미지 고르기…] [이미지 지우기](바로 바뀐다) + 이름 칸(저장 때).
-// 이름을 비우면 원래 이름으로(--clear). 이름 · 이미지는 팩 안에 저장돼 팀과 같이 쓴다(5.7)
+// 이름을 비우면 원래 이름으로(--clear). 이름 · 이미지는 팩 안에 저장돼 팀과 같이 쓴다
 async function editPackLookDialog(id) {
   const find = () => [...(packs.packs || []), packs.current].find((item) => item && item.id === id)
   const pack = find()
@@ -1884,7 +1884,7 @@ function enterWelcome() {
   renderPackWelcome()
 }
 
-// 목록에서 고름 — 이 창의 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 이 창에서 그 팩으로 바꾼다(D4 바꿈).
+// 목록에서 고름 — 이 창의 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 이 창에서 그 팩으로 바꾼다.
 // 그 팩을 다른 창이 이미 보고 있으면 그 창이 앞으로 오고 이 시작 화면 창은 접는다
 async function enterPack(id) {
   if (packs.current && packs.current.id === id) {
@@ -1900,7 +1900,7 @@ function openNoPacks() {
   if (currentTab !== 'work') switchTab('work')
 }
 
-// 팩 바꾸기 — 그 팩 본체를 준비하고(처음이면 본체를 만든다) 이 창을 그 팩으로 다시 붙인다(D4 바꿈 — 한 창에서 바꿔 보기).
+// 팩 바꾸기 — 그 팩 본체를 준비하고(처음이면 본체를 만든다) 이 창을 그 팩으로 다시 붙인다(한 창에서 바꿔 보기).
 // 이전 팩의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 누르면 보던 자리 그대로). newWindow 면 새 창으로(우클릭 [새 창으로 열기])
 async function switchPack(id, { newWindow = false } = {}) {
   if (packs.current && packs.current.id === id) return { ok: true, same: true }
@@ -1958,7 +1958,7 @@ async function applySwitchedPack(next) {
   await refreshPackList()
 }
 
-// 새 팩 — 빈 자리 + 본체를 만들고 이 창에서 그 팩으로 바꾼다(D4 바꿈 — 그 본체 아테나가 /setup)
+// 새 팩 — 빈 자리 + 본체를 만들고 이 창에서 그 팩으로 바꾼다(그 본체 아테나가 /setup)
 async function newPack() {
   showPackProgress(say('pack.new.progress'), true)
   const result = await studio.packNew()

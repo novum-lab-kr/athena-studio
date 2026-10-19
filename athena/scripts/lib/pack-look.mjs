@@ -1,4 +1,4 @@
-// 팩 표시 이름 · 아이콘 이미지 — 팩 안(팀과 공유)에 저장한다(계획서 plans/feature/20261018-팩마다-본체 5.7 "팩 표시 이름 · 아이콘 이미지")
+// 팩 표시 이름 · 아이콘 이미지 — 팩 안(팀과 공유)에 저장한다
 //
 //   pack.json displayName   화면에 보이는 이름(1~40자 · 줄바꿈·제어 문자 없음). 팩 id · name · packId 는 바꾸지 않는다(name 은 같은 팩 판단용)
 //   pack.json icon          늘 "assets/icon.<png|jpg|webp>" — 팩 폴더 assets/ 에 하나만(바꾸면 이전 것 지움)

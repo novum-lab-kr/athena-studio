@@ -1,9 +1,9 @@
-// 팩마다 본체 — 본체 열기·만들기 · 일괄 업데이트 · 되돌리기(계획서 plans/feature/20261018-팩마다-본체 5.7 · D1~D12)
+// 팩마다 본체 — 본체 열기·만들기 · 일괄 업데이트 · 되돌리기(약속: docs/pack.md "여러 팩")
 //
-//   주 본체   ~/athena                git 저장소 주인 · main 브랜치 · 정비는 여기서만
-//   팩 본체   ~/athena-<만들 때 id>    같은 저장소의 워크트리(브랜치 없이 detached) · .pack-data 가 그 팩에 고정
-//             레지스트리 bodiesDir 가 있으면 <bodiesDir>/<id>(스튜디오 — 계획서 20261019-스튜디오-코어-내장 4.1)
-//   배포 커밋 레지스트리 deploy.commit(update 가 정한다 · 없으면 origin/main) · deploy.source 는 받아 온 곳(origin | bundle)
+//   주 본체   ~/.athena-studio/core   git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 정비는 여기서만
+//   팩 본체   <bodiesDir>/<id>        같은 저장소의 워크트리(브랜치 없이 detached) · .pack-data 가 그 팩에 고정
+//             bodiesDir 는 레지스트리 값(스튜디오는 ~/.athena-studio/bodies) · 없으면 <주 본체>-<id>
+//   배포 커밋 레지스트리 deploy.commit(update --from 이 정한다 · 없으면 주 본체의 origin/main — 처음 clone 한 번들) · deploy.source 는 받아 온 곳(bundle · 옛 기록은 origin)
 //   기록      <데이터>/updates/<operationId>.json · 되돌릴 커밋은 refs/athena/rollback/<operationId>/<팩 id> 로 보존(gc 에 안 지워진다)
 //   포트      레지스트리 portBase(없으면 4700) — 주 본체 기본 · 팩 본체는 +2 부터 2씩
 //
@@ -21,7 +21,7 @@ import {
 } from './packs.mjs'
 
 export const CONTRACT = 2
-// 뒤 넷은 계획서 20261019-스튜디오-코어-내장 4.1(하위 호환으로 더함) — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
+// 뒤 넷은 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
 export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base']
 
 const git = (dir, args, { quiet = true } = {}) => execFileSync('git', ['-C', dir, ...args], {
@@ -133,9 +133,9 @@ const createBody = async (root, data, id, main, registry, report) => {
   if (existsSync(body)) throw new PackError('body-conflict', `본체 자리에 이미 폴더가 있다: ${body} — 덮지 않는다`, { body })
   // 배포 커밋 — 레지스트리 deploy.commit → origin/main. 주 본체 로컬 HEAD 는 쓰지 않는다(push 안 한 정비 커밋이 팩 본체로 새지 않게 · 5.4 · 리뷰 1차)
   const commit = registry.deploy?.commit ?? gitTry(main, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'])
-  if (!commit) throw new PackError('unsafe', '배포 커밋을 정하지 못했다(deploy 없음 · origin/main 없음) — 주 본체에서 git fetch origin 뒤 다시')
+  if (!commit) throw new PackError('unsafe', '배포 커밋을 정하지 못했다(deploy 없음 · origin/main 없음) — 앱을 다시 켜 코어를 update --from <번들> 로 맞춘 뒤 다시')
   // 그 커밋의 코어가 팩마다 본체를 아나(pack attach) — 모르면 만들지 않는다. 옛 pack use 로 우회하면 옛 코드가 다른 본체의 빈 자리를 지울 수 있다(리뷰 1차)
-  if (!gitOk(main, ['cat-file', '-e', `${commit}:scripts/lib/bodies.mjs`])) throw new PackError('contract-mismatch', `배포 커밋 ${commit.slice(0, 7)} 의 코어는 팩마다 본체(약속 ${CONTRACT})를 모른다 — bin/athena update 로 배포 커밋을 올린 뒤 다시`, { contract: CONTRACT })
+  if (!gitOk(main, ['cat-file', '-e', `${commit}:scripts/lib/bodies.mjs`])) throw new PackError('contract-mismatch', `배포 커밋 ${commit.slice(0, 7)} 의 코어는 팩마다 본체(약속 ${CONTRACT})를 모른다 — 앱을 다시 켜 코어를 update --from <번들> 로 올린 뒤 다시`, { contract: CONTRACT })
   const version = readRegistry(data).formatVersion ?? 1
   if (!formatOk(formatsAt(main, commit), version)) throw new PackError('data-incompatible', `배포 커밋 ${commit.slice(0, 7)} 의 코어는 데이터 형식 ${version} 을 다루지 못한다`)
   report('body', `본체 만들기 — ${body} @ ${commit.slice(0, 7)}`)
@@ -334,15 +334,10 @@ const opDir = (data) => join(data, 'updates')
 const saveOp = (data, record) => writeJson(join(opDir(data), `${record.operationId}.json`), record)
 
 // ── update ──────────────────────────────────────────────────────────────
-// from: git 번들 파일(앱이 들고 온 코어 · 스튜디오) — origin 대신 그 번들의 main 을 refs/athena/bundle/main 으로 받아 그 커밋으로.
+// from: git 번들 파일(앱이 들고 온 코어) — 그 번들의 main 을 refs/athena/bundle/main 으로 받아 그 커밋으로. 원격(origin)에서 받는 길은 없다 — 코어는 앱과 함께 온다
 // backupDirty: 코어 파일을 고쳐 둔 본체도 사본(<데이터>/backups/core-edits/<operationId>/)을 두고 옮긴다(D4 · 기본은 dirty 로 건너뜀)
 export const BUNDLE_REF = 'refs/athena/bundle/main'
 const fetchEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=15' })
-const fetchOrigin = (main) => {
-  const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', 'origin'], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: fetchEnv() })
-  if (fetched.status !== 0) throw new PackError('fetch-failed', `origin 에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
-  return gitTry(main, ['rev-parse', 'refs/remotes/origin/main']) ?? null
-}
 const fetchBundle = (main, file) => {
   let isFile = false
   try { isFile = statSync(file).isFile() } catch { /* 없음 */ }
@@ -354,20 +349,21 @@ const fetchBundle = (main, file) => {
   return gitTry(main, ['rev-parse', BUNDLE_REF]) ?? null
 }
 export const updateBodies = (root, { to = '', from = '', backupDirty = false, report = () => {} } = {}) => {
+  if (!from) throw new PackError('usage', 'update 는 --from <git 번들> 이 필요하다 — 코어는 Athena Studio 앱이 들고 온 번들로 업데이트한다')
   const data = dataDir(root)
   const registry = readRegistry(data)
   checkDataFormat(registry)
   const main = mainBody(root)
   if (!main) throw new PackError('unsafe', '주 본체가 git 체크아웃이 아니다')
   const operationId = stampId('upd')
-  const source = from ? 'bundle' : 'origin'
-  const bundle = from ? resolve(from) : null
+  const source = 'bundle'
+  const bundle = resolve(from)
   report('lock', '팩마다 잠금은 본체를 옮길 때 잡는다')
-  report('fetch', `받아 오기 — ${bundle ? `번들 ${bundle}` : main}`)
+  report('fetch', `받아 오기 — 번들 ${bundle}`)
   const releaseGit = takeLock(gitLockDir(data), `update fetch ${operationId}`, { waitMs: 60_000 })
   let fetchedCommit = null
-  try { fetchedCommit = bundle ? fetchBundle(main, bundle) : fetchOrigin(main) } finally { releaseGit() }
-  const requestedTo = to || (bundle ? BUNDLE_REF : 'origin/main')
+  try { fetchedCommit = fetchBundle(main, bundle) } finally { releaseGit() }
+  const requestedTo = to || BUNDLE_REF
   const target = gitTry(main, ['rev-parse', '--verify', '--quiet', `${requestedTo}^{commit}`])
   if (!target) throw new PackError('not-found', `그런 커밋이 없다: ${requestedTo}`)
   const bodies = collectBodies(root, data, registry)
@@ -388,7 +384,7 @@ export const updateBodies = (root, { to = '', from = '', backupDirty = false, re
   const previousSource = registry.deploy?.source ?? null
   // 고친 코어 파일 사본 — 본체마다(backupDirty 일 때만 필드를 더한다 · contract 2 하위 호환)
   const backedUp = results.filter((entry) => entry.backedUp?.length).map((entry) => ({ id: entry.id, dir: entry.backupDir, files: entry.backedUp }))
-  const extra = { source, ...(bundle ? { bundle } : {}), ...(backupDirty ? { backedUp } : {}) }
+  const extra = { source, bundle, ...(backupDirty ? { backedUp } : {}) }
   saveOp(data, { kind: 'update', operationId, at: now(), requestedTo, targetCore: target, fetched: fetchedCommit, previousDeploy, previousSource, status, ...extra, bodies: results })
   // 배포 커밋은 한 본체라도 대상에 닿았을 때만 옮긴다 — 모두 실패했는데 옮기면 열 때마다 따라잡기를 다시 시도하고 현황판을 끈다(리뷰 1차)
   if (status !== 'failed') updateRegistry(data, (next) => { next.deploy = { commit: target, previous: previousDeploy, at: now(), operationId, source } })

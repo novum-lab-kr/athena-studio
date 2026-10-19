@@ -3,48 +3,48 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stdout
 --- stderr
 {"error": "not_found", "message": "studio pane get: 없는 pane: p99"}
---- herdr
+--- screen
 ["@studio", "pane", "get", "p99"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane wait-output p2 --match never --timeout 1000
 --- exit 1
 --- stdout
 --- stderr
 {"error": "timeout", "message": "studio pane wait-output: 1000ms 안에 맞는 출력이 없다"}
---- herdr
+--- screen
 ["@studio", "pane", "wait-output", "p2", "--match", "never", "--timeout", "1000"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane read p2 --ansi
 --- exit 2
 --- stdout
 --- stderr
 {"error": "usage", "message": "studio pane read: 모르는 옵션: --ansi"}
---- herdr
+--- screen
 ["@studio", "pane", "read", "p2", "--ansi"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list
 --- exit 1
 --- stdout
 --- stderr
 {"error": "unavailable", "message": "studio pane list: 데몬에 붙지 못했다(ENOENT): /tmp/athena-studio.sock"}
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane split --target self --direction down --format id
 --- exit 1
 --- stdout
 --- stderr
 {"error": "unavailable", "message": "studio pane split: 데몬에 붙지 못했다(ENOENT): /tmp/athena-studio.sock"}
---- herdr
+--- screen
 ["@studio", "pane", "split", "--target", "self", "--direction", "down"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane is-shell p3
 --- exit 1
 --- stdout
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "is-shell", "p3"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list
 --- exit 1
 --- stdout
 --- stderr
 node:internal/modules/cjs/loader:1 boom
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli python3 -c import sys; sys.path.insert(0, "scripts/lib"); import screen
 try: screen.list_panes()
@@ -53,16 +53,16 @@ except screen.ScreenError as error: print(error.code, error.message)
 --- stdout
 unavailable studio pane list: 데몬에 붙지 못했다(ENOENT): /tmp/athena-studio.sock
 --- stderr
---- herdr
+--- screen
 ["@studio", "pane", "list"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_STUDIO_CLI=/nope PATH=/usr/bin:/bin /usr/bin/python3 scripts/screen pane list
 --- exit 1
 --- stdout
 --- stderr
 {"error": "unavailable", "message": "Athena Studio 데몬 CLI(athena-studio-cli)를 찾지 못했다 — 앱을 켜면 데몬이 뜬다"}
---- herdr
+--- screen
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_STUDIO_CLI=/nope PATH=/usr/bin:/bin /usr/bin/python3 scripts/screen inside
 --- exit 1
 --- stdout
 --- stderr
---- herdr
+--- screen

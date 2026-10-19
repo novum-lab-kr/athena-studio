@@ -1,5 +1,5 @@
 // 회사 팩 — Electron 없이 도는 순수 로직(npm test). 실제 일(잠금 · 링크 · 되돌리기 · 검사)은 아테나 본체 명령이 한다.
-// 약속 정본: 아테나 계획서 plans/feature/20261018-여러-회사-팩.md "5. 공통 스펙"
+// 약속: 코어 `pack … --json` 출력(코어는 athena/)
 //   node scripts/athena.mjs pack <명령> … --json → `progress: <단계ID> <설명>` 줄들 + 마지막 줄 JSON · 실패 종료 1 + { ok:false, error, message }
 const path = require('path')
 
@@ -10,9 +10,9 @@ const KOREAN = require('../i18n/ko.json')
 const koreanSay = i18n.translator(KOREAN, KOREAN)
 
 // 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
-const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'body', 'port', 'slow'] // body · port — 5.7 pack open 단계
+const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'body', 'port', 'slow'] // body · port — pack open 단계
 // 본체 오류 코드(사전 pack.errorCode.<코드>)
-const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible'] // 뒤 넷 — 5.7 pack open
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible'] // 뒤 넷 — pack open
 // 남은 작업 종류(사전 pack.busy.<종류>)
 const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside', 'codex', 'unknown']
 
@@ -25,7 +25,7 @@ function splitLines(rest, chunk) {
 }
 
 // `progress: <단계ID> <설명>` 한 줄 → { step, text } (아니면 null)
-// 본체가 준 설명(한국어 · D4 범위 밖)이 있으면 그대로, 없으면 사전의 단계 이름
+// 본체가 준 설명(한국어 · 번역 범위 밖)이 있으면 그대로, 없으면 사전의 단계 이름
 function parseProgressLine(line, say = koreanSay) {
   const match = /^progress:\s+(\S+)\s*(.*)$/.exec(String(line).trim())
   if (!match) return null
@@ -49,7 +49,7 @@ function parsePackOutput(text, say = koreanSay) {
 }
 
 // 오류 결과 → 화면에 보일 한 문장(본체 message 가 있으면 뒤에 붙인다)
-// 본체 message 는 본체가 쓴 한국어 그대로(D4 범위 밖)
+// 본체 message 는 본체가 쓴 한국어 그대로(번역 범위 밖)
 function packErrorText(result, say = koreanSay) {
   if (!result || result.ok) return ''
   const base = ERROR_CODES.includes(result.error) ? say(`pack.errorCode.${result.error}`) : say('pack.error.unknown')
@@ -91,7 +91,7 @@ function normalizePackList(result) {
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
 }
 
-// 스튜디오가 아는 코어 약속 번호(아테나 계획서 20261018-팩마다-본체 5.7 — 2 = 팩마다 본체)
+// 스튜디오가 아는 코어 약속 번호(2 = 팩마다 본체)
 const CONTRACT = 2
 
 // `version --json` 결과 → { contract, core }. 명령이 없는 옛 코어(사용법 오류 · JSON 이 아닌 출력)는 contract 1,
@@ -103,7 +103,7 @@ function contractOf(result) {
   return { contract: result && OLD_CORE_ERRORS.includes(result.error) ? 1 : null, core: null }
 }
 
-// 화면에 보일 팩 이름 — 표시 이름(pack set-name) → 이름 → id (아테나 계획서 20261018-팩마다-본체 5.7)
+// 화면에 보일 팩 이름 — 표시 이름(pack set-name) → 이름 → id
 function packLabel(pack) {
   return (pack && (pack.displayName || pack.name || pack.id)) || ''
 }

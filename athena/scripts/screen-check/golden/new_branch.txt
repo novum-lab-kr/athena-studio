@@ -1,14 +1,14 @@
-$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ROOT=<ATHENA> ATHENA_AGENT=fe bash -c created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?" _ <WORK>/rename.sh
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ROOT=<ATHENA> ATHENA_AGENT=fe bash -c created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?" _ <WORK>/rename.sh
 --- exit 0
 --- stdout
 🏷  pane 이름: 🤖 fe · feat/x
 rc=0
 --- stderr
---- herdr
-["pane", "rename", "w1:p1", "🤖 fe · feat/x"]
+--- screen
+["@studio", "pane", "rename", "p1", "🤖 fe · feat/x"]
 $ ROOT=<ATHENA> ATHENA_AGENT=fe bash -c created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?" _ <WORK>/rename.sh
 --- exit 0
 --- stdout
 rc=0
 --- stderr
---- herdr
+--- screen

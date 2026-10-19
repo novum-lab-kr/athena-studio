@@ -14,7 +14,7 @@ argument-hint: "(없음) | <파일> | 설명 | 열기 | 시작하기 | 그림"
 
 | 인자 | 동작 |
 |---|---|
-| 없음 / `pane` / `메뉴` | `scripts/guide-pane.sh` — 현재 pane 오른쪽에 선택형 메뉴(`scripts/guide-menu.sh`)를 띄운다. 아테나 구조 설명 · 시작하기 가이드 · 플레이북 · 다이어그램 · 확장 가이드 · 스킬 목록·실행 · 에이전트·담당 레포·라우팅. 클릭 또는 ↑/↓·숫자 + Enter, `q` 로 닫는다 (화면 계층 `scripts/screen pane split` — herdr · tmux `split-window` · 둘 다 아니면 새 Ghostty 창) |
+| 없음 / `pane` / `메뉴` | `scripts/guide-pane.sh` — 현재 pane 오른쪽에 선택형 메뉴(`scripts/guide-menu.sh`)를 띄운다. 아테나 구조 설명 · 시작하기 가이드 · 플레이북 · 다이어그램 · 확장 가이드 · 스킬 목록·실행 · 에이전트·담당 레포·라우팅. 클릭 또는 ↑/↓·숫자 + Enter, `q` 로 닫는다 (Athena Studio pane 안이면 화면 계층 `scripts/screen pane split` · tmux 면 `split-window` · 둘 다 아니면 새 Ghostty 창) |
 | `<파일>` / `pane <파일>` | **실제로 있는 경로일 때만** 메뉴 대신 그 파일을 뷰어로 띄운다(예: `CLAUDE.md`). 없는 경로·일반 단어(`스킬`·`팀` 등)면 아래 "그 밖의 질문"으로 처리한다 |
 | `설명` / `구조` | `scripts/screen open-url <athena-explained.html>` — 아테나 구조 설명(무엇이고 어떻게 돌아가나 · Hermes Agent 와의 차이)을 브라우저로. 열었다는 한 줄만 답한다 |
 | `열기` / `open` | `scripts/screen open-url <playbook.html>` — 플레이북을 브라우저로. 열었다는 한 줄만 답한다 |

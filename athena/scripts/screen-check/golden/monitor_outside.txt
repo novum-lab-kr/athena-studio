@@ -2,5 +2,5 @@ $ scripts/monitor-pane.sh
 --- exit 1
 --- stdout
 --- stderr
-herdr 밖입니다. 직접 실행하세요:  <ATHENA>/scripts/agent-monitor.py --stay --recent
---- herdr
+Athena Studio 화면 밖입니다. 직접 실행하세요:  <ATHENA>/scripts/agent-monitor.py --stay --recent
+--- screen

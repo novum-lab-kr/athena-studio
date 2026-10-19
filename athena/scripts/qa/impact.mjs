@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 영향 화면 산출 — 변경 파일에서 import 를 거꾸로 따라가 그 파일을 쓰는 화면(라우트)을 모두 찾는다.
- * 계획서: plans/feature/20261002-QA-시뮬레이션-영향-화면.md (D4 dependency-cruiser · D9 가까운 화면부터)
+ * dependency-cruiser 로 import 를 거꾸로 따라간다 · 가까운 화면부터
  *
  *   node scripts/qa/impact.mjs --cwd <레포 또는 워크트리> --app <앱> [--base <ref>] [--files a,b] [--json]
  *
