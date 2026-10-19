@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "9c16ccd4-5409-436f-a6de-d85f4a75f772",
+  "receiptId": "741b71ab-9c19-47a3-8ca3-5835993226b9",
   "status": "current",
   "command": "deliver",
   "type": "workflow",
   "input": "docs/diagrams/athena-flow-light.workflow.json",
   "output": "docs/diagrams/athena-flow-light.html",
   "specification": {
-    "sha256": "9f8170a6d8af61614a7758871bebfe8b813989a4a14d260e50fd3f5f4c474e1c",
-    "bytes": 14490
+    "sha256": "3969eba866866088e3baa09014dc91ac2230ebce182c0656e43ef5b08e2d2d67",
+    "bytes": 14707
   },
   "artifact": {
-    "sha256": "df0339e90c30a6e95fbcdfc8485f42c2013ef0fc777c741cbe10c8ee92eb88ba",
-    "bytes": 788052
+    "sha256": "89e02357cfcd7bd16457c5a46b8d5dd933b3899d8a843a3ecb60be9520739a99",
+    "bytes": 850912
   }
 }
