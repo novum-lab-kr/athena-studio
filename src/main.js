@@ -1509,6 +1509,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       webPreferences: { partition: BROWSER_PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
     browserView.setBackgroundColor('#ffffff')
+    watchConsoleSends(browserSession)
     const contents = browserView.webContents
     // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면 — D4 바꿈)
     const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
@@ -1700,6 +1701,22 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 const BROWSER_PARTITION = 'persist:studio-browser'
+const CONSOLE_CLOSE_MS = 1200 // [이대로 진행] 뒤 '✅ 보냄' 을 잠깐 보여 주고 서랍을 닫는다
+
+// 결정 콘솔이 보내기를 마치면 그 창의 옆 브라우저 서랍을 닫는다(사용자 요청 2026-10-19). 세션은 창끼리 같이 쓰니 한 번만 건다
+let consoleWatched = false
+function watchConsoleSends(browserSession) {
+  if (consoleWatched) return
+  consoleWatched = true
+  browserSession.webRequest.onCompleted((details) => {
+    const contents = details.webContents
+    if (!contents || contents.isDestroyed()) return
+    const owner = [...packWindows].find((ctx) => ctx.isBrowserContents(contents))
+    if (!owner) return
+    if (!core.isConsoleSent({ method: details.method, url: details.url, statusCode: details.statusCode, pageUrl: contents.getURL() })) return
+    setTimeout(() => owner.send('browser:close'), CONSOLE_CLOSE_MS)
+  })
+}
 
 // 보일 때만 2초마다 창마다 pane 목록 · 브랜치
 let panesTimer = null

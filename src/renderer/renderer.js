@@ -1488,6 +1488,7 @@ function initBrowser() {
   studio.onBrowserToggle(toggleBrowserPanel)
   studio.onBrowserState(applyBrowserState)
   studio.onBrowserError(showBrowserError)
+  studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보낸 뒤(main 이 알린다)
   // 창 크기가 바뀌면 서랍(너비 46%)도 바뀐다 — 다 나와 있을 때만 다시 붙인다
   new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
 }

@@ -256,3 +256,16 @@ test('창마다 팩: 켤 때 열 본체 목록 · 예전 설정(athenaDir 하나
   assert.deepEqual(core.withWindows({ athenaDir: '/old' }, []), { athenaDir: '/old', windows: [] })
 })
 
+
+test('isConsoleSent: 옆 브라우저의 결정 콘솔이 같은 현황판 /api/action 에 POST 200 일 때만', () => {
+  const page = 'http://localhost:4804/plans/setup/20261019-a.html?token=x'
+  const sent = { method: 'POST', url: 'http://localhost:4804/api/action', statusCode: 200, pageUrl: page }
+  assert.equal(core.isConsoleSent(sent), true)
+  assert.equal(core.isConsoleSent({ ...sent, statusCode: 400 }), false) // 못 보냄 — [프롬프트로 복사] 를 봐야 한다
+  assert.equal(core.isConsoleSent({ ...sent, method: 'GET' }), false)
+  assert.equal(core.isConsoleSent({ ...sent, url: 'http://localhost:4804/api/move' }), false)
+  assert.equal(core.isConsoleSent({ ...sent, url: 'http://localhost:4700/api/action' }), false) // 다른 현황판
+  assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'http://localhost:4804/' }), false) // 현황판 화면 자체
+  assert.equal(core.isConsoleSent({ ...sent, url: 'https://example.com/api/action', pageUrl: 'https://example.com/plans/a.html' }), false)
+  assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'not a url' }), false)
+})

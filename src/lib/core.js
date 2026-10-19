@@ -241,6 +241,19 @@ function openTarget(rawUrl, { fromBoard = false } = {}) {
   return LOCAL_HOSTS.includes(new URL(rawUrl).hostname) ? 'panel' : 'external'
 }
 
+// 옆 브라우저의 결정 콘솔(현황판이 주는 /plans/….html)이 [이대로 진행] 으로 pane 에 보내기를 마쳤나 —
+// 같은 localhost 현황판의 POST /api/action 이 200 이면 보냄(실패면 콘솔이 [프롬프트로 복사] 로 바뀌니 서랍을 두어야 한다)
+function isConsoleSent({ method, url, statusCode, pageUrl }) {
+  if (method !== 'POST' || statusCode !== 200) return false
+  try {
+    const request = new URL(url)
+    const page = new URL(pageUrl)
+    return LOCAL_HOSTS.includes(request.hostname) && request.origin === page.origin && request.pathname === '/api/action' && /^\/plans\/.+\.html$/.test(page.pathname)
+  } catch {
+    return false
+  }
+}
+
 // 옆 브라우저가 열 수 있는 주소 — http(s) 만
 function isWebUrl(rawUrl) {
   try {
@@ -294,6 +307,7 @@ module.exports = {
   realDir,
   reposRootFor,
   isInside,
+  isConsoleSent,
   boardPortCandidates,
   parseLsofPath,
   setAthenaBoardPort,
