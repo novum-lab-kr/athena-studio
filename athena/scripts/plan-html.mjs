@@ -224,9 +224,20 @@ const previousPane = (() => {
 })()
 // 리뷰 뒤 결정(--add)은 그 결정을 덧붙인 pane(작업 에이전트)으로 보낸다 — 처음 계획서를 만든 아테나가 아니라
 const savedPane = plan.leadPane || plan.hermesPane
+// 저장된 pane 이 지금 화면에 없으면 버린다 — 화면(스튜디오 데몬 등)을 다시 띄우면 옛 id 가 사라져 [이대로 진행] 이 보낼 곳을 못 찾았다.
+// 지금 pane 을 모르면(화면 계층을 못 부름) 확인할 수 없으니 그대로 둔다
+const paneExists = (id) => {
+  try {
+    return screenSync(['pane', 'get', id]).pane?.id === id
+  } catch {
+    return false
+  }
+}
+const nowPane = currentPane()
+const usable = (id) => Boolean(id) && (!nowPane || id === nowPane || paneExists(id))
 plan.leadPane = addPath
-  ? option('pane') || currentPane() || savedPane || previousPane
-  : option('pane') || savedPane || previousPane || currentPane()
+  ? option('pane') || nowPane || savedPane || previousPane
+  : option('pane') || [savedPane, previousPane].find(usable) || nowPane
 // 이름 변경(2026-10) 전에 만든 html 은 콘솔 코드가 PLAN.hermesPane 을 읽는다 — 그런 파일에는 옛 이름도 같이 적는다
 if (/PLAN\.hermesPane/.test(body)) plan.hermesPane = plan.leadPane
 else delete plan.hermesPane
