@@ -186,7 +186,7 @@ sc_studio_dock() {
   step studio-dock,studio "${LIVE[@]}" -- $S pane list --workspace self --format ids
   # 고정 칸은 나눌 수 없다 — 데몬의 usage 를 그대로(fixture studio-docksplit)
   step studio-docksplit,studio-dock,studio "${IN_STUDIO[@]}" -- $S pane split --target p20 --direction right
-  # 모니터: 고정 칸을 다시 쓴다(split 없음) · athena-up 도 모니터를 새로 띄우지 않는다
+  # 모니터: studio 면 아무것도 띄우지 않는다(고정 칸이 남아 있어도 · 앱 화면이 모니터) · athena-up 도 모니터를 띄우지 않는다
   step studio-dock,studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh
   STEP_WAIT="#nohup" step studio-dock,studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh
 }

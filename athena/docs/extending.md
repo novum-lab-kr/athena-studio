@@ -102,7 +102,7 @@ argument-hint: "<인자 예시>"
 - studio 백엔드(`StudioBackend`) — 데몬 CLI `athena-studio-cli`(계약 정본: athena-studio 레포 `src/lib/protocol.js`)를 부른다. 출력이 이미 납작한 JSON 이라 읽기만 한다
   - CLI 찾기: `ATHENA_STUDIO_CLI`(pane 셸) → 접속 파일의 `cli` → PATH 의 `athena-studio-cli`. 접속 파일로 찾으면 `socket`·`node` 를 `ATHENA_STUDIO_SOCKET`·`ATHENA_STUDIO_NODE` 로 넘긴다(CLI 래퍼가 그 node — 앱의 Electron — 로 돈다)
   - self: `ATHENA_STUDIO_PANE_ID`·`_TAB_ID`·`_WORKSPACE_ID`(데몬에 묻지 않음). id 는 `p<n>`·`t<n>`·`w<n>`
-  - 탭 밖 고정 칸(데몬 프로토콜 3 `dock` — 앱 하단 에이전트 모니터): `pane list` 에 `tab_id`·`workspace_id` 가 null 이고 이름표가 `🛰 에이전트 모니터` 인 pane 이 섞인다. 탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡혀 `monitor-pane.sh`·`athena-up.sh` 가 모니터를 새로 띄우지 않고 그 칸을 다시 쓴다. 고정 칸은 나눌 수 없다(데몬이 `usage`) — 부르는 쪽은 `--target self`·탭의 pane 을 쓴다. 화면 계층은 프로토콜 번호를 보지 않는다(같은 앱의 CLI 를 쓰므로 맞추는 건 앱 몫)
+  - 탭 밖 고정 칸(데몬 프로토콜 3 `dock` — 앱 하단 에이전트 모니터): `pane list` 에 `tab_id`·`workspace_id` 가 null 이고 이름표가 `🛰 에이전트 모니터` 인 pane 이 섞인다. 탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡힌다. 지금 앱은 모니터를 앱 화면(AGENT MONITOR 칸)으로 그리고 남은 고정 칸은 닫으므로, `monitor-pane.sh`·`athena-up.sh` 는 Studio 화면이면 모니터 pane 을 아예 띄우지 않는다(`SCREEN_BACKEND=studio`). 고정 칸은 나눌 수 없다(데몬이 `usage`) — 부르는 쪽은 `--target self`·탭의 pane 을 쓴다. 화면 계층은 프로토콜 번호를 보지 않는다(같은 앱의 CLI 를 쓰므로 맞추는 건 앱 몫)
   - 실패: CLI 가 종료 1 + 표준오류 `{"error","message"}` 로 말하면 그 code(`usage`·`not_found`·`timeout`·`unavailable`·`internal`) 그대로, 종료 3(데몬에 못 붙음)은 `unavailable`, 약속 밖 출력이면 herdr 처럼 그대로 흘려보낸다
   - `pane read` 는 `--lines`·`--source visible|recent` 만(`--read-format`·`--ansi`·`--raw` 는 CLI 가 `usage` 로 거절)
 - 사용자에게 보이는 안내 글에 화면 이름이 필요하면 글자를 박지 말고 `"$("$SCREEN" name) 밖입니다"`(node `screenName()`) — 지금 백엔드 이름이 들어간다(herdr 에서는 예전 글자 그대로)

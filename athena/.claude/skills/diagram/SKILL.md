@@ -41,7 +41,7 @@ node scripts/check-diagrams.mjs
 
 ## 3. 작업자 디스패치
 - **한 서비스 = 작업자 하나**(Agent 도구, `general-purpose`, 백그라운드). 서로 다른 파일만 쓰므로 병렬. **한 번에 최대 5개**(묶음 순서는 `docs/diagrams/SERVICES.md`)
-- 띄우기 전에 `scripts/monitor-pane.sh` 로 모니터를 메인 탭에 띄운다(이미 있으면 재사용). 따로 탭을 만들지 않는다
+- 띄우기 전에 `scripts/monitor-pane.sh` 로 모니터를 메인 탭에 띄운다(이미 있으면 재사용 · Studio 화면이면 앱 아래 모니터 칸이 맡아 띄우지 않는다). 따로 탭을 만들지 않는다
 - 지시에 넣을 것(`AUTHORING.md` 9절):
   - `docs/diagrams/AUTHORING.md` → `docs/diagrams/guides/<서비스>.md` → `docs/knowledge/<레포>/gotchas.md` 순서로 읽는다
   - 코드는 체크아웃 경로에서만, `meta.repository.revision` 은 위 SHA

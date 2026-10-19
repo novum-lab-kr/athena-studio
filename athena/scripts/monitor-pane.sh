@@ -4,7 +4,7 @@
 #
 # 같은 워크스페이스에 "🛰 에이전트 모니터" pane 이 이미 있으면 새로 만들지 않고 그 pane 에서 다시 실행한다.
 # 늘 켜 두는 용도(--stay) — 로그가 없어도 닫지 않고 기다리다 에이전트가 뜨면 붙는다. 10분 조용해지면 pane 에 한 줄(MONITOR_IDLE_ALERT_SEC).
-# 표준출력은 pane id 한 줄 (재사용이면 " (재사용)" 이 붙는다).
+# 표준출력은 pane id 한 줄 (재사용이면 " (재사용)" 이 붙는다). Studio 화면이면 아무것도 띄우지 않고 0(표준출력 없음).
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 LABEL="🛰 에이전트 모니터"
@@ -20,7 +20,13 @@ if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:  ${CMD[*]}" >&2
   exit 1
 fi
-eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
+eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다 · SCREEN_BACKEND
+# Studio 화면에는 모니터 pane 을 띄우지 않는다 — 앱 가운데 맨 아래 칸(AGENT MONITOR)이 같은 로그를 보여 준다.
+# /setup·/diagram·디스패치가 "보이게" 부르므로 실패(1)가 아니라 할 일 없음(0)으로 끝낸다(사용자 결정 2026-10-19)
+if [ "${SCREEN_BACKEND:-}" = studio ]; then
+  echo "Athena Studio 는 앱 아래 AGENT MONITOR 칸이 에이전트 로그를 보여 줍니다 — pane 을 띄우지 않습니다" >&2
+  exit 0
+fi
 
 # 이미 떠 있는 모니터 pane 찾기 (부른 pane 의 워크스페이스 우선)
 PANE="$("$SCREEN" pane list --label "$LABEL" --prefer-workspace self --format id 2>/dev/null)"

@@ -137,7 +137,7 @@ class StudioBackend(Backend):
     """Athena Studio 자체 터미널 — 데몬 CLI(athena-studio-cli)를 부른다. 출력이 이미 납작한 JSON 이라 읽기만 한다.
     데몬 프로토콜 번호는 보지 않는다 — CLI 가 그 데몬과 같은 앱에서 오므로(접속 파일의 cli) 맞춰 보는 건 앱(S3) 몫이다. 프로토콜 3 까지 확인.
     pane list 에는 탭 밖 고정 칸(앱 하단 에이전트 모니터 — dock)이 섞인다: tab_id·workspace_id 가 null · 이름표 '🛰 에이전트 모니터'.
-    탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡혀 monitor-pane 이 새로 띄우지 않고 그 칸을 다시 쓴다(나눌 수는 없다 — 데몬이 usage)
+    탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡힌다(나눌 수는 없다 — 데몬이 usage). 지금 앱은 모니터를 앱 화면으로 그려 monitor-pane 은 studio 에서 띄우지 않는다
     CLI 실패: 종료 1 + 표준오류 {"error","message"} → 그 code 의 ScreenError · 데몬에 못 붙으면 종료 3 → unavailable.
     pane 안이면 데몬이 넣어 준 ATHENA_STUDIO=1 · ATHENA_STUDIO_PANE_ID · _TAB_ID · _WORKSPACE_ID · _SOCKET · _CLI · _NODE 를,
     pane 밖이면 접속 파일의 socket · cli · node 를 쓴다. 고정 배치(layout · move · swap)·herdr 사이드바는 없다 — features 에서 끈다"""
