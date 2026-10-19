@@ -1316,7 +1316,10 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const blocked = await contractBlock(ctx.athenaDir)
     if (blocked) return blocked
     return ctx.packTask(say('pack.task.new'), async (signal) => {
-      const result = await runPack(['new'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })
+      // 스튜디오 집 안 본체면 코어(주 본체)에서 만든다 — 새 팩 local.json 의 reposRoot 를 지금 본체 설정에서 옮겨 적는데,
+      // 팩 본체 설정에는 reposRoot 가 없어 '..'(= bodies 폴더)로 잡혀 /setup 레포 찾기가 회사 레포를 못 찾았다. 코어 설정에는 홈이 있다
+      const newDir = core.isInside(ctx.athenaDir, STUDIO.root) ? STUDIO.core : ctx.athenaDir
+      const result = await runPack(['new'], { dir: newDir, onProgress: ctx.packProgress, signal })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
       if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
       const state = rebindBody(result.body)
