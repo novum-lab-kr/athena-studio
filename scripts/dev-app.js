@@ -1,12 +1,14 @@
 // 개발용 Athena.app — `npm start` 로 켜면 맥 메뉴 막대 · Dock · ⌘Tab 이 node_modules 의 Electron.app 이름(Electron)을 쓴다.
 // 그래서 Electron.app 을 레포 안 무시 폴더(.dev-app/)에 Athena.app 으로 복제하고 이름 · 아이콘만 바꿔 그걸로 켠다(node_modules 는 건드리지 않는다).
-// 앱 이름(package.json productName "Athena Studio")은 그대로 — 앱 데이터 폴더(설정 · 데몬 · 스튜디오 아테나)가 옮겨지지 않게.
+// 앱 데이터 폴더는 main 이 정한다 — 개발 앱은 'Athena Studio Dev' · 데몬 접속 파일 daemon-dev.json(배포판과 겹치지 않게 · src/lib/studio-home.js appIdentity).
 //   node scripts/dev-app.js make    (postinstall) 없거나 Electron 버전 · 아이콘이 바뀌었으면 다시 만든다
-//   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로
+//   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
+//                                   켜기 전에 레포 athena/(git subtree)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { execFileSync, spawn } = require('child_process')
+const studioHome = require('../src/lib/studio-home')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -146,7 +148,21 @@ function build() {
   }
 }
 
+// 앱이 들고 갈 아테나 코어 — 레포 athena/ 의 커밋된 기록(subtree split)을 git 번들로. 앱은 첫 실행 때 ~/.athena-studio/core 로 풀고,
+// 새 커밋이면 켤 때 업데이트한다. 못 만들어도 켜기는 한다(이미 만든 번들 · 이미 푼 코어를 쓴다)
+function makeBundle() {
+  const out = studioHome.coreBundlePath({ appRoot: ROOT, packaged: false })
+  try {
+    const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, log: (line) => console.log(`[dev-app] ${line}`) })
+    if (!made.ok) console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
+    else if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)} → ${path.relative(ROOT, out)}`)
+  } catch (error) {
+    console.warn(`[dev-app] 코어 번들을 만들지 못했어요 — ${error.message}`)
+  }
+}
+
 function start(args) {
+  makeBundle()
   const useDevApp = process.platform === 'darwin' && make()
   const binary = useDevApp ? BINARY : require('electron')
   let child = null

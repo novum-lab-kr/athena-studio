@@ -20,10 +20,11 @@ test('설정: 없거나 깨진 파일은 기본값', () => {
 test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', () => {
   const file = path.join(tmp(), 'sub', 'config.json')
   core.saveConfig(file, { athenaDir: '/a/b', boardPort: 4711 })
-  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711, homeAthenaAsked: false })
-  // 예전 키(studioAthenaAsked)는 읽으면서 버린다
-  core.saveConfig(file, { athenaDir: '/a/b', studioAthenaAsked: true })
+  assert.deepEqual(core.loadConfig(file), { athenaDir: '/a/b', boardPort: 4711 })
+  // 예전 키(studioAthenaAsked · homeAthenaAsked)는 읽으면서 버린다
+  core.saveConfig(file, { athenaDir: '/a/b', studioAthenaAsked: true, homeAthenaAsked: true })
   assert.equal('studioAthenaAsked' in core.loadConfig(file), false)
+  assert.equal('homeAthenaAsked' in core.loadConfig(file), false)
   assert.equal(fs.existsSync(`${file}.tmp`), false)
   core.saveConfig(file, { athenaDir: 3, boardPort: 'x' })
   assert.deepEqual(core.loadConfig(file), core.DEFAULT_CONFIG)
@@ -33,7 +34,7 @@ test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', ()
   assert.equal(core.DEFAULT_CONFIG.boardPort, 4701)
 })
 
-test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데이터 폴더 아테나면 홈, 아니면 ..', () => {
+test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 스튜디오 집 안 본체면 홈, 아니면 ..', () => {
   const base = tmp()
   const real = path.join(base, 'real', 'athena')
   fs.mkdirSync(real, { recursive: true })
@@ -44,11 +45,16 @@ test('같은 폴더: 심볼릭 링크를 풀어 본다 · reposRoot 는 앱 데�
   assert.equal(core.sameDir(real, path.join(base, 'real')), false)
   assert.equal(core.sameDir(null, real), false)
   assert.equal(core.findAthenaWorkspace([{ label: 'athena', id: 'w1', cwd: real }], linked).id, 'w1')
-  // 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
-  const studioAthena = core.studioAthenaDir(path.join(base, 'athena-studio'))
-  assert.equal(studioAthena, path.join(base, 'athena-studio', 'athena'))
-  assert.equal(core.reposRootFor(studioAthena, { studioAthena, home: '/Users/me' }), '/Users/me')
-  assert.equal(core.reposRootFor(real, { studioAthena, home: '/Users/me' }), '..')
+  // 스튜디오 집(주 본체 · 팩 본체)이면 홈, 직접 고른 폴더면 ..
+  const studioRoot = path.join(base, '.athena-studio')
+  fs.mkdirSync(path.join(studioRoot, 'bodies', 'acme'), { recursive: true })
+  fs.symlinkSync(studioRoot, path.join(base, 'studio-link'))
+  assert.equal(core.reposRootFor(path.join(studioRoot, 'core'), { studioRoot, home: '/Users/me' }), '/Users/me')
+  assert.equal(core.reposRootFor(path.join(base, 'studio-link', 'bodies', 'acme'), { studioRoot, home: '/Users/me' }), '/Users/me')
+  assert.equal(core.reposRootFor(real, { studioRoot, home: '/Users/me' }), '..')
+  assert.equal(core.reposRootFor(`${studioRoot}-other`, { studioRoot, home: '/Users/me' }), '..')
+  assert.equal(core.isInside(studioRoot, studioRoot), true)
+  assert.equal(core.isInside(null, studioRoot), false)
 })
 
 test('아테나 폴더: CLAUDE.md 와 scripts/board/server.mjs 가 있어야 한다', () => {
@@ -200,6 +206,8 @@ test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으�
   assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1, endpoint: '/x/daemon.json' }).endpoint, '/x/daemon.json')
   assert.equal(core.daemonPaths({ userData: exact, home: '/h', tmpdir: '/t', uid: 1 }).endpoint, '/h/.athena-studio/daemon.json')
   assert.equal(core.daemonPaths({ userData: `${exact}a`, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
+  // 개발 앱은 대체 자리도 따로(배포판과 소켓을 같이 쓰지 않게)
+  assert.equal(core.daemonPaths({ userData: `${exact}a`, home: '/h', tmpdir: '/t', uid: 1, socketTag: '-dev' }).socket, '/t/athena-studio-1-dev/daemon.sock')
   const korean = '/' + '가'.repeat(31) // 소켓 경로가 글자로는 44개지만 바이트로는 106
   assert.equal(core.daemonPaths({ userData: korean, home: '/h', tmpdir: '/t', uid: 1 }).socket, '/t/athena-studio-1/daemon.sock')
   // 대체 자리도 길면 분명한 오류

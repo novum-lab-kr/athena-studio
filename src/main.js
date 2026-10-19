@@ -7,6 +7,7 @@ const fs = require('fs')
 const http = require('http')
 const path = require('path')
 const core = require('./lib/core')
+const studioHome = require('./lib/studio-home')
 const packModel = require('./lib/pack')
 const agentFeed = require('./lib/agent-feed')
 const trayModel = require('./lib/tray-model')
@@ -18,9 +19,20 @@ const viewer = require('./lib/viewer')
 const i18n = require('./lib/i18n')
 
 const isMac = process.platform === 'darwin'
+// 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다(아테나 계획서 20261019-스튜디오-코어-내장 4.2).
+// 앱 데이터 자리는 ready 전에 정해야 한다. ATHENA_STUDIO_HOME — 격리 실행(시험): 스튜디오 집 · 앱 데이터를 그 아래로
+const IDENTITY = studioHome.appIdentity({ packaged: app.isPackaged })
+const STUDIO_HOME_OVERRIDE = process.env.ATHENA_STUDIO_HOME || null
+app.setName(IDENTITY.name)
+// --user-data-dir 로 직접 준 자리는 그대로 둔다(README '격리 실행')
+if (!app.commandLine.hasSwitch('user-data-dir')) {
+  app.setPath('userData', studioHome.userDataDir({ appData: app.getPath('appData'), identity: IDENTITY, override: STUDIO_HOME_OVERRIDE }))
+}
+// 스튜디오 집 — ~/.athena-studio/{core,bodies,data,daemon.json}. ~/athena(herdr 용 아테나)와 본체 · 데이터 · 포트를 나누지 않는다
+const STUDIO = studioHome.studioLayout({ home: app.getPath('home'), override: STUDIO_HOME_OVERRIDE, identity: IDENTITY })
+// 앱이 들고 온 아테나 코어(git 번들) — 앱 리소스 자리 하나(개발 앱은 npm start 가 레포 athena/ 에서 만든다)
+const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(__dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
 // 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
-// 스튜디오용 아테나 — 이 레포의 athena/(git subtree)
-const STUDIO_ATHENA = core.studioAthenaDir(path.join(__dirname, '..'))
 const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-app-icon.png')
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
@@ -119,7 +131,14 @@ function releaseHeldWindows() {
 
 // 셸 pane 은 데몬이 갖는다(src/daemon) — 앱은 붙어서 보여 주기만 한다. 앱을 닫아도 데몬·셸·에이전트는 계속 돈다
 const daemonPaths = () =>
-  core.daemonPaths({ userData: app.getPath('userData'), home: app.getPath('home'), tmpdir: app.getPath('temp'), uid: process.getuid(), endpoint: process.env.ATHENA_STUDIO_ENDPOINT || null })
+  core.daemonPaths({
+    userData: app.getPath('userData'),
+    home: app.getPath('home'),
+    tmpdir: app.getPath('temp'),
+    uid: process.getuid(),
+    endpoint: process.env.ATHENA_STUDIO_ENDPOINT || STUDIO.endpoint,
+    socketTag: IDENTITY.socketTag,
+  })
 
 // 데몬 쪽 오류 중 화면에 보이는 것 — 연결 끊김 · 붙기 실패는 사전 문구로(나머지 데몬 오류는 데몬이 쓴 글 그대로)
 function daemonErrorText(error) {
@@ -521,44 +540,68 @@ async function stopStaleBoard(port, athenaDir) {
 }
 
 // ── 아테나 폴더 — 공용 ──────────────────────────────────────
-// 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 레포의 athena/ 면 홈, 직접 고른 폴더면 ..
-const athenaReposRoot = (dir) => core.reposRootFor(dir, { studioAthena: STUDIO_ATHENA, home: app.getPath('home') })
-const homeAthena = () => path.join(app.getPath('home'), 'athena')
+// 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
+const athenaReposRoot = (dir) => core.reposRootFor(dir, { studioRoot: STUDIO.root, home: app.getPath('home') })
 
-// 스튜디오 레포 athena/ 를 쓰던 사람 — ~/athena 가 여러 팩을 지원하면 한 번 묻는다.
-// 옮기기로 하면 본체를 ~/athena 로 바꾸고, 화면이 뜬 뒤 그 폴더의 팩 · 작업 기록 가져오기(import-athena)를 이어서 연다. 옛 폴더는 건드리지 않는다
-let pendingAthenaImport = null
-async function offerMoveToHome() {
-  // 가짜 본체(화면 확인용)는 어느 폴더에 물어도 '여러 팩 지원' 이라 답한다 — 진짜 설정(athenaDir)을 바꾸지 않게 묻지 않는다
-  if (process.env.ATHENA_STUDIO_FAKE_PACK === '1') return
-  if (config.homeAthenaAsked || !core.checkAthenaDir(homeAthena()).ok || !core.sameDir(config.athenaDir, STUDIO_ATHENA)) return
-  const listed = packModel.normalizePackList(await runPack(['list'], { dir: homeAthena() }))
-  if (!packModel.shouldOfferMoveToHome({ config, studioAthena: STUDIO_ATHENA, homeSupportsPacks: listed.supported && !listed.legacy, sameDir: core.sameDir })) return
-  // 창을 만들기 전이라 대화상자가 다른 앱 뒤에 숨는다 — 앱을 앞으로 가져온다
-  app.focus({ steal: true })
-  const { response } = await dialog.showMessageBox({
-    type: 'question',
-    message: say('dialog.moveToHome.message'),
-    detail: [say('dialog.moveToHome.current', { path: STUDIO_ATHENA }), say('dialog.moveToHome.detail'), say('dialog.moveToHome.laterNote')].join('\n\n'),
-    buttons: [say('dialog.moveToHome.confirm'), say('common.later')],
-    defaultId: 0,
-    cancelId: 1,
-  })
-  config = { ...config, homeAthenaAsked: true }
-  if (response === 0) {
-    // 옛 설정의 첫 창(스튜디오 아테나)을 ~/athena 로
-    const dirs = core.windowDirs(config, core.sameDir).map((dir) => (core.sameDir(dir, STUDIO_ATHENA) ? homeAthena() : dir))
-    config = core.withWindows({ ...config, athenaDir: homeAthena() }, dirs.length ? dirs : [homeAthena()])
-    pendingAthenaImport = STUDIO_ATHENA
+// 스튜디오 코어 준비 — 없으면 들고 온 번들에서 ~/.athena-studio/core 로 풀고, 본체 설정(dataDir · screen) · 레지스트리 손잡이(bodiesDir · portBase)를 채운다.
+// update: 이미 있던 본체면 번들이 앞일 때 업데이트(켤 때만 — 창을 열기 전, 아무 창도 본체를 쓰지 않을 때). 결과 기록은 pack.log
+let coreUpdateNotice = null // 켤 때 업데이트에서 알릴 것(건너뛴 본체 · 백업 · 실패) — 첫 창이 뜬 뒤 보여 준다
+// 예외(git 이 없음 · 쓰기 실패 등)도 결과로 — 켤 때 창이 안 뜨는 일이 없게
+async function prepareStudioCore({ update }) {
+  let result
+  try {
+    result = await studioHome.prepareCore({
+      layout: STUDIO,
+      bundle: CORE_BUNDLE,
+      home: app.getPath('home'),
+      update,
+      runCore: (argv) => runCore(argv, { dir: STUDIO.core }),
+    })
+  } catch (error) {
+    result = { ok: fs.existsSync(STUDIO.core), error: 'prepare-failed', message: error.message, update: null }
   }
-  core.saveConfig(configFile(), config)
+  logCore(`prepare ${JSON.stringify({ ok: result.ok, created: result.created, error: result.error, update: result.update && { state: result.update.state, head: result.update.head, target: result.update.target, error: result.update.error } })}`)
+  const updated = result.update
+  if (updated && updated.summary && updated.summary.notify) coreUpdateNotice = updated
+  else if (updated && ['unsupported', 'ff-failed', 'diverged', 'fetch-failed'].includes(updated.state)) coreUpdateNotice = updated
+  return result
+}
+
+// 켤 때 업데이트 결과 — 일하는 본체를 건너뛰었거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
+function showCoreUpdateNotice(parentWindow) {
+  const notice = coreUpdateNotice
+  coreUpdateNotice = null
+  if (!notice) return
+  const lines = []
+  const summary = notice.summary
+  if (summary) {
+    if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${entry.reason})`).join(', ') }))
+    for (const entry of summary.backedUp) lines.push(say('dialog.coreUpdate.backedUp', { body: entry.id, path: entry.dir }))
+    if (summary.failed.length) lines.push(say('dialog.coreUpdate.failed', { bodies: summary.failed.map((entry) => `${entry.id}(${entry.error})`).join(', ') }))
+  } else {
+    lines.push(say(notice.state === 'unsupported' ? 'dialog.coreUpdate.unsupported' : 'dialog.coreUpdate.notMoved', { reason: notice.error || notice.state }))
+  }
+  if (!lines.length) return
+  lines.push(say('dialog.coreUpdate.log', { path: packLogFile() }))
+  const options = { type: 'info', message: say('dialog.coreUpdate.message'), detail: lines.join('\n\n') }
+  ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
+}
+
+// 코어를 풀지 못한 까닭 — 화면 문구로
+function coreInstallError(prepared) {
+  if (prepared.error === 'bundle-missing') return say('error.coreBundleMissing', { path: CORE_BUNDLE })
+  return say('error.coreInstall', { message: prepared.message || prepared.file || prepared.error })
+}
+
+function logCore(line) {
+  fs.mkdir(path.dirname(packLogFile()), { recursive: true }, () => fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} studio-core ${line}\n`, () => {}))
 }
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 정본은 아테나 본체 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
 // 약속: 아테나 계획서 plans/feature/20261018-팩마다-본체.md 5.7(contract 2). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
-const PACK_TIMEOUTS = { list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000 }
+const PACK_TIMEOUTS = { update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000 }
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 function packScript(dir) {
@@ -601,9 +644,9 @@ function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
       child.kill('SIGTERM')
       setTimeout(() => child.exitCode === null && child.kill('SIGKILL'), 15000).unref()
     }
-    // R3 — 팩을 바꾸거나 본체를 만드는 명령(use · new · open · import --replace)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
+    // R3 — 팩을 바꾸거나 본체를 만들거나 옮기는 명령(use · new · open · import --replace · update)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
     const sub = argv[0] === 'pack' ? argv[1] : argv[0] // 시간 초과는 pack 하위 명령(또는 version 같은 최상위 명령) 이름으로
-    const changesPack = ['use', 'new', 'open'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
+    const changesPack = ['use', 'new', 'open', 'update'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
     const slow = () => onProgress && onProgress({ step: 'slow', text: say('pack.step.slow') })
     const timer = changesPack ? setInterval(slow, PACK_TIMEOUTS[sub] || 60000) : setTimeout(() => stop('timeout'), PACK_TIMEOUTS[sub] || 60000)
     if (signal) signal.addEventListener('abort', () => stop('canceled'), { once: true })
@@ -700,7 +743,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       valid: check.ok,
       missing: check.missing,
       boardUrl: core.boardUrl(boardPortNow()),
-      installDir: homeAthena(), // 처음 켤 때 쓰는 본체(~/athena · 사용자 결정 1)
+      installDir: STUDIO.core, // 처음 켤 때 앱이 코어를 푸는 자리(~/.athena-studio/core)
       tabKey: isMac ? '⌘' : 'Alt+',
       platform: process.platform,
       athenaWorkspace: core.ATHENA_WORKSPACE, // 하단 에이전트 모니터는 이 이름이고 아테나 폴더인 작업 공간에서만 보인다
@@ -1221,11 +1264,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (watching) ctx.setMonitorWatch(true)
   }
 
-  // 처음 켤 때 — 받지 않고 ~/athena 를 본체로 쓴다(여러 회사 팩 · 사용자 결정 1). 없으면 폴더를 고르게 한다(본체 받기는 범위 밖)
+  // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다(~/athena 는 보지 않는다 — 다른 앱이다)
   ctx.installAthena = async () => {
-    const found = packModel.defaultAthenaDir(config, homeAthena(), (dir) => core.checkAthenaDir(dir).ok)
-    if (!found) return { ...ctx.athenaState(), error: say('error.homeAthenaMissing', { path: homeAthena() }) }
-    return useAthenaDir(found)
+    const prepared = await prepareStudioCore({ update: false })
+    if (!prepared.ok) return { ...ctx.athenaState(), error: coreInstallError(prepared) }
+    return useAthenaDir(STUDIO.core)
   }
 
   // ── 회사 팩 ──
@@ -1288,9 +1331,6 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (kind === 'git') {
       target = packModel.validGitUrl(source)
       if (!target) return { ok: false, error: 'invalid-url', text: say('pack.error.invalidGitUrl') }
-    } else if (kind === 'athena' && typeof source === 'string' && source === pendingAthenaImport) {
-      target = source // 시작할 때 고른 "옮기기" — 대화상자 없이
-      pendingAthenaImport = null
     } else {
       const options = {
         file: { title: say('dialog.packFile.title'), properties: ['openFile'], filters: [{ name: say('dialog.packFile.filter'), extensions: ['gz', 'tgz'] }] },
@@ -2177,8 +2217,6 @@ handle('pack:icon', (ctx, id) => ctx.packIcon(String(id)))
 handle('pack:set-name', (ctx, id, name) => ctx.packSetName(String(id), typeof name === 'string' ? name : null))
 handle('pack:set-icon', (ctx, id, clear) => ctx.packSetIcon(String(id), clear === true))
 handle('pack:context-menu', (ctx, id, point) => ctx.packContextMenu(String(id), point && typeof point === 'object' ? point : null))
-// 시작할 때 "옮기기" 를 골랐으면 화면이 붙은 뒤 기존 아테나 가져오기를 이어서 연다(첫 창만 — 받아 가면 비운다)
-handle('pack:pending-import', () => pendingAthenaImport)
 // 이 창 닫기 — 시작 화면에서 다른 팩을 열고 나면(창이 하나뿐이면 닫지 않는다)
 handle('window:close', (ctx) => {
   if (packWindows.size > 1) setImmediate(() => ctx.close())
@@ -2228,7 +2266,7 @@ listen('browser:hide', (ctx) => ctx.hideBrowser())
 handle('browser:command', (ctx, name, value) => ctx.browserCommand(String(name), typeof value === 'string' ? value : ''))
 
 app.whenReady().then(async () => {
-  app.setName('Athena Studio') // 앱 데이터 폴더 이름 — 바꾸면 설정 · 데몬 · 스튜디오 아테나가 옮겨진다
+  // 앱 데이터 폴더 이름(IDENTITY.name)은 맨 위에서 정했다 — 바꾸면 설정 · 데몬이 옮겨진다
   // 보이는 이름은 Athena(메뉴 막대 · Dock 은 개발용 Athena.app — scripts/dev-app.js)
   app.setAboutPanelOptions({ applicationName: 'Athena' })
   // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
@@ -2237,17 +2275,25 @@ app.whenReady().then(async () => {
   // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 정본)
   if (!Array.isArray(config.windows)) config = core.withWindows(config, core.windowDirs(config, core.sameDir))
   language = i18n.pickLanguage(config.language, app.getLocale())
-  await offerMoveToHome()
+  // 코어 준비 · 업데이트는 git · node 를 부르므로 로그인 셸 PATH 를 받은 뒤에
+  const loginPath = await loadLoginPath()
+  if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
+  // 스튜디오 코어 — 처음이면 번들에서 풀고, 있던 본체면 번들이 앞일 때 업데이트(창을 열기 전 · 일하는 본체는 코어가 건너뛴다)
+  const prepared = await prepareStudioCore({ update: true })
+  if (prepared.ok && !core.windowDirs(config, core.sameDir).length) {
+    config = core.withWindows(config, [STUDIO.core])
+    core.saveConfig(configFile(), config)
+  }
   for (const dir of core.windowDirs(config, core.sameDir)) {
     if (!core.checkAthenaDir(dir).ok) continue
     try {
       core.ensureAthenaConfig(dir, athenaReposRoot(dir))
     } catch {}
   }
-  const loginPath = await loadLoginPath()
-  if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
   buildMenu()
   openSavedWindows()
+  const first = frontCtx()
+  showCoreUpdateNotice(first && first.win)
   startPanesPolling()
   // 메뉴 막대는 맥에서만(다른 OS 는 숨은 패널 창이 남아 창을 닫아도 앱이 안 꺼진다)
   if (isMac) createTray()

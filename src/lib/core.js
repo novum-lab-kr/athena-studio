@@ -2,9 +2,8 @@
 const fs = require('fs')
 const path = require('path')
 
-// 현황판 기본 포트는 4701 — herdr 용 아테나(~/athena)의 현황판(4700)과 나란히 돈다
-// homeAthenaAsked — 스튜디오 레포 athena/ 를 쓰던 사람에게 ~/athena 로 옮기기를 물었는지(여러 회사 팩 · 사용자 결정 1)
-const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701, homeAthenaAsked: false }
+// 현황판 기본 포트는 4701 — herdr 용 아테나(~/athena)의 현황판(4700)과 나란히 돈다(옛 본체만 · 팩 본체는 코어가 정한다)
+const DEFAULT_CONFIG = { athenaDir: null, boardPort: 4701 }
 
 // 앱 설정(userData/config.json). 깨졌거나 없으면 기본값
 function loadConfig(file) {
@@ -17,8 +16,9 @@ function loadConfig(file) {
   const port = Number(config.boardPort)
   config.boardPort = Number.isInteger(port) && port > 0 && port < 65536 ? port : DEFAULT_CONFIG.boardPort
   if (typeof config.athenaDir !== 'string' || !config.athenaDir) config.athenaDir = null
-  config.homeAthenaAsked = config.homeAthenaAsked === true
-  delete config.studioAthenaAsked // 예전 키(스튜디오 전용 아테나를 물었는지) — 이제 쓰지 않는다
+  // 예전 키 — 스튜디오 전용 아테나 · ~/athena 로 옮기기를 물었는지. 스튜디오는 이제 자기 코어(~/.athena-studio)만 쓴다
+  delete config.studioAthenaAsked
+  delete config.homeAthenaAsked
   return config
 }
 
@@ -59,14 +59,6 @@ function checkAthenaDir(dir) {
   return { ok: missing.length === 0, missing }
 }
 
-// 스튜디오용 아테나 — 스튜디오 레포 안 athena/(git subtree · 정본은 아테나 레포 novum-lab-kr/athena). 앱은 그 폴더를 바로 쓴다.
-// herdr 용 아테나(~/athena)와 섞이지 않는다
-const ATHENA_DIR_NAME = 'athena'
-
-function studioAthenaDir(appRoot) {
-  return path.join(appRoot, ATHENA_DIR_NAME)
-}
-
 // 같은 폴더인지 — 심볼릭 링크(/tmp → /private/tmp 등)까지 풀어 본다. 없는 폴더는 표기만 정리해 비교
 function realDir(dir) {
   try {
@@ -93,10 +85,32 @@ function ensureAthenaConfig(dir, reposRoot = '..') {
   return true
 }
 
-// 스튜디오 레포의 athena/ 는 상위가 스튜디오 레포라 담당 레포가 없다 — 예전(~/athena/..)과 같은 홈을 절대 경로로.
-// 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
-function reposRootFor(dir, { studioAthena, home }) {
-  return sameDir(dir, studioAthena) ? home : '..'
+// 스튜디오 집(~/.athena-studio) 안의 본체는 상위가 스튜디오 집이라 담당 레포가 없다 — 회사 레포 클론이 있는 홈을 절대 경로로
+// (두 앱이 같은 클론을 같이 쓴다 · 결정 D6). 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
+function reposRootFor(dir, { studioRoot, home }) {
+  return isInside(dir, studioRoot) ? home : '..'
+}
+
+// dir 이 root 안(또는 root 자체)인가 — 심볼릭 링크를 풀어 본다(아직 없는 폴더는 있는 상위까지 풀고 나머지를 붙인다)
+function realDirLoose(dir) {
+  let current = path.resolve(dir)
+  const rest = []
+  for (;;) {
+    try {
+      return path.join(fs.realpathSync(current), ...rest)
+    } catch {
+      const parent = path.dirname(current)
+      if (parent === current) return path.resolve(dir)
+      rest.unshift(path.basename(current))
+      current = parent
+    }
+  }
+}
+
+function isInside(dir, root) {
+  if (!dir || !root) return false
+  const relative = path.relative(realDirLoose(root), realDirLoose(dir))
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
 // 현황판 포트 고르기 — 저장된 포트부터 차례로 본다(다른 아테나 현황판 등이 쥐고 있으면 다음 번호)
@@ -257,9 +271,10 @@ const SOCKET_PATH_MAX = 103
 
 // endpoint — 데몬 접속 파일. ATHENA_STUDIO_ENDPOINT 가 있으면 그 자리(아테나 screen.py 와 같은 변수 · 개발 · 회귀 검사용 격리 —
 // Electron 은 HOME 을 바꿔도 홈 경로를 그대로 써서, 격리 실행이 사용자 앱의 접속 파일을 덮을 수 있다)
-function daemonPaths({ userData, home, tmpdir, uid, endpoint = null }) {
+// socketTag — 대체 자리를 개발 앱 · 배포판이 같이 쓰지 않게(개발 앱 '-dev' · studio-home appIdentity)
+function daemonPaths({ userData, home, tmpdir, uid, endpoint = null, socketTag = '' }) {
   let socket = path.join(userData, 'daemon.sock')
-  if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) socket = path.join(tmpdir, `athena-studio-${uid}`, 'daemon.sock')
+  if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) socket = path.join(tmpdir, `athena-studio-${uid}${socketTag}`, 'daemon.sock')
   // 대체 자리도 길면 여기서 알린다 — 데몬이 listen 하다 EINVAL 로 죽는 것보다 원인이 분명하다
   if (Buffer.byteLength(socket) > SOCKET_PATH_MAX) throw new Error(`데몬 소켓 경로가 ${SOCKET_PATH_MAX}바이트를 넘어요: ${socket}`)
   return {
@@ -275,10 +290,10 @@ module.exports = {
   loadConfig,
   saveConfig,
   checkAthenaDir,
-  studioAthenaDir,
   sameDir,
   realDir,
   reposRootFor,
+  isInside,
   boardPortCandidates,
   parseLsofPath,
   setAthenaBoardPort,

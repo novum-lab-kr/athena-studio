@@ -1,6 +1,5 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const path = require('path')
 const pack = require('../src/lib/pack')
 
 test('팩 출력: progress 줄을 모으고 마지막 줄 JSON 을 결과로', () => {
@@ -141,23 +140,6 @@ test('현황판 포트: pack status 의 boardPort 만 · 실패 · 이상한 값
   assert.equal(pack.statusBoardPort({ ok: true, boardPort: '4710' }), null)
   assert.equal(pack.statusBoardPort({ ok: false, boardPort: 4710 }), null)
   assert.equal(pack.statusBoardPort({ ok: true, boardPort: 70000 }), null)
-})
-
-test('기본 본체: 저장된 것이 유효하면 그것, 아니면 ~/athena, 둘 다 없으면 null', () => {
-  const valid = new Set(['/Users/me/athena', '/Users/me/other'])
-  const isAthena = (dir) => valid.has(dir)
-  assert.equal(pack.defaultAthenaDir({ athenaDir: '/Users/me/other' }, '/Users/me/athena', isAthena), '/Users/me/other')
-  assert.equal(pack.defaultAthenaDir({ athenaDir: '/gone' }, '/Users/me/athena', isAthena), '/Users/me/athena')
-  assert.equal(pack.defaultAthenaDir({ athenaDir: null }, '/nope', isAthena), null)
-})
-
-test('~/athena 로 옮기기: 스튜디오 레포 athena/ 를 쓰고 ~/athena 가 여러 팩을 지원할 때 한 번만', () => {
-  const sameDir = (left, right) => path.resolve(left) === path.resolve(right)
-  const base = { config: { athenaDir: '/repo/athena', homeAthenaAsked: false }, studioAthena: '/repo/athena', homeSupportsPacks: true, sameDir }
-  assert.equal(pack.shouldOfferMoveToHome(base), true)
-  assert.equal(pack.shouldOfferMoveToHome({ ...base, homeSupportsPacks: false }), false)
-  assert.equal(pack.shouldOfferMoveToHome({ ...base, config: { athenaDir: '/repo/athena', homeAthenaAsked: true } }), false)
-  assert.equal(pack.shouldOfferMoveToHome({ ...base, config: { athenaDir: '/Users/me/athena' } }), false)
 })
 
 test('비교 줄: 있는 정보만 이어 쓴다', () => {

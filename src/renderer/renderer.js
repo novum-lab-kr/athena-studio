@@ -1969,19 +1969,16 @@ async function newPack() {
 }
 
 // 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
-async function importPack(kind = null, source = null) {
-  let chosen = kind
-  let target = source
-  if (!chosen) {
-    chosen = await packDialog({
-      title: say('pack.import.title'),
-      body: [say('pack.import.where')],
-      actions: [...['file', 'folder', 'git', 'athena'].map((value) => ({ label: say(`pack.import.kind.${value}`), value })), { label: say('common.cancel'), value: null }],
-    })
-    if (!chosen) return
-  }
+async function importPack() {
+  let target = null
+  const chosen = await packDialog({
+    title: say('pack.import.title'),
+    body: [say('pack.import.where')],
+    actions: [...['file', 'folder', 'git', 'athena'].map((value) => ({ label: say(`pack.import.kind.${value}`), value })), { label: say('common.cancel'), value: null }],
+  })
+  if (!chosen) return
   // 기존 아테나는 git 설정(.git)을 그대로 가져온다(R4 A) — 내 컴퓨터에서 쓰던 것만 고르게 먼저 알린다
-  if (chosen === 'athena' && !target) {
+  if (chosen === 'athena') {
     const ok = await packDialog({
       title: say('pack.import.athena.title'),
       body: [say('pack.import.athena.body'), el('p', 'muted', say('pack.import.athena.note'))],
@@ -1989,7 +1986,7 @@ async function importPack(kind = null, source = null) {
     })
     if (!ok) return
   }
-  if (chosen === 'git' && !target) {
+  if (chosen === 'git') {
     const answer = await packDialog({
       title: say('pack.import.git.title'),
       body: [say('pack.import.git.body')],
@@ -2097,13 +2094,11 @@ async function initPacks() {
   await afterAthenaReady()
 }
 
-// 본체가 정해진 뒤 — 시작할 때 "옮기기" 를 골랐으면 기존 아테나 가져오기를 이어서, 팩이 하나도 없으면 두 가지만 보여 준다
+// 본체가 정해진 뒤 — 팩이 하나도 없으면 두 가지만 보여 준다
 async function afterAthenaReady() {
   if (!state || !state.valid) return
   await refreshPackList()
   if (!packs.supported) return
-  const pending = await studio.packPendingImport()
-  if (pending) return runPackFlow(() => importPack('athena', pending))
   if (hasNoPacks()) openNoPacks()
 }
 
@@ -2132,7 +2127,7 @@ function setSetupTitle(key) {
   $('setup-title').textContent = key ? say(key) : 'Athena Studio'
 }
 
-// 처음 켤 때 아테나 폴더가 안 정해졌으면 묻지 않고 레포의 athena/ 를 쓴다. 안 됐을 때만 [다시 시도] · [폴더 고르기] 를 보여 준다
+// 처음 켤 때 아테나 폴더가 안 정해졌으면 묻지 않고 앱이 들고 온 코어를 풀어 쓴다(~/.athena-studio/core). 안 됐을 때만 [다시 시도] · [폴더 고르기] 를 보여 준다
 async function installAthena() {
   const buttons = [$('install'), $('pick')]
   for (const button of buttons) button.hidden = true

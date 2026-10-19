@@ -168,19 +168,6 @@ function boardIdentity(boardState, current) {
   return pack.id === current.id && pack.generation === current.generation ? 'current' : 'stale'
 }
 
-// 처음 켤 때 고를 기본 본체 — 저장된 것이 있으면 그것, 없으면 ~/athena(사용자 결정 1)
-function defaultAthenaDir(config, homeAthena, isAthenaDir) {
-  if (config.athenaDir && isAthenaDir(config.athenaDir)) return config.athenaDir
-  return isAthenaDir(homeAthena) ? homeAthena : null
-}
-
-// 스튜디오 레포 athena/ 를 쓰던 사람 — ~/athena 가 여러 팩을 지원하면 옮기기를 한 번 묻는다
-function shouldOfferMoveToHome({ config, studioAthena, homeSupportsPacks, sameDir }) {
-  if (config.homeAthenaAsked) return false
-  if (!config.athenaDir || !sameDir(config.athenaDir, studioAthena)) return false
-  return homeSupportsPacks === true
-}
-
 // 같은 이름 팩 비교 줄
 function packSummary(pack, say = koreanSay) {
   if (!pack) return ''
@@ -216,7 +203,5 @@ module.exports = {
   packIconPath,
   iconMime,
   statusBoardPort,
-  defaultAthenaDir,
-  shouldOfferMoveToHome,
   packSummary,
 }
