@@ -9,4 +9,4 @@ argument-hint: "(선택) 레포 폴더 — 비우면 athena.config.json reposRoo
 레포 폴더: $ARGUMENTS (비우면 `reposRoot`, 없으면 `..`)
 
 절차의 정본은 **`docs/setup.md`**(Codex 등 다른 도구도 같은 문서를 따른다) — 먼저 읽고 0단계부터 그대로 한다.
-이 세션(Claude Code)에서는 묻기 = AskUserQuestion, 5단계 작업자 = Agent 도구 `general-purpose` 백그라운드(한 번에 최대 5개 · `scripts/monitor-pane.sh` 로 보이게), 7-1단계 = `/diagram`.
+이 세션(Claude Code)에서는 묻기 = AskUserQuestion, 5단계 작업자 = Agent 도구 `general-purpose` 백그라운드(한 번에 최대 5개 · `scripts/monitor-pane.sh` 로 보이게 · Studio 화면이면 앱 아래 모니터 칸이 보여 주므로 스크립트가 아무것도 안 띄운다), 7-1단계 = `/diagram`.
