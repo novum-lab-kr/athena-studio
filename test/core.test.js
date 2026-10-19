@@ -115,6 +115,14 @@ test('실행 파일 찾기: 실제 파일 시스템', () => {
   assert.equal(core.findExecutable('herdr', dir), exe)
 })
 
+test('자식 환경: HOME 은 그대로(pane 의 claude 가 진짜 홈의 로그인 · 키체인을 쓴다) · 격리용 ATHENA_STUDIO_HOME 은 넘기지 않는다', () => {
+  const base = { HOME: '/Users/me', ATHENA_STUDIO_HOME: '/tmp/iso', PATH: '/usr/bin' }
+  for (const env of [core.childEnv(base), core.terminalEnv(base)]) {
+    assert.equal(env.HOME, '/Users/me')
+    assert.equal('ATHENA_STUDIO_HOME' in env, false)
+  }
+})
+
 test('자식 환경: HERDR_* 와 ELECTRON_RUN_AS_NODE 는 물려주지 않는다', () => {
   const env = core.childEnv({ PATH: '/x', HERDR_ENV: '1', HERDR_PANE_ID: 'p1', ELECTRON_RUN_AS_NODE: '1', HOME: '/h' }, { A: 'b' })
   assert.deepEqual(env, { PATH: '/x', HOME: '/h', A: 'b' })
