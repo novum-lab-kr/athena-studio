@@ -1,0 +1,20 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen open-url http://localhost:47999/plans/refactor/20261003-lead.html
+--- exit 0
+--- stdout
+{"ok": true, "target": "external", "via": "open"}
+--- stderr
+--- herdr
+["#open", "http://localhost:47999/plans/refactor/20261003-lead.html"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_SCREEN=none scripts/screen open-url docs/playbook.html
+--- exit 0
+--- stdout
+{"ok": true, "target": "external", "via": "open"}
+--- stderr
+--- herdr
+["#open", "docs/playbook.html"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen open-url
+--- exit 2
+--- stdout
+--- stderr
+{"error": "usage", "message": "주소 가 없다"}
+--- herdr

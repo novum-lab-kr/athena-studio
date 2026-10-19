@@ -70,7 +70,7 @@ argument-hint: "<인자 예시>"
 
 ## 화면 계층 (scripts/screen)
 아테나 스크립트·훅·지시문은 pane·탭·workspace 를 **`scripts/screen` 으로만** 다룬다. 화면 백엔드는 **herdr** 와 **studio**(Athena Studio 자체 터미널 데몬) 둘이고, herdr 명령·`HERDR_*`·herdr JSON 모양을 아는 곳도, 데몬 CLI(`athena-studio-cli`)·`ATHENA_STUDIO_*`·접속 파일을 아는 곳도 `scripts/lib/screen.py` 하나다 — 둘이 같은 계약을 구현하므로 어느 쪽을 켜도 스크립트는 그대로 돈다(공존).
-- 입구: bash·node 는 `scripts/screen <동작>`(node 는 `scripts/lib/screen.mjs` 의 `screen()`·`screenSync()`·`screenName()`), 파이썬 훅은 `scripts/lib/screen.py` 를 바로 불러 쓴다(`config.mjs ↔ athena_config.py` 와 같은 짝). 결과는 납작한 JSON, 실패면 종료 코드 1 이상
+- 입구: bash·node 는 `scripts/screen <동작>`(node 는 `scripts/lib/screen.mjs` 의 `screen()`·`screenSync()`·`screenName()`·`openUrl()`·`openUrlSync()`), 파이썬 훅은 `scripts/lib/screen.py` 를 바로 불러 쓴다(`config.mjs ↔ athena_config.py` 와 같은 짝). 결과는 납작한 JSON, 실패면 종료 코드 1 이상
 - 동작(`scripts/screen --help`)
 
   | 묶음 | 동작 |
@@ -79,6 +79,7 @@ argument-hint: "<인자 예시>"
   | 보기 | `pane list`(`--tab`·`--workspace`·`--label`(이름표만)·`--label-or-name`·`--cwd`·`--agent-only`·`--prefer-tab`·`--prefer-workspace`, `self` 를 값으로) · `pane get` · `pane layout --pane` · `pane is-shell` · `pane read`·`pane wait-output`(herdr 읽기 옵션 그대로 — 출력 형식은 `--read-format`) · `tab list`·`tab get` · `workspace list`·`workspace get` |
   | 바꾸기 | `pane split --target <id\|self\|focused>` · `pane run` · `pane send-text` · `pane send-keys` · `pane rename` · `pane swap` · `pane move`(id 가 바뀐다) · `pane close` · `tab rename`·`tab close` · `workspace create` |
 
+- **브라우저 열기도 화면 계층으로** — `scripts/screen open-url <주소|파일>`(node `openUrl()`·`openUrlSync()`). `open`·`xdg-open` 을 직접 부르지 않는다. studio 면 데몬 op `open-url` → 그 본체에 붙은 앱 창이 주소를 연다(localhost 는 옆 브라우저 · 그 밖 http(s) 는 기본 브라우저 · 결과 `{ok, target:"panel"|"external", via:"studio"}`). herdr·none·http(s) 가 아닌 것(파일)·옛 데몬(op 모름)·붙은 앱 창 없음이면 기본 브라우저(`open` → 없으면 `xdg-open` · `via` 가 그 이름)로 떨어진다 — 부르는 쪽은 이것 하나만 부른다
 - `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다(herdr 계약 그대로). 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)
 - `--target self` 는 부른 pane(모르면 포커스된 pane), `focused` 는 포커스된 pane. 뒤에서 도는 스크립트는 self 를 쓴다 — 포커스된 pane 은 사용자가 보고 있는 엉뚱한 곳일 수 있다
 - 출력 형식: `--format json`(기본) · `id`(첫 대상의 id 한 줄) · `ids`(한 줄에 하나). id 는 불투명한 문자열 — 쪼개 읽지 않는다(workspace 는 `workspace_id`·`tab get` 으로)

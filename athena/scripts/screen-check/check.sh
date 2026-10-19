@@ -109,6 +109,11 @@ sc_board_reuse()    { step board-reuse "${IN[@]}" "${PORT_ENV[@]}" -- scripts/bo
 sc_board_nopane()   { step - HERDR_ENV=1 HERDR_TAB_ID=w1:t1 "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_board_outside()  { STEP_WAIT="#nohup" step - "${PORT_ENV[@]}" -- scripts/board.sh; }   # nohup 은 &로 뒤에서 돈다 — 기록이 다음 시나리오로 새지 않게 기다린다
 sc_board_splitfail(){ step split-fail "${IN[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
+# 떠 있는 현황판(FAKE_BOARD_UP) — 결정 콘솔 열기 · 탭이 없으면 현황판 열기가 화면 계층 open-url 로(herdr 면 기본 브라우저)
+sc_board_open() {
+  step - "${IN[@]}" ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 -- bash -c 'touch plans/refactor/20261003-lead.html && scripts/board.sh open plans/refactor/20261003-lead.md'
+  step - "${IN[@]}" ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 -- scripts/board.sh
+}
 sc_monitor_new()    { step - "${IN[@]}" -- scripts/monitor-pane.sh 30; }
 sc_monitor_reuse()  { step monitor-reuse "${IN[@]}" -- scripts/monitor-pane.sh; }
 sc_monitor_otherws(){ step monitor-reuse HERDR_ENV=1 HERDR_PANE_ID=w9:p1 HERDR_TAB_ID=w9:t1 -- scripts/monitor-pane.sh; }
@@ -214,7 +219,7 @@ sc_titled_workspace_up() {
 }
 sc_titled_server()  { board_server titled; }
 
-SCENARIOS=(board_new board_reuse board_nopane board_outside board_splitfail monitor_new monitor_reuse monitor_otherws monitor_outside
+SCENARIOS=(board_new board_reuse board_nopane board_outside board_splitfail board_open monitor_new monitor_reuse monitor_otherws monitor_outside
   learn_new learn_busy learn_shell learn_outside guide_new guide_file guide_nopane guide_busy guide_shell guide_menu new_branch
   delegate_newws delegate_existing delegate_here delegate_outside layout_ok layout_swap layout_arg layout_other layout_base
   up_normal up_redeploy up_firstrun up_outside workspace_up setup_check compact plan_html board_server

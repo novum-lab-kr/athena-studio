@@ -5,6 +5,7 @@
 #       scripts/board.sh url      → 주소만 출력
 #       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 현황판 주소로 연다
 #                                  [이대로 진행] 이 아테나 pane 으로 보내려면 이 주소로 열어야 한다
+# 브라우저는 화면 계층 scripts/screen open-url 로 연다 — Athena Studio 면 그 창의 옆 브라우저, 그 밖(herdr 등)은 기본 브라우저(open)
 #
 # 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
 # 여러 팩 — 떠 있는 현황판의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
@@ -95,7 +96,7 @@ if [ -n "$OPEN_PATH" ]; then
   # 한글 경로는 퍼센트 인코딩해서 연다
   ENCODED="$(python3 -c 'import sys, urllib.parse; print(urllib.parse.quote(sys.argv[1]))' "$OPEN_PATH")"
   echo "$URL/$ENCODED"
-  command -v open >/dev/null 2>&1 && open "$URL/$ENCODED"
+  "$ATHENA_DIR/scripts/screen" open-url "$URL/$ENCODED" >/dev/null || true
   exit 0
 fi
 
@@ -111,5 +112,5 @@ if [ "${ATHENA_BOARD_NO_BROWSER:-}" = 1 ]; then
 elif [ "${VIEWERS:-0}" -gt 0 ]; then
   echo "  (이미 열린 탭 ${VIEWERS}개 — 새 탭은 열지 않는다. 그 탭은 서버가 다시 뜨면 저절로 새로고침된다)"
 else
-  command -v open >/dev/null 2>&1 && open "$URL"
+  "$ATHENA_DIR/scripts/screen" open-url "$URL" >/dev/null || true
 fi

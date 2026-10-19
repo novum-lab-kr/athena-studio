@@ -1,0 +1,15 @@
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 bash -c touch plans/refactor/20261003-lead.html && scripts/board.sh open plans/refactor/20261003-lead.md
+--- exit 0
+--- stdout
+http://localhost:47999 (이미 떠 있음)
+http://localhost:47999/plans/refactor/20261003-lead.html
+--- stderr
+--- herdr
+["#open", "http://localhost:47999/plans/refactor/20261003-lead.html"]
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 scripts/board.sh
+--- exit 0
+--- stdout
+http://localhost:47999 (이미 떠 있음)
+--- stderr
+--- herdr
+["#open", "http://localhost:47999"]

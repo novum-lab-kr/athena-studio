@@ -3,7 +3,7 @@
 
 받은 인자를 가짜 herdr 와 같은 로그($FAKE_HERDR_LOG)에 ["@studio", 인자…] 한 줄로 적고(순서까지 비교되게), 응답은 fixture 에서 준다.
   FAKE_HERDR_FIXTURE  fixture 폴더 목록(':' 로 구분 · 앞이 우선) 중 이름이 studio 로 시작하는 폴더만 본다(herdr fixture 와 섞이지 않게)
-                      파일 이름은 하위 명령 두 단어 — pane list → pane_list.json(출력 그대로 · 글자 응답(read·wait-output)은 .txt) · <이름>.exit(종료 코드) · <이름>.stderr
+                      파일 이름은 하위 명령 두 단어 — pane list → pane_list.json(open-url 은 한 단어 — 주소가 바뀌어도 open-url.json)(출력 그대로 · 글자 응답(read·wait-output)은 .txt) · <이름>.exit(종료 코드) · <이름>.stderr
                       그 이름이 없으면 같은 폴더의 any.* (모든 동작에 같은 답 — 데몬 없음 등)
                       어디에도 없으면 빈 출력 · 0 (바꾸는 동작은 진짜 CLI 도 출력이 없다)
   FAKE_ATHENA         응답 안의 @ATHENA@ 를 이 경로로 바꾼다(작업 트리 사본)
@@ -23,7 +23,7 @@ if log:
             out.write(json.dumps(['#studio-env', os.environ.get('ATHENA_STUDIO_SOCKET', ''), os.environ.get('ATHENA_STUDIO_NODE', '')], ensure_ascii=False) + '\n')
 
 words = [arg for arg in args if not arg.startswith('-')][:2]
-key = '_'.join(words) or 'none'
+key = 'open-url' if args[:1] == ['open-url'] else '_'.join(words) or 'none'
 body, code = '', 0
 folders = [folder for folder in os.environ.get('FAKE_HERDR_FIXTURE', '').split(':') if os.path.basename(folder.rstrip('/')).startswith('studio')]
 

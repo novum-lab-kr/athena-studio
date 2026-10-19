@@ -9,7 +9,7 @@
  */
 import { existsSync } from 'node:fs'
 import { join, relative } from 'node:path'
-import { execFileSync } from 'node:child_process'
+import { openUrlSync } from '../lib/screen.mjs'
 import { RUNS_DIR, listRuns, buildReport, buildIndex, summaryText, when } from './report.mjs'
 
 const argv = process.argv.slice(2)
@@ -32,7 +32,7 @@ if (argv.includes('--open')) {
     console.error(`⚠️  없음: ${target}`)
     process.exit(2)
   }
-  execFileSync('open', [target])
+  openUrlSync(target)
   console.log(`🌐 ${relative(process.cwd(), target)}`)
   process.exit(0)
 }

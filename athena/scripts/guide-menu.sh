@@ -150,10 +150,10 @@ PY
 
 # 안내 HTML — 팩에 그 회사 판(pack/guide/<파일>)이 있으면 그것, 없으면 코어 판(docs/<파일>)
 guide_file() { if [ -f "pack/guide/$1" ]; then echo "pack/guide/$1"; else echo "docs/$1"; fi; }
-act_explained() { local f; f="$(guide_file athena-explained.html)"; open "$f" && echo "브라우저에서 $f(아테나 구조 설명)을 열었습니다."; pause; }
-act_onboarding() { local f; f="$(guide_file onboarding.html)"; open "$f" && echo "브라우저에서 $f(시작하기 가이드)을 열었습니다."; pause; }
-act_playbook()  { local f; f="$(guide_file playbook.html)"; open "$f" && echo "브라우저에서 $f 을 열었습니다."; pause; }
-act_diagram()   { open docs/diagrams/index.html && echo "브라우저에서 다이어그램 목록을 열었습니다."; pause; }
+act_explained() { local f; f="$(guide_file athena-explained.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f(아테나 구조 설명)을 열었습니다."; pause; }
+act_onboarding() { local f; f="$(guide_file onboarding.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f(시작하기 가이드)을 열었습니다."; pause; }
+act_playbook()  { local f; f="$(guide_file playbook.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f 을 열었습니다."; pause; }
+act_diagram()   { "$ATHENA_DIR/scripts/screen" open-url docs/diagrams/index.html >/dev/null && echo "브라우저에서 다이어그램 목록을 열었습니다."; pause; }
 act_extending() { view_md docs/extending.md; }
 
 # ---------- 메뉴 ----------

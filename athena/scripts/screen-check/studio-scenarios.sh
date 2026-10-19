@@ -212,3 +212,18 @@ sc_studio_config_screen() {
   printf '%s\n' "$saved" > "$COPY/athena.config.json"
 }
 SCENARIOS+=(studio_config_screen)
+
+# 주소 열기 — Studio pane 안 · pane 밖(접속 파일)이면 데몬 op open-url(그 본체 창의 옆 브라우저) ·
+# http(s) 가 아니거나 · 옛 데몬(op 모름 usage) · 붙은 앱 창 없음(not_found) · 데몬 없음이면 기본 브라우저(open)로 떨어진다
+sc_studio_open_url() {
+  local url="http://localhost:47999/plans/refactor/20261003-lead.html"
+  step studio "${IN_STUDIO[@]}" -- $S open-url "$url"
+  step studio "${LIVE[@]}" -- $S open-url "$url"
+  step studio "${IN_STUDIO[@]}" -- $S open-url docs/playbook.html
+  step studio-oldurl,studio "${IN_STUDIO[@]}" -- $S open-url "$url"
+  step studio-noapp,studio "${LIVE[@]}" -- $S open-url "$url"
+  step studio-down "${IN_STUDIO[@]}" -- $S open-url "$url"
+  step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 -- bash -c 'touch plans/refactor/20261003-lead.html && scripts/board.sh open plans/refactor/20261003-lead.md'
+  step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 FAKE_BOARD_UP=1 -- scripts/board.sh
+}
+SCENARIOS+=(studio_open_url)

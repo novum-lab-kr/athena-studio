@@ -95,4 +95,10 @@ sc_cli_passthrough() {
   step - "${IN[@]}" -- $S pane read w1:p2 --source visible --lines 5 --read-format ansi --ansi --raw
   step - "${IN[@]}" -- $S pane wait-output w1:p2 --regex 'done$' --raw --timeout 500
 }
-SCENARIOS+=(cli_self cli_split cli_list cli_ops cli_node cli_titled cli_passthrough)
+# 주소 열기 — herdr · none 은 기본 브라우저(가짜 open 이 ["#open", 주소] 로 적는다) · 주소가 없으면 usage
+sc_cli_open_url() {
+  step - "${IN[@]}" -- $S open-url "http://localhost:47999/plans/refactor/20261003-lead.html"
+  step - "${IN[@]}" ATHENA_SCREEN=none -- $S open-url docs/playbook.html
+  step - "${IN[@]}" -- $S open-url
+}
+SCENARIOS+=(cli_self cli_split cli_list cli_ops cli_node cli_titled cli_passthrough cli_open_url)
