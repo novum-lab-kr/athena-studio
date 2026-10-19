@@ -1,0 +1,24 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen self
+--- exit 0
+--- stdout
+{"inside": true, "backend": "studio", "pane_id": "p1", "tab_id": "t1", "workspace_id": "w1"}
+--- stderr
+--- herdr
+$ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json scripts/screen capabilities
+--- exit 0
+--- stdout
+{"backend": "herdr", "features": ["agent-status", "process-info", "layout-geometry", "pane-move", "workspaces", "herdr-sidebar"]}
+--- stderr
+--- herdr
+$ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 scripts/screen self
+--- exit 0
+--- stdout
+{"inside": true, "backend": "herdr", "pane_id": "w1:p1", "tab_id": "w1:t1", "workspace_id": "w1"}
+--- stderr
+--- herdr
+$ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json ATHENA_STUDIO_ENDPOINT=<WORK>/studio/deadpid.json scripts/screen capabilities
+--- exit 0
+--- stdout
+{"backend": "studio", "features": ["agent-status", "process-info", "workspaces"]}
+--- stderr
+--- herdr

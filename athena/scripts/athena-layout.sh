@@ -20,6 +20,8 @@ WS="$("$SCREEN" tab get "$TAB" | python3 -c "import sys,json;print(json.load(sys
 
 EXPLORER="Explorer"; GUIDE="가이드 메뉴"; MON="🛰 에이전트 모니터"; BOARD="📋 현황판"; LEARN="📚 배우기 검토"
 ROW=("$MON" "$BOARD" "$LEARN")
+# 사이드바 pane 판별(python 식, 변수 p) — 플러그인은 탭마다 'Explorer' 말고 'Sidebar'·'Source Control' 로도 띄우고, 이름 붙기 전엔 제목만 herdr-sidebar 다
+IS_SIDEBAR="(p.get('label') in ('Explorer','Sidebar','Source Control') or (p.get('title') or '').strip()=='herdr-sidebar')"
 
 # 이 탭의 pane 사각형: 라벨\tid\tx\ty\tw\th (라벨 없는 pane 은 "-") + AREA 줄
 snapshot() {
@@ -127,7 +129,7 @@ for label in "$GUIDE" "${ROW[@]}"; do
     PARK="$("$SCREEN" pane move "$id" --new-tab --no-focus 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['pane']['tab_id'])" 2>/dev/null)"
     [ -n "$PARK" ] || { echo "⚠️  athena-layout: 임시 탭을 못 만들었습니다" >&2; exit 0; }
   else
-    anchor="$("$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;print(next((p['id'] for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK' and p.get('label')!='$EXPLORER'),''))")"
+    anchor="$("$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;print(next((p['id'] for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK' and not $IS_SIDEBAR),''))")"
     "$SCREEN" pane move "$id" --tab "$PARK" --target "$anchor" --split right --no-focus >/dev/null 2>&1
   fi
 done
@@ -161,9 +163,9 @@ if [ -n "$(find_ws "$GUIDE")" ]; then
   if [ -n "$E" ]; then put "$GUIDE" "$E" down 0.6; else put "$GUIDE" "$MAIN" right 0.8; fi
 fi
 
-# ④ 임시 탭 정리 — 도구 pane 이 다 돌아왔고 남은 게 사이드바 Explorer 뿐이면 닫는다
+# ④ 임시 탭 정리 — 도구 pane 이 다 돌아왔고 남은 게 사이드바뿐이면 닫는다
 if [ -n "$PARK" ]; then
-  if "$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;ps=[p for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK'];sys.exit(0 if all(p.get('label')=='$EXPLORER' for p in ps) else 1)"; then
+  if "$SCREEN" pane list 2>/dev/null | python3 -c "import sys,json;ps=[p for p in json.load(sys.stdin)['panes'] if p['tab_id']=='$PARK'];sys.exit(0 if all($IS_SIDEBAR for p in ps) else 1)"; then
     "$SCREEN" tab close "$PARK" >/dev/null 2>&1 || true
   else
     echo "⚠️  athena-layout: 임시 탭 $PARK 에 도구 pane 이 남아 있습니다" >&2

@@ -297,7 +297,7 @@
     <div class="eyebrow">Frontend Agent Team · Claude Code Workspace</div>
     <h1>Athena 플레이북</h1>
     <div class="meta">
-      <span>core · 회사 팩과 함께</span>
+      <span>core · 팩과 함께</span>
       <span>updated 2026-10-14</span>
       <span>core agents 2 · skills 7</span>
     </div>
@@ -321,11 +321,11 @@
   <main>
     <section id="start">
       <h2>시작하기</h2>
-      <p>athena 폴더에서 Claude Code를 열면 그 세션이 곧 아테나가 됩니다. 아테나는 <strong>코어</strong>(이 레포 — 흐름·훅·현황판·학습 루프·공통 규칙, 회사 이름을 모름)와 <strong>회사 팩</strong>(<code>packs/&lt;회사&gt;/</code>, 별도 레포 — 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉩니다. 코어와 팩을 받고 <code>bin/athena pack link</code> 로 팩 파일을 코어 자리에 링크하면 준비가 끝납니다. 켤 때마다 담당 레포 연결(<code>repos/&lt;레포&gt;</code> 링크)을 확인하고, 빠진 게 있으면 athena 상위 폴더에서 찾아 알아서 연결합니다. 거기에도 없는 레포가 있을 때만 아테나가 위치를 묻습니다.</p>
+      <p>athena 폴더에서 Claude Code를 열면 그 세션이 곧 아테나가 됩니다. 아테나는 <strong>코어</strong>(이 레포 — 흐름·훅·현황판·학습 루프·공통 규칙, 회사 이름을 모름)와 <strong>팩</strong>(<code>packs/&lt;회사&gt;/</code>, 별도 레포 — 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉩니다. 코어와 팩을 받고 <code>bin/athena pack link</code> 로 팩 파일을 코어 자리에 링크하면 준비가 끝납니다. 켤 때마다 담당 레포 연결(<code>repos/&lt;레포&gt;</code> 링크)을 확인하고, 빠진 게 있으면 athena 상위 폴더에서 찾아 알아서 연결합니다. 거기에도 없는 레포가 있을 때만 아테나가 위치를 묻습니다.</p>
       <p>처음 받는 팀원은 <strong><code>ONBOARDING.md</code></strong>(준비물 · 설치 · 첫 사용 · 학습 · 막힐 때)부터 읽습니다 — 같은 내용의 화면은 <code>docs/onboarding.html</code>.</p>
       <p>※ Nous Research 의 오픈소스 <strong>Hermes Agent</strong> 와는 다른 것입니다(예전 이름 "헤르메스"가 같았을 뿐). 따로 설치하지 않습니다.</p>
 <pre><code>git clone &lt;코어 레포 주소&gt; athena &amp;&amp; cd athena
-git clone &lt;회사 팩 레포 주소&gt; packs/&lt;회사&gt;      # 팩이 있는 회사 — 없으면 건너뛰고 claude 에서 /setup
+git clone &lt;팩 레포 주소&gt; packs/&lt;회사&gt;      # 팩이 있는 회사 — 없으면 건너뛰고 claude 에서 /setup
 echo '{ "pack": "packs/&lt;회사&gt;", "reposRoot": ".." }' &gt; athena.config.json
 bin/athena pack link                            # 팩 파일을 코어 자리에 링크로
 claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레포 찾기부터 안내한다
@@ -343,7 +343,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
     <section id="team">
       <h2>팀 구성</h2>
-      <p>코어에는 <strong>레포에 묶이지 않는 에이전트 둘</strong>만 있습니다. <strong>레포 담당 에이전트</strong>는 회사 팩에 있습니다 — 팩 <code>pack.json</code> 의 레포마다(모노레포는 앱마다) 하나씩 만들어지고, <code>bin/athena pack link</code> 가 <code>.claude/agents/</code> 자리에 링크로 겁니다. 에이전트 이름·담당 레포·서비스·스택·검증 명령은 회사 팩 <code>pack/ROUTING.md</code> "에이전트" 표가 정본이고, 터미널에서는 <code>/guide</code> 의 에이전트·라우팅 메뉴로 봅니다.</p>
+      <p>코어에는 <strong>레포에 묶이지 않는 에이전트 둘</strong>만 있습니다. <strong>레포 담당 에이전트</strong>는 팩에 있습니다 — 팩 <code>pack.json</code> 의 레포마다(모노레포는 앱마다) 하나씩 만들어지고, <code>bin/athena pack link</code> 가 <code>.claude/agents/</code> 자리에 링크로 겁니다. 에이전트 이름·담당 레포·서비스·스택·검증 명령은 팩 <code>pack/ROUTING.md</code> "에이전트" 표가 정본이고, 터미널에서는 <code>/guide</code> 의 에이전트·라우팅 메뉴로 봅니다.</p>
       <div class="table-wrap">
         <table>
           <thead>
@@ -352,7 +352,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
           <tbody>
             <tr>
               <td class="name">&lt;에이전트&gt;</td>
-              <td>회사 팩 <code>pack.json</code> 의 <code>&lt;레포&gt;</code>(모노레포는 <code>&lt;앱&gt;</code>)</td>
+              <td>팩 <code>pack.json</code> 의 <code>&lt;레포&gt;</code>(모노레포는 <code>&lt;앱&gt;</code>)</td>
               <td>그 레포 안의 화면·서버 작업<span class="sub">자기 레포 안에서만 수정. 목록은 팩 <code>pack/ROUTING.md</code></span></td>
               <td>팩 <code>ROUTING.md</code> · <code>docs/knowledge/&lt;레포&gt;/structure.md</code><span class="sub"><code>/sync</code> 가 운영 기준 브랜치로 갱신</span></td>
               <td><code>scripts/verify/&lt;레포&gt;.sh</code></td>
@@ -381,7 +381,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
     <section id="routing">
       <h2>라우팅</h2>
-      <p>아테나는 요청의 말을 회사 팩 <code>pack/ROUTING.md</code> "어느 레포인지 고르기" 규칙에 맞춰 담당 에이전트를 고릅니다. 판단이 안 서면 <code>repos/*</code>에서 키워드를 검색해 정하고, 그래도 모호하면 사용자에게 묻습니다.</p>
+      <p>아테나는 요청의 말을 팩 <code>pack/ROUTING.md</code> "어느 레포인지 고르기" 규칙에 맞춰 담당 에이전트를 고릅니다. 판단이 안 서면 <code>repos/*</code>에서 키워드를 검색해 정하고, 그래도 모호하면 사용자에게 묻습니다.</p>
       <div class="route">
         <div class="kw">요청의 서비스·화면·도메인 말 (예: "결제 페이지 버그 고쳐줘")</div><div class="to">팩 ROUTING.md 규칙 → &lt;에이전트&gt;</div>
         <div class="kw">같은 말이 여러 레포를 가리킨다 (예: 관리자 콘솔에도 사용자 웹에도 같은 이름의 화면이 있다)</div><div class="to">사용자에게 되묻는다</div>
@@ -494,7 +494,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
         <article class="cmd wide">
           <div class="cmd-head"><kbd>/setup <span class="arg">레포 폴더 (선택)</span></kbd><span class="tag">새 회사 첫 실행</span></div>
-          <p class="what">회사 팩이 없을 때 한 번 돌립니다(세션 시작 훅이 안내합니다). 기계적인 일은 <code>bin/athena</code> 가, 코드를 읽고 판단하는 일은 아테나와 작업자가 합니다. 이미 팩 레포가 있는 회사면 clone → <code>athena.config.json</code> → <code>bin/athena pack link</code> 만 하고 검증으로 넘어갑니다. <strong>레포는 읽기만 합니다</strong>(fetch·설치는 묻고).</p>
+          <p class="what">팩이 없을 때 한 번 돌립니다(세션 시작 훅이 안내합니다). 기계적인 일은 <code>bin/athena</code> 가, 코드를 읽고 판단하는 일은 아테나와 작업자가 합니다. 이미 팩 레포가 있는 회사면 clone → <code>athena.config.json</code> → <code>bin/athena pack link</code> 만 하고 검증으로 넘어갑니다. <strong>레포는 읽기만 합니다</strong>(fetch·설치는 묻고).</p>
           <div class="flow"><span>레포 찾기 <code>athena init --scan</code></span><span>팩 만들기 <code>athena init</code></span><span>뼈대 <code>athena scaffold</code></span><span class="hi">레포 코드로 뼈대 채우기</span><span>검증 한 번</span><span class="hi">지문 기준선</span></div>
           <dl>
             <dt>확인</dt><dd>넣을 레포 · 회사 이름(팩 폴더) · 추정이 틀린 기준 브랜치·작업 base · 에이전트 이름을 사용자에게 묻습니다</dd>
@@ -506,7 +506,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
         <article class="cmd wide">
           <div class="cmd-head"><kbd>(회사 스킬)</kbd><span class="tag plain">팩</span></div>
-          <p class="what">회사마다 필요한 스킬(리포트를 이슈로 모으기, QA TC 목록 쓰기 등)은 회사 팩에 있고 <code>bin/athena pack link</code> 가 <code>.claude/skills/</code> 자리에 링크로 겁니다. 목록과 쓰는 법은 팩 <code>pack/ROUTING.md</code> "회사 스킬" — <code>/guide</code> 스킬 목록에도 자동으로 나옵니다.</p>
+          <p class="what">회사마다 필요한 스킬(리포트를 이슈로 모으기, QA TC 목록 쓰기 등)은 팩에 있고 <code>bin/athena pack link</code> 가 <code>.claude/skills/</code> 자리에 링크로 겁니다. 목록과 쓰는 법은 팩 <code>pack/ROUTING.md</code> "회사 스킬" — <code>/guide</code> 스킬 목록에도 자동으로 나옵니다.</p>
         </article>
 
         <article class="cmd wide">
@@ -527,7 +527,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
         <article class="cmd wide">
           <div class="cmd-head"><kbd>/sync <span class="arg">레포 이름 (선택)</span></kbd><span class="tag">문서 갱신</span></div>
-          <p class="what">담당 레포의 <strong>운영 기준 브랜치</strong>를 fetch 해 지식 문서·에이전트 md·서비스 맵·회사 팩 판 플레이북을 <strong>운영에 반영된 상태</strong>에 맞게 고칩니다. 로컬 작업 트리는 브랜치가 제각각이라 읽지 않고, 항상 아래 <code>origin/&lt;기준 브랜치&gt;</code> 를 봅니다. 이전 sync 이후 바뀐 부분만 찾아 반영합니다.</p>
+          <p class="what">담당 레포의 <strong>운영 기준 브랜치</strong>를 fetch 해 지식 문서·에이전트 md·서비스 맵·팩 판 플레이북을 <strong>운영에 반영된 상태</strong>에 맞게 고칩니다. 로컬 작업 트리는 브랜치가 제각각이라 읽지 않고, 항상 아래 <code>origin/&lt;기준 브랜치&gt;</code> 를 봅니다. 이전 sync 이후 바뀐 부분만 찾아 반영합니다.</p>
           <div class="table-wrap">
             <table class="baseline">
               <thead><tr><th>대상</th><th>sync 기준 (문서가 따라가는 곳)</th><th>작업 브랜치를 딸 곳 (prBase)</th></tr></thead>
@@ -538,7 +538,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
               </tbody>
             </table>
           </div>
-          <p class="what">두 열은 다릅니다. 개발 브랜치(<code>dev</code>)에만 머지되고 아직 배포되지 않은 변경은 sync 해도 문서에 들어가지 않습니다 — 배포돼 운영 브랜치에 올라간 뒤 반영됩니다. 정본은 회사 팩 <code>pack.json</code> 의 <code>branch</code>(sync 기준)·<code>prBase</code>(작업 기준)입니다.</p>
+          <p class="what">두 열은 다릅니다. 개발 브랜치(<code>dev</code>)에만 머지되고 아직 배포되지 않은 변경은 sync 해도 문서에 들어가지 않습니다 — 배포돼 운영 브랜치에 올라간 뒤 반영됩니다. 정본은 팩 <code>pack.json</code> 의 <code>branch</code>(sync 기준)·<code>prBase</code>(작업 기준)입니다.</p>
           <div class="flow"><span>fetch 기준 브랜치</span><span>지문 생성</span><span class="hi">baseline 비교</span><span>변경 레포 diff 읽기</span><span class="hi">정본(knowledge · config) 갱신</span><span>파생 문서 생성</span><span>baseline 확정</span></div>
           <div class="sync-cols">
             <dl>
@@ -565,7 +565,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
       <h2>문서 기준 커밋</h2>
       <p>지식 노트와 에이전트 md 의 스택·포트·구조 정보는 레포마다 <strong>운영 반영분</strong>(팩 <code>pack.json</code> 의 레포별 <code>branch</code>) 커밋을 읽어 만든 것입니다. 어느 커밋을 기준으로 삼았는지는 회사마다 다르므로 코어판에는 표가 없습니다.</p>
       <div class="note">
-        <strong>레포별 기준 커밋 표는 회사 팩 판 플레이북(팩 <code>guide/playbook.html</code>)에 있습니다.</strong> <code>/sync</code> 가 지문을 확정하면 <code>scripts/build-derived.mjs</code> 가 그 표와 헤더의 last sync 를 채웁니다. 레포의 운영 브랜치가 표보다 앞서 있으면 <code>/sync</code>를 돌려야 문서가 따라옵니다.
+        <strong>레포별 기준 커밋 표는 팩 판 플레이북(팩 <code>guide/playbook.html</code>)에 있습니다.</strong> <code>/sync</code> 가 지문을 확정하면 <code>scripts/build-derived.mjs</code> 가 그 표와 헤더의 last sync 를 채웁니다. 레포의 운영 브랜치가 표보다 앞서 있으면 <code>/sync</code>를 돌려야 문서가 따라옵니다.
       </div>
     </section>
 
@@ -710,9 +710,9 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 ├── AGENTS.md                  <span class="c">공통 규칙·지식 진입점 — 도구 무관 (Codex 등도 읽는다)</span>
 ├── CLAUDE.md                  <span class="c">@AGENTS.md import + Claude Code 전용 (서브에이전트 · 스킬 · Plan-First)</span>
 ├── README.md
-├── athena.config.json         <span class="c">회사 팩 위치(pack) · reposRoot — 레포 목록·브랜치 정본은 팩 pack.json</span>
+├── athena.config.json         <span class="c">팩 위치(pack) · reposRoot — 레포 목록·브랜치 정본은 팩 pack.json</span>
 ├── bin/athena                 <span class="c">init · scaffold · pack link · pack check (/setup 이 부른다)</span>
-├── packs/&lt;회사&gt;/              <span class="c">회사 팩 (별도 레포) — pack.json · ROUTING.md · agents · knowledge · verify · 회사 스킬 · guide</span>
+├── packs/&lt;회사&gt;/              <span class="c">팩 (별도 레포) — pack.json · ROUTING.md · agents · knowledge · verify · 회사 스킬 · guide</span>
 ├── repos/                     <span class="c">레포 심볼릭 링크 (scripts/setup.sh 생성, gitignore)</span>
 ├── .claude/
 │   ├── agents/                <span class="c">reviewer · learn-reviewer (코어) + 레포 담당 에이전트 (팩에서 링크)</span>
@@ -749,7 +749,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
     ├── mdview.py              <span class="c">터미널 마크다운 뷰어 (glow 없을 때 내장 렌더러)</span>
     └── sync-fingerprint.mjs   <span class="c">기준 브랜치 지문 생성·비교</span></code></pre>
       <div class="note">
-        레포 경로는 어디서나 <code>repos/&lt;레포&gt;</code>입니다. 실제 위치는 <code>scripts/setup.sh</code>가 만드는 심볼릭 링크가 가리키며, 목록은 회사 팩 <code>pack.json</code>이 정본입니다. <code>repos/</code>는 gitignore라 팀원마다 배치가 달라도 문서는 공유됩니다.
+        레포 경로는 어디서나 <code>repos/&lt;레포&gt;</code>입니다. 실제 위치는 <code>scripts/setup.sh</code>가 만드는 심볼릭 링크가 가리키며, 목록은 팩 <code>pack.json</code>이 정본입니다. <code>repos/</code>는 gitignore라 팀원마다 배치가 달라도 문서는 공유됩니다.
       </div>
     </section>
 

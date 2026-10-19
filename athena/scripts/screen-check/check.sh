@@ -46,6 +46,7 @@ IN=(HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1)   # herdr pane w1:p1(아
 rsync -a --exclude .git --exclude .omc --exclude /repos --exclude /plans --exclude /issues --exclude /archive --exclude /.worktrees \
   --exclude node_modules --exclude '/.qa-*' --exclude '/.board-*' --exclude /.jev-log.jsonl --exclude /packs --exclude /pack \
   --exclude /patches/herdr-sidebar/bin --exclude __pycache__ --exclude /athena.config.json --exclude /.claude/settings.local.json \
+  --exclude /.pack-data --exclude '/.pack-data.*' --exclude /.sync --exclude '/.migrate-*' --exclude /test \
   --exclude /scripts/screen-check "$ATHENA_DIR/" "$TEMPLATE/"
 (
   cd "$TEMPLATE" || exit 1
@@ -241,6 +242,8 @@ text = re.sub(r'[^\s"\']*/(hermes-(?:runner|prompt|settings|agents|context|plan-
 text = re.sub(r'(hermes-issue-(?:runner|prompt))-[0-9a-f]{8}', r'\1-X', text)
 text = re.sub(r'(\.sh): line [0-9]+:', r'\1: line N:', text)
 text = re.sub(r'<WORK>/tmp//+', '<WORK>/tmp/', text)
+# reviewer 를 띄운 시각(delegate.sh 의 '- Review: … · 띄움 <시각>') — 돌릴 때마다 다르다
+text = re.sub(r'띄움 \d{4}-\d{2}-\d{2} \d{2}:\d{2}', '띄움 <TIME>', text)
 open(path, 'w', encoding='utf-8').write(text)
 PY
 }

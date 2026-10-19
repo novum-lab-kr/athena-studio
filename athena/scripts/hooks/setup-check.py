@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """첫 실행 점검 훅 (SessionStart) — Claude Code 는 .claude/settings.json, Codex 는 .codex/hooks.json(--tool codex) 이 아테나 세션에 건다.
 
-회사 팩이 없으면 첫 실행(docs/setup.md)을 안내한다. herdr 안에서 새로 켠 세션이면 화면 세팅 뒤 workspace-up 훅(athena-up.sh)이
+팩이 없으면 첫 실행(docs/setup.md)을 안내한다. herdr 안에서 새로 켠 세션이면 화면 세팅 뒤 workspace-up 훅(athena-up.sh)이
 그 pane 에 첫 실행 지시(Claude `/setup` · Codex 문장)를 대신 입력하므로 사용자는 아무것도 치지 않아도 된다.
 
 repos/<레포> 링크가 athena.config.json 목록대로 다 있으면 아무것도 하지 않는다.
@@ -48,10 +48,10 @@ def main() -> None:
         auto = me['inside'] and me['pane_id'] and payload.get('source') in (None, 'startup')
         how = '/setup 스킬을 부른다' if TOOL == 'claude' else 'docs/setup.md 절차를 0단계부터 그대로 한다'
         print(json.dumps({
-            'systemMessage': ('🌱 아직 회사 팩이 없습니다 — 화면 세팅이 끝나면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 바로 시작합니다.' if auto
-                              else '🌱 아직 회사 팩이 없습니다 — 아무 말이나 입력하면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 시작합니다.'),
+            'systemMessage': ('🌱 아직 팩이 없습니다 — 화면 세팅이 끝나면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 바로 시작합니다.' if auto
+                              else '🌱 아직 팩이 없습니다 — 아무 말이나 입력하면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 시작합니다.'),
             'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': (
-                '[setup-check] 회사 팩이 없다(athena.config.json 의 pack 이 없거나 pack.json 에 레포가 0개). '
+                '[setup-check] 팩이 없다(athena.config.json 의 pack 이 없거나 pack.json 에 레포가 0개). '
                 f'사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 {how}(환경 설정이라 계획서 없이 진행). '
                 '이미 만든 팩을 받을 회사면 packs/<회사> 에 clone 하고 athena.config.json 에 pack 을 적은 뒤 bin/athena pack link 하면 된다 — 첫 실행 0단계가 먼저 그걸 묻는다.'
             )},

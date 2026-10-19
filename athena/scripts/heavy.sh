@@ -72,6 +72,8 @@ while ! mkdir "$LOCK" 2>/dev/null; do
   sleep 5
 done
 # 무엇이 도는지(what)는 대기 화면·현황판에 보인다 — 인자 속 비밀값(token=… · --password … · Bearer …)은 가려서 적는다(macOS sed 는 대소문자 무시 플래그가 없어 글자마다 [Tt] 로)
+# root — 이 잠금을 쥔 본체(이 스크립트가 든 아테나 체크아웃). 잠금은 한 대 공용이지만 bin/athena pack busy·update 는 그 본체만 일하는 것으로 본다(팩마다-본체 · Codex C10)
+(cd "$(dirname "$0")/.." && pwd -P) > "$LOCK/root" 2>/dev/null || true
 echo $$ > "$LOCK/pid"; printf '%s · %s\n' "$WHO" "$*" \
   | sed -E 's/([A-Za-z_-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww]([Oo][Rr])?[Dd]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh])[A-Za-z_-]*[=:])[^ ]+/\1***/g; s/(--?[A-Za-z-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Aa][Pp][Ii]-?[Kk][Ee][Yy])[A-Za-z-]*) +[^ -][^ ]*/\1 ***/g; s/([Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc]) +[^ ]+/\1 ***/g' \
   | cut -c1-160 > "$LOCK/what"

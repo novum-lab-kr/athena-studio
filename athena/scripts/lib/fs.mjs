@@ -1,4 +1,4 @@
-// 폴더 훑기 — 회사 팩 파일은 코어 자리에 심볼릭 링크로 걸린다(athena pack link).
+// 폴더 훑기 — 팩 파일은 코어 자리에 심볼릭 링크로 걸린다(athena pack link).
 // readdirSync(…, { withFileTypes: true }) 의 isDirectory() 는 링크를 폴더로 치지 않으니 이걸 쓴다
 import { statSync } from 'node:fs'
 import { join } from 'node:path'

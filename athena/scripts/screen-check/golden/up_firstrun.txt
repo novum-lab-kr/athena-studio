@@ -58,5 +58,5 @@ $ HERDR_ENV=1 HERDR_PANE_ID=w1:p1 HERDR_TAB_ID=w1:t1 ATHENA_BOARD_PORT=47999 ATH
 ["#herdr-sidebar-patch.sh"]
 ["pane", "get", "w1:p1"]
 ["pane", "get", "w1:p1"]
-["pane", "send-text", "w1:p1", "아테나 첫 실행 — 회사 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘"]
+["pane", "send-text", "w1:p1", "아테나 첫 실행 — 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘"]
 ["pane", "send-keys", "w1:p1", "Enter"]

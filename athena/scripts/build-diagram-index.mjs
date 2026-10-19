@@ -17,7 +17,7 @@ const TYPES = [
   { key: 'sequence', label: '요청 흐름', suffix: '.sequence.html' },
 ];
 
-// 서비스 카드 — 회사 팩 docs/diagrams/index.json(groups · deepNote · missingNote). 없으면 작업 흐름만
+// 서비스 카드 — 팩 docs/diagrams/index.json(groups · deepNote · missingNote). 없으면 작업 흐름만
 const PACK_INDEX = existsSync(join(DIR, "index.json")) ? JSON.parse(readFileSync(join(DIR, "index.json"), "utf8")) : {};
 const GROUPS = PACK_INDEX.groups ?? [];;
 

@@ -20,8 +20,9 @@ while [ $# -gt 0 ]; do
 done
 [ -n "$PLAN" ] && [ -n "$DIR" ] && [ -n "$VERDICT" ] || { echo "사용: $0 --plan <계획서> --dir <워크트리> --verdict 승인|수정필요 [--note …]" >&2; exit 2; }
 case "$VERDICT" in 승인) ;; 수정필요|"수정 필요") VERDICT="수정 필요" ;; *) echo "verdict 는 승인 또는 수정필요" >&2; exit 2 ;; esac
-case "$PLAN" in /*) [ -d "$(dirname "$PLAN")" ] && PLAN="$(cd "$(dirname "$PLAN")" && pwd -P)/$(basename "$PLAN")" ;; esac   # 옛 경로(~/…/hermes 링크)로 와도 실제 경로로 맞춘 뒤 자른다
-PLAN="${PLAN#"$ATHENA_DIR"/}"
+# 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
+. "$ATHENA_DIR/scripts/lib/plan-path.sh"
+PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 [ -f "$ATHENA_DIR/$PLAN" ] && case "$PLAN" in plans/*.md) true ;; *) false ;; esac || { echo "계획서가 없다: $PLAN" >&2; exit 1; }
 SHA="$(git -C "$DIR" rev-parse --short HEAD 2>/dev/null)" || { echo "git 레포가 아니다: $DIR" >&2; exit 1; }
 BRANCH="$(git -C "$DIR" symbolic-ref --short -q HEAD || echo detached)"

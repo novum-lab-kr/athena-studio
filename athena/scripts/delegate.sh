@@ -56,13 +56,28 @@ if [ ! -f "$ATHENA_DIR/.claude/agents/$AGENT.md" ]; then
   exit 2
 fi
 
+# 이 본체의 팩을 열거나 업데이트하는 중이면 새 작업을 받지 않는다(<데이터>/locks/<팩 id>.lock — bin/athena pack open·update). 팩 ID·세대는 실행기에 넘긴다
+PACK_STATE="$(python3 - "$ATHENA_DIR" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import paths, switching
+where = paths(sys.argv[1])
+print('switching' if switching(sys.argv[1]) else 'ok', where.get('packId') or '', where.get('generation') if where.get('generation') is not None else '', sep='\t')
+PYEOF
+)"
+IFS=$'\t' read -r PACK_SWITCH PACK_ID PACK_GEN <<< "$PACK_STATE"
+if [ "$PACK_SWITCH" = switching ]; then
+  echo "이 팩을 열거나 업데이트하는 중이라 에이전트를 띄우지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2
+  exit 1
+fi
+
 if [ -n "$PLAN_NEW" ]; then
   PROMPT_TMP="$(mktemp -t hermes-plan-prompt)"; printf '%s' "$PROMPT" > "$PROMPT_TMP"
   PLAN="$(node "$ATHENA_DIR/scripts/new-plan.mjs" --agent "$AGENT" --summary "$PLAN_NEW" --prompt-file "$PROMPT_TMP")" || { rm -f "$PROMPT_TMP"; echo "경량 계획서를 만들지 못했다" >&2; exit 1; }
   rm -f "$PROMPT_TMP"
 fi
-case "$PLAN" in /*) [ -d "$(dirname "$PLAN")" ] && PLAN="$(cd "$(dirname "$PLAN")" && pwd -P)/$(basename "$PLAN")" ;; esac   # 옛 경로(~/…/hermes 링크)로 와도 실제 경로로 맞춘 뒤 자른다
-PLAN="${PLAN#"$ATHENA_DIR"/}"
+# 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
+. "$ATHENA_DIR/scripts/lib/plan-path.sh"
+PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 case "$PLAN" in plans/*.md) ;; *) echo "계획서는 plans/ 아래 .md 여야 한다: $PLAN" >&2; exit 2 ;; esac
 [ -f "$ATHENA_DIR/$PLAN" ] || { echo "계획서가 없다: $PLAN" >&2; exit 2; }
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
@@ -128,7 +143,7 @@ if not repo and cwd:
     import subprocess, os
     listing = subprocess.run(['git', '-C', cwd, 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout
     main = next((row[len('worktree '):] for row in listing.splitlines() if row.startswith('worktree ')), '')
-    links = pathlib.Path(sys.argv[1]).resolve().parents[2] / 'repos'
+    links = pathlib.Path(sys.argv[2]) / 'repos'   # 본체 repos/ (여러 팩이면 지금 팩의 레포 링크)
     for link in (links.iterdir() if links.is_dir() else []):
         if main and os.path.realpath(link) == os.path.realpath(main):
             repo = link.name; break
@@ -144,8 +159,9 @@ fi
 
 WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 [ -d "$WORKDIR" ] || { echo "디렉터리가 없다: $WORKDIR"; exit 2; }
-# 상대 경로면 절대 경로로 — 실행기는 pane 의 시작 폴더(이미 그 폴더)에서 다시 cd 하므로 상대 경로는 어긋난다
-WORKDIR="$(cd "$WORKDIR" && pwd)"
+# 상대 경로면 절대 경로로 — 실행기는 pane 의 시작 폴더(이미 그 폴더)에서 다시 cd 하므로 상대 경로는 어긋난다.
+# 실제 경로로 푼다 — 본체의 repos/·.worktrees 는 여러 팩 구조에서 지금 팩을 가리키는 링크라, 링크 경로로 Work ref 에 적으면 팩을 갈아 끼운 뒤 다른 팩을 가리킨다
+WORKDIR="$(cd "$WORKDIR" && pwd -P)"
 
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
@@ -287,6 +303,8 @@ PYEOF
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
   echo "export ATHENA_AGENT=$(shq "$AGENT")"
+  # 여러 팩 — 어느 팩·세대에서 띄웠는지(현황판·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
+  [ -n "${PACK_ID:-}" ] && echo "export ATHENA_PACK_ID=$(shq "$PACK_ID") ATHENA_SWITCH_GEN=$(shq "${PACK_GEN:-0}")"
   [ -n "$EXTRA_FILES" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
   if [ -n "$PROMPT" ]; then
@@ -322,7 +340,9 @@ plan, cwd, branch, pane, agent = sys.argv[1:6]
 def record(text):
     if agent == 'reviewer':
         # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(현황판이 이 pane 도 카드에 붙인다)
-        line = f"- Review: {cwd} · 🌿 {branch} · pane {pane} (reviewer)"
+        # 띄운 시각 — review-wait.sh 가 "이 시각 뒤에 적힌 결론" 을 찾는다(기다리기를 늦게 시작해도 이미 끝난 결론을 놓치지 않게)
+        stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        line = f"- Review: {cwd} · 🌿 {branch} · pane {pane} (reviewer) · 띄움 {stamp}"
         if re.search(r'^- Review:', text, re.M):
             text = re.sub(r'^- Review:.*$', line, text, count=1, flags=re.M)
         elif re.search(r'^- Work ref:.*$', text, re.M):
@@ -344,3 +364,5 @@ update_plan(plan, record)
 PYEOF
 
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
+# reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
+if [ "$AGENT" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi

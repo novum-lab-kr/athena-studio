@@ -143,12 +143,12 @@ for path in sorted(glob.glob(os.path.join(root, '.claude/agents/*.md'))):
     print()
 PY
     echo
-    # 레포·라우팅은 회사 팩(pack/ROUTING.md) — 팩이 없으면 코어 일반 원칙
+    # 레포·라우팅은 팩(pack/ROUTING.md) — 팩이 없으면 코어 일반 원칙
     if [ -f pack/ROUTING.md ]; then cat pack/ROUTING.md; else section AGENTS.md '^### 어느 레포인지 고르기' '^---'; fi
   } | view_md_stdin
 }
 
-# 안내 HTML — 회사 팩에 그 회사 판(pack/guide/<파일>)이 있으면 그것, 없으면 코어 판(docs/<파일>)
+# 안내 HTML — 팩에 그 회사 판(pack/guide/<파일>)이 있으면 그것, 없으면 코어 판(docs/<파일>)
 guide_file() { if [ -f "pack/guide/$1" ]; then echo "pack/guide/$1"; else echo "docs/$1"; fi; }
 act_explained() { local f; f="$(guide_file athena-explained.html)"; open "$f" && echo "브라우저에서 $f(아테나 구조 설명)을 열었습니다."; pause; }
 act_onboarding() { local f; f="$(guide_file onboarding.html)"; open "$f" && echo "브라우저에서 $f(시작하기 가이드)을 열었습니다."; pause; }
@@ -178,7 +178,7 @@ DESCS=(
   ".claude/agents/* · AGENTS.md"
 )
 HELPS=(
-  "아테나가 무엇이고 어떻게 돌아가는지 한 장으로 — 요청부터 PR 까지의 흐름 · 에이전트(레포 담당은 회사 팩) · 안전장치 · 아테나가 아는 것 · 학습 구조, 그리고 오픈소스 Hermes Agent 와 무엇이 다른지. 회사 팩 판이 있으면 pack/guide/, 없으면 docs/ 의 athena-explained.html 을 기본 브라우저에서 연다"
+  "아테나가 무엇이고 어떻게 돌아가는지 한 장으로 — 요청부터 PR 까지의 흐름 · 에이전트(레포 담당은 팩) · 안전장치 · 아테나가 아는 것 · 학습 구조, 그리고 오픈소스 Hermes Agent 와 무엇이 다른지. 팩 판이 있으면 pack/guide/, 없으면 docs/ 의 athena-explained.html 을 기본 브라우저에서 연다"
   "처음 받는 팀원용 시작하기 가이드(준비물 · 설치 · 처음 써 보기 · 현황판 · 학습 · 꼭 지킬 것 · 막힐 때)를 기본 브라우저에서 연다. 원본은 ONBOARDING.md"
   "플레이북 HTML(팩 판이 있으면 pack/guide/playbook.html, 없으면 docs/playbook.html)을 기본 브라우저에서 연다 — 팀 구성·라우팅·커맨드·작업 흐름·아테나가 아는 것·FAQ"
   "다이어그램 목록을 브라우저로 연다. 아테나 작업 흐름 두 장(경량 — 대부분의 작업 / 정식 — 여러 레포·결정 콘솔, 단계별 규칙이 카드에 들어 있다)과 담당 서비스를 세 각도로 본 다이어그램이 있다 — 구조 / 화면 맵 / 요청 흐름(일부 서비스는 화면 전수를 담은 심층 추가). 노드를 클릭하면 상세가 뜨고 SRC 배지가 붙은 노드는 실제 파일 경로를 가리킨다. Archify 로 만들며 원본은 docs/diagrams/*.json (브라우저)"

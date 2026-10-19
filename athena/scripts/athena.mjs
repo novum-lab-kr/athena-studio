@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * athena — 코어와 회사 팩을 잇는 명령
+ * athena — 코어와 팩을 잇는 명령
  *
  *   athena pack link      팩 파일을 코어의 정해진 자리에 링크로 건다(이미 건 것은 다시 맞춘다)
  *   athena pack unlink    팩을 가리키는 링크를 모두 지운다
@@ -9,6 +9,29 @@
  *                         팩 폴더를 날짜 붙은 압축 파일 하나로(기본 ~/athena-pack-backups · .env*·키 파일·node_modules 는 뺀다)
  *   athena pack restore <파일>
  *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
+ *
+ *   여러 팩 — 팩마다 본체(팩은 <데이터>/packs/<id> · 본체 ~/athena-<id> · docs/pack.md "여러 팩" · 약속은 계획서 팩마다-본체 5.7)
+ *   --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON. 스튜디오는 --contract 2 를 붙인다(다르면 contract-mismatch)
+ *   athena pack list|status|busy [--json]          팩 목록(본체·포트·busy) · 이 본체의 팩 · 이 본체에서 도는 작업
+ *   athena pack open <id> [--json]                 그 팩 본체를 준비(없으면 git 워크트리로 만들기)하고 경로·포트를 돌려준다
+ *   athena pack use <id> [--start-board] [--json]  = pack open(활성 링크는 바꾸지 않는다 · --json 이면 --contract 2 필요)
+ *   athena pack new [--json]                       빈 팩 자리 + 그 본체 → 그 본체에서 claude 를 켜면 /setup(--json 이면 --contract 2 필요)
+ *   athena pack discard <id> [--json]              /setup 전 빈 자리와 그 본체를 지운다
+ *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
+ *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
+ *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
+ *   athena update [--to <커밋>] [--json]           주 본체에서 fetch 한 번 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
+ *   athena update --rollback [<operationId>] [--json]  그 업데이트가 바꾼 본체만 이전 커밋으로
+ *   athena pack inspect <파일|폴더|git 주소> --json  임시 위치에서 검사만 → token
+ *   athena pack import <token> --new|--replace|--keep [--json]
+ *   athena pack import-athena <옛 아테나 폴더> --json  팩 + 계획서·이슈를 임시본으로(원본은 그대로) → pack import <token>
+ *   athena pack export --out <폴더> [--json]        지금 팩만 · 허용 목록
+ *   athena pack backup --with-work [--out <폴더>] [--json] · athena pack restore --with-work <파일> [--new|--replace] [--json]
+ *   athena pack board-token --json                 떠 있는 현황판의 쓰기 토큰·포트
+ *   athena pack migrate [--yes] [--json]           옛 구조 본체를 여러 팩 구조로(--yes 없으면 계획만)
+ *   athena pack test-setup [--json]                테스트 데이터(ATHENA_DATA_DIR · 이름에 test)를 지우고 fixture 팩 acme·globex 등록
+ *
+ *   athena version [--json]                          이 본체 코어 커밋 · 약속 번호(contract) · 데이터 형식 범위 · 배포 커밋 — 스튜디오가 맞는지 본다
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
  *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
@@ -21,38 +44,31 @@
  * (커밋되는 .gitignore 에 회사 경로를 적지 않는다). Claude Code 가 정해진 자리에서만 찾는 것(.claude/agents·skills)과
  * 스크립트가 고정 경로로 읽는 것(docs/knowledge/<레포>·scripts/verify/<레포>.sh·archive …)을 링크로 잇는다.
  */
-import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
+import { execFileSync, spawnSync } from 'node:child_process'
+import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
-import { ATHENA_ROOT, loadConfig } from './lib/config.mjs'
+import { ATHENA_ROOT, boardPort, loadConfig, paths } from './lib/config.mjs'
+import { setDisplayName, setIcon } from './lib/pack-look.mjs'
+import { CONTRACT, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { initPack, scaffold, scanRepos } from './lib/init.mjs'
+import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
+import {
+  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate,
+  packStatus, relinkBody, renameNewSlot, restoreWithWork, testSetup,
+} from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
 
 const ROOT = ATHENA_ROOT
 const [command, sub] = process.argv.slice(2)
 
-// 팩 안 경로 → 코어 자리. each = 그 폴더의 항목마다 링크(코어 폴더에 코어 파일과 섞여 있다), whole = 폴더째 링크
-const OVERLAY = [
-  { from: 'agents', to: '.claude/agents', each: true },
-  { from: 'skills', to: '.claude/skills', each: true },
-  { from: 'knowledge', to: 'docs/knowledge', each: true },
-  { from: 'docs', to: 'docs', each: true },
-  { from: 'diagrams', to: 'docs/diagrams', each: true },
-  { from: 'verify', to: 'scripts/verify', each: true },
-  { from: 'scripts', to: 'scripts', each: true },
-  { from: 'qa/docs', to: 'docs/qa' },
-  { from: 'qa/routes', to: 'scripts/qa/routes' },
-  { from: 'qa/scenarios', to: 'scripts/qa/scenarios' },
-  { from: 'sync', to: '.sync' },
-  { from: 'archive', to: 'archive' },
-]
-
 // 이 컴퓨터 설정 — 새 회사는 아직 없을 수 있다(athena init 이 만든다)
 const local = existsSync(join(ROOT, 'athena.config.json')) ? JSON.parse(readFileSync(join(ROOT, 'athena.config.json'), 'utf8')) : {}
+// 지금 팩 폴더 — 여러 팩 구조면 본체의 pack(활성 팩), 옛 구조면 athena.config.json 의 pack
 const packDir = () => {
-  if (!local.pack) fail('athena.config.json 에 pack 이 없다 — 팩 없이 쓰는 중')
-  const dir = resolve(ROOT, local.pack)
+  const where = paths(ROOT)
+  const dir = where.packDir
+  if (!dir) fail('athena.config.json 에 pack 이 없다 — 팩 없이 쓰는 중')
   if (!existsSync(join(dir, 'pack.json'))) fail(`팩이 없다: ${dir}/pack.json`)
   return dir
 }
@@ -60,105 +76,21 @@ function fail(message) {
   console.error(`❌ ${message}`)
   process.exit(1)
 }
-const isLink = (path) => { try { return lstatSync(path).isSymbolicLink() } catch { return false } }
-const pointsInto = (link, dir) => { try { return realpathSync(link).startsWith(realpathSync(dir) + '/') || realpathSync(link) === realpathSync(dir) } catch { return false } }
 
-// 코어 자리 → 팩 실제 경로 쌍
-const plannedLinks = (pack) => {
-  const links = [{ at: 'pack', target: pack }]
-  for (const { from, to, each } of OVERLAY) {
-    const source = join(pack, from)
-    if (!existsSync(source)) continue
-    if (!each) { links.push({ at: to, target: source }); continue }
-    for (const name of readdirSync(source)) {
-      if (name === '.DS_Store') continue
-      links.push({ at: join(to, name), target: join(source, name) })
-    }
-  }
-  return links
-}
-
-// .git/info/exclude 는 워크트리들이 같이 쓴다(git common dir) — 체크아웃마다 자기 구간(경로로 표시)만 바꾼다.
-// 남의 체크아웃 구간은 그대로 두고(그 체크아웃의 팩 링크 목록이다), 폴더가 사라진 체크아웃의 구간과 옛 표시(경로 없는 구간)는 치운다
-const EXCLUDE_START = '# >>> athena pack links (athena pack link 가 관리)'
-const EXCLUDE_END = '# <<< athena pack links'
-const writeExclude = (paths) => {
-  let gitDir
-  try { gitDir = execFileSync('git', ['-C', ROOT, 'rev-parse', '--git-common-dir'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return }   // git 레포가 아니면(복사본) 건너뛴다
-  const file = resolve(ROOT, gitDir, 'info', 'exclude')
-  // 무시 경로는 git 루트 기준이다 — 아테나가 다른 레포 안(예: 스튜디오 레포의 athena/ subtree)이면 그 앞자리를 붙인다
-  const prefix = execFileSync('git', ['-C', ROOT, 'rev-parse', '--show-prefix'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
-  mkdirSync(dirname(file), { recursive: true })
-  const before = existsSync(file) ? readFileSync(file, 'utf8') : ''
-  // 표시 문자열의 괄호를 정규식으로 escape 한다
-  const escape = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-  const section = new RegExp(`\\n?${escape(EXCLUDE_START)}( · (.+))?\\n[\\s\\S]*?${escape(EXCLUDE_END)}\\n?`, 'g')
-  const kept = before.replace(section, (whole, _, owner) => (owner && owner !== ROOT && existsSync(owner) ? whole : '\n')).replace(/\n+$/, '')
-  const block = paths.length ? `\n${EXCLUDE_START} · ${ROOT}\n${paths.map((path) => `/${prefix}${path}`).join('\n')}\n${EXCLUDE_END}\n` : '\n'
-  writeFileSync(file, `${kept}${block}`)
-}
-
-// 지금 팩이 아닌 팩(packs/…)을 가리키는 링크 — 팩을 바꾸면 옛 팩 링크가 남는다
-const packLinks = () => {
-  const found = []
-  const walk = (dir, depth) => {
-    for (const name of readdirSync(dir)) {
-      if (['.git', 'node_modules', 'repos', '.worktrees', 'packs'].includes(name)) continue
-      const path = join(dir, name)
-      if (isLink(path)) {
-        if (readlinkSync(path).includes('packs/') || pointsInto(path, join(ROOT, 'packs'))) found.push(relative(ROOT, path))
-      } else if (depth < 3 && lstatSync(path).isDirectory()) walk(path, depth + 1)
-    }
-  }
-  walk(ROOT, 0)
-  return found
-}
-
+// 팩 파일을 코어 자리에 링크로(scripts/lib/overlay.mjs)
 const link = () => {
   const pack = packDir()
-  const planned = plannedLinks(pack)
-  // 먼저 다 살펴본다 — 코어 파일과 이름이 겹치는 게 하나라도 있으면 아무것도 바꾸지 않고 멈춘다(반만 링크된 상태를 남기지 않게)
-  const clash = planned.filter(({ at }) => !isLink(join(ROOT, at)) && existsSync(join(ROOT, at))).map(({ at }) => at)
-  if (clash.length) {
-    console.log(`🔗 팩 ${relative(ROOT, pack)} — ⚠️ 코어에 같은 이름의 실제 파일이 있어 아무것도 링크하지 않았다(${clash.length}개)`)
-    for (const at of clash) console.log(`   ⚠️ ${at}`)
+  const result = linkOverlay(ROOT)
+  if (result.clash.length) {
+    console.log(`🔗 팩 ${relative(ROOT, pack)} — ⚠️ 코어에 같은 이름의 실제 파일이 있어 아무것도 링크하지 않았다(${result.clash.length}개)`)
+    for (const at of result.clash) console.log(`   ⚠️ ${at}`)
     process.exit(1)
   }
-  const made = []; const kept = []
-  for (const { at, target } of planned) {
-    const path = join(ROOT, at)
-    const want = relative(dirname(path), target)
-    if (isLink(path)) {
-      if (readlinkSync(path) === want) { kept.push(at); continue }
-      rmSync(path)
-    }
-    mkdirSync(dirname(path), { recursive: true })
-    symlinkSync(want, path)
-    made.push(at)
-  }
-  // 팩을 바꿨으면 옛 팩 링크가 남는다 — 이번 목록에 없는 팩 링크는 지운다
-  const wanted = new Set(planned.map(({ at }) => at))
-  const stale = packLinks().filter((at) => !wanted.has(at))
-  for (const at of stale) rmSync(join(ROOT, at))
-  writeExclude([...made, ...kept])
-  console.log(`🔗 팩 ${relative(ROOT, pack)} — 새로 ${made.length} · 그대로 ${kept.length}${stale.length ? ` · 옛 팩 링크 지움 ${stale.length}` : ''}`)
+  console.log(`🔗 팩 ${relative(ROOT, pack)} — 새로 ${result.made.length} · 그대로 ${result.kept.length}${result.stale.length ? ` · 옛 팩 링크 지움 ${result.stale.length}` : ''}`)
 }
 
 const unlink = () => {
-  const pack = local.pack ? resolve(ROOT, local.pack) : null
-  let removed = 0
-  const walk = (dir, depth) => {
-    for (const name of readdirSync(dir)) {
-      if (['.git', 'node_modules', 'repos', '.worktrees', 'packs'].includes(name)) continue
-      const path = join(dir, name)
-      if (isLink(path)) {
-        if (pack && (pointsInto(path, pack) || readlinkSync(path).includes('packs/'))) { rmSync(path); removed += 1 }
-      } else if (depth < 3 && lstatSync(path).isDirectory()) walk(path, depth + 1)
-    }
-  }
-  walk(ROOT, 0)
-  writeExclude([])
-  console.log(`🔗 팩 링크 ${removed}개를 지웠다`)
+  console.log(`🔗 팩 링크 ${unlinkOverlay(ROOT)}개를 지웠다`)
 }
 
 // 코어 파일(git 추적 + 미추적, 링크·팩 제외)에서 팩 names 를 찾는다
@@ -171,7 +103,7 @@ const check = () => {
   const files = execFileSync('git', ['-C', ROOT, 'ls-files', '-co', '--exclude-standard', '-z'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
     .split('\0').filter(Boolean)
     // athena.config.json 은 이 컴퓨터 설정(팩 경로가 들어 있다 — 코어 레포에는 예시만 둔다)
-    .filter((file) => file !== 'athena.config.json' && !file.startsWith('packs/') && !isLink(join(ROOT, file)) && !file.split('/').some((part, index, parts) => isLink(join(ROOT, ...parts.slice(0, index + 1)))))
+    .filter((file) => file !== 'athena.config.json' && !file.startsWith('packs/') && !file.startsWith('test/fixtures/') && !isLink(join(ROOT, file)) && !file.split('/').some((part, index, parts) => isLink(join(ROOT, ...parts.slice(0, index + 1)))))
   const hits = []
   for (const file of files) {
     let text
@@ -219,7 +151,10 @@ const init = () => {
     const { pack, entries } = initPack({ athenaRoot: ROOT, company, repos: chosen, names: (flag('names') || '').split(',').filter(Boolean), org, reposRoot: root })
     console.log(`📦 팩 ${relative(ROOT, pack)} — 레포 ${entries.length}개${org ? ` · GitHub ${org}` : ' · ⚠️ GitHub 조직 모름(--org)'}`)
   } catch (error) { fail(error.message) }
-  Object.assign(local, JSON.parse(readFileSync(join(ROOT, 'athena.config.json'), 'utf8')))
+  if (existsSync(join(ROOT, 'athena.config.json'))) Object.assign(local, JSON.parse(readFileSync(join(ROOT, 'athena.config.json'), 'utf8')))
+  // 여러 팩 구조 — pack new 로 만든 빈 자리(new-…)면 자리 이름을 회사 이름으로
+  const renamed = renameNewSlot(ROOT, company)
+  if (renamed) console.log(`📁 팩 자리 이름: ${renamed}`)
   link()
 }
 
@@ -235,7 +170,15 @@ const runScaffold = () => {
 // 비밀값이 들 수 있는 파일은 담지 않는다 — 팩에 원래 두지 않는 것들이지만 실수로 있어도 백업 파일로 새지 않게.
 // .git 도 뺀다(팩이 git 레포면 설정의 인증 정보·과거 커밋의 값이 남을 수 있다 — 그런 팩은 원격으로 백업한다). Codex 리뷰 2026-10-17
 const BACKUP_EXCLUDES = ['.env*', '*.key', '*.pem', '*.p12', '.npmrc', '.netrc', '.git', 'node_modules', '.DS_Store', '.omc']
+// 여러 팩 구조에서는 옛 backup·restore 를 쓰지 않는다 — pack 은 링크라 압축에 링크 하나만 담기고, restore 는 본체 설정에 pack 을 다시 쓴다(리뷰 2026-10-18)
+const packsModeOnly = (what) => {
+  if (paths(ROOT).mode !== 'packs') return
+  fail(`여러 팩 구조에서는 ${what} 를 쓰지 않는다 — ${what === 'pack backup'
+    ? '팩만: bin/athena pack export --out <폴더> · 팩 + 작업 기록: bin/athena pack backup --with-work [--out <폴더>]'
+    : '팩 압축·폴더: bin/athena pack inspect <파일> → bin/athena pack import <token> --new · 작업 기록 백업: bin/athena pack restore --with-work <파일>'} (docs/pack.md "여러 팩")`)
+}
 const backup = () => {
+  packsModeOnly('pack backup')
   const dir = packDir()
   const out = resolve(flag('out') || join(homedir(), 'athena-pack-backups'))
   mkdirSync(out, { recursive: true })
@@ -252,6 +195,7 @@ const backup = () => {
   console.log('   되살리기: bin/athena pack restore <이 파일>')
 }
 const restore = () => {
+  packsModeOnly('pack restore')
   const file = resolve(process.argv[4] || fail('사용: athena pack restore <백업 파일>'))
   if (!existsSync(file)) fail(`백업 파일이 없다: ${file}`)
   const entries = execFileSync('tar', ['-tzf', file], { encoding: 'utf8' }).split('\n').filter(Boolean)
@@ -273,17 +217,135 @@ const restore = () => {
     console.log('   athena.config.json 의 pack 을 이 팩으로 — 링크를 건다')
     link()
   } else if (local.pack !== `packs/${name}`) {
-    console.log(`   지금 쓰는 팩은 ${local.pack} — 바꾸려면 athena.config.json 의 pack 을 packs/${name} 로 고치고 bin/athena pack link`)
+    console.log(`   지금 쓰는 팩은 ${local.pack} — 갈아 끼우려면 athena.config.json 의 pack 을 packs/${name} 로 고치고 bin/athena pack link`)
   }
 }
 
+// ── 여러 팩 명령 — --json: progress 줄 + 마지막 줄 JSON · 실패 1({ ok:false, error, message }) · 사용법 오류 2 ──────────
+const asJson = args.includes('--json')
+const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
+// args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id'].includes(rest[index - 1])))
+// 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
+// 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다(결정 D9 · Codex C5)
+const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
+const checkContract = (name) => {
+  const mismatch = (why) => new PackError('contract-mismatch', `스튜디오 약속이 다르다(${why}) — 이 코어는 약속 ${CONTRACT}. 스튜디오를 먼저 업데이트한다`, { contract: CONTRACT })
+  if (contractArg && Number(contractArg) !== CONTRACT) throw mismatch(`받은 약속 ${contractArg}`)
+  if (asJson && !contractArg && ['use', 'new'].includes(name)) throw mismatch('약속 번호 없음 — 팩마다 본체 전 스튜디오')
+}
+const human = {
+  list: (result) => {
+    if (result.legacy && result.current) console.log('옛 구조 본체(athena.config.json 의 pack) — 여러 팩으로 옮기려면 bin/athena pack migrate')
+    console.log(`이 본체의 팩: ${result.current ? `${result.current.id} (${result.current.name} · 세대 ${result.current.generation})` : '없음'}${result.switching ? ' · ⏳ 작업 중' : ''}`)
+    for (const pack of result.packs) {
+      const where = pack.body ? `${pack.body} · :${pack.boardPort}${pack.bodyBusy ? ' · 🔨 일하는 중' : ''}${pack.updatePending ? ' · ⬆️ 업데이트 대기' : ''}${pack.bodyState === 'repair-required' ? ' · ⚠️ 링크 고치기 필요' : ''}` : (pack.bodyState === 'missing' ? '본체 폴더 없음' : '본체 없음(pack open)')
+      console.log(`  ${result.current?.id === pack.id ? '▶' : ' '} ${pack.id.padEnd(20)} ${pack.name} · 레포 ${pack.repos} · ${pack.hasWork ? '작업 기록 있음' : '작업 기록 없음'} · ${where}`)
+    }
+    for (const slot of result.emptySlots ?? []) console.log(`    ${slot.id.padEnd(20)} (빈 자리 · /setup 전${slot.body ? ` · ${slot.body}` : ''} — 버리려면 pack discard ${slot.id})`)
+  },
+  busy: (result) => { if (!result.busy.length) console.log(result.busyKnown === false ? '도는 작업을 다 읽지 못했다' : '이 본체에서 도는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
+  version: (result) => console.log(`코어 ${result.core ? result.core.slice(0, 7) : '(git 아님)'}${result.dirty ? ' (미커밋 변경)' : ''} · 약속 ${result.contract} · 데이터 형식 ${result.dataFormats.join('~')} · 본체 ${result.body}${result.deploy ? ` · 배포 ${result.deploy.commit.slice(0, 7)}` : ''}`),
+  update: (result) => {
+    console.log(`${result.status === 'complete' ? '✅' : '⚠️'} ${result.rollbackOf ? `되돌리기(${result.rollbackOf})` : `업데이트 → ${result.targetCore?.slice(0, 7)}`} · ${result.status} · ${result.operationId}`)
+    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}`)
+  },
+}
+const runPack = async (name, work) => {
+  try {
+    checkContract(name)
+    const result = await work()
+    if (asJson) console.log(JSON.stringify(result))
+    else if (human[name]) human[name](result)
+    else console.log(JSON.stringify(result, null, 2))
+    process.exit(result.ok === false ? 1 : 0)
+  } catch (error) {
+    const code = error instanceof PackError ? error.code : 'failed'
+    if (code === 'usage') { console.error(error.message); process.exit(2) }
+    const body = { ok: false, error: code, message: error.message, ...(error.extra ?? {}) }
+    if (asJson) console.log(JSON.stringify(body))
+    else console.error(`❌ ${error.message}${error.extra?.busy ? `\n${error.extra.busy.map((item) => `   - ${item.what}`).join('\n')}` : ''}`)
+    process.exit(1)
+  }
+}
+// pack use --start-board · CLI 용 — 연 본체의 현황판을 띄운다(스튜디오는 자기가 띄운다). 포트는 그 본체가 정한다
+const startBoard = (body) => {
+  const env = { ...process.env, ATHENA_BOARD_NO_BROWSER: '1' }
+  delete env.ATHENA_BOARD_PORT
+  return spawnSync(join(body, 'scripts', 'board.sh'), [], { stdio: asJson ? 'ignore' : 'inherit', env }).status === 0
+}
+
+const packCommands = {
+  list: () => listPacks(ROOT),
+  status: () => packStatus(ROOT),
+  busy: () => busyNow(ROOT),
+  use: async () => {
+    const id = positional()[0]
+    if (!id) throw new PackError('usage', '사용: athena pack use <id> [--start-board] [--json]')
+    const result = await useAsOpen(ROOT, id, { report })
+    if (args.includes('--start-board')) result.boardStarted = startBoard(result.body) ? result.boardPort : null
+    return result
+  },
+  open: async () => {
+    const id = positional()[0]
+    if (!id) throw new PackError('usage', '사용: athena pack open <id> [--json]')
+    return openPack(ROOT, id, { report })
+  },
+  new: () => newPackBody(ROOT, { report }),
+  discard: () => {
+    if (!positional()[0]) throw new PackError('usage', '사용: athena pack discard <id> [--json]')
+    return discardPack(ROOT, positional()[0], { report })
+  },
+  // 본체 안에서 — update 뒤 새 코드로 · pack open 의 고치기. 시험용: ATHENA_RELINK_FAIL_AT=<커밋> 이면 그 커밋에서 실패
+  relink: () => {
+    const failAt = process.env.ATHENA_RELINK_FAIL_AT
+    if (failAt && (headOf(ROOT) ?? '').startsWith(failAt)) throw new PackError('verify-failed', `시험용 실패(ATHENA_RELINK_FAIL_AT=${failAt})`)
+    return relinkBody(ROOT)
+  },
+  'set-name': () => {
+    const clear = args.includes('--clear')
+    if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-name <이름>|--clear [--id <팩>] [--json]')
+    return setDisplayName(paths(ROOT), { id: flag('id'), name: positional().join(' '), clear })
+  },
+  'set-icon': () => {
+    const clear = args.includes('--clear')
+    if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-icon <이미지 파일>|--clear [--id <팩>] [--json]')
+    return setIcon(paths(ROOT), { id: flag('id'), file: clear ? '' : resolve(positional()[0]), clear })
+  },
+  attach: () => {
+    if (!positional()[0]) throw new PackError('usage', '사용: athena pack attach <id> [--json]')
+    return attachPack(ROOT, positional()[0], { report, allowEmpty: true })
+  },
+  inspect: () => inspectSource(ROOT, positional()[0], { report }),
+  import: () => {
+    const mode = ['keep', 'replace', 'new'].find((name) => args.includes(`--${name}`))
+    if (!positional()[0] || !mode) throw new PackError('usage', '사용: athena pack import <token> --new|--replace|--keep [--json]')
+    return importToken(ROOT, positional()[0], mode, { report })
+  },
+  'import-athena': () => inspectAthena(ROOT, positional()[0], { report }),
+  export: () => exportPack(ROOT, flag('out')),
+  'board-token': () => boardToken(ROOT),
+  migrate: () => migrate(ROOT, { yes: args.includes('--yes'), report }),
+  'test-setup': () => testSetup(ROOT, { report }),
+}
+
 if (command === 'init') init()
+else if (command === 'version') runPack('version', () => versionInfo(ROOT))
+else if (command === 'update') {
+  // update --rollback [<operationId>] — --rollback 바로 뒤가 --… 가 아니면 그 값이 operationId
+  const rollback = args.includes('--rollback')
+  const operationId = rollback ? (flag('rollback').startsWith('--') ? '' : flag('rollback')) : ''
+  runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), report })))
+}
 else if (command === 'scaffold') runScaffold()
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()
 else if (command === 'pack' && sub === 'check') check()
+else if (command === 'pack' && sub === 'backup' && args.includes('--with-work')) runPack('backup', () => backupWithWork(ROOT, flag('out')))
+else if (command === 'pack' && sub === 'restore' && args.includes('--with-work')) runPack('restore', () => restoreWithWork(ROOT, positional()[0], ['replace', 'new'].find((name) => args.includes(`--${name}`)), { report }))
 else if (command === 'pack' && sub === 'backup') backup()
 else if (command === 'pack' && sub === 'restore') restore()
+else if (command === 'pack' && packCommands[sub]) runPack(sub, packCommands[sub])
 else {
   console.log(readFileSync(new URL(import.meta.url), 'utf8').match(/\/\*\*([\s\S]*?)\*\//)[1].replace(/^ \* ?/gm, '').trim())
   process.exit(command ? 2 : 0)

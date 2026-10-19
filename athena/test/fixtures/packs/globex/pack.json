@@ -1,0 +1,11 @@
+{
+  "$comment": "테스트 fixture 팩(가짜 회사) — docs/pack.md \"여러 팩 테스트\". names 는 코어 문서에 나오지 않는 문자열이라 pack check 에 걸리지 않는다",
+  "formatVersion": 1,
+  "id": "globex-9d3e7c41",
+  "name": "Globex",
+  "names": ["globexfixture-co"],
+  "repos": [
+    { "name": "globex-shop", "agents": ["globex-shop-fe"], "branch": "main", "prBase": "main", "kind": "single" },
+    { "name": "globex-admin", "agents": ["globex-admin-fe"], "branch": "main", "prBase": "main", "kind": "single" }
+  ]
+}

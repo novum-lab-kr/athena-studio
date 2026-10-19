@@ -23,7 +23,7 @@ import { createInterface } from 'node:readline'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
-import { githubOrg, loadConfig, prLinkPattern } from './lib/config.mjs'
+import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
@@ -32,8 +32,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
 // 체크아웃마다 따로 — 아테나를 두 곳에 받아 두면(회사별) 한 대기열을 섞어 쓰지 않게 체크아웃 경로의 해시를 이름에 붙인다
 const REAL_ROOT = realpathSync(ROOT)
-const ROOT_KEY = createHash('sha1').update(REAL_ROOT).digest('hex').slice(0, 8)
-const QUEUE_DIR = process.env.ATHENA_LEARN_QUEUE || `/tmp/hermes-learn-queue-${ROOT_KEY}`
+// 여러 팩 — 대기열은 팩마다(<팩 데이터>/state/learn-queue · 실제 경로). 이 팩의 세대가 바뀌면(팩 교체 등) 이 프로세스는 옛 설정이라 끝낸다
+const BOOT_PATHS = paths(ROOT)
+const PACK_KEY = BOOT_PATHS.mode === 'packs' ? `:${BOOT_PATHS.packId}` : ''
+const ROOT_KEY = createHash('sha1').update(REAL_ROOT + PACK_KEY).digest('hex').slice(0, 8)
+const QUEUE_DIR = process.env.ATHENA_LEARN_QUEUE || (BOOT_PATHS.mode === 'packs' ? join(BOOT_PATHS.packDataReal, 'state', 'learn-queue') : `/tmp/hermes-learn-queue-${ROOT_KEY}`)
+const packChanged = () => {
+  if (BOOT_PATHS.mode !== 'packs') return false
+  const now = paths(ROOT)
+  return now.packId !== BOOT_PATHS.packId || now.generation !== BOOT_PATHS.generation
+}
 // 검토 pane 은 하나 — mkdir 잠금(안에 pid). 실패한 일은 지우지 않고 failed/ 에 남긴다(MAX_ATTEMPTS 번 다시 해 본 뒤)
 const WATCHER_LOCK = join(QUEUE_DIR, '.watcher.lock')
 const FAILED_DIR = join(QUEUE_DIR, 'failed')
@@ -51,11 +59,13 @@ const option = (name) => {
 }
 const flag = (name) => argv.includes(`--${name}`)
 
-// 첫 실행 전(회사 팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
+// 첫 실행 전(팩을 아직 안 만듦 — athena.config.json 없음)에 세션 시작이 이 pane 을 띄우면 죽지 말고 기다린다.
 // 설정이 생기면 같은 인자로 다시 시작한다(설정은 모듈을 읽을 때 한 번만 읽으므로)
-if (flag('watch') && !existsSync(join(ROOT, 'athena.config.json'))) {
-  console.log('📚 배우기 검토 — 회사 팩이 아직 없다. 첫 실행(/setup)이 끝나면 저절로 시작한다')
-  while (!existsSync(join(ROOT, 'athena.config.json'))) await new Promise((done) => setTimeout(done, 10_000))
+// (여러 팩 구조의 빈 팩 자리 — pack new 직후 — 도 같다: pack.json 이 생길 때까지)
+const configReady = () => { try { loadConfig(ROOT); return true } catch { return false } }
+if (flag('watch') && !configReady()) {
+  console.log('📚 배우기 검토 — 팩이 아직 없다. 첫 실행(/setup)이 끝나면 저절로 시작한다')
+  while (!configReady()) { if (packChanged()) process.exit(0); await new Promise((done) => setTimeout(done, 10_000)) }
   const child = spawnSync(process.execPath, process.argv.slice(1), { stdio: 'inherit' })
   process.exit(child.status ?? 1)
 }
@@ -534,7 +544,7 @@ const enqueue = (planArg, head) => {
   // 같은 계획서·표시가 이미 기다리거나 도는 중이면 또 넣지 않는다(현황판이 다시 켜지면 같은 걸 또 넣을 수 있다)
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('📚 이미 배우기 검토 대기열에 있다')
   const id = `${Date.now()}-${digest}`
-  writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, attempts: 0 }))
+  writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, ...(BOOT_PATHS.packId ? { packId: BOOT_PATHS.packId, generation: BOOT_PATHS.generation } : {}), attempts: 0 }))
   if (watcherAlive()) return console.log('📚 배우기 검토 대기열에 넣었다 — "📚 배우기 검토" pane 이 차례로 처리한다')
   // 방금(30초 안) 다른 요청이 pane 을 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 잠금이 생기기 전 틈.
   // 표시 파일은 없을 때만 만든다(wx — 둘이 동시에 만들지 못한다). 오래된 표시는 치우고 다시
@@ -593,6 +603,8 @@ const watch = async () => {
   console.log('📚 배우기 검토 — 대기열을 기다린다(내 작업의 PR 이 머지되면 현황판이 넣는다). 끄려면 Ctrl-C')
   const readJob = (file) => { try { return JSON.parse(readFileSync(join(QUEUE_DIR, file), 'utf8')) } catch { return {} } }
   for (;;) {
+    // 팩을 갈아 끼웠으면 끝낸다 — 이 프로세스의 설정·계획서 읽기는 이전 팩 것이다(새 팩은 세션 시작·현황판이 다시 띄운다)
+    if (packChanged()) { console.log('📚 팩을 갈아 끼워 배우기 검토를 끝낸다'); process.exit(0) }
     // 다시 해 볼 시각(notBefore)이 안 된 일은 건너뛴다
     const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort().find((file) => !(readJob(file).notBefore > Date.now()))
     if (!next) {
@@ -604,8 +616,12 @@ const watch = async () => {
     let job = {}
     try {
       job = JSON.parse(readFileSync(working, 'utf8'))
-      // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다
-      if (job.root && job.root !== REAL_ROOT) {
+      // 다른 체크아웃이 넣은 일 — 이 체크아웃의 계획서·팩으로 읽으면 엉뚱한 작업을 배운다.
+      // 여러 팩 구조는 대기열이 팩 데이터 안이라 팩이 같으면 내 일이다 — 팩을 새 본체로 옮겨도(팩마다-본체 · Codex C9) 이어서 한다
+      const foreign = BOOT_PATHS.packId && job.packId
+        ? job.packId !== BOOT_PATHS.packId
+        : Boolean(job.root && job.root !== REAL_ROOT)
+      if (foreign) {
         job.foreign = true
         throw new Error(`다른 체크아웃(${job.root})의 일이다`)
       }

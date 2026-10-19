@@ -52,8 +52,9 @@ done
 fail() { echo "❌ 보내지 않았다: $*" >&2; exit 1; }
 
 [ -n "$PLAN" ] && [ -n "$DIR" ] || { echo "사용: $0 --plan <plans/…md> --dir <워크트리> [--base … --title … --yes]" >&2; exit 2; }
-case "$PLAN" in /*) [ -d "$(dirname "$PLAN")" ] && PLAN="$(cd "$(dirname "$PLAN")" && pwd -P)/$(basename "$PLAN")" ;; esac   # 옛 경로(~/…/hermes 링크)로 와도 실제 경로로 맞춘 뒤 자른다
-PLAN="${PLAN#"$ATHENA_DIR"/}"
+# 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
+. "$ATHENA_DIR/scripts/lib/plan-path.sh"
+PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 [ -f "$ATHENA_DIR/$PLAN" ] && case "$PLAN" in plans/*.md) true ;; *) false ;; esac || fail "계획서가 없다: $PLAN"
 command -v gh >/dev/null 2>&1 || fail "gh CLI 가 없다"
 

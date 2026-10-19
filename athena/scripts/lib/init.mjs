@@ -3,8 +3,10 @@
 //   initPack    고른 레포로 빈 팩(pack.json · ROUTING.md · 폴더)과 athena.config.json 을 만든다
 //   scaffold    pack.json 의 레포마다 에이전트 프로필 · 지식 뼈대(rules·structure·gotchas) · 검증 스크립트를 템플릿으로 만든다(있는 파일은 건드리지 않는다)
 import { execFileSync } from 'node:child_process'
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
+import { paths } from './config.mjs'
 
 const git = (dir, args) => {
   try { return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
@@ -123,7 +125,7 @@ const routingDoc = (company, repos) => {
   })
   return `# ${company} 팩 — 담당 레포·에이전트·라우팅
 
-> 회사 팩의 라우팅 정본. 코어 문서는 회사 레포를 모르고 이 문서를 가리킨다(\`pack/ROUTING.md\`). 기계 정본은 \`pack.json\`.
+> 팩의 라우팅 정본. 코어 문서는 회사 레포를 모르고 이 문서를 가리킨다(\`pack/ROUTING.md\`). 기계 정본은 \`pack.json\`.
 > \`athena init\` 이 만든 뼈대 — "확인 필요" 는 /setup 이 레포 코드를 읽고 채운다.
 
 ## 1. 담당 레포와 기준 브랜치
@@ -161,12 +163,15 @@ const repoPaths = (current, repos) => {
 
 // 고른 레포(스캔 결과 + 에이전트 이름)로 팩을 만든다
 export const initPack = ({ athenaRoot, company, repos, names = [], org = '', reposRoot = '..' }) => {
-  const packRel = `packs/${company}`
-  const pack = resolve(athenaRoot, packRel)
+  // 여러 팩 구조(활성 링크 .pack-data)면 지금 팩 자리(pack/)에 만들고, 이 컴퓨터 설정은 <팩 데이터>/local.json 에 쓴다
+  const where = paths(athenaRoot)
+  const packsMode = where.mode === 'packs'
+  const packRel = packsMode ? 'pack' : `packs/${company}`
+  const pack = packsMode ? where.packDataReal + '/pack' : resolve(athenaRoot, packRel)
   if (existsSync(join(pack, 'pack.json'))) throw new Error(`이미 팩이 있다: ${packRel}/pack.json`)
-  const configPath = join(athenaRoot, 'athena.config.json')
+  const configPath = packsMode ? join(where.packDataReal, 'local.json') : join(athenaRoot, 'athena.config.json')
   const current = readJson(configPath)
-  if (current?.pack) throw new Error(`athena.config.json 이 이미 팩(${current.pack})을 가리킨다`)
+  if (!packsMode && current?.pack) throw new Error(`athena.config.json 이 이미 팩(${current.pack})을 가리킨다`)
   const entries = repos.map((repo) => {
     // 기본 에이전트 이름 — 사용자가 고친 값(agents · appsSpec · packagesAgent)이 있으면 그것
     const defaults = defaultAgents(repo)
@@ -191,7 +196,9 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
     makeDir(pack)
     for (const sub of ['agents', 'skills', 'knowledge', 'verify', 'docs', 'sync', 'archive']) makeDir(join(pack, sub))
     const packJson = {
-      $comment: `${company} 회사 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
+      $comment: `${company} 팩 — 형식은 코어 docs/pack.md. athena init 이 만들었다`,
+      formatVersion: 1,
+      id: `${company}-${randomBytes(4).toString('hex')}`,
       name: company,
       names: [...new Set([company, ...names])],
       ...(org ? { github: { org } } : {}),
@@ -201,8 +208,14 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
     write(join(pack, 'ROUTING.md'), routingDoc(company, entries))
     write(join(pack, 'archive', '.gitkeep'), '')
     write(join(pack, 'pack.json'), JSON.stringify(packJson, null, 2) + '\n')
-    writeFileSync(configPath, JSON.stringify({
-      $comment: '이 컴퓨터 설정 — pack: 회사 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
+    writeFileSync(configPath, JSON.stringify(packsMode ? {
+      $comment: '이 팩의 이 컴퓨터 설정 — reposRoot: 담당 레포 클론이 있는 폴더(절대 경로) · repoPaths: 이름과 다른 위치',
+      ...(current ?? {}),
+      // 이번에 훑은 레포 폴더(init --root · 없으면 ..) — repoPaths 가 이 폴더 기준이다
+      reposRoot: resolve(athenaRoot, reposRoot),
+      ...(repoPaths(current, repos) ? { repoPaths: repoPaths(current, repos) } : {}),
+    } : {
+      $comment: '이 컴퓨터 설정 — pack: 팩 폴더 · reposRoot: 담당 레포 클론이 있는 폴더. 회사 값은 팩에 있다',
       ...(current ?? {}),
       pack: packRel,
       reposRoot: current?.reposRoot ?? reposRoot,

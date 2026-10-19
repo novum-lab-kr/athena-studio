@@ -6,12 +6,14 @@
 #       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 현황판 주소로 연다
 #                                  [이대로 진행] 이 아테나 pane 으로 보내려면 이 주소로 열어야 한다
 #
-# 포트는 ATHENA_BOARD_PORT (기본 4700). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
-# herdr 밖이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log.
+# 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
+# 여러 팩 — 떠 있는 현황판의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
+# herdr 밖이거나 Studio 화면이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log.
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
-PORT="${ATHENA_BOARD_PORT:-4700}"
+# 포트 순서는 athena_config.board_port(여러 팩: 레지스트리 → 본체 설정 → ATHENA_BOARD_PORT → 4700 · 옛 구조: env 먼저)
+PORT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import board_port; print(board_port(sys.argv[1]))' "$ATHENA_DIR" 2>/dev/null || echo "${ATHENA_BOARD_PORT:-4700}")"
 URL="http://localhost:$PORT"
 LABEL="📋 현황판"
 
@@ -33,13 +35,36 @@ case "${1:-}" in
     exit 0 ;;
 esac
 
+# 떠 있는 현황판이 지금 팩·세대의 것인가(옛 구조 본체면 늘 그렇다고 본다)
+same_pack() {
+  curl -s --max-time 2 "$URL/api/state" | python3 -c '
+import json, sys
+sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import paths
+where = paths(sys.argv[1])
+if where["mode"] != "packs": sys.exit(0)
+try: state = json.load(sys.stdin)
+except Exception: sys.exit(1)
+pack = state.get("pack")
+sys.exit(0 if pack and pack.get("id") == where["packId"] and pack.get("generation") == where["generation"] else 1)' "$ATHENA_DIR"
+}
+if is_up && ! same_pack; then
+  echo "떠 있는 현황판이 다른 팩·세대의 것이라 다시 띄운다"
+  "$0" stop >/dev/null
+  for _ in $(seq 1 20); do is_up || break; sleep 0.2; done
+fi
+
 if is_up; then
   echo "$URL (이미 떠 있음)"
 else
   CMD="ATHENA_BOARD_PORT=$PORT node $(printf '%q' "$ATHENA_DIR/scripts/board/server.mjs")"
   SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — pane 은 이걸로만 다룬다
+  # Studio 화면이면 pane 없이 백그라운드로 띄운다(사용자 결정 2026-10-18 — 앱 현황판 탭이 보여 준다)
+  IN_PANE=0
   if "$SCREEN" inside; then
-    eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다
+    eval "$("$SCREEN" self --format sh)"   # SCREEN_TAB_ID — 고정 배치에 넘긴다 · SCREEN_BACKEND
+    [ "${SCREEN_BACKEND:-}" = studio ] || IN_PANE=1
+  fi
+  if [ "$IN_PANE" = 1 ]; then
     # 같은 이름의 pane 이 있으면(어느 workspace 든) 거기서 다시 띄운다
     PANE="$("$SCREEN" pane list --label-or-name "$LABEL" --format id 2>/dev/null)"
     if [ -z "$PANE" ]; then

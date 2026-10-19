@@ -244,7 +244,7 @@ const replaceBlock = (text, name, body) => {
   return { text: next, found: true, changed }
 }
 
-// 생성 대상은 회사 팩 파일만 — 코어 파일에 회사 표를 써 넣지 않는다(docs/services.md 는 팩 링크, 플레이북은 팩 guide/ 판)
+// 생성 대상은 팩 파일만 — 코어 파일에 회사 표를 써 넣지 않는다(docs/services.md 는 팩 링크, 플레이북은 팩 guide/ 판)
 const PLAYBOOK = 'pack/guide/playbook.html'
 const inPack = (file) => {
   if (!config.packDir || !existsSync(join(ROOT, file))) return false
@@ -261,7 +261,7 @@ const allTargets = [
   }
 ]
 const targets = allTargets.filter((target) => inPack(target.file))
-for (const target of allTargets) if (!targets.includes(target)) console.log(`  건너뜀: ${target.file} (회사 팩에 없다)`)
+for (const target of allTargets) if (!targets.includes(target)) console.log(`  건너뜀: ${target.file} (팩에 없다)`)
 
 let wrote = 0
 let drift = 0
