@@ -33,7 +33,7 @@ fi
 [ "$HAS_SIDEBAR" = 1 ] && "$ATHENA_DIR/scripts/herdr-sidebar-ensure.sh" "$TAB"
 
 # 첫 실행 자동 시작 — 화면 세팅이 끝났으니 이 pane 에 지시를 입력한다(사용자가 아무것도 치지 않아도 되게).
-# 화면 백엔드가 본 그 pane 의 에이전트가 입력을 기다릴 때(idle)만 보낸다. 그사이 working 이 보이면(사용자가 먼저 말을 걸었다 — 아테나가 훅 안내로 첫 실행을 맡는다)
+# 화면 백엔드가 본 그 pane 의 에이전트가 입력을 기다릴 때(idle)만 보낸다. idle 을 본 뒤에 working 이 보이면(사용자가 먼저 말을 걸었다 — 아테나가 훅 안내로 첫 실행을 맡는다 · idle 전의 working 은 켜지는 중이라 무시)
 # 또는 90초 안에 idle 이 안 되면 보내지 않는다
 if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   case "$ATHENA_FIRST_RUN" in
@@ -42,10 +42,12 @@ if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   esac
   pane_status() { "$SCREEN" pane get "$SCREEN_PANE_ID" 2>/dev/null | python3 -c "import sys,json;p=json.load(sys.stdin)['pane'];print(p.get('agent_status') or '')" 2>/dev/null; }
   result="안 보냄 — 90초 안에 idle 아님"
+  seen_idle=0
   for _ in $(seq 1 90); do
     status="$(pane_status)"
-    if [ "$status" = working ]; then result="안 보냄 — 사용자가 먼저 입력"; break; fi
+    if [ "$status" = working ] && [ "$seen_idle" = 1 ]; then result="안 보냄 — 사용자가 먼저 입력"; break; fi
     if [ "$status" = idle ]; then
+      seen_idle=1
       sleep 1   # 입력창이 그려질 틈
       if [ "$(pane_status)" = idle ]; then
         "$SCREEN" pane send-text "$SCREEN_PANE_ID" "$FIRST_PROMPT" >/dev/null 2>&1 && sleep 0.5 && "$SCREEN" pane send-keys "$SCREEN_PANE_ID" Enter >/dev/null 2>&1 && result="보냄"
