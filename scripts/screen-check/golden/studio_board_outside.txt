@@ -2,6 +2,6 @@ $ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json ATHENA_BOARD_PORT=47999 ATHENA_
 --- exit 1
 --- stdout
 --- stderr
-⚠️  서버가 뜨지 않았다 — 백그라운드 (로그 /tmp/hermes-board.log) 확인
+⚠️  서버가 뜨지 않았다 — 백그라운드 (로그 /tmp/hermes-board-47999.log) 확인
 --- herdr
 ["#nohup", "bash", "-c", "ATHENA_BOARD_PORT=47999 node <ATHENA>/scripts/board/server.mjs"]

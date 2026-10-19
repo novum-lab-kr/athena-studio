@@ -16,7 +16,7 @@ import {
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
-import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, paths, readRegistry } from './config.mjs'
+import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, defaultBackupDir, paths, portBaseOf, readRegistry } from './config.mjs'
 import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLockDir, takeLock } from './lock.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './overlay.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
@@ -212,11 +212,11 @@ export const bodyLinksOk = (body) => isLink(join(body, ACTIVE_LINK)) && FIXED_LI
   if (name === '.worktrees' && existsSync(path) && !isLink(path)) return true
   return isLink(path) && readlinkSync(path) === join(ACTIVE_LINK, inner)
 })
-// 본체 현황판 포트 — 그 본체에서 boardPort() 가 돌려줄 값(레지스트리 정본 → 본체 설정 → 4700). 부른 본체는 env 까지
-const bodyBoardPort = (root, body, entry) => {
+// 본체 현황판 포트 — 그 본체에서 boardPort() 가 돌려줄 값(레지스트리 정본 → 본체 설정 → portBase). 부른 본체는 env 까지
+const bodyBoardPort = (root, body, entry, registry) => {
   if (!body) return entry?.boardPort ?? null
   if (realOr(body) === realOr(root)) return boardPort(root)
-  return Number(entry?.boardPort || bodyConfig(body).boardPort || 4700)
+  return Number(entry?.boardPort || bodyConfig(body).boardPort || portBaseOf(registry))
 }
 const bodyStateOf = (body, entry) => {
   if (!body) return entry?.body && !existsSync(entry.body) ? 'missing' : 'none'
@@ -229,7 +229,7 @@ const withBody = (root, data, registry, scan, bodies) => (info) => {
   const targetCore = registry.deploy?.commit ?? null
   const scanned = body ? busyScan(body, scan) : { busy: [], known: true }
   return {
-    ...info, body, bodyId: body ? bodyIdOf(body) : null, bodyState: bodyStateOf(body, entry), boardPort: bodyBoardPort(root, body, entry),
+    ...info, body, bodyId: body ? bodyIdOf(body) : null, bodyState: bodyStateOf(body, entry), boardPort: bodyBoardPort(root, body, entry, registry),
     core, targetCore, updatePending: Boolean(body && core && targetCore && core !== targetCore),
     busy: scanned.busy, busyKnown: scanned.known, bodyBusy: scanned.busy.length > 0 || !scanned.known,
   }
@@ -1026,7 +1026,7 @@ export const exportPack = (root, out) => {
 // 내 백업 — 팩 + 작업 기록(계획서 · 이슈 · 보관함). 비밀값 · 결과물(상태 · 워크트리 · 레포)은 뺀다
 export const backupWithWork = (root, out) => {
   const { packDir, id, where } = requireCurrent(root)
-  const target = resolve(out || join(homedir(), 'athena-pack-backups'))
+  const target = resolve(out || defaultBackupDir(where.dataDir))
   const stage = join(where.dataDir, 'tmp', `backup-${randomBytes(6).toString('hex')}`)
   try {
     const top = join(stage, id)

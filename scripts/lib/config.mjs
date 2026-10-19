@@ -39,6 +39,23 @@ export const dataDir = (root = ATHENA_ROOT) => resolve(root, expandHome(process.
 // 데이터 폴더의 팩 목록·지금 팩·전환 세대(<데이터>/config.json)
 export const readRegistry = (data) => readJson(join(data, 'config.json')) ?? { formatVersion: 1, current: null, generation: 0, packs: {} }
 
+// ── 데이터 폴더마다 다른 손잡이(레지스트리 키 · 없으면 지금 동작 · 계획서 20261019-스튜디오-코어-내장 5절) ──
+// 현황판 포트 기준 — 레지스트리 portBase(주 본체 기본 포트 · 팩 본체는 +2 부터 2씩). 없거나 이상하면 4700
+// 두 앱(~/athena · 스튜디오)이 데이터 폴더를 따로 쓰면 포트 범위도 갈라 꺼진 상대 포트와 부딪히지 않게 한다
+export const DEFAULT_PORT_BASE = 4700
+export const portBaseOf = (registry) => {
+  const value = registry?.portBase   // 숫자만(파이썬 athena_config.port_base 와 같은 판정)
+  return Number.isInteger(value) && value >= 1024 && value <= 65400 ? value : DEFAULT_PORT_BASE
+}
+// 팩 본체 자리 — 레지스트리 bodiesDir 가 있으면 <bodiesDir>/<id>(상대 경로는 데이터 폴더 기준), 없으면 null(부른 쪽이 <주 본체>-<id>)
+export const bodiesDirOf = (data, registry) => (typeof registry?.bodiesDir === 'string' && registry.bodiesDir.trim()
+  ? resolve(data, expandHome(registry.bodiesDir.trim()))
+  : null)
+// 백업 기본 자리 — 기본 데이터 폴더(~/athena-data)면 지금처럼 ~/athena-pack-backups, 다른 데이터 폴더면 <데이터>/backups/packs
+export const defaultBackupDir = (data) => (realOr(data) === realOr(join(homedir(), 'athena-data'))
+  ? join(homedir(), 'athena-pack-backups')
+  : join(data, 'backups', 'packs'))
+
 // 경로 묶음 — 새 코드는 이걸 쓴다(옛 코드는 고정 링크 덕에 그대로 돈다)
 export const paths = (root = ATHENA_ROOT) => {
   const data = dataDir(root)
@@ -102,13 +119,14 @@ export const isSwitching = (root = ATHENA_ROOT) => {
   try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' }
 }
 
-// 현황판 포트 — 여러 팩 구조: 레지스트리 packs.<id>.boardPort(정본) → 본체 설정 boardPort → ATHENA_BOARD_PORT → 4700
+// 현황판 포트 — 여러 팩 구조: 레지스트리 packs.<id>.boardPort(정본) → 본체 설정 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700
 // (앱이 물려준 환경 변수 하나가 모든 본체를 같은 포트로 만들지 않게 — Codex C8). 옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700
 export const boardPort = (root = ATHENA_ROOT) => {
   const where = paths(root)
   if (where.mode === 'packs') {
-    const saved = readRegistry(where.dataDir).packs?.[where.packId]?.boardPort
-    return Number(saved || bodyConfig(root).boardPort || process.env.ATHENA_BOARD_PORT || 4700)
+    const registry = readRegistry(where.dataDir)
+    const saved = registry.packs?.[where.packId]?.boardPort
+    return Number(saved || bodyConfig(root).boardPort || process.env.ATHENA_BOARD_PORT || portBaseOf(registry))
   }
   return Number(process.env.ATHENA_BOARD_PORT || bodyConfig(root).boardPort || 4700)
 }

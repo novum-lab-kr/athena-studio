@@ -2,15 +2,17 @@
 //
 //   주 본체   ~/athena                git 저장소 주인 · main 브랜치 · 정비는 여기서만
 //   팩 본체   ~/athena-<만들 때 id>    같은 저장소의 워크트리(브랜치 없이 detached) · .pack-data 가 그 팩에 고정
-//   배포 커밋 레지스트리 deploy.commit(update 가 정한다 · 없으면 origin/main)
+//             레지스트리 bodiesDir 가 있으면 <bodiesDir>/<id>(스튜디오 — 계획서 20261019-스튜디오-코어-내장 4.1)
+//   배포 커밋 레지스트리 deploy.commit(update 가 정한다 · 없으면 origin/main) · deploy.source 는 받아 온 곳(origin | bundle)
 //   기록      <데이터>/updates/<operationId>.json · 되돌릴 커밋은 refs/athena/rollback/<operationId>/<팩 id> 로 보존(gc 에 안 지워진다)
+//   포트      레지스트리 portBase(없으면 4700) — 주 본체 기본 · 팩 본체는 +2 부터 2씩
 //
 // 명령 입구는 scripts/athena.mjs(pack open · new · discard · use · update · update --rollback · version)
 import { execFileSync, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
-import { existsSync, mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { cpSync, existsSync, lstatSync, mkdirSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, resolve } from 'node:path'
-import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, dataDir, paths, readRegistry } from './config.mjs'
+import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig, bodyIdOf, dataDir, paths, portBaseOf, readRegistry } from './config.mjs'
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
@@ -19,7 +21,8 @@ import {
 } from './packs.mjs'
 
 export const CONTRACT = 2
-export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract']
+// 뒤 넷은 계획서 20261019-스튜디오-코어-내장 4.1(하위 호환으로 더함) — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
+export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base']
 
 const git = (dir, args, { quiet = true } = {}) => execFileSync('git', ['-C', dir, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -52,11 +55,12 @@ const listeners = (port) => { try { return execFileSync('lsof', ['-ti', `tcp:${p
 const argsOf = (pid) => { try { return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' } }
 // 그 포트를 그 본체 현황판이 쓰나(인자의 server.mjs 경로로) — 그러면 "쓰는 중"이 아니다
 const portFreeFor = (port, body) => listeners(port).every((pid) => [join(body, 'scripts', 'board', 'server.mjs'), join(realOr(body), 'scripts', 'board', 'server.mjs')].some((script) => argsOf(pid).includes(script)))
-// 새 포트 — 4702 부터 2씩. 레지스트리에 있거나 주 본체 포트이거나 지금 듣고 있으면 건너뛴다(레지스트리 잠금 안에서 불러 예약까지 한 번에)
+// 새 포트 — portBase+2 부터 2씩(기본 4702~4798). 레지스트리에 있거나 주 본체 포트이거나 지금 듣고 있으면 건너뛴다(레지스트리 잠금 안에서 불러 예약까지 한 번에)
 const pickPort = (registry, main) => {
-  const used = new Set([4700, Number(main ? bodyConfig(main).boardPort || 4700 : 4700), ...Object.values(registry.packs ?? {}).map((entry) => Number(entry.boardPort)).filter(Boolean)])
-  for (let port = 4702; port < 4800; port += 2) if (!used.has(port) && listeners(port).length === 0) return port
-  throw new PackError('port-in-use', '현황판에 쓸 빈 포트가 없다(4702~4798)')
+  const base = portBaseOf(registry)
+  const used = new Set([base, Number(main ? bodyConfig(main).boardPort || base : base), ...Object.values(registry.packs ?? {}).map((entry) => Number(entry.boardPort)).filter(Boolean)])
+  for (let port = base + 2; port < base + 100; port += 2) if (!used.has(port) && listeners(port).length === 0) return port
+  throw new PackError('port-in-use', `현황판에 쓸 빈 포트가 없다(${base + 2}~${base + 98})`)
 }
 const writeBodyConfig = (body, patch) => {
   const file = join(body, 'athena.config.json')
@@ -118,10 +122,14 @@ export const openPack = async (root, id, { report = () => {}, allowEmpty = false
   }
 }
 
-// 새 본체 — <주 본체>-<id> 에 worktree add --detach <배포 커밋> → 본체 설정 → 그 본체 코드로 pack attach. 실패하면 본체를 지운다
+// 새 본체 — <주 본체>-<id>(레지스트리 bodiesDir 가 있으면 <bodiesDir>/<id>)에 worktree add --detach <배포 커밋> → 본체 설정 → 그 본체 코드로 pack attach. 실패하면 본체를 지운다
+const bodyPlace = (data, registry, main, id) => {
+  const bodiesDir = bodiesDirOf(data, registry)
+  return bodiesDir ? join(bodiesDir, id) : join(dirname(main), `${basename(main)}-${id}`)
+}
 const createBody = async (root, data, id, main, registry, report) => {
   if (!main) throw new PackError('unsafe', '주 본체가 git 체크아웃이 아니라 본체를 만들 수 없다')
-  const body = join(dirname(main), `${basename(main)}-${id}`)
+  const body = bodyPlace(data, registry, main, id)
   if (existsSync(body)) throw new PackError('body-conflict', `본체 자리에 이미 폴더가 있다: ${body} — 덮지 않는다`, { body })
   // 배포 커밋 — 레지스트리 deploy.commit → origin/main. 주 본체 로컬 HEAD 는 쓰지 않는다(push 안 한 정비 커밋이 팩 본체로 새지 않게 · 5.4 · 리뷰 1차)
   const commit = registry.deploy?.commit ?? gitTry(main, ['rev-parse', '--verify', '--quiet', 'refs/remotes/origin/main^{commit}'])
@@ -132,7 +140,7 @@ const createBody = async (root, data, id, main, registry, report) => {
   if (!formatOk(formatsAt(main, commit), version)) throw new PackError('data-incompatible', `배포 커밋 ${commit.slice(0, 7)} 의 코어는 데이터 형식 ${version} 을 다루지 못한다`)
   report('body', `본체 만들기 — ${body} @ ${commit.slice(0, 7)}`)
   const releaseGit = takeLock(gitLockDir(data), `worktree add ${body}`, { waitMs: 30_000 })
-  try { git(main, ['worktree', 'add', '--quiet', '--detach', body, commit], { quiet: false }) } catch (error) {
+  try { mkdirSync(dirname(body), { recursive: true }); git(main, ['worktree', 'add', '--quiet', '--detach', body, commit], { quiet: false }) } catch (error) {
     throw new PackError('rollback', `본체를 만들지 못했다 — ${String(error.stderr ?? error.message).trim().slice(0, 300)}`, { rolledBack: true })
   } finally { releaseGit() }
   try {
@@ -166,10 +174,10 @@ const removeBody = (main, body, data) => {
   } finally { releaseGit() }
 }
 
-// 포트 — 레지스트리가 정본. 없으면(주 본체 처음) 본체 설정 → 4700 을 등록. 다른 프로세스가 쓰고 있으면 새 포트(portChanged)
+// 포트 — 레지스트리가 정본. 없으면(주 본체 처음) 본체 설정 → portBase(기본 4700) 를 등록. 다른 프로세스가 쓰고 있으면 새 포트(portChanged)
 const assignPort = (data, id, body, main) => updateRegistry(data, (registry) => {
   const entry = registry.packs[id] ?? {}
-  const before = Number(entry.boardPort || bodyConfig(body).boardPort || (isMainBody(main, body) ? 4700 : 0)) || null
+  const before = Number(entry.boardPort || bodyConfig(body).boardPort || (isMainBody(main, body) ? portBaseOf(registry) : 0)) || null
   let port = before
   let changed = null
   if (!port || !portFreeFor(port, body)) {
@@ -195,9 +203,9 @@ const catchUpBody = ({ main, body, id, data, registry, report }) => {
 }
 
 // ── 본체 하나 옮기기(update · rollback · 따라잡기 공용) ─────────────────────
-// 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty → (update) 이전 커밋 ref 보존 → 현황판 끄기
-// → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
-export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false }) => {
+// 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
+// → 현황판 끄기 → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
+export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false }) => {
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
   let release = () => {}
@@ -213,11 +221,19 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
     if (busy.length) return { ...entry, reason: 'busy', busy }
     if (from === target) return { ...entry, status: 'same' }
-    if (isDirty(body)) return { ...entry, reason: 'dirty' }
+    // 코어 파일을 고쳐 둔 본체 — 기본은 건너뜀(dirty). update --backup-dirty 면 아래 검사를 다 통과한 뒤 사본을 두고 되돌린다(D4)
+    const dirty = isDirty(body)
+    if (dirty && !(backupDirty && mode === 'update')) return { ...entry, reason: 'dirty' }
     if (isMain) {
       if (mode !== 'update') return { ...entry, reason: 'main' }
       const branch = gitTry(body, ['symbolic-ref', '-q', '--short', 'HEAD'])
       if (!branch || !gitOk(body, ['merge-base', '--is-ancestor', from, target])) return { ...entry, reason: 'diverged', ...(branch ? { branch } : {}) }
+    }
+    if (dirty) {
+      const saved = backupCoreEdits({ body, id, data, operationId })
+      if (!saved.ok) return { ...entry, status: 'failed', error: 'backup-failed', message: saved.message }
+      Object.assign(entry, { backedUp: saved.files, backupDir: saved.dir })
+      if (!gitOk(body, ['reset', '--quiet', '--hard', 'HEAD'])) return { ...entry, status: 'failed', error: 'reset-failed' }
     }
     if (mode === 'update' || mode === 'catch-up') gitOk(main, ['update-ref', `refs/athena/rollback/${operationId}/${id}`, from])
     const stopped = stopBoard(body)
@@ -234,11 +250,40 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     release()
   }
 }
+// 고쳐 둔 코어 파일 사본 — <데이터>/backups/core-edits/<operationId>/<팩 id>/ 에 files/(지금 내용) · changes.patch(HEAD 와의 차이) · meta.json.
+// 추적 파일만(git diff HEAD — 스테이징·작업 트리 둘 다). 무시된 파일(athena.config.json · 상태 파일 · 팩 링크)은 git 이 건드리지 않으니 담지 않는다
+const backupCoreEdits = ({ body, id, data, operationId }) => {
+  const dir = join(data, 'backups', 'core-edits', operationId, id)
+  try {
+    const names = git(body, ['diff', '--name-only', '--no-renames', '-z', 'HEAD']).split('\0').filter(Boolean)
+    const files = []
+    for (const name of names) {
+      const from = join(body, name)
+      let exists = false
+      try { exists = lstatSync(from).isFile() || lstatSync(from).isSymbolicLink() } catch { /* 지운 파일 */ }
+      if (exists) cpSync(from, join(dir, 'files', name), { verbatimSymlinks: true })
+      files.push({ path: name, state: exists ? 'changed' : 'deleted' })
+    }
+    mkdirSync(dir, { recursive: true })
+    const patch = spawnSync('git', ['-C', body, 'diff', '--binary', '--no-renames', 'HEAD'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 })
+    if (patch.status !== 0) throw new Error(String(patch.stderr ?? '').trim().slice(0, 200) || 'git diff 실패')
+    writeFileSync(join(dir, 'changes.patch'), patch.stdout)
+    writeJson(join(dir, 'meta.json'), { kind: 'core-edits', operationId, id, body, head: headOf(body), at: now(), files })
+    // 사본이 다 있는지 다시 본다 — 하나라도 없으면 되돌리지 않는다
+    const missing = files.filter((file) => file.state === 'changed' && !existsSync(join(dir, 'files', file.path)) && !isLinkAt(join(dir, 'files', file.path)))
+    if (missing.length) throw new Error(`사본이 없다: ${missing.map((file) => file.path).slice(0, 5).join(', ')}`)
+    return { ok: true, dir, files: files.map((file) => file.path) }
+  } catch (error) {
+    return { ok: false, message: `고친 코어 파일 사본을 만들지 못해 건드리지 않았다 — ${error.message}` }
+  }
+}
+const isLinkAt = (path) => { try { return lstatSync(path).isSymbolicLink() } catch { return false } }
+
 // 그 본체 현황판만 끈다(포트를 듣는 프로세스가 그 본체 server.mjs 일 때만). 다시 띄우는 것은 부른 쪽
 const stopBoard = (body) => {
   const config = paths(body)
   const registry = readRegistry(config.dataDir)
-  const port = Number(registry.packs?.[config.packId]?.boardPort || bodyConfig(body).boardPort || 4700)
+  const port = Number(registry.packs?.[config.packId]?.boardPort || bodyConfig(body).boardPort || portBaseOf(registry))
   const scripts = [join(body, 'scripts', 'board', 'server.mjs'), join(realOr(body), 'scripts', 'board', 'server.mjs')]
   const pids = listeners(port).filter((pid) => scripts.some((script) => argsOf(pid).includes(script)))
   for (const pid of pids) {
@@ -289,24 +334,42 @@ const opDir = (data) => join(data, 'updates')
 const saveOp = (data, record) => writeJson(join(opDir(data), `${record.operationId}.json`), record)
 
 // ── update ──────────────────────────────────────────────────────────────
-export const updateBodies = (root, { to = '', report = () => {} } = {}) => {
+// from: git 번들 파일(앱이 들고 온 코어 · 스튜디오) — origin 대신 그 번들의 main 을 refs/athena/bundle/main 으로 받아 그 커밋으로.
+// backupDirty: 코어 파일을 고쳐 둔 본체도 사본(<데이터>/backups/core-edits/<operationId>/)을 두고 옮긴다(D4 · 기본은 dirty 로 건너뜀)
+export const BUNDLE_REF = 'refs/athena/bundle/main'
+const fetchEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=15' })
+const fetchOrigin = (main) => {
+  const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', 'origin'], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: fetchEnv() })
+  if (fetched.status !== 0) throw new PackError('fetch-failed', `origin 에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
+  return gitTry(main, ['rev-parse', 'refs/remotes/origin/main']) ?? null
+}
+const fetchBundle = (main, file) => {
+  let isFile = false
+  try { isFile = statSync(file).isFile() } catch { /* 없음 */ }
+  if (!isFile) throw new PackError('not-found', `번들 파일이 없다: ${file}`)
+  const heads = spawnSync('git', ['-C', main, 'bundle', 'list-heads', file, 'refs/heads/main'], { encoding: 'utf8', env: fetchEnv() })
+  if (heads.status !== 0 || !/\srefs\/heads\/main$/m.test(heads.stdout ?? '')) throw new PackError('fetch-failed', `git 번들이 아니거나 main 이 없다: ${file}`)
+  const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', '--no-tags', file, `+refs/heads/main:${BUNDLE_REF}`], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: fetchEnv() })
+  if (fetched.status !== 0) throw new PackError('fetch-failed', `번들에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
+  return gitTry(main, ['rev-parse', BUNDLE_REF]) ?? null
+}
+export const updateBodies = (root, { to = '', from = '', backupDirty = false, report = () => {} } = {}) => {
   const data = dataDir(root)
   const registry = readRegistry(data)
   checkDataFormat(registry)
   const main = mainBody(root)
   if (!main) throw new PackError('unsafe', '주 본체가 git 체크아웃이 아니다')
   const operationId = stampId('upd')
+  const source = from ? 'bundle' : 'origin'
+  const bundle = from ? resolve(from) : null
   report('lock', '팩마다 잠금은 본체를 옮길 때 잡는다')
-  report('fetch', `받아 오기 — ${main}`)
+  report('fetch', `받아 오기 — ${bundle ? `번들 ${bundle}` : main}`)
   const releaseGit = takeLock(gitLockDir(data), `update fetch ${operationId}`, { waitMs: 60_000 })
-  try {
-    const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', 'origin'], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=15' } })
-    if (fetched.status !== 0) throw new PackError('fetch-failed', `origin 에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
-  } finally { releaseGit() }
-  const requestedTo = to || 'origin/main'
+  let fetchedCommit = null
+  try { fetchedCommit = bundle ? fetchBundle(main, bundle) : fetchOrigin(main) } finally { releaseGit() }
+  const requestedTo = to || (bundle ? BUNDLE_REF : 'origin/main')
   const target = gitTry(main, ['rev-parse', '--verify', '--quiet', `${requestedTo}^{commit}`])
   if (!target) throw new PackError('not-found', `그런 커밋이 없다: ${requestedTo}`)
-  const fetchedCommit = gitTry(main, ['rev-parse', 'refs/remotes/origin/main']) ?? null
   const bodies = collectBodies(root, data, registry)
   const version = registry.formatVersion ?? 1
   // 데이터 형식이 바뀌는 업데이트(대상 코어가 지금 형식을 못 다룸) — 모든 본체가 비었을 때만(D10)
@@ -318,15 +381,19 @@ export const updateBodies = (root, { to = '', report = () => {} } = {}) => {
   const results = bodies.map((item) => {
     if (item.missing) return { id: item.id, body: item.body, main: false, status: 'skipped', reason: 'missing', from: null, requestedTo, to: null, rollbackTo: null, services: { boardStopped: [] } }
     report('body', `${item.id} — ${item.body}`)
-    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain })
+    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain, backupDirty })
   })
   const status = rollup(results)
   const previousDeploy = registry.deploy?.commit ?? null
-  saveOp(data, { kind: 'update', operationId, at: now(), requestedTo, targetCore: target, fetched: fetchedCommit, previousDeploy, status, bodies: results })
+  const previousSource = registry.deploy?.source ?? null
+  // 고친 코어 파일 사본 — 본체마다(backupDirty 일 때만 필드를 더한다 · contract 2 하위 호환)
+  const backedUp = results.filter((entry) => entry.backedUp?.length).map((entry) => ({ id: entry.id, dir: entry.backupDir, files: entry.backedUp }))
+  const extra = { source, ...(bundle ? { bundle } : {}), ...(backupDirty ? { backedUp } : {}) }
+  saveOp(data, { kind: 'update', operationId, at: now(), requestedTo, targetCore: target, fetched: fetchedCommit, previousDeploy, previousSource, status, ...extra, bodies: results })
   // 배포 커밋은 한 본체라도 대상에 닿았을 때만 옮긴다 — 모두 실패했는데 옮기면 열 때마다 따라잡기를 다시 시도하고 현황판을 끈다(리뷰 1차)
-  if (status !== 'failed') updateRegistry(data, (next) => { next.deploy = { commit: target, previous: previousDeploy, at: now(), operationId } })
+  if (status !== 'failed') updateRegistry(data, (next) => { next.deploy = { commit: target, previous: previousDeploy, at: now(), operationId, source } })
   report('done', `업데이트 ${status} — ${results.map((entry) => `${entry.id}:${entry.status}${entry.reason ? `(${entry.reason})` : ''}`).join(' · ')}`)
-  return finish({ operationId, status, fetched: fetchedCommit, targetCore: target, requestedTo, bodies: results }, 'failed')
+  return finish({ operationId, status, fetched: fetchedCommit, targetCore: target, requestedTo, ...extra, bodies: results }, 'failed')
 }
 
 // ── update --rollback [<operationId>] ────────────────────────────────────
@@ -366,7 +433,7 @@ export const rollbackUpdate = (root, { operationId: wanted = '', report = () => 
   if (results.some((entry) => entry.status === 'updated')) {
     updateRegistry(data, (next) => {
       if (next.deploy?.commit !== op.targetCore) return
-      if (op.previousDeploy) next.deploy = { commit: op.previousDeploy, previous: null, at: now(), operationId }
+      if (op.previousDeploy) next.deploy = { commit: op.previousDeploy, previous: null, at: now(), operationId, ...(op.previousSource ? { source: op.previousSource } : {}) }
       else delete next.deploy
     })
   }
@@ -435,6 +502,6 @@ export const versionInfo = (root) => {
   const registry = readRegistry(dataDir(root))
   return {
     ok: true, core: headOf(root), contract: CONTRACT, dirty: isDirty(root), dataFormats: DATA_FORMATS, capabilities: CAPABILITIES,
-    body: resolve(root), bodyId: bodyIdOf(root), deploy: registry.deploy ? { commit: registry.deploy.commit, operationId: registry.deploy.operationId ?? null } : null,
+    body: resolve(root), bodyId: bodyIdOf(root), deploy: registry.deploy ? { commit: registry.deploy.commit, operationId: registry.deploy.operationId ?? null, source: registry.deploy.source ?? 'origin' } : null,
   }
 }

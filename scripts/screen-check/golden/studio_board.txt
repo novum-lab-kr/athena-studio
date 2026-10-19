@@ -2,9 +2,6 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- exit 1
 --- stdout
 --- stderr
-⚠️  서버가 뜨지 않았다 — pane p9 확인
+⚠️  서버가 뜨지 않았다 — 백그라운드 (로그 /tmp/hermes-board-47999.log) 확인
 --- herdr
-["@studio", "pane", "list"]
-["@studio", "pane", "split", "--target", "self", "--direction", "down", "--ratio", "0.25", "--cwd", "<ATHENA>", "--no-focus"]
-["@studio", "pane", "run", "p9", "'env' 'ATHENA_BOARD_PORT=47999' 'node' '<ATHENA>/scripts/board/server.mjs'"]
-["@studio", "pane", "rename", "p9", "📋 현황판"]
+["#nohup", "bash", "-c", "ATHENA_BOARD_PORT=47999 node <ATHENA>/scripts/board/server.mjs"]
