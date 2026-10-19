@@ -32,6 +32,10 @@
       herdr 가 실패하면 그 출력·종료 코드를 그대로 흘려보낸다 — 원래 스크립트가 오류 안내에 넣던 글자가 그대로 남게.
       studio 는 데몬 CLI 가 이미 {"error","message"} 로 말하므로 그 code(usage · not_found · timeout · unavailable · internal)를 그대로 옮긴다
 
+주소 열기(open-url) — 화면이 브라우저를 품고 있으면 그 안에서 연다(studio: 그 본체 창의 옆 브라우저 · 데몬 op open-url → 앱).
+  못 하면(herdr · none · 옛 데몬 · 붙은 앱 창 없음 · http(s) 가 아님) 기본 브라우저(맥 open · 그 밖 xdg-open)로 떨어진다 — 부르는 쪽은 늘 이것 하나만 부른다.
+  결과 {ok, target: "panel"|"external", via: "studio"|"open"|"xdg-open"}
+
 bash 에서:  "$ATHENA_DIR/scripts/screen" pane list --label "📋 현황판" --format id
 파이썬에서: sys.path.insert(0, ATHENA_DIR + '/scripts/lib'); import screen
             me = screen.self_info(); panes = screen.list_panes(timeout=3)
@@ -84,6 +88,10 @@ class Backend:
 
     def self_info(self):
         return {'inside': False, 'backend': self.name, 'pane_id': '', 'tab_id': '', 'workspace_id': ''}
+
+    def open_url(self, url):
+        """화면 안에서 주소를 열 수 있으면 {ok, target, via} · 못 하면 None(부르는 쪽이 기본 브라우저로)"""
+        return None
 
     pane_current = list_panes = get_pane = layout = is_shell = read = wait_output = _no
     list_tabs = get_tab = rename_tab = close_tab = list_workspaces = get_workspace = create_workspace = _no
@@ -200,6 +208,18 @@ class StudioBackend(Backend):
             return json.loads(done.stdout)
         except ValueError:
             raise ScreenError('backend', f'studio {" ".join(args[:2])} 응답을 읽지 못했다', done.stdout, done.stderr)
+
+    def open_url(self, url):
+        # 옆 브라우저는 http(s) 만 연다 — 파일 경로 등은 기본 브라우저로. 데몬이 op 를 모르거나(옛 데몬) · 붙은 앱 창이 없거나 · 못 붙으면 None
+        if not url.startswith(('http://', 'https://')):
+            return None
+        try:
+            result = self._call(['open-url', url], timeout=10)
+        except (ScreenError, subprocess.TimeoutExpired):
+            return None
+        if not isinstance(result, dict) or result.get('target') not in ('panel', 'external'):
+            return None
+        return {'ok': True, 'target': result['target'], 'via': 'studio'}
 
     # 조회
     def pane_current(self):
@@ -480,6 +500,24 @@ def backend_name():
     return 'none'
 
 
+def open_external(url):
+    """기본 브라우저로 — 맥 open · 그 밖 xdg-open(원래 스크립트가 하던 그대로). 둘 다 없으면 unavailable"""
+    for opener in ('open', 'xdg-open'):
+        path = shutil.which(opener)
+        if not path:
+            continue
+        done = subprocess.run([path, url], capture_output=True, text=True, timeout=15)
+        if done.returncode != 0:
+            raise ScreenError('backend', f'{opener} 실패', done.stdout, done.stderr, done.returncode)
+        return {'ok': True, 'target': 'external', 'via': opener}
+    raise ScreenError('unavailable', '브라우저를 열 명령이 없다(open · xdg-open)')
+
+
+def open_url(url):
+    """화면 안에서 열 수 있으면 거기서(studio 옆 브라우저), 아니면 기본 브라우저로"""
+    return get_backend().open_url(url) or open_external(url)
+
+
 def get_backend():
     name = backend_name()
     if name not in BACKENDS:
@@ -518,6 +556,7 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   pane swap <pane> <pane> · pane move <pane> (--new-tab | --tab T --target P --split right|down [--ratio R]) [--focus|--no-focus]
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
+  open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(herdr · none · 옛 데몬) 기본 브라우저(open)
   공통: --format json(기본) | id(첫 대상의 id 한 줄) | ids(한 줄에 하나)
   백엔드: ATHENA_SCREEN=herdr|studio|none → pane 안 표시(HERDR_ENV·HERDR_PANE_ID → herdr · ATHENA_STUDIO=1 → studio)
          → athena.config.json screen → Studio 데몬 접속 파일 → herdr 명령 → none"""
@@ -600,6 +639,9 @@ def _dispatch(screen, words, flags, positional, raw_rest):
         return None, 0 if screen.inside() else 1
     if op == 'name':
         return {'text': screen.title + '\n'}, 0
+    if op == 'open-url':
+        url = _need(positional, 1, '주소')[0]
+        return screen.open_url(url) or open_external(url), 0
     if op == 'capabilities':
         features = screen.features()
         if '--has' in flags:
@@ -712,7 +754,7 @@ def main(argv):
         print(USAGE)
         return 0 if argv else 2
     # 동작 이름(한두 단어) — pane run · send-text · rename 뒤는 손대지 않고 그대로 넘긴다(단어가 - 로 시작해도)
-    count = 1 if argv[0] in ('self', 'inside', 'name', 'capabilities') else 2
+    count = 1 if argv[0] in ('self', 'inside', 'name', 'capabilities', 'open-url') else 2
     words, rest = argv[:count], argv[count:]
     raw_ops = ('pane run', 'pane send-text', 'pane send-keys', 'pane rename', 'tab rename')
     fmt = 'json'

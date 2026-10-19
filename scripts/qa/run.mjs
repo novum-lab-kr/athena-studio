@@ -42,6 +42,7 @@ import { PNG } from 'pngjs'
 import { buildReport, buildIndex } from './report.mjs'
 import { runScenario, placeWindow, guardMutations, describe as describeStep } from './scenario.mjs'
 import { baselineDir, readBaselineProblems } from './baseline.mjs'
+import { openUrl } from '../lib/screen.mjs'
 import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from './tracking.mjs'
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
@@ -215,7 +216,7 @@ if (flag('flow')) {
   if (flag('live')) {
     const board = `http://localhost:${boardPort(HERMES)}`
     const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-    if (up) spawn('open', [`${board}/qa-live?group=${groupId}`], { stdio: 'ignore', detached: true }).unref()
+    if (up) openUrl(`${board}/qa-live?group=${groupId}`)
     console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
   }
   const deadline = Date.now() + 10 * 60 * 1000
@@ -322,7 +323,7 @@ if (option('profiles')) {
     if (flag('live')) {
       const board = `http://localhost:${boardPort(HERMES)}`
       const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-      if (up) spawn('open', [`${board}/qa-live?group=${groupId}`], { stdio: 'ignore', detached: true }).unref()
+      if (up) openUrl(`${board}/qa-live?group=${groupId}`)
       console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
     }
     for (const name of names.slice(1)) {
@@ -439,14 +440,14 @@ const setPhase = (phase) => {
 // 보이는 창 배치 — 뷰포트별 창의 왼쪽 위치(흐름 씬도 같은 자리에 띄운다)
 const windowLefts = {}
 
-// --live — 현황판이 떠 있으면 실시간 페이지를 기본 브라우저로 연다(안 떠 있으면 주소만 알린다)
+// --live — 현황판이 떠 있으면 실시간 페이지를 연다(Studio 면 그 창 옆 브라우저 · 아니면 기본 브라우저 — 안 떠 있으면 주소만 알린다)
 async function openLivePage() {
   // 묶음(--profiles)이면 부모가 묶음 화면을 연다
   if (option('group')) return
   const board = `http://localhost:${boardPort(HERMES)}`
   const liveUrl = `${board}/qa-live?id=${runId}`
   const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-  if (up) spawn('open', [liveUrl], { stdio: 'ignore', detached: true }).unref()
+  if (up) openUrl(liveUrl)
   say(up ? `📺 실시간 화면 — ${liveUrl}` : `📺 현황판이 꺼져 있다 — scripts/board.sh 로 띄운 뒤 ${liveUrl}`)
 }
 

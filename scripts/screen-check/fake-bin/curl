@@ -1,3 +1,4 @@
 #!/bin/sh
-# 가짜 curl — 현황판 서버가 없는 것으로(연결 실패)
+# 가짜 curl — 현황판 서버가 없는 것으로(연결 실패). FAKE_BOARD_UP=1 이면 떠 있는 것으로(빈 응답 · 0) — board.sh open 의 브라우저 열기를 보려고
+[ "${FAKE_BOARD_UP:-}" = 1 ] && exit 0
 exit 7
