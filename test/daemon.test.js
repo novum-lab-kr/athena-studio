@@ -196,6 +196,32 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
   }
 })
 
+test('데몬을 다시 띄워도 id 를 처음부터 다시 매기지 않는다(접속 파일 옆 -ids.json)', { skip: ptyMissing || false, timeout: 30000 }, async () => {
+  const dir = workDir()
+  let daemon = startDaemon(dir)
+  try {
+    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    const first = await connect(daemon.socket)
+    await first.call('hello', { protocol: protocol.PROTOCOL })
+    assert.deepEqual((await first.call('tab new', { label: 'athena', cwd: dir, cols: 100, rows: 30 })).result, { workspace: 'w1', tab: 't1', pane: 'p1' })
+    await first.call('shutdown')
+    first.close()
+    await waitFor(() => !alive(daemon.pid), '데몬 종료')
+
+    daemon = startDaemon(dir)
+    await waitFor(() => fs.existsSync(daemon.socket), '다시 띄운 데몬 소켓')
+    const second = await connect(daemon.socket)
+    await second.call('hello', { protocol: protocol.PROTOCOL })
+    assert.deepEqual((await second.call('tab new', { label: 'athena', cwd: dir, cols: 100, rows: 30 })).result, { workspace: 'w2', tab: 't2', pane: 'p2' })
+    await second.call('shutdown')
+    second.close()
+    await waitFor(() => !alive(daemon.pid), '데몬 종료')
+  } finally {
+    if (alive(daemon.pid)) process.kill(daemon.pid, 'SIGTERM')
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 공간 · 출력 · 포커스 · 고정 칸 · CLI 는 부른 pane 의 본체만', { skip: ptyMissing || false, timeout: 30000 }, async () => {
   const dir = workDir()
   const daemon = startDaemon(dir)

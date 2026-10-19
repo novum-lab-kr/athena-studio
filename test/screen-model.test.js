@@ -8,6 +8,14 @@ test('id: 종류마다 1 부터 · 다시 쓰지 않음 · [\\w:] 만', () => {
   assert.match(ids.next('p'), /^[\w:]+$/)
 })
 
+test('id: 지난 데몬 번호에서 이어서 센다 · 바뀔 때마다 알린다 · 이상한 값은 버린다', () => {
+  const saved = []
+  const ids = model.createIdGen({ p: 4, t: 2, bad: -1, 'x-y': 3, w: 'a' }, (counters) => saved.push(counters))
+  assert.deepEqual([ids.next('p'), ids.next('t'), ids.next('w')], ['p5', 't3', 'w1'])
+  assert.deepEqual(saved.at(-1), { p: 5, t: 3, w: 1 })
+  assert.deepEqual([model.createIdGen(null).next('p'), model.createIdGen('x').next('p')], ['p1', 'p1'])
+})
+
 test('납작한 Pane: 화면 계층 screen.py _pane 과 같은 12개 키 · 빈 값은 null', () => {
   // 아테나 scripts/lib/screen.py `_pane` 키 순서 그대로 — 바뀌면 코어 계약이 바뀐 것
   const expected = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title']

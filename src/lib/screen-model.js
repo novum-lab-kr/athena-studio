@@ -5,12 +5,18 @@ const path = require('path')
 // 납작한 Pane 의 키 — screen.py `_pane` 과 같은 12개, 같은 순서
 const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title']
 
-// id 는 데몬 수명 동안 다시 쓰지 않는다. [\w:] 만 · 'hermes' 로 시작하지 않는다(현황판의 가짜 id)
-function createIdGen() {
+// id 는 다시 쓰지 않는다. [\w:] 만 · 'hermes' 로 시작하지 않는다(현황판의 가짜 id)
+// start 로 지난 데몬이 남긴 번호를 받아 이어서 센다 — 데몬을 다시 띄워도 p1 부터 다시 매기지 않게(계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게).
+// onChange 는 번호가 바뀔 때마다 지금 번호 전체를 받는다(데몬이 파일에 남긴다)
+function createIdGen(start = {}, onChange = null) {
   const counters = {}
+  for (const [prefix, value] of Object.entries(start && typeof start === 'object' ? start : {})) {
+    if (/^\w+$/.test(prefix) && Number.isSafeInteger(value) && value > 0) counters[prefix] = value
+  }
   return {
     next(prefix) {
       counters[prefix] = (counters[prefix] || 0) + 1
+      if (onChange) onChange({ ...counters })
       return `${prefix}${counters[prefix]}`
     },
   }

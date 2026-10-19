@@ -44,7 +44,9 @@ class Daemon {
     this.socketPath = socket
     this.endpointPath = endpoint
     this.cliPath = cli || path.join(APP_ROOT, 'bin', 'athena-studio-cli')
-    this.ids = model.createIdGen()
+    // 번호는 접속 파일 옆 <이름>-ids.json 에 남긴다(앱마다 접속 파일이 달라 개발 앱 · 배포판이 섞이지 않는다)
+    this.idsPath = endpoint.replace(/\.json$/, '') + '-ids.json'
+    this.ids = model.createIdGen(readIds(this.idsPath), (counters) => writeIds(this.idsPath, counters))
     this.panes = new Map()
     this.workspaces = [] // {id, label, cwd, activeTab, body} — 레포마다 하나(코어 delegate 가 만든다) · body = 그 작업 공간이 속한 아테나 본체(팩) 실제 경로, 모르면 null(모든 본체에 보임)
     this.tabs = [] // {id, workspaceId, label, tree, size: {cols, rows}}
@@ -778,6 +780,25 @@ function isDirectory(dir) {
     return fs.statSync(dir).isDirectory()
   } catch {
     return false
+  }
+}
+
+// 지난 데몬이 남긴 id 번호 — 없거나 깨졌으면 처음부터
+function readIds(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return {}
+  }
+}
+
+// 못 써도 데몬은 계속 돈다(그 데몬 안에서는 번호가 겹치지 않는다) — 로그만
+function writeIds(file, counters) {
+  try {
+    fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
+    fs.writeFileSync(file, JSON.stringify(counters))
+  } catch (error) {
+    log('id 번호를 남기지 못했다', file, error.message)
   }
 }
 
