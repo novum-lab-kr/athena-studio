@@ -764,6 +764,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       send('pane:exit', message.pane)
     } else if (message.event === 'resync') {
       send('screen:resync')
+    } else if (message.event === 'open-url' && typeof message.url === 'string') {
+      openUrl(ctx, message.url) // 아테나 화면 계층 open-url — 계획서 · 선택 화면을 이 창 옆 브라우저로(localhost 아니면 기본 브라우저)
     }
   }
 

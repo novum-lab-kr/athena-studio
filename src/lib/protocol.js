@@ -2,7 +2,7 @@
 // 계약 정본: 아테나 plans/feature/20261017-studio-own-terminal.md 4절 "2) 데몬 CLI"
 //
 // 요청  {id, op, args}            → 응답 {id, ok: true, result} | {id, ok: false, error: {code, message}}
-// 알림  {event, ...}  (데몬 → 앱: 출력 · 배치 바뀜 · resync)
+// 알림  {event, ...}  (데몬 → 앱: 출력 · 배치 바뀜 · resync · open-url {url} — 아테나 화면 계층이 주소를 그 창에서 열어 달라고 할 때)
 // 첫 요청은 hello {protocol, appVersion} — 프로토콜 번호만 비교한다(S3)
 
 // 데몬과 앱(·CLI)이 서로 알아듣는 형식이 바뀌면 올린다(요청 하나를 더해도). 앱 버전이 아니다
@@ -10,6 +10,8 @@
 // 4 — 'pane pids'(팩 바꾸기 전 점검 · e23b039) · 3 까지의 데몬은 모른다
 // 5 — 창-본체 묶음(아테나 계획서 20261018-팩마다-본체 C6): attach {body} · 작업 공간 body · 보는 자리(활성 작업 공간 · 포커스)가 본체마다 ·
 //     상태 · 출력 · 목록은 그 본체 것만 · CLI 는 부른 pane 의 본체만 본다
+// open-url(CLI 가 부르는 동작 · 데몬 → 앱 알림)은 번호를 올리지 않았다 — 앱이 보내는 요청이 아니라 앱은 옛 데몬에 기대지 않고,
+// 옛 데몬은 CLI 에 '모르는 동작'(usage)으로 답해 아테나 화면 계층이 기본 브라우저로 떨어진다(번호를 올리면 켤 때 데몬을 다시 띄워 pane 이 모두 닫힌다)
 const PROTOCOL = 5
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
@@ -75,7 +77,8 @@ const USAGE = `athena-studio-cli — Athena Studio 데몬 (아테나 화면 계�
   pane wait-output <id> (--match T | --regex R) [--lines N] [--timeout MS]
   pane is-shell <id> · pane close <id>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
-  tab list [--workspace W] · tab get <t> · tab rename <t> <이름> · tab close <t>`
+  tab list [--workspace W] · tab get <t> · tab rename <t> <이름> · tab close <t>
+  open-url <주소>  부른 pane(·ATHENA_STUDIO_BODY)의 본체에 붙은 앱 창이 연다(localhost 는 옆 브라우저) → {ok, target}`
 
 // 뒤를 손대지 않고 그대로 넘기는 동작 — 낱말이 - 로 시작해도(screen.py raw_ops 와 같다)
 const RAW_OPS = ['pane run', 'pane send-text', 'pane send-keys', 'pane rename', 'tab rename']
@@ -128,6 +131,10 @@ function parseCli(argv) {
   if (!argv.length || ['-h', '--help', 'help'].includes(argv[0])) return { op: 'help', local: true }
   if (argv[0] === 'version') return { op: 'version', local: true }
   if (argv[0] === 'self') return { op: 'self', local: true }
+  if (argv[0] === 'open-url') {
+    if (argv.length !== 2) throw new UsageError('open-url <주소>')
+    return { op: 'open-url', args: { url: argv[1] } }
+  }
   if (!['pane', 'tab', 'workspace'].includes(argv[0]) || argv.length < 2) throw new UsageError(`모르는 동작: ${argv.slice(0, 2).join(' ')}`)
 
   const op = `${argv[0]} ${argv[1]}`

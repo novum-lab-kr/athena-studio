@@ -99,6 +99,12 @@ test('CLI: read · wait-output', () => {
   assert.throws(() => protocol.parseCli(['pane', 'wait-output', 'p1', '--regex', '(']), { code: 'usage' })
 })
 
+test('CLI: open-url — 주소 하나만', () => {
+  assert.deepEqual(protocol.parseCli(['open-url', 'http://localhost:4802/plans/a.html']), { op: 'open-url', args: { url: 'http://localhost:4802/plans/a.html' } })
+  assert.throws(() => protocol.parseCli(['open-url']), { code: 'usage' })
+  assert.throws(() => protocol.parseCli(['open-url', 'http://a', 'http://b']), { code: 'usage' })
+})
+
 test('CLI: 모르는 동작', () => {
   assert.throws(() => protocol.parseCli(['tab', 'move', 't1']), { code: 'usage' })
   assert.throws(() => protocol.parseCli(['window', 'list']), { code: 'usage' })

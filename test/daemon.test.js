@@ -291,6 +291,44 @@ test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 �
   }
 })
 
+test('데몬 open-url: 그 본체에 붙은 앱 창 하나에만 알리고 {ok, target} · 못 고르면 not_found · http(s) 아니면 usage', { skip: ptyMissing || false, timeout: 20000 }, async () => {
+  const dir = workDir()
+  const daemon = startDaemon(dir)
+  const bodyA = path.join(dir, 'athena-a')
+  const bodyB = path.join(dir, 'athena-b')
+  const url = 'http://localhost:4802/plans/setup/pick.html'
+  try {
+    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    const appA = await connect(daemon.socket)
+    await appA.call('attach', { body: bodyA })
+    // 창이 하나면 본체를 모르는 호출(일반 터미널)도 그 창으로
+    assert.deepEqual(JSON.parse((await cli(daemon.socket, ['open-url', url])).stdout), { ok: true, target: 'panel' })
+    await waitFor(() => appA.events.some((event) => event.event === 'open-url' && event.url === url), 'A 알림')
+    const appB = await connect(daemon.socket)
+    await appB.call('attach', { body: bodyB })
+    // 현황판(pane 밖)은 ATHENA_STUDIO_BODY 의 본체 창만
+    const before = appA.events.length
+    assert.deepEqual(JSON.parse((await cli(daemon.socket, ['open-url', url], { ATHENA_STUDIO_BODY: bodyB })).stdout), { ok: true, target: 'panel' })
+    await waitFor(() => appB.events.some((event) => event.event === 'open-url'), 'B 알림')
+    assert.equal(appA.events.slice(before).some((event) => event.event === 'open-url'), false)
+    // 부른 pane 의 본체
+    const tabA = (await appA.call('tab new', { cwd: dir })).result
+    const fromA = await cli(daemon.socket, ['open-url', 'https://example.com/x'], { ATHENA_STUDIO_PANE_ID: tabA.pane })
+    assert.deepEqual(JSON.parse(fromA.stdout), { ok: true, target: 'external' })
+    await waitFor(() => appA.events.some((event) => event.event === 'open-url' && event.url === 'https://example.com/x'), 'A 의 pane 에서')
+    // 창이 여럿인데 본체를 모르면 · 붙은 창이 없는 본체면 not_found(화면 계층이 기본 브라우저로)
+    assert.equal(JSON.parse((await cli(daemon.socket, ['open-url', url])).stderr).error, 'not_found')
+    assert.equal(JSON.parse((await cli(daemon.socket, ['open-url', url], { ATHENA_STUDIO_BODY: path.join(dir, 'none') })).stderr).error, 'not_found')
+    assert.equal(JSON.parse((await cli(daemon.socket, ['open-url', 'file:///etc/hosts'], { ATHENA_STUDIO_BODY: bodyA })).stderr).error, 'usage')
+    await appA.call('shutdown')
+    for (const connection of [appA, appB]) connection.close()
+    await waitFor(() => !alive(daemon.pid), '데몬 종료')
+  } finally {
+    if (alive(daemon.pid)) process.kill(daemon.pid, 'SIGTERM')
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('데몬에 못 붙으면 CLI 는 종료 3 · unavailable', async () => {
   const result = await cli('/tmp/asd-no-such-daemon.sock', ['pane', 'list'])
   assert.equal(result.code, 3)

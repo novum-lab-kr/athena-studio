@@ -218,6 +218,24 @@ class Daemon {
     if (!this.sees(scope, body)) throw failure('not_found', `이 창(팩)에 없는 ${what}`)
   }
 
+  // 주소 열기(아테나 화면 계층 open-url) — 그 본체에 붙은 앱 창 하나에 알린다. 여는 건 앱(main openUrl — localhost 는 옆 브라우저 · 그 밖 http(s) 는 기본 브라우저)
+  // 고르는 곳: 그 본체에 묶인 연결. 본체를 모르는 호출(부른 pane · ATHENA_STUDIO_BODY 없음)이면 붙은 창이 하나일 때만 그 창.
+  // 못 고르면 not_found — 아테나 화면 계층이 기본 브라우저로 떨어진다
+  openUrl(scope, url) {
+    const target = core.openTarget(String(url || ''))
+    if (target === 'deny') throw failure('usage', `http(s) 주소만 열 수 있다: ${url}`)
+    const app = this.appFor(scope)
+    if (!app) throw failure('not_found', scope ? '이 본체에 붙은 앱 창이 없다' : '어느 앱 창에서 열지 모르겠다(붙은 창이 없거나 여럿)')
+    app.socket.write(protocol.encode({ event: 'open-url', url: String(url) }))
+    return { ok: true, target }
+  }
+
+  appFor(scope) {
+    const apps = [...this.clients].filter((client) => client.attached && !client.socket.destroyed)
+    if (scope) return apps.find((client) => client.body === scope) || null
+    return apps.length === 1 ? apps[0] : null
+  }
+
   async handle(client, message) {
     const { id, op, args = {} } = message || {}
     try {
@@ -263,6 +281,9 @@ class Daemon {
       case 'shutdown':
         setImmediate(() => this.shutdown('앱이 요청'))
         return { panes: this.panes.size }
+      // ── 화면 계층(CLI) — 주소 열기 ──
+      case 'open-url':
+        return this.openUrl(scope, args.url)
       // ── 화면 계층(CLI) ──
       case 'pane list':
         return { panes: await this.flatPanes(this.visiblePanes(scope)) }
