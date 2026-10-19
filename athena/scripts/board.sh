@@ -6,15 +6,18 @@
 #       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 현황판 주소로 연다
 #                                  [이대로 진행] 이 아테나 pane 으로 보내려면 이 주소로 열어야 한다
 #
-# 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
+# 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
 # 여러 팩 — 떠 있는 현황판의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
-# herdr 밖이거나 Studio 화면이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log.
+# herdr 밖이거나 Studio 화면이면 백그라운드(nohup)로 띄우고 로그는 /tmp/hermes-board.log(포트 4700) · 다른 포트면 /tmp/hermes-board-<포트>.log
+# (포트는 본체마다 달라 — 두 앱·여러 본체의 현황판 로그가 서로 덮지 않는다).
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
-# 포트 순서는 athena_config.board_port(여러 팩: 레지스트리 → 본체 설정 → ATHENA_BOARD_PORT → 4700 · 옛 구조: env 먼저)
+# 포트 순서는 athena_config.board_port(여러 팩: 레지스트리 → 본체 설정 → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700 · 옛 구조: env 먼저)
 PORT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import board_port; print(board_port(sys.argv[1]))' "$ATHENA_DIR" 2>/dev/null || echo "${ATHENA_BOARD_PORT:-4700}")"
 URL="http://localhost:$PORT"
+# 백그라운드 로그 — 4700(~/athena 기본)은 지금 이름 그대로, 다른 포트는 포트별 이름
+if [ "$PORT" = 4700 ]; then LOG_FILE=/tmp/hermes-board.log; else LOG_FILE="/tmp/hermes-board-$PORT.log"; fi
 LABEL="📋 현황판"
 
 is_up() { curl -s -o /dev/null --max-time 1 "$URL/api/state"; }
@@ -80,8 +83,8 @@ else
     "$ATHENA_DIR/scripts/athena-layout.sh" "${SCREEN_TAB_ID:-}" >/dev/null 2>&1 || true   # athena workspace 고정 배치
     PLACE="pane $PANE"
   else
-    nohup bash -c "$CMD" >/tmp/hermes-board.log 2>&1 &
-    PLACE="백그라운드 (로그 /tmp/hermes-board.log)"
+    nohup bash -c "$CMD" >"$LOG_FILE" 2>&1 &
+    PLACE="백그라운드 (로그 $LOG_FILE)"
   fi
   for _ in $(seq 1 20); do is_up && break; sleep 0.3; done
   is_up || { echo "⚠️  서버가 뜨지 않았다 — $PLACE 확인" >&2; exit 1; }

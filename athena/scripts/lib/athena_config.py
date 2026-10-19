@@ -122,14 +122,22 @@ def switching(athena_dir):
         return False
 
 
+def port_base(registry):
+    """현황판 포트 기준 — 레지스트리 portBase(config.mjs portBaseOf 와 같다). 없거나 이상하면 4700."""
+    value = (registry or {}).get('portBase')
+    if isinstance(value, int) and not isinstance(value, bool) and 1024 <= value <= 65400:
+        return value
+    return 4700
+
+
 def board_port(athena_dir):
-    """현황판 포트 — config.mjs boardPort 와 같다. 여러 팩: 레지스트리 packs.<id>.boardPort → 본체 설정 → ATHENA_BOARD_PORT → 4700.
-    옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700."""
+    """현황판 포트 — config.mjs boardPort 와 같다. 여러 팩: 레지스트리 packs.<id>.boardPort → 본체 설정 → ATHENA_BOARD_PORT
+    → 레지스트리 portBase → 4700. 옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700."""
     where = paths(athena_dir)
     if where['mode'] == 'packs':
         registry = _read_json(os.path.join(where['dataDir'], 'config.json')) or {}
         saved = ((registry.get('packs') or {}).get(where['packId']) or {}).get('boardPort')
-        return int(saved or body_config(athena_dir).get('boardPort') or os.environ.get('ATHENA_BOARD_PORT') or 4700)
+        return int(saved or body_config(athena_dir).get('boardPort') or os.environ.get('ATHENA_BOARD_PORT') or port_base(registry))
     return int(os.environ.get('ATHENA_BOARD_PORT') or body_config(athena_dir).get('boardPort') or 4700)
 
 

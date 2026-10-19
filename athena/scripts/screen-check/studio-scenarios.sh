@@ -119,14 +119,15 @@ JS
 }
 
 # 아테나 스크립트를 studio pane 안에서 — herdr 시나리오와 같은 명령(백엔드만 다르다)
-sc_studio_board()    { step studio "${IN_STUDIO[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
+# 스튜디오 화면이면 현황판도 nohup(뒤에서) — 기록이 다음 시나리오로 새지 않게 기다린다(board_outside 와 같다)
+sc_studio_board()    { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_studio_board_outside() { STEP_WAIT="#nohup" step studio "${LIVE[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_studio_monitor()  { step studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh 30; step studio "${LIVE[@]}" -- scripts/monitor-pane.sh; }
 sc_studio_learn()    { step studio "${IN_STUDIO[@]}" -- scripts/learn-review-pane.sh; }
 sc_studio_guide()    { step studio "${IN_STUDIO[@]}" -- scripts/guide-pane.sh; }
 sc_studio_layout()   { step studio "${IN_STUDIO[@]}" -- scripts/athena-layout.sh; }
-sc_studio_up()       { step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh; }
-sc_studio_up_firstrun() { step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 ATHENA_FIRST_RUN=claude -- scripts/athena-up.sh; }
+sc_studio_up()       { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh; }
+sc_studio_up_firstrun() { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 ATHENA_FIRST_RUN=claude -- scripts/athena-up.sh; }
 sc_studio_delegate_newws()    { step studio-newws,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe "버튼 고쳐 줘 (긴급)" --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; studio_cleanup_runner; }
 sc_studio_delegate_existing() { step studio-existing,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe --plan plans/task/20261001-fe-test.md --down; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; studio_cleanup_runner; }
 sc_studio_delegate_here()     { step studio "${IN_STUDIO[@]}" -- scripts/delegate.sh reviewer --here --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; studio_cleanup_runner; }
@@ -187,7 +188,7 @@ sc_studio_dock() {
   step studio-docksplit,studio-dock,studio "${IN_STUDIO[@]}" -- $S pane split --target p20 --direction right
   # 모니터: 고정 칸을 다시 쓴다(split 없음) · athena-up 도 모니터를 새로 띄우지 않는다
   step studio-dock,studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh
-  step studio-dock,studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh
+  STEP_WAIT="#nohup" step studio-dock,studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh
 }
 sc_studio_dock_server() {
   local saved=("${IN[@]}")
