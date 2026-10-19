@@ -18,7 +18,7 @@
 #   - HEAD 가 브랜치에 붙어 있다(detached 아님) · 보호 브랜치(dev·main·master·stg·frz·prd*·release/*·dev-*)가 아니다
 #   - 원래 스테이징돼 있던 변경이 없다 — 남의 변경이 섞이지 않게
 #   - 파일은 글자 그대로의 경로만(디렉터리·glob 금지), 워크트리 안이고, 실제로 바뀐 파일이다
-# 그다음: 지정 파일만 스테이징 → 그 상태로 엄격 검증 → 검증 전후 스테이징·파일 내용·HEAD 가 같을 때만 커밋
+# 그다음: 지정 파일만 스테이징 → 그 상태로 엄격 검증(같은 트리로 이미 통과했으면 재사용 — scripts/verify/reuse.sh) → 검증 전후 스테이징·파일 내용·HEAD 가 같을 때만 커밋
 #         → 계획서 "## Commits" 에 SHA·검증 결과를 한 줄 기록
 # 실패하면 이 스크립트가 스테이징한 파일만 되돌린다(남의 스테이징은 애초에 없다).
 set -uo pipefail
@@ -155,11 +155,16 @@ if [ $NO_VERIFY = 0 ]; then
   [ ${#TARGETS[@]} -gt 0 ] || { unstage; fail "검증할 앱을 파일에서 찾지 못했다 — --verify \"<앱|packages/<pkg>>\" 를 준다"; }
   for target in "${TARGETS[@]}"; do
     echo "── 검증: scripts/verify/$REPO.sh $target (엄격 모드, 대상 $TOP)"
+    # 같은 트리 내용·스크립트·인자로 이미 통과했으면 다시 돌리지 않는다(scripts/verify/reuse.sh — 계획서 기록에 "재사용(@시각)")
+    REUSE_NOTE="$(mktemp -t hermes-commit-reuse)"
     # shellcheck disable=SC2086
-    if ! ATHENA_VERIFY_STRICT=1 ATHENA_VERIFY_ALLOW_SKIP="$ALLOW_SKIP" ATHENA_VERIFY_DIR="$TOP" "$SCRIPT" $target; then
+    if ! ATHENA_VERIFY_STRICT=1 ATHENA_VERIFY_ALLOW_SKIP="$ALLOW_SKIP" ATHENA_VERIFY_DIR="$TOP" ATHENA_VERIFY_REUSE_NOTE="$REUSE_NOTE" \
+        "$ATHENA_DIR/scripts/verify/reuse.sh" "$REPO" $target; then
+      rm -f "$REUSE_NOTE"
       unstage; fail "검증을 통과하지 못했다(${target:-전체}). 위 표를 보고 고친 뒤 다시 — 건너뛴 단계를 허용하려면 사용자 확인 후 --allow-skip"
     fi
-    RESULTS="$RESULTS${target:-전체} "
+    REUSED="$(cat "$REUSE_NOTE" 2>/dev/null)"; rm -f "$REUSE_NOTE"
+    RESULTS="$RESULTS${target:-전체}${REUSED:+ $REUSED} "
   done
   VERIFY_NOTE="엄격 검증 통과 — $RESULTS${ALLOW_SKIP:+(건너뜀 허용: $ALLOW_SKIP)}"
 fi
