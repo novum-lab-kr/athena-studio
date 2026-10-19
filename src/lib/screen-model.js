@@ -22,6 +22,9 @@ function createIdGen(start = {}, onChange = null) {
   }
 }
 
+// 데몬이 id 번호를 남기는 파일 — 접속 파일 옆 <이름>-ids.json(앱마다 접속 파일이 달라 개발 앱 · 배포판이 섞이지 않는다)
+const idsPath = (endpoint) => endpoint.replace(/\.json$/, '') + '-ids.json'
+
 // 빈 글자는 null — screen.py 가 `or None` 으로 하던 그대로
 const orNull = (value) => (value === undefined || value === null || value === '' ? null : value)
 
@@ -157,6 +160,7 @@ function findMatch(text, { match, regex }) {
 }
 
 module.exports = {
+  idsPath,
   PANE_KEYS,
   createIdGen,
   flatPane,

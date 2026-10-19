@@ -44,8 +44,7 @@ class Daemon {
     this.socketPath = socket
     this.endpointPath = endpoint
     this.cliPath = cli || path.join(APP_ROOT, 'bin', 'athena-studio-cli')
-    // 번호는 접속 파일 옆 <이름>-ids.json 에 남긴다(앱마다 접속 파일이 달라 개발 앱 · 배포판이 섞이지 않는다)
-    this.idsPath = endpoint.replace(/\.json$/, '') + '-ids.json'
+    this.idsPath = model.idsPath(endpoint)
     this.ids = model.createIdGen(readIds(this.idsPath), (counters) => writeIds(this.idsPath, counters))
     this.panes = new Map()
     this.workspaces = [] // {id, label, cwd, activeTab, body} — 레포마다 하나(코어 delegate 가 만든다) · body = 그 작업 공간이 속한 아테나 본체(팩) 실제 경로, 모르면 null(모든 본체에 보임)

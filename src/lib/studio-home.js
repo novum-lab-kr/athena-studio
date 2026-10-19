@@ -8,6 +8,7 @@
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
+const model = require('./screen-model')
 const { execFileSync } = require('child_process')
 
 // ── 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(userData) · 데몬 접속 파일을 같이 쓰지 않게 ──
@@ -254,6 +255,34 @@ function summarizeUpdate(result) {
 //  - 주 본체에 팩이 없으면(스튜디오는 첫 팩을 bodies/<id> 에 만든다) 코어 update 가 주 본체를 옮기지 않으므로 그 뒤 앱이 앞으로 감는다
 const UPDATE_CAPABILITIES = ['update-from-bundle', 'backup-dirty']
 
+// ── 초기화(메뉴 보기 › 스튜디오 초기화) — 처음 켠 것처럼 ──
+// 끌 현황판(코어 + 팩마다)과 지울 자리. 스튜디오 집 안 것만 — 회사 레포 클론(홈 아래)은 건드리지 않는다
+function resetPlan(layout) {
+  const registry = readJson(path.join(layout.data, 'config.json')) || {}
+  const packs = registry.packs && typeof registry.packs === 'object' ? registry.packs : {}
+  const boards = []
+  if (fs.existsSync(layout.core)) {
+    const coreConfig = readJson(path.join(layout.core, 'athena.config.json')) || {}
+    boards.push({ port: Number.isInteger(coreConfig.boardPort) ? coreConfig.boardPort : STUDIO_PORT_BASE, dir: layout.core })
+  }
+  for (const entry of Object.values(packs)) {
+    if (entry && Number.isInteger(entry.boardPort) && typeof entry.body === 'string' && fs.existsSync(entry.body)) boards.push({ port: entry.boardPort, dir: entry.body })
+  }
+  return { packs: Object.keys(packs), boards, remove: [layout.core, layout.bodies, layout.data, layout.endpoint, model.idsPath(layout.endpoint)] }
+}
+
+// 지운다 — 스튜디오 집 안(집 자체는 빼고)이 아닌 자리는 건너뛴다(다른 앱의 접속 파일 daemon.json 등은 목록에 없어 남는다)
+function resetHome(layout, plan) {
+  const removed = []
+  for (const target of plan.remove) {
+    const relative = path.relative(layout.root, target)
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) continue
+    fs.rmSync(target, { recursive: true, force: true })
+    removed.push(target)
+  }
+  return removed
+}
+
 function registryHasPacks(dataDir) {
   const registry = readJson(path.join(dataDir, 'config.json'))
   return Boolean(registry && registry.packs && typeof registry.packs === 'object' && Object.keys(registry.packs).length)
@@ -362,4 +391,6 @@ module.exports = {
   updateCore,
   prepareCore,
   makeCoreBundle,
+  resetPlan,
+  resetHome,
 }

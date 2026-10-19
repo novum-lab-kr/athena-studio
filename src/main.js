@@ -190,6 +190,38 @@ async function restartDaemon() {
   for (const each of packWindows) each.send('screen:resync')
 }
 
+// 스튜디오 초기화(메뉴 보기) — 처음 켠 것처럼: 현황판 · 데몬(모든 pane · 에이전트)을 끄고 스튜디오 집의 코어 · 본체 · 팩 데이터 ·
+// 이 앱의 데몬 파일을 지운 뒤 창 목록을 비우고 앱을 다시 띄운다. 회사 레포 클론 · 언어 설정 · 다른 앱의 접속 파일은 둔다
+async function resetStudio() {
+  const ctx = frontCtx()
+  const plan = studioHome.resetPlan(STUDIO)
+  const choice = await dialog.showMessageBox(ctx ? ctx.win : null, {
+    type: 'warning',
+    message: say('dialog.studioReset.message'),
+    detail: say('dialog.studioReset.detail', { packs: plan.packs.join(', ') || say('dialog.studioReset.noPacks'), path: STUDIO.root }),
+    buttons: [say('common.cancel'), say('dialog.studioReset.confirm')],
+    defaultId: 0,
+    cancelId: 0,
+  })
+  if (choice.response !== 1) return
+  quitting = true // 창이 닫히며 창 목록을 다시 적지 않게
+  // 현황판은 본체가 있을 때 그 토큰으로 끈다(지운 뒤에는 끌 방법이 없다)
+  for (const board of plan.boards) await stopStaleBoard(board.port, board.dir).catch(() => false)
+  const connection = ctx ? await ctx.connectDaemon().catch(() => null) : null
+  if (connection) await connection.call('shutdown').catch(() => null)
+  for (const each of packWindows) each.detachScreen()
+  await daemonClient.waitDaemonGone(daemonPaths().socket)
+  try {
+    studioHome.resetHome(STUDIO, plan)
+  } catch (error) {
+    dialog.showErrorBox(say('dialog.studioReset.message'), say('error.studioReset', { message: error.message }))
+  }
+  config = core.withWindows(config, [])
+  core.saveConfig(configFile(), config)
+  app.relaunch()
+  app.exit(0)
+}
+
 // ── 에이전트 모니터 — 기록 읽기(창마다 따로 따라간다) ───────────────
 // Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl)을 따라 읽어 화면에 이벤트로 보낸다 — 아테나 agent-monitor.py 와 같은 대상:
 // 서브에이전트(<세션>/subagents/agent-*.jsonl) · 워크트리 세션 · 지금 에이전트가 도는 pane 폴더의 세션. 최근 120분 안에 바뀐 것만.
@@ -2163,6 +2195,7 @@ function buildMenu() {
         { label: say('menu.view.browser'), accelerator: `${TAB_KEY}+Shift+B`, click: toFront('browser:toggle') },
         { label: say('menu.view.reattach'), click: toFront('screen:resync') },
         { label: say('menu.view.restartDaemon'), click: () => restartDaemon() },
+        { label: say('menu.view.resetStudio'), click: () => resetStudio() },
         { type: 'separator' },
         { label: say('menu.view.language'), submenu: languageMenu() },
         { type: 'separator' },

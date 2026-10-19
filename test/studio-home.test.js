@@ -292,3 +292,26 @@ test('켤 때 준비: 첫 실행은 풀고 · 다시 켜면 새 번들로 감되
   // update: false([다시 시도]) 는 업데이트를 보지 않는다
   assert.deepEqual(await home.prepareCore({ layout, bundle, home: '/Users/me', runCore, update: false }), { ok: true, created: false, update: null })
 })
+
+test('초기화: 끌 현황판(코어 + 팩마다) · 지울 자리는 스튜디오 집 안만 · 다른 앱 접속 파일과 집 밖은 남긴다', () => {
+  const root = tmp()
+  const layout = home.studioLayout({ home: '/unused', override: root, identity: home.appIdentity({ packaged: false }) })
+  fs.mkdirSync(layout.core, { recursive: true })
+  fs.writeFileSync(path.join(layout.core, 'athena.config.json'), JSON.stringify({ boardPort: 4800 }))
+  const body = path.join(layout.bodies, 'acme')
+  fs.mkdirSync(body, { recursive: true })
+  fs.mkdirSync(layout.data, { recursive: true })
+  fs.writeFileSync(path.join(layout.data, 'config.json'), JSON.stringify({ packs: { acme: { body, boardPort: 4802 }, gone: { body: path.join(layout.bodies, 'gone'), boardPort: 4804 } } }))
+  fs.writeFileSync(layout.endpoint, '{}')
+  fs.writeFileSync(path.join(root, 'daemon-dev-ids.json'), '{}')
+  fs.writeFileSync(path.join(root, 'daemon.json'), '{}') // 배포판 접속 파일 — 남긴다
+  const outside = path.join(tmp(), 'repo')
+  fs.mkdirSync(outside)
+
+  const plan = home.resetPlan(layout)
+  assert.deepEqual(plan.packs, ['acme', 'gone'])
+  assert.deepEqual(plan.boards, [{ port: 4800, dir: layout.core }, { port: 4802, dir: body }]) // 본체가 없는 팩은 끌 수 없다
+  home.resetHome(layout, { ...plan, remove: [...plan.remove, outside, root] })
+  assert.deepEqual(fs.readdirSync(root), ['daemon.json'])
+  assert.equal(fs.existsSync(outside), true) // 집 밖 · 집 자체는 지우지 않는다
+})
