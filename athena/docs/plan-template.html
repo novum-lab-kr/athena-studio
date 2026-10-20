@@ -9,12 +9,16 @@
   Athena 작업계획서 — 결정 콘솔 + 계획서 뷰 (HTML 템플릿)
   ----------------------------------------------------------------------------
   이 파일 하나가 작업계획서의 라이프사이클 전체를 담는다.
-    (1) 승인 전 → 상단에 .md 본문이 렌더링되고, 그 아래 "결정 콘솔"에서
-                  선택지를 고르고 [이대로 진행] — 결정이 PLAN.leadPane(계획서를 만든
-                  아테나 pane)에 바로 입력된다. 현황판 주소(scripts/board.sh open <이 파일>)로
-                  열어야 보낼 수 있고, 보낼 수 없으면 [프롬프트로 복사] 로 바뀐다
-    (2) 확정 후 → 각 결정에 decided 값을 채우면 하단 결정 콘솔이 "✅ 확정" 으로
-                  잠기고, 위쪽 .md 본문이 "읽기용 계획서"로 유지된다.
+    (1) 승인 전 → 머리(제목·요약·상태) 아래 "결정 콘솔"에서 선택지를 고르고
+                  [이대로 진행] — 결정이 PLAN.leadPane(계획서를 만든 아테나 pane)에 바로
+                  입력된다. .md 본문은 그 아래 "계획서 전문"으로 렌더링된다. 현황판 주소
+                  (scripts/board.sh open <이 파일>)로 열어야 보낼 수 있고, 보낼 수 없으면
+                  [프롬프트로 복사] 로 바뀐다
+    (2) 확정 후 → 각 결정에 decided 값을 채우면 결정 카드가 "확정" 으로 잠기고(고른 것만
+                  보이고 나머지는 접힘), 아래 .md 본문이 "읽기용 계획서"로 유지된다.
+  색은 시스템 설정을 따른다 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱과 같은 값.
+  스타일 · 스크립트는 plan-html.mjs 가 계획서를 맞출 때마다 이 템플릿 것으로 바꿔 쓴다
+  (PLAN · plan-md 두 블록만 그 계획서 것) — 기존 계획서도 다음 갱신 때 새 모양이 된다.
 
   사용법 (Team Lead):
   1) 이 파일을 plans/<유형>/YYYYMMDD-제목.html 로 복사한다 (md와 동일 파일명).
@@ -87,203 +91,253 @@ const PLAN = {
 </script>
 
 <style>
+  /* 색 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱(src/renderer/style.css)과 같은 값. 시스템 설정(prefers-color-scheme)을 따른다 */
   :root {
-    --bg: #f1f5f9;
+    color-scheme: light;
+    --bg: #f5f3ee;
     --surface: #ffffff;
-    --border: #e2e8f0;
-    --text: #0f172a;
-    --muted: #64748b;
-    --primary: #2563eb;
-    --primary-weak: #eff6ff;
-    --primary-border: #bfdbfe;
-    --good: #16a34a;
-    --good-weak: #f0fdf4;
-    --good-border: #bbf7d0;
-    --warn: #d97706;
-    --radius: 12px;
-    --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
+    --surface-2: #faf8f4;
+    --line: #e4e0d6;
+    --line-strong: #d3cdc0;
+    --text: #23211d;
+    --muted: #77726a;
+    --accent: #3b6fd8;
+    --accent-weak: #edf2fc;
+    --accent-ink: #ffffff;
+    --ok: #2f9e62;
+    --ok-weak: #eaf5ee;
+    --warn: #b07a10;
+    --code-bg: #eeebe4;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif;
+    --font-mono: 'D2Coding', 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #16171a;
+      --surface: #1f2125;
+      --surface-2: #1b1c20;
+      --line: #2e3137;
+      --line-strong: #3b3e45;
+      --text: #e8e6e1;
+      --muted: #9a968e;
+      --accent: #c9ad78;
+      --accent-weak: #2d2a23;
+      --accent-ink: #16171a;
+      --ok: #86c7a3;
+      --ok-weak: #1e2823;
+      --warn: #dbb579;
+      --code-bg: #191b1f;
+    }
   }
   * { box-sizing: border-box; }
   body {
     margin: 0;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Apple SD Gothic Neo',
-      'Malgun Gothic', sans-serif;
+    font: 14px/1.6 var(--font-ui);
     background: var(--bg);
     color: var(--text);
-    line-height: 1.55;
     -webkit-font-smoothing: antialiased;
   }
-  .wrap { max-width: 880px; margin: 0 auto; padding: 32px 20px 200px; }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 20px 16px 120px; }
+  @media (min-width: 720px) { .wrap { padding: 32px 24px 120px; } }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  header.plan-head {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 24px 26px;
-    box-shadow: var(--shadow);
-    margin-bottom: 16px;
-  }
-  .plan-head h1 { margin: 0 0 6px; font-size: 22px; letter-spacing: -.01em; }
-  .plan-summary { color: var(--muted); margin: 8px 0 16px; font-size: 15px; }
-  .badges { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* 머리 — 유형 · 범위 · 원본 링크 / 제목 / 요약 / 상태 줄 */
+  header.plan-head { margin-bottom: 20px; }
+  .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
   .badge {
-    font-size: 12px; font-weight: 600; padding: 3px 10px; border-radius: 999px;
-    background: var(--primary-weak); color: var(--primary); border: 1px solid var(--primary-border);
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
   }
-  .badge.type-feature { background:#eff6ff; color:#2563eb; border-color:#bfdbfe; }
-  .badge.type-bugfix  { background:#fef2f2; color:#dc2626; border-color:#fecaca; }
-  .badge.type-refactor{ background:#f5f3ff; color:#7c3aed; border-color:#ddd6fe; }
-  .badge.type-task    { background:#f0fdf4; color:#16a34a; border-color:#bbf7d0; }
-  .badge.scope { background:#f8fafc; color:var(--muted); border-color:var(--border); }
-  .md-link { display:inline-block; margin-top:14px; font-size:13px; color:var(--muted); text-decoration:none; }
-  .md-link:hover { color: var(--primary); text-decoration: underline; }
-  .md-link code { background:#f1f5f9; padding:2px 6px; border-radius:6px; font-size:12px; }
+  .badge.type { color: var(--text); }
+  .badge.type::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .badge.type-bugfix::before { background: #d1463b; }
+  .badge.type-refactor::before { background: #7a62c9; }
+  .badge.type-task::before { background: var(--ok); }
+  .md-link { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .md-link code { font-family: var(--font-mono); font-size: 11.5px; }
+  .plan-head h1 { margin: 0; font-size: 20px; line-height: 1.35; letter-spacing: -.01em; }
+  .plan-summary { color: var(--muted); margin: 6px 0 0; }
+  .plan-summary:empty { display: none; }
 
-  /* 상태 배너 */
   .statusbar {
-    display:flex; align-items:center; gap:10px;
-    border-radius: var(--radius); padding: 12px 18px; margin: 24px 0;
-    font-size: 14px; font-weight: 600; border: 1px solid var(--border);
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 16px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    font-size: 13px;
   }
-  .statusbar.pending { background:#fffbeb; border-color:#fcd34d; color:#92400e; }
-  .statusbar.confirmed { background:var(--good-weak); border-color:var(--good-border); color:#166534; }
-  .statusbar .dot { width:9px; height:9px; border-radius:50%; flex:none; }
-  .statusbar.pending .dot { background:#d97706; }
-  .statusbar.confirmed .dot { background:var(--good); }
+  .statusbar .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--warn); }
+  .statusbar.confirmed .dot { background: var(--ok); }
+  #statusbar-text { flex: 1; min-width: 0; }
+  .jump { font-size: 12px; color: var(--muted); white-space: nowrap; }
 
-  .section-title { font-size: 13px; font-weight: 700; color: var(--muted);
-    text-transform: uppercase; letter-spacing: .05em; margin: 0 0 12px 2px; }
+  /* 절 머리 */
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 10px; }
+  .section-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+  .progress { font-size: 12px; color: var(--muted); }
 
+  /* 결정 카드 */
   .card {
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    padding: 20px 22px;
-    margin-bottom: 16px;
-    box-shadow: var(--shadow);
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px;
+    scroll-margin-top: 16px; transition: border-color .2s, box-shadow .2s;
   }
-  .card.unresolved { border-color: #fcd34d; }
-  .card.confirmed { border-color: var(--good-border); background: #fcfdfc; }
-  .card-head { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
-  .card-title { font-size: 16px; font-weight: 700; margin: 0; }
-  .card-desc { color: var(--muted); font-size: 14px; margin: 4px 0 16px; }
-  .pick-tag { font-size:11px; font-weight:700; color:var(--muted); white-space:nowrap;
-    border:1px solid var(--border); border-radius:999px; padding:2px 9px; }
-  .pick-tag.done { color:var(--good); border-color:var(--good-border); background:var(--good-weak); }
+  .card.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .card-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .card-desc { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+  .tags { display: flex; gap: 4px; flex: none; }
+  .tag {
+    font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap;
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+  }
+  .tag.required { color: var(--text); border-color: var(--line-strong); }
+  .pick-tag.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-weak); }
 
-  .options { display: flex; flex-direction: column; gap: 8px; }
+  .options { display: flex; flex-direction: column; gap: 6px; }
   .option {
-    display: flex; align-items: flex-start; gap: 12px;
-    border: 1.5px solid var(--border); border-radius: 10px; padding: 12px 14px;
-    cursor: pointer; transition: border-color .12s, background .12s;
-    background: #fff;
+    display: flex; align-items: flex-start; gap: 12px; min-height: 44px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 11px 12px;
+    background: var(--surface); cursor: pointer; transition: border-color .12s, background .12s;
   }
-  .option:hover { border-color: #cbd5e1; background: #f8fafc; }
-  .option.selected { border-color: var(--primary); background: var(--primary-weak); }
+  .option:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .option.selected { border-color: var(--accent); background: var(--accent-weak); }
   .option .marker {
-    flex: none; width: 20px; height: 20px; margin-top: 1px;
-    border: 2px solid #cbd5e1; background:#fff; display:grid; place-items:center;
+    flex: none; width: 18px; height: 18px; margin-top: 2px;
+    border: 1.5px solid var(--line-strong); background: var(--surface);
+    display: grid; place-items: center;
   }
   .option[data-type="single"] .marker { border-radius: 50%; }
-  .option[data-type="multi"] .marker { border-radius: 6px; }
-  .option.selected .marker { border-color: var(--primary); background: var(--primary); }
-  .option.selected .marker::after {
-    content: ''; width: 8px; height: 8px; background:#fff; border-radius:2px;
+  .option[data-type="multi"] .marker { border-radius: 4px; }
+  .option.selected .marker { border-color: var(--accent); background: var(--accent); }
+  .option[data-type="single"].selected .marker::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ink); }
+  .option[data-type="multi"].selected .marker::after {
+    content: ''; width: 5px; height: 9px; margin-top: -2px;
+    border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg);
   }
-  .option[data-type="single"].selected .marker::after { border-radius: 50%; }
-  .option .opt-body { flex: 1; }
-  .opt-label { font-weight: 600; font-size: 14.5px; }
-  .opt-label .rec { font-size:11px; font-weight:700; color:var(--good); margin-left:6px;
-    background:var(--good-weak); border:1px solid var(--good-border); padding:1px 7px; border-radius:999px; }
+  .opt-body { flex: 1; min-width: 0; }
+  .opt-label { font-weight: 600; }
+  .rec {
+    display: inline-block; margin-left: 6px; vertical-align: 1px;
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 0 7px;
+  }
   .opt-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
-  .custom-input { margin-top: 8px; width: 100%; border:1.5px solid var(--border);
-    border-radius:8px; padding:8px 10px; font-size:14px; font-family:inherit; display:none; }
-  .option.selected .custom-input { display:block; }
+  .custom-input {
+    display: none; width: 100%; margin-top: 8px; padding: 8px 10px;
+    font: inherit; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  }
+  .option.selected .custom-input { display: block; }
 
-  /* 확정(locked) 카드 — 선택된 것만 강조, 나머지는 흐리게, 클릭 비활성 */
-  .card.confirmed .options { cursor: default; }
+  /* 확정된 카드 — 고른 것만 보이고, 나머지는 [다른 선택지] 로 펼친다 */
   .card.confirmed .option { cursor: default; }
-  .card.confirmed .option:hover { border-color: var(--border); background: #fff; }
-  .card.confirmed .option.selected { border-color: var(--good-border); background: var(--good-weak); }
-  .card.confirmed .option.selected .marker { border-color: var(--good); background: var(--good); }
-  .card.confirmed .option:not(.selected) { opacity: .45; }
+  .card.confirmed .option:hover { border-color: var(--line); background: var(--surface); }
+  .card.confirmed .option.selected { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-weak); }
+  .card.confirmed .option.selected .marker { border-color: var(--ok); background: var(--ok); }
+  .card.confirmed .option:not(.selected) { display: none; opacity: .6; }
+  .card.confirmed.show-all .option:not(.selected) { display: flex; }
+  .others { margin-top: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .others:hover { color: var(--text); }
 
-  .notes-area { width:100%; min-height:70px; border:1.5px solid var(--border); border-radius:10px;
-    padding:12px 14px; font-size:14px; font-family:inherit; resize:vertical; }
+  .notes-area {
+    display: block; width: 100%; min-height: 72px; padding: 10px 12px; resize: vertical;
+    font: inherit; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  }
+  .notes-area::placeholder, .custom-input::placeholder { color: var(--muted); }
 
-  /* 계획서 본문(.md 렌더) */
-  .plan-body {
-    background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius);
-    padding: 28px 32px; box-shadow: var(--shadow); margin-top: 8px;
+  details.preview { margin: 4px 2px 28px; }
+  details.preview summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+  pre.prompt-out {
+    margin: 6px 0 0; padding: 14px 16px; border-radius: var(--radius);
+    background: var(--code-bg); border: 1px solid var(--line); color: var(--text);
+    font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word;
   }
-  .plan-body h1, .plan-body h2, .plan-body h3, .plan-body h4, .plan-body h5, .plan-body h6 {
-    line-height: 1.3; letter-spacing: -.01em; margin: 1.4em 0 .5em;
+
+  /* 계획서 전문(.md 렌더) */
+  details.plan-doc {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    scroll-margin-top: 16px;
   }
+  details.plan-doc > summary {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    padding: 12px 16px; font-size: 13px; font-weight: 700;
+  }
+  details.plan-doc > summary::-webkit-details-marker { display: none; }
+  details.plan-doc > summary::before {
+    content: ''; width: 6px; height: 6px; margin: 0 2px;
+    border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s;
+  }
+  details.plan-doc[open] > summary::before { transform: rotate(45deg); }
+  details.plan-doc[open] > summary { border-bottom: 1px solid var(--line); }
+  .plan-body { padding: 18px 20px 22px; overflow-wrap: anywhere; }
+  @media (min-width: 720px) { .plan-body { padding: 22px 28px 26px; } }
   .plan-body > :first-child { margin-top: 0; }
-  .plan-body h1 { font-size: 22px; border-bottom: 2px solid var(--border); padding-bottom: .3em; }
-  .plan-body h2 { font-size: 19px; border-bottom: 1px solid var(--border); padding-bottom: .25em; }
-  .plan-body h3 { font-size: 16.5px; }
-  .plan-body h4 { font-size: 15px; color: #334155; }
-  .plan-body p { margin: .6em 0; font-size: 14.5px; }
-  .plan-body ul, .plan-body ol { margin: .5em 0; padding-left: 1.4em; font-size: 14.5px; }
-  .plan-body li { margin: .25em 0; }
-  .plan-body strong { font-weight: 700; color: #0f172a; }
+  .plan-body h1, .plan-body h2, .plan-body h3, .plan-body h4, .plan-body h5, .plan-body h6 {
+    line-height: 1.4; letter-spacing: -.01em; margin: 1.5em 0 .5em;
+  }
+  .plan-body h1 { font-size: 18px; }
+  .plan-body h2 { font-size: 16px; }
+  .plan-body h3 { font-size: 14.5px; }
+  .plan-body h4, .plan-body h5, .plan-body h6 { font-size: 14px; color: var(--muted); }
+  .plan-body p { margin: .6em 0; }
+  .plan-body ul, .plan-body ol { margin: .5em 0; padding-left: 1.4em; }
+  .plan-body li { margin: .2em 0; }
+  .plan-body li::marker { color: var(--muted); }
+  .plan-body strong { font-weight: 700; }
   .plan-body code {
-    background: #f1f5f9; color: #be123c; padding: 1.5px 6px; border-radius: 6px;
-    font-size: 12.8px; font-family: 'SF Mono', Menlo, Consolas, monospace;
+    font: 12.5px var(--font-mono); background: var(--code-bg); color: var(--text);
+    border: 1px solid var(--line); padding: 0 5px; border-radius: 4px;
   }
   .plan-body pre.md-code {
-    background: #0f172a; color: #e2e8f0; border-radius: 10px; padding: 14px 16px;
-    overflow-x: auto; margin: .8em 0;
+    margin: .8em 0; padding: 12px 14px; overflow-x: auto;
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
   }
-  .plan-body pre.md-code code { background: none; color: inherit; padding: 0; font-size: 12.8px; }
+  .plan-body pre.md-code code { background: none; border: 0; padding: 0; font-size: 12.5px; line-height: 1.6; }
   .plan-body blockquote {
-    margin: .8em 0; padding: 8px 16px; border-left: 4px solid var(--primary-border);
-    background: var(--primary-weak); color: #334155; border-radius: 0 8px 8px 0; font-size: 14px;
+    margin: .8em 0; padding: 8px 14px; color: var(--text);
+    background: var(--surface-2); border-left: 3px solid var(--line-strong); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
   }
-  .plan-body hr { border: none; border-top: 1px solid var(--border); margin: 1.6em 0; }
-  .plan-body a { color: var(--primary); text-decoration: none; }
-  .plan-body a:hover { text-decoration: underline; }
+  .plan-body hr { border: none; border-top: 1px solid var(--line); margin: 1.6em 0; }
   .plan-body table {
-    border-collapse: collapse; width: 100%; margin: .9em 0; font-size: 13.5px;
-    display: block; overflow-x: auto;
+    display: block; overflow-x: auto; border-collapse: collapse; margin: .9em 0; font-size: 13px;
   }
-  .plan-body th, .plan-body td { border: 1px solid var(--border); padding: 7px 11px; text-align: left; vertical-align: top; }
-  .plan-body th { background: #f8fafc; font-weight: 700; white-space: nowrap; }
-  .plan-body tbody tr:nth-child(even) { background: #fcfdfe; }
+  .plan-body th, .plan-body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .plan-body th { background: var(--surface-2); font-weight: 700; white-space: nowrap; }
 
-  /* 하단 고정 액션 바 */
+  /* 하단 고정 바 */
   .actionbar {
-    position: fixed; left: 0; right: 0; bottom: 0;
-    background: rgba(255,255,255,.92); backdrop-filter: blur(8px);
-    border-top: 1px solid var(--border); box-shadow: 0 -2px 12px rgba(15,23,42,.06);
-    padding: 14px 20px;
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line); padding: 12px 16px;
   }
-  .actionbar-inner { max-width: 880px; margin: 0 auto; display: flex; align-items: center; gap: 12px; }
-  .status { font-size: 13px; color: var(--muted); flex: 1; }
+  .actionbar-inner { max-width: 832px; margin: 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .status { flex: 1 1 220px; min-width: 0; font-size: 13px; color: var(--muted); }
   .status b { color: var(--text); }
+  .status a { white-space: nowrap; }
+  .actions { display: flex; gap: 8px; margin-left: auto; }
   button {
-    font-family: inherit; font-size: 14px; font-weight: 600; cursor: pointer;
-    border-radius: 9px; padding: 11px 18px; border: 1px solid var(--border);
-    background: #fff; color: var(--text); transition: filter .12s, background .12s;
+    font: 600 13px var(--font-ui); cursor: pointer;
+    border-radius: var(--radius-sm); padding: 9px 16px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+    transition: filter .12s, background .12s;
   }
-  button:hover { background: #f8fafc; }
-  button.primary { background: var(--primary); color:#fff; border-color: var(--primary); }
-  button.primary:hover { filter: brightness(1.06); background: var(--primary); }
-  button:disabled { opacity: .5; cursor: not-allowed; }
+  button:hover { background: var(--surface-2); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 
-  details.preview { margin: 8px 0 24px; }
-  details.preview summary { cursor:pointer; font-size:13px; color:var(--muted); padding:6px 0; }
-  pre.prompt-out {
-    background:#0f172a; color:#e2e8f0; border-radius:10px; padding:16px 18px;
-    font-size:13px; line-height:1.6; white-space:pre-wrap; word-break:break-word;
-    font-family: 'SF Mono', Menlo, Consolas, monospace; margin: 4px 0 0;
-  }
   .toast {
-    position: fixed; bottom: 84px; left: 50%; transform: translateX(-50%) translateY(20px);
-    background: var(--good); color:#fff; padding: 10px 20px; border-radius: 999px;
-    font-size: 14px; font-weight: 600; opacity: 0; pointer-events: none;
-    transition: opacity .2s, transform .2s; box-shadow: var(--shadow); z-index: 50;
+    position: fixed; left: 50%; bottom: 84px; z-index: 50;
+    transform: translateX(-50%) translateY(16px); opacity: 0; pointer-events: none;
+    background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; transition: opacity .2s, transform .2s;
   }
   .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 </style>
@@ -291,45 +345,54 @@ const PLAN = {
 <body>
 <div class="wrap">
   <header class="plan-head">
+    <div class="meta">
+      <span class="badge type" id="p-type"></span>
+      <span class="badge scope" id="p-scope"></span>
+      <a class="md-link" id="p-mdlink" href="#"></a>
+    </div>
     <h1 id="p-title"></h1>
     <p class="plan-summary" id="p-summary"></p>
-    <div class="badges">
-      <span class="badge" id="p-type"></span>
-      <span class="badge scope" id="p-scope"></span>
+    <div class="statusbar" id="statusbar">
+      <span class="dot"></span><span id="statusbar-text"></span>
+      <a class="jump" id="jump-doc" href="#plan-doc" style="display:none">계획서 전문 ↓</a>
     </div>
-    <a class="md-link" id="p-mdlink" href="#"></a>
   </header>
 
-  <p class="section-title" id="body-title" style="display:none">작업계획서 상세</p>
-  <article class="plan-body" id="plan-body" style="display:none"></article>
-
-  <div class="statusbar" id="statusbar"><span class="dot"></span><span id="statusbar-text"></span></div>
-
-  <div id="decisions-wrap">
-    <p class="section-title" id="decisions-title">결정 사항 — 선택 후 하단 [이대로 진행]</p>
+  <section id="decisions-wrap">
+    <div class="section-head">
+      <h2 class="section-title" id="decisions-title">결정</h2>
+      <span class="progress" id="progress"></span>
+    </div>
     <div id="decisions"></div>
 
     <div class="card" id="notes-card">
-      <h3 class="card-title">추가 메모 (선택)</h3>
-      <p class="card-desc">결정 외에 전달할 제약·우선순위·주의사항이 있으면 적어주세요.</p>
-      <textarea class="notes-area" id="notes" placeholder="예: 마이그레이션은 이번 배포에 포함하지 말 것"></textarea>
+      <h3 class="card-title">추가 메모 <span class="tag">선택</span></h3>
+      <p class="card-desc">결정 외에 전달할 제약 · 우선순위 · 주의사항</p>
+      <textarea class="notes-area" id="notes" aria-label="추가 메모" placeholder="예: 마이그레이션은 이번 배포에 넣지 말 것"></textarea>
     </div>
 
     <details class="preview">
       <summary>보낼 프롬프트 미리보기</summary>
       <pre class="prompt-out" id="preview"></pre>
     </details>
-  </div>
+  </section>
+
+  <details class="plan-doc" id="plan-doc" open style="display:none">
+    <summary id="body-title">계획서 전문</summary>
+    <article class="plan-body" id="plan-body"></article>
+  </details>
 </div>
 
 <div class="actionbar" id="actionbar">
   <div class="actionbar-inner">
-    <div class="status" id="status"></div>
-    <button id="btn-copy" style="display:none">프롬프트로 복사</button>
-    <button class="primary" id="btn-send">이대로 진행</button>
+    <div class="status" id="status" aria-live="polite"></div>
+    <div class="actions">
+      <button id="btn-copy" style="display:none">프롬프트로 복사</button>
+      <button class="primary" id="btn-send">이대로 진행</button>
+    </div>
   </div>
 </div>
-<div class="toast" id="toast">복사되었습니다</div>
+<div class="toast" id="toast" role="status">복사되었습니다</div>
 
 <script>
 (function () {
@@ -354,18 +417,23 @@ const PLAN = {
   const allConfirmed = () => PLAN.decisions.length > 0 &&
     PLAN.decisions.every((dec) => !dec.required || isConfirmed(dec));
 
-  // --- 헤더 렌더 ---
+  // --- 머리 ---
+  const TYPE_LABELS = { feature: '기능', bugfix: '버그 수정', refactor: '리팩터링', task: '작업' };
   document.getElementById('p-title').textContent = PLAN.title;
+  document.title = PLAN.title + ' — 작업계획서';
   document.getElementById('p-summary').textContent = PLAN.summary || '';
   const typeBadge = document.getElementById('p-type');
-  typeBadge.textContent = PLAN.type;
+  typeBadge.textContent = TYPE_LABELS[PLAN.type] || PLAN.type;
   typeBadge.classList.add('type-' + PLAN.type);
-  document.getElementById('p-scope').textContent = '영향 범위: ' + PLAN.scope;
+  const scopeBadge = document.getElementById('p-scope');
+  if (PLAN.scope && PLAN.scope !== '-') scopeBadge.textContent = '영향 범위 · ' + PLAN.scope;
+  else scopeBadge.remove();
   const mdLink = document.getElementById('p-mdlink');
-  mdLink.innerHTML = '원본 계획서 → <code>' + escapeText(PLAN.mdFile) + '</code>';
+  mdLink.innerHTML = '원본 <code>' + escapeText(PLAN.mdFile.split('/').pop()) + '</code>';
+  mdLink.title = PLAN.mdFile;
   mdLink.href = PLAN.mdFile.split('/').pop();
 
-  // --- 결정 카드 렌더 ---
+  // --- 결정 카드 ---
   const container = document.getElementById('decisions');
   PLAN.decisions.forEach((dec) => {
     const confirmed = isConfirmed(dec);
@@ -374,28 +442,40 @@ const PLAN = {
 
     const card = el('div', 'card' + (confirmed ? ' confirmed' : ''));
     card.dataset.id = dec.id;
-    const reqMark = dec.required ? ' *' : '';
+    card.id = 'decision-' + dec.id;
+    const tags = (dec.required ? '<span class="tag required">필수</span>' : '') +
+      '<span class="tag pick-tag">' + (dec.type === 'multi' ? '복수 선택' : '택1') + '</span>';
     card.appendChild(el('div', 'card-head',
-      '<h3 class="card-title">' + escapeText(dec.title) + reqMark + '</h3>' +
-      '<span class="pick-tag">' + (dec.type === 'multi' ? '복수 선택' : '택1') + '</span>'));
+      '<h3 class="card-title">' + escapeText(dec.title) + '</h3><span class="tags">' + tags + '</span>'));
     if (dec.desc) card.appendChild(el('p', 'card-desc', escapeText(dec.desc)));
+    else card.querySelector('.card-head').style.marginBottom = '12px';
 
     const opts = el('div', 'options');
+    opts.setAttribute('role', dec.type === 'multi' ? 'group' : 'radiogroup');
+    opts.setAttribute('aria-label', dec.title);
     dec.options.forEach((opt) => {
       const row = el('div', 'option');
       row.dataset.type = dec.type;
+      row.setAttribute('role', dec.type === 'multi' ? 'checkbox' : 'radio');
       if (preset.includes(opt.label)) row.classList.add('selected');
+      row.setAttribute('aria-checked', String(preset.includes(opt.label)));
       const rec = opt.recommended ? '<span class="rec">추천</span>' : '';
       const desc = opt.desc ? '<div class="opt-desc">' + escapeText(opt.desc) + '</div>' : '';
       const customField = opt.custom
-        ? '<input class="custom-input" placeholder="직접 입력" />' : '';
+        ? '<input class="custom-input" placeholder="직접 입력" aria-label="' + escapeText(opt.label) + ' — 직접 입력" />' : '';
       row.innerHTML =
-        '<div class="marker"></div>' +
+        '<div class="marker" aria-hidden="true"></div>' +
         '<div class="opt-body"><div class="opt-label">' + escapeText(opt.label) + rec + '</div>' +
         desc + customField + '</div>';
       if (!confirmed) {
+        row.tabIndex = 0;
         row.addEventListener('click', (ev) => {
           if (ev.target.classList.contains('custom-input')) return;
+          toggle(dec, opt, row, opts);
+        });
+        row.addEventListener('keydown', (ev) => {
+          if (ev.target !== row || (ev.key !== ' ' && ev.key !== 'Enter')) return;
+          ev.preventDefault();
           toggle(dec, opt, row, opts);
         });
         const customInput = row.querySelector('.custom-input');
@@ -407,6 +487,17 @@ const PLAN = {
       opts.appendChild(row);
     });
     card.appendChild(opts);
+    // 확정된 카드는 고른 것만 — 나머지는 펼쳐 볼 수 있게
+    const others = dec.options.length - preset.filter((label) => dec.options.some((opt) => opt.label === label)).length;
+    if (confirmed && others > 0) {
+      const more = el('button', 'others', '다른 선택지 ' + others + '개 보기');
+      more.type = 'button';
+      more.addEventListener('click', () => {
+        const open = card.classList.toggle('show-all');
+        more.textContent = open ? '다른 선택지 접기' : '다른 선택지 ' + others + '개 보기';
+      });
+      card.appendChild(more);
+    }
     container.appendChild(card);
   });
 
@@ -414,13 +505,22 @@ const PLAN = {
     const picks = state[dec.id].picks;
     if (dec.type === 'single') {
       picks.clear();
-      opts.querySelectorAll('.option').forEach((node) => node.classList.remove('selected'));
+      opts.querySelectorAll('.option').forEach((node) => {
+        node.classList.remove('selected');
+        node.setAttribute('aria-checked', 'false');
+      });
       picks.add(opt.label);
       row.classList.add('selected');
+    } else if (picks.has(opt.label)) {
+      picks.delete(opt.label);
+      row.classList.remove('selected');
     } else {
-      if (picks.has(opt.label)) { picks.delete(opt.label); row.classList.remove('selected'); }
-      else { picks.add(opt.label); row.classList.add('selected'); }
+      picks.add(opt.label);
+      row.classList.add('selected');
     }
+    row.setAttribute('aria-checked', String(row.classList.contains('selected')));
+    const customInput = row.querySelector('.custom-input');
+    if (customInput && row.classList.contains('selected')) customInput.focus();
     render();
   }
 
@@ -455,63 +555,94 @@ const PLAN = {
     return lines.join('\n');
   }
 
+  // 남은 필수 결정으로 — 카드를 잠깐 밝힌다
+  function jumpTo(dec) {
+    const card = document.getElementById('decision-' + dec.id);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1200);
+    const first = card.querySelector('.option[tabindex]');
+    if (first) first.focus({ preventScroll: true });
+  }
+
   function render() {
     PLAN.decisions.forEach((dec) => {
       const card = container.querySelector('[data-id="' + dec.id + '"]');
       const tag = card.querySelector('.pick-tag');
       const decided = state[dec.id].picks.size > 0;
-      card.classList.toggle('unresolved', dec.required && !decided && !isConfirmed(dec));
       if (decided) {
         tag.classList.add('done');
-        tag.textContent = (isConfirmed(dec) ? '✅ 확정 · ' : '✓ ') + valueFor(dec);
+        tag.textContent = isConfirmed(dec) ? '확정' : '골랐음';
       } else {
         tag.classList.remove('done');
         tag.textContent = dec.type === 'multi' ? '복수 선택' : '택1';
       }
     });
+    const required = PLAN.decisions.filter((dec) => dec.required);
+    const optional = PLAN.decisions.length - required.length;
     const left = unresolved();
+    document.getElementById('progress').textContent =
+      (required.length ? '필수 ' + (required.length - left.length) + '/' + required.length : '') +
+      (required.length && optional ? ' · ' : '') + (optional ? '선택 ' + optional + '개' : '');
     const status = document.getElementById('status');
-    if (sent) status.innerHTML = '<b>✅ ' + escapeText(PLAN.leadPane) + ' 에 보냈습니다.</b> 확정되면 이 화면이 잠깁니다.';
-    else if (sendError) status.innerHTML = '⚠️ ' + escapeText(sendError) + ' — [프롬프트로 복사] 후 ' + escapeText(PLAN.leadPane || '담당') + ' pane 에 붙여넣어 주세요.';
-    else if (left.length === 0) status.innerHTML = '<b>모든 필수 결정 완료.</b> [이대로 진행] 을 누르면 ' + escapeText(PLAN.leadPane) + ' pane 에 바로 보냅니다.';
-    else status.innerHTML = '필수 결정 <b>' + left.length + '개</b> 남음: ' +
-      left.map((dec) => escapeText(dec.title)).join(', ');
+    if (sent) status.innerHTML = '<b>' + escapeText(PLAN.leadPane) + ' 에 보냈어요.</b> 확정되면 이 화면이 잠깁니다.';
+    else if (sendError) status.innerHTML = escapeText(sendError) + ' — 복사해서 ' + escapeText(PLAN.leadPane || '담당') + ' pane 에 붙여넣어 주세요.';
+    else if (left.length === 0) status.innerHTML = '<b>모두 골랐어요.</b> ' + escapeText(PLAN.leadPane) + ' pane 에 보냅니다.';
+    else {
+      status.innerHTML = '필수 <b>' + left.length + '개</b> 남음 · ';
+      const link = el('a', '', escapeText(left[0].title) + '로 이동');
+      link.href = '#decision-' + left[0].id;
+      link.addEventListener('click', (ev) => { ev.preventDefault(); jumpTo(left[0]); });
+      status.appendChild(link);
+    }
+    if (!allConfirmed()) {
+      document.getElementById('statusbar-text').innerHTML = left.length
+        ? '<b>결정 대기</b> · 필수 ' + left.length + '개를 고르고 [이대로 진행]'
+        : '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요';
+    }
     document.getElementById('btn-copy').disabled = left.length > 0;
     document.getElementById('btn-send').disabled = left.length > 0 || sent || sending;
     document.getElementById('preview').textContent = buildPrompt();
   }
 
-  // --- 라이프사이클 UI: 결정 콘솔 / 확정 뷰 전환 ---
+  // --- 라이프사이클: 결정 콘솔 / 확정 뷰 ---
   function applyLifecycle() {
     const confirmed = allConfirmed();
     const bar = document.getElementById('statusbar');
     const barText = document.getElementById('statusbar-text');
     if (confirmed) {
       bar.className = 'statusbar confirmed';
-      barText.textContent = '✅ 확정 완료 — 위 작업계획서가 확정되었습니다. (아래 결정 카드는 잠금 표시)';
-      document.getElementById('decisions-title').textContent = '확정된 결정 사항';
-      // 확정되면 메모 입력/미리보기/액션바는 감춰 읽기용으로 전환
+      barText.innerHTML = '<b>확정됨</b> · 아래 결정대로 진행합니다';
+      document.getElementById('decisions-title').textContent = '확정된 결정';
+      // 확정되면 메모 · 미리보기 · 액션 바를 감춰 읽기용으로
       document.getElementById('notes-card').style.display = 'none';
       document.querySelector('details.preview').style.display = 'none';
       document.getElementById('actionbar').style.display = 'none';
-      document.querySelector('.wrap').style.paddingBottom = '60px';
+      document.querySelector('.wrap').style.paddingBottom = '48px';
     } else {
-      bar.className = 'statusbar pending';
-      const left = PLAN.decisions.filter((dec) => dec.required && !isConfirmed(dec)).length;
-      barText.textContent = '결정 대기 — 필수 ' + left + '건을 선택하고 [이대로 진행] 을 눌러 주세요.';
+      bar.className = 'statusbar pending'; // 글은 render() 가 고른 상태에 맞춰 쓴다
     }
+    if (!PLAN.decisions.length) document.getElementById('decisions-wrap').style.display = 'none';
   }
 
-  // --- .md 본문 렌더 ---
+  // --- .md 본문 ---
   renderPlanBody();
   function renderPlanBody() {
-    const raw = (document.getElementById('plan-md').textContent || '').trim();
+    let raw = (document.getElementById('plan-md').textContent || '').trim();
     if (!raw) return;
-    document.getElementById('body-title').style.display = '';
-    const body = document.getElementById('plan-body');
-    body.style.display = '';
-    body.innerHTML = miniMarkdown(raw);
+    // 맨 앞 # 제목이 PLAN.title 과 같으면 뺀다 — 머리에 이미 있다
+    const first = raw.match(/^#\s+(.+)\n?/);
+    if (first && first[1].trim() === String(PLAN.title).trim()) raw = raw.slice(first[0].length).trim();
+    document.getElementById('plan-doc').style.display = '';
+    document.getElementById('jump-doc').style.display = '';
+    document.getElementById('plan-body').innerHTML = miniMarkdown(raw);
   }
+  document.getElementById('jump-doc').addEventListener('click', (ev) => {
+    ev.preventDefault();
+    const doc = document.getElementById('plan-doc');
+    doc.open = true;
+    doc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
 
   // 의존성 없는 경량 마크다운 렌더러 (중첩목록 미지원)
   // 따옴표까지 이스케이프한다 — 현황판이 토큰을 넣어 주는 페이지라 본문 링크로 속성이 깨지면 /api/* 를 부를 수 있다
@@ -522,7 +653,7 @@ const PLAN = {
   // 제어문자·공백이 섞이면 거부한다 — URL 파서가 앞의 제어문자를 지워 "\x01javascript:" 가 스킴으로 살아난다
   function safeHref(href) {
     const decoded = href.replace(/&amp;/g, '&');
-    if (/[\u0000-\u0020\u007f-\u009f]/.test(decoded)) return null;
+    if (/[\u0000- \u007f-\u009f]/.test(decoded)) return null;
     if (/^https?:\/\//i.test(decoded)) return href;
     // 첫 / ? # 앞에 : 가 없으면 상대 경로다
     const head = decoded.split(/[/?#]/)[0];
@@ -653,7 +784,7 @@ const PLAN = {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || '보내지 못했어요 (' + response.status + ')');
       sent = true;
-      document.getElementById('btn-send').textContent = '✅ 보냄';
+      document.getElementById('btn-send').textContent = '보냄';
     } catch (error) {
       fallbackToCopy(error.message || '보내지 못했어요');
     } finally {
@@ -662,13 +793,22 @@ const PLAN = {
     }
   }
   if (!PLAN.leadPane) fallbackToCopy('보낼 pane 이 계획서에 적혀 있지 않아요');
-  else if (!boardToken) fallbackToCopy('현황판 주소로 열지 않아 보낼 수 없어요 (scripts/board.sh open <이 파일>)');
+  else if (!boardToken) fallbackToCopy('현황판 주소로 열지 않아 바로 보낼 수 없어요');
   document.getElementById('btn-send').addEventListener('click', sendToHermes);
   document.getElementById('btn-copy').addEventListener('click', () => copy(buildPrompt()));
   document.getElementById('notes').addEventListener('input', render);
 
+  // 고정 바가 마지막 내용을 가리지 않게 — 바 높이만큼 아래 여백
+  const actionbar = document.getElementById('actionbar');
+  const wrap = document.querySelector('.wrap');
+  const fitBottom = () => {
+    if (actionbar.style.display !== 'none') wrap.style.paddingBottom = (actionbar.offsetHeight + 32) + 'px';
+  };
+  if (window.ResizeObserver) new ResizeObserver(fitBottom).observe(actionbar);
+
   render();
   applyLifecycle();
+  fitBottom();
 })();
 </script>
 </body>

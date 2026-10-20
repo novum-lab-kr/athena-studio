@@ -3,7 +3,7 @@
  * 정식 계획서의 결정 콘솔 html 을 만들거나 md 와 맞춘다.
  *
  *   node scripts/plan-html.mjs <plans/…md> --data <PLAN.json>   # 처음 만들 때 (docs/plan-template.html 복사)
- *   node scripts/plan-html.mjs <plans/…md> [--data <PLAN.json>] # 이미 있으면 plan-md 를 md 로 다시 맞추고, --data 가 있으면 PLAN 도 바꾼다
+ *   node scripts/plan-html.mjs <plans/…md> [--data <PLAN.json>] # 이미 있으면 틀을 지금 템플릿으로 · plan-md 를 md 로 다시 맞추고, --data 가 있으면 PLAN 도 바꾼다
  *   node scripts/plan-html.mjs <plans/…md> --add <결정.json>    # 리뷰 뒤 결정을 덧붙인다 — 기존 결정(확정분은 잠긴 채)은 두고 새 결정만 연다.
  *                                                               html 이 없으면(경량 계획서) 템플릿으로 새로 만든다. 결정.json 은 decisions[] 배열(또는 { decisions: [] })
  *   node scripts/plan-html.mjs <plans/…md> --decide r1='<label>' [r2='<label>' …]  # 확정을 기록한다 — 그 id 에만 decided 를 채우고 나머지는 그대로
@@ -67,10 +67,14 @@ if (!existsSync(htmlPath) && !dataPath && !addPath) {
 const planLock = acquirePlanLock(mdPath)
 process.on('exit', () => releaseLock(planLock))
 
-const source = readFileSync(existsSync(htmlPath) ? htmlPath : join(ROOT, 'docs/plan-template.html'), 'utf8')
+// 틀(스타일 · 스크립트)은 늘 지금 템플릿 것으로 — 기존 html 에서는 PLAN 블록만 읽는다(본문은 md 에서 다시 넣는다).
+// 그래서 템플릿을 고치면 기존 계획서도 다음에 맞출 때 새 모양이 된다
+const source = readFileSync(join(ROOT, 'docs/plan-template.html'), 'utf8')
 const commentEnd = source.indexOf('-->') + 3
 const head = source.slice(0, commentEnd)
 let body = source.slice(commentEnd)
+const existing = existsSync(htmlPath) ? readFileSync(htmlPath, 'utf8') : null
+const existingBody = existing === null ? body : existing.slice(existing.indexOf('-->') + 3)
 
 const planBlock = /(<script id="plan-data">\n)const PLAN = ([\s\S]*?)\n(<\/script>)/
 
@@ -143,7 +147,7 @@ function parsePlanLiteral(source) {
     return fail(error.message)
   }
 }
-const current = body.match(planBlock)
+const current = existingBody.match(planBlock)
 if (!current) {
   console.error('⚠️  html 에서 PLAN 블록을 찾지 못했다')
   process.exit(1)
@@ -151,7 +155,7 @@ if (!current) {
 let plan
 if (dataPath) {
   plan = JSON.parse(readFileSync(dataPath, 'utf8'))
-} else if (existsSync(htmlPath)) {
+} else if (existing !== null) {
   try {
     plan = parsePlanLiteral(current[2])
   } catch (error) {
@@ -238,9 +242,8 @@ const usable = (id) => Boolean(id) && (!nowPane || id === nowPane || paneExists(
 plan.leadPane = addPath
   ? option('pane') || nowPane || savedPane || previousPane
   : option('pane') || [savedPane, previousPane].find(usable) || nowPane
-// 이름 변경(2026-10) 전에 만든 html 은 콘솔 코드가 PLAN.hermesPane 을 읽는다 — 그런 파일에는 옛 이름도 같이 적는다
-if (/PLAN\.hermesPane/.test(body)) plan.hermesPane = plan.leadPane
-else delete plan.hermesPane
+// 틀을 늘 지금 템플릿으로 다시 쓰므로 옛 이름(hermesPane)을 읽는 콘솔 코드는 남지 않는다
+delete plan.hermesPane
 
 // PLAN 안의 < 는 \u003c 로 — 문자열에 </script> 가 있어도 블록이 끊기지 않게
 const planJson = JSON.stringify(plan, null, 2).replace(/</g, '\\u003c')
