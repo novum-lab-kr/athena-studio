@@ -3,8 +3,8 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stdout
 --- stderr
 --- screen
-["#nohup", "bash", "-c", "ATHENA_BOARD_PORT=47999 node <ATHENA>/scripts/board/server.mjs"]
 ["@studio", "pane", "get", "p1"]
 ["@studio", "pane", "get", "p1"]
 ["@studio", "pane", "send-text", "p1", "/setup"]
 ["@studio", "pane", "send-keys", "p1", "Enter"]
+["#nohup", "bash", "-c", "ATHENA_BOARD_PORT=47999 node <ATHENA>/scripts/board/server.mjs"]

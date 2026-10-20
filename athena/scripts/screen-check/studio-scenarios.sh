@@ -115,7 +115,17 @@ sc_studio_board_outside() { STEP_WAIT="#nohup" step studio "${LIVE[@]}" "${PORT_
 sc_studio_monitor()  { step studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh 30; step studio "${LIVE[@]}" -- scripts/monitor-pane.sh; }
 sc_studio_guide()    { step studio "${IN_STUDIO[@]}" -- scripts/guide-pane.sh; }
 sc_studio_up()       { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh; }
-sc_studio_up_firstrun() { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 ATHENA_FIRST_RUN=claude -- scripts/athena-up.sh; }
+# 첫 실행은 현황판을 뒤에서 띄우는 동안 /setup 을 보낸다 — 둘의 순서는 돌릴 때마다 다르니 #nohup 줄을 기록 끝으로 모아 비교한다
+sc_studio_up_firstrun() {
+  STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 ATHENA_FIRST_RUN=claude -- scripts/athena-up.sh
+  python3 - "$RESULT" <<'PY'
+import sys
+path = sys.argv[1]
+lines = open(path, encoding='utf-8').read().splitlines(keepends=True)
+board = [line for line in lines if line.startswith('["#nohup"')]
+open(path, 'w', encoding='utf-8').write(''.join([line for line in lines if not line.startswith('["#nohup"')] + board))
+PY
+}
 sc_studio_delegate_newws()    { step studio-newws,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe "버튼 고쳐 줘 (긴급)" --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
 sc_studio_delegate_existing() { step studio-existing,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe --plan plans/task/20261001-fe-test.md --down; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
 sc_studio_delegate_here()     { step studio "${IN_STUDIO[@]}" -- scripts/delegate.sh reviewer --here --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
