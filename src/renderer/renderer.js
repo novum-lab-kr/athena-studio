@@ -1169,7 +1169,7 @@ async function commitRatio(tab, path, ratio) {
   layoutPanes()
   const result = await studio.tabRatio(tab.id, path, ratio)
   if (result.unsupported) {
-    if (!ratioUnsupportedNoticed) showToast(say('pane.sizeOldDaemon'))
+    if (!ratioUnsupportedNoticed) showToast(say('pane.sizeOldDaemon'), 'info')
     ratioUnsupportedNoticed = true
     return
   }
@@ -1331,12 +1331,35 @@ async function openAgent(options) {
   return result
 }
 
-// 알림은 pane 위에 따로 띄운다(누르면 닫힘)
-function showToast(message) {
+// 알림은 pane 위에 따로 띄운다 — kind: error(기본 · ✕ 로 닫을 때까지) · success(4초) · info(6초). 마우스를 올려 두면 기다린다
+const TOAST_MS = { success: 4000, info: 6000 }
+let toastTimer = null
+function showToast(message, kind = 'error') {
   const toast = $('toast')
-  toast.textContent = message
+  clearTimeout(toastTimer)
+  const icon = el('span', 'toast-icon', kind === 'success' ? '✓' : kind === 'info' ? 'i' : '!')
+  icon.setAttribute('aria-hidden', 'true')
+  const text = el('span', 'toast-message', message)
+  const close = el('button', 'toast-close')
+  close.append(lineIcon(POPUP_ICONS.close))
+  close.type = 'button'
+  close.setAttribute('aria-label', say('common.close'))
+  const hide = () => {
+    clearTimeout(toastTimer)
+    toast.hidden = true
+  }
+  close.addEventListener('click', hide)
+  const wait = () => {
+    clearTimeout(toastTimer)
+    if (TOAST_MS[kind]) toastTimer = setTimeout(hide, TOAST_MS[kind])
+  }
+  toast.onmouseenter = () => clearTimeout(toastTimer)
+  toast.onmouseleave = wait
+  toast.dataset.kind = kind
+  toast.setAttribute('role', kind === 'error' ? 'alert' : 'status')
+  toast.replaceChildren(icon, text, close)
   toast.hidden = false
-  toast.onclick = () => (toast.hidden = true)
+  wait()
 }
 
 // ── 현황판 ────────────────────────────────────────────────
@@ -1418,6 +1441,7 @@ function closeBrowserPanel() {
 
 // 다 나온 서랍의 자리 — 슬라이드 중(transform)이면 아직 붙이지 않는다
 function placeBrowserView() {
+  if (modalOpen()) return // 대화상자 위를 덮지 않게 — 닫힐 때 syncModal 이 다시 붙인다
   if (!browserOpen || browserTimer || $('browser').hidden || $('browser').classList.contains('resizing')) return
   const rect = $('browser-slot').getBoundingClientRect()
   if (rect.width < 1 || rect.height < 1) return
@@ -1594,64 +1618,145 @@ function el(tag, className, text) {
   return node
 }
 
+// 대화상자 · 진행 표시가 떠 있는 동안 — 뒤 화면은 inert(포커스 · 클릭 막기), 옆 브라우저는 네이티브 뷰라 위를 덮어서 잠깐 뗀다
+const modalOpen = () => !$('pack-dialog').hidden || !$('pack-progress').hidden
+function syncModal() {
+  const open = modalOpen()
+  for (const node of document.querySelectorAll('body > header, body > main')) node.inert = open
+  if (!browserOpen) return
+  if (open) studio.browserHide()
+  else placeBrowserView()
+}
+
 // 대화상자 하나 — actions: [{ label, value, kind: 'primary'|'danger'|'link' }] · Esc 는 null.
+// 버튼은 맥처럼 취소(value null) → 다른 것 → 확인 · 위험(맨 오른쪽) 순서로 놓는다. 위험이 있으면 처음 포커스는 취소에
+// input: { value, placeholder, maxLength, label, code } — Enter 는 확인(primary) 버튼(한글 조합 중이면 무시)
 // 이미 열린 것이 있으면 null 로 닫고 연다(앞 흐름이 영영 기다리지 않게)
 let closeOpenDialog = null
-function packDialog({ title, body = [], actions = [], input = null }) {
+function packDialog({ title, subtitle = '', body = [], actions = [], input = null, close = false }) {
   if (closeOpenDialog) closeOpenDialog(null)
   const dialog = $('pack-dialog')
+  const before = document.activeElement
   $('pack-dialog-title').textContent = title
+  const sub = $('pack-dialog-subtitle')
+  sub.textContent = subtitle
+  sub.hidden = !subtitle
   const bodyNode = $('pack-dialog-body')
   bodyNode.replaceChildren(...body.map((part) => (typeof part === 'string' ? el('p', null, part) : part)))
   let field = null
   if (input) {
-    field = el('input', 'pack-input')
+    field = el('input', `pack-input${input.code ? ' code' : ''}`)
+    field.id = 'pack-dialog-input'
     field.placeholder = input.placeholder || ''
     field.value = input.value || ''
     if (input.maxLength) field.maxLength = input.maxLength
     field.spellcheck = false
     field.autocomplete = 'off'
-    bodyNode.append(field)
+    field.setAttribute('aria-label', input.label || title)
+    let place = field
+    // input.error — 칸 아래 빨간 한 줄(고쳐 쓰면 사라진다)
+    if (input.error) {
+      place = el('div', 'pack-field')
+      const error = el('p', 'pack-field-error', input.error)
+      error.id = 'pack-dialog-input-error'
+      error.setAttribute('role', 'alert')
+      place.append(field, error)
+      field.setAttribute('aria-invalid', 'true')
+      field.setAttribute('aria-describedby', error.id)
+      field.addEventListener('input', () => {
+        error.remove()
+        field.removeAttribute('aria-invalid')
+      }, { once: true })
+    }
+    // 본문에 [data-input-slot] 이 있으면 그 자리에(이름 · 이미지처럼 칸이 옆에 붙는 대화상자)
+    ;(bodyNode.querySelector('[data-input-slot]') || bodyNode).append(place)
   }
+  const rank = (action) => (action.value === null ? 0 : action.kind === 'primary' || action.kind === 'danger' ? 2 : 1)
+  const ordered = actions.map((action, index) => ({ action, index })).sort((a, b) => rank(a.action) - rank(b.action) || a.index - b.index).map((item) => item.action)
   return new Promise((resolve) => {
     const finish = (value) => {
       if (closeOpenDialog !== finish) return
       closeOpenDialog = null
       dialog.hidden = true
       dialog.onkeydown = null
+      syncModal()
+      if (before instanceof HTMLElement && before.isConnected) before.focus({ preventScroll: true })
       resolve(field && value !== null ? { value, text: field.value } : value)
     }
-    const buttons = actions.map((action) => {
-      const button = el('button', action.kind === 'primary' ? 'primary' : `pack-button${action.kind === 'danger' ? ' danger' : ''}`, action.label)
+    const buttons = ordered.map((action) => {
+      const kind = action.kind === 'primary' ? 'primary' : action.kind === 'danger' ? 'pack-button danger' : action.kind === 'link' ? 'link' : 'pack-button'
+      const button = el('button', kind, action.label)
+      button.type = 'button'
+      button.dataset.kind = action.kind || ''
+      if (action.value === null) button.dataset.cancel = ''
       button.addEventListener('click', () => finish(action.value))
       return button
     })
     $('pack-dialog-actions').replaceChildren(...buttons)
-    // 목록 줄(팩 고르기)도 같은 끝내기로
+    // close — 머리 오른쪽 ✕(Esc 와 같다) · 아래 [닫기] 버튼 대신
+    const closeButton = $('pack-dialog-close')
+    closeButton.hidden = !close
+    closeButton.onclick = () => finish(null)
+    // 목록 줄(팩 고르기) · 고르기 카드도 같은 끝내기로
     for (const node of bodyNode.querySelectorAll('[data-value]')) node.addEventListener('click', () => finish(node.dataset.value))
     closeOpenDialog = finish
     dialog.onkeydown = (event) => {
-      if (event.key === 'Escape') finish(null)
-      if (event.key === 'Enter' && field && document.activeElement === field) finish(actions[0] && actions[0].value)
+      if (event.isComposing) return
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        finish(null)
+      } else if (event.key === 'Enter' && field && document.activeElement === field) {
+        event.preventDefault()
+        const primary = buttons.find((button) => button.dataset.kind === 'primary') || buttons.find((button) => !('cancel' in button.dataset))
+        if (primary) primary.click()
+      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        // 목록 · 고르기 카드 안에서는 위아래 화살표로
+        const group = document.activeElement && document.activeElement.closest('.pack-list, .pack-links')
+        if (!group) return
+        const items = [...group.querySelectorAll('button:not(:disabled)')]
+        const at = items.indexOf(document.activeElement)
+        event.preventDefault()
+        items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus()
+      }
     }
     dialog.hidden = false
-    const focus = field || buttons.find((button) => button.classList.contains('primary')) || buttons[0]
-    if (focus) focus.focus()
+    syncModal()
+    const cancel = buttons.find((button) => 'cancel' in button.dataset)
+    const danger = buttons.some((button) => button.dataset.kind === 'danger')
+    const focus = field || (danger && cancel) || bodyNode.querySelector('[data-value]') || buttons.find((button) => button.dataset.kind === 'primary') || cancel || buttons[0] || (close && $('pack-dialog-close'))
+    if (focus) focus.focus({ preventScroll: true })
   })
 }
 
 const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
 
 // 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다)
+let progressBefore = null // 닫으면 포커스를 돌려줄 곳
 function showPackProgress(title, cancellable) {
+  const progress = $('pack-progress')
+  if (progress.hidden) progressBefore = document.activeElement
   $('pack-progress-title').textContent = title
   $('pack-progress-step').textContent = ''
   const cancel = $('pack-progress-cancel')
   cancel.hidden = !cancellable
   cancel.onclick = () => studio.packCancel()
   $('pack-progress').hidden = false
+  syncModal()
+  $('pack-progress').focus({ preventScroll: true })
 }
-const hidePackProgress = () => ($('pack-progress').hidden = true)
+// 단계 하나 — 지금 하는 일 한 줄
+function updatePackProgress(step) {
+  $('pack-progress-step').textContent = step.text || ''
+  // 정리를 시작하면 더는 취소할 수 없다
+  if (step.cancellable === false) $('pack-progress-cancel').hidden = true
+}
+const hidePackProgress = () => {
+  $('pack-progress').hidden = true
+  syncModal()
+  // 이어서 대화상자가 떴으면 그쪽 포커스 그대로
+  if ($('pack-dialog').hidden && progressBefore instanceof HTMLElement && progressBefore.isConnected) progressBefore.focus({ preventScroll: true })
+  progressBefore = null
+}
 
 // 지금 팩 이름 — pack new 로 만든 빈 자리(5.4 current.empty)는 /setup 중
 function packCurrentLabel() {
@@ -1717,59 +1822,92 @@ async function editPackLook(id, action) {
   if (result && !result.ok && !result.canceled) return packAlert(say('pack.look.failed'), result.text || result.message)
 }
 
-// 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — 미리보기 + [이미지 고르기…] [이미지 지우기](바로 바뀐다) + 이름 칸(저장 때).
-// 이름을 비우면 원래 이름으로(--clear). 이름 · 이미지는 팩 안에 저장돼 팀과 같이 쓴다
+// 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — 왼쪽 큰 아이콘(누르면 이미지 고르기 · 아래 지우기) + 오른쪽 이름 칸.
+// 이미지도 이름처럼 [저장] 때 바뀐다(고른 파일은 main 이 들고 있다) · 이름을 비우면 원래 이름으로(--clear). 둘 다 팩 안에 저장돼 팀과 같이 쓴다
 async function editPackLookDialog(id) {
   const find = () => [...(packs.packs || []), packs.current].find((item) => item && item.id === id)
   const pack = find()
   if (!pack) return
-  const preview = el('span', 'space-icon pack-icon pack-look-preview')
-  preview.style.setProperty('--space-color', spaceColor(id))
-  const paintPreview = async () => {
-    const now = find() || pack
-    const result = now.iconPath ? await studio.packIcon(id) : null
-    if (result && result.dataUrl) {
-      const image = el('img', 'pack-icon-image')
-      image.src = result.dataUrl
-      image.alt = ''
-      preview.replaceChildren(image)
+  let image = pack.iconPath ? ((await studio.packIcon(id)) || {}).dataUrl || null : null
+  let iconChange = null // null(그대로) · 'picked' · 'clear'
+  const avatar = el('button', 'space-icon pack-icon pack-look-avatar')
+  avatar.type = 'button'
+  avatar.style.setProperty('--space-color', spaceColor(id))
+  avatar.setAttribute('aria-label', say('pack.menu.icon'))
+  avatar.dataset.tip = say('pack.menu.icon')
+  // 지우기 — 아이콘 오른쪽 위 작은 휴지통(이미지가 있을 때만)
+  const remove = el('button', 'pack-look-remove')
+  remove.type = 'button'
+  remove.append(lineIcon(POPUP_ICONS.trash))
+  remove.setAttribute('aria-label', say('pack.menu.clearIcon'))
+  remove.dataset.tip = say('pack.menu.clearIcon')
+  const error = el('p', 'pack-look-error')
+  error.setAttribute('role', 'alert')
+  const nameField = () => document.getElementById('pack-dialog-input')
+  const paint = () => {
+    if (image) {
+      const node = el('img', 'pack-icon-image')
+      node.src = image
+      node.alt = ''
+      avatar.replaceChildren(node)
     } else {
-      preview.replaceChildren(document.createTextNode(spaceInitials(packLabel(now))))
+      const field = nameField()
+      avatar.replaceChildren(document.createTextNode(spaceInitials((field && field.value.trim()) || pack.name || id)))
     }
-    clearIcon.hidden = !now.iconPath
+    const edit = el('span', 'pack-look-edit')
+    edit.append(lineIcon(POPUP_ICONS.camera))
+    avatar.append(edit)
+    remove.hidden = !image
   }
-  const chooseIcon = el('button', 'pack-button', say('pack.menu.icon'))
-  const clearIcon = el('button', 'pack-button', say('pack.menu.clearIcon'))
-  const changeIcon = async (clear) => {
-    const result = await studio.packSetIcon(id, clear)
-    if (result && !result.ok && !result.canceled) return showToast(result.text || result.message || say('pack.look.failed'))
-    if (result && result.ok) {
-      await refreshPackList()
-      await paintPreview()
+  avatar.addEventListener('click', async () => {
+    error.textContent = ''
+    const result = await studio.packPickIcon()
+    if (!result || result.canceled) return
+    if (!result.ok) {
+      error.textContent = result.text || say('pack.look.failed')
+      return
     }
-  }
-  chooseIcon.addEventListener('click', () => changeIcon(false))
-  clearIcon.addEventListener('click', () => changeIcon(true))
-  const imageRow = el('div', 'pack-look-row')
-  const imageButtons = el('div', 'pack-look-buttons')
-  imageButtons.append(chooseIcon, clearIcon)
-  imageRow.append(preview, imageButtons)
-  await paintPreview()
-  const answer = await packDialog({
+    image = result.dataUrl
+    iconChange = 'picked'
+    paint()
+  })
+  remove.addEventListener('click', () => {
+    image = null
+    iconChange = 'clear'
+    paint()
+    avatar.focus()
+  })
+  const side = el('div', 'pack-look-side')
+  side.append(avatar, remove)
+  const name = el('div', 'pack-look-name')
+  const label = el('label', 'pack-look-label', say('pack.look.name'))
+  label.htmlFor = 'pack-dialog-input'
+  const slot = el('div')
+  slot.dataset.inputSlot = ''
+  name.append(label, slot, error)
+  const look = el('div', 'pack-look')
+  look.append(side, name)
+  look.addEventListener('input', () => !image && paint()) // 이미지가 없으면 머리글자가 이름을 따라간다
+  const pending = packDialog({
     title: say('pack.look.title'),
-    body: [el('p', 'muted', say('pack.look.body', { id, name: pack.name || id })), el('p', 'pack-look-label', say('pack.look.image')), imageRow, el('p', 'pack-look-label', say('pack.look.name'))],
-    input: { value: packLabel(find() || pack), placeholder: pack.name || id, maxLength: PACK_NAME_MAX },
+    body: [look],
+    input: { value: packLabel(pack), placeholder: pack.name || id, maxLength: PACK_NAME_MAX, label: say('pack.look.name') },
     actions: [
       { label: say('pack.look.save'), value: 'save', kind: 'primary' },
       { label: say('common.cancel'), value: null },
     ],
   })
+  paint()
+  nameField().select()
+  const answer = await pending
   if (!answer || answer.value !== 'save') return
-  const now = find() || pack
   const text = answer.text.trim()
-  if (text === packLabel(now)) return // 이름은 그대로
-  const result = await studio.packSetName(id, text ? text : null)
-  if (result && !result.ok) return packAlert(say('pack.look.failed'), result.text || result.message)
+  const now = find() || pack
+  const results = []
+  if (text !== packLabel(now)) results.push(await studio.packSetName(id, text ? text : null))
+  if (iconChange) results.push(await studio.packSetIcon(id, iconChange === 'clear', iconChange === 'picked'))
+  const failed = results.find((result) => result && !result.ok && !result.canceled)
+  if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
 }
 
 // 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기
@@ -1839,20 +1977,44 @@ async function refreshPackList() {
   return packs
 }
 
+// 대화상자 안 아이콘 줄(24 격자 선 아이콘)
+const POPUP_ICONS = {
+  new: ['M12 5v14', 'M5 12h14'],
+  import: ['M12 3v10', 'M8 9.5l4 4l4-4', 'M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14'],
+  export: ['M12 14V4', 'M8 7.5l4-4l4 4', 'M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14'],
+  backup: ['M3 5h18v4H3z', 'M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9', 'M10 13h4'],
+  file: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M10 12h1M10 15h1M10 18h1'],
+  folder: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
+  git: ['M6 3v12', 'M18 9a9 9 0 0 1-9 9', 'M21 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0', 'M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0'],
+  athena: ['M12 8v4l3 2', 'M21 12a9 9 0 1 1-18 0a9 9 0 0 1 18 0'],
+  close: ['M6 6l12 12', 'M18 6L6 18'],
+  camera: ['M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M15.5 13a3.5 3.5 0 1 1-7 0a3.5 3.5 0 0 1 7 0'],
+  trash: ['M4 7h16', 'M9 7V4.5h6V7', 'M6.5 7l1 13h9l1-13'],
+}
+
+// 아이콘 · 이름 · 한 줄 설명 버튼(고르면 data-value 로 대화상자를 끝낸다) — 팩 명령 줄 · 가져오기 종류
+function popupOption(className, value, icon, title, note) {
+  const button = el('button', className)
+  button.type = 'button'
+  button.dataset.value = value
+  const mark = el('span', 'popup-icon')
+  mark.append(lineIcon(POPUP_ICONS[icon]))
+  const copy = el('span', 'popup-option-copy')
+  copy.append(el('b', null, title), el('small', null, note))
+  button.append(mark, copy)
+  return button
+}
+
 // 팩 대화상자 아래 줄 — 새로 만들기 · 가져오기 · 내보내기 · 내 백업
 function packLinks() {
   const links = el('div', 'pack-links')
-  for (const value of ['new', 'import', 'export', 'backup']) {
-    const link = el('button', 'link', say(`pack.link.${value}`))
-    link.dataset.value = value
-    links.append(link)
-  }
+  for (const value of ['new', 'import', 'export', 'backup']) links.append(popupOption('pack-command', value, value, say(`pack.link.${value}`), say(`pack.link.${value}Note`)))
   return links
 }
 
 // 팩 세로 줄의 + — 목록 없이 만들기 · 가져오기 · 내보내기 · 내 백업만
 async function openPackActions() {
-  const choice = await packDialog({ title: say('pack.title'), body: [packLinks()], actions: [{ label: say('common.close'), value: null }] })
+  const choice = await packDialog({ title: say('pack.title'), body: [packLinks()], close: true })
   if (choice) return packCommand(choice)
 }
 
@@ -1870,10 +2032,18 @@ async function openPackPicker() {
     row.setAttribute('aria-current', String(isCurrent))
     row.dataset.value = `pack:${item.id}`
     const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
-    row.append(el('span', null, `${isCurrent ? '● ' : '○ '}${packLabel(item)}`), el('span', 'meta', meta))
+    const avatar = el('span', 'space-icon pack-icon pack-avatar')
+    avatar.setAttribute('aria-hidden', 'true')
+    avatar.style.setProperty('--space-color', spaceColor(item.id))
+    const image = packIconImage(item)
+    if (image) avatar.append(image)
+    else avatar.textContent = spaceInitials(packLabel(item))
+    const check = el('span', 'pack-current', isCurrent ? '✓' : '')
+    check.setAttribute('aria-hidden', 'true')
+    row.append(avatar, el('span', 'name', packLabel(item)), el('span', 'meta', meta), check)
     list.append(row)
   }
-  const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], actions: [{ label: say('common.close'), value: null }] })
+  const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], close: true })
   if (!choice) return
   if (choice.startsWith('pack:')) return switchPack(choice.slice(5))
   return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
@@ -1882,7 +2052,7 @@ async function openPackPicker() {
 // 팩 흐름은 한 번에 하나 — 진행 중에 메뉴로 또 열면 알리기만
 let packFlow = false
 async function runPackFlow(work) {
-  if (packFlow) return showToast(say('pack.flowBusy'))
+  if (packFlow) return showToast(say('pack.flowBusy'), 'info')
   packFlow = true
   try {
     return await work()
@@ -2036,40 +2206,51 @@ async function newPack() {
   if (result.canceled || result.error === 'canceled') return
   if (!result.ok) return packAlert(say('pack.new.failed'), result.text || result.message)
   if (result.switched) await applySwitchedPack(result.state)
-  showToast(say('pack.new.opened'))
+  showToast(say('pack.new.opened'), 'success')
 }
 
 // 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
 async function importPack() {
   let target = null
+  const options = el('div', 'pack-links')
+  for (const value of ['file', 'folder', 'git', 'athena']) options.append(popupOption('pack-command', value, value, say(`pack.import.kind.${value}`), say(`pack.import.kind.${value}Note`)))
   const chosen = await packDialog({
     title: say('pack.import.title'),
-    body: [say('pack.import.where')],
-    actions: [...['file', 'folder', 'git', 'athena'].map((value) => ({ label: say(`pack.import.kind.${value}`), value })), { label: say('common.cancel'), value: null }],
+    subtitle: say('pack.import.where'),
+    body: [options],
+    close: true,
   })
   if (!chosen) return
   // 기존 아테나는 git 설정(.git)을 그대로 가져온다(R4 A) — 내 컴퓨터에서 쓰던 것만 고르게 먼저 알린다
   if (chosen === 'athena') {
     const ok = await packDialog({
       title: say('pack.import.athena.title'),
-      body: [say('pack.import.athena.body'), el('p', 'muted', say('pack.import.athena.note'))],
+      subtitle: say('pack.import.athena.body'),
+      body: [el('p', 'muted', say('pack.import.athena.note'))],
       actions: [{ label: say('pack.import.athena.pick'), value: 'go', kind: 'primary' }, { label: say('common.cancel'), value: null }],
     })
     if (!ok) return
   }
-  if (chosen === 'git') {
-    const answer = await packDialog({
-      title: say('pack.import.git.title'),
-      body: [say('pack.import.git.body')],
-      input: { placeholder: say('pack.import.git.placeholder') },
-      actions: [{ label: say('pack.import.git.inspect'), value: 'go', kind: 'primary' }, { label: say('common.cancel'), value: null }],
-    })
-    if (!answer || !answer.value) return
-    target = answer.text
+  // git 주소 — 잘못된 주소면(main 이 검사) 쓴 그대로 다시 열고 칸 아래 오류
+  let inspected = null
+  let gitError = ''
+  for (;;) {
+    if (chosen === 'git') {
+      const answer = await packDialog({
+        title: say('pack.import.git.title'),
+        subtitle: say('pack.import.git.body'),
+        input: { placeholder: say('pack.import.git.placeholder'), value: target || '', code: true, label: say('pack.import.git.title'), error: gitError },
+        actions: [{ label: say('pack.import.git.inspect'), value: 'go', kind: 'primary' }, { label: say('common.cancel'), value: null }],
+      })
+      if (!answer || !answer.value) return
+      target = answer.text.trim()
+    }
+    showPackProgress(say('pack.import.inspecting'), true)
+    inspected = await studio.packInspect(chosen, target)
+    hidePackProgress()
+    if (chosen !== 'git' || inspected.error !== 'invalid-url') break
+    gitError = inspected.text || inspected.message
   }
-  showPackProgress(say('pack.import.inspecting'), true)
-  const inspected = await studio.packInspect(chosen, target)
-  hidePackProgress()
   if (inspected.canceled || inspected.error === 'canceled') return
   if (!inspected.ok) return packAlert(say('pack.import.failed'), inspected.text || inspected.message)
   const choice = await chooseImport(inspected, chosen)
@@ -2080,17 +2261,33 @@ async function importPack() {
   hidePackProgress()
   if (!result.ok) return packAlert(say('pack.import.failed'), result.text || result.message)
   if (choice === 'keep') return
+  // 끝 — 팩 한 줄(아이콘 · 이름 · 레포) · 백업 · git 안내 · [나중에] [열기]
   const imported = result.imported
+  const intoCurrent = !imported || (packs.current && packs.current.id === imported.id)
+  const body = []
+  if (imported) {
+    const name = imported.name || imported.id
+    const card = el('div', 'pack-result-card')
+    const avatar = el('span', 'space-icon pack-icon pack-avatar', spaceInitials(name))
+    avatar.setAttribute('aria-hidden', 'true')
+    avatar.style.setProperty('--space-color', spaceColor(imported.id))
+    const copy = el('div')
+    copy.append(el('b', null, name))
+    const repos = inspected.pack && inspected.pack.repos
+    if (Number.isInteger(repos)) copy.append(el('small', null, say('pack.meta.repos', { count: repos })))
+    card.append(avatar, copy)
+    body.push(card)
+  }
+  if (result.backup) body.push(el('p', 'pack-result-note', say('pack.import.backedUp', { path: result.backup })))
   // R4 A — 폴더 · 압축에서 온 .git 은 코어가 지웠다(inspect 결과 gitRemoved)
-  const gitNote = inspected.gitRemoved ? `\n${say('pack.import.gitRemoved')}` : ''
-  const backupNote = `${result.backup ? `\n${say('pack.import.backedUp', { path: result.backup })}` : ''}${gitNote}`
-  if (!imported || (packs.current && packs.current.id === imported.id)) return packAlert(say('pack.import.done'), `${say('pack.import.intoCurrent')}${backupNote}`)
+  if (inspected.gitRemoved) body.push(el('p', 'pack-result-note', say('pack.import.gitRemoved')))
   const openNow = await packDialog({
     title: say('pack.import.done'),
-    body: [`${say('pack.import.registered', { name: imported.name || imported.id })}${backupNote}`, say('pack.import.openNow')],
-    actions: [{ label: say('pack.verb.open'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
+    subtitle: say(intoCurrent ? 'pack.import.intoCurrent' : 'pack.import.openNow'),
+    body,
+    actions: intoCurrent ? [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] : [{ label: say('pack.verb.open'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
   })
-  if (openNow) return switchPack(imported.id)
+  if (openNow === 'yes') return switchPack(imported.id)
 }
 
 // 같은 이름이면 나란히(사용자 결정 3) · 기존 아테나면 가져올 작업 기록도 보여 준다. 반환: new · replace · keep(null 은 취소)
@@ -2118,7 +2315,7 @@ async function chooseImport(inspected, kind) {
   body.unshift(compare)
   body.push(el('p', 'muted', [say('pack.compare.note'), inspected.current ? say('pack.compare.noteCurrent') : ''].filter(Boolean).join(' ')))
   // reason: packId(같은 팩 — 하나만) · name(이름만 같은 다른 팩 — 둘 다 둘 수 있다 · 5.4)
-  const actions = [{ label: say('pack.compare.replace'), value: 'replace', kind: 'primary' }, { label: say('pack.compare.keep'), value: 'keep' }]
+  const actions = [{ label: say('pack.compare.replace'), value: 'replace', kind: 'danger' }, { label: say('pack.compare.keep'), value: 'keep' }]
   if (inspected.conflict.reason === 'name') actions.splice(1, 0, { label: say('pack.compare.both'), value: 'new' })
   actions.push({ label: say('common.cancel'), value: null })
   const sameTitle = inspected.conflict.reason === 'name' ? say('pack.compare.sameName', { name }) : say('pack.compare.same', { name })
@@ -2137,7 +2334,8 @@ async function exportPack(kind) {
   const reveal = await packDialog({
     title: say('pack.result.done', { title }),
     body: [`${result.file}`, `${say('pack.result.files', { count: result.files || 0 })}${size}`, el('p', 'muted', say(`${prefix}.note`))],
-    actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }, { label: say('common.close'), value: null }],
+    actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }],
+    close: true,
   })
   if (reveal) studio.packReveal()
 }
@@ -2154,11 +2352,7 @@ async function initPacks() {
     packs = next
     renderPackRail()
   })
-  studio.onPackProgress((step) => {
-    $('pack-progress-step').textContent = step.text || ''
-    // 정리를 시작하면 더는 취소할 수 없다
-    if (step.cancellable === false) $('pack-progress-cancel').hidden = true
-  })
+  studio.onPackProgress(updatePackProgress)
   studio.onPackChanged(onPackChanged)
   studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
   for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))

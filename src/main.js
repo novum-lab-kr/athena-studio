@@ -1504,10 +1504,38 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return result
   }
 
-  // 이미지 고르기 — 파일 대화상자는 main 이 연다(png · jpg · webp 만 보이게). clear 면 지우기
-  ctx.packSetIcon = async (id, clear) => {
+  // 이미지 미리 고르기 — 이름 · 이미지 대화상자용. 고른 파일은 main 이 들고 있고(화면은 경로를 모른다) 미리보기만 넘긴다.
+  // [저장] 때 packSetIcon(id, false, true) 로 붙인다 — 취소하면 아무것도 바뀌지 않는다
+  ctx.packPickIcon = async () => {
+    ctx.pickedIcon = null
+    const picked = await dialog.showOpenDialog(ctx.win, {
+      title: say('pack.icon.title'),
+      properties: ['openFile'],
+      filters: [{ name: say('pack.icon.filter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
+      defaultPath: app.getPath('pictures'),
+    })
+    if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
+    try {
+      const stat = await fs.promises.stat(picked.filePaths[0])
+      if (stat.size > packModel.ICON_MAX_BYTES) return { ok: false, text: say('pack.icon.tooBig') }
+      const bytes = await fs.promises.readFile(picked.filePaths[0])
+      const mime = packModel.iconMime(bytes.subarray(0, 12))
+      if (!mime) return { ok: false, text: say('pack.icon.unsupported') }
+      ctx.pickedIcon = picked.filePaths[0]
+      return { ok: true, dataUrl: `data:${mime};base64,${bytes.toString('base64')}` }
+    } catch (error) {
+      return { ok: false, text: error.message }
+    }
+  }
+
+  // 이미지 고르기 — 파일 대화상자는 main 이 연다(png · jpg · webp 만 보이게). clear 면 지우기 · usePicked 면 packPickIcon 으로 고른 것
+  ctx.packSetIcon = async (id, clear, usePicked = false) => {
     let args = ['set-icon', '--clear', '--id', id]
-    if (!clear) {
+    if (usePicked) {
+      if (!ctx.pickedIcon) return { canceled: true }
+      args = ['set-icon', ctx.pickedIcon, '--id', id]
+      ctx.pickedIcon = null
+    } else if (!clear) {
       const picked = await dialog.showOpenDialog(ctx.win, {
         title: say('pack.icon.title'),
         properties: ['openFile'],
@@ -2295,7 +2323,8 @@ handle('pack:export', (ctx, kind) => ctx.packExport(kind === 'backup' ? 'backup'
 handle('pack:reveal', () => packReveal())
 handle('pack:icon', (ctx, id) => ctx.packIcon(String(id)))
 handle('pack:set-name', (ctx, id, name) => ctx.packSetName(String(id), typeof name === 'string' ? name : null))
-handle('pack:set-icon', (ctx, id, clear) => ctx.packSetIcon(String(id), clear === true))
+handle('pack:set-icon', (ctx, id, clear, usePicked) => ctx.packSetIcon(String(id), clear === true, usePicked === true))
+handle('pack:pick-icon', (ctx) => ctx.packPickIcon())
 handle('pack:context-menu', (ctx, id, point) => ctx.packContextMenu(String(id), point && typeof point === 'object' ? point : null))
 // 이 창 닫기 — 시작 화면에서 다른 팩을 열고 나면(창이 하나뿐이면 닫지 않는다)
 handle('window:close', (ctx) => {

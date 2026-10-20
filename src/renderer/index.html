@@ -82,7 +82,6 @@
           <svg class="rail-panel" viewBox="0 0 24 24" aria-hidden="true"><path class="panel-fill" d="M15 3h4a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2h-4z"/><path d="M5 3h14a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2z"/><path d="M15 3v18"/></svg>
         </button>
       </aside>
-      <div id="toast" class="toast" hidden></div>
     </section>
 
     <section id="board" class="panel" hidden>
@@ -106,19 +105,21 @@
     </aside>
   </main>
   <!-- 회사 팩 대화상자 · 진행 표시 — 창 전체 위에(처음 켤 때 화면 포함) -->
-  <div id="pack-dialog" class="pack-overlay" hidden role="dialog" aria-modal="true">
+  <div id="pack-dialog" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pack-dialog-title">
     <div class="pack-box">
       <h2 id="pack-dialog-title"></h2>
+      <p id="pack-dialog-subtitle" class="pack-subtitle" hidden></p>
+      <button id="pack-dialog-close" class="pack-close" type="button" hidden aria-label="닫기" data-i18n-aria-label="common.close"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12"/><path d="M18 6L6 18"/></svg></button>
       <div id="pack-dialog-body" class="pack-body"></div>
       <div id="pack-dialog-actions" class="pack-actions"></div>
     </div>
   </div>
-  <div id="pack-progress" class="pack-overlay" hidden>
+  <div id="pack-progress" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-busy="true" aria-labelledby="pack-progress-title" tabindex="-1">
     <div class="pack-box">
       <div class="spinner"></div>
       <h2 id="pack-progress-title"></h2>
-      <p id="pack-progress-step" class="pack-step"></p>
-      <div class="pack-actions"><button id="pack-progress-cancel" class="link" hidden data-i18n="common.cancel">취소</button></div>
+      <p id="pack-progress-step" class="pack-step" role="status"></p>
+      <div class="pack-actions"><button id="pack-progress-cancel" class="pack-button" hidden data-i18n="common.cancel">취소</button></div>
     </div>
   </div>
 
@@ -131,6 +132,8 @@
   <script src="../lib/i18n.js"></script>
   <!-- 카트리지(팩) 아이콘 — 시작 화면 '내 팩' 줄이 복사해 쓴다 -->
   <template id="cartridge-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h12a1 1 0 0 1 1 1v12.5l-2 2V21H7v-2.5l-2-2V4a1 1 0 0 1 1-1z"/><path d="M8.5 7h7v5h-7z"/><path d="M9 18.5v2M12 18.5v2M15 18.5v2"/></svg></template>
+  <!-- 알림 — 대화상자보다 위(대화상자가 떠 있어도 보이고 닫을 수 있게) -->
+  <div id="toast" class="toast" hidden></div>
   <!-- 툴팁 — data-tip 이 있는 버튼에 마우스를 올리면(탭 줄은 기본 title 툴팁이 안 떠서 직접 그린다) -->
   <div id="tip" class="tip" role="tooltip" hidden></div>
   <script src="renderer.js"></script>

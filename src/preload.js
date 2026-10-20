@@ -26,7 +26,8 @@ contextBridge.exposeInMainWorld('studio', {
   packReveal: () => ipcRenderer.invoke('pack:reveal'),
   packIcon: (id) => ipcRenderer.invoke('pack:icon', id),
   packSetName: (id, name) => ipcRenderer.invoke('pack:set-name', id, name),
-  packSetIcon: (id, clear) => ipcRenderer.invoke('pack:set-icon', id, clear),
+  packSetIcon: (id, clear, usePicked) => ipcRenderer.invoke('pack:set-icon', id, clear, usePicked),
+  packPickIcon: () => ipcRenderer.invoke('pack:pick-icon'),
   packContextMenu: (id, point) => ipcRenderer.invoke('pack:context-menu', id, point),
   // 이 창 닫기 — 시작 화면에서 다른 팩 창을 연 뒤(창이 하나뿐이면 닫지 않는다)
   closeWindow: () => ipcRenderer.invoke('window:close'),
