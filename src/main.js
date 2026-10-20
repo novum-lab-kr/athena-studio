@@ -24,7 +24,7 @@ const isMac = process.platform === 'darwin'
 const IDENTITY = studioHome.appIdentity({ packaged: app.isPackaged })
 const STUDIO_HOME_OVERRIDE = process.env.ATHENA_STUDIO_HOME || null
 app.setName(IDENTITY.name)
-// --user-data-dir 로 직접 준 자리는 그대로 둔다(README '격리 실행')
+// --user-data-dir 로 직접 준 자리는 그대로 둔다(AGENTS.md '격리 실행')
 if (!app.commandLine.hasSwitch('user-data-dir')) {
   app.setPath('userData', studioHome.userDataDir({ appData: app.getPath('appData'), identity: IDENTITY, override: STUDIO_HOME_OVERRIDE }))
 }
@@ -1050,11 +1050,16 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const entries = await Promise.all(
       dirents.map(async (dirent) => {
         let dir = dirent.isDirectory()
-        if (dirent.isSymbolicLink()) dir = await fs.promises.stat(path.join(real, dirent.name)).then((stat) => stat.isDirectory(), () => false)
+        if (dirent.isSymbolicLink()) {
+          // 작업 공간 밖을 가리키는 링크는 열 수 없으니 목록에서 뺀다(끊긴 링크는 그대로 둔다)
+          const target = await fs.promises.realpath(path.join(real, dirent.name)).catch(() => null)
+          if (target && !explorer.isInside(root, target)) return null
+          dir = await fs.promises.stat(path.join(real, dirent.name)).then((stat) => stat.isDirectory(), () => false)
+        }
         return { name: dirent.name, dir, ...fileIcons.iconFor(fileIcons.loadManifest(), dirent.name, dir) }
       }),
     )
-    return { entries: explorer.sortEntries(entries) }
+    return { entries: explorer.sortEntries(entries.filter(Boolean)) }
   }
 
   // 작업 공간 폴더 기준 git 변경. git 레포가 아니면 git: false
