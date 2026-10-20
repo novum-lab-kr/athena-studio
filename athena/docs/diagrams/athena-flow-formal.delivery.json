@@ -1,17 +1,17 @@
 {
   "schemaVersion": 1,
-  "receiptId": "6c820b1c-3800-4b6e-ae03-6a1564f99a81",
+  "receiptId": "fd1e5031-a511-4aac-9204-2d110f95e2bc",
   "status": "current",
   "command": "deliver",
   "type": "workflow",
   "input": "docs/diagrams/athena-flow-formal.workflow.json",
   "output": "docs/diagrams/athena-flow-formal.html",
   "specification": {
-    "sha256": "e7856c493745f01e7fc913e905ee0eabd5ae87970edeb9b44251f2469ac4f534",
-    "bytes": 18606
+    "sha256": "2a123059f475d7214b0a55078309e79b741c7d709045a82a1f8307b9000bd998",
+    "bytes": 18672
   },
   "artifact": {
-    "sha256": "7e592267cb56ce9cfdc7c7c65a81d2cc1e60ddab327486286d3a7b291746b298",
-    "bytes": 858472
+    "sha256": "c45d975e42fade3feeea135b3eab9bab274275da48b4bdd99bf369cffe61c9f3",
+    "bytes": 858538
   }
 }
