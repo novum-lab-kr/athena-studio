@@ -382,6 +382,61 @@ function spaceRail() {
   return [foldButton('left', say('spaces.expand', { key: state.tabKey }), () => setSpacesCollapsed(false), true), ...rows, add]
 }
 
+// 펼친 spaces 에서 레포 밑에 그 작업 공간의 pane 들 — 탭 순서, 탭 안은 분할 순서. 접은 레포는 기억해 둔다
+const foldedSpaces = new Set(readFoldedSpaces())
+
+function readFoldedSpaces() {
+  try {
+    const saved = JSON.parse(localStorage.getItem('studio.spacesFolded') || '[]')
+    return Array.isArray(saved) ? saved.map(String) : []
+  } catch {
+    return []
+  }
+}
+
+function setSpaceFolded(workspaceId, folded) {
+  if (folded) foldedSpaces.add(workspaceId)
+  else foldedSpaces.delete(workspaceId)
+  try {
+    localStorage.setItem('studio.spacesFolded', JSON.stringify([...foldedSpaces]))
+  } catch {}
+  renderSides()
+}
+
+function workspacePanes(workspaceId) {
+  const meta = new Map(screen.panes.filter(isTabPane).map((pane) => [pane.id, pane]))
+  return screen.tabs
+    .filter((tab) => tab.workspace === workspaceId)
+    .flatMap((tab) => StudioLayout.paneIds(tab.tree).filter((id) => meta.has(id)).map((id) => ({ ...meta.get(id), tab: tab.id })))
+}
+
+// pane 줄 — 누르면 그 탭(작업 공간도 따라 바뀐다)을 열고 그 pane 에 포커스
+function spacePaneRow(pane, repo) {
+  const button = document.createElement('button')
+  button.className = 'space space-pane'
+  button.dataset.pane = pane.id
+  button.setAttribute('aria-current', String(pane.id === screen.focused))
+  // 왼쪽 브랜치(길면 …) · 오른쪽 끝 역할 — 전체 이름은 툴팁
+  const row = StudioSpaceNames.paneRow(pane, repo)
+  const label = document.createElement('span')
+  label.className = 'space-label'
+  label.textContent = row.branch
+  button.title = row.tip
+  button.append(label)
+  if (row.role) {
+    const role = document.createElement('span')
+    role.className = 'space-role'
+    role.textContent = row.role
+    button.append(role)
+  }
+  button.addEventListener('click', async () => {
+    if (currentTab !== 'work') switchTab('work')
+    await studio.tabSelect(pane.tab)
+    focusPane(pane.id)
+  })
+  return button
+}
+
 function renderSides() {
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
@@ -398,11 +453,16 @@ function renderSides() {
   actions.className = 'side-title-actions'
   actions.append(addSpaceButton(), foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
   title.append(titleText, actions)
-  const rows = screen.workspaces.map((workspace) => {
+  const rows = screen.workspaces.flatMap((workspace) => {
+    const panes = workspacePanes(workspace.id)
+    const folded = foldedSpaces.has(workspace.id)
     const button = document.createElement('button')
-    button.className = 'space'
-    button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
-    button.title = workspace.cwd || ''
+    const current = workspace.id === screen.activeWorkspace
+    button.className = 'space space-repo'
+    button.setAttribute('aria-current', String(current))
+    if (panes.length) button.setAttribute('aria-expanded', String(!folded))
+    // 레포 줄은 이름만 — 브랜치는 툴팁(에이전트 브랜치는 밑의 pane 줄에)
+    button.title = [workspace.cwd, branches[workspace.id]].filter(Boolean).join('\n')
     const dot = document.createElement('span')
     dot.className = 'dot'
     dot.textContent = workspace.id === screen.activeWorkspace ? '●' : '○'
@@ -412,19 +472,21 @@ function renderSides() {
     label.className = 'space-label'
     label.textContent = workspace.label
     text.append(label)
-    // 이름 오른쪽에 브랜치(한 줄)
-    if (branches[workspace.id]) {
-      const branch = document.createElement('span')
-      branch.className = 'space-branch'
-      branch.textContent = branches[workspace.id]
-      text.append(branch)
-    }
     button.append(dot, text)
+    // 이미 고른 레포를 다시 누르면 밑의 pane 줄을 접고 편다. 다른 레포는 고르고(접혀 있었으면 편다)
     button.addEventListener('click', () => {
-      if (currentTab !== 'work') switchTab('work')
+      const onWork = currentTab === 'work'
+      if (!onWork) switchTab('work')
+      if (current && panes.length && onWork) return setSpaceFolded(workspace.id, !folded)
+      if (folded) setSpaceFolded(workspace.id, false)
       studio.workspaceSelect(workspace.id)
     })
-    return button
+    if (folded || !panes.length) return [button]
+    // pane 줄은 트리 연결선(├ └)으로 레포에 묶는다
+    const children = document.createElement('div')
+    children.className = 'space-children'
+    children.append(...panes.map((pane) => spacePaneRow(pane, workspace.label)))
+    return [button, children]
   })
   spaces.replaceChildren(title, ...rows)
 
@@ -1136,6 +1198,7 @@ function focusPane(paneId) {
   screen = { ...screen, focused: paneId }
   studio.paneFocus(paneId)
   for (const [id, view] of views) view.el.classList.toggle('focused', id === paneId)
+  for (const row of document.querySelectorAll('.space-pane')) row.setAttribute('aria-current', String(row.dataset.pane === paneId))
   views.get(paneId).term.focus()
 }
 
