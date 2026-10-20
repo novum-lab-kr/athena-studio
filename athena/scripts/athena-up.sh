@@ -14,12 +14,12 @@ SCREEN="$ATHENA_DIR/scripts/screen"
 eval "$("$SCREEN" self --format sh)"   # SCREEN_PANE_ID(이 아테나 pane) · SCREEN_TAB_ID
 [ -n "${SCREEN_TAB_ID:-}" ] || exit 0
 
-# 세션 시작 때는 브라우저를 새로 열지 않는다
-ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1
+# 세션 시작 때는 브라우저를 새로 열지 않는다. 뒤에서 띄운다 — 첫 실행 지시가 현황판 뜨기를 기다리지 않게
+ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1 &
 
 # 첫 실행 자동 시작 — 화면 세팅이 끝났으니 이 pane 에 지시를 입력한다(사용자가 아무것도 치지 않아도 되게).
 # 화면 백엔드가 본 그 pane 의 에이전트가 입력을 기다릴 때(idle)만 보낸다. idle 을 본 뒤에 working 이 보이면(사용자가 먼저 말을 걸었다 — 아테나가 훅 안내로 첫 실행을 맡는다 · idle 전의 working 은 켜지는 중이라 무시)
-# 또는 90초 안에 idle 이 안 되면 보내지 않는다
+# 또는 90초 안에 idle 이 안 되면 보내지 않는다. 상태는 0.5초마다 본다(켜지자마자 보내게)
 if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   case "$ATHENA_FIRST_RUN" in
     codex) FIRST_PROMPT="아테나 첫 실행 — 팩이 없다. docs/setup.md 절차를 0단계부터 그대로 해 줘" ;;
@@ -28,19 +28,20 @@ if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   pane_status() { "$SCREEN" pane get "$SCREEN_PANE_ID" 2>/dev/null | python3 -c "import sys,json;p=json.load(sys.stdin)['pane'];print(p.get('agent_status') or '')" 2>/dev/null; }
   result="안 보냄 — 90초 안에 idle 아님"
   seen_idle=0
-  for _ in $(seq 1 90); do
+  for _ in $(seq 1 180); do
     status="$(pane_status)"
     if [ "$status" = working ] && [ "$seen_idle" = 1 ]; then result="안 보냄 — 사용자가 먼저 입력"; break; fi
     if [ "$status" = idle ]; then
       seen_idle=1
-      sleep 1   # 입력창이 그려질 틈
+      sleep 0.5   # 입력창이 그려질 틈
       if [ "$(pane_status)" = idle ]; then
         "$SCREEN" pane send-text "$SCREEN_PANE_ID" "$FIRST_PROMPT" >/dev/null 2>&1 && sleep 0.5 && "$SCREEN" pane send-keys "$SCREEN_PANE_ID" Enter >/dev/null 2>&1 && result="보냄"
         break
       fi
     fi
-    sleep 1
+    sleep 0.5
   done
   printf '%s  첫 실행 자동 시작(%s): %s\n' "$(date '+%F %T')" "$ATHENA_FIRST_RUN" "$result" >> "${TMPDIR:-/tmp}/hermes-up.log"
 fi
+wait   # 뒤에서 띄운 현황판 스크립트가 끝날 때까지(훅이 이 스크립트를 뒤에서 돌려 세션은 기다리지 않는다)
 exit 0
