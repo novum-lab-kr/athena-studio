@@ -10,8 +10,8 @@
 <body>
   <header class="tabbar">
     <span class="spacer"></span>
-    <!-- 현황판 토글 — 누르면 현황판, 다시 누르면 작업 창(작업 창 탭 버튼은 없다 · ⌘1/⌘2 는 메뉴) · 제목에 단축키(renderState) -->
-    <button id="board-tab" class="tabbar-tool" data-tab="board" aria-selected="false" aria-label="현황판" data-i18n-aria-label="board.title">
+    <!-- 현황판 — 기본 브라우저로 연다(⌘2 와 같다) · 제목에 단축키(renderState) -->
+    <button id="board-tab" class="tabbar-tool" aria-label="현황판" data-i18n-aria-label="board.title">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
     </button>
     <button id="browser-toggle" class="tabbar-tool" aria-label="옆 브라우저 열기·닫기" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
@@ -84,10 +84,6 @@
       </aside>
     </section>
 
-    <section id="board" class="panel" hidden>
-      <div id="board-status" class="status"></div>
-      <iframe id="board-frame" title="현황판" data-i18n-title="board.title" hidden></iframe>
-    </section>
 
     <!-- 오른쪽에서 스르륵 나오는 옆 브라우저 — 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
     <aside id="browser" class="browser" hidden>

@@ -187,7 +187,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .pane-body { flex: 1; min-height: 0; padding-left: 4px; }
 .screen-status { padding: 24px; color: var(--muted); white-space: pre-wrap; }
 .screen-status[hidden] { display: none; }
-#board iframe { width: 100%; height: 100%; border: 0; background: #fff; }
 .status { padding: 24px; color: var(--muted); white-space: pre-wrap; }
 .status.error { color: var(--error); }
 .setup {

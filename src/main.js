@@ -1156,6 +1156,20 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   const boardPortNow = () => packBoardPort || config.boardPort
   ctx.boardPortNow = boardPortNow
 
+  // 현황판을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
+  ctx.openBoardExternal = async () => {
+    const result = await ctx.ensureBoard()
+    if (result.ok) {
+      await shell.openExternal(result.url)
+      return { ok: true }
+    }
+    const detail = [result.error, result.log && say('board.logLine', { log: result.log })].filter(Boolean).join('\n')
+    const options = { type: 'warning', message: say('board.openFailed'), detail }
+    if (ctx.win && !ctx.win.isDestroyed()) dialog.showMessageBox(ctx.win, options)
+    else dialog.showMessageBox(options)
+    return { ok: false }
+  }
+
   ctx.ensureBoard = () => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirMissing') })
     return queueBoard(() => findOrStartBoard(ctx.athenaDir))
@@ -1681,6 +1695,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // ── 창 ──
   ctx.show = (tab) => {
     if (!ctx.win || ctx.win.isDestroyed()) return
+    // 현황판은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
+    if (tab === 'board') return send('tab:switch', 'board')
     if (ctx.win.isMinimized()) ctx.win.restore()
     ctx.win.show()
     ctx.win.focus()
@@ -2244,7 +2260,6 @@ function buildMenu() {
         { label: say('menu.view.work'), accelerator: `${TAB_KEY}+1`, click: toFront('tab:switch', 'work') },
         { label: say('menu.view.board'), accelerator: `${TAB_KEY}+2`, click: toFront('tab:switch', 'board') },
         { type: 'separator' },
-        { label: say('menu.view.reloadBoard'), accelerator: 'CmdOrCtrl+R', click: toFront('board:reload') },
         { label: say('menu.view.browser'), accelerator: `${TAB_KEY}+Shift+B`, click: toFront('browser:toggle') },
         { label: say('menu.view.reattach'), click: toFront('screen:resync') },
         { label: say('menu.view.restartDaemon'), click: () => restartDaemon() },
@@ -2366,7 +2381,7 @@ handle('tab:ratio', async (ctx, tabId, path, ratio) => {
   if (reply.error && reply.code === 'usage' && /모르는 동작/.test(reply.error)) return { unsupported: true }
   return reply
 })
-handle('board:ensure', (ctx) => ctx.ensureBoard())
+handle('board:open', (ctx) => ctx.openBoardExternal())
 listen('ui:tab', (ctx, tab) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url) => openUrl(ctx, String(url)))
 // 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 현황판 iframe · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)

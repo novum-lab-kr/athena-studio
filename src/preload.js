@@ -58,7 +58,7 @@ contextBridge.exposeInMainWorld('studio', {
   paneFocus: (paneId) => ipcRenderer.send('pane:focus', paneId),
   paneInput: (paneId, data) => ipcRenderer.send('pane:input', paneId, data),
   paneResize: (paneId, cols, rows) => ipcRenderer.send('pane:resize', paneId, cols, rows),
-  ensureBoard: () => ipcRenderer.invoke('board:ensure'),
+  openBoard: () => ipcRenderer.invoke('board:open'),
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
   // 지금 탭(work · board) — 메뉴 막대 알림이 보고 있는 pane 을 건너뛸 때 쓴다
   reportTab: (tab) => ipcRenderer.send('ui:tab', tab),
@@ -81,6 +81,5 @@ contextBridge.exposeInMainWorld('studio', {
   onScreenDisconnected: listen('screen:disconnected'),
   onScreenCommand: listen('screen:command'),
   onTabSwitch: listen('tab:switch'),
-  onBoardReload: listen('board:reload'),
   onPickRequest: listen('athena:pick'),
 })

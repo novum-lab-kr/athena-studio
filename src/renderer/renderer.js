@@ -17,8 +17,7 @@ function applyStaticTexts() {
 }
 applyStaticTexts()
 
-const panels = { setup: $('setup'), work: $('work'), board: $('board') }
-const tabs = [...document.querySelectorAll('[data-tab]')] // 오른쪽 현황판 토글 아이콘 하나(작업 창은 그 아이콘을 다시 누르거나 ⌘1)
+const panels = { setup: $('setup'), work: $('work') }
 
 let state = null
 let currentTab = 'work'
@@ -1362,39 +1361,6 @@ function showToast(message, kind = 'error') {
   wait()
 }
 
-// ── 현황판 ────────────────────────────────────────────────
-let boardLoaded = false
-let boardLoading = false
-
-async function loadBoard(force = false) {
-  const frame = $('board-frame')
-  const status = $('board-status')
-  if (boardLoading) return
-  if (boardLoaded && !force) return
-  boardLoading = true
-  status.className = 'status'
-  status.textContent = say('board.opening')
-  status.hidden = false
-  frame.hidden = true // 새 주소를 받기 전까지 숨긴다 — 팩을 바꾸면 옛 팩 현황판이 잠깐 보였다(팩마다 포트가 달라 옛 서버가 살아 있다)
-  try {
-    const result = await studio.ensureBoard()
-    if (!result.ok) {
-      status.className = 'status error'
-      status.textContent = `${result.error}${result.log ? `\n${say('board.logLine', { log: result.log })}` : ''}\n\n${say('board.retryHint', { key: state.tabKey })}`
-      frame.hidden = true
-      boardLoaded = false
-      return
-    }
-    status.hidden = true
-    frame.hidden = false
-    // 같은 주소를 다시 넣어도 새로 불러온다(새로고침은 첫 화면으로)
-    frame.src = result.url
-    boardLoaded = true
-  } finally {
-    boardLoading = false
-  }
-}
-
 // ── 옆 브라우저 ──────────────────────────────────────────
 // 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그린다 — 화면 위에 따로 떠 있어서
 // 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다
@@ -1588,23 +1554,17 @@ function initBrowser() {
 }
 
 // ── 탭 ──────────────────────────────────────────────────
+// 현황판은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
 function switchTab(name) {
   if (!state || !state.valid) return
-  if (name === 'board' && welcomeShown()) return // 팩을 고르기 전에는 현황판을 열지 않는다(⌘2 · 트레이 포함)
-  currentTab = name
-  studio.reportTab(name)
-  for (const tab of tabs) tab.setAttribute('aria-selected', String(tab.dataset.tab === name))
-  panels.work.hidden = name !== 'work'
-  panels.board.hidden = name !== 'board'
-  if (name === 'work') {
-    requestAnimationFrame(layoutPanes)
-  } else {
-    // 작업 창이 숨으면 모든 칸이 안 보이는 것 — 돌아올 때 다시 그리도록(layoutPanes) 표시만 해 둔다
-    for (const view of views.values()) view.shown = false
-    setMonitorVisible(false)
-    loadBoard()
-    $('board-frame').focus()
+  if (name === 'board') {
+    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 현황판을 열지 않는다
+    return
   }
+  currentTab = 'work'
+  studio.reportTab('work')
+  panels.work.hidden = false
+  requestAnimationFrame(layoutPanes)
 }
 
 // ── 회사 팩 ────────────────────────────────────────────────
@@ -2081,9 +2041,8 @@ function renderPackWelcome() {
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
   // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
-  for (const tab of tabs) tab.disabled = !state || !state.valid || on
+  $('board-tab').disabled = !state || !state.valid || on
   $('browser-toggle').disabled = on
-  if (on && currentTab === 'board') switchTab('work')
   if (on && browserOpen) closeBrowserPanel()
   // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
   if (on && !welcomeWasOn) $('dock').classList.add('collapsed')
@@ -2185,9 +2144,7 @@ async function applySwitchedPack(next) {
   state = next
   enterWelcome() // 시작 화면에서 바꿨으면 닫고 모니터를 펼친다
   if (browserOpen) closeBrowserPanel()
-  boardLoaded = false
   renderState()
-  if (currentTab === 'board') loadBoard(true)
   starting = true
   try {
     if (await attach()) await openAgent({ keepView: true })
@@ -2343,8 +2300,6 @@ async function exportPack(kind) {
 // 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
 function onPackChanged() {
   refreshPackList()
-  boardLoaded = false
-  if (currentTab === 'board') loadBoard(true)
 }
 
 async function initPacks() {
@@ -2372,14 +2327,13 @@ function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
   $('browser-toggle').dataset.tip = say('browser.toggleTitle', { key: state.tabKey })
-  $('board-tab').dataset.tip = `${say('board.title')} (${state.tabKey}2)`
+  $('board-tab').dataset.tip = `${say('board.openTitle')} (${state.tabKey}2)`
   const ready = state.valid
   panels.setup.hidden = ready
-  for (const tab of tabs) tab.disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
+  $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
   renderPackRail()
   if (!ready) {
     panels.work.hidden = true
-    panels.board.hidden = true
   }
 }
 
@@ -2431,7 +2385,6 @@ async function applyAthenaResult(pending) {
   renderState()
   if (!wasValid || result.changed) {
     // 처음 정했거나 폴더가 바뀌었으면 작업 창을 연다(이미 있는 데몬 탭은 그대로 — athena 탭이 없을 때만 새로 켠다)
-    boardLoaded = false
     switchTab('work')
     startScreen()
     afterAthenaReady()
@@ -2457,8 +2410,7 @@ function applyLanguage(next) {
 async function init() {
   state = await studio.athenaState()
   renderState()
-  // 현황판 아이콘은 토글 — 현황판이면 작업 창으로 돌아간다
-  $('board-tab').addEventListener('click', () => switchTab(currentTab === 'board' ? 'work' : 'board'))
+  $('board-tab').addEventListener('click', () => switchTab('board'))
   initTips()
   initBrowser()
   initMonitor()
@@ -2466,7 +2418,6 @@ async function init() {
   $('install').addEventListener('click', installAthena)
   studio.onTabSwitch(switchTab)
   studio.onPickRequest(pickAthenaDir)
-  studio.onBoardReload(() => state.valid && loadBoard(true))
   // 데몬 알림 — 붙는 중에 온 출력은 되살릴 화면에 이미 들어 있어 버린다
   studio.onPaneData((paneId, data) => {
     if (attached && !attaching) views.get(paneId)?.term.write(data)
