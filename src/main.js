@@ -76,7 +76,8 @@ function loadLoginPath() {
     execFile(
       loginShell,
       ['-ilc', `printf '%s%s%s' '${core.PATH_MARK}' "$PATH" '${core.PATH_MARK}'`],
-      { timeout: 5000, encoding: 'utf8' },
+      // 대화형 zsh 는 SIGTERM 을 무시해서 시간이 넘어도 안 끝난다(셸이 느리면 창이 그만큼 늦게 뜬다) — SIGKILL 로 끊는다
+      { timeout: 5000, killSignal: 'SIGKILL', encoding: 'utf8' },
       (error, stdout) => resolve(core.parseMarkedPath(stdout || '')),
     )
   })
