@@ -34,6 +34,8 @@ const STUDIO = studioHome.studioLayout({ home: app.getPath('home'), override: ST
 const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(__dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
 // 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
 const APP_ICON = path.join(__dirname, 'renderer', 'assets', 'logo', 'athena-app-icon.png')
+// 창 · 빈 옆 브라우저 바탕 — renderer style.css --bg 와 같은 값
+const APP_BACKGROUND = '#16171a'
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
 
@@ -1545,9 +1547,13 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     browserView = new WebContentsView({
       webPreferences: { partition: BROWSER_PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
-    browserView.setBackgroundColor('#ffffff')
+    // 빈 페이지일 땐 앱 배경색(흰 판이 튀지 않게). 웹 페이지로 가면 흰색 — 배경을 안 정한 사이트가 어두운 바탕에 검은 글씨가 되지 않게
+    const view = browserView
+    const fitBackground = (url) => view.setBackgroundColor(core.isWebUrl(url) ? '#ffffff' : APP_BACKGROUND)
+    fitBackground('')
     watchConsoleSends(browserSession)
     const contents = browserView.webContents
+    contents.on('did-navigate', (_event, url) => fitBackground(url))
     // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면)
     const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
     if (remembered) contents.loadURL(remembered)
@@ -1651,7 +1657,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     minHeight: 480,
     title: 'Athena',
     titleBarStyle: isMac ? 'hiddenInset' : 'default', // 맥은 탭 줄이 제목 줄을 겸한다
-    backgroundColor: '#16171a',
+    backgroundColor: APP_BACKGROUND,
     icon: APP_ICON, // 맥은 무시한다(Dock 은 whenReady 에서) — 윈도우·리눅스 창 아이콘
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
