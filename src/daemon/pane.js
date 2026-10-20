@@ -18,6 +18,7 @@ class Pane {
     this.lastOutputAt = 0
     this.exited = false
     this.waiters = new Set()
+    this.ptySize = { cols, rows } // pty 크기 — 화면 버퍼(screen)는 앞 출력을 다 읽은 뒤에 따라온다
 
     this.screen = new Terminal({ cols, rows, scrollback: SCROLLBACK, allowProposedApi: true })
     this.serializer = new SerializeAddon()
@@ -49,11 +50,15 @@ class Pane {
 
   resize(cols, rows) {
     if (this.exited || cols < 2 || rows < 2) return
-    if (cols === this.screen.cols && rows === this.screen.rows) return
+    if (cols === this.ptySize.cols && rows === this.ptySize.rows) return
+    this.ptySize = { cols, rows }
     try {
       this.pty.resize(cols, rows)
     } catch {}
-    this.screen.resize(cols, rows)
+    // 화면 버퍼는 앞서 받은 출력을 다 읽은 뒤에(write 는 비동기 큐) — 앱 화면도 같은 순서로 바꾼다(main.js ctx.resizePane)
+    this.screen.write('', () => {
+      if (!this.exited) this.screen.resize(cols, rows)
+    })
   }
 
   get size() {

@@ -890,6 +890,19 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
   }
   ctx.notifyDaemon = (op, args) => daemon && daemon.notify(op, args)
+  // pane 크기 — 답을 받는 그 자리(같은 소켓의 뒤 출력보다 먼저)에서 앞 출력을 내보내고 화면에 '적용됨'을 알린다.
+  // 화면은 그 알림을 받아 앞 출력을 다 읽은 뒤 xterm 크기를 바꾼다 — 데몬이 pty 를 바꾼 출력 지점과 같다(데몬 버퍼도 앞 출력을 다 읽은 뒤 바꾼다 · Pane.resize).
+  // 데몬이 스스로 바꾸는 크기(분할 · pane 종료의 fitTab)는 알리지 않는다 — 곧 화면이 자기 크기를 다시 요청한다
+  ctx.resizePane = (paneId, cols, rows) => {
+    if (!daemon) return
+    daemon
+      .call('resize', { pane: paneId, cols, rows }, (reply) => {
+        if (!reply.ok) return
+        flushOutput()
+        send('pane:resized', paneId, cols, rows)
+      })
+      .catch(() => {})
+  }
   ctx.screenDetached = () => screenDetached
 
   // pane 닫기(⌘W) — 에이전트가 돌고 있으면 묻는다(S6)
@@ -2308,7 +2321,7 @@ listen('pane:input', (ctx, paneId, data) => {
   if (typeof data === 'string') ctx.notifyDaemon('input', { pane: String(paneId), data })
 })
 listen('pane:resize', (ctx, paneId, cols, rows) => {
-  if (cols > 1 && rows > 1) ctx.notifyDaemon('resize', { pane: String(paneId), cols: cols | 0, rows: rows | 0 })
+  if (cols > 1 && rows > 1) ctx.resizePane(String(paneId), cols | 0, rows | 0)
 })
 listen('tab:size', (ctx, tabId, size) => {
   const cells = cellSize(size)

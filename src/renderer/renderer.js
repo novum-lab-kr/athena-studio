@@ -842,13 +842,20 @@ function layoutPanes() {
     view.head.textContent = info.label || info.title || paneId
     if (!view.shown) redrawAfterHidden(view)
     view.shown = true
+    // 크기는 재기만 하고 xterm 은 데몬이 pty · 화면 버퍼에 적용했다고 답할 때(pane:resized) 바꾼다.
+    // 여기서 먼저 바꾸면 그 사이 출력이 이 창과 데몬 버퍼에서 다른 폭으로 그려져 갈라진다 — Claude Code 가 다시 그릴 때 엉뚱한 줄을 지워 화면이 겹친다
+    let size = null
     try {
-      view.fit.fit()
+      size = view.fit.proposeDimensions()
     } catch {}
-    const { cols, rows } = view.term
+    if (!size || !(size.cols > 1) || !(size.rows > 1)) continue
+    const { cols, rows } = size
     // 경계를 끄는 동안은 셸에 크기를 알리지 않는다(놓을 때 한 번)
     if (dividerDrag) continue
-    if (!view.sent || view.sent.cols !== cols || view.sent.rows !== rows) {
+    // 데몬이 스스로 바꾼 크기(분할 · pane 종료 때 탭 크기로 어림한 fitTab — pane 머리 줄을 빼지 않아 몇 줄 크다)도 다시 맞춘다
+    const drifted = info.cols > 1 && (info.cols !== cols || info.rows !== rows)
+    if (!view.sent || view.sent.cols !== cols || view.sent.rows !== rows || (drifted && !view.resizing)) {
+      view.resizing = true
       view.sent = { cols, rows }
       studio.paneResize(paneId, cols, rows)
     }
@@ -2269,6 +2276,17 @@ async function init() {
   // 데몬 알림 — 붙는 중에 온 출력은 되살릴 화면에 이미 들어 있어 버린다
   studio.onPaneData((paneId, data) => {
     if (attached && !attaching) views.get(paneId)?.term.write(data)
+  })
+  // 데몬이 크기를 적용한 자리 — 그 앞 출력(이미 보낸 것)을 다 읽은 뒤에 바꾼다(빈 write 의 콜백 = 앞선 write 다음 차례).
+  // 붙는 중이면 버린다 — 새 view 는 attach 가 준 크기(이 요청이 이미 반영된)로 만든다
+  studio.onPaneResized((paneId, cols, rows) => {
+    const view = views.get(paneId)
+    if (!view || !attached || attaching || !(cols > 1 && rows > 1)) return
+    view.resizing = false
+    // 받은 상태의 크기도 고쳐 둔다 — 다음 상태가 올 때까지 옛 크기로 보고 다시 요청하지 않게
+    const known = screen.panes.find((pane) => pane.id === paneId)
+    if (known) Object.assign(known, { cols, rows })
+    view.term.write('', () => views.get(paneId) === view && view.term.resize(cols, rows))
   })
   studio.onScreenState((next) => attached && !attaching && applyState(next))
   studio.onScreenBranches((next) => {
