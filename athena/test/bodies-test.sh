@@ -90,6 +90,8 @@ check "만들다 실패 → rollback · 본체·자리·워크트리 없음" '[ 
 R="$(J "$MAIN" pack new)"; NEW="$(echo "$R" | field id)"; NEWBODY="$(echo "$R" | field body)"
 check "pack new → 빈 자리 + 본체(created · previous=acme)" '[ "$(echo "$R" | field created)" = True ] && [ "$(echo "$R" | field previous)" = acme ] && [ -L "$NEWBODY/.pack-data" ] && [ "$(basename "$(readlink "$NEWBODY/.pack-data")")" = "$NEW" ]' "$R"
 check "list: 빈 자리는 emptySlots 에(packs 에는 없음)" '[ "$(J "$MAIN" pack list | field emptySlots | grep -c "$NEW")" = 1 ] && ! J "$MAIN" pack list | field packs | grep -q "$NEW"'
+R="$(J "$MAIN" pack open "$NEW")"
+check "빈 자리도 open → 그 본체 그대로(다른 팩에서 돌아오기)" '[ "$(echo "$R" | field ok)" = True ] && [ "$(echo "$R" | field body)" = "$NEWBODY" ]' "$R"
 check "이 본체에서 자기를 discard → unsafe" '[ "$(J "$NEWBODY" pack discard "$NEW" | field error)" = unsafe ]'
 check "팩이 있는 자리 discard → unsafe" '[ "$(J "$MAIN" pack discard globex | field error)" = unsafe ] && [ -d "$BODY_B" ]'
 R="$(J "$MAIN" pack discard "$NEW")"
