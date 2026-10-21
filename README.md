@@ -69,7 +69,7 @@ npm start     # 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — �
 |---|---|
 | `athenaDir` · `windows` | 열린 팩 창의 본체 폴더(처음 켜면 `~/.athena-studio/core`) |
 | `boardPort` | 옛 본체에서만 — 현황판 포트를 고르기 시작하는 번호(기본 4701 · 고른 포트를 다시 적는다). 팩 지원 본체는 본체가 정한 포트를 쓴다 |
-| `language` | 화면 언어 `ko` · `en` · `ja` · `zh`([보기 → 언어]). 없으면 시스템 언어, 네 언어 밖이면 영어 |
+| `language` | 화면 언어 `ko` · `en` · `ja` · `zh`([보기 → 언어]). 없으면 시스템 언어, 네 언어 밖이면 영어. 에이전트 답 언어도 따라간다 — 창이 본체를 열 때 · 언어를 바꿀 때 본체 `.claude/settings.local.json` 의 `language`(`korean` 등)에 적고, 코어 훅 `scripts/hooks/language.py` 가 메시지마다 다시 읽어 아테나 · 위임 에이전트 · Codex 에 넣는다(켜 둔 세션도 다음 메시지부터). 답뿐 아니라 계획서 · 이슈 · 커밋 메시지 · 주석도 그 언어로 |
 
 예전 키 `homeAthenaAsked` · `studioAthenaAsked` 는 읽으면서 버린다. 칸 접힘 · 모니터 접힘 · 브라우저 너비 같은 화면 기억은 이 파일이 아니라 화면 쪽 저장소(localStorage)에 있다.
 

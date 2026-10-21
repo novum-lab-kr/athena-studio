@@ -17,6 +17,7 @@ const explorer = require('./lib/explorer')
 const fileIcons = require('./lib/file-icons')
 const viewer = require('./lib/viewer')
 const i18n = require('./lib/i18n')
+const agentLanguage = require('./lib/agent-language')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -64,6 +65,20 @@ function setLanguage(next) {
     if (window && !window.isDestroyed()) window.webContents.send('i18n:changed', i18nPayload())
   }
   if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
+  for (const ctx of packWindows) syncAgentLanguage(ctx.athenaDir)
+}
+
+// 에이전트 답 언어 — 앱 언어를 본체 .claude/settings.local.json 의 language 로(lib/agent-language.js).
+// 코어 훅이 메시지마다 다시 읽어서 켜 둔 세션에도 다음 메시지부터 먹는다. .claude 가 없는 폴더(본체 아님)는 건드리지 않는다
+function syncAgentLanguage(dir) {
+  if (!dir || !fs.existsSync(path.join(dir, '.claude'))) return
+  const file = agentLanguage.settingsFile(dir)
+  try {
+    const next = agentLanguage.withLanguage(fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null, language)
+    if (next !== null) fs.writeFileSync(file, next)
+  } catch (error) {
+    console.error(`[agent-language] ${file}: ${error.message}`)
+  }
 }
 
 const configFile = () => path.join(app.getPath('userData'), 'config.json')
@@ -751,6 +766,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     packAbort: null, // 기다리는 중 · 검사 중이면 취소할 수 있다
     uiTab: 'work',
   }
+  syncAgentLanguage(ctx.athenaDir)
   // ── 데몬 연결 — 창마다 하나, 이 창의 본체로 묶인다(protocol 5) ──
   let daemon = null // DaemonConnection
   let connecting = null
@@ -1287,6 +1303,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
     const changed = dir !== ctx.athenaDir
     if (changed) return rebindBody(dir)
+    syncAgentLanguage(dir)
     saveWindows()
     ctx.prepareBoardPort()
     return { ...ctx.athenaState(), changed }
@@ -1302,6 +1319,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     ctx.detachScreen() // 화면이 다시 붙을 때 새 본체로 묶인다
     rememberBrowser()
     ctx.athenaDir = dir
+    syncAgentLanguage(dir)
     packBoardPort = null
     branchCache = { at: 0, value: null }
     resetMonitor()
