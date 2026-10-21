@@ -24,6 +24,14 @@ test('pane 줄: delegate 이름표는 브랜치 · 역할로 · 아니면 이름
     tip: 'feat/fsd-work\nfsd-agent-team-fe',
   })
   assert.deepEqual(names.paneRow({ id: 'p3', label: '🤖 reviewer' }, 'x'), { branch: '🤖 reviewer', role: '', tip: '🤖 reviewer' })
-  assert.deepEqual(names.paneRow({ id: 'p4', label: null, title: '✳ Claude Code' }, 'x'), { branch: '✳ Claude Code', role: '', tip: '✳ Claude Code' })
+  assert.deepEqual(names.paneRow({ id: 'p4', label: null, title: 'zsh' }, 'x'), { branch: 'zsh', role: '', tip: 'zsh' })
   assert.deepEqual(names.paneRow({ id: 'p5' }, 'x'), { branch: 'p5', role: '', tip: 'p5' })
+})
+
+test('pane 줄: 이름표가 없으면 터미널 제목에서 앞 상태 기호를 뗀다', () => {
+  assert.equal(names.paneRow({ id: 'p1', title: '✳ 쿠폰 적용 순서 정리' }, 'athena').branch, '쿠폰 적용 순서 정리')
+  assert.equal(names.paneRow({ id: 'p1', title: '⠂ 쿠폰 적용 순서 정리' }, 'athena').tip, '쿠폰 적용 순서 정리')
+  assert.equal(names.paneRow({ id: 'p1', title: '✳ Claude Code' }, 'athena').branch, 'Claude Code')
+  assert.equal(names.paneRow({ id: 'p1', title: '✳ ' }, 'athena').branch, 'p1')
+  assert.equal(names.paneRow({ id: 'p1', label: '✳ 손으로 붙인 이름' }, 'athena').branch, '✳ 손으로 붙인 이름')
 })

@@ -1195,33 +1195,27 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pack-welcome-recent-row .name { flex: 1; min-width: 0; overflow: hidden; color: #e8e2d4; font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
 .pack-welcome-recent-row .meta { flex: none; color: #8d8a83; font-size: 11px; }
 
-/* spaces — 레포 밑 pane 줄. 왼쪽 세로줄 하나로 레포에 묶고, 고른 표시는 pane 하나에만(레포는 굵은 글씨 · 점 색만) */
-.space.space-repo[aria-current="true"],
-.space.space-repo[aria-current="true"]:hover { background: transparent; }
+/* spaces — 레포는 작은 머리글(지금 레포만 밝게), 밑에 pane 줄. 고른 표시는 pane 하나에만
+   (시안 docs/plans/20261021-attention-requests-mockup.html) */
+.space.space-repo {
+  min-height: 0;
+  margin-top: 10px;
+  padding: 3px 6px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+.side-title + .space.space-repo { margin-top: 0; }
+.space.space-repo[aria-current="true"] { background: transparent; color: var(--text); font-weight: 500; }
 .space.space-repo:hover,
 .space.space-repo[aria-current="true"]:hover { background: var(--hover); }
-/* 트리 연결선 ├ └ — 줄마다 세로선(마지막 줄은 가운데까지) + 가로 꺾임 */
-.space-children { margin: 0 0 4px 13px; }
+.space-children { margin: 2px 0; }
 .space.space-pane {
-  position: relative;
-  min-height: 26px;
-  margin-left: 14px;
-  width: calc(100% - 14px);
-  padding: 3px 8px;
-  color: var(--muted);
-  font-size: 12px;
+  min-height: 28px;
+  gap: 7px;
+  padding: 5px 6px;
+  font-size: 12.5px;
 }
-.space.space-pane[aria-current="true"] { color: var(--text); }
 .space.space-pane .space-label { flex: 1 1 auto; }
-.space.space-pane::before,
-.space.space-pane::after {
-  position: absolute;
-  left: -14px;
-  border-color: var(--line);
-  border-style: solid;
-  content: "";
-  pointer-events: none;
-}
-.space.space-pane::before { top: 0; bottom: 0; border-width: 0 0 0 1px; }
-.space.space-pane:last-child::before { bottom: 50%; }
-.space.space-pane::after { top: 50%; width: 10px; border-width: 1px 0 0; }
+.space-status { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.space-status.working { background: var(--success); }

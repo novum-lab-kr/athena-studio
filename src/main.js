@@ -1046,6 +1046,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const listed = await daemonCall('pane list')
     if (listed.result) {
       monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean)
+      // spaces pane 줄 앞 점 — 에이전트가 없는 pane 은 null
+      send('screen:pane-status', Object.fromEntries(listed.result.panes.map((pane) => [pane.id, pane.agent ? pane.agent_status : null])))
     }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)

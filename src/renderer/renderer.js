@@ -29,6 +29,7 @@ const HEAD_HEIGHT = 22 // pane 머리줄 높이(style.css .pane-head 와 같은 
 const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
 let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
+let paneStatus = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
 let attached = false
 let attaching = null
 let reattachOnKey = false
@@ -417,11 +418,14 @@ function spacePaneRow(pane, repo) {
   button.setAttribute('aria-current', String(pane.id === screen.focused))
   // 왼쪽 브랜치(길면 …) · 오른쪽 끝 역할 — 전체 이름은 툴팁
   const row = StudioSpaceNames.paneRow(pane, repo)
+  // 앞 점 — 일하는 중(초록) · 그 밖(회색)
+  const status = document.createElement('span')
+  status.className = `space-status ${paneStatus[pane.id] || ''}`
   const label = document.createElement('span')
   label.className = 'space-label'
   label.textContent = row.branch
   button.title = row.tip
-  button.append(label)
+  button.append(status, label)
   if (row.role) {
     const role = document.createElement('span')
     role.className = 'space-role'
@@ -460,18 +464,15 @@ function renderSides() {
     button.className = 'space space-repo'
     button.setAttribute('aria-current', String(current))
     if (panes.length) button.setAttribute('aria-expanded', String(!folded))
-    // 레포 줄은 이름만 — 브랜치는 툴팁(에이전트 브랜치는 밑의 pane 줄에)
+    // 레포 줄은 이름만 쓴 머리글 — 브랜치는 툴팁(에이전트 브랜치는 밑의 pane 줄에)
     button.title = [workspace.cwd, branches[workspace.id]].filter(Boolean).join('\n')
-    const dot = document.createElement('span')
-    dot.className = 'dot'
-    dot.textContent = workspace.id === screen.activeWorkspace ? '●' : '○'
     const text = document.createElement('span')
     text.className = 'space-text'
     const label = document.createElement('span')
     label.className = 'space-label'
     label.textContent = workspace.label
     text.append(label)
-    button.append(dot, text)
+    button.append(text)
     // 이미 고른 레포를 다시 누르면 밑의 pane 줄을 접고 편다. 다른 레포는 고르고(접혀 있었으면 편다)
     button.addEventListener('click', () => {
       const onWork = currentTab === 'work'
@@ -481,7 +482,7 @@ function renderSides() {
       studio.workspaceSelect(workspace.id)
     })
     if (folded || !panes.length) return [button]
-    // pane 줄은 트리 연결선(├ └)으로 레포에 묶는다
+    // pane 줄은 레포 머리글 밑에
     const children = document.createElement('div')
     children.className = 'space-children'
     children.append(...panes.map((pane) => spacePaneRow(pane, workspace.label)))
@@ -2437,6 +2438,11 @@ async function init() {
   studio.onScreenBranches((next) => {
     if (JSON.stringify(next) === JSON.stringify(branches)) return
     branches = next
+    if (attached) renderSides()
+  })
+  studio.onScreenPaneStatus((next) => {
+    if (JSON.stringify(next) === JSON.stringify(paneStatus)) return
+    paneStatus = next
     if (attached) renderSides()
   })
   applySideFolds()
