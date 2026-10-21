@@ -1871,14 +1871,19 @@ async function editPackLookDialog(id) {
   if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
 }
 
+// 팩 줄 · 팩 메뉴의 줄 — 목록에 지금 팩이 없으면(옛 구조 본체는 목록이 빈다) 지금 팩을 앞에 더한다
+function packRows() {
+  const current = packs.current && !packs.packs.some((item) => item.id === packs.current.id) ? [packs.current] : []
+  return [...current, ...packs.packs]
+}
+
 // 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기
 function renderPackRail() {
   renderPackWelcome()
   const rail = $('pack-rail')
   rail.hidden = !packs.supported || !state || !state.valid || hasNoPacks()
   if (rail.hidden) return
-  // 옛 구조 본체는 목록이 비고 지금 팩만 있다 — 그 하나라도 보이게
-  const rows = packs.packs.length ? packs.packs : [packs.current].filter(Boolean)
+  const rows = packRows()
   const icons = rows.map((item) => {
     const isCurrent = Boolean(packs.current) && packs.current.id === item.id
     const name = isCurrent ? packCurrentLabel() : packLabel(item)
@@ -1985,14 +1990,13 @@ async function openPackPicker() {
   if (!packs.supported) return packAlert(say('pack.title'), say('pack.unsupported'))
   if (hasNoPacks()) return openNoPacks()
   const list = el('div', 'pack-list')
-  // 옛 구조 본체는 목록이 비고 지금 팩만 있다 — 그 한 줄이라도 보이게
-  const rows = packs.packs.length ? packs.packs : [packs.current].filter(Boolean)
+  const rows = packRows()
   for (const item of rows) {
     const row = el('button', 'pack-row')
     const isCurrent = Boolean(packs.current) && packs.current.id === item.id
     row.setAttribute('aria-current', String(isCurrent))
     row.dataset.value = `pack:${item.id}`
-    const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
+    const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.empty ? say('pack.meta.empty') : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
     const avatar = el('span', 'space-icon pack-icon pack-avatar')
     avatar.setAttribute('aria-hidden', 'true')
     avatar.style.setProperty('--space-color', spaceColor(item.id))

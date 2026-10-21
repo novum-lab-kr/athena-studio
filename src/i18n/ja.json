@@ -261,6 +261,7 @@
   "pack.meta.current": "使用中",
   "pack.meta.repos": "リポジトリ {count}",
   "pack.meta.hasWork": "作業記録あり",
+  "pack.meta.empty": "未設定",
   "pack.meta.updated": "最終変更 {date}",
   "pack.meta.created": "作成日 {date}",
   "pack.meta.local": "ローカル",

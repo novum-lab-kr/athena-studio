@@ -87,6 +87,11 @@ function validGitUrl(text) {
 function normalizePackList(result) {
   if (!result || result.ok !== true || !Array.isArray(result.packs)) return { supported: false, error: (result && result.error) || 'bad-output' }
   const packs = result.packs.filter((pack) => pack && typeof pack.id === 'string')
+  // 빈 자리(pack new 뒤 /setup 전)도 팩으로 — 다른 팩으로 넘어간 뒤에도 다시 열 수 있게(empty 표시)
+  const slots = Array.isArray(result.emptySlots) ? result.emptySlots : []
+  for (const slot of slots) {
+    if (slot && typeof slot.id === 'string' && !packs.some((pack) => pack.id === slot.id)) packs.push({ id: slot.id, name: slot.id, empty: true })
+  }
   const current = result.current && typeof result.current.id === 'string' ? result.current : null
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
 }
@@ -136,14 +141,16 @@ function statusBoardPort(result) {
 
 // 시작 화면(회사 팩이 아직 없어요)을 띄울까 — 목록도 비고 지금 팩도 없을 때만.
 // 옛 구조 본체(legacy · packs:[] · current 있음) · 새로 만드는 빈 자리(current.empty) · 명령이 없는 본체(supported:false)는 아니다
+// 빈 자리(empty)만 있으면 팩이 없는 것으로 본다
+const realPacks = (list) => list.packs.filter((pack) => !pack.empty)
 function showPackWelcome(list) {
-  return Boolean(list && list.supported && Array.isArray(list.packs) && !list.packs.length && !list.current)
+  return Boolean(list && list.supported && Array.isArray(list.packs) && !realPacks(list).length && !list.current)
 }
 
 // 켤 때 시작 화면을 띄울까(팩이 있어도 — 사용자 결정 2026-10-18) — 팩 지원 본체 · 팩이 하나 이상 · 켤 때 도는 에이전트 pane 이 없을 때.
 // 에이전트가 돌고 있으면(앱만 다시 켬) 하던 일을 끊지 않게 건너뛴다. 옛 구조 본체(legacy)는 목록이 없어 띄우지 않는다
 function welcomeOnLaunch({ list, agentPanes }) {
-  if (!list || !list.supported || list.legacy || !Array.isArray(list.packs) || !list.packs.length) return false
+  if (!list || !list.supported || list.legacy || !Array.isArray(list.packs) || !realPacks(list).length) return false
   return !(agentPanes > 0)
 }
 

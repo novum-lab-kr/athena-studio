@@ -261,6 +261,7 @@
   "pack.meta.current": "当前",
   "pack.meta.repos": "仓库 {count}",
   "pack.meta.hasWork": "有工作记录",
+  "pack.meta.empty": "未设置",
   "pack.meta.updated": "最后修改 {date}",
   "pack.meta.created": "创建于 {date}",
   "pack.meta.local": "本地",

@@ -1396,17 +1396,22 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
   }
 
+  // 팩을 만들고 여는 명령(new · open)을 돌릴 본체 — 스튜디오 집 안 본체면 코어(주 본체), 밖에서 연결한 본체면 그 본체.
+  // 코어는 앱을 켤 때마다 새 코드로 가지만 팩 본체는 claude 가 켜져 있으면 업데이트를 건너뛰어 옛 코드에 남는다 —
+  // 지금 본체로 돌리면 고친 열기(빈 자리 다시 열기 등)가 들어오지 않는다. 약속 검사(contractBlock)도 같은 본체로.
+  // new 는 처음부터 코어에서 — 새 팩 local.json 의 reposRoot 를 부른 본체 설정에서 옮겨 적는데,
+  // 팩 본체 설정에는 reposRoot 가 없어 '..'(= bodies 폴더)로 잡혀 /setup 레포 찾기가 회사 레포를 못 찾았다. 코어 설정에는 홈이 있다
+  const packManagerDir = () => (core.isInside(ctx.athenaDir, STUDIO.root) ? STUDIO.core : ctx.athenaDir)
+
   // 새 팩 — 빈 자리 + 그 본체(pack new)를 만들고 이 창을 그 본체로 바꾼다. 그 본체에서 claude 가 켜지면 /setup.
   // 옛 데몬이면 만들기 전에 막는다(바꿔 보면 팩끼리 pane 이 섞인다)
   ctx.packNew = async () => {
     if (daemonOld) return { ok: false, error: 'old-daemon', text: say('pack.switch.oldDaemon') }
-    const blocked = await contractBlock(ctx.athenaDir)
+    const dir = packManagerDir()
+    const blocked = await contractBlock(dir)
     if (blocked) return blocked
     return ctx.packTask(say('pack.task.new'), async (signal) => {
-      // 스튜디오 집 안 본체면 코어(주 본체)에서 만든다 — 새 팩 local.json 의 reposRoot 를 지금 본체 설정에서 옮겨 적는데,
-      // 팩 본체 설정에는 reposRoot 가 없어 '..'(= bodies 폴더)로 잡혀 /setup 레포 찾기가 회사 레포를 못 찾았다. 코어 설정에는 홈이 있다
-      const newDir = core.isInside(ctx.athenaDir, STUDIO.root) ? STUDIO.core : ctx.athenaDir
-      const result = await runPack(['new'], { dir: newDir, onProgress: ctx.packProgress, signal })
+      const result = await runPack(['new'], { dir, onProgress: ctx.packProgress, signal })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
       if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
       const state = rebindBody(result.body)
@@ -1494,10 +1499,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
     // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다
     if (daemonOld) return { ok: false, error: 'old-daemon', text: say(newWindow ? 'pack.open.oldDaemon' : 'pack.switch.oldDaemon') }
-    const blocked = await contractBlock(ctx.athenaDir)
+    const dir = packManagerDir()
+    const blocked = await contractBlock(dir)
     if (blocked) return blocked
     return ctx.packTask(say('pack.task.open'), async (signal) => {
-      const result = await runPack(['open', id], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })
+      const result = await runPack(['open', id], { dir, onProgress: ctx.packProgress, signal })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
       if (result.created) refreshAllPacks()
       const notes = { unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required', created: result.created === true }

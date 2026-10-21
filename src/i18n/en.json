@@ -261,6 +261,7 @@
   "pack.meta.current": "current",
   "pack.meta.repos": "repos: {count}",
   "pack.meta.hasWork": "has work history",
+  "pack.meta.empty": "not set up",
   "pack.meta.updated": "last changed {date}",
   "pack.meta.created": "created {date}",
   "pack.meta.local": "local",

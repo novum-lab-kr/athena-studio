@@ -75,6 +75,13 @@ test('팩 목록: 실패 · 옛 본체면 supported:false, 이상한 항목은 �
   assert.equal(pack.normalizePackList({ ok: true, packs: 'x' }).supported, false)
 })
 
+test('팩 목록: 빈 자리(emptySlots)도 empty 팩으로 — 다른 팩으로 넘어간 뒤에도 다시 연다', () => {
+  const list = pack.normalizePackList({ ok: true, current: { id: 'new-2', empty: true }, packs: [{ id: 'acme' }], emptySlots: [{ id: 'new-1', body: '/b/new-1' }, { id: 'new-2', body: '/b/new-2' }, { id: 'acme' }, null] })
+  assert.deepEqual(list.packs.map((item) => [item.id, Boolean(item.empty)]), [['acme', false], ['new-1', true], ['new-2', true]])
+  assert.equal(pack.showPackWelcome({ supported: true, packs: [{ id: 'new-1', empty: true }], current: null }), true) // 빈 자리만 — 팩은 아직 없다
+  assert.equal(pack.welcomeOnLaunch({ list: { supported: true, packs: [{ id: 'new-1', empty: true }] }, agentPanes: 0 }), false)
+})
+
 test('시작 화면: 목록도 비고 지금 팩도 없을 때만', () => {
   assert.equal(pack.showPackWelcome({ supported: true, legacy: true, packs: [], current: null }), true) // 갓 받은 본체
   assert.equal(pack.showPackWelcome({ supported: true, legacy: true, packs: [], current: { id: 'novum-lab' } }), false) // 옛 구조 본체(리뷰 4차 회귀)

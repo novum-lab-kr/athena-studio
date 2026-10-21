@@ -261,6 +261,7 @@
   "pack.meta.current": "지금",
   "pack.meta.repos": "레포 {count}",
   "pack.meta.hasWork": "작업 기록 있음",
+  "pack.meta.empty": "설정 전",
   "pack.meta.updated": "마지막 변경 {date}",
   "pack.meta.created": "만든 날 {date}",
   "pack.meta.local": "로컬",
