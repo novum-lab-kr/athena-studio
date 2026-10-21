@@ -15,6 +15,17 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/language.py\"",
+            "timeout": 5
+          }
+        ]
+      }
     ]
   }
 }

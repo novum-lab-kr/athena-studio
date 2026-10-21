@@ -62,4 +62,6 @@ else:
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]
 settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post"}]}]
+# 답 언어 — 메시지마다 본체 .claude/settings.local.json 의 language(스튜디오 앱 언어)를 다시 읽어 넣는다 (scripts/hooks/language.py)
+settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"}]}]
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")

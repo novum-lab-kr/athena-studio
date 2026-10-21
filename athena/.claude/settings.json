@@ -59,6 +59,16 @@
           }
         ]
       }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hooks/language.py\""
+          }
+        ]
+      }
     ]
   }
 }
