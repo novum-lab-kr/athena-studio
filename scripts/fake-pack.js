@@ -97,7 +97,8 @@ async function main() {
     if (fakeContract === 1) fail('usage', '모르는 명령: version')
     return done({ ok: true, core: 'fake', contract: fakeContract, dirty: false, dataFormats: [1, 1], capabilities: ['open', 'contract'], body: process.cwd(), bodyId: 'fake', deploy: null })
   }
-  if (command !== 'pack') fail('usage', '사용: fake-pack.js pack <명령> · version')
+  if (command === 'request') return fakeRequest(sub, arg)
+  if (command !== 'pack') fail('usage', '사용: fake-pack.js pack <명령> · request <명령> · version')
   // 새 코어처럼 — --json 인데 약속 번호가 다르거나(있으면) pack use · new 에 없으면 거부
   const contract = process.env.ATHENA_CONTRACT || ''
   if (fakeContract !== 1 && json && ((contract && contract !== String(fakeContract)) || (!contract && ['use', 'new'].includes(sub)))) {
@@ -265,6 +266,40 @@ async function main() {
     }
     default:
       fail('usage', `모르는 명령: ${sub}`)
+  }
+}
+
+// 사람에게 묻는 요청 흉내(athena/docs/requests.md 와 같은 모양) — 질문 하나 · 결정 하나로 시작. answer → answered, ack → delivered
+// ATHENA_FAKE_CONTRACT=1(옛 코어)이면 request 명령이 없다
+function fakeRequest(sub, id) {
+  if ((Number(process.env.ATHENA_FAKE_CONTRACT) || 2) === 1) fail('usage', '모르는 명령: request')
+  const state = load()
+  const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOString()
+  state.requests = state.requests || [
+    { format: 1, id: 'r-20261021-141520-1080', kind: 'question', title: '주문 목록 API 에 취소 사유(cancelReason) 필드가 있나요?', body: '- 응답 타입 OrderListItem 에 없어요\n- 백엔드 orders/dto.ts 에서도 못 찾았어요 — 다른 이름일 수 있어요', options: [{ label: '있다', desc: '필드 이름을 알려 주면 그대로 표시해요' }, { label: '없다', desc: '백엔드에 추가를 요청하고 이 작업은 멈춰요', recommended: true }], links: { plan: 'plans/task/20261021-ord-412.md', html: null, issue: null }, pane: null, pack: 'acme', generation: 1, dedupeKey: null, state: 'open', rev: 1, createdAt: minutesAgo(12), updatedAt: minutesAgo(12), answer: null, deliveredAt: null, closedReason: null },
+    { format: 1, id: 'r-20261021-145700-2b3c', kind: 'decision', title: '쿠폰 적용 순서 바꾸기', body: '- D1 할인 계산 순서\n- D2 이미 발급한 쿠폰 처리', options: [], links: { plan: 'plans/feature/20261021-coupon-order.md', html: 'plans/feature/20261021-coupon-order.html', issue: null }, pane: null, pack: 'acme', generation: 1, dedupeKey: 'plan:plans/feature/20261021-coupon-order.md', state: 'open', rev: 1, createdAt: minutesAgo(3), updatedAt: minutesAgo(3), answer: null, deliveredAt: null, closedReason: null },
+  ]
+  const find = () => state.requests.find((request) => request.id === id) || fail('not-found', `그런 요청이 없다: ${id}`)
+  const at = new Date().toISOString()
+  switch (sub) {
+    case 'list':
+      save(state)
+      return done({ ok: true, requests: process.argv.includes('--all') ? state.requests : state.requests.filter((request) => ['open', 'answered'].includes(request.state)) })
+    case 'answer': {
+      const request = find()
+      if (request.state !== 'open') fail('conflict', `이미 ${request.state} 인 요청이다`)
+      Object.assign(request, { state: 'answered', answer: { choice: flag('--choice'), text: flag('--text'), by: flag('--by') || 'app', at }, rev: request.rev + 1, updatedAt: at })
+      save(state)
+      return done({ ok: true, request })
+    }
+    case 'ack': {
+      const request = find()
+      Object.assign(request, { state: 'delivered', deliveredAt: at, rev: request.rev + 1, updatedAt: at })
+      save(state)
+      return done({ ok: true, request })
+    }
+    default:
+      fail('usage', `모르는 명령: request ${sub}`)
   }
 }
 

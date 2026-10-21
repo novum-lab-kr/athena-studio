@@ -14,8 +14,12 @@ test('요약: 확인 필요(막힘 · 리뷰 대기) · 에이전트(막힘 먼�
     boardUp: true,
     now: new Date('2026-10-18T08:00:00').getTime(),
   })
-  assert.deepEqual(summary.counts, { working: 1, blocked: 2, review: 1 })
-  assert.deepEqual(summary.attention.map((item) => `${item.mark} ${item.text}`), ['! claude — 입력을 기다려요', '! 로그인 — 막힘', '? 버튼 — 리뷰 대기'])
+  assert.deepEqual(summary.counts, { working: 1, blocked: 2, review: 1, asking: 0 })
+  // 확인 필요는 요청만 — 막힌 에이전트 · 막힌 계획서 · 리뷰 대기는 넣지 않는다
+  assert.deepEqual(summary.attention, [])
+  const asked = tray.summarize({ requests: [{ id: 'r1', kind: 'question', state: 'open', title: '필드가 있나요?' }, { id: 'r2', kind: 'decision', state: 'answered', title: '전달 전' }] })
+  assert.deepEqual(asked.attention, [{ kind: 'request', mark: '?', id: 'r1', requestKind: 'question', text: '필드가 있나요?' }])
+  assert.equal(asked.counts.asking, 1)
   assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['claude', 'athena', 'blocked'], ['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle']])
   assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
   assert.deepEqual([summary.idleAgents, summary.blockedAgents], [1, 1])
@@ -76,4 +80,14 @@ test('최근 24시간 완료: 완료 칸 카드를 mtime 으로 한 시간씩 ·
   assert.equal(result.hours.length, 24)
   assert.equal(result.hours[23], 2)
   assert.equal(result.hours[18], 1)
+})
+
+test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 않는다 · 못 읽으면 기억 그대로', () => {
+  const notifier = new tray.Notifier()
+  const open = (id, kind = 'question') => ({ id, kind, state: 'open', title: `제목 ${id}` })
+  assert.deepEqual(notifier.updateRequests([open('a')]), [])
+  assert.deepEqual(notifier.updateRequests(null), [])
+  const found = notifier.updateRequests([open('a'), open('b', 'decision'), { id: 'c', state: 'answered', title: 'x' }])
+  assert.deepEqual(found, [{ kind: 'request', title: '결정이 필요해요', body: '제목 b', target: { request: 'b' } }])
+  assert.deepEqual(notifier.updateRequests([open('a'), open('b', 'decision')]), [])
 })

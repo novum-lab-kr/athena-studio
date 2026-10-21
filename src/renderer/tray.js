@@ -37,24 +37,24 @@ function title(text, summaryText) {
   return row
 }
 
-// 확인 필요 — 제목에 수, 아래 한 줄씩(누르면 그 pane · 결정 콘솔)
+// 확인 필요 — 사람에게 묻는 요청만. 제목에 수, 아래 한 줄씩(누르면 앱에서 그 요청 — 질문은 답하기 · 결정은 결정 콘솔)
 function attention(summary) {
   const items = summary.attention
   if (!items.length) return el('div', 'att clear', say('tray.attention.none'))
   const box = el('div', 'att')
   box.append(el('b', '', say('tray.attention.count', { count: items.length })))
   for (const item of items.slice(0, ATTENTION_ROWS)) {
-    const row = el('button', `it ${item.mark === '!' ? 'b' : 'r'}`)
+    const row = el('button', 'it r')
     row.title = item.text
     row.append(el('span', 'tx', item.text), el('span', 'go', '›'))
-    if (item.mark === '?') row.append(el('em', '', say('tray.column.review')))
-    row.addEventListener('click', () => (item.kind === 'pane' ? trayPanel.action('focus-pane', item.id) : trayPanel.action('open-card', item.html)))
+    row.append(el('em', '', say(`work.kind.${item.requestKind === 'decision' ? 'decision' : 'question'}`)))
+    row.addEventListener('click', () => trayPanel.action('open-request', item.id))
     box.append(row)
   }
   if (items.length > ATTENTION_ROWS) {
     const more = el('button', 'it')
     more.append(el('span', 'tx', say('tray.attention.more', { count: items.length - ATTENTION_ROWS })), el('span', 'go', '›'))
-    more.addEventListener('click', () => trayPanel.action('show', 'board'))
+    more.addEventListener('click', () => trayPanel.action('open-work'))
     box.append(more)
   }
   return box

@@ -6,11 +6,12 @@
 #       KEEP=1 test/requests-test.sh     → 임시 폴더를 남긴다
 #
 # 보는 것(docs/requests.md): 열기 · 자리(팩 데이터 state/requests) · 같은 키는 고치기 · rev 충돌 · 두 번 답하기 거절 · ack(두 번 불러도 됨) ·
-# 대화로 답하면 바로 delivered · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 · 사용법 오류
+# 대화로 답하면 바로 delivered · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
+# 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기 · 사용법 오류
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/requests-test.XXXXXX")" && pwd -P)"
-[ "${KEEP:-}" = 1 ] || trap 'rm -rf "$WORK"' EXIT
+[ "${KEEP:-}" = 1 ] || trap 'pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; rm -rf "$WORK"' EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ✖ %s\n' "$1"; [ -n "${2:-}" ] && printf '      %s\n' "$2" | head -c 600 && echo; }
@@ -88,6 +89,20 @@ node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D1='가' > /dev/
 check "하나만 정하면 열린 채" 'A request list | grep -q "plan:plans/feature/20261021-y.md"'
 node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D2='다' > /dev/null 2>&1
 check "다 정하면 delivered(답 기록)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-y.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and \"D1=가\" in r[-1][\"answer\"][\"choice\"] else 1)"'
+
+section "결정 콘솔 [이대로 진행] → 현황판이 답을 적는다"
+printf '# 기능 Z\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-z.md
+node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+bash scripts/board.sh >/dev/null 2>&1
+TOKEN="$(A pack board-token | field token)"
+HDR=(-H "Origin: http://localhost:47730" -H "x-board-token: $TOKEN" -H "content-type: application/json")
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-z.md","text":"[작업계획서 결정사항 확정] 기능 Z"}' http://127.0.0.1:47730/api/action)"
+R="$(A request list)"
+check "pane 이 없어 보내지는 못해도(400) 답은 적힘(answered · by board)" '[ "$CODE" = 400 ] && echo "$R" | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[0][\"state\"]==\"answered\" and r[0][\"answer\"][\"by\"]==\"board\" else 1)"' "$CODE $R"
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"../etc/x.md","text":"x"}' http://127.0.0.1:47730/api/action)"
+check "plans/ 밖 경로는 요청을 건드리지 않는다" '[ "$CODE" = 400 ]'
+node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
+check "확정하면 delivered(콘솔 답은 그대로)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and r[-1][\"answer\"][\"by\"]==\"board\" else 1)"'
 
 section "사용법 · 약속"
 node scripts/athena.mjs request open --title x --json > /dev/null 2>&1; check "종류 없으면 사용법 오류(2)" '[ $? -eq 2 ]'

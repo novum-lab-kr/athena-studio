@@ -1219,3 +1219,72 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space.space-pane .space-label { flex: 1 1 auto; }
 .space-status { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .space-status.working { background: var(--success); }
+
+/* ── [작업] 팝업 · 현황판 페이지 메뉴 ─────────────────────────────
+   탭 줄 [작업] — 나를 기다리는 것이 있으면 왼쪽 위 모서리에 금색 점만(숫자 없음 · 사용자). 팝업은 버튼 아래에 붙는 창(모달 아님) */
+.tabbar-tool.work-tool { position: relative; width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; font: 12.5px var(--font-ui); }
+.work-ask { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bar); pointer-events: none; }
+.work-ask[hidden] { display: none; }
+.work-pop {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  width: min(400px, calc(100vw - 16px));
+  max-height: calc(100vh - 64px);
+  border: 1px solid var(--popup-line);
+  border-radius: 10px;
+  background: var(--popup-bg);
+  color: var(--popup-text);
+  box-shadow: 0 16px 44px rgb(0 0 0 / 50%), inset 0 1px 0 rgb(255 255 255 / 3%);
+  -webkit-app-region: no-drag;
+}
+.work-pop[hidden] { display: none; }
+.work-pop-head { flex: none; padding: 10px 14px 4px; color: var(--popup-muted); font-size: 12px; }
+.work-pop-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 6px 6px; }
+.work-pop-foot { flex: none; display: flex; justify-content: space-between; align-items: center; gap: 10px; padding: 8px 14px; border-top: 1px solid rgb(255 255 255 / 6%); color: var(--popup-muted); font-size: 12px; }
+.work-pop-foot .link { border: 0; background: transparent; padding: 0; color: var(--accent); font: inherit; cursor: pointer; }
+.work-sec { padding: 4px 0 6px; }
+.work-sec + .work-sec { border-top: 1px solid rgb(255 255 255 / 6%); }
+.work-sec h3 { display: flex; align-items: center; gap: 6px; margin: 6px 8px 4px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
+.work-sec-count { color: var(--accent); }
+.work-empty { margin: 6px 8px; color: var(--popup-muted); font-size: 12px; }
+.work-row { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 1px solid transparent; border-radius: 7px; background: transparent; color: var(--popup-text); font: inherit; text-align: left; cursor: pointer; }
+.work-row:hover, .work-row:focus-visible { background: var(--popup-hover); outline: none; }
+.work-row.ask { margin-bottom: 4px; border-color: var(--popup-gold-line); background: var(--popup-gold-bg); }
+.work-row-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.work-row-title { overflow: hidden; font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.work-row.ask .work-row-title { font-weight: 600; }
+.work-row-meta { overflow: hidden; color: var(--popup-muted); font-size: 11.5px; text-overflow: ellipsis; white-space: nowrap; }
+.work-kind { margin-right: 6px; padding: 0 6px; border: 1px solid var(--popup-gold-line); border-radius: 999px; color: var(--accent); font-size: 10.5px; font-weight: 500; }
+.work-state { display: inline-flex; flex: none; align-items: center; gap: 5px; color: var(--popup-muted); font-size: 11.5px; white-space: nowrap; }
+.work-state::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+.work-state[data-state="work"]::before { background: var(--success); }
+.work-state[data-state="wait"]::before { background: var(--accent); }
+.work-state[data-state="blocked"]::before { background: var(--error); }
+.work-state[data-state="done"]::before { background: #6e8f7d; }
+.board-menu { width: 240px; padding: 6px; }
+.board-menu-item { display: flex; flex-direction: column; width: 100%; padding: 7px 10px; border: 0; border-radius: 7px; background: transparent; color: var(--popup-text); font: 13px var(--font-ui); text-align: left; cursor: pointer; }
+.board-menu-item b { font-weight: 500; }
+.board-menu-item small { color: var(--popup-muted); font-size: 11px; }
+.board-menu-item:hover, .board-menu-item:focus-visible { background: var(--popup-hover); outline: none; }
+.board-menu-sep { height: 1px; margin: 4px 6px; background: rgb(255 255 255 / 6%); }
+/* 작업 상세 · 답하기 — 대화상자(pack-dialog) 안 */
+.work-field { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid rgb(255 255 255 / 6%); font-size: 13px; }
+.work-field:first-child { border-top: 0; }
+.work-field-key { padding-top: 1px; color: var(--popup-muted); font-size: 12px; }
+.work-field-value { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.work-steps { display: flex; gap: 4px; margin-top: 4px; }
+.work-steps i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+.work-steps i.done { background: var(--success); }
+.work-steps i.now { background: var(--accent); }
+.work-request-body { color: var(--popup-text); font-size: 13px; }
+.work-options { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
+.work-option { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 9px 11px; border: 1px solid var(--popup-line); border-radius: 8px; background: transparent; color: var(--popup-text); font: 13px var(--font-ui); text-align: left; cursor: pointer; }
+.work-option[aria-checked="true"] { border-color: var(--accent); background: var(--popup-gold-bg); }
+.work-option small { display: block; color: var(--popup-muted); font-size: 11.5px; }
+.work-radio { flex: none; width: 15px; height: 15px; margin-top: 2px; border: 1.5px solid #555; border-radius: 50%; }
+.work-option[aria-checked="true"] .work-radio { border: 5px solid var(--accent); }
+.work-rec { margin-left: 6px; padding: 0 6px; border: 1px solid rgb(134 199 163 / 40%); border-radius: 999px; color: var(--success); font-size: 10.5px; }
+.work-note { width: 100%; min-height: 56px; padding: 8px 10px; border: 1px solid var(--popup-line); border-radius: 8px; background: var(--popup-inset); color: var(--popup-text); font: 12.5px var(--font-ui); resize: vertical; }
+.work-note:focus { outline: 2px solid var(--focus-line); outline-offset: 0; }

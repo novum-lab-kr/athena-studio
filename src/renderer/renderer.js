@@ -1568,6 +1568,294 @@ function switchTab(name) {
   requestAnimationFrame(layoutPanes)
 }
 
+// ── [작업] 팝업 · 현황판 페이지 메뉴 ────────────────────────────
+// 칸반 대신 탭 줄 [작업] — 나를 기다리는 것(사람에게 묻는 요청) · 진행 중 · 최근 끝난 것. 작업을 누르면 상세, 질문을 누르면 앱 안에서 바로 답한다.
+// 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(현황판을 띄운다)
+let workRequests = { supported: false, requests: [] }
+let workData = null // 마지막으로 읽은 목록(workGet) — 진행 중 숫자
+const WORK_STATES = ['wait', 'work', 'blocked', 'idle', 'done']
+
+function renderWorkTab() {
+  const waiting = workRequests.requests.filter((request) => request.state === 'open').length
+  // 숫자는 두지 않는다(사용자) — 있다는 것만 점으로, 수는 툴팁에
+  $('work-ask').hidden = !waiting
+  const doing = workData ? workData.counts.doing : 0
+  $('work-tab').classList.toggle('asking', waiting > 0)
+  $('work-tab').dataset.tip = say('work.tip', { doing, waiting })
+}
+
+// 탭 줄 버튼 아래에 붙인다 — 오른쪽 끝을 버튼 오른쪽에 맞춘다
+function placeUnder(pop, button) {
+  const rect = button.getBoundingClientRect()
+  pop.style.top = `${Math.round(rect.bottom + 6)}px`
+  pop.style.right = `${Math.max(8, Math.round(window.innerWidth - rect.right))}px`
+}
+
+let popBefore = null
+function closePops() {
+  for (const [pop, button] of [['work-pop', 'work-tab'], ['board-menu', 'board-tab']]) {
+    if ($(pop).hidden) continue
+    $(pop).hidden = true
+    $(button).setAttribute('aria-expanded', 'false')
+    $(button).classList.remove('active')
+  }
+  if (popBefore instanceof HTMLElement && popBefore.isConnected) popBefore.focus({ preventScroll: true })
+  popBefore = null
+}
+function openPop(pop, button) {
+  closePops()
+  popBefore = document.activeElement
+  placeUnder($(pop), $(button))
+  $(pop).hidden = false
+  $(button).setAttribute('aria-expanded', 'true')
+  $(button).classList.add('active')
+}
+
+function workRow({ className = '', title, meta, state, kindLabel = '', onClick }) {
+  const row = el('button', `work-row ${className}`.trim())
+  row.type = 'button'
+  const main = el('span', 'work-row-main')
+  const head = el('span', 'work-row-title')
+  if (kindLabel) head.append(el('span', 'work-kind', kindLabel))
+  head.append(document.createTextNode(title))
+  main.append(head)
+  if (meta) main.append(el('span', 'work-row-meta', meta))
+  row.append(main)
+  if (state) {
+    const badge = el('span', 'work-state', say(`work.state.${state}`))
+    badge.dataset.state = state
+    row.append(badge)
+  }
+  row.addEventListener('click', onClick)
+  return row
+}
+
+function renderWorkPop() {
+  const body = $('work-pop-body')
+  $('work-pop-title').textContent = say('work.popTitle', { pack: (packs.current && packLabel(packs.current)) || '' })
+  const sections = []
+  const section = (title, count, rows, empty) => {
+    const node = el('section', 'work-sec')
+    const head = el('h3', null, title)
+    if (count) head.append(el('span', 'work-sec-count', String(count)))
+    node.append(head)
+    if (rows.length) node.append(...rows)
+    else if (empty) node.append(el('p', 'work-empty', empty))
+    sections.push(node)
+  }
+  const requests = workData ? workData.requests : workRequests.requests
+  if (requests.length) {
+    section(say('work.section.waiting'), requests.filter((request) => request.state === 'open').length, requests.map((request) => workRow({
+      className: 'ask',
+      kindLabel: say(`work.kind.${request.kind}`),
+      title: request.title,
+      meta: [request.state === 'answered' ? say('work.notDelivered') : '', request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · '),
+      onClick: () => openRequest(request),
+    })))
+  }
+  if (!workData) {
+    sections.push(el('p', 'work-empty', say('work.loading')))
+  } else {
+    if (!workData.boardUp) sections.push(el('p', 'work-empty', say('work.boardDown')))
+    const doing = workData.doing.map((item) => workRow({ title: item.title, meta: item.line, state: item.state, onClick: () => openWorkDetail(item) }))
+    section(say('work.section.doing'), 0, doing, workData.boardUp ? say('work.empty') : '')
+    if (workData.done.length) section(say('work.section.done'), 0, workData.done.map((item) => workRow({ title: item.title, meta: item.line, state: 'done', onClick: () => openWorkDetail(item) })))
+  }
+  body.replaceChildren(...sections)
+}
+
+async function toggleWorkPop() {
+  if (!$('work-pop').hidden) return closePops()
+  if (!state || !state.valid || welcomeShown()) return
+  openPop('work-pop', 'work-tab')
+  renderWorkPop()
+  const first = $('work-pop-body').querySelector('button')
+  if (first) first.focus({ preventScroll: true })
+  workData = await studio.workGet()
+  if ($('work-pop').hidden) return renderWorkTab()
+  if (workData && Array.isArray(workData.requests)) workRequests = { supported: workData.supported, requests: workData.requests }
+  renderWorkTab()
+  renderWorkPop()
+}
+
+function toggleBoardMenu() {
+  if (!$('board-menu').hidden) return closePops()
+  if (!state || !state.valid || welcomeShown()) return
+  openPop('board-menu', 'board-tab')
+  $('board-menu').querySelector('button').focus({ preventScroll: true })
+}
+
+// 작업 상세 — 계획서에서 왜 · 정한 것 · 진행 · 검증 · 결과 · 다음
+async function openWorkDetail(item) {
+  closePops()
+  const detail = await studio.workDetail(item.id)
+  const body = []
+  if (!detail || !detail.ok) body.push(el('p', 'muted', say('work.detail.unreadable')))
+  else {
+    const field = (key, value) => {
+      if (!value || (Array.isArray(value) && !value.length)) return
+      const row = el('div', 'work-field')
+      row.append(el('span', 'work-field-key', say(`work.detail.${key}`)))
+      const text = el('span', 'work-field-value')
+      if (Array.isArray(value)) text.append(...value.map((line) => el('span', 'work-field-line', line)))
+      else text.textContent = value
+      row.append(text)
+      body.push(row)
+    }
+    field('why', detail.why)
+    field('blocked', detail.blocked)
+    field('decided', detail.decided)
+    if (detail.progress.total) {
+      const row = el('div', 'work-field')
+      row.append(el('span', 'work-field-key', say('work.detail.progress')))
+      const value = el('span', 'work-field-value', `${detail.progress.checked}/${detail.progress.total}${detail.progress.now ? ` · ${detail.progress.now}` : ''}`)
+      const bar = el('span', 'work-steps')
+      for (let index = 0; index < detail.progress.total; index += 1) bar.append(el('i', index < detail.progress.checked ? 'done' : index === detail.progress.checked ? 'now' : ''))
+      value.append(bar)
+      row.append(value)
+      body.push(row)
+    }
+    field('validation', detail.validation)
+    field('results', detail.results)
+    field('next', detail.next)
+  }
+  const actions = [{ label: say('work.detail.openPlan'), value: 'plan' }]
+  if (item.html) actions.push({ label: say('work.detail.console'), value: 'console' })
+  const pane = item.agents.find(paneLive)
+  if (pane) actions.push({ label: say('work.detail.goPane'), value: 'pane', kind: 'primary' })
+  const choice = await packDialog({ title: item.title, subtitle: say(`work.state.${item.state}`), body, actions, close: true })
+  if (choice === 'plan') studio.workOpenPlan(item.id, null)
+  else if (choice === 'console') studio.workOpenPlan(item.id, item.html)
+  else if (choice === 'pane') goToPane(pane)
+}
+
+// pane 이 다른 탭 · 작업 공간에 있어도 — 왼쪽 목록에서 누른 것과 같다
+const paneLive = (paneId) => Boolean(paneId) && screen.panes.some((pane) => pane.id === paneId)
+async function goToPane(paneId) {
+  const pane = screen.panes.find((entry) => entry.id === paneId)
+  if (!pane) return
+  await studio.tabSelect(pane.tab)
+  focusPane(pane.id)
+}
+
+// 질문 · 결정 — 질문은 앱 안에서 바로 답하고, 결정(정식 계획서)은 결정 콘솔로
+async function openRequest(request) {
+  closePops()
+  if (request.kind === 'decision') {
+    const choice = await packDialog({
+      title: request.title,
+      subtitle: say('work.kind.decision'),
+      body: [el('p', 'work-request-body', request.body), el('p', 'muted', say('work.decisionNote'))],
+      actions: [{ label: say('work.detail.console'), value: 'console', kind: 'primary' }],
+      close: true,
+    })
+    if (choice === 'console') studio.workOpenPlan(request.plan || '', request.html)
+    return
+  }
+  if (request.state === 'answered') {
+    const answer = [request.answer && request.answer.choice, request.answer && request.answer.text].filter(Boolean).join(' · ')
+    const choice = await packDialog({
+      title: request.title,
+      subtitle: say('work.notDelivered'),
+      body: [el('p', null, say('work.answeredNote', { answer }))],
+      actions: [{ label: say('work.resend'), value: 'resend', kind: 'primary' }],
+      close: true,
+    })
+    if (choice === 'resend') reportDelivery(await studio.workRedeliver(request.id))
+    return
+  }
+  const body = []
+  if (request.body) body.push(el('p', 'work-request-body', request.body))
+  let picked = (request.options.find((option) => option.recommended) || request.options[0] || {}).label || ''
+  if (request.options.length) {
+    const list = el('div', 'work-options')
+    list.setAttribute('role', 'radiogroup')
+    for (const option of request.options) {
+      const row = el('button', 'work-option')
+      row.type = 'button'
+      row.setAttribute('role', 'radio')
+      const sync = () => {
+        for (const node of list.children) node.setAttribute('aria-checked', String(node === row))
+      }
+      const label = el('span', 'work-option-label', option.label)
+      if (option.recommended) label.append(el('span', 'work-rec', say('work.recommended')))
+      const text = el('span', null)
+      text.append(label)
+      if (option.desc) text.append(el('small', null, option.desc))
+      row.append(el('span', 'work-radio'), text)
+      row.setAttribute('aria-checked', String(option.label === picked))
+      row.addEventListener('click', () => {
+        picked = option.label
+        sync()
+      })
+      list.append(row)
+    }
+    body.push(list)
+  }
+  const note = el('textarea', 'work-note')
+  note.placeholder = say('work.notePlaceholder')
+  note.maxLength = 1500
+  body.push(note)
+  const meta = [request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · ')
+  const actions = [{ label: say('work.send'), value: 'send', kind: 'primary' }]
+  if (paneLive(request.pane)) actions.unshift({ label: say('work.detail.goPane'), value: 'pane' })
+  const choice = await packDialog({ title: request.title, subtitle: [say('work.kind.question'), meta].filter(Boolean).join(' · '), body, actions, close: true })
+  if (choice === 'pane') return goToPane(request.pane)
+  if (choice !== 'send') return
+  if (!picked && !note.value.trim()) return showToast(say('work.needAnswer'), 'info')
+  const result = await studio.workAnswer(request.id, { choice: picked, text: note.value })
+  if (!result || !result.ok) return showToast(say(result && result.error === 'conflict' ? 'work.answerConflict' : 'work.answerFailed', { message: (result && result.message) || '' }))
+  reportDelivery(result)
+}
+
+function reportDelivery(result) {
+  if (!result || !result.ok) return showToast(say('work.answerFailed', { message: (result && result.message) || '' }))
+  showToast(say(result.delivered ? 'work.sent' : 'work.savedNoPane'), result.delivered ? 'success' : 'info')
+}
+
+function initWork() {
+  $('work-tab').addEventListener('click', toggleWorkPop)
+  $('board-tab').addEventListener('click', toggleBoardMenu)
+  for (const item of document.querySelectorAll('#board-menu [data-section]')) {
+    item.addEventListener('click', () => {
+      closePops()
+      studio.openBoardSection(item.dataset.section)
+    })
+  }
+  $('work-pop-pages').addEventListener('click', () => {
+    closePops()
+    openPop('board-menu', 'board-tab')
+  })
+  // 바깥을 누르거나 Esc — 닫는다(대화상자가 떠 있으면 대화상자가 Esc 를 먼저 받는다)
+  document.addEventListener('mousedown', (event) => {
+    if (event.target.closest('#work-pop, #board-menu, #work-tab, #board-tab')) return
+    closePops()
+  })
+  document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && (!$('work-pop').hidden || !$('board-menu').hidden)) {
+      event.preventDefault()
+      closePops()
+    }
+  })
+  window.addEventListener('resize', closePops)
+  studio.onWorkRequests((next) => {
+    workRequests = next && Array.isArray(next.requests) ? next : { supported: false, requests: [] }
+    if (workData) workData = { ...workData, requests: workRequests.requests.map((request) => ({ ...request, waited: (workData.requests.find((known) => known.id === request.id) || {}).waited || '' })) }
+    renderWorkTab()
+    if (!$('work-pop').hidden) renderWorkPop()
+  })
+  studio.onWorkOpen((id) => {
+    const request = id && workRequests.requests.find((entry) => entry.id === id)
+    if (request) return openRequest(request)
+    if ($('work-pop').hidden) toggleWorkPop()
+  })
+  studio.workRequests().then((next) => {
+    if (next && Array.isArray(next.requests)) workRequests = next
+    renderWorkTab()
+  })
+  renderWorkTab()
+}
+
 // ── 회사 팩 ────────────────────────────────────────────────
 // 본체가 여러 팩을 지원할 때만 보인다(packs.supported). 일은 main → 아테나 본체 명령이 하고, 화면은 묻고 · 기다리고 · 결과를 보여 준다
 let packs = { supported: false }
@@ -2332,10 +2620,11 @@ function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
   $('browser-toggle').dataset.tip = say('browser.toggleTitle', { key: state.tabKey })
-  $('board-tab').dataset.tip = `${say('board.openTitle')} (${state.tabKey}2)`
+  $('board-tab').dataset.tip = say('board.openTitle')
   const ready = state.valid
   panels.setup.hidden = ready
   $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
+  $('work-tab').disabled = !ready || welcomeShown()
   renderPackRail()
   if (!ready) {
     panels.work.hidden = true
@@ -2415,7 +2704,7 @@ function applyLanguage(next) {
 async function init() {
   state = await studio.athenaState()
   renderState()
-  $('board-tab').addEventListener('click', () => switchTab('board'))
+  initWork()
   initTips()
   initBrowser()
   initMonitor()

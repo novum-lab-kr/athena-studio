@@ -1,5 +1,5 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
-// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage)
+// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
 const i18n = require('./i18n')
 const KOREAN = require('../i18n/ko.json')
 
@@ -41,7 +41,7 @@ function columnCounts(cards) {
 }
 
 // 메뉴 · 아이콘 제목에 쓸 요약
-function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardUp = false, now = Date.now(), say = koreanSay } = {}) {
+function summarize({ panes = [], workspaces = [], cards = [], requests = [], usage = [], boardUp = false, now = Date.now(), say = koreanSay } = {}) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.label]))
   const agents = panes
     .filter((pane) => pane && pane.agent)
@@ -52,15 +52,14 @@ function summarize({ panes = [], workspaces = [], cards = [], usage = [], boardU
   const plans = liveCards(cards)
   const blockedCards = plans.filter((card) => card.status === 'blocked')
   const reviewCards = plans.filter((card) => card.status === 'ready_for_review')
-  const attention = [
-    ...agents.filter((agent) => agent.status === 'blocked').map((agent) => ({ kind: 'pane', mark: '!', id: agent.id, text: say('tray.attention.agentWaiting', { name: agent.name }) })),
-    ...blockedCards.map((card) => ({ kind: 'card', mark: '!', id: card.id, html: card.html || null, text: say('tray.attention.blocked', { title: card.title }) })),
-    ...reviewCards.map((card) => ({ kind: 'card', mark: '?', id: card.id, html: card.html || null, text: say('tray.attention.reviewWaiting', { title: card.title }) })),
-  ]
+  // 확인 필요 = 사람에게 묻는 요청(아직 답하지 않은 것)만 — 막힌 에이전트 · 리뷰 상태는 에이전트 줄 · 칸반 숫자에서만 보인다(상태 글자로 추측하지 않는다)
+  const waiting = (Array.isArray(requests) ? requests : []).filter((request) => request && request.state === 'open')
+  const attention = waiting.map((request) => ({ kind: 'request', mark: '?', id: request.id, requestKind: request.kind, text: request.title }))
   const counts = {
     working: agents.filter((agent) => agent.status === 'working').length,
     blocked: agents.filter((agent) => agent.status === 'blocked').length + blockedCards.length,
     review: reviewCards.length,
+    asking: waiting.length,
   }
   const columns = columnCounts(cards)
   const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'blocked').length
@@ -129,6 +128,17 @@ class Notifier {
     this.ready = false
     this.panes = new Map() // id → { status, since, was, notified }
     this.cards = new Map() // id → status
+    this.requests = null // 본 요청 id — 처음 본 목록은 알리지 않는다(켤 때 기준)
+  }
+
+  // 새로 열린 요청만 한 번 — [{ kind: 'request', title, body, target: { request } }]. requests 가 null 이면(못 읽음) 기억 그대로
+  updateRequests(requests, say = koreanSay) {
+    if (!Array.isArray(requests)) return []
+    const open = requests.filter((request) => request && request.state === 'open')
+    const known = this.requests
+    this.requests = new Set(open.map((request) => request.id))
+    if (known === null) return []
+    return open.filter((request) => !known.has(request.id)).map((request) => ({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: { request: request.id } }))
   }
 
   // 반환: [{ kind, title, body, target }] — target 은 { pane } 또는 { card, html }. 묶기(bundle)는 부르는 쪽이 거른 뒤에.

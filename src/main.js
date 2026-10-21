@@ -18,6 +18,8 @@ const fileIcons = require('./lib/file-icons')
 const viewer = require('./lib/viewer')
 const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language')
+const requestsModel = require('./lib/requests')
+const workModel = require('./lib/work-model')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -651,7 +653,9 @@ function logCore(line) {
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
 // 약속: 코어 `pack … --json` 출력(contract 2 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
-const PACK_TIMEOUTS = { update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000 }
+const PACK_TIMEOUTS = { update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
+// 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다
+const REQUESTS_POLL_MS = 30000
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 function packScript(dir) {
@@ -1193,6 +1197,152 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return queueBoard(() => findOrStartBoard(ctx.athenaDir))
   }
 
+  // ── 사람에게 묻는 요청 · [작업] 팝업 데이터 ──
+  // 요청은 코어 명령(request list)으로 읽는다 — 현황판이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
+  // 바뀌면 바로, 놓칠 때를 대비해 REQUESTS_POLL_MS 마다. request 명령이 없는 옛 코어면 supported:false(요청 없음)
+  let requestsState = { supported: false, requests: [] }
+  let requestsWatch = null
+  let requestsTimer = null
+  let requestsKick = null
+  let requestsBusy = null
+  let requestsAgain = false
+  ctx.refreshRequests = async () => {
+    if (requestsBusy) {
+      requestsAgain = true
+      return requestsBusy
+    }
+    const dir = ctx.athenaDir
+    if (!core.checkAthenaDir(dir).ok) return requestsState
+    requestsBusy = (async () => {
+      const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir }))
+      // 그새 팩을 바꿨거나 일시 실패(잠금 · 시간 초과)면 지난 목록을 그대로 둔다
+      if (dir !== ctx.athenaDir || (next.error && next.supported)) return requestsState
+      const changed = next.supported !== requestsState.supported || JSON.stringify(next.requests) !== JSON.stringify(requestsState.requests)
+      requestsState = { supported: next.supported, requests: next.requests }
+      if (changed) {
+        send('work:requests', requestsState)
+        trayRequestsChanged(ctx)
+      }
+      return requestsState
+    })()
+    try {
+      return await requestsBusy
+    } finally {
+      requestsBusy = null
+      if (requestsAgain) {
+        requestsAgain = false
+        ctx.refreshRequests()
+      }
+    }
+  }
+  // 요청 폴더 감시 — 폴더는 첫 요청이 생길 때 만들어지므로, 없으면 주기마다 다시 걸어 본다
+  const watchRequestsDir = () => {
+    if (requestsWatch || !ctx.athenaDir) return
+    for (const dir of [path.join(ctx.athenaDir, '.pack-data', 'state', 'requests'), path.join(ctx.athenaDir, '.requests')]) {
+      try {
+        requestsWatch = fs.watch(fs.realpathSync(dir), () => {
+          clearTimeout(requestsKick)
+          requestsKick = setTimeout(() => ctx.refreshRequests(), 300)
+        })
+        requestsWatch.on('error', () => {
+          if (requestsWatch) requestsWatch.close()
+          requestsWatch = null
+        })
+        return
+      } catch {}
+    }
+  }
+  ctx.requestsNow = () => requestsState
+  ctx.stopRequests = () => {
+    if (requestsWatch) requestsWatch.close()
+    requestsWatch = null
+    clearInterval(requestsTimer)
+    clearTimeout(requestsKick)
+  }
+  // 창이 본체를 열 때 · 다른 팩으로 다시 묶을 때 — 지난 팩의 요청은 지우고 새로 읽는다
+  ctx.watchRequests = () => {
+    ctx.stopRequests()
+    requestsState = { supported: false, requests: [] }
+    send('work:requests', requestsState)
+    if (!ctx.athenaDir) return
+    watchRequestsDir()
+    requestsTimer = setInterval(() => {
+      watchRequestsDir()
+      ctx.refreshRequests()
+    }, REQUESTS_POLL_MS)
+    ctx.refreshRequests()
+  }
+
+  // [작업] 팝업 — 현황판을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
+  ctx.workState = async () => {
+    const board = await ctx.ensureBoard()
+    const state = board.ok ? await fetchBoardJson(boardPortNow(), '/api/state') : null
+    const requests = await ctx.refreshRequests()
+    return {
+      supported: requests.supported,
+      requests: requests.requests.map((request) => ({ ...request, waited: requestsModel.waitedLabel(request.createdAt, Date.now(), say) })),
+      boardUp: Boolean(state),
+      boardError: board.ok ? null : board.error || null,
+      ...workModel.workList(state && Array.isArray(state.cards) ? state.cards : [], requests.requests),
+    }
+  }
+  // 답을 그 pane 에 한 줄로 넣는다 — 에이전트는 [요청 <id>] 를 보고 ack 한다. pane 이 지금 없으면 false(답은 저장돼 있다 · 다시 보내기)
+  const deliverToPane = async (paneId, line) => {
+    if (!paneId) return false
+    const listed = await ctx.peekCall('pane list')
+    const panes = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
+    if (!panes.some((pane) => pane.id === paneId)) return false
+    ctx.notifyDaemon('input', { pane: paneId, data: line })
+    // 입력창이 붙여 넣은 글을 받은 뒤에 Enter — 같이 보내면 줄바꿈으로 들어가는 에이전트가 있다
+    await new Promise((resolve) => setTimeout(resolve, 150))
+    ctx.notifyDaemon('input', { pane: paneId, data: '\r' })
+    return true
+  }
+  // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
+  ctx.answerRequest = async (id, answer) => {
+    const known = requestsState.requests.find((request) => request.id === id)
+    if (!known) return { ok: false, error: 'not-found' }
+    const result = await runCore(requestsModel.answerArgs(id, { choice: answer && answer.choice, text: answer && answer.text, rev: known.rev }), { dir: ctx.athenaDir })
+    if (!result.ok || !result.request) {
+      ctx.refreshRequests()
+      return { ok: false, error: result.error || 'failed', message: result.message || '' }
+    }
+    const delivered = await deliverToPane(known.pane, requestsModel.deliveryLine(known, result.request.answer || {}))
+    ctx.refreshRequests()
+    return { ok: true, delivered }
+  }
+  // 답은 했는데 전달 못 한 것(answered) — 다시 보내기
+  ctx.redeliverRequest = async (id) => {
+    const known = requestsState.requests.find((request) => request.id === id && request.state === 'answered')
+    if (!known || !known.answer) return { ok: false, error: 'not-found' }
+    return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer)) }
+  }
+  // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소로 브라우저에, 없으면 md 를 기본 앱으로
+  ctx.openPlan = async (id, html) => {
+    const safe = (value, ext) => typeof value === 'string' && value.startsWith('plans/') && value.endsWith(ext) && !value.split('/').includes('..')
+    if (safe(html, '.html')) {
+      const board = await ctx.ensureBoard()
+      if (board.ok) return shell.openExternal(`${board.url.replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
+    }
+    if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
+    return null
+  }
+  // 현황판 페이지(QA · 학습 · 아카이브 · 전체 칸반) — 현황판 탭 이름을 주소 끝 #<탭> 으로
+  const BOARD_SECTIONS = ['now', 'qa', 'learn', 'history']
+  ctx.openBoardSection = async (section) => {
+    const result = await ctx.ensureBoard()
+    if (!result.ok) return ctx.openBoardExternal()
+    return shell.openExternal(`${result.url.replace(/\/$/, '')}/${BOARD_SECTIONS.includes(section) && section !== 'now' ? `#${section}` : ''}`)
+  }
+
+  // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
+  ctx.workDetail = async (id) => {
+    if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
+    const card = await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)
+    if (!card || typeof card.text !== 'string') return { ok: false, error: 'not-found' }
+    return { ok: true, id, ...workModel.planDetail(card.text) }
+  }
+
   // 현황판은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
   // 팩 지원 본체면 포트는 본체가 정하니 읽기만 하고 본체 설정에 쓰지 않는다(setAthenaBoardPort 는 옛 본체에서만)
   ctx.prepareBoardPort = () => {
@@ -1322,6 +1472,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     rememberBrowser()
     ctx.athenaDir = dir
     syncAgentLanguage(dir)
+    ctx.watchRequests()
     packBoardPort = null
     branchCache = { at: 0, value: null }
     resetMonitor()
@@ -1769,6 +1920,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   ctx.win.on('closed', () => {
     ctx.win = null
     clearInterval(monitor.timer)
+    ctx.stopRequests()
     // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
     if (browserView && !browserView.webContents.isDestroyed()) browserView.webContents.close()
     browserView = null
@@ -1781,6 +1933,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   })
   packWindows.add(ctx)
   ctx.prepareBoardPort()
+  ctx.watchRequests()
   return ctx
 }
 
@@ -1990,6 +2143,8 @@ ipcMain.on('tray:action', (event, name, value) => {
   if (!fromTrayPanel(event)) return
   if (name === 'focus-pane' && typeof value === 'string') focusPaneFromTray(value)
   if (name === 'open-card') openCardFromTray(typeof value === 'string' ? value : null)
+  if (name === 'open-request' && typeof value === 'string') openRequestFromTray(value)
+  if (name === 'open-work') openRequestFromTray(null)
   if (name === 'show') showWindow(value === 'work' || value === 'board' ? value : undefined)
   if (name === 'menu') tray.popUpContextMenu(Menu.buildFromTemplate(trayShortMenu()))
   if (name !== 'menu' && trayWindow) trayWindow.hide()
@@ -2012,6 +2167,7 @@ async function pollTray() {
     trayState.boardAt = 0
     trayHistory.length = 0
     trayNotifier = new trayModel.Notifier()
+    if (ctx) trayNotifier.updateRequests(ctx.requestsNow().supported ? ctx.requestsNow().requests : null, say)
   }
   // 이미 붙은 데몬만 읽는다 — 끊겼을 때 숨은 채로 데몬을 띄우거나 버전 확인 대화상자를 띄우지 않게(화면이 다시 붙으면 이어서)
   if (trayState.polling || !ctx || !ctx.isAttached() || !core.checkAthenaDir(ctx.athenaDir).ok) return
@@ -2060,6 +2216,10 @@ async function pollTray() {
 
 // 현황판이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
 function fetchBoardState(port) {
+  return fetchBoardJson(port, '/api/state')
+}
+// 현황판 GET 하나 → JSON(실패면 null)
+function fetchBoardJson(port, pathName) {
   return new Promise((resolve) => {
     let settled = false
     const finish = (value) => {
@@ -2067,7 +2227,7 @@ function fetchBoardState(port) {
       settled = true
       resolve(value)
     }
-    const request = http.get({ host: '127.0.0.1', port, path: '/api/state', timeout: 2000 }, (response) => {
+    const request = http.get({ host: '127.0.0.1', port, path: pathName, timeout: 2000 }, (response) => {
       let body = ''
       response.setEncoding('utf8')
       response.on('data', (chunk) => {
@@ -2097,14 +2257,16 @@ function fetchBoardState(port) {
 }
 
 function traySummary() {
-  return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], usage: trayState.usage, boardUp: trayState.boardUp, say })
+  const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : null
+  const requests = ctx ? ctx.requestsNow().requests : []
+  return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], requests, usage: trayState.usage, boardUp: trayState.boardUp, say })
 }
 
 function refreshTray() {
   if (!tray) return
   const summary = traySummary()
   // 아이콘 옆 숫자는 두지 않는다(사용자) — 막힘이 있으면 빨간 점만
-  setTrayIcon(summary.counts.blocked > 0)
+  setTrayIcon(summary.counts.blocked > 0 || summary.counts.asking > 0)
   const { working, blocked, review } = summary.counts
   tray.setToolTip(say('tray.tooltip', { working, blocked, review }))
 }
@@ -2173,6 +2335,23 @@ function openCardFromTray(html) {
   }
 }
 
+// 요청 — 창을 앞으로 가져와 그 요청(id 가 없으면 [작업] 팝업)을 연다
+function openRequestFromTray(id) {
+  const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : frontCtx()
+  if (!ctx) return
+  ctx.show('work')
+  ctx.send('work:open', id)
+}
+
+// 앞 창(메뉴 막대가 보는 창)의 요청이 바뀌면 — 새로 열린 것만 맥 알림 한 번(창이 여럿이어도 메뉴 막대가 보는 창 것만) · 메뉴 막대 다시 그리기
+function trayRequestsChanged(ctx) {
+  if (!tray || ctx !== trayState.ctx) return
+  const now = ctx.requestsNow()
+  for (const item of trayModel.bundle(trayNotifier.updateRequests(now.supported ? now.requests : null, say), say)) notify(item)
+  refreshTray()
+  if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
+}
+
 // 지금 보고 있는 pane 이면(그 창이 앞에 있고 작업 창 탭 · 그 pane 포커스) 알리지 않는다
 function lookingAt(item) {
   const ctx = trayState.ctx
@@ -2182,7 +2361,11 @@ function lookingAt(item) {
 function notify(item) {
   if (trayState.pausedUntil > Date.now() || !Notification.isSupported()) return
   const notification = new Notification({ title: item.title, body: item.body, silent: true })
-  notification.on('click', () => (item.target.pane ? focusPaneFromTray(item.target.pane) : openCardFromTray(item.target.html)))
+  notification.on('click', () => {
+    if (item.target.request) openRequestFromTray(item.target.request)
+    else if (item.target.pane) focusPaneFromTray(item.target.pane)
+    else openCardFromTray(item.target.html)
+  })
   notification.show()
 }
 
@@ -2408,6 +2591,14 @@ handle('tab:ratio', async (ctx, tabId, path, ratio) => {
   return reply
 })
 handle('board:open', (ctx) => ctx.openBoardExternal())
+// [작업] 팝업 — 목록(요청 + 계획서) · 상세(계획서 id 만 받는다)
+handle('work:get', (ctx) => ctx.workState())
+handle('work:requests', (ctx) => ctx.refreshRequests())
+handle('work:answer', (ctx, id, answer) => ctx.answerRequest(String(id || ''), { choice: String((answer && answer.choice) || '').slice(0, 500), text: String((answer && answer.text) || '').slice(0, 1500) }))
+handle('work:redeliver', (ctx, id) => ctx.redeliverRequest(String(id || '')))
+handle('work:open-plan', (ctx, id, html) => ctx.openPlan(String(id || ''), html ? String(html) : null))
+handle('board:section', (ctx, section) => ctx.openBoardSection(String(section || '')))
+handle('work:detail', (ctx, id) => ctx.workDetail(String(id || '')))
 listen('ui:tab', (ctx, tab) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url) => openUrl(ctx, String(url)))
 // 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 현황판 iframe · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)

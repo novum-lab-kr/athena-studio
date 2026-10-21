@@ -59,6 +59,17 @@ contextBridge.exposeInMainWorld('studio', {
   paneInput: (paneId, data) => ipcRenderer.send('pane:input', paneId, data),
   paneResize: (paneId, cols, rows) => ipcRenderer.send('pane:resize', paneId, cols, rows),
   openBoard: () => ipcRenderer.invoke('board:open'),
+  // [작업] 팝업 — 목록 · 계획서 상세 · 요청이 바뀌면 { supported, requests }
+  workGet: () => ipcRenderer.invoke('work:get'),
+  workRequests: () => ipcRenderer.invoke('work:requests'),
+  workAnswer: (id, answer) => ipcRenderer.invoke('work:answer', id, answer),
+  workRedeliver: (id) => ipcRenderer.invoke('work:redeliver', id),
+  workOpenPlan: (id, html) => ipcRenderer.invoke('work:open-plan', id, html),
+  openBoardSection: (section) => ipcRenderer.invoke('board:section', section),
+  workDetail: (id) => ipcRenderer.invoke('work:detail', id),
+  onWorkRequests: listen('work:requests'),
+  // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
+  onWorkOpen: listen('work:open'),
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
   // 지금 탭(work · board) — 메뉴 막대 알림이 보고 있는 pane 을 건너뛸 때 쓴다
   reportTab: (tab) => ipcRenderer.send('ui:tab', tab),

@@ -779,7 +779,8 @@ const PLAN = {
       const response = await fetch('/api/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Board-Token': boardToken },
-        body: JSON.stringify({ pane: PLAN.leadPane, text: buildPrompt() }),
+        // plan — 현황판이 이 계획서의 결정 요청에 답을 적는다(scripts/lib/requests.mjs)
+        body: JSON.stringify({ pane: PLAN.leadPane, plan: PLAN.mdFile, text: buildPrompt() }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || '보내지 못했어요 (' + response.status + ')');

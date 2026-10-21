@@ -30,6 +30,7 @@
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [처리 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
+ *                      결정 콘솔이 plan(계획서 경로)을 같이 주면 그 계획서의 결정 요청에 답을 적고(answered) 지시 앞에 [요청 <id>] 를 붙인다(docs/requests.md)
  *     정식 계획서 결정 콘솔(/plans/*.html)의 [이대로 진행] 도 이걸로 PLAN.leadPane 에 보낸다
  *   브라우저가 보내기 전에 지시문을 보여주고 고치게 한다
  * 다른 사이트가 localhost 로 요청을 보내 아테나에 지시를 넣지 못하게, 서버를 띄울 때마다 만드는 토큰과
@@ -42,6 +43,7 @@ import { fileURLToPath } from 'node:url'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
+import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
@@ -888,6 +890,21 @@ const sendToPane = async (paneId, text) => {
   return null
 }
 
+// 결정 콘솔 [이대로 진행] — 그 계획서의 결정 요청(plan:<경로>)에 사람이 답했다고 적고, 지시 앞에 요청 번호를 붙인다.
+// 에이전트가 plan-html.mjs --decide 로 확정하면 요청이 delivered 로 닫힌다. 요청이 없거나(옛 계획서) 못 적어도 지시는 그대로 보낸다
+const consoleAnswer = (plan, text) => {
+  if (!/^plans\/[^\0]+\.md$/.test(plan) || plan.split('/').includes('..')) return text
+  try {
+    const live = listRequests(ROOT).requests.find((request) => request.dedupeKey === `plan:${plan}`)
+    if (!live) return text
+    if (live.state === 'open') answerRequest(ROOT, live.id, { choice: '결정 콘솔', text: text.slice(0, 1500), by: 'board' })
+    return `[요청 ${live.id}] ${text}`
+  } catch (error) {
+    console.log(`⚠️ 결정 요청을 적지 못했다 ${plan}: ${error.message}`)
+    return text
+  }
+}
+
 // 이슈 [처리 시작] → 아테나: 떠 있는 아테나 pane 에 끼워 넣지 않고 **새 아테나 pane** 을 열어 그 안에서 처리한다.
 // 하던 대화 한가운데에 다른 이슈가 섞이지 않게 — 이슈 하나에 세션 하나. 자리는 아테나 pane 옆(없으면 현황판 pane 옆)
 const openHermesPane = async (issueId, text) => {
@@ -1728,7 +1745,8 @@ const handleRequest = async (request, response) => {
       await refresh()
       return reply(200, { ok: true, ...result })
     }
-    const error = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), String(body.text ?? ''))
+    const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? '')) : ''
+    const error = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
     if (error) return reply(400, { error })
     await refresh()
     return reply(200, { ok: true })

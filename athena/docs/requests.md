@@ -11,7 +11,7 @@
 
 | 종류 | 누가 · 언제 |
 |---|---|
-| `decision` | **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다. 따로 부를 필요 없다 |
+| `decision` | **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
 | `question` | **모아서 묻기**(`AGENTS.md` 5절 "추측으로 개발하지 않는다") — Blocked 에 적고 사용자에게 묻는 바로 그때 연다. 한 번에 묻는 묶음이 요청 하나다 |
 
 열지 않는 것: 진행 보고 · "리뷰할까요?" 같은 한 줄 확인 · 커밋 · PR 확인(사용자가 말할 때만 하는 일) · 끝났다는 알림.
@@ -39,7 +39,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 - **사용자가 대화로 답하면** — `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
 - **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`
-- 결정 콘솔 요청은 `plan-html.mjs` 가 맡는다 — 손으로 열거나 닫지 않는다
+- 결정 콘솔 요청은 `plan-html.mjs` · 현황판이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)
 
 ## 명령
 

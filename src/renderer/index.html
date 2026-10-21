@@ -10,8 +10,13 @@
 <body>
   <header class="tabbar">
     <span class="spacer"></span>
-    <!-- 현황판 — 기본 브라우저로 연다(⌘2 와 같다) · 제목에 단축키(renderState) -->
-    <button id="board-tab" class="tabbar-tool" aria-label="현황판" data-i18n-aria-label="board.title">
+    <!-- [작업] — 나를 기다리는 것(사람에게 묻는 요청)이 있으면 왼쪽 위에 점 하나(숫자는 툴팁에만). 누르면 작업 팝업(work-pop) -->
+    <button id="work-tab" class="tabbar-tool work-tool" aria-haspopup="dialog" aria-expanded="false" aria-controls="work-pop">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6"/></svg>
+      <span data-i18n="work.title">작업</span><span id="work-ask" class="work-ask" hidden></span>
+    </button>
+    <!-- 현황판 페이지 메뉴(QA · 학습 · 아카이브 · 전체 칸반) — 고르면 기본 브라우저로. ⌘2 는 전체 칸반 -->
+    <button id="board-tab" class="tabbar-tool" aria-label="현황판" data-i18n-aria-label="board.title" aria-haspopup="menu" aria-expanded="false" aria-controls="board-menu">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
     </button>
     <button id="browser-toggle" class="tabbar-tool" aria-label="옆 브라우저 열기·닫기" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
@@ -100,6 +105,20 @@
       <div id="browser-slot" class="browser-slot"></div>
     </aside>
   </main>
+  <!-- [작업] 팝업 — 탭 줄 [작업] 아래에 붙는다(모달 아님 · 바깥을 누르거나 Esc 면 닫힌다). 내용은 renderer renderWorkPop -->
+  <div id="work-pop" class="work-pop" hidden role="dialog" aria-labelledby="work-pop-title">
+    <div class="work-pop-head"><span id="work-pop-title"></span></div>
+    <div id="work-pop-body" class="work-pop-body"></div>
+    <div class="work-pop-foot"><span data-i18n="work.foot">누르면 자세히 · 지난 일은 아카이브에서</span><button id="work-pop-pages" class="link" type="button" data-i18n="work.footPages">QA · 학습 · 아카이브 →</button></div>
+  </div>
+  <!-- 현황판 페이지 메뉴 -->
+  <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="현황판" data-i18n-aria-label="board.title">
+    <button class="board-menu-item" type="button" role="menuitem" data-section="qa"><b data-i18n="board.menu.qa">QA</b><small data-i18n="board.menu.qaNote">검수 실행 · 화면 비교</small></button>
+    <button class="board-menu-item" type="button" role="menuitem" data-section="learn"><b data-i18n="board.menu.learn">학습</b><small data-i18n="board.menu.learnNote">에이전트가 배운 것 넣기 · 버리기</small></button>
+    <button class="board-menu-item" type="button" role="menuitem" data-section="history"><b data-i18n="board.menu.history">아카이브</b><small data-i18n="board.menu.historyNote">끝난 일 찾기</small></button>
+    <div class="board-menu-sep" role="separator"></div>
+    <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">전체 칸반</b><small data-i18n="board.menu.kanbanNote">예전 현황판 화면</small></button>
+  </div>
   <!-- 회사 팩 대화상자 · 진행 표시 — 창 전체 위에(처음 켤 때 화면 포함) -->
   <div id="pack-dialog" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pack-dialog-title">
     <div class="pack-box">
