@@ -183,6 +183,8 @@ text = re.sub(r'(\.sh): line [0-9]+:', r'\1: line N:', text)
 text = re.sub(r'<WORK>/tmp//+', '<WORK>/tmp/', text)
 # reviewer 를 띄운 시각(delegate.sh 의 '- Review: … · 띄움 <시각>') — 돌릴 때마다 다르다
 text = re.sub(r'띄움 \d{4}-\d{2}-\d{2} \d{2}:\d{2}', '띄움 <TIME>', text)
+# 사람에게 묻는 요청 번호(scripts/lib/requests.mjs — 시각 + 무작위) — plan-html.mjs 가 찍는다
+text = re.sub(r'\br-\d{8}-\d{6}-[0-9a-f]{4}\b', 'r-<ID>', text)
 open(path, 'w', encoding='utf-8').write(text)
 PY
 }

@@ -33,6 +33,17 @@
  *   athena pack migrate [--yes] [--json]           옛 구조 본체를 여러 팩 구조로(--yes 없으면 계획만)
  *   athena pack test-setup [--json]                테스트 데이터(ATHENA_DATA_DIR · 이름에 test)를 지우고 fixture 팩 acme·globex 등록
  *
+ *   사람에게 묻는 요청(docs/requests.md) — 팩마다 · 쓰기는 이 명령으로만. --json 은 위와 같은 모양
+ *   athena request open --kind decision|question --title <글> [--body <글>|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …]
+ *                       [--recommend <라벨>] [--plan <plans/…md>] [--html <…html>] [--issue <issues/…md>] [--pane <id>] [--key <중복 방지 키>] [--json]
+ *                                                  요청을 연다(같은 --key 로 열린 것이 있으면 고친다). pane 을 안 주면 지금 pane
+ *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지면 expired 로 닫는다
+ *   athena request show <id> [--json]
+ *   athena request answer <id> --by board|app|chat [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
+ *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered
+ *   athena request ack <id> [--json]               에이전트가 답을 받았다(answered → delivered · 두 번 불러도 된다)
+ *   athena request cancel <id> [--reason <글>] [--json]
+ *
  *   athena version [--json]                          이 본체 코어 커밋 · 약속 번호(contract) · 데이터 형식 범위 · 배포 커밋 — 스튜디오가 맞는지 본다
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
@@ -59,6 +70,8 @@ import {
   packStatus, relinkBody, renameNewSlot, restoreWithWork, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
+import { ackRequest, answerRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
+import { screenSync } from './lib/screen.mjs'
 
 const ROOT = ATHENA_ROOT
 const [command, sub] = process.argv.slice(2)
@@ -247,6 +260,10 @@ const human = {
   },
   busy: (result) => { if (!result.busy.length) console.log(result.busyKnown === false ? '도는 작업을 다 읽지 못했다' : '이 본체에서 도는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
   version: (result) => console.log(`코어 ${result.core ? result.core.slice(0, 7) : '(git 아님)'}${result.dirty ? ' (미커밋 변경)' : ''} · 약속 ${result.contract} · 데이터 형식 ${result.dataFormats.join('~')} · 본체 ${result.body}${result.deploy ? ` · 배포 ${result.deploy.commit.slice(0, 7)}` : ''}`),
+  'request list': (result) => {
+    if (!result.requests.length) console.log('열린 요청 없음')
+    for (const request of result.requests) console.log(`  ${requestLine(request)}`)
+  },
   update: (result) => {
     console.log(`${result.status === 'complete' ? '✅' : '⚠️'} ${result.rollbackOf ? `되돌리기(${result.rollbackOf})` : `업데이트 → ${result.targetCore?.slice(0, 7)}`} · ${result.status} · ${result.operationId}`)
     for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}`)
@@ -276,6 +293,47 @@ const startBoard = (body) => {
   return spawnSync(join(body, 'scripts', 'board.sh'), [], { stdio: asJson ? 'ignore' : 'inherit', env }).status === 0
 }
 
+// ── 요청(request) ─────────────────────────────────────────────────────────
+const requestId = () => {
+  const id = args[1]
+  if (!id || id.startsWith('--')) throw new PackError('usage', `사용: athena request ${sub} <id> [--json]`)
+  return id
+}
+const currentPane = () => {
+  try {
+    return screenSync(['pane', 'current']).pane.id
+  } catch {
+    return ''
+  }
+}
+const requestCommands = {
+  open: () => {
+    const recommend = flag('recommend')
+    const options = flags('option').map((raw) => {
+      const [label, ...desc] = raw.split(' :: ')
+      return { label: label.trim(), desc: desc.join(' :: ').trim(), recommended: label.trim() === recommend }
+    })
+    const bodyFile = flag('body-file')
+    return openRequest(ROOT, {
+      kind: flag('kind'),
+      title: flag('title'),
+      body: bodyFile ? readFileSync(resolve(bodyFile), 'utf8') : flag('body'),
+      options,
+      links: { plan: flag('plan'), html: flag('html'), issue: flag('issue') },
+      pane: flag('pane') || currentPane(),
+      dedupeKey: flag('key'),
+    })
+  },
+  list: () => listRequests(ROOT, { all: args.includes('--all') }),
+  show: () => showRequest(ROOT, requestId()),
+  answer: () => answerRequest(ROOT, requestId(), { choice: flag('choice'), text: flag('text'), by: flag('by'), rev: flag('rev') === '' ? null : Number(flag('rev')) }),
+  ack: () => ackRequest(ROOT, requestId()),
+  cancel: () => cancelRequest(ROOT, requestId(), { reason: flag('reason') }),
+}
+const requestLine = (request) => `${request.id} · ${request.kind} · ${request.state}${request.pane ? ` · pane ${request.pane}` : ''} — ${request.title}`
+
+for (const name of ['open', 'show', 'answer', 'ack', 'cancel']) human[`request ${name}`] = (result) => console.log(`✅ ${requestLine(result.request)}`)
+
 const packCommands = {
   list: () => listPacks(ROOT),
   status: () => packStatus(ROOT),
@@ -290,7 +348,8 @@ const packCommands = {
   open: async () => {
     const id = positional()[0]
     if (!id) throw new PackError('usage', '사용: athena pack open <id> [--json]')
-    return openPack(ROOT, id, { report })
+    // 빈 자리(pack new 뒤 /setup 전)도 연다 — 다른 팩으로 넘어갔다가 돌아와 /setup 을 이어 하게
+    return openPack(ROOT, id, { report, allowEmpty: true })
   },
   new: () => newPackBody(ROOT, { report }),
   discard: () => {
@@ -339,6 +398,7 @@ else if (command === 'update') {
   runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), from: flag('from'), backupDirty: args.includes('--backup-dirty'), report })))
 }
 else if (command === 'scaffold') runScaffold()
+else if (command === 'request' && requestCommands[sub]) runPack(`request ${sub}`, requestCommands[sub])
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()
 else if (command === 'pack' && sub === 'check') check()

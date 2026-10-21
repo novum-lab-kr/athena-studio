@@ -68,7 +68,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
    ├─ plans/ · issues/          작업 기록
    ├─ repos/                    레포 링크(local.json 의 reposRoot · repoPaths 로 만든다)
    ├─ worktrees/                새 워크트리(실제 경로)
-   ├─ state/                    현황판 휴지통·학습 수·Jev 캐시·QA 결과·학습 검토 대기열(learn-queue)·현황판 토큰(board-token, 600)
+   ├─ state/                    현황판 휴지통·학습 수·Jev 캐시·QA 결과·학습 검토 대기열(learn-queue)·현황판 토큰(board-token, 600)·사람에게 묻는 요청(requests/ — docs/requests.md)
    └─ local.json                그 팩의 이 컴퓨터 설정 { reposRoot(절대 경로), repoPaths }
 ```
 
@@ -87,7 +87,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | 명령 | 하는 일 |
 |---|---|
 | `list` · `status` · `busy` | 팩 목록(팩마다 본체 · 포트 · `bodyState` · `core` · `updatePending` · `busy[]`·`busyKnown`) + `emptySlots`(/setup 전 빈 자리) · 이 본체의 팩·포트·코어 · 이 본체에서 도는 것 |
-| `open <id>` | 그 팩 본체를 준비하고 경로를 돌려준다. 없으면 `<bodiesDir>/<id>`(레지스트리 `bodiesDir` — 스튜디오는 `~/.athena-studio/bodies` · 없으면 `<주 본체>-<id>`)에 `git worktree add --detach <배포 커밋>`(레지스트리 `deploy.commit` → 주 본체의 `origin/main`(처음 clone 한 번들) · 주 본체 로컬 HEAD 는 쓰지 않는다 · 그 커밋 코어가 팩마다 본체를 모르면 `contract-mismatch`) → 본체 설정 → **그 본체 코드로** 팩을 건다(`pack attach`) → 포트 배정. 있으면 링크를 검증·고친다(못 고치면 `state:"repair-required"`) · 배포 커밋보다 뒤처졌고(배포 커밋이 지금 커밋의 후손 — 앞으로만) 비어 있으면 그때 옮긴다(`updated` — 그 본체 현황판을 껐으면 `updated.boardStopped`). 만들다 실패하면 만들던 본체를 지운다. 그 자리에 다른 폴더가 있으면 `body-conflict` |
+| `open <id>` | 그 팩 본체를 준비하고 경로를 돌려준다. 없으면 `<bodiesDir>/<id>`(레지스트리 `bodiesDir` — 스튜디오는 `~/.athena-studio/bodies` · 없으면 `<주 본체>-<id>`)에 `git worktree add --detach <배포 커밋>`(레지스트리 `deploy.commit` → 주 본체의 `origin/main`(처음 clone 한 번들) · 주 본체 로컬 HEAD 는 쓰지 않는다 · 그 커밋 코어가 팩마다 본체를 모르면 `contract-mismatch`) → 본체 설정 → **그 본체 코드로** 팩을 건다(`pack attach`) → 포트 배정. 있으면 링크를 검증·고친다(못 고치면 `state:"repair-required"`) · 배포 커밋보다 뒤처졌고(배포 커밋이 지금 커밋의 후손 — 앞으로만) 비어 있으면 그때 옮긴다(`updated` — 그 본체 현황판을 껐으면 `updated.boardStopped`). 만들다 실패하면 만들던 본체를 지운다. 그 자리에 다른 폴더가 있으면 `body-conflict`. 빈 자리(`pack new` 뒤 /setup 전)도 연다 — 다른 팩으로 넘어갔다 돌아와 /setup 을 이어 한다 |
 | `use <id> [--start-board]` | `open` 과 같다(+ 1단계 필드 `current`·`previous`·`unchanged`·`bodyChanged`·`opened`). 본체의 팩을 바꾸지 않는다 |
 | `new` | 빈 팩 자리(`new-<시각>`) + 그 본체 → 그 본체에서 claude 를 켜면 /setup(`athena init` 이 자리 이름만 회사 이름으로 · 본체 폴더는 그대로). 취소는 다른 본체에서 `discard <id>` |
 | `discard <id>` | 빈 자리(팩·작업 기록 없음)와 그 본체만 지운다 — 주 본체·부른 본체는 지우지 않는다. 서비스 레포·워크트리는 링크라 그대로 |

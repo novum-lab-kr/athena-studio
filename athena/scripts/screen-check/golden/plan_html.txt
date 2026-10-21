@@ -2,6 +2,7 @@ $ node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add <WORK>/decisio
 --- exit 0
 --- stdout
 plans/task/20261001-fe-test.html · 결정 0/1 확정 · 보낼 pane (없음 — 복사로만)
+   요청 r-<ID> · open
 --- stderr
 {"error": "not_inside", "message": "화면 계층 밖이다(ATHENA_SCREEN=none · Athena Studio 밖)"}
 --- screen

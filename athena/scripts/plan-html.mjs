@@ -13,11 +13,13 @@
  * PLAN.json 은 title·type·scope·summary·decisions[] (형식은 docs/plan-template.html 헤더 주석). mdFile 은 자동으로 채운다.
  * 치환은 헤더 주석이 끝난 뒤에서만 한다 — 주석 안의 블록 이름까지 바꾸면 PLAN 이 주석에 갇혀 빈 화면이 된다.
  * 만든 뒤 `scripts/board.sh open <md>` 로 현황판 주소로 연다.
+ * 안 정한 결정이 있으면 사람에게 묻는 요청(scripts/lib/requests.mjs · 계획서마다 하나)을 열고, 다 정해지면 받은 것으로 닫는다 — 앱 배지 · 알림이 이것을 센다.
  */
 import { existsSync, readFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquirePlanLock, releaseLock, writeAtomic } from './lib/plan-update.mjs'
+import { syncPlanRequest } from './lib/requests.mjs'
 import { screenSync } from './lib/screen.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -255,3 +257,10 @@ writeAtomic(htmlPath, head + body)
 
 const decided = (plan.decisions ?? []).filter((decision) => decision.decided != null).length
 console.log(`${relative(ROOT, htmlPath)} · 결정 ${decided}/${plan.decisions?.length ?? 0} 확정 · 보낼 pane ${plan.leadPane || '(없음 — 복사로만)'}`)
+// 요청은 곁가지 — 못 열어도 결정 콘솔은 그대로 쓴다
+try {
+  const { request } = syncPlanRequest(ROOT, { mdFile, htmlFile: relative(ROOT, htmlPath), plan })
+  if (request) console.log(`   요청 ${request.id} · ${request.state}`)
+} catch (error) {
+  console.log(`   ⚠️ 요청을 열지 못했다 — ${error.message}`)
+}
