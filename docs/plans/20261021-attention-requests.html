@@ -1,0 +1,1044 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>작업계획서</title>
+<!--
+  ============================================================================
+  Athena 작업계획서 — 결정 콘솔 + 계획서 뷰 (HTML 템플릿)
+  ----------------------------------------------------------------------------
+  이 파일 하나가 작업계획서의 라이프사이클 전체를 담는다.
+    (1) 승인 전 → 머리(제목·요약·상태) 아래 "결정 콘솔"에서 선택지를 고르고
+                  [이대로 진행] — 결정이 PLAN.leadPane(계획서를 만든 아테나 pane)에 바로
+                  입력된다. .md 본문은 그 아래 "계획서 전문"으로 렌더링된다. 현황판 주소
+                  (scripts/board.sh open <이 파일>)로 열어야 보낼 수 있고, 보낼 수 없으면
+                  [프롬프트로 복사] 로 바뀐다
+    (2) 확정 후 → 각 결정에 decided 값을 채우면 결정 카드가 "확정" 으로 잠기고(고른 것만
+                  보이고 나머지는 접힘), 아래 .md 본문이 "읽기용 계획서"로 유지된다.
+  색은 시스템 설정을 따른다 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱과 같은 값.
+  스타일 · 스크립트는 plan-html.mjs 가 계획서를 맞출 때마다 이 템플릿 것으로 바꿔 쓴다
+  (PLAN · plan-md 두 블록만 그 계획서 것) — 기존 계획서도 다음 갱신 때 새 모양이 된다.
+
+  사용법 (Team Lead):
+  1) 이 파일을 plans/<유형>/YYYYMMDD-제목.html 로 복사한다 (md와 동일 파일명).
+  2) 아래 두 블록만 채운다 — 스타일/스크립트(맨 아래)는 건드릴 필요 없다.
+     ⚠️ 스크립트로 자동 치환할 때는 이 헤더 주석이 끝난 뒤에서만 찾아 바꾼다.
+        주석 안의 블록 이름까지 매칭되면 주석 종료 표시가 먹혀 PLAN 전체가 주석에 갇히고
+        브라우저에서 "PLAN is not defined" 로 빈 화면이 된다. (그래서 위 [A][B] 는 태그가 아닌 script#id 표기다)
+
+     [A] script#plan-data 의 PLAN 객체
+         - title/type/scope/mdFile/summary
+         - leadPane : [이대로 진행] 이 보낼 pane id — 계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트 (scripts/screen pane current, 예 'w2:p33')
+         - decisions[] : .md "사용자 결정 사항"과 1:1
+           · 승인 전: options[] 만 채운다 (decided 생략)
+           · 확정 후: 각 결정에 decided 를 채운다
+                      (택1이면 문자열, 복수면 배열) → 해당 결정이 "✅ 확정"으로 잠김
+
+     [B] script#plan-md 안에 .md 본문을 그대로 붙여넣는다
+         - 이 텍스트가 결정 콘솔 위에 렌더링되어 "보기 좋은 계획서"가 된다.
+         - .md 가 단일 소스 — 수정 시 .md 와 이 블록을 같은 턴에 함께 갱신한다.
+         - Checkpoint(Status/Progress/Next)만 바뀐 경우에도 이 블록은 동기화한다.
+           단 decisions[] 는 승인된 결정이 바뀔 때만 건드린다.
+
+  지원 마크다운: 제목(#~######), 굵게(**), 인라인코드(`), 코드펜스(```),
+                 표(GFM), 목록(- * 1.), 인용(>), 구분선(---), 링크. (중첩목록 제외)
+  ============================================================================
+-->
+<script id="plan-data">
+const PLAN = {
+  "title": "현황판 개편 — \"내 판단이 필요해요\" 를 명시적 요청으로",
+  "type": "feature",
+  "scope": "양쪽",
+  "mdFile": "docs/plans/20261021-attention-requests.md",
+  "summary": "입구는 앱(배지 · pane 표시 · 맥 알림), 현황판은 판단 근거를 보고 답하는 곳. 상태 추측 대신 아테나가 남기는 명시적 요청으로.",
+  "leadPane": "",
+  "decisions": [
+    {
+      "id": "D1",
+      "title": "요청을 어디에 둘까",
+      "desc": "요청 파일이 저장되는 자리 — 팩 백업 · 옮기기에 따라가는지가 달라진다",
+      "type": "single",
+      "required": true,
+      "options": [
+        {
+          "label": "팩 데이터 requests/",
+          "desc": "팩마다 따로 · pane 이 닫히거나 데몬이 다시 떠도 남는다 · 백업엔 넣고 팀 공유 내보내기엔 뺀다",
+          "recommended": true
+        },
+        {
+          "label": "본체 state/ 아래",
+          "desc": "링크 추가는 없지만 팩 백업 · 옮기기에서 빠진다"
+        },
+        {
+          "label": "데몬 메모리 + 프로토콜",
+          "desc": "빠르지만 데몬이 다시 뜨면 사라지고, 프로토콜을 올려 pane 이 닫힌다"
+        }
+      ],
+      "decided": "팩 데이터 requests/"
+    },
+    {
+      "id": "D2",
+      "title": "앱이 요청을 어떻게 읽을까",
+      "desc": "현황판 서버가 꺼져 있을 때 배지가 뜨는지가 달라진다",
+      "type": "single",
+      "required": true,
+      "options": [
+        {
+          "label": "코어 명령 athena request list --json",
+          "desc": "현황판이 꺼져 있어도 된다 · 폴더가 바뀌면 부르고 30초마다 한 번 더",
+          "recommended": true
+        },
+        {
+          "label": "현황판 /api/state 로",
+          "desc": "지금 트레이와 같은 길 — 서버가 꺼지면 배지가 빈다"
+        },
+        {
+          "label": "앱이 파일을 직접 읽기",
+          "desc": "가장 빠르지만 파일 형식이 코어 · 앱 두 곳에 박힌다"
+        }
+      ],
+      "decided": "코어 명령 athena request list --json"
+    },
+    {
+      "id": "D3",
+      "title": "처음에 어떤 요청부터",
+      "desc": "1단계 크기가 달라진다",
+      "type": "single",
+      "required": true,
+      "options": [
+        {
+          "label": "결정 콘솔 + 질문",
+          "desc": "결정 콘솔은 이미 화면 · 전달 길이 있고, 질문은 \"모아서 묻기\"를 기록으로 남긴다",
+          "recommended": true
+        },
+        {
+          "label": "결정 콘솔만",
+          "desc": "가장 작다 — 질문은 대화에만 남는다"
+        },
+        {
+          "label": "+ QA 기준 승인까지",
+          "desc": "QA 흐름까지 바꿔 1단계가 커진다"
+        }
+      ],
+      "decided": "결정 콘솔 + 질문"
+    },
+    {
+      "id": "D4",
+      "title": "답을 어떻게 전할까",
+      "desc": "전달이 실패했을 때 알 수 있는지가 달라진다",
+      "type": "single",
+      "required": true,
+      "options": [
+        {
+          "label": "pane 입력 + 요청 번호 · 에이전트가 ack 로 닫기",
+          "desc": "\"답함\"과 \"전달됨\"이 갈려, 실패하면 다시 보낼 수 있다",
+          "recommended": true
+        },
+        {
+          "label": "답만 저장 · 에이전트가 주기적으로 읽기",
+          "desc": "pane 입력이 없어 깔끔하지만 에이전트가 쉬는 동안은 못 받는다"
+        },
+        {
+          "label": "지금처럼 입력만",
+          "desc": "기록이 없다 — 이번 문제를 그대로 둔다"
+        }
+      ],
+      "decided": "pane 입력 + 요청 번호 · 에이전트가 ack 로 닫기"
+    },
+    {
+      "id": "D5",
+      "title": "트레이 \"확인 필요\" 에 무엇을 셀까",
+      "desc": "숫자를 믿을 수 있는지가 달라진다",
+      "type": "single",
+      "required": true,
+      "options": [
+        {
+          "label": "요청만",
+          "desc": "blocked pane 은 \"에이전트 상태\"로 따로 · review · blocked 카드는 뺀다",
+          "recommended": true
+        },
+        {
+          "label": "요청 + 지금 추측 같이",
+          "desc": "놓치는 건 적지만 중복 · 오탐이 남는다"
+        }
+      ],
+      "decided": "요청만"
+    }
+  ]
+}
+</script>
+
+<!-- [B] .md 본문을 그대로 붙여넣는다. 비워두면 본문 렌더링 영역이 숨겨진다. -->
+<script id="plan-md" type="text/markdown">
+# 현황판 개편 — "내 판단이 필요해요" 를 명시적 요청으로
+
+## Checkpoint
+- Updated: 2026-10-21 / Claude — 결정 확정
+- Status: in_progress
+- Owner: Mason
+- Scope: athena-studio — 코어 `athena/` + 앱 `src/`
+- Work ref: main 15e9fc3
+- Approved scope: 방향(입구는 앱 · 현황판은 판단 근거와 응답 · 명시적 요청)은 2026-10-21 대화에서 승인. 결정 D1–D5 는 2026-10-21 결정 콘솔로 확정(모두 추천안)
+
+### Progress
+- [x] 현황 조사 · Codex 논의(진단 · 방향 · 순서 합의)
+- [x] 결정 D1–D5 확정 — 모두 추천안
+- [ ] 1단계 — 요청 약속 · 코어 명령 · 아테나 규칙
+
+### Next
+1. 1단계: `athena/scripts/lib/requests.mjs` · `athena.mjs request` · 팩 데이터 `requests/` · `plan-html.mjs` 연결 · 규칙 · `test/requests-test.sh`
+
+### Blocked
+- 없음
+
+### Validation
+- 아직 없음
+
+### Decisions
+- D1 팩 데이터 `requests/` · D2 코어 명령 `athena request list --json` · D3 결정 콘솔 + 질문 · D4 pane 입력 + 요청 번호 · ack 로 닫기 · D5 트레이 "확인 필요" 는 요청만 — 상세 3절
+
+## 1. 개요
+- 작업 유형: feature (여러 단계)
+- 요청 사항: 현황판이 내용 · 코드 · 디자인 모두 불편해 잘 안 보게 된다 → 다시 쓴다
+- 진단(Claude · Codex 공통, 코드 근거 — 실제 사용 관찰로는 아직 확인 안 함)
+  - 칸반은 에이전트가 옮기고 일은 pane 에서 끝난다 → 현황판은 이미 아는 걸 다시 읽는 곳
+  - 카드 순서는 파일 mtime, 칸은 업무 단계와 터미널 상태(working 이면 진행 중으로 덮음 — `server.mjs:723`)가 섞임
+  - 사람 판단이 필요한 화면(결정 콘솔 · QA 승인 · 학습)이 흩어져 있다
+  - 브라우저 탭은 일부러 열어야 한다 — 밀어 주지 않으면 안 연다
+  - "사람 차례"를 상태 글자로 추측한다(트레이 `tray-model.js:55` — blocked pane + blocked 카드 중복 · `ready_for_review` 를 승인 대기로 해석)
+- 방향: **입구는 앱(탭 줄 배지 · pane 표시 · 맥 알림), 현황판은 판단 근거를 보고 답하는 곳.** 그 바탕은 **명시적 요청** — 아테나가 사람 판단이 필요할 때 요청을 남기고, 답하면 닫힌다. 상태 추측은 버린다
+- 사용자 결정 사항
+  - D1 요청 저장 자리: **팩 데이터 `requests/`**
+  - D2 앱이 요청을 읽는 길: **코어 명령 `athena request list --json`**
+  - D3 처음 다룰 요청 종류: **결정 콘솔 + 질문**
+  - D4 답 전달: **pane 입력 유지 + 요청 id 로 받음 확인**
+  - D5 트레이 "확인 필요" 세기: **요청만**
+
+## 2. 현재 상태
+- 현황판 서버 `athena/scripts/board/server.mjs`(1790줄) · 화면 `index.html`(2170줄 단일 파일) · 3초 폴링 → SSE
+- 결정 콘솔: 정식 계획서의 `.html`(`plan-html.mjs` · `PLAN.decisions[]` · `leadPane`) → [이대로 진행] 이 `/api/action` → `sendToPane`(`server.mjs:880`)으로 pane 에 글자를 친다. 보낸 뒤 결과를 기록하지 않는다
+- 질문: 아테나 규칙(`athena/CLAUDE.md:25`)은 "모르면 Blocked 에 적고 모아서 한 번에 묻는다" — 대화로만 묻고 남는 기록은 계획서 Blocked 줄뿐
+- 앱 알림: `tray-model.js` `Notifier` 가 pane 상태 변화 · 카드 상태 변화로 맥 알림(`main.js:2156`), 클릭하면 pane 포커스 또는 계획서 html. 카드는 현황판 `/api/state` 를 15초마다(`main.js:2007`) — **현황판 서버가 꺼져 있으면 카드 정보가 없다**
+- 팩 데이터 링크: `packs.mjs` `FIXED_LINKS`(plans · issues · repos · .worktrees · state/…)
+- 현황판 `collect()` 는 보기만 하지 않는다 — PR 머지 자동 완료(`autoDonePlans` `:361`) · 학습 대기열 넣기 · Jev 학습 점검. 서버를 줄이거나 끄면 이것도 멈춘다
+
+## 3. 결정 사항
+
+### D1 요청 저장 자리
+- **A. 팩 데이터 `requests/<id>.json`, `FIXED_LINKS` 에 `requests` 추가 (추천)** — 팩마다 따로 · pane 이 닫히거나 데몬이 다시 떠도 남는다. `backup --with-work` · `restore` · `import-athena` 는 plans · issues 처럼 담고, `export`(팀 공유)는 뺀다
+- B. 본체 `state/` 아래 — 링크 추가가 없지만 팩 백업 · 옮기기에서 빠진다
+- C. 데몬 메모리 + 프로토콜 요청 — 빠르지만 데몬이 다시 뜨면 사라지고 PROTOCOL 을 올려야 해 pane 이 닫힌다
+
+### D2 앱이 요청을 읽는 길
+- **A. 코어 명령 `athena request list --json` (추천)** — 현황판이 꺼져 있어도 된다. 앱은 파일 형식이 아니라 명령 출력에 묶인다(팩 명령처럼 `CONTRACT` 로 맞춘다). `requests/` 를 `fs.watch` 로 보다가 바뀌면 부르고, 놓칠 때를 대비해 30초마다 한 번
+- B. 현황판 `/api/state` 에 실어서 — 지금 트레이와 같은 길이지만 서버가 꺼지면 배지가 빈다
+- C. 앱이 파일을 직접 읽기 — 가장 빠르지만 형식이 코어 · 앱 두 곳에 박힌다
+
+### D3 처음 다룰 요청 종류
+- **A. 결정 콘솔 + 질문 (추천)** — 결정 콘솔은 이미 화면 · 전달 경로가 있어 옮기기 쉽고, 질문은 "모아서 묻기" 규칙(`dc34c00`)을 기록으로 남긴다
+- B. 결정 콘솔만 — 가장 작다. 질문은 대화에만 남는다
+- C. + QA 기준 승인까지 — QA 쪽 흐름까지 바꿔 1단계가 커진다(4단계로 미루는 게 낫다)
+
+### D4 답 전달
+- **A. 지금처럼 pane 에 입력 + 요청 id 를 붙이고, 에이전트가 `athena request ack <id>` 로 받았다고 닫는다 (추천)** — "답함"과 "전달됨"이 갈린다. 전달이 실패하면 `answered` 로 남아 다시 보낼 수 있고, 같은 id 로 두 번 와도 에이전트가 무시한다
+- B. 답 저장만 하고 에이전트가 요청을 주기적으로 읽기 — pane 입력이 없어 깔끔하지만 에이전트가 쉬는 동안은 못 받는다
+- C. 지금처럼 입력만, 기록 없음 — 이번 문제를 그대로 둔다
+
+### D5 트레이 "확인 필요"
+- **A. 요청만 센다 (추천)** — blocked pane 알림은 "에이전트 상태"로 따로 두고, `ready_for_review` · blocked 카드는 "확인 필요"에서 뺀다. 숫자를 믿을 수 있게
+- B. 요청 + 지금 추측을 같이 — 놓치는 건 적지만 중복 · 오탐이 남는다
+
+## 4. 요청 형식 (D1 · D3 · D4 추천 기준 초안)
+```json
+{
+  "format": 1,
+  "id": "r-20261021-1530-a1b2",
+  "kind": "decision | question",
+  "title": "한 줄 — 무엇을 정하는지",
+  "body": "자세히 · 근거(마크다운)",
+  "options": [{ "id": "A", "label": "…", "recommended": true }],
+  "links": { "plan": "plans/feature/…md", "html": "plans/feature/…html", "issue": null },
+  "pane": "<만든 pane id — 이동 힌트일 뿐 · 보낼 때 다시 확인>",
+  "pack": "<팩 id>", "generation": 3,
+  "dedupeKey": "plan:<경로>:D2",
+  "state": "open | answered | delivered | cancelled | expired",
+  "rev": 4,
+  "createdAt": "…", "answer": { "choice": "A", "text": "", "at": "…", "by": "board | app | chat" },
+  "deliveredAt": null
+}
+```
+- 쓰기는 코어 명령으로만: `athena request open|answer|ack|cancel|list|show [--json]` — 잠금 + 원자 저장 + `rev` 검사(에이전트 취소와 사용자 답이 서로 덮지 않게)
+- 같은 `dedupeKey` 로 열린 요청이 있으면 새로 만들지 않고 고친다
+- 팩 세대가 바뀐 뒤(`generation`) 온 답은 거절 — 현황판 쓰기의 409 와 같은 규칙
+
+## 5. 단계
+
+### 1단계 — 약속 · 코어 명령 · 아테나 규칙 (코어)
+- `athena/scripts/lib/requests.mjs`(읽기 · 쓰기 · 잠금 · 검사) + `athena.mjs` `request` 하위 명령
+- `packs.mjs` `FIXED_LINKS` · `SLOT_DIRS` 에 `requests` · backup/restore/import-athena 에 포함 · export 제외
+- `plan-html.mjs`: 정식 계획서 결정마다 `decision` 요청을 연다(`--add` 도) · 확정되면 `answered`
+- 아테나 규칙(`athena/CLAUDE.md` · `AGENTS.md` 5절): 모아서 물을 때 `question` 요청을 연다 · 답을 받으면 `ack` · 대화로 답해도 `answer --by chat` 으로 닫는다
+- 문서: `athena/docs/requests.md`(새) · `pack.md` 팩 데이터 목록
+- 검사: `athena/test/requests-test.sh`(열기 · 중복 · rev 충돌 · 세대 거절 · ack) · `packs-test.sh` · `bodies-test.sh`
+
+### 2단계 — 현황판 없이 모으기 · 최소 응답 화면
+- 앱 `src/lib/requests.js`(출력 해석 · 정렬) + `test/requests.test.js` · `main.js` 창 `ctx` 마다 `requests/` 감시 → `athena request list --json`
+- 팩 명령 `CONTRACT` 2 → 3: `src/lib/pack.js` · `bodies.mjs` · `scripts/fake-pack.js`(가짜 요청 몇 개) · `test/pack.test.js` · `pack.md`
+- 현황판: `/requests/<id>` 상세(근거 · 선택지 · [답하기]) · 결정 콘솔 [이대로 진행] 은 `answer` → pane 전달 → 결과를 요청에 기록
+- 검사: `npm run check` · `npm test`(skip 없는지) · 코어 검사
+
+### 3단계 — 앱에서 밀어 주기
+- 탭 줄 배지(열린 요청 수) · 그 pane 탭 표시 · 맥 알림(새 요청 한 번만, 창이 여럿이어도 한 번) · 클릭 → 현황판 `/requests/<id>`
+- 트레이 "확인 필요" = 요청만(D5) · `tray-model.js` 정리 · `test/tray-model.test.js`
+- 문구 네 언어(`src/i18n/*.json`) · README "화면"
+- 데몬 프로토콜은 바꾸지 않는다
+
+### 4단계 — 현황판 첫 화면 · 코드 정리
+- 첫 화면 세 구역: **내 결정 필요**(요청) · **진행 중**(계획서 단위 짧은 목록 · pane 바로가기) · **최근 결과**
+- 첫 화면에서 빼기: 칸반 드래그(상세의 명시적 상태 바꾸기로) · 전체 워크트리 · 에이전트 명단. 서비스 · 정비 탭은 필터로 합침. QA · 학습 · 아카이브는 하위 페이지
+- `index.html` → 빌드 없는 ES 모듈(연결 · 상태 저장소 · 화면별) · 통째 `innerHTML` 대신 항목 id 기준 갱신
+- `collect()` 에서 자동 완료 · 학습 검사를 따로 떼기 — 서버를 켜는 방식을 바꾸기 **전에** 부작용부터 점검
+- QA 기준 승인도 요청으로(D3 C)
+- 함께 정리: 브라우저로 옮기고 남은 흔적 — `README.md:46` · `main.js` `openUrl({fromBoard})` · `ui:tab 'board'` · `renderer.js:1` 주석
+
+## 6. 위험
+- 현황판 서버를 줄이거나 끄면 자동 완료 · 학습 대기열도 멈춘다 — 4단계 전까지 서버 시작 방식은 그대로
+- 요청을 아테나가 안 쓰면 배지가 비어 "조용하다"로 오해한다 — 1단계에서 결정 콘솔 요청은 `plan-html.mjs` 가 자동으로 연다(규칙에만 기대지 않는다)
+- 오래 열린 브라우저의 답이 다른 팩 · 재사용된 pane 으로 가면 안 된다 — 세대 검사 · 보낼 때 pane 다시 확인
+- 요청이 쌓이면 이슈 56개 때와 같다 — 만료(예: 계획서가 done · 아카이브되면 그 요청 자동 `expired`)
+- 개발 앱과 배포판이 같은 스튜디오 집을 쓴다 — CONTRACT 를 올리면 옛 앱이 새 코어에 붙을 때 `contract-mismatch`
+
+## 7. 검증 방법
+- 각 단계: `[단계] → 확인: [방법] → 성공 조건`
+  - 1 → `requests-test.sh` → 열기 · 같은 키 중복 없음 · rev 충돌 거절 · 다른 세대 답 거절 · ack 후 `delivered`
+  - 2 → 격리 실행(`ATHENA_STUDIO_HOME=<임시>`)에서 현황판을 끈 채 요청 열기 → 앱이 목록을 받음 · 결정 콘솔 답 → 요청 `delivered`, pane 이 없으면 `answered` 로 남고 다시 보내기
+  - 3 → 요청 열기 → 배지 · 맥 알림 한 번 · 클릭 → 상세 · 창 두 개여도 알림 한 번
+  - 4 → 첫 화면에서 요청 · 진행 중 · 최근 결과만 · 자동 완료가 계속 도는지(PR 머지된 계획서 → done)
+- 성공 기준(쓰면서): 요청을 알아차리고 답하기까지 걸린 시간 · 중복 알림 · 전달 실패 수
+
+</script>
+
+<style>
+  /* 색 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱(src/renderer/style.css)과 같은 값. 시스템 설정(prefers-color-scheme)을 따른다 */
+  :root {
+    color-scheme: light;
+    --bg: #f5f3ee;
+    --surface: #ffffff;
+    --surface-2: #faf8f4;
+    --line: #e4e0d6;
+    --line-strong: #d3cdc0;
+    --text: #23211d;
+    --muted: #77726a;
+    --accent: #3b6fd8;
+    --accent-weak: #edf2fc;
+    --accent-ink: #ffffff;
+    --ok: #2f9e62;
+    --ok-weak: #eaf5ee;
+    --warn: #b07a10;
+    --code-bg: #eeebe4;
+    --radius: 8px;
+    --radius-sm: 6px;
+    --font-ui: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Pretendard', 'Segoe UI', 'Malgun Gothic', sans-serif;
+    --font-mono: 'D2Coding', 'SF Mono', Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #16171a;
+      --surface: #1f2125;
+      --surface-2: #1b1c20;
+      --line: #2e3137;
+      --line-strong: #3b3e45;
+      --text: #e8e6e1;
+      --muted: #9a968e;
+      --accent: #c9ad78;
+      --accent-weak: #2d2a23;
+      --accent-ink: #16171a;
+      --ok: #86c7a3;
+      --ok-weak: #1e2823;
+      --warn: #dbb579;
+      --code-bg: #191b1f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font: 14px/1.6 var(--font-ui);
+    background: var(--bg);
+    color: var(--text);
+    -webkit-font-smoothing: antialiased;
+  }
+  .wrap { max-width: 880px; margin: 0 auto; padding: 20px 16px 120px; }
+  @media (min-width: 720px) { .wrap { padding: 32px 24px 120px; } }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+
+  /* 머리 — 유형 · 범위 · 원본 링크 / 제목 / 요약 / 상태 줄 */
+  header.plan-head { margin-bottom: 20px; }
+  .meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; font-size: 12px; }
+  .badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-weight: 600; padding: 2px 9px; border-radius: 999px;
+    border: 1px solid var(--line); background: var(--surface); color: var(--muted);
+  }
+  .badge.type { color: var(--text); }
+  .badge.type::before { content: ''; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); }
+  .badge.type-bugfix::before { background: #d1463b; }
+  .badge.type-refactor::before { background: #7a62c9; }
+  .badge.type-task::before { background: var(--ok); }
+  .md-link { margin-left: auto; color: var(--muted); font-size: 12px; }
+  .md-link code { font-family: var(--font-mono); font-size: 11.5px; }
+  .plan-head h1 { margin: 0; font-size: 20px; line-height: 1.35; letter-spacing: -.01em; }
+  .plan-summary { color: var(--muted); margin: 6px 0 0; }
+  .plan-summary:empty { display: none; }
+
+  .statusbar {
+    display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+    margin-top: 16px; padding: 10px 14px;
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    font-size: 13px;
+  }
+  .statusbar .dot { width: 8px; height: 8px; border-radius: 50%; flex: none; background: var(--warn); }
+  .statusbar.confirmed .dot { background: var(--ok); }
+  #statusbar-text { flex: 1; min-width: 0; }
+  .jump { font-size: 12px; color: var(--muted); white-space: nowrap; }
+
+  /* 절 머리 */
+  .section-head { display: flex; align-items: baseline; gap: 10px; margin: 0 2px 10px; }
+  .section-title { margin: 0; font-size: 13px; font-weight: 700; color: var(--text); }
+  .progress { font-size: 12px; color: var(--muted); }
+
+  /* 결정 카드 */
+  .card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 16px; margin-bottom: 12px;
+    scroll-margin-top: 16px; transition: border-color .2s, box-shadow .2s;
+  }
+  .card.flash { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-weak); }
+  .card-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .card-title { margin: 0; font-size: 15px; font-weight: 700; line-height: 1.4; }
+  .card-desc { color: var(--muted); font-size: 13px; margin: 4px 0 12px; }
+  .tags { display: flex; gap: 4px; flex: none; }
+  .tag {
+    font-size: 11px; font-weight: 600; color: var(--muted); white-space: nowrap;
+    border: 1px solid var(--line); border-radius: 999px; padding: 1px 8px;
+  }
+  .tag.required { color: var(--text); border-color: var(--line-strong); }
+  .pick-tag.done { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-weak); }
+
+  .options { display: flex; flex-direction: column; gap: 6px; }
+  .option {
+    display: flex; align-items: flex-start; gap: 12px; min-height: 44px;
+    border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 11px 12px;
+    background: var(--surface); cursor: pointer; transition: border-color .12s, background .12s;
+  }
+  .option:hover { border-color: var(--line-strong); background: var(--surface-2); }
+  .option.selected { border-color: var(--accent); background: var(--accent-weak); }
+  .option .marker {
+    flex: none; width: 18px; height: 18px; margin-top: 2px;
+    border: 1.5px solid var(--line-strong); background: var(--surface);
+    display: grid; place-items: center;
+  }
+  .option[data-type="single"] .marker { border-radius: 50%; }
+  .option[data-type="multi"] .marker { border-radius: 4px; }
+  .option.selected .marker { border-color: var(--accent); background: var(--accent); }
+  .option[data-type="single"].selected .marker::after { content: ''; width: 6px; height: 6px; border-radius: 50%; background: var(--accent-ink); }
+  .option[data-type="multi"].selected .marker::after {
+    content: ''; width: 5px; height: 9px; margin-top: -2px;
+    border: solid var(--accent-ink); border-width: 0 2px 2px 0; transform: rotate(45deg);
+  }
+  .opt-body { flex: 1; min-width: 0; }
+  .opt-label { font-weight: 600; }
+  .rec {
+    display: inline-block; margin-left: 6px; vertical-align: 1px;
+    font-size: 11px; font-weight: 600; color: var(--accent);
+    border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent); border-radius: 999px; padding: 0 7px;
+  }
+  .opt-desc { font-size: 13px; color: var(--muted); margin-top: 2px; }
+  .custom-input {
+    display: none; width: 100%; margin-top: 8px; padding: 8px 10px;
+    font: inherit; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  }
+  .option.selected .custom-input { display: block; }
+
+  /* 확정된 카드 — 고른 것만 보이고, 나머지는 [다른 선택지] 로 펼친다 */
+  .card.confirmed .option { cursor: default; }
+  .card.confirmed .option:hover { border-color: var(--line); background: var(--surface); }
+  .card.confirmed .option.selected { border-color: color-mix(in srgb, var(--ok) 45%, transparent); background: var(--ok-weak); }
+  .card.confirmed .option.selected .marker { border-color: var(--ok); background: var(--ok); }
+  .card.confirmed .option:not(.selected) { display: none; opacity: .6; }
+  .card.confirmed.show-all .option:not(.selected) { display: flex; }
+  .others { margin-top: 8px; padding: 0; border: 0; background: none; font: inherit; font-size: 12px; color: var(--muted); cursor: pointer; }
+  .others:hover { color: var(--text); }
+
+  .notes-area {
+    display: block; width: 100%; min-height: 72px; padding: 10px 12px; resize: vertical;
+    font: inherit; color: var(--text); background: var(--surface);
+    border: 1px solid var(--line-strong); border-radius: var(--radius-sm);
+  }
+  .notes-area::placeholder, .custom-input::placeholder { color: var(--muted); }
+
+  details.preview { margin: 4px 2px 28px; }
+  details.preview summary { cursor: pointer; font-size: 12px; color: var(--muted); padding: 4px 0; }
+  pre.prompt-out {
+    margin: 6px 0 0; padding: 14px 16px; border-radius: var(--radius);
+    background: var(--code-bg); border: 1px solid var(--line); color: var(--text);
+    font: 12.5px/1.6 var(--font-mono); white-space: pre-wrap; word-break: break-word;
+  }
+
+  /* 계획서 전문(.md 렌더) */
+  details.plan-doc {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    scroll-margin-top: 16px;
+  }
+  details.plan-doc > summary {
+    display: flex; align-items: center; gap: 8px; cursor: pointer; list-style: none;
+    padding: 12px 16px; font-size: 13px; font-weight: 700;
+  }
+  details.plan-doc > summary::-webkit-details-marker { display: none; }
+  details.plan-doc > summary::before {
+    content: ''; width: 6px; height: 6px; margin: 0 2px;
+    border: solid var(--muted); border-width: 0 1.5px 1.5px 0; transform: rotate(-45deg); transition: transform .15s;
+  }
+  details.plan-doc[open] > summary::before { transform: rotate(45deg); }
+  details.plan-doc[open] > summary { border-bottom: 1px solid var(--line); }
+  .plan-body { padding: 18px 20px 22px; overflow-wrap: anywhere; }
+  @media (min-width: 720px) { .plan-body { padding: 22px 28px 26px; } }
+  .plan-body > :first-child { margin-top: 0; }
+  .plan-body h1, .plan-body h2, .plan-body h3, .plan-body h4, .plan-body h5, .plan-body h6 {
+    line-height: 1.4; letter-spacing: -.01em; margin: 1.5em 0 .5em;
+  }
+  .plan-body h1 { font-size: 18px; }
+  .plan-body h2 { font-size: 16px; }
+  .plan-body h3 { font-size: 14.5px; }
+  .plan-body h4, .plan-body h5, .plan-body h6 { font-size: 14px; color: var(--muted); }
+  .plan-body p { margin: .6em 0; }
+  .plan-body ul, .plan-body ol { margin: .5em 0; padding-left: 1.4em; }
+  .plan-body li { margin: .2em 0; }
+  .plan-body li::marker { color: var(--muted); }
+  .plan-body strong { font-weight: 700; }
+  .plan-body code {
+    font: 12.5px var(--font-mono); background: var(--code-bg); color: var(--text);
+    border: 1px solid var(--line); padding: 0 5px; border-radius: 4px;
+  }
+  .plan-body pre.md-code {
+    margin: .8em 0; padding: 12px 14px; overflow-x: auto;
+    background: var(--code-bg); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  }
+  .plan-body pre.md-code code { background: none; border: 0; padding: 0; font-size: 12.5px; line-height: 1.6; }
+  .plan-body blockquote {
+    margin: .8em 0; padding: 8px 14px; color: var(--text);
+    background: var(--surface-2); border-left: 3px solid var(--line-strong); border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  }
+  .plan-body hr { border: none; border-top: 1px solid var(--line); margin: 1.6em 0; }
+  .plan-body table {
+    display: block; overflow-x: auto; border-collapse: collapse; margin: .9em 0; font-size: 13px;
+  }
+  .plan-body th, .plan-body td { border: 1px solid var(--line); padding: 6px 10px; text-align: left; vertical-align: top; }
+  .plan-body th { background: var(--surface-2); font-weight: 700; white-space: nowrap; }
+
+  /* 하단 고정 바 */
+  .actionbar {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: color-mix(in srgb, var(--surface) 92%, transparent); backdrop-filter: blur(10px);
+    border-top: 1px solid var(--line); padding: 12px 16px;
+  }
+  .actionbar-inner { max-width: 832px; margin: 0 auto; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .status { flex: 1 1 220px; min-width: 0; font-size: 13px; color: var(--muted); }
+  .status b { color: var(--text); }
+  .status a { white-space: nowrap; }
+  .actions { display: flex; gap: 8px; margin-left: auto; }
+  button {
+    font: 600 13px var(--font-ui); cursor: pointer;
+    border-radius: var(--radius-sm); padding: 9px 16px;
+    border: 1px solid var(--line-strong); background: var(--surface); color: var(--text);
+    transition: filter .12s, background .12s;
+  }
+  button:hover { background: var(--surface-2); }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+  button.primary:hover { filter: brightness(1.08); background: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
+
+  .toast {
+    position: fixed; left: 50%; bottom: 84px; z-index: 50;
+    transform: translateX(-50%) translateY(16px); opacity: 0; pointer-events: none;
+    background: var(--text); color: var(--bg); padding: 8px 16px; border-radius: 999px;
+    font-size: 13px; font-weight: 600; transition: opacity .2s, transform .2s;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="plan-head">
+    <div class="meta">
+      <span class="badge type" id="p-type"></span>
+      <span class="badge scope" id="p-scope"></span>
+      <a class="md-link" id="p-mdlink" href="#"></a>
+    </div>
+    <h1 id="p-title"></h1>
+    <p class="plan-summary" id="p-summary"></p>
+    <div class="statusbar" id="statusbar">
+      <span class="dot"></span><span id="statusbar-text"></span>
+      <a class="jump" id="jump-doc" href="#plan-doc" style="display:none">계획서 전문 ↓</a>
+    </div>
+  </header>
+
+  <section id="decisions-wrap">
+    <div class="section-head">
+      <h2 class="section-title" id="decisions-title">결정</h2>
+      <span class="progress" id="progress"></span>
+    </div>
+    <div id="decisions"></div>
+
+    <div class="card" id="notes-card">
+      <h3 class="card-title">추가 메모 <span class="tag">선택</span></h3>
+      <p class="card-desc">결정 외에 전달할 제약 · 우선순위 · 주의사항</p>
+      <textarea class="notes-area" id="notes" aria-label="추가 메모" placeholder="예: 마이그레이션은 이번 배포에 넣지 말 것"></textarea>
+    </div>
+
+    <details class="preview">
+      <summary>보낼 프롬프트 미리보기</summary>
+      <pre class="prompt-out" id="preview"></pre>
+    </details>
+  </section>
+
+  <details class="plan-doc" id="plan-doc" open style="display:none">
+    <summary id="body-title">계획서 전문</summary>
+    <article class="plan-body" id="plan-body"></article>
+  </details>
+</div>
+
+<div class="actionbar" id="actionbar">
+  <div class="actionbar-inner">
+    <div class="status" id="status" aria-live="polite"></div>
+    <div class="actions">
+      <button id="btn-copy" style="display:none">프롬프트로 복사</button>
+      <button class="primary" id="btn-send">이대로 진행</button>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast" role="status">복사되었습니다</div>
+
+<script>
+(function () {
+  const state = {}; // decisionId -> { picks: Set, custom: '' }
+
+  const el = (tag, cls, html) => {
+    const node = document.createElement(tag);
+    if (cls) node.className = cls;
+    if (html != null) node.innerHTML = html;
+    return node;
+  };
+  const escapeText = (str) => String(str).replace(/[&<>"]/g, (ch) =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[ch]));
+
+  // decided 값을 배열로 정규화
+  const decidedList = (dec) => {
+    if (dec.decided == null) return null;
+    return Array.isArray(dec.decided) ? dec.decided : [dec.decided];
+  };
+  const isConfirmed = (dec) => decidedList(dec) !== null;
+  // 모든 필수 결정에 decided 가 채워졌는가 → 확정 모드
+  const allConfirmed = () => PLAN.decisions.length > 0 &&
+    PLAN.decisions.every((dec) => !dec.required || isConfirmed(dec));
+
+  // --- 머리 ---
+  const TYPE_LABELS = { feature: '기능', bugfix: '버그 수정', refactor: '리팩터링', task: '작업' };
+  document.getElementById('p-title').textContent = PLAN.title;
+  document.title = PLAN.title + ' — 작업계획서';
+  document.getElementById('p-summary').textContent = PLAN.summary || '';
+  const typeBadge = document.getElementById('p-type');
+  typeBadge.textContent = TYPE_LABELS[PLAN.type] || PLAN.type;
+  typeBadge.classList.add('type-' + PLAN.type);
+  const scopeBadge = document.getElementById('p-scope');
+  if (PLAN.scope && PLAN.scope !== '-') scopeBadge.textContent = '영향 범위 · ' + PLAN.scope;
+  else scopeBadge.remove();
+  const mdLink = document.getElementById('p-mdlink');
+  mdLink.innerHTML = '원본 <code>' + escapeText(PLAN.mdFile.split('/').pop()) + '</code>';
+  mdLink.title = PLAN.mdFile;
+  mdLink.href = PLAN.mdFile.split('/').pop();
+
+  // --- 결정 카드 ---
+  const container = document.getElementById('decisions');
+  PLAN.decisions.forEach((dec) => {
+    const confirmed = isConfirmed(dec);
+    const preset = decidedList(dec) || [];
+    state[dec.id] = { picks: new Set(preset), custom: '' };
+
+    const card = el('div', 'card' + (confirmed ? ' confirmed' : ''));
+    card.dataset.id = dec.id;
+    card.id = 'decision-' + dec.id;
+    const tags = (dec.required ? '<span class="tag required">필수</span>' : '') +
+      '<span class="tag pick-tag">' + (dec.type === 'multi' ? '복수 선택' : '택1') + '</span>';
+    card.appendChild(el('div', 'card-head',
+      '<h3 class="card-title">' + escapeText(dec.title) + '</h3><span class="tags">' + tags + '</span>'));
+    if (dec.desc) card.appendChild(el('p', 'card-desc', escapeText(dec.desc)));
+    else card.querySelector('.card-head').style.marginBottom = '12px';
+
+    const opts = el('div', 'options');
+    opts.setAttribute('role', dec.type === 'multi' ? 'group' : 'radiogroup');
+    opts.setAttribute('aria-label', dec.title);
+    dec.options.forEach((opt) => {
+      const row = el('div', 'option');
+      row.dataset.type = dec.type;
+      row.setAttribute('role', dec.type === 'multi' ? 'checkbox' : 'radio');
+      if (preset.includes(opt.label)) row.classList.add('selected');
+      row.setAttribute('aria-checked', String(preset.includes(opt.label)));
+      const rec = opt.recommended ? '<span class="rec">추천</span>' : '';
+      const desc = opt.desc ? '<div class="opt-desc">' + escapeText(opt.desc) + '</div>' : '';
+      const customField = opt.custom
+        ? '<input class="custom-input" placeholder="직접 입력" aria-label="' + escapeText(opt.label) + ' — 직접 입력" />' : '';
+      row.innerHTML =
+        '<div class="marker" aria-hidden="true"></div>' +
+        '<div class="opt-body"><div class="opt-label">' + escapeText(opt.label) + rec + '</div>' +
+        desc + customField + '</div>';
+      if (!confirmed) {
+        row.tabIndex = 0;
+        row.addEventListener('click', (ev) => {
+          if (ev.target.classList.contains('custom-input')) return;
+          toggle(dec, opt, row, opts);
+        });
+        row.addEventListener('keydown', (ev) => {
+          if (ev.target !== row || (ev.key !== ' ' && ev.key !== 'Enter')) return;
+          ev.preventDefault();
+          toggle(dec, opt, row, opts);
+        });
+        const customInput = row.querySelector('.custom-input');
+        if (customInput) customInput.addEventListener('input', () => {
+          state[dec.id].custom = customInput.value;
+          render();
+        });
+      }
+      opts.appendChild(row);
+    });
+    card.appendChild(opts);
+    // 확정된 카드는 고른 것만 — 나머지는 펼쳐 볼 수 있게
+    const others = dec.options.length - preset.filter((label) => dec.options.some((opt) => opt.label === label)).length;
+    if (confirmed && others > 0) {
+      const more = el('button', 'others', '다른 선택지 ' + others + '개 보기');
+      more.type = 'button';
+      more.addEventListener('click', () => {
+        const open = card.classList.toggle('show-all');
+        more.textContent = open ? '다른 선택지 접기' : '다른 선택지 ' + others + '개 보기';
+      });
+      card.appendChild(more);
+    }
+    container.appendChild(card);
+  });
+
+  function toggle(dec, opt, row, opts) {
+    const picks = state[dec.id].picks;
+    if (dec.type === 'single') {
+      picks.clear();
+      opts.querySelectorAll('.option').forEach((node) => {
+        node.classList.remove('selected');
+        node.setAttribute('aria-checked', 'false');
+      });
+      picks.add(opt.label);
+      row.classList.add('selected');
+    } else if (picks.has(opt.label)) {
+      picks.delete(opt.label);
+      row.classList.remove('selected');
+    } else {
+      picks.add(opt.label);
+      row.classList.add('selected');
+    }
+    row.setAttribute('aria-checked', String(row.classList.contains('selected')));
+    const customInput = row.querySelector('.custom-input');
+    if (customInput && row.classList.contains('selected')) customInput.focus();
+    render();
+  }
+
+  // --- 선택 결과 → 텍스트 ---
+  function valueFor(dec) {
+    const st = state[dec.id];
+    const labels = [...st.picks].map((label) => {
+      const opt = dec.options.find((option) => option.label === label);
+      if (opt && opt.custom && st.custom.trim()) return st.custom.trim();
+      return label;
+    });
+    return labels.join(', ');
+  }
+
+  function unresolved() {
+    return PLAN.decisions.filter((dec) => dec.required && state[dec.id].picks.size === 0);
+  }
+
+  function buildPrompt() {
+    const lines = [];
+    lines.push('[작업계획서 결정사항 확정] ' + PLAN.title);
+    lines.push('');
+    lines.push('아래 결정사항으로 ' + PLAN.mdFile + ' 계획서를 확정하고 진행해주세요.');
+    lines.push('');
+    PLAN.decisions.forEach((dec, idx) => {
+      const val = valueFor(dec) || '(미결정)';
+      lines.push((idx + 1) + '. ' + dec.title + ': ' + val);
+    });
+    const notes = document.getElementById('notes').value.trim();
+    lines.push('');
+    lines.push('추가 메모: ' + (notes || '(없음)'));
+    return lines.join('\n');
+  }
+
+  // 남은 필수 결정으로 — 카드를 잠깐 밝힌다
+  function jumpTo(dec) {
+    const card = document.getElementById('decision-' + dec.id);
+    card.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    card.classList.add('flash');
+    setTimeout(() => card.classList.remove('flash'), 1200);
+    const first = card.querySelector('.option[tabindex]');
+    if (first) first.focus({ preventScroll: true });
+  }
+
+  function render() {
+    PLAN.decisions.forEach((dec) => {
+      const card = container.querySelector('[data-id="' + dec.id + '"]');
+      const tag = card.querySelector('.pick-tag');
+      const decided = state[dec.id].picks.size > 0;
+      if (decided) {
+        tag.classList.add('done');
+        tag.textContent = isConfirmed(dec) ? '확정' : '골랐음';
+      } else {
+        tag.classList.remove('done');
+        tag.textContent = dec.type === 'multi' ? '복수 선택' : '택1';
+      }
+    });
+    const required = PLAN.decisions.filter((dec) => dec.required);
+    const optional = PLAN.decisions.length - required.length;
+    const left = unresolved();
+    document.getElementById('progress').textContent =
+      (required.length ? '필수 ' + (required.length - left.length) + '/' + required.length : '') +
+      (required.length && optional ? ' · ' : '') + (optional ? '선택 ' + optional + '개' : '');
+    const status = document.getElementById('status');
+    if (sent) status.innerHTML = '<b>' + escapeText(PLAN.leadPane) + ' 에 보냈어요.</b> 확정되면 이 화면이 잠깁니다.';
+    else if (sendError) status.innerHTML = escapeText(sendError) + ' — 복사해서 ' + escapeText(PLAN.leadPane || '담당') + ' pane 에 붙여넣어 주세요.';
+    else if (left.length === 0) status.innerHTML = '<b>모두 골랐어요.</b> ' + escapeText(PLAN.leadPane) + ' pane 에 보냅니다.';
+    else {
+      status.innerHTML = '필수 <b>' + left.length + '개</b> 남음 · ';
+      const link = el('a', '', escapeText(left[0].title) + '로 이동');
+      link.href = '#decision-' + left[0].id;
+      link.addEventListener('click', (ev) => { ev.preventDefault(); jumpTo(left[0]); });
+      status.appendChild(link);
+    }
+    if (!allConfirmed()) {
+      document.getElementById('statusbar-text').innerHTML = left.length
+        ? '<b>결정 대기</b> · 필수 ' + left.length + '개를 고르고 [이대로 진행]'
+        : '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요';
+    }
+    document.getElementById('btn-copy').disabled = left.length > 0;
+    document.getElementById('btn-send').disabled = left.length > 0 || sent || sending;
+    document.getElementById('preview').textContent = buildPrompt();
+  }
+
+  // --- 라이프사이클: 결정 콘솔 / 확정 뷰 ---
+  function applyLifecycle() {
+    const confirmed = allConfirmed();
+    const bar = document.getElementById('statusbar');
+    const barText = document.getElementById('statusbar-text');
+    if (confirmed) {
+      bar.className = 'statusbar confirmed';
+      barText.innerHTML = '<b>확정됨</b> · 아래 결정대로 진행합니다';
+      document.getElementById('decisions-title').textContent = '확정된 결정';
+      // 확정되면 메모 · 미리보기 · 액션 바를 감춰 읽기용으로
+      document.getElementById('notes-card').style.display = 'none';
+      document.querySelector('details.preview').style.display = 'none';
+      document.getElementById('actionbar').style.display = 'none';
+      document.querySelector('.wrap').style.paddingBottom = '48px';
+    } else {
+      bar.className = 'statusbar pending'; // 글은 render() 가 고른 상태에 맞춰 쓴다
+    }
+    if (!PLAN.decisions.length) document.getElementById('decisions-wrap').style.display = 'none';
+  }
+
+  // --- .md 본문 ---
+  renderPlanBody();
+  function renderPlanBody() {
+    let raw = (document.getElementById('plan-md').textContent || '').trim();
+    if (!raw) return;
+    // 맨 앞 # 제목이 PLAN.title 과 같으면 뺀다 — 머리에 이미 있다
+    const first = raw.match(/^#\s+(.+)\n?/);
+    if (first && first[1].trim() === String(PLAN.title).trim()) raw = raw.slice(first[0].length).trim();
+    document.getElementById('plan-doc').style.display = '';
+    document.getElementById('jump-doc').style.display = '';
+    document.getElementById('plan-body').innerHTML = miniMarkdown(raw);
+  }
+  document.getElementById('jump-doc').addEventListener('click', (ev) => {
+    ev.preventDefault();
+    const doc = document.getElementById('plan-doc');
+    doc.open = true;
+    doc.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  });
+
+  // 의존성 없는 경량 마크다운 렌더러 (중첩목록 미지원)
+  // 따옴표까지 이스케이프한다 — 현황판이 토큰을 넣어 주는 페이지라 본문 링크로 속성이 깨지면 /api/* 를 부를 수 있다
+  function mdEscape(str) {
+    return String(str).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+  }
+  // 링크 주소는 http(s)·상대 경로·# 만 허용한다 (javascript:·data: 등 스킴은 링크로 만들지 않는다)
+  // 제어문자·공백이 섞이면 거부한다 — URL 파서가 앞의 제어문자를 지워 "\x01javascript:" 가 스킴으로 살아난다
+  function safeHref(href) {
+    const decoded = href.replace(/&amp;/g, '&');
+    if (/[\u0000- \u007f-\u009f]/.test(decoded)) return null;
+    if (/^https?:\/\//i.test(decoded)) return href;
+    // 첫 / ? # 앞에 : 가 없으면 상대 경로다
+    const head = decoded.split(/[/?#]/)[0];
+    return head.includes(':') ? null : href;
+  }
+  function mdInline(str) {
+    let out = mdEscape(str);
+    out = out.replace(/`([^`]+)`/g, (m, code) => '<code>' + code + '</code>');
+    out = out.replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>');
+    out = out.replace(/\[([^\]]+)\]\(([^)\s]+)\)/g, (m, text, href) => {
+      const safe = safeHref(href);
+      return safe ? '<a href="' + safe + '">' + text + '</a>' : text;
+    });
+    return out;
+  }
+  function mdSplitRow(line) {
+    return line.trim().replace(/^\|/, '').replace(/\|$/, '').split('|').map((cell) => cell.trim());
+  }
+  function miniMarkdown(src) {
+    const lines = src.replace(/\r\n/g, '\n').split('\n');
+    let html = '';
+    let idx = 0;
+    const isSpecial = (line) =>
+      /^(#{1,6})\s/.test(line) || /^```/.test(line) || /^\s*\|.*\|\s*$/.test(line) ||
+      /^\s*([-*])\s+/.test(line) || /^\s*\d+\.\s+/.test(line) || /^\s*---+\s*$/.test(line) ||
+      /^\s*>/.test(line) || /^\s*$/.test(line);
+
+    while (idx < lines.length) {
+      const line = lines[idx];
+
+      // 코드 펜스
+      if (/^```/.test(line)) {
+        idx += 1;
+        const buf = [];
+        while (idx < lines.length && !/^```/.test(lines[idx])) { buf.push(lines[idx]); idx += 1; }
+        idx += 1;
+        html += '<pre class="md-code"><code>' + mdEscape(buf.join('\n')) + '</code></pre>';
+        continue;
+      }
+      // 표 (헤더 + 구분선)
+      if (/^\s*\|.*\|\s*$/.test(line) && idx + 1 < lines.length && /^\s*\|[\s:|-]+\|\s*$/.test(lines[idx + 1])) {
+        const header = mdSplitRow(line);
+        idx += 2;
+        const rows = [];
+        while (idx < lines.length && /^\s*\|.*\|\s*$/.test(lines[idx])) { rows.push(mdSplitRow(lines[idx])); idx += 1; }
+        html += '<table><thead><tr>' + header.map((cell) => '<th>' + mdInline(cell) + '</th>').join('') + '</tr></thead><tbody>';
+        html += rows.map((row) => '<tr>' + row.map((cell) => '<td>' + mdInline(cell) + '</td>').join('') + '</tr>').join('');
+        html += '</tbody></table>';
+        continue;
+      }
+      // 제목
+      const heading = line.match(/^(#{1,6})\s+(.*)$/);
+      if (heading) {
+        const level = heading[1].length;
+        html += '<h' + level + '>' + mdInline(heading[2]) + '</h' + level + '>';
+        idx += 1;
+        continue;
+      }
+      // 구분선
+      if (/^\s*---+\s*$/.test(line)) { html += '<hr>'; idx += 1; continue; }
+      // 인용
+      if (/^\s*>\s?/.test(line)) {
+        const buf = [];
+        while (idx < lines.length && /^\s*>\s?/.test(lines[idx])) { buf.push(lines[idx].replace(/^\s*>\s?/, '')); idx += 1; }
+        html += '<blockquote>' + mdInline(buf.join(' ')) + '</blockquote>';
+        continue;
+      }
+      // 목록
+      if (/^\s*([-*]|\d+\.)\s+/.test(line)) {
+        const ordered = /^\s*\d+\.\s+/.test(line);
+        const buf = [];
+        while (idx < lines.length && /^\s*([-*]|\d+\.)\s+/.test(lines[idx])) {
+          buf.push(lines[idx].replace(/^\s*([-*]|\d+\.)\s+/, '')); idx += 1;
+        }
+        const items = buf.map((item) => '<li>' + mdInline(item) + '</li>').join('');
+        html += ordered ? '<ol>' + items + '</ol>' : '<ul>' + items + '</ul>';
+        continue;
+      }
+      // 빈 줄
+      if (/^\s*$/.test(line)) { idx += 1; continue; }
+      // 문단
+      const buf = [line];
+      idx += 1;
+      while (idx < lines.length && !isSpecial(lines[idx])) { buf.push(lines[idx]); idx += 1; }
+      html += '<p>' + mdInline(buf.join(' ')) + '</p>';
+    }
+    return html;
+  }
+
+  function copy(text) {
+    navigator.clipboard.writeText(text).then(showToast).catch(() => {
+      const ta = document.createElement('textarea');
+      ta.value = text; document.body.appendChild(ta); ta.select();
+      document.execCommand('copy'); ta.remove(); showToast();
+    });
+  }
+  let toastTimer;
+  function showToast() {
+    const toast = document.getElementById('toast');
+    toast.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
+  }
+
+  // --- [이대로 진행]: 현황판 서버(/api/action)를 거쳐 계획서를 만든 아테나 pane 에 입력한다 ---
+  // 토큰은 현황판이 이 파일을 서빙할 때 넣어 준다. file:// 로 열었거나 보낼 pane 이 없으면 복사로 바꾼다
+  let sent = false;
+  let sending = false;
+  let sendError = '';
+  const boardToken = window.ATHENA_BOARD_TOKEN || '';
+  function fallbackToCopy(reason) {
+    sendError = reason;
+    document.getElementById('btn-send').style.display = 'none';
+    const copyButton = document.getElementById('btn-copy');
+    copyButton.style.display = '';
+    copyButton.classList.add('primary');
+    render();
+  }
+  async function sendToHermes() {
+    sending = true;
+    render();
+    try {
+      const response = await fetch('/api/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Board-Token': boardToken },
+        body: JSON.stringify({ pane: PLAN.leadPane, text: buildPrompt() }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || '보내지 못했어요 (' + response.status + ')');
+      sent = true;
+      document.getElementById('btn-send').textContent = '보냄';
+    } catch (error) {
+      fallbackToCopy(error.message || '보내지 못했어요');
+    } finally {
+      sending = false;
+      render();
+    }
+  }
+  if (!PLAN.leadPane) fallbackToCopy('보낼 pane 이 계획서에 적혀 있지 않아요');
+  else if (!boardToken) fallbackToCopy('현황판 주소로 열지 않아 바로 보낼 수 없어요');
+  document.getElementById('btn-send').addEventListener('click', sendToHermes);
+  document.getElementById('btn-copy').addEventListener('click', () => copy(buildPrompt()));
+  document.getElementById('notes').addEventListener('input', render);
+
+  // 고정 바가 마지막 내용을 가리지 않게 — 바 높이만큼 아래 여백
+  const actionbar = document.getElementById('actionbar');
+  const wrap = document.querySelector('.wrap');
+  const fitBottom = () => {
+    if (actionbar.style.display !== 'none') wrap.style.paddingBottom = (actionbar.offsetHeight + 32) + 'px';
+  };
+  if (window.ResizeObserver) new ResizeObserver(fitBottom).observe(actionbar);
+
+  render();
+  applyLifecycle();
+  fitBottom();
+})();
+</script>
+</body>
+</html>

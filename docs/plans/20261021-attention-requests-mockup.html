@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>작업 팝업 시안</title>
+<style>
+  :root {
+    --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Pretendard", sans-serif;
+    --font-mono: "D2Coding", "SF Mono", Menlo, monospace;
+    /* 앱 — src/renderer/style.css 와 같은 값 */
+    --bg: #16171a; --bar: #1f2125; --hover: #28292d; --line: #2e3137; --text: #e8e6e1; --muted: #9a968e;
+    --accent: #c9ad78; --selected: #2d2a23; --success: #86c7a3; --warning: #dbb579; --error: #e58c99;
+    --popup-bg: #1f2024; --popup-inset: #191a1e; --popup-line: rgb(255 255 255 / 9%); --popup-hover: rgb(255 255 255 / 5%);
+    --gold-line: rgb(201 173 120 / 40%); --gold-bg: rgb(201 173 120 / 10%);
+    --page: #0f1012; --page-text: #e8e6e1; --page-muted: #9a968e; --page-line: #2a2c31; --page-surface: #17181b;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --page: #ecebe7; --page-text: #23211d; --page-muted: #6f6a62; --page-line: #d9d5cb; --page-surface: #ffffff; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--page-text); font: 14px/1.5 var(--font-ui); }
+  button { font: inherit; color: inherit; cursor: pointer; }
+
+  .guide { position: sticky; top: 0; z-index: 50; background: var(--page-surface); border-bottom: 1px solid var(--page-line); padding: 10px 20px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; }
+  .guide h1 { font-size: 15px; margin: 0 6px 0 0; }
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; }
+  .steps button { border: 1px solid var(--page-line); background: transparent; border-radius: 999px; padding: 4px 12px; font-size: 13px; color: var(--page-text); }
+  .steps button.on { background: #c9ad78; border-color: #c9ad78; color: #16171a; font-weight: 600; }
+  .legend { display: flex; gap: 12px; align-items: center; font-size: 12.5px; color: var(--page-muted); margin-left: auto; }
+  .legend i { display: inline-block; width: 22px; height: 12px; border: 2px solid #e5484d; border-radius: 3px; vertical-align: -1px; margin-right: 4px; }
+  .legend i.chg { border-style: dashed; }
+  .legend label { display: flex; gap: 4px; align-items: center; cursor: pointer; }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 24px 20px 60px; }
+  .caption { margin: 0 0 16px; font-size: 13.5px; color: var(--page-muted); min-height: 42px; }
+  .caption b { color: var(--page-text); }
+
+  /* 빨간 박스 — 새로(실선) · 바뀜(점선) */
+  .mark { position: relative; outline: 2px solid #e5484d; outline-offset: 3px; border-radius: 6px; }
+  .mark.chg { outline-style: dashed; }
+  .mark::after { content: attr(data-mark); position: absolute; top: -14px; left: -3px; z-index: 30; background: #e5484d; color: #fff; font: 600 10.5px/1 var(--font-ui); padding: 3px 6px; border-radius: 4px; white-space: nowrap; pointer-events: none; }
+  .mark.right::after { left: auto; right: -3px; }
+  .mark.below::after { top: auto; bottom: -16px; }
+  body.nomarks .mark { outline: none; } body.nomarks .mark::after { display: none; }
+
+  /* 앱 틀 */
+  .app { background: var(--bg); color: var(--text); border-radius: 10px; box-shadow: 0 18px 50px rgb(0 0 0 / 30%); border: 1px solid #000; position: relative; }
+  .tabbar { height: 38px; background: var(--bar); display: flex; align-items: center; padding: 0 10px 0 80px; gap: 6px; border-bottom: 1px solid var(--line); border-radius: 10px 10px 0 0; position: relative; }
+  .lights { position: absolute; left: 13px; top: 13px; display: flex; gap: 8px; }
+  .lights i { width: 12px; height: 12px; border-radius: 50%; background: #ff5f57; } .lights i:nth-child(2) { background: #febc2e; } .lights i:nth-child(3) { background: #28c840; }
+  .pack-chip { font-size: 12.5px; color: var(--muted); padding: 3px 8px; }
+  .spacer { flex: 1; }
+  .tool { height: 26px; min-width: 28px; border: 0; background: transparent; color: var(--muted); border-radius: 6px; display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 7px; font-size: 12.5px; }
+  .tool:hover, .tool.active { background: var(--line); color: var(--text); }
+  .tool svg { fill: none; stroke: currentColor; stroke-width: 1.3; }
+  .tool .n { font-weight: 600; color: var(--text); }
+  .tool .ask { display: inline-flex; align-items: center; gap: 4px; color: var(--accent); font-weight: 700; }
+  .tool .ask::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 3px rgb(201 173 120 / 22%); }
+  .app-body { display: grid; grid-template-columns: 44px 200px 1fr; height: 560px; border-radius: 0 0 10px 10px; overflow: hidden; }
+  .rail { background: var(--bar); border-right: 1px solid var(--line); display: flex; flex-direction: column; align-items: center; padding-top: 10px; gap: 8px; }
+  .rail i { width: 28px; height: 28px; border-radius: 7px; background: #2a2c31; display: grid; place-items: center; font-style: normal; font-size: 11px; color: var(--muted); }
+  .rail i.cur { background: var(--selected); color: var(--accent); }
+  .spaces { border-right: 1px solid var(--line); padding: 10px 8px; font-size: 12.5px; }
+  .spaces h4 { margin: 10px 6px 4px; font-size: 11px; color: var(--muted); font-weight: 500; }
+  .row { display: flex; align-items: center; gap: 7px; padding: 5px 6px; border-radius: 6px; }
+  .row.cur { background: var(--selected); }
+  .st { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); flex: none; }
+  .st.work { background: var(--success); }
+  .row .name { flex: 1; } .row .role { color: var(--muted); font-size: 11px; }
+  .qmark { flex: none; font-size: 10.5px; font-weight: 700; color: #16171a; background: var(--accent); border-radius: 999px; padding: 0 6px; line-height: 16px; }
+  .center { display: flex; flex-direction: column; min-width: 0; }
+  .studio-tabs { height: 32px; display: flex; align-items: flex-end; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); font-size: 12.5px; }
+  .studio-tabs span { padding: 6px 12px; color: var(--muted); }
+  .studio-tabs span.cur { color: var(--text); border: 1px solid var(--line); border-bottom-color: var(--bg); border-radius: 6px 6px 0 0; margin-bottom: -1px; background: var(--bg); }
+  .panes { flex: 1; display: grid; grid-template-columns: 1fr 1fr; }
+  .pane { font: 12px/1.6 var(--font-mono); padding: 10px 12px; color: #cfcac0; border-right: 1px solid var(--line); opacity: .55; }
+  .pane .ttl { font-family: var(--font-ui); font-size: 11.5px; color: var(--muted); margin-bottom: 8px; }
+  .pane .dim { color: #7d796f; }
+
+  /* 팝업 */
+  .pop { position: absolute; z-index: 20; background: var(--popup-bg); border: 1px solid var(--popup-line); border-radius: 10px; box-shadow: 0 16px 44px rgb(0 0 0 / 50%); color: var(--text); }
+  .pop[hidden] { display: none; }
+  .pop-head { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px 6px; font-size: 12px; color: var(--muted); }
+  .pop-sec { padding: 4px 6px 6px; }
+  .pop-sec h5 { margin: 6px 8px 4px; font-size: 11.5px; color: var(--muted); font-weight: 600; display: flex; gap: 6px; align-items: center; }
+  .pop-sec h5 .c { color: var(--accent); }
+  .pop-sec + .pop-sec { border-top: 1px solid rgb(255 255 255 / 6%); }
+  .it { display: grid; grid-template-columns: 1fr auto; gap: 1px 10px; padding: 7px 8px; border-radius: 7px; cursor: pointer; }
+  .it:hover { background: var(--popup-hover); }
+  .it .t { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .it .m { font-size: 11.5px; color: var(--muted); grid-column: 1; }
+  .it .s { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 11.5px; color: var(--muted); display: flex; gap: 5px; align-items: center; white-space: nowrap; }
+  .it .s::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
+  .it .s.work::before { background: var(--success); } .it .s.wait::before { background: var(--accent); } .it .s.done::before { background: #6e8f7d; }
+  .it.ask { border: 1px solid var(--gold-line); background: var(--gold-bg); margin-bottom: 4px; }
+  .it.ask .t { color: var(--text); font-weight: 600; }
+  .kind { font-size: 10.5px; border: 1px solid var(--gold-line); color: var(--accent); border-radius: 999px; padding: 0 6px; margin-right: 6px; font-weight: 500; }
+  .pop-foot { border-top: 1px solid rgb(255 255 255 / 6%); padding: 8px 14px; font-size: 12px; color: var(--muted); display: flex; justify-content: space-between; }
+  .pop-foot a { color: var(--accent); text-decoration: none; }
+
+  #work-pop { right: 120px; top: 42px; width: 400px; }
+  #detail { left: 50%; top: 70px; width: 520px; transform: translateX(-40%); }
+  #ask { left: 50%; top: 70px; width: 520px; transform: translateX(-40%); }
+  #menu { right: 44px; top: 42px; width: 230px; padding: 6px; }
+
+  .dlg-head { padding: 14px 18px 4px; display: flex; gap: 10px; align-items: flex-start; }
+  .dlg-head h3 { margin: 0; font-size: 16px; flex: 1; }
+  .dlg-head .x { border: 0; background: transparent; color: var(--muted); font-size: 16px; }
+  .dlg-meta { padding: 0 18px 10px; font-size: 12px; color: var(--muted); display: flex; gap: 10px; flex-wrap: wrap; }
+  .dlg-body { padding: 4px 18px 12px; font-size: 13px; }
+  .fld { display: grid; grid-template-columns: 64px 1fr; gap: 8px; padding: 7px 0; border-top: 1px solid rgb(255 255 255 / 6%); }
+  .fld > span:first-child { color: var(--muted); font-size: 12px; padding-top: 1px; }
+  .steps-line { display: flex; gap: 4px; margin-top: 2px; }
+  .steps-line i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
+  .steps-line i.d { background: var(--success); } .steps-line i.n { background: var(--accent); }
+  .dlg-foot { padding: 10px 18px 14px; display: flex; gap: 8px; justify-content: flex-end; border-top: 1px solid rgb(255 255 255 / 6%); }
+  .btn { border: 1px solid var(--popup-line); background: transparent; border-radius: 7px; padding: 6px 12px; font-size: 12.5px; color: var(--text); }
+  .btn.gold { background: var(--accent); border-color: var(--accent); color: #16171a; font-weight: 600; }
+  .lnk { color: var(--accent); text-decoration: none; }
+  code { font-family: var(--font-mono); font-size: 11.5px; background: var(--popup-inset); border: 1px solid var(--popup-line); border-radius: 4px; padding: 0 4px; }
+  .opt { display: flex; gap: 10px; border: 1px solid var(--popup-line); border-radius: 8px; padding: 9px 11px; margin-top: 7px; cursor: pointer; }
+  .opt.sel { border-color: var(--accent); background: var(--gold-bg); }
+  .opt .r { width: 15px; height: 15px; border-radius: 50%; border: 1.5px solid #555; flex: none; margin-top: 2px; }
+  .opt.sel .r { border: 5px solid var(--accent); }
+  .opt small { display: block; color: var(--muted); font-size: 11.5px; }
+  .rec { font-size: 10.5px; color: var(--success); border: 1px solid rgb(134 199 163 / 40%); border-radius: 999px; padding: 0 6px; margin-left: 6px; }
+  textarea { width: 100%; margin-top: 8px; min-height: 52px; background: var(--popup-inset); color: var(--text); border: 1px solid var(--popup-line); border-radius: 8px; padding: 8px 10px; font: inherit; font-size: 12.5px; resize: vertical; }
+  .sent { margin: 0 18px 14px; padding: 10px 12px; border-radius: 8px; background: rgb(134 199 163 / 10%); border: 1px solid rgb(134 199 163 / 35%); font-size: 12.5px; }
+  .sent b { color: var(--success); }
+  .sent[hidden] { display: none; }
+  .menu-it { display: flex; align-items: center; gap: 9px; padding: 7px 9px; border-radius: 7px; font-size: 13px; }
+  .menu-it:hover { background: var(--popup-hover); }
+  .menu-it .ic { width: 18px; text-align: center; color: var(--muted); }
+  .menu-it .b { margin-left: auto; font-size: 11px; color: var(--accent); }
+  .menu-it small { display: block; color: var(--muted); font-size: 11px; }
+  .menu-sep { height: 1px; background: rgb(255 255 255 / 6%); margin: 4px 6px; }
+
+  .notes { margin: 18px 0 0; padding: 0; list-style: none; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; font-size: 13px; }
+  .notes li { background: var(--page-surface); border: 1px solid var(--page-line); border-radius: 8px; padding: 9px 12px; }
+  .notes b { color: #e5484d; margin-right: 6px; }
+
+  @media (max-width: 860px) {
+    .app-body { grid-template-columns: 0 0 1fr; } .rail, .spaces { display: none; }
+    .panes { grid-template-columns: 1fr; } .pane:last-child { display: none; }
+    #work-pop, #menu { right: 8px; width: calc(100% - 16px); }
+    #detail, #ask { left: 8px; transform: none; width: calc(100% - 16px); }
+    .notes { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+<div class="guide">
+  <h1>작업 팝업 시안</h1>
+  <div class="steps">
+    <button class="on" data-state="list">① 작업 목록</button>
+    <button data-state="detail">② 작업 상세</button>
+    <button data-state="ask">③ 답하기</button>
+    <button data-state="menu">④ QA · 학습 · 아카이브</button>
+  </div>
+  <span class="legend"><span><i></i>새로 생김</span><span><i class="chg"></i>바뀜</span><label><input type="checkbox" id="marks" checked>표시 보기</label></span>
+</div>
+
+<div class="wrap">
+  <p class="caption" id="caption"></p>
+
+  <div class="app">
+    <div class="tabbar">
+      <div class="lights"><i></i><i></i><i></i></div>
+      <span class="pack-chip">▣ acme ▾</span>
+      <span class="spacer"></span>
+      <button class="tool mark right" data-mark="새로 · 작업 버튼(칸반 대신)" data-open="list" id="work-btn">
+        <svg viewBox="0 0 16 16" width="15" height="15"><path d="M3 4.5h10M3 8h10M3 11.5h6"/></svg>
+        작업 <span class="n">4</span><span class="ask">2</span>
+      </button>
+      <button class="tool mark chg right below" data-mark="바뀜 · 현황판 아이콘 → 메뉴" data-open="menu" id="menu-btn">
+        <svg viewBox="0 0 16 16" width="15" height="15"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
+      </button>
+      <button class="tool"><svg viewBox="0 0 16 16" width="15" height="15"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.75" ry="6.25"/><path d="M1.9 6h12.2M1.9 10h12.2"/></svg></button>
+    </div>
+
+    <!-- ① 작업 목록 -->
+    <div class="pop mark" data-mark="새로 · 작업 목록 팝업" id="work-pop" hidden>
+      <div class="pop-head"><span>acme · 작업</span><span>⌘J</span></div>
+      <div class="pop-sec">
+        <h5>나를 기다리는 것 <span class="c">2</span></h5>
+        <div class="it ask" data-open="ask"><span class="t"><span class="kind">질문</span>주문 목록 API 에 취소 사유 필드가 있나요?</span><span class="m">acme-web-fe · ORD-412 · 12분</span><span class="s wait"></span></div>
+        <div class="it ask" data-open="detail"><span class="t"><span class="kind">결정</span>쿠폰 적용 순서 바꾸기 — 2개</span><span class="m">아테나 · 정식 계획서 · 3분</span><span class="s wait"></span></div>
+      </div>
+      <div class="pop-sec">
+        <h5>진행 중</h5>
+        <div class="it" data-open="detail"><span class="t">쿠폰 적용 순서 바꾸기</span><span class="m">api ✔ → web 작업 중 · 2/3</span><span class="s wait">결정 대기</span></div>
+        <div class="it" data-open="detail"><span class="t">ORD-412 주문 취소 표시</span><span class="m">취소 사유 필드 확인 중</span><span class="s wait">답 대기</span></div>
+        <div class="it" data-open="detail"><span class="t">ORD-398 주문 목록 정렬</span><span class="m">검증 통과 · 리뷰할 차례</span><span class="s work">일하는 중</span></div>
+        <div class="it" data-open="detail"><span class="t">배송비 문구 정리</span><span class="m">PR #231 리뷰 대기 · 머지되면 자동 완료</span><span class="s">쉬는 중</span></div>
+      </div>
+      <div class="pop-sec">
+        <h5>최근 끝난 것</h5>
+        <div class="it" data-open="detail"><span class="t">회원 등급 뱃지</span><span class="m">PR #228 머지 · 2시간 전</span><span class="s done">완료</span></div>
+        <div class="it" data-open="detail"><span class="t">주문 API 페이지 크기 상한</span><span class="m">PR #97 머지 · 5시간 전</span><span class="s done">완료</span></div>
+      </div>
+      <div class="pop-foot"><span>누르면 상세 · 지난 일은 아카이브에서</span><a href="#" data-open="menu">QA · 학습 · 아카이브 →</a></div>
+    </div>
+
+    <!-- ② 작업 상세 -->
+    <div class="pop mark" data-mark="새로 · 작업 상세 팝업" id="detail" hidden>
+      <div class="dlg-head"><h3>쿠폰 적용 순서 바꾸기</h3><button class="x" data-open="list">✕</button></div>
+      <div class="dlg-meta"><span>정식 계획서</span><span>acme-api · acme-web</span><span>Mason</span><span>시작 10/20</span></div>
+      <div class="dlg-body">
+        <div class="fld"><span>왜</span><span>할인이 쿠폰보다 먼저 계산돼 결제 금액이 화면과 달라요</span></div>
+        <div class="fld"><span>정한 것</span><span>D1 쿠폰 먼저 계산 · D2 이미 발급한 쿠폰은 그대로 <span style="color:var(--accent)">· 2개 더 정할 것 있음</span></span></div>
+        <div class="fld"><span>진행</span><span>api 수정 ✔ 머지 → <b>web 작업 중</b> → 리뷰<div class="steps-line"><i class="d"></i><i class="n"></i><i></i></div></span></div>
+        <div class="fld"><span>검증</span><span>api ✔ lint · tsc · test(118) · web 아직</span></div>
+        <div class="fld"><span>결과</span><span><a class="lnk" href="#">PR #97</a> 머지 · <a class="lnk" href="#">PR #233</a> 리뷰 중</span></div>
+        <div class="fld"><span>다음</span><span>web 할인 표시 순서 맞추기 → 리뷰</span></div>
+      </div>
+      <div class="dlg-foot"><button class="btn">계획서 열기</button><button class="btn">결정 콘솔</button><button class="btn gold">pane 으로 가기</button></div>
+    </div>
+
+    <!-- ③ 답하기 -->
+    <div class="pop mark" data-mark="새로 · 앱 안에서 바로 답하기" id="ask" hidden>
+      <div class="dlg-head"><h3><span class="kind">질문</span>주문 목록 API 에 취소 사유(cancelReason) 필드가 있나요?</h3><button class="x" data-open="list">✕</button></div>
+      <div class="dlg-meta"><span>🤖 acme-web-fe · ORD-412</span><span>12분 기다림</span><a class="lnk" href="#">계획서</a></div>
+      <div class="dlg-body" id="ask-form">
+        <div class="fld"><span>왜</span><span>응답 타입 <code>OrderListItem</code> 에 없고, 백엔드 <code>orders/dto.ts</code> 에서도 못 찾았어요 — 다른 이름일 수 있어요</span></div>
+        <div class="opt" data-opt><span class="r"></span><span>있다<small>필드 이름을 알려 주면 그대로 표시해요</small></span></div>
+        <div class="opt sel" data-opt><span class="r"></span><span>없다 <span class="rec">추천</span><small>백엔드에 추가를 요청하고 이 작업은 멈춰요</small></span></div>
+        <textarea placeholder="덧붙일 말(선택)"></textarea>
+      </div>
+      <div class="sent" id="sent" hidden><b>✓ 보냈어요</b> — acme-web-fe 가 받았어요. 목록에서 빠졌어요.</div>
+      <div class="dlg-foot" id="ask-foot"><button class="btn">pane 으로 가기</button><button class="btn gold" id="send">답 보내기 → acme-web-fe</button></div>
+    </div>
+
+    <!-- ④ 메뉴 -->
+    <div class="pop mark" data-mark="새로 · 브라우저로 여는 페이지" id="menu" hidden>
+      <div class="menu-it"><span class="ic">◎</span><span>QA<small>검수 실행 · 화면 비교</small></span></div>
+      <div class="menu-it"><span class="ic">✎</span><span>학습<small>에이전트가 배운 것 넣기 · 버리기</small></span><span class="b">3</span></div>
+      <div class="menu-it"><span class="ic">▤</span><span>아카이브<small>끝난 일 찾기</small></span></div>
+      <div class="menu-sep"></div>
+      <div class="menu-it"><span class="ic">▦</span><span>전체 칸반<small>예전 현황판 화면 — 가끔 볼 때</small></span></div>
+    </div>
+
+    <div class="app-body">
+      <div class="rail"><i class="cur">ac</i><i>gl</i><i>+</i></div>
+      <aside class="spaces">
+        <h4>athena</h4>
+        <div class="row"><span class="st work"></span><span class="name">🧭 아테나</span></div>
+        <h4>acme-web</h4>
+        <div class="row cur"><span class="st"></span><span class="name">ORD-412</span><span class="role">fe</span></div>
+        <div class="row"><span class="st work"></span><span class="name">ORD-398</span><span class="role">fe</span></div>
+        <h4>acme-api</h4>
+        <div class="row"><span class="st"></span><span class="name">main</span><span class="role">be</span></div>
+      </aside>
+      <div class="center">
+        <nav class="studio-tabs"><span>athena</span><span class="cur">acme-web</span><span>acme-api</span></nav>
+        <div class="panes">
+          <div class="pane"><div class="ttl">🤖 acme-web-fe · ORD-398</div><div class="dim">● Edit app/orders/list.tsx (+18 −4)</div><div>  ✔ lint  ✔ tsc  ✔ test (42)</div></div>
+          <div class="pane"><div class="ttl">🤖 acme-web-fe · ORD-412</div><div class="dim">● Read repos/acme-api/src/orders/dto.ts</div><div>  취소 사유 필드를 못 찾았어요 — 물어볼게요</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <ul class="notes">
+    <li><b>현황판 첫 화면</b>없어진다 — 칸반은 [작업] 팝업이, 자세한 건 상세 팝업이 맡는다. 예전 칸반은 메뉴의 "전체 칸반" 으로 남긴다</li>
+    <li><b>현황판 서버</b>그대로 뒤에서 돈다 — PR 머지 자동 완료 · 학습 대기열 · 트레이 · 이 팝업의 데이터</li>
+    <li><b>QA · 학습 · 아카이브</b>지금처럼 브라우저 페이지 — 넓은 화면이 필요한 "하는" 일이라. 앱 메뉴에서 바로 연다</li>
+    <li><b>답하기</b>브라우저로 안 넘어가고 앱 팝업에서 끝낸다. 결정 콘솔(정식 계획서)은 지금처럼 브라우저</li>
+  </ul>
+</div>
+
+<script>
+  const CAPTIONS = {
+    list: '<b>① 탭 줄 [작업] 을 누르면</b> — 나를 기다리는 것 · 진행 중 · 최근 끝난 것을 한 줄씩. 숫자 4 는 진행 중, 금색 2 는 나를 기다리는 것',
+    detail: '<b>② 작업 하나를 누르면</b> — 계획서를 한 장으로 요약: 왜 · 정한 것 · 어디까지 · 검증 · PR · 다음. 자세한 건 계획서 · pane 으로',
+    ask: '<b>③ 질문을 누르면</b> — 근거를 보고 앱 안에서 바로 답한다. 답은 그 pane 에 입력되고, 에이전트가 받으면 목록에서 빠진다',
+    menu: '<b>④ 현황판 아이콘을 누르면</b> — QA · 학습 · 아카이브를 브라우저로 연다. 지금 현황판의 탭들이 여기로 온다',
+  }
+  const POPS = { list: 'work-pop', detail: 'detail', ask: 'ask', menu: 'menu' }
+  const setState = (state) => {
+    for (const [key, id] of Object.entries(POPS)) document.getElementById(id).hidden = key !== state
+    document.querySelectorAll('.steps button').forEach((el) => el.classList.toggle('on', el.dataset.state === state))
+    document.getElementById('work-btn').classList.toggle('active', state === 'list')
+    document.getElementById('menu-btn').classList.toggle('active', state === 'menu')
+    document.getElementById('caption').innerHTML = CAPTIONS[state]
+  }
+  document.addEventListener('click', (event) => {
+    const step = event.target.closest('[data-state]')
+    if (step) return setState(step.dataset.state)
+    const open = event.target.closest('[data-open]')
+    if (open) { event.preventDefault(); return setState(open.dataset.open) }
+    const opt = event.target.closest('[data-opt]')
+    if (opt) { document.querySelectorAll('[data-opt]').forEach((el) => el.classList.toggle('sel', el === opt)); return }
+    if (event.target.closest('#send')) {
+      document.getElementById('ask-form').hidden = true
+      document.getElementById('ask-foot').hidden = true
+      document.getElementById('sent').hidden = false
+    }
+  })
+  document.getElementById('marks').addEventListener('change', (event) => document.body.classList.toggle('nomarks', !event.target.checked))
+  setState('list')
+</script>
+</body>
+</html>
