@@ -358,9 +358,15 @@ function spaceInitials(label) {
   return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()
 }
 
+// 작업 공간 순서 — 아테나(본체) 작업 공간은 늘 맨 위, 나머지는 데몬 순서 그대로
+function orderedWorkspaces() {
+  const athena = screen.workspaces.filter(isAthenaWorkspace)
+  return [...athena, ...screen.workspaces.filter((workspace) => !athena.includes(workspace))]
+}
+
 // 접힌 왼쪽 — 작업 공간마다 아이콘 하나
 function spaceRail() {
-  const rows = screen.workspaces.map((workspace) => {
+  const rows = orderedWorkspaces().map((workspace) => {
     const button = document.createElement('button')
     button.className = 'space-icon'
     button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
@@ -517,9 +523,10 @@ async function closeWorkspace(workspace) {
 
 // 팩에서 레포 빼기 — 무엇이 지워지는지 · 레포 폴더는 그대로 · 자동 백업을 알리고 확인
 async function removeRepoFromPack(name) {
+  const behind = await studio.packBodyBehind()
   const ok = await packDialog({
     title: say('spaces.removeRepoTitle', { repo: name }),
-    body: [el('p', null, say('spaces.removeRepoBody')), el('p', 'muted', say('spaces.removeRepoNote'))],
+    body: [el('p', null, say('spaces.removeRepoBody')), el('p', 'muted', say('spaces.removeRepoNote')), ...(behind ? [el('p', 'muted', say('pack.catchUp.notice'))] : [])],
     actions: [{ label: say('spaces.removeRepoYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
   })
   if (!ok) return
@@ -533,10 +540,11 @@ async function removeRepoFromPack(name) {
 
 // spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지
 async function offerAddRepo({ dir, name }) {
+  const behind = await studio.packBodyBehind()
   const choice = await packDialog({
     title: say('spaces.addRepoTitle', { repo: name }),
     subtitle: say('spaces.addRepoNote'),
-    body: [el('p', 'muted', dir)],
+    body: [el('p', 'muted', dir), ...(behind ? [el('p', 'muted', say('pack.catchUp.notice'))] : [])],
     actions: [{ label: say('spaces.addRepoYes'), value: 'add', kind: 'primary' }, { label: say('spaces.addRepoTerminal'), value: 'open' }, { label: say('common.cancel'), value: null }],
   })
   if (choice === 'open') {
@@ -609,7 +617,7 @@ function renderSides() {
   actions.className = 'side-title-actions'
   actions.append(addSpaceButton(), foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
   title.append(titleText, actions)
-  const rows = screen.workspaces.flatMap((workspace) => {
+  const rows = orderedWorkspaces().flatMap((workspace) => {
     const panes = workspacePanes(workspace.id)
     const folded = foldedSpaces.has(workspace.id)
     const button = document.createElement('button')
@@ -1456,10 +1464,11 @@ async function runCommand(name) {
     return studio.tabSelect(tabsHere[(index + step + tabsHere.length) % tabsHere.length].id)
   }
   if (name === 'workspace-prev' || name === 'workspace-next') {
-    const index = screen.workspaces.findIndex((workspace) => workspace.id === screen.activeWorkspace)
+    const ordered = orderedWorkspaces()
+    const index = ordered.findIndex((workspace) => workspace.id === screen.activeWorkspace)
     if (index < 0) return undefined
     const step = name === 'workspace-next' ? 1 : -1
-    return studio.workspaceSelect(screen.workspaces[(index + step + screen.workspaces.length) % screen.workspaces.length].id)
+    return studio.workspaceSelect(ordered[(index + step + ordered.length) % ordered.length].id)
   }
   if (name === 'close-tab') {
     const current = activeTab()

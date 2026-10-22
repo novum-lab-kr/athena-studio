@@ -1065,7 +1065,27 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   ctx.openWorkspaceDir = (dir, size) => daemonCall('workspace create', { label: path.basename(dir), cwd: dir, focus: true, ...size })
 
   // 팩에 레포 하나 더하기 — 코어 repo add(pack.json · 자리 · 링크 · 뼈대) 뒤 아테나에게 뼈대 채우기를 맡긴다(docs/setup.md "레포 하나 더하기")
+  // 레포 더하기 · 빼기는 이 본체의 코어 명령이다 — 본체가 배포 코어보다 뒤처졌으면(아테나가 계속 일해 자동 따라잡기를 못 했으면) 먼저 따라잡는다.
+  // 옛 본체는 명령을 몰라 사용법만 찍고 끝났다(2026-10-23 — "알 수 없는 답")
+  // 이 창 본체가 배포 코어보다 뒤처졌나 — 화면이 레포 더하기 · 빼기 확인창에 "에이전트를 멈췄다 다시 켜요" 를 붙인다
+  ctx.bodyBehind = async () => {
+    const body = ctx.athenaDir
+    if (!body || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return false
+    const registry = await fs.promises.readFile(path.join(STUDIO.data, 'config.json'), 'utf8').then(JSON.parse, () => null)
+    const target = registry && registry.deploy && registry.deploy.commit
+    const mine = ((await runGit(body, ['rev-parse', 'HEAD'])) || '').trim()
+    if (!target || !mine || mine === target) return false
+    return (await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) !== null
+  }
+  const freshBody = async () => {
+    const listed = await daemonCall('pane list')
+    const caught = await ctx.catchUpBody(listed.result ? listed.result.panes : null, { force: true })
+    if (!caught || caught.ok) return null
+    return { ok: false, error: 'body-behind', text: say(`pack.catchUp.${caught.reason === 'unknown-session' ? 'unknownSession' : caught.reason === 'working' ? 'working' : 'failed'}`) }
+  }
   ctx.addRepo = async (dir, name) => {
+    const stale = await freshBody()
+    if (stale) return stale
     const args = ['repo', 'add', String(dir), ...(name ? ['--name', String(name)] : [])]
     const result = await ctx.packTask(say('pack.task.addRepo'), () => runCore(args, { dir: ctx.athenaDir }))
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
@@ -1074,6 +1094,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
   // 팩에서 레포 빼기 — 코어 repo remove(팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증) 뒤 아테나에게 ROUTING · services 줄 정리를 맡긴다
   ctx.removeRepo = async (name) => {
+    const stale = await freshBody()
+    if (stale) return stale
     const result = await ctx.packTask(say('pack.task.removeRepo'), () => runCore(['repo', 'remove', String(name)], { dir: ctx.athenaDir }))
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     await sendToAthena(say('spaces.removeRepoAsk', { repo: result.removed }))
@@ -1142,42 +1164,61 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const result = await runPack(['busy'], { dir: ctx.athenaDir })
     return result.ok && result.busyKnown !== false ? result.busy || [] : null
   }
-  ctx.catchUpBody = async (panes) => {
-    if (catchingUp || !panes || Date.now() - catchUpAt < 30000 || Date.now() < catchUpBackoff) return
-    catchUpAt = Date.now()
+  // force — 사용자가 고른 일(레포 더하기 · 빼기)이 새 코어 명령을 써야 할 때: 30초 · 10분 쉬기를 건너뛴다(나머지 안전 검사는 그대로).
+  // 돌려주는 것: { ok, same } 이미 같음 · { ok:false, reason } working(누가 일하는 중 · 질문 창 · 쓰다 만 글) | unknown-session | still-busy | failed
+  ctx.catchUpBody = async (panes, { force = false } = {}) => {
+    // 자동 따라잡기가 도는 중이면 — 사용자가 고른 일은 끝날 때까지(최대 1분) 기다렸다 다시 본다(이미 옮겼으면 same)
+    for (let tries = 0; force && catchingUp && tries < 60; tries += 1) await new Promise((resolve) => setTimeout(resolve, 1000))
+    if (catchingUp) return { ok: false, reason: 'working' }
+    if (!force && (!panes || Date.now() - catchUpAt < 30000 || Date.now() < catchUpBackoff)) return null
+    if (!force) catchUpAt = Date.now()
+    if (!panes) return { ok: false, reason: 'failed' }
     const body = ctx.athenaDir
     const packId = ctx.packState.current && ctx.packState.current.id
-    if (!body || !packId || ctx.packBusy || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return
+    if (!body || !packId || (!force && ctx.packBusy) || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return { ok: true, same: true }
     // 기준은 코어와 같다(bodies.mjs catchUpBody) — 레지스트리 deploy.commit 이 이 본체 커밋의 후손일 때만(주 본체 HEAD 가 아니다 · 정비 커밋으로 앞서도 옮기지 않는다)
     const registry = await fs.promises.readFile(path.join(STUDIO.data, 'config.json'), 'utf8').then(JSON.parse, () => null)
     const target = registry && registry.deploy && registry.deploy.commit
     const mine = ((await runGit(body, ['rev-parse', 'HEAD'])) || '').trim()
-    if (!target || !mine || mine === target) return
-    if ((await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) === null) return
+    if (!target || !mine || mine === target) return { ok: true, same: true }
+    if ((await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) === null) return { ok: true, same: true }
     const realBody = core.realDir(body)
     const packData = core.realDir(path.join(body, '.pack-data'))
     const under = (dir, root) => Boolean(dir) && core.isInside(core.realDir(dir), root)
     const inBody = panes.filter((pane) => pane.agent && (under(pane.foreground_cwd || pane.cwd, realBody) || under(pane.foreground_cwd || pane.cwd, packData)))
     const athenaPanes = inBody.filter((pane) => under(pane.foreground_cwd || pane.cwd, realBody))
+    // force(사용자가 고른 일) — 일하는 중이어도 이 팩의 에이전트를 모두 멈추고 옮긴다(화면이 미리 알린다). 아래 기다리기 검사는 건너뛴다
     // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · claude 가 아니면(되살릴 수 없다) 다음에
-    if (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle')) return
+    if (!force && (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle'))) return { ok: false, reason: 'working' }
     // 화면으로도 — 질문 · 고르기 창이 떠 있거나 쓰다 만 글이 있으면 건드리지 않는다
-    for (const pane of athenaPanes) {
+    for (const pane of force ? [] : athenaPanes) {
       const read = await daemonCall('pane read', { pane: pane.id, lines: 40 })
-      if (!read.result || !core.claudeAtEmptyPrompt(read.result.text)) return
+      if (!read.result || !core.claudeAtEmptyPrompt(read.result.text)) return { ok: false, reason: 'working' }
     }
     // 코어 기준으로도 아테나 말고 바쁜 것이 없어야 시작한다(레포 · 워크트리 에이전트 · 무거운 명령)
     const before = await coreBusy()
-    if (!before || before.some((item) => item.kind !== 'athena')) return
+    if (!force && (!before || before.some((item) => item.kind !== 'athena'))) return { ok: false, reason: 'working' }
     const sessions = []
-    for (const pane of athenaPanes) {
+    for (const pane of force ? inBody : athenaPanes) {
       const record = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
-      if (!record || !record.session) return // 어느 대화인지 모르면 끄지 않는다
-      sessions.push({ pane: pane.id, session: record.session })
+      // 어느 대화인지 모르면 끄지 않는다 — force 면 끄고 다시 켜지는 않는다
+      if (!record || !record.session) {
+        if (!force) return { ok: false, reason: 'unknown-session' }
+        sessions.push({ pane: pane.id, session: null })
+      } else sessions.push({ pane: pane.id, session: record.session })
     }
     catchingUp = true
     try {
       for (const item of sessions) {
+        if (force) {
+          // 일하는 중이면 /exit 가 줄만 선다 — 멈추고(Esc) 입력 창을 비우고(C-c) 끈다(C-c 두 번)
+          await daemonCall('pane send-keys', { pane: item.pane, keys: ['Escape'] })
+          await new Promise((resolve) => setTimeout(resolve, 300))
+          await daemonCall('pane send-keys', { pane: item.pane, keys: ['C-c'] })
+          await new Promise((resolve) => setTimeout(resolve, 300))
+          await daemonCall('pane send-keys', { pane: item.pane, keys: ['C-c'] })
+          continue
+        }
         await daemonCall('pane send-text', { pane: item.pane, text: '/exit' })
         await daemonCall('pane send-keys', { pane: item.pane, keys: ['Enter'] })
       }
@@ -1194,8 +1235,9 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       const opened = quiet ? await runPack(['open', packId], { dir: STUDIO.core }) : { ok: false, error: 'still-busy' }
       if (!opened.ok || !opened.updated) catchUpBackoff = Date.now() + 10 * 60000
       fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
-      for (const item of sessions) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
+      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
       if (opened.ok && opened.updated) send('pack:caught-up', { pack: ctx.packState.current.displayName || ctx.packState.current.name || packId })
+      return opened.ok && opened.updated ? { ok: true } : { ok: false, reason: opened.error === 'still-busy' ? 'still-busy' : 'failed' }
     } finally {
       catchingUp = false
     }
@@ -2853,6 +2895,7 @@ handle('workspace:select', (ctx, workspaceId) => ctx.daemonCall('workspace selec
 handle('workspace:new', (ctx, size) => ctx.newWorkspace(cellSize(size)))
 handle('workspace:open-dir', (ctx, dir, size) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.openWorkspaceDir(dir, cellSize(size)) : { error: 'bad dir' }))
 handle('pack:delete', (ctx, id, options) => ctx.deletePack(String(id), { withWorktrees: Boolean(options && options.withWorktrees) }))
+handle('pack:body-behind', (ctx) => ctx.bodyBehind())
 handle('pack:remove-repo', (ctx, name) => (typeof name === 'string' && /^[\w.-]+$/.test(name) ? ctx.removeRepo(name) : { ok: false, error: 'usage' }))
 handle('workspace:close', (ctx, workspaceId) => ctx.closeWorkspace(String(workspaceId || '')))
 handle('space:context-menu', (ctx, target, point) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? point : null))

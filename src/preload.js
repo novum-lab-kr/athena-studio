@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('studio', {
   workspaceOpenDir: (dir, size) => ipcRenderer.invoke('workspace:open-dir', dir, size),
   packAddRepo: (dir, name) => ipcRenderer.invoke('pack:add-repo', dir, name),
   packRemoveRepo: (name) => ipcRenderer.invoke('pack:remove-repo', name),
+  packBodyBehind: () => ipcRenderer.invoke('pack:body-behind'),
   packDelete: (id, options) => ipcRenderer.invoke('pack:delete', id, options),
   workspaceClose: (id) => ipcRenderer.invoke('workspace:close', id),
   spaceContextMenu: (target, point) => ipcRenderer.invoke('space:context-menu', target, point),

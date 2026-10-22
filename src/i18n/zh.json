@@ -544,5 +544,9 @@
   "pack.delete.open": "有窗口正在显示这个包 — 请先把那个窗口切换到其他包再删除",
   "pack.delete.unsafe": "这个包绑定在主本体上，无法删除",
   "pack.delete.done": "已删除 {name} 包",
-  "pack.delete.doneNote": "备份文件 — 可以用[导入]恢复"
+  "pack.delete.doneNote": "备份文件 — 可以用[导入]恢复",
+  "pack.catchUp.working": "这个包的本体是旧核心，需要先迁移到新核心 — 雅典娜或代理正在工作，或输入框里有未发送的内容，无法迁移。完成后再试一次",
+  "pack.catchUp.unknownSession": "这个包的本体是旧核心，需要先迁移到新核心 — 没有可以恢复雅典娜对话的记录，无法迁移。先给雅典娜发一条消息再试",
+  "pack.catchUp.failed": "无法把这个包的本体迁移到新核心(详情见 pack.log)",
+  "pack.catchUp.notice": "这个包的本体是旧核心，会先迁移到新核心 — 会停止这个包的雅典娜和代理，雅典娜会用原来的对话重新打开(正在进行的工作会停止)。"
 }

@@ -544,5 +544,9 @@
   "pack.delete.open": "A window is showing this pack — switch that window to another pack first",
   "pack.delete.unsafe": "This pack is tied to the main body and can't be deleted",
   "pack.delete.done": "Deleted the {name} pack",
-  "pack.delete.doneNote": "Backup file — bring it back with [Import]"
+  "pack.delete.doneNote": "Backup file — bring it back with [Import]",
+  "pack.catchUp.working": "This pack's body runs an older core and must move to the new one first — Athena or an agent is working, or the input has an unsent draft. Try again when it's done",
+  "pack.catchUp.unknownSession": "This pack's body runs an older core and must move to the new one first — there's no record to resume the Athena conversation. Send Athena any message once, then try again",
+  "pack.catchUp.failed": "Couldn't move this pack's body to the new core (details in pack.log)",
+  "pack.catchUp.notice": "This pack's body runs an older core, so it moves to the new one first — this pack's Athena and agents stop, and Athena reopens the same conversation (any work in progress stops)."
 }
