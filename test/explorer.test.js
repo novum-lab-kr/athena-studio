@@ -46,11 +46,24 @@ test('루트 안 판정 · 상대 경로 검사', () => {
   assert.equal(explorer.isInside('/w/repo', '/etc/passwd'), false)
   assert.equal(explorer.isInside('/w/repo', '/w/repo/..notes'), true)
   assert.equal(explorer.isInside('/w/repo', '/w'), false)
+  // 여러 팩 본체 — 작업 공간 + 지금 팩 데이터(plans · issues 링크가 가리키는 곳)만, 그 밖(내 레포 등)은 아니다
+  const roots = ['/h/bodies/b1', '/h/data/packs/acme']
+  assert.equal(explorer.isInsideAny(roots, '/h/bodies/b1/CLAUDE.md'), true)
+  assert.equal(explorer.isInsideAny(roots, '/h/data/packs/acme/plans/a.md'), true)
+  assert.equal(explorer.isInsideAny(roots, '/h/data/packs/globex/plans/a.md'), false)
+  assert.equal(explorer.isInsideAny(roots, '/Users/me/code/api'), false)
   assert.equal(explorer.cleanRelative(''), '.')
   assert.equal(explorer.cleanRelative('src/../a.js'), 'a.js')
   assert.equal(explorer.cleanRelative('/etc/passwd'), null)
   assert.equal(explorer.cleanRelative('a\0b'), null)
   assert.equal(explorer.cleanRelative(3), '.')
+})
+
+test('팩 본체 Explorer — 맨 위는 팩 내용만 · 변경도 팩 내용 쪽만', () => {
+  const entries = ['scripts', 'docs', 'CLAUDE.md', 'pack', 'plans', 'issues', 'archive', 'repos', '.worktrees', '.pack-data'].map((name) => ({ name, dir: true }))
+  assert.deepEqual(explorer.packBodyEntries(entries).map((entry) => entry.name), ['pack', 'plans', 'issues', 'archive'])
+  const changes = [{ path: 'scripts/athena.mjs', code: 'M' }, { path: 'pack/pack.json', code: 'M' }, { path: 'plans/a.md', code: '??' }]
+  assert.deepEqual(explorer.packBodyChanges(changes).map((change) => change.path), ['pack/pack.json', 'plans/a.md'])
 })
 
 test('바이너리 어림', () => {

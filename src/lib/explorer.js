@@ -53,6 +53,17 @@ function isInside(root, target) {
   return relative === '' || (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
 }
 
+// 팩 본체(여러 팩 구조 — .pack-data 가 있다)에서 사용자에게 보일 맨 위 항목 — 팩 내용만.
+// 코어(scripts · docs · CLAUDE.md …)와 본체 설정 · 상태, 링크 폴더(repos · .worktrees · .pack-data)는 숨긴다
+const PACK_BODY_NAMES = ['pack', 'plans', 'issues', 'archive']
+const packBodyEntries = (entries) => entries.filter((entry) => PACK_BODY_NAMES.includes(entry.name))
+const packBodyChanges = (changes) => changes.filter((change) => PACK_BODY_NAMES.includes(change.path.split('/')[0]))
+
+// 여러 루트 중 하나 안인가 — 작업 공간 폴더 + 여러 팩 본체의 지금 팩 데이터(plans · issues · archive 가 그리로 가는 링크다)
+function isInsideAny(roots, target) {
+  return roots.some((root) => isInside(root, target))
+}
+
 // 화면이 보낸 상대 경로를 검사 — 절대 경로·NUL 은 거절(풀린 실제 경로 검사는 isInside 가 한다)
 function cleanRelative(relative) {
   const value = typeof relative === 'string' ? relative : ''
@@ -72,6 +83,10 @@ module.exports = {
   statusCode,
   relativeToWorkspace,
   isInside,
+  isInsideAny,
+  PACK_BODY_NAMES,
+  packBodyEntries,
+  packBodyChanges,
   cleanRelative,
   looksBinary,
 }

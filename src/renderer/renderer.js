@@ -495,7 +495,7 @@ function renderSides() {
 }
 
 // ── 오른쪽 Explorer (파일 · 변경) ──
-// 파일은 main 이 작업 공간 폴더 안만 읽어 준다. 폴더는 펼칠 때 읽고, git 변경은 보일 때 3초마다
+// 파일은 main 이 작업 공간 폴더(+ 지금 팩 데이터) 안만 읽어 준다. 폴더는 펼칠 때 읽고, 보일 때 3초마다 git 변경과 펼친 폴더를 다시 본다
 const explorerView = { workspace: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '' }
 
 function resetExplorer() {
@@ -515,8 +515,18 @@ async function loadFolder(relative) {
   const workspace = explorerView.workspace
   const result = await studio.explorerList(workspace, relative)
   if (workspace !== explorerView.workspace) return
-  explorerView.children.set(relative, result.error ? { error: result.error } : result.entries)
+  const next = result.error ? { error: result.error } : result.entries
+  // 그대로면 다시 그리지 않는다(3초마다 다시 읽는다)
+  if (JSON.stringify(next) === JSON.stringify(explorerView.children.get(relative))) return
+  explorerView.children.set(relative, next)
   renderExplorer()
+}
+
+// 3초마다 — git 변경 + 펼친 폴더. git 이 안 보는 곳(.gitignore 된 plans · issues · 팩 데이터 링크)의 새 파일도 보이게
+function refreshExplorer() {
+  if (!explorerView.workspace) return
+  refreshStatus()
+  for (const folder of explorerView.expanded) if (explorerView.children.has(folder)) loadFolder(folder)
 }
 
 async function refreshStatus() {
@@ -526,13 +536,10 @@ async function refreshStatus() {
   if (workspace !== explorerView.workspace || result.error) return
   const key = JSON.stringify(result)
   if (key === explorerView.statusKey) return
-  const first = !explorerView.statusKey
   explorerView.statusKey = key
   explorerView.git = result.git
   explorerView.changes = result.changes
   renderExplorer()
-  // 파일이 생기거나 지워졌을 수 있다 — 펼쳐 둔 폴더를 다시 읽는다(처음 읽을 때는 이미 읽는 중)
-  if (!first) for (const folder of explorerView.expanded) loadFolder(folder)
 }
 
 const joinPath = (folder, name) => (folder === '.' ? name : `${folder}/${name}`)
@@ -2742,9 +2749,9 @@ async function init() {
   $('side-open').addEventListener('click', () => setPanelHidden(false))
   $('preview-close').addEventListener('click', closePreview)
   $('preview').addEventListener('keydown', (event) => event.key === 'Escape' && closePreview())
-  // git 변경은 Explorer 가 보일 때만 3초마다
+  // git 변경 · 펼친 폴더는 Explorer 가 보일 때만 3초마다
   setInterval(() => {
-    if (currentTab === 'work' && !$('side-panel').hidden && attached) refreshStatus()
+    if (currentTab === 'work' && !$('side-panel').hidden && attached) refreshExplorer()
   }, 3000)
   studio.onScreenResync(() => state.valid && attach())
   studio.onScreenDisconnected(() => {

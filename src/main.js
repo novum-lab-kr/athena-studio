@@ -408,12 +408,19 @@ function monitorSessions(monitor) {
 }
 
 // ── 오른쪽 Explorer · 파일 뷰어 — 공용 도우미 ───────────────────────
-// 상대 경로를 풀어(심볼릭 링크 포함) 루트 안인지 본다
+// 읽어도 되는 곳 — 작업 공간 폴더 + 여러 팩 본체면 지금 팩 데이터(.pack-data 가 가리키는 곳).
+// plans · issues · archive · repos 는 .pack-data 를 거친 링크라, 데이터 쪽을 빼면 Explorer 에 아예 안 보인다
+async function explorerRoots(root) {
+  const data = await fs.promises.realpath(path.join(root, '.pack-data')).catch(() => null)
+  return data ? [root, data] : [root]
+}
+
+// 상대 경로를 풀어(심볼릭 링크 포함) 읽어도 되는 곳 안인지 본다
 async function resolveInside(root, relative) {
   const clean = explorer.cleanRelative(relative)
   if (clean === null) throw new Error(say('error.pathUnreadable'))
   const real = await fs.promises.realpath(path.join(root, clean))
-  if (!explorer.isInside(root, real)) throw new Error(say('error.outsideWorkspace'))
+  if (!explorer.isInsideAny(await explorerRoots(root), real)) throw new Error(say('error.outsideWorkspace'))
   return { real, clean }
 }
 
@@ -1083,21 +1090,24 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   ctx.explorerList = async (workspaceId, relative) => {
     const root = await workspaceRoot(workspaceId)
-    const { real } = await resolveInside(root, relative)
+    const { real, clean } = await resolveInside(root, relative)
+    const roots = await explorerRoots(root)
     const dirents = await fs.promises.readdir(real, { withFileTypes: true })
     const entries = await Promise.all(
       dirents.map(async (dirent) => {
         let dir = dirent.isDirectory()
         if (dirent.isSymbolicLink()) {
-          // 작업 공간 밖을 가리키는 링크는 열 수 없으니 목록에서 뺀다(끊긴 링크는 그대로 둔다)
+          // 읽어도 되는 곳 밖을 가리키는 링크는 열 수 없으니 목록에서 뺀다(끊긴 링크는 그대로 둔다)
           const target = await fs.promises.realpath(path.join(real, dirent.name)).catch(() => null)
-          if (target && !explorer.isInside(root, target)) return null
+          if (target && !explorer.isInsideAny(roots, target)) return null
           dir = await fs.promises.stat(path.join(real, dirent.name)).then((stat) => stat.isDirectory(), () => false)
         }
         return { name: dirent.name, dir, ...fileIcons.iconFor(fileIcons.loadManifest(), dirent.name, dir) }
       }),
     )
-    return { entries: explorer.sortEntries(entries.filter(Boolean)) }
+    const shown = entries.filter(Boolean)
+    // 팩 본체면 맨 위는 팩 내용만(코어 · 본체 설정은 사용자가 볼 것이 아니다)
+    return { entries: explorer.sortEntries(clean === '.' && roots.length > 1 ? explorer.packBodyEntries(shown) : shown) }
   }
 
   // 작업 공간 폴더 기준 git 변경. git 레포가 아니면 git: false
@@ -1109,7 +1119,9 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     // 새 폴더는 한 줄(`dir/`)로 — 안의 파일을 다 세면 .omc/ 같은 폴더 하나로 수백 줄이 된다(git 기본과 같다)
     const output = await runGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])
     if (output === null) return { git: true, changes: [] }
-    const changes = explorer.relativeToWorkspace(explorer.parseGitStatus(output), prefix.split(path.sep).join('/'))
+    const all = explorer.relativeToWorkspace(explorer.parseGitStatus(output), prefix.split(path.sep).join('/'))
+    // 팩 본체의 git 은 코어 레포다 — 코어 변경은 빼고 팩 내용 쪽만
+    const changes = (await explorerRoots(root)).length > 1 ? explorer.packBodyChanges(all) : all
     // 변경 목록에도 아이콘 — 새 폴더(`dir/`)는 폴더 아이콘
     const manifest = fileIcons.loadManifest()
     return {
