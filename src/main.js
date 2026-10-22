@@ -1072,6 +1072,37 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (!result.already) await sendToAthena(say('spaces.addRepoAsk', { repo: result.repo.name, path: result.path }))
     return result
   }
+  // 팩에서 레포 빼기 — 코어 repo remove(팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증) 뒤 아테나에게 ROUTING · services 줄 정리를 맡긴다
+  ctx.removeRepo = async (name) => {
+    const result = await ctx.packTask(say('pack.task.removeRepo'), () => runCore(['repo', 'remove', String(name)], { dir: ctx.athenaDir }))
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    await sendToAthena(say('spaces.removeRepoAsk', { repo: result.removed }))
+    return result
+  }
+  // 작업 공간 닫기 — 그 작업 공간의 탭을 모두 닫는다(pane 이 다 닫히면 데몬이 작업 공간도 지운다 · 팩은 그대로)
+  ctx.closeWorkspace = async (workspaceId) => {
+    const state = await daemonCall('state')
+    const tabs = ((state.result && state.result.tabs) || []).filter((tab) => tab.workspace === workspaceId)
+    for (const tab of tabs) await daemonCall('tab close', { tab: tab.id })
+    return { ok: true, closed: tabs.length }
+  }
+  // spaces 레포 줄 우클릭 — 고른 동작 이름(remove-repo · close-workspace · null)
+  ctx.spaceContextMenu = ({ repo = null, workspace = null } = {}, point = null) => new Promise((resolve) => {
+    let chosen = null
+    const pick = (action) => () => {
+      chosen = action
+      resolve(action)
+    }
+    const items = []
+    if (workspace) items.push({ label: say('spaces.menu.closeWorkspace'), click: pick('close-workspace') })
+    if (repo) items.push(...(items.length ? [{ type: 'separator' }] : []), { label: say('spaces.menu.removeRepo'), click: pick('remove-repo') })
+    if (!items.length || !ctx.win) return resolve(null)
+    const menu = Menu.buildFromTemplate(items)
+    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
+    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
+    menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
+  })
+
   // 아테나 pane(이 창 아테나 작업 공간의 첫 pane)에 글 한 줄 + Enter — 없으면 false
   async function sendToAthena(text) {
     const state = await daemonCall('state')
@@ -2783,6 +2814,9 @@ handle('tab:rename', (ctx, tabId, label) => ctx.daemonCall('tab rename', { tab: 
 handle('workspace:select', (ctx, workspaceId) => ctx.daemonCall('workspace select', { workspace: String(workspaceId) }))
 handle('workspace:new', (ctx, size) => ctx.newWorkspace(cellSize(size)))
 handle('workspace:open-dir', (ctx, dir, size) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.openWorkspaceDir(dir, cellSize(size)) : { error: 'bad dir' }))
+handle('pack:remove-repo', (ctx, name) => (typeof name === 'string' && /^[\w.-]+$/.test(name) ? ctx.removeRepo(name) : { ok: false, error: 'usage' }))
+handle('workspace:close', (ctx, workspaceId) => ctx.closeWorkspace(String(workspaceId || '')))
+handle('space:context-menu', (ctx, target, point) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? point : null))
 handle('pack:add-repo', (ctx, dir, name) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.addRepo(dir, typeof name === 'string' && name ? name : null) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on) => ctx.setMonitorWatch(on === true))
 handle('explorer:list', (ctx, workspaceId, relative) => guarded(() => ctx.explorerList(workspaceId, relative)))

@@ -54,6 +54,7 @@
  *   athena init --pack <회사> --repos <a,b|all> [--names <x,y>] [--org <GitHub 조직>] [--agent <레포>=<이름> …]
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
  *   athena repo add <레포 폴더> [--name <이름>] [--json]       이미 있는 팩에 레포 하나 더하기 — pack.json · 자리 · repos/ 링크 · 그 레포 뼈대 · 팩 링크(채우기는 docs/setup.md "레포 하나 더하기")
+ *   athena repo remove <레포 이름> [--json]                  팩에서 레포 빼기 — 팩 자동 백업 · pack.json · 자리 · 링크 · 그 레포 에이전트 · 지식 · 검증(레포 폴더는 그대로 · 워크트리가 있으면 거부)
  *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서·다이어그램 표(있는 파일은 그대로) + 링크
  *
  * 팩 위치는 athena.config.json 의 pack. 링크 목록은 이 컴퓨터의 .git/info/exclude 에 적어 git 이 무시하게 한다
@@ -69,7 +70,7 @@ import { CONTRACT, discardPack, newPackBody, openPack, rollbackUpdate, updateBod
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
-  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate, syncRepos,
+  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate, removeRepo, syncRepos,
   packStatus, relinkBody, renameNewSlot, restoreWithWork, restoreWorkCommand, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
@@ -189,6 +190,17 @@ const runRepoAdd = () => {
   if (asJson) console.log = () => {}
   try { link() } finally { console.log = quiet }
   return { ...added, linked: repos.linked.includes(added.repo.name), scaffolded: made.map((path) => relative(ROOT, path)) }
+}
+
+// 팩에서 레포 빼기 — lib/packs.mjs removeRepo 뒤 팩 링크 정리(빠진 에이전트 링크가 지워진다). ROUTING · services 줄 정리는 아테나가
+const runRepoRemove = () => {
+  const name = positional()[0]
+  if (!name) throw new PackError('usage', '사용: athena repo remove <레포 이름> [--json]')
+  const result = removeRepo(ROOT, name, { report })
+  const quiet = console.log
+  if (asJson) console.log = () => {}
+  try { link() } finally { console.log = quiet }
+  return result
 }
 
 const runScaffold = () => {
@@ -419,6 +431,7 @@ else if (command === 'update') {
 }
 else if (command === 'scaffold') runScaffold()
 else if (command === 'repo' && sub === 'add') runPack('repo add', () => runRepoAdd())
+else if (command === 'repo' && sub === 'remove') runPack('repo remove', () => runRepoRemove())
 else if (command === 'request' && requestCommands[sub]) runPack(`request ${sub}`, requestCommands[sub])
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()

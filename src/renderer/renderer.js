@@ -458,6 +458,10 @@ function idleRepoRows() {
     text.append(el('span', 'space-label', repo.name))
     button.append(text)
     if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      spaceMenu({ workspace: null, repo: repo.name }, event)
+    })
     button.addEventListener('click', () => {
       if (blocked) return showToast(blocked, 'info')
       if (currentTab !== 'work') switchTab('work')
@@ -490,6 +494,41 @@ function callMeta(info) {
     row(say('spaces.callMainKey'), [main.branch, sync, dirty].join(' · '))
   }
   return meta
+}
+
+// spaces 레포 줄 우클릭 메뉴(main) — 작업 공간 닫기 · 팩에서 레포 빼기
+async function spaceMenu({ workspace, repo }, event) {
+  const action = await studio.spaceContextMenu({ workspace: workspace ? workspace.id : null, repo }, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
+  if (action === 'close-workspace') return closeWorkspace(workspace)
+  if (action === 'remove-repo') return runPackFlow(() => removeRepoFromPack(repo))
+}
+
+// 작업 공간 닫기 — 에이전트가 도는 pane 이 있으면 한 번 묻는다
+async function closeWorkspace(workspace) {
+  const panes = workspacePanes(workspace.id)
+  const agents = panes.filter((pane) => paneStatus[pane.id])
+  if (agents.length) {
+    const ok = await packDialog({ title: say('spaces.closeWorkspaceTitle', { name: workspace.label }), body: [el('p', 'muted', say('spaces.closeWorkspaceNote', { count: agents.length }))], actions: [{ label: say('spaces.closeWorkspaceYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }] })
+    if (!ok) return
+  }
+  const result = await studio.workspaceClose(workspace.id)
+  if (result.error) showToast(result.error)
+}
+
+// 팩에서 레포 빼기 — 무엇이 지워지는지 · 레포 폴더는 그대로 · 자동 백업을 알리고 확인
+async function removeRepoFromPack(name) {
+  const ok = await packDialog({
+    title: say('spaces.removeRepoTitle', { repo: name }),
+    body: [el('p', null, say('spaces.removeRepoBody')), el('p', 'muted', say('spaces.removeRepoNote'))],
+    actions: [{ label: say('spaces.removeRepoYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
+  })
+  if (!ok) return
+  showPackProgress(say('spaces.removeRepoProgress', { repo: name }), false)
+  const result = await studio.packRemoveRepo(name)
+  hidePackProgress()
+  if (!result.ok) return packAlert(say('spaces.removeRepoFailed'), result.text || result.message)
+  await refreshPackRepos()
+  showToast(say('spaces.removeRepoDone', { repo: name }), 'success')
 }
 
 // spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지
@@ -601,6 +640,11 @@ function renderSides() {
       if (currentTab !== 'work') switchTab('work')
       if (panes.length) return setSpaceFolded(workspace.id, !folded)
       studio.workspaceSelect(workspace.id)
+    })
+    // 우클릭 — 작업 공간 닫기 · (팩 레포면) 팩에서 빼기
+    button.addEventListener('contextmenu', (event) => {
+      event.preventDefault()
+      spaceMenu({ workspace, repo: packRepos.some((repo) => repo.name === workspace.label) ? workspace.label : null }, event)
     })
     if (!shown.length) return [button]
     // pane 줄은 레포 머리글 밑에

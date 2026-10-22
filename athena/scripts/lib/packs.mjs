@@ -487,6 +487,40 @@ export const syncRepos = (root) => {
   return { linked, unlinked, removed }
 }
 
+// 팩에서 레포 하나 빼기(bin/athena repo remove) — 팩 자동 백업 → pack.json 항목 · local.json 자리 · repos/ 링크 · 그 레포 에이전트 · 지식 · 검증 스크립트.
+// 레포 폴더는 그대로. 그 레포 워크트리가 남아 있으면(미커밋 작업일 수 있다) 빼지 않는다. 팩 링크 정리는 부르는 쪽(link)이
+export const removeRepo = (root, name, { report = () => {} } = {}) => {
+  const where = paths(root)
+  if (where.mode !== 'packs' || !where.packDataReal) throw new PackError('not-found', '여러 팩 본체가 아니다 — 팩 데이터가 없다')
+  const packDir = join(where.packDataReal, 'pack')
+  const pack = readPackJson(packDir)
+  const entry = (pack?.repos ?? []).find((repo) => repo.name === name)
+  if (!entry) throw new PackError('not-found', `팩에 그런 레포가 없다: ${name}`)
+  const trees = join(where.packDataReal, 'worktrees', name)
+  const left = existsSync(trees) ? readdirSync(trees).filter((item) => !item.startsWith('.')) : []
+  if (left.length) throw new PackError('busy', `그 레포 워크트리가 남아 있다 — ${left.join(', ')} · 정리한 뒤 다시(git -C repos/${name} worktree remove <경로>)`, { worktrees: left })
+  report('backup', `팩 백업 — ${where.packId}`)
+  const backup = tarPack(packDir, join(where.dataDir, 'backups'), `${where.packId}-pack-before-repo-remove`)
+  // 이 레포 에이전트 — 다른 레포도 쓰는 이름이면 두기
+  const agentsOf = (repo) => [...(repo.agents ?? []), ...Object.values(repo.apps ?? {}).map((app) => app?.agent), repo.packagesAgent].filter((agent) => typeof agent === 'string' && /^[\w-]+$/.test(agent))
+  const others = new Set((pack.repos ?? []).filter((repo) => repo !== entry).flatMap(agentsOf))
+  const removed = []
+  const drop = (rel) => { const path = join(packDir, rel); if (existsSync(path) || isLink(path)) { rmSync(path, { recursive: true, force: true }); removed.push(rel) } }
+  for (const agent of agentsOf(entry)) if (!others.has(agent)) drop(`agents/${agent}.md`)
+  drop(`knowledge/${name}`)
+  drop(`verify/${name}.sh`)
+  writeJsonAtomic(join(packDir, 'pack.json'), { ...pack, repos: pack.repos.filter((repo) => repo !== entry) })
+  const localFile = join(where.packDataReal, 'local.json')
+  const local = readJson(localFile)
+  if (local?.repoPaths?.[name] !== undefined) {
+    const { [name]: _gone, ...repoPaths } = local.repoPaths
+    writeJsonAtomic(localFile, { ...local, repoPaths })
+  }
+  const repos = syncRepos(root)
+  report('done', `뺐다 — ${name}`)
+  return { ok: true, removed: name, backup, files: removed, unlinked: repos.removed.includes(name) }
+}
+
 // 내보내기 · 백업 사본의 pack.json 에 레포 git 주소를 채운다(원본 팩은 그대로) — 받은 컴퓨터가 git 주소로 레포를 찾게
 const addRemotes = (packJsonPath, reposDir) => {
   const pack = readJson(packJsonPath)

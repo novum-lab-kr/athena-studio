@@ -217,7 +217,7 @@ mkdir -p "$O/badrestore/acme/restore" && cp -R "$F/packs/acme" "$O/badrestore/ac
 check "나쁜 되살리기 정보(계획서 경로에 ..) → unsafe" '[ "$(A pack inspect "$O/badrestore" | field error)" = unsafe ]'
 unset ATHENA_CLAUDE_HOME
 
-section "레포 하나 더하기(repo add)"
+section "레포 하나 더하기 · 빼기(repo add · remove)"
 SRCS="$ATHENA_DATA_DIR/repos-src"; LOCAL="$ATHENA_DATA_DIR/packs/acme/local.json"; cp "$LOCAL" "$WORK/local.add.bak"; cp pack/pack.json "$WORK/pack.add.bak"
 mkdir -p "$SRCS/team/new-svc" && git -C "$SRCS/team/new-svc" init -q -b main && (cd "$SRCS/team/new-svc" && echo x > README.md && git add . && git -c user.email=t@e.invalid -c user.name=t commit -qm init && git remote add origin https://u:tok@example.com/acme/new-svc.git)
 R="$(A repo add "$SRCS/team/new-svc")"
@@ -227,8 +227,14 @@ check "같은 레포 다시 → already" '[ "$(A repo add "$SRCS/team/new-svc" |
 mkdir -p "$SRCS/other/new-svc" && git -C "$SRCS/other/new-svc" init -q -b main
 check "같은 이름 · 다른 자리 → exists" '[ "$(A repo add "$SRCS/other/new-svc" | field error)" = exists ]'
 check "git 레포가 아니면 → not-repo" '[ "$(A repo add "$WORK" | field error)" = not-repo ]'
-cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; rm -rf pack/agents/new-svc-fe.md pack/knowledge/new-svc pack/verify/new-svc.sh; A pack open acme >/dev/null
-check "원래대로 — new-svc 링크 없음" '[ ! -e repos/new-svc ] && [ ! -L repos/new-svc ]'
+mkdir -p "$ATHENA_DATA_DIR/packs/acme/worktrees/new-svc/feature-x"
+check "repo remove — 워크트리가 남아 있으면 거부(busy)" '[ "$(A repo remove new-svc | field error)" = busy ] && grep -q "\"new-svc\"" pack/pack.json'
+rm -rf "$ATHENA_DATA_DIR/packs/acme/worktrees/new-svc"
+R="$(A repo remove new-svc)"
+check "repo remove → 팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증 지움 · 레포 폴더는 그대로" '[ -f "$(echo "$R" | field backup)" ] && ! grep -q "\"new-svc\"" pack/pack.json && ! grep -q "new-svc" "$LOCAL" && [ ! -e repos/new-svc ] && [ ! -L repos/new-svc ] && [ ! -e pack/agents/new-svc-fe.md ] && [ ! -e pack/knowledge/new-svc ] && [ ! -e pack/verify/new-svc.sh ] && [ ! -L .claude/agents/new-svc-fe.md ] && [ -d "$SRCS/team/new-svc/.git" ]' "$R"
+check "없는 레포 → not-found" '[ "$(A repo remove nope | field error)" = not-found ]'
+check "다른 레포는 그대로(acme-web · acme-api 링크)" '[ -L repos/acme-web ] && [ -L repos/acme-api ] && [ -L .claude/agents/acme-web-fe.md ]'
+cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; A pack open acme >/dev/null
 
 section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
 IMG="$WORK/img"; mkdir -p "$IMG"
