@@ -1331,11 +1331,35 @@ async function startScreen() {
   ensureSomeTab()
 }
 
-// athena 탭에서 아테나 에이전트를 켠다(이미 있으면 그 탭으로) — 묻지 않고 claude, 없으면 깔린 것 중 첫 번째
+// athena 탭에서 아테나 에이전트를 켠다(이미 있으면 그 탭으로) — 묻지 않고 claude, 없으면 깔린 것 중 첫 번째.
+// 가져오기에서 [열고 작업 되살리기] 를 골랐으면(restoreArmed) main 이 그 사이에 백업 때 작업을 되살린다 — 진행 표시 · 결과
+let restoreArmed = false
 async function openAgent(options) {
+  const restoring = restoreArmed
+  restoreArmed = false
+  if (restoring) showPackProgress(say('pack.restore.progress'), false)
   const result = await studio.openAgent(estimateCells($('panes')), options)
+  if (restoring) hidePackProgress()
   if (result.error) showToast(result.error)
+  if (result.restore) showRestoreResult(result.restore)
   return result
+}
+
+// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유
+function showRestoreResult(result) {
+  if (!result.ok) return packAlert(say('pack.restore.failed'), result.text || result.message)
+  const worktrees = result.worktrees || []
+  const sessions = result.sessions || []
+  const counts = {
+    worktrees: worktrees.filter((item) => item.status === 'done').length,
+    agents: sessions.filter((item) => item.status === 'done').length,
+    athena: (result.athena || []).length,
+  }
+  const problems = [...worktrees, ...sessions].filter((item) => item.status !== 'done')
+  const renamed = worktrees.filter((item) => item.renamed).map((item) => say('pack.restore.renamed', { name: item.name, branch: item.renamed }))
+  if (!problems.length && !renamed.length) return showToast(say('pack.restore.done', counts), 'success')
+  const lines = problems.map((item) => `· ${item.name || item.agent}: ${item.message || item.reason}`)
+  return packAlert(problems.length ? say('pack.restore.partial') : say('pack.restore.done', counts), [say('pack.restore.done', counts), ...renamed, ...lines].join('\n'))
 }
 
 // 알림은 pane 위에 따로 띄운다 — kind: error(기본 · ✕ 로 닫을 때까지) · success(4초) · info(6초). 마우스를 올려 두면 기다린다
@@ -2537,15 +2561,43 @@ async function importPack() {
     body.push(card)
   }
   if (result.backup) body.push(el('p', 'pack-result-note', say('pack.import.backedUp', { path: result.backup })))
+  // 백업 때 하던 작업(에이전트 대화 · 워크트리)이 함께 왔으면 — 열면서 되살릴지 고른다(안 고르면 남겨 둔다)
+  const restore = inspected.restore
+  if (restore) body.push(el('p', 'pack-result-note', say('pack.restore.offer', restore)), el('p', 'pack-result-note', say('pack.restore.note')))
   // R4 A — 폴더 · 압축에서 온 .git 은 코어가 지웠다(inspect 결과 gitRemoved)
   if (inspected.gitRemoved) body.push(el('p', 'pack-result-note', say('pack.import.gitRemoved')))
   const openNow = await packDialog({
     title: say('pack.import.done'),
     subtitle: say(intoCurrent ? 'pack.import.intoCurrent' : 'pack.import.openNow'),
     body,
-    actions: intoCurrent ? [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] : [{ label: say('pack.verb.open'), value: 'yes', kind: 'primary' }, { label: say('common.later'), value: null }],
+    actions: restoreActions(intoCurrent, Boolean(restore)),
   })
+  if (openNow === 'restore') {
+    if (intoCurrent) {
+      showPackProgress(say('pack.restore.progress'), false)
+      const restored = await studio.packRestoreNow()
+      hidePackProgress()
+      return showRestoreResult(restored)
+    }
+    await studio.packRestoreArm(imported.id)
+    restoreArmed = true
+    const opened = await switchPack(imported.id)
+    // 열지 못했거나 다른 창으로 갔으면 이 창의 예약은 지운다(main 의 예약은 그 팩을 연 창이 쓰거나 여기서 지운다)
+    if (!packs.current || packs.current.id !== imported.id) {
+      restoreArmed = false
+      studio.packRestoreDisarm()
+    }
+    return opened
+  }
   if (openNow === 'yes') return switchPack(imported.id)
+}
+
+// 가져오기 끝 버튼 — 되살릴 작업이 있으면 [열고 작업 되살리기](지금 팩이면 [작업 되살리기])가 확인 자리
+function restoreActions(intoCurrent, restore) {
+  if (intoCurrent) return restore ? [{ label: say('pack.restore.now'), value: 'restore', kind: 'primary' }, { label: say('common.later'), value: null }] : [{ label: say('common.ok'), value: 'ok', kind: 'primary' }]
+  const actions = [{ label: say('pack.verb.open'), value: 'yes', kind: restore ? undefined : 'primary' }, { label: say('common.later'), value: null }]
+  if (restore) actions.unshift({ label: say('pack.restore.openAndRestore'), value: 'restore', kind: 'primary' })
+  return actions
 }
 
 // 같은 이름이면 나란히(사용자 결정 3) · 기존 아테나면 가져올 작업 기록도 보여 준다. 반환: new · replace · keep(null 은 취소)
@@ -2591,6 +2643,16 @@ async function chooseExport() {
   if (kind) return exportPack(kind)
 }
 
+// 내 백업에 담긴 되살리기 정보 — 에이전트 대화 · 워크트리 수 · 대화를 못 담은 pane · 뺀 것(큰 파일 등)
+function backupNotes(result) {
+  const restore = result.restore
+  if (!restore) return []
+  const notes = [el('p', null, say('pack.restore.saved', { sessions: restore.sessions || 0, worktrees: restore.worktrees || 0 }))]
+  if ((restore.missing || []).length) notes.push(el('p', 'muted', say('pack.restore.missing', { count: restore.missing.length })))
+  for (const warning of result.warnings || []) notes.push(el('p', 'muted', warning))
+  return notes
+}
+
 async function exportPack(kind) {
   const prefix = kind === 'backup' ? 'pack.backup' : 'pack.export'
   const title = say(`${prefix}.title`)
@@ -2602,7 +2664,7 @@ async function exportPack(kind) {
   const size = result.bytes ? ` · ${Math.max(1, Math.round(result.bytes / 1024))}KB` : ''
   const reveal = await packDialog({
     title: say('pack.result.done', { title }),
-    body: [`${result.file}`, `${say('pack.result.files', { count: result.files || 0 })}${size}`, el('p', 'muted', say(`${prefix}.note`))],
+    body: [`${result.file}`, `${say('pack.result.files', { count: result.files || 0 })}${size}`, ...backupNotes(result), el('p', 'muted', say(`${prefix}.note`))],
     actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }],
     close: true,
   })
@@ -2620,6 +2682,7 @@ async function initPacks() {
     renderPackRail()
   })
   studio.onPackProgress(updatePackProgress)
+  studio.onPackRestored(showRestoreResult)
   studio.onPackChanged(onPackChanged)
   studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
   for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))

@@ -296,8 +296,9 @@ else
   [ "$AGENT" != reviewer ] && GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/commit-guard.py")
   GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
   # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
-  python3 -c 'import json,shlex,sys; hooks=[{"type":"command","command":"python3 "+shlex.quote(path)} for path in sys.argv[2:]]; json.dump({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":hooks}]}}, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" "${GUARD_HOOKS[@]}"
+  # pane ↔ 대화 기록(팩 백업이 되살릴 때 --resume) — 첫 인자
+  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; json.dump({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[3:]]}],"SessionStart":[{"hooks":[command(sys.argv[2])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[2])]}]}}, open(sys.argv[1],"w"))' \
+    "$SETTINGS_FILE" "$ATHENA_DIR/scripts/hooks/pane-session.py" "${GUARD_HOOKS[@]}"
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS --settings $(shq "$SETTINGS_FILE")"
 fi
@@ -323,6 +324,8 @@ PYEOF
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
   echo "export ATHENA_AGENT=$(shq "$AGENT")"
+  # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
+  echo "export ATHENA_PLAN=$(shq "$PLAN")"
   # 여러 팩 — 어느 팩·세대에서 띄웠는지(현황판·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
   [ -n "${PACK_ID:-}" ] && echo "export ATHENA_PACK_ID=$(shq "$PACK_ID") ATHENA_SWITCH_GEN=$(shq "${PACK_GEN:-0}")"
   [ -n "$EXTRA_FILES" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"

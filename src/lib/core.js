@@ -225,6 +225,13 @@ function agentDecision(available) {
   return { agent: available[0] }
 }
 
+// 백업에서 되살린 아테나 대화를 잇는 명령 — 세션 id 모양만 받는다(pane 에 글로 쓰이니 셸 글자가 섞이면 안 된다)
+const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i
+function resumeCommand(session) {
+  if (!SESSION_ID.test(String(session || ''))) throw new Error('bad session id')
+  return `claude --resume ${session}`
+}
+
 // 데몬 상태의 작업 공간 중 이름이 athena 이고 그 아테나 폴더인 것 — 아테나 폴더를 바꿨으면 예전 폴더의 athena 작업 공간은 건드리지 않는다
 function findAthenaWorkspace(workspaces, athenaDir) {
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
@@ -319,6 +326,7 @@ module.exports = {
   availableAgents,
   agentDecision,
   findAthenaWorkspace,
+  resumeCommand,
   openTarget,
   isWebUrl,
   normalizeAddress,

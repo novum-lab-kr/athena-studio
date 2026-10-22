@@ -38,6 +38,11 @@ contextBridge.exposeInMainWorld('studio', {
   // 작업 창 — 데몬의 탭·pane(모든 함수가 pane id 를 단다)
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
   openAgent: (size, options) => ipcRenderer.invoke('agent:open', size, options),
+  packRestoreArm: (id) => ipcRenderer.invoke('pack:restore-arm', id),
+  packRestoreDisarm: () => ipcRenderer.invoke('pack:restore-disarm'),
+  onPackRestored: (handler) => ipcRenderer.on('pack:restored', (_event, result) => handler(result)),
+  packRestoreNow: () => ipcRenderer.invoke('pack:restore-now'),
+  packRestoreDiscard: () => ipcRenderer.invoke('pack:restore-discard'),
   tabNew: (size) => ipcRenderer.invoke('tab:new', size),
   tabSelect: (tabId) => ipcRenderer.invoke('tab:select', tabId),
   tabClose: (tabId) => ipcRenderer.invoke('tab:close', tabId),

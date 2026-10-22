@@ -162,6 +162,57 @@ check "설정에 없어도 지금 링크가 레포면 지우지 않고 local.jso
 mv "$SRCS/team/api-moved" "$SRCS/acme-api"; cp "$WORK/local.json.bak" "$LOCAL"; cp "$WORK/pack.json.bak" pack/pack.json; A pack open acme >/dev/null
 check "원래대로 — acme-api 다시 이어짐" '[ "$(readlink repos/acme-api)" = "$SRCS/acme-api" ]'
 
+section "되살리기 — 에이전트 대화 · 워크트리(미커밋 · push 안 한 커밋)"
+export ATHENA_CLAUDE_HOME="$WORK/claude-home"   # 진짜 ~/.claude 를 건드리지 않게
+WT="$ATHENA_DATA_DIR/packs/acme/worktrees/acme-web/feature-T-9"; WTR="$(cd "$WT" && pwd -P)"
+SID=11111111-2222-3333-4444-555555555555
+check "훅: pane ↔ 대화 기록(state/pane-sessions/p9.json)" 'printf "{\"session_id\":\"%s\",\"cwd\":\"%s\"}" "$SID" "$WTR" | ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_AGENT=acme-web-fe ATHENA_PLAN="$PLAN" python3 scripts/hooks/pane-session.py && grep -q "$SID" "$ATHENA_DATA_DIR/packs/acme/state/pane-sessions/p9.json"'
+SID2=22222222-3333-4444-5555-666666666666; BR="$(pwd -P)"
+printf "{\"session_id\":\"%s\",\"cwd\":\"%s\"}" "$SID2" "$BR" | ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p8 python3 scripts/hooks/pane-session.py   # 본체 아테나(ATHENA_AGENT 없음)
+PROJ2="$ATHENA_CLAUDE_HOME/.claude/projects/$(printf '%s' "$BR" | sed 's/[^A-Za-z0-9]/-/g')"; mkdir -p "$PROJ2" && printf '{}\n' > "$PROJ2/$SID2.jsonl"
+PROJ="$ATHENA_CLAUDE_HOME/.claude/projects/$(printf '%s' "$WTR" | sed 's/[^A-Za-z0-9]/-/g')"
+mkdir -p "$PROJ/$SID/subagents" && printf '{"type":"user"}\n' > "$PROJ/$SID.jsonl" && printf '{}\n' > "$PROJ/$SID/subagents/agent-a.jsonl"
+(cd "$WT" && git config user.email t@e.invalid && git config user.name t && echo local > local.txt && git add local.txt && git commit -qm local \
+  && echo staged >> README.md && git add README.md && echo unstaged >> README.md && echo new > new.txt && echo SECRET=1 > .env) >/dev/null 2>&1
+HEAD_BEFORE="$(git -C "$WT" rev-parse HEAD)"
+R="$(A pack backup --with-work --panes p9,p8,p404 --out "$O")"; WB2="$(echo "$R" | field file)"
+check "백업 — 기록 없는 pane 은 missing(p404)" '[ "$(echo "$R" | field restore.missing)" = "[\"p404\"]" ]' "$R"
+check "백업 — 대화 2 · 워크트리 · 대화 기록(하위 에이전트까지)" '[ "$(echo "$R" | field restore.sessions)" = 2 ] && tar -tzf "$WB2" | grep -q "acme/restore/transcripts/$SID.jsonl" && tar -tzf "$WB2" | grep -q "transcripts/$SID/subagents/agent-a.jsonl"' "$R"
+check "백업 — staged · unstaged · 추적 안 하는 파일 · push 안 한 커밋 · .env 는 뺌" 'L="$(tar -tzf "$WB2")"; echo "$L" | grep -q "worktrees/[0-9]*/staged.patch" && echo "$L" | grep -q "worktrees/[0-9]*/unstaged.patch" && echo "$L" | grep -q "untracked/new.txt" && echo "$L" | grep -q "commits.bundle" && ! echo "$L" | grep -q "\.env$"'
+rm -rf "$WT" "$PROJ"   # 초기화처럼 — 워크트리 폴더 · 대화 기록이 사라짐(레포의 등록 · 브랜치는 남는다)
+R="$(A pack inspect "$WB2")"
+check "검사 — 되살리기 요약(대화 2 · 에이전트 1 · 아테나 1)" '[ "$(echo "$R" | field restore.sessions)" = 2 ] && [ "$(echo "$R" | field restore.agents)" = 1 ] && [ "$(echo "$R" | field restore.athena)" = 1 ]' "$R"
+R="$(A pack import "$(echo "$R" | field token)" --replace)"
+check "가져오기 → state/restore 에 둠" '[ -f "$ATHENA_DATA_DIR/packs/acme/state/restore/restore.json" ]' "$R"
+check "restore-work --dry-run → 남은 것 있음" '[ "$(A pack restore-work --dry-run | field pending)" = True ]'
+R="$(A pack restore-work --no-agents)"
+check "워크트리 되살림 — 같은 HEAD · staged · unstaged · 새 파일 · .env 없음" '[ "$(git -C "$WT" rev-parse HEAD)" = "$HEAD_BEFORE" ] && git -C "$WT" diff --cached | grep -q "+staged" && git -C "$WT" diff | grep -q "+unstaged" && [ -f "$WT/new.txt" ] && [ ! -e "$WT/.env" ]' "$R"
+check "대화 기록 되살림 · 에이전트는 건너뜀(--no-agents) · 아테나는 앱에 넘김(ack 전까지 남음)" '[ -f "$PROJ/$SID.jsonl" ] && [ -f "$PROJ/$SID/subagents/agent-a.jsonl" ] && echo "$R" | grep -q "$SID2" && [ "$(echo "$R" | field remaining)" = 2 ] && [ -d "$ATHENA_DATA_DIR/packs/acme/state/restore" ]' "$R"
+check "--ack <아테나 세션> → 그것만 끝 · 에이전트는 남음" '[ "$(A pack restore-work --ack "$SID2" | field remaining)" = 1 ]' 
+R="$(A pack restore-work --no-agents)"
+check "다시 돌려도 워크트리는 그대로(이미 됨)" '[ "$(echo "$R" | field worktrees)" = "[]" ] && [ "$(git -C "$WT" rev-parse HEAD)" = "$HEAD_BEFORE" ]' "$R"
+# staged 가 안 되면 그 단계에서 멈추고 · 다시 부르면 거기서 잇는다(unstaged 를 엉뚱한 기준에 얹지 않는다)
+A pack restore-work --discard >/dev/null; rm -rf "$WT"; R="$(A pack inspect "$WB2")"; A pack import "$(echo "$R" | field token)" --replace >/dev/null
+SP="$(ls "$ATHENA_DATA_DIR"/packs/acme/state/restore/worktrees/*/staged.patch | head -1)"; cp "$SP" "$WORK/staged.ok"; printf 'not a patch\n' > "$SP"
+R="$(A pack restore-work --no-agents)"
+check "staged 실패 → 멈춤(unstaged 안 얹음) · 다시 할 자리 남음" 'echo "$R" | grep -q patch-staged && ! git -C "$WT" diff | grep -q "+unstaged" && [ -d "$ATHENA_DATA_DIR/packs/acme/state/restore" ]' "$R"
+cp "$WORK/staged.ok" "$SP"; R="$(A pack restore-work --no-agents)"
+check "고친 뒤 다시 → 그 단계부터 이어서 끝" 'git -C "$WT" diff --cached | grep -q "+staged" && git -C "$WT" diff | grep -q "+unstaged" && [ -f "$WT/new.txt" ]' "$R"
+check "--discard → 되살리기 정보 버림" '[ "$(A pack restore-work --discard | field ok)" = True ] && [ ! -d "$ATHENA_DATA_DIR/packs/acme/state/restore" ]'
+# 다른 컴퓨터처럼 — push 안 한 커밋이 레포에 아예 없다(브랜치 · 객체 지움) → 백업의 bundle 로 같은 HEAD
+REPO_WEB="$(cd repos/acme-web && pwd -P)"
+rm -rf "$WT" && git -C "$REPO_WEB" worktree prune && git -C "$REPO_WEB" branch -qD feature/T-9 \
+  && git -C "$REPO_WEB" reflog expire --expire=now --all && git -C "$REPO_WEB" gc -q --prune=now
+check "(준비) 그 커밋이 레포에 없음" '! git -C "$REPO_WEB" cat-file -e "$HEAD_BEFORE^{commit}" 2>/dev/null'
+R="$(A pack inspect "$WB2")"; A pack import "$(echo "$R" | field token)" --replace >/dev/null
+R="$(A pack restore-work --no-agents)"
+check "push 안 한 커밋 — bundle 에서 받아 같은 HEAD · 브랜치 다시 · 변경 그대로" '[ "$(git -C "$WT" rev-parse HEAD)" = "$HEAD_BEFORE" ] && [ "$(git -C "$WT" symbolic-ref --short HEAD)" = feature/T-9 ] && git -C "$WT" diff | grep -q "+unstaged"' "$R"
+A pack restore-work --discard >/dev/null
+mkdir -p "$O/badrestore/acme/restore" && cp -R "$F/packs/acme" "$O/badrestore/acme/pack" && printf '{"kind":"with-work"}\n' > "$O/badrestore/acme/athena-backup.json" \
+  && printf '{"version":1,"sessions":[{"agent":"x","session":"11111111-aaaa","plan":"plans/../../etc.md","cwd":"/tmp"}],"worktrees":[]}\n' > "$O/badrestore/acme/restore/restore.json"
+check "나쁜 되살리기 정보(계획서 경로에 ..) → unsafe" '[ "$(A pack inspect "$O/badrestore" | field error)" = unsafe ]'
+unset ATHENA_CLAUDE_HOME
+
 section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
 IMG="$WORK/img"; mkdir -p "$IMG"
 printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$IMG/a.png"

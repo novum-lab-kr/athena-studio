@@ -40,6 +40,11 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 - `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
 - `bin/athena pack restore <파일>` — `packs/<팩>` 으로 되살린다. 같은 이름 팩이 있으면 **덮지 않고 멈춘다**(옮기거나 지운 뒤 다시). 팩 없이 쓰는 중이면 `athena.config.json` 의 `pack` 을 잡고 링크까지 건다
 - `pack backup --with-work` 는 이 컴퓨터의 레포 자리(`local.json` — 지금 이어진 링크의 실제 경로)도 담는다. 되살릴 때 그 폴더가 있으면 그대로 잇는다(`--new` 는 그대로 · `--replace` 는 이 컴퓨터 설정에 없는 레포만 채운다). 팀에 주는 `pack export` 에는 담지 않는다. 두 파일 모두 **사본** pack.json 에 레포 git 주소(`repos[].remote` · https 주소의 사용자 · 토큰은 뗀다)를 채운다 — 원본 팩은 그대로
+- **되살리기 정보**(`pack backup --with-work --panes <pane,…>` — 스튜디오가 넘긴다 · `scripts/lib/restore.mjs`): 백업 안 `restore/` 에
+  - 에이전트 대화 — pane 마다 `{ agent, session, plan, cwd }`(경로는 자리표 `{pack}` · `{body}` · `{repo:<이름>}`) + 대화 기록 사본(`~/.claude/projects/<cwd>/<세션>.jsonl` · 하위 에이전트). pane ↔ 세션은 훅 `scripts/hooks/pane-session.py`(SessionStart · UserPromptSubmit — 본체 `.claude/settings.json` · delegate 설정)가 `<팩 데이터>/state/pane-sessions/<pane>.json` 에 적는다. 기록이 없는 pane 은 결과 `restore.missing`. **대화 기록에는 소스 · 도구 출력(비밀값일 수 있다)이 들어간다**
+  - 워크트리(`<팩 데이터>/worktrees/<레포>/<이름>`) — HEAD · 브랜치 · `staged.patch` · `unstaged.patch` · 추적 안 하는 파일(비밀 이름 · node_modules 빼고 · 5MB 넘는 것 빼고) · push 안 한 커밋(`commits.bundle`). patch 가 150MB 를 넘으면 `incomplete`(되살림을 끝냄으로 치지 않는다) · 그 밖은 합계 200MB 까지
+  - 가져오기(inspect · import)는 모양 · 이름 · 링크를 검사해 `<팩 데이터>/state/restore/` 에 둔다(실행하지 않는다) — 결과 `restore{ sessions, agents, athena, worktrees }`
+  - `pack restore-work`(본체에서): 워크트리(저장한 HEAD — 브랜치가 그 뒤로 움직였으면 `<브랜치>-restored` · 커밋이 없으면 bundle 에서 · 단계 added → staged → unstaged → untracked 를 `progress.json` 에 적고 실패하면 그 단계에서 멈춤) → 대화 기록(그 컴퓨터에 없을 때만 새 cwd 의 기록 폴더로) → 에이전트 pane(`delegate.sh --resume` · 화면 계층이 필요하다). 본체 아테나 대화는 결과 `athena[]` 로 넘기고 스튜디오가 아테나 pane 을 `claude --resume` 으로 켠 뒤 `--ack <세션>`. 다 되면 `state/restore` 를 지운다 · `--dry-run` 요약 · `--no-agents` · `--discard`
 - **여러 팩 구조**(아래)에서는 두 명령 모두 멈추고 안내만 한다 — 팩만은 `pack export --out <폴더>`, 팩 + 작업 기록은 `pack backup --with-work`, 되살리기는 `pack restore --with-work <파일>` 또는 `pack inspect <파일>` → `pack import <token> --new`
 - 말로: "팩 백업해줘" · "팩 되살려줘 <파일>"
 

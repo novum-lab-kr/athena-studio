@@ -20,6 +20,7 @@ const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language')
 const requestsModel = require('./lib/requests')
 const workModel = require('./lib/work-model')
+const layout = require('./lib/layout')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -660,7 +661,9 @@ function logCore(line) {
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
 // 약속: 코어 `pack … --json` 출력(contract 2 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
-const PACK_TIMEOUTS = { update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
+// 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
+let restoreArmedFor = null
+const PACK_TIMEOUTS = { 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
 // 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다
 const REQUESTS_POLL_MS = 30000
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
@@ -673,11 +676,12 @@ function packScript(dir) {
 // 셸을 거치지 않고 실행 · progress 줄은 그때그때 화면에 · 원문(stderr)은 화면에 넘기지 않고 pack.log 에만
 // 본체 명령 — `athena.mjs <argv…> --json`. 늘 약속 번호를 알린다(ATHENA_CONTRACT — 다르면 본체가 contract-mismatch).
 // dir = 그 명령을 부를 본체(창마다 다르다 — '지금 팩' 은 부른 본체의 팩)
-function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
+// extraEnv — 화면 계층(데몬)을 써야 하는 명령(restore-work 가 delegate.sh 로 pane 을 띄운다)만 데몬 접속 값을 넘긴다
+function runCore(argv, { dir, onProgress = null, signal = null, extraEnv = null } = {}) {
   return new Promise((resolve) => {
     if (!dir) return resolve({ ok: false, error: 'not-found', message: say('error.athenaCoreUnset') })
     const nodePath = core.findExecutable('node', process.env.PATH)
-    const env = core.childEnv(process.env, { ATHENA_CONTRACT: String(packModel.CONTRACT), ...(nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' }) })
+    const env = core.childEnv(process.env, { ATHENA_CONTRACT: String(packModel.CONTRACT), ...(nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' }), ...(extraEnv || {}) })
     let child
     try {
       child = spawn(nodePath || process.execPath, [packScript(dir), ...argv, '--json'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -707,7 +711,8 @@ function runCore(argv, { dir, onProgress = null, signal = null } = {}) {
     }
     // R3 — 팩을 바꾸거나 본체를 만들거나 옮기는 명령(use · new · open · import --replace · update)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
     const sub = argv[0] === 'pack' ? argv[1] : argv[0] // 시간 초과는 pack 하위 명령(또는 version 같은 최상위 명령) 이름으로
-    const changesPack = ['use', 'new', 'open', 'update'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
+    // restore-work 도 — 워크트리를 만들고 pane 을 띄우는 중에 끊으면 반쯤 된다
+    const changesPack = ['use', 'new', 'open', 'update', 'restore-work'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
     const slow = () => onProgress && onProgress({ step: 'slow', text: say('pack.step.slow') })
     const timer = changesPack ? setInterval(slow, PACK_TIMEOUTS[sub] || 60000) : setTimeout(() => stop('timeout'), PACK_TIMEOUTS[sub] || 60000)
     if (signal) signal.addEventListener('abort', () => stop('canceled'), { once: true })
@@ -1171,18 +1176,66 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const state = await daemonCall('state')
     if (state.error) return { error: state.error }
     const existing = core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
-    if (existing && keepView) return { existing: true }
+    // 백업에서 되살리기로 열었으면 — 워크트리 · 대화 기록 · 에이전트 pane 을 먼저 되살리고, 아테나는 그 대화로 잇는다
+    const restore = restoreArmedFor && ctx.packState.current && ctx.packState.current.id === restoreArmedFor ? await ctx.packRestore() : null
+    const athenaSessions = (restore && restore.athena) || []
+    if (existing && athenaSessions.length) await resumeAthenaBeside(existing, athenaSessions)
+    if (existing && keepView) return { existing: true, restore }
     if (existing) {
       await daemonCall('workspace select', { workspace: existing.id })
-      return { focused: true }
+      return { focused: true, restore }
     }
     const decision = core.agentDecision(core.availableAgents(process.env.PATH))
     const created = await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
     if (decision.none) return { error: say('error.agentNotInstalled') }
-    const run = await daemonCall('pane run', { pane: created.result.root_pane.id, text: decision.agent })
+    // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(claude 만 — 세션 id 는 코어가 모양을 본 값)
+    const [first, ...rest] = decision.agent === 'claude' ? athenaSessions : []
+    const text = first ? core.resumeCommand(first.session) : decision.agent
+    const run = await daemonCall('pane run', { pane: created.result.root_pane.id, text })
     if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
-    return { started: decision.agent }
+    if (first) await ackRestore([first.session])
+    if (rest.length) await resumeAthenaBeside({ id: created.result.workspace.id }, rest)
+    return { started: decision.agent, restore }
+  }
+
+  // 아테나 작업 공간이 이미 있으면 — 되살린 아테나 대화마다 첫 pane 옆에 pane 을 하나 쪼개 잇는다
+  async function resumeAthenaBeside(workspace, sessions) {
+    const state = await daemonCall('state')
+    const tab = state.result && state.result.tabs.find((entry) => entry.workspace === workspace.id)
+    const base = tab && layout.paneIds(tab.tree)[0]
+    if (!base) return
+    for (const item of sessions) {
+      const split = await daemonCall('pane split', { target: base, direction: 'right', ratio: 0.5, cwd: ctx.athenaDir, focus: false })
+      const run = split.result && split.result.pane ? await daemonCall('pane run', { pane: split.result.pane.id, text: core.resumeCommand(item.session) }) : null
+      if (run && !run.error) await ackRestore([item.session])
+    }
+  }
+  // 아테나 대화를 pane 에서 켰다고 코어에 알린다 — 그 전에는 되살리기 정보를 지우지 않는다
+  const ackRestore = (sessions) => runPack(['restore-work', ...sessions.flatMap((session) => ['--ack', session])], { dir: ctx.athenaDir })
+
+  // ── 백업에서 되살리기 ──
+  // 코어 pack restore-work(본체에서) — 워크트리(미커밋 변경 · push 안 한 커밋) → 대화 기록 → 에이전트 pane(delegate.sh --resume).
+  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(현황판과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
+  ctx.restoreStatus = () => runPack(['restore-work', '--dry-run'], { dir: ctx.athenaDir })
+  ctx.packRestore = async ({ discard = false } = {}) => {
+    restoreArmedFor = null
+    if (discard) return runPack(['restore-work', '--discard'], { dir: ctx.athenaDir })
+    const paths = daemonPaths()
+    // ATHENA_STUDIO=1 — delegate.sh 가 화면 계층 안인지(screen inside) 본다
+    const extraEnv = { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir) }
+    const result = await ctx.packTask(say('pack.task.restore'), () => runPack(['restore-work'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, extraEnv }))
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    return result
+  }
+  // 지금 창의 팩에 바로(가져오기로 지금 팩을 바꾼 뒤) — 아테나 대화는 아테나 작업 공간 옆에서 잇는다
+  ctx.restoreNow = async () => {
+    const result = await ctx.packRestore()
+    if (!result.ok || !(result.athena || []).length) return result
+    const state = await daemonCall('state')
+    const existing = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
+    if (existing) await resumeAthenaBeside(existing, result.athena)
+    return result
   }
 
   // ── 현황판 ──
@@ -1642,6 +1695,13 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
     if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
     const args = kind === 'backup' ? ['backup', '--with-work', '--out', picked.filePaths[0]] : ['export', '--out', picked.filePaths[0]]
+    // 내 백업 — 이 창의 살아 있는 pane(데몬 상태는 이 본체 것만)을 넘겨 그 pane 의 에이전트 대화를 담게(코어 lib/restore.mjs)
+    // claude 가 도는 pane 만 — 기록이 없는 pane 은 결과 restore.missing 으로 돌아온다(훅이 생기기 전에 켠 세션)
+    if (kind === 'backup') {
+      const listed = await daemonCall('pane list').catch(() => null)
+      const panes = ((listed && listed.result && listed.result.panes) || []).filter((pane) => pane.agent === 'claude').map((pane) => pane.id)
+      if (panes.length) args.push('--panes', panes.join(','))
+    }
     return ctx.packTask(kind === 'backup' ? say('pack.task.backup') : say('pack.task.export'), async () => {
       const result = await runPack(args, { dir: ctx.athenaDir, onProgress: ctx.packProgress })
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
@@ -1658,6 +1718,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const elsewhere = [...packWindows].find((other) => other !== ctx && other.packState.current && other.packState.current.id === id)
     if (elsewhere) {
       elsewhere.show()
+      // 되살리기로 열었는데 다른 창이 이미 그 팩이면 — 그 창에서 되살린다(아테나는 그 창 아테나 옆에서)
+      if (restoreArmedFor === id) elsewhere.restoreNow().then((result) => elsewhere.send('pack:restored', result))
       return { ok: true, id, existing: true }
     }
     // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다
@@ -2569,6 +2631,10 @@ handle('window:close', (ctx) => {
   return { closed: packWindows.size > 1 }
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
+handle('pack:restore-arm', (ctx, id) => (restoreArmedFor = typeof id === 'string' && id ? id : null))
+handle('pack:restore-disarm', () => (restoreArmedFor = null))
+handle('pack:restore-now', (ctx) => ctx.restoreNow())
+handle('pack:restore-discard', (ctx) => ctx.packRestore({ discard: true }))
 handle('agent:open', (ctx, size, options) => ctx.openAthenaAgent(cellSize(size), { keepView: Boolean(options && options.keepView) }))
 handle('tab:new', (ctx, size) => ctx.daemonCall('tab new', { defaultCwd: ctx.athenaDir, ...cellSize(size) }))
 handle('tab:select', (ctx, tabId) => ctx.daemonCall('tab select', { tab: String(tabId) }))

@@ -29,6 +29,8 @@
  *   athena pack import-athena <옛 아테나 폴더> --json  팩 + 계획서·이슈를 임시본으로(원본은 그대로) → pack import <token>
  *   athena pack export --out <폴더> [--json]        지금 팩만 · 허용 목록
  *   athena pack backup --with-work [--out <폴더>] [--json] · athena pack restore --with-work <파일> [--new|--replace] [--json]
+ *   athena pack backup --with-work --panes <pane,…>             위 + 그 pane 들의 에이전트 대화 · 팩 워크트리(미커밋 변경 · push 안 한 커밋) — 되살리기 정보
+ *   athena pack restore-work [--dry-run|--no-agents|--discard|--ack <세션>] [--json]  가져온 되살리기 정보로 워크트리 · 대화 기록 · 에이전트 pane 되살리기(본체에서)
  *   athena pack board-token --json                 떠 있는 현황판의 쓰기 토큰·포트
  *   athena pack migrate [--yes] [--json]           옛 구조 본체를 여러 팩 구조로(--yes 없으면 계획만)
  *   athena pack test-setup [--json]                테스트 데이터(ATHENA_DATA_DIR · 이름에 test)를 지우고 fixture 팩 acme·globex 등록
@@ -67,7 +69,7 @@ import { initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
   PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate,
-  packStatus, relinkBody, renameNewSlot, restoreWithWork, testSetup,
+  packStatus, relinkBody, renameNewSlot, restoreWithWork, restoreWorkCommand, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
 import { ackRequest, answerRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
@@ -239,7 +241,7 @@ const restore = () => {
 const asJson = args.includes('--json')
 const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
-const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from'].includes(rest[index - 1])))
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack'].includes(rest[index - 1])))
 // 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
 // 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
@@ -335,6 +337,7 @@ const requestLine = (request) => `${request.id} · ${request.kind} · ${request.
 for (const name of ['open', 'show', 'answer', 'ack', 'cancel']) human[`request ${name}`] = (result) => console.log(`✅ ${requestLine(result.request)}`)
 
 const packCommands = {
+  'restore-work': () => restoreWorkCommand(ROOT, { dryRun: args.includes('--dry-run'), agents: !args.includes('--no-agents'), discard: args.includes('--discard'), ack: flags('ack'), report }),
   list: () => listPacks(ROOT),
   status: () => packStatus(ROOT),
   busy: () => busyNow(ROOT),
@@ -402,7 +405,7 @@ else if (command === 'request' && requestCommands[sub]) runPack(`request ${sub}`
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()
 else if (command === 'pack' && sub === 'check') check()
-else if (command === 'pack' && sub === 'backup' && args.includes('--with-work')) runPack('backup', () => backupWithWork(ROOT, flag('out')))
+else if (command === 'pack' && sub === 'backup' && args.includes('--with-work')) runPack('backup', () => backupWithWork(ROOT, flag('out'), { panes: flag('panes').split(',').filter(Boolean), report }))
 else if (command === 'pack' && sub === 'restore' && args.includes('--with-work')) runPack('restore', () => restoreWithWork(ROOT, positional()[0], ['replace', 'new'].find((name) => args.includes(`--${name}`)), { report }))
 else if (command === 'pack' && sub === 'backup') backup()
 else if (command === 'pack' && sub === 'restore') restore()

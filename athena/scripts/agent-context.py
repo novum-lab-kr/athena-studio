@@ -61,7 +61,10 @@ else:
 # 대화 압축 전후 — 직전에 계획서 Checkpoint 에 상태 한 줄, 직후에 계획서부터 다시 읽게 (scripts/hooks/compact-checkpoint.py)
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]
-settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post"}]}]
+# pane ↔ 대화 기록 — 팩 백업이 되살릴 때 claude --resume 으로 잇는다 (scripts/hooks/pane-session.py)
+settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post"}]},
+                                     {"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/pane-session.py')}"}]}]
 # 답 언어 — 메시지마다 본체 .claude/settings.local.json 의 language(스튜디오 앱 언어)를 다시 읽어 넣는다 (scripts/hooks/language.py)
-settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"}]}]
+settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"},
+                                                     {"type": "command", "command": f"python3 {script('scripts/hooks/pane-session.py')}"}]}]
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")

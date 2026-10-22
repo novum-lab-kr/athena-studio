@@ -19,6 +19,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, defaultBackupDir, paths, portBaseOf, readRegistry } from './config.mjs'
 import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLockDir, takeLock } from './lock.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './overlay.mjs'
+import { captureRestore, checkRestore, discardRestore, restoreWork } from './restore.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
 
 export { PackError, alive }
@@ -807,6 +808,11 @@ const finishInspect = (data, dir, token, meta, report) => {
     if (backupLocal && !meta.local) meta.local = backupLocal
     mkdirSync(join(dir, 'work'), { recursive: true })
     for (const sub of ['plans', 'issues']) if (existsSync(join(found.work, sub))) { inspectTree(join(found.work, sub)); renameSync(join(found.work, sub), join(dir, 'work', sub)) }
+    // 되살리기 정보(에이전트 대화 · 워크트리) — 모양 · 이름 · 링크를 본 뒤 함께 둔다(lib/restore.mjs)
+    if (existsSync(join(found.work, 'restore'))) {
+      meta.restore = checkRestore(join(found.work, 'restore'))
+      renameSync(join(found.work, 'restore'), join(dir, 'work', 'restore'))
+    }
   }
   rmSync(join(dir, 'in'), { recursive: true, force: true })
   const work = existsSync(join(dir, 'work')) ? workCounts(join(dir, 'work')) : null
@@ -819,6 +825,7 @@ const finishInspect = (data, dir, token, meta, report) => {
     pack: summarize(pack),
     ...(conflict ? { conflict } : {}),
     ...(work ? { work } : {}),
+    ...(meta.restore ? { restore: meta.restore } : {}),
     files: tree.files, bytes: tree.bytes,
     // gitRemoved — 가져온 폴더·압축의 .git 을 지웠다(팀과 git 으로 같이 쓰는 팩이면 git 주소로 가져오기 안내)
     ...(tree.gitRemoved ? { gitRemoved: true } : {}),
@@ -955,6 +962,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
     report('copy', `등록 — ${id}`)
     renameSync(join(dir, 'pack'), join(slot, 'pack'))
     for (const sub of ['plans', 'issues']) if (existsSync(join(dir, 'work', sub))) renameSync(join(dir, 'work', sub), join(slot, sub))
+    placeRestore(dir, slot)
     ensureSlot(slot)
     const defaultRoot = resolve(root, bodyConfig(root).reposRoot ?? '..')
     const reposRoot = meta.local?.reposRoot && existsSync(meta.local.reposRoot) ? meta.local.reposRoot : defaultRoot
@@ -1007,6 +1015,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
       // 작업 기록 백업을 되살리는 --replace — 기존 기록 위에 없는 파일만 더한다(덮지 않는다)
       if (existsSync(join(dir, 'work', sub))) cpSync(join(dir, 'work', sub), join(slot, sub), { recursive: true, force: false, errorOnExist: false })
     }
+    placeRestore(dir, slot)
     updateRegistry(data, (registry) => {
       registry.packs[id] = { ...(registry.packs[id] ?? {}), packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), replacedAt: stamp() }
       bumpGeneration(registry, id)
@@ -1133,7 +1142,7 @@ export const exportPack = (root, out) => {
 }
 
 // 내 백업 — 팩 + 작업 기록(계획서 · 이슈 · 보관함). 비밀값 · 결과물(상태 · 워크트리 · 레포)은 뺀다
-export const backupWithWork = (root, out) => {
+export const backupWithWork = (root, out, { panes = [], report = () => {} } = {}) => {
   const { packDir, id, where } = requireCurrent(root)
   const target = resolve(out || defaultBackupDir(where.dataDir))
   const stage = join(where.dataDir, 'tmp', `backup-${randomBytes(6).toString('hex')}`)
@@ -1155,11 +1164,31 @@ export const backupWithWork = (root, out) => {
       stageCopy(base, files, join(top, sub))
       count += files.length
     }
+    // 되살리기 정보 — 이 창의 에이전트 대화(panes) · 워크트리(미커밋 변경 · push 안 한 커밋) — lib/restore.mjs
+    const captured = where.packData ? captureRestore(root, where.packDataReal ?? where.packData, top, { panes, report }) : null
+    const restore = captured && !captured.empty ? captured : null
     const pack = readPackJson(packDir) ?? {}
-    writeJsonAtomic(join(top, 'athena-backup.json'), { kind: 'with-work', id, packId: pack.id ?? null, name: pack.name ?? id, createdAt: stamp() })
+    writeJsonAtomic(join(top, 'athena-backup.json'), { kind: 'with-work', version: restore ? 2 : 1, id, packId: pack.id ?? null, name: pack.name ?? id, createdAt: stamp() })
     const file = tarFiles(stage, id, target, `${id}-work`)
-    return { ok: true, file, files: count + 1, bytes: statSync(file).size }
+    return { ok: true, file, files: count + 1, bytes: statSync(file).size, ...(restore ? { restore: { sessions: restore.sessions, worktrees: restore.worktrees, missing: restore.missing }, ...(restore.warnings.length ? { warnings: restore.warnings } : {}) } : {}) }
   } finally { rmSync(stage, { recursive: true, force: true }) }
+}
+
+// 가져온 되살리기 정보를 그 팩 데이터 state/restore 로(이전 것은 버린다) — 실제로 되살리는 것은 pack restore-work
+const placeRestore = (dir, slot) => {
+  if (!existsSync(join(dir, 'work', 'restore'))) return
+  mkdirSync(join(slot, 'state'), { recursive: true })
+  rmSync(join(slot, 'state', 'restore'), { recursive: true, force: true })
+  renameSync(join(dir, 'work', 'restore'), join(slot, 'state', 'restore'))
+}
+
+// pack restore-work — 이 본체 팩의 되살리기 정보(state/restore)로 워크트리 · 대화 기록 · 에이전트 pane 을 되살린다.
+// --dry-run 은 요약만 · --no-agents 는 에이전트 pane 을 띄우지 않는다 · --discard 는 버린다
+export const restoreWorkCommand = (root, { dryRun = false, agents = true, discard = false, ack = [], report = () => {} } = {}) => {
+  const where = paths(root)
+  if (where.mode !== 'packs' || !where.packDataReal) throw new PackError('not-found', '여러 팩 본체가 아니다 — 되살릴 팩 데이터가 없다')
+  if (discard) return discardRestore(where.packDataReal)
+  return restoreWork(root, where.packDataReal, { dryRun, agents, ack, report })
 }
 
 // 작업 기록 백업 되살리기 — 검사(inspect) 뒤 같은 팩이 없으면 새로 등록, 있으면 conflict(--replace|--new 로 다시)
