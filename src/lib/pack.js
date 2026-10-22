@@ -187,7 +187,65 @@ function packSummary(pack, say = koreanSay) {
   return parts.join(' · ')
 }
 
+// 레포의 대표 에이전트 — 단일 레포는 agents 첫째, 모노레포는 첫 앱 에이전트(없으면 packagesAgent). 이름 모양만 받는다(아테나 pane 에 글로 쓰인다)
+function repoAgent(repo) {
+  const apps = repo && repo.apps && typeof repo.apps === 'object' ? Object.values(repo.apps).map((app) => app && app.agent) : []
+  const agent = [...(Array.isArray(repo && repo.agents) ? repo.agents : []), ...apps, repo && repo.packagesAgent].find((name) => typeof name === 'string' && /^[\w-]{1,64}$/.test(name))
+  return agent || null
+}
+
+// scripts/call-branch-info.sh 출력(탭으로 나눈 줄) — target · repo · main(상태 · 미커밋 수) · candidate(브랜치 · 로컬/원격 · 최근 활동 · 체크아웃 자리) · direct(메인 체크아웃)
+function parseCallInfo(text) {
+  const info = { target: '', main: null, candidates: [], direct: null }
+  for (const line of String(text || '').split('\n')) {
+    const [key, ...rest] = line.split('\t')
+    if (key === 'target') info.target = rest[0] || ''
+    else if (key === 'main') {
+      const status = (rest[0] || '').replace(/^##\s*/, '')
+      info.main = { status, dirty: Number(rest[1]) || 0, ...parseBranchStatus(status) }
+    }
+    else if (key === 'candidate' && rest[0]) info.candidates.push(parseCandidate(rest))
+    else if (key === 'direct' && rest[0]) info.direct = rest[0]
+  }
+  return info
+}
+
+// 후보 브랜치 한 줄(scripts/branch-candidates.sh) — 자리(로컬 · 원격 · 둘 다) · 날짜 · 마지막 커밋 제목(커밋이 없으면 noCommits) · 워크트리
+function parseCandidate([branch, where = '', activity = '', checkout = '']) {
+  const [, date = '', what = ''] = activity.match(/^(\d{4}-\d{2}-\d{2}|\?)\s*(.*)$/) || []
+  const place = where.includes('·') ? 'both' : where === '로컬' ? 'local' : 'remote'
+  const noCommits = what.startsWith('(커밋 없음)')
+  return { branch, place, date: date === '?' ? '' : date, subject: noCommits ? '' : what.trim(), noCommits, worktree: checkout && checkout !== '-' ? checkout : null }
+}
+
+// git status 머리줄("main...origin/main [ahead 1, behind 2]")을 나눈다 — 브랜치 · 원격 · 앞섬 · 뒤처짐. 원격이 없으면 upstream null
+function parseBranchStatus(status) {
+  const text = String(status || '').trim()
+  const match = text.match(/^(.+?)(?:\.\.\.(\S+))?(?:\s+\[(.*)\])?$/)
+  if (!match) return { branch: text, upstream: null, ahead: 0, behind: 0 }
+  const counts = match[3] || ''
+  const number = (word) => Number((counts.match(new RegExp(`${word} (\\d+)`)) || [])[1]) || 0
+  return { branch: match[1].replace(/^No commits yet on /, ''), upstream: match[2] || null, ahead: number('ahead'), behind: number('behind'), gone: counts.includes('gone') }
+}
+
+// scripts/new-branch.sh 출력 — 만든(또는 이어 쓰는) 워크트리 자리 · "이미 있다"(이어 쓸지 다시 물어야 한다)
+function parseNewBranch(text) {
+  const lines = String(text || '').split('\n')
+  const worktree = (lines.map((line) => line.match(/^\s*워크트리:\s*(\S.*)$/)).find(Boolean) || [])[1] || (lines.map((line) => line.match(/워크트리 경로가 이미 있다:\s*(\S.*)$/)).find(Boolean) || [])[1] || null
+  const exists = !worktree && lines.some((line) => line.includes('이미 있다') && line.startsWith('⚠️'))
+  const message = lines.filter((line) => /^(⚠️|❌|⏭)/.test(line.trim())).join('\n')
+  return { worktree: worktree ? worktree.trim() : null, exists, message }
+}
+
+// 새 브랜치 이름(티켓 · fix/설명) — 셸에 넘기지는 않지만 git 이 받을 모양만
+const validBranchInput = (text) => typeof text === 'string' && /^[\w\uAC00-\uD7A3][\w\uAC00-\uD7A3./-]{0,79}$/.test(text) && !text.includes('..') && !text.endsWith('/') && !text.endsWith('.lock')
+
 module.exports = {
+  repoAgent,
+  parseCallInfo,
+  parseBranchStatus,
+  parseNewBranch,
+  validBranchInput,
   STEP_IDS,
   ERROR_CODES,
   BUSY_KINDS,

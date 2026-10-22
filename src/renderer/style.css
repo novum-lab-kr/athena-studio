@@ -1210,6 +1210,16 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space.space-repo:hover,
 .space.space-repo[aria-current="true"]:hover { background: var(--hover); }
 .space-children { margin: 2px 0; }
+/* 부르기 팝업 위 — 담당 · 메인 체크아웃 두 줄(이름 · 값) */
+.call-meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); font-size: 12px; }
+.call-meta dt { color: var(--popup-muted); }
+.call-meta dd { min-width: 0; margin: 0; color: var(--popup-text); overflow-wrap: anywhere; }
+/* 에이전트 없는 팩 레포 — 흐리게 · 올리면 [부르기] */
+.space.space-idle { opacity: .5; }
+.space.space-idle:hover { opacity: 1; }
+.space.space-idle.unlinked .space-label { text-decoration: line-through; }
+.space-idle .space-call { margin-left: auto; color: var(--accent); font-size: 10.5px; opacity: 0; }
+.space-idle:hover .space-call { opacity: 1; }
 .space.space-pane {
   min-height: 28px;
   gap: 7px;

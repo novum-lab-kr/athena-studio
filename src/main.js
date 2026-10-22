@@ -1214,6 +1214,54 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // 아테나 대화를 pane 에서 켰다고 코어에 알린다 — 그 전에는 되살리기 정보를 지우지 않는다
   const ackRestore = (sessions) => runPack(['restore-work', ...sessions.flatMap((session) => ['--ack', session])], { dir: ctx.athenaDir })
 
+  // ── 팩 레포 — spaces 에 에이전트 없는 레포도 흐리게 · 누르면 아테나에게 /call ──
+  // 레포 목록은 이 본체 팩의 pack.json(여러 팩이면 pack 링크) · 이어졌는지는 본체 repos/<이름> 이 git 레포인지
+  ctx.packRepos = async () => {
+    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse, () => null)
+    if (!pack || !Array.isArray(pack.repos)) return []
+    return pack.repos
+      .filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
+      .map((repo) => ({ name: repo.name, agent: packModel.repoAgent(repo), linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')) }))
+  }
+  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
+  ctx.studioEnv = () => {
+    const paths = daemonPaths()
+    return { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir) }
+  }
+  // 본체 스크립트 하나 — 셸을 거치지 않고 인자로만
+  const runBodyScript = (script, args, { studioEnv = false, timeout = 120000 } = {}) => new Promise((resolve) => {
+    const env = core.childEnv(process.env, studioEnv ? ctx.studioEnv() : {})
+    execFile('bash', [path.join(ctx.athenaDir, 'scripts', script), ...args], { cwd: ctx.athenaDir, env, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) =>
+      resolve({ ok: !error, stdout: stdout || '', stderr: stderr || '', code: error ? error.code : 0 }),
+    )
+  })
+  // 레포 에이전트 부르기 1 — 브랜치 정보(scripts/call-branch-info.sh — /call 스킬과 같은 것): 메인 체크아웃 상태 · 최근 작업 브랜치 · main 직접이면 그 자리
+  ctx.callInfo = async (name) => {
+    const repo = (await ctx.packRepos()).find((item) => item.name === name)
+    if (!repo || !repo.agent) return { error: say('spaces.callNoAgent', { repo: name }) }
+    const run = await runBodyScript('call-branch-info.sh', [repo.agent])
+    if (!run.ok) return { error: (run.stderr || run.stdout).trim().slice(-300) || say('spaces.callFailed') }
+    return { agent: repo.agent, repo: name, ...packModel.parseCallInfo(run.stdout) }
+  }
+  // 레포 에이전트 부르기 2 — 고른 브랜치로 워크트리(new-branch.sh · 이어 쓰기면 --reuse) → 그 자리에 에이전트 pane(delegate.sh · 빈 지시 경량 계획서)
+  ctx.callStart = async (name, { branch = '', reuse = false } = {}) => {
+    const info = await ctx.callInfo(name)
+    if (info.error) return info
+    let worktree = info.direct || ''
+    if (!worktree) {
+      if (!packModel.validBranchInput(branch)) return { error: say('spaces.callBadBranch') }
+      const made = await runBodyScript('new-branch.sh', [branch, info.target, ...(reuse ? ['--reuse'] : [])])
+      const parsed = packModel.parseNewBranch(made.stdout)
+      if (parsed.exists) return { exists: true, branch, message: parsed.message }
+      if (!parsed.worktree) return { error: (parsed.message || made.stderr || made.stdout).trim().slice(-300) || say('spaces.callFailed') }
+      worktree = parsed.worktree
+    }
+    const run = await runBodyScript('delegate.sh', [info.agent, '--cwd', worktree, '--plan', 'new', say('spaces.callPlanTitle', { agent: info.agent })], { studioEnv: true })
+    if (!run.ok) return { error: (run.stdout + run.stderr).trim().slice(-300) || say('spaces.callFailed') }
+    const pane = (run.stdout.match(/^(\S+)\s+\(/m) || [])[1] || null
+    return { ok: true, agent: info.agent, pane, worktree, branch: info.direct ? null : branch }
+  }
+
   // ── 백업에서 되살리기 ──
   // 코어 pack restore-work(본체에서) — 워크트리(미커밋 변경 · push 안 한 커밋) → 대화 기록 → 에이전트 pane(delegate.sh --resume).
   // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(현황판과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
@@ -1222,9 +1270,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     restoreArmedFor = null
     ctx.restoreForPack = null
     if (discard) return runPack(['restore-work', '--discard'], { dir: ctx.athenaDir })
-    const paths = daemonPaths()
     // ATHENA_STUDIO=1 — delegate.sh 가 화면 계층 안인지(screen inside) 본다
-    const extraEnv = { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir) }
+    const extraEnv = ctx.studioEnv()
     const result = await ctx.packTask(say('pack.task.restore'), () => runPack(['restore-work'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, extraEnv }))
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     return result
@@ -2637,6 +2684,9 @@ handle('window:close', (ctx) => {
   return { closed: packWindows.size > 1 }
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
+handle('pack:repos', (ctx) => ctx.packRepos())
+handle('pack:call-info', (ctx, name) => ctx.callInfo(String(name || '')))
+handle('pack:call-start', (ctx, name, options) => ctx.callStart(String(name || ''), { branch: String((options && options.branch) || ''), reuse: Boolean(options && options.reuse) }))
 handle('pack:restore-arm', (ctx, id) => (restoreArmedFor = typeof id === 'string' && id ? id : null))
 handle('pack:restore-disarm', () => (restoreArmedFor = null))
 handle('pack:restore-now', (ctx) => ctx.restoreNow())

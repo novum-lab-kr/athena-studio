@@ -166,3 +166,41 @@ test('코어 약속 번호: version 결과 → contract · 옛 코어(명령 없
   assert.deepEqual(pack.contractOf({ ok: false, error: 'not-found' }), { contract: null, core: null })
   assert.deepEqual(pack.contractOf(null), { contract: null, core: null })
 })
+
+test('레포 대표 에이전트 — 단일 · 모노레포 · 이상한 이름은 빼기', () => {
+  assert.equal(pack.repoAgent({ name: 'web', agents: ['web-fe', 'web-be'] }), 'web-fe')
+  assert.equal(pack.repoAgent({ name: 'mono', apps: { shop: { agent: 'shop-fe' } }, packagesAgent: 'mono-packages-fe' }), 'shop-fe')
+  assert.equal(pack.repoAgent({ name: 'mono', apps: {}, packagesAgent: 'mono-packages-fe' }), 'mono-packages-fe')
+  assert.equal(pack.repoAgent({ name: 'x', agents: ['bad; rm -rf'] }), null)
+  assert.equal(pack.repoAgent({ name: 'x' }), null)
+})
+
+test('레포 에이전트 부르기 — call-branch-info · new-branch 출력 · 브랜치 이름', () => {
+  const info = pack.parseCallInfo('target\tweb\nrepo\tweb\nmain\t## main...origin/main [behind 1]\t2\ncandidate\tfeature/T-1\t로컬\t2026-10-18 · 커밋 3\t/w/.worktrees/web/feature-T-1\n')
+  assert.equal(info.target, 'web')
+  assert.equal(info.main.status, 'main...origin/main [behind 1]')
+  assert.equal(info.main.dirty, 2)
+  assert.equal(info.main.branch, 'main')
+  assert.deepEqual(info.candidates[0], { branch: 'feature/T-1', place: 'local', date: '2026-10-18', subject: '· 커밋 3', noCommits: false, worktree: '/w/.worktrees/web/feature-T-1' })
+  const fresh = pack.parseCallInfo('candidate\tcheck/1\t로컬·원격\t2026-10-18 (커밋 없음) branch: Created from origin/main\t-\n').candidates[0]
+  assert.deepEqual(fresh, { branch: 'check/1', place: 'both', date: '2026-10-18', subject: '', noCommits: true, worktree: null })
+  assert.equal(info.direct, null)
+  assert.equal(pack.parseCallInfo('target\tapp\ndirect\t/w/repos/app\n').direct, '/w/repos/app')
+  assert.equal(pack.parseNewBranch('✅ web — 새 브랜치\n        워크트리: /d/worktrees/web/feature-T-2\n').worktree, '/d/worktrees/web/feature-T-2')
+  const exists = pack.parseNewBranch('⚠️  web — 브랜치 feature/T-1 가 이미 있다 (로컬)\n        그대로 이어 쓰려면 --reuse\n')
+  assert.equal(exists.exists, true)
+  assert.equal(exists.worktree, null)
+  assert.equal(pack.parseNewBranch('⏭  web — 워크트리 경로가 이미 있다: /d/wt\n').worktree, '/d/wt')
+  for (const ok of ['PROJ-123', 'fix/login', '로그인-수정']) assert.equal(pack.validBranchInput(ok), true, ok)
+  for (const bad of ['', '-x', 'a..b', 'fix/', 'a b', 'x.lock', 'a;rm']) assert.equal(pack.validBranchInput(bad), false, bad)
+})
+
+test('git status 머리줄 풀기 — 원격과 비교', () => {
+  assert.deepEqual(pack.parseBranchStatus('main...origin/main [behind 1]'), { branch: 'main', upstream: 'origin/main', ahead: 0, behind: 1, gone: false })
+  assert.deepEqual(pack.parseBranchStatus('dev...origin/dev [ahead 2, behind 3]'), { branch: 'dev', upstream: 'origin/dev', ahead: 2, behind: 3, gone: false })
+  assert.equal(pack.parseBranchStatus('main...origin/main').ahead, 0)
+  assert.equal(pack.parseBranchStatus('feature/x').upstream, null)
+  assert.equal(pack.parseBranchStatus('main...origin/main [gone]').gone, true)
+  assert.equal(pack.parseBranchStatus('No commits yet on main').branch, 'main')
+  assert.equal(pack.parseCallInfo('main\t## main...origin/main [behind 1]\t0\n').main.behind, 1)
+})

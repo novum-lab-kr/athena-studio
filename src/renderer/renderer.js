@@ -440,6 +440,98 @@ function spacePaneRow(pane, repo) {
   return button
 }
 
+// 팩 레포 중 아직 작업 공간(에이전트 pane)이 없는 것 — 흐리게. 누르면 아테나에게 /call <그 레포 에이전트>
+let packRepos = []
+async function refreshPackRepos() {
+  const next = (await studio.packRepos().catch(() => [])) || []
+  if (JSON.stringify(next) === JSON.stringify(packRepos)) return
+  packRepos = next
+  if (attached) renderSides()
+}
+function idleRepoRows() {
+  const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
+  return packRepos.filter((repo) => !labels.has(repo.name)).map((repo) => {
+    const button = el('button', `space space-repo space-idle${repo.linked ? '' : ' unlinked'}`)
+    // 툴팁은 없다 — 못 부르는 레포(연결 안 됨 · 에이전트 없음)만 누르면 이유를 알림으로
+    const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
+    const text = el('span', 'space-text')
+    text.append(el('span', 'space-label', repo.name))
+    button.append(text)
+    if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
+    button.addEventListener('click', () => {
+      if (blocked) return showToast(blocked, 'info')
+      if (currentTab !== 'work') switchTab('work')
+      runPackFlow(() => callRepoAgent(repo))
+    })
+    return button
+  })
+}
+
+// 후보 브랜치 설명 — 로컬 · 10/18 · 마지막 커밋 제목(없으면 "아직 커밋 없음") · 워크트리 있음
+function candidateNote(item) {
+  const day = item.date ? `${Number(item.date.slice(5, 7))}/${Number(item.date.slice(8, 10))}` : ''
+  return [say(`spaces.place.${item.place}`), day, item.noCommits ? say('spaces.noCommits') : item.subject, item.worktree ? say('spaces.hasWorktree') : ''].filter(Boolean).join(' · ')
+}
+
+// 부르기 팝업 위 두 줄 — 담당 에이전트 · 메인 체크아웃(브랜치 · 원격과 비교 · 바뀐 파일). git 글자 그대로 보이지 않게 풀어 쓴다
+function callMeta(info) {
+  const meta = el('dl', 'call-meta')
+  const row = (key, value) => meta.append(el('dt', null, key), el('dd', null, value))
+  row(say('spaces.callAgentKey'), info.agent)
+  const main = info.main
+  if (main) {
+    const sync = !main.upstream ? say('spaces.syncNone')
+      : main.gone ? say('spaces.syncGone')
+      : main.ahead && main.behind ? say('spaces.syncBoth', { ahead: main.ahead, behind: main.behind })
+      : main.ahead ? say('spaces.syncAhead', { count: main.ahead })
+      : main.behind ? say('spaces.syncBehind', { count: main.behind })
+      : say('spaces.syncSame')
+    const dirty = main.dirty ? say('spaces.dirtyCount', { count: main.dirty }) : say('spaces.dirtyNone')
+    row(say('spaces.callMainKey'), [main.branch, sync, dirty].join(' · '))
+  }
+  return meta
+}
+
+// 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
+async function callRepoAgent(repo) {
+  const info = await studio.packCallInfo(repo.name)
+  if (info.error) return showToast(info.error)
+  let choice = { branch: '', reuse: false }
+  if (!info.direct) {
+    const rows = el('div', 'pack-links')
+    for (const item of info.candidates) rows.append(popupOption('pack-command', `reuse:${item.branch}`, 'git', say('spaces.callReuse', { branch: item.branch }), candidateNote(item)))
+    const meta = callMeta(info)
+    const label = el('label', 'pack-look-label', say('spaces.callNewLabel'))
+    label.htmlFor = 'pack-dialog-input'
+    const slot = el('div')
+    slot.dataset.inputSlot = ''
+    const answer = await packDialog({
+      title: say('spaces.callTitle', { repo: repo.name }),
+      body: [meta, ...(info.candidates.length ? [rows] : []), label, slot],
+      input: { placeholder: say('spaces.callNewPlaceholder'), code: true, label: say('spaces.callNewLabel') },
+      actions: [{ label: say('spaces.callStart'), value: 'new', kind: 'primary' }, { label: say('common.cancel'), value: null }],
+    })
+    if (!answer) return
+    const value = typeof answer === 'string' ? answer : answer.value
+    if (value.startsWith('reuse:')) choice = { branch: value.slice(6), reuse: true }
+    else if (answer.text && answer.text.trim()) choice = { branch: answer.text.trim(), reuse: false }
+    else return showToast(say('spaces.callBadBranch'))
+  }
+  showPackProgress(say('spaces.callProgress', { agent: info.agent }), false)
+  let result = await studio.packCallStart(repo.name, choice)
+  hidePackProgress()
+  // 새 이름인데 이미 있는 브랜치 — 이어 쓸지 한 번 더
+  if (result.exists) {
+    const again = await packDialog({ title: say('spaces.callExists', { branch: choice.branch }), body: [el('p', 'muted', result.message || '')], actions: [{ label: say('spaces.callReuseYes'), value: 'yes', kind: 'primary' }, { label: say('common.cancel'), value: null }] })
+    if (!again) return
+    showPackProgress(say('spaces.callProgress', { agent: info.agent }), false)
+    result = await studio.packCallStart(repo.name, { branch: choice.branch, reuse: true })
+    hidePackProgress()
+  }
+  if (result.error) return packAlert(say('spaces.callFailed'), result.error)
+  showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
+}
+
 function renderSides() {
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
@@ -488,7 +580,7 @@ function renderSides() {
     children.append(...panes.map((pane) => spacePaneRow(pane, workspace.label)))
     return [button, children]
   })
-  spaces.replaceChildren(title, ...rows)
+  spaces.replaceChildren(title, ...rows, ...idleRepoRows())
 
   // 오른쪽: 지금 작업 공간의 Explorer — 작업 공간이 바뀌면 따라간다
   if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
@@ -2678,6 +2770,7 @@ function onPackChanged() {
 
 async function initPacks() {
   studio.onPackState((next) => {
+    refreshPackRepos()
     packs = next
     renderPackRail()
   })
@@ -2827,6 +2920,8 @@ async function init() {
   // git 변경 · 펼친 폴더는 Explorer 가 보일 때만 3초마다
   setInterval(() => {
     if (currentTab === 'work' && !$('side-panel').hidden && attached) refreshExplorer()
+    // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
+    if (attached) refreshPackRepos()
   }, 3000)
   studio.onScreenResync(() => state.valid && attach())
   studio.onScreenDisconnected(() => {
