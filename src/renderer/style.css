@@ -1210,6 +1210,13 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space.space-repo:hover,
 .space.space-repo[aria-current="true"]:hover { background: var(--hover); }
 .space-children { margin: 2px 0; }
+/* 레포 머리글 앞 꺾쇠(접기 · 펴기) · 접혔을 때 pane 수 */
+.space-repo .space-twisty { width: 16px; height: 16px; margin: 0 4px 0 -4px; color: var(--text); opacity: .75; }
+.space-repo .space-twisty svg { width: 11px; height: 11px; stroke-width: 2; }
+.space-repo:hover .space-twisty { opacity: 1; }
+.space-repo .space-fold-count { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 7px; border-radius: 8px; background: var(--surface-active); color: var(--text); font-size: 10.5px; font-weight: 600; line-height: 17px; }
+.space-repo .space-fold-count .space-status { width: 6px; height: 6px; }
+.space.space-repo.holds-focus { color: var(--text); background: var(--selected); } /* 접힌 안에 지금 보는 pane 이 있다 */
 /* 부르기 팝업 위 — 담당 · 메인 체크아웃 두 줄(이름 · 값) */
 .call-meta { display: grid; grid-template-columns: max-content 1fr; gap: 4px 14px; margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); font-size: 12px; }
 .call-meta dt { color: var(--popup-muted); }

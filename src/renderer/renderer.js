@@ -564,20 +564,27 @@ function renderSides() {
     label.className = 'space-label'
     label.textContent = workspace.label
     text.append(label)
+    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(꺾쇠는 늘 · pane 이 없으면 그 레포를 고른다). 접으면 모두 숨기고 머리글에 —
+    // 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
+    const shown = folded ? [] : panes
+    if (panes.length) button.append(Object.assign(twistyElement(folded ? 'closed' : 'open'), { className: `twisty space-twisty${folded ? '' : ' open'}` }))
     button.append(text)
-    // 이미 고른 레포를 다시 누르면 밑의 pane 줄을 접고 편다. 다른 레포는 고르고(접혀 있었으면 편다)
+    if (folded && panes.length) {
+      if (panes.some((pane) => pane.id === screen.focused)) button.classList.add('holds-focus')
+      const count = el('span', 'space-fold-count', `+${panes.length}`)
+      if (panes.some((pane) => paneStatus[pane.id] === 'working')) count.prepend(el('span', 'space-status working'))
+      button.append(count)
+    }
     button.addEventListener('click', () => {
-      const onWork = currentTab === 'work'
-      if (!onWork) switchTab('work')
-      if (current && panes.length && onWork) return setSpaceFolded(workspace.id, !folded)
-      if (folded) setSpaceFolded(workspace.id, false)
+      if (currentTab !== 'work') switchTab('work')
+      if (panes.length) return setSpaceFolded(workspace.id, !folded)
       studio.workspaceSelect(workspace.id)
     })
-    if (folded || !panes.length) return [button]
+    if (!shown.length) return [button]
     // pane 줄은 레포 머리글 밑에
     const children = document.createElement('div')
     children.className = 'space-children'
-    children.append(...panes.map((pane) => spacePaneRow(pane, workspace.label)))
+    children.append(...shown.map((pane) => spacePaneRow(pane, workspace.label)))
     return [button, children]
   })
   spaces.replaceChildren(title, ...rows, ...idleRepoRows())
