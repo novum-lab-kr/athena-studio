@@ -232,6 +232,22 @@ function resumeCommand(session) {
   return `claude --resume ${session}`
 }
 
+// claude 화면이 "아무것도 안 하고 비어 있다" 인가 — 질문 · 고르기 창이 없고 입력칸이 비었을 때만(자리 글 Try "…" 는 빈 것으로).
+// 데몬의 agent_status 는 질문을 기다리는 것도 idle 로 본다 — 그 상태에 /exit 를 치면 사용자가 답하던 창 · 쓰던 글에 들어간다
+const PROMPT_MENU = /Enter to (select|confirm)|Esc to cancel|↑\/↓ to navigate|Do you want to|Type something\./
+const BACKGROUND_WORK = /·\s*[↓↑]\s*[\d.,]+k?\s*tokens|esc to interrupt/i
+function claudeAtEmptyPrompt(text) {
+  const lines = String(text || '').split('\n').map((line) => line.replace(/\s+$/, '')).filter((line) => line.trim())
+  const tail = lines.slice(-12)
+  if (tail.some((line) => PROMPT_MENU.test(line))) return false
+  // 뒤에서 도는 하위 에이전트 · 셸(◯ … 1m 29s · ↓ 135.1k tokens) — 입력칸이 비어도 일하는 중
+  if (tail.some((line) => BACKGROUND_WORK.test(line))) return false
+  const prompt = [...tail].reverse().find((line) => /^\s*❯/.test(line))
+  if (!prompt) return false
+  const typed = prompt.replace(/^\s*❯\s?/, '').trim()
+  return typed === '' || /^Try "/.test(typed)
+}
+
 // 데몬 상태의 작업 공간 중 이름이 athena 이고 그 아테나 폴더인 것 — 아테나 폴더를 바꿨으면 예전 폴더의 athena 작업 공간은 건드리지 않는다
 function findAthenaWorkspace(workspaces, athenaDir) {
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
@@ -327,6 +343,7 @@ module.exports = {
   agentDecision,
   findAthenaWorkspace,
   resumeCommand,
+  claudeAtEmptyPrompt,
   openTarget,
   isWebUrl,
   normalizeAddress,

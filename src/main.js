@@ -1135,9 +1135,15 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // 30초에 한 번 HEAD 둘만 본다. 뒤처졌을 때: 본체 안 에이전트(워크트리)가 있거나 아테나가 일하는 중이면 기다린다.
   // 아테나가 쉬는 중이면 그 대화를 기억하고 잠깐 끄고(/exit) → pack open(본체 따라잡기) → 같은 대화로 다시 켠다(claude --resume) — 사용자가 손댈 일 없게
   let catchUpAt = 0
+  let catchUpBackoff = 0 // 해 봤는데 못 옮겼으면 10분 쉰다 — 아테나를 30초마다 껐다 켜지 않게
   let catchingUp = false
+  // 코어가 보는 바쁨(pack busy — 본체 · 레포 · 워크트리 안 claude · codex · 무거운 명령 …) — 코어가 옮길지 말지를 이걸로 정한다
+  const coreBusy = async () => {
+    const result = await runPack(['busy'], { dir: ctx.athenaDir })
+    return result.ok && result.busyKnown !== false ? result.busy || [] : null
+  }
   ctx.catchUpBody = async (panes) => {
-    if (catchingUp || !panes || Date.now() - catchUpAt < 30000) return
+    if (catchingUp || !panes || Date.now() - catchUpAt < 30000 || Date.now() < catchUpBackoff) return
     catchUpAt = Date.now()
     const body = ctx.athenaDir
     const packId = ctx.packState.current && ctx.packState.current.id
@@ -1155,6 +1161,14 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const athenaPanes = inBody.filter((pane) => under(pane.foreground_cwd || pane.cwd, realBody))
     // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · claude 가 아니면(되살릴 수 없다) 다음에
     if (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle')) return
+    // 화면으로도 — 질문 · 고르기 창이 떠 있거나 쓰다 만 글이 있으면 건드리지 않는다
+    for (const pane of athenaPanes) {
+      const read = await daemonCall('pane read', { pane: pane.id, lines: 40 })
+      if (!read.result || !core.claudeAtEmptyPrompt(read.result.text)) return
+    }
+    // 코어 기준으로도 아테나 말고 바쁜 것이 없어야 시작한다(레포 · 워크트리 에이전트 · 무거운 명령)
+    const before = await coreBusy()
+    if (!before || before.some((item) => item.kind !== 'athena')) return
     const sessions = []
     for (const pane of athenaPanes) {
       const record = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
@@ -1167,14 +1181,18 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
         await daemonCall('pane send-text', { pane: item.pane, text: '/exit' })
         await daemonCall('pane send-keys', { pane: item.pane, keys: ['Enter'] })
       }
-      // 끝날 때까지(최대 20초)
-      for (let tries = 0; tries < 40 && sessions.length; tries += 1) {
-        const listed = await daemonCall('pane list')
-        const alive = ((listed.result && listed.result.panes) || []).filter((pane) => sessions.some((item) => item.pane === pane.id) && pane.agent)
-        if (!alive.length) break
-        await new Promise((resolve) => setTimeout(resolve, 500))
+      // 코어가 보기에 다 끝날 때까지(최대 30초) — pane 은 셸로 돌아와도 claude 의 딸린 프로세스가 잠깐 남는다(2026-10-23 실측)
+      let quiet = false
+      for (let tries = 0; tries < 30; tries += 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1000))
+        const busy = await coreBusy()
+        if (busy && !busy.length) {
+          quiet = true
+          break
+        }
       }
-      const opened = await runPack(['open', packId], { dir: STUDIO.core })
+      const opened = quiet ? await runPack(['open', packId], { dir: STUDIO.core }) : { ok: false, error: 'still-busy' }
+      if (!opened.ok || !opened.updated) catchUpBackoff = Date.now() + 10 * 60000
       fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
       for (const item of sessions) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
       if (opened.ok && opened.updated) send('pack:caught-up', { pack: ctx.packState.current.displayName || ctx.packState.current.name || packId })

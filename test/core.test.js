@@ -268,3 +268,14 @@ test('isConsoleSent: 옆 브라우저의 결정 콘솔이 같은 현황판 /api/
   assert.equal(core.isConsoleSent({ ...sent, url: 'https://example.com/api/action', pageUrl: 'https://example.com/plans/a.html' }), false)
   assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'not a url' }), false)
 })
+
+test('claude 화면이 비어 있나 — 질문 · 고르기 창 · 쓰다 만 글이면 아니다', () => {
+  const rule = '─'.repeat(40)
+  const status = '  📁 core  🌿 HEAD\n  ⏵⏵ auto mode on (shift+tab to cycle)'
+  assert.equal(core.claudeAtEmptyPrompt(`⏺ 네\n${rule}\n❯ \n${rule}\n${status}`), true)
+  assert.equal(core.claudeAtEmptyPrompt(`${rule}\n❯ Try "fix typecheck errors"\n${rule}\n${status}`), true)
+  assert.equal(core.claudeAtEmptyPrompt(`${rule}\n❯ 새 브랜치로 만들어줘\n${rule}\n${status}`), false)
+  assert.equal(core.claudeAtEmptyPrompt(`☐ 다이어그램\n❯ 1. 나중에\n  2. 지금 그린다\n  3. Type something.\nEnter to select · ↑/↓ to navigate · Esc to cancel`), false)
+  assert.equal(core.claudeAtEmptyPrompt('➜  demo git:(main)'), false)
+  assert.equal(core.claudeAtEmptyPrompt(`${rule}\n❯ \n${rule}\n${status}\n  ⏺ main\n  ◯ general-purpose  지식 채우기 재개   4s · ↓ 85.7k tokens`), false)
+})
