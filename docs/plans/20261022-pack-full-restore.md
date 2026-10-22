@@ -2,7 +2,7 @@
 
 ## Checkpoint
 - Updated: 2026-10-22 / Claude — 1~3단계 구현 · Codex 구현 검토 8건 반영 · 코어 시험 118 통과
-- Status: in_progress
+- Status: done
 - Owner: Mason
 - Scope: athena-studio — 앱 `src/` + 코어 `athena/`
 - Work ref: main f9b0b7f
@@ -16,7 +16,7 @@
 - [x] 2단계 — 백업에 담기(코어 `lib/restore.mjs` captureRestore · 앱이 claude 도는 pane 을 `--panes` 로)
 - [x] 3단계 — 가져온 뒤 되살리기(코어 `pack restore-work` · 앱 [열고 작업 되살리기] · 아테나 `claude --resume` + `--ack`)
   - 설계 바꿈: 화면 배치는 데몬 상태를 담지 않고 delegate.sh 의 배치 규칙(작업 공간 = 레포 · 한 탭에 나란히)으로 다시 놓는다 — 원래도 delegate 가 놓은 배치라 같은 모양이 된다(분할 비율은 기본값)
-- [ ] 4단계 — 시험 · 문서 (코어 시험 · docs/pack.md · README 끝 — 손 확인 남음)
+- [x] 4단계 — 시험 · 문서 · 실제 앱 왕복(아래 Validation)
 
 ## 1. 지금
 - 백업(`pack backup --with-work`)은 팩 · 계획서 · 이슈 · 레포 자리(local.json)만. 초기화하면 사라지는 것:
@@ -78,3 +78,5 @@
 ## Validation
 - 코어 `test/packs-test.sh` 118/118 — 되살리기 절: 훅 · missing · 대화 2(에이전트 · 아테나) · staged/unstaged/추적 안 함/.env 뺌/bundle · 검사 요약 · state/restore · dry-run · 워크트리 같은 HEAD · 대화 기록 · ack · 다시 돌림 · staged 실패 멈춤 → 고친 뒤 이어서 · discard · 다른 컴퓨터(커밋 없음 → bundle) · 나쁜 경로 거부
 - 앱 `npm test` 142/142 · skip 0
+- 실제 앱 왕복(2026-10-22 · 격리 앱 `ATHENA_STUDIO_HOME` + 디버그 포트 · 파일 고르기 · 확인 창만 정해진 답으로): 가짜 레포 · 팩 → 아테나에 "사과-11" · 워크트리 에이전트(delegate)에 "바나나-22" · 워크트리에 로컬 커밋 · staged · unstaged · 새 파일 · .env → [내보내기 → 팩 + 내 작업 기록](대화 2 · 워크트리 1) → [스튜디오 초기화] → [팩 가져오기 → 압축 파일] → [열고 작업 되살리기] → 에이전트 pane(demo-web 작업 공간) · 아테나 pane 이 그 대화로 열림 — 물으니 "사과-11" · "바나나-22" · 워크트리 같은 HEAD · 브랜치 · staged · unstaged · 새 파일 · .env 없음
+  - 이 왕복에서 찾아 고친 것: 팩을 바꾼 직후 main 의 지금 팩 정보가 아직 옛 값이라 되살리기를 건너뜀(→ 팩을 연 순간 그 창에 예약을 넘김) · 세션이 살아 있는 채로 기록을 지우면 대화 없는 껍데기가 다시 생겨 되살리지 않음(→ 대화 없는 기록은 백업 것으로 · 옛 것은 .bak) · 백업 완료 안내 문구가 "미커밋 코드는 안 담긴다" 로 남아 있던 것
