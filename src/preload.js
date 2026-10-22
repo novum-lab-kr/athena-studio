@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('studio', {
   packCallStart: (name, options) => ipcRenderer.invoke('pack:call-start', name, options),
   packRestoreArm: (id) => ipcRenderer.invoke('pack:restore-arm', id),
   packRestoreDisarm: () => ipcRenderer.invoke('pack:restore-disarm'),
+  onPackCaughtUp: (handler) => ipcRenderer.on('pack:caught-up', (_event, info) => handler(info)),
   onPackRestored: (handler) => ipcRenderer.on('pack:restored', (_event, result) => handler(result)),
   packRestoreNow: () => ipcRenderer.invoke('pack:restore-now'),
   packRestoreDiscard: () => ipcRenderer.invoke('pack:restore-discard'),

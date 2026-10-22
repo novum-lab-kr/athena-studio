@@ -458,6 +458,7 @@
   "pack.restore.renamed": "· {name}: the branch moved since, so a new branch {branch} was created",
   "pack.restore.saved": "Restore data included — {sessions} agent conversations · {worktrees} worktrees (with uncommitted changes and unpushed commits)",
   "pack.restore.missing": "{count} panes' conversations were not included — send one message in those panes, then back up again",
+  "pack.caughtUp": "Updated the {pack} body to the new core — Athena reopened in the same conversation",
   "pack.verb.open": "Switch",
   "work.title": "Work",
   "work.tip": "Work — {doing} in progress · {waiting} waiting for you",

@@ -458,6 +458,7 @@
   "pack.restore.renamed": "· {name}: 分支之后已变化,已新建分支 {branch}",
   "pack.restore.saved": "已包含恢复信息 — 代理对话 {sessions} · 工作树 {worktrees}(含未提交更改和未推送的提交)",
   "pack.restore.missing": "有 {count} 个 pane 的对话未能包含 — 在这些 pane 中发送一条消息后再备份即可包含",
+  "pack.caughtUp": "已将 {pack} 本体更新到新核心 — Athena 已以原对话重新打开",
   "pack.verb.open": "切换",
   "work.title": "工作",
   "work.tip": "工作 — 进行中 {doing} · 等你处理 {waiting}",

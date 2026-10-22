@@ -458,6 +458,7 @@
   "pack.restore.renamed": "· {name}: ブランチがその後変わったため {branch} を新しく作りました",
   "pack.restore.saved": "復元情報も含めました — エージェントの会話 {sessions} · ワークツリー {worktrees}(未コミットの変更 · push していないコミットを含む)",
   "pack.restore.missing": "会話を含められなかった pane が {count} 個あります — その pane でメッセージを一度送ってから、もう一度バックアップすると含まれます",
+  "pack.caughtUp": "{pack} の本体を新しいコアに合わせました — アテナは同じ会話で開き直しました",
   "pack.verb.open": "切り替え",
   "work.title": "作業",
   "work.tip": "作業 — 進行中 {doing} · あなた待ち {waiting}",

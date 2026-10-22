@@ -2806,6 +2806,7 @@ async function initPacks() {
   })
   studio.onPackProgress(updatePackProgress)
   studio.onPackRestored(showRestoreResult)
+  studio.onPackCaughtUp((info) => showToast(say('pack.caughtUp', info), 'info'))
   studio.onPackChanged(onPackChanged)
   studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
   for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))

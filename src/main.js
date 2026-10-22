@@ -1097,6 +1097,59 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)
+    ctx.catchUpBody(listed.result ? listed.result.panes : null).catch(() => {})
+  }
+
+  // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡는다 — 앱 업데이트는 일하는 본체를 건너뛰고, 그 뒤에는 앱이 새 번들을 들고 오지 않는 한 다시 하지 않는다.
+  // 30초에 한 번 HEAD 둘만 본다. 뒤처졌을 때: 본체 안 에이전트(워크트리)가 있거나 아테나가 일하는 중이면 기다린다.
+  // 아테나가 쉬는 중이면 그 대화를 기억하고 잠깐 끄고(/exit) → pack open(본체 따라잡기) → 같은 대화로 다시 켠다(claude --resume) — 사용자가 손댈 일 없게
+  let catchUpAt = 0
+  let catchingUp = false
+  ctx.catchUpBody = async (panes) => {
+    if (catchingUp || !panes || Date.now() - catchUpAt < 30000) return
+    catchUpAt = Date.now()
+    const body = ctx.athenaDir
+    const packId = ctx.packState.current && ctx.packState.current.id
+    if (!body || !packId || ctx.packBusy || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return
+    // 기준은 코어와 같다(bodies.mjs catchUpBody) — 레지스트리 deploy.commit 이 이 본체 커밋의 후손일 때만(주 본체 HEAD 가 아니다 · 정비 커밋으로 앞서도 옮기지 않는다)
+    const registry = await fs.promises.readFile(path.join(STUDIO.data, 'config.json'), 'utf8').then(JSON.parse, () => null)
+    const target = registry && registry.deploy && registry.deploy.commit
+    const mine = ((await runGit(body, ['rev-parse', 'HEAD'])) || '').trim()
+    if (!target || !mine || mine === target) return
+    if ((await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) === null) return
+    const realBody = core.realDir(body)
+    const packData = core.realDir(path.join(body, '.pack-data'))
+    const under = (dir, root) => Boolean(dir) && core.isInside(core.realDir(dir), root)
+    const inBody = panes.filter((pane) => pane.agent && (under(pane.foreground_cwd || pane.cwd, realBody) || under(pane.foreground_cwd || pane.cwd, packData)))
+    const athenaPanes = inBody.filter((pane) => under(pane.foreground_cwd || pane.cwd, realBody))
+    // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · claude 가 아니면(되살릴 수 없다) 다음에
+    if (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle')) return
+    const sessions = []
+    for (const pane of athenaPanes) {
+      const record = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
+      if (!record || !record.session) return // 어느 대화인지 모르면 끄지 않는다
+      sessions.push({ pane: pane.id, session: record.session })
+    }
+    catchingUp = true
+    try {
+      for (const item of sessions) {
+        await daemonCall('pane send-text', { pane: item.pane, text: '/exit' })
+        await daemonCall('pane send-keys', { pane: item.pane, keys: ['Enter'] })
+      }
+      // 끝날 때까지(최대 20초)
+      for (let tries = 0; tries < 40 && sessions.length; tries += 1) {
+        const listed = await daemonCall('pane list')
+        const alive = ((listed.result && listed.result.panes) || []).filter((pane) => sessions.some((item) => item.pane === pane.id) && pane.agent)
+        if (!alive.length) break
+        await new Promise((resolve) => setTimeout(resolve, 500))
+      }
+      const opened = await runPack(['open', packId], { dir: STUDIO.core })
+      fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
+      for (const item of sessions) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
+      if (opened.ok && opened.updated) send('pack:caught-up', { pack: ctx.packState.current.displayName || ctx.packState.current.name || packId })
+    } finally {
+      catchingUp = false
+    }
   }
 
   // 작업 공간마다 git 브랜치(이름 아래에) — 5초에 한 번만 묻는다
