@@ -47,6 +47,8 @@ export const inspectRepo = (dir) => {
   }
   return {
     name,
+    // git 주소 — 팩에 적어 두면 다른 컴퓨터에서 폴더 이름이 달라도 이 주소로 레포를 찾는다(https 주소의 사용자 · 토큰은 뗀다)
+    remote: origin.replace(/^(https?:\/\/)[^/@]+@/i, '$1'),
     branch: kind === 'monorepo' ? prBase : (pick(BRANCH_ORDER, branches) || branches[0] || ''),
     prBase,
     appBranches: Object.fromEntries(apps.map((app) => [app, appBranch(app)])),
@@ -175,7 +177,7 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
   const entries = repos.map((repo) => {
     // 기본 에이전트 이름 — 사용자가 고친 값(agents · appsSpec · packagesAgent)이 있으면 그것
     const defaults = defaultAgents(repo)
-    const entry = { name: repo.name, branch: repo.branch, prBase: repo.prBase, kind: repo.kind }
+    const entry = { name: repo.name, branch: repo.branch, prBase: repo.prBase, kind: repo.kind, ...(repo.remote ? { remote: repo.remote } : {}) }
     if (repo.kind === 'monorepo') {
       entry.apps = repo.appsSpec ?? defaults.apps
       entry.packagesAgent = repo.packagesAgent ?? defaults.packagesAgent

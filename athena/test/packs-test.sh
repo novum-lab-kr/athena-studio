@@ -104,7 +104,9 @@ check "pack restore → 실패 · 안내 · 설정에 pack 안 씀" '[ "$CODE" =
 
 section "가져오기 · 내보내기 · 백업"
 F="$SRC/test/fixtures"; O="$WORK/out"; mkdir -p "$O"
+PRE_EXPORT="$(shasum pack/pack.json)"
 R="$(A pack export --out "$O")"; EXPORT="$(echo "$R" | field file)"
+check "내보내기 사본 pack.json 에 git 주소 · 원본 팩은 그대로" 'tar -xzOf "$EXPORT" acme/pack.json | grep -q "\"remote\"" && [ "$PRE_EXPORT" = "$(shasum pack/pack.json)" ]'
 check "내보내기 — 허용 목록만(작업 기록·archive 없음)" '[ -f "$EXPORT" ] && ! tar -tzf "$EXPORT" | grep -Eq "plans/|issues/|archive/|local.json"' "$R"
 R="$(A pack inspect "$EXPORT")"; TOKEN="$(echo "$R" | field token)"
 check "같은 팩 압축 → conflict(packId)" '[ "$(echo "$R" | field conflict.reason)" = packId ]' "$R"
@@ -141,6 +143,24 @@ check "나쁜 팩 뒤 임시본 없음" '[ -z "$(ls "$ATHENA_DATA_DIR/tmp" 2>/de
 R="$(A pack backup --with-work --out "$O")"; WB="$(echo "$R" | field file)"
 check "작업 기록 백업 — 계획서·이슈 포함" 'tar -tzf "$WB" | grep -q "/plans/" && tar -tzf "$WB" | grep -q "/issues/" && tar -tzf "$WB" | grep -q athena-backup.json' "$R"
 check "되살리기(같은 팩) → conflict 안내" '[ "$(A pack restore --with-work "$WB" | field error)" = conflict ]'
+check "백업 — 레포 자리(local.json · 실제 경로) · 사본 pack.json 에 git 주소" 'tar -xzOf "$WB" acme/local.json | grep -q "$ATHENA_DATA_DIR/repos-src/acme-web" && tar -xzOf "$WB" acme/pack/pack.json | grep -q "\"remote\""' "$(tar -xzOf "$WB" acme/local.json 2>&1)"
+FRESH="$WORK/fresh-test-data"; mkdir -p "$FRESH"
+R="$(ATHENA_DATA_DIR="$FRESH" node scripts/athena.mjs pack inspect "$WB" --json 2>/dev/null | tail -1)"
+R="$(ATHENA_DATA_DIR="$FRESH" node scripts/athena.mjs pack import "$(echo "$R" | field token)" --new --json 2>/dev/null | tail -1)"
+check "빈 데이터에 백업 되살리기(--new) → 레포 자리 그대로 · 계획서 · 이슈" 'grep -q "$ATHENA_DATA_DIR/repos-src/acme-web" "$FRESH/packs/acme/local.json" && ls "$FRESH/packs/acme/plans/task" | grep -q acme && ls "$FRESH/packs/acme/issues" | grep -q acme' "$R"
+
+section "레포 자리 찾기 — 손으로 이은 링크 · git 주소"
+SRCS="$ATHENA_DATA_DIR/repos-src"; LOCAL="$ATHENA_DATA_DIR/packs/acme/local.json"; cp "$LOCAL" "$WORK/local.json.bak"; cp pack/pack.json "$WORK/pack.json.bak"
+mkdir -p "$SRCS/team" && mv "$SRCS/acme-api" "$SRCS/team/api-moved"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); [r.update(remote=sys.argv[2]) for r in p["repos"] if r["name"]=="acme-api"]; json.dump(p,open(sys.argv[1],"w"),indent=2)' pack/pack.json "$(git -C "$SRCS/team/api-moved" config --get remote.origin.url)"
+R="$(A pack open acme)"
+check "폴더를 옮겨도 git 주소로 찾아 이음 · local.json 에 적음" '[ "$(echo "$R" | field unlinkedRepos)" = "[]" ] && [ "$(readlink repos/acme-api)" = "$SRCS/team/api-moved" ] && grep -q "team/api-moved" "$LOCAL"' "$R"
+python3 -c 'import json,sys; p=json.load(open(sys.argv[1])); [r.pop("remote",None) for r in p["repos"]]; json.dump(p,open(sys.argv[1],"w"),indent=2)' pack/pack.json
+printf '{ "reposRoot": "%s" }\n' "$SRCS" > "$LOCAL"
+R="$(A pack open acme)"
+check "설정에 없어도 지금 링크가 레포면 지우지 않고 local.json 에 적음" '[ "$(echo "$R" | field unlinkedRepos)" = "[]" ] && [ "$(readlink repos/acme-api)" = "$SRCS/team/api-moved" ] && grep -q "team/api-moved" "$LOCAL"' "$R"
+mv "$SRCS/team/api-moved" "$SRCS/acme-api"; cp "$WORK/local.json.bak" "$LOCAL"; cp "$WORK/pack.json.bak" pack/pack.json; A pack open acme >/dev/null
+check "원래대로 — acme-api 다시 이어짐" '[ "$(readlink repos/acme-api)" = "$SRCS/acme-api" ]'
 
 section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
 IMG="$WORK/img"; mkdir -p "$IMG"

@@ -395,12 +395,48 @@ export const stopServices = async (root, busy) => {
 export const busyNow = (root) => { const { busy, known } = busyScan(root); return { ok: true, busy, busyKnown: known } }
 
 // ── 레포 링크(repos/) 맞추기 ────────────────────────────────────────────
-// 예상 목록(pack.json repos)과 실제 링크를 전부 대조 — 목록에 없는 링크는 지우고, 잇지 못한 레포는 unlinked 로 돌려준다
+// git 주소 비교용 — 프로토콜 · 사용자 · .git 꼬리를 떼고 host:path 를 host/path 로(https · ssh · git@ 로 받은 같은 레포가 같게)
+export const remoteKey = (url) => String(url ?? '').trim()
+  .replace(/^[a-z][\w+.-]*:\/\//i, '').replace(/^[^@/]+@/, '').replace(/^([^/:]+):(?!\d+\/)/, '$1/')
+  .replace(/\.git$/, '').replace(/\/+$/, '').toLowerCase()
+// 팩에 적을 git 주소 — https 주소에 든 사용자 · 토큰은 뗀다(팩은 팀과 같이 쓴다)
+export const shareableRemote = (url) => String(url ?? '').trim().replace(/^(https?:\/\/)[^/@]+@/i, '$1')
+const originOf = (dir) => { try { return execFileSync('git', ['-C', dir, 'config', '--get', 'remote.origin.url'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' } }
+const isRepoDir = (path) => existsSync(join(path, '.git'))
+
+// git 주소로 레포 찾기 — base 아래 depth 단계까지 git 레포를 훑어 keys(remoteKey) 와 같은 것 → Map(key → 경로).
+// 레포를 찾으면 그 안으로 내려가지 않는다 · 숨김 · node_modules · 맥 시스템 폴더는 건너뛴다(홈을 훑어도 빠르게)
+const SKIP_SCAN = new Set(['node_modules', 'Library', 'Applications', 'Movies', 'Music', 'Pictures'])
+const findReposByRemote = (base, keys, depth = 3) => {
+  const found = new Map()
+  const walk = (dir, level) => {
+    let names = []
+    try { names = readdirSync(dir, { withFileTypes: true }) } catch { return }
+    for (const entry of names) {
+      if (found.size === keys.size) return
+      if (!entry.isDirectory() || entry.name.startsWith('.') || SKIP_SCAN.has(entry.name)) continue
+      const path = join(dir, entry.name)
+      if (isRepoDir(path)) {
+        const key = remoteKey(originOf(path))
+        if (keys.has(key) && !found.has(key)) found.set(key, path)
+        continue
+      }
+      if (level < depth) walk(path, level + 1)
+    }
+  }
+  if (existsSync(base)) walk(base, 1)
+  return found
+}
+
+// 예상 목록(pack.json repos)과 실제 링크를 전부 대조 — 목록에 없는 링크는 지우고, 잇지 못한 레포는 unlinked 로 돌려준다.
+// 레포 자리 찾는 순서: local.json repoPaths(없으면 reposRoot/<이름>) → 지금 링크가 가리키는 레포(손으로 이은 것) → git 주소(pack.json repos[].remote)로 reposRoot 아래에서.
+// 뒤의 둘로 찾으면 local.json repoPaths 에 적는다(다음부터는 바로)
 export const syncRepos = (root) => {
   const where = paths(root)
   const pack = readPackJson(where.packDir)
   if (!pack) return { linked: [], unlinked: [], removed: [] }
-  const local = readJson(join(where.packData, 'local.json')) ?? {}
+  const localFile = join(where.packData, 'local.json')
+  const local = readJson(localFile) ?? {}
   const reposRoot = resolve(root, local.reposRoot ?? bodyConfig(root).reposRoot ?? '..')
   const dir = join(root, 'repos')
   mkdirSync(dir, { recursive: true })
@@ -409,11 +445,35 @@ export const syncRepos = (root) => {
   for (const name of readdirSync(dir)) {
     if (!wanted.has(name) && isLink(join(dir, name))) { rmSync(join(dir, name)); removed.push(name) }
   }
+  const repoPaths = { ...(local.repoPaths ?? {}) }
+  const remember = (name, path) => {
+    const rel = relative(reposRoot, path)
+    repoPaths[name] = rel.startsWith('..') || rel === '' ? path : rel
+  }
+  const targets = new Map()
+  const missing = []
+  for (const repo of pack.repos ?? []) {
+    const configured = resolve(reposRoot, repoPaths[repo.name] ?? repo.name)
+    const link = join(dir, repo.name)
+    const current = isLink(link) ? resolve(dir, readlinkSync(link)) : null
+    if (isRepoDir(configured)) targets.set(repo.name, configured)
+    else if (current && isRepoDir(current)) { targets.set(repo.name, current); remember(repo.name, current) }
+    else missing.push(repo)
+  }
+  const byRemote = missing.filter((repo) => repo.remote)
+  if (byRemote.length) {
+    const found = findReposByRemote(reposRoot, new Set(byRemote.map((repo) => remoteKey(repo.remote))))
+    for (const repo of byRemote) {
+      const path = found.get(remoteKey(repo.remote))
+      if (path) { targets.set(repo.name, path); remember(repo.name, path) }
+    }
+  }
+  if (JSON.stringify(repoPaths) !== JSON.stringify(local.repoPaths ?? {})) writeJsonAtomic(localFile, { ...local, repoPaths })
   const linked = []; const unlinked = []
   for (const repo of pack.repos ?? []) {
-    const target = resolve(reposRoot, local.repoPaths?.[repo.name] ?? repo.name)
+    const target = targets.get(repo.name)
     const link = join(dir, repo.name)
-    if (!existsSync(join(target, '.git'))) {
+    if (!target) {
       if (isLink(link)) rmSync(link)
       unlinked.push(repo.name)
       continue
@@ -424,6 +484,43 @@ export const syncRepos = (root) => {
     linked.push(repo.name)
   }
   return { linked, unlinked, removed }
+}
+
+// 내보내기 · 백업 사본의 pack.json 에 레포 git 주소를 채운다(원본 팩은 그대로) — 받은 컴퓨터가 git 주소로 레포를 찾게
+const addRemotes = (packJsonPath, reposDir) => {
+  const pack = readJson(packJsonPath)
+  if (!pack || !Array.isArray(pack.repos)) return
+  let changed = false
+  for (const repo of pack.repos) {
+    if (repo.remote || !repo.name) continue
+    const url = shareableRemote(originOf(join(reposDir, repo.name)))
+    if (url) { repo.remote = url; changed = true }
+  }
+  if (changed) writeJsonAtomic(packJsonPath, pack)
+}
+
+// 이 컴퓨터의 레포 자리(백업용) — local.json 에 지금 이어진 링크의 실제 자리를 더한 것(절대 경로)
+const localForBackup = (where) => {
+  const local = readJson(join(where.packData, 'local.json')) ?? {}
+  const reposRoot = local.reposRoot ? resolve(local.reposRoot) : null
+  const repoPaths = {}
+  for (const [name, path] of Object.entries(local.repoPaths ?? {})) if (typeof path === 'string') repoPaths[name] = resolve(reposRoot ?? '/', path)
+  const reposDir = join(where.packData, 'repos')
+  if (existsSync(reposDir)) {
+    for (const name of readdirSync(reposDir)) {
+      const target = realOr(join(reposDir, name))
+      if (isRepoDir(target)) repoPaths[name] = target
+    }
+  }
+  return { ...(reposRoot ? { reposRoot } : {}), ...(Object.keys(repoPaths).length ? { repoPaths } : {}) }
+}
+
+// 백업에 든 레포 자리 — 이름 · 경로 모양만 믿는다(경로는 링크를 걸 때 .git 이 있는지 다시 본다)
+const cleanLocal = (value) => {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const okPath = (path) => typeof path === 'string' && path.startsWith('/') && !path.includes('\0')
+  const repoPaths = Object.fromEntries(Object.entries(value.repoPaths ?? {}).filter(([name, path]) => /^[\w.-]+$/.test(name) && okPath(path)))
+  return { ...(okPath(value.reposRoot) ? { reposRoot: value.reposRoot } : {}), ...(Object.keys(repoPaths).length ? { repoPaths } : {}) }
 }
 
 // 링크 대조 — 고정 링크가 활성 팩을 가리키고 OVERLAY 링크가 모두 열리는가
@@ -705,6 +802,9 @@ const finishInspect = (data, dir, token, meta, report) => {
   // 검사한 팩을 정해진 자리로 모은다 — <tmp>/pack (+ 작업 기록 <tmp>/work)
   renameSync(found.pack, join(dir, 'pack'))
   if (found.work) {
+    // 작업 기록 백업에 든 이 컴퓨터의 레포 자리 — 등록 때 local.json 으로(--replace 는 빈 자리만 채운다)
+    const backupLocal = cleanLocal(readJson(join(found.work, 'local.json')))
+    if (backupLocal && !meta.local) meta.local = backupLocal
     mkdirSync(join(dir, 'work'), { recursive: true })
     for (const sub of ['plans', 'issues']) if (existsSync(join(found.work, sub))) { inspectTree(join(found.work, sub)); renameSync(join(found.work, sub), join(dir, 'work', sub)) }
   }
@@ -856,7 +956,9 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
     renameSync(join(dir, 'pack'), join(slot, 'pack'))
     for (const sub of ['plans', 'issues']) if (existsSync(join(dir, 'work', sub))) renameSync(join(dir, 'work', sub), join(slot, sub))
     ensureSlot(slot)
-    writeJsonAtomic(join(slot, 'local.json'), meta.local ?? { reposRoot: resolve(root, bodyConfig(root).reposRoot ?? '..') })
+    const defaultRoot = resolve(root, bodyConfig(root).reposRoot ?? '..')
+    const reposRoot = meta.local?.reposRoot && existsSync(meta.local.reposRoot) ? meta.local.reposRoot : defaultRoot
+    writeJsonAtomic(join(slot, 'local.json'), { ...(meta.local ?? {}), reposRoot })
     updateRegistry(data, (registry) => {
       registry.packs[id] = { packId: pack.id, name: pack.name ?? id, source, ...(remote ? { remote } : {}), addedAt: stamp(), ...(meta.kind === 'athena' ? { importedFrom: meta.source } : {}) }
     })
@@ -895,6 +997,12 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
       }
     }
     rmSync(old, { recursive: true, force: true })
+    // 작업 기록 백업의 레포 자리 — 이 컴퓨터 설정에 없는 레포만 채운다(있는 것은 덮지 않는다)
+    if (meta.local?.repoPaths) {
+      const current = readJson(join(slot, 'local.json')) ?? {}
+      const repoPaths = { ...meta.local.repoPaths, ...(current.repoPaths ?? {}) }
+      if (JSON.stringify(repoPaths) !== JSON.stringify(current.repoPaths ?? {})) writeJsonAtomic(join(slot, 'local.json'), { ...current, repoPaths })
+    }
     for (const sub of ['plans', 'issues']) {
       // 작업 기록 백업을 되살리는 --replace — 기존 기록 위에 없는 파일만 더한다(덮지 않는다)
       if (existsSync(join(dir, 'work', sub))) cpSync(join(dir, 'work', sub), join(slot, sub), { recursive: true, force: false, errorOnExist: false })
@@ -1014,6 +1122,7 @@ export const exportPack = (root, out) => {
   const stage = join(where.dataDir, 'tmp', `export-${randomBytes(6).toString('hex')}`)
   try {
     stageCopy(packDir, files, join(stage, id))
+    addRemotes(join(stage, id, 'pack.json'), join(root, 'repos'))
     const file = tarFiles(stage, id, resolve(out), `${id}-pack`)
     // 만든 파일을 다시 읽어 허용 목록 밖·비밀 파일이 없는지 확인(만든 쪽과 다른 길로 한 번 더)
     const entries = archiveEntries(file).filter((entry) => !entry.endsWith('/')).map((entry) => entry.split('/').slice(1).join('/')).filter(Boolean)
@@ -1032,7 +1141,13 @@ export const backupWithWork = (root, out) => {
     const top = join(stage, id)
     const packFiles = collect(packDir, readdirSync(packDir))
     stageCopy(packDir, packFiles, join(top, 'pack'))
+    addRemotes(join(top, 'pack', 'pack.json'), join(root, 'repos'))
     let count = packFiles.length
+    // 이 컴퓨터의 레포 자리 — 같은 컴퓨터로 되살리면 레포를 그대로 잇는다(팀에 주는 내보내기에는 넣지 않는다)
+    if (where.packData) {
+      writeJsonAtomic(join(top, 'local.json'), localForBackup(where))
+      count += 1
+    }
     for (const sub of ['plans', 'issues']) {
       const base = realOr(join(root, sub))
       if (!existsSync(base)) continue

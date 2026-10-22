@@ -39,6 +39,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 팩은 git 레포가 아닐 수 있다(로컬에만 두는 회사 — 그러면 `archive/` 보관도 커밋되지 않고 로컬에만 남는다). 그래서 압축 파일 하나로 백업한다.
 - `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
 - `bin/athena pack restore <파일>` — `packs/<팩>` 으로 되살린다. 같은 이름 팩이 있으면 **덮지 않고 멈춘다**(옮기거나 지운 뒤 다시). 팩 없이 쓰는 중이면 `athena.config.json` 의 `pack` 을 잡고 링크까지 건다
+- `pack backup --with-work` 는 이 컴퓨터의 레포 자리(`local.json` — 지금 이어진 링크의 실제 경로)도 담는다. 되살릴 때 그 폴더가 있으면 그대로 잇는다(`--new` 는 그대로 · `--replace` 는 이 컴퓨터 설정에 없는 레포만 채운다). 팀에 주는 `pack export` 에는 담지 않는다. 두 파일 모두 **사본** pack.json 에 레포 git 주소(`repos[].remote` · https 주소의 사용자 · 토큰은 뗀다)를 채운다 — 원본 팩은 그대로
 - **여러 팩 구조**(아래)에서는 두 명령 모두 멈추고 안내만 한다 — 팩만은 `pack export --out <폴더>`, 팩 + 작업 기록은 `pack backup --with-work`, 되살리기는 `pack restore --with-work <파일>` 또는 `pack inspect <파일>` → `pack import <token> --new`
 - 말로: "팩 백업해줘" · "팩 되살려줘 <파일>"
 
@@ -66,7 +67,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 └─ packs/<id>/                  id = 이 컴퓨터의 등록 이름(폴더 이름 · 바뀌지 않음)
    ├─ pack/                     팩(pack.json 의 id = 공유 ID packId)
    ├─ plans/ · issues/          작업 기록
-   ├─ repos/                    레포 링크(local.json 의 reposRoot · repoPaths 로 만든다)
+   ├─ repos/                    레포 링크 — 찾는 순서: local.json repoPaths(없으면 reposRoot/<이름>) → 지금 링크가 가리키는 레포(손으로 이은 것) → pack.json repos[].remote 와 git 주소가 같은 레포(reposRoot 아래 3단계). 뒤의 둘로 찾으면 repoPaths 에 적는다
    ├─ worktrees/                새 워크트리(실제 경로)
    ├─ state/                    현황판 휴지통·학습 수·Jev 캐시·QA 결과·학습 검토 대기열(learn-queue)·현황판 토큰(board-token, 600)·사람에게 묻는 요청(requests/ — docs/requests.md)
    └─ local.json                그 팩의 이 컴퓨터 설정 { reposRoot(절대 경로), repoPaths }
@@ -148,6 +149,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
   "repos": [
     { "name": "admin-web", "agents": ["admin-fe"], "branch": "prd", "prBase": "dev", "kind": "single", "appDir": "app",
+      "remote": "git@github.com:acme-inc/admin-web.git",   // (선택) git 주소 — 폴더 이름이 달라도 이 주소로 레포를 찾는다. athena init 이 적고, 내보내기 · 백업 사본에 채운다
       "alias": "admin",                    // new-branch 대상 이름(없으면 레포 이름 일부)
       "prScope": "admin" },                // PR 제목 범위 — 문자열 또는 [{ "match": "^apps/([^/]+)/", "scope": "$1" }]
     { "name": "web", "kind": "monorepo", "branch": "dev", "alias": "web",
