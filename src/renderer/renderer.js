@@ -2211,6 +2211,7 @@ function renderPackRail() {
       // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
       const action = await studio.packContextMenu(item.id, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
       if (action === 'new-window') runPackFlow(() => switchPack(item.id, { newWindow: true }))
+      else if (action === 'export') runPackFlow(chooseExport)
       else if (action) runPackFlow(() => editPackLook(item.id, action))
     })
     return button
@@ -2269,7 +2270,7 @@ function popupOption(className, value, icon, title, note) {
 // 팩 대화상자 아래 줄 — 새로 만들기 · 가져오기 · 내보내기 · 내 백업
 function packLinks() {
   const links = el('div', 'pack-links')
-  for (const value of ['new', 'import', 'export', 'backup']) links.append(popupOption('pack-command', value, value, say(`pack.link.${value}`), say(`pack.link.${value}Note`)))
+  for (const value of ['new', 'import', 'export']) links.append(popupOption('pack-command', value, value, say(`pack.link.${value}`), say(`pack.link.${value}Note`)))
   return links
 }
 
@@ -2326,7 +2327,7 @@ function packCommand(name) {
   if (name === 'picker') return openPackPicker()
   if (name === 'new') return newPack()
   if (name === 'import') return importPack()
-  if (name === 'export' || name === 'backup') return exportPack(name)
+  if (name === 'export') return chooseExport()
 }
 
 // 시작 화면 — 작업 창 가운데(VS Code 처럼). 두 경우(규칙은 main 이 pack.js 로 계산해 넘긴다):
@@ -2577,6 +2578,17 @@ async function chooseImport(inspected, kind) {
   actions.push({ label: say('common.cancel'), value: null })
   const sameTitle = inspected.conflict.reason === 'name' ? say('pack.compare.sameName', { name }) : say('pack.compare.same', { name })
   return packDialog({ title: sameTitle, body, actions })
+}
+
+// 내보내기 — 담을 것을 먼저 묻는다: 팩 + 내 작업 기록(백업 · 위) · 팩만(팀에 줄 것)
+async function chooseExport() {
+  const options = el('div', 'pack-links')
+  options.append(
+    popupOption('pack-command', 'backup', 'backup', say('pack.export.withWork'), say('pack.export.withWorkNote')),
+    popupOption('pack-command', 'share', 'export', say('pack.export.packOnly'), say('pack.export.packOnlyNote')),
+  )
+  const kind = await packDialog({ title: say('pack.export.title'), subtitle: say('pack.export.ask'), body: [options], close: true })
+  if (kind) return exportPack(kind)
 }
 
 async function exportPack(kind) {

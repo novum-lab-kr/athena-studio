@@ -57,11 +57,11 @@ npm test        # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(�
 
 **A. 가짜 본체로 화면 흐름** — `ATHENA_STUDIO_FAKE_PACK=1 npm start`(격리하려면 `ATHENA_STUDIO_HOME` 도). 스튜디오 코어는 그대로 준비되고 팩 명령만 `scripts/fake-pack.js` 가 같은 `--json` 모양으로 답한다.
 - 가짜도 파일을 만든다: 상태 `$TMPDIR/athena-studio-fake-pack.json`, 가짜 본체 `$TMPDIR/athena-studio-fake-bodies/<id>/`(`CLAUDE.md` · 현황판 서버). 처음으로 돌리려면 둘 다 지운다. `ATHENA_STUDIO_HOME` 으로 옮겨지지 않는다(그리고 `ATHENA_STUDIO_FAKE_PACK_STATE` 는 `childEnv` 가 걷어 내 앱을 거쳐서는 안 먹는다)
-1. 시작 화면 "내 팩" 에 acme(맨 위 "지금") · globex · broken. acme → 작업 창 · 탭 줄 `▣ acme ▾`(⌘⇧P) → 목록 + 새로 만들기 · 가져오기 · 내보내기 · 내 백업
+1. 시작 화면 "내 팩" 에 acme(맨 위 "지금") · globex · broken. acme → 작업 창 · 탭 줄 `▣ acme ▾`(⌘⇧P) → 목록 + 새로 만들기 · 가져오기 · 내보내기
 2. globex 누르기 → 처음이면 본체 만들기 진행 → 이 창이 globex 로(현황판 다시 뜸) · "연결하지 못한 레포: globex-api" 알림. acme 에서 띄운 pane 은 닫히지 않는다 — acme 로 돌아오면 보던 자리 그대로
 3. 팩 우클릭 [새 창으로 열기] → 새 창 · 이미 다른 창이 보는 팩을 누르면 그 창이 앞으로. 이름 바꾸기 · 이미지 고르기 · 지우기 · 원래 이름으로
 4. 가져오기 → 압축 파일 이름에 `bad` → "안전하지 않은 파일…" / `acme-pack…tar.gz` → 같은 이름 비교 → [가져온 것으로 바꾸기] → "기존 팩은 자동 백업했어요" / git 레포 → `https://u:비번@…` · 공백 든 주소는 거절, `git@github.com:x/newco.git` 은 등록 → "지금 이 팩으로 바꿀까요?" / 기존 아테나 → 작업 기록(계획서 · 이슈 · 보관함 · 워크트리 1개 미커밋) · acme 와 같은 이름 비교
-5. 내보내기 · 내 백업 → 저장 폴더 → "만들었어요 — 파일 N개 · KB" · [Finder 에서 보기](가짜는 내보낸 파일은 만들지 않는다 — 경로만)
+5. 내보내기 → 팩 + 내 작업 기록 / 팩만 → 저장 폴더 → "만들었어요 — 파일 N개 · KB" · [Finder 에서 보기](가짜는 내보낸 파일은 만들지 않는다 — 경로만)
 6. 팩 작업이 도는 중에 메뉴에서 또 열기 → "팩 작업이 진행 중이에요" 알림만
 - broken 의 "바꾸다 실패해서 되돌렸어요" 는 옛 `pack use` 경로 흉내다 — 지금 화면은 `pack open` 을 불러 broken 도 그냥 열린다
 

@@ -1771,6 +1771,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       if (pack.displayName) items.push({ label: say('pack.menu.resetName'), click: pick('reset-name') })
       items.push({ type: 'separator' }, { label: say('pack.menu.icon'), click: pick('icon') })
       if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
+      // 내보내기(담을 것은 화면이 묻는다) — 코어 명령이 이 본체의 팩(지금 팩)만 다룬다(--id 가 없다)
+      if (ctx.packState.current && ctx.packState.current.id === id) items.push({ type: 'separator' }, { label: say('pack.link.export'), click: pick('export') })
       // 메뉴가 닫힌 뒤 click 이 늦게 올 수 있어 잠깐 기다렸다 null
       const menu = Menu.buildFromTemplate(items)
       menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
@@ -2454,7 +2456,6 @@ function buildMenu() {
         { label: say('menu.file.pack'), accelerator: `${TAB_KEY}+Shift+P`, click: toFront('pack:command', 'picker') },
         { label: say('menu.file.packImport'), click: toFront('pack:command', 'import') },
         { label: say('menu.file.packExport'), click: toFront('pack:command', 'export') },
-        { label: say('menu.file.backup'), click: toFront('pack:command', 'backup') },
         { type: 'separator' },
         { label: say('menu.file.pickAthena'), click: toFront('athena:pick') },
         { type: 'separator' },
