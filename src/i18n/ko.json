@@ -528,5 +528,21 @@
   "board.menu.kanban": "전체 칸반",
   "board.menu.kanbanNote": "예전 현황판 화면",
   "notify.request.question": "답이 필요해요",
-  "notify.request.decision": "결정이 필요해요"
+  "notify.request.decision": "결정이 필요해요",
+  "pack.menu.delete": "팩 삭제…",
+  "pack.task.delete": "팩 삭제",
+  "pack.delete.title": "{name} 팩을 삭제할까요?",
+  "pack.delete.body": "이 팩의 본체 · 계획서 · 이슈 · 작업 기록 · 현황판을 지워요. 레포 폴더(코드)는 그대로예요.",
+  "pack.delete.note": "지우기 전에 팩과 작업 기록을 자동 백업해요 — 나중에 [가져오기]로 되살릴 수 있어요.",
+  "pack.delete.yes": "삭제",
+  "pack.delete.progress": "{name} 팩을 삭제하는 중",
+  "pack.delete.treesTitle": "워크트리 {count}개가 남아 있어요",
+  "pack.delete.treesBody": "같이 지울까요? 커밋하지 않은 변경도 백업에 담겨요.",
+  "pack.delete.treeDirty": "{name} — 미커밋 {count}개",
+  "pack.delete.treesYes": "워크트리도 삭제",
+  "pack.delete.failed": "팩을 삭제하지 못했어요",
+  "pack.delete.open": "열린 창이 보고 있는 팩이에요 — 그 창을 다른 팩으로 바꾼 뒤 지워 주세요",
+  "pack.delete.unsafe": "이 팩은 주 본체에 묶여 있어 지울 수 없어요",
+  "pack.delete.done": "{name} 팩을 삭제했어요",
+  "pack.delete.doneNote": "백업 파일 — [가져오기]로 되살릴 수 있어요"
 }

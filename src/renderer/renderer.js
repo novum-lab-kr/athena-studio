@@ -2246,6 +2246,41 @@ function packIconImage(item) {
   return null // 받는 동안은 두 글자
 }
 
+// 팩 지우기 — 무엇이 지워지고 무엇이 남는지 · 자동 백업을 알리고 확인. 워크트리가 있으면 목록을 보여 주고 한 번 더 묻는다
+async function deletePack(id) {
+  const pack = [...packs.packs, packs.current].find((item) => item && item.id === id)
+  const name = packLabel(pack) || id
+  const ok = await packDialog({
+    title: say('pack.delete.title', { name }),
+    body: [el('p', null, say('pack.delete.body')), el('p', 'muted', say('pack.delete.note'))],
+    actions: [{ label: say('pack.delete.yes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
+  })
+  if (!ok) return
+  showPackProgress(say('pack.delete.progress', { name }), false)
+  let result = await studio.packDelete(id)
+  hidePackProgress()
+  if (result.error === 'has-worktrees') {
+    const lines = result.worktrees.map((tree) => el('p', 'muted', tree.dirty ? say('pack.delete.treeDirty', { name: tree.name, count: tree.dirty }) : tree.name))
+    const again = await packDialog({
+      title: say('pack.delete.treesTitle', { count: result.worktrees.length }),
+      body: [el('p', null, say('pack.delete.treesBody')), ...lines],
+      actions: [{ label: say('pack.delete.treesYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
+    })
+    if (!again) return
+    showPackProgress(say('pack.delete.progress', { name }), false)
+    result = await studio.packDelete(id, { withWorktrees: true })
+    hidePackProgress()
+  }
+  if (!result.ok) return packAlert(say('pack.delete.failed'), result.text || result.message)
+  await refreshPackList()
+  const reveal = await packDialog({
+    title: say('pack.delete.done', { name }),
+    body: [el('p', 'muted', say('pack.delete.doneNote')), el('p', 'muted', result.backup)],
+    actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }, { label: say('common.ok'), value: null }],
+  })
+  if (reveal) studio.packReveal()
+}
+
 // 팩 아이콘 우클릭 — main 메뉴(이름 바꾸기 · 원래 이름으로 · 이미지 고르기 · 이미지 지우기)에서 고른 것을 한다
 async function editPackLook(id, action) {
   let result = null
@@ -2402,6 +2437,7 @@ function renderPackRail() {
       const action = await studio.packContextMenu(item.id, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
       if (action === 'new-window') runPackFlow(() => switchPack(item.id, { newWindow: true }))
       else if (action === 'export') runPackFlow(chooseExport)
+      else if (action === 'delete') runPackFlow(() => deletePack(item.id))
       else if (action) runPackFlow(() => editPackLook(item.id, action))
     })
     return button

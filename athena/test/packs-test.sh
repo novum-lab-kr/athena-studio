@@ -335,5 +335,13 @@ check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트" '[ "$(ATHENA_BOAR
 TOKEN="$(A pack board-token | field token)"; HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")
 check "POST /api/shutdown → 꺼짐 · 토큰 파일 지움" '[ "$(curl -s -X POST "${HDR[@]}" -d "{}" "http://127.0.0.1:$PORT/api/shutdown" | field ok)" = True ] && sleep 0.5 && [ "$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/state")" = 000 ] && [ ! -f "$ATHENA_DATA_DIR/packs/acme/state/board-token" ]'
 
+section "팩 지우기(pack delete)"
+check "지금 본체의 팩은 여기서 못 지움 → unsafe" '[ "$(A pack delete acme | field error)" = unsafe ] && [ -d "$ATHENA_DATA_DIR/packs/acme" ]'
+mkdir -p "$ATHENA_DATA_DIR/packs/globex/plans/task" && printf '# 글로벡스 계획\n' > "$ATHENA_DATA_DIR/packs/globex/plans/task/20261023-g.md"
+R="$(A pack delete globex)"
+check "globex 지움 → 백업(팩 + 계획서) · 자리 · 레지스트리에서 빠짐" '[ "$(echo "$R" | field ok)" = True ] && tar -tzf "$(echo "$R" | field backup)" | grep -q "globex/plans/task/20261023-g.md" && [ ! -d "$ATHENA_DATA_DIR/packs/globex" ] && ! grep -q "\"globex\"" "$ATHENA_DATA_DIR/config.json"' "$R"
+check "지운 팩 백업은 다시 가져올 수 있다(inspect)" '[ "$(A pack inspect "$(echo "$R" | field backup)" | field ok)" = True ]'
+check "없는 팩 → not-found" '[ "$(A pack delete globex | field error)" = not-found ]'
+
 printf '\n통과 %d · 실패 %d%s\n' "$PASS" "$FAIL" "$([ "${KEEP:-}" = 1 ] && echo " · 임시 폴더 $WORK")"
 [ "$FAIL" = 0 ]

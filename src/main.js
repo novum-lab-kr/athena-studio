@@ -663,7 +663,7 @@ function logCore(line) {
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor = null
-const PACK_TIMEOUTS = { repo: 120000, 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
+const PACK_TIMEOUTS = { repo: 120000, 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, delete: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
 // 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다
 const REQUESTS_POLL_MS = 30000
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
@@ -712,7 +712,7 @@ function runCore(argv, { dir, onProgress = null, signal = null, extraEnv = null 
     // R3 — 팩을 바꾸거나 본체를 만들거나 옮기는 명령(use · new · open · import --replace · update)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
     const sub = argv[0] === 'pack' ? argv[1] : argv[0] // 시간 초과는 pack 하위 명령(또는 version 같은 최상위 명령) 이름으로
     // restore-work 도 — 워크트리를 만들고 pane 을 띄우는 중에 끊으면 반쯤 된다
-    const changesPack = ['use', 'new', 'open', 'update', 'restore-work'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
+    const changesPack = ['use', 'new', 'open', 'update', 'restore-work', 'delete'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
     const slow = () => onProgress && onProgress({ step: 'slow', text: say('pack.step.slow') })
     const timer = changesPack ? setInterval(slow, PACK_TIMEOUTS[sub] || 60000) : setTimeout(() => stop('timeout'), PACK_TIMEOUTS[sub] || 60000)
     if (signal) signal.addEventListener('abort', () => stop('canceled'), { once: true })
@@ -2001,6 +2001,24 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return result
   }
 
+  // 팩 지우기 — 열린 창이 없는 팩만. 코어 pack delete(먼저 팩 + 작업 기록 + 워크트리 변경 백업 · 일하는 중이면 busy · 워크트리가 있으면 has-worktrees)를
+  // 팩 관리 본체에서 — 팩 본체는 자기 팩을 지우지 못한다. 레포 폴더(코드)는 그대로
+  ctx.deletePack = async (id, { withWorktrees = false } = {}) => {
+    if (openPackIds().includes(id)) return { ok: false, error: 'open', text: say('pack.delete.open') }
+    const dir = packManagerDir()
+    const blocked = await contractBlock(dir)
+    if (blocked) return blocked
+    const result = await ctx.packTask(say('pack.task.delete'), (signal) => runPack(['delete', id, ...(withWorktrees ? ['--with-worktrees'] : [])], { dir, onProgress: ctx.packProgress, signal }))
+    if (result.ok) {
+      lastPackFile = typeof result.backup === 'string' ? result.backup : null
+      refreshAllPacks()
+      return result
+    }
+    if (result.error === 'has-worktrees') return { ok: false, error: 'has-worktrees', worktrees: Array.isArray(result.worktrees) ? result.worktrees : [] }
+    if (result.error === 'unsafe') return { ...result, text: say('pack.delete.unsafe') }
+    return { ...result, text: packModel.packErrorText(result, say) }
+  }
+
   // 팩 아이콘 우클릭 메뉴 — 고른 동작 이름을 돌려준다(이름 입력은 화면이 받는다). 아무것도 안 고르면 null
   ctx.packContextMenu = (id, point) => {
     const pack = [...(ctx.packState.packs || []), ctx.packState.current].find((item) => item && item.id === id)
@@ -2020,6 +2038,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
       // 내보내기(담을 것은 화면이 묻는다) — 코어 명령이 이 본체의 팩(지금 팩)만 다룬다(--id 가 없다)
       if (ctx.packState.current && ctx.packState.current.id === id) items.push({ type: 'separator' }, { label: say('pack.link.export'), click: pick('export') })
+      // 지우기 — 어느 창도 보고 있지 않은 팩만(보는 창이 있으면 그 창에서 다른 팩으로 바꾼 뒤)
+      if (!openPackIds().includes(id)) items.push({ type: 'separator' }, { label: say('pack.menu.delete'), click: pick('delete') })
       // 메뉴가 닫힌 뒤 click 이 늦게 올 수 있어 잠깐 기다렸다 null
       const menu = Menu.buildFromTemplate(items)
       menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
@@ -2832,6 +2852,7 @@ handle('tab:rename', (ctx, tabId, label) => ctx.daemonCall('tab rename', { tab: 
 handle('workspace:select', (ctx, workspaceId) => ctx.daemonCall('workspace select', { workspace: String(workspaceId) }))
 handle('workspace:new', (ctx, size) => ctx.newWorkspace(cellSize(size)))
 handle('workspace:open-dir', (ctx, dir, size) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.openWorkspaceDir(dir, cellSize(size)) : { error: 'bad dir' }))
+handle('pack:delete', (ctx, id, options) => ctx.deletePack(String(id), { withWorktrees: Boolean(options && options.withWorktrees) }))
 handle('pack:remove-repo', (ctx, name) => (typeof name === 'string' && /^[\w.-]+$/.test(name) ? ctx.removeRepo(name) : { ok: false, error: 'usage' }))
 handle('workspace:close', (ctx, workspaceId) => ctx.closeWorkspace(String(workspaceId || '')))
 handle('space:context-menu', (ctx, target, point) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? point : null))

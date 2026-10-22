@@ -528,5 +528,21 @@
   "board.menu.kanban": "Full kanban",
   "board.menu.kanbanNote": "The previous board view",
   "notify.request.question": "An agent needs your answer",
-  "notify.request.decision": "A decision is needed"
+  "notify.request.decision": "A decision is needed",
+  "pack.menu.delete": "Delete Pack…",
+  "pack.task.delete": "Delete pack",
+  "pack.delete.title": "Delete the {name} pack?",
+  "pack.delete.body": "This removes the pack's body, plans, issues, work history and board. Repo folders (code) stay as they are.",
+  "pack.delete.note": "The pack and its work history are backed up first — you can bring it back later with [Import].",
+  "pack.delete.yes": "Delete",
+  "pack.delete.progress": "Deleting the {name} pack",
+  "pack.delete.treesTitle": "{count} worktrees remain",
+  "pack.delete.treesBody": "Delete them too? Uncommitted changes are included in the backup.",
+  "pack.delete.treeDirty": "{name} — {count} uncommitted",
+  "pack.delete.treesYes": "Delete worktrees too",
+  "pack.delete.failed": "Couldn't delete the pack",
+  "pack.delete.open": "A window is showing this pack — switch that window to another pack first",
+  "pack.delete.unsafe": "This pack is tied to the main body and can't be deleted",
+  "pack.delete.done": "Deleted the {name} pack",
+  "pack.delete.doneNote": "Backup file — bring it back with [Import]"
 }

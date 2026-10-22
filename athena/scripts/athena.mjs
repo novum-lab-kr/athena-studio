@@ -16,6 +16,7 @@
  *   athena pack open <id> [--json]                 그 팩 본체를 준비(없으면 git 워크트리로 만들기)하고 경로·포트를 돌려준다
  *   athena pack use <id> [--start-board] [--json]  = pack open(활성 링크는 바꾸지 않는다 · --json 이면 --contract 2 필요)
  *   athena pack new [--json]                       빈 팩 자리 + 그 본체 → 그 본체에서 claude 를 켜면 /setup(--json 이면 --contract 2 필요)
+ *   athena pack delete <id> [--with-worktrees] [--json]      팩 지우기 — 먼저 팩 + 작업 기록 + 워크트리 변경 백업 · 일하는 중이면 busy · 워크트리가 있으면 --with-worktrees · 레포 폴더는 그대로(주 본체에서)
  *   athena pack discard <id> [--json]              /setup 전 빈 자리와 그 본체를 지운다
  *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
  *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
@@ -66,7 +67,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, boardPort, dataDir, defaultBackupDir, loadConfig, paths } from './lib/config.mjs'
 import { setDisplayName, setIcon } from './lib/pack-look.mjs'
-import { CONTRACT, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
+import { CONTRACT, deletePack, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
@@ -384,6 +385,10 @@ const packCommands = {
     return openPack(ROOT, id, { report, allowEmpty: true })
   },
   new: () => newPackBody(ROOT, { report }),
+  delete: () => {
+    if (!positional()[0]) throw new PackError('usage', '사용: athena pack delete <id> [--with-worktrees] [--json]')
+    return deletePack(ROOT, positional()[0], { withWorktrees: args.includes('--with-worktrees'), report })
+  },
   discard: () => {
     if (!positional()[0]) throw new PackError('usage', '사용: athena pack discard <id> [--json]')
     return discardPack(ROOT, positional()[0], { report })

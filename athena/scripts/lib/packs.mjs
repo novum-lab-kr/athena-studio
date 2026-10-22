@@ -1178,8 +1178,15 @@ export const exportPack = (root, out) => {
 // 내 백업 — 팩 + 작업 기록(계획서 · 이슈 · 보관함). 비밀값 · 결과물(상태 · 워크트리 · 레포)은 뺀다
 export const backupWithWork = (root, out, { panes = [], report = () => {} } = {}) => {
   const { packDir, id, where } = requireCurrent(root)
-  const target = resolve(out || defaultBackupDir(where.dataDir))
-  const stage = join(where.dataDir, 'tmp', `backup-${randomBytes(6).toString('hex')}`)
+  return writeWorkBackup({ root, packDir, id, data: where.dataDir, packData: where.packDataReal ?? where.packData ?? null, out, panes, report })
+}
+
+// 팩 + 작업 기록(+ 되살리기 정보) 압축 하나 — 내 백업 · 팩 삭제 전 백업이 같이 쓴다. root 는 repos/ · plans/ · issues/ 를 읽는 자리
+// (본체 — 여러 팩이면 팩 데이터 링크 · 본체가 없으면 팩 데이터 자체도 된다). packData 가 없으면(옛 구조) 레포 자리 · 되살리기 정보는 뺀다
+export const writeWorkBackup = ({ root, packDir, id, data, packData, out, panes = [], report = () => {}, prefix = 'work' }) => {
+  const where = { packData, packDataReal: packData }
+  const target = resolve(out || defaultBackupDir(data))
+  const stage = join(data, 'tmp', `backup-${randomBytes(6).toString('hex')}`)
   try {
     const top = join(stage, id)
     const packFiles = collect(packDir, readdirSync(packDir))
@@ -1203,7 +1210,7 @@ export const backupWithWork = (root, out, { panes = [], report = () => {} } = {}
     const restore = captured && !captured.empty ? captured : null
     const pack = readPackJson(packDir) ?? {}
     writeJsonAtomic(join(top, 'athena-backup.json'), { kind: 'with-work', version: restore ? 2 : 1, id, packId: pack.id ?? null, name: pack.name ?? id, createdAt: stamp() })
-    const file = tarFiles(stage, id, target, `${id}-work`)
+    const file = tarFiles(stage, id, target, `${id}-${prefix}`)
     return { ok: true, file, files: count + 1, bytes: statSync(file).size, ...(restore ? { restore: { sessions: restore.sessions, worktrees: restore.worktrees, missing: restore.missing }, ...(restore.warnings.length ? { warnings: restore.warnings } : {}) } : {}) }
   } finally { rmSync(stage, { recursive: true, force: true }) }
 }

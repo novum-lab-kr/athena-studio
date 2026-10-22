@@ -17,7 +17,7 @@ import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
   BLOCKING, bodyOf, busyScan, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
-  takePackLock, updateRegistry,
+  takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
 export const CONTRACT = 2
@@ -478,6 +478,54 @@ export const discardPack = (root, id, { report = () => {} } = {}) => {
     updateRegistry(data, (registry) => { delete registry.packs[id]; if (registry.current === id) registry.current = null })
     report('done', `지움 — ${id}`)
     return { ok: true, id, removedBody: body ?? null }
+  } finally {
+    release()
+  }
+}
+
+// pack delete — 팩 하나를 지운다(팩 · 작업 기록 · 워크트리 · 본체 · 레지스트리). 레포 폴더는 그대로.
+// 먼저 "팩 + 작업 기록 + 워크트리 변경" 백업(pack import 로 되살린다) · 그 본체에서 일하는 중이면 busy · 워크트리가 있으면 withWorktrees 가 있어야
+export const deletePack = (root, id, { withWorktrees = false, report = () => {} } = {}) => {
+  const data = dataDir(root)
+  if (!validId(id)) throw new PackError('not-found', `팩 id 가 올바르지 않다: ${id}`)
+  const slot = join(data, 'packs', id)
+  if (!existsSync(slot)) throw new PackError('not-found', `그런 팩이 없다: ${id}`)
+  const release = takePackLock(data, id, `pack delete ${id}`)
+  try {
+    const main = mainBody(root)
+    const body = bodyOf(root, data, id)
+    if (body && (isMainBody(main, body) || realOr(body) === realOr(root))) throw new PackError('unsafe', `이 본체(${body})의 팩은 여기서 지우지 않는다 — 주 본체(~/.athena-studio/core)에서 부른다`)
+    if (body) {
+      const scanned = busyScan(body, scanProcesses())
+      const blocking = scanned.busy.filter((item) => BLOCKING.has(item.kind) && item.pid !== process.pid)
+      if (!scanned.known || blocking.length) throw new PackError('busy', `그 팩 본체에서 도는 작업이 있다 — ${blocking.map((item) => item.what).join(' · ') || '확인 못 함'}`, { busy: blocking })
+    }
+    // 워크트리(<팩 데이터>/worktrees/<레포>/<이름> · .git 이 파일) — 미커밋 수와 함께 알린다
+    const trees = []
+    const base = join(slot, 'worktrees')
+    if (existsSync(base)) for (const repo of readdirSync(base)) {
+      if (!lstatSync(join(base, repo)).isDirectory()) continue
+      for (const name of readdirSync(join(base, repo))) {
+        const path = join(base, repo, name)
+        try { if (lstatSync(join(path, '.git')).isFile()) trees.push({ name: `${repo}/${name}`, path, dirty: (gitTry(path, ['status', '--porcelain']) ?? '').split('\n').filter(Boolean).length }) } catch { /* 워크트리 아님 */ }
+      }
+    }
+    if (trees.length && !withWorktrees) throw new PackError('has-worktrees', `워크트리가 ${trees.length}개 있다 — 같이 지우려면 --with-worktrees(변경은 백업에 담긴다)`, { worktrees: trees.map(({ name, dirty }) => ({ name, dirty })) })
+    report('backup', `백업 — ${id}`)
+    const pack = readJson(join(slot, 'pack', 'pack.json')) ?? {}
+    const backup = existsSync(join(slot, 'pack', 'pack.json'))
+      ? writeWorkBackup({ root: body ?? slot, packDir: join(slot, 'pack'), id, data, packData: slot, report, prefix: 'before-delete' }).file
+      : null
+    if (body) { report('body', `현황판 끄기 · 본체 지우기 — ${body}`); stopBoard(body) }
+    for (const tree of trees) {
+      const common = gitTry(tree.path, ['rev-parse', '--path-format=absolute', '--git-common-dir'])
+      if (!(common && gitOk(dirname(common), ['worktree', 'remove', '--force', tree.path]))) rmSync(tree.path, { recursive: true, force: true })
+    }
+    if (body) removeBody(main, body, data)
+    rmSync(slot, { recursive: true, force: true })
+    updateRegistry(data, (registry) => { delete registry.packs[id]; if (registry.current === id) registry.current = null })
+    report('done', `지움 — ${id}`)
+    return { ok: true, id, name: pack.displayName ?? pack.name ?? id, backup, removedBody: body ?? null, worktrees: trees.length }
   } finally {
     release()
   }

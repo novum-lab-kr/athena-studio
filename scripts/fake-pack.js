@@ -241,6 +241,19 @@ async function main() {
       const file = path.join(out, `${state.current.id}-${sub === 'backup' ? 'backup' : 'pack'}-fake.tar.gz`)
       return done({ ok: true, file, files: sub === 'backup' ? 88 : 41, bytes: sub === 'backup' ? 512000 : 210000 })
     }
+    // 팩 지우기 — broken 은 워크트리가 남아 있는 척(--with-worktrees 면 지운다). 가짜는 백업 파일을 만들지 않는다 — 경로만
+    case 'delete': {
+      const target = findPack(arg)
+      if (!target) fail('not-found', `팩 ${arg} 이 없어요`)
+      if (mine && mine.id === target.id) fail('unsafe', `이 본체의 팩은 여기서 지우지 않는다`)
+      if (target.id === 'broken' && !process.argv.includes('--with-worktrees')) fail('has-worktrees', '워크트리가 2개 있다', { worktrees: [{ name: 'broken-web/feature-x', dirty: 3 }, { name: 'broken-api/fix-y', dirty: 0 }] })
+      progress('backup', '백업 만드는 중')
+      await sleep(600)
+      state.packs = state.packs.filter((pack) => pack.id !== target.id)
+      delete state.bodies[target.id]
+      save(state)
+      return done({ ok: true, id: target.id, name: target.name, backup: path.join(os.tmpdir(), `${target.id}-before-delete-fake.tar.gz`), removedBody: true, worktrees: 0 })
+    }
     // 팩 열기 — 본체가 없으면 만든다(가짜는 아테나 폴더 모양만). 이미 있으면 경로만
     case 'open': {
       const target = findPack(arg)

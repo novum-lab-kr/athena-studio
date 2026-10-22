@@ -528,5 +528,21 @@
   "board.menu.kanban": "完整看板",
   "board.menu.kanbanNote": "以前的看板视图",
   "notify.request.question": "需要你的回复",
-  "notify.request.decision": "需要你做决定"
+  "notify.request.decision": "需要你做决定",
+  "pack.menu.delete": "删除包…",
+  "pack.task.delete": "删除包",
+  "pack.delete.title": "要删除 {name} 包吗？",
+  "pack.delete.body": "将删除这个包的本体、计划书、问题、工作记录和看板。仓库文件夹(代码)保持不变。",
+  "pack.delete.note": "删除前会自动备份包和工作记录 — 以后可以用[导入]恢复。",
+  "pack.delete.yes": "删除",
+  "pack.delete.progress": "正在删除 {name} 包",
+  "pack.delete.treesTitle": "还有 {count} 个工作树",
+  "pack.delete.treesBody": "一起删除吗？未提交的更改也会放进备份。",
+  "pack.delete.treeDirty": "{name} — {count} 个未提交",
+  "pack.delete.treesYes": "也删除工作树",
+  "pack.delete.failed": "无法删除包",
+  "pack.delete.open": "有窗口正在显示这个包 — 请先把那个窗口切换到其他包再删除",
+  "pack.delete.unsafe": "这个包绑定在主本体上，无法删除",
+  "pack.delete.done": "已删除 {name} 包",
+  "pack.delete.doneNote": "备份文件 — 可以用[导入]恢复"
 }

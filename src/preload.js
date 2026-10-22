@@ -56,6 +56,7 @@ contextBridge.exposeInMainWorld('studio', {
   workspaceOpenDir: (dir, size) => ipcRenderer.invoke('workspace:open-dir', dir, size),
   packAddRepo: (dir, name) => ipcRenderer.invoke('pack:add-repo', dir, name),
   packRemoveRepo: (name) => ipcRenderer.invoke('pack:remove-repo', name),
+  packDelete: (id, options) => ipcRenderer.invoke('pack:delete', id, options),
   workspaceClose: (id) => ipcRenderer.invoke('workspace:close', id),
   spaceContextMenu: (target, point) => ipcRenderer.invoke('space:context-menu', target, point),
   // 가운데 맨 아래 에이전트 모니터 — 보일 때만 main 이 Claude 기록을 따라 읽는다

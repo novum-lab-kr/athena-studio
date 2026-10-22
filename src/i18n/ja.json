@@ -528,5 +528,21 @@
   "board.menu.kanban": "カンバン全体",
   "board.menu.kanbanNote": "以前のボード画面",
   "notify.request.question": "回答が必要です",
-  "notify.request.decision": "決定が必要です"
+  "notify.request.decision": "決定が必要です",
+  "pack.menu.delete": "パックを削除…",
+  "pack.task.delete": "パック削除",
+  "pack.delete.title": "{name} パックを削除しますか？",
+  "pack.delete.body": "このパックの本体・計画書・イシュー・作業記録・ボードを削除します。リポジトリのフォルダ(コード)はそのままです。",
+  "pack.delete.note": "削除する前にパックと作業記録を自動でバックアップします — あとで[インポート]で戻せます。",
+  "pack.delete.yes": "削除",
+  "pack.delete.progress": "{name} パックを削除中",
+  "pack.delete.treesTitle": "ワークツリーが {count} 個残っています",
+  "pack.delete.treesBody": "一緒に削除しますか？未コミットの変更もバックアップに含まれます。",
+  "pack.delete.treeDirty": "{name} — 未コミット {count} 個",
+  "pack.delete.treesYes": "ワークツリーも削除",
+  "pack.delete.failed": "パックを削除できませんでした",
+  "pack.delete.open": "開いているウィンドウがこのパックを表示しています — そのウィンドウを別のパックに切り替えてから削除してください",
+  "pack.delete.unsafe": "このパックはメイン本体に結び付いているため削除できません",
+  "pack.delete.done": "{name} パックを削除しました",
+  "pack.delete.doneNote": "バックアップファイル — [インポート]で戻せます"
 }
