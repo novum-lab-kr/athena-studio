@@ -53,6 +53,7 @@
  *                                                     reposRoot(기본 ..) 아래 n 단계(기본 3)까지 git 레포를 훑어 추정을 보여 준다(읽기 전용)
  *   athena init --pack <회사> --repos <a,b|all> [--names <x,y>] [--org <GitHub 조직>] [--agent <레포>=<이름> …]
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
+ *   athena repo add <레포 폴더> [--name <이름>] [--json]       이미 있는 팩에 레포 하나 더하기 — pack.json · 자리 · repos/ 링크 · 그 레포 뼈대 · 팩 링크(채우기는 docs/setup.md "레포 하나 더하기")
  *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서·다이어그램 표(있는 파일은 그대로) + 링크
  *
  * 팩 위치는 athena.config.json 의 pack. 링크 목록은 이 컴퓨터의 .git/info/exclude 에 적어 git 이 무시하게 한다
@@ -65,10 +66,10 @@ import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, boardPort, dataDir, defaultBackupDir, loadConfig, paths } from './lib/config.mjs'
 import { setDisplayName, setIcon } from './lib/pack-look.mjs'
 import { CONTRACT, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
-import { initPack, scaffold, scanRepos } from './lib/init.mjs'
+import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
-  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate,
+  PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate, syncRepos,
   packStatus, relinkBody, renameNewSlot, restoreWithWork, restoreWorkCommand, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
@@ -174,6 +175,22 @@ const init = () => {
   link()
 }
 
+// 레포 하나 더하기 — pack.json · local.json(lib/init.mjs addRepo) → repos/ 링크 → 그 레포 뼈대(에이전트 · 지식 · 검증) → 팩 링크.
+// 뼈대 채우기(에이전트 설명 · 지식 · ROUTING · services · 지문)는 아테나가 docs/setup.md "레포 하나 더하기" 대로
+const runRepoAdd = () => {
+  const dir = positional()[0]
+  if (!dir) throw new PackError('usage', '사용: athena repo add <레포 폴더> [--name <이름>] [--json]')
+  let added
+  try { added = addRepo({ athenaRoot: ROOT, dir: resolve(dir), name: flag('name') }) } catch (error) { throw new PackError(error.code ?? 'invalid-pack', error.message) }
+  const repos = syncRepos(ROOT)
+  const made = added.already ? [] : scaffold({ athenaRoot: ROOT, packDir: packDir(), config: loadConfig(ROOT), only: [added.repo.name] })
+  if (!asJson) for (const path of made) console.log(`   + ${relative(ROOT, path)}`)
+  const quiet = console.log
+  if (asJson) console.log = () => {}
+  try { link() } finally { console.log = quiet }
+  return { ...added, linked: repos.linked.includes(added.repo.name), scaffolded: made.map((path) => relative(ROOT, path)) }
+}
+
 const runScaffold = () => {
   const pack = packDir()
   const made = scaffold({ athenaRoot: ROOT, packDir: pack, config: loadConfig(ROOT), only: args })
@@ -241,7 +258,7 @@ const restore = () => {
 const asJson = args.includes('--json')
 const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
-const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack'].includes(rest[index - 1])))
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack', '--name'].includes(rest[index - 1])))
 // 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
 // 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
@@ -401,6 +418,7 @@ else if (command === 'update') {
   runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), from: flag('from'), backupDirty: args.includes('--backup-dirty'), report })))
 }
 else if (command === 'scaffold') runScaffold()
+else if (command === 'repo' && sub === 'add') runPack('repo add', () => runRepoAdd())
 else if (command === 'request' && requestCommands[sub]) runPack(`request ${sub}`, requestCommands[sub])
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()

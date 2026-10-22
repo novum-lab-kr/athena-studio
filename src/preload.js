@@ -52,6 +52,8 @@ contextBridge.exposeInMainWorld('studio', {
   tabRename: (tabId, label) => ipcRenderer.invoke('tab:rename', tabId, label),
   workspaceSelect: (workspaceId) => ipcRenderer.invoke('workspace:select', workspaceId),
   workspaceNew: (size) => ipcRenderer.invoke('workspace:new', size),
+  workspaceOpenDir: (dir, size) => ipcRenderer.invoke('workspace:open-dir', dir, size),
+  packAddRepo: (dir, name) => ipcRenderer.invoke('pack:add-repo', dir, name),
   // 가운데 맨 아래 에이전트 모니터 — 보일 때만 main 이 Claude 기록을 따라 읽는다
   monitorWatch: (on) => ipcRenderer.send('monitor:watch', on),
   onMonitorUpdate: listen('monitor:update'),

@@ -663,7 +663,7 @@ function logCore(line) {
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor = null
-const PACK_TIMEOUTS = { 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
+const PACK_TIMEOUTS = { repo: 120000, 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
 // 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다
 const REQUESTS_POLL_MS = 30000
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
@@ -1044,6 +1044,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
 
   // 새 작업 공간 — 폴더를 고르면 그 이름으로(레포 하나 = 작업 공간 하나)
+  // spaces + — 폴더를 고른다. 팩 본체이고 고른 것이 팩에 없는 git 레포면 바로 열지 않고 돌려준다(화면이 "팩에 더할까요?" 를 묻는다)
   ctx.newWorkspace = async (size) => {
     const result = await dialog.showOpenDialog(ctx.win, {
       title: say('dialog.newWorkspace.title'),
@@ -1053,7 +1054,36 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     })
     if (result.canceled || !result.filePaths[0]) return { canceled: true }
     const dir = result.filePaths[0]
-    return daemonCall('workspace create', { label: path.basename(dir), cwd: dir, focus: true, ...size })
+    const packBody = fs.existsSync(path.join(ctx.athenaDir || '', '.pack-data'))
+    if (packBody && fs.existsSync(path.join(dir, '.git'))) {
+      const real = core.realDir(dir)
+      const inPack = (await ctx.packRepos()).some((repo) => repo.linked && core.realDir(path.join(ctx.athenaDir, 'repos', repo.name)) === real)
+      if (!inPack) return { askAdd: true, dir, name: path.basename(dir) }
+    }
+    return ctx.openWorkspaceDir(dir, size)
+  }
+  ctx.openWorkspaceDir = (dir, size) => daemonCall('workspace create', { label: path.basename(dir), cwd: dir, focus: true, ...size })
+
+  // 팩에 레포 하나 더하기 — 코어 repo add(pack.json · 자리 · 링크 · 뼈대) 뒤 아테나에게 뼈대 채우기를 맡긴다(docs/setup.md "레포 하나 더하기")
+  ctx.addRepo = async (dir, name) => {
+    const args = ['repo', 'add', String(dir), ...(name ? ['--name', String(name)] : [])]
+    const result = await ctx.packTask(say('pack.task.addRepo'), () => runCore(args, { dir: ctx.athenaDir }))
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.already) await sendToAthena(say('spaces.addRepoAsk', { repo: result.repo.name, path: result.path }))
+    return result
+  }
+  // 아테나 pane(이 창 아테나 작업 공간의 첫 pane)에 글 한 줄 + Enter — 없으면 false
+  async function sendToAthena(text) {
+    const state = await daemonCall('state')
+    const athena = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
+    const tab = athena && state.result.tabs.find((entry) => entry.workspace === athena.id)
+    const pane = tab && layout.paneIds(tab.tree)[0]
+    if (!pane) return false
+    await daemonCall('workspace select', { workspace: athena.id })
+    const typed = await daemonCall('pane send-text', { pane, text })
+    if (typed.error) return false
+    await daemonCall('pane send-keys', { pane, keys: ['Enter'] })
+    return true
   }
 
   // 보일 때만(startPanesPolling 이 2초마다 부른다) pane 목록(에이전트가 도는 폴더 → 모니터)과 작업 공간 브랜치를 갱신한다
@@ -2699,6 +2729,8 @@ handle('tab:close', (ctx, tabId) => ctx.closeTab(String(tabId)))
 handle('tab:rename', (ctx, tabId, label) => ctx.daemonCall('tab rename', { tab: String(tabId), label: typeof label === 'string' ? label.trim().slice(0, 60) : '' }))
 handle('workspace:select', (ctx, workspaceId) => ctx.daemonCall('workspace select', { workspace: String(workspaceId) }))
 handle('workspace:new', (ctx, size) => ctx.newWorkspace(cellSize(size)))
+handle('workspace:open-dir', (ctx, dir, size) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.openWorkspaceDir(dir, cellSize(size)) : { error: 'bad dir' }))
+handle('pack:add-repo', (ctx, dir, name) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.addRepo(dir, typeof name === 'string' && name ? name : null) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on) => ctx.setMonitorWatch(on === true))
 handle('explorer:list', (ctx, workspaceId, relative) => guarded(() => ctx.explorerList(workspaceId, relative)))
 handle('explorer:status', (ctx, workspaceId) => guarded(() => ctx.explorerStatus(workspaceId)))

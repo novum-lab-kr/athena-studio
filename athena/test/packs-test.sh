@@ -217,6 +217,19 @@ mkdir -p "$O/badrestore/acme/restore" && cp -R "$F/packs/acme" "$O/badrestore/ac
 check "나쁜 되살리기 정보(계획서 경로에 ..) → unsafe" '[ "$(A pack inspect "$O/badrestore" | field error)" = unsafe ]'
 unset ATHENA_CLAUDE_HOME
 
+section "레포 하나 더하기(repo add)"
+SRCS="$ATHENA_DATA_DIR/repos-src"; LOCAL="$ATHENA_DATA_DIR/packs/acme/local.json"; cp "$LOCAL" "$WORK/local.add.bak"; cp pack/pack.json "$WORK/pack.add.bak"
+mkdir -p "$SRCS/team/new-svc" && git -C "$SRCS/team/new-svc" init -q -b main && (cd "$SRCS/team/new-svc" && echo x > README.md && git add . && git -c user.email=t@e.invalid -c user.name=t commit -qm init && git remote add origin https://u:tok@example.com/acme/new-svc.git)
+R="$(A repo add "$SRCS/team/new-svc")"
+check "repo add → pack.json 항목(git 주소 · 토큰 뗌) · 자리 · repos/ 링크" '[ "$(echo "$R" | field repo.name)" = new-svc ] && grep -q "\"new-svc\"" pack/pack.json && grep -q "https://example.com/acme/new-svc.git" pack/pack.json && ! grep -q "tok@" pack/pack.json && grep -q "team/new-svc" "$LOCAL" && [ "$(readlink repos/new-svc)" = "$SRCS/team/new-svc" ] && [ "$(echo "$R" | field linked)" = True ]' "$R"
+check "repo add → 그 레포 뼈대(에이전트 · 지식 · 검증) · 에이전트 링크" '[ -f pack/agents/new-svc-fe.md ] && [ -f pack/knowledge/new-svc/rules.md ] && [ -x pack/verify/new-svc.sh ] && [ -L .claude/agents/new-svc-fe.md ]' "$R"
+check "같은 레포 다시 → already" '[ "$(A repo add "$SRCS/team/new-svc" | field already)" = True ]'
+mkdir -p "$SRCS/other/new-svc" && git -C "$SRCS/other/new-svc" init -q -b main
+check "같은 이름 · 다른 자리 → exists" '[ "$(A repo add "$SRCS/other/new-svc" | field error)" = exists ]'
+check "git 레포가 아니면 → not-repo" '[ "$(A repo add "$WORK" | field error)" = not-repo ]'
+cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; rm -rf pack/agents/new-svc-fe.md pack/knowledge/new-svc pack/verify/new-svc.sh; A pack open acme >/dev/null
+check "원래대로 — new-svc 링크 없음" '[ ! -e repos/new-svc ] && [ ! -L repos/new-svc ]'
+
 section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
 IMG="$WORK/img"; mkdir -p "$IMG"
 printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$IMG/a.png"

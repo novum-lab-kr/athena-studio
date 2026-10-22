@@ -164,6 +164,58 @@ const repoPaths = (current, repos) => {
 }
 
 // 고른 레포(스캔 결과 + 에이전트 이름)로 팩을 만든다
+// 훑은 레포 하나 → pack.json repos 항목. 기본 에이전트 이름 — 사용자가 고친 값(agents · appsSpec · packagesAgent)이 있으면 그것
+export const packEntry = (repo) => {
+  const defaults = defaultAgents(repo)
+  const entry = { name: repo.name, branch: repo.branch, prBase: repo.prBase, kind: repo.kind, ...(repo.remote ? { remote: repo.remote } : {}) }
+  if (repo.kind === 'monorepo') {
+    entry.apps = repo.appsSpec ?? defaults.apps
+    entry.packagesAgent = repo.packagesAgent ?? defaults.packagesAgent
+  } else {
+    entry.agents = repo.agents ?? defaults.agents
+  }
+  if (repo.layer === 'be') entry.layer = 'be'
+  if (repo.lang === 'python') entry.lang = 'python'
+  if (repo.appDir) entry.appDir = repo.appDir
+  return entry
+}
+
+// 이미 있는 팩에 레포 하나 더하기(여러 팩 구조 · docs/setup.md "레포 하나 더하기") — 훑어 pack.json 에 항목 · <팩 데이터>/local.json 에 자리.
+// 링크 · 뼈대 · 팩 링크는 부르는 쪽(bin/athena repo add)이 이어서. 같은 이름이 있으면 같은 자리면 already, 다른 자리면 exists(--name 으로 다른 이름)
+export const addRepo = ({ athenaRoot, dir, name = '' }) => {
+  const where = paths(athenaRoot)
+  if (where.mode !== 'packs' || !where.packDataReal) throw new Error('여러 팩 본체가 아니다 — 팩 데이터가 없다')
+  const real = (() => { try { return realpathSync(dir) } catch { return '' } })()
+  if (!real || !existsSync(join(real, '.git'))) throw Object.assign(new Error(`git 레포가 아니다: ${dir}`), { code: 'not-repo' })
+  const self = realpathSync(athenaRoot)
+  if (real === self || real.startsWith(self + '/')) throw Object.assign(new Error('아테나 본체 안의 폴더는 레포로 더하지 않는다'), { code: 'unsafe' })
+  const repo = { ...inspectRepo(real), ...(name ? { name } : {}) }
+  if (!/^[\w.-]+$/.test(repo.name)) throw Object.assign(new Error(`레포 이름이 올바르지 않다: ${repo.name}`), { code: 'usage' })
+  const packJson = join(where.packDataReal, 'pack', 'pack.json')
+  const pack = readJson(packJson)
+  if (!pack) throw new Error('지금 팩에 pack.json 이 없다 — /setup 을 먼저 끝낸다')
+  const localFile = join(where.packDataReal, 'local.json')
+  const local = readJson(localFile) ?? {}
+  const reposRoot = resolve(athenaRoot, local.reposRoot ?? '..')
+  const placed = (entryName) => realpathOr(resolve(reposRoot, local.repoPaths?.[entryName] ?? entryName))
+  const existing = (pack.repos ?? []).find((item) => item.name === repo.name)
+  if (existing) {
+    if (placed(existing.name) === real) return { ok: true, already: true, repo: existing, path: real }
+    throw Object.assign(new Error(`같은 이름의 레포가 이미 팩에 있다: ${repo.name} — 다른 이름으로(--name)`), { code: 'exists' })
+  }
+  const entry = packEntry(repo)
+  pack.repos = [...(pack.repos ?? []), entry]
+  writeFileSync(packJson, `${JSON.stringify(pack, null, 2)}\n`)
+  // 자리 — reposRoot/<이름> 이 아니면 repoPaths 에(reposRoot 안이면 상대 경로)
+  const rel = relative(reposRoot, real)
+  if (rel !== repo.name) {
+    const next = { ...local, repoPaths: { ...(local.repoPaths ?? {}), [repo.name]: rel.startsWith('..') ? real : rel } }
+    writeFileSync(localFile, `${JSON.stringify(next, null, 2)}\n`)
+  }
+  return { ok: true, repo: entry, path: real }
+}
+const realpathOr = (path) => { try { return realpathSync(path) } catch { return path } }
+
 export const initPack = ({ athenaRoot, company, repos, names = [], org = '', reposRoot = '..' }) => {
   // 여러 팩 구조(활성 링크 .pack-data)면 지금 팩 자리(pack/)에 만들고, 이 컴퓨터 설정은 <팩 데이터>/local.json 에 쓴다
   const where = paths(athenaRoot)
@@ -174,21 +226,7 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
   const configPath = packsMode ? join(where.packDataReal, 'local.json') : join(athenaRoot, 'athena.config.json')
   const current = readJson(configPath)
   if (!packsMode && current?.pack) throw new Error(`athena.config.json 이 이미 팩(${current.pack})을 가리킨다`)
-  const entries = repos.map((repo) => {
-    // 기본 에이전트 이름 — 사용자가 고친 값(agents · appsSpec · packagesAgent)이 있으면 그것
-    const defaults = defaultAgents(repo)
-    const entry = { name: repo.name, branch: repo.branch, prBase: repo.prBase, kind: repo.kind, ...(repo.remote ? { remote: repo.remote } : {}) }
-    if (repo.kind === 'monorepo') {
-      entry.apps = repo.appsSpec ?? defaults.apps
-      entry.packagesAgent = repo.packagesAgent ?? defaults.packagesAgent
-    } else {
-      entry.agents = repo.agents ?? defaults.agents
-    }
-    if (repo.layer === 'be') entry.layer = 'be'
-    if (repo.lang === 'python') entry.lang = 'python'
-    if (repo.appDir) entry.appDir = repo.appDir
-    return entry
-  })
+  const entries = repos.map(packEntry)
   // 하나라도 실패하면 이번에 만든 파일·폴더를 지워 처음 상태로 되돌린다(반쯤 만든 팩이 "이미 팩이 있다" 로 다시 못 돌게 막지 않게).
   // 설정(athena.config.json)은 맨 마지막에 쓴다 — 팩이 다 만들어진 뒤에만 팩을 가리킨다
   const created = []

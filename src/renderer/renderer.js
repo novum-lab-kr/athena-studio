@@ -492,6 +492,28 @@ function callMeta(info) {
   return meta
 }
 
+// spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지
+async function offerAddRepo({ dir, name }) {
+  const choice = await packDialog({
+    title: say('spaces.addRepoTitle', { repo: name }),
+    subtitle: say('spaces.addRepoNote'),
+    body: [el('p', 'muted', dir)],
+    actions: [{ label: say('spaces.addRepoYes'), value: 'add', kind: 'primary' }, { label: say('spaces.addRepoTerminal'), value: 'open' }, { label: say('common.cancel'), value: null }],
+  })
+  if (choice === 'open') {
+    const opened = await studio.workspaceOpenDir(dir, estimateCells($('panes')))
+    if (opened.error) showToast(say('spaces.createFailed', { message: opened.error }))
+    return
+  }
+  if (choice !== 'add') return
+  showPackProgress(say('spaces.addRepoProgress', { repo: name }), false)
+  const result = await studio.packAddRepo(dir, null)
+  hidePackProgress()
+  if (!result.ok) return packAlert(say('spaces.addRepoFailed'), result.text || result.message)
+  await refreshPackRepos()
+  showToast(say(result.already ? 'spaces.addRepoAlready' : 'spaces.addRepoDone', { repo: result.repo.name }), 'success')
+}
+
 // 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
 async function callRepoAgent(repo) {
   const info = await studio.packCallInfo(repo.name)
@@ -1402,6 +1424,7 @@ async function runCommand(name) {
   }
   if (name === 'new-workspace') {
     const result = await studio.workspaceNew(estimateCells($('panes')))
+    if (result.askAdd) return runPackFlow(() => offerAddRepo(result))
     if (result.error) showToast(say('spaces.createFailed', { message: result.error }))
     return undefined
   }
