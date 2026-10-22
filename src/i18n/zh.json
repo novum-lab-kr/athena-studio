@@ -375,7 +375,7 @@
   "pack.compare.same": "{name} 已存在",
   "pack.backup.title": "我的备份",
   "pack.backup.progress": "正在创建备份",
-  "pack.backup.note": "不包含未提交的代码和未推送的提交。",
+  "pack.backup.note": "仓库主检出中未提交的代码不会包含 — 只包含包的工作树(代理的工作位置)。",
   "pack.export.title": "导出包",
   "pack.export.ask": "要包含哪些内容?",
   "pack.export.withWork": "包 + 我的工作记录",

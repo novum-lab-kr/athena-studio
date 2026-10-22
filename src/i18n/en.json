@@ -375,7 +375,7 @@
   "pack.compare.same": "{name} already exists",
   "pack.backup.title": "My Backup",
   "pack.backup.progress": "Creating the backup",
-  "pack.backup.note": "Uncommitted code and unpushed commits are not included.",
+  "pack.backup.note": "Uncommitted code in a repo's main checkout is not included — only the pack's worktrees (where agents work).",
   "pack.export.title": "Export Pack",
   "pack.export.ask": "What should it include?",
   "pack.export.withWork": "Pack + my work history",

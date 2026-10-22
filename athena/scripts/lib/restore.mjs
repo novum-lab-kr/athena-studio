@@ -296,14 +296,18 @@ const restoreWorktree = (root, packData, dir, item, state, save) => {
   return { status: 'done', path: target, branch: state.branch, ...(state.renamed ? { renamed: state.renamed } : {}) }
 }
 
-// 대화 기록 — 그 컴퓨터에 없을 때만 새 cwd 의 기록 폴더로 넣는다(있으면 그대로 · 덮지 않는다)
+// 대화가 든 기록인가 — 사용자 메시지 줄이 하나라도 있으면. 세션이 살아 있는 채로 파일이 지워지면 Claude 가 설정 줄만 든 새 파일을 다시 쓴다(2026-10-22 실측)
+const hasMessages = (file) => { try { return readFileSync(file, 'utf8').includes('"type":"user"') } catch { return false } }
+
+// 대화 기록 — 그 컴퓨터에 없을 때만 새 cwd 의 기록 폴더로 넣는다. 있으면 그대로 · 대화 없는 껍데기만 있으면 옆에 남기고(.bak-<시각>) 백업 것으로
 const restoreTranscript = (dir, item, cwd) => {
   const project = claudeProjectDir(cwd)
   const log = join(project, `${item.session}.jsonl`)
-  if (existsSync(log)) return 'present'
   const source = join(dir, 'transcripts', `${item.session}.jsonl`)
+  if (existsSync(log) && (hasMessages(log) || !hasMessages(source))) return 'present'
   if (!existsSync(source)) return 'missing'
   mkdirSync(project, { recursive: true })
+  if (existsSync(log)) renameSync(log, `${log}.bak-${Date.now()}`)
   cpSync(source, log)
   if (existsSync(join(dir, 'transcripts', item.session))) cpSync(join(dir, 'transcripts', item.session), join(project, item.session), { recursive: true, force: false, errorOnExist: false })
   return 'copied'

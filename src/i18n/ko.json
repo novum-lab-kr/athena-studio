@@ -375,7 +375,7 @@
   "pack.compare.same": "{name} 이 이미 있어요",
   "pack.backup.title": "내 백업",
   "pack.backup.progress": "백업을 만드는 중",
-  "pack.backup.note": "미커밋 코드 · push 안 한 커밋은 담기지 않아요.",
+  "pack.backup.note": "레포 메인 체크아웃의 미커밋 코드는 담기지 않아요 — 팩 워크트리(에이전트 작업 자리)만 담아요.",
   "pack.export.title": "팩 내보내기",
   "pack.export.ask": "무엇을 담을까요?",
   "pack.export.withWork": "팩 + 내 작업 기록",

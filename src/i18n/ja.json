@@ -375,7 +375,7 @@
   "pack.compare.same": "{name} はすでにあります",
   "pack.backup.title": "自分のバックアップ",
   "pack.backup.progress": "バックアップを作成中",
-  "pack.backup.note": "未コミットのコード・push していないコミットは含まれません。",
+  "pack.backup.note": "リポジトリのメインチェックアウトの未コミットのコードは含まれません — パックのワークツリー(エージェントの作業場所)だけです。",
   "pack.export.title": "パックを書き出す",
   "pack.export.ask": "何を含めますか?",
   "pack.export.withWork": "パック + 自分の作業記録",

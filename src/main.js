@@ -1177,7 +1177,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (state.error) return { error: state.error }
     const existing = core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
     // 백업에서 되살리기로 열었으면 — 워크트리 · 대화 기록 · 에이전트 pane 을 먼저 되살리고, 아테나는 그 대화로 잇는다
-    const restore = restoreArmedFor && ctx.packState.current && ctx.packState.current.id === restoreArmedFor ? await ctx.packRestore() : null
+    const restore = ctx.restoreForPack ? await ctx.packRestore() : null
     const athenaSessions = (restore && restore.athena) || []
     if (existing && athenaSessions.length) await resumeAthenaBeside(existing, athenaSessions)
     if (existing && keepView) return { existing: true, restore }
@@ -1220,6 +1220,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   ctx.restoreStatus = () => runPack(['restore-work', '--dry-run'], { dir: ctx.athenaDir })
   ctx.packRestore = async ({ discard = false } = {}) => {
     restoreArmedFor = null
+    ctx.restoreForPack = null
     if (discard) return runPack(['restore-work', '--discard'], { dir: ctx.athenaDir })
     const paths = daemonPaths()
     // ATHENA_STUDIO=1 — delegate.sh 가 화면 계층 안인지(screen inside) 본다
@@ -1741,6 +1742,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       if (other === ctx) return { ok: true, same: true }
       if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
       const state = rebindBody(result.body)
+      // 되살리기로 연 팩이면 이 창에 넘긴다 — 아테나를 켤 때(openAthenaAgent) 되살린다. 팩 목록(packState)은 그 뒤에 새로 읽혀서 그걸로는 못 본다
+      if (restoreArmedFor === id) {
+        ctx.restoreForPack = id
+        restoreArmedFor = null
+      }
       return { ok: true, id, switched: true, state, ...notes }
     })
   }

@@ -191,6 +191,10 @@ check "대화 기록 되살림 · 에이전트는 건너뜀(--no-agents) · 아�
 check "--ack <아테나 세션> → 그것만 끝 · 에이전트는 남음" '[ "$(A pack restore-work --ack "$SID2" | field remaining)" = 1 ]' 
 R="$(A pack restore-work --no-agents)"
 check "다시 돌려도 워크트리는 그대로(이미 됨)" '[ "$(echo "$R" | field worktrees)" = "[]" ] && [ "$(git -C "$WT" rev-parse HEAD)" = "$HEAD_BEFORE" ]' "$R"
+# 대화 없는 껍데기 기록(세션이 살아 있는 채로 지워진 뒤 다시 쓴 것)이 있으면 백업 것으로 바꾼다
+A pack restore-work --discard >/dev/null; rm -rf "$WT"; printf '{"type":"mode"}\n' > "$PROJ/$SID.jsonl"; R="$(A pack inspect "$WB2")"; A pack import "$(echo "$R" | field token)" --replace >/dev/null
+A pack restore-work --no-agents >/dev/null
+check "껍데기 기록 → 백업 것으로(옛 것은 .bak)" 'grep -q "\"type\":\"user\"" "$PROJ/$SID.jsonl" && ls "$PROJ" | grep -q "$SID.jsonl.bak-"'
 # staged 가 안 되면 그 단계에서 멈추고 · 다시 부르면 거기서 잇는다(unstaged 를 엉뚱한 기준에 얹지 않는다)
 A pack restore-work --discard >/dev/null; rm -rf "$WT"; R="$(A pack inspect "$WB2")"; A pack import "$(echo "$R" | field token)" --replace >/dev/null
 SP="$(ls "$ATHENA_DATA_DIR"/packs/acme/state/restore/worktrees/*/staged.patch | head -1)"; cp "$SP" "$WORK/staged.ok"; printf 'not a patch\n' > "$SP"
