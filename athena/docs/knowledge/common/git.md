@@ -39,7 +39,7 @@ scripts/ship.sh --plan <계획서> --dir <워크트리> --base dev \
 - 현황판이 열린 PR 의 새 HEAD 를 보면(5분 안) Claude · Codex 가 도구 없이 리뷰해 PR 댓글과 계획서 `- Auto review:` 줄을 남긴다. 같은 HEAD 는 한 번만
 - **수정 필요** → 작업 에이전트 pane 에 `[자동 리뷰 → <에이전트>]` 지시. 에이전트는 **그 지시에 한해** 묻지 않고 고쳐 `commit.sh` 로 커밋하고 `ship.sh --plan <계획서> --dir <워크트리> --auto-push` 로 올린다 — 이미 열린 그 PR 브랜치에 빨리 감기만(새 PR · 제목 · base · 강제 push 없음). 라운드 상한 3, 넘으면 멈추고 사람에게 요청
 - **결정 필요** → 결정 콘솔에 덧붙인다(자동으로 고르지 않는다)
-- **머지** → Claude · Codex 둘 다 승인 + 같은 HEAD 로 검증 통과(엄격) + 충돌 없음일 때 머지 확인 요청(맥 알림 · [작업] 팝업) → 사람이 [머지] → `gh pr ready` · `gh pr merge --squash --match-head-commit`. 하나라도 실패 · 반려면 머지하지 않는다
+- **머지** → Claude · Codex 둘 다 승인 + 같은 HEAD 로 검증 통과(엄격) + 충돌 없음일 때 머지 확인 요청(맥 알림 · [작업] 팝업) → 사람이 [머지](레포가 `"autoMergeConfirm": false` 면 묻지 않고 바로) → `gh pr ready` · `gh pr merge --squash --match-head-commit`. 하나라도 실패 · 반려면 머지하지 않는다
 - 보호 훅(`commit-guard.py`)은 바뀌지 않는다 — 사람 세션의 직접 push · `gh pr` 쓰기는 그대로 막히고, `ship.sh --auto-push` 가 스스로 조건(켠 레포 · 계획서 PR 줄의 열린 PR · 그 PR 의 `- Auto review:` 가 수정 · 결정 필요)을 확인한다
 
 ## PR 제목·본문 (모든 레포 공통)

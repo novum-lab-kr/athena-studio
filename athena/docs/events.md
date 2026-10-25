@@ -23,7 +23,7 @@
 | `auto.fix` | `scripts/pr-auto.mjs` — 수정 지시를 작업 pane 에 보낸 뒤 | `plan` · `repo` · `branch` · `sha` · `pr` · `pane` · `reviewers` |
 | `auto.push` | `scripts/ship.sh --auto-push` — 고친 커밋을 그 PR 브랜치에 올린 뒤 | `plan` · `repo` · `branch` · `sha` · `pr` |
 | `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 사람에게 넘길 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers · rounds · verify) · `why` |
-| `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤 | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · gh) |
+| `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` |
 
 `verify` 에는 계획서가 없다 — 검증은 계획서를 모른다. 계획서와 이으려면 같은 `repo` · `branch` 의 `commit` · `review` 를 본다.
 
