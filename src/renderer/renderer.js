@@ -2032,35 +2032,37 @@ async function openRequest(request) {
 let mergeRows = null // null — 읽는 중 · false — pack.json 을 못 읽음
 let mergeSaving = false
 
-function settingsSwitch({ key, label, checked, disabled, onClick }) {
-  const row = el('button', 'settings-switch')
+function settingsSwitch({ key, kind, label, checked, onClick }) {
+  const row = el('button', `settings-switch ${kind}`)
   row.type = 'button'
   row.dataset.key = key
   row.setAttribute('role', 'switch')
   row.setAttribute('aria-checked', String(checked))
-  row.disabled = disabled
   row.append(el('span', 'settings-switch-label', label), el('span', 'settings-switch-track'))
   row.addEventListener('click', onClick)
   return row
 }
 
+// 레포 묶음 — 레포 이름 줄이 자동 머지 스위치, 들여쓴 하위 줄이 머지 전 확인(자동 머지가 꺼지면 뜻이 없어 숨긴다)
 function settingsRepo(repo) {
-  const node = el('section', 'work-sec settings-repo')
-  node.append(el('h3', null, repo.name))
-  node.append(settingsSwitch({ key: `${repo.name}:auto`, label: say('settings.autoMerge'), checked: repo.autoMerge, disabled: false, onClick: () => saveMerge(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`) }))
-  // 머지 전에 묻기 — 자동 머지가 꺼져 있으면 뜻이 없어 비활성
-  node.append(settingsSwitch({ key: `${repo.name}:confirm`, label: say('settings.confirm'), checked: repo.confirm, disabled: !repo.autoMerge, onClick: () => saveMerge(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`) }))
-  if (repo.autoMerge && !repo.confirm && repo.releaseOnMerge) node.append(el('p', 'settings-warn', say('settings.releaseWarn')))
+  const node = el('section', 'settings-repo')
+  node.append(settingsSwitch({ key: `${repo.name}:auto`, kind: 'repo', label: repo.name, checked: repo.autoMerge, onClick: () => saveMerge(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`) }))
+  if (!repo.autoMerge) return node
+  node.append(settingsSwitch({ key: `${repo.name}:confirm`, kind: 'sub', label: say('settings.confirm'), checked: repo.confirm, onClick: () => saveMerge(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`) }))
+  // 작업 base 가 운영 브랜치와 같은데 확인을 끄면 머지가 곧 그 브랜치 반영
+  if (!repo.confirm && repo.releaseOnMerge) node.append(el('p', 'settings-note', say('settings.releaseWarn', { branch: repo.prBase })))
   return node
 }
 
 function renderSettingsPop() {
-  $('settings-pop-title').textContent = say('settings.popTitle', { pack: (packs.current && packLabel(packs.current)) || '' })
+  $('settings-pop-pack').textContent = (packs.current && packLabel(packs.current)) || ''
   const body = $('settings-pop-body')
   if (mergeRows === null) return body.replaceChildren(el('p', 'work-empty', say('work.loading')))
   if (mergeRows === false) return body.replaceChildren(el('p', 'work-empty', say('settings.unreadable')))
   if (!mergeRows.length) return body.replaceChildren(el('p', 'work-empty', say('settings.empty')))
-  body.replaceChildren(...mergeRows.map(settingsRepo))
+  const intro = el('div', 'settings-intro')
+  intro.append(el('h3', 'settings-intro-title', say('settings.mergeTitle')), el('p', 'settings-intro-desc', say('settings.mergeDesc')))
+  body.replaceChildren(intro, ...mergeRows.map(settingsRepo))
 }
 
 // 다시 읽어 그리고, 누르던 스위치에 포커스를 돌려준다

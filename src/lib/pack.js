@@ -205,6 +205,7 @@ function mergeSettings(pack) {
       autoMerge: repo.autoMerge === true,
       confirm: repo.autoMergeConfirm !== false,
       releaseOnMerge: typeof repo.branch === 'string' && repo.branch !== '' && repo.prBase === repo.branch,
+      prBase: typeof repo.prBase === 'string' ? repo.prBase : '',
     }))
 }
 

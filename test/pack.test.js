@@ -186,10 +186,10 @@ test('⚙ 설정 — 레포별 자동 머지 줄(main 직접 레포 빼기 · �
     ],
   })
   assert.deepEqual(rows, [
-    { name: 'web', autoMerge: true, confirm: false, releaseOnMerge: true },
-    { name: 'api', autoMerge: false, confirm: true, releaseOnMerge: false },
+    { name: 'web', autoMerge: true, confirm: false, releaseOnMerge: true, prBase: 'main' },
+    { name: 'api', autoMerge: false, confirm: true, releaseOnMerge: false, prBase: 'dev' },
     // 글자 "true" · "false" 는 켬 · 안 묻기가 아니다(docs/pr-auto.md — 불리언만)
-    { name: 'odd', autoMerge: false, confirm: true, releaseOnMerge: true },
+    { name: 'odd', autoMerge: false, confirm: true, releaseOnMerge: true, prBase: 'main' },
   ])
   assert.deepEqual(pack.mergeSettings(null), [])
   assert.deepEqual(pack.mergeSettings({}), [])
