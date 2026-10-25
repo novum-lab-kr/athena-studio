@@ -212,13 +212,15 @@ C3B="$(newcommit "test: 업데이트 3b")"
 (cd "$BODY_B" && sh -c '"$1" -e "setTimeout(() => {}, 120000)"; true' sh "$FAKE/claude") >/dev/null 2>&1 & PSH=$!; sleep 0.5
 panes_state() { python3 -c 'import json,sys,datetime
 at=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=int(sys.argv[3]))).isoformat()
-json.dump({"at": at, "panes": [{"id": "p1", "label": "🧭 아테나", "pid": int(sys.argv[1]), "agent": "claude", "status": sys.argv[2]}]}, open(sys.argv[4], "w"))' "$PSH" "$1" "${2:-0}" "$WORK/panes.json"; echo "$WORK/panes.json"; }
+json.dump({"at": at, "panes": [{"id": "p1", "label": "🧭 아테나", "pid": int(sys.argv[1]), "agent": sys.argv[5], "status": sys.argv[2]}]}, open(sys.argv[4], "w"))' "$PSH" "$1" "${2:-0}" "$WORK/panes.json" "${3:-claude}"; echo "$WORK/panes.json"; }
 R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state working)")"
 check "일하는 pane(working) 의 세션 → skipped(busy) · busy 에 pane 이름" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"pane\":\"🧭 아테나\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
 R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle 600)")"
 check "오래된(2분 넘은) 상태 파일 → 버림 · skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "상태 파일 없으면 지금처럼 skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ]' "$R"
+R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle 0 codex)")"
+check "pane 은 idle 이어도 에이전트 종류가 다르면(codex pane 안 claude) → skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"paneStatus\":\"idle\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
 check "pack busy 는 그대로 athena 를 센다(업데이트만 바뀜)" 'J "$BODY_B" pack busy | grep -q "\"kind\":\"athena\""'
 R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle)")"
 check "입력을 기다리는 pane(idle) 의 세션 → 막지 않음 · B 는 C3B" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"

@@ -2088,6 +2088,8 @@ function appUpdateNote() {
   if (appUpdate.running) return say('settings.appUpdateRunning')
   if (appUpdateFailure) return appUpdateReasonText(appUpdateFailure, appUpdate.branch) || say('settings.appUpdateCurrent')
   if (appUpdate.reason && appUpdate.state === 'behind') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
+  // origin 에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
+  if (appUpdate.reason === 'fetch-failed') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
   if (appUpdate.state === 'behind') return say('settings.appUpdateBehind', { count: appUpdate.behind })
   return say('settings.appUpdateCurrent')
 }
