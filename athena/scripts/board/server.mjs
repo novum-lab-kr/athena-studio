@@ -854,6 +854,7 @@ const PAGE_CONFIG = JSON.stringify({
   qaApps: Object.fromEntries(listQaApps(config).map((entry) => [entry.app, entry.label])),
   qaExampleUrl: config.qa?.exampleUrl ?? 'https://dev.example.com',
 }).replace(/</g, '\\u003c')
+const FAVICON = readFileSync(join(ROOT, 'scripts/board/favicon.png'))
 const page = readFileSync(join(ROOT, 'scripts/board/index.html'), 'utf8').replace('__BOARD_TOKEN__', TOKEN).replace('__BOARD_BOOT__', BOOT)
   .replace('__BOARD_CONFIG__', () => PAGE_CONFIG).replaceAll('__BOARD_QA_EXAMPLE__', () => JSON.parse(PAGE_CONFIG).qaExampleUrl)
 
@@ -1810,6 +1811,12 @@ const handleRequest = async (request, response) => {
     if (error) return reply(400, { error })
     await refresh()
     return reply(200, { ok: true })
+  }
+  // 탭 아이콘(아테나 로고) — /favicon.ico 도 같은 그림을 준다(링크 줄이 없는 결정 콘솔에서 브라우저가 스스로 찾는다)
+  if (url.pathname === '/favicon.png' || url.pathname === '/favicon.ico') {
+    response.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'max-age=86400' })
+    response.end(FAVICON)
+    return
   }
   // 보관된 결정 콘솔(archive/<이름>/plan.html) — 히스토리에서 읽기 전용으로 본다. 토큰을 넣지 않아 [이대로 진행] 은 복사로 바뀐다
   if (url.pathname.startsWith('/archive/') && url.pathname.endsWith('/plan.html')) {
