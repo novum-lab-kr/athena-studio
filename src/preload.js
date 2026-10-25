@@ -39,6 +39,9 @@ contextBridge.exposeInMainWorld('studio', {
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
   openAgent: (size, options) => ipcRenderer.invoke('agent:open', size, options),
   packRepos: () => ipcRenderer.invoke('pack:repos'),
+  // ⚙ 설정 — 이 창 팩의 레포별 자동 머지(읽기 · 바꾸기 — 바꾸기는 코어 pack set-auto-merge)
+  mergeSettings: () => ipcRenderer.invoke('settings:merge'),
+  setAutoMerge: (repo, values) => ipcRenderer.invoke('settings:set-merge', repo, values),
   packCallInfo: (name) => ipcRenderer.invoke('pack:call-info', name),
   packCallStart: (name, options) => ipcRenderer.invoke('pack:call-start', name, options),
   packRestoreArm: (id) => ipcRenderer.invoke('pack:restore-arm', id),

@@ -26,6 +26,10 @@
     <button id="browser-toggle" class="tabbar-tool" aria-label="옆 브라우저 열기·닫기" data-i18n-aria-label="browser.toggle" aria-controls="browser" aria-expanded="false">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="6.25"/><ellipse cx="8" cy="8" rx="2.75" ry="6.25"/><path d="M1.9 6h12.2M1.9 10h12.2"/></svg>
     </button>
+    <!-- ⚙ 설정 — 이 창 팩의 레포별 PR 자동 리뷰 · 머지. 누르면 설정 팝업(settings-pop) -->
+    <button id="settings-tab" class="tabbar-tool" title="설정" data-i18n-title="settings.title" aria-label="설정" data-i18n-aria-label="settings.title" aria-haspopup="dialog" aria-expanded="false" aria-controls="settings-pop">
+      <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><circle cx="8" cy="8" r="2"/><circle cx="8" cy="8" r="4.5"/><path d="M8 1.75v1.75M8 12.5v1.75M1.75 8h1.75M12.5 8h1.75M3.58 3.58l1.24 1.24M11.18 11.18l1.24 1.24M3.58 12.42l1.24-1.24M11.18 4.82l1.24-1.24"/></svg>
+    </button>
   </header>
 
   <main>
@@ -114,6 +118,11 @@
     <div class="work-pop-head"><span id="work-pop-title"></span></div>
     <div id="work-pop-body" class="work-pop-body"></div>
     <div class="work-pop-foot"><span data-i18n="work.foot">누르면 자세히 · 지난 일은 아카이브에서</span><button id="work-pop-pages" class="link" type="button" data-i18n="work.footPages">QA · 학습 · 아카이브 →</button></div>
+  </div>
+  <!-- ⚙ 설정 팝업 — 탭 줄 ⚙ 아래에 붙는다([작업] 팝업과 같은 방식). 레포마다 자동 리뷰 · 머지 · 머지 전에 묻기. 내용은 renderer renderSettingsPop -->
+  <div id="settings-pop" class="work-pop settings-pop" hidden role="dialog" aria-labelledby="settings-pop-title">
+    <div class="work-pop-head"><span id="settings-pop-title"></span></div>
+    <div id="settings-pop-body" class="work-pop-body"></div>
   </div>
   <!-- 현황판 페이지 메뉴 -->
   <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="현황판" data-i18n-aria-label="board.title">

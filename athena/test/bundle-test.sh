@@ -37,7 +37,7 @@ C0="$(git -C "$DEV" rev-parse HEAD)"
 newcommit() { printf '%s\n' "$1" >> "$DEV/docs/bundle-test-note.md"; git -C "$DEV" add -A >/dev/null; git -C "$DEV" commit -qm "$1"; git -C "$DEV" rev-parse HEAD; }
 git -C "$DEV" bundle create -q "$WORK/core-1.bundle" main 2>/dev/null
 
-J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 2 2>/dev/null | tail -1); }
+J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 3 2>/dev/null | tail -1); }
 field() { python3 -c 'import json,sys
 d=json.loads(sys.stdin.read() or "{}")
 for k in sys.argv[1].split("."):

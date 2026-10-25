@@ -155,7 +155,7 @@ test('비교 줄: 있는 정보만 이어 쓴다', () => {
 })
 
 test('코어 약속 번호: version 결과 → contract · 옛 코어(명령 없음 · 실패)는 1', () => {
-  assert.equal(pack.CONTRACT, 2)
+  assert.equal(pack.CONTRACT, 3)
   assert.deepEqual(pack.contractOf({ ok: true, core: 'abc', contract: 2 }), { contract: 2, core: 'abc' })
   assert.deepEqual(pack.contractOf({ ok: true, contract: 3 }), { contract: 3, core: null })
   assert.deepEqual(pack.contractOf({ ok: false, error: 'bad-output' }), { contract: 1, core: null })
@@ -173,6 +173,27 @@ test('레포 대표 에이전트 — 단일 · 모노레포 · 이상한 이름�
   assert.equal(pack.repoAgent({ name: 'mono', apps: {}, packagesAgent: 'mono-packages-fe' }), 'mono-packages-fe')
   assert.equal(pack.repoAgent({ name: 'x', agents: ['bad; rm -rf'] }), null)
   assert.equal(pack.repoAgent({ name: 'x' }), null)
+})
+
+test('⚙ 설정 — 레포별 자동 머지 줄(main 직접 레포 빼기 · 키 없으면 끔 · 묻기 · 머지가 곧 운영 반영)', () => {
+  const rows = pack.mergeSettings({
+    repos: [
+      { name: 'web', branch: 'main', prBase: 'main', autoMerge: true, autoMergeConfirm: false },
+      { name: 'api', branch: 'prd', prBase: 'dev' },
+      { name: 'mobile', branch: 'main', prBase: 'main', direct: true, autoMerge: true },
+      { name: 'odd', branch: 'main', prBase: 'main', autoMerge: 'true', autoMergeConfirm: 'false' },
+      { name: 'bad; rm' },
+    ],
+  })
+  assert.deepEqual(rows, [
+    { name: 'web', autoMerge: true, confirm: false, releaseOnMerge: true },
+    { name: 'api', autoMerge: false, confirm: true, releaseOnMerge: false },
+    // 글자 "true" · "false" 는 켬 · 안 묻기가 아니다(docs/pr-auto.md — 불리언만)
+    { name: 'odd', autoMerge: false, confirm: true, releaseOnMerge: true },
+  ])
+  assert.deepEqual(pack.mergeSettings(null), [])
+  assert.deepEqual(pack.mergeSettings({}), [])
+  assert.ok(pack.packErrorText({ ok: false, error: 'not-applicable' }).includes('main 직접'))
 })
 
 test('레포 에이전트 부르기 — call-branch-info · new-branch 출력 · 브랜치 이름', () => {

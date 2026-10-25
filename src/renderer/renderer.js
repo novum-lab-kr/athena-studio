@@ -1812,7 +1812,7 @@ function placeUnder(pop, button) {
 
 let popBefore = null
 function closePops() {
-  for (const [pop, button] of [['work-pop', 'work-tab'], ['board-menu', 'board-tab']]) {
+  for (const [pop, button] of [['work-pop', 'work-tab'], ['board-menu', 'board-tab'], ['settings-pop', 'settings-tab']]) {
     if ($(pop).hidden) continue
     $(pop).hidden = true
     $(button).setAttribute('aria-expanded', 'false')
@@ -2027,6 +2027,70 @@ async function openRequest(request) {
   reportDelivery(result)
 }
 
+// ── ⚙ 설정 팝업 — 이 창 팩의 레포별 PR 자동 리뷰 · 머지 ─────────────────────
+// 읽기는 main 이 pack.json 을 바로, 바꾸기는 코어 pack set-auto-merge. 바꿀 때마다 pack.json 을 다시 읽어 그린다(파일이 정본)
+let mergeRows = null // null — 읽는 중 · false — pack.json 을 못 읽음
+let mergeSaving = false
+
+function settingsSwitch({ key, label, checked, disabled, onClick }) {
+  const row = el('button', 'settings-switch')
+  row.type = 'button'
+  row.dataset.key = key
+  row.setAttribute('role', 'switch')
+  row.setAttribute('aria-checked', String(checked))
+  row.disabled = disabled
+  row.append(el('span', 'settings-switch-label', label), el('span', 'settings-switch-track'))
+  row.addEventListener('click', onClick)
+  return row
+}
+
+function settingsRepo(repo) {
+  const node = el('section', 'work-sec settings-repo')
+  node.append(el('h3', null, repo.name))
+  node.append(settingsSwitch({ key: `${repo.name}:auto`, label: say('settings.autoMerge'), checked: repo.autoMerge, disabled: false, onClick: () => saveMerge(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`) }))
+  // 머지 전에 묻기 — 자동 머지가 꺼져 있으면 뜻이 없어 비활성
+  node.append(settingsSwitch({ key: `${repo.name}:confirm`, label: say('settings.confirm'), checked: repo.confirm, disabled: !repo.autoMerge, onClick: () => saveMerge(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`) }))
+  if (repo.autoMerge && !repo.confirm && repo.releaseOnMerge) node.append(el('p', 'settings-warn', say('settings.releaseWarn')))
+  return node
+}
+
+function renderSettingsPop() {
+  $('settings-pop-title').textContent = say('settings.popTitle', { pack: (packs.current && packLabel(packs.current)) || '' })
+  const body = $('settings-pop-body')
+  if (mergeRows === null) return body.replaceChildren(el('p', 'work-empty', say('work.loading')))
+  if (mergeRows === false) return body.replaceChildren(el('p', 'work-empty', say('settings.unreadable')))
+  if (!mergeRows.length) return body.replaceChildren(el('p', 'work-empty', say('settings.empty')))
+  body.replaceChildren(...mergeRows.map(settingsRepo))
+}
+
+// 다시 읽어 그리고, 누르던 스위치에 포커스를 돌려준다
+async function loadSettings(focusKey) {
+  const result = await studio.mergeSettings()
+  if ($('settings-pop').hidden) return
+  mergeRows = result && result.ok ? result.repos : false
+  renderSettingsPop()
+  const target = [...$('settings-pop-body').querySelectorAll('button')].find((node) => !focusKey || node.dataset.key === focusKey)
+  if (target) target.focus({ preventScroll: true })
+}
+
+async function saveMerge(repo, values, focusKey) {
+  if (mergeSaving) return
+  mergeSaving = true
+  const result = await studio.setAutoMerge(repo.name, values)
+  mergeSaving = false
+  if (!result || !result.ok) showToast(say('settings.saveFailed', { message: (result && result.text) || '' }))
+  await loadSettings(focusKey)
+}
+
+function toggleSettingsPop() {
+  if (!$('settings-pop').hidden) return closePops()
+  if (!state || !state.valid || welcomeShown()) return
+  mergeRows = null
+  openPop('settings-pop', 'settings-tab')
+  renderSettingsPop()
+  loadSettings()
+}
+
 function reportDelivery(result) {
   if (!result || !result.ok) return showToast(say('work.answerFailed', { message: (result && result.message) || '' }))
   showToast(say(result.delivered ? 'work.sent' : 'work.savedNoPane'), result.delivered ? 'success' : 'info')
@@ -2035,6 +2099,7 @@ function reportDelivery(result) {
 function initWork() {
   $('work-tab').addEventListener('click', toggleWorkPop)
   $('board-tab').addEventListener('click', toggleBoardMenu)
+  $('settings-tab').addEventListener('click', toggleSettingsPop)
   for (const item of document.querySelectorAll('#board-menu [data-section]')) {
     item.addEventListener('click', () => {
       closePops()
@@ -2053,11 +2118,11 @@ function initWork() {
   })
   // 바깥을 누르거나 Esc — 닫는다(대화상자가 떠 있으면 대화상자가 Esc 를 먼저 받는다)
   document.addEventListener('mousedown', (event) => {
-    if (event.target.closest('#work-pop, #board-menu, #work-tab, #board-tab')) return
+    if (event.target.closest('#work-pop, #board-menu, #settings-pop, #work-tab, #board-tab, #settings-tab')) return
     closePops()
   })
   document.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape' && (!$('work-pop').hidden || !$('board-menu').hidden)) {
+    if (event.key === 'Escape' && (!$('work-pop').hidden || !$('board-menu').hidden || !$('settings-pop').hidden)) {
       event.preventDefault()
       closePops()
     }
@@ -2941,6 +3006,7 @@ function renderState() {
   $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
   $('diagrams-open').disabled = !ready || welcomeShown() // 다이어그램도 팩에 들어간 뒤에만
   $('work-tab').disabled = !ready || welcomeShown()
+  $('settings-tab').disabled = !ready || welcomeShown() // 설정은 팩에 들어간 뒤에만(그 팩의 pack.json)
   renderPackRail()
   if (!ready) {
     panels.work.hidden = true

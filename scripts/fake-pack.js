@@ -92,7 +92,7 @@ const flag = (name) => {
 async function main() {
   const [command, sub, arg] = process.argv.slice(2)
   // 약속 번호 — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
-  const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 2
+  const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 3
   if (command === 'version') {
     if (fakeContract === 1) fail('usage', '모르는 명령: version')
     return done({ ok: true, core: 'fake', contract: fakeContract, dirty: false, dataFormats: [1, 1], capabilities: ['open', 'contract'], body: process.cwd(), bodyId: 'fake', deploy: null })
@@ -165,6 +165,27 @@ async function main() {
       const iconPath = path.resolve(arg)
       sameAsCurrent({ iconPath, iconUpdatedAt: new Date().toISOString() })
       return done({ ok: true, id: target.id, iconPath })
+    }
+    // 레포별 자동 머지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만 고친다(가짜 본체에는 없다 → not-found). 글자 보존은 진짜 코어만
+    case 'set-auto-merge': {
+      const file = path.join(process.cwd(), 'pack', 'pack.json')
+      let pack
+      try {
+        pack = JSON.parse(fs.readFileSync(file, 'utf8'))
+      } catch {
+        fail('not-found', '이 본체 팩에 pack.json 이 없어요')
+      }
+      const repo = (pack.repos || []).find((item) => item && item.name === arg)
+      if (!repo) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
+      if (repo.direct === true) fail('not-applicable', `${arg} 는 main 직접 레포라 PR 이 없다`)
+      const auto = flag('--auto')
+      const confirm = flag('--confirm')
+      if (auto === 'on') repo.autoMerge = true
+      if (auto === 'off') delete repo.autoMerge
+      if (confirm === 'on') delete repo.autoMergeConfirm
+      if (confirm === 'off') repo.autoMergeConfirm = false
+      fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false })
     }
     case 'board-token':
       return done({ ok: false, error: 'not-found', message: '가짜 모드에는 현황판 토큰이 없어요' }, 1)
@@ -285,7 +306,7 @@ async function main() {
 // 사람에게 묻는 요청 흉내(athena/docs/requests.md 와 같은 모양) — 질문 하나 · 결정 하나로 시작. answer → answered, ack → delivered
 // ATHENA_FAKE_CONTRACT=1(옛 코어)이면 request 명령이 없다
 function fakeRequest(sub, id) {
-  if ((Number(process.env.ATHENA_FAKE_CONTRACT) || 2) === 1) fail('usage', '모르는 명령: request')
+  if ((Number(process.env.ATHENA_FAKE_CONTRACT) || 3) === 1) fail('usage', '모르는 명령: request')
   const state = load()
   const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOString()
   state.requests = state.requests || [

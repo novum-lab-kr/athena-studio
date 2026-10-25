@@ -20,7 +20,8 @@ import {
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
-export const CONTRACT = 2
+// 약속 번호 — 2 팩마다 본체 · 3 pack set-auto-merge(레포별 자동 머지) · 오류 코드 not-applicable. 스튜디오 src/lib/pack.js CONTRACT 와 같이 올린다
+export const CONTRACT = 3
 // 뒤 넷은 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
 export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base']
 

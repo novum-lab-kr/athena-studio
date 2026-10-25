@@ -45,7 +45,7 @@ newcommit() { printf '%s\n' "${3:-$1}" >> "$DEV/${2:-docs/bodies-test-note.md}";
 
 # bundle — 원격 main 을 git 번들로(스튜디오 앱이 코어를 들고 오는 방식 · update 는 --from <번들> 로만 받는다)
 bundle() { rm -f "$WORK/core.bundle"; git -C "$ORIGIN" bundle create "$WORK/core.bundle" main >/dev/null 2>&1; echo "$WORK/core.bundle"; }
-J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 2 2>/dev/null | tail -1); }
+J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 3 2>/dev/null | tail -1); }
 field() { python3 -c 'import json,sys
 d=json.loads(sys.stdin.read() or "{}")
 for k in sys.argv[1].split("."):
@@ -75,7 +75,7 @@ R1="$(cat "$WORK/open1.json")"; R2="$(cat "$WORK/open2.json")"
 check "동시에 두 번 열어도 본체 하나(하나는 created · 다른 하나는 locked 또는 그대로)" '[ "$(git -C "$MAIN" worktree list | grep -c "athena-globex")" = 1 ] && { [ "$(echo "$R1" | field created)" = True ] || [ "$(echo "$R2" | field created)" = True ]; } && for r in "$R1" "$R2"; do e="$(echo "$r" | field error)"; [ -z "$e" ] || [ "$e" = locked ] || exit 1; done' "$R1 / $R2"
 R="$(J "$MAIN" pack open globex)"
 check "다시 열면 created false · state ready · 포트 4702" '[ "$(echo "$R" | field created)" = False ] && [ "$(echo "$R" | field state)" = ready ] && [ "$(echo "$R" | field body)" = "$BODY_B" ] && [ "$(echo "$R" | field boardPort)" = 4702 ]' "$R"
-check "결과에 bodyId · core · contract · dataDir · generation" '[ -n "$(echo "$R" | field bodyId)" ] && [ "$(echo "$R" | field core)" = "$C0" ] && [ "$(echo "$R" | field contract)" = 2 ] && [ "$(echo "$R" | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(echo "$R" | field generation)" = 1 ]' "$R"
+check "결과에 bodyId · core · contract · dataDir · generation" '[ -n "$(echo "$R" | field bodyId)" ] && [ "$(echo "$R" | field core)" = "$C0" ] && [ "$(echo "$R" | field contract)" = 3 ] && [ "$(echo "$R" | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(echo "$R" | field generation)" = 1 ]' "$R"
 check "본체 B 는 detached · 배포 커밋(origin/main)" '[ "$(git -C "$BODY_B" rev-parse --abbrev-ref HEAD)" = HEAD ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C0" ]'
 check "본체 B 설정에 boardPort · dataDir" 'python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d[\"boardPort\"]==4702 and d[\"dataDir\"]==sys.argv[2] else 1)" "$BODY_B/athena.config.json" "$ATHENA_DATA_DIR"'
 check "본체 B 가 globex · 주 본체는 acme 그대로" '[ "$(basename "$(readlink "$BODY_B/.pack-data")")" = globex ] && [ "$(basename "$(readlink "$MAIN/.pack-data")")" = acme ]'
@@ -88,7 +88,7 @@ EXCL="$(cd "$MAIN" && cd "$(git rev-parse --git-common-dir)" && pwd)/info/exclud
 check "git exclude 는 본체마다 구간(남의 구간을 지우지 않음)" 'grep -q "athena pack links (athena pack link 가 관리) · $MAIN\$" "$EXCL" && grep -q "athena pack links (athena pack link 가 관리) · $BODY_B\$" "$EXCL"'
 
 section "실패하면 만들던 본체를 지움 · pack new · discard"
-R="$(cd "$MAIN" && ATHENA_PACK_FAIL_AT=open node scripts/athena.mjs pack new --json --contract 2 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_PACK_FAIL_AT=open node scripts/athena.mjs pack new --json --contract 3 2>/dev/null | tail -1)"
 check "만들다 실패 → rollback · 본체·자리·워크트리 없음" '[ "$(echo "$R" | field error)" = rollback ] && [ -z "$(ls -d "$WORK"/athena-new-* 2>/dev/null)" ] && [ -z "$(ls "$ATHENA_DATA_DIR/packs" | grep "^new-")" ] && ! git -C "$MAIN" worktree list | grep -q athena-new' "$R"
 R="$(J "$MAIN" pack new)"; NEW="$(echo "$R" | field id)"; NEWBODY="$(echo "$R" | field body)"
 check "pack new → 빈 자리 + 본체(created · previous=acme)" '[ "$(echo "$R" | field created)" = True ] && [ "$(echo "$R" | field previous)" = acme ] && [ -L "$NEWBODY/.pack-data" ] && [ "$(basename "$(readlink "$NEWBODY/.pack-data")")" = "$NEW" ]' "$R"
@@ -123,7 +123,7 @@ R="$(J "$BODY_B" pack list)"
 check "본체 B 에서 불러도 같은 body · current 는 globex" '[ "$(echo "$R" | field packs.acme.body)" = "$MAIN" ] && [ "$(echo "$R" | field current.id)" = globex ]' "$R"
 check "status.body · boardPort 는 부른 본체" '[ "$(J "$BODY_B" pack status | field body)" = "$BODY_B" ] && [ "$(J "$BODY_B" pack status | field boardPort)" = 4702 ]'
 V1="$(J "$MAIN" version)"; V2="$(J "$BODY_B" version)"
-check "version — contract 2 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 2 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
+check "version — contract 3 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 3 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
 
 section "한 본체가 일해도 다른 본체는 열리고 비어 있음"
 CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; sleep 0.5
@@ -157,7 +157,7 @@ VOUT="$(bash "$BODY_B/scripts/verify/globex-shop.sh" 2>&1)"
 check "팩 링크 검증 스크립트(본체 경로로 부름) → B 의 repos 에서 통과" 'echo "$VOUT" | grep -q "✅ 통과"' "$(echo "$VOUT" | tail -8)"
 
 section "update — 일하는 본체는 건너뛰고, 주 본체는 ff"
-check "--from 없이는 usage · 종료 2(원격에서 받는 길 없음)" '(cd "$MAIN" && node scripts/athena.mjs update --json --contract 2 >/dev/null 2>&1); [ $? = 2 ]'
+check "--from 없이는 usage · 종료 2(원격에서 받는 길 없음)" '(cd "$MAIN" && node scripts/athena.mjs update --json --contract 3 >/dev/null 2>&1); [ $? = 2 ]'
 C1="$(newcommit "test: 업데이트 1")"
 CB="$(fake_claude "$BODY_B")"; sleep 0.5
 R="$(J "$MAIN" update --from "$(bundle)")"; OP1="$(echo "$R" | field operationId)"
@@ -184,7 +184,7 @@ check "없는 실행 → rollback-unavailable" '[ "$(J "$MAIN" update --rollback
 
 section "링크 실패면 그 본체만 이전 커밋으로 · dirty · diverged"
 C3="$(newcommit "test: 업데이트 3")"
-R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3" node scripts/athena.mjs update --from "$(bundle)" --json --contract 2 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
 check "새 코드 relink 실패 → 둘 다 rolledBack · 커밋 그대로 · status failed" '[ "$(echo "$R" | field status)" = failed ] && [ "$(echo "$R" | field bodies.globex.rolledBack)" = True ] && [ "$(echo "$R" | field bodies.acme.rolledBack)" = True ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C1" ] && [ "$(git -C "$MAIN" rev-parse HEAD)" = "$C2" ] && [ "$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)" = main ]' "$R"
 check "모두 실패한 update 는 배포 커밋을 옮기지 않음 · 열어도 따라잡기 안 함" '[ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[\"deploy\"][\"commit\"])" "$ATHENA_DATA_DIR/config.json")" = "$C1" ] && [ -z "$(J "$MAIN" pack open globex | field updated)" ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C1" ]'
 OPF="$(echo "$R" | field operationId)"

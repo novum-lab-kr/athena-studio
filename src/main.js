@@ -660,7 +660,7 @@ function logCore(line) {
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
-// 약속: 코어 `pack … --json` 출력(contract 2 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
+// 약속: 코어 `pack … --json` 출력(contract 3 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor = null
@@ -755,7 +755,8 @@ async function contractBlock(dir) {
   const known = await coreContract(dir)
   if (known.contract === packModel.CONTRACT) return null
   if (known.contract === null) return { ok: false, error: 'contract-unknown', text: say('pack.contract.unknown') } // 확인 못 함 — 옛 코어라고 단정하지 않는다
-  return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract === 1 ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
+  // 본체 약속이 낮으면 본체 업데이트 안내 · 높으면 스튜디오 업데이트 안내
+  return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract < packModel.CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
 }
 
 // [Finder 에서 보기] — 방금 만든 파일만
@@ -1417,6 +1418,22 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return pack.repos
       .filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
       .map((repo) => ({ name: repo.name, agent: packModel.repoAgent(repo), linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')) }))
+  }
+  // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
+  // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
+  ctx.mergeSettings = async () => {
+    // 읽기 실패 · 망가진 JSON 모두 null — 팝업이 '읽지 못했어요' 를 보이게(then 의 두 번째 인자는 JSON.parse 오류를 못 잡는다)
+    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
+    return { ok: Boolean(pack), repos: packModel.mergeSettings(pack) }
+  }
+  ctx.setAutoMerge = async (repo, { autoMerge, confirm }) => {
+    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
+    const args = ['set-auto-merge', repo]
+    if (typeof autoMerge === 'boolean') args.push('--auto', autoMerge ? 'on' : 'off')
+    if (typeof confirm === 'boolean') args.push('--confirm', confirm ? 'on' : 'off')
+    const result = await runPack(args, { dir: ctx.athenaDir })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    return result
   }
   // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
   ctx.studioEnv = () => {
@@ -2933,6 +2950,11 @@ handle('window:close', (ctx) => {
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
 handle('pack:repos', (ctx) => ctx.packRepos())
+handle('settings:merge', (ctx) => ctx.mergeSettings())
+handle('settings:set-merge', (ctx, repo, values) => ctx.setAutoMerge(String(repo || ''), {
+  autoMerge: values && typeof values.autoMerge === 'boolean' ? values.autoMerge : null,
+  confirm: values && typeof values.confirm === 'boolean' ? values.confirm : null,
+}))
 handle('pack:call-info', (ctx, name) => ctx.callInfo(String(name || '')))
 handle('pack:call-start', (ctx, name, options) => ctx.callStart(String(name || ''), { branch: String((options && options.branch) || ''), reuse: Boolean(options && options.reuse) }))
 handle('pack:restore-arm', (ctx, id) => (restoreArmedFor = typeof id === 'string' && id ? id : null))

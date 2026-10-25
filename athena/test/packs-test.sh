@@ -51,13 +51,13 @@ check "status·list 에 dataDir(실제 데이터 폴더)" '[ "$(A pack status | 
 check "스튜디오 데이터 폴더(~/.athena-studio/data)로는 거부" '[ "$(ATHENA_DATA_DIR="$HOME/.athena-studio/data" node scripts/athena.mjs pack test-setup --json | tail -1 | field error)" = unsafe ]'
 
 section "이 본체의 팩 · 열기(같은 본체 — 본체 만들기는 test/bodies-test.sh)"
-R="$(A pack use acme --contract 2)"
+R="$(A pack use acme --contract 3)"
 check "pack use 이 본체 팩 → unchanged · body 는 이 본체" '[ "$(echo "$R" | field unchanged)" = True ] && [ "$(echo "$R" | field body)" = "$B" ] && [ "$(echo "$R" | field bodyChanged)" = False ]' "$R"
 check "pack use --json 계약 없이 → contract-mismatch" '[ "$(A pack use acme | field error)" = contract-mismatch ]'
 check "pack new --json 계약 없이 → contract-mismatch" '[ "$(A pack new | field error)" = contract-mismatch ]'
 check "--contract 1 → contract-mismatch" '[ "$(A pack list --contract 1 | field error)" = contract-mismatch ]'
 R="$(A pack open acme)"
-check "pack open 이 본체 팩 → created false · 포트 $PORT · state ready" '[ "$(echo "$R" | field created)" = False ] && [ "$(echo "$R" | field boardPort)" = "$PORT" ] && [ "$(echo "$R" | field state)" = ready ] && [ "$(echo "$R" | field contract)" = 2 ]' "$R"
+check "pack open 이 본체 팩 → created false · 포트 $PORT · state ready" '[ "$(echo "$R" | field created)" = False ] && [ "$(echo "$R" | field boardPort)" = "$PORT" ] && [ "$(echo "$R" | field state)" = ready ] && [ "$(echo "$R" | field contract)" = 3 ]' "$R"
 check "레지스트리에 acme 본체·포트 등록" 'python3 -c "import json,sys; d=json.load(open(sys.argv[1]))[\"packs\"][\"acme\"]; sys.exit(0 if d.get(\"body\")==sys.argv[2] and d.get(\"boardPort\")=='"$PORT"' else 1)" "$ATHENA_DATA_DIR/config.json" "$B"'
 check "없는 팩 → not-found" '[ "$(A pack open nope | field error)" = not-found ]'
 check "이미 묶인 본체에 다른 팩 attach → body-mismatch" '[ "$(A pack attach globex | field error)" = body-mismatch ] && [ "$(basename "$(readlink .pack-data)")" = acme ]'
@@ -85,7 +85,7 @@ check "레포 메인 체크아웃: --agent 붙은 claude 만 agent · 인자 없
 kill "$C4" 2>/dev/null; wait "$C4" 2>/dev/null
 R="$(A pack list)"
 check "list: acme bodyBusy · busy[] 있음" '[ "$(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); p=[x for x in d[\"packs\"] if x[\"id\"]==\"acme\"][0]; print(p[\"bodyBusy\"], len(p[\"busy\"])>=3)")" = "True True" ]' "$R"
-check "busy 여도 이 본체 팩 use 는 unchanged" '[ "$(A pack use acme --contract 2 | field unchanged)" = True ]'
+check "busy 여도 이 본체 팩 use 는 unchanged" '[ "$(A pack use acme --contract 3 | field unchanged)" = True ]'
 kill "$C1" "$C2" "$C3" 2>/dev/null; wait "$C1" "$C2" "$C3" 2>/dev/null
 check "끝나면 busy 없음" '[ "$(A pack busy | field busy)" = "[]" ]'
 
@@ -271,6 +271,18 @@ check "SVG → invalid-image" '[ "$(A pack set-icon "$IMG/e.svg" | field error)"
 check "이미지 아닌 .png → invalid-image" '[ "$(A pack set-icon "$IMG/f.png" | field error)" = invalid-image ]'
 check "1MB 넘음 → image-too-large · 기존 아이콘 그대로" '[ "$(A pack set-icon "$IMG/big.png" | field error)" = image-too-large ] && [ -f pack/assets/icon.jpg ]'
 check "없는 팩 --id → not-found" '[ "$(A pack set-name x --id nope | field error)" = not-found ]'
+# 레포별 자동 머지 설정(docs/pr-auto.md "켜기") — 그 레포 항목의 두 키만 글자로 고친다
+cp pack/pack.json "$WORK/pack.merge.bak"
+R="$(A pack set-auto-merge acme-web --auto on --confirm off)"
+check "set-auto-merge on · confirm off → autoMerge true · autoMergeConfirm false(불리언)" '[ "$(echo "$R" | field autoMerge)" = True ] && [ "$(echo "$R" | field autoMergeConfirm)" = False ] && [ "$(python3 -c "import json; r=[x for x in json.load(open(\"pack/pack.json\"))[\"repos\"] if x[\"name\"]==\"acme-web\"][0]; print(r[\"autoMerge\"] is True, r[\"autoMergeConfirm\"] is False)")" = "True True" ]' "$R"
+check "다른 레포 · 다른 키는 그대로" '[ "$(python3 -c "import json,sys; a=json.load(open(sys.argv[1])); b=json.load(open(\"pack/pack.json\")); [r.pop(k,None) for r in b[\"repos\"] for k in (\"autoMerge\",\"autoMergeConfirm\")]; print(a==b)" "$WORK/pack.merge.bak")" = True ]'
+A pack set-auto-merge acme-web --auto off --confirm on >/dev/null
+check "끄고 묻기로 → 두 키 지움 · 파일이 처음과 글자까지 같다" 'cmp -s pack/pack.json "$WORK/pack.merge.bak"'
+check "없는 레포 → not-found" '[ "$(A pack set-auto-merge nope --auto on | field error)" = not-found ]'
+check "on|off 아닌 값 → 사용법 오류(종료 2)" 'node scripts/athena.mjs pack set-auto-merge acme-web --auto yes --json >/dev/null 2>&1; [ $? -eq 2 ]'
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['repos'][1]['direct']=True; json.dump(d, open(p,'w'), indent=2)" pack/pack.json
+check "main 직접 레포 → not-applicable" '[ "$(A pack set-auto-merge acme-api --auto on | field error)" = not-applicable ]'
+cp "$WORK/pack.merge.bak" pack/pack.json
 A pack set-name "Acme 팀" >/dev/null
 R="$(A pack open acme)"
 check "open 응답에 displayName · iconPath" '[ "$(echo "$R" | field displayName)" = "Acme 팀" ] && [ "$(basename "$(echo "$R" | field iconPath)")" = icon.jpg ]' "$R"
@@ -336,7 +348,7 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"id":"x"
 check "이 팩 세대가 다르면 쓰기 409" '[ "$CODE" = 409 ]' "$CODE"
 GEN acme -1
 check "같은 팩이면 board.sh 가 다시 안 띄움" 'bash scripts/board.sh 2>&1 | grep -q "이미 떠 있음"'
-R="$(A pack use acme --contract 2 --start-board)"
+R="$(A pack use acme --contract 3 --start-board)"
 check "pack use --start-board → 이 본체 현황판(포트 $PORT)" '[ "$(echo "$R" | field boardStarted)" = "$PORT" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = acme ]' "$R"
 check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트" '[ "$(ATHENA_BOARD_PORT=4999 node scripts/athena.mjs pack status --json | tail -1 | field boardPort)" = "$PORT" ]'
 TOKEN="$(A pack board-token | field token)"; HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")

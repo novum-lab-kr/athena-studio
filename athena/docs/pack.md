@@ -88,7 +88,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 ### 명령 (`bin/athena …` — 스튜디오 앱이 부르는 약속은 이 절이 정본)
 
-`--json` 이면 진행은 `progress: <단계> <설명>` 줄, **마지막 줄 하나가 JSON**. 실패는 종료 1 + `{ ok:false, error, message }`, 일부만 성공은 종료 1 + `status:"partial"`, 사용법 오류는 2. 스튜디오는 `--contract 2` 를 붙인다(다르면 `contract-mismatch` · `pack use`·`pack new` 는 `--json` 인데 없으면 거부 — 1단계 스튜디오의 "갈아 끼우기"를 막는다). 오류 코드: 1단계(`locked` · `busy` · `not-found` · `invalid-pack` · `unsafe` · `format-unknown` · `conflict` · `token-expired` · `clone-failed` · `rollback`) + `body-conflict` · `body-mismatch` · `port-in-use` · `contract-mismatch` · `data-incompatible` · `fetch-failed` · `verify-failed` · `rollback-unavailable` · `rollback-failed` · `partial`.
+`--json` 이면 진행은 `progress: <단계> <설명>` 줄, **마지막 줄 하나가 JSON**. 실패는 종료 1 + `{ ok:false, error, message }`, 일부만 성공은 종료 1 + `status:"partial"`, 사용법 오류는 2. 스튜디오는 `--contract 3` 을 붙인다(약속 2 — 팩마다 본체 · 3 — `set-auto-merge` · `not-applicable` 더함 · 다르면 `contract-mismatch` · `pack use`·`pack new` 는 `--json` 인데 없으면 거부 — 1단계 스튜디오의 "갈아 끼우기"를 막는다). 오류 코드: 1단계(`locked` · `busy` · `not-found` · `invalid-pack` · `unsafe` · `format-unknown` · `conflict` · `token-expired` · `clone-failed` · `rollback`) + `body-conflict` · `body-mismatch` · `port-in-use` · `contract-mismatch` · `data-incompatible` · `fetch-failed` · `verify-failed` · `rollback-unavailable` · `rollback-failed` · `partial`.
 
 | 명령 | 하는 일 |
 |---|---|
@@ -100,6 +100,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `delete <id> [--with-worktrees]` | 팩 지우기 — 먼저 팩 + 계획서 · 이슈 + 작업 기록(워크트리 변경 · pane 대화)을 `<데이터>/backups/packs/<id>-before-delete-….tar.gz` 로 백업(가져오기로 되살린다) → 현황판 끄기 → 워크트리 · 본체 · 데이터 자리 · 레지스트리 줄을 지운다. 주 본체 · 부른 본체의 팩은 `unsafe`(주 본체에서 부른다), 그 본체에서 claude 등이 돌면 `busy`, 워크트리가 남아 있으면 `has-worktrees`(+ `worktrees[{name,dirty}]` — `--with-worktrees` 면 같이 지운다). 서비스 레포 폴더는 그대로. 결과 `{ id, name, backup, removedBody, worktrees }` |
 | `inspect` · `import <token> --new\|--replace\|--keep` · `import-athena` · `export` · `backup --with-work` · `restore --with-work` · `board-token` · `migrate` | 1단계와 같다. `import --replace` 는 **그 팩의 본체**(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy·현황판 끄기·링크 다시·그 팩 세대 +1 |
 | `set-name <이름>\|--clear [--id <팩>]` · `set-icon <이미지>\|--clear [--id <팩>]` | 팩 표시 이름 · 아이콘을 **팩 안**(`pack.json` `displayName`·`icon` · `assets/`)에 — 팀과 공유된다(git 팩이면 팩 레포의 미커밋 변경). 이미지는 앞 바이트로 png·jpeg·webp 만 · 1MB 이하(`invalid-image` · `image-too-large`), 이름은 1~40자 · 줄바꿈 없음(`invalid-name`). `--id` 없으면 이 본체의 팩. 그 팩 작업 잠금 안에서 쓴다. `list`·`status`·`open` 에 `displayName` · `iconPath`(실제 절대 경로) · `iconUpdatedAt`. 내보내기·백업에 `assets/` 가 들고, 가져오기 검사는 `icon` 경로 모양과 `assets/` 안 이미지(형식·크기·링크 없음)를 본다 |
+| `set-auto-merge <레포> [--auto on\|off] [--confirm on\|off] [--id <팩>]` | 레포별 PR 자동 리뷰 · 머지 — 그 레포 항목의 `"autoMerge": true`(off 면 키 지움) · `"autoMergeConfirm": false`(머지 전에 묻기 on 이면 키 지움). 값은 불리언 · 뜻은 `docs/pr-auto.md` "켜기". **그 두 키만 글자로 고친다** — 다른 키 · 순서 · 들여쓰기 · 한 줄로 쓴 항목 모양은 그대로. 없는 레포 `not-found` · main 직접 레포 `not-applicable`. `--id` 없으면 이 본체의 팩 · 그 팩 작업 잠금 안에서 쓴다. 결과 `{ id, repo, autoMerge, autoMergeConfirm }`(묻기면 `autoMergeConfirm: true`). 스튜디오 앱 ⚙ 설정이 이 명령을 부른다 |
 | `relink` · `attach <id>` | 본체 안에서 쓰는 것 — 링크 다시 맞추기(업데이트 뒤 새 코드로) · 빈 본체에 팩을 처음 걸기(이미 다른 팩에 묶였으면 `body-mismatch`) |
 
 ### 코어 업데이트 · 되돌리기 · 버전
@@ -127,7 +128,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
    ```
    `/tmp/athena-test-data` 를 **지우고** 가짜 레포 넷(`repos-src/` · 원격은 `remotes/`)과 테스트 팩 둘(`test/fixtures/packs/{acme,globex}` 복사 · 팩마다 샘플 계획서·이슈 하나)을 등록한 뒤 acme 를 이 본체 팩으로 건다. 본체 `athena.config.json` 에 `dataDir: /tmp/athena-test-data` · `boardPort: 4710` 을 적는다. 데이터 폴더 이름에 `test` 가 없거나 본체가 `~/.athena-studio/core` 거나 데이터 폴더가 `~/.athena-studio/data` 면 멈춘다
 2. 확인: `bin/athena pack list` → acme ▶(이 본체) · globex(본체 없음)
-3. 열기: `bin/athena pack open globex` → `<테스트 본체>-globex` 가 생기고 포트 4702. `cd <테스트 본체>-globex && bin/athena pack use globex --contract 2 --start-board` → 현황판 http://localhost:4702 에 globex 샘플만. 테스트 본체 현황판(4710)은 acme 그대로
+3. 열기: `bin/athena pack open globex` → `<테스트 본체>-globex` 가 생기고 포트 4702. `cd <테스트 본체>-globex && bin/athena pack use globex --contract 3 --start-board` → 현황판 http://localhost:4702 에 globex 샘플만. 테스트 본체 현황판(4710)은 acme 그대로
 4. 동시에: 한 터미널에서 `cd <테스트 본체>-globex && claude` 를 켜 둔 채 `bin/athena pack list` → globex `bodyBusy` · acme 는 비어 있음 · acme 쪽 작업·열기는 그대로 된다
 5. 업데이트: 다른 clone 에서 코어에 커밋을 만들고 번들로(`git -C <그 clone> bundle create /tmp/core.bundle main`) `bin/athena update --from /tmp/core.bundle` → claude 가 도는 globex 는 `skipped(busy)`, 나머지는 새 커밋. claude 를 끄고 `bin/athena pack open globex` → 따라잡음. `bin/athena update --rollback` → 그 업데이트가 바꾼 본체만 되돌림
 6. 스튜디오: 앱을 `ATHENA_STUDIO_HOME=<임시 폴더>` 로 띄우면 스튜디오 집(코어·본체·데이터·데몬 접속 파일)을 통째로 따로 쓴다 — 창마다 팩(약속 5.7)
