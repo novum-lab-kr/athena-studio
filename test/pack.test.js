@@ -155,7 +155,7 @@ test('비교 줄: 있는 정보만 이어 쓴다', () => {
 })
 
 test('코어 약속 번호: version 결과 → contract · 옛 코어(명령 없음 · 실패)는 1', () => {
-  assert.equal(pack.CONTRACT, 2)
+  assert.equal(pack.CONTRACT, 3)
   assert.deepEqual(pack.contractOf({ ok: true, core: 'abc', contract: 2 }), { contract: 2, core: 'abc' })
   assert.deepEqual(pack.contractOf({ ok: true, contract: 3 }), { contract: 3, core: null })
   assert.deepEqual(pack.contractOf({ ok: false, error: 'bad-output' }), { contract: 1, core: null })

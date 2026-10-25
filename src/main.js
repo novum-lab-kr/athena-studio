@@ -660,7 +660,7 @@ function logCore(line) {
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
-// 약속: 코어 `pack … --json` 출력(contract 2 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
+// 약속: 코어 `pack … --json` 출력(contract 3 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor = null
@@ -755,7 +755,8 @@ async function contractBlock(dir) {
   const known = await coreContract(dir)
   if (known.contract === packModel.CONTRACT) return null
   if (known.contract === null) return { ok: false, error: 'contract-unknown', text: say('pack.contract.unknown') } // 확인 못 함 — 옛 코어라고 단정하지 않는다
-  return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract === 1 ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
+  // 본체 약속이 낮으면 본체 업데이트 안내 · 높으면 스튜디오 업데이트 안내
+  return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract < packModel.CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
 }
 
 // [Finder 에서 보기] — 방금 만든 파일만

@@ -11,11 +11,11 @@
  *                         백업을 packs/ 에 되살린다 — 같은 이름 팩이 있으면 덮지 않고 멈춘다. 팩 없이 쓰는 중이면 설정·링크까지
  *
  *   여러 팩 — 팩마다 본체(팩은 <데이터>/packs/<id> · 본체 <bodiesDir>/<id> · 약속은 docs/pack.md "여러 팩")
- *   --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON. 스튜디오는 --contract 2 를 붙인다(다르면 contract-mismatch)
+ *   --json 이면 진행은 "progress: <단계> <설명>" 줄, 마지막 줄 하나가 JSON. 스튜디오는 --contract 3 를 붙인다(다르면 contract-mismatch)
  *   athena pack list|status|busy [--json]          팩 목록(본체·포트·busy) · 이 본체의 팩 · 이 본체에서 도는 작업
  *   athena pack open <id> [--json]                 그 팩 본체를 준비(없으면 git 워크트리로 만들기)하고 경로·포트를 돌려준다
- *   athena pack use <id> [--start-board] [--json]  = pack open(활성 링크는 바꾸지 않는다 · --json 이면 --contract 2 필요)
- *   athena pack new [--json]                       빈 팩 자리 + 그 본체 → 그 본체에서 claude 를 켜면 /setup(--json 이면 --contract 2 필요)
+ *   athena pack use <id> [--start-board] [--json]  = pack open(활성 링크는 바꾸지 않는다 · --json 이면 --contract 3 필요)
+ *   athena pack new [--json]                       빈 팩 자리 + 그 본체 → 그 본체에서 claude 를 켜면 /setup(--json 이면 --contract 3 필요)
  *   athena pack delete <id> [--with-worktrees] [--json]      팩 지우기 — 먼저 팩 + 작업 기록 + 워크트리 변경 백업 · 일하는 중이면 busy · 워크트리가 있으면 --with-worktrees · 레포 폴더는 그대로(주 본체에서)
  *   athena pack discard <id> [--json]              /setup 전 빈 자리와 그 본체를 지운다
  *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기

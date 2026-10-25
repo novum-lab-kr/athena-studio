@@ -96,8 +96,8 @@ function normalizePackList(result) {
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
 }
 
-// 스튜디오가 아는 코어 약속 번호(2 = 팩마다 본체)
-const CONTRACT = 2
+// 스튜디오가 아는 코어 약속 번호(2 = 팩마다 본체 · 3 = pack set-auto-merge · 오류 코드 not-applicable)
+const CONTRACT = 3
 
 // `version --json` 결과 → { contract, core }. 명령이 없는 옛 코어(사용법 오류 · JSON 이 아닌 출력)는 contract 1,
 // 그 밖의 실패(시간 초과 · 실행 못 함 등 — 일시적일 수 있다)는 null(모름 — 기억하지 않고 다음에 다시 묻는다)

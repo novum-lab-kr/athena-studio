@@ -92,7 +92,7 @@ const flag = (name) => {
 async function main() {
   const [command, sub, arg] = process.argv.slice(2)
   // 약속 번호 — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
-  const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 2
+  const fakeContract = Number(process.env.ATHENA_FAKE_CONTRACT) || 3
   if (command === 'version') {
     if (fakeContract === 1) fail('usage', '모르는 명령: version')
     return done({ ok: true, core: 'fake', contract: fakeContract, dirty: false, dataFormats: [1, 1], capabilities: ['open', 'contract'], body: process.cwd(), bodyId: 'fake', deploy: null })
@@ -306,7 +306,7 @@ async function main() {
 // 사람에게 묻는 요청 흉내(athena/docs/requests.md 와 같은 모양) — 질문 하나 · 결정 하나로 시작. answer → answered, ack → delivered
 // ATHENA_FAKE_CONTRACT=1(옛 코어)이면 request 명령이 없다
 function fakeRequest(sub, id) {
-  if ((Number(process.env.ATHENA_FAKE_CONTRACT) || 2) === 1) fail('usage', '모르는 명령: request')
+  if ((Number(process.env.ATHENA_FAKE_CONTRACT) || 3) === 1) fail('usage', '모르는 명령: request')
   const state = load()
   const minutesAgo = (minutes) => new Date(Date.now() - minutes * 60000).toISOString()
   state.requests = state.requests || [
