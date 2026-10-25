@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# 에이전트 로컬 커밋 — 사용자가 pane 에서 "커밋해줘" 라고 했을 때만, 이 스크립트로만 커밋한다.
-# push·PR 은 하지 않는다 — 사용자가 "PR 올려줘" 라고 하면 scripts/ship.sh 로.
+# 에이전트 로컬 커밋 — 사용자가 pane 에서 "커밋해줘" 또는 "PR 올려줘" 라고 했을 때만, 이 스크립트로만 커밋한다.
+# push·PR 은 하지 않는다 — "PR 올려줘" 면 이 커밋 뒤에 scripts/ship.sh 로 이어 간다.
 #
 # 사용:
 #   scripts/commit.sh --plan <plans/…md> --dir <워크트리> -m "<커밋 메시지>" [--verify "<검증 인자>"] -- <파일> [<파일>…]
@@ -213,4 +213,4 @@ PYEOF
 node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
 
 echo "✅ 커밋했다: $SHA ($REPO · $BRANCH) — $VERIFY_NOTE"
-echo "   push·PR 은 하지 않았다. 사용자가 \"PR 올려줘\" 라고 하면 scripts/ship.sh --plan $PLAN --dir $TOP 로 미리보기부터"
+echo "   push·PR 은 하지 않았다. \"PR 올려줘\" 면 이어서 scripts/ship.sh --plan $PLAN --dir $TOP 미리보기 → 제목 · 본문 정리 → --yes"

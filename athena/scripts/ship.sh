@@ -1,5 +1,7 @@
 #!/usr/bin/env bash
 # 에이전트 push·PR — 사용자가 pane 에서 "PR 올려줘" 라고 했을 때만, 이 스크립트로만 한다.
+# "PR 올려줘" 한 마디로 끝까지 간다(2026-10-25) — 에이전트가 커밋 안 된 작업을 commit.sh 로 커밋 → 미리보기 → 제목 · 본문 정리 → 묻지 않고 --yes(base 는 prBase).
+# main 직접 레포의 push 만 지금처럼 사용자에게 확인받는다.
 # 레포 하나짜리 작업만 받는다(여러 레포에 걸친 작업은 아테나가 순서를 정해 올린다).
 # main 직접 레포(팩 direct: true)는 PR 대신 메인 체크아웃의 작업 브랜치를 origin 에 빨리 감기로 push 한다 — 미리보기 → --yes 는 같다(제목·base·본문 없음)
 #
@@ -7,7 +9,7 @@
 #   1) 미리보기 — 아무것도 보내지 않는다
 #      scripts/ship.sh --plan <plans/…md> --dir <워크트리>
 #      → 브랜치 · base 후보 · 올라갈 커밋 · 검증·리뷰 기록 · 제목 제안 · 본문 초안 파일 경로를 출력
-#   2) 사용자가 미리보기를 보고 base·제목을 고른 뒤
+#   2) 에이전트가 작업 내용으로 제목 · 본문 초안을 정리한 뒤(묻지 않는다 · base 는 prBase — main 직접 레포만 사용자 확인 뒤)
 #      scripts/ship.sh --plan <plans/…md> --dir <워크트리> --base <브랜치> [--base <브랜치2>] \
 #        --title "<type(범위): 티켓 요약>" [--body-file <본문.md>] [--no-review-ok] --yes
 #
@@ -15,7 +17,8 @@
 #   --base <브랜치>      PR 대상. 여러 번 주면 PR 을 각각 연다(레포 설정 extraPrBases — 예: 앱의 prd·dev 양쪽 관례)
 #   --title "<제목>"     형식: type(범위): [티켓 ]요약 — 규칙은 docs/knowledge/common/git.md "PR 제목·본문"
 #   --body-file <파일>   본문. 없으면 미리보기가 만든 초안을 쓴다. 필수 절(작업 내용·변경 사항·검증·확인 필요)이 있어야 한다
-#   --no-review-ok       리뷰 승인이 없거나 지금 커밋된 내용과 달라도 올린다 — 사용자가 확인했을 때만(리뷰는 선택이다)
+#   --no-review-ok       리뷰 승인이 없거나 지금 커밋된 내용과 달라도 올린다(리뷰는 선택이다). PR 은 묻지 않고 붙이고
+#                        본문 "확인 필요" · 보고에 "리뷰 승인 전" 을 적는다. main 직접 레포의 push 는 사용자가 확인했을 때만
 #   --repo-agent <이름>  (아테나 전용) 여러 에이전트가 붙은 계획서에서 이 에이전트의 레포 몫만 올린다.
 #                        FE 세션에서는 보호 훅이 이 옵션을 막는다 — 순서 조율은 아테나가 한다
 #   --yes                실제로 보낸다. 없으면 미리보기만
@@ -30,7 +33,7 @@
 #   - HEAD 가 계획서 Commits 에 commit.sh 로 기록된 커밋이다 (검증 기록이 있는 커밋만 나간다)
 #   - base 가 원격에 있고, base 에 없는 커밋이 하나 이상 있다
 #   - 제목 형식 · 본문 필수 절 · 본문에 로컬 경로(plans/… · /Users/… · .worktrees/)·내부 주소·비밀값 흔적이 없다
-#   - 본문은 미리보기가 만든 초안(또는 --body-file) 그대로 — --yes 때 초안을 다시 만들지 않는다(사용자가 본 그대로 나간다)
+#   - 본문은 미리보기가 만든 초안(또는 --body-file) 그대로 — --yes 때 초안을 다시 만들지 않는다(에이전트가 정리한 그대로 나간다)
 # 그다음: git push -u origin <브랜치> → base 마다 draft PR (이미 열린 PR 이 있으면 push 만 하고 링크를 알린다)
 #         → 계획서 Commits 의 해당 줄 "push 안 함" 을 PR 링크로 바꾸고 Checkpoint 에 "- PR:" 줄을 남긴다
 set -uo pipefail
@@ -76,7 +79,7 @@ BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD �
 # 보호 브랜치 — 흔한 운영·개발 이름 + 팩에 적힌 이 레포의 branch·prBase·extraPrBases(scripts/lib/athena_config.py)
 PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_protected; print(1 if is_protected(load(sys.argv[1]), sys.argv[2], sys.argv[3]) else 0)' "$ATHENA_DIR" "$REPO" "$BRANCH")" || fail "설정을 읽지 못했다(보호 브랜치 확인)"
 [ "$PROTECTED" = 0 ] || fail "보호 브랜치($BRANCH)는 올리지 않는다"
-[ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "커밋하지 않은 변경이 있다 — 먼저 \"커밋해줘\"(scripts/commit.sh) 또는 사용자에게 확인"
+[ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "커밋하지 않은 변경이 있다 — 먼저 scripts/commit.sh 로 커밋한다(\"PR 올려줘\" 면 내 작업 파일은 묻지 않고 · 내가 만들지 않은 변경이면 사용자에게 확인)"
 UNTRACKED="$(git -C "$TOP" ls-files --others --exclude-standard | wc -l | tr -d ' ')"
 HEAD_SHA="$(git -C "$TOP" rev-parse --short HEAD)"
 
@@ -149,12 +152,15 @@ elif [ "${AGENT_COUNT:-0}" -gt 1 ]; then
 fi
 [ -n "$RECORDED" ] || fail "HEAD($HEAD_SHA)가 계획서 Commits 에 없다 — scripts/commit.sh 로 커밋한 것만 올린다(검증 기록이 있어야 한다)"
 case "$RECORDED" in *"검증 생략"*) VERIFY_WARN="⚠️ 이 커밋은 검증 없이 커밋됐다(사용자 지시)";; *) VERIFY_WARN="";; esac
+# 승인이 아닐 때 할 일 — PR 은 "PR 올려줘" 한 마디로 묻지 않고 올리고(본문 · 보고에 적는다), main 직접 레포의 push 만 사용자에게 묻는다(git.md "PR 올리기")
+if [ -n "$DIRECT" ]; then REVIEW_ACT="이대로 올릴지 사용자에게 확인(올리면 --no-review-ok)"
+else REVIEW_ACT="묻지 않고 --no-review-ok 로 올리고 PR 본문 \"확인 필요\" · 보고에 \"리뷰 승인 전\" 을 적는다"; fi
 case "$REVIEWED" in
   ok) REVIEW_NOTE="reviewer 승인 — 리뷰한 내용과 커밋된 내용이 같다" ;;
-  stale) REVIEW_NOTE="⚠️ reviewer 가 승인한 뒤 내용이 바뀌었다(리뷰 뒤 수정·다른 파일 커밋) — 다시 리뷰받거나, 이대로 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
-  changes) REVIEW_NOTE="⚠️ reviewer 결론이 승인이 아니다(수정 필요) — 반영·재리뷰하거나, 이대로 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
-  pending) REVIEW_NOTE="⚠️ reviewer 를 띄웠지만 결론 기록(- Review result:)이 없다 — 이대로 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
-  *) REVIEW_NOTE="⚠️ reviewer 기록 없음 — 리뷰 없이 올릴지 사용자에게 확인(올리면 --no-review-ok)" ;;
+  stale) REVIEW_NOTE="⚠️ reviewer 가 승인한 뒤 내용이 바뀌었다(리뷰 뒤 수정·다른 파일 커밋) — $REVIEW_ACT" ;;
+  changes) REVIEW_NOTE="⚠️ reviewer 결론이 승인이 아니다(수정 필요) — $REVIEW_ACT" ;;
+  pending) REVIEW_NOTE="⚠️ reviewer 를 띄웠지만 결론 기록(- Review result:)이 없다 — $REVIEW_ACT" ;;
+  *) REVIEW_NOTE="⚠️ reviewer 기록 없음 — $REVIEW_ACT" ;;
 esac
 
 # ── main 직접 — PR 없이 origin/<작업 브랜치> 에 빨리 감기로 push 한다(팩 direct: true) ─────────────
@@ -358,7 +364,7 @@ if [ $YES = 0 ]; then
   echo "제목 제안 $SUGGESTED"
   echo "본문 초안 $DRAFT  (고치려면 이 파일을 편집하거나 --body-file — --yes 때 다시 만들지 않는다)"
   echo "──"
-  echo "사용자에게 base(후보 중 선택, 여러 개 가능)·제목(그대로/수정)을 확인받은 뒤 --base … --title \"…\" --yes 로 다시 실행한다"
+  echo "묻지 않고 — 작업 내용으로 제목과 본문 초안 파일을 정리한 뒤 --base $PR_BASE(다른 base 는 사용자가 말했을 때만) --title \"…\" [--no-review-ok] --yes 로 다시 실행한다"
   exit 0
 fi
 
