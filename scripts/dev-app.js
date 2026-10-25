@@ -5,7 +5,7 @@
 //   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
 //                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
 //   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>]
-//                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려 → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
+//                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려(1분 넘게 살아 있으면 멈춤) → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
 //                                   → start 와 같이 켠다. install 이 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed)
 const fs = require('fs')
 const path = require('path')
@@ -203,6 +203,12 @@ async function restart(args) {
   }
   // 옛 앱이 끝나길 1분까지 기다린다
   for (let waited = 0; Number.isInteger(after) && after > 0 && alive(after) && waited < 60000; waited += 200) await new Promise((resolve) => setTimeout(resolve, 200))
+  // 1분이 지나도 옛 앱이 살아 있으면 멈춘다 — 쓰는 중인 node_modules 를 바꾸거나 앱을 둘 켜지 않게(기록은 app-update.log)
+  if (Number.isInteger(after) && after > 0 && alive(after)) {
+    console.error(`[dev-app] 앱(pid ${after})이 1분 안에 끝나지 않아 설치 · 다시 켜기를 멈췄어요 — 앱을 끈 뒤 npm start 로 켜 주세요`)
+    process.exitCode = 1
+    return
+  }
   // 앱이 이 도우미를 node 대신 Electron(ELECTRON_RUN_AS_NODE)으로 띄웠으면 — 켤 앱에 물려주지 않는다
   delete process.env.ELECTRON_RUN_AS_NODE
   if (args.includes('--install')) {
