@@ -24,7 +24,7 @@ B="$WORK/body"
 git clone -q "$SRC" "$B" 2>/dev/null || { mkdir -p "$B"; git -C "$B" init -q; }
 rsync -a --delete --exclude .git --exclude .omc --exclude /plans --exclude /issues --exclude /repos --exclude /.worktrees --exclude /pack --exclude /packs \
   --exclude /archive --exclude /.sync --exclude /.pack-data --exclude /athena.config.json --exclude __pycache__ --exclude '/.board-*' --exclude '/.qa-*' \
-  --exclude /.requests --exclude /.jev-log.jsonl --exclude /.migrate-* --exclude node_modules "$SRC/" "$B/"
+  --exclude /.requests --exclude /.jev-log.jsonl --exclude /.events.jsonl --exclude /.migrate-* --exclude node_modules "$SRC/" "$B/"
 cd "$B" || exit 1
 A() { node scripts/athena.mjs "$@" --json 2>/dev/null | tail -1; }
 field() { python3 -c 'import json,sys
@@ -103,6 +103,31 @@ CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"
 check "plans/ 밖 경로는 요청을 건드리지 않는다" '[ "$CODE" = 400 ]'
 node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
 check "확정하면 delivered(콘솔 답은 그대로)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and r[-1][\"answer\"][\"by\"]==\"board\" else 1)"'
+
+section "사건 기록(docs/events.md)"
+EV="$(cd .pack-data/state && pwd -P)/events.jsonl"
+states() { python3 -c 'import json,sys
+print(" ".join(e["state"] for e in map(json.loads, open(sys.argv[1])) if e["type"]=="request" and e["id"]==sys.argv[2]))' "$EV" "$1"; }
+check "팩 데이터 state/events.jsonl 에 남는다" '[ -s "$EV" ]'
+check "요청 흐름이 그대로(열기 · 고쳐 열기 · 답 · 받음 — ack 두 번째는 안 남음)" '[ "$(states "$ID")" = "open open answered delivered" ]' "$(states "$ID")"
+check "대화로 답 → delivered 한 줄(by chat)" '[ "$(states "$Q")" = "open delivered" ] && grep "\"id\":\"$Q\"" "$EV" | tail -1 | grep -q "\"by\":\"chat\""'
+check "취소 · 계획서 done 으로 닫힘도 남는다" '[ "$(states "$C")" = "open cancelled" ] && [ "$(states "$P")" = "open expired" ]'
+check "줄마다 형식 · 시각 · 팩" 'python3 -c "import json,sys; es=[json.loads(l) for l in open(sys.argv[1])]; sys.exit(0 if all(e[\"v\"]==1 and e[\"at\"] and e[\"pack\"]==\"acme\" for e in es) else 1)" "$EV"'
+node scripts/lib/events.mjs verify repo=r1 ok=false strict=true failed='lint|test'
+check "셸에서 남기기 — 참거짓은 참거짓으로" 'tail -1 "$EV" | python3 -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if e[\"type\"]==\"verify\" and e[\"ok\"] is False and e[\"strict\"] is True and e[\"failed\"]==\"lint|test\" else 1)"' "$(tail -1 "$EV")"
+M="$(curl -s 'http://127.0.0.1:47730/api/metrics?days=7')"
+check "현황판 /api/metrics — 요청 사건을 세고 계획서에 제목을 붙인다" 'echo "$M" | python3 -c "import json,sys; m=json.load(sys.stdin); p=[x for x in m[\"plans\"] if x[\"plan\"]==\"plans/task/20261021-x.md\"]; sys.exit(0 if m[\"events\"]>0 and m[\"current\"][\"asks\"]>=5 and p and p[0][\"title\"]==\"일\" and p[0][\"exists\"] else 1)"' "$M"
+check "scripts/metrics.mjs — 요약을 찍는다" 'node scripts/metrics.mjs | grep -q "작업당 질문" && [ "$(node scripts/metrics.mjs --all --json | field days)" = "" ]'
+# 위에서 띄운 현황판도 훑을 때마다 같은 일을 한다 — 끄고 본 기록을 지운 뒤 처음부터
+pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; sleep 1
+rm -f .pack-data/state/plan-status.json
+BEFORE="$(wc -l < "$EV")"
+observe() { node --input-type=module -e "import { observePlanStatus } from './scripts/lib/events.mjs'; observePlanStatus(process.cwd(), JSON.parse(process.argv[1]))" "$1"; }
+observe '[{"id":"plans/task/a.md","grade":"light","status":"planned"}]'
+check "계획서 상태 — 처음 볼 때는 적어 두기만" '[ "$(wc -l < "$EV")" = "$BEFORE" ] && [ -f .pack-data/state/plan-status.json ]'
+observe '[{"id":"plans/task/a.md","grade":"light","status":"in_progress"},{"id":"plans/task/b.md","grade":"light","status":"planned"}]'
+observe '[{"id":"plans/task/a.md","grade":"light","status":"in_progress"},{"id":"plans/task/b.md","grade":"light","status":"planned"}]'
+check "바뀐 것 · 새로 생긴 것만 한 번씩(같으면 안 남김)" 'python3 -c "import json,sys; es=[json.loads(l) for l in open(sys.argv[1])][int(sys.argv[2]):]; sys.exit(0 if [(e[\"plan\"],e[\"from\"],e[\"to\"]) for e in es]==[(\"plans/task/a.md\",\"planned\",\"in_progress\"),(\"plans/task/b.md\",None,\"planned\")] else 1)" "$EV" "$BEFORE"' "$(tail -2 "$EV")"
 
 section "사용법 · 약속"
 node scripts/athena.mjs request open --title x --json > /dev/null 2>&1; check "종류 없으면 사용법 오류(2)" '[ $? -eq 2 ]'

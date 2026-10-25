@@ -160,6 +160,17 @@ mark_skipped() {
   for result in "${STEP_RESULTS[@]}"; do case "$result" in ❌*) VERIFY_FAILED=1 ;; esac; done
 }
 
+verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다
+  [ "$VERIFY_RECORD" = 1 ] && command -v node >/dev/null 2>&1 || return 0
+  local failed="" ok=false strict=false i
+  for i in "${!STEP_NAMES[@]}"; do
+    case "${STEP_RESULTS[$i]}" in ❌*) failed="${failed:+$failed|}${STEP_NAMES[$i]}" ;; esac
+  done
+  [ "$VERIFY_FAILED" = 0 ] && ok=true
+  [ "${ATHENA_VERIFY_STRICT:-0}" = 1 ] && strict=true
+  node "$VERIFY_LIB_DIR/../lib/events.mjs" verify repo="$1" branch="$2" sha="$3" ok="$ok" strict="$strict" failed="$failed" args="$VERIFY_SCRIPT_ARGS" >/dev/null 2>&1 || true
+}
+
 print_summary() { # print_summary <레포명> <레포경로>
   local repo="$1" path="$2" sha branch
   sha="$(git -C "$path" rev-parse --short HEAD 2>/dev/null || echo '?')"
@@ -181,5 +192,6 @@ print_summary() { # print_summary <레포명> <레포경로>
   done
   echo; echo "전체 로그: $VERIFY_LOG_DIR"
   verify_record_pass "$repo" "$path" "$branch" "$sha"
+  verify_log_event "$repo" "$branch" "$sha"
   [ "$VERIFY_FAILED" = 0 ]
 }

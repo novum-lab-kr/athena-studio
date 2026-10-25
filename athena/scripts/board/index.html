@@ -234,6 +234,51 @@
   .pill.kind-issue { color: var(--col-issue); border-color: color-mix(in srgb, var(--col-issue) 40%, transparent); }
   .formal-mark { margin-right: 4px; font-size: 13px; cursor: default; }
   .pill.kind-plan { color: var(--col-plan); border-color: color-mix(in srgb, var(--col-plan) 40%, transparent); }
+  /* 지표 탭 — 묶음별 숫자 칸(지난 기간 대비 방향) · 확인 필요 · 계획서 줄 */
+  .metric-groups { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 12px; margin-bottom: 16px; }
+  .metric-group { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); padding: 12px 14px 14px; }
+  .metric-group h3, .metric-block h3 { margin: 0 0 10px; font-size: 12px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
+  .metric-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .metric-tile { display: grid; gap: 3px; align-content: start; }
+  .metric-tile .label { font-size: 12px; color: var(--muted); }
+  .metric-tile .value { font-size: 28px; font-weight: 650; line-height: 1.15; }
+  .metric-tile .delta { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; gap: 0 6px; }
+  .metric-tile .delta b { font-weight: 650; }
+  .metric-tile .delta b.good { color: var(--ok); }
+  .metric-tile .delta b.bad { color: var(--bad); }
+  .metric-tile .sub { font-size: 11.5px; color: var(--muted); }
+  .metric-block { margin-bottom: 16px; }
+  .metric-attention { display: grid; gap: 6px; }
+  .metric-attention .row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); font-size: 13px; }
+  .metric-attention .row.blocked { background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
+  .metric-attention .why { font-weight: 650; white-space: nowrap; }
+  .metric-attention .row .why { color: var(--warn); }
+  .metric-attention .row.blocked .why { color: var(--bad); }
+  .metric-attention .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .metric-attention .since { color: var(--muted); font-size: 12px; white-space: nowrap; }
+  .metric-plans { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
+  .metric-plan { display: grid; grid-template-columns: minmax(0, 1.6fr) 84px minmax(120px, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); }
+  .metric-plan:first-child { border-top: 0; }
+  .metric-plan.head { font-size: 11.5px; color: var(--muted); font-weight: 600; padding-top: 8px; padding-bottom: 8px; }
+  .metric-plan .name { font-size: 13.5px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .metric-plan .path { font-size: 11.5px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .metric-status { justify-self: start; font-size: 11.5px; font-weight: 650; padding: 2px 9px; border-radius: 999px; border: 1px solid currentColor; white-space: nowrap; }
+  .metric-status.planned { color: var(--col-plan); } .metric-status.in_progress { color: var(--col-doing); } .metric-status.ready_for_review { color: var(--col-review); }
+  .metric-status.done { color: var(--col-done); } .metric-status.blocked { color: var(--bad); }
+  .metric-lead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
+  .metric-lead .track { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
+  .metric-lead .bar { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+  .metric-lead .text { min-width: 54px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .metric-lead.none { color: var(--muted); }
+  .metric-chips { display: flex; flex-wrap: wrap; gap: 5px; }
+  .metric-chips .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
+  .metric-chips .quiet { font-size: 12px; color: var(--muted); }
+  .metric-note { font-size: 12px; color: var(--muted); margin: 10px 0 0; }
+  @media (max-width: 720px) {
+    .metric-plan { grid-template-columns: minmax(0, 1fr) auto; }
+    .metric-plan.head { display: none; }
+    .metric-lead, .metric-chips { grid-column: 1 / -1; }
+  }
   .empty-history { padding: 28px 16px; text-align: center; color: var(--muted); font-size: 13px; }
   .history-wrap { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 14px; align-items: start; }
   .h-tree { position: sticky; top: 70px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 6px; display: grid; gap: 1px; max-height: calc(100vh - 110px); overflow-y: auto; }
@@ -365,6 +410,7 @@
     <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="QA 시뮬레이션 런 · TC 목록">QA</button>
     <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 클로드 학습(메모리)">학습</button>
     <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
+    <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)">지표</button>
   </nav>
   <span class="live-note" id="live-text">연결 중…</span>
   <div class="usage" id="usage" hidden></div>
@@ -445,6 +491,15 @@
         <div id="history" class="history"><div class="empty-history">불러오는 중이에요…</div></div>
       </div>
     </div>
+  </section>
+</main>
+<main id="view-metrics" hidden>
+  <section>
+    <h2>작업 지표</h2>
+    <div class="history-bar">
+      <select id="metrics-days" aria-label="기간"><option value="7">최근 7일</option><option value="30">최근 30일</option><option value="all">전체</option></select>
+    </div>
+    <div id="metrics"><div class="empty-history">불러오는 중이에요…</div></div>
   </section>
 </main>
 <main id="view-learn" hidden>
@@ -974,6 +1029,97 @@
     historyPick = '';
     renderHistory();
   }));
+  // ── 지표 탭 — /api/metrics(scripts/lib/metrics.mjs). 누를 때 · 기간을 바꿀 때만 읽는다
+  const metricDuration = (ms) => {
+    if (ms === null || ms === undefined) return '—';
+    if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))}분`;
+    if (ms < 172_800_000) return `${(ms / 3_600_000).toFixed(1)}시간`;
+    return `${(ms / 86_400_000).toFixed(1)}일`;
+  };
+  const metricRate = (value) => (value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`);
+  const metricCount = (value) => (value === null || value === undefined ? '—' : String(Math.round(value * 10) / 10));
+  const METRIC_STATUS = { planned: '계획', in_progress: '진행 중', blocked: '막힘', ready_for_review: '리뷰', done: '완료' };
+  // 지난 기간 대비 — 화살표(▲▼)와 글자로 방향을, 색으로 좋고 나쁨을(낮을수록 좋은 숫자는 ▼ 가 초록)
+  const metricDelta = (current, before, { rate = false, lowerIsBetter = true } = {}) => {
+    if (current === null || current === undefined || before === null || before === undefined) return '';
+    // 비율은 %p 차이, 나머지는 % 변화 — 전이 0 이면 % 변화가 없다
+    if (!rate && !before) return current === before ? '<b>변화 없음</b>' : '';
+    const diff = rate ? (current - before) * 100 : (current - before) / before * 100;
+    if (Math.abs(diff) < 0.5) return '<b>변화 없음</b>';
+    const better = lowerIsBetter ? diff < 0 : diff > 0;
+    return `<b class="${better ? 'good' : 'bad'}">${diff < 0 ? '▼' : '▲'} ${Math.round(Math.abs(diff))}${rate ? '%p' : '%'}</b>`;
+  };
+  const loadMetrics = async () => {
+    const box = document.getElementById('metrics');
+    const daysValue = document.getElementById('metrics-days').value;
+    let summary;
+    try {
+      const response = await fetch(`/api/metrics?days=${encodeURIComponent(daysValue)}`);
+      summary = await response.json();
+    } catch (error) {
+      box.innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      return;
+    }
+    if (!summary.events) {
+      box.innerHTML = '<div class="empty-history">기록 없음</div>';
+      return;
+    }
+    const { current, previous } = summary;
+    const before = summary.days ? `이전 ${summary.days}일` : '';
+    const tile = (label, value, prev, format, options = {}, sub = '') => {
+      const delta = previous ? metricDelta(value, prev, options) : '';
+      return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(format(value))}</span>`
+        + (previous ? `<span class="delta">${delta}<span>${esc(before)} ${esc(format(prev))}</span></span>` : '')
+        + (sub ? `<span class="sub">${esc(sub)}</span>` : '') + '</div>';
+    };
+    const group = (title, tiles) => `<section class="metric-group"><h3>${esc(title)}</h3><div class="metric-tiles">${tiles.join('')}</div></section>`;
+    const groups = [
+      group('처리', [
+        tile('완료', current.done, previous?.done, metricCount, { lowerIsBetter: false }),
+        tile('평균 소요', current.leadMs, previous?.leadMs, metricDuration, {}, current.done > current.leadKnown ? `시작 기록 ${current.leadKnown}개 기준` : ''),
+      ]),
+      group('개입', [
+        tile('작업당 질문', current.asksPerDone, previous?.asksPerDone, metricCount),
+        tile('평균 응답 대기', current.waitMs, previous?.waitMs, metricDuration),
+      ]),
+      group('검증', [
+        tile('검증 실패율', current.verifyFailRate, previous?.verifyFailRate, metricRate, { rate: true }, `${current.verifyRuns}회`),
+        tile('리뷰 반려율', current.reviewRejectRate, previous?.reviewRejectRate, metricRate, { rate: true }, `${current.reviewRuns}회`),
+      ]),
+    ].join('');
+    // 확인 필요 — 응답 대기 중인 작업 · 막힌 작업
+    const now = Date.now();
+    const attention = summary.plans.filter((plan) => plan.waiting > 0 || plan.status === 'blocked').map((plan) => {
+      const label = plan.title || plan.plan;
+      if (plan.waiting > 0) return `<div class="row"><span class="why">응답 대기${plan.waiting > 1 ? ` ${plan.waiting}` : ''}</span><span class="title">${esc(label)}</span><span class="since">${esc(metricDuration(now - plan.waitingSince))}</span></div>`;
+      return `<div class="row blocked"><span class="why">막힘</span><span class="title">${esc(label)}</span></div>`;
+    }).join('');
+    // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것 대비 막대로
+    const longest = Math.max(0, ...summary.plans.map((plan) => plan.leadMs ?? 0));
+    const chip = (text, warn = false) => `<span class="chip${warn ? ' warn' : ''}">${esc(text)}</span>`;
+    const rows = summary.plans.map((plan) => {
+      const lead = plan.leadMs !== null && longest
+        ? `<div class="metric-lead"><span class="track"><span class="bar" style="width:${Math.max(3, plan.leadMs / longest * 100).toFixed(1)}%"></span></span><span class="text">${esc(metricDuration(plan.leadMs))}</span></div>`
+        : `<div class="metric-lead none">${plan.status === 'done' ? '시작 기록 없음' : '—'}</div>`;
+      const chips = [
+        plan.asks ? chip(`질문 ${plan.asks}`) : '',
+        plan.answered ? chip(`응답 대기 ${metricDuration(plan.waitMs)}`) : '',
+        plan.blocked ? chip(`막힘 ${plan.blocked}`, true) : '',
+        plan.verify.runs ? chip(plan.verify.fails ? `검증 실패 ${plan.verify.fails}/${plan.verify.runs}` : `검증 통과 ${plan.verify.runs}`, plan.verify.fails > 0) : '',
+        plan.reviews.runs ? chip(plan.reviews.rejects ? `리뷰 반려 ${plan.reviews.rejects}/${plan.reviews.runs}` : '리뷰 승인', plan.reviews.rejects > 0) : '',
+        plan.commits ? chip(`커밋 ${plan.commits}`) : '',
+      ].join('');
+      return `<div class="metric-plan"><div><div class="name">${esc(plan.title || plan.plan)}</div><div class="path">${esc(plan.plan)}${plan.exists ? '' : ' · 지금 없음'}</div></div>`
+        + `<span class="metric-status ${esc(plan.status ?? '')}">${esc(METRIC_STATUS[plan.status] ?? plan.status ?? '—')}</span>${lead}`
+        + `<div class="metric-chips">${chips || '<span class="quiet">기록 없음</span>'}</div></div>`;
+    }).join('');
+    box.innerHTML = `<div class="metric-groups">${groups}</div>`
+      + (attention ? `<div class="metric-block"><h3>확인 필요</h3><div class="metric-attention">${attention}</div></div>` : '')
+      + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
+      + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
+      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
+  };
+  document.getElementById('metrics-days').addEventListener('change', loadMetrics);
   // ── QA 탭 — .qa-runs/ 런 목록 + 런 하나의 화면 카드. 돌고 있는 동안만 1.5초마다 다시 읽는다
   const QA_STATUS = {
     pass: ['✅', '통과', 'ok'], expected: ['☑️', '기대대로 이동', 'ok'], changed: ['🟡', '화면 변화', 'warn'], fail: ['❌', '실패', 'bad'],
@@ -1634,13 +1780,14 @@
   };
   document.querySelectorAll('[data-learnview]').forEach((button) => { button.onclick = () => showLearnView(button.dataset.learnview); });
 
-  const TABS = ['now', 'hermes', 'qa', 'learn', 'history'];
+  const TABS = ['now', 'hermes', 'qa', 'learn', 'history', 'metrics'];
   const showTab = (tab) => {
     for (const name of TABS) {
       document.getElementById(`view-${name}`).hidden = name !== tab;
       document.getElementById(`tab-${name}`).setAttribute('aria-selected', String(name === tab));
     }
     if (tab === 'history') loadHistory();
+    if (tab === 'metrics') loadMetrics();
     if (tab === 'learn') showLearnView(learnView);
     if (tab === 'qa') loadQa(); else stopQa();
     try { history.replaceState(null, '', tab === 'now' ? location.pathname : `#${tab}`); } catch (error) { /* 무시 */ }

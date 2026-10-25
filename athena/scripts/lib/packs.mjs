@@ -1267,6 +1267,7 @@ const LEGACY_STATE = [
   ['.board-trash', 'state/board-trash'], ['.board-learn-stats.json', 'state/board-learn-stats.json'], ['.board-jev-qa.json', 'state/board-jev-qa.json'],
   ['.board-jev-learn.json', 'state/board-jev-learn.json'], ['.jev-log.jsonl', 'state/jev-log.jsonl'],
   ['.qa-runs', 'state/qa-runs'], ['.qa-auth', 'state/qa-auth'], ['.qa-baselines', 'state/qa-baselines'],
+  ['.events.jsonl', 'state/events.jsonl'],
 ]
 export const migrate = async (root, { yes = false, report = () => {} } = {}) => {
   const where = paths(root)

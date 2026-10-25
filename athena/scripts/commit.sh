@@ -209,6 +209,8 @@ if not update_plan(plan, add_commit):
     sys.exit(1)   # 기록이 안 됐다 — 아래에서 경고
 PYEOF
 [ $? = 0 ] || echo "⚠️ 커밋은 됐지만 계획서 기록에 실패했다 — 다시 커밋하지 말고 계획서 ## Commits 에 손으로 적는다: $SHA" >&2
+# 측정용 사건 기록(docs/events.md) — 실패해도 커밋은 그대로
+node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
 
 echo "✅ 커밋했다: $SHA ($REPO · $BRANCH) — $VERIFY_NOTE"
 echo "   push·PR 은 하지 않았다. 사용자가 \"PR 올려줘\" 라고 하면 scripts/ship.sh --plan $PLAN --dir $TOP 로 미리보기부터"

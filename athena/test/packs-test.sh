@@ -27,7 +27,7 @@ mkbody() { # mkbody <폴더> — git clone(코어 이력) + 작업 트리 덮기
   git clone -q "$SRC" "$1" 2>/dev/null || { mkdir -p "$1"; git -C "$1" init -q; }
   rsync -a --delete --exclude .git --exclude .omc --exclude /plans --exclude /issues --exclude /repos --exclude /.worktrees --exclude /pack --exclude /packs \
     --exclude /archive --exclude /.sync --exclude /.pack-data --exclude /athena.config.json --exclude __pycache__ --exclude '/.board-*' --exclude '/.qa-*' \
-    --exclude /.jev-log.jsonl --exclude /.migrate-* --exclude node_modules "$SRC/" "$1/"
+    --exclude /.jev-log.jsonl --exclude /.events.jsonl --exclude /.migrate-* --exclude node_modules "$SRC/" "$1/"
 }
 B="$WORK/body"; mkbody "$B"; cd "$B" || exit 1
 A() { node scripts/athena.mjs "$@" --json 2>/dev/null | tail -1; }

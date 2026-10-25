@@ -57,6 +57,8 @@ def record(text):
 update_plan(plan, record)
 print(line)
 PYEOF
+# 측정용 사건 기록(docs/events.md) — 실패해도 리뷰 기록은 그대로
+node "$ATHENA_DIR/scripts/lib/events.mjs" review plan="$PLAN" verdict="$VERDICT" repo="$REPO" branch="$BRANCH" sha="$SHA" dirty="$DIRTY" >/dev/null 2>&1 || true
 
 # 리뷰를 끝낸 reviewer pane 은 쉬기 시작한 뒤 1분 뒤 닫는다 — 결론은 위에서 계획서에 남았다. 화면 계층으로만 다룬다(밖이면 아무것도 안 한다)
 if [ "${ATHENA_REVIEW_AUTOCLOSE:-1}" != 0 ] && "$ATHENA_DIR/scripts/screen" inside 2>/dev/null; then

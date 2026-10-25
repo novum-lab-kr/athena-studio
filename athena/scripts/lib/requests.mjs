@@ -10,6 +10,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { paths } from './config.mjs'
+import { logEvent } from './events.mjs'
 import { PackError, takeLock } from './lock.mjs'
 import { writeAtomic } from './plan-update.mjs'
 
@@ -49,6 +50,10 @@ const readAll = (dir) => {
     .sort((left, right) => left.createdAt.localeCompare(right.createdAt))
 }
 const save = (dir, request) => writeAtomic(join(dir, `${request.id}.json`), `${JSON.stringify(request, null, 2)}\n`)
+// 상태가 바뀔 때마다 사건 기록에도 한 줄(사람 개입 측정 — docs/events.md)
+const logState = (root, request) => logEvent(root, 'request', {
+  id: request.id, kind: request.kind, state: request.state, plan: request.links?.plan || null, by: request.answer?.by || null, rev: request.rev,
+})
 
 // 폴더 잠금 안에서 — 읽고 고치고 쓰기가 다른 쓰기와 섞이지 않게
 const withLock = (root, work) => {
@@ -95,6 +100,7 @@ export const openRequest = (root, input) => {
       // 답을 받은 뒤(answered) 다시 열면 새 질문이다 — 답을 지우고 open 으로
       const updated = { ...same, ...fields, state: 'open', answer: null, rev: same.rev + 1, updatedAt: now() }
       save(dir, updated)
+      logState(root, updated)
       return { ok: true, request: updated, reused: true }
     }
     const request = {
@@ -113,6 +119,7 @@ export const openRequest = (root, input) => {
       closedReason: null,
     }
     save(dir, request)
+    logState(root, request)
     return { ok: true, request, reused: false }
   })
 }
@@ -127,6 +134,7 @@ export const listRequests = (root, { all = false } = {}) => withLock(root, (dir)
     if (text !== null && !/^- Status:\s*done\b/m.test(text)) continue
     Object.assign(request, { state: 'expired', closedReason: text === null ? '계획서가 없어졌다' : '계획서가 done', rev: request.rev + 1, updatedAt: now() })
     save(dir, request)
+    logState(root, request)
   }
   return { ok: true, requests: all ? requests : requests.filter((request) => LIVE.includes(request.state)) }
 })
@@ -150,6 +158,7 @@ export const answerRequest = (root, id, { choice = '', text = '', by = '', rev =
     const delivered = by === 'chat'
     Object.assign(request, { state: delivered ? 'delivered' : 'answered', answer, deliveredAt: delivered ? at : null, rev: request.rev + 1, updatedAt: at })
     save(dir, request)
+    logState(root, request)
     return { ok: true, request }
   })
 }
@@ -162,6 +171,7 @@ export const ackRequest = (root, id) => withLock(root, (dir) => {
   const at = now()
   Object.assign(request, { state: 'delivered', deliveredAt: at, rev: request.rev + 1, updatedAt: at })
   save(dir, request)
+  logState(root, request)
   return { ok: true, request, already: false }
 })
 
@@ -170,6 +180,7 @@ export const cancelRequest = (root, id, { reason = '' } = {}) => withLock(root, 
   if (!LIVE.includes(request.state)) throw new PackError('conflict', `이미 ${request.state} 인 요청이다`, { request })
   Object.assign(request, { state: 'cancelled', closedReason: String(reason).trim() || null, rev: request.rev + 1, updatedAt: now() })
   save(dir, request)
+  logState(root, request)
   return { ok: true, request }
 })
 
@@ -196,6 +207,7 @@ export const syncPlanRequest = (root, { mdFile, htmlFile, plan }) => {
     const answer = live.answer ?? { choice: decisions.map((decision) => `${decision.id}=${[].concat(decision.decided).join(',')}`).join(' '), text: null, by: 'chat', at }
     Object.assign(live, { state: 'delivered', answer, deliveredAt: at, rev: live.rev + 1, updatedAt: at })
     save(dir, live)
+    logState(root, live)
     return { ok: true, request: live }
   })
 }

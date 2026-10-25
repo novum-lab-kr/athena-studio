@@ -44,6 +44,8 @@ import { execFile, execFileSync, spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
 import { answerRequest, listRequests } from '../lib/requests.mjs'
+import { observePlanStatus, readEvents } from '../lib/events.mjs'
+import { summarize } from '../lib/metrics.mjs'
 import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
@@ -708,6 +710,8 @@ const collect = async () => {
     .filter(Boolean)
     .filter((issue) => issue.column !== 'done' || now - issue.mtime < DONE_KEEP_DAYS * 86_400_000)
   await autoDonePlans(plans)
+  // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
+  observePlanStatus(ROOT, plans)
   const [{ available, panes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
   await Promise.all([...plans, ...issues].map(async (card) => { card.owner = await ownerOf(card.owner, join(ROOT, card.id)) }))
   const subagents = readSubagents()
@@ -1633,6 +1637,19 @@ const handleRequest = async (request, response) => {
     const item = readHistoryItem(String(url.searchParams.get('dir') ?? ''))
     response.writeHead(item ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' })
     return response.end(JSON.stringify(item ?? { error: '보관된 일을 찾지 못했어요' }))
+  }
+  // 지표 — 사건 기록(state/events.jsonl)을 계획서마다 묶은 숫자(scripts/lib/metrics.mjs). 누를 때만 읽는다
+  if (url.pathname === '/api/metrics') {
+    const days = url.searchParams.get('days') === 'all' ? null : Number(url.searchParams.get('days')) || 7
+    const summary = summarize(readEvents(ROOT), { days })
+    // 제목은 계획서에서 — 지웠거나 보관했으면 경로만
+    for (const plan of summary.plans) {
+      const text = plan.plan.startsWith('plans/') && !plan.plan.includes('..') ? readText(join(ROOT, plan.plan)) : null
+      plan.title = text ? plain(text.match(/^#\s+(.+)$/m)?.[1] ?? '') : ''
+      plan.exists = Boolean(text)
+    }
+    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+    return response.end(JSON.stringify(summary))
   }
   if (url.pathname === '/api/learn') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
