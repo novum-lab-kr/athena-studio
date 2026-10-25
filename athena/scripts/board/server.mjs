@@ -449,13 +449,20 @@ const doneCheck = async (issue) => {
     })
     checks.push({ label: items.length ? `## 후속 ${items.length - open.length}/${items.length} 정리` : '## 후속 절 (없으면 "- [x] 없음")', ok: items.length > 0 && open.length === 0 })
   } else if (issue.type === 'knowledge' || issue.type === 'diagram' || issue.scope === 'hermes') {
-    // athena 자체 이슈는 kind 와 무관하게 이 기준 — PR 없이 코어 브랜치에 커밋·push 하므로 fix: 커밋이 그 원격 브랜치에 있으면 끝.
-    // 코어 브랜치는 이 체크아웃이 따라가는 원격 브랜치(upstream) — 없으면 origin/main
-    const coreRef = (await run('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']))?.trim() || 'origin/main'
-    const shas = issue.fix.split(/[,\s]+/).filter(Boolean)
-    let allIn = shas.length > 0
-    for (const sha of shas) if ((await run('git', ['-C', ROOT, 'merge-base', '--is-ancestor', sha, coreRef])) === null) allIn = false
-    checks.push({ label: shas.length ? `fix: ${shas.join(', ')} ${coreRef} 에 push 됨` : 'fix: 수정 커밋 sha', ok: allIn })
+    // athena 자체 이슈는 kind 와 무관하게 이 기준.
+    // 코어를 브랜치 · PR 로 고쳤으면(pr: PR 주소 또는 <레포>#<번호> — 2026-10-25 결정 D4) 그 PR 이 머지됐으면 끝(squash 머지라 fix: sha 는 main 에 없다).
+    // pr: 이 없으면 옛 길 — PR 없이 코어 브랜치에 커밋·push 했으니 fix: 커밋이 그 원격 브랜치(이 체크아웃의 upstream · 없으면 origin/main)에 있으면 끝
+    const prLink = String(issue.pr ?? '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\/(\d+)/) ?? String(issue.pr ?? '').match(/^([\w.-]+)#(\d+)$/)
+    if (prLink) {
+      const merged = (await prState(prLink[1], prLink[2])) === 'MERGED'
+      checks.push({ label: `pr: ${prLink[1]}#${prLink[2]} MERGED`, ok: merged })
+    } else {
+      const coreRef = (await run('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']))?.trim() || 'origin/main'
+      const shas = issue.fix.split(/[,\s]+/).filter(Boolean)
+      let allIn = shas.length > 0
+      for (const sha of shas) if ((await run('git', ['-C', ROOT, 'merge-base', '--is-ancestor', sha, coreRef])) === null) allIn = false
+      checks.push({ label: shas.length ? `fix: ${shas.join(', ')} ${coreRef} 에 push 됨` : 'fix: 수정 커밋 sha', ok: allIn })
+    }
   } else if (issue.type === 'seo') {
     // 서비스당 하나로 매주 갱신되는 SEO Health 이슈(/seo-feedback) — 현재 항목이 전부 해결([x])이면 끝
     const current = issue.body.match(/^## 현재 항목\s*\n([\s\S]*?)(?=^## |$(?![\s\S]))/m)?.[1] ?? ''
