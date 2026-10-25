@@ -1064,7 +1064,8 @@ const dispatchAgent = async (issueId, agent, text, job) => {
     const title = issueText.match(/^title:\s*(.+)$/m)?.[1]?.trim().replace(/^"|"$/g, '') || basename(issueId, '.md')
     const promptPath = join(tmpdir(), `hermes-issue-prompt-${Date.now()}.txt`)
     writeFileSync(promptPath, header + prompt)
-    plan = ((await run('node', [join(ROOT, 'scripts/new-plan.mjs'), '--agent', agent, '--summary', title, '--issue', issueId, '--prompt-file', promptPath], { cwd: ROOT })) ?? '').trim()
+    // --no-pane-name — 현황판을 띄운 pane(아테나일 수 있다) 이름을 이 이슈로 바꾸지 않게
+    plan = ((await run('node', [join(ROOT, 'scripts/new-plan.mjs'), '--agent', agent, '--summary', title, '--issue', issueId, '--prompt-file', promptPath, '--no-pane-name'], { cwd: ROOT })) ?? '').trim()
     rmSync(promptPath, { force: true })
     if (!plan) return fail('plan', '경량 계획서를 만들지 못했어요')
     const withPlan = /^plan:.*$/m.test(issueText) ? issueText.replace(/^plan:.*$/m, `plan: ${plan}`) : issueText.replace(/^(status:.*)$/m, `$1\nplan: ${plan}`)
