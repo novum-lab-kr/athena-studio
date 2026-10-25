@@ -434,10 +434,13 @@ export const checkConfirms = async (only = '') => {
     if (request && ['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); continue }
     if (request?.state === 'open') continue
     const choice = job.noConfirm ? '머지' : request.answer?.choice ?? ''
+    // 확인 요청 건은 답을 받으면 바로 지운다(지금까지와 같다). 확인 없는 건은 잡은 파일을 검증 · 머지 결과를 계획서에 적을 때까지 쥐고 있다가(finish)
+    // 지운다 — 그 사이 이 실행이 죽으면 파일이 잡은 이름 그대로 남아 restoreClaims 가 되돌리고 다시 본다(같은 HEAD 는 재리뷰가 돌지 않으니 여기서 놓치면 끝)
     const settle = () => {
       if (request) try { ackRequest(ROOT, request.id) } catch { /* 두 번째면 이미 받음 */ }
-      rmSync(current, { force: true })
+      if (!job.noConfirm) rmSync(current, { force: true })
     }
+    const finish = () => { if (job.noConfirm) rmSync(current, { force: true }) }
     if (choice !== '머지') {
       settle()
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})` })
@@ -453,6 +456,7 @@ export const checkConfirms = async (only = '') => {
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})` })
       logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: false, reason: 'recheck' })
+      finish()
       continue
     }
     const target = ['--repo', `${org}/${job.repo}`]
@@ -462,6 +466,7 @@ export const checkConfirms = async (only = '') => {
         if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `검증 대기 — draft 풀기 실패(${firstLine(ready.err)})` })
         logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: false, reason: 'gh' })
         console.log(`  ⚠️ draft 풀기 실패 ${job.repo}#${job.number}: ${firstLine(ready.err)}`)
+        finish()
         continue
       }
     }
@@ -469,6 +474,7 @@ export const checkConfirms = async (only = '') => {
     if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: merged.ok ? `머지됨 — squash → ${job.base}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})` })
     logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: merged.ok, ...(merged.ok ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
     console.log(merged.ok ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)
+    finish()
   }
 }
 
