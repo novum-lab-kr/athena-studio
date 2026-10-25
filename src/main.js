@@ -2555,7 +2555,6 @@ async function pollTray() {
       trayHistory.push({ at: Date.now(), working: trayState.panes.filter((pane) => pane.agent && pane.agent_status === 'working').length })
       while (trayHistory.length && Date.now() - trayHistory[0].at > 30 * 60000) trayHistory.shift()
     }
-    let cards = null
     if (Date.now() - trayState.boardAt > 15000) {
       trayState.boardAt = Date.now()
       const board = await fetchBoardState(ctx.boardPortNow())
@@ -2564,7 +2563,6 @@ async function pollTray() {
         trayState.boardOkAt = Date.now()
         trayState.cards = board.cards || []
         trayState.usage = (board.header && board.header.usage) || []
-        cards = trayState.cards
         // 평균 답 대기(지난 7일 · 현황판 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
         if (Date.now() - trayState.metricsAt > 5 * 60000) {
           trayState.metricsAt = Date.now()
@@ -2581,7 +2579,7 @@ async function pollTray() {
     }
     refreshTray()
     if (panesOk) {
-      const due = trayNotifier.update({ panes: trayState.panes, cards, names: trayNames(), say }, Date.now())
+      const due = trayNotifier.update({ panes: trayState.panes, names: trayNames(), say }, Date.now())
       // 지금 보고 있는 pane 은 빼고 묶는다
       for (const item of trayModel.bundle(due.filter((entry) => !lookingAt(entry)), say)) notify(item)
     }
