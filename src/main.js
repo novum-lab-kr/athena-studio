@@ -1621,6 +1621,14 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (!result.ok) return ctx.openBoardExternal()
     return shell.openExternal(`${result.url.replace(/\/$/, '')}/${BOARD_SECTIONS.includes(section) && section !== 'now' ? `#${section}` : ''}`)
   }
+  // 다이어그램 목록 — 이 창 본체의 docs/diagrams/index.html 을 기본 앱으로(/guide 그림 과 같은 파일 · 같은 방식). 없으면 missing
+  ctx.openDiagrams = async () => {
+    if (!ctx.athenaDir) return { ok: false, error: 'missing' }
+    const file = path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html')
+    if (!fs.existsSync(file)) return { ok: false, error: 'missing' }
+    const failure = await shell.openPath(file)
+    return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
+  }
 
   // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
   ctx.workDetail = async (id) => {
@@ -2942,6 +2950,7 @@ handle('work:answer', (ctx, id, answer) => ctx.answerRequest(String(id || ''), {
 handle('work:redeliver', (ctx, id) => ctx.redeliverRequest(String(id || '')))
 handle('work:open-plan', (ctx, id, html) => ctx.openPlan(String(id || ''), html ? String(html) : null))
 handle('board:section', (ctx, section) => ctx.openBoardSection(String(section || '')))
+handle('board:diagrams', (ctx) => ctx.openDiagrams())
 handle('work:detail', (ctx, id) => ctx.workDetail(String(id || '')))
 listen('ui:tab', (ctx, tab) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url) => openUrl(ctx, String(url)))

@@ -56,42 +56,50 @@ const html = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1" />
 <title>아테나 다이어그램</title>
 <style>
-  :root { color-scheme: dark; }
+  /* 색 · 글꼴 · 간격은 Athena Studio 앱(src/renderer/style.css :root)을 따른다 — 앱이 다크 하나뿐이라 다크만 */
+  :root {
+    color-scheme: dark;
+    --bg: #16171a; --bar: #1f2125; --hover: #28292d; --line: #2e3137;
+    --text: #e8e6e1; --muted: #9a968e; --title: #f3ead6; --accent: #c9ad78; --accent-text: #e9d2a0;
+    --gold-line: rgb(201 173 120 / 38%); --gold-bg: rgb(201 173 120 / 7%);
+    --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
+    --font-mono: "D2Coding", "SF Mono", Menlo, monospace;
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; padding: 40px 28px 64px;
-    background: #070b14; color: #e6edf6;
-    font-family: -apple-system, BlinkMacSystemFont, 'Apple SD Gothic Neo', 'Segoe UI', sans-serif;
-    line-height: 1.6;
+    margin: 0; padding: 36px 28px 56px;
+    background: var(--bg); color: var(--text);
+    font: 13px/1.6 var(--font-ui);
+    -webkit-font-smoothing: antialiased;
   }
   .wrap { max-width: 1060px; margin: 0 auto; }
-  h1 { font-size: 26px; margin: 0 0 6px; letter-spacing: -.01em; }
-  .lead { color: #8fa3bf; font-size: 14px; margin: 0 0 8px; }
-  .note { color: #6d819c; font-size: 12.5px; margin: 0 0 36px; }
-  .note code { background: #111a2b; padding: 2px 6px; border-radius: 5px; color: #9ec5ff; }
+  h1 { font-size: 22px; margin: 0 0 6px; color: var(--title); }
+  .lead { color: var(--muted); font-size: 13px; margin: 0 0 6px; }
+  .note { color: var(--muted); font-size: 12px; margin: 0 0 28px; }
+  code { background: var(--bar); padding: 1px 6px; border-radius: 4px; color: var(--accent-text); font: 12px var(--font-mono); }
   h2 {
-    font-size: 13px; color: #7f94b4; font-weight: 600;
-    margin: 34px 0 12px; padding-bottom: 8px; border-bottom: 1px solid #1b2740;
+    font-size: 11px; color: var(--muted); font-weight: 600; letter-spacing: .04em;
+    margin: 28px 0 10px; padding-bottom: 6px; border-bottom: 1px solid var(--line);
   }
-  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 14px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 10px; }
   .card {
-    background: #0d1422; border: 1px solid #1b2740; border-radius: 12px;
-    padding: 16px 18px; transition: border-color .15s, background .15s;
+    background: rgb(255 255 255 / 2.5%); border: 1px solid rgb(255 255 255 / 8%); border-radius: 8px;
+    padding: 12px 14px; transition: border-color .14s, background-color .14s;
   }
-  .card:hover { border-color: #26365a; }
-  .t { font-size: 15px; font-weight: 700; margin-bottom: 3px; }
-  .s { font-size: 12px; color: #6fd3c4; font-family: 'SF Mono', Menlo, monospace; margin-bottom: 8px; }
-  .d { font-size: 13px; color: #93a6c2; }
-  .pills { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 13px; }
+  .card:hover { border-color: var(--gold-line); background: var(--gold-bg); }
+  .t { font-size: 13px; font-weight: 600; color: var(--title); margin-bottom: 2px; }
+  .s { font-size: 11.5px; color: var(--accent); margin-bottom: 6px; }
+  .d { font-size: 12px; color: var(--muted); }
+  .pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
   .pill {
-    text-decoration: none; font-size: 12.5px; font-weight: 600;
-    color: #cfe0f8; background: #111c2f; border: 1px solid #22314f;
-    padding: 5px 11px; border-radius: 999px;
-    transition: border-color .15s, background .15s, color .15s;
+    text-decoration: none; font-size: 12px; font-weight: 500;
+    color: var(--text); background: var(--bar); border: 1px solid var(--line);
+    padding: 3px 10px; border-radius: 6px;
+    transition: border-color .14s, background-color .14s, color .14s;
   }
-  .pill:hover { border-color: #2f6df6; background: #16243c; color: #fff; }
-  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid #1b2740; color: #5f738f; font-size: 12.5px; }
-  footer code { background: #111a2b; padding: 2px 6px; border-radius: 5px; color: #9ec5ff; }
+  .pill:hover, .pill:focus-visible { outline: none; border-color: var(--gold-line); background: var(--gold-bg); color: var(--accent-text); }
+  a { color: var(--accent-text); }
+  footer { margin-top: 36px; padding-top: 14px; border-top: 1px solid var(--line); color: var(--muted); font-size: 12px; }
 </style>
 </head>
 <body>
@@ -122,7 +130,7 @@ const html = `<!doctype html>
     </div>
 ${body}
     <footer>
-      원본 스펙은 <code>docs/diagrams/*.json</code> 이고 <a href="https://github.com/tt-a1i/archify" style="color:#9ec5ff">Archify</a> 로 생성한다.
+      원본 스펙은 <code>docs/diagrams/*.json</code> 이고 <a href="https://github.com/tt-a1i/archify">Archify</a> 로 생성한다.
       이 목록은 <code>node scripts/build-diagram-index.mjs</code> 로 다시 만든다 — 카드를 손으로 늘리지 않는다.
       다시 만드는 방법과 스키마 함정은 <code>docs/diagrams/README.md</code> 에 있다.${PACK_INDEX.missingNote ? `\n      ${PACK_INDEX.missingNote}` : ""}
     </footer>

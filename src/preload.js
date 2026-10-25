@@ -82,6 +82,7 @@ contextBridge.exposeInMainWorld('studio', {
   workRedeliver: (id) => ipcRenderer.invoke('work:redeliver', id),
   workOpenPlan: (id, html) => ipcRenderer.invoke('work:open-plan', id, html),
   openBoardSection: (section) => ipcRenderer.invoke('board:section', section),
+  openDiagrams: () => ipcRenderer.invoke('board:diagrams'),
   workDetail: (id) => ipcRenderer.invoke('work:detail', id),
   onWorkRequests: listen('work:requests'),
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
