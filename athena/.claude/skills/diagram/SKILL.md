@@ -47,7 +47,7 @@ node scripts/check-diagrams.mjs
   - 코드는 체크아웃 경로에서만, `meta.repository.revision` 은 위 SHA
   - 그릴 것: 기본 3장(`<서비스>.architecture.json` · `.domains.architecture.json` · `.sequence.json` → 각 html). 심층 폴더가 있으면 그 번들 전체(탭 JSON · `build-bundle.py` · 화면 전수 대조). 기존 장이 있으면 **새로 만들지 말고 현재 코드에 맞게 고친다**
   - 쓰는 곳: `docs/diagrams/<서비스>.*`, 심층 폴더, `docs/diagrams/guides/<서비스>.md`("지금 있는 장"·"탭 구성" 갱신) **만**. index·build-diagram-index·knowledge·issues 는 아테나가 한다
-  - deliver 의 html 경로는 **반드시 `docs/diagrams/...` 전체 경로**로 준다(파일명만 주면 athena 루트에 생긴다)
+  - deliver 의 html 경로는 **반드시 `docs/diagrams/...` 전체 경로**로 준다(파일명만 주면 athena 루트에 생긴다) · deliver 한 html 마다 바로 `node scripts/diagram-theme.mjs <html>`(아테나 테마 · 번들 전에)
   - 긴 JSON 은 탭별로 나눠 쓰고, 한 장이 끝날 때마다 파일로 저장한다(스트림이 끊겨도 남게)
   - 레포 코드 수정·커밋 금지, `.env*`·키·토큰 값 출력 금지
   - 보고 형식: `AUTHORING.md` 9절 1~6 + **7. 그리다 찾은 코드 문제**(버그·보안·죽은 코드 — 파일:줄, 심각도 추정)
@@ -61,13 +61,14 @@ node $A/bin/archify.mjs validate sequence <json> --quality showcase --json      
 node scripts/diagram-coverage.mjs docs/diagrams/<심층 폴더>     # App/Pages Router 앱만. 그 밖(React Native 등)은 작업자의 대조 출력 확인
 node scripts/check-diagrams.mjs                                 # 대상 장이 ✅ 최신
 ls *.architecture.html 2>/dev/null                              # athena 루트에 잘못 생긴 html 이 없어야 한다
+node scripts/diagram-theme.mjs --check docs/diagrams/<서비스>*.html docs/diagrams/<심층 폴더>/*.html   # 모두 ✔(테마 입힘)
 ```
 - 하나라도 실패면 해당 작업자에게 다시 시킨다. 통과하지 못한 장은 커밋하지 않는다
 - 줄 번호가 달린 근거 몇 개를 `sed -n '<줄>p'` 로 찍어 문장과 대조한다(표본)
 
 ## 5. 목록 · 문서 반영 (아테나)
 - 심층 번들 라벨(화면 수 등)이 바뀌었으면 `scripts/build-diagram-index.mjs` 의 카드 `extra` 를 고친다 → `node scripts/build-diagram-index.mjs`
-- 🟡 repin 만 한 장: 해당 JSON 들을 deliver 로 다시 만들고(html 경로 전체로) 번들이면 `python3 docs/diagrams/<폴더>/build-bundle.py`
+- 🟡 repin 만 한 장: 해당 JSON 들을 deliver 로 다시 만들고(html 경로 전체로) `node scripts/diagram-theme.mjs <html>…` · 번들이면 `python3 docs/diagrams/<폴더>/build-bundle.py`
 - 작업자가 보고한 **지식 문서와 코드의 차이**: 코드로 다시 확인한 것만 `docs/knowledge/**` 에 반영한다
 - **그리다 찾은 코드 문제**: 코드로 확인한 뒤 `docs/issues.md` "등록 기준"대로 — 보안·버그(high)만 바로 등록, 나머지는 보고에 "이슈 후보"로. 등록할 때는 `issues/<YYYYMMDD>-<레포>-<제목>.md`(`docs/issues.md` 형식, `source: diagram <날짜>`, `kind: code`). 이미 같은 이슈가 있으면(`issues/`·`archive/*/issue.md`·`.board-trash/`) 새로 만들지 않고 알린다. 값(키·토큰)은 옮기지 않는다
 

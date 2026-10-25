@@ -22,6 +22,7 @@ npm test        # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(�
 - 앱을 고쳤으면 `npm run check` · `npm test`. node-pty 를 못 불러오면 데몬 통합 테스트가 **skip** 된다(`test/daemon.test.js`) — 통과 숫자만 보지 말고 skip 이 없는지 본다
 - `npm test` 는 코어를 보지 않는다. `athena/` 를 고쳤으면 고친 곳에 맞는 코어 검사를 따로(`athena/` 에서):
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
+  - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
   - 자세한 것은 `athena/docs/pack.md` "여러 팩 테스트"
 

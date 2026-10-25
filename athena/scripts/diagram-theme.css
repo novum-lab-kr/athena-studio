@@ -1,0 +1,57 @@
+/* 아테나 다이어그램 테마 — archify 결과 HTML 에 덧씌운다(archify 는 그대로 · scripts/diagram-theme.mjs 가 끼워 넣는다).
+   한글 본문 글꼴 · 현황판과 같은 색 · 조금 큰 글자 · 면을 채운 둥근 상자. 프리셋(classic 등)과 상관없이 같은 모습 */
+
+/* 글꼴 — 고정폭(JetBrains Mono) 대신 한글 본문 글꼴. 코드처럼 보여야 하는 것은 없다 */
+body, svg text, .toolbar button, .card, .legend {
+  font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif !important;
+  letter-spacing: 0 !important;
+}
+h1 { font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif !important; font-weight: 700 !important; letter-spacing: -.01em !important; }
+
+/* 글자 크기 — 상자 이름 · 설명 · 화살표 이름을 한 단계씩 */
+svg text[data-node-label] { font-size: 13px !important; font-weight: 700 !important; }
+svg text[data-detail="context"] { font-size: 10.5px !important; }
+svg text[data-detail="fine"] { font-size: 8.5px !important; }
+
+/* 화살표 이름(archify 가 8px 로 쓴다) — 조금 크게 · 바탕색 테두리를 둘러 선 위에서도 읽히게 */
+svg text[font-size="8"] { font-size: 10px !important; font-weight: 500; fill: var(--text-muted); paint-order: stroke; stroke: var(--mask); stroke-width: 4px; stroke-linejoin: round; }
+/* 강조 화살표 이름(t-backend) — 강조 선과 같은 색 · 점선 화살표 이름(t-messagebus) — 보통 글자색 */
+svg text[font-size="8"].t-backend { fill: var(--arrow-emphasis); font-weight: 600; }
+svg text[font-size="8"].t-messagebus { fill: var(--text-muted); }
+
+/* 상자 — 모서리를 둥글게 · 테두리는 얇게(상자는 stroke-width 1.5 · 범례 색 칸은 1 이라 둥글게 하지 않는다) */
+svg rect[class^="c-"][stroke-width="1.5"] { rx: 10px; ry: 10px; stroke-width: 1.2px; }
+
+/* 경계(스튜디오 집 같은 구역) — 옅은 면 · 차분한 점선 · 이름은 보통 글자색 */
+svg .c-region { fill: var(--lane-fill) !important; stroke: var(--lane-stroke) !important; stroke-dasharray: 6 4 !important; }
+svg text[data-boundary-label] { fill: var(--text-muted); font-size: 10.5px !important; }
+
+/* 색 — 라이트(현황판 토큰) */
+html[data-theme="light"], html[data-theme="light"][data-preset] {
+  --bg: #f5f3ee; --panel: #ffffff; --panel-border: #e4e0d6; --grid: rgba(35, 33, 29, .035);
+  --text: #23211d; --text-muted: #76716a; --text-dim: #8e897f; --text-faint: #b3ada2;
+  --mask: #ffffff; --arrow: #a19b90; --arrow-emphasis: #3b6fd8;
+  --lane-fill: rgba(59, 111, 216, .035); --lane-stroke: #c9c3b6;
+  --frontend-fill: #e9effb; --frontend-stroke: #3b6fd8;
+  --backend-fill: #ffffff; --backend-stroke: #cfc9bc;
+  --database-fill: #efebf9; --database-stroke: #7a62c9;
+  --messagebus-fill: #faf1df; --messagebus-stroke: #c98a12;
+  --external-fill: #f3f1ec; --external-stroke: #a7a196;
+  --cloud-fill: #e7f4ed; --cloud-stroke: #2f9e62;
+  --security-fill: #fbe9e7; --security-stroke: #d1463b;
+}
+
+/* 색 — 다크 */
+html[data-theme="dark"], html[data-theme="dark"][data-preset] {
+  --bg: #141518; --panel: #1b1c20; --panel-border: #2e3137; --grid: rgba(232, 230, 225, .03);
+  --text: #e8e6e1; --text-muted: #9b978f; --text-dim: #85817a; --text-faint: #5f5c57;
+  --mask: #1b1c20; --arrow: #6d6a64; --arrow-emphasis: #79a1f0;
+  --lane-fill: rgba(121, 161, 240, .04); --lane-stroke: #3a3d44;
+  --frontend-fill: #1e2943; --frontend-stroke: #79a1f0;
+  --backend-fill: #24262b; --backend-stroke: #4a4e57;
+  --database-fill: #262036; --database-stroke: #a08ce0;
+  --messagebus-fill: #2e2618; --messagebus-stroke: #e0a83a;
+  --external-fill: #222326; --external-stroke: #6d6a64;
+  --cloud-fill: #1b2e23; --cloud-stroke: #4fbf82;
+  --security-fill: #351f1d; --security-stroke: #ec6b60;
+}
