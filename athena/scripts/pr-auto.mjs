@@ -390,8 +390,10 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref,
 
 // 머지 확인 답 보기 — 답이 오면 다시 확인하고 머지 · 보류. HEAD 가 바뀌었으면 거둔다.
 // 확인 없는 레포의 파일(noConfirm — 요청 없음)은 [머지] 를 고른 것으로 보고 같은 경로로 간다. only 를 주면 그 파일 하나만
-const checkConfirms = async (only = '') => {
+export const checkConfirms = async (only = '') => {
   if (!existsSync(CONFIRM_DIR)) return
+  // 다른 실행(손으로 돌린 한 번 등)이 잡은 채로 끝난 파일도 돌고 있는 처리기가 30초마다 되돌려 이어서 본다
+  if (!only) restoreClaims()
   const config = loadConfig(ROOT)
   const org = githubOrg(config)
   const files = only ? [only].filter((file) => existsSync(file)) : readdirSync(CONFIRM_DIR).filter((file) => file.endsWith('.json')).map((name) => join(CONFIRM_DIR, name))
@@ -524,7 +526,8 @@ const enqueue = (planArg, prArg, head) => {
   launchWatcher()
 }
 
-// 확인 없는 머지를 잡은 채로 끝난 처리기(꺼짐 · 죽음)의 파일(<이름>.json.<pid>)을 원래 이름으로 — 그대로 두면 아무도 다시 보지 않는다
+// 확인 없는 머지를 잡은 채로 끝난 실행(처리기 · 손으로 돌린 한 번 — 꺼짐 · 죽음)의 파일(<이름>.json.<pid>)을 원래 이름으로 — 그대로 두면 아무도 다시 보지 않는다.
+// 처리기 시작 · --kick · 처리기의 머지 확인 보기(30초마다 checkConfirms)가 부른다. 잡은 pid 가 살아 있으면 건드리지 않는다
 export const restoreClaims = () => {
   if (!existsSync(CONFIRM_DIR)) return
   for (const name of readdirSync(CONFIRM_DIR)) {
