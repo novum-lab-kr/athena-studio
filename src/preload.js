@@ -71,6 +71,7 @@ contextBridge.exposeInMainWorld('studio', {
   tabRatio: (tabId, path, ratio) => ipcRenderer.invoke('tab:ratio', tabId, path, ratio),
   paneSplit: (paneId, direction) => ipcRenderer.invoke('pane:split', paneId, direction),
   paneClose: (paneId) => ipcRenderer.invoke('pane:close', paneId),
+  paneContextMenu: (point) => ipcRenderer.invoke('pane:context-menu', point),
   paneFocus: (paneId) => ipcRenderer.send('pane:focus', paneId),
   paneInput: (paneId, data) => ipcRenderer.send('pane:input', paneId, data),
   paneResize: (paneId, cols, rows) => ipcRenderer.send('pane:resize', paneId, cols, rows),

@@ -77,6 +77,8 @@ function ensureView(paneId) {
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
+  // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
+  el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
   const view = { term, fit, el, head, shown: false, sent: null }
   views.set(paneId, view)
   return view
@@ -1431,6 +1433,19 @@ async function newTab() {
   if (result.error) showToast(say('tab.openFailed', { message: result.error }))
 }
 
+async function splitPane(paneId, direction) {
+  const result = await studio.paneSplit(paneId, direction)
+  if (result.error) showToast(say('pane.splitFailed', { message: result.error }))
+}
+
+// pane 우클릭 메뉴(main) — 대상은 포커스된 pane 이 아니라 우클릭한 그 pane
+async function paneMenu(paneId, event) {
+  if (!state || !state.valid || !attached) return
+  const action = await studio.paneContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) })
+  if (action === 'split-right' || action === 'split-down') return splitPane(paneId, action === 'split-down' ? 'down' : 'right')
+  if (action === 'close-pane') return studio.paneClose(paneId)
+}
+
 // 메뉴 단축키(⌘T · ⌘D · ⌘⇧D · ⌘W · ⌘⌥방향 · ⌘⇧[ ]) — Ctrl 은 pane 안으로 간다
 async function runCommand(name) {
   if (!state || !state.valid || !attached) return
@@ -1440,9 +1455,7 @@ async function runCommand(name) {
   if (name === 'new-tab') return newTab()
   if (name === 'split-right' || name === 'split-down') {
     if (!focused) return newTab()
-    const result = await studio.paneSplit(focused, name === 'split-down' ? 'down' : 'right')
-    if (result.error) showToast(say('pane.splitFailed', { message: result.error }))
-    return undefined
+    return splitPane(focused, name === 'split-down' ? 'down' : 'right')
   }
   if (name === 'close-pane') {
     if (focused) await studio.paneClose(focused)
