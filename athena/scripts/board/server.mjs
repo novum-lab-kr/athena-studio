@@ -454,10 +454,14 @@ const doneCheck = async (issue) => {
     // 코어를 브랜치 · PR 로 고쳤으면(pr: PR 주소 또는 <레포>#<번호> — 2026-10-25 결정 D4) 그 PR 이 머지됐으면 끝(squash 머지라 fix: sha 는 main 에 없다).
     // pr: 이 없으면 옛 길 — PR 없이 코어 브랜치에 커밋·push 했으니 fix: 커밋이 그 원격 브랜치(이 체크아웃의 upstream · 없으면 origin/main)에 있으면 끝
     // PR 주소면 주소의 조직 · 레포 그대로(코어 정본 레포가 팩 github.org 밖일 수 있다) · <레포>#<번호> 면 팩 github.org
-    const prUrl = String(issue.pr ?? '').match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/)
-    const prShort = String(issue.pr ?? '').match(/^([\w.-]+)#(\d+)$/)
+    // pr: 이 적혀 있는데 읽지 못하면 완료로 보지 않는다(옛 fix: 판정으로 넘어가 PR 머지를 건너뛰지 않게)
+    const prText = String(issue.pr ?? '').trim()
+    const prUrl = prText.match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/)
+    const prShort = prText.match(/^([\w.-]+)#(\d+)$/)
     const prLink = prUrl ? { org: prUrl[1], repo: prUrl[2], number: prUrl[3] } : prShort && { org: ORG, repo: prShort[1], number: prShort[2] }
-    if (prLink) {
+    if (prText && !prLink) {
+      checks.push({ label: `pr: ${prText} — PR 주소 또는 <레포>#<번호> 가 아니다`, ok: false })
+    } else if (prLink) {
       const merged = (await prState(prLink.repo, prLink.number, prLink.org)) === 'MERGED'
       checks.push({ label: `pr: ${prLink.org}/${prLink.repo}#${prLink.number} MERGED`, ok: merged })
     } else {
