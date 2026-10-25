@@ -10,7 +10,7 @@
 # 자리 충돌 · pack new/discard · list(body·busy·updatePending) · 한 본체가 일해도 다른 본체 열기·busy 는 비어 있음 ·
 # 무거운 명령 잠금은 쥔 본체만 · import --replace 는 그 팩 본체 기준(C1) · 경로 검증표(C11) · version ·
 # update(일하는 본체 건너뜀 · 주 본체 ff · dirty·diverged) · --rollback(실행 ID 단위) · 링크 실패면 그 본체만 되돌림 ·
-# 열 때 따라잡기 · 데이터 형식이 바뀌는 업데이트는 모두 비었을 때만
+# 열 때 따라잡기 · update --panes-state(쉬는 pane 의 세션은 막지 않음) · 데이터 형식이 바뀌는 업데이트는 모두 비었을 때만
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bodies-test.XXXXXX")" && pwd -P)"
@@ -206,12 +206,31 @@ LOCAL="$(git -C "$MAIN" rev-parse HEAD)"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "주 본체가 갈라짐(로컬 커밋) → skipped(diverged) · 그대로" '[ "$(echo "$R" | field bodies.acme.reason)" = diverged ] && [ "$(git -C "$MAIN" rev-parse HEAD)" = "$LOCAL" ]' "$R"
 
+section "update --panes-state — 입력을 기다리는 pane 의 세션은 막지 않는다(결정 D1)"
+C3B="$(newcommit "test: 업데이트 3b")"
+# pane 셸 흉내 — sh 가 claude 의 부모(exec 하지 않는다). 그 sh pid 가 데몬 pane pids 의 pane 셸
+(cd "$BODY_B" && sh -c '"$1" -e "setTimeout(() => {}, 120000)"; true' sh "$FAKE/claude") >/dev/null 2>&1 & PSH=$!; sleep 0.5
+panes_state() { python3 -c 'import json,sys,datetime
+at=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=int(sys.argv[3]))).isoformat()
+json.dump({"at": at, "panes": [{"id": "p1", "label": "🧭 아테나", "pid": int(sys.argv[1]), "agent": "claude", "status": sys.argv[2]}]}, open(sys.argv[4], "w"))' "$PSH" "$1" "${2:-0}" "$WORK/panes.json"; echo "$WORK/panes.json"; }
+R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state working)")"
+check "일하는 pane(working) 의 세션 → skipped(busy) · busy 에 pane 이름" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"pane\":\"🧭 아테나\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
+R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle 600)")"
+check "오래된(2분 넘은) 상태 파일 → 버림 · skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "상태 파일 없으면 지금처럼 skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ]' "$R"
+check "pack busy 는 그대로 athena 를 센다(업데이트만 바뀜)" 'J "$BODY_B" pack busy | grep -q "\"kind\":\"athena\""'
+R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle)")"
+check "입력을 기다리는 pane(idle) 의 세션 → 막지 않음 · B 는 C3B" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
+check "version capabilities 에 idle-panes" 'J "$MAIN" version | grep -q "\"idle-panes\""'
+pkill -P "$PSH" 2>/dev/null; kill "$PSH" 2>/dev/null; wait "$PSH" 2>/dev/null
+
 section "데이터 형식이 바뀌는 업데이트 — 모든 본체가 비었을 때만(D10)"
 sed -i.bak 's/export const DATA_FORMATS = \[1, 1\]/export const DATA_FORMATS = [2, 2]/' "$DEV/scripts/lib/config.mjs" && rm -f "$DEV/scripts/lib/config.mjs.bak"
 C4="$(newcommit "test: 데이터 형식 2")"
 CB="$(fake_claude "$BODY_B")"; sleep 0.5
 R="$(J "$MAIN" update --from "$(bundle)")"
-check "B 가 일하면 data-incompatible · 아무 본체도 안 옮김" '[ "$(echo "$R" | field error)" = data-incompatible ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3" ]' "$R"
+check "B 가 일하면 data-incompatible · 아무 본체도 안 옮김" '[ "$(echo "$R" | field error)" = data-incompatible ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
 kill "$CB" 2>/dev/null; wait "$CB" 2>/dev/null
 python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['formatVersion']=9; json.dump(d, open(p,'w'))" "$ATHENA_DATA_DIR/config.json"
 check "데이터 형식이 범위 밖이면 쓰기 명령 data-incompatible" '[ "$(J "$MAIN" pack open globex | field error)" = data-incompatible ] && [ "$(J "$MAIN" pack list | field ok)" = True ]'

@@ -374,6 +374,45 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
   return { busy, known }
 }
 export const busyList = (root, scan, options) => busyScan(root, scan, options).busy
+// ── 업데이트만 — 쉬는 세션은 막지 않는다(결정 D1 · 2026-10-26) ─────────────────────
+// panes: 스튜디오가 update --panes-state <파일> 로 넘긴 데몬 pane 상태 [{ id, label, pid(pane 셸), agent, status }].
+// 세션(athena · agent · codex) 프로세스의 조상에 pane 셸이 있고 그 pane 이 입력을 기다리는(status idle) 같은 종류 에이전트면 막지 않는다.
+// 일하는 pane(working) · 질문 대기(waiting) · 모르는 상태 · pane 밖 세션 · 못 짝지은 세션은 그대로 막는다(확인이 안 되면 막는 쪽).
+// 막는 세션에는 짝지은 pane 이름(pane)을 붙인다 — 스튜디오가 무엇이 막는지 보인다. heavy · switch · unknown 등은 건드리지 않는다
+export const SESSION_KINDS = new Set(['athena', 'agent', 'codex'])
+const paneAgentOf = (kind) => (kind === 'codex' ? 'codex' : 'claude')
+export const settleIdleSessions = (busy, table, panes) => {
+  if (!Array.isArray(panes) || !panes.length) return busy
+  const byShell = new Map(panes.filter((pane) => pane && Number.isInteger(pane.pid) && pane.pid > 0).map((pane) => [pane.pid, pane]))
+  const parent = new Map((table ?? []).map((row) => [row.pid, row.ppid]))
+  const paneOf = (pid) => {
+    const seen = new Set()
+    for (let current = pid; current && current > 1 && !seen.has(current); current = parent.get(current)) {
+      seen.add(current)
+      if (byShell.has(current)) return byShell.get(current)
+    }
+    return null
+  }
+  const kept = []
+  for (const item of busy) {
+    if (!SESSION_KINDS.has(item.kind) || !item.pid) { kept.push(item); continue }
+    const pane = paneOf(item.pid)
+    if (!pane) { kept.push(item); continue }
+    if (pane.status === 'idle' && pane.agent === paneAgentOf(item.kind)) continue
+    kept.push({ ...item, pane: String(pane.label || pane.id || ''), paneStatus: String(pane.status || 'unknown') })
+  }
+  return kept
+}
+// 스튜디오가 넘긴 pane 상태 파일 — 형식이 틀렸거나 오래됐으면(2분) 없는 것으로(= 모든 세션이 막는다)
+export const PANES_STATE_MAX_AGE_MS = 120_000
+export const readPanesState = (file, nowMs = Date.now()) => {
+  if (!file) return null
+  const state = readJson(file)
+  const at = Date.parse(state?.at ?? '')
+  if (!state || !Array.isArray(state.panes) || !Number.isFinite(at) || nowMs - at > PANES_STATE_MAX_AGE_MS || at - nowMs > PANES_STATE_MAX_AGE_MS) return null
+  return state.panes
+}
+
 // 팩을 바꾸면(attach · import --replace) 안 되는 것 — QA·학습 검토는 코어가 끈다. 모르면(unknown) 막는다
 export const BLOCKING = new Set(['agent', 'athena', 'codex', 'heavy', 'switch', 'unknown'])
 

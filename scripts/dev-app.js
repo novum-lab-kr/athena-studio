@@ -4,6 +4,9 @@
 //   node scripts/dev-app.js make    (postinstall) 없거나 Electron 버전 · 아이콘이 바뀌었으면 다시 만든다
 //   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
 //                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
+//   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>]
+//                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려 → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
+//                                   → start 와 같이 켠다. install 이 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -183,10 +186,45 @@ function start(args) {
   for (const name of ['SIGINT', 'SIGTERM', 'SIGUSR2']) process.on(name, () => child && child.kill(name))
 }
 
+// 앱 업데이트 뒤 다시 켜기 — 옛 앱이 끝난 뒤에(같은 앱 데이터 · node_modules 를 쓰는 동안 바꾸지 않게)
+async function restart(args) {
+  const valueOf = (name) => {
+    const index = args.indexOf(name)
+    return index >= 0 ? args[index + 1] || '' : ''
+  }
+  const after = Number(valueOf('--after'))
+  const alive = (pid) => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      return error.code === 'EPERM'
+    }
+  }
+  // 옛 앱이 끝나길 1분까지 기다린다
+  for (let waited = 0; Number.isInteger(after) && after > 0 && alive(after) && waited < 60000; waited += 200) await new Promise((resolve) => setTimeout(resolve, 200))
+  // 앱이 이 도우미를 node 대신 Electron(ELECTRON_RUN_AS_NODE)으로 띄웠으면 — 켤 앱에 물려주지 않는다
+  delete process.env.ELECTRON_RUN_AS_NODE
+  if (args.includes('--install')) {
+    const heavy = valueOf('--heavy')
+    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
+    const [file, list] = heavy && fs.existsSync(heavy) ? ['bash', [heavy, npm, 'install']] : [npm, ['install']]
+    console.log(`[dev-app] ${[file, ...list].join(' ')}`)
+    try {
+      execFileSync(file, list, { cwd: ROOT, stdio: 'inherit' })
+    } catch (error) {
+      console.error(`[dev-app] npm install 실패: ${error.message}`)
+      process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
+    }
+  }
+  start([])
+}
+
 const [command, ...rest] = process.argv.slice(2)
 if (command === 'make') make()
 else if (command === 'start') start(rest)
+else if (command === 'restart') restart(rest)
 else {
-  console.error('사용: node scripts/dev-app.js make | start')
+  console.error('사용: node scripts/dev-app.js make | start | restart --after <pid> [--install] [--heavy <heavy.sh>]')
   process.exit(2)
 }

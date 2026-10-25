@@ -242,18 +242,41 @@ function fastForwardPackless({ coreDir, bundle, backupRoot = null, env = gitEnv(
 // 코어 update 결과(contract 2 + 4.1) → 화면에 알릴 것. 건너뛴 본체(일하는 중 · 고쳐 둠 …) · 백업한 코어 파일 · 실패
 function summarizeUpdate(result) {
   const bodies = Array.isArray(result && result.bodies) ? result.bodies : []
-  const skipped = bodies.filter((entry) => entry.status === 'skipped' && entry.reason !== 'missing').map((entry) => ({ id: entry.id, reason: entry.reason || 'unknown' }))
+  // blockers — 그 본체를 막은 것(짝지은 pane 이름 · 없으면 코어 설명). 같은 이름은 한 번만
+  const blockersOf = (entry) => [...new Set((Array.isArray(entry.busy) ? entry.busy : []).map((item) => item && (item.pane || item.what)).filter(Boolean))]
+  const skipped = bodies.filter((entry) => entry.status === 'skipped' && entry.reason !== 'missing').map((entry) => ({ id: entry.id, reason: entry.reason || 'unknown', blockers: blockersOf(entry) }))
   const failed = bodies.filter((entry) => entry.status === 'failed').map((entry) => ({ id: entry.id, error: entry.error || 'unknown' }))
   const backedUp = Array.isArray(result && result.backedUp) ? result.backedUp.filter((entry) => entry && entry.dir) : []
   const updated = bodies.filter((entry) => entry.status === 'updated').map((entry) => entry.id)
   return { updated, skipped, failed, backedUp, notify: skipped.length > 0 || failed.length > 0 || backedUp.length > 0 || Boolean(result && result.ok === false && !bodies.length) }
 }
 
-// 켤 때 코어 업데이트 — 주 본체보다 번들이 앞일 때만. runCore(argv) → 코어 JSON 결과(--json 은 부르는 쪽이 붙인다)
+// 켤 때 코어 업데이트 — 주 본체보다 번들이 앞일 때만. runCore(argv, { contract: false }) → 코어 JSON 결과(--json 은 부르는 쪽이 붙인다)
+//  - 업데이트 경로(version · update --from)는 약속 번호를 싣지 않는다 — 약속이 오른 앱이 옛 코어에 약속을 실으면 코어가 contract-mismatch 로
+//    거절해 영영 못 올린다(2026-10-26 약속 3 앱 · 약속 2 코어). 이미 설치된 옛 코어는 고칠 수 없으니 앱 쪽에서 뺀다
 //  - 팩이 하나라도 있으면(레지스트리 packs) 코어에 맡긴다: update --from <번들> --backup-dirty — 팩에 묶인 본체마다 확정 · 일하는 본체는 건너뜀 ·
 //    고친 코어 파일은 <데이터>/backups/core-edits/ 에 사본. 설치된 코어가 이 손잡이를 모르면(4.1 전 코어) 아무것도 건드리지 않고 알린다
 //  - 주 본체에 팩이 없으면(스튜디오는 첫 팩을 bodies/<id> 에 만든다) 코어 update 가 주 본체를 옮기지 않으므로 그 뒤 앱이 앞으로 감는다
 const UPDATE_CAPABILITIES = ['update-from-bundle', 'backup-dirty']
+const NO_CONTRACT = Object.freeze({ contract: false })
+// 쉬는 세션은 업데이트를 막지 않는다(결정 D1) — 코어가 이 손잡이를 알면 데몬 pane 상태 파일을 넘긴다(update --panes-state)
+const IDLE_PANES_CAPABILITY = 'idle-panes'
+
+// 데몬 pane 상태 → 코어에 넘길 모양 { at, panes:[{ id, label, pid, agent, status }] }.
+// panes: pane list 결과 · pids: pane pids 결과(pane id → 셸 pid) · waiting: 질문 · 고르기 창을 띄운 pane id 들(screen-model waitingForInput).
+// status 는 데몬 agent_status 그대로(idle · working · unknown) — 단 idle 인데 질문을 기다리면 waiting(일하는 중으로 막는다). 셸 pid 를 모르는 pane 은 뺀다
+function panesState({ panes, pids, waiting = [], now = new Date() }) {
+  const waitingIds = new Set(waiting)
+  const list = []
+  for (const pane of Array.isArray(panes) ? panes : []) {
+    const pid = pids && pids[pane.id]
+    if (!Number.isInteger(pid) || pid <= 0) continue
+    let status = typeof pane.agent_status === 'string' ? pane.agent_status : 'unknown'
+    if (status === 'idle' && waitingIds.has(pane.id)) status = 'waiting'
+    list.push({ id: pane.id, label: pane.label || pane.name || pane.id, pid, agent: pane.agent || null, status })
+  }
+  return { at: now.toISOString(), panes: list }
+}
 
 // ── 초기화(메뉴 보기 › 스튜디오 초기화) — 처음 켠 것처럼 ──
 // 끌 현황판(코어 + 팩마다)과 지울 자리. 스튜디오 집 안 것만 — 회사 레포 클론(홈 아래)은 건드리지 않는다
@@ -288,7 +311,8 @@ function registryHasPacks(dataDir) {
   return Boolean(registry && registry.packs && typeof registry.packs === 'object' && Object.keys(registry.packs).length)
 }
 
-async function updateCore({ coreDir, dataDir, bundle, runCore, env = gitEnv() }) {
+// panesStateFile: async () → 데몬 pane 상태 파일 경로 | null(데몬 없음 · 못 읽음) — 코어가 idle-panes 를 알 때만 부른다
+async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = null, env = gitEnv() }) {
   const status = bundleStatus({ coreDir, bundle, env })
   if (status.state !== 'ahead') return { state: status.state, head: status.head || null, target: status.target || null }
   const base = { head: status.head, target: status.target }
@@ -296,10 +320,13 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, env = gitEnv() })
   let coreUpdate = null
   if (!packless || registryHasPacks(dataDir)) {
     // 설치된 코어(주 본체 코드)가 번들 업데이트를 아는가(4.1 손잡이)
-    const version = await runCore(['version'])
+    const version = await runCore(['version'], NO_CONTRACT)
     const capabilities = Array.isArray(version && version.capabilities) ? version.capabilities : []
     if (!UPDATE_CAPABILITIES.every((name) => capabilities.includes(name))) return { state: 'unsupported', ...base }
-    const result = await runCore(['update', '--from', bundle, '--backup-dirty'])
+    const args = ['update', '--from', bundle, '--backup-dirty']
+    const stateFile = panesStateFile && capabilities.includes(IDLE_PANES_CAPABILITY) ? await panesStateFile().catch(() => null) : null
+    if (stateFile) args.push('--panes-state', stateFile)
+    const result = await runCore(args, NO_CONTRACT)
     coreUpdate = { result, summary: summarizeUpdate(result) }
   }
   if (!packless) return { state: coreUpdate.result && coreUpdate.result.ok ? 'updated' : 'partial', ...coreUpdate, ...base }
@@ -322,7 +349,7 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, env = gitEnv() })
 }
 
 // 켤 때 · [다시 시도] — 없으면 번들에서 풀고, 본체 설정 · 레지스트리 손잡이를 채우고, 있던 본체면 업데이트까지(update: false 면 건너뜀)
-async function prepareCore({ layout, bundle, home, runCore, update = true, env = gitEnv() }) {
+async function prepareCore({ layout, bundle, home, runCore, panesStateFile = null, update = true, env = gitEnv() }) {
   const installed = installCore({ bundle, coreDir: layout.core, env })
   if (!installed.ok) return installed
   const config = ensureCoreConfig(layout.core, { dataDir: layout.data, reposRoot: home, boardPort: STUDIO_PORT_BASE })
@@ -331,7 +358,7 @@ async function prepareCore({ layout, bundle, home, runCore, update = true, env =
   const registry = ensureRegistry(layout.data, { bodiesDir: path.relative(layout.data, layout.bodies), portBase: STUDIO_PORT_BASE })
   if (!registry.ok) return registry
   if (installed.created || !update) return { ok: true, created: installed.created, update: null }
-  return { ok: true, created: false, update: await updateCore({ coreDir: layout.core, dataDir: layout.data, bundle, runCore, env }) }
+  return { ok: true, created: false, update: await updateCore({ coreDir: layout.core, dataDir: layout.data, bundle, runCore, panesStateFile, env }) }
 }
 
 // ── 개발 앱 — 레포 athena/(스튜디오 코어)의 커밋 기록으로 번들 만들기(scripts/dev-app.js start) ──
@@ -388,6 +415,7 @@ module.exports = {
   backupCoreEdits,
   fastForwardPackless,
   summarizeUpdate,
+  panesState,
   updateCore,
   prepareCore,
   makeCoreBundle,

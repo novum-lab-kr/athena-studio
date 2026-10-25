@@ -16,14 +16,15 @@ import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
-  BLOCKING, bodyOf, busyScan, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
+  BLOCKING, bodyOf, busyScan, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
 // 약속 번호 — 2 팩마다 본체 · 3 pack set-auto-merge(레포별 자동 머지) · 오류 코드 not-applicable. 스튜디오 src/lib/pack.js CONTRACT 와 같이 올린다
 export const CONTRACT = 3
 // 뒤 넷은 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
-export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base']
+// idle-panes — update --panes-state <파일>(쉬는 pane 의 세션은 업데이트를 막지 않는다 · 결정 D1)
+export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base', 'idle-panes']
 
 const git = (dir, args, { quiet = true } = {}) => execFileSync('git', ['-C', dir, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -209,9 +210,10 @@ const catchUpBody = ({ main, body, id, data, registry, report }) => {
 }
 
 // ── 본체 하나 옮기기(update · rollback · 따라잡기 공용) ─────────────────────
+// panes: update 만 — 스튜디오가 넘긴 pane 상태. 쉬는 pane 의 세션은 막지 않는다(settleIdleSessions · 결정 D1). rollback · 따라잡기는 그대로
 // 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
 // → 현황판 끄기 → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
-export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false }) => {
+export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false, panes = null }) => {
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
   let release = () => {}
@@ -222,8 +224,10 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     }
   }
   try {
-    const scanned = busyScan(body, scanProcesses(), { includeSelf: true })
-    const busy = scanned.busy.filter((item) => item.pid !== process.pid)
+    const scan = scanProcesses()
+    const scanned = busyScan(body, scan, { includeSelf: true })
+    const others = scanned.busy.filter((item) => item.pid !== process.pid)
+    const busy = mode === 'update' ? settleIdleSessions(others, scan.table, panes) : others
     if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
     if (busy.length) return { ...entry, reason: 'busy', busy }
     if (from === target) return { ...entry, status: 'same' }
@@ -354,7 +358,8 @@ const fetchBundle = (main, file) => {
   if (fetched.status !== 0) throw new PackError('fetch-failed', `번들에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
   return gitTry(main, ['rev-parse', BUNDLE_REF]) ?? null
 }
-export const updateBodies = (root, { to = '', from = '', backupDirty = false, report = () => {} } = {}) => {
+// panesState: 스튜디오가 넘긴 데몬 pane 상태 파일(--panes-state · readPanesState) — 없거나 오래됐으면 지금처럼 모든 세션이 막는다
+export const updateBodies = (root, { to = '', from = '', backupDirty = false, panesState = '', report = () => {} } = {}) => {
   if (!from) throw new PackError('usage', 'update 는 --from <git 번들> 이 필요하다 — 코어는 Athena Studio 앱이 들고 온 번들로 업데이트한다')
   const data = dataDir(root)
   const registry = readRegistry(data)
@@ -373,6 +378,8 @@ export const updateBodies = (root, { to = '', from = '', backupDirty = false, re
   const target = gitTry(main, ['rev-parse', '--verify', '--quiet', `${requestedTo}^{commit}`])
   if (!target) throw new PackError('not-found', `그런 커밋이 없다: ${requestedTo}`)
   const bodies = collectBodies(root, data, registry)
+  const panes = readPanesState(panesState)
+  if (panesState && !panes) report('panes', 'pane 상태 파일을 쓸 수 없다(없음 · 형식 · 2분 넘음) — 모든 세션이 막는다')
   const version = registry.formatVersion ?? 1
   // 데이터 형식이 바뀌는 업데이트(대상 코어가 지금 형식을 못 다룸) — 모든 본체가 비었을 때만(D10)
   if (!formatOk(formatsAt(main, target), version)) {
@@ -383,7 +390,7 @@ export const updateBodies = (root, { to = '', from = '', backupDirty = false, re
   const results = bodies.map((item) => {
     if (item.missing) return { id: item.id, body: item.body, main: false, status: 'skipped', reason: 'missing', from: null, requestedTo, to: null, rollbackTo: null, services: { boardStopped: [] } }
     report('body', `${item.id} — ${item.body}`)
-    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain, backupDirty })
+    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain, backupDirty, panes })
   })
   const status = rollup(results)
   const previousDeploy = registry.deploy?.commit ?? null
