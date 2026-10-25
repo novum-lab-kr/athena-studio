@@ -202,6 +202,16 @@ function childEnv(baseEnv, extra = {}) {
   return { ...env, ...extra }
 }
 
+// 앱을 다시 켤 때(⚙ [업데이트] → scripts/dev-app.js restart) — childEnv 로 걷어 내되 다시 켜진 앱이 켤 때 읽는 값만 다시 싣는다:
+// 격리 실행의 스튜디오 집 · 데몬 접속 파일 자리 · 가짜 팩(화면 확인). 지난 업데이트 표시(ATHENA_STUDIO_APP_UPDATE)는 싣지 않는다.
+// electronAsNode — node 가 없어 도우미를 Electron 으로 돌릴 때(도우미가 켤 앱에서는 뗀다)
+const RELAUNCH_KEYS = ['ATHENA_STUDIO_HOME', 'ATHENA_STUDIO_ENDPOINT', 'ATHENA_STUDIO_FAKE_PACK']
+function relaunchEnv(baseEnv, { electronAsNode = false } = {}) {
+  const kept = {}
+  for (const key of RELAUNCH_KEYS) if (typeof baseEnv[key] === 'string' && baseEnv[key]) kept[key] = baseEnv[key]
+  return childEnv(baseEnv, { ...kept, ...(electronAsNode ? { ELECTRON_RUN_AS_NODE: '1' } : {}) })
+}
+
 function terminalEnv(baseEnv) {
   return childEnv(baseEnv, {
     TERM: 'xterm-256color',
@@ -336,6 +346,7 @@ module.exports = {
   mergePath,
   findExecutable,
   childEnv,
+  relaunchEnv,
   terminalEnv,
   ATHENA_WORKSPACE,
   availableAgents,

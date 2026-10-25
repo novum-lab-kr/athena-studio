@@ -734,11 +734,8 @@ async function runAppUpdate() {
   const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid)]
   const heavy = path.join(STUDIO.core, 'scripts', 'heavy.sh')
   if (pulled.install) args.push('--install', ...(fs.existsSync(heavy) ? ['--heavy', heavy] : []))
-  // 앱을 켤 때의 환경 그대로(격리 실행 ATHENA_STUDIO_HOME 등) — 지난 업데이트 표시만 뗀다. node 가 없으면 Electron 을 node 로(도우미가 켤 앱에서는 뗀다)
-  const env = { ...process.env }
-  delete env.ATHENA_STUDIO_APP_UPDATE
-  if (nodePath) delete env.ELECTRON_RUN_AS_NODE
-  else env.ELECTRON_RUN_AS_NODE = '1'
+  // 자식 환경은 childEnv 로 — 다시 켜진 앱이 켤 때 읽는 값(격리 실행 ATHENA_STUDIO_HOME 등)만 다시 싣는다(core.relaunchEnv)
+  const env = core.relaunchEnv(process.env, { electronAsNode: !nodePath })
   // 도우미가 실제로 떴는지('spawn') 확인한 뒤에만 앱을 끈다 — 실행 파일을 못 여는 등의 실패는 비동기 'error' 로 온다
   const started = await startRestartHelper(nodePath || process.execPath, args, env, pulled)
   if (!started) {
