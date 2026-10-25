@@ -117,6 +117,17 @@ async function ensureDaemon({ paths, env, onEvent, onClose }) {
   return { connection, hello: reply.result || null, status: protocol.checkHello(reply), launched }
 }
 
+// 떠 있는 데몬에만 붙는다(없으면 띄우지 않고 null) · 프로토콜이 다르면 끊고 null — 켤 때 코어 업데이트 전 pane 상태 읽기용
+async function peekDaemon({ paths }) {
+  const socket = await connectSocket(paths.socket).catch(() => null)
+  if (!socket) return null
+  const connection = new DaemonConnection(socket, { onEvent: () => {}, onClose: () => {} })
+  const reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
+  if (protocol.checkHello(reply) === 'ok') return connection
+  connection.destroy()
+  return null
+}
+
 // 소켓이 사라질 때까지(데몬이 끝날 때까지) 기다린다 — 다시 띄우기 전에
 async function waitDaemonGone(socketPath, limitMs = 5000) {
   const until = Date.now() + limitMs
@@ -129,4 +140,4 @@ async function waitDaemonGone(socketPath, limitMs = 5000) {
   return false
 }
 
-module.exports = { ensureDaemon, waitDaemonGone, CLI }
+module.exports = { ensureDaemon, peekDaemon, waitDaemonGone, CLI }

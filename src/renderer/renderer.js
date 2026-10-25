@@ -2056,13 +2056,71 @@ function settingsRepo(repo) {
 
 function renderSettingsPop() {
   $('settings-pop-pack').textContent = (packs.current && packLabel(packs.current)) || ''
-  const body = $('settings-pop-body')
-  if (mergeRows === null) return body.replaceChildren(el('p', 'work-empty', say('work.loading')))
-  if (mergeRows === false) return body.replaceChildren(el('p', 'work-empty', say('settings.unreadable')))
-  if (!mergeRows.length) return body.replaceChildren(el('p', 'work-empty', say('settings.empty')))
+  const update = settingsAppUpdate()
+  $('settings-pop-body').replaceChildren(...settingsMerge(), ...(update ? [update] : []))
+}
+
+function settingsMerge() {
+  if (mergeRows === null) return [el('p', 'work-empty', say('work.loading'))]
+  if (mergeRows === false) return [el('p', 'work-empty', say('settings.unreadable'))]
+  if (!mergeRows.length) return [el('p', 'work-empty', say('settings.empty'))]
   const intro = el('div', 'settings-intro')
   intro.append(el('h3', 'settings-intro-title', say('settings.mergeTitle')), el('p', 'settings-intro-desc', say('settings.mergeDesc')))
-  body.replaceChildren(intro, ...mergeRows.map(settingsRepo))
+  return [intro, ...mergeRows.map(settingsRepo)]
+}
+
+// ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜지고 ⚙ 에 점 ─────
+// 누르면 main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
+let appUpdate = null // main 의 상태 { state, behind, branch, reason, running } · unavailable 이면 줄을 그리지 않는다
+let appUpdateFailure = null // 방금 누른 [업데이트] 가 못 한 까닭(다음 상태가 오면 지운다)
+
+function appUpdateReasonText(reason, branch) {
+  if (reason === 'not-main') return say('settings.appUpdateNotMain', { branch: branch || '-' })
+  if (reason === 'dirty') return say('settings.appUpdateDirty')
+  if (reason === 'diverged') return say('settings.appUpdateDiverged')
+  if (reason === 'fetch-failed') return say('settings.appUpdateFetchFailed')
+  if (reason === 'ff-failed') return say('settings.appUpdateFfFailed')
+  if (reason === 'restart-failed') return say('settings.appUpdateRestartFailed')
+  return ''
+}
+
+function appUpdateNote() {
+  if (appUpdate.running) return say('settings.appUpdateRunning')
+  if (appUpdateFailure) return appUpdateReasonText(appUpdateFailure, appUpdate.branch) || say('settings.appUpdateCurrent')
+  if (appUpdate.reason && appUpdate.state === 'behind') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
+  // origin 에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
+  if (appUpdate.reason === 'fetch-failed') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
+  if (appUpdate.state === 'behind') return say('settings.appUpdateBehind', { count: appUpdate.behind })
+  return say('settings.appUpdateCurrent')
+}
+
+function settingsAppUpdate() {
+  if (!appUpdate || appUpdate.state === 'unavailable') return null
+  const node = el('section', 'settings-app-update')
+  const row = el('div', 'settings-app-row')
+  const button = el('button', 'settings-app-button', say('settings.appUpdateButton'))
+  button.type = 'button'
+  button.dataset.key = 'app-update'
+  button.disabled = appUpdate.state !== 'behind' || appUpdate.running
+  button.addEventListener('click', runAppUpdate)
+  row.append(el('span', 'settings-app-label', say('settings.appUpdate')), button)
+  node.append(row, el('p', 'settings-note settings-app-note', appUpdateNote()))
+  return node
+}
+
+function applyAppUpdate(next) {
+  appUpdate = next || null
+  appUpdateFailure = null
+  $('settings-tab').classList.toggle('has-update', Boolean(appUpdate && appUpdate.state === 'behind'))
+  if (!$('settings-pop').hidden) renderSettingsPop()
+}
+
+async function runAppUpdate() {
+  if (!appUpdate || appUpdate.running) return
+  const result = await studio.runAppUpdate()
+  if (result && result.ok) return // 앱이 곧 꺼졌다 다시 켜진다
+  appUpdateFailure = (result && result.reason) || 'ff-failed'
+  if (!$('settings-pop').hidden) renderSettingsPop()
 }
 
 // 다시 읽어 그리고, 누르던 스위치에 포커스를 돌려준다
@@ -2091,6 +2149,7 @@ function toggleSettingsPop() {
   openPop('settings-pop', 'settings-tab')
   renderSettingsPop()
   loadSettings()
+  studio.checkAppUpdate() // 상태는 onAppUpdate 로 온다
 }
 
 function reportDelivery(result) {
@@ -2102,6 +2161,8 @@ function initWork() {
   $('work-tab').addEventListener('click', toggleWorkPop)
   $('board-tab').addEventListener('click', toggleBoardMenu)
   $('settings-tab').addEventListener('click', toggleSettingsPop)
+  studio.onAppUpdate(applyAppUpdate)
+  studio.appUpdateStatus().then((next) => next && !next.error && applyAppUpdate(next))
   for (const item of document.querySelectorAll('#board-menu [data-section]')) {
     item.addEventListener('click', () => {
       closePops()

@@ -42,6 +42,11 @@ contextBridge.exposeInMainWorld('studio', {
   // ⚙ 설정 — 이 창 팩의 레포별 자동 머지(읽기 · 바꾸기 — 바꾸기는 코어 pack set-auto-merge)
   mergeSettings: () => ipcRenderer.invoke('settings:merge'),
   setAutoMerge: (repo, values) => ipcRenderer.invoke('settings:set-merge', repo, values),
+  // ⚙ 설정 맨 아래 — 앱 업데이트(개발 앱 체크아웃이 origin/main 보다 뒤처졌는지 · 받기 → 다시 켜기)
+  appUpdateStatus: () => ipcRenderer.invoke('app-update:status'),
+  checkAppUpdate: () => ipcRenderer.invoke('app-update:check'),
+  runAppUpdate: () => ipcRenderer.invoke('app-update:run'),
+  onAppUpdate: listen('app-update:status'),
   packCallInfo: (name) => ipcRenderer.invoke('pack:call-info', name),
   packCallStart: (name, options) => ipcRenderer.invoke('pack:call-start', name, options),
   packRestoreArm: (id) => ipcRenderer.invoke('pack:restore-arm', id),

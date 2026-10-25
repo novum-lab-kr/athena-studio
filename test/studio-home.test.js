@@ -212,11 +212,77 @@ test('켤 때 업데이트: 팩이 있으면 코어에 맡긴다 — 손잡이�
   const updated = await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: newCore })
   assert.deepEqual(calls, [['version'], ['update', '--from', bundle, '--backup-dirty']])
   assert.equal(updated.state, 'partial')
-  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy' }])
+  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: [] }])
   assert.deepEqual(updated.summary.updated, ['acme'])
   assert.equal(updated.summary.backedUp[0].dir, '/d/backups/core-edits/upd-1/acme')
   assert.equal(updated.summary.notify, true)
   assert.equal(home.summarizeUpdate({ ok: true, bodies: [{ id: 'acme', status: 'updated' }, { id: 'old', status: 'skipped', reason: 'missing' }], backedUp: [] }).notify, false)
+})
+
+test('켤 때 업데이트: 약속이 오른 앱이 옛 코어를 올린다 — version · update --from 에 약속 번호를 싣지 않는다', async () => {
+  const repo = studioRepo()
+  const bundle = path.join(repo, 'core.bundle')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const coreDir = path.join(tmp(), 'core')
+  home.installCore({ bundle, coreDir })
+  fs.symlinkSync(tmp(), path.join(coreDir, '.pack-data'))
+  commitCore(repo, 'D.md', 'd\n')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  // 옛 코어(약속 2) 흉내 — athena.mjs checkContract 처럼 약속 번호가 실리면(앱 약속 3) contract-mismatch 로 거절
+  const calls = []
+  const oldCore = async (argv, options = {}) => {
+    calls.push({ argv, contract: options.contract })
+    if (options.contract !== false) return { ok: false, error: 'contract-mismatch', contract: 2 }
+    return argv[0] === 'version' ? { ok: true, contract: 2, capabilities: ['update-from-bundle', 'backup-dirty'] } : { ok: true, bodies: [{ id: 'acme', status: 'updated' }], backedUp: [] }
+  }
+  const updated = await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: oldCore })
+  assert.equal(updated.state, 'updated')
+  assert.deepEqual(calls.map((call) => call.argv[0]), ['version', 'update'])
+  assert.ok(calls.every((call) => call.contract === false))
+})
+
+test('켤 때 업데이트: 코어가 idle-panes 를 알면 데몬 pane 상태 파일을 넘기고 · 막은 pane 이름을 알린다', async () => {
+  const repo = studioRepo()
+  const bundle = path.join(repo, 'core.bundle')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const coreDir = path.join(tmp(), 'core')
+  home.installCore({ bundle, coreDir })
+  fs.symlinkSync(tmp(), path.join(coreDir, '.pack-data'))
+  commitCore(repo, 'P.md', 'p\n')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const calls = []
+  const busy = [{ kind: 'athena', pid: 11, pane: '🧭 아테나' }, { kind: 'agent', pid: 12, pane: '🧭 아테나' }, { kind: 'heavy', pid: 13, what: '무거운 명령 잠금(heavy.sh)' }]
+  const makeCore = (capabilities) => async (argv) => {
+    calls.push(argv)
+    return argv[0] === 'version' ? { ok: true, capabilities } : { ok: false, error: 'partial', bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy }], backedUp: [] }
+  }
+  const panesStateFile = async () => '/tmp/panes.json'
+  const updated = await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: makeCore(['update-from-bundle', 'backup-dirty', 'idle-panes']), panesStateFile })
+  assert.deepEqual(calls[1], ['update', '--from', bundle, '--backup-dirty', '--panes-state', '/tmp/panes.json'])
+  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: ['🧭 아테나', '무거운 명령 잠금(heavy.sh)'] }])
+  // 손잡이를 모르는 코어 · 상태 파일이 없으면 넘기지 않는다
+  calls.length = 0
+  await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: makeCore(['update-from-bundle', 'backup-dirty']), panesStateFile })
+  assert.deepEqual(calls[1], ['update', '--from', bundle, '--backup-dirty'])
+  calls.length = 0
+  await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: makeCore(['update-from-bundle', 'backup-dirty', 'idle-panes']), panesStateFile: async () => null })
+  assert.deepEqual(calls[1], ['update', '--from', bundle, '--backup-dirty'])
+})
+
+test('pane 상태: 데몬 agent_status 그대로 · 질문을 기다리면 waiting · 셸 pid 모르는 pane 은 뺀다', () => {
+  const panes = [
+    { id: 'p1', label: '🧭 아테나', agent: 'claude', agent_status: 'idle' },
+    { id: 'p2', label: null, name: null, agent: 'claude', agent_status: 'idle' },
+    { id: 'p3', label: '🤖 fe', agent: 'claude', agent_status: 'working' },
+    { id: 'p4', label: 'zsh', agent: null, agent_status: 'unknown' },
+  ]
+  const state = home.panesState({ panes, pids: { p1: 101, p2: 102, p3: 103 }, waiting: ['p2'], now: new Date('2026-10-26T00:00:00Z') })
+  assert.equal(state.at, '2026-10-26T00:00:00.000Z')
+  assert.deepEqual(state.panes, [
+    { id: 'p1', label: '🧭 아테나', pid: 101, agent: 'claude', status: 'idle' },
+    { id: 'p2', label: 'p2', pid: 102, agent: 'claude', status: 'waiting' },
+    { id: 'p3', label: '🤖 fe', pid: 103, agent: 'claude', status: 'working' },
+  ])
 })
 
 test('켤 때 업데이트: 주 본체에 팩이 없어도 레지스트리에 팩이 있으면 코어 update 뒤 주 본체를 앱이 감는다', async () => {

@@ -22,6 +22,7 @@ const agentLanguage = require('./lib/agent-language')
 const requestsModel = require('./lib/requests')
 const workModel = require('./lib/work-model')
 const layout = require('./lib/layout')
+const appUpdate = require('./lib/app-update')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -616,7 +617,9 @@ async function prepareStudioCore({ update }) {
       bundle: CORE_BUNDLE,
       home: app.getPath('home'),
       update,
-      runCore: (argv) => runCore(argv, { dir: STUDIO.core }),
+      // 업데이트 경로는 약속 번호를 싣지 않는다(studio-home updateCore 가 { contract: false } 를 넘긴다)
+      runCore: (argv, options) => runCore(argv, { ...options, dir: STUDIO.core }),
+      panesStateFile: writePanesState,
     })
   } catch (error) {
     result = { ok: fs.existsSync(STUDIO.core), error: 'prepare-failed', message: error.message, update: null }
@@ -628,6 +631,35 @@ async function prepareStudioCore({ update }) {
   return result
 }
 
+// 켤 때 업데이트 전 — 떠 있는 데몬의 pane 상태를 파일로(코어 update --panes-state · 쉬는 세션은 막지 않는다 · 결정 D1).
+// 데몬이 없거나(띄우지 않는다) 옛 프로토콜이거나 못 읽으면 null — 코어는 지금처럼 모든 세션을 막는다.
+// 데몬이 idle 로 본 에이전트 pane 도 화면을 읽어 비어 있는 입력칸일 때만 idle 로 남긴다 — 질문 · 고르기 창 · 쓰던 글 · 뒤에서 도는 하위 작업 · 못 읽음은 막는 쪽(waiting)
+async function writePanesState() {
+  const connection = await daemonClient.peekDaemon({ paths: daemonPaths() }).catch(() => null)
+  if (!connection) return null
+  try {
+    const listed = await connection.call('pane list')
+    const shells = await connection.call('pane pids')
+    const panes = (listed && listed.panes) || []
+    const busy = []
+    for (const pane of panes) {
+      if (!pane.agent || pane.agent_status !== 'idle') continue
+      const read = await connection.call('pane read', { pane: pane.id, lines: 40, source: 'visible' }).catch(() => null)
+      const text = read && typeof read.text === 'string' ? read.text : null
+      const empty = text !== null && !screenModel.waitingForInput(text) && (pane.agent !== 'claude' || core.claudeAtEmptyPrompt(text))
+      if (!empty) busy.push(pane.id)
+    }
+    const state = studioHome.panesState({ panes, pids: (shells && shells.pids) || {}, waiting: busy })
+    const file = path.join(app.getPath('userData'), 'panes-state.json')
+    await fs.promises.writeFile(file, `${JSON.stringify(state)}\n`)
+    return file
+  } catch {
+    return null
+  } finally {
+    connection.destroy()
+  }
+}
+
 // 켤 때 업데이트 결과 — 일하는 본체를 건너뛰었거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
 function showCoreUpdateNotice(parentWindow) {
   const notice = coreUpdateNotice
@@ -636,7 +668,8 @@ function showCoreUpdateNotice(parentWindow) {
   const lines = []
   const summary = notice.summary
   if (summary) {
-    if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${entry.reason})`).join(', ') }))
+    // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
+    if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${(entry.blockers || []).length ? entry.blockers.join(', ') : entry.reason})`).join(', ') }))
     for (const entry of summary.backedUp) lines.push(say('dialog.coreUpdate.backedUp', { body: entry.id, path: entry.dir }))
     if (summary.failed.length) lines.push(say('dialog.coreUpdate.failed', { bodies: summary.failed.map((entry) => `${entry.id}(${entry.error})`).join(', ') }))
   } else {
@@ -645,6 +678,101 @@ function showCoreUpdateNotice(parentWindow) {
   if (!lines.length) return
   lines.push(say('dialog.coreUpdate.log', { path: packLogFile() }))
   const options = { type: 'info', message: say('dialog.coreUpdate.message'), detail: lines.join('\n\n') }
+  ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
+}
+
+// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) ─────────────
+// 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.js),
+// scripts/dev-app.js restart 를 떼어 띄운 뒤 앱을 끈다 — 도우미가 앱이 끝나길 기다려 npm install(필요할 때 · heavy.sh 줄 서기) → 다시 켠다.
+// 다시 켜면 코어 번들을 새로 만들고 켤 때 본체를 업데이트한다(데몬 · pane 은 그대로 — 쉬는 세션은 막지 않는다 · D1)
+const APP_ROOT = path.join(__dirname, '..')
+const APP_UPDATE_CHECK_MS = 30 * 60 * 1000
+const APP_UPDATE_FETCH_GAP_MS = 60 * 1000 // 팝업을 자주 열어도 origin 은 이만큼에 한 번만 받는다
+const appUpdateLogFile = () => path.join(app.getPath('userData'), 'app-update.log')
+let appUpdateStatus = { state: 'unavailable', behind: 0, branch: null, reason: null }
+let appUpdateRunning = false
+let appUpdateFetchedAt = 0
+let appUpdateChecking = null
+
+const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
+const appUpdateView = () => ({ ...appUpdateStatus, running: appUpdateRunning })
+function sendAppUpdate() {
+  for (const each of packWindows) each.send('app-update:status', appUpdateView())
+}
+
+function checkAppUpdate() {
+  if (!appUpdateEnabled() || appUpdateRunning) return Promise.resolve(appUpdateView())
+  if (appUpdateChecking) return appUpdateChecking
+  const fetch = Date.now() - appUpdateFetchedAt > APP_UPDATE_FETCH_GAP_MS
+  appUpdateChecking = appUpdate
+    .checkStatus({ repoRoot: APP_ROOT, fetch })
+    .then((status) => {
+      if (fetch) appUpdateFetchedAt = Date.now()
+      appUpdateStatus = status
+      sendAppUpdate()
+      return appUpdateView()
+    })
+    .catch(() => appUpdateView())
+    .finally(() => (appUpdateChecking = null))
+  return appUpdateChecking
+}
+
+// [업데이트] — 받기 → 도우미 띄우기 → 앱 끄기. 못 하면 { ok: false, reason } (팝업이 까닭을 보인다)
+async function runAppUpdate() {
+  if (!appUpdateEnabled()) return { ok: false, reason: 'unavailable' }
+  if (appUpdateRunning) return { ok: false, reason: 'running' }
+  appUpdateRunning = true
+  sendAppUpdate()
+  const pulled = await appUpdate.pullMain({ repoRoot: APP_ROOT }).catch(() => ({ ok: false, reason: 'ff-failed' }))
+  if (!pulled.ok) {
+    appUpdateRunning = false
+    appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
+    sendAppUpdate()
+    return pulled
+  }
+  const nodePath = core.findExecutable('node', process.env.PATH)
+  const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid)]
+  const heavy = path.join(STUDIO.core, 'scripts', 'heavy.sh')
+  if (pulled.install) args.push('--install', ...(fs.existsSync(heavy) ? ['--heavy', heavy] : []))
+  // 자식 환경은 childEnv 로 — 다시 켜진 앱이 켤 때 읽는 값(격리 실행 ATHENA_STUDIO_HOME 등)만 다시 싣는다(core.relaunchEnv)
+  const env = core.relaunchEnv(process.env, { electronAsNode: !nodePath })
+  // 도우미가 실제로 떴는지('spawn') 확인한 뒤에만 앱을 끈다 — 실행 파일을 못 여는 등의 실패는 비동기 'error' 로 온다
+  const started = await startRestartHelper(nodePath || process.execPath, args, env, pulled)
+  if (!started) {
+    // 받기는 됐다 — 다시 켜기만 사람 몫
+    appUpdateRunning = false
+    sendAppUpdate()
+    return { ok: false, reason: 'restart-failed' }
+  }
+  setTimeout(() => app.quit(), 200)
+  return { ok: true }
+}
+
+// 다시 켜기 도우미를 떼어 띄운다 — 떴으면 true, 못 띄웠으면(동기 예외 · 'error' 이벤트) false
+async function startRestartHelper(file, args, env, pulled) {
+  let out = null
+  try {
+    fs.mkdirSync(path.dirname(appUpdateLogFile()), { recursive: true })
+    out = fs.openSync(appUpdateLogFile(), 'a')
+    fs.writeSync(out, `\n── ${new Date().toISOString()} app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${pulled.install ? ' · npm install' : ''}\n`)
+    const child = spawn(file, args, { cwd: APP_ROOT, env, detached: true, stdio: ['ignore', out, out] })
+    const started = await new Promise((resolve) => {
+      child.once('spawn', () => resolve(true))
+      child.once('error', () => resolve(false))
+    })
+    if (started) child.unref()
+    return started
+  } catch {
+    return false
+  } finally {
+    if (out !== null) fs.closeSync(out)
+  }
+}
+
+// 지난 업데이트의 npm install 이 실패했으면(도우미가 알린다) 켤 때 한 번 알린다
+function showAppUpdateNotice(parentWindow) {
+  if (process.env.ATHENA_STUDIO_APP_UPDATE !== 'install-failed') return
+  const options = { type: 'warning', message: say('dialog.appUpdate.message'), detail: say('dialog.appUpdate.installFailed', { path: appUpdateLogFile() }) }
   ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
 }
 
@@ -675,14 +803,16 @@ function packScript(dir) {
 }
 
 // 셸을 거치지 않고 실행 · progress 줄은 그때그때 화면에 · 원문(stderr)은 화면에 넘기지 않고 pack.log 에만
-// 본체 명령 — `athena.mjs <argv…> --json`. 늘 약속 번호를 알린다(ATHENA_CONTRACT — 다르면 본체가 contract-mismatch).
+// 본체 명령 — `athena.mjs <argv…> --json`. 약속 번호를 알린다(ATHENA_CONTRACT — 다르면 본체가 contract-mismatch).
+// contract: false — 코어 업데이트 경로(version · update --from)만. 약속이 오른 앱이 옛 코어를 올릴 수 있게(studio-home updateCore)
 // dir = 그 명령을 부를 본체(창마다 다르다 — '지금 팩' 은 부른 본체의 팩)
 // extraEnv — 화면 계층(데몬)을 써야 하는 명령(restore-work 가 delegate.sh 로 pane 을 띄운다)만 데몬 접속 값을 넘긴다
-function runCore(argv, { dir, onProgress = null, signal = null, extraEnv = null } = {}) {
+function runCore(argv, { dir, onProgress = null, signal = null, extraEnv = null, contract = true } = {}) {
   return new Promise((resolve) => {
     if (!dir) return resolve({ ok: false, error: 'not-found', message: say('error.athenaCoreUnset') })
     const nodePath = core.findExecutable('node', process.env.PATH)
-    const env = core.childEnv(process.env, { ATHENA_CONTRACT: String(packModel.CONTRACT), ...(nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' }), ...(extraEnv || {}) })
+    const env = core.childEnv(process.env, { ...(contract ? { ATHENA_CONTRACT: String(packModel.CONTRACT) } : {}), ...(nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' }), ...(extraEnv || {}) })
+    if (!contract) delete env.ATHENA_CONTRACT // 앱을 켤 때 물려받은 값도 싣지 않는다
     let child
     try {
       child = spawn(nodePath || process.execPath, [packScript(dir), ...argv, '--json'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] })
@@ -2948,6 +3078,9 @@ handle('window:close', (ctx) => {
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
 handle('pack:repos', (ctx) => ctx.packRepos())
+handle('app-update:status', () => appUpdateView())
+handle('app-update:check', () => checkAppUpdate())
+handle('app-update:run', () => runAppUpdate())
 handle('settings:merge', (ctx) => ctx.mergeSettings())
 handle('settings:set-merge', (ctx, repo, values) => ctx.setAutoMerge(String(repo || ''), {
   autoMerge: values && typeof values.autoMerge === 'boolean' ? values.autoMerge : null,
@@ -3047,6 +3180,9 @@ app.whenReady().then(async () => {
   openSavedWindows()
   const first = frontCtx()
   showCoreUpdateNotice(first && first.win)
+  showAppUpdateNotice(first && first.win)
+  checkAppUpdate()
+  setInterval(checkAppUpdate, APP_UPDATE_CHECK_MS)
   startPanesPolling()
   // 메뉴 막대는 맥에서만(다른 OS 는 숨은 패널 창이 남아 창을 닫아도 앱이 안 꺼진다)
   if (isMac) createTray()

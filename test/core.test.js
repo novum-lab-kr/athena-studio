@@ -277,3 +277,16 @@ test('claude 화면이 비어 있나 — 질문 · 고르기 창 · 쓰다 만 �
   assert.equal(core.claudeAtEmptyPrompt('➜  demo git:(main)'), false)
   assert.equal(core.claudeAtEmptyPrompt(`${rule}\n❯ \n${rule}\n${status}\n  ⏺ main\n  ◯ general-purpose  지식 채우기 재개   4s · ↓ 85.7k tokens`), false)
 })
+
+test('다시 켜기 환경: childEnv 로 걷어 내고 켤 때 읽는 값(스튜디오 집 · 접속 파일 · 가짜 팩)만 다시 싣는다', () => {
+  const base = { PATH: '/bin', HOME: '/h', CLAUDECODE: '1', ATHENA_AGENT: 'x', ELECTRON_RUN_AS_NODE: '1', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: '/s', ATHENA_STUDIO_PANE_ID: 'p1', ATHENA_STUDIO_APP_UPDATE: 'install-failed', ATHENA_STUDIO_HOME: '/tmp/iso', ATHENA_STUDIO_ENDPOINT: '/tmp/iso/d.json', ATHENA_STUDIO_FAKE_PACK: '1' }
+  const env = core.relaunchEnv(base)
+  assert.deepEqual(
+    Object.keys(env).sort(),
+    ['ATHENA_STUDIO_ENDPOINT', 'ATHENA_STUDIO_FAKE_PACK', 'ATHENA_STUDIO_HOME', 'HOME', 'PATH'],
+  )
+  assert.equal(env.ATHENA_STUDIO_HOME, '/tmp/iso')
+  assert.equal(core.relaunchEnv({ PATH: '/bin' }, { electronAsNode: true }).ELECTRON_RUN_AS_NODE, '1')
+  assert.equal('ATHENA_STUDIO_HOME' in core.relaunchEnv({ PATH: '/bin', ATHENA_STUDIO_HOME: '' }), false)
+})
+

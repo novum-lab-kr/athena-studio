@@ -23,8 +23,9 @@
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
  *   athena pack set-auto-merge <레포> [--auto on|off] [--confirm on|off] [--id <팩>] [--json]
  *                                                  레포별 PR 자동 리뷰 · 머지(pack.json "autoMerge") · 머지 전에 묻기("autoMergeConfirm") — docs/pr-auto.md "켜기"
- *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--json]
+ *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--panes-state <파일>] [--json]
  *                                                  앱이 들고 온 코어 번들을 주 본체로 받아 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
+ *                                                  --panes-state: 스튜디오가 넘긴 데몬 pane 상태 — 입력을 기다리는 pane 의 세션은 막지 않는다
  *                                                  --backup-dirty: 코어 파일을 고쳐 둔 본체는 <데이터>/backups/core-edits/<operationId>/ 에 사본을 두고 교체(결과 backedUp)
  *   athena update --rollback [<operationId>] [--json]  그 업데이트가 바꾼 본체만 이전 커밋으로
  *   athena pack inspect <파일|폴더|git 주소> --json  임시 위치에서 검사만 → token
@@ -274,7 +275,7 @@ const restore = () => {
 const asJson = args.includes('--json')
 const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
-const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack', '--name', '--auto', '--confirm'].includes(rest[index - 1])))
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--panes-state', '--ack', '--name', '--auto', '--confirm'].includes(rest[index - 1])))
 // 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
 // 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
@@ -436,7 +437,7 @@ else if (command === 'update') {
   // update --rollback [<operationId>] — --rollback 바로 뒤가 --… 가 아니면 그 값이 operationId
   const rollback = args.includes('--rollback')
   const operationId = rollback ? (flag('rollback').startsWith('--') ? '' : flag('rollback')) : ''
-  runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), from: flag('from'), backupDirty: args.includes('--backup-dirty'), report })))
+  runPack('update', () => (rollback ? rollbackUpdate(ROOT, { operationId, report }) : updateBodies(ROOT, { to: flag('to'), from: flag('from'), backupDirty: args.includes('--backup-dirty'), panesState: flag('panes-state'), report })))
 }
 else if (command === 'scaffold') runScaffold()
 else if (command === 'repo' && sub === 'add') runPack('repo add', () => runRepoAdd())
