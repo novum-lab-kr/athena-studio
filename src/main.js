@@ -1422,7 +1422,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
   // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
   ctx.mergeSettings = async () => {
-    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse, () => null)
+    // 읽기 실패 · 망가진 JSON 모두 null — 팝업이 '읽지 못했어요' 를 보이게(then 의 두 번째 인자는 JSON.parse 오류를 못 잡는다)
+    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
     return { ok: Boolean(pack), repos: packModel.mergeSettings(pack) }
   }
   ctx.setAutoMerge = async (repo, { autoMerge, confirm }) => {
