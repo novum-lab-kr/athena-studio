@@ -739,22 +739,37 @@ async function runAppUpdate() {
   delete env.ATHENA_STUDIO_APP_UPDATE
   if (nodePath) delete env.ELECTRON_RUN_AS_NODE
   else env.ELECTRON_RUN_AS_NODE = '1'
+  // 도우미가 실제로 떴는지('spawn') 확인한 뒤에만 앱을 끈다 — 실행 파일을 못 여는 등의 실패는 비동기 'error' 로 온다
+  const started = await startRestartHelper(nodePath || process.execPath, args, env, pulled)
+  if (!started) {
+    // 받기는 됐다 — 다시 켜기만 사람 몫
+    appUpdateRunning = false
+    sendAppUpdate()
+    return { ok: false, reason: 'restart-failed' }
+  }
+  setTimeout(() => app.quit(), 200)
+  return { ok: true }
+}
+
+// 다시 켜기 도우미를 떼어 띄운다 — 떴으면 true, 못 띄웠으면(동기 예외 · 'error' 이벤트) false
+async function startRestartHelper(file, args, env, pulled) {
   let out = null
   try {
     fs.mkdirSync(path.dirname(appUpdateLogFile()), { recursive: true })
     out = fs.openSync(appUpdateLogFile(), 'a')
     fs.writeSync(out, `\n── ${new Date().toISOString()} app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${pulled.install ? ' · npm install' : ''}\n`)
-    spawn(nodePath || process.execPath, args, { cwd: APP_ROOT, env, detached: true, stdio: ['ignore', out, out] }).unref()
+    const child = spawn(file, args, { cwd: APP_ROOT, env, detached: true, stdio: ['ignore', out, out] })
+    const started = await new Promise((resolve) => {
+      child.once('spawn', () => resolve(true))
+      child.once('error', () => resolve(false))
+    })
+    if (started) child.unref()
+    return started
   } catch {
-    // 받기는 됐다 — 다시 켜기만 사람 몫
-    appUpdateRunning = false
-    sendAppUpdate()
-    return { ok: false, reason: 'restart-failed' }
+    return false
   } finally {
     if (out !== null) fs.closeSync(out)
   }
-  setTimeout(() => app.quit(), 200)
-  return { ok: true }
 }
 
 // 지난 업데이트의 npm install 이 실패했으면(도우미가 알린다) 켤 때 한 번 알린다
