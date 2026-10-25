@@ -2,7 +2,7 @@
 //
 //   계획서 표시 줄(PR 마다 한 줄 · 바꿔 쓴다)
 //     - Auto review: <레포>#<번호> @<sha7> · <결과> · 라운드 <k>/<상한> · <YYYY-MM-DD HH:MM>
-//   결과: 승인 → 머지 확인 대기 · 수정 필요 · 결정 필요 · 리뷰어 부족 · 검증 대기 · 멈춤 · 보류 · 머지됨 · 본문 고침
+//   결과: 승인 → 머지 확인 대기 · 승인 → 바로 머지(확인 없음) · 수정 필요 · 결정 필요 · 리뷰어 부족 · 검증 대기 · 멈춤 · 보류 · 머지됨 · 본문 고침
 //   같은 PR · 같은 HEAD(sha7) 가 이미 적혀 있으면 다시 돌지 않는다 — 본문 고침(ship.sh --auto-push --body-file 이 커밋 없이 본문만 바꿈)만 같은 HEAD 를 다시 본다
 
 // 자동 머지 합의 — 결정 D2 "Claude·Codex 둘 다 승인"(+ 같은 HEAD 검증 통과). 하나라도 실패 · 로그인 안 됨 · 반려면 머지하지 않는다(남은 하나로 판정하지 않는다)
@@ -142,6 +142,9 @@ export const nextRound = (known, headSha) => {
 // ── 팩 설정 ────────────────────────────────────────────────────────────
 // 결정 D4 — 레포별 스위치(pack.json 레포의 "autoMerge": true · 기본 꺼짐)
 export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => repo.autoMerge === true && !repo.direct).map((repo) => repo.name))
+// 머지 직전 사람 확인(결정 D3)을 건너뛰는 레포 — 자동 머지를 켰고 "autoMergeConfirm": false 일 때만. 키가 없거나 false 가 아니면 지금처럼 묻는다
+export const skipsMergeConfirm = (config, repoName) => autoMergeRepos(config).has(repoName)
+  && (config?.repos ?? []).some((repo) => repo.name === repoName && repo.autoMergeConfirm === false)
 
 const repoAgents = (repo) => [
   ...(repo.agents ?? []),
