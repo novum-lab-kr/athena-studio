@@ -112,6 +112,43 @@ test('agent_status: 표식 · 출력 정지 · agent 아님', () => {
   assert.equal(model.agentStatus({ agent: 'claude', screenLines: old, lastOutputAt: quiet, now }), 'idle')
 })
 
+// 실측 화면(2026-10-25 · Claude Code 2.1.310 · codex-cli 0.160.0 — pane read --source visible) 그대로 줄인 것
+const WAIT_SCREENS = {
+  claudePermission: [
+    '⏺ Creating empty file probe-two.txt',
+    '  ⎿  $ touch probe-two.txt',
+    '─────────────────────',
+    ' Bash command',
+    ' touch probe-two.txt',
+    ' Do you want to proceed?',
+    ' ❯ 1. Yes',
+    '   2. Yes, and don’t ask again for: touch *',
+    '   4. No',
+    '',
+    ' Esc to cancel · Tab to amend',
+  ],
+  claudeQuestion: [' ☐ Color', '', 'Which color do you like?', '', '❯ 1. Red', '     The color red', '  2. Blue', '  3. Type something.', '────', '  4. Chat about this', '', 'Enter to select · ↑/↓ to navigate · Esc to cancel'],
+  claudeTrust: [' Quick safety check: Is this a project you created or one you trust?', '', ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel'],
+  codexApproval: ['  Would you like to run the following command?', '', '  $ touch codex-probe.txt', '', '', '› 1. Yes, proceed (y)', "  2. Yes, and don't ask again (p)", '  3. No, and tell Codex what to do differently (esc)', '', '  Press enter to confirm or esc to cancel'],
+  codexHooks: ['  Hooks need review', '', '› 1. Review hooks', '  2. Trust all and continue', '', '  enter confirm · esc skip'],
+}
+
+test('입력 대기: 권한 질문 · 고르기 창 · 폴더 신뢰 · Codex 승인은 잡고, 빈 입력칸 · 일하는 중 · 본문 속 같은 글은 빼고', () => {
+  for (const [name, lines] of Object.entries(WAIT_SCREENS)) assert.equal(model.waitingForInput(lines.join('\n')), true, name)
+  // 빈 입력칸(Claude · Codex)
+  const claudeIdle = ['⏺ 끝났어요', '', '✻ Churned for 9s', '', '────', '❯ ', '────', '  Opus 5.5 | ctx 6%', '  ⏵⏵ auto mode on (shift+tab to cycle)']
+  assert.equal(model.waitingForInput(claudeIdle.join('\n')), false)
+  assert.equal(model.waitingForInput(['› Ask Codex to do anything', '', '  GPT medium · /tmp', '  ? for shortcuts'].join('\n')), false)
+  // 일하는 중(맺음 줄 자리에 esc to interrupt)
+  assert.equal(model.waitingForInput(['❯ 1. Yes', '✻ Thinking… (3s · esc to interrupt)', 'Esc to cancel'].join('\n')), false)
+  // 대화 본문에 같은 글이 있어도 화면 맨 아래가 아니면 아니다
+  assert.equal(model.waitingForInput(['❯ 1. Yes', 'Esc to cancel · Tab to amend', ...claudeIdle].join('\n')), false)
+  // 고르는 줄이 없으면 아니다 · 빈 화면
+  assert.equal(model.waitingForInput(['some log', 'Press enter to confirm or esc to cancel'].join('\n')), false)
+  assert.equal(model.waitingForInput(''), false)
+  assert.equal(model.waitingForInput(null), false)
+})
+
 test('읽기: 줄 끝 공백 · 끝 빈 줄 떼고 마지막 N 줄', () => {
   const lines = ['a  ', 'b', '  c ', '', '   ', '']
   assert.equal(model.formatRead(lines), 'a\nb\n  c\n')

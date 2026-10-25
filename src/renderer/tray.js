@@ -7,7 +7,7 @@ const ATTENTION_ROWS = 3
 // 문구는 사전(src/i18n) — main 이 preload 로 넘긴다
 let i18nState = trayPanel.i18n()
 const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
-const STATUS_KEYS = { working: 'tray.status.working', idle: 'tray.status.idle' }
+const STATUS_KEYS = { working: 'tray.status.working', idle: 'tray.status.idle', waiting: 'tray.status.waiting' }
 const COLUMNS = [
   ['issue', 'tray.column.issue'],
   ['plan', 'tray.column.plan'],
@@ -140,7 +140,8 @@ function render(data) {
   conn.title = say('tray.board.checkedAt', { time: clock(data.boardAt) })
 
   const parts = [attention(summary)]
-  parts.push(title(say('tray.agents.title'), say('tray.agents.summary', { working: summary.counts.working, idle: summary.idleAgents })))
+  const waitingNote = summary.waitingAgents ? say('tray.agents.waiting', { count: summary.waitingAgents }) : ''
+  parts.push(title(say('tray.agents.title'), `${say('tray.agents.summary', { working: summary.counts.working, idle: summary.idleAgents })}${waitingNote}`))
   parts.push(agentsBlock(summary))
   parts.push(title(say('tray.usage.title')))
   parts.push(usageBlock(summary))

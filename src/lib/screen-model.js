@@ -137,6 +137,26 @@ function agentStatus({ agent, screenLines, lastOutputAt, now }) {
   return 'idle'
 }
 
+// ── 입력 대기 (권한 질문 · 고르기 창 · 폴더 신뢰 — 사람이 골라야 이어진다) ─────────
+// agent_status 는 이것을 idle 로 보거나(조용할 때) working 으로 본다(질문 창을 다시 그리는 동안 '방금 출력'). 메뉴 막대가 에이전트 pane 의 화면(pane read --source visible)을 읽어 따로 가린다.
+// 근거는 실측 화면의 맺음 줄(2026-10-25 · Claude Code 2.1.310 · codex-cli 0.160.0):
+//   Claude 권한 질문 'Esc to cancel · Tab to amend' · 고르기 창 'Enter to select · ↑/↓ to navigate · Esc to cancel' ·
+//   폴더 신뢰 'Enter to confirm · Esc to cancel' · Codex 승인 'Press enter to confirm or esc to cancel' · Codex 훅 확인 'enter confirm · esc skip'
+// 맺음 줄은 화면 맨 아래 몇 줄에만 본다(대화 본문에 같은 글이 있어도 잡지 않게) · 고르는 줄(❯ · ›)도 있어야 한다
+const WAIT_FOOTER = /\benter (to )?(select|confirm)\b|\besc (to )?(cancel|skip)\b/i
+const WAIT_CURSOR = /^\s*[❯›]\s*\S/
+const WAIT_FOOTER_LINES = 3
+const WAIT_CURSOR_LINES = 20
+
+// text: 화면 글(pane read 결과) — 입력을 기다리면 true
+function waitingForInput(text) {
+  const lines = String(text || '').split('\n').filter((line) => line.trim())
+  const footer = lines.slice(-WAIT_FOOTER_LINES)
+  if (footer.some((line) => WORKING_MARK.test(line))) return false
+  if (!footer.some((line) => WAIT_FOOTER.test(line))) return false
+  return lines.slice(-WAIT_CURSOR_LINES).some((line) => WAIT_CURSOR.test(line))
+}
+
 // ── 읽기 · 기다리기 ───────────────────────────────────────────────────
 const DEFAULT_READ_LINES = 200
 
@@ -172,6 +192,7 @@ module.exports = {
   detectAgent,
   QUIET_MS,
   agentStatus,
+  waitingForInput,
   DEFAULT_READ_LINES,
   formatRead,
   findMatch,

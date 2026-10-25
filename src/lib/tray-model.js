@@ -6,6 +6,8 @@ const KOREAN = require('../i18n/ko.json')
 // 문구는 사전(src/i18n)에서 — main 이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
 const koreanSay = i18n.translator(KOREAN, KOREAN)
 const IDLE_HOLD_MS = 10000 // 일하다 멈춘 뒤 이만큼 조용해야 "응답이 끝났어요"
+// 입력 대기(권한 질문 · 고르기 창)가 이만큼 이어져야 알린다 — 메뉴 막대가 4초마다 보니 두 번 잇달아 보여야 한다(잠깐 묻고 바로 넘어간 것은 빼고)
+const WAIT_HOLD_MS = 3000
 
 // pane 이름 — delegate 가 붙인 '🤖 에이전트 · 브랜치' 이름표가 있으면 그것, 없으면 agent
 function agentName(pane) {
@@ -45,8 +47,9 @@ function summarize({ panes = [], workspaces = [], cards = [], requests = [], usa
   const agents = panes
     .filter((pane) => pane && pane.agent)
     .map((pane) => ({ id: pane.id, name: agentName(pane), workspace: names.get(pane.workspace_id) || '', status: pane.agent_status || 'idle' }))
-  // 일하는 것 먼저 — pane 상태는 데몬이 작업 중 · 대기 · 모름으로만 정한다(입력 대기는 알아내지 않는다)
-  agents.sort((left, right) => (left.status === 'working' ? 0 : 1) - (right.status === 'working' ? 0 : 1))
+  // 입력 대기 먼저, 그다음 일하는 것 — 데몬은 작업 중 · 대기 · 모름만 정하고, 입력 대기(waiting)는 메뉴 막대가 에이전트 pane 의 화면을 읽어 덧붙인다
+  const rank = { waiting: 0, working: 1 }
+  agents.sort((left, right) => (rank[left.status] ?? 2) - (rank[right.status] ?? 2))
   const plans = liveCards(cards)
   const blockedCards = plans.filter((card) => card.status === 'blocked')
   const reviewCards = plans.filter((card) => card.status === 'ready_for_review')
@@ -60,7 +63,7 @@ function summarize({ panes = [], workspaces = [], cards = [], requests = [], usa
     asking: waiting.length,
   }
   const columns = columnCounts(cards)
-  const idle = agents.filter((agent) => agent.status !== 'working').length
+  const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'waiting').length
   return {
     counts,
     // 지난 7일 평균 답 대기(현황판 지표) — 확인 필요 머리줄에 붙인다. 현황판이 꺼졌거나 기록이 없으면 ''
@@ -72,6 +75,7 @@ function summarize({ panes = [], workspaces = [], cards = [], requests = [], usa
     done24: doneByHour(cards, now),
     columns,
     idleAgents: idle,
+    waitingAgents: agents.filter((agent) => agent.status === 'waiting').length,
     boardUp,
   }
 }
@@ -168,10 +172,14 @@ class Notifier {
       const name = agentName(pane)
       const where = names.get(pane.workspace_id)
       const who = where ? `${name} · ${where}` : name
-      if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
+      if (status === 'waiting' && now - before.since >= WAIT_HOLD_MS) {
+        // 풀릴 때까지(상태가 바뀔 때까지) 한 번 — 켤 때 이미 기다리던 것은 알리지 않는다(위 notified)
+        found.push({ kind: 'waiting', title: say('notify.waiting.title'), body: say('notify.waiting.body', { who }), target: { pane: pane.id } })
+        before.notified = true
+      } else if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
         found.push({ kind: 'idle', title: say('notify.idle.title'), body: say('notify.idle.body', { who }), target: { pane: pane.id } })
         before.notified = true
-      } else if (status !== 'idle') {
+      } else if (status !== 'idle' && status !== 'waiting') {
         before.notified = true
       }
     }
@@ -206,4 +214,4 @@ function bundle(found, say = koreanSay) {
   )
 }
 
-module.exports = { IDLE_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, waitText, Notifier, bundle }
+module.exports = { IDLE_HOLD_MS, WAIT_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, waitText, Notifier, bundle }
