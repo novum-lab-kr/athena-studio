@@ -1,6 +1,6 @@
 // 팩마다 본체 — 본체 열기·만들기 · 일괄 업데이트 · 되돌리기(약속: docs/pack.md "여러 팩")
 //
-//   주 본체   ~/.athena-studio/core   git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 정비는 여기서만
+//   주 본체   ~/.athena-studio/core   git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 설치본(코어 정비는 코어 정본 레포에서 브랜치 · PR — 여기서 고치지 않는다)
 //   팩 본체   <bodiesDir>/<id>        같은 저장소의 워크트리(브랜치 없이 detached) · .pack-data 가 그 팩에 고정
 //             bodiesDir 는 레지스트리 값(스튜디오는 ~/.athena-studio/bodies) · 없으면 <주 본체>-<id>
 //   배포 커밋 레지스트리 deploy.commit(update --from 이 정한다 · 없으면 주 본체의 origin/main — 처음 clone 한 번들) · deploy.source 는 받아 온 곳(bundle · 옛 기록은 origin)

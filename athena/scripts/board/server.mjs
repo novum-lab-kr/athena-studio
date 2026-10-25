@@ -258,7 +258,7 @@ const readIssue = (path) => {
     status,
     column: ISSUE_COLUMN[status] ?? 'issue',
     repo: meta.repo || '',
-    // repo: athena(옛 이슈는 hermes) 는 아테나 자체 이슈 — 담당 에이전트·PR 없이 아테나가 직접 고치고 main 에 커밋·push 하면 끝
+    // repo: athena(옛 이슈는 hermes) 는 아테나 자체 이슈 — 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고 그 PR(pr:)이 머지되면 끝(옛 이슈는 fix: 커밋)
     scope: meta.repo === 'athena' || meta.repo === 'hermes' ? 'hermes' : 'service',
     severity: meta.severity || '',
     type: meta.kind || '',
@@ -279,11 +279,12 @@ const readIssue = (path) => {
 // ── 완료 가능 판정 ───────────────────────────────────────────────────────
 // 전부 파일·git·GitHub 에서 기계적으로 확인되는 신호만 쓴다. 판정은 배지일 뿐, 옮기는 건 사람이다
 const prCache = new Map() // pr → { state, at }
-const prState = async (repoName, pr) => {
-  const key = `${repoName}#${pr}`
+// org — PR 주소에 적힌 조직(없으면 팩 github.org)
+const prState = async (repoName, pr, org = ORG) => {
+  const key = `${org}/${repoName}#${pr}`
   const cached = prCache.get(key)
   if (cached && Date.now() - cached.at < 5 * 60_000) return cached.state
-  const out = await run('gh', ['pr', 'view', String(pr).replace(/^#/, ''), '--repo', `${ORG}/${repoName}`, '--json', 'state', '--jq', '.state'], { timeout: 15_000 })
+  const out = await run('gh', ['pr', 'view', String(pr).replace(/^#/, ''), '--repo', `${org}/${repoName}`, '--json', 'state', '--jq', '.state'], { timeout: 15_000 })
   const state = out?.trim() || 'UNKNOWN'
   prCache.set(key, { state, at: Date.now() })
   return state
@@ -452,10 +453,13 @@ const doneCheck = async (issue) => {
     // athena 자체 이슈는 kind 와 무관하게 이 기준.
     // 코어를 브랜치 · PR 로 고쳤으면(pr: PR 주소 또는 <레포>#<번호> — 2026-10-25 결정 D4) 그 PR 이 머지됐으면 끝(squash 머지라 fix: sha 는 main 에 없다).
     // pr: 이 없으면 옛 길 — PR 없이 코어 브랜치에 커밋·push 했으니 fix: 커밋이 그 원격 브랜치(이 체크아웃의 upstream · 없으면 origin/main)에 있으면 끝
-    const prLink = String(issue.pr ?? '').match(/github\.com\/[\w.-]+\/([\w.-]+)\/pull\/(\d+)/) ?? String(issue.pr ?? '').match(/^([\w.-]+)#(\d+)$/)
+    // PR 주소면 주소의 조직 · 레포 그대로(코어 정본 레포가 팩 github.org 밖일 수 있다) · <레포>#<번호> 면 팩 github.org
+    const prUrl = String(issue.pr ?? '').match(/github\.com\/([\w.-]+)\/([\w.-]+)\/pull\/(\d+)/)
+    const prShort = String(issue.pr ?? '').match(/^([\w.-]+)#(\d+)$/)
+    const prLink = prUrl ? { org: prUrl[1], repo: prUrl[2], number: prUrl[3] } : prShort && { org: ORG, repo: prShort[1], number: prShort[2] }
     if (prLink) {
-      const merged = (await prState(prLink[1], prLink[2])) === 'MERGED'
-      checks.push({ label: `pr: ${prLink[1]}#${prLink[2]} MERGED`, ok: merged })
+      const merged = (await prState(prLink.repo, prLink.number, prLink.org)) === 'MERGED'
+      checks.push({ label: `pr: ${prLink.org}/${prLink.repo}#${prLink.number} MERGED`, ok: merged })
     } else {
       const coreRef = (await run('git', ['-C', ROOT, 'rev-parse', '--abbrev-ref', '--symbolic-full-name', '@{upstream}']))?.trim() || 'origin/main'
       const shas = issue.fix.split(/[,\s]+/).filter(Boolean)
