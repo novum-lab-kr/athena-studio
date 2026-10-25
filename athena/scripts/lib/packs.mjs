@@ -293,6 +293,8 @@ const parseLsof = (out, map) => {
 const inside = (path, dir) => Boolean(dir) && (path === dir || path.startsWith(dir + sep))
 // 에이전트로 보는 실행 파일 — Claude Code · Codex
 const AGENT_COMMS = new Set(['claude', 'codex'])
+// delegate.sh 가 붙이는 인자(--agent <이름> · 워크트리면 --agents <JSON> 도) — 인자 안 값은 보지 않고 있는지만
+const AGENT_FLAG = /(^|\s)--agents?(\s|=|$)/
 
 // 프로세스 표 · 에이전트 작업 폴더를 한 번만 읽는다(pack list 가 본체 여럿의 busy 를 볼 때 같이 쓴다).
 // ps 를 못 읽으면 known:false — 비어 있다고 보지 않는다
@@ -320,6 +322,8 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
   const reposDir = join(root, 'repos')
   if (existsSync(reposDir)) for (const name of readdirSync(reposDir)) repoMains.push(realOr(join(reposDir, name)))
   const ours = (real) => inside(real, rootReal) || inside(real, legacyWorktrees) || inside(real, dataReal) || repoMains.some((main) => inside(real, main))
+  // 레포 메인 체크아웃 안이고 본체 · 데이터 · 옛 워크트리 안은 아닌 자리
+  const onlyRepoMain = (real) => !inside(real, rootReal) && !inside(real, legacyWorktrees) && !inside(real, dataReal) && repoMains.some((main) => inside(real, main))
   for (const row of agents) {
     if (skip(row.pid)) continue
     const cwd = cwds.get(row.pid)
@@ -332,7 +336,13 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
     if (!ours(real)) continue
     if (row.comm === 'codex') busy.push({ kind: 'codex', what: `Codex 세션 — ${real}`, pid: row.pid })
     else if (inside(real, rootReal) && !inside(real, legacyWorktrees)) busy.push({ kind: 'athena', what: `본체에서 도는 아테나 세션(claude) — ${real}`, pid: row.pid })
-    else busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
+    else if (onlyRepoMain(real)) {
+      // 레포 메인 체크아웃 안 claude 는 아테나가 띄운 에이전트(delegate.sh — --agent/--agents 인자)일 때만 센다.
+      // 사용자가 그 폴더에서 직접 켠 claude 는 이 본체 일이 아니다(결정 D1 · 2026-10-25). 인자를 못 읽으면 모른다(보수적)
+      const args = argsOf(row.pid)
+      if (!args) { if (alive(row.pid)) { known = false; busy.push({ kind: 'unknown', what: `인자를 읽지 못한 claude — ${real}`, pid: row.pid }) } }
+      else if (AGENT_FLAG.test(args)) busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
+    } else busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
   }
   // QA 런 — 이 본체 팩 상태의 run.json 이 running 이고 그 pid 가 살아 있으면
   const runs = join(root, '.qa-runs')

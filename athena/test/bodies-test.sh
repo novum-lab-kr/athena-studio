@@ -54,7 +54,8 @@ for k in sys.argv[1].split("."):
 print("" if d is None else (json.dumps(d) if isinstance(d,(dict,list)) else d))' "$1"; }
 FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude"
 # 가짜 claude — 출력은 버린다($(...) 가 끝나길 기다리지 않게)
-fake_claude() { (cd "$1" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 120000)') >/dev/null 2>&1 & echo $!; }
+# fake_claude <폴더> [인자…] — 인자는 ps 에 보이게 그대로 붙인다(레포 메인 체크아웃은 --agent 가 있어야 일로 센다 · 결정 D1)
+fake_claude() { local dir="$1"; shift; (cd "$dir" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 120000)' -- "$@") >/dev/null 2>&1 & echo $!; }
 
 section "주 본체 — test-setup(acme)"
 printf '{ "boardPort": %s }\n' "$PORT_A" > "$MAIN/athena.config.json"
@@ -125,7 +126,7 @@ V1="$(J "$MAIN" version)"; V2="$(J "$BODY_B" version)"
 check "version — contract 2 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 2 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
 
 section "한 본체가 일해도 다른 본체는 열리고 비어 있음"
-CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop")"; sleep 0.5
+CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; sleep 0.5
 check "본체 B busy: athena · agent" 'R="$(J "$BODY_B" pack busy)"; echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\""'
 check "주 본체 busy 는 비어 있음" '[ "$(J "$MAIN" pack busy | field busy)" = "[]" ]'
 check "list bodyBusy — globex true · acme false" 'R="$(J "$MAIN" pack list)"; [ "$(echo "$R" | field packs.globex.bodyBusy)" = True ] && [ "$(echo "$R" | field packs.acme.bodyBusy)" = False ]'
