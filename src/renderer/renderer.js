@@ -2028,6 +2028,12 @@ function initWork() {
       studio.openBoardSection(item.dataset.section)
     })
   }
+  $('diagrams-open').addEventListener('click', async () => {
+    closePops()
+    const result = await studio.openDiagrams()
+    if (result && result.ok) return
+    showToast(result && result.error === 'missing' ? say('board.diagramsMissing') : say('board.diagramsFailed', { message: (result && result.message) || '' }))
+  })
   $('work-pop-pages').addEventListener('click', () => {
     closePops()
     openPop('board-menu', 'board-tab')
@@ -2578,6 +2584,7 @@ function renderPackWelcome() {
   document.body.classList.toggle('pack-welcome-on', on)
   // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
   $('board-tab').disabled = !state || !state.valid || on
+  $('diagrams-open').disabled = !state || !state.valid || on
   $('browser-toggle').disabled = on
   if (on && browserOpen) closeBrowserPanel()
   // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
@@ -2919,6 +2926,7 @@ function renderState() {
   const ready = state.valid
   panels.setup.hidden = ready
   $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
+  $('diagrams-open').disabled = !ready || welcomeShown() // 다이어그램도 팩에 들어간 뒤에만
   $('work-tab').disabled = !ready || welcomeShown()
   renderPackRail()
   if (!ready) {
