@@ -59,7 +59,7 @@ const html = `<!doctype html>
   /* 색 · 글꼴 · 간격은 Athena Studio 앱(src/renderer/style.css :root)을 따른다 — 앱이 다크 하나뿐이라 다크만 */
   :root {
     color-scheme: dark;
-    --bg: #16171a; --bar: #1f2125; --hover: #28292d; --line: #2e3137;
+    --bg: #16171a; --bar: #1f2125; --line: #2e3137;
     --text: #e8e6e1; --muted: #9a968e; --title: #f3ead6; --accent: #c9ad78; --accent-text: #e9d2a0;
     --gold-line: rgb(201 173 120 / 38%); --gold-bg: rgb(201 173 120 / 7%);
     --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
