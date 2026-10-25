@@ -41,31 +41,27 @@ test('요약: 확인 필요(요청만) · 막힘은 계획서만 · 에이전트
   assert.equal(counted.counts.review, 1)
 })
 
-test('알림: 처음 상태는 알리지 않고 · 일하다 멈춤 · 카드 리뷰·완료 · 여러 건은 묶음', () => {
+test('알림: 사람이 고를 것만 — 일하다 멈춤 · 카드 리뷰·완료는 알리지 않고 · 여러 건은 묶음', () => {
   const notifier = new tray.Notifier()
   const names = new Map([['w1', 'athena']])
-  // 켤 때 이미 쉬던 것은 알리지 않는다
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 0), [])
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 60000), [])
-  // p2 가 멈춤 → 10초 지나야 한 번
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000), [])
-  const idle = notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000 + tray.IDLE_HOLD_MS)
-  assert.deepEqual(idle, [{ kind: 'idle', title: '응답이 끝났어요', body: 'claude · athena — 결과를 확인해 주세요', target: { pane: 'p2' } }])
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 90000), [])
-  // 모르는 상태(unknown)로 바뀌어도 알리지 않는다 — 막힘 알림은 없다
-  notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 100000)
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 100000 + 60000), [])
-  // 카드 — 리뷰 대기 · 완료(카드 목록이 같이 와야 비교한다)
-  const cards = notifier.update({ panes: [], cards: [card('a', 'ready_for_review', '로그인'), card('b', 'done', '새 카드')] }, 200000)
-  assert.deepEqual(cards.map((item) => item.kind), ['review'])
-  assert.deepEqual(notifier.update({ panes: [], cards: [card('a', 'done', '로그인'), card('b', 'done', '새 카드')] }, 210000).map((item) => item.kind), ['done'])
-  // 여러 건은 묶는다
+  // 켤 때 상태는 기준만
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'working')], names }, 0), [])
+  // 일하다 멈춰도(응답 끝남) 알리지 않는다 — 오래 지나도
+  notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000)
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000 + 600000), [])
+  // 모르는 상태(unknown)로 바뀌어도 알리지 않는다
+  notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 700000)
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 760000), [])
+  // 카드가 리뷰 · 완료로 바뀌어도 알리지 않는다(카드는 받지도 않는다)
+  assert.deepEqual(notifier.update({ panes: [], cards: [card('a', 'in_progress', '로그인')] }, 800000), [])
+  assert.deepEqual(notifier.update({ panes: [], cards: [card('a', 'ready_for_review', '로그인'), card('b', 'done', '새 카드')] }, 810000), [])
+  // 입력 대기 여러 건은 묶는다
   const busy = new tray.Notifier()
   busy.update({ panes: [pane('p1', 'working'), pane('p2', 'working')], names }, 0)
-  busy.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 1000)
-  const bundled = tray.bundle(busy.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 1000 + tray.IDLE_HOLD_MS))
+  busy.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 1000)
+  const bundled = tray.bundle(busy.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 1000 + tray.WAIT_HOLD_MS))
   assert.equal(bundled.length, 1)
-  assert.equal(bundled[0].title, '응답이 끝났어요 (2건)')
+  assert.equal(bundled[0].title, '입력을 기다려요 (2건)')
 })
 
 test('입력 대기: 에이전트 줄 맨 위 · 머리줄 수 · 대기 수에서 빼고 · 이어지면 한 번 알리고 풀릴 때까지 다시 안 알린다', () => {
@@ -93,9 +89,9 @@ test('입력 대기: 에이전트 줄 맨 위 · 머리줄 수 · 대기 수에�
   notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'working')], names }, 210000)
   notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 220000)
   assert.equal(notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 220000 + tray.WAIT_HOLD_MS).length, 1)
-  // 입력 대기가 풀려 대기(idle)가 되면 '응답이 끝났어요' 는 아니다(일하다 멈춘 것이 아니다)
+  // 입력 대기가 풀려 대기(idle)가 되면 알리지 않는다
   notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'idle')], names }, 300000)
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'idle')], names }, 300000 + tray.IDLE_HOLD_MS), [])
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'idle')], names }, 360000), [])
 })
 
 test('사용량 리셋 시각: 오늘은 시각만 · 내일 · 그 뒤는 요일', () => {

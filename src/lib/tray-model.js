@@ -5,7 +5,6 @@ const KOREAN = require('../i18n/ko.json')
 
 // 문구는 사전(src/i18n)에서 — main 이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
 const koreanSay = i18n.translator(KOREAN, KOREAN)
-const IDLE_HOLD_MS = 10000 // 일하다 멈춘 뒤 이만큼 조용해야 "응답이 끝났어요"
 // 입력 대기(권한 질문 · 고르기 창)가 이만큼 이어져야 알린다 — 메뉴 막대가 4초마다 보니 두 번 잇달아 보여야 한다(잠깐 묻고 바로 넘어간 것은 빼고)
 const WAIT_HOLD_MS = 3000
 
@@ -135,12 +134,13 @@ function usageItems(usage, now = Date.now(), say = koreanSay) {
 }
 
 
-// 알림 — 처음 본 상태는 알리지 않고(켤 때 기준만 잡는다), 같은 변화는 한 번만, 한 번에 여러 건이면 묶는다
+// 알림 — 사람이 고르거나 답할 것만: pane 의 입력 대기 · 새로 열린 요청(질문 · 결정).
+// 응답 끝남 · 리뷰 · 완료는 알리지 않는다(사용자 2026-10-26 — 알림이 너무 많다). 메뉴 막대 패널 · 칸반 숫자로는 그대로 보인다.
+// 처음 본 상태는 알리지 않고(켤 때 기준만 잡는다), 같은 변화는 한 번만, 한 번에 여러 건이면 묶는다
 class Notifier {
   constructor() {
     this.ready = false
-    this.panes = new Map() // id → { status, since, was, notified }
-    this.cards = new Map() // id → status
+    this.panes = new Map() // id → { status, since, notified }
     this.requests = null // 본 요청 id — 처음 본 목록은 알리지 않는다(켤 때 기준)
   }
 
@@ -154,9 +154,8 @@ class Notifier {
     return open.filter((request) => !known.has(request.id)).map((request) => ({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: { request: request.id } }))
   }
 
-  // 반환: [{ kind, title, body, target }] — target 은 { pane } 또는 { card, html }. 묶기(bundle)는 부르는 쪽이 거른 뒤에.
-  // cards 가 없으면(현황판이 꺼졌거나 아직 못 받음) 카드는 비교하지 않고 기억도 그대로 둔다
-  update({ panes = [], cards = null, names = new Map(), say = koreanSay }, now) {
+  // 반환: [{ kind: 'waiting', title, body, target: { pane } }] — 묶기(bundle)는 부르는 쪽이 거른 뒤에
+  update({ panes = [], names = new Map(), say = koreanSay }, now) {
     const found = []
     const seen = new Set()
     for (const pane of panes) {
@@ -165,46 +164,24 @@ class Notifier {
       const status = pane.agent_status || 'idle'
       const before = this.panes.get(pane.id)
       if (!before || before.status !== status) {
-        this.panes.set(pane.id, { status, since: now, was: before ? before.status : null, notified: !this.ready })
+        this.panes.set(pane.id, { status, since: now, notified: !this.ready })
         continue
       }
-      if (before.notified) continue
+      if (before.notified || status !== 'waiting' || now - before.since < WAIT_HOLD_MS) continue
+      // 풀릴 때까지(상태가 바뀔 때까지) 한 번 — 켤 때 이미 기다리던 것은 알리지 않는다(위 notified)
       const name = agentName(pane)
       const where = names.get(pane.workspace_id)
       const who = where ? `${name} · ${where}` : name
-      if (status === 'waiting' && now - before.since >= WAIT_HOLD_MS) {
-        // 풀릴 때까지(상태가 바뀔 때까지) 한 번 — 켤 때 이미 기다리던 것은 알리지 않는다(위 notified)
-        found.push({ kind: 'waiting', title: say('notify.waiting.title'), body: say('notify.waiting.body', { who }), target: { pane: pane.id } })
-        before.notified = true
-      } else if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
-        found.push({ kind: 'idle', title: say('notify.idle.title'), body: say('notify.idle.body', { who }), target: { pane: pane.id } })
-        before.notified = true
-      } else if (status !== 'idle' && status !== 'waiting') {
-        before.notified = true
-      }
+      found.push({ kind: 'waiting', title: say('notify.waiting.title'), body: say('notify.waiting.body', { who }), target: { pane: pane.id } })
+      before.notified = true
     }
     for (const id of [...this.panes.keys()]) if (!seen.has(id)) this.panes.delete(id)
-
-    if (cards === null) {
-      this.ready = true
-      return found
-    }
-    const alive = new Set()
-    for (const card of liveCards(cards)) {
-      alive.add(card.id)
-      const before = this.cards.get(card.id)
-      this.cards.set(card.id, card.status)
-      if (!this.ready || before === undefined || before === card.status) continue
-      if (card.status === 'ready_for_review') found.push({ kind: 'review', title: say('notify.review.title'), body: card.title, target: { card: card.id, html: card.html || null } })
-      if (card.status === 'done') found.push({ kind: 'done', title: say('notify.done.title'), body: card.title, target: { card: card.id, html: card.html || null } })
-    }
-    for (const id of [...this.cards.keys()]) if (!alive.has(id)) this.cards.delete(id)
     this.ready = true
     return found
   }
 }
 
-// 같은 종류가 여러 건이면 하나로 — '응답이 끝났어요 (3건)'
+// 같은 종류가 여러 건이면 하나로 — '입력을 기다려요 (3건)'
 // 묶은 본문은 이름만 — 알림 본문은 사전에서 '<누구> — <내용>' 꼴이다(네 언어 모두 ' — ')
 function bundle(found, say = koreanSay) {
   const byKind = new Map()
@@ -214,4 +191,4 @@ function bundle(found, say = koreanSay) {
   )
 }
 
-module.exports = { IDLE_HOLD_MS, WAIT_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, waitText, Notifier, bundle }
+module.exports = { WAIT_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, waitText, Notifier, bundle }

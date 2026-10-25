@@ -87,7 +87,7 @@ test('순수 로직: pack · tray-model 은 넘긴 언어의 say 로 쓴다(안 
   assert.equal(notifier.updateRequests([{ id: 'r1', kind: 'decision', state: 'open', title: 't' }], english)[0].title, 'A decision is needed')
   const now = new Date(2026, 9, 18, 12, 0).getTime()
   assert.equal(tray.resetClock(new Date(2026, 9, 19, 9, 30).getTime(), now, english), 'tomorrow 09:30')
-  const bundled = tray.bundle([{ kind: 'idle', title: 'Done', body: 'a — x' }, { kind: 'idle', title: 'Done', body: 'b — y' }], english)
+  const bundled = tray.bundle([{ kind: 'waiting', title: 'Done', body: 'a — x' }, { kind: 'waiting', title: 'Done', body: 'b — y' }], english)
   assert.equal(bundled[0].title, 'Done (2)')
   assert.equal(bundled[0].body, 'a, b')
 })
