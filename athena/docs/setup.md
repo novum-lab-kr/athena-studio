@@ -39,9 +39,10 @@
 - **회사 이름**(팩 폴더 이름, 영문 소문자) · **회사를 가리키는 말**(names — 서비스·브랜드 이름, `pack check` 가 코어에서 찾는다)
 - **추정이 틀린 레포** — 기준 브랜치(운영 반영분)·작업 base(PR 대상)·종류·층. 고칠 게 있으면 그 레포만 다시 묻는다
 - **에이전트 이름** — 기본은 `<레포>-fe|be`, 모노레포는 `<앱>-fe` + `<레포>-packages-fe`. 바꾸려면 `--agent <레포>=<이름>` · `--agent <레포>/<앱>=<이름>`
+- **PR 자동 리뷰 · 머지를 켤 레포**(`docs/pr-auto.md`) — 고른 레포 중에서 여러 개 고르기 · **기본은 아무것도 안 켠다**(고르지 않으면 지금처럼 PR 뒤는 사람이). 켜면 그 레포의 레포 하나짜리 PR 을 Claude · Codex 가 리뷰하고 고치고, 둘 다 승인 + 같은 HEAD 검증 + 충돌 없음이면 사람이 [머지] 를 한 번 눌러 squash 머지한다. 물을 때 레포마다 한 줄로 알린다: 작업 base(`prBase`)가 기준 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영** · main 직접 레포(`direct`)는 PR 이 없어 고를 수 없다 · Claude · Codex 가 이 컴퓨터에 로그인돼 있어야 돈다(`claude auth status` · `codex login status` 로 있는지만 본다 — 로그인 창을 띄우는 실행은 하지 않는다)
 
 ## 3. 팩 만들기
-`bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 그다음 `scripts/setup.sh`(repos/ 링크).
+`bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 2단계에서 자동 머지를 켜기로 고른 레포에는 `"autoMerge": true` 를 넣는다(안 고른 레포에는 넣지 않는다 — 없으면 꺼짐). 그다음 `scripts/setup.sh`(repos/ 링크).
 
 ## 4. 뼈대
 `bin/athena scaffold` — 레포마다 `agents/<에이전트>.md` · `knowledge/<레포>/{rules,structure,gotchas}.md` · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리) · `diagrams/SERVICES.md`(/diagram 서비스 표) · `diagrams/index.json`(다이어그램 목록 카드). 있는 파일은 건드리지 않는다.
@@ -86,7 +87,7 @@ Jev(TypeSafe 의 판정 모델)는 QA 실패 원인 추정 · 학습 후보 중�
 ## 레포 하나 더하기 — 이미 팩이 있을 때
 Athena Studio 의 spaces `+` 로 git 레포 폴더를 고르면 앱이 1단계를 하고 아테나에게 "레포 <이름> 을 팩에 더했어 — 뼈대를 채워 줘" 를 보낸다. 말로 "<폴더> 레포 추가해줘" 라고 해도 같다.
 1. (앱이 안 했으면) `bin/athena repo add <레포 폴더> [--name <이름>]` — 훑어 `pack.json` 에 항목(브랜치 · 기준 · 종류 · 층 · git 주소 · 기본 에이전트) · `<팩 데이터>/local.json` 에 자리 · `repos/` 링크 · 그 레포 뼈대(4단계와 같은 파일) · 팩 링크. 같은 이름이 다른 자리에 있으면 `exists` — 사용자에게 다른 이름을 묻고 `--name`
-2. 추정이 맞는지 사용자에게 한 줄로 확인한다(2단계와 같은 표 — 그 레포 한 줄) · 고쳤으면 `pack.json` 그 항목
+2. 추정이 맞는지 사용자에게 한 줄로 확인한다(2단계와 같은 표 — 그 레포 한 줄) · 고쳤으면 `pack.json` 그 항목 · 같은 자리에서 **PR 자동 리뷰 · 머지를 켤지** 묻는다(2단계와 같은 안내 · 기본 끔 — 켜면 그 항목에 `"autoMerge": true`)
 3. 그 레포만 5단계(작업자 하나 — 뼈대 채우기) · `ROUTING.md` 표 한 줄과 "어느 레포인지 고르기" · `docs/services.md` 그 서비스 한 줄
 4. 그 레포만 6단계(`scripts/verify/<레포>.sh`) · 7단계(`node scripts/sync-fingerprint.mjs --repo <레포>` → `--accept` → `node scripts/build-derived.mjs`) · 다이어그램은 묻는다(7-1)
 5. 보고 — 8단계 형식에서 그 레포 것만

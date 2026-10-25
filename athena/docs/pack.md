@@ -166,6 +166,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
       "requireChangeset": true },          // ship.sh 미리보기가 .changeset/*.md 없으면 경고
     { "name": "mobile", "agents": ["mobile-app"], "branch": "prd", "prBase": "prd", "kind": "single",
       "extraPrBases": ["dev"],             // PR base 후보에 함께
+      // "autoMerge": true,                // PR 자동 리뷰 · 수정 · 머지(docs/pr-auto.md) — 이 레포의 레포 하나짜리 PR 만 · 기본 꺼짐 · direct 레포는 무시
       // "direct": true,                   // main 직접 — 브랜치·워크트리·PR 없이 메인 체크아웃의 prBase 에서 바로 작업·커밋, ship.sh 가 빨리 감기 push(git.md "작업 브랜치 만들기")
       "branchName": { "pattern": "feature/v{version}/{ticket}", "versionFile": "app.config.js", "versionRegex": "^\\s*version:\\s*\"([0-9.]+)\"" } },
     { "name": "api", "agents": ["api-be"], "branch": "prd", "prBase": "dev", "kind": "single", "layer": "be", "appDir": "src" }

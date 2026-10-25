@@ -3,18 +3,18 @@
 - **모든 작업은 계획서 하나에 묶인다**(정식 `plans/<유형>/…` 또는 경량 `plans/task/…`). 계획서 없이 시작하지 않는다
 - **작업은 팩 `pack.json` 의 `prBase` 에서 딴 새 작업 브랜치·워크트리에서 한다**(`scripts/new-branch.sh` → `.worktrees/<레포>/<슬러그>`, 절차는 아래 "작업 브랜치 만들기"). 지금 체크아웃된 브랜치에 얹지 않고, 메인 체크아웃을 건드리지 않으며, 남의 미커밋 변경을 stash 하지 않는다. `prBase`(작업 base)와 `branch`(문서 기준, 운영 반영분)는 다를 수 있다
 - 작업 시작 전 `git status --short --branch`로 대상 레포의 기존 변경을 확인하고, 사용자가 만든 변경과 무관한 파일은 건드리지 않는다
-- **FE 에이전트의 커밋은 사용자가 pane 에서 "커밋해줘" 라고 할 때만, `scripts/commit.sh` 로만 한다.** 스크립트가 워크트리·보호 브랜치·기존 스테이징·지정 파일을 확인하고, 그 상태로 엄격 검증한 뒤 커밋해 계획서 `## Commits` 에 적는다. `git commit` 직접·`git add -A`·`git push`·`gh pr create` 등 쓰기(ship.sh 로), commit.sh 를 거치지 않고 커밋을 만드는 `revert`·`merge`·`cherry-pick`·`am`, 미커밋 변경을 치우는 `stash`(list·show 제외)·`reset --hard`·`checkout`/`restore` 로 전부·폴더째 되돌리기·`checkout -f`·`clean -f`, 커밋·브랜치를 직접 만드는 `rebase`·`commit-tree`·`update-ref` 는 FE 세션의 보호 훅(`scripts/hooks/commit-guard.py`)이 막는다(실수 방지용 — 보안 경계는 아니다). 꼭 필요하면 에이전트가 이유를 말하고 사용자가 직접 실행한다
+- **FE 에이전트의 커밋은 사용자가 pane 에서 "커밋해줘" 또는 "PR 올려줘" 라고 할 때만, `scripts/commit.sh` 로만 한다.** 스크립트가 워크트리·보호 브랜치·기존 스테이징·지정 파일을 확인하고, 그 상태로 엄격 검증한 뒤 커밋해 계획서 `## Commits` 에 적는다. `git commit` 직접·`git add -A`·`git push`·`gh pr create` 등 쓰기(ship.sh 로), commit.sh 를 거치지 않고 커밋을 만드는 `revert`·`merge`·`cherry-pick`·`am`, 미커밋 변경을 치우는 `stash`(list·show 제외)·`reset --hard`·`checkout`/`restore` 로 전부·폴더째 되돌리기·`checkout -f`·`clean -f`, 커밋·브랜치를 직접 만드는 `rebase`·`commit-tree`·`update-ref` 는 FE 세션의 보호 훅(`scripts/hooks/commit-guard.py`)이 막는다(실수 방지용 — 보안 경계는 아니다). 꼭 필요하면 에이전트가 이유를 말하고 사용자가 직접 실행한다
   - commit.sh 가 거부하는 경우: 메인 체크아웃, detached HEAD, 보호 브랜치(`dev`·`develop`·`development`·`main`·`master`·`stg`·`staging`·`frz`·`prd`·`prod`·`production`·`prd-*`·`release/*`·`dev-*` + 팩에 적힌 그 레포의 `branch`·`prBase`·`extraPrBases` — `scripts/lib/athena_config.py`), 남이 해 둔 스테이징, 비밀 파일(`.env*`(예시 제외)·`*.pem`·`*.key`·`id_rsa*`·개인키가 든 파일·토큰이 글자 그대로 든 `.npmrc`), 같은 워크트리에서 커밋·push 가 진행 중, 검증 실패
   - 모노레포(`kind: monorepo`)는 바뀐 파일에서 앱(`apps/<앱>/`·`packages/<pkg>/`)을 찾아 검증한다. 루트 파일만 커밋하면 대상을 못 찾아 멈추니 `--verify "<앱|packages/<pkg>>"` 를 준다. 발행 패키지 레포(`kind: packages`)는 `--verify "<패키지명>"` 이 필요하다
   - **한계**: 검증은 작업 트리 **전체**에서 돈다. 지정하지 않은 미커밋 변경이 있으면 그 변경이 검증 결과에 섞일 수 있다(커밋에는 안 들어간다) — 스크립트가 경고하고 계획서 기록에 "지정 밖 미커밋 변경 N개" 를 남긴다. 검증 중 작업 트리 어디든 바뀌면 커밋하지 않는다
   - 검증은 **엄격 모드**다 — 건너뜀(⏭)도 실패로 친다. 레포가 원래 건너뛰는 단계(회사 레포 목록은 `docs/knowledge/company/verify.md`)는 **사용자 확인 후** `--allow-skip "<단계 이름>"` 으로 허용한다(`verify.md`)
-- **push·PR 은 사용자가 "PR 올려줘" 라고 할 때만, `scripts/ship.sh` 로만 한다**(아래 "PR 올리기"). 레포 하나짜리 작업은 FE 에이전트가 자기 pane 에서, **여러 레포에 걸친 작업은 아테나가** 순서(공유 패키지 먼저)·공개 범위를 확인하고 올린다. 보호 브랜치 직접 push·force-push 금지
+- **push·PR 은 사용자가 "PR 올려줘" 라고 할 때만, `scripts/ship.sh` 로만 한다**(아래 "PR 올리기" · 예외는 아래 "PR 자동 리뷰 · 머지" 하나). 레포 하나짜리 작업은 FE 에이전트가 자기 pane 에서, **여러 레포에 걸친 작업은 아테나가** 순서(공유 패키지 먼저)·공개 범위를 확인하고 올린다. 보호 브랜치 직접 push·force-push 금지
 - 커밋 메시지는 한국어. 티켓이 있으면 `feat: PROJ-1234 설명` (레포별 세부 관례는 `<레포>/rules.md`)
 - 브랜치 이름·PR 대상 등 레포별 전략은 `<레포>/rules.md`. base 는 `prBase` 로 정해지고, 설정으로 정할 수 없는 것만 사용자에게 묻는다
 
 ## PR 올리기 (`scripts/ship.sh`)
 
-사용자가 pane 에서 **"PR 올려줘"** 라고 하면 한다. 두 번 부른다 — 미리보기 → 사용자 확인 → 보내기.
+사용자가 pane 에서 **"PR 올려줘"** 라고 하면 한다. **그 한 마디로 끝까지 간다 — 묻지 않는다**(2026-10-25): ① 커밋 안 된 작업 파일이 있으면 `commit.sh` 로 먼저 커밋 ② 미리보기로 초안을 받고 ③ 작업 내용(계획서 · diff)을 보고 제목 · 본문 초안 파일을 정리한 뒤 ④ `--yes` 로 보낸다. base 는 미리보기의 기본(`prBase`) 하나 — 다른 base(`extraPrBases` · `release/*`)는 사용자가 말했을 때만. main 직접 레포의 push 는 지금처럼 미리보기 → 확인 → `--yes`.
 
 ```bash
 scripts/ship.sh --plan <계획서> --dir <워크트리>                       # 1) 미리보기 — 아무것도 보내지 않는다
@@ -23,14 +23,24 @@ scripts/ship.sh --plan <계획서> --dir <워크트리> --base dev \
 ```
 
 - **미리보기에 나오는 것**: 브랜치 · base 후보(`prBase` + 레포 설정 `extraPrBases` + 최근 30일 안에 움직인 원격 `release/*`) · 올라갈 커밋 · 검증 기록 · reviewer 기록 · 제목 제안 · 본문 초안 파일
-- 미리보기를 보고할 때 끝에 **📚 배운 것**(`AGENTS.md` 6절)을 붙인다 — 이게 작업을 끝내는 보고다. PR 이 머지되면 현황판이 그 작업을 배우기 검토자 대기열에 넣는다(`AGENTS.md` 6절 `review`)
-- 에이전트는 미리보기를 그대로 보여 주고 AskUserQuestion 으로 **base(여러 개 가능 — prd·dev 양쪽에 올리는 레포는 `--base prd --base dev`)·제목(제안 그대로/수정)** 을 받는다. **리뷰는 선택이다.** reviewer 결론(`- Review result: 승인 @<SHA> · tree <내용>`)은 **리뷰한 파일 내용**에 묶인다 — 리뷰 → 커밋 순서든 커밋 → 리뷰 순서든 커밋된 내용(`HEAD^{tree}`)이 리뷰한 내용과 같으면 승인이다. 승인이 아니면(reviewer 기록 없음 · 띄웠지만 결론 미기록 · 수정 필요 · 승인 뒤 내용이 바뀜 — 리뷰 뒤 수정이나 리뷰 때 워크트리에만 있던 파일 포함) 미리보기에 ⚠️ 가 뜬다 — **이대로 올릴지 한 번 더 묻고**, 올리라면 `--no-review-ok`
+- PR 을 올리고 보고할 때 끝에 **📚 배운 것**(`AGENTS.md` 6절)을 붙인다 — 이게 작업을 끝내는 보고다. PR 이 머지되면 현황판이 그 작업을 배우기 검토자 대기열에 넣는다(`AGENTS.md` 6절 `review`)
+- 에이전트는 base · 제목을 묻지 않는다(위). 사용자가 다른 base 를 말했으면 그것으로(여러 개 가능 — prd·dev 양쪽에 올리는 레포는 `--base prd --base dev`). **리뷰는 선택이다.** reviewer 결론(`- Review result: 승인 @<SHA> · tree <내용>`)은 **리뷰한 파일 내용**에 묶인다 — 리뷰 → 커밋 순서든 커밋 → 리뷰 순서든 커밋된 내용(`HEAD^{tree}`)이 리뷰한 내용과 같으면 승인이다. 승인이 아니면(reviewer 기록 없음 · 띄웠지만 결론 미기록 · 수정 필요 · 승인 뒤 내용이 바뀜 — 리뷰 뒤 수정이나 리뷰 때 워크트리에만 있던 파일 포함) 미리보기에 ⚠️ 가 뜬다 — 묻지 않고 `--no-review-ok` 로 올리되, PR 본문 "확인 필요" 와 보고에 "리뷰 승인 전" 을 적는다
 - **거부하는 경우**(아무것도 보내지 않는다): 메인 체크아웃 · detached · 보호 브랜치(`frz` 포함) · 추적 파일 미커밋 · 여러 에이전트가 붙은 계획서(아테나로) · HEAD 가 계획서 Commits 에 없음(= `commit.sh` 를 안 거친 커밋) · base 가 원격에 없음 · 올릴 커밋 없음 · 제목 형식·범위·티켓 불일치 · 본문 필수 절 누락 · 본문에 로컬 경로(`plans/`·`/Users/`·`.worktrees/`)·내부 주소·비밀값 흔적 · 확인하는 동안 커밋이 진행 중이거나 HEAD 가 바뀜(commit.sh 와 같은 워크트리 잠금을 쥐고, 브랜치 이름이 아니라 **검사한 커밋 SHA** 를 push 한다)
 - 보내면: `git push -u origin <브랜치>` → base 마다 **draft PR**(이미 열린 PR 이 있으면 push 만) → 계획서 Commits 의 "push 안 함" 을 PR 링크로 바꾸고 Checkpoint 에 `- PR:` 줄. 리뷰어 지정·Ready 전환은 사용자가 GitHub 에서
-- **자동 리뷰는 정식 계획서(여러 레포 작업 포함)만** — 에이전트는 코드를 바꾼 요청을 보고하면 묻지 않고 바로 리뷰를 띄운다(조사만 했거나 승인 뒤 바뀐 게 없으면 생략). 경량 계획서는 보고 끝에 "리뷰할까요?" 한 줄만 붙인다. 자동 리뷰나 pane 에서 **"리뷰해줘"** → 에이전트가 `scripts/delegate.sh reviewer --cwd <워크트리> --here --plan <계획서>` 로 같은 탭 옆에 reviewer 를 띄운다. reviewer 는 끝에 `scripts/review-result.sh` 로 결론(승인/수정 필요 @HEAD)을 계획서에 남긴다. 선택지가 갈리는 **결정 필요**가 나오면 에이전트가 결정 콘솔로 보여 준다(`plan-html.mjs --add` · `board.sh open`). 수정할 게 나오면 원래 에이전트 pane 에 말한다
+- **자동 리뷰는 정식 계획서(여러 레포 작업 포함)의 넓은 수정만** — 넓은 수정(새 기능 · 구조 변경 · 여러 파일에 걸친 로직 변경 · 보안 · 권한 · 데이터 · 외부 계약에 닿는 코드)을 보고하면 묻지 않고 바로 리뷰를 띄운다. 리뷰 지적 반영 · 문구 · 문서 · 작은 수정 · 조사뿐 · 승인 뒤 바뀐 게 없으면 띄우지 않는다. 경량 계획서는 넓은 수정일 때만 보고 끝에 "리뷰할까요?" 한 줄(2026-10-25). 자동 리뷰나 pane 에서 **"리뷰해줘"** → 에이전트가 `scripts/delegate.sh reviewer --cwd <워크트리> --here --plan <계획서>` 로 같은 탭 옆에 reviewer 를 띄운다. reviewer 는 끝에 `scripts/review-result.sh` 로 결론(승인/수정 필요 @HEAD)을 계획서에 남긴다. 선택지가 갈리는 **결정 필요**가 나오면 에이전트가 결정 콘솔로 보여 준다(`plan-html.mjs --add` · `board.sh open`). 수정할 게 나오면 원래 에이전트 pane 에 말한다
 - 본문 초안은 **미리보기 때만** 만든다. 미리보기 뒤 초안 파일을 고쳤으면 `--yes` 때 그대로 나간다(다시 만들지 않는다). 미리보기 뒤에 새 커밋이 생겼으면 초안이 낡았으므로 거부한다 — 미리보기부터 다시
 - 스크립트는 **절대 경로로** 부른다(`<athena>/scripts/ship.sh`). 보호 훅이 hermes 의 그 파일인지 경로로 확인해서, 워크트리에서 `scripts/ship.sh` 로 치면 막힌다
 - **아테나(여러 레포 작업)**: 순서대로 레포마다 `scripts/ship.sh … --repo-agent <그 레포 에이전트>` 로 올린다. 이 옵션은 FE 세션에서 보호 훅이 막는다
+
+## PR 자동 리뷰 · 머지 (켠 레포만 — `scripts/pr-auto.mjs`)
+
+정본 `docs/pr-auto.md`. 팩 레포에 `"autoMerge": true` 를 켠 레포의 **레포 하나짜리** PR 만(기본 꺼짐 · main 직접 레포 제외).
+
+- 현황판이 열린 PR 의 새 HEAD 를 보면(5분 안) Claude · Codex 가 도구 없이 리뷰해 PR 댓글과 계획서 `- Auto review:` 줄을 남긴다. 같은 HEAD 는 한 번만
+- **수정 필요** → 작업 에이전트 pane 에 `[자동 리뷰 → <에이전트>]` 지시. 에이전트는 **그 지시에 한해** 묻지 않고 고쳐 `commit.sh` 로 커밋하고 `ship.sh --plan <계획서> --dir <워크트리> --auto-push` 로 올린다 — 이미 열린 그 PR 브랜치에 빨리 감기만(새 PR · 제목 · base · 강제 push 없음). 라운드 상한 3, 넘으면 멈추고 사람에게 요청
+- **결정 필요** → 결정 콘솔에 덧붙인다(자동으로 고르지 않는다)
+- **머지** → Claude · Codex 둘 다 승인 + 같은 HEAD 로 검증 통과(엄격) + 충돌 없음일 때 머지 확인 요청(맥 알림 · [작업] 팝업) → 사람이 [머지] → `gh pr ready` · `gh pr merge --squash --match-head-commit`. 하나라도 실패 · 반려면 머지하지 않는다
+- 보호 훅(`commit-guard.py`)은 바뀌지 않는다 — 사람 세션의 직접 push · `gh pr` 쓰기는 그대로 막히고, `ship.sh --auto-push` 가 스스로 조건(켠 레포 · 계획서 PR 줄의 열린 PR · 그 PR 의 `- Auto review:` 가 수정 · 결정 필요)을 확인한다
 
 ## PR 제목·본문 (모든 레포 공통)
 

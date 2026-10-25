@@ -4,13 +4,15 @@
 막는 것 (실수 방지용이지 보안 경계가 아니다 — 스크립트 파일 안의 명령까지 보지는 않는다)
   - git commit 직접        → scripts/commit.sh 로 안내 (지정 파일만·엄격 검증·계획서 기록)
   - git add -A / --all / . / -u / 디렉터리  → 남의 변경이 섞인다. 파일을 하나씩 지정하거나 commit.sh 로
-  - git push · gh pr (쓰기) → scripts/ship.sh 로 안내 (사용자가 "PR 올려줘" 했을 때 · 레포 하나짜리 작업만 · 미리보기 확인 후)
+  - git push · gh pr (쓰기) → scripts/ship.sh 로 안내 (사용자가 "PR 올려줘" 했을 때 · 레포 하나짜리 작업만 · 그 한 마디로 커밋 → 정리 → draft PR)
   - git revert · merge · cherry-pick · am  → commit.sh 를 거치지 않고 커밋을 만든다
   - git stash(list·show 제외) · reset --hard → 미커밋 변경(남의 작업일 수 있다)을 치우거나 지운다
   - git checkout·restore 로 전부(. · :/ · 디렉터리)를 되돌리기 · checkout -f · clean -f → 같은 이유(파일 하나 되돌리기·restore --staged 는 통과)
   - git rebase(--abort·--continue 등 진행 중 정리는 통과) · commit-tree · update-ref → commit.sh 를 거치지 않고 커밋·브랜치를 바꾼다
 통과: 실제로 실행되는 명령(조각의 첫 실행 토큰)이 **이 아테나(athena) 레포의** scripts/commit.sh · scripts/ship.sh 인 조각(경로를 풀어 비교 — 같은 이름의 다른 파일은 막는다),
       gh pr 읽기(view·list·status·checks·diff), gh api 읽기(GET).
+      PR 자동 리뷰의 고친 커밋 push 도 ship.sh --auto-push 로 이 통과 길을 쓴다 — 조건(켠 레포 · 열린 PR · 자동 리뷰의 수정 요청)은 ship.sh 가 본다(docs/pr-auto.md).
+      자동 머지는 FE 세션이 아니라 scripts/pr-auto.mjs(현황판이 띄우는 처리기)가 하므로 이 훅이 걸리지 않는다.
 그 밖에 막는 것: ship.sh --repo-agent(아테나 전용 — 여러 레포 순서 조율), gh api 쓰기(-X POST 등 · -f/-F 필드 · --input, 붙여 쓴 꼴 포함).
 경로는 페이로드 cwd 기준으로 푼다 — 워크트리에서는 절대 경로로 부른다(에이전트 지시문이 그렇게 한다).
 한계(보안 경계가 아니다): FE 세션은 아테나 레포에 쓰기 권한이 있어 scripts 자체나 계획서 기록(Review result 등)을 고칠 수 있고,
@@ -158,7 +160,7 @@ def check_git(args):
         return ''
     sub, rest = args[index], args[index + 1:]
     if sub == 'commit':
-        return '커밋은 scripts/commit.sh 로만 한다 — 사용자가 "커밋해줘" 라고 했을 때: scripts/commit.sh --plan <계획서> --dir <워크트리> -m "<메시지>" -- <파일>…'
+        return '커밋은 scripts/commit.sh 로만 한다 — 사용자가 "커밋해줘" · "PR 올려줘" 라고 했을 때: scripts/commit.sh --plan <계획서> --dir <워크트리> -m "<메시지>" -- <파일>…'
     if sub in ('revert', 'merge', 'cherry-pick', 'am', 'commit-tree', 'update-ref'):
         return f'git {sub} 는 commit.sh 를 거치지 않고 커밋·브랜치를 만든다(검증·계획서 기록 없음). 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다'
     if sub == 'rebase' and not any(arg in ('--abort', '--quit', '--show-current-patch') for arg in rest):
@@ -180,7 +182,7 @@ def check_git(args):
     if sub == 'reset' and '--hard' in rest:
         return 'git reset --hard 는 미커밋 변경을 지운다. 되돌릴 게 있으면 파일을 지정해 사용자에게 확인한 뒤 사용자가 직접 한다'
     if sub == 'push':
-        return 'push 는 scripts/ship.sh 로만 한다 — 사용자가 "PR 올려줘" 라고 했을 때: scripts/ship.sh --plan <계획서> --dir <워크트리> 로 미리보기부터'
+        return 'push 는 scripts/ship.sh 로만 한다 — 사용자가 "PR 올려줘" 라고 했을 때: scripts/ship.sh --plan <계획서> --dir <워크트리> 미리보기 → 제목 · 본문 정리 → --yes'
     if sub == 'add':
         for arg in rest:
             short_bundle = re.match(r'^-[A-Za-z]+$', arg) and any(flag in arg[1:] for flag in 'Au')
@@ -215,7 +217,7 @@ def check_gh(args):
         action = args[index + 1] if index + 1 < len(args) else ''
         if action in ('view', 'list', 'status', 'checks', 'diff'):
             return ''
-        return 'PR 은 scripts/ship.sh 로만 만든다 — 사용자가 "PR 올려줘" 라고 했을 때: scripts/ship.sh --plan <계획서> --dir <워크트리> 로 미리보기부터'
+        return 'PR 은 scripts/ship.sh 로만 만든다 — 사용자가 "PR 올려줘" 라고 했을 때: scripts/ship.sh --plan <계획서> --dir <워크트리> 미리보기 → 제목 · 본문 정리 → --yes'
     return ''
 
 

@@ -27,6 +27,7 @@ import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
+import { maskSecrets } from './lib/mask.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
@@ -86,35 +87,8 @@ const planAgents = (planText) => [...knowledgeOfAgent.keys()].filter((agent) => 
 const isLeadPlan = (planText) => /^- Agent:\s*(?:athena|hermes)\b/m.test(planText) || /^- Work ref:\s*(?:athena|hermes)\b/m.test(planText)
 const planKnowledge = (planText) => [...new Set([...planAgents(planText).map((agent) => knowledgeOfAgent.get(agent)), ...(isLeadPlan(planText) ? ['athena'] : [])])]
 
-// ── 비밀값 가리기 — 모양만 보고 가린다(규칙: 값은 어디에도 남기지 않는다) ─────
-const SECRET_PATTERNS = [
-  /(-----BEGIN [A-Z ]*PRIVATE KEY-----)[\s\S]*?(?:-----END [A-Z ]*PRIVATE KEY-----|$)/g,
-  /(_authToken=)[^\s"'\\]+/g,
-  /\b(npm_)[A-Za-z0-9]{20,}/g,
-  /\b(github_pat_)[A-Za-z0-9_]{20,}/g,
-  /\b(glpat-)[A-Za-z0-9_-]{16,}/g,
-  /\b(gh[pousr]_)[A-Za-z0-9]{20,}/g,
-  /\b(eyJ)[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}/g,
-  /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@"']+:)[^\s@"']+(?=@)/gi,
-  /(--(?:password|passwd|token|secret|api-key|auth)[\s=]+)[^\s"']+/gi,
-  /(\b[A-Z][A-Z0-9_]*(?:_AUTH|_KEY|_TOKEN|_SECRET|_PASSWORD|_PASS|_PAT)\s*=\s*["']?)[^\s"';]+/g,
-  /\b(sk-(?:ant-)?)[A-Za-z0-9_-]{16,}/g,
-  /\b(xox[abpr]-)[A-Za-z0-9-]{10,}/g,
-  /\b(AKIA)[A-Z0-9]{16}/g,
-  /((?:token|secret|password|passwd|api[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;\\]{6,}/gi,
-  /(Bearer\s+)[A-Za-z0-9._-]{16,}/g,
-]
-export const maskSecrets = (text) => {
-  let masked = text
-  let count = 0
-  for (const pattern of SECRET_PATTERNS) {
-    masked = masked.replace(pattern, (_whole, prefix) => {
-      count += 1
-      return `${prefix}***`
-    })
-  }
-  return { masked, count }
-}
+// ── 비밀값 가리기 — scripts/lib/mask.mjs(PR 자동 리뷰와 같이 쓴다) · 이 파일을 import 하던 곳을 위해 다시 내보낸다 ─────
+export { maskSecrets }
 
 // ── 대화 기록 찾기 — delegate.sh 가 띄운 세션은 첫 지시 맨 앞이 "이 작업의 계획서: <절대경로> —" 또는 "리뷰할 계획서: <절대경로> —" ──
 const projectsDir = join(homedir(), '.claude/projects')
