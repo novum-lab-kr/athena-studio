@@ -1418,6 +1418,21 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       .filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
       .map((repo) => ({ name: repo.name, agent: packModel.repoAgent(repo), linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')) }))
   }
+  // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
+  // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
+  ctx.mergeSettings = async () => {
+    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse, () => null)
+    return { ok: Boolean(pack), repos: packModel.mergeSettings(pack) }
+  }
+  ctx.setAutoMerge = async (repo, { autoMerge, confirm }) => {
+    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
+    const args = ['set-auto-merge', repo]
+    if (typeof autoMerge === 'boolean') args.push('--auto', autoMerge ? 'on' : 'off')
+    if (typeof confirm === 'boolean') args.push('--confirm', confirm ? 'on' : 'off')
+    const result = await runPack(args, { dir: ctx.athenaDir })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    return result
+  }
   // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
   ctx.studioEnv = () => {
     const paths = daemonPaths()
@@ -2933,6 +2948,11 @@ handle('window:close', (ctx) => {
 })
 handle('screen:attach', (ctx) => ctx.attachScreen())
 handle('pack:repos', (ctx) => ctx.packRepos())
+handle('settings:merge', (ctx) => ctx.mergeSettings())
+handle('settings:set-merge', (ctx, repo, values) => ctx.setAutoMerge(String(repo || ''), {
+  autoMerge: values && typeof values.autoMerge === 'boolean' ? values.autoMerge : null,
+  confirm: values && typeof values.confirm === 'boolean' ? values.confirm : null,
+}))
 handle('pack:call-info', (ctx, name) => ctx.callInfo(String(name || '')))
 handle('pack:call-start', (ctx, name, options) => ctx.callStart(String(name || ''), { branch: String((options && options.branch) || ''), reuse: Boolean(options && options.reuse) }))
 handle('pack:restore-arm', (ctx, id) => (restoreArmedFor = typeof id === 'string' && id ? id : null))

@@ -39,7 +39,7 @@
 - **회사 이름**(팩 폴더 이름, 영문 소문자) · **회사를 가리키는 말**(names — 서비스·브랜드 이름, `pack check` 가 코어에서 찾는다)
 - **추정이 틀린 레포** — 기준 브랜치(운영 반영분)·작업 base(PR 대상)·종류·층. 고칠 게 있으면 그 레포만 다시 묻는다
 - **에이전트 이름** — 기본은 `<레포>-fe|be`, 모노레포는 `<앱>-fe` + `<레포>-packages-fe`. 바꾸려면 `--agent <레포>=<이름>` · `--agent <레포>/<앱>=<이름>`
-- **PR 자동 리뷰 · 머지를 켤 레포**(`docs/pr-auto.md`) — 고른 레포 중에서 여러 개 고르기 · **기본은 아무것도 안 켠다**(고르지 않으면 지금처럼 PR 뒤는 사람이). 켜면 그 레포의 레포 하나짜리 PR 을 Claude · Codex 가 리뷰하고 고치고, 둘 다 승인 + 같은 HEAD 검증 + 충돌 없음이면 사람이 [머지] 를 한 번 눌러 squash 머지한다. 물을 때 레포마다 한 줄로 알린다: 작업 base(`prBase`)가 기준 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영** · main 직접 레포(`direct`)는 PR 이 없어 고를 수 없다 · Claude · Codex 가 이 컴퓨터에 로그인돼 있어야 돈다(`claude auth status` · `codex login status` 로 있는지만 본다 — 로그인 창을 띄우는 실행은 하지 않는다)
+- **PR 자동 리뷰 · 머지를 켤 레포**(`docs/pr-auto.md`) — 고른 레포 중에서 여러 개 고르기 · **기본은 아무것도 안 켠다**(고르지 않으면 지금처럼 PR 뒤는 사람이 · 나중에 Athena Studio 앱 ⚙ 설정에서도 바꿀 수 있다). 켜면 그 레포의 레포 하나짜리 PR 을 Claude · Codex 가 리뷰하고 고치고, 둘 다 승인 + 같은 HEAD 검증 + 충돌 없음이면 사람이 [머지] 를 한 번 눌러 squash 머지한다. 물을 때 레포마다 한 줄로 알린다: 작업 base(`prBase`)가 기준 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영** · main 직접 레포(`direct`)는 PR 이 없어 고를 수 없다 · Claude · Codex 가 이 컴퓨터에 로그인돼 있어야 돈다(`claude auth status` · `codex login status` 로 있는지만 본다 — 로그인 창을 띄우는 실행은 하지 않는다)
 
 ## 3. 팩 만들기
 `bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 2단계에서 자동 머지를 켜기로 고른 레포에는 `"autoMerge": true` 를 넣는다(안 고른 레포에는 넣지 않는다 — 없으면 꺼짐). 그다음 `scripts/setup.sh`(repos/ 링크).

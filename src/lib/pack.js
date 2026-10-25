@@ -12,7 +12,7 @@ const koreanSay = i18n.translator(KOREAN, KOREAN)
 // 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
 const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'body', 'port', 'slow'] // body · port — pack open 단계
 // 본체 오류 코드(사전 pack.errorCode.<코드>)
-const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible'] // 뒤 넷 — pack open
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible', 'not-applicable'] // body-… · port-in-use · data-incompatible — pack open · not-applicable — pack set-auto-merge(main 직접 레포)
 // 남은 작업 종류(사전 pack.busy.<종류>)
 const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside', 'codex', 'unknown']
 
@@ -194,6 +194,20 @@ function repoAgent(repo) {
   return agent || null
 }
 
+// ⚙ 설정 — 레포별 PR 자동 리뷰 · 머지(pack.json "autoMerge" · "autoMergeConfirm" — 뜻은 코어 docs/pr-auto.md "켜기").
+// main 직접 레포("direct": true)는 PR 이 없어 목록에서 뺀다. releaseOnMerge — 작업 base(prBase)가 운영 브랜치(branch)와 같아 머지가 곧 운영 반영
+function mergeSettings(pack) {
+  if (!pack || !Array.isArray(pack.repos)) return []
+  return pack.repos
+    .filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')) && repo.direct !== true)
+    .map((repo) => ({
+      name: repo.name,
+      autoMerge: repo.autoMerge === true,
+      confirm: repo.autoMergeConfirm !== false,
+      releaseOnMerge: typeof repo.branch === 'string' && repo.branch !== '' && repo.prBase === repo.branch,
+    }))
+}
+
 // scripts/call-branch-info.sh 출력(탭으로 나눈 줄) — target · repo · main(상태 · 미커밋 수) · candidate(브랜치 · 로컬/원격 · 최근 활동 · 체크아웃 자리) · direct(메인 체크아웃)
 function parseCallInfo(text) {
   const info = { target: '', main: null, candidates: [], direct: null }
@@ -242,6 +256,7 @@ const validBranchInput = (text) => typeof text === 'string' && /^[\w\uAC00-\uD7A
 
 module.exports = {
   repoAgent,
+  mergeSettings,
   parseCallInfo,
   parseBranchStatus,
   parseNewBranch,

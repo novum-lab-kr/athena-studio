@@ -166,6 +166,27 @@ async function main() {
       sameAsCurrent({ iconPath, iconUpdatedAt: new Date().toISOString() })
       return done({ ok: true, id: target.id, iconPath })
     }
+    // 레포별 자동 머지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만 고친다(가짜 본체에는 없다 → not-found). 글자 보존은 진짜 코어만
+    case 'set-auto-merge': {
+      const file = path.join(process.cwd(), 'pack', 'pack.json')
+      let pack
+      try {
+        pack = JSON.parse(fs.readFileSync(file, 'utf8'))
+      } catch {
+        fail('not-found', '이 본체 팩에 pack.json 이 없어요')
+      }
+      const repo = (pack.repos || []).find((item) => item && item.name === arg)
+      if (!repo) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
+      if (repo.direct === true) fail('not-applicable', `${arg} 는 main 직접 레포라 PR 이 없다`)
+      const auto = flag('--auto')
+      const confirm = flag('--confirm')
+      if (auto === 'on') repo.autoMerge = true
+      if (auto === 'off') delete repo.autoMerge
+      if (confirm === 'on') delete repo.autoMergeConfirm
+      if (confirm === 'off') repo.autoMergeConfirm = false
+      fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false })
+    }
     case 'board-token':
       return done({ ok: false, error: 'not-found', message: '가짜 모드에는 현황판 토큰이 없어요' }, 1)
     case 'use': {

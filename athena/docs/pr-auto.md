@@ -8,7 +8,7 @@
 
 ## 켜기 — 레포마다 (기본 꺼짐)
 
-팩 `pack.json` 의 레포에 `"autoMerge": true`. 없으면 그 레포 PR 은 지금처럼 사람이 한다. **첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 그 레포 항목을 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
+팩 `pack.json` 의 레포에 `"autoMerge": true`. 없으면 그 레포 PR 은 지금처럼 사람이 한다. **첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 레포마다 켜고 끄거나(아래 머지 전 확인도 같은 곳) `bin/athena pack set-auto-merge <레포> --auto on|off [--confirm on|off]` · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
 ```jsonc
 { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true }

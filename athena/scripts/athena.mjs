@@ -21,6 +21,8 @@
  *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
  *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
+ *   athena pack set-auto-merge <레포> [--auto on|off] [--confirm on|off] [--id <팩>] [--json]
+ *                                                  레포별 PR 자동 리뷰 · 머지(pack.json "autoMerge") · 머지 전에 묻기("autoMergeConfirm") — docs/pr-auto.md "켜기"
  *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--json]
  *                                                  앱이 들고 온 코어 번들을 주 본체로 받아 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
  *                                                  --backup-dirty: 코어 파일을 고쳐 둔 본체는 <데이터>/backups/core-edits/<operationId>/ 에 사본을 두고 교체(결과 backedUp)
@@ -67,6 +69,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, boardPort, dataDir, defaultBackupDir, loadConfig, paths } from './lib/config.mjs'
 import { setDisplayName, setIcon } from './lib/pack-look.mjs'
+import { setAutoMerge } from './lib/pack-merge.mjs'
 import { CONTRACT, deletePack, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
@@ -271,7 +274,7 @@ const restore = () => {
 const asJson = args.includes('--json')
 const report = (step, text) => { if (asJson) console.log(`progress: ${step} ${text}`); else console.log(`· ${text}`) }
 // args 맨 앞은 하위 명령(pack <sub>) — 그 뒤의 위치 인자만(--out 값은 뺀다)
-const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack', '--name'].includes(rest[index - 1])))
+const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsWith('--') && !(index > 0 && ['--out', '--contract', '--to', '--id', '--from', '--panes', '--ack', '--name', '--auto', '--confirm'].includes(rest[index - 1])))
 // 약속 번호 — 스튜디오가 --contract <n>(또는 ATHENA_CONTRACT)로 알린다. 다르면 거부. pack use·new 는 --json 인데 없으면 거부 —
 // 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
@@ -409,6 +412,7 @@ const packCommands = {
     if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-icon <이미지 파일>|--clear [--id <팩>] [--json]')
     return setIcon(paths(ROOT), { id: flag('id'), file: clear ? '' : resolve(positional()[0]), clear })
   },
+  'set-auto-merge': () => setAutoMerge(paths(ROOT), { id: flag('id'), repo: positional()[0], auto: flag('auto'), confirm: flag('confirm') }),
   attach: () => {
     if (!positional()[0]) throw new PackError('usage', '사용: athena pack attach <id> [--json]')
     return attachPack(ROOT, positional()[0], { report, allowEmpty: true })
