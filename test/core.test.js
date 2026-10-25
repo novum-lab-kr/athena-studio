@@ -176,14 +176,12 @@ test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 �
   assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
 
-test('링크 열 곳: 현황판에서 누른 것 · localhost 는 옆 브라우저, 그 밖 http(s) 는 기본 브라우저, 나머지는 막기 · 주소창', () => {
-  // 현황판에서 누른 http(s) 는 모두 옆 브라우저, 그 밖은 localhost 만 옆 브라우저
-  assert.equal(core.openTarget('https://github.com/novum-lab-kr', { fromBoard: true }), 'panel')
+test('링크 열 곳: localhost 는 옆 브라우저, 그 밖 http(s) 는 기본 브라우저, 나머지는 막기 · 주소창', () => {
   assert.equal(core.openTarget('http://localhost:4701/plans/a/plan.html'), 'panel')
   assert.equal(core.openTarget('http://127.0.0.1:3000/'), 'panel')
   assert.equal(core.openTarget('http://[::1]:5173/'), 'panel')
   assert.equal(core.openTarget('https://github.com/novum-lab-kr'), 'external')
-  assert.equal(core.openTarget('file:///etc/passwd', { fromBoard: true }), 'deny')
+  assert.equal(core.openTarget('file:///etc/passwd'), 'deny')
   assert.equal(core.openTarget('javascript:alert(1)'), 'deny')
   assert.equal(core.openTarget('not a url'), 'deny')
   // 주소창
