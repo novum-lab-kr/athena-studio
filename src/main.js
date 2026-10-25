@@ -1125,6 +1125,26 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
   })
 
+  // pane(터미널) 우클릭 — 고른 동작 이름(split-right · split-down · close-pane · null). 동작은 화면이 우클릭한 그 pane 으로 한다.
+  // 단축키는 앱 메뉴(보기 · 파일)에 이미 걸려 있어 여기서는 보여 주기만 한다
+  ctx.paneContextMenu = (point = null) => new Promise((resolve) => {
+    if (!ctx.win) return resolve(null)
+    let chosen = null
+    const pick = (action) => () => {
+      chosen = action
+      resolve(action)
+    }
+    const menu = Menu.buildFromTemplate([
+      { label: say('menu.pane.splitRight'), accelerator: `${TAB_KEY}+D`, registerAccelerator: false, click: pick('split-right') },
+      { label: say('menu.pane.splitDown'), accelerator: `${TAB_KEY}+Shift+D`, registerAccelerator: false, click: pick('split-down') },
+      { type: 'separator' },
+      { label: say('menu.file.closePane'), accelerator: `${TAB_KEY}+W`, registerAccelerator: false, click: pick('close-pane') },
+    ])
+    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
+    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
+    menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
+  })
+
   // 아테나 pane(이 창 아테나 작업 공간의 첫 pane)에 글 한 줄 + Enter — 없으면 false
   async function sendToAthena(text) {
     const state = await daemonCall('state')
@@ -2914,6 +2934,7 @@ handle('explorer:status', (ctx, workspaceId) => guarded(() => ctx.explorerStatus
 handle('explorer:open', (ctx, workspaceId, relative) => guarded(() => ctx.explorerOpen(workspaceId, relative)))
 handle('pane:split', (ctx, paneId, direction) => ctx.daemonCall('pane split', { target: String(paneId), direction: direction === 'down' ? 'down' : 'right' }))
 handle('pane:close', (ctx, paneId) => ctx.closePane(String(paneId)))
+handle('pane:context-menu', (ctx, point) => ctx.paneContextMenu(point && typeof point === 'object' ? point : null))
 listen('pane:focus', (ctx, paneId) => ctx.notifyDaemon('focus', { pane: String(paneId) }))
 listen('pane:input', (ctx, paneId, data) => {
   if (typeof data === 'string') ctx.notifyDaemon('input', { pane: String(paneId), data })
