@@ -51,7 +51,7 @@ html { background: rgba(20, 21, 25, 0.62); }
 .ag i { color: var(--muted); font-size: 10px; font-style: normal; }
 .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .dot.working { background: var(--blue); }
-.dot.blocked { background: var(--warn); }
+.dot.waiting { background: var(--warn); }
 .empty { padding: 4px 0 8px; color: var(--muted); font-size: 12px; }
 .empty button { margin-left: 6px; padding: 1px 8px; border: 1px solid var(--line); border-radius: 5px; background: transparent; cursor: pointer; }
 .empty button:hover { background: var(--line); }
