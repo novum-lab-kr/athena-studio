@@ -19,6 +19,9 @@
 #   --repo-agent <이름>  (아테나 전용) 여러 에이전트가 붙은 계획서에서 이 에이전트의 레포 몫만 올린다.
 #                        FE 세션에서는 보호 훅이 이 옵션을 막는다 — 순서 조율은 아테나가 한다
 #   --yes                실제로 보낸다. 없으면 미리보기만
+#   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
+#                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
+#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · HEAD 가 commit.sh 로 기록된 커밋
 #
 # 확인하는 것 (하나라도 걸리면 아무것도 보내지 않는다)
 #   - <워크트리> 가 등록된 워크트리이고 메인 체크아웃이 아니다 · 브랜치에 붙어 있다 · 보호 브랜치가 아니다
@@ -34,7 +37,7 @@ set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
 git() { command git -c core.quotePath=false "$@"; }
 
-PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""
+PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""; AUTO_PUSH=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan) PLAN="${2:-}"; shift 2 ;;
@@ -44,6 +47,7 @@ while [ $# -gt 0 ]; do
     --body-file) BODY_FILE="${2:-}"; shift 2 ;;
     --no-review-ok) REVIEW_OK=1; shift ;;
     --yes) YES=1; shift ;;
+    --auto-push) AUTO_PUSH=1; shift ;;
     --repo-agent) REPO_AGENT="${2:-}"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "모르는 옵션: $1" >&2; exit 2 ;;
@@ -193,6 +197,55 @@ update_plan(plan, lambda text: re.sub(r'^- .*push 안 함.*$', mark, text, flags
 PYEOF
   [ $? = 0 ] || echo "⚠️ push 는 됐지만 계획서 기록에 실패했다 — Commits 줄의 'push 안 함' 을 손으로 고친다" >&2
   echo "✅ push: $REPO · $HEAD_SHA → origin/$DIRECT (main 직접 · PR 없음)"
+  exit 0
+fi
+
+# ── PR 자동 리뷰 흐름 — 고친 커밋을 그 PR 브랜치에 빨리 감기로만 push 한다(scripts/pr-auto.mjs 가 보낸 지시에서만 · docs/pr-auto.md) ──────────
+if [ $AUTO_PUSH = 1 ]; then
+  # 여기 오기 전에 평소 검사를 모두 지났다 — 워크트리 · 보호 브랜치 · 추적 파일 미커밋 · 레포 하나짜리 · HEAD 가 계획서 Commits 에 commit.sh 로 기록된 커밋(위 [ -n "$RECORDED" ])
+  [ -z "$DIRECT" ] || fail "main 직접 레포는 자동 흐름 대상이 아니다"
+  AUTO_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, repo_entry; print(1 if repo_entry(load(sys.argv[1]), sys.argv[2]).get("autoMerge") is True else 0)' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(autoMerge 확인)"
+  [ "$AUTO_ON" = 1 ] || fail "$REPO 는 자동 머지를 켜지 않았다(pack.json 레포 \"autoMerge\": true) — 사용자가 \"PR 올려줘\" 라고 할 때 미리보기부터"
+  PR_NUMBER="$(cd "$TOP" && gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null)"
+  [ -n "$PR_NUMBER" ] || fail "$BRANCH 의 열린 PR 이 없다 — 자동 흐름은 이미 열린 PR 에만 push 한다"
+  AUTO_STATE="$(python3 - "$ATHENA_DIR/$PLAN" "$REPO" "$PR_NUMBER" <<'PYEOF'
+import re, sys, pathlib
+text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); repo, number = sys.argv[2:4]
+pr_line = re.search(rf'^- PR:\s*\S*/{re.escape(repo)}/pull/{number}\b', text, re.M)
+auto = re.search(rf'^- Auto review:\s*{re.escape(repo)}#{number}\s+@[0-9a-f]+\s+·\s+(.+?)\s+·', text, re.M)
+print('no-pr' if not pr_line else ('ok' if auto and re.match(r'(수정 필요|결정 필요)', auto.group(1)) else 'no-request'))
+PYEOF
+)"
+  case "$AUTO_STATE" in
+    ok) ;;
+    no-pr) fail "PR #$PR_NUMBER 이 계획서 PR 줄에 없다 — 이 계획서의 PR 이 아니다" ;;
+    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
+  esac
+  git -C "$TOP" fetch --quiet origin "$BRANCH" 2>/dev/null || fail "fetch 실패 — origin/$BRANCH 를 확인하지 못했다"
+  git -C "$TOP" merge-base --is-ancestor "origin/$BRANCH" HEAD 2>/dev/null || fail "origin/$BRANCH 에 여기 없는 커밋이 있다 — 빨리 감기가 아니라 올리지 않는다(강제 push 하지 않는다)"
+  [ -n "$(git -C "$TOP" rev-list "origin/$BRANCH"..HEAD)" ] || fail "origin/$BRANCH 에 없는 커밋이 없다 — 올릴 게 없다"
+  LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
+  mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 다시"
+  trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+  [ "$(git -C "$TOP" rev-parse HEAD)" = "$HEAD_FULL" ] || fail "확인하는 동안 HEAD 가 바뀌었다 — 다시"
+  [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 다시"
+  PUSHED="$(git -C "$TOP" log --pretty=%H "origin/$BRANCH".."$HEAD_FULL" | tr '\n' ' ')"
+  # 빨리 감기만 — 원격이 그사이 움직였으면 git 이 거절한다(강제 push 하지 않는다)
+  git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패 — 원격이 그사이 움직였으면 받아서 다시"
+  ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$BRANCH" "$PUSHED" "$PR_NUMBER" <<'PYEOF'
+import os, sys, re
+sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
+plan, branch, pushed, number = sys.argv[1:5]
+shas = set(pushed.split())
+def mark(match):
+    entry = match.group(0)
+    hit = re.search(r'`([0-9a-f]{6,})`', entry)
+    return entry.replace('push 안 함', f'push → PR #{number}(자동 수정)') if hit and any(full.startswith(hit.group(1)) for full in shas) and branch in entry else entry
+update_plan(plan, lambda text: re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M))
+PYEOF
+  [ $? = 0 ] || echo "⚠️ push 는 됐지만 계획서 기록에 실패했다 — Commits 줄의 'push 안 함' 을 손으로 고친다" >&2
+  node "$ATHENA_DIR/scripts/lib/events.mjs" auto.push plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$HEAD_SHA" pr="$PR_NUMBER" >/dev/null 2>&1 || true
+  echo "✅ 자동 수정 push: $REPO · $HEAD_SHA → origin/$BRANCH (PR #$PR_NUMBER) — 자동 리뷰가 새 커밋을 다시 본다(5분 안)"
   exit 0
 fi
 

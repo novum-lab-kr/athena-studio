@@ -57,6 +57,7 @@ import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
+import { autoMergeRepos, needsReview } from '../lib/pr-auto.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -294,9 +295,9 @@ const prInfo = async (repoName, number) => {
   const key = `${repoName}#${number}`
   const cached = prInfoCache.get(key)
   if (cached && (cached.state === 'MERGED' || Date.now() - cached.at < 5 * 60_000)) return cached
-  const out = await run('gh', ['pr', 'view', String(number), '--repo', `${ORG}/${repoName}`, '--json', 'state,baseRefName,mergedAt'], { timeout: 15_000 })
-  let info = { state: 'UNKNOWN', base: '', mergedAt: '' }
-  try { const json = JSON.parse(out ?? ''); info = { state: json.state, base: json.baseRefName, mergedAt: json.mergedAt ?? '' } } catch { /* gh 실패 — 다음에 다시 */ }
+  const out = await run('gh', ['pr', 'view', String(number), '--repo', `${ORG}/${repoName}`, '--json', 'state,baseRefName,mergedAt,headRefOid'], { timeout: 15_000 })
+  let info = { state: 'UNKNOWN', base: '', mergedAt: '', head: '' }
+  try { const json = JSON.parse(out ?? ''); info = { state: json.state, base: json.baseRefName, mergedAt: json.mergedAt ?? '', head: json.headRefOid ?? '' } } catch { /* gh 실패 — 다음에 다시 */ }
   const entry = { ...info, at: Date.now() }
   prInfoCache.set(key, entry)
   return entry
@@ -393,6 +394,41 @@ const autoDonePlans = async (plans) => {
       return { number, ...(await prInfo(repoName, number)) }
     }))).filter((info) => info.state !== 'CLOSED')
     if (infos.length && infos.every((info) => info.state === 'MERGED')) enqueueLearn(plan.id, mergedMark(infos), infos)
+  }))
+}
+
+// PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs · docs/pr-auto.md) — 켠 레포(pack.json "autoMerge": true)의 열린 PR 에
+// 새 HEAD 가 오면(계획서 "- Auto review:" 줄의 sha 와 다르면) 대기열에 넣는다. PR 상태는 prInfo 캐시(5분)라 늦어도 5분 안에 잡는다.
+// 같은 HEAD 는 한 번만(이 현황판이 켜져 있는 동안은 메모리로도 · 다시 켜면 계획서 줄로). 머지 확인을 기다리는 일은 5분마다 처리기가 살아 있게 한다
+const autoReviewQueued = new Set()
+let autoKickAt = 0
+const autoReviewPlans = async (plans) => {
+  let config
+  try { config = loadConfig(ROOT) } catch { return }
+  const repos = autoMergeRepos(config)
+  if (!repos.size) return
+  if (Date.now() - autoKickAt > 5 * 60_000) {
+    autoKickAt = Date.now()
+    spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--kick'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
+  }
+  const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
+  await Promise.all(targets.map(async (plan) => {
+    const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
+    const text = readText(join(ROOT, plan.id)) || ''
+    for (const link of links) {
+      const [repoName, number] = link.split('#')
+      if (!repos.has(repoName)) continue
+      const info = await prInfo(repoName, number)
+      if (info.state !== 'OPEN' || !/^[0-9a-f]{40}$/.test(info.head) || !needsReview(text, repoName, number, info.head)) continue
+      const key = `${plan.id}@${link}@${info.head}`
+      if (autoReviewQueued.has(key)) continue
+      autoReviewQueued.add(key)
+      const child = spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--enqueue', '--plan', plan.id, '--pr', link, '--head', info.head], { cwd: ROOT, detached: true, stdio: 'ignore' })
+      child.on('exit', (code) => { if (code !== 0) autoReviewQueued.delete(key) })
+      child.on('error', () => autoReviewQueued.delete(key))
+      child.unref()
+      console.log(`🤖 자동 리뷰 대기열 ${plan.id} · ${link} @${info.head.slice(0, 7)}`)
+    }
   }))
 }
 
@@ -711,6 +747,7 @@ const collect = async () => {
     .filter(Boolean)
     .filter((issue) => issue.column !== 'done' || now - issue.mtime < DONE_KEEP_DAYS * 86_400_000)
   await autoDonePlans(plans)
+  await autoReviewPlans(plans)
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)
   // 완료로 바뀐 시각 — 사건 기록에 없으면(기록 전에 끝난 것) null, 앱은 그때 mtime 을 쓴다
