@@ -32,11 +32,11 @@ console.log(`기간: ${days ? `최근 ${days}일` : '전체'} · 기록 시작 $
 console.log(`  완료           ${compare(current.done, previous?.done, count)}`)
 console.log(`  평균 소요      ${compare(current.leadMs, previous?.leadMs, formatDuration)}${current.done > current.leadKnown ? ` — 시작 기록 ${current.leadKnown}개 기준` : ''}`)
 console.log(`  작업당 질문    ${compare(current.asksPerDone, previous?.asksPerDone, count)}`)
-console.log(`  평균 응답 대기 ${compare(current.waitMs, previous?.waitMs, formatDuration)}`)
+console.log(`  평균 답 대기   ${compare(current.waitMs, previous?.waitMs, formatDuration)}`)
 console.log(`  검증 실패율    ${compare(current.verifyFailRate, previous?.verifyFailRate, formatRate)} · ${current.verifyRuns}회`)
 console.log(`  리뷰 반려율    ${compare(current.reviewRejectRate, previous?.reviewRejectRate, formatRate)} · ${current.reviewRuns}회`)
 console.log()
-console.log('계획서 | 상태 | 소요 | 질문 | 응답 대기 | 막힘 | 검증 실패/전체 | 리뷰 반려/전체 | 커밋')
+console.log('계획서 | 상태 | 소요 | 질문 | 답 대기 | 막힘 | 검증 실패/전체 | 리뷰 반려/전체 | 커밋')
 for (const plan of summary.plans) {
   console.log([plan.plan, plan.status ?? '—', formatDuration(plan.leadMs), plan.asks, formatDuration(plan.answered ? plan.waitMs : null), plan.blocked,
     `${plan.verify.fails}/${plan.verify.runs}`, `${plan.reviews.rejects}/${plan.reviews.runs}`, plan.commits].join(' | '))

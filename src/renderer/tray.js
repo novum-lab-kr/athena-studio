@@ -7,7 +7,7 @@ const ATTENTION_ROWS = 3
 // 문구는 사전(src/i18n) — main 이 preload 로 넘긴다
 let i18nState = trayPanel.i18n()
 const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
-const STATUS_KEYS = { working: 'tray.status.working', blocked: 'tray.status.blocked', idle: 'tray.status.idle' }
+const STATUS_KEYS = { working: 'tray.status.working', idle: 'tray.status.idle' }
 const COLUMNS = [
   ['issue', 'tray.column.issue'],
   ['plan', 'tray.column.plan'],
@@ -42,7 +42,7 @@ function attention(summary) {
   const items = summary.attention
   if (!items.length) return el('div', 'att clear', say('tray.attention.none'))
   const box = el('div', 'att')
-  box.append(el('b', '', say('tray.attention.count', { count: items.length })))
+  box.append(el('b', '', `${say('tray.attention.count', { count: items.length })}${summary.avgWait}`))
   for (const item of items.slice(0, ATTENTION_ROWS)) {
     const row = el('button', 'it r')
     row.title = item.text
@@ -126,23 +126,10 @@ function kanbanBlock(summary) {
   return box
 }
 
-// 최근 24시간 완료 — 한 시간씩 24칸 막대(마지막 칸이 지금)
+// 최근 24시간 완료 — 한 줄 숫자(추세는 현황판 지표에서)
 function historyBlock(summary) {
   const done = summary.done24 || { hours: [], total: 0 }
-  const box = el('div', 'hist', say('tray.done.title', { count: done.total }))
-  const bars = el('div', 'bars')
-  const peak = Math.max(1, ...done.hours)
-  done.hours.forEach((count, index) => {
-    const bar = el('span', count ? '' : 'zero')
-    bar.style.height = `${Math.round((count / peak) * 100)}%`
-    const to = 23 - index ? say('time.hoursAgo', { n: 23 - index }) : say('time.now')
-    bar.title = say('tray.done.barTitle', { from: say('time.hoursAgo', { n: 24 - index }), to, count })
-    bars.append(bar)
-  })
-  const axis = el('small')
-  axis.append(el('span', '', say('time.hoursAgo', { n: 24 })), el('span', '', say('time.now')))
-  box.append(bars, axis)
-  return box
+  return el('div', 'hist', say('tray.done.title', { count: done.total }))
 }
 
 function render(data) {
@@ -153,8 +140,7 @@ function render(data) {
   conn.title = say('tray.board.checkedAt', { time: clock(data.boardAt) })
 
   const parts = [attention(summary)]
-  const blockedNote = summary.blockedAgents ? say('tray.agents.blocked', { count: summary.blockedAgents }) : ''
-  parts.push(title(say('tray.agents.title'), `${say('tray.agents.summary', { working: summary.counts.working, idle: summary.idleAgents })}${blockedNote}`))
+  parts.push(title(say('tray.agents.title'), say('tray.agents.summary', { working: summary.counts.working, idle: summary.idleAgents })))
   parts.push(agentsBlock(summary))
   parts.push(title(say('tray.usage.title')))
   parts.push(usageBlock(summary))

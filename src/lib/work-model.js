@@ -42,10 +42,12 @@ function workList(cards, requests = [], now = Date.now()) {
     html: plan.html || null,
     agents: Array.isArray(plan.agents) ? plan.agents : [],
     mtime: Number(plan.mtime) || 0,
+    // 완료로 바뀐 시각(현황판 사건 기록) — 없으면(기록 전에 끝난 것) 파일을 마지막으로 고친 시각
+    doneAt: Number(plan.doneAt) || Number(plan.mtime) || 0,
   }))
   const rank = { wait: 0, blocked: 1, work: 2, idle: 3 }
   const doing = items.filter((item) => item.state !== 'done').sort((left, right) => rank[left.state] - rank[right.state] || right.mtime - left.mtime)
-  const done = items.filter((item) => item.state === 'done' && now - item.mtime < RECENT_DONE_MS).sort((left, right) => right.mtime - left.mtime).slice(0, RECENT_DONE_MAX)
+  const done = items.filter((item) => item.state === 'done' && now - item.doneAt < RECENT_DONE_MS).sort((left, right) => right.doneAt - left.doneAt).slice(0, RECENT_DONE_MAX)
   return { doing, done, counts: { doing: doing.length } }
 }
 

@@ -78,7 +78,3 @@ html { background: rgba(20, 21, 25, 0.62); }
 .kb small { color: var(--muted); font-size: 10px; }
 /* 최근 24시간 완료 — 한 시간씩 24칸 */
 .hist { padding: 6px 0 2px; border-top: 1px solid var(--line); font-size: 11px; }
-.bars { display: flex; align-items: flex-end; gap: 2px; height: 32px; margin: 5px 0 2px; }
-.bars span { flex: 1; min-height: 1px; border-radius: 1px; background: var(--blue); opacity: 0.8; }
-.bars span.zero { background: rgba(255, 255, 255, 0.12); opacity: 1; }
-.hist small { display: flex; justify-content: space-between; color: var(--muted); font-size: 10px; }

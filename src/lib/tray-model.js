@@ -5,7 +5,6 @@ const KOREAN = require('../i18n/ko.json')
 
 // 문구는 사전(src/i18n)에서 — main 이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
 const koreanSay = i18n.translator(KOREAN, KOREAN)
-const BLOCKED_HOLD_MS = 8000 // 막힘이 이만큼 이어져야 알린다(잠깐 묻고 바로 넘어가는 것은 빼고)
 const IDLE_HOLD_MS = 10000 // 일하다 멈춘 뒤 이만큼 조용해야 "응답이 끝났어요"
 
 // pane 이름 — delegate 가 붙인 '🤖 에이전트 · 브랜치' 이름표가 있으면 그것, 없으면 agent
@@ -41,30 +40,31 @@ function columnCounts(cards) {
 }
 
 // 메뉴 · 아이콘 제목에 쓸 요약
-function summarize({ panes = [], workspaces = [], cards = [], requests = [], usage = [], boardUp = false, now = Date.now(), say = koreanSay } = {}) {
+function summarize({ panes = [], workspaces = [], cards = [], requests = [], usage = [], boardUp = false, waitMs = null, now = Date.now(), say = koreanSay } = {}) {
   const names = new Map(workspaces.map((workspace) => [workspace.id, workspace.label]))
   const agents = panes
     .filter((pane) => pane && pane.agent)
     .map((pane) => ({ id: pane.id, name: agentName(pane), workspace: names.get(pane.workspace_id) || '', status: pane.agent_status || 'idle' }))
-  // 일하는 것 · 막힌 것 먼저
-  const rank = { blocked: 0, working: 1 }
-  agents.sort((left, right) => (rank[left.status] ?? 2) - (rank[right.status] ?? 2))
+  // 일하는 것 먼저 — pane 상태는 데몬이 작업 중 · 대기 · 모름으로만 정한다(입력 대기는 알아내지 않는다)
+  agents.sort((left, right) => (left.status === 'working' ? 0 : 1) - (right.status === 'working' ? 0 : 1))
   const plans = liveCards(cards)
   const blockedCards = plans.filter((card) => card.status === 'blocked')
   const reviewCards = plans.filter((card) => card.status === 'ready_for_review')
-  // 확인 필요 = 사람에게 묻는 요청(아직 답하지 않은 것)만 — 막힌 에이전트 · 리뷰 상태는 에이전트 줄 · 칸반 숫자에서만 보인다(상태 글자로 추측하지 않는다)
+  // 확인 필요 = 사람에게 묻는 요청(아직 답하지 않은 것)만 — 막힌 계획서 · 리뷰 상태는 칸반 숫자에서만 보인다(상태 글자로 추측하지 않는다)
   const waiting = (Array.isArray(requests) ? requests : []).filter((request) => request && request.state === 'open')
   const attention = waiting.map((request) => ({ kind: 'request', mark: '?', id: request.id, requestKind: request.kind, text: request.title }))
   const counts = {
     working: agents.filter((agent) => agent.status === 'working').length,
-    blocked: agents.filter((agent) => agent.status === 'blocked').length + blockedCards.length,
+    blocked: blockedCards.length,
     review: reviewCards.length,
     asking: waiting.length,
   }
   const columns = columnCounts(cards)
-  const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'blocked').length
+  const idle = agents.filter((agent) => agent.status !== 'working').length
   return {
     counts,
+    // 지난 7일 평균 답 대기(현황판 지표) — 확인 필요 머리줄에 붙인다. 현황판이 꺼졌거나 기록이 없으면 ''
+    avgWait: boardUp && typeof waitMs === 'number' ? say('tray.attention.avgWait', { time: waitText(waitMs, say) }) : '',
     // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
     attention,
     agents,
@@ -72,7 +72,6 @@ function summarize({ panes = [], workspaces = [], cards = [], requests = [], usa
     done24: doneByHour(cards, now),
     columns,
     idleAgents: idle,
-    blockedAgents: agents.filter((agent) => agent.status === 'blocked').length,
     boardUp,
   }
 }
@@ -94,13 +93,23 @@ function resetClock(resetsAt, now = Date.now(), say = koreanSay) {
   return `${say(`time.weekday.${date.getDay()}`)} ${time}`
 }
 
-// 최근 24시간 완료 — 완료 칸 카드를 마지막으로 바뀐 시각(mtime)으로 한 시간씩 24칸(마지막 칸이 지금)
+// 걸린 시간 짧게 — 1시간 안은 분, 2일 안은 시간(소수 한 자리), 그 뒤는 일
+function waitText(ms, say = koreanSay) {
+  if (ms < HOUR_MS) return say('time.minutes', { n: Math.max(1, Math.round(ms / 60000)) })
+  if (ms < 48 * HOUR_MS) return say('time.hours', { n: Math.round(ms / HOUR_MS * 10) / 10 })
+  return say('time.days', { n: Math.round(ms / (24 * HOUR_MS) * 10) / 10 })
+}
+
+// 최근 24시간 완료 — 완료 칸 카드를 완료로 바뀐 시각(doneAt · 이슈는 붙은 계획서 것)으로 한 시간씩 24칸(마지막 칸이 지금).
+// doneAt 이 없으면(사건 기록 전에 끝난 것) 마지막으로 바뀐 시각(mtime)
 function doneByHour(cards, now = Date.now()) {
   const hours = new Array(24).fill(0)
   let total = 0
   for (const card of Array.isArray(cards) ? cards : []) {
-    if (!card || card.archived || card.column !== 'done' || typeof card.mtime !== 'number') continue
-    const age = now - card.mtime
+    if (!card || card.archived || card.column !== 'done') continue
+    const at = Number(card.doneAt || card.linkedPlan?.doneAt) || card.mtime
+    if (typeof at !== 'number') continue
+    const age = now - at
     if (age < 0 || age >= 24 * HOUR_MS) continue
     hours[23 - Math.floor(age / HOUR_MS)] += 1
     total += 1
@@ -159,13 +168,10 @@ class Notifier {
       const name = agentName(pane)
       const where = names.get(pane.workspace_id)
       const who = where ? `${name} · ${where}` : name
-      if (status === 'blocked' && now - before.since >= BLOCKED_HOLD_MS) {
-        found.push({ kind: 'blocked', title: say('notify.attention.title'), body: say('notify.attention.body', { who }), target: { pane: pane.id } })
-        before.notified = true
-      } else if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
+      if (status === 'idle' && before.was === 'working' && now - before.since >= IDLE_HOLD_MS) {
         found.push({ kind: 'idle', title: say('notify.idle.title'), body: say('notify.idle.body', { who }), target: { pane: pane.id } })
         before.notified = true
-      } else if (status !== 'blocked' && status !== 'idle') {
+      } else if (status !== 'idle') {
         before.notified = true
       }
     }
@@ -200,4 +206,4 @@ function bundle(found, say = koreanSay) {
   )
 }
 
-module.exports = { BLOCKED_HOLD_MS, IDLE_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, Notifier, bundle }
+module.exports = { IDLE_HOLD_MS, agentName, liveCards, summarize, usageItems, resetClock, doneByHour, waitText, Notifier, bundle }

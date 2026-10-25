@@ -44,7 +44,7 @@ import { execFile, execFileSync, spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
 import { answerRequest, listRequests } from '../lib/requests.mjs'
-import { observePlanStatus, readEvents } from '../lib/events.mjs'
+import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { summarize } from '../lib/metrics.mjs'
 import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
@@ -56,6 +56,7 @@ import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
+import { isPackBody } from '../lib/bodies.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -712,6 +713,9 @@ const collect = async () => {
   await autoDonePlans(plans)
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)
+  // 완료로 바뀐 시각 — 사건 기록에 없으면(기록 전에 끝난 것) null, 앱은 그때 mtime 을 쓴다
+  const done = doneTimes(ROOT)
+  for (const plan of plans) plan.doneAt = plan.status === 'done' ? done.get(plan.id) ?? null : null
   const [{ available, panes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
   await Promise.all([...plans, ...issues].map(async (card) => { card.owner = await ownerOf(card.owner, join(ROOT, card.id)) }))
   const subagents = readSubagents()
@@ -746,18 +750,20 @@ const collect = async () => {
     // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 위해 만든 것(Issue:)일 때만 합친다
     if (issue.status === 'open' && plan.issue !== issue.id) continue
     merged.add(plan.id)
-    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents }
+    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents }
     // 계획서가 리뷰 단계면 이슈 카드도 리뷰 칸에
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'
     if (plan.working && issue.column !== 'done') issue.column = 'doing'
     issue.linkedPlan.working = plan.working
     if (plan.status === 'blocked') issue.blocked = plan.blocked || '막힘'
   }
-  return { header: readHeader(), screen: available, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
+  return { header: readHeader(), screen: available, maintenance: MAINTENANCE, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
 }
 
 // ── 서버 ────────────────────────────────────────────────────────────────
 let snapshot = null
+// [정비] 탭(아테나 자체 작업)은 코어를 고치는 주 본체 · 개발 체크아웃에서만 — 팩 본체(사용자가 일하는 곳)에서는 그 카드를 서비스 칸반에 합친다
+const MAINTENANCE = !isPackBody(ROOT)
 let snapshotHash = ''
 let updatedAt = 0
 const clients = new Set()

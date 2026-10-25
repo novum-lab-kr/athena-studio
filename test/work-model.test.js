@@ -38,6 +38,12 @@ test('목록: 최근 끝난 것은 24시간 안 · 최근 순 · 보관한 것�
   const result = work.workList(cards, [], NOW)
   assert.deepEqual(result.done.map((item) => item.id), ['plans/task/new.md'])
   assert.equal(result.doing.length, 0)
+  // 완료로 바뀐 시각(doneAt)이 있으면 그것으로 — 끝난 뒤 계획서를 고쳐 mtime 이 지금이어도 다시 "방금 완료" 가 아니다
+  const edited = work.workList([
+    plan('plans/task/edited.md', { status: 'done', column: 'done', mtime: NOW - 1000, doneAt: NOW - 30 * 3600000 }),
+    plan('plans/task/fresh.md', { status: 'done', column: 'done', mtime: NOW - 26 * 3600000, doneAt: NOW - 3600000 }),
+  ], [], NOW)
+  assert.deepEqual(edited.done.map((item) => item.id), ['plans/task/fresh.md'])
 })
 
 test('목록: 이슈에 붙은 계획서는 이슈 제목 · 계획서 id 로', () => {

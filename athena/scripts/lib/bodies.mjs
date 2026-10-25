@@ -40,6 +40,11 @@ const validId = (id) => /^[a-z0-9][a-z0-9-]*$/.test(id ?? '')
 // 주 본체 — 같은 저장소 체크아웃 목록의 첫째(git worktree list 의 main worktree)
 export const mainBody = (root) => gitBodies(root)[0] ?? null
 const isMainBody = (main, body) => Boolean(main) && realOr(main) === realOr(body)
+// 팩 본체인가 — 주 본체가 따로 있고 이 본체가 그것이 아니다(팩 본체는 코어를 고치지 않는다 — 현황판 [정비] 탭을 숨긴다)
+export const isPackBody = (root) => {
+  const main = mainBody(root)
+  return Boolean(main) && !isMainBody(main, root)
+}
 export const isDirty = (body) => (gitTry(body, ['status', '--porcelain', '--untracked-files=no']) ?? 'x') !== ''
 
 // 대상 커밋의 코어가 다루는 데이터 형식 범위 — 그 커밋의 config.mjs 의 DATA_FORMATS 줄(없으면 [1, 1] — 이 줄이 생기기 전 코어)

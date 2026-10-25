@@ -248,14 +248,6 @@
   .metric-tile .delta b.bad { color: var(--bad); }
   .metric-tile .sub { font-size: 11.5px; color: var(--muted); }
   .metric-block { margin-bottom: 16px; }
-  .metric-attention { display: grid; gap: 6px; }
-  .metric-attention .row { display: flex; align-items: center; gap: 10px; padding: 9px 12px; border-radius: 10px; background: color-mix(in srgb, var(--warn) 9%, var(--panel)); border: 1px solid color-mix(in srgb, var(--warn) 35%, transparent); font-size: 13px; }
-  .metric-attention .row.blocked { background: color-mix(in srgb, var(--bad) 7%, var(--panel)); border-color: color-mix(in srgb, var(--bad) 35%, transparent); }
-  .metric-attention .why { font-weight: 650; white-space: nowrap; }
-  .metric-attention .row .why { color: var(--warn); }
-  .metric-attention .row.blocked .why { color: var(--bad); }
-  .metric-attention .title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .metric-attention .since { color: var(--muted); font-size: 12px; white-space: nowrap; }
   .metric-plans { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .metric-plan { display: grid; grid-template-columns: minmax(0, 1.6fr) 84px minmax(120px, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); }
   .metric-plan:first-child { border-top: 0; }
@@ -615,12 +607,15 @@
     ['doing', '진행 중', 'var(--col-doing)'],
     ['done', '완료', 'var(--col-done)'],
   ];
+  // 정비 칸에 둘 카드인가 — 팩 본체 현황판(state.maintenance false)이면 아테나 자체 작업도 서비스 칸반에
+  let maintenance = true;
+  const inMaintenance = (card) => maintenance && card.scope === 'hermes';
   const laneColumn = (card) => {
-    if (card.scope !== 'hermes') return card.column;
+    if (!inMaintenance(card)) return card.column;
     if (card.column === 'done') return 'done';
     return card.column === 'issue' || card.column === 'plan' ? 'issue' : 'doing';
   };
-  const STATUS_LABEL = { working: '작업 중', idle: '대기', blocked: '입력 대기', done: '끝남', unknown: '?' };
+  const STATUS_LABEL = { working: '작업 중', idle: '대기', done: '끝남', unknown: '?' };
   const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
   const ago = (sec) => (sec < 60 ? `${sec}초 전` : sec < 3600 ? `${Math.round(sec / 60)}분 전` : `${Math.round(sec / 3600)}시간 전`);
   // 카드 시각 — 오늘이면 시:분, 올해면 월/일 시:분, 그 전이면 연/월/일
@@ -1080,20 +1075,13 @@
       ]),
       group('개입', [
         tile('작업당 질문', current.asksPerDone, previous?.asksPerDone, metricCount),
-        tile('평균 응답 대기', current.waitMs, previous?.waitMs, metricDuration),
+        tile('평균 답 대기', current.waitMs, previous?.waitMs, metricDuration),
       ]),
       group('검증', [
         tile('검증 실패율', current.verifyFailRate, previous?.verifyFailRate, metricRate, { rate: true }, `${current.verifyRuns}회`),
         tile('리뷰 반려율', current.reviewRejectRate, previous?.reviewRejectRate, metricRate, { rate: true }, `${current.reviewRuns}회`),
       ]),
     ].join('');
-    // 확인 필요 — 응답 대기 중인 작업 · 막힌 작업
-    const now = Date.now();
-    const attention = summary.plans.filter((plan) => plan.waiting > 0 || plan.status === 'blocked').map((plan) => {
-      const label = plan.title || plan.plan;
-      if (plan.waiting > 0) return `<div class="row"><span class="why">응답 대기${plan.waiting > 1 ? ` ${plan.waiting}` : ''}</span><span class="title">${esc(label)}</span><span class="since">${esc(metricDuration(now - plan.waitingSince))}</span></div>`;
-      return `<div class="row blocked"><span class="why">막힘</span><span class="title">${esc(label)}</span></div>`;
-    }).join('');
     // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것 대비 막대로
     const longest = Math.max(0, ...summary.plans.map((plan) => plan.leadMs ?? 0));
     const chip = (text, warn = false) => `<span class="chip${warn ? ' warn' : ''}">${esc(text)}</span>`;
@@ -1103,7 +1091,7 @@
         : `<div class="metric-lead none">${plan.status === 'done' ? '시작 기록 없음' : '—'}</div>`;
       const chips = [
         plan.asks ? chip(`질문 ${plan.asks}`) : '',
-        plan.answered ? chip(`응답 대기 ${metricDuration(plan.waitMs)}`) : '',
+        plan.answered ? chip(`답 대기 ${metricDuration(plan.waitMs)}`) : '',
         plan.blocked ? chip(`막힘 ${plan.blocked}`, true) : '',
         plan.verify.runs ? chip(plan.verify.fails ? `검증 실패 ${plan.verify.fails}/${plan.verify.runs}` : `검증 통과 ${plan.verify.runs}`, plan.verify.fails > 0) : '',
         plan.reviews.runs ? chip(plan.reviews.rejects ? `리뷰 반려 ${plan.reviews.rejects}/${plan.reviews.runs}` : '리뷰 승인', plan.reviews.rejects > 0) : '',
@@ -1114,7 +1102,6 @@
         + `<div class="metric-chips">${chips || '<span class="quiet">기록 없음</span>'}</div></div>`;
     }).join('');
     box.innerHTML = `<div class="metric-groups">${groups}</div>`
-      + (attention ? `<div class="metric-block"><h3>확인 필요</h3><div class="metric-attention">${attention}</div></div>` : '')
       + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
       + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
       + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
@@ -1997,14 +1984,14 @@
 
   const agentCard = (item) => {
     const status = item.status || 'unknown';
-    const dotClass = status === 'working' ? 'dot on' : status === 'blocked' ? 'dot off' : 'dot';
+    const dotClass = status === 'working' ? 'dot on' : 'dot';
     const where = item.kind === 'pane'
       ? `${esc(item.id)} · ${esc(item.cwd)}${item.branch ? ` · 🌿 ${esc(item.branch)}` : ''}`
       : `백그라운드 · ${ago(item.ageSec)}`;
     const detail = item.kind === 'pane' ? item.title : item.lastTool || item.title;
     return `<div class="agent">
       <div class="row"><span class="${dotClass}"></span><span class="name">${esc(item.agent)}</span>
-        <span class="pill ${status === 'working' ? 'working' : status === 'blocked' ? 'blocked' : ''}">${STATUS_LABEL[status] || esc(status)}</span>
+        <span class="pill ${status === 'working' ? 'working' : ''}">${STATUS_LABEL[status] || esc(status)}</span>
         ${item.tool ? `<span class="pill">${esc(item.tool)}</span>` : ''}</div>
       <div class="sub">${where}</div>
       ${detail ? `<div class="sub" title="${esc(detail)}">${esc(detail)}</div>` : ''}
@@ -2110,8 +2097,11 @@
     agentsBox.scrollLeft = agentsScroll;
 
     const cards = state.cards || [];
+    maintenance = state.maintenance !== false;
+    document.getElementById('tab-hermes').hidden = !maintenance;
+    if (!maintenance && !document.getElementById('view-hermes').hidden) showTab('now');
     const drawLane = (lane, columns) => columns.map(([key, label, color]) => {
-      const inColumn = cards.filter((card) => (card.scope === 'hermes') === (lane === 'hermes') && laneColumn(card) === key).sort((left, right) => right.mtime - left.mtime);
+      const inColumn = cards.filter((card) => inMaintenance(card) === (lane === 'hermes') && laneColumn(card) === key).sort((left, right) => right.mtime - left.mtime);
       const body = inColumn.map((card) => (card.kind === 'plan' ? planCard(card, state.panes || []) : issueCard(card, state.panes || []))).join('') || '<div class="empty">비어 있어요</div>';
       return `<div class="col" data-col="${key}" data-lane="${lane}"><div class="col-head"><span class="bar" style="background:${color}"></span>${label}<span class="count">${inColumn.length}</span></div>${body}</div>`;
     }).join('');
@@ -2209,7 +2199,7 @@
         const id = event.dataTransfer.getData('text/plain');
         const card = findCard(id);
         // 서비스 칸반 ↔ 아테나 칸 사이로는 옮기지 않는다(repo·Agent 로 정해진다)
-        if (!card || (card.scope === 'hermes') !== (column.dataset.lane === 'hermes') || laneColumn(card) === column.dataset.col) return;
+        if (!card || inMaintenance(card) !== (column.dataset.lane === 'hermes') || laneColumn(card) === column.dataset.col) return;
         // 아테나 칸 '할 일' 에 계획서를 놓으면 planned
         moveTo(id, card.kind === 'plan' && column.dataset.col === 'issue' ? 'plan' : column.dataset.col);
       };

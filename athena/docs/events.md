@@ -43,7 +43,7 @@ node scripts/metrics.mjs --days 30    # --all 전체 · --json
 | 완료 | 그 기간에 done 이 된 계획서(done 뒤 다시 열렸으면 빼고) |
 | 평균 소요 | 처음 본 때(`plan.status` from null) → done. 기록 전에 시작한 계획서는 뺀다(칸에 "시작 기록 N개 기준") |
 | 작업당 질문 | 완료한 작업마다 요청이 open 이 된 횟수의 평균 — 열린 채로 고친 것은 세지 않는다 |
-| 평균 응답 대기 | 그 기간에 답이 온 요청의 open → answered · delivered |
+| 평균 답 대기 | 그 기간에 답이 온 요청의 open → answered · delivered |
 | 검증 실패율 · 리뷰 반려율 | 그 기간의 `verify` 중 실패 · `review` 중 수정 필요 |
 
 계획서 표는 그 기간에 무슨 사건이든 있었던 계획서다(최근 것부터). 검증은 같은 레포 · 브랜치의 커밋 · 리뷰가 있어야 계획서에 붙는다.

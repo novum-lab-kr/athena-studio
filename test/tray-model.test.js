@@ -5,24 +5,31 @@ const tray = require('../src/lib/tray-model')
 const pane = (id, status, label = null, workspace = 'w1') => ({ id, agent: 'claude', agent_status: status, label, workspace_id: workspace })
 const card = (id, status, title = id, extra = {}) => ({ kind: 'plan', id, status, title, column: { ready_for_review: 'review', done: 'done' }[status] || 'doing', html: null, archived: false, ...extra })
 
-test('요약: 확인 필요(막힘 · 리뷰 대기) · 에이전트(막힘 먼저 · 자르지 않음) · 사용량 · 칸반', () => {
+test('요약: 확인 필요(요청만) · 막힘은 계획서만 · 에이전트(작업 중 먼저 · 자르지 않음) · 사용량 · 칸반', () => {
   const summary = tray.summarize({
-    panes: [pane('p1', 'working', '🤖 web-fe · feature/x'), pane('p2', 'blocked'), pane('p3', 'idle'), { id: 'p4', agent: null }],
+    panes: [pane('p3', 'idle'), pane('p1', 'working', '🤖 web-fe · feature/x'), pane('p2', 'idle'), { id: 'p4', agent: null }],
     workspaces: [{ id: 'w1', label: 'athena' }],
     cards: [card('a', 'blocked', '로그인'), card('b', 'ready_for_review', '버튼'), card('c', 'done'), card('d', 'in_progress', 'x', { archived: true })],
     usage: [{ id: 'codex', label: 'Codex', windows: [{ label: '주간', percent: 41.6, resetsAt: '2026-10-18T09:30:00' }] }, { id: 'claude', label: 'Claude', windows: [] }],
     boardUp: true,
     now: new Date('2026-10-18T08:00:00').getTime(),
   })
-  assert.deepEqual(summary.counts, { working: 1, blocked: 2, review: 1, asking: 0 })
-  // 확인 필요는 요청만 — 막힌 에이전트 · 막힌 계획서 · 리뷰 대기는 넣지 않는다
+  // 막힘 = 계획서 Status blocked 만(pane 의 입력 대기는 데몬이 알아내지 않는다)
+  assert.deepEqual(summary.counts, { working: 1, blocked: 1, review: 1, asking: 0 })
+  // 확인 필요는 요청만 — 막힌 계획서 · 리뷰 대기는 넣지 않는다
   assert.deepEqual(summary.attention, [])
   const asked = tray.summarize({ requests: [{ id: 'r1', kind: 'question', state: 'open', title: '필드가 있나요?' }, { id: 'r2', kind: 'decision', state: 'answered', title: '전달 전' }] })
   assert.deepEqual(asked.attention, [{ kind: 'request', mark: '?', id: 'r1', requestKind: 'question', text: '필드가 있나요?' }])
   assert.equal(asked.counts.asking, 1)
-  assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['claude', 'athena', 'blocked'], ['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle']])
+  assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle'], ['claude', 'athena', 'idle']])
   assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
-  assert.deepEqual([summary.idleAgents, summary.blockedAgents], [1, 1])
+  assert.equal(summary.idleAgents, 2)
+  // 평균 답 대기 — 현황판이 떠 있고 값이 있을 때만 확인 필요 머리줄에
+  assert.equal(summary.avgWait, '')
+  assert.equal(tray.summarize({ boardUp: true, waitMs: 3.2 * 3600000 }).avgWait, ' · 평균 대기 3.2시간')
+  assert.equal(tray.summarize({ boardUp: false, waitMs: 3600000 }).avgWait, '')
+  assert.deepEqual([tray.waitText(20 * 60000), tray.waitText(30 * 1000), tray.waitText(72 * 3600000)], ['20분', '1분', '3일'])
+  assert.equal('blockedAgents' in summary, false)
   assert.equal(summary.columns.done, 1)
   // 많아도 자르지 않는다(패널이 칸 안에서 스크롤)
   assert.equal(tray.summarize({ panes: Array.from({ length: 8 }, (_, index) => pane(`p${index}`, 'working')) }).agents.length, 8)
@@ -34,21 +41,20 @@ test('요약: 확인 필요(막힘 · 리뷰 대기) · 에이전트(막힘 먼�
   assert.equal(counted.counts.review, 1)
 })
 
-test('알림: 처음 상태는 알리지 않고 · 막힘은 이어질 때 한 번 · 일하다 멈춤 · 카드 리뷰·완료 · 여러 건은 묶음', () => {
+test('알림: 처음 상태는 알리지 않고 · 일하다 멈춤 · 카드 리뷰·완료 · 여러 건은 묶음', () => {
   const notifier = new tray.Notifier()
   const names = new Map([['w1', 'athena']])
-  // 켤 때 이미 막혀 있던 것은 알리지 않는다
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 0), [])
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 60000), [])
+  // 켤 때 이미 쉬던 것은 알리지 않는다
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 0), [])
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'working')], cards: [card('a', 'in_progress', '로그인')], names }, 60000), [])
   // p2 가 멈춤 → 10초 지나야 한 번
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'idle')], names }, 61000), [])
-  const idle = notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'idle')], names }, 61000 + tray.IDLE_HOLD_MS)
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000), [])
+  const idle = notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 61000 + tray.IDLE_HOLD_MS)
   assert.deepEqual(idle, [{ kind: 'idle', title: '응답이 끝났어요', body: 'claude · athena — 결과를 확인해 주세요', target: { pane: 'p2' } }])
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'idle')], names }, 90000), [])
-  // 새로 막힘 → 잠깐이면 안 알리고, 이어지면 한 번
-  notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'blocked')], names }, 100000)
-  assert.deepEqual(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'blocked')], names }, 100000 + 3000), [])
-  assert.equal(notifier.update({ panes: [pane('p1', 'blocked'), pane('p2', 'blocked')], names }, 100000 + tray.BLOCKED_HOLD_MS)[0].kind, 'blocked')
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'idle'), pane('p2', 'idle')], names }, 90000), [])
+  // 모르는 상태(unknown)로 바뀌어도 알리지 않는다 — 막힘 알림은 없다
+  notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 100000)
+  assert.deepEqual(notifier.update({ panes: [pane('p1', 'unknown'), pane('p2', 'idle')], names }, 100000 + 60000), [])
   // 카드 — 리뷰 대기 · 완료(카드 목록이 같이 와야 비교한다)
   const cards = notifier.update({ panes: [], cards: [card('a', 'ready_for_review', '로그인'), card('b', 'done', '새 카드')] }, 200000)
   assert.deepEqual(cards.map((item) => item.kind), ['review'])
@@ -71,7 +77,7 @@ test('사용량 리셋 시각: 오늘은 시각만 · 내일 · 그 뒤는 요�
   assert.equal(tray.resetClock('읽을 수 없음', now), '')
 })
 
-test('최근 24시간 완료: 완료 칸 카드를 mtime 으로 한 시간씩 · 마지막 칸이 지금 · 24시간 밖 · 보관 · 다른 칸은 빼고', () => {
+test('최근 24시간 완료: 완료로 바뀐 시각(doneAt · 없으면 mtime)으로 한 시간씩 · 마지막 칸이 지금 · 24시간 밖 · 보관 · 다른 칸은 빼고', () => {
   const now = new Date('2026-10-18T12:00:00').getTime()
   const hour = 3600000
   const done = (mtime, extra = {}) => ({ kind: 'plan', id: String(mtime), column: 'done', mtime, ...extra })
@@ -80,6 +86,10 @@ test('최근 24시간 완료: 완료 칸 카드를 mtime 으로 한 시간씩 ·
   assert.equal(result.hours.length, 24)
   assert.equal(result.hours[23], 2)
   assert.equal(result.hours[18], 1)
+  // 완료 뒤에 계획서를 고쳐 mtime 이 지금이어도 doneAt(30시간 전)이 먼저 — 다시 "방금 완료" 로 세지 않는다
+  const edited = tray.doneByHour([done(now - 60000, { doneAt: now - 30 * hour }), { kind: 'issue', id: 'i', column: 'done', mtime: now - 60000, linkedPlan: { doneAt: now - 2 * hour } }], now)
+  assert.equal(edited.total, 1)
+  assert.equal(edited.hours[21], 1)
 })
 
 test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 않는다 · 못 읽으면 기억 그대로', () => {

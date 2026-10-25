@@ -1614,8 +1614,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
     return null
   }
-  // 현황판 페이지(QA · 학습 · 아카이브 · 전체 칸반) — 현황판 탭 이름을 주소 끝 #<탭> 으로
-  const BOARD_SECTIONS = ['now', 'qa', 'learn', 'history']
+  // 현황판 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 현황판 탭 이름을 주소 끝 #<탭> 으로
+  const BOARD_SECTIONS = ['now', 'qa', 'learn', 'metrics', 'history']
   ctx.openBoardSection = async (section) => {
     const result = await ctx.ensureBoard()
     if (!result.ok) return ctx.openBoardExternal()
@@ -2335,7 +2335,7 @@ function startPanesPolling() {
 // 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
 const TRAY_ICON_DIR = path.join(__dirname, 'renderer', 'assets', 'logo')
-const trayState = { ctx: null, panes: [], workspaces: [], focused: null, boardOkAt: 0, cards: null, usage: [], boardUp: false, boardAt: 0, pausedUntil: 0, polling: false }
+const trayState = { ctx: null, panes: [], workspaces: [], focused: null, boardOkAt: 0, cards: null, usage: [], waitMs: null, metricsAt: 0, boardUp: false, boardAt: 0, pausedUntil: 0, polling: false }
 let trayNotifier = new trayModel.Notifier()
 let tray = null
 let trayWindow = null
@@ -2518,10 +2518,18 @@ async function pollTray() {
         trayState.cards = board.cards || []
         trayState.usage = (board.header && board.header.usage) || []
         cards = trayState.cards
+        // 평균 답 대기(지난 7일 · 현황판 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
+        if (Date.now() - trayState.metricsAt > 5 * 60000) {
+          trayState.metricsAt = Date.now()
+          const metrics = await fetchBoardJson(ctx.boardPortNow(), '/api/metrics?days=7')
+          trayState.waitMs = metrics && metrics.current && typeof metrics.current.waitMs === 'number' ? metrics.current.waitMs : null
+        }
       } else {
-        // 꺼졌으면 예전 카드 · 사용량을 지금 값처럼 보이지 않게
+        // 꺼졌으면 예전 카드 · 사용량 · 평균 대기를 지금 값처럼 보이지 않게
         trayState.cards = null
         trayState.usage = []
+        trayState.waitMs = null
+        trayState.metricsAt = 0
       }
     }
     refreshTray()
@@ -2582,7 +2590,7 @@ function fetchBoardJson(port, pathName) {
 function traySummary() {
   const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : null
   const requests = ctx ? ctx.requestsNow().requests : []
-  return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], requests, usage: trayState.usage, boardUp: trayState.boardUp, say })
+  return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], requests, usage: trayState.usage, boardUp: trayState.boardUp, waitMs: trayState.waitMs, say })
 }
 
 function refreshTray() {

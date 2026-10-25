@@ -7,7 +7,7 @@
 //
 //   node:  logEvent(root, 'commit', { plan, repo, sha })
 //   셸:    node scripts/lib/events.mjs <종류> 키=값 …     (값 true · false 는 참거짓으로)
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs'
+import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { ATHENA_ROOT, paths } from './config.mjs'
@@ -38,6 +38,28 @@ export const readEvents = (root) => {
     })
   } catch {
     return []
+  }
+}
+
+// 계획서마다 완료로 바뀐 시각(ms) — 마지막 plan.status 가 done 일 때만(done 뒤 다시 열렸으면 없음).
+// 현황판이 카드에 doneAt 으로 실어 앱(트레이 · [작업] 팝업)이 같은 완료 기준을 쓴다. 파일이 그대로면 다시 읽지 않는다
+let doneCache = { key: '', times: new Map() }
+export const doneTimes = (root) => {
+  try {
+    const file = eventsFile(root)
+    const stat = statSync(file)
+    const key = `${file}:${stat.size}:${stat.mtimeMs}`
+    if (doneCache.key === key) return doneCache.times
+    const times = new Map()
+    for (const event of readEvents(root)) {
+      if (event.type !== 'plan.status' || !event.plan) continue
+      if (event.to === 'done') times.set(event.plan, Date.parse(event.at) || null)
+      else times.delete(event.plan)
+    }
+    doneCache = { key, times }
+    return times
+  } catch {
+    return new Map()
   }
 }
 

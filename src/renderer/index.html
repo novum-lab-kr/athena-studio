@@ -113,11 +113,13 @@
   </div>
   <!-- 현황판 페이지 메뉴 -->
   <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="현황판" data-i18n-aria-label="board.title">
+    <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">칸반</b><small data-i18n="board.menu.kanbanNote">계획서 · 이슈 · 에이전트</small></button>
+    <div class="board-menu-sep" role="separator"></div>
     <button class="board-menu-item" type="button" role="menuitem" data-section="qa"><b data-i18n="board.menu.qa">QA</b><small data-i18n="board.menu.qaNote">검수 실행 · 화면 비교</small></button>
     <button class="board-menu-item" type="button" role="menuitem" data-section="learn"><b data-i18n="board.menu.learn">학습</b><small data-i18n="board.menu.learnNote">에이전트가 배운 것 넣기 · 버리기</small></button>
-    <button class="board-menu-item" type="button" role="menuitem" data-section="history"><b data-i18n="board.menu.history">아카이브</b><small data-i18n="board.menu.historyNote">끝난 일 찾기</small></button>
     <div class="board-menu-sep" role="separator"></div>
-    <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">전체 칸반</b><small data-i18n="board.menu.kanbanNote">예전 현황판 화면</small></button>
+    <button class="board-menu-item" type="button" role="menuitem" data-section="metrics"><b data-i18n="board.menu.metrics">지표</b><small data-i18n="board.menu.metricsNote">완료 · 소요 · 질문 · 검증</small></button>
+    <button class="board-menu-item" type="button" role="menuitem" data-section="history"><b data-i18n="board.menu.history">아카이브</b><small data-i18n="board.menu.historyNote">끝난 일 찾기</small></button>
   </div>
   <!-- 회사 팩 대화상자 · 진행 표시 — 창 전체 위에(처음 켤 때 화면 포함) -->
   <div id="pack-dialog" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="pack-dialog-title">

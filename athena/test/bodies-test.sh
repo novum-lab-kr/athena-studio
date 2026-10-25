@@ -80,6 +80,8 @@ check "본체 B 설정에 boardPort · dataDir" 'python3 -c "import json,sys; d=
 check "본체 B 가 globex · 주 본체는 acme 그대로" '[ "$(basename "$(readlink "$BODY_B/.pack-data")")" = globex ] && [ "$(basename "$(readlink "$MAIN/.pack-data")")" = acme ]'
 check "계획서·이슈·repos 는 각자 팩 것만" 'ls "$MAIN/issues" | grep -q acme && ! ls "$MAIN/issues" | grep -q globex && ls "$BODY_B/issues" | grep -q globex && ! ls "$BODY_B/issues" | grep -q acme && [ "$(ls "$BODY_B/repos" | tr "\n" " ")" = "globex-admin globex-shop " ]'
 check "팩 링크도 각자(.claude/agents)" '[ -L "$MAIN/.claude/agents/acme-web-fe.md" ] && [ ! -e "$MAIN/.claude/agents/globex-shop-fe.md" ] && [ -L "$BODY_B/.claude/agents/globex-shop-fe.md" ] && [ ! -e "$BODY_B/.claude/agents/acme-web-fe.md" ]'
+isPack() { node --input-type=module -e "import { isPackBody } from '$MAIN/scripts/lib/bodies.mjs'; console.log(isPackBody(process.argv[1]))" "$1"; }
+check "팩 본체인가 — 주 본체 false · 본체 B true (현황판 [정비] 탭은 주 본체에서만)" '[ "$(isPack "$MAIN")" = false ] && [ "$(isPack "$BODY_B")" = true ]'
 check "본체 B 도 깨끗(추적 파일 변경 없음)" '[ -z "$(git -C "$BODY_B" status --porcelain --untracked-files=no)" ]' "$(git -C "$BODY_B" status --porcelain --untracked-files=no)"
 EXCL="$(cd "$MAIN" && cd "$(git rev-parse --git-common-dir)" && pwd)/info/exclude"
 check "git exclude 는 본체마다 구간(남의 구간을 지우지 않음)" 'grep -q "athena pack links (athena pack link 가 관리) · $MAIN\$" "$EXCL" && grep -q "athena pack links (athena pack link 가 관리) · $BODY_B\$" "$EXCL"'

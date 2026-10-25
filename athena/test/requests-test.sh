@@ -117,6 +117,7 @@ node scripts/lib/events.mjs verify repo=r1 ok=false strict=true failed='lint|tes
 check "셸에서 남기기 — 참거짓은 참거짓으로" 'tail -1 "$EV" | python3 -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if e[\"type\"]==\"verify\" and e[\"ok\"] is False and e[\"strict\"] is True and e[\"failed\"]==\"lint|test\" else 1)"' "$(tail -1 "$EV")"
 M="$(curl -s 'http://127.0.0.1:47730/api/metrics?days=7')"
 check "현황판 /api/metrics — 요청 사건을 세고 계획서에 제목을 붙인다" 'echo "$M" | python3 -c "import json,sys; m=json.load(sys.stdin); p=[x for x in m[\"plans\"] if x[\"plan\"]==\"plans/task/20261021-x.md\"]; sys.exit(0 if m[\"events\"]>0 and m[\"current\"][\"asks\"]>=5 and p and p[0][\"title\"]==\"일\" and p[0][\"exists\"] else 1)"' "$M"
+check "현황판 /api/state — 주 본체라 [정비] 탭을 보인다(maintenance)" '[ "$(curl -s http://127.0.0.1:47730/api/state | field maintenance)" = True ]'
 check "scripts/metrics.mjs — 요약을 찍는다" 'node scripts/metrics.mjs | grep -q "작업당 질문" && [ "$(node scripts/metrics.mjs --all --json | field days)" = "" ]'
 # 위에서 띄운 현황판도 훑을 때마다 같은 일을 한다 — 끄고 본 기록을 지운 뒤 처음부터
 pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; sleep 1
