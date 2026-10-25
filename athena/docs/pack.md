@@ -53,7 +53,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 팩 여럿을 등록해 두고 **팩마다 본체를 따로** 둔다. 본체는 코어 체크아웃이고, 본체 하나 = 팩 하나 = 현황판 하나다. 그래서 팩 여러 개를 **동시에** 켤 수 있다(한 팩에서 아테나·에이전트가 일해도 다른 팩은 그대로 열린다). 다른 팩으로 가는 것은 **열기**(`pack open`)다 — 본체의 팩을 바꾸지 않는다. 팩과 그 팩의 작업 기록은 **사용자 데이터 폴더**에 있고, 본체에는 링크만 있다. 팩끼리 섞이지 않는다(가져오기는 복사 · 링크 금지).
 
 ```
-~/.athena-studio/core/          주 본체 — git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 정비(코어 고치기·커밋)는 여기서만
+~/.athena-studio/core/          주 본체 — git 저장소 주인(앱이 들고 온 번들에서 clone) · main 브랜치 · 설치본(코어 정비는 코어 정본 레포에서 브랜치 · PR 로 — 여기서 고치지 않는다)
 ~/.athena-studio/bodies/<id>/   팩 본체 — 같은 저장소의 git 워크트리 · 브랜치 없이(detached) 배포 커밋 · pack open 이 만든다(레지스트리 bodiesDir)
   (각 본체 안)
 ├─ .pack-data → <데이터>/packs/<id>     그 본체의 팩 — 본체를 만들 때 한 번 걸고 바꾸지 않는다
@@ -80,11 +80,11 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 - **문서 ID 는 본체 기준 논리 경로**(`plans/…md` · `issues/…md` · `archive/…`) — 실제 경로로 풀지 않는다. 계획서 경로를 받는 스크립트는 `scripts/lib/plan-path.sh`(`plan_rel`)로 맞춘다. 실제 경로로 푸는 새 코드는 `scripts/path-lint.sh` 가 잡는다
 - **세션 자리**: 아테나(Claude·Codex)는 그 팩 본체에서 켠다 · 위임 에이전트는 워크트리에서(실행기 `delegate.sh` 가 규칙·훅을 넘기고 `ATHENA_PACK_ID`·`ATHENA_SWITCH_GEN` 을 export) · 데이터 폴더에서는 세션을 띄우지 않는다. 스크립트는 자기 위치로 본체를 찾는다 — 팩 링크로 걸린 스크립트(`scripts/verify/<레포>.sh` 등)는 **본체 경로로** 부른다(실제 경로 `<데이터>/packs/…` 로 부르면 본체를 못 찾는다)
-- **정비는 주 본체에서만**: 팩 본체는 브랜치가 없다(detached). 그 본체에서 직접 켠 claude 에는 루트 훅(secret-guard)만 걸리고 커밋 보호(commit-guard)는 위임(`delegate.sh`)이 넣는다 — 팩 본체에서 코어를 고치거나 커밋하지 않는다
+- **본체에서 정비하지 않는다**: 코어는 코어 정본 레포(Athena Studio 레포 `athena/`)에서 코어 담당 에이전트가 브랜치 · PR 로 고친다(2026-10-25 결정). 팩 본체는 브랜치가 없다(detached). 그 본체에서 직접 켠 claude 에는 루트 훅(secret-guard)만 걸리고 커밋 보호(commit-guard)는 위임(`delegate.sh`)이 넣는다 — 팩 본체에서 코어를 고치거나 커밋하지 않는다
 - **설정**: 본체 `athena.config.json` 은 본체 것만(`dataDir` · `boardPort` · 필요하면 `screen`) — `pack` 은 쓰지 않는다(활성 링크가 정본). 합치는 순서 `pack.json` < 본체 설정 < `local.json`
 - **현황판 포트**: 레지스트리 `packs.<id>.boardPort`(정본) → 본체 `boardPort` → `ATHENA_BOARD_PORT` → 레지스트리 `portBase` → 4700(옛 구조 본체는 env 가 먼저). 주 본체는 지금 값(없으면 `portBase` · 기본 4700), 새 본체는 `portBase`+2(기본 4702) 부터 2씩 — 데이터 폴더마다 `portBase` 로 범위를 가른다(스튜디오 4800). 백그라운드로 띄운 현황판 로그는 `/tmp/hermes-board.log`(포트 4700) · 다른 포트면 `/tmp/hermes-board-<포트>.log`. 현황판은 뜰 때의 팩·**그 팩 세대**·`bodyId`·`core`·`instance` 를 `/api/state.pack` 으로 알리고, 그 팩 세대가 바뀐 뒤의 쓰기는 `409 stale-generation`(다른 팩의 일로는 바뀌지 않는다). `POST /api/shutdown`(같은 출처 + 토큰) 으로 끈다
 - **git exclude**: 팩 링크 목록은 `.git/info/exclude` 에 본체마다 구간으로 적는다. 링크된 워크트리도 공용 exclude 만 읽으므로(2026-10-18 git 2.50 실측) 무시 규칙은 모든 본체의 **합집합**이다 — 팩 링크 자리에 코어 실제 파일을 두지 않는 규칙(링크 clash)이 이걸 막는다. 쓰기는 잠금으로 하나씩
-- **busy**: 그 본체·그 팩 데이터·그 팩 레포 안에서 도는 claude·codex · QA · 학습 검토 · 무거운 명령 잠금(잠금에 적힌 본체만 — `scripts/heavy.sh` 가 `root` 를 적는다) · 그 팩 작업 잠금. 프로세스·작업 폴더를 못 읽으면 `unknown`(비어 있다고 보지 않는다). 다른 본체의 일은 이 본체를 막지 않는다
+- **busy**: 그 본체·그 팩 데이터·그 팩 레포 안에서 도는 claude·codex(레포 메인 체크아웃 안 claude 는 아테나가 띄운 에이전트 — `delegate.sh` 의 `--agent`/`--agents` 인자 — 일 때만. 사용자가 그 폴더에서 직접 켠 claude 는 세지 않는다 · 인자를 못 읽으면 `unknown` · 2026-10-25) · QA · 학습 검토 · 무거운 명령 잠금(잠금에 적힌 본체만 — `scripts/heavy.sh` 가 `root` 를 적는다) · 그 팩 작업 잠금. 프로세스·작업 폴더를 못 읽으면 `unknown`(비어 있다고 보지 않는다). 다른 본체의 일은 이 본체를 막지 않는다
 
 ### 명령 (`bin/athena …` — 스튜디오 앱이 부르는 약속은 이 절이 정본)
 

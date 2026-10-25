@@ -25,6 +25,8 @@
 #   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
 #                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
 #                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · HEAD 가 commit.sh 로 기록된 커밋
+#                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
+#                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
 #
 # 확인하는 것 (하나라도 걸리면 아무것도 보내지 않는다)
 #   - <워크트리> 가 등록된 워크트리이고 메인 체크아웃이 아니다 · 브랜치에 붙어 있다 · 보호 브랜치가 아니다
@@ -57,6 +59,17 @@ while [ $# -gt 0 ]; do
   esac
 done
 fail() { echo "❌ 보내지 않았다: $*" >&2; exit 1; }
+# PR 본문 검사 — 새 PR(--yes) · 자동 흐름 본문 고침(--auto-push --body-file)이 같이 쓴다
+check_body() {
+  local body="$1" heading
+  for heading in '## 작업 내용' '## 변경 사항' '## 검증' '## 확인 필요'; do
+    grep -qxF "$heading" "$body" || fail "본문에 \"$heading\" 절이 없다(docs/knowledge/common/git.md \"PR 제목·본문\")"
+  done
+  grep -qE '(^|[^[:alnum:]])plans/|/Users/|/private/|\.worktrees/|(HERMES|ATHENA)_[A-Z_]+=' "$body" && fail "본문에 로컬 경로(plans/… · /Users/… · .worktrees/ · ATHENA_*=·HERMES_*=)가 있다 — 빼고 다시"
+  grep -qiE 'https?://(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)|https?://[^/[:space:]]*\.(internal|local)([:/[:space:]]|$)' "$body" && fail "본문에 내부 주소로 보이는 URL 이 있다 — 확인하고 빼기"
+  grep -qiE '(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*[^[:space:]]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY' "$body" && fail "본문에 비밀값으로 보이는 줄이 있다 — 확인하고 빼기"
+  return 0
+}
 
 [ -n "$PLAN" ] && [ -n "$DIR" ] || { echo "사용: $0 --plan <plans/…md> --dir <워크트리> [--base … --title … --yes]" >&2; exit 2; }
 # 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
@@ -227,15 +240,41 @@ PYEOF
     no-pr) fail "PR #$PR_NUMBER 이 계획서 PR 줄에 없다 — 이 계획서의 PR 이 아니다" ;;
     *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
   esac
+  if [ -n "$BODY_FILE" ]; then [ -f "$BODY_FILE" ] || fail "본문 파일이 없다: $BODY_FILE"; check_body "$BODY_FILE"; fi
   git -C "$TOP" fetch --quiet origin "$BRANCH" 2>/dev/null || fail "fetch 실패 — origin/$BRANCH 를 확인하지 못했다"
   git -C "$TOP" merge-base --is-ancestor "origin/$BRANCH" HEAD 2>/dev/null || fail "origin/$BRANCH 에 여기 없는 커밋이 있다 — 빨리 감기가 아니라 올리지 않는다(강제 push 하지 않는다)"
-  [ -n "$(git -C "$TOP" rev-list "origin/$BRANCH"..HEAD)" ] || fail "origin/$BRANCH 에 없는 커밋이 없다 — 올릴 게 없다"
+  # 올릴 커밋이 없으면 본문만 고칠 때(--body-file)만 계속한다
+  BODY_ONLY=0
+  if [ -z "$(git -C "$TOP" rev-list "origin/$BRANCH"..HEAD)" ]; then
+    [ -n "$BODY_FILE" ] || fail "origin/$BRANCH 에 없는 커밋이 없다 — 올릴 게 없다(본문만 고치려면 --body-file)"
+    BODY_ONLY=1
+  fi
   LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
   mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 다시"
   trap 'rmdir "$LOCK" 2>/dev/null' EXIT
   [ "$(git -C "$TOP" rev-parse HEAD)" = "$HEAD_FULL" ] || fail "확인하는 동안 HEAD 가 바뀌었다 — 다시"
   [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 다시"
   PUSHED="$(git -C "$TOP" log --pretty=%H "origin/$BRANCH".."$HEAD_FULL" | tr '\n' ' ')"
+  # 본문 먼저 — 새 커밋을 올리면 자동 리뷰가 그 커밋을 볼 때 고친 본문을 같이 본다
+  if [ -n "$BODY_FILE" ]; then
+    (cd "$TOP" && gh pr edit "$PR_NUMBER" --body-file "$BODY_FILE" >/dev/null) || fail "PR #$PR_NUMBER 본문을 바꾸지 못했다(gh pr edit)"
+    echo "✅ PR #$PR_NUMBER 본문을 바꿨다"
+  fi
+  if [ $BODY_ONLY = 1 ]; then
+    # 커밋 없이 본문만 — 같은 HEAD 라 현황판이 다시 감지하지 않는다. 계획서 줄을 "본문 고침" 으로 바꾸고 대기열에 직접 넣는다(라운드 하나)
+    node --input-type=module -e '
+      const [lib, update, plan, repo, number, stamp] = process.argv.slice(1)
+      const { autoLines, withAutoLine, BODY_EDITED } = await import(lib)
+      const { updatePlan } = await import(update)
+      updatePlan(plan, (text) => { const known = autoLines(text).get(`${repo}#${number}`); return known ? withAutoLine(text, { ...known, result: `${BODY_EDITED} — 다시 리뷰 대기`, stamp }) : text })
+    ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/$PLAN" "$REPO" "$PR_NUMBER" "$(date '+%Y-%m-%d %H:%M')" \
+      || echo "⚠️ 본문은 바꿨지만 계획서 \"- Auto review:\" 줄을 바꾸지 못했다 — 자동 리뷰가 같은 HEAD 를 다시 보지 않는다. 사용자에게 알린다" >&2
+    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --enqueue --plan "$PLAN" --pr "$REPO#$PR_NUMBER" --head "$HEAD_FULL") \
+      || echo "⚠️ 자동 리뷰 대기열에 넣지 못했다 — 현황판이 다시 켜지면 계획서 줄로 잡는다" >&2
+    node "$ATHENA_DIR/scripts/lib/events.mjs" auto.push plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$HEAD_SHA" pr="$PR_NUMBER" body=1 >/dev/null 2>&1 || true
+    echo "✅ 자동 수정(본문만): $REPO PR #$PR_NUMBER @$HEAD_SHA — 자동 리뷰가 같은 HEAD 를 다시 본다"
+    exit 0
+  fi
   # 빨리 감기만 — 원격이 그사이 움직였으면 git 이 거절한다(강제 push 하지 않는다)
   git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패 — 원격이 그사이 움직였으면 받아서 다시"
   ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$BRANCH" "$PUSHED" "$PR_NUMBER" <<'PYEOF'
@@ -250,7 +289,7 @@ def mark(match):
 update_plan(plan, lambda text: re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M))
 PYEOF
   [ $? = 0 ] || echo "⚠️ push 는 됐지만 계획서 기록에 실패했다 — Commits 줄의 'push 안 함' 을 손으로 고친다" >&2
-  node "$ATHENA_DIR/scripts/lib/events.mjs" auto.push plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$HEAD_SHA" pr="$PR_NUMBER" >/dev/null 2>&1 || true
+  node "$ATHENA_DIR/scripts/lib/events.mjs" auto.push plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$HEAD_SHA" pr="$PR_NUMBER"${BODY_FILE:+ body=1} >/dev/null 2>&1 || true
   echo "✅ 자동 수정 push: $REPO · $HEAD_SHA → origin/$BRANCH (PR #$PR_NUMBER) — 자동 리뷰가 새 커밋을 다시 본다(5분 안)"
   exit 0
 fi
@@ -386,12 +425,7 @@ BODY="${BODY_FILE:-$DRAFT}"
 if [ -z "$BODY_FILE" ] && [ "$(cat "$DRAFT.head" 2>/dev/null)" != "$HEAD_FULL" ]; then
   fail "미리보기 뒤에 HEAD 가 바뀌었다 — 초안이 지금 커밋과 맞지 않는다. 미리보기부터 다시"
 fi
-for heading in '## 작업 내용' '## 변경 사항' '## 검증' '## 확인 필요'; do
-  grep -qxF "$heading" "$BODY" || fail "본문에 \"$heading\" 절이 없다(docs/knowledge/common/git.md \"PR 제목·본문\")"
-done
-grep -qE '(^|[^[:alnum:]])plans/|/Users/|/private/|\.worktrees/|(HERMES|ATHENA)_[A-Z_]+=' "$BODY" && fail "본문에 로컬 경로(plans/… · /Users/… · .worktrees/ · ATHENA_*=·HERMES_*=)가 있다 — 빼고 다시"
-grep -qiE 'https?://(localhost|127\.0\.0\.1|10\.|192\.168\.|172\.(1[6-9]|2[0-9]|3[01])\.)|https?://[^/[:space:]]*\.(internal|local)([:/[:space:]]|$)' "$BODY" && fail "본문에 내부 주소로 보이는 URL 이 있다 — 확인하고 빼기"
-grep -qiE '(api[_-]?key|secret|token|password)[[:space:]]*[:=][[:space:]]*[^[:space:]]{8,}|-----BEGIN [A-Z ]*PRIVATE KEY' "$BODY" && fail "본문에 비밀값으로 보이는 줄이 있다 — 확인하고 빼기"
+check_body "$BODY"
 for base in "${BASES[@]}"; do
   git -C "$TOP" ls-remote --exit-code --heads origin "$base" >/dev/null 2>&1 || fail "원격에 base 브랜치가 없다: $base"
   [ -n "$(git -C "$TOP" rev-list "origin/$base"..HEAD 2>/dev/null)" ] || fail "origin/$base 에 없는 커밋이 없다 — 올릴 게 없다"

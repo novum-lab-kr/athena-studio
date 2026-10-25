@@ -2,8 +2,8 @@
 //
 //   계획서 표시 줄(PR 마다 한 줄 · 바꿔 쓴다)
 //     - Auto review: <레포>#<번호> @<sha7> · <결과> · 라운드 <k>/<상한> · <YYYY-MM-DD HH:MM>
-//   결과: 승인 → 머지 확인 대기 · 승인 → 바로 머지(확인 없음) · 수정 필요 · 결정 필요 · 리뷰어 부족 · 검증 대기 · 멈춤 · 보류 · 머지됨
-//   같은 PR · 같은 HEAD(sha7) 가 이미 적혀 있으면 다시 돌지 않는다
+//   결과: 승인 → 머지 확인 대기 · 승인 → 바로 머지(확인 없음) · 수정 필요 · 결정 필요 · 리뷰어 부족 · 검증 대기 · 멈춤 · 보류 · 머지됨 · 본문 고침
+//   같은 PR · 같은 HEAD(sha7) 가 이미 적혀 있으면 다시 돌지 않는다 — 본문 고침(ship.sh --auto-push --body-file 이 커밋 없이 본문만 바꿈)만 같은 HEAD 를 다시 본다
 
 // 자동 머지 합의 — 결정 D2 "Claude·Codex 둘 다 승인"(+ 같은 HEAD 검증 통과). 하나라도 실패 · 로그인 안 됨 · 반려면 머지하지 않는다(남은 하나로 판정하지 않는다)
 export const REVIEWERS = ['claude', 'codex']
@@ -11,6 +11,8 @@ export const REVIEWERS = ['claude', 'codex']
 export const MAX_ROUNDS = 3
 // 끝난 결과 — 이 PR 은 사람이 이어받았다. 새 커밋이 와도 자동 리뷰를 다시 돌지 않는다(계획서에서 그 줄을 지우면 다시 돈다)
 export const FINAL_RESULTS = ['멈춤', '머지됨']
+// 커밋 없이 PR 본문만 고쳤다(ship.sh --auto-push --body-file) — 같은 HEAD 지만 다시 리뷰하고 라운드를 하나 쓴다
+export const BODY_EDITED = '본문 고침'
 
 // 리뷰어 답 형식 — Claude --json-schema · Codex --output-schema(엄격: 모든 객체에 additionalProperties false · 모든 키 required)
 export const REVIEW_SCHEMA = {
@@ -128,7 +130,13 @@ export const needsReview = (planText, repo, number, headSha) => {
   const known = autoLines(planText).get(`${repo}#${number}`)
   if (!known) return true
   if (FINAL_RESULTS.some((result) => known.result.startsWith(result))) return false
+  if (known.result.startsWith(BODY_EDITED)) return true
   return !String(headSha).startsWith(known.sha)
+}
+// 이번 리뷰의 라운드 — 새 HEAD 이거나 본문만 고쳤으면 하나 올린다(같은 HEAD 를 다시 보는 --dry-run 은 그대로)
+export const nextRound = (known, headSha) => {
+  if (!known) return 1
+  return !String(headSha).startsWith(known.sha) || known.result.startsWith(BODY_EDITED) ? known.round + 1 : known.round
 }
 
 // ── 팩 설정 ────────────────────────────────────────────────────────────
@@ -199,10 +207,13 @@ export const reviewComment = ({ sha, round, results, summary }) => {
 // 작업 에이전트 pane 에 보낼 수정 지시 한 줄 — 지적 전문은 PR 댓글에 있다
 export const fixInstruction = ({ agent, org, repo, number, sha, round, findings, plan, worktree, athenaDir }) => {
   const list = findings.slice(0, 6).map((item, index) => `${index + 1}) ${item.file}${item.line ? `:${item.line}` : ''} ${oneLine(item.problem, 160)} → ${oneLine(item.fix, 160)}`).join(' ')
-  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${MAX_ROUNDS} — 수정 필요: ${list}${findings.length > 6 ? ` 외 ${findings.length - 6}개` : ''}. 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
+  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${MAX_ROUNDS} — 수정 필요: ${list}${findings.length > 6 ? ` 외 ${findings.length - 6}개` : ''}. 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). PR 본문 지적이면 본문 파일을 고쳐 --auto-push --body-file <파일> 로(커밋이 없어도 된다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
 }
 
 export const decisionNotice = ({ agent, repo, number, sha, count, plan, worktree, athenaDir }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — 결정 필요 ${count}개를 결정 콘솔(${plan})에 올렸다. 사람이 확정하면 그 지시가 이 pane 으로 온다 — 반영한 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh … 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(자동 흐름 예외)`, 2000)
+
+// 머지 확인 답을 처리한 결과(머지됨 · 보류 · 다시 확인 실패 · 머지 실패) — 작업 에이전트 pane 에 알림 한 줄(할 일은 주지 않는다)
+export const mergeNotice = ({ agent, repo, number, sha, result }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — ${result}. 알림만 — 이 글로 할 일은 없다(계획서 "- Auto review:" 줄)`, 600)
 
 // 리뷰 뒤 결정 → plan-html.mjs --add 의 decisions[] — 추천 label 이 선택지에 있을 때만 recommended
 export const decisionsForConsole = (decisions) => decisions.map((item, index) => ({

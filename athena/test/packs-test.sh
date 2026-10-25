@@ -74,11 +74,15 @@ check "주인이 죽은 잠금은 넘겨받음" 'mkdir -p "$ATHENA_DATA_DIR/lock
 check "pid 없는 부서진 잠금도 넘겨받음" 'mkdir -p "$ATHENA_DATA_DIR/locks/acme.lock" && [ "$(A pack open acme | field ok)" = True ]'
 FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude"; ln -s "$(command -v node)" "$FAKE/codex"
 (cd "$B" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)') & C1=$!
-(cd "$ATHENA_DATA_DIR/repos-src/acme-web" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)') & C2=$!
+# 레포 메인 체크아웃 — 아테나가 띄운 에이전트(--agent 인자)만 센다(결정 D1). 사용자가 직접 켠 claude(인자 없음)는 세지 않는다
+(cd "$ATHENA_DATA_DIR/repos-src/acme-web" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)' -- --agent acme-web-fe) & C2=$!
 (cd "$B" && exec "$FAKE/codex" -e 'setTimeout(() => {}, 60000)') & C3=$!
+(cd "$ATHENA_DATA_DIR/repos-src/acme-web" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 60000)') & C4=$!
 sleep 0.5
 R="$(A pack busy)"
 check "busy: athena · agent · codex · busyKnown" 'echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\"" && echo "$R" | grep -q "\"kind\":\"codex\"" && [ "$(echo "$R" | field busyKnown)" = True ]' "$R"
+check "레포 메인 체크아웃: --agent 붙은 claude 만 agent · 인자 없는 claude 는 안 셈" 'echo "$R" | grep -q "\"pid\":$C2[,}]" && ! echo "$R" | grep -q "\"pid\":$C4[,}]"' "$R"
+kill "$C4" 2>/dev/null; wait "$C4" 2>/dev/null
 R="$(A pack list)"
 check "list: acme bodyBusy · busy[] 있음" '[ "$(echo "$R" | python3 -c "import json,sys; d=json.load(sys.stdin); p=[x for x in d[\"packs\"] if x[\"id\"]==\"acme\"][0]; print(p[\"bodyBusy\"], len(p[\"busy\"])>=3)")" = "True True" ]' "$R"
 check "busy 여도 이 본체 팩 use 는 unchanged" '[ "$(A pack use acme --contract 2 | field unchanged)" = True ]'
@@ -94,6 +98,9 @@ check "다른 팩 실제 경로 → 그대로(거부됨)" 'case "$(plan_rel "$B"
 check "review-result 가 절대 경로 계획서를 받음" 'bash scripts/review-result.sh --plan "$B/$PLAN" --dir "$B/repos/acme-web" --verdict 승인 --note 시험 >/dev/null 2>&1 && grep -q "Review result: 승인" "$PLAN"'
 R="$(bash scripts/new-branch.sh T-9 acme-web 2>&1)"
 check "new-branch 워크트리는 팩 데이터 실제 경로" 'git -C repos/acme-web worktree list | grep -q "$ATHENA_DATA_DIR/packs/acme/worktrees/acme-web/feature-T-9"' "$R"
+# delegate.sh — 본체의 링크(pack · plans · issues)가 가리키는 데이터 폴더 실제 경로도 --add-dir 로(권한 질문으로 멈추지 않게 · 2026-10-25 시험)
+LD="$(ATHENA_DIR="$B" ATHENA_REAL="$(cd "$B" && pwd -P)" bash -c 'shq() { printf "%q" "$1"; }; eval "$(awk "/^LINK_DIRS=\"\"/{p=1} p{print} p && /^done\$/{exit}" scripts/delegate.sh)"; echo "$LINK_DIRS"')"
+check "delegate — 링크된 pack · plans · issues 의 실제 경로를 --add-dir 로" 'echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/pack" && pwd -P)" && echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/plans" && pwd -P)" && echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/issues" && pwd -P)"' "$LD"
 
 section "옛 pack backup·restore 는 여러 팩에서 멈춤"
 mkdir -p "$WORK/oldbk"

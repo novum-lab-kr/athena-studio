@@ -33,7 +33,7 @@ import { screen } from './lib/screen.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import {
   MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, aggregate, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
-  fixInstruction, needsReview, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf,
+  fixInstruction, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -227,6 +227,16 @@ const agentPane = async ({ planFile, ref }) => {
   return pane
 }
 
+// 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만)
+const notifyResult = async (job, result) => {
+  const planPath = join(ROOT, job.plan)
+  if (!existsSync(planPath)) return
+  const ref = workRefOf(readFileSync(planPath, 'utf8'))
+  if (!ref.pane || !(await livePanes()).has(ref.pane)) return
+  const sent = await sendToPane(ref.pane, masked(mergeNotice({ agent: ref.agent || '작업 에이전트', repo: job.repo, number: job.number, sha: job.sha, result })))
+  console.log(sent ? `  → 결과를 pane ${ref.pane} 에 알렸다` : `  ⚠️ 결과를 pane ${ref.pane} 에 보내지 못했다`)
+}
+
 const ask = (planFile, { key, title, body, options = [] }) => {
   try {
     return openRequest(ROOT, { kind: 'question', title, body, options, links: { plan: planFile }, pane: null, dedupeKey: key }).request
@@ -253,7 +263,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const sha = pr.headRefOid
   if (!dryRun && !needsReview(planText, repo, number, sha)) return console.log(`⏭  ${repo}#${number} @${sha.slice(0, 7)} — 이미 봤거나 사람이 이어받았다`)
   const known = autoLines(planText).get(`${repo}#${number}`)
-  const round = known && !sha.startsWith(known.sha) ? known.round + 1 : (known?.round ?? 1)
+  const round = nextRound(known, sha)
   const ref = workRefOf(planText)
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}`)
 
@@ -443,8 +453,10 @@ export const checkConfirms = async (only = '') => {
     const finish = () => { if (job.noConfirm) rmSync(current, { force: true }) }
     if (choice !== '머지') {
       settle()
-      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})` })
+      const result = `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})`
+      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
       logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: false, reason: 'held' })
+      await notifyResult(job, result)
       continue
     }
     // 고른 사이 바뀐 것이 없는지 한 번 더 — 충돌 · 검증(같은 HEAD 그대로면 재사용이라 금방).
@@ -454,27 +466,33 @@ export const checkConfirms = async (only = '') => {
     settle()
     const verify = verifiedAt(job.repo, job.worktree, job.sha)
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
-      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})` })
+      const result = `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})`
+      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
       logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: false, reason: 'recheck' })
       finish()
+      await notifyResult(job, result)
       continue
     }
     const target = ['--repo', `${org}/${job.repo}`]
     if (pr.isDraft) {
       const ready = gh(['pr', 'ready', String(job.number), ...target])
       if (!ready.ok) {
-        if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: `검증 대기 — draft 풀기 실패(${firstLine(ready.err)})` })
+        const result = `검증 대기 — draft 풀기 실패(${firstLine(ready.err)})`
+        if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
         logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: false, reason: 'gh' })
         console.log(`  ⚠️ draft 풀기 실패 ${job.repo}#${job.number}: ${firstLine(ready.err)}`)
         finish()
+        await notifyResult(job, result)
         continue
       }
     }
     const merged = gh(['pr', 'merge', String(job.number), ...target, '--squash', '--match-head-commit', job.sha])
-    if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: merged.ok ? `머지됨 — squash → ${job.base}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})` })
+    const result = merged.ok ? `머지됨 — squash → ${job.base}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
+    if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
     logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: merged.ok, ...(merged.ok ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
     console.log(merged.ok ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)
     finish()
+    await notifyResult(job, result)
   }
 }
 
