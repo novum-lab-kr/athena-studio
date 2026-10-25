@@ -253,12 +253,11 @@ function findAthenaWorkspace(workspaces, athenaDir) {
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
 }
 
-// 링크를 어디서 열지: 현황판에서 누른 것 · localhost(계획서 · 테스트 화면)는 옆 브라우저(panel), 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
+// 링크를 어디서 열지: localhost(계획서 · 테스트 화면)는 옆 브라우저(panel), 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 
-function openTarget(rawUrl, { fromBoard = false } = {}) {
+function openTarget(rawUrl) {
   if (!isWebUrl(rawUrl)) return 'deny'
-  if (fromBoard) return 'panel'
   return LOCAL_HOSTS.includes(new URL(rawUrl).hostname) ? 'panel' : 'external'
 }
 

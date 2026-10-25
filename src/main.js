@@ -102,7 +102,7 @@ function loadLoginPath() {
 }
 
 // ── 팩 창 찾기 ─────────────────────────────────────────────
-// IPC 는 보낸 창 기준 — 맨 위 프레임(앱 화면)에서 온 것만. 현황판 iframe · 서랍 안 페이지는 창 문맥을 얻지 못한다
+// IPC 는 보낸 창 기준 — 맨 위 프레임(앱 화면)에서 온 것만. 하위 프레임 · 서랍 안 페이지는 창 문맥을 얻지 못한다
 function ctxOf(event) {
   for (const ctx of packWindows) {
     if (ctx.win && !ctx.win.isDestroyed() && event.sender === ctx.win.webContents && event.senderFrame === event.sender.mainFrame) return ctx
@@ -2253,7 +2253,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     },
   })
   ctx.win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
-  // 맨 위 페이지는 앱 화면에서 벗어나지 않는다(현황판은 iframe 안에서만 움직인다)
+  // 맨 위 페이지는 앱 화면에서 벗어나지 않는다 — 이동하려는 주소는 openUrl 이 옆 브라우저 · 기본 브라우저로 돌린다
   ctx.win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()
     openUrl(ctx, url)
@@ -2308,14 +2308,14 @@ function openBody(body) {
 
 // ── 새 창 · 링크 ──────────────────────────────────────────
 // 터미널 링크 · 맨 위 페이지 이동 — localhost(계획서 · 테스트 화면)는 그 창 옆 브라우저, 그 밖 http(s) 는 기본 브라우저
-function openUrl(ctx, url, { fromBoard = false } = {}) {
-  const target = core.openTarget(url, { fromBoard })
+function openUrl(ctx, url) {
+  const target = core.openTarget(url)
   if (target === 'external') shell.openExternal(url)
   if (target === 'panel' && ctx) ctx.openInBrowser(url)
   return target
 }
 
-// 새 창 요청 — 팩 창에서 온 것은 현황판 iframe 이 연 것이라 http(s) 면 모두 그 창 옆 브라우저.
+// 새 창 요청 — 팩 창 · 그 밖 화면에서 온 것은 링크와 같은 규칙(localhost 는 그 창 옆 브라우저, 그 밖 http(s) 는 기본 브라우저).
 // 옆 브라우저 안에서 연 새 창은 같은 뷰로. 새 BrowserWindow 는 만들지 않는다
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
@@ -2324,7 +2324,7 @@ app.on('web-contents-created', (_event, contents) => {
       if (core.isWebUrl(url)) contents.loadURL(url)
     } else {
       const fromWindow = [...packWindows].find((ctx) => ctx.win && contents === ctx.win.webContents)
-      openUrl(fromWindow || frontCtx(), url, { fromBoard: Boolean(fromWindow) })
+      openUrl(fromWindow || frontCtx(), url)
     }
     return { action: 'deny' }
   })
@@ -2872,7 +2872,7 @@ function buildMenu() {
 // 언어 사전 — preload 가 처음 한 번 동기로 받는다(화면이 첫 글자를 그리기 전에). 읽기 전용 데이터
 ipcMain.on('i18n:get', (event) => (event.returnValue = i18nPayload()))
 
-// handle(채널, (ctx, ...args) => …) — 팩 창 화면에서 온 것만. 문맥이 없으면(현황판 iframe · 닫힌 창) 거절
+// handle(채널, (ctx, ...args) => …) — 팩 창 화면에서 온 것만. 문맥이 없으면(하위 프레임 · 닫힌 창) 거절
 const NO_WINDOW = '앱 화면에서만 부를 수 있어요'
 function handle(channel, work) {
   ipcMain.handle(channel, (event, ...args) => {
@@ -2975,7 +2975,7 @@ handle('board:diagrams', (ctx) => ctx.openDiagrams())
 handle('work:detail', (ctx, id) => ctx.workDetail(String(id || '')))
 listen('ui:tab', (ctx, tab) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url) => openUrl(ctx, String(url)))
-// 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 현황판 iframe · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)
+// 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)
 listen('browser:place', (ctx, rect) => ctx.placeBrowser(browserRect(rect)))
 listen('browser:hide', (ctx) => ctx.hideBrowser())
 handle('browser:command', (ctx, name, value) => ctx.browserCommand(String(name), typeof value === 'string' ? value : ''))
