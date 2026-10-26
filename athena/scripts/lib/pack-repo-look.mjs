@@ -1,6 +1,7 @@
 // 레포 표시 이름 · 아이콘 이미지 — 팩 pack.json repos[] 항목의 displayName · icon(규칙은 pack-look.mjs 맨 위 · 팩 표시 이름 · 아이콘과 같다)
 //
-//   레포 name 은 바꾸지 않는다(경로 · 브랜치 · 스크립트 · 작업 공간 이름이 이것으로 찾는다) — 화면에 보일 이름만
+//   레포 name 은 바꾸지 않는다(경로 · 브랜치 · 스크립트 · 작업 공간 이름이 이것으로 찾는다) — 화면에 보일 이름만.
+//   표시 이름은 팩에 있는 모든 레포에 된다 · 레포 name 규칙(REPO_NAME)은 아이콘 파일 이름에만 건다
 //   아이콘 파일은 팩 폴더 assets/repos/<name>.<png|jpg|webp> 하나 — 바꾸면 이전 것을 지우고, 지우면 빈 폴더도 지운다.
 //   팩 폴더 안이라 내보내기 · 백업 · 가져오기 · 되살리기에 같이 실린다
 //   pack.json 은 글자 단위로 고친다(pack-merge.mjs 와 같다 — 그 레포 항목의 키만 넣고 빼고, 다른 키 · 순서 · 들여쓰기는 그대로)
@@ -22,8 +23,9 @@ const findRepo = (pack, repo) => {
   if (!entry) throw new PackError('not-found', `팩에 그런 레포가 없다: ${repo}`)
   return entry
 }
-const checkRepoName = (repo) => {
-  if (!REPO_NAME.test(String(repo ?? ''))) throw new PackError('not-found', `레포 이름이 올바르지 않다: ${repo}`)
+// 아이콘 파일 이름으로 쓸 수 있는 레포 name 인지(경로 구분 · '..' 안 됨)
+const checkIconRepoName = (repo) => {
+  if (!REPO_NAME.test(String(repo ?? ''))) throw new PackError('not-found', `이 레포 이름으로는 아이콘 파일을 만들 수 없다(글자·숫자·_ 로 시작하고 . - 만): ${repo}`)
 }
 
 // 그 레포 항목의 키 넣기 · 지우기 — [키, 값(null 이면 지우기)]. 글자로 고친 결과가 뜻한 내용과 다르면 쓰지 않는다
@@ -74,7 +76,7 @@ export const dropRepoIcons = (packDir, repo, keep = null) => {
 }
 
 export const setRepoDisplayName = (where, { id = '', repo = '', name = '', clear = false } = {}) => {
-  checkRepoName(repo)
+  if (!repo) throw new PackError('not-found', '레포 이름이 없다')
   const target = lookTarget(where, id)
   const value = clear ? null : normalizeName(name)
   return withPackLock(target, `pack set-repo-name ${target.id} ${repo}`, () => {
@@ -84,7 +86,7 @@ export const setRepoDisplayName = (where, { id = '', repo = '', name = '', clear
 }
 
 export const setRepoIcon = (where, { id = '', repo = '', file = '', clear = false } = {}) => {
-  checkRepoName(repo)
+  checkIconRepoName(repo)
   const target = lookTarget(where, id)
   let kind = null
   let bytes = null

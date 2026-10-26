@@ -198,7 +198,8 @@ async function main() {
         fail('not-found', '이 본체 팩에 pack.json 이 없어요')
       }
       const repo = (pack.repos || []).find((item) => item && item.name === arg)
-      if (!repo || !/^\w[\w.-]*$/.test(arg)) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
+      if (!repo) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
+      if (sub === 'set-repo-icon' && !/^\w[\w.-]*$/.test(arg)) fail('not-found', `이 레포 이름으로는 아이콘 파일을 만들 수 없다: ${arg}`)
       const clear = process.argv.includes('--clear')
       const value = process.argv[5] && !process.argv[5].startsWith('--') ? process.argv[5] : null // pack <명령> <레포> <값>
       const id = (mine && mine.id) || 'fake'
@@ -211,8 +212,11 @@ async function main() {
         return done({ ok: true, id, repo: arg, displayName: name })
       }
       const assets = path.join(process.cwd(), 'pack', 'assets', 'repos')
-      for (const kind of ['png', 'jpg', 'webp']) fs.rmSync(path.join(assets, `${arg}.${kind}`), { force: true })
+      const dropOld = () => {
+        for (const kind of ['png', 'jpg', 'webp']) fs.rmSync(path.join(assets, `${arg}.${kind}`), { force: true })
+      }
       if (clear) {
+        dropOld()
         delete repo.icon
         fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
         return done({ ok: true, id, repo: arg, iconPath: null })
@@ -230,6 +234,7 @@ async function main() {
       else if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') kind = 'webp'
       if (!kind) fail('invalid-image', 'png · jpeg · webp 만')
       if (bytes.length > 1024 * 1024) fail('image-too-large', '1MB 이하만')
+      dropOld() // 검사를 모두 통과한 뒤에만 — 나쁜 이미지면 기존 아이콘이 그대로 남게
       fs.mkdirSync(assets, { recursive: true })
       fs.writeFileSync(path.join(assets, `${arg}.${kind}`), bytes)
       repo.icon = `assets/repos/${arg}.${kind}`

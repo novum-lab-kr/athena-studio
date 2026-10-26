@@ -559,7 +559,15 @@ export const removeRepo = (root, name, { report = () => {} } = {}) => {
   for (const agent of agentsOf(entry)) if (!others.has(agent)) drop(`agents/${agent}.md`)
   drop(`knowledge/${name}`)
   drop(`verify/${name}.sh`)
-  removed.push(...dropRepoIcons(packDir, name)) // 그 레포 표시 아이콘(assets/repos/<레포>.*)
+  // 그 레포 표시 아이콘(assets/repos/<레포>.*) — assets 가 링크 등이라 못 지우면(unsafe) 아이콘만 건너뛰고 경고, 빼기는 이어 간다
+  const warnings = []
+  try {
+    removed.push(...dropRepoIcons(packDir, name))
+  } catch (error) {
+    if (error?.code !== 'unsafe') throw error
+    warnings.push(`그 레포 아이콘은 지우지 않았다 — ${error.message}`)
+    report('warn', warnings[warnings.length - 1])
+  }
   writeJsonAtomic(join(packDir, 'pack.json'), { ...pack, repos: pack.repos.filter((repo) => repo !== entry) })
   const localFile = join(where.packDataReal, 'local.json')
   const local = readJson(localFile)
@@ -569,7 +577,7 @@ export const removeRepo = (root, name, { report = () => {} } = {}) => {
   }
   const repos = syncRepos(root)
   report('done', `뺐다 — ${name}`)
-  return { ok: true, removed: name, backup, files: removed, unlinked: repos.removed.includes(name) }
+  return { ok: true, removed: name, backup, files: removed, unlinked: repos.removed.includes(name), ...(warnings.length ? { warnings } : {}) }
 }
 
 // 내보내기 · 백업 사본의 pack.json 에 레포 git 주소를 채운다(원본 팩은 그대로) — 받은 컴퓨터가 git 주소로 레포를 찾게

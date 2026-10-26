@@ -241,6 +241,12 @@ printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$WORK/repo-icon.png"; A pack s
 R="$(A repo remove new-svc)"
 check "repo remove → 그 레포 아이콘(assets/repos/new-svc.*)도 지움" '[ ! -e pack/assets/repos/new-svc.png ]' "$R"
 check "repo remove → 팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증 지움 · 레포 폴더는 그대로" '[ -f "$(echo "$R" | field backup)" ] && ! grep -q "\"new-svc\"" pack/pack.json && ! grep -q "new-svc" "$LOCAL" && [ ! -e repos/new-svc ] && [ ! -L repos/new-svc ] && [ ! -e pack/agents/new-svc-fe.md ] && [ ! -e pack/knowledge/new-svc ] && [ ! -e pack/verify/new-svc.sh ] && [ ! -L .claude/agents/new-svc-fe.md ] && [ -d "$SRCS/team/new-svc/.git" ]' "$R"
+# 아이콘 자리가 링크면(git 으로 받은 팩) 아이콘만 건너뛰고 경고 · 빼기는 이어 간다 · 밖 파일은 그대로
+mkdir -p "$SRCS/team/new-svc2" && git -C "$SRCS/team/new-svc2" init -q -b main && A repo add "$SRCS/team/new-svc2" >/dev/null
+mkdir -p "$WORK/outside3" && printf 'x' > "$WORK/outside3/new-svc2.png" && rm -rf pack/assets/repos && mkdir -p pack/assets && ln -s "$WORK/outside3" pack/assets/repos
+R="$(A repo remove new-svc2)"
+check "repo remove — assets/repos 가 링크면 아이콘만 건너뜀(warnings) · 빼기는 됨 · 밖 파일 그대로" '[ "$(echo "$R" | field ok)" = True ] && echo "$R" | grep -q "warnings" && ! grep -q "\"new-svc2\"" pack/pack.json && [ -f "$WORK/outside3/new-svc2.png" ]' "$R"
+rm -rf pack/assets
 check "없는 레포 → not-found" '[ "$(A repo remove nope | field error)" = not-found ]'
 check "다른 레포는 그대로(acme-web · acme-api 링크)" '[ -L repos/acme-web ] && [ -L repos/acme-api ] && [ -L .claude/agents/acme-web-fe.md ]'
 cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; A pack open acme >/dev/null
@@ -316,6 +322,10 @@ cp pack/pack.json "$WORK/pack.repolook.bak"
 R="$(A pack set-repo-name acme-web "쇼핑 웹")"
 check "set-repo-name → 그 레포 displayName · 레포 name 그대로" '[ "$(echo "$R" | field displayName)" = "쇼핑 웹" ] && [ "$(echo "$R" | field repo)" = acme-web ] && [ "$(rj acme-web displayName)" = "쇼핑 웹" ] && [ -L repos/acme-web ]' "$R"
 check "레포 이름도 41자 · 줄바꿈 → invalid-name" '[ "$(A pack set-repo-name acme-web "$(printf "가%.0s" $(seq 41))" | field error)" = invalid-name ] && [ "$(A pack set-repo-name acme-web "$(printf "a\nb")" | field error)" = invalid-name ]'
+cp pack/pack.json "$WORK/pack.dot.bak"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['repos'].append({'name': '.dot-repo'}); json.dump(d, open(p,'w'), indent=2)" pack/pack.json
+check "표시 이름은 레포 이름 규칙 밖(.dot-repo)에도 · 아이콘만 not-found" '[ "$(A pack set-repo-name .dot-repo "점 레포" | field displayName)" = "점 레포" ] && [ "$(A pack set-repo-icon .dot-repo "$IMG/a.png" | field error)" = not-found ] && [ ! -e pack/assets/repos ]'
+cp "$WORK/pack.dot.bak" pack/pack.json
 check "없는 레포 · 경로 같은 이름 → not-found" '[ "$(A pack set-repo-name nope x | field error)" = not-found ] && [ "$(A pack set-repo-icon ../x "$IMG/a.png" | field error)" = not-found ] && [ ! -e x.png ]'
 check "이름 없이 → 사용법 오류(종료 2)" 'node scripts/athena.mjs pack set-repo-name acme-web --json >/dev/null 2>&1; [ $? -eq 2 ]'
 R="$(A pack set-repo-icon acme-web "$IMG/a.png")"
