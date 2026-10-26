@@ -91,9 +91,34 @@ function ensureView(paneId) {
   el.addEventListener('mousedown', () => focusPane(paneId))
   // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
   el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
-  const view = { term, fit, el, head, shown: false, sent: null }
+  const view = { term, fit, el, head, body, shown: false, sent: null }
+  term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
   return view
+}
+
+// 칸 높이로 나누고 남는 몇 px 를 어디에 두나 — 화면이 차 있으면 위에 두고 글을 pane 아래에 붙인다(.pane-body.screen-bottom).
+// 셸 · Claude Code 처럼 마지막 줄(프롬프트 · 입력창)이 맨 아래에 있는 화면을 위에 붙여 두면, 위아래로 크기를 바꿀 때
+// 상자는 px 단위로 움직이는데 줄 수는 한 줄(약 14px)씩만 바뀌어 아래쪽 글이 밀렸다 한 줄씩 되튄다(톱니). 아래에 붙이면 아래쪽 글이 제자리에 있다.
+// 아직 덜 찬 화면(새 셸 · 막 켠 Claude Code)은 지금처럼 위에 붙인다.
+// 출력 중간(다시 그리기 조각 사이)에 바꾸면 남는 px 만큼 흔들리니 출력이 이만큼 조용할 때 · 덮어 두지 않을 때만 바꾼다
+const SCREEN_ANCHOR_SETTLE_MS = 150
+
+function scheduleScreenAnchor(paneId, view) {
+  clearTimeout(view.anchorTimer)
+  view.anchorTimer = setTimeout(() => {
+    if (views.get(paneId) !== view) return
+    if (view.hold) return scheduleScreenAnchor(paneId, view)
+    return view.body.classList.toggle('screen-bottom', screenIsFull(view.term))
+  }, SCREEN_ANCHOR_SETTLE_MS)
+}
+
+// 전체 화면 프로그램 · 스크롤백이 있는 화면 · 맨 아래 줄까지 글이 있는 화면
+function screenIsFull(term) {
+  const buffer = term.buffer.active
+  if (buffer.type === 'alternate' || buffer.baseY > 0) return true
+  const lastRow = buffer.getLine(buffer.baseY + term.rows - 1)
+  return Boolean(lastRow && lastRow.translateToString(true))
 }
 
 // 숨었던 칸이 다시 보일 때 — xterm DOM 렌더러는 글자 폭을 DOM 으로 재서 글자 간격(셀 폭 − 글자 폭)을 정하는데,
@@ -113,6 +138,7 @@ function disposeView(paneId) {
   const view = views.get(paneId)
   if (!view) return
   clearTimeout(view.resizing)
+  clearTimeout(view.anchorTimer)
   if (view.hold) clearTimeout(view.hold.timer)
   view.term.dispose()
   view.el.remove()
@@ -1189,9 +1215,11 @@ function holdForRedraw(paneId, view) {
   if (!view.hold) {
     const live = view.term.element && view.term.element.querySelector('.xterm-screen')
     if (!live) return false
-    const still = live.cloneNode(true)
-    still.classList.add('pane-still')
+    // 복제한 화면을 칸 전체를 덮는 틀에 넣는다 — 글을 아래에 붙인 화면(screen-bottom)이면 틀 아래에 붙여서 덮는 순간 · 걷는 순간 위아래로 안 튄다
+    const still = document.createElement('div')
+    still.className = 'pane-still'
     still.style.background = view.term.options.theme.background
+    still.append(live.cloneNode(true))
     view.term.element.append(still)
     view.hold = { still }
   }
