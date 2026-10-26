@@ -25,16 +25,25 @@ function argValue(args, name) {
   return index >= 0 ? args[index + 1] || '' : ''
 }
 
-// 그 커밋을 만든 PR — { title, number, url } · 못 찾으면 null(gh 가 없거나 API 실패)
+// 그 커밋을 만든 PR — { title, number, url } · PR 이 없으면(main 에 바로 push) null.
+// API 를 부르지 못하면(권한 · 네트워크) 멈춘다 — 제목을 모른 채 끝자리로 올리지 않게. 다음 실행이 이 커밋부터 다시 한다
 function pullRequestOf(repository, sha) {
   if (!repository) return null
+  let list
   try {
-    const list = JSON.parse(run('gh', ['api', `repos/${repository}/commits/${sha}/pulls`]))
-    const merged = (Array.isArray(list) ? list : []).find((pull) => pull && pull.merged_at) || null
-    return merged ? { title: String(merged.title || ''), number: merged.number, url: merged.html_url || null } : null
-  } catch {
-    return null
+    list = JSON.parse(run('gh', ['api', `repos/${repository}/commits/${sha}/pulls`]))
+  } catch (error) {
+    throw new Error(`${sha.slice(0, 7)} 의 PR 을 읽지 못했어요(gh api) — 태그를 달지 않고 멈춰요: ${String(error.stderr || error.message).trim().slice(0, 200)}`)
   }
+  const merged = (Array.isArray(list) ? list : []).find((pull) => pull && pull.merged_at) || null
+  return merged ? { title: String(merged.title || ''), number: merged.number, url: merged.html_url || null } : null
+}
+
+// PR 이 없을 때의 제목 — 커밋 제목. GitHub 머지 커밋('Merge pull request #N from …')이면 본문 첫 줄이 PR 제목이다
+function commitTitle(sha) {
+  const subject = run('git', ['log', '-1', '--format=%s', sha])
+  if (!/^Merge pull request #\d+ /.test(subject)) return subject
+  return lines(run('git', ['log', '-1', '--format=%b', sha]))[0] || subject
 }
 
 // → { base, commits: [sha…](오래된 순) } — 기준 태그 뒤 main 커밋 중 태그가 없는 것
@@ -58,7 +67,7 @@ function main(args) {
   if (!version.parseVersion(base)) throw new Error(`기준 버전을 읽지 못했어요: ${base}`)
   const details = commits.map((commit) => {
     const pull = pullRequestOf(repository, commit)
-    const title = pull ? pull.title : run('git', ['log', '-1', '--format=%s', commit])
+    const title = pull ? pull.title : commitTitle(commit)
     const commitUrl = repository ? `${process.env.GITHUB_SERVER_URL || 'https://github.com'}/${repository}/commit/${commit}` : null
     return { sha: commit, title, notes: version.releaseNotes(pull || { title, url: commitUrl }) }
   })

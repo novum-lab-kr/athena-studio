@@ -117,3 +117,33 @@ test('버전: fetchTags — origin 의 v 태그를 받고 · origin 이 없으�
   git(app, 'remote', 'remove', 'origin')
   assert.equal(version.fetchTags({ repoRoot: app, env }), false)
 })
+
+test('버전: release-version.js — PR 을 못 읽으면(gh 실패) 태그 없이 멈추고 · PR 이 없으면 머지 커밋 본문의 PR 제목으로', () => {
+  const dir = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'release-gh-test-')))
+  test.after(() => fs.rmSync(dir, { recursive: true, force: true }))
+  const env = { ...gitEnv(), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' }
+  delete env.GITHUB_REPOSITORY
+  delete env.GITHUB_SHA
+  const repo = path.join(dir, 'repo')
+  const git = (...args) => execFileSync('git', args, { cwd: repo, env, encoding: 'utf8' }).trim()
+  const script = path.join(__dirname, '..', 'scripts', 'release-version.js')
+  fs.mkdirSync(repo)
+  git('init', '-q', '-b', 'main')
+  git('commit', '-q', '--allow-empty', '-m', 'chore: 처음')
+  git('tag', 'v0.2.0')
+  // 브랜치를 머지한 커밋 — 제목은 'Merge pull request', 본문 첫 줄이 PR 제목(GitHub 머지 커밋 모양)
+  git('checkout', '-q', '-b', 'feature/x')
+  git('commit', '-q', '--allow-empty', '-m', 'wip')
+  git('checkout', '-q', 'main')
+  git('merge', '-q', '--no-ff', 'feature/x', '-m', 'Merge pull request #9 from org/feature/x', '-m', 'feat: 새 기능')
+  const dry = (extra) => execFileSync(process.execPath, [script, '--dry-run'], { cwd: repo, env: { ...env, ...extra }, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
+  assert.match(dry({}), /^v0\.2\.0 → v0\.3\.0 \(minor\) · \w{7} · feat: 새 기능/)
+  // gh 가 실패하면(권한 없음 흉내) 끝자리로 넘어가지 않고 종료 1
+  const bin = path.join(dir, 'bin')
+  fs.mkdirSync(bin)
+  fs.writeFileSync(path.join(bin, 'gh'), '#!/bin/sh\necho "HTTP 403: Resource not accessible by integration" >&2\nexit 1\n', { mode: 0o755 })
+  assert.throws(() => dry({ GITHUB_REPOSITORY: 'org/repo', PATH: `${bin}:${env.PATH}` }), (error) => error.status === 1 && /PR 을 읽지 못했어요/.test(String(error.stderr)))
+  // gh 가 PR 없음([])이면 커밋 쪽 제목으로
+  fs.writeFileSync(path.join(bin, 'gh'), '#!/bin/sh\necho "[]"\n', { mode: 0o755 })
+  assert.match(dry({ GITHUB_REPOSITORY: 'org/repo', PATH: `${bin}:${env.PATH}` }), /v0\.3\.0 \(minor\)/)
+})
