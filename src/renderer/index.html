@@ -15,8 +15,8 @@
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6"/></svg>
       <span data-i18n="work.title">작업</span><span id="work-ask" class="work-ask" hidden></span>
     </button>
-    <!-- 현황판 페이지 메뉴(QA · 학습 · 아카이브 · 전체 칸반) — 고르면 기본 브라우저로. ⌘2 는 전체 칸반 -->
-    <button id="board-tab" class="tabbar-tool" aria-label="현황판" data-i18n-aria-label="board.title" aria-haspopup="menu" aria-expanded="false" aria-controls="board-menu">
+    <!-- 일감 페이지 메뉴(QA · 학습 · 아카이브 · 전체 칸반) — 고르면 기본 브라우저로. ⌘2 는 전체 칸반 -->
+    <button id="board-tab" class="tabbar-tool" aria-label="일감" data-i18n-aria-label="board.title" aria-haspopup="menu" aria-expanded="false" aria-controls="board-menu">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
     </button>
     <!-- 다이어그램 목록 — 본체 docs/diagrams/index.html 을 기본 앱으로(/guide 그림 과 같은 파일) -->
@@ -119,14 +119,23 @@
     <div id="work-pop-body" class="work-pop-body"></div>
     <div class="work-pop-foot"><span data-i18n="work.foot">누르면 자세히 · 지난 일은 아카이브에서</span><button id="work-pop-pages" class="link" type="button" data-i18n="work.footPages">QA · 학습 · 아카이브 →</button></div>
   </div>
+  <!-- pane [상세] — 계획서에 묶인 pane 머리 줄 아이콘을 누르면 작업 창 위에 오른쪽에서 나온다(레이아웃에 끼지 않아 pane · 터미널 크기는 그대로). 내용은 renderer renderPaneDetail -->
+  <aside id="pane-detail" class="pane-detail" hidden role="dialog" aria-labelledby="pane-detail-title">
+    <div class="pane-detail-head">
+      <span id="pane-detail-title" class="pane-detail-title" data-i18n="pane.detail.title">상세</span>
+      <span id="pane-detail-pane" class="pane-detail-pane"></span>
+      <button id="pane-detail-close" class="pane-detail-close" type="button" title="닫기" data-i18n-title="pane.detail.close" aria-label="닫기" data-i18n-aria-label="pane.detail.close">×</button>
+    </div>
+    <div id="pane-detail-body" class="pane-detail-body"></div>
+  </aside>
   <!-- ⚙ 설정 팝업 — 탭 줄 ⚙ 아래에 붙는다([작업] 팝업과 같은 방식). 머리(설정 · 팩 이름) + PR 자동 머지 묶음(레포 줄 스위치 · 그 아래 머지 전 확인). 내용은 renderer renderSettingsPop -->
   <div id="settings-pop" class="work-pop settings-pop" hidden role="dialog" aria-labelledby="settings-pop-title">
     <div class="work-pop-head settings-pop-head"><span id="settings-pop-title" data-i18n="settings.title">설정</span><span id="settings-pop-pack" class="settings-pop-pack"></span></div>
     <div id="settings-pop-body" class="work-pop-body"></div>
   </div>
-  <!-- 현황판 페이지 메뉴 -->
-  <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="현황판" data-i18n-aria-label="board.title">
-    <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">칸반</b><small data-i18n="board.menu.kanbanNote">계획서 · 이슈 · 에이전트</small></button>
+  <!-- 일감 페이지 메뉴 -->
+  <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="일감" data-i18n-aria-label="board.title">
+    <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">이슈</b><small data-i18n="board.menu.kanbanNote">해결할 이슈 · 작업 시작</small></button>
     <div class="board-menu-sep" role="separator"></div>
     <button class="board-menu-item" type="button" role="menuitem" data-section="qa"><b data-i18n="board.menu.qa">QA</b><small data-i18n="board.menu.qaNote">검수 실행 · 화면 비교</small></button>
     <button class="board-menu-item" type="button" role="menuitem" data-section="learn"><b data-i18n="board.menu.learn">학습</b><small data-i18n="board.menu.learnNote">에이전트가 배운 것 넣기 · 버리기</small></button>

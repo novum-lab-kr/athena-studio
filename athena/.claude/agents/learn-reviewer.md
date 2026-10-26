@@ -8,7 +8,7 @@ tools: Read, Glob, Grep
 
 ## 언제 불리나
 
-- **내 작업의 PR 이 모두 머지되면**(어느 브랜치로든) 현황판이 그 계획서를 대기열에 넣고, 뒤에서 도는 `scripts/learn-review.mjs --watch` 가 차례로 검토한다. 머지되지 않은 시도는 보지 않는다. 그 스크립트가 이 문서를 역할로 삼아 Claude 를 **도구 없이 한 번** 실행한다
+- **내 작업의 PR 이 모두 머지되면**(어느 브랜치로든) 일감이 그 계획서를 대기열에 넣고, 뒤에서 도는 `scripts/learn-review.mjs --watch` 가 차례로 검토한다. 머지되지 않은 시도는 보지 않는다. 그 스크립트가 이 문서를 역할로 삼아 Claude 를 **도구 없이 한 번** 실행한다
 - 사람이나 아테나가 직접 subagent 로 부르지 않는다. 수동으로 돌릴 때도 `node scripts/learn-review.mjs --plan <계획서>`
 
 ## 받는 것

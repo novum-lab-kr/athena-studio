@@ -1,4 +1,4 @@
-// [작업] 팝업 — 현황판 서버 `/api/state` 의 카드(계획서 · 이슈)를 목록으로, `/api/card` 의 계획서 원문을 상세로.
+// [작업] 팝업 — 일감 서버 `/api/state` 의 카드(계획서 · 이슈)를 목록으로, `/api/card` 의 계획서 원문을 상세로.
 // 칸반 칸 대신 "진행 중 · 최근 끝난 것" 두 묶음과 한 줄 요약만 — 자세한 건 계획서 · pane 으로 간다
 const RECENT_DONE_MS = 24 * 3600000
 const RECENT_DONE_MAX = 5
@@ -42,7 +42,7 @@ function workList(cards, requests = [], now = Date.now()) {
     html: plan.html || null,
     agents: Array.isArray(plan.agents) ? plan.agents : [],
     mtime: Number(plan.mtime) || 0,
-    // 완료로 바뀐 시각(현황판 사건 기록) — 없으면(기록 전에 끝난 것) 파일을 마지막으로 고친 시각
+    // 완료로 바뀐 시각(일감 사건 기록) — 없으면(기록 전에 끝난 것) 파일을 마지막으로 고친 시각
     doneAt: Number(plan.doneAt) || Number(plan.mtime) || 0,
   }))
   const rank = { wait: 0, blocked: 1, work: 2, idle: 3 }

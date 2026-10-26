@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>현황판</title>
+<title>일감</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
   :root {
@@ -57,54 +57,29 @@
   main > section { min-width: 0; }
   h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
   /* 카드가 많아져도 한 줄 — 넘치면 가로 스크롤 */
-  .agents { display: grid; grid-auto-flow: column; grid-auto-columns: 260px; gap: 10px; overflow-x: auto; padding-bottom: 6px; scroll-snap-type: x proximity; }
-  .agents .agent { scroll-snap-align: start; }
-  .agent { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; display: grid; gap: 4px; }
-  .agent .row { display: flex; align-items: center; gap: 8px; }
-  .agent .name { font-weight: 600; }
-  .agent .sub { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
   .pill.working { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
   .pill.blocked, .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
   .pill.ready { color: #fff; background: var(--ok); border-color: var(--ok); }
-  .checks { font-size: 12px; color: var(--muted); display: grid; gap: 1px; }
-  .checks .ok { color: var(--ok); }
   .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
   .empty { color: var(--muted); font-size: 13px; padding: 10px 2px; }
-  .board { display: grid; grid-template-columns: repeat(5, minmax(220px, 1fr)); gap: 12px; align-items: start; overflow-x: auto; }
-  .col { background: color-mix(in srgb, var(--panel) 55%, var(--bg)); border: 1px solid var(--line); border-radius: 12px; padding: 10px; min-height: 120px; }
-  .col-head { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; font-weight: 600; font-size: 13px; }
-  .col-head .bar { width: 4px; height: 14px; border-radius: 2px; }
-  .col-head .count { margin-left: auto; color: var(--muted); font-weight: 500; }
-  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 11px; margin-bottom: 8px; display: grid; gap: 5px; }
-  .card.flash { animation: flash 1.2s ease-out; }
   @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
-  .card .title { font-weight: 600; line-height: 1.35; }
-  .card .tags { display: flex; flex-wrap: wrap; gap: 4px; }
-  .card .line { font-size: 12px; color: var(--muted); }
-  .card .line b { color: var(--text); font-weight: 600; }
-  .card a { color: var(--accent); text-decoration: none; font-size: 12px; }
-  .progress { height: 4px; background: var(--line); border-radius: 2px; overflow: hidden; }
-  .progress i { display: block; height: 100%; background: var(--col-doing); }
-  .worktrees { display: flex; flex-wrap: wrap; gap: 8px; }
-  .wt { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; font-size: 12px; }
-  .card[draggable="true"] { cursor: grab; }
-  .card.dragging { opacity: .45; }
-  .hermes-board { grid-template-columns: repeat(3, minmax(220px, 1fr)); }
-  /* 넓은 화면은 한 화면에 맞춘다 — 페이지는 스크롤하지 않고 칸반이 남은 높이를 채워 칸마다 따로 스크롤(칸 제목은 고정). 좁은 화면은 그대로 페이지 스크롤 */
+  /* 해결할 이슈 목록 — 한 줄에 제목 · 레포 · 중요도 · 등록일 · 상태(작업 시작 / 진행 중) */
+  .issue-list { display: grid; gap: 6px; }
+  .issue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .issue-row.flash { animation: flash 1.2s ease-out; }
+  .issue-row .title { font-weight: 600; line-height: 1.35; cursor: pointer; }
+  .issue-row .title:hover { color: var(--accent); }
+  .issue-row .sub { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .issue-row .state { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; grid-row: span 2; }
+  .issue-row .summary { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .issue-head { display: flex; align-items: baseline; gap: 8px; }
+  .issue-head .count { color: var(--muted); font-weight: 500; }
   @media (min-width: 721px) and (min-height: 560px) {
     body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     header { flex: none; }
-    #view-now:not([hidden]), #view-hermes:not([hidden]) { flex: 1; min-height: 0; display: flex; flex-direction: column; gap: 14px; padding-bottom: 14px; }
-    #view-history:not([hidden]), #view-qa:not([hidden]), #view-learn:not([hidden]) { flex: 1; min-height: 0; overflow-y: auto; }
-    main > section { flex: none; }
-    main > section.board-section { flex: 1; min-height: 0; display: flex; flex-direction: column; }
-    .board-section .board { flex: 1; min-height: 0; grid-auto-rows: minmax(0, 1fr); align-items: stretch; }
-    .board-section .col { min-height: 0; overflow-y: auto; padding-top: 0; }
-    .board-section .col-head { position: sticky; top: 0; z-index: 1; background: inherit; padding-top: 10px; padding-bottom: 6px; margin-bottom: 2px; }
-    .worktrees { max-height: 64px; overflow-y: auto; }
+    #view-now:not([hidden]), #view-history:not([hidden]), #view-qa:not([hidden]), #view-learn:not([hidden]), #view-metrics:not([hidden]) { flex: 1; min-height: 0; overflow-y: auto; }
   }
-  .col.drop { outline: 2px dashed var(--accent); outline-offset: -4px; }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
   button, select, textarea { font: inherit; color: inherit; }
   .btn { font-size: 12px; padding: 3px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--panel); cursor: pointer; }
@@ -113,8 +88,6 @@
   .steps .done { color: var(--ok); } .steps .running { color: var(--accent); } .steps .error { color: var(--bad); } .steps .warn { color: var(--warn); } .steps .wait, .steps .skip { color: var(--muted); }
   .btn.danger { color: var(--bad); border-color: transparent; background: transparent; margin-left: auto; }
   .btn.danger:hover { border-color: var(--bad); }
-  .card .title { cursor: pointer; }
-  .card .title:hover { color: var(--accent); }
   #detail { width: min(760px, calc(100vw - 32px)); max-height: calc(100vh - 64px); }
   #detail .body { overflow-y: auto; max-height: calc(100vh - 190px); padding-right: 4px; }
   #detail h4 { margin: 14px 0 6px; font-size: 13px; color: var(--muted); }
@@ -149,6 +122,7 @@
   /* 위 4px · 아래 2px — 한글이 위로 쏠려 보이는 것을 맞춘다 */
   .tabs button { font: inherit; font-size: 12.5px; padding: 4px 12px 2px; border: 0; border-radius: 6px; background: transparent; color: var(--muted); cursor: pointer; }
   .tabs button[aria-selected="true"] { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: 0 1px 2px rgba(0,0,0,.08); }
+  .tabs button:not(#tab-now) { font-size: 11.5px; padding: 3px 9px 1px; }
   .tabs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
   /* 히스토리 */
   .history-bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
@@ -206,7 +180,6 @@
   .chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 2px 0 12px; }
   .chip { font-size: 11.5px; padding: 2px 9px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); background: var(--bg); }
   .md-sections { display: grid; gap: 10px; }
-  .card .line.origin { font-size: 11.5px; color: var(--muted); }
   .md-sections details.more { margin-top: 6px; font-size: 12.5px; }
   .md-sections details.more > summary { cursor: pointer; color: var(--accent); }
   .md-sections ol { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13px; line-height: 1.6; }
@@ -292,7 +265,7 @@
   /* QA 탭 */
   .qa-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .qa-top .sub { color: var(--muted); font-size: 12px; flex: 1 1 260px; }
-  /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 현황판 색을 쓴다 */
+  /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 일감 색을 쓴다 */
   .qa-top select, .tc-filter select { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); }
   .qa-top select option, .tc-filter select option { background: var(--panel); color: var(--text); }
   .qa-warn { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--warn); }
@@ -395,11 +368,10 @@
 </head>
 <body>
 <header>
-  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span>현황판
+  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span>일감
     <span class="tip" role="tooltip"><span id="live-state"></span><span id="updated"></span><span id="sync"></span></span></h1>
   <nav class="tabs" role="tablist" aria-label="보기">
-    <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="서비스 레포 작업 — 지금 도는 에이전트와 이슈·계획서 칸반">서비스</button>
-    <button type="button" role="tab" id="tab-hermes" data-tab="hermes" aria-selected="false" title="아테나 자체(스크립트·현황판·규칙)를 고치는 일">정비</button>
+    <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
     <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="QA 시뮬레이션 런 · TC 목록">QA</button>
     <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 클로드 학습(메모리)">학습</button>
     <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
@@ -410,22 +382,8 @@
 </header>
 <main id="view-now">
   <section>
-    <h2>지금 동작 중</h2>
-    <div id="agents" class="agents"></div>
-  </section>
-  <section class="board-section">
-    <h2>칸반</h2>
-    <div id="board" class="board"></div>
-  </section>
-  <section>
-    <h2>워크트리 (.worktrees)</h2>
-    <div id="worktrees" class="worktrees"></div>
-  </section>
-</main>
-<main id="view-hermes" hidden>
-  <section class="board-section">
-    <h2>정비 — 아테나 자체(스크립트·현황판·규칙 문서)를 고치는 일. 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고, PR 이 머지되면 끝</h2>
-    <div id="hermes-board" class="board hermes-board"></div>
+    <h2 class="issue-head">해결할 이슈 <span class="count" id="issue-count"></span></h2>
+    <div id="issues" class="issue-list"></div>
   </section>
 </main>
 <main id="view-qa" hidden>
@@ -595,28 +553,6 @@
   // 회사 값(GitHub 조직 · 에이전트 목록 · QA 앱) — 서버가 설정에서 채운다
   const ATHENA = __BOARD_CONFIG__;
   const PR_LINK = new RegExp(`github\\.com/${ATHENA.githubOrg ? ATHENA.githubOrg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '[\\w.-]+'}/([\\w.-]+)/pull/(\\d+)`, 'g');
-  const COLUMNS = [
-    ['issue', '이슈', 'var(--col-issue)'],
-    ['plan', '계획', 'var(--col-plan)'],
-    ['doing', '진행 중', 'var(--col-doing)'],
-    ['review', '리뷰', 'var(--col-review)'],
-    ['done', '완료', 'var(--col-done)'],
-  ];
-  // 아테나 칸 — 계획·리뷰 단계가 따로 없다(아테나가 이 세션에서 바로 고친다). 서비스 칸반의 칸 값을 셋으로 접는다
-  const ATHENA_COLUMNS = [
-    ['issue', '할 일', 'var(--col-issue)'],
-    ['doing', '진행 중', 'var(--col-doing)'],
-    ['done', '완료', 'var(--col-done)'],
-  ];
-  // 정비 칸에 둘 카드인가 — 팩 본체 현황판(state.maintenance false)이면 아테나 자체 작업도 서비스 칸반에
-  let maintenance = true;
-  const inMaintenance = (card) => maintenance && card.scope === 'hermes';
-  const laneColumn = (card) => {
-    if (!inMaintenance(card)) return card.column;
-    if (card.column === 'done') return 'done';
-    return card.column === 'issue' || card.column === 'plan' ? 'issue' : 'doing';
-  };
-  const STATUS_LABEL = { working: '작업 중', idle: '대기', done: '끝남', unknown: '?' };
   const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
   const ago = (sec) => (sec < 60 ? `${sec}초 전` : sec < 3600 ? `${Math.round(sec / 60)}분 전` : `${Math.round(sec / 3600)}시간 전`);
   // 카드 시각 — 오늘이면 시:분, 올해면 월/일 시:분, 그 전이면 연/월/일
@@ -647,15 +583,15 @@
   let targetPane = '';
 
   // 카드 상태별 액션 — 아테나에게 보낼 지시문 초안. 보내기 전에 창에서 고칠 수 있다
-  // 이슈 [처리 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
+  // 이슈 [작업 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
   const INVESTIGATE = (card) => `${card.id} 이슈를 맡는다. 순서대로 한다: ① git status --short --branch 로 담당 레포의 현재 브랜치·미커밋 변경을 먼저 보고한다(체크아웃·stash 하지 않는다) ② 이슈의 근거를 기준 ref 에서 git show·ls-tree 로 확인한다 ③ ${card.type === 'check' ? '확인 결과를 이슈 파일 끝에 "## 확인 결과 (날짜 · 에이전트)" 절로 파일:줄 근거와 함께 적는다' : '원인과 고칠 범위를 정리해 보고한다 — 코드는 수정하지 않는다(계획서 승인 뒤 아테나가 브랜치를 만들어 다시 맡긴다)'}. 이슈 파일 말고는 수정하지 않는다. 커밋하지 않는다.`;
-  // [QA 실행] — 아테나·에이전트를 거치지 않고 현황판 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
+  // [QA 실행] — 아테나·에이전트를 거치지 않고 일감 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
   const QA_ACTION = ['QA 실행', (card) => `영향 화면 QA 시뮬레이션을 돌려요.\n대상: ${card.workRef || '(Work ref 없음)'}\n바뀐 파일 → 영향 화면을 찾아 작업·기준 dev 서버로 데스크톱·모바일 검사 + 스크린샷 비교. 진행은 QA 탭에서 실시간으로 보여요.`, 'qa'];
   const ACTIONS = {
     issue: {
       // 아테나가 직접 하지 않는다 — 라우팅 → 브랜치 확인 → 담당 에이전트 pane 디스패치 순서를 지시문에 박는다
       // 기본은 아테나가 처리한다(판단 → 계획서 → prBase 브랜치 → 담당 에이전트). 팝업에서 "담당 에이전트로 바로(조사만)" 로 바꿀 수 있다
-      open: [['처리 시작', (card) => `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
+      open: [['작업 시작', (card) => `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
       planned: [['계획 보기', (card) => `${card.id} 이슈에 연결된 계획서${card.plan ? ` ${card.plan}` : ''} 상태를 알려줘.`]],
       in_progress: [['진행 상황', (card) => `${card.id} 이슈 진행 상황을 알려줘.`]],
     },
@@ -668,9 +604,9 @@
     },
   };
 
-  // hermes 이슈 [처리 시작] — 디스패치하지 않는다. 아테나가 경량 계획서로 바로 고치고, 커밋·push 하면 fix: 로 완료
+  // hermes 이슈 [작업 시작] — 디스패치하지 않는다. 아테나가 경량 계획서로 바로 고치고, 커밋·push 하면 fix: 로 완료
   const ATHENA_ACTIONS = {
-    open: [['처리 시작', (card) => `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
+    open: [['작업 시작', (card) => `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
   };
   const actionsFor = (card) => ((card.scope === 'hermes' && card.kind === 'issue' && ATHENA_ACTIONS[card.status]) || (ACTIONS[card.kind] || {})[card.status] || []);
   const api = async (path, body) => {
@@ -1105,7 +1041,7 @@
     box.innerHTML = `<div class="metric-groups">${groups}</div>`
       + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
       + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
-      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
+      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 일감이 켜져 있을 때만 기록</p></div>`;
   };
   document.getElementById('metrics-days').addEventListener('change', loadMetrics);
   // ── QA 탭 — .qa-runs/ 런 목록 + 런 하나의 화면 카드. 돌고 있는 동안만 1.5초마다 다시 읽는다
@@ -1768,7 +1704,7 @@
   };
   document.querySelectorAll('[data-learnview]').forEach((button) => { button.onclick = () => showLearnView(button.dataset.learnview); });
 
-  const TABS = ['now', 'hermes', 'qa', 'learn', 'history', 'metrics'];
+  const TABS = ['now', 'qa', 'learn', 'history', 'metrics'];
   const showTab = (tab) => {
     for (const name of TABS) {
       document.getElementById(`view-${name}`).hidden = name !== tab;
@@ -1798,7 +1734,7 @@
     });
   });
 
-  // 브라우저 기본 confirm 대신 현황판 안의 확인 창 — 무엇이 남았는지 ✓/✗ 로 보여 준다
+  // 브라우저 기본 confirm 대신 일감 안의 확인 창 — 무엇이 남았는지 ✓/✗ 로 보여 준다
   const askConfirm = ({ title, message = '', items = [], yes }) =>
     new Promise((resolve) => {
       const dialog = document.getElementById('confirm');
@@ -1812,36 +1748,6 @@
       dialog.oncancel = () => resolve(false);
       dialog.showModal();
     });
-
-  const moveTo = async (id, column) => {
-    // 완료는 사람이 옮긴다 — 조건이 덜 찼으면 무엇이 남았는지 보여 주고 한 번 더 묻는다
-    const target = (lastState?.cards || []).find((entry) => entry.id === id);
-    if (column === 'done' && target?.kind === 'issue' && target.doneCheck && !target.doneCheck.ready) {
-      const go = await askConfirm({
-        title: '아직 완료 조건이 다 채워지지 않았어요',
-        message: '아래 ✗ 항목이 남아 있습니다. 그래도 완료로 옮기시겠어요?',
-        items: target.doneCheck.checks,
-        yes: '그래도 완료로 옮기기',
-      });
-      if (!go) return render(lastState);
-    }
-    try {
-      await api('/api/move', { id, column });
-      toast(`'${COLUMNS.find((entry) => entry[0] === column)[1]}' 칸으로 옮겼어요`);
-      // 끝난 이슈의 워크트리 정리 — 미커밋 변경이 있으면 서버가 거부한다
-      const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      if (column === 'done' && card?.kind === 'issue' && card.worktree?.exists) {
-        const remove = await askConfirm({
-          title: '이 이슈의 워크트리도 정리할까요?',
-          message: `${card.worktree.rel} — 커밋하지 않은 변경이 있으면 지우지 않고 알려 드려요.`,
-          yes: '워크트리 지우기',
-        });
-        if (remove) await api('/api/worktree-remove', { id, agent: card.agent }).then(() => toast('워크트리를 정리했어요')).catch((error) => toast(`워크트리를 지우지 못했어요: ${error.message}`));
-      }
-    } catch (error) {
-      toast(`옮기지 못했어요: ${error.message}`);
-    }
-  };
 
   // 지시문 창
   let pending = null; // { mode: 'pane' | 'dispatch', agent }
@@ -1898,7 +1804,7 @@
       // 받는 곳 안내는 이슈 팝업(route)이 채운다
     } else if (mode === 'qa') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      to.innerHTML = `→ <b>QA 시뮬레이션</b> (scripts/qa/run.mjs) 를 현황판 서버가 뒤에서 돌려요 · 한 번에 하나 · 아테나는 거치지 않아요${card?.workRef ? `<br>워크트리 <code>${esc(card.workRef.split(' ')[0])}</code>` : ''}<br>아래 글은 안내라 고쳐도 보내지지 않아요`;
+      to.innerHTML = `→ <b>QA 시뮬레이션</b> (scripts/qa/run.mjs) 를 일감 서버가 뒤에서 돌려요 · 한 번에 하나 · 아테나는 거치지 않아요${card?.workRef ? `<br>워크트리 <code>${esc(card.workRef.split(' ')[0])}</code>` : ''}<br>아래 글은 안내라 고쳐도 보내지지 않아요`;
     } else if (mode === 'review') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
       to.innerHTML = `→ <b>reviewer</b> 를 계획서의 담당 레포 workspace 에 새 pane 으로 띄워요${card?.workRef ? `<br>대상 <code>${esc(card.workRef)}</code>` : ''} · 아테나는 거치지 않아요`;
@@ -1972,34 +1878,6 @@
     }
   };
 
-  const controls = (card) => {
-    const actions = actionsFor(card)
-      .map(([label], index) => `<button class="btn" data-act="${index}" data-id="${esc(card.id)}">${label}</button>`)
-      .join('');
-    const movable = !card.archived;
-    // 완료 칸은 현황판이 바로 처리하는 [아카이브] 하나만 — 끝난 일에 지시할 것은 없다
-    if (card.column === 'done') return `<div class="actions"><button class="btn" data-archive="${esc(card.id)}" title="끝난 일을 보관하고 보드에서 치워요" style="margin-left:auto">아카이브</button></div>`;
-    return `<div class="actions">${actions}<button class="btn" data-act="free" data-id="${esc(card.id)}">직접 지시</button>
-      ${movable ? `<button class="btn danger" data-delete="${esc(card.id)}" title="휴지통으로 옮겨요">삭제</button>` : ''}</div>`;
-  };
-
-  const agentCard = (item) => {
-    const status = item.status || 'unknown';
-    const dotClass = status === 'working' ? 'dot on' : 'dot';
-    const where = item.kind === 'pane'
-      ? `${esc(item.id)} · ${esc(item.cwd)}${item.branch ? ` · 🌿 ${esc(item.branch)}` : ''}`
-      : `백그라운드 · ${ago(item.ageSec)}`;
-    const detail = item.kind === 'pane' ? item.title : item.lastTool || item.title;
-    return `<div class="agent">
-      <div class="row"><span class="${dotClass}"></span><span class="name">${esc(item.agent)}</span>
-        <span class="pill ${status === 'working' ? 'working' : ''}">${STATUS_LABEL[status] || esc(status)}</span>
-        ${item.tool ? `<span class="pill">${esc(item.tool)}</span>` : ''}</div>
-      <div class="sub">${where}</div>
-      ${detail ? `<div class="sub" title="${esc(detail)}">${esc(detail)}</div>` : ''}
-      ${item.kind === 'subagent' && item.title && item.lastTool ? `<div class="sub">${esc(item.title)}</div>` : ''}
-    </div>`;
-  };
-
   // 정식 계획서만 제목 옆에 문서 아이콘 — 경량은 표시하지 않는다
   const formalMark = (plan) => plan?.grade === 'formal' ? '<span class="formal-mark" title="정식 계획서 — md + 결정 콘솔">📄</span>' : '';
 
@@ -2010,39 +1888,6 @@
     if (branch) return `<div class="line" title="${esc(workRef)}">🌿 ${esc(branch)}</div>`;
     if (/^(?:athena|hermes)\b/.test(workRef || '') || /\/\d{8}-(?:athena|hermes)-/.test(id)) return `<div class="line" title="${esc(workRef || '')}">🏠 athena · main</div>`;
     return '';
-  };
-
-  const planCard = (card, panes) => {
-    const tags = [`<span class="pill">${esc(card.status)}</span>`];
-    if (card.blocked) tags.push(`<span class="pill bad">막힘</span>`);
-    if (card.working && card.status !== 'in_progress') tags.push('<span class="pill working">에이전트 작업 중</span>');
-    const running = (card.agents || []).map((id) => panes.find((pane) => pane.id === id)).filter(Boolean);
-    for (const pane of running) tags.push(`<span class="pill ${pane.status === 'working' ? 'working' : ''}">🤖 ${esc(pane.agent)}</span>`);
-    const progress = card.progress ? `<div class="progress" title="${card.progress.checked}/${card.progress.total}"><i style="width:${Math.round((card.progress.checked / card.progress.total) * 100)}%"></i></div><div class="line">진행 ${card.progress.checked}/${card.progress.total}</div>` : '';
-    return `<div class="card" data-key="${esc(card.id)}" draggable="${!card.archived}">
-      <div class="title" title="${esc(card.id)}">${formalMark(card)}${esc(card.title)}</div>
-      ${when(card)}
-      ${card.origin ? `<div class="line origin">등록 · ${esc(card.origin)}</div>` : ''}
-      <div class="tags">${tags.join('')}</div>
-      ${card.statusNote ? `<div class="line">${esc(card.statusNote)}</div>` : ''}
-      ${progress}
-      ${card.blocked ? `<div class="line"><b>막힘</b> ${esc(card.blocked)}</div>` : ''}
-      ${card.next && card.column !== 'done' ? `<div class="line"><b>다음</b> ${esc(card.next)}</div>` : ''}
-      ${branchLine(card.workRef, card.id)}
-      ${card.html ? `<a href="/${esc(card.html)}" target="_blank">결정 콘솔 열기 ↗</a>` : ''}
-      ${controls(card)}
-    </div>`;
-  };
-
-  // 이슈 카드 안에 합친 계획서 — 경로·진행·막힘·에이전트
-  const linkedPlan = (card, panes) => {
-    const plan = card.linkedPlan;
-    if (!plan) return '';
-    const running = (plan.agents || []).map((id) => panes.find((pane) => pane.id === id)).filter(Boolean);
-    const bar = plan.progress ? `<div class="progress"><i style="width:${Math.round((plan.progress.checked / plan.progress.total) * 100)}%"></i></div>` : '';
-    return `<div class="line">📋 <b>계획</b> ${esc(plan.status)}${plan.progress ? ` · 진행 ${plan.progress.checked}/${plan.progress.total}` : ''}${running.map((pane) => ` · <span class="pill ${pane.status === 'working' ? 'working' : ''}">🤖 ${esc(pane.agent)}</span>`).join('')}</div>
-      ${bar}
-      ${plan.blocked ? `<div class="line"><b>막힘</b> ${esc(plan.blocked)}</div>` : ''}`;
   };
 
   // 이슈 등록 경로 — front matter source: 글을 보고 누가·무엇을 하다 올렸는지 한 줄로(원문은 팝업에)
@@ -2065,57 +1910,65 @@
     return text ? { icon: '📍', label: '기타' } : null;
   };
   const originChip = (source) => { const origin = issueOrigin(source); return origin ? `<span class="chip" title="${esc(source)}">${origin.icon} ${esc(origin.label)}</span>` : ''; };
-  const issueCard = (card, panes = []) => {
-    const tags = [];
-    if (card.repo) tags.push(`<span class="pill">${esc(card.repo)}</span>`);
-    if (card.scope === 'hermes') tags.push('<span class="pill">🧭 아테나</span>');
-    else tags.push(`<span class="pill">${card.agent ? `🤖 ${esc(card.agent)}` : '담당 미정'}</span>`);
-    const check = card.doneCheck;
-    if (check?.ready && card.column !== 'done') tags.push('<span class="pill ready">완료 가능</span>');
-    if (card.type) tags.push(`<span class="pill">${esc(card.type)}</span>`);
-    if (card.severity) tags.push(`<span class="pill ${card.severity === 'high' ? 'bad' : card.severity === 'medium' ? 'warn' : ''}">${esc(card.severity)}</span>`);
-    return `<div class="card" data-key="${esc(card.id)}" draggable="true">
-      <div class="title" title="${esc([card.summary, card.source && `출처 ${card.source}`, card.id, card.linkedPlan && `계획 ${card.linkedPlan.id}`].filter(Boolean).join('\n'))}">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
-      ${when(card)}
-      ${issueOrigin(card.source) ? `<div class="line origin" title="${esc(card.source)}">등록 · ${issueOrigin(card.source).icon} ${esc(issueOrigin(card.source).label)}</div>` : ''}
-      <div class="tags">${tags.join('')}</div>
-      ${card.linkedPlan ? branchLine(card.linkedPlan.workRef, card.linkedPlan.id) : ''}
-      ${linkedPlan(card, panes)}
-      ${check && card.column !== 'done' && card.column !== 'issue' ? `<div class="checks">${check.checks.map((item) => `<span class="${item.ok ? 'ok' : ''}">${item.ok ? '✓' : '·'} ${esc(item.label)}</span>`).join('')}</div>` : ''}
-      ${controls(card)}
+  // ── 해결할 이슈 목록 ───────────────────────────────────────────────
+  // 학습 후보(kind: knowledge · -learn- 파일)는 [학습] 탭 몫이라 뺀다. 끝난 것(done · wontfix)은 목록에 두지 않는다
+  const isOpenIssue = (card) => card.kind === 'issue' && card.type !== 'knowledge' && !['done', 'wontfix'].includes(card.status);
+  const SEVERITY_RANK = { high: 0, medium: 1, low: 2 };
+  // 진행 중인 것 먼저, 그다음 중요도 · 최근 등록 순
+  const issueRank = (card) => [card.status === 'open' ? 1 : 0, SEVERITY_RANK[card.severity] ?? 3, -(card.created || card.mtime || 0)];
+  const byRank = (left, right) => {
+    const leftRank = issueRank(left);
+    const rightRank = issueRank(right);
+    for (let index = 0; index < leftRank.length; index += 1) if (leftRank[index] !== rightRank[index]) return leftRank[index] - rightRank[index];
+    return 0;
+  };
+  const severityPill = (severity) => {
+    if (!severity) return '';
+    const level = { high: 'bad', medium: 'warn' }[severity] || '';
+    return `<span class="pill ${level}">${esc(severity)}</span>`;
+  };
+  // 상태 칸 — 열린 이슈는 [작업 시작](기존 처리 흐름), 시작한 이슈는 진행 중 + 맡은 pane
+  const issueState = (card, panes) => {
+    if (card.status === 'open') {
+      const actions = actionsFor(card).map(([label], index) => `<button class="btn primary" data-act="${index}" data-id="${esc(card.id)}">${esc(label)}</button>`).join('');
+      return `${actions}<button class="btn danger" data-delete="${esc(card.id)}" title="휴지통으로 옮겨요">삭제</button>`;
+    }
+    const plan = card.linkedPlan;
+    const running = (plan?.agents || []).map((id) => panes.find((pane) => pane.id === id)).filter(Boolean);
+    const pills = [`<span class="pill working">진행 중</span>`];
+    if (plan?.status === 'blocked' || card.blocked) pills.push('<span class="pill bad">막힘</span>');
+    if (card.doneCheck?.ready) pills.push('<span class="pill ready">완료 가능</span>');
+    for (const pane of running) pills.push(`<span class="pill ${pane.status === 'working' ? 'working' : ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}</span>`);
+    if (!running.length) pills.push(`<span class="pill">${card.agent ? `🤖 ${esc(card.agent)}` : '담당 미정'} · pane 없음</span>`);
+    return pills.join('');
+  };
+  const issueRow = (card, panes) => {
+    const created = card.created || card.mtime;
+    const origin = issueOrigin(card.source);
+    return `<div class="issue-row" data-key="${esc(card.id)}">
+      <div class="title" title="누르면 요청·진행·결과를 볼 수 있어요">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
+      <div class="state">${issueState(card, panes)}</div>
+      <div class="sub">
+        ${card.repo ? `<span class="pill">${esc(card.repo)}</span>` : ''}
+        ${severityPill(card.severity)}
+        <span title="${esc(new Date(created).toLocaleString('ko-KR', { hour12: false }))}">등록 ${clock(created)}</span>
+        ${origin ? `<span title="${esc(card.source)}">${origin.icon} ${esc(origin.label)}</span>` : ''}
+        ${card.summary ? `<span class="summary" title="${esc(card.summary)}">${esc(card.summary)}</span>` : ''}
+      </div>
     </div>`;
   };
 
   const render = (state) => {
     lastState = state;
-    const agents = [...(state.panes || []), ...(state.subagents || [])];
-    // 가로 스크롤 위치는 다시 그려도 유지한다
-    const agentsBox = document.getElementById('agents');
-    const agentsScroll = agentsBox.scrollLeft;
-    agentsBox.innerHTML = agents.length
-      ? agents.map(agentCard).join('')
-      : `<div class="empty">${state.screen ? '지금 돌고 있는 에이전트가 없어요' : 'Athena Studio 화면을 찾지 못했어요 — 앱을 켜면 pane 이 보여요'}</div>`;
-    agentsBox.scrollLeft = agentsScroll;
+    const panes = state.panes || [];
+    const issues = (state.cards || []).filter(isOpenIssue).sort(byRank);
+    document.getElementById('issue-count').textContent = issues.length ? String(issues.length) : '';
+    document.getElementById('issues').innerHTML = issues.length
+      ? issues.map((card) => issueRow(card, panes)).join('')
+      : '<div class="empty">해결할 이슈가 없어요</div>';
 
-    const cards = state.cards || [];
-    maintenance = state.maintenance !== false;
-    document.getElementById('tab-hermes').hidden = !maintenance;
-    if (!maintenance && !document.getElementById('view-hermes').hidden) showTab('now');
-    const drawLane = (lane, columns) => columns.map(([key, label, color]) => {
-      const inColumn = cards.filter((card) => inMaintenance(card) === (lane === 'hermes') && laneColumn(card) === key).sort((left, right) => right.mtime - left.mtime);
-      const body = inColumn.map((card) => (card.kind === 'plan' ? planCard(card, state.panes || []) : issueCard(card, state.panes || []))).join('') || '<div class="empty">비어 있어요</div>';
-      return `<div class="col" data-col="${key}" data-lane="${lane}"><div class="col-head"><span class="bar" style="background:${color}"></span>${label}<span class="count">${inColumn.length}</span></div>${body}</div>`;
-    }).join('');
-    document.getElementById('board').innerHTML = drawLane('service', COLUMNS);
-    document.getElementById('hermes-board').innerHTML = drawLane('hermes', ATHENA_COLUMNS);
-
-    const worktrees = state.worktrees || [];
-    document.getElementById('worktrees').innerHTML = worktrees.length
-      ? worktrees.map((wt) => `<div class="wt">📁 ${esc(wt.repo)} · 🌿 ${esc(wt.branch)}${wt.dirty ? ` · ✎${wt.dirty}` : ''}</div>`).join('')
-      : '<div class="empty">비어 있어요</div>';
-
-    // 바뀐 카드만 잠깐 반짝인다
-    const next = new Map(cards.map((card) => [card.id, JSON.stringify(card)]));
+    // 바뀐 줄만 잠깐 반짝인다
+    const next = new Map(issues.map((card) => [card.id, JSON.stringify(card)]));
     if (previous.size) {
       for (const [key, value] of next) {
         if (previous.get(key) !== value) document.querySelector(`[data-key="${CSS.escape(key)}"]`)?.classList.add('flash');
@@ -2124,27 +1977,24 @@
     previous = next;
 
     const findCard = (id) => (state.cards || []).find((card) => card.id === id);
-    document.querySelectorAll('[data-act]').forEach((button) => {
+    document.querySelectorAll('#issues [data-act]').forEach((button) => {
       button.onclick = () => {
         const card = findCard(button.dataset.id);
         if (!card) return;
-        if (button.dataset.act === 'free') return ask('직접 지시', `${card.id} `);
         const [label, build, mode] = actionsFor(card)[Number(button.dataset.act)];
         ask(label, build(card), mode || 'pane', card.agent || '', card.id);
       };
     });
-    document.querySelectorAll('.card .title').forEach((title) => {
-      title.title = '누르면 요청·진행·결과를 볼 수 있어요';
-      title.onclick = () => openDetail(title.closest('.card').dataset.key);
+    document.querySelectorAll('#issues .issue-row .title').forEach((title) => {
+      title.onclick = () => openDetail(title.closest('.issue-row').dataset.key);
     });
-    document.querySelectorAll('[data-delete]').forEach((button) => {
+    document.querySelectorAll('#issues [data-delete]').forEach((button) => {
       button.onclick = async () => {
         const card = findCard(button.dataset.delete);
         if (!card) return;
         const items = [{ label: card.id, ok: false }];
-        if (card.kind === 'issue' && card.linkedPlan?.id?.startsWith('plans/task/')) items.push({ label: `연결된 경량 계획서 ${card.linkedPlan.id}`, ok: false });
-        if (card.kind === 'issue' && card.worktree?.exists) items.push({ label: `이슈 워크트리 ${card.worktree.rel} (커밋 안 된 변경이 있으면 남겨요)`, ok: false });
-        if (card.kind === 'plan' && card.html) items.push({ label: `결정 콘솔 ${card.html}`, ok: false });
+        if (card.linkedPlan?.id?.startsWith('plans/task/')) items.push({ label: `연결된 경량 계획서 ${card.linkedPlan.id}`, ok: false });
+        if (card.worktree?.exists) items.push({ label: `이슈 워크트리 ${card.worktree.rel} (커밋 안 된 변경이 있으면 남겨요)`, ok: false });
         const go = await askConfirm({
           title: `'${card.title}' 을(를) 삭제할까요?`,
           message: '아래 항목을 휴지통(.board-trash/날짜/)으로 옮겨요. 필요하면 거기서 되살릴 수 있어요. 떠 있는 에이전트 pane 은 닫지 않아요.',
@@ -2158,51 +2008,6 @@
         } catch (error) {
           toast(`삭제하지 못했어요: ${error.message}`);
         }
-      };
-    });
-    document.querySelectorAll('[data-archive]').forEach((button) => {
-      button.onclick = async () => {
-        const card = findCard(button.dataset.archive);
-        if (!card) return;
-        const isIssue = card.kind === 'issue';
-        const folder = `archive/${card.id.split('/').pop().replace(/\.md$/, '')}/`;
-        const items = [{ label: `${card.id} → ${folder}${isIssue ? 'issue.md' : 'plan.md'}`, ok: true }];
-        if (isIssue && card.linkedPlan?.id) items.push(card.linkedPlan.status === 'done'
-          ? { label: `${card.linkedPlan.id} → ${folder}plan.md (같은 폴더로 묶어요)`, ok: true }
-          : { label: `${card.linkedPlan.id} — 아직 끝나지 않아 두고 가요(Status ${card.linkedPlan.status})`, ok: false });
-        if (isIssue && card.worktree?.exists) items.push({ label: `이슈 워크트리 ${card.worktree.rel} 정리 (커밋 안 된 변경이 있으면 남겨요)`, ok: true });
-        if (!isIssue && card.html) items.push({ label: `결정 콘솔 ${card.html} → ${folder}plan.html`, ok: true });
-        const go = await askConfirm({
-          title: `'${card.title}' 을(를) 아카이브할까요?`,
-          message: '끝난 일을 이슈·계획서 한 폴더(archive/)로 묶어 보관하고 보드에서 치워요. git 에 커밋돼 남고, 히스토리 탭에서 다시 볼 수 있어요.',
-          items,
-          yes: '아카이브',
-        });
-        if (!go) return;
-        try {
-          const result = await api('/api/archive', { id: card.id });
-          toast(`아카이브했어요 (${result.moved.length}개)${result.notes?.length ? ` · ${result.notes.join(' · ')}` : ''}`);
-        } catch (error) {
-          toast(`아카이브하지 못했어요: ${error.message}`);
-        }
-      };
-    });
-    document.querySelectorAll('.card[draggable="true"]').forEach((element) => {
-      element.ondragstart = (event) => { event.dataTransfer.setData('text/plain', element.dataset.key); element.classList.add('dragging'); };
-      element.ondragend = () => element.classList.remove('dragging');
-    });
-    document.querySelectorAll('.col[data-col]').forEach((column) => {
-      column.ondragover = (event) => { event.preventDefault(); column.classList.add('drop'); };
-      column.ondragleave = () => column.classList.remove('drop');
-      column.ondrop = (event) => {
-        event.preventDefault();
-        column.classList.remove('drop');
-        const id = event.dataTransfer.getData('text/plain');
-        const card = findCard(id);
-        // 서비스 칸반 ↔ 아테나 칸 사이로는 옮기지 않는다(repo·Agent 로 정해진다)
-        if (!card || inMaintenance(card) !== (column.dataset.lane === 'hermes') || laneColumn(card) === column.dataset.col) return;
-        // 아테나 칸 '할 일' 에 계획서를 놓으면 planned
-        moveTo(id, card.kind === 'plan' && column.dataset.col === 'issue' ? 'plan' : column.dataset.col);
       };
     });
 

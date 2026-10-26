@@ -5,7 +5,7 @@
 //         대화로 답을 받았으면(answer --by chat) 에이전트가 이미 받은 것이라 바로 delivered
 //   쓰기는 이 모듈로만 — 폴더 잠금 + 원자 저장 + rev(고칠 때마다 +1). 답할 때 rev 를 주면 그사이 바뀐 요청에는 답하지 않는다(conflict)
 //   같은 dedupeKey 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다
-//   팩 세대가 바뀐 뒤(가져오기 --replace 등) 만든 요청에 온 답은 거절한다(stale) — 현황판 쓰기의 409 와 같은 규칙
+//   팩 세대가 바뀐 뒤(가져오기 --replace 등) 만든 요청에 온 답은 거절한다(stale) — 일감 쓰기의 409 와 같은 규칙
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'

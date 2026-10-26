@@ -1,12 +1,12 @@
 #!/usr/bin/env node
 /**
- * 아테나 현황판 — 로컬 서버를 띄워 지금 무슨 일이 돌아가는지 브라우저에서 실시간으로 본다.
+ * 아테나 일감 — 로컬 서버를 띄워 지금 무슨 일이 돌아가는지 브라우저에서 실시간으로 본다.
  *
  *   node scripts/board/server.mjs            # http://localhost:4700 (ATHENA_BOARD_PORT 로 변경)
  *   /board                                   # 아테나 세션에서 — 뒤에서 띄우고 브라우저를 연다(scripts/board.sh)
  *
  * 보여주는 것 (로컬 파일·명령에서 읽는다)
- *   - 칸반: 이슈(issues/*.md) · 계획 · 진행 중 · 리뷰 · 완료(plans/**\/*.md 의 Checkpoint Status)
+ *   - 카드: 이슈(issues/*.md) · 계획서(plans/**\/*.md 의 Checkpoint Status) — 페이지 첫 화면은 해결할 이슈 목록, 계획서는 앱 [작업] · pane [상세] 가 /api/state 로 읽는다
  *   - 지금 동작 중: 화면(Athena Studio) pane 의 에이전트(agent_status), 백그라운드 서브에이전트 로그, 워크트리
  *   - 머리: 마지막 sync, 다이어그램 점검 결과는 /board 에서 따로 돌리지 않는다(무겁다)
  *
@@ -14,7 +14,7 @@
  *
  * 쓰기는 두 가지뿐이다 (브라우저 버튼)
  *   - POST /api/move   카드를 다른 칸으로 — 이슈 frontmatter status, 계획서 Checkpoint Status(md 와 html 의 plan-md 사본 둘 다)
- *   - POST /api/dispatch (이슈 [처리 시작] → "담당 에이전트로 바로(조사만)") 이슈마다 워크트리(.worktrees/<레포>/issue-<이슈>, 운영 기준 ref · detached — 조사 전용, 코드 수정 없음)를 만들고
+ *   - POST /api/dispatch (이슈 [작업 시작] → "담당 에이전트로 바로(조사만)") 이슈마다 워크트리(.worktrees/<레포>/issue-<이슈>, 운영 기준 ref · detached — 조사 전용, 코드 수정 없음)를 만들고
  *     담당 에이전트를 그 레포 workspace 에 새 pane 으로 띄운다(scripts/delegate.sh --cwd). 한 레포에서 여러 이슈를 동시에 돌려도 부딪히지 않게
  *   - POST /api/worktree-remove 끝난 이슈의 워크트리를 지운다(미커밋 변경이 있으면 거부)
  *   - POST /api/delete 카드를 휴지통(.board-trash/<날짜>/)으로 옮긴다 — 이슈면 연결된 경량 계획서·워크트리도. 되돌릴 수 있게 지우지 않는다
@@ -28,7 +28,7 @@
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
- *   - POST /api/hermes-new 이슈 [처리 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
+ *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
  *                      결정 콘솔이 plan(계획서 경로)을 같이 주면 그 계획서의 결정 요청에 답을 적고(answered) 지시 앞에 [요청 <id>] 를 붙인다(docs/requests.md)
  *     정식 계획서 결정 콘솔(/plans/*.html)의 [이대로 진행] 도 이걸로 PLAN.leadPane 에 보낸다
@@ -62,12 +62,12 @@ import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
-// 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 갈아 끼운 뒤 남은 현황판이 다른 팩에 쓰지 않게)
+// 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 갈아 끼운 뒤 남은 일감이 다른 팩에 쓰지 않게)
 const BOOT_PATHS = paths(ROOT)
 const BOOT_PACK = BOOT_PATHS.mode === 'packs' ? (() => {
   let pack = {}
   try { pack = JSON.parse(readFileSync(join(BOOT_PATHS.packDir, 'pack.json'), 'utf8')) } catch { /* 빈 팩 자리(pack new 직후) */ }
-  // bodyId · core(뜰 때의 코어 커밋) · instance(뜰 때마다 새 값) — 스튜디오가 "어느 본체의 어느 코드로 뜬 현황판인지" 안다
+  // bodyId · core(뜰 때의 코어 커밋) · instance(뜰 때마다 새 값) — 스튜디오가 "어느 본체의 어느 코드로 뜬 일감인지" 안다
   let core = null
   try { core = execFileSync('git', ['-C', ROOT, 'rev-parse', 'HEAD'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() || null } catch { /* git 아님 */ }
   return { id: BOOT_PATHS.packId, packId: pack.id ?? null, name: pack.name ?? BOOT_PATHS.packId, generation: BOOT_PATHS.generation, bodyId: bodyIdOf(ROOT), core, instance: randomBytes(6).toString('hex') }
@@ -140,17 +140,22 @@ const section = (text, heading) => {
 const field = (text, name) => text.match(new RegExp(`^-\\s*${name}:\\s*(.+)$`, 'm'))?.[1].trim() ?? ''
 const plain = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').trim()
 
-// 이 계획서가 어떻게 시작됐나 — 이슈 [처리 시작] · /call · /qa-tc · 아테나 대화(정식·경량). 카드·팝업에 한 줄로
+// 이 계획서가 어떻게 시작됐나 — 이슈 [작업 시작] · /call · /qa-tc · 아테나 대화(정식·경량). 카드·팝업에 한 줄로
 const planOrigin = (path, text, rawAgent, issueField) => {
   const title = text.match(/^#\s+(.+)$/m)?.[1] ?? ''
   const agent = rawAgent.startsWith('(') ? '' : rawAgent   // "(정해지지 않음)" 같은 자리표시는 없는 것으로
-  if (/issues\/\S+\.md/.test(issueField)) return '📌 이슈 [처리 시작]'
+  if (/issues\/\S+\.md/.test(issueField)) return '📌 이슈 [작업 시작]'
   if (/QA TC/.test(title)) return `🧪 /qa-tc${agent ? ` · ${agent}` : ''}`
   // /call 이 만든 계획서 — 제목은 에이전트가 작업을 시작하며 바꾸므로 파일 이름(…-작업-pane-에서-지시)으로 본다
   if (/작업 \(pane 에서 지시\)\s*$/.test(title) || /-작업-pane-에서-지시\.md$/.test(path)) return `📞 /call ${agent}`.trim()
   if (path.split('/').at(-2) !== 'task') return '🧭 아테나 · 정식 계획'
   if (agent === 'athena' || agent === 'hermes') return '🧭 아테나 대화 (정비)'
   return `🧭 아테나 대화${agent ? ` → ${agent}` : ''}`
+}
+const leadPaneOfHtml = (path) => {
+  const html = path.replace(/\.md$/, '.html')
+  if (!existsSync(html)) return ''
+  return (readText(html) || '').match(/"(?:leadPane|hermesPane)":\s*"([^"]*)"/)?.[1] ?? ''
 }
 const readPlan = (path) => {
   const text = readText(path)
@@ -186,6 +191,8 @@ const readPlan = (path) => {
     // 여러 레포 계획서는 에이전트마다 Work ref 줄이 있다 — pane 을 붙일 때는 모두 본다
     workRefs: [...checkpoint.matchAll(/^-\s*Work ref:\s*(.+)$/gm)].map((match) => plain(match[1].trim())).join('\n'),
     review: plain(field(checkpoint, 'Review')),
+    // 이 일을 맡긴 아테나 pane — 정식은 결정 콘솔 PLAN.leadPane(옛 계획서 hermesPane), 경량은 delegate.sh 가 적는 "- Lead pane:" 줄
+    leadPane: plain(field(checkpoint, 'Lead pane')) || leadPaneOfHtml(path),
     // PR 줄은 여러 개일 수 있다(레포·앱마다 하나) — 전부 모은다
     pr: [...checkpoint.matchAll(/^-\s*PR:\s*(.+)$/gm)].map((match) => plain(match[1])).join('\n'),
     issue: plain(field(checkpoint, 'Issue')).match(/issues\/\S+\.md/)?.[0] ?? '',
@@ -318,7 +325,7 @@ const enqueueLearn = (planId, mark, infos = []) => {
   if (learnQueued.has(key)) return
   learnQueued.add(key)
   const child = spawn(process.execPath, [join(ROOT, 'scripts/learn-review.mjs'), '--enqueue', '--plan', planId, '--head', mark], { cwd: ROOT, detached: true, stdio: 'ignore' })
-  // 넣지 못했으면 다음 확인 때 다시 넣는다(넣기 전에 표시만 해 두면 이 현황판이 켜져 있는 동안 다시 시도하지 않는다)
+  // 넣지 못했으면 다음 확인 때 다시 넣는다(넣기 전에 표시만 해 두면 이 일감이 켜져 있는 동안 다시 시도하지 않는다)
   child.on('exit', (code) => { if (code !== 0) learnQueued.delete(key) })
   child.on('error', () => learnQueued.delete(key))
   child.unref()
@@ -386,21 +393,24 @@ const autoDonePlans = async (plans) => {
     plan.column = 'done'
     enqueueLearn(plan.id, mergedMark(counted), counted)
   }))
-  // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 배우지 않았으면(Learn review 줄 없음) 넣는다
-  const learned = plans.filter((plan) => !plan.archived && plan.status === 'done' && /\/pull\/\d+/.test(plan.pr) && !/^- Learn review:/m.test(readText(join(ROOT, plan.id)) || ''))
+  // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 그 PR 묶음을 배우지 않았으면(Learn review 줄에 지금 표시가 없음) 넣는다.
+  // 줄이 있어도 이어 머지된 PR 이 생겼으면 표시가 달라 다시 넣는다(자동 보관이 그 표시를 기다린다 — autoArchive)
+  const learned = plans.filter((plan) => !plan.archived && plan.status === 'done' && /\/pull\/\d+/.test(plan.pr))
   await Promise.all(learned.map(async (plan) => {
     const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
     const infos = (await Promise.all(links.map(async (link) => {
       const [repoName, number] = link.split('#')
       return { number, ...(await prInfo(repoName, number)) }
     }))).filter((info) => info.state !== 'CLOSED')
-    if (infos.length && infos.every((info) => info.state === 'MERGED')) enqueueLearn(plan.id, mergedMark(infos), infos)
+    if (!infos.length || infos.some((info) => info.state !== 'MERGED')) return
+    const learnLine = (readText(join(ROOT, plan.id)) || '').match(/^- Learn review:.*$/m)?.[0] ?? ''
+    if (!learnLine.includes(mergedMark(infos))) enqueueLearn(plan.id, mergedMark(infos), infos)
   }))
 }
 
 // PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs · docs/pr-auto.md) — 켠 레포(pack.json "autoMerge": true)의 열린 PR 에
 // 새 HEAD 가 오면(계획서 "- Auto review:" 줄의 sha 와 다르면) 대기열에 넣는다. 보통은 ship.sh 가 push 하자마자 먼저 넣고, 여기는 놓친 것을 잡는 안전망이다
-// (PR 상태는 prInfo 캐시(5분)라 늦어도 5분 안에). 같은 HEAD 는 한 번만 — 이 현황판의 메모리 · 대기열(pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막는다) ·
+// (PR 상태는 prInfo 캐시(5분)라 늦어도 5분 안에). 같은 HEAD 는 한 번만 — 이 일감의 메모리 · 대기열(pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막는다) ·
 // 계획서 줄(처리기가 끝난 HEAD 를 건너뛴다). 머지 확인을 기다리는 일은 5분마다 처리기가 살아 있게 한다
 const autoReviewQueued = new Set()
 let autoKickAt = 0
@@ -432,7 +442,7 @@ const autoReviewPlans = async (plans) => {
       let action = 'skip'
       try {
         updatePlan(path, (current) => {
-          const claim = claimAutoReview(current, { config, repoName, number, stamp: stamp(), by: '현황판 자동(이어 올린 PR)' })
+          const claim = claimAutoReview(current, { config, repoName, number, stamp: stamp(), by: '일감 자동(이어 올린 PR)' })
           action = claim.action
           return claim.text
         })
@@ -454,6 +464,65 @@ const autoReviewPlans = async (plans) => {
       console.log(`🤖 자동 리뷰 대기열 ${plan.id} · ${link} @${info.head.slice(0, 7)}`)
     }
   }))
+}
+
+// 끝난 일 자동 보관(archive.mjs — 2026-10-26 결정 D4) — 이어서 쓸 일이 없을 때 그 자리에서 보관한다.
+// 계획서: done · PR 이 모두 머지(머지 없이 닫힌 것은 빼고, 남은 PR 이 없으면 PR 없는 계획서와 같다) · 배우기 검토 끝(또는 대상 아님) · 묶인 에이전트 pane 이 모두 닫힘.
+//   일찍 보관하면 commit.sh · ship.sh(--plan 이 plans/ 에 있어야 한다) · 배우기 검토(plans/ 계획서에 줄을 쓴다) · 이어 올린 PR 감지가 계획서를 못 찾는다
+// 이슈: done · wontfix 이고 아직 plans/ 에 남은 연결 계획서가 없으면(있으면 계획서를 보관할 때 archive.mjs 가 같이 묶는다)
+// 화면(pane 목록)을 못 읽으면 pane 이 닫혔는지 모르니 보관하지 않는다
+const autoArchiveFailed = new Set() // 실패한 것은 이 일감이 켜져 있는 동안 다시 시도하지 않는다(매 3초 같은 오류를 내지 않게)
+const planReadyToArchive = async (plan) => {
+  if (plan.archived || plan.status !== 'done' || plan.agents.length) return false
+  const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
+  const infos = (await Promise.all(links.map(async (link) => {
+    const [repoName, number] = link.split('#')
+    return { number, ...(await prInfo(repoName, number)) }
+  }))).filter((info) => info.state !== 'CLOSED')
+  if (infos.some((info) => info.state !== 'MERGED')) return false
+  // 배우기 검토 대상(enqueueLearn 과 같은 기준)이면 계획서에 그 PR 묶음의 "- Learn review:" 줄이 생긴 뒤에
+  const learnTarget = infos.length && infos.some((info) => String(info.mergedAt).slice(0, 10) >= LEARN_SINCE)
+  if (!learnTarget) return true
+  const learnLine = (readText(join(ROOT, plan.id)) || '').match(/^- Learn review:.*$/m)?.[0] ?? ''
+  return learnLine.includes(mergedMark(infos))
+}
+const autoArchive = async (plans, issues) => {
+  const archived = new Set()
+  // 팩을 갈아 끼운 뒤 남은 일감이면 옮기지도 커밋하지도 않는다(쓰기 API 의 409 와 같은 기준)
+  if (staleGeneration()) return archived
+  const notes = []
+  const results = []
+  const planIds = new Set(plans.map((plan) => plan.id))
+  for (const plan of plans) {
+    if (autoArchiveFailed.has(plan.id) || !(await planReadyToArchive(plan))) continue
+    const bundle = archiveBundle(plan.id)
+    if (bundle.error) { autoArchiveFailed.add(plan.id); console.log(`⚠️ 자동 보관 실패 ${plan.id}: ${bundle.error}`); continue }
+    results.push(bundle)
+    archived.add(plan.id)
+    // 같이 묶여 옮겨진 끝난 이슈만 목록에서 뺀다 — 열려 있어 남겨 둔 이슈(plan: 만 고친 것)는 그대로 둔다
+    for (const path of bundle.paths) if (path.startsWith('issues/') && !existsSync(join(ROOT, path))) archived.add(path)
+  }
+  for (const issue of issues) {
+    if (archived.has(issue.id) || autoArchiveFailed.has(issue.id) || !['done', 'wontfix'].includes(issue.status)) continue
+    // 연결 계획서가 아직 plans/ 에 있으면 그 계획서와 함께 보관한다
+    if (issue.plan && planIds.has(issue.plan) && !archived.has(issue.plan)) continue
+    if (plans.some((plan) => plan.issue === issue.id && !archived.has(plan.id))) continue
+    if (issue.agent) {
+      const removed = await removeIssueWorktree(issue.id, issue.agent)
+      if (removed.error && !removed.error.startsWith('지울 워크트리가 없어요')) notes.push(`${issue.id}: ${removed.error}`)
+    }
+    const bundle = archiveBundle(issue.id)
+    if (bundle.error) { autoArchiveFailed.add(issue.id); console.log(`⚠️ 자동 보관 실패 ${issue.id}: ${bundle.error}`); continue }
+    results.push(bundle)
+    archived.add(issue.id)
+  }
+  if (!results.length) return archived
+  // 보관한 것만 로컬 커밋(push 는 아테나) — 한 번에 묶어서
+  const committed = commitArchive(results)
+  console.log(`🗄 자동 보관 ${results.map((result) => result.dir).join(' · ')}${committed.sha ? ` · 커밋 ${committed.sha}` : ''}`)
+  if (committed.error) console.log(`⚠️ 자동 보관 커밋 실패: ${committed.error}`)
+  for (const note of [committed.note, ...notes].filter(Boolean)) console.log(`ℹ️ ${note}`)
+  return archived
 }
 
 const doneCheck = async (issue) => {
@@ -628,7 +697,7 @@ const readWorktrees = async () => {
   if (!existsSync(dir)) continue
   for (const repo of readdirSync(dir)) {
     const repoDir = join(dir, repo)
-    // 읽는 도중 워크트리 정리로 폴더가 사라질 수 있다(2026-10-14 현황판이 이걸로 죽음) — 없으면 건너뛴다
+    // 읽는 도중 워크트리 정리로 폴더가 사라질 수 있다(2026-10-14 일감이 이걸로 죽음) — 없으면 건너뛴다
     let slugs
     try {
       if (!statSync(repoDir).isDirectory()) continue
@@ -816,6 +885,13 @@ const collect = async () => {
     plan.working = plan.agents.some((id) => panes.find((pane) => pane.id === id)?.status === 'working')
     if (plan.working && (plan.column === 'review' || plan.column === 'done')) plan.column = 'doing'
   }
+  // 끝난 일 자동 보관 — 화면(pane 목록)을 읽었을 때만(pane 이 닫혔는지 알아야 한다)
+  if (available) {
+    const archived = await autoArchive(plans, issues)
+    if (archived.size) {
+      for (const list of [plans, issues]) for (let index = list.length - 1; index >= 0; index -= 1) if (archived.has(list[index].id)) list.splice(index, 1)
+    }
+  }
   // 이슈에 연결된 계획서는 카드를 따로 만들지 않고 이슈 카드 안에 합친다 — 같은 일이 두 장으로 보이지 않게
   const merged = new Set()
   for (const issue of issues) {
@@ -825,7 +901,7 @@ const collect = async () => {
     // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 위해 만든 것(Issue:)일 때만 합친다
     if (issue.status === 'open' && plan.issue !== issue.id) continue
     merged.add(plan.id)
-    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents }
+    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents, leadPane: plan.leadPane }
     // 계획서가 리뷰 단계면 이슈 카드도 리뷰 칸에
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'
     if (plan.working && issue.column !== 'done') issue.column = 'doing'
@@ -847,7 +923,7 @@ const refreshOnce = async () => {
   const collectStarted = Date.now()
   const state = await collect()
   const collectMs = Date.now() - collectStarted
-  if (collectMs > 1500) console.log(`⚠️ 현황판 재계산 ${collectMs}ms`)
+  if (collectMs > 1500) console.log(`⚠️ 일감 재계산 ${collectMs}ms`)
   checkLearnJev()
   const hash = createHash('sha1').update(JSON.stringify(state)).digest('hex')
   if (hash === snapshotHash) return
@@ -873,7 +949,7 @@ const refresh = (again = true) => {
         await refreshOnce()
       } while (refreshAgain)
     } catch (error) {
-      console.error(`⚠️ 현황판 갱신 실패: ${error.message}`)
+      console.error(`⚠️ 일감 갱신 실패: ${error.message}`)
     } finally {
       refreshing = null
     }
@@ -944,7 +1020,7 @@ const setPlanStatus = (id, status, note = '') => {
       const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
       const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
-      const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
+      const newUpdated = `- Updated: ${stamp()} / ${note ? '일감 자동(PR 머지)' : '일감에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
       if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
       writeAtomic(path, next)
@@ -966,7 +1042,7 @@ const setPlanStatus = (id, status, note = '') => {
 // ── 쓰기: 아테나에게 지시 ───────────────────────────────────────────────
 const sendToPane = async (paneId, text) => {
   const panes = snapshot?.panes ?? []
-  // 'hermes' 또는 보낼 수 없는 pane(현황판 pane 등)을 주면 떠 있는 아테나 pane 으로 — QA 라이브 [조사 맡기기] 가 쓴다
+  // 'hermes' 또는 보낼 수 없는 pane(일감 pane 등)을 주면 떠 있는 아테나 pane 으로 — QA 라이브 [조사 맡기기] 가 쓴다
   const target = panes.find((pane) => pane.id === paneId && pane.role !== 'other') ?? (paneId === 'hermes' || paneId.startsWith('hermes:') ? panes.find((pane) => pane.role === 'hermes') : null)
   if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
@@ -991,8 +1067,8 @@ const consoleAnswer = (plan, text) => {
   }
 }
 
-// 이슈 [처리 시작] → 아테나: 떠 있는 아테나 pane 에 끼워 넣지 않고 **새 아테나 pane** 을 열어 그 안에서 처리한다.
-// 하던 대화 한가운데에 다른 이슈가 섞이지 않게 — 이슈 하나에 세션 하나. 자리는 아테나 pane 옆(없으면 현황판 pane 옆)
+// 이슈 [작업 시작] → 아테나: 떠 있는 아테나 pane 에 끼워 넣지 않고 **새 아테나 pane** 을 열어 그 안에서 처리한다.
+// 하던 대화 한가운데에 다른 이슈가 섞이지 않게 — 이슈 하나에 세션 하나. 자리는 아테나 pane 옆(없으면 일감 pane 옆)
 const openHermesPane = async (issueId, text) => {
   const issuePath = safePath(issueId, 'issues')
   if (!issuePath) return { error: '이슈 파일을 찾지 못했어요' }
@@ -1087,7 +1163,7 @@ const dispatchAgent = async (issueId, agent, text, job) => {
     const title = issueText.match(/^title:\s*(.+)$/m)?.[1]?.trim().replace(/^"|"$/g, '') || basename(issueId, '.md')
     const promptPath = join(tmpdir(), `hermes-issue-prompt-${Date.now()}.txt`)
     writeFileSync(promptPath, header + prompt)
-    // --no-pane-name — 현황판을 띄운 pane(아테나일 수 있다) 이름을 이 이슈로 바꾸지 않게
+    // --no-pane-name — 일감을 띄운 pane(아테나일 수 있다) 이름을 이 이슈로 바꾸지 않게
     plan = ((await run('node', [join(ROOT, 'scripts/new-plan.mjs'), '--agent', agent, '--summary', title, '--issue', issueId, '--prompt-file', promptPath, '--no-pane-name'], { cwd: ROOT })) ?? '').trim()
     rmSync(promptPath, { force: true })
     if (!plan) return fail('plan', '경량 계획서를 만들지 못했어요')
@@ -1097,7 +1173,7 @@ const dispatchAgent = async (issueId, agent, text, job) => {
   step('plan', 'done', plan)
   step('pane', 'running', `${worktree.repo} workspace`)
   const out = await run(join(ROOT, 'scripts/delegate.sh'), [agent, header + prompt, '--cwd', worktree.path, '--plan', plan], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return fail('pane', `에이전트를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요`)
+  if (out === null) return fail('pane', `에이전트를 띄우지 못했어요 — ${screenName()} 안에서 일감을 띄웠는지 확인해 주세요`)
   const pane = out.trim().split('\n').pop()
   step('pane', 'done', pane.split(' ')[0])
   // 맡겼으면 카드도 진행 중으로 — open·planned 일 때만 (이미 더 간 상태는 건드리지 않는다)
@@ -1113,7 +1189,7 @@ const dispatchReview = async (planId, text) => {
   const prompt = text.trim()
   if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
   const out = await run(join(ROOT, 'scripts/delegate.sh'), ['reviewer', prompt, '--plan', planId], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return { error: `reviewer 를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요` }
+  if (out === null) return { error: `reviewer 를 띄우지 못했어요 — ${screenName()} 안에서 일감을 띄웠는지 확인해 주세요` }
   return { pane: out.trim().split('\n').pop() }
 }
 
@@ -1267,7 +1343,7 @@ function startQaRun(planId) {
   const app = (appOfAgent(config, agent) ?? (sameRepo.length === 1 ? sameRepo[0] : null))?.app
   if (!app || !findQaApp(config, app)?.configured) return { error: `QA 시뮬레이션 설정이 있는 앱이 아니에요 (scripts/qa/routes/<앱>.json — 없으면 node scripts/qa/init-app.mjs --app <앱>)${agent ? ` — 이 계획서는 ${agent}` : ''}` }
   // 방금 띄운 런은 run.json 을 쓰기 전일 수 있다 — 이 서버가 띄운 프로세스가 살아 있으면 먼저 거부
-  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 현황판이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
+  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 일감이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
   const running = activeQaRun()
   if (running) return { error: `다른 QA 가 돌고 있어요 — ${running.id} (${running.phase})` }
   mkdirSync(QA_RUNS_DIR, { recursive: true })
@@ -1279,7 +1355,7 @@ function startQaRun(planId) {
   return { ok: true, app, worktree }
 }
 
-// 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지 + 이 현황판이 띄운 QA 가 기다리는 중인지
+// 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지 + 이 일감이 띄운 QA 가 기다리는 중인지
 function heavyLockState() {
   const lock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
   let holder = ''
@@ -1512,7 +1588,7 @@ function startQaSuite(app, profile, target = 'local', flow = false, server = '',
   if (checked?.error) return { error: checked.error }
   if (!known) return { error: `전체 검수 설정이 없는 앱이에요 — scripts/qa/routes/${app}.json` }
   if (profile && !known.profiles.some((entry) => entry.name === profile)) return { error: `프로필 ${profile} 이 없어요` }
-  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 현황판이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
+  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 일감이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
   const running = activeQaRun()
   if (running) return { error: `다른 QA 가 돌고 있어요 — ${running.id} (${running.phase})` }
   mkdirSync(QA_RUNS_DIR, { recursive: true })
@@ -1624,7 +1700,7 @@ const handleRequest = async (request, response) => {
       }
     }
     // 런이 끝나면 스트림을 닫는다 — 브라우저는 한 주소에 연결을 6개까지만 열어서, 끝난 런의 스트림이 남아 있으면
-    // 현황판의 다른 페이지(결정 콘솔 등)가 열리지 않고 계속 돈다. 2초마다 run.json 을 보고, 끝났으면 마지막 프레임까지 보낸 뒤 닫는다
+    // 일감의 다른 페이지(결정 콘솔 등)가 열리지 않고 계속 돈다. 2초마다 run.json 을 보고, 끝났으면 마지막 프레임까지 보낸 뒤 닫는다
     const runFile = join(QA_RUNS_DIR, id, 'run.json')
     let ticks = 0
     const timer = setInterval(() => {
@@ -1749,7 +1825,7 @@ const handleRequest = async (request, response) => {
   }
   if (url.pathname === '/api/state') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    // pack — 이 현황판이 뜰 때의 팩·세대(옛 구조면 없다). 스튜디오가 지금 팩과 비교해 다시 띄울지 정한다
+    // pack — 이 일감이 뜰 때의 팩·세대(옛 구조면 없다). 스튜디오가 지금 팩과 비교해 다시 띄울지 정한다
     response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
@@ -1767,7 +1843,7 @@ const handleRequest = async (request, response) => {
       setTimeout(() => shutdown(0), 50)
       return
     }
-    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩을 갈아 끼웠어요 — 현황판을 다시 띄워 주세요' })
+    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩을 갈아 끼웠어요 — 일감을 다시 띄워 주세요' })
     if (url.pathname === '/api/dispatch') {
       // 바로 작업 번호를 돌려주고 뒤에서 돈다 — 진행은 SSE event: job
       const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map(([key, label]) => ({ key, label, state: 'wait' })) }
@@ -1888,11 +1964,11 @@ const writeTokenFile = () => {
   try {
     mkdirSync(dirname(TOKEN_FILE), { recursive: true })
     writeFileSync(TOKEN_FILE, JSON.stringify({ token: TOKEN, port: PORT, pid: process.pid, generation: BOOT_PACK.generation, packId: BOOT_PACK.id }), { mode: 0o600 })
-    chmodSync(TOKEN_FILE, 0o600)   // mode 는 새로 만들 때만 먹는다 — 이미 있던 파일(이전 현황판이 남긴 것)도 600 으로
-  } catch (error) { console.error(`⚠️ 현황판 토큰 파일을 쓰지 못했다: ${error.message}`) }
+    chmodSync(TOKEN_FILE, 0o600)   // mode 는 새로 만들 때만 먹는다 — 이미 있던 파일(이전 일감이 남긴 것)도 600 으로
+  } catch (error) { console.error(`⚠️ 일감 토큰 파일을 쓰지 못했다: ${error.message}`) }
 }
 const shutdown = (code) => {
-  // 내 토큰 파일만 지운다(그 사이 다른 현황판이 새로 썼으면 그대로)
+  // 내 토큰 파일만 지운다(그 사이 다른 일감이 새로 썼으면 그대로)
   try { if (TOKEN_FILE && JSON.parse(readFileSync(TOKEN_FILE, 'utf8')).pid === process.pid) rmSync(TOKEN_FILE, { force: true }) } catch { /* 없다 */ }
   process.exit(code)
 }
@@ -1910,5 +1986,5 @@ createServer((request, response) => {
   writeTokenFile()
   await refresh()
   setInterval(() => refresh(false), POLL_MS)
-  console.log(`아테나 현황판: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
+  console.log(`아테나 일감: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })

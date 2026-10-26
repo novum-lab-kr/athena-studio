@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# 아테나 세션이 켜질 때 화면을 세팅한다 — 현황판을 (없으면) 띄우고, 첫 실행이면 그 pane 에 첫 실행 지시를 입력한다.
+# 아테나 세션이 켜질 때 화면을 세팅한다 — 일감을 (없으면) 띄우고, 첫 실행이면 그 pane 에 첫 실행 지시를 입력한다.
 #   에이전트 모니터는 Athena Studio 앱 가운데 맨 아래 칸(AGENT MONITOR)이 보여 주고, 배우기 검토는 대기열이 생기면 뒤에서 돌고,
 #   가이드 메뉴는 /guide 로 부를 때만 띄운다 — 여기서 도구 pane 을 더 띄우지 않는다(사용자 결정 2026-10-17 · 모니터는 2026-10-18).
 #   pane 은 화면 계층(scripts/screen)으로만 다룬다.
 # 아테나 세션이 켜질 때 SessionStart 훅(scripts/hooks/workspace-up.py)이 뒤에서 부른다. 손으로: scripts/athena-up.sh
 # 조건은 "athena 폴더에서 켠 아테나 claude" 하나 — workspace 이름은 보지 않는다(훅이 cwd·에이전트 여부를 거른다)
-# 현황판 스크립트는 떠 있으면 새로 띄우지 않는다 — 다시 돌려도 안전.
+# 일감 스크립트는 떠 있으면 새로 띄우지 않는다 — 다시 돌려도 안전.
 # ATHENA_FIRST_RUN=claude|codex(팩 없음 · 새로 켠 세션 — workspace-up 훅이 넘긴다)면 화면 세팅이 끝난 뒤 그 pane 에 첫 실행 지시를 입력한다
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -14,7 +14,7 @@ SCREEN="$ATHENA_DIR/scripts/screen"
 eval "$("$SCREEN" self --format sh)"   # SCREEN_PANE_ID(이 아테나 pane) · SCREEN_TAB_ID
 [ -n "${SCREEN_TAB_ID:-}" ] || exit 0
 
-# 세션 시작 때는 브라우저를 새로 열지 않는다. 뒤에서 띄운다 — 첫 실행 지시가 현황판 뜨기를 기다리지 않게
+# 세션 시작 때는 브라우저를 새로 열지 않는다. 뒤에서 띄운다 — 첫 실행 지시가 일감 뜨기를 기다리지 않게
 ATHENA_BOARD_NO_BROWSER=1 "$ATHENA_DIR/scripts/board.sh" >/dev/null 2>&1 &
 
 # 첫 실행 자동 시작 — 화면 세팅이 끝났으니 이 pane 에 지시를 입력한다(사용자가 아무것도 치지 않아도 되게).
@@ -43,5 +43,5 @@ if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   done
   printf '%s  첫 실행 자동 시작(%s): %s\n' "$(date '+%F %T')" "$ATHENA_FIRST_RUN" "$result" >> "${TMPDIR:-/tmp}/hermes-up.log"
 fi
-wait   # 뒤에서 띄운 현황판 스크립트가 끝날 때까지(훅이 이 스크립트를 뒤에서 돌려 세션은 기다리지 않는다)
+wait   # 뒤에서 띄운 일감 스크립트가 끝날 때까지(훅이 이 스크립트를 뒤에서 돌려 세션은 기다리지 않는다)
 exit 0

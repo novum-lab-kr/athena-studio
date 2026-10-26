@@ -71,7 +71,7 @@ while ! mkdir "$LOCK" 2>/dev/null; do
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "잠금"
   sleep 5
 done
-# 무엇이 도는지(what)는 대기 화면·현황판에 보인다 — 인자 속 비밀값(token=… · --password … · Bearer …)은 가려서 적는다(macOS sed 는 대소문자 무시 플래그가 없어 글자마다 [Tt] 로)
+# 무엇이 도는지(what)는 대기 화면·일감에 보인다 — 인자 속 비밀값(token=… · --password … · Bearer …)은 가려서 적는다(macOS sed 는 대소문자 무시 플래그가 없어 글자마다 [Tt] 로)
 # root — 이 잠금을 쥔 본체(이 스크립트가 든 아테나 체크아웃). 잠금은 한 대 공용이지만 bin/athena pack busy·update 는 그 본체만 일하는 것으로 본다
 (cd "$(dirname "$0")/.." && pwd -P) > "$LOCK/root" 2>/dev/null || true
 echo $$ > "$LOCK/pid"; printf '%s · %s\n' "$WHO" "$*" \

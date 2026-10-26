@@ -321,7 +321,7 @@
   <main>
     <section id="start">
       <h2>시작하기</h2>
-      <p>athena 폴더에서 Claude Code를 열면 그 세션이 곧 아테나가 됩니다. 아테나는 <strong>코어</strong>(이 폴더 — 흐름·훅·현황판·학습 루프·공통 규칙, 회사 이름을 모름)와 <strong>팩</strong>(별도 레포 — 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉩니다. 코어는 <strong>Athena Studio 앱이 들고 와</strong> <code>~/.athena-studio/core</code> 에 풀고, 팩은 앱의 팩 메뉴·시작 화면에서 만들거나 가져옵니다(팩마다 본체 <code>~/.athena-studio/bodies/&lt;id&gt;</code> · 데이터 <code>~/.athena-studio/data</code>). 코어 업데이트도 앱과 함께 옵니다. 켤 때마다 담당 레포 연결(<code>repos/&lt;레포&gt;</code> 링크)을 확인하고, 빠진 게 있으면 <code>reposRoot</code> 아래에서 찾아 알아서 연결합니다. 거기에도 없는 레포가 있을 때만 아테나가 위치를 묻습니다.</p>
+      <p>athena 폴더에서 Claude Code를 열면 그 세션이 곧 아테나가 됩니다. 아테나는 <strong>코어</strong>(이 폴더 — 흐름·훅·일감·학습 루프·공통 규칙, 회사 이름을 모름)와 <strong>팩</strong>(별도 레포 — 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅)으로 나뉩니다. 코어는 <strong>Athena Studio 앱이 들고 와</strong> <code>~/.athena-studio/core</code> 에 풀고, 팩은 앱의 팩 메뉴·시작 화면에서 만들거나 가져옵니다(팩마다 본체 <code>~/.athena-studio/bodies/&lt;id&gt;</code> · 데이터 <code>~/.athena-studio/data</code>). 코어 업데이트도 앱과 함께 옵니다. 켤 때마다 담당 레포 연결(<code>repos/&lt;레포&gt;</code> 링크)을 확인하고, 빠진 게 있으면 <code>reposRoot</code> 아래에서 찾아 알아서 연결합니다. 거기에도 없는 레포가 있을 때만 아테나가 위치를 묻습니다.</p>
       <p>처음 받는 팀원은 <strong><code>ONBOARDING.md</code></strong>(준비물 · 설치 · 첫 사용 · 학습 · 막힐 때)부터 읽습니다 — 같은 내용의 화면은 <code>docs/onboarding.html</code>.</p>
       <p>※ Nous Research 의 오픈소스 <strong>Hermes Agent</strong> 와는 다른 것입니다(예전 이름 "헤르메스"가 같았을 뿐). 따로 설치하지 않습니다.</p>
 <pre><code># Athena Studio 를 켜고 팩을 고른 뒤(새 팩이면 [새 팩 만들기]) 창의 athena 작업 공간 pane 에서
@@ -398,7 +398,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
           <tbody>
             <tr><td>레포 폴더·화면(라우트) 지도</td><td><code>docs/knowledge/&lt;레포&gt;/structure.md</code></td><td><code>/sync</code> — 운영에 배포된 코드 기준</td><td>✅</td></tr>
             <tr><td>레포 규칙("이건 꼭 지켜")</td><td><code>…/rules.md</code></td><td><code>/sync</code> — 레포 안 규칙 문서가 바뀔 때</td><td>✅</td></tr>
-            <tr><td>함정("모르면 당한다")</td><td><code>…/gotchas.md</code></td><td><strong>학습</strong> — 작업하다 알게 된 걸 현황판 [학습] 탭에서 [넣기] + <code>/sync</code></td><td>✅</td></tr>
+            <tr><td>함정("모르면 당한다")</td><td><code>…/gotchas.md</code></td><td><strong>학습</strong> — 작업하다 알게 된 걸 일감 [학습] 탭에서 [넣기] + <code>/sync</code></td><td>✅</td></tr>
             <tr><td>따라 할 예시 파일·작업 절차</td><td><code>…/patterns.md</code> · <code>workflows.md</code></td><td>처음 만들 때 + <code>/sync</code></td><td>✅</td></tr>
             <tr><td>나의 일하는 방식("표로 보여 줘")</td><td>Claude 메모리(<code>~/.claude/…</code>)</td><td>Claude 가 대화에서 알아서</td><td>❌ 나만</td></tr>
             <tr><td>진행 중인 일</td><td>계획서(<code>plans/</code>)·이슈(<code>issues/</code>)</td><td>작업하면서</td><td>❌ 나만 (끝나면 [아카이브]로 팀에)</td></tr>
@@ -465,8 +465,8 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
         </article>
 
         <article class="cmd">
-          <div class="cmd-head"><kbd>/board <span class="arg">stop · url (선택)</span></kbd><span class="tag plain">현황판</span></div>
-          <p class="what">아테나 현황판입니다. 로컬 서버(<code>localhost:4700</code> · 스튜디오는 4800 부터)를 뒤에서 띄우고 브라우저(Studio 면 앱 📋 현황판 탭 · 옆 브라우저)를 엽니다. 3초마다 모아 바뀐 것만 화면에 밀어 주므로 새로고침하지 않아도 됩니다. 위쪽은 <strong>지금 동작 중인 에이전트</strong>(Studio pane 의 작업 중·대기, 백그라운드 서브에이전트), 아래는 <strong>칸반</strong>(이슈 · 계획 · 진행 중 · 리뷰 · 완료)입니다. 탭은 <strong>서비스 · 정비 · QA · 학습 · 아카이브</strong> 입니다. 위 에이전트·칸반은 <strong>[서비스]</strong> 탭. <strong>[정비]</strong> 탭(할 일 · 진행 중 · 완료)에는 아테나 자체를 고치는 일(<code>repo: athena</code> 이슈 · <code>Agent: athena</code> 계획서)이 따로 모입니다 — 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고, PR 이 머지되면 끝납니다. 카드는 계획서 Checkpoint 의 <code>Status</code> 와 <code>issues/*.md</code> 의 <code>status</code> 를 따라 움직입니다. <strong>카드를 끌어다 놓으면 그 파일의 상태가 바뀌고</strong>(계획서는 md·html 둘 다), <strong>액션 버튼</strong>(처리 시작 · 이어서 진행 · 리뷰 요청 …)을 누르면 지시문을 보여준 뒤 아테나 pane 에 입력합니다. <strong>[QA]</strong> 탭은 웹 QA 시뮬레이션(대상 앱은 팩 <code>qa</code> 설정) — 런 목록·영향 화면 카드(작업·기준·차이 스크린샷)와 <strong>[TC 목록]</strong>, 로그인 세션 줄의 <strong>[로그인]</strong> 으로 테스트 계정 세션을 저장합니다. <strong>[학습]</strong> 탭은 둘로 나뉩니다 — <strong>🧭 아테나 학습</strong>(작업하며 알게 된 레포 함정 후보를 [넣기]·[고쳐서 넣기]·[버리기], 넣은 것은 서비스별 공책에 들어가고 언제든 수정·삭제) / <strong>🤖 클로드 학습</strong>(Claude Code 가 대화에서 기억한 일하는 방식, 이 컴퓨터에만, 읽기 전용). <strong>[아카이브]</strong> 탭은 보관한 일(<code>archive/</code>)을 월별로 보여 줍니다 — 제목·요약·레포·커밋 검색, 한 건을 누르면 이슈·요청·진행·결과·검증·커밋이 한 화면에. 계획서 <code>PR:</code> 줄의 PR 이 <strong>모두</strong> 머지되면(어느 base 든 · 머지 없이 닫힌 PR 은 셈에서 뺌) 카드가 <strong>자동으로 완료</strong>로 옮겨집니다(5분마다 확인).</p>
+          <div class="cmd-head"><kbd>/board <span class="arg">stop · url (선택)</span></kbd><span class="tag plain">일감</span></div>
+          <p class="what">아테나 일감입니다. 로컬 서버(<code>localhost:4700</code> · 스튜디오는 4800 부터)를 뒤에서 띄우고 브라우저(Studio 면 기본 브라우저)를 엽니다. 3초마다 모아 바뀐 것만 화면에 밀어 주므로 새로고침하지 않아도 됩니다. 첫 화면은 <strong>해결할 이슈 목록</strong>입니다(<code>issues/*.md</code> — 학습 후보 제외). 열린 이슈는 <strong>[작업 시작]</strong>으로 아테나에게 맡기고(팝업에서 "담당 에이전트로 바로(조사만)" 도 고를 수 있습니다), 시작한 이슈는 "진행 중" 과 맡은 에이전트 pane 이 보입니다. 뒤쪽 탭은 <strong>QA · 학습 · 아카이브 · 지표</strong>입니다. 계획서 칸반 · [정비] 탭은 없습니다 — 계획서 진행은 Studio 의 [작업] 팝업과 pane 머리 줄 <strong>[상세]</strong>에서 봅니다. <strong>[QA]</strong> 탭은 웹 QA 시뮬레이션(대상 앱은 팩 <code>qa</code> 설정) — 런 목록·영향 화면 카드(작업·기준·차이 스크린샷)와 <strong>[TC 목록]</strong>, 로그인 세션 줄의 <strong>[로그인]</strong> 으로 테스트 계정 세션을 저장합니다. <strong>[학습]</strong> 탭은 둘로 나뉩니다 — <strong>🧭 아테나 학습</strong>(작업하며 알게 된 레포 함정 후보를 [넣기]·[고쳐서 넣기]·[버리기], 넣은 것은 서비스별 공책에 들어가고 언제든 수정·삭제) / <strong>🤖 클로드 학습</strong>(Claude Code 가 대화에서 기억한 일하는 방식, 이 컴퓨터에만, 읽기 전용). <strong>[아카이브]</strong> 탭은 보관한 일(<code>archive/</code>)을 월별로 보여 줍니다 — 제목·요약·레포·커밋 검색, 한 건을 누르면 이슈·요청·진행·결과·검증·커밋이 한 화면에. 계획서 <code>PR:</code> 줄의 PR 이 <strong>모두</strong> 머지되면(어느 base 든 · 머지 없이 닫힌 PR 은 셈에서 뺌) <strong>자동으로 완료</strong>로 옮겨지고(5분마다 확인), 배우기 검토가 끝나고 그 계획서의 에이전트 pane 이 모두 닫히면 <strong>자동으로 보관</strong>됩니다.</p>
           <div class="flow"><span>Studio pane · 서브에이전트 로그</span><span>plans Checkpoint · issues/</span><span class="hi">브라우저 실시간</span></div>
           <dl>
             <dt>언제</dt><dd>여러 작업·에이전트가 동시에 돌 때, sync 에서 나온 이슈가 무엇이 남았는지 볼 때</dd>
@@ -478,7 +478,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
         <article class="cmd">
           <div class="cmd-head"><kbd>/diagram <span class="arg">서비스 · 점검 (선택)</span></kbd><span class="tag plain">다이어그램</span></div>
-          <p class="what">담당 서비스의 다이어그램을 <strong>운영 기준 브랜치 코드로 다시 그립니다.</strong> 서비스마다 작업자 하나가 <code>docs/diagrams/AUTHORING.md</code>(공통)와 <code>guides/&lt;서비스&gt;.md</code>(서비스별)를 읽고 구조 · 화면 맵 · 요청 흐름을, 팩이 정한 서비스는 화면 전수 심층 번들까지 고칩니다. 아테나가 archify 검사(9/9) · 화면 전수 대조 · 근거 점검을 다시 돌리고 목록을 갱신합니다. <strong>그리다 찾은 코드 문제는 <code>issues/</code> 에 등록</strong>돼 현황판에 뜹니다. 서비스를 안 주면 전체(서비스마다 작업자 하나, 한 번에 5개씩)라 오래 걸립니다.</p>
+          <p class="what">담당 서비스의 다이어그램을 <strong>운영 기준 브랜치 코드로 다시 그립니다.</strong> 서비스마다 작업자 하나가 <code>docs/diagrams/AUTHORING.md</code>(공통)와 <code>guides/&lt;서비스&gt;.md</code>(서비스별)를 읽고 구조 · 화면 맵 · 요청 흐름을, 팩이 정한 서비스는 화면 전수 심층 번들까지 고칩니다. 아테나가 archify 검사(9/9) · 화면 전수 대조 · 근거 점검을 다시 돌리고 목록을 갱신합니다. <strong>그리다 찾은 코드 문제는 <code>issues/</code> 에 등록</strong>돼 일감에 뜹니다. 서비스를 안 주면 전체(서비스마다 작업자 하나, 한 번에 5개씩)라 오래 걸립니다.</p>
           <div class="flow"><span>기준 ref 체크아웃</span><span>서비스별 작업자</span><span class="hi">검증 · 목록 · 이슈</span></div>
           <dl>
             <dt>언제</dt><dd>구조가 크게 바뀐 서비스를 다시 그릴 때, 코드 문제를 훑어 이슈로 모을 때. 변경만 따라가려면 <code>/diagram 점검</code> 이나 <code>/sync</code></dd>
@@ -568,17 +568,17 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 
     <section id="flow">
       <h2>작업 흐름</h2>
-      <p>아테나는 요청마다 <strong>경량인지 정식인지 먼저 정해 한 줄로 알립니다.</strong> 대부분인 <strong>경량</strong>(레포 하나 · 문구 · 버그 하나 · 조사 · <code>/call</code>)은 계획서를 자동으로 기록만 하고 승인 단계 없이 에이전트 pane 에서 커밋·리뷰·PR 까지 갑니다. <strong>정식</strong>(여러 레포·API·구조 변경)만 아래 6단계를 모두 거칩니다. 어느 쪽이든 모든 작업은 계획서 하나에 묶입니다. 그림은 <code>/guide 그림</code> 의 <b>작업 흐름 · 경량</b>, <b>작업 흐름 · 정식</b> 두 장입니다. 진행 상황은 현황판(<code>/board</code>)에서 실시간으로 봅니다. 원본은 <code>CLAUDE.md</code> "작업 흐름"입니다.</p>
+      <p>아테나는 요청마다 <strong>경량인지 정식인지 먼저 정해 한 줄로 알립니다.</strong> 대부분인 <strong>경량</strong>(레포 하나 · 문구 · 버그 하나 · 조사 · <code>/call</code>)은 계획서를 자동으로 기록만 하고 승인 단계 없이 에이전트 pane 에서 커밋·리뷰·PR 까지 갑니다. <strong>정식</strong>(여러 레포·API·구조 변경)만 아래 6단계를 모두 거칩니다. 어느 쪽이든 모든 작업은 계획서 하나에 묶입니다. 그림은 <code>/guide 그림</code> 의 <b>작업 흐름 · 경량</b>, <b>작업 흐름 · 정식</b> 두 장입니다. 진행 상황은 일감(<code>/board</code>)에서 실시간으로 봅니다. 원본은 <code>CLAUDE.md</code> "작업 흐름"입니다.</p>
       <div class="steps">
         <div class="step" data-n="1">
           <h3>요청 · 계획서</h3>
           <div class="who">아테나</div>
           <ul>
-            <li>요청은 세 갈래로 들어옵니다 — <strong>대화</strong>(담당자를 모르거나 여러 레포·기능·버그 원인 찾기), <strong><code>/call &lt;에이전트&gt;</code></strong>(담당자를 알 때), <strong>현황판 이슈 카드의 [처리 시작]</strong>.</li>
+            <li>요청은 세 갈래로 들어옵니다 — <strong>대화</strong>(담당자를 모르거나 여러 레포·기능·버그 원인 찾기), <strong><code>/call &lt;에이전트&gt;</code></strong>(담당자를 알 때), <strong>일감 이슈 카드의 [작업 시작]</strong>.</li>
             <li>대상 서비스를 정하고 관련 코드를 탐색합니다. 같은 말이 여러 레포를 가리키면 어느 쪽인지 묻습니다(기준은 팩 <code>pack/ROUTING.md</code>).</li>
             <li><strong>경량인지 정식인지 아테나가 정하고 한 줄로 알립니다</strong> — <code>📋 경량으로 진행합니다 — 이유 · 경로</code>. "정식으로"라고 하면 바꿉니다. <code>/call</code> 은 항상 경량이고 뜬 에이전트가 같은 줄을 알립니다.</li>
             <li><strong>정식 계획서</strong> — 새 기능·여러 레포·API·구조 변경. <code>plans/{feature,bugfix,refactor}/YYYYMMDD-제목.md</code> 하나.</li>
-            <li><strong>경량 계획서</strong> — 문구·버그 하나·확인·조사·직접 부른 에이전트·긴급 수정. <code>plans/task/…md</code> 하나. 따로 보여 주지 않고 기록만 하며, 현황판 카드 제목을 누르면 볼 수 있습니다.</li>
+            <li><strong>경량 계획서</strong> — 문구·버그 하나·확인·조사·직접 부른 에이전트·긴급 수정. <code>plans/task/…md</code> 하나. 따로 보여 주지 않고 기록만 하며, 일감 카드 제목을 누르면 볼 수 있습니다.</li>
             <li>그 자리에서 고치지 않은 발견은 <code>issues/*.md</code>로 등록합니다.</li>
           </ul>
         </div>
@@ -586,7 +586,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           <h3>사용자 승인</h3>
           <div class="who">사용자</div>
           <ul>
-            <li>정식: 아테나가 md 와 같은 이름의 <strong>html 결정 콘솔</strong>을 만들어 현황판 주소로 열어 줍니다(대화에는 경로와 결정마다 제목·추천 한 줄). 콘솔에서 고르고 <strong>[이대로 진행]</strong>을 누르면 결정이 그 계획서를 만든 아테나 pane 에 바로 들어갑니다 → md·html 에 확정값을 적고 "✅ 확정". 대화로 "추천대로", "D2 는 B" 라고 답해도 됩니다. 경량에는 결정 콘솔이 없습니다.</li>
+            <li>정식: 아테나가 md 와 같은 이름의 <strong>html 결정 콘솔</strong>을 만들어 일감 주소로 열어 줍니다(대화에는 경로와 결정마다 제목·추천 한 줄). 콘솔에서 고르고 <strong>[이대로 진행]</strong>을 누르면 결정이 그 계획서를 만든 아테나 pane 에 바로 들어갑니다 → md·html 에 확정값을 적고 "✅ 확정". 대화로 "추천대로", "D2 는 B" 라고 답해도 됩니다. 경량에는 결정 콘솔이 없습니다.</li>
             <li>경량: 사용자의 지시가 곧 승인입니다. 정식 대상이어도 <strong>"바로 고쳐"</strong>라고 하면 경량으로 바로 갑니다(보고에 그 사실을 적음).</li>
           </ul>
         </div>
@@ -630,7 +630,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           <h3>작업 · 커밋 (pane 에서 반복)</h3>
           <div class="who">FE 에이전트</div>
           <ul>
-            <li>사용자가 pane 에서 여러 번 요청합니다. 요청마다 Status 가 <code>in_progress</code> ↔ <code>ready_for_review</code> 로 바뀌어 현황판 카드가 진행 중 ↔ 리뷰를 오갑니다.</li>
+            <li>사용자가 pane 에서 여러 번 요청합니다. 요청마다 Status 가 <code>in_progress</code> ↔ <code>ready_for_review</code> 로 바뀌어 일감 카드가 진행 중 ↔ 리뷰를 오갑니다.</li>
             <li>작업 뒤 표준 검증 스크립트(<code>scripts/verify/*.sh</code>)를 돌리고 출력 표를 그대로 보고합니다.</li>
             <li>커밋은 사용자가 <strong>"커밋해줘"</strong>라고 할 때만 <code>scripts/commit.sh</code>로 합니다 — 지정 파일만·엄격 검증·계획서 <code>## Commits</code> 기록. 메인 체크아웃·보호 브랜치·검증 실패면 거부합니다.</li>
             <li><strong>레포 하나짜리 작업은 여기서 PR 까지</strong> — 코드를 바꾼 요청을 보고하면 정식 계획서는 에이전트가 <strong>묻지 않고 바로 옆에 reviewer pane 을 띄우고</strong>(자동 리뷰), 경량 계획서(<code>/call</code> 포함)는 보고 끝에 "리뷰할까요?" 한 줄만 붙여 "리뷰해줘" 할 때 띄웁니다. 리뷰어는 같은 트리로 이미 통과한 검증을 다시 돌리지 않습니다(♻️ 재사용). 결론이 나오면 보여 주고, 수정 필요(고칠 방법이 하나)면 묻지 않고 고친 뒤 무엇을 고쳤는지 알려 줍니다. "리뷰해줘"로 다시 받을 수도 있고, "PR 올려줘"면 <code>scripts/ship.sh</code> 가 base 후보·올라갈 커밋·검증·리뷰 기록·제목 제안·본문 초안을 보여 준 뒤 확인받아 <strong>draft PR</strong> 을 엽니다. 커밋 안 된 변경, <code>commit.sh</code> 를 안 거친 커밋, 여러 레포 작업, 형식에 안 맞는 제목은 거부합니다.</li>
@@ -649,10 +649,10 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           <h3>정리</h3>
           <div class="who">아테나</div>
           <ul>
-            <li>끝난 카드는 현황판 완료 칸의 <strong>[아카이브]</strong> — 이슈와 계획서를 <code>archive/&lt;이름&gt;/</code> 한 폴더로 묶어 보관하고 git 에 커밋합니다. git 에 올라가는 건 이 <code>archive/</code> 뿐이고, 진행 중·리뷰·완료의 이슈·계획서는 각자 로컬에 갖습니다. 이슈 워크트리도 정리합니다(미커밋·push 안 된 커밋이 있으면 남김). 지나간 일은 현황판 <strong>[아카이브]</strong> 탭에서 검색합니다.</li>
-            <li>계획서 <code>PR:</code> 줄의 PR 이 <strong>모두</strong> 머지되면(어느 base 든 — GitHub <code>MERGED</code>) 현황판이 그 계획서를 <strong>자동으로 완료</strong>로 옮깁니다(진행 중·리뷰 계획서만, 5분마다 확인 · 완료된 계획서에 이어 PR 을 올리면 자동 머지를 켠 레포는 리뷰로 되돌려 자동 리뷰를 다시 태웁니다). 머지 없이 닫힌 PR(<code>CLOSED</code>)은 셈에서 빼고, 그것만 있으면 옮기지 않습니다.</li>
+            <li>끝난 카드는 일감 완료 칸의 <strong>[아카이브]</strong> — 이슈와 계획서를 <code>archive/&lt;이름&gt;/</code> 한 폴더로 묶어 보관하고 git 에 커밋합니다. git 에 올라가는 건 이 <code>archive/</code> 뿐이고, 진행 중·리뷰·완료의 이슈·계획서는 각자 로컬에 갖습니다. 이슈 워크트리도 정리합니다(미커밋·push 안 된 커밋이 있으면 남김). 지나간 일은 일감 <strong>[아카이브]</strong> 탭에서 검색합니다.</li>
+            <li>계획서 <code>PR:</code> 줄의 PR 이 <strong>모두</strong> 머지되면(어느 base 든 — GitHub <code>MERGED</code>) 일감이 그 계획서를 <strong>자동으로 완료</strong>로 옮깁니다(진행 중·리뷰 계획서만, 5분마다 확인 · 완료된 계획서에 이어 PR 을 올리면 자동 머지를 켠 레포는 리뷰로 되돌려 자동 리뷰를 다시 태웁니다). 머지 없이 닫힌 PR(<code>CLOSED</code>)은 셈에서 빼고, 그것만 있으면 옮기지 않습니다.</li>
             <li>이슈는 완료 기준이 채워지면 <code>완료 가능</code> 배지가 붙고 아테나가 완료로 옮깁니다. 안전망: <code>scripts/archive-plans.sh</code>(30일 이상 + 최근 git log 미언급).</li>
-            <li><strong>📚 학습</strong> — 에이전트는 작업을 끝낼 때(PR 을 올린 보고)·사용자가 바로잡을 때·같은 오류가 3번 날 때 "다음에도 밟을 코드 함정"을 학습 후보로 올리고, PR 이 머지되면 배우기 검토자(별도 Claude, 뒤에서 돈다)가 계획서·대화·바뀐 코드·리뷰 댓글을 읽어 보탭니다. 사용자가 현황판 [학습] 탭에서 [넣기]를 고른 것만 서비스별 공책(<code>gotchas.md</code>)에 들어가고, 다음 작업이 읽습니다. 일하는 취향은 넣지 않습니다(근거가 코드·실행 결과일 때만). 기준 <code>docs/knowledge/common/learning.md</code></li>
+            <li><strong>📚 학습</strong> — 에이전트는 작업을 끝낼 때(PR 을 올린 보고)·사용자가 바로잡을 때·같은 오류가 3번 날 때 "다음에도 밟을 코드 함정"을 학습 후보로 올리고, PR 이 머지되면 배우기 검토자(별도 Claude, 뒤에서 돈다)가 계획서·대화·바뀐 코드·리뷰 댓글을 읽어 보탭니다. 사용자가 일감 [학습] 탭에서 [넣기]를 고른 것만 서비스별 공책(<code>gotchas.md</code>)에 들어가고, 다음 작업이 읽습니다. 일하는 취향은 넣지 않습니다(근거가 코드·실행 결과일 때만). 기준 <code>docs/knowledge/common/learning.md</code></li>
           </ul>
         </div>
       </div>
@@ -725,8 +725,8 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 │   ├── plan-template.md       <span class="c">정식 계획서 (+ plan-template.html 결정 콘솔)</span>
 │   └── plan-template-light.md <span class="c">경량 계획서</span>
 ├── plans/                     <span class="c">진행 중 계획서 — feature/ bugfix/ refactor/ task/ (로컬, gitignore)</span>
-├── issues/                    <span class="c">열린 이슈 (현황판 이슈 칸)</span>
-├── archive/                   <span class="c">끝난 일 — &lt;이름&gt;/ 에 issue.md · plan.md · meta.json 을 묶어 커밋 (현황판 [아카이브] 탭)</span>
+├── issues/                    <span class="c">열린 이슈 (일감 이슈 칸)</span>
+├── archive/                   <span class="c">끝난 일 — &lt;이름&gt;/ 에 issue.md · plan.md · meta.json 을 묶어 커밋 (일감 [아카이브] 탭)</span>
 └── scripts/
     ├── setup.sh               <span class="c">repos/ 링크 + 도구 점검 + QA 도구(Playwright) 설치 — 링크는 claude 를 켤 때 훅(hooks/setup-check.py)이 알아서, 나머지는 QA 를 쓸 때 한 번</span>
     ├── verify/&lt;레포&gt;.sh        <span class="c">표준 검증 (lint·타입·테스트 → 표 요약). 에이전트·reviewer 공용</span>
@@ -736,7 +736,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
     ├── ship.sh                <span class="c">push + draft PR ("PR 올려줘", 레포 하나짜리)</span>
     ├── agent-monitor.py       <span class="c">서브에이전트·pane 에이전트 로그 실시간 모니터 (렌더러)</span>
     ├── monitor-pane.sh        <span class="c">모니터를 어디서 보는지 알림 — Studio 는 앱 AGENT MONITOR 칸 (/monitor)</span>
-    ├── board.sh               <span class="c">현황판 서버를 뒤에서 띄우고 브라우저로 (/board) — 서버·화면은 board/</span>
+    ├── board.sh               <span class="c">일감 서버를 뒤에서 띄우고 브라우저로 (/board) — 서버·화면은 board/</span>
     ├── learn-review.mjs       <span class="c">배우기 검토자 — 내 PR 이 머지되면 계획서·대화·바뀐 코드·리뷰 댓글을 별도 Claude 가 읽고 학습 후보를 올린다 (뒤에서 돈다)</span>
     ├── learn-curator.mjs      <span class="c">30일 넘게 안 쓴 스킬을 정리 후보로 (/sync 끝에)</span>
     ├── gotchas-check.mjs      <span class="c">낡은 공책 줄 · 나눌 때가 된 공책을 정리 후보로 (/sync 끝에)</span>
@@ -800,7 +800,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           <summary>아테나는 스스로 배우나요?</summary>
           <div class="a">
             <p>네, 다만 <strong>사람이 고른 것만</strong> 배웁니다. 작업에서 알게 된 코드 함정이 서비스별 공책(<code>gotchas.md</code>)에 쌓이고, 에이전트는 작업 전에 이 공책을 읽습니다.</p>
-            <p><strong>누가</strong> — ① <strong>작업한 에이전트</strong>가 작업을 끝낼 때(PR 을 올린 보고)·사용자가 바로잡을 때·같은 오류가 3번 날 때 학습 후보를 올리고 ② <strong>배우기 검토자</strong>(별도 Claude)가 PR 이 머지된 뒤 계획서·대화·바뀐 코드·리뷰 댓글를 다시 읽어 빠진 것을 보탭니다 ③ <strong>사람</strong>이 현황판 [학습] 탭에서 [넣기]·[고쳐서 넣기]·[버리기] — 넣은 것만 공책에 들어갑니다.</p>
+            <p><strong>누가</strong> — ① <strong>작업한 에이전트</strong>가 작업을 끝낼 때(PR 을 올린 보고)·사용자가 바로잡을 때·같은 오류가 3번 날 때 학습 후보를 올리고 ② <strong>배우기 검토자</strong>(별도 Claude)가 PR 이 머지된 뒤 계획서·대화·바뀐 코드·리뷰 댓글를 다시 읽어 빠진 것을 보탭니다 ③ <strong>사람</strong>이 일감 [학습] 탭에서 [넣기]·[고쳐서 넣기]·[버리기] — 넣은 것만 공책에 들어갑니다.</p>
             <p><strong>기준</strong> — 다시 마주치고 · 모르면 실제로 잘못되고 · 코드만 봐서는 바로 알기 어려운 것만. 근거가 코드나 실행 결과로 확인돼야 하고, "사용자가 그렇게 말했다"뿐이면 취향일 수 있어 스크립트가 거릅니다(취향은 각자 Claude 메모리 몫). 이미 코드로 고친 버그·한 번 있었던 일·원인이 서버인 것은 넣지 않습니다. 대부분의 작업은 0개가 정상입니다. 정본 <code>docs/knowledge/common/learning.md</code>.</p>
             <p><strong>Nous Research Hermes Agent 와의 차이</strong> — 학습 구조 아이디어만 가져와 직접 만들었습니다.</p>
             <div class="table-wrap"><table>

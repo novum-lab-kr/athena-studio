@@ -1,5 +1,5 @@
 /* 아테나 다이어그램 테마 — archify 결과 HTML 에 덧씌운다(archify 는 그대로 · scripts/diagram-theme.mjs 가 끼워 넣는다).
-   한글 본문 글꼴 · 현황판과 같은 색 · 조금 큰 글자 · 면을 채운 둥근 상자. 프리셋(classic 등)과 상관없이 같은 모습 */
+   한글 본문 글꼴 · 일감과 같은 색 · 조금 큰 글자 · 면을 채운 둥근 상자. 프리셋(classic 등)과 상관없이 같은 모습 */
 
 /* 글꼴 — 고정폭(JetBrains Mono) 대신 한글 본문 글꼴. 코드처럼 보여야 하는 것은 없다 */
 body, svg text, .toolbar button, .card, .legend {
@@ -26,7 +26,7 @@ svg rect[class^="c-"][stroke-width="1.5"] { rx: 10px; ry: 10px; stroke-width: 1.
 svg .c-region { fill: var(--lane-fill) !important; stroke: var(--lane-stroke) !important; stroke-dasharray: 6 4 !important; }
 svg text[data-boundary-label] { fill: var(--text-muted); font-size: 10.5px !important; }
 
-/* 색 — 라이트(현황판 토큰) */
+/* 색 — 라이트(일감 토큰) */
 html[data-theme="light"], html[data-theme="light"][data-preset] {
   --bg: #f5f3ee; --panel: #ffffff; --panel-border: #e4e0d6; --grid: rgba(35, 33, 29, .035);
   --text: #23211d; --text-muted: #76716a; --text-dim: #8e897f; --text-faint: #b3ada2;

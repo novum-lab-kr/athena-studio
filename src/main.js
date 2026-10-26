@@ -1,5 +1,5 @@
-// Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 현황판 서버 · 아테나 폴더 설정
-// 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 현황판 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
+// Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 일감 서버 · 아테나 폴더 설정
+// 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 일감 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
 // 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만)
 const { app, BrowserWindow, Menu, Notification, Tray, WebContentsView, dialog, ipcMain, nativeImage, nativeTheme, session, shell } = require('electron')
 const { execFile, spawn } = require('child_process')
@@ -21,6 +21,7 @@ const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language')
 const requestsModel = require('./lib/requests')
 const workModel = require('./lib/work-model')
+const paneDetail = require('./lib/pane-detail')
 const layout = require('./lib/layout')
 const appUpdate = require('./lib/app-update')
 const versionModel = require('./lib/version')
@@ -46,7 +47,7 @@ const APP_BACKGROUND = '#16171a'
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
 
-let config = null // 앱 설정(언어 · 열린 팩 창 목록 windows · 옛 현황판 포트 …)
+let config = null // 앱 설정(언어 · 열린 팩 창 목록 windows · 옛 일감 포트 …)
 const packWindows = new Set() // 열린 팩 창 — createPackWindow 의 문맥
 let lastFocused = null // 마지막으로 앞에 있던 팩 창(메뉴 · 메뉴 막대가 이 창 기준)
 
@@ -214,7 +215,7 @@ async function restartDaemon() {
   for (const each of packWindows) each.send('screen:resync')
 }
 
-// 스튜디오 초기화(메뉴 보기) — 처음 켠 것처럼: 현황판 · 데몬(모든 pane · 에이전트)을 끄고 스튜디오 집의 코어 · 본체 · 팩 데이터 ·
+// 스튜디오 초기화(메뉴 보기) — 처음 켠 것처럼: 일감 · 데몬(모든 pane · 에이전트)을 끄고 스튜디오 집의 코어 · 본체 · 팩 데이터 ·
 // 이 앱의 데몬 파일을 지운 뒤 창 목록을 비우고 앱을 다시 띄운다. 회사 레포 클론 · 언어 설정 · 다른 앱의 접속 파일은 둔다
 async function resetStudio() {
   const ctx = frontCtx()
@@ -229,7 +230,7 @@ async function resetStudio() {
   })
   if (choice.response !== 1) return
   quitting = true // 창이 닫히며 창 목록을 다시 적지 않게
-  // 현황판은 본체가 있을 때 그 토큰으로 끈다(지운 뒤에는 끌 방법이 없다)
+  // 일감은 본체가 있을 때 그 토큰으로 끈다(지운 뒤에는 끌 방법이 없다)
   for (const board of plan.boards) await stopStaleBoard(board.port, board.dir).catch(() => false)
   const connection = ctx ? await ctx.connectDaemon().catch(() => null) : null
   if (connection) await connection.call('shutdown').catch(() => null)
@@ -504,7 +505,7 @@ async function guarded(work) {
   }
 }
 
-// ── 현황판 — 공용 도우미 ────────────────────────────────────
+// ── 일감 — 공용 도우미 ────────────────────────────────────
 function isBoardUp(port) {
   return new Promise((resolve) => {
     const request = http.get({ host: '127.0.0.1', port, path: '/', timeout: 1500 }, (response) => {
@@ -517,7 +518,7 @@ function isBoardUp(port) {
 }
 
 // scripts/board.sh 는 브라우저를 열므로 쓰지 않고 server.mjs 를 직접 띄운다.
-// 앱을 닫아도 현황판은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
+// 앱을 닫아도 일감은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
 // 포트 정하기 · 띄우기가 겹치지 않게 한 줄로 세운다(창이 여럿이어도 — 포트를 서로 고르다 겹치지 않게)
 let boardQueue = Promise.resolve()
 function queueBoard(work) {
@@ -556,13 +557,13 @@ async function startBoard(port, athenaDir) {
   const logFile = boardLogFile()
   fs.mkdirSync(path.dirname(logFile), { recursive: true })
   const log = fs.openSync(logFile, 'a')
-  fs.writeSync(log, `\n── ${new Date().toISOString()} 현황판 시작 (포트 ${port})\n`)
+  fs.writeSync(log, `\n── ${new Date().toISOString()} 일감 시작 (포트 ${port})\n`)
 
   // node 가 PATH 에 없으면 Electron 을 node 로 돌린다
   const nodePath = core.findExecutable('node', process.env.PATH)
-  // 현황판은 pane 밖에서 pane 목록을 묻는다 — 화면 계층이 studio 데몬을 고르게 자리를 넘긴다(S4)
+  // 일감은 pane 밖에서 pane 목록을 묻는다 — 화면 계층이 studio 데몬을 고르게 자리를 넘긴다(S4)
   const paths = daemonPaths()
-  // ATHENA_STUDIO_BODY — 현황판이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
+  // ATHENA_STUDIO_BODY — 일감이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
   const extra = { ATHENA_BOARD_PORT: String(port), ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(athenaDir) }
   if (!nodePath) extra.ELECTRON_RUN_AS_NODE = '1'
   const env = core.childEnv(process.env, extra)
@@ -597,7 +598,7 @@ async function startBoard(port, athenaDir) {
   return { ok: false, url, error: say('error.boardStartReason', { reason: why }), log: logFile }
 }
 
-// 현황판이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
+// 일감이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
 function boardJson(port, pathName, { method = 'GET', headers = {} } = {}) {
   return new Promise((resolve) => {
     const request = http.request({ host: '127.0.0.1', port, path: pathName, method, headers, timeout: 3000 }, (response) => {
@@ -971,7 +972,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   let screenDetached = false
   let launchWelcome = welcome ? null : false // 켤 때 시작 화면 — 첫 창만 정한다(null = 아직 안 정함)
   let branchCache = { at: 0, value: null }
-  let packBoardPort = null // 이 본체 현황판 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
+  let packBoardPort = null // 이 본체 일감 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
   const monitor = newMonitor()
   let browserView = null
   let browserAttached = false
@@ -1354,6 +1355,92 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return true
   }
 
+  // ── pane [상세] ─────────────────────────────────────────────────────
+  // 지금 상태가 된 시각(걸린 시간) — pane 목록을 볼 때마다 상태가 바뀐 pane 만 고친다
+  const paneSince = new Map() // pane id → { status, at }
+  const trackPaneSince = (panes) => {
+    const alive = new Set()
+    for (const pane of panes) {
+      alive.add(pane.id)
+      const status = pane.agent ? pane.agent_status : null
+      const known = paneSince.get(pane.id)
+      if (!known || known.status !== status) paneSince.set(pane.id, { status, at: Date.now() })
+    }
+    for (const id of paneSince.keys()) if (!alive.has(id)) paneSince.delete(id)
+  }
+  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 일감이 떠 있을 때만 읽는다(띄우지는 않는다). 꺼졌으면 지난 값을 둔다
+  const PANE_BOUND_MS = 5000
+  let paneBound = {}
+  let paneBoundAt = 0
+  const refreshPaneBound = async () => {
+    const state = await fetchBoardJson(ctx.boardPortNow(), '/api/state')
+    if (!state || !Array.isArray(state.cards)) return
+    const next = paneDetail.bindings(state.cards)
+    if (JSON.stringify(next) === JSON.stringify(paneBound)) return
+    paneBound = next
+    send('screen:pane-bound', paneBound)
+  }
+  ctx.paneBound = () => paneBound
+  // 아카이브 목록은 무겁다(보관 폴더를 다 읽는다) — 아테나 pane 상세가 열려 있어도 30초에 한 번만
+  const HISTORY_CACHE_MS = 30000
+  let historyCache = { at: 0, items: [] }
+  const recentHistory = async () => {
+    if (Date.now() - historyCache.at < HISTORY_CACHE_MS) return historyCache.items
+    const history = await fetchBoardJson(ctx.boardPortNow(), '/api/history')
+    historyCache = { at: Date.now(), items: history && Array.isArray(history.items) ? history.items : historyCache.items }
+    return historyCache.items
+  }
+  // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.
+  // 재료: 일감 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
+  ctx.paneDetail = async (paneId) => {
+    if (!/^[\w:]+$/.test(paneId)) return { ok: false, error: 'bad-id' }
+    const port = ctx.boardPortNow()
+    const state = await fetchBoardJson(port, '/api/state')
+    if (!state || !Array.isArray(state.cards)) return { ok: false, error: 'board-down' }
+    const listed = await daemonCall('pane list')
+    const panes = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
+    const pane = panes.find((entry) => entry.id === paneId)
+    if (!pane) return { ok: false, error: 'no-pane' }
+    const label = pane.label || pane.name || pane.title || paneId
+    const open = requestsState.requests.filter((request) => request.state === 'open')
+    const since = Object.fromEntries([...paneSince].map(([id, entry]) => [id, entry.at]))
+    const plan = paneDetail.agentPlan(state.cards, paneId)
+    if (!plan) {
+      const status = Object.fromEntries(panes.map((entry) => [entry.id, entry.agent ? entry.agent_status : null]))
+      const rows = paneDetail.leadRows(state.cards, await recentHistory(), paneId, { panes: state.panes || [], since, status, waitingPlans: new Set(open.map((request) => request.plan).filter(Boolean)), now: Date.now() })
+      return { ok: true, mode: 'lead', paneId, label, rows }
+    }
+    const [visible, recent, card] = await Promise.all([
+      daemonCall('pane read', { pane: paneId, lines: 40, source: 'visible' }),
+      daemonCall('pane read', { pane: paneId, lines: 400, source: 'recent' }),
+      fetchBoardJson(port, `/api/card?id=${encodeURIComponent(plan.id)}`),
+    ])
+    const visibleText = visible.result && typeof visible.result.text === 'string' ? visible.result.text : ''
+    const digest = paneDetail.screenDigest(recent.result && typeof recent.result.text === 'string' ? recent.result.text : '')
+    const record = paneDetail.planRecord(card && typeof card.text === 'string' ? card.text : '')
+    const waiting = screenModel.waitingForInput(visibleText)
+    const todo = open.filter((request) => request.plan === plan.id || request.pane === paneId).map((request) => ({ id: request.id, kind: request.kind, title: request.title }))
+    const now = paneDetail.nowState({
+      agentStatus: pane.agent ? pane.agent_status : null,
+      waiting,
+      unsent: pane.agent === 'claude' && pane.agent_status === 'idle' && Boolean(paneDetail.unsentInput(visibleText)),
+      heavy: digest.heavy,
+      hasRequest: todo.length > 0,
+      planStatus: record.status || plan.status,
+    })
+    const known = paneSince.get(paneId)
+    return {
+      ok: true,
+      mode: 'agent',
+      paneId,
+      label,
+      now: { ...now, sinceMs: known ? Date.now() - known.at : 0, line: digest.now },
+      report: digest.report,
+      todo,
+      plan: { id: plan.id, html: plan.html || null, title: record.title || plan.title, created: Number(plan.created) || 0, readable: Boolean(card), ...record },
+    }
+  }
+
   // 보일 때만(startPanesPolling 이 2초마다 부른다) pane 목록(에이전트가 도는 폴더 → 모니터)과 작업 공간 브랜치를 갱신한다
   ctx.pollPanes = async () => {
     if (!ctx.win || ctx.win.isDestroyed() || !ctx.win.isVisible() || ctx.win.isMinimized() || !daemon) return
@@ -1362,6 +1449,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean)
       // spaces pane 줄 앞 점 — 에이전트가 없는 pane 은 null
       send('screen:pane-status', Object.fromEntries(listed.result.panes.map((pane) => [pane.id, pane.agent ? pane.agent_status : null])))
+      trackPaneSince(listed.result.panes)
+    }
+    if (Date.now() - paneBoundAt > PANE_BOUND_MS) {
+      paneBoundAt = Date.now()
+      refreshPaneBound().catch(() => {})
     }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)
@@ -1625,7 +1717,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }))
   }
   // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
-  // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
+  // 일감 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
   ctx.mergeSettings = async () => {
     // 읽기 실패 · 망가진 JSON 모두 null — 팝업이 '읽지 못했어요' 를 보이게(then 의 두 번째 인자는 JSON.parse 오류를 못 잡는다)
     const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
@@ -1640,7 +1732,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     return result
   }
-  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
+  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(일감과 같은 값 + studio · pane 안 표시)
   ctx.studioEnv = () => {
     const paths = daemonPaths()
     return { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir) }
@@ -1681,7 +1773,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // ── 백업에서 되살리기 ──
   // 코어 pack restore-work(본체에서) — 워크트리(미커밋 변경 · push 안 한 커밋) → 대화 기록 → 에이전트 pane(delegate.sh --resume).
-  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(현황판과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
+  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(일감과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
   ctx.restoreStatus = () => runPack(['restore-work', '--dry-run'], { dir: ctx.athenaDir })
   ctx.packRestore = async ({ discard = false } = {}) => {
     restoreArmedFor = null
@@ -1703,12 +1795,12 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return result
   }
 
-  // ── 현황판 ──
-  // 지금 현황판 포트 — 팩 지원 본체면 본체가 정한 값(pack status · 본체마다 다르다), 옛 본체면 앱 설정
+  // ── 일감 ──
+  // 지금 일감 포트 — 팩 지원 본체면 본체가 정한 값(pack status · 본체마다 다르다), 옛 본체면 앱 설정
   const boardPortNow = () => packBoardPort || config.boardPort
   ctx.boardPortNow = boardPortNow
 
-  // 현황판을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
+  // 일감을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
   ctx.openBoardExternal = async () => {
     const result = await ctx.ensureBoard()
     if (result.ok) {
@@ -1728,7 +1820,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
 
   // ── 사람에게 묻는 요청 · [작업] 팝업 데이터 ──
-  // 요청은 코어 명령(request list)으로 읽는다 — 현황판이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
+  // 요청은 코어 명령(request list)으로 읽는다 — 일감이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
   // 바뀌면 바로, 놓칠 때를 대비해 REQUESTS_POLL_MS 마다. request 명령이 없는 옛 코어면 supported:false(요청 없음)
   let requestsState = { supported: false, requests: [] }
   let requestsWatch = null
@@ -1803,7 +1895,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     ctx.refreshRequests()
   }
 
-  // [작업] 팝업 — 현황판을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
+  // [작업] 팝업 — 일감을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
   ctx.workState = async () => {
     const board = await ctx.ensureBoard()
     const state = board.ok ? await fetchBoardJson(boardPortNow(), '/api/state') : null
@@ -1847,7 +1939,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (!known || !known.answer) return { ok: false, error: 'not-found' }
     return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer)) }
   }
-  // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소로 브라우저에, 없으면 md 를 기본 앱으로
+  // 계획서 열기 — 결정 콘솔(html)이 있으면 일감 주소로 브라우저에, 없으면 md 를 기본 앱으로
   ctx.openPlan = async (id, html) => {
     const safe = (value, ext) => typeof value === 'string' && value.startsWith('plans/') && value.endsWith(ext) && !value.split('/').includes('..')
     if (safe(html, '.html')) {
@@ -1857,7 +1949,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
     return null
   }
-  // 현황판 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 현황판 탭 이름을 주소 끝 #<탭> 으로
+  // 일감 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 일감 탭 이름을 주소 끝 #<탭> 으로
   const BOARD_SECTIONS = ['now', 'qa', 'learn', 'metrics', 'history']
   ctx.openBoardSection = async (section) => {
     const result = await ctx.ensureBoard()
@@ -1873,7 +1965,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
   }
 
-  // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
+  // 작업 상세 — 계획서 원문(일감 /api/card)에서 몇 줄만. plans/ 안의 .md 만
   ctx.workDetail = async (id) => {
     if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
     const card = await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)
@@ -1881,7 +1973,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     return { ok: true, id, ...workModel.planDetail(card.text) }
   }
 
-  // 현황판은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
+  // 일감은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 일감 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
   // 팩 지원 본체면 포트는 본체가 정하니 읽기만 하고 본체 설정에 쓰지 않는다(setAthenaBoardPort 는 옛 본체에서만)
   ctx.prepareBoardPort = () => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return
@@ -1892,7 +1984,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }).catch(() => {})
   }
 
-  // 옛 본체 — 저장된 포트부터 차례로. 이 아테나 폴더에서 도는 현황판이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것이 쥐고 있으면 다음 번호
+  // 옛 본체 — 저장된 포트부터 차례로. 이 아테나 폴더에서 도는 일감이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것이 쥐고 있으면 다음 번호
   async function findBoardPort(dir) {
     const ports = core.boardPortCandidates(config.boardPort)
     for (const port of ports) {
@@ -1909,21 +2001,21 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   async function findOrStartBoard(dir) {
     const result = await findOrStartBoardFor(dir)
-    // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 현황판을 보여 주지 않는다
+    // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 일감을 보여 주지 않는다
     if (ctx.athenaDir !== dir) return { ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirChangedReload', { key: reloadKey() }) }
     return result
   }
 
-  // 팩 지원 본체인지 · 현황판 포트 — pack status(가볍다). 옛 본체면 null
+  // 팩 지원 본체인지 · 일감 포트 — pack status(가볍다). 옛 본체면 null
   async function refreshPackStatus(dir) {
     const status = await runPack(['status'], { dir })
     packBoardPort = packModel.statusBoardPort(status)
-    // current 도 같이 — 현황판 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 현황판을 끄지 않게)
+    // current 도 같이 — 일감 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 일감을 끄지 않게)
     return packBoardPort ? { boardPort: packBoardPort, current: status.current || null } : null
   }
 
-  // 팩 지원 본체의 현황판 — 포트는 본체가 정한다(본체 하나에 현황판 하나). 떠 있는 현황판이 이 본체 팩 · 세대 것이면
-  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 현황판이 아닌 것이 쥐고 있으면 오류
+  // 팩 지원 본체의 일감 — 포트는 본체가 정한다(본체 하나에 일감 하나). 떠 있는 일감이 이 본체 팩 · 세대 것이면
+  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 일감이 아닌 것이 쥐고 있으면 오류
   async function packBoard(port, dir, current) {
     const url = core.boardUrl(port)
     if (await isBoardUp(port)) {
@@ -2001,7 +2093,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // 이 창을 다른 본체(팩)로 다시 묶는다(한 창에서 팩을 바꿔 본다).
   // 이전 본체의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 오면 그 본체의 보던 자리 그대로). 화면은 돌려준 상태로 다시 붙는다(attach{body}) —
-  // 작업 공간 · 현황판 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
+  // 작업 공간 · 일감 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
   function rebindBody(dir) {
     try {
       core.ensureAthenaConfig(dir, athenaReposRoot(dir))
@@ -2152,7 +2244,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       const result = await runPack(['import', token, `--${choice}`], { dir: ctx.athenaDir, onProgress: ctx.packProgress })
       refreshAllPacks()
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      // 열린 창의 팩을 바꿨으면 그 창 현황판을 새로
+      // 열린 창의 팩을 바꿨으면 그 창 일감을 새로
       const replaced = result.imported && result.imported.id
       for (const each of packWindows) if (replaced && each.packState.current && each.packState.current.id === replaced) each.send('pack:changed', { ok: true, replaced })
       return result
@@ -2357,7 +2449,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
 
   // ── 옆 브라우저 — 창마다 서랍 하나 ──
-  // 작업 창 · 현황판 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지 — 창끼리 같은 저장소),
+  // 작업 창 · 일감 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지 — 창끼리 같은 저장소),
   // 화면은 서랍 안 자리(#browser-slot)의 사각형만 알려 준다. 페이지에는 preload · Node 를 넘기지 않는다
   function ensureBrowserView() {
     if (browserView && !browserView.webContents.isDestroyed()) return browserView
@@ -2460,7 +2552,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // ── 창 ──
   ctx.show = (tab) => {
     if (!ctx.win || ctx.win.isDestroyed()) return
-    // 현황판은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
+    // 일감은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
     if (tab === 'board') return send('tab:switch', 'board')
     if (ctx.win.isMinimized()) ctx.win.restore()
     ctx.win.show()
@@ -2597,7 +2689,7 @@ function startPanesPolling() {
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 ───────────────────
 // 맥 상단 메뉴 막대 아이콘 — 누르면 확인 필요 · 에이전트 · 사용량 · 바로가기. 막힘 · 응답 끝 · 리뷰 대기 · 완료는 맥 알림.
-// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
+// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 일감 상태(/api/state — 일감을 띄우지는 않는다)를 본다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
 const TRAY_ICON_DIR = path.join(__dirname, 'renderer', 'assets', 'logo')
 const trayState = { ctx: null, panes: [], workspaces: [], focused: null, boardOkAt: 0, cards: null, usage: [], waitMs: null, metricsAt: 0, boardUp: false, boardAt: 0, pausedUntil: 0, polling: false }
@@ -2782,7 +2874,7 @@ async function pollTray() {
         trayState.boardOkAt = Date.now()
         trayState.cards = board.cards || []
         trayState.usage = (board.header && board.header.usage) || []
-        // 평균 답 대기(지난 7일 · 현황판 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
+        // 평균 답 대기(지난 7일 · 일감 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
         if (Date.now() - trayState.metricsAt > 5 * 60000) {
           trayState.metricsAt = Date.now()
           const metrics = await fetchBoardJson(ctx.boardPortNow(), '/api/metrics?days=7')
@@ -2825,11 +2917,11 @@ async function markWaiting(ctx, panes, before = []) {
   )
 }
 
-// 현황판이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
+// 일감이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
 function fetchBoardState(port) {
   return fetchBoardJson(port, '/api/state')
 }
-// 현황판 GET 하나 → JSON(실패면 null)
+// 일감 GET 하나 → JSON(실패면 null)
 function fetchBoardJson(port, pathName) {
   return new Promise((resolve) => {
     let settled = false
@@ -2934,7 +3026,7 @@ async function focusPaneFromTray(paneId) {
   await ctx.daemonCall('focus', { pane: String(paneId) })
 }
 
-// 계획서 결정 콘솔이 있으면 옆 브라우저로, 없으면 현황판 탭
+// 계획서 결정 콘솔이 있으면 옆 브라우저로, 없으면 일감 탭
 function openCardFromTray(html) {
   const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : frontCtx()
   if (!ctx) return
@@ -3236,6 +3328,9 @@ handle('work:open-plan', (ctx, id, html) => ctx.openPlan(String(id || ''), html 
 handle('board:section', (ctx, section) => ctx.openBoardSection(String(section || '')))
 handle('board:diagrams', (ctx) => ctx.openDiagrams())
 handle('work:detail', (ctx, id) => ctx.workDetail(String(id || '')))
+// pane [상세] — 계획서에 묶인 pane(머리 줄 아이콘) · 그 pane 의 상세
+handle('pane:bound', (ctx) => ctx.paneBound())
+handle('pane:detail', (ctx, paneId) => ctx.paneDetail(String(paneId || '')))
 listen('ui:tab', (ctx, tab) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url) => openUrl(ctx, String(url)))
 // 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)

@@ -126,7 +126,7 @@ function kanbanBlock(summary) {
   return box
 }
 
-// 최근 24시간 완료 — 한 줄 숫자(추세는 현황판 지표에서)
+// 최근 24시간 완료 — 한 줄 숫자(추세는 일감 지표에서)
 function historyBlock(summary) {
   const done = summary.done24 || { hours: [], total: 0 }
   return el('div', 'hist', say('tray.done.title', { count: done.total }))
@@ -145,7 +145,7 @@ function render(data) {
   parts.push(agentsBlock(summary))
   parts.push(title(say('tray.usage.title')))
   parts.push(usageBlock(summary))
-  // 현황판이 꺼져 있으면 칸반 · 완료 그래프는 숨긴다(0 으로 보이지 않게)
+  // 일감이 꺼져 있으면 칸반 · 완료 그래프는 숨긴다(0 으로 보이지 않게)
   if (summary.boardUp) parts.push(kanbanBlock(summary), historyBlock(summary))
   $('body').replaceChildren(...parts)
 

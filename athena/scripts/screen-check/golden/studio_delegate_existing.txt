@@ -19,6 +19,7 @@ p8  (fe — 계획서 plans/task/20261001-fe-test.md · workspace 'shop-web' (pa
 - Owner: t
 - Agent: fe
 - Issue: 
+- Lead pane: p1
 - Work ref: <ATHENA> · 🌿 main · pane p8 (fe)
 
 ## 지시

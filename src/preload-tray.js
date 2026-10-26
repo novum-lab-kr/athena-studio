@@ -9,7 +9,7 @@ contextBridge.exposeInMainWorld('trayPanel', {
     ipcRenderer.on('i18n:changed', handler)
     return () => ipcRenderer.removeListener('i18n:changed', handler)
   },
-  // main 이 보내는 요약(에이전트 · 확인 필요 · 사용량 · 칸반 · 현황판)
+  // main 이 보내는 요약(에이전트 · 확인 필요 · 사용량 · 칸반 · 일감)
   onUpdate: (callback) => {
     const handler = (_event, data) => callback(data)
     ipcRenderer.on('tray:update', handler)

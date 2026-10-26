@@ -156,7 +156,7 @@ export async function runScenario(context, scenario, options) {
     const kind = stepKind(step)
     const record = { label: describe(step), ok: true, detail: '' }
     steps.push(record)
-    // 진행 알림 — 지금 몇 번째 단계인지(현황판·라이브 화면이 따라 그린다)
+    // 진행 알림 — 지금 몇 번째 단계인지(일감·라이브 화면이 따라 그린다)
     options.onStep?.(steps)
     const timeout = step.timeout ?? STEP_TIMEOUT
     // 조건 — "when": { "url": "/auth/ci-request" } 은 지금 화면 경로가 이것으로 시작할 때만(여정에서 본인인증 화면에 왔을 때만 본인인증 구간 등)
@@ -196,7 +196,7 @@ export async function runScenario(context, scenario, options) {
       if (kind === 'session') {
         // 여정 중간에 로그인 상태로 — 저장된 세션(routes profiles 의 session)의 쿠키를 이 창에 넣는다. 다음 goto 부터 그 상태
         const cookies = await options.sessionCookies?.(step.session)
-        if (!cookies) throw new Error(`세션 ${step.session} 이 없거나 만료 — 현황판 QA 로그인 세션 줄에서 로그인`)
+        if (!cookies) throw new Error(`세션 ${step.session} 이 없거나 만료 — 일감 QA 로그인 세션 줄에서 로그인`)
         await page.context().clearCookies()
         await page.context().addCookies(cookies)
         record.detail = `쿠키 ${cookies.length}개(값은 안 남김)`

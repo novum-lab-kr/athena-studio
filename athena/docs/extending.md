@@ -17,7 +17,7 @@ argument-hint: "인자 예시"
 ```
 
 ## 학습으로 스킬 만들기 (learn 이슈 `target: skill:<이름>`)
-에이전트가 같은 절차를 반복하면 스킬 후보가 현황판 [학습] 탭에 쌓인다(`AGENTS.md` 6절 "📚 배운 것"). 사용자가 [아테나에게 맡기기]를 누르면 아테나가 아래 틀로 만든다.
+에이전트가 같은 절차를 반복하면 스킬 후보가 일감 [학습] 탭에 쌓인다(`AGENTS.md` 6절 "📚 배운 것"). 사용자가 [아테나에게 맡기기]를 누르면 아테나가 아래 틀로 만든다.
 - 이름은 **절차의 종류**로 짓는다 — PR 번호·오류 문구·`fix-…` 같은 일회성 이름 금지. 소문자·숫자·`-`
 - 먼저 **기존 스킬을 고쳐 넣을 수 있는지** 본다 — 비슷한 스킬이 있으면 새로 만들지 않고 그 스킬에 절을 더한다
 - `description` 은 **첫 60자 안에 "어떤 요청이면 이 스킬"** 이 보이게(스킬 목록에서 잘려 보인다)
@@ -80,7 +80,7 @@ argument-hint: "<인자 예시>"
   | 바꾸기 | `pane split --target <id\|self\|focused>` · `pane run` · `pane send-text` · `pane send-keys` · `pane rename` · `pane close` · `tab rename`·`tab close` · `workspace create` |
 
 - **브라우저 열기도 화면 계층으로** — `scripts/screen open-url <주소|파일>`(node `openUrl()`·`openUrlSync()`). `open`·`xdg-open` 을 직접 부르지 않는다. studio 면 데몬 op `open-url` → 그 본체에 붙은 앱 창이 주소를 연다(localhost 는 옆 브라우저 · 그 밖 http(s) 는 기본 브라우저 · 결과 `{ok, target:"panel"|"external", via:"studio"}`). none·http(s) 가 아닌 것(파일)·옛 데몬(op 모름)·붙은 앱 창 없음이면 기본 브라우저(`open` → 없으면 `xdg-open` · `via` 가 그 이름)로 떨어진다 — 부르는 쪽은 이것 하나만 부른다
-- **pane 이름** — 에이전트 pane 은 `🤖 <에이전트> · <브랜치>`(`delegate.sh` · `new-branch.sh`), 아테나 pane 은 계획서를 새로 만들 때 `🧭 아테나 · <제목 앞 30자>`(`new-plan.mjs` · 정식 html 을 처음 만드는 `plan-html.mjs` → `screen.mjs` `nameLeadPane()` — `ATHENA_AGENT` 가 있거나 화면 밖이면 안 함 · 실패는 조용히 · 현황판 서버는 `--no-pane-name`)
+- **pane 이름** — 에이전트 pane 은 `🤖 <에이전트> · <브랜치>`(`delegate.sh` · `new-branch.sh`), 아테나 pane 은 계획서를 새로 만들 때 `🧭 아테나 · <제목 앞 30자>`(`new-plan.mjs` · 정식 html 을 처음 만드는 `plan-html.mjs` → `screen.mjs` `nameLeadPane()` — `ATHENA_AGENT` 가 있거나 화면 밖이면 안 함 · 실패는 조용히 · 일감 서버는 `--no-pane-name`)
 - `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다. 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)
 - `--target self` 는 부른 pane(모르면 포커스된 pane), `focused` 는 포커스된 pane. 뒤에서 도는 스크립트는 self 를 쓴다 — 포커스된 pane 은 사용자가 보고 있는 엉뚱한 곳일 수 있다
 - 출력 형식: `--format json`(기본) · `id`(첫 대상의 id 한 줄) · `ids`(한 줄에 하나). id 는 불투명한 문자열 — 쪼개 읽지 않는다(workspace 는 `workspace_id`·`tab get` 으로)
@@ -88,7 +88,7 @@ argument-hint: "<인자 예시>"
   1. `ATHENA_SCREEN=studio|none` 이 있으면 그것(회귀 검사 · 한 번만 바꿀 때 · `auto` 면 다음으로 · 그 밖의 값은 `usage`)
   2. `ATHENA_STUDIO=1`(Studio pane 안 — 데몬이 pane 셸에 넣는다) → studio
   3. 이 아테나 폴더의 `athena.config.json` `"screen"`(`studio`·`none` — **pane 밖에서만** 쓰인다). 모르는 값(옛 설정에 남은 다른 백엔드 이름 등)이면 오류 없이 다음으로(자동). `pack migrate` 는 이 고정값을 지운다
-  4. Studio 데몬 접속 파일 `~/.athena-studio/daemon.json` 이 살아 있다(pid 가 살아 있고 소켓이 있다 — 낡은 파일은 없는 것으로) → studio. pane 밖(앱이 띄운 현황판 · 일반 터미널)용
+  4. Studio 데몬 접속 파일 `~/.athena-studio/daemon.json` 이 살아 있다(pid 가 살아 있고 소켓이 있다 — 낡은 파일은 없는 것으로) → studio. pane 밖(앱이 띄운 일감 · 일반 터미널)용
   5. 그 밖 → none. 바꾸는 동작이 실패하고 부르는 쪽이 원래 대체 동작(nohup · 새 창 · 직접 실행 안내)을 한다
   - pane 안인가(`inside`)는 따로 — `ATHENA_STUDIO=1` + 데몬 CLI 를 찾음
 - 백엔드 기능(`capabilities`): studio 는 `agent-status` · `process-info` · `workspaces`, none 은 없음
@@ -100,4 +100,4 @@ argument-hint: "<인자 예시>"
   - `pane read` 는 `--lines`·`--source visible|recent` 만(`--read-format`·`--ansi`·`--raw` 는 CLI 가 `usage` 로 거절)
 - 사용자에게 보이는 안내 글에 화면 이름이 필요하면 글자를 박지 말고 `"$("$SCREEN" name) 밖입니다"`(node `screenName()`) — 지금 백엔드 이름이 들어간다
 - 지킴이: `scripts/screen-lint.sh` — `scripts`·`bin`·`.claude`·`.codex` 에서 화면 계층 밖의 `ATHENA_STUDIO*`·`athena-studio-cli`·`.athena-studio/daemon.json` 을 찾으면 1. 스크립트를 고치거나 더하면 돌린다(예외 줄 표시는 없다 — 안내 글은 `name` 으로)
-- 회귀 검사: `scripts/screen-check/check.sh` — 가짜 `athena-studio-cli`(로그에 `["@studio", …]` · 가짜 `nohup`·`open` 등은 `["#<이름>", …]`)로 각 스크립트가 부르는 인자·순서·출력을 golden 과 비교한다(진짜 Studio 데몬·현황판은 건드리지 않는다 — 접속 파일은 `ATHENA_STUDIO_ENDPOINT` 로 막는다). 화면 밖(none) 시나리오는 `check.sh`, 화면 계층 자체는 `cli-scenarios.sh`, Studio pane 안·밖은 `studio-scenarios.sh`(`golden/studio_*.txt`). fixture 는 `fixtures/studio*/`. 화면 동작을 일부러 바꿨으면 그 시나리오만 `--record` 하고 golden 변화를 `git diff` 로 확인한다
+- 회귀 검사: `scripts/screen-check/check.sh` — 가짜 `athena-studio-cli`(로그에 `["@studio", …]` · 가짜 `nohup`·`open` 등은 `["#<이름>", …]`)로 각 스크립트가 부르는 인자·순서·출력을 golden 과 비교한다(진짜 Studio 데몬·일감은 건드리지 않는다 — 접속 파일은 `ATHENA_STUDIO_ENDPOINT` 로 막는다). 화면 밖(none) 시나리오는 `check.sh`, 화면 계층 자체는 `cli-scenarios.sh`, Studio pane 안·밖은 `studio-scenarios.sh`(`golden/studio_*.txt`). fixture 는 `fixtures/studio*/`. 화면 동작을 일부러 바꿨으면 그 시나리오만 `--record` 하고 golden 변화를 `git diff` 로 확인한다

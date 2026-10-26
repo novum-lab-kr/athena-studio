@@ -93,8 +93,8 @@ AUTO_ON=0
 if [ -z "$DIRECT" ]; then
   AUTO_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, repo_entry; print(1 if repo_entry(load(sys.argv[1]), sys.argv[2]).get("autoMerge") is True else 0)' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(autoMerge 확인)"
 fi
-# push 한 PR 을 자동 리뷰 대기열에 바로 넣는다 — 새 PR · 열린 PR 에 push · --auto-push 모두. 현황판의 PR 감지(5분 캐시)는 놓친 것을 잡는 안전망으로 남는다.
-# 대상은 현황판과 같다 — 켠 레포 · 레포 하나짜리(아테나의 --repo-agent 는 아님) · 계획서 Status 가 in_progress · ready_for_review.
+# push 한 PR 을 자동 리뷰 대기열에 바로 넣는다 — 새 PR · 열린 PR 에 push · --auto-push 모두. 일감의 PR 감지(5분 캐시)는 놓친 것을 잡는 안전망으로 남는다.
+# 대상은 일감과 같다 — 켠 레포 · 레포 하나짜리(아테나의 --repo-agent 는 아님) · 계획서 Status 가 in_progress · ready_for_review.
 # 완료(done) · 계획(planned) 계획서에 이어 올린 PR 이면 Status 를 ready_for_review 로 되돌린 뒤 넣는다 — blocked 는 그대로(scripts/lib/pr-auto.mjs autoReviewAction · PR #28 재현)
 # 같은 HEAD 는 한 번만 — pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막고, 끝난 HEAD 는 처리기가 계획서 "- Auto review:" 줄로 건너뛴다
 auto_review_now() {   # <PR 번호>
@@ -114,14 +114,14 @@ auto_review_now() {   # <PR 번호>
     })
     console.log(action)
   ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/$PLAN" "$REPO" "$1" "$(date '+%Y-%m-%d %H:%M')")" \
-    || { echo "⚠️ PR #$1 — 계획서 Status 를 읽지 못해 자동 리뷰 대기열에 넣지 않았다 — 현황판이 5분 안에 잡는다" >&2; return 0; }
+    || { echo "⚠️ PR #$1 — 계획서 Status 를 읽지 못해 자동 리뷰 대기열에 넣지 않았다 — 일감이 5분 안에 잡는다" >&2; return 0; }
   case "$action" in
     review) ;;
     reopened) echo "↩️ 계획서가 완료 · 계획 상태였다 — 이어 올린 PR #$1 이라 Status 를 ready_for_review 로 되돌렸다(자동 리뷰 대상)" ;;
     *) return 0 ;;
   esac
   (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --enqueue --plan "$PLAN" --pr "$REPO#$1" --head "$HEAD_FULL") \
-    || echo "⚠️ PR #$1 을 자동 리뷰 대기열에 바로 넣지 못했다 — 현황판이 5분 안에 잡는다" >&2
+    || echo "⚠️ PR #$1 을 자동 리뷰 대기열에 바로 넣지 못했다 — 일감이 5분 안에 잡는다" >&2
 }
 [ "$TOP" != "$MAIN" ] || [ -n "$DIRECT" ] || fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 작업한 브랜치만 올린다"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다"
@@ -315,7 +315,7 @@ PYEOF
     echo "✅ PR #$PR_NUMBER 본문을 바꿨다"
   fi
   if [ $BODY_ONLY = 1 ]; then
-    # 커밋 없이 본문만 — 같은 HEAD 라 현황판이 다시 감지하지 않는다. 계획서 줄을 "본문 고침" 으로 바꾸고 대기열에 직접 넣는다(라운드 하나)
+    # 커밋 없이 본문만 — 같은 HEAD 라 일감이 다시 감지하지 않는다. 계획서 줄을 "본문 고침" 으로 바꾸고 대기열에 직접 넣는다(라운드 하나)
     node --input-type=module -e '
       const [lib, update, plan, repo, number, stamp] = process.argv.slice(1)
       const { autoLines, withAutoLine, BODY_EDITED } = await import(lib)
@@ -324,7 +324,7 @@ PYEOF
     ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/$PLAN" "$REPO" "$PR_NUMBER" "$(date '+%Y-%m-%d %H:%M')" \
       || echo "⚠️ 본문은 바꿨지만 계획서 \"- Auto review:\" 줄을 바꾸지 못했다 — 자동 리뷰가 같은 HEAD 를 다시 보지 않는다. 사용자에게 알린다" >&2
     (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --enqueue --plan "$PLAN" --pr "$REPO#$PR_NUMBER" --head "$HEAD_FULL") \
-      || echo "⚠️ 자동 리뷰 대기열에 넣지 못했다 — 현황판이 다시 켜지면 계획서 줄로 잡는다" >&2
+      || echo "⚠️ 자동 리뷰 대기열에 넣지 못했다 — 일감이 다시 켜지면 계획서 줄로 잡는다" >&2
     node "$ATHENA_DIR/scripts/lib/events.mjs" auto.push plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$HEAD_SHA" pr="$PR_NUMBER" body=1 >/dev/null 2>&1 || true
     echo "✅ 자동 수정(본문만): $REPO PR #$PR_NUMBER @$HEAD_SHA — 자동 리뷰가 같은 HEAD 를 다시 본다"
     exit 0

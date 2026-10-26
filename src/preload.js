@@ -97,6 +97,10 @@ contextBridge.exposeInMainWorld('studio', {
   openBoardSection: (section) => ipcRenderer.invoke('board:section', section),
   openDiagrams: () => ipcRenderer.invoke('board:diagrams'),
   workDetail: (id) => ipcRenderer.invoke('work:detail', id),
+  // pane [상세] — 계획서에 묶인 pane id → agent · lead / 그 pane 의 상세(열려 있는 동안 화면이 다시 부른다)
+  paneBound: () => ipcRenderer.invoke('pane:bound'),
+  paneDetail: (paneId) => ipcRenderer.invoke('pane:detail', paneId),
+  onPaneBound: listen('screen:pane-bound'),
   onWorkRequests: listen('work:requests'),
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
   onWorkOpen: listen('work:open'),

@@ -8,7 +8,7 @@
  *
  * archive/ 는 git 에 커밋한다(진행 중 계획서 plans/** 는 로컬 산출물이라 커밋하지 않는다).
  * 이슈의 plan: 과 계획서의 Issue: 는 새 위치로 고쳐 서로를 가리키게 한다.
- * 현황판 [아카이브](server.mjs) · 30일 안전망(archive-plans.sh) · 예전 plans/archive·issues/archive 이전이 모두 이 함수를 쓴다.
+ * 일감 [아카이브](server.mjs) · 30일 안전망(archive-plans.sh) · 예전 plans/archive·issues/archive 이전이 모두 이 함수를 쓴다.
  *
  * 사용: node scripts/board/archive.mjs <issues/…md | plans/…md> [--dry-run] [--no-commit]   보관한 것만 로컬 커밋(push 는 안 함)
  *       node scripts/board/archive.mjs --migrate [--dry-run]   예전 plans/archive/**·issues/archive/* 를 이 형태로 옮긴다
@@ -118,21 +118,22 @@ export const commitArchive = (results) => {
       try { execFileSync('git', ['-C', found.top, 'check-ignore', '-q', '--', found.rel], { stdio: 'ignore' }); return true } catch { return false }
     }
     const local = all.filter(ignored)
-    const paths = all.filter((path) => !local.includes(path))
+    // 커밋할 경로 — 가져온 paths()(본체 자리)와 이름이 겹치지 않게(겹치면 아래 backupHint 가 늘 실패해 커밋을 못 했다)
+    const toCommit = all.filter((path) => !local.includes(path))
     // 백업 안내 — 여러 팩 구조면 작업 기록까지 담는 backup --with-work(옛 pack backup 은 거부된다)
     const backupHint = paths(ROOT).mode === 'packs' ? 'bin/athena pack backup --with-work' : 'bin/athena pack backup'
     const note = local.length ? `팩이 git 레포가 아니라 로컬에만 보관했다 — 백업은 ${backupHint}` : ''
-    if (!paths.length) return { skipped: true, note }
+    if (!toCommit.length) return { skipped: true, note }
     const title = done.length === 1 ? done[0].title || done[0].dir : `${done.length}건`
-    gitEach(ROOT, paths, ['add', '-A', '--', '{paths}'])
-    gitEach(ROOT, paths, ['commit', '-q', '-m', `docs: 아카이브 — ${title}`, '--', '{paths}'])
-    return { sha: gitEach(ROOT, paths, ['rev-parse', '--short', 'HEAD']).map((repo) => repo.out).join(','), note }
+    gitEach(ROOT, toCommit, ['add', '-A', '--', '{paths}'])
+    gitEach(ROOT, toCommit, ['commit', '-q', '-m', `docs: 아카이브 — ${title}`, '--', '{paths}'])
+    return { sha: gitEach(ROOT, toCommit, ['rev-parse', '--short', 'HEAD']).map((repo) => repo.out).join(','), note }
   } catch (error) {
     return { error: String(error.stderr || error.message).trim().split('\n').slice(-2).join(' ') }
   }
 }
 
-// ── 히스토리(현황판) ─────────────────────────────────────────────────────
+// ── 히스토리(일감) ─────────────────────────────────────────────────────
 const section = (text, heading) => text.match(new RegExp(`^#{2,3}\\s*${heading}[^\\n]*\\n([\\s\\S]*?)(?=^#{1,3} |$(?![\\s\\S]))`, 'm'))?.[1].trim() ?? ''
 const front = (text) =>
   Object.fromEntries(
@@ -231,6 +232,8 @@ export const listHistory = () => {
         planType: planText ? (meta.from?.plan?.split('/')[1] === 'archive' ? meta.from.plan.split('/')[2] : meta.from?.plan?.split('/')[1]) || '' : '',
         commits,
         summary,
+        // 이 일을 맡긴 아테나 pane(앱의 아테나 pane [상세] — 오늘 끝난 일)
+        leadPane: plainLine(checkpoint.match(/^-\s*Lead pane:\s*(.+)$/m)?.[1] ?? '') || (exists(join(dir, 'plan.html')) ? read(join(dir, 'plan.html')).match(/"(?:leadPane|hermesPane)":\s*"([^"]*)"/)?.[1] ?? '' : ''),
         files: { issue: issueText ? join(dir, 'issue.md') : null, plan: planText ? join(dir, 'plan.md') : null, html: exists(join(dir, 'plan.html')) ? join(dir, 'plan.html') : null },
       }
     })

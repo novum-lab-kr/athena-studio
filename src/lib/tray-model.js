@@ -1,5 +1,5 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
-// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
+// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 일감 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
 const i18n = require('./i18n')
 const KOREAN = require('../i18n/ko.json')
 
@@ -30,7 +30,7 @@ function liveCards(cards) {
   return plans
 }
 
-// 칸반 칸별 수 — 현황판이 보여 주는 카드(이슈 · 계획서) 그대로
+// 칸반 칸별 수 — 일감이 보여 주는 카드(이슈 · 계획서) 그대로
 function columnCounts(cards) {
   const columns = {}
   for (const card of Array.isArray(cards) ? cards : []) {
@@ -65,7 +65,7 @@ function summarize({ panes = [], workspaces = [], cards = [], requests = [], usa
   const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'waiting').length
   return {
     counts,
-    // 지난 7일 평균 답 대기(현황판 지표) — 확인 필요 머리줄에 붙인다. 현황판이 꺼졌거나 기록이 없으면 ''
+    // 지난 7일 평균 답 대기(일감 지표) — 확인 필요 머리줄에 붙인다. 일감이 꺼졌거나 기록이 없으면 ''
     avgWait: boardUp && typeof waitMs === 'number' ? say('tray.attention.avgWait', { time: waitText(waitMs, say) }) : '',
     // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
     attention,
@@ -120,7 +120,7 @@ function doneByHour(cards, now = Date.now()) {
   return { hours, total }
 }
 
-// 현황판 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
+// 일감 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
 function usageItems(usage, now = Date.now(), say = koreanSay) {
   const items = []
   for (const tool of Array.isArray(usage) ? usage : []) {
