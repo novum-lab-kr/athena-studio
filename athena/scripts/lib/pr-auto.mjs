@@ -269,6 +269,34 @@ export const needsReview = (planText, repo, number, headSha) => {
   if (known.result.startsWith(BODY_EDITED)) return true
   return !String(headSha).startsWith(known.sha)
 }
+// ── 대상 계획서 Status — ship.sh(push 직후) · 현황판(안전망)이 같이 쓴다 ─────────────
+// 진행 중 · 리뷰면 그대로 대상. 완료(done) · 계획(planned)이면 이어 올린 PR 이다 — Status 를 ready_for_review 로 되돌린 뒤 대상으로
+// (2026-10-26 PR #28 재현 — #27 머지로 done 이 된 계획서에서 추가 요청의 새 PR 이 대기열에 안 들어갔다. 에이전트가 요청마다 in_progress 로 되돌리기를 놓쳐도 막히지 않게).
+// 되돌리면 현황판 카드 · 머지 뒤 자동 done 이 그대로 돈다. 막힘(blocked)은 사람이 풀 때까지 대상 아님 — 풀면(in_progress · ready_for_review) 현황판이 잡는다
+export const AUTO_REVIEW_STATUSES = ['in_progress', 'ready_for_review']
+export const REOPEN_STATUSES = ['done', 'planned']
+export const REOPEN_STATUS = 'ready_for_review'
+const STATUS_WORD = /planned|in_progress|blocked|ready_for_review|done/
+// 계획서 Checkpoint 의 Status 값(현황판 readPlan 과 같은 읽기 — ** · ` 는 걷고 첫 상태 낱말)
+export const planStatusOf = (planText) => {
+  const raw = String(planText ?? '').match(/^-\s*Status:\s*(.+)$/m)?.[1] ?? ''
+  return raw.replace(/[*`]/g, '').match(STATUS_WORD)?.[0] ?? ''
+}
+// 'review'(그대로 대상) · 'reopen'(ready_for_review 로 되돌린 뒤 대상) · 'skip'
+export const autoReviewAction = (status) => {
+  if (AUTO_REVIEW_STATUSES.includes(status)) return 'review'
+  if (REOPEN_STATUSES.includes(status)) return 'reopen'
+  return 'skip'
+}
+export const reopenNote = (repo, number) => `이어 올린 PR ${repo}#${number} 자동 리뷰 대기(완료에서 되돌림)`
+// Status 줄을 ready_for_review 로(설명은 note 로 바꿈) · Updated 줄이 있으면 시각 · 누가
+export const reopenedPlan = (planText, { note, stamp, by }) => {
+  const text = String(planText)
+  if (!/^- Status:.*$/m.test(text)) return text
+  const next = text.replace(/^- Status:.*$/m, `- Status: ${REOPEN_STATUS} — ${note}`)
+  return next.replace(/^- Updated:.*$/m, `- Updated: ${stamp} / ${by}`)
+}
+
 // base 합치기 merge 커밋(충돌 풀기 · commit.sh --merge-base)은 라운드 상한에 세지 않는다 — 지난 라운드 번호 그대로 한 번 리뷰하고 줄 메모에 표시(2026-10-26 아테나 · 사용자 방침)
 export const BASE_MERGED = 'base 합침'
 export const baseMergeRound = (known, round, baseMerge) => (baseMerge && known ? known.round : round)

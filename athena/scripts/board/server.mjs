@@ -57,7 +57,7 @@ import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
-import { autoMergeRepos, needsReview } from '../lib/pr-auto.mjs'
+import { autoMergeRepos, autoReviewAction, needsReview, reopenNote, REOPEN_STATUS, singleRepoPlan } from '../lib/pr-auto.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -413,7 +413,8 @@ const autoReviewPlans = async (plans) => {
     autoKickAt = Date.now()
     spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--kick'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
   }
-  const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
+  // 진행 중 · 리뷰 계획서 + 완료 · 계획 계획서(이어 올린 PR — 열린 PR 의 새 HEAD 가 있으면 ready_for_review 로 되돌린 뒤 · ship.sh 와 같은 규칙 · lib/pr-auto.mjs autoReviewAction)
+  const targets = plans.filter((plan) => !plan.archived && autoReviewAction(plan.status) !== 'skip' && /\/pull\/\d+/.test(plan.pr))
   await Promise.all(targets.map(async (plan) => {
     const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
     const text = readText(join(ROOT, plan.id)) || ''
@@ -424,6 +425,15 @@ const autoReviewPlans = async (plans) => {
       if (info.state !== 'OPEN' || !/^[0-9a-f]{40}$/.test(info.head) || !needsReview(text, repoName, number, info.head)) continue
       const key = `${plan.id}@${link}@${info.head}`
       if (autoReviewQueued.has(key)) continue
+      if (autoReviewAction(plan.status) === 'reopen') {
+        // 여러 레포 작업은 사람이 올린다(자동 흐름 대상 아님) — 완료 계획서를 되돌리지 않는다
+        if (!singleRepoPlan(text, config, repoName)) continue
+        const error = setPlanStatus(plan.id, REOPEN_STATUS, reopenNote(repoName, number), '현황판 자동(이어 올린 PR)')
+        if (error) { console.log(`⚠️ 되돌리기 실패 ${plan.id}: ${error}`); continue }
+        console.log(`↩️ ${plan.id} — 이어 올린 PR ${link} 이 열려 있어 ${REOPEN_STATUS} 로 되돌림`)
+        plan.status = REOPEN_STATUS
+        plan.column = STATUS_COLUMN[REOPEN_STATUS]
+      }
       autoReviewQueued.add(key)
       const child = spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--enqueue', '--plan', plan.id, '--pr', link, '--head', info.head], { cwd: ROOT, detached: true, stdio: 'ignore' })
       child.on('exit', (code) => { if (code !== 0) autoReviewQueued.delete(key) })
@@ -906,8 +916,8 @@ const moveCard = (id, column) => {
   return setPlanStatus(id, PLAN_STATUS_OF[column])
 }
 
-// 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
-const setPlanStatus = (id, status, note = '') => {
+// 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고(Updated 줄에 by), 없으면 상태 값만 바꾸고 설명은 둔다
+const setPlanStatus = (id, status, note = '', by = '현황판 자동(PR 머지)') => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
@@ -922,7 +932,7 @@ const setPlanStatus = (id, status, note = '') => {
       const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
       const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
-      const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
+      const newUpdated = `- Updated: ${stamp()} / ${note ? by : '현황판에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
       if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
       writeAtomic(path, next)
