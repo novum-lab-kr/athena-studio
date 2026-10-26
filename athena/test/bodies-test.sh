@@ -258,6 +258,15 @@ C3E="$(newcommit "test: 업데이트 3e")"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "빈 대기열만 기다리는 감시자 → 끄고 올림 · 다시 띄우지 않음" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && ! kill -0 "$LW" 2>/dev/null && ! { [ -n "$(lock_pid)" ] && kill -0 "$(lock_pid)" 2>/dev/null; }' "$R"
 kill "$LW" 2>/dev/null; wait "$LW" 2>/dev/null
+# 새 코드 relink 가 실패해 이전 커밋으로 되돌려도 — 꺼 둔 학습 검토는 그때 본체 코드로 다시 뜬다(꺼진 채 남지 않게 · 자동 리뷰 1차)
+C3E2="$(newcommit "test: 업데이트 3e2")"
+watcher
+echo '{"plan":"plans/x.md","head":"y","root":"/nonexistent-checkout","attempts":0}' > "$LEARN_Q/0-fail.json"
+R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3E2" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+for _ in $(seq 1 50); do [ -n "$(lock_pid)" ] && [ "$(lock_pid)" != "$LW" ] && break; sleep 0.1; done
+check "relink 실패로 되돌림(rolledBack) → 학습 검토는 다시 뜸(learnKicked) · B 는 C3E" '[ "$(echo "$R" | field bodies.globex.error)" = verify-failed ] && [ "$(echo "$R" | field bodies.globex.rolledBack)" = True ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && [ "$(echo "$R" | field bodies.globex.services.learnKicked)" = True ] && ! kill -0 "$LW" 2>/dev/null && [ -n "$(lock_pid)" ] && [ "$(lock_pid)" != "$LW" ] && kill -0 "$(lock_pid)" 2>/dev/null' "$R"
+NEWW="$(lock_pid)"; kill "$NEWW" 2>/dev/null; for _ in $(seq 1 30); do kill -0 "$NEWW" 2>/dev/null || break; sleep 0.1; done
+rm -rf "$LEARN_Q"/*.json "$LEARN_Q"/*.json.working "$LEARN_Q/failed"
 
 section "update — 도는 커밋 · 올리기(commit.sh · ship.sh) · 무거운 명령은 잠깐 기다린 뒤 올린다"
 # 셸 흉내 — 인자에 그 본체 스크립트 경로가 보이는 bash(명령이 하나면 bash 가 exec 해 버리니 ; true 를 붙인다)
@@ -272,6 +281,17 @@ C3G="$(newcommit "test: 업데이트 3g")"
 FS="$(fake_script "$BODY_B" 60 scripts/ship.sh)"; sleep 0.3
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
 check "상한까지 안 끝나는 올리기(상대 경로 · 본체 안) → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"commit\"" && echo "$R" | grep -q "ship.sh" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
+kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
+# scripts 폴더 안에서 bash commit.sh — 작업 폴더 기준으로 풀면 이 본체 스크립트(자동 리뷰 1차)
+FS="$(fake_script "$BODY_B/scripts" 60 commit.sh)"; sleep 0.3
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "scripts 폴더에서 bash commit.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
+kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
+# 본체 밖 폴더에서 ../<본체>/scripts/ship.sh(자동 리뷰 1차)
+mkdir -p "$WORK/elsewhere"; REL_B="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$BODY_B" "$WORK/elsewhere")"
+FS="$(fake_script "$WORK/elsewhere" 60 "$REL_B/scripts/ship.sh")"; sleep 0.3
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "본체 밖에서 ../<본체>/scripts/ship.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "ship.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 FS="$(fake_script "$WORK" 60 scripts/ship.sh)"; sleep 0.3
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"

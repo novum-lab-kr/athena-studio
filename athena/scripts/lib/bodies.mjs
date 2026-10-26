@@ -282,26 +282,28 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       const key = item.kind === 'qa' ? 'qaStopped' : 'learnStopped'
       entry.services[key] = [...(entry.services[key] ?? []), item.pid]
     }
+    // 학습 검토를 껐으면 어떻게 끝나든(올림 · 실패 · 이전 커밋으로 되돌림) 그때 본체에 있는 코드로 다시 띄운다 — 꺼진 채 두면 대기열이 멈춘다
+    const finish = (result) => {
+      if (entry.services.learnStopped?.length) result.services = { ...result.services, learnKicked: kickLearnReview(body) }
+      return result
+    }
     if (dirty) {
       const saved = backupCoreEdits({ body, id, data, operationId })
-      if (!saved.ok) return { ...entry, status: 'failed', error: 'backup-failed', message: saved.message }
+      if (!saved.ok) return finish({ ...entry, status: 'failed', error: 'backup-failed', message: saved.message })
       Object.assign(entry, { backedUp: saved.files, backupDir: saved.dir })
-      if (!gitOk(body, ['reset', '--quiet', '--hard', 'HEAD'])) return { ...entry, status: 'failed', error: 'reset-failed' }
+      if (!gitOk(body, ['reset', '--quiet', '--hard', 'HEAD'])) return finish({ ...entry, status: 'failed', error: 'reset-failed' })
     }
     if (mode === 'update' || mode === 'catch-up') gitOk(main, ['update-ref', `refs/athena/rollback/${operationId}/${id}`, from])
     const stopped = stopBoard(body)
     entry.services.boardStopped = stopped
     const moved = isMain ? gitOk(body, ['merge', '--ff-only', '--quiet', target]) : gitOk(body, ['checkout', '--quiet', '--detach', target])
-    if (!moved) return { ...entry, status: 'failed', error: 'checkout-failed', to: headOf(body) }
+    if (!moved) return finish({ ...entry, status: 'failed', error: 'checkout-failed', to: headOf(body) })
     const relinked = relinkIn(body, data)
-    if (relinked.ok) {
-      if (entry.services.learnStopped?.length) entry.services.learnKicked = kickLearnReview(body)
-      return { ...entry, status: 'updated', to: headOf(body), rollbackTo: from, unlinkedRepos: relinked.unlinkedRepos ?? [] }
-    }
+    if (relinked.ok) return finish({ ...entry, status: 'updated', to: headOf(body), rollbackTo: from, unlinkedRepos: relinked.unlinkedRepos ?? [] })
     // 새 코드로 맞추지 못했다 — 이 본체만 이전 커밋으로(D7)
     const back = isMain ? gitOk(body, ['reset', '--keep', from]) : gitOk(body, ['checkout', '--quiet', '--detach', from])
     const again = back ? relinkIn(body, data) : { ok: false }
-    return { ...entry, status: 'failed', error: 'verify-failed', message: relinked.message ?? relinked.error, to: headOf(body), rolledBack: Boolean(back && again.ok), ...(back && again.ok ? {} : { recoveryRequired: true }) }
+    return finish({ ...entry, status: 'failed', error: 'verify-failed', message: relinked.message ?? relinked.error, to: headOf(body), rolledBack: Boolean(back && again.ok), ...(back && again.ok ? {} : { recoveryRequired: true }) })
   } finally {
     release()
   }

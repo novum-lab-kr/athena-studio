@@ -407,26 +407,29 @@ export const settleIdleSessions = (busy, table, panes) => {
 }
 // ── 업데이트만 — 도는 커밋 · 올리기(commit.sh · ship.sh) ─────────────────────────────
 // 이 본체의 scripts/commit.sh · ship.sh 를 도는 셸 → [{ kind:'commit', what, pid }]. 업데이트는 끝날 때까지 잠깐 기다린다(사용자 결정 2026-10-26).
-// 절대 경로로 불렀으면 인자로, scripts/… 처럼 상대 경로면 그 셸의 작업 폴더가 이 본체 안일 때만. 인자를 못 읽은 셸은 세지 않는다(셸은 많고 대부분 우리 일이 아니다)
+// 셸 인자 중 이름이 commit.sh · ship.sh 인 것을 그 셸의 작업 폴더 기준으로 절대 경로로 풀어(bash commit.sh · bash ../<본체>/scripts/ship.sh 도)
+// 이 본체 scripts/ 의 그 파일과 같은지 본다(링크는 실제 경로로). 인자 · 작업 폴더를 못 읽은 셸은 세지 않는다(셸은 많고 대부분 우리 일이 아니다).
+// 인자는 공백으로 나눈다 — 경로에 공백이 든 절대 경로는 통째로 든 것만 잡는다
 const SHELL_COMMS = new Set(['bash', 'sh', 'zsh', 'dash'])
 const CORE_SCRIPTS = ['commit.sh', 'ship.sh']
-const RELATIVE_SCRIPT = /(^|[\s/])scripts\/(commit|ship)\.sh(\s|$)/
 export const runningCoreScripts = (root, scan = scanProcesses()) => {
-  const rootReal = realOr(root)
-  const absolute = CORE_SCRIPTS.flatMap((name) => [join(rootReal, 'scripts', name), join(root, 'scripts', name)])
+  const targets = new Map(CORE_SCRIPTS.map((name) => [realOr(join(root, 'scripts', name)), name]))
+  const literal = CORE_SCRIPTS.flatMap((name) => [join(realOr(root), 'scripts', name), join(root, 'scripts', name)].map((path) => [path, name]))
   const found = []
-  const byCwd = []
+  const pending = []
   for (const row of scan.table.filter((item) => SHELL_COMMS.has(item.comm) && item.pid !== process.pid && !scan.mine.has(item.pid))) {
     const args = argsOf(row.pid)
     if (!args) continue
-    const hit = absolute.find((script) => args.includes(script))
-    if (hit) found.push({ kind: 'commit', what: `${basename(hit)} 실행 중`, pid: row.pid })
-    else if (RELATIVE_SCRIPT.test(args)) byCwd.push({ pid: row.pid, name: args.match(RELATIVE_SCRIPT)[2] })
+    const hit = literal.find(([path]) => args.includes(path))
+    if (hit) { found.push({ kind: 'commit', what: `${hit[1]} 실행 중`, pid: row.pid }); continue }
+    const words = args.split(/\s+/).filter((word) => CORE_SCRIPTS.includes(basename(word)))
+    if (words.length) pending.push({ pid: row.pid, words })
   }
-  const cwds = cwdsOf(byCwd.map((item) => item.pid))
-  for (const item of byCwd) {
+  const cwds = cwdsOf(pending.filter((item) => item.words.some((word) => !word.startsWith('/'))).map((item) => item.pid))
+  for (const item of pending) {
     const cwd = cwds.get(item.pid)
-    if (cwd && inside(realOr(cwd), rootReal)) found.push({ kind: 'commit', what: `${item.name}.sh 실행 중`, pid: item.pid })
+    const name = item.words.map((word) => (word.startsWith('/') ? word : cwd ? resolve(cwd, word) : null)).filter(Boolean).map((path) => targets.get(realOr(path))).find(Boolean)
+    if (name) found.push({ kind: 'commit', what: `${name} 실행 중`, pid: item.pid })
   }
   return found
 }
