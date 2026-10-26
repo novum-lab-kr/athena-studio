@@ -2,7 +2,7 @@
 
 에이전트가 draft PR 을 올린 뒤의 일 — 리뷰 · 고치기 · 머지 — 를 사람 대신 돌린다. 사람은 **머지 직전에 한 번** 누른다(레포가 `"autoMergeConfirm": false` 면 그것도 없이 바로 — 아래 "켜기").
 
-- 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 — 순수 로직) · 감지는 현황판(`scripts/board/server.mjs` `autoReviewPlans`) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
+- 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 · 리뷰어 구성 · 앞 리뷰 이어받기 — 순수 로직) · 대기열 넣기는 `scripts/ship.sh`(push 하자마자) · 놓친 것은 현황판(`scripts/board/server.mjs` `autoReviewPlans` — 5분 안전망) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
 - 시험: `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
 - 기록: 처리기 로그 `/tmp/athena-pr-auto-<키>.log` · 대기열 팩 데이터 `state/pr-auto-queue/`(머지 확인 대기 `confirm/` · 실패 `failed/`) · 사건 기록 `state/events.jsonl`(`docs/events.md`)
 
@@ -42,8 +42,9 @@
 ## 흐름
 
 ```
-draft PR (ship.sh) ─▶ 현황판이 새 HEAD 감지(5분 안) ─▶ 대기열 ─▶ 처리기(하나)
-   ─▶ Claude · Codex 리뷰(나란히 · 도구 없이 · JSON) ─▶ PR 댓글 + 계획서 "- Auto review:" 줄
+draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친 것을 5분 안에) ─▶ 처리기(하나)
+   ─▶ Claude · Codex 리뷰(나란히 · 도구 없이 · JSON — Codex 를 못 쓰면 다른 모델 Claude · 앞 리뷰 승인이 같은 내용이면 Claude 는 이어받음)
+   ─▶ PR 댓글 + 계획서 "- Auto review:" 줄
         ├ 둘 다 승인 ─▶ 같은 HEAD 검증(엄격) · 충돌 확인 ─▶ 머지 확인 요청(맥 알림 · [작업] 팝업)
         │                 └ [머지] ─▶ 다시 확인 ─▶ gh pr ready ─▶ squash 머지(--match-head-commit)
         │                 (레포가 autoMergeConfirm: false 면 요청 없이 바로 [머지] 와 같은 길로)
@@ -51,6 +52,8 @@ draft PR (ship.sh) ─▶ 현황판이 새 HEAD 감지(5분 안) ─▶ 대기�
         ├ 결정 필요 ─▶ 결정 콘솔에 덧붙임(plan-html --add) ─▶ 사람이 고름 ─▶ 에이전트가 반영 · 올림 ─▶ 다시
         └ 리뷰어 부족(하나라도 실패 · 로그인 안 됨) ─▶ 머지하지 않고 사람에게 요청
 ```
+
+**언제 시작하나** — `ship.sh` 가 켠 레포의 PR 브랜치에 push 하면(새 draft PR · 이미 열린 PR 에 push · `--auto-push`) 그 자리에서 그 PR · 새 HEAD 를 대기열에 넣는다(대상은 아래 "무엇이 대상인가" 와 같다 — 레포 하나짜리 · Status `in_progress` · `ready_for_review`). push 직후 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답하면 처리기가 몇 번(5초 간격 3번) 다시 묻는다. 현황판의 PR 감지(5분 캐시)는 놓친 것(대기열 넣기 실패 · 다른 곳에서 push)을 잡는 안전망으로 남는다. **같은 HEAD 는 한 번만** — 대기 · 처리 중인 같은 일(계획서 · PR · HEAD)은 `--enqueue` 가 막고, 처리기는 하나가 차례로 돌며 끝난 HEAD 는 계획서 `- Auto review:` 줄로 건너뛴다. 그래서 `ship.sh` 와 현황판이 둘 다 넣어도 리뷰는 한 번이다.
 
 머지 확인 답을 처리한 결과(머지됨 · 보류 · 머지 직전 확인 실패 · draft 풀기 · 머지 실패)는 계획서 줄 · 사건 기록과 함께 작업 pane(Work ref 의 `pane`)에도 `[자동 리뷰 → <에이전트>] PR <레포>#<번호> @<sha> — <결과>. 알림만 …` 한 줄로 간다. pane 이 살아 있을 때만 — 닫혔으면 보내지 않는다(머지 결과로 닫힌 세션을 다시 열지 않는다).
 
@@ -69,6 +72,28 @@ draft PR (ship.sh) ─▶ 현황판이 새 HEAD 감지(5분 안) ─▶ 대기�
 - 모양이 틀린 답 · 10분 넘김 · 명령 없음 · 0 이 아닌 종료(로그인이 풀려 답을 못 낸 경우 포함)는 그 리뷰어의 **실패** 다. 승인인데 지적이 붙은 모순된 답은 승인으로 세지 않는다
 - Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml` 의 모델 그대로
 - **둘 다 승인해야 머지로 간다.** 하나라도 실패 · 반려면 머지하지 않는다 — 남은 하나로 판정하지 않는다
+
+### Codex 가 없는 사람 — Claude 두 번(2026-10-26 사용자 결정)
+
+Codex 유무는 팩이 아니라 사람(기기)마다 다르다. 리뷰 전에 `codex` 명령이 있는지 · 로그인됐는지(`codex login status` 종료 코드 — 출력은 보지 않는다)를 보고, **처음부터** 못 쓰면 두 번째 자리를 Claude 가 **다른 모델로** 따로 한 번 더 리뷰한다. "둘 다 승인" 규칙은 그대로다.
+
+| | 첫 자리 | 두 번째 자리 |
+|---|---|---|
+| Codex 를 쓸 수 있음 | Claude — `models.prReview`, 없으면 기본 모델(지금과 같다) | Codex |
+| Codex 없음 · 로그인 안 됨 | Claude — `models.prReview`, 없으면 `opus` | Claude — `models.prReviewSecond`, 없으면 `sonnet` |
+
+- 팩 `models` 에 적힌 값이 먼저다(`docs/pack.md` "models"). 두 자리가 같은 모델이 되면 대신하지 않고 **리뷰어 부족**(같은 모델 두 번은 합의가 아니다)
+- Codex 가 **돌다가 실패**(오류 · 시간 넘김 · 답 모양 틀림)한 것은 바꾸지 않는다 — 지금처럼 리뷰어 부족(조용히 Claude 로 바꾸지 않는다)
+- 팩 `models` 가 이상하면 기본값으로 덮지 않는다 — 첫 자리 Claude 가 실패해 리뷰어 부족으로 드러난다
+- 어떤 구성으로 돌았는지 PR 댓글 · 계획서 줄에 남는다 — `리뷰어 claude(opus) + claude(sonnet) — Codex 로그인 안 됨` · `리뷰어 claude + codex`
+
+### 앞 리뷰 승인 이어받기(2026-10-26 사용자 결정)
+
+PR 전에 reviewer pane 이 돌아(정식 계획서 · 넓은 수정) 계획서 `- Review result:` 가 **같은 내용으로 승인**이면, 첫 자리 Claude 는 다시 돌리지 않고 그 승인을 Claude 몫으로 쓴다. 두 번째 자리(Codex 또는 다른 모델 Claude)는 늘 새로 돈다.
+
+- 같은 내용 판정은 `ship.sh` 의 리뷰 판정과 같다 — 그 줄의 `tree`(reviewer 가 본 워크트리 전체 · 커밋 전 변경 포함 — `review-result.sh`)로 PR HEAD 커밋의 tree 가 시작할 때. `tree` 가 없는 옛 줄은 커밋 sha 로. 줄은 이 레포 · 이 PR 브랜치 줄(없으면 표시 없는 옛 줄)의 마지막을 본다. PR HEAD tree 는 작업 워크트리에서, 없으면 GitHub 에서 읽고 못 읽으면 이어받지 않는다
+- HEAD(tree)가 다르거나 결론이 수정 필요면 지금처럼 둘 다 돈다 — 수정 고리의 다음 라운드는 내용이 바뀌니 보통 둘 다 돈다
+- PR 댓글 · 계획서 줄에 `Claude: 앞 리뷰 승인 이어받음 @<sha>` · 사건 기록 `reviewers` 에 `claude:inherited`
 
 | 판정 | 조건(위부터) | 하는 일 |
 |---|---|---|
@@ -111,8 +136,10 @@ draft PR (ship.sh) ─▶ 현황판이 새 HEAD 감지(5분 안) ─▶ 대기�
 PR 마다 한 줄, 바꿔 쓴다(Work ref 바로 뒤).
 
 ```
-- Auto review: <레포>#<번호> @<sha7> · <결과> · 라운드 <k>/3 · <YYYY-MM-DD HH:MM>
+- Auto review: <레포>#<번호> @<sha7> · <결과> · 리뷰어 <구성> [· Claude: 앞 리뷰 승인 이어받음 @<sha7> …] · 라운드 <k>/3 · <YYYY-MM-DD HH:MM>
 ```
+
+결과 뒤의 메모(리뷰어 구성 · 이어받음)는 판정에 쓰지 않는다 — 결과는 앞부분으로만 읽어서 같은 HEAD 판정 · `ship.sh --auto-push` 확인이 그대로다.
 
 결과: `수정 필요` · `결정 필요` · `승인 2/2 → 머지 확인 대기` · `승인 2/2 → 바로 머지(확인 없음)`(확인 없는 레포 — GitHub 가 계산 중이면 이 줄로 30초마다 다시 본다) · `리뷰어 부족(승인 n/2)` · `검증 대기 — <이유>` · `보류 — 사람이 고름` · `멈춤 — 라운드 상한` · `머지됨 — squash → <base>`.
 
@@ -122,7 +149,8 @@ PR 마다 한 줄, 바꿔 쓴다(Work ref 바로 뒤).
 
 ## 한계
 
-- 감지는 현황판이 켜져 있을 때만(5분 캐시). 꺼져 있던 동안 온 커밋은 다음에 켜질 때 잡는다
+- 바로 시작은 `ship.sh` 로 push 할 때만 — 그 밖의 push(사람이 직접 · 다른 기기)는 현황판이 켜져 있을 때 5분 캐시로 잡고, 꺼져 있던 동안 온 커밋은 다음에 켜질 때 잡는다
+- 두 번째 Claude 자리는 모델 이름 글자로만 다른지 본다 — 별칭과 전체 이름(`sonnet` · `claude-sonnet-…`)이 같은 모델이어도 다르다고 본다. 팩 값은 별칭끼리 적는다
 - 리뷰어는 diff 와 문서만 본다 — 실행해 보지 않는다. 그래서 머지 조건에 같은 HEAD 검증이 따로 있다
 - Codex 도구 끄기는 기능 이름 목록이라, Codex 가 새 도구 기능을 기본으로 켜고 나오면 그것은 꺼지지 않는다 — 올린 뒤 다시 실측한다. 리뷰어 답은 댓글 · 지시로 내보내기 전에 비밀값 모양을 한 번 더 가린다
 - PR 댓글은 의견(comment)으로 단다 — 같은 계정이 연 PR 은 승인(approve)을 달 수 없고, 머지 판정은 이 스크립트가 한다

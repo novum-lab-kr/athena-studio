@@ -180,7 +180,7 @@ def is_protected(cfg, repo_name, branch):
 
 
 # 역할마다 Claude 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
-MODEL_ROLES = ('athena', 'agent', 'reviewer', 'prReview', 'learnReview')
+MODEL_ROLES = ('athena', 'agent', 'reviewer', 'prReview', 'prReviewSecond', 'learnReview')
 # fullmatch 로만 검사한다 — match 와 $ 는 끝 줄바꿈('sonnet\n')을 통과시켜 JS 판정과 갈린다
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*')
 

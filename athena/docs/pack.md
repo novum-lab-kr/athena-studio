@@ -185,7 +185,8 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   |---|---|---|
   | `agent` | 담당 에이전트 pane(`scripts/delegate.sh`) | 띄우지 않는다 |
   | `reviewer` | reviewer pane(`scripts/delegate.sh`) | 띄우지 않는다 |
-  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs` · Codex 는 `~/.codex/config.toml` 그대로) | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
+  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs` · Codex 는 `~/.codex/config.toml` 그대로). 없으면 기본 모델 — 단 Codex 를 처음부터 못 쓰는 사람의 Claude 두 번 모드에서는 `opus` | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
+  | `prReviewSecond` | PR 자동 리뷰 두 번째 자리 — Codex 가 없거나 로그인 안 된 사람에게만 Codex 대신 도는 Claude. 없으면 `sonnet`. `prReview`(또는 그 기본 `opus`)와 같은 모델이 되면 대신하지 않는다(`docs/pr-auto.md` "Codex 가 없는 사람") | 첫 자리 Claude 리뷰어 실패 → 리뷰어 부족 |
   | `learnReview` | 배우기 검토(`scripts/learn-review.mjs`) | 그 검토 실패(다시 해 본 뒤 failed/) |
   | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |
   - 에이전트 하나만 다르게 하려면 그 프로필(`.claude/agents/<이름>.md`) frontmatter `model:` — 있으면 팩 값보다 이긴다(`inherit` 은 없는 것과 같다). delegate.sh 가 그 값을 `--model` 로 넘긴다(워크트리에서 띄울 때 다시 만드는 프로필에는 `model` 이 없어서)
