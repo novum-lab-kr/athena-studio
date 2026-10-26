@@ -6,7 +6,8 @@ on:
     branches: [main]
 permissions:
   contents: write
-# 머지가 몰려도 하나씩 — 앞 태그를 보고 다음 번호를 정한다
+# 머지가 몰려도 하나씩 — 앞 태그를 보고 다음 번호를 정한다. GitHub 은 대기 실행을 하나만 남기고 나머지를 취소하지만,
+# 스크립트가 기준 태그 뒤 아직 태그 없는 main 커밋을 모두 차례로 처리하므로 취소된 실행의 머지도 다음 실행이 채운다
 concurrency:
   group: release
   cancel-in-progress: false

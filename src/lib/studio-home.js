@@ -402,8 +402,16 @@ function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, env 
   const marker = `${out}.json`
   const saved = readJson(marker)
   if (saved && saved.tree === tree && (saved.version || null) === versionName && saved.commit && bundleHead(out, { env }) === saved.commit) return { ok: true, built: false, commit: saved.commit, tree, version: versionName }
-  log(`코어 번들 만들기 — ${prefix}/ 트리 ${tree.slice(0, 12)}`)
-  const commit = git(['subtree', 'split', '--prefix', prefix, 'HEAD'], { cwd: repoRoot, env, timeout: 600000 }).split('\n').pop().trim()
+  // 트리가 같으면 subtree split(오래 걸린다)을 다시 돌리지 않고 지난 커밋을 쓴다 — 버전(0.2.1+N)만 바뀐 앱 커밋마다 split 하지 않게
+  const reuse = Boolean(saved && saved.tree === tree && saved.commit && gitOk(['cat-file', '-e', `${saved.commit}^{commit}`], { cwd: repoRoot, env }))
+  let commit
+  if (reuse) {
+    log(`코어 번들 다시 묶기(버전 ${versionName || '-'}) — ${prefix}/ 트리 그대로 · 커밋 ${saved.commit.slice(0, 12)}`)
+    commit = saved.commit
+  } else {
+    log(`코어 번들 만들기 — ${prefix}/ 트리 ${tree.slice(0, 12)}`)
+    commit = git(['subtree', 'split', '--prefix', prefix, 'HEAD'], { cwd: repoRoot, env, timeout: 600000 }).split('\n').pop().trim()
+  }
   const objects = git(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repoRoot, env })
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-core-bundle-'))
   const building = `${out}.building-${process.pid}`

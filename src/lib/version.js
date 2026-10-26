@@ -46,6 +46,18 @@ function nextVersion(base, title) {
   return `${major}.${minor}.${patch + 1}`
 }
 
+// 아직 태그가 없는 main 커밋들(오래된 순 · [{ sha, title }]) → 커밋마다 붙일 버전. 앞 커밋의 버전이 다음 커밋의 기준이다
+// (머지가 몰려 앞 실행이 취소돼도 다음 실행이 빠진 커밋을 차례로 채운다 — 어느 feat 도 가운데 올림을 잃지 않는다)
+function releasePlan(base, commits) {
+  const plan = []
+  let current = base
+  for (const commit of commits) {
+    current = nextVersion(current, commit.title)
+    plan.push({ ...commit, version: current, kind: bumpKind(commit.title) })
+  }
+  return plan
+}
+
 // git describe --tags --long 출력('v0.2.1-3-gabc1234') → '0.2.1+3' · 태그 커밋이면 '0.2.1' · 못 읽으면 null
 function formatDescribe(output) {
   const match = /^v(\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+$/.exec(String(output || '').trim())
@@ -75,4 +87,4 @@ function releaseNotes({ title, number = null, url = null }) {
   return url ? `${head}\n\n${url}\n` : `${head}\n`
 }
 
-module.exports = { TAG_PATTERN, DISPLAY_RE, parseVersion, compareVersions, latestTag, bumpKind, nextVersion, formatDescribe, describeVersion, splitDisplay, releaseNotes }
+module.exports = { TAG_PATTERN, DISPLAY_RE, parseVersion, compareVersions, latestTag, bumpKind, nextVersion, releasePlan, formatDescribe, describeVersion, splitDisplay, releaseNotes }

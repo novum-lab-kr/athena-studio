@@ -141,8 +141,12 @@ test('번들: 버전 ref 를 싣고(버전이 바뀌면 다시 만든다) · 주
   // 레포에는 ref 를 만들지 않는다
   assert.deepEqual(run(repo, 'for-each-ref', '--format=%(refname)').split('\n'), ['refs/heads/main'])
   // 코어 트리는 그대로 · 버전만 바뀜 → 다시 만든다(같은 커밋 · 새 ref)
-  const second = home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0+1' })
+  const logs = []
+  const second = home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0+1', log: (line) => logs.push(line) })
   assert.equal(second.built, true)
+  // subtree split 을 다시 돌리지 않고 지난 커밋에 버전 ref 만 달아 묶는다
+  assert.equal(logs.length, 1)
+  assert.match(logs[0], /다시 묶기/)
   assert.equal(second.commit, first.commit)
   assert.deepEqual(heads(), ['HEAD', 'refs/athena/version/0.2.0+1', 'refs/heads/main'])
   assert.equal(home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0+1' }).built, false)
