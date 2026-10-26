@@ -226,13 +226,34 @@ R="$(J "$MAIN" update --from "$(bundle)" --panes-state "$(panes_state idle)")"
 check "입력을 기다리는 pane(idle) 의 세션 → 막지 않음 · B 는 C3B" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
 check "version capabilities 에 idle-panes" 'J "$MAIN" version | grep -q "\"idle-panes\""'
 pkill -P "$PSH" 2>/dev/null; kill "$PSH" 2>/dev/null; wait "$PSH" 2>/dev/null
+# pane 셸 흉내 아래 가짜 claude 가 남으면 뒤 절에서 B 가 계속 일하는 것으로 보인다 — 남김없이 끈다
+pkill -f "^$FAKE/claude" 2>/dev/null; sleep 0.3
+
+section "update — 빈 대기열만 기다리는 학습 검토 감시자는 막지 않고 끈다"
+# 앱 · 현황판이 띄우는 것과 같은 모양(절대 경로 · --watch). 대기열은 그 팩 데이터의 state/learn-queue
+LEARN_Q="$ATHENA_DATA_DIR/packs/globex/state/learn-queue"
+watcher() { (cd "$BODY_B" && exec node "$BODY_B/scripts/learn-review.mjs" --watch) >/dev/null 2>&1 & LW=$!; for _ in $(seq 1 50); do [ -f "$LEARN_Q/.watcher.lock/pid" ] && break; sleep 0.1; done; }
+C3C="$(newcommit "test: 업데이트 3c")"
+watcher
+echo '{}' > "$LEARN_Q/0-test.json.working"
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "검토 중(*.json.working 있음)인 감시자 → skipped(busy · learn-review) · 감시자 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"learn-review\"" && kill -0 "$LW" 2>/dev/null && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
+rm -f "$LEARN_Q/0-test.json.working"
+LP="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/learn-review.mjs" --plan plans/x.md >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "한 번 검토(--plan) 도는 중 → skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
+kill "$LP" 2>/dev/null; wait "$LP" 2>/dev/null
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "빈 대기열만 기다리는 감시자 → 막지 않음 · B 는 C3C · 감시자는 꺼짐(옛 코드라)" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3C" ] && ! kill -0 "$LW" 2>/dev/null' "$R"
+check "pack busy 는 그대로 학습 검토를 센다(업데이트만 바뀜)" 'watcher; J "$BODY_B" pack busy | grep -q "\"kind\":\"learn-review\""'
+kill "$LW" 2>/dev/null; wait "$LW" 2>/dev/null
 
 section "데이터 형식이 바뀌는 업데이트 — 모든 본체가 비었을 때만(D10)"
 sed -i.bak 's/export const DATA_FORMATS = \[1, 1\]/export const DATA_FORMATS = [2, 2]/' "$DEV/scripts/lib/config.mjs" && rm -f "$DEV/scripts/lib/config.mjs.bak"
 C4="$(newcommit "test: 데이터 형식 2")"
 CB="$(fake_claude "$BODY_B")"; sleep 0.5
 R="$(J "$MAIN" update --from "$(bundle)")"
-check "B 가 일하면 data-incompatible · 아무 본체도 안 옮김" '[ "$(echo "$R" | field error)" = data-incompatible ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
+check "B 가 일하면 data-incompatible · 아무 본체도 안 옮김" '[ "$(echo "$R" | field error)" = data-incompatible ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3C" ]' "$R"
 kill "$CB" 2>/dev/null; wait "$CB" 2>/dev/null
 python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['formatVersion']=9; json.dump(d, open(p,'w'))" "$ATHENA_DATA_DIR/config.json"
 check "데이터 형식이 범위 밖이면 쓰기 명령 data-incompatible" '[ "$(J "$MAIN" pack open globex | field error)" = data-incompatible ] && [ "$(J "$MAIN" pack list | field ok)" = True ]'

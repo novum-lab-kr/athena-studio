@@ -403,6 +403,27 @@ export const settleIdleSessions = (busy, table, panes) => {
   }
   return kept
 }
+// ── 업데이트만 — 빈 대기열을 기다리기만 하는 학습 검토 감시자는 막지 않는다(2026-10-26) ─────────────
+// 쉬는 감시자: --watch 이고 · 이 본체 팩 대기열(<팩 데이터>/state/learn-queue)의 감시자 잠금 주인이 그 pid 이고 ·
+// 대기열에 일(*.json 대기 · *.json.working 검토 중)이 없고 · 자식 프로세스(claude · git 등)가 없다. 하나라도 아니면(옛 구조 본체 ·
+// 잠금을 못 읽음 · 인자를 못 읽음 · 한 번 검토 --plan · 넣기 --enqueue) 지금처럼 막는다. 업데이트는 쉬는 감시자를 끄고 옮긴다(옛 코드라 —
+// 다음에 일이 들어오면 learn-review --enqueue 가 새 코드로 다시 띄운다)
+const WATCH_FLAG = /(^|\s)--watch(\s|$)/
+export const learnQueueOf = (root) => {
+  const where = paths(root)
+  return where.mode === 'packs' && where.packDataReal ? join(realOr(where.packDataReal), 'state', 'learn-queue') : null
+}
+export const learnQueueEmpty = (queue) => {
+  try { return !readdirSync(queue).some((name) => /\.json(\.working)?$/.test(name)) } catch { return false }
+}
+export const learnWatcherIdle = (root, item, table) => {
+  if (item?.kind !== 'learn-review' || !item.pid) return false
+  const queue = learnQueueOf(root)
+  if (!queue || lockOwnerAt(join(queue, '.watcher.lock'))?.pid !== item.pid) return false
+  if (!WATCH_FLAG.test(argsOf(item.pid))) return false
+  if ((table ?? []).some((row) => row.ppid === item.pid)) return false
+  return learnQueueEmpty(queue)
+}
 // 스튜디오가 넘긴 pane 상태 파일 — 형식이 틀렸거나 오래됐으면(2분) 없는 것으로(= 모든 세션이 막는다)
 export const PANES_STATE_MAX_AGE_MS = 120_000
 export const readPanesState = (file, nowMs = Date.now()) => {
