@@ -171,7 +171,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .pane-divider { position: absolute; z-index: 5; }
 .pane-divider.right { cursor: col-resize; }
 .pane-divider.down { cursor: row-resize; }
-.pane-divider:hover, .pane-divider.dragging { background: var(--accent); opacity: 0.45; }
 .pane.focused { border-color: var(--focus-line); }
 .pane-head {
   height: 22px;
