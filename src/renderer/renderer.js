@@ -113,6 +113,7 @@ function disposeView(paneId) {
   const view = views.get(paneId)
   if (!view) return
   clearTimeout(view.resizing)
+  if (view.hold) clearTimeout(view.hold.timer)
   view.term.dispose()
   view.el.remove()
   views.delete(paneId)
@@ -1158,7 +1159,8 @@ const RESIZE_REPLY_TIMEOUT_MS = 1000
 
 function sendPaneSize(paneId, view, info) {
   const want = view.want
-  if (!want || view.resizing) return
+  // 날아간 요청이 있거나 앞 크기의 다시 그리기를 기다리는 중(holdForRedraw)이면 나중에 — 답 · releaseHold 가 최신 크기로 다시 부른다
+  if (!want || view.resizing || view.hold) return
   // 데몬이 스스로 바꾼 크기(분할 · pane 종료 때 탭 크기로 어림한 fitTab — pane 머리 줄을 빼지 않아 몇 줄 크다)도 다시 맞춘다
   const drifted = Boolean(info) && info.cols > 1 && (info.cols !== want.cols || info.rows !== want.rows)
   if (view.sent && view.sent.cols === want.cols && view.sent.rows === want.rows && !drifted) return
@@ -1171,6 +1173,55 @@ function sendPaneSize(paneId, view, info) {
     sendPaneSize(paneId, view, null)
   }, RESIZE_REPLY_TIMEOUT_MS)
   studio.paneResize(paneId, want.cols, want.rows)
+}
+
+// 크기를 바꾼 뒤 안 프로그램이 다시 그린 출력을 다 받을 때까지 마지막으로 그린 화면을 그대로 보여 준다 — 그 화면(.xterm-screen)을 복제해 위에 덮고, 출력이 조용해지면 걷는다.
+// 안 덮으면 다시 그리기(Claude Code 는 크기마다 화면을 지우고(2J) 다 다시 그린다)가 두 조각으로 올 때 반쪽만 그린 프레임이 끼어 덜컹거린다.
+// 동기 출력(DEC 2026)으로는 못 막는다 — xterm DOM 렌더러가 resize · 선택 영역 다시 그리기 때는 그 모드를 거치지 않고 바로 그린다(xterm 6.0 실측). 복제는 DOM 렌더러라서 된다.
+// 다음 크기는 걷은 뒤에 보낸다(releaseHold) — 다시 그리는 도중에 다음 크기가 오면 걷는 순간 그 반쪽이 보인다. 그래서 끄는 동안 크기는 다시 그리기 한 번에 한 번씩 간다
+// 출력이 이만큼 조용하면 걷는다 — 다시 그리기 조각 사이 간격 실측 p90 13~21ms · 최대 24ms(main 이 출력을 8ms 마다 묶어 보낸다)
+const RESIZE_HOLD_QUIET_MS = 24
+// 출력이 이어지거나(셸이 계속 찍음) 아무 출력이 없어도 크기를 적용하고 이만큼 지나면 걷는다 — 크기 → 첫 출력 실측 최대 24ms(계속 찍는 셸 48ms)
+const RESIZE_HOLD_MAX_MS = 60
+
+// 크기를 적용하기 직전에 부른다 — 덮었으면 true(다음 크기는 releaseHold 가 보낸다)
+function holdForRedraw(paneId, view) {
+  if (!view.hold) {
+    const live = view.term.element && view.term.element.querySelector('.xterm-screen')
+    if (!live) return false
+    const still = live.cloneNode(true)
+    still.classList.add('pane-still')
+    still.style.background = view.term.options.theme.background
+    view.term.element.append(still)
+    view.hold = { still }
+  }
+  // 덮은 중에 또 크기가 오면(답이 늦어 다시 보낸 것 등) 걷으려던 것을 멈추고 이번 크기부터 다시 센다
+  view.hold.releasing = false
+  clearTimeout(view.hold.timer)
+  view.hold.start = performance.now()
+  view.hold.timer = setTimeout(() => releaseHold(paneId, view), RESIZE_HOLD_MAX_MS)
+  return true
+}
+
+function holdOutputArrived(paneId, view) {
+  clearTimeout(view.hold.timer)
+  const left = RESIZE_HOLD_MAX_MS - (performance.now() - view.hold.start)
+  view.hold.timer = setTimeout(() => releaseHold(paneId, view), Math.max(0, Math.min(RESIZE_HOLD_QUIET_MS, left)))
+}
+
+function releaseHold(paneId, view) {
+  const hold = view.hold
+  if (!hold || hold.releasing) return
+  clearTimeout(hold.timer)
+  hold.releasing = true
+  // 받은 출력을 다 읽고 xterm 이 그린 뒤에 걷는다 — 읽는 중에 xterm 이 먼저 요청한 프레임 콜백이 이것보다 먼저 돈다.
+  // 걷을 때까지 view.hold 를 남겨 두어 그 사이 크기를 보내지 않는다. 걷고 나서 기다리는 사이 바뀐 최신 크기를 이어서 보낸다
+  view.term.write('', () => requestAnimationFrame(() => {
+    if (!hold.releasing || views.get(paneId) !== view) return
+    hold.still.remove()
+    view.hold = null
+    sendPaneSize(paneId, view, screen.panes.find((pane) => pane.id === paneId))
+  }))
 }
 
 // 지금 pane 의 터미널로 입력을 돌려준다(작업 창이 보이고 옆 브라우저를 쓰지 않을 때)
@@ -3298,7 +3349,11 @@ async function init() {
   studio.onPickRequest(pickAthenaDir)
   // 데몬 알림 — 붙는 중에 온 출력은 되살릴 화면에 이미 들어 있어 버린다
   studio.onPaneData((paneId, data) => {
-    if (attached && !attaching) views.get(paneId)?.term.write(data)
+    if (!attached || attaching) return
+    const view = views.get(paneId)
+    if (!view) return
+    view.term.write(data)
+    if (view.hold && !view.hold.releasing) holdOutputArrived(paneId, view)
   })
   // 데몬이 크기를 적용한 자리 — 그 앞 출력(이미 보낸 것)을 다 읽은 뒤에 바꾼다(빈 write 의 콜백 = 앞선 write 다음 차례).
   // 붙는 중이면 버린다 — 새 view 는 attach 가 준 크기(이 요청이 이미 반영된)로 만든다
@@ -3310,9 +3365,10 @@ async function init() {
     // 받은 상태의 크기도 고쳐 둔다 — 다음 상태가 올 때까지 옛 크기로 보고 다시 요청하지 않게
     const known = screen.panes.find((pane) => pane.id === paneId)
     if (known) Object.assign(known, { cols, rows })
+    const held = holdForRedraw(paneId, view)
     view.term.write('', () => views.get(paneId) === view && view.term.resize(cols, rows))
-    // 기다리는 사이 크기가 또 바뀌었으면 최신 크기만 이어서 — 다음 프레임에(프레임당 한 번 넘게 보내지 않게)
-    if (view.want && (view.want.cols !== cols || view.want.rows !== rows)) {
+    // 기다리는 사이 크기가 또 바뀌었으면 최신 크기만 이어서 — 덮었으면 다시 그리기를 다 받은 뒤(releaseHold), 아니면 다음 프레임에
+    if (!held && view.want && (view.want.cols !== cols || view.want.rows !== rows)) {
       requestAnimationFrame(() => views.get(paneId) === view && sendPaneSize(paneId, view, known))
     }
   })
