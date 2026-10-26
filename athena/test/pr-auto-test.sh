@@ -9,7 +9,8 @@
 # 머지 확인 — 키 없음 · true 면 확인 요청 · false 면 요청 없이 바로 머지(그새 새 커밋 · 검증 실패면 안 함 · 가짜 gh) ·
 # 가짜 리뷰어 — 둘 다 답 · 명령 없음 · 시간 넘김 · 모양이 틀린 답 · 모델(models.prReview → --model) ·
 # 사람에게 넘기지 않기(2026-10-26 결정 A · B · C) — 결정이 있어도 수정은 보냄 · 구현 세부 결정은 추천안으로 자동 확정 · 상한 뒤 이어받아 검증만으로 머지 ·
-# 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인)
+# 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인) ·
+# 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
@@ -18,7 +19,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -140,6 +141,20 @@ check('Agent 줄이 이 레포 에이전트 하나 → 대상', singleRepoPlan('
 const formal = '## 6. 작업 배분\n\n| 담당 | 작업 |\n|---|---|\n| api-be | x |\n| web-fe | y |\n| reviewer | z |\n'
 check('작업 배분 표에 다른 레포 에이전트가 있으면 → 대상 아님', !singleRepoPlan(formal, config, 'web'))
 check('에이전트가 없거나 다른 레포 것이면 → 대상 아님', !singleRepoPlan('- Agent: api-be\n', config, 'web') && !singleRepoPlan('본문만\n', config, 'web'))
+check('Status — 진행 중 · 리뷰는 그대로 대상 · 완료 · 계획은 되돌린 뒤 대상(PR #28 재현) · 막힘 · 없음은 아님',
+  ['in_progress', 'ready_for_review'].every((status) => autoReviewAction(status) === 'review') && ['done', 'planned'].every((status) => autoReviewAction(status) === 'reopen')
+  && autoReviewAction('blocked') === 'skip' && autoReviewAction('') === 'skip')
+check('Status 읽기 — 설명 · 굵게 · 코드 표시가 붙어도 첫 상태 낱말', planStatusOf('## Checkpoint\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n') === 'done' && planStatusOf('- Status: **`ready_for_review`**\n') === 'ready_for_review' && planStatusOf('본문만\n') === '')
+const doneText = '# x\n## Checkpoint\n- Updated: 2026-10-26 10:00 / 현황판 자동(PR 머지)\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n- Agent: web-fe\n'
+const reopened = reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: 'ship.sh(이어 올린 PR)' })
+check('되돌리기 — Status 줄 · Updated 줄만 바꿈 · 다시 읽으면 대상', reopened === `# x\n## Checkpoint\n- Updated: 2026-10-26 11:00 / ship.sh(이어 올린 PR)\n- Status: ${REOPEN_STATUS} — 이어 올린 PR web#28 자동 리뷰 대기(완료에서 되돌림)\n- Agent: web-fe\n` && autoReviewAction(planStatusOf(reopened)) === 'review', reopened)
+const claimOpts = { config: { repos: [{ name: 'web', agents: ['web-fe'], autoMerge: true }, { name: 'api', agents: ['api-be'] }] }, repoName: 'web', number: '28', stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' }
+const blockedNow = doneText.replace(/^- Status:.*$/m, '- Status: blocked — 사용자 답 기다림')
+check('현황판 — 잠금 안 최신 Status 로 다시 판정: 조회 사이 blocked 로 바뀌면 skip · 글 그대로(PR #29 지적)', claimAutoReview(blockedNow, claimOpts).action === 'skip' && claimAutoReview(blockedNow, claimOpts).text === blockedNow)
+check('현황판 — done 은 되돌림(ship.sh 와 같은 글) · 리뷰는 그대로 · 여러 레포 계획서는 되돌리지 않음',
+  claimAutoReview(doneText, claimOpts).action === 'reopened' && claimAutoReview(doneText, claimOpts).text === reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' })
+  && claimAutoReview(reopened, claimOpts).action === 'review'
+  && claimAutoReview(doneText.replace('- Agent: web-fe', '- Agent: web-fe · api-be'), claimOpts).action === 'skip')
 
 console.log('\n댓글')
 const comment = reviewComment({ sha: 'abcdef123', round: 1, results: [ok('claude', { ...changes, summary: '토큰 ghp_' + 'a'.repeat(30) + ' 이 보인다' }), { name: 'codex', status: 'failed', reason: '시간 넘김' }], summary: aggregate([ok('claude', changes), { name: 'codex', status: 'failed' }]) })
@@ -626,6 +641,51 @@ grep -q "이번은 2번째 리뷰다" "$PROMPT" && grep -q "지난 리뷰 지적
   && grep -q "지난 리뷰 HEAD @${S1:0:7} 이후 바뀐 것만" "$PROMPT" && grep -q "^+fixed" "$PROMPT" \
   && ! grep -q "^pr diff" "$GH_LOG" && grep -q "· 라운드 2/3" "$CORE/plans/task/x.md" \
   && echo "  ✔ D — 2라운드 프롬프트: 지난 지적 · 지난 HEAD 이후 diff 만(gh pr diff 안 부름)" || { echo "  ✖ D — 2라운드"; sed 's/^/      /' "$PROMPT" | tail -25; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+
+# 완료(done)된 계획서에 이어 올린 PR(2026-10-26 · PR #28 재현) — #27 이 머지돼 계획서가 done 이 된 뒤 같은 계획서에서 새 PR 을 올리면
+# ship.sh 가 Status 를 ready_for_review 로 되돌리고 대기열에 넣는다 · 열린 PR 에 push 도 같다 · blocked 는 그대로(대상 아님)
+echo; echo "완료된 계획서에 이어 올린 PR(PR #28 재현)"
+FBIN="$TMP/followup-bin"; mkdir -p "$FBIN"
+cat > "$FBIN/gh" <<'SH'
+#!/bin/sh
+echo "gh $*" >> "$FAKE_LOG"
+case "$1 $2" in
+  "pr list") [ -z "${FAKE_OPEN_URL:-}" ] || echo "$FAKE_OPEN_URL" ;;
+  "pr create") echo "https://github.com/acme/web/pull/8" ;;
+  *) exit 1 ;;
+esac
+SH
+chmod +x "$FBIN/gh"
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
+G -C "$TMP/web" fetch -q origin 2>/dev/null
+G -C "$TMP/web" worktree add -q -b feat/y "$TMP/wt-y" origin/dev 2>/dev/null
+WTY="$(cd "$TMP/wt-y" && pwd -P)"
+FPLAN="plans/task/20261026-web-fe-followup.md"
+FQUEUE="$TMP/queue-followup"; mkdir -p "$FQUEUE/.watcher.lock"; echo $$ > "$FQUEUE/.watcher.lock/pid"
+followup_plan() {   # <Status 줄 값> <커밋 sha> [추가 PR 줄]
+  printf '# 시험 이어 올림\n\n## Checkpoint\n- Status: %s\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/y · pane p3 (web-fe)\n- Auto review: web#7 @1234567 · 머지됨 — squash → dev · 라운드 1/3 · 2026-10-26 10:00\n- PR: https://github.com/acme/web/pull/7 (feat/x → dev, draft · 2026-10-26 09:00)\n%s\n## Commits\n- `%s` feat/y · 이어서 · push 안 함\n' "$1" "$WTY" "${3:-}" "${2:0:7}" > "$CORE/$FPLAN"
+}
+fship() { (cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" ATHENA_PR_AUTO_QUEUE="$FQUEUE" ATHENA_DATA_DIR="$TMP/data" "$@" bash scripts/ship.sh --plan "$FPLAN" --dir "$WTY" --base dev --title 'feat(web): 이어서' --body-file "$TMP/body.md" --no-review-ok --yes 2>&1); }
+echo y1 > "$WTY/y.txt" && G -C "$WTY" add y.txt && G -C "$WTY" commit -q -m y1
+FS1="$(git -C "$WTY" rev-parse HEAD)"
+followup_plan 'done — 자동 — PR #7 이 dev 에 머지됨(2026-10-26 10:30)' "$FS1"; : > "$FLOG"
+OUT="$(fship)"; CODE=$?
+expect "done 계획서에 새 PR(#8) → Status ready_for_review 로 되돌림 · 그 PR · HEAD 가 대기열에" '[ $CODE = 0 ] && grep -q "gh pr create" "$FLOG" && grep -q "^- Status: ready_for_review" "$CORE/$FPLAN" && grep -l "web#8" "$FQUEUE"/*.json 2>/dev/null | xargs grep -lq "$FS1"' "$OUT
+$(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+rm -f "$FQUEUE"/*.json
+echo y2 >> "$WTY/y.txt" && G -C "$WTY" add y.txt && G -C "$WTY" commit -q -m y2
+FS2="$(git -C "$WTY" rev-parse HEAD)"
+followup_plan 'done' "$FS2" '- PR: https://github.com/acme/web/pull/8 (feat/y → dev, draft · 2026-10-26 11:00)'; : > "$FLOG"
+OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
+expect "done 계획서의 열린 PR 에 push → 새 PR 없이 push 만 · ready_for_review · 새 HEAD 가 대기열에" '[ $CODE = 0 ] && ! grep -q "gh pr create" "$FLOG" && [ "$(git -C "$TMP/origin.git" rev-parse feat/y)" = "$FS2" ] && grep -q "^- Status: ready_for_review" "$CORE/$FPLAN" && grep -l "web#8" "$FQUEUE"/*.json 2>/dev/null | xargs grep -lq "$FS2"' "$OUT
+$(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+rm -f "$FQUEUE"/*.json
+echo y3 >> "$WTY/y.txt" && G -C "$WTY" add y.txt && G -C "$WTY" commit -q -m y3
+FS3="$(git -C "$WTY" rev-parse HEAD)"
+followup_plan 'blocked — 사용자 답 기다림' "$FS3" '- PR: https://github.com/acme/web/pull/8 (feat/y → dev, draft · 2026-10-26 11:00)'; : > "$FLOG"
+OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
+expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
+$(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL

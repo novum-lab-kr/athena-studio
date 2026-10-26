@@ -95,10 +95,31 @@ if [ -z "$DIRECT" ]; then
 fi
 # push 한 PR 을 자동 리뷰 대기열에 바로 넣는다 — 새 PR · 열린 PR 에 push · --auto-push 모두. 현황판의 PR 감지(5분 캐시)는 놓친 것을 잡는 안전망으로 남는다.
 # 대상은 현황판과 같다 — 켠 레포 · 레포 하나짜리(아테나의 --repo-agent 는 아님) · 계획서 Status 가 in_progress · ready_for_review.
+# 완료(done) · 계획(planned) 계획서에 이어 올린 PR 이면 Status 를 ready_for_review 로 되돌린 뒤 넣는다 — blocked 는 그대로(scripts/lib/pr-auto.mjs autoReviewAction · PR #28 재현)
 # 같은 HEAD 는 한 번만 — pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막고, 끝난 HEAD 는 처리기가 계획서 "- Auto review:" 줄로 건너뛴다
 auto_review_now() {   # <PR 번호>
   [ "$AUTO_ON" = 1 ] && [ -z "$REPO_AGENT" ] || return 0
-  grep -qE '^- Status:[[:space:]]*(in_progress|ready_for_review)([^[:alnum:]_]|$)' "$ATHENA_DIR/$PLAN" || return 0
+  # 잠금 안에서 Status 를 읽고 필요하면 되돌린다 — review · reopened · skip 을 출력
+  local action
+  action="$(node --input-type=module -e '
+    const [lib, update, plan, repo, number, stamp] = process.argv.slice(1)
+    const { autoReviewAction, planStatusOf, reopenedPlan, reopenNote } = await import(lib)
+    const { updatePlan } = await import(update)
+    let action = "skip"
+    updatePlan(plan, (text) => {
+      action = autoReviewAction(planStatusOf(text))
+      if (action !== "reopen") return text
+      action = "reopened"
+      return reopenedPlan(text, { note: reopenNote(repo, number), stamp, by: "ship.sh(이어 올린 PR)" })
+    })
+    console.log(action)
+  ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/$PLAN" "$REPO" "$1" "$(date '+%Y-%m-%d %H:%M')")" \
+    || { echo "⚠️ PR #$1 — 계획서 Status 를 읽지 못해 자동 리뷰 대기열에 넣지 않았다 — 현황판이 5분 안에 잡는다" >&2; return 0; }
+  case "$action" in
+    review) ;;
+    reopened) echo "↩️ 계획서가 완료 · 계획 상태였다 — 이어 올린 PR #$1 이라 Status 를 ready_for_review 로 되돌렸다(자동 리뷰 대상)" ;;
+    *) return 0 ;;
+  esac
   (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --enqueue --plan "$PLAN" --pr "$REPO#$1" --head "$HEAD_FULL") \
     || echo "⚠️ PR #$1 을 자동 리뷰 대기열에 바로 넣지 못했다 — 현황판이 5분 안에 잡는다" >&2
 }

@@ -38,6 +38,7 @@
 
 - 켠 레포의 **레포 하나짜리 작업** PR — 계획서의 `Agent` 줄 · 정식 계획서 "작업 배분" 표에 붙은 에이전트가 그 레포 에이전트 하나뿐일 때(`ship.sh` 와 같은 기준). 여러 레포 작업 PR 은 사람이 한다
 - 계획서 Checkpoint 의 `- PR:` 줄에 있고 GitHub 에서 열린(OPEN) PR · 계획서 Status 가 `in_progress` · `ready_for_review`
+- **완료(`done`) · 계획(`planned`) 계획서에 이어 올린 PR 도 대상** — 머지로 `done` 이 된 계획서에서 추가 요청의 새 PR 을 올리거나 열린 PR 에 push 하면(에이전트가 요청마다 `in_progress` 로 되돌리기를 놓쳐도) Status 를 `ready_for_review`(`— 이어 올린 PR <레포>#<번호> 자동 리뷰 대기(완료에서 되돌림)`)로 되돌린 뒤 대기열에 넣는다. 그래서 현황판 카드 · 머지 뒤 자동 완료가 그대로 돈다(2026-10-26 PR #28 재현). 막힘(`blocked`)은 사람이 풀 때까지 대상 아님 — 풀면 현황판이 잡는다. 판정은 `scripts/lib/pr-auto.mjs` `autoReviewAction` 하나를 `ship.sh` · 현황판이 같이 쓴다
 
 ## 흐름
 
@@ -56,7 +57,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
         └ 상한(3) 라운드에도 승인 아님 ─▶ 남은 지적을 지시 ─▶ 고친 새 HEAD 는 리뷰 없이 같은 HEAD 검증 · 충돌 확인 ─▶ 승인과 같은 머지 단계
 ```
 
-**언제 시작하나** — `ship.sh` 가 켠 레포의 PR 브랜치에 push 하면(새 draft PR · 이미 열린 PR 에 push · `--auto-push`) 그 자리에서 그 PR · 새 HEAD 를 대기열에 넣는다(대상은 아래 "무엇이 대상인가" 와 같다 — 레포 하나짜리 · Status `in_progress` · `ready_for_review`). push 직후 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답하면 처리기가 몇 번(5초 간격 3번) 다시 묻는다. 현황판의 PR 감지(5분 캐시)는 놓친 것(대기열 넣기 실패 · 다른 곳에서 push)을 잡는 안전망으로 남는다. **같은 HEAD 는 한 번만** — 대기 · 처리 중인 같은 일(계획서 · PR · HEAD)은 `--enqueue` 가 막고, 처리기는 하나가 차례로 돌며 끝난 HEAD 는 계획서 `- Auto review:` 줄로 건너뛴다. 그래서 `ship.sh` 와 현황판이 둘 다 넣어도 리뷰는 한 번이다.
+**언제 시작하나** — `ship.sh` 가 켠 레포의 PR 브랜치에 push 하면(새 draft PR · 이미 열린 PR 에 push · `--auto-push`) 그 자리에서 그 PR · 새 HEAD 를 대기열에 넣는다(대상은 위 "무엇이 대상인가" 와 같다 — 레포 하나짜리 · Status `in_progress` · `ready_for_review`, 완료 · 계획 계획서면 `ready_for_review` 로 되돌린 뒤). push 직후 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답하면 처리기가 몇 번(5초 간격 3번) 다시 묻는다. 현황판의 PR 감지(5분 캐시)는 놓친 것(대기열 넣기 실패 · 다른 곳에서 push)을 잡는 안전망으로 남는다 — 같은 대상 규칙(완료 · 계획 계획서의 열린 PR 에 리뷰 안 한 HEAD 가 있으면 레포 하나짜리일 때 `ready_for_review` 로 되돌리고 넣는다). **같은 HEAD 는 한 번만** — 대기 · 처리 중인 같은 일(계획서 · PR · HEAD)은 `--enqueue` 가 막고, 처리기는 하나가 차례로 돌며 끝난 HEAD 는 계획서 `- Auto review:` 줄로 건너뛴다. 그래서 `ship.sh` 와 현황판이 둘 다 넣어도 리뷰는 한 번이다.
 
 머지 확인 답을 처리한 결과(머지됨 · 보류 · 머지 직전 확인 실패 · draft 풀기 · 머지 실패)는 계획서 줄 · 사건 기록과 함께 작업 pane(Work ref 의 `pane`)에도 `[자동 리뷰 → <에이전트>] PR <레포>#<번호> @<sha> — <결과>. 알림만 …` 한 줄로 간다. pane 이 살아 있을 때만 — 닫혔으면 보내지 않는다(머지 결과로 닫힌 세션을 다시 열지 않는다).
 
