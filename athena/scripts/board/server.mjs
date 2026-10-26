@@ -50,14 +50,14 @@ import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue,
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
 import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
-import { withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
+import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { approveRun as approveQaRun } from '../qa/baseline.mjs'
 import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
-import { autoMergeRepos, autoReviewAction, needsReview, reopenNote, REOPEN_STATUS, singleRepoPlan } from '../lib/pr-auto.mjs'
+import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -425,11 +425,23 @@ const autoReviewPlans = async (plans) => {
       if (info.state !== 'OPEN' || !/^[0-9a-f]{40}$/.test(info.head) || !needsReview(text, repoName, number, info.head)) continue
       const key = `${plan.id}@${link}@${info.head}`
       if (autoReviewQueued.has(key)) continue
-      if (autoReviewAction(plan.status) === 'reopen') {
-        // 여러 레포 작업은 사람이 올린다(자동 흐름 대상 아님) — 완료 계획서를 되돌리지 않는다
-        if (!singleRepoPlan(text, config, repoName)) continue
-        const error = setPlanStatus(plan.id, REOPEN_STATUS, reopenNote(repoName, number), '현황판 자동(이어 올린 PR)')
-        if (error) { console.log(`⚠️ 되돌리기 실패 ${plan.id}: ${error}`); continue }
+      // PR 을 조회하는 사이 Status 가 바뀌었을 수 있다(사람이 blocked 로 옮김 등) — 잠금 안에서 지금 Status 로 다시 판정하고,
+      // 완료 · 계획이면 그 자리에서 ready_for_review 로 되돌린다. skip 이면 상태도 대기열도 건드리지 않는다(lib/pr-auto.mjs claimAutoReview)
+      const path = safePath(plan.id, 'plans')
+      if (!path) continue
+      let action = 'skip'
+      try {
+        updatePlan(path, (current) => {
+          const claim = claimAutoReview(current, { config, repoName, number, stamp: stamp(), by: '현황판 자동(이어 올린 PR)' })
+          action = claim.action
+          return claim.text
+        })
+      } catch (error) {
+        console.log(`⚠️ 자동 리뷰 대상 확인 실패 ${plan.id}: ${error.message}`)
+        continue
+      }
+      if (action === 'skip') continue
+      if (action === 'reopened') {
         console.log(`↩️ ${plan.id} — 이어 올린 PR ${link} 이 열려 있어 ${REOPEN_STATUS} 로 되돌림`)
         plan.status = REOPEN_STATUS
         plan.column = STATUS_COLUMN[REOPEN_STATUS]
@@ -916,8 +928,8 @@ const moveCard = (id, column) => {
   return setPlanStatus(id, PLAN_STATUS_OF[column])
 }
 
-// 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고(Updated 줄에 by), 없으면 상태 값만 바꾸고 설명은 둔다
-const setPlanStatus = (id, status, note = '', by = '현황판 자동(PR 머지)') => {
+// 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
+const setPlanStatus = (id, status, note = '') => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
@@ -932,7 +944,7 @@ const setPlanStatus = (id, status, note = '', by = '현황판 자동(PR 머지)'
       const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
       const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
-      const newUpdated = `- Updated: ${stamp()} / ${note ? by : '현황판에서 이동'}`
+      const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
       if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
       writeAtomic(path, next)

@@ -297,6 +297,18 @@ export const reopenedPlan = (planText, { note, stamp, by }) => {
   return next.replace(/^- Updated:.*$/m, `- Updated: ${stamp} / ${by}`)
 }
 
+// 계획서 잠금 안에서 부른다 — 지금 내용(최신 Status)으로 다시 판정하고, 되돌릴 때만 바꾼 글을 준다.
+// 현황판이 PR 을 조회하는 사이 사람이 blocked 로 옮겼으면 skip(상태도 대기열도 건드리지 않는다 · PR #29 자동 리뷰 지적).
+// 되돌리기는 레포 하나짜리 계획서만 — 여러 레포 작업은 사람이 올린다
+// → { action: 'review' | 'reopened' | 'skip', text }
+export const claimAutoReview = (planText, { config, repoName, number, stamp, by }) => {
+  const text = String(planText)
+  const action = autoReviewAction(planStatusOf(text))
+  if (action === 'review') return { action, text }
+  if (action === 'skip' || !singleRepoPlan(text, config, repoName)) return { action: 'skip', text }
+  return { action: 'reopened', text: reopenedPlan(text, { note: reopenNote(repoName, number), stamp, by }) }
+}
+
 // base 합치기 merge 커밋(충돌 풀기 · commit.sh --merge-base)은 라운드 상한에 세지 않는다 — 지난 라운드 번호 그대로 한 번 리뷰하고 줄 메모에 표시(2026-10-26 아테나 · 사용자 방침)
 export const BASE_MERGED = 'base 합침'
 export const baseMergeRound = (known, round, baseMerge) => (baseMerge && known ? known.round : round)

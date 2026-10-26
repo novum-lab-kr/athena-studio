@@ -19,7 +19,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoReviewAction, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -148,6 +148,13 @@ check('Status 읽기 — 설명 · 굵게 · 코드 표시가 붙어도 첫 상�
 const doneText = '# x\n## Checkpoint\n- Updated: 2026-10-26 10:00 / 현황판 자동(PR 머지)\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n- Agent: web-fe\n'
 const reopened = reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: 'ship.sh(이어 올린 PR)' })
 check('되돌리기 — Status 줄 · Updated 줄만 바꿈 · 다시 읽으면 대상', reopened === `# x\n## Checkpoint\n- Updated: 2026-10-26 11:00 / ship.sh(이어 올린 PR)\n- Status: ${REOPEN_STATUS} — 이어 올린 PR web#28 자동 리뷰 대기(완료에서 되돌림)\n- Agent: web-fe\n` && autoReviewAction(planStatusOf(reopened)) === 'review', reopened)
+const claimOpts = { config: { repos: [{ name: 'web', agents: ['web-fe'], autoMerge: true }, { name: 'api', agents: ['api-be'] }] }, repoName: 'web', number: '28', stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' }
+const blockedNow = doneText.replace(/^- Status:.*$/m, '- Status: blocked — 사용자 답 기다림')
+check('현황판 — 잠금 안 최신 Status 로 다시 판정: 조회 사이 blocked 로 바뀌면 skip · 글 그대로(PR #29 지적)', claimAutoReview(blockedNow, claimOpts).action === 'skip' && claimAutoReview(blockedNow, claimOpts).text === blockedNow)
+check('현황판 — done 은 되돌림(ship.sh 와 같은 글) · 리뷰는 그대로 · 여러 레포 계획서는 되돌리지 않음',
+  claimAutoReview(doneText, claimOpts).action === 'reopened' && claimAutoReview(doneText, claimOpts).text === reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' })
+  && claimAutoReview(reopened, claimOpts).action === 'review'
+  && claimAutoReview(doneText.replace('- Agent: web-fe', '- Agent: web-fe · api-be'), claimOpts).action === 'skip')
 
 console.log('\n댓글')
 const comment = reviewComment({ sha: 'abcdef123', round: 1, results: [ok('claude', { ...changes, summary: '토큰 ghp_' + 'a'.repeat(30) + ' 이 보인다' }), { name: 'codex', status: 'failed', reason: '시간 넘김' }], summary: aggregate([ok('claude', changes), { name: 'codex', status: 'failed' }]) })
