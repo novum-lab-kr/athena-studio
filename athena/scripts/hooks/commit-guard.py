@@ -5,7 +5,7 @@
   - git commit 직접        → scripts/commit.sh 로 안내 (지정 파일만·엄격 검증·계획서 기록)
   - git add -A / --all / . / -u / 디렉터리  → 남의 변경이 섞인다. 파일을 하나씩 지정하거나 commit.sh 로
   - git push · gh pr (쓰기) → scripts/ship.sh 로 안내 (사용자가 "PR 올려줘" 했을 때 · 레포 하나짜리 작업만 · 그 한 마디로 커밋 → 정리 → draft PR)
-  - git revert · merge · cherry-pick · am  → commit.sh 를 거치지 않고 커밋을 만든다
+  - git revert · merge · cherry-pick · am  → commit.sh 를 거치지 않고 커밋을 만든다(base 합치기는 commit.sh --merge-base — prBase 만)
   - git stash(list·show 제외) · reset --hard → 미커밋 변경(남의 작업일 수 있다)을 치우거나 지운다
   - git checkout·restore 로 전부(. · :/ · 디렉터리)를 되돌리기 · checkout -f · clean -f → 같은 이유(파일 하나 되돌리기·restore --staged 는 통과)
   - git rebase(--abort·--continue 등 진행 중 정리는 통과) · commit-tree · update-ref → commit.sh 를 거치지 않고 커밋·브랜치를 바꾼다
@@ -161,7 +161,10 @@ def check_git(args):
     sub, rest = args[index], args[index + 1:]
     if sub == 'commit':
         return '커밋은 scripts/commit.sh 로만 한다 — 사용자가 "커밋해줘" · "PR 올려줘" 라고 했을 때: scripts/commit.sh --plan <계획서> --dir <워크트리> -m "<메시지>" -- <파일>…'
-    if sub in ('revert', 'merge', 'cherry-pick', 'am', 'commit-tree', 'update-ref'):
+    if sub == 'merge':
+        # base 합치기(PR 충돌 풀기)는 commit.sh --merge-base 한 길만 — 이 레포 prBase 만 · 커밋은 commit.sh 가 merge 커밋으로(docs/pr-auto.md)
+        return 'git merge 는 막는다. base(prBase)를 합쳐 충돌을 풀려면 scripts/commit.sh --plan <계획서> --dir <워크트리> --merge-base → 충돌을 푼 뒤 scripts/commit.sh … -m "<메시지>" -- <푼 파일>… 로 merge 커밋. 다른 브랜치를 합쳐야 하면 이유를 사용자에게 말한다'
+    if sub in ('revert', 'cherry-pick', 'am', 'commit-tree', 'update-ref'):
         return f'git {sub} 는 commit.sh 를 거치지 않고 커밋·브랜치를 만든다(검증·계획서 기록 없음). 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다'
     if sub == 'rebase' and not any(arg in ('--abort', '--quit', '--show-current-patch') for arg in rest):
         return 'git rebase 는 commit.sh 를 거치지 않고 커밋을 다시 만든다. 필요하면 이유를 사용자에게 말하고 사용자가 직접 실행하게 한다(진행 중인 rebase 정리 --abort 는 된다)'

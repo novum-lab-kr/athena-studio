@@ -24,7 +24,8 @@
 #   --yes                실제로 보낸다. 없으면 미리보기만
 #   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
 #                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
-#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · HEAD 가 commit.sh 로 기록된 커밋
+#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · 충돌로 검증 대기(CONFLICTING) ·
+#                        HEAD 가 commit.sh 로 기록된 커밋(충돌이면 base 를 합친 merge 커밋)
 #                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
 #
@@ -245,13 +246,15 @@ import re, sys, pathlib
 text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); repo, number = sys.argv[2:4]
 pr_line = re.search(rf'^- PR:\s*\S*/{re.escape(repo)}/pull/{number}\b', text, re.M)
 auto = re.search(rf'^- Auto review:\s*{re.escape(repo)}#{number}\s+@[0-9a-f]+\s+·\s+(.+?)\s+·', text, re.M)
-print('no-pr' if not pr_line else ('ok' if auto and re.match(r'(수정 필요|결정 필요)', auto.group(1)) else 'no-request'))
+# 수정 · 결정 요청, 또는 base 와 충돌해 머지 못 한 "검증 대기"(pr-auto.mjs prepareMerge · 머지 직전 확인) — 충돌은 base 를 합친 merge 커밋으로 푼다
+wants = auto and (re.match(r'(수정 필요|결정 필요)', auto.group(1)) or re.match(r'검증 대기 — .*충돌.*CONFLICTING', auto.group(1)))
+print('no-pr' if not pr_line else ('ok' if wants else 'no-request'))
 PYEOF
 )"
   case "$AUTO_STATE" in
     ok) ;;
     no-pr) fail "PR #$PR_NUMBER 이 계획서 PR 줄에 없다 — 이 계획서의 PR 이 아니다" ;;
-    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
+    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
   esac
   if [ -n "$BODY_FILE" ]; then [ -f "$BODY_FILE" ] || fail "본문 파일이 없다: $BODY_FILE"; check_body "$BODY_FILE"; fi
   git -C "$TOP" fetch --quiet origin "$BRANCH" 2>/dev/null || fail "fetch 실패 — origin/$BRANCH 를 확인하지 못했다"

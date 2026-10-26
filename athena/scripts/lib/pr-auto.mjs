@@ -269,6 +269,9 @@ export const needsReview = (planText, repo, number, headSha) => {
   if (known.result.startsWith(BODY_EDITED)) return true
   return !String(headSha).startsWith(known.sha)
 }
+// base 합치기 merge 커밋(충돌 풀기 · commit.sh --merge-base)은 라운드 상한에 세지 않는다 — 지난 라운드 번호 그대로 한 번 리뷰하고 줄 메모에 표시(2026-10-26 아테나 · 사용자 방침)
+export const BASE_MERGED = 'base 합침'
+export const baseMergeRound = (known, round, baseMerge) => (baseMerge && known ? known.round : round)
 // 이번 리뷰의 라운드 — 새 HEAD 이거나 본문만 고쳤으면 하나 올린다(같은 HEAD 를 다시 보는 --dry-run 은 그대로)
 export const nextRound = (known, headSha) => {
   if (!known) return 1
@@ -370,6 +373,11 @@ export const fixInstruction = ({ agent, org, repo, number, sha, round, findings,
 }
 
 export const decisionNotice = ({ agent, repo, number, sha, count, plan, worktree, athenaDir }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — 결정 필요 ${count}개를 결정 콘솔(${plan})에 올렸다. 사람이 확정하면 그 지시가 이 pane 으로 온다 — 반영한 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh … 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(자동 흐름 예외)`, 2000)
+
+// base 와 충돌해 머지하지 못했다 — 작업 에이전트에 "base 를 합쳐 충돌을 풀어라"(2026-10-26 아테나 · 사용자 방침 "자동화 · 고치고 바로 머지").
+// merge 는 commit.sh --merge-base(이 레포 prBase 만 · 보호 훅이 통과시키는 길) → 충돌을 풀고 commit.sh 가 merge 커밋 → ship.sh --auto-push(충돌로 검증 대기인 PR 도 받는다).
+// 그 새 HEAD 는 라운드를 올리지 않고 한 번 리뷰한다(BASE_MERGED)
+export const conflictNotice = ({ agent, repo, number, sha, base, plan, worktree, athenaDir }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — base(${base})와 충돌해 머지하지 못했다. 자동 흐름 예외(이 지시에만): 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} --merge-base 로 origin/${base} 를 합치고, 충돌을 푼 뒤 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <푼 파일>… 로 merge 커밋을 만들어 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(base 합침 — 라운드를 쓰지 않고 자동 리뷰가 한 번 다시 본다). merge 커밋에는 충돌 풀기만 담고 다른 수정은 섞지 않는다. 푸는 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 2000)
 
 // 머지 확인 답을 처리한 결과(머지됨 · 보류 · 다시 확인 실패 · 머지 실패) — 작업 에이전트 pane 에 알림 한 줄(할 일은 주지 않는다)
 export const mergeNotice = ({ agent, repo, number, sha, result }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — ${result}. 알림만 — 이 글로 할 일은 없다(계획서 "- Auto review:" 줄)`, 600)
