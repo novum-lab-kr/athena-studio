@@ -13,6 +13,12 @@ export const REVIEWERS = ['claude', 'codex']
 export const MAX_ROUNDS = 3
 export const TAKEOVER = '상한 뒤 이어받음'
 export const isTakeoverRound = (round) => round > MAX_ROUNDS
+// 상한 라운드가 이어받기를 허락했나 — 그 라운드가 쓴 줄('수정 필요 — 상한 뒤 이어받음…' · '결정 필요 — 상한 뒤 이어받음…')로 시작할 때만.
+// 이어받은 HEAD 가 머지 단계로 간 뒤의 줄('상한 뒤 이어받음(…) → 머지 확인 대기' 등)은 아니다 — 그 뒤 온 커밋은 멈춘다(PR #20 자동 리뷰 지적)
+export const grantsTakeover = (result) => [`수정 필요 — ${TAKEOVER}`, `결정 필요 — ${TAKEOVER}`].some((head) => String(result ?? '').startsWith(head))
+// 이 리뷰 라운드가 다음 커밋에 이어받기를 줄 수 있나 — 상한 라운드 · 승인 아님 · 리뷰어가 모두 답했을 때만(하나라도 실패한 라운드는 그 리뷰어가 본 적이 없으니 주지 않는다)
+export const takeoverEligible = (summary, round) => round >= MAX_ROUNDS && ['changes', 'decision'].includes(summary.verdict)
+  && summary.total === REVIEWERS.length && summary.answered === REVIEWERS.length
 // 끝난 결과 — 이 PR 은 사람이 이어받았다. 새 커밋이 와도 자동 리뷰를 다시 돌지 않는다(계획서에서 그 줄을 지우면 다시 돈다).
 // 멈춤은 옛 상한 동작(2026-10-26 전)의 줄 — 지금 흐름은 라운드 상한으로 멈추지 않는다
 export const FINAL_RESULTS = ['멈춤', '머지됨']
@@ -244,7 +250,10 @@ export const reviewComment = ({ sha, round, results, summary }) => {
   if (summary.autoDecisions?.length) {
     notes.push('**추천안으로 자동 확정(구현 세부 — 사람을 기다리지 않음)**', ...summary.autoDecisions.map((item) => `- ${oneLine(item.title, 200)} → **${oneLine(item.recommended, 80)}** (${item.by})`))
   }
-  if (round >= MAX_ROUNDS && summary.verdict !== 'approve' && summary.verdict !== 'insufficient') {
+  if (round >= MAX_ROUNDS && ['changes', 'decision'].includes(summary.verdict) && !takeoverEligible(summary, round)) {
+    notes.push(`**이어받지 않음** — 리뷰 상한(${MAX_ROUNDS})인데 답하지 못한 리뷰어가 있다(리뷰어 부족). 고친 커밋도 리뷰 없이 머지하지 않고 멈춘다 — 사람이 이어받는다`)
+  }
+  if (takeoverEligible(summary, round)) {
     notes.push(`**${TAKEOVER}** — 리뷰 상한(${MAX_ROUNDS})이라 다시 리뷰하지 않는다. 남은 지적을 고친 커밋은 리뷰 없이 같은 HEAD 검증 · 충돌 확인만으로 머지 단계로 간다${summary.verdict === 'decision' ? '(사람이 정할 결정은 결정 콘솔 — 다 정할 때까지 머지하지 않는다)' : ''}`)
   }
   const head = `### 🤖 자동 리뷰 — 라운드 ${round}/${MAX_ROUNDS} · @${String(sha).slice(0, 7)}`
@@ -266,13 +275,16 @@ export const takeoverComment = ({ sha, round }) => `### 🤖 자동 리뷰 — $
 
 // 작업 에이전트 pane 에 보낼 수정 지시 한 줄 — 지적 전문은 PR 댓글에 있다
 // autoDecisions — 추천안으로 자동 확정한 결정(구현 세부)도 고칠 것으로 함께 · humanDecisions — 결정 콘솔에 올린 수(따로 온다)
-export const fixInstruction = ({ agent, org, repo, number, sha, round, findings, autoDecisions = [], humanDecisions = 0, plan, worktree, athenaDir }) => {
+// takeover — 이 라운드가 이어받기를 준다(takeoverEligible) · 상한인데 주지 않으면 그 사실을 알린다
+export const fixInstruction = ({ agent, org, repo, number, sha, round, findings, autoDecisions = [], humanDecisions = 0, takeover = false, plan, worktree, athenaDir }) => {
   const list = findings.slice(0, 6).map((item, index) => `${index + 1}) ${item.file}${item.line ? `:${item.line}` : ''} ${oneLine(item.problem, 160)} → ${oneLine(item.fix, 160)}`).join(' ')
   const fixes = findings.length ? ` 수정 필요: ${list}${findings.length > 6 ? ` 외 ${findings.length - 6}개` : ''}.` : ''
   const decided = autoDecisions.length ? ` 추천안으로 자동 확정한 결정(구현 세부 — 그대로 반영): ${autoDecisions.slice(0, 5).map((item, index) => `D${index + 1}) ${oneLine(item.title, 120)} → ${oneLine(item.recommended, 80)}`).join(' ')}.` : ''
   const pending = humanDecisions ? ` 사람이 정할 결정 ${humanDecisions}개는 결정 콘솔(${plan})에 올렸다 — 위 수정은 기다리지 말고 지금 하고, 결정은 확정 지시가 따로 오면 반영한다.` : ''
-  const takeover = round >= MAX_ROUNDS ? ` 리뷰 상한(${MAX_ROUNDS}) — 이번에 올린 커밋은 다시 리뷰하지 않고 같은 HEAD 검증 · 충돌 확인만으로 머지 단계로 간다(${TAKEOVER}). 검증 스크립트를 통과하게 고친다.` : ''
-  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${MAX_ROUNDS} —${fixes}${decided}${pending}${takeover} 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). PR 본문 지적이면 본문 파일을 고쳐 --auto-push --body-file <파일> 로(커밋이 없어도 된다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
+  let limit = ''
+  if (takeover) limit = ` 리뷰 상한(${MAX_ROUNDS}) — 이번에 올린 커밋은 다시 리뷰하지 않고 같은 HEAD 검증 · 충돌 확인만으로 머지 단계로 간다(${TAKEOVER}). 검증 스크립트를 통과하게 고친다.`
+  else if (round >= MAX_ROUNDS) limit = ` 리뷰 상한(${MAX_ROUNDS}) · 답하지 못한 리뷰어가 있어 이어받지 않는다 — 고친 커밋은 자동으로 머지되지 않고 사람이 이어받는다.`
+  return oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} 라운드 ${round}/${MAX_ROUNDS} —${fixes}${decided}${pending}${limit} 전문: gh pr view ${number} --repo ${org}/${repo} --comments. 자동 흐름 예외(이 지시에만): 고친 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh --plan ${athenaDir}/${plan} --dir ${worktree} -m '<메시지>' -- <파일>… 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(새 커밋을 자동 리뷰가 다시 본다). PR 본문 지적이면 본문 파일을 고쳐 --auto-push --body-file <파일> 로(커밋이 없어도 된다). 고칠 방법이 하나가 아니면 고르지 말고 멈춰 아테나에 알린다. 계획서 Progress 에 한 줄`, 3500)
 }
 
 export const decisionNotice = ({ agent, repo, number, sha, count, plan, worktree, athenaDir }) => oneLine(`[자동 리뷰 → ${agent}] PR ${repo}#${number} @${String(sha).slice(0, 7)} — 결정 필요 ${count}개를 결정 콘솔(${plan})에 올렸다. 사람이 확정하면 그 지시가 이 pane 으로 온다 — 반영한 뒤 묻지 않고 ${athenaDir}/scripts/commit.sh … 로 커밋하고 ${athenaDir}/scripts/ship.sh --plan ${athenaDir}/${plan} --dir ${worktree} --auto-push 로 올린다(자동 흐름 예외)`, 2000)

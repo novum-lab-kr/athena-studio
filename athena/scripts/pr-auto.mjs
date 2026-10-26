@@ -38,7 +38,7 @@ import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs } from './lib/models.mjs'
 import {
   MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
-  fixInstruction, isTakeoverRound, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
+  fixInstruction, grantsTakeover, isTakeoverRound, takeoverEligible, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
 
@@ -310,7 +310,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto' }
 
-  if (isTakeoverRound(round) && !String(known?.result ?? '').includes(TAKEOVER)) {
+  if (isTakeoverRound(round) && !grantsTakeover(known?.result)) {
     // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 사람에게
     if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${MAX_ROUNDS}(직전이 ${TAKEOVER}가 아님) · 사람에게 요청`)
     writeAutoLine(planPath, { repo, number, sha, round, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
@@ -369,7 +369,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     return
   }
   logEvent(ROOT, 'review', { ...base, verdict: summary.verdict === 'decision' ? '결정 필요' : '수정 필요' })
-  const atLimit = round >= MAX_ROUNDS
+  const takeover = takeoverEligible(summary, round)
   // 구현 세부 결정은 추천안으로 확정(결정 B) — 계획서 Decisions 에 남기고 수정 지시에 싣는다(PR 댓글에는 reviewComment 가 이미 적었다)
   if (summary.autoDecisions.length) {
     const decisionLines = summary.autoDecisions.map((decision) => masked(autoDecisionLine({ decision, repo, number, sha })))
@@ -383,10 +383,26 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     writeFileSync(file, JSON.stringify(decisionsForConsole(summary.decisions)))
     const added = spawnSync(process.execPath, [join(ROOT, 'scripts/plan-html.mjs'), planPath, '--add', file, ...(pane ? ['--pane', pane] : [])], { cwd: ROOT, encoding: 'utf8' })
     rmSync(dirname(file), { recursive: true, force: true })
-    if (added.status !== 0) console.log(`  ⚠️ 결정 콘솔에 덧붙이지 못했다: ${firstLine(added.stderr || added.stdout)}`)
+    if (added.status !== 0) {
+      // 콘솔에 못 올렸다 — 결정 콘솔이 쓰는 같은 키(plan:<계획서>)로 결정 요청을 직접 열어 둔다. 이 요청이 살아 있는 동안 pendingDecisions 가 머지를 막는다
+      // (사람이 콘솔에 다시 올려 정하면 plan-html 이 닫고, 답하면 작업 pane 으로 가 에이전트가 반영 · ack 한다)
+      console.log(`  ⚠️ 결정 콘솔에 덧붙이지 못했다: ${firstLine(added.stderr || added.stdout)} — 결정 요청을 대신 연다`)
+      try {
+        openRequest(ROOT, {
+          kind: 'decision',
+          title: `자동 리뷰 결정 ${summary.decisions.length}개 — 결정 콘솔 등록 실패 · ${repo}#${number}`,
+          body: `${summary.decisions.map((item) => `- ${masked(item.title)} — ${item.options.map((option) => masked(option.label)).join(' / ')}${item.recommended ? ` (추천 ${masked(item.recommended)})` : ''} (${item.by})`).join('\n')}\n정할 때까지 이 PR 은 머지하지 않는다. 결정 콘솔에 다시 올리거나(plan-html.mjs --add) 여기 답한다.`,
+          links: { plan: planFile },
+          pane: pane || null,
+          dedupeKey: `plan:${planFile}`,
+        })
+      } catch (error) {
+        console.log(`  ⚠️ 결정 요청도 열지 못했다: ${error.message} — 줄을 결정 필요로 두고 머지 단계에서 다시 본다`)
+      }
+    }
   }
   const hasFixes = summary.findings.length > 0 || summary.autoDecisions.length > 0
-  writeAutoLine(planPath, { ...line, result: autoResult(summary.verdict, atLimit) })
+  writeAutoLine(planPath, { ...line, result: autoResult(summary.verdict, takeover, round >= MAX_ROUNDS) })
   if (!hasFixes) {
     // 결정만 — 작업 에이전트에 알리고 사람의 확정을 기다린다
     if (pane) await sendToPane(pane, decisionNotice({ agent: ref.agent, repo, number, sha, count: summary.decisions.length, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))
@@ -395,7 +411,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // 수정 필요(결정이 같이 있어도 — 결정 A) — 작업 에이전트에 지시. pane 이 없으면 사람에게
   const instruction = masked(fixInstruction({
     agent: ref.agent || '작업 에이전트', org, repo, number, sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions,
-    humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, plan: planFile, worktree: ref.worktree, athenaDir: ROOT,
+    humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT,
   }))
   if (pane && (await sendToPane(pane, instruction))) {
     console.log(`  → 수정 지시를 pane ${pane} 에 보냈다`)
@@ -405,10 +421,12 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   }
 }
 
-// 리뷰 뒤 계획서 줄 결과 — ship.sh --auto-push 는 "수정 필요" · "결정 필요" 로 시작하는 줄에만 올린다
-const autoResult = (verdict, atLimit) => {
+// 리뷰 뒤 계획서 줄 결과 — ship.sh --auto-push 는 "수정 필요" · "결정 필요" 로 시작하는 줄에만 올린다.
+// 이어받기를 주는 줄은 grantsTakeover 가 알아보는 모양('<머리> — 상한 뒤 이어받음…')으로만 쓴다
+const autoResult = (verdict, takeover, atLimit) => {
   const head = verdict === 'decision' ? '결정 필요' : '수정 필요'
-  return atLimit ? `${head} — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만)` : head
+  if (takeover) return `${head} — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만)`
+  return atLimit ? `${head} — 리뷰어 부족이라 이어받지 않음` : head
 }
 
 const plannedAction = (summary, round) => {
@@ -419,7 +437,8 @@ const plannedAction = (summary, round) => {
   if (summary.verdict === 'decision') parts.push(`결정 콘솔에 ${summary.decisions.length}개 덧붙임`)
   if (summary.findings.length || summary.autoDecisions.length) parts.push(`작업 에이전트 pane 에 수정 지시(지적 ${summary.findings.length}개)`)
   else parts.push('작업 에이전트에 알림')
-  if (round >= MAX_ROUNDS) parts.push(`리뷰 상한 ${MAX_ROUNDS} — 다음 커밋은 ${TAKEOVER}(리뷰 없이 검증만으로 머지 단계)`)
+  if (takeoverEligible(summary, round)) parts.push(`리뷰 상한 ${MAX_ROUNDS} — 다음 커밋은 ${TAKEOVER}(리뷰 없이 검증만으로 머지 단계)`)
+  else if (round >= MAX_ROUNDS) parts.push(`리뷰 상한 ${MAX_ROUNDS} · 리뷰어 부족 — 다음 커밋은 이어받지 않고 멈춤`)
   return parts.join(' · ')
 }
 
@@ -454,8 +473,11 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref,
   if (pendingDecisions(planFile)) {
     // 사람이 정할 결정이 결정 콘솔에 남아 있다(결정 A 로 수정이 먼저 올라온 경우) — 묻지도 머지하지도 않는다. 확정 지시를 반영한 커밋이 오면 다시 본다
     // 상한 라운드에서 승인됐으면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — 줄에 그 표시를 남긴다
-    const next = !takeover && round >= MAX_ROUNDS ? ` · 다음 커밋은 ${TAKEOVER}` : ''
-    writeAutoLine(planPath, { ...line, result: `결정 필요 — ${passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기${next}` })
+    // 상한 라운드 승인이나 이어받은 HEAD 면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — grantsTakeover 가 알아보는 '결정 필요 — 상한 뒤 이어받음…' 으로
+    const result = takeover || round >= MAX_ROUNDS
+      ? `결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · ${takeover ? '이어받은 HEAD' : passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
+      : `결정 필요 — ${passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
+    writeAutoLine(planPath, { ...line, result })
     logEvent(ROOT, 'auto.stop', { plan: planFile, repo, pr: number, sha: sha.slice(0, 7), reason: 'decisions' })
     console.log('  → 결정 콘솔에 안 정한 결정이 있다 — 머지하지 않고 기다린다')
     return

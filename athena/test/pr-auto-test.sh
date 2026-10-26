@@ -18,7 +18,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, isTakeoverRound, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, grantsTakeover, isTakeoverRound, takeoverEligible, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -68,7 +68,7 @@ check('B — 제품 · 계약 결정 · 추천 없음 · 추천이 선택지에 
   && aggregate([ok('claude', approve), ok('codex', implDecision({ recommended: 'C' }))]).verdict === 'decision')
 const mixed = aggregate([ok('claude', changes), ok('codex', { ...decision, decisions: [...decision.decisions, implDecision().decisions[0]] })])
 check('A — 결정 필요여도 findings · 자동 확정 결정은 그대로 남는다(보낼 것)', mixed.verdict === 'decision' && mixed.findings.length === 1 && mixed.autoDecisions.length === 1 && mixed.decisions.length === 1, JSON.stringify(mixed))
-const instr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: MAX_ROUNDS, findings: mixed.findings, autoDecisions: mixed.autoDecisions, humanDecisions: 1, plan: 'plans/task/x.md', worktree: '/wt', athenaDir: '/a' })
+const instr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: MAX_ROUNDS, findings: mixed.findings, autoDecisions: mixed.autoDecisions, humanDecisions: 1, takeover: true, plan: 'plans/task/x.md', worktree: '/wt', athenaDir: '/a' })
 check('수정 지시 — 지적 · 자동 확정 결정 · 결정 콘솔 안내 · 상한 이어받기 안내 · commit/ship', instr.startsWith('[자동 리뷰 → web-fe] PR web#7 @abcdef1 라운드 3/3 — 수정 필요: 1) a.js:3') && instr.includes('자동 확정한 결정') && instr.includes('아이콘 자리 → A') && instr.includes('결정 1개는 결정 콘솔') && instr.includes(TAKEOVER) && instr.includes('--auto-push'), instr)
 const onlyAuto = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: 1, findings: [], autoDecisions: autoSum.autoDecisions, plan: 'p', worktree: '/wt', athenaDir: '/a' })
 check('수정 지시 — 지적 없이 자동 확정 결정만 · 상한 전이면 이어받기 안내 없음', !onlyAuto.includes('수정 필요:') && onlyAuto.includes('아이콘 자리 → A') && !onlyAuto.includes(TAKEOVER), onlyAuto)
@@ -76,6 +76,14 @@ const autoComment = reviewComment({ sha: 'abcdef1', round: MAX_ROUNDS, results: 
 check('댓글 — 추천안으로 자동 확정 · 상한 뒤 이어받음', autoComment.includes('추천안으로 자동 확정') && autoComment.includes('아이콘 자리 → **A**') && autoComment.includes(TAKEOVER), autoComment)
 check('댓글 — 상한 전 · 승인이면 이어받음 줄 없음', !reviewComment({ sha: 'a', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)]) }).includes(TAKEOVER)
   && !reviewComment({ sha: 'a', round: 3, results: [ok('claude', approve), ok('codex', approve)], summary: aggregate([ok('claude', approve), ok('codex', approve)]) }).includes(TAKEOVER))
+check('C — 이어받기는 상한 라운드가 쓴 줄(수정 · 결정 필요 — 상한 뒤 이어받음…)로 시작할 때만 · 머지 단계로 간 뒤의 줄은 아님',
+  grantsTakeover(`수정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만)`) && grantsTakeover(`결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · 승인 2/2이지만 …`)
+  && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 머지 확인 대기`) && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 바로 머지(확인 없음)`) && !grantsTakeover('검증 대기 — x') && !grantsTakeover(undefined))
+const partial = aggregate([ok('claude', changes), { name: 'codex', status: 'failed', reason: 'x' }])
+check('C — 리뷰어가 하나라도 실패한 상한 라운드는 이어받기를 주지 않음(지적은 그대로 보냄)', partial.verdict === 'changes' && partial.findings.length === 1 && !takeoverEligible(partial, MAX_ROUNDS) && takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS) && !takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS - 1))
+const partialInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: MAX_ROUNDS, findings: partial.findings, takeover: false, plan: 'p', worktree: '/wt', athenaDir: '/a' })
+const partialComment = reviewComment({ sha: 'abcdef1', round: MAX_ROUNDS, results: [ok('claude', changes), { name: 'codex', status: 'failed', reason: 'x' }], summary: partial })
+check('C — 리뷰어 부족 상한 라운드: 지시 · 댓글에 이어받지 않음', partialInstr.includes('이어받지 않는다') && !partialInstr.includes(`(${TAKEOVER})`) && partialComment.includes('이어받지 않음') && !partialComment.includes(`**${TAKEOVER}**`), partialInstr)
 check('C — 상한을 넘은 라운드만 이어받기 · 댓글에 "리뷰 없이 검증만으로 머지"', !isTakeoverRound(MAX_ROUNDS) && isTakeoverRound(MAX_ROUNDS + 1) && takeoverComment({ sha: 'abcdef1', round: 4 }).includes('리뷰 없이 검증만으로 머지'))
 const dLine = autoDecisionLine({ decision: autoSum.autoDecisions[0], repo: 'web', number: '7', sha: 'abcdef123' })
 const light = '# x\n\n## Checkpoint\n- Status: in_progress\n\n### Blocked\n- 없음\n\n## 지시\n본문\n'
@@ -369,12 +377,28 @@ AUTO_LINE="- Auto review: web#7 @$OLD7 · 리뷰어 부족(승인 1/2) · 라운
   merge_case "C — 상한을 넘었는데 직전이 이어받기가 아님 → 멈춤(리뷰 없이 머지 안 함)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한'
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
   merge_case "C — 상한 라운드(3/3)에서 수정 필요 → 멈추지 않고 수정 지시 · 줄에 이어받음" ', "autoMergeConfirm": false' no '^- Auto review: web#7 @[0-9a-f]+ · 수정 필요 — 상한 뒤 이어받음' FAKE_CODEX=changes
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 상한 뒤 이어받음(리뷰 없이 검증만으로 머지) → 머지 확인 대기 · 라운드 4/3 · 2026-10-26 10:00" \
+  merge_case "C — 이어받은 HEAD 가 머지 단계로 간 뒤 또 커밋 → 멈춤(다시 이어받지 않음)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
+  merge_case "C — 상한 라운드에 리뷰어 하나 실패 → 지적은 보내고 이어받지 않음" ', "autoMergeConfirm": false' no '· 수정 필요 — 리뷰어 부족이라 이어받지 않음 · 라운드 3/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
+grep -q 'b.js:2' "$CORE/.requests"/*.json 2>/dev/null && echo "  ✔ C — 리뷰어 부족 상한 라운드도 지적(b.js:2)은 보냄" || { echo "  ✖ C — 리뷰어 부족 상한 라운드 지적"; FAIL=1; }
 merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_CODEX=impl
 grep -q '^- 추천안으로 자동 확정(자동 리뷰 · codex · web#7 @.* · 구현 세부): 아이콘 자리 → A 왼쪽$' "$CORE/plans/task/x.md" && [ ! -e "$CORE/plans/task/x.html" ] && grep -q "추천안으로 자동 확정" "$GH_LOG" \
   && echo "  ✔ B — 계획서 Decisions · PR 댓글에 추천안으로 자동 확정" || { echo "  ✖ B — 계획서 · 댓글 기록"; sed 's/^/      /' "$CORE/plans/task/x.md"; FAIL=1; }
 merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 · 라운드 1/3' FAKE_CODEX=product FAKE_CLAUDE=changes
 grep -q '"title": "자동 리뷰 수정 지시를 보낼 pane 이 없다' "$CORE/.requests"/*.json 2>/dev/null && grep -q 'b.js:2' "$CORE/.requests"/*.json \
   && echo "  ✔ A — 결정이 있어도 수정 지시(b.js:2)를 보냄(가짜 화면엔 pane 이 없어 사람 요청으로)" || { echo "  ✖ A — 수정 지시가 없다"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+# 가짜 본체엔 docs/plan-template.html 이 없어 plan-html --add 가 실패한다 — 그래도 결정 콘솔과 같은 키의 결정 요청이 열려 머지를 막는다
+grep -l '"dedupeKey": "plan:plans/task/x.md"' "$CORE/.requests"/*.json 2>/dev/null | xargs grep -q '결정 콘솔 등록 실패' 2>/dev/null \
+  && echo "  ✔ A — 결정 콘솔 등록 실패 → 같은 키(plan:<계획서>)로 결정 요청을 대신 엶" || { echo "  ✖ A — 등록 실패 뒤 결정 요청이 없다"; FAIL=1; }
+(cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+  const { writeFileSync } = await import('node:fs')
+  writeFileSync('plans/task/x.md', '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: $WT · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 · 라운드 1/3 · s\n- PR: https://github.com/acme/web/pull/7\n')")
+: > "$GH_LOG"; rm -f "$GH_LOG.views"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" \
+  "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
+! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 승인 2/2이지만 결정 콘솔에 안 정한 결정' "$CORE/plans/task/x.md" \
+  && echo "  ✔ A — 그 요청이 남아 있으면 다음 라운드가 승인이어도 머지 안 함" || { echo "  ✖ A — 등록 실패 뒤 머지가 막히지 않음"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 PENDING=1 merge_case "A — 둘 다 승인이어도 결정 콘솔에 안 정한 결정 → 머지 안 함" ', "autoMergeConfirm": false' no '결정 필요 — 승인 2/2이지만 결정 콘솔에 안 정한 결정' FAKE_CODEX=ok
 PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
   merge_case "A · C — 이어받은 HEAD 도 안 정한 결정이 있으면 머지 안 함(다음 커밋도 이어받음)" ', "autoMergeConfirm": false' no '결정 필요 — 상한 뒤 이어받음.*머지 대기'
