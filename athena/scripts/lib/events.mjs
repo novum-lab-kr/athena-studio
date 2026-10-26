@@ -42,7 +42,7 @@ export const readEvents = (root) => {
 }
 
 // 계획서마다 완료로 바뀐 시각(ms) — 마지막 plan.status 가 done 일 때만(done 뒤 다시 열렸으면 없음).
-// 현황판이 카드에 doneAt 으로 실어 앱(트레이 · [작업] 팝업)이 같은 완료 기준을 쓴다. 파일이 그대로면 다시 읽지 않는다
+// 일감이 카드에 doneAt 으로 실어 앱(트레이 · [작업] 팝업)이 같은 완료 기준을 쓴다. 파일이 그대로면 다시 읽지 않는다
 let doneCache = { key: '', times: new Map() }
 export const doneTimes = (root) => {
   try {
@@ -64,7 +64,7 @@ export const doneTimes = (root) => {
 }
 
 // 계획서 Status 변화 — 에이전트가 계획서 md 를 직접 고치므로 고치는 쪽에서 남길 수 없다.
-// 현황판이 훑을 때마다 지난번 본 상태와 비교해 바뀐 것만 남긴다(현황판이 꺼져 있던 동안의 변화는 다음에 볼 때 시각으로).
+// 일감이 훑을 때마다 지난번 본 상태와 비교해 바뀐 것만 남긴다(일감이 꺼져 있던 동안의 변화는 다음에 볼 때 시각으로).
 // 처음(본 기록이 없을 때)은 지금 상태만 적어 두고 사건은 남기지 않는다 — 예전 계획서가 한꺼번에 "새로 생김" 으로 찍히지 않게
 export const observePlanStatus = (root, plans) => {
   try {

@@ -1,6 +1,6 @@
 # 사람에게 묻는 요청 (request)
 
-에이전트가 **사람의 판단이 있어야 넘어갈 수 있을 때** 남기는 기록이다. 현황판 · 스튜디오 앱의 "확인 필요" 는 이것만 센다 — Status 글자(`blocked` · `ready_for_review`)나 pane 상태로 "사람 차례"를 짐작하지 않는다.
+에이전트가 **사람의 판단이 있어야 넘어갈 수 있을 때** 남기는 기록이다. 일감 · 스튜디오 앱의 "확인 필요" 는 이것만 센다 — Status 글자(`blocked` · `ready_for_review`)나 pane 상태로 "사람 차례"를 짐작하지 않는다.
 
 - 코드: `scripts/lib/requests.mjs` · 명령 `bin/athena request …`(아래) · 시험 `test/requests-test.sh`
 - 자리: 여러 팩 구조면 **팩 데이터 `state/requests/<id>.json`**(팩마다 따로 · 본체 링크를 늘리지 않는다), 옛 구조 본체면 `.requests/`
@@ -11,7 +11,7 @@
 
 | 종류 | 누가 · 언제 |
 |---|---|
-| `decision` | **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
+| `decision` | **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 일감(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
 | `question` | **모아서 묻기**(`AGENTS.md` 5절 "추측으로 개발하지 않는다") — Blocked 에 적고 사용자에게 묻는 바로 그때 연다. 한 번에 묻는 묶음이 요청 하나다 |
 
 열지 않는 것: 진행 보고 · "리뷰할까요?" 같은 한 줄 확인 · 커밋 · PR 확인(사용자가 말할 때만 하는 일) · 끝났다는 알림.
@@ -19,7 +19,7 @@
 ## 흐름
 
 ```
-open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이전트가 받음: ack)──▶ delivered
+open ──(사람이 답함: 일감 · 앱)──▶ answered ──(에이전트가 받음: ack)──▶ delivered
   │                                                 
   ├──(대화로 답함: answer --by chat)──────────────▶ delivered
   ├──(에이전트가 거둠: cancel)──▶ cancelled
@@ -37,9 +37,9 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
   `bin/athena request open --kind question --title '<무엇을 정해야 하나 한 줄>' --body-file <근거 · 확인한 것 · 추천안> [--plan <계획서>] [--option '<라벨> :: <설명>' … --recommend <라벨>]`
   돌려받은 `request.id` 를 계획서 Blocked 줄에 같이 적는다
 - **사용자가 대화로 답하면** — `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
-- **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
+- **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(일감 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`
-- 결정 콘솔 요청은 `plan-html.mjs` · 현황판이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)
+- 결정 콘솔 요청은 `plan-html.mjs` · 일감이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)
 
 ## 명령
 

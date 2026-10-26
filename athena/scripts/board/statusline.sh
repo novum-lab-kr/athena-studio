@@ -1,5 +1,5 @@
 #!/bin/sh
-# Claude Code statusLine 래퍼 — 입력 JSON 의 rate_limits(5시간·주간 사용량)를 현황판이 읽을 파일로 떨군다.
+# Claude Code statusLine 래퍼 — 입력 JSON 의 rate_limits(5시간·주간 사용량)를 일감이 읽을 파일로 떨군다.
 # 입력은 그대로 기존 statusline(Orca 훅)에 넘긴다. 여기서 실패해도 statusline 은 깨지지 않게 조용히 넘어간다.
 #
 #   ~/.claude/settings.json → "statusLine": { "type": "command", "command": "/bin/sh <athena>/scripts/board/statusline.sh" }

@@ -5,7 +5,7 @@
  *   node scripts/qa/approve.mjs <런 id>                 승인할 만한 화면 전부(🆕 기준 없음 · 🟡 화면 변화 · ✅ 통과)
  *   node scripts/qa/approve.mjs <런 id> --key /help/faq  그 화면만 (실패 화면도 콕 집으면 올린다)
  *
- * 현황판 QA 탭의 [기준으로 승인] 도 같은 일을 한다.
+ * 일감 QA 탭의 [기준으로 승인] 도 같은 일을 한다.
  */
 import { approveRun } from './baseline.mjs'
 

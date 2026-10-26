@@ -30,7 +30,7 @@ test('설정: 저장한 값을 다시 읽고, 이상한 포트는 기본값', ()
   assert.deepEqual(core.loadConfig(file), core.DEFAULT_CONFIG)
   core.saveConfig(file, { boardPort: 70000 })
   assert.equal(core.loadConfig(file).boardPort, 4701)
-  // 현황판 기본은 4701
+  // 일감 기본은 4701
   assert.equal(core.DEFAULT_CONFIG.boardPort, 4701)
 })
 
@@ -154,7 +154,7 @@ test('자식 환경: delegate 실행기 값 · 스튜디오 pane 표시도 넘�
   })
   // 아테나 설정값(ATHENA_BOARD_PORT · ATHENA_DIR)은 남긴다 — 세션 표시만 지운다
   assert.deepEqual(env, { PATH: '/bin', ATHENA_BOARD_PORT: '4700', ATHENA_DIR: '/w/athena' })
-  // 새로 넣는 값은 그대로 들어간다(main 이 현황판에 소켓을 넘길 때)
+  // 새로 넣는 값은 그대로 들어간다(main 이 일감에 소켓을 넘길 때)
   assert.equal(core.childEnv({ ATHENA_STUDIO_SOCKET: '/old' }, { ATHENA_STUDIO_SOCKET: '/new' }).ATHENA_STUDIO_SOCKET, '/new')
 })
 
@@ -219,7 +219,7 @@ test('데몬 자리: 소켓은 userData, 104바이트(끝 NUL 포함)를 넘으�
   assert.throws(() => core.daemonPaths({ userData: longDir, home: '/h', tmpdir: `/${'t'.repeat(100)}`, uid: 1 }), /103바이트/)
 })
 
-test('현황판 포트: 저장된 포트부터 20개 · lsof 경로 · 스튜디오 아테나 설정에만 적는다', () => {
+test('일감 포트: 저장된 포트부터 20개 · lsof 경로 · 스튜디오 아테나 설정에만 적는다', () => {
   assert.deepEqual(core.boardPortCandidates(4701).slice(0, 3), [4701, 4702, 4703])
   assert.equal(core.boardPortCandidates(4701).length, 20)
   assert.equal(core.boardPortCandidates(65530).length, 6)
@@ -254,15 +254,15 @@ test('창마다 팩: 켤 때 열 본체 목록 · 예전 설정(athenaDir 하나
 })
 
 
-test('isConsoleSent: 옆 브라우저의 결정 콘솔이 같은 현황판 /api/action 에 POST 200 일 때만', () => {
+test('isConsoleSent: 옆 브라우저의 결정 콘솔이 같은 일감 /api/action 에 POST 200 일 때만', () => {
   const page = 'http://localhost:4804/plans/setup/20261019-a.html?token=x'
   const sent = { method: 'POST', url: 'http://localhost:4804/api/action', statusCode: 200, pageUrl: page }
   assert.equal(core.isConsoleSent(sent), true)
   assert.equal(core.isConsoleSent({ ...sent, statusCode: 400 }), false) // 못 보냄 — [프롬프트로 복사] 를 봐야 한다
   assert.equal(core.isConsoleSent({ ...sent, method: 'GET' }), false)
   assert.equal(core.isConsoleSent({ ...sent, url: 'http://localhost:4804/api/move' }), false)
-  assert.equal(core.isConsoleSent({ ...sent, url: 'http://localhost:4700/api/action' }), false) // 다른 현황판
-  assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'http://localhost:4804/' }), false) // 현황판 화면 자체
+  assert.equal(core.isConsoleSent({ ...sent, url: 'http://localhost:4700/api/action' }), false) // 다른 일감
+  assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'http://localhost:4804/' }), false) // 일감 화면 자체
   assert.equal(core.isConsoleSent({ ...sent, url: 'https://example.com/api/action', pageUrl: 'https://example.com/plans/a.html' }), false)
   assert.equal(core.isConsoleSent({ ...sent, pageUrl: 'not a url' }), false)
 })

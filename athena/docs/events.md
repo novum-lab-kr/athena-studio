@@ -16,7 +16,7 @@
 | type | 누가 남기나 | 필드 |
 |---|---|---|
 | `request` | `scripts/lib/requests.mjs` — 요청 상태가 바뀔 때마다(열기 · 고쳐 열기 · 답 · 받음 · 취소 · 닫힘) | `id` · `kind` · `state` · `plan` · `by`(board · app · chat) · `rev` |
-| `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
+| `plan.status` | 일감(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
 | `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` |
 | `commit` | `scripts/commit.sh` — 커밋한 뒤 | `plan` · `repo` · `branch` · `sha` · `verified` · `verify` |
 | `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) |
@@ -31,13 +31,13 @@
 
 ## 계획서 상태의 한계
 
-에이전트가 계획서 md 를 직접 고치므로 Status 변화는 고치는 쪽에서 남길 수 없다. 현황판이 훑을 때(켜져 있을 때만) 지난번 본 상태(`state/plan-status.json`)와 비교해 남긴다.
-- 현황판이 꺼져 있던 동안의 변화는 다음에 켜졌을 때의 시각으로 찍힌다 — 그사이 여러 번 바뀌었으면 마지막 것만
+에이전트가 계획서 md 를 직접 고치므로 Status 변화는 고치는 쪽에서 남길 수 없다. 일감이 훑을 때(켜져 있을 때만) 지난번 본 상태(`state/plan-status.json`)와 비교해 남긴다.
+- 일감이 꺼져 있던 동안의 변화는 다음에 켜졌을 때의 시각으로 찍힌다 — 그사이 여러 번 바뀌었으면 마지막 것만
 - 처음(본 기록이 없을 때)은 지금 상태만 적어 두고 사건은 남기지 않는다
 
-## 보기 — 현황판 [지표] 탭 · scripts/metrics.mjs
+## 보기 — 일감 [지표] 탭 · scripts/metrics.mjs
 
-계산은 `scripts/lib/metrics.mjs` 하나(시험 `test/metrics-test.sh`) — 현황판 [지표] 탭(`/api/metrics?days=7|30|all`)과 명령이 같이 쓴다.
+계산은 `scripts/lib/metrics.mjs` 하나(시험 `test/metrics-test.sh`) — 일감 [지표] 탭(`/api/metrics?days=7|30|all`)과 명령이 같이 쓴다.
 
 ```sh
 node scripts/metrics.mjs              # 최근 7일 · 지난 7일과 비교

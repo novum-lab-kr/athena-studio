@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>QA 라이브</title>
 <link rel="icon" type="image/png" href="/favicon.png">
-<!-- QA 자동화 도구 화면 — scripts/qa/run.mjs --live 런의 실시간 화면(live/*.jpg) · API 호출 · Mixpanel 이벤트(live.jsonl)를 한 페이지에. 현황판 서버가 /qa-live?id=<런> 으로 준다 -->
+<!-- QA 자동화 도구 화면 — scripts/qa/run.mjs --live 런의 실시간 화면(live/*.jpg) · API 호출 · Mixpanel 이벤트(live.jsonl)를 한 페이지에. 일감 서버가 /qa-live?id=<런> 으로 준다 -->
 <style>
   :root {
     --bg: #f4f4f2; --panel: #ffffff; --line: #e3e3de; --text: #1d1d1b; --muted: #6b6b66;
@@ -73,7 +73,7 @@
   .dlg-head { position: sticky; top: 0; z-index: 1; display: flex; align-items: baseline; gap: 10px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--panel); }
   .dlg-head h3 { margin: 0; font-size: 15px; flex: 1; word-break: break-all; }
   .dlg-head button { font: inherit; font-size: 12.5px; border: 1px solid var(--line); background: var(--bg); color: var(--text); border-radius: 6px; padding: 4px 12px; cursor: pointer; }
-  /* 닫기 — 오른쪽 끝 × (현황판 팝업과 같은 모양) */
+  /* 닫기 — 오른쪽 끝 × (일감 팝업과 같은 모양) */
   .dlg-head .dlg-x { align-self: center; margin-left: auto; width: 30px; height: 30px; padding: 0; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 22px; line-height: 1; }
   .dlg-head .dlg-x:hover { background: color-mix(in srgb, var(--text) 8%, transparent); color: var(--text); }
   .dlg-body { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; padding: 14px 16px 18px; }
@@ -664,7 +664,7 @@
         state.scenarioStatus[key] = scenario.status;
         if (human && before && ['queued', 'running'].includes(before) && !['queued', 'running'].includes(scenario.status)) openDetail(key);
       }
-      document.getElementById('links').innerHTML = `<a href="/#qa">현황판 QA 탭</a>${run.status === 'done' ? ` · <a href="/qa-runs/${encodeURIComponent(run.id)}/report.html" target="_blank" rel="noopener">리포트 ↗</a>` : ''}`;
+      document.getElementById('links').innerHTML = `<a href="/#qa">일감 QA 탭</a>${run.status === 'done' ? ` · <a href="/qa-runs/${encodeURIComponent(run.id)}/report.html" target="_blank" rel="noopener">리포트 ↗</a>` : ''}`;
       const screens = run.screens || [];
       const finished = screens.filter((screen) => !['queued', 'running'].includes(screen.status)).length;
       const scenarios = run.scenarios || [];

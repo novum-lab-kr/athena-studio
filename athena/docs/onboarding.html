@@ -157,7 +157,7 @@
       <li><a href="#prep">준비물</a></li>
       <li><a href="#install">설치</a></li>
       <li><a href="#first">처음 써 보기</a></li>
-      <li><a href="#board">현황판</a></li>
+      <li><a href="#board">일감</a></li>
       <li><a href="#knows">아테나가 아는 것</a></li>
       <li><a href="#learn">학습</a></li>
       <li><a href="#cmds">자주 쓰는 명령</a></li>
@@ -183,10 +183,10 @@
         <tbody>
           <tr><td>Claude Code</td><td>아테나·에이전트 본체 (<code>claude</code>)</td><td>동작하지 않음</td></tr>
           <tr><td>git · python3</td><td>셋업·훅·스크립트</td><td>동작하지 않음</td></tr>
-          <tr><td>Node + nvm</td><td>검증·현황판·QA. 레포마다 <code>.nvmrc</code> 버전이 다릅니다</td><td>검증이 경고·실패</td></tr>
+          <tr><td>Node + nvm</td><td>검증·일감·QA. 레포마다 <code>.nvmrc</code> 버전이 다릅니다</td><td>검증이 경고·실패</td></tr>
           <tr><td>pnpm</td><td>레포 설치·빌드</td><td>검증·빌드 불가</td></tr>
-          <tr><td>gh</td><td>push·draft PR, 현황판의 PR 머지 감지. <code>gh auth login</code> 까지</td><td>PR 을 못 올림</td></tr>
-          <tr><td>Athena Studio</td><td>아테나 코어를 들고 와 풀고, 에이전트를 옆 pane 에 띄워 일하는 모습을 보여 줍니다 · 현황판 · 에이전트 모니터</td><td>앱 밖 터미널이면 pane 대신 "직접 실행하세요" 안내만 나옴</td></tr>
+          <tr><td>gh</td><td>push·draft PR, 일감의 PR 머지 감지. <code>gh auth login</code> 까지</td><td>PR 을 못 올림</td></tr>
+          <tr><td>Athena Studio</td><td>아테나 코어를 들고 와 풀고, 에이전트를 옆 pane 에 띄워 일하는 모습을 보여 줍니다 · 일감 · 에이전트 모니터</td><td>앱 밖 터미널이면 pane 대신 "직접 실행하세요" 안내만 나옴</td></tr>
         </tbody>
       </table></div>
 
@@ -223,7 +223,7 @@
 claude</pre></div>
           <p>첫 화면에서 <b>"현황 알려줘"</b> 라고 해 보세요. 레포별 브랜치와 변경 상태가 나오면 준비가 끝난 겁니다.</p>
           <div class="note">따로 셋업하지 않아도 됩니다. <code>claude</code> 를 켜면 <code>reposRoot</code> 아래의 담당 레포를 찾아 <code>repos/&lt;레포&gt;</code> 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻습니다. 팩이 없는 새 회사라면 <code>/setup</code> 이 레포 찾기부터 안내합니다.</div>
-          <p><b>Studio 창 안에서 켜면 화면이 저절로 잡힙니다.</b> 현황판은 뒤에서 뜨고(앱 📋 현황판 탭이 보여 줍니다), 에이전트 로그는 작업 창 가운데 맨 아래 🛰 AGENT MONITOR 칸이 보여 줍니다. 오른쪽 Explorer 에서 바뀐 파일을 누르면 diff 가 뜹니다. 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드 메뉴는 <code>/guide</code> 로 부를 때만 뜹니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. 작업 창에서는 레포마다 <b>작업 공간(workspace)</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
+          <p><b>Studio 창 안에서 켜면 화면이 저절로 잡힙니다.</b> 일감은 뒤에서 뜨고(앱 📋 일감 탭이 보여 줍니다), 에이전트 로그는 작업 창 가운데 맨 아래 🛰 AGENT MONITOR 칸이 보여 줍니다. 오른쪽 Explorer 에서 바뀐 파일을 누르면 diff 가 뜹니다. 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드 메뉴는 <code>/guide</code> 로 부를 때만 뜹니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. 작업 창에서는 레포마다 <b>작업 공간(workspace)</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
           <p><b>QA 시뮬레이션을 쓸 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·claude…)도 점검해 줍니다.</p>
           <div class="code"><button class="copy" type="button">복사</button><pre>scripts/setup.sh</pre></div>
         </li>
@@ -267,20 +267,17 @@ claude</pre></div>
     </section>
 
     <section id="board">
-      <h2><span class="no">04</span>현황판</h2>
+      <h2><span class="no">04</span>일감</h2>
       <div class="code"><button class="copy" type="button">복사</button><pre>/board          <span class="c"># 브라우저에 localhost:4700 이 열린다</span>
 /board stop     <span class="c"># 끄기</span></pre></div>
       <div class="tbl"><table>
         <thead><tr><th>칸</th><th>보는 것</th></tr></thead>
         <tbody>
-          <tr><td>에이전트</td><td>지금 일하고 있는 pane</td></tr>
-          <tr><td>계획서 칸반</td><td>계획 · 진행 중 · 리뷰 · 완료. 카드를 끌어 상태를 바꾸고, 버튼으로 지시를 보냅니다. 계획서의 PR 이 모두 머지되면 자동으로 완료로 갑니다</td></tr>
-          <tr><td>이슈</td><td>작업 중 찾았지만 그 자리에서 고치지 않은 것. [처리 시작] 으로 맡깁니다</td></tr>
+          <tr><td>이슈(첫 화면)</td><td>해결할 이슈 목록 — 작업 중 찾았지만 그 자리에서 고치지 않은 것(학습 후보 제외). [작업 시작] 으로 맡기고, 시작한 이슈는 맡은 pane 이 보입니다</td></tr>
+          <tr><td>계획서</td><td>진행은 Studio 의 [작업] 팝업과 pane 머리 줄 [상세] 에서 봅니다. 계획서의 PR 이 모두 머지되면 자동으로 완료로 갑니다</td></tr>
           <tr><td>QA</td><td>웹 화면 시뮬레이션(대상은 팩 <code>qa</code> 설정). 처음 한 번 QA 탭 로그인 세션 줄의 [로그인] 으로 테스트 계정 로그인을 저장합니다(로컬 서버가 꺼져 있으면 잠깐 띄워 1~3분. 터미널이면 <code>node scripts/qa/login.mjs</code>)</td></tr>
-          <tr><td>[서비스] 탭</td><td>위의 에이전트·계획서 칸반·이슈 — 서비스 레포 작업</td></tr>
-          <tr><td>[정비] 탭</td><td>아테나 자체(스크립트·현황판·규칙)를 고치는 일. 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고, PR 이 머지되면 끝</td></tr>
           <tr><td>[학습] 탭</td><td><b>아테나 학습</b> — 작업하며 알게 된 레포 함정을 서비스별 공책에 넣기(후보 [넣기]·[버리기], 학습한 내용 수정·삭제) / <b>클로드 학습</b> — Claude Code 메모리(대화에서 기억한 일하는 방식, 이 컴퓨터에만 있음, 읽기 전용)</td></tr>
-          <tr><td>[아카이브] 탭</td><td>끝난 카드는 [아카이브] 버튼으로 보관하고, 지난 일은 이 탭에서 찾습니다</td></tr>
+          <tr><td>[아카이브] 탭</td><td>끝난 일은 일감이 자동으로 보관하고(머지 · 배우기 검토 · pane 닫힘 뒤), 지난 일은 이 탭에서 찾습니다</td></tr>
         </tbody>
       </table></div>
     </section>
@@ -334,7 +331,7 @@ claude</pre></div>
         <tbody>
           <tr><td>작업한 에이전트</td><td>작업을 끝낼 때(PR 미리보기) · 사용자가 바로잡을 때 · 같은 오류가 3번 날 때</td><td>그 자리에서 "다음에도 밟을 것"을 학습 후보로 올립니다. 맥락을 가장 잘 압니다</td></tr>
           <tr><td>배우기 검토자<br>(별도 Claude · 역할 문서 <code>.claude/agents/learn-reviewer.md</code>)</td><td><b>내 작업의 PR 이 머지되면</b> 자동으로(어느 브랜치로든)</td><td>그 작업의 <b>계획서(요청·결정·결과) · 대화 · 최종으로 바뀐 코드 · PR 리뷰 댓글</b>을 읽고 에이전트가 빠뜨린 것을 보탭니다. 팀이 받아들인 결과로 배우고, 머지 안 된 시도는 배우지 않습니다. "📚 배우기 검토" pane 이 하나 뜹니다(끝나면 닫아도 됩니다 · 한 번에 약 $0.1~0.4, 구독이면 사용량에서)</td></tr>
-          <tr><td><b>사람(나)</b></td><td>아무 때나</td><td>현황판 <b>[학습] 탭 → 🧭 아테나 학습</b>에서 후보를 읽고 <b>[넣기]·[고쳐서 넣기]·[버리기]</b>. 넣어야만 공책에 들어갑니다</td></tr>
+          <tr><td><b>사람(나)</b></td><td>아무 때나</td><td>일감 <b>[학습] 탭 → 🧭 아테나 학습</b>에서 후보를 읽고 <b>[넣기]·[고쳐서 넣기]·[버리기]</b>. 넣어야만 공책에 들어갑니다</td></tr>
         </tbody>
       </table></div>
 
@@ -380,7 +377,7 @@ claude</pre></div>
         <thead><tr><th>명령</th><th>용도</th></tr></thead>
         <tbody>
           <tr><td><code>/call &lt;에이전트&gt;</code></td><td>담당 에이전트 pane 바로 띄우기</td></tr>
-          <tr><td><code>/board</code></td><td>현황판</td></tr>
+          <tr><td><code>/board</code></td><td>일감</td></tr>
           <tr><td><code>/guide</code></td><td>가이드 메뉴(문서·스킬·에이전트·라우팅). <code>/guide 설명</code> 은 아테나 구조 설명, <code>/guide 시작하기</code> 는 이 가이드, <code>/guide 열기</code> 는 플레이북, <code>/guide 그림</code> 은 서비스 다이어그램</td></tr>
           <tr><td><code>/monitor</code></td><td>백그라운드 서브에이전트·<code>/call</code>·디스패치로 띄운 pane 에이전트 로그</td></tr>
           <tr><td>(회사 스킬)</td><td>팩 <code>pack/ROUTING.md</code> "회사 스킬"</td></tr>
@@ -418,7 +415,7 @@ claude</pre></div>
           <tr><td>명령이 137 로 끝남</td><td>프로세스·메모리 폭주로 감시가 끊은 것. 다시 돌리기 전에 원인부터</td></tr>
           <tr><td>세션이 끊김</td><td>다시 켜고 "○○ 작업 이어서". 진행 상황은 계획서 Checkpoint 에 남아 있습니다</td></tr>
           <tr><td>대화가 길어져 압축됨</td><td>할 일 없음. 압축 직전 상태가 계획서에 자동으로 한 줄 남고, 압축 뒤 에이전트가 계획서부터 다시 읽고 이어 갑니다</td></tr>
-          <tr><td>배우기 검토가 돌고 있는지 궁금함</td><td>머지된 내 PR 에서 배운 것을 뒤에서 뽑습니다(pane 은 없습니다). 결과는 현황판 [학습] 탭에 뜹니다</td></tr>
+          <tr><td>배우기 검토가 돌고 있는지 궁금함</td><td>머지된 내 PR 에서 배운 것을 뒤에서 뽑습니다(pane 은 없습니다). 결과는 일감 [학습] 탭에 뜹니다</td></tr>
         </tbody>
       </table></div>
     </section>

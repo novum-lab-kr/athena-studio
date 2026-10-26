@@ -1,4 +1,4 @@
-"""계획서 고치기 — commit.sh·ship.sh·delegate.sh·review-result.sh·압축 훅과 현황판·learn-review 가 같은 계획서를 동시에 고칠 수 있다.
+"""계획서 고치기 — commit.sh·ship.sh·delegate.sh·review-result.sh·압축 훅과 일감·learn-review 가 같은 계획서를 동시에 고칠 수 있다.
 읽기 → 바꾸기 → 쓰기를 계획서마다 잠금 하나(<계획서>.lock 폴더 — node 쪽 plan-update.mjs 와 같은 잠금) 안에서 하고,
 쓰기는 임시 파일 → 바꿔치기로 한다. 정식 계획서의 결정 콘솔 html 안 md 사본(<script id="plan-md">)도 같은 잠금 안에서 맞춘다.
 에이전트가 편집기로 직접 고치는 것까지 막지는 못한다(잠금을 모른다) — 스크립트끼리 서로의 기록을 덮어쓰지 않게 하는 것이다.

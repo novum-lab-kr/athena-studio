@@ -33,7 +33,7 @@ docs/knowledge/
   company/                      회사 관례(git · verify · review) — 팩. common/ 과 함께 읽는다
   learned/                      학습 기록 — 팩
                                 (회사별 실제 배치는 company/README.md)
-  hermes/                       gotchas — 아테나 자체(스크립트·현황판·규칙) 작업의 함정. 학습 루프 learn 이슈로만 채운다
+  hermes/                       gotchas — 아테나 자체(스크립트·일감·규칙) 작업의 함정. 학습 루프 learn 이슈로만 채운다
 ```
 레포마다 패턴은 다르다. hub의 항목을 복제하지 않고 **각 레포 코드에서 반복되는 것**만 patterns.md 에 적는다. "설치만 되어 있고 사용처가 없는" 라이브러리는 관례로 적지 않고 gotchas 에 기록한다.
 

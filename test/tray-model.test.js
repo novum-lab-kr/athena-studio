@@ -24,7 +24,7 @@ test('요약: 확인 필요(요청만) · 막힘은 계획서만 · 에이전트
   assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle'], ['claude', 'athena', 'idle']])
   assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
   assert.equal(summary.idleAgents, 2)
-  // 평균 답 대기 — 현황판이 떠 있고 값이 있을 때만 확인 필요 머리줄에
+  // 평균 답 대기 — 일감이 떠 있고 값이 있을 때만 확인 필요 머리줄에
   assert.equal(summary.avgWait, '')
   assert.equal(tray.summarize({ boardUp: true, waitMs: 3.2 * 3600000 }).avgWait, ' · 평균 대기 3.2시간')
   assert.equal(tray.summarize({ boardUp: false, waitMs: 3600000 }).avgWait, '')

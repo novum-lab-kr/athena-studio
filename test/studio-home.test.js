@@ -405,7 +405,7 @@ test('켤 때 준비: 첫 실행은 풀고 · 다시 켜면 새 번들로 감되
   assert.deepEqual(await home.prepareCore({ layout, bundle, home: '/Users/me', runCore, update: false }), { ok: true, created: false, update: null })
 })
 
-test('초기화: 끌 현황판(코어 + 팩마다) · 지울 자리는 스튜디오 집 안만 · 다른 앱 접속 파일과 집 밖은 남긴다', () => {
+test('초기화: 끌 일감(코어 + 팩마다) · 지울 자리는 스튜디오 집 안만 · 다른 앱 접속 파일과 집 밖은 남긴다', () => {
   const root = tmp()
   const layout = home.studioLayout({ home: '/unused', override: root, identity: home.appIdentity({ packaged: false }) })
   fs.mkdirSync(layout.core, { recursive: true })

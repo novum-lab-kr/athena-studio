@@ -6,8 +6,8 @@
  *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run]
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
- *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
- *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
+ *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 일감이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
+ *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(일감이 5분마다)
  *   node scripts/pr-auto.mjs --watch     뒤에서 돈다 — 대기열을 차례로 · 머지 확인 답을 30초마다 본다. 처리기는 하나만
  *
  * 안전
@@ -764,7 +764,7 @@ const enqueue = (planArg, prArg, head) => {
   }
   mkdirSync(QUEUE_DIR, { recursive: true })
   const digest = createHash('sha1').update(`${planArg}\n${prArg}\n${head}`).digest('hex').slice(0, 8)
-  // 같은 계획서 · PR · HEAD 는 한 번만 — ship.sh(push 직후)와 현황판(5분 안전망)이 둘 다 넣어도 겹치지 않게.
+  // 같은 계획서 · PR · HEAD 는 한 번만 — ship.sh(push 직후)와 일감(5분 안전망)이 둘 다 넣어도 겹치지 않게.
   // 대기 · 처리 중이면 여기서 막고, 끝났으면 처리기(하나 · 차례로)가 계획서 "- Auto review:" 줄(needsReview)로 건너뛴다
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('🤖 이미 자동 리뷰 대기열에 있다')
   writeFileSync(join(QUEUE_DIR, `${Date.now()}-${digest}.json`), JSON.stringify({ plan: planArg, pr: prArg, head, root: REAL_ROOT, packId: BOOT_PATHS.packId }))
@@ -822,7 +822,7 @@ const watch = async () => {
       if (foreign) throw new Error(`다른 체크아웃(${job.root})의 일이다`)
       await handle(job.plan, job.pr, { head: job.head })
     } catch (error) {
-      // 다시 돌리지 않는다 — 같은 HEAD 는 현황판이 다시 넣지 않으니 failed/ 에 이유와 함께 남긴다(사람이 보고 대기열로 옮기면 다시)
+      // 다시 돌리지 않는다 — 같은 HEAD 는 일감이 다시 넣지 않으니 failed/ 에 이유와 함께 남긴다(사람이 보고 대기열로 옮기면 다시)
       console.log(`  ⚠️ ${error.message}`)
       mkdirSync(FAILED_DIR, { recursive: true })
       writeFileSync(join(FAILED_DIR, next), JSON.stringify({ ...job, failedAt: new Date().toISOString(), lastError: masked(error.message) }, null, 2))

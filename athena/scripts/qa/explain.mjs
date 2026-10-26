@@ -1,10 +1,10 @@
 /**
  * QA 실패 문구를 사람이 읽는 원인으로 — 콘솔 오류 원문(스택·%o·수천 번 반복)을 "무엇 때문에 실패인지" 한 줄 + 횟수 + 확인할 곳으로 묶는다.
- * run.json 은 원문 그대로 두고, 보여 줄 때만 쓴다(현황판 /api/qa/run 이 screens[].reasons 로 붙인다).
+ * run.json 은 원문 그대로 두고, 보여 줄 때만 쓴다(일감 /api/qa/run 이 screens[].reasons 로 붙인다).
  *
  *   explainProblems(problems, guesses?) → [{ title, why, hint, kind, count, viewports, at, sample, unknownKey? }]  (많이 나온 순)
  *   guessCause(group) → { cause, confidence, model } | null   정규식이 모르는 오류(unknownKey 가 있는 묶음)의 원인을 Jev 로 추정
- *     guesses = { [unknownKey]: guessCause 결과 } 를 explainProblems 에 주면 why·hint 에 "추정(Jev N%)" 으로 붙인다(현황판이 캐시에 모아 준다)
+ *     guesses = { [unknownKey]: guessCause 결과 } 를 explainProblems 에 주면 why·hint 에 "추정(Jev N%)" 으로 붙인다(일감이 캐시에 모아 준다)
  */
 import { askJev } from '../lib/jev.mjs'
 

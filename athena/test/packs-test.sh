@@ -7,7 +7,7 @@
 #
 # 보는 것(계획서 7절 "단계별 확인" · 팩마다 본체 이후): test-setup · 이 본체의 팩 열기·계약 확인 · 팩마다 잠금 · busy(claude·codex) ·
 # (본체 만들기·업데이트·되돌리기는 test/bodies-test.sh) · 나쁜 팩(형식·pack.json 없음·밖 링크·.env·../·ext::) · 같은 팩 충돌·교체 백업 ·
-# 내보내기 허용 목록 · 작업 기록 백업·되살리기 · 옛 아테나 가져오기(원본 그대로) · 옮기기(두 번 돌려도 같음) · 계획서 논리 경로 · 현황판(팩·세대·409·끄기)
+# 내보내기 허용 목록 · 작업 기록 백업·되살리기 · 옛 아테나 가져오기(원본 그대로) · 옮기기(두 번 돌려도 같음) · 계획서 논리 경로 · 일감(팩·세대·409·끄기)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/packs-test.XXXXXX")" && pwd -P)"
@@ -378,8 +378,8 @@ check "migrate --yes — 링크 전환 · screen 지움 · 원본 팩 남음" '[
 R="$(cd "$L" && ATHENA_DATA_DIR="$WORK/mig-data" node scripts/athena.mjs pack migrate --yes --json | tail -1)"
 check "migrate 두 번째 → already" '[ "$(echo "$R" | field already)" = True ]' "$R"
 
-section "현황판 — 팩·세대 · 토큰 · 409 · 끄기"
-printf '{}' > "$ATHENA_DATA_DIR/packs/acme/state/board-token"; chmod 644 "$ATHENA_DATA_DIR/packs/acme/state/board-token"   # 이전 현황판이 남긴 파일이 644 였어도
+section "일감 — 팩·세대 · 토큰 · 409 · 끄기"
+printf '{}' > "$ATHENA_DATA_DIR/packs/acme/state/board-token"; chmod 644 "$ATHENA_DATA_DIR/packs/acme/state/board-token"   # 이전 일감이 남긴 파일이 644 였어도
 bash scripts/board.sh >/dev/null 2>&1
 STATE="$(curl -s "http://127.0.0.1:$PORT/api/state")"
 check "/api/state.pack = acme" '[ "$(echo "$STATE" | field pack.id)" = acme ]' "$(echo "$STATE" | head -c 200)"
@@ -399,7 +399,7 @@ check "이 팩 세대가 다르면 쓰기 409" '[ "$CODE" = 409 ]' "$CODE"
 GEN acme -1
 check "같은 팩이면 board.sh 가 다시 안 띄움" 'bash scripts/board.sh 2>&1 | grep -q "이미 떠 있음"'
 R="$(A pack use acme --contract 3 --start-board)"
-check "pack use --start-board → 이 본체 현황판(포트 $PORT)" '[ "$(echo "$R" | field boardStarted)" = "$PORT" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = acme ]' "$R"
+check "pack use --start-board → 이 본체 일감(포트 $PORT)" '[ "$(echo "$R" | field boardStarted)" = "$PORT" ] && [ "$(curl -s "http://127.0.0.1:$PORT/api/state" | field pack.id)" = acme ]' "$R"
 check "ATHENA_BOARD_PORT 가 있어도 레지스트리 포트" '[ "$(ATHENA_BOARD_PORT=4999 node scripts/athena.mjs pack status --json | tail -1 | field boardPort)" = "$PORT" ]'
 TOKEN="$(A pack board-token | field token)"; HDR=(-H "Origin: http://localhost:$PORT" -H "x-board-token: $TOKEN" -H "content-type: application/json")
 check "POST /api/shutdown → 꺼짐 · 토큰 파일 지움" '[ "$(curl -s -X POST "${HDR[@]}" -d "{}" "http://127.0.0.1:$PORT/api/shutdown" | field ok)" = True ] && sleep 0.5 && [ "$(curl -s -o /dev/null -w "%{http_code}" "http://127.0.0.1:$PORT/api/state")" = 000 ] && [ ! -f "$ATHENA_DATA_DIR/packs/acme/state/board-token" ]'

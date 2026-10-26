@@ -1,5 +1,5 @@
 /**
- * 현황판 [학습] 탭 — 학습 후보(issues/*-learn-*.md)와 학습한 내용(docs/knowledge/learned/*.md)을 다룬다.
+ * 일감 [학습] 탭 — 학습 후보(issues/*-learn-*.md)와 학습한 내용(docs/knowledge/learned/*.md)을 다룬다.
  * 기준·흐름 정본: docs/knowledge/common/learning.md
  *
  *   넣기      후보 → 공책(target 파일) 끝 "## 학습" 절에 한 줄(<!-- learn:<id> -->) + 기록 docs/knowledge/learned/<id>.md
@@ -28,7 +28,7 @@ const ISSUES = join(ROOT, 'issues')
 const LEARNED = join(ROOT, 'docs/knowledge/learned')
 const STATS = join(ROOT, '.board-learn-stats.json')
 const SECTION = '## 학습'
-const SECTION_NOTE = '학습 루프로 들어온 줄 — 현황판 [학습] 탭에서 수정·삭제한다. 쉬운 설명은 `docs/knowledge/learned/`'
+const SECTION_NOTE = '학습 루프로 들어온 줄 — 일감 [학습] 탭에서 수정·삭제한다. 쉬운 설명은 `docs/knowledge/learned/`'
 
 const today = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 10)
 export const isLearnIssue = (path) => /-learn-[^/]*\.md$/.test(path) && !/-learn-curator\.md$/.test(path)  // curator 정리 목록은 후보가 아니다
@@ -380,7 +380,7 @@ const JEV_DISCARD_MIN = 0.95
 const JEV_HINT_MIN = 0.6
 // 줄마다 질문 하나(noul) — 너무 많으면 후보와 낱말이 많이 겹치는 줄부터 이만큼만
 const JEV_MAX_LINES = 60
-// 한 번에 점검할 후보 수(현황판이 1분에 한 번 부른다)
+// 한 번에 점검할 후보 수(일감이 1분에 한 번 부른다)
 const JEV_PER_RUN = 3
 const JEV_VERSION = 'learn-dedupe-v1'
 
@@ -412,7 +412,7 @@ const recordJevDiscard = (entry) => {
   try { writeFileSync(STATS, JSON.stringify(stats)) } catch { /* 수만 못 셀 뿐 */ }
 }
 
-// 현황판이 부른다 — 돌려주는 것은 서버 로그용 한 줄들
+// 일감이 부른다 — 돌려주는 것은 서버 로그용 한 줄들
 export const checkLearnWithJev = async () => {
   const checked = readJevChecks()
   const done = []

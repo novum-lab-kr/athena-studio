@@ -1,4 +1,4 @@
-// 앱 화면 — 탭 두 개(작업 창 · 현황판) · 작업 창 안의 데몬 탭·pane · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
+// 앱 화면 — 탭 두 개(작업 창 · 일감) · 작업 창 안의 데몬 탭·pane · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
 // studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
 /* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout, StudioI18n */
 const $ = (id) => document.getElementById(id)
@@ -65,6 +65,10 @@ function ensureView(paneId) {
   el.className = 'pane'
   const head = document.createElement('div')
   head.className = 'pane-head'
+  const headLabel = document.createElement('span')
+  headLabel.className = 'pane-head-label'
+  const detailButton = paneDetailButton(paneId)
+  head.append(headLabel, detailButton)
   const body = document.createElement('div')
   body.className = 'pane-body'
   el.append(head, body)
@@ -91,7 +95,7 @@ function ensureView(paneId) {
   el.addEventListener('mousedown', () => focusPane(paneId))
   // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
   el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
-  const view = { term, fit, el, head, body, shown: false, sent: null }
+  const view = { term, fit, el, head, headLabel, detailButton, body, shown: false, sent: null }
   term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
   return view
@@ -122,7 +126,7 @@ function screenIsFull(term) {
 }
 
 // 숨었던 칸이 다시 보일 때 — xterm DOM 렌더러는 글자 폭을 DOM 으로 재서 글자 간격(셀 폭 − 글자 폭)을 정하는데,
-// 숨은 칸(display:none — 다른 작업 공간의 하단 칸 · 현황판 탭)에서는 0 으로 재져 간격이 셀 폭만큼 벌어진다.
+// 숨은 칸(display:none — 다른 작업 공간의 하단 칸 · 일감 탭)에서는 0 으로 재져 간격이 셀 폭만큼 벌어진다.
 // (A) 숨은 채 열면 기본 간격이 그렇게 굳고 (B) 숨는 순간의 한 프레임에 그려진 줄도 그대로 남는다.
 // 옵션이 바뀌면 렌더러가 기본 간격을 다시 정하고(같은 값은 무시돼서 바꿨다 되돌린다) 0 으로 잰 글자 폭은 캐시에 남지 않으니, 보일 때 다시 재고 전부 다시 그린다.
 // open 을 미루면 그 전에 온 OSC 색 설정이 버려져서(테마 서비스가 open 때 생긴다) 열기는 그대로 둔다
@@ -1160,7 +1164,8 @@ function layoutPanes() {
     if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
     view.el.classList.toggle('focused', paneId === screen.focused)
     const info = meta.get(paneId) || {}
-    view.head.textContent = info.label || info.title || paneId
+    view.headLabel.textContent = info.label || info.title || paneId
+    syncDetailButton(paneId, view)
     if (!view.shown) redrawAfterHidden(view)
     view.shown = true
     // 크기는 재기만 하고 xterm 은 데몬이 pty · 화면 버퍼에 적용했다고 답할 때(pane:resized) 바꾼다.
@@ -1980,11 +1985,11 @@ function initBrowser() {
 }
 
 // ── 탭 ──────────────────────────────────────────────────
-// 현황판은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
+// 일감은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
 function switchTab(name) {
   if (!state || !state.valid) return
   if (name === 'board') {
-    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 현황판을 열지 않는다
+    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 일감을 열지 않는다
     return
   }
   currentTab = 'work'
@@ -1993,9 +1998,9 @@ function switchTab(name) {
   requestAnimationFrame(layoutPanes)
 }
 
-// ── [작업] 팝업 · 현황판 페이지 메뉴 ────────────────────────────
+// ── [작업] 팝업 · 일감 페이지 메뉴 ────────────────────────────
 // 칸반 대신 탭 줄 [작업] — 나를 기다리는 것(사람에게 묻는 요청) · 진행 중 · 최근 끝난 것. 작업을 누르면 상세, 질문을 누르면 앱 안에서 바로 답한다.
-// 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(현황판을 띄운다)
+// 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(일감을 띄운다)
 let workRequests = { supported: false, requests: [] }
 let workData = null // 마지막으로 읽은 목록(workGet) — 진행 중 숫자
 const WORK_STATES = ['wait', 'work', 'blocked', 'idle', 'done']
@@ -2152,6 +2157,211 @@ async function openWorkDetail(item) {
   if (choice === 'plan') studio.workOpenPlan(item.id, null)
   else if (choice === 'console') studio.workOpenPlan(item.id, item.html)
   else if (choice === 'pane') goToPane(pane)
+}
+
+// ── pane [상세] ─────────────────────────────────────────────
+// 계획서에 묶인 pane(그 계획서를 하는 에이전트 · 맡긴 아테나) 머리 줄 오른쪽 아이콘 → 작업 창 위에 오른쪽에서 뜨는 팝업.
+// 팝업은 레이아웃에 끼지 않는다(position: fixed) — pane · spaces · Explorer · 모니터 크기와 터미널 크기는 그대로.
+// 열려 있는 동안 3초마다 다시 읽는다(main ctx.paneDetail — 일감 카드 · 계획서 · pane 화면 글, 모델 호출 없음)
+let paneBound = {} // pane id → 'agent' | 'lead'
+let detailPane = null
+let detailTimer = null
+const PANE_DETAIL_REFRESH_MS = 3000
+// 아이콘 모양은 사용자가 고르는 중 — 정해지면 이 한 줄만 바꾼다
+const PANE_DETAIL_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8.5h3l1.6-4.5 3 9 1.6-4.5h3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+
+function paneDetailButton(paneId) {
+  const button = el('button', 'pane-detail-btn')
+  button.type = 'button'
+  button.hidden = true
+  button.innerHTML = PANE_DETAIL_ICON
+  button.title = say('pane.detail.open')
+  button.setAttribute('aria-label', say('pane.detail.open'))
+  button.setAttribute('aria-controls', 'pane-detail')
+  button.addEventListener('click', (event) => {
+    event.stopPropagation()
+    togglePaneDetail(paneId)
+  })
+  return button
+}
+
+function syncDetailButton(paneId, view) {
+  view.detailButton.hidden = !paneBound[paneId]
+  view.detailButton.setAttribute('aria-expanded', String(detailPane === paneId))
+  view.detailButton.classList.toggle('active', detailPane === paneId)
+}
+function syncDetailButtons() {
+  for (const [paneId, view] of views) syncDetailButton(paneId, view)
+}
+
+function togglePaneDetail(paneId) {
+  if (detailPane === paneId) return closePaneDetail()
+  return openPaneDetail(paneId)
+}
+
+function openPaneDetail(paneId) {
+  closePops()
+  const pop = $('pane-detail')
+  const first = detailPane === null
+  detailPane = paneId
+  const bar = document.querySelector('.tabbar')
+  pop.style.top = `${Math.round(bar ? bar.getBoundingClientRect().bottom : 0)}px`
+  if (first) {
+    $('pane-detail-body').replaceChildren(el('p', 'work-empty', say('work.loading')))
+    pop.hidden = false
+    requestAnimationFrame(() => pop.classList.add('open'))
+  }
+  $('pane-detail-body').scrollTop = 0
+  syncDetailButtons()
+  clearInterval(detailTimer)
+  detailTimer = setInterval(loadPaneDetail, PANE_DETAIL_REFRESH_MS)
+  loadPaneDetail()
+  $('pane-detail-close').focus({ preventScroll: true })
+}
+
+function closePaneDetail() {
+  if (detailPane === null) return
+  detailPane = null
+  clearInterval(detailTimer)
+  detailTimer = null
+  const pop = $('pane-detail')
+  pop.classList.remove('open')
+  setTimeout(() => {
+    if (detailPane === null) pop.hidden = true
+  }, 180)
+  syncDetailButtons()
+  focusCurrentTerminal()
+}
+
+async function loadPaneDetail() {
+  const paneId = detailPane
+  if (!paneId) return
+  const detail = await studio.paneDetail(paneId)
+  if (detailPane !== paneId) return
+  renderPaneDetail(paneId, detail || { ok: false })
+}
+
+// 걸린 시간 — 1시간 안은 분, 그 뒤는 시간 · 분
+function spanLabel(ms) {
+  const minutes = Math.max(1, Math.floor(ms / 60000))
+  if (minutes < 60) return say('time.minutes', { n: minutes })
+  return `${say('time.hours', { n: Math.floor(minutes / 60) })} ${minutes % 60 ? say('time.minutes', { n: minutes % 60 }) : ''}`.trim()
+}
+
+function detailSection(title, nodes) {
+  const node = el('section', 'work-sec pd-sec')
+  node.append(el('h3', null, title), ...nodes)
+  return node
+}
+function detailField(key, lines) {
+  const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
+  if (!list.length) return null
+  const row = el('div', 'work-field')
+  row.append(el('span', 'work-field-key', say(`pane.detail.record.${key}`)))
+  const value = el('span', 'work-field-value')
+  value.append(...list.map((line) => el('span', 'work-field-line', line)))
+  row.append(value)
+  return row
+}
+// 지금 상태 점 — 멈춤은 사람 몫이라 금색(답 대기와 같은 색), 에이전트 없음은 회색
+const DETAIL_DOT = { work: 'work', idle: 'idle', stop: 'wait', gone: 'done' }
+
+function renderPaneDetail(paneId, detail) {
+  const body = $('pane-detail-body')
+  const scroll = body.scrollTop
+  $('pane-detail-pane').textContent = (detail && detail.label) || paneId
+  if (!detail.ok) {
+    const known = ['board-down', 'no-pane'].includes(detail.error) ? detail.error : 'default'
+    body.replaceChildren(el('p', 'work-empty', say(`pane.detail.error.${known}`)))
+    return
+  }
+  const sections = detail.mode === 'lead' ? leadSections(detail) : agentSections(paneId, detail)
+  body.replaceChildren(...sections)
+  body.scrollTop = scroll
+}
+
+function agentSections(paneId, detail) {
+  const sections = []
+  const { now, plan } = detail
+  // 내가 할 일 — 있으면 맨 위
+  const todo = detail.todo.map((request) => workRow({
+    className: 'ask',
+    kindLabel: say(`work.kind.${request.kind}`),
+    title: request.title,
+    onClick: () => {
+      const known = workRequests.requests.find((entry) => entry.id === request.id)
+      if (known) openRequest(known)
+    },
+  }))
+  if (now.reason === 'question' || now.reason === 'unsent') {
+    todo.push(workRow({ className: 'ask', title: say(`pane.detail.todo.${now.reason}`), onClick: () => { closePaneDetail(); goToPane(paneId) } }))
+  }
+  if (todo.length) sections.push(detailSection(say('pane.detail.section.todo'), todo))
+
+  // 지금 — 상태 · 까닭 · 걸린 시간 · 지금 하는 일 한 줄
+  const state = el('div', 'pd-now')
+  const badge = el('span', 'work-state', say(`pane.detail.state.${now.state}`))
+  badge.dataset.state = DETAIL_DOT[now.state] || 'idle'
+  state.append(badge)
+  if (now.sinceMs && now.state !== 'gone') state.append(el('span', 'pd-muted', say('pane.detail.since', { time: spanLabel(now.sinceMs) })))
+  if (plan.created) state.append(el('span', 'pd-muted', say('pane.detail.started', { time: new Date(plan.created).toLocaleString(i18nState.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })))
+  const nowNodes = [state]
+  if (now.reason) nowNodes.push(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
+  if (now.line) nowNodes.push(el('p', 'pd-line', now.line))
+  sections.push(detailSection(say('pane.detail.section.now'), nowNodes))
+
+  // 찾은 것 · 결과 — 에이전트의 마지막 보고(화면 글 그대로)
+  if (detail.report.length) sections.push(detailSection(say('pane.detail.section.report'), [el('div', 'pd-report', detail.report.join('\n'))]))
+
+  // PR · 자동 리뷰
+  const prNodes = plan.prs.map((url) => {
+    const link = el('button', 'pd-link', url.replace(/^https:\/\/github\.com\//, ''))
+    link.type = 'button'
+    link.addEventListener('click', () => studio.openUrl(url))
+    return link
+  })
+  for (const line of plan.autoReview) prNodes.push(el('p', 'pd-line', line))
+  if (plan.reviewResult) prNodes.push(el('p', 'pd-line', `${say('pane.detail.review')} · ${plan.reviewResult}`))
+  if (!prNodes.length) prNodes.push(el('p', 'pd-muted', say('pane.detail.prNone')))
+  sections.push(detailSection(say('pane.detail.section.pr'), prNodes))
+
+  // 계획서 기록 — 요청 · 진행 · 다음 · 막힘 · 검증
+  const title = el('button', 'pd-link pd-plan', plan.title || plan.id)
+  title.type = 'button'
+  title.title = say('pane.detail.openPlan')
+  title.addEventListener('click', () => studio.workOpenPlan(plan.id, plan.html))
+  const record = [title]
+  if (!plan.readable) record.push(el('p', 'pd-muted', say('work.detail.unreadable')))
+  record.push(...[
+    detailField('request', plan.request),
+    detailField('progress', plan.progress.map((item) => `${item.done ? '✓' : '○'} ${item.text}`)),
+    detailField('next', plan.next),
+    detailField('blocked', plan.blocked),
+    detailField('validation', plan.validation),
+  ].filter(Boolean))
+  sections.push(detailSection(say('pane.detail.section.record'), record))
+  return sections
+}
+
+// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서)
+function leadSections(detail) {
+  if (!detail.rows.length) return [el('p', 'work-empty', say('pane.detail.lead.empty'))]
+  const sections = []
+  const ROW_STATE = { wait: 'wait', now: 'work', done: 'done' }
+  for (const group of ['wait', 'now', 'done']) {
+    const rows = detail.rows.filter((row) => row.state === group).map((row) => workRow({
+      title: row.title,
+      meta: [row.who, row.what, row.sinceMs ? say('pane.detail.since', { time: spanLabel(row.sinceMs) }) : '', row.archived ? say('pane.detail.lead.archived') : ''].filter(Boolean).join(' · '),
+      state: ROW_STATE[group],
+      onClick: () => {
+        if (row.paneId && paneLive(row.paneId)) return openPaneDetail(row.paneId)
+        if (row.id.startsWith('plans/')) studio.workOpenPlan(row.id, null)
+        return null
+      },
+    }))
+    if (rows.length) sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
+  }
+  return sections
 }
 
 // pane 이 다른 탭 · 작업 공간에 있어도 — 왼쪽 목록에서 누른 것과 같다
@@ -2402,6 +2612,25 @@ function initWork() {
     }
   })
   window.addEventListener('resize', closePops)
+  // pane [상세] — 바깥을 누르거나 Esc 면 닫는다(다른 팝업과 같은 관례). 아이콘을 다시 눌러도 닫힌다
+  document.addEventListener('mousedown', (event) => {
+    if (detailPane === null || event.target.closest('#pane-detail, .pane-detail-btn')) return
+    closePaneDetail()
+  })
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape' || detailPane === null) return
+    event.preventDefault()
+    closePaneDetail()
+  })
+  $('pane-detail-close').addEventListener('click', closePaneDetail)
+  studio.onPaneBound((next) => {
+    paneBound = next && typeof next === 'object' ? next : {}
+    syncDetailButtons()
+  })
+  studio.paneBound().then((next) => {
+    paneBound = next && typeof next === 'object' ? next : {}
+    syncDetailButtons()
+  }).catch(() => {})
   studio.onWorkRequests((next) => {
     workRequests = next && Array.isArray(next.requests) ? next : { supported: false, requests: [] }
     if (workData) workData = { ...workData, requests: workRequests.requests.map((request) => ({ ...request, waited: (workData.requests.find((known) => known.id === request.id) || {}).waited || '' })) }
@@ -2941,7 +3170,7 @@ function renderPackWelcome() {
   const on = welcomeShown()
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
-  // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
+  // 일감 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
   $('board-tab').disabled = !state || !state.valid || on
   $('diagrams-open').disabled = !state || !state.valid || on
   $('browser-toggle').disabled = on
@@ -3040,7 +3269,7 @@ async function openOrSwitchPack(id, { newWindow, name }) {
   return result
 }
 
-// 이 창이 다른 본체로 다시 묶였다 — 상태 · 현황판 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
+// 이 창이 다른 본체로 다시 묶였다 — 상태 · 일감 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
 // 다녀온 팩이면 보던 자리 그대로(keepView)
 async function applySwitchedPack(next) {
   state = next
@@ -3248,7 +3477,7 @@ async function exportPack(kind) {
   if (reveal) studio.packReveal()
 }
 
-// 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
+// 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 일감을 새로(창의 본체 · pane 은 그대로)
 function onPackChanged() {
   refreshPackList()
 }
@@ -3284,7 +3513,7 @@ function renderState() {
   $('board-tab').dataset.tip = say('board.openTitle')
   const ready = state.valid
   panels.setup.hidden = ready
-  $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
+  $('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 일감을 못 연다
   $('diagrams-open').disabled = !ready || welcomeShown() // 다이어그램도 팩에 들어간 뒤에만
   $('work-tab').disabled = !ready || welcomeShown()
   $('settings-tab').disabled = !ready || welcomeShown() // 설정은 팩에 들어간 뒤에만(그 팩의 pack.json)

@@ -62,7 +62,7 @@ if (fromFile && !existsSync(fromFile)) {
 }
 
 // --start-local — 로컬 서버가 꺼져 있으면 최신 개발 브랜치 워크트리(qa-base)에서 next dev 를 잠깐 띄우고, 로그인이 끝나면 끈다
-// (현황판 🔐 [로그인] 이 heavy.sh 로 감싸 부른다 — 검수가 돌고 있으면 차례를 기다린다)
+// (일감 🔐 [로그인] 이 heavy.sh 로 감싸 부른다 — 검수가 돌고 있으면 차례를 기다린다)
 let localServer = null
 const serverUp = () => fetch(origin, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)
 if (!(await serverUp()) && argv.includes('--start-local') && target === 'local') {

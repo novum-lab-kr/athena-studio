@@ -6,7 +6,7 @@
  *   node scripts/learn-review.mjs --plan <plans/…md> [--head <sha>] [--dry-run] [--force]
  *        한 계획서를 검토한다. --dry-run 은 줄인 기록 크기·LLM 답·만들 이슈만 보여 주고 파일은 쓰지 않는다
  *   node scripts/learn-review.mjs --enqueue --plan <plans/…md> [--head <표시>]
- *        대기열에 넣고 배우기 검토가 뒤에서 돌고 있게 한다(현황판이 내 계획서의 PR 이 모두 머지된 걸 보면 부른다 — 표시는 merged-<PR번호들>). 바로 끝난다
+ *        대기열에 넣고 배우기 검토가 뒤에서 돌고 있게 한다(일감이 내 계획서의 PR 이 모두 머지된 걸 보면 부른다 — 표시는 merged-<PR번호들>). 바로 끝난다
  *   node scripts/learn-review.mjs --watch
  *        뒤에서 돈다 — 대기열을 차례로 꺼내 검토한다. 검토 프로세스는 하나만(작업마다 늘리지 않는다)
  *   node scripts/learn-review.mjs --kick
@@ -522,7 +522,7 @@ function acquireWatcher() {
 const enqueue = (planArg, head) => {
   mkdirSync(QUEUE_DIR, { recursive: true })
   const digest = createHash('sha1').update(planArg + head).digest('hex').slice(0, 6)
-  // 같은 계획서·표시가 이미 기다리거나 도는 중이면 또 넣지 않는다(현황판이 다시 켜지면 같은 걸 또 넣을 수 있다)
+  // 같은 계획서·표시가 이미 기다리거나 도는 중이면 또 넣지 않는다(일감이 다시 켜지면 같은 걸 또 넣을 수 있다)
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('📚 이미 배우기 검토 대기열에 있다')
   const id = `${Date.now()}-${digest}`
   writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, ...(BOOT_PATHS.packId ? { packId: BOOT_PATHS.packId, generation: BOOT_PATHS.generation } : {}), attempts: 0 }))
@@ -593,10 +593,10 @@ const watch = async () => {
   for (const file of readdirSync(QUEUE_DIR).filter((name) => name.endsWith('.json.working'))) {
     try { renameSync(join(QUEUE_DIR, file), join(QUEUE_DIR, file.replace(/\.working$/, ''))) } catch { /* 다른 쪽이 먼저 옮겼다 */ }
   }
-  console.log('📚 배우기 검토 — 대기열을 기다린다(내 작업의 PR 이 머지되면 현황판이 넣는다). 끄려면 Ctrl-C')
+  console.log('📚 배우기 검토 — 대기열을 기다린다(내 작업의 PR 이 머지되면 일감이 넣는다). 끄려면 Ctrl-C')
   const readJob = (file) => { try { return JSON.parse(readFileSync(join(QUEUE_DIR, file), 'utf8')) } catch { return {} } }
   for (;;) {
-    // 팩을 갈아 끼웠으면 끝낸다 — 이 프로세스의 설정·계획서 읽기는 이전 팩 것이다(새 팩은 세션 시작·현황판이 다시 띄운다)
+    // 팩을 갈아 끼웠으면 끝낸다 — 이 프로세스의 설정·계획서 읽기는 이전 팩 것이다(새 팩은 세션 시작·일감이 다시 띄운다)
     if (packChanged()) { console.log('📚 팩을 갈아 끼워 배우기 검토를 끝낸다'); process.exit(0) }
     // 다시 해 볼 시각(notBefore)이 안 된 일은 건너뛴다
     const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort().find((file) => !(readJob(file).notBefore > Date.now()))

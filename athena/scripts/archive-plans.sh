@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 완료된 plans 파일을 archive/<이름>/ 로 보관한다(scripts/board/archive.mjs — 현황판 [아카이브]와 같은 형태, git 에 커밋된다).
+# 완료된 plans 파일을 archive/<이름>/ 로 보관한다(scripts/board/archive.mjs — 일감 [아카이브]와 같은 형태, git 에 커밋된다).
 #
 # 이동 조건 — 아래를 모두 만족해야 한다:
 #   1. 본문 Checkpoint 의 `Status:` 가 **done** (명시적 완료)
@@ -109,7 +109,7 @@ while IFS= read -r file; do
   fi
 
   rel="plans/${file#$PLANS_DIR/}"
-  # 보관 형태(archive/<이름>/ plan.md · plan.html · meta.json)는 archive.mjs 한 곳에서 정한다 — 현황판 [아카이브]와 같다
+  # 보관 형태(archive/<이름>/ plan.md · plan.html · meta.json)는 archive.mjs 한 곳에서 정한다 — 일감 [아카이브]와 같다
   dry=""; [[ $DRY_RUN -eq 1 ]] && dry="--dry-run"
   if ! (cd "$ROOT" && node scripts/board/archive.mjs "$rel" $dry); then
     echo "이동 실패: $rel" >&2; held=$((held+1)); continue

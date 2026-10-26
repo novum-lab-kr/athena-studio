@@ -116,12 +116,12 @@ docs/diagrams/<앱>/
 
 ## 6. 검증 — 전부 통과해야 끝난다
 
-deliver 로 만든 html 에는 **바로 `node scripts/diagram-theme.mjs <html>`** 로 아테나 테마를 입힌다(archify 결과에 CSS 만 덧씌운다 — 고정폭 대신 한글 본문 글꼴 · 현황판 색 · 조금 큰 글자. 배치 · 뷰어 기능은 그대로). 번들은 탭 html 을 그대로 담으므로 탭마다 입힌 뒤 `build-bundle.py` 를 돌린다. 입혔는지는 `node scripts/diagram-theme.mjs --check <html>…`
+deliver 로 만든 html 에는 **바로 `node scripts/diagram-theme.mjs <html>`** 로 아테나 테마를 입힌다(archify 결과에 CSS 만 덧씌운다 — 고정폭 대신 한글 본문 글꼴 · 일감 색 · 조금 큰 글자. 배치 · 뷰어 기능은 그대로). 번들은 탭 html 을 그대로 담으므로 탭마다 입힌 뒤 `build-bundle.py` 를 돌린다. 입혔는지는 `node scripts/diagram-theme.mjs --check <html>…`
 
 ```bash
 node $A/bin/archify.mjs validate architecture <json> --quality showcase --repo-root $R --json   # ok:true, 검사 9개
 node $A/bin/archify.mjs deliver  architecture <json> <html> --quality showcase --repo-root $R --json  # exit 0
-node scripts/diagram-theme.mjs <html>…                    # 아테나 테마(한글 글꼴 · 현황판 색) — deliver 할 때마다 · 번들 전에
+node scripts/diagram-theme.mjs <html>…                    # 아테나 테마(한글 글꼴 · 일감 색) — deliver 할 때마다 · 번들 전에
 python3 docs/diagrams/<앱>/build-bundle.py
 node scripts/diagram-coverage.mjs docs/diagrams/<앱>     # 누락 0 · 중복 0 · 없는 경로 0
 node scripts/check-diagrams.mjs                          # 새 장이 ✅ 최신

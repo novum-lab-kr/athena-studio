@@ -1,5 +1,5 @@
 // 아테나 설정 읽기 — 코어 스크립트는 athena.config.json 을 직접 읽지 않고 이걸 쓴다.
-//   athena.config.json : 이 컴퓨터·이 본체 설정(현황판 포트 boardPort · 화면 screen · 데이터 폴더 dataDir · 옛 구조면 pack·reposRoot)
+//   athena.config.json : 이 컴퓨터·이 본체 설정(일감 포트 boardPort · 화면 screen · 데이터 폴더 dataDir · 옛 구조면 pack·reposRoot)
 //   <pack>/pack.json   : 팩(레포 목록 · GitHub 조직 · QA · 추적 의존성 …)
 //   <팩 데이터>/local.json : (여러 팩 구조) 그 팩의 이 컴퓨터 설정(reposRoot · repoPaths)
 // 합치는 규칙: 팩 값 위에 이 컴퓨터 설정을 덮는다(같은 키면 이 컴퓨터가 이긴다). 단 repos 는 팩 것만.
@@ -41,7 +41,7 @@ export const dataDir = (root = ATHENA_ROOT) => resolve(root, expandHome(process.
 export const readRegistry = (data) => readJson(join(data, 'config.json')) ?? { formatVersion: 1, current: null, generation: 0, packs: {} }
 
 // ── 데이터 폴더마다 다른 손잡이(레지스트리 키 · 없으면 지금 동작) ──
-// 현황판 포트 기준 — 레지스트리 portBase(주 본체 기본 포트 · 팩 본체는 +2 부터 2씩). 없거나 이상하면 4700
+// 일감 포트 기준 — 레지스트리 portBase(주 본체 기본 포트 · 팩 본체는 +2 부터 2씩). 없거나 이상하면 4700
 // 데이터 폴더마다 포트 범위를 갈라 다른 데이터 폴더(시험 등)의 꺼진 포트와 부딪히지 않게 한다
 export const DEFAULT_PORT_BASE = 4700
 export const portBaseOf = (registry) => {
@@ -78,7 +78,7 @@ export const paths = (root = ATHENA_ROOT) => {
     // 새 워크트리는 팩 데이터 안 실제 경로로 — git 이 실제 경로를 기록하고, 팩을 갈아 끼워도 그 팩 폴더에 남는다(D4)
     worktrees: process.env.ATHENA_WORKTREE_ROOT || join(real, 'worktrees'),
     packId: basename(real),
-    // 세대는 팩마다(packs.<id>.generation) — 다른 본체의 일이 이 본체 현황판을 stale 로 만들지 않게
+    // 세대는 팩마다(packs.<id>.generation) — 다른 본체의 일이 이 본체 일감을 stale 로 만들지 않게
     generation: registry.packs?.[basename(real)]?.generation ?? 0,
     // 활성 링크가 지금 데이터 폴더 밖을 가리킨다(ATHENA_DATA_DIR 가 다른 값) — 쓰기 명령은 멈춘다
     dataMismatch: realOr(dirname(dirname(real))) !== realOr(data),
@@ -118,7 +118,7 @@ export const isSwitching = (root = ATHENA_ROOT) => {
   try { process.kill(pid, 0); return true } catch (error) { return error.code === 'EPERM' }
 }
 
-// 현황판 포트 — 여러 팩 구조: 레지스트리 packs.<id>.boardPort(정본) → 본체 설정 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700
+// 일감 포트 — 여러 팩 구조: 레지스트리 packs.<id>.boardPort(정본) → 본체 설정 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700
 // (앱이 물려준 환경 변수 하나가 모든 본체를 같은 포트로 만들지 않게). 옛 구조: ATHENA_BOARD_PORT → 본체 설정 → 4700
 export const boardPort = (root = ATHENA_ROOT) => {
   const where = paths(root)

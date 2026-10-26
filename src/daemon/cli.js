@@ -66,7 +66,7 @@ async function main(argv, env) {
   if (!socket) return fail('unavailable', 'Athena Studio 데몬을 찾지 못했다(ATHENA_STUDIO_SOCKET · ~/.athena-studio/daemon.json 없음)')
   let result
   try {
-    // 부른 pane 이 없을 때(현황판 등 pane 밖) 어느 본체(팩) 것인지 — 앱이 현황판 환경에 넣는다(protocol 5)
+    // 부른 pane 이 없을 때(일감 등 pane 밖) 어느 본체(팩) 것인지 — 앱이 일감 환경에 넣는다(protocol 5)
     result = await request(socket, parsed.op, parsed.args, env.ATHENA_STUDIO_PANE_ID || null, env.ATHENA_STUDIO_BODY || null)
   } catch (error) {
     return fail(error.code || 'internal', error.message)
