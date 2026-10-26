@@ -12,7 +12,7 @@ const koreanSay = i18n.translator(KOREAN, KOREAN)
 // 진행 단계 이름 — 본체 progress 단계ID 와 스튜디오가 스스로 하는 단계(사전 pack.step.<ID>)
 const STEP_IDS = ['lock', 'check', 'stop', 'link', 'repos', 'verify', 'done', 'rollback', 'body', 'port', 'slow'] // body · port — pack open 단계
 // 본체 오류 코드(사전 pack.errorCode.<코드>)
-const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible', 'not-applicable'] // body-… · port-in-use · data-incompatible — pack open · not-applicable — pack set-auto-merge(main 직접 레포)
+const ERROR_CODES = ['locked', 'busy', 'not-found', 'invalid-pack', 'unsafe', 'format-unknown', 'token-expired', 'clone-failed', 'rollback', 'no-pack-support', 'bad-output', 'timeout', 'canceled', 'failed', 'conflict', 'invalid-name', 'invalid-image', 'image-too-large', 'contract-mismatch', 'body-conflict', 'body-mismatch', 'port-in-use', 'data-incompatible', 'not-applicable', 'core-old'] // body-… · port-in-use · data-incompatible — pack open · not-applicable — pack set-auto-merge(main 직접 레포) · core-old — 스튜디오가 붙인다(coreTooOld)
 // 남은 작업 종류(사전 pack.busy.<종류>)
 const BUSY_KINDS = ['agent', 'athena', 'qa', 'learn-review', 'heavy', 'switch', 'outside', 'codex', 'unknown']
 
@@ -106,6 +106,20 @@ function contractOf(result) {
   if (result && result.ok === true && Number.isInteger(result.contract)) return { contract: result.contract, core: typeof result.core === 'string' ? result.core : null }
   if (result && result.ok === true) return { contract: 1, core: null }
   return { contract: result && OLD_CORE_ERRORS.includes(result.error) ? 1 : null, core: null }
+}
+
+// 약속 번호를 올리지 않고 나중에 더한 명령 → 그 명령을 아는 코어의 손잡이(코어 version capabilities · athena/scripts/lib/bodies.mjs CAPABILITIES)
+const COMMAND_CAPABILITIES = { 'pack set-repo-name': 'repo-look', 'pack set-repo-icon': 'repo-look' }
+const commandName = (argv) => (argv[0] === 'pack' ? `pack ${argv[1]}` : String(argv[0] || ''))
+// "알 수 없는 답"이 온 명령 · 그 본체의 version 결과 → 본체 코어가 옛 버전이라 그 명령을 모르나.
+// 약속 번호가 낮으면(명령 없음 → 1 포함) 옛 코어 · 같으면 그 명령의 손잡이가 capabilities 에 없을 때만. version 을 못 물었으면(일시 실패) 모름 → false
+function coreTooOld(argv, versionResult) {
+  const { contract } = contractOf(versionResult)
+  if (contract === null) return false
+  if (contract < CONTRACT) return true
+  const needed = COMMAND_CAPABILITIES[commandName(argv || [])]
+  const capabilities = versionResult && Array.isArray(versionResult.capabilities) ? versionResult.capabilities : []
+  return Boolean(needed) && !capabilities.includes(needed)
 }
 
 // 화면에 보일 팩 이름 — 표시 이름(pack set-name) → 이름 → id
@@ -284,6 +298,7 @@ module.exports = {
   parseProgressLine,
   parsePackOutput,
   packErrorText,
+  coreTooOld,
   busyLines,
   validGitUrl,
   normalizePackList,

@@ -375,11 +375,12 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
   return { busy, known }
 }
 export const busyList = (root, scan, options) => busyScan(root, scan, options).busy
-// ── 업데이트만 — 쉬는 세션은 막지 않는다(결정 D1 · 2026-10-26) ─────────────────────
+// ── 업데이트만 — 일하는 중이던 세션 가려내기(결정 D1 · 2026-10-26) ─────────────────────
+// 업데이트는 세션이 있어도 본체를 올린다(사용자 결정 2026-10-26 "일해도 바로 올리기") — 이건 기록 · 알림에 "일하는 중이던 세션" 을 셀 때만 쓴다.
 // panes: 스튜디오가 update --panes-state <파일> 로 넘긴 데몬 pane 상태 [{ id, label, pid(pane 셸), agent, status }].
-// 세션(athena · agent · codex) 프로세스의 조상에 pane 셸이 있고 그 pane 이 입력을 기다리는(status idle) 같은 종류 에이전트면 막지 않는다.
-// 일하는 pane(working) · 질문 대기(waiting) · 모르는 상태 · pane 밖 세션 · 못 짝지은 세션은 그대로 막는다(확인이 안 되면 막는 쪽).
-// 막는 세션에는 짝지은 pane 이름(pane)을 붙인다 — 스튜디오가 무엇이 막는지 보인다. heavy · switch · unknown 등은 건드리지 않는다
+// 세션(athena · agent · codex) 프로세스의 조상에 pane 셸이 있고 그 pane 이 입력을 기다리는(status idle) 같은 종류 에이전트면 쉬는 세션이라 뺀다.
+// 일하는 pane(working) · 질문 대기(waiting) · 모르는 상태 · pane 밖 세션 · 못 짝지은 세션은 남긴다(확인이 안 되면 일하는 쪽).
+// 남긴 세션에는 짝지은 pane 이름(pane)을 붙인다 — 스튜디오가 어느 세션이었는지 보인다. 세션이 아닌 것(heavy · switch · unknown 등)은 그대로 둔다
 export const SESSION_KINDS = new Set(['athena', 'agent', 'codex'])
 const paneAgentOf = (kind) => (kind === 'codex' ? 'codex' : 'claude')
 export const settleIdleSessions = (busy, table, panes) => {
@@ -404,63 +405,32 @@ export const settleIdleSessions = (busy, table, panes) => {
   }
   return kept
 }
-// ── 업데이트만 — 빈 대기열을 기다리기만 하는 학습 검토 감시자는 막지 않는다(2026-10-26) ─────────────
-// 쉬는 감시자: --watch 이고 · 이 본체 팩 대기열(<팩 데이터>/state/learn-queue)의 감시자 잠금 주인이 그 pid 이고 ·
-// 대기열에 일(*.json 대기 · *.json.working 검토 중)이 없고 · 자식 프로세스(claude · git 등)가 없다. 하나라도 아니면(옛 구조 본체 ·
-// 잠금을 못 읽음 · 인자를 못 읽음 · 한 번 검토 --plan · 넣기 --enqueue) 지금처럼 막는다. 업데이트는 쉬는 감시자를 끄고 옮긴다(옛 코드라 —
-// 다음에 일이 들어오면 learn-review --enqueue 가 새 코드로 다시 띄운다)
-const WATCH_FLAG = /(^|\s)--watch(\s|$)/
-const learnQueueOf = (root) => {
-  const where = paths(root)
-  return where.mode === 'packs' && where.packDataReal ? join(realOr(where.packDataReal), 'state', 'learn-queue') : null
-}
-const learnQueueEmpty = (queue) => {
-  try { return !readdirSync(queue).some((name) => /\.json(\.working)?$/.test(name)) } catch { return false }
-}
-export const learnWatcherIdle = (root, item, table) => {
-  if (item?.kind !== 'learn-review' || !item.pid) return false
-  const queue = learnQueueOf(root)
-  if (!queue || lockOwnerAt(join(queue, '.watcher.lock'))?.pid !== item.pid) return false
-  if (!WATCH_FLAG.test(argsOf(item.pid))) return false
-  if ((table ?? []).some((row) => row.ppid === item.pid)) return false
-  return learnQueueEmpty(queue)
-}
-// 쉬는 감시자 끄기 — 감시자가 일을 집는 것과 끄는 것을 한 줄로 세운다: 먼저 얼리고(SIGSTOP · 그동안 대기열을 못 건드린다)
-// 잠금 주인 · 대기열 · 자식 프로세스를 새로 본 뒤, 여전히 쉬는 중이면 얼린 채 SIGKILL(풀어 주면 그 틈에 일을 집을 수 있다)하고 끝난 것을 확인하면 true.
-// 아니면(쉬는 중이 아님 · 3초 안에 안 끝남) 풀어 주고(SIGCONT) false — 부른 쪽은 그 본체를 일하는 중으로 건너뛴다. 감시자 코드에 기대지 않아 이미 떠 있는 옛 감시자에도 같다.
-// 남은 잠금(.watcher.lock)은 주인이 죽은 것이라 다음 감시자가 치운다. 다시 띄우지는 않는다 — 얼린 동안 들어온 일은 다음 --enqueue 가 새 코드로 감시자를 띄워 처리한다(결정 A · 2026-10-26)
-const stateOf = (pid) => { try { return execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' } }
-const waitStopped = (pid, limitMs = 2000) => {
-  for (let waited = 0; waited <= limitMs; waited += 50) {
-    if (stateOf(pid).startsWith('T')) return true
-    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+// ── 업데이트만 — 도는 커밋 · 올리기(commit.sh · ship.sh) ─────────────────────────────
+// 이 본체의 scripts/commit.sh · ship.sh 를 도는 셸 → [{ kind:'commit', what, pid }]. 업데이트는 끝날 때까지 잠깐 기다린다(사용자 결정 2026-10-26).
+// 절대 경로로 불렀으면 인자로, scripts/… 처럼 상대 경로면 그 셸의 작업 폴더가 이 본체 안일 때만. 인자를 못 읽은 셸은 세지 않는다(셸은 많고 대부분 우리 일이 아니다)
+const SHELL_COMMS = new Set(['bash', 'sh', 'zsh', 'dash'])
+const CORE_SCRIPTS = ['commit.sh', 'ship.sh']
+const RELATIVE_SCRIPT = /(^|[\s/])scripts\/(commit|ship)\.sh(\s|$)/
+export const runningCoreScripts = (root, scan = scanProcesses()) => {
+  const rootReal = realOr(root)
+  const absolute = CORE_SCRIPTS.flatMap((name) => [join(rootReal, 'scripts', name), join(root, 'scripts', name)])
+  const found = []
+  const byCwd = []
+  for (const row of scan.table.filter((item) => SHELL_COMMS.has(item.comm) && item.pid !== process.pid && !scan.mine.has(item.pid))) {
+    const args = argsOf(row.pid)
+    if (!args) continue
+    const hit = absolute.find((script) => args.includes(script))
+    if (hit) found.push({ kind: 'commit', what: `${basename(hit)} 실행 중`, pid: row.pid })
+    else if (RELATIVE_SCRIPT.test(args)) byCwd.push({ pid: row.pid, name: args.match(RELATIVE_SCRIPT)[2] })
   }
-  return false
-}
-export const stopIdleLearnWatcher = (root, pid) => {
-  // 시험용(test/bodies-test.sh) — 첫 확인과 끄기 사이에 일이 들어와 감시자가 집는 경합을 만든다
-  const raceJob = process.env.ATHENA_LEARN_RACE_JOB
-  if (raceJob) { writeFileSync(raceJob, JSON.stringify({ plan: 'plans/race-test.md', head: 'race', attempts: 0 })); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6500) }
-  // 시험용 — 얼리는 신호를 바꿔(예 SIGURG · 무시된다) 얼지 않은 감시자를 만든다
-  const stopSignal = process.env.ATHENA_LEARN_STOP_SIGNAL || 'SIGSTOP'
-  try { process.kill(pid, stopSignal) } catch { return !alive(pid) }
-  let idle = false
-  try {
-    // 신호는 비동기로 닿는다 — 실제로 멈춘 상태(ps state T)를 2초 안에 확인한 뒤에만 다시 본다. 못 보면 쉬는 중으로 치지 않는다
-    if (!waitStopped(pid)) throw new Error('not stopped')
-    const queue = learnQueueOf(root)
-    idle = Boolean(queue) && lockOwnerAt(join(queue, '.watcher.lock'))?.pid === pid && learnQueueEmpty(queue) && !processTable().some((row) => row.ppid === pid)
-  } catch { idle = false }
-  if (idle) {
-    // 끝난 것을 확인해야 성공 — 살아 있는 채 다시 띄우면 새 감시자가 잠금을 못 잡는다
-    try { process.kill(pid, 'SIGKILL') } catch { /* 아래에서 살아 있는지 본다 */ }
-    for (let index = 0; index < 30 && alive(pid); index += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    if (!alive(pid)) return true
+  const cwds = cwdsOf(byCwd.map((item) => item.pid))
+  for (const item of byCwd) {
+    const cwd = cwds.get(item.pid)
+    if (cwd && inside(realOr(cwd), rootReal)) found.push({ kind: 'commit', what: `${item.name}.sh 실행 중`, pid: item.pid })
   }
-  try { process.kill(pid, 'SIGCONT') } catch { /* 이미 끝 */ }
-  return false
+  return found
 }
-// 스튜디오가 넘긴 pane 상태 파일 — 형식이 틀렸거나 오래됐으면(2분) 없는 것으로(= 모든 세션이 막는다)
+// 스튜디오가 넘긴 pane 상태 파일 — 형식이 틀렸거나 오래됐으면(2분) 없는 것으로(= 모든 세션을 일하는 중으로 센다)
 export const PANES_STATE_MAX_AGE_MS = 120_000
 export const readPanesState = (file, nowMs = Date.now()) => {
   if (!file) return null

@@ -16,15 +16,17 @@ import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
-  BLOCKING, bodyOf, busyScan, learnWatcherIdle, stopIdleLearnWatcher, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
+  BLOCKING, bodyOf, busyScan, readPanesState, runningCoreScripts, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
 // 약속 번호 — 2 팩마다 본체 · 3 pack set-auto-merge(레포별 자동 머지) · 오류 코드 not-applicable. 스튜디오 src/lib/pack.js CONTRACT 와 같이 올린다
 export const CONTRACT = 3
-// 뒤 넷은 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
-// idle-panes — update --panes-state <파일>(쉬는 pane 의 세션은 업데이트를 막지 않는다 · 결정 D1)
-export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base', 'idle-panes']
+// update-from-bundle 부터는 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
+// idle-panes — update --panes-state <파일>(쉬는 pane 의 세션은 일하는 중으로 세지 않는다 · 결정 D1)
+// update-busy — update 가 일하는 세션이 있어도 본체를 올린다(entry.working · 2026-10-26) · repo-look — pack set-repo-name · set-repo-icon
+// (앱은 모르는 명령에 옛 코어가 사용법만 찍으면 이 이름들로 "본체 코어가 옛 버전" 을 가린다 — 앱 src/lib/pack.js COMMAND_CAPABILITIES)
+export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base', 'idle-panes', 'update-busy', 'repo-look']
 
 const git = (dir, args, { quiet = true } = {}) => execFileSync('git', ['-C', dir, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
@@ -210,10 +212,27 @@ const catchUpBody = ({ main, body, id, data, registry, report }) => {
 }
 
 // ── 본체 하나 옮기기(update · rollback · 따라잡기 공용) ─────────────────────
-// panes: update 만 — 스튜디오가 넘긴 pane 상태. 쉬는 pane 의 세션은 막지 않는다(settleIdleSessions · 결정 D1). rollback · 따라잡기는 그대로
 // 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
 // → 현황판 끄기 → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
-export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false, panes = null }) => {
+// rollback · 따라잡기는 무엇이든 돌면 건너뛴다. update 만 아래(사용자 결정 2026-10-26 "일해도 바로 올리기" — 데이터가 깨지는 것만 막는다):
+//   기다림  commit(commit.sh · ship.sh) · heavy(heavy.sh 잠금) — waitUntil 까지(업데이트 하나에 한 번 · UPDATE_WAIT_MS). 그래도 돌면 건너뜀(busy)
+//   막음    switch(그 팩 작업 잠금 — 다른 열기 · 바꾸기 · 업데이트) · 그 밖의 모르는 종류 · ps 를 못 읽음(busy-unknown)
+//   끔      learn-review · qa — 팩 바꾸기처럼 끄고 올린다. 학습 검토는 대기열에 일이 남았으면 새 코드로 다시 띄운다(learn-review --kick)
+//   올림    athena · agent · codex · unknown(작업 폴더 · 인자를 못 읽은 세션) — entry.working 에 남긴다(panes 로 쉬는 pane 의 세션은 뺀다 · settleIdleSessions)
+// 기다리는 상한 — 같은 update 가 git 잠금을 기다리는 값(takeLock waitMs 60_000)과 같다. 시험은 ATHENA_UPDATE_WAIT_MS 로 줄인다
+export const UPDATE_WAIT_MS = 60_000
+const UPDATE_WAIT_KINDS = new Set(['commit', 'heavy'])
+const UPDATE_STOP_KINDS = new Set(['learn-review', 'qa'])
+const UPDATE_SESSION_KINDS = new Set(['athena', 'agent', 'codex', 'unknown'])
+const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
+const updateScan = (body) => {
+  const scan = scanProcesses()
+  const others = busyScan(body, scan, { includeSelf: true }).busy.filter((item) => item.pid !== process.pid)
+  return { scan, all: [...others, ...runningCoreScripts(body, scan)] }
+}
+// 학습 검토 다시 띄우기 — 옮긴 본체의 새 코드로(대기열에 일이 없으면 learn-review 가 아무것도 안 한다)
+const kickLearnReview = (body) => spawnSync(process.execPath, [join(body, 'scripts', 'learn-review.mjs'), '--kick'], { cwd: body, stdio: 'ignore', timeout: 15_000 }).status === 0
+export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false, panes = null, waitUntil = Date.now() + UPDATE_WAIT_MS }) => {
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
   let release = () => {}
@@ -224,15 +243,27 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     }
   }
   try {
-    const scan = scanProcesses()
-    const scanned = busyScan(body, scan, { includeSelf: true })
-    const others = scanned.busy.filter((item) => item.pid !== process.pid)
-    // update 만 — 쉬는 pane 의 세션 · 빈 대기열만 기다리는 학습 검토 감시자는 막지 않는다(감시자는 아래에서 끈다)
-    const idleWatchers = mode === 'update' ? others.filter((item) => learnWatcherIdle(body, item, scan.table)) : []
-    const working = others.filter((item) => !idleWatchers.includes(item))
-    const busy = mode === 'update' ? settleIdleSessions(working, scan.table, panes) : others
-    if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
-    if (busy.length) return { ...entry, reason: 'busy', busy }
+    let toStop = []
+    let table = []
+    if (mode === 'update') {
+      let { scan, all } = updateScan(body)
+      while (scan.known && all.some((item) => UPDATE_WAIT_KINDS.has(item.kind)) && Date.now() < waitUntil) {
+        sleepSync(1000)
+        ;({ scan, all } = updateScan(body))
+      }
+      if (!scan.known) return { ...entry, reason: 'busy-unknown', busy: all }
+      const blocking = all.filter((item) => !UPDATE_SESSION_KINDS.has(item.kind) && !UPDATE_STOP_KINDS.has(item.kind))
+      if (blocking.length) return { ...entry, reason: 'busy', busy: blocking }
+      toStop = all.filter((item) => UPDATE_STOP_KINDS.has(item.kind))
+      table = scan.table
+      const working = settleIdleSessions(all.filter((item) => UPDATE_SESSION_KINDS.has(item.kind)), scan.table, panes)
+      if (working.length) entry.working = working
+    } else {
+      const scanned = busyScan(body, scanProcesses(), { includeSelf: true })
+      const busy = scanned.busy.filter((item) => item.pid !== process.pid)
+      if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
+      if (busy.length) return { ...entry, reason: 'busy', busy }
+    }
     if (from === target) return { ...entry, status: 'same' }
     // 코어 파일을 고쳐 둔 본체 — 기본은 건너뜀(dirty). update --backup-dirty 면 아래 검사를 다 통과한 뒤 사본을 두고 되돌린다(D4)
     const dirty = isDirty(body)
@@ -242,10 +273,14 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       const branch = gitTry(body, ['symbolic-ref', '-q', '--short', 'HEAD'])
       if (!branch || !gitOk(body, ['merge-base', '--is-ancestor', from, target])) return { ...entry, reason: 'diverged', ...(branch ? { branch } : {}) }
     }
-    // 쉬는 감시자는 옛 코드라 끈다 — 얼려서 다시 확인한 뒤에만(stopIdleLearnWatcher). 그새 일을 집었으면 끄지 않고 건너뜀.
-    // 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에
-    for (const item of idleWatchers) {
-      if (!stopIdleLearnWatcher(body, item.pid)) return { ...entry, reason: 'busy', busy: [item] }
+    // 학습 검토 · QA 는 옛 코드라 끈다 — 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에.
+    // 검토하다 끊긴 일(*.json.working)은 다음 감시자가 대기열로 되돌린다(learn-review watch). 학습 검토는 claude -p 를 동기로 불러
+    // SIGTERM 을 그 뒤에야 받으니 바로 아래 자식(claude · gh)부터 끈다 — 남기면 결과를 받을 곳 없이 끝까지 돈다
+    for (const item of toStop) {
+      if (item.kind === 'learn-review') for (const row of table.filter((each) => each.ppid === item.pid)) stopPidSync(row.pid)
+      stopPidSync(item.pid)
+      const key = item.kind === 'qa' ? 'qaStopped' : 'learnStopped'
+      entry.services[key] = [...(entry.services[key] ?? []), item.pid]
     }
     if (dirty) {
       const saved = backupCoreEdits({ body, id, data, operationId })
@@ -259,7 +294,10 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     const moved = isMain ? gitOk(body, ['merge', '--ff-only', '--quiet', target]) : gitOk(body, ['checkout', '--quiet', '--detach', target])
     if (!moved) return { ...entry, status: 'failed', error: 'checkout-failed', to: headOf(body) }
     const relinked = relinkIn(body, data)
-    if (relinked.ok) return { ...entry, status: 'updated', to: headOf(body), rollbackTo: from, unlinkedRepos: relinked.unlinkedRepos ?? [] }
+    if (relinked.ok) {
+      if (entry.services.learnStopped?.length) entry.services.learnKicked = kickLearnReview(body)
+      return { ...entry, status: 'updated', to: headOf(body), rollbackTo: from, unlinkedRepos: relinked.unlinkedRepos ?? [] }
+    }
     // 새 코드로 맞추지 못했다 — 이 본체만 이전 커밋으로(D7)
     const back = isMain ? gitOk(body, ['reset', '--keep', from]) : gitOk(body, ['checkout', '--quiet', '--detach', from])
     const again = back ? relinkIn(body, data) : { ok: false }
@@ -387,7 +425,7 @@ const fetchBundle = (main, file) => {
   if (fetched.status !== 0) throw new PackError('fetch-failed', `번들에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
   return gitTry(main, ['rev-parse', BUNDLE_REF]) ?? null
 }
-// panesState: 스튜디오가 넘긴 데몬 pane 상태 파일(--panes-state · readPanesState) — 없거나 오래됐으면 지금처럼 모든 세션이 막는다
+// panesState: 스튜디오가 넘긴 데몬 pane 상태 파일(--panes-state · readPanesState) — 쉬는 pane 의 세션은 working 에서 뺀다. 없거나 오래됐으면 모든 세션을 일하는 중으로 센다
 export const updateBodies = (root, { to = '', from = '', backupDirty = false, panesState = '', report = () => {} } = {}) => {
   if (!from) throw new PackError('usage', 'update 는 --from <git 번들> 이 필요하다 — 코어는 Athena Studio 앱이 들고 온 번들로 업데이트한다')
   const data = dataDir(root)
@@ -408,7 +446,7 @@ export const updateBodies = (root, { to = '', from = '', backupDirty = false, pa
   if (!target) throw new PackError('not-found', `그런 커밋이 없다: ${requestedTo}`)
   const bodies = collectBodies(root, data, registry)
   const panes = readPanesState(panesState)
-  if (panesState && !panes) report('panes', 'pane 상태 파일을 쓸 수 없다(없음 · 형식 · 2분 넘음) — 모든 세션이 막는다')
+  if (panesState && !panes) report('panes', 'pane 상태 파일을 쓸 수 없다(없음 · 형식 · 2분 넘음) — 모든 세션을 일하는 중으로 센다')
   const version = registry.formatVersion ?? 1
   // 데이터 형식이 바뀌는 업데이트(대상 코어가 지금 형식을 못 다룸) — 모든 본체가 비었을 때만(D10)
   if (!formatOk(formatsAt(main, target), version)) {
@@ -416,10 +454,13 @@ export const updateBodies = (root, { to = '', from = '', backupDirty = false, pa
     const busyBodies = bodies.filter((item) => !item.missing).filter((item) => { const scanned = busyScan(item.body, scan, { includeSelf: true }); return !scanned.known || scanned.busy.some((busy) => busy.pid !== process.pid) })
     if (busyBodies.length) throw new PackError('data-incompatible', `데이터 형식이 바뀌는 업데이트라 모든 본체가 비어 있어야 한다 — 일하는 본체: ${busyBodies.map((item) => item.id).join(', ')}`, { bodies: busyBodies.map((item) => item.id) })
   }
+  // 도는 커밋 · 무거운 명령을 기다리는 상한 — 업데이트 하나에 한 번(본체마다 따로 기다리면 늘어난다)
+  const waitMs = Number(process.env.ATHENA_UPDATE_WAIT_MS ?? UPDATE_WAIT_MS)
+  const waitUntil = Date.now() + (Number.isFinite(waitMs) && waitMs >= 0 ? waitMs : UPDATE_WAIT_MS)
   const results = bodies.map((item) => {
     if (item.missing) return { id: item.id, body: item.body, main: false, status: 'skipped', reason: 'missing', from: null, requestedTo, to: null, rollbackTo: null, services: { boardStopped: [] } }
     report('body', `${item.id} — ${item.body}`)
-    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain, backupDirty, panes })
+    return moveBody({ main, body: item.body, id: item.id, data, target, requestedTo, operationId, mode: 'update', isMain: item.isMain, backupDirty, panes, waitUntil })
   })
   const status = rollup(results)
   const previousDeploy = registry.deploy?.commit ?? null

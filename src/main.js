@@ -689,7 +689,7 @@ async function writePanesState() {
   }
 }
 
-// 켤 때 업데이트 결과 — 일하는 본체를 건너뛰었거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
+// 켤 때 업데이트 결과 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
 function showCoreUpdateNotice(parentWindow) {
   const notice = coreUpdateNotice
   coreUpdateNotice = null
@@ -699,6 +699,7 @@ function showCoreUpdateNotice(parentWindow) {
   if (summary) {
     // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
     if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${(entry.blockers || []).length ? entry.blockers.join(', ') : entry.reason})`).join(', ') }))
+    for (const entry of summary.working || []) lines.push(say('dialog.coreUpdate.working', { body: entry.id, count: entry.count, sessions: entry.sessions.join(', ') }))
     for (const entry of summary.backedUp) lines.push(say('dialog.coreUpdate.backedUp', { body: entry.id, path: entry.dir }))
     if (summary.failed.length) lines.push(say('dialog.coreUpdate.failed', { bodies: summary.failed.map((entry) => `${entry.id}(${entry.error})`).join(', ') }))
   } else {
@@ -844,7 +845,16 @@ function packScript(dir) {
 // contract: false — 코어 업데이트 경로(version · update --from)만. 약속이 오른 앱이 옛 코어를 올릴 수 있게(studio-home updateCore)
 // dir = 그 명령을 부를 본체(창마다 다르다 — '지금 팩' 은 부른 본체의 팩)
 // extraEnv — 화면 계층(데몬)을 써야 하는 명령(restore-work 가 delegate.sh 로 pane 을 띄운다)만 데몬 접속 값을 넘긴다
-function runCore(argv, { dir, onProgress = null, signal = null, extraEnv = null, contract = true } = {}) {
+// 옛 코어가 모르는 명령이면 사용법만 찍고 끝나 "알 수 없는 답"(bad-output)이 된다 — 그때만 같은 본체에 version 을 물어
+// 약속 번호 · capabilities 로 옛 코어인지 가려 core-old 로 바꾼다(packModel.coreTooOld · 2026-10-26 pack set-repo-icon)
+async function runCore(argv, options = {}) {
+  const result = await runCoreOnce(argv, options)
+  if (!result || result.error !== 'bad-output' || argv[0] === 'version' || !options.dir) return result
+  const version = await runCoreOnce(['version'], { dir: options.dir, contract: false })
+  return packModel.coreTooOld(argv, version) ? { ok: false, error: 'core-old' } : result
+}
+
+function runCoreOnce(argv, { dir, onProgress = null, signal = null, extraEnv = null, contract = true } = {}) {
   return new Promise((resolve) => {
     if (!dir) return resolve({ ok: false, error: 'not-found', message: say('error.athenaCoreUnset') })
     const nodePath = core.findExecutable('node', process.env.PATH)

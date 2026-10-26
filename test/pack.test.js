@@ -242,3 +242,20 @@ test('git status 머리줄 풀기 — 원격과 비교', () => {
   assert.equal(pack.parseBranchStatus('No commits yet on main').branch, 'main')
   assert.equal(pack.parseCallInfo('main\t## main...origin/main [behind 1]\t0\n').main.behind, 1)
 })
+
+test('coreTooOld: "알 수 없는 답" 뒤 version 으로 본체 코어가 옛 버전인지 가린다', () => {
+  const repoIcon = ['pack', 'set-repo-icon', 'shop', '/tmp/a.png']
+  // 약속이 같고 손잡이가 없으면 옛 코어(set-repo-icon 전 코어 · 2026-10-26)
+  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: 3, capabilities: ['update', 'idle-panes'] }), true)
+  // 손잡이가 있으면 진짜 이상한 답 — 그대로 둔다
+  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: 3, capabilities: ['repo-look'] }), false)
+  // 약속이 낮으면(version 명령이 없는 코어 포함) 옛 코어
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop'], { ok: true, contract: 2, capabilities: [] }), true)
+  assert.equal(pack.coreTooOld(['pack', 'list'], { ok: false, error: 'bad-output' }), true)
+  // 손잡이를 따로 두지 않은 명령은 약속이 같으면 옛 코어로 보지 않는다
+  assert.equal(pack.coreTooOld(['pack', 'list'], { ok: true, contract: 3, capabilities: [] }), false)
+  // version 을 못 물었으면(시간 초과 등) 모름 — 옛 코어라고 단정하지 않는다
+  assert.equal(pack.coreTooOld(repoIcon, { ok: false, error: 'timeout' }), false)
+  assert.equal(pack.ERROR_CODES.includes('core-old'), true)
+  assert.match(pack.packErrorText({ ok: false, error: 'core-old' }), /옛 버전/)
+})

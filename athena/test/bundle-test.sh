@@ -9,7 +9,7 @@
 # 보는 것: 번들 → 주 본체 clone · 레지스트리 bodiesDir(상대 경로는 데이터 폴더 기준)로 팩 본체 자리 · portBase 포트 범위 ·
 # update --from <번들>(전체 · 앞 커밋을 전제로 한 얇은 번들) · deploy.source · 업데이트 전후 사용자 데이터(<데이터>/packs) 해시 동일 ·
 # 본체 안 진짜 파일(설정·상태 파일·.migrate-*)이 업데이트에 안 건드려짐 · dirty 는 기본 건너뜀 · --backup-dirty 는 사본 뒤 교체(backedUp) ·
-# 되돌리기 · 일하는 본체 건너뜀 · 백업 기본 자리(<데이터>/backups/packs) · 현황판 포트·로그 이름
+# 되돌리기 · 팩 작업 중인 본체 건너뜀(일하는 세션은 올림 — bodies-test) · 백업 기본 자리(<데이터>/backups/packs) · 현황판 포트·로그 이름
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bundle-test.XXXXXX")" && pwd -P)"
@@ -61,8 +61,6 @@ print(h.hexdigest())' "$DATA/packs"; }
 # 본체 안 진짜 파일(무시 목록) 해시 — 업데이트가 건드리지 않아야 한다
 LOCALFILES="athena.config.json .board-usage.json .claude/settings.local.json .migrate-20261019-000000/athena.config.json"
 localhash() { (cd "$1" && for file in $LOCALFILES; do printf '%s ' "$file"; cat "$file" 2>/dev/null | shasum | cut -c1-12; done); }
-FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude"
-fake_claude() { (cd "$1" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 120000)') >/dev/null 2>&1 & echo $!; }
 
 section "번들 → 주 본체(clone) · 데이터 폴더는 본체 설정 dataDir"
 mkdir -p "$APP"
@@ -132,14 +130,15 @@ check "사본 — 고친 내용 · 스테이징한 새 파일 · changes.patch �
 check "교체 뒤 본체는 깨끗 · 새 코어 내용" '[ -z "$(git -C "$BODY_G" status --porcelain --untracked-files=no)" ] && [ -z "$(git -C "$CORE" status --porcelain --untracked-files=no)" ] && ! grep -q "사용자가 고친" "$BODY_G/scripts/lib/lock.mjs" && [ ! -e "$CORE/docs/local-new.md" ]'
 check "업데이트 기록에 backedUp · 사용자 데이터 해시 그대로 · 진짜 파일 그대로" 'grep -q "\"backedUp\"" "$DATA/updates/$OP3.json" && [ "$(datahash)" = "$H0" ] && [ "$(localhash "$BODY_G")" = "$L_G" ] && [ "$(localhash "$CORE")" = "$L_CORE" ]'
 
-section "되돌리기 · 일하는 본체"
+section "되돌리기 · 팩 작업 중인 본체"
 R="$(J "$CORE" update --rollback "$OP3")"
 # 배포 커밋은 그 실행 이전 값 — 모두 dirty 로 건너뛴 앞 실행(partial)이 이미 C2 로 옮겨 두었다(기존 규칙 · 열 때 따라잡기용)
 check "--rollback: globex 는 C1 로 · 주 본체 skipped(main) · deploy 는 실행 이전(C2 · source bundle)" '[ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C1" ] && [ "$(echo "$R" | field bodies.acme.reason)" = main ] && [ "$(REG deploy.commit)" = "$C2" ] && [ "$(REG deploy.source)" = bundle ]' "$R"
-CB="$(fake_claude "$BODY_G")"; sleep 0.5
+# 다른 쪽이 globex 팩 작업 잠금을 쥐고 있다(열기 · 바꾸기 중) — 일하는 세션과 달리 업데이트가 건너뛴다
+PLOCK="$DATA/locks/globex.lock"; mkdir -p "$PLOCK"; sleep 60 & PL=$!; echo "$PL" > "$PLOCK/pid"; echo "pack open globex" > "$PLOCK/what"
 R="$(J "$CORE" update --from "$WORK/core-3.bundle" --backup-dirty)"
-check "globex 가 일하면 skipped(busy) · 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C1" ]' "$R"
-kill "$CB" 2>/dev/null; wait "$CB" 2>/dev/null
+check "globex 팩이 잠겨 있으면 skipped(busy) · 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C1" ]' "$R"
+kill "$PL" 2>/dev/null; wait "$PL" 2>/dev/null; rm -rf "$PLOCK"
 R="$(J "$CORE" pack open globex)"
 check "비면 열 때 따라잡음(C2)" '[ "$(echo "$R" | field updated.to)" = "$C2" ] && [ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C2" ]' "$R"
 
