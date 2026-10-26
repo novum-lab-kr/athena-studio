@@ -3,8 +3,9 @@
 //   pack.json displayName   화면에 보이는 이름(1~40자 · 줄바꿈·제어 문자 없음). 팩 id · name · packId 는 바꾸지 않는다(name 은 같은 팩 판단용)
 //   pack.json icon          늘 "assets/icon.<png|jpg|webp>" — 팩 폴더 assets/ 에 하나만(바꾸면 이전 것 지움)
 //   이미지                   png · jpeg · webp 만(앞 바이트로 확인 · 확장자 믿지 않음) · 1MB 이하. SVG(안에 스크립트) · GIF(움직임) 거부
+//   레포마다(repos[] 항목)    displayName · icon 같은 규칙 — icon 은 늘 "assets/repos/<레포 name>.<png|jpg|webp>"(레포마다 하나). 레포 name 은 그대로(바꾸기는 pack-repo-look.mjs)
 //
-// 명령 입구 scripts/athena.mjs(pack set-name · set-icon). 가져오기 검사·목록은 scripts/lib/packs.mjs 가 이 파일을 쓴다
+// 명령 입구 scripts/athena.mjs(pack set-name · set-icon · set-repo-name · set-repo-icon). 가져오기 검사·목록은 scripts/lib/packs.mjs 가 이 파일을 쓴다
 import { closeSync, existsSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, readdirSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { join, sep } from 'node:path'
 import { PackError, packLockDir, takeLock } from './lock.mjs'
@@ -12,6 +13,14 @@ import { PackError, packLockDir, takeLock } from './lock.mjs'
 export const ICON_MAX_BYTES = 1024 * 1024
 export const ICON_PATH = /^assets\/icon\.(png|jpg|webp)$/
 const NAME_MAX = 40
+// 레포 아이콘 파일 이름에 쓰는 레포 name — 글자·숫자·_ 로 시작, 그 뒤 . - 도(경로 구분 · '..' 안 됨)
+export const REPO_NAME = /^\w[\w.-]*$/
+// 그 레포의 아이콘 경로 모양 — assets/repos/<name>.<png|jpg|webp>
+export const isRepoIconPath = (name, rel) => {
+  if (typeof rel !== 'string' || !REPO_NAME.test(String(name ?? ''))) return false
+  const prefix = `assets/repos/${name}.`
+  return rel.startsWith(prefix) && /^(png|jpg|webp)$/.test(rel.slice(prefix.length))
+}
 
 // 파일 앞 바이트로 형식 판별 → 'png' | 'jpg' | 'webp' | null
 export const imageKind = (head) => {
@@ -45,13 +54,13 @@ export const normalizeName = (text) => {
   return name
 }
 
-// 팩 폴더에서 표시 이름·아이콘 읽기 — 목록·열기 응답용. 아이콘은 형식이 맞고 팩 안의 일반 파일일 때만(아니면 null)
-export const packLook = (packDir, pack) => {
-  const displayName = typeof pack?.displayName === 'string' && (() => { try { return normalizeName(pack.displayName) } catch { return null } })() || null
+// 표시 이름 · 아이콘 읽기 — 이름은 규칙에 맞을 때만, 아이콘은 모양이 맞고(okIcon) 팩 안의 일반 파일일 때만(아니면 null)
+const readLook = (packDir, item, okIcon) => {
+  const displayName = typeof item?.displayName === 'string' && (() => { try { return normalizeName(item.displayName) } catch { return null } })() || null
   let iconPath = null
   let iconUpdatedAt = null
-  if (typeof pack?.icon === 'string' && ICON_PATH.test(pack.icon)) {
-    const path = join(packDir, pack.icon)
+  if (typeof item?.icon === 'string' && okIcon(item.icon)) {
+    const path = join(packDir, item.icon)
     try {
       const real = realpathSync.native(path)
       if (!lstatSync(path).isSymbolicLink() && real.startsWith(realpathSync.native(packDir) + sep) && statSync(real).isFile()) {
@@ -62,6 +71,10 @@ export const packLook = (packDir, pack) => {
   }
   return { displayName, iconPath, iconUpdatedAt }
 }
+// 팩 폴더에서 표시 이름·아이콘 읽기 — 목록·열기 응답용
+export const packLook = (packDir, pack) => readLook(packDir, pack, (rel) => ICON_PATH.test(rel))
+// 레포 항목의 표시 이름·아이콘 — 아이콘은 그 레포 자리(assets/repos/<name>.*)만
+export const repoLook = (packDir, repo) => readLook(packDir, repo, (rel) => isRepoIconPath(repo?.name, rel))
 
 // 가져오기 검사 — pack.json 의 icon 은 정해진 모양만(밖을 가리키는 경로 거부) · assets/ 안 파일은 모두 이미지 검사
 export const inspectLook = (packRoot, pack) => {
@@ -85,6 +98,15 @@ export const inspectLook = (packRoot, pack) => {
     walk(assets)
   }
   if (pack.icon && !existsSync(join(packRoot, pack.icon))) warnings.push(`pack.json 의 icon 파일이 없다: ${pack.icon}`)
+  // 레포 표시 이름 · 아이콘 — 같은 규칙(아이콘은 그 레포 자리만 · 밖을 가리키는 경로 거부)
+  for (const repo of Array.isArray(pack.repos) ? pack.repos : []) {
+    if (!repo || typeof repo !== 'object') continue
+    if (repo.icon !== undefined && !isRepoIconPath(repo.name, repo.icon)) throw new PackError('invalid-pack', `pack.json 레포 ${JSON.stringify(repo.name)} 의 icon 은 assets/repos/<레포>.<png|jpg|webp> 만 — ${JSON.stringify(repo.icon)}`)
+    if (repo.displayName !== undefined) {
+      try { if (typeof repo.displayName !== 'string') throw new Error('문자열 아님'); normalizeName(repo.displayName) } catch (error) { warnings.push(`pack.json 레포 ${repo.name} 의 displayName 을 쓰지 않는다 — ${error.message}`) }
+    }
+    if (repo.icon && !existsSync(join(packRoot, repo.icon))) warnings.push(`pack.json 레포 ${repo.name} 의 icon 파일이 없다: ${repo.icon}`)
+  }
   return warnings
 }
 
@@ -111,7 +133,7 @@ export const lookTarget = (where, id) => {
   throw new PackError('not-found', '팩이 없다')
 }
 // 팩 작업 잠금 안에서(여러 팩 구조) — 열기·업데이트·다른 이름 바꾸기와 겹치지 않게
-const withPackLock = (target, what, work) => {
+export const withPackLock = (target, what, work) => {
   if (!target.data) return work()
   const release = takeLock(packLockDir(target.data, target.id), what, { waitMs: 5_000, message: (owner) => `그 팩(${target.id})에 다른 작업이 진행 중이다(pid ${owner.pid})` })
   try { return work() } finally { release() }

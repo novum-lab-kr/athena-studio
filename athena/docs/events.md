@@ -19,10 +19,12 @@
 | `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
 | `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` |
 | `commit` | `scripts/commit.sh` — 커밋한 뒤 | `plan` · `repo` · `branch` · `sha` · `verified` · `verify` |
-| `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 — 자동 리뷰의 결정 필요도 수정 필요) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) |
+| `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) |
 | `auto.fix` | `scripts/pr-auto.mjs` — 수정 지시를 작업 pane 에 보낸 뒤 | `plan` · `repo` · `branch` · `sha` · `pr` · `pane` · `reviewers` |
 | `auto.push` | `scripts/ship.sh --auto-push` — 고친 커밋을 그 PR 브랜치에 올린 뒤(또는 `--body-file` 로 본문만 바꾼 뒤) | `plan` · `repo` · `branch` · `sha` · `pr` · 본문을 바꿨으면 `body`(1) |
-| `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 사람에게 넘길 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers · rounds · verify) · `why` |
+| `auto.decide` | `scripts/pr-auto.mjs` — 구현 세부 결정을 추천안으로 자동 확정한 뒤(계획서 Decisions 에 적고) | `plan` · `repo` · `branch` · `sha` · `pr` · `count` · `reviewers` |
+| `auto.takeover` | `scripts/pr-auto.mjs` — 리뷰 상한 뒤 이어받은 HEAD 를 리뷰 없이 머지 단계로 넘길 때 | `plan` · `repo` · `branch` · `sha` · `pr` |
+| `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 멈출 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers · rounds — 상한을 넘었는데 이어받을 수정이 없음 · verify · decisions — 결정 콘솔에 안 정한 결정) · `why` |
 | `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` |
 
 `verify` 에는 계획서가 없다 — 검증은 계획서를 모른다. 계획서와 이으려면 같은 `repo` · `branch` 의 `commit` · `review` 를 본다.

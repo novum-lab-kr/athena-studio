@@ -132,6 +132,23 @@ test('팩 표시 이름 · 이미지: displayName → name → id · 본체가 �
   assert.equal(pack.ICON_MAX_BYTES, 1024 * 1024)
 })
 
+test('레포 표시 이름 · 이미지: 규칙에 맞는 displayName 만 · icon 은 그 레포 자리(assets/repos/<name>.*)만', () => {
+  assert.deepEqual(pack.repoLook({ name: 'shop-web', displayName: '  쇼핑 웹 ', icon: 'assets/repos/shop-web.png' }), { displayName: '쇼핑 웹', icon: 'assets/repos/shop-web.png' })
+  assert.deepEqual(pack.repoLook({ name: 'shop-web' }), { displayName: null, icon: null })
+  assert.equal(pack.repoLook({ name: 'a', displayName: '가'.repeat(41) }).displayName, null) // 41자
+  assert.equal(pack.repoLook({ name: 'a', displayName: 'a\nb' }).displayName, null) // 줄바꿈
+  assert.equal(pack.repoLook({ name: 'a', displayName: 'abc‮def' }).displayName, null) // 글자 방향 문자
+  assert.equal(pack.repoLook({ name: 'a', displayName: '   ' }).displayName, null)
+  assert.equal(pack.repoLook({ name: 'a', displayName: 3 }).displayName, null)
+  assert.equal(pack.repoLook({ name: 'api', icon: 'assets/repos/api.webp' }).icon, 'assets/repos/api.webp')
+  assert.equal(pack.repoLook({ name: 'api', icon: 'assets/repos/shop-web.png' }).icon, null) // 다른 레포 자리
+  assert.equal(pack.repoLook({ name: 'api', icon: 'assets/repos/api.svg' }).icon, null)
+  assert.equal(pack.repoLook({ name: 'api', icon: '../../etc/hosts' }).icon, null)
+  assert.equal(pack.repoLook({ name: 'api', icon: 'assets/repos/api.png/../../x.png' }).icon, null)
+  assert.equal(pack.repoLook({ name: '..', icon: 'assets/repos/...png' }).icon, null) // 이름이 . 으로 시작
+  assert.deepEqual(pack.repoLook(null), { displayName: null, icon: null })
+})
+
 test('현황판 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 current (A→B→A 의 옛 A 는 stale)', () => {
   const current = { id: 'acme', generation: 3 }
   assert.equal(pack.boardIdentity({ cards: [] }, current), 'legacy')

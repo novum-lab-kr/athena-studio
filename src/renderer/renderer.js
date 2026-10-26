@@ -372,9 +372,13 @@ function spaceRail() {
     const button = document.createElement('button')
     button.className = 'space-icon'
     button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
-    button.style.setProperty('--space-color', spaceColor(workspace.label))
-    button.textContent = spaceInitials(workspace.label)
-    button.title = [workspace.label, branches[workspace.id]].filter(Boolean).join('\n')
+    button.style.setProperty('--space-color', spaceColor(workspace.label)) // 색은 레포 name 으로 — 표시 이름을 바꿔도 그대로
+    const repo = packRepoOf(workspace.label)
+    const name = repo ? repoLabel(repo) : workspace.label
+    const image = repo && repoIconImage(repo)
+    if (image) button.append(image)
+    else button.textContent = spaceInitials(name)
+    button.title = [name, branches[workspace.id]].filter(Boolean).join('\n')
     button.addEventListener('click', () => {
       if (currentTab !== 'work') switchTab('work')
       studio.workspaceSelect(workspace.id)
@@ -456,6 +460,43 @@ async function refreshPackRepos() {
   packRepos = next
   if (attached) renderSides()
 }
+// 레포 표시 이름(pack set-repo-name) — 사이드바만. 레포 name 은 그대로(작업 공간 이름 · 경로가 이것으로 찾는다)
+function repoLabel(repo) {
+  return (repo && (repo.displayName || repo.name)) || ''
+}
+function packRepoOf(label) {
+  return packRepos.find((repo) => repo.name === label) || null
+}
+
+// 레포 이미지 — main 이 확인한 iconPath 를 data URL 로 받는다. iconUpdatedAt 이 바뀌면 다시 받는다(팩 이미지 packIconImage 와 같은 방식)
+const repoIconCache = new Map() // name → { stamp, dataUrl }
+const repoIconPending = new Set()
+function repoIconImage(repo) {
+  if (!repo.iconPath) return null
+  const stamp = `${repo.iconPath}|${repo.iconUpdatedAt || ''}`
+  const cached = repoIconCache.get(repo.name)
+  if (cached && cached.stamp === stamp) {
+    if (!cached.dataUrl) return null
+    const image = el('img', 'pack-icon-image')
+    image.src = cached.dataUrl
+    image.alt = ''
+    image.draggable = false
+    return image
+  }
+  if (!repoIconPending.has(repo.name)) {
+    repoIconPending.add(repo.name)
+    studio
+      .repoIcon(repo.name)
+      .then((result) => repoIconCache.set(repo.name, { stamp, dataUrl: (result && result.dataUrl) || null }))
+      .catch(() => repoIconCache.set(repo.name, { stamp, dataUrl: null })) // 실패도 적어 둔다 — 다시 그릴 때마다 또 요청하지 않게
+      .finally(() => {
+        repoIconPending.delete(repo.name)
+        if (attached) renderSides()
+      })
+  }
+  return null // 받는 동안은 두 글자
+}
+
 function idleRepoRows() {
   const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
   return packRepos.filter((repo) => !labels.has(repo.name)).map((repo) => {
@@ -463,7 +504,7 @@ function idleRepoRows() {
     // 툴팁은 없다 — 못 부르는 레포(연결 안 됨 · 에이전트 없음)만 누르면 이유를 알림으로
     const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
     const text = el('span', 'space-text')
-    text.append(el('span', 'space-label', repo.name))
+    text.append(el('span', 'space-label', repoLabel(repo)))
     button.append(text)
     if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
     button.addEventListener('contextmenu', (event) => {
@@ -508,7 +549,33 @@ function callMeta(info) {
 async function spaceMenu({ workspace, repo }, event) {
   const action = await studio.spaceContextMenu({ workspace: workspace ? workspace.id : null, repo }, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
   if (action === 'close-workspace') return closeWorkspace(workspace)
+  if (action === 'repo-look') return runPackFlow(() => editRepoLookDialog(repo))
+  if (action === 'repo-reset-name' || action === 'repo-clear-icon') return runPackFlow(() => resetRepoLook(repo, action))
   if (action === 'remove-repo') return runPackFlow(() => removeRepoFromPack(repo))
+}
+
+// 레포 이름 · 이미지 — 팩 이름 · 이미지와 같은 대화상자(lookDialog). 레포 name 은 그대로, 화면 표시만(팀과 같이 쓰는 팩 안에 저장)
+async function editRepoLookDialog(name) {
+  await refreshPackRepos()
+  const repo = packRepoOf(name)
+  if (!repo) return
+  const image = repo.iconPath ? ((await studio.repoIcon(name)) || {}).dataUrl || null : null
+  const answer = await lookDialog({ title: say('spaces.look.title'), color: name, image, value: repoLabel(repo), placeholder: name, pickKind: 'repo' })
+  if (!answer) return
+  const now = packRepoOf(name) || repo
+  const results = []
+  if (answer.text !== repoLabel(now)) results.push(await studio.repoSetName(name, answer.text ? answer.text : null))
+  if (answer.iconChange) results.push(await studio.repoSetIcon(name, answer.iconChange === 'clear', answer.iconChange === 'picked'))
+  await refreshPackRepos()
+  const failed = results.find((result) => result && !result.ok && !result.canceled)
+  if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
+}
+
+// 레포 우클릭 [원래 이름으로] · [이미지 지우기]
+async function resetRepoLook(name, action) {
+  const result = action === 'repo-reset-name' ? await studio.repoSetName(name, null) : await studio.repoSetIcon(name, true)
+  await refreshPackRepos()
+  if (result && !result.ok && !result.canceled) return packAlert(say('pack.look.failed'), result.text || result.message)
 }
 
 // 작업 공간 닫기 — 에이전트가 도는 pane 이 있으면 한 번 묻는다
@@ -633,7 +700,7 @@ function renderSides() {
     text.className = 'space-text'
     const label = document.createElement('span')
     label.className = 'space-label'
-    label.textContent = workspace.label
+    label.textContent = repoLabel(packRepoOf(workspace.label)) || workspace.label
     text.append(label)
     // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(꺾쇠는 늘 · pane 이 없으면 그 레포를 고른다). 접으면 모두 숨기고 머리글에 —
     // 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
@@ -2464,17 +2531,30 @@ async function editPackLook(id, action) {
   if (result && !result.ok && !result.canceled) return packAlert(say('pack.look.failed'), result.text || result.message)
 }
 
-// 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — 왼쪽 큰 아이콘(누르면 이미지 고르기 · 아래 지우기) + 오른쪽 이름 칸.
-// 이미지도 이름처럼 [저장] 때 바뀐다(고른 파일은 main 이 들고 있다) · 이름을 비우면 원래 이름으로(--clear). 둘 다 팩 안에 저장돼 팀과 같이 쓴다
+// 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — lookDialog. 이름을 비우면 원래 이름으로(--clear). 둘 다 팩 안에 저장돼 팀과 같이 쓴다
 async function editPackLookDialog(id) {
   const find = () => [...(packs.packs || []), packs.current].find((item) => item && item.id === id)
   const pack = find()
   if (!pack) return
-  let image = pack.iconPath ? ((await studio.packIcon(id)) || {}).dataUrl || null : null
-  let iconChange = null // null(그대로) · 'picked' · 'clear'
+  const image = pack.iconPath ? ((await studio.packIcon(id)) || {}).dataUrl || null : null
+  const answer = await lookDialog({ title: say('pack.look.title'), color: id, image, value: packLabel(pack), placeholder: pack.name || id, pickKind: 'pack' })
+  if (!answer) return
+  const now = find() || pack
+  const results = []
+  if (answer.text !== packLabel(now)) results.push(await studio.packSetName(id, answer.text ? answer.text : null))
+  if (answer.iconChange) results.push(await studio.packSetIcon(id, answer.iconChange === 'clear', answer.iconChange === 'picked'))
+  const failed = results.find((result) => result && !result.ok && !result.canceled)
+  if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
+}
+
+// 이름 · 이미지 대화상자(팩 · 레포 같이) — 왼쪽 큰 아이콘(누르면 이미지 고르기 · 오른쪽 위 지우기) + 오른쪽 이름 칸.
+// 이미지도 이름처럼 [저장] 때 바뀐다(고른 파일은 main 이 들고 있다). 돌려주는 것: null(취소) · { text(앞뒤 공백 뺀 이름), iconChange: null(그대로) · 'picked' · 'clear' }
+async function lookDialog({ title, color, image: startImage, value, placeholder, pickKind }) {
+  let image = startImage
+  let iconChange = null
   const avatar = el('button', 'space-icon pack-icon pack-look-avatar')
   avatar.type = 'button'
-  avatar.style.setProperty('--space-color', spaceColor(id))
+  avatar.style.setProperty('--space-color', spaceColor(color))
   avatar.setAttribute('aria-label', say('pack.menu.icon'))
   avatar.dataset.tip = say('pack.menu.icon')
   // 지우기 — 아이콘 오른쪽 위 작은 휴지통(이미지가 있을 때만)
@@ -2494,7 +2574,7 @@ async function editPackLookDialog(id) {
       avatar.replaceChildren(node)
     } else {
       const field = nameField()
-      avatar.replaceChildren(document.createTextNode(spaceInitials((field && field.value.trim()) || pack.name || id)))
+      avatar.replaceChildren(document.createTextNode(spaceInitials((field && field.value.trim()) || placeholder)))
     }
     const edit = el('span', 'pack-look-edit')
     edit.append(lineIcon(POPUP_ICONS.camera))
@@ -2503,7 +2583,7 @@ async function editPackLookDialog(id) {
   }
   avatar.addEventListener('click', async () => {
     error.textContent = ''
-    const result = await studio.packPickIcon()
+    const result = await studio.packPickIcon(pickKind)
     if (!result || result.canceled) return
     if (!result.ok) {
       error.textContent = result.text || say('pack.look.failed')
@@ -2531,9 +2611,9 @@ async function editPackLookDialog(id) {
   look.append(side, name)
   look.addEventListener('input', () => !image && paint()) // 이미지가 없으면 머리글자가 이름을 따라간다
   const pending = packDialog({
-    title: say('pack.look.title'),
+    title,
     body: [look],
-    input: { value: packLabel(pack), placeholder: pack.name || id, maxLength: PACK_NAME_MAX, label: say('pack.look.name') },
+    input: { value, placeholder, maxLength: PACK_NAME_MAX, label: say('pack.look.name') },
     actions: [
       { label: say('pack.look.save'), value: 'save', kind: 'primary' },
       { label: say('common.cancel'), value: null },
@@ -2542,14 +2622,8 @@ async function editPackLookDialog(id) {
   paint()
   nameField().select()
   const answer = await pending
-  if (!answer || answer.value !== 'save') return
-  const text = answer.text.trim()
-  const now = find() || pack
-  const results = []
-  if (text !== packLabel(now)) results.push(await studio.packSetName(id, text ? text : null))
-  if (iconChange) results.push(await studio.packSetIcon(id, iconChange === 'clear', iconChange === 'picked'))
-  const failed = results.find((result) => result && !result.ok && !result.canceled)
-  if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
+  if (!answer || answer.value !== 'save') return null
+  return { text: answer.text.trim(), iconChange }
 }
 
 // 팩 줄 · 팩 메뉴의 줄 — 목록에 지금 팩이 없으면(옛 구조 본체는 목록이 빈다) 지금 팩을 앞에 더한다

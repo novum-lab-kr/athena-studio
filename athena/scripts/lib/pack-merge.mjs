@@ -5,7 +5,7 @@
 //
 // main 직접 레포("direct": true)는 PR 이 없어 대상이 아니다(not-applicable).
 // 파일은 글자 단위로 고친다 — 그 레포 항목의 두 키만 넣고 빼고, 다른 키 · 순서 · 들여쓰기 · 한 줄로 쓴 항목 모양은 그대로 둔다.
-// 명령 입구 scripts/athena.mjs(pack set-auto-merge) · 스튜디오 앱 ⚙ 설정이 이 명령을 부른다.
+// 명령 입구 scripts/athena.mjs(pack set-auto-merge) · 스튜디오 앱 ⚙ 설정이 이 명령을 부른다. 글자 고치기 도구(repoObject · setKey · deleteKey)는 pack-repo-look.mjs 도 쓴다.
 // 현황판 · pr-auto.mjs 는 확인할 때마다 pack.json 을 새로 읽으므로 다시 띄울 필요가 없다
 import { isDeepStrictEqual } from 'node:util'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
@@ -69,7 +69,7 @@ const scanValue = (text, index) => {
 }
 
 // 그 레포 항목(객체)의 위치
-const repoObject = (text, repo) => {
+export const repoObject = (text, repo) => {
   const root = scanValue(text, 0)
   const repos = (root.members || []).find((member) => member.key === 'repos')
   for (const item of (repos && repos.value.items) || []) {
@@ -80,7 +80,7 @@ const repoObject = (text, repo) => {
 }
 
 // 키 하나 넣기 · 바꾸기 — 없으면 마지막 멤버 뒤에, 그 항목의 멤버 사이 모양(", " · ",\n    ")을 따라
-const setKey = (text, object, key, literal) => {
+export const setKey = (text, object, key, literal) => {
   const { members } = object
   const found = members.find((member) => member.key === key)
   if (found) return text.slice(0, found.value.start) + literal + text.slice(found.value.end)
@@ -91,7 +91,7 @@ const setKey = (text, object, key, literal) => {
   return text.slice(0, last.value.end) + separator + JSON.stringify(key) + ': ' + literal + text.slice(last.value.end)
 }
 // 키 하나 지우기 — 그 멤버와 앞(맨 앞이면 뒤)의 쉼표까지
-const deleteKey = (text, object, key) => {
+export const deleteKey = (text, object, key) => {
   const { members } = object
   const index = members.findIndex((member) => member.key === key)
   if (index < 0) return text

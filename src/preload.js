@@ -27,7 +27,7 @@ contextBridge.exposeInMainWorld('studio', {
   packIcon: (id) => ipcRenderer.invoke('pack:icon', id),
   packSetName: (id, name) => ipcRenderer.invoke('pack:set-name', id, name),
   packSetIcon: (id, clear, usePicked) => ipcRenderer.invoke('pack:set-icon', id, clear, usePicked),
-  packPickIcon: () => ipcRenderer.invoke('pack:pick-icon'),
+  packPickIcon: (kind) => ipcRenderer.invoke('pack:pick-icon', kind),
   packContextMenu: (id, point) => ipcRenderer.invoke('pack:context-menu', id, point),
   // 이 창 닫기 — 시작 화면에서 다른 팩 창을 연 뒤(창이 하나뿐이면 닫지 않는다)
   closeWindow: () => ipcRenderer.invoke('window:close'),
@@ -39,6 +39,10 @@ contextBridge.exposeInMainWorld('studio', {
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
   openAgent: (size, options) => ipcRenderer.invoke('agent:open', size, options),
   packRepos: () => ipcRenderer.invoke('pack:repos'),
+  // 레포 표시 이름 · 이미지(사이드바만 — 코어 pack set-repo-name · set-repo-icon)
+  repoIcon: (name) => ipcRenderer.invoke('repo:icon', name),
+  repoSetName: (name, displayName) => ipcRenderer.invoke('repo:set-name', name, displayName),
+  repoSetIcon: (name, clear, usePicked) => ipcRenderer.invoke('repo:set-icon', name, clear, usePicked),
   // ⚙ 설정 — 이 창 팩의 레포별 자동 머지(읽기 · 바꾸기 — 바꾸기는 코어 pack set-auto-merge)
   mergeSettings: () => ipcRenderer.invoke('settings:merge'),
   setAutoMerge: (repo, values) => ipcRenderer.invoke('settings:set-merge', repo, values),
