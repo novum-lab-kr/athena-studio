@@ -9,6 +9,7 @@ bash 에서:  python3 - "$ATHENA_DIR" <<'PYEOF'
 """
 import json
 import os
+import re
 
 ACTIVE_LINK = '.pack-data'
 
@@ -176,3 +177,56 @@ def is_protected(cfg, repo_name, branch):
     if is_direct(cfg, repo_name) and branch == direct_branch(cfg, repo_name):
         return False
     return branch in protected_branches(cfg, repo_name) or branch.startswith(PROTECTED_PREFIXES)
+
+
+# 역할마다 Claude 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
+MODEL_ROLES = ('athena', 'agent', 'reviewer', 'prReview', 'learnReview')
+_MODEL_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*$')
+
+
+def model_of(cfg, role):
+    """역할의 모델 이름 — 없으면 ''. 형식이 이상하면(모르는 역할 · 문자열 아님 · 빈 값 · 공백 · 따옴표 등) ValueError(무시하지 않는다)."""
+    if role not in MODEL_ROLES:
+        raise ValueError(f'모르는 모델 역할: {role}')
+    models = cfg.get('models')
+    if models is None:
+        return ''
+    if not isinstance(models, dict):
+        raise ValueError('pack.json "models" 는 { "<역할>": "<모델>" } 모양이어야 한다')
+    for key, value in models.items():
+        if key not in MODEL_ROLES:
+            raise ValueError(f'pack.json "models" 에 모르는 역할: {key}(가능: {" · ".join(MODEL_ROLES)})')
+        if not isinstance(value, str) or not _MODEL_NAME.match(value):
+            raise ValueError(f'pack.json "models.{key}" 모델 이름이 이상하다: {json.dumps(value, ensure_ascii=False)}')
+    return models.get(role, '')
+
+
+def profile_model(profile_path):
+    """에이전트 프로필 frontmatter 의 model: 값 — 없거나 inherit 면 ''(inherit 는 띄운 쪽 모델을 따른다는 뜻이라 팩 값을 쓴다)."""
+    try:
+        with open(profile_path, encoding='utf-8') as handle:
+            text = handle.read()
+    except OSError:
+        return ''
+    if not text.startswith('---'):
+        return ''
+    front = text.split('---', 2)[1] if text.count('---') >= 2 else ''
+    for line in front.splitlines():
+        match = re.match(r'^model:\s*(.*?)\s*$', line)
+        if match:
+            value = match.group(1).strip('\'"')
+            return '' if value in ('', 'inherit') else value
+    return ''
+
+
+def agent_model(athena_dir, agent):
+    """delegate.sh 가 붙일 --model 값 — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다), 없으면 팩 models 의
+    reviewer(reviewer) · agent(그 밖의 에이전트), 그것도 없으면 ''(--model 을 붙이지 않는다).
+    프로필 값도 --model 로 넘긴다 — 워크트리에서 띄우면 프로필을 --agents JSON 으로 다시 만들어 넘기는데(agent-context.py) 거기에는 model 이 없다."""
+    profile = os.path.join(athena_dir, '.claude', 'agents', f'{agent}.md')
+    own = profile_model(profile)
+    if own:
+        if not _MODEL_NAME.match(own):
+            raise ValueError(f'{profile} 의 model: 이름이 이상하다: {json.dumps(own, ensure_ascii=False)}')
+        return own
+    return model_of(load(athena_dir), 'reviewer' if agent == 'reviewer' else 'agent')

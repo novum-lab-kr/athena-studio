@@ -243,6 +243,8 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
       names: [...new Set([company, ...names])],
       ...(org ? { github: { org } } : {}),
       worktreeCopy: { include: ['.env', '.env.*', '.claude/settings.local.json'] },
+      // 역할마다 모델(docs/pack.md "pack.json" · scripts/lib/models.mjs) — 새 팩 기본은 배우기 검토만 Sonnet(2026-10-26 결정 D1)
+      models: { learnReview: 'sonnet' },
       repos: entries,
     }
     write(join(pack, 'ROUTING.md'), routingDoc(company, entries))

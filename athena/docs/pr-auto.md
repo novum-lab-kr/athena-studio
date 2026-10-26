@@ -60,13 +60,14 @@ draft PR (ship.sh) ─▶ 현황판이 새 HEAD 감지(5분 안) ─▶ 대기�
 
 | 리뷰어 | 부르는 법 | 도구 |
 |---|---|---|
-| Claude | `claude -p --tools "" --strict-mcp-config --no-session-persistence --output-format json --json-schema <형식>` · 답은 `structured_output` | 없음 |
+| Claude | `claude -p [--model <models.prReview>] --tools "" --strict-mcp-config --no-session-persistence --output-format json --json-schema <형식>` · 답은 `structured_output` | 없음 |
 | Codex | `codex exec --ignore-user-config --disable <도구 기능>… -c web_search="disabled" --sandbox read-only --ephemeral --skip-git-repo-check -C <빈 폴더> --output-schema <파일> -o <파일>`(프롬프트는 표준 입력) · 답은 `-o` 파일 | 없음 — 셸 · 웹 · 사용자 MCP 서버를 끈다(아래) |
 
 - **Codex 는 읽기 전용 샌드박스만으로는 도구가 남는다**(2026-10-25 실측 · codex-cli 0.160 — 셸로 `pwd` 가 돌고 · 웹에서 값을 가져오고 · 사용자 MCP 서버 `hostinger_*` 등이 붙었다). 그래서 사용자 `config.toml` 을 안 읽고(`--ignore-user-config` — MCP 서버 · 훅이 빠지고 로그인은 그대로) · 도구를 주는 기능을 끄고(`CODEX_TOOL_FEATURES` — `shell_tool` · `unified_exec` · `apps` · `browser_use` · `computer_use` · `plugins` · `multi_agent` …) · 웹 검색을 끈다(`web_search="disabled"`). 끈 뒤 같은 질문으로 셸 · 웹 · MCP 가 모두 없는 것을 실측했다. Codex 를 올리면 `codex features list` 로 새 도구 기능이 생겼는지 다시 본다
 - 둘 다 빈 임시 폴더에서 돌고 끝나면 지운다. 받는 것: 레포 `rules.md` · `gotchas.md` · 계획서(앞 6000자) · PR 제목 · 본문 · diff(앞 6만 자) — 비밀값 모양은 가린다(`scripts/lib/mask.mjs`). PR 안의 글은 데이터로 넣고 지시로 따르지 않게 한다
 - 답 형식(`REVIEW_SCHEMA`): `verdict` approve · changes · decision · `summary` · `findings[]`(파일 · 줄 · 문제 · 고칠 방법) · `decisions[]`(제목 · 왜 · 선택지 2~4 · 추천)
 - 모양이 틀린 답 · 10분 넘김 · 명령 없음 · 0 이 아닌 종료(로그인이 풀려 답을 못 낸 경우 포함)는 그 리뷰어의 **실패** 다. 승인인데 지적이 붙은 모순된 답은 승인으로 세지 않는다
+- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml` 의 모델 그대로
 - **둘 다 승인해야 머지로 간다.** 하나라도 실패 · 반려면 머지하지 않는다 — 남은 하나로 판정하지 않는다
 
 | 판정 | 조건(위부터) | 하는 일 |

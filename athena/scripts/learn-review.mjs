@@ -15,6 +15,8 @@
  *   - 기록은 사용자 말·에이전트 답·도구 이름과 짧은 인자·도구 오류 첫 줄만. 도구 결과 본문은 넣지 않고 비밀값 모양은 가린다
  *   - 출력·이슈에 대화 원문을 옮기지 않는다(LLM 이 쓴 규칙·근거 한 줄만)
  *   - 같은 계획서·같은 HEAD 는 한 번만(계획서 Checkpoint "- Learn review:" 줄)
+ *
+ * 모델: 팩 pack.json "models.learnReview"(docs/pack.md "pack.json" · 새 팩 기본 sonnet) — 없으면 기본 모델. learn-reviewer.md 의 frontmatter model: 은 보지 않는다
  */
 import { closeSync, createReadStream, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -28,6 +30,7 @@ import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 import { maskSecrets } from './lib/mask.mjs'
+import { modelArgs } from './lib/models.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
@@ -303,7 +306,9 @@ ${transcript}
 
 const askReviewer = (prompt) => {
   // 도구 없이, 세션 저장 없이, 중립 폴더에서(hermes CLAUDE.md·훅을 끌어오지 않게) 한 번 돈다
-  const result = spawnSync('claude', ['-p', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(LEARN_SCHEMA)], {
+  // 모델은 팩 pack.json "models.learnReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 검토가 실패한다(기본 모델로 다시 하지 않는다).
+  // 설정은 검토마다 새로 읽는다 — 뒤에서 도는 검토 프로세스를 다시 띄우지 않아도 pack.json 을 고친 값이 다음 검토부터 먹는다
+  const result = spawnSync('claude', ['-p', ...modelArgs(loadConfig(ROOT), 'learnReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(LEARN_SCHEMA)], {
     input: prompt,
     cwd: tmpdir(),
     encoding: 'utf8',

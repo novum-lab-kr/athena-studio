@@ -195,6 +195,18 @@ PYEOF
   fi
 fi
 
+# 역할마다 모델(팩 pack.json "models" · scripts/lib/models.mjs) — reviewer 는 reviewer, 그 밖은 agent. 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다 · athena_config.agent_model).
+# 값이 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게)
+MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import agent_model
+try:
+    print(agent_model(sys.argv[1], sys.argv[2]))
+except ValueError as error:
+    print(error, file=sys.stderr); sys.exit(1)
+PYEOF
+)" || { echo "모델 설정이 이상해서 띄우지 않는다 — 팩 pack.json \"models\" 를 고친다(docs/pack.md \"pack.json\")" >&2; exit 2; }
+
 WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 [ -d "$WORKDIR" ] || { echo "디렉터리가 없다: $WORKDIR"; exit 2; }
 # 상대 경로면 절대 경로로 — 실행기는 pane 의 시작 폴더(이미 그 폴더)에서 다시 cd 하므로 상대 경로는 어긋난다.
@@ -203,8 +215,9 @@ WORKDIR="$(cd "$WORKDIR" && pwd -P)"
 
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
-  if [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT \"$PROMPT\")"
-  else echo "  (cd $WORKDIR && claude --agent $AGENT)"; fi
+  MODEL_HINT="${MODEL:+ --model $MODEL}"
+  if [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT \"$PROMPT\")"
+  else echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT)"; fi
   exit 1
 fi
 
@@ -298,6 +311,7 @@ ATHENA_REAL="$(cd "$ATHENA_DIR" && pwd -P)"
 # 실행기에 넣는 값은 모두 printf %q 로 감싼다 — 작은따옴표로 바로 넣으면 경로에 ' 가 있을 때 실행기가 깨진다
 shq() { printf '%q' "$1"; }
 CLAUDE_ARGS="--agent $(shq "$AGENT")"
+[ -n "$MODEL" ] && CLAUDE_ARGS="$CLAUDE_ARGS --model $(shq "$MODEL")"
 EXTRA_FILES=""
 # 여러 팩 구조 — 본체의 pack · plans · issues 는 데이터 폴더(<데이터>/packs/<id>/…)로 가는 링크라 실제 경로가 본체 밖이다.
 # 그 실제 경로도 허용 폴더로 줘야 계획서 쓰기 · 지식(docs/knowledge/<레포> → pack/…) 읽기에서 권한을 묻고 멈추지 않는다(2026-10-25 시험).
