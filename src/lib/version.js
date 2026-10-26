@@ -75,6 +75,17 @@ function describeVersion({ repoRoot, ref = 'HEAD', env = process.env }) {
   }
 }
 
+// origin 의 v* 태그를 받는다 — 앱을 켤 때 버전을 정하기 전에(scripts/dev-app.js start). 코어 번들 · 맥 정보 · ⚙ 줄이 같은 번호를 쓰게.
+// 못 받으면(오프라인 · origin 없음) false — 있는 태그로 정한다. 기다림은 짧게(켜기를 오래 막지 않게)
+function fetchTags({ repoRoot, env = process.env, timeout = 10000 }) {
+  try {
+    execFileSync('git', ['fetch', '--quiet', '--no-tags', 'origin', '+refs/tags/v*:refs/tags/v*'], { cwd: repoRoot, env, stdio: 'ignore', timeout })
+    return true
+  } catch {
+    return false
+  }
+}
+
 // '0.2.1+3' → { tag: '0.2.1', distance: 3 } · 모양이 아니면 null
 function splitDisplay(text) {
   const match = /^(\d+\.\d+\.\d+)(?:\+(\d+))?$/.exec(String(text || ''))
@@ -87,4 +98,4 @@ function releaseNotes({ title, number = null, url = null }) {
   return url ? `${head}\n\n${url}\n` : `${head}\n`
 }
 
-module.exports = { TAG_PATTERN, DISPLAY_RE, parseVersion, compareVersions, latestTag, bumpKind, nextVersion, releasePlan, formatDescribe, describeVersion, splitDisplay, releaseNotes }
+module.exports = { TAG_PATTERN, DISPLAY_RE, parseVersion, compareVersions, latestTag, bumpKind, nextVersion, releasePlan, formatDescribe, describeVersion, fetchTags, splitDisplay, releaseNotes }

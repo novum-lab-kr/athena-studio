@@ -696,14 +696,15 @@ let appUpdateFetchedAt = 0
 let appUpdateChecking = null
 
 // 앱 버전(SemVer 0.x — 정본은 git 태그 · lib/version.js) — 개발 앱 체크아웃은 git describe(0.2.1 · 0.2.1+3), 태그가 없거나 배포판이면 package.json.
-// 켤 때 한 번 정한다(업데이트는 앱을 다시 켠다). ⚙ 앱 업데이트 줄 · 맥 메뉴 정보에 같은 번호
+// 켤 때 한 번 정한다(업데이트는 앱을 다시 켠다 · origin 태그는 scripts/dev-app.js start 가 그 전에 받는다). ⚙ 앱 업데이트 줄 · 맥 메뉴 정보 · 코어 번들에 같은 번호 —
+// ⚙ 확인이 나중에 태그를 더 받아도 지금 버전은 바꾸지 않는다(새 번호는 latest 로만)
 let appVersionCache = null
 function appVersion() {
   if (!appVersionCache) appVersionCache = (!app.isPackaged && versionModel.describeVersion({ repoRoot: APP_ROOT, env: studioHome.gitEnv() })) || app.getVersion()
   return appVersionCache
 }
 const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
-const appUpdateView = () => ({ ...appUpdateStatus, version: appUpdateStatus.version || appVersion(), running: appUpdateRunning })
+const appUpdateView = () => ({ ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
 function sendAppUpdate() {
   for (const each of packWindows) each.send('app-update:status', appUpdateView())
 }

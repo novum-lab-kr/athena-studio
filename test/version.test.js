@@ -99,3 +99,21 @@ test('버전: release-version.js --dry-run — 빠진 머지를 차례로 채우
   git('tag', 'v0.3.1')
   assert.match(dry()[0], /^이미 태그가 있어요 — v0\.3\.1/)
 })
+
+test('버전: fetchTags — origin 의 v 태그를 받고 · origin 이 없으면 false', () => {
+  const root = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fetch-tags-test-')))
+  test.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const env = { ...gitEnv(), GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@example.invalid' }
+  const git = (cwd, ...args) => execFileSync('git', args, { cwd, env, stdio: 'ignore' })
+  const origin = path.join(root, 'origin')
+  git(root, 'init', '-q', '-b', 'main', origin)
+  git(origin, 'commit', '-q', '--allow-empty', '-m', 'first')
+  git(root, 'clone', '-q', '--no-tags', origin, 'app')
+  const app = path.join(root, 'app')
+  git(origin, 'tag', 'v0.2.0')
+  assert.equal(version.describeVersion({ repoRoot: app, env }), null)
+  assert.equal(version.fetchTags({ repoRoot: app, env }), true)
+  assert.equal(version.describeVersion({ repoRoot: app, env }), '0.2.0')
+  git(app, 'remote', 'remove', 'origin')
+  assert.equal(version.fetchTags({ repoRoot: app, env }), false)
+})

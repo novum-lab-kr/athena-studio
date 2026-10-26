@@ -168,6 +168,8 @@ function makeBundle() {
 }
 
 function start(args) {
+  // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
+  version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
   makeBundle()
   const useDevApp = process.platform === 'darwin' && make()
   const binary = useDevApp ? BINARY : require('electron')
