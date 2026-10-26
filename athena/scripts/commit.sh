@@ -35,6 +35,17 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 git() { GIT_LITERAL_PATHSPECS=1 command git -c core.quotePath=false "$@"; }
 # 파일 목록은 NUL 구분(-z)으로 받아 줄로 바꾼다 — " \ 공백이 든 이름도 인용되지 않은 그대로 (줄바꿈이 든 이름은 다루지 않는다)
 untracked_names() { git -C "$TOP" ls-files -z --others --exclude-standard | tr '\0' '\n'; }
+# .npmrc 내용(표준 입력)에 토큰 값이 글자 그대로 있나 — _authToken 값을 떼어(공백 · 따옴표 걷고) 비었거나 ${이름} 하나면 괜찮다. 값은 출력하지 않는다
+npmrc_literal_token() {
+  # 맥 awk 는 정규식의 \x27 · {n} 을 모른다 — 작은따옴표는 -v 로, 이름은 글자 하나씩
+  awk -v sq="'" '{ line = $0; sub(/^[ \t]+/, "", line); if (line ~ /^[#;]/) next
+         at = index(line, "_authToken"); if (!at) next
+         rest = substr(line, at + 10); if (rest !~ /^[ \t]*=/) next
+         sub(/^[ \t]*=/, "", rest); sub(/[ \t\r]+$/, "", rest); sub(/^[ \t]+/, "", rest)
+         if (substr(rest, 1, 1) == "\"" || substr(rest, 1, 1) == sq) { quote = substr(rest, 1, 1); if (substr(rest, length(rest), 1) == quote) rest = substr(rest, 2, length(rest) - 2) }
+         if (rest == "" || rest ~ /^\$\{[A-Za-z_][A-Za-z0-9_]*\}$/) next
+         found = 1 } END { exit found ? 0 : 1 }'
+}
 
 PLAN=""; DIR=""; MESSAGE=""; VERIFY_ARGS=""; ALLOW_SKIP=""; ALLOW_MAIN=0; NO_VERIFY=0; MERGE_BASE=0; FILES=()
 while [ $# -gt 0 ]; do
@@ -163,7 +174,7 @@ for file in ${FILES[@]+"${FILES[@]}"}; do
   esac
   if [ -f "$TOP/$file" ]; then
     grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$TOP/$file" 2>/dev/null && fail "개인키가 들어 있다: $file — 커밋하지 않는다"
-    [ "$name" = .npmrc ] && grep -qE '_authToken=[^$[:space:]]' "$TOP/$file" 2>/dev/null \
+    [ "$name" = .npmrc ] && npmrc_literal_token < "$TOP/$file" \
       && fail "토큰 값이 글자 그대로 들어 있다: $file — \${NPM_TOKEN} 같은 참조로 바꾼 뒤 커밋"
   fi
 done
@@ -190,7 +201,7 @@ if [ $MERGING = 1 ]; then
       .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|.netrc) fail "merge 결과에 비밀 파일로 보이는 것이 스테이징돼 있다: $staged — 커밋하지 않는다" ;;
     esac
     git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' && fail "merge 결과에 개인키가 든 파일이 있다: $staged — 커밋하지 않는다"
-    [ "$sname" = .npmrc ] && git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE '_authToken=[^$[:space:]]' \
+    [ "$sname" = .npmrc ] && git -C "$TOP" show ":$staged" 2>/dev/null | npmrc_literal_token \
       && fail "merge 결과의 $staged 에 토큰 값이 글자 그대로 들어 있다 — 커밋하지 않는다"
     git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE '^(<<<<<<<|>>>>>>>) ' && fail "merge 결과에 충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이 있다: $staged — 충돌을 다 푼 뒤 다시"
   done < <(git -C "$TOP" diff --cached --name-only --diff-filter=ACMR)

@@ -438,6 +438,22 @@ OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "
 expect "merge 중이면 파일 없이(-- 만)도 merge 커밋 · base 쪽 f.txt 포함" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ] && git -C "$WT" cat-file -e HEAD:f.txt' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "x" -- 2>&1)"; CODE=$?
 expect "merge 중이 아니면 파일 없는 호출은 거부(사용법)" '[ $CODE = 2 ]' "$OUT"
+# 충돌로 검증 대기인 PR 의 --auto-push 는 base 를 합친 merge 커밋 하나만(PR #22 라운드 3) — 줄은 지금 충돌 검증 대기(origin/feat/x = MERGE_COMMIT)
+PUSHED_BEFORE="$(git -C "$TMP/origin.git" rev-parse feat/x)"; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "충돌 검증 대기 — merge 커밋이어도 첫 부모가 origin/feat/x 가 아니면 거절(그 사이 커밋이 더 있음)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "첫 부모가 origin/feat/x 가 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
+echo g > "$WT/g.txt" && G -C "$WT" add g.txt && G -C "$WT" commit -q -m g
+printf -- '- `%s` feat/x · g · push 안 함\n' "$(git -C "$WT" rev-parse --short HEAD)" >> "$CORE/$PLANF"
+OUT="$(ship)"; CODE=$?
+expect "충돌 검증 대기 — merge 커밋이 아닌 커밋은 거절" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 커밋이 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
+# .npmrc 토큰 검사 — ${이름} 참조 · 빈 값은 커밋 · 값이 글자 그대로면 거부(PR #22 라운드 3 · 가짜 값)
+printf '//registry.npmjs.org/:_authToken="${NPM_TOKEN}"\n//npm.example.com/:_authToken=\n' > "$WT/.npmrc"
+OUT="$(commit .npmrc)"; CODE=$?
+expect ".npmrc — \${NPM_TOKEN} 참조(따옴표 포함) · 빈 값은 커밋" '[ $CODE = 0 ] && git -C "$WT" cat-file -e HEAD:.npmrc' "$OUT"
+printf '//registry.npmjs.org/:_authToken=fake-not-a-real-token\n' >> "$WT/.npmrc"
+OUT="$(commit .npmrc)"; CODE=$?
+expect ".npmrc — 값이 글자 그대로 적혀 있으면 거부(값은 출력 안 함)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "토큰 값이 글자 그대로" && ! echo "$OUT" | grep -q "fake-not-a-real-token"' "$OUT"
+G -C "$WT" checkout -q -- .npmrc
 
 # ── 머지 확인 — 레포가 "autoMergeConfirm": false 면 묻지 않고 바로 · 키가 없으면 지금처럼 확인 요청 ─────────
 # 임시 코어 사본(옛 구조 본체 · athena.config.json)에서 가짜 gh · 가짜 리뷰어(둘 다 승인) · 가짜 검증(reuse.sh 통과)으로 handle 을 끝까지 돌린다
