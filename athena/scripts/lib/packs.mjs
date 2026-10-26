@@ -21,6 +21,7 @@ import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLock
 import { isLink, linkOverlay, unlinkOverlay } from './overlay.mjs'
 import { captureRestore, checkRestore, discardRestore, restoreWork } from './restore.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
+import { dropRepoIcons } from './pack-repo-look.mjs'
 
 export { PackError, alive }
 
@@ -558,6 +559,7 @@ export const removeRepo = (root, name, { report = () => {} } = {}) => {
   for (const agent of agentsOf(entry)) if (!others.has(agent)) drop(`agents/${agent}.md`)
   drop(`knowledge/${name}`)
   drop(`verify/${name}.sh`)
+  removed.push(...dropRepoIcons(packDir, name)) // 그 레포 표시 아이콘(assets/repos/<레포>.*)
   writeJsonAtomic(join(packDir, 'pack.json'), { ...pack, repos: pack.repos.filter((repo) => repo !== entry) })
   const localFile = join(where.packDataReal, 'local.json')
   const local = readJson(localFile)

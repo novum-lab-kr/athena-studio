@@ -100,6 +100,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `delete <id> [--with-worktrees]` | 팩 지우기 — 먼저 팩 + 계획서 · 이슈 + 작업 기록(워크트리 변경 · pane 대화)을 `<데이터>/backups/packs/<id>-before-delete-….tar.gz` 로 백업(가져오기로 되살린다) → 현황판 끄기 → 워크트리 · 본체 · 데이터 자리 · 레지스트리 줄을 지운다. 주 본체 · 부른 본체의 팩은 `unsafe`(주 본체에서 부른다), 그 본체에서 claude 등이 돌면 `busy`, 워크트리가 남아 있으면 `has-worktrees`(+ `worktrees[{name,dirty}]` — `--with-worktrees` 면 같이 지운다). 서비스 레포 폴더는 그대로. 결과 `{ id, name, backup, removedBody, worktrees }` |
 | `inspect` · `import <token> --new\|--replace\|--keep` · `import-athena` · `export` · `backup --with-work` · `restore --with-work` · `board-token` · `migrate` | 1단계와 같다. `import --replace` 는 **그 팩의 본체**(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy·현황판 끄기·링크 다시·그 팩 세대 +1 |
 | `set-name <이름>\|--clear [--id <팩>]` · `set-icon <이미지>\|--clear [--id <팩>]` | 팩 표시 이름 · 아이콘을 **팩 안**(`pack.json` `displayName`·`icon` · `assets/`)에 — 팀과 공유된다(git 팩이면 팩 레포의 미커밋 변경). 이미지는 앞 바이트로 png·jpeg·webp 만 · 1MB 이하(`invalid-image` · `image-too-large`), 이름은 1~40자 · 줄바꿈 없음(`invalid-name`). `--id` 없으면 이 본체의 팩. 그 팩 작업 잠금 안에서 쓴다. `list`·`status`·`open` 에 `displayName` · `iconPath`(실제 절대 경로) · `iconUpdatedAt`. 내보내기·백업에 `assets/` 가 들고, 가져오기 검사는 `icon` 경로 모양과 `assets/` 안 이미지(형식·크기·링크 없음)를 본다 |
+| `set-repo-name <레포> <이름>\|--clear [--id <팩>]` · `set-repo-icon <레포> <이미지>\|--clear [--id <팩>]` | 레포 표시 이름 · 아이콘 — 팩 `set-name`·`set-icon` 과 같은 규칙(이름 1~40자 · 이미지 png·jpeg·webp · 1MB 이하 · 같은 오류 코드)으로 그 레포 항목의 `displayName` · `icon` 에. **레포 `name` 은 그대로**(경로 · 브랜치 · 스크립트 · 작업 공간 이름이 이것으로 찾는다 — 화면 표시만). 아이콘 파일은 늘 `assets/repos/<레포>.<png\|jpg\|webp>` 하나(바꾸면 이전 것 지움 · `--clear` 면 파일과 빈 폴더도 지움) — 팩 폴더 안이라 내보내기 · 백업 · 가져오기 · 되살리기에 같이 실린다. 그 키만 글자로 고친다(`set-auto-merge` 와 같다). 없는 레포 · 이름이 `^\w[\w.-]*$` 가 아니면 `not-found`. 팩에서 레포를 빼면(`repo remove`) 그 아이콘도 지운다. 가져오기 검사는 레포 `icon` 이 그 레포 자리 모양인지 본다(아니면 `invalid-pack` · 이름이 규칙 밖이면 경고). 결과 `{ id, repo, displayName }` · `{ id, repo, iconPath }`. 스튜디오 앱 사이드바 레포 우클릭이 이 명령을 부른다 |
 | `set-auto-merge <레포> [--auto on\|off] [--confirm on\|off] [--id <팩>]` | 레포별 PR 자동 리뷰 · 머지 — 그 레포 항목의 `"autoMerge": true`(off 면 키 지움) · `"autoMergeConfirm": false`(머지 전에 묻기 on 이면 키 지움). 값은 불리언 · 뜻은 `docs/pr-auto.md` "켜기". **그 두 키만 글자로 고친다** — 다른 키 · 순서 · 들여쓰기 · 한 줄로 쓴 항목 모양은 그대로. 없는 레포 `not-found` · main 직접 레포 `not-applicable`. `--id` 없으면 이 본체의 팩 · 그 팩 작업 잠금 안에서 쓴다. 결과 `{ id, repo, autoMerge, autoMergeConfirm }`(묻기면 `autoMergeConfirm: true`). 스튜디오 앱 ⚙ 설정이 이 명령을 부른다 |
 | `relink` · `attach <id>` | 본체 안에서 쓰는 것 — 링크 다시 맞추기(업데이트 뒤 새 코드로) · 빈 본체에 팩을 처음 걸기(이미 다른 팩에 묶였으면 `body-mismatch`) |
 
@@ -160,7 +161,9 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
     { "name": "admin-web", "agents": ["admin-fe"], "branch": "prd", "prBase": "dev", "kind": "single", "appDir": "app",
       "remote": "git@github.com:acme-inc/admin-web.git",   // (선택) git 주소 — 폴더 이름이 달라도 이 주소로 레포를 찾는다. athena init 이 적고, 내보내기 · 백업 사본에 채운다
       "alias": "admin",                    // new-branch 대상 이름(없으면 레포 이름 일부)
-      "prScope": "admin" },                // PR 제목 범위 — 문자열 또는 [{ "match": "^apps/([^/]+)/", "scope": "$1" }]
+      "prScope": "admin",                  // PR 제목 범위 — 문자열 또는 [{ "match": "^apps/([^/]+)/", "scope": "$1" }]
+      "displayName": "어드민",              // (선택) 스튜디오 사이드바에 보일 이름(팩 displayName 과 같은 규칙) — bin/athena pack set-repo-name · name 은 그대로
+      "icon": "assets/repos/admin-web.png" },   // (선택) 사이드바 아이콘 — 늘 assets/repos/<name>.<png|jpg|webp> — bin/athena pack set-repo-icon
     { "name": "web", "kind": "monorepo", "branch": "dev", "alias": "web",
       "apps": { "shop-web": { "agent": "shop-fe", "branch": "prd-shop", "prBase": "dev" } },
       "packagesAgent": "web-packages-fe",

@@ -187,6 +187,55 @@ async function main() {
       fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
       return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false })
     }
+    // 레포 표시 이름 · 이미지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만(set-auto-merge 와 같다). 이미지는 형식만 보고 assets/repos/<레포>.<형식> 으로 복사
+    case 'set-repo-name':
+    case 'set-repo-icon': {
+      const file = path.join(process.cwd(), 'pack', 'pack.json')
+      let pack
+      try {
+        pack = JSON.parse(fs.readFileSync(file, 'utf8'))
+      } catch {
+        fail('not-found', '이 본체 팩에 pack.json 이 없어요')
+      }
+      const repo = (pack.repos || []).find((item) => item && item.name === arg)
+      if (!repo || !/^\w[\w.-]*$/.test(arg)) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
+      const clear = process.argv.includes('--clear')
+      const value = process.argv[5] && !process.argv[5].startsWith('--') ? process.argv[5] : null // pack <명령> <레포> <값>
+      const id = (mine && mine.id) || 'fake'
+      if (sub === 'set-repo-name') {
+        const name = clear ? null : String(value || '').trim()
+        if (!clear && (name.length < 1 || name.length > 40)) fail('invalid-name', '이름은 1~40자')
+        if (name) repo.displayName = name
+        else delete repo.displayName
+        fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+        return done({ ok: true, id, repo: arg, displayName: name })
+      }
+      const assets = path.join(process.cwd(), 'pack', 'assets', 'repos')
+      for (const kind of ['png', 'jpg', 'webp']) fs.rmSync(path.join(assets, `${arg}.${kind}`), { force: true })
+      if (clear) {
+        delete repo.icon
+        fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+        return done({ ok: true, id, repo: arg, iconPath: null })
+      }
+      let bytes
+      try {
+        bytes = fs.readFileSync(value)
+      } catch {
+        fail('invalid-image', '이미지 파일을 읽지 못했어요')
+      }
+      const head = bytes.subarray(0, 12)
+      let kind = null
+      if (head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) kind = 'png'
+      else if (head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) kind = 'jpg'
+      else if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') kind = 'webp'
+      if (!kind) fail('invalid-image', 'png · jpeg · webp 만')
+      if (bytes.length > 1024 * 1024) fail('image-too-large', '1MB 이하만')
+      fs.mkdirSync(assets, { recursive: true })
+      fs.writeFileSync(path.join(assets, `${arg}.${kind}`), bytes)
+      repo.icon = `assets/repos/${arg}.${kind}`
+      fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+      return done({ ok: true, id, repo: arg, iconPath: path.join(assets, `${arg}.${kind}`) })
+    }
     case 'board-token':
       return done({ ok: false, error: 'not-found', message: '가짜 모드에는 현황판 토큰이 없어요' }, 1)
     case 'use': {

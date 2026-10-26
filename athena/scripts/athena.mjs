@@ -21,6 +21,8 @@
  *   athena pack relink · attach <id> [--json]      (본체 안에서 쓰는 것) 링크 다시 맞추기 · 빈 본체에 팩을 처음 걸기
  *   athena pack set-name <이름>|--clear [--id <팩>] [--json]      팩 표시 이름(pack.json displayName · 팀과 공유 · id·name 은 그대로)
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
+ *   athena pack set-repo-name <레포> <이름>|--clear [--id <팩>] [--json]     레포 표시 이름(pack.json repos[] displayName · 레포 name 은 그대로)
+ *   athena pack set-repo-icon <레포> <이미지>|--clear [--id <팩>] [--json]   레포 아이콘(같은 규칙 → 팩 assets/repos/<레포>.<형식>)
  *   athena pack set-auto-merge <레포> [--auto on|off] [--confirm on|off] [--id <팩>] [--json]
  *                                                  레포별 PR 자동 리뷰 · 머지(pack.json "autoMerge") · 머지 전에 묻기("autoMergeConfirm") — docs/pr-auto.md "켜기"
  *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--panes-state <파일>] [--json]
@@ -70,6 +72,7 @@ import { existsSync, lstatSync, mkdirSync, readFileSync, statSync, writeFileSync
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { ATHENA_ROOT, boardPort, dataDir, defaultBackupDir, loadConfig, paths } from './lib/config.mjs'
 import { setDisplayName, setIcon } from './lib/pack-look.mjs'
+import { setRepoDisplayName, setRepoIcon } from './lib/pack-repo-look.mjs'
 import { setAutoMerge } from './lib/pack-merge.mjs'
 import { CONTRACT, deletePack, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
@@ -412,6 +415,18 @@ const packCommands = {
     const clear = args.includes('--clear')
     if (!clear && !positional()[0]) throw new PackError('usage', '사용: athena pack set-icon <이미지 파일>|--clear [--id <팩>] [--json]')
     return setIcon(paths(ROOT), { id: flag('id'), file: clear ? '' : resolve(positional()[0]), clear })
+  },
+  'set-repo-name': () => {
+    const clear = args.includes('--clear')
+    const [repo, ...words] = positional()
+    if (!repo || (!clear && !words.length)) throw new PackError('usage', '사용: athena pack set-repo-name <레포> <이름>|--clear [--id <팩>] [--json]')
+    return setRepoDisplayName(paths(ROOT), { id: flag('id'), repo, name: words.join(' '), clear })
+  },
+  'set-repo-icon': () => {
+    const clear = args.includes('--clear')
+    const [repo, file] = positional()
+    if (!repo || (!clear && !file)) throw new PackError('usage', '사용: athena pack set-repo-icon <레포> <이미지 파일>|--clear [--id <팩>] [--json]')
+    return setRepoIcon(paths(ROOT), { id: flag('id'), repo, file: clear ? '' : resolve(file), clear })
   },
   'set-auto-merge': () => setAutoMerge(paths(ROOT), { id: flag('id'), repo: positional()[0], auto: flag('auto'), confirm: flag('confirm') }),
   attach: () => {
