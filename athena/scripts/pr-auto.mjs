@@ -173,7 +173,8 @@ export const runReviewers = async (prompt, config = {}, inherited = [], slots = 
   if (taken) return taken
   if (slot.unavailable) return { name, status: 'unavailable', reason: slot.unavailable }
   if (!has(kind)) return { name, status: 'unavailable', reason: '설치 안 됨' }
-  const workDir = mkdtempSync(join(tmpdir(), `athena-pr-auto-${name}-`))
+  // 접두사는 고정된 kind 로 — name 에는 모델 이름이 들어가고(claude-<모델>) 모델 이름은 '/' 를 허용해 경로로 풀린다(PR #21 자동 리뷰 지적)
+  const workDir = mkdtempSync(join(tmpdir(), `athena-pr-auto-${kind}-`))
   try {
     return await REVIEWER_RUN[kind](prompt, workDir, config, slot)
   } catch (error) {
