@@ -490,6 +490,8 @@
   "settings.appUpdateButton": "업데이트",
   "settings.appUpdateBehind": "새 커밋 {count}개",
   "settings.appUpdateCurrent": "최신이에요",
+  "settings.appUpdateVersion": "{version}",
+  "settings.appUpdateNewVersion": "{current} → {next}",
   "settings.appUpdateRunning": "받는 중…",
   "settings.appUpdateNotMain": "main 브랜치가 아니에요({branch})",
   "settings.appUpdateDirty": "커밋하지 않은 변경이 있어요",

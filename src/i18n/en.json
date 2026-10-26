@@ -490,6 +490,8 @@
   "settings.appUpdateButton": "Update",
   "settings.appUpdateBehind": "{count} new commits",
   "settings.appUpdateCurrent": "Up to date",
+  "settings.appUpdateVersion": "{version}",
+  "settings.appUpdateNewVersion": "{current} → {next}",
   "settings.appUpdateRunning": "Pulling…",
   "settings.appUpdateNotMain": "Not on main ({branch})",
   "settings.appUpdateDirty": "Uncommitted changes",

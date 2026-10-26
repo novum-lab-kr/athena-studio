@@ -39,6 +39,11 @@ function userDataDir({ appData, identity, override = null }) {
 // 개발 앱: 레포의 .dev-app/resources/(npm start 가 레포 athena/ 에서 만든다 · git 무시)
 // 배포판(나중 — 패키징은 다음 계획): process.resourcesPath(extraResources 로 같은 이름을 넣는다)
 const CORE_BUNDLE_NAME = 'athena-core.bundle'
+// 번들에 싣는 버전 ref — refs/athena/version/<버전>(0.2.1 · 0.2.1+3 — src/lib/version.js) → 코어 커밋.
+// 코어 커밋은 athena/ 가 그대로면 여러 앱 버전에서 같으니, 버전은 커밋이 아니라 이 ref 로 따라간다(코어 version --json 의 version)
+const VERSION_REF_PREFIX = 'refs/athena/version/'
+const VERSION_REFSPEC = `+${VERSION_REF_PREFIX}*:${VERSION_REF_PREFIX}*`
+const VERSION_NAME_RE = /^\d+\.\d+\.\d+(\+\d+)?$/
 
 function resourcesDir({ appRoot, packaged, resourcesPath = null }) {
   return packaged ? resourcesPath : path.join(appRoot, '.dev-app', 'resources')
@@ -80,6 +85,26 @@ function bundleHead(bundle, options = {}) {
     return line ? line.split(' ')[0] : null
   } catch {
     return null
+  }
+}
+
+// 번들이 실은 버전 ref(refs/athena/version/*)를 주 본체에 받는다 — 팩 본체(같은 저장소의 워크트리)도 같은 ref 를 본다.
+// 이미 같으면 받지 않는다. 옛 번들(버전 ref 없음)이면 아무것도 안 한다. → 받은 ref 수 · 실패는 0(버전만 비고 켜기는 그대로)
+function syncVersionRefs({ coreDir, bundle, env = gitEnv() }) {
+  try {
+    const wanted = git(['bundle', 'list-heads', bundle], { env }).split('\n').map((line) => line.split(' ')).filter((parts) => parts.length === 2 && parts[1].startsWith(VERSION_REF_PREFIX))
+    const missing = wanted.filter(([sha, ref]) => {
+      try {
+        return git(['rev-parse', '--verify', '--quiet', ref], { cwd: coreDir, env }) !== sha
+      } catch {
+        return true
+      }
+    })
+    if (!missing.length) return 0
+    git(['fetch', '--quiet', '--no-tags', '--no-write-fetch-head', bundle, VERSION_REFSPEC], { cwd: coreDir, env, timeout: 300000 })
+    return missing.length
+  } catch {
+    return 0
   }
 }
 
@@ -352,6 +377,7 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = 
 async function prepareCore({ layout, bundle, home, runCore, panesStateFile = null, update = true, env = gitEnv() }) {
   const installed = installCore({ bundle, coreDir: layout.core, env })
   if (!installed.ok) return installed
+  syncVersionRefs({ coreDir: layout.core, bundle, env })
   const config = ensureCoreConfig(layout.core, { dataDir: layout.data, reposRoot: home, boardPort: STUDIO_PORT_BASE })
   if (!config.ok) return config
   // bodiesDir 는 데이터 폴더 기준 상대 경로 — 스튜디오 집을 통째로 옮겨도 맞는다
@@ -364,7 +390,9 @@ async function prepareCore({ layout, bundle, home, runCore, panesStateFile = nul
 // ── 개발 앱 — 레포 athena/(스튜디오 코어)의 커밋 기록으로 번들 만들기(scripts/dev-app.js start) ──
 // athena/ 폴더 기록만 뽑아(git subtree split) 같은 기록이면 늘 같은 커밋을 낸다(코어 커밋의 후손 — 앞으로 감기가 된다). athena/ 트리가 그대로면 다시 만들지 않는다.
 // 커밋하지 않은 athena/ 변경은 들어가지 않는다. 레포 ref 는 만들지 않는다(임시 bare 저장소 + alternates 에서 번들을 만든다)
-function makeCoreBundle({ repoRoot, out, prefix = 'athena', env = gitEnv(), log = () => {} }) {
+// version: 이 앱 체크아웃의 버전 — 번들에 버전 ref 로 싣는다(위 VERSION_REF_PREFIX)
+function makeCoreBundle({ repoRoot, out, prefix = 'athena', version = null, env = gitEnv(), log = () => {} }) {
+  const versionName = version && VERSION_NAME_RE.test(version) ? version : null
   let tree
   try {
     tree = git(['rev-parse', `HEAD:${prefix}`], { cwd: repoRoot, env })
@@ -373,7 +401,7 @@ function makeCoreBundle({ repoRoot, out, prefix = 'athena', env = gitEnv(), log 
   }
   const marker = `${out}.json`
   const saved = readJson(marker)
-  if (saved && saved.tree === tree && saved.commit && bundleHead(out, { env }) === saved.commit) return { ok: true, built: false, commit: saved.commit, tree }
+  if (saved && saved.tree === tree && (saved.version || null) === versionName && saved.commit && bundleHead(out, { env }) === saved.commit) return { ok: true, built: false, commit: saved.commit, tree, version: versionName }
   log(`코어 번들 만들기 — ${prefix}/ 트리 ${tree.slice(0, 12)}`)
   const commit = git(['subtree', 'split', '--prefix', prefix, 'HEAD'], { cwd: repoRoot, env, timeout: 600000 }).split('\n').pop().trim()
   const objects = git(['rev-parse', '--path-format=absolute', '--git-common-dir'], { cwd: repoRoot, env })
@@ -384,11 +412,16 @@ function makeCoreBundle({ repoRoot, out, prefix = 'athena', env = gitEnv(), log 
     fs.writeFileSync(path.join(scratch, 'objects', 'info', 'alternates'), path.join(objects, 'objects') + '\n')
     git(['update-ref', 'refs/heads/main', commit], { cwd: scratch, env })
     git(['symbolic-ref', 'HEAD', 'refs/heads/main'], { cwd: scratch, env })
+    const refs = ['HEAD', 'main']
+    if (versionName) {
+      git(['update-ref', `${VERSION_REF_PREFIX}${versionName}`, commit], { cwd: scratch, env })
+      refs.push(`${VERSION_REF_PREFIX}${versionName}`)
+    }
     fs.mkdirSync(path.dirname(out), { recursive: true })
-    git(['bundle', 'create', '--quiet', building, 'HEAD', 'main'], { cwd: scratch, env, timeout: 600000 })
+    git(['bundle', 'create', '--quiet', building, ...refs], { cwd: scratch, env, timeout: 600000 })
     fs.renameSync(building, out)
-    writeJson(marker, { tree, commit, at: new Date().toISOString() })
-    return { ok: true, built: true, commit, tree }
+    writeJson(marker, { tree, commit, version: versionName, at: new Date().toISOString() })
+    return { ok: true, built: true, commit, tree, version: versionName }
   } catch (error) {
     fs.rmSync(building, { force: true })
     return { ok: false, error: 'bundle-failed', message: String(error.stderr || error.message).trim().slice(0, 300) }
@@ -419,6 +452,8 @@ module.exports = {
   updateCore,
   prepareCore,
   makeCoreBundle,
+  syncVersionRefs,
+  VERSION_REF_PREFIX,
   resetPlan,
   resetHome,
 }

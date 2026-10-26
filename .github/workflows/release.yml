@@ -1,0 +1,23 @@
+# main 에 머지될 때마다 버전 태그 vX.Y.Z + GitHub Release(결정 D2 · D4 — plans/feature/20261026-버저닝).
+# 사람이 GitHub 에서 머지해도 · 자동 머지 흐름이 머지해도 push → main 이라 똑같이 걸린다. 계산은 scripts/release-version.js(src/lib/version.js)
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+# 머지가 몰려도 하나씩 — 앞 태그를 보고 다음 번호를 정한다
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 버전 태그 · Release
+        run: node scripts/release-version.js --sha "$GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}

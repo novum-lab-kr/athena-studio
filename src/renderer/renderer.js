@@ -2071,7 +2071,7 @@ function settingsMerge() {
 
 // ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜지고 ⚙ 에 점 ─────
 // 누르면 main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
-let appUpdate = null // main 의 상태 { state, behind, branch, reason, running } · unavailable 이면 줄을 그리지 않는다
+let appUpdate = null // main 의 상태 { state, behind, branch, reason, version, latest, running } · unavailable 이면 줄을 그리지 않는다
 let appUpdateFailure = null // 방금 누른 [업데이트] 가 못 한 까닭(다음 상태가 오면 지운다)
 
 function appUpdateReasonText(reason, branch) {
@@ -2090,6 +2090,8 @@ function appUpdateNote() {
   if (appUpdate.reason && appUpdate.state === 'behind') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
   // origin 에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
   if (appUpdate.reason === 'fetch-failed') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
+  // origin/main 에 새 버전 태그가 있으면 '0.2.1 → 0.3.0' · 아직 없으면 커밋 수
+  if (appUpdate.state === 'behind' && appUpdate.latest) return say('settings.appUpdateNewVersion', { current: appUpdate.version || '-', next: appUpdate.latest })
   if (appUpdate.state === 'behind') return say('settings.appUpdateBehind', { count: appUpdate.behind })
   return say('settings.appUpdateCurrent')
 }
@@ -2103,7 +2105,10 @@ function settingsAppUpdate() {
   button.dataset.key = 'app-update'
   button.disabled = appUpdate.state !== 'behind' || appUpdate.running
   button.addEventListener('click', runAppUpdate)
-  row.append(el('span', 'settings-app-label', say('settings.appUpdate')), button)
+  const label = el('span', 'settings-app-label', say('settings.appUpdate'))
+  // 지금 버전 — 늘
+  if (appUpdate.version) label.append(el('span', 'settings-app-version', say('settings.appUpdateVersion', { version: appUpdate.version })))
+  row.append(label, button)
   node.append(row, el('p', 'settings-note settings-app-note', appUpdateNote()))
   return node
 }

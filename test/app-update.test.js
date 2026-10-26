@@ -46,15 +46,15 @@ const push = (dev, file, text) => {
 const gitOrFail = (args, { cwd }) => new Promise((resolve) => resolve(run(cwd, ...args)))
 
 test('앱 업데이트: git 체크아웃이 아니면 unavailable(줄을 보이지 않는다)', async () => {
-  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: tmp() }), { state: 'unavailable', behind: 0, branch: null, reason: null })
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: tmp() }), { state: 'unavailable', behind: 0, branch: null, reason: null, version: null, latest: null })
 })
 
 test('앱 업데이트: 최신이면 current · 뒤처지면 behind(커밋 수) · 받으면 빨리 감기 · lockfile 이 그대로면 install 없음', async () => {
   const { app, dev } = repos()
-  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'current', behind: 0, branch: 'main', reason: null })
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'current', behind: 0, branch: 'main', reason: null, version: null, latest: null })
   push(dev, 'README.md', 'b\n')
   const next = push(dev, 'README.md', 'c\n')
-  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 2, branch: 'main', reason: null })
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 2, branch: 'main', reason: null, version: null, latest: null })
   const pulled = await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })
   assert.equal(pulled.ok, true)
   assert.equal(pulled.to, next)
@@ -79,7 +79,7 @@ test('앱 업데이트: 추적 파일 변경 · main 이 아님 · 로컬 커밋
   fs.writeFileSync(path.join(app, 'scratch.txt'), 'x\n')
   assert.equal((await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail })).reason, null)
   fs.appendFileSync(path.join(app, 'README.md'), 'local\n')
-  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 1, branch: 'main', reason: 'dirty' })
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 1, branch: 'main', reason: 'dirty', version: null, latest: null })
   assert.deepEqual(await appUpdate.pullMain({ repoRoot: app, git: gitOrFail }), { ok: false, reason: 'dirty', branch: 'main' })
   assert.equal(run(app, 'rev-parse', 'HEAD'), before)
   assert.match(fs.readFileSync(path.join(app, 'README.md'), 'utf8'), /local/)
@@ -103,7 +103,7 @@ test('앱 업데이트: origin 에서 못 받으면 fetch-failed — 이미 받�
   run(app, 'fetch', '-q', 'origin')
   run(app, 'remote', 'set-url', 'origin', path.join(tmp(), 'missing.git'))
   const status = await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail })
-  assert.deepEqual(status, { state: 'behind', behind: 1, branch: 'main', reason: 'fetch-failed' })
+  assert.deepEqual(status, { state: 'behind', behind: 1, branch: 'main', reason: 'fetch-failed', version: null, latest: null })
   assert.equal((await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })).reason, 'fetch-failed')
 })
 
@@ -111,4 +111,36 @@ test('앱 업데이트: 기본 git(runGit)으로도 돈다', async () => {
   const { app, dev } = repos()
   push(dev, 'README.md', 'b\n')
   assert.equal((await appUpdate.checkStatus({ repoRoot: app })).state, 'behind')
+})
+
+// 버전 — 태그 vX.Y.Z(src/lib/version.js). 지금 버전은 늘 · origin/main 에 더 높은 태그가 있을 때만 latest
+test('앱 업데이트: 태그로 지금 버전 · origin 의 새 태그(latest) — 새 태그가 아직 없으면 latest 없음', async () => {
+  const { app, dev } = repos()
+  run(dev, 'tag', 'v0.2.1')
+  run(dev, 'push', '-q', 'origin', 'v0.2.1')
+  run(app, 'fetch', '-q', 'origin', 'v0.2.1:refs/tags/v0.2.1')
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'current', behind: 0, branch: 'main', reason: null, version: '0.2.1', latest: null })
+  // 커밋만 늘었다 — 새 태그 없음
+  push(dev, 'README.md', 'b\n')
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 1, branch: 'main', reason: null, version: '0.2.1', latest: null })
+  // 새 태그 — 받기(fetch)로 태그도 온다
+  push(dev, 'README.md', 'c\n')
+  run(dev, 'tag', 'v0.3.0')
+  run(dev, 'push', '-q', 'origin', 'v0.3.0')
+  assert.deepEqual(await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail }), { state: 'behind', behind: 2, branch: 'main', reason: null, version: '0.2.1', latest: '0.3.0' })
+  // 받은 뒤 — 태그 커밋이면 0.3.0 · 그 위에 내 커밋이면 +1
+  await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })
+  assert.equal((await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail, fetch: false })).version, '0.3.0')
+  run(app, 'checkout', '-q', '-b', 'feature/y')
+  fs.appendFileSync(path.join(app, 'README.md'), 'mine\n')
+  run(app, 'commit', '-qam', 'mine')
+  assert.equal((await appUpdate.checkStatus({ repoRoot: app, git: gitOrFail, fetch: false })).version, '0.3.0+1')
+})
+
+test('앱 업데이트: newerVersion — 태그가 더 높을 때만', () => {
+  assert.equal(appUpdate.newerVersion('0.2.1', '0.3.0'), '0.3.0')
+  assert.equal(appUpdate.newerVersion('0.2.1+2', '0.2.1+5'), null)
+  assert.equal(appUpdate.newerVersion('0.2.1', '0.2.2+1'), '0.2.2+1')
+  assert.equal(appUpdate.newerVersion(null, '0.1.1'), '0.1.1')
+  assert.equal(appUpdate.newerVersion('0.2.1', null), null)
 })

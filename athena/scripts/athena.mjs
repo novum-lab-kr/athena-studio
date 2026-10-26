@@ -50,7 +50,7 @@
  *   athena request ack <id> [--json]               에이전트가 답을 받았다(answered → delivered · 두 번 불러도 된다)
  *   athena request cancel <id> [--reason <글>] [--json]
  *
- *   athena version [--json]                          이 본체 코어 커밋 · 약속 번호(contract) · 데이터 형식 범위 · 배포 커밋 — 스튜디오가 맞는지 본다
+ *   athena version [--json]                          이 본체 코어 커밋 · 스튜디오 버전 · 약속 번호(contract) · 데이터 형식 범위 · 배포 커밋 — 스튜디오가 맞는지 본다
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
  *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
@@ -295,7 +295,7 @@ const human = {
     for (const slot of result.emptySlots ?? []) console.log(`    ${slot.id.padEnd(20)} (빈 자리 · /setup 전${slot.body ? ` · ${slot.body}` : ''} — 버리려면 pack discard ${slot.id})`)
   },
   busy: (result) => { if (!result.busy.length) console.log(result.busyKnown === false ? '도는 작업을 다 읽지 못했다' : '이 본체에서 도는 작업 없음'); for (const item of result.busy) console.log(`  ${item.kind.padEnd(13)} ${item.what}${item.pid ? ` (pid ${item.pid})` : ''}`) },
-  version: (result) => console.log(`코어 ${result.core ? result.core.slice(0, 7) : '(git 아님)'}${result.dirty ? ' (미커밋 변경)' : ''} · 약속 ${result.contract} · 데이터 형식 ${result.dataFormats.join('~')} · 본체 ${result.body}${result.deploy ? ` · 배포 ${result.deploy.commit.slice(0, 7)}` : ''}`),
+  version: (result) => console.log(`코어 ${result.core ? result.core.slice(0, 7) : '(git 아님)'}${result.dirty ? ' (미커밋 변경)' : ''}${result.version ? ` · 버전 ${result.version}` : ''} · 약속 ${result.contract} · 데이터 형식 ${result.dataFormats.join('~')} · 본체 ${result.body}${result.deploy ? ` · 배포 ${result.deploy.commit.slice(0, 7)}` : ''}`),
   'request list': (result) => {
     if (!result.requests.length) console.log('열린 요청 없음')
     for (const request of result.requests) console.log(`  ${requestLine(request)}`)

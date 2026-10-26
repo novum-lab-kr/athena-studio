@@ -490,6 +490,8 @@
   "settings.appUpdateButton": "アップデート",
   "settings.appUpdateBehind": "新しいコミット {count} 件",
   "settings.appUpdateCurrent": "最新です",
+  "settings.appUpdateVersion": "{version}",
+  "settings.appUpdateNewVersion": "{current} → {next}",
   "settings.appUpdateRunning": "取得中…",
   "settings.appUpdateNotMain": "main ブランチではありません({branch})",
   "settings.appUpdateDirty": "コミットしていない変更があります",

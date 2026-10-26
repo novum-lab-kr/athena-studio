@@ -117,7 +117,7 @@ test('번들: athena/ 커밋 기록으로 만들고 · 트리가 같으면 다�
   // 레포 쪽 파일만 바뀐 커밋 — 코어 트리가 같으니 그대로
   fs.writeFileSync(path.join(repo, 'README.md'), 'studio 2\n')
   run(repo, 'commit', '-q', '-am', 'studio only')
-  assert.deepEqual(home.makeCoreBundle({ repoRoot: repo, out }), { ok: true, built: false, commit: first.commit, tree: first.tree })
+  assert.deepEqual(home.makeCoreBundle({ repoRoot: repo, out }), { ok: true, built: false, commit: first.commit, tree: first.tree, version: null })
   commitCore(repo, 'NEW.md', 'new\n')
   const second = home.makeCoreBundle({ repoRoot: repo, out })
   assert.equal(second.built, true)
@@ -129,6 +129,36 @@ test('번들: athena/ 커밋 기록으로 만들고 · 트리가 같으면 다�
   assert.equal(fs.existsSync(path.join(clone, 'NEW.md')), true)
   assert.equal(fs.existsSync(path.join(clone, 'README.md')), false)
   assert.equal(home.makeCoreBundle({ repoRoot: tmp(), out }).ok, false)
+})
+
+test('번들: 버전 ref 를 싣고(버전이 바뀌면 다시 만든다) · 주 본체로 받는다(이미 같으면 안 받음 · 옛 번들이면 아무것도)', () => {
+  const repo = studioRepo()
+  const out = path.join(repo, 'core.bundle')
+  const first = home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0' })
+  assert.equal(first.version, '0.2.0')
+  const heads = () => run(repo, 'bundle', 'list-heads', out).split('\n').map((line) => line.split(' ')[1]).sort()
+  assert.deepEqual(heads(), ['HEAD', 'refs/athena/version/0.2.0', 'refs/heads/main'])
+  // 레포에는 ref 를 만들지 않는다
+  assert.deepEqual(run(repo, 'for-each-ref', '--format=%(refname)').split('\n'), ['refs/heads/main'])
+  // 코어 트리는 그대로 · 버전만 바뀜 → 다시 만든다(같은 커밋 · 새 ref)
+  const second = home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0+1' })
+  assert.equal(second.built, true)
+  assert.equal(second.commit, first.commit)
+  assert.deepEqual(heads(), ['HEAD', 'refs/athena/version/0.2.0+1', 'refs/heads/main'])
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out, version: '0.2.0+1' }).built, false)
+  // 모양이 아닌 버전은 싣지 않는다
+  assert.equal(home.makeCoreBundle({ repoRoot: repo, out: path.join(repo, 'odd.bundle'), version: 'v1 x' }).version, null)
+  // 주 본체로 — 처음엔 받고 · 같으면 0
+  const coreDir = path.join(tmp(), 'core')
+  home.installCore({ bundle: out, coreDir })
+  assert.equal(home.syncVersionRefs({ coreDir, bundle: out }), 1)
+  assert.equal(run(coreDir, 'rev-parse', 'refs/athena/version/0.2.0+1'), first.commit)
+  assert.equal(home.syncVersionRefs({ coreDir, bundle: out }), 0)
+  // 옛 번들(버전 없음) · 번들이 없음 — 아무것도 안 한다
+  const plain = path.join(repo, 'plain.bundle')
+  home.makeCoreBundle({ repoRoot: repo, out: plain })
+  assert.equal(home.syncVersionRefs({ coreDir, bundle: plain }), 0)
+  assert.equal(home.syncVersionRefs({ coreDir, bundle: path.join(repo, 'none.bundle') }), 0)
 })
 
 test('풀기: 번들 → 주 본체(main · origin/main) · 있으면 그대로 · 번들이 없으면 bundle-missing', () => {
@@ -332,11 +362,13 @@ test('켤 때 업데이트: 주 본체에 팩이 없어도 레지스트리에 �
 test('켤 때 준비: 첫 실행은 풀고 · 다시 켜면 새 번들로 감되 데이터 폴더 해시는 같다', async () => {
   const repo = studioRepo()
   const bundle = path.join(repo, '.dev-app', 'resources', home.CORE_BUNDLE_NAME)
-  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const made = home.makeCoreBundle({ repoRoot: repo, out: bundle, version: '0.3.0' })
   const layout = home.studioLayout({ home: '/unused', override: path.join(tmp(), '.athena-studio'), identity: home.appIdentity({ packaged: false }) })
   const runCore = async () => assert.fail('팩 없는 본체는 코어를 부르지 않는다')
   const first = await home.prepareCore({ layout, bundle, home: '/Users/me', runCore })
   assert.deepEqual(first, { ok: true, created: true, update: null })
+  // 번들이 실은 버전 ref 도 받는다(코어 version --json 의 version)
+  assert.equal(run(layout.core, 'rev-parse', `${home.VERSION_REF_PREFIX}0.3.0`), made.commit)
   assert.deepEqual(JSON.parse(fs.readFileSync(path.join(layout.core, 'athena.config.json'), 'utf8')), { dataDir: layout.data, screen: 'studio', reposRoot: '/Users/me', boardPort: home.STUDIO_PORT_BASE })
   const registry = JSON.parse(fs.readFileSync(path.join(layout.data, 'config.json'), 'utf8'))
   assert.equal(registry.bodiesDir, '../bodies')

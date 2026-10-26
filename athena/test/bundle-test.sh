@@ -107,6 +107,12 @@ check "본체 안 진짜 파일(설정·상태·.migrate-*) 그대로" '[ "$(loc
 check "두 본체 다 ready · 깨끗" '[ "$(J "$CORE" pack list | field packs.globex.bodyState)" = ready ] && [ -z "$(git -C "$BODY_G" status --porcelain --untracked-files=no)" ]'
 R="$(J "$CORE" update --from "$WORK/core-2.bundle")"
 check "같은 번들을 다시 → same · complete(멱등)" '[ "$(echo "$R" | field status)" = complete ] && [ "$(echo "$R" | field bodies.globex.status)" = same ]' "$R"
+check "옛 번들(버전 ref 없음) → version null" '[ -z "$(J "$BODY_G" version | field version)" ]'
+git -C "$DEV" update-ref refs/athena/version/0.9.0 "$C1"
+git -C "$DEV" bundle create -q "$WORK/core-2v.bundle" main refs/athena/version/0.9.0 2>/dev/null
+git -C "$DEV" update-ref -d refs/athena/version/0.9.0
+R="$(J "$CORE" update --from "$WORK/core-2v.bundle")"
+check "버전 ref 를 실은 번들 → 두 본체 version 0.9.0 · 텍스트에도" '[ "$(J "$CORE" version | field version)" = 0.9.0 ] && [ "$(J "$BODY_G" version | field version)" = 0.9.0 ] && (cd "$BODY_G" && node scripts/athena.mjs version --contract 3 2>/dev/null | grep -q "버전 0.9.0")' "$R"
 check "없는 번들 → not-found · 번들 아닌 파일 → fetch-failed" '[ "$(J "$CORE" update --from "$WORK/nope.bundle" | field error)" = not-found ] && [ "$(J "$CORE" update --from "$WORK/files.list" | field error)" = fetch-failed ]'
 
 section "얇은 번들(앞 커밋 전제) · dirty 는 기본 건너뜀"
