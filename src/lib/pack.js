@@ -124,6 +124,20 @@ function packIconPath(list, id) {
   return ICON_EXTENSIONS.includes(path.extname(iconPath).toLowerCase()) ? iconPath : null
 }
 
+// 레포 표시 이름 · 아이콘 — pack.json repos[] 의 displayName · icon(코어 athena/scripts/lib/pack-repo-look.mjs 와 같은 규칙). 화면은 displayName ?? name.
+// 규칙 밖이면 null(이름은 원래 이름 · 아이콘은 글자 동그라미). icon 은 늘 assets/repos/<name>.<png|jpg|webp> — 실제 파일(팩 안 · 링크 아님)은 읽는 쪽(main)이 본다
+const REPO_ICON_NAME = /^\w[\w.-]*$/
+const LOOK_NAME_MAX = 40
+const LOOK_NAME_BAD = /[\u0000-\u001f\u007f\u2028\u2029\u200e\u200f\u202a-\u202e\u2066-\u2069]/
+function repoLook(repo) {
+  const name = String((repo && repo.name) || '')
+  const text = repo && typeof repo.displayName === 'string' ? repo.displayName.trim() : ''
+  const displayName = text && [...text].length <= LOOK_NAME_MAX && !LOOK_NAME_BAD.test(text) ? text : null
+  const prefix = `assets/repos/${name}.`
+  const okIcon = REPO_ICON_NAME.test(name) && typeof repo.icon === 'string' && repo.icon.startsWith(prefix) && /^(png|jpg|webp)$/.test(repo.icon.slice(prefix.length))
+  return { displayName, icon: okIcon ? repo.icon : null }
+}
+
 // 이미지 앞 바이트로 형식 — png · jpeg · webp 만(SVG · GIF 등은 null)
 function iconMime(head) {
   if (!Buffer.isBuffer(head) || head.length < 12) return null
@@ -282,6 +296,7 @@ module.exports = {
   packLabel,
   ICON_MAX_BYTES,
   packIconPath,
+  repoLook,
   iconMime,
   statusBoardPort,
   packSummary,

@@ -428,6 +428,34 @@ async function resolveInside(root, relative) {
   return { real, clean }
 }
 
+// 팩 안 이미지 파일 — 링크가 아니고 풀어도 팩 폴더 안의 일반 파일일 때만 { path(실제 경로), updatedAt }, 아니면 null
+async function packIconFile(packDir, relative) {
+  try {
+    const file = path.join(packDir, relative)
+    if ((await fs.promises.lstat(file)).isSymbolicLink()) return null
+    const [real, realPack] = await Promise.all([fs.promises.realpath(file), fs.promises.realpath(packDir)])
+    if (!real.startsWith(realPack + path.sep)) return null
+    const stat = await fs.promises.stat(real)
+    return stat.isFile() ? { path: real, updatedAt: stat.mtime.toISOString() } : null
+  } catch {
+    return null
+  }
+}
+
+// 이미지 파일 → data URL(png · jpeg · webp · 1MB 이하만 — CSP img-src 'self' data: 와 맞는다). 아니면 { dataUrl: null }
+async function iconDataUrl(iconPath) {
+  if (!iconPath) return { dataUrl: null }
+  try {
+    const stat = await fs.promises.stat(iconPath)
+    if (!stat.isFile() || stat.size > packModel.ICON_MAX_BYTES) return { dataUrl: null }
+    const bytes = await fs.promises.readFile(iconPath)
+    const mime = packModel.iconMime(bytes.subarray(0, 12))
+    return { dataUrl: mime ? `data:${mime};base64,${bytes.toString('base64')}` : null }
+  } catch {
+    return { dataUrl: null }
+  }
+}
+
 function runGit(cwd, args) {
   return new Promise((resolve) => {
     execFile('git', args, { cwd, encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 * 1024, env: core.childEnv(process.env, { GIT_OPTIONAL_LOCKS: '0' }) }, (error, stdout) =>
@@ -1249,8 +1277,13 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     for (const tab of tabs) await daemonCall('tab close', { tab: tab.id })
     return { ok: true, closed: tabs.length }
   }
-  // spaces 레포 줄 우클릭 — 고른 동작 이름(remove-repo · close-workspace · null)
-  ctx.spaceContextMenu = ({ repo = null, workspace = null } = {}, point = null) => new Promise((resolve) => {
+  // spaces 레포 줄 우클릭 — 고른 동작 이름(repo-look · repo-reset-name · repo-clear-icon · remove-repo · close-workspace · null).
+  // 이름 · 이미지는 팩 이름 · 이미지와 같은 대화상자(화면) · 되돌리기는 바꿔 둔 것이 있을 때만
+  ctx.spaceContextMenu = async ({ repo = null, workspace = null } = {}, point = null) => {
+    const info = repo ? (await ctx.packRepos()).find((item) => item.name === repo) : null
+    return spaceMenuPopup({ repo, workspace, info }, point)
+  }
+  const spaceMenuPopup = ({ repo, workspace, info }, point) => new Promise((resolve) => {
     let chosen = null
     const pick = (action) => () => {
       chosen = action
@@ -1258,6 +1291,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
     const items = []
     if (workspace) items.push({ label: say('spaces.menu.closeWorkspace'), click: pick('close-workspace') })
+    if (info) {
+      items.push(...(items.length ? [{ type: 'separator' }] : []), { label: say('spaces.menu.look'), click: pick('repo-look') })
+      if (info.displayName) items.push({ label: say('spaces.menu.resetName'), click: pick('repo-reset-name') })
+      if (info.iconPath) items.push({ label: say('spaces.menu.clearIcon'), click: pick('repo-clear-icon') })
+    }
     if (repo) items.push(...(items.length ? [{ type: 'separator' }] : []), { label: say('spaces.menu.removeRepo'), click: pick('remove-repo') })
     if (!items.length || !ctx.win) return resolve(null)
     const menu = Menu.buildFromTemplate(items)
@@ -1550,13 +1588,25 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   const ackRestore = (sessions) => runPack(['restore-work', ...sessions.flatMap((session) => ['--ack', session])], { dir: ctx.athenaDir })
 
   // ── 팩 레포 — spaces 에 에이전트 없는 레포도 흐리게 · 누르면 아테나에게 /call ──
-  // 레포 목록은 이 본체 팩의 pack.json(여러 팩이면 pack 링크) · 이어졌는지는 본체 repos/<이름> 이 git 레포인지
+  // 레포 목록은 이 본체 팩의 pack.json(여러 팩이면 pack 링크) · 이어졌는지는 본체 repos/<이름> 이 git 레포인지.
+  // 표시 이름 · 아이콘(pack set-repo-name · set-repo-icon)도 — 사이드바만 쓴다. 아이콘은 팩 안의 일반 파일일 때만(링크 · 밖이면 null)
   ctx.packRepos = async () => {
-    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse, () => null)
+    const packDir = path.join(ctx.athenaDir || '', 'pack')
+    const pack = await fs.promises.readFile(path.join(packDir, 'pack.json'), 'utf8').then(JSON.parse, () => null)
     if (!pack || !Array.isArray(pack.repos)) return []
-    return pack.repos
-      .filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
-      .map((repo) => ({ name: repo.name, agent: packModel.repoAgent(repo), linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')) }))
+    const repos = pack.repos.filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
+    return Promise.all(repos.map(async (repo) => {
+      const look = packModel.repoLook(repo)
+      const icon = look.icon ? await packIconFile(packDir, look.icon) : null
+      return {
+        name: repo.name,
+        agent: packModel.repoAgent(repo),
+        linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')),
+        displayName: look.displayName,
+        iconPath: icon ? icon.path : null,
+        iconUpdatedAt: icon ? icon.updatedAt : null,
+      }
+    }))
   }
   // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
   // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
@@ -2159,18 +2209,11 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // ── 팩 표시 이름 · 이미지 ──
   // 이미지는 본체가 준 iconPath(마지막 pack list)만 읽어 data URL 로 넘긴다 — 화면이 경로를 정하지 않고, CSP(img-src 'self' data:)와 맞는다
-  ctx.packIcon = async (id) => {
-    const iconPath = packModel.packIconPath(ctx.packState, id)
-    if (!iconPath) return { dataUrl: null }
-    try {
-      const stat = await fs.promises.stat(iconPath)
-      if (!stat.isFile() || stat.size > packModel.ICON_MAX_BYTES) return { dataUrl: null }
-      const bytes = await fs.promises.readFile(iconPath)
-      const mime = packModel.iconMime(bytes.subarray(0, 12))
-      return { dataUrl: mime ? `data:${mime};base64,${bytes.toString('base64')}` : null }
-    } catch {
-      return { dataUrl: null }
-    }
+  ctx.packIcon = async (id) => iconDataUrl(packModel.packIconPath(ctx.packState, id))
+  // 레포 이미지 — packRepos 가 확인한 iconPath(팩 안 · assets/repos/<레포>.*)만
+  ctx.repoIcon = async (name) => {
+    const repo = (await ctx.packRepos()).find((item) => item.name === name)
+    return iconDataUrl(repo ? repo.iconPath : null)
   }
 
   // 이름 바꾸기 — name 이 없으면 원래 이름으로(--clear). 끝나면 모든 창의 목록을 새로
@@ -2183,10 +2226,10 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
 
   // 이미지 미리 고르기 — 이름 · 이미지 대화상자용. 고른 파일은 main 이 들고 있고(화면은 경로를 모른다) 미리보기만 넘긴다.
   // [저장] 때 packSetIcon(id, false, true) 로 붙인다 — 취소하면 아무것도 바뀌지 않는다
-  ctx.packPickIcon = async () => {
+  ctx.packPickIcon = async (kind = 'pack') => {
     ctx.pickedIcon = null
     const picked = await dialog.showOpenDialog(ctx.win, {
-      title: say('pack.icon.title'),
+      title: say(kind === 'repo' ? 'spaces.icon.title' : 'pack.icon.title'),
       properties: ['openFile'],
       filters: [{ name: say('pack.icon.filter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
       defaultPath: app.getPath('pictures'),
@@ -2225,6 +2268,27 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const result = await runPack(args, { dir: ctx.athenaDir })
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     refreshAllPacks()
+    return result
+  }
+
+  // 레포 표시 이름 · 이미지 — 이 창 본체의 팩(코어 pack set-repo-name · set-repo-icon). name 이 null 이면 원래 이름으로(--clear).
+  // 이미지는 이름 · 이미지 대화상자에서 미리 고른 것(usePicked)이나 지우기만 — 바뀐 목록은 화면이 다시 읽는다(refreshPackRepos)
+  ctx.repoSetName = async (repo, name) => {
+    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
+    const result = await runPack(name === null ? ['set-repo-name', repo, '--clear'] : ['set-repo-name', repo, name], { dir: ctx.athenaDir })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    return result
+  }
+  ctx.repoSetIcon = async (repo, clear, usePicked = false) => {
+    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
+    let args = ['set-repo-icon', repo, '--clear']
+    if (!clear) {
+      if (!usePicked || !ctx.pickedIcon) return { canceled: true }
+      args = ['set-repo-icon', repo, ctx.pickedIcon]
+      ctx.pickedIcon = null
+    }
+    const result = await runPack(args, { dir: ctx.athenaDir })
+    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     return result
   }
 
@@ -3078,7 +3142,10 @@ handle('pack:reveal', () => packReveal())
 handle('pack:icon', (ctx, id) => ctx.packIcon(String(id)))
 handle('pack:set-name', (ctx, id, name) => ctx.packSetName(String(id), typeof name === 'string' ? name : null))
 handle('pack:set-icon', (ctx, id, clear, usePicked) => ctx.packSetIcon(String(id), clear === true, usePicked === true))
-handle('pack:pick-icon', (ctx) => ctx.packPickIcon())
+handle('pack:pick-icon', (ctx, kind) => ctx.packPickIcon(kind === 'repo' ? 'repo' : 'pack'))
+handle('repo:icon', (ctx, name) => ctx.repoIcon(String(name)))
+handle('repo:set-name', (ctx, name, displayName) => ctx.repoSetName(String(name), typeof displayName === 'string' ? displayName : null))
+handle('repo:set-icon', (ctx, name, clear, usePicked) => ctx.repoSetIcon(String(name), clear === true, usePicked === true))
 handle('pack:context-menu', (ctx, id, point) => ctx.packContextMenu(String(id), point && typeof point === 'object' ? point : null))
 // 이 창 닫기 — 시작 화면에서 다른 팩을 열고 나면(창이 하나뿐이면 닫지 않는다)
 handle('window:close', (ctx) => {
