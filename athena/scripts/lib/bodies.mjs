@@ -16,7 +16,7 @@ import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
-  BLOCKING, bodyOf, busyScan, learnQueueEmpty, learnQueueOf, learnWatcherIdle, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
+  BLOCKING, bodyOf, busyScan, learnWatcherIdle, relaunchLearnWatcherIfQueued, stopIdleLearnWatcher, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
@@ -217,6 +217,7 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
   let release = () => {}
+  let stoppedWatcher = false
   if (!lockHeld) {
     try { release = takePackLock(data, id, `${mode} ${operationId}`) } catch (error) {
       if (error.code === 'locked') return { ...entry, reason: 'busy', busy: [{ kind: 'switch', what: error.message }] }
@@ -249,10 +250,10 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       if (!gitOk(body, ['reset', '--quiet', '--hard', 'HEAD'])) return { ...entry, status: 'failed', error: 'reset-failed' }
     }
     if (mode === 'update' || mode === 'catch-up') gitOk(main, ['update-ref', `refs/athena/rollback/${operationId}/${id}`, from])
-    // 쉬는 감시자는 옛 코드라 끈다 — 끄기 직전에 대기열을 다시 본다(그새 일을 집었으면 끄지 않고 건너뜀)
-    if (idleWatchers.length) {
-      if (!learnQueueEmpty(learnQueueOf(body))) return { ...entry, reason: 'busy', busy: idleWatchers }
-      for (const item of idleWatchers) stopPidSync(item.pid)
+    // 쉬는 감시자는 옛 코드라 끈다 — 얼려서 다시 확인한 뒤에만(stopIdleLearnWatcher). 그새 일을 집었으면 끄지 않고 건너뜀
+    for (const item of idleWatchers) {
+      if (!stopIdleLearnWatcher(body, item.pid)) return { ...entry, reason: 'busy', busy: [item] }
+      stoppedWatcher = true
     }
     const stopped = stopBoard(body)
     entry.services.boardStopped = stopped
@@ -265,6 +266,8 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     const again = back ? relinkIn(body, data) : { ok: false }
     return { ...entry, status: 'failed', error: 'verify-failed', message: relinked.message ?? relinked.error, to: headOf(body), rolledBack: Boolean(back && again.ok), ...(back && again.ok ? {} : { recoveryRequired: true }) }
   } finally {
+    // 감시자를 껐는데 대기열에 일이 남았으면(얼린 동안 들어온 일) 지금 본체 코드로 다시 띄운다
+    if (stoppedWatcher) relaunchLearnWatcherIfQueued(body)
     release()
   }
 }

@@ -8,7 +8,7 @@
 //   <데이터>/packs/<id>/{pack,plans,issues,repos,worktrees,state,local.json}
 //
 // 명령 입구는 scripts/athena.mjs. 본체 만들기·업데이트는 scripts/lib/bodies.mjs. 실패는 PackError(code) — 코드는 계획서 5.7
-import { execFileSync, spawnSync } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import {
   appendFileSync, cpSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, realpathSync,
@@ -409,11 +409,11 @@ export const settleIdleSessions = (busy, table, panes) => {
 // 잠금을 못 읽음 · 인자를 못 읽음 · 한 번 검토 --plan · 넣기 --enqueue) 지금처럼 막는다. 업데이트는 쉬는 감시자를 끄고 옮긴다(옛 코드라 —
 // 다음에 일이 들어오면 learn-review --enqueue 가 새 코드로 다시 띄운다)
 const WATCH_FLAG = /(^|\s)--watch(\s|$)/
-export const learnQueueOf = (root) => {
+const learnQueueOf = (root) => {
   const where = paths(root)
   return where.mode === 'packs' && where.packDataReal ? join(realOr(where.packDataReal), 'state', 'learn-queue') : null
 }
-export const learnQueueEmpty = (queue) => {
+const learnQueueEmpty = (queue) => {
   try { return !readdirSync(queue).some((name) => /\.json(\.working)?$/.test(name)) } catch { return false }
 }
 export const learnWatcherIdle = (root, item, table) => {
@@ -423,6 +423,35 @@ export const learnWatcherIdle = (root, item, table) => {
   if (!WATCH_FLAG.test(argsOf(item.pid))) return false
   if ((table ?? []).some((row) => row.ppid === item.pid)) return false
   return learnQueueEmpty(queue)
+}
+// 쉬는 감시자 끄기 — 감시자가 일을 집는 것과 끄는 것을 한 줄로 세운다: 먼저 얼리고(SIGSTOP · 그동안 대기열을 못 건드린다)
+// 잠금 주인 · 대기열 · 자식 프로세스를 새로 본 뒤, 여전히 쉬는 중이면 얼린 채 SIGKILL(풀어 주면 그 틈에 일을 집을 수 있다).
+// 아니면 풀어 주고(SIGCONT) false — 부른 쪽은 그 본체를 일하는 중으로 건너뛴다. 감시자 코드에 기대지 않아 이미 떠 있는 옛 감시자에도 같다.
+// 남은 잠금(.watcher.lock)은 주인이 죽은 것이라 다음 감시자가 치운다
+export const stopIdleLearnWatcher = (root, pid) => {
+  // 시험용(test/bodies-test.sh) — 첫 확인과 끄기 사이에 일이 들어와 감시자가 집는 경합을 만든다
+  const raceJob = process.env.ATHENA_LEARN_RACE_JOB
+  if (raceJob) { writeFileSync(raceJob, JSON.stringify({ plan: 'plans/race-test.md', head: 'race', attempts: 0 })); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6500) }
+  try { process.kill(pid, 'SIGSTOP') } catch { return !alive(pid) }
+  let idle = false
+  try {
+    const queue = learnQueueOf(root)
+    idle = Boolean(queue) && lockOwnerAt(join(queue, '.watcher.lock'))?.pid === pid && learnQueueEmpty(queue) && !processTable().some((row) => row.ppid === pid)
+  } catch { idle = false }
+  if (idle) {
+    try { process.kill(pid, 'SIGKILL') } catch { /* 이미 끝 */ }
+    return true
+  }
+  try { process.kill(pid, 'SIGCONT') } catch { /* 이미 끝 */ }
+  return false
+}
+// 감시자를 끈 뒤 대기열에 일이 남았으면(얼린 동안 들어온 일 등) 이 본체 코드로 다시 띄운다 — 넣는 쪽은 감시자가 살아 있어 띄우지 않았다
+export const relaunchLearnWatcherIfQueued = (root) => {
+  const queue = learnQueueOf(root)
+  if (!queue || !existsSync(queue) || learnQueueEmpty(queue)) return false
+  const child = spawn(process.execPath, [join(root, 'scripts', 'learn-review.mjs'), '--watch'], { cwd: root, detached: true, stdio: 'ignore' })
+  child.unref()
+  return true
 }
 // 스튜디오가 넘긴 pane 상태 파일 — 형식이 틀렸거나 오래됐으면(2분) 없는 것으로(= 모든 세션이 막는다)
 export const PANES_STATE_MAX_AGE_MS = 120_000

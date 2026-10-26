@@ -243,6 +243,10 @@ LP="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/learn-review.mjs" 
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "한 번 검토(--plan) 도는 중 → skipped(busy)" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
 kill "$LP" 2>/dev/null; wait "$LP" 2>/dev/null
+# 경합 — 첫 확인(쉬는 중)과 끄기 사이에 일이 들어와 감시자가 집는다(ATHENA_LEARN_RACE_JOB: 끄기 직전에 일을 넣고 감시자가 한 번 돌 때까지 기다린다)
+R="$(cd "$MAIN" && ATHENA_LEARN_RACE_JOB="$LEARN_Q/1-race.json" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "끄기 직전에 일을 집은 감시자 → 끄지 않음 · skipped(busy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && kill -0 "$LW" 2>/dev/null && [ "$(ps -o stat= -p "$LW" | cut -c1)" != T ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
+rm -rf "$LEARN_Q"/*.json "$LEARN_Q"/*.json.working "$LEARN_Q/failed"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "빈 대기열만 기다리는 감시자 → 막지 않음 · B 는 C3C · 감시자는 꺼짐(옛 코드라)" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3C" ] && ! kill -0 "$LW" 2>/dev/null' "$R"
 check "pack busy 는 그대로 학습 검토를 센다(업데이트만 바뀜)" 'watcher; J "$BODY_B" pack busy | grep -q "\"kind\":\"learn-review\""'
