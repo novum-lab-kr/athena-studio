@@ -428,13 +428,25 @@ export const learnWatcherIdle = (root, item, table) => {
 // 잠금 주인 · 대기열 · 자식 프로세스를 새로 본 뒤, 여전히 쉬는 중이면 얼린 채 SIGKILL(풀어 주면 그 틈에 일을 집을 수 있다)하고 끝난 것을 확인하면 true.
 // 아니면(쉬는 중이 아님 · 3초 안에 안 끝남) 풀어 주고(SIGCONT) false — 부른 쪽은 그 본체를 일하는 중으로 건너뛴다. 감시자 코드에 기대지 않아 이미 떠 있는 옛 감시자에도 같다.
 // 남은 잠금(.watcher.lock)은 주인이 죽은 것이라 다음 감시자가 치운다. 다시 띄우지는 않는다 — 얼린 동안 들어온 일은 다음 --enqueue 가 새 코드로 감시자를 띄워 처리한다(결정 A · 2026-10-26)
+const stateOf = (pid) => { try { return execFileSync('ps', ['-o', 'stat=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' } }
+const waitStopped = (pid, limitMs = 2000) => {
+  for (let waited = 0; waited <= limitMs; waited += 50) {
+    if (stateOf(pid).startsWith('T')) return true
+    Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 50)
+  }
+  return false
+}
 export const stopIdleLearnWatcher = (root, pid) => {
   // 시험용(test/bodies-test.sh) — 첫 확인과 끄기 사이에 일이 들어와 감시자가 집는 경합을 만든다
   const raceJob = process.env.ATHENA_LEARN_RACE_JOB
   if (raceJob) { writeFileSync(raceJob, JSON.stringify({ plan: 'plans/race-test.md', head: 'race', attempts: 0 })); Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 6500) }
-  try { process.kill(pid, 'SIGSTOP') } catch { return !alive(pid) }
+  // 시험용 — 얼리는 신호를 바꿔(예 SIGURG · 무시된다) 얼지 않은 감시자를 만든다
+  const stopSignal = process.env.ATHENA_LEARN_STOP_SIGNAL || 'SIGSTOP'
+  try { process.kill(pid, stopSignal) } catch { return !alive(pid) }
   let idle = false
   try {
+    // 신호는 비동기로 닿는다 — 실제로 멈춘 상태(ps state T)를 2초 안에 확인한 뒤에만 다시 본다. 못 보면 쉬는 중으로 치지 않는다
+    if (!waitStopped(pid)) throw new Error('not stopped')
     const queue = learnQueueOf(root)
     idle = Boolean(queue) && lockOwnerAt(join(queue, '.watcher.lock'))?.pid === pid && learnQueueEmpty(queue) && !processTable().some((row) => row.ppid === pid)
   } catch { idle = false }

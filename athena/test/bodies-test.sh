@@ -247,6 +247,9 @@ kill "$LP" 2>/dev/null; wait "$LP" 2>/dev/null
 R="$(cd "$MAIN" && ATHENA_LEARN_RACE_JOB="$LEARN_Q/1-race.json" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
 check "끄기 직전에 일을 집은 감시자 → 끄지 않음 · skipped(busy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && kill -0 "$LW" 2>/dev/null && [ "$(ps -o stat= -p "$LW" | cut -c1)" != T ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
 rm -rf "$LEARN_Q"/*.json "$LEARN_Q"/*.json.working "$LEARN_Q/failed"
+# 얼리기 신호가 닿지 않아 멈춘 상태(T)를 확인하지 못하면 → 끄지 않고 busy(ATHENA_LEARN_STOP_SIGNAL=SIGURG: 무시되는 신호로 바꿔 얼지 않게)
+R="$(cd "$MAIN" && ATHENA_LEARN_STOP_SIGNAL=SIGURG node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "멈춘 상태를 확인 못 한 감시자 → 끄지 않음 · skipped(busy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && kill -0 "$LW" 2>/dev/null && [ "$(ps -o stat= -p "$LW" | cut -c1)" != T ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3B" ]' "$R"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "빈 대기열만 기다리는 감시자 → 막지 않음 · B 는 C3C · 감시자는 꺼짐(옛 코드라)" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3C" ] && ! kill -0 "$LW" 2>/dev/null' "$R"
 check "pack busy 는 그대로 학습 검토를 센다(업데이트만 바뀜)" 'watcher; J "$BODY_B" pack busy | grep -q "\"kind\":\"learn-review\""'
