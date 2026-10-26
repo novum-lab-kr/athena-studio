@@ -75,7 +75,7 @@
 ## 7-2. (선택) Jev 키 — 사람마다 본인 키
 Jev(TypeSafe 의 판정 모델)는 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정에 쓴다(`docs/knowledge/common/learning.md` 6절). **없어도 그대로 돈다.** 유료라 키는 사람마다 본인 것(사용량은 키 주인에게 청구 · 나눠 쓰지 않는다).
 사용자에게 묻는다 — "TypeSafe Jev 키가 있나요?" · 선택지 `있다 — 지금 등록`(description: 옆에 뜨는 입력 창에 직접 붙여 넣는다 · 대화창에는 넣지 않는다) / `없다 · 나중에`(description: 없어도 그대로 돈다 · 키가 생기면 "Jev 키 등록해줘").
-- 있다: **키를 대화로 받지 않는다.** Studio pane 안이면 `scripts/screen pane split --target focused --direction down --cwd <athena> --format id` 로 입력 창을 열고(나온 pane id) `scripts/screen pane run <id> node scripts/jev-key.mjs` — 사용자가 그 창에 붙여 넣고 Enter. 맞는 키인지 그 자리에서 확인하고(틀리면 저장 안 함) `~/.config/athena/typesafe.key`(이 컴퓨터에만 · 권한 600)에 저장한다. 끝나면 `node scripts/jev-key.mjs --status` 로 **있는지·길이만** 확인하고 그 창을 닫는다(`scripts/screen pane close <id>`). Studio pane 밖이면 새 터미널에서 `node scripts/jev-key.mjs` 를 직접 돌리라고 안내한다
+- 있다: **키를 대화로 받지 않는다.** Studio pane 안이면 `scripts/screen pane split --target self --direction down --cwd <athena> --format id` 로 이 pane 아래에 입력 창을 열고(나온 pane id) `scripts/screen pane run <id> node scripts/jev-key.mjs` — 사용자가 그 창에 붙여 넣고 Enter. 맞는 키인지 그 자리에서 확인하고(틀리면 저장 안 함) `~/.config/athena/typesafe.key`(이 컴퓨터에만 · 권한 600)에 저장한다. 끝나면 `node scripts/jev-key.mjs --status` 로 **있는지·길이만** 확인하고 그 창을 닫는다(`scripts/screen pane close <id>`). Studio pane 밖이면 새 터미널에서 `node scripts/jev-key.mjs` 를 직접 돌리라고 안내한다
 - 사용자가 키를 대화창에 붙여 넣었으면 노출로 본다 — 그 값은 쓰지 않고, 콘솔에서 폐기·재발급한 뒤 입력 창으로 다시 넣자고 알린다(AGENTS.md 5절)
 - 나중에 — **"Jev 키 등록해줘"·"Jev 키 바꿔줘"** 도 이 절 그대로(새 키를 넣으면 덮어쓴다). "Jev 키 지워줘" 는 `node scripts/jev-key.mjs --remove`. 등록·지우기는 현황판·배우기 검토를 다시 켜지 않아도 다음 판정부터 먹는다. 환경 변수 `TYPESAFE_API_KEY` 가 있으면 그게 먼저다
 

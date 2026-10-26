@@ -286,9 +286,11 @@ print(sum(1 for p in json.load(sys.stdin)['panes'] if p.get('tab_id') == '$TAB')
   fi
 fi
 
-# 위에서 못 만들었으면(또는 --here) 지금 탭에서 쪼갠다 — 포커스된 pane 옆(--target focused)
+# 위에서 못 만들었으면(또는 --here) 지금 탭에서 쪼갠다 — 이 스크립트를 부른 pane 옆(--target self).
+# 포커스된 pane 을 쓰면 뒤에서 부른 에이전트의 reviewer 가 사용자가 보던 다른 탭(아테나 탭)에 뜬다(2026-10-26 실측).
+# 부른 pane 을 모르면(환경 없음) 화면 계층이 포커스된 pane 으로 대신한다
 if [ -z "$PANE" ]; then
-  OUT="$("$SCREEN" pane split --target focused --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
+  OUT="$("$SCREEN" pane split --target self --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
     || { echo "pane split 실패: $OUT"; exit 1; }
   PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')" \
     || { echo "pane id 파싱 실패"; exit 1; }
