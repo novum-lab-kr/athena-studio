@@ -1216,6 +1216,8 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space-repo .space-twisty { width: 16px; height: 16px; margin: 0 4px 0 -4px; color: var(--text); opacity: .75; }
 .space-repo .space-twisty svg { width: 11px; height: 11px; stroke-width: 2; }
 .space-repo:hover .space-twisty { opacity: 1; }
+/* 레포 이미지(정한 레포만) — 이름 앞 작은 네모 */
+.space-repo .space-repo-icon { flex: none; width: 14px; height: 14px; overflow: hidden; border-radius: 3px; }
 .space-repo .space-fold-count { display: inline-flex; align-items: center; gap: 5px; margin-left: auto; padding: 0 7px; border-radius: 8px; background: var(--surface-active); color: var(--text); font-size: 10.5px; font-weight: 600; line-height: 17px; }
 .space-repo .space-fold-count .space-status { width: 6px; height: 6px; }
 .space.space-repo.holds-focus { color: var(--text); background: var(--selected); } /* 접힌 안에 지금 보는 pane 이 있다 */
