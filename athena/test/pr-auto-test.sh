@@ -18,7 +18,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, grantsTakeover, isTakeoverRound, takeoverEligible, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -90,6 +90,12 @@ const light = '# x\n\n## Checkpoint\n- Status: in_progress\n\n### Blocked\n- 없
 const lightOut = withDecisionLines(light, [dLine])
 check('계획서 Decisions — 절이 없으면 Checkpoint 끝에 만든다 · 같은 줄은 다시 안 넣음', /### Blocked\n- 없음\n\n### Decisions\n- 추천안으로 자동 확정\(자동 리뷰 · codex · web#7 @abcdef1 · 구현 세부\): 아이콘 자리 → A\n\n## 지시/.test(lightOut) && withDecisionLines(lightOut, [dLine]) === lightOut, lightOut)
 const formalPlan = '## Checkpoint\n### Decisions\n- D1 기존\n\n### Commits\n- c\n'
+const pendingBase = '# 시험\n## Checkpoint\n- Work ref: /tmp/wt · 🌿 feat/x · pane p3 (web-fe)\n- PR: x\n'
+const withAuto = withAutoLine(pendingBase, { repo: 'web', number: '7', sha: 'abcdef1', result: '결정 필요', round: 1, stamp: 's' })
+const marked = withPendingDecisionLine(withAuto, { repo: 'web', number: '7', sha: 'abcdef123', count: 2, registered: false, stamp: 's' })
+check('결정 대기 줄 — 그 PR 의 Auto review 줄 바로 뒤 · 등록 실패 읽기', /- Auto review: web#7 .*\n- Auto decisions: web#7 @abcdef1 · 2개 · 등록 실패 · /.test(marked) && pendingDecisionLine(marked, 'web', '7')?.registered === false && pendingDecisionLine(marked, 'web', '8') === null, marked)
+const remarked = withPendingDecisionLine(marked, { repo: 'web', number: '7', sha: 'bbbbbbb', count: 1, registered: true, stamp: 's' })
+check('결정 대기 줄 — 같은 PR 은 바꿔 쓰기 · 등록됨 · 지우기', (remarked.match(/^- Auto decisions:/gm) ?? []).length === 1 && pendingDecisionLine(remarked, 'web', '7')?.registered === true && pendingDecisionLine(withoutPendingDecisionLine(remarked, 'web', '7'), 'web', '7') === null && withoutPendingDecisionLine(remarked, 'web', '7') === withAuto)
 check('계획서 Decisions — 절이 있으면 그 끝에 덧붙임', withDecisionLines(formalPlan, [dLine]) === `## Checkpoint\n### Decisions\n- D1 기존\n${dLine}\n\n### Commits\n- c\n`, withDecisionLines(formalPlan, [dLine]))
 
 console.log('\n계획서 표시 줄')
@@ -317,6 +323,8 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n' "$WT" "${AUTO_LINE:+$AUTO_LINE
 }" > "$CORE/plans/task/x.md"
+  # BLOCK_REQUESTS=1 — 요청 폴더 자리에 파일을 둬 요청을 하나도 못 열게(결정 콘솔 · 대체 요청 둘 다 실패)
+  [ "${BLOCK_REQUESTS:-0}" = 1 ] && : > "$CORE/.requests"
   # PENDING=1 — 결정 콘솔에 안 정한 결정이 있는 것처럼(plan-html.mjs 가 여는 계획서 결정 요청)
   [ "${PENDING:-0}" = 1 ] && (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
     const { openRequest } = await import('./scripts/lib/requests.mjs')
@@ -405,6 +413,26 @@ PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤
 merge_case "E — 권장만 남은 수정 필요 → 승인으로 보고 머지 단계(바로 머지)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_CODEX=advisory
 grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null \
   && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
+
+# 결정 콘솔 · 대체 요청이 둘 다 실패해도 — 계획서 "- Auto decisions:" 줄(등록 실패)이 남아 머지를 막는다(PR #20 2라운드 지적)
+BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 · 라운드 1/3' FAKE_CODEX=product
+MARK="$(grep '^- Auto decisions:' "$CORE/plans/task/x.md")"
+case "$MARK" in "- Auto decisions: web#7 @"*" · 1개 · 등록 실패 · "*) echo "  ✔ A — 결정 대기 줄: $MARK" ;; *) echo "  ✖ A — 결정 대기 줄이 없다: $MARK"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1 ;; esac
+rm -f "$CORE/.requests"
+pending_plan() {   # <결정 대기 줄> — 지난 라운드 줄 · 결정 대기 줄을 둔 계획서
+  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 · 라운드 1/3 · s\n%s\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "$1" > "$CORE/plans/task/x.md"
+}
+run_handle() { : > "$GH_LOG"; rm -f "$GH_LOG.views"; env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1; }
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
+rm -rf "$CORE/.requests"; pending_plan "$MARK"; run_handle
+! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 승인 2/2이지만' "$CORE/plans/task/x.md" && grep -q '^- Auto decisions: .*등록 실패' "$CORE/plans/task/x.md" \
+  && echo "  ✔ A — 요청이 하나도 없어도 등록 실패 줄이 있으면 승인돼도 머지 안 함 · 줄 그대로" || { echo "  ✖ A — 등록 실패 줄로 머지가 막히지 않음"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+rm -rf "$CORE/.requests"; pending_plan "- Auto decisions: web#7 @0000000 · 1개 · 등록됨 · 결정 콘솔에서 다 정하면 저절로 지워진다 · s"; run_handle
+grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && ! grep -q '^- Auto decisions:' "$CORE/plans/task/x.md" \
+  && echo "  ✔ A — 등록됨 · 결정 요청이 닫혔으면 해결 — 줄을 지우고 머지" || { echo "  ✖ A — 등록됨 해결"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+# 리뷰어가 하나라도 실패한 라운드는 지난 리뷰 기록(history)을 덮지 않는다(PR #20 2라운드 지적)
+merge_case "D — 리뷰어 하나 실패한 라운드 → 수정 필요(지적은 보냄)" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
+[ ! -e "$TMP/queue-confirm/history/web-7.json" ] && echo "  ✔ D — 리뷰어가 실패한 라운드는 history 를 남기지 않음" || { echo "  ✖ D — 실패한 라운드가 history 를 썼다"; FAIL=1; }
 
 # 결정 D — 1라운드 지적을 기록해 두고, 2라운드 프롬프트에는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 diff 만
 echo; echo "지적은 한 번에(결정 D)"

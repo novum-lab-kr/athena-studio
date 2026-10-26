@@ -180,6 +180,32 @@ export const withDecisionLines = (planText, newLines) => {
   return lines.join('\n')
 }
 
+// 사람이 정할 결정 대기 줄 — 결정이 나오면 요청을 열 수 있든 없든 계획서에 남긴다(PR #20 자동 리뷰 지적 — 요청이 안 열려도 머지를 막게)
+//   - Auto decisions: <레포>#<번호> @<sha7> · <N>개 · 등록됨|등록 실패 · <안내> · <YYYY-MM-DD HH:MM>
+//   등록됨 = 결정 콘솔(또는 같은 키의 결정 요청)에 올렸다 — 그 요청이 닫히면 해결로 보고 줄을 지운다
+//   등록 실패 = 둘 다 못 했다 — 사람이 정한 뒤 이 줄을 지울 때까지 머지하지 않는다
+const PENDING_LINE = /^- Auto decisions:\s*([\w.-]+)#(\d+)\s+@([0-9a-f]{6,40})\s+·\s+(\d+)개\s+·\s+(등록됨|등록 실패)(?:\s+·.*)?$/
+const isPendingRow = (row, repo, number) => { const hit = row.match(PENDING_LINE); return Boolean(hit) && hit[1] === repo && hit[2] === String(number) }
+export const pendingDecisionLine = (planText, repo, number) => {
+  const row = String(planText ?? '').split('\n').find((line) => isPendingRow(line, repo, number))
+  if (!row) return null
+  const hit = row.match(PENDING_LINE)
+  return { sha: hit[3], count: Number(hit[4]), registered: hit[5] === '등록됨', line: row }
+}
+export const pendingDecisionText = ({ repo, number, sha, count, registered, stamp }) => `- Auto decisions: ${repo}#${number} @${String(sha).slice(0, 7)} · ${count}개 · ${registered ? '등록됨 · 결정 콘솔에서 다 정하면 저절로 지워진다' : '등록 실패 · 사람이 정한 뒤 이 줄을 지운다(그때까지 머지하지 않는다)'} · ${stamp}`
+// 같은 PR 줄이 있으면 그 자리, 없으면 그 PR 의 "- Auto review:" 줄 뒤(없으면 Work ref 뒤 · 그것도 없으면 끝)
+export const withPendingDecisionLine = (planText, entry) => {
+  const line = pendingDecisionText(entry)
+  const lines = String(planText).split('\n')
+  const index = lines.findIndex((row) => isPendingRow(row, entry.repo, entry.number))
+  if (index >= 0) { lines[index] = line; return lines.join('\n') }
+  let anchor = lines.findIndex((row) => { const hit = row.match(AUTO_LINE); return hit && hit[1] === entry.repo && hit[2] === String(entry.number) })
+  if (anchor < 0) anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
+  if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
+  return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
+}
+export const withoutPendingDecisionLine = (planText, repo, number) => String(planText).split('\n').filter((row) => !isPendingRow(row, repo, number)).join('\n')
+
 // 이 HEAD 를 자동 흐름이 다시 봐야 하나 — 현황판 감지 · 대기열이 같이 쓴다
 export const needsReview = (planText, repo, number, headSha) => {
   const known = autoLines(planText).get(`${repo}#${number}`)

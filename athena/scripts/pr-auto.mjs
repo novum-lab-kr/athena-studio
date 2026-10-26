@@ -38,7 +38,7 @@ import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs } from './lib/models.mjs'
 import {
   MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
-  fixInstruction, grantsTakeover, isTakeoverRound, takeoverEligible, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
+  fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
 
@@ -229,15 +229,24 @@ const planPathOf = (planArg) => {
   return { path, file }
 }
 const writeAutoLine = (planPath, entry) => updatePlan(planPath, (current) => withAutoLine(current, { ...entry, stamp: stamp() }))
-// 사람이 정할 결정이 결정 콘솔에 남아 있나 — plan-html.mjs 가 계획서마다 연 결정 요청(dedupeKey plan:<계획서>)이 열려 있거나 답만 받았으면(open · answered) 아직이다
-const pendingDecisions = (planFile) => {
+// 사람이 정할 결정이 남아 있나 — 둘 중 하나라도면 아직이다(모든 머지 경로가 부른다)
+//   ① plan-html.mjs 가 계획서마다 연 결정 요청(dedupeKey plan:<계획서>)이 열려 있거나 답만 받음(open · answered)
+//   ② 계획서 "- Auto decisions:" 줄 — 등록 실패면 사람이 지울 때까지 · 등록됨인데 ① 이 닫혔으면 해결로 보고 줄을 지운다
+const pendingDecisions = (planFile, repo, number) => {
   try {
-    return listRequests(ROOT).requests.some((request) => request.dedupeKey === `plan:${planFile}`)
+    if (listRequests(ROOT).requests.some((request) => request.dedupeKey === `plan:${planFile}`)) return true
   } catch (error) {
     // 확인하지 못하면 남아 있는 것으로 본다 — 사람이 정하기 전에 머지하지 않는 쪽
     console.log(`  ⚠️ 결정 요청을 확인하지 못했다: ${error.message}`)
     return true
   }
+  const planPath = join(ROOT, planFile)
+  if (!existsSync(planPath)) return false
+  const marker = pendingDecisionLine(readFileSync(planPath, 'utf8'), repo, number)
+  if (!marker) return false
+  if (!marker.registered) return true
+  updatePlan(planPath, (current) => withoutPendingDecisionLine(current, repo, number))
+  return false
 }
 
 const livePanes = async () => {
@@ -353,7 +362,8 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // 댓글은 의견(comment)으로 — 같은 계정이 연 PR 은 승인(approve)을 달 수 없고, 머지 판정은 이 스크립트가 한다
   const posted = gh(['pr', 'review', number, '--repo', `${org}/${repo}`, '--comment', '--body', comment])
   if (!posted.ok) console.log(`  ⚠️ PR 댓글 실패: ${firstLine(posted.err)}`)
-  if (summary.verdict !== 'insufficient') writeHistory(repo, number, { sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions })
+  // 두 리뷰어가 모두 답한 라운드만 기록한다 — 하나라도 실패한 라운드를 기준으로 삼으면 다음 라운드에 그 리뷰어가 못 본 변경이 증분 diff 에서 빠진다(PR #20 자동 리뷰 지적)
+  if (summary.answered === REVIEWERS.length && summary.total === REVIEWERS.length) writeHistory(repo, number, { sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions })
   base.reviewers = reviewerBrief(results)
   const line = { repo, number, sha, round }
 
@@ -383,7 +393,8 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     writeFileSync(file, JSON.stringify(decisionsForConsole(summary.decisions)))
     const added = spawnSync(process.execPath, [join(ROOT, 'scripts/plan-html.mjs'), planPath, '--add', file, ...(pane ? ['--pane', pane] : [])], { cwd: ROOT, encoding: 'utf8' })
     rmSync(dirname(file), { recursive: true, force: true })
-    if (added.status !== 0) {
+    let registered = added.status === 0
+    if (!registered) {
       // 콘솔에 못 올렸다 — 결정 콘솔이 쓰는 같은 키(plan:<계획서>)로 결정 요청을 직접 열어 둔다. 이 요청이 살아 있는 동안 pendingDecisions 가 머지를 막는다
       // (사람이 콘솔에 다시 올려 정하면 plan-html 이 닫고, 답하면 작업 pane 으로 가 에이전트가 반영 · ack 한다)
       console.log(`  ⚠️ 결정 콘솔에 덧붙이지 못했다: ${firstLine(added.stderr || added.stdout)} — 결정 요청을 대신 연다`)
@@ -396,10 +407,13 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
           pane: pane || null,
           dedupeKey: `plan:${planFile}`,
         })
+        registered = true
       } catch (error) {
-        console.log(`  ⚠️ 결정 요청도 열지 못했다: ${error.message} — 줄을 결정 필요로 두고 머지 단계에서 다시 본다`)
+        console.log(`  ⚠️ 결정 요청도 열지 못했다: ${error.message} — 계획서 "- Auto decisions:" 줄(등록 실패)로 머지를 막는다`)
       }
     }
+    // 등록이 되든 안 되든 결정 대기를 계획서에 남긴다 — 요청이 없어도 pendingDecisions 가 이 줄로 머지를 막는다
+    updatePlan(planPath, (current) => withPendingDecisionLine(current, { repo, number, sha, count: summary.decisions.length, registered, stamp: stamp() }))
   }
   const hasFixes = summary.findings.length > 0 || summary.autoDecisions.length > 0
   writeAutoLine(planPath, { ...line, result: autoResult(summary.verdict, takeover, round >= MAX_ROUNDS) })
@@ -470,7 +484,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref,
   const line = { repo, number, sha, round }
   const takeover = summary === null
   const passed = takeover ? `${TAKEOVER}(리뷰 없이 검증만으로 머지)` : `승인 ${summary.approvals}/${REVIEWERS.length}`
-  if (pendingDecisions(planFile)) {
+  if (pendingDecisions(planFile, repo, number)) {
     // 사람이 정할 결정이 결정 콘솔에 남아 있다(결정 A 로 수정이 먼저 올라온 경우) — 묻지도 머지하지도 않는다. 확정 지시를 반영한 커밋이 오면 다시 본다
     // 상한 라운드에서 승인됐으면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — 줄에 그 표시를 남긴다
     // 상한 라운드 승인이나 이어받은 HEAD 면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — grantsTakeover 가 알아보는 '결정 필요 — 상한 뒤 이어받음…' 으로
@@ -586,7 +600,7 @@ export const checkConfirms = async (only = '') => {
     pr.mergeable = await settledMergeable(org, job.repo, job.number, pr.mergeable)
     if (pr.mergeable === 'UNKNOWN') { release(); console.log(`  … ${job.repo}#${job.number} — GitHub 가 머지 가능 여부를 계산 중 · 다음 확인에 다시`); continue }
     settle()
-    const verify = pendingDecisions(job.plan) ? { ok: false, why: '결정 콘솔에 안 정한 결정' } : verifiedAt(job.repo, job.worktree, job.sha)
+    const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : verifiedAt(job.repo, job.worktree, job.sha)
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
       const result = `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})`
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
