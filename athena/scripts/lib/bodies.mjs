@@ -16,7 +16,7 @@ import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
-  BLOCKING, bodyOf, busyScan, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
+  BLOCKING, bodyOf, busyScan, learnWatcherIdle, stopIdleLearnWatcher, readPanesState, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
@@ -227,7 +227,10 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     const scan = scanProcesses()
     const scanned = busyScan(body, scan, { includeSelf: true })
     const others = scanned.busy.filter((item) => item.pid !== process.pid)
-    const busy = mode === 'update' ? settleIdleSessions(others, scan.table, panes) : others
+    // update 만 — 쉬는 pane 의 세션 · 빈 대기열만 기다리는 학습 검토 감시자는 막지 않는다(감시자는 아래에서 끈다)
+    const idleWatchers = mode === 'update' ? others.filter((item) => learnWatcherIdle(body, item, scan.table)) : []
+    const working = others.filter((item) => !idleWatchers.includes(item))
+    const busy = mode === 'update' ? settleIdleSessions(working, scan.table, panes) : others
     if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
     if (busy.length) return { ...entry, reason: 'busy', busy }
     if (from === target) return { ...entry, status: 'same' }
@@ -238,6 +241,11 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       if (mode !== 'update') return { ...entry, reason: 'main' }
       const branch = gitTry(body, ['symbolic-ref', '-q', '--short', 'HEAD'])
       if (!branch || !gitOk(body, ['merge-base', '--is-ancestor', from, target])) return { ...entry, reason: 'diverged', ...(branch ? { branch } : {}) }
+    }
+    // 쉬는 감시자는 옛 코드라 끈다 — 얼려서 다시 확인한 뒤에만(stopIdleLearnWatcher). 그새 일을 집었으면 끄지 않고 건너뜀.
+    // 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에
+    for (const item of idleWatchers) {
+      if (!stopIdleLearnWatcher(body, item.pid)) return { ...entry, reason: 'busy', busy: [item] }
     }
     if (dirty) {
       const saved = backupCoreEdits({ body, id, data, operationId })
@@ -296,12 +304,14 @@ const stopBoard = (body) => {
   const port = Number(registry.packs?.[config.packId]?.boardPort || bodyConfig(body).boardPort || portBaseOf(registry))
   const scripts = [join(body, 'scripts', 'board', 'server.mjs'), join(realOr(body), 'scripts', 'board', 'server.mjs')]
   const pids = listeners(port).filter((pid) => scripts.some((script) => argsOf(pid).includes(script)))
-  for (const pid of pids) {
-    try { process.kill(pid, 'SIGTERM') } catch { /* 이미 끝 */ }
-    for (let index = 0; index < 30 && alive(pid); index += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
-    if (alive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* 이미 끝 */ } }
-  }
+  for (const pid of pids) stopPidSync(pid)
   return pids.length ? [port] : []
+}
+// SIGTERM → 3초 기다려도 살아 있으면 SIGKILL
+const stopPidSync = (pid) => {
+  try { process.kill(pid, 'SIGTERM') } catch { return }
+  for (let index = 0; index < 30 && alive(pid); index += 1) Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 100)
+  if (alive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* 이미 끝 */ } }
 }
 
 // 데이터 폴더에 묶인 본체들 — 같은 저장소 체크아웃 중 .pack-data 가 <데이터>/packs/<id> 인 것 + 레지스트리에만 있고 폴더가 없는 것(missing)
