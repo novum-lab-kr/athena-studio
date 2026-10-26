@@ -5,7 +5,7 @@ p9  (reviewer — 계획서 plans/task/20261001-fe-test.md · 현재 탭 · cwd:
    결론 기다리기: <ATHENA>/scripts/review-wait.sh --plan plans/task/20261001-fe-test.md --dir <ATHENA>
 --- stderr
 --- screen
-["@studio", "pane", "split", "--target", "focused", "--direction", "right", "--ratio", "0.5", "--cwd", "<ATHENA>", "--no-focus"]
+["@studio", "pane", "split", "--target", "self", "--direction", "right", "--ratio", "0.5", "--cwd", "<ATHENA>", "--no-focus"]
 ["@studio", "pane", "run", "p9", "'<TMP>/hermes-runner.X'"]
 ["@studio", "pane", "rename", "p9", "🤖 reviewer"]
 # 검사 작업
