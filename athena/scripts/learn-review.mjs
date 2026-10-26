@@ -9,6 +9,8 @@
  *        대기열에 넣고 배우기 검토가 뒤에서 돌고 있게 한다(현황판이 내 계획서의 PR 이 모두 머지된 걸 보면 부른다 — 표시는 merged-<PR번호들>). 바로 끝난다
  *   node scripts/learn-review.mjs --watch
  *        뒤에서 돈다 — 대기열을 차례로 꺼내 검토한다. 검토 프로세스는 하나만(작업마다 늘리지 않는다)
+ *   node scripts/learn-review.mjs --kick
+ *        대기열에 일이 남았고 도는 검토가 없으면 뒤에서 띄운다(코어 업데이트가 옛 검토를 끈 뒤 새 코드로 — bodies.mjs moveBody). 바로 끝난다
  *
  * 안전
  *   - 검토자 Claude 는 도구 없이(--tools "") 줄인 기록만 읽고 JSON 으로만 답한다. 파일은 이 스크립트가 쓴다
@@ -525,6 +527,20 @@ const enqueue = (planArg, head) => {
   const id = `${Date.now()}-${digest}`
   writeFileSync(join(QUEUE_DIR, `${id}.json`), JSON.stringify({ plan: planArg, head, root: REAL_ROOT, ...(BOOT_PATHS.packId ? { packId: BOOT_PATHS.packId, generation: BOOT_PATHS.generation } : {}), attempts: 0 }))
   if (watcherAlive()) return console.log('📚 배우기 검토 대기열에 넣었다 — 뒤에서 도는 검토가 차례로 처리한다')
+  launchWatcher()
+}
+
+// 대기열에 일(대기 · 끊긴 검토)이 있고 도는 검토가 없을 때만 띄운다
+const kick = () => {
+  let pending = false
+  try { pending = readdirSync(QUEUE_DIR).some((file) => /\.json(\.working)?$/.test(file)) } catch { /* 대기열 없음 */ }
+  if (!pending) return console.log('📚 대기열이 비었다 — 띄우지 않는다')
+  if (watcherAlive()) return console.log('📚 뒤에서 도는 검토가 있다')
+  launchWatcher()
+}
+
+// 뒤에서 검토 하나 띄우기 — 넣기(--enqueue) · 다시 띄우기(--kick) 공용
+const launchWatcher = () => {
   // 방금(30초 안) 다른 요청이 검토를 띄우는 중이면 또 띄우지 않는다 — 여러 개가 한꺼번에 들어올 때 잠금이 생기기 전 틈.
   // 표시 파일은 없을 때만 만든다(wx — 둘이 동시에 만들지 못한다). 오래된 표시는 치우고 다시
   const launching = join(QUEUE_DIR, '.launching')
@@ -618,8 +634,9 @@ if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()
 else if (flag('enqueue')) enqueue(option('plan'), option('head'))
+else if (flag('kick')) kick()
 else if (option('plan')) await reviewPlan(option('plan'), { head: option('head'), dryRun: flag('dry-run'), force: flag('force') })
 else {
-  console.error('사용: node scripts/learn-review.mjs --plan <plans/…md> [--head <sha>] [--dry-run] [--force] | --enqueue --plan <…> [--head <sha>] | --watch')
+  console.error('사용: node scripts/learn-review.mjs --plan <plans/…md> [--head <sha>] [--dry-run] [--force] | --enqueue --plan <…> [--head <sha>] | --watch | --kick')
   process.exit(1)
 }

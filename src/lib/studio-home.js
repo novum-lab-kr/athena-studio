@@ -264,7 +264,8 @@ function fastForwardPackless({ coreDir, bundle, backupRoot = null, env = gitEnv(
   return { ok: true, ...(backedUp ? { backedUp } : {}) }
 }
 
-// 코어 update 결과(contract 2 + 4.1) → 화면에 알릴 것. 건너뛴 본체(일하는 중 · 고쳐 둠 …) · 백업한 코어 파일 · 실패
+// 코어 update 결과(contract 2 + 4.1) → 화면에 알릴 것. 건너뛴 본체(팩 작업 중 · 커밋 중 · 고쳐 둠 …) · 백업한 코어 파일 · 실패 ·
+// 일하는 세션이 있었지만 바로 올린 본체(working — 코어 update-busy · 2026-10-26 "일해도 바로 올리기")
 function summarizeUpdate(result) {
   const bodies = Array.isArray(result && result.bodies) ? result.bodies : []
   // blockers — 그 본체를 막은 것(짝지은 pane 이름 · 없으면 코어 설명). 같은 이름은 한 번만
@@ -273,14 +274,18 @@ function summarizeUpdate(result) {
   const failed = bodies.filter((entry) => entry.status === 'failed').map((entry) => ({ id: entry.id, error: entry.error || 'unknown' }))
   const backedUp = Array.isArray(result && result.backedUp) ? result.backedUp.filter((entry) => entry && entry.dir) : []
   const updated = bodies.filter((entry) => entry.status === 'updated').map((entry) => entry.id)
-  return { updated, skipped, failed, backedUp, notify: skipped.length > 0 || failed.length > 0 || backedUp.length > 0 || Boolean(result && result.ok === false && !bodies.length) }
+  // sessions — 그 세션들(짝지은 pane 이름 · 없으면 코어 설명). count 는 세션 수 그대로(같은 이름이 둘이어도 둘)
+  const working = bodies
+    .filter((entry) => entry.status === 'updated' && Array.isArray(entry.working) && entry.working.length)
+    .map((entry) => ({ id: entry.id, count: entry.working.length, sessions: blockersOf({ busy: entry.working }) }))
+  return { updated, skipped, failed, backedUp, working, notify: skipped.length > 0 || failed.length > 0 || backedUp.length > 0 || working.length > 0 || Boolean(result && result.ok === false && !bodies.length) }
 }
 
 // 켤 때 코어 업데이트 — 주 본체보다 번들이 앞일 때만. runCore(argv, { contract: false }) → 코어 JSON 결과(--json 은 부르는 쪽이 붙인다)
 //  - 업데이트 경로(version · update --from)는 약속 번호를 싣지 않는다 — 약속이 오른 앱이 옛 코어에 약속을 실으면 코어가 contract-mismatch 로
 //    거절해 영영 못 올린다(2026-10-26 약속 3 앱 · 약속 2 코어). 이미 설치된 옛 코어는 고칠 수 없으니 앱 쪽에서 뺀다
-//  - 팩이 하나라도 있으면(레지스트리 packs) 코어에 맡긴다: update --from <번들> --backup-dirty — 팩에 묶인 본체마다 확정 · 일하는 본체는 건너뜀 ·
-//    고친 코어 파일은 <데이터>/backups/core-edits/ 에 사본. 설치된 코어가 이 손잡이를 모르면(4.1 전 코어) 아무것도 건드리지 않고 알린다
+//  - 팩이 하나라도 있으면(레지스트리 packs) 코어에 맡긴다: update --from <번들> --backup-dirty — 팩에 묶인 본체마다 확정 · 팩 작업 중인 본체는 건너뜀 ·
+//    고친 코어 파일은 <데이터>/backups/core-edits/ 에 사본. 일하는 세션이 있어도 올리는지는 코어가 정한다(update-busy 코어부터 · 옛 코어는 건너뜀). 설치된 코어가 이 손잡이를 모르면(4.1 전 코어) 아무것도 건드리지 않고 알린다
 //  - 주 본체에 팩이 없으면(스튜디오는 첫 팩을 bodies/<id> 에 만든다) 코어 update 가 주 본체를 옮기지 않으므로 그 뒤 앱이 앞으로 감는다
 const UPDATE_CAPABILITIES = ['update-from-bundle', 'backup-dirty']
 const NO_CONTRACT = Object.freeze({ contract: false })
@@ -359,7 +364,7 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = 
   // 주 본체(앱이 감음) 몫 — 백업했으면 · 못 감았으면 알린다
   const mainBackup = moved.backedUp && moved.backedUp.ok ? [{ id: 'core', dir: moved.backedUp.dir, files: moved.backedUp.files }] : []
   const mainFailed = moved.ok ? [] : [{ id: 'core', error: moved.error }]
-  const empty = { updated: [], skipped: [], failed: [], backedUp: [], notify: false }
+  const empty = { updated: [], skipped: [], failed: [], backedUp: [], working: [], notify: false }
   const prior = coreUpdate ? coreUpdate.summary : empty
   const summary = {
     ...prior,
