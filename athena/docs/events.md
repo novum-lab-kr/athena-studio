@@ -19,7 +19,7 @@
 | `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
 | `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` |
 | `commit` | `scripts/commit.sh` — 커밋한 뒤 | `plan` · `repo` · `branch` · `sha` · `verified` · `verify` |
-| `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴) |
+| `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) |
 | `auto.fix` | `scripts/pr-auto.mjs` — 수정 지시를 작업 pane 에 보낸 뒤 | `plan` · `repo` · `branch` · `sha` · `pr` · `pane` · `reviewers` |
 | `auto.push` | `scripts/ship.sh --auto-push` — 고친 커밋을 그 PR 브랜치에 올린 뒤(또는 `--body-file` 로 본문만 바꾼 뒤) | `plan` · `repo` · `branch` · `sha` · `pr` · 본문을 바꿨으면 `body`(1) |
 | `auto.decide` | `scripts/pr-auto.mjs` — 구현 세부 결정을 추천안으로 자동 확정한 뒤(계획서 Decisions 에 적고) | `plan` · `repo` · `branch` · `sha` · `pr` · `count` · `reviewers` |

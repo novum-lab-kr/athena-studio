@@ -18,7 +18,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -142,6 +142,37 @@ console.log('\n댓글')
 const comment = reviewComment({ sha: 'abcdef123', round: 1, results: [ok('claude', { ...changes, summary: '토큰 ghp_' + 'a'.repeat(30) + ' 이 보인다' }), { name: 'codex', status: 'failed', reason: '시간 넘김' }], summary: aggregate([ok('claude', changes), { name: 'codex', status: 'failed' }]) })
 check('결론 · 리뷰어마다 줄 · 실패 이유', comment.includes('결론: 수정 필요') && comment.includes('**codex** — 실패(시간 넘김)') && comment.includes('`a.js:3`'), comment)
 check('비밀값 모양은 가린 뒤 보낸다(pr-auto.mjs 가 maskSecrets 로 감쌈)', !maskSecrets(comment).masked.includes('a'.repeat(30)))
+
+console.log('\n앞 리뷰 승인 이어받기(같은 내용 — ship.sh 와 같은 판정)')
+const tree = 'aaaabbbbccccdddd0000111122223333444455556'
+const reviewed = (verdict, extra = '') => `- Review: pane p9\n- Review result: ${verdict} @1234567 · tree ${tree.slice(0, 12)} · 📦 web · 🌿 feat/x · 2026-10-26 10:00${extra}\n`
+check('승인 · tree 같음 → 이어받음', Boolean(priorApproval(reviewed('승인'), { repo: 'web', branch: 'feat/x', sha: 'ffff999', tree })))
+check('승인 · tree 다름 → 안 이어받음(새로 리뷰)', !priorApproval(reviewed('승인'), { repo: 'web', branch: 'feat/x', sha: '1234567', tree: '9999' + tree.slice(4) }))
+check('tree 를 못 구하면 → 안 이어받음', !priorApproval(reviewed('승인'), { repo: 'web', branch: 'feat/x', sha: '1234567', tree: '' }))
+check('수정 필요 → 안 이어받음', !priorApproval(reviewed('수정 필요'), { repo: 'web', branch: 'feat/x', sha: '1234567', tree }))
+check('다른 레포 · 브랜치 줄은 안 봄', !priorApproval(reviewed('승인'), { repo: 'api', branch: 'feat/x', sha: '1234567', tree }) && !priorApproval(reviewed('승인'), { repo: 'web', branch: 'feat/y', sha: '1234567', tree }))
+check('tree 없는 옛 줄은 커밋 sha 로', Boolean(priorApproval('- Review result: 승인 @1234567 · 2026-10-01\n', { repo: 'web', branch: 'feat/x', sha: '1234567abc', tree })) && !priorApproval('- Review result: 승인 @1234567 · 2026-10-01\n', { repo: 'web', branch: 'feat/x', sha: 'ffff000', tree }))
+check('같은 레포 · 브랜치 줄이 여럿이면 마지막(승인 뒤 수정 필요 → 안 이어받음)', !priorApproval(reviewed('승인') + reviewed('수정 필요').split('\n')[1] + '\n', { repo: 'web', branch: 'feat/x', sha: '1234567', tree }))
+const taken = inheritedResult({ sha: '1234567', tree: tree.slice(0, 12) }, 'abcdef0123')
+check('이어받은 Claude + Codex 승인 → 승인 · Codex 반려 → 수정 필요', aggregate([taken, ok('codex', approve)]).verdict === 'approve' && aggregate([taken, ok('codex', changes)]).verdict === 'changes')
+check('이어받은 자리는 사건 기록에 inherited · 댓글에 "앞 리뷰 승인 이어받음 @sha"', reviewerBrief([taken, ok('codex', approve)]) === 'claude:inherited,codex:approve'
+  && reviewComment({ sha: 'abcdef0123', round: 1, results: [taken, ok('codex', approve)], summary: aggregate([taken, ok('codex', approve)]) }).includes('Claude: 앞 리뷰 승인 이어받음 @abcdef0'))
+const noted = withAutoLine(plan, { repo: 'web', number: '7', sha: 'abcdef0123', result: '승인 2/2 → 머지 확인 대기', note: taken.review.summary, round: 1, stamp: 's' })
+const parsed = autoLines(noted).get('web#7')
+check('계획서 줄에 메모가 붙어도 결과 · 라운드 · 같은 HEAD 판정은 그대로', parsed.result.startsWith('승인 2/2 → 머지 확인 대기 · Claude: 앞 리뷰 승인 이어받음 @abcdef0') && parsed.round === 1 && !needsReview(noted, 'web', '7', 'abcdef0123'), noted)
+
+console.log('\n리뷰어 구성(두 번째 자리 — Codex 없는 사람은 다른 모델 Claude · 사용자 결정 b)')
+const ready = reviewerSlots({ codex: 'ready', firstModel: '' })
+check('Codex 를 쓸 수 있으면 지금과 같다(claude + codex · 첫 자리 모델은 팩 값 그대로)', ready.second.name === 'codex' && !ready.second.unavailable && ready.first.model === '' && reviewerSlots({ codex: 'ready', firstModel: 'haiku' }).first.model === 'haiku')
+const pair = reviewerSlots({ codex: 'logged-out' })
+check('로그인 안 됨 · 팩 값 없음 → 기본 opus + sonnet', pair.first.model === 'opus' && pair.second.kind === 'claude' && pair.second.model === 'sonnet' && pair.second.name === 'claude-sonnet')
+const custom = reviewerSlots({ codex: 'missing', firstModel: 'sonnet', secondModel: 'haiku' })
+check('설치 안 됨 · 팩 값이 먼저(sonnet + haiku)', custom.first.model === 'sonnet' && custom.second.model === 'haiku')
+const same = reviewerSlots({ codex: 'missing', firstModel: 'sonnet' })
+check('두 자리가 같은 모델이 되면 대신하지 않음(→ 리뷰어 부족)', same.second.name === 'codex' && Boolean(same.second.unavailable) && Boolean(reviewerSlots({ codex: 'missing', firstModel: 'x', secondModel: 'x' }).second.unavailable))
+check('구성 메모 — 계획서 줄 · 댓글용', lineupNote(pair) === '리뷰어 claude(opus) + claude(sonnet) — Codex 로그인 안 됨' && lineupNote(ready) === '리뷰어 claude + codex', `${lineupNote(pair)} / ${lineupNote(ready)}`)
+check('Claude 두 자리 둘 다 승인 → 승인(둘 다 승인 규칙 그대로)', aggregate([ok('claude', approve), ok('claude-sonnet', approve)]).verdict === 'approve')
+
 console.log(`\n${pass + fail}개 중 실패 ${fail}`)
 process.exit(fail ? 1 : 0)
 EOF
@@ -162,6 +193,8 @@ SH
 # codex exec … -o <파일> — 마지막 답을 그 파일에
 cat > "$BIN/codex" <<'SH'
 #!/bin/sh
+# 돌리기 전 로그인 확인(codex login status — 종료 코드만 본다) · FAKE_CODEX_LOGIN=out 이면 로그인 안 됨
+if [ "$1 $2" = "login status" ]; then [ "${FAKE_CODEX_LOGIN:-in}" = in ]; exit $?; fi
 cat > /dev/null
 # 도구 없이 돌리는 옵션(사용자 설정 · 셸 · 웹 끄기)이 빠지면 실패한다 — docs/pr-auto.md "리뷰어"
 case " $* " in *" --ignore-user-config "*) ;; *) echo "도구 끄기 옵션 없음" >&2; exit 9 ;; esac
@@ -192,8 +225,32 @@ echo; echo "가짜 리뷰어"
 run_case "둘 다 승인 → 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok
 run_case "둘 다 답함(claude 승인 · codex 수정 필요) → 수정 필요" "$BIN:/usr/bin:/bin" changes
 ONLY="$TMP/only-claude"; mkdir -p "$ONLY"; cp "$BIN/claude" "$ONLY/"
-run_case "codex 명령 없음 → 리뷰어 부족(claude 승인만으로 머지 안 함)" "$ONLY:/usr/bin:/bin" insufficient
-run_case "codex 시간 넘김 → 리뷰어 부족" "$BIN:/usr/bin:/bin" insufficient FAKE_CODEX=slow
+# Codex 를 처음부터 못 쓰면 두 번째 자리를 다른 모델 Claude 가(사용자 결정 b — 기본 opus + sonnet · 팩 값이 먼저 · 같으면 리뷰어 부족)
+PAIR_LOG="$TMP/claude-pair"; : > "$PAIR_LOG"
+cat > "$ONLY/claude" <<'SH'
+#!/bin/sh
+cat > /dev/null
+echo "$*" >> "$FAKE_CLAUDE_ARGS"
+echo '{"is_error":false,"structured_output":{"verdict":"approve","summary":"좋다","findings":[],"decisions":[]}}'
+SH
+chmod +x "$ONLY/claude"
+run_case "codex 명령 없음 → claude(opus) + claude(sonnet) 둘 다 승인 → 승인" "$ONLY:/usr/bin:/bin" approve FAKE_CLAUDE_ARGS="$PAIR_LOG"
+grep -q -- '-p --model opus ' "$PAIR_LOG" && grep -q -- '-p --model sonnet ' "$PAIR_LOG" && [ "$(wc -l < "$PAIR_LOG" | tr -d ' ')" = 2 ] \
+  && echo "  ✔ Claude 두 번 — --model opus 한 번 · --model sonnet 한 번" || { echo "  ✖ Claude 두 번 모델: $(cat "$PAIR_LOG")"; FAIL=1; }
+: > "$PAIR_LOG"
+run_case "codex 로그인 안 됨 · 팩 models 값이 먼저(sonnet + haiku)" "$ONLY:$BIN:/usr/bin:/bin" approve FAKE_CODEX_LOGIN=out FAKE_CODEX=ok FAKE_CLAUDE_ARGS="$PAIR_LOG" FAKE_CONFIG='{"models":{"prReview":"sonnet","prReviewSecond":"haiku"}}'
+grep -q -- '-p --model sonnet ' "$PAIR_LOG" && grep -q -- '-p --model haiku ' "$PAIR_LOG" \
+  && echo "  ✔ 팩 값 — --model sonnet · --model haiku" || { echo "  ✖ 팩 값 모델: $(cat "$PAIR_LOG")"; FAIL=1; }
+run_case "두 번째 모델 이름에 '/' 가 있어도(클라우드 이름) 임시 폴더가 경로로 안 풀림 → 승인" "$ONLY:/usr/bin:/bin" approve FAKE_CLAUDE_ARGS="$PAIR_LOG" FAKE_CONFIG='{"models":{"prReview":"opus","prReviewSecond":"vendor/claude-x"}}'
+run_case "codex 없음 · models 설정 오류 → 기본 sonnet 으로 대신하지 않고 리뷰어 부족" "$ONLY:/usr/bin:/bin" insufficient FAKE_CLAUDE_ARGS="$PAIR_LOG" FAKE_CONFIG='{"models":{"prReviewSecond":"x y"}}'
+INH_OUT="$(env PATH="$ONLY:/usr/bin:/bin" FAKE_CLAUDE_ARGS="$PAIR_LOG" "$(command -v node)" --input-type=module -e "
+  const { runReviewers } = await import('./scripts/pr-auto.mjs')
+  const { aggregate, inheritedResult, reviewerBrief } = await import('./scripts/lib/pr-auto.mjs')
+  const results = await runReviewers('리뷰해 줘', { models: { prReviewSecond: 'x y' } }, [inheritedResult({ sha: '1234567', tree: 'abc' }, '1234567')])
+  console.log(aggregate(results).verdict + ' ' + reviewerBrief(results))" 2>&1 | tail -1)"
+case "$INH_OUT" in "insufficient claude:failed,"*) echo "  ✔ models 설정 오류면 앞 리뷰 승인을 이어받아도 첫 자리 실패 → 리뷰어 부족 — $INH_OUT" ;; *) echo "  ✖ 설정 오류 + 이어받기 — $INH_OUT"; FAIL=1 ;; esac
+run_case "codex 없음 · 두 자리가 같은 모델(prReview sonnet · 두 번째 기본 sonnet) → 리뷰어 부족" "$ONLY:/usr/bin:/bin" insufficient FAKE_CLAUDE_ARGS="$PAIR_LOG" FAKE_CONFIG='{"models":{"prReview":"sonnet"}}'
+run_case "codex 가 돌다가 실패(시간 넘김)는 Claude 로 바꾸지 않음 → 리뷰어 부족" "$BIN:/usr/bin:/bin" insufficient FAKE_CODEX=slow
 run_case "claude 답 모양이 틀림 → 그 리뷰어는 실패" "$BIN:/usr/bin:/bin" changes FAKE_CLAUDE=bad
 # 모델(팩 pack.json models.prReview · docs/pack.md) — 있으면 claude 에 --model · 없으면 안 붙임 · 이상하면 claude 리뷰어 실패 → 리뷰어 부족
 ARGS_LOG="$TMP/claude-args"
@@ -288,6 +345,17 @@ OUT="$(run_confirms '')"
 expect "pane 이 없으면 보내지 않는다(닫힌 세션을 다시 열지 않음) · 계획서 줄은 머지됨" '! grep -q "send-text" "$FLOG" && ! grep -q "delegate" "$FLOG" && grep -q "· 머지됨 — squash → dev ·" "$CORE/$PLANF"' "$OUT
 $(cat "$FLOG")"
 
+# push 하자마자 대기열에(지시 1) — --auto-push 로 새 커밋을 올리면 그 HEAD 가 바로 대기열에 · 같은 HEAD 를 또 넣어도(현황판 안전망) 하나만
+echo more > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" commit -q -m y
+SHA2="$(git -C "$WT" rev-parse HEAD)"
+write_plan '수정 필요' p3; printf -- '- `%s` feat/x · 시험2 · push 안 함\n' "${SHA2:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "--auto-push 새 커밋 → push · 그 HEAD 가 바로 대기열에(5분 감지를 기다리지 않음)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ] && [ "$(grep -l "$SHA2" "$QUEUE"/*.json 2>/dev/null | wc -l | tr -d " ")" = 1 ]' "$OUT
+$(ls "$QUEUE")"
+OUT="$(cd "$CORE" && "${ENVS[@]}" node scripts/pr-auto.mjs --enqueue --plan "$PLANF" --pr web#7 --head "$SHA2" 2>&1)"
+expect "현황판이 같은 HEAD 를 또 넣어도 하나만(이미 대기열에 있다)" 'echo "$OUT" | grep -q "이미" && [ "$(ls "$QUEUE"/*.json | wc -l | tr -d " ")" = 1 ]' "$OUT"
+rm -f "$QUEUE"/*.json
+
 # ── 머지 확인 — 레포가 "autoMergeConfirm": false 면 묻지 않고 바로 · 키가 없으면 지금처럼 확인 요청 ─────────
 # 임시 코어 사본(옛 구조 본체 · athena.config.json)에서 가짜 gh · 가짜 리뷰어(둘 다 승인) · 가짜 검증(reuse.sh 통과)으로 handle 을 끝까지 돌린다
 echo; echo "머지 확인(autoMergeConfirm)"
@@ -321,8 +389,8 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
   local name="$1" extra="$2" want="$3" line="$4"; shift 4
   rm -rf "$CORE/.requests" "$CORE/.events.jsonl" "$TMP/queue-confirm" "$GH_LOG.views" "$CORE/plans/task/"*; : > "$GH_LOG"
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
-  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n' "$WT" "${AUTO_LINE:+$AUTO_LINE
-}" > "$CORE/plans/task/x.md"
+  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n%s' "$WT" "${AUTO_LINE:+$AUTO_LINE
+}" "${EXTRA_PLAN:-}" > "$CORE/plans/task/x.md"
   # BLOCK_REQUESTS=1 — 요청 폴더 자리에 파일을 둬 요청을 하나도 못 열게(결정 콘솔 · 대체 요청 둘 다 실패)
   [ "${BLOCK_REQUESTS:-0}" = 1 ] && : > "$CORE/.requests"
   # PENDING=1 — 결정 콘솔에 안 정한 결정이 있는 것처럼(plan-html.mjs 가 여는 계획서 결정 요청)
@@ -370,6 +438,17 @@ env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(com
 merge_case "autoMergeConfirm: false 라도 머지 직전에 새 커밋 → 머지 안 함" ', "autoMergeConfirm": false' no '바로 머지' FAKE_GH_HEAD_AFTER=1
 merge_case "autoMergeConfirm: false 라도 검증 실패 → 머지 안 함" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
 
+# 앞 리뷰 승인 이어받기(지시 2) — 계획서 "- Review result:" 가 같은 내용(tree)으로 승인이면 Claude 를 부르지 않고 그 승인을 쓴다(Codex 는 돈다)
+echo; echo "앞 리뷰 승인 이어받기"
+TREE="$(git -C "$WT" rev-parse 'HEAD^{tree}')"
+CLAUDE_LOG="$TMP/claude-called"; rm -f "$CLAUDE_LOG"
+EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web · 🌿 feat/x · 2026-10-26 10:00
+" merge_case "같은 tree 로 승인 → Claude 안 부름 · 줄에 '앞 리뷰 승인 이어받음'" ', "autoMergeConfirm": false' yes "머지됨 — squash → main · 리뷰어 claude \\+ codex · Claude: 앞 리뷰 승인 이어받음 @${SHA:0:7}" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
+[ ! -s "$CLAUDE_LOG" ] && echo "  ✔ Claude 리뷰어는 불리지 않았다" || { echo "  ✖ 이어받았는데 Claude 가 불렸다"; FAIL=1; }
+grep -q "^pr review 7 " "$GH_LOG" && grep -q "앞 리뷰 승인 이어받음" "$GH_LOG" && echo "  ✔ PR 댓글에 이어받음" || { echo "  ✖ PR 댓글에 이어받음이 없다"; FAIL=1; }
+EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree 0000ffff0000 · 📦 web · 🌿 feat/x · 2026-10-26 10:00
+" merge_case "tree 가 다르면 → Claude 도 다시 리뷰" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 claude \+ codex · 라운드' FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
+[ -s "$CLAUDE_LOG" ] && echo "  ✔ Claude 리뷰어가 불렸다" || { echo "  ✖ tree 가 다른데 Claude 가 안 불렸다"; FAIL=1; }
 echo; echo "사람에게 넘기지 않기(결정 A · B · C)"
 OLD7="0000000"
 CALLED="$TMP/codex-called"; rm -f "$CALLED"
@@ -388,12 +467,12 @@ AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 상한 뒤 이어받음(리뷰 없이 검증만으로 머지) → 머지 확인 대기 · 라운드 4/3 · 2026-10-26 10:00" \
   merge_case "C — 이어받은 HEAD 가 머지 단계로 간 뒤 또 커밋 → 멈춤(다시 이어받지 않음)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
-  merge_case "C — 상한 라운드에 리뷰어 하나 실패 → 지적은 보내고 이어받지 않음" ', "autoMergeConfirm": false' no '· 수정 필요 — 리뷰어 부족이라 이어받지 않음 · 라운드 3/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
+  merge_case "C — 상한 라운드에 리뷰어 하나 실패 → 지적은 보내고 이어받지 않음" ', "autoMergeConfirm": false' no '· 수정 필요 — 리뷰어 부족이라 이어받지 않음 · 리뷰어 claude \+ codex · 라운드 3/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
 grep -q 'b.js:2' "$CORE/.requests"/*.json 2>/dev/null && echo "  ✔ C — 리뷰어 부족 상한 라운드도 지적(b.js:2)은 보냄" || { echo "  ✖ C — 리뷰어 부족 상한 라운드 지적"; FAIL=1; }
-merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_CODEX=impl
+merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX=impl
 grep -q '^- 추천안으로 자동 확정(자동 리뷰 · codex · web#7 @.* · 구현 세부): 아이콘 자리 → A 왼쪽$' "$CORE/plans/task/x.md" && [ ! -e "$CORE/plans/task/x.html" ] && grep -q "추천안으로 자동 확정" "$GH_LOG" \
   && echo "  ✔ B — 계획서 Decisions · PR 댓글에 추천안으로 자동 확정" || { echo "  ✖ B — 계획서 · 댓글 기록"; sed 's/^/      /' "$CORE/plans/task/x.md"; FAIL=1; }
-merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 · 라운드 1/3' FAKE_CODEX=product FAKE_CLAUDE=changes
+merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX=product FAKE_CLAUDE=changes
 grep -q '"title": "자동 리뷰 수정 지시를 보낼 pane 이 없다' "$CORE/.requests"/*.json 2>/dev/null && grep -q 'b.js:2' "$CORE/.requests"/*.json \
   && echo "  ✔ A — 결정이 있어도 수정 지시(b.js:2)를 보냄(가짜 화면엔 pane 이 없어 사람 요청으로)" || { echo "  ✖ A — 수정 지시가 없다"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 가짜 본체엔 docs/plan-template.html 이 없어 plan-html --add 가 실패한다 — 그래도 결정 콘솔과 같은 키의 결정 요청이 열려 머지를 막는다
@@ -415,7 +494,7 @@ grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수�
   && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
 
 # 결정 콘솔 · 대체 요청이 둘 다 실패해도 — 계획서 "- Auto decisions:" 줄(등록 실패)이 남아 머지를 막는다(PR #20 2라운드 지적)
-BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 · 라운드 1/3' FAKE_CODEX=product
+BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX=product
 MARK="$(grep '^- Auto decisions:' "$CORE/plans/task/x.md")"
 case "$MARK" in "- Auto decisions: web#7 @"*" · 1개 · 등록 실패 · "*) echo "  ✔ A — 결정 대기 줄: $MARK" ;; *) echo "  ✖ A — 결정 대기 줄이 없다: $MARK"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1 ;; esac
 rm -f "$CORE/.requests"
@@ -431,13 +510,13 @@ rm -rf "$CORE/.requests"; pending_plan "- Auto decisions: web#7 @0000000 · 1개
 grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && ! grep -q '^- Auto decisions:' "$CORE/plans/task/x.md" \
   && echo "  ✔ A — 등록됨 · 결정 요청이 닫혔으면 해결 — 줄을 지우고 머지" || { echo "  ✖ A — 등록됨 해결"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 리뷰어가 하나라도 실패한 라운드는 지난 리뷰 기록(history)을 덮지 않는다(PR #20 2라운드 지적)
-merge_case "D — 리뷰어 하나 실패한 라운드 → 수정 필요(지적은 보냄)" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
+merge_case "D — 리뷰어 하나 실패한 라운드 → 수정 필요(지적은 보냄)" ', "autoMergeConfirm": false' no '· 수정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX=slow FAKE_CLAUDE=changes ATHENA_PR_AUTO_TIMEOUT_MS=1500
 [ ! -e "$TMP/queue-confirm/history/web-7.json" ] && echo "  ✔ D — 리뷰어가 실패한 라운드는 history 를 남기지 않음" || { echo "  ✖ D — 실패한 라운드가 history 를 썼다"; FAIL=1; }
 
 # 결정 D — 1라운드 지적을 기록해 두고, 2라운드 프롬프트에는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 diff 만
 echo; echo "지적은 한 번에(결정 D)"
 PROMPT="$TMP/prompt.txt"
-merge_case "D — 1라운드: 수정 필요 · 지난 지적 기록" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_PROMPT="$PROMPT" FAKE_CODEX=changes
+merge_case "D — 1라운드: 수정 필요 · 지난 지적 기록" ', "autoMergeConfirm": false' no '· 수정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_PROMPT="$PROMPT" FAKE_CODEX=changes
 grep -q "찾을 수 있는 지적을 이번 리뷰에서 모두 낸다" "$PROMPT" && ! grep -q "지난 리뷰 지적" "$PROMPT" && grep -q '"file": "a.js"' "$TMP/queue-confirm/history/web-7.json" \
   && echo "  ✔ D — 1라운드 프롬프트는 '모두 한 번에' · history 에 보낸 지적" || { echo "  ✖ D — 1라운드"; sed 's/^/      /' "$PROMPT" | head -20; FAIL=1; }
 S1="$SHA"; echo 'fixed' > "$WT/a.js"; git -C "$WT" add a.js && git -C "$WT" -c user.name=t -c user.email=t@t commit -q -m fix

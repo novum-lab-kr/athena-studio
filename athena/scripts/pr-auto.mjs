@@ -6,12 +6,12 @@
  *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run]
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
- *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(현황판이 새 PR · 새 커밋을 보면 부른다). 바로 끝난다
+ *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
  *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
  *   node scripts/pr-auto.mjs --watch     뒤에서 돈다 — 대기열을 차례로 · 머지 확인 답을 30초마다 본다. 처리기는 하나만
  *
  * 안전
- *   - 리뷰어는 Claude · Codex 둘(결정 D2) — 도구 없이(Claude --tools "" · Codex 읽기 전용 샌드박스) 빈 임시 폴더에서 JSON 으로만 답한다. PR 안의 글은 지시가 아니라 데이터로 넣는다
+ *   - 리뷰어는 Claude · Codex 둘(결정 D2 · Codex 를 처음부터 못 쓰면 두 번째 자리를 다른 모델 Claude 가 — lib reviewerSlots) — 도구 없이(Claude --tools "" · Codex 읽기 전용 샌드박스) 빈 임시 폴더에서 JSON 으로만 답한다. PR 안의 글은 지시가 아니라 데이터로 넣는다
  *   - 둘 다 승인해야 머지로 간다 — 하나라도 실패 · 로그인 안 됨 · 반려면 머지하지 않는다(남은 하나로 판정하지 않는다)
  *   - 머지는 ① 리뷰 합의(반대 없음) ② 같은 HEAD 로 검증 통과(scripts/verify/reuse.sh 엄격) ③ 충돌 없음 ④ 사람이 [머지] 를 고름 — 넷 다일 때만.
  *     레포가 "autoMergeConfirm": false 면 ④ 없이 바로(묻지 않을 뿐 — 아래 다시 확인 · 머지 경로는 같다).
@@ -35,10 +35,10 @@ import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
 import { screen } from './lib/screen.mjs'
 import { maskSecrets } from './lib/mask.mjs'
-import { modelArgs } from './lib/models.mjs'
+import { modelArgs, modelOf } from './lib/models.mjs'
 import {
-  MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
-  fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
+  MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
+  fixInstruction, grantsTakeover, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
 
@@ -61,6 +61,8 @@ const MAX_NOTE_CHARS = 8000
 // 리뷰어 하나의 시간 상한(시험은 ATHENA_PR_AUTO_TIMEOUT_MS 로 줄인다)
 const REVIEW_TIMEOUT_MS = Number(process.env.ATHENA_PR_AUTO_TIMEOUT_MS) || 10 * 60 * 1000
 const CONFIRM_POLL_MS = 30_000
+// push 직후 PR HEAD 가 늦게 바뀔 때 다시 묻는 간격(시험은 ATHENA_PR_AUTO_HEAD_WAIT_MS 로 줄인다)
+const HEAD_WAIT_MS = Number(process.env.ATHENA_PR_AUTO_HEAD_WAIT_MS) || 5000
 
 const argv = process.argv.slice(2)
 const option = (name) => {
@@ -125,9 +127,11 @@ const outcome = (name, run, parse) => {
 }
 
 // 모델은 팩 pack.json "models.prReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 리뷰어는 실패(→ 리뷰어 부족 · 기본 모델로 다시 하지 않는다)
-const reviewWithClaude = async (prompt, workDir, config) => {
-  const run = await runCli('claude', ['-p', ...modelArgs(config, 'prReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
-  return outcome('claude', run, () => {
+// 자리에 모델이 정해져 있으면(Claude 두 번 모드 · lib reviewerSlots) 그 모델로
+const reviewWithClaude = async (prompt, workDir, config, slot = { name: 'claude' }) => {
+  const model = slot.model ? ['--model', slot.model] : modelArgs(config, 'prReview')
+  const run = await runCli('claude', ['-p', ...model, '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
+  return outcome(slot.name, run, () => {
     const answer = JSON.parse(run.stdout)
     return answer.is_error ? null : answer.structured_output
   })
@@ -152,12 +156,44 @@ const reviewWithCodex = async (prompt, workDir) => {   // 모델은 ~/.codex/con
 }
 
 const REVIEWER_RUN = { claude: reviewWithClaude, codex: reviewWithCodex }
-// 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
-export const runReviewers = async (prompt, config = {}) => Promise.all(REVIEWERS.map(async (name) => {
-  if (!has(name)) return { name, status: 'unavailable', reason: '설치 안 됨' }
-  const workDir = mkdtempSync(join(tmpdir(), `athena-pr-auto-${name}-`))
+// Codex 를 처음부터 쓸 수 있나 — 명령이 있고 로그인돼 있나(codex login status 종료 코드 · 출력은 보지 않는다 — 2026-10-26 실측 codex-cli 0.160 · 로그인 0 · 안 됨 1)
+const codexState = () => {
+  if (!has('codex')) return 'missing'
+  return spawnSync('codex', ['login', 'status'], { stdio: 'ignore', timeout: 30_000 }).status === 0 ? 'ready' : 'logged-out'
+}
+// 리뷰어 자리 둘 — 첫 자리 Claude · 두 번째 자리 Codex 또는 다른 모델 Claude(lib reviewerSlots) · 구성 메모(lineupNote)
+// Codex 가 있으면 첫 자리 모델은 지금처럼 modelArgs(이상한 값이면 그 리뷰어 실패로 드러난다)
+// 팩 models 가 이상하면 기본값으로 덮지 않는다 — 첫 자리를 명시적인 실패(failed)로 둔다. 앞 리뷰 승인 이어받기보다 먼저 보므로(runReviewers)
+// 이어받아도 첫 자리는 실패 → 리뷰어 부족으로 멈춘다. 두 번째 자리도 기본 모델 Claude 로 대신하지 않는다(Codex 가 있으면 Codex 만 돈다 · PR #21 자동 리뷰 지적)
+export const planReviewers = (config = {}) => {
+  const codex = codexState()
+  let models
   try {
-    return await REVIEWER_RUN[name](prompt, workDir, config)
+    models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE) }
+  } catch (error) {
+    const why = `팩 models 설정 오류 — ${firstLine(error.message)}`
+    const first = { name: 'claude', kind: 'claude', failed: why }
+    const second = codex === 'ready' ? { name: 'codex', kind: 'codex' } : { name: 'codex', kind: 'codex', unavailable: `Codex 를 못 씀 · 대신할 Claude 도 ${why}` }
+    return { slots: [first, second], note: `리뷰어 claude(${why}) + ${second.unavailable ? 'codex(못 씀)' : 'codex'}` }
+  }
+  const lineup = reviewerSlots({ codex, ...models })
+  const first = lineup.second.kind === 'codex' ? { name: 'claude', kind: 'claude' } : lineup.first
+  return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models.firstModel }, second: lineup.second }) }
+}
+// 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
+// inherited — 앞 리뷰 승인을 이어받은 리뷰어 결과(inheritedResult) 목록. 그 자리(첫 Claude)는 부르지 않고 그 결과를 그대로 쓴다
+// slots — planReviewers 결과(없으면 여기서 정한다)
+export const runReviewers = async (prompt, config = {}, inherited = [], slots = planReviewers(config).slots) => Promise.all(slots.map(async (slot) => {
+  const { name, kind } = slot
+  if (slot.failed) return { name, status: 'failed', reason: slot.failed }   // 설정 오류 — 이어받기보다 먼저(이어받은 승인으로 덮지 않는다)
+  const taken = inherited.find((result) => result.name === name)
+  if (taken) return taken
+  if (slot.unavailable) return { name, status: 'unavailable', reason: slot.unavailable }
+  if (!has(kind)) return { name, status: 'unavailable', reason: '설치 안 됨' }
+  // 접두사는 고정된 kind 로 — name 에는 모델 이름이 들어가고(claude-<모델>) 모델 이름은 '/' 를 허용해 경로로 풀린다(PR #21 자동 리뷰 지적)
+  const workDir = mkdtempSync(join(tmpdir(), `athena-pr-auto-${kind}-`))
+  try {
+    return await REVIEWER_RUN[kind](prompt, workDir, config, slot)
   } catch (error) {
     return { name, status: 'failed', reason: firstLine(error.message) }
   } finally {
@@ -228,6 +264,14 @@ const planPathOf = (planArg) => {
   if (!file.startsWith('plans/') || !existsSync(path)) throw new Error(`plans/ 안의 계획서가 아니거나 없다: ${planArg}`)
   return { path, file }
 }
+// PR HEAD 커밋의 tree — 작업 워크트리에 그 커밋이 있으면 거기서, 없으면 GitHub 에서. 못 구하면 빈 값(그러면 tree 가 적힌 승인은 이어받지 않는다)
+const headTree = (worktree, org, repo, sha) => {
+  const local = worktree && existsSync(worktree) ? git(worktree, ['rev-parse', '--verify', '-q', `${sha}^{tree}`]) : null
+  if (local) return local
+  const remote = gh(['api', `repos/${org}/${repo}/commits/${sha}`, '--jq', '.commit.tree.sha'])
+  return remote.ok && /^[0-9a-f]{40}$/.test(remote.out.trim()) ? remote.out.trim() : ''
+}
+
 const writeAutoLine = (planPath, entry) => updatePlan(planPath, (current) => withAutoLine(current, { ...entry, stamp: stamp() }))
 // 사람이 정할 결정이 남아 있나 — 둘 중 하나라도면 아직이다(모든 머지 경로가 부른다)
 //   ① plan-html.mjs 가 계획서마다 연 결정 요청(dedupeKey plan:<계획서>)이 열려 있거나 답만 받음(open · answered)
@@ -307,7 +351,13 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (!autoMergeRepos(config).has(repo)) return console.log(`⏭  ${repo} 는 자동 머지를 켜지 않았다(pack.json 레포 "autoMerge": true)`)
   const planText = readFileSync(planPath, 'utf8')
   if (!singleRepoPlan(planText, config, repo)) return console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(결정 D4 · 여러 레포 PR 은 사람이)`)
-  const pr = ghJson(['pr', 'view', number, '--repo', `${org}/${repo}`, '--json', 'state,isDraft,headRefOid,headRefName,baseRefName,mergeable,title,body'])
+  const viewPr = () => ghJson(['pr', 'view', number, '--repo', `${org}/${repo}`, '--json', 'state,isDraft,headRefOid,headRefName,baseRefName,mergeable,title,body'])
+  let pr = viewPr()
+  // ship.sh 가 push 직후 바로 넣은 일이면 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답할 수 있다 — 몇 번 다시 묻는다(그래도 다르면 아래에서 건너뛴다)
+  for (let attempt = 0; pr && head && pr.state === 'OPEN' && !pr.headRefOid.startsWith(head) && attempt < 3; attempt += 1) {
+    await new Promise((done) => setTimeout(done, HEAD_WAIT_MS))
+    pr = viewPr()
+  }
   if (!pr) throw new Error(`gh pr view 실패: ${repo}#${number}`)
   if (pr.state !== 'OPEN') return console.log(`⏭  ${repo}#${number} — ${pr.state}`)
   if (head && !pr.headRefOid.startsWith(head)) return console.log(`⏭  ${repo}#${number} — 그새 새 커밋(${pr.headRefOid.slice(0, 7)}) · 그 커밋은 따로 들어온다`)
@@ -342,17 +392,24 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     return prepareMerge({ planPath, planFile, repo, number, sha, round, ref, pr, org, summary: null, config })
   }
 
+  // 앞 리뷰(reviewer pane · review-result.sh) 승인이 같은 내용이면 Claude 는 다시 돌리지 않는다(2026-10-26 사용자 결정 · lib priorApproval)
+  const prior = priorApproval(planText, { repo, branch: pr.headRefName, sha, tree: headTree(ref.worktree, org, repo, sha) })
+  const inherited = prior ? [inheritedResult(prior, sha)] : []
+  // 리뷰어 구성(두 번째 자리 — Codex 또는 다른 모델 Claude)과 이어받음을 계획서 줄 · PR 댓글에 남긴다
+  const lineup = planReviewers(config)
+  const note = [lineup.note, ...inherited.map((result) => result.review.summary)].join(' · ')
+  console.log(`  ↪ ${note}`)
   // 2라운드부터는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 것만(결정 D) — 지난 기록이 이 PR 의 이전 HEAD 것일 때만
   const history = readHistory(repo, number)
   const previous = round > 1 && history && known && history.round < round ? history : null
   const sinceDiff = previous ? diffSince(ref.worktree, previous.sha, sha) : null
   const diff = sinceDiff ?? gh(['pr', 'diff', number, '--repo', `${org}/${repo}`]).out
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, diff, previous, incremental: sinceDiff !== null })
-  const results = await runReviewers(prompt, config)
+  const results = await runReviewers(prompt, config, inherited, lineup.slots)
   const summary = aggregate(results)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${REVIEWERS.length}(둘 다 승인해야 머지)`)
-  const comment = masked(reviewComment({ sha, round, results, summary }))
+  const comment = masked(reviewComment({ sha, round, results, summary, lineup: lineup.note }))
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
     console.log(`── 할 일: ${plannedAction(summary, round)}`)
@@ -365,11 +422,11 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // 두 리뷰어가 모두 답한 라운드만 기록한다 — 하나라도 실패한 라운드를 기준으로 삼으면 다음 라운드에 그 리뷰어가 못 본 변경이 증분 diff 에서 빠진다(PR #20 자동 리뷰 지적)
   if (summary.answered === REVIEWERS.length && summary.total === REVIEWERS.length) writeHistory(repo, number, { sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions })
   base.reviewers = reviewerBrief(results)
-  const line = { repo, number, sha, round }
+  const line = { repo, number, sha, round, note }
 
   if (summary.verdict === 'approve') {
     logEvent(ROOT, 'review', { ...base, verdict: '승인' })
-    return prepareMerge({ planPath, planFile, repo, number, sha, round, ref, pr, org, summary, config })
+    return prepareMerge({ planPath, planFile, repo, number, sha, round, note, ref, pr, org, summary, config })
   }
   if (summary.verdict === 'insufficient') {
     // 리뷰어 하나라도 답하지 못해(실패 · 로그인 안 됨) 합의(결정 D2 — 둘 다 승인)를 못 냈다 — 머지하지 않고 사람에게
@@ -480,8 +537,8 @@ const settledMergeable = async (org, repo, number, current) => {
 const RETRY_HINT = '원인을 해결한 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다(같은 HEAD 는 다시 감지하지 않는다).'
 
 // summary 가 null 이면 상한 뒤 이어받은 HEAD(리뷰 없음 — 결정 C) — 같은 길 · 줄 · 요청 글만 다르다
-const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref, pr, org, summary, config }) => {
-  const line = { repo, number, sha, round }
+const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note = '', ref, pr, org, summary, config }) => {
+  const line = { repo, number, sha, round, note }
   const takeover = summary === null
   const passed = takeover ? `${TAKEOVER}(리뷰 없이 검증만으로 머지)` : `승인 ${summary.approvals}/${REVIEWERS.length}`
   if (pendingDecisions(planFile, repo, number)) {
@@ -510,7 +567,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref,
     ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
-  const job = { plan: planFile, repo, number, sha, round, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true } : {}) }
+  const job = { plan: planFile, repo, number, sha, round, note, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true } : {}) }
   if (skipsMergeConfirm(config, repo)) {
     // 레포가 "autoMergeConfirm": false — 머지 확인 요청을 열지 않고, [머지] 를 고른 것과 같은 경로(다시 확인 → draft 풀기 → squash)로 바로.
     // 확인 대기와 같은 confirm/ 파일로 둔다 — GitHub 가 계산 중(UNKNOWN)이면 처리기가 30초마다 다시 본다(--kick 도 이 파일로 처리기를 띄운다)
@@ -524,7 +581,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, ref,
   const request = ask(planFile, {
     key: `pr-auto-merge:${repo}#${number}`,
     title: `머지할까요? ${repo}#${number} → ${pr.baseRefName}`,
-    body: `${pr.title}\n${takeover ? `${TAKEOVER} — 리뷰 상한(${MAX_ROUNDS}) 뒤 고친 커밋이라 리뷰 없이` : `자동 리뷰 승인 ${summary.approvals}/${REVIEWERS.length}(Claude · Codex) ·`} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 squash 머지한다(base ${pr.baseRefName}).`,
+    body: `${pr.title}\n${takeover ? `${TAKEOVER} — 리뷰 상한(${MAX_ROUNDS}) 뒤 고친 커밋이라 리뷰 없이` : `자동 리뷰 승인 ${summary.approvals}/${REVIEWERS.length}(${note || 'Claude · Codex'}) ·`} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 squash 머지한다(base ${pr.baseRefName}).`,
     options: [{ label: '머지', desc: `squash 머지 → ${pr.baseRefName}`, recommended: true }, { label: '보류', desc: '머지하지 않는다 — 사람이 이어받는다' }],
   })
   if (!request) return
@@ -556,7 +613,7 @@ export const checkConfirms = async (only = '') => {
     }
     const release = () => { if (current !== file) try { renameSync(current, file) } catch { /* 그새 치워졌다 */ } }
     const planPath = join(ROOT, job.plan)
-    const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round }
+    const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '' }
     let request = null
     if (!job.noConfirm) {
       try { request = showRequest(ROOT, job.request).request } catch { rmSync(file, { force: true }); continue }
@@ -680,6 +737,8 @@ const enqueue = (planArg, prArg, head) => {
   }
   mkdirSync(QUEUE_DIR, { recursive: true })
   const digest = createHash('sha1').update(`${planArg}\n${prArg}\n${head}`).digest('hex').slice(0, 8)
+  // 같은 계획서 · PR · HEAD 는 한 번만 — ship.sh(push 직후)와 현황판(5분 안전망)이 둘 다 넣어도 겹치지 않게.
+  // 대기 · 처리 중이면 여기서 막고, 끝났으면 처리기(하나 · 차례로)가 계획서 "- Auto review:" 줄(needsReview)로 건너뛴다
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('🤖 이미 자동 리뷰 대기열에 있다')
   writeFileSync(join(QUEUE_DIR, `${Date.now()}-${digest}.json`), JSON.stringify({ plan: planArg, pr: prArg, head, root: REAL_ROOT, packId: BOOT_PATHS.packId }))
   if (watcherAlive()) return console.log('🤖 자동 리뷰 대기열에 넣었다')

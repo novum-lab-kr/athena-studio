@@ -25,6 +25,32 @@ export const FINAL_RESULTS = ['멈춤', '머지됨']
 // 커밋 없이 PR 본문만 고쳤다(ship.sh --auto-push --body-file) — 같은 HEAD 지만 다시 리뷰하고 라운드를 하나 쓴다
 export const BODY_EDITED = '본문 고침'
 
+// ── 리뷰어 구성 — 두 번째 자리(2026-10-26 사용자 결정 · Codex 없는 사람) ──────────────
+// 첫 자리는 늘 Claude. 두 번째 자리는 Codex 를 쓸 수 있으면 Codex(지금과 똑같이 — 첫 자리는 models.prReview, 없으면 기본 모델),
+// **처음부터** 못 쓰면(명령 없음 · 로그인 안 됨 — 돌리기 전 확인) Claude 두 번 모드 — 두 번째 자리를 다른 모델 Claude 가 따로 한 번 더 리뷰한다.
+// Claude 두 번 모드의 모델: 팩 models 에 적힌 값이 먼저, 없으면 첫 자리 opus · 두 번째 자리 sonnet(사용자 결정 b).
+// 두 자리가 같은 모델이 되면 대신하지 않는다(→ 리뷰어 부족 · 같은 모델 두 번은 합의가 아니다).
+// Codex 가 돌다가 실패한 것은 여기서 바꾸지 않는다(그 자리는 실패 → 리뷰어 부족 · 조용히 Claude 로 바꾸지 않는다)
+export const SECOND_MODEL_ROLE = 'prReviewSecond'
+export const CLAUDE_PAIR_DEFAULTS = { first: 'opus', second: 'sonnet' }
+// codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · firstModel · secondModel: 팩 models 값('' = 안 적음)
+// 결과: { first: { name, kind, model? }, second: { name, kind, model?, unavailable?, replaces? } } — name 은 댓글 · 사건 기록 · 판정에 쓰는 이름
+export const reviewerSlots = ({ codex, firstModel = '', secondModel = '' }) => {
+  if (codex === 'ready') return { first: { name: 'claude', kind: 'claude', model: firstModel }, second: { name: 'codex', kind: 'codex' } }
+  const why = codex === 'missing' ? 'Codex 설치 안 됨' : 'Codex 로그인 안 됨'
+  const firstUsed = firstModel || CLAUDE_PAIR_DEFAULTS.first
+  const secondUsed = secondModel || CLAUDE_PAIR_DEFAULTS.second
+  const first = { name: 'claude', kind: 'claude', model: firstUsed }
+  if (firstUsed === secondUsed) return { first, second: { name: 'codex', kind: 'codex', unavailable: `${why} · 대신할 Claude 모델(models.${SECOND_MODEL_ROLE} · ${secondUsed})이 첫 자리와 같은 모델` } }
+  return { first, second: { name: `claude-${secondUsed}`, kind: 'claude', model: secondUsed, replaces: why } }
+}
+// 어떤 구성으로 돌았나 — PR 댓글 · 계획서 "- Auto review:" 줄에 남긴다
+export const lineupNote = ({ first, second }) => {
+  const head = `리뷰어 claude${first.model ? `(${first.model})` : ''}`
+  if (second.kind === 'claude') return `${head} + claude(${second.model}) — ${second.replaces}`
+  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : ''}`
+}
+
 // 지적의 등급 — blocking(막음: 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 — 수정 필요 · 머지 차단) · advisory(권장: 그 밖 — PR 댓글에만 · 에이전트에 보내지 않고 머지를 막지 않는다)
 // (2026-10-26 사용자 결정 E — 기준은 리뷰 프롬프트의 승인 기준 "버그 · 보안 · 데이터 위험 · 레포 규칙 위반" 그대로)
 export const FINDING_SEVERITIES = ['blocking', 'advisory']
@@ -132,8 +158,36 @@ export const aggregate = (results) => {
   return { verdict, approvals: approvals.length, answered: answered.length, total: results.length, findings, advisories, decisions, autoDecisions }
 }
 
-// 리뷰어마다 짧은 상태 — 사건 기록 · 댓글 · 계획서에
-export const reviewerBrief = (results) => results.map((result) => `${result.name}:${result.status === 'ok' ? result.review.verdict : result.status}`).join(',')
+// 리뷰어마다 짧은 상태 — 사건 기록 · 댓글 · 계획서에. 앞 리뷰 승인을 이어받은 리뷰어는 inherited
+export const reviewerBrief = (results) => results.map((result) => `${result.name}:${result.inherited ? 'inherited' : result.status === 'ok' ? result.review.verdict : result.status}`).join(',')
+
+// ── 앞 리뷰 승인 이어받기(2026-10-26 사용자 결정) ────────────────────────
+// PR 전에 reviewer pane 이 남긴 계획서 "- Review result:" 줄이 같은 내용으로 승인이면 Claude 리뷰어는 다시 돌리지 않고 그 승인을 Claude 몫으로 쓴다(Codex 는 그대로).
+// 같은 내용 판정은 ship.sh "리뷰" 와 같다 — 줄에 tree(리뷰한 워크트리 전체 · 커밋 전 변경 포함)가 있으면 PR HEAD 의 tree 가 그것으로 시작할 때,
+// tree 가 없는 옛 줄이면 PR HEAD 커밋이 그 sha 로 시작할 때. 줄 고르기도 ship.sh 와 같다 — 이 레포 · 브랜치 줄 → 레포 표시 없는 이 브랜치 줄 → 표시 없는 옛 줄, 그중 마지막
+export const INHERITED_BY = 'claude'
+export const priorApproval = (planText, { repo, branch, sha, tree }) => {
+  const lines = String(planText ?? '').split('\n').filter((line) => /^- Review result:/.test(line))
+  const mine = [
+    lines.filter((line) => `${line} `.includes(`📦 ${repo} · 🌿 ${branch} `)),
+    lines.filter((line) => !line.includes('📦') && `${line} `.includes(`🌿 ${branch} `)),
+    lines.filter((line) => !line.includes('📦') && !line.includes('🌿')),
+  ].find((group) => group.length) ?? []
+  const last = mine.at(-1)
+  const hit = last?.match(/^- Review result:\s*(.+?)\s*@\s*([0-9a-f]{6,40})/)
+  if (!hit || !hit[1].startsWith('승인')) return null
+  const reviewedTree = last.match(/· tree ([0-9a-f]{6,40})/)?.[1] ?? ''
+  const same = reviewedTree ? Boolean(tree) && String(tree).startsWith(reviewedTree) : String(sha).startsWith(hit[2])
+  return same ? { sha: hit[2], tree: reviewedTree } : null
+}
+// 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 리뷰어가 승인한 것으로 들어간다
+export const inheritedResult = (prior, headSha) => ({
+  name: INHERITED_BY,
+  status: 'ok',
+  inherited: true,
+  review: { verdict: 'approve', summary: inheritedNote(headSha, prior), findings: [], decisions: [] },
+})
+export const inheritedNote = (headSha, prior) => `Claude: 앞 리뷰 승인 이어받음 @${String(headSha).slice(0, 7)}${prior?.tree ? ` (reviewer 승인 · tree ${prior.tree.slice(0, 12)})` : ` (reviewer 승인 @${String(prior?.sha ?? '').slice(0, 7)})`}`
 
 // ── 계획서 표시 줄 ─────────────────────────────────────────────────────
 const AUTO_LINE = /^- Auto review:\s*([\w.-]+)#(\d+)\s+@([0-9a-f]{6,40})\s+·\s+(.+?)\s+·\s+라운드\s+(\d+)\/(\d+)(?:\s+·\s+(.*))?$/
@@ -145,7 +199,8 @@ export const autoLines = (planText) => {
   }
   return found
 }
-export const autoLineText = ({ repo, number, sha, result, round, max = MAX_ROUNDS, stamp }) => `- Auto review: ${repo}#${number} @${String(sha).slice(0, 7)} · ${result} · 라운드 ${round}/${max} · ${stamp}`
+// note(앞 리뷰 승인 이어받음 등)는 결과 뒤에 붙인다 — 결과는 앞부분(startsWith)으로만 읽으니 판정이 바뀌지 않는다
+export const autoLineText = ({ repo, number, sha, result, note = '', round, max = MAX_ROUNDS, stamp }) => `- Auto review: ${repo}#${number} @${String(sha).slice(0, 7)} · ${result}${note ? ` · ${note}` : ''} · 라운드 ${round}/${max} · ${stamp}`
 // 계획서에 이 줄을 넣거나 바꾼 새 글 — 같은 PR 줄이 있으면 그 자리, 없으면 Work ref 뒤
 export const withAutoLine = (planText, entry) => {
   const line = autoLineText(entry)
@@ -269,8 +324,8 @@ const oneLine = (text, size) => {
   const flat = String(text ?? '').replace(/\s*\n\s*/g, ' ').trim()
   return flat.length > size ? `${flat.slice(0, size)}…` : flat
 }
-// PR 댓글 본문 — 리뷰어마다 결론 · 요약 · 지적
-export const reviewComment = ({ sha, round, results, summary }) => {
+// PR 댓글 본문 — 리뷰어마다 결론 · 요약 · 지적 · 리뷰어 구성(lineup — lineupNote)
+export const reviewComment = ({ sha, round, results, summary, lineup = '' }) => {
   const notes = []
   if (summary.advisories?.length) notes.push(`**💡 권장 ${summary.advisories.length}개는 머지를 막지 않는다** — 에이전트에 보내지 않고 이 댓글에만 남긴다`)
   if (summary.autoDecisions?.length) {
@@ -286,6 +341,7 @@ export const reviewComment = ({ sha, round, results, summary }) => {
   const verdictText = { approve: '승인', changes: '수정 필요', decision: '결정 필요', insufficient: `리뷰어 부족(승인 ${summary.approvals}/${REVIEWERS.length} · 둘 다 승인해야 머지)` }[summary.verdict]
   const rows = results.map((result) => {
     if (result.status !== 'ok') return `- **${result.name}** — ${result.status === 'unavailable' ? '못 씀' : '실패'}(${oneLine(result.reason, 120)})`
+    if (result.inherited) return `- **${result.name}** — 승인 · ${oneLine(result.review.summary, 300)} — 다시 돌리지 않음`
     const label = { approve: '승인', changes: '수정 필요', decision: '결정 필요' }[result.review.verdict]
     const items = [
       ...result.review.findings.map((item) => `  - ${isBlocking(item) ? '⛔ 막음' : '💡 권장'} \`${item.file}${item.line ? `:${item.line}` : ''}\` ${oneLine(item.problem, 300)} → ${oneLine(item.fix, 300)}`),
@@ -293,7 +349,7 @@ export const reviewComment = ({ sha, round, results, summary }) => {
     ]
     return [`- **${result.name}** — ${label}: ${oneLine(result.review.summary, 600)}`, ...items].join('\n')
   })
-  return `${head}\n\n**결론: ${verdictText}**\n\n${rows.join('\n')}\n${notes.length ? `\n${notes.join('\n')}\n` : ''}`
+  return `${head}\n\n**결론: ${verdictText}**${lineup ? `\n\n_${lineup}_` : ''}\n\n${rows.join('\n')}\n${notes.length ? `\n${notes.join('\n')}\n` : ''}`
 }
 
 // 상한 뒤 이어받은 HEAD 의 PR 댓글 — 리뷰 없이 검증만으로 머지 단계로 간다는 것

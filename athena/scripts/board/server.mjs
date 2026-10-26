@@ -399,8 +399,9 @@ const autoDonePlans = async (plans) => {
 }
 
 // PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs · docs/pr-auto.md) — 켠 레포(pack.json "autoMerge": true)의 열린 PR 에
-// 새 HEAD 가 오면(계획서 "- Auto review:" 줄의 sha 와 다르면) 대기열에 넣는다. PR 상태는 prInfo 캐시(5분)라 늦어도 5분 안에 잡는다.
-// 같은 HEAD 는 한 번만(이 현황판이 켜져 있는 동안은 메모리로도 · 다시 켜면 계획서 줄로). 머지 확인을 기다리는 일은 5분마다 처리기가 살아 있게 한다
+// 새 HEAD 가 오면(계획서 "- Auto review:" 줄의 sha 와 다르면) 대기열에 넣는다. 보통은 ship.sh 가 push 하자마자 먼저 넣고, 여기는 놓친 것을 잡는 안전망이다
+// (PR 상태는 prInfo 캐시(5분)라 늦어도 5분 안에). 같은 HEAD 는 한 번만 — 이 현황판의 메모리 · 대기열(pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막는다) ·
+// 계획서 줄(처리기가 끝난 HEAD 를 건너뛴다). 머지 확인을 기다리는 일은 5분마다 처리기가 살아 있게 한다
 const autoReviewQueued = new Set()
 let autoKickAt = 0
 const autoReviewPlans = async (plans) => {
