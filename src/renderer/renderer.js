@@ -385,9 +385,10 @@ function spaceRail() {
     button.className = 'space-icon'
     button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
     button.style.setProperty('--space-color', spaceColor(workspace.label)) // 색은 레포 name 으로 — 표시 이름을 바꿔도 그대로
-    const repo = packRepoOf(workspace.label)
+    const athena = isAthenaWorkspace(workspace)
+    const repo = athena ? null : packRepoOf(workspace.label) // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지를 쓰지 않는다
     const name = repo ? repoLabel(repo) : workspace.label
-    const image = repo && repoIconImage(repo)
+    const image = spaceImage(workspace, repo, 180)
     if (image) button.append(image)
     else button.textContent = spaceInitials(name)
     button.title = [name, branches[workspace.id]].filter(Boolean).join('\n')
@@ -509,9 +510,25 @@ function repoIconImage(repo) {
   return null // 받는 동안은 두 글자
 }
 
-// 펼친 spaces 레포 줄 이름 앞 작은 이미지 — 이미지를 정한 레포만(없거나 받는 중이면 null · 이름만)
-function repoRowIcon(repo) {
-  const image = repo && repoIconImage(repo)
+// 아테나 작업 공간 로고 — 늘 우리 로고(화이트판). 팩에 같은 이름 레포가 있어도 그 레포 이미지 · 이름으로 바꾸지 않는다.
+// 작은 칸이라 크기에 맞는 파일을 쓴다(펼친 줄 14px → 32 · 접힌 rail 32px → 180)
+function athenaLogoImage(size) {
+  const image = el('img', 'pack-icon-image space-athena-logo')
+  image.src = `assets/logo/athena-white-${size}.png`
+  image.alt = ''
+  image.draggable = false
+  return image
+}
+
+// 작업 공간 줄 이미지 — 아테나 작업 공간은 아테나 로고, 그 밖엔 이미지를 정한 팩 레포만(없거나 받는 중이면 null)
+function spaceImage(workspace, repo, size) {
+  if (workspace && isAthenaWorkspace(workspace)) return athenaLogoImage(size)
+  return (repo && repoIconImage(repo)) || null
+}
+
+// 펼친 spaces 레포 줄 꺾쇠 자리의 작은 이미지(없으면 null — 꺾쇠 그대로 · 이름만)
+function repoRowIcon(workspace, repo) {
+  const image = spaceImage(workspace, repo, 32)
   if (!image) return null
   const icon = el('span', 'space-repo-icon')
   icon.append(image)
@@ -526,7 +543,7 @@ function idleRepoRows() {
     const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
     const text = el('span', 'space-text')
     text.append(el('span', 'space-label', repoLabel(repo)))
-    const icon = repoRowIcon(repo)
+    const icon = repoRowIcon(null, repo)
     if (icon) button.append(icon)
     button.append(text)
     if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
@@ -723,15 +740,16 @@ function renderSides() {
     text.className = 'space-text'
     const label = document.createElement('span')
     label.className = 'space-label'
-    const repo = packRepoOf(workspace.label)
+    const athena = isAthenaWorkspace(workspace)
+    const repo = athena ? null : packRepoOf(workspace.label) // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
     label.textContent = repoLabel(repo) || workspace.label
     text.append(label)
-    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(꺾쇠는 늘 · pane 이 없으면 그 레포를 고른다). 접으면 모두 숨기고 머리글에 —
-    // 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
+    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(pane 이 없으면 그 레포를 고른다). 앞 칸은 이미지가 있으면 이미지, 없으면 꺾쇠(pane 이 있을 때).
+    // 접으면 모두 숨기고 머리글에 — 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
     const shown = folded ? [] : panes
-    if (panes.length) button.append(Object.assign(twistyElement(folded ? 'closed' : 'open'), { className: `twisty space-twisty${folded ? '' : ' open'}` }))
-    const icon = repoRowIcon(repo)
+    const icon = repoRowIcon(workspace, repo)
     if (icon) button.append(icon)
+    else if (panes.length) button.append(Object.assign(twistyElement(folded ? 'closed' : 'open'), { className: `twisty space-twisty${folded ? '' : ' open'}` }))
     button.append(text)
     if (folded && panes.length) {
       if (panes.some((pane) => pane.id === screen.focused)) button.classList.add('holds-focus')
@@ -747,7 +765,7 @@ function renderSides() {
     // 우클릭 — 작업 공간 닫기 · (팩 레포면) 팩에서 빼기
     button.addEventListener('contextmenu', (event) => {
       event.preventDefault()
-      spaceMenu({ workspace, repo: packRepos.some((repo) => repo.name === workspace.label) ? workspace.label : null }, event)
+      spaceMenu({ workspace, repo: repo ? repo.name : null }, event)
     })
     if (!shown.length) return [button]
     // pane 줄은 레포 머리글 밑에
