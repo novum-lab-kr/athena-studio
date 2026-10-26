@@ -71,9 +71,21 @@ function ensureView(paneId) {
   $('panes').append(el)
   const { term, fit } = makeTerminal()
   term.open(body)
-  term.onData((data) => {
+  const sendInput = (data) => {
     if (reattachOnKey) return reattach()
     return studio.paneInput(paneId, data)
+  }
+  term.onData(sendInput)
+  // Shift+Enter → 줄바꿈 신호(ESC CR — Option+Enter 가 macOptionIsMeta 로 보내는 것과 같다). xterm 기본은 Shift 를 무시하고 CR(전송)을 보낸다.
+  // 한글 조합 중(isComposing)이면 xterm 에 맡긴다. keydown 에서만 보내고 keypress · keyup 의 Shift+Enter 도 막아 CR 이 새지 않게 한다
+  term.attachCustomKeyEventHandler((event) => {
+    const isShiftEnter = event.key === 'Enter' && event.shiftKey && !event.ctrlKey && !event.altKey && !event.metaKey
+    if (!isShiftEnter || event.isComposing) return true
+    if (event.type === 'keydown') {
+      event.preventDefault()
+      sendInput('\x1b\r')
+    }
+    return false
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
