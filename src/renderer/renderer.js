@@ -1166,6 +1166,8 @@ function sendPaneSize(paneId, view, info) {
   view.resizing = setTimeout(() => {
     if (views.get(paneId) !== view) return
     view.resizing = null
+    // 답을 못 받은 크기는 적용됐는지 모른다 — 보낸 기록을 지워 지금 크기를 다시 보낸다(같은 크기여도)
+    view.sent = null
     sendPaneSize(paneId, view, null)
   }, RESIZE_REPLY_TIMEOUT_MS)
   studio.paneResize(paneId, want.cols, want.rows)
