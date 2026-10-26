@@ -497,6 +497,15 @@ function repoIconImage(repo) {
   return null // 받는 동안은 두 글자
 }
 
+// 펼친 spaces 레포 줄 이름 앞 작은 이미지 — 이미지를 정한 레포만(없거나 받는 중이면 null · 이름만)
+function repoRowIcon(repo) {
+  const image = repo && repoIconImage(repo)
+  if (!image) return null
+  const icon = el('span', 'space-repo-icon')
+  icon.append(image)
+  return icon
+}
+
 function idleRepoRows() {
   const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
   return packRepos.filter((repo) => !labels.has(repo.name)).map((repo) => {
@@ -505,6 +514,8 @@ function idleRepoRows() {
     const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
     const text = el('span', 'space-text')
     text.append(el('span', 'space-label', repoLabel(repo)))
+    const icon = repoRowIcon(repo)
+    if (icon) button.append(icon)
     button.append(text)
     if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
     button.addEventListener('contextmenu', (event) => {
@@ -700,12 +711,15 @@ function renderSides() {
     text.className = 'space-text'
     const label = document.createElement('span')
     label.className = 'space-label'
-    label.textContent = repoLabel(packRepoOf(workspace.label)) || workspace.label
+    const repo = packRepoOf(workspace.label)
+    label.textContent = repoLabel(repo) || workspace.label
     text.append(label)
     // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(꺾쇠는 늘 · pane 이 없으면 그 레포를 고른다). 접으면 모두 숨기고 머리글에 —
     // 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
     const shown = folded ? [] : panes
     if (panes.length) button.append(Object.assign(twistyElement(folded ? 'closed' : 'open'), { className: `twisty space-twisty${folded ? '' : ' open'}` }))
+    const icon = repoRowIcon(repo)
+    if (icon) button.append(icon)
     button.append(text)
     if (folded && panes.length) {
       if (panes.some((pane) => pane.id === screen.focused)) button.classList.add('holds-focus')
