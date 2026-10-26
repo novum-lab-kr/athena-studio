@@ -88,7 +88,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 ### 명령 (`bin/athena …` — 스튜디오 앱이 부르는 약속은 이 절이 정본)
 
-`--json` 이면 진행은 `progress: <단계> <설명>` 줄, **마지막 줄 하나가 JSON**. 실패는 종료 1 + `{ ok:false, error, message }`, 일부만 성공은 종료 1 + `status:"partial"`, 사용법 오류는 2. 스튜디오는 `--contract 3` 을 붙인다(약속 2 — 팩마다 본체 · 3 — `set-auto-merge` · `not-applicable` 더함 · 다르면 `contract-mismatch` · `pack use`·`pack new` 는 `--json` 인데 없으면 거부 — 1단계 스튜디오의 "갈아 끼우기"를 막는다). 오류 코드: 1단계(`locked` · `busy` · `not-found` · `invalid-pack` · `unsafe` · `format-unknown` · `conflict` · `token-expired` · `clone-failed` · `rollback`) + `body-conflict` · `body-mismatch` · `port-in-use` · `contract-mismatch` · `data-incompatible` · `fetch-failed` · `verify-failed` · `rollback-unavailable` · `rollback-failed` · `partial`.
+`--json` 이면 진행은 `progress: <단계> <설명>` 줄, **마지막 줄 하나가 JSON**. 실패는 종료 1 + `{ ok:false, error, message }`, 일부만 성공은 종료 1 + `status:"partial"`, 사용법 오류는 2. 스튜디오는 `--contract 3` 을 붙인다(약속 2 — 팩마다 본체 · 3 — `set-auto-merge` · `not-applicable` 더함 · 다르면 `contract-mismatch` · **명령을 더하는 것만으로는 번호를 올리지 않는다** — 새 명령은 이름을 따로 두어 옛 코어가 사용법 오류로 안전하게 실패하게 한다(`set-repo-name` · `set-repo-icon` · `repo remove` 의 `warnings` 가 그렇다 — 2026-10-26) · 있던 명령의 출력 · 뜻 · 오류 코드를 바꿀 때 올린다 · `pack use`·`pack new` 는 `--json` 인데 없으면 거부 — 1단계 스튜디오의 "갈아 끼우기"를 막는다). 오류 코드: 1단계(`locked` · `busy` · `not-found` · `invalid-pack` · `unsafe` · `format-unknown` · `conflict` · `token-expired` · `clone-failed` · `rollback`) + `body-conflict` · `body-mismatch` · `port-in-use` · `contract-mismatch` · `data-incompatible` · `fetch-failed` · `verify-failed` · `rollback-unavailable` · `rollback-failed` · `partial`.
 
 | 명령 | 하는 일 |
 |---|---|
