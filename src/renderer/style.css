@@ -184,8 +184,8 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   white-space: nowrap;
 }
 .pane.focused .pane-head { color: var(--accent); }
-/* 줄이는 동안 넘침 자르기 — xterm 은 데몬이 크기를 적용했다고 답할 때(pane:resized)·경계를 놓을 때 줄어서 그 사이 옛 크기로 상자보다 크다.
-   자르지 않으면 아래 모니터 · 오른쪽 칸 위로 글자가 넘쳐 보인다. 자리를 잡으면 xterm 이 상자에 맞아 잘리는 것이 없다 */
+/* 줄이는 동안 넘침 자르기 — xterm 은 데몬이 크기를 적용했다고 답할 때(pane:resized) 줄어서 그 왕복 동안은 옛 크기로 상자보다 크다.
+   자르지 않으면 그 틈에 아래 모니터 · 오른쪽 칸 위로 글자가 넘쳐 보인다. 답이 오면 xterm 이 상자에 맞아 잘리는 것이 없다 */
 .pane-body { flex: 1; min-height: 0; padding-left: 4px; overflow: hidden; }
 .screen-status { padding: 24px; color: var(--muted); white-space: pre-wrap; }
 .screen-status[hidden] { display: none; }
