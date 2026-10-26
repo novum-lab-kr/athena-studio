@@ -1289,7 +1289,13 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   }
   // spaces 레포 줄 우클릭 — 고른 동작 이름(repo-look · repo-reset-name · repo-clear-icon · remove-repo · close-workspace · null).
   // 이름 · 이미지는 팩 이름 · 이미지와 같은 대화상자(화면) · 되돌리기는 바꿔 둔 것이 있을 때만
+  // 아테나 작업 공간 줄은 레포 항목(이름 · 이미지 · 팩에서 빼기)을 띄우지 않는다 — 팩에 같은 이름 레포가 있어도 아테나 로고 고정
   ctx.spaceContextMenu = async ({ repo = null, workspace = null } = {}, point = null) => {
+    if (repo && workspace) {
+      const state = await daemonCall('state')
+      const athena = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
+      if (athena && athena.id === workspace) repo = null
+    }
     const info = repo ? (await ctx.packRepos()).find((item) => item.name === repo) : null
     return spaceMenuPopup({ repo, workspace, info }, point)
   }
