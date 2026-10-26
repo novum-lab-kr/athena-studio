@@ -18,7 +18,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { aggregate, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -72,6 +72,9 @@ const instr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number
 check('수정 지시 — 지적 · 자동 확정 결정 · 결정 콘솔 안내 · 상한 이어받기 안내 · commit/ship', instr.startsWith('[자동 리뷰 → web-fe] PR web#7 @abcdef1 라운드 3/3 — 수정 필요: 1) a.js:3') && instr.includes('자동 확정한 결정') && instr.includes('아이콘 자리 → A') && instr.includes('결정 1개는 결정 콘솔') && instr.includes(TAKEOVER) && instr.includes('--auto-push'), instr)
 const onlyAuto = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: 1, findings: [], autoDecisions: autoSum.autoDecisions, plan: 'p', worktree: '/wt', athenaDir: '/a' })
 check('수정 지시 — 지적 없이 자동 확정 결정만 · 상한 전이면 이어받기 안내 없음', !onlyAuto.includes('수정 필요:') && onlyAuto.includes('아이콘 자리 → A') && !onlyAuto.includes(TAKEOVER), onlyAuto)
+const conflict = conflictNotice({ agent: 'web-fe', repo: 'web', number: '7', sha: 'abcdef123', base: 'main', plan: 'plans/task/x.md', worktree: '/wt', athenaDir: '/a' })
+check('충돌 알림 — commit.sh --merge-base 로 origin/<base> 합치기 · commit.sh 로 merge 커밋 · ship.sh --auto-push · 아테나에 부탁하지 않음', conflict.startsWith('[자동 리뷰 → web-fe] PR web#7 @abcdef1 — base(main)와 충돌') && conflict.includes('/a/scripts/commit.sh --plan /a/plans/task/x.md --dir /wt --merge-base') && conflict.includes('origin/main') && conflict.includes('--auto-push') && !conflict.includes('→ 아테나]'), conflict)
+check('base 합침 — 라운드를 올리지 않음(지난 줄 라운드 그대로) · 아니면 그대로', baseMergeRound({ round: 3 }, 4, true) === 3 && baseMergeRound({ round: 3 }, 4, false) === 4 && baseMergeRound(undefined, 1, true) === 1 && BASE_MERGED === 'base 합침')
 const autoComment = reviewComment({ sha: 'abcdef1', round: MAX_ROUNDS, results: [ok('claude', approve), ok('codex', implDecision())], summary: autoSum })
 check('댓글 — 추천안으로 자동 확정 · 상한 뒤 이어받음', autoComment.includes('추천안으로 자동 확정') && autoComment.includes('아이콘 자리 → **A**') && autoComment.includes(TAKEOVER), autoComment)
 check('댓글 — 상한 전 · 승인이면 이어받음 줄 없음', !reviewComment({ sha: 'a', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)]) }).includes(TAKEOVER)
@@ -355,6 +358,102 @@ $(ls "$QUEUE")"
 OUT="$(cd "$CORE" && "${ENVS[@]}" node scripts/pr-auto.mjs --enqueue --plan "$PLANF" --pr web#7 --head "$SHA2" 2>&1)"
 expect "현황판이 같은 HEAD 를 또 넣어도 하나만(이미 대기열에 있다)" 'echo "$OUT" | grep -q "이미" && [ "$(ls "$QUEUE"/*.json | wc -l | tr -d " ")" = 1 ]' "$OUT"
 rm -f "$QUEUE"/*.json
+
+# 충돌 풀기(2026-10-26 · PR #21 재현) — base 를 합친 merge 중이면 commit.sh 가 merge 커밋을 만들고, ship.sh --auto-push 가 충돌로 검증 대기인 PR 에 올린다
+echo; echo "충돌 풀기(commit.sh merge 커밋 · ship.sh --auto-push 충돌 검증 대기)"
+printf '#!/bin/sh\nexit 0\n' > "$CORE/scripts/verify/web.sh"; chmod +x "$CORE/scripts/verify/web.sh"
+git -C "$TMP/web" config user.name t && git -C "$TMP/web" config user.email t@t
+G clone -q "$TMP/origin.git" "$TMP/dev-side" 2>/dev/null
+G -C "$TMP/dev-side" checkout -q dev && echo dev > "$TMP/dev-side/a.txt" && echo base > "$TMP/dev-side/c.txt" \
+  && G -C "$TMP/dev-side" add a.txt c.txt && G -C "$TMP/dev-side" commit -q -m dev && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+commit() { (cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "merge dev" -- "$@" 2>&1); }
+merge_base() { (cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" "$@" --merge-base 2>&1); }
+write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3
+OUT="$(merge_base -m x)"; CODE=$?
+expect "--merge-base 에 -m 을 주면 거부(merge 안 걺)" '[ $CODE != 0 ] && ! git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$OUT"
+echo dirty >> "$WT/b.txt"
+OUT="$(merge_base)"; CODE=$?
+expect "--merge-base — 커밋 안 한 변경이 있으면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "커밋하지 않은 변경" && ! git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$OUT"
+G -C "$WT" checkout -q -- b.txt
+OUT="$(merge_base)"; CODE=$?
+DEV_SHA="$(git -C "$WT" rev-parse origin/dev)"
+expect "--merge-base — prBase(origin/dev)를 merge --no-ff --no-commit 으로 걺 · 충돌 파일(a.txt)과 다음 명령을 알림 · 커밋은 안 함" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse MERGE_HEAD)" = "$DEV_SHA" ] && [ "$(git -C "$WT" rev-parse HEAD)" = "$SHA2" ] && echo "$OUT" | grep -q "a.txt" && echo "$OUT" | grep -q "다음:"' "$OUT"
+OUT="$(merge_base)"; CODE=$?
+expect "--merge-base — 이미 merge 중이면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "이미 merge 중"' "$OUT"
+expect "merge 중 · 충돌이 남음(시험 준비)" '[ -n "$(git -C "$WT" diff --name-only --diff-filter=U)" ] && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null'
+OUT="$(commit c.txt)"; CODE=$?
+expect "merge 중 풀지 않은 파일(a.txt)이 남으면 거부 · 스테이징된 merge 결과는 그대로" '[ $CODE != 0 ] && echo "$OUT" | grep -q "풀지 않은 파일이 있다: a.txt" && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null && [ "$(git -C "$WT" diff --cached --name-only --diff-filter=A)" = c.txt ]' "$OUT"
+OUT="$(commit a.txt)"; CODE=$?
+expect "충돌 표시가 남은 파일은 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "충돌 표시" && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$OUT"
+printf 'hi\ndev\n' > "$WT/a.txt"
+OUT="$(commit a.txt)"; CODE=$?
+MERGE_COMMIT="$(git -C "$WT" rev-parse HEAD)"
+expect "충돌을 풀면 merge 커밋 — 두 번째 부모가 origin/dev · base 쪽 c.txt 도 들어감 · 계획서 Commits 에 merge 커밋 기록" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$DEV_SHA" ] && git -C "$WT" cat-file -e HEAD:c.txt && ! git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null && grep -q "${MERGE_COMMIT:0:7}\` — merge dev · merge 커밋(${DEV_SHA:0:7} 합침)" "$CORE/$PLANF"' "$OUT
+$(grep -A3 '## Commits' "$CORE/$PLANF")"
+echo z > "$WT/z.txt" && G -C "$WT" add z.txt && echo y > "$WT/y.txt"
+OUT="$(commit y.txt)"; CODE=$?
+expect "merge 가 아니면 남의 스테이징 거부는 그대로" '[ $CODE != 0 ] && echo "$OUT" | grep -q "원래 스테이징돼 있던 변경이 있다"' "$OUT"
+G -C "$WT" reset -q -- z.txt; rm -f "$WT/z.txt" "$WT/y.txt"
+write_plan '검증 대기 — 워크트리를 못 찾음' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "충돌이 아닌 검증 대기면 --auto-push 거절" '[ $CODE != 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ]' "$OUT"
+write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "충돌로 검증 대기면 merge 커밋을 빨리 감기 push · 그 HEAD 가 대기열에" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ] && grep -lq "$MERGE_COMMIT" "$QUEUE"/*.json' "$OUT"
+rm -f "$QUEUE"/*.json
+# base 합침 merge 커밋은 라운드를 올리지 않는다 — 지난 줄이 3/3 이어도 멈추거나 이어받지 않고 그 라운드로 한 번 리뷰(--dry-run 으로 할 일만)
+sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "base 합침 — 라운드 3/3 그대로 · 멈춤 · 이어받음 아님 · 리뷰를 돈다" 'echo "$OUT" | grep -q "라운드 3/3 · base 합침" && ! echo "$OUT" | grep -q "멈춤" && ! echo "$OUT" | grep -q "리뷰 없이 같은 HEAD 검증"' "$OUT"
+sed -i.bak "s|^- Auto review: web#7 @[0-9a-f]* |- Auto review: web#7 @${SHA:0:7} |" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "첫 부모가 지난번 본 HEAD 가 아니면 base 합침 아님 — 평소처럼 라운드 4/3(멈춤)" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+# 충돌 풀기 밖의 수정을 섞은 merge 커밋은 base 합침이 아니다(내용 검사 — PR #22 라운드 1) — dev 에 새 커밋 → --merge-base(충돌 없음) → b.txt 도 고쳐 같이 커밋
+echo dev2 > "$TMP/dev-side/d.txt" && G -C "$TMP/dev-side" add d.txt && G -C "$TMP/dev-side" commit -q -m dev2 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+OUT="$(merge_base)"
+echo mixed >> "$WT/b.txt"
+OUT="$OUT
+$(commit b.txt)"; CODE=$?
+MIXED="$(git -C "$WT" rev-parse HEAD)"
+expect "(시험 준비) 다른 수정을 섞은 merge 커밋" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse -q --verify HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ]' "$OUT"
+sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 4/3" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+# merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
+echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+echo side > "$WT/e.txt" && G -C "$WT" add e.txt && G -C "$WT" commit -q -m e
+merge_base >/dev/null
+G -C "$WT" add b.txt; echo more >> "$WT/e.txt"
+OUT="$(commit e.txt)"; CODE=$?
+expect "merge 커밋 — 지정하지 않은 스테이징 파일(b.txt)에 충돌 표시가 남았으면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 결과에 충돌 표시" && echo "$OUT" | grep -q "b.txt"' "$OUT"
+# 충돌을 지금 브랜치 내용으로 풀어 HEAD 와 차이가 없는 merge 결과도 merge 커밋이 된다 — 파일 없이도 · HEAD 와 같은 파일을 줘도(PR #22 라운드 2)
+# 앞 시험이 실패하며 스테이징한 e.txt(merge 중 실패는 스테이징을 되돌리지 않는다)도 HEAD 로
+G -C "$WT" show HEAD:b.txt > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" reset -q -- e.txt && G -C "$WT" checkout -q -- e.txt
+expect "(시험 준비) merge 결과가 HEAD 와 같다" '[ -z "$(git -C "$WT" diff --cached --name-only HEAD)" ] && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$(git -C "$WT" status --short; git -C "$WT" diff --cached --stat HEAD)"
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "merge dev" -- b.txt 2>&1)"; CODE=$?
+expect "HEAD 와 같은 내용으로 푼 파일을 줘도 merge 커밋(두 번째 부모 = origin/dev)" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ]' "$OUT"
+echo dev4 > "$TMP/dev-side/f.txt" && G -C "$TMP/dev-side" add f.txt && G -C "$TMP/dev-side" commit -q -m dev4 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+merge_base >/dev/null
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "merge dev" -- 2>&1)"; CODE=$?
+expect "merge 중이면 파일 없이(-- 만)도 merge 커밋 · base 쪽 f.txt 포함" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ] && git -C "$WT" cat-file -e HEAD:f.txt' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "x" -- 2>&1)"; CODE=$?
+expect "merge 중이 아니면 파일 없는 호출은 거부(사용법)" '[ $CODE = 2 ]' "$OUT"
+# 충돌로 검증 대기인 PR 의 --auto-push 는 base 를 합친 merge 커밋 하나만(PR #22 라운드 3) — 줄은 지금 충돌 검증 대기(origin/feat/x = MERGE_COMMIT)
+PUSHED_BEFORE="$(git -C "$TMP/origin.git" rev-parse feat/x)"; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "충돌 검증 대기 — merge 커밋이어도 첫 부모가 origin/feat/x 가 아니면 거절(그 사이 커밋이 더 있음)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "첫 부모가 origin/feat/x 가 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
+echo g > "$WT/g.txt" && G -C "$WT" add g.txt && G -C "$WT" commit -q -m g
+printf -- '- `%s` feat/x · g · push 안 함\n' "$(git -C "$WT" rev-parse --short HEAD)" >> "$CORE/$PLANF"
+OUT="$(ship)"; CODE=$?
+expect "충돌 검증 대기 — merge 커밋이 아닌 커밋은 거절" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 커밋이 아니다" && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PUSHED_BEFORE" ]' "$OUT"
+# .npmrc 토큰 검사 — ${이름} 참조 · 빈 값은 커밋 · 값이 글자 그대로면 거부(PR #22 라운드 3 · 가짜 값)
+printf '//registry.npmjs.org/:_authToken="${NPM_TOKEN}"\n//npm.example.com/:_authToken=\n' > "$WT/.npmrc"
+OUT="$(commit .npmrc)"; CODE=$?
+expect ".npmrc — \${NPM_TOKEN} 참조(따옴표 포함) · 빈 값은 커밋" '[ $CODE = 0 ] && git -C "$WT" cat-file -e HEAD:.npmrc' "$OUT"
+printf '//registry.npmjs.org/:_authToken=fake-not-a-real-token\n' >> "$WT/.npmrc"
+OUT="$(commit .npmrc)"; CODE=$?
+expect ".npmrc — 값이 글자 그대로 적혀 있으면 거부(값은 출력 안 함)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "토큰 값이 글자 그대로" && ! echo "$OUT" | grep -q "fake-not-a-real-token"' "$OUT"
+G -C "$WT" checkout -q -- .npmrc
 
 # ── 머지 확인 — 레포가 "autoMergeConfirm": false 면 묻지 않고 바로 · 키가 없으면 지금처럼 확인 요청 ─────────
 # 임시 코어 사본(옛 구조 본체 · athena.config.json)에서 가짜 gh · 가짜 리뷰어(둘 다 승인) · 가짜 검증(reuse.sh 통과)으로 handle 을 끝까지 돌린다

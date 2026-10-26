@@ -24,7 +24,8 @@
 #   --yes                실제로 보낸다. 없으면 미리보기만
 #   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
 #                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
-#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · HEAD 가 commit.sh 로 기록된 커밋
+#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · 충돌로 검증 대기(CONFLICTING) ·
+#                        HEAD 가 commit.sh 로 기록된 커밋(충돌이면 base 를 합친 merge 커밋만 — 부모 둘 · 첫 부모 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안)
 #                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
 #
@@ -245,17 +246,36 @@ import re, sys, pathlib
 text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); repo, number = sys.argv[2:4]
 pr_line = re.search(rf'^- PR:\s*\S*/{re.escape(repo)}/pull/{number}\b', text, re.M)
 auto = re.search(rf'^- Auto review:\s*{re.escape(repo)}#{number}\s+@[0-9a-f]+\s+·\s+(.+?)\s+·', text, re.M)
-print('no-pr' if not pr_line else ('ok' if auto and re.match(r'(수정 필요|결정 필요)', auto.group(1)) else 'no-request'))
+# 수정 · 결정 요청, 또는 base 와 충돌해 머지 못 한 "검증 대기"(pr-auto.mjs prepareMerge · 머지 직전 확인) — 충돌은 base 를 합친 merge 커밋으로 푼다
+# 충돌이면 'conflict <PR base>' — PR base 는 ship.sh 가 남긴 PR 줄 "(<브랜치> → <base>, …)" 에서
+fixes = auto and re.match(r'(수정 필요|결정 필요)', auto.group(1))
+conflict = auto and re.match(r'검증 대기 — .*충돌.*CONFLICTING', auto.group(1))
+base = re.search(rf'^- PR:\s*\S*/{re.escape(repo)}/pull/{number}\b.*?\(\S+ → ([^,)\s]+)', text, re.M)
+if not pr_line: print('no-pr')
+elif fixes: print('ok')
+elif conflict: print(f"conflict {base.group(1) if base else ''}")
+else: print('no-request')
 PYEOF
 )"
+  CONFLICT_BASE=""
   case "$AUTO_STATE" in
     ok) ;;
+    conflict*) CONFLICT_BASE="${AUTO_STATE#conflict }"; CONFLICT_BASE="${CONFLICT_BASE# }"
+      [ -n "$CONFLICT_BASE" ] || fail "PR #$PR_NUMBER 의 base 를 계획서 PR 줄에서 못 찾았다 — 충돌 풀기 push 는 base 를 합친 merge 커밋인지 확인한 뒤에만" ;;
     no-pr) fail "PR #$PR_NUMBER 이 계획서 PR 줄에 없다 — 이 계획서의 PR 이 아니다" ;;
-    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
+    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
   esac
   if [ -n "$BODY_FILE" ]; then [ -f "$BODY_FILE" ] || fail "본문 파일이 없다: $BODY_FILE"; check_body "$BODY_FILE"; fi
   git -C "$TOP" fetch --quiet origin "$BRANCH" 2>/dev/null || fail "fetch 실패 — origin/$BRANCH 를 확인하지 못했다"
   git -C "$TOP" merge-base --is-ancestor "origin/$BRANCH" HEAD 2>/dev/null || fail "origin/$BRANCH 에 여기 없는 커밋이 있다 — 빨리 감기가 아니라 올리지 않는다(강제 push 하지 않는다)"
+  # 충돌로 검증 대기면 base 를 합친 merge 커밋 하나만 받는다 — 부모 둘 · 첫 부모가 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안(pr-auto.mjs isBaseMerge 와 같은 부모 검사)
+  if [ -n "$CONFLICT_BASE" ]; then
+    read -r -a MERGE_PARENTS <<< "$(git -C "$TOP" rev-list --parents -n 1 HEAD)"
+    [ ${#MERGE_PARENTS[@]} = 3 ] || fail "충돌로 검증 대기인 PR 에는 base($CONFLICT_BASE)를 합친 merge 커밋만 올린다 — HEAD 가 merge 커밋이 아니다(commit.sh --merge-base → 충돌 풀기 → commit.sh)"
+    [ "${MERGE_PARENTS[1]}" = "$(git -C "$TOP" rev-parse "origin/$BRANCH")" ] || fail "merge 커밋의 첫 부모가 origin/$BRANCH 가 아니다 — 충돌 풀기 push 는 올라간 브랜치에 base 를 합친 merge 커밋 하나만"
+    git -C "$TOP" fetch --quiet origin "$CONFLICT_BASE" 2>/dev/null || fail "fetch 실패 — origin/$CONFLICT_BASE 를 확인하지 못했다"
+    git -C "$TOP" merge-base --is-ancestor "${MERGE_PARENTS[2]}" "refs/remotes/origin/$CONFLICT_BASE" 2>/dev/null || fail "merge 커밋의 두 번째 부모가 origin/$CONFLICT_BASE 에 없다 — PR base 를 합친 merge 커밋만 받는다"
+  fi
   # 올릴 커밋이 없으면 본문만 고칠 때(--body-file)만 계속한다
   BODY_ONLY=0
   if [ -z "$(git -C "$TOP" rev-list "origin/$BRANCH"..HEAD)" ]; then

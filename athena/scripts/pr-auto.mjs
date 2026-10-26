@@ -37,7 +37,7 @@ import { screen } from './lib/screen.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
-  MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
+  BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   fixInstruction, grantsTakeover, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
@@ -265,6 +265,25 @@ const planPathOf = (planArg) => {
   return { path, file }
 }
 // PR HEAD 커밋의 tree — 작업 워크트리에 그 커밋이 있으면 거기서, 없으면 GitHub 에서. 못 구하면 빈 값(그러면 tree 가 적힌 승인은 이어받지 않는다)
+// base 합치기 merge 커밋인가 — 부모가 둘 · 첫 부모가 지난번 본 HEAD · 두 번째 부모가 origin/<base> 에 들어 있다(commit.sh --merge-base 로 만든 커밋)
+// · 내용도 — 두 부모를 git 이 자동으로 합친 트리(merge-tree --write-tree)와 이 커밋의 차이가 충돌 났던 파일에만 있다(PR #22 라운드 1 · 아테나 확정 "코드에 내용 검사를 더한다").
+// 고친 커밋 뒤에 합쳤거나(첫 부모가 다름) · 다른 브랜치를 합쳤거나 · 충돌 풀기 밖의 수정이 섞였거나 · git 이 merge-tree --write-tree 를 모르면(2.38 전) 아니다 — 평소처럼 라운드를 쓴다
+const isBaseMerge = (worktree, knownSha, sha, base) => {
+  if (!worktree || !existsSync(worktree) || !knownSha || !base) return false
+  const parents = (git(worktree, ['rev-list', '--parents', '-n', '1', sha]) ?? '').split(' ').slice(1)
+  if (parents.length !== 2 || !parents[0].startsWith(knownSha)) return false
+  git(worktree, ['fetch', '--quiet', 'origin', base])
+  if (git(worktree, ['merge-base', '--is-ancestor', parents[1], `refs/remotes/origin/${base}`]) === null) return false
+  // 종료 0 = 충돌 없음 · 1 = 충돌(첫 줄 트리 다음 줄부터 충돌 파일) · 그 밖은 실패
+  const merged = spawnSync('git', ['-C', worktree, '-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', '--no-messages', parents[0], parents[1]], { encoding: 'utf8' })
+  if (merged.status !== 0 && merged.status !== 1) return false
+  const [autoTree, ...conflicted] = merged.stdout.split('\n').filter(Boolean)
+  if (!/^[0-9a-f]{40,64}$/.test(autoTree ?? '')) return false
+  const changed = git(worktree, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '--name-only', autoTree, sha])
+  if (changed === null) return false
+  const allowed = new Set(conflicted)
+  return changed.split('\n').filter(Boolean).every((path) => allowed.has(path))
+}
 const headTree = (worktree, org, repo, sha) => {
   const local = worktree && existsSync(worktree) ? git(worktree, ['rev-parse', '--verify', '-q', `${sha}^{tree}`]) : null
   if (local) return local
@@ -364,12 +383,14 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const sha = pr.headRefOid
   if (!dryRun && !needsReview(planText, repo, number, sha)) return console.log(`⏭  ${repo}#${number} @${sha.slice(0, 7)} — 이미 봤거나 사람이 이어받았다`)
   const known = autoLines(planText).get(`${repo}#${number}`)
-  const round = nextRound(known, sha)
   const ref = workRefOf(planText)
-  console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}`)
+  const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
+  const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
+  console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto' }
 
-  if (isTakeoverRound(round) && !grantsTakeover(known?.result)) {
+  // base 합침은 상한을 넘은 라운드여도 멈추거나 이어받지 않고 한 번 리뷰한다
+  if (isTakeoverRound(round) && !baseMerge && !grantsTakeover(known?.result)) {
     // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 사람에게
     if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${MAX_ROUNDS}(직전이 ${TAKEOVER}가 아님) · 사람에게 요청`)
     writeAutoLine(planPath, { repo, number, sha, round, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
@@ -377,7 +398,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 상한(${MAX_ROUNDS}) 넘음 — ${repo}#${number}`, body: `직전 결과(${known?.result ?? '없음'})가 ${TAKEOVER}가 아니라 리뷰 없이 머지하지 않는다. 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).` })
     return
   }
-  if (isTakeoverRound(round)) {
+  if (isTakeoverRound(round) && !baseMerge) {
     // 상한 뒤 이어받음(결정 C) — 리뷰어를 부르지 않고 같은 HEAD 검증 · 충돌 · 안 정한 결정만 보고 승인과 같은 머지 단계로
     const comment = masked(takeoverComment({ sha, round }))
     if (dryRun) {
@@ -397,7 +418,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const inherited = prior ? [inheritedResult(prior, sha)] : []
   // 리뷰어 구성(두 번째 자리 — Codex 또는 다른 모델 Claude)과 이어받음을 계획서 줄 · PR 댓글에 남긴다
   const lineup = planReviewers(config)
-  const note = [lineup.note, ...inherited.map((result) => result.review.summary)].join(' · ')
+  const note = [...(baseMerge ? [BASE_MERGED] : []), lineup.note, ...inherited.map((result) => result.review.summary)].join(' · ')
   console.log(`  ↪ ${note}`)
   // 2라운드부터는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 것만(결정 D) — 지난 기록이 이 PR 의 이전 HEAD 것일 때만
   const history = readHistory(repo, number)
@@ -564,6 +585,12 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   pr.mergeable = await settledMergeable(org, repo, number, pr.mergeable)
   if (pr.mergeable !== 'MERGEABLE') {
     writeAutoLine(planPath, { ...line, result: `검증 대기 — 충돌 확인 ${pr.mergeable}` })
+    if (pr.mergeable === 'CONFLICTING') {
+      // 충돌이면 작업 에이전트에 base 를 합쳐 풀게 한다 — 사람 요청은 그대로 연다(pane 이 없거나 에이전트가 못 풀 때 사람이 본다)
+      const pane = await agentPane({ planFile, ref })
+      const sent = pane && (await sendToPane(pane, masked(conflictNotice({ agent: ref.agent || '작업 에이전트', repo, number, sha, base: pr.baseRefName, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))))
+      console.log(sent ? `  → 충돌 — base 를 합쳐 풀라고 pane ${pane} 에 보냈다` : '  ⚠️ 충돌 — 작업 pane 이 없어 사람 요청만 연다')
+    }
     ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
