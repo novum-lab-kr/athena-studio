@@ -426,6 +426,18 @@ merge_base >/dev/null
 G -C "$WT" add b.txt; echo more >> "$WT/e.txt"
 OUT="$(commit e.txt)"; CODE=$?
 expect "merge 커밋 — 지정하지 않은 스테이징 파일(b.txt)에 충돌 표시가 남았으면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 결과에 충돌 표시" && echo "$OUT" | grep -q "b.txt"' "$OUT"
+# 충돌을 지금 브랜치 내용으로 풀어 HEAD 와 차이가 없는 merge 결과도 merge 커밋이 된다 — 파일 없이도 · HEAD 와 같은 파일을 줘도(PR #22 라운드 2)
+# 앞 시험이 실패하며 스테이징한 e.txt(merge 중 실패는 스테이징을 되돌리지 않는다)도 HEAD 로
+G -C "$WT" show HEAD:b.txt > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" reset -q -- e.txt && G -C "$WT" checkout -q -- e.txt
+expect "(시험 준비) merge 결과가 HEAD 와 같다" '[ -z "$(git -C "$WT" diff --cached --name-only HEAD)" ] && git -C "$WT" rev-parse -q --verify MERGE_HEAD >/dev/null' "$(git -C "$WT" status --short; git -C "$WT" diff --cached --stat HEAD)"
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "merge dev" -- b.txt 2>&1)"; CODE=$?
+expect "HEAD 와 같은 내용으로 푼 파일을 줘도 merge 커밋(두 번째 부모 = origin/dev)" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ]' "$OUT"
+echo dev4 > "$TMP/dev-side/f.txt" && G -C "$TMP/dev-side" add f.txt && G -C "$TMP/dev-side" commit -q -m dev4 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+merge_base >/dev/null
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "merge dev" -- 2>&1)"; CODE=$?
+expect "merge 중이면 파일 없이(-- 만)도 merge 커밋 · base 쪽 f.txt 포함" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ] && git -C "$WT" cat-file -e HEAD:f.txt' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" bash scripts/commit.sh --plan "$PLANF" --dir "$WT" -m "x" -- 2>&1)"; CODE=$?
+expect "merge 중이 아니면 파일 없는 호출은 거부(사용법)" '[ $CODE = 2 ]' "$OUT"
 
 # ── 머지 확인 — 레포가 "autoMergeConfirm": false 면 묻지 않고 바로 · 키가 없으면 지금처럼 확인 요청 ─────────
 # 임시 코어 사본(옛 구조 본체 · athena.config.json)에서 가짜 gh · 가짜 리뷰어(둘 다 승인) · 가짜 검증(reuse.sh 통과)으로 handle 을 끝까지 돌린다

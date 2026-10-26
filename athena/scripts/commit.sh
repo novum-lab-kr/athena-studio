@@ -21,6 +21,7 @@
 #   - HEAD 가 브랜치에 붙어 있다(detached 아님) · 보호 브랜치(dev·main·master·stg·frz·prd*·release/*·dev-*)가 아니다
 #   - 원래 스테이징돼 있던 변경이 없다 — 남의 변경이 섞이지 않게
 #     예외 — merge 진행 중(MERGE_HEAD 있음)이면 merge 가 스테이징한 변경을 받아 merge 커밋을 만든다(base 를 합쳐 충돌을 푼 뒤 · docs/pr-auto.md).
+#     이때는 파일 없이(-- 만) 불러도 되고, HEAD 와 같은 내용으로 푼 파일도 받는다(merge 결과가 HEAD 와 같아도 merge 커밋).
 #     지정 파일(푼 파일)에 충돌 표시가 남았거나, 스테이징한 뒤 미병합 파일이 남았거나, 커밋될 스테이징 전체에 비밀 파일 · 내용 · 충돌 표시가 있으면 거부. 실패해도 스테이징은 되돌리지 않는다(merge 결과라 되돌리면 base 쪽 변경이 빠진다)
 #   - 파일은 글자 그대로의 경로만(디렉터리·glob 금지), 워크트리 안이고, 실제로 바뀐 파일이다
 # 그다음: 지정 파일만 스테이징 → 그 상태로 엄격 검증(같은 트리로 이미 통과했으면 재사용 — scripts/verify/reuse.sh) → 검증 전후 스테이징·파일 내용·HEAD 가 같을 때만 커밋
@@ -53,7 +54,8 @@ while [ $# -gt 0 ]; do
 done
 fail() { echo "❌ 커밋하지 않았다: $*" >&2; exit 1; }
 
-[ -n "$PLAN" ] && [ -n "$DIR" ] && { [ $MERGE_BASE = 1 ] || { [ -n "$MESSAGE" ] && [ ${#FILES[@]} -gt 0 ]; }; } \
+# 파일은 merge 진행 중일 때만 없어도 된다 — 아래에서 MERGE_HEAD 를 본 뒤 다시 확인한다
+[ -n "$PLAN" ] && [ -n "$DIR" ] && { [ $MERGE_BASE = 1 ] || [ -n "$MESSAGE" ]; } \
   || { echo "사용: $0 --plan <plans/…md> --dir <워크트리> -m \"<메시지>\" [--verify …] -- <파일>…   |   $0 --plan … --dir … --merge-base" >&2; exit 2; }
 # 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
 . "$ATHENA_DIR/scripts/lib/plan-path.sh"
@@ -119,9 +121,9 @@ PYEOF
   if [ -n "$UNMERGED" ]; then
     echo "   충돌 $(printf '%s\n' "$UNMERGED" | wc -l | tr -d ' ')개 — 풀고 나서 그 파일들을 -- 뒤에 준다:"; printf '%s\n' "$UNMERGED" | sed 's/^/     /'
   else
-    echo "   충돌 없음 — 스테이징된 파일 하나 이상을 -- 뒤에 준다:"; git -C "$TOP" diff --cached --name-only | head -5 | sed 's/^/     /'
+    echo "   충돌 없음 — 파일 없이(-- 만) 커밋해도 된다(merge 결과가 이미 스테이징돼 있다)"
   fi
-  echo "   다음: $0 --plan $PLAN --dir $TOP -m '<메시지>' -- <파일>…   (merge 커밋 · 엄격 검증 · 계획서 기록)"
+  echo "   다음: $0 --plan $PLAN --dir $TOP -m '<메시지>' -- [<푼 파일>…]   (merge 커밋 · 엄격 검증 · 계획서 기록 · 파일 없이도 된다)"
   exit 0
 fi
 
@@ -135,7 +137,7 @@ MERGING=0; MERGE_SHA=""
 if MERGE_SHA="$(git -C "$TOP" rev-parse -q --verify MERGE_HEAD 2>/dev/null)"; then MERGING=1; fi
 unstage() {
   if [ $MERGING = 1 ]; then echo "   (merge 중이라 스테이징은 되돌리지 않았다 — 그대로 고친 뒤 다시)" >&2; STAGED=0; return; fi
-  git -C "$TOP" reset -q -- "${FILES[@]}" 2>/dev/null; STAGED=0
+  git -C "$TOP" reset -q -- ${FILES[@]+"${FILES[@]}"} 2>/dev/null; STAGED=0
 }
 # 어떤 이유로 끝나든(실패·Ctrl+C·TERM·예상 못 한 오류) 커밋 전이면 이 스크립트가 올린 스테이징을 되돌린다
 cleanup() { [ $STAGED = 1 ] && [ $COMMITTED = 0 ] && unstage; rmdir "$LOCK" 2>/dev/null; rm -f "${UNTRACKED_LIST:-}" 2>/dev/null; }
@@ -143,12 +145,15 @@ trap cleanup EXIT
 trap 'echo "❌ 중단됐다 — 스테이징을 되돌렸다" >&2; exit 130' INT TERM
 
 [ $MERGING = 1 ] || git -C "$TOP" diff --cached --quiet || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다"
-for file in "${FILES[@]}"; do
+# 파일 없이 부르는 것은 merge 커밋일 때만(merge 결과가 이미 다 스테이징돼 있다 — 충돌 파일을 지금 브랜치 내용으로 풀어 HEAD 와 차이가 없을 때 등)
+[ ${#FILES[@]} -gt 0 ] || [ $MERGING = 1 ] || { echo "사용: $0 --plan <plans/…md> --dir <워크트리> -m \"<메시지>\" [--verify …] -- <파일>…" >&2; exit 2; }
+for file in ${FILES[@]+"${FILES[@]}"}; do
   # 글자 그대로 쓰므로 [ ] 는 받는다(동적 라우트). * ? 는 셸 glob 이 덜 펼쳐진 것일 수 있어 거부
   case "$file" in *'*'*|*'?'*|/*|../*|*/../*) fail "파일은 워크트리 기준 글자 그대로의 상대 경로만: $file" ;; esac
   [ -d "$TOP/$file" ] && fail "디렉터리는 받지 않는다: $file"
   # merge 중에는 merge 가 이미 스테이징한 파일(base 쪽 변경 · 푼 파일)도 받는다 — status 가 HEAD 와 다르면 바뀐 것
-  [ -n "$(git -C "$TOP" status --porcelain -- "$file")" ] || fail "바뀐 게 없는 파일이다: $file"
+  # merge 중에는 HEAD 와 같은 내용으로 푼 파일(지금 브랜치 쪽을 고른 충돌)도 받는다 — 아래 미병합 · 스테이징 전체 검사가 본다
+  [ $MERGING = 1 ] || [ -n "$(git -C "$TOP" status --porcelain -- "$file")" ] || fail "바뀐 게 없는 파일이다: $file"
   # 비밀 파일은 커밋하지 않는다 — 이름(.env·키·인증서)과 내용(개인키 · .npmrc 의 글자 그대로 토큰)으로 본다. 값은 읽어도 출력하지 않는다
   name="${file##*/}"
   case "$name" in
@@ -166,12 +171,12 @@ HEAD_BEFORE="$(git -C "$TOP" rev-parse HEAD)"
 
 if [ $MERGING = 1 ]; then
   # 충돌 표시가 남은 파일은 스테이징하기 전에 거부한다 — git add 하면 미병합 표시가 사라져 다음에 알아보기 어렵다
-  for file in "${FILES[@]}"; do
+  for file in ${FILES[@]+"${FILES[@]}"}; do
     [ -f "$TOP/$file" ] && grep -qE '^(<<<<<<<|>>>>>>>) ' "$TOP/$file" 2>/dev/null && fail "충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이다: $file — 충돌을 다 푼 뒤 다시"
   done
 fi
 STAGED=1
-git -C "$TOP" add -- "${FILES[@]}" || { unstage; fail "git add 실패"; }
+[ ${#FILES[@]} = 0 ] || git -C "$TOP" add -- ${FILES[@]+"${FILES[@]}"} || { unstage; fail "git add 실패"; }
 if [ $MERGING = 1 ]; then
   # merge 커밋 — 스테이징은 merge 결과 전체(base 쪽 변경 + 푼 파일). 미병합 파일이 남았으면 커밋하지 않는다
   UNMERGED="$(git -C "$TOP" diff --name-only --diff-filter=U | tr '\n' ' ')"
@@ -212,7 +217,7 @@ tree_state() { printf '%s|%s|%s|%s' "$(git -C "$TOP" diff --cached | shasum | cu
 STATE_BEFORE="$(tree_state)"
 # 지정 밖 미커밋 변경 — 검증 결과에 섞였을 수 있다. 막지는 않고 알리고 기록한다(docs/knowledge/common/git.md)
 #   merge 중이면 merge 가 스테이징한 파일(merge 커밋에 들어간다)은 지정 밖으로 세지 않는다
-COMMITTING="$(printf '%s\n' "${FILES[@]}"; [ $MERGING = 0 ] || git -C "$TOP" diff --cached --name-only)"
+COMMITTING="$(printf '%s\n' ${FILES[@]+"${FILES[@]}"}; [ $MERGING = 0 ] || git -C "$TOP" diff --cached --name-only)"
 OUTSIDE="$(git -C "$TOP" status --porcelain -z --untracked-files=all | tr '\0' '\n' | cut -c4- | grep -vxF -f <(printf '%s\n' "$COMMITTING") | wc -l | tr -d ' ')"
 [ "$OUTSIDE" = 0 ] || echo "⚠️ 지정하지 않은 미커밋 변경이 ${OUTSIDE}개 있다 — 검증은 작업 트리 전체에서 돌아 그 변경이 결과에 섞였을 수 있다(커밋에는 안 들어간다)" >&2
 
@@ -223,7 +228,8 @@ if [ $NO_VERIFY = 0 ]; then
   [ -x "$SCRIPT" ] || { unstage; fail "검증 스크립트가 없다: scripts/verify/$REPO.sh"; }
   if [ -z "$VERIFY_ARGS" ] && [ "$REPO_KIND" = monorepo ]; then
     # 바뀐 파일에서 앱·패키지를 찾는다
-    VERIFY_ARGS="$(printf '%s\n' "${FILES[@]}" | sed -nE 's#^apps/([^/]+)/.*#\1#p; s#^(packages/[^/]+)/.*#\1#p' | sort -u | tr '\n' ' ')"
+    # merge 커밋은 스테이징 전체(base 쪽 변경 포함)에서 앱을 찾는다
+    VERIFY_ARGS="$({ printf '%s\n' ${FILES[@]+"${FILES[@]}"}; [ $MERGING = 0 ] || git -C "$TOP" diff --cached --name-only; } | sed -nE 's#^apps/([^/]+)/.*#\1#p; s#^(packages/[^/]+)/.*#\1#p' | sort -u | tr '\n' ' ')"
   fi
   [ "$REPO_KIND" = packages ] && [ -z "$VERIFY_ARGS" ] && { unstage; fail "$REPO 는 --verify \"<패키지명>\" 이 필요하다"; }
   RESULTS=""
