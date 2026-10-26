@@ -2167,8 +2167,8 @@ let paneBound = {} // pane id → 'agent' | 'lead'
 let detailPane = null
 let detailTimer = null
 const PANE_DETAIL_REFRESH_MS = 3000
-// 아이콘 모양은 사용자가 고르는 중 — 정해지면 이 한 줄만 바꾼다
-const PANE_DETAIL_ICON = '<svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1.5 8.5h3l1.6-4.5 3 9 1.6-4.5h3.8" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+// 아이콘 — 체크리스트 모양(사용자 확정 2026-10-27 · 시안 B)
+const PANE_DETAIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/></svg>'
 
 function paneDetailButton(paneId) {
   const button = el('button', 'pane-detail-btn')
