@@ -408,6 +408,24 @@ expect "base 합침 — 라운드 3/3 그대로 · 멈춤 · 이어받음 아님
 sed -i.bak "s|^- Auto review: web#7 @[0-9a-f]* |- Auto review: web#7 @${SHA:0:7} |" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "첫 부모가 지난번 본 HEAD 가 아니면 base 합침 아님 — 평소처럼 라운드 4/3(멈춤)" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+# 충돌 풀기 밖의 수정을 섞은 merge 커밋은 base 합침이 아니다(내용 검사 — PR #22 라운드 1) — dev 에 새 커밋 → --merge-base(충돌 없음) → b.txt 도 고쳐 같이 커밋
+echo dev2 > "$TMP/dev-side/d.txt" && G -C "$TMP/dev-side" add d.txt && G -C "$TMP/dev-side" commit -q -m dev2 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+OUT="$(merge_base)"
+echo mixed >> "$WT/b.txt"
+OUT="$OUT
+$(commit b.txt)"; CODE=$?
+MIXED="$(git -C "$WT" rev-parse HEAD)"
+expect "(시험 준비) 다른 수정을 섞은 merge 커밋" '[ $CODE = 0 ] && [ "$(git -C "$WT" rev-parse -q --verify HEAD^2)" = "$(git -C "$WT" rev-parse origin/dev)" ]' "$OUT"
+sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 4/3" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+# merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
+echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
+echo side > "$WT/e.txt" && G -C "$WT" add e.txt && G -C "$WT" commit -q -m e
+merge_base >/dev/null
+G -C "$WT" add b.txt; echo more >> "$WT/e.txt"
+OUT="$(commit e.txt)"; CODE=$?
+expect "merge 커밋 — 지정하지 않은 스테이징 파일(b.txt)에 충돌 표시가 남았으면 거부" '[ $CODE != 0 ] && echo "$OUT" | grep -q "merge 결과에 충돌 표시" && echo "$OUT" | grep -q "b.txt"' "$OUT"
 
 # ── 머지 확인 — 레포가 "autoMergeConfirm": false 면 묻지 않고 바로 · 키가 없으면 지금처럼 확인 요청 ─────────
 # 임시 코어 사본(옛 구조 본체 · athena.config.json)에서 가짜 gh · 가짜 리뷰어(둘 다 승인) · 가짜 검증(reuse.sh 통과)으로 handle 을 끝까지 돌린다

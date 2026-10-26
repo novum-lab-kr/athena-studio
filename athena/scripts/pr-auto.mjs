@@ -265,14 +265,24 @@ const planPathOf = (planArg) => {
   return { path, file }
 }
 // PR HEAD 커밋의 tree — 작업 워크트리에 그 커밋이 있으면 거기서, 없으면 GitHub 에서. 못 구하면 빈 값(그러면 tree 가 적힌 승인은 이어받지 않는다)
-// base 합치기 merge 커밋인가 — 부모가 둘 · 첫 부모가 지난번 본 HEAD · 두 번째 부모가 origin/<base> 에 들어 있다(commit.sh --merge-base 로 만든 커밋).
-// 고친 커밋 뒤에 합쳤거나(첫 부모가 다름) 다른 브랜치를 합친 것은 아니다 — 평소처럼 라운드를 쓴다
+// base 합치기 merge 커밋인가 — 부모가 둘 · 첫 부모가 지난번 본 HEAD · 두 번째 부모가 origin/<base> 에 들어 있다(commit.sh --merge-base 로 만든 커밋)
+// · 내용도 — 두 부모를 git 이 자동으로 합친 트리(merge-tree --write-tree)와 이 커밋의 차이가 충돌 났던 파일에만 있다(PR #22 라운드 1 · 아테나 확정 "코드에 내용 검사를 더한다").
+// 고친 커밋 뒤에 합쳤거나(첫 부모가 다름) · 다른 브랜치를 합쳤거나 · 충돌 풀기 밖의 수정이 섞였거나 · git 이 merge-tree --write-tree 를 모르면(2.38 전) 아니다 — 평소처럼 라운드를 쓴다
 const isBaseMerge = (worktree, knownSha, sha, base) => {
   if (!worktree || !existsSync(worktree) || !knownSha || !base) return false
   const parents = (git(worktree, ['rev-list', '--parents', '-n', '1', sha]) ?? '').split(' ').slice(1)
   if (parents.length !== 2 || !parents[0].startsWith(knownSha)) return false
   git(worktree, ['fetch', '--quiet', 'origin', base])
-  return git(worktree, ['merge-base', '--is-ancestor', parents[1], `refs/remotes/origin/${base}`]) !== null
+  if (git(worktree, ['merge-base', '--is-ancestor', parents[1], `refs/remotes/origin/${base}`]) === null) return false
+  // 종료 0 = 충돌 없음 · 1 = 충돌(첫 줄 트리 다음 줄부터 충돌 파일) · 그 밖은 실패
+  const merged = spawnSync('git', ['-C', worktree, '-c', 'core.quotePath=false', 'merge-tree', '--write-tree', '--name-only', '--no-messages', parents[0], parents[1]], { encoding: 'utf8' })
+  if (merged.status !== 0 && merged.status !== 1) return false
+  const [autoTree, ...conflicted] = merged.stdout.split('\n').filter(Boolean)
+  if (!/^[0-9a-f]{40,64}$/.test(autoTree ?? '')) return false
+  const changed = git(worktree, ['-c', 'core.quotePath=false', 'diff', '--no-renames', '--name-only', autoTree, sha])
+  if (changed === null) return false
+  const allowed = new Set(conflicted)
+  return changed.split('\n').filter(Boolean).every((path) => allowed.has(path))
 }
 const headTree = (worktree, org, repo, sha) => {
   const local = worktree && existsSync(worktree) ? git(worktree, ['rev-parse', '--verify', '-q', `${sha}^{tree}`]) : null

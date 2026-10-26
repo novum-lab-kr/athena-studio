@@ -21,7 +21,7 @@
 #   - HEAD 가 브랜치에 붙어 있다(detached 아님) · 보호 브랜치(dev·main·master·stg·frz·prd*·release/*·dev-*)가 아니다
 #   - 원래 스테이징돼 있던 변경이 없다 — 남의 변경이 섞이지 않게
 #     예외 — merge 진행 중(MERGE_HEAD 있음)이면 merge 가 스테이징한 변경을 받아 merge 커밋을 만든다(base 를 합쳐 충돌을 푼 뒤 · docs/pr-auto.md).
-#     지정 파일(푼 파일)에 충돌 표시가 남았거나, 스테이징한 뒤 미병합 파일이 하나라도 남아 있으면 거부. 실패해도 스테이징은 되돌리지 않는다(merge 결과라 되돌리면 base 쪽 변경이 빠진다)
+#     지정 파일(푼 파일)에 충돌 표시가 남았거나, 스테이징한 뒤 미병합 파일이 남았거나, 커밋될 스테이징 전체에 비밀 파일 · 내용 · 충돌 표시가 있으면 거부. 실패해도 스테이징은 되돌리지 않는다(merge 결과라 되돌리면 base 쪽 변경이 빠진다)
 #   - 파일은 글자 그대로의 경로만(디렉터리·glob 금지), 워크트리 안이고, 실제로 바뀐 파일이다
 # 그다음: 지정 파일만 스테이징 → 그 상태로 엄격 검증(같은 트리로 이미 통과했으면 재사용 — scripts/verify/reuse.sh) → 검증 전후 스테이징·파일 내용·HEAD 가 같을 때만 커밋
 #         → 계획서 "## Commits" 에 SHA·검증 결과를 한 줄 기록
@@ -176,6 +176,19 @@ if [ $MERGING = 1 ]; then
   # merge 커밋 — 스테이징은 merge 결과 전체(base 쪽 변경 + 푼 파일). 미병합 파일이 남았으면 커밋하지 않는다
   UNMERGED="$(git -C "$TOP" diff --name-only --diff-filter=U | tr '\n' ' ')"
   [ -z "$UNMERGED" ] || fail "merge 중 아직 풀지 않은 파일이 있다: ${UNMERGED}— 충돌을 풀고 그 파일도 -- 뒤에 준다"
+  # merge 커밋에는 지정하지 않은 스테이징 파일도 들어간다 — 비밀 파일 · 내용 · 충돌 표시 검사를 커밋될 스테이징 전체(인덱스 내용)에 한다(값은 출력하지 않는다)
+  while IFS= read -r staged; do
+    [ -n "$staged" ] || continue
+    sname="${staged##*/}"
+    case "$sname" in
+      .env.example|.env.sample|.env.template|*.env.example) ;;
+      .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|.netrc) fail "merge 결과에 비밀 파일로 보이는 것이 스테이징돼 있다: $staged — 커밋하지 않는다" ;;
+    esac
+    git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' && fail "merge 결과에 개인키가 든 파일이 있다: $staged — 커밋하지 않는다"
+    [ "$sname" = .npmrc ] && git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE '_authToken=[^$[:space:]]' \
+      && fail "merge 결과의 $staged 에 토큰 값이 글자 그대로 들어 있다 — 커밋하지 않는다"
+    git -C "$TOP" show ":$staged" 2>/dev/null | grep -qE '^(<<<<<<<|>>>>>>>) ' && fail "merge 결과에 충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이 있다: $staged — 충돌을 다 푼 뒤 다시"
+  done < <(git -C "$TOP" diff --cached --name-only --diff-filter=ACMR)
   echo "── merge 커밋: MERGE_HEAD ${MERGE_SHA:0:7} 를 합친다(스테이징된 merge 결과 전체 · 지정 파일 ${#FILES[@]}개)"
 else
   # 지정한 파일 말고는 스테이징에 없어야 한다
