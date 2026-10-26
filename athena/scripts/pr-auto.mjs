@@ -156,19 +156,29 @@ const codexState = () => {
 }
 // 리뷰어 자리 둘 — 첫 자리 Claude · 두 번째 자리 Codex 또는 다른 모델 Claude(lib reviewerSlots) · 구성 메모(lineupNote)
 // Codex 가 있으면 첫 자리 모델은 지금처럼 modelArgs(이상한 값이면 그 리뷰어 실패로 드러난다)
-// 팩 models 가 이상하면 기본값으로 덮지 않는다 — 첫 자리를 modelArgs 로 돌려 그 리뷰어 실패(→ 리뷰어 부족)로 드러낸다(docs/pack.md "models")
+// 팩 models 가 이상하면 기본값으로 덮지 않는다 — 첫 자리를 명시적인 실패(failed)로 둔다. 앞 리뷰 승인 이어받기보다 먼저 보므로(runReviewers)
+// 이어받아도 첫 자리는 실패 → 리뷰어 부족으로 멈춘다. 두 번째 자리도 기본 모델 Claude 로 대신하지 않는다(Codex 가 있으면 Codex 만 돈다 · PR #21 자동 리뷰 지적)
 export const planReviewers = (config = {}) => {
-  let models = null
-  try { models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE) } } catch { /* 아래 첫 자리가 실패로 드러낸다 */ }
-  const lineup = reviewerSlots({ codex: codexState(), ...(models ?? {}) })
-  const first = lineup.second.kind === 'codex' || !models ? { name: 'claude', kind: 'claude' } : lineup.first
-  return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models?.firstModel || '' }, second: lineup.second }) }
+  const codex = codexState()
+  let models
+  try {
+    models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE) }
+  } catch (error) {
+    const why = `팩 models 설정 오류 — ${firstLine(error.message)}`
+    const first = { name: 'claude', kind: 'claude', failed: why }
+    const second = codex === 'ready' ? { name: 'codex', kind: 'codex' } : { name: 'codex', kind: 'codex', unavailable: `Codex 를 못 씀 · 대신할 Claude 도 ${why}` }
+    return { slots: [first, second], note: `리뷰어 claude(${why}) + ${second.unavailable ? 'codex(못 씀)' : 'codex'}` }
+  }
+  const lineup = reviewerSlots({ codex, ...models })
+  const first = lineup.second.kind === 'codex' ? { name: 'claude', kind: 'claude' } : lineup.first
+  return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models.firstModel }, second: lineup.second }) }
 }
 // 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
 // inherited — 앞 리뷰 승인을 이어받은 리뷰어 결과(inheritedResult) 목록. 그 자리(첫 Claude)는 부르지 않고 그 결과를 그대로 쓴다
 // slots — planReviewers 결과(없으면 여기서 정한다)
 export const runReviewers = async (prompt, config = {}, inherited = [], slots = planReviewers(config).slots) => Promise.all(slots.map(async (slot) => {
   const { name, kind } = slot
+  if (slot.failed) return { name, status: 'failed', reason: slot.failed }   // 설정 오류 — 이어받기보다 먼저(이어받은 승인으로 덮지 않는다)
   const taken = inherited.find((result) => result.name === name)
   if (taken) return taken
   if (slot.unavailable) return { name, status: 'unavailable', reason: slot.unavailable }
