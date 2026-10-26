@@ -29,7 +29,9 @@ function planCards(cards) {
 }
 
 // pane id → 'agent'(그 계획서를 하는 에이전트 pane) | 'lead'(그 계획서를 맡긴 아테나 pane). 둘 다면 agent
-function bindings(cards) {
+// panes: 일감 /api/state panes — role 'hermes'(본체 루트에서 도는 claude · 위임 이름표 없음 — 일감 readPanes)는
+// 아테나 pane 이라 맡긴 일이 지금 없어도(다 끝나 보관돼 카드에서 빠져도) 'lead' 로 둔다
+function bindings(cards, panes = []) {
   const result = {}
   for (const plan of planCards(cards)) {
     for (const paneId of plan.agents) result[paneId] = 'agent'
@@ -37,6 +39,9 @@ function bindings(cards) {
       const key = paneKey(plan.leadPane)
       if (!result[key]) result[key] = 'lead'
     }
+  }
+  for (const pane of Array.isArray(panes) ? panes : []) {
+    if (pane && pane.role === 'hermes' && pane.id && !result[pane.id]) result[pane.id] = 'lead'
   }
   return result
 }

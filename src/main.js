@@ -1375,7 +1375,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   const refreshPaneBound = async () => {
     const state = await fetchBoardJson(ctx.boardPortNow(), '/api/state')
     if (!state || !Array.isArray(state.cards)) return
-    const next = paneDetail.bindings(state.cards)
+    const next = paneDetail.bindings(state.cards, state.panes)
     if (JSON.stringify(next) === JSON.stringify(paneBound)) return
     paneBound = next
     send('screen:pane-bound', paneBound)

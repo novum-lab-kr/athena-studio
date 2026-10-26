@@ -17,6 +17,17 @@ test('묶인 pane: 에이전트 pane 은 agent · 맡긴 아테나 pane 은 lead
   assert.equal(detail.samePane('p333', 'p33'), false)
 })
 
+test('아테나 pane(일감 role hermes)은 맡긴 일이 다 보관돼 카드에 없어도 lead · 에이전트 · 그 밖 pane 은 그대로', () => {
+  const cards = [plan('plans/task/a.md', { status: 'done', agents: ['p82'] })]
+  const panes = [
+    { kind: 'pane', id: 'p67', role: 'hermes' },
+    { kind: 'pane', id: 'p82', role: 'agent' },
+    { kind: 'pane', id: 'p90', role: 'other' },
+  ]
+  assert.deepEqual(detail.bindings(cards, panes), { p82: 'agent', p67: 'lead' })
+  assert.deepEqual(detail.bindings([], null), {})
+})
+
 test('에이전트 pane 의 계획서: 끝나지 않은 것 먼저, 그다음 최근에 고친 것', () => {
   const cards = [
     plan('plans/task/done.md', { status: 'done', agents: ['p5'], mtime: NOW }),
