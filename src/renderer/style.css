@@ -184,7 +184,9 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
   white-space: nowrap;
 }
 .pane.focused .pane-head { color: var(--accent); }
-.pane-body { flex: 1; min-height: 0; padding-left: 4px; }
+/* 줄이는 동안 넘침 자르기 — xterm 은 데몬이 크기를 적용했다고 답할 때(pane:resized)·경계를 놓을 때 줄어서 그 사이 옛 크기로 상자보다 크다.
+   자르지 않으면 아래 모니터 · 오른쪽 칸 위로 글자가 넘쳐 보인다. 자리를 잡으면 xterm 이 상자에 맞아 잘리는 것이 없다 */
+.pane-body { flex: 1; min-height: 0; padding-left: 4px; overflow: hidden; }
 .screen-status { padding: 24px; color: var(--muted); white-space: pre-wrap; }
 .screen-status[hidden] { display: none; }
 .status { padding: 24px; color: var(--muted); white-space: pre-wrap; }
@@ -544,7 +546,7 @@ body[data-platform="darwin"] .tabbar {
   background: var(--bg);
   border-color: var(--line); /* 포커스 안 된 pane 도 경계가 보이게 — 포커스되면 아래 focus-line */
   border-radius: 0; /* 각진 상자 — 미리보기 상자와 같은 모양 */
-  /* xterm 보조 화면이 잘리지 않게 overflow 는 건드리지 않는다 */
+  /* overflow 는 .pane 이 아니라 .pane-body 에서 자른다(머리 줄 · 경계선은 그대로) */
 }
 
 .pane.focused {
