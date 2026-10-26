@@ -181,7 +181,8 @@ def is_protected(cfg, repo_name, branch):
 
 # 역할마다 Claude 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
 MODEL_ROLES = ('athena', 'agent', 'reviewer', 'prReview', 'learnReview')
-_MODEL_NAME = re.compile(r'^[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*$')
+# fullmatch 로만 검사한다 — match 와 $ 는 끝 줄바꿈('sonnet\n')을 통과시켜 JS 판정과 갈린다
+_MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*')
 
 
 def model_of(cfg, role):
@@ -196,7 +197,7 @@ def model_of(cfg, role):
     for key, value in models.items():
         if key not in MODEL_ROLES:
             raise ValueError(f'pack.json "models" 에 모르는 역할: {key}(가능: {" · ".join(MODEL_ROLES)})')
-        if not isinstance(value, str) or not _MODEL_NAME.match(value):
+        if not isinstance(value, str) or not _MODEL_NAME.fullmatch(value):
             raise ValueError(f'pack.json "models.{key}" 모델 이름이 이상하다: {json.dumps(value, ensure_ascii=False)}')
     return models.get(role, '')
 
@@ -223,10 +224,12 @@ def agent_model(athena_dir, agent):
     """delegate.sh 가 붙일 --model 값 — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다), 없으면 팩 models 의
     reviewer(reviewer) · agent(그 밖의 에이전트), 그것도 없으면 ''(--model 을 붙이지 않는다).
     프로필 값도 --model 로 넘긴다 — 워크트리에서 띄우면 프로필을 --agents JSON 으로 다시 만들어 넘기는데(agent-context.py) 거기에는 model 이 없다."""
+    # 팩 models 는 프로필 값이 있어도 먼저 전체를 검사한다 — 잘못된 값이 프로필 뒤에 숨어 그냥 넘어가지 않게
+    pack_model = model_of(load(athena_dir), 'reviewer' if agent == 'reviewer' else 'agent')
     profile = os.path.join(athena_dir, '.claude', 'agents', f'{agent}.md')
     own = profile_model(profile)
     if own:
-        if not _MODEL_NAME.match(own):
+        if not _MODEL_NAME.fullmatch(own):
             raise ValueError(f'{profile} 의 model: 이름이 이상하다: {json.dumps(own, ensure_ascii=False)}')
         return own
-    return model_of(load(athena_dir), 'reviewer' if agent == 'reviewer' else 'agent')
+    return pack_model

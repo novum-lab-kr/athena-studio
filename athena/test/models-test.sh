@@ -26,6 +26,7 @@ CASES='[
   ["공백", {"models": {"agent": " sonnet"}}, "agent", "ERR"],
   ["따옴표", {"models": {"agent": "son\"net"}}, "agent", "ERR"],
   ["셸 글자", {"models": {"agent": "sonnet;rm"}}, "agent", "ERR"],
+  ["끝 줄바꿈", {"models": {"agent": "sonnet\n"}}, "agent", "ERR"],
   ["문자열 아님", {"models": {"agent": 3}}, "agent", "ERR"],
   ["모르는 역할(오타)", {"models": {"learnreview": "sonnet"}}, "agent", "ERR"],
   ["models 가 배열", {"models": ["sonnet"]}, "agent", "ERR"],
@@ -82,6 +83,9 @@ OUT="$(run web-fe)"; check "models 없음 → --model 안 붙임" 'printf "%s" "
 config ', "models": { "agent": "son net" }'
 OUT="$(run web-fe)"; CODE=$?
 check "이상한 값 → 띄우지 않음(종료 2 · 이유)" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "models.agent" && ! printf "%s" "$OUT" | grep -q "claude --agent"' "종료 $CODE · $OUT"
+config ', "models": { "agnet": "sonnet" }'
+OUT="$(run own-fe)"; CODE=$?
+check "프로필 model: 이 있어도 팩 models 가 이상하면 띄우지 않음" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "agnet" && ! printf "%s" "$OUT" | grep -q "claude --agent"' "종료 $CODE · $OUT"
 
 # ── 새 팩 기본값(결정 D1) — initPack 이 pack.json 에 models.learnReview: sonnet ─────────
 echo; echo "새 팩 기본값"
