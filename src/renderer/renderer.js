@@ -59,16 +59,6 @@ function makeTerminal() {
 // 탭 밖 고정 칸(dock — 예전 터미널 모니터)은 그리지 않는다. 모니터는 이제 앱 화면(#dock)이다
 const isTabPane = (pane) => Boolean(pane.tab)
 
-// pane 에 xterm 기본 대신 보낼 신호(없으면 null)
-// - Shift+Enter → ESC CR(줄바꿈 — Option+Enter 가 macOptionIsMeta 로 보내는 것과 같다). xterm 기본은 Shift 를 무시하고 CR(전송)
-// - ⌘Backspace → Ctrl+U(커서 앞 줄 지우기 — 맥 터미널 관례). xterm 기본은 Meta 를 무시하고 DEL(한 글자)
-function paneKeyOverride(event) {
-  const { shiftKey, ctrlKey, altKey, metaKey } = event
-  if (event.key === 'Enter' && shiftKey && !ctrlKey && !altKey && !metaKey) return '\x1b\r'
-  if (event.key === 'Backspace' && metaKey && !shiftKey && !ctrlKey && !altKey) return '\x15'
-  return null
-}
-
 function ensureView(paneId) {
   if (views.has(paneId)) return views.get(paneId)
   const el = document.createElement('div')
@@ -89,7 +79,7 @@ function ensureView(paneId) {
   // xterm 기본과 다르게 보내는 키. 한글 조합 중(isComposing)이면 xterm 에 맡긴다.
   // keydown 에서만 보내고 keypress · keyup 의 같은 키도 막아 기본 신호가 새지 않게 한다
   term.attachCustomKeyEventHandler((event) => {
-    const data = paneKeyOverride(event)
+    const data = StudioPaneKeys.paneKeyOverride(event)
     if (data === null || event.isComposing) return true
     if (event.type === 'keydown') {
       event.preventDefault()
