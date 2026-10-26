@@ -409,9 +409,26 @@ export const settleIdleSessions = (busy, table, panes) => {
 // 이 본체의 scripts/commit.sh · ship.sh 를 도는 셸 → [{ kind:'commit', what, pid }]. 업데이트는 끝날 때까지 잠깐 기다린다(사용자 결정 2026-10-26).
 // 셸 인자 중 이름이 commit.sh · ship.sh 인 것을 그 셸의 작업 폴더 기준으로 절대 경로로 풀어(bash commit.sh · bash ../<본체>/scripts/ship.sh 도)
 // 이 본체 scripts/ 의 그 파일과 같은지 본다(링크는 실제 경로로). 인자 · 작업 폴더를 못 읽은 셸은 세지 않는다(셸은 많고 대부분 우리 일이 아니다).
-// 인자는 공백으로 나눈다 — 경로에 공백이 든 절대 경로는 통째로 든 것만 잡는다
+// ps 인자 줄은 argv 를 공백으로 이어 붙여 원래 인자 경계를 잃는다 — 그래서 스크립트 이름으로 끝나는 자리마다 그 앞의 공백 경계를
+// 하나씩 시작점으로 잡아 후보를 만든다(bash "../My Body/scripts/commit.sh" → "Body/scripts/commit.sh" · "../My Body/scripts/commit.sh" · …).
+// 후보 중 하나라도 풀어서 이 본체 스크립트면 센다
 const SHELL_COMMS = new Set(['bash', 'sh', 'zsh', 'dash'])
 const CORE_SCRIPTS = ['commit.sh', 'ship.sh']
+const SCRIPT_END = /(?:commit|ship)\.sh(?=\s|$)/g
+const scriptCandidates = (args) => {
+  const starts = [0]
+  for (let index = 0; index < args.length; index += 1) if (/\s/.test(args[index])) starts.push(index + 1)
+  const found = []
+  for (const match of args.matchAll(SCRIPT_END)) {
+    const end = match.index + match[0].length
+    for (const start of starts) {
+      if (start > match.index) break
+      const candidate = args.slice(start, end)
+      if (CORE_SCRIPTS.includes(basename(candidate))) found.push(candidate)
+    }
+  }
+  return found
+}
 export const runningCoreScripts = (root, scan = scanProcesses()) => {
   const targets = new Map(CORE_SCRIPTS.map((name) => [realOr(join(root, 'scripts', name)), name]))
   const literal = CORE_SCRIPTS.flatMap((name) => [join(realOr(root), 'scripts', name), join(root, 'scripts', name)].map((path) => [path, name]))
@@ -422,7 +439,7 @@ export const runningCoreScripts = (root, scan = scanProcesses()) => {
     if (!args) continue
     const hit = literal.find(([path]) => args.includes(path))
     if (hit) { found.push({ kind: 'commit', what: `${hit[1]} 실행 중`, pid: row.pid }); continue }
-    const words = args.split(/\s+/).filter((word) => CORE_SCRIPTS.includes(basename(word)))
+    const words = scriptCandidates(args)
     if (words.length) pending.push({ pid: row.pid, words })
   }
   const cwds = cwdsOf(pending.filter((item) => item.words.some((word) => !word.startsWith('/'))).map((item) => item.pid))

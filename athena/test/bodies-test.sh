@@ -297,10 +297,20 @@ FS="$(fake_script "$WORK" 60 scripts/ship.sh)"; sleep 0.3
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
 check "본체 밖 폴더의 scripts/ship.sh 는 세지 않음 → 올림 · B 는 C3G" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
+# 공백이 든 상대 경로 — bash "../my body/scripts/commit.sh"(본체로 가는 링크 이름에 공백 · 자동 리뷰 2차). 끝날 때까지 기다린 뒤 올린다
+C3G2="$(newcommit "test: 업데이트 3g2")"
+ln -s "$BODY_B" "$WORK/my body"
+FS="$(fake_script "$WORK/elsewhere" 8 "../my body/scripts/commit.sh")"; sleep 0.3
+START=$(date +%s)
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "공백 든 상대 경로의 commit.sh 도 찾음 → 상한(1.5초) 안 끝나면 skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+check "그 실행이 끝날 때까지 기다린 뒤 올림 · B 는 C3G2" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ] && ! kill -0 "$FS" 2>/dev/null && [ $(( $(date +%s) - START )) -ge 2 ]' "$R"
+wait "$FS" 2>/dev/null; rm -f "$WORK/my body"
 C3H="$(newcommit "test: 업데이트 3h")"
 mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
-check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(busy · heavy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"heavy\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
+check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(busy · heavy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"heavy\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ]' "$R"
 (sleep 2; kill "$H" 2>/dev/null) &
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
 check "잠금이 상한 안에 풀림 → 기다린 뒤 올림 · B 는 C3H" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
