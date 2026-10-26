@@ -1204,7 +1204,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
   margin-top: 10px;
   padding: 3px 6px;
   color: var(--muted);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
 }
 .side-title + .space.space-repo { margin-top: 0; }
@@ -1212,12 +1212,9 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space.space-repo:hover,
 .space.space-repo[aria-current="true"]:hover { background: var(--hover); }
 .space-children { margin: 2px 0; }
-/* 레포 머리글 앞 꺾쇠(접기 · 펴기) · 접혔을 때 pane 수 */
-.space-repo .space-twisty { width: 16px; height: 16px; margin: 0 4px 0 -4px; color: var(--text); opacity: .75; }
-.space-repo .space-twisty svg { width: 11px; height: 11px; stroke-width: 2; }
-.space-repo:hover .space-twisty { opacity: 1; }
-/* 레포 이미지(정한 레포 · 아테나 로고) — 꺾쇠 자리(16px 칸 가운데)에 작은 네모. 이름 시작이 꺾쇠 줄과 같게 */
-.space-repo .space-repo-icon { flex: none; width: 14px; height: 14px; margin: 0 5px 0 -3px; overflow: hidden; border-radius: 3px; }
+/* 레포 머리글 앞 칸 — 이미지(정한 레포 · 아테나 로고) 또는 두 글자 배지(접힌 칸과 같은 색) · 접혔을 때 pane 수 */
+.space-repo .space-repo-icon { flex: none; width: 18px; height: 18px; margin: 0 2px 0 -4px; overflow: hidden; border-radius: 4px; }
+.space-repo .space-repo-badge { display: grid; place-items: center; background: color-mix(in srgb, var(--space-color, var(--muted)) 22%, transparent); color: var(--space-color, var(--text)); font-size: 9px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
 /* 아테나 로고는 투명 바탕 문양 — 자르지 않고 칸 안에 */
 .space-athena-logo { object-fit: contain; }
 .spaces.collapsed .space-icon:has(.space-athena-logo) { padding: 5px; }

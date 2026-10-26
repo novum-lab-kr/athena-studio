@@ -526,12 +526,17 @@ function spaceImage(workspace, repo, size) {
   return (repo && repoIconImage(repo)) || null
 }
 
-// 펼친 spaces 레포 줄 꺾쇠 자리의 작은 이미지(없으면 null — 꺾쇠 그대로 · 이름만)
+// 펼친 spaces 레포 줄 앞 칸 — 이미지가 있으면 이미지, 없으면 접힌 칸과 같은 색 · 두 글자 배지(꺾쇠 대신)
 function repoRowIcon(workspace, repo) {
   const image = spaceImage(workspace, repo, 32)
-  if (!image) return null
-  const icon = el('span', 'space-repo-icon')
-  icon.append(image)
+  const icon = el('span', image ? 'space-repo-icon' : 'space-repo-icon space-repo-badge')
+  if (image) {
+    icon.append(image)
+    return icon
+  }
+  const label = workspace ? workspace.label : repo.name
+  icon.style.setProperty('--space-color', spaceColor(label)) // 색은 레포 name 으로 — 접힌 칸(spaceRail)과 같다
+  icon.textContent = spaceInitials(repoLabel(repo) || label)
   return icon
 }
 
@@ -543,9 +548,7 @@ function idleRepoRows() {
     const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
     const text = el('span', 'space-text')
     text.append(el('span', 'space-label', repoLabel(repo)))
-    const icon = repoRowIcon(null, repo)
-    if (icon) button.append(icon)
-    button.append(text)
+    button.append(repoRowIcon(null, repo), text)
     if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
     button.addEventListener('contextmenu', (event) => {
       event.preventDefault()
@@ -744,13 +747,10 @@ function renderSides() {
     const repo = athena ? null : packRepoOf(workspace.label) // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
     label.textContent = repoLabel(repo) || workspace.label
     text.append(label)
-    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(pane 이 없으면 그 레포를 고른다). 앞 칸은 이미지가 있으면 이미지, 없으면 꺾쇠(pane 이 있을 때).
+    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(pane 이 없으면 그 레포를 고른다). 앞 칸은 이미지 또는 두 글자 배지(꺾쇠는 없다).
     // 접으면 모두 숨기고 머리글에 — 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
     const shown = folded ? [] : panes
-    const icon = repoRowIcon(workspace, repo)
-    if (icon) button.append(icon)
-    else if (panes.length) button.append(Object.assign(twistyElement(folded ? 'closed' : 'open'), { className: `twisty space-twisty${folded ? '' : ' open'}` }))
-    button.append(text)
+    button.append(repoRowIcon(workspace, repo), text)
     if (folded && panes.length) {
       if (panes.some((pane) => pane.id === screen.focused)) button.classList.add('holds-focus')
       const count = el('span', 'space-fold-count', `+${panes.length}`)
