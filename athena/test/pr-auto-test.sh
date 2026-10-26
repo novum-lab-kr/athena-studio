@@ -7,7 +7,9 @@
 # 보는 것(docs/pr-auto.md): 둘 다 승인해야 승인 · 하나라도 실패 · 없음 · 반려면 머지 안 함 · 모순된 답(승인인데 지적)은 승인으로 안 셈 ·
 # 같은 HEAD 는 한 번만 · 멈춤 · 머지됨은 다시 안 돎 · 표시 줄 바꿔 쓰기 · 레포 하나짜리만 · 켠 레포만(main 직접 제외) · 댓글의 비밀값 가림 ·
 # 머지 확인 — 키 없음 · true 면 확인 요청 · false 면 요청 없이 바로 머지(그새 새 커밋 · 검증 실패면 안 함 · 가짜 gh) ·
-# 가짜 리뷰어 — 둘 다 답 · 명령 없음 · 시간 넘김 · 모양이 틀린 답 · 모델(models.prReview → --model)
+# 가짜 리뷰어 — 둘 다 답 · 명령 없음 · 시간 넘김 · 모양이 틀린 답 · 모델(models.prReview → --model) ·
+# 사람에게 넘기지 않기(2026-10-26 결정 A · B · C) — 결정이 있어도 수정은 보냄 · 구현 세부 결정은 추천안으로 자동 확정 · 상한 뒤 이어받아 검증만으로 머지 ·
+# 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
@@ -16,13 +18,15 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoLines, autoMergeRepos, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS } from './scripts/lib/pr-auto.mjs'
+import { aggregate, autoDecisionLine, autoLines, autoMergeRepos, fixInstruction, isTakeoverRound, mergeNotice, needsReview, nextRound, reviewComment, singleRepoPlan, skipsMergeConfirm, takeoverComment, validReview, withAutoLine, withDecisionLines, workRefOf, BODY_EDITED, MAX_ROUNDS, REVIEWERS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
 const approve = { verdict: 'approve', summary: '좋다', findings: [], decisions: [] }
-const changes = { verdict: 'changes', summary: '고칠 것', findings: [{ file: 'a.js', line: 3, problem: 'p', fix: 'f' }], decisions: [] }
-const decision = { verdict: 'decision', summary: '정할 것', findings: [], decisions: [{ title: 't', why: 'w', options: [{ label: 'A', desc: '' }, { label: 'B', desc: '' }], recommended: 'A' }] }
+const changes = { verdict: 'changes', summary: '고칠 것', findings: [{ file: 'a.js', line: 3, problem: 'p', fix: 'f', severity: 'blocking' }], decisions: [] }
+const advisory = { verdict: 'changes', summary: '권장', findings: [{ file: 'c.js', line: 5, problem: '이름이 길다', fix: '줄인다', severity: 'advisory' }], decisions: [] }
+const decision = { verdict: 'decision', summary: '정할 것', findings: [], decisions: [{ title: 't', why: 'w', options: [{ label: 'A', desc: '' }, { label: 'B', desc: '' }], recommended: 'A', kind: 'product' }] }
+const implDecision = (extra = {}) => ({ ...decision, decisions: [{ ...decision.decisions[0], title: '아이콘 자리', kind: 'implementation', ...extra }] })
 const ok = (name, review) => ({ name, status: 'ok', review: validReview(review) })
 
 console.log('\n판정(결정 D2 — Claude · Codex 둘 다 승인)')
@@ -38,8 +42,47 @@ check('모양이 틀린 답은 버림(모르는 결론 · 지적 없는 수정 �
 check('빠지거나 틀린 칸이 하나라도 있으면 버림 — 승인으로 세지 않음(배열 없음 · 항목 칸 빠짐 · 선택지 하나)',
   !validReview({ verdict: 'approve', summary: '좋다' })
   && !validReview({ ...approve, findings: [{ file: 'a.js', line: 1, problem: 'p' }] })
+  && !validReview({ ...changes, findings: [{ ...changes.findings[0], severity: undefined }] })
+  && !validReview({ ...changes, findings: [{ ...changes.findings[0], severity: 'minor' }] })
   && !validReview({ ...changes, findings: [...changes.findings, { problem: 'p' }] })
   && !validReview({ ...decision, decisions: [{ ...decision.decisions[0], options: [{ label: 'A', desc: '' }] }] }))
+check('결정에 kind 가 없거나 모르는 값이면 버림', !validReview({ ...decision, decisions: [{ ...decision.decisions[0], kind: undefined }] }) && !validReview({ ...decision, decisions: [{ ...decision.decisions[0], kind: 'ux' }] }))
+
+console.log('\n막는 지적만 막기(2026-10-26 결정 E)')
+const advSum = aggregate([ok('claude', approve), ok('codex', advisory)])
+check('E — 권장(advisory)만 남으면 승인 · 보낼 지적 없음 · 권장은 따로', advSum.verdict === 'approve' && advSum.approvals === 2 && advSum.findings.length === 0 && advSum.advisories.length === 1, JSON.stringify(advSum))
+check('E — 승인 + 권장 지적은 승인 그대로 · 승인 + 막는 지적은 수정 필요', validReview({ ...approve, findings: advisory.findings }).verdict === 'approve' && validReview({ ...approve, findings: changes.findings }).verdict === 'changes')
+const both = aggregate([ok('claude', changes), ok('codex', advisory)])
+check('E — 막음 + 권장 → 수정 필요 · 보낼 지적은 막음만', both.verdict === 'changes' && both.findings.length === 1 && both.findings[0].severity === 'blocking' && both.advisories.length === 1)
+const advComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('claude', changes), ok('codex', advisory)], summary: both })
+check('E — 댓글에 ⛔ 막음 · 💡 권장 표시 · 권장은 머지를 막지 않는다는 줄', advComment.includes('⛔ 막음 `a.js:3`') && advComment.includes('💡 권장 `c.js:5`') && advComment.includes('권장 1개는 머지를 막지 않는다'), advComment)
+const advInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: 1, findings: both.findings, plan: 'p', worktree: '/wt', athenaDir: '/a' })
+check('E — 수정 지시에 권장은 없다', advInstr.includes('a.js:3') && !advInstr.includes('c.js'), advInstr)
+
+console.log('\n사람에게 넘기지 않기(2026-10-26 결정 A · B · C)')
+const autoSum = aggregate([ok('claude', approve), ok('codex', implDecision())])
+check('B — 구현 세부 + 추천이 선택지에 있음 → 자동 확정 · 수정 필요(사람 결정 없음)', autoSum.verdict === 'changes' && autoSum.autoDecisions.length === 1 && autoSum.decisions.length === 0, JSON.stringify(autoSum))
+check('B — 제품 · 계약 결정 · 추천 없음 · 추천이 선택지에 없음 → 사람(결정 필요)',
+  aggregate([ok('claude', approve), ok('codex', decision)]).verdict === 'decision'
+  && aggregate([ok('claude', approve), ok('codex', implDecision({ recommended: '' }))]).verdict === 'decision'
+  && aggregate([ok('claude', approve), ok('codex', implDecision({ recommended: 'C' }))]).verdict === 'decision')
+const mixed = aggregate([ok('claude', changes), ok('codex', { ...decision, decisions: [...decision.decisions, implDecision().decisions[0]] })])
+check('A — 결정 필요여도 findings · 자동 확정 결정은 그대로 남는다(보낼 것)', mixed.verdict === 'decision' && mixed.findings.length === 1 && mixed.autoDecisions.length === 1 && mixed.decisions.length === 1, JSON.stringify(mixed))
+const instr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: MAX_ROUNDS, findings: mixed.findings, autoDecisions: mixed.autoDecisions, humanDecisions: 1, plan: 'plans/task/x.md', worktree: '/wt', athenaDir: '/a' })
+check('수정 지시 — 지적 · 자동 확정 결정 · 결정 콘솔 안내 · 상한 이어받기 안내 · commit/ship', instr.startsWith('[자동 리뷰 → web-fe] PR web#7 @abcdef1 라운드 3/3 — 수정 필요: 1) a.js:3') && instr.includes('자동 확정한 결정') && instr.includes('아이콘 자리 → A') && instr.includes('결정 1개는 결정 콘솔') && instr.includes(TAKEOVER) && instr.includes('--auto-push'), instr)
+const onlyAuto = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef123', round: 1, findings: [], autoDecisions: autoSum.autoDecisions, plan: 'p', worktree: '/wt', athenaDir: '/a' })
+check('수정 지시 — 지적 없이 자동 확정 결정만 · 상한 전이면 이어받기 안내 없음', !onlyAuto.includes('수정 필요:') && onlyAuto.includes('아이콘 자리 → A') && !onlyAuto.includes(TAKEOVER), onlyAuto)
+const autoComment = reviewComment({ sha: 'abcdef1', round: MAX_ROUNDS, results: [ok('claude', approve), ok('codex', implDecision())], summary: autoSum })
+check('댓글 — 추천안으로 자동 확정 · 상한 뒤 이어받음', autoComment.includes('추천안으로 자동 확정') && autoComment.includes('아이콘 자리 → **A**') && autoComment.includes(TAKEOVER), autoComment)
+check('댓글 — 상한 전 · 승인이면 이어받음 줄 없음', !reviewComment({ sha: 'a', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)]) }).includes(TAKEOVER)
+  && !reviewComment({ sha: 'a', round: 3, results: [ok('claude', approve), ok('codex', approve)], summary: aggregate([ok('claude', approve), ok('codex', approve)]) }).includes(TAKEOVER))
+check('C — 상한을 넘은 라운드만 이어받기 · 댓글에 "리뷰 없이 검증만으로 머지"', !isTakeoverRound(MAX_ROUNDS) && isTakeoverRound(MAX_ROUNDS + 1) && takeoverComment({ sha: 'abcdef1', round: 4 }).includes('리뷰 없이 검증만으로 머지'))
+const dLine = autoDecisionLine({ decision: autoSum.autoDecisions[0], repo: 'web', number: '7', sha: 'abcdef123' })
+const light = '# x\n\n## Checkpoint\n- Status: in_progress\n\n### Blocked\n- 없음\n\n## 지시\n본문\n'
+const lightOut = withDecisionLines(light, [dLine])
+check('계획서 Decisions — 절이 없으면 Checkpoint 끝에 만든다 · 같은 줄은 다시 안 넣음', /### Blocked\n- 없음\n\n### Decisions\n- 추천안으로 자동 확정\(자동 리뷰 · codex · web#7 @abcdef1 · 구현 세부\): 아이콘 자리 → A\n\n## 지시/.test(lightOut) && withDecisionLines(lightOut, [dLine]) === lightOut, lightOut)
+const formalPlan = '## Checkpoint\n### Decisions\n- D1 기존\n\n### Commits\n- c\n'
+check('계획서 Decisions — 절이 있으면 그 끝에 덧붙임', withDecisionLines(formalPlan, [dLine]) === `## Checkpoint\n### Decisions\n- D1 기존\n${dLine}\n\n### Commits\n- c\n`, withDecisionLines(formalPlan, [dLine]))
 
 console.log('\n계획서 표시 줄')
 const plan = `# 시험\n## Checkpoint\n- Status: in_progress\n- Work ref: /tmp/wt/web-x · 🌿 feat/x · pane p3 (web-fe)\n- PR: https://github.com/acme/web/pull/7 (feat/x → dev, draft · 2026-10-25 10:00)\n`
@@ -94,11 +137,12 @@ BIN="$TMP/bin"; mkdir -p "$BIN"
 # claude -p --output-format json --json-schema … — structured_output 에 답(learn-review 가 쓰는 꼴)
 cat > "$BIN/claude" <<'SH'
 #!/bin/sh
-cat > /dev/null
+if [ -n "${FAKE_PROMPT:-}" ]; then cat > "$FAKE_PROMPT"; else cat > /dev/null; fi
 [ -n "${FAKE_CLAUDE_ARGS:-}" ] && echo "$*" > "$FAKE_CLAUDE_ARGS"
 case "${FAKE_CLAUDE:-approve}" in
   approve) echo '{"is_error":false,"structured_output":{"verdict":"approve","summary":"좋다","findings":[],"decisions":[]}}' ;;
   bad) echo '{"is_error":false,"structured_output":{"verdict":"maybe"}}' ;;
+  changes) echo '{"is_error":false,"structured_output":{"verdict":"changes","summary":"고칠 것","findings":[{"file":"b.js","line":2,"problem":"p","fix":"f","severity":"blocking"}],"decisions":[]}}' ;;
 esac
 SH
 # codex exec … -o <파일> — 마지막 답을 그 파일에
@@ -111,8 +155,13 @@ case " $* " in *" --disable shell_tool "*) ;; *) echo "셸 끄기 없음" >&2; e
 case " $* " in *'web_search="disabled"'*) ;; *) echo "웹 끄기 없음" >&2; exit 9 ;; esac
 [ "${FAKE_CODEX:-approve}" = slow ] && sleep 30
 out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out="$2"; shift; done
+[ -n "${FAKE_CODEX_CALLED:-}" ] && echo called > "$FAKE_CODEX_CALLED"
+decision_of() { echo '{"verdict":"decision","summary":"정할 것","findings":[],"decisions":[{"title":"아이콘 자리","why":"w","options":[{"label":"A 왼쪽","desc":""},{"label":"B 오른쪽","desc":""}],"recommended":"A 왼쪽","kind":"'"$1"'"}]}'; }
 if [ "${FAKE_CODEX:-}" = ok ]; then echo '{"verdict":"approve","summary":"좋다","findings":[],"decisions":[]}' > "$out"
-else echo '{"verdict":"changes","summary":"고칠 것","findings":[{"file":"a.js","line":1,"problem":"p","fix":"f"}],"decisions":[]}' > "$out"; fi
+elif [ "${FAKE_CODEX:-}" = impl ]; then decision_of implementation > "$out"
+elif [ "${FAKE_CODEX:-}" = product ]; then decision_of product > "$out"
+elif [ "${FAKE_CODEX:-}" = advisory ]; then echo '{"verdict":"changes","summary":"권장","findings":[{"file":"c.js","line":5,"problem":"이름이 길다","fix":"줄인다","severity":"advisory"}],"decisions":[]}' > "$out"
+else echo '{"verdict":"changes","summary":"고칠 것","findings":[{"file":"a.js","line":1,"problem":"p","fix":"f","severity":"blocking"}],"decisions":[]}' > "$out"; fi
 SH
 chmod +x "$BIN/claude" "$BIN/codex"
 run_case() {   # <이름> <PATH> <기대 판정> [환경…]
@@ -258,7 +307,12 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
   local name="$1" extra="$2" want="$3" line="$4"; shift 4
   rm -rf "$CORE/.requests" "$CORE/.events.jsonl" "$TMP/queue-confirm" "$GH_LOG.views" "$CORE/plans/task/"*; : > "$GH_LOG"
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
-  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- PR: https://github.com/acme/web/pull/7\n' "$WT" > "$CORE/plans/task/x.md"
+  printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n' "$WT" "${AUTO_LINE:+$AUTO_LINE
+}" > "$CORE/plans/task/x.md"
+  # PENDING=1 — 결정 콘솔에 안 정한 결정이 있는 것처럼(plan-html.mjs 가 여는 계획서 결정 요청)
+  [ "${PENDING:-0}" = 1 ] && (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+    const { openRequest } = await import('./scripts/lib/requests.mjs')
+    openRequest('.', { kind: 'decision', title: 'x', body: '- R1', links: { plan: 'plans/task/x.md' }, pane: null, dedupeKey: 'plan:plans/task/x.md' })" >/dev/null)
   env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" \
     "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
   local merged=no; grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && merged=yes
@@ -299,6 +353,49 @@ env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(com
   && echo "  ✔ 검증 도중 처리기가 죽으면 잡은 파일이 남고(머지 안 함) 되돌려 다시 본다" || { echo "  ✖ 검증 도중 죽은 뒤 잡은 파일 남기기 — 남은 것: $(ls "$TMP/queue-confirm/confirm")"; FAIL=1; }
 merge_case "autoMergeConfirm: false 라도 머지 직전에 새 커밋 → 머지 안 함" ', "autoMergeConfirm": false' no '바로 머지' FAKE_GH_HEAD_AFTER=1
 merge_case "autoMergeConfirm: false 라도 검증 실패 → 머지 안 함" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
+
+echo; echo "사람에게 넘기지 않기(결정 A · B · C)"
+OLD7="0000000"
+CALLED="$TMP/codex-called"; rm -f "$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
+  merge_case "C — 상한 뒤 이어받은 새 HEAD → 리뷰 없이 검증만으로 바로 머지(확인 없음 레포)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(상한 뒤 이어받음 — 리뷰 없이 검증만으로 머지\) · 라운드 4/3" FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q "^pr review 7 .*상한 뒤 이어받음" "$GH_LOG" \
+  && echo "  ✔ C — 리뷰어를 부르지 않음 · PR 댓글에 상한 뒤 이어받음" || { echo "  ✖ C — 리뷰어가 불렸거나 댓글이 없다"; FAIL=1; }
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
+  merge_case "C — 이어받은 HEAD · 확인 켠 레포 → 머지 확인 요청(autoMergeConfirm 그대로)" '' no '상한 뒤 이어받음\(리뷰 없이 검증만으로 머지\) → 머지 확인 대기'
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
+  merge_case "C — 이어받은 HEAD 가 검증 실패 → 머지 안 함 · 사람에게(자동 재시도 없음)" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 리뷰어 부족(승인 1/2) · 라운드 3/3 · 2026-10-26 10:00" \
+  merge_case "C — 상한을 넘었는데 직전이 이어받기가 아님 → 멈춤(리뷰 없이 머지 안 함)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한'
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 · 라운드 2/3 · 2026-10-26 10:00" \
+  merge_case "C — 상한 라운드(3/3)에서 수정 필요 → 멈추지 않고 수정 지시 · 줄에 이어받음" ', "autoMergeConfirm": false' no '^- Auto review: web#7 @[0-9a-f]+ · 수정 필요 — 상한 뒤 이어받음' FAKE_CODEX=changes
+merge_case "B — 구현 세부 결정 + 추천 → 자동 확정 · 수정 필요(결정 콘솔 없음)" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_CODEX=impl
+grep -q '^- 추천안으로 자동 확정(자동 리뷰 · codex · web#7 @.* · 구현 세부): 아이콘 자리 → A 왼쪽$' "$CORE/plans/task/x.md" && [ ! -e "$CORE/plans/task/x.html" ] && grep -q "추천안으로 자동 확정" "$GH_LOG" \
+  && echo "  ✔ B — 계획서 Decisions · PR 댓글에 추천안으로 자동 확정" || { echo "  ✖ B — 계획서 · 댓글 기록"; sed 's/^/      /' "$CORE/plans/task/x.md"; FAIL=1; }
+merge_case "A — 제품 결정 + 수정 지적 → 결정 필요 · 수정 지시도 만듦" ', "autoMergeConfirm": false' no '· 결정 필요 · 라운드 1/3' FAKE_CODEX=product FAKE_CLAUDE=changes
+grep -q '"title": "자동 리뷰 수정 지시를 보낼 pane 이 없다' "$CORE/.requests"/*.json 2>/dev/null && grep -q 'b.js:2' "$CORE/.requests"/*.json \
+  && echo "  ✔ A — 결정이 있어도 수정 지시(b.js:2)를 보냄(가짜 화면엔 pane 이 없어 사람 요청으로)" || { echo "  ✖ A — 수정 지시가 없다"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+PENDING=1 merge_case "A — 둘 다 승인이어도 결정 콘솔에 안 정한 결정 → 머지 안 함" ', "autoMergeConfirm": false' no '결정 필요 — 승인 2/2이지만 결정 콘솔에 안 정한 결정' FAKE_CODEX=ok
+PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · 라운드 3/3 · 2026-10-26 10:00" \
+  merge_case "A · C — 이어받은 HEAD 도 안 정한 결정이 있으면 머지 안 함(다음 커밋도 이어받음)" ', "autoMergeConfirm": false' no '결정 필요 — 상한 뒤 이어받음.*머지 대기'
+merge_case "E — 권장만 남은 수정 필요 → 승인으로 보고 머지 단계(바로 머지)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_CODEX=advisory
+grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null \
+  && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
+
+# 결정 D — 1라운드 지적을 기록해 두고, 2라운드 프롬프트에는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 diff 만
+echo; echo "지적은 한 번에(결정 D)"
+PROMPT="$TMP/prompt.txt"
+merge_case "D — 1라운드: 수정 필요 · 지난 지적 기록" ', "autoMergeConfirm": false' no '· 수정 필요 · 라운드 1/3' FAKE_PROMPT="$PROMPT" FAKE_CODEX=changes
+grep -q "찾을 수 있는 지적을 이번 리뷰에서 모두 낸다" "$PROMPT" && ! grep -q "지난 리뷰 지적" "$PROMPT" && grep -q '"file": "a.js"' "$TMP/queue-confirm/history/web-7.json" \
+  && echo "  ✔ D — 1라운드 프롬프트는 '모두 한 번에' · history 에 보낸 지적" || { echo "  ✖ D — 1라운드"; sed 's/^/      /' "$PROMPT" | head -20; FAIL=1; }
+S1="$SHA"; echo 'fixed' > "$WT/a.js"; git -C "$WT" add a.js && git -C "$WT" -c user.name=t -c user.email=t@t commit -q -m fix
+S2="$(git -C "$WT" rev-parse HEAD)"; : > "$GH_LOG"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$S2" GH_LOG="$GH_LOG" FAKE_PROMPT="$PROMPT" \
+  "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
+grep -q "이번은 2번째 리뷰다" "$PROMPT" && grep -q "지난 리뷰 지적 (@${S1:0:7}" "$PROMPT" && grep -q "1) a.js:1 — p → f" "$PROMPT" \
+  && grep -q "지난 리뷰 HEAD @${S1:0:7} 이후 바뀐 것만" "$PROMPT" && grep -q "^+fixed" "$PROMPT" \
+  && ! grep -q "^pr diff" "$GH_LOG" && grep -q "· 라운드 2/3" "$CORE/plans/task/x.md" \
+  && echo "  ✔ D — 2라운드 프롬프트: 지난 지적 · 지난 HEAD 이후 diff 만(gh pr diff 안 부름)" || { echo "  ✖ D — 2라운드"; sed 's/^/      /' "$PROMPT" | tail -25; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL
