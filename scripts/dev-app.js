@@ -12,6 +12,7 @@ const path = require('path')
 const crypto = require('crypto')
 const { execFileSync, spawn } = require('child_process')
 const studioHome = require('../src/lib/studio-home')
+const version = require('../src/lib/version')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -152,19 +153,23 @@ function build() {
 }
 
 // 앱이 들고 갈 아테나 코어 — 레포 athena/ 의 커밋된 기록을 git 번들로. 앱은 첫 실행 때 ~/.athena-studio/core 로 풀고,
-// 새 커밋이면 켤 때 업데이트한다. 못 만들어도 켜기는 한다(이미 만든 번들 · 이미 푼 코어를 쓴다)
+// 새 커밋이면 켤 때 업데이트한다. 못 만들어도 켜기는 한다(이미 만든 번들 · 이미 푼 코어를 쓴다).
+// 앱 버전(git describe · 태그가 없으면 package.json)을 번들에 같이 싣는다 — 코어 version --json 의 version
 function makeBundle() {
   const out = studioHome.coreBundlePath({ appRoot: ROOT, packaged: false })
   try {
-    const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, log: (line) => console.log(`[dev-app] ${line}`) })
+    const appVersion = version.describeVersion({ repoRoot: ROOT, env: studioHome.gitEnv() }) || require(path.join(ROOT, 'package.json')).version
+    const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, version: appVersion, log: (line) => console.log(`[dev-app] ${line}`) })
     if (!made.ok) console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
-    else if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)} → ${path.relative(ROOT, out)}`)
+    else if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)}${made.version ? ` · ${made.version}` : ''} → ${path.relative(ROOT, out)}`)
   } catch (error) {
     console.warn(`[dev-app] 코어 번들을 만들지 못했어요 — ${error.message}`)
   }
 }
 
 function start(args) {
+  // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
+  version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
   makeBundle()
   const useDevApp = process.platform === 'darwin' && make()
   const binary = useDevApp ? BINARY : require('electron')

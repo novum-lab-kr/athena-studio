@@ -23,6 +23,7 @@ const requestsModel = require('./lib/requests')
 const workModel = require('./lib/work-model')
 const layout = require('./lib/layout')
 const appUpdate = require('./lib/app-update')
+const versionModel = require('./lib/version')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -694,8 +695,16 @@ let appUpdateRunning = false
 let appUpdateFetchedAt = 0
 let appUpdateChecking = null
 
+// 앱 버전(SemVer 0.x — 정본은 git 태그 · lib/version.js) — 개발 앱 체크아웃은 git describe(0.2.1 · 0.2.1+3), 태그가 없거나 배포판이면 package.json.
+// 켤 때 한 번 정한다(업데이트는 앱을 다시 켠다 · origin 태그는 scripts/dev-app.js start 가 그 전에 받는다). ⚙ 앱 업데이트 줄 · 맥 메뉴 정보 · 코어 번들에 같은 번호 —
+// ⚙ 확인이 나중에 태그를 더 받아도 지금 버전은 바꾸지 않는다(새 번호는 latest 로만)
+let appVersionCache = null
+function appVersion() {
+  if (!appVersionCache) appVersionCache = (!app.isPackaged && versionModel.describeVersion({ repoRoot: APP_ROOT, env: studioHome.gitEnv() })) || app.getVersion()
+  return appVersionCache
+}
 const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
-const appUpdateView = () => ({ ...appUpdateStatus, running: appUpdateRunning })
+const appUpdateView = () => ({ ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
 function sendAppUpdate() {
   for (const each of packWindows) each.send('app-update:status', appUpdateView())
 }
@@ -3154,7 +3163,8 @@ handle('browser:command', (ctx, name, value) => ctx.browserCommand(String(name),
 app.whenReady().then(async () => {
   // 앱 데이터 폴더 이름(IDENTITY.name)은 맨 위에서 정했다 — 바꾸면 설정 · 데몬이 옮겨진다
   // 보이는 이름은 Athena(메뉴 막대 · Dock 은 개발용 Athena.app — scripts/dev-app.js)
-  app.setAboutPanelOptions({ applicationName: 'Athena' })
+  // 버전은 ⚙ 앱 업데이트 줄과 같은 번호(version 도 같게 — 괄호 안 Electron 번호가 붙지 않게)
+  app.setAboutPanelOptions({ applicationName: 'Athena', applicationVersion: appVersion(), version: appVersion() })
   // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
   config = core.loadConfig(configFile())

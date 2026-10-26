@@ -1,0 +1,25 @@
+# main 에 머지될 때마다 버전 태그 vX.Y.Z + GitHub Release(결정 D2 · D4 — plans/feature/20261026-버저닝).
+# 사람이 GitHub 에서 머지해도 · 자동 머지 흐름이 머지해도 push → main 이라 똑같이 걸린다. 계산은 scripts/release-version.js(src/lib/version.js)
+name: release
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write # 태그 · Release 만들기
+  pull-requests: read # 머지 커밋의 PR 제목 읽기(gh api …/commits/<sha>/pulls)
+# 머지가 몰려도 하나씩 — 앞 태그를 보고 다음 번호를 정한다. GitHub 은 대기 실행을 하나만 남기고 나머지를 취소하지만,
+# 스크립트가 기준 태그 뒤 아직 태그 없는 main 커밋을 모두 차례로 처리하므로 취소된 실행의 머지도 다음 실행이 채운다
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 버전 태그 · Release
+        run: node scripts/release-version.js --sha "$GITHUB_SHA"
+        env:
+          GH_TOKEN: ${{ github.token }}

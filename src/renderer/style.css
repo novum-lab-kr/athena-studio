@@ -1313,6 +1313,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .settings-app-button:hover:not(:disabled), .settings-app-button:focus-visible { background: var(--accent); color: var(--popup-bg); outline: none; }
 .settings-app-button:disabled { border-color: rgb(255 255 255 / 14%); color: var(--popup-muted); cursor: default; }
 .settings-app-note { margin: 0 8px 4px; }
+.settings-app-version { margin-left: 8px; color: var(--popup-muted); font-size: 12px; }
 #settings-tab { position: relative; }
 #settings-tab.has-update::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }
 /* 작업 상세 · 답하기 — 대화상자(pack-dialog) 안 */

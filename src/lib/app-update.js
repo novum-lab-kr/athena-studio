@@ -7,6 +7,7 @@ const fs = require('fs')
 const path = require('path')
 const { execFile } = require('child_process')
 const { gitEnv } = require('./studio-home')
+const version = require('./version')
 
 const BRANCH = 'main'
 const REMOTE = 'origin'
@@ -28,22 +29,40 @@ function isCheckout(repoRoot) {
   return Boolean(repoRoot) && fs.existsSync(path.join(repoRoot, '.git'))
 }
 
-// → { state: 'behind' | 'current' | 'unavailable', behind, branch, reason }
+// → { state: 'behind' | 'current' | 'unavailable', behind, branch, reason, version, latest }
 //   reason(진행하지 못하는 까닭 · 없으면 null): not-main · dirty · diverged · fetch-failed
-//   fetch: origin main 을 먼저 받는다(실패해도 이미 받은 origin/main 으로 센다 — 까닭에 fetch-failed)
+//   version: 지금 체크아웃 버전(0.2.1 · 0.2.1+3 — 태그가 없으면 null · 부르는 쪽이 package.json 값으로)
+//   latest: origin/main 버전 — 지금보다 새 태그가 있을 때만(없으면 null · 화면은 커밋 수를 보인다)
+//   fetch: origin main 과 v* 태그를 먼저 받는다(실패해도 이미 받은 origin/main 으로 센다 — 까닭에 fetch-failed)
 async function checkStatus({ repoRoot, fetch = true, git = runGit }) {
-  if (!isCheckout(repoRoot)) return { state: 'unavailable', behind: 0, branch: null, reason: null }
+  if (!isCheckout(repoRoot)) return { state: 'unavailable', behind: 0, branch: null, reason: null, version: null, latest: null }
   const run = (args, options = {}) => git(args, { cwd: repoRoot, ...options })
   let fetchFailed = false
-  if (fetch) fetchFailed = !(await run(['fetch', '--quiet', '--no-tags', REMOTE, BRANCH], { timeout: FETCH_TIMEOUT_MS }).then(() => true, () => false))
+  if (fetch) fetchFailed = !(await run(['fetch', '--quiet', '--no-tags', REMOTE, BRANCH, '+refs/tags/v*:refs/tags/v*'], { timeout: FETCH_TIMEOUT_MS }).then(() => true, () => false))
+  const current = await describe(run, 'HEAD')
   const upstream = await run(['rev-parse', '--verify', '--quiet', `refs/remotes/${REMOTE}/${BRANCH}`]).catch(() => '')
-  if (!upstream) return { state: 'unavailable', behind: 0, branch: null, reason: fetchFailed ? 'fetch-failed' : null }
+  if (!upstream) return { state: 'unavailable', behind: 0, branch: null, reason: fetchFailed ? 'fetch-failed' : null, version: current, latest: null }
   const branch = await run(['symbolic-ref', '-q', '--short', 'HEAD']).catch(() => '')
   const behind = Number(await run(['rev-list', '--count', `HEAD..${upstream}`]).catch(() => '0')) || 0
   const ahead = Number(await run(['rev-list', '--count', `${upstream}..HEAD`]).catch(() => '0')) || 0
   const dirty = Boolean(await run(['status', '--porcelain', '--untracked-files=no']).catch(() => 'unknown'))
   const reason = pickReason({ branch, dirty, ahead, fetchFailed })
-  return { state: behind > 0 ? 'behind' : 'current', behind, branch: branch || null, reason }
+  const latest = behind > 0 ? newerVersion(current, await describe(run, upstream)) : null
+  return { state: behind > 0 ? 'behind' : 'current', behind, branch: branch || null, reason, version: current, latest }
+}
+
+// 그 ref 의 버전(0.2.1 · 0.2.1+3) · 태그가 없으면 null
+async function describe(run, ref) {
+  const output = await run(['describe', '--tags', '--long', '--match', version.TAG_PATTERN, ref]).catch(() => '')
+  return version.formatDescribe(output)
+}
+
+// origin/main 쪽 태그가 지금 것보다 높을 때만 그 버전 — 새 태그가 아직 없으면 null
+function newerVersion(current, upstream) {
+  const next = version.splitDisplay(upstream)
+  if (!next) return null
+  const now = version.splitDisplay(current)
+  return !now || version.compareVersions(next.tag, now.tag) > 0 ? upstream : null
 }
 
 // 진행하지 못하는 까닭 — 앞의 것이 먼저(main 이 아니면 나머지는 뜻이 없다)
@@ -71,4 +90,4 @@ async function pullMain({ repoRoot, git = runGit }) {
   return { ok: true, from, to, install: Boolean(changed) }
 }
 
-module.exports = { BRANCH, INSTALL_FILES, isCheckout, checkStatus, pickReason, pullMain }
+module.exports = { BRANCH, INSTALL_FILES, isCheckout, checkStatus, pickReason, newerVersion, pullMain }

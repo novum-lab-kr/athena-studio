@@ -347,6 +347,25 @@ const saveOp = (data, record) => writeJson(join(opDir(data), `${record.operation
 // from: git 번들 파일(앱이 들고 온 코어) — 그 번들의 main 을 refs/athena/bundle/main 으로 받아 그 커밋으로. 원격(origin)에서 받는 길은 없다 — 코어는 앱과 함께 온다
 // backupDirty: 코어 파일을 고쳐 둔 본체도 사본(<데이터>/backups/core-edits/<operationId>/)을 두고 옮긴다(D4 · 기본은 dirty 로 건너뜀)
 export const BUNDLE_REF = 'refs/athena/bundle/main'
+// 스튜디오 버전 — 앱이 번들에 refs/athena/version/<버전>(0.2.1 · 0.2.1+3) → 코어 커밋으로 싣는다(앱 src/lib/studio-home.js).
+// 같은 코어 커밋을 여러 앱 버전이 실을 수 있어 그 커밋을 가리키는 것 중 가장 높은 것 · 없으면(옛 번들 · 고친 코어) null
+const VERSION_REF_PREFIX = 'refs/athena/version/'
+const VERSION_REFSPEC = `+${VERSION_REF_PREFIX}*:${VERSION_REF_PREFIX}*`
+const versionKey = (name) => {
+  const match = /^(\d+)\.(\d+)\.(\d+)(?:\+(\d+))?$/.exec(name)
+  return match ? match.slice(1).map((part) => Number(part ?? 0)) : null
+}
+const studioVersionOf = (root) => {
+  const head = headOf(root)
+  if (!head) return null
+  const names = (gitTry(root, ['for-each-ref', '--points-at', head, '--format=%(refname)', VERSION_REF_PREFIX]) ?? '').split('\n').map((ref) => ref.slice(VERSION_REF_PREFIX.length)).filter((name) => versionKey(name))
+  const higher = (left, right) => {
+    const [first, second] = [versionKey(left), versionKey(right)]
+    const index = first.findIndex((part, at) => part !== second[at])
+    return index >= 0 && first[index] > second[index]
+  }
+  return names.reduce((best, name) => (best === null || higher(name, best) ? name : best), null)
+}
 const fetchEnv = () => ({ ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=15' })
 const fetchBundle = (main, file) => {
   let isFile = false
@@ -354,7 +373,7 @@ const fetchBundle = (main, file) => {
   if (!isFile) throw new PackError('not-found', `번들 파일이 없다: ${file}`)
   const heads = spawnSync('git', ['-C', main, 'bundle', 'list-heads', file, 'refs/heads/main'], { encoding: 'utf8', env: fetchEnv() })
   if (heads.status !== 0 || !/\srefs\/heads\/main$/m.test(heads.stdout ?? '')) throw new PackError('fetch-failed', `git 번들이 아니거나 main 이 없다: ${file}`)
-  const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', '--no-tags', file, `+refs/heads/main:${BUNDLE_REF}`], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: fetchEnv() })
+  const fetched = spawnSync('git', ['-C', main, 'fetch', '--quiet', '--no-tags', file, `+refs/heads/main:${BUNDLE_REF}`, VERSION_REFSPEC], { stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000, env: fetchEnv() })
   if (fetched.status !== 0) throw new PackError('fetch-failed', `번들에서 받아 오지 못했다 — ${String(fetched.stderr ?? '').trim().slice(0, 200)}`)
   return gitTry(main, ['rev-parse', BUNDLE_REF]) ?? null
 }
@@ -558,7 +577,7 @@ export const useAsOpen = async (root, id, options = {}) => {
 export const versionInfo = (root) => {
   const registry = readRegistry(dataDir(root))
   return {
-    ok: true, core: headOf(root), contract: CONTRACT, dirty: isDirty(root), dataFormats: DATA_FORMATS, capabilities: CAPABILITIES,
+    ok: true, core: headOf(root), version: studioVersionOf(root), contract: CONTRACT, dirty: isDirty(root), dataFormats: DATA_FORMATS, capabilities: CAPABILITIES,
     body: resolve(root), bodyId: bodyIdOf(root), deploy: registry.deploy ? { commit: registry.deploy.commit, operationId: registry.deploy.operationId ?? null, source: registry.deploy.source ?? 'origin' } : null,
   }
 }
