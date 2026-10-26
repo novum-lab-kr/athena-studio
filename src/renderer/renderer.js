@@ -112,6 +112,7 @@ function redrawAfterHidden(view) {
 function disposeView(paneId) {
   const view = views.get(paneId)
   if (!view) return
+  clearTimeout(view.resizing)
   view.term.dispose()
   view.el.remove()
   views.delete(paneId)
@@ -1142,19 +1143,34 @@ function layoutPanes() {
       size = view.fit.proposeDimensions()
     } catch {}
     if (!size || !(size.cols > 1) || !(size.rows > 1)) continue
-    const { cols, rows } = size
-    // 경계를 끄는 동안은 셸에 크기를 알리지 않는다(놓을 때 한 번)
-    if (dividerDrag) continue
-    // 데몬이 스스로 바꾼 크기(분할 · pane 종료 때 탭 크기로 어림한 fitTab — pane 머리 줄을 빼지 않아 몇 줄 크다)도 다시 맞춘다
-    const drifted = info.cols > 1 && (info.cols !== cols || info.rows !== rows)
-    if (!view.sent || view.sent.cols !== cols || view.sent.rows !== rows || (drifted && !view.resizing)) {
-      view.resizing = true
-      view.sent = { cols, rows }
-      studio.paneResize(paneId, cols, rows)
-    }
+    // 경계를 끄는 동안 · 창 크기를 바꾸는 동안에도 보낸다 — 한 pane 에 하나씩만 날아가고 답이 오면 그 사이 바뀐 최신 크기만 이어서(sendPaneSize)
+    view.want = { cols: size.cols, rows: size.rows }
+    sendPaneSize(paneId, view, info)
   }
   reportTabSize(tab, container)
   if (!renamingTab) focusCurrentTerminal() // 탭 이름을 고치는 중이면 글자 칸 포커스를 뺏지 않는다
+}
+
+// 크기 요청은 pane 마다 하나만 날아간다 — 답(pane:resized)이 오기 전에 바뀐 크기는 view.want 에 최신 것만 남기고 중간 크기는 건너뛴다.
+// 그래서 끄는 동안에도 xterm 은 데몬이 적용한 크기로만, 보낸 순서대로 바뀌고(갈라짐 없음) 셸 · Claude Code 는 왕복 한 번에 한 번만 다시 그린다.
+// 답이 끝내 안 오면(데몬이 거절 · 끊김) 이만큼 뒤에 막힘을 풀고 최신 크기를 다시 본다
+const RESIZE_REPLY_TIMEOUT_MS = 1000
+
+function sendPaneSize(paneId, view, info) {
+  const want = view.want
+  if (!want || view.resizing) return
+  // 데몬이 스스로 바꾼 크기(분할 · pane 종료 때 탭 크기로 어림한 fitTab — pane 머리 줄을 빼지 않아 몇 줄 크다)도 다시 맞춘다
+  const drifted = Boolean(info) && info.cols > 1 && (info.cols !== want.cols || info.rows !== want.rows)
+  if (view.sent && view.sent.cols === want.cols && view.sent.rows === want.rows && !drifted) return
+  view.sent = { cols: want.cols, rows: want.rows }
+  view.resizing = setTimeout(() => {
+    if (views.get(paneId) !== view) return
+    view.resizing = null
+    // 답을 못 받은 크기는 적용됐는지 모른다 — 보낸 기록을 지워 지금 크기를 다시 보낸다(같은 크기여도)
+    view.sent = null
+    sendPaneSize(paneId, view, null)
+  }, RESIZE_REPLY_TIMEOUT_MS)
+  studio.paneResize(paneId, want.cols, want.rows)
 }
 
 // 지금 pane 의 터미널로 입력을 돌려준다(작업 창이 보이고 옆 브라우저를 쓰지 않을 때)
@@ -3289,11 +3305,16 @@ async function init() {
   studio.onPaneResized((paneId, cols, rows) => {
     const view = views.get(paneId)
     if (!view || !attached || attaching || !(cols > 1 && rows > 1)) return
-    view.resizing = false
+    clearTimeout(view.resizing)
+    view.resizing = null
     // 받은 상태의 크기도 고쳐 둔다 — 다음 상태가 올 때까지 옛 크기로 보고 다시 요청하지 않게
     const known = screen.panes.find((pane) => pane.id === paneId)
     if (known) Object.assign(known, { cols, rows })
     view.term.write('', () => views.get(paneId) === view && view.term.resize(cols, rows))
+    // 기다리는 사이 크기가 또 바뀌었으면 최신 크기만 이어서 — 다음 프레임에(프레임당 한 번 넘게 보내지 않게)
+    if (view.want && (view.want.cols !== cols || view.want.rows !== rows)) {
+      requestAnimationFrame(() => views.get(paneId) === view && sendPaneSize(paneId, view, known))
+    }
   })
   studio.onScreenState((next) => attached && !attaching && applyState(next))
   studio.onScreenBranches((next) => {
