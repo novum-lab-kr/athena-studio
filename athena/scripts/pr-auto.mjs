@@ -31,6 +31,7 @@ import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, openRequest, showRequest } from './lib/requests.mjs'
 import { screen } from './lib/screen.mjs'
 import { maskSecrets } from './lib/mask.mjs'
+import { modelArgs } from './lib/models.mjs'
 import {
   MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, aggregate, autoLines, autoMergeRepos, decisionNotice, decisionsForConsole,
   fixInstruction, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf,
@@ -116,8 +117,9 @@ const outcome = (name, run, parse) => {
   return review ? { name, status: 'ok', review } : { name, status: 'failed', reason: '답 모양이 틀림(JSON 형식)' }
 }
 
-const reviewWithClaude = async (prompt, workDir) => {
-  const run = await runCli('claude', ['-p', '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
+// 모델은 팩 pack.json "models.prReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 리뷰어는 실패(→ 리뷰어 부족 · 기본 모델로 다시 하지 않는다)
+const reviewWithClaude = async (prompt, workDir, config) => {
+  const run = await runCli('claude', ['-p', ...modelArgs(config, 'prReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
   return outcome('claude', run, () => {
     const answer = JSON.parse(run.stdout)
     return answer.is_error ? null : answer.structured_output
@@ -130,7 +132,7 @@ const CODEX_TOOL_FEATURES = [
   'computer_use', 'in_app_browser', 'plugins', 'remote_plugin', 'multi_agent', 'image_generation', 'view_image', 'hooks', 'skill_search',
   'skill_mcp_dependency_install', 'tool_suggest', 'code_mode_host', 'sleep_tool', 'goals', 'worktrees', 'in_app_local_automation',
 ]
-const reviewWithCodex = async (prompt, workDir) => {
+const reviewWithCodex = async (prompt, workDir) => {   // 모델은 ~/.codex/config.toml 그대로(팩 models 는 Claude 만)
   const schemaFile = join(workDir, 'codex-schema.json')
   const outFile = join(workDir, 'codex-answer.json')
   writeFileSync(schemaFile, JSON.stringify(REVIEW_SCHEMA))
@@ -143,12 +145,12 @@ const reviewWithCodex = async (prompt, workDir) => {
 }
 
 const REVIEWER_RUN = { claude: reviewWithClaude, codex: reviewWithCodex }
-// 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다
-export const runReviewers = async (prompt) => Promise.all(REVIEWERS.map(async (name) => {
+// 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
+export const runReviewers = async (prompt, config = {}) => Promise.all(REVIEWERS.map(async (name) => {
   if (!has(name)) return { name, status: 'unavailable', reason: '설치 안 됨' }
   const workDir = mkdtempSync(join(tmpdir(), `athena-pr-auto-${name}-`))
   try {
-    return await REVIEWER_RUN[name](prompt, workDir)
+    return await REVIEWER_RUN[name](prompt, workDir, config)
   } catch (error) {
     return { name, status: 'failed', reason: firstLine(error.message) }
   } finally {
@@ -269,7 +271,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
 
   const diff = gh(['pr', 'diff', number, '--repo', `${org}/${repo}`]).out
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, diff })
-  const results = await runReviewers(prompt)
+  const results = await runReviewers(prompt, config)
   const summary = aggregate(results)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${REVIEWERS.length}(둘 다 승인해야 머지)`)

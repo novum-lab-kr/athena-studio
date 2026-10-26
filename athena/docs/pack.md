@@ -155,6 +155,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "qa": { "apps": { "shop-web": "쇼핑" }, "ownHosts": ["acme.com"], "iconFont": "", "exampleUrl": "https://dev.acme.com" },   // apps 는 화면에 보일 이름표만(없어도 된다)
   "derived": { "servicesColumns": ["…"], "playbookOrder": ["…"] },   // 없으면 설정 순서
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
+  "models": { "learnReview": "sonnet" },  // 역할마다 Claude 모델(아래 "models") — 없으면 기본 모델 · athena init 이 새 팩에 이 한 줄을 넣는다
   "repos": [
     { "name": "admin-web", "agents": ["admin-fe"], "branch": "prd", "prBase": "dev", "kind": "single", "appDir": "app",
       "remote": "git@github.com:acme-inc/admin-web.git",   // (선택) git 주소 — 폴더 이름이 달라도 이 주소로 레포를 찾는다. athena init 이 적고, 내보내기 · 백업 사본에 채운다
@@ -179,6 +180,15 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 - `kind`: `single` · `monorepo`(앱마다 에이전트·브랜치, 커밋 검증은 바뀐 앱마다) · `packages`(발행 패키지 — 커밋 검증에 패키지 이름 필요)
 - `layer: "be"` — 백엔드. PR 범위 규칙이 없으면 `src/features/<기능>`·`src/<모듈>`
+- `models` — 역할마다 Claude 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름). 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
+  | 역할 | 어디에 붙나 | 이상한 값이면 |
+  |---|---|---|
+  | `agent` | 담당 에이전트 pane(`scripts/delegate.sh`) | 띄우지 않는다 |
+  | `reviewer` | reviewer pane(`scripts/delegate.sh`) | 띄우지 않는다 |
+  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs` · Codex 는 `~/.codex/config.toml` 그대로) | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
+  | `learnReview` | 배우기 검토(`scripts/learn-review.mjs`) | 그 검토 실패(다시 해 본 뒤 failed/) |
+  | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |
+  - 에이전트 하나만 다르게 하려면 그 프로필(`.claude/agents/<이름>.md`) frontmatter `model:` — 있으면 팩 값보다 이긴다(`inherit` 은 없는 것과 같다). delegate.sh 가 그 값을 `--model` 로 넘긴다(워크트리에서 띄울 때 다시 만드는 프로필에는 `model` 이 없어서)
 
 ## QA 대상 앱
 
