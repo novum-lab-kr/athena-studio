@@ -1,7 +1,7 @@
 // ── 창 — 팩 창 하나의 BrowserWindow ─────────────────────────────
 // main.js createPackWindow 에서 옮겼다(PR3g) — 열린 팩 창(packWindows · openPackIds) · 창 목록 저장(saveWindows) · 링크 열기(openUrl) · 메뉴 막대(hasTray · pollTray) ·
-// 에이전트 모니터(monitor — main.js 의 창 변수 그대로) · 앱 아이콘 · 바탕색은 인자로 받는다.
-// main.js 의 값 — 끄는 중(quitting) · 마지막으로 앞에 있던 창(lastFocused)은 읽기 · 쓰기 함수로 받는다.
+// 에이전트 모니터(monitor — main.mts 의 창 변수 그대로) · 앱 아이콘 · 바탕색은 인자로 받는다.
+// main.mts 의 값 — 끄는 중(quitting) · 마지막으로 앞에 있던 창(lastFocused)은 읽기 · 쓰기 함수로 받는다.
 // ctx 에 같은 이름(show · close · win)으로 붙인다
 import path from 'node:path'
 import { BrowserWindow } from 'electron'
@@ -9,7 +9,7 @@ import type { Monitor } from './monitor-logs.mts'
 
 const isMac = process.platform === 'darwin'
 
-// 팩 창 문맥(main.js createPackWindow) 중 창이 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 창이 읽는 것 · 붙이는 것
 export type PackWindowCtx = {
   win: BrowserWindow | null
   packState: Record<string, unknown>

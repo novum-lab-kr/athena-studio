@@ -79,7 +79,7 @@ export function boardJson(port: number, pathName: string, { method = 'GET', head
   })
 }
 
-// say — 화면 문구 · boardLogFile — 일감 로그 자리 · daemonPaths — 데몬 소켓 자리 · runPack — 코어 팩 명령(main.js)
+// say — 화면 문구 · boardLogFile — 일감 로그 자리 · daemonPaths — 데몬 소켓 자리 · runPack — 코어 팩 명령(main.mts)
 export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: Say; boardLogFile: () => string; daemonPaths: () => { socket: string }; runPack: RunPack }) {
   async function startBoard(port: number, athenaDir: string): Promise<BoardStart> {
     const url = core.boardUrl(port)

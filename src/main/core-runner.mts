@@ -37,7 +37,7 @@ function packScript(dir: string): string {
 }
 
 // app — 홈 · 앱 데이터 자리 · dialog — 알림 창 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
-// daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.js)
+// daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.mts)
 export function createCoreRunner({ app, dialog, say, language, studio, coreBundle, daemonPaths, packLogFile }: { app: App; dialog: Dialog; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
   // ── 아테나 폴더 — 공용 ──────────────────────────────────────
   // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..

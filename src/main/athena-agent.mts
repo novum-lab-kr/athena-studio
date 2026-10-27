@@ -21,7 +21,7 @@ type RunReply = { error?: string }
 type Restore = PackResult & { athena?: { session: unknown }[] }
 type RunPack = (args: string[], options: RunCoreOptions) => Promise<PackResult>
 
-// 팩 창 문맥(main.js createPackWindow) 중 아테나 에이전트 · 되살리기가 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 아테나 에이전트 · 되살리기가 읽는 것 · 붙이는 것
 export type AthenaAgentCtx = {
   athenaDir: string | null
   restoreForPack?: string | null

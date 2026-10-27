@@ -21,6 +21,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 
 ## TypeScript (섞어 쓰는 중)
 - **빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. `npm start` · ⚙ 업데이트 · 데몬 띄우기는 JS 때와 같다
+- Electron 진입점은 `src/main.mts`(ES 모듈 · `package.json` `main`) — Electron 이 이 파일을 끝까지 읽은 뒤 ready 를 낸다(`app.setName` · `setPath` 는 ready 전). 가져온 모듈은 본문보다 먼저 도니 `src/main/*.mts` 맨 위에서 app 자리를 읽지 않는다
 - 앱 Node 쪽(main · daemon · `src/lib`) **새 파일은 `.mts`**(ES 모듈). `.ts` 는 안 된다 — 레포가 CommonJS 라 `import`/`export` 를 쓴 `.ts` 를 tsc 가 막는다
 - 가져올 때 확장자까지: `require('./lib/requests.mts')` · `import { x } from './y.mts'`. 타입만이면 `import type`
 - **지울 수 있는 문법만** — enum · namespace · 생성자 매개변수 속성 · `import x = require()` 금지(`erasableSyntaxOnly` · `scripts/check-ts.js` 가 막는다)
@@ -56,7 +57,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 ## 함정
 - **번들은 커밋된 `HEAD:athena` 에서 만든다** — `athena/` 의 미커밋 변경은 `npm start` 에 들어가지 않는다. `athena/` 트리가 같으면 다시 만들지 않고, 만들다 실패해도 앱은 이전 번들 · 이미 푼 코어로 켜진다(`[dev-app] 코어 번들을 만들지 못했어요` 경고만). 켜졌다고 최신 코어가 들어간 것이 아니다 — `npm start` 로그를 본다. (커밋이 필요하다는 뜻이지, 사용자에게 묻지 않고 커밋해도 된다는 뜻은 아니다)
 - **데몬은 앱보다 오래 산다** — 데몬 코드(`src/daemon/`)를 고치고 앱만 다시 켜면 옛 데몬에 붙는다. [보기 → 작업 창 데몬 다시 띄우기] 가 필요하고 그러면 pane 이 모두 닫힌다 — 사용자가 에이전트를 돌리는 중이면 먼저 묻는다
-- **팩 바꾸기는 pane 을 닫지 않는다** — 창이 다른 본체로 다시 붙을 뿐(`main.js` `packOpen` → `rebindBody`). pane 이 닫히는 것은 사용자가 pane · 탭을 닫을 때 · 옛 터미널 모니터 칸(데몬 dock) 정리 · 데몬 다시 띄우기 · 스튜디오 초기화뿐이다
+- **팩 바꾸기는 pane 을 닫지 않는다** — 창이 다른 본체로 다시 붙을 뿐(`src/main/packs.mts` `packOpen` → `athena-dir.mts` `rebindBody`). pane 이 닫히는 것은 사용자가 pane · 탭을 닫을 때 · 옛 터미널 모니터 칸(데몬 dock) 정리 · 데몬 다시 띄우기 · 스튜디오 초기화뿐이다
 - **창마다 문맥이 따로** — 본체 · 데몬 연결 · 일감 · 옆 브라우저 · 모니터 · 팩 상태는 창(`ctx`)마다. 팩 상태를 전역으로 두지 않고, IPC 는 보낸 창의 문맥으로 처리한다. 트레이는 별도 preload(`preload-tray.js`)와 보낸 쪽 검사를 유지한다
 - **팩을 바꾸는 명령은 끊지 않는다** — `use` · `new` · `open` · `update` · `import --replace` 는 시간이 넘어도 "오래 걸려요" 만 띄우고 기다린다(`src/main/core-runner.mts` `PACK_TIMEOUTS` 근처). 여기에 일괄 timeout 종료를 넣지 않는다
 - **자식 환경은 `core.childEnv` 로** — `ATHENA_STUDIO*` · `CLAUDE_CODE_*` · `CLAUDECODE` · `ATHENA_AGENT` 등을 걷어 낸다(pane 안에서 앱을 켜도 하위 세션으로 오인하지 않게). 그래서 앱을 켤 때 준 `ATHENA_STUDIO_*` 는 팩 명령 · pane 에 넘어가지 않는다
