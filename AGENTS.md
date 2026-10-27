@@ -11,15 +11,26 @@
 
 ## 명령
 ```sh
-npm install     # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기
-npm start       # 코어 번들 만들고 개발 앱 켜기(맥)
-npm run check   # 문법(node --check — 목록은 package.json 에 손으로)
-npm test        # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(실제 pty)
+npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기
+npm start         # 코어 번들 만들고 개발 앱 켜기(맥)
+npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로)
+npm run typecheck # 타입 검사(tsc — tsconfig.json · athena/jsconfig.json)
+npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(실제 pty)
 ```
-빌드 · 패키징 스크립트는 아직 없다. 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서.
+빌드 · 패키징 스크립트는 아직 없다. 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
+
+## TypeScript (섞어 쓰는 중)
+- **빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. `npm start` · ⚙ 업데이트 · 데몬 띄우기는 JS 때와 같다
+- 앱 Node 쪽(main · daemon · `src/lib`) **새 파일은 `.mts`**(ES 모듈). `.ts` 는 안 된다 — 레포가 CommonJS 라 `import`/`export` 를 쓴 `.ts` 를 tsc 가 막는다
+- 가져올 때 확장자까지: `require('./lib/requests.mts')` · `import { x } from './y.mts'`. 타입만이면 `import type`
+- **지울 수 있는 문법만** — enum · namespace · 생성자 매개변수 속성 · `import x = require()` 금지(`erasableSyntaxOnly` · `scripts/check-ts.js` 가 막는다)
+- JS 파일은 맨 위 `// @ts-check` 를 붙인 것만 검사한다(`checkJs` 를 전역으로 켜면 옛 오류 수천 개). 붙인 파일 · `.mts` 는 오류 0 을 지킨다
+- renderer · preload 는 브라우저 쪽이라 아직 JS(타입 검사 밖) — `<script>` 로 싣는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 `.mts` 로 옮기지 않는다
+- 코어 `athena/` 는 `.mjs` 그대로 + JSDoc · 고치는 파일부터 `// @ts-check`(설치본은 node 로 바로 실행 — 빌드를 끼우지 않는다)
+- `.mts` 를 CommonJS 에서 `require` 하면 고정된 이름공간 객체다 — 테스트에서 모듈 함수를 바꿔 끼울 수 없다(인자로 넘긴다)
 
 ## 검사
-- 앱을 고쳤으면 `npm run check` · `npm test`. node-pty 를 못 불러오면 데몬 통합 테스트가 **skip** 된다(`test/daemon.test.js`) — 통과 숫자만 보지 말고 skip 이 없는지 본다
+- 앱을 고쳤으면 `npm run check` · `npm run typecheck` · `npm test`. node-pty 를 못 불러오면 데몬 통합 테스트가 **skip** 된다(`test/daemon.test.js`) — 통과 숫자만 보지 말고 skip 이 없는지 본다
 - `npm test` 는 코어를 보지 않는다. `athena/` 를 고쳤으면 고친 곳에 맞는 코어 검사를 따로(`athena/` 에서):
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
@@ -35,6 +46,7 @@ npm test        # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(�
 | 팩 명령 약속(`pack … --json` 출력 · 오류 코드) | 앱 `src/lib/pack.js` `CONTRACT` 와 코어 `athena/scripts/lib/bodies.mjs` `CONTRACT`(둘 다 3 — 데몬 `PROTOCOL` 과는 별개) · 출력 해석 · `packErrorText` · `scripts/fake-pack.js`(같은 모양으로) · `test/pack.test.js` · 코어 `athena/docs/pack.md` |
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) |
+| 새 `.mts` 파일 · JS → `.mts` 옮기기 | `package.json` `check` 의 `scripts/check-ts.js` 줄 · 부르는 곳의 `require` 경로(확장자까지) · 테스트의 `require` |
 | 순수 로직 | `src/lib/` 에 두고 `test/<이름>.test.js` — Electron 없이 돈다 |
 | 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · README "스튜디오 집과 데이터" |
 | 메뉴 · 단축키 · 화면 동작 | README "화면" · "팩" · "문제가 생기면" |

@@ -1,0 +1,18 @@
+{
+  // 스튜디오 코어 타입 검사(D4 — JSDoc + checkJs 만 · 설치본은 .mjs 를 node 로 그대로 실행한다)
+  // checkJs 를 전역으로 켜지 않는다 — 파일 맨 위 // @ts-check 를 붙인 파일만 검사한다. 앱 레포에서 npm run typecheck 가 부른다
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    "skipLibCheck": true
+  },
+  "include": ["scripts/**/*.mjs", "scripts/**/*.js"]
+}

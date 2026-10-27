@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const requests = require('../src/lib/requests')
+const requests = require('../src/lib/requests.mts')
 
 const sample = (extra = {}) => ({
   id: 'r-20261021-141520-1080', kind: 'question', title: '필드가 있나요?', body: '근거', state: 'open', rev: 2,

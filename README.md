@@ -93,7 +93,7 @@ SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 
 | `src/preload.js` · `src/preload-tray.js` | 창 · 트레이 패널에 열어 주는 IPC 함수(따로) |
 | `src/renderer/` | 작업 창(`index.html` · `renderer.js` · `style.css`) · 트레이 패널(`tray.html` · `tray.js` · `tray.css`) · 로고(`assets/logo/` — 화이트판만 쓴다) |
 | `src/daemon/` · `src/daemon-client.js` · `bin/athena-studio-cli` | 데몬(`main.js` 소켓 서버 · `pane.js` pty + 화면 버퍼 · `cli.js`) · 띄우기 · 붙기 · 버전 확인 · 코어 화면 계층이 pane 을 다루는 CLI |
-| `src/lib/` | Electron 없이 도는 순수 로직(`npm test`) — `studio-home.js`(스튜디오 집 · 번들 · 업데이트 판단 · 초기화) · `app-update.js`(⚙ 앱 업데이트 — 뒤처짐 · 빨리 감기) · `version.js`(버전 번호 — 태그 계산 · describe) · `pack.js`(팩 명령 출력 · 오류 · 약속 번호 · 이름 · 아이콘 · 시작 화면) · `core.js`(설정 · 에이전트 고르기 · 자식 환경 · 포트) · `protocol.js`(데몬 통신) · `layout.js`(분할 트리) · `screen-model.js` · `explorer.js` · `file-icons.js` · `viewer.js` · `agent-feed.js`(모니터 피드) · `tray-model.js`(트레이 요약 · 알림) · `tray-icon.js` · `i18n.js` |
+| `src/lib/` | Electron 없이 도는 순수 로직(`npm test`) — `studio-home.js`(스튜디오 집 · 번들 · 업데이트 판단 · 초기화) · `app-update.js`(⚙ 앱 업데이트 — 뒤처짐 · 빨리 감기) · `version.js`(버전 번호 — 태그 계산 · describe) · `pack.js`(팩 명령 출력 · 오류 · 약속 번호 · 이름 · 아이콘 · 시작 화면) · `core.js`(설정 · 에이전트 고르기 · 자식 환경 · 포트) · `protocol.js`(데몬 통신) · `layout.js`(분할 트리) · `screen-model.js` · `explorer.js` · `file-icons.js` · `viewer.js` · `agent-feed.js`(모니터 피드) · `tray-model.js`(트레이 요약 · 알림) · `tray-icon.mts` · `i18n.js` |
 | `src/i18n/<언어>.json` | 화면 문구 사전 4개(ko · en · ja · zh — 일 · 중은 검수 전 `draft`) |
 | `scripts/` | `dev-app.js`(개발용 Athena.app · 코어 번들 · 켜기) · `fix-spawn-helper.js` · `fake-pack.js`(개발용 가짜 본체) |
 | `test/` | `node:test` — 순수 로직 + 데몬 통합(맥 · 실제 pty) |
