@@ -307,7 +307,10 @@ async function restartDaemon(): Promise<void> {
   if (choice.response !== 1) return
   const connection = ctx ? await ctx.connectDaemon().catch(() => null) : null
   if (connection) await connection.call('shutdown').catch(() => null)
-  for (const each of packWindows) each.detachScreen()
+  // 옛 연결이 닫혀 화면이 screen:disconnected 를 먼저 받은 뒤에 resync 를 보낸다 — 거꾸로 가면 다시 붙는 중에 끊김 표시로 덮인다
+  // (옛 데몬이 빨리 내려가면 waitDaemonGone 이 바로 돌아와 resync 가 앞섰다 · 2026-10-28 화면 확인에서 재현). 답 없는 소켓이면 1초만 기다린다
+  const detached = [...packWindows].map((each) => each.detachScreen())
+  await Promise.race([Promise.all(detached), new Promise((resolve) => setTimeout(resolve, 1000))])
   await daemonClient.waitDaemonGone(daemonPaths().socket)
   for (const each of packWindows) each.send('screen:resync')
 }

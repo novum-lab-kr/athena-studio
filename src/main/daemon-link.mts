@@ -33,7 +33,7 @@ export type PackCtx = {
   connectDaemon(): Promise<Connection>
   isAttached(): boolean
   attachScreen(): Promise<unknown>
-  detachScreen(): void
+  detachScreen(): Promise<void>
   daemonCall: DaemonCall
   peekCall(op: string, args?: object): Promise<Called>
   notifyDaemon(op: string, args?: object): unknown
@@ -149,11 +149,12 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   }
 
   // 창 닫기 · 앱 종료 — 연결만 끊는다(데몬·셸·에이전트는 계속 돈다)
+  // 옛 연결이 실제로 닫히면 풀린다 — 닫힘 알림(screen:disconnected)이 다음 screen:resync 보다 늦게 가지 않게 기다릴 수 있다
   ctx.detachScreen = () => {
-    if (!daemon) return
+    if (!daemon) return Promise.resolve()
     const current = daemon
     daemon = null
-    current.close()
+    return current.close()
   }
 
   const daemonCall: DaemonCall = async <T,>(op: string, args?: object) => {
