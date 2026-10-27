@@ -593,6 +593,7 @@
   "pane.detail.prNone": "PR はまだありません",
   "pane.detail.back": "任せた作業",
   "pane.detail.more": "もっと見る（{n}行）",
+  "pane.detail.moreText": "もっと見る",
   "pane.detail.prCount": "PR {n}件",
   "pane.detail.progressCount": "進行 {done}/{total}",
   "pane.detail.section.todo": "あなたの作業",

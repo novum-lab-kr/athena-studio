@@ -593,6 +593,7 @@
   "pane.detail.prNone": "还没有 PR",
   "pane.detail.back": "已委派",
   "pane.detail.more": "显示更多（{n} 行）",
+  "pane.detail.moreText": "显示更多",
   "pane.detail.prCount": "PR {n} 个",
   "pane.detail.progressCount": "进度 {done}/{total}",
   "pane.detail.section.todo": "需要你做",

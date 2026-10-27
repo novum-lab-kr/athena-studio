@@ -593,6 +593,7 @@
   "pane.detail.prNone": "아직 PR 없음",
   "pane.detail.back": "맡긴 일",
   "pane.detail.more": "더 보기 ({n}줄)",
+  "pane.detail.moreText": "더 보기",
   "pane.detail.prCount": "PR {n}개",
   "pane.detail.progressCount": "진행 {done}/{total}",
   "pane.detail.section.todo": "내가 할 일",

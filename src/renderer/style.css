@@ -1423,5 +1423,5 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pd-fold-body { padding: 0 2px 10px 20px; }
 .pd-fold-body .work-field { grid-template-columns: 52px 1fr; font-size: 12.5px; }
 .pd-fold-body .work-field-line { overflow-wrap: anywhere; }
-.pd-more { align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.pd-more { display: block; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .pd-more:hover, .pd-more:focus-visible { text-decoration: underline; outline: none; }

@@ -2312,6 +2312,27 @@ function clippedLines(paneId, key, lines, max) {
   })
   return { shown: lines.slice(0, max), more }
 }
+// 한 줄 글 — 두 줄까지만 보이게 접고, 넘치면 그려진 뒤 [더 보기](fitClamps). 펼친 것은 detailMoreKeys 로 기억한다
+function clampLine(paneId, key, node) {
+  if (detailMoreKeys.has(`${paneId}:${key}`)) return node
+  node.classList.add('pd-clamp')
+  node.dataset.moreKey = key
+  return node
+}
+// 화면에 붙은 뒤에야 넘치는지 안다 — 넘친 줄 밑에만 [더 보기]
+function fitClamps(paneId, body) {
+  for (const node of body.querySelectorAll('.pd-clamp[data-more-key]')) {
+    if (node.scrollHeight <= node.clientHeight + 1) continue
+    const moreKey = `${paneId}:${node.dataset.moreKey}`
+    const more = el('button', 'pd-more', say('pane.detail.moreText'))
+    more.type = 'button'
+    more.addEventListener('click', () => {
+      detailMoreKeys.add(moreKey)
+      if (detailLast && detailPane === paneId) renderPaneDetail(paneId, detailLast)
+    })
+    node.after(more)
+  }
+}
 function detailField(paneId, key, lines) {
   const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
   if (!list.length) return null
@@ -2340,6 +2361,7 @@ function renderPaneDetail(paneId, detail) {
   detailLast = detail
   const sections = detail.mode === 'lead' ? leadSections(paneId, detail) : agentSections(paneId, detail)
   body.replaceChildren(...sections)
+  fitClamps(paneId, body)
   if (detailRestore !== null) {
     body.scrollTop = detailRestore
     detailRestore = null
@@ -2389,11 +2411,11 @@ function agentSections(paneId, detail) {
   const glance = el('section', 'pd-glance')
   glance.append(state)
   if (now.reason) glance.append(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
-  if (now.line) glance.append(el('p', 'pd-line pd-clamp', now.line))
+  if (now.line) glance.append(clampLine(paneId, 'now', el('p', 'pd-line', now.line)))
   if (plan.next.length) {
-    const next = el('p', 'pd-line pd-clamp')
+    const next = el('p', 'pd-line')
     next.append(el('span', 'pd-key', say('pane.detail.record.next')), document.createTextNode(plan.next[0]))
-    glance.append(next)
+    glance.append(clampLine(paneId, 'next-first', next))
   }
   if (plan.prs.length) {
     const prs = el('div', 'pd-glance-prs')
