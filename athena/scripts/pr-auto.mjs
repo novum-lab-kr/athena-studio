@@ -38,7 +38,7 @@ import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
   BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  fixInstruction, grantsTakeover, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
+  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedPatterns, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
 
@@ -55,6 +55,7 @@ const FAILED_DIR = join(QUEUE_DIR, 'failed')
 const HISTORY_DIR = join(QUEUE_DIR, 'history')
 const WATCHER_LOCK = join(QUEUE_DIR, '.watcher.lock')
 const LOG_FILE = `/tmp/athena-pr-auto-${ROOT_KEY}.log`
+// 리뷰어에게 넣는 diff 자리 — 생성물은 빼고 코드 파일부터 채운다(packDiff · docs/pr-auto.md "큰 diff")
 const MAX_DIFF_CHARS = 60_000
 const MAX_PLAN_CHARS = 6000
 const MAX_NOTE_CHARS = 8000
@@ -220,8 +221,10 @@ const diffSince = (worktree, fromSha, toSha) => {
 }
 
 const findingText = (item) => `${item.file}${item.line ? `:${item.line}` : ''} — ${item.problem} → ${item.fix}`
-// previous — 지난 라운드 기록(readHistory) · incremental — diff 가 지난 리뷰 HEAD 이후만인가
-export const buildPrompt = ({ repo, number, pr, planFile, planText, diff, previous = null, incremental = false }) => {
+// previous — 지난 라운드 기록(readHistory) · incremental — diff 가 지난 리뷰 HEAD 이후만인가 · packed — packDiff 결과(생성물 뺀 diff · 못 넣은 목록)
+export const buildPrompt = ({ repo, number, pr, planFile, planText, packed, previous = null, incremental = false }) => {
+  const omitted = omittedSection(packed)
+  const emptyText = packed.generated.length ? '(생성물 밖의 코드 변경 없음)' : '(코드 변경 없음)'
   const readIf = (path, size) => (existsSync(path) ? clip(readFileSync(path, 'utf8'), size) : '(없음)')
   const rules = readIf(join(ROOT, 'docs/knowledge', repo, 'rules.md'), MAX_NOTE_CHARS)
   const gotchas = readIf(join(ROOT, 'docs/knowledge', repo, 'gotchas.md'), MAX_NOTE_CHARS)
@@ -252,9 +255,12 @@ ${clip(String(pr.body ?? ''), 3000)}
 ${previous ? `## 지난 리뷰 지적 (@${String(previous.sha).slice(0, 7)} · ${previous.round}번째 — 고쳐졌는지 본다)
 ${[...(previous.findings ?? []).map((item, index) => `${index + 1}) ${findingText(item)}`), ...(previous.autoDecisions ?? []).map((item) => `- 추천안으로 자동 확정한 결정: ${item.title} → ${item.recommended}`)].join('\n') || '(없음 — 결정 · 본문만)'}
 
-` : ''}## 바뀐 코드 (${incremental ? `지난 리뷰 HEAD @${String(previous.sha).slice(0, 7)} 이후 바뀐 것만` : previous ? 'PR 전체 diff — 지난 리뷰 이후 것만 따로 구하지 못했다' : 'diff'}${diff.length > MAX_DIFF_CHARS ? ' · 길어서 앞부분만' : ''})
-${clip(diff || '(코드 변경 없음)', MAX_DIFF_CHARS)}
-`)
+` : ''}## 바뀐 코드 (${incremental ? `지난 리뷰 HEAD @${String(previous.sha).slice(0, 7)} 이후 바뀐 것만` : previous ? 'PR 전체 diff — 지난 리뷰 이후 것만 따로 구하지 못했다' : 'diff'}${packed.complete ? '' : ' · 길어서 일부만 — 아래 "리뷰에 넣지 못한 것"'})
+${packed.text || emptyText}
+${omitted ? `
+## 리뷰에 넣지 못한 것
+${omitted}
+` : ''}`)
 }
 
 // ── 계획서 · pane ──────────────────────────────────────────────────────
@@ -425,15 +431,21 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const previous = round > 1 && history && known && history.round < round ? history : null
   const sinceDiff = previous ? diffSince(ref.worktree, previous.sha, sha) : null
   const diff = sinceDiff ?? gh(['pr', 'diff', number, '--repo', `${org}/${repo}`]).out
-  const prompt = buildPrompt({ repo, number, pr, planFile, planText, diff, previous, incremental: sinceDiff !== null })
+  // 생성물(팩 레포 "generated" · PR HEAD 의 .gitattributes linguist-generated · lockfile · 큰 데이터)은 빼고 코드 파일부터(이슈 syung#23)
+  const attributesText = ref.worktree && existsSync(ref.worktree) ? git(ref.worktree, ['show', `${sha}:.gitattributes`]) : null
+  const packed = packDiff(diff, { limit: MAX_DIFF_CHARS, patterns: repoGeneratedPatterns(config, repo), attributes: linguistGeneratedPatterns(attributesText) })
+  if (packed.generated.length) console.log(`  ↪ 생성물 ${packed.generated.length}개는 diff 본문에서 뺐다: ${packed.generated.map((item) => item.path).slice(0, 5).join(', ')}${packed.generated.length > 5 ? ' …' : ''}`)
+  if (!packed.complete) console.log(`  ⚠️ diff 가 길어 코드 파일 ${partialCount(packed)}개를 다 넣지 못했다 — 승인이어도 머지 승인으로 세지 않는다`)
+  const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null })
   const results = await runReviewers(prompt, config, inherited, lineup.slots)
   const summary = aggregate(results)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${REVIEWERS.length}(둘 다 승인해야 머지)`)
-  const comment = masked(reviewComment({ sha, round, results, summary, lineup: lineup.note }))
+  const comment = masked(reviewComment({ sha, round, results, summary, lineup: lineup.note, partial: partialCount(packed) }))
+  const partial = partialApproval(summary, packed)
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
-    console.log(`── 할 일: ${plannedAction(summary, round)}`)
+    console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 사람에게 요청` : plannedAction(summary, round)}`)
     console.log('(--dry-run — 댓글 · 계획서 · pane · 요청 · 머지 모두 하지 않았다)')
     return
   }
@@ -445,6 +457,14 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   base.reviewers = reviewerBrief(results)
   const line = { repo, number, sha, round, note }
 
+  if (partial) {
+    // 리뷰어가 diff 일부만 보고 승인했다 — PR 전체 승인이 아니라 머지 조건 ①로 세지 않고 사람에게(이슈 20261025 · syung#12 에서 잘린 승인으로 결함을 놓침)
+    const missed = [...packed.truncated, ...packed.dropped].map((item) => item.path || '(경로 모름)')
+    writeAutoLine(planPath, { ...line, result: `${PARTIAL_APPROVAL} — 사람 확인(못 본 코드 파일 ${missed.length}개)` })
+    logEvent(ROOT, 'auto.stop', { ...base, reason: 'partial-diff' })
+    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 — diff 가 길어 일부만 보고 승인 · ${repo}#${number}`, body: `리뷰어 둘 다 승인했지만 diff 가 길어(${MAX_DIFF_CHARS}자 넘음 · 생성물 ${packed.generated.length}개는 이미 뺐다) 아래 코드 파일을 다 보지 못했다 — 머지 승인으로 세지 않는다.\n${missed.map((path) => `- ${path}`).join('\n')}\n사람이 리뷰하고 머지하거나(gh pr view ${number} --repo ${org}/${repo}), 생성물 경로를 팩 레포 "generated" 에 적은 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
+    return
+  }
   if (summary.verdict === 'approve') {
     logEvent(ROOT, 'review', { ...base, verdict: '승인' })
     return prepareMerge({ planPath, planFile, repo, number, sha, round, note, ref, pr, org, summary, config })

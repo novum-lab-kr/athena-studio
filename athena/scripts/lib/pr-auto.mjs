@@ -2,7 +2,7 @@
 //
 //   계획서 표시 줄(PR 마다 한 줄 · 바꿔 쓴다)
 //     - Auto review: <레포>#<번호> @<sha7> · <결과> · 라운드 <k>/<상한> · <YYYY-MM-DD HH:MM>
-//   결과: 승인 → 머지 확인 대기 · 승인 → 바로 머지(확인 없음) · 수정 필요 · 결정 필요 · 리뷰어 부족 · 검증 대기 · 멈춤 · 보류 · 머지됨 · 본문 고침
+//   결과: 승인 → 머지 확인 대기 · 승인 → 바로 머지(확인 없음) · 수정 필요 · 결정 필요 · 리뷰어 부족 · 잘린 diff 승인 · 검증 대기 · 멈춤 · 보류 · 머지됨 · 본문 고침
 //         · 상한 뒤 이어받음 → 머지 확인 대기 / 바로 머지(확인 없음) — 라운드가 상한을 넘은 HEAD(리뷰 없이 같은 HEAD 검증 · 충돌 확인만)
 //   같은 PR · 같은 HEAD(sha7) 가 이미 적혀 있으면 다시 돌지 않는다 — 본문 고침(ship.sh --auto-push --body-file 이 커밋 없이 본문만 바꿈)만 같은 HEAD 를 다시 본다
 
@@ -368,8 +368,10 @@ const oneLine = (text, size) => {
   return flat.length > size ? `${flat.slice(0, size)}…` : flat
 }
 // PR 댓글 본문 — 리뷰어마다 결론 · 요약 · 지적 · 리뷰어 구성(lineup — lineupNote)
-export const reviewComment = ({ sha, round, results, summary, lineup = '' }) => {
+// partial — diff 를 다 넣지 못해 못 본 코드 파일 수(0 이면 다 봤다 · packDiff)
+export const reviewComment = ({ sha, round, results, summary, lineup = '', partial = 0 }) => {
   const notes = []
+  if (partial) notes.push(`**⚠️ diff 가 길어 코드 파일 ${partial}개를 다 넣지 못했다** — 리뷰어가 일부만 봤다.${summary.verdict === 'approve' ? ' 이 승인은 머지 승인으로 세지 않고 사람 확인으로 넘긴다' : ''}`)
   if (summary.advisories?.length) notes.push(`**💡 권장 ${summary.advisories.length}개는 머지를 막지 않는다** — 에이전트에 보내지 않고 이 댓글에만 남긴다`)
   if (summary.autoDecisions?.length) {
     notes.push('**추천안으로 자동 확정(구현 세부 — 사람을 기다리지 않음)**', ...summary.autoDecisions.map((item) => `- ${oneLine(item.title, 200)} → **${oneLine(item.recommended, 80)}** (${item.by})`))
@@ -431,3 +433,154 @@ export const decisionsForConsole = (decisions) => decisions.map((item, index) =>
   required: true,
   options: item.options.map((option) => ({ label: oneLine(option.label, 80), desc: oneLine(option.desc, 300), ...(option.label === item.recommended ? { recommended: true } : {}) })),
 }))
+
+// ── 큰 diff 나누기 — 생성물은 빼고 코드 파일부터(이슈 20261025-자동-리뷰-큰-PR-diff-잘림 · syung#12 · #23) ─────────────
+// 리뷰어 프롬프트에는 diff 를 limit 자까지만 넣는다. 예전에는 앞에서부터 잘라 맨 앞 생성물(1.2 MB JSON 등)이 자리를 다 차지했다.
+// 이제 ① 생성물 · 데이터 파일은 본문 없이 "경로 · +N/−M줄 · 이유" 만 ② 나머지 파일의 아주 긴 줄은 앞부분만 ③ 코드 파일을 순서대로 넣고
+// 넘치면 그 파일을 잘라 넣거나 빼고 목록으로 알린다. 잘리거나 빠진 파일이 있으면 complete=false — 그 승인은 머지 승인으로 세지 않는다(pr-auto.mjs)
+export const LONG_LINE = 1000
+export const SHORT_LINE_KEEP = 200
+export const DATA_FILE_CHARS = 20_000
+// 잘라서라도 넣는 최소 자리 — 이보다 남은 자리가 적으면 그 파일은 빼고 목록에만
+export const MIN_PART_CHARS = 2000
+const LOCKFILES = new Set(['package-lock.json', 'npm-shrinkwrap.json', 'pnpm-lock.yaml', 'yarn.lock', 'bun.lockb', 'bun.lock', 'Cargo.lock', 'poetry.lock', 'uv.lock', 'Pipfile.lock', 'Gemfile.lock', 'composer.lock', 'go.sum', 'Podfile.lock', 'pubspec.lock', 'mix.lock', 'flake.lock'])
+const DATA_EXT = /\.(json|geojson|ndjson|jsonl|csv|tsv|xml|svg)$/i
+const MINIFIED = /\.min\.(js|css|mjs)$|\.map$/i
+const baseName = (path) => String(path).split('/').at(-1) ?? ''
+
+// gitattributes 식 경로 패턴 → 정규식. / 가 없으면 어느 폴더의 이름이든(basename) · ** 는 폴더를 넘는다 · 끝이 / 면 그 폴더 아래 전부
+export const globToRegExp = (pattern) => {
+  let text = String(pattern).trim()
+  const dirOnly = text.endsWith('/')
+  if (dirOnly) text = text.slice(0, -1)
+  const anchored = text.includes('/')
+  text = text.replace(/^\//, '')
+  let body = ''
+  for (let index = 0; index < text.length; index += 1) {
+    const char = text[index]
+    if (char === '*' && text[index + 1] === '*') {
+      body += text[index + 2] === '/' ? '(?:.*/)?' : '.*'
+      index += text[index + 2] === '/' ? 2 : 1
+    } else if (char === '*') body += '[^/]*'
+    else if (char === '?') body += '[^/]'
+    else body += char.replace(/[.+^${}()|[\]\\]/g, '\\$&')
+  }
+  const prefix = anchored ? '^' : '^(?:.*/)?'
+  return new RegExp(`${prefix}${body}${dirOnly ? '/.*' : '(?:/.*)?'}$`)
+}
+const matchesAny = (path, patterns) => patterns.some((pattern) => globToRegExp(pattern).test(path))
+
+// .gitattributes 에서 linguist-generated 로 표시한 패턴(-linguist-generated · =false 는 뺀다)
+export const linguistGeneratedPatterns = (attributesText) => String(attributesText ?? '').split('\n').flatMap((line) => {
+  const [pattern, ...attrs] = line.trim().split(/\s+/)
+  if (!pattern || pattern.startsWith('#')) return []
+  return attrs.some((attr) => attr === 'linguist-generated' || attr === 'linguist-generated=true') ? [pattern] : []
+})
+
+// 팩 레포 설정의 생성물 경로 — pack.json 레포 항목 "generated": ["<패턴>", …](문자열이 아닌 것은 버린다)
+export const repoGeneratedPatterns = (config, repoName) => {
+  const list = (config?.repos ?? []).find((repo) => repo.name === repoName)?.generated
+  return Array.isArray(list) ? list.filter((item) => typeof item === 'string' && item.trim()) : []
+}
+
+// git diff 글 → 파일마다 { path, text, added, removed, longest }. 머리줄(diff --git) 앞의 글이나 머리줄이 없는 글은 path '' 한 덩어리
+export const splitDiff = (diff) => {
+  const text = String(diff ?? '')
+  if (!text) return []
+  const starts = [...text.matchAll(/^diff --git /gm)].map((match) => match.index)
+  if (!starts.length || starts[0] !== 0) starts.unshift(0)
+  return starts.map((start, index) => {
+    const chunk = text.slice(start, starts[index + 1] ?? text.length)
+    const lines = chunk.split('\n')
+    const plus = lines.find((line) => line.startsWith('+++ '))?.slice(4) ?? ''
+    const minus = lines.find((line) => line.startsWith('--- '))?.slice(4) ?? ''
+    const header = lines[0].match(/^diff --git a\/(.+) b\/(.+)$/)?.[2] ?? ''
+    let path = header
+    if (plus && plus !== '/dev/null') path = plus.replace(/^b\//, '')
+    else if (minus && minus !== '/dev/null') path = minus.replace(/^a\//, '')
+    let added = 0
+    let removed = 0
+    let longest = 0
+    let inHunk = false
+    for (const line of lines) {
+      if (line.startsWith('@@')) { inHunk = true; continue }
+      if (!inHunk) continue
+      if (line.startsWith('+')) added += 1
+      else if (line.startsWith('-')) removed += 1
+      longest = Math.max(longest, line.length)
+    }
+    return { path: chunk.startsWith('diff --git ') ? path : '', text: chunk, added, removed, longest }
+  })
+}
+
+// 생성물 · 데이터 파일이면 이유 글, 아니면 '' — 판별 기준은 docs/pr-auto.md "큰 diff"
+export const generatedReason = (file, { patterns = [], attributes = [] } = {}) => {
+  if (!file.path) return ''
+  if (matchesAny(file.path, patterns)) return '팩 설정 생성물'
+  if (matchesAny(file.path, attributes)) return 'linguist-generated'
+  if (LOCKFILES.has(baseName(file.path))) return 'lockfile'
+  if (MINIFIED.test(file.path)) return '압축본 · 소스맵'
+  if (DATA_EXT.test(file.path) && (file.text.length > DATA_FILE_CHARS || file.longest > LONG_LINE)) return file.longest > LONG_LINE ? `데이터 파일 · 아주 긴 줄(${file.longest}자)` : `큰 데이터 파일(${file.text.length}자)`
+  return ''
+}
+
+// 아주 긴 줄은 앞부분만 — 코드 파일 안에 한 줄로 박힌 데이터(syung#12 web/index.html 의 역 데이터)가 자리를 다 먹지 않게
+const shortenLongLines = (text) => {
+  let count = 0
+  const out = text.split('\n').map((line) => {
+    if (line.length <= LONG_LINE) return line
+    count += 1
+    return `${line.slice(0, SHORT_LINE_KEEP)} …(이 줄 ${line.length}자 — 앞 ${SHORT_LINE_KEEP}자만)`
+  }).join('\n')
+  return { text: out, count }
+}
+
+// → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed }], complete }
+export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
+  const generated = []
+  const shortened = []
+  const truncated = []
+  const dropped = []
+  const parts = []
+  const waiting = []
+  let left = limit
+  // 1) 통째로 들어가는 코드 파일을 순서대로(큰 파일 하나가 막아도 뒤의 작은 파일은 들어간다)
+  for (const [index, file] of splitDiff(diff).entries()) {
+    const reason = generatedReason(file, { patterns, attributes })
+    if (reason) { generated.push({ path: file.path, added: file.added, removed: file.removed, reason }); continue }
+    const short = shortenLongLines(file.text)
+    if (short.count) shortened.push({ path: file.path, lines: short.count })
+    if (short.text.length <= left) {
+      parts.push({ index, text: short.text })
+      left -= short.text.length
+    } else waiting.push({ index, file, text: short.text })
+  }
+  // 2) 못 들어간 것 — 남은 자리가 있으면 맨 앞 하나를 잘라 넣고, 나머지는 목록에만
+  for (const item of waiting) {
+    if (left >= MIN_PART_CHARS) {
+      parts.push({ index: item.index, text: `${item.text.slice(0, left)}\n…(이 파일 diff 는 여기서 잘림 — 뒤 ${item.text.length - left}자 못 넣음)\n` })
+      truncated.push({ path: item.file.path, shown: left, total: item.text.length })
+      left = 0
+    } else dropped.push({ path: item.file.path, added: item.file.added, removed: item.file.removed })
+  }
+  const text = parts.sort((first, second) => first.index - second.index).map((part) => part.text).join('')
+  return { text, generated, shortened, truncated, dropped, complete: !truncated.length && !dropped.length }
+}
+
+// 프롬프트의 "리뷰에 넣지 못한 것" 절 — 없으면 ''
+export const omittedSection = (packed) => {
+  const lines = []
+  const name = (path) => `\`${path || '(경로 모름)'}\``
+  if (packed.generated.length) lines.push('생성물 · 데이터라 diff 본문을 넣지 않은 파일(리뷰 대상 아님 — 이 파일 내용으로 지적하지 않는다):', ...packed.generated.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 생성물이라 생략(${item.reason})`))
+  if (packed.shortened.length) lines.push('아주 긴 줄을 앞부분만 넣은 파일:', ...packed.shortened.map((item) => `- ${name(item.path)} · ${item.lines}줄`))
+  if (!packed.complete) {
+    lines.push('⚠️ 길어서 다 넣지 못한 코드 파일 — 이 PR 은 일부만 보고 판단한다. 아래 파일의 못 본 부분은 판단하지 않고, "전체 diff 를 달라" 같은 지적도 내지 않는다(받을 수 없다 · 자동 흐름이 따로 사람 확인으로 넘긴다):')
+    lines.push(...packed.truncated.map((item) => `- ${name(item.path)} · 앞 ${item.shown}자만(전체 ${item.total}자)`), ...packed.dropped.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 못 넣음`))
+  }
+  return lines.join('\n')
+}
+
+// 잘린 diff 로 받은 승인 — 머지 조건의 승인으로 세지 않고 사람 확인으로(계획서 줄 결과 머리)
+export const PARTIAL_APPROVAL = '잘린 diff 승인'
+export const partialApproval = (summary, packed) => summary.verdict === 'approve' && !packed.complete
+export const partialCount = (packed) => packed.truncated.length + packed.dropped.length
