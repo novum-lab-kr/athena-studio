@@ -1,6 +1,6 @@
 // 팩 세로 줄(pack-rail) — 팩마다 이름 두 글자(또는 팩 이미지) + 이름 색 · 지금 팩 강조 · 다른 창에 열린 팩 점 · 맨 아래 ＋
 // PR-R10. 줄 껍데기(보이기 · 숨기기 — 팩을 지원 · 본체가 정해짐 · 팩이 있을 때)와 누른 뒤의 팩 흐름(바꾸기 · 이름 · 이미지 · 우클릭 메뉴 · 만들기 · 가져오기 ·
-// 내보내기 · 진행 중 막기 runPackFlow)은 renderer.js 그대로. 받은 팩 목록 · 고른 팩 표시 · 팩 이미지 받기(캐시)와 그리기는 여기서 한다.
+// 내보내기 · 진행 중 막기 runPackFlow)은 바닐라 그대로(pack-switch.ts · pack-dialogs.ts · pack-transfer.ts). 받은 팩 목록 · 고른 팩 표시 · 팩 이미지 받기(캐시)와 그리기는 여기서 한다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다(모니터 칸과 같다)
 import { useEffect, useRef } from 'react'
 import type { CSSProperties } from 'react'

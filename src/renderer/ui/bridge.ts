@@ -35,7 +35,7 @@ export function useStore<T>(store: Store<T>): T {
   return useSyncExternalStore(store.subscribe, store.get)
 }
 
-// 바닐라 도우미 — connect 전에 그리면 키를 그대로 보인다(진입점이 renderer.js 를 실은 뒤에야 화면을 띄우므로 실제로는 없다)
+// 바닐라 도우미 — connect 전에 그리면 키를 그대로 보인다(진입점이 main.ts 를 실은 뒤에야 화면을 띄우므로 실제로는 없다)
 let helpers: VanillaHelpers = { say: (key) => key, showToast: () => {} }
 // 문구 판 번호 — 언어가 바뀔 때마다 1 씩. useSay 가 이 값을 구독해 다시 그린다
 const texts = createStore(0)
