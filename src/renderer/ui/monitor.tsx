@@ -13,7 +13,7 @@ type MonitorSession = { id: string; label: string; pane: boolean; finished: bool
 type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null }
 export type MonitorUpdate = { reset?: boolean; sessions?: MonitorSession[]; events?: MonitorEvent[] }
 
-// 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색(renderer.js spaceColor)
+// 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색(space-actions.ts spaceColor)
 export type MonitorOptions = { spaceColor: (label: string) => string }
 
 const MONITOR_ROWS = 300

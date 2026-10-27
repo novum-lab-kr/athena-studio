@@ -8,7 +8,8 @@ import { HEAD_HEIGHT, disposeView, ensureView, isTabPane, views } from './termin
 import { StudioUi } from './ui/index.ts'
 import type { RestoreResult } from './ui/notices.tsx'
 import { activeTab, applyState, ensureSomeTab, switchTab } from './tabs.ts'
-import { offerAddRepo, orderedWorkspaces, setPanelHidden, setSpacesCollapsed } from './renderer.js'
+import { offerAddRepo, orderedWorkspaces } from './space-actions.ts'
+import { setPanelHidden, setSpacesCollapsed } from './side-panels.ts'
 
 export let screen: ScreenState = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 export const setScreen = (next: ScreenState): void => {

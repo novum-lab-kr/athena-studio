@@ -1,4 +1,4 @@
-// 왼쪽 spaces 목록의 pane 줄 이름 — ES 모듈(layout.mts 와 같은 방식 · 화면은 진입점이 전역 StudioSpaceNames 로 넣는다).
+// 왼쪽 spaces 목록의 pane 줄 이름 — ES 모듈(layout.mts 와 같은 방식 · 화면은 space-actions.ts 가 이름공간째(StudioSpaceNames) import 한다).
 // delegate 가 붙인 이름표 '🤖 <에이전트> · <브랜치>' 를 [브랜치 · 역할] 두 칸으로 나눈다.
 //   브랜치는 '/' 앞 접두어를 떼고(feature/REF-1 → REF-1), 역할은 레포 이름을 뗀다(fsd-agent-team-fe → fe).
 //   전체 이름은 tip 으로(툴팁). 이름표가 그 모양이 아니면 그대로 쓰고 역할은 비운다.

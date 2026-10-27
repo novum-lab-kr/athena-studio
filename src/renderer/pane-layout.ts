@@ -8,9 +8,9 @@ import { screen } from './screen.ts'
 import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
 import { renderDividers, reportTabSize, treeForLayout } from './dividers.ts'
 import { StudioUi } from './ui/index.ts'
+import { spaceColor } from './space-actions.ts'
 import { browserOpen } from './browser.ts'
 import { syncDetailButton } from './detail.ts'
-import { spaceColor } from './renderer.js'
 
 // 크기를 비교할 pane 메타 — 데몬 상태의 pane(없으면 빈 것 · 답이 늦어 다시 볼 때는 null)
 type PaneSizeInfo = { cols?: number; rows?: number } | null | undefined
@@ -162,8 +162,7 @@ export function initMonitor(): void {
     dock.classList.toggle('collapsed', collapsed)
     localStorage.setItem('studio.monitorCollapsed', collapsed ? '1' : '0')
   })
-  // spaceColor 는 아직 renderer.js(JS) — 추론 타입이 string | undefined 라 캐스트만(R3c 에서 옮기며 타입)
-  StudioUi.monitor.mount($('monitor-sessions'), $('monitor-feed'), { spaceColor: spaceColor as (label: string) => string })
+  StudioUi.monitor.mount($('monitor-sessions'), $('monitor-feed'), { spaceColor })
   studio.onMonitorUpdate(StudioUi.monitor.update)
   // 'n분 전' 을 새로 쓰고, 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
   setInterval(() => {
