@@ -9,13 +9,8 @@ const core = require('./lib/core.mts')
 const studioHome = require('./lib/studio-home')
 const packModel = require('./lib/pack.mts')
 const daemonClient = require('./daemon-client.mts')
-const explorer = require('./lib/explorer.mts')
-const fileIcons = require('./lib/file-icons')
-const viewer = require('./lib/viewer.mts')
 const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language.mts')
-const requestsModel = require('./lib/requests.mts')
-const workModel = require('./lib/work-model.mts')
 const tokenUsage = require('./lib/token-usage.mts')
 const layout = require('./lib/layout')
 
@@ -246,10 +241,15 @@ async function resetStudio() {
 // 쓰는 것(기록 폴더 · 화면 문구 · 일감 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
 const { newMonitor, createMonitorLogs } = require('./main/monitor-logs.mts')
 const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
-const { explorerRoots, createFiles, packIconFile, iconDataUrl, runGit, colorRows, guarded } = require('./main/files.mts')
+const { createFiles, iconDataUrl, guarded } = require('./main/files.mts')
 const { resolveInside } = createFiles({ say })
-const { isBoardUp, queueBoard, boardOwner, boardJson, createBoard } = require('./main/board.mts')
+const { createBoard } = require('./main/board.mts')
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
+// 팩 창 묶음(Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 일감 · 요청 · [작업]) — createPackWindow 안에서 installX(ctx, deps) 로 ctx 에 붙인다
+const { installExplorer } = require('./main/explorer-panel.mts')
+const { installAthenaAgent } = require('./main/athena-agent.mts')
+const { installPackRepos } = require('./main/pack-repos.mts')
+const { installWork } = require('./main/work.mts')
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
 // 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
@@ -343,495 +343,33 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡기(catchUpBody)
   installCatchUp(ctx, { studio: STUDIO, runPack, packLogFile })
 
-  // ── 오른쪽 Explorer ──
-  // 화면은 파일에 손대지 않는다 — main 이 읽어 준다. 루트는 화면이 준 경로가 아니라 데몬 상태(이 창 본체)의 작업 공간 폴더다
-  async function workspaceRoot(workspaceId) {
-    const state = await daemonCall('state')
-    const workspace = state.result && state.result.workspaces.find((entry) => entry.id === String(workspaceId))
-    if (!workspace) throw new Error(say('error.workspaceMissing'))
-    return fs.promises.realpath(workspace.cwd)
-  }
-
-  ctx.explorerList = async (workspaceId, relative) => {
-    const root = await workspaceRoot(workspaceId)
-    const { real, clean } = await resolveInside(root, relative)
-    const roots = await explorerRoots(root)
-    const dirents = await fs.promises.readdir(real, { withFileTypes: true })
-    const entries = await Promise.all(
-      dirents.map(async (dirent) => {
-        let dir = dirent.isDirectory()
-        if (dirent.isSymbolicLink()) {
-          // 읽어도 되는 곳 밖을 가리키는 링크는 열 수 없으니 목록에서 뺀다(끊긴 링크는 그대로 둔다)
-          const target = await fs.promises.realpath(path.join(real, dirent.name)).catch(() => null)
-          if (target && !explorer.isInsideAny(roots, target)) return null
-          dir = await fs.promises.stat(path.join(real, dirent.name)).then((stat) => stat.isDirectory(), () => false)
-        }
-        return { name: dirent.name, dir, ...fileIcons.iconFor(fileIcons.loadManifest(), dirent.name, dir) }
-      }),
-    )
-    const shown = entries.filter(Boolean)
-    // 팩 본체면 맨 위는 팩 내용만(코어 · 본체 설정은 사용자가 볼 것이 아니다)
-    return { entries: explorer.sortEntries(clean === '.' && roots.length > 1 ? explorer.packBodyEntries(shown) : shown) }
-  }
-
-  // 작업 공간 폴더 기준 git 변경. git 레포가 아니면 git: false
-  ctx.explorerStatus = async (workspaceId) => {
-    const root = await workspaceRoot(workspaceId)
-    const top = await runGit(root, ['rev-parse', '--show-toplevel'])
-    if (top === null) return { git: false, changes: [] }
-    const prefix = path.relative(await fs.promises.realpath(top.trim()), root)
-    // 새 폴더는 한 줄(`dir/`)로 — 안의 파일을 다 세면 .omc/ 같은 폴더 하나로 수백 줄이 된다(git 기본과 같다)
-    const output = await runGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])
-    if (output === null) return { git: true, changes: [] }
-    const all = explorer.relativeToWorkspace(explorer.parseGitStatus(output), prefix.split(path.sep).join('/'))
-    // 팩 본체의 git 은 코어 레포다 — 코어 변경은 빼고 팩 내용 쪽만
-    const changes = (await explorerRoots(root)).length > 1 ? explorer.packBodyChanges(all) : all
-    // 변경 목록에도 아이콘 — 새 폴더(`dir/`)는 폴더 아이콘
-    const manifest = fileIcons.loadManifest()
-    return {
-      git: true,
-      changes: changes.map((change) => ({ ...change, ...fileIcons.iconFor(manifest, change.path.split('/').filter(Boolean).pop(), change.path.endsWith('/')) })),
-    }
-  }
-
-  // 미리보기 — 이미지는 그림, 바뀐 파일은 diff(옛·새 줄 번호), 그 밖은 내용(앞 512KB). 바이너리는 안내만
-  ctx.explorerOpen = async (workspaceId, relative) => {
-    const root = await workspaceRoot(workspaceId)
-    const { real, clean } = await resolveInside(root, relative)
-    const stat = await fs.promises.stat(real)
-    if (!stat.isFile()) throw new Error(say('error.notFile'))
-    const image = viewer.imageType(clean)
-    if (image) {
-      if (stat.size > viewer.IMAGE_LIMIT) return { kind: 'binary', path: clean, size: stat.size }
-      const data = await fs.promises.readFile(real)
-      return { kind: 'image', path: clean, src: `data:${image};base64,${data.toString('base64')}`, size: stat.size }
-    }
-    const status = await runGit(root, ['status', '--porcelain=v1', '-z', '--', clean])
-    const tracked = status && status.length > 3 && !status.startsWith('??')
-    if (tracked) {
-      const diff = await runGit(root, ['diff', 'HEAD', '--', clean])
-      if (diff) {
-        const colored = await colorRows(viewer.diffRows(diff.slice(0, explorer.PREVIEW_LIMIT)), clean)
-        return { kind: 'diff', path: clean, ...colored, truncated: diff.length > explorer.PREVIEW_LIMIT }
-      }
-    }
-    const handle = await fs.promises.open(real, 'r')
-    try {
-      const buffer = Buffer.alloc(Math.min(stat.size, explorer.PREVIEW_LIMIT))
-      await handle.read(buffer, 0, buffer.length, 0)
-      if (explorer.looksBinary(buffer)) return { kind: 'binary', path: clean, size: stat.size }
-      const colored = await colorRows(viewer.fileRows(buffer.toString('utf8')), clean)
-      return { kind: 'file', path: clean, ...colored, truncated: stat.size > explorer.PREVIEW_LIMIT, untracked: Boolean(status && status.startsWith('??')) }
-    } finally {
-      await handle.close()
-    }
-  }
-
-  // ── 아테나 에이전트 ──
-  // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
-  // keepView — 팩을 바꿔 돌아왔을 때: 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
-  ctx.openAthenaAgent = async (size, { keepView = false } = {}) => {
-    if (!core.checkAthenaDir(ctx.athenaDir).ok) return { skipped: true }
-    const state = await daemonCall('state')
-    if (state.error) return { error: state.error }
-    const existing = core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
-    // 백업에서 되살리기로 열었으면 — 워크트리 · 대화 기록 · 에이전트 pane 을 먼저 되살리고, 아테나는 그 대화로 잇는다
-    const restore = ctx.restoreForPack ? await ctx.packRestore() : null
-    const athenaSessions = (restore && restore.athena) || []
-    if (existing && athenaSessions.length) await resumeAthenaBeside(existing, athenaSessions)
-    if (existing && keepView) return { existing: true, restore }
-    if (existing) {
-      await daemonCall('workspace select', { workspace: existing.id })
-      return { focused: true, restore }
-    }
-    const decision = core.agentDecision(core.availableAgents(process.env.PATH))
-    const created = await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })
-    if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
-    if (decision.none) return { error: say('error.agentNotInstalled') }
-    // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(claude 만 — 세션 id 는 코어가 모양을 본 값)
-    const [first, ...rest] = decision.agent === 'claude' ? athenaSessions : []
-    const text = first ? core.resumeCommand(first.session) : decision.agent
-    const run = await daemonCall('pane run', { pane: created.result.root_pane.id, text })
-    if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
-    if (first) await ackRestore([first.session])
-    if (rest.length) await resumeAthenaBeside({ id: created.result.workspace.id }, rest)
-    return { started: decision.agent, restore }
-  }
-
-  // 아테나 작업 공간이 이미 있으면 — 되살린 아테나 대화마다 첫 pane 옆에 pane 을 하나 쪼개 잇는다
-  async function resumeAthenaBeside(workspace, sessions) {
-    const state = await daemonCall('state')
-    const tab = state.result && state.result.tabs.find((entry) => entry.workspace === workspace.id)
-    const base = tab && layout.paneIds(tab.tree)[0]
-    if (!base) return
-    for (const item of sessions) {
-      const split = await daemonCall('pane split', { target: base, direction: 'right', ratio: 0.5, cwd: ctx.athenaDir, focus: false })
-      const run = split.result && split.result.pane ? await daemonCall('pane run', { pane: split.result.pane.id, text: core.resumeCommand(item.session) }) : null
-      if (run && !run.error) await ackRestore([item.session])
-    }
-  }
-  // 아테나 대화를 pane 에서 켰다고 코어에 알린다 — 그 전에는 되살리기 정보를 지우지 않는다
-  const ackRestore = (sessions) => runPack(['restore-work', ...sessions.flatMap((session) => ['--ack', session])], { dir: ctx.athenaDir })
-
-  // ── 팩 레포 — spaces 에 에이전트 없는 레포도 흐리게 · 누르면 아테나에게 /call ──
-  // 레포 목록은 이 본체 팩의 pack.json(여러 팩이면 pack 링크) · 이어졌는지는 본체 repos/<이름> 이 git 레포인지.
-  // 표시 이름 · 아이콘(pack set-repo-name · set-repo-icon)도 — 사이드바만 쓴다. 아이콘은 팩 안의 일반 파일일 때만(링크 · 밖이면 null)
-  ctx.packRepos = async () => {
-    const packDir = path.join(ctx.athenaDir || '', 'pack')
-    const pack = await fs.promises.readFile(path.join(packDir, 'pack.json'), 'utf8').then(JSON.parse, () => null)
-    if (!pack || !Array.isArray(pack.repos)) return []
-    const repos = pack.repos.filter((repo) => repo && /^[\w.-]+$/.test(String(repo.name || '')))
-    return Promise.all(repos.map(async (repo) => {
-      const look = packModel.repoLook(repo)
-      const icon = look.icon ? await packIconFile(packDir, look.icon) : null
-      return {
-        name: repo.name,
-        agent: packModel.repoAgent(repo),
-        linked: fs.existsSync(path.join(ctx.athenaDir, 'repos', repo.name, '.git')),
-        displayName: look.displayName,
-        iconPath: icon ? icon.path : null,
-        iconUpdatedAt: icon ? icon.updatedAt : null,
-      }
-    }))
-  }
-  // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
-  // 일감 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
-  ctx.mergeSettings = async () => {
-    // 읽기 실패 · 망가진 JSON 모두 null — 팝업이 '읽지 못했어요' 를 보이게(then 의 두 번째 인자는 JSON.parse 오류를 못 잡는다)
-    const pack = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
-    return { ok: Boolean(pack), repos: packModel.mergeSettings(pack) }
-  }
-  ctx.setAutoMerge = async (repo, { autoMerge, confirm }) => {
-    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
-    const args = ['set-auto-merge', repo]
-    if (typeof autoMerge === 'boolean') args.push('--auto', autoMerge ? 'on' : 'off')
-    if (typeof confirm === 'boolean') args.push('--confirm', confirm ? 'on' : 'off')
-    const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    return result
-  }
-  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(일감과 같은 값 + studio · pane 안 표시)
-  ctx.studioEnv = () => {
-    const paths = daemonPaths()
-    return { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: daemonClient.CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir) }
-  }
-  // 본체 스크립트 하나 — 셸을 거치지 않고 인자로만
-  const runBodyScript = (script, args, { studioEnv = false, timeout = 120000 } = {}) => new Promise((resolve) => {
-    const env = core.childEnv(process.env, studioEnv ? ctx.studioEnv() : {})
-    execFile('bash', [path.join(ctx.athenaDir, 'scripts', script), ...args], { cwd: ctx.athenaDir, env, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) =>
-      resolve({ ok: !error, stdout: stdout || '', stderr: stderr || '', code: error ? error.code : 0 }),
-    )
-  })
-  // 레포 에이전트 부르기 1 — 브랜치 정보(scripts/call-branch-info.sh — /call 스킬과 같은 것): 메인 체크아웃 상태 · 최근 작업 브랜치 · main 직접이면 그 자리
-  ctx.callInfo = async (name) => {
-    const repo = (await ctx.packRepos()).find((item) => item.name === name)
-    if (!repo || !repo.agent) return { error: say('spaces.callNoAgent', { repo: name }) }
-    const run = await runBodyScript('call-branch-info.sh', [repo.agent])
-    if (!run.ok) return { error: (run.stderr || run.stdout).trim().slice(-300) || say('spaces.callFailed') }
-    return { agent: repo.agent, repo: name, ...packModel.parseCallInfo(run.stdout) }
-  }
-  // 레포 에이전트 부르기 2 — 고른 브랜치로 워크트리(new-branch.sh · 이어 쓰기면 --reuse) → 그 자리에 에이전트 pane(delegate.sh · 빈 지시 경량 계획서)
-  ctx.callStart = async (name, { branch = '', reuse = false } = {}) => {
-    const info = await ctx.callInfo(name)
-    if (info.error) return info
-    let worktree = info.direct || ''
-    if (!worktree) {
-      if (!packModel.validBranchInput(branch)) return { error: say('spaces.callBadBranch') }
-      const made = await runBodyScript('new-branch.sh', [branch, info.target, ...(reuse ? ['--reuse'] : [])])
-      const parsed = packModel.parseNewBranch(made.stdout)
-      if (parsed.exists) return { exists: true, branch, message: parsed.message }
-      if (!parsed.worktree) return { error: (parsed.message || made.stderr || made.stdout).trim().slice(-300) || say('spaces.callFailed') }
-      worktree = parsed.worktree
-    }
-    const run = await runBodyScript('delegate.sh', [info.agent, '--cwd', worktree, '--plan', 'new', say('spaces.callPlanTitle', { agent: info.agent })], { studioEnv: true })
-    if (!run.ok) return { error: (run.stdout + run.stderr).trim().slice(-300) || say('spaces.callFailed') }
-    const pane = (run.stdout.match(/^(\S+)\s+\(/m) || [])[1] || null
-    return { ok: true, agent: info.agent, pane, worktree, branch: info.direct ? null : branch }
-  }
-
-  // ── 백업에서 되살리기 ──
-  // 코어 pack restore-work(본체에서) — 워크트리(미커밋 변경 · push 안 한 커밋) → 대화 기록 → 에이전트 pane(delegate.sh --resume).
-  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(일감과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
-  ctx.restoreStatus = () => runPack(['restore-work', '--dry-run'], { dir: ctx.athenaDir })
-  ctx.packRestore = async ({ discard = false } = {}) => {
-    restoreArmedFor = null
-    ctx.restoreForPack = null
-    if (discard) return runPack(['restore-work', '--discard'], { dir: ctx.athenaDir })
-    // ATHENA_STUDIO=1 — delegate.sh 가 화면 계층 안인지(screen inside) 본다
-    const extraEnv = ctx.studioEnv()
-    const result = await ctx.packTask(say('pack.task.restore'), () => runPack(['restore-work'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, extraEnv }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    return result
-  }
-  // 지금 창의 팩에 바로(가져오기로 지금 팩을 바꾼 뒤) — 아테나 대화는 아테나 작업 공간 옆에서 잇는다
-  ctx.restoreNow = async () => {
-    const result = await ctx.packRestore()
-    if (!result.ok || !(result.athena || []).length) return result
-    const state = await daemonCall('state')
-    const existing = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
-    if (existing) await resumeAthenaBeside(existing, result.athena)
-    return result
-  }
-
-  // ── 일감 ──
-  // 지금 일감 포트 — 팩 지원 본체면 본체가 정한 값(pack status · 본체마다 다르다), 옛 본체면 앱 설정
-  const boardPortNow = () => packBoardPort || config.boardPort
-  ctx.boardPortNow = boardPortNow
-
-  // 일감을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
-  ctx.openBoardExternal = async () => {
-    const result = await ctx.ensureBoard()
-    if (result.ok) {
-      await shell.openExternal(result.url)
-      return { ok: true }
-    }
-    const detail = [result.error, result.log && say('board.logLine', { log: result.log })].filter(Boolean).join('\n')
-    const options = { type: 'warning', message: say('board.openFailed'), detail }
-    if (ctx.win && !ctx.win.isDestroyed()) dialog.showMessageBox(ctx.win, options)
-    else dialog.showMessageBox(options)
-    return { ok: false }
-  }
-
-  ctx.ensureBoard = () => {
-    if (!core.checkAthenaDir(ctx.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirMissing') })
-    return queueBoard(() => findOrStartBoard(ctx.athenaDir))
-  }
-
-  // ── 사람에게 묻는 요청 · [작업] 팝업 데이터 ──
-  // 요청은 코어 명령(request list)으로 읽는다 — 일감이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
-  // 바뀌면 바로, 놓칠 때를 대비해 REQUESTS_POLL_MS 마다. request 명령이 없는 옛 코어면 supported:false(요청 없음)
+  // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 일감 · 요청 · [작업] — src/main/*.mts ──
+  // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 일감 · 앱 설정)은 인자로 넘긴다
+  installExplorer(ctx, { say, resolveInside })
+  installAthenaAgent(ctx, { say, runPack, disarmRestore: () => (restoreArmedFor = null) })
+  installPackRepos(ctx, { say, runPack, daemonPaths })
+  // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
   let requestsState = { supported: false, requests: [] }
-  let requestsWatch = null
-  let requestsTimer = null
-  let requestsKick = null
-  let requestsBusy = null
-  let requestsAgain = false
-  ctx.refreshRequests = async () => {
-    if (requestsBusy) {
-      requestsAgain = true
-      return requestsBusy
-    }
-    const dir = ctx.athenaDir
-    if (!core.checkAthenaDir(dir).ok) return requestsState
-    requestsBusy = (async () => {
-      const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir }))
-      // 그새 팩을 바꿨거나 일시 실패(잠금 · 시간 초과)면 지난 목록을 그대로 둔다
-      if (dir !== ctx.athenaDir || (next.error && next.supported)) return requestsState
-      const changed = next.supported !== requestsState.supported || JSON.stringify(next.requests) !== JSON.stringify(requestsState.requests)
-      requestsState = { supported: next.supported, requests: next.requests }
-      if (changed) {
-        send('work:requests', requestsState)
-        trayRequestsChanged(ctx)
-      }
-      return requestsState
-    })()
-    try {
-      return await requestsBusy
-    } finally {
-      requestsBusy = null
-      if (requestsAgain) {
-        requestsAgain = false
-        ctx.refreshRequests()
-      }
-    }
-  }
-  // 요청 폴더 감시 — 폴더는 첫 요청이 생길 때 만들어지므로, 없으면 주기마다 다시 걸어 본다
-  const watchRequestsDir = () => {
-    if (requestsWatch || !ctx.athenaDir) return
-    for (const dir of [path.join(ctx.athenaDir, '.pack-data', 'state', 'requests'), path.join(ctx.athenaDir, '.requests')]) {
-      try {
-        requestsWatch = fs.watch(fs.realpathSync(dir), () => {
-          clearTimeout(requestsKick)
-          requestsKick = setTimeout(() => ctx.refreshRequests(), 300)
-        })
-        requestsWatch.on('error', () => {
-          if (requestsWatch) requestsWatch.close()
-          requestsWatch = null
-        })
-        return
-      } catch {}
-    }
-  }
-  ctx.requestsNow = () => requestsState
-  ctx.stopRequests = () => {
-    if (requestsWatch) requestsWatch.close()
-    requestsWatch = null
-    clearInterval(requestsTimer)
-    clearTimeout(requestsKick)
-  }
-  // 창이 본체를 열 때 · 다른 팩으로 다시 묶을 때 — 지난 팩의 요청은 지우고 새로 읽는다
-  ctx.watchRequests = () => {
-    ctx.stopRequests()
-    requestsState = { supported: false, requests: [] }
-    send('work:requests', requestsState)
-    if (!ctx.athenaDir) return
-    watchRequestsDir()
-    requestsTimer = setInterval(() => {
-      watchRequestsDir()
-      ctx.refreshRequests()
-    }, REQUESTS_POLL_MS)
-    ctx.refreshRequests()
-  }
-
-  // [작업] 팝업 — 일감을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
-  ctx.workState = async () => {
-    const board = await ctx.ensureBoard()
-    const state = board.ok ? await fetchBoardJson(boardPortNow(), '/api/state') : null
-    const requests = await ctx.refreshRequests()
-    return {
-      supported: requests.supported,
-      requests: requests.requests.map((request) => ({ ...request, waited: requestsModel.waitedLabel(request.createdAt, Date.now(), say) })),
-      boardUp: Boolean(state),
-      boardError: board.ok ? null : board.error || null,
-      ...workModel.workList(state && Array.isArray(state.cards) ? state.cards : [], requests.requests),
-    }
-  }
-  // 답을 그 pane 에 한 줄로 넣는다 — 에이전트는 [요청 <id>] 를 보고 ack 한다. pane 이 지금 없으면 false(답은 저장돼 있다 · 다시 보내기)
-  const deliverToPane = async (paneId, line) => {
-    if (!paneId) return false
-    const listed = await ctx.peekCall('pane list')
-    const panes = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
-    if (!panes.some((pane) => pane.id === paneId)) return false
-    ctx.notifyDaemon('input', { pane: paneId, data: line })
-    // 입력창이 붙여 넣은 글을 받은 뒤에 Enter — 같이 보내면 줄바꿈으로 들어가는 에이전트가 있다
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    ctx.notifyDaemon('input', { pane: paneId, data: '\r' })
-    return true
-  }
-  // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
-  ctx.answerRequest = async (id, answer) => {
-    const known = requestsState.requests.find((request) => request.id === id)
-    if (!known) return { ok: false, error: 'not-found' }
-    const result = await runCore(requestsModel.answerArgs(id, { choice: answer && answer.choice, text: answer && answer.text, rev: known.rev }), { dir: ctx.athenaDir })
-    if (!result.ok || !result.request) {
-      ctx.refreshRequests()
-      return { ok: false, error: result.error || 'failed', message: result.message || '' }
-    }
-    const delivered = await deliverToPane(known.pane, requestsModel.deliveryLine(known, result.request.answer || {}))
-    ctx.refreshRequests()
-    return { ok: true, delivered }
-  }
-  // 답은 했는데 전달 못 한 것(answered) — 다시 보내기
-  ctx.redeliverRequest = async (id) => {
-    const known = requestsState.requests.find((request) => request.id === id && request.state === 'answered')
-    if (!known || !known.answer) return { ok: false, error: 'not-found' }
-    return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer)) }
-  }
-  // 계획서 열기 — 결정 콘솔(html)이 있으면 일감 주소로 브라우저에, 없으면 md 를 기본 앱으로
-  ctx.openPlan = async (id, html) => {
-    const safe = (value, ext) => typeof value === 'string' && value.startsWith('plans/') && value.endsWith(ext) && !value.split('/').includes('..')
-    if (safe(html, '.html')) {
-      const board = await ctx.ensureBoard()
-      if (board.ok) return shell.openExternal(`${board.url.replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
-    }
-    if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
-    return null
-  }
-  // 일감 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 일감 탭 이름을 주소 끝 #<탭> 으로
-  const BOARD_SECTIONS = ['now', 'qa', 'learn', 'metrics', 'history']
-  ctx.openBoardSection = async (section) => {
-    const result = await ctx.ensureBoard()
-    if (!result.ok) return ctx.openBoardExternal()
-    return shell.openExternal(`${result.url.replace(/\/$/, '')}/${BOARD_SECTIONS.includes(section) && section !== 'now' ? `#${section}` : ''}`)
-  }
-  // 다이어그램 목록 — 이 창 본체의 docs/diagrams/index.html 을 기본 앱으로(/guide 그림 과 같은 파일 · 같은 방식). 없으면 missing
-  ctx.openDiagrams = async () => {
-    if (!ctx.athenaDir) return { ok: false, error: 'missing' }
-    const file = path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html')
-    if (!fs.existsSync(file)) return { ok: false, error: 'missing' }
-    const failure = await shell.openPath(file)
-    return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
-  }
-
-  // 작업 상세 — 계획서 원문(일감 /api/card)에서 몇 줄만. plans/ 안의 .md 만
-  ctx.workDetail = async (id) => {
-    if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
-    const card = await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)
-    if (!card || typeof card.text !== 'string') return { ok: false, error: 'not-found' }
-    return { ok: true, id, ...workModel.planDetail(card.text) }
-  }
-
-  // 일감은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 일감 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
-  // 팩 지원 본체면 포트는 본체가 정하니 읽기만 하고 본체 설정에 쓰지 않는다(setAthenaBoardPort 는 옛 본체에서만)
-  ctx.prepareBoardPort = () => {
-    if (!core.checkAthenaDir(ctx.athenaDir).ok) return
-    const dir = ctx.athenaDir
-    queueBoard(async () => {
-      if (await refreshPackStatus(dir)) return null
-      return findBoardPort(dir)
-    }).catch(() => {})
-  }
-
-  // 옛 본체 — 저장된 포트부터 차례로. 이 아테나 폴더에서 도는 일감이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것이 쥐고 있으면 다음 번호
-  async function findBoardPort(dir) {
-    const ports = core.boardPortCandidates(config.boardPort)
-    for (const port of ports) {
-      const owner = await boardOwner(port, dir)
-      if (owner === 'other') continue
-      // 찾는 사이 아테나 폴더가 바뀌었으면 이 결과는 버린다
-      if (ctx.athenaDir !== dir) return { error: say('error.athenaDirChanged') }
-      const saved = rememberBoardPort(port, dir)
-      if (saved.error) return saved
-      return { port, owner }
-    }
-    return { error: say('error.boardPortsBusy', { from: ports[0], to: ports[ports.length - 1] }) }
-  }
-
-  async function findOrStartBoard(dir) {
-    const result = await findOrStartBoardFor(dir)
-    // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 일감을 보여 주지 않는다
-    if (ctx.athenaDir !== dir) return { ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirChangedReload', { key: reloadKey() }) }
-    return result
-  }
-
-  // 팩 지원 본체인지 · 일감 포트 — pack status(가볍다). 옛 본체면 null
-  async function refreshPackStatus(dir) {
-    const status = await runPack(['status'], { dir })
-    packBoardPort = packModel.statusBoardPort(status)
-    // current 도 같이 — 일감 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 일감을 끄지 않게)
-    return packBoardPort ? { boardPort: packBoardPort, current: status.current || null } : null
-  }
-
-  // 팩 지원 본체의 일감 — 포트는 본체가 정한다(본체 하나에 일감 하나). 떠 있는 일감이 이 본체 팩 · 세대 것이면
-  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 일감이 아닌 것이 쥐고 있으면 오류
-  async function packBoard(port, dir, current) {
-    const url = core.boardUrl(port)
-    if (await isBoardUp(port)) {
-      const reply = await boardJson(port, '/api/state')
-      if (reply.status !== 200 || !reply.body) return { ok: false, url, error: say('error.boardStateUnreadable', { port, key: reloadKey() }) }
-      if (packModel.boardIdentity(reply.body, current) !== 'stale') return { ok: true, url, started: false }
-      if (await stopStaleBoard(port, dir)) return startBoard(port, dir)
-      return { ok: false, url, error: say('error.boardStaleStopFailed', { port }) }
-    }
-    if ((await boardOwner(port, dir)) === 'free') return startBoard(port, dir)
-    return { ok: false, url, error: say('error.boardPortBusyCore', { port }) }
-  }
-
-  async function findOrStartBoardFor(dir) {
-    const status = await refreshPackStatus(dir)
-    if (status) return packBoard(status.boardPort, dir, status.current)
-    // 옛 본체 — 지금까지처럼 앱 설정 boardPort 부터 비어 있는 포트를 골라 적는다
-    const found = await findBoardPort(dir)
-    if (found.error) return { ok: false, url: core.boardUrl(config.boardPort), error: found.error }
-    if (found.owner === 'free') return startBoard(found.port, dir)
-    const url = core.boardUrl(found.port)
-    if (await isBoardUp(found.port)) return { ok: true, url, started: false }
-    return { ok: false, url, error: say('error.boardNoAnswer', { port: found.port }) }
-  }
-
-  // 아테나 설정에 먼저 적고, 되면 앱 설정에 — 둘이 다른 포트를 가리키지 않게(옛 본체만)
-  function rememberBoardPort(port, dir) {
-    try {
-      core.setAthenaBoardPort(dir, port)
-    } catch (error) {
-      return { error: say('error.boardPortSave', { message: error.message }) }
-    }
-    if (config.boardPort !== port) {
-      config = { ...config, boardPort: port }
+  installWork(ctx, {
+    say,
+    runCore,
+    runPack,
+    startBoard,
+    stopStaleBoard,
+    reloadKey,
+    requestsPollMs: REQUESTS_POLL_MS,
+    trayRequestsChanged: (target) => trayRequestsChanged(target),
+    appConfig: () => config,
+    saveAppConfig: (next) => {
+      config = next
       core.saveConfig(configFile(), config)
-    }
-    return {}
-  }
+    },
+    packBoardPort: () => packBoardPort,
+    setPackBoardPort: (port) => (packBoardPort = port),
+    requestsState: () => requestsState,
+    setRequestsState: (next) => (requestsState = next),
+  })
+  const boardPortNow = ctx.boardPortNow
 
   // ── 아테나 폴더 ──
   ctx.pickAthenaDir = async () => {
@@ -1467,7 +1005,6 @@ function startPanesPolling() {
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 — src/main/tray.mts ───────────────────
 // 쓰는 것(화면 문구 · 앞 창 찾기 · 열린 팩 창 · 지난 창 다시 열기)은 인자로 넘긴다. tray · 패널 창은 바뀌는 값이라 hasTray() · trayPanel() 로 읽는다
-const { fetchBoardJson } = require('./main/board.mts')
 const { setupTray } = require('./main/tray.mts')
 const { createTray, refreshTray, sendTrayUpdate, pollTray, trayRequestsChanged, showWindow, hasTray, trayPanel } = setupTray({ say, frontCtx, packWindows, openSavedWindows })
 
