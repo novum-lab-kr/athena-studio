@@ -1397,3 +1397,31 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pd-plan { margin-bottom: 4px; color: var(--popup-text); font-weight: 600; }
 .pd-sec .work-field { grid-template-columns: 52px 1fr; font-size: 12.5px; }
 .pd-sec .work-field-line { overflow-wrap: anywhere; }
+/* 정리해서 보여 주기(2026-10-27) — 한눈 요약만 펼쳐 두고 나머지는 접은 절(제목 + 한 줄 요약) · 긴 글은 [더 보기] */
+.pane-detail-back { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border: 1px solid var(--popup-line); border-radius: 6px; background: transparent; color: var(--popup-text); font: inherit; font-size: 12px; cursor: pointer; }
+.pane-detail-back[hidden] { display: none; }
+.pane-detail-back:hover, .pane-detail-back:focus-visible { background: var(--popup-hover); outline: none; }
+.pd-glance { margin: 8px 6px 4px; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); }
+.pd-glance .pd-line { margin-top: 6px; }
+.pd-clamp { display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.pd-key { margin-right: 6px; color: var(--popup-muted); font-size: 12px; }
+.pd-glance-prs { margin-top: 6px; }
+.pd-alert { display: flex; flex-direction: column; gap: 2px; margin: 8px 6px 4px; padding: 8px 12px; border: 1px solid var(--popup-gold-line); border-radius: 9px; background: var(--popup-gold-bg); font-size: 12.5px; line-height: 1.45; }
+.pd-alert-key { color: var(--accent); font-size: 12px; font-weight: 600; }
+.pd-alert-line { overflow-wrap: anywhere; }
+.pd-fold { margin: 0 6px; border-top: 1px solid rgb(255 255 255 / 6%); }
+.pd-fold:first-child { border-top: 0; }
+.pd-glance + .pd-fold { margin-top: 6px; }
+.pd-fold-head { display: flex; align-items: baseline; gap: 10px; padding: 9px 2px; list-style: none; cursor: pointer; }
+.pd-fold-head::-webkit-details-marker { display: none; }
+.pd-fold-head::before { content: "▸"; flex: none; width: 10px; color: var(--popup-muted); font-size: 10px; }
+.pd-fold[open] > .pd-fold-head::before { content: "▾"; }
+.pd-fold-head:hover, .pd-fold-head:focus-visible { border-radius: 6px; background: var(--popup-hover); }
+.pd-fold-head:focus-visible { outline: none; }
+.pd-fold-title { flex: none; display: inline-flex; align-items: center; gap: 6px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
+.pd-fold-sum { flex: 1; min-width: 0; overflow: hidden; color: var(--popup-text); font-size: 12.5px; text-overflow: ellipsis; white-space: nowrap; }
+.pd-fold-body { padding: 0 2px 10px 20px; }
+.pd-fold-body .work-field { grid-template-columns: 52px 1fr; font-size: 12.5px; }
+.pd-fold-body .work-field-line { overflow-wrap: anywhere; }
+.pd-more { align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
+.pd-more:hover, .pd-more:focus-visible { text-decoration: underline; outline: none; }

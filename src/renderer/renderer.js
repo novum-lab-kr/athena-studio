@@ -2166,7 +2166,17 @@ async function openWorkDetail(item) {
 let paneBound = {} // pane id → 'agent' | 'lead'
 let detailPane = null
 let detailTimer = null
+// 아테나 목록에서 들어온 상세면 돌아갈 자리 — { paneId, scroll } · 에이전트 pane 에서 바로 열면 null
+let detailBack = null
+// 다시 그릴 때 맞출 스크롤(뒤로 가기) — 그 pane 을 처음 그릴 때 한 번
+let detailRestore = null
+let detailLast = null
+// 펼친 절 · [더 보기] 한 글 — `${paneId}:${key}`. 3초 갱신으로 다시 그려도 그대로 둔다(창이 열려 있는 동안)
+const detailOpenKeys = new Set()
+const detailMoreKeys = new Set()
 const PANE_DETAIL_REFRESH_MS = 3000
+// 긴 글은 이만큼만 보이고 [더 보기]
+const DETAIL_CLIP = { report: 6, request: 3, progress: 5, validation: 4 }
 // 아이콘 — 체크리스트 모양(사용자 확정 2026-10-27 · 시안 B)
 const PANE_DETAIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/></svg>'
 
@@ -2199,15 +2209,23 @@ function togglePaneDetail(paneId) {
   return openPaneDetail(paneId)
 }
 
-function openPaneDetail(paneId) {
+// from: 아테나 목록에서 들어올 때 돌아갈 자리 · restore: 뒤로 가기로 돌아올 때 맞출 스크롤
+function openPaneDetail(paneId, { from = null, restore = null } = {}) {
   closePops()
   const pop = $('pane-detail')
   const first = detailPane === null
+  const changed = detailPane !== paneId
   detailPane = paneId
+  detailBack = from
+  detailRestore = restore
+  $('pane-detail-back').hidden = !detailBack
   const bar = document.querySelector('.tabbar')
   pop.style.top = `${Math.round(bar ? bar.getBoundingClientRect().bottom : 0)}px`
-  if (first) {
+  if (first || changed) {
+    detailLast = null
     $('pane-detail-body').replaceChildren(el('p', 'work-empty', say('work.loading')))
+  }
+  if (first) {
     pop.hidden = false
     requestAnimationFrame(() => pop.classList.add('open'))
   }
@@ -2216,12 +2234,23 @@ function openPaneDetail(paneId) {
   clearInterval(detailTimer)
   detailTimer = setInterval(loadPaneDetail, PANE_DETAIL_REFRESH_MS)
   loadPaneDetail()
-  $('pane-detail-close').focus({ preventScroll: true })
+  $(detailBack ? 'pane-detail-back' : 'pane-detail-close').focus({ preventScroll: true })
+}
+
+function backPaneDetail() {
+  if (!detailBack) return
+  const { paneId, scroll } = detailBack
+  openPaneDetail(paneId, { restore: scroll })
 }
 
 function closePaneDetail() {
   if (detailPane === null) return
   detailPane = null
+  detailBack = null
+  detailRestore = null
+  detailLast = null
+  detailOpenKeys.clear()
+  detailMoreKeys.clear()
   clearInterval(detailTimer)
   detailTimer = null
   const pop = $('pane-detail')
@@ -2253,13 +2282,45 @@ function detailSection(title, nodes) {
   node.append(el('h3', null, title), ...nodes)
   return node
 }
-function detailField(key, lines) {
+// 접는 절 — 제목 + 한 줄 요약, 누르면 펼침. 펼친 것은 detailOpenKeys 로 기억한다
+function detailFold(paneId, key, title, summary, nodes, { count = 0 } = {}) {
+  const fold = el('details', 'pd-fold')
+  const openKey = `${paneId}:${key}`
+  fold.open = detailOpenKeys.has(openKey)
+  const head = el('summary', 'pd-fold-head')
+  const name = el('span', 'pd-fold-title', title)
+  if (count) name.append(el('span', 'work-sec-count', String(count)))
+  head.append(name)
+  if (summary) head.append(el('span', 'pd-fold-sum', summary))
+  fold.append(head, el('div', 'pd-fold-body'))
+  fold.lastChild.append(...nodes)
+  fold.addEventListener('toggle', () => {
+    if (fold.open) detailOpenKeys.add(openKey)
+    else detailOpenKeys.delete(openKey)
+  })
+  return fold
+}
+// 긴 줄 목록 — 앞 max 줄만, 나머지는 [더 보기]
+function clippedLines(paneId, key, lines, max) {
+  const moreKey = `${paneId}:${key}`
+  if (lines.length <= max || detailMoreKeys.has(moreKey)) return { shown: lines, more: null }
+  const more = el('button', 'pd-more', say('pane.detail.more', { n: lines.length - max }))
+  more.type = 'button'
+  more.addEventListener('click', () => {
+    detailMoreKeys.add(moreKey)
+    if (detailLast && detailPane === paneId) renderPaneDetail(paneId, detailLast)
+  })
+  return { shown: lines.slice(0, max), more }
+}
+function detailField(paneId, key, lines) {
   const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
   if (!list.length) return null
   const row = el('div', 'work-field')
   row.append(el('span', 'work-field-key', say(`pane.detail.record.${key}`)))
   const value = el('span', 'work-field-value')
-  value.append(...list.map((line) => el('span', 'work-field-line', line)))
+  const { shown, more } = DETAIL_CLIP[key] ? clippedLines(paneId, key, list, DETAIL_CLIP[key]) : { shown: list, more: null }
+  value.append(...shown.map((line) => el('span', 'work-field-line', line)))
+  if (more) value.append(more)
   row.append(value)
   return row
 }
@@ -2271,15 +2332,29 @@ function renderPaneDetail(paneId, detail) {
   const scroll = body.scrollTop
   $('pane-detail-pane').textContent = (detail && detail.label) || paneId
   if (!detail.ok) {
+    detailLast = null
     const known = ['board-down', 'no-pane'].includes(detail.error) ? detail.error : 'default'
     body.replaceChildren(el('p', 'work-empty', say(`pane.detail.error.${known}`)))
     return
   }
-  const sections = detail.mode === 'lead' ? leadSections(detail) : agentSections(paneId, detail)
+  detailLast = detail
+  const sections = detail.mode === 'lead' ? leadSections(paneId, detail) : agentSections(paneId, detail)
   body.replaceChildren(...sections)
-  body.scrollTop = scroll
+  if (detailRestore !== null) {
+    body.scrollTop = detailRestore
+    detailRestore = null
+  } else body.scrollTop = scroll
 }
 
+function prLink(url) {
+  const link = el('button', 'pd-link', url.replace(/^https:\/\/github\.com\//, ''))
+  link.type = 'button'
+  link.addEventListener('click', () => studio.openUrl(url))
+  return link
+}
+
+// 에이전트 pane — 맨 위 사람 몫(내가 할 일 · 막힘), 그다음 한눈 요약(상태 · 몇 분째 · 지금 한 줄 · 다음 · PR),
+// 나머지(결과 · PR · 리뷰 · 계획서)는 접힌 절로. 보여 주는 정보는 그대로고 배치 · 접기 · 줄이기만 한다
 function agentSections(paneId, detail) {
   const sections = []
   const { now, plan } = detail
@@ -2297,35 +2372,54 @@ function agentSections(paneId, detail) {
     todo.push(workRow({ className: 'ask', title: say(`pane.detail.todo.${now.reason}`), onClick: () => { closePaneDetail(); goToPane(paneId) } }))
   }
   if (todo.length) sections.push(detailSection(say('pane.detail.section.todo'), todo))
+  // 막힘 — 사람이 풀어야 해서 요약보다 위에 눈에 띄게
+  if (plan.blocked.length) {
+    const blocked = el('div', 'pd-alert')
+    blocked.append(el('span', 'pd-alert-key', say('pane.detail.record.blocked')), ...plan.blocked.map((line) => el('span', 'pd-alert-line', line)))
+    sections.push(blocked)
+  }
 
-  // 지금 — 상태 · 까닭 · 걸린 시간 · 지금 하는 일 한 줄
+  // 한눈 요약 — 상태 · 까닭 · 걸린 시간 · 지금 하는 일 한 줄 · 다음 할 일 · PR
   const state = el('div', 'pd-now')
   const badge = el('span', 'work-state', say(`pane.detail.state.${now.state}`))
   badge.dataset.state = DETAIL_DOT[now.state] || 'idle'
   state.append(badge)
   if (now.sinceMs && now.state !== 'gone') state.append(el('span', 'pd-muted', say('pane.detail.since', { time: spanLabel(now.sinceMs) })))
   if (plan.created) state.append(el('span', 'pd-muted', say('pane.detail.started', { time: new Date(plan.created).toLocaleString(i18nState.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })))
-  const nowNodes = [state]
-  if (now.reason) nowNodes.push(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
-  if (now.line) nowNodes.push(el('p', 'pd-line', now.line))
-  sections.push(detailSection(say('pane.detail.section.now'), nowNodes))
+  const glance = el('section', 'pd-glance')
+  glance.append(state)
+  if (now.reason) glance.append(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
+  if (now.line) glance.append(el('p', 'pd-line pd-clamp', now.line))
+  if (plan.next.length) {
+    const next = el('p', 'pd-line pd-clamp')
+    next.append(el('span', 'pd-key', say('pane.detail.record.next')), document.createTextNode(plan.next[0]))
+    glance.append(next)
+  }
+  if (plan.prs.length) {
+    const prs = el('div', 'pd-glance-prs')
+    prs.append(...plan.prs.map(prLink))
+    glance.append(prs)
+  }
+  sections.push(glance)
 
-  // 찾은 것 · 결과 — 에이전트의 마지막 보고(화면 글 그대로)
-  if (detail.report.length) sections.push(detailSection(say('pane.detail.section.report'), [el('div', 'pd-report', detail.report.join('\n'))]))
+  // 찾은 것 · 결과 — 에이전트의 마지막 보고(화면 글 그대로) · 몇 줄만 보이고 [더 보기]
+  if (detail.report.length) {
+    const { shown, more } = clippedLines(paneId, 'report', detail.report, DETAIL_CLIP.report)
+    const nodes = [el('div', 'pd-report', shown.join('\n'))]
+    if (more) nodes.push(more)
+    const first = detail.report.find((line) => line.trim()) || ''
+    sections.push(detailFold(paneId, 'report', say('pane.detail.section.report'), first, nodes))
+  }
 
   // PR · 자동 리뷰
-  const prNodes = plan.prs.map((url) => {
-    const link = el('button', 'pd-link', url.replace(/^https:\/\/github\.com\//, ''))
-    link.type = 'button'
-    link.addEventListener('click', () => studio.openUrl(url))
-    return link
-  })
+  const prNodes = plan.prs.map(prLink)
   for (const line of plan.autoReview) prNodes.push(el('p', 'pd-line', line))
   if (plan.reviewResult) prNodes.push(el('p', 'pd-line', `${say('pane.detail.review')} · ${plan.reviewResult}`))
+  const prSummary = [plan.prs.length ? say('pane.detail.prCount', { n: plan.prs.length }) : say('pane.detail.prNone'), plan.reviewResult ? `${say('pane.detail.review')} · ${plan.reviewResult}` : ''].filter(Boolean).join(' · ')
   if (!prNodes.length) prNodes.push(el('p', 'pd-muted', say('pane.detail.prNone')))
-  sections.push(detailSection(say('pane.detail.section.pr'), prNodes))
+  sections.push(detailFold(paneId, 'pr', say('pane.detail.section.pr'), prSummary, prNodes))
 
-  // 계획서 기록 — 요청 · 진행 · 다음 · 막힘 · 검증
+  // 계획서 기록 — 요청 · 진행 · 다음 · 검증(막힘은 위에)
   const title = el('button', 'pd-link pd-plan', plan.title || plan.id)
   title.type = 'button'
   title.title = say('pane.detail.openPlan')
@@ -2333,33 +2427,38 @@ function agentSections(paneId, detail) {
   const record = [title]
   if (!plan.readable) record.push(el('p', 'pd-muted', say('work.detail.unreadable')))
   record.push(...[
-    detailField('request', plan.request),
-    detailField('progress', plan.progress.map((item) => `${item.done ? '✓' : '○'} ${item.text}`)),
-    detailField('next', plan.next),
-    detailField('blocked', plan.blocked),
-    detailField('validation', plan.validation),
+    detailField(paneId, 'request', plan.request),
+    detailField(paneId, 'progress', plan.progress.map((item) => `${item.done ? '✓' : '○'} ${item.text}`)),
+    detailField(paneId, 'next', plan.next),
+    detailField(paneId, 'validation', plan.validation),
   ].filter(Boolean))
-  sections.push(detailSection(say('pane.detail.section.record'), record))
+  const doneCount = plan.progress.filter((item) => item.done).length
+  const recordSummary = [plan.title || plan.id, plan.progress.length ? say('pane.detail.progressCount', { done: doneCount, total: plan.progress.length }) : ''].filter(Boolean).join(' · ')
+  sections.push(detailFold(paneId, 'record', say('pane.detail.section.record'), recordSummary, record))
   return sections
 }
 
-// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서)
-function leadSections(detail) {
+// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서) · 그 상세 머리에 [← 맡긴 일]
+// 나를 기다림 · 지금은 펼쳐 두고, 오늘 끝남은 접어 둔다(제목 + 개수)
+function leadSections(paneId, detail) {
   if (!detail.rows.length) return [el('p', 'work-empty', say('pane.detail.lead.empty'))]
   const sections = []
   const ROW_STATE = { wait: 'wait', now: 'work', done: 'done' }
   for (const group of ['wait', 'now', 'done']) {
     const rows = detail.rows.filter((row) => row.state === group).map((row) => workRow({
+      className: group === 'wait' ? 'ask' : '',
       title: row.title,
       meta: [row.who, row.what, row.sinceMs ? say('pane.detail.since', { time: spanLabel(row.sinceMs) }) : '', row.archived ? say('pane.detail.lead.archived') : ''].filter(Boolean).join(' · '),
       state: ROW_STATE[group],
       onClick: () => {
-        if (row.paneId && paneLive(row.paneId)) return openPaneDetail(row.paneId)
+        if (row.paneId && paneLive(row.paneId)) return openPaneDetail(row.paneId, { from: { paneId, scroll: $('pane-detail-body').scrollTop } })
         if (row.id.startsWith('plans/')) studio.workOpenPlan(row.id, null)
         return null
       },
     }))
-    if (rows.length) sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
+    if (!rows.length) continue
+    if (group === 'done') sections.push(detailFold(paneId, 'lead-done', say('pane.detail.lead.done'), '', rows, { count: rows.length }))
+    else sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
   }
   return sections
 }
@@ -2623,6 +2722,7 @@ function initWork() {
     closePaneDetail()
   })
   $('pane-detail-close').addEventListener('click', closePaneDetail)
+  $('pane-detail-back').addEventListener('click', backPaneDetail)
   studio.onPaneBound((next) => {
     paneBound = next && typeof next === 'object' ? next : {}
     syncDetailButtons()
