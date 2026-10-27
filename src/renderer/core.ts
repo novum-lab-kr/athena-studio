@@ -7,7 +7,8 @@ import { StudioUi } from './ui/index.ts'
 // 없는 id 면 지금처럼 그 자리에서 TypeError(캐스트만 — 동작 그대로)
 export const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T
 
-export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
+// className 이 없으면 null 로 넘기기도 한다(el('p', null, 글자))
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string | null, text?: string): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
   if (className) node.className = className
   if (text !== undefined) node.textContent = text
