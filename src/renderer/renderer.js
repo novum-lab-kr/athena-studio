@@ -2013,20 +2013,11 @@ async function openWorkDetail(item) {
 // ── pane [상세] ─────────────────────────────────────────────
 // 계획서에 묶인 pane(그 계획서를 하는 에이전트 · 맡긴 아테나) 머리 줄 오른쪽 아이콘 → 작업 창 위에 오른쪽에서 뜨는 팝업.
 // 팝업은 레이아웃에 끼지 않는다(position: fixed) — pane · spaces · Explorer · 모니터 크기와 터미널 크기는 그대로.
-// 열려 있는 동안 3초마다 다시 읽는다(main ctx.paneDetail — 일감 카드 · 계획서 · pane 화면 글, 모델 호출 없음)
+// 몸통은 React(ui/pane-detail.tsx — 3초마다 다시 읽기 · [더 보기] · 뒤로 간 스크롤) · 여기는 껍데기(아이콘 · 열기 · 닫기 · 머리줄 · [← 맡긴 일])
 let paneBound = {} // pane id → 'agent' | 'lead'
 let detailPane = null
-let detailTimer = null
 // 아테나 목록에서 들어온 상세면 돌아갈 자리 — { paneId, scroll } · 에이전트 pane 에서 바로 열면 null
 let detailBack = null
-// 다시 그릴 때 맞출 스크롤(뒤로 가기) — 그 pane 을 처음 그릴 때 한 번
-let detailRestore = null
-let detailLast = null
-// [더 보기] 한 글 — `${paneId}:${key}`. 3초 갱신으로 다시 그려도 그대로 둔다(창이 열려 있는 동안)
-const detailMoreKeys = new Set()
-const PANE_DETAIL_REFRESH_MS = 3000
-// 긴 글은 이만큼만 보이고 [더 보기]
-const DETAIL_CLIP = { report: 6, request: 3, progress: 5, validation: 4 }
 // 아이콘 — 체크리스트 모양(사용자 확정 2026-10-27 · 시안 B)
 const PANE_DETAIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/></svg>'
 
@@ -2064,26 +2055,19 @@ function openPaneDetail(paneId, { from = null, restore = null } = {}) {
   closePops()
   const pop = $('pane-detail')
   const first = detailPane === null
-  const changed = detailPane !== paneId
   detailPane = paneId
   detailBack = from
-  detailRestore = restore
   $('pane-detail-back').hidden = !detailBack
   const bar = document.querySelector('.tabbar')
   pop.style.top = `${Math.round(bar ? bar.getBoundingClientRect().bottom : 0)}px`
-  if (first || changed) {
-    detailLast = null
-    $('pane-detail-body').replaceChildren(el('p', 'work-empty', say('work.loading')))
-  }
+  // 처음이거나 다른 pane 이면 읽는 중부터 · 같은 pane 이면 그린 것을 두고 바로 다시 읽는다
+  StudioUi.paneDetail.open($('pane-detail-body'), paneId, restore, paneDetailActions)
   if (first) {
     pop.hidden = false
     requestAnimationFrame(() => pop.classList.add('open'))
   }
   $('pane-detail-body').scrollTop = 0
   syncDetailButtons()
-  clearInterval(detailTimer)
-  detailTimer = setInterval(loadPaneDetail, PANE_DETAIL_REFRESH_MS)
-  loadPaneDetail()
   $(detailBack ? 'pane-detail-back' : 'pane-detail-close').focus({ preventScroll: true })
 }
 
@@ -2099,236 +2083,34 @@ function closePaneDetail() {
   if (detailPane === null) return
   detailPane = null
   detailBack = null
-  detailRestore = null
-  detailLast = null
-  detailMoreKeys.clear()
-  clearInterval(detailTimer)
-  detailTimer = null
+  // 다시 읽기는 바로 멈추고, 몸통은 미끄러져 나간 뒤 내린다
+  StudioUi.paneDetail.stop()
   const pop = $('pane-detail')
   pop.classList.remove('open')
   setTimeout(() => {
-    if (detailPane === null) pop.hidden = true
+    if (detailPane !== null) return
+    pop.hidden = true
+    StudioUi.paneDetail.close()
   }, 180)
   syncDetailButtons()
   focusCurrentTerminal()
 }
 
-async function loadPaneDetail() {
-  const paneId = detailPane
-  if (!paneId) return
-  const detail = await studio.paneDetail(paneId)
-  if (detailPane !== paneId) return
-  renderPaneDetail(paneId, detail || { ok: false })
-}
-
-// 걸린 시간 — 1시간 안은 분, 그 뒤는 시간 · 분
-function spanLabel(ms) {
-  const minutes = Math.max(1, Math.floor(ms / 60000))
-  if (minutes < 60) return say('time.minutes', { n: minutes })
-  return `${say('time.hours', { n: Math.floor(minutes / 60) })} ${minutes % 60 ? say('time.minutes', { n: minutes % 60 }) : ''}`.trim()
-}
-
-function detailSection(title, nodes) {
-  const node = el('section', 'work-sec pd-sec')
-  node.append(el('h3', null, title), ...nodes)
-  return node
-}
-// 긴 줄 목록 — 앞 max 줄만, 나머지는 [더 보기]
-function clippedLines(paneId, key, lines, max) {
-  const moreKey = `${paneId}:${key}`
-  if (lines.length <= max || detailMoreKeys.has(moreKey)) return { shown: lines, more: null }
-  const more = el('button', 'pd-more', say('pane.detail.more', { n: lines.length - max }))
-  more.type = 'button'
-  more.addEventListener('click', () => {
-    detailMoreKeys.add(moreKey)
-    if (detailLast && detailPane === paneId) renderPaneDetail(paneId, detailLast)
-  })
-  return { shown: lines.slice(0, max), more }
-}
-// 한 줄 글 — 두 줄까지만 보이게 접고, 넘치면 그려진 뒤 [더 보기](fitClamps). 펼친 것은 detailMoreKeys 로 기억한다
-function clampLine(paneId, key, node) {
-  if (detailMoreKeys.has(`${paneId}:${key}`)) return node
-  node.classList.add('pd-clamp')
-  node.dataset.moreKey = key
-  return node
-}
-// 화면에 붙은 뒤에야 넘치는지 안다 — 넘친 줄 밑에만 [더 보기]
-function fitClamps(paneId, body) {
-  for (const node of body.querySelectorAll('.pd-clamp[data-more-key]')) {
-    if (node.scrollHeight <= node.clientHeight + 1) continue
-    const moreKey = `${paneId}:${node.dataset.moreKey}`
-    const more = el('button', 'pd-more', say('pane.detail.moreText'))
-    more.type = 'button'
-    more.addEventListener('click', () => {
-      detailMoreKeys.add(moreKey)
-      if (detailLast && detailPane === paneId) renderPaneDetail(paneId, detailLast)
-    })
-    node.after(more)
-  }
-}
-function detailField(paneId, key, lines) {
-  const list = (Array.isArray(lines) ? lines : [lines]).filter(Boolean)
-  if (!list.length) return null
-  const row = el('div', 'work-field')
-  row.append(el('span', 'work-field-key', say(`pane.detail.record.${key}`)))
-  const value = el('span', 'work-field-value')
-  const { shown, more } = DETAIL_CLIP[key] ? clippedLines(paneId, key, list, DETAIL_CLIP[key]) : { shown: list, more: null }
-  value.append(...shown.map((line) => el('span', 'work-field-line', line)))
-  if (more) value.append(more)
-  row.append(value)
-  return row
-}
-// 지금 상태 점 — 멈춤은 사람 몫이라 금색(답 대기와 같은 색), 에이전트 없음은 회색
-const DETAIL_DOT = { work: 'work', idle: 'idle', stop: 'wait', gone: 'done' }
-
-function renderPaneDetail(paneId, detail) {
-  const body = $('pane-detail-body')
-  const scroll = body.scrollTop
-  $('pane-detail-pane').textContent = (detail && detail.label) || paneId
-  if (!detail.ok) {
-    detailLast = null
-    // 뒤로 간 첫 응답이 오류면 맞출 스크롤도 버린다 — 나중 갱신에서 그새 옮긴 스크롤을 되돌리지 않게
-    detailRestore = null
-    const known = ['board-down', 'no-pane'].includes(detail.error) ? detail.error : 'default'
-    body.replaceChildren(el('p', 'work-empty', say(`pane.detail.error.${known}`)))
-    return
-  }
-  detailLast = detail
-  const sections = detail.mode === 'lead' ? leadSections(paneId, detail) : agentSections(paneId, detail)
-  body.replaceChildren(...sections)
-  fitClamps(paneId, body)
-  if (detailRestore !== null) {
-    body.scrollTop = detailRestore
-    detailRestore = null
-  } else body.scrollTop = scroll
-}
-
-// 토큰 — 입력+출력을 크게, 캐시는 옆에 작게(main 이 숫자를 42k · 3.1M 로 줄여 보낸다). 기록을 못 찾으면 null → 그리지 않는다
-function tokenLine(tokens) {
-  if (!tokens) return null
-  const line = el('span', 'pd-tokens', say('pane.detail.tokens', { n: tokens.ioText }))
-  line.title = say('pane.detail.tokensTitle', { io: tokens.io.toLocaleString(i18nState.language), cache: tokens.cache.toLocaleString(i18nState.language) })
-  if (tokens.cache) line.append(el('span', 'pd-tokens-cache', `(${say('pane.detail.tokensCache', { n: tokens.cacheText })})`))
-  return line
-}
-
-function prLink(url) {
-  const link = el('button', 'pd-link', url.replace(/^https:\/\/github\.com\//, ''))
-  link.type = 'button'
-  link.addEventListener('click', () => studio.openUrl(url))
-  return link
-}
-
-// 에이전트 pane — 맨 위 사람 몫(내가 할 일 · 막힘), 그다음 한눈 요약(상태 · 몇 분째 · 지금 한 줄 · 다음 · PR),
-// 그 아래 결과 · PR · 리뷰 · 계획서를 펼쳐 둔다(접지 않는다 — 사용자 2026-10-27). 긴 글만 [더 보기]
-function agentSections(paneId, detail) {
-  const sections = []
-  const { now, plan } = detail
-  // 내가 할 일 — 있으면 맨 위
-  const todo = detail.todo.map((request) => workRow({
-    className: 'ask',
-    kindLabel: say(`work.kind.${request.kind}`),
-    title: request.title,
-    onClick: () => {
-      const known = workRequests.requests.find((entry) => entry.id === request.id)
-      if (known) openRequest(known)
-    },
-  }))
-  if (now.reason === 'question') {
-    todo.push(workRow({ className: 'ask', title: say(`pane.detail.todo.${now.reason}`), onClick: () => { closePaneDetail(); goToPane(paneId) } }))
-  }
-  if (todo.length) sections.push(detailSection(say('pane.detail.section.todo'), todo))
-  // 막힘 — 사람이 풀어야 해서 요약보다 위에 눈에 띄게
-  if (plan.blocked.length) {
-    const blocked = el('div', 'pd-alert')
-    blocked.append(el('span', 'pd-alert-key', say('pane.detail.record.blocked')), ...plan.blocked.map((line) => el('span', 'pd-alert-line', line)))
-    sections.push(blocked)
-  }
-
-  // 한눈 요약 — 상태 · 까닭 · 걸린 시간 · 지금 하는 일 한 줄 · 다음 할 일 · PR
-  const state = el('div', 'pd-now')
-  const badge = el('span', 'work-state', say(`pane.detail.state.${now.state}`))
-  badge.dataset.state = DETAIL_DOT[now.state] || 'idle'
-  state.append(badge)
-  if (now.sinceMs && now.state !== 'gone') state.append(el('span', 'pd-muted', say('pane.detail.since', { time: spanLabel(now.sinceMs) })))
-  if (plan.created) state.append(el('span', 'pd-muted', say('pane.detail.started', { time: new Date(plan.created).toLocaleString(i18nState.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })))
-  const tokens = tokenLine(detail.tokens)
-  if (tokens) state.append(tokens)
-  const glance = el('section', 'pd-glance')
-  glance.append(state)
-  if (now.reason) glance.append(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
-  if (now.line) glance.append(clampLine(paneId, 'now', el('p', 'pd-line', now.line)))
-  if (plan.next.length) {
-    const next = el('p', 'pd-line')
-    next.append(el('span', 'pd-key', say('pane.detail.record.next')), document.createTextNode(plan.next[0]))
-    glance.append(clampLine(paneId, 'next-first', next))
-  }
-  if (plan.prs.length) {
-    const prs = el('div', 'pd-glance-prs')
-    prs.append(...plan.prs.map(prLink))
-    glance.append(prs)
-  }
-  sections.push(glance)
-
-  // 찾은 것 · 결과 — 에이전트의 마지막 보고(화면 글 그대로) · 몇 줄만 보이고 [더 보기]
-  if (detail.report.length) {
-    const { shown, more } = clippedLines(paneId, 'report', detail.report, DETAIL_CLIP.report)
-    const nodes = [el('div', 'pd-report', shown.join('\n'))]
-    if (more) nodes.push(more)
-    sections.push(detailSection(say('pane.detail.section.report'), nodes))
-  }
-
-  // PR · 자동 리뷰
-  const prNodes = plan.prs.map(prLink)
-  for (const line of plan.autoReview) prNodes.push(el('p', 'pd-line', line))
-  if (plan.reviewResult) prNodes.push(el('p', 'pd-line', `${say('pane.detail.review')} · ${plan.reviewResult}`))
-  if (!prNodes.length) prNodes.push(el('p', 'pd-muted', say('pane.detail.prNone')))
-  sections.push(detailSection(say('pane.detail.section.pr'), prNodes))
-
-  // 계획서 기록 — 요청 · 진행 · 다음 · 검증(막힘은 위에)
-  const title = el('button', 'pd-link pd-plan', plan.title || plan.id)
-  title.type = 'button'
-  title.title = say('pane.detail.openPlan')
-  title.addEventListener('click', () => studio.workOpenPlan(plan.id, plan.html))
-  const record = [title]
-  if (!plan.readable) record.push(el('p', 'pd-muted', say('work.detail.unreadable')))
-  record.push(...[
-    detailField(paneId, 'request', plan.request),
-    detailField(paneId, 'progress', plan.progress.map((item) => `${item.done ? '✓' : '○'} ${item.text}`)),
-    detailField(paneId, 'next', plan.next),
-    detailField(paneId, 'validation', plan.validation),
-  ].filter(Boolean))
-  sections.push(detailSection(say('pane.detail.section.record'), record))
-  return sections
-}
-
-// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서) · 그 상세 머리에 [← 맡긴 일]
-function leadSections(paneId, detail) {
-  const sections = []
-  // 이 아테나 대화 하나의 토큰(맡긴 일 토큰은 더하지 않는다)
-  const tokens = tokenLine(detail.tokens)
-  if (tokens) {
-    const head = el('div', 'pd-now pd-lead-tokens')
-    head.append(tokens)
-    sections.push(head)
-  }
-  if (!detail.rows.length) return [...sections, el('p', 'work-empty', say('pane.detail.lead.empty'))]
-  const ROW_STATE = { wait: 'wait', now: 'work', done: 'done' }
-  for (const group of ['wait', 'now', 'done']) {
-    const rows = detail.rows.filter((row) => row.state === group).map((row) => workRow({
-      className: group === 'wait' ? 'ask' : '',
-      title: row.title,
-      meta: [row.who, row.what, row.sinceMs ? say('pane.detail.since', { time: spanLabel(row.sinceMs) }) : '', row.archived ? say('pane.detail.lead.archived') : ''].filter(Boolean).join(' · '),
-      state: ROW_STATE[group],
-      onClick: () => {
-        if (row.paneId && paneLive(row.paneId)) return openPaneDetail(row.paneId, { from: { paneId, scroll: $('pane-detail-body').scrollTop } })
-        if (row.id.startsWith('plans/')) studio.workOpenPlan(row.id, null)
-        return null
-      },
-    }))
-    if (rows.length) sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
-  }
-  return sections
+// React 몸통이 부르는 바닐라 쪽 — 다른 pane 상세 · pane 으로 가기 · 요청 대화상자 · 머리줄 이름
+const paneDetailActions = {
+  openPane: (paneId, from) => openPaneDetail(paneId, { from }),
+  goToPane: (paneId) => {
+    closePaneDetail()
+    goToPane(paneId)
+  },
+  paneLive: (paneId) => paneLive(paneId),
+  openRequest: (id) => {
+    const known = workRequests.requests.find((entry) => entry.id === id)
+    if (known) openRequest(known)
+  },
+  setLabel: (text) => {
+    $('pane-detail-pane').textContent = text
+  },
 }
 
 // pane 이 다른 탭 · 작업 공간에 있어도 — 왼쪽 목록에서 누른 것과 같다
