@@ -566,11 +566,11 @@ body[data-platform="darwin"] .tabbar {
   height: 22px;
   padding: 0 8px;
   border-radius: 0;
+  background: var(--bar); /* 바탕은 늘 — 포커스는 테두리 · 밝은 글자 · 왼쪽 강조 막대로 구분한다 */
   font: 11px/22px var(--font-ui);
 }
 
 .pane.focused .pane-head {
-  background: var(--bar);
   color: var(--text);
 }
 
@@ -710,7 +710,7 @@ body[data-platform="darwin"] .tabbar {
 .preview:focus-within { border-color: var(--focus-line); }
 /* 미리보기에 입력이 있는 동안은 터미널 테두리를 보통으로 — 포커스 테두리는 한 상자만 */
 .work-area:has(.preview:focus-within) .pane.focused { border-color: var(--line); }
-.work-area:has(.preview:focus-within) .pane.focused .pane-head { background: transparent; color: var(--muted); }
+.work-area:has(.preview:focus-within) .pane.focused .pane-head { color: var(--muted); }
 
 /* 머리줄은 터미널 pane 머리줄과 같다 — 보통은 바탕 없이 흐린 글자, 포커스면 막대 바탕 + 밝은 글자 + 왼쪽 강조 커서 */
 .preview-head {
