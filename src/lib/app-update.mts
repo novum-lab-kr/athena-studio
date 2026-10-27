@@ -3,19 +3,30 @@
 // 체크아웃이 main 이 아니거나 · 추적 파일 변경이 있거나 · 로컬 커밋이 있어 빨리 감기가 안 되면 진행하지 않고 까닭을 돌려준다.
 // 받은 뒤 package.json · lockfile 이 바뀌었으면 install: true — npm install · 다시 켜기는 scripts/dev-app.js restart 가 앱이 끝난 뒤에 한다.
 // Electron 없이 돈다(test/app-update.test.js). git 은 셸을 거치지 않고 부른다
-const fs = require('fs')
-const path = require('path')
-const { execFile } = require('child_process')
-const { gitEnv } = require('./studio-home')
-const version = require('./version')
+import fs from 'node:fs'
+import path from 'node:path'
+import { execFile } from 'node:child_process'
+import { createRequire } from 'node:module'
 
-const BRANCH = 'main'
+// studio-home · version 은 JS(dev-app.js 가 PATH 의 node 로도 부른다) — main 과 같은 require 캐시의 것을 쓴다
+const require = createRequire(import.meta.url)
+const { gitEnv }: typeof import('./studio-home.js') = require('./studio-home.js')
+const version: typeof import('./version.js') = require('./version.js')
+
+// git 을 부르는 함수 — 테스트는 가짜를 넘긴다
+export type Git = (args: string[], options: { cwd: string; timeout?: number }) => Promise<string>
+export type UpdateReason = 'not-main' | 'dirty' | 'diverged' | 'fetch-failed'
+export type UpdateStatus = { state: 'behind' | 'current' | 'unavailable'; behind: number; branch: string | null; reason: UpdateReason | null; version: string | null; latest: string | null }
+export type PullResult = { ok: true; from: string; to: string; install: boolean } | { ok: false; reason: UpdateReason | 'current' | 'unavailable' | 'ff-failed'; branch: string | null }
+type Run = (args: string[], options?: { timeout?: number }) => Promise<string>
+
+export const BRANCH = 'main'
 const REMOTE = 'origin'
 const FETCH_TIMEOUT_MS = 60000
-const INSTALL_FILES = ['package.json', 'package-lock.json']
+export const INSTALL_FILES = ['package.json', 'package-lock.json']
 
 // git 하나 — 성공이면 stdout(앞뒤 공백 뗌), 실패면 Error(code: 'git')
-function runGit(args, { cwd, timeout = 30000 }) {
+function runGit(args: string[], { cwd, timeout = 30000 }: { cwd: string; timeout?: number }): Promise<string> {
   return new Promise((resolve, reject) => {
     execFile('git', args, { cwd, env: gitEnv(), timeout, encoding: 'utf8', maxBuffer: 4 * 1024 * 1024 }, (error, stdout) => {
       if (error) return reject(Object.assign(error, { code: 'git' }))
@@ -25,8 +36,8 @@ function runGit(args, { cwd, timeout = 30000 }) {
 }
 
 // 앱 레포가 git 체크아웃인가(배포판 · 압축본이면 업데이트 줄을 보이지 않는다)
-function isCheckout(repoRoot) {
-  return Boolean(repoRoot) && fs.existsSync(path.join(repoRoot, '.git'))
+export function isCheckout(repoRoot: string | null | undefined): boolean {
+  return Boolean(repoRoot) && fs.existsSync(path.join(repoRoot as string, '.git'))
 }
 
 // → { state: 'behind' | 'current' | 'unavailable', behind, branch, reason, version, latest }
@@ -34,9 +45,9 @@ function isCheckout(repoRoot) {
 //   version: 지금 체크아웃 버전(0.2.1 · 0.2.1+3 — 태그가 없으면 null · 부르는 쪽이 package.json 값으로)
 //   latest: origin/main 버전 — 지금보다 새 태그가 있을 때만(없으면 null · 화면은 커밋 수를 보인다)
 //   fetch: origin main 과 v* 태그를 먼저 받는다(실패해도 이미 받은 origin/main 으로 센다 — 까닭에 fetch-failed)
-async function checkStatus({ repoRoot, fetch = true, git = runGit }) {
+export async function checkStatus({ repoRoot, fetch = true, git = runGit }: { repoRoot: string; fetch?: boolean; git?: Git }): Promise<UpdateStatus> {
   if (!isCheckout(repoRoot)) return { state: 'unavailable', behind: 0, branch: null, reason: null, version: null, latest: null }
-  const run = (args, options = {}) => git(args, { cwd: repoRoot, ...options })
+  const run: Run = (args, options = {}) => git(args, { cwd: repoRoot, ...options })
   let fetchFailed = false
   if (fetch) fetchFailed = !(await run(['fetch', '--quiet', '--no-tags', REMOTE, BRANCH, '+refs/tags/v*:refs/tags/v*'], { timeout: FETCH_TIMEOUT_MS }).then(() => true, () => false))
   const current = await describe(run, 'HEAD')
@@ -52,13 +63,13 @@ async function checkStatus({ repoRoot, fetch = true, git = runGit }) {
 }
 
 // 그 ref 의 버전(0.2.1 · 0.2.1+3) · 태그가 없으면 null
-async function describe(run, ref) {
+async function describe(run: Run, ref: string): Promise<string | null> {
   const output = await run(['describe', '--tags', '--long', '--match', version.TAG_PATTERN, ref]).catch(() => '')
   return version.formatDescribe(output)
 }
 
 // origin/main 쪽 태그가 지금 것보다 높을 때만 그 버전 — 새 태그가 아직 없으면 null
-function newerVersion(current, upstream) {
+export function newerVersion(current: string | null, upstream: string | null): string | null {
   const next = version.splitDisplay(upstream)
   if (!next) return null
   const now = version.splitDisplay(current)
@@ -66,7 +77,7 @@ function newerVersion(current, upstream) {
 }
 
 // 진행하지 못하는 까닭 — 앞의 것이 먼저(main 이 아니면 나머지는 뜻이 없다)
-function pickReason({ branch, dirty, ahead, fetchFailed }) {
+export function pickReason({ branch, dirty, ahead, fetchFailed }: { branch: string; dirty: boolean; ahead: number; fetchFailed: boolean }): UpdateReason | null {
   if (branch !== BRANCH) return 'not-main'
   if (dirty) return 'dirty'
   if (ahead > 0) return 'diverged'
@@ -76,12 +87,12 @@ function pickReason({ branch, dirty, ahead, fetchFailed }) {
 
 // main 받기 — 다시 확인(받기 포함)하고 빨리 감기만. → { ok: true, from, to, install } | { ok: false, reason, branch }
 //   reason: 위 까닭 · current(받을 것 없음) · unavailable · ff-failed
-async function pullMain({ repoRoot, git = runGit }) {
+export async function pullMain({ repoRoot, git = runGit }: { repoRoot: string; git?: Git }): Promise<PullResult> {
   const status = await checkStatus({ repoRoot, fetch: true, git })
   if (status.state === 'unavailable') return { ok: false, reason: 'unavailable', branch: null }
   if (status.reason) return { ok: false, reason: status.reason, branch: status.branch }
   if (status.state !== 'behind') return { ok: false, reason: 'current', branch: status.branch }
-  const run = (args) => git(args, { cwd: repoRoot })
+  const run = (args: string[]) => git(args, { cwd: repoRoot })
   const from = await run(['rev-parse', 'HEAD'])
   const merged = await run(['merge', '--ff-only', '--quiet', `${REMOTE}/${BRANCH}`]).then(() => true, () => false)
   if (!merged) return { ok: false, reason: 'ff-failed', branch: status.branch }
@@ -89,5 +100,3 @@ async function pullMain({ repoRoot, git = runGit }) {
   const changed = await run(['diff', '--name-only', from, to, '--', ...INSTALL_FILES]).catch(() => INSTALL_FILES.join('\n'))
   return { ok: true, from, to, install: Boolean(changed) }
 }
-
-module.exports = { BRANCH, INSTALL_FILES, isCheckout, checkStatus, pickReason, newerVersion, pullMain }

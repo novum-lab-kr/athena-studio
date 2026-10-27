@@ -1,3 +1,4 @@
+// @ts-check
 // 버전 번호(SemVer 0.x · 결정 D1 · D2 — plans/feature/20261026-버저닝) — 정본은 git 태그 vX.Y.Z 하나.
 // main 에 머지될 때마다 워크플로(.github/workflows/release.yml → scripts/release-version.js)가 그 커밋에 다음 태그를 단다:
 // PR 제목(squash 커밋 제목)의 타입이 feat 이거나 ! 가 붙으면 가운데(0.Y+1.0) · 그 밖은 끝자리(0.Y.Z+1). 1.0 전이라 ! 도 가운데까지만.
@@ -11,44 +12,70 @@ const VERSION_RE = /^(\d+)\.(\d+)\.(\d+)$/
 const DISPLAY_RE = /^\d+\.\d+\.\d+(\+\d+)?$/
 
 // '0.2.1' · 'v0.2.1' → [0, 2, 1] · 아니면 null
+/**
+ * @param {unknown} text
+ * @returns {[number, number, number] | null}
+ */
 function parseVersion(text) {
   const match = VERSION_RE.exec(String(text || '').replace(/^v/, ''))
   return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
 }
 
+// 버전 모양이 아니면 원래대로 TypeError(부르는 쪽이 모양을 확인한 값만 넘긴다)
+/**
+ * @param {unknown} left
+ * @param {unknown} right
+ */
 function compareVersions(left, right) {
-  const first = parseVersion(left)
-  const second = parseVersion(right)
+  const first = /** @type {[number, number, number]} */ (parseVersion(left))
+  const second = /** @type {[number, number, number]} */ (parseVersion(right))
   for (let index = 0; index < 3; index += 1) {
-    if (first[index] !== second[index]) return first[index] - second[index]
+    if (first[index] !== second[index]) return /** @type {number} */ (first[index]) - /** @type {number} */ (second[index])
   }
   return 0
 }
 
 // 태그 이름들 중 가장 높은 버전(v 없이) · 맞는 태그가 없으면 null
+/**
+ * @param {unknown} tags
+ * @returns {string | null}
+ */
 function latestTag(tags) {
+  /** @type {string[]} */
   const versions = (Array.isArray(tags) ? tags : []).filter((tag) => /^v/.test(tag) && parseVersion(tag)).map((tag) => tag.slice(1))
-  return versions.reduce((best, each) => (best === null || compareVersions(each, best) > 0 ? each : best), null)
+  return versions.reduce((/** @type {string | null} */ best, each) => (best === null || compareVersions(each, best) > 0 ? each : best), null)
 }
 
 // PR 제목 → 'minor' | 'patch'. feat(…) · 타입 뒤 ! 는 가운데, 그 밖(fix · docs · chore · 형식 없는 제목)은 끝자리
+/** @param {unknown} title */
 function bumpKind(title) {
   const match = /^\s*([A-Za-z]+)(\([^)]*\))?(!)?:/.exec(String(title || ''))
   if (!match) return 'patch'
-  if (match[3] || match[1].toLowerCase() === 'feat') return 'minor'
+  if (match[3] || /** @type {string} */ (match[1]).toLowerCase() === 'feat') return 'minor'
   return 'patch'
 }
 
 // 기준 버전(가장 최근 태그 · 없으면 package.json) + 제목 → 다음 버전
+// 기준 버전 모양이 아니면 원래대로 TypeError
+/**
+ * @param {unknown} base
+ * @param {unknown} title
+ */
 function nextVersion(base, title) {
-  const [major, minor, patch] = parseVersion(base)
+  const [major, minor, patch] = /** @type {[number, number, number]} */ (parseVersion(base))
   if (bumpKind(title) === 'minor') return `${major}.${minor + 1}.0`
   return `${major}.${minor}.${patch + 1}`
 }
 
 // 아직 태그가 없는 main 커밋들(오래된 순 · [{ sha, title }]) → 커밋마다 붙일 버전. 앞 커밋의 버전이 다음 커밋의 기준이다
 // (머지가 몰려 앞 실행이 취소돼도 다음 실행이 빠진 커밋을 차례로 채운다 — 어느 feat 도 가운데 올림을 잃지 않는다)
+/**
+ * @template {{ title: string }} Commit
+ * @param {string} base
+ * @param {Commit[]} commits
+ */
 function releasePlan(base, commits) {
+  /** @type {(Commit & { version: string, kind: string })[]} */
   const plan = []
   let current = base
   for (const commit of commits) {
@@ -59,13 +86,18 @@ function releasePlan(base, commits) {
 }
 
 // git describe --tags --long 출력('v0.2.1-3-gabc1234') → '0.2.1+3' · 태그 커밋이면 '0.2.1' · 못 읽으면 null
+/**
+ * @param {unknown} output
+ * @returns {string | null}
+ */
 function formatDescribe(output) {
   const match = /^v(\d+\.\d+\.\d+)-(\d+)-g[0-9a-f]+$/.exec(String(output || '').trim())
   if (!match) return null
-  return match[2] === '0' ? match[1] : `${match[1]}+${match[2]}`
+  return match[2] === '0' ? /** @type {string} */ (match[1]) : `${match[1]}+${match[2]}`
 }
 
 // 그 ref 의 버전 — 태그가 없거나 git 이 아니면 null(부르는 쪽이 package.json 값으로)
+/** @param {{ repoRoot: string, ref?: string, env?: NodeJS.ProcessEnv }} options */
 function describeVersion({ repoRoot, ref = 'HEAD', env = process.env }) {
   try {
     const output = execFileSync('git', ['describe', '--tags', '--long', '--match', TAG_PATTERN, ref], { cwd: repoRoot, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], timeout: 10000 })
@@ -77,6 +109,7 @@ function describeVersion({ repoRoot, ref = 'HEAD', env = process.env }) {
 
 // origin 의 v* 태그를 받는다 — 앱을 켤 때 버전을 정하기 전에(scripts/dev-app.js start). 코어 번들 · 맥 정보 · ⚙ 줄이 같은 번호를 쓰게.
 // 못 받으면(오프라인 · origin 없음) false — 있는 태그로 정한다. 기다림은 짧게(켜기를 오래 막지 않게)
+/** @param {{ repoRoot: string, env?: NodeJS.ProcessEnv, timeout?: number }} options */
 function fetchTags({ repoRoot, env = process.env, timeout = 10000 }) {
   try {
     execFileSync('git', ['fetch', '--quiet', '--no-tags', 'origin', '+refs/tags/v*:refs/tags/v*'], { cwd: repoRoot, env, stdio: 'ignore', timeout })
@@ -87,12 +120,17 @@ function fetchTags({ repoRoot, env = process.env, timeout = 10000 }) {
 }
 
 // '0.2.1+3' → { tag: '0.2.1', distance: 3 } · 모양이 아니면 null
+/**
+ * @param {unknown} text
+ * @returns {{ tag: string, distance: number } | null}
+ */
 function splitDisplay(text) {
   const match = /^(\d+\.\d+\.\d+)(?:\+(\d+))?$/.exec(String(text || ''))
-  return match ? { tag: match[1], distance: Number(match[2] || 0) } : null
+  return match ? { tag: /** @type {string} */ (match[1]), distance: Number(match[2] || 0) } : null
 }
 
 // Release 본문 — PR 제목 · 링크(PR 을 못 찾으면 커밋 제목 · 커밋 링크)
+/** @param {{ title: unknown, number?: number | null, url?: string | null }} pull */
 function releaseNotes({ title, number = null, url = null }) {
   const head = number && !String(title).includes(`(#${number})`) ? `${title} (#${number})` : String(title)
   return url ? `${head}\n\n${url}\n` : `${head}\n`

@@ -3,7 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('fs')
 const os = require('os')
 const path = require('path')
-const core = require('../src/lib/core')
+const core = require('../src/lib/core.mts')
 
 const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'athena-studio-'))
 

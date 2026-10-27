@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const pack = require('../src/lib/pack')
+const pack = require('../src/lib/pack.mts')
 
 test('팩 출력: progress 줄을 모으고 마지막 줄 JSON 을 결과로', () => {
   const out = 'progress: lock 잠금\nprogress: link 링크 바꾸는 중\n{"ok":true,"current":{"id":"acme","generation":3}}\n'
