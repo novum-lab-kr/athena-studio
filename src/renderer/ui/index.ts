@@ -3,10 +3,11 @@
 import { connect, textsChanged } from './bridge.ts'
 import * as explorer from './explorer.tsx'
 import * as monitor from './monitor.tsx'
+import * as paneDetail from './pane-detail.tsx'
 import * as settings from './settings-pop.tsx'
 import * as work from './work-pop.tsx'
 
-const StudioUi = { connect, textsChanged, explorer, monitor, settings, work }
+const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail }
 
 declare global {
   // renderer.js 가 읽는 전역 이름
