@@ -5,7 +5,8 @@ import { $, currentTab, say, showToast, state } from './core.ts'
 import { HEAD_HEIGHT, disposeView, ensureView, isTabPane, views } from './terminal.ts'
 import { StudioUi } from './ui/index.ts'
 import type { RestoreResult } from './ui/notices.tsx'
-import { activeTab, applyState, ensureSomeTab, hidePackProgress, offerAddRepo, orderedWorkspaces, packAlert, runPackFlow, setPanelHidden, setSpacesCollapsed, showPackProgress, switchTab, welcomeShown } from './renderer.js'
+import { activeTab, applyState, ensureSomeTab, switchTab } from './tabs.ts'
+import { hidePackProgress, offerAddRepo, orderedWorkspaces, packAlert, runPackFlow, setPanelHidden, setSpacesCollapsed, showPackProgress, welcomeShown } from './renderer.js'
 
 export let screen: ScreenState = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 export const setScreen = (next: ScreenState): void => {
