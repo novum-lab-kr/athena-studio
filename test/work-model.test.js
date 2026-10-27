@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const work = require('../src/lib/work-model')
+const work = require('../src/lib/work-model.mts')
 
 const NOW = Date.parse('2026-10-21T06:00:00.000Z')
 const plan = (id, extra = {}) => ({ kind: 'plan', id, title: id, status: 'in_progress', column: 'doing', grade: 'light', mtime: NOW - 60000, ...extra })

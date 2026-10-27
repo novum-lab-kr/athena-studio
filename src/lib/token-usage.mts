@@ -1,29 +1,45 @@
 // pane [상세] 토큰 — Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl)의 assistant 줄 message.usage 를 더한다.
 // 모델을 부르지 않고 파일만 읽는다. 3초마다 다시 물어도 파일마다 읽은 자리(바이트)를 기억해 늘어난 부분만 읽는다.
 // 한 답(message.id)은 내용 조각(thinking · text · tool_use)마다 줄이 나뉘어 같은 usage 로 여러 번 적힌다(2026-10-27 실제 기록 확인) — id 마다 한 번만 센다
-const fs = require('node:fs')
-const path = require('node:path')
+import fs from 'node:fs'
+import path from 'node:path'
+
+// 기록 JSON 의 객체 하나(모양은 칸마다 따로 본다)
+type Loose = Record<string, unknown>
+// 입력+출력(io) · 캐시 만들기+읽기(cache)
+export type Usage = { io: number; cache: number }
+// 파일 하나를 따라 읽는 상태 — 읽은 바이트 · 답 id 마다 값 · id 없는 답의 합
+export type Tally = { offset: number; ids: Map<string, Usage>; loose: Usage }
+type Answer = Usage & { id: string | null }
+
+function isLoose(value: unknown): value is Loose {
+  return Boolean(value) && typeof value === 'object'
+}
 
 const HEAD_LINES = 40
 const CHUNK_BYTES = 8 * 1024 * 1024
 const SCAN_MS = 15000
 
 // ── 기록 한 파일 따라 읽기 ─────────────────────────────────────────────
-const newTally = () => ({ offset: 0, ids: new Map(), loose: { io: 0, cache: 0 } })
+export const newTally = (): Tally => ({ offset: 0, ids: new Map(), loose: { io: 0, cache: 0 } })
 
 // 줄 하나 → 그 답의 { id, io, cache } | null
-function usageOf(line) {
+export function usageOf(line: string): Answer | null {
   if (!line.includes('"usage"')) return null
-  let record
+  let record: unknown
   try {
     record = JSON.parse(line)
   } catch {
     return null
   }
-  const message = record && record.type === 'assistant' ? record.message : null
-  const usage = message && message.usage
-  if (!usage || typeof usage !== 'object') return null
-  const count = (key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
+  const message = isLoose(record) && record.type === 'assistant' ? record.message : null
+  if (!isLoose(message)) return null
+  const usage = message.usage
+  if (!isLoose(usage)) return null
+  const count = (key: string): number => {
+    const value = usage[key]
+    return typeof value === 'number' && Number.isFinite(value) ? value : 0
+  }
   return {
     id: typeof message.id === 'string' && message.id ? message.id : null,
     io: count('input_tokens') + count('output_tokens'),
@@ -32,7 +48,7 @@ function usageOf(line) {
 }
 
 // 끝까지 적힌 줄들(마지막 줄바꿈까지)을 더한다 — 같은 id 는 마지막 줄 값 하나로
-function feedLines(tally, text) {
+export function feedLines(tally: Tally, text: string): void {
   for (const line of text.split('\n')) {
     const answer = usageOf(line)
     if (!answer) continue
@@ -44,8 +60,8 @@ function feedLines(tally, text) {
   }
 }
 
-function totalsOf(tally) {
-  const sum = { io: tally.loose.io, cache: tally.loose.cache }
+export function totalsOf(tally: Tally): Usage {
+  const sum: Usage = { io: tally.loose.io, cache: tally.loose.cache }
   for (const answer of tally.ids.values()) {
     sum.io += answer.io
     sum.cache += answer.cache
@@ -54,7 +70,7 @@ function totalsOf(tally) {
 }
 
 // 지난번 자리부터 늘어난 부분만 — 마지막 줄바꿈까지만 먹고(쓰다 만 줄은 다음에), 파일이 줄었으면(새로 씀) 처음부터
-async function readGrowth(file, tally) {
+export async function readGrowth(file: string, tally: Tally): Promise<Tally> {
   const stat = await fs.promises.stat(file)
   if (stat.size < tally.offset) Object.assign(tally, newTally())
   if (stat.size === tally.offset) return tally
@@ -63,7 +79,7 @@ async function readGrowth(file, tally) {
     // 줄바꿈 바이트(0x0A)는 여러 바이트 글자 안에 나오지 않아 여기서 잘라도 글자가 깨지지 않는다.
     // 한 조각에 줄바꿈이 없으면(이미지가 든 아주 긴 줄) 다음 조각과 이어 붙인다
     let position = tally.offset
-    let pending = Buffer.alloc(0)
+    let pending: Buffer = Buffer.alloc(0)
     while (position < stat.size) {
       const length = Math.min(CHUNK_BYTES, stat.size - position)
       const buffer = Buffer.alloc(length)
@@ -88,16 +104,20 @@ async function readGrowth(file, tally) {
 
 // ── 계획서 → 대화 기록(코어 scripts/learn-review.mjs findTranscripts 와 같은 규칙) ──────────────
 // delegate.sh 가 띄운 세션은 첫 지시 맨 앞이 "이 작업의 계획서: <본체>/<계획서> —" 또는 "리뷰할 계획서: <본체>/<계획서> —"
-const stripNoise = (text) => text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').replace(/<local-command-[\s\S]*?<\/local-command-[a-z]+>/g, '').trim()
+const stripNoise = (text: string): string => text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').replace(/<local-command-[\s\S]*?<\/local-command-[a-z]+>/g, '').trim()
 
-function userText(line) {
+function userText(line: string): string {
   if (!line.includes('"type":"user"')) return ''
   try {
-    const record = JSON.parse(line)
-    if (record.type !== 'user') return ''
-    const content = record.message && record.message.content
+    const record: unknown = JSON.parse(line)
+    if (!isLoose(record) || record.type !== 'user') return ''
+    const message = record.message
+    const content = isLoose(message) ? message.content : undefined
     if (typeof content === 'string') return content
-    if (Array.isArray(content)) return content.filter((block) => block && block.type === 'text').map((block) => block.text || '').join('\n')
+    if (Array.isArray(content)) {
+      const blocks: unknown[] = content
+      return blocks.filter((block): block is Loose => isLoose(block) && block.type === 'text').map((block) => block.text || '').join('\n')
+    }
   } catch {
     // 깨진 줄은 건너뛴다
   }
@@ -105,13 +125,13 @@ function userText(line) {
 }
 
 // 앞 40줄 안의 첫 사용자 글(잡음 뺀 것). 없으면 ''
-async function firstUserText(file) {
+export async function firstUserText(file: string): Promise<string> {
   const handle = await fs.promises.open(file, 'r')
   try {
     let text = ''
     let position = 0
     let seen = 0
-    let rest = Buffer.alloc(0)
+    let rest: Buffer = Buffer.alloc(0)
     while (seen < HEAD_LINES) {
       const buffer = Buffer.alloc(1024 * 1024)
       const { bytesRead } = await handle.read(buffer, 0, buffer.length, position)
@@ -136,35 +156,42 @@ async function firstUserText(file) {
   }
 }
 
-const planHeaders = (bodyDirs, planId) => [...new Set(bodyDirs.filter(Boolean))].flatMap((dir) => {
+export const planHeaders = (bodyDirs: readonly (string | null | undefined)[], planId: string): string[] => [...new Set(bodyDirs.filter((dir): dir is string => Boolean(dir)))].flatMap((dir) => {
   const full = path.join(dir, planId)
   return [`이 작업의 계획서: ${full} —`, `리뷰할 계획서: ${full} —`]
 })
 
 // ── 보기 좋은 숫자 — 42k · 3.1M ──────────────────────────────────────
-function formatTokens(count) {
+export function formatTokens(count: unknown): string {
   const value = Math.max(0, Math.round(Number(count) || 0))
   if (value < 1000) return String(value)
   if (value < 1e6) return `${trimZero((value / 1000).toFixed(value < 10000 ? 1 : 0))}k`
   if (value < 1e9) return `${trimZero((value / 1e6).toFixed(value < 1e7 ? 1 : 0))}M`
   return `${trimZero((value / 1e9).toFixed(1))}B`
 }
-const trimZero = (text) => text.replace(/\.0$/, '')
+const trimZero = (text: string): string => text.replace(/\.0$/, '')
 
 // ── 묶음 — 기록 폴더 목록 · 파일 머리 · 파일별 합계를 기억한다 ───────────────────
 // peekPlan · peekSession 은 기다리지 않는다: 아는 값을 바로 돌려주고(처음엔 null) 뒤에서 새로 읽는다
-function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}) {
-  const tallies = new Map() // 파일 → 따라 읽는 상태
-  const heads = new Map() // 파일 → { mtimeMs, text }
-  const known = new Map() // 물음 열쇠 → 값({ io, cache } | null)
-  const running = new Set()
-  let files = []
+export type TokenUsageOptions = { projectsDir: string; scanMs?: number; now?: () => number }
+export type TokenUsage = {
+  peekPlan: (bodyDirs: readonly (string | null | undefined)[] | null | undefined, planId: string | null | undefined) => Usage | null
+  peekSession: (sessionId: unknown) => Usage | null
+  planUsage: (bodyDirs: readonly (string | null | undefined)[], planId: string) => Promise<Usage | null>
+  sessionUsage: (sessionId: unknown) => Promise<Usage | null>
+}
+export function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now }: TokenUsageOptions): TokenUsage {
+  const tallies = new Map<string, Tally>() // 파일 → 따라 읽는 상태
+  const heads = new Map<string, { mtimeMs: number; text: string }>() // 파일 → { mtimeMs, text }
+  const known = new Map<string, Usage | null>() // 물음 열쇠 → 값({ io, cache } | null)
+  const running = new Set<string>()
+  let files: string[] = []
   let scannedAt = -Infinity
 
   // 프로젝트 폴더 바로 아래 <세션>.jsonl 만(서브에이전트 기록은 findTranscripts 처럼 넣지 않는다) · scanMs 마다 한 번
-  async function listFiles() {
+  async function listFiles(): Promise<string[]> {
     if (now() - scannedAt < scanMs) return files
-    const next = []
+    const next: string[] = []
     const dirs = await fs.promises.readdir(projectsDir, { withFileTypes: true }).catch(() => [])
     for (const dir of dirs) {
       if (!dir.isDirectory()) continue
@@ -177,7 +204,7 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
   }
 
   // 첫 사용자 글은 한 번 적히면 바뀌지 않는다 — 찾았으면 계속 쓰고, 못 찾았으면 파일이 바뀔 때 다시 본다
-  async function headOf(file) {
+  async function headOf(file: string): Promise<string> {
     const cached = heads.get(file)
     if (cached && cached.text) return cached.text
     const stat = await fs.promises.stat(file).catch(() => null)
@@ -188,9 +215,9 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
     return text
   }
 
-  async function sumFiles(list) {
+  async function sumFiles(list: readonly string[]): Promise<Usage | null> {
     if (!list.length) return null
-    const sum = { io: 0, cache: 0 }
+    const sum: Usage = { io: 0, cache: 0 }
     let read = 0
     for (const file of list) {
       const tally = tallies.get(file) || newTally()
@@ -208,9 +235,9 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
     return read ? sum : null
   }
 
-  async function planUsage(bodyDirs, planId) {
+  async function planUsage(bodyDirs: readonly (string | null | undefined)[], planId: string): Promise<Usage | null> {
     const headers = planHeaders(bodyDirs, planId)
-    const matched = []
+    const matched: string[] = []
     for (const file of await listFiles()) {
       const head = await headOf(file)
       if (head && headers.some((header) => head.startsWith(header))) matched.push(file)
@@ -218,7 +245,7 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
     return sumFiles(matched)
   }
 
-  async function sessionUsage(sessionId) {
+  async function sessionUsage(sessionId: unknown): Promise<Usage | null> {
     const name = `${sessionId}.jsonl`
     let list = (await listFiles()).filter((file) => path.basename(file) === name)
     // 방금 시작한 세션은 목록이 오래됐을 수 있다 — 한 번 더 훑는다
@@ -229,21 +256,21 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
     return sumFiles(list)
   }
 
-  function peek(key, compute) {
+  function peek(key: string, compute: () => Promise<Usage | null>): Usage | null {
     if (!running.has(key)) {
       running.add(key)
       compute()
         .then((value) => known.set(key, value), () => {})
         .finally(() => running.delete(key))
     }
-    return known.has(key) ? known.get(key) : null
+    return known.has(key) ? (known.get(key) ?? null) : null
   }
 
   return {
     // 열쇠에 본체까지 — 다른 팩에 같은 상대 경로 계획서가 있어도 값 · 실행이 섞이지 않게
     peekPlan: (bodyDirs, planId) => {
       if (!planId) return null
-      const dirs = [...new Set((bodyDirs || []).filter(Boolean).map((dir) => path.resolve(dir)))].sort()
+      const dirs = [...new Set((bodyDirs || []).filter((dir): dir is string => Boolean(dir)).map((dir) => path.resolve(dir)))].sort()
       return peek(`plan:${dirs.join('\n')}\n${planId}`, () => planUsage(dirs, planId))
     },
     peekSession: (sessionId) => (/^[0-9a-fA-F-]{8,64}$/.test(String(sessionId || '')) ? peek(`session:${sessionId}`, () => sessionUsage(sessionId)) : null),
@@ -251,5 +278,3 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
     sessionUsage,
   }
 }
-
-module.exports = { usageOf, newTally, feedLines, totalsOf, readGrowth, firstUserText, planHeaders, formatTokens, createTokenUsage }

@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const feed = require('../src/lib/agent-feed')
+const feed = require('../src/lib/agent-feed.mts')
 
 test('기록 한 줄 → 이벤트: 도구 · 말 · 사용자 지시(시스템 메시지는 뺀다)', () => {
   const tool = {

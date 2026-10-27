@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
-const tokens = require('../src/lib/token-usage')
+const tokens = require('../src/lib/token-usage.mts')
 
 const answer = (id, usage, block = 'text') => JSON.stringify({ type: 'assistant', message: { id, content: [{ type: block }], usage } })
 const user = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } })

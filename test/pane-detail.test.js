@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const detail = require('../src/lib/pane-detail')
+const detail = require('../src/lib/pane-detail.mts')
 
 const NOW = Date.parse('2026-10-26T14:00:00+09:00')
 const plan = (id, extra = {}) => ({ kind: 'plan', id, title: id, status: 'in_progress', agents: [], mtime: NOW - 60000, ...extra })

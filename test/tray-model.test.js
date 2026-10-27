@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const tray = require('../src/lib/tray-model')
+const tray = require('../src/lib/tray-model.mts')
 
 const pane = (id, status, label = null, workspace = 'w1') => ({ id, agent: 'claude', agent_status: status, label, workspace_id: workspace })
 const card = (id, status, title = id, extra = {}) => ({ kind: 'plan', id, status, title, column: { ready_for_review: 'review', done: 'done' }[status] || 'doing', html: null, archived: false, ...extra })

@@ -3,21 +3,48 @@
 const REPORT_MAX_LINES = 30
 const LINE_MAX = 160
 
-const plain = (value) => String(value || '').replace(/\*\*/g, '').replace(/`/g, '').trim()
-const clip = (value, max = LINE_MAX) => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
+// 일감 카드에서 여기서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
+export type DetailCard = {
+  id?: string
+  kind?: string
+  archived?: boolean
+  title?: string
+  status?: string
+  statusNote?: string
+  next?: string
+  blocked?: string
+  agents?: string[]
+  leadPane?: unknown
+  mtime?: unknown
+  doneAt?: unknown
+  linkedPlan?: DetailCard
+}
+// 계획서 하나 — agents 는 늘 배열 · 이슈에 붙은 것은 issue 에 이슈 id
+export type DetailPlan = DetailCard & { agents: string[]; issue?: string }
+// 일감 /api/state panes 에서 읽는 칸만
+type BoardPane = { id: string; agent?: string; role?: string }
+// 보관한 계획서 기록(최근 것)
+type HistoryItem = { dir?: string; title?: string; summary?: string; leadPane?: unknown; archivedAt?: unknown }
+
+export type LeadRow = { id: string | undefined; title: string; paneId: string | null; who: string | undefined; what: string; sinceMs: number; state: 'wait' | 'now' | 'done'; archived?: boolean }
+export type LeadOptions = { panes?: BoardPane[]; since?: Record<string, number>; status?: Record<string, unknown>; waitingPlans?: ReadonlySet<unknown>; now?: number }
+
+const plain = (value: unknown): string => String(value || '').replace(/\*\*/g, '').replace(/`/g, '').trim()
+const clip = (value: string, max: number = LINE_MAX): string => (value.length > max ? `${value.slice(0, max - 1)}…` : value)
 
 // 계획서 · 결정 콘솔에 적힌 pane id 가 이 pane 인가 — 옛 화면 id(w2:p33)는 끝 부분으로 맞춘다
-function samePane(value, paneId) {
+export function samePane(value: unknown, paneId: unknown): boolean {
   if (!value || !paneId) return false
   const text = String(value)
   return text === paneId || text.endsWith(`:${paneId}`)
 }
-const paneKey = (value) => String(value).split(':').pop()
+const paneKey = (value: unknown): string | undefined => String(value).split(':').pop()
 
 // 카드 → 계획서 모양 하나로. 이슈에 붙은 계획서(linkedPlan)는 이슈 제목으로
-function planCards(cards) {
-  const plans = []
-  for (const card of Array.isArray(cards) ? cards : []) {
+function planCards(cards: unknown): DetailPlan[] {
+  const plans: DetailPlan[] = []
+  const list: (DetailCard | null | undefined)[] = Array.isArray(cards) ? cards : []
+  for (const card of list) {
     if (!card || card.archived) continue
     if (card.kind === 'plan') plans.push({ ...card, agents: Array.isArray(card.agents) ? card.agents : [] })
     else if (card.kind === 'issue' && card.linkedPlan) {
@@ -31,45 +58,47 @@ function planCards(cards) {
 // pane id → 'agent'(그 계획서를 하는 에이전트 pane) | 'lead'(그 계획서를 맡긴 아테나 pane). 둘 다면 agent
 // panes: 일감 /api/state panes — role 'hermes'(본체 루트에서 도는 claude · 위임 이름표 없음 — 일감 readPanes)는
 // 아테나 pane 이라 맡긴 일이 지금 없어도(다 끝나 보관돼 카드에서 빠져도) 'lead' 로 둔다
-function bindings(cards, panes = []) {
-  const result = {}
+export function bindings(cards: unknown, panes: unknown = []): Record<string, 'agent' | 'lead'> {
+  const result: Record<string, 'agent' | 'lead'> = {}
   for (const plan of planCards(cards)) {
     for (const paneId of plan.agents) result[paneId] = 'agent'
     if (plan.leadPane) {
-      const key = paneKey(plan.leadPane)
+      // String(…).split(':').pop() 는 늘 글자 하나를 돌려준다
+      const key = paneKey(plan.leadPane) ?? ''
       if (!result[key]) result[key] = 'lead'
     }
   }
-  for (const pane of Array.isArray(panes) ? panes : []) {
+  const paneList: (BoardPane | null | undefined)[] = Array.isArray(panes) ? panes : []
+  for (const pane of paneList) {
     if (pane && pane.role === 'hermes' && pane.id && !result[pane.id]) result[pane.id] = 'lead'
   }
   return result
 }
 
 // 에이전트 pane 이 하는 계획서 — 끝나지 않은 것, 그다음 최근에 고친 것
-function agentPlan(cards, paneId) {
+export function agentPlan(cards: unknown, paneId: string): DetailPlan | null {
   const mine = planCards(cards).filter((plan) => plan.agents.includes(paneId))
   mine.sort((left, right) => Number(left.status === 'done') - Number(right.status === 'done') || (Number(right.mtime) || 0) - (Number(left.mtime) || 0))
   return mine[0] || null
 }
 
-const sameDay = (left, right) => new Date(left).toDateString() === new Date(right).toDateString()
+const sameDay = (left: number, right: number): boolean => new Date(left).toDateString() === new Date(right).toDateString()
 // 보관 시각(일감 archive.mjs — 'YYYY-MM-DD HH:MM' 서울 시각) → ms
-const archivedMs = (value) => {
+const archivedMs = (value: unknown): number => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)
   return match ? Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00+09:00`) : 0
 }
 
 // 아테나 pane 이 맡긴 일 — 계획서마다 한 줄: 나를 기다림(wait) · 지금(now) · 끝남(done — 오늘 끝난 것과 오늘 보관한 것)
 // panes: 일감 /api/state panes(에이전트 이름) · since: pane id → 지금 상태가 된 시각(ms) · waitingPlans: 열린 요청이 있는 계획서 id
-function leadRows(cards, history, paneId, { panes = [], since = {}, status = {}, waitingPlans = new Set(), now = Date.now() } = {}) {
-  const rows = []
-  const seen = new Set()
+export function leadRows(cards: unknown, history: unknown, paneId: string, { panes = [], since = {}, status = {}, waitingPlans = new Set(), now = Date.now() }: LeadOptions = {}): LeadRow[] {
+  const rows: LeadRow[] = []
+  const seen = new Set<string | undefined>()
   for (const plan of planCards(cards)) {
     if (!samePane(plan.leadPane, paneId) || seen.has(plan.id)) continue
     seen.add(plan.id)
     const agentPane = plan.agents.map((id) => panes.find((pane) => pane.id === id)).find(Boolean) || null
-    const row = { id: plan.id, title: String(plan.title || plan.id), paneId: agentPane ? agentPane.id : null, who: agentPane ? agentPane.agent : '', what: plain(plan.statusNote || plan.next || ''), sinceMs: 0, state: 'now' }
+    const row: LeadRow = { id: plan.id, title: String(plan.title || plan.id), paneId: agentPane ? agentPane.id : null, who: agentPane ? agentPane.agent : '', what: plain(plan.statusNote || plan.next || ''), sinceMs: 0, state: 'now' }
     if (plan.status === 'done') {
       if (!sameDay(Number(plan.doneAt) || Number(plan.mtime) || 0, now)) continue
       row.state = 'done'
@@ -77,16 +106,18 @@ function leadRows(cards, history, paneId, { panes = [], since = {}, status = {},
       row.state = 'wait'
       if (plan.status === 'blocked' && plan.blocked) row.what = plain(plan.blocked)
     }
-    if (agentPane && since[agentPane.id]) row.sinceMs = now - since[agentPane.id]
+    const startedAt = agentPane ? since[agentPane.id] : undefined
+    if (startedAt) row.sinceMs = now - startedAt
     rows.push(row)
   }
-  for (const item of Array.isArray(history) ? history : []) {
+  const historyList: (HistoryItem | null | undefined)[] = Array.isArray(history) ? history : []
+  for (const item of historyList) {
     if (!item || !samePane(item.leadPane, paneId)) continue
     const at = archivedMs(item.archivedAt)
     if (!at || !sameDay(at, now)) continue
     rows.push({ id: item.dir, title: String(item.title || item.dir), paneId: null, who: '', what: plain(item.summary || ''), sinceMs: 0, state: 'done', archived: true })
   }
-  const rank = { wait: 0, now: 1, done: 2 }
+  const rank: Record<LeadRow['state'], number> = { wait: 0, now: 1, done: 2 }
   return rows.sort((left, right) => rank[left.state] - rank[right.state])
 }
 
@@ -98,9 +129,9 @@ const TOOL_BLOCK = /^⏺ ([A-Za-z][\w-]*\(|User answered\b)/
 const COLLAPSED_TOOL = /^(Ran|Read|Made|Searched for|Listed|Wrote|Edited|Updated|Found|Fetched) \d+\b/
 const HEAVY_WAIT = /⏳ 대기 \d+초/
 
-function sayBlocks(lines) {
-  const blocks = []
-  let current = null
+function sayBlocks(lines: readonly string[]): string[][] {
+  const blocks: string[][] = []
+  let current: string[] | null = null
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '')
     if (line.startsWith('⏺ ')) {
@@ -120,12 +151,12 @@ function sayBlocks(lines) {
   }
   return blocks.map((block) => {
     const trimmed = [...block]
-    while (trimmed.length && !trimmed[trimmed.length - 1].trim()) trimmed.pop()
+    while (trimmed.length && !(trimmed[trimmed.length - 1] ?? '').trim()) trimmed.pop()
     return trimmed
   })
 }
 
-function screenDigest(text) {
+export function screenDigest(text: unknown): { now: string; report: string[]; heavy: boolean } {
   const lines = String(text || '').split('\n')
   const blocks = sayBlocks(lines)
   const last = blocks[blocks.length - 1] || []
@@ -142,7 +173,9 @@ function screenDigest(text) {
 // 지금 — 일하는 중(work) · 쉬는 중(idle) · 멈춤(stop + 까닭) · 에이전트 없음(gone)
 // agentStatus: 데몬 상태(working · idle · null) · waiting: 화면이 고르기 · 권한 질문
 // (입력창에 보내지 않은 글은 보지 않는다 — Claude Code 의 회색 추천 글까지 잡아 별것 아닌 멈춤을 띄웠다 · 사용자 2026-10-27)
-function nowState({ agentStatus, waiting = false, heavy = false, hasRequest = false, planStatus = '' }) {
+export type NowInput = { agentStatus: unknown; waiting?: boolean; heavy?: boolean; hasRequest?: boolean; planStatus?: string | undefined }
+export type NowState = { state: 'gone' | 'stop' | 'work' | 'idle'; reason: 'question' | 'request' | 'heavy' | 'blocked' | null }
+export function nowState({ agentStatus, waiting = false, heavy = false, hasRequest = false, planStatus = '' }: NowInput): NowState {
   if (!agentStatus) return { state: 'gone', reason: null }
   if (waiting) return { state: 'stop', reason: 'question' }
   if (hasRequest) return { state: 'stop', reason: 'request' }
@@ -152,31 +185,32 @@ function nowState({ agentStatus, waiting = false, heavy = false, hasRequest = fa
 }
 
 // ── 계획서 원문 → 기록(요청 · 진행 · 다음 · 막힘 · 검증) · PR · 자동 리뷰 ─────────
-function section(text, heading) {
+function section(text: string, heading: string): string[] {
   const lines = text.split('\n')
   const start = lines.findIndex((line) => new RegExp(`^#{2,3}\\s*${heading}(?:\\s|$)`).test(line.trim()))
   if (start < 0) return []
-  const depth = lines[start].trim().match(/^#+/)[0].length
-  const body = []
+  // 찾은 줄은 #{2,3} 로 시작한다
+  const depth = (lines[start] ?? '').trim().match(/^#+/)?.[0].length ?? 0
+  const body: string[] = []
   for (const line of lines.slice(start + 1)) {
     const head = line.match(/^(#+)\s/)
-    if (head && head[1].length <= depth) break
+    if (head && (head[1] ?? '').length <= depth) break
     body.push(line)
   }
   return body
 }
-const isNone = (value) => !value || /^(없음|\(확정 전\)|아직 없음|none)/i.test(value) || /^\(.*\)$/.test(value)
-const items = (lines) => lines.map((line) => line.trim()).filter((line) => /^(-|\d+\.)\s+/.test(line)).map((line) => plain(line.replace(/^(-|\d+\.)\s+(\[[ xX]\]\s+)?/, ''))).filter((line) => !isNone(line))
-const field = (text, name) => plain((text.match(new RegExp(`^\\s*-\\s*${name}:\\s*(.+)$`, 'm')) || [])[1] || '')
+const isNone = (value: string): boolean => !value || /^(없음|\(확정 전\)|아직 없음|none)/i.test(value) || /^\(.*\)$/.test(value)
+const items = (lines: readonly string[]): string[] => lines.map((line) => line.trim()).filter((line) => /^(-|\d+\.)\s+/.test(line)).map((line) => plain(line.replace(/^(-|\d+\.)\s+(\[[ xX]\]\s+)?/, ''))).filter((line) => !isNone(line))
+const field = (text: string, name: string): string => plain((text.match(new RegExp(`^\\s*-\\s*${name}:\\s*(.+)$`, 'm')) || [])[1] || '')
 
 // 요청 — 경량은 '## 지시'(> 인용 · 요청마다 ### 절), 정식은 개요의 '요청 사항' 아래 번호 줄
-function requestLines(source) {
+function requestLines(source: string): string[] {
   const instruction = section(source, '지시').map((line) => plain(line.replace(/^>\s?/, '').replace(/^#+\s*/, ''))).filter(Boolean)
   if (instruction.length) return instruction.slice(-10).map((line) => clip(line, 400))
   const lines = source.split('\n')
   const start = lines.findIndex((line) => /^\s*-\s*요청 사항/.test(line))
   if (start < 0) return []
-  const out = []
+  const out: string[] = []
   for (const line of lines.slice(start + 1)) {
     if (!/^\s{2,}\S/.test(line)) break
     out.push(clip(plain(line.trim().replace(/^(\d+\.|-)\s+/, '')), 400))
@@ -184,13 +218,13 @@ function requestLines(source) {
   return out
 }
 
-function planRecord(text) {
+export function planRecord(text: unknown) {
   const source = String(text || '')
   const checkpoint = section(source, 'Checkpoint').join('\n')
   const statusRaw = field(checkpoint, 'Status')
   const progress = section(source, 'Progress').map((line) => line.trim()).filter((line) => /^-\s+\[[ xX]\]/.test(line))
     .map((line) => ({ done: /^-\s+\[[xX]\]/.test(line), text: plain(line.replace(/^-\s+\[[ xX]\]\s+/, '')) }))
-  const prs = [...checkpoint.matchAll(/^\s*-\s*PR:\s*(.+)$/gm)].flatMap((match) => [...match[1].matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)].map((url) => url[0]))
+  const prs = [...checkpoint.matchAll(/^\s*-\s*PR:\s*(.+)$/gm)].flatMap((match) => [...(match[1] ?? '').matchAll(/https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+/g)].map((url) => url[0]))
   return {
     title: plain((source.match(/^#\s+(.+)$/m) || [])[1] || ''),
     status: (statusRaw.match(/planned|in_progress|blocked|ready_for_review|done/) || [''])[0],
@@ -206,5 +240,3 @@ function planRecord(text) {
     reviewResult: field(checkpoint, 'Review result'),
   }
 }
-
-module.exports = { samePane, bindings, agentPlan, leadRows, screenDigest, nowState, planRecord }

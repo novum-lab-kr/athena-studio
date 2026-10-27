@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const explorer = require('../src/lib/explorer')
+const explorer = require('../src/lib/explorer.mts')
 
 test('정렬: 폴더 먼저 · 이름 대소문자 무시 · .git 빼기', () => {
   const sorted = explorer.sortEntries([
