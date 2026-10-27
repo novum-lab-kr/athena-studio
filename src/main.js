@@ -12,14 +12,14 @@ const packModel = require('./lib/pack')
 const agentFeed = require('./lib/agent-feed')
 const trayModel = require('./lib/tray-model')
 const screenModel = require('./lib/screen-model')
-const trayBadge = require('./lib/tray-icon')
+const trayBadge = require('./lib/tray-icon.mts')
 const daemonClient = require('./daemon-client')
 const explorer = require('./lib/explorer')
 const fileIcons = require('./lib/file-icons')
 const viewer = require('./lib/viewer')
 const i18n = require('./lib/i18n')
-const agentLanguage = require('./lib/agent-language')
-const requestsModel = require('./lib/requests')
+const agentLanguage = require('./lib/agent-language.mts')
+const requestsModel = require('./lib/requests.mts')
 const workModel = require('./lib/work-model')
 const paneDetail = require('./lib/pane-detail')
 const tokenUsage = require('./lib/token-usage')
@@ -78,7 +78,7 @@ function setLanguage(next) {
   for (const ctx of packWindows) syncAgentLanguage(ctx.athenaDir)
 }
 
-// 에이전트 답 언어 — 앱 언어를 본체 .claude/settings.local.json 의 language 로(lib/agent-language.js).
+// 에이전트 답 언어 — 앱 언어를 본체 .claude/settings.local.json 의 language 로(lib/agent-language.mts).
 // 코어 훅이 메시지마다 다시 읽어서 켜 둔 세션에도 다음 메시지부터 먹는다. .claude 가 없는 폴더(본체 아님)는 건드리지 않는다
 function syncAgentLanguage(dir) {
   if (!dir || !fs.existsSync(path.join(dir, '.claude'))) return

@@ -1,13 +1,17 @@
 // 메뉴 막대 아이콘에 빨간 점 — 템플릿 아이콘은 맥이 흑백으로만 칠해 색을 못 쓴다.
 // 그래서 막힘이 있을 때만 로고 비트맵(BGRA)을 메뉴 막대 색(흰색 · 검정)으로 칠하고 오른쪽 아래에 빨간 점을 그린 새 비트맵을 만든다
-const RED = [255, 59, 48] // 맥 시스템 빨강
+
+// [r, g, b] — 0~255
+export type Rgb = readonly [number, number, number]
+
+export const RED: Rgb = [255, 59, 48] // 맥 시스템 빨강
 
 // bgra: Buffer(가로×세로×4, B·G·R·A · premultiplied) · tint: [r, g, b] 로고 색 · 돌려줌: 새 Buffer
-function badgeBitmap(bgra, width, height, tint) {
+export function badgeBitmap(bgra: Buffer, width: number, height: number, tint: Rgb): Buffer {
   const out = Buffer.from(bgra)
   // 로고는 알파만 남기고 tint 로 — Electron 비트맵은 premultiplied alpha 라 색에 알파를 곱한다(투명이면 0)
   for (let offset = 0; offset < out.length; offset += 4) {
-    const alpha = out[offset + 3] / 255
+    const alpha = (out[offset + 3] ?? 0) / 255
     out[offset] = Math.round(tint[2] * alpha)
     out[offset + 1] = Math.round(tint[1] * alpha)
     out[offset + 2] = Math.round(tint[0] * alpha)
@@ -33,5 +37,3 @@ function badgeBitmap(bgra, width, height, tint) {
   }
   return out
 }
-
-module.exports = { RED, badgeBitmap }

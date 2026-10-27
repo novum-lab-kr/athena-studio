@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { RED, badgeBitmap } = require('../src/lib/tray-icon')
+const { RED, badgeBitmap } = require('../src/lib/tray-icon.mts')
 
 test('빨간 점 아이콘: 로고는 메뉴 막대 색으로 · 오른쪽 아래 빨간 점 · 점 둘레는 비움 · 원본은 그대로', () => {
   const width = 16

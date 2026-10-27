@@ -1,0 +1,24 @@
+{
+  // 앱 Node 쪽(main · daemon · src/lib) 타입 검사 — 빌드 없음. Electron 44(Node 24)가 .mts 를 타입만 지우고 바로 실행한다
+  // 섞어 쓰는 중: .mts 는 늘 검사 · JS 는 파일 맨 위 // @ts-check 를 붙인 것만(checkJs 를 전역으로 켜면 옛 오류 수천 개)
+  // renderer · preload 는 브라우저 쪽이라 뺀다(renderer 단계에서 따로). 코어 athena/ 는 athena/jsconfig.json
+  "compilerOptions": {
+    "target": "ES2022",
+    "lib": ["ES2023"],
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "types": ["node"],
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "allowJs": true,
+    "checkJs": false,
+    "noEmit": true,
+    // Node 타입 지우기가 읽을 수 있는 문법만 — enum · namespace · 매개변수 속성 · import = 금지
+    "erasableSyntaxOnly": true,
+    "verbatimModuleSyntax": true,
+    "allowImportingTsExtensions": true,
+    "skipLibCheck": true
+  },
+  "include": ["src/**/*", "scripts/*.js", "test/*.js"],
+  "exclude": ["src/renderer", "src/preload.js", "src/preload-tray.js"]
+}

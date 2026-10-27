@@ -1,7 +1,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const path = require('node:path')
-const agentLanguage = require('../src/lib/agent-language')
+const agentLanguage = require('../src/lib/agent-language.mts')
 
 test('앱 언어 네 개 모두 Claude Code language 값으로', () => {
   assert.deepEqual(Object.keys(agentLanguage.AGENT_LANGUAGES).sort(), ['en', 'ja', 'ko', 'zh'])
