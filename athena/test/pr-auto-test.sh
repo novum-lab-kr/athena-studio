@@ -10,7 +10,8 @@
 # 가짜 리뷰어 — 둘 다 답 · 명령 없음 · 시간 넘김 · 모양이 틀린 답 · 모델(models.prReview → --model) ·
 # 사람에게 넘기지 않기(2026-10-26 결정 A · B · C) — 결정이 있어도 수정은 보냄 · 구현 세부 결정은 추천안으로 자동 확정 · 상한 뒤 이어받아 검증만으로 머지 ·
 # 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인) ·
-# 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로)
+# 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로) ·
+# 큰 diff(syung#12 · #23 재현 — 생성물은 빼고 코드 파일부터 · 잘린 · 빠진 파일 목록 · 잘린 diff 승인은 머지 승인 아님)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
@@ -195,6 +196,84 @@ console.log(`\n${pass + fail}개 중 실패 ${fail}`)
 process.exit(fail ? 1 : 0)
 EOF
 
+# ── 큰 diff — 생성물은 빼고 코드 파일부터 · 잘린 승인은 머지 승인 아님(이슈 20261025 · syung#12 · syung#23) ──
+node --input-type=module - <<'EOF' || FAIL=1
+import { packDiff, splitDiff, generatedReason, globToRegExp, linguistGeneratedRules, linguistGenerated, missedFiles, dataLikeLine, repoGeneratedPatterns, omittedSection, partialApproval, partialCount, PARTIAL_APPROVAL, reviewComment, aggregate, validReview } from './scripts/lib/pr-auto.mjs'
+import { buildPrompt } from './scripts/pr-auto.mjs'
+let pass = 0, fail = 0
+const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
+const fileDiff = (path, added, { status = 'modify' } = {}) => {
+  const minus = status === 'add' ? '/dev/null' : `a/${path}`
+  const plus = status === 'delete' ? '/dev/null' : `b/${path}`
+  const sign = status === 'delete' ? '-' : '+'
+  return `diff --git a/${path} b/${path}\nindex 1111111..2222222 100644\n--- ${minus}\n+++ ${plus}\n@@ -1,1 +1,${added.length} @@\n${added.map((line) => `${sign}${line}`).join('\n')}\n`
+}
+const LIMIT = 60_000
+console.log('\n큰 diff 나누기')
+// syung#23 재현 — 맨 앞 생성물 data/fare/bus_km.json(1.2 MB · 한 줄짜리 큰 JSON)이 diff 앞을 다 차지
+const busKm = fileDiff('data/fare/bus_km.json', [`{${'"100100":12.3,'.repeat(90_000)}"x":0}`], { status: 'add' })
+const code = fileDiff('src/fare.mjs', ['export const fare = (km) => Math.round(km * 100)', 'export const min = 1400'])
+const test = fileDiff('test/fare.test.mjs', ['import { fare } from "../src/fare.mjs"', 'assert.equal(fare(1), 100)'])
+const syung23 = busKm + code + test
+check('(재현 · 고치기 전) 앞에서 6만 자로 자르면 코드 파일이 하나도 안 들어간다', !syung23.slice(0, LIMIT).includes('src/fare.mjs') && syung23.length > 1_000_000)
+const files = splitDiff(syung23)
+check('splitDiff — 파일 셋 · 경로 · +줄 수(새 파일 /dev/null 은 b 경로)', files.length === 3 && files.map((item) => item.path).join(',') === 'data/fare/bus_km.json,src/fare.mjs,test/fare.test.mjs' && files[1].added === 2 && files[0].added === 1, JSON.stringify(files.map(({ path, added, removed, longest }) => ({ path, added, removed, longest }))))
+check('splitDiff — 지운 파일은 a 경로 · −줄 · 빈 글은 []', splitDiff(fileDiff('old/x.js', ['a', 'b'], { status: 'delete' }))[0].path === 'old/x.js' && splitDiff(fileDiff('old/x.js', ['a', 'b'], { status: 'delete' }))[0].removed === 2 && splitDiff('').length === 0)
+const packed = packDiff(syung23, { limit: LIMIT })
+check('syung#23 — 생성물(큰 JSON)은 본문 없이 목록에 · 코드 · 시험 파일은 들어감 · 다 넣음(complete)', packed.complete && packed.text.includes('src/fare.mjs') && packed.text.includes('test/fare.test.mjs') && !packed.text.includes('100100') && packed.generated.length === 1 && packed.generated[0].path === 'data/fare/bus_km.json' && packed.generated[0].added === 1, JSON.stringify({ ...packed, text: packed.text.length }))
+const omitted = omittedSection(packed)
+check('프롬프트 목록 — "경로 · +N/−M줄 · 생성물이라 생략"', omitted.includes('`data/fare/bus_km.json` · +1/−0줄 · 생성물이라 생략(데이터 파일 · 아주 긴 줄') && !omitted.includes('⚠️'), omitted)
+// syung#12 재현 — 코드 파일(web/index.html) 안에 한 줄로 박힌 큰 역 데이터
+const html = fileDiff('web/index.html', ['<div aria-live="polite" id="sheet"></div>', `<script>const stationData=${'[1,2],'.repeat(20_000)}</script>`])
+const account = fileDiff('server/account.mjs', ['export const login = () => true'])
+const syung12 = packDiff(html + account, { limit: LIMIT })
+check('syung#12 — 코드 파일 안의 아주 긴 줄은 앞부분만 · 같은 파일의 다른 줄과 뒤 파일은 그대로', syung12.complete && syung12.text.includes('aria-live="polite"') && syung12.text.includes('server/account.mjs') && syung12.text.includes('…(이 줄 ') && syung12.shortened[0]?.path === 'web/index.html' && syung12.text.length < 5000, JSON.stringify({ ...syung12, text: syung12.text.length }))
+// 코드로 보이는 긴 줄(압축 코드)은 앞부분만 넣으면 못 본 코드 — 잘린 것과 같이 불완전(PR #62 R1 확정 "데이터 모양 줄만 완전으로" · 라운드 1 · 2 지적 3)
+const minified = fileDiff('web/app.js', ['// 짧은 줄', 'function a(b){return b.map(c=>c*2)};'.repeat(60)])
+const codeLong = packDiff(minified + account, { limit: LIMIT })
+check('R1 — 데이터 모양 판별: 숫자 · 따옴표 · 괄호 리터럴(문자열 내용은 비우고 셈)은 데이터 · 압축 코드는 아님', dataLikeLine(`+<script>const stationData=${'[1,2],'.repeat(500)}</script>`) && dataLikeLine(`+const names=[${'"서울역",'.repeat(300)}]`) && dataLikeLine(`+${'"100100":12.3,'.repeat(200)}`) && !dataLikeLine(`+${'function a(b){return b.map(c=>c*2)};'.repeat(40)}`))
+check('R1 — 코드로 보이는 긴 줄을 줄인 파일은 불완전 · 못 본 파일 목록 · 개수에 들어감 · 데이터 줄만 줄인 파일(syung#12)은 다 본 것', !codeLong.complete && JSON.stringify(missedFiles(codeLong)) === '["web/app.js"]' && partialCount(codeLong) === 1 && codeLong.shortened[0].code === 1 && syung12.complete && syung12.shortened[0].code === 0, JSON.stringify({ ...codeLong, text: codeLong.text.length }))
+const codeLongText = omittedSection(codeLong)
+check('R1 — 프롬프트 ⚠️ 목록에 "코드로 보이는 아주 긴 줄 1개를 앞 200자만" · 데이터 줄 목록은 따로', codeLongText.includes('⚠️ 길어서 다 넣지 못한 코드 파일') && codeLongText.includes('`web/app.js` · 코드로 보이는 아주 긴 줄 1개를 앞 200자만') && omittedSection(syung12).includes('데이터 모양의 아주 긴 줄을 앞부분만 넣은 파일') && !omittedSection(syung12).includes('⚠️'), codeLongText)
+
+console.log('\n생성물 판별 기준(docs/pr-auto.md "큰 diff")')
+const one = (path, extra = {}) => ({ path, text: 'x', longest: 10, ...extra })
+check('팩 레포 "generated" 패턴이 먼저(작은 파일도) — data/** · *.gen.ts', generatedReason(one('data/a/b.txt'), { patterns: ['data/**'] }) === '팩 설정 생성물' && generatedReason(one('src/api/x.gen.ts'), { patterns: ['*.gen.ts'] }) === '팩 설정 생성물' && generatedReason(one('src/data/b.txt'), { patterns: ['data/**'] }) === '')
+check('repoGeneratedPatterns — 그 레포 항목의 문자열 배열만(없으면 [])', JSON.stringify(repoGeneratedPatterns({ repos: [{ name: 'syung', generated: ['data/fare/**', 3, ''] }, { name: 'x', generated: 'data' }] }, 'syung')) === '["data/fare/**"]' && repoGeneratedPatterns({ repos: [{ name: 'x', generated: 'data' }] }, 'x').length === 0 && repoGeneratedPatterns({}, 'y').length === 0)
+const attrs = linguistGeneratedRules('# 주석\nweb/stations.js linguist-generated\n*.pb.go linguist-generated=true\nvendor/** -linguist-generated\nx.js linguist-generated=false\ny.js !linguist-generated\nREADME.md text\n')
+check('.gitattributes linguist-generated — 켬 · 끔 규칙을 순서대로(속성 없는 줄은 뺌) · 켠 경로는 생성물', JSON.stringify(attrs.map((rule) => `${rule.pattern}:${rule.on}`)) === '["web/stations.js:true","*.pb.go:true","vendor/**:false","x.js:false","y.js:false"]' && generatedReason(one('web/stations.js'), { attributes: attrs }) === 'linguist-generated' && generatedReason(one('api/a.pb.go'), { attributes: attrs }) === 'linguist-generated' && generatedReason(one('x.js'), { attributes: attrs }) === '', JSON.stringify(attrs))
+const wide = linguistGeneratedRules('* linguist-generated\nsrc/** -linguist-generated\nsrc/gen/** linguist-generated\n')
+check('.gitattributes — 뒤 규칙이 덮는다: "*" 켬 뒤 "src/**" 끔이면 src 코드는 리뷰 · 그 뒤 "src/gen/**" 켬은 다시 생성물', linguistGenerated('dist/a.js', wide) && !linguistGenerated('src/app.mjs', wide) && linguistGenerated('src/gen/api.ts', wide) && generatedReason(one('src/app.mjs'), { attributes: wide }) === '' && !linguistGenerated('a.js', []))
+check('lockfile · 압축본 · 소스맵', generatedReason(one('package-lock.json')) === 'lockfile' && generatedReason(one('apps/web/pnpm-lock.yaml')) === 'lockfile' && generatedReason(one('dist/app.min.js')) === '압축본 · 소스맵' && generatedReason(one('dist/app.js.map')) === '압축본 · 소스맵')
+check('데이터 확장자는 크거나(2만 자 넘음) 아주 긴 줄일 때만 — 작은 설정 JSON 은 코드처럼 리뷰', generatedReason(one('package.json')) === '' && generatedReason(one('data/x.csv', { text: 'x'.repeat(20_001) })).startsWith('큰 데이터 파일') && generatedReason(one('a.json', { longest: 1001 })).startsWith('데이터 파일 · 아주 긴 줄'))
+check('glob — / 없는 패턴은 어느 폴더든 · 끝 / 는 폴더 아래 · 앞 / 는 맨 위만', globToRegExp('*.lock').test('a/b/c.lock') && globToRegExp('gen/').test('gen/a/b.ts') && globToRegExp('/gen/*.ts').test('gen/a.ts') && !globToRegExp('/gen/*.ts').test('x/gen/a.ts') && globToRegExp('**/fixtures/**').test('a/fixtures/b.json'))
+console.log('\n넘칠 때 — 잘린 · 빠진 파일 목록 · 잘린 승인은 머지 승인 아님')
+const big = (path) => fileDiff(path, Array.from({ length: 600 }, (_, index) => `const value${index} = ${index} // ${'x'.repeat(30)}`))
+const over = packDiff(big('src/a.mjs') + big('src/b.mjs') + big('src/c.mjs') + fileDiff('src/d.mjs', ['export const d = 1']), { limit: LIMIT })
+check('코드 파일을 순서대로 — 통째로 들어가는 것 먼저(뒤의 작은 파일 d 도) · 남은 자리로 하나를 잘라 넣고 · 나머지는 목록에만 · 순서는 원래대로', !over.complete && over.text.includes('src/a.mjs') && over.text.includes('src/d.mjs') && over.text.indexOf('src/b.mjs') < over.text.indexOf('src/d.mjs') && over.truncated.length === 1 && over.truncated[0].path === 'src/b.mjs' && over.dropped.map((item) => item.path).join() === 'src/c.mjs' && over.text.length <= LIMIT + 200, JSON.stringify({ ...over, text: over.text.length }))
+const twice = packDiff(big('src/a.mjs') + big('src/b.mjs') + fileDiff('src/b2.mjs', Array.from({ length: 600 }, () => 'function a(b){return b.map(c=>c*2)};'.repeat(40))), { limit: LIMIT })
+check('R1 — 줄도 줄이고 잘리기도 한 파일은 못 본 파일 목록에 한 번만(중복 없음)', new Set(missedFiles(twice)).size === missedFiles(twice).length && partialCount(twice) === missedFiles(twice).length && missedFiles(twice).includes('src/b2.mjs'), JSON.stringify(missedFiles(twice)))
+const overText = omittedSection(over)
+check('프롬프트에 잘린 · 빠진 파일 목록과 "전체 diff 를 달라는 지적은 내지 않는다"', overText.includes('⚠️ 길어서 다 넣지 못한 코드 파일') && overText.includes('전체 diff 를 달라') && [...over.truncated, ...over.dropped].every((item) => overText.includes(item.path)), overText)
+const ok = (name, review) => ({ name, status: 'ok', review: validReview(review) })
+const approve = { verdict: 'approve', summary: '좋다', findings: [], decisions: [] }
+const changes = { verdict: 'changes', summary: '고칠 것', findings: [{ file: 'a.js', line: 3, problem: 'p', fix: 'f', severity: 'blocking' }], decisions: [] }
+const both = aggregate([ok('claude', approve), ok('codex', approve)])
+check('못 본 파일 목록(missedFiles) — 잘린 · 빠진 파일 경로(history 에 남겨 다음 라운드가 전체 diff 를 다시 본다)', JSON.stringify(missedFiles(over)) === JSON.stringify([...over.truncated, ...over.dropped].map((item) => item.path)) && missedFiles(packed).length === 0)
+check('잘린 diff + 둘 다 승인 → 잘린 승인(머지 승인 아님) · 다 넣었으면 그대로 승인 · 수정 필요는 그대로 보낸다', partialApproval(both, over) && !partialApproval(both, packed) && !partialApproval(aggregate([ok('claude', approve), ok('codex', changes)]), over) && partialCount(over) === over.truncated.length + over.dropped.length && PARTIAL_APPROVAL === '잘린 diff 승인')
+const partialComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both, partial: partialCount(over) })
+check('PR 댓글 — 다 넣지 못한 파일 수 · 이 승인은 머지 승인으로 세지 않는다 · 다 넣었으면 그 줄 없음', partialComment.includes(`코드 파일 ${partialCount(over)}개를 다 넣지 못했다`) && partialComment.includes('머지 승인으로 세지 않고') && !reviewComment({ sha: 'a', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both }).includes('다 넣지 못했다'), partialComment)
+const pr = { baseRefName: 'dev', title: '시험', body: '본문' }
+const prompt = buildPrompt({ repo: 'syung', number: '23', pr, planFile: 'plans/task/x.md', planText: '계획', packed })
+check('프롬프트 — 코드 diff · "리뷰에 넣지 못한 것" 절에 생성물 목록 · 생성물 본문 없음', prompt.includes('src/fare.mjs') && prompt.includes('## 리뷰에 넣지 못한 것') && prompt.includes('bus_km.json` · +1/−0줄 · 생성물이라 생략') && !prompt.includes('100100') && !prompt.includes('길어서 일부만'), prompt.slice(-1500))
+const overPrompt = buildPrompt({ repo: 'syung', number: '23', pr, planFile: 'plans/task/x.md', planText: '계획', packed: over })
+check('프롬프트 — 넘치면 제목에 "길어서 일부만" · 잘린 파일 목록', overPrompt.includes('길어서 일부만') && overPrompt.includes('⚠️ 길어서 다 넣지 못한 코드 파일'))
+const onlyGen = buildPrompt({ repo: 'syung', number: '23', pr, planFile: 'p', planText: '', packed: packDiff(busKm, { limit: LIMIT }) })
+check('프롬프트 — 생성물만 바뀌면 "(생성물 밖의 코드 변경 없음)" · 빈 diff 는 "(코드 변경 없음)" · 목록 절 없음', onlyGen.includes('(생성물 밖의 코드 변경 없음)') && buildPrompt({ repo: 's', number: '1', pr, planFile: 'p', planText: '', packed: packDiff('', { limit: LIMIT }) }).includes('(코드 변경 없음)') && !buildPrompt({ repo: 's', number: '1', pr, planFile: 'p', planText: '', packed: packDiff('', { limit: LIMIT }) }).includes('리뷰에 넣지 못한 것'))
+console.log(`\n${pass + fail}개 중 실패 ${fail}`)
+process.exit(fail ? 1 : 0)
+EOF
+
 # ── 가짜 리뷰어로 실행 ───────────────────────────────────────────────────
 BIN="$TMP/bin"; mkdir -p "$BIN"
 # claude -p --output-format json --json-schema … — structured_output 에 답(learn-review 가 쓰는 꼴)
@@ -297,6 +376,7 @@ echo "gh $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "pr list") echo 7 ;;
   "pr view") printf '{"state":"OPEN","isDraft":false,"headRefOid":"%s","mergeable":"MERGEABLE","baseRefName":"dev"}\n' "$FAKE_HEAD" ;;
+  "pr diff") [ -n "${FAKE_DIFF:-}" ] && cat "$FAKE_DIFF" || exit 1 ;;
   "pr edit"|"pr merge"|"pr ready") ;;
   *) exit 1 ;;
 esac
@@ -434,6 +514,45 @@ expect "(시험 준비) 다른 수정을 섞은 merge 커밋" '[ $CODE = 0 ] && 
 sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${MERGE_COMMIT:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "충돌 풀기 밖의 수정(b.txt)이 섞이면 base 합침 아님 — 평소처럼 라운드 4/3" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
+# 큰 diff(syung#23) — 생성물은 빼고 · 코드 파일이 넘치면 둘 다 승인이어도 "잘린 diff 승인" 으로 머지하지 않음(--dry-run 으로 할 일만)
+node -e '
+const line = (path, body) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1,2 @@\n${body}\n`
+const code = (path) => line(path, Array.from({ length: 900 }, (_, index) => `+const v${index} = ${index} // ${"x".repeat(40)}`).join("\n"))
+require("fs").writeFileSync(process.argv[1], line("data/fare/bus_km.json", `+{${"\"1\":2,".repeat(300000)}}`) + code("src/a.mjs") + code("src/b.mjs"))
+require("fs").writeFileSync(process.argv[2], line("data/fare/bus_km.json", `+{${"\"1\":2,".repeat(300000)}}`) + line("src/fare.mjs", "+export const fare = 1"))
+' "$TMP/big.diff" "$TMP/gen.diff"
+cp "$CORE/$PLANF" "$TMP/plan.keep"; write_plan '수정 필요' p3
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 둘 다 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다"' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "큰 생성물 + 작은 코드 — 생성물만 빼고 다 넣었으면 평소 승인 길(머지 확인 요청)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+# PR 이 스스로 .gitattributes 에 "src/** linguist-generated" 를 더해도 판별은 base(origin/dev) 쪽 — src 코드는 그대로 리뷰(PR #62 자동 리뷰 지적 1)
+ATTR_BLOB="$(printf 'src/** linguist-generated\n' | git -C "$WT" hash-object -w --stdin)"
+ATTR_TREE="$(printf '100644 blob %s\t.gitattributes\n' "$ATTR_BLOB" | git -C "$WT" mktree)"
+ATTR_HEAD="$(G -C "$WT" commit-tree "$ATTR_TREE" -p "$MIXED" -m attrs)"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$ATTR_HEAD" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "PR HEAD 의 .gitattributes 는 쓰지 않음 — src/fare.mjs 는 생성물로 안 빠지고 본문이 프롬프트에" 'grep -q "export const fare" "$TMP/prompt.txt" && ! grep -q "src/fare.mjs\` · .*생성물이라 생략" "$TMP/prompt.txt" && echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json$"' "$OUT"
+# 지난 라운드가 코드 파일을 다 못 봤으면(history missed) 2라운드는 증분이 아니라 PR 전체 diff 를 다시(지적 2) — 다시 넣어도 넘치면 또 잘린 승인
+mkdir -p "$QUEUE/history"; printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":["src/b.mjs"]}' "$SHA" > "$QUEUE/history/web-7.json"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "지난 라운드 못 본 파일 있음 → 2라운드는 PR 전체 diff(증분 아님) · 프롬프트에 그렇게" 'grep -q "지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다" "$TMP/prompt.txt" && grep -q "export const fare" "$TMP/prompt.txt" && echo "$OUT" | grep -q "라운드 2/3"' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "전체를 다시 넣어도 넘치면 2라운드 승인도 잘린 diff 승인(머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인"' "$OUT"
+printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":[]}' "$SHA" > "$QUEUE/history/web-7.json"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "지난 라운드가 다 봤으면 2라운드는 지금처럼 증분 diff(gh pr diff 안 씀)" 'grep -q "이후 바뀐 것만" "$TMP/prompt.txt" && ! grep -q "전체를 다시" "$TMP/prompt.txt"' "$OUT"
+rm -f "$QUEUE/history/web-7.json"
+# 코드로 보이는 긴 줄(압축 코드)을 줄인 PR — 둘 다 승인이어도 잘린 diff 승인(R1 · 지적 3) · 데이터 모양 긴 줄만이면 평소 승인
+node -e '
+const line = (path, body) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++ b/${path}\n@@ -1 +1,2 @@\n${body}\n`
+require("fs").writeFileSync(process.argv[1], line("web/app.js", "+" + "function a(b){return b.map(c=>c*2)};".repeat(60)))
+require("fs").writeFileSync(process.argv[2], line("web/index.html", "+<script>const stationData=" + "[1,2],".repeat(2000) + "</script>"))
+' "$TMP/code-long.diff" "$TMP/data-long.diff"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/code-long.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "코드 긴 줄을 줄인 PR — 둘 다 승인이어도 잘린 diff 승인(못 본 코드 파일 1개 · 머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)"' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/data-long.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "데이터 모양 긴 줄만 줄인 PR(syung#12) — 평소 승인 길" 'echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+cp "$TMP/plan.keep" "$CORE/$PLANF"   # 뒤 시험은 앞의 계획서 줄(충돌 검증 대기)을 그대로 쓴다
 # merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
 echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
 echo side > "$WT/e.txt" && G -C "$WT" add e.txt && G -C "$WT" commit -q -m e
