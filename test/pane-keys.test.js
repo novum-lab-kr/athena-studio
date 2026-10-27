@@ -12,6 +12,15 @@ test('⌘Backspace → Ctrl+U(커서 앞 줄 지우기)', () => {
   assert.equal(paneKeyOverride(key('Backspace', { metaKey: true })), '\x15')
 })
 
+test('⌘← · ⌘→ → Ctrl+A · Ctrl+E(줄 처음 · 끝 — 숨은 입력칸 커서를 옮기지 않게)', () => {
+  assert.equal(paneKeyOverride(key('ArrowLeft', { metaKey: true })), '\x01')
+  assert.equal(paneKeyOverride(key('ArrowRight', { metaKey: true })), '\x05')
+  assert.equal(paneKeyOverride(key('ArrowLeft')), null)
+  assert.equal(paneKeyOverride(key('ArrowLeft', { metaKey: true, shiftKey: true })), null)
+  assert.equal(paneKeyOverride(key('ArrowLeft', { metaKey: true, altKey: true })), null)
+  assert.equal(paneKeyOverride(key('ArrowRight', { metaKey: true, ctrlKey: true })), null)
+})
+
 test('수정키가 없거나 다른 수정키가 섞이면 바꾸지 않는다', () => {
   assert.equal(paneKeyOverride(key('Enter')), null)
   assert.equal(paneKeyOverride(key('Enter', { shiftKey: true, ctrlKey: true })), null)
