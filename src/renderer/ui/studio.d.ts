@@ -54,6 +54,9 @@ declare global {
     repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>
     // main 의 browserCommand(src/main/side-browser.mts) — navigate 는 { url } 또는 { error }, 나머지는 {}
     browserCommand(name: 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'external', value?: string): Promise<{ url?: string; error?: string }>
+    // main 의 ctx.packIcon(src/main/packs.mts → files.mts iconDataUrl) · pack:cancel(도는 팩 명령 멈추기)
+    packIcon(id: string): Promise<{ dataUrl: string | null } | undefined>
+    packCancel(): Promise<unknown>
   }
 
   const studio: StudioApi
