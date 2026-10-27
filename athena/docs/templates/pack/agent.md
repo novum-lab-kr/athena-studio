@@ -24,6 +24,9 @@ tools: {{tools}}
 지식은 `docs/knowledge/{{knowledge}}/` — `rules.md` · `structure.md` · `patterns.md` · `workflows.md` · `gotchas.md`.
 (patterns·workflows 는 이 레포를 처음 작업할 때 채운다 — 비어 있으면 실제 코드에서 같은 종류의 기존 구현을 찾아 따른다)
 
+## 코드 기준 (정본 `docs/knowledge/common/coding.md` "언어 · 타입" · "최신 문법" · "층별 기준")
+{{layerRules}}
+
 ## 검증
 athena 루트에서 `scripts/verify/{{verifyCmd}}` 를 실행하고 출력 표를 보고의 "검증 결과"에 **그대로** 붙인다. reviewer 도 같은 스크립트를 다시 돌린다. 워크트리면 `ATHENA_VERIFY_DIR=<워크트리>` 를 앞에 붙인다. 실행하지 못한 검증을 통과한 것처럼 적지 않는다.
 
@@ -31,3 +34,4 @@ athena 루트에서 `scripts/verify/{{verifyCmd}}` 를 실행하고 출력 표�
 
 ## 보고
 `AGENTS.md` 6절 형식 — 변경 파일 목록 / 구현 요약 / 검증 결과 / 남은 위험·확인 필요.
+{{contractLine}}

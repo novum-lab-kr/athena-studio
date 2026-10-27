@@ -175,6 +175,8 @@ export const packEntry = (repo) => {
     entry.agents = repo.agents ?? defaults.agents
   }
   if (repo.layer === 'be') entry.layer = 'be'
+  // 모바일 앱(react-native · expo) — 생성 틀이 앱 층 기준을 싣는다(QA · 서비스 표는 보지 않는다)
+  if (repo.mobile) entry.mobile = true
   if (repo.lang === 'python') entry.lang = 'python'
   if (repo.appDir) entry.appDir = repo.appDir
   return entry
@@ -271,6 +273,41 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
   return { pack, entries }
 }
 
+// 층(fe · be · app)마다 새로 만들 때의 기본 기준 — 프로필 "코드 기준" · rules.md "언어 · 타입 상태" 에 싣는다.
+// 정본은 docs/knowledge/common/coding.md "언어 · 타입" · "최신 문법" · "층별 기준" — 여기는 그 절을 가리키는 요약이다
+const layerOf = (repo) => {
+  if (repo.layer === 'be') return 'be'
+  if (repo.mobile) return 'app'
+  return 'fe'
+}
+const LAYER_RULES = {
+  fe: [
+    '- 언어 · 타입 — 새 레포 · 새 파일은 TypeScript `strict`. 기존 레포는 `rules.md` "언어 · 타입 상태" 의 최신 쪽으로(칸이 없으면 지금 코드가 상태 — 빌드 없는 레포에 `.ts` 를 만들지 않는다)',
+    '- 최신 문법(ES2015+) — `const` / `let` · 화살표 함수 · 구조 분해 · `async` / `await` · `?.` · `??` · ES 모듈(CommonJS 레포는 `rules.md` 상태대로)',
+    '- 프레임워크 — 레포가 쓰는 것. 새로 만들면 웹 서비스는 Next.js · 앱 안 화면 · 단일 페이지 도구는 Vite + React',
+  ],
+  be: [
+    '- 언어 · 타입 — Node 는 TypeScript `strict` · ES 모듈, Python 은 모든 함수에 타입 힌트 + pyright · ruff. 기존 레포는 `rules.md` "언어 · 타입 상태" 의 최신 쪽으로',
+    '- API — 하위 호환(필드 삭제 · 이름 바꾸기 금지, 추가만) · 경계에서 입력 검증 · 오류는 한 모양(`{ code, message }`) · 비밀값은 환경 변수(코드 · 로그에 넣지 않는다) · DB 변경은 마이그레이션 파일로만',
+    '- 새로 만들 때의 기본값(레포 `rules.md` 가 먼저) — Node: NestJS(큰 서버) · Fastify(작은 서비스) · zod · Vitest / Python: 3.12+ · FastAPI + pydantic v2 · uv · pytest',
+  ],
+  app: [
+    '- 언어 · 타입 — TypeScript `strict` · 최신 문법(ES2015+). 기존 레포는 `rules.md` "언어 · 타입 상태" 의 최신 쪽으로',
+    '- 새로 만들 때의 기본값(레포 `rules.md` 가 먼저) — React Native + Expo · Expo Router · TanStack Query · zustand · react-hook-form + zod · EAS Build / Update',
+    '- 보안 — 로그인 토큰은 `expo-secure-store` 에만 · **비밀 키는 앱에 넣지 않는다**(앱 파일은 누구나 열어 본다) · 권한은 쓰는 순간에 묻는다 · iOS · Android 둘 다 확인',
+  ],
+}
+// rules.md "언어 · 타입 상태" 칸 — /setup 이 레포 코드(tsconfig · jsconfig · pyright 설정 · 파일 확장자)를 읽고 하나로 고른다
+const TYPE_STATE = {
+  node: '확인 필요 — 셋 중 하나로 고른다: `JS + JSDoc · checkJs` / `섞어 쓰는 중(allowJs · checkJs)` / `TS`. 모듈 방식(CommonJS · ES 모듈)도 적는다',
+  python: '확인 필요 — 타입 힌트 범위(일부 · 모든 함수)와 타입 검사(pyright 설정 유무) · 린트(ruff 유무)를 적는다',
+}
+// BE 보고 — 프론트에 넘길 계약 변경(AGENTS.md 1절 "프론트와 백엔드가 함께 바뀌면 백엔드 먼저")
+const ROLE_WORD = { fe: '프론트엔드', be: '백엔드', app: '앱' }
+const CONTRACT_LINE = {
+  be: '\n**계약 변경**(엔드포인트 · 요청 · 응답 필드 · 오류 코드 · 하위 호환 여부)을 보고 끝에 따로 적는다 — 없으면 "계약 변경 없음". 아테나가 그대로 프론트 에이전트에 넘긴다.\n',
+}
+
 // 템플릿 채우기 — {{key}}
 const fill = (template, values) => template.replace(/\{\{(\w+)\}\}/g, (_, key) => values[key] ?? '')
 const writeIfMissing = (path, text, made) => {
@@ -349,12 +386,16 @@ export const scaffold = ({ athenaRoot, packDir, config, only = [] }) => {
         ]
       : (repo.agents ?? []).map((agent) => ({ agent, knowledge: repo.name, repoPath: repo.name, branch: repo.branch, prBase: repo.prBase, verifyCmd: `${repo.name}.sh`, appScope: '' }))
     for (const target of targets) {
+      const layer = layerOf(repo)
       const values = {
         ...target, repo: repo.name, today, tools,
+        layerRules: LAYER_RULES[layer].join('\n'),
+        typeState: TYPE_STATE[repo.lang === 'python' ? 'python' : 'node'],
+        contractLine: CONTRACT_LINE[layer] ?? '',
         repoLabel: target.repoPath,
         knowledgeLabel: target.knowledge,
-        stackLine: [repo.layer === 'be' ? '백엔드' : '프론트엔드', repo.lang === 'python' ? 'Python' : 'Node'].join(' · '),
-        roleWord: repo.layer === 'be' ? '백엔드' : '프론트엔드',
+        stackLine: [ROLE_WORD[layer], repo.lang === 'python' ? 'Python' : 'Node'].join(' · '),
+        roleWord: ROLE_WORD[layer],
       }
       writeIfMissing(join(packDir, 'agents', `${target.agent}.md`), fill(read('agent.md'), values), made)
       writeIfMissing(join(packDir, 'knowledge', target.knowledge, 'rules.md'), fill(read('rules.md'), values), made)

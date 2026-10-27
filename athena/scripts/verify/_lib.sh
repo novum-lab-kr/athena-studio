@@ -4,6 +4,15 @@
 #   skip_step "<이름>" "<이유>"   → 건너뜀으로 기록
 #   skip_step_rule "<이름>" "<이유>" → 규칙으로 정해진 건너뜀(예: 화면 파일 변경 없음 — changed-screen.sh). 엄격 모드에서도 실패로 치지 않는다
 #   print_summary                 → 표준 형식 요약 출력, 실패가 있으면 exit 1
+#   typecheck_step <레포> [--all|--changed] → 타입 검사(tsc --noEmit · pyright). 지금 폴더에 설정이 있을 때만 줄을 넣는다(없으면 1)
+#
+# 타입 검사(typecheck_step) — 지금 폴더(cd 한 레포 · 앱 폴더)의 설정을 본다
+#   Node   — tsconfig.json → jsconfig.json 순. node_modules/.bin/tsc(그 폴더 · 레포 맨 위)로 tsc --noEmit -p <설정> --pretty false
+#   Python — pyrightconfig.json 또는 pyproject.toml 의 [tool.pyright] 가 있을 때 pyright --outputjson(uv.lock 이 있으면 uv run --frozen)
+#   점진(--changed) — 바뀐 파일(기준 ref 와의 merge-base 대비 커밋 + 미커밋 + 미추적 · changed-screen.sh 와 같은 셈)의 오류만 실패.
+#                    전체 오류 수는 결과 칸에 숫자로만. 기준 ref = 팩 prBase 의 origin/<prBase> → upstream → origin/HEAD → origin/main
+#   전체(--all)    — 오류가 하나라도 있으면 실패(이미 타입이 깨끗한 레포)
+#   둘 다 안 주면 — tsconfig 에 allowJs · checkJs 가 없으면(순수 TS) 전체, 있거나 jsconfig · pyright 면 점진(docs/knowledge/common/coding.md "언어 · 타입")
 #
 # 엄격 모드(ATHENA_VERIFY_STRICT=1, scripts/commit.sh 가 켠다) — 커밋 전 검증용
 #   - 건너뜀(⏭)도 실패로 친다. 사용자가 확인한 단계만 ATHENA_VERIFY_ALLOW_SKIP="이름1|이름2" 로 허용
@@ -158,6 +167,142 @@ mark_skipped() {
   fi
   VERIFY_FAILED=0
   for result in "${STEP_RESULTS[@]}"; do case "$result" in ❌*) VERIFY_FAILED=1 ;; esac; done
+}
+
+verify_pack_prbase() { # verify_pack_prbase <레포> — 팩 pack.json 의 그 레포 prBase(없으면 빈 줄)
+  local pack_json="$VERIFY_LIB_DIR/../../pack/pack.json"
+  [ -f "$pack_json" ] || return 0
+  if command -v node >/dev/null 2>&1; then
+    node -e 'const pack = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const repo = (pack.repos ?? []).find((item) => item.name === process.argv[2]); process.stdout.write(repo?.prBase ?? "")' "$pack_json" "$1" 2>/dev/null
+  elif command -v python3 >/dev/null 2>&1; then
+    python3 -I -c 'import json, sys; repos = json.load(open(sys.argv[1])).get("repos", []); print(next((item.get("prBase", "") for item in repos if item.get("name") == sys.argv[2]), ""), end="")' "$pack_json" "$1" 2>/dev/null
+  fi
+}
+
+# verify_changed_files <레포> — 지금 폴더가 든 git 트리에서 바뀐 파일의 절대 경로(실제 경로)를 한 줄에 하나.
+# 기준 ref 를 못 찾으면 미커밋 · 미추적만 내고 1 을 돌려준다(부르는 쪽이 그 사실을 표에 적는다)
+verify_changed_files() {
+  local repo="$1" pr_base base="" candidate merge_base top status=0
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
+  top="$(cd "$top" && pwd -P)"
+  pr_base="$(verify_pack_prbase "$repo")"
+  for candidate in ${pr_base:+"origin/$pr_base"} '@{upstream}' origin/HEAD origin/main; do
+    git rev-parse -q --verify "$candidate^{commit}" >/dev/null 2>&1 && { base="$candidate"; break; }
+  done
+  merge_base=""; [ -n "$base" ] && merge_base="$(git merge-base HEAD "$base" 2>/dev/null)"
+  [ -n "$merge_base" ] || status=1
+  {
+    [ -n "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only "$merge_base" HEAD
+    git -c core.quotePath=false -C "$top" diff --name-only --cached
+    git -c core.quotePath=false -C "$top" diff --name-only
+    git -c core.quotePath=false -C "$top" ls-files --others --exclude-standard --full-name
+  } | sort -u | sed "s#^#$top/#"
+  return $status
+}
+
+typecheck_step() {
+  local repo="$1" mode="${2:-auto}" config="" kind="" top bin="" name log changed_list errors_list note=""
+  local total=0 global=0 changed=0 show_config
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || top="$PWD"
+  if [ -f tsconfig.json ]; then config=tsconfig.json; kind=tsc
+  elif [ -f jsconfig.json ]; then config=jsconfig.json; kind=tsc
+  elif [ -f pyrightconfig.json ] || { [ -f pyproject.toml ] && grep -q '^\[tool\.pyright\]' pyproject.toml; }; then kind=pyright
+  else return 1; fi
+
+  if [ "$kind" = tsc ]; then
+    name="tsc --noEmit ($config)"
+    for candidate in "$PWD/node_modules/.bin/tsc" "$top/node_modules/.bin/tsc"; do [ -x "$candidate" ] && { bin="$candidate"; break; }; done
+    [ -n "$bin" ] || { skip_step "$name" "typescript 가 설치되지 않음(node_modules/.bin/tsc 없음)"; return 0; }
+    if [ "$mode" = auto ]; then
+      mode=--all
+      [ "$config" = jsconfig.json ] && mode=--changed
+      # tsc --showConfig 는 extends 까지 풀어 준다(타입 검사는 하지 않아 빠르다)
+      show_config="$("$bin" --showConfig -p "$config" 2>/dev/null)"
+      printf '%s' "$show_config" | grep -Eq '"(allowJs|checkJs)": *true' && mode=--changed
+    fi
+  else
+    name="pyright"
+    if command -v uv >/dev/null 2>&1 && [ -f "$top/uv.lock" ] && uv run --frozen pyright --version >/dev/null 2>&1; then bin="uv run --frozen pyright"
+    elif command -v pyright >/dev/null 2>&1; then bin=pyright
+    else skip_step "$name" "pyright 가 설치되지 않음 — uv add --dev pyright 또는 npm i -g pyright"; return 0; fi
+    command -v python3 >/dev/null 2>&1 || { skip_step "$name" "python3 없음 — pyright 결과를 읽지 못함"; return 0; }
+    [ "$mode" = auto ] && mode=--changed
+  fi
+
+  log="$VERIFY_LOG_DIR/$(echo "$name" | tr ' /:()' '_____').log"
+  changed_list="$VERIFY_LOG_DIR/.typecheck-changed"; errors_list="$VERIFY_LOG_DIR/.typecheck-errors"
+  local start=$SECONDS
+  verify_changed_files "$repo" > "$changed_list" || note=" · 기준 ref 를 못 찾아 미커밋 파일만 봄"
+  if [ "$kind" = tsc ]; then
+    "$bin" --noEmit -p "$config" --pretty false > "$log.raw" 2>&1
+    local tsc_status=$?
+    # 오류 줄: <경로>(줄,칸): error TSnnnn: … — 경로는 지금 폴더 기준. 파일 없는 오류(error TSnnnn: — 설정 오류)는 따로 센다
+    # 경로를 실제 절대 경로로 — tsc 는 지금 폴더 기준 상대 경로(../ 로 폴더 밖 파일도)를 낸다. 바뀐 파일 목록(실제 경로)과 같은 모양으로 맞춘다
+    # errors_list: 오류마다 "<절대 경로>\t<원래 줄>"
+    node -e '
+const { readFileSync, realpathSync } = require("fs")
+const { resolve } = require("path")
+const real = (path) => { try { return realpathSync(path) } catch { return path } }
+const pattern = /^([^ ].*)\(\d+,\d+\): error TS\d+/
+for (const line of readFileSync(process.argv[1], "utf8").split("\n")) {
+  const found = line.match(pattern)
+  if (found) console.log(`${real(resolve(found[1]))}\t${line}`)
+}
+' "$log.raw" > "$errors_list"
+    total="$(wc -l < "$errors_list" | tr -d ' ')"
+    global="$(grep -cE '^error TS[0-9]+' "$log.raw")"
+    changed="$(cut -f1 "$errors_list" | grep -cFxf "$changed_list")"
+    # 오류를 하나도 못 읽었는데 tsc 가 실패했으면 검사 자체가 돌지 않은 것 — 실패로 둔다
+    [ "$tsc_status" != 0 ] && [ "$total" = 0 ] && [ "$global" = 0 ] && global=1
+  else
+    $bin --outputjson > "$log.raw" 2>"$log.err"
+    # pyright JSON — generalDiagnostics[].severity == "error" 를 센다. 읽지 못하면 global 1(실패)
+    read -r total changed global < <(python3 -I -c '
+import json, os, sys
+changed = set(os.path.realpath(line) for line in open(sys.argv[2], encoding="utf-8").read().split("\n") if line)
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    print(0, 0, 1); sys.exit()
+errors = [item for item in data.get("generalDiagnostics", []) if item.get("severity") == "error"]
+hit = [item for item in errors if os.path.realpath(item.get("file", "")) in changed]
+print(len(errors), len(hit), 0)
+' "$log.raw" "$changed_list")
+    python3 -I -c '
+import json, sys
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, ValueError):
+    sys.exit()
+for item in data.get("generalDiagnostics", []):
+    if item.get("severity") != "error":
+        continue
+    line = item.get("range", {}).get("start", {}).get("line", 0) + 1
+    message = (item.get("message") or "").split("\n")[0]
+    print("%s:%d: %s" % (item.get("file", ""), line, message))
+' "$log.raw" > "$errors_list.text" 2>/dev/null
+  fi
+  # 로그 — 실패하면 print_summary 가 마지막 40줄을 보여 준다. 바뀐 파일 오류를 맨 뒤에 모아 둔다
+  {
+    if [ "$kind" = tsc ]; then head -200 "$log.raw"; else cat "$log.err" "$errors_list.text" 2>/dev/null | head -200; fi
+    echo "== 전체 오류 $total · 바뀐 파일 오류 $changed · 설정 오류 $global ($mode$note)"
+    if [ "$kind" = tsc ]; then
+      while IFS=$'\t' read -r path line; do grep -qFx "$path" "$changed_list" && printf '%s\n' "$line"; done < "$errors_list" | tail -30
+    else grep -F -f "$changed_list" "$errors_list.text" 2>/dev/null | tail -30; fi
+  } > "$log"
+  STEP_NAMES+=("$name"); STEP_SECS+=("$((SECONDS - start))"); STEP_LOGS+=("$log")
+  if [ "$global" -gt 0 ]; then
+    STEP_RESULTS+=("❌ 실패 — 설정 · 실행 오류(로그 확인)"); VERIFY_FAILED=1
+  elif [ "$mode" = --all ] && [ "$total" -gt 0 ]; then
+    STEP_RESULTS+=("❌ 실패 — 오류 ${total}개"); VERIFY_FAILED=1
+  elif [ "$mode" = --all ]; then
+    STEP_RESULTS+=("✅ 통과 — 오류 0")
+  elif [ "$changed" -gt 0 ]; then
+    STEP_RESULTS+=("❌ 실패 — 바뀐 파일 오류 ${changed}개 (전체 ${total}개$note)"); VERIFY_FAILED=1
+  else
+    STEP_RESULTS+=("✅ 통과 — 바뀐 파일 오류 0 (전체 ${total}개 · 점진$note)")
+  fi
+  return 0
 }
 
 verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다

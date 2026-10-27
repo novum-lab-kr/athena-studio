@@ -45,12 +45,12 @@
 `bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 2단계에서 자동 머지를 켜기로 고른 레포에는 `"autoMerge": true` 를 넣는다(안 고른 레포에는 넣지 않는다 — 없으면 꺼짐). 그다음 `scripts/setup.sh`(repos/ 링크).
 
 ## 4. 뼈대
-`bin/athena scaffold` — 레포마다 `agents/<에이전트>.md` · `knowledge/<레포>/{rules,structure,gotchas}.md` · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리) · `diagrams/SERVICES.md`(/diagram 서비스 표) · `diagrams/index.json`(다이어그램 목록 카드). 있는 파일은 건드리지 않는다.
+`bin/athena scaffold` — 레포마다 `agents/<에이전트>.md`(층 fe · be · app 마다 "코드 기준" · BE 는 보고 "계약 변경" 줄) · `knowledge/<레포>/{rules,structure,gotchas}.md`(`rules.md` 에 "언어 · 타입 상태" 칸) · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리) · `diagrams/SERVICES.md`(/diagram 서비스 표) · `diagrams/index.json`(다이어그램 목록 카드). 있는 파일은 건드리지 않는다.
 
 ## 5. 뼈대 채우기 (레포마다 작업자 하나 — 위 표)
 작업자 지시(레포마다 같은 틀):
 - 대상: `repos/<레포>`(모노레포 앱은 `apps/<앱>`)를 **운영 기준 ref**(`git show origin/<branch>:<경로>` · `git ls-tree`)로 읽는다. 메인 체크아웃은 브랜치가 제각각이라 읽지 않는다. 쓰지 않는다
-- 채울 것: 에이전트 `description`(어떤 요청이면 이 에이전트인지 — 화면·도메인 키워드 한 문장, **콜론+공백 금지**) · `rules.md` "필수"(금지·용어·생성물) · `structure.md`(스택·디렉토리·라우트·스크립트) · 레포 원문(`README`·`CLAUDE.md`·`AGENTS.md`) 요약. **확인 안 된 것은 "확인 필요"로 남긴다** — 추측을 사실로 쓰지 않는다
+- 채울 것: 에이전트 `description`(어떤 요청이면 이 에이전트인지 — 화면·도메인 키워드 한 문장, **콜론+공백 금지**) · `rules.md` "필수"(금지·용어·생성물) · `rules.md` "언어 · 타입 상태"(`tsconfig` · `jsconfig` · pyright 설정 · 파일 확장자 · 모듈 방식을 읽고 `JS + JSDoc · checkJs` / `섞어 쓰는 중` / `TS` 중 하나 — 기준 `docs/knowledge/common/coding.md` "언어 · 타입") · `structure.md`(스택·디렉토리·라우트·스크립트) · 레포 원문(`README`·`CLAUDE.md`·`AGENTS.md`) 요약. **확인 안 된 것은 "확인 필요"로 남긴다** — 추측을 사실로 쓰지 않는다
 - `patterns.md`·`workflows.md` 는 만들지 않는다(그 레포를 처음 작업할 때 채운다)
 - 레포 고유 검증이 필요하면(`_generic.sh` 로 부족) `verify/<레포>.sh` 를 `_lib.sh` 로 다시 쓴다
 - 보고: 채운 파일 · "확인 필요" 목록 · **서비스 소개**(서비스(앱)마다 "무엇을 하나" 한 줄 · 주요 화면·API 3~5개와 근거 파일) — services.md 는 작업자가 쓰지 않는다(여럿이 한 파일을 덮지 않게)
