@@ -22,6 +22,7 @@ const agentLanguage = require('./lib/agent-language')
 const requestsModel = require('./lib/requests')
 const workModel = require('./lib/work-model')
 const paneDetail = require('./lib/pane-detail')
+const tokenUsage = require('./lib/token-usage')
 const layout = require('./lib/layout')
 const appUpdate = require('./lib/app-update')
 const versionModel = require('./lib/version')
@@ -38,6 +39,8 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
 }
 // 스튜디오 집 — ~/.athena-studio/{core,bodies,data,daemon.json}. 본체 · 데이터 · 포트를 모두 이 아래에 둔다
 const STUDIO = studioHome.studioLayout({ home: app.getPath('home'), override: STUDIO_HOME_OVERRIDE, identity: IDENTITY })
+// pane [상세] 토큰 — 대화 기록 읽은 자리 · 합계를 창 사이에 같이 쓴다(기록 파일은 팩 · 창과 상관없는 Claude Code 자리)
+const paneTokens = tokenUsage.createTokenUsage({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
 // 앱이 들고 온 아테나 코어(git 번들) — 앱 리소스 자리 하나(개발 앱은 npm start 가 레포 athena/ 에서 만든다)
 const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(__dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
 // 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
@@ -1390,6 +1393,14 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     historyCache = { at: Date.now(), items: history && Array.isArray(history.items) ? history.items : historyCache.items }
     return historyCache.items
   }
+  // 상세 토큰 — 대화 기록 usage 합계(파일만 읽음 · 파일마다 늘어난 부분만 · 기다리지 않고 아는 값). 기록을 못 찾으면 null → 화면에서 숨긴다
+  const tokenView = (sum) => (sum && sum.io + sum.cache > 0 ? { io: sum.io, cache: sum.cache, ioText: tokenUsage.formatTokens(sum.io), cacheText: tokenUsage.formatTokens(sum.cache) } : null)
+  // 아테나 pane 의 지금 대화 — 훅 pane-session.py 가 적는 <팩 데이터>/state/pane-sessions/<pane>.json 의 session
+  const paneSession = async (paneId) => {
+    if (!ctx.athenaDir) return ''
+    const record = await fs.promises.readFile(path.join(core.realDir(path.join(ctx.athenaDir, '.pack-data')), 'state', 'pane-sessions', `${paneId.split(':').pop()}.json`), 'utf8').then(JSON.parse, () => null)
+    return record && typeof record.session === 'string' ? record.session : ''
+  }
   // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.
   // 재료: 일감 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
   ctx.paneDetail = async (paneId) => {
@@ -1408,7 +1419,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     if (!plan) {
       const status = Object.fromEntries(panes.map((entry) => [entry.id, entry.agent ? entry.agent_status : null]))
       const rows = paneDetail.leadRows(state.cards, await recentHistory(), paneId, { panes: state.panes || [], since, status, waitingPlans: new Set(open.map((request) => request.plan).filter(Boolean)), now: Date.now() })
-      return { ok: true, mode: 'lead', paneId, label, rows }
+      return { ok: true, mode: 'lead', paneId, label, rows, tokens: tokenView(paneTokens.peekSession(await paneSession(paneId))) }
     }
     const [visible, recent, card] = await Promise.all([
       daemonCall('pane read', { pane: paneId, lines: 40, source: 'visible' }),
@@ -1436,6 +1447,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
       now: { ...now, sinceMs: known ? Date.now() - known.at : 0, line: digest.now },
       report: digest.report,
       todo,
+      // 이 계획서에 묶인 대화 기록 전부(작업 · 리뷰 세션) — 계획서 → 기록 찾기는 코어 learn-review.mjs findTranscripts 와 같은 규칙
+      tokens: tokenView(paneTokens.peekPlan([ctx.athenaDir, core.realDir(ctx.athenaDir)], plan.id)),
       plan: { id: plan.id, html: plan.html || null, title: record.title || plan.title, created: Number(plan.created) || 0, readable: Boolean(card), ...record },
     }
   }

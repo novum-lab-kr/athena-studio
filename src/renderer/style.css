@@ -1409,5 +1409,9 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pd-alert { display: flex; flex-direction: column; gap: 2px; margin: 8px 6px 4px; padding: 8px 12px; border: 1px solid var(--popup-gold-line); border-radius: 9px; background: var(--popup-gold-bg); font-size: 12.5px; line-height: 1.45; }
 .pd-alert-key { color: var(--accent); font-size: 12px; font-weight: 600; }
 .pd-alert-line { overflow-wrap: anywhere; }
+/* 토큰(2026-10-27) — 요약 첫 줄 오른쪽 끝 · 캐시는 작게 */
+.pd-tokens { display: inline-flex; align-items: baseline; gap: 5px; margin-left: auto; color: var(--popup-text); font-size: 12.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pd-tokens-cache { color: var(--popup-muted); font-size: 11px; }
+.pd-lead-tokens { margin: 8px 8px 0; }
 .pd-more { display: block; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .pd-more:hover, .pd-more:focus-visible { text-decoration: underline; outline: none; }
