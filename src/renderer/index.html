@@ -93,14 +93,8 @@
     <!-- 오른쪽에서 스르륵 나오는 옆 브라우저 — 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
     <aside id="browser" class="browser" hidden>
       <div id="browser-resize" class="browser-resize" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비" data-i18n-title="browser.resizeHint"></div>
-      <div class="browser-bar">
-        <button id="browser-back" title="뒤로" data-i18n-title="browser.back" disabled>◀</button>
-        <button id="browser-forward" title="앞으로" data-i18n-title="browser.forward" disabled>▶</button>
-        <button id="browser-reload" title="새로고침" data-i18n-title="common.reload">⟳</button>
-        <input id="browser-url" class="browser-url" spellcheck="false" autocomplete="off" placeholder="주소 — localhost:3000 · 계획서 링크 · https://…" data-i18n-placeholder="browser.urlPlaceholder">
-        <button id="browser-external" title="기본 브라우저로 열기" data-i18n-title="browser.external">↗</button>
-        <button id="browser-close" title="닫기" data-i18n-title="common.close">✕</button>
-      </div>
+      <!-- 막대(뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 알림 줄은 React(ui/browser-bar.tsx)가 그린다 -->
+      <div class="browser-bar"></div>
       <div id="browser-error" class="browser-error" hidden></div>
       <div id="browser-slot" class="browser-slot"></div>
     </aside>

@@ -7,7 +7,9 @@ const $ = (id) => document.getElementById(id)
 // 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.js). 정적 문구는 index.html 의 data-i18n* 속성
 let i18nState = studio.i18n()
 const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
-// React 화면(ui/)도 같은 say · 토스트를 쓴다(ui/bridge.ts)
+// 알림 · 상태 줄은 React(ui/notices.tsx) — 켤 때 한 번 띄워 둔다. React 화면(ui/)도 같은 say · 토스트를 쓴다(ui/bridge.ts)
+const { showToast } = StudioUi.notices
+StudioUi.notices.mount($('toast'), $('screen-status'))
 StudioUi.connect({ say, showToast })
 
 function applyStaticTexts() {
@@ -1310,7 +1312,7 @@ async function attach() {
   attaching = (async () => {
     const result = await studio.screenAttach()
     if (result.error) {
-      showScreenStatus(result.error)
+      StudioUi.notices.showScreenStatus(result.error)
       return false
     }
     for (const paneId of [...views.keys()]) disposeView(paneId)
@@ -1324,7 +1326,7 @@ async function attach() {
     applyState(result.state)
     attached = true
     reattachOnKey = false
-    $('screen-status').hidden = true
+    StudioUi.notices.hideScreenStatus()
     return true
   })().finally(() => (attaching = null))
   return attaching
@@ -1333,12 +1335,6 @@ async function attach() {
 function reattach() {
   reattachOnKey = false
   attach()
-}
-
-function showScreenStatus(message) {
-  const status = $('screen-status')
-  status.textContent = message
-  status.hidden = false
 }
 
 async function newTab() {
@@ -1446,57 +1442,15 @@ async function openAgent(options) {
   return result
 }
 
-// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유
+// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유(ui/notices.tsx)
 function showRestoreResult(result) {
-  if (!result.ok) return packAlert(say('pack.restore.failed'), result.text || result.message)
-  const worktrees = result.worktrees || []
-  const sessions = result.sessions || []
-  const counts = {
-    worktrees: worktrees.filter((item) => item.status === 'done').length,
-    agents: sessions.filter((item) => item.status === 'done').length,
-    athena: (result.athena || []).length,
-  }
-  const problems = [...worktrees, ...sessions].filter((item) => item.status !== 'done')
-  const renamed = worktrees.filter((item) => item.renamed).map((item) => say('pack.restore.renamed', { name: item.name, branch: item.renamed }))
-  if (!problems.length && !renamed.length) return showToast(say('pack.restore.done', counts), 'success')
-  const lines = problems.map((item) => `· ${item.name || item.agent}: ${item.message || item.reason}`)
-  return packAlert(problems.length ? say('pack.restore.partial') : say('pack.restore.done', counts), [say('pack.restore.done', counts), ...renamed, ...lines].join('\n'))
-}
-
-// 알림은 pane 위에 따로 띄운다 — kind: error(기본 · ✕ 로 닫을 때까지) · success(4초) · info(6초). 마우스를 올려 두면 기다린다
-const TOAST_MS = { success: 4000, info: 6000 }
-let toastTimer = null
-function showToast(message, kind = 'error') {
-  const toast = $('toast')
-  clearTimeout(toastTimer)
-  const icon = el('span', 'toast-icon', kind === 'success' ? '✓' : kind === 'info' ? 'i' : '!')
-  icon.setAttribute('aria-hidden', 'true')
-  const text = el('span', 'toast-message', message)
-  const close = el('button', 'toast-close')
-  close.append(lineIcon(POPUP_ICONS.close))
-  close.type = 'button'
-  close.setAttribute('aria-label', say('common.close'))
-  const hide = () => {
-    clearTimeout(toastTimer)
-    toast.hidden = true
-  }
-  close.addEventListener('click', hide)
-  const wait = () => {
-    clearTimeout(toastTimer)
-    if (TOAST_MS[kind]) toastTimer = setTimeout(hide, TOAST_MS[kind])
-  }
-  toast.onmouseenter = () => clearTimeout(toastTimer)
-  toast.onmouseleave = wait
-  toast.dataset.kind = kind
-  toast.setAttribute('role', kind === 'error' ? 'alert' : 'status')
-  toast.replaceChildren(icon, text, close)
-  toast.hidden = false
-  wait()
+  return StudioUi.notices.showRestoreResult(result, packAlert)
 }
 
 // ── 옆 브라우저 ──────────────────────────────────────────
 // 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그린다 — 화면 위에 따로 떠 있어서
-// 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다
+// 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다.
+// 막대(앞뒤 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기)와 알림 줄은 React(ui/browser-bar.tsx) — 서랍 껍데기 · 너비 끌기는 여기
 const BROWSER_SLIDE_MS = 240
 let browserOpen = false
 let browserTimer = null
@@ -1552,39 +1506,19 @@ function toggleBrowserPanel() {
   openBrowserPanel()
   // 처음이면 주소창부터 — 다 나온 뒤에, 스크롤 없이(나오는 중에 포커스를 주면 뒤 화면이 밀린다).
   // 그사이 닫았거나 다른 곳을 눌렀으면 하지 않는다
-  if ($('browser-url').value) return
+  if (StudioUi.browser.url()) return
   clearTimeout(urlFocusTimer)
   const before = document.activeElement
   urlFocusTimer = setTimeout(() => {
-    if (browserOpen && document.activeElement === before) $('browser-url').focus({ preventScroll: true })
+    if (browserOpen && document.activeElement === before) StudioUi.browser.focusUrl()
   }, BROWSER_SLIDE_MS)
 }
 
-async function browserNavigate() {
-  const input = $('browser-url')
-  const result = await studio.browserCommand('navigate', input.value)
-  showBrowserError(result.error || '')
-  if (!result.error) input.blur()
-}
-
-function showBrowserError(message) {
-  const error = $('browser-error')
-  error.textContent = message
-  error.hidden = !message
-  // 알림 줄이 생기거나 없어지면 페이지 자리가 바뀐다
-  requestAnimationFrame(placeBrowserView)
-}
-
+// main 알림(browser:state) — 서랍의 읽는 중 표시 · 제목은 여기, 막대는 React
 function applyBrowserState(next) {
-  const input = $('browser-url')
-  if (document.activeElement !== input) input.value = next.url || ''
-  $('browser-back').disabled = !next.canGoBack
-  $('browser-forward').disabled = !next.canGoForward
-  $('browser-reload').textContent = next.loading ? '✕' : '⟳'
-  $('browser-reload').title = next.loading ? say('browser.stop') : say('common.reload')
   $('browser').classList.toggle('loading', Boolean(next.loading))
   $('browser').title = next.title || ''
-  if (next.loading) showBrowserError('')
+  StudioUi.browser.applyState(next)
 }
 
 // 너비 끌기 — 끄는 동안은 페이지(화면 위에 떠 있는 뷰)를 떼어 둔다. 마우스가 페이지 위로 지나가도 끌기가 이어지게
@@ -1656,31 +1590,22 @@ function initBrowserResize() {
 
 function initBrowser() {
   initBrowserResize()
+  StudioUi.browser.mount($('browser').querySelector('.browser-bar'), $('browser-error'), { close: closeBrowserPanel, place: placeBrowserView })
   $('browser-toggle').addEventListener('click', toggleBrowserPanel)
-  $('browser-close').addEventListener('click', closeBrowserPanel)
-  $('browser-back').addEventListener('click', () => studio.browserCommand('back'))
-  $('browser-forward').addEventListener('click', () => studio.browserCommand('forward'))
-  $('browser-reload').addEventListener('click', () => studio.browserCommand($('browser').classList.contains('loading') ? 'stop' : 'reload'))
-  $('browser-external').addEventListener('click', () => studio.browserCommand('external'))
-  $('browser-url').addEventListener('keydown', (event) => {
-    if (event.key === 'Enter') browserNavigate()
-    if (event.key === 'Escape') closeBrowserPanel()
-  })
-  $('browser-url').addEventListener('focus', () => $('browser-url').select())
   studio.onBrowserOpen((url) => {
-    $('browser-url').value = url
-    showBrowserError('')
+    StudioUi.browser.setUrl(url)
+    StudioUi.browser.showError('')
     openBrowserPanel()
   })
   // 팩을 바꿨다 — 서랍을 닫고 주소 칸을 비운다(새 팩에서 열면 그 팩에서 보던 페이지로)
   studio.onBrowserReset(() => {
     if (browserOpen) closeBrowserPanel()
-    $('browser-url').value = ''
-    showBrowserError('')
+    StudioUi.browser.setUrl('')
+    StudioUi.browser.showError('')
   })
   studio.onBrowserToggle(toggleBrowserPanel)
   studio.onBrowserState(applyBrowserState)
-  studio.onBrowserError(showBrowserError)
+  studio.onBrowserError(StudioUi.browser.showError)
   studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보낸 뒤(main 이 알린다)
   // 창 크기가 바뀌면 서랍(너비 46%)도 바뀐다 — 다 나와 있을 때만 다시 붙인다
   new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
@@ -3007,7 +2932,7 @@ async function applyAthenaResult(pending) {
   }
 }
 
-// 메뉴 [보기 → 언어] — 정적 문구와 지금 보이는 것만 다시 그린다(열린 대화상자 · 토스트는 다음에 열 때부터)
+// 메뉴 [보기 → 언어] — 정적 문구와 지금 보이는 것만 다시 그린다(열린 대화상자는 다음에 열 때부터 · React 화면은 textsChanged 로 바로)
 function applyLanguage(next) {
   i18nState = next
   applyStaticTexts()
@@ -3085,7 +3010,7 @@ async function init() {
   studio.onScreenDisconnected(() => {
     attached = false
     reattachOnKey = true
-    showScreenStatus(say('screen.disconnected'))
+    StudioUi.notices.showScreenStatus(say('screen.disconnected'))
   })
   studio.onScreenCommand(runCommand)
   studio.onLanguage(applyLanguage)

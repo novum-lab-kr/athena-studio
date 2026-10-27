@@ -53,6 +53,9 @@ export function useSay(): Say {
   return helpers.say
 }
 
+// 컴포넌트 밖(바닐라가 부르는 함수)에서 쓰는 문구 — 다시 그리기를 구독하지 않는다
+export const say: Say = (key, values) => helpers.say(key, values)
+
 export function showToast(message: string, kind?: ToastKind): void {
   helpers.showToast(message, kind)
 }
