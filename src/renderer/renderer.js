@@ -2171,8 +2171,7 @@ let detailBack = null
 // 다시 그릴 때 맞출 스크롤(뒤로 가기) — 그 pane 을 처음 그릴 때 한 번
 let detailRestore = null
 let detailLast = null
-// 펼친 절 · [더 보기] 한 글 — `${paneId}:${key}`. 3초 갱신으로 다시 그려도 그대로 둔다(창이 열려 있는 동안)
-const detailOpenKeys = new Set()
+// [더 보기] 한 글 — `${paneId}:${key}`. 3초 갱신으로 다시 그려도 그대로 둔다(창이 열려 있는 동안)
 const detailMoreKeys = new Set()
 const PANE_DETAIL_REFRESH_MS = 3000
 // 긴 글은 이만큼만 보이고 [더 보기]
@@ -2240,7 +2239,9 @@ function openPaneDetail(paneId, { from = null, restore = null } = {}) {
 function backPaneDetail() {
   if (!detailBack) return
   const { paneId, scroll } = detailBack
-  openPaneDetail(paneId, { restore: scroll })
+  // 그사이 아테나 pane 이 닫혔으면 돌아갈 목록이 없다 — 들어갈 때(paneLive)와 같이 본다
+  if (!paneLive(paneId)) return closePaneDetail()
+  return openPaneDetail(paneId, { restore: scroll })
 }
 
 function closePaneDetail() {
@@ -2249,7 +2250,6 @@ function closePaneDetail() {
   detailBack = null
   detailRestore = null
   detailLast = null
-  detailOpenKeys.clear()
   detailMoreKeys.clear()
   clearInterval(detailTimer)
   detailTimer = null
@@ -2281,24 +2281,6 @@ function detailSection(title, nodes) {
   const node = el('section', 'work-sec pd-sec')
   node.append(el('h3', null, title), ...nodes)
   return node
-}
-// 접는 절 — 제목 + 한 줄 요약, 누르면 펼침. 펼친 것은 detailOpenKeys 로 기억한다
-function detailFold(paneId, key, title, summary, nodes, { count = 0 } = {}) {
-  const fold = el('details', 'pd-fold')
-  const openKey = `${paneId}:${key}`
-  fold.open = detailOpenKeys.has(openKey)
-  const head = el('summary', 'pd-fold-head')
-  const name = el('span', 'pd-fold-title', title)
-  if (count) name.append(el('span', 'work-sec-count', String(count)))
-  head.append(name)
-  if (summary) head.append(el('span', 'pd-fold-sum', summary))
-  fold.append(head, el('div', 'pd-fold-body'))
-  fold.lastChild.append(...nodes)
-  fold.addEventListener('toggle', () => {
-    if (fold.open) detailOpenKeys.add(openKey)
-    else detailOpenKeys.delete(openKey)
-  })
-  return fold
 }
 // 긴 줄 목록 — 앞 max 줄만, 나머지는 [더 보기]
 function clippedLines(paneId, key, lines, max) {
@@ -2354,6 +2336,8 @@ function renderPaneDetail(paneId, detail) {
   $('pane-detail-pane').textContent = (detail && detail.label) || paneId
   if (!detail.ok) {
     detailLast = null
+    // 뒤로 간 첫 응답이 오류면 맞출 스크롤도 버린다 — 나중 갱신에서 그새 옮긴 스크롤을 되돌리지 않게
+    detailRestore = null
     const known = ['board-down', 'no-pane'].includes(detail.error) ? detail.error : 'default'
     body.replaceChildren(el('p', 'work-empty', say(`pane.detail.error.${known}`)))
     return
@@ -2376,7 +2360,7 @@ function prLink(url) {
 }
 
 // 에이전트 pane — 맨 위 사람 몫(내가 할 일 · 막힘), 그다음 한눈 요약(상태 · 몇 분째 · 지금 한 줄 · 다음 · PR),
-// 나머지(결과 · PR · 리뷰 · 계획서)는 접힌 절로. 보여 주는 정보는 그대로고 배치 · 접기 · 줄이기만 한다
+// 그 아래 결과 · PR · 리뷰 · 계획서를 펼쳐 둔다(접지 않는다 — 사용자 2026-10-27). 긴 글만 [더 보기]
 function agentSections(paneId, detail) {
   const sections = []
   const { now, plan } = detail
@@ -2390,7 +2374,7 @@ function agentSections(paneId, detail) {
       if (known) openRequest(known)
     },
   }))
-  if (now.reason === 'question' || now.reason === 'unsent') {
+  if (now.reason === 'question') {
     todo.push(workRow({ className: 'ask', title: say(`pane.detail.todo.${now.reason}`), onClick: () => { closePaneDetail(); goToPane(paneId) } }))
   }
   if (todo.length) sections.push(detailSection(say('pane.detail.section.todo'), todo))
@@ -2429,17 +2413,15 @@ function agentSections(paneId, detail) {
     const { shown, more } = clippedLines(paneId, 'report', detail.report, DETAIL_CLIP.report)
     const nodes = [el('div', 'pd-report', shown.join('\n'))]
     if (more) nodes.push(more)
-    const first = detail.report.find((line) => line.trim()) || ''
-    sections.push(detailFold(paneId, 'report', say('pane.detail.section.report'), first, nodes))
+    sections.push(detailSection(say('pane.detail.section.report'), nodes))
   }
 
   // PR · 자동 리뷰
   const prNodes = plan.prs.map(prLink)
   for (const line of plan.autoReview) prNodes.push(el('p', 'pd-line', line))
   if (plan.reviewResult) prNodes.push(el('p', 'pd-line', `${say('pane.detail.review')} · ${plan.reviewResult}`))
-  const prSummary = [plan.prs.length ? say('pane.detail.prCount', { n: plan.prs.length }) : say('pane.detail.prNone'), plan.reviewResult ? `${say('pane.detail.review')} · ${plan.reviewResult}` : ''].filter(Boolean).join(' · ')
   if (!prNodes.length) prNodes.push(el('p', 'pd-muted', say('pane.detail.prNone')))
-  sections.push(detailFold(paneId, 'pr', say('pane.detail.section.pr'), prSummary, prNodes))
+  sections.push(detailSection(say('pane.detail.section.pr'), prNodes))
 
   // 계획서 기록 — 요청 · 진행 · 다음 · 검증(막힘은 위에)
   const title = el('button', 'pd-link pd-plan', plan.title || plan.id)
@@ -2454,14 +2436,11 @@ function agentSections(paneId, detail) {
     detailField(paneId, 'next', plan.next),
     detailField(paneId, 'validation', plan.validation),
   ].filter(Boolean))
-  const doneCount = plan.progress.filter((item) => item.done).length
-  const recordSummary = [plan.title || plan.id, plan.progress.length ? say('pane.detail.progressCount', { done: doneCount, total: plan.progress.length }) : ''].filter(Boolean).join(' · ')
-  sections.push(detailFold(paneId, 'record', say('pane.detail.section.record'), recordSummary, record))
+  sections.push(detailSection(say('pane.detail.section.record'), record))
   return sections
 }
 
 // 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서) · 그 상세 머리에 [← 맡긴 일]
-// 나를 기다림 · 지금은 펼쳐 두고, 오늘 끝남은 접어 둔다(제목 + 개수)
 function leadSections(paneId, detail) {
   if (!detail.rows.length) return [el('p', 'work-empty', say('pane.detail.lead.empty'))]
   const sections = []
@@ -2478,9 +2457,7 @@ function leadSections(paneId, detail) {
         return null
       },
     }))
-    if (!rows.length) continue
-    if (group === 'done') sections.push(detailFold(paneId, 'lead-done', say('pane.detail.lead.done'), '', rows, { count: rows.length }))
-    else sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
+    if (rows.length) sections.push(detailSection(say(`pane.detail.lead.${group}`), rows))
   }
   return sections
 }
