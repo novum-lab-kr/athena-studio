@@ -1327,11 +1327,23 @@ function sessionKind(session) {
   return session.finished ? say('monitor.subagentDone') : say('monitor.subagent')
 }
 
+// 지금 작업 중인 에이전트 — 끝나지 않았고 마지막 움직임이 2분 안
+const isLiveSession = (session) => !session.finished && Date.now() - session.lastAt < 2 * 60000
+
+// 고른 칩의 세션이 조용해졌으면(칩이 빠진다) 거름을 풀어 전체 로그로 — 풀었으면 true
+function dropQuietFilter() {
+  if (!monitorView.filter) return false
+  const session = monitorView.sessions.find((entry) => entry.id === monitorView.filter)
+  if (session && isLiveSession(session)) return false
+  monitorView.filter = null
+  return true
+}
+
+// 머리줄 칩은 지금 작업 중인 에이전트만 — 없으면 비워 둔다(아래 로그는 그대로)
 function renderMonitorSessions() {
-  const chips = monitorView.sessions.map((session) => {
+  const chips = monitorView.sessions.filter(isLiveSession).map((session) => {
     const chip = document.createElement('button')
-    const live = !session.finished && Date.now() - session.lastAt < 2 * 60000
-    chip.className = `monitor-chip${live ? ' live' : ''}${monitorView.filter === session.id ? ' active' : ''}`
+    chip.className = `monitor-chip live${monitorView.filter === session.id ? ' active' : ''}`
     chip.style.setProperty('--label-color', spaceColor(session.label))
     const name = document.createElement('span')
     name.className = 'name'
@@ -1378,9 +1390,8 @@ function applyMonitorUpdate(update) {
   const feed = $('monitor-feed')
   const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24
   monitorView.sessions = update.sessions || []
-  // 고른 세션이 빠졌으면 필터를 풀고 전체를 다시 그린다
-  const filterGone = monitorView.filter && !monitorView.sessions.some((session) => session.id === monitorView.filter)
-  if (filterGone) monitorView.filter = null
+  // 고른 세션이 빠졌거나 조용해졌으면 필터를 풀고 전체를 다시 그린다
+  const filterGone = dropQuietFilter()
   if (update.reset) {
     monitorView.events = [...(update.events || [])].sort(byEventTime).slice(-MONITOR_ROWS)
     renderMonitorSessions()
@@ -1412,8 +1423,12 @@ function initMonitor() {
   })
   studio.onMonitorUpdate(applyMonitorUpdate)
   renderMonitorFeed()
-  // 'n분 전' 을 새로 쓴다
-  setInterval(() => monitorView.visible && renderMonitorSessions(), 30000)
+  // 'n분 전' 을 새로 쓰고, 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
+  setInterval(() => {
+    if (!monitorView.visible) return
+    if (dropQuietFilter()) renderMonitorFeed(true)
+    renderMonitorSessions()
+  }, 30000)
 }
 
 // ── pane 경계 끌기 ───────────────────────────────────────

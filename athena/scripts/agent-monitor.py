@@ -73,7 +73,7 @@ def pane_label(path):
                 except Exception: continue
                 cwd=d.get("cwd") or ""
                 if not cwd: continue
-                m=re.search(r"/\.worktrees/([^/]+)/", cwd)
+                m=re.search(r"/(?:\.worktrees|packs/[^/]+/worktrees)/([^/]+)/", cwd)   # 본체 안 .worktrees · 여러 팩 구조의 packs/<팩>/worktrees
                 repo=m.group(1) if m else os.path.basename(cwd)
                 branch=d.get("gitBranch") or os.path.basename(cwd)
                 return f"{repo}·{branch}"
@@ -126,7 +126,9 @@ def find_recent(mins):
     """최근 mins 분 안에 바뀐 (경로, pane 세션 여부) 목록"""
     root=os.path.expanduser("~/.claude/projects")
     subagents=[(p,False) for p in glob.glob(f"{root}/*/*/subagents/agent-*.jsonl")]
-    panes=[(p,True) for p in glob.glob(f"{root}/*--worktrees-*/*.jsonl")]
+    # 워크트리 세션 폴더 — 옛 <본체>/.worktrees/… → '…--worktrees-…' · 여러 팩 구조 …/packs/<팩>/worktrees/… → '…-packs-<팩>-worktrees-…'
+    panes=[(p,True) for pattern in ("*--worktrees-*","*-packs-*-worktrees-*") for p in glob.glob(f"{root}/{pattern}/*.jsonl")]
+    panes=list(dict.fromkeys(panes))
     now=time.time()
     found=[(p,pane) for p,pane in subagents+panes if now-os.path.getmtime(p) < mins*60]
     found.sort(key=lambda item: os.path.getmtime(item[0]))

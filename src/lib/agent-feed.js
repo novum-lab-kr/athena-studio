@@ -18,11 +18,11 @@ function summarizeTool(name, input) {
   return oneLine(JSON.stringify(value))
 }
 
-// 기록의 cwd · gitBranch → '레포·브랜치'(워크트리면 .worktrees/<레포>/ 의 레포)
+// 기록의 cwd · gitBranch → '레포·브랜치'(워크트리면 그 레포 — 본체 안 .worktrees/<레포>/ · 여러 팩 구조의 packs/<팩>/worktrees/<레포>/)
 function sessionLabel(record) {
   const cwd = record && typeof record.cwd === 'string' ? record.cwd : ''
   if (!cwd) return null
-  const worktree = cwd.match(/\/\.worktrees\/([^/]+)\//)
+  const worktree = cwd.match(/\/(?:\.worktrees|packs\/[^/]+\/worktrees)\/([^/]+)\//)
   const repo = worktree ? worktree[1] : path.basename(cwd)
   const branch = record.gitBranch || path.basename(cwd)
   return `${repo}·${branch}`

@@ -253,7 +253,7 @@ async function resetStudio() {
 // ── 에이전트 모니터 — 기록 읽기(창마다 따로 따라간다) ───────────────
 // Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl)을 따라 읽어 화면에 이벤트로 보낸다 — 아테나 agent-monitor.py 와 같은 대상:
 // 서브에이전트(<세션>/subagents/agent-*.jsonl) · 워크트리 세션 · 지금 에이전트가 도는 pane 폴더의 세션. 최근 120분 안에 바뀐 것만.
-// 팩 창마다 그 본체(·그 안 .worktrees) 폴더의 세션만 — 다른 팩 본체의 세션은 그 팩 창 몫이다
+// 팩 창마다 그 본체(·그 .worktrees 가 가리키는 워크트리) 폴더의 세션만 — 다른 팩 본체의 세션은 그 팩 창 몫이다
 // 예전 터미널 모니터 칸의 이름표 — 이미 떠 있는 pane 을 찾는 값이라 번역하지 않는다
 const MONITOR_LABEL = '🛰 에이전트 모니터'
 const MONITOR_MINUTES = 120
@@ -282,7 +282,9 @@ async function recentFile(file, since) {
 }
 
 // 이 본체의 세션 폴더인가 — 본체 자체 · 그 안 워크트리(<본체>/.worktrees/… → '<이름>--worktrees-…')
-function ownProject(name, bodyName) {
+// · 여러 팩 구조의 워크트리(.worktrees 가 가리키는 …/packs/<팩>/worktrees/… → '<그 폴더 이름>-…')
+function ownProject(name, bodyName, worktreesName) {
+  if (worktreesName && name.startsWith(`${worktreesName}-`)) return true
   return Boolean(bodyName) && (name === bodyName || name.startsWith(`${bodyName}--`))
 }
 
@@ -292,10 +294,11 @@ async function findMonitorLogs(monitor, allSessions, athenaDir) {
   const since = Math.max(Date.now() - MONITOR_MINUTES * 60000, monitor.floor)
   const wanted = new Set(monitor.agentCwds.map(agentFeed.projectDirName))
   const bodyName = athenaDir ? agentFeed.projectDirName(core.realDir(athenaDir)) : null
+  const worktreesName = athenaDir ? agentFeed.projectDirName(core.realDir(path.join(athenaDir, '.worktrees'))) : null
   const found = []
   for (const project of await readDir(root)) {
     if (!project.isDirectory()) continue
-    const own = ownProject(project.name, bodyName)
+    const own = ownProject(project.name, bodyName, worktreesName)
     const paneSessions = wanted.has(project.name) || own
     // 이 팩과 상관없는 폴더는 서브에이전트도 보지 않는다
     if (!paneSessions) continue

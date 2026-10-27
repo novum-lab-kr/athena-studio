@@ -28,6 +28,9 @@ test('기록 한 줄 → 이벤트: 도구 · 말 · 사용자 지시(시스템 
 test('세션 이름표 · 줄 읽기 · 폴더 이름', () => {
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/athena/.worktrees/web/feature-x/src', gitBranch: 'feature/x' }), 'web·feature/x')
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/novum-lab/athena-studio', gitBranch: 'main' }), 'athena-studio·main')
+  // 여러 팩 구조 — 워크트리는 스튜디오 집 데이터 폴더(packs/<팩>/worktrees/<레포>/<슬러그>) · 하위 폴더에서 연 세션도 같은 레포
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/data/packs/novum-lab/worktrees/athena-studio/feat-modern-code-rules', gitBranch: 'feat/modern-code-rules' }), 'athena-studio·feat/modern-code-rules')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/data/packs/novum-lab/worktrees/athena-studio/feat-modern-code-rules/src/lib', gitBranch: 'feat/modern-code-rules' }), 'athena-studio·feat/modern-code-rules')
   assert.equal(feed.sessionLabel({}), null)
   assert.deepEqual(feed.subagentInfo({ description: 'Fill skeleton: web', agentType: 'general-purpose', finished: true }), { label: '🤖 Fill skeleton: web', finished: true })
   assert.deepEqual(feed.subagentInfo({ agentType: 'reviewer' }), { label: '🤖 reviewer', finished: false })
