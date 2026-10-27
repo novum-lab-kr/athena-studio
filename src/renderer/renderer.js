@@ -2352,6 +2352,15 @@ function renderPaneDetail(paneId, detail) {
   } else body.scrollTop = scroll
 }
 
+// 토큰 — 입력+출력을 크게, 캐시는 옆에 작게(main 이 숫자를 42k · 3.1M 로 줄여 보낸다). 기록을 못 찾으면 null → 그리지 않는다
+function tokenLine(tokens) {
+  if (!tokens) return null
+  const line = el('span', 'pd-tokens', say('pane.detail.tokens', { n: tokens.ioText }))
+  line.title = say('pane.detail.tokensTitle', { io: tokens.io.toLocaleString(i18nState.language), cache: tokens.cache.toLocaleString(i18nState.language) })
+  if (tokens.cache) line.append(el('span', 'pd-tokens-cache', `(${say('pane.detail.tokensCache', { n: tokens.cacheText })})`))
+  return line
+}
+
 function prLink(url) {
   const link = el('button', 'pd-link', url.replace(/^https:\/\/github\.com\//, ''))
   link.type = 'button'
@@ -2392,6 +2401,8 @@ function agentSections(paneId, detail) {
   state.append(badge)
   if (now.sinceMs && now.state !== 'gone') state.append(el('span', 'pd-muted', say('pane.detail.since', { time: spanLabel(now.sinceMs) })))
   if (plan.created) state.append(el('span', 'pd-muted', say('pane.detail.started', { time: new Date(plan.created).toLocaleString(i18nState.language, { month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) })))
+  const tokens = tokenLine(detail.tokens)
+  if (tokens) state.append(tokens)
   const glance = el('section', 'pd-glance')
   glance.append(state)
   if (now.reason) glance.append(el('p', 'pd-reason', say(`pane.detail.reason.${now.reason}`)))
@@ -2442,8 +2453,15 @@ function agentSections(paneId, detail) {
 
 // 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서) · 그 상세 머리에 [← 맡긴 일]
 function leadSections(paneId, detail) {
-  if (!detail.rows.length) return [el('p', 'work-empty', say('pane.detail.lead.empty'))]
   const sections = []
+  // 이 아테나 대화 하나의 토큰(맡긴 일 토큰은 더하지 않는다)
+  const tokens = tokenLine(detail.tokens)
+  if (tokens) {
+    const head = el('div', 'pd-now pd-lead-tokens')
+    head.append(tokens)
+    sections.push(head)
+  }
+  if (!detail.rows.length) return [...sections, el('p', 'work-empty', say('pane.detail.lead.empty'))]
   const ROW_STATE = { wait: 'wait', now: 'work', done: 'done' }
   for (const group of ['wait', 'now', 'done']) {
     const rows = detail.rows.filter((row) => row.state === group).map((row) => workRow({
