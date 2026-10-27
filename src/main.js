@@ -1,13 +1,12 @@
 // Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 일감 서버 · 아테나 폴더 설정
 // 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 일감 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
 // 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만)
-const { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, session, shell } = require('electron')
+const { app, BrowserWindow, Menu, dialog, ipcMain, shell } = require('electron')
 const { execFile } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const core = require('./lib/core.mts')
 const studioHome = require('./lib/studio-home')
-const packModel = require('./lib/pack.mts')
 const daemonClient = require('./daemon-client.mts')
 const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language.mts')
@@ -241,7 +240,7 @@ async function resetStudio() {
 // 쓰는 것(기록 폴더 · 화면 문구 · 일감 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
 const { newMonitor, createMonitorLogs } = require('./main/monitor-logs.mts')
 const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
-const { createFiles, iconDataUrl, guarded } = require('./main/files.mts')
+const { createFiles, guarded } = require('./main/files.mts')
 const { resolveInside } = createFiles({ say })
 const { createBoard } = require('./main/board.mts')
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
@@ -250,6 +249,11 @@ const { installExplorer } = require('./main/explorer-panel.mts')
 const { installAthenaAgent } = require('./main/athena-agent.mts')
 const { installPackRepos } = require('./main/pack-repos.mts')
 const { installWork } = require('./main/work.mts')
+// 팩 창 묶음(아테나 폴더 · 회사 팩 · 팩 표시 이름 · 이미지 · 옆 브라우저 · 창) — 같은 방식으로 ctx 에 붙인다
+const { installAthenaDir } = require('./main/athena-dir.mts')
+const { installPacks } = require('./main/packs.mts')
+const { installSideBrowser } = require('./main/side-browser.mts')
+const { installPackWindow } = require('./main/pack-window.mts')
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
 // 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
@@ -307,8 +311,6 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   let launchWelcome = welcome ? null : false // 켤 때 시작 화면 — 첫 창만 정한다(null = 아직 안 정함)
   let packBoardPort = null // 이 본체 일감 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
   const monitor = newMonitor()
-  let browserView = null
-  let browserAttached = false
 
   const send = (channel, ...args) => {
     if (ctx.win && !ctx.win.isDestroyed()) ctx.win.webContents.send(channel, ...args)
@@ -371,561 +373,60 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   })
   const boardPortNow = ctx.boardPortNow
 
-  // ── 아테나 폴더 ──
-  ctx.pickAthenaDir = async () => {
-    const result = await dialog.showOpenDialog(ctx.win, {
-      title: say('dialog.pickAthena.title'),
-      message: say('dialog.pickAthena.message'),
-      properties: ['openDirectory'],
-      defaultPath: ctx.athenaDir || app.getPath('home'),
-    })
-    if (result.canceled || !result.filePaths[0]) return { canceled: true, ...ctx.athenaState() }
-    return useAthenaDir(result.filePaths[0])
-  }
-
-  function useAthenaDir(dir) {
-    // 팩 작업 중에는 본체를 바꾸지 않는다
-    if (ctx.packBusy) return { ...ctx.athenaState(), error: say('error.packBusyAthena', { task: ctx.packBusy }) }
-    const check = core.checkAthenaDir(dir)
-    if (!check.ok) return { ...ctx.athenaState(), error: say('error.notAthenaDir', { files: check.missing.join(', ') }), picked: dir }
-    // 다른 창이 이미 그 본체면 그 창으로(창 하나 = 본체 하나)
-    const other = ctxOfBody(dir)
-    if (other && other !== ctx) {
-      other.show()
-      return { ...ctx.athenaState(), error: say('pack.open.alreadyOpen') }
-    }
-    try {
-      core.ensureAthenaConfig(dir, athenaReposRoot(dir))
-    } catch (error) {
-      return { ...ctx.athenaState(), error: say('error.configCreate', { message: error.message }), picked: dir }
-    }
-    const changed = dir !== ctx.athenaDir
-    if (changed) return rebindBody(dir)
-    syncAgentLanguage(dir)
-    saveWindows()
-    ctx.prepareBoardPort()
-    return { ...ctx.athenaState(), changed }
-  }
-
-  // 이 창을 다른 본체(팩)로 다시 묶는다(한 창에서 팩을 바꿔 본다).
-  // 이전 본체의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 오면 그 본체의 보던 자리 그대로). 화면은 돌려준 상태로 다시 붙는다(attach{body}) —
-  // 작업 공간 · 일감 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
-  function rebindBody(dir) {
-    try {
-      core.ensureAthenaConfig(dir, athenaReposRoot(dir))
-    } catch {}
-    ctx.detachScreen() // 화면이 다시 붙을 때 새 본체로 묶인다
-    rememberBrowser()
-    ctx.athenaDir = dir
-    syncAgentLanguage(dir)
-    ctx.watchRequests()
-    packBoardPort = null
-    ctx.resetBranches()
-    resetMonitor()
-    saveWindows()
-    ctx.prepareBoardPort()
-    if (hasTray()) pollTray()
-    return { ...ctx.athenaState(), changed: true }
-  }
-  ctx.rebindBody = rebindBody
-
-  // 옆 브라우저 — 지금 본체에서 보던 주소를 기억하고 뷰를 닫는다(새 본체에서 서랍을 열면 그 본체 주소로 · ensureBrowserView)
-  function rememberBrowser() {
-    if (browserView && !browserView.webContents.isDestroyed()) {
-      const url = browserView.webContents.getURL()
-      if (ctx.athenaDir && core.isWebUrl(url)) browserUrls.set(core.realDir(ctx.athenaDir), url)
-      if (browserAttached && ctx.win) ctx.win.contentView.removeChildView(browserView)
-      browserView.webContents.close()
-    }
-    browserView = null
-    browserAttached = false
-    send('browser:reset')
-  }
-
-  // 에이전트 모니터 — 새 본체 기록부터 다시 모은다(보고 있었으면 바로 이어서)
-  function resetMonitor() {
-    const watching = monitor.watching
-    clearInterval(monitor.timer)
-    Object.assign(monitor, newMonitor())
-    if (watching) ctx.setMonitorWatch(true)
-  }
-
-  // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다
-  ctx.installAthena = async () => {
-    const prepared = await prepareStudioCore({ update: false })
-    if (!prepared.ok) return { ...ctx.athenaState(), error: coreInstallError(prepared) }
-    return useAthenaDir(STUDIO.core)
-  }
-
-  // ── 회사 팩 ──
-  // 켤 때 시작 화면을 띄울지 — 첫 창이 처음 목록을 읽을 때 한 번만 정한다(그 뒤로는 화면이 '들어갔음' 을 기억한다)
-  async function decideLaunchWelcome(listed) {
-    if (launchWelcome !== null || !listed.supported) return
-    const listedPanes = await daemonCall('pane list')
-    const agentPanes = ((listedPanes.result && listedPanes.result.panes) || []).filter((pane) => pane.agent).length
-    launchWelcome = packModel.welcomeOnLaunch({ list: listed, agentPanes })
-  }
-
-  ctx.refreshPacks = async () => {
-    if (!core.checkAthenaDir(ctx.athenaDir).ok) {
-      ctx.packState = { supported: false }
-    } else {
-      const listed = packModel.normalizePackList(await runPack(['list'], { dir: ctx.athenaDir }))
-      await decideLaunchWelcome(listed)
-      // welcome — 팩이 하나도 없을 때 시작 화면 · launchWelcome — 켤 때 시작 화면(팩이 있어도) · recent — 시작 화면 '내 팩' 목록. 규칙은 pack.js 한 곳에서만
-      ctx.packState = { ...listed, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome === true, recent: packModel.recentPacks(listed) }
-    }
-    // 열린 팩 창들 — 팩 줄의 '열려 있음' 점(다른 창 목록이 바뀌어도 보이게 모든 창에)
-    for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })
-    return { ...ctx.packState, openIds: openPackIds() }
-  }
-
-  // 한 번에 하나 — 같은 요청이 두 번 와도 두 번째는 busy
-  ctx.packTask = async (name, work) => {
-    if (ctx.packBusy) return { ok: false, error: 'locked', message: say('pack.error.taskBusy', { task: ctx.packBusy }) }
-    ctx.packBusy = name
-    ctx.packAbort = new AbortController()
-    try {
-      return await work(ctx.packAbort.signal)
-    } finally {
-      ctx.packBusy = null
-      ctx.packAbort = null
-    }
-  }
-
-  // 팩을 만들고 여는 명령(new · open)을 돌릴 본체 — 스튜디오 집 안 본체면 코어(주 본체), 밖에서 연결한 본체면 그 본체.
-  // 코어는 앱을 켤 때마다 새 코드로 가지만 팩 본체는 claude 가 켜져 있으면 업데이트를 건너뛰어 옛 코드에 남는다 —
-  // 지금 본체로 돌리면 고친 열기(빈 자리 다시 열기 등)가 들어오지 않는다. 약속 검사(contractBlock)도 같은 본체로.
-  // new 는 처음부터 코어에서 — 새 팩 local.json 의 reposRoot 를 부른 본체 설정에서 옮겨 적는데,
-  // 팩 본체 설정에는 reposRoot 가 없어 '..'(= bodies 폴더)로 잡혀 /setup 레포 찾기가 회사 레포를 못 찾았다. 코어 설정에는 홈이 있다
-  const packManagerDir = () => (core.isInside(ctx.athenaDir, STUDIO.root) ? STUDIO.core : ctx.athenaDir)
-
-  // 새 팩 — 빈 자리 + 그 본체(pack new)를 만들고 이 창을 그 본체로 바꾼다. 그 본체에서 claude 가 켜지면 /setup.
-  // 옛 데몬이면 만들기 전에 막는다(바꿔 보면 팩끼리 pane 이 섞인다)
-  ctx.packNew = async () => {
-    if (daemonOld) return { ok: false, error: 'old-daemon', text: say('pack.switch.oldDaemon') }
-    const dir = packManagerDir()
-    const blocked = await contractBlock(dir)
-    if (blocked) return blocked
-    return ctx.packTask(say('pack.task.new'), async (signal) => {
-      const result = await runPack(['new'], { dir, onProgress: ctx.packProgress, signal })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
-      const state = rebindBody(result.body)
-      refreshAllPacks()
-      return { ok: true, id: result.id, body: result.body, switched: true, state }
-    })
-  }
-
-  // 가져오기 검사 — 파일 · 폴더 · 기존 아테나는 main 이 대화상자를 연다(화면이 경로를 만들지 않게), git 은 주소를 검사해 넘긴다
-  ctx.packInspect = async (kind, source) => {
-    const blocked = await contractBlock(ctx.athenaDir)
-    if (blocked) return blocked
-    let target = null
-    if (kind === 'git') {
-      target = packModel.validGitUrl(source)
-      if (!target) return { ok: false, error: 'invalid-url', text: say('pack.error.invalidGitUrl') }
-    } else {
-      const options = {
-        file: { title: say('dialog.packFile.title'), properties: ['openFile'], filters: [{ name: say('dialog.packFile.filter'), extensions: ['gz', 'tgz'] }] },
-        folder: { title: say('dialog.packFolder.title'), properties: ['openDirectory'] },
-        athena: { title: say('dialog.packAthena.title'), properties: ['openDirectory'] },
-      }[kind]
-      if (!options) return { ok: false, error: 'invalid-pack', text: say('pack.error.unknownImportKind') }
-      const picked = await dialog.showOpenDialog(ctx.win, { ...options, defaultPath: app.getPath('home') })
-      if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
-      target = picked.filePaths[0]
-    }
-    return ctx.packTask(say('pack.task.inspect'), async (signal) => {
-      const result = await runPack([kind === 'athena' ? 'import-athena' : 'inspect', target], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      return {
-        ...result,
-        source: kind === 'git' ? target : path.basename(target),
-        summary: { incoming: packModel.packSummary({ ...result.pack, source: kind === 'git' ? 'git' : null }, say), existing: packModel.packSummary(result.conflict, say) },
-        current: Boolean(result.conflict && ctx.packState.current && result.conflict.id === ctx.packState.current.id),
-      }
-    })
-  }
-
-  // 검사한 임시본 등록 — keep(버림) · replace(기존 자동 백업 후 교체) · new.
-  // 교체는 본체가 그 팩 본체 기준으로 막거나(일하는 중이면 busy) 링크를 다시 건다 — 스튜디오는 pane 을 닫지 않는다
-  ctx.packImport = async (token, choice) => {
-    if (typeof token !== 'string' || !['keep', 'replace', 'new'].includes(choice)) return { ok: false, error: 'invalid-pack', text: say('pack.error.badImportRequest') }
-    if (choice !== 'keep') {
-      const blocked = await contractBlock(ctx.athenaDir)
-      if (blocked) return blocked
-    }
-    return ctx.packTask(say('pack.task.import'), async () => {
-      const result = await runPack(['import', token, `--${choice}`], { dir: ctx.athenaDir, onProgress: ctx.packProgress })
-      refreshAllPacks()
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      // 열린 창의 팩을 바꿨으면 그 창 일감을 새로
-      const replaced = result.imported && result.imported.id
-      for (const each of packWindows) if (replaced && each.packState.current && each.packState.current.id === replaced) each.send('pack:changed', { ok: true, replaced })
-      return result
-    })
-  }
-
-  // 내보내기(팀에 주는 것 — 허용 목록만) · 내 백업(팩 + 작업 기록) — 저장 폴더를 고르고 명령 → 결과
-  ctx.packExport = async (kind) => {
-    const picked = await dialog.showOpenDialog(ctx.win, {
-      title: kind === 'backup' ? say('dialog.packBackup.title') : say('dialog.packExport.title'),
-      properties: ['openDirectory', 'createDirectory'],
-      defaultPath: app.getPath('downloads'),
-    })
-    if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
-    const args = kind === 'backup' ? ['backup', '--with-work', '--out', picked.filePaths[0]] : ['export', '--out', picked.filePaths[0]]
-    // 내 백업 — 이 창의 살아 있는 pane(데몬 상태는 이 본체 것만)을 넘겨 그 pane 의 에이전트 대화를 담게(코어 lib/restore.mjs)
-    // claude 가 도는 pane 만 — 기록이 없는 pane 은 결과 restore.missing 으로 돌아온다(훅이 생기기 전에 켠 세션)
-    if (kind === 'backup') {
-      const listed = await daemonCall('pane list').catch(() => null)
-      const panes = ((listed && listed.result && listed.result.panes) || []).filter((pane) => pane.agent === 'claude').map((pane) => pane.id)
-      if (panes.length) args.push('--panes', panes.join(','))
-    }
-    return ctx.packTask(kind === 'backup' ? say('pack.task.backup') : say('pack.task.export'), async () => {
-      const result = await runPack(args, { dir: ctx.athenaDir, onProgress: ctx.packProgress })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      lastPackFile = typeof result.file === 'string' ? result.file : null
-      return result
-    })
-  }
-
-  // 팩 열기 — 그 팩 본체를 준비하고(pack open) 이 창을 그 본체로 바꾼다(한 창에서 바꿔 보기).
-  // 다른 창이 이미 그 팩을 보고 있으면 그 창으로(한 팩을 두 창이 같이 보지 않게). newWindow 면 새 창으로(우클릭 [새 창으로 열기])
-  ctx.packOpen = async (id, { newWindow = false } = {}) => {
-    if (typeof id !== 'string' || !id) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
-    if (ctx.packState.current && ctx.packState.current.id === id) return { ok: true, same: true }
-    const elsewhere = [...packWindows].find((other) => other !== ctx && other.packState.current && other.packState.current.id === id)
-    if (elsewhere) {
-      elsewhere.show()
-      // 되살리기로 열었는데 다른 창이 이미 그 팩이면 — 그 창에서 되살린다(아테나는 그 창 아테나 옆에서)
-      if (restoreArmedFor === id) elsewhere.restoreNow().then((result) => elsewhere.send('pack:restored', result))
-      return { ok: true, id, existing: true }
-    }
-    // 옛 데몬이면 바꾸기 · 새 창 모두 막는다 — 창을 본체로 묶지 못해 팩끼리 pane 이 섞인다
-    if (daemonOld) return { ok: false, error: 'old-daemon', text: say(newWindow ? 'pack.open.oldDaemon' : 'pack.switch.oldDaemon') }
-    const dir = packManagerDir()
-    const blocked = await contractBlock(dir)
-    if (blocked) return blocked
-    return ctx.packTask(say('pack.task.open'), async (signal) => {
-      const result = await runPack(['open', id], { dir, onProgress: ctx.packProgress, signal })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      if (result.created) refreshAllPacks()
-      const notes = { unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required', created: result.created === true }
-      const other = typeof result.body === 'string' ? ctxOfBody(result.body) : null
-      if (newWindow || (other && other !== ctx)) {
-        const opened = openBody(result.body)
-        if (opened.error) return { ok: false, error: opened.code || 'invalid-pack', text: opened.error }
-        return { ok: true, id, existing: opened.existing, ...notes }
-      }
-      if (other === ctx) return { ok: true, same: true }
-      if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
-      const state = rebindBody(result.body)
-      // 되살리기로 연 팩이면 이 창에 넘긴다 — 아테나를 켤 때(openAthenaAgent) 되살린다. 팩 목록(packState)은 그 뒤에 새로 읽혀서 그걸로는 못 본다
-      if (restoreArmedFor === id) {
-        ctx.restoreForPack = id
-        restoreArmedFor = null
-      }
-      return { ok: true, id, switched: true, state, ...notes }
-    })
-  }
-
-  // ── 팩 표시 이름 · 이미지 ──
-  // 이미지는 본체가 준 iconPath(마지막 pack list)만 읽어 data URL 로 넘긴다 — 화면이 경로를 정하지 않고, CSP(img-src 'self' data:)와 맞는다
-  ctx.packIcon = async (id) => iconDataUrl(packModel.packIconPath(ctx.packState, id))
-  // 레포 이미지 — packRepos 가 확인한 iconPath(팩 안 · assets/repos/<레포>.*)만
-  ctx.repoIcon = async (name) => {
-    const repo = (await ctx.packRepos()).find((item) => item.name === name)
-    return iconDataUrl(repo ? repo.iconPath : null)
-  }
-
-  // 이름 바꾸기 — name 이 없으면 원래 이름으로(--clear). 끝나면 모든 창의 목록을 새로
-  ctx.packSetName = async (id, name) => {
-    const result = await runPack(name === null ? ['set-name', '--clear', '--id', id] : ['set-name', name, '--id', id], { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    refreshAllPacks()
-    return result
-  }
-
-  // 이미지 미리 고르기 — 이름 · 이미지 대화상자용. 고른 파일은 main 이 들고 있고(화면은 경로를 모른다) 미리보기만 넘긴다.
-  // [저장] 때 packSetIcon(id, false, true) 로 붙인다 — 취소하면 아무것도 바뀌지 않는다
-  ctx.packPickIcon = async (kind = 'pack') => {
-    ctx.pickedIcon = null
-    const picked = await dialog.showOpenDialog(ctx.win, {
-      title: say(kind === 'repo' ? 'spaces.icon.title' : 'pack.icon.title'),
-      properties: ['openFile'],
-      filters: [{ name: say('pack.icon.filter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-      defaultPath: app.getPath('pictures'),
-    })
-    if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
-    try {
-      const stat = await fs.promises.stat(picked.filePaths[0])
-      if (stat.size > packModel.ICON_MAX_BYTES) return { ok: false, text: say('pack.icon.tooBig') }
-      const bytes = await fs.promises.readFile(picked.filePaths[0])
-      const mime = packModel.iconMime(bytes.subarray(0, 12))
-      if (!mime) return { ok: false, text: say('pack.icon.unsupported') }
-      ctx.pickedIcon = picked.filePaths[0]
-      return { ok: true, dataUrl: `data:${mime};base64,${bytes.toString('base64')}` }
-    } catch (error) {
-      return { ok: false, text: error.message }
-    }
-  }
-
-  // 이미지 고르기 — 파일 대화상자는 main 이 연다(png · jpg · webp 만 보이게). clear 면 지우기 · usePicked 면 packPickIcon 으로 고른 것
-  ctx.packSetIcon = async (id, clear, usePicked = false) => {
-    let args = ['set-icon', '--clear', '--id', id]
-    if (usePicked) {
-      if (!ctx.pickedIcon) return { canceled: true }
-      args = ['set-icon', ctx.pickedIcon, '--id', id]
-      ctx.pickedIcon = null
-    } else if (!clear) {
-      const picked = await dialog.showOpenDialog(ctx.win, {
-        title: say('pack.icon.title'),
-        properties: ['openFile'],
-        filters: [{ name: say('pack.icon.filter'), extensions: ['png', 'jpg', 'jpeg', 'webp'] }],
-        defaultPath: app.getPath('pictures'),
-      })
-      if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
-      args = ['set-icon', picked.filePaths[0], '--id', id]
-    }
-    const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    refreshAllPacks()
-    return result
-  }
-
-  // 레포 표시 이름 · 이미지 — 이 창 본체의 팩(코어 pack set-repo-name · set-repo-icon). name 이 null 이면 원래 이름으로(--clear).
-  // 이미지는 이름 · 이미지 대화상자에서 미리 고른 것(usePicked)이나 지우기만 — 바뀐 목록은 화면이 다시 읽는다(refreshPackRepos)
-  ctx.repoSetName = async (repo, name) => {
-    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
-    const result = await runPack(name === null ? ['set-repo-name', repo, '--clear'] : ['set-repo-name', repo, name], { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    return result
-  }
-  ctx.repoSetIcon = async (repo, clear, usePicked = false) => {
-    if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
-    let args = ['set-repo-icon', repo, '--clear']
-    if (!clear) {
-      if (!usePicked || !ctx.pickedIcon) return { canceled: true }
-      args = ['set-repo-icon', repo, ctx.pickedIcon]
-      ctx.pickedIcon = null
-    }
-    const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    return result
-  }
-
-  // 팩 지우기 — 열린 창이 없는 팩만. 코어 pack delete(먼저 팩 + 작업 기록 + 워크트리 변경 백업 · 일하는 중이면 busy · 워크트리가 있으면 has-worktrees)를
-  // 팩 관리 본체에서 — 팩 본체는 자기 팩을 지우지 못한다. 레포 폴더(코드)는 그대로
-  ctx.deletePack = async (id, { withWorktrees = false } = {}) => {
-    if (openPackIds().includes(id)) return { ok: false, error: 'open', text: say('pack.delete.open') }
-    const dir = packManagerDir()
-    const blocked = await contractBlock(dir)
-    if (blocked) return blocked
-    const result = await ctx.packTask(say('pack.task.delete'), (signal) => runPack(['delete', id, ...(withWorktrees ? ['--with-worktrees'] : [])], { dir, onProgress: ctx.packProgress, signal }))
-    if (result.ok) {
-      lastPackFile = typeof result.backup === 'string' ? result.backup : null
-      refreshAllPacks()
-      return result
-    }
-    if (result.error === 'has-worktrees') return { ok: false, error: 'has-worktrees', worktrees: Array.isArray(result.worktrees) ? result.worktrees : [] }
-    if (result.error === 'unsafe') return { ...result, text: say('pack.delete.unsafe') }
-    return { ...result, text: packModel.packErrorText(result, say) }
-  }
-
-  // 팩 아이콘 우클릭 메뉴 — 고른 동작 이름을 돌려준다(이름 입력은 화면이 받는다). 아무것도 안 고르면 null
-  ctx.packContextMenu = (id, point) => {
-    const pack = [...(ctx.packState.packs || []), ctx.packState.current].find((item) => item && item.id === id)
-    if (!pack || !ctx.win) return Promise.resolve(null)
-    return new Promise((resolve) => {
-      let chosen = null
-      const pick = (action) => () => {
-        chosen = action
-        resolve(action)
-      }
-      const items = []
-      // 지금 팩이 아니면 — 따로 띄우고 싶을 때만 새 창으로(누르면 이 창에서 바꿔 본다)
-      if (!(ctx.packState.current && ctx.packState.current.id === id)) items.push({ label: say('pack.menu.newWindow'), click: pick('new-window') }, { type: 'separator' })
-      items.push({ label: say('pack.menu.rename'), click: pick('rename') })
-      if (pack.displayName) items.push({ label: say('pack.menu.resetName'), click: pick('reset-name') })
-      items.push({ type: 'separator' }, { label: say('pack.menu.icon'), click: pick('icon') })
-      if (pack.iconPath) items.push({ label: say('pack.menu.clearIcon'), click: pick('clear-icon') })
-      // 내보내기(담을 것은 화면이 묻는다) — 코어 명령이 이 본체의 팩(지금 팩)만 다룬다(--id 가 없다)
-      if (ctx.packState.current && ctx.packState.current.id === id) items.push({ type: 'separator' }, { label: say('pack.link.export'), click: pick('export') })
-      // 지우기 — 어느 창도 보고 있지 않은 팩만(보는 창이 있으면 그 창에서 다른 팩으로 바꾼 뒤)
-      if (!openPackIds().includes(id)) items.push({ type: 'separator' }, { label: say('pack.menu.delete'), click: pick('delete') })
-      // 메뉴가 닫힌 뒤 click 이 늦게 올 수 있어 잠깐 기다렸다 null
-      const menu = Menu.buildFromTemplate(items)
-      menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
-      // 누른 자리에 — 안 주면 OS 커서 자리(다른 화면일 수도)에 뜬다
-      const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
-      menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
-    })
-  }
-
-  // ── 옆 브라우저 — 창마다 서랍 하나 ──
-  // 작업 창 · 일감 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지 — 창끼리 같은 저장소),
-  // 화면은 서랍 안 자리(#browser-slot)의 사각형만 알려 준다. 페이지에는 preload · Node 를 넘기지 않는다
-  function ensureBrowserView() {
-    if (browserView && !browserView.webContents.isDestroyed()) return browserView
-    const browserSession = session.fromPartition(BROWSER_PARTITION)
-    // 카메라 · 마이크 · 알림 · 위치 같은 권한은 묻지 않고 거절한다
-    browserSession.setPermissionRequestHandler((_contents, _permission, callback) => callback(false))
-    browserSession.setPermissionCheckHandler(() => false)
-    browserView = new WebContentsView({
-      webPreferences: { partition: BROWSER_PARTITION, contextIsolation: true, sandbox: true, nodeIntegration: false },
-    })
-    // 빈 페이지일 땐 앱 배경색(흰 판이 튀지 않게). 웹 페이지로 가면 흰색 — 배경을 안 정한 사이트가 어두운 바탕에 검은 글씨가 되지 않게
-    const view = browserView
-    const fitBackground = (url) => view.setBackgroundColor(core.isWebUrl(url) ? '#ffffff' : APP_BACKGROUND)
-    fitBackground('')
-    watchConsoleSends(browserSession)
-    const contents = browserView.webContents
-    contents.on('did-navigate', (_event, url) => fitBackground(url))
-    // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면)
-    const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
-    if (remembered) contents.loadURL(remembered)
-    // http(s) 밖으로는 움직이지 않는다 — 안쪽 프레임까지
-    contents.on('will-frame-navigate', (event) => {
-      if (!core.isWebUrl(event.url)) event.preventDefault()
-    })
-    contents.on('will-redirect', (event, url) => {
-      if (!core.isWebUrl(url)) event.preventDefault()
-    })
-    for (const name of ['did-navigate', 'did-navigate-in-page', 'page-title-updated', 'did-start-loading', 'did-stop-loading']) {
-      contents.on(name, sendBrowserState)
-    }
-    contents.on('did-fail-load', (_event, code, description, url, isMainFrame) => {
-      // -3 은 이동이 취소된 것(새 주소로 바로 넘어감) — 알리지 않는다
-      if (isMainFrame && code !== -3) send('browser:error', `${description} (${code}) — ${url}`)
-    })
-    return browserView
-  }
-  ctx.isBrowserContents = (contents) => Boolean(browserView) && !browserView.webContents.isDestroyed() && contents === browserView.webContents
-
-  function sendBrowserState() {
-    if (!browserView || browserView.webContents.isDestroyed()) return
-    const contents = browserView.webContents
-    const history = contents.navigationHistory
-    send('browser:state', {
-      url: contents.getURL(),
-      title: contents.getTitle(),
-      canGoBack: history.canGoBack(),
-      canGoForward: history.canGoForward(),
-      loading: contents.isLoading(),
-    })
-  }
-
-  // 화면이 서랍을 열고, 다 나오면 browser:place 로 자리를 알려 준다
-  ctx.openInBrowser = (url) => {
-    ensureBrowserView().webContents.loadURL(url)
-    send('browser:open', url)
-    if (ctx.win) ctx.win.show()
-  }
-
-  // 화면 좌표(CSS 픽셀)는 확대·축소 비율을 곱해야 창 좌표가 된다. 창 안으로 자른다
-  ctx.placeBrowser = (rect) => {
-    if (!ctx.win || !rect) return
-    const view = ensureBrowserView()
-    const zoom = ctx.win.webContents.getZoomFactor()
-    const [contentWidth, contentHeight] = ctx.win.getContentSize()
-    const x = Math.min(Math.max(0, Math.round(rect.x * zoom)), contentWidth)
-    const y = Math.min(Math.max(0, Math.round(rect.y * zoom)), contentHeight)
-    const width = Math.min(Math.max(0, Math.round(rect.width * zoom)), contentWidth - x)
-    const height = Math.min(Math.max(0, Math.round(rect.height * zoom)), contentHeight - y)
-    view.setBounds({ x, y, width, height })
-    if (!browserAttached) {
-      ctx.win.contentView.addChildView(view)
-      browserAttached = true
-    }
-  }
-
-  // 서랍을 닫기 시작할 때 먼저 뗀다(페이지가 화면 위에 떠 있으니 슬라이드 전에 치운다). 페이지는 그대로 두어 다시 열면 이어 본다
-  ctx.hideBrowser = () => {
-    if (!ctx.win || !browserView || !browserAttached) return
-    ctx.win.contentView.removeChildView(browserView)
-    browserAttached = false
-  }
-
-  ctx.browserCommand = (name, value) => {
-    if (name === 'navigate') {
-      const url = core.normalizeAddress(value)
-      if (!url) return { error: say('error.urlNotAllowed') }
-      ensureBrowserView().webContents.loadURL(url)
-      return { url }
-    }
-    if (!browserView || browserView.webContents.isDestroyed()) return {}
-    const contents = browserView.webContents
-    if (name === 'back' && contents.navigationHistory.canGoBack()) contents.navigationHistory.goBack()
-    if (name === 'forward' && contents.navigationHistory.canGoForward()) contents.navigationHistory.goForward()
-    if (name === 'reload') contents.reload()
-    if (name === 'stop') contents.stop()
-    if (name === 'external' && core.isWebUrl(contents.getURL())) shell.openExternal(contents.getURL())
-    return {}
-  }
-
-  // ── 창 ──
-  ctx.show = (tab) => {
-    if (!ctx.win || ctx.win.isDestroyed()) return
-    // 일감은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
-    if (tab === 'board') return send('tab:switch', 'board')
-    if (ctx.win.isMinimized()) ctx.win.restore()
-    ctx.win.show()
-    ctx.win.focus()
-    if (tab) send('tab:switch', tab)
-  }
-
-  // 그 창만 닫기 — 시작 화면에서 다른 팩을 열면 이 창은 접는다(창 하나 = 팩 하나)
-  ctx.close = () => {
-    if (ctx.win && !ctx.win.isDestroyed()) ctx.win.destroy()
-  }
-
-  ctx.win = new BrowserWindow({
-    width: 1400,
-    height: 900,
-    minWidth: 720,
-    minHeight: 480,
-    title: 'Athena',
-    titleBarStyle: isMac ? 'hiddenInset' : 'default', // 맥은 탭 줄이 제목 줄을 겸한다
-    backgroundColor: APP_BACKGROUND,
-    icon: APP_ICON, // 맥은 무시한다(Dock 은 whenReady 에서) — 윈도우·리눅스 창 아이콘
-    webPreferences: {
-      preload: path.join(__dirname, 'preload.js'),
-      contextIsolation: true,
-      sandbox: true,
-      nodeIntegration: false,
-    },
+  // ── 아테나 폴더 · 회사 팩 · 팩 표시 이름 · 이미지 · 옆 브라우저 · 창 — src/main/*.mts ──
+  // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(electron · 화면 문구 · 코어 명령 · 창 찾기 · 앱 값)은 인자로 넘긴다
+  installAthenaDir(ctx, {
+    app,
+    dialog,
+    say,
+    studio: STUDIO,
+    athenaReposRoot,
+    prepareStudioCore,
+    coreInstallError,
+    ctxOfBody,
+    saveWindows,
+    syncAgentLanguage,
+    monitor,
+    setPackBoardPort: (port) => (packBoardPort = port),
+    hasTray,
+    pollTray,
   })
-  ctx.win.loadFile(path.join(__dirname, 'renderer', 'index.html'))
-  // 맨 위 페이지는 앱 화면에서 벗어나지 않는다 — 이동하려는 주소는 openUrl 이 옆 브라우저 · 기본 브라우저로 돌린다
-  ctx.win.webContents.on('will-navigate', (event, url) => {
-    event.preventDefault()
-    openUrl(ctx, url)
+  installPacks(ctx, {
+    app,
+    dialog,
+    Menu,
+    say,
+    studio: STUDIO,
+    runPack,
+    contractBlock,
+    packWindows,
+    openPackIds,
+    refreshAllPacks,
+    ctxOfBody,
+    openBody,
+    daemonOld: () => daemonOld,
+    restoreArmedFor: () => restoreArmedFor,
+    disarmRestore: () => (restoreArmedFor = null),
+    setLastPackFile: (file) => (lastPackFile = file),
+    launchWelcome: () => launchWelcome,
+    setLaunchWelcome: (value) => (launchWelcome = value),
   })
-  ctx.win.on('focus', () => {
-    lastFocused = ctx
-    if (hasTray()) pollTray() // 메뉴 막대는 앞 창의 팩만 — 창을 바꾸면 바로 다시 읽는다
-  })
-  // 맥은 마지막 창을 닫아도 메뉴 막대에 남는다(숨기기) — 완전히 끄는 것은 [Athena 종료] · ⌘Q. 창이 여럿이면 그 창만 닫는다
-  ctx.win.on('close', (event) => {
-    if (!isMac || quitting || packWindows.size > 1) return
-    event.preventDefault()
-    ctx.win.hide()
-  })
-  ctx.win.on('closed', () => {
-    ctx.win = null
-    clearInterval(monitor.timer)
-    ctx.stopRequests()
-    // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
-    if (browserView && !browserView.webContents.isDestroyed()) browserView.webContents.close()
-    browserView = null
-    browserAttached = false
-    ctx.detachScreen()
-    packWindows.delete(ctx)
-    if (lastFocused === ctx) lastFocused = null
-    saveWindows()
-    for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })
+  // 옆 브라우저 — 창마다 서랍 하나(뷰는 그 안에 · 본체별 마지막 주소 browserUrls 는 창끼리 같이 쓴다)
+  installSideBrowser(ctx, { say, browserUrls, browserPartition: BROWSER_PARTITION, watchConsoleSends, appBackground: APP_BACKGROUND })
+  // 창 — 만들고 focus · close · closed 를 건다
+  installPackWindow(ctx, {
+    packWindows,
+    openPackIds,
+    saveWindows,
+    openUrl,
+    hasTray,
+    pollTray,
+    monitor,
+    appIcon: APP_ICON,
+    appBackground: APP_BACKGROUND,
+    quitting: () => quitting,
+    lastFocused: () => lastFocused,
+    setLastFocused: (next) => (lastFocused = next),
   })
   packWindows.add(ctx)
   ctx.prepareBoardPort()
