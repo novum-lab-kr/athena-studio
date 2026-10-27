@@ -25,7 +25,9 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 가져올 때 확장자까지: `require('./lib/requests.mts')` · `import { x } from './y.mts'`. 타입만이면 `import type`
 - **지울 수 있는 문법만** — enum · namespace · 생성자 매개변수 속성 · `import x = require()` 금지(`erasableSyntaxOnly` · `scripts/check-ts.js` 가 막는다)
 - JS 파일은 맨 위 `// @ts-check` 를 붙인 것만 검사한다(`checkJs` 를 전역으로 켜면 옛 오류 수천 개). 붙인 파일 · `.mts` 는 오류 0 을 지킨다
-- renderer · preload 는 브라우저 쪽이라 아직 JS(타입 검사 밖) — `<script>` 로 싣는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 `.mts` 로 옮기지 않는다
+- renderer 는 브라우저 쪽이라 아직 JS(타입 검사 밖) — `<script>` 로 싣는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 `.mts` 로 옮기지 않는다
+- preload(`preload.js` · `preload-tray.js`)는 JS + `// @ts-check` — `sandbox: true` 라 한 파일 · `require('electron')` 만 된다(`.mts` · 다른 파일 require 안 됨)
+- 데몬 CLI `src/daemon/cli.js` 는 JS + `// @ts-check` — `bin/athena-studio-cli` 가 pane 밖에서 PATH 의 node 로 부를 수 있다(그 node 가 타입 지우기를 못 할 수 있다). 그래서 cli.js 가 부르는 `protocol.js` 도 JS
 - 코어 `athena/` 는 `.mjs` 그대로 + JSDoc · 고치는 파일부터 `// @ts-check`(설치본은 node 로 바로 실행 — 빌드를 끼우지 않는다)
 - `.mts` 를 CommonJS 에서 `require` 하면 고정된 이름공간 객체다 — 테스트에서 모듈 함수를 바꿔 끼울 수 없다(인자로 넘긴다)
 
@@ -42,7 +44,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 ## 고칠 때 같이 바꾸는 곳
 | 바꾸는 것 | 같이 |
 |---|---|
-| 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 5)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.js` · `src/daemon/cli.js` · `src/daemon-client.js` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
+| 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 5)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.mts` · `src/daemon/cli.js` · `src/daemon-client.mts` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
 | 팩 명령 약속(`pack … --json` 출력 · 오류 코드) | 앱 `src/lib/pack.mts` `CONTRACT` 와 코어 `athena/scripts/lib/bodies.mjs` `CONTRACT`(둘 다 3 — 데몬 `PROTOCOL` 과는 별개) · 출력 해석 · `packErrorText` · `scripts/fake-pack.js`(같은 모양으로) · `test/pack.test.js` · 코어 `athena/docs/pack.md` |
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) |

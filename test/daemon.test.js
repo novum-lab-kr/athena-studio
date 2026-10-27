@@ -24,7 +24,7 @@ function startDaemon(dir) {
   const socket = path.join(dir, 'd.sock')
   const endpoint = path.join(dir, 'endpoint.json')
   const log = fs.openSync(path.join(dir, 'daemon.log'), 'a')
-  const child = spawn(process.execPath, [path.join(ROOT, 'src', 'daemon', 'main.js'), '--socket', socket, '--endpoint', endpoint], {
+  const child = spawn(process.execPath, [path.join(ROOT, 'src', 'daemon', 'main.mts'), '--socket', socket, '--endpoint', endpoint], {
     detached: true,
     stdio: ['ignore', log, log],
   })
@@ -366,7 +366,7 @@ test('떼어 띄운 데몬은 띄운 쪽이 끝나도 셸과 함께 산다', { s
   // 중간 프로세스가 데몬을 떼어 띄우고 바로 끝난다(앱을 닫는 것과 같다)
   const launcher = `
     const { spawn } = require('child_process')
-    const child = spawn(process.execPath, [${JSON.stringify(path.join(ROOT, 'src', 'daemon', 'main.js'))}, '--socket', ${JSON.stringify(path.join(dir, 'd.sock'))}, '--endpoint', ${JSON.stringify(path.join(dir, 'e.json'))}], { detached: true, stdio: 'ignore' })
+    const child = spawn(process.execPath, [${JSON.stringify(path.join(ROOT, 'src', 'daemon', 'main.mts'))}, '--socket', ${JSON.stringify(path.join(dir, 'd.sock'))}, '--endpoint', ${JSON.stringify(path.join(dir, 'e.json'))}], { detached: true, stdio: 'ignore' })
     child.unref()
     console.log(child.pid)`
   const daemonPid = await new Promise((resolve, reject) => execFile(process.execPath, ['-e', launcher], (error, stdout) => (error ? reject(error) : resolve(Number(stdout.trim())))))

@@ -1,33 +1,92 @@
 // Athena Studio 데몬 — pane(셸 pty)을 갖고 앱보다 오래 산다. 앱을 닫아도 셸·에이전트는 계속 돈다(rules.md 필수).
 // 앱이 떼어 띄운다(detached · unref, 일감과 같은 방식). 앱·CLI 는 유닉스 소켓으로 말한다(src/lib/protocol.js).
-// 띄우기: <node> src/daemon/main.js --socket <경로> --endpoint <경로> [--cli <athena-studio-cli 경로>]
+// 띄우기: <node> src/daemon/main.mts --socket <경로> --endpoint <경로> [--cli <athena-studio-cli 경로>]
 //   (앱은 Electron 을 node 로 — ELECTRON_RUN_AS_NODE=1, S2. 표준 출력·오류는 앱이 daemon.log 로 돌린다)
-const fs = require('fs')
-const net = require('net')
-const os = require('os')
-const path = require('path')
-const { execFile, execFileSync } = require('child_process')
-const core = require('../lib/core.mts')
-const layout = require('../lib/layout')
-const model = require('../lib/screen-model')
-const protocol = require('../lib/protocol')
-const { Pane } = require('./pane')
+import fs from 'node:fs'
+import net from 'node:net'
+import os from 'node:os'
+import path from 'node:path'
+import { execFile, execFileSync } from 'node:child_process'
+import { createRequire } from 'node:module'
+import * as core from '../lib/core.mts'
+import { Pane } from './pane.mts'
+import type { Waiter } from './pane.mts'
 
-const APP_ROOT = path.join(__dirname, '..', '..')
-const DAEMON_VERSION = require(path.join(APP_ROOT, 'package.json')).version
+// layout(화면과 같이 쓰는 UMD) · screen-model · protocol 은 JS — 같은 require 캐시의 것을 쓴다
+const require = createRequire(import.meta.url)
+const layout: Layout = require('../lib/layout.js')
+const model: typeof import('../lib/screen-model.js') = require('../lib/screen-model.js')
+const protocol: typeof import('../lib/protocol.js') = require('../lib/protocol.js')
+
+// 탭 하나의 분할 트리(src/lib/layout.js) — 잎 { pane } · 가지 { split, ratio, first, second }
+type Tree = { pane: string } | { split: 'right' | 'down'; ratio: number; first: Tree; second: Tree }
+type Rect = { x: number; y: number; width: number; height: number }
+// 데몬이 쓰는 layout 함수만(UMD 라 타입을 끌어오지 못한다)
+type Layout = {
+  leaf: (paneId: string) => Tree
+  paneIds: (node: Tree | null) => string[]
+  splitPane: (node: Tree | null, targetId: string, newId: string, direction: unknown, ratio: unknown) => Tree | null
+  removePane: (node: Tree | null, paneId: string) => Tree | null
+  computeRects: (node: Tree | null, area: Rect, gap?: number) => Record<string, Rect>
+  setRatio: (node: Tree | null, path: unknown, ratio: unknown) => Tree | null
+}
+type ProcessRow = ReturnType<typeof model.parsePs>[number]
+type Size = { cols: number; rows: number }
+// body = 그 작업 공간이 속한 아테나 본체(팩) 실제 경로, 모르면 null(모든 본체에 보임)
+type Workspace = { id: string; label: string; cwd: string; activeTab: string | null; body: string | null }
+type Tab = { id: string; workspaceId: string; label: string | null; tree: Tree | null; size: Size }
+type View = { activeWorkspace: string | null; focusedPane: string | null | undefined }
+// body — attach 때 앱 창이 알린 본체(묶이지 않으면 null = 전부)
+type Client = { socket: net.Socket; attached: boolean; body: string | null }
+// 본체 범위 — null · undefined 면 전부
+type Scope = string | null | undefined
+// 요청 인자 — 소켓 JSON 그대로(모양 검사는 하지 않는다). 동작마다 읽는 칸만
+type Args = {
+  pane?: string
+  tab?: string
+  workspace?: string
+  data?: unknown
+  text?: unknown
+  url?: unknown
+  name?: unknown
+  body?: unknown
+  cols?: number
+  rows?: number
+  path?: unknown
+  ratio?: unknown
+  label?: string | null
+  cwd?: string
+  defaultCwd?: string
+  focus?: boolean
+  command?: string
+  target?: string
+  direction?: string
+  env?: Record<string, string>
+  keys?: string[]
+  source?: string
+  lines?: number
+  match?: unknown
+  regex?: unknown
+  timeout?: number
+}
+type Message = { id?: unknown; op?: string; args?: Args; caller?: string | null; body?: unknown }
+type Failure = Error & { code: string }
+
+const APP_ROOT = path.join(import.meta.dirname, '..', '..')
+const DAEMON_VERSION: string = require(path.join(APP_ROOT, 'package.json')).version
 const IDLE_EXIT_MS = 10 * 60 * 1000 // pane 0개 · 붙은 앱 없음이 이만큼 이어지면 끝
 const BACKLOG_LIMIT = 8 * 1024 * 1024 // 앱이 못 따라오면 실시간 출력을 멈추고 resync(다시 attach)
 const PROCESS_CACHE_MS = 1000
 const DEFAULT_SIZE = { cols: 120, rows: 36 }
 
-const log = (...words) => console.log(new Date().toISOString(), ...words)
+const log = (...words: unknown[]) => console.log(new Date().toISOString(), ...words)
 
-function parseArgs(argv) {
-  const args = {}
+function parseArgs(argv: string[]): Record<string, string> {
+  const args: Record<string, string> = {}
   for (let index = 0; index < argv.length; index += 2) {
     const key = argv[index]
     if (!key || !key.startsWith('--') || index + 1 >= argv.length) throw new Error(`인자를 읽지 못했다: ${argv.join(' ')}`)
-    args[key.slice(2)] = argv[index + 1]
+    args[key.slice(2)] = argv[index + 1] as string
   }
   return args
 }
@@ -36,11 +95,31 @@ function parseArgs(argv) {
 function defaultPaths() {
   const home = os.homedir()
   const userData = process.platform === 'darwin' ? path.join(home, 'Library', 'Application Support', 'Athena Studio') : path.join(home, '.config', 'Athena Studio')
-  return core.daemonPaths({ userData, home, tmpdir: os.tmpdir(), uid: process.getuid() })
+  return core.daemonPaths({ userData, home, tmpdir: os.tmpdir(), uid: process.getuid!() })
 }
 
-class Daemon {
-  constructor({ socket, endpoint, cli }) {
+export class Daemon {
+  // declare — 타입만(실행 코드에 칸을 만들지 않는다 · 값은 constructor · start 가 넣는다)
+  declare socketPath: string
+  declare endpointPath: string
+  declare cliPath: string
+  declare idsPath: string
+  declare ids: ReturnType<typeof model.createIdGen>
+  // id 가 없을 수 있는 값(요청 인자 · 포커스)으로 그대로 찾는다 — 없으면 undefined
+  declare panes: Map<string | null | undefined, Pane>
+  declare workspaces: Workspace[]
+  declare tabs: Tab[]
+  declare docks: Map<string, string>
+  declare views: Map<string, View>
+  declare lastKey: string
+  declare clients: Set<Client>
+  declare startedAt: string
+  declare processCache: { at: number; rows: Promise<ProcessRow[]> } | null
+  declare idleSince: number
+  declare server: net.Server
+  declare idleTimer: NodeJS.Timeout
+
+  constructor({ socket, endpoint, cli }: { socket: string; endpoint: string; cli?: string }) {
     this.socketPath = socket
     this.endpointPath = endpoint
     this.cliPath = cli || path.join(APP_ROOT, 'bin', 'athena-studio-cli')
@@ -67,7 +146,7 @@ class Daemon {
       fs.unlinkSync(this.socketPath) // 죽은 데몬이 남긴 소켓
     } catch {}
     this.server = net.createServer((socket) => this.accept(socket))
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       this.server.once('error', reject)
       this.server.listen(this.socketPath, resolve)
     })
@@ -95,7 +174,7 @@ class Daemon {
     } catch {}
   }
 
-  shutdown(reason) {
+  shutdown(reason: string): void {
     log(`데몬 끝: ${reason}`)
     for (const pane of this.panes.values()) pane.close()
     this.removeEndpoint()
@@ -115,8 +194,8 @@ class Daemon {
   }
 
   // ── 연결 ───────────────────────────────────────────────────
-  accept(socket) {
-    const client = { socket, attached: false, body: null } // body — attach 때 앱 창이 알린 본체(묶이지 않으면 null = 전부)
+  accept(socket: net.Socket): void {
+    const client: Client = { socket, attached: false, body: null } // body — attach 때 앱 창이 알린 본체(묶이지 않으면 null = 전부)
     this.clients.add(client)
     socket.setEncoding('utf8')
     socket.on('data', protocol.createDecoder((message) => this.handle(client, message), (line) => log('깨진 줄', line.slice(0, 200))))
@@ -124,14 +203,14 @@ class Daemon {
     socket.on('close', () => this.clients.delete(client))
   }
 
-  reply(client, message) {
+  reply(client: Client, message: unknown): void {
     if (client.socket.destroyed) return
     client.socket.write(protocol.encode(message))
   }
 
   // 붙은 앱에 알림. 못 따라오면(쌓인 글이 너무 많으면) 실시간을 멈추고 resync 를 보낸다.
   // body 를 주면 그 본체를 보는 연결(과 묶이지 않은 연결)에만 — pane 출력이 다른 팩 창으로 새지 않게
-  broadcast(message, body = undefined) {
+  broadcast(message: unknown, body: Scope = undefined): void {
     const line = protocol.encode(message)
     for (const client of this.clients) {
       if (!client.attached || client.socket.destroyed) continue
@@ -147,7 +226,7 @@ class Daemon {
 
   // 연결마다 자기 본체 상태만 — 같은 본체끼리는 한 번만 만든다
   broadcastState() {
-    const made = new Map()
+    const made = new Map<string | null, string>()
     for (const client of this.clients) {
       if (!client.attached || client.socket.destroyed) continue
       const key = client.body === null ? null : client.body
@@ -157,28 +236,28 @@ class Daemon {
         client.socket.write(protocol.encode({ event: 'resync' }))
         continue
       }
-      client.socket.write(made.get(key))
+      client.socket.write(made.get(key) as string)
     }
   }
 
   // ── 본체(팩) 묶음 ───────────────────────────────────────────
   // scope 가 null 이면 전부 본다(묶이지 않은 연결) · 본체 모르는 작업 공간(body null)은 누구에게나 보인다
-  sees(scope, body) {
+  sees(scope: Scope, body: string | null | undefined): boolean {
     return scope === null || scope === undefined || !body || body === scope
   }
 
-  view(key) {
+  view(key: string | null | undefined): View {
     const name = key || ''
     if (!this.views.has(name)) this.views.set(name, { activeWorkspace: null, focusedPane: null })
-    return this.views.get(name)
+    return this.views.get(name) as View
   }
 
-  workspaceBody(workspaceId) {
+  workspaceBody(workspaceId: string | null | undefined): string | null {
     const workspace = this.workspaces.find((entry) => entry.id === workspaceId)
     return workspace ? workspace.body : null
   }
 
-  paneBody(pane) {
+  paneBody(pane: Pane | null | undefined): string | null {
     if (!pane) return null
     if (pane.dock) return pane.body || null
     const tab = this.tabs.find((entry) => entry.id === pane.tabId)
@@ -187,7 +266,7 @@ class Daemon {
 
   // 이 요청이 보는 본체 — 묶인 앱 연결이면 그 본체, CLI 는 부른 pane(ATHENA_STUDIO_PANE_ID)의 본체,
   // pane 밖(일감)이면 CLI 가 실어 온 ATHENA_STUDIO_BODY, 다 없으면 null(전부)
-  scopeOf(client, message) {
+  scopeOf(client: Client, message: Message): string | null {
     if (client.body) return client.body
     const caller = message && message.caller ? this.panes.get(message.caller) : null
     if (caller) return this.paneBody(caller) || null
@@ -195,34 +274,34 @@ class Daemon {
   }
 
   // 포커스 · 활성 작업 공간을 바꿀 자리 — scope 가 없으면 마지막으로 움직인 본체
-  viewKeyOf(scope) {
+  viewKeyOf(scope: Scope): string {
     return scope === null || scope === undefined ? this.lastKey : scope
   }
 
   // 이미 있는 것(pane · 탭 · 작업 공간)을 고를 때의 자리 — 묶이지 않은 호출이면 그것이 속한 본체(모르면 마지막으로 움직인 본체).
   // lastKey 로만 고르면 다른 본체 창의 활성 작업 공간 · 포커스를 덮는다(리뷰 제안 1)
-  viewKeyFor(scope, body) {
+  viewKeyFor(scope: Scope, body: string | null): string {
     return scope === null || scope === undefined ? body || this.lastKey : scope
   }
 
   // scope 가 보는 것만 — 목록 응답 · 상태
-  visibleWorkspaces(scope) {
+  visibleWorkspaces(scope: Scope): Workspace[] {
     return this.workspaces.filter((workspace) => this.sees(scope, workspace.body))
   }
 
-  visiblePanes(scope) {
+  visiblePanes(scope: Scope): Pane[] {
     return [...this.panes.values()].filter((pane) => this.sees(scope, this.paneBody(pane)))
   }
 
   // 다른 본체의 pane · 탭 · 작업 공간을 고르지 못하게(없는 것처럼)
-  checkVisible(scope, body, what) {
+  checkVisible(scope: Scope, body: string | null, what: string): void {
     if (!this.sees(scope, body)) throw failure('not_found', `이 창(팩)에 없는 ${what}`)
   }
 
   // 주소 열기(아테나 화면 계층 open-url) — 그 본체에 붙은 앱 창 하나에 알린다. 여는 건 앱(main openUrl — localhost 는 옆 브라우저 · 그 밖 http(s) 는 기본 브라우저)
   // 고르는 곳: 그 본체에 묶인 연결. 본체를 모르는 호출(부른 pane · ATHENA_STUDIO_BODY 없음)이면 붙은 창이 하나일 때만 그 창.
   // 못 고르면 not_found — 아테나 화면 계층이 기본 브라우저로 떨어진다
-  openUrl(scope, url) {
+  openUrl(scope: Scope, url: unknown): { ok: true; target: 'panel' | 'external' } {
     const target = core.openTarget(String(url || ''))
     if (target === 'deny') throw failure('usage', `http(s) 주소만 열 수 있다: ${url}`)
     const app = this.appFor(scope)
@@ -231,25 +310,26 @@ class Daemon {
     return { ok: true, target }
   }
 
-  appFor(scope) {
+  appFor(scope: Scope): Client | null {
     const apps = [...this.clients].filter((client) => client.attached && !client.socket.destroyed)
     if (scope) return apps.find((client) => client.body === scope) || null
-    return apps.length === 1 ? apps[0] : null
+    return apps.length === 1 ? (apps[0] as Client) : null
   }
 
-  async handle(client, message) {
-    const { id, op, args = {} } = message || {}
+  async handle(client: Client, message: unknown): Promise<void> {
+    const { id, op, args = {} } = (message || {}) as Message
     try {
-      const result = await this.dispatch(client, op, args, message)
+      const result = await this.dispatch(client, op, args, message as Message)
       if (id !== undefined) this.reply(client, { id, ok: true, result: result === undefined ? null : result })
-    } catch (error) {
+    } catch (caught) {
+      const error = caught as { code?: string; stack?: string; message?: string }
       const code = error.code && protocol.ERROR_CODES.includes(error.code) ? error.code : 'internal'
       if (code === 'internal') log(`${op} 실패`, error.stack || error)
       if (id !== undefined) this.reply(client, protocol.errorReply(id, code, error.message))
     }
   }
 
-  async dispatch(client, op, args, message) {
+  async dispatch(client: Client, op: string | undefined, args: Args, message: Message): Promise<unknown> {
     const scope = this.scopeOf(client, message)
     switch (op) {
       case 'hello':
@@ -263,7 +343,7 @@ class Daemon {
         this.paneIn(scope, args.pane).write(String(args.data))
         return undefined
       case 'resize':
-        this.paneIn(scope, args.pane).resize(args.cols | 0, args.rows | 0)
+        this.paneIn(scope, args.pane).resize((args.cols as number) | 0, (args.rows as number) | 0)
         return undefined
       case 'focus':
         return this.focus(scope, args.pane)
@@ -278,7 +358,7 @@ class Daemon {
       case 'tab ratio':
         return this.setTabRatio(this.tabIn(scope, args.tab).id, args.path, args.ratio)
       case 'tab size':
-        return this.setTabSize(this.tabIn(scope, args.tab).id, args.cols | 0, args.rows | 0)
+        return this.setTabSize(this.tabIn(scope, args.tab).id, (args.cols as number) | 0, (args.rows as number) | 0)
       case 'shutdown':
         setImmediate(() => this.shutdown('앱이 요청'))
         return { panes: this.panes.size }
@@ -349,38 +429,38 @@ class Daemon {
   }
 
   // ── 상태 ───────────────────────────────────────────────────
-  paneOf(paneId) {
+  paneOf(paneId: string | null | undefined): Pane {
     const pane = this.panes.get(paneId)
     if (!pane) throw failure('not_found', `없는 pane: ${paneId}`)
     return pane
   }
 
-  paneIn(scope, paneId) {
+  paneIn(scope: Scope, paneId: string | null | undefined): Pane {
     const pane = this.paneOf(paneId)
     this.checkVisible(scope, this.paneBody(pane), 'pane')
     return pane
   }
 
-  tabIn(scope, tabId) {
+  tabIn(scope: Scope, tabId: string | undefined): Tab {
     const tab = this.tabOf(tabId)
     this.checkVisible(scope, this.workspaceBody(tab.workspaceId), '탭')
     return tab
   }
 
-  workspaceIn(scope, workspaceId) {
+  workspaceIn(scope: Scope, workspaceId: string | undefined): Workspace {
     const workspace = this.workspaceOf(workspaceId)
     this.checkVisible(scope, workspace.body, '작업 공간')
     return workspace
   }
 
   // 앱 화면이 그릴 상태 — 작업 공간 · 탭(트리) · pane 메타. scope 가 있으면 그 본체 것만(창마다 자기 팩)
-  state(scope = null) {
+  state(scope: Scope = null) {
     const view = this.view(this.viewKeyOf(scope))
     const workspaces = this.visibleWorkspaces(scope)
     const ids = new Set(workspaces.map((workspace) => workspace.id))
     return {
       workspaces: workspaces.map((workspace) => ({ id: workspace.id, label: workspace.label, cwd: workspace.cwd, activeTab: workspace.activeTab, body: workspace.body || null })),
-      activeWorkspace: ids.has(view.activeWorkspace) ? view.activeWorkspace : null,
+      activeWorkspace: ids.has(view.activeWorkspace as string) ? view.activeWorkspace : null,
       tabs: this.tabs.filter((tab) => ids.has(tab.workspaceId)).map((tab) => ({ id: tab.id, workspace: tab.workspaceId, label: tab.label, tree: tab.tree })),
       focused: this.panes.has(view.focusedPane) && this.sees(scope, this.paneBody(this.panes.get(view.focusedPane))) ? view.focusedPane : null,
       panes: this.visiblePanes(scope).map((pane) => ({ id: pane.id, tab: pane.tabId, dock: pane.dock || null, label: pane.label, title: pane.title, cols: pane.size.cols, rows: pane.size.rows })),
@@ -388,11 +468,11 @@ class Daemon {
   }
 
   // 화면 계층 Workspace 모양(screen.py _workspace) — focused 는 그 작업 공간 본체의 보는 자리 기준
-  flatWorkspace(workspace) {
+  flatWorkspace(workspace: Workspace): { id: string; label: string; active_tab_id: string | null; focused: boolean } {
     return { id: workspace.id, label: workspace.label, active_tab_id: workspace.activeTab, focused: workspace.id === this.view(workspace.body || this.lastKey).activeWorkspace }
   }
 
-  workspaceOf(workspaceId) {
+  workspaceOf(workspaceId: string | undefined): Workspace {
     const workspace = this.workspaces.find((entry) => entry.id === workspaceId)
     if (!workspace) throw failure('not_found', `없는 작업 공간: ${workspaceId}`)
     return workspace
@@ -400,28 +480,28 @@ class Daemon {
 
   // 지금 상태 + pane 마다 되살릴 화면. 이 응답 뒤로 같은 소켓에 실시간 출력이 이어진다(빈틈 없음)
   // 앱 창이 붙는다 — body(그 창의 아테나 본체 실제 경로)를 주면 그 본체 것만 보고 받는다(protocol 5). 안 주면 전부
-  attach(client, { body } = {}) {
+  attach(client: Client, { body }: Args = {}) {
     client.body = typeof body === 'string' && body ? body : null
-    const snapshots = {}
+    const snapshots: Record<string, string> = {}
     for (const pane of this.visiblePanes(client.body)) snapshots[pane.id] = pane.snapshot()
     client.attached = true
     return { state: this.state(client.body), snapshots }
   }
 
-  focus(scope, paneId) {
+  focus(scope: Scope, paneId: string | undefined): undefined {
     const pane = this.paneIn(scope, paneId)
     const key = this.viewKeyFor(scope, this.paneBody(pane))
     // 고정 칸은 탭이 없다 — 포커스만 옮긴다(보고 있던 작업 공간·탭은 그대로)
     if (pane.dock) {
       this.view(key).focusedPane = pane.id
       this.lastKey = key
-    } else this.activate(key, this.tabOf(pane.tabId), pane.id)
+    } else this.activate(key, this.tabOf(pane.tabId as string), pane.id)
     this.broadcastState()
     return undefined
   }
 
   // 그 탭을 보이게(작업 공간까지) 하고 포커스를 옮긴다 — paneId 가 없으면 탭의 첫 pane. key = 바꿀 보는 자리(본체)
-  activate(key, tab, paneId) {
+  activate(key: string, tab: Tab, paneId: string | null | undefined): void {
     const workspace = this.workspaceOf(tab.workspaceId)
     workspace.activeTab = tab.id
     // 본체가 정해진 작업 공간은 그 본체 자리만 바꾼다 — 다른 본체 창의 화면을 덮지 않게
@@ -435,9 +515,9 @@ class Daemon {
   // ── 탭 · 분할 ──────────────────────────────────────────────
   // 작업 공간 하나 + 셸 탭 하나. 화면 계층 workspace create 는 {workspace, root_pane}
   // 새 작업 공간은 부른 쪽 본체에 속한다(앱 창이면 그 창 · CLI 면 부른 pane 의 작업 공간 본체)
-  async createWorkspace(scope, { label, cwd, focus, cols, rows }) {
+  async createWorkspace(scope: Scope, { label, cwd, focus, cols, rows }: Args) {
     const workdir = cwd && isDirectory(cwd) ? cwd : os.homedir()
-    const workspace = { id: this.ids.next('w'), label: label || path.basename(workdir), cwd: workdir, activeTab: null, body: scope || null }
+    const workspace: Workspace = { id: this.ids.next('w'), label: label || path.basename(workdir), cwd: workdir, activeTab: null, body: scope || null }
     this.workspaces.push(workspace)
     const key = this.viewKeyOf(scope)
     const view = this.view(key)
@@ -455,7 +535,7 @@ class Daemon {
 
   // 앱의 ＋ · ⌘T — 작업 공간을 주지 않으면 지금 작업 공간(없으면 cwd · defaultCwd 이름으로 하나 만든다).
   // 새 탭 폴더는 cwd 를 주지 않으면 그 작업 공간 폴더
-  newTab(scope, { workspace: workspaceId, label, cwd, defaultCwd, cols, rows }) {
+  newTab(scope: Scope, { workspace: workspaceId, label, cwd, defaultCwd, cols, rows }: Args): { workspace: string; tab: string; pane: string } {
     const key = this.viewKeyOf(scope)
     let workspace = this.visibleWorkspaces(scope).find((entry) => entry.id === (workspaceId || this.view(key).activeWorkspace))
     if (!workspace) {
@@ -469,8 +549,8 @@ class Daemon {
     return { workspace: workspace.id, tab: tab.id, pane: pane.id }
   }
 
-  addTab({ key, workspace, label, cwd, cols, rows }) {
-    const tab = { id: this.ids.next('t'), workspaceId: workspace.id, label: label || null, tree: null, size: sizeOr({ cols, rows }) }
+  addTab({ key, workspace, label, cwd, cols, rows }: { key: string; workspace: Workspace; label?: string | null; cwd: string; cols?: number; rows?: number }): { tab: Tab; pane: Pane } {
+    const tab: Tab = { id: this.ids.next('t'), workspaceId: workspace.id, label: label || null, tree: null, size: sizeOr({ cols, rows }) }
     this.tabs.push(tab) // pane 환경(ATHENA_STUDIO_WORKSPACE_ID)이 탭을 찾을 수 있게 먼저 넣는다
     const pane = this.spawnPane({ tabId: tab.id, cwd, cols: tab.size.cols, rows: tab.size.rows })
     tab.tree = layout.leaf(pane.id)
@@ -478,17 +558,17 @@ class Daemon {
     return { tab, pane }
   }
 
-  selectTab(scope, tabId) {
+  selectTab(scope: Scope, tabId: string | undefined): undefined {
     const tab = this.tabIn(scope, tabId)
     const key = this.viewKeyFor(scope, this.workspaceBody(tab.workspaceId))
     const ids = layout.paneIds(tab.tree)
     const focused = this.view(key).focusedPane
-    this.activate(key, tab, ids.includes(focused) ? focused : null)
+    this.activate(key, tab, ids.includes(focused as string) ? focused : null)
     this.broadcastState()
     return undefined
   }
 
-  selectWorkspace(scope, workspaceId) {
+  selectWorkspace(scope: Scope, workspaceId: string | undefined): undefined {
     const workspace = this.workspaceIn(scope, workspaceId)
     const key = this.viewKeyFor(scope, workspace.body)
     const tab = this.tabs.find((entry) => entry.id === workspace.activeTab) || this.tabs.find((entry) => entry.workspaceId === workspace.id)
@@ -502,14 +582,14 @@ class Daemon {
   }
 
   // 탭 안의 pane 을 모두 닫는다 — 마지막 pane 이 끝나면 탭이 빠진다(paneExited)
-  closeTab(tabId) {
+  closeTab(tabId: string): undefined {
     const tab = this.tabOf(tabId)
     for (const paneId of layout.paneIds(tab.tree)) this.panes.get(paneId)?.close()
     return undefined
   }
 
   // 앱에서 pane 경계를 끈 결과 — path 의 가지 비율을 바꾼다
-  setTabRatio(tabId, path, ratio) {
+  setTabRatio(tabId: string, path: unknown, ratio: unknown): undefined {
     const tab = this.tabOf(tabId)
     const tree = layout.setRatio(tab.tree, path, ratio)
     if (!tree) throw failure('usage', `없는 경계: ${JSON.stringify(path)}`)
@@ -518,27 +598,27 @@ class Daemon {
     return undefined
   }
 
-  setTabSize(tabId, cols, rows) {
+  setTabSize(tabId: string, cols: number, rows: number): undefined {
     const tab = this.tabOf(tabId)
     if (cols > 1 && rows > 1) tab.size = { cols, rows }
     return undefined
   }
 
-  tabOf(tabId) {
+  tabOf(tabId: string | undefined): Tab {
     const tab = this.tabs.find((entry) => entry.id === tabId)
     if (!tab) throw failure('not_found', `없는 탭: ${tabId}`)
     return tab
   }
 
   // target: self = 부른 pane(CLI 가 ATHENA_STUDIO_PANE_ID 를 caller 로 보낸다, 없으면 포커스) · focused · pane id
-  async split(scope, { target, direction, ratio, cwd, env, focus }, caller) {
+  async split(scope: Scope, { target, direction, ratio, cwd, env, focus }: Args, caller: string | null | undefined) {
     const focusedNow = this.view(this.viewKeyOf(scope)).focusedPane
-    let targetId = target
+    let targetId: string | null | undefined = target
     if (target === 'self') targetId = caller && this.panes.has(caller) ? caller : focusedNow
     if (target === 'focused') targetId = focusedNow
     const base = this.paneIn(scope, targetId)
     if (base.dock) throw failure('usage', `고정 칸(${base.dock})은 나눌 수 없다 — 탭의 pane 을 주세요`)
-    const tab = this.tabOf(base.tabId)
+    const tab = this.tabOf(base.tabId as string)
     const pane = this.spawnPane({ tabId: tab.id, cwd: cwd || base.cwd, env, ...base.size })
     tab.tree = layout.splitPane(tab.tree, base.id, pane.id, direction, ratio)
     this.fitTab(tab)
@@ -549,7 +629,7 @@ class Daemon {
   }
 
   // 앱이 없을 때도 크기가 맞게 탭 크기를 트리대로 나눠 pty 크기를 정한다(앱이 붙어 있으면 앱이 실제 크기로 다시 알린다)
-  fitTab(tab) {
+  fitTab(tab: Tab): void {
     const rects = layout.computeRects(tab.tree, { x: 0, y: 0, width: tab.size.cols, height: tab.size.rows }, 1)
     for (const [paneId, rect] of Object.entries(rects)) {
       const pane = this.panes.get(paneId)
@@ -557,7 +637,7 @@ class Daemon {
     }
   }
 
-  spawnPane({ tabId, cwd, env = {}, cols, rows }) {
+  spawnPane({ tabId, cwd, env = {}, cols, rows }: { tabId: string | null; cwd?: string; env?: Record<string, string>; cols?: number; rows?: number }): Pane {
     const id = this.ids.next('p')
     const workdir = cwd && isDirectory(cwd) ? cwd : os.homedir()
     const pane = new Pane({
@@ -577,7 +657,7 @@ class Daemon {
   }
 
   // pane 셸 환경 — 아테나 화면 계층이 스튜디오 pane 인 것을 ATHENA_STUDIO* 로 안다. ELECTRON_RUN_AS_NODE 등 물려받은 세션 표시는 지운다
-  paneEnv(paneId, tabId, extra) {
+  paneEnv(paneId: string, tabId: string | null, extra: Record<string, string>): Record<string, string | undefined> {
     const tab = this.tabs.find((entry) => entry.id === tabId)
     return {
       ...core.terminalEnv(process.env),
@@ -592,11 +672,11 @@ class Daemon {
     }
   }
 
-  paneExited(paneId, code) {
+  paneExited(paneId: string, code: number): void {
     const pane = this.panes.get(paneId)
     if (!pane) return
     this.panes.delete(paneId)
-    if (pane.dock && this.docks.get(pane.dockKey) === paneId) this.docks.delete(pane.dockKey)
+    if (pane.dock && this.docks.get(pane.dockKey as string) === paneId) this.docks.delete(pane.dockKey as string)
     log(`pane ${paneId} 끝 (${code})`)
     const tab = this.tabs.find((entry) => entry.id === pane.tabId)
     if (tab) {
@@ -611,7 +691,7 @@ class Daemon {
   }
 
   // 탭 밖 고정 칸 — 이름마다 하나. 없으면 셸을 띄우고 그 셸에서 command 를 실행한다(명령이 끝나도 칸은 남는다)
-  ensureDock(scope, { name, cwd, command, label, cols, rows }) {
+  ensureDock(scope: Scope, { name, cwd, command, label, cols, rows }: Args): { pane: string; created: boolean } {
     if (!name || typeof name !== 'string') throw failure('usage', 'dock 이름이 없다')
     const dockKey = `${scope || ''}\0${name}` // 본체마다 따로
     const existing = this.panes.get(this.docks.get(dockKey))
@@ -629,17 +709,17 @@ class Daemon {
   }
 
   // 빈 탭을 빼고, 탭이 없어진 작업 공간도 뺀다
-  removeTab(tab) {
+  removeTab(tab: Tab): void {
     this.tabs = this.tabs.filter((entry) => entry !== tab)
     const workspace = this.workspaces.find((entry) => entry.id === tab.workspaceId)
     if (!workspace) return
     const rest = this.tabs.filter((entry) => entry.workspaceId === workspace.id)
     if (!rest.length) this.workspaces = this.workspaces.filter((entry) => entry !== workspace)
-    else if (workspace.activeTab === tab.id) workspace.activeTab = rest[rest.length - 1].id
+    else if (workspace.activeTab === tab.id) workspace.activeTab = (rest[rest.length - 1] as Tab).id
   }
 
   // 포커스가 사라졌으면 — 그 본체 안에서 지금 작업 공간의 활성 탭 → 다른 작업 공간 순으로
-  refocus(key) {
+  refocus(key: string): void {
     const view = this.view(key)
     const own = this.visibleWorkspaces(key || null)
     const workspace = own.find((entry) => entry.id === view.activeWorkspace) || own[own.length - 1]
@@ -654,9 +734,9 @@ class Daemon {
   }
 
   // ── 쓰기 · 읽기 ────────────────────────────────────────────
-  sendKeys({ pane: paneId, keys }) {
+  sendKeys({ pane: paneId, keys }: Args): undefined {
     const pane = this.paneOf(paneId)
-    const bytes = keys.map((key) => {
+    const bytes = (keys as string[]).map((key) => {
       const value = model.keyBytes(key)
       if (value === null) throw failure('usage', `모르는 키: ${key}`)
       return value
@@ -665,26 +745,26 @@ class Daemon {
     return undefined
   }
 
-  waitOutput({ pane: paneId, match, regex, lines, timeout }) {
+  waitOutput({ pane: paneId, match, regex, lines, timeout }: Args): Promise<{ text: string }> {
     const pane = this.paneOf(paneId)
     return new Promise((resolve, reject) => {
-      let timer = null
-      const waiter = {
+      let timer: NodeJS.Timeout | null = null
+      const waiter: Waiter = {
         check: () => {
-          let found
+          let found: string | null
           try {
             found = model.findMatch(model.formatRead(pane.lines('recent'), lines), { match, regex })
           } catch (error) {
-            waiter.fail('usage', error.message)
+            waiter.fail('usage', (error as Error).message)
             return true
           }
           if (found === null) return false
-          clearTimeout(timer)
+          clearTimeout(timer as NodeJS.Timeout)
           resolve({ text: `${found}\n` })
           return true
         },
         fail: (code, text) => {
-          clearTimeout(timer)
+          clearTimeout(timer as NodeJS.Timeout)
           reject(failure(code, text))
         },
       }
@@ -700,7 +780,7 @@ class Daemon {
   }
 
   // ── 납작한 Pane (agent · 앞쪽 cwd 는 ps · lsof 로, 1초 캐시) ─────────────
-  async flatPanes(panes) {
+  async flatPanes(panes: Pane[]) {
     const processes = await this.processes()
     const foreground = panes.map((pane) => {
       const group = model.foregroundGroup(processes, pane.pid)
@@ -718,7 +798,7 @@ class Daemon {
         workspaceId: tab ? tab.workspaceId : null,
         label: pane.label,
         cwd: pane.cwd,
-        foregroundCwd: cwds[foreground[index]] || null,
+        foregroundCwd: cwds[foreground[index] as number] || null,
         focused: pane.id === this.view(this.paneBody(pane) || this.lastKey).focusedPane,
         agent,
         agentStatus: model.agentStatus({ agent, screenLines: pane.lines('visible'), lastOutputAt: pane.lastOutputAt, now }),
@@ -727,9 +807,9 @@ class Daemon {
     })
   }
 
-  processes() {
+  processes(): Promise<ProcessRow[]> {
     if (this.processCache && Date.now() - this.processCache.at < PROCESS_CACHE_MS) return this.processCache.rows
-    const rows = new Promise((resolve) => {
+    const rows = new Promise<ProcessRow[]>((resolve) => {
       execFile('ps', ['-axo', 'pid=,pgid=,tpgid=,comm='], { maxBuffer: 16 * 1024 * 1024 }, (error, stdout) => resolve(error ? [] : model.parsePs(stdout)))
     })
     this.processCache = { at: Date.now(), rows }
@@ -738,7 +818,7 @@ class Daemon {
 }
 
 // node 로 도는 앞쪽 프로세스만 인자를 본다(npm 판 codex) — 앞쪽 그룹 밖은 묻지 않는다
-function nodeArgs(pid) {
+function nodeArgs(pid: number): string | null {
   try {
     return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8', timeout: 1000 })
   } catch {
@@ -747,13 +827,13 @@ function nodeArgs(pid) {
 }
 
 // pid → cwd. lsof 한 번으로 묶는다
-function foregroundCwds(pids) {
+function foregroundCwds(pids: number[]): Promise<Record<number, string>> {
   const unique = [...new Set(pids.filter(Boolean))]
   if (!unique.length) return Promise.resolve({})
   return new Promise((resolve) => {
     execFile('lsof', ['-a', '-d', 'cwd', '-Fn', '-p', unique.join(',')], { timeout: 2000 }, (_error, stdout) => {
-      const cwds = {}
-      let current = null
+      const cwds: Record<number, string> = {}
+      let current: number | null = null
       for (const line of String(stdout || '').split('\n')) {
         if (line.startsWith('p')) current = Number(line.slice(1))
         else if (line.startsWith('n') && current) cwds[current] = line.slice(1)
@@ -763,7 +843,7 @@ function foregroundCwds(pids) {
   })
 }
 
-function canConnect(socketPath) {
+function canConnect(socketPath: string): Promise<boolean> {
   return new Promise((resolve) => {
     const socket = net.connect(socketPath)
     socket.once('connect', () => {
@@ -774,7 +854,7 @@ function canConnect(socketPath) {
   })
 }
 
-function isDirectory(dir) {
+function isDirectory(dir: string): boolean {
   try {
     return fs.statSync(dir).isDirectory()
   } catch {
@@ -783,7 +863,7 @@ function isDirectory(dir) {
 }
 
 // 지난 데몬이 남긴 id 번호 — 없거나 깨졌으면 처음부터
-function readIds(file) {
+function readIds(file: string): unknown {
   try {
     return JSON.parse(fs.readFileSync(file, 'utf8'))
   } catch {
@@ -792,48 +872,47 @@ function readIds(file) {
 }
 
 // 못 써도 데몬은 계속 돈다(그 데몬 안에서는 번호가 겹치지 않는다) — 로그만
-function writeIds(file, counters) {
+function writeIds(file: string, counters: Record<string, number>): void {
   try {
     fs.mkdirSync(path.dirname(file), { recursive: true, mode: 0o700 })
     fs.writeFileSync(file, JSON.stringify(counters))
   } catch (error) {
-    log('id 번호를 남기지 못했다', file, error.message)
+    log('id 번호를 남기지 못했다', file, (error as Error).message)
   }
 }
 
-function sizeOr({ cols, rows }) {
-  return { cols: cols > 1 ? cols | 0 : DEFAULT_SIZE.cols, rows: rows > 1 ? rows | 0 : DEFAULT_SIZE.rows }
+function sizeOr({ cols, rows }: { cols?: number; rows?: number }): Size {
+  return { cols: (cols as number) > 1 ? (cols as number) | 0 : DEFAULT_SIZE.cols, rows: (rows as number) > 1 ? (rows as number) | 0 : DEFAULT_SIZE.rows }
 }
 
 // 화면 계층 Tab 모양
-function flatTab(tab) {
+function flatTab(tab: Tab): { id: string; workspace_id: string; label: string | null } {
   return { id: tab.id, workspace_id: tab.workspaceId, label: tab.label }
 }
 
-function failure(code, message) {
-  const error = new Error(message)
+function failure(code: string, message: string): Failure {
+  const error = new Error(message) as Failure
   error.code = code
   return error
 }
 
-async function main() {
+async function main(): Promise<void> {
   process.title = 'athena-studio-daemon'
   const args = parseArgs(process.argv.slice(2))
   const defaults = defaultPaths()
   const daemon = new Daemon({ socket: args.socket || defaults.socket, endpoint: args.endpoint || defaults.endpoint, cli: args.cli })
   // 예외 하나로 데몬이 죽으면 모든 셸이 SIGHUP 으로 같이 죽는다 — 로그만 남기고 계속 돈다
   process.on('uncaughtException', (error) => log('잡히지 않은 예외', error.stack || error))
-  process.on('unhandledRejection', (error) => log('처리 안 된 거절', (error && error.stack) || error))
+  process.on('unhandledRejection', (error) => log('처리 안 된 거절', (error && (error as Error).stack) || error))
   process.on('SIGTERM', () => daemon.shutdown('SIGTERM'))
   process.on('SIGHUP', () => {}) // 띄운 터미널이 닫혀도 산다
   await daemon.start()
 }
 
-if (require.main === module) {
-  main().catch((error) => {
+// 바로 띄웠을 때만(require.main === module 과 같다)
+if (import.meta.main) {
+  main().catch((error: Error) => {
     log('데몬 시작 실패', error.message)
     process.exit(1)
   })
 }
-
-module.exports = { Daemon }
