@@ -52,6 +52,8 @@ declare global {
     openUrl(url: string): Promise<unknown>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
     repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>
+    // main 의 browserCommand(src/main/side-browser.mts) — navigate 는 { url } 또는 { error }, 나머지는 {}
+    browserCommand(name: 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'external', value?: string): Promise<{ url?: string; error?: string }>
   }
 
   const studio: StudioApi
