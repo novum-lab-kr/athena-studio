@@ -11,7 +11,7 @@ import { StudioUi } from './ui/index.ts'
 import type { SpacePane, SpaceRepo, SpacesActions } from './ui/spaces.tsx'
 import { hidePackProgress, lookDialog, packAlert, packDialog, showPackProgress } from './pack-dialogs.ts'
 import { popupOption, runPackFlow } from './pack-switch.ts'
-import { branches, paneStatus } from './renderer.js'
+import { branches, paneStatus } from './main.ts'
 
 // 작업 공간 아이콘 — 이름 앞 두 글자 + 이름으로 고른 색(같은 이름은 늘 같은 색)
 const SPACE_COLORS = ['#7aa2f7', '#9ece6a', '#e0af68', '#bb9af7', '#f7768e', '#7dcfff', '#ff9e64', '#73daca']

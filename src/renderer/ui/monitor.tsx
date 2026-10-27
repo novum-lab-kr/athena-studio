@@ -100,7 +100,7 @@ export function tick(): void {
   commit({ ...state, filter: liveFilter(state.filter, state.sessions, now), now }, 'keep')
 }
 
-// 언어를 바꾼 뒤(renderer.js applyLanguage) — 지금 언어로 바로 다시 그린다
+// 언어를 바꾼 뒤(main.ts applyLanguage) — 지금 언어로 바로 다시 그린다
 export function refresh(): void {
   commit({ ...view.get(), now: Date.now() }, 'keep')
 }
