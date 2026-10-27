@@ -21,7 +21,7 @@ let statusBox: HTMLElement | null = null
 let toastTimer: ReturnType<typeof setTimeout> | undefined
 let toastKind: ToastKind = 'error'
 
-// 켤 때 한 번(renderer.js 맨 위) — 알림 칸 · 상태 줄 칸에 각각 띄운다(내리지 않는다)
+// 켤 때 한 번(core.ts 맨 위) — 알림 칸 · 상태 줄 칸에 각각 띄운다(내리지 않는다)
 export function mount(toast: HTMLElement, status: HTMLElement): void {
   toastBox = toast
   statusBox = status

@@ -1,171 +1,15 @@
 // 앱 화면 — 탭 두 개(작업 창 · 일감) · 작업 창 안의 데몬 탭·pane · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
 // studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
-/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout, StudioI18n, StudioUi */
-const $ = (id) => document.getElementById(id)
+/* global studio, StudioLayout, StudioSpaceNames, StudioUi */
+// 기능별로 .ts 로 나누는 중(R3 — 계획서 "R3 나누기"). 옮긴 묶음은 import 로 부르고, 옮긴 묶음이 부르는 아직 안 옮긴 함수는 여기서 export 한다(순환 import — 묶음 사이 사용은 모두 함수 안이라 읽는 순서와 상관없다)
+// 옮긴 묶음의 변수는 그쪽이 가진다 — 여기서는 이름 그대로 읽고, 바꿀 때만 setX
+import { $, applyStaticTexts, currentTab, el, panels, say, setCurrentTab, setI18nState, setState, showToast, state } from './core.ts'
+import { PANE_GAP, disposeView, ensureView, isTabPane, redrawAfterHidden, views } from './terminal.ts'
+import { attach, attached, attaching, estimateCells, focusPane, newTab, openAgent, runCommand, screen, setAttached, setReattachOnKey, setRestoreArmed, setScreen, setStarting, showRestoreResult, startScreen, starting } from './screen.ts'
 
-// ── 언어 ──────────────────────────────────────────────────
-// 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.mts). 정적 문구는 index.html 의 data-i18n* 속성
-let i18nState = studio.i18n()
-const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
-// 알림 · 상태 줄은 React(ui/notices.tsx) — 켤 때 한 번 띄워 둔다. React 화면(ui/)도 같은 say · 토스트를 쓴다(ui/bridge.ts)
-const { showToast } = StudioUi.notices
-StudioUi.notices.mount($('toast'), $('screen-status'))
-StudioUi.connect({ say, showToast })
-
-function applyStaticTexts() {
-  document.documentElement.lang = i18nState.language
-  for (const node of document.querySelectorAll('[data-i18n]')) node.textContent = say(node.dataset.i18n)
-  for (const node of document.querySelectorAll('[data-i18n-title]')) node.title = say(node.dataset.i18nTitle)
-  for (const node of document.querySelectorAll('[data-i18n-aria-label]')) node.setAttribute('aria-label', say(node.dataset.i18nAriaLabel))
-  for (const node of document.querySelectorAll('[data-i18n-placeholder]')) node.placeholder = say(node.dataset.i18nPlaceholder)
-}
-applyStaticTexts()
-
-const panels = { setup: $('setup'), work: $('work') }
-
-let state = null
-let currentTab = 'work'
-
-// ── 작업 창 (데몬의 탭 · pane) ───────────────────────────────
-// pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.mts)
-const PANE_GAP = 2
-const HEAD_HEIGHT = 22 // pane 머리줄 높이(style.css .pane-head 와 같은 값)
-const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
-let screen = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 let paneStatus = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
-let attached = false
-let attaching = null
-let reattachOnKey = false
 let lastTabSize = null
-
-function makeTerminal() {
-  const term = new Terminal({
-    allowProposedApi: true, // unicode11 에 필요
-    // Nerd Font 는 아이콘(사이드바 Explorer 등)용 — 기본 글꼴에 없는 글자만 그 글꼴로 그린다
-    fontFamily: '"D2Coding", "SF Mono", Menlo, "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", monospace',
-    fontSize: 13,
-    cursorBlink: true,
-    scrollback: 5000,
-    macOptionIsMeta: true,
-    macOptionClickForcesSelection: true, // 안의 프로그램이 마우스를 잡아도 Option+드래그로 고를 수 있게
-    theme: { background: '#16171a', foreground: '#e8e6e1' },
-  })
-  const fit = new FitAddon.FitAddon()
-  term.loadAddon(fit)
-  term.loadAddon(new WebLinksAddon.WebLinksAddon((_event, uri) => studio.openUrl(uri)))
-  // 이모지(🤖 🧭)를 두 칸으로 — 데몬의 화면 버퍼와 같은 규칙
-  term.loadAddon(new Unicode11Addon.Unicode11Addon())
-  term.unicode.activeVersion = '11'
-  return { term, fit }
-}
-
-// 탭 밖 고정 칸(dock — 예전 터미널 모니터)은 그리지 않는다. 모니터는 이제 앱 화면(#dock)이다
-const isTabPane = (pane) => Boolean(pane.tab)
-
-function ensureView(paneId) {
-  if (views.has(paneId)) return views.get(paneId)
-  const el = document.createElement('div')
-  el.className = 'pane'
-  const head = document.createElement('div')
-  head.className = 'pane-head'
-  const headLabel = document.createElement('span')
-  headLabel.className = 'pane-head-label'
-  const detailButton = paneDetailButton(paneId)
-  head.append(headLabel, detailButton)
-  const body = document.createElement('div')
-  body.className = 'pane-body'
-  el.append(head, body)
-  $('panes').append(el)
-  const { term, fit } = makeTerminal()
-  term.open(body)
-  const sendInput = (data) => {
-    if (reattachOnKey) return reattach()
-    return studio.paneInput(paneId, data)
-  }
-  term.onData(sendInput)
-  // 조합 중 누른 ⌘← · ⌘→ 는 조합이 확정된 뒤 보낸다(StudioPaneKeys.createComposingKeys). 확정 소식은 xterm 보다 늦게 건 이 처리로
-  const composingKeys = StudioPaneKeys.createComposingKeys({ send: sendInput })
-  term.textarea.addEventListener('compositionend', () => composingKeys.compositionEnd())
-  // xterm 기본과 다르게 보내는 키. 한글 조합 중(isComposing)이면 xterm 에 맡긴다 — 둘만 빼고:
-  //   ⌘ 키 자체 — xterm 6.0.0 은 조합 중 Shift · Ctrl · Alt 만 수정키로 보고 ⌘ 는 조합을 바로 끝내 글자를 보낸 뒤, 진짜 조합 끝에 한 번 더 보낸다(글자 반복)
-  //   줄 처음 · 끝(⌘← · ⌘→) — 기본 커서 이동을 막고 신호를 조합 확정 뒤로 미룬다. 조합 마무리는 compositionend 로 xterm 이 한다
-  // keydown 에서만 보내고 keypress · keyup 의 같은 키도 막아 기본 신호가 새지 않게 한다
-  term.attachCustomKeyEventHandler((event) => {
-    if (event.isComposing && event.key === 'Meta') return false
-    const data = StudioPaneKeys.paneKeyOverride(event)
-    if (data === null) return true
-    if (event.isComposing) {
-      if (!StudioPaneKeys.holdWhileComposing(data)) return true
-      if (event.type === 'keydown') {
-        event.preventDefault()
-        composingKeys.hold(data)
-      }
-      return false
-    }
-    if (event.type === 'keydown') {
-      event.preventDefault()
-      sendInput(data)
-    }
-    return false
-  })
-  // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
-  el.addEventListener('mousedown', () => focusPane(paneId))
-  // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
-  el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
-  const view = { term, fit, el, head, headLabel, detailButton, body, shown: false, sent: null }
-  term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
-  views.set(paneId, view)
-  return view
-}
-
-// 칸 높이로 나누고 남는 몇 px 를 어디에 두나 — 화면이 차 있으면 위에 두고 글을 pane 아래에 붙인다(.pane-body.screen-bottom).
-// 셸 · Claude Code 처럼 마지막 줄(프롬프트 · 입력창)이 맨 아래에 있는 화면을 위에 붙여 두면, 위아래로 크기를 바꿀 때
-// 상자는 px 단위로 움직이는데 줄 수는 한 줄(약 14px)씩만 바뀌어 아래쪽 글이 밀렸다 한 줄씩 되튄다(톱니). 아래에 붙이면 아래쪽 글이 제자리에 있다.
-// 아직 덜 찬 화면(새 셸 · 막 켠 Claude Code)은 지금처럼 위에 붙인다.
-// 출력 중간(다시 그리기 조각 사이)에 바꾸면 남는 px 만큼 흔들리니 출력이 이만큼 조용할 때 · 덮어 두지 않을 때만 바꾼다
-const SCREEN_ANCHOR_SETTLE_MS = 150
-
-function scheduleScreenAnchor(paneId, view) {
-  clearTimeout(view.anchorTimer)
-  view.anchorTimer = setTimeout(() => {
-    if (views.get(paneId) !== view) return
-    if (view.hold) return scheduleScreenAnchor(paneId, view)
-    return view.body.classList.toggle('screen-bottom', screenIsFull(view.term))
-  }, SCREEN_ANCHOR_SETTLE_MS)
-}
-
-// 전체 화면 프로그램 · 스크롤백이 있는 화면 · 맨 아래 줄까지 글이 있는 화면
-function screenIsFull(term) {
-  const buffer = term.buffer.active
-  if (buffer.type === 'alternate' || buffer.baseY > 0) return true
-  const lastRow = buffer.getLine(buffer.baseY + term.rows - 1)
-  return Boolean(lastRow && lastRow.translateToString(true))
-}
-
-// 숨었던 칸이 다시 보일 때 — xterm DOM 렌더러는 글자 폭을 DOM 으로 재서 글자 간격(셀 폭 − 글자 폭)을 정하는데,
-// 숨은 칸(display:none — 다른 작업 공간의 하단 칸 · 일감 탭)에서는 0 으로 재져 간격이 셀 폭만큼 벌어진다.
-// (A) 숨은 채 열면 기본 간격이 그렇게 굳고 (B) 숨는 순간의 한 프레임에 그려진 줄도 그대로 남는다.
-// 옵션이 바뀌면 렌더러가 기본 간격을 다시 정하고(같은 값은 무시돼서 바꿨다 되돌린다) 0 으로 잰 글자 폭은 캐시에 남지 않으니, 보일 때 다시 재고 전부 다시 그린다.
-// open 을 미루면 그 전에 온 OSC 색 설정이 버려져서(테마 서비스가 open 때 생긴다) 열기는 그대로 둔다
-function redrawAfterHidden(view) {
-  const { term } = view
-  const sensitivity = term.options.scrollSensitivity
-  term.options.scrollSensitivity = sensitivity + 1
-  term.options.scrollSensitivity = sensitivity
-  term.refresh(0, term.rows - 1)
-}
-
-function disposeView(paneId) {
-  const view = views.get(paneId)
-  if (!view) return
-  clearTimeout(view.resizing)
-  clearTimeout(view.anchorTimer)
-  if (view.hold) clearTimeout(view.hold.timer)
-  view.term.dispose()
-  view.el.remove()
-  views.delete(paneId)
-}
 
 function activeWorkspace() {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
@@ -185,14 +29,14 @@ function isAthenaWorkspace(workspace) {
   return anyMatch ? sameFolder(workspace) : true
 }
 
-function activeTab() {
+export function activeTab() {
   const workspace = activeWorkspace()
   return (workspace && screen.tabs.find((tab) => tab.id === workspace.activeTab)) || null
 }
 
 // 데몬이 준 상태로 탭 줄 · pane 을 다시 그린다
-function applyState(next) {
-  screen = next
+export function applyState(next) {
+  setScreen(next)
   const alive = new Set(screen.panes.filter(isTabPane).map((pane) => pane.id))
   for (const paneId of [...views.keys()]) if (!alive.has(paneId)) disposeView(paneId)
   for (const pane of screen.panes.filter(isTabPane)) ensureView(pane.id)
@@ -204,8 +48,7 @@ function applyState(next) {
 
 // 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나
 let openingTab = false
-let starting = false // 처음 켤 때는 에이전트 판단(athena 탭)이 끝난 뒤에 본다
-function ensureSomeTab() {
+export function ensureSomeTab() {
   // 시작 화면이 떠 있으면 만들지 않는다 — 고를 때 닫을 pane 이 생겨 확인 창이 뜨지 않게(들어가면 아테나 탭이 생긴다)
   if (screen.tabs.length || openingTab || starting || !state || !state.valid || welcomeShown()) return
   openingTab = true
@@ -395,7 +238,7 @@ function spaceInitials(label) {
 }
 
 // 작업 공간 순서 — 아테나(본체) 작업 공간은 늘 맨 위, 나머지는 데몬 순서 그대로
-function orderedWorkspaces() {
+export function orderedWorkspaces() {
   const athena = screen.workspaces.filter(isAthenaWorkspace)
   return [...athena, ...screen.workspaces.filter((workspace) => !athena.includes(workspace))]
 }
@@ -512,7 +355,7 @@ async function removeRepoFromPack(name) {
 }
 
 // spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지
-async function offerAddRepo({ dir, name }) {
+export async function offerAddRepo({ dir, name }) {
   const behind = await studio.packBodyBehind()
   const choice = await packDialog({
     title: say('spaces.addRepoTitle', { repo: name }),
@@ -726,7 +569,7 @@ function closePreview() {
 }
 
 // 오른쪽 Explorer 접기·펴기(⌘⌥B) — 접으면 좁은 줄만 남는다. 앱을 다시 켜도 기억한다
-function setPanelHidden(hidden) {
+export function setPanelHidden(hidden) {
   $('side-panel').hidden = hidden
   $('side-rail').hidden = !hidden
   localStorage.setItem('studio.panelHidden', hidden ? '1' : '0')
@@ -748,7 +591,7 @@ function applySideFolds() {
 }
 
 // 왼쪽 작업 공간 접기·펴기(⌘B) — 접으면 아이콘 줄
-function setSpacesCollapsed(collapsed) {
+export function setSpacesCollapsed(collapsed) {
   $('spaces').classList.toggle('collapsed', collapsed)
   localStorage.setItem('studio.spacesCollapsed', collapsed ? '1' : '0')
   renderSides()
@@ -1079,165 +922,6 @@ function reportTabSize(tab, container) {
   studio.tabSize(tab.id, size)
 }
 
-// 보이는 터미널 하나로 글자 칸 크기를 재서 영역을 칸으로. 아직 없으면 대략(13px 글꼴)
-function estimateCells(container) {
-  const sample = [...views.values()].find((view) => !view.el.hidden && view.term.cols > 1)
-  const cellWidth = sample ? sample.term.element.querySelector('.xterm-screen').clientWidth / sample.term.cols : 7.8
-  const cellHeight = sample ? sample.term.element.querySelector('.xterm-screen').clientHeight / sample.term.rows : 17
-  if (!cellWidth || !cellHeight) return null
-  return { cols: Math.max(2, Math.floor(container.clientWidth / cellWidth)), rows: Math.max(2, Math.floor((container.clientHeight - HEAD_HEIGHT) / cellHeight)) }
-}
-
-function focusPane(paneId) {
-  if (!views.has(paneId)) return
-  screen = { ...screen, focused: paneId }
-  studio.paneFocus(paneId)
-  for (const [id, view] of views) view.el.classList.toggle('focused', id === paneId)
-  StudioUi.spaces.focus(paneId) // 왼쪽 pane 줄 표시(React)
-  views.get(paneId).term.focus()
-}
-
-// 데몬에 붙기 — 상태 + pane 마다 되살릴 화면. 그동안 온 출력은 화면에 이미 들어 있어 버린다
-async function attach() {
-  if (attaching) return attaching
-  attaching = (async () => {
-    const result = await studio.screenAttach()
-    if (result.error) {
-      StudioUi.notices.showScreenStatus(result.error)
-      return false
-    }
-    for (const paneId of [...views.keys()]) disposeView(paneId)
-    // 되살릴 화면은 데몬이 가진 크기로 직렬화됐다 — 그 크기로 먼저 쓰고, 그다음 창에 맞춰 다시 맞춘다(먼저 맞추면 줄이 다른 폭에서 꺾여 깨진다)
-    screen = result.state
-    for (const pane of screen.panes.filter(isTabPane)) {
-      const view = ensureView(pane.id)
-      if (pane.cols > 1 && pane.rows > 1) view.term.resize(pane.cols, pane.rows)
-      if (result.snapshots[pane.id]) view.term.write(result.snapshots[pane.id])
-    }
-    applyState(result.state)
-    attached = true
-    reattachOnKey = false
-    StudioUi.notices.hideScreenStatus()
-    return true
-  })().finally(() => (attaching = null))
-  return attaching
-}
-
-function reattach() {
-  reattachOnKey = false
-  attach()
-}
-
-async function newTab() {
-  const result = await studio.tabNew(estimateCells($('panes')))
-  if (result.error) showToast(say('tab.openFailed', { message: result.error }))
-}
-
-async function splitPane(paneId, direction) {
-  const result = await studio.paneSplit(paneId, direction)
-  if (result.error) showToast(say('pane.splitFailed', { message: result.error }))
-}
-
-// pane 우클릭 메뉴(main) — 대상은 포커스된 pane 이 아니라 우클릭한 그 pane
-async function paneMenu(paneId, event) {
-  if (!state || !state.valid || !attached) return
-  const action = await studio.paneContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) })
-  if (action === 'split-right' || action === 'split-down') return splitPane(paneId, action === 'split-down' ? 'down' : 'right')
-  if (action === 'close-pane') return studio.paneClose(paneId)
-}
-
-// 메뉴 단축키(⌘T · ⌘D · ⌘⇧D · ⌘W · ⌘⌥방향 · ⌘⇧[ ]) — Ctrl 은 pane 안으로 간다
-async function runCommand(name) {
-  if (!state || !state.valid || !attached) return
-  if (currentTab !== 'work') switchTab('work')
-  // 나누기·닫기·이동의 기준은 지금 탭의 pane — 포커스가 탭 밖이면 탭의 첫 pane
-  const focused = tabPaneForCommand()
-  if (name === 'new-tab') return newTab()
-  if (name === 'split-right' || name === 'split-down') {
-    if (!focused) return newTab()
-    return splitPane(focused, name === 'split-down' ? 'down' : 'right')
-  }
-  if (name === 'close-pane') {
-    if (focused) await studio.paneClose(focused)
-    return undefined
-  }
-  if (name.startsWith('focus-')) {
-    const tab = activeTab()
-    const container = $('panes')
-    const target = tab && focused && StudioLayout.neighbor(tab.tree, { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }, focused, name.slice(6))
-    if (target) focusPane(target)
-    return undefined
-  }
-  if (name === 'tab-prev' || name === 'tab-next') {
-    const current = activeTab()
-    const tabsHere = screen.tabs.filter((tab) => tab.workspace === screen.activeWorkspace)
-    const index = current ? tabsHere.findIndex((tab) => tab.id === current.id) : -1
-    if (index < 0) return undefined
-    const step = name === 'tab-next' ? 1 : -1
-    return studio.tabSelect(tabsHere[(index + step + tabsHere.length) % tabsHere.length].id)
-  }
-  if (name === 'workspace-prev' || name === 'workspace-next') {
-    const ordered = orderedWorkspaces()
-    const index = ordered.findIndex((workspace) => workspace.id === screen.activeWorkspace)
-    if (index < 0) return undefined
-    const step = name === 'workspace-next' ? 1 : -1
-    return studio.workspaceSelect(ordered[(index + step + ordered.length) % ordered.length].id)
-  }
-  if (name === 'close-tab') {
-    const current = activeTab()
-    if (current) await studio.tabClose(current.id)
-    return undefined
-  }
-  if (name === 'new-workspace') {
-    const result = await studio.workspaceNew(estimateCells($('panes')))
-    if (result.askAdd) return runPackFlow(() => offerAddRepo(result))
-    if (result.error) showToast(say('spaces.createFailed', { message: result.error }))
-    return undefined
-  }
-  if (name === 'toggle-panel') return setPanelHidden(!$('side-panel').hidden)
-  if (name === 'toggle-spaces') return setSpacesCollapsed(!$('spaces').classList.contains('collapsed'))
-  return undefined
-}
-
-function tabPaneForCommand() {
-  const tab = activeTab()
-  if (!tab) return null
-  const ids = StudioLayout.paneIds(tab.tree)
-  return ids.includes(screen.focused) ? screen.focused : ids[0] || null
-}
-
-async function startScreen() {
-  starting = true
-  try {
-    if (!(await attach())) return
-    // 시작 화면이 떠 있으면 팩을 고를 때까지 아테나를 켜지 않는다(enterPack 이 켠다)
-    if (!welcomeShown()) await openAgent()
-  } finally {
-    starting = false
-  }
-  // 에이전트를 못 켰어도 셸 탭 하나는 있게
-  ensureSomeTab()
-}
-
-// athena 탭에서 아테나 에이전트를 켠다(이미 있으면 그 탭으로) — 묻지 않고 claude, 없으면 깔린 것 중 첫 번째.
-// 가져오기에서 [열고 작업 되살리기] 를 골랐으면(restoreArmed) main 이 그 사이에 백업 때 작업을 되살린다 — 진행 표시 · 결과
-let restoreArmed = false
-async function openAgent(options) {
-  const restoring = restoreArmed
-  restoreArmed = false
-  if (restoring) showPackProgress(say('pack.restore.progress'), false)
-  const result = await studio.openAgent(estimateCells($('panes')), options)
-  if (restoring) hidePackProgress()
-  if (result.error) showToast(result.error)
-  if (result.restore) showRestoreResult(result.restore)
-  return result
-}
-
-// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유(ui/notices.tsx)
-function showRestoreResult(result) {
-  return StudioUi.notices.showRestoreResult(result, packAlert)
-}
-
 // ── 옆 브라우저 ──────────────────────────────────────────
 // 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그린다 — 화면 위에 따로 떠 있어서
 // 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다.
@@ -1404,13 +1088,13 @@ function initBrowser() {
 
 // ── 탭 ──────────────────────────────────────────────────
 // 일감은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
-function switchTab(name) {
+export function switchTab(name) {
   if (!state || !state.valid) return
   if (name === 'board') {
     if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 일감을 열지 않는다
     return
   }
-  currentTab = 'work'
+  setCurrentTab('work')
   studio.reportTab('work')
   panels.work.hidden = false
   requestAnimationFrame(layoutPanes)
@@ -1544,7 +1228,7 @@ let detailBack = null
 // 아이콘 — 체크리스트 모양(사용자 확정 2026-10-27 · 시안 B)
 const PANE_DETAIL_ICON = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 6h11M9 12h11M9 18h11"/><path d="M4 6l1 1 2-2M4 12l1 1 2-2"/><circle cx="5" cy="18" r="1"/></svg>'
 
-function paneDetailButton(paneId) {
+export function paneDetailButton(paneId) {
   const button = el('button', 'pane-detail-btn')
   button.type = 'button'
   button.hidden = true
@@ -1811,13 +1495,6 @@ function initWork() {
 // 본체가 여러 팩을 지원할 때만 보인다(packs.supported). 일은 main → 아테나 본체 명령이 하고, 화면은 묻고 · 기다리고 · 결과를 보여 준다
 let packs = { supported: false }
 
-function el(tag, className, text) {
-  const node = document.createElement(tag)
-  if (className) node.className = className
-  if (text !== undefined) node.textContent = text
-  return node
-}
-
 // 대화상자 · 진행 표시가 떠 있는 동안 — 뒤 화면은 inert(포커스 · 클릭 막기), 옆 브라우저는 네이티브 뷰라 위를 덮어서 잠깐 뗀다
 const modalOpen = () => !$('pack-dialog').hidden || !$('pack-progress').hidden
 function syncModal() {
@@ -1928,12 +1605,12 @@ function packDialog({ title, subtitle = '', body = [], actions = [], input = nul
   })
 }
 
-const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
+export const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
 
 // 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다).
 // 몸통(제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) — 여기는 보이기 · 숨기기 · 뒤 화면 막기 · 포커스만
 let progressBefore = null // 닫으면 포커스를 돌려줄 곳
-function showPackProgress(title, cancellable) {
+export function showPackProgress(title, cancellable) {
   const progress = $('pack-progress')
   if (progress.hidden) progressBefore = document.activeElement
   StudioUi.packProgress.show(title, cancellable)
@@ -1941,7 +1618,7 @@ function showPackProgress(title, cancellable) {
   syncModal()
   $('pack-progress').focus({ preventScroll: true })
 }
-const hidePackProgress = () => {
+export const hidePackProgress = () => {
   $('pack-progress').hidden = true
   syncModal()
   // 이어서 대화상자가 떴으면 그쪽 포커스 그대로
@@ -2211,7 +1888,7 @@ async function openPackPicker() {
 
 // 팩 흐름은 한 번에 하나 — 진행 중에 메뉴로 또 열면 알리기만
 let packFlow = false
-async function runPackFlow(work) {
+export async function runPackFlow(work) {
   if (packFlow) return showToast(say('pack.flowBusy'), 'info')
   packFlow = true
   try {
@@ -2234,7 +1911,7 @@ function packCommand(name) {
 // 켤 때 시작 화면은 팩을 고르거나 · 만들거나 · 가져와 들어가면(welcomeEntered) 닫힌다. 떠 있는 동안 에이전트 모니터는 접어 두고, 들어가면 펼친다
 const hasNoPacks = () => packs.welcome === true
 let welcomeEntered = false
-const welcomeShown = () => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
+export const welcomeShown = () => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
 let welcomeWasOn = false
 function renderPackWelcome() {
   const on = welcomeShown()
@@ -2331,15 +2008,15 @@ async function openOrSwitchPack(id, { newWindow, name }) {
 // 이 창이 다른 본체로 다시 묶였다 — 상태 · 일감 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
 // 다녀온 팩이면 보던 자리 그대로(keepView)
 async function applySwitchedPack(next) {
-  state = next
+  setState(next)
   enterWelcome() // 시작 화면에서 바꿨으면 닫고 모니터를 펼친다
   if (browserOpen) closeBrowserPanel()
   renderState()
-  starting = true
+  setStarting(true)
   try {
     if (await attach()) await openAgent({ keepView: true })
   } finally {
-    starting = false
+    setStarting(false)
   }
   ensureSomeTab()
   await refreshPackList()
@@ -2445,11 +2122,11 @@ async function importPack() {
       return showRestoreResult(restored)
     }
     await studio.packRestoreArm(imported.id)
-    restoreArmed = true
+    setRestoreArmed(true)
     const opened = await switchPack(imported.id)
     // 열지 못했거나 다른 창으로 갔으면 이 창의 예약은 지운다(main 의 예약은 그 팩을 연 창이 쓰거나 여기서 지운다)
     if (!packs.current || packs.current.id !== imported.id) {
-      restoreArmed = false
+      setRestoreArmed(false)
       studio.packRestoreDisarm()
     }
     return opened
@@ -2627,7 +2304,7 @@ async function applyAthenaResult(pending) {
   }
   error.hidden = true
   const wasValid = state.valid
-  state = result
+  setState(result)
   renderState()
   if (!wasValid || result.changed) {
     // 처음 정했거나 폴더가 바뀌었으면 작업 창을 연다(이미 있는 데몬 탭은 그대로 — athena 탭이 없을 때만 새로 켠다)
@@ -2639,7 +2316,7 @@ async function applyAthenaResult(pending) {
 
 // 메뉴 [보기 → 언어] — 정적 문구와 지금 보이는 것만 다시 그린다(열린 대화상자는 다음에 열 때부터 · React 화면은 textsChanged 로 바로)
 function applyLanguage(next) {
-  i18nState = next
+  setI18nState(next)
   applyStaticTexts()
   StudioUi.textsChanged()
   if (setupTitleKey) setSetupTitle(setupTitleKey)
@@ -2654,7 +2331,7 @@ function applyLanguage(next) {
 }
 
 async function init() {
-  state = await studio.athenaState()
+  setState(await studio.athenaState())
   renderState()
   initWork()
   initTips()
@@ -2714,8 +2391,8 @@ async function init() {
   }, 3000)
   studio.onScreenResync(() => state.valid && attach())
   studio.onScreenDisconnected(() => {
-    attached = false
-    reattachOnKey = true
+    setAttached(false)
+    setReattachOnKey(true)
     StudioUi.notices.showScreenStatus(say('screen.disconnected'))
   })
   studio.onScreenCommand(runCommand)
