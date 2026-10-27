@@ -73,6 +73,21 @@ declare global {
   // main 의 explorerList · explorerStatus(src/main/explorer-panel.mts — 실패는 guarded 가 { error }) · 아이콘 이름은 src/lib/file-icons.js iconFor(없으면 null)
   type ExplorerEntry = { name: string; dir: boolean; icon: string | null; iconOpen?: string | null }
   type ExplorerChange = { path: string; code: string; icon: string | null; iconOpen?: string | null }
+  // main 의 explorerOpen(explorer-panel.mts — 실패는 guarded 가 { error }) · 줄은 src/lib/viewer.mts ColoredRow(Node 모듈이라 가져오지 않는다) · 색은 files.mts colorRows
+  type ViewerRow = { kind: 'context' | 'add' | 'del' | 'hunk'; oldNo?: number; newNo?: number; code: string; tokens?: [string, string | null, number][] }
+  type ExplorerPreview = { error?: string; kind?: 'binary' | 'image' | 'diff' | 'file'; path?: string; size?: number; src?: string; rows?: ViewerRow[]; lang?: string; fg?: string; bg?: string; truncated?: boolean; untracked?: boolean }
+
+  // 레포 이름 · 이미지(src/main/packs.mts repoSetName · repoSetIcon — 코어 pack 결과 · 실패면 text) · 이미지를 안 골랐으면 { canceled }
+  type RepoLookReply = { ok?: boolean; canceled?: boolean; error?: string; text?: string; message?: string }
+  // 팩에 레포 더하기 · 빼기(src/main/workspaces.mts addRepo · removeRepo — 코어 repo add · remove 결과 · 실패면 text)
+  type RepoAddReply = { ok: true; already?: boolean; repo: { name: string }; path: string } | { ok: false; error?: string; text?: string; message?: string }
+  type RepoRemoveReply = { ok: boolean; removed?: string; error?: string; text?: string; message?: string }
+  // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
+  type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
+  type CallMain = { status: string; dirty: number; branch: string; upstream: string | null; ahead: number; behind: number; gone?: boolean }
+  // 실패면 { error } 만 온다(부르는 쪽이 error 를 먼저 본다)
+  type CallInfo = { error?: string; agent: string; repo: string; target: string; main: CallMain | null; candidates: CallCandidate[]; direct: string | null }
+  type CallStartReply = { error?: string; exists?: boolean; message?: string; ok?: boolean; agent?: string; pane?: string | null; worktree?: string; branch?: string | null }
 
   // 이 창 팩 상태(src/main/packs.mts ctx.refreshPacks — pack list 를 다듬은 것 + 시작 화면 칸 + 열린 팩 openIds). 지원하지 않으면 { supported: false } 만
   type PackState = {
@@ -154,6 +169,21 @@ declare global {
     closeWindow(): Promise<unknown>
     // 옆 브라우저 뷰를 잠깐 떼기(대화상자가 위를 덮을 때 — src/main/side-browser.mts)
     browserHide(): void
+    // 왼쪽 작업 공간 목록 · Explorer 미리보기(R3c) — main.mts handle(pack:repos · repo:set-name · repo:set-icon · space:context-menu · workspace:close · pack:body-behind ·
+    // pack:remove-repo · pack:add-repo · workspace:open-dir · pack:call-info · pack:call-start · explorer:open)
+    packRepos(): Promise<import('./ui/spaces.tsx').SpaceRepo[]>
+    repoSetName(name: string, displayName: string | null): Promise<RepoLookReply>
+    repoSetIcon(name: string, clear: boolean, usePicked?: boolean): Promise<RepoLookReply>
+    // 레포 줄 우클릭(workspaces.mts spaceContextMenu) — 고른 동작 이름 · 안 고르면 null
+    spaceContextMenu(target: { workspace: string | null; repo: string | null }, point: { x: number; y: number }): Promise<string | null | { error: string }>
+    workspaceClose(workspaceId: string): Promise<{ ok?: boolean; closed?: number; error?: string }>
+    packBodyBehind(): Promise<boolean>
+    packRemoveRepo(name: string): Promise<RepoRemoveReply>
+    packAddRepo(dir: string, name: string | null): Promise<RepoAddReply>
+    workspaceOpenDir(dir: string, size: CellSize | null): Promise<DaemonReply>
+    packCallInfo(name: string): Promise<CallInfo>
+    packCallStart(name: string, options: { branch: string; reuse: boolean }): Promise<CallStartReply>
+    explorerOpen(workspaceId: string | null, relative: string): Promise<ExplorerPreview>
   }
 
   const studio: StudioApi

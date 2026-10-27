@@ -21,7 +21,7 @@ export type PackItem = {
   hasWork?: boolean
 }
 
-// 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색 · 두 글자(renderer.js spaceColor · spaceInitials)
+// 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색 · 두 글자(space-actions.ts spaceColor · spaceInitials)
 export type PackLookOptions = {
   spaceColor: (label: string) => string
   spaceInitials: (label: string) => string
