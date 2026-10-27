@@ -1,13 +1,18 @@
+// @ts-check
 // 화면(renderer)에 열어 주는 기능 — Node 는 넘기지 않고 이 함수들만
 const { contextBridge, ipcRenderer } = require('electron')
 
-const listen = (channel) => (callback) => {
-  const handler = (_event, ...args) => callback(...args)
+// 화면에 넘기는 값은 main 이 받아 검사한다 — 여기서는 그대로 넘긴다(그래서 매개변수는 unknown)
+/** @typedef {Record<string, (...values: unknown[]) => unknown>} Bridge */
+
+/** @param {string} channel */
+const listen = (channel) => (/** @type {(...values: unknown[]) => void} */ callback) => {
+  const handler = (/** @type {import('electron').IpcRendererEvent} */ _event, /** @type {unknown[]} */ ...args) => callback(...args)
   ipcRenderer.on(channel, handler)
   return () => ipcRenderer.removeListener(channel, handler)
 }
 
-contextBridge.exposeInMainWorld('studio', {
+contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 언어 사전 { language, dictionary, fallback } — 동기로 받는다(첫 그림 전에) · 메뉴 [보기 → 언어] 로 바꾸면 onLanguage
   i18n: () => ipcRenderer.sendSync('i18n:get'),
   onLanguage: listen('i18n:changed'),
@@ -128,4 +133,4 @@ contextBridge.exposeInMainWorld('studio', {
   onScreenCommand: listen('screen:command'),
   onTabSwitch: listen('tab:switch'),
   onPickRequest: listen('athena:pick'),
-})
+}))
