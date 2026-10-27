@@ -58,7 +58,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - **데몬은 앱보다 오래 산다** — 데몬 코드(`src/daemon/`)를 고치고 앱만 다시 켜면 옛 데몬에 붙는다. [보기 → 작업 창 데몬 다시 띄우기] 가 필요하고 그러면 pane 이 모두 닫힌다 — 사용자가 에이전트를 돌리는 중이면 먼저 묻는다
 - **팩 바꾸기는 pane 을 닫지 않는다** — 창이 다른 본체로 다시 붙을 뿐(`main.js` `packOpen` → `rebindBody`). pane 이 닫히는 것은 사용자가 pane · 탭을 닫을 때 · 옛 터미널 모니터 칸(데몬 dock) 정리 · 데몬 다시 띄우기 · 스튜디오 초기화뿐이다
 - **창마다 문맥이 따로** — 본체 · 데몬 연결 · 일감 · 옆 브라우저 · 모니터 · 팩 상태는 창(`ctx`)마다. 팩 상태를 전역으로 두지 않고, IPC 는 보낸 창의 문맥으로 처리한다. 트레이는 별도 preload(`preload-tray.js`)와 보낸 쪽 검사를 유지한다
-- **팩을 바꾸는 명령은 끊지 않는다** — `use` · `new` · `open` · `update` · `import --replace` 는 시간이 넘어도 "오래 걸려요" 만 띄우고 기다린다(`main.js` `PACK_TIMEOUTS` 근처). 여기에 일괄 timeout 종료를 넣지 않는다
+- **팩을 바꾸는 명령은 끊지 않는다** — `use` · `new` · `open` · `update` · `import --replace` 는 시간이 넘어도 "오래 걸려요" 만 띄우고 기다린다(`src/main/core-runner.mts` `PACK_TIMEOUTS` 근처). 여기에 일괄 timeout 종료를 넣지 않는다
 - **자식 환경은 `core.childEnv` 로** — `ATHENA_STUDIO*` · `CLAUDE_CODE_*` · `CLAUDECODE` · `ATHENA_AGENT` 등을 걷어 낸다(pane 안에서 앱을 켜도 하위 세션으로 오인하지 않게). 그래서 앱을 켤 때 준 `ATHENA_STUDIO_*` 는 팩 명령 · pane 에 넘어가지 않는다
 - 개발 앱과 배포판은 앱 데이터만 따로고 스튜디오 집의 코어 · 본체 · 팩 데이터는 같이 쓴다 — 초기화 · 업데이트는 둘 다에 닿는다
 - 앱 단축키는 ⌘ 만 — Ctrl 조합은 pane 으로 보낸다
