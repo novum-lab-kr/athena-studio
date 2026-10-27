@@ -59,6 +59,7 @@ import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName } from '../lib/screen.mjs'
+import { boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -164,9 +165,7 @@ const readPlan = (path) => {
   const checkpoint = text.match(/^## Checkpoint\s*\n([\s\S]*?)(?=^## (?!#))/m)?.[1] ?? ''
   const statusRaw = plain(field(checkpoint, 'Status'))
   const status = archived ? 'done' : (statusRaw.match(/planned|in_progress|blocked|ready_for_review|done/)?.[0] ?? 'planned')
-  const progress = section(checkpoint, 'Progress')
-  const checked = (progress.match(/^- \[x\]/gim) ?? []).length
-  const total = (progress.match(/^- \[[ x]\]/gim) ?? []).length
+  const progress = progressOf(section(checkpoint, 'Progress'))
   const blocked = plain(section(checkpoint, 'Blocked').split('\n')[0] ?? '').replace(/^-\s*/, '')
   const next = plain(section(checkpoint, 'Next').split('\n').find((line) => line.trim()) ?? '').replace(/^\d+\.\s*/, '')
   const mtime = statSync(path).mtimeMs
@@ -198,7 +197,7 @@ const readPlan = (path) => {
     issue: plain(field(checkpoint, 'Issue')).match(/issues\/\S+\.md/)?.[0] ?? '',
     origin: planOrigin(path, text, plain(field(checkpoint, 'Agent')), plain(field(checkpoint, 'Issue'))),
     updated: plain(field(checkpoint, 'Updated')),
-    progress: total ? { checked, total } : null,
+    progress,
     archived,
     mtime,
     html: existsSync(path.replace(/\.md$/, '.html')) ? relative(ROOT, path.replace(/\.md$/, '.html')) : null,
@@ -313,6 +312,7 @@ const prInfo = async (repoName, number) => {
 
 // 계획서의 PR 이 전부 머지되면(GitHub state MERGED — 어느 base 든) 계획서를 자동으로 완료로. 하나라도 열려 있으면(OPEN·확인 실패) 그대로 둔다.
 // 머지 없이 닫힌 것(CLOSED — 취소·다른 PR 로 대체)은 판정에서 빼고, 머지된 PR 이 하나도 없으면 옮기지 않는다.
+// Progress 에 남은 단계(빈 맨 앞 칸 `- [ ]`)가 있으면 옮기지 않는다 — 단계 PR 사이 틈에 완료 · 보관되지 않게(plan-bind.mjs hasOpenSteps).
 // 진행 중·리뷰 계획서만, Status 줄만 바꾼다(정식이면 html 사본도)
 // 학습 루프 5단계 — 내 계획서의 PR 이 모두 머지되면 배우기 검토자 대기열에 넣는다(scripts/learn-review.mjs).
 // 표시는 PR 번호 묶음(merged-<번호들>) — 계획서 "- Learn review:" 줄에 같은 표시가 있으면 learn-review 가 건너뛴다
@@ -372,6 +372,7 @@ const checkLearnJev = () => {
   }).catch((error) => console.error(`⚠️ Jev 학습 후보 점검 실패: ${error.message}`)).finally(() => { learnJevRunning = false })
 }
 
+const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
 const autoDonePlans = async (plans) => {
   const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
   await Promise.all(targets.map(async (plan) => {
@@ -382,6 +383,13 @@ const autoDonePlans = async (plans) => {
     }))
     const counted = infos.filter((info) => info.state !== 'CLOSED')
     if (!counted.length || counted.some((info) => info.state !== 'MERGED')) return
+    // 남은 단계(Progress 의 빈 맨 앞 칸)가 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
+    // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 칸을 다 채우거나 사람이 완료로 옮기면 그때 끝난다(plan-bind.mjs)
+    if (hasOpenSteps(plan.progress)) {
+      const key = `${plan.id}@${mergedMark(counted)}`
+      if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 단계 ${plan.progress.total - plan.progress.checked}개`) }
+      return
+    }
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))
     const merged = last.mergedAt ? new Date(last.mergedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16) : ''
@@ -468,6 +476,7 @@ const autoReviewPlans = async (plans) => {
 
 // 끝난 일 자동 보관(archive.mjs — 2026-10-26 결정 D4) — 이어서 쓸 일이 없을 때 그 자리에서 보관한다.
 // 계획서: done · PR 이 모두 머지(머지 없이 닫힌 것은 빼고, 남은 PR 이 없으면 PR 없는 계획서와 같다) · 배우기 검토 끝(또는 대상 아님) · 묶인 에이전트 pane 이 모두 닫힘.
+//   묶인 pane = Work ref · Review 줄의 pane(또는 브랜치) + 그 계획서로 띄운 pane 기록(state/pane-sessions — 같은 계획서로 여러 번 띄워 Work ref 가 덮여도 · plan-bind.mjs)
 //   일찍 보관하면 commit.sh · ship.sh(--plan 이 plans/ 에 있어야 한다) · 배우기 검토(plans/ 계획서에 줄을 쓴다) · 이어 올린 PR 감지가 계획서를 못 찾는다
 // 이슈: done · wontfix 이고 아직 plans/ 에 남은 연결 계획서가 없으면(있으면 계획서를 보관할 때 archive.mjs 가 같이 묶는다)
 // 화면(pane 목록)을 못 읽으면 pane 이 닫혔는지 모르니 보관하지 않는다
@@ -836,10 +845,6 @@ const readUsage = () =>
 // 보호 브랜치(statusline.sh 와 같은 목록)는 여러 계획서가 같이 쓰므로 브랜치로는 붙이지 않는다.
 // athena 자체 작업은 모두 main 이라, 그냥 포함 검사를 하면 main 에서 도는 pane 하나가 hermes 계획서 전부를 진행 중으로 끌고 갔다
 const PROTECTED_BRANCH = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
-const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-// delegate.sh 가 적는 "🌿 <브랜치>" 형식으로 정확히 같을 때만 (feature/A 가 feature/A-2 에 붙지 않게)
-const branchMatches = (workRef, branch) =>
-  Boolean(branch) && !PROTECTED_BRANCH.test(branch) && new RegExp(`🌿 ${escapeRegExp(branch)}(?=[\\s@·(]|$)`).test(workRef)
 
 const collect = async () => {
   const now = Date.now()
@@ -874,12 +879,11 @@ const collect = async () => {
     const worktree = issue.agent ? issueWorktree(issue.id, issue.agent) : null
     issue.worktree = worktree ? { repo: worktree.repo, ref: `origin/${worktree.branch}`, rel: worktree.rel, exists: existsSync(worktree.path) } : null
   }
-  // 에이전트 pane 을 브랜치로 계획서에 붙인다
+  // 에이전트 pane 을 계획서에 붙인다 — delegate.sh 가 Work ref · Review 에 적은 "pane <id>"(없으면 브랜치) + 그 계획서로 띄운 pane 기록(plan-bind.mjs).
+  // 같은 계획서로 여러 번 띄우면 Work ref 는 마지막 pane 으로 바뀌어도 기록은 pane 마다 남는다 — 자동 보관이 일하는 pane 을 놓치지 않게
+  const sessions = BOOT_PATHS.mode === 'packs' ? readPaneSessions(join(BOOT_PATHS.state, 'pane-sessions')) : []
   for (const plan of plans) {
-    // delegate.sh 가 Work ref 에 "pane <id>" 를 적는다. 없으면 브랜치로 맞춘다
-    plan.agents = panes
-      .filter((pane) => pane.role === 'agent' && (plan.workRefs.split('\n').some((ref) => ref.includes(`pane ${pane.id} `) || ref.endsWith(`pane ${pane.id}`) || branchMatches(ref, pane.branch)) || plan.review.includes(`pane ${pane.id} `)))
-      .map((pane) => pane.id)
+    plan.agents = boundPaneIds(plan, panes, sessions, PROTECTED_BRANCH)
     // 에이전트가 지금 일하고 있으면 진행 중 칸에 — 요청을 여러 번 주고받으면 계획서 Status 가 리뷰에 머물러 있어도
     // 실제로는 작업 중이다. 파일은 바꾸지 않고 보여 주는 칸만 (끝나 대기로 돌아가면 다시 리뷰 칸)
     plan.working = plan.agents.some((id) => panes.find((pane) => pane.id === id)?.status === 'working')

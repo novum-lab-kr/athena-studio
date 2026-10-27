@@ -5871,7 +5871,7 @@ html[data-theme="dark"], html[data-theme="dark"][data-preset] {
           <li>&bull; 끝난 카드는 일감 [아카이브] — archive/&lt;이름&gt;/ 에 이슈·계획서를 묶어 커밋, 지나간 일은 [아카이브] 탭</li>
           <li>&bull; 일감 [학습] 탭 — 학습 후보 [넣기]·[고쳐서 넣기]·[버리기](넣으면 공책 gotchas 에 한 줄), 학습한 내용 수정·삭제, 스킬 후보는 아테나에게 맡기기. /sync 끝에 learn-curator 가 30일 안 쓴 스킬을, gotchas-check 가 사라진 파일을 가리키는 공책 줄·나눌 때가 된 공책(공통 2만 자·같은 화면 5줄 → gotchas/&lt;폴더&gt;.md)을 정리 후보로(지우지 않음)</li>
           <li>&bull; 이슈 완료 가능 배지 = 확인 결과·후속·fix·계획 done+PR MERGED. 배지가 뜨면 아테나가 옮긴다 (이슈·계획서는 로컬 — git 엔 archive/ 만)</li>
-          <li>&bull; 계획서 PR 줄의 PR 이 모두 머지되면(GitHub MERGED, base 무관) 일감이 계획서를 자동으로 done 으로 옮긴다. 머지 없이 닫힌 PR 은 판정에서 뺀다</li>
+          <li>&bull; 계획서 PR 줄의 PR 이 모두 머지되면(GitHub MERGED, base 무관) 일감이 계획서를 자동으로 done 으로 옮긴다. 머지 없이 닫힌 PR 은 판정에서 빼고, Progress 에 빈 칸(남은 단계)이 있으면 옮기지 않는다</li>
           <li>&bull; 끊기면 계획서 하나를 읽고, 현재 브랜치·diff 가 Work ref 와 같은지부터 본다</li>
           <li>&bull; Next 가 현재 코드에서도 유효한지 확인하고 진행한다</li>
           <li>&bull; 바뀐 ref 에서 과거 검증 결과를 재사용하지 않는다</li>
