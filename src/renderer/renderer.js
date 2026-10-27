@@ -80,11 +80,25 @@ function ensureView(paneId) {
     return studio.paneInput(paneId, data)
   }
   term.onData(sendInput)
-  // xterm 기본과 다르게 보내는 키. 한글 조합 중(isComposing)이면 xterm 에 맡긴다.
+  // 조합 중 누른 ⌘← · ⌘→ 는 조합이 확정된 뒤 보낸다(StudioPaneKeys.createComposingKeys). 확정 소식은 xterm 보다 늦게 건 이 처리로
+  const composingKeys = StudioPaneKeys.createComposingKeys({ send: sendInput })
+  term.textarea.addEventListener('compositionend', () => composingKeys.compositionEnd())
+  // xterm 기본과 다르게 보내는 키. 한글 조합 중(isComposing)이면 xterm 에 맡긴다 — 둘만 빼고:
+  //   ⌘ 키 자체 — xterm 6.0.0 은 조합 중 Shift · Ctrl · Alt 만 수정키로 보고 ⌘ 는 조합을 바로 끝내 글자를 보낸 뒤, 진짜 조합 끝에 한 번 더 보낸다(글자 반복)
+  //   줄 처음 · 끝(⌘← · ⌘→) — 기본 커서 이동을 막고 신호를 조합 확정 뒤로 미룬다. 조합 마무리는 compositionend 로 xterm 이 한다
   // keydown 에서만 보내고 keypress · keyup 의 같은 키도 막아 기본 신호가 새지 않게 한다
   term.attachCustomKeyEventHandler((event) => {
+    if (event.isComposing && event.key === 'Meta') return false
     const data = StudioPaneKeys.paneKeyOverride(event)
-    if (data === null || event.isComposing) return true
+    if (data === null) return true
+    if (event.isComposing) {
+      if (!StudioPaneKeys.holdWhileComposing(data)) return true
+      if (event.type === 'keydown') {
+        event.preventDefault()
+        composingKeys.hold(data)
+      }
+      return false
+    }
     if (event.type === 'keydown') {
       event.preventDefault()
       sendInput(data)
