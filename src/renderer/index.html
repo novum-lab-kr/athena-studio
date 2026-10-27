@@ -155,12 +155,8 @@
     </div>
   </div>
   <div id="pack-progress" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-busy="true" aria-labelledby="pack-progress-title" tabindex="-1">
-    <div class="pack-box">
-      <div class="spinner"></div>
-      <h2 id="pack-progress-title"></h2>
-      <p id="pack-progress-step" class="pack-step" role="status"></p>
-      <div class="pack-actions"><button id="pack-progress-cancel" class="pack-button" hidden data-i18n="common.cancel">취소</button></div>
-    </div>
+    <!-- 몸통(도는 표시 · 제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) -->
+    <div class="pack-box"></div>
   </div>
 
   <!-- 카트리지(팩) 아이콘 — 시작 화면 '내 팩' 줄이 복사해 쓴다 -->

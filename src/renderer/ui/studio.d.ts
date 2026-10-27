@@ -44,6 +44,9 @@ declare global {
     paneDetail(paneId: string): Promise<PaneDetailView | undefined>
     workOpenPlan(id: string, html: string | null): Promise<unknown>
     openUrl(url: string): Promise<unknown>
+    // main 의 ctx.packIcon(src/main/packs.mts → files.mts iconDataUrl) · pack:cancel(도는 팩 명령 멈추기)
+    packIcon(id: string): Promise<{ dataUrl: string | null } | undefined>
+    packCancel(): Promise<unknown>
   }
 
   const studio: StudioApi
