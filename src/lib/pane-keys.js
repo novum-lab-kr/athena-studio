@@ -17,5 +17,37 @@
     return null
   }
 
-  return { paneKeyOverride }
+  // 한글 조합 중에 눌러도 xterm 에 맡기지 않을 신호 — 줄 처음 · 끝(⌘← · ⌘→). 맡기면 숨은 입력칸 커서가 그대로 움직인다.
+  // 조합 중 Enter · ⌘⌫ 같은 나머지는 지금처럼 xterm(입력기)에 맡긴다
+  const MOVE_SIGNALS = new Set(['\x01', '\x05'])
+  const holdWhileComposing = (data) => MOVE_SIGNALS.has(data)
+
+  // 조합 중 누른 이동 키 — 기본 커서 이동은 화면이 막고(preventDefault), 신호는 조합이 확정돼 xterm 이 확정 글자를 보낸 뒤에 보낸다.
+  // compositionEnd 는 xterm 보다 늦게 건 compositionend 처리에서 부른다 — xterm 이 확정 글자를 setTimeout(0) 뒤에 보내니 그 뒤로 줄 선다.
+  // 확정 소식이 끝내 안 오면 키가 사라지지 않게 FALLBACK_MS 뒤에 보낸다
+  const FALLBACK_MS = 300
+  function createComposingKeys({ send, defer = setTimeout, cancel = clearTimeout }) {
+    let pending = ''
+    let fallback = null
+    const flush = () => {
+      cancel(fallback)
+      fallback = null
+      if (!pending) return
+      const data = pending
+      pending = ''
+      send(data)
+    }
+    return {
+      hold(data) {
+        pending += data
+        cancel(fallback)
+        fallback = defer(flush, FALLBACK_MS)
+      },
+      compositionEnd() {
+        if (pending) defer(flush, 0)
+      },
+    }
+  }
+
+  return { paneKeyOverride, holdWhileComposing, createComposingKeys, FALLBACK_MS }
 })
