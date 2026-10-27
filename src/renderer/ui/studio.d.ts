@@ -36,7 +36,13 @@ declare global {
   type PaneDetailLead = { ok: true; mode: 'lead'; paneId: string; label: string; rows: PaneDetailLeadRow[]; tokens: PaneDetailTokens | null }
   type PaneDetailView = PaneDetailAgent | PaneDetailLead | { ok: false; error?: string }
 
+  // main 의 explorerList · explorerStatus(src/main/explorer-panel.mts — 실패는 guarded 가 { error }) · 아이콘 이름은 src/lib/file-icons.js iconFor(없으면 null)
+  type ExplorerEntry = { name: string; dir: boolean; icon: string | null; iconOpen?: string | null }
+  type ExplorerChange = { path: string; code: string; icon: string | null; iconOpen?: string | null }
+
   interface StudioApi {
+    explorerList(workspaceId: string | null, relative: string): Promise<{ entries: ExplorerEntry[] } | { error: string }>
+    explorerStatus(workspaceId: string): Promise<{ git: boolean; changes: ExplorerChange[] } | { error: string }>
     mergeSettings(): Promise<{ ok: boolean; repos: MergeRepo[] } | undefined>
     setAutoMerge(repo: string, values: { autoMerge?: boolean; confirm?: boolean }): Promise<{ ok: boolean; text?: string } | undefined>
     checkAppUpdate(): Promise<unknown>
