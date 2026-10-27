@@ -1142,8 +1142,8 @@ function setSpacesCollapsed(collapsed) {
 // 트리 → 픽셀 사각형. 보이는 pane 만 fit 하고, 칸 수가 바뀐 것만 데몬에 알린다
 function layoutPanes() {
   if (panels.work.hidden) return
-  // 하단 칸(에이전트 모니터)은 athena 작업 공간에서만 — 다른 공간은 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
-  const showDock = isAthenaWorkspace(activeWorkspace())
+  // 하단 칸(에이전트 모니터)은 작업 공간이 있으면 어느 공간이든 — 공간이 없으면 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
+  const showDock = Boolean(activeWorkspace())
   $('dock').hidden = !showDock
   if (!showDock && $('dock').contains(document.activeElement)) document.activeElement.blur()
   setMonitorVisible(showDock)
