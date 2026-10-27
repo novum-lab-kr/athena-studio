@@ -8,11 +8,9 @@ const path = require('path')
 const core = require('./lib/core.mts')
 const studioHome = require('./lib/studio-home')
 const packModel = require('./lib/pack.mts')
-const screenModel = require('./lib/screen-model')
 const daemonClient = require('./daemon-client.mts')
 const i18n = require('./lib/i18n')
 const agentLanguage = require('./lib/agent-language.mts')
-const paneDetail = require('./lib/pane-detail.mts')
 const tokenUsage = require('./lib/token-usage.mts')
 const layout = require('./lib/layout')
 
@@ -241,9 +239,9 @@ async function resetStudio() {
 
 // ── 공용 도우미 — src/main/*.mts(에이전트 모니터 기록 읽기 · Explorer · 파일 뷰어 · 일감) ─────
 // 쓰는 것(기록 폴더 · 화면 문구 · 일감 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
-const { MONITOR_LABEL, MONITOR_MINUTES, MONITOR_KEEP, newMonitor, createMonitorLogs, readNewLines, tailEvents, readSubagentMeta, openTail, monitorSessions } = require('./main/monitor-logs.mts')
+const { newMonitor, createMonitorLogs } = require('./main/monitor-logs.mts')
 const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
-const { createFiles, iconDataUrl, runGit, guarded } = require('./main/files.mts')
+const { createFiles, iconDataUrl, guarded } = require('./main/files.mts')
 const { resolveInside } = createFiles({ say })
 const { createBoard } = require('./main/board.mts')
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
@@ -286,6 +284,13 @@ function refreshAllPacks() {
   for (const ctx of packWindows) ctx.refreshPacks().catch(() => {})
 }
 
+// 팩 창 묶음 — 데몬 연결 · pane · 작업 공간 · 에이전트 모니터 · pane [상세] · 따라잡기(src/main/*.mts · createPackWindow 의 ctx 에 같은 이름으로)
+const { installDaemonLink } = require('./main/daemon-link.mts')
+const { installWorkspaces } = require('./main/workspaces.mts')
+const { installAgentMonitor } = require('./main/agent-monitor.mts')
+const { installPaneWatch } = require('./main/pane-watch.mts')
+const { installCatchUp } = require('./main/catch-up.mts')
+
 // ── 팩 창 ─────────────────────────────────────────────────
 // 창 하나 = 팩 본체 하나. welcome — 앱을 켤 때 첫 창이면 시작 화면 규칙(launchWelcome)을 본다
 function createPackWindow(athenaDir, { welcome = false } = {}) {
@@ -298,15 +303,8 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     uiTab: 'work',
   }
   syncAgentLanguage(ctx.athenaDir)
-  // ── 데몬 연결 — 창마다 하나, 이 창의 본체로 묶인다(protocol 5) ──
-  let daemon = null // DaemonConnection
-  let connecting = null
-  const outputQueue = new Map() // paneId → 모아 둔 출력(8ms 마다 한 번에 보낸다)
-  let flushTimer = null
-  let dropOutput = false // attach 답이 오기 전 출력 — 되살릴 화면에 이미 들어 있다
-  let screenDetached = false
+  // ── 데몬 연결 · pane · 작업 공간 · 에이전트 모니터 · pane [상세] · 따라잡기 — src/main/*.mts(ctx 에 같은 이름으로 붙는다) ──
   let launchWelcome = welcome ? null : false // 켤 때 시작 화면 — 첫 창만 정한다(null = 아직 안 정함)
-  let branchCache = { at: 0, value: null }
   let packBoardPort = null // 이 본체 일감 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
   const monitor = newMonitor()
   let browserView = null
@@ -333,581 +331,17 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     }
   }
 
-  function onDaemonEvent(message) {
-    if (message.event === 'data') {
-      if (dropOutput) return
-      outputQueue.set(message.pane, (outputQueue.get(message.pane) || '') + message.data)
-      if (!flushTimer) flushTimer = setTimeout(flushOutput, 8)
-    } else if (message.event === 'state') {
-      flushOutput() // 배치가 바뀌기 전 출력부터
-      send('screen:state', message.state)
-    } else if (message.event === 'exit') {
-      flushOutput()
-      send('pane:exit', message.pane)
-    } else if (message.event === 'resync') {
-      send('screen:resync')
-    } else if (message.event === 'open-url' && typeof message.url === 'string') {
-      openUrl(ctx, message.url) // 아테나 화면 계층 open-url — 계획서 · 선택 화면을 이 창 옆 브라우저로(localhost 아니면 기본 브라우저)
-    }
-  }
-
-  function flushOutput() {
-    clearTimeout(flushTimer)
-    flushTimer = null
-    for (const [paneId, data] of outputQueue) send('pane:data', paneId, data)
-    outputQueue.clear()
-  }
-
-  // 연결이 끊기면 화면에 알린다(앱이 스스로 끊은 detachScreen 은 daemon 을 먼저 비운다)
-  function onDaemonClosed() {
-    daemon = null
-    screenDetached = true
-    send('screen:disconnected')
-  }
-
-  ctx.connectDaemon = () => {
-    if (daemon) return Promise.resolve(daemon)
-    if (connecting) return connecting
-    connecting = (async () => {
-      const paths = daemonPaths()
-      const options = { paths, env: core.childEnv(process.env), onEvent: onDaemonEvent, onClose: onDaemonClosed }
-      let result = await daemonClient.ensureDaemon(options)
-      if (result.status === 'mismatch' && (await askRestartDaemon(result, ctx.win))) result = await daemonClient.ensureDaemon(options)
-      if (result.status === 'ok') {
-        daemonOld = false
-        releaseHeldWindows()
-      } else if (result.status === 'mismatch') daemonOld = true
-      daemon = daemon || result.connection
-      return daemon
-    })().finally(() => (connecting = null))
-    return connecting
-  }
-  ctx.isAttached = () => Boolean(daemon)
-
-  // 화면이 붙는다 — 지금 상태 + pane 마다 되살릴 화면. 이 뒤로 실시간 출력이 이어진다
-  ctx.attachScreen = async () => {
-    const check = core.checkAthenaDir(ctx.athenaDir)
-    if (!check.ok) return { error: say('error.athenaDirMissing') }
-    try {
-      const connection = await ctx.connectDaemon()
-      flushOutput()
-      dropOutput = true
-      try {
-        // 이 창의 본체로 묶는다(protocol 5) — 다른 팩 창의 작업 공간 · 출력은 오지 않는다
-        const attached = await connection.call('attach', { body: core.realDir(ctx.athenaDir) }, () => {
-          dropOutput = false
-          outputQueue.clear()
-        })
-        screenDetached = false
-        // 예전 터미널 모니터 칸이 남아 있으면 닫는다(이제 모니터는 앱 화면)
-        closeMonitorDock().catch(() => {})
-        return attached
-      } finally {
-        dropOutput = false
-      }
-    } catch (error) {
-      return { error: say('error.daemonConnect', { message: daemonErrorText(error) }) }
-    }
-  }
-
-  // 창 닫기 · 앱 종료 — 연결만 끊는다(데몬·셸·에이전트는 계속 돈다)
-  ctx.detachScreen = () => {
-    if (!daemon) return
-    const current = daemon
-    daemon = null
-    current.close()
-  }
-
-  const daemonCall = async (op, args) => {
-    try {
-      const connection = await ctx.connectDaemon()
-      return { result: await connection.call(op, args) }
-    } catch (error) {
-      return { error: daemonErrorText(error), code: error.code }
-    }
-  }
-  ctx.daemonCall = daemonCall
-  // 메뉴 막대 폴링 전용 — 이미 붙은 연결로만 묻는다(daemonCall 은 끊겼으면 데몬을 다시 띄우거나 버전 확인창을 띄운다)
-  ctx.peekCall = async (op, args = {}) => {
-    const connection = daemon
-    if (!connection) return { error: say('tray.daemonOffline') }
-    try {
-      return { result: await connection.call(op, args) }
-    } catch (error) {
-      return { error: error.message }
-    }
-  }
-  ctx.notifyDaemon = (op, args) => daemon && daemon.notify(op, args)
-  // pane 크기 — 답을 받는 그 자리(같은 소켓의 뒤 출력보다 먼저)에서 앞 출력을 내보내고 화면에 '적용됨'을 알린다.
-  // 화면은 그 알림을 받아 앞 출력을 다 읽은 뒤 xterm 크기를 바꾼다 — 데몬이 pty 를 바꾼 출력 지점과 같다(데몬 버퍼도 앞 출력을 다 읽은 뒤 바꾼다 · Pane.resize).
-  // 데몬이 스스로 바꾸는 크기(분할 · pane 종료의 fitTab)는 알리지 않는다 — 곧 화면이 자기 크기를 다시 요청한다
-  ctx.resizePane = (paneId, cols, rows) => {
-    if (!daemon) return
-    daemon
-      .call('resize', { pane: paneId, cols, rows }, (reply) => {
-        if (!reply.ok) return
-        flushOutput()
-        send('pane:resized', paneId, cols, rows)
-      })
-      .catch(() => {})
-  }
-  ctx.screenDetached = () => screenDetached
-
-  // pane 닫기(⌘W) — 에이전트가 돌고 있으면 묻는다(S6)
-  ctx.closePane = async (paneId) => {
-    const info = await daemonCall('pane get', { pane: paneId })
-    const pane = info.result && info.result.pane
-    if (pane && pane.agent) {
-      const choice = await dialog.showMessageBox(ctx.win, {
-        type: 'warning',
-        message: say('dialog.closePane.message', { agent: pane.agent }),
-        buttons: [say('common.cancel'), say('common.close')],
-        defaultId: 0,
-        cancelId: 0,
-      })
-      if (choice.response !== 1) return { canceled: true }
-    }
-    return daemonCall('pane close', { pane: paneId })
-  }
-
-  // 예전엔 데몬 고정 칸에서 agent-monitor.py 를 돌렸다 — 남아 있으면 닫는다(보기만 하는 칸이라 잃는 것이 없다)
-  async function closeMonitorDock() {
-    const listed = await daemonCall('pane list')
-    for (const pane of (listed.result && listed.result.panes) || []) {
-      if (!pane.tab_id && pane.label === MONITOR_LABEL) await daemonCall('pane close', { pane: pane.id })
-    }
-  }
-
-  // ── 에이전트 모니터 ──
-  async function monitorTick() {
-    // 창이 숨었으면(메뉴 막대로 내려감) 기록을 읽지 않는다
-    if (!monitor.watching || monitor.ticking || !ctx.win || ctx.win.isDestroyed() || !ctx.win.isVisible()) return
-    monitor.ticking = true
-    try {
-      const fresh = []
-      let changed = false
-      // 10초마다 새 세션을 찾고, 120분 넘게 조용한 세션은 뺀다
-      if (Date.now() - monitor.lastScan > 10000) {
-        monitor.lastScan = Date.now()
-        const allSessions = Date.now() - monitor.lastFullScan > 60000
-        if (allSessions) monitor.lastFullScan = Date.now()
-        const found = await findMonitorLogs(monitor, allSessions, ctx.athenaDir)
-        for (const item of found) {
-          if (monitor.tails.has(item.file)) continue
-          fresh.push(...(await openTail(monitor, item)))
-          changed = true
-        }
-        for (const tail of monitor.tails.values()) {
-          const before = tail.finished
-          await readSubagentMeta(tail)
-          if (tail.finished !== before) changed = true
-        }
-        const since = Date.now() - MONITOR_MINUTES * 60000
-        for (const [file, tail] of monitor.tails) {
-          if (tail.mtime < since) {
-            monitor.tails.delete(file)
-            changed = true
-          }
-        }
-      }
-      for (const tail of monitor.tails.values()) {
-        // 한 파일이 사라지거나 못 읽어도 다른 세션은 계속
-        try {
-          fresh.push(...tailEvents(monitor, tail, await readNewLines(tail)))
-        } catch {}
-      }
-      const events = fresh.sort((left, right) => String(left.at).localeCompare(String(right.at)))
-      if (events.length) {
-        monitor.events = [...monitor.events, ...events].sort((left, right) => String(left.at).localeCompare(String(right.at)) || left.id - right.id).slice(-MONITOR_KEEP)
-        changed = true
-      }
-      if (changed) send('monitor:update', { sessions: monitorSessions(monitor), events })
-    } catch (error) {
-      send('monitor:update', { sessions: monitorSessions(monitor), events: [], error: error.message })
-    } finally {
-      monitor.ticking = false
-    }
-  }
-
-  ctx.setMonitorWatch = (on) => {
-    monitor.watching = Boolean(on)
-    clearInterval(monitor.timer)
-    if (!monitor.watching) return
-    monitor.lastScan = 0
-    monitor.lastFullScan = 0
-    // 다시 보이면 지금까지 모은 것을 한 번에 보내고 이어서 따라간다
-    send('monitor:update', { reset: true, sessions: monitorSessions(monitor), events: monitor.events })
-    monitorTick()
-    monitor.timer = setInterval(monitorTick, 1000)
-  }
-
-  // 탭 닫기 — 안에 에이전트가 돌고 있으면 묻는다
-  ctx.closeTab = async (tabId) => {
-    const listed = await daemonCall('pane list')
-    const agents = ((listed.result && listed.result.panes) || []).filter((pane) => pane.tab_id === tabId && pane.agent)
-    if (agents.length) {
-      const choice = await dialog.showMessageBox(ctx.win, {
-        type: 'warning',
-        message: say('dialog.closeTab.message', { agents: agents.map((pane) => pane.agent).join(' · ') }),
-        buttons: [say('common.cancel'), say('common.close')],
-        defaultId: 0,
-        cancelId: 0,
-      })
-      if (choice.response !== 1) return { canceled: true }
-    }
-    return daemonCall('tab close', { tab: tabId })
-  }
-
-  // 새 작업 공간 — 폴더를 고르면 그 이름으로(레포 하나 = 작업 공간 하나)
-  // spaces + — 폴더를 고른다. 팩 본체이고 고른 것이 팩에 없는 git 레포면 바로 열지 않고 돌려준다(화면이 "팩에 더할까요?" 를 묻는다)
-  ctx.newWorkspace = async (size) => {
-    const result = await dialog.showOpenDialog(ctx.win, {
-      title: say('dialog.newWorkspace.title'),
-      properties: ['openDirectory'],
-      // 아테나는 앱 데이터 폴더에 있으니 레포 고르기는 홈에서 시작한다
-      defaultPath: app.getPath('home'),
-    })
-    if (result.canceled || !result.filePaths[0]) return { canceled: true }
-    const dir = result.filePaths[0]
-    const packBody = fs.existsSync(path.join(ctx.athenaDir || '', '.pack-data'))
-    if (packBody && fs.existsSync(path.join(dir, '.git'))) {
-      const real = core.realDir(dir)
-      const inPack = (await ctx.packRepos()).some((repo) => repo.linked && core.realDir(path.join(ctx.athenaDir, 'repos', repo.name)) === real)
-      if (!inPack) return { askAdd: true, dir, name: path.basename(dir) }
-    }
-    return ctx.openWorkspaceDir(dir, size)
-  }
-  ctx.openWorkspaceDir = (dir, size) => daemonCall('workspace create', { label: path.basename(dir), cwd: dir, focus: true, ...size })
-
-  // 팩에 레포 하나 더하기 — 코어 repo add(pack.json · 자리 · 링크 · 뼈대) 뒤 아테나에게 뼈대 채우기를 맡긴다(docs/setup.md "레포 하나 더하기")
-  // 레포 더하기 · 빼기는 이 본체의 코어 명령이다 — 본체가 배포 코어보다 뒤처졌으면(아테나가 계속 일해 자동 따라잡기를 못 했으면) 먼저 따라잡는다.
-  // 옛 본체는 명령을 몰라 사용법만 찍고 끝났다(2026-10-23 — "알 수 없는 답")
-  // 이 창 본체가 배포 코어보다 뒤처졌나 — 화면이 레포 더하기 · 빼기 확인창에 "에이전트를 멈췄다 다시 켜요" 를 붙인다
-  ctx.bodyBehind = async () => {
-    const body = ctx.athenaDir
-    if (!body || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return false
-    const registry = await fs.promises.readFile(path.join(STUDIO.data, 'config.json'), 'utf8').then(JSON.parse, () => null)
-    const target = registry && registry.deploy && registry.deploy.commit
-    const mine = ((await runGit(body, ['rev-parse', 'HEAD'])) || '').trim()
-    if (!target || !mine || mine === target) return false
-    return (await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) !== null
-  }
-  const freshBody = async () => {
-    const listed = await daemonCall('pane list')
-    const caught = await ctx.catchUpBody(listed.result ? listed.result.panes : null, { force: true })
-    if (!caught || caught.ok) return null
-    return { ok: false, error: 'body-behind', text: say(`pack.catchUp.${caught.reason === 'unknown-session' ? 'unknownSession' : caught.reason === 'working' ? 'working' : 'failed'}`) }
-  }
-  ctx.addRepo = async (dir, name) => {
-    const stale = await freshBody()
-    if (stale) return stale
-    const args = ['repo', 'add', String(dir), ...(name ? ['--name', String(name)] : [])]
-    const result = await ctx.packTask(say('pack.task.addRepo'), () => runCore(args, { dir: ctx.athenaDir }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    if (!result.already) await sendToAthena(say('spaces.addRepoAsk', { repo: result.repo.name, path: result.path }))
-    return result
-  }
-  // 팩에서 레포 빼기 — 코어 repo remove(팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증) 뒤 아테나에게 ROUTING · services 줄 정리를 맡긴다
-  ctx.removeRepo = async (name) => {
-    const stale = await freshBody()
-    if (stale) return stale
-    const result = await ctx.packTask(say('pack.task.removeRepo'), () => runCore(['repo', 'remove', String(name)], { dir: ctx.athenaDir }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-    await sendToAthena(say('spaces.removeRepoAsk', { repo: result.removed }))
-    return result
-  }
-  // 작업 공간 닫기 — 그 작업 공간의 탭을 모두 닫는다(pane 이 다 닫히면 데몬이 작업 공간도 지운다 · 팩은 그대로)
-  ctx.closeWorkspace = async (workspaceId) => {
-    const state = await daemonCall('state')
-    const tabs = ((state.result && state.result.tabs) || []).filter((tab) => tab.workspace === workspaceId)
-    for (const tab of tabs) await daemonCall('tab close', { tab: tab.id })
-    return { ok: true, closed: tabs.length }
-  }
-  // spaces 레포 줄 우클릭 — 고른 동작 이름(repo-look · repo-reset-name · repo-clear-icon · remove-repo · close-workspace · null).
-  // 이름 · 이미지는 팩 이름 · 이미지와 같은 대화상자(화면) · 되돌리기는 바꿔 둔 것이 있을 때만
-  // 아테나 작업 공간 줄은 레포 항목(이름 · 이미지 · 팩에서 빼기)을 띄우지 않는다 — 팩에 같은 이름 레포가 있어도 아테나 로고 고정
-  ctx.spaceContextMenu = async ({ repo = null, workspace = null } = {}, point = null) => {
-    if (repo && workspace) {
-      const state = await daemonCall('state')
-      const athena = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
-      if (athena && athena.id === workspace) repo = null
-    }
-    const info = repo ? (await ctx.packRepos()).find((item) => item.name === repo) : null
-    return spaceMenuPopup({ repo, workspace, info }, point)
-  }
-  const spaceMenuPopup = ({ repo, workspace, info }, point) => new Promise((resolve) => {
-    let chosen = null
-    const pick = (action) => () => {
-      chosen = action
-      resolve(action)
-    }
-    const items = []
-    if (workspace) items.push({ label: say('spaces.menu.closeWorkspace'), click: pick('close-workspace') })
-    if (info) {
-      items.push(...(items.length ? [{ type: 'separator' }] : []), { label: say('spaces.menu.look'), click: pick('repo-look') })
-      if (info.displayName) items.push({ label: say('spaces.menu.resetName'), click: pick('repo-reset-name') })
-      if (info.iconPath) items.push({ label: say('spaces.menu.clearIcon'), click: pick('repo-clear-icon') })
-    }
-    if (repo) items.push(...(items.length ? [{ type: 'separator' }] : []), { label: say('spaces.menu.removeRepo'), click: pick('remove-repo') })
-    if (!items.length || !ctx.win) return resolve(null)
-    const menu = Menu.buildFromTemplate(items)
-    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
-    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
-    menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
-  })
-
-  // pane(터미널) 우클릭 — 고른 동작 이름(split-right · split-down · close-pane · null). 동작은 화면이 우클릭한 그 pane 으로 한다.
-  // 단축키는 앱 메뉴(보기 · 파일)에 이미 걸려 있어 여기서는 보여 주기만 한다
-  ctx.paneContextMenu = (point = null) => new Promise((resolve) => {
-    if (!ctx.win) return resolve(null)
-    let chosen = null
-    const pick = (action) => () => {
-      chosen = action
-      resolve(action)
-    }
-    const menu = Menu.buildFromTemplate([
-      { label: say('menu.pane.splitRight'), accelerator: `${TAB_KEY}+D`, registerAccelerator: false, click: pick('split-right') },
-      { label: say('menu.pane.splitDown'), accelerator: `${TAB_KEY}+Shift+D`, registerAccelerator: false, click: pick('split-down') },
-      { type: 'separator' },
-      { label: say('menu.file.closePane'), accelerator: `${TAB_KEY}+W`, registerAccelerator: false, click: pick('close-pane') },
-    ])
-    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
-    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x, y: point.y } : {}
-    menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
-  })
-
-  // 아테나 pane(이 창 아테나 작업 공간의 첫 pane)에 글 한 줄 + Enter — 없으면 false
-  async function sendToAthena(text) {
-    const state = await daemonCall('state')
-    const athena = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir)
-    const tab = athena && state.result.tabs.find((entry) => entry.workspace === athena.id)
-    const pane = tab && layout.paneIds(tab.tree)[0]
-    if (!pane) return false
-    await daemonCall('workspace select', { workspace: athena.id })
-    const typed = await daemonCall('pane send-text', { pane, text })
-    if (typed.error) return false
-    await daemonCall('pane send-keys', { pane, keys: ['Enter'] })
-    return true
-  }
-
-  // ── pane [상세] ─────────────────────────────────────────────────────
-  // 지금 상태가 된 시각(걸린 시간) — pane 목록을 볼 때마다 상태가 바뀐 pane 만 고친다
-  const paneSince = new Map() // pane id → { status, at }
-  const trackPaneSince = (panes) => {
-    const alive = new Set()
-    for (const pane of panes) {
-      alive.add(pane.id)
-      const status = pane.agent ? pane.agent_status : null
-      const known = paneSince.get(pane.id)
-      if (!known || known.status !== status) paneSince.set(pane.id, { status, at: Date.now() })
-    }
-    for (const id of paneSince.keys()) if (!alive.has(id)) paneSince.delete(id)
-  }
-  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 일감이 떠 있을 때만 읽는다(띄우지는 않는다). 꺼졌으면 지난 값을 둔다
-  const PANE_BOUND_MS = 5000
-  let paneBound = {}
-  let paneBoundAt = 0
-  const refreshPaneBound = async () => {
-    const state = await fetchBoardJson(ctx.boardPortNow(), '/api/state')
-    if (!state || !Array.isArray(state.cards)) return
-    const next = paneDetail.bindings(state.cards, state.panes)
-    if (JSON.stringify(next) === JSON.stringify(paneBound)) return
-    paneBound = next
-    send('screen:pane-bound', paneBound)
-  }
-  ctx.paneBound = () => paneBound
-  // 아카이브 목록은 무겁다(보관 폴더를 다 읽는다) — 아테나 pane 상세가 열려 있어도 30초에 한 번만
-  const HISTORY_CACHE_MS = 30000
-  let historyCache = { at: 0, items: [] }
-  const recentHistory = async () => {
-    if (Date.now() - historyCache.at < HISTORY_CACHE_MS) return historyCache.items
-    const history = await fetchBoardJson(ctx.boardPortNow(), '/api/history')
-    historyCache = { at: Date.now(), items: history && Array.isArray(history.items) ? history.items : historyCache.items }
-    return historyCache.items
-  }
-  // 상세 토큰 — 대화 기록 usage 합계(파일만 읽음 · 파일마다 늘어난 부분만 · 기다리지 않고 아는 값). 기록을 못 찾으면 null → 화면에서 숨긴다
-  const tokenView = (sum) => (sum && sum.io + sum.cache > 0 ? { io: sum.io, cache: sum.cache, ioText: tokenUsage.formatTokens(sum.io), cacheText: tokenUsage.formatTokens(sum.cache) } : null)
-  // 아테나 pane 의 지금 대화 — 훅 pane-session.py 가 적는 <팩 데이터>/state/pane-sessions/<pane>.json 의 session
-  const paneSession = async (paneId) => {
-    if (!ctx.athenaDir) return ''
-    const record = await fs.promises.readFile(path.join(core.realDir(path.join(ctx.athenaDir, '.pack-data')), 'state', 'pane-sessions', `${paneId.split(':').pop()}.json`), 'utf8').then(JSON.parse).catch(() => null)
-    return record && typeof record.session === 'string' ? record.session : ''
-  }
-  // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.
-  // 재료: 일감 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
-  ctx.paneDetail = async (paneId) => {
-    if (!/^[\w:]+$/.test(paneId)) return { ok: false, error: 'bad-id' }
-    const port = ctx.boardPortNow()
-    const state = await fetchBoardJson(port, '/api/state')
-    if (!state || !Array.isArray(state.cards)) return { ok: false, error: 'board-down' }
-    const listed = await daemonCall('pane list')
-    const panes = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
-    const pane = panes.find((entry) => entry.id === paneId)
-    if (!pane) return { ok: false, error: 'no-pane' }
-    const label = pane.label || pane.name || pane.title || paneId
-    const open = requestsState.requests.filter((request) => request.state === 'open')
-    const since = Object.fromEntries([...paneSince].map(([id, entry]) => [id, entry.at]))
-    const plan = paneDetail.agentPlan(state.cards, paneId)
-    if (!plan) {
-      const status = Object.fromEntries(panes.map((entry) => [entry.id, entry.agent ? entry.agent_status : null]))
-      const rows = paneDetail.leadRows(state.cards, await recentHistory(), paneId, { panes: state.panes || [], since, status, waitingPlans: new Set(open.map((request) => request.plan).filter(Boolean)), now: Date.now() })
-      return { ok: true, mode: 'lead', paneId, label, rows, tokens: tokenView(paneTokens.peekSession(await paneSession(paneId))) }
-    }
-    const [visible, recent, card] = await Promise.all([
-      daemonCall('pane read', { pane: paneId, lines: 40, source: 'visible' }),
-      daemonCall('pane read', { pane: paneId, lines: 400, source: 'recent' }),
-      fetchBoardJson(port, `/api/card?id=${encodeURIComponent(plan.id)}`),
-    ])
-    const visibleText = visible.result && typeof visible.result.text === 'string' ? visible.result.text : ''
-    const digest = paneDetail.screenDigest(recent.result && typeof recent.result.text === 'string' ? recent.result.text : '')
-    const record = paneDetail.planRecord(card && typeof card.text === 'string' ? card.text : '')
-    const waiting = screenModel.waitingForInput(visibleText)
-    const todo = open.filter((request) => request.plan === plan.id || request.pane === paneId).map((request) => ({ id: request.id, kind: request.kind, title: request.title }))
-    const now = paneDetail.nowState({
-      agentStatus: pane.agent ? pane.agent_status : null,
-      waiting,
-      heavy: digest.heavy,
-      hasRequest: todo.length > 0,
-      planStatus: record.status || plan.status,
-    })
-    const known = paneSince.get(paneId)
-    return {
-      ok: true,
-      mode: 'agent',
-      paneId,
-      label,
-      now: { ...now, sinceMs: known ? Date.now() - known.at : 0, line: digest.now },
-      report: digest.report,
-      todo,
-      // 이 계획서에 묶인 대화 기록 전부(작업 · 리뷰 세션) — 계획서 → 기록 찾기는 코어 learn-review.mjs findTranscripts 와 같은 규칙
-      tokens: tokenView(paneTokens.peekPlan([ctx.athenaDir, core.realDir(ctx.athenaDir)], plan.id)),
-      plan: { id: plan.id, html: plan.html || null, title: record.title || plan.title, created: Number(plan.created) || 0, readable: Boolean(card), ...record },
-    }
-  }
-
-  // 보일 때만(startPanesPolling 이 2초마다 부른다) pane 목록(에이전트가 도는 폴더 → 모니터)과 작업 공간 브랜치를 갱신한다
-  ctx.pollPanes = async () => {
-    if (!ctx.win || ctx.win.isDestroyed() || !ctx.win.isVisible() || ctx.win.isMinimized() || !daemon) return
-    const listed = await daemonCall('pane list')
-    if (listed.result) {
-      monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter(Boolean)
-      // spaces pane 줄 앞 점 — 에이전트가 없는 pane 은 null
-      send('screen:pane-status', Object.fromEntries(listed.result.panes.map((pane) => [pane.id, pane.agent ? pane.agent_status : null])))
-      trackPaneSince(listed.result.panes)
-    }
-    if (Date.now() - paneBoundAt > PANE_BOUND_MS) {
-      paneBoundAt = Date.now()
-      refreshPaneBound().catch(() => {})
-    }
-    const branches = await workspaceBranches()
-    if (branches) send('screen:branches', branches)
-    ctx.catchUpBody(listed.result ? listed.result.panes : null).catch(() => {})
-  }
-
-  // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡는다 — 앱 업데이트는 일하는 본체를 건너뛰고, 그 뒤에는 앱이 새 번들을 들고 오지 않는 한 다시 하지 않는다.
-  // 30초에 한 번 HEAD 둘만 본다. 뒤처졌을 때: 본체 안 에이전트(워크트리)가 있거나 아테나가 일하는 중이면 기다린다.
-  // 아테나가 쉬는 중이면 그 대화를 기억하고 잠깐 끄고(/exit) → pack open(본체 따라잡기) → 같은 대화로 다시 켠다(claude --resume) — 사용자가 손댈 일 없게
-  let catchUpAt = 0
-  let catchUpBackoff = 0 // 해 봤는데 못 옮겼으면 10분 쉰다 — 아테나를 30초마다 껐다 켜지 않게
-  let catchingUp = false
-  // 코어가 보는 바쁨(pack busy — 본체 · 레포 · 워크트리 안 claude · codex · 무거운 명령 …) — 코어가 옮길지 말지를 이걸로 정한다
-  const coreBusy = async () => {
-    const result = await runPack(['busy'], { dir: ctx.athenaDir })
-    return result.ok && result.busyKnown !== false ? result.busy || [] : null
-  }
-  // force — 사용자가 고른 일(레포 더하기 · 빼기)이 새 코어 명령을 써야 할 때: 30초 · 10분 쉬기를 건너뛴다(나머지 안전 검사는 그대로).
-  // 돌려주는 것: { ok, same } 이미 같음 · { ok:false, reason } working(누가 일하는 중 · 질문 창 · 쓰다 만 글) | unknown-session | still-busy | failed
-  ctx.catchUpBody = async (panes, { force = false } = {}) => {
-    // 자동 따라잡기가 도는 중이면 — 사용자가 고른 일은 끝날 때까지(최대 1분) 기다렸다 다시 본다(이미 옮겼으면 same)
-    for (let tries = 0; force && catchingUp && tries < 60; tries += 1) await new Promise((resolve) => setTimeout(resolve, 1000))
-    if (catchingUp) return { ok: false, reason: 'working' }
-    if (!force && (!panes || Date.now() - catchUpAt < 30000 || Date.now() < catchUpBackoff)) return null
-    if (!force) catchUpAt = Date.now()
-    if (!panes) return { ok: false, reason: 'failed' }
-    const body = ctx.athenaDir
-    const packId = ctx.packState.current && ctx.packState.current.id
-    if (!body || !packId || (!force && ctx.packBusy) || core.sameDir(body, STUDIO.core) || !fs.existsSync(path.join(body, '.pack-data'))) return { ok: true, same: true }
-    // 기준은 코어와 같다(bodies.mjs catchUpBody) — 레지스트리 deploy.commit 이 이 본체 커밋의 후손일 때만(주 본체 HEAD 가 아니다 · 정비 커밋으로 앞서도 옮기지 않는다)
-    const registry = await fs.promises.readFile(path.join(STUDIO.data, 'config.json'), 'utf8').then(JSON.parse, () => null)
-    const target = registry && registry.deploy && registry.deploy.commit
-    const mine = ((await runGit(body, ['rev-parse', 'HEAD'])) || '').trim()
-    if (!target || !mine || mine === target) return { ok: true, same: true }
-    if ((await runGit(STUDIO.core, ['merge-base', '--is-ancestor', mine, target])) === null) return { ok: true, same: true }
-    const realBody = core.realDir(body)
-    const packData = core.realDir(path.join(body, '.pack-data'))
-    const under = (dir, root) => Boolean(dir) && core.isInside(core.realDir(dir), root)
-    const inBody = panes.filter((pane) => pane.agent && (under(pane.foreground_cwd || pane.cwd, realBody) || under(pane.foreground_cwd || pane.cwd, packData)))
-    const athenaPanes = inBody.filter((pane) => under(pane.foreground_cwd || pane.cwd, realBody))
-    // force(사용자가 고른 일) — 일하는 중이어도 이 팩의 에이전트를 모두 멈추고 옮긴다(화면이 미리 알린다). 아래 기다리기 검사는 건너뛴다
-    // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · claude 가 아니면(되살릴 수 없다) 다음에
-    if (!force && (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle'))) return { ok: false, reason: 'working' }
-    // 화면으로도 — 질문 · 고르기 창이 떠 있거나 쓰다 만 글이 있으면 건드리지 않는다
-    for (const pane of force ? [] : athenaPanes) {
-      const read = await daemonCall('pane read', { pane: pane.id, lines: 40 })
-      if (!read.result || !core.claudeAtEmptyPrompt(read.result.text)) return { ok: false, reason: 'working' }
-    }
-    // 코어 기준으로도 아테나 말고 바쁜 것이 없어야 시작한다(레포 · 워크트리 에이전트 · 무거운 명령)
-    const before = await coreBusy()
-    if (!force && (!before || before.some((item) => item.kind !== 'athena'))) return { ok: false, reason: 'working' }
-    const sessions = []
-    for (const pane of force ? inBody : athenaPanes) {
-      const record = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
-      // 어느 대화인지 모르면 끄지 않는다 — force 면 끄고 다시 켜지는 않는다
-      if (!record || !record.session) {
-        if (!force) return { ok: false, reason: 'unknown-session' }
-        sessions.push({ pane: pane.id, session: null })
-      } else sessions.push({ pane: pane.id, session: record.session })
-    }
-    catchingUp = true
-    try {
-      for (const item of sessions) {
-        if (force) {
-          // 일하는 중이면 /exit 가 줄만 선다 — 멈추고(Esc) 입력 창을 비우고(C-c) 끈다(C-c 두 번)
-          await daemonCall('pane send-keys', { pane: item.pane, keys: ['Escape'] })
-          await new Promise((resolve) => setTimeout(resolve, 300))
-          await daemonCall('pane send-keys', { pane: item.pane, keys: ['C-c'] })
-          await new Promise((resolve) => setTimeout(resolve, 300))
-          await daemonCall('pane send-keys', { pane: item.pane, keys: ['C-c'] })
-          continue
-        }
-        await daemonCall('pane send-text', { pane: item.pane, text: '/exit' })
-        await daemonCall('pane send-keys', { pane: item.pane, keys: ['Enter'] })
-      }
-      // 코어가 보기에 다 끝날 때까지(최대 30초) — pane 은 셸로 돌아와도 claude 의 딸린 프로세스가 잠깐 남는다(2026-10-23 실측)
-      let quiet = false
-      for (let tries = 0; tries < 30; tries += 1) {
-        await new Promise((resolve) => setTimeout(resolve, 1000))
-        const busy = await coreBusy()
-        if (busy && !busy.length) {
-          quiet = true
-          break
-        }
-      }
-      const opened = quiet ? await runPack(['open', packId], { dir: STUDIO.core }) : { ok: false, error: 'still-busy' }
-      if (!opened.ok || !opened.updated) catchUpBackoff = Date.now() + 10 * 60000
-      fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
-      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
-      if (opened.ok && opened.updated) send('pack:caught-up', { pack: ctx.packState.current.displayName || ctx.packState.current.name || packId })
-      return opened.ok && opened.updated ? { ok: true } : { ok: false, reason: opened.error === 'still-busy' ? 'still-busy' : 'failed' }
-    } finally {
-      catchingUp = false
-    }
-  }
-
-  // 작업 공간마다 git 브랜치(이름 아래에) — 5초에 한 번만 묻는다
-  async function workspaceBranches() {
-    if (branchCache.value && Date.now() - branchCache.at < 5000) return branchCache.value
-    const state = await daemonCall('state')
-    if (!state.result) return null
-    const pairs = await Promise.all(
-      state.result.workspaces.map(async (workspace) => {
-        const branch = await runGit(workspace.cwd, ['rev-parse', '--abbrev-ref', 'HEAD'])
-        return [workspace.id, branch ? branch.trim() : null]
-      }),
-    )
-    branchCache = { at: Date.now(), value: Object.fromEntries(pairs) }
-    return branchCache.value
-  }
+  // 데몬 연결(창마다 하나 · 이 창의 본체로 묶인다 · protocol 5) — 옛 데몬 표시(daemonOld)는 main.js 가 갖는다
+  installDaemonLink(ctx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld: (old) => (daemonOld = old), releaseHeldWindows, openUrl })
+  const daemonCall = ctx.daemonCall
+  // pane · 탭 · 작업 공간 닫기 · 새 작업 공간 · 팩 레포 더하기 · 빼기 · 우클릭 메뉴
+  installWorkspaces(ctx, { app, dialog, Menu, say, studio: STUDIO, tabKey: TAB_KEY, runCore })
+  // 에이전트 모니터 — monitor 는 위(팩을 바꿀 때 resetMonitor 가 비운다)
+  installAgentMonitor(ctx, { monitor, findMonitorLogs })
+  // pane [상세] · pane 목록 갱신(pollPanes) · 작업 공간 브랜치
+  installPaneWatch(ctx, { monitor, paneTokens })
+  // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡기(catchUpBody)
+  installCatchUp(ctx, { studio: STUDIO, runPack, packLogFile })
 
   // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 일감 · 요청 · [작업] — src/main/*.mts ──
   // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 일감 · 앱 설정)은 인자로 넘긴다
@@ -986,7 +420,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     syncAgentLanguage(dir)
     ctx.watchRequests()
     packBoardPort = null
-    branchCache = { at: 0, value: null }
+    ctx.resetBranches()
     resetMonitor()
     saveWindows()
     ctx.prepareBoardPort()
@@ -1571,7 +1005,6 @@ function startPanesPolling() {
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 — src/main/tray.mts ───────────────────
 // 쓰는 것(화면 문구 · 앞 창 찾기 · 열린 팩 창 · 지난 창 다시 열기)은 인자로 넘긴다. tray · 패널 창은 바뀌는 값이라 hasTray() · trayPanel() 로 읽는다
-const { fetchBoardJson } = require('./main/board.mts')
 const { setupTray } = require('./main/tray.mts')
 const { createTray, refreshTray, sendTrayUpdate, pollTray, trayRequestsChanged, showWindow, hasTray, trayPanel } = setupTray({ say, frontCtx, packWindows, openSavedWindows })
 
