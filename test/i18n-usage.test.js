@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.mts', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts', 'src/main/explorer-panel.mts', 'src/main/athena-agent.mts', 'src/main/pack-repos.mts', 'src/main/work.mts', 'src/main/daemon-link.mts', 'src/main/workspaces.mts', 'src/main/agent-monitor.mts', 'src/main/pane-watch.mts', 'src/main/catch-up.mts', 'src/main/athena-dir.mts', 'src/main/packs.mts', 'src/main/side-browser.mts', 'src/main/pack-window.mts', 'src/renderer/ui/settings-pop.tsx', 'src/renderer/ui/work-pop.tsx', 'src/renderer/ui/monitor.tsx', 'src/renderer/ui/pane-detail.tsx', 'src/renderer/ui/pack-welcome.tsx', 'src/renderer/ui/spaces.tsx']
+const SCRIPT_FILES = ['src/main.mts', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts', 'src/main/explorer-panel.mts', 'src/main/athena-agent.mts', 'src/main/pack-repos.mts', 'src/main/work.mts', 'src/main/daemon-link.mts', 'src/main/workspaces.mts', 'src/main/agent-monitor.mts', 'src/main/pane-watch.mts', 'src/main/catch-up.mts', 'src/main/athena-dir.mts', 'src/main/packs.mts', 'src/main/side-browser.mts', 'src/main/pack-window.mts', 'src/renderer/ui/settings-pop.tsx', 'src/renderer/ui/work-pop.tsx', 'src/renderer/ui/monitor.tsx', 'src/renderer/ui/pane-detail.tsx', 'src/renderer/ui/pack-welcome.tsx', 'src/renderer/ui/explorer.tsx', 'src/renderer/ui/spaces.tsx']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
@@ -76,7 +76,7 @@ test('화면 문구: HTML 의 한국어는 data-i18n 이 덮는 기본 글뿐이
 })
 
 test('순수 로직: pack · tray-model 은 넘긴 언어의 say 로 쓴다(안 넘기면 한국어)', () => {
-  const i18n = require('../src/lib/i18n')
+  const i18n = require('../src/lib/i18n.mts')
   const pack = require('../src/lib/pack.mts')
   const tray = require('../src/lib/tray-model.mts')
   const english = i18n.translator(JSON.parse(read('src/i18n/en.json')), korean)

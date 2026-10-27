@@ -1,15 +1,14 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
 // 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 일감 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
 import { createRequire } from 'node:module'
+import * as i18n from './i18n.mts'
 
-// 문구 — say(키, 자리 값). 사전 · 자리 채우기는 i18n.js
+// 문구 — say(키, 자리 값). 사전 · 자리 채우기는 i18n.mts
 export type Say = (key: string, values?: Record<string, unknown>) => string
 type Dictionary = Record<string, string>
-type I18n = { translator(dictionary: Dictionary, fallback: Dictionary): Say }
 
-// i18n.js 는 화면이 <script> 로도 싣는 UMD · 사전은 JSON — main 과 같은 require 캐시의 것을 쓴다
+// 사전은 JSON — main 과 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
-const i18n: I18n = require('./i18n.js')
 const KOREAN: Dictionary = require('../i18n/ko.json')
 
 // 데몬 pane 에서 읽는 칸만

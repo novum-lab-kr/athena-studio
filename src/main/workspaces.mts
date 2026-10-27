@@ -3,16 +3,12 @@
 // 쓰는 것(electron app · dialog · Menu · 화면 문구 · 스튜디오 집 자리 · 앱 단축키 이름 · 코어 명령)은 인자로 받는다
 import fs from 'node:fs'
 import path from 'node:path'
-import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
+import * as layout from '../lib/layout.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 import { runGit } from './files.mts'
 import type { DaemonPane, DaemonState, PackCtx, Size } from './daemon-link.mts'
-
-// layout 은 화면이 <script> 로도 싣는 UMD — main 과 같은 require 캐시의 것을 쓴다(쓰는 함수만 적는다)
-const require = createRequire(import.meta.url)
-const layout: { paneIds(node: unknown): string[] } = require('../lib/layout.js')
 
 type App = { getPath(name: 'home'): string }
 type Dialog = Pick<typeof import('electron').dialog, 'showMessageBox' | 'showOpenDialog'>

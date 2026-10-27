@@ -2,7 +2,7 @@ const test = require('node:test')
 const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const path = require('node:path')
-const i18n = require('../src/lib/i18n')
+const i18n = require('../src/lib/i18n.mts')
 
 const I18N_DIR = path.join(__dirname, '..', 'src', 'i18n')
 const dictionaries = Object.fromEntries(
