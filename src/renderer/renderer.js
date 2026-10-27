@@ -2058,6 +2058,7 @@ function closePops() {
     if ($(pop).hidden) continue
     $(pop).hidden = true
     if (pop === 'settings-pop') StudioUi.settings.close() // React 몸통을 내린다(다음에 열 때 읽는 중부터)
+    if (pop === 'work-pop') StudioUi.work.close()
     $(button).setAttribute('aria-expanded', 'false')
     $(button).classList.remove('active')
   }
@@ -2073,57 +2074,10 @@ function openPop(pop, button) {
   $(button).classList.add('active')
 }
 
-function workRow({ className = '', title, meta, state, kindLabel = '', onClick }) {
-  const row = el('button', `work-row ${className}`.trim())
-  row.type = 'button'
-  const main = el('span', 'work-row-main')
-  const head = el('span', 'work-row-title')
-  if (kindLabel) head.append(el('span', 'work-kind', kindLabel))
-  head.append(document.createTextNode(title))
-  main.append(head)
-  if (meta) main.append(el('span', 'work-row-meta', meta))
-  row.append(main)
-  if (state) {
-    const badge = el('span', 'work-state', say(`work.state.${state}`))
-    badge.dataset.state = state
-    row.append(badge)
-  }
-  row.addEventListener('click', onClick)
-  return row
-}
-
+// 몸통(work-pop-body)은 React(ui/work-pop.tsx) — 여기는 머리줄 팩 이름과 그릴 값 넘기기만
 function renderWorkPop() {
-  const body = $('work-pop-body')
   $('work-pop-title').textContent = say('work.popTitle', { pack: (packs.current && packLabel(packs.current)) || '' })
-  const sections = []
-  const section = (title, count, rows, empty) => {
-    const node = el('section', 'work-sec')
-    const head = el('h3', null, title)
-    if (count) head.append(el('span', 'work-sec-count', String(count)))
-    node.append(head)
-    if (rows.length) node.append(...rows)
-    else if (empty) node.append(el('p', 'work-empty', empty))
-    sections.push(node)
-  }
-  const requests = workData ? workData.requests : workRequests.requests
-  if (requests.length) {
-    section(say('work.section.waiting'), requests.filter((request) => request.state === 'open').length, requests.map((request) => workRow({
-      className: 'ask',
-      kindLabel: say(`work.kind.${request.kind}`),
-      title: request.title,
-      meta: [request.state === 'answered' ? say('work.notDelivered') : '', request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · '),
-      onClick: () => openRequest(request),
-    })))
-  }
-  if (!workData) {
-    sections.push(el('p', 'work-empty', say('work.loading')))
-  } else {
-    if (!workData.boardUp) sections.push(el('p', 'work-empty', say('work.boardDown')))
-    const doing = workData.doing.map((item) => workRow({ title: item.title, meta: item.line, state: item.state, onClick: () => openWorkDetail(item) }))
-    section(say('work.section.doing'), 0, doing, workData.boardUp ? say('work.empty') : '')
-    if (workData.done.length) section(say('work.section.done'), 0, workData.done.map((item) => workRow({ title: item.title, meta: item.line, state: 'done', onClick: () => openWorkDetail(item) })))
-  }
-  body.replaceChildren(...sections)
+  StudioUi.work.setWork(workData, workData ? workData.requests : workRequests.requests)
 }
 
 async function toggleWorkPop() {
@@ -2131,6 +2085,7 @@ async function toggleWorkPop() {
   if (!state || !state.valid || welcomeShown()) return
   openPop('work-pop', 'work-tab')
   renderWorkPop()
+  StudioUi.work.open($('work-pop-body'), { openRequest, openWorkDetail })
   const first = $('work-pop-body').querySelector('button')
   if (first) first.focus({ preventScroll: true })
   workData = await studio.workGet()

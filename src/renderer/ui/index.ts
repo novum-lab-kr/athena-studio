@@ -2,8 +2,9 @@
 // 진입점(entry.ts)이 renderer.js 보다 먼저 싣는다. renderer.js 를 .ts 로 옮기면 이 전역 대신 바로 import 한다
 import { connect, textsChanged } from './bridge.ts'
 import * as settings from './settings-pop.tsx'
+import * as work from './work-pop.tsx'
 
-const StudioUi = { connect, textsChanged, settings }
+const StudioUi = { connect, textsChanged, settings, work }
 
 declare global {
   // renderer.js 가 읽는 전역 이름
