@@ -765,7 +765,7 @@ function renderSides() {
   const spaces = $('spaces')
   if (spaces.classList.contains('collapsed')) {
     spaces.replaceChildren(...spaceRail())
-    if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
+    if (StudioUi.explorer.workspace() !== screen.activeWorkspace) StudioUi.explorer.reset(screen.activeWorkspace)
     return
   }
   // 왼쪽: 작업 공간(레포)만
@@ -825,215 +825,22 @@ function renderSides() {
   spaces.replaceChildren(title, ...rows, ...idleRepoRows())
 
   // 오른쪽: 지금 작업 공간의 Explorer — 작업 공간이 바뀌면 따라간다
-  if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
+  if (StudioUi.explorer.workspace() !== screen.activeWorkspace) StudioUi.explorer.reset(screen.activeWorkspace)
 }
 
 // ── 오른쪽 Explorer (파일 · 변경) ──
-// 파일은 main 이 작업 공간 폴더(+ 지금 팩 데이터) 안만 읽어 준다. 폴더는 펼칠 때 읽고, 보일 때 3초마다 git 변경과 펼친 폴더를 다시 본다
-const explorerView = { workspace: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '' }
-
-function resetExplorer() {
-  explorerView.workspace = screen.activeWorkspace
-  explorerView.children = new Map()
-  explorerView.expanded = new Set(['.'])
-  explorerView.changes = []
-  explorerView.git = false
-  explorerView.statusKey = ''
-  renderExplorer()
-  if (!explorerView.workspace) return
-  loadFolder('.')
-  refreshStatus()
-}
-
-async function loadFolder(relative) {
-  const workspace = explorerView.workspace
-  const result = await studio.explorerList(workspace, relative)
-  if (workspace !== explorerView.workspace) return
-  const next = result.error ? { error: result.error } : result.entries
-  // 그대로면 다시 그리지 않는다(3초마다 다시 읽는다)
-  if (JSON.stringify(next) === JSON.stringify(explorerView.children.get(relative))) return
-  explorerView.children.set(relative, next)
-  renderExplorer()
-}
-
-// 3초마다 — git 변경 + 펼친 폴더. git 이 안 보는 곳(.gitignore 된 plans · issues · 팩 데이터 링크)의 새 파일도 보이게
-function refreshExplorer() {
-  if (!explorerView.workspace) return
-  refreshStatus()
-  for (const folder of explorerView.expanded) if (explorerView.children.has(folder)) loadFolder(folder)
-}
-
-async function refreshStatus() {
-  const workspace = explorerView.workspace
-  if (!workspace) return
-  const result = await studio.explorerStatus(workspace)
-  if (workspace !== explorerView.workspace || result.error) return
-  const key = JSON.stringify(result)
-  if (key === explorerView.statusKey) return
-  explorerView.statusKey = key
-  explorerView.git = result.git
-  explorerView.changes = result.changes
-  renderExplorer()
-}
-
-const joinPath = (folder, name) => (folder === '.' ? name : `${folder}/${name}`)
-
-// 아이콘 — VSCode Material Icon Theme 의 SVG(main 이 이름으로 골라 준다). 폴더는 열림·닫힘 아이콘이 화살표를 대신한다
-const ICON_ROOT = '../../node_modules/material-icon-theme/icons'
-
-function iconElement(entry, open) {
-  const name = open && entry.iconOpen ? entry.iconOpen : entry.icon
-  const image = document.createElement('img')
-  image.className = 'file-icon'
-  image.alt = ''
-  if (typeof name === 'string' && /^[\w.-]+$/.test(name)) image.src = `${ICON_ROOT}/${name}.svg`
-  return image
-}
-
-// 폴더 열기·닫기 표시 — 둥근 단추 꺾쇠(›, 열리면 아래로 돈다 · 마우스를 올리면 동그란 바탕) · 'none' 은 파일 줄의 빈 자리(이름 줄 맞춤)
-function twistyElement(state) {
-  const twisty = document.createElement('span')
-  twisty.className = `twisty${state === 'open' ? ' open' : ''}${state === 'none' ? ' none' : ''}`
-  if (state === 'none') return twisty
-  const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
-  svg.setAttribute('viewBox', '0 0 10 10')
-  svg.setAttribute('aria-hidden', 'true')
-  const path = document.createElementNS('http://www.w3.org/2000/svg', 'path')
-  path.setAttribute('d', 'M3.5 1.5L7 5L3.5 8.5')
-  svg.append(path)
-  twisty.append(svg)
-  return twisty
-}
-
-function treeRow({ depth, label, mark, markClass, dotfile, onClick, title, icon, twisty }) {
-  const row = document.createElement('button')
-  row.className = `tree-row${dotfile ? ' dotfile' : ''}`
-  row.style.paddingLeft = `${6 + depth * 12}px`
-  row.title = title || label
-  if (twisty === 'open' || twisty === 'closed') row.setAttribute('aria-expanded', String(twisty === 'open'))
-  const name = document.createElement('span')
-  name.className = 'label'
-  name.textContent = label
-  const tail = document.createElement('span')
-  tail.className = `mark ${markClass || ''}`
-  tail.textContent = mark || ''
-  row.append(...(twisty ? [twistyElement(twisty)] : []), ...(icon ? [icon] : []), name, tail)
-  row.addEventListener('click', onClick)
-  return row
-}
-
-// 펼친 폴더만 따라 내려가며 줄을 만든다(펼친 만큼만 — 큰 레포도 처음엔 한 단계)
-function fileRows() {
-  const codes = new Map(explorerView.changes.map((change) => [change.path, change.code]))
-  const folders = new Set()
-  for (const change of explorerView.changes) {
-    let dir = change.path.includes('/') ? change.path.slice(0, change.path.lastIndexOf('/')) : ''
-    while (dir) {
-      folders.add(dir)
-      dir = dir.includes('/') ? dir.slice(0, dir.lastIndexOf('/')) : ''
-    }
+// 칸 몸통(머리줄 · 폴더 트리 · 변경 목록)과 그 상태 · 읽기는 React(ui/explorer.tsx · PR-R9). 여기는 껍데기 — 접기 · 펴기 · 3초 타이머 · 미리보기(뷰어)
+function explorerActions() {
+  return {
+    workspaceOf: (id) => screen.workspaces.find((entry) => entry.id === id),
+    tabKey: () => state.tabKey,
+    foldIcon: PANEL_ICONS.right,
+    openPreview,
+    collapse: () => setPanelHidden(true),
   }
-  const rows = []
-  const walk = (folder, depth) => {
-    const entries = explorerView.children.get(folder)
-    if (!entries) {
-      rows.push(treeRow({ depth, twisty: 'none', label: say('explorer.loading'), onClick: () => {} }))
-      return
-    }
-    if (entries.error) {
-      rows.push(treeRow({ depth, twisty: 'none', label: entries.error, onClick: () => {} }))
-      return
-    }
-    for (const entry of entries) {
-      const relative = joinPath(folder, entry.name)
-      if (entry.dir) {
-        const open = explorerView.expanded.has(relative)
-        rows.push(
-          treeRow({
-            depth,
-            twisty: open ? 'open' : 'closed',
-            icon: iconElement(entry, open),
-            label: entry.name,
-            mark: folders.has(relative) ? '●' : '',
-            markClass: 'code-M',
-            dotfile: entry.name.startsWith('.'),
-            onClick: () => toggleFolder(relative),
-          }),
-        )
-        if (open) walk(relative, depth + 1)
-      } else {
-        const code = codes.get(relative)
-        rows.push(
-          treeRow({ depth, twisty: 'none', icon: iconElement(entry), label: entry.name, mark: code, markClass: code ? `code-${code}` : '', dotfile: entry.name.startsWith('.'), onClick: () => openPreview(relative) }),
-        )
-      }
-    }
-  }
-  walk('.', 0)
-  return rows
 }
 
-function changeRows() {
-  if (!explorerView.git) return [treeRow({ depth: 0, label: say('explorer.notGit'), onClick: () => {} })]
-  if (!explorerView.changes.length) return [treeRow({ depth: 0, label: say('explorer.noChanges'), onClick: () => {} })]
-  return explorerView.changes.map((change) =>
-    treeRow({ depth: 0, icon: iconElement(change), label: change.path, mark: change.code, markClass: `code-${change.code}`, onClick: () => openPreview(change.path), title: change.path }),
-  )
-}
-
-function toggleFolder(relative) {
-  if (explorerView.expanded.has(relative)) explorerView.expanded.delete(relative)
-  else {
-    explorerView.expanded.add(relative)
-    if (!explorerView.children.has(relative)) loadFolder(relative)
-  }
-  renderExplorer()
-}
-
-function renderExplorer() {
-  const panel = $('side-panel')
-  const workspace = screen.workspaces.find((entry) => entry.id === explorerView.workspace)
-  if (!workspace) {
-    const empty = document.createElement('div')
-    empty.className = 'side-empty'
-    empty.textContent = say('explorer.noWorkspace')
-    panel.replaceChildren(empty)
-    return
-  }
-  const head = document.createElement('div')
-  head.className = 'explorer-head'
-  const name = document.createElement('span')
-  name.className = 'explorer-name'
-  name.textContent = workspace.label
-  name.title = say('explorer.cwdTitle', { path: workspace.cwd, key: state.tabKey })
-  // 파일 · 변경 — 글자 없이 아이콘만(이름은 마우스를 올리면 · 변경 수는 작은 숫자)
-  const viewButton = (mode, label, badge) => {
-    const button = document.createElement('button')
-    button.className = 'view-button icon'
-    button.title = label
-    button.setAttribute('aria-label', label)
-    button.append(lineIcon(VIEW_ICONS[mode]))
-    if (badge) button.append(Object.assign(document.createElement('span'), { className: 'view-badge', textContent: String(badge) }))
-    button.setAttribute('aria-pressed', String(explorerView.mode === mode))
-    button.addEventListener('click', () => {
-      explorerView.mode = mode
-      renderExplorer()
-    })
-    return button
-  }
-  const count = explorerView.changes.length
-  head.append(name, viewButton('files', say('explorer.files')), viewButton('changes', count ? say('explorer.changesCount', { count }) : say('explorer.changes'), count), foldButton('right', say('explorer.collapse', { key: state.tabKey }), () => setPanelHidden(true)))
-  const scroll = panel.scrollTop
-  panel.replaceChildren(head, ...(explorerView.mode === 'files' ? fileRows() : changeRows()))
-  panel.scrollTop = scroll
-}
-
-// 선 아이콘(24 격자 · 글자색을 따름) — 파일은 겹친 문서, 변경은 git 갈래
-const VIEW_ICONS = {
-  files: ['M15 2H9a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2V7z', 'M15 2v5h5', 'M4 7v13a2 2 0 0 0 2 2h9'],
-  changes: ['M6 3v12', 'M18 9a9 9 0 0 1-9 9', 'M21 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0', 'M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0'],
-}
-
+// 선 아이콘(24 격자 · 글자색을 따름)
 function lineIcon(paths) {
   const svgNs = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(svgNs, 'svg')
@@ -1084,7 +891,7 @@ function viewerLine(row, diff) {
 }
 
 async function openPreview(relative) {
-  const result = await studio.explorerOpen(explorerView.workspace, relative)
+  const result = await studio.explorerOpen(StudioUi.explorer.workspace(), relative)
   const body = $('preview-body')
   const preview = $('preview')
   $('preview-title').textContent = result.path || relative
@@ -1130,7 +937,7 @@ function setPanelHidden(hidden) {
   $('side-panel').hidden = hidden
   $('side-rail').hidden = !hidden
   localStorage.setItem('studio.panelHidden', hidden ? '1' : '0')
-  if (!hidden) renderExplorer()
+  if (!hidden) StudioUi.explorer.render()
   requestAnimationFrame(layoutPanes)
 }
 
@@ -1143,7 +950,7 @@ function applySideFolds() {
   $('side-rail').hidden = !panelHidden
   if (!attached) return
   renderSides()
-  if (!panelHidden) renderExplorer()
+  if (!panelHidden) StudioUi.explorer.render()
   requestAnimationFrame(layoutPanes)
 }
 
@@ -3441,7 +3248,7 @@ function applyLanguage(next) {
   if (attached) {
     renderTabs()
     renderSides()
-    renderExplorer()
+    StudioUi.explorer.render()
   }
   StudioUi.monitor.refresh()
 }
@@ -3453,6 +3260,7 @@ async function init() {
   initTips()
   initBrowser()
   initMonitor()
+  StudioUi.explorer.setup($('side-panel'), explorerActions())
   $('pick').addEventListener('click', pickAthenaDir)
   $('install').addEventListener('click', installAthena)
   studio.onTabSwitch(switchTab)
@@ -3499,7 +3307,7 @@ async function init() {
   $('preview').addEventListener('keydown', (event) => event.key === 'Escape' && closePreview())
   // git 변경 · 펼친 폴더는 Explorer 가 보일 때만 3초마다
   setInterval(() => {
-    if (currentTab === 'work' && !$('side-panel').hidden && attached) refreshExplorer()
+    if (currentTab === 'work' && !$('side-panel').hidden && attached) StudioUi.explorer.refresh()
     // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
     if (attached) refreshPackRepos()
   }, 3000)
