@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts']
+const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts', 'src/main/explorer-panel.mts', 'src/main/athena-agent.mts', 'src/main/pack-repos.mts', 'src/main/work.mts']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
