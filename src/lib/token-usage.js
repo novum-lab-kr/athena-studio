@@ -240,7 +240,12 @@ function createTokenUsage({ projectsDir, scanMs = SCAN_MS, now = Date.now } = {}
   }
 
   return {
-    peekPlan: (bodyDirs, planId) => (planId ? peek(`plan:${planId}`, () => planUsage(bodyDirs, planId)) : null),
+    // 열쇠에 본체까지 — 다른 팩에 같은 상대 경로 계획서가 있어도 값 · 실행이 섞이지 않게
+    peekPlan: (bodyDirs, planId) => {
+      if (!planId) return null
+      const dirs = [...new Set((bodyDirs || []).filter(Boolean).map((dir) => path.resolve(dir)))].sort()
+      return peek(`plan:${dirs.join('\n')}\n${planId}`, () => planUsage(dirs, planId))
+    },
     peekSession: (sessionId) => (/^[0-9a-fA-F-]{8,64}$/.test(String(sessionId || '')) ? peek(`session:${sessionId}`, () => sessionUsage(sessionId)) : null),
     planUsage,
     sessionUsage,

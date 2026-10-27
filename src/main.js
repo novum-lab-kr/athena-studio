@@ -1398,7 +1398,7 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
   // 아테나 pane 의 지금 대화 — 훅 pane-session.py 가 적는 <팩 데이터>/state/pane-sessions/<pane>.json 의 session
   const paneSession = async (paneId) => {
     if (!ctx.athenaDir) return ''
-    const record = await fs.promises.readFile(path.join(core.realDir(path.join(ctx.athenaDir, '.pack-data')), 'state', 'pane-sessions', `${paneId.split(':').pop()}.json`), 'utf8').then(JSON.parse, () => null)
+    const record = await fs.promises.readFile(path.join(core.realDir(path.join(ctx.athenaDir, '.pack-data')), 'state', 'pane-sessions', `${paneId.split(':').pop()}.json`), 'utf8').then(JSON.parse).catch(() => null)
     return record && typeof record.session === 'string' ? record.session : ''
   }
   // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.

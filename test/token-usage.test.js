@@ -86,3 +86,16 @@ test('숫자 줄이기: 42k · 3.1M', () => {
   assert.equal(tokens.formatTokens(3100000), '3.1M')
   assert.equal(tokens.formatTokens(10290779), '10M')
 })
+
+test('peekPlan: 본체가 다르면 같은 계획서 경로라도 값을 따로 둔다', async () => {
+  const root = tempProjects()
+  const plan = 'plans/task/same.md'
+  fs.writeFileSync(path.join(root, '-a', 'acme.jsonl'), `${user(`이 작업의 계획서: /bodies/acme/${plan} — `)}\n${answer('a1', USAGE)}\n`)
+  fs.writeFileSync(path.join(root, '-b', 'globex.jsonl'), `${user(`이 작업의 계획서: /bodies/globex/${plan} — `)}\n${answer('g1', { input_tokens: 1, output_tokens: 2 })}\n`)
+  const usage = tokens.createTokenUsage({ projectsDir: root })
+  usage.peekPlan(['/bodies/acme'], plan)
+  usage.peekPlan(['/bodies/globex'], plan)
+  await new Promise((done) => setTimeout(done, 80))
+  assert.deepEqual(usage.peekPlan(['/bodies/acme'], plan), { io: 100, cache: 5000 })
+  assert.deepEqual(usage.peekPlan(['/bodies/globex'], plan), { io: 3, cache: 0 })
+})
