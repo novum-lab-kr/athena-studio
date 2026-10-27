@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.js', 'src/lib/tray-model.js']
+const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.js', 'src/lib/tray-model.mts']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
@@ -75,7 +75,7 @@ test('화면 문구: HTML 의 한국어는 data-i18n 이 덮는 기본 글뿐이
 test('순수 로직: pack · tray-model 은 넘긴 언어의 say 로 쓴다(안 넘기면 한국어)', () => {
   const i18n = require('../src/lib/i18n')
   const pack = require('../src/lib/pack')
-  const tray = require('../src/lib/tray-model')
+  const tray = require('../src/lib/tray-model.mts')
   const english = i18n.translator(JSON.parse(read('src/i18n/en.json')), korean)
   assert.equal(pack.packErrorText({ ok: false, error: 'locked' }, english), 'Packs are being swapped elsewhere — try again when it finishes')
   assert.match(pack.packErrorText({ ok: false, error: 'busy', busy: [{ kind: 'heavy', what: 'npm ci' }] }, english), /· heavy command — npm ci/)

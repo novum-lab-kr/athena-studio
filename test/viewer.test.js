@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const viewer = require('../src/lib/viewer')
+const viewer = require('../src/lib/viewer.mts')
 
 const known = new Set(['typescript', 'ts', 'javascript', 'js', 'json', 'md', 'markdown', 'yaml', 'shellscript', 'docker', 'make', 'ini', 'dotenv', 'py', 'css'])
 
