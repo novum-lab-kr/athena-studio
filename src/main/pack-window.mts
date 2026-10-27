@@ -72,7 +72,8 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
     },
   })
   ctx.win = win
-  win.loadFile(path.join(import.meta.dirname, '..', 'renderer', 'index.html'))
+  // 화면은 Vite 빌드 결과(dist/renderer — scripts/dev-app.js start 가 켤 때 만든다 · vite.config.mts)
+  win.loadFile(path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'index.html'))
   // 맨 위 페이지는 앱 화면에서 벗어나지 않는다 — 이동하려는 주소는 openUrl 이 옆 브라우저 · 기본 브라우저로 돌린다
   win.webContents.on('will-navigate', (event, url) => {
     event.preventDefault()

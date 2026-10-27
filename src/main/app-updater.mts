@@ -120,10 +120,12 @@ export function createAppUpdater({ app, dialog, say, studio, packWindows }: { ap
     }
   }
 
-  // 지난 업데이트의 npm install 이 실패했으면(도우미가 알린다) 켤 때 한 번 알린다
+  // 지난 업데이트의 npm install · 화면 빌드가 실패했으면(도우미 scripts/dev-app.js 가 알린다) 켤 때 한 번 알린다 — 화면 빌드 실패면 이전 빌드로 켜진 것
   function showAppUpdateNotice(parentWindow: ParentWindow): void {
-    if (process.env.ATHENA_STUDIO_APP_UPDATE !== 'install-failed') return
-    const options = { type: 'warning' as const, message: say('dialog.appUpdate.message'), detail: say('dialog.appUpdate.installFailed', { path: appUpdateLogFile() }) }
+    const failed = process.env.ATHENA_STUDIO_APP_UPDATE
+    if (failed !== 'install-failed' && failed !== 'build-failed') return
+    const detailKey = failed === 'install-failed' ? 'dialog.appUpdate.installFailed' : 'dialog.appUpdate.buildFailed'
+    const options = { type: 'warning' as const, message: say('dialog.appUpdate.message'), detail: say(detailKey, { path: appUpdateLogFile() }) }
     ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
   }
 

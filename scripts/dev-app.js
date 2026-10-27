@@ -3,10 +3,11 @@
 // 앱 데이터 폴더는 main 이 정한다 — 개발 앱은 'Athena Studio Dev' · 데몬 접속 파일 daemon-dev.json(배포판과 겹치지 않게 · src/lib/studio-home.js appIdentity).
 //   node scripts/dev-app.js make    (postinstall) 없거나 Electron 버전 · 아이콘이 바뀌었으면 다시 만든다
 //   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
-//                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 둔다(src/lib/studio-home.js)
+//                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 두고(src/lib/studio-home.js)
+//                                   화면(src/renderer)을 Vite 로 dist/renderer 에 빌드한다(vite.config.mts). 빌드가 실패하면 이전 빌드로 켜고 경고 · 이전 빌드가 없으면 켜지 않는다
 //   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>]
 //                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려(1분 넘게 살아 있으면 멈춤) → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
-//                                   → start 와 같이 켠다. install 이 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed)
+//                                   → start 와 같이 켠다. install · 화면 빌드가 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed · build-failed)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -167,10 +168,44 @@ function makeBundle() {
   }
 }
 
-function start(args) {
+// 화면 빌드 — Vite 를 이 프로세스에서 부른다(앱 ⚙ 업데이트가 이 도우미를 Electron(ELECTRON_RUN_AS_NODE)으로 띄워도 된다 —
+// 자식으로 process.execPath 를 띄우면 그때는 Electron 앱이 하나 더 켜진다). 옆 폴더(dist/renderer-next)에 만들고 다 되면 바꿔 끼운다 —
+// 실패해도 이전 빌드(dist/renderer)는 그대로 남는다. 돌려주는 값: built(새로 만듦) · previous(실패 · 이전 빌드로) · missing(실패 · 이전 빌드도 없음)
+const RENDERER_OUT = path.join(ROOT, 'dist', 'renderer')
+const RENDERER_NEXT = path.join(ROOT, 'dist', 'renderer-next')
+async function buildRenderer() {
+  const started = Date.now()
+  try {
+    fs.rmSync(RENDERER_NEXT, { recursive: true, force: true })
+    const vite = await import('vite')
+    await vite.build({ configFile: path.join(ROOT, 'vite.config.mts'), logLevel: 'warn', build: { outDir: RENDERER_NEXT } })
+    fs.rmSync(RENDERER_OUT, { recursive: true, force: true })
+    fs.renameSync(RENDERER_NEXT, RENDERER_OUT)
+    console.log(`[dev-app] 화면 빌드 → ${path.relative(ROOT, RENDERER_OUT)} (${Date.now() - started}ms)`)
+    return 'built'
+  } catch (error) {
+    fs.rmSync(RENDERER_NEXT, { recursive: true, force: true })
+    const previous = fs.existsSync(path.join(RENDERER_OUT, 'index.html')) && fs.existsSync(path.join(RENDERER_OUT, 'tray.html'))
+    if (previous) {
+      console.warn(`[dev-app] 화면을 빌드하지 못했어요 — 이전 빌드로 켜요: ${error.message}`)
+      return 'previous'
+    }
+    console.error(`[dev-app] 화면을 빌드하지 못했고 이전 빌드도 없어 켜지 않아요 — 고친 뒤 npm start(vite 가 없으면 npm install 먼저): ${error.message}`)
+    return 'missing'
+  }
+}
+
+async function start(args, { fromUpdate = false } = {}) {
   // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
   version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
   makeBundle()
+  const renderer = await buildRenderer()
+  if (renderer === 'missing') {
+    process.exitCode = 1
+    return
+  }
+  // 앱 ⚙ 업데이트 뒤 다시 켤 때 화면 빌드가 실패했으면 앱에 알린다(npm install 실패를 먼저 알린다)
+  if (renderer === 'previous' && fromUpdate && !process.env.ATHENA_STUDIO_APP_UPDATE) process.env.ATHENA_STUDIO_APP_UPDATE = 'build-failed'
   const useDevApp = process.platform === 'darwin' && make()
   const binary = useDevApp ? BINARY : require('electron')
   let child = null
@@ -228,7 +263,7 @@ async function restart(args) {
       process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
     }
   }
-  start([])
+  await start([], { fromUpdate: true })
 }
 
 const [command, ...rest] = process.argv.slice(2)
