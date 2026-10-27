@@ -2623,29 +2623,18 @@ function renderPackWelcome() {
     welcomeWasOn = on
     applySideFolds() // 시작 화면이 뜨면 양쪽을 접고, 들어가면 저장된 대로
   }
-  if (on) renderWelcomeRecent()
+  // 몸통(로고 · 만들기 · 가져오기 · '내 팩')은 React(ui/pack-welcome.tsx) — 떠 있는 동안 목록을 넘기고, 닫히면 내린다
+  if (on) StudioUi.welcome.open($('pack-welcome').querySelector('.pack-welcome-inner'), welcomeRecent(), welcomeActions())
+  else StudioUi.welcome.close()
 }
 
-// '내 팩' — 지금 팩 맨 위 · 최근 순 · 최대 5개(main 의 packs.recent) · 고르면 그 팩으로 들어간다
-function renderWelcomeRecent() {
-  const recent = (!hasNoPacks() && Array.isArray(packs.recent) && packs.recent) || []
-  $('pack-welcome-recent').hidden = !recent.length
-  const cartridge = $('cartridge-icon').content.querySelector('svg')
-  const rows = recent.map((item) => {
-    const row = el('button', 'pack-welcome-recent-row')
-    row.dataset.packId = item.id
-    if (item.current) row.setAttribute('aria-current', 'true')
-    const icon = el('span', 'icon')
-    icon.setAttribute('aria-hidden', 'true')
-    if (cartridge) icon.append(cartridge.cloneNode(true))
-    const date = item.updatedAt ? new Date(item.updatedAt) : null
-    const when = date && !Number.isNaN(date.getTime()) ? `${date.getMonth() + 1}/${date.getDate()}` : ''
-    const meta = [item.current ? say('pack.meta.current') : '', Number.isFinite(item.repos) ? say('pack.meta.repos', { count: item.repos }) : '', item.current ? '' : when].filter(Boolean).join(' · ')
-    row.append(icon, el('span', 'name', item.name), el('span', 'meta', meta))
-    row.addEventListener('click', () => runPackFlow(() => enterPack(item.id)))
-    return row
-  })
-  $('pack-welcome-recent-list').replaceChildren(...rows)
+// '내 팩' — 지금 팩 맨 위 · 최근 순 · 최대 5개(main 의 packs.recent) · 팩이 없으면 비운다(만들기 · 가져오기만)
+function welcomeRecent() {
+  return (!hasNoPacks() && Array.isArray(packs.recent) && packs.recent) || []
+}
+// 시작 화면에서 누르면 — 만들기 · 가져오기 · 모두 보기는 팩 흐름 그대로, '내 팩' 줄을 고르면 그 팩으로 들어간다
+function welcomeActions() {
+  return { command: (name) => runPackCommand(name), enter: (id) => runPackFlow(() => enterPack(id)) }
 }
 
 // 시작 화면에서 들어가기 — 시작 화면을 닫고 모니터를 펼친다. 시작 화면이 떠 있지 않았으면(칩으로 갈아 끼움) 모니터는 그대로
@@ -2935,7 +2924,6 @@ async function initPacks() {
   studio.onPackCaughtUp((info) => showToast(say('pack.caughtUp', info), 'info'))
   studio.onPackChanged(onPackChanged)
   studio.onPackCommand((name) => state && state.valid && runPackCommand(name))
-  for (const button of document.querySelectorAll('[data-pack-command]')) button.addEventListener('click', () => runPackCommand(button.dataset.packCommand))
   await afterAthenaReady()
 }
 
