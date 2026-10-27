@@ -4,7 +4,7 @@
 const $ = (id) => document.getElementById(id)
 
 // ── 언어 ──────────────────────────────────────────────────
-// 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.js). 정적 문구는 index.html 의 data-i18n* 속성
+// 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.mts). 정적 문구는 index.html 의 data-i18n* 속성
 let i18nState = studio.i18n()
 const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
 // React 화면(ui/)도 같은 say · 토스트를 쓴다(ui/bridge.ts)
@@ -25,7 +25,7 @@ let state = null
 let currentTab = 'work'
 
 // ── 작업 창 (데몬의 탭 · pane) ───────────────────────────────
-// pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.js)
+// pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.mts)
 const PANE_GAP = 2
 const HEAD_HEIGHT = 22 // pane 머리줄 높이(style.css .pane-head 와 같은 값)
 const views = new Map() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }

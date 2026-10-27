@@ -11,25 +11,14 @@ import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import { Pane } from './pane.mts'
 import type { Waiter } from './pane.mts'
+import * as layout from '../lib/layout.mts'
+import type { Tree } from '../lib/layout.mts'
 
-// layout(화면과 같이 쓰는 UMD) · screen-model · protocol 은 JS — 같은 require 캐시의 것을 쓴다
+// screen-model · protocol 은 JS — 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
-const layout: Layout = require('../lib/layout.js')
 const model: typeof import('../lib/screen-model.js') = require('../lib/screen-model.js')
 const protocol: typeof import('../lib/protocol.js') = require('../lib/protocol.js')
 
-// 탭 하나의 분할 트리(src/lib/layout.js) — 잎 { pane } · 가지 { split, ratio, first, second }
-type Tree = { pane: string } | { split: 'right' | 'down'; ratio: number; first: Tree; second: Tree }
-type Rect = { x: number; y: number; width: number; height: number }
-// 데몬이 쓰는 layout 함수만(UMD 라 타입을 끌어오지 못한다)
-type Layout = {
-  leaf: (paneId: string) => Tree
-  paneIds: (node: Tree | null) => string[]
-  splitPane: (node: Tree | null, targetId: string, newId: string, direction: unknown, ratio: unknown) => Tree | null
-  removePane: (node: Tree | null, paneId: string) => Tree | null
-  computeRects: (node: Tree | null, area: Rect, gap?: number) => Record<string, Rect>
-  setRatio: (node: Tree | null, path: unknown, ratio: unknown) => Tree | null
-}
 type ProcessRow = ReturnType<typeof model.parsePs>[number]
 type Size = { cols: number; rows: number }
 // body = 그 작업 공간이 속한 아테나 본체(팩) 실제 경로, 모르면 null(모든 본체에 보임)
