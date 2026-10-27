@@ -141,3 +141,41 @@ export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: 
 
   return { startBoard, stopStaleBoard }
 }
+
+// 일감 GET 하나 → JSON(실패면 null) — main.js 메뉴 막대 묶음에서 옮겼다(PR3d · 팩 창도 쓴다)
+export function fetchBoardJson(port: number, pathName: string): Promise<unknown> {
+  return new Promise((resolve) => {
+    let settled = false
+    const finish = (value: unknown) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+    const request = http.get({ host: '127.0.0.1', port, path: pathName, timeout: 2000 }, (response) => {
+      let body = ''
+      response.setEncoding('utf8')
+      response.on('data', (chunk) => {
+        body += chunk
+        if (body.length > 5 * 1024 * 1024) {
+          request.destroy()
+          finish(null)
+        }
+      })
+      response.on('end', () => {
+        try {
+          finish(response.statusCode === 200 ? JSON.parse(body) : null)
+        } catch {
+          finish(null)
+        }
+      })
+      response.on('aborted', () => finish(null))
+      response.on('error', () => finish(null))
+      response.on('close', () => finish(null))
+    })
+    request.on('timeout', () => {
+      request.destroy()
+      finish(null)
+    })
+    request.on('error', () => finish(null))
+  })
+}

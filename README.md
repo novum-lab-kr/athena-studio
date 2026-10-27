@@ -90,7 +90,7 @@ SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 
 |---|---|
 | `athena/` | 스튜디오 코어(정본) — 앱이 들고 갈 코어 번들의 출처. 본체로 직접 쓰지 않는다 |
 | `src/main.js` | Electron main — 창(팩마다) · 메뉴 · 데몬 중계 · 일감 서버 · 팩 명령 · 옆 브라우저 · 트레이 · 에이전트 모니터 |
-| `src/main/` | main.js 에서 나눈 기능 묶음(`.mts` — 쓰는 것은 인자로 받는다) — `monitor-logs.mts`(에이전트 모니터 기록 읽기) · `files.mts`(Explorer · 파일 뷰어 도우미) · `board.mts`(일감 띄우기 · 확인 · 끄기) |
+| `src/main/` | main.js 에서 나눈 기능 묶음(`.mts` — 쓰는 것은 인자로 받는다) — `monitor-logs.mts`(에이전트 모니터 기록 읽기) · `files.mts`(Explorer · 파일 뷰어 도우미) · `board.mts`(일감 띄우기 · 확인 · 끄기 · 읽기) · `tray.mts`(메뉴 막대 아이콘 · 패널 · 맥 알림) |
 | `src/preload.js` · `src/preload-tray.js` | 창 · 트레이 패널에 열어 주는 IPC 함수(따로) |
 | `src/renderer/` | 작업 창(`index.html` · `renderer.js` · `style.css`) · 트레이 패널(`tray.html` · `tray.js` · `tray.css`) · 로고(`assets/logo/` — 화이트판만 쓴다) |
 | `src/daemon/` · `src/daemon-client.mts` · `bin/athena-studio-cli` | 데몬(`main.mts` 소켓 서버 · `pane.mts` pty + 화면 버퍼 · `cli.js`) · 띄우기 · 붙기 · 버전 확인 · 코어 화면 계층이 pane 을 다루는 CLI |
