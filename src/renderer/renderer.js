@@ -1285,148 +1285,13 @@ function usingBrowser() {
 }
 
 // ── 에이전트 모니터(가운데 맨 아래) ─────────────────────────
-// main 이 Claude 기록을 따라 읽어 세션 · 이벤트를 보낸다(보일 때만). 칩을 누르면 그 세션만 걸러 본다
-const MONITOR_ROWS = 300
-const monitorView = { visible: null, sessions: [], events: [], filter: null }
+// main 이 Claude 기록을 따라 읽어 세션 · 이벤트를 보낸다(보일 때만). 칩 · 로그 그리기는 React(ui/monitor.tsx) — 여기는 껍데기(보이기 · 접기 · 알림 받기 · 타이머)
+let monitorVisible = null
 
 function setMonitorVisible(visible) {
-  if (monitorView.visible === visible) return
-  monitorView.visible = visible
+  if (monitorVisible === visible) return
+  monitorVisible = visible
   studio.monitorWatch(visible)
-}
-
-function monitorTime(at) {
-  const date = at ? new Date(at) : null
-  if (!date || Number.isNaN(date.getTime())) return '--:--'
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
-}
-
-function sinceText(ms) {
-  const minutes = Math.floor((Date.now() - ms) / 60000)
-  if (minutes < 1) return say('time.justNow')
-  if (minutes < 60) return say('time.minutesAgo', { n: minutes })
-  return say('time.hoursAgo', { n: Math.floor(minutes / 60) })
-}
-
-function sessionLabelOf(sessionId) {
-  const session = monitorView.sessions.find((entry) => entry.id === sessionId)
-  return session ? session.label : '?'
-}
-
-// 서브에이전트 보고(SubagentHandback)는 입력이 없어 main(agent-feed)이 고정 문구를 준다 — 화면 언어로 바꿔 보인다
-const eventText = (event) => (event.kind === 'tool' && event.name === 'SubagentHandback' ? say('monitor.finalReport') : event.text)
-
-function monitorRow(event) {
-  const row = document.createElement('div')
-  row.className = `monitor-row ${event.kind}`
-  const label = sessionLabelOf(event.session)
-  row.style.setProperty('--label-color', spaceColor(label))
-  const cells = [
-    ['monitor-time', monitorTime(event.at)],
-    ['monitor-label', `[${label}]`],
-    ['monitor-icon', event.icon],
-    ['monitor-name', event.name],
-    ['monitor-text', eventText(event)],
-  ]
-  for (const [className, text] of cells) {
-    const cell = document.createElement('span')
-    cell.className = className
-    cell.textContent = text
-    row.append(cell)
-  }
-  row.title = `${label} · ${event.name ? `${event.name} · ` : ''}${eventText(event)}`
-  return row
-}
-
-function sessionKind(session) {
-  if (session.pane) return say('monitor.paneSession')
-  return session.finished ? say('monitor.subagentDone') : say('monitor.subagent')
-}
-
-// 지금 작업 중인 에이전트 — 끝나지 않았고 마지막 움직임이 2분 안
-const isLiveSession = (session) => !session.finished && Date.now() - session.lastAt < 2 * 60000
-
-// 고른 칩의 세션이 조용해졌으면(칩이 빠진다) 거름을 풀어 전체 로그로 — 풀었으면 true
-function dropQuietFilter() {
-  if (!monitorView.filter) return false
-  const session = monitorView.sessions.find((entry) => entry.id === monitorView.filter)
-  if (session && isLiveSession(session)) return false
-  monitorView.filter = null
-  return true
-}
-
-// 머리줄 칩은 지금 작업 중인 에이전트만 — 없으면 비워 둔다(아래 로그는 그대로)
-function renderMonitorSessions() {
-  const chips = monitorView.sessions.filter(isLiveSession).map((session) => {
-    const chip = document.createElement('button')
-    chip.className = `monitor-chip live${monitorView.filter === session.id ? ' active' : ''}`
-    chip.style.setProperty('--label-color', spaceColor(session.label))
-    const name = document.createElement('span')
-    name.className = 'name'
-    name.textContent = session.label
-    chip.append(name)
-    const count = document.createElement('span')
-    count.className = 'count'
-    count.textContent = `${session.tools} · ${sinceText(session.lastAt)}`
-    chip.append(count)
-    chip.title = say('monitor.sessionTitle', { label: session.label, kind: sessionKind(session), tools: session.tools, since: sinceText(session.lastAt) })
-    chip.addEventListener('click', () => {
-      monitorView.filter = monitorView.filter === session.id ? null : session.id
-      renderMonitorSessions()
-      renderMonitorFeed()
-    })
-    return chip
-  })
-  $('monitor-sessions').replaceChildren(...chips)
-}
-
-function shownEvents() {
-  return monitorView.filter ? monitorView.events.filter((event) => event.session === monitorView.filter) : monitorView.events
-}
-
-// keepScroll — 위쪽을 읽던 중이면 그 자리를 지킨다(맨 아래였으면 따라 내려간다)
-function renderMonitorFeed(keepScroll = false) {
-  const feed = $('monitor-feed')
-  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24
-  const scrollTop = feed.scrollTop
-  const events = shownEvents()
-  if (!events.length) {
-    const empty = Object.assign(document.createElement('div'), { className: 'monitor-empty', textContent: monitorView.sessions.length ? say('monitor.empty') : say('monitor.noAgents') })
-    feed.replaceChildren(empty)
-    return
-  }
-  feed.replaceChildren(...events.map(monitorRow))
-  feed.scrollTop = keepScroll && !atBottom ? scrollTop : feed.scrollHeight
-}
-
-const byEventTime = (left, right) => String(left.at).localeCompare(String(right.at)) || left.id - right.id
-
-// 새 이벤트는 덧붙인다 — 맨 아래를 보고 있을 때만 따라 내려간다
-function applyMonitorUpdate(update) {
-  const feed = $('monitor-feed')
-  const atBottom = feed.scrollHeight - feed.scrollTop - feed.clientHeight < 24
-  monitorView.sessions = update.sessions || []
-  // 고른 세션이 빠졌거나 조용해졌으면 필터를 풀고 전체를 다시 그린다
-  const filterGone = dropQuietFilter()
-  if (update.reset) {
-    monitorView.events = [...(update.events || [])].sort(byEventTime).slice(-MONITOR_ROWS)
-    renderMonitorSessions()
-    return renderMonitorFeed()
-  }
-  const fresh = update.events || []
-  const last = monitorView.events[monitorView.events.length - 1]
-  // 늦게 찾은 세션의 이전 줄이 섞이면 시각 순으로 다시 세워 전부 다시 그린다
-  const outOfOrder = last && fresh.some((event) => String(event.at) < String(last.at))
-  monitorView.events = [...monitorView.events, ...fresh].sort(byEventTime).slice(-MONITOR_ROWS)
-  renderMonitorSessions()
-  if (outOfOrder || filterGone) return renderMonitorFeed(true)
-  const visible = monitorView.filter ? fresh.filter((event) => event.session === monitorView.filter) : fresh
-  if (!visible.length) return undefined
-  if (feed.querySelector('.monitor-empty')) return renderMonitorFeed()
-  feed.append(...visible.map(monitorRow))
-  while (feed.childElementCount > MONITOR_ROWS) feed.firstElementChild.remove()
-  if (atBottom) feed.scrollTop = feed.scrollHeight
-  return undefined
 }
 
 function initMonitor() {
@@ -1437,13 +1302,12 @@ function initMonitor() {
     dock.classList.toggle('collapsed', collapsed)
     localStorage.setItem('studio.monitorCollapsed', collapsed ? '1' : '0')
   })
-  studio.onMonitorUpdate(applyMonitorUpdate)
-  renderMonitorFeed()
+  StudioUi.monitor.mount($('monitor-sessions'), $('monitor-feed'), { spaceColor })
+  studio.onMonitorUpdate(StudioUi.monitor.update)
   // 'n분 전' 을 새로 쓰고, 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
   setInterval(() => {
-    if (!monitorView.visible) return
-    if (dropQuietFilter()) renderMonitorFeed(true)
-    renderMonitorSessions()
+    if (!monitorVisible) return
+    StudioUi.monitor.tick()
   }, 30000)
 }
 
@@ -3361,8 +3225,7 @@ function applyLanguage(next) {
     renderSides()
     renderExplorer()
   }
-  renderMonitorSessions()
-  renderMonitorFeed(true)
+  StudioUi.monitor.refresh()
 }
 
 async function init() {
