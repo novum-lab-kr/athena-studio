@@ -5,6 +5,7 @@
 // - publicDir 없음 · renderer.js 가 실행 중에 만드는 로고 경로(assets/logo/athena-white-<크기>.png)는 번들러가 못 보므로 로고 폴더를 그대로 복사한다
 import fs from 'node:fs'
 import path from 'node:path'
+import react from '@vitejs/plugin-react'
 import { defineConfig } from 'vite'
 import type { Plugin } from 'vite'
 
@@ -30,7 +31,8 @@ export default defineConfig({
   root,
   base: './',
   publicDir: false,
-  plugins: [copyLogo()],
+  // React 화면(src/renderer/ui/*.tsx) — JSX 변환. 개발 서버(HMR)는 쓰지 않는다(결정 D9 · CSP script-src 'self' 가 미리 싣기 인라인 스크립트를 막는다)
+  plugins: [react(), copyLogo()],
   build: {
     outDir: path.join(import.meta.dirname, 'dist', 'renderer'),
     emptyOutDir: true,
@@ -38,6 +40,8 @@ export default defineConfig({
     target: 'chrome140',
     // 옛 브라우저용 modulepreload 대체 코드는 넣지 않는다
     modulePreload: { polyfill: false },
+    // 파일(file://)로 여는 앱이라 나눠 실을 까닭이 없다 — React 를 넣어 670KB 안팎(500KB 경고를 넘는다)
+    chunkSizeWarningLimit: 1500,
     rollupOptions: {
       input: {
         index: path.join(root, 'index.html'),
