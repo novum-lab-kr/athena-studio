@@ -10,15 +10,16 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/tray.mts']
+const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
 const ALLOWED = {
   // 예전 터미널 모니터 칸 이름표(이미 떠 있는 pane 을 찾는 값) · 일감 로그 머리줄 · pack.log 원문 표시 · 내부 IPC 오류 · 데몬 오류 글 맞추기
-  'src/main.js': ['[JSON 이 아닌 마지막 줄]', '잘못된 경계 값', '/모르는 동작/', '앱 화면에서만 부를 수 있어요'],
+  'src/main.js': ['잘못된 경계 값', '/모르는 동작/', '앱 화면에서만 부를 수 있어요'],
   'src/main/monitor-logs.mts': ['🛰 에이전트 모니터'],
   'src/main/board.mts': ['일감 시작 (포트'],
+  'src/main/core-runner.mts': ['[JSON 이 아닌 마지막 줄]'],
   // 본체 출력 해석 중 던지고 바로 잡는 내부 예외
   // · 본체 new-branch.sh 출력 맞추기(워크트리 자리 · 이미 있음)
   'src/lib/pack.mts': ["new Error('객체가 아님')", '워크트리:', '워크트리 경로가 이미 있다:', "'이미 있다'", "'로컬'", "'(커밋 없음)'"],

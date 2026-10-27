@@ -2,7 +2,7 @@
 // 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 일감 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
 // 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만)
 const { app, BrowserWindow, Menu, WebContentsView, dialog, ipcMain, session, shell } = require('electron')
-const { execFile, spawn } = require('child_process')
+const { execFile } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const core = require('./lib/core.mts')
@@ -20,8 +20,6 @@ const workModel = require('./lib/work-model.mts')
 const paneDetail = require('./lib/pane-detail.mts')
 const tokenUsage = require('./lib/token-usage.mts')
 const layout = require('./lib/layout')
-const appUpdate = require('./lib/app-update.mts')
-const versionModel = require('./lib/version')
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -255,311 +253,24 @@ const { resolveInside } = createFiles({ say })
 const { isBoardUp, queueBoard, boardOwner, boardJson, createBoard } = require('./main/board.mts')
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
 
-// ── 아테나 폴더 — 공용 ──────────────────────────────────────
-// 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
-const athenaReposRoot = (dir) => core.reposRootFor(dir, { studioRoot: STUDIO.root, home: app.getPath('home') })
-
-// 스튜디오 코어 준비 — 없으면 들고 온 번들에서 ~/.athena-studio/core 로 풀고, 본체 설정(dataDir · screen) · 레지스트리 손잡이(bodiesDir · portBase)를 채운다.
-// update: 이미 있던 본체면 번들이 앞일 때 업데이트(켤 때만 — 창을 열기 전, 아무 창도 본체를 쓰지 않을 때). 결과 기록은 pack.log
-let coreUpdateNotice = null // 켤 때 업데이트에서 알릴 것(건너뛴 본체 · 백업 · 실패) — 첫 창이 뜬 뒤 보여 준다
-// 예외(git 이 없음 · 쓰기 실패 등)도 결과로 — 켤 때 창이 안 뜨는 일이 없게
-async function prepareStudioCore({ update }) {
-  let result
-  try {
-    result = await studioHome.prepareCore({
-      layout: STUDIO,
-      bundle: CORE_BUNDLE,
-      home: app.getPath('home'),
-      update,
-      // 업데이트 경로는 약속 번호를 싣지 않는다(studio-home updateCore 가 { contract: false } 를 넘긴다)
-      runCore: (argv, options) => runCore(argv, { ...options, dir: STUDIO.core }),
-      panesStateFile: writePanesState,
-    })
-  } catch (error) {
-    result = { ok: fs.existsSync(STUDIO.core), error: 'prepare-failed', message: error.message, update: null }
-  }
-  logCore(`prepare ${JSON.stringify({ ok: result.ok, created: result.created, error: result.error, update: result.update && { state: result.update.state, head: result.update.head, target: result.update.target, error: result.update.error } })}`)
-  const updated = result.update
-  if (updated && updated.summary && updated.summary.notify) coreUpdateNotice = updated
-  else if (updated && ['unsupported', 'ff-failed', 'diverged', 'fetch-failed'].includes(updated.state)) coreUpdateNotice = updated
-  return result
-}
-
-// 켤 때 업데이트 전 — 떠 있는 데몬의 pane 상태를 파일로(코어 update --panes-state · 쉬는 세션은 막지 않는다 · 결정 D1).
-// 데몬이 없거나(띄우지 않는다) 옛 프로토콜이거나 못 읽으면 null — 코어는 지금처럼 모든 세션을 막는다.
-// 데몬이 idle 로 본 에이전트 pane 도 화면을 읽어 비어 있는 입력칸일 때만 idle 로 남긴다 — 질문 · 고르기 창 · 쓰던 글 · 뒤에서 도는 하위 작업 · 못 읽음은 막는 쪽(waiting)
-async function writePanesState() {
-  const connection = await daemonClient.peekDaemon({ paths: daemonPaths() }).catch(() => null)
-  if (!connection) return null
-  try {
-    const listed = await connection.call('pane list')
-    const shells = await connection.call('pane pids')
-    const panes = (listed && listed.panes) || []
-    const busy = []
-    for (const pane of panes) {
-      if (!pane.agent || pane.agent_status !== 'idle') continue
-      const read = await connection.call('pane read', { pane: pane.id, lines: 40, source: 'visible' }).catch(() => null)
-      const text = read && typeof read.text === 'string' ? read.text : null
-      const empty = text !== null && !screenModel.waitingForInput(text) && (pane.agent !== 'claude' || core.claudeAtEmptyPrompt(text))
-      if (!empty) busy.push(pane.id)
-    }
-    const state = studioHome.panesState({ panes, pids: (shells && shells.pids) || {}, waiting: busy })
-    const file = path.join(app.getPath('userData'), 'panes-state.json')
-    await fs.promises.writeFile(file, `${JSON.stringify(state)}\n`)
-    return file
-  } catch {
-    return null
-  } finally {
-    connection.destroy()
-  }
-}
-
-// 켤 때 업데이트 결과 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
-function showCoreUpdateNotice(parentWindow) {
-  const notice = coreUpdateNotice
-  coreUpdateNotice = null
-  if (!notice) return
-  const lines = []
-  const summary = notice.summary
-  if (summary) {
-    // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
-    if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${(entry.blockers || []).length ? entry.blockers.join(', ') : entry.reason})`).join(', ') }))
-    for (const entry of summary.working || []) lines.push(say('dialog.coreUpdate.working', { body: entry.id, count: entry.count, sessions: entry.sessions.join(', ') }))
-    for (const entry of summary.backedUp) lines.push(say('dialog.coreUpdate.backedUp', { body: entry.id, path: entry.dir }))
-    if (summary.failed.length) lines.push(say('dialog.coreUpdate.failed', { bodies: summary.failed.map((entry) => `${entry.id}(${entry.error})`).join(', ') }))
-  } else {
-    lines.push(say(notice.state === 'unsupported' ? 'dialog.coreUpdate.unsupported' : 'dialog.coreUpdate.notMoved', { reason: notice.error || notice.state }))
-  }
-  if (!lines.length) return
-  lines.push(say('dialog.coreUpdate.log', { path: packLogFile() }))
-  const options = { type: 'info', message: say('dialog.coreUpdate.message'), detail: lines.join('\n\n') }
-  ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
-}
-
-// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) ─────────────
-// 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.mts),
-// scripts/dev-app.js restart 를 떼어 띄운 뒤 앱을 끈다 — 도우미가 앱이 끝나길 기다려 npm install(필요할 때 · heavy.sh 줄 서기) → 다시 켠다.
-// 다시 켜면 코어 번들을 새로 만들고 켤 때 본체를 업데이트한다(데몬 · pane 은 그대로 — 쉬는 세션은 막지 않는다 · D1)
-const APP_ROOT = path.join(__dirname, '..')
-const APP_UPDATE_CHECK_MS = 30 * 60 * 1000
-const APP_UPDATE_FETCH_GAP_MS = 60 * 1000 // 팝업을 자주 열어도 origin 은 이만큼에 한 번만 받는다
-const appUpdateLogFile = () => path.join(app.getPath('userData'), 'app-update.log')
-let appUpdateStatus = { state: 'unavailable', behind: 0, branch: null, reason: null }
-let appUpdateRunning = false
-let appUpdateFetchedAt = 0
-let appUpdateChecking = null
-
-// 앱 버전(SemVer 0.x — 정본은 git 태그 · lib/version.js) — 개발 앱 체크아웃은 git describe(0.2.1 · 0.2.1+3), 태그가 없거나 배포판이면 package.json.
-// 켤 때 한 번 정한다(업데이트는 앱을 다시 켠다 · origin 태그는 scripts/dev-app.js start 가 그 전에 받는다). ⚙ 앱 업데이트 줄 · 맥 메뉴 정보 · 코어 번들에 같은 번호 —
-// ⚙ 확인이 나중에 태그를 더 받아도 지금 버전은 바꾸지 않는다(새 번호는 latest 로만)
-let appVersionCache = null
-function appVersion() {
-  if (!appVersionCache) appVersionCache = (!app.isPackaged && versionModel.describeVersion({ repoRoot: APP_ROOT, env: studioHome.gitEnv() })) || app.getVersion()
-  return appVersionCache
-}
-const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
-const appUpdateView = () => ({ ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
-function sendAppUpdate() {
-  for (const each of packWindows) each.send('app-update:status', appUpdateView())
-}
-
-function checkAppUpdate() {
-  if (!appUpdateEnabled() || appUpdateRunning) return Promise.resolve(appUpdateView())
-  if (appUpdateChecking) return appUpdateChecking
-  const fetch = Date.now() - appUpdateFetchedAt > APP_UPDATE_FETCH_GAP_MS
-  appUpdateChecking = appUpdate
-    .checkStatus({ repoRoot: APP_ROOT, fetch })
-    .then((status) => {
-      if (fetch) appUpdateFetchedAt = Date.now()
-      appUpdateStatus = status
-      sendAppUpdate()
-      return appUpdateView()
-    })
-    .catch(() => appUpdateView())
-    .finally(() => (appUpdateChecking = null))
-  return appUpdateChecking
-}
-
-// [업데이트] — 받기 → 도우미 띄우기 → 앱 끄기. 못 하면 { ok: false, reason } (팝업이 까닭을 보인다)
-async function runAppUpdate() {
-  if (!appUpdateEnabled()) return { ok: false, reason: 'unavailable' }
-  if (appUpdateRunning) return { ok: false, reason: 'running' }
-  appUpdateRunning = true
-  sendAppUpdate()
-  const pulled = await appUpdate.pullMain({ repoRoot: APP_ROOT }).catch(() => ({ ok: false, reason: 'ff-failed' }))
-  if (!pulled.ok) {
-    appUpdateRunning = false
-    appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
-    sendAppUpdate()
-    return pulled
-  }
-  const nodePath = core.findExecutable('node', process.env.PATH)
-  const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid)]
-  const heavy = path.join(STUDIO.core, 'scripts', 'heavy.sh')
-  if (pulled.install) args.push('--install', ...(fs.existsSync(heavy) ? ['--heavy', heavy] : []))
-  // 자식 환경은 childEnv 로 — 다시 켜진 앱이 켤 때 읽는 값(격리 실행 ATHENA_STUDIO_HOME 등)만 다시 싣는다(core.relaunchEnv)
-  const env = core.relaunchEnv(process.env, { electronAsNode: !nodePath })
-  // 도우미가 실제로 떴는지('spawn') 확인한 뒤에만 앱을 끈다 — 실행 파일을 못 여는 등의 실패는 비동기 'error' 로 온다
-  const started = await startRestartHelper(nodePath || process.execPath, args, env, pulled)
-  if (!started) {
-    // 받기는 됐다 — 다시 켜기만 사람 몫
-    appUpdateRunning = false
-    sendAppUpdate()
-    return { ok: false, reason: 'restart-failed' }
-  }
-  setTimeout(() => app.quit(), 200)
-  return { ok: true }
-}
-
-// 다시 켜기 도우미를 떼어 띄운다 — 떴으면 true, 못 띄웠으면(동기 예외 · 'error' 이벤트) false
-async function startRestartHelper(file, args, env, pulled) {
-  let out = null
-  try {
-    fs.mkdirSync(path.dirname(appUpdateLogFile()), { recursive: true })
-    out = fs.openSync(appUpdateLogFile(), 'a')
-    fs.writeSync(out, `\n── ${new Date().toISOString()} app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${pulled.install ? ' · npm install' : ''}\n`)
-    const child = spawn(file, args, { cwd: APP_ROOT, env, detached: true, stdio: ['ignore', out, out] })
-    const started = await new Promise((resolve) => {
-      child.once('spawn', () => resolve(true))
-      child.once('error', () => resolve(false))
-    })
-    if (started) child.unref()
-    return started
-  } catch {
-    return false
-  } finally {
-    if (out !== null) fs.closeSync(out)
-  }
-}
-
-// 지난 업데이트의 npm install 이 실패했으면(도우미가 알린다) 켤 때 한 번 알린다
-function showAppUpdateNotice(parentWindow) {
-  if (process.env.ATHENA_STUDIO_APP_UPDATE !== 'install-failed') return
-  const options = { type: 'warning', message: say('dialog.appUpdate.message'), detail: say('dialog.appUpdate.installFailed', { path: appUpdateLogFile() }) }
-  ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
-}
-
-// 코어를 풀지 못한 까닭 — 화면 문구로
-function coreInstallError(prepared) {
-  if (prepared.error === 'bundle-missing') return say('error.coreBundleMissing', { path: CORE_BUNDLE })
-  return say('error.coreInstall', { message: prepared.message || prepared.file || prepared.error })
-}
-
-function logCore(line) {
-  fs.mkdir(path.dirname(packLogFile()), { recursive: true }, () => fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} studio-core ${line}\n`, () => {}))
-}
+// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
+// 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
+const { APP_UPDATE_CHECK_MS, createAppUpdater } = require('./main/app-updater.mts')
+const { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, showAppUpdateNotice } = createAppUpdater({ app, dialog, say, studio: STUDIO, packWindows })
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
 // 약속: 코어 `pack … --json` 출력(contract 3 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
-// ATHENA_STUDIO_FAKE_PACK=1 이면 본체 대신 scripts/fake-pack.js(같은 약속의 가짜)를 부른다 — 화면 확인용
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor = null
-const PACK_TIMEOUTS = { repo: 120000, 'restore-work': 300000, update: 300000, list: 20000, status: 20000, busy: 30000, use: 180000, inspect: 300000, 'import-athena': 300000, import: 180000, export: 180000, backup: 300000, delete: 300000, new: 180000, open: 180000, version: 15000, 'board-token': 15000, request: 15000 }
 // 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다
 const REQUESTS_POLL_MS = 30000
 const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
-function packScript(dir) {
-  if (process.env.ATHENA_STUDIO_FAKE_PACK === '1') return path.join(__dirname, '..', 'scripts', 'fake-pack.js')
-  return path.join(dir, 'scripts', 'athena.mjs')
-}
-
-// 셸을 거치지 않고 실행 · progress 줄은 그때그때 화면에 · 원문(stderr)은 화면에 넘기지 않고 pack.log 에만
-// 본체 명령 — `athena.mjs <argv…> --json`. 약속 번호를 알린다(ATHENA_CONTRACT — 다르면 본체가 contract-mismatch).
-// contract: false — 코어 업데이트 경로(version · update --from)만. 약속이 오른 앱이 옛 코어를 올릴 수 있게(studio-home updateCore)
-// dir = 그 명령을 부를 본체(창마다 다르다 — '지금 팩' 은 부른 본체의 팩)
-// extraEnv — 화면 계층(데몬)을 써야 하는 명령(restore-work 가 delegate.sh 로 pane 을 띄운다)만 데몬 접속 값을 넘긴다
-// 옛 코어가 모르는 명령이면 사용법만 찍고 끝나 "알 수 없는 답"(bad-output)이 된다 — 그때만 같은 본체에 version 을 물어
-// 약속 번호 · capabilities 로 옛 코어인지 가려 core-old 로 바꾼다(packModel.coreTooOld · 2026-10-26 pack set-repo-icon)
-async function runCore(argv, options = {}) {
-  const result = await runCoreOnce(argv, options)
-  if (!result || result.error !== 'bad-output' || argv[0] === 'version' || !options.dir) return result
-  const version = await runCoreOnce(['version'], { dir: options.dir, contract: false })
-  return packModel.coreTooOld(argv, version) ? { ok: false, error: 'core-old' } : result
-}
-
-function runCoreOnce(argv, { dir, onProgress = null, signal = null, extraEnv = null, contract = true } = {}) {
-  return new Promise((resolve) => {
-    if (!dir) return resolve({ ok: false, error: 'not-found', message: say('error.athenaCoreUnset') })
-    const nodePath = core.findExecutable('node', process.env.PATH)
-    const env = core.childEnv(process.env, { ...(contract ? { ATHENA_CONTRACT: String(packModel.CONTRACT) } : {}), ...(nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' }), ...(extraEnv || {}) })
-    if (!contract) delete env.ATHENA_CONTRACT // 앱을 켤 때 물려받은 값도 싣지 않는다
-    let child
-    try {
-      child = spawn(nodePath || process.execPath, [packScript(dir), ...argv, '--json'], { cwd: dir, env, stdio: ['ignore', 'pipe', 'pipe'] })
-    } catch (error) {
-      return resolve({ ok: false, error: 'bad-output', message: error.message })
-    }
-    let output = ''
-    let rest = ''
-    let errors = ''
-    let settled = false
-    const finish = (result) => {
-      if (settled) return
-      settled = true
-      clearTimeout(timer)
-      clearInterval(timer)
-      if (errors.trim()) fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} ${argv.slice(0, 2).join(' ')}\n${errors.slice(-20000)}`, () => {})
-      resolve(result)
-    }
-    // 시간 초과 · 취소는 SIGTERM — 본체가 임시본을 지우거나 되돌리고 끝낸다. 결과는 프로세스가 실제로 끝난 뒤에(그 전에 다음 단계로 가지 않게).
-    // 15초 안에 안 끝나면 SIGKILL
-    let forced = null
-    const stop = (reason) => {
-      if (forced) return
-      forced = { ok: false, error: reason }
-      child.kill('SIGTERM')
-      setTimeout(() => child.exitCode === null && child.kill('SIGKILL'), 15000).unref()
-    }
-    // R3 — 팩을 바꾸거나 본체를 만들거나 옮기는 명령(use · new · open · import --replace · update)은 시간이 넘어도 끄지 않는다(중간에 끊으면 반쯤 바뀐다). "오래 걸려요" 만 알리고 기다린다
-    const sub = argv[0] === 'pack' ? argv[1] : argv[0] // 시간 초과는 pack 하위 명령(또는 version 같은 최상위 명령) 이름으로
-    // restore-work 도 — 워크트리를 만들고 pane 을 띄우는 중에 끊으면 반쯤 된다
-    const changesPack = ['use', 'new', 'open', 'update', 'restore-work', 'delete'].includes(sub) || (sub === 'import' && argv.includes('--replace'))
-    const slow = () => onProgress && onProgress({ step: 'slow', text: say('pack.step.slow') })
-    const timer = changesPack ? setInterval(slow, PACK_TIMEOUTS[sub] || 60000) : setTimeout(() => stop('timeout'), PACK_TIMEOUTS[sub] || 60000)
-    if (signal) signal.addEventListener('abort', () => stop('canceled'), { once: true })
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => {
-      output += chunk
-      const split = packModel.splitLines(rest, chunk)
-      rest = split.rest
-      for (const line of split.lines) {
-        const step = packModel.parseProgressLine(line, say)
-        // 본체 설명은 한국어(번역 범위 밖) — 한국어가 아니면 아는 단계는 사전 이름으로 보인다
-        if (step && language !== i18n.FALLBACK_LANGUAGE) step.text = packModel.stepLabel(step.step, say) || step.text
-        if (step && onProgress) onProgress(step)
-      }
-    })
-    child.stderr.setEncoding('utf8')
-    child.stderr.on('data', (chunk) => (errors += chunk))
-    child.on('error', (error) => finish({ ok: false, error: 'bad-output', message: error.message }))
-    child.on('close', () => {
-      const parsed = packModel.parsePackOutput(output, say)
-      if (!forced && parsed.result.error === 'bad-output' && parsed.raw) errors += `\n[JSON 이 아닌 마지막 줄] ${parsed.raw}`
-      finish(forced || parsed.result)
-    })
-  })
-}
-
-const runPack = (args, options) => runCore(['pack', ...args], options)
-
-// 본체의 약속 번호 — `version --json`. 명령이 없으면(옛 코어 · 사용법 오류) 1 · 일시 실패면 null.
-// 본체를 업데이트하면 바뀌므로 기억하지 않고 부를 때마다 묻는다(팩을 열거나 만들거나 가져올 때만 — 가볍다)
-async function coreContract(dir) {
-  if (!dir) return { contract: null, core: null }
-  return packModel.contractOf(await runCore(['version'], { dir }))
-}
-
-// 옛 코어(약속 1 · version 명령 없음)면 팩을 열거나 · 만들거나 · 가져오는 일은 막고 업데이트를 안내한다.
-// 본체를 바꾸는 명령보다 **먼저** 부른다
-async function contractBlock(dir) {
-  const known = await coreContract(dir)
-  if (known.contract === packModel.CONTRACT) return null
-  if (known.contract === null) return { ok: false, error: 'contract-unknown', text: say('pack.contract.unknown') } // 확인 못 함 — 옛 코어라고 단정하지 않는다
-  // 본체 약속이 낮으면 본체 업데이트 안내 · 높으면 스튜디오 업데이트 안내
-  return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract < packModel.CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
-}
+// 아테나 폴더 · 스튜디오 코어 준비 · 코어 · 팩 명령 실행 — src/main/core-runner.mts(PACK_TIMEOUTS 도 거기 — 팩을 바꾸는 명령은 시간이 넘어도 끊지 않는다).
+// 쓰는 것(electron app · dialog · 화면 문구 · 지금 언어 · 스튜디오 집 자리 · 코어 번들 · 데몬 자리 · 팩 로그 자리)은 인자로 넘긴다
+const { createCoreRunner } = require('./main/core-runner.mts')
+const { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, dialog, say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile })
 
 // [Finder 에서 보기] — 방금 만든 파일만
 let lastPackFile = null
