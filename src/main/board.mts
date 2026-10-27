@@ -80,7 +80,25 @@ export function boardJson(port: number, pathName: string, { method = 'GET', head
 }
 
 // say — 화면 문구 · boardLogFile — 일감 로그 자리 · daemonPaths — 데몬 소켓 자리 · runPack — 코어 팩 명령(main.mts)
-export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: Say; boardLogFile: () => string; daemonPaths: () => { socket: string }; runPack: RunPack }) {
+// 일감에 넘길 환경 — 일감은 pane 밖에서 pane 목록을 묻는다. 화면 계층(screen.py)이 studio 데몬을 고르게 자리를 넘긴다(S4).
+// ATHENA_STUDIO_ENDPOINT — 접속 파일 자리. 화면 계층은 pane 밖이면 이 파일로 studio 를 알아본다(없으면 ~/.athena-studio/daemon.json —
+// 개발판은 daemon-dev.json 을 써서, 안 넘기면 none 이 되어 pane 목록을 못 읽는다)
+// ATHENA_STUDIO_BODY — 일감이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
+export function boardEnvExtra({ port, paths, athenaDir, nodePath }: { port: number; paths: { socket: string; endpoint: string }; athenaDir: string; nodePath: string | null }): Record<string, string> {
+  const extra: Record<string, string> = {
+    ATHENA_BOARD_PORT: String(port),
+    ATHENA_STUDIO_SOCKET: paths.socket,
+    ATHENA_STUDIO_ENDPOINT: paths.endpoint,
+    ATHENA_STUDIO_CLI: CLI,
+    ATHENA_STUDIO_NODE: process.execPath,
+    ATHENA_STUDIO_BODY: core.realDir(athenaDir),
+  }
+  // node 가 PATH 에 없으면 Electron 을 node 로 돌린다
+  if (!nodePath) extra.ELECTRON_RUN_AS_NODE = '1'
+  return extra
+}
+
+export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: Say; boardLogFile: () => string; daemonPaths: () => { socket: string; endpoint: string }; runPack: RunPack }) {
   async function startBoard(port: number, athenaDir: string): Promise<BoardStart> {
     const url = core.boardUrl(port)
     const logFile = boardLogFile()
@@ -88,14 +106,8 @@ export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: 
     const log = fs.openSync(logFile, 'a')
     fs.writeSync(log, `\n── ${new Date().toISOString()} 일감 시작 (포트 ${port})\n`)
 
-    // node 가 PATH 에 없으면 Electron 을 node 로 돌린다
     const nodePath = core.findExecutable('node', process.env.PATH)
-    // 일감은 pane 밖에서 pane 목록을 묻는다 — 화면 계층이 studio 데몬을 고르게 자리를 넘긴다(S4)
-    const paths = daemonPaths()
-    // ATHENA_STUDIO_BODY — 일감이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
-    const extra: Record<string, string> = { ATHENA_BOARD_PORT: String(port), ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(athenaDir) }
-    if (!nodePath) extra.ELECTRON_RUN_AS_NODE = '1'
-    const env = core.childEnv(process.env, extra)
+    const env = core.childEnv(process.env, boardEnvExtra({ port, paths: daemonPaths(), athenaDir, nodePath }))
 
     let exited: number | string | null = null
     try {
