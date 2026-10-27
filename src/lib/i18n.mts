@@ -1,5 +1,5 @@
 // 언어팩 — 사전(src/i18n/<언어>.json)에서 문구를 고르고 자리를 채운다. main · 화면 · 트레이가 같이 쓴다.
-// ES 모듈 — main 은 import, 화면 · 트레이는 진입점(globals.ts · tray-globals.ts)이 묶어 전역 StudioI18n 으로 넣는다.
+// ES 모듈 — main 은 import, 화면은 진입점(globals.ts)이 묶어 전역 StudioI18n 으로 넣고, 트레이(tray.ts)는 import 한다.
 //
 // 사전: 평평한 키 → 문구 { "menu.file": "파일", "time.minutesAgo": "{n}분 전" }
 //   자리 채우기는 {이름} 하나뿐이다(복수형·성별 규칙 없음). 값에 없는 자리는 {이름} 그대로 남긴다.
