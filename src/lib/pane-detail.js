@@ -139,23 +139,14 @@ function screenDigest(text) {
   }
 }
 
-// 입력창(❯)에 쳐 두고 보내지 않은 글 — Claude Code 화면 맨 아래 몇 줄에서. 빈 칸 · 안내 글('Try "…"')은 없는 것으로
-function unsentInput(text) {
-  const lines = String(text || '').split('\n').map((line) => line.replace(/\s+$/, '')).filter((line) => line.trim())
-  const prompt = [...lines.slice(-12)].reverse().find((line) => /^\s*❯/.test(line))
-  if (!prompt) return ''
-  const typed = prompt.replace(/^\s*❯\s?/, '').trim()
-  return typed && !/^Try "/.test(typed) ? typed : ''
-}
-
 // 지금 — 일하는 중(work) · 쉬는 중(idle) · 멈춤(stop + 까닭) · 에이전트 없음(gone)
-// agentStatus: 데몬 상태(working · idle · null) · waiting: 화면이 고르기 · 권한 질문 · unsent: 입력창에 보내지 않은 글
-function nowState({ agentStatus, waiting = false, unsent = false, heavy = false, hasRequest = false, planStatus = '' }) {
+// agentStatus: 데몬 상태(working · idle · null) · waiting: 화면이 고르기 · 권한 질문
+// (입력창에 보내지 않은 글은 보지 않는다 — Claude Code 의 회색 추천 글까지 잡아 별것 아닌 멈춤을 띄웠다 · 사용자 2026-10-27)
+function nowState({ agentStatus, waiting = false, heavy = false, hasRequest = false, planStatus = '' }) {
   if (!agentStatus) return { state: 'gone', reason: null }
   if (waiting) return { state: 'stop', reason: 'question' }
   if (hasRequest) return { state: 'stop', reason: 'request' }
   if (agentStatus === 'working') return heavy ? { state: 'stop', reason: 'heavy' } : { state: 'work', reason: null }
-  if (unsent) return { state: 'stop', reason: 'unsent' }
   if (planStatus === 'blocked') return { state: 'stop', reason: 'blocked' }
   return { state: 'idle', reason: null }
 }
@@ -216,4 +207,4 @@ function planRecord(text) {
   }
 }
 
-module.exports = { samePane, bindings, agentPlan, leadRows, screenDigest, unsentInput, nowState, planRecord }
+module.exports = { samePane, bindings, agentPlan, leadRows, screenDigest, nowState, planRecord }

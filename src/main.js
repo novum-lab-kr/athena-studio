@@ -1423,7 +1423,6 @@ function createPackWindow(athenaDir, { welcome = false } = {}) {
     const now = paneDetail.nowState({
       agentStatus: pane.agent ? pane.agent_status : null,
       waiting,
-      unsent: pane.agent === 'claude' && pane.agent_status === 'idle' && Boolean(paneDetail.unsentInput(visibleText)),
       heavy: digest.heavy,
       hasRequest: todo.length > 0,
       planStatus: record.status || plan.status,
