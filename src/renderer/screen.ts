@@ -2,10 +2,12 @@
 // renderer.js 에서 옮김(R3a · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. 다른 묶음이 바꾸는 값은 setX(읽는 쪽은 이름 그대로)
 import * as StudioLayout from '../lib/layout.mts'
 import { $, currentTab, say, showToast, state } from './core.ts'
+import { hidePackProgress, packAlert, showPackProgress } from './pack-dialogs.ts'
+import { runPackFlow, welcomeShown } from './pack-switch.ts'
 import { HEAD_HEIGHT, disposeView, ensureView, isTabPane, views } from './terminal.ts'
 import { StudioUi } from './ui/index.ts'
 import type { RestoreResult } from './ui/notices.tsx'
-import { activeTab, applyState, ensureSomeTab, hidePackProgress, offerAddRepo, orderedWorkspaces, packAlert, runPackFlow, setPanelHidden, setSpacesCollapsed, showPackProgress, switchTab, welcomeShown } from './renderer.js'
+import { activeTab, applyState, ensureSomeTab, offerAddRepo, orderedWorkspaces, setPanelHidden, setSpacesCollapsed, switchTab } from './renderer.js'
 
 export let screen: ScreenState = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 export const setScreen = (next: ScreenState): void => {
