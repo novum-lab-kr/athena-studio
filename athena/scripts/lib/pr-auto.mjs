@@ -532,19 +532,32 @@ export const generatedReason = (file, { patterns = [], attributes = [] } = {}) =
   return ''
 }
 
-// 아주 긴 줄은 앞부분만 — 코드 파일 안에 한 줄로 박힌 데이터(syung#12 web/index.html 의 역 데이터)가 자리를 다 먹지 않게
+// 데이터 모양 줄 — 따옴표 문자열 내용을 비운 뒤 숫자 · 따옴표 · 괄호 · 구분 기호 · 공백이 90% 이상인 리터럴(PR #62 R1 확정 "데이터 모양 줄만 완전으로").
+// 이런 줄은 앞부분만 넣어도 다 본 것으로 친다(역 데이터 · 숫자 표). 아니면(압축 코드 등) 못 본 코드가 있는 것 — 잘린 diff 와 같이 사람 확인으로
+export const DATA_LINE_RATIO = 0.9
+export const dataLikeLine = (line) => {
+  const body = String(line).replace(/^[+\- ]/, '').replace(/"(?:[^"\\]|\\.)*"|'(?:[^'\\]|\\.)*'/g, '""')
+  if (!body.length) return true
+  const data = body.match(/[0-9"'`[\]{}(),:;.\s+\-]/g)?.length ?? 0
+  return data / body.length >= DATA_LINE_RATIO
+}
+
+// 아주 긴 줄은 앞부분만 — 코드 파일 안에 한 줄로 박힌 데이터(syung#12 web/index.html 의 역 데이터)가 자리를 다 먹지 않게.
+// code — 그중 데이터 모양이 아닌 줄 수(> 0 이면 그 파일은 못 본 코드가 있다)
 const shortenLongLines = (text) => {
   let count = 0
+  let code = 0
   const out = text.split('\n').map((line) => {
     if (line.length <= LONG_LINE) return line
     count += 1
+    if (!dataLikeLine(line)) code += 1
     return `${line.slice(0, SHORT_LINE_KEEP)} …(이 줄 ${line.length}자 — 앞 ${SHORT_LINE_KEEP}자만)`
   }).join('\n')
-  return { text: out, count }
+  return { text: out, count, code }
 }
 
 // attributes — linguistGeneratedRules 결과(PR base 쪽 .gitattributes — PR 이 스스로 바꾼 것은 쓰지 않는다)
-// → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed }], complete }
+// → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines, code }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed }], complete }
 export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
   const generated = []
   const shortened = []
@@ -558,7 +571,7 @@ export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
     const reason = generatedReason(file, { patterns, attributes })
     if (reason) { generated.push({ path: file.path, added: file.added, removed: file.removed, reason }); continue }
     const short = shortenLongLines(file.text)
-    if (short.count) shortened.push({ path: file.path, lines: short.count })
+    if (short.count) shortened.push({ path: file.path, lines: short.count, code: short.code })
     if (short.text.length <= left) {
       parts.push({ index, text: short.text })
       left -= short.text.length
@@ -573,7 +586,8 @@ export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
     } else dropped.push({ path: item.file.path, added: item.file.added, removed: item.file.removed })
   }
   const text = parts.sort((first, second) => first.index - second.index).map((part) => part.text).join('')
-  return { text, generated, shortened, truncated, dropped, complete: !truncated.length && !dropped.length }
+  const packed = { text, generated, shortened, truncated, dropped }
+  return { ...packed, complete: missedFiles(packed).length === 0 }
 }
 
 // 프롬프트의 "리뷰에 넣지 못한 것" 절 — 없으면 ''
@@ -581,10 +595,15 @@ export const omittedSection = (packed) => {
   const lines = []
   const name = (path) => `\`${path || '(경로 모름)'}\``
   if (packed.generated.length) lines.push('생성물 · 데이터라 diff 본문을 넣지 않은 파일(리뷰 대상 아님 — 이 파일 내용으로 지적하지 않는다):', ...packed.generated.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 생성물이라 생략(${item.reason})`))
-  if (packed.shortened.length) lines.push('아주 긴 줄을 앞부분만 넣은 파일:', ...packed.shortened.map((item) => `- ${name(item.path)} · ${item.lines}줄`))
+  const dataOnly = packed.shortened.filter((item) => !item.code)
+  if (dataOnly.length) lines.push('데이터 모양의 아주 긴 줄을 앞부분만 넣은 파일(숫자 · 따옴표 · 괄호 위주 리터럴 — 그 줄 내용으로 지적하지 않는다):', ...dataOnly.map((item) => `- ${name(item.path)} · ${item.lines}줄`))
   if (!packed.complete) {
     lines.push('⚠️ 길어서 다 넣지 못한 코드 파일 — 이 PR 은 일부만 보고 판단한다. 아래 파일의 못 본 부분은 판단하지 않고, "전체 diff 를 달라" 같은 지적도 내지 않는다(받을 수 없다 · 자동 흐름이 따로 사람 확인으로 넘긴다):')
-    lines.push(...packed.truncated.map((item) => `- ${name(item.path)} · 앞 ${item.shown}자만(전체 ${item.total}자)`), ...packed.dropped.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 못 넣음`))
+    lines.push(
+      ...packed.truncated.map((item) => `- ${name(item.path)} · 앞 ${item.shown}자만(전체 ${item.total}자)`),
+      ...packed.dropped.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 못 넣음`),
+      ...packed.shortened.filter((item) => item.code).map((item) => `- ${name(item.path)} · 코드로 보이는 아주 긴 줄 ${item.code}개를 앞 ${SHORT_LINE_KEEP}자만`),
+    )
   }
   return lines.join('\n')
 }
@@ -592,6 +611,6 @@ export const omittedSection = (packed) => {
 // 잘린 diff 로 받은 승인 — 머지 조건의 승인으로 세지 않고 사람 확인으로(계획서 줄 결과 머리)
 export const PARTIAL_APPROVAL = '잘린 diff 승인'
 export const partialApproval = (summary, packed) => summary.verdict === 'approve' && !packed.complete
-export const partialCount = (packed) => packed.truncated.length + packed.dropped.length
-// 이 라운드에 못 본 코드 파일 경로 — history 에 남겨 다음 라운드가 증분 대신 PR 전체 diff 를 다시 보게 한다
-export const missedFiles = (packed) => [...packed.truncated, ...packed.dropped].map((item) => item.path || '(경로 모름)')
+// 이 라운드에 못 본 코드 파일 경로(중복 없이) — 잘림 · 빠짐 · 코드로 보이는 긴 줄을 줄임. history 에 남겨 다음 라운드가 증분 대신 PR 전체 diff 를 다시 보게 한다
+export const missedFiles = (packed) => [...new Set([...packed.truncated, ...packed.dropped, ...packed.shortened.filter((item) => item.code)].map((item) => item.path || '(경로 모름)'))]
+export const partialCount = (packed) => missedFiles(packed).length
