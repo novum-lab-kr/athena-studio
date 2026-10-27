@@ -24,14 +24,11 @@
 
   // 조합 중 누른 이동 키 — 기본 커서 이동은 화면이 막고(preventDefault), 신호는 조합이 확정돼 xterm 이 확정 글자를 보낸 뒤에 보낸다.
   // compositionEnd 는 xterm 보다 늦게 건 compositionend 처리에서 부른다 — xterm 이 확정 글자를 setTimeout(0) 뒤에 보내니 그 뒤로 줄 선다.
-  // 확정 소식이 끝내 안 오면 키가 사라지지 않게 FALLBACK_MS 뒤에 보낸다
-  const FALLBACK_MS = 300
-  function createComposingKeys({ send, defer = setTimeout, cancel = clearTimeout }) {
+  // 시간이 지났다고 먼저 보내지 않는다 — 조합이 길게 이어질 때 먼저 보내면 확정 안 된 글자가 옮긴 자리에 들어간다.
+  // 조합은 끝날 때(확정 · 취소 · 포커스 잃음) 늘 compositionend 를 낸다
+  function createComposingKeys({ send, defer = setTimeout }) {
     let pending = ''
-    let fallback = null
     const flush = () => {
-      cancel(fallback)
-      fallback = null
       if (!pending) return
       const data = pending
       pending = ''
@@ -40,8 +37,6 @@
     return {
       hold(data) {
         pending += data
-        cancel(fallback)
-        fallback = defer(flush, FALLBACK_MS)
       },
       compositionEnd() {
         if (pending) defer(flush, 0)
@@ -49,5 +44,5 @@
     }
   }
 
-  return { paneKeyOverride, holdWhileComposing, createComposingKeys, FALLBACK_MS }
+  return { paneKeyOverride, holdWhileComposing, createComposingKeys }
 })

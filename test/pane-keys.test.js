@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { paneKeyOverride, holdWhileComposing, createComposingKeys, FALLBACK_MS } = require('../src/lib/pane-keys')
+const { paneKeyOverride, holdWhileComposing, createComposingKeys } = require('../src/lib/pane-keys')
 
 const key = (name, mods = {}) => ({ key: name, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
 
@@ -55,7 +55,6 @@ function fakeTimers() {
     queue.set(seq, { fn, at: now + ms, seq })
     return seq
   }
-  const cancel = (id) => queue.delete(id)
   const advance = (ms) => {
     const until = now + ms
     for (;;) {
@@ -67,13 +66,13 @@ function fakeTimers() {
     }
     now = until
   }
-  return { defer, cancel, advance }
+  return { defer, advance }
 }
 
 test('조합 중 ⌘← — 확정 글자가 먼저, 줄 처음 신호는 그 뒤(마지막 글자 조합 중 · 뒤이은 입력까지)', () => {
   const timers = fakeTimers()
   const sent = []
-  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer, cancel: timers.cancel })
+  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer })
   sent.push('안녕하세') // 앞 글자들은 이미 확정돼 나갔다
   keys.hold('\x01') // '요' 조합 중 ⌘← keydown
   // compositionend — xterm 처리가 먼저 걸려 있어 확정 글자 setTimeout(0) 이 앞에 선다
@@ -81,30 +80,33 @@ test('조합 중 ⌘← — 확정 글자가 먼저, 줄 처음 신호는 그 �
   keys.compositionEnd()
   timers.advance(0)
   for (const syllable of ['반', '가', '워']) sent.push(syllable)
-  timers.advance(FALLBACK_MS * 2)
+  timers.advance(1000)
   assert.equal(sent.join(''), '안녕하세요\x01반가워')
 })
 
-test('조합 확정 소식이 안 오면 FALLBACK_MS 뒤에 한 번만 보낸다 · 둘 이상이면 누른 순서대로', () => {
+test('조합이 오래(300ms 넘게) 이어져도 시간만으로 먼저 보내지 않는다 — 조합 끝 · 확정 글자 뒤에 · 누른 순서대로 한 번', () => {
   const timers = fakeTimers()
   const sent = []
-  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer, cancel: timers.cancel })
-  keys.hold('\x01')
-  keys.hold('\x05')
-  timers.advance(FALLBACK_MS - 1)
-  assert.deepEqual(sent, [])
-  timers.advance(1)
-  assert.deepEqual(sent, ['\x01\x05'])
-  keys.compositionEnd() // 늦게 온 확정 소식 — 더 보내지 않는다
-  timers.advance(FALLBACK_MS)
-  assert.deepEqual(sent, ['\x01\x05'])
+  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer })
+  sent.push('안녕하세')
+  keys.hold('\x01') // '요' 조합 중 ⌘←
+  keys.hold('\x05') // 아직 조합 중 ⌘→
+  timers.advance(5000)
+  assert.equal(sent.join(''), '안녕하세')
+  timers.defer(() => sent.push('요'), 0) // compositionend — xterm 의 확정 글자 전송이 먼저 줄 선다
+  keys.compositionEnd()
+  timers.advance(0)
+  assert.equal(sent.join(''), '안녕하세요\x01\x05')
+  keys.compositionEnd() // 다음 조합 끝 — 더 보내지 않는다
+  timers.advance(1000)
+  assert.equal(sent.join(''), '안녕하세요\x01\x05')
 })
 
 test('미룬 신호가 없으면 조합 끝에 아무것도 안 보낸다', () => {
   const timers = fakeTimers()
   const sent = []
-  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer, cancel: timers.cancel })
+  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer })
   keys.compositionEnd()
-  timers.advance(FALLBACK_MS)
+  timers.advance(1000)
   assert.deepEqual(sent, [])
 })
