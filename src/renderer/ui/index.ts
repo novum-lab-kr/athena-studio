@@ -10,8 +10,10 @@ import * as paneDetail from './pane-detail.tsx'
 import * as settings from './settings-pop.tsx'
 import * as work from './work-pop.tsx'
 import * as welcome from './pack-welcome.tsx'
+import * as browser from './browser-bar.tsx'
+import * as notices from './notices.tsx'
 
-const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, packRail, packMenu, packProgress }
+const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, browser, notices, packRail, packMenu, packProgress }
 
 declare global {
   // renderer.js 가 읽는 전역 이름
