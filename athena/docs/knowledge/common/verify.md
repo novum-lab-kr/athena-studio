@@ -9,6 +9,7 @@
 - **Node 버전**: 레포 `.nvmrc`와 현재 `node -v`가 같아야 한다. 스크립트가 다르면 경고 단계로 표시한다. 맞추는 법은 `nvm use <버전>`. 값은 각 레포 `.nvmrc`(지문 `.sync/snapshots/<레포>.json` 의 `nvmrc`). `.nvmrc` 가 없으면 검사가 조용히 생략된다
 - **작업 base 최신 여부**: 작업 브랜치가 `origin/<prBase>` 보다 뒤처졌으면(`git log --oneline HEAD..origin/<prBase>`) 검증 실패가 내 변경 때문이 아닐 수 있다. 반영이 필요하면 사용자에게 묻는다. 메인 체크아웃을 pull 하지 않는다
 - **생성물**: Orval(`__generated__/`)·Relay 아티팩트가 없으면 타입 검사가 실패하거나 건너뛴다. 스크립트가 유무를 확인해 이유를 표시한다
+- **타입 검사 단계**(`scripts/verify/_lib.sh` `typecheck_step` — 공용 `_generic.sh` 가 부르고, 레포 스크립트도 부를 수 있다): 지금 폴더에 `tsconfig.json` · `jsconfig.json` · pyright 설정(`pyrightconfig.json` · `pyproject.toml` 의 `[tool.pyright]`)이 있을 때만 줄이 생긴다 — 없으면 그 레포 검증은 지금과 같다. 순수 TS(`allowJs` · `checkJs` 없음)는 오류 하나라도 실패, 섞어 쓰는 중(`allowJs` · `checkJs` · `jsconfig`) · pyright 는 **바뀐 파일**(기준 `origin/<prBase>` merge-base 대비 커밋 + 미커밋 + 미추적)의 오류만 실패이고 전체 오류 수는 결과 칸에 숫자로만 남는다. 레포 스크립트는 `typecheck_step <레포> --all|--changed` 로 정해 부를 수 있다. 기준 ref 를 못 찾으면 미커밋 파일만 보고 그 사실을 결과 칸에 적는다
 
 ## 결과 해석
 | 표시 | 뜻 |

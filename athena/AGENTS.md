@@ -58,7 +58,7 @@ Jev 키(선택 · 사람마다 본인 키)는 첫 실행 7-2단계가 묻고, �
 > - 자동 주입됨 — `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md` 4개, 에이전트 프로필 본문
 > - **자동 주입되지 않음** — `docs/knowledge/**` 전부. `rules.md`의 "필수" 절과 `gotchas.md`는 **직접 읽어야 한다**
 >
-> 그래서 팀 공통 코드 규칙(변수명·`any` 금지·성능)은 Claude Code 에서는 `.claude/rules/coding-standards.md` 로 항상 들어오지만, **그렇지 않은 도구(Codex 등)는 `docs/knowledge/common/coding.md` 를 직접 읽어야 한다.** 자동 주입을 전제하지 말고, 필요한 규칙이 실제로 눈앞에 있는지 확인한다.
+> 그래서 팀 공통 코드 규칙(언어·타입·최신 문법·층별 기준·변수명·`any` 금지·성능)은 Claude Code 에서는 `.claude/rules/coding-standards.md` 로 항상 들어오지만, **그렇지 않은 도구(Codex 등)는 `docs/knowledge/common/coding.md` 를 직접 읽어야 한다.** 자동 주입을 전제하지 말고, 필요한 규칙이 실제로 눈앞에 있는지 확인한다.
 
 ### 2.3 그다음은 작업 유형에 따라 필요한 절만 읽는다
 

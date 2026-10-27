@@ -183,6 +183,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 - `kind`: `single` · `monorepo`(앱마다 에이전트·브랜치, 커밋 검증은 바뀐 앱마다) · `packages`(발행 패키지 — 커밋 검증에 패키지 이름 필요)
 - `layer: "be"` — 백엔드. PR 범위 규칙이 없으면 `src/features/<기능>`·`src/<모듈>`
+- `mobile: true` — 모바일 앱(react-native · expo — `athena init` 이 package.json 으로 정한다). 지금은 `athena scaffold` 가 앱 층 기준(`docs/knowledge/common/coding.md` "앱 (모바일)")을 프로필 · `rules.md` 뼈대에 싣는 데만 쓴다
 - `models` — 역할마다 Claude 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름). 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
   | 역할 | 어디에 붙나 | 이상한 값이면 |
   |---|---|---|

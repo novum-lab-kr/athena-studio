@@ -6,11 +6,69 @@
 - **모든 작업은 계획서 하나에 묶이고, `prBase` 에서 딴 작업 브랜치·워크트리에서 한다**(`AGENTS.md` 5절, 절차는 `git.md`)
 - **작업 전 Node 버전을 레포 `.nvmrc`에 맞춘다** (`nvm use <버전>`). 버전이 다르면 lint 결과가 달라지고 네이티브 모듈(canvas 등)이 로드되지 않아 테스트가 통째로 실패한다. 검증 스크립트가 불일치를 경고로 표시한다. `.nvmrc` 가 없는 레포는 검사가 조용히 생략되므로 `<레포>/rules.md` 를 본다
 - 작업 전 기존 코드 패턴을 읽고 **그 패턴을 따른다**. 새 스타일을 들이지 않는다
+  - **우선순위 한 줄** — 구조 · 이름 · 폴더 · 쓰는 라이브러리는 기존 패턴, **언어 · 타입 · 문법 수준은 아래 "언어 · 타입" 이 먼저**(레포 `rules.md` "언어 · 타입 상태" 의 최신 쪽). 옛 파일이 타입 없는 JS · `var` · 콜백이어도 새로 쓰는 코드는 그 모양을 따라 하지 않는다
 - 요청 범위 밖의 정리·의존성 업그레이드·파일 이동·공통화·전역 포맷팅 금지
 - 포맷은 **작업한 파일만**. 명령·설정은 `<레포>/rules.md` 가 정본이다(레포마다 다르다). 대부분 `pnpm exec prettier --write <파일>` + 레포 `.prettierrc` 이고, Prettier 가 없는 레포는 주변 스타일에 맞춘다
 - 자기 담당 범위(레포·앱·디렉토리) 밖은 수정하지 않는다. 필요하면 아테나에 보고
 - 생성물(`__generated__/`, Relay 아티팩트 등)은 직접 편집하지 않고 생성 명령으로 만든다. 생성 불가 시 임시 코드 + **보고에 명시**
 - 사용자가 명시적으로 요청한 것만 수정한다. 읽기·탐색은 자유
+
+## 언어 · 타입 (모든 층)
+- **새 레포 · 새 프로젝트는 TypeScript `strict` 가 기본**(Python 은 타입 힌트 + pyright). 프레임워크는 그 레포가 정한 것을 쓰고, 새 프로젝트면 아래 층별 기본값 — 다르게 하려면 계획서 결정으로
+- **기존 레포는 레포 `rules.md` "언어 · 타입 상태" 를 따른다.** 상태는 셋 중 하나이고 **새 파일 · 고친 곳은 그 상태의 최신 쪽**으로 쓴다
+
+| 상태 | 새 파일 | 고친 JS 파일 |
+|---|---|---|
+| JS + JSDoc · `checkJs` | `.js`(또는 `.mjs`) + JSDoc 타입 · `// @ts-check` 가 없으면 붙인다 | 고친 함수에 JSDoc 타입 |
+| 섞어 쓰는 중(`allowJs` · `checkJs`) | `.ts`(화면이면 `.tsx`) | 고친 함수에 최소 JSDoc 타입 · 옮기는 것은 전환 PR 에서 |
+| TS | `.ts` · `.tsx` | (JS 가 남아 있으면 옮길 대상 — 기능 PR 에 섞지 않는다) |
+
+- `rules.md` 에 그 칸이 없으면 지금 코드가 곧 상태다 — `.ts` 를 읽는 빌드가 없는 레포에 `.ts` 를 만들지 않는다(JS + JSDoc 쪽). 상태를 바꾸는 일(tsconfig · 빌드 추가)은 계획서 결정으로
+- `tsconfig` 기본: `strict: true` · `noUncheckedIndexedAccess: true` · `target` **ES2022 이상** · 전환 중이면 `allowJs` · `checkJs`
+- `any` 금지는 그대로(아래 "변수명 / 가독성"). 외부 입력(요청 · 응답 · 파일 · 환경 변수)은 `unknown` 으로 받아 검증한 뒤 타입을 붙인다
+- **전환 PR 은 동작을 바꾸지 않는다** — 기능 변경과 섞지 않는다
+- 검증 스크립트의 타입 검사(`tsc --noEmit` · pyright — `scripts/verify/_lib.sh` `typecheck_step`)는 설정(`tsconfig` · `jsconfig` · pyright 설정)이 있는 레포에서만 돈다. 섞어 쓰는 중 · pyright 는 **바뀐 파일의 오류만 실패**이고 전체 오류 수는 표에 숫자로 남는다 — 바뀐 파일의 옛 오류도 그 PR 에서 같이 고친다
+
+## 최신 문법 (브라우저 · Node 스크립트 모두 — FE · BE 공통)
+- **ES2015+ 가 기본** — ES 모듈(`import` / `export`) · `const` / `let`(`var` 금지) · 화살표 함수 · 구조 분해 · 스프레드 · 템플릿 문자열 · `async` / `await`(콜백 · `.then` 체인 대신) · 옵셔널 체이닝 `?.` · `??` · 클래스 필드 · Array / Object 최신 메서드(`at` · `flatMap` · `Object.entries` / `fromEntries` · `structuredClone` 등)
+- `tsconfig` · 빌드 `target` 은 ES2022 이상이 기본값
+- **이미 CommonJS(`require`) 인 레포는 레포 `rules.md` 상태를 따른다** — 모듈 방식을 바꾸는 것은 그 상태가 허용할 때 새 파일부터. 모듈 방식과 상관없는 문법(`const` · `async` / `await` · `?.` · `??` …)은 어느 레포에서나 새 코드에 쓴다
+
+## 층별 기준 — 새로 만들 때의 기본값
+아래는 **새 레포 · 새 서비스를 만들 때의 기본값**이다. **레포 `rules.md` 가 다르게 정하면 그쪽이 먼저**다(이 문서 맨 위). 기존 레포를 이 기본값으로 옮기는 것은 계획서 결정으로만.
+
+### FE (웹 · 데스크톱 화면)
+- TypeScript `strict` · 위 "최신 문법"
+- **프레임워크 기본값** — 새 웹 서비스(여러 페이지 · SEO · 서버 렌더링)는 **Next.js**, 앱 안 화면(Electron 등) · 단일 페이지 도구는 **Vite + React**. 지금 레포가 쓰는 것이 있으면 그것(바닐라 DOM 레포에 프레임워크를 들이는 것은 계획서 결정으로)
+- React 는 아래 "React / Next 공통"
+
+### BE 공통
+- **API 계약** — OpenAPI 로 요청 · 응답 모양을 남긴다. **하위 호환** — 필드 삭제 · 이름 바꾸기 금지, 추가만. 바꾸면 보고 "계약 변경"(엔드포인트 · 필드 · 하위 호환)에 적는다(`AGENTS.md` 1절 — 프론트에 넘긴다)
+- **입력 검증** — 경계(요청이 들어오는 곳)에서 형식부터 검사
+- **오류 형식** — 한 모양(`{ code, message }`)
+- **설정 · 비밀값** — 환경 변수로. 켜질 때 빠진 값이면 바로 멈춘다. 코드 · 로그에 넣지 않는다
+- **시간** — 저장은 UTC, 보여 줄 때 KST
+- **DB 변경** — 마이그레이션 파일로만
+- **로그** — 구조화(JSON). 개인정보 · 토큰은 빼고
+- `/health` 상태 확인 주소
+- 최신 문법은 FE 와 같다(ES2015+ · `async` / `await`)
+
+### Node BE
+- TypeScript `strict` · ES 모듈 · Node LTS 22+
+- 큰 API 서버는 NestJS, 작은 서비스는 Fastify
+- 입력 검증 zod · DB Prisma(또는 Drizzle) · 로그 pino · 테스트 Vitest + supertest
+
+### Python BE
+- Python 3.12+ · **모든 함수에 타입 힌트** · pyright(타입 검사) · ruff(린트 · 정리) · `pyproject.toml` + uv
+- 새 서버는 FastAPI + pydantic v2(입력 검증 · 설정) · 테스트 pytest
+- 표준 라이브러리만 쓰는 기존 서버는 구조를 유지하고 타입 힌트 · pyright · ruff 만 더한다(레포 `rules.md` 가 정한다)
+
+### 앱 (모바일)
+- React Native + Expo(최신 SDK) · TypeScript `strict` · Expo Router
+- 서버 데이터 TanStack Query · 앱 안 상태 zustand · 폼 react-hook-form + zod
+- 로그인 토큰은 `expo-secure-store` 에만. **비밀 키는 앱에 넣지 않는다**(앱 파일은 누구나 열어 본다 — 서버에 둔다)
+- 권한은 쓰는 순간에 묻는다 · iOS · Android 둘 다 확인 · 네트워크 끊김 · 느림 확인
+- 빌드 EAS Build · 작은 수정 EAS Update · 테스트 Jest + React Native Testing Library
 
 ## 단순한 구현
 - 현재 요구와 확인된 사용처를 충족하는 가장 단순한 구현을 고른다. 미래의 재사용만을 위해 범용 계층·확장 지점·설정 옵션·prop 을 추가하지 않는다
@@ -25,7 +83,7 @@
 - 이번 변경으로 추가됐거나 미사용이 된 import·변수·함수는 정리한다. 기존 미사용 코드는 정리가 요청 범위에 들어 있을 때만 지운다. 범위 밖에서 발견한 것은 고치지 않고 보고에 적는다(이슈 등록은 `docs/issues.md` "등록 기준" — 정보성 목록이면 등록하지 않는다)
 - 한글 식별자로 인한 lint 경고는 임의 수정 금지 (도메인 용어일 수 있음)
 
-## React / Next 공통 (웹 레포. React Native 앱은 그 레포 `rules.md`)
+## React / Next 공통 (웹 레포. React Native 앱은 위 "앱 (모바일)" 과 그 레포 `rules.md`)
 - 함수형 컴포넌트, `React.FC` 금지
 - 운영 코드에 `console.log`/`console.debug` 금지 (`info/warn/error`는 의미 있는 메시지와 함께)
 - `window`·`document`·storage 접근은 클라이언트 컴포넌트나 훅 안에서만
