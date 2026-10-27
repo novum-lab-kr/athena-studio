@@ -7,7 +7,8 @@ import { runPackFlow, welcomeShown } from './pack-switch.ts'
 import { HEAD_HEIGHT, disposeView, ensureView, isTabPane, views } from './terminal.ts'
 import { StudioUi } from './ui/index.ts'
 import type { RestoreResult } from './ui/notices.tsx'
-import { activeTab, applyState, ensureSomeTab, offerAddRepo, orderedWorkspaces, setPanelHidden, setSpacesCollapsed, switchTab } from './renderer.js'
+import { activeTab, applyState, ensureSomeTab, switchTab } from './tabs.ts'
+import { offerAddRepo, orderedWorkspaces, setPanelHidden, setSpacesCollapsed } from './renderer.js'
 
 export let screen: ScreenState = { workspaces: [], activeWorkspace: null, tabs: [], focused: null, panes: [] }
 export const setScreen = (next: ScreenState): void => {

@@ -9,7 +9,7 @@ import { $ } from './core.ts'
 import { focusPane, paneMenu, reattach, reattachOnKey } from './screen.ts'
 import { paneDetailButton } from './renderer.js'
 
-// 크기를 바꾸는 동안 옛 화면을 덮어 두는 틀(renderer.js holdForRedraw)
+// 크기를 바꾸는 동안 옛 화면을 덮어 두는 틀(pane-layout.ts holdForRedraw)
 export type PaneHold = { still: HTMLElement; releasing?: boolean; start?: number; timer?: number }
 export type PaneView = {
   term: Terminal

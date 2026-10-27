@@ -102,6 +102,11 @@ declare global {
     tabNew(size: CellSize | null): Promise<DaemonReply>
     tabSelect(tabId: string): Promise<DaemonReply>
     tabClose(tabId: string): Promise<CloseReply>
+    // 탭 이름(main.mts tab:rename → 데몬 tab rename) · 탭 전체 크기 알리기(tab:size — 답 없음)
+    tabRename(tabId: string, label: string): Promise<DaemonReply>
+    tabSize(tabId: string, size: CellSize): void
+    // pane 경계 비율(main.mts tab:ratio) — 옛 데몬이 동작을 모르면 { unsupported: true } · 값이 잘못되면 { error }
+    tabRatio(tabId: string, path: string[], ratio: number): Promise<DaemonReply & { unsupported?: boolean }>
     workspaceSelect(workspaceId: string): Promise<DaemonReply>
     workspaceNew(size: CellSize | null): Promise<WorkspaceNewReply>
     paneSplit(paneId: string, direction: 'right' | 'down'): Promise<DaemonReply>
@@ -110,6 +115,14 @@ declare global {
     paneContextMenu(point: { x: number; y: number }): Promise<string | null | { error: string }>
     paneFocus(paneId: string): void
     paneInput(paneId: string, data: string): void
+    // 크기 요청(main.mts pane:resize — 답은 pane:resized 알림으로 온다)
+    paneResize(paneId: string, cols: number, rows: number): void
+    // 에이전트 모니터 — 보일 때만 main 이 따라 읽는다(src/main/agent-monitor.mts setMonitorWatch · monitor:update). 돌려준 함수는 듣기 그만
+    monitorWatch(on: boolean): void
+    onMonitorUpdate(callback: (update: import('./ui/monitor.tsx').MonitorUpdate) => void): () => void
+    // 일감을 기본 브라우저로(src/main/work.mts openBoardExternal) · 지금 탭 알리기(ui:tab — 답 없음)
+    openBoard(): Promise<{ ok: boolean }>
+    reportTab(tab: string): void
 
     explorerList(workspaceId: string | null, relative: string): Promise<{ entries: ExplorerEntry[] } | { error: string }>
     explorerStatus(workspaceId: string): Promise<{ git: boolean; changes: ExplorerChange[] } | { error: string }>
