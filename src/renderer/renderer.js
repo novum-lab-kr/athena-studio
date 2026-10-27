@@ -1930,25 +1930,16 @@ function packDialog({ title, subtitle = '', body = [], actions = [], input = nul
 
 const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
 
-// 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다)
+// 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다).
+// 몸통(제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) — 여기는 보이기 · 숨기기 · 뒤 화면 막기 · 포커스만
 let progressBefore = null // 닫으면 포커스를 돌려줄 곳
 function showPackProgress(title, cancellable) {
   const progress = $('pack-progress')
   if (progress.hidden) progressBefore = document.activeElement
-  $('pack-progress-title').textContent = title
-  $('pack-progress-step').textContent = ''
-  const cancel = $('pack-progress-cancel')
-  cancel.hidden = !cancellable
-  cancel.onclick = () => studio.packCancel()
+  StudioUi.packProgress.show(title, cancellable)
   $('pack-progress').hidden = false
   syncModal()
   $('pack-progress').focus({ preventScroll: true })
-}
-// 단계 하나 — 지금 하는 일 한 줄
-function updatePackProgress(step) {
-  $('pack-progress-step').textContent = step.text || ''
-  // 정리를 시작하면 더는 취소할 수 없다
-  if (step.cancellable === false) $('pack-progress-cancel').hidden = true
 }
 const hidePackProgress = () => {
   $('pack-progress').hidden = true
@@ -1958,47 +1949,10 @@ const hidePackProgress = () => {
   progressBefore = null
 }
 
-// 지금 팩 이름 — pack new 로 만든 빈 자리(5.4 current.empty)는 /setup 중
-function packCurrentLabel() {
-  if (!packs.current) return say('pack.none')
-  if (packs.current.empty) return say('pack.newSetup')
-  return packLabel(packs.current)
-}
-
 const PACK_NAME_MAX = 40 // 표시 이름 1~40자(본체가 다시 검사한다)
-const DOUBLE_CLICK_MS = 260 // 팩 아이콘 — 이 안에 다시 누르면 더블클릭(열기 대신 이름 · 이미지 바꾸기)
 
 // 화면에 보일 팩 이름 — 표시 이름(팩 안에 저장 · 팀과 같이) → 이름 → id
 const packLabel = (pack) => (pack && (pack.displayName || pack.name || pack.id)) || ''
-
-// 팩 이미지 — main 이 iconPath 를 읽어 data URL 로 준다. iconUpdatedAt 이 바뀌면 다시 받는다(캐시 깨기)
-const packIconCache = new Map() // id → { stamp, dataUrl }
-const packIconPending = new Set()
-function packIconImage(item) {
-  if (!item.iconPath) return null
-  const stamp = `${item.iconPath}|${item.iconUpdatedAt || ''}`
-  const cached = packIconCache.get(item.id)
-  if (cached && cached.stamp === stamp) {
-    if (!cached.dataUrl) return null
-    const image = el('img', 'pack-icon-image')
-    image.src = cached.dataUrl
-    image.alt = ''
-    image.draggable = false
-    return image
-  }
-  if (!packIconPending.has(item.id)) {
-    packIconPending.add(item.id)
-    studio
-      .packIcon(item.id)
-      .then((result) => packIconCache.set(item.id, { stamp, dataUrl: (result && result.dataUrl) || null }))
-      .catch(() => packIconCache.set(item.id, { stamp, dataUrl: null })) // 실패도 적어 둔다 — 안 그러면 다시 그릴 때마다 또 요청한다
-      .finally(() => {
-        packIconPending.delete(item.id)
-        renderPackRail()
-      })
-  }
-  return null // 받는 동안은 두 글자
-}
 
 // 팩 지우기 — 무엇이 지워지고 무엇이 남는지 · 자동 백업을 알리고 확인. 워크트리가 있으면 목록을 보여 주고 한 번 더 묻는다
 async function deletePack(id) {
@@ -2158,66 +2112,39 @@ function packRows() {
   return [...current, ...packs.packs]
 }
 
-// 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기
+// 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기.
+// 줄(아이콘 · 이미지 · ＋)은 React(ui/pack-rail.tsx) — 여기는 보이기 · 숨기기와 누른 뒤의 팩 흐름
 function renderPackRail() {
   renderPackWelcome()
   const rail = $('pack-rail')
   rail.hidden = !packs.supported || !state || !state.valid || hasNoPacks()
   if (rail.hidden) return
-  const rows = packRows()
-  const icons = rows.map((item) => {
-    const isCurrent = Boolean(packs.current) && packs.current.id === item.id
-    const name = isCurrent ? packCurrentLabel() : packLabel(item)
-    const button = el('button', 'space-icon pack-icon')
-    // 다른 창에 열려 있는 팩 — 작은 점(누르면 그 창이 앞으로)
-    if (!isCurrent && Array.isArray(packs.openIds) && packs.openIds.includes(item.id)) button.classList.add('open-elsewhere')
-    const image = packIconImage(item)
-    if (image) button.append(image)
-    else button.textContent = spaceInitials(packLabel(item))
-    button.style.setProperty('--space-color', spaceColor(item.id)) // 색은 id 로 — 이름을 바꿔도 그대로
-    button.dataset.packId = item.id
-    button.setAttribute('aria-current', String(item.id === selectedPackId()))
-    button.setAttribute('aria-label', name)
-    button.dataset.tip = name // 툴팁은 팩 이름만
-    // 한 번 누르면 이 창에서 그 팩으로 바꾼다(조금 기다렸다 — 더블클릭이면 이름 · 이미지 바꾸기로)
-    let clickTimer = null
-    if (!isCurrent) {
-      button.addEventListener('click', () => {
-        clearTimeout(clickTimer)
-        clickTimer = setTimeout(() => runPackFlow(() => switchPack(item.id)), DOUBLE_CLICK_MS)
-      })
-    }
-    button.addEventListener('dblclick', (event) => {
-      event.preventDefault()
-      clearTimeout(clickTimer)
-      runPackFlow(() => editPackLookDialog(item.id))
-    })
-    button.addEventListener('contextmenu', async (event) => {
-      event.preventDefault()
-      // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
-      const action = await studio.packContextMenu(item.id, { x: Math.round(event.clientX), y: Math.round(event.clientY) })
-      if (action === 'new-window') runPackFlow(() => switchPack(item.id, { newWindow: true }))
-      else if (action === 'export') runPackFlow(chooseExport)
-      else if (action === 'delete') runPackFlow(() => deletePack(item.id))
-      else if (action) runPackFlow(() => editPackLook(item.id, action))
-    })
-    return button
-  })
-  const add = el('button', 'space-icon add pack-add', '＋')
-  add.dataset.tip = say('pack.rail.add')
-  add.setAttribute('aria-label', add.dataset.tip)
-  add.addEventListener('click', () => runPackFlow(openPackActions))
-  rail.replaceChildren(...icons, add)
+  StudioUi.packRail.render({ rows: packRows(), current: packs.current || null, openIds: Array.isArray(packs.openIds) ? packs.openIds : [], selectedId: selectedPackId() })
+}
+
+// 팩 줄 누르기 — 한 번(조금 기다렸다 · 지금 팩은 빼고) 이 창에서 그 팩으로 · 더블클릭 이름 · 이미지 바꾸기 · ＋ 만들기 · 가져오기 · 내보내기
+const packRailActions = {
+  open: (id) => runPackFlow(() => switchPack(id)),
+  edit: (id) => runPackFlow(() => editPackLookDialog(id)),
+  menu: packRailMenu,
+  add: () => runPackFlow(openPackActions),
+}
+
+// 팩 아이콘 우클릭 — main 메뉴에서 고른 것을 한다
+async function packRailMenu(id, x, y) {
+  // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
+  const action = await studio.packContextMenu(id, { x, y })
+  if (action === 'new-window') runPackFlow(() => switchPack(id, { newWindow: true }))
+  else if (action === 'export') runPackFlow(chooseExport)
+  else if (action === 'delete') runPackFlow(() => deletePack(id))
+  else if (action) runPackFlow(() => editPackLook(id, action))
 }
 
 // 팩 줄 선택 표시 — 바꾸는 중인 팩이 있으면 그 팩(진행 팝업이 닫히면), 없으면 지금 팩
 let packPendingId = null
 const selectedPackId = () => packPendingId || (packs.current && packs.current.id) || null
 // 버튼을 다시 그리지 않고 표시만 바꾼다(다시 그리면 두 번째 클릭이 다른 버튼에 떨어져 더블클릭이 안 된다)
-function markPackSelection() {
-  const selected = selectedPackId()
-  for (const button of $('pack-rail').querySelectorAll('.pack-icon[data-pack-id]')) button.setAttribute('aria-current', String(button.dataset.packId === selected))
-}
+const markPackSelection = () => StudioUi.packRail.select(selectedPackId())
 
 async function refreshPackList() {
   if (!state || !state.valid) return packs
@@ -2272,26 +2199,11 @@ async function openPackPicker() {
   await refreshPackList()
   if (!packs.supported) return packAlert(say('pack.title'), say('pack.unsupported'))
   if (hasNoPacks()) return openNoPacks()
+  // 줄 목록은 React(ui/pack-menu.tsx) — 대화상자가 끝나면 내린다
   const list = el('div', 'pack-list')
-  const rows = packRows()
-  for (const item of rows) {
-    const row = el('button', 'pack-row')
-    const isCurrent = Boolean(packs.current) && packs.current.id === item.id
-    row.setAttribute('aria-current', String(isCurrent))
-    row.dataset.value = `pack:${item.id}`
-    const meta = [isCurrent ? say('pack.meta.current') : '', item.repos !== undefined ? say('pack.meta.repos', { count: item.repos }) : '', item.source === 'git' ? 'git' : '', item.empty ? say('pack.meta.empty') : '', item.hasWork ? say('pack.meta.hasWork') : ''].filter(Boolean).join(' · ')
-    const avatar = el('span', 'space-icon pack-icon pack-avatar')
-    avatar.setAttribute('aria-hidden', 'true')
-    avatar.style.setProperty('--space-color', spaceColor(item.id))
-    const image = packIconImage(item)
-    if (image) avatar.append(image)
-    else avatar.textContent = spaceInitials(packLabel(item))
-    const check = el('span', 'pack-current', isCurrent ? '✓' : '')
-    check.setAttribute('aria-hidden', 'true')
-    row.append(avatar, el('span', 'name', packLabel(item)), el('span', 'meta', meta), check)
-    list.append(row)
-  }
+  StudioUi.packMenu.open(list, packRows(), packs.current || null)
   const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], close: true })
+  StudioUi.packMenu.close()
   if (!choice) return
   if (choice.startsWith('pack:')) return switchPack(choice.slice(5))
   return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
@@ -2630,12 +2542,14 @@ function onPackChanged() {
 }
 
 async function initPacks() {
+  StudioUi.packRail.mount($('pack-rail'), packRailActions, { spaceColor, spaceInitials })
+  StudioUi.packProgress.mount($('pack-progress').querySelector('.pack-box'))
   studio.onPackState((next) => {
     refreshPackRepos()
     packs = next
     renderPackRail()
   })
-  studio.onPackProgress(updatePackProgress)
+  studio.onPackProgress(StudioUi.packProgress.step)
   studio.onPackRestored(showRestoreResult)
   studio.onPackCaughtUp((info) => showToast(say('pack.caughtUp', info), 'info'))
   studio.onPackChanged(onPackChanged)

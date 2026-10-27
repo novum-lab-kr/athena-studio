@@ -104,7 +104,7 @@ function setFolded(workspaceId: string, folded: boolean): void {
   commit({ ...shown.get(), folded: next })
 }
 
-// 레포 이미지 — main 이 확인한 iconPath 를 data URL 로 받는다. iconUpdatedAt 이 바뀌면 다시 받는다(팩 이미지 packIconImage 와 같은 방식)
+// 레포 이미지 — main 이 확인한 iconPath 를 data URL 로 받는다. iconUpdatedAt 이 바뀌면 다시 받는다(팩 이미지 ui/pack-rail.tsx usePackIcon 과 같은 방식)
 const repoIconCache = new Map<string, { stamp: string; dataUrl: string | null }>() // name → 받은 것
 const repoIconPending = new Set<string>()
 const iconStamp = (repo: SpaceRepo) => `${repo.iconPath}|${repo.iconUpdatedAt || ''}`

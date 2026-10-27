@@ -3,6 +3,9 @@
 import { connect, textsChanged } from './bridge.ts'
 import * as explorer from './explorer.tsx'
 import * as monitor from './monitor.tsx'
+import * as packMenu from './pack-menu.tsx'
+import * as packProgress from './pack-progress.tsx'
+import * as packRail from './pack-rail.tsx'
 import * as paneDetail from './pane-detail.tsx'
 import * as settings from './settings-pop.tsx'
 import * as work from './work-pop.tsx'
@@ -11,7 +14,7 @@ import * as browser from './browser-bar.tsx'
 import * as notices from './notices.tsx'
 import * as spaces from './spaces.tsx'
 
-const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, browser, notices, spaces }
+const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, browser, notices, spaces, packRail, packMenu, packProgress }
 
 declare global {
   // renderer.js 가 읽는 전역 이름
