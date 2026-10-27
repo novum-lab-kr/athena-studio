@@ -1,4 +1,4 @@
-// pane(xterm)에 xterm 기본 대신 보낼 키 신호 — ES 모듈(space-names.mts 와 같은 방식 · 화면은 진입점이 전역 StudioPaneKeys 로 넣는다).
+// pane(xterm)에 xterm 기본 대신 보낼 키 신호 — ES 모듈(space-names.mts 와 같은 방식 · 화면은 terminal.ts 가 이름공간째(StudioPaneKeys) import 한다).
 //   Shift+Enter → ESC CR(줄바꿈 — Option+Enter 가 macOptionIsMeta 로 보내는 것과 같다). xterm 기본은 Shift 를 무시하고 CR(전송)
 //   ⌘Backspace → Ctrl+U(커서 앞 줄 지우기 — 맥 터미널 관례). xterm 기본은 Meta 를 무시하고 DEL(한 글자)
 //   ⌘← · ⌘→ → Ctrl+A · Ctrl+E(줄 처음 · 끝). xterm 6.0.0 기본은 아무것도 보내지 않고 막지도 않아서 숨은 입력칸(textarea) 커서만 앞으로 간다 —

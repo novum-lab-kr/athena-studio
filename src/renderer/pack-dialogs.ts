@@ -2,7 +2,9 @@
 // renderer.js 에서 옮김(R3e · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. packs 를 바꾸는 바깥 쪽은 setPacks(읽는 쪽은 이름 그대로)
 import { $, el, say } from './core.ts'
 import { POPUP_ICONS, refreshPackList } from './pack-switch.ts'
-import { browserOpen, lineIcon, placeBrowserView, spaceColor, spaceInitials } from './renderer.js'
+import { spaceColor, spaceInitials } from './space-actions.ts'
+import { lineIcon } from './side-panels.ts'
+import { browserOpen, placeBrowserView } from './renderer.js'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
 
@@ -251,7 +253,7 @@ export async function lookDialog({ title, color, image: startImage, value, place
   // 지우기 — 아이콘 오른쪽 위 작은 휴지통(이미지가 있을 때만)
   const remove = el('button', 'pack-look-remove')
   remove.type = 'button'
-  remove.append(lineIcon(POPUP_ICONS.trash))
+  remove.append(lineIcon(POPUP_ICONS.trash!))
   remove.setAttribute('aria-label', say('pack.menu.clearIcon'))
   remove.dataset.tip = say('pack.menu.clearIcon')
   const error = el('p', 'pack-look-error')
@@ -268,7 +270,7 @@ export async function lookDialog({ title, color, image: startImage, value, place
       avatar.replaceChildren(document.createTextNode(spaceInitials((field && field.value.trim()) || placeholder)))
     }
     const edit = el('span', 'pack-look-edit')
-    edit.append(lineIcon(POPUP_ICONS.camera))
+    edit.append(lineIcon(POPUP_ICONS.camera!))
     avatar.append(edit)
     remove.hidden = !image
   }

@@ -1,6 +1,6 @@
 // 왼쪽 작업 공간 목록(#spaces) — 펼친 칸(머리줄 · 레포 줄 · pane 줄 · 아직 작업 공간이 없는 팩 레포 줄) · 접힌 칸(아이콘 줄)
 // PR-R11. 칸 껍데기(접기 · 펴기 ⌘B — #spaces 의 collapsed 클래스 · 저장)와 데이터(데몬 상태 · 브랜치 · pane 상태 · 팩 레포 목록),
-// 누른 뒤의 일(작업 공간 고르기 · 탭 열기 · pane 포커스 · 우클릭 메뉴 · 에이전트 부르기)은 renderer.js 그대로.
+// 누른 뒤의 일(작업 공간 고르기 · 탭 열기 · pane 포커스 · 우클릭 메뉴 · 에이전트 부르기)은 바닐라 그대로(space-actions.ts).
 // 바닐라가 renderSides() 때마다 지금 값을 render() 로 넘기고, 여기서는 그리기 · 레포 줄 접기(저장) · 레포 이미지 받아 두기만 한다
 import { flushSync } from 'react-dom'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
@@ -9,8 +9,8 @@ import type { Say } from './bridge.ts'
 
 // main 의 packRepos(src/main/pack-repos.mts PackRepo — 팩 레포 목록). 그 파일은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
 export type SpaceRepo = { name: string; agent: string | null; linked: boolean; displayName: string | null; iconPath: string | null; iconUpdatedAt: string | null }
-// 데몬 상태(screen.panes)의 pane + 그 pane 이 있는 탭(renderer.js workspacePanes)
-export type SpacePane = { id: string; label?: string; title?: string; tab: string }
+// 데몬 상태(screen.panes)의 pane + 그 pane 이 있는 탭(space-actions.ts workspacePanes)
+export type SpacePane = { id: string; label?: string | null; title?: string | null; tab: string }
 export type SpaceWorkspace = {
   id: string
   label: string
@@ -28,7 +28,7 @@ export type SpacesView = {
   focused: string | null
   workspaces: SpaceWorkspace[]
   idleRepos: SpaceRepo[] // 팩 레포 중 아직 작업 공간이 없는 것
-  paneStatus: Record<string, string>
+  paneStatus: Record<string, string | null>
 }
 
 // 바닐라 도우미 · 누른 뒤의 일
@@ -163,7 +163,7 @@ function LineIcon({ paths, fill }: { paths: string[]; fill?: string }) {
   )
 }
 
-// 접기·펴기 버튼(renderer.js foldButton 의 왼쪽) — 접힌 칸은 그쪽을 칠한다
+// 접기·펴기 버튼(side-panels.ts PANEL_ICONS · PANEL_FILLS 의 왼쪽) — 접힌 칸은 그쪽을 칠한다
 function FoldButton({ title, collapsed, onClick, shell }: { title: string; collapsed: boolean; onClick: () => void; shell: SpacesActions }) {
   return (
     <button className="fold-button" title={title} aria-label={title} onClick={onClick}>

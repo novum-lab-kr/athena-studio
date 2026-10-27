@@ -1,5 +1,5 @@
 // 탭 하나의 분할 트리 — 데몬(칸 단위)과 화면(픽셀 단위)이 같이 쓴다.
-// ES 모듈 — 데몬 · main 은 import, 화면은 진입점(src/renderer/globals.ts)이 묶어 전역 StudioLayout 으로 넣는다(renderer.js 가 그 이름을 읽는다).
+// ES 모듈 — 데몬 · main 은 import, 화면은 나눈 .ts(screen · dividers · pane-layout · space-actions)가 이름공간째(StudioLayout) import 한다.
 //
 // 트리: 잎 { pane: '<id>' } · 가지 { split: 'right' | 'down', ratio, first, second }
 //   right = first 왼쪽 · second 오른쪽, down = first 위 · second 아래.
