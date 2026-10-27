@@ -4,7 +4,8 @@ import { $, panels, say, setCurrentTab, showToast, state } from './core.ts'
 import { disposeView, ensureView, isTabPane, views } from './terminal.ts'
 import { newTab, screen, setScreen, starting } from './screen.ts'
 import { focusCurrentTerminal, layoutPanes } from './pane-layout.ts'
-import { renderSides, welcomeShown } from './renderer.js'
+import { welcomeShown } from './pack-switch.ts'
+import { renderSides } from './renderer.js'
 
 export function activeWorkspace(): ScreenWorkspace | null {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null

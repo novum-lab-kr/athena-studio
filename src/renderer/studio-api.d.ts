@@ -74,6 +74,26 @@ declare global {
   type ExplorerEntry = { name: string; dir: boolean; icon: string | null; iconOpen?: string | null }
   type ExplorerChange = { path: string; code: string; icon: string | null; iconOpen?: string | null }
 
+  // 이 창 팩 상태(src/main/packs.mts ctx.refreshPacks — pack list 를 다듬은 것 + 시작 화면 칸 + 열린 팩 openIds). 지원하지 않으면 { supported: false } 만
+  type PackState = {
+    supported: boolean
+    current?: import('./ui/pack-rail.tsx').PackItem | null
+    packs?: import('./ui/pack-rail.tsx').PackItem[]
+    welcome?: boolean
+    launchWelcome?: boolean
+    recent?: import('./ui/pack-welcome.tsx').WelcomePack[]
+    openIds?: string[]
+    error?: string
+  }
+  // 팩 명령 답(packs.mts — 실패는 { ok: false, error, text }(packErrorText) · 고르기를 그만두면 { canceled } · 그 밖의 칸은 코어 결과 그대로)
+  type PackReply = { [key: string]: unknown; ok?: boolean; error?: string; text?: string; message?: string; canceled?: boolean }
+  // 팩 열기 · 바꾸기(packs.mts ctx.packOpen) — 이 창에서 바꿨으면 switched + 새 상태(athena-dir.mts rebindBody) · 다른 창이 보던 팩이면 existing
+  type PackOpenReply = PackReply & { id?: string; same?: boolean; existing?: boolean; switched?: boolean; state?: AthenaState; unlinkedRepos?: string[]; repair?: boolean; created?: boolean }
+  // 팩 지우기(packs.mts ctx.deletePack) — 워크트리가 있으면 { error: 'has-worktrees', worktrees }(코어 bodies.mjs — dirty 는 바뀐 파일 수) · 끝나면 백업 파일 backup
+  type PackDeleteReply = PackReply & { worktrees?: { name: string; dirty: number }[]; backup?: string }
+  // 이미지 미리 고르기(packs.mts ctx.packPickIcon) — 미리보기 dataUrl 만(파일은 main 이 들고 있다)
+  type PackPickIconReply = { ok?: boolean; canceled?: boolean; dataUrl?: string; text?: string }
+
   interface StudioApi {
     // 화면 · 언어 — preload 가 sendSync · send 로 부르는 것은 값이 없다
     i18n(): I18nPayload
@@ -120,6 +140,20 @@ declare global {
     // main 의 ctx.packIcon(src/main/packs.mts → files.mts iconDataUrl) · pack:cancel(도는 팩 명령 멈추기)
     packIcon(id: string): Promise<{ dataUrl: string | null } | undefined>
     packCancel(): Promise<unknown>
+    // 회사 팩(src/main.mts handle('pack:…') → src/main/packs.mts) — 창이 없으면 { error }
+    packList(): Promise<PackState>
+    packOpen(id: string, options: { newWindow?: boolean }): Promise<PackOpenReply>
+    packDelete(id: string, options?: { withWorktrees?: boolean }): Promise<PackDeleteReply>
+    packReveal(): Promise<unknown>
+    packSetName(id: string, name: string | null): Promise<PackReply>
+    packSetIcon(id: string, clear: boolean, usePicked?: boolean): Promise<PackReply>
+    packPickIcon(kind: 'pack' | 'repo'): Promise<PackPickIconReply | undefined>
+    // 우클릭 메뉴(packs.mts packContextMenu) — 고른 동작 이름 · 안 고르면 null
+    packContextMenu(id: string, point: { x: number; y: number }): Promise<string | null | { error: string }>
+    // 이 창 닫기(main.mts window:close — 창이 하나뿐이면 닫지 않는다)
+    closeWindow(): Promise<unknown>
+    // 옆 브라우저 뷰를 잠깐 떼기(대화상자가 위를 덮을 때 — src/main/side-browser.mts)
+    browserHide(): void
   }
 
   const studio: StudioApi

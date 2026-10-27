@@ -8,6 +8,8 @@ import { isTabPane, views } from './terminal.ts'
 import { attach, attached, attaching, estimateCells, focusPane, openAgent, runCommand, screen, setAttached, setReattachOnKey, setRestoreArmed, setStarting, showRestoreResult, startScreen } from './screen.ts'
 import { applyState, ensureSomeTab, isAthenaWorkspace, renderTabs, switchTab } from './tabs.ts'
 import { focusCurrentTerminal, holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
+import { hidePackProgress, lookDialog, modalOpen, packAlert, packDialog, packLabel, packs, setPacks, showPackProgress } from './pack-dialogs.ts'
+import { applySwitchedPack, hasNoPacks, openNoPacks, packRailActions, popupOption, refreshPackList, renderPackRail, runPackCommand, runPackFlow, switchPack, welcomeShown } from './pack-switch.ts'
 
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 let paneStatus = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
@@ -106,7 +108,7 @@ export function spaceColor(label) {
   return SPACE_COLORS[hash % SPACE_COLORS.length]
 }
 
-function spaceInitials(label) {
+export function spaceInitials(label) {
   const words = String(label).split(/[-_\s.]+/).filter(Boolean)
   const letters = words.length > 1 ? words[0][0] + words[1][0] : String(label).slice(0, 2)
   return letters.charAt(0).toUpperCase() + letters.slice(1).toLowerCase()
@@ -352,7 +354,7 @@ function explorerActions() {
 }
 
 // 선 아이콘(24 격자 · 글자색을 따름)
-function lineIcon(paths) {
+export function lineIcon(paths) {
   const svgNs = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(svgNs, 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
@@ -453,7 +455,7 @@ export function setPanelHidden(hidden) {
 }
 
 // 저장된 접기 설정대로 양쪽을 맞춘다 — 시작 화면(팩 고르기) 동안은 저장값과 상관없이 양쪽을 접는다(저장은 안 바꾼다 · 들어가면 원래대로)
-function applySideFolds() {
+export function applySideFolds() {
   const welcome = welcomeShown()
   const panelHidden = welcome || localStorage.getItem('studio.panelHidden') === '1'
   $('spaces').classList.toggle('collapsed', welcome || localStorage.getItem('studio.spacesCollapsed') === '1')
@@ -499,7 +501,7 @@ function openBrowserPanel() {
   }, BROWSER_SLIDE_MS)
 }
 
-function closeBrowserPanel() {
+export function closeBrowserPanel() {
   const panel = $('browser')
   if (!browserOpen) return
   browserOpen = false
@@ -519,7 +521,7 @@ function closeBrowserPanel() {
 }
 
 // 다 나온 서랍의 자리 — 슬라이드 중(transform)이면 아직 붙이지 않는다
-function placeBrowserView() {
+export function placeBrowserView() {
   if (modalOpen()) return // 대화상자 위를 덮지 않게 — 닫힐 때 syncModal 이 다시 붙인다
   if (!browserOpen || browserTimer || $('browser').hidden || $('browser').classList.contains('resizing')) return
   const rect = $('browser-slot').getBoundingClientRect()
@@ -1030,537 +1032,9 @@ function initWork() {
 
 // ── 회사 팩 ────────────────────────────────────────────────
 // 본체가 여러 팩을 지원할 때만 보인다(packs.supported). 일은 main → 아테나 본체 명령이 하고, 화면은 묻고 · 기다리고 · 결과를 보여 준다
-let packs = { supported: false }
-
-// 대화상자 · 진행 표시가 떠 있는 동안 — 뒤 화면은 inert(포커스 · 클릭 막기), 옆 브라우저는 네이티브 뷰라 위를 덮어서 잠깐 뗀다
-const modalOpen = () => !$('pack-dialog').hidden || !$('pack-progress').hidden
-function syncModal() {
-  const open = modalOpen()
-  for (const node of document.querySelectorAll('body > header, body > main')) node.inert = open
-  if (!browserOpen) return
-  if (open) studio.browserHide()
-  else placeBrowserView()
-}
-
-// 대화상자 하나 — actions: [{ label, value, kind: 'primary'|'danger'|'link' }] · Esc 는 null.
-// 버튼은 맥처럼 취소(value null) → 다른 것 → 확인 · 위험(맨 오른쪽) 순서로 놓는다. 위험이 있으면 처음 포커스는 취소에
-// input: { value, placeholder, maxLength, label, code } — Enter 는 확인(primary) 버튼(한글 조합 중이면 무시)
-// 이미 열린 것이 있으면 null 로 닫고 연다(앞 흐름이 영영 기다리지 않게)
-let closeOpenDialog = null
-function packDialog({ title, subtitle = '', body = [], actions = [], input = null, close = false }) {
-  if (closeOpenDialog) closeOpenDialog(null)
-  const dialog = $('pack-dialog')
-  const before = document.activeElement
-  $('pack-dialog-title').textContent = title
-  const sub = $('pack-dialog-subtitle')
-  sub.textContent = subtitle
-  sub.hidden = !subtitle
-  const bodyNode = $('pack-dialog-body')
-  bodyNode.replaceChildren(...body.map((part) => (typeof part === 'string' ? el('p', null, part) : part)))
-  let field = null
-  if (input) {
-    field = el('input', `pack-input${input.code ? ' code' : ''}`)
-    field.id = 'pack-dialog-input'
-    field.placeholder = input.placeholder || ''
-    field.value = input.value || ''
-    if (input.maxLength) field.maxLength = input.maxLength
-    field.spellcheck = false
-    field.autocomplete = 'off'
-    field.setAttribute('aria-label', input.label || title)
-    let place = field
-    // input.error — 칸 아래 빨간 한 줄(고쳐 쓰면 사라진다)
-    if (input.error) {
-      place = el('div', 'pack-field')
-      const error = el('p', 'pack-field-error', input.error)
-      error.id = 'pack-dialog-input-error'
-      error.setAttribute('role', 'alert')
-      place.append(field, error)
-      field.setAttribute('aria-invalid', 'true')
-      field.setAttribute('aria-describedby', error.id)
-      field.addEventListener('input', () => {
-        error.remove()
-        field.removeAttribute('aria-invalid')
-      }, { once: true })
-    }
-    // 본문에 [data-input-slot] 이 있으면 그 자리에(이름 · 이미지처럼 칸이 옆에 붙는 대화상자)
-    ;(bodyNode.querySelector('[data-input-slot]') || bodyNode).append(place)
-  }
-  const rank = (action) => (action.value === null ? 0 : action.kind === 'primary' || action.kind === 'danger' ? 2 : 1)
-  const ordered = actions.map((action, index) => ({ action, index })).sort((a, b) => rank(a.action) - rank(b.action) || a.index - b.index).map((item) => item.action)
-  return new Promise((resolve) => {
-    const finish = (value) => {
-      if (closeOpenDialog !== finish) return
-      closeOpenDialog = null
-      dialog.hidden = true
-      dialog.onkeydown = null
-      syncModal()
-      if (before instanceof HTMLElement && before.isConnected) before.focus({ preventScroll: true })
-      resolve(field && value !== null ? { value, text: field.value } : value)
-    }
-    const buttons = ordered.map((action) => {
-      const kind = action.kind === 'primary' ? 'primary' : action.kind === 'danger' ? 'pack-button danger' : action.kind === 'link' ? 'link' : 'pack-button'
-      const button = el('button', kind, action.label)
-      button.type = 'button'
-      button.dataset.kind = action.kind || ''
-      if (action.value === null) button.dataset.cancel = ''
-      button.addEventListener('click', () => finish(action.value))
-      return button
-    })
-    $('pack-dialog-actions').replaceChildren(...buttons)
-    // close — 머리 오른쪽 ✕(Esc 와 같다) · 아래 [닫기] 버튼 대신
-    const closeButton = $('pack-dialog-close')
-    closeButton.hidden = !close
-    closeButton.onclick = () => finish(null)
-    // 목록 줄(팩 고르기) · 고르기 카드도 같은 끝내기로
-    for (const node of bodyNode.querySelectorAll('[data-value]')) node.addEventListener('click', () => finish(node.dataset.value))
-    closeOpenDialog = finish
-    dialog.onkeydown = (event) => {
-      if (event.isComposing) return
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        finish(null)
-      } else if (event.key === 'Enter' && field && document.activeElement === field) {
-        event.preventDefault()
-        const primary = buttons.find((button) => button.dataset.kind === 'primary') || buttons.find((button) => !('cancel' in button.dataset))
-        if (primary) primary.click()
-      } else if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        // 목록 · 고르기 카드 안에서는 위아래 화살표로
-        const group = document.activeElement && document.activeElement.closest('.pack-list, .pack-links')
-        if (!group) return
-        const items = [...group.querySelectorAll('button:not(:disabled)')]
-        const at = items.indexOf(document.activeElement)
-        event.preventDefault()
-        items[(at + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus()
-      }
-    }
-    dialog.hidden = false
-    syncModal()
-    const cancel = buttons.find((button) => 'cancel' in button.dataset)
-    const danger = buttons.some((button) => button.dataset.kind === 'danger')
-    const focus = field || (danger && cancel) || bodyNode.querySelector('[data-value]') || buttons.find((button) => button.dataset.kind === 'primary') || cancel || buttons[0] || (close && $('pack-dialog-close'))
-    if (focus) focus.focus({ preventScroll: true })
-  })
-}
-
-export const packAlert = (title, text) => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
-
-// 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다).
-// 몸통(제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) — 여기는 보이기 · 숨기기 · 뒤 화면 막기 · 포커스만
-let progressBefore = null // 닫으면 포커스를 돌려줄 곳
-export function showPackProgress(title, cancellable) {
-  const progress = $('pack-progress')
-  if (progress.hidden) progressBefore = document.activeElement
-  StudioUi.packProgress.show(title, cancellable)
-  $('pack-progress').hidden = false
-  syncModal()
-  $('pack-progress').focus({ preventScroll: true })
-}
-export const hidePackProgress = () => {
-  $('pack-progress').hidden = true
-  syncModal()
-  // 이어서 대화상자가 떴으면 그쪽 포커스 그대로
-  if ($('pack-dialog').hidden && progressBefore instanceof HTMLElement && progressBefore.isConnected) progressBefore.focus({ preventScroll: true })
-  progressBefore = null
-}
-
-const PACK_NAME_MAX = 40 // 표시 이름 1~40자(본체가 다시 검사한다)
-
-// 화면에 보일 팩 이름 — 표시 이름(팩 안에 저장 · 팀과 같이) → 이름 → id
-const packLabel = (pack) => (pack && (pack.displayName || pack.name || pack.id)) || ''
-
-// 팩 지우기 — 무엇이 지워지고 무엇이 남는지 · 자동 백업을 알리고 확인. 워크트리가 있으면 목록을 보여 주고 한 번 더 묻는다
-async function deletePack(id) {
-  const pack = [...packs.packs, packs.current].find((item) => item && item.id === id)
-  const name = packLabel(pack) || id
-  const ok = await packDialog({
-    title: say('pack.delete.title', { name }),
-    body: [el('p', null, say('pack.delete.body')), el('p', 'muted', say('pack.delete.note'))],
-    actions: [{ label: say('pack.delete.yes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
-  })
-  if (!ok) return
-  showPackProgress(say('pack.delete.progress', { name }), false)
-  let result = await studio.packDelete(id)
-  hidePackProgress()
-  if (result.error === 'has-worktrees') {
-    const lines = result.worktrees.map((tree) => el('p', 'muted', tree.dirty ? say('pack.delete.treeDirty', { name: tree.name, count: tree.dirty }) : tree.name))
-    const again = await packDialog({
-      title: say('pack.delete.treesTitle', { count: result.worktrees.length }),
-      body: [el('p', null, say('pack.delete.treesBody')), ...lines],
-      actions: [{ label: say('pack.delete.treesYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
-    })
-    if (!again) return
-    showPackProgress(say('pack.delete.progress', { name }), false)
-    result = await studio.packDelete(id, { withWorktrees: true })
-    hidePackProgress()
-  }
-  if (!result.ok) return packAlert(say('pack.delete.failed'), result.text || result.message)
-  await refreshPackList()
-  const reveal = await packDialog({
-    title: say('pack.delete.done', { name }),
-    body: [el('p', 'muted', say('pack.delete.doneNote')), el('p', 'muted', result.backup)],
-    actions: [{ label: say('pack.reveal'), value: 'reveal', kind: 'primary' }, { label: say('common.ok'), value: null }],
-  })
-  if (reveal) studio.packReveal()
-}
-
-// 팩 아이콘 우클릭 — main 메뉴(이름 바꾸기 · 원래 이름으로 · 이미지 고르기 · 이미지 지우기)에서 고른 것을 한다
-async function editPackLook(id, action) {
-  let result = null
-  if (action === 'rename') {
-    const pack = [...packs.packs, packs.current].find((item) => item && item.id === id)
-    const answer = await packDialog({
-      title: say('pack.rename.title'),
-      body: [say('pack.rename.body', { id })],
-      input: { value: packLabel(pack), placeholder: (pack && pack.name) || id, maxLength: PACK_NAME_MAX },
-      actions: [
-        { label: say('common.ok'), value: 'ok', kind: 'primary' },
-        { label: say('common.cancel'), value: null },
-      ],
-    })
-    if (!answer || !answer.text.trim()) return
-    result = await studio.packSetName(id, answer.text.trim())
-  }
-  if (action === 'reset-name') result = await studio.packSetName(id, null)
-  if (action === 'icon' || action === 'clear-icon') result = await studio.packSetIcon(id, action === 'clear-icon')
-  if (result && !result.ok && !result.canceled) return packAlert(say('pack.look.failed'), result.text || result.message)
-}
-
-// 팩 이름 · 이미지 한 번에(아이콘 더블클릭) — lookDialog. 이름을 비우면 원래 이름으로(--clear). 둘 다 팩 안에 저장돼 팀과 같이 쓴다
-async function editPackLookDialog(id) {
-  const find = () => [...(packs.packs || []), packs.current].find((item) => item && item.id === id)
-  const pack = find()
-  if (!pack) return
-  const image = pack.iconPath ? ((await studio.packIcon(id)) || {}).dataUrl || null : null
-  const answer = await lookDialog({ title: say('pack.look.title'), color: id, image, value: packLabel(pack), placeholder: pack.name || id, pickKind: 'pack' })
-  if (!answer) return
-  const now = find() || pack
-  const results = []
-  if (answer.text !== packLabel(now)) results.push(await studio.packSetName(id, answer.text ? answer.text : null))
-  if (answer.iconChange) results.push(await studio.packSetIcon(id, answer.iconChange === 'clear', answer.iconChange === 'picked'))
-  const failed = results.find((result) => result && !result.ok && !result.canceled)
-  if (failed) return packAlert(say('pack.look.failed'), failed.text || failed.message)
-}
-
-// 이름 · 이미지 대화상자(팩 · 레포 같이) — 왼쪽 큰 아이콘(누르면 이미지 고르기 · 오른쪽 위 지우기) + 오른쪽 이름 칸.
-// 이미지도 이름처럼 [저장] 때 바뀐다(고른 파일은 main 이 들고 있다). 돌려주는 것: null(취소) · { text(앞뒤 공백 뺀 이름), iconChange: null(그대로) · 'picked' · 'clear' }
-async function lookDialog({ title, color, image: startImage, value, placeholder, pickKind }) {
-  let image = startImage
-  let iconChange = null
-  const avatar = el('button', 'space-icon pack-icon pack-look-avatar')
-  avatar.type = 'button'
-  avatar.style.setProperty('--space-color', spaceColor(color))
-  avatar.setAttribute('aria-label', say('pack.menu.icon'))
-  avatar.dataset.tip = say('pack.menu.icon')
-  // 지우기 — 아이콘 오른쪽 위 작은 휴지통(이미지가 있을 때만)
-  const remove = el('button', 'pack-look-remove')
-  remove.type = 'button'
-  remove.append(lineIcon(POPUP_ICONS.trash))
-  remove.setAttribute('aria-label', say('pack.menu.clearIcon'))
-  remove.dataset.tip = say('pack.menu.clearIcon')
-  const error = el('p', 'pack-look-error')
-  error.setAttribute('role', 'alert')
-  const nameField = () => document.getElementById('pack-dialog-input')
-  const paint = () => {
-    if (image) {
-      const node = el('img', 'pack-icon-image')
-      node.src = image
-      node.alt = ''
-      avatar.replaceChildren(node)
-    } else {
-      const field = nameField()
-      avatar.replaceChildren(document.createTextNode(spaceInitials((field && field.value.trim()) || placeholder)))
-    }
-    const edit = el('span', 'pack-look-edit')
-    edit.append(lineIcon(POPUP_ICONS.camera))
-    avatar.append(edit)
-    remove.hidden = !image
-  }
-  avatar.addEventListener('click', async () => {
-    error.textContent = ''
-    const result = await studio.packPickIcon(pickKind)
-    if (!result || result.canceled) return
-    if (!result.ok) {
-      error.textContent = result.text || say('pack.look.failed')
-      return
-    }
-    image = result.dataUrl
-    iconChange = 'picked'
-    paint()
-  })
-  remove.addEventListener('click', () => {
-    image = null
-    iconChange = 'clear'
-    paint()
-    avatar.focus()
-  })
-  const side = el('div', 'pack-look-side')
-  side.append(avatar, remove)
-  const name = el('div', 'pack-look-name')
-  const label = el('label', 'pack-look-label', say('pack.look.name'))
-  label.htmlFor = 'pack-dialog-input'
-  const slot = el('div')
-  slot.dataset.inputSlot = ''
-  name.append(label, slot, error)
-  const look = el('div', 'pack-look')
-  look.append(side, name)
-  look.addEventListener('input', () => !image && paint()) // 이미지가 없으면 머리글자가 이름을 따라간다
-  const pending = packDialog({
-    title,
-    body: [look],
-    input: { value, placeholder, maxLength: PACK_NAME_MAX, label: say('pack.look.name') },
-    actions: [
-      { label: say('pack.look.save'), value: 'save', kind: 'primary' },
-      { label: say('common.cancel'), value: null },
-    ],
-  })
-  paint()
-  nameField().select()
-  const answer = await pending
-  if (!answer || answer.value !== 'save') return null
-  return { text: answer.text.trim(), iconChange }
-}
-
-// 팩 줄 · 팩 메뉴의 줄 — 목록에 지금 팩이 없으면(옛 구조 본체는 목록이 빈다) 지금 팩을 앞에 더한다
-function packRows() {
-  const current = packs.current && !packs.packs.some((item) => item.id === packs.current.id) ? [packs.current] : []
-  return [...current, ...packs.packs]
-}
-
-// 팩 세로 줄 — 팩마다 이름 두 글자 + 이름 색(접힌 spaces 아이콘과 같은 모양) · 지금 팩 강조 · 누르면 갈아 끼우기.
-// 줄(아이콘 · 이미지 · ＋)은 React(ui/pack-rail.tsx) — 여기는 보이기 · 숨기기와 누른 뒤의 팩 흐름
-function renderPackRail() {
-  renderPackWelcome()
-  const rail = $('pack-rail')
-  rail.hidden = !packs.supported || !state || !state.valid || hasNoPacks()
-  if (rail.hidden) return
-  StudioUi.packRail.render({ rows: packRows(), current: packs.current || null, openIds: Array.isArray(packs.openIds) ? packs.openIds : [], selectedId: selectedPackId() })
-}
-
-// 팩 줄 누르기 — 한 번(조금 기다렸다 · 지금 팩은 빼고) 이 창에서 그 팩으로 · 더블클릭 이름 · 이미지 바꾸기 · ＋ 만들기 · 가져오기 · 내보내기
-const packRailActions = {
-  open: (id) => runPackFlow(() => switchPack(id)),
-  edit: (id) => runPackFlow(() => editPackLookDialog(id)),
-  menu: packRailMenu,
-  add: () => runPackFlow(openPackActions),
-}
-
-// 팩 아이콘 우클릭 — main 메뉴에서 고른 것을 한다
-async function packRailMenu(id, x, y) {
-  // 메뉴는 팩 흐름 잠금 밖에서 — 메뉴가 끝내 닫힘 알림을 안 주면(창이 뒤에 있을 때 등) 잠금이 풀리지 않아 팩 일을 다 막는다
-  const action = await studio.packContextMenu(id, { x, y })
-  if (action === 'new-window') runPackFlow(() => switchPack(id, { newWindow: true }))
-  else if (action === 'export') runPackFlow(chooseExport)
-  else if (action === 'delete') runPackFlow(() => deletePack(id))
-  else if (action) runPackFlow(() => editPackLook(id, action))
-}
-
-// 팩 줄 선택 표시 — 바꾸는 중인 팩이 있으면 그 팩(진행 팝업이 닫히면), 없으면 지금 팩
-let packPendingId = null
-const selectedPackId = () => packPendingId || (packs.current && packs.current.id) || null
-// 버튼을 다시 그리지 않고 표시만 바꾼다(다시 그리면 두 번째 클릭이 다른 버튼에 떨어져 더블클릭이 안 된다)
-const markPackSelection = () => StudioUi.packRail.select(selectedPackId())
-
-async function refreshPackList() {
-  if (!state || !state.valid) return packs
-  packs = await studio.packList()
-  renderPackRail()
-  return packs
-}
-
-// 대화상자 안 아이콘 줄(24 격자 선 아이콘)
-const POPUP_ICONS = {
-  new: ['M12 5v14', 'M5 12h14'],
-  import: ['M12 3v10', 'M8 9.5l4 4l4-4', 'M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14'],
-  export: ['M12 14V4', 'M8 7.5l4-4l4 4', 'M4 14v4.5A1.5 1.5 0 0 0 5.5 20h13a1.5 1.5 0 0 0 1.5-1.5V14'],
-  backup: ['M3 5h18v4H3z', 'M5 9v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V9', 'M10 13h4'],
-  file: ['M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z', 'M14 3v5h5', 'M10 12h1M10 15h1M10 18h1'],
-  folder: ['M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z'],
-  git: ['M6 3v12', 'M18 9a9 9 0 0 1-9 9', 'M21 6a3 3 0 1 1-6 0a3 3 0 1 1 6 0', 'M9 18a3 3 0 1 1-6 0a3 3 0 1 1 6 0'],
-  athena: ['M12 8v4l3 2', 'M21 12a9 9 0 1 1-18 0a9 9 0 0 1 18 0'],
-  close: ['M6 6l12 12', 'M18 6L6 18'],
-  camera: ['M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M15.5 13a3.5 3.5 0 1 1-7 0a3.5 3.5 0 0 1 7 0'],
-  trash: ['M4 7h16', 'M9 7V4.5h6V7', 'M6.5 7l1 13h9l1-13'],
-}
-
-// 아이콘 · 이름 · 한 줄 설명 버튼(고르면 data-value 로 대화상자를 끝낸다) — 팩 명령 줄 · 가져오기 종류
-function popupOption(className, value, icon, title, note) {
-  const button = el('button', className)
-  button.type = 'button'
-  button.dataset.value = value
-  const mark = el('span', 'popup-icon')
-  mark.append(lineIcon(POPUP_ICONS[icon]))
-  const copy = el('span', 'popup-option-copy')
-  copy.append(el('b', null, title), el('small', null, note))
-  button.append(mark, copy)
-  return button
-}
-
-// 팩 대화상자 아래 줄 — 새로 만들기 · 가져오기 · 내보내기 · 내 백업
-function packLinks() {
-  const links = el('div', 'pack-links')
-  for (const value of ['new', 'import', 'export']) links.append(popupOption('pack-command', value, value, say(`pack.link.${value}`), say(`pack.link.${value}Note`)))
-  return links
-}
-
-// 팩 세로 줄의 + — 목록 없이 만들기 · 가져오기 · 내보내기 · 내 백업만
-async function openPackActions() {
-  const choice = await packDialog({ title: say('pack.title'), body: [packLinks()], close: true })
-  if (choice) return packCommand(choice)
-}
-
-// 회사 팩 고르기 — 목록 + 새로 만들기 · 가져오기 · 내보내기 · 내 백업
-async function openPackPicker() {
-  await refreshPackList()
-  if (!packs.supported) return packAlert(say('pack.title'), say('pack.unsupported'))
-  if (hasNoPacks()) return openNoPacks()
-  // 줄 목록은 React(ui/pack-menu.tsx) — 대화상자가 끝나면 내린다
-  const list = el('div', 'pack-list')
-  StudioUi.packMenu.open(list, packRows(), packs.current || null)
-  const choice = await packDialog({ title: say('pack.title'), body: [list, packLinks()], close: true })
-  StudioUi.packMenu.close()
-  if (!choice) return
-  if (choice.startsWith('pack:')) return switchPack(choice.slice(5))
-  return packCommand(choice) // 이미 흐름 안 — runPackCommand 를 다시 부르면 자기 잠금에 막힌다
-}
-
-// 팩 흐름은 한 번에 하나 — 진행 중에 메뉴로 또 열면 알리기만
-let packFlow = false
-export async function runPackFlow(work) {
-  if (packFlow) return showToast(say('pack.flowBusy'), 'info')
-  packFlow = true
-  try {
-    return await work()
-  } finally {
-    packFlow = false
-  }
-}
-const runPackCommand = (name) => runPackFlow(() => packCommand(name))
-
-function packCommand(name) {
-  if (name === 'picker') return openPackPicker()
-  if (name === 'new') return newPack()
-  if (name === 'import') return importPack()
-  if (name === 'export') return chooseExport()
-}
-
-// 시작 화면 — 작업 창 가운데(VS Code 처럼). 두 경우(규칙은 main 이 pack.js 로 계산해 넘긴다):
-//   welcome — 팩이 하나도 없을 때(만들기 · 가져오기만) · launchWelcome — 앱을 켤 때마다(팩이 있어도 · 도는 에이전트가 없으면) + '내 팩' 목록
-// 켤 때 시작 화면은 팩을 고르거나 · 만들거나 · 가져와 들어가면(welcomeEntered) 닫힌다. 떠 있는 동안 에이전트 모니터는 접어 두고, 들어가면 펼친다
-const hasNoPacks = () => packs.welcome === true
-let welcomeEntered = false
-export const welcomeShown = () => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
-let welcomeWasOn = false
-function renderPackWelcome() {
-  const on = welcomeShown()
-  $('pack-welcome').hidden = !on
-  document.body.classList.toggle('pack-welcome-on', on)
-  // 일감 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
-  $('board-tab').disabled = !state || !state.valid || on
-  $('diagrams-open').disabled = !state || !state.valid || on
-  $('browser-toggle').disabled = on
-  if (on && browserOpen) closeBrowserPanel()
-  // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
-  if (on && !welcomeWasOn) $('dock').classList.add('collapsed')
-  if (on !== welcomeWasOn) {
-    welcomeWasOn = on
-    applySideFolds() // 시작 화면이 뜨면 양쪽을 접고, 들어가면 저장된 대로
-  }
-  // 몸통(로고 · 만들기 · 가져오기 · '내 팩')은 React(ui/pack-welcome.tsx) — 떠 있는 동안 목록을 넘기고, 닫히면 내린다
-  if (on) StudioUi.welcome.open($('pack-welcome').querySelector('.pack-welcome-inner'), welcomeRecent(), welcomeActions())
-  else StudioUi.welcome.close()
-}
-
-// '내 팩' — 지금 팩 맨 위 · 최근 순 · 최대 5개(main 의 packs.recent) · 팩이 없으면 비운다(만들기 · 가져오기만)
-function welcomeRecent() {
-  return (!hasNoPacks() && Array.isArray(packs.recent) && packs.recent) || []
-}
-// 시작 화면에서 누르면 — 만들기 · 가져오기 · 모두 보기는 팩 흐름 그대로, '내 팩' 줄을 고르면 그 팩으로 들어간다
-function welcomeActions() {
-  return { command: (name) => runPackCommand(name), enter: (id) => runPackFlow(() => enterPack(id)) }
-}
-
-// 시작 화면에서 들어가기 — 시작 화면을 닫고 모니터를 펼친다. 시작 화면이 떠 있지 않았으면(칩으로 갈아 끼움) 모니터는 그대로
-function enterWelcome() {
-  const wasShown = welcomeShown()
-  welcomeEntered = true
-  if (wasShown) $('dock').classList.remove('collapsed')
-  renderPackWelcome()
-}
-
-// 목록에서 고름 — 이 창의 팩이면 바로 들어가 아테나를 켜고, 다른 팩이면 이 창에서 그 팩으로 바꾼다.
-// 그 팩을 다른 창이 이미 보고 있으면 그 창이 앞으로 오고 이 시작 화면 창은 접는다
-async function enterPack(id) {
-  if (packs.current && packs.current.id === id) {
-    enterWelcome()
-    await openAgent()
-    return
-  }
-  const result = await switchPack(id)
-  if (result && result.ok && result.existing && welcomeShown()) studio.closeWindow()
-}
-function openNoPacks() {
-  renderPackWelcome()
-  if (currentTab !== 'work') switchTab('work')
-}
-
-// 팩 바꾸기 — 그 팩 본체를 준비하고(처음이면 본체를 만든다) 이 창을 그 팩으로 다시 붙인다(한 창에서 바꿔 보기).
-// 이전 팩의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 누르면 보던 자리 그대로). newWindow 면 새 창으로(우클릭 [새 창으로 열기])
-async function switchPack(id, { newWindow = false } = {}) {
-  if (packs.current && packs.current.id === id) return { ok: true, same: true }
-  const target = (packs.packs || []).find((item) => item.id === id)
-  const name = target ? packLabel(target) : id
-  try {
-    return await openOrSwitchPack(id, { newWindow, name })
-  } finally {
-    // 끝나면(실패 · 취소 · 다른 창으로 감 포함) 실제 지금 팩으로 맞춘다
-    if (packPendingId === id) {
-      packPendingId = null
-      markPackSelection()
-    }
-  }
-}
-
-async function openOrSwitchPack(id, { newWindow, name }) {
-  showPackProgress(say(newWindow ? 'pack.open.progress' : 'pack.switch.progress', { name }), true)
-  const result = await studio.packOpen(id, { newWindow })
-  hidePackProgress()
-  // 선택 표시는 진행 팝업이 닫힐 때 옮긴다 — 다시 붙기 · 목록 읽기가 끝날 때까지 기다리지 않게
-  if (result.switched) {
-    packPendingId = id
-    markPackSelection()
-  }
-  if (result.same || result.canceled || result.error === 'canceled') return result
-  if (!result.ok) {
-    await packAlert(say(newWindow ? 'pack.open.failed' : 'pack.switch.failed'), result.text || result.message)
-    return result
-  }
-  if (result.switched) await applySwitchedPack(result.state)
-  const notes = []
-  if (result.unlinkedRepos && result.unlinkedRepos.length) notes.push(say('pack.switch.unlinked', { repos: result.unlinkedRepos.join(', ') }))
-  if (result.repair) notes.push(say('pack.open.repair'))
-  if (notes.length) packAlert(say(result.switched ? 'pack.switch.done' : 'pack.open.done', { name }), notes.join('\n'))
-  return result
-}
-
-// 이 창이 다른 본체로 다시 묶였다 — 상태 · 일감 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
-// 다녀온 팩이면 보던 자리 그대로(keepView)
-async function applySwitchedPack(next) {
-  setState(next)
-  enterWelcome() // 시작 화면에서 바꿨으면 닫고 모니터를 펼친다
-  if (browserOpen) closeBrowserPanel()
-  renderState()
-  setStarting(true)
-  try {
-    if (await attach()) await openAgent({ keepView: true })
-  } finally {
-    setStarting(false)
-  }
-  ensureSomeTab()
-  await refreshPackList()
-}
 
 // 새 팩 — 빈 자리 + 본체를 만들고 이 창에서 그 팩으로 바꾼다(그 본체 아테나가 /setup)
-async function newPack() {
+export async function newPack() {
   showPackProgress(say('pack.new.progress'), true)
   const result = await studio.packNew()
   hidePackProgress()
@@ -1571,7 +1045,7 @@ async function newPack() {
 }
 
 // 가져오기 — 종류 고르기 → 검사(main 이 대화상자) → 같은 이름이면 나란히 비교 → 등록 → "지금 바꿀까요?"
-async function importPack() {
+export async function importPack() {
   let target = null
   const options = el('div', 'pack-links')
   for (const value of ['file', 'folder', 'git', 'athena']) options.append(popupOption('pack-command', value, value, say(`pack.import.kind.${value}`), say(`pack.import.kind.${value}Note`)))
@@ -1712,7 +1186,7 @@ async function chooseImport(inspected, kind) {
 }
 
 // 내보내기 — 담을 것을 먼저 묻는다: 팩 + 내 작업 기록(백업 · 위) · 팩만(팀에 줄 것)
-async function chooseExport() {
+export async function chooseExport() {
   const options = el('div', 'pack-links')
   options.append(
     popupOption('pack-command', 'backup', 'backup', say('pack.export.withWork'), say('pack.export.withWorkNote')),
@@ -1760,7 +1234,7 @@ async function initPacks() {
   StudioUi.packProgress.mount($('pack-progress').querySelector('.pack-box'))
   studio.onPackState((next) => {
     refreshPackRepos()
-    packs = next
+    setPacks(next)
     renderPackRail()
   })
   studio.onPackProgress(StudioUi.packProgress.step)
@@ -1780,7 +1254,7 @@ async function afterAthenaReady() {
 }
 
 // ── 아테나 폴더 ────────────────────────────────────────────
-function renderState() {
+export function renderState() {
   document.body.dataset.platform = state.platform
   $('install-dir').textContent = state.installDir || ''
   $('browser-toggle').dataset.tip = say('browser.toggleTitle', { key: state.tabKey })
