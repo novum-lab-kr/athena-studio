@@ -3,139 +3,14 @@
 /* global studio, StudioLayout, StudioSpaceNames, StudioUi */
 // 기능별로 .ts 로 나누는 중(R3 — 계획서 "R3 나누기"). 옮긴 묶음은 import 로 부르고, 옮긴 묶음이 부르는 아직 안 옮긴 함수는 여기서 export 한다(순환 import — 묶음 사이 사용은 모두 함수 안이라 읽는 순서와 상관없다)
 // 옮긴 묶음의 변수는 그쪽이 가진다 — 여기서는 이름 그대로 읽고, 바꿀 때만 setX
-import { $, applyStaticTexts, currentTab, el, panels, say, setCurrentTab, setI18nState, setState, showToast, state } from './core.ts'
-import { PANE_GAP, disposeView, ensureView, isTabPane, redrawAfterHidden, views } from './terminal.ts'
-import { attach, attached, attaching, estimateCells, focusPane, newTab, openAgent, runCommand, screen, setAttached, setReattachOnKey, setRestoreArmed, setScreen, setStarting, showRestoreResult, startScreen, starting } from './screen.ts'
+import { $, applyStaticTexts, currentTab, el, panels, say, setI18nState, setState, showToast, state } from './core.ts'
+import { isTabPane, views } from './terminal.ts'
+import { attach, attached, attaching, estimateCells, focusPane, openAgent, runCommand, screen, setAttached, setReattachOnKey, setRestoreArmed, setStarting, showRestoreResult, startScreen } from './screen.ts'
+import { applyState, ensureSomeTab, isAthenaWorkspace, renderTabs, switchTab } from './tabs.ts'
+import { focusCurrentTerminal, holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
 
 let branches = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 let paneStatus = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
-let lastTabSize = null
-
-function activeWorkspace() {
-  return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
-}
-
-// 아테나 폴더의 작업 공간인가 — 이름이 athena 이고 지금 아테나 폴더인 것(main 의 core.findAthenaWorkspace 와 같은 규칙).
-// 아테나 폴더를 바꿔 예전 폴더의 athena 작업 공간이 남아 있으면 그쪽엔 모니터를 안 보인다.
-// 화면은 심볼릭 링크를 못 풀어서 적어 둔 경로 · main 이 푼 경로(athenaRealDir) 둘 중 하나와 글자로 맞춰 본다.
-// 폴더가 맞는 것이 하나도 없으면(새 작업 공간을 만들기 전 잠깐 등) 예전처럼 이름만 본다
-const trimSlash = (dir) => String(dir || '').replace(/\/+$/, '')
-
-function isAthenaWorkspace(workspace) {
-  if (!workspace || !state || workspace.label !== state.athenaWorkspace) return false
-  const wanted = [state.athenaDir, state.athenaRealDir].filter(Boolean).map(trimSlash)
-  const sameFolder = (entry) => wanted.includes(trimSlash(entry.cwd))
-  const anyMatch = screen.workspaces.some((entry) => entry.label === state.athenaWorkspace && sameFolder(entry))
-  return anyMatch ? sameFolder(workspace) : true
-}
-
-export function activeTab() {
-  const workspace = activeWorkspace()
-  return (workspace && screen.tabs.find((tab) => tab.id === workspace.activeTab)) || null
-}
-
-// 데몬이 준 상태로 탭 줄 · pane 을 다시 그린다
-export function applyState(next) {
-  setScreen(next)
-  const alive = new Set(screen.panes.filter(isTabPane).map((pane) => pane.id))
-  for (const paneId of [...views.keys()]) if (!alive.has(paneId)) disposeView(paneId)
-  for (const pane of screen.panes.filter(isTabPane)) ensureView(pane.id)
-  renderTabs()
-  renderSides()
-  layoutPanes()
-  ensureSomeTab()
-}
-
-// 탭이 하나도 없으면(마지막 셸을 닫음 · 새 데몬) 아테나 폴더에서 셸 탭 하나
-let openingTab = false
-export function ensureSomeTab() {
-  // 시작 화면이 떠 있으면 만들지 않는다 — 고를 때 닫을 pane 이 생겨 확인 창이 뜨지 않게(들어가면 아테나 탭이 생긴다)
-  if (screen.tabs.length || openingTab || starting || !state || !state.valid || welcomeShown()) return
-  openingTab = true
-  newTab().finally(() => (openingTab = false))
-}
-
-// 가운데 탭 줄 — 지금 작업 공간의 탭만. ✕ 로 닫는다(에이전트가 돌면 main 이 묻는다) · 더블클릭하면 이름 바꾸기
-let renamingTab = null // 이름을 고치는 중인 탭 id — 그동안은 탭 줄을 다시 그리지 않는다(글자 칸이 사라지지 않게)
-function renderTabs() {
-  const bar = $('studio-tabs')
-  if (renamingTab && bar.querySelector('.studio-tab-input')) return
-  const current = activeTab()
-  const buttons = screen.tabs
-    .filter((tab) => tab.workspace === screen.activeWorkspace)
-    .map((tab, index) => {
-      const button = document.createElement('button')
-      button.className = 'studio-tab'
-      const selected = Boolean(current) && tab.id === current.id
-      button.setAttribute('aria-selected', String(selected))
-      button.addEventListener('click', (event) => {
-        // 이미 고른 탭은 데몬에 다시 묻지 않는다 — 다시 물으면 상태가 새로 와 더블클릭 직후 글자 칸이 포커스를 잃는다
-        if (!selected) studio.tabSelect(tab.id)
-        else if (event.detail === 1) focusCurrentTerminal()
-      })
-      const name = document.createElement('span')
-      name.textContent = tab.label || say('tab.default', { n: index + 1 })
-      const close = document.createElement('span')
-      close.className = 'close'
-      close.textContent = '✕'
-      close.title = say('tab.closeTitle', { key: state.tabKey })
-      close.addEventListener('click', (event) => {
-        event.stopPropagation()
-        studio.tabClose(tab.id)
-      })
-      button.append(name, close)
-      button.title = say('tab.renameHint')
-      button.addEventListener('dblclick', () => startTabRename(button, tab, name.textContent))
-      return button
-    })
-  const add = document.createElement('button')
-  add.className = 'studio-tab add'
-  add.textContent = '＋'
-  add.title = say('tab.newTitle', { key: state.tabKey })
-  add.setAttribute('aria-label', say('tab.new')) // ＋ 글자는 아이콘으로 가려져 있어 읽기용 이름을 따로
-  add.addEventListener('click', newTab)
-  bar.replaceChildren(...buttons, add)
-}
-
-// 탭 자리에 글자 칸을 띄운다 — Enter·칸 밖 누르기 저장 · Esc 취소 · 비우면 기본 이름으로
-function startTabRename(button, tab, shown) {
-  const input = document.createElement('input')
-  input.className = 'studio-tab studio-tab-input'
-  input.value = tab.label || ''
-  input.placeholder = shown
-  input.maxLength = 60
-  input.spellcheck = false
-  input.setAttribute('aria-label', say('tab.nameLabel'))
-  renamingTab = tab.id
-  let done = false
-  const finish = (save) => {
-    if (done) return
-    done = true
-    renamingTab = null
-    const label = input.value.trim()
-    if (save && label !== (tab.label || '')) {
-      const before = tab.label
-      tab.label = label || null // 데몬이 새 상태를 보내기 전에도 바로 보이게
-      studio.tabRename(tab.id, label).then((result) => {
-        if (!result || !result.error) return
-        // 못 바꿨으면 원래 이름으로 되돌리고 알린다
-        tab.label = before
-        renderTabs()
-        showToast(say('tab.renameFailed', { message: result.error }))
-      })
-    }
-    renderTabs()
-  }
-  input.addEventListener('keydown', (event) => {
-    if (event.isComposing) return // 한글 조합 중 Enter 는 글자 확정용
-    if (event.key === 'Enter') finish(true)
-    if (event.key === 'Escape') finish(false)
-  })
-  input.addEventListener('blur', () => finish(true))
-  button.replaceWith(input)
-  input.focus()
-  input.select()
-}
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
 // 접기·펴기 버튼 아이콘 — 칸 머리에 붙는다(그리기는 React — 왼쪽 ui/spaces.tsx · 오른쪽 ui/explorer.tsx). 패널 아이콘(네모 + 세로선 · 사용자가 시안 5 를 고름) · 접힌 칸은 그쪽을 칠한다
@@ -225,7 +100,7 @@ function initTips() {
 // 작업 공간 아이콘 — 이름 앞 두 글자 + 이름으로 고른 색(같은 이름은 늘 같은 색)
 const SPACE_COLORS = ['#7aa2f7', '#9ece6a', '#e0af68', '#bb9af7', '#f7768e', '#7dcfff', '#ff9e64', '#73daca']
 
-function spaceColor(label) {
+export function spaceColor(label) {
   let hash = 0
   for (const character of String(label)) hash = (hash * 31 + character.codePointAt(0)) >>> 0
   return SPACE_COLORS[hash % SPACE_COLORS.length]
@@ -417,7 +292,7 @@ async function callRepoAgent(repo) {
   showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
 }
 
-function renderSides() {
+export function renderSides() {
   // 왼쪽: 작업 공간(레포)만 — 그리기는 React(ui/spaces.tsx). 접기 · 펴기(collapsed 클래스)는 여기서
   const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
   StudioUi.spaces.render({
@@ -598,336 +473,12 @@ export function setSpacesCollapsed(collapsed) {
   requestAnimationFrame(layoutPanes)
 }
 
-// 트리 → 픽셀 사각형. 보이는 pane 만 fit 하고, 칸 수가 바뀐 것만 데몬에 알린다
-function layoutPanes() {
-  if (panels.work.hidden) return
-  // 하단 칸(에이전트 모니터)은 작업 공간이 있으면 어느 공간이든 — 공간이 없으면 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
-  const showDock = Boolean(activeWorkspace())
-  $('dock').hidden = !showDock
-  if (!showDock && $('dock').contains(document.activeElement)) document.activeElement.blur()
-  setMonitorVisible(showDock)
-  const container = $('panes')
-  const tab = activeTab()
-  const tree = tab ? treeForLayout(tab) : null
-  const area = { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }
-  const rects = tree ? StudioLayout.computeRects(tree, area, PANE_GAP) : {}
-  renderDividers(tab, tree, area)
-  const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
-  for (const [paneId, view] of views) {
-    const rect = rects[paneId]
-    view.el.hidden = !rect
-    if (view.el.hidden) {
-      view.shown = false
-      continue
-    }
-    if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
-    view.el.classList.toggle('focused', paneId === screen.focused)
-    const info = meta.get(paneId) || {}
-    view.headLabel.textContent = info.label || info.title || paneId
-    syncDetailButton(paneId, view)
-    if (!view.shown) redrawAfterHidden(view)
-    view.shown = true
-    // 크기는 재기만 하고 xterm 은 데몬이 pty · 화면 버퍼에 적용했다고 답할 때(pane:resized) 바꾼다.
-    // 여기서 먼저 바꾸면 그 사이 출력이 이 창과 데몬 버퍼에서 다른 폭으로 그려져 갈라진다 — Claude Code 가 다시 그릴 때 엉뚱한 줄을 지워 화면이 겹친다
-    let size = null
-    try {
-      size = view.fit.proposeDimensions()
-    } catch {}
-    if (!size || !(size.cols > 1) || !(size.rows > 1)) continue
-    // 경계를 끄는 동안 · 창 크기를 바꾸는 동안에도 보낸다 — 한 pane 에 하나씩만 날아가고 답이 오면 그 사이 바뀐 최신 크기만 이어서(sendPaneSize)
-    view.want = { cols: size.cols, rows: size.rows }
-    sendPaneSize(paneId, view, info)
-  }
-  reportTabSize(tab, container)
-  if (!renamingTab) focusCurrentTerminal() // 탭 이름을 고치는 중이면 글자 칸 포커스를 뺏지 않는다
-}
-
-// 크기 요청은 pane 마다 하나만 날아간다 — 답(pane:resized)이 오기 전에 바뀐 크기는 view.want 에 최신 것만 남기고 중간 크기는 건너뛴다.
-// 그래서 끄는 동안에도 xterm 은 데몬이 적용한 크기로만, 보낸 순서대로 바뀌고(갈라짐 없음) 셸 · Claude Code 는 왕복 한 번에 한 번만 다시 그린다.
-// 답이 끝내 안 오면(데몬이 거절 · 끊김) 이만큼 뒤에 막힘을 풀고 최신 크기를 다시 본다
-const RESIZE_REPLY_TIMEOUT_MS = 1000
-
-function sendPaneSize(paneId, view, info) {
-  const want = view.want
-  // 날아간 요청이 있거나 앞 크기의 다시 그리기를 기다리는 중(holdForRedraw)이면 나중에 — 답 · releaseHold 가 최신 크기로 다시 부른다
-  if (!want || view.resizing || view.hold) return
-  // 데몬이 스스로 바꾼 크기(분할 · pane 종료 때 탭 크기로 어림한 fitTab — pane 머리 줄을 빼지 않아 몇 줄 크다)도 다시 맞춘다
-  const drifted = Boolean(info) && info.cols > 1 && (info.cols !== want.cols || info.rows !== want.rows)
-  if (view.sent && view.sent.cols === want.cols && view.sent.rows === want.rows && !drifted) return
-  view.sent = { cols: want.cols, rows: want.rows }
-  view.resizing = setTimeout(() => {
-    if (views.get(paneId) !== view) return
-    view.resizing = null
-    // 답을 못 받은 크기는 적용됐는지 모른다 — 보낸 기록을 지워 지금 크기를 다시 보낸다(같은 크기여도)
-    view.sent = null
-    sendPaneSize(paneId, view, null)
-  }, RESIZE_REPLY_TIMEOUT_MS)
-  studio.paneResize(paneId, want.cols, want.rows)
-}
-
-// 크기를 바꾼 뒤 안 프로그램이 다시 그린 출력을 다 받을 때까지 마지막으로 그린 화면을 그대로 보여 준다 — 그 화면(.xterm-screen)을 복제해 위에 덮고, 출력이 조용해지면 걷는다.
-// 안 덮으면 다시 그리기(Claude Code 는 크기마다 화면을 지우고(2J) 다 다시 그린다)가 두 조각으로 올 때 반쪽만 그린 프레임이 끼어 덜컹거린다.
-// 동기 출력(DEC 2026)으로는 못 막는다 — xterm DOM 렌더러가 resize · 선택 영역 다시 그리기 때는 그 모드를 거치지 않고 바로 그린다(xterm 6.0 실측). 복제는 DOM 렌더러라서 된다.
-// 다음 크기는 걷은 뒤에 보낸다(releaseHold) — 다시 그리는 도중에 다음 크기가 오면 걷는 순간 그 반쪽이 보인다. 그래서 끄는 동안 크기는 다시 그리기 한 번에 한 번씩 간다
-// 출력이 이만큼 조용하면 걷는다 — 다시 그리기 조각 사이 간격 실측 p90 13~21ms · 최대 24ms(main 이 출력을 8ms 마다 묶어 보낸다)
-const RESIZE_HOLD_QUIET_MS = 24
-// 출력이 이어지거나(셸이 계속 찍음) 아무 출력이 없어도 크기를 적용하고 이만큼 지나면 걷는다 — 크기 → 첫 출력 실측 최대 24ms(계속 찍는 셸 48ms)
-const RESIZE_HOLD_MAX_MS = 60
-
-// 크기를 적용하기 직전에 부른다 — 덮었으면 true(다음 크기는 releaseHold 가 보낸다)
-function holdForRedraw(paneId, view) {
-  if (!view.hold) {
-    const live = view.term.element && view.term.element.querySelector('.xterm-screen')
-    if (!live) return false
-    // 복제한 화면을 칸 전체를 덮는 틀에 넣는다 — 글을 아래에 붙인 화면(screen-bottom)이면 틀 아래에 붙여서 덮는 순간 · 걷는 순간 위아래로 안 튄다
-    const still = document.createElement('div')
-    still.className = 'pane-still'
-    still.style.background = view.term.options.theme.background
-    still.append(live.cloneNode(true))
-    view.term.element.append(still)
-    view.hold = { still }
-  }
-  // 덮은 중에 또 크기가 오면(답이 늦어 다시 보낸 것 등) 걷으려던 것을 멈추고 이번 크기부터 다시 센다
-  view.hold.releasing = false
-  clearTimeout(view.hold.timer)
-  view.hold.start = performance.now()
-  view.hold.timer = setTimeout(() => releaseHold(paneId, view), RESIZE_HOLD_MAX_MS)
-  return true
-}
-
-function holdOutputArrived(paneId, view) {
-  clearTimeout(view.hold.timer)
-  const left = RESIZE_HOLD_MAX_MS - (performance.now() - view.hold.start)
-  view.hold.timer = setTimeout(() => releaseHold(paneId, view), Math.max(0, Math.min(RESIZE_HOLD_QUIET_MS, left)))
-}
-
-function releaseHold(paneId, view) {
-  const hold = view.hold
-  if (!hold || hold.releasing) return
-  clearTimeout(hold.timer)
-  hold.releasing = true
-  // 받은 출력을 다 읽고 xterm 이 그린 뒤에 걷는다 — 읽는 중에 xterm 이 먼저 요청한 프레임 콜백이 이것보다 먼저 돈다.
-  // 걷을 때까지 view.hold 를 남겨 두어 그 사이 크기를 보내지 않는다. 걷고 나서 기다리는 사이 바뀐 최신 크기를 이어서 보낸다
-  view.term.write('', () => requestAnimationFrame(() => {
-    if (!hold.releasing || views.get(paneId) !== view) return
-    hold.still.remove()
-    view.hold = null
-    sendPaneSize(paneId, view, screen.panes.find((pane) => pane.id === paneId))
-  }))
-}
-
-// 지금 pane 의 터미널로 입력을 돌려준다(작업 창이 보이고 옆 브라우저를 쓰지 않을 때)
-function focusCurrentTerminal() {
-  const focused = views.get(screen.focused)
-  if (focused && !focused.el.hidden && currentTab === 'work' && !usingBrowser()) focused.term.focus()
-}
-
-// 옆 브라우저를 쓰는 중인가 — 주소창에 치는 중이거나 서랍 안 페이지(앱 화면 밖이라 문서가 포커스를 잃는다)를 보는 중이면 터미널로 포커스를 뺏지 않는다
-function usingBrowser() {
-  return browserOpen && (!document.hasFocus() || $('browser').contains(document.activeElement))
-}
-
-// ── 에이전트 모니터(가운데 맨 아래) ─────────────────────────
-// main 이 Claude 기록을 따라 읽어 세션 · 이벤트를 보낸다(보일 때만). 칩 · 로그 그리기는 React(ui/monitor.tsx) — 여기는 껍데기(보이기 · 접기 · 알림 받기 · 타이머)
-let monitorVisible = null
-
-function setMonitorVisible(visible) {
-  if (monitorVisible === visible) return
-  monitorVisible = visible
-  studio.monitorWatch(visible)
-}
-
-function initMonitor() {
-  const dock = $('dock')
-  dock.classList.toggle('collapsed', localStorage.getItem('studio.monitorCollapsed') === '1')
-  $('monitor-fold').addEventListener('click', () => {
-    const collapsed = !dock.classList.contains('collapsed')
-    dock.classList.toggle('collapsed', collapsed)
-    localStorage.setItem('studio.monitorCollapsed', collapsed ? '1' : '0')
-  })
-  StudioUi.monitor.mount($('monitor-sessions'), $('monitor-feed'), { spaceColor })
-  studio.onMonitorUpdate(StudioUi.monitor.update)
-  // 'n분 전' 을 새로 쓰고, 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
-  setInterval(() => {
-    if (!monitorVisible) return
-    StudioUi.monitor.tick()
-  }, 30000)
-}
-
-// ── pane 경계 끌기 ───────────────────────────────────────
-// 비율은 데몬 탭 트리에 저장한다(tab ratio). 끄는 동안과, 옛 데몬이 그 동작을 모를 때는 화면이 임시로 기억한다(ratioOverrides).
-// 임시 비율은 트리 모양(비율 뺀)이 같을 때만 쓴다 — 나누거나 닫아 모양이 바뀌면 버린다
-const ratioOverrides = new Map() // `${tabId}|${path}` → { ratio, shape }
-let dividerDrag = null // { tabId, shape, element, pointerId, ratio, cancel }
-let ratioUnsupportedNoticed = false
-
-const treeShape = (tree) => JSON.stringify(tree, (key, value) => (key === 'ratio' ? undefined : value))
-
-function treeForLayout(tab) {
-  let tree = tab.tree
-  const shape = treeShape(tab.tree)
-  for (const [key, override] of ratioOverrides) {
-    const [tabId, path] = key.split('|')
-    if (tabId !== tab.id) continue
-    if (override.shape !== shape) {
-      ratioOverrides.delete(key)
-      continue
-    }
-    tree = StudioLayout.setRatio(tree, path ? path.split('.') : [], override.ratio) || tree
-  }
-  return tree
-}
-
-// 경계 요소는 경로마다 하나를 계속 쓴다(새로 만들면 더블클릭 · 끌기 중 포인터 캡처가 끊긴다)
-const dividerElements = new Map() // path → element(element.divider 가 지금 경계)
-
-function renderDividers(tab, tree, area) {
-  const container = $('panes')
-  // 닫힌 탭의 임시 비율은 버린다
-  const tabIds = new Set(screen.tabs.map((entry) => entry.id))
-  for (const key of ratioOverrides.keys()) if (!tabIds.has(key.split('|')[0])) ratioOverrides.delete(key)
-  // 끄는 중에 탭이 바뀌었거나 pane 이 생기고 닫혀 트리 모양이 바뀌면 끌기를 취소한다(다른 경계에 저장되지 않게)
-  if (dividerDrag && (!tab || tab.id !== dividerDrag.tabId || treeShape(tab.tree) !== dividerDrag.shape)) cancelDividerDrag()
-  const found = tab && tree ? StudioLayout.dividers(tree, area, PANE_GAP) : []
-  const alive = new Set()
-  for (const divider of found) {
-    const key = divider.path.join('.')
-    alive.add(key)
-    let element = dividerElements.get(key)
-    if (!element) {
-      element = document.createElement('div')
-      element.title = say('pane.resizeHint')
-      element.addEventListener('pointerdown', (event) => startDividerDrag(event, element))
-      element.addEventListener('dblclick', () => {
-        const current = activeTab()
-        if (current && element.divider) commitRatio(current, element.divider.path, StudioLayout.DEFAULT_RATIO)
-      })
-      dividerElements.set(key, element)
-      container.append(element)
-    }
-    element.className = `pane-divider ${divider.split}${dividerDrag && dividerDrag.element === element ? ' dragging' : ''}`
-    element.divider = divider
-    placeDivider(element, divider)
-  }
-  for (const [key, element] of dividerElements) {
-    if (alive.has(key)) continue
-    element.remove()
-    dividerElements.delete(key)
-  }
-}
-
-// 잡기 쉽게 gap 양옆으로 3px 씩 넓힌다
-function placeDivider(element, divider) {
-  const { line } = divider
-  const grab = 3
-  const box = divider.split === 'right'
-    ? { left: line.x - grab, top: line.y, width: line.width + grab * 2, height: line.height }
-    : { left: line.x, top: line.y - grab, width: line.width, height: line.height + grab * 2 }
-  Object.assign(element.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` })
-}
-
-function startDividerDrag(event, element) {
-  const tab = activeTab()
-  if (event.button !== 0 || !tab || !element.divider || dividerDrag) return
-  event.preventDefault()
-  element.setPointerCapture(event.pointerId)
-  element.classList.add('dragging')
-  const path = element.divider.path
-  const key = `${tab.id}|${path.join('.')}`
-  const shape = treeShape(tab.tree)
-  let frame = 0
-  const move = (moveEvent) => {
-    if (!dividerDrag || moveEvent.pointerId !== dividerDrag.pointerId) return
-    const origin = $('panes').getBoundingClientRect()
-    const divider = element.divider
-    const pos = divider.split === 'right' ? moveEvent.clientX - origin.left : moveEvent.clientY - origin.top
-    dividerDrag.ratio = StudioLayout.ratioAt(divider, pos, PANE_GAP)
-    ratioOverrides.set(key, { ratio: dividerDrag.ratio, shape })
-    if (!frame) frame = requestAnimationFrame(() => {
-      frame = 0
-      layoutPanes()
-    })
-  }
-  const abort = (cancelEvent) => {
-    if (dividerDrag && dividerDrag.element === element && cancelEvent.pointerId === dividerDrag.pointerId) cancelDividerDrag()
-    layoutPanes()
-  }
-  const detach = () => {
-    element.removeEventListener('pointermove', move)
-    element.removeEventListener('pointerup', finish)
-    element.removeEventListener('pointercancel', abort)
-    element.removeEventListener('lostpointercapture', abort)
-    if (frame) cancelAnimationFrame(frame)
-    element.classList.remove('dragging')
-  }
-  // 같은 포인터를 놓았을 때만 저장 — 취소 · 캡처를 잃음은 저장 없이 원래대로
-  const finish = (upEvent) => {
-    if (!dividerDrag || dividerDrag.element !== element || upEvent.pointerId !== dividerDrag.pointerId) return
-    const { ratio } = dividerDrag
-    dividerDrag = null
-    detach()
-    if (ratio === null) return layoutPanes()
-    commitRatio(tab, path, ratio)
-  }
-  dividerDrag = {
-    tabId: tab.id,
-    shape,
-    element,
-    pointerId: event.pointerId,
-    ratio: null,
-    // 취소 — 임시 비율을 버리고 원래대로(저장하지 않는다)
-    cancel: () => {
-      dividerDrag = null
-      detach()
-      ratioOverrides.delete(key)
-      if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
-    },
-  }
-  element.addEventListener('pointermove', move)
-  element.addEventListener('pointerup', finish)
-  element.addEventListener('pointercancel', abort)
-  element.addEventListener('lostpointercapture', abort)
-}
-
-function cancelDividerDrag() {
-  if (dividerDrag) dividerDrag.cancel()
-}
-
-// 데몬에 저장 — 되면 임시 비율을 지우고(데몬 상태에 들어 있다), 옛 데몬이면 임시로 두고 한 번 알린다
-async function commitRatio(tab, path, ratio) {
-  const key = `${tab.id}|${path.join('.')}`
-  ratioOverrides.set(key, { ratio, shape: treeShape(tab.tree) })
-  layoutPanes()
-  const result = await studio.tabRatio(tab.id, path, ratio)
-  if (result.unsupported) {
-    if (!ratioUnsupportedNoticed) showToast(say('pane.sizeOldDaemon'), 'info')
-    ratioUnsupportedNoticed = true
-    return
-  }
-  if (result.error) {
-    ratioOverrides.delete(key)
-    showToast(say('pane.sizeSaveFailed', { message: result.error }))
-  } else if (ratioOverrides.get(key) && ratioOverrides.get(key).ratio === ratio) {
-    ratioOverrides.delete(key)
-  }
-  layoutPanes()
-}
-
-// 탭 전체 크기(칸) — 앱이 없을 때 CLI 로 나눠도 데몬이 크기를 맞게 나누도록
-function reportTabSize(tab, container) {
-  const size = estimateCells(container)
-  if (!tab || !size) return
-  if (lastTabSize && lastTabSize.tab === tab.id && lastTabSize.cols === size.cols && lastTabSize.rows === size.rows) return
-  lastTabSize = { tab: tab.id, ...size }
-  studio.tabSize(tab.id, size)
-}
-
 // ── 옆 브라우저 ──────────────────────────────────────────
 // 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그린다 — 화면 위에 따로 떠 있어서
 // 다 나온 뒤에 자리(#browser-slot)를 알려 붙이고, 닫을 땐 먼저 떼고 미끄러져 들어간다.
 // 막대(앞뒤 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기)와 알림 줄은 React(ui/browser-bar.tsx) — 서랍 껍데기 · 너비 끌기는 여기
 const BROWSER_SLIDE_MS = 240
-let browserOpen = false
+export let browserOpen = false
 let browserTimer = null
 let urlFocusTimer = null
 
@@ -1086,20 +637,6 @@ function initBrowser() {
   new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
 }
 
-// ── 탭 ──────────────────────────────────────────────────
-// 일감은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
-export function switchTab(name) {
-  if (!state || !state.valid) return
-  if (name === 'board') {
-    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 일감을 열지 않는다
-    return
-  }
-  setCurrentTab('work')
-  studio.reportTab('work')
-  panels.work.hidden = false
-  requestAnimationFrame(layoutPanes)
-}
-
 // ── [작업] 팝업 · 일감 페이지 메뉴 ────────────────────────────
 // 칸반 대신 탭 줄 [작업] — 나를 기다리는 것(사람에게 묻는 요청) · 진행 중 · 최근 끝난 것. 작업을 누르면 상세, 질문을 누르면 앱 안에서 바로 답한다.
 // 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(일감을 띄운다)
@@ -1243,7 +780,7 @@ export function paneDetailButton(paneId) {
   return button
 }
 
-function syncDetailButton(paneId, view) {
+export function syncDetailButton(paneId, view) {
   view.detailButton.hidden = !paneBound[paneId]
   view.detailButton.setAttribute('aria-expanded', String(detailPane === paneId))
   view.detailButton.classList.toggle('active', detailPane === paneId)
