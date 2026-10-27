@@ -88,6 +88,7 @@
   "dialog.coreUpdate.log": "Details: {path}",
   "dialog.appUpdate.message": "App update",
   "dialog.appUpdate.installFailed": "npm install failed. Log: {path}",
+  "dialog.appUpdate.buildFailed": "Renderer build failed — started with the previous build. Log: {path}",
   "dialog.packFile.title": "Choose a Pack Archive",
   "dialog.packFile.filter": "Pack Archive",
   "dialog.packFolder.title": "Choose a Pack Folder (the folder with pack.json)",

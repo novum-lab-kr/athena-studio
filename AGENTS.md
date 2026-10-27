@@ -12,21 +12,25 @@
 ## 명령
 ```sh
 npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기
-npm start         # 코어 번들 만들고 개발 앱 켜기(맥)
-npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로)
-npm run typecheck # 타입 검사(tsc — tsconfig.json · athena/jsconfig.json)
+npm start         # 코어 번들 · 화면 빌드(dist/renderer) 만들고 개발 앱 켜기(맥)
+npm run build:renderer # 화면만 빌드(vite build — 켤 때 저절로 돈다)
+npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로) · 끝에 화면 빌드(renderer .ts 문법)
+npm run typecheck # 타입 검사(tsc — tsconfig.json · src/renderer/tsconfig.json · athena/jsconfig.json)
 npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(실제 pty)
 ```
-빌드 · 패키징 스크립트는 아직 없다. 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
+패키징 스크립트는 아직 없다(빌드는 화면만 — 아래 "TypeScript"). 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
 
 ## TypeScript (섞어 쓰는 중)
-- **빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. `npm start` · ⚙ 업데이트 · 데몬 띄우기는 JS 때와 같다
+- **앱 Node 쪽은 빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. 데몬 띄우기는 JS 때와 같다
+- **화면(renderer)은 Vite 빌드** — `src/renderer` 의 `index.html` · `tray.html` 을 `vite.config.mts` 가 `dist/renderer/`(git 무시)로 묶고 main 은 그쪽을 연다. `npm start` · ⚙ 업데이트 뒤 다시 켜기(`scripts/dev-app.js start`)가 켤 때마다 빌드한다 — 실패하면 이전 빌드로 켜고 경고(⚙ 업데이트 뒤면 앱이 알림) · 이전 빌드도 없으면 켜지 않는다. 지켜보며 다시 빌드하지 않는다 — 화면을 고쳤으면 앱을 다시 켠다
 - Electron 진입점은 `src/main.mts`(ES 모듈 · `package.json` `main`) — Electron 이 이 파일을 끝까지 읽은 뒤 ready 를 낸다(`app.setName` · `setPath` 는 ready 전). 가져온 모듈은 본문보다 먼저 도니 `src/main/*.mts` 맨 위에서 app 자리를 읽지 않는다
 - 앱 Node 쪽(main · daemon · `src/lib`) **새 파일은 `.mts`**(ES 모듈). `.ts` 는 안 된다 — 레포가 CommonJS 라 `import`/`export` 를 쓴 `.ts` 를 tsc 가 막는다
 - 가져올 때 확장자까지: `require('./lib/requests.mts')` · `import { x } from './y.mts'`. 타입만이면 `import type`
 - **지울 수 있는 문법만** — enum · namespace · 생성자 매개변수 속성 · `import x = require()` 금지(`erasableSyntaxOnly` · `scripts/check-ts.js` 가 막는다)
 - JS 파일은 맨 위 `// @ts-check` 를 붙인 것만 검사한다(`checkJs` 를 전역으로 켜면 옛 오류 수천 개). 붙인 파일 · `.mts` 는 오류 0 을 지킨다
-- renderer 는 브라우저 쪽이라 아직 JS(타입 검사 밖) — `<script>` 로 싣는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 `.mts` 로 옮기지 않는다
+- renderer 는 섞어 쓰는 중 — `renderer.js` · `tray.js` 는 아직 JS(타입 검사 밖 · 쪼개면서 `.ts` 로). 진입점 `entry.ts` · `tray-entry.ts` 가 옛 `<script>` 전역(xterm · 공유 lib — `globals.ts` · `tray-globals.ts`)을 넣은 뒤 그 JS 를 싣는다. renderer 새 파일은 `.ts`(Vite 가 지운다 · 같은 지울 수 있는 문법만) · 타입 검사는 `src/renderer/tsconfig.json`(DOM · strict). 화면이 같이 쓰는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 아직 UMD JS
+- 화면 진입점은 **정적 import 만** — main 이 창을 다 읽자마자(`did-finish-load`) 한 번 보내는 것(트레이 `tray:update`)이 있어 동적 `import()` 로 늦게 실으면 놓친다
+- renderer 가 실행 중에 만드는 경로는 번들러가 못 본다 — 로고(`assets/logo/…`)는 빌드가 폴더째 복사하고, `ICON_ROOT`(`../../node_modules/material-icon-theme/icons`)는 `dist/renderer` 가 레포 뿌리에서 두 칸 아래라 맞는다(outDir 을 옮기지 않는다)
 - preload(`preload.js` · `preload-tray.js`)는 JS + `// @ts-check` — `sandbox: true` 라 한 파일 · `require('electron')` 만 된다(`.mts` · 다른 파일 require 안 됨)
 - 데몬 CLI `src/daemon/cli.js` 는 JS + `// @ts-check` — `bin/athena-studio-cli` 가 pane 밖에서 PATH 의 node 로 부를 수 있다(그 node 가 타입 지우기를 못 할 수 있다). 그래서 cli.js 가 부르는 `protocol.js` 도 JS
 - 코어 `athena/` 는 `.mjs` 그대로 + JSDoc · 고치는 파일부터 `// @ts-check`(설치본은 node 로 바로 실행 — 빌드를 끼우지 않는다)
@@ -49,13 +53,14 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 | 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 5)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.mts` · `src/daemon/cli.js` · `src/daemon-client.mts` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
 | 팩 명령 약속(`pack … --json` 출력 · 오류 코드) | 앱 `src/lib/pack.mts` `CONTRACT` 와 코어 `athena/scripts/lib/bodies.mjs` `CONTRACT`(둘 다 3 — 데몬 `PROTOCOL` 과는 별개) · 출력 해석 · `packErrorText` · `scripts/fake-pack.js`(같은 모양으로) · `test/pack.test.js` · 코어 `athena/docs/pack.md` |
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
-| 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) |
+| 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) — renderer 새 파일(`.ts`)은 진입점에서 import 하면 `check` 끝의 화면 빌드가 본다 |
 | 새 `.mts` 파일 · JS → `.mts` 옮기기 | `package.json` `check` 의 `scripts/check-ts.js` 줄 · 부르는 곳의 `require` 경로(확장자까지) · 테스트의 `require` |
 | 순수 로직 | `src/lib/` 에 두고 `test/<이름>.test.js` — Electron 없이 돈다 |
 | 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · README "스튜디오 집과 데이터" |
 | 메뉴 · 단축키 · 화면 동작 | README "화면" · "팩" · "문제가 생기면" |
 
 ## 함정
+- **화면은 `dist/renderer/` 를 연다** — `npm start` 를 거치지 않고 `electron .` 으로 바로 켜면(화면 확인 스크립트 등) 빌드가 돌지 않는다. 빌드가 없으면 빈 창 · 있으면 옛 화면이다 — 먼저 `npm run build:renderer`
 - **번들은 커밋된 `HEAD:athena` 에서 만든다** — `athena/` 의 미커밋 변경은 `npm start` 에 들어가지 않는다. `athena/` 트리가 같으면 다시 만들지 않고, 만들다 실패해도 앱은 이전 번들 · 이미 푼 코어로 켜진다(`[dev-app] 코어 번들을 만들지 못했어요` 경고만). 켜졌다고 최신 코어가 들어간 것이 아니다 — `npm start` 로그를 본다. (커밋이 필요하다는 뜻이지, 사용자에게 묻지 않고 커밋해도 된다는 뜻은 아니다)
 - **데몬은 앱보다 오래 산다** — 데몬 코드(`src/daemon/`)를 고치고 앱만 다시 켜면 옛 데몬에 붙는다. [보기 → 작업 창 데몬 다시 띄우기] 가 필요하고 그러면 pane 이 모두 닫힌다 — 사용자가 에이전트를 돌리는 중이면 먼저 묻는다
 - **팩 바꾸기는 pane 을 닫지 않는다** — 창이 다른 본체로 다시 붙을 뿐(`src/main/packs.mts` `packOpen` → `athena-dir.mts` `rebindBody`). pane 이 닫히는 것은 사용자가 pane · 탭을 닫을 때 · 옛 터미널 모니터 칸(데몬 dock) 정리 · 데몬 다시 띄우기 · 스튜디오 초기화뿐이다

@@ -88,6 +88,7 @@
   "dialog.coreUpdate.log": "详细记录: {path}",
   "dialog.appUpdate.message": "应用更新",
   "dialog.appUpdate.installFailed": "npm install 失败。记录: {path}",
+  "dialog.appUpdate.buildFailed": "界面构建失败，已用上次的构建启动。记录: {path}",
   "dialog.packFile.title": "选择包压缩文件",
   "dialog.packFile.filter": "包压缩文件",
   "dialog.packFolder.title": "选择包文件夹(含 pack.json 的文件夹)",

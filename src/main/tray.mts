@@ -145,7 +145,8 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
       webPreferences: { preload: path.join(import.meta.dirname, '..', 'preload-tray.js'), contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
     trayWindow = created
-    created.loadFile(path.join(import.meta.dirname, '..', 'renderer', 'tray.html'))
+    // 화면은 Vite 빌드 결과(dist/renderer · vite.config.mts)
+    created.loadFile(path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'tray.html'))
     // 로드가 끝나야 받는 쪽이 생긴다 — 그때 한 번 보낸다(다시 만든 직후 비어 보이지 않게)
     created.webContents.on('did-finish-load', sendTrayUpdate)
     // 다른 곳을 누르면 닫힌다(메뉴처럼)

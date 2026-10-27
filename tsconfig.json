@@ -1,7 +1,7 @@
 {
   // 앱 Node 쪽(main · daemon · src/lib) 타입 검사 — 빌드 없음. Electron 44(Node 24)가 .mts 를 타입만 지우고 바로 실행한다
   // 섞어 쓰는 중: .mts 는 늘 검사 · JS 는 파일 맨 위 // @ts-check 를 붙인 것만(checkJs 를 전역으로 켜면 옛 오류 수천 개)
-  // renderer 는 브라우저 쪽이라 뺀다(renderer 단계에서 따로) · preload 는 JS + // @ts-check(sandbox 라 한 파일 · require('electron') 만). 코어 athena/ 는 athena/jsconfig.json
+  // renderer 는 브라우저 쪽이라 뺀다(src/renderer/tsconfig.json — Vite 가 묶는다) · preload 는 JS + // @ts-check(sandbox 라 한 파일 · require('electron') 만). 코어 athena/ 는 athena/jsconfig.json
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES2023"],
@@ -19,6 +19,6 @@
     "allowImportingTsExtensions": true,
     "skipLibCheck": true
   },
-  "include": ["src/**/*", "scripts/*.js", "test/*.js"],
+  "include": ["src/**/*", "scripts/*.js", "test/*.js", "vite.config.mts"],
   "exclude": ["src/renderer"]
 }

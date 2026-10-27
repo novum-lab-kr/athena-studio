@@ -88,6 +88,7 @@
   "dialog.coreUpdate.log": "자세한 기록: {path}",
   "dialog.appUpdate.message": "앱 업데이트",
   "dialog.appUpdate.installFailed": "npm install 에 실패했어요. 기록: {path}",
+  "dialog.appUpdate.buildFailed": "화면 빌드에 실패해 이전 빌드로 켰어요. 기록: {path}",
   "dialog.packFile.title": "팩 압축 파일 고르기",
   "dialog.packFile.filter": "팩 압축 파일",
   "dialog.packFolder.title": "팩 폴더 고르기 (pack.json 이 있는 폴더)",

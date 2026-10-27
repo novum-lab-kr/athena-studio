@@ -4,8 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
   <title>Athena</title>
-  <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
-  <link rel="stylesheet" href="style.css">
+  <!-- 스크립트 · 스타일은 진입점 하나(entry.ts — xterm.css · style.css · 전역 · renderer.js)로 Vite 가 묶는다 -->
+  <script type="module" src="entry.ts"></script>
 </head>
 <body>
   <header class="tabbar">
@@ -163,20 +163,11 @@
     </div>
   </div>
 
-  <script src="../../node_modules/@xterm/xterm/lib/xterm.js"></script>
-  <script src="../../node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
-  <script src="../../node_modules/@xterm/addon-web-links/lib/addon-web-links.js"></script>
-  <script src="../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.js"></script>
-  <script src="../lib/layout.js"></script>
-  <script src="../lib/space-names.js"></script>
-  <script src="../lib/pane-keys.js"></script>
-  <script src="../lib/i18n.js"></script>
   <!-- 카트리지(팩) 아이콘 — 시작 화면 '내 팩' 줄이 복사해 쓴다 -->
   <template id="cartridge-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" stroke-linecap="round"><path d="M6 3h12a1 1 0 0 1 1 1v12.5l-2 2V21H7v-2.5l-2-2V4a1 1 0 0 1 1-1z"/><path d="M8.5 7h7v5h-7z"/><path d="M9 18.5v2M12 18.5v2M15 18.5v2"/></svg></template>
   <!-- 알림 — 대화상자보다 위(대화상자가 떠 있어도 보이고 닫을 수 있게) -->
   <div id="toast" class="toast" hidden></div>
   <!-- 툴팁 — data-tip 이 있는 버튼에 마우스를 올리면(탭 줄은 기본 title 툴팁이 안 떠서 직접 그린다) -->
   <div id="tip" class="tip" role="tooltip" hidden></div>
-  <script src="renderer.js"></script>
 </body>
 </html>

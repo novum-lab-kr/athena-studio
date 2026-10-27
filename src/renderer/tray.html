@@ -4,7 +4,8 @@
   <meta charset="utf-8">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:">
   <title>Athena</title>
-  <link rel="stylesheet" href="tray.css">
+  <!-- 스크립트 · 스타일은 진입점 하나(tray-entry.ts)로 Vite 가 묶는다 -->
+  <script type="module" src="tray-entry.ts"></script>
 </head>
 <body>
   <!-- 메뉴 막대 패널(사용자가 고른 ★ Codex 추천 · 상태 목록형) — 확인 필요 · 에이전트 · 사용량 막대 · 칸반 숫자 · 최근 24시간 완료 -->
@@ -18,7 +19,5 @@
     </header>
     <div id="body" class="body"></div>
   </div>
-  <script src="../lib/i18n.js"></script>
-  <script src="tray.js"></script>
 </body>
 </html>
