@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.mts', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts', 'src/main/explorer-panel.mts', 'src/main/athena-agent.mts', 'src/main/pack-repos.mts', 'src/main/work.mts', 'src/main/daemon-link.mts', 'src/main/workspaces.mts', 'src/main/agent-monitor.mts', 'src/main/pane-watch.mts', 'src/main/catch-up.mts', 'src/main/athena-dir.mts', 'src/main/packs.mts', 'src/main/side-browser.mts', 'src/main/pack-window.mts']
+const SCRIPT_FILES = ['src/main.mts', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts', 'src/main/monitor-logs.mts', 'src/main/files.mts', 'src/main/board.mts', 'src/main/core-runner.mts', 'src/main/app-updater.mts', 'src/main/tray.mts', 'src/main/explorer-panel.mts', 'src/main/athena-agent.mts', 'src/main/pack-repos.mts', 'src/main/work.mts', 'src/main/daemon-link.mts', 'src/main/workspaces.mts', 'src/main/agent-monitor.mts', 'src/main/pane-watch.mts', 'src/main/catch-up.mts', 'src/main/athena-dir.mts', 'src/main/packs.mts', 'src/main/side-browser.mts', 'src/main/pack-window.mts', 'src/renderer/ui/settings-pop.tsx']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
@@ -25,11 +25,11 @@ const ALLOWED = {
   'src/lib/pack.mts': ["new Error('객체가 아님')", '워크트리:', '워크트리 경로가 이미 있다:', "'이미 있다'", "'로컬'", "'(커밋 없음)'"],
 }
 
-// 주석을 뺀 줄 — 줄 전체 주석과 ' // ' 뒤(주소의 :// 는 앞에 공백이 없어 남는다)
+// 주석을 뺀 줄 — 줄 전체 주석(JSX 의 {/* … */} 포함)과 ' // ' 뒤(주소의 :// 는 앞에 공백이 없어 남는다)
 function codeLines(text) {
   return text.split('\n').map((line, index) => {
     const trimmed = line.trim()
-    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*')) return { number: index + 1, code: '' }
+    if (trimmed.startsWith('//') || trimmed.startsWith('*') || trimmed.startsWith('/*') || trimmed.startsWith('{/*')) return { number: index + 1, code: '' }
     const comment = line.indexOf(' // ')
     return { number: index + 1, code: comment >= 0 ? line.slice(0, comment) : line }
   })

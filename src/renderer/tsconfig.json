@@ -6,6 +6,7 @@
     "target": "ES2023",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "esnext",
+    "jsx": "react-jsx",
     "moduleResolution": "bundler",
     "types": ["vite/client"],
     "strict": true,

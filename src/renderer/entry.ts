@@ -4,4 +4,6 @@
 import '@xterm/xterm/css/xterm.css'
 import './style.css'
 import './globals.ts'
+// React 화면(ui/) — renderer.js 가 StudioUi 전역으로 부른다. 그래서 renderer.js 보다 먼저
+import './ui/index.ts'
 import './renderer.js'

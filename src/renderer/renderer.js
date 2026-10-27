@@ -1,12 +1,14 @@
 // 앱 화면 — 탭 두 개(작업 창 · 일감) · 작업 창 안의 데몬 탭·pane · 처음 켤 때 아테나 받기 · 에이전트(claude · codex) 고르기
 // studio 는 preload 의 contextBridge 가 만든 전역이다 — 같은 이름으로 다시 선언하면 이 파일 전체가 SyntaxError 로 죽는다
-/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout, StudioI18n */
+/* global studio, Terminal, FitAddon, WebLinksAddon, Unicode11Addon, StudioLayout, StudioI18n, StudioUi */
 const $ = (id) => document.getElementById(id)
 
 // ── 언어 ──────────────────────────────────────────────────
 // 문구는 사전(src/i18n) — main 이 preload 로 넘긴다(StudioI18n 은 src/lib/i18n.mts). 정적 문구는 index.html 의 data-i18n* 속성
 let i18nState = studio.i18n()
 const say = (key, values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
+// React 화면(ui/)도 같은 say · 토스트를 쓴다(ui/bridge.ts)
+StudioUi.connect({ say, showToast })
 
 function applyStaticTexts() {
   document.documentElement.lang = i18nState.language
@@ -2055,6 +2057,7 @@ function closePops() {
   for (const [pop, button] of [['work-pop', 'work-tab'], ['board-menu', 'board-tab'], ['settings-pop', 'settings-tab']]) {
     if ($(pop).hidden) continue
     $(pop).hidden = true
+    if (pop === 'settings-pop') StudioUi.settings.close() // React 몸통을 내린다(다음에 열 때 읽는 중부터)
     $(button).setAttribute('aria-expanded', 'false')
     $(button).classList.remove('active')
   }
@@ -2588,134 +2591,19 @@ async function openRequest(request) {
   reportDelivery(result)
 }
 
-// ── ⚙ 설정 팝업 — 이 창 팩의 레포별 PR 자동 리뷰 · 머지 ─────────────────────
-// 읽기는 main 이 pack.json 을 바로, 바꾸기는 코어 pack set-auto-merge. 바꿀 때마다 pack.json 을 다시 읽어 그린다(파일이 정본)
-let mergeRows = null // null — 읽는 중 · false — pack.json 을 못 읽음
-let mergeSaving = false
-
-function settingsSwitch({ key, kind, label, checked, onClick }) {
-  const row = el('button', `settings-switch ${kind}`)
-  row.type = 'button'
-  row.dataset.key = key
-  row.setAttribute('role', 'switch')
-  row.setAttribute('aria-checked', String(checked))
-  row.append(el('span', 'settings-switch-label', label), el('span', 'settings-switch-track'))
-  row.addEventListener('click', onClick)
-  return row
-}
-
-// 레포 묶음 — 레포 이름 줄이 자동 머지 스위치, 들여쓴 하위 줄이 머지 전 확인(자동 머지가 꺼지면 뜻이 없어 숨긴다)
-function settingsRepo(repo) {
-  const node = el('section', 'settings-repo')
-  node.append(settingsSwitch({ key: `${repo.name}:auto`, kind: 'repo', label: repo.name, checked: repo.autoMerge, onClick: () => saveMerge(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`) }))
-  if (!repo.autoMerge) return node
-  node.append(settingsSwitch({ key: `${repo.name}:confirm`, kind: 'sub', label: say('settings.confirm'), checked: repo.confirm, onClick: () => saveMerge(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`) }))
-  // 작업 base 가 운영 브랜치와 같은데 확인을 끄면 머지가 곧 그 브랜치 반영
-  if (!repo.confirm && repo.releaseOnMerge) node.append(el('p', 'settings-note', say('settings.releaseWarn', { branch: repo.prBase })))
-  return node
-}
-
-function renderSettingsPop() {
-  $('settings-pop-pack').textContent = (packs.current && packLabel(packs.current)) || ''
-  const update = settingsAppUpdate()
-  $('settings-pop-body').replaceChildren(...settingsMerge(), ...(update ? [update] : []))
-}
-
-function settingsMerge() {
-  if (mergeRows === null) return [el('p', 'work-empty', say('work.loading'))]
-  if (mergeRows === false) return [el('p', 'work-empty', say('settings.unreadable'))]
-  if (!mergeRows.length) return [el('p', 'work-empty', say('settings.empty'))]
-  const intro = el('div', 'settings-intro')
-  intro.append(el('h3', 'settings-intro-title', say('settings.mergeTitle')), el('p', 'settings-intro-desc', say('settings.mergeDesc')))
-  return [intro, ...mergeRows.map(settingsRepo)]
-}
-
-// ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜지고 ⚙ 에 점 ─────
-// 누르면 main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
-let appUpdate = null // main 의 상태 { state, behind, branch, reason, version, latest, running } · unavailable 이면 줄을 그리지 않는다
-let appUpdateFailure = null // 방금 누른 [업데이트] 가 못 한 까닭(다음 상태가 오면 지운다)
-
-function appUpdateReasonText(reason, branch) {
-  if (reason === 'not-main') return say('settings.appUpdateNotMain', { branch: branch || '-' })
-  if (reason === 'dirty') return say('settings.appUpdateDirty')
-  if (reason === 'diverged') return say('settings.appUpdateDiverged')
-  if (reason === 'fetch-failed') return say('settings.appUpdateFetchFailed')
-  if (reason === 'ff-failed') return say('settings.appUpdateFfFailed')
-  if (reason === 'restart-failed') return say('settings.appUpdateRestartFailed')
-  return ''
-}
-
-function appUpdateNote() {
-  if (appUpdate.running) return say('settings.appUpdateRunning')
-  if (appUpdateFailure) return appUpdateReasonText(appUpdateFailure, appUpdate.branch) || say('settings.appUpdateCurrent')
-  if (appUpdate.reason && appUpdate.state === 'behind') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
-  // origin 에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
-  if (appUpdate.reason === 'fetch-failed') return appUpdateReasonText(appUpdate.reason, appUpdate.branch)
-  // origin/main 에 새 버전 태그가 있으면 '0.2.1 → 0.3.0' · 아직 없으면 커밋 수
-  if (appUpdate.state === 'behind' && appUpdate.latest) return say('settings.appUpdateNewVersion', { current: appUpdate.version || '-', next: appUpdate.latest })
-  if (appUpdate.state === 'behind') return say('settings.appUpdateBehind', { count: appUpdate.behind })
-  return say('settings.appUpdateCurrent')
-}
-
-function settingsAppUpdate() {
-  if (!appUpdate || appUpdate.state === 'unavailable') return null
-  const node = el('section', 'settings-app-update')
-  const row = el('div', 'settings-app-row')
-  const button = el('button', 'settings-app-button', say('settings.appUpdateButton'))
-  button.type = 'button'
-  button.dataset.key = 'app-update'
-  button.disabled = appUpdate.state !== 'behind' || appUpdate.running
-  button.addEventListener('click', runAppUpdate)
-  const label = el('span', 'settings-app-label', say('settings.appUpdate'))
-  // 지금 버전 — 늘
-  if (appUpdate.version) label.append(el('span', 'settings-app-version', say('settings.appUpdateVersion', { version: appUpdate.version })))
-  row.append(label, button)
-  node.append(row, el('p', 'settings-note settings-app-note', appUpdateNote()))
-  return node
-}
-
+// ── ⚙ 설정 팝업 — 이 창 팩의 레포별 PR 자동 리뷰 · 머지 + 앱 업데이트 ─────────────────────
+// 몸통(settings-pop-body)은 React(ui/settings-pop.tsx) — 여기는 껍데기(열기 · 닫기 · 머리줄 팩 이름)와 ⚙ 의 업데이트 점만
 function applyAppUpdate(next) {
-  appUpdate = next || null
-  appUpdateFailure = null
-  $('settings-tab').classList.toggle('has-update', Boolean(appUpdate && appUpdate.state === 'behind'))
-  if (!$('settings-pop').hidden) renderSettingsPop()
-}
-
-async function runAppUpdate() {
-  if (!appUpdate || appUpdate.running) return
-  const result = await studio.runAppUpdate()
-  if (result && result.ok) return // 앱이 곧 꺼졌다 다시 켜진다
-  appUpdateFailure = (result && result.reason) || 'ff-failed'
-  if (!$('settings-pop').hidden) renderSettingsPop()
-}
-
-// 다시 읽어 그리고, 누르던 스위치에 포커스를 돌려준다
-async function loadSettings(focusKey) {
-  const result = await studio.mergeSettings()
-  if ($('settings-pop').hidden) return
-  mergeRows = result && result.ok ? result.repos : false
-  renderSettingsPop()
-  const target = [...$('settings-pop-body').querySelectorAll('button')].find((node) => !focusKey || node.dataset.key === focusKey)
-  if (target) target.focus({ preventScroll: true })
-}
-
-async function saveMerge(repo, values, focusKey) {
-  if (mergeSaving) return
-  mergeSaving = true
-  const result = await studio.setAutoMerge(repo.name, values)
-  mergeSaving = false
-  if (!result || !result.ok) showToast(say('settings.saveFailed', { message: (result && result.text) || '' }))
-  await loadSettings(focusKey)
+  $('settings-tab').classList.toggle('has-update', Boolean(next && next.state === 'behind'))
+  StudioUi.settings.setAppUpdate(next || null)
 }
 
 function toggleSettingsPop() {
   if (!$('settings-pop').hidden) return closePops()
   if (!state || !state.valid || welcomeShown()) return
-  mergeRows = null
   openPop('settings-pop', 'settings-tab')
-  renderSettingsPop()
-  loadSettings()
-  studio.checkAppUpdate() // 상태는 onAppUpdate 로 온다
+  $('settings-pop-pack').textContent = (packs.current && packLabel(packs.current)) || ''
+  StudioUi.settings.open($('settings-pop-body'))
 }
 
 function reportDelivery(result) {
@@ -3727,6 +3615,7 @@ async function applyAthenaResult(pending) {
 function applyLanguage(next) {
   i18nState = next
   applyStaticTexts()
+  StudioUi.textsChanged()
   if (setupTitleKey) setSetupTitle(setupTitleKey)
   if (!state) return
   renderState()
