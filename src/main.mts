@@ -14,6 +14,7 @@ import * as core from './lib/core.mts'
 import * as daemonClient from './daemon-client.mts'
 import * as agentLanguage from './lib/agent-language.mts'
 import * as tokenUsage from './lib/token-usage.mts'
+import * as i18n from './lib/i18n.mts'
 import type { AppConfig } from './lib/core.mts'
 import { newMonitor, createMonitorLogs } from './main/monitor-logs.mts'
 import { createFiles, guarded } from './main/files.mts'
@@ -45,18 +46,10 @@ import type { SideBrowserCtx } from './main/side-browser.mts'
 import type { PackWindowCtx } from './main/pack-window.mts'
 import type { TrayCtx } from './main/tray.mts'
 
-// studio-home 은 JS · i18n 은 화면이 <script> 로도 싣는 UMD · 사전은 JSON — 다른 src/main/*.mts 와 같은 require 캐시의 것을 쓴다
+// studio-home 은 JS · 사전은 JSON — 다른 src/main/*.mts 와 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
 const studioHome: typeof import('./lib/studio-home.js') = require('./lib/studio-home.js')
 type Dictionary = Record<string, string>
-// i18n.js 에서 main 이 쓰는 것만
-type I18n = {
-  LANGUAGES: string[]
-  FALLBACK_LANGUAGE: string
-  t(dictionary: Dictionary | undefined, key: string, values: Record<string, unknown> | undefined, fallback: Dictionary | undefined): string
-  pickLanguage(setting: unknown, systemLocale: string): string
-}
-const i18n: I18n = require('./lib/i18n.js')
 type Ensured = Awaited<ReturnType<typeof daemonClient.ensureDaemon>>
 
 // 팩 창 문맥(createPackWindow 의 ctx) — 각 묶음(src/main/*.mts)이 읽고 붙이는 칸을 모두 합친 것 + 아래 IPC · 메뉴가 부르는 것

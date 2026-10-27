@@ -5,6 +5,7 @@ import * as core from '../lib/core.mts'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 import type { Say } from '../lib/pack.mts'
+import type { Tree } from '../lib/layout.mts'
 import { MONITOR_LABEL } from './monitor-logs.mts'
 
 type Ensured = Awaited<ReturnType<typeof daemonClient.ensureDaemon>>
@@ -16,7 +17,7 @@ export type DaemonCall = <T = unknown>(op: string, args?: object) => Promise<Cal
 // 데몬 pane 목록(pane list) 한 줄 — 읽는 칸만
 export type DaemonPane = { id: string; tab_id?: string | null; label?: string; name?: string; title?: string; agent?: string | null; agent_status?: string; cwd?: string; foreground_cwd?: string }
 // 데몬 화면 상태(state) — 읽는 칸만
-export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: string }[]; tabs: { id: string; workspace: string; tree: unknown }[] }
+export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: string }[]; tabs: { id: string; workspace: string; tree: Tree | null }[] }
 
 // 화면이 넘기는 pane 크기(cols · rows) — 그대로 데몬에 넘긴다
 export type Size = Record<string, unknown> | undefined

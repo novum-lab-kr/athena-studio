@@ -28,7 +28,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 가져올 때 확장자까지: `require('./lib/requests.mts')` · `import { x } from './y.mts'`. 타입만이면 `import type`
 - **지울 수 있는 문법만** — enum · namespace · 생성자 매개변수 속성 · `import x = require()` 금지(`erasableSyntaxOnly` · `scripts/check-ts.js` 가 막는다)
 - JS 파일은 맨 위 `// @ts-check` 를 붙인 것만 검사한다(`checkJs` 를 전역으로 켜면 옛 오류 수천 개). 붙인 파일 · `.mts` 는 오류 0 을 지킨다
-- renderer 는 섞어 쓰는 중 — `renderer.js` · `tray.js` 는 아직 JS(타입 검사 밖 · 쪼개면서 `.ts` 로). 진입점 `entry.ts` · `tray-entry.ts` 가 옛 `<script>` 전역(xterm · 공유 lib — `globals.ts` · `tray-globals.ts`)을 넣은 뒤 그 JS 를 싣는다. renderer 새 파일은 `.ts`(Vite 가 지운다 · 같은 지울 수 있는 문법만) · 타입 검사는 `src/renderer/tsconfig.json`(DOM · strict). 화면이 같이 쓰는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 아직 UMD JS
+- renderer 는 섞어 쓰는 중 — `renderer.js` · `tray.js` 는 아직 JS(타입 검사 밖 · 쪼개면서 `.ts` 로). 진입점 `entry.ts` · `tray-entry.ts` 가 옛 `<script>` 전역(xterm · 공유 lib — `globals.ts` · `tray-globals.ts`)을 넣은 뒤 그 JS 를 싣는다. renderer 새 파일은 `.ts`(Vite 가 지운다 · 같은 지울 수 있는 문법만) · 타입 검사는 `src/renderer/tsconfig.json`(DOM · strict). 화면이 같이 쓰는 `src/lib` 4개(layout · space-names · pane-keys · i18n)는 `.mts` — main · 데몬은 import, 화면은 진입점이 이름공간째 옛 전역 이름(`StudioLayout` 등)으로 넣는다
 - 화면 진입점은 **정적 import 만** — main 이 창을 다 읽자마자(`did-finish-load`) 한 번 보내는 것(트레이 `tray:update`)이 있어 동적 `import()` 로 늦게 실으면 놓친다
 - renderer 가 실행 중에 만드는 경로는 번들러가 못 본다 — 로고(`assets/logo/…`)는 빌드가 폴더째 복사하고, `ICON_ROOT`(`../../node_modules/material-icon-theme/icons`)는 `dist/renderer` 가 레포 뿌리에서 두 칸 아래라 맞는다(outDir 을 옮기지 않는다)
 - preload(`preload.js` · `preload-tray.js`)는 JS + `// @ts-check` — `sandbox: true` 라 한 파일 · `require('electron')` 만 된다(`.mts` · 다른 파일 require 안 됨)
