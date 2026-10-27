@@ -1,0 +1,131 @@
+// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) ─────────────
+// main.js 에서 옮겼다(PR3c) — electron(app · dialog) · 화면 문구(say) · 스튜디오 집 자리 · 팩 창 목록은 createAppUpdater 인자로 받는다.
+// 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.mts),
+// scripts/dev-app.js restart 를 떼어 띄운 뒤 앱을 끈다 — 도우미가 앱이 끝나길 기다려 npm install(필요할 때 · heavy.sh 줄 서기) → 다시 켠다.
+// 다시 켜면 코어 번들을 새로 만들고 켤 때 본체를 업데이트한다(데몬 · pane 은 그대로 — 쉬는 세션은 막지 않는다 · D1)
+import fs from 'node:fs'
+import path from 'node:path'
+import { spawn } from 'node:child_process'
+import { createRequire } from 'node:module'
+import * as core from '../lib/core.mts'
+import * as appUpdate from '../lib/app-update.mts'
+import type { PullResult, UpdateStatus } from '../lib/app-update.mts'
+import type { Say } from '../lib/pack.mts'
+
+// studio-home · version 은 JS(dev-app.js 가 PATH 의 node 로도 부른다) — main 과 같은 require 캐시의 것을 쓴다
+const require = createRequire(import.meta.url)
+const studioHome: typeof import('../lib/studio-home.js') = require('../lib/studio-home.js')
+const versionModel: typeof import('../lib/version.js') = require('../lib/version.js')
+
+type App = { isPackaged: boolean; getVersion(): string; getPath(name: 'userData'): string; quit(): void }
+type Dialog = Pick<typeof import('electron').dialog, 'showMessageBox'>
+type ParentWindow = import('electron').BrowserWindow | null | undefined
+type PackWindow = { send(channel: string, payload: unknown): void }
+// 화면에 보내는 상태 — 처음(아직 확인 전)에는 version · latest 칸이 없다
+type Status = Omit<UpdateStatus, 'version' | 'latest'> & Partial<Pick<UpdateStatus, 'version' | 'latest'>>
+type Pulled = Extract<PullResult, { ok: true }>
+
+const APP_ROOT = path.join(import.meta.dirname, '..', '..')
+export const APP_UPDATE_CHECK_MS = 30 * 60 * 1000
+const APP_UPDATE_FETCH_GAP_MS = 60 * 1000 // 팝업을 자주 열어도 origin 은 이만큼에 한 번만 받는다
+
+// app — 앱 정보 · 끄기 · dialog — 알림 창 · say — 화면 문구 · studio — 스튜디오 집 자리(heavy.sh) · packWindows — 열린 팩 창(main.js 의 Set 그대로)
+export function createAppUpdater({ app, dialog, say, studio, packWindows }: { app: App; dialog: Dialog; say: Say; studio: { core: string }; packWindows: Iterable<PackWindow> }) {
+  const appUpdateLogFile = () => path.join(app.getPath('userData'), 'app-update.log')
+  let appUpdateStatus: Status = { state: 'unavailable', behind: 0, branch: null, reason: null }
+  let appUpdateRunning = false
+  let appUpdateFetchedAt = 0
+  let appUpdateChecking: Promise<ReturnType<typeof appUpdateView>> | null = null
+
+  // 앱 버전(SemVer 0.x — 정본은 git 태그 · lib/version.js) — 개발 앱 체크아웃은 git describe(0.2.1 · 0.2.1+3), 태그가 없거나 배포판이면 package.json.
+  // 켤 때 한 번 정한다(업데이트는 앱을 다시 켠다 · origin 태그는 scripts/dev-app.js start 가 그 전에 받는다). ⚙ 앱 업데이트 줄 · 맥 메뉴 정보 · 코어 번들에 같은 번호 —
+  // ⚙ 확인이 나중에 태그를 더 받아도 지금 버전은 바꾸지 않는다(새 번호는 latest 로만)
+  let appVersionCache: string | null = null
+  function appVersion(): string {
+    if (!appVersionCache) appVersionCache = (!app.isPackaged && versionModel.describeVersion({ repoRoot: APP_ROOT, env: studioHome.gitEnv() })) || app.getVersion()
+    return appVersionCache
+  }
+  const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
+  const appUpdateView = () => ({ ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
+  function sendAppUpdate(): void {
+    for (const each of packWindows) each.send('app-update:status', appUpdateView())
+  }
+
+  function checkAppUpdate(): Promise<ReturnType<typeof appUpdateView>> {
+    if (!appUpdateEnabled() || appUpdateRunning) return Promise.resolve(appUpdateView())
+    if (appUpdateChecking) return appUpdateChecking
+    const fetch = Date.now() - appUpdateFetchedAt > APP_UPDATE_FETCH_GAP_MS
+    appUpdateChecking = appUpdate
+      .checkStatus({ repoRoot: APP_ROOT, fetch })
+      .then((status) => {
+        if (fetch) appUpdateFetchedAt = Date.now()
+        appUpdateStatus = status
+        sendAppUpdate()
+        return appUpdateView()
+      })
+      .catch(() => appUpdateView())
+      .finally(() => (appUpdateChecking = null))
+    return appUpdateChecking
+  }
+
+  // [업데이트] — 받기 → 도우미 띄우기 → 앱 끄기. 못 하면 { ok: false, reason } (팝업이 까닭을 보인다)
+  async function runAppUpdate(): Promise<{ ok: boolean; reason?: string }> {
+    if (!appUpdateEnabled()) return { ok: false, reason: 'unavailable' }
+    if (appUpdateRunning) return { ok: false, reason: 'running' }
+    appUpdateRunning = true
+    sendAppUpdate()
+    const pulled = await appUpdate.pullMain({ repoRoot: APP_ROOT }).catch(() => ({ ok: false, reason: 'ff-failed' }) as PullResult)
+    if (!pulled.ok) {
+      appUpdateRunning = false
+      appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
+      sendAppUpdate()
+      return pulled
+    }
+    const nodePath = core.findExecutable('node', process.env.PATH)
+    const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid)]
+    const heavy = path.join(studio.core, 'scripts', 'heavy.sh')
+    if (pulled.install) args.push('--install', ...(fs.existsSync(heavy) ? ['--heavy', heavy] : []))
+    // 자식 환경은 childEnv 로 — 다시 켜진 앱이 켤 때 읽는 값(격리 실행 ATHENA_STUDIO_HOME 등)만 다시 싣는다(core.relaunchEnv)
+    const env = core.relaunchEnv(process.env, { electronAsNode: !nodePath })
+    // 도우미가 실제로 떴는지('spawn') 확인한 뒤에만 앱을 끈다 — 실행 파일을 못 여는 등의 실패는 비동기 'error' 로 온다
+    const started = await startRestartHelper(nodePath || process.execPath, args, env, pulled)
+    if (!started) {
+      // 받기는 됐다 — 다시 켜기만 사람 몫
+      appUpdateRunning = false
+      sendAppUpdate()
+      return { ok: false, reason: 'restart-failed' }
+    }
+    setTimeout(() => app.quit(), 200)
+    return { ok: true }
+  }
+
+  // 다시 켜기 도우미를 떼어 띄운다 — 떴으면 true, 못 띄웠으면(동기 예외 · 'error' 이벤트) false
+  async function startRestartHelper(file: string, args: string[], env: NodeJS.ProcessEnv, pulled: Pulled): Promise<boolean> {
+    let out: number | null = null
+    try {
+      fs.mkdirSync(path.dirname(appUpdateLogFile()), { recursive: true })
+      out = fs.openSync(appUpdateLogFile(), 'a')
+      fs.writeSync(out, `\n── ${new Date().toISOString()} app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${pulled.install ? ' · npm install' : ''}\n`)
+      const child = spawn(file, args, { cwd: APP_ROOT, env, detached: true, stdio: ['ignore', out, out] })
+      const started = await new Promise<boolean>((resolve) => {
+        child.once('spawn', () => resolve(true))
+        child.once('error', () => resolve(false))
+      })
+      if (started) child.unref()
+      return started
+    } catch {
+      return false
+    } finally {
+      if (out !== null) fs.closeSync(out)
+    }
+  }
+
+  // 지난 업데이트의 npm install 이 실패했으면(도우미가 알린다) 켤 때 한 번 알린다
+  function showAppUpdateNotice(parentWindow: ParentWindow): void {
+    if (process.env.ATHENA_STUDIO_APP_UPDATE !== 'install-failed') return
+    const options = { type: 'warning' as const, message: say('dialog.appUpdate.message'), detail: say('dialog.appUpdate.installFailed', { path: appUpdateLogFile() }) }
+    ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
+  }
+
+  return { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, showAppUpdateNotice }
+}
