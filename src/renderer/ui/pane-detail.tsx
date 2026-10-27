@@ -203,7 +203,7 @@ function PrLink({ url }: { url: string }) {
   return <button className="pd-link" type="button" onClick={() => void studio.openUrl(url)}>{url.replace(/^https:\/\/github\.com\//, '')}</button>
 }
 
-// 일감 [작업] 팝업의 한 줄과 같은 모양(renderer.js workRow)
+// 일감 [작업] 팝업의 한 줄과 같은 모양(ui/work-pop.tsx WorkRow)
 function WorkRow({ className = '', title, meta, state, kindLabel = '', onClick, say }: { className?: string; title: string; meta?: string; state?: string; kindLabel?: string; onClick: () => void; say: Say }) {
   return (
     <button className={`work-row ${className}`.trim()} type="button" onClick={onClick}>

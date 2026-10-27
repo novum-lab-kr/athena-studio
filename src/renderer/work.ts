@@ -12,7 +12,6 @@ import { StudioUi } from './ui/index.ts'
 // 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(일감을 띄운다)
 export let workRequests: WorkRequestsState = { supported: false, requests: [] }
 let workData: WorkView | null = null // 마지막으로 읽은 목록(workGet) — 진행 중 숫자
-const WORK_STATES = ['wait', 'work', 'blocked', 'idle', 'done']
 
 function renderWorkTab(): void {
   const waiting = workRequests.requests.filter((request) => request.state === 'open').length

@@ -1,5 +1,5 @@
 // 팩 작업 진행 표시(pack-progress) 몸통 — 도는 표시 · 제목 · 지금 하는 일 한 줄 · [취소]
-// PR-R10. 껍데기(보이기 · 숨기기 · 뒤 화면 막기 syncModal · 포커스 받기 · 닫으면 포커스 돌려주기)는 renderer.js 그대로. 켤 때 한 번 띄워 두고 계속 쓴다
+// PR-R10. 껍데기(보이기 · 숨기기 · 뒤 화면 막기 syncModal · 포커스 받기 · 닫으면 포커스 돌려주기)는 바닐라 pack-dialogs.ts. 켤 때 한 번 띄워 두고 계속 쓴다
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 

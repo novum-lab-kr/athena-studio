@@ -1,6 +1,6 @@
 // 하단 에이전트 모니터 칸 — 머리줄 칩(monitor-sessions) · 로그(monitor-feed)
 // PR-R8. 칸 껍데기(보이기 · 숨기기 — 작업 공간이 있으면 어느 공간이든(#59) · 접기 · 펴기 · main 에 보는 중 알리기(monitorWatch) ·
-// main 알림 받기(onMonitorUpdate) · 30초마다 새로 쓰기 타이머)는 renderer.js 그대로. 받은 갱신을 모으고(세션 · 이벤트 · 고른 칩) 그리기 · 스크롤 지키기는 여기서 한다.
+// main 알림 받기(onMonitorUpdate) · 30초마다 새로 쓰기 타이머)는 바닐라 pane-layout.ts. 받은 갱신을 모으고(세션 · 이벤트 · 고른 칩) 그리기 · 스크롤 지키기는 여기서 한다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다
 import { flushSync } from 'react-dom'
 import type { CSSProperties } from 'react'
@@ -93,14 +93,14 @@ export function update(next: MonitorUpdate): void {
   commit({ sessions, events, filter, now }, outOfOrder || filterGone ? 'keep' : 'follow')
 }
 
-// 30초마다(보일 때만 — renderer.js) · 'n분 전' 을 새로 쓰고 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
+// 30초마다(보일 때만 — 바닐라 pane-layout.ts) · 'n분 전' 을 새로 쓰고 조용해진 에이전트의 칩을 뺀다(고른 칩이 빠지면 전체 로그로)
 export function tick(): void {
   const state = view.get()
   const now = Date.now()
   commit({ ...state, filter: liveFilter(state.filter, state.sessions, now), now }, 'keep')
 }
 
-// 언어를 바꾼 뒤(renderer.js applyLanguage) — 지금 언어로 바로 다시 그린다
+// 언어를 바꾼 뒤(main.ts applyLanguage) — 지금 언어로 바로 다시 그린다
 export function refresh(): void {
   commit({ ...view.get(), now: Date.now() }, 'keep')
 }

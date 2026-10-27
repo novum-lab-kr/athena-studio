@@ -1,4 +1,4 @@
-// 바닐라 renderer.js ↔ React 화면을 잇는 작은 틀 — 화면 하나를 React 로 옮길 때 이 파일의 네 가지만 쓴다
+// 바닐라 .ts ↔ React 화면을 잇는 작은 틀 — 화면 하나를 React 로 옮길 때 이 파일의 네 가지만 쓴다
 // 1. 마운트: 바닐라가 이미 가진 "몸통" 칸(예: settings-pop-body)에 mountIsland 로 React 루트를 띄우고, 닫을 때 돌려받은 함수로 내린다.
 //    바깥 껍데기(열기 · 닫기 · Esc · 바깥 누르기 · 포커스 돌려주기)는 바닐라(openPop · closePops)가 그대로 맡는다
 // 2. 문구: 바닐라의 say(core.ts)를 connect 로 받아 useSay 로 쓴다. 언어가 바뀌면 바닐라가 textsChanged() 한 줄 → 떠 있는 React 화면이 다시 그린다
@@ -35,7 +35,7 @@ export function useStore<T>(store: Store<T>): T {
   return useSyncExternalStore(store.subscribe, store.get)
 }
 
-// 바닐라 도우미 — connect 전에 그리면 키를 그대로 보인다(진입점이 renderer.js 를 실은 뒤에야 화면을 띄우므로 실제로는 없다)
+// 바닐라 도우미 — connect 전에 그리면 키를 그대로 보인다(진입점이 main.ts 를 실은 뒤에야 화면을 띄우므로 실제로는 없다)
 let helpers: VanillaHelpers = { say: (key) => key, showToast: () => {} }
 // 문구 판 번호 — 언어가 바뀔 때마다 1 씩. useSay 가 이 값을 구독해 다시 그린다
 const texts = createStore(0)

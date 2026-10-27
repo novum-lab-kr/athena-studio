@@ -1,6 +1,6 @@
 // 시작 화면 몸통(#pack-welcome 안 .pack-welcome-inner) — 로고 · 제목 · 새 팩 만들기 · 팩 가져오기 · '내 팩'(최근 팩)
-// PR-R7. 껍데기(#pack-welcome 보이기 · 숨기기 · 모니터 접기 · 일감 · 브라우저 아이콘 끄기 · 양쪽 접기)는 renderer.js renderPackWelcome 그대로,
-// 몸통만 여기서 그린다. 무엇을 띄울지(팩이 없으면 '내 팩' 없음 · 켤 때 시작 화면) 규칙은 main(pack.mts)과 renderer.js 가 정하고 목록만 넘긴다
+// PR-R7. 껍데기(#pack-welcome 보이기 · 숨기기 · 모니터 접기 · 일감 · 브라우저 아이콘 끄기 · 양쪽 접기)는 바닐라 pack-switch.ts renderPackWelcome,
+// 몸통만 여기서 그린다. 무엇을 띄울지(팩이 없으면 '내 팩' 없음 · 켤 때 시작 화면) 규칙은 main(pack.mts)과 pack-switch.ts 가 정하고 목록만 넘긴다
 // 로고는 Vite 가 묶는다(옛 index.html 의 <img src> 와 같은 결과 파일)
 import logo from '../assets/logo/athena-logo-white.png'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
@@ -8,7 +8,7 @@ import type { Say } from './bridge.ts'
 
 // main 의 packs.recent(src/lib/pack.mts recentPacks) — 지금 팩 맨 위 · 최근 순 · 최대 5개
 export type WelcomePack = { id: string; name: unknown; repos: unknown; updatedAt: unknown; current: boolean }
-// 누르면 하는 일 — renderer.js 의 팩 흐름(runPackCommand · enterPack)을 그대로 부른다
+// 누르면 하는 일 — pack-switch.ts 의 팩 흐름(runPackCommand · enterPack)을 그대로 부른다
 export type WelcomeActions = { command: (name: 'new' | 'import' | 'picker') => void; enter: (id: string) => void }
 
 const recentStore = createStore<WelcomePack[]>([])

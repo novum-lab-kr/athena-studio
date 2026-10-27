@@ -1,7 +1,7 @@
 {
   // 화면(renderer) 타입 검사 — 브라우저 쪽 · Vite 가 묶는다(vite.config.mts). 앱 Node 쪽은 루트 tsconfig.json
   // 새 파일은 .ts(Vite 가 타입을 지운다 — 앱 쪽 .mts 와 달리 확장자 제한은 없지만 지울 수 있는 문법만 쓴다 · lib 를 옮길 때 편하게)
-  // 섞어 쓰는 중: renderer.js 는 아직 JS — // @ts-check 를 붙인 JS 만 검사한다(옛 오류 1,000개 넘음 · 쪼개면서 .ts 로)
+  // 화면 코드는 모두 .ts · .tsx(옛 renderer.js 는 R3 에서 다 옮겨 지움). JS 를 다시 두면 // @ts-check 를 붙인 것만 검사한다(checkJs: false)
   "compilerOptions": {
     "target": "ES2023",
     "lib": ["ES2023", "DOM", "DOM.Iterable"],

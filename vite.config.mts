@@ -1,8 +1,8 @@
 // 화면(renderer) 빌드 — src/renderer 의 index.html · tray.html 을 dist/renderer/ 로 묶는다(git 무시). main 은 dist/renderer/… 를 연다
 // 켤 때마다 빌드한다(scripts/dev-app.js start · 0.3초 안팎) — 손으로는 npm run build:renderer
 // - base './' — file:// 로 연다(Electron loadFile)
-// - outDir 은 dist/renderer 로 고정 — renderer.js 의 ICON_ROOT('../../node_modules/…')가 레포 뿌리에서 두 칸 아래를 전제한다
-// - publicDir 없음 · renderer.js 가 실행 중에 만드는 로고 경로(assets/logo/athena-white-<크기>.png)는 번들러가 못 보므로 로고 폴더를 그대로 복사한다
+// - outDir 은 dist/renderer 로 고정 — ui/explorer.tsx 의 ICON_ROOT('../../node_modules/…')가 레포 뿌리에서 두 칸 아래를 전제한다
+// - publicDir 없음 · 화면 코드가 실행 중에 만드는 로고 경로(assets/logo/athena-white-<크기>.png)는 번들러가 못 보므로 로고 폴더를 그대로 복사한다
 import fs from 'node:fs'
 import path from 'node:path'
 import react from '@vitejs/plugin-react'

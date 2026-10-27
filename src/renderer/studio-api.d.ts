@@ -1,5 +1,5 @@
-// preload(src/preload.js)의 studio 전역 타입 한 곳 — 화면 .ts · .tsx 가 부르는 것만(renderer.js 는 JS 라 이 타입 밖).
-// renderer.js 를 .ts 로 옮기면서(R3 — 계획서 "R3 나누기") 옮긴 코드가 부르는 메서드를 더한다. 응답 모양은 main 쪽 코드(src/main.mts handle · src/main/*.mts)에서 확인해 적는다
+// preload(src/preload.js)의 studio 전역 타입 한 곳 — 화면 .ts · .tsx 가 부르는 것.
+// 새로 부르는 메서드는 여기에 더한다. 응답 모양은 main 쪽 코드(src/main.mts handle · src/main/*.mts)에서 확인해 적는다
 declare global {
   // 언어 사전(main.mts i18nPayload) — i18n:get 동기 · i18n:changed
   type I18nPayload = { language: string; dictionary: Record<string, unknown>; fallback: Record<string, unknown> }
@@ -16,6 +16,8 @@ declare global {
     athenaRealDir: string | null
     changed?: boolean
   }
+  // 폴더 고르기 · 코어 받기(src/main/athena-dir.mts pickAthenaDir · installAthena) — 상태 + 그만두면 canceled · 못 쓰면 error(고른 폴더 picked)
+  type AthenaResult = AthenaState & { canceled?: boolean; error?: string; picked?: string }
 
   // 데몬이 앱 화면에 주는 상태(src/daemon/main.mts Daemon.state) — 작업 공간 · 탭(분할 트리) · pane 메타
   type CellSize = { cols: number; rows: number }
@@ -106,6 +108,24 @@ declare global {
   type PackOpenReply = PackReply & { id?: string; same?: boolean; existing?: boolean; switched?: boolean; state?: AthenaState; unlinkedRepos?: string[]; repair?: boolean; created?: boolean }
   // 팩 지우기(packs.mts ctx.deletePack) — 워크트리가 있으면 { error: 'has-worktrees', worktrees }(코어 bodies.mjs — dirty 는 바뀐 파일 수) · 끝나면 백업 파일 backup
   type PackDeleteReply = PackReply & { worktrees?: { name: string; dirty: number }[]; backup?: string }
+  // 새 팩(packs.mts ctx.packNew) — 이 창을 새 본체로 바꿨으면 switched + 새 상태
+  type PackNewReply = PackReply & { id?: string; body?: string; switched?: boolean; state?: AthenaState }
+  // 가져오기 검사(packs.mts ctx.packInspect — 코어 athena/scripts/lib/packs.mjs inspect 결과 + source · summary · current). git 주소가 틀리면 { error: 'invalid-url' }
+  type PackInspectReply = PackReply & {
+    token?: string
+    pack?: { name?: string | null; repos?: number } | null
+    conflict?: { id?: string; reason?: 'packId' | 'name' } | null
+    work?: { plans?: number; issues?: number; archive?: number; worktrees?: { dirty?: boolean }[] } | null
+    restore?: Record<string, unknown> | null
+    gitRemoved?: boolean
+    source?: string
+    summary?: { incoming: string; existing: string }
+    current?: boolean
+  }
+  // 가져오기 등록(packs.mts ctx.packImport — 코어 import 결과) — 교체면 기존 팩 백업 파일 backup
+  type PackImportReply = PackReply & { imported?: { id: string; name?: string } | null; backup?: string }
+  // 내보내기 · 내 백업(packs.mts ctx.packExport — 코어 export · backup 결과) — 백업이면 되살리기 정보 restore · 뺀 것 warnings
+  type PackExportReply = PackReply & { file?: string; files?: number; bytes?: number; restore?: { sessions?: number; worktrees?: number; missing?: unknown[] }; warnings?: string[] }
   // 이미지 미리 고르기(packs.mts ctx.packPickIcon) — 미리보기 dataUrl 만(파일은 main 이 들고 있다)
   type PackPickIconReply = { ok?: boolean; canceled?: boolean; dataUrl?: string; text?: string }
 
@@ -224,6 +244,36 @@ declare global {
     packCallInfo(name: string): Promise<CallInfo>
     packCallStart(name: string, options: { branch: string; reuse: boolean }): Promise<CallStartReply>
     explorerOpen(workspaceId: string | null, relative: string): Promise<ExplorerPreview>
+    // 시작 · 아테나 폴더 · 팩 만들기 · 가져오기 · 내보내기(R3f — main.ts · pack-transfer.ts) — main.mts handle(athena:state · athena:pick · athena:install ·
+    // pack:new · pack:inspect · pack:import · pack:export · pack:restore-now · pack:restore-arm · pack:restore-disarm)
+    athenaState(): Promise<AthenaState>
+    pickAthenaDir(): Promise<AthenaResult>
+    installAthena(): Promise<AthenaResult>
+    packNew(): Promise<PackNewReply>
+    packInspect(kind: string, source: string | null): Promise<PackInspectReply>
+    packImport(token: string, choice: string): Promise<PackImportReply>
+    packExport(kind: string): Promise<PackExportReply>
+    packRestoreNow(): Promise<import('./ui/notices.tsx').RestoreResult>
+    packRestoreArm(id: string): Promise<unknown>
+    packRestoreDisarm(): Promise<unknown>
+    // main 이 보내는 알림(preload listen — 돌려준 함수는 듣기 그만) · 값 모양은 보내는 곳(src/main.mts · src/main/*.mts 의 send('<이름>', …))
+    onPackState(callback: (next: PackState) => void): () => void
+    onPackProgress(callback: (step: import('./ui/pack-progress.tsx').PackProgressStep) => void): () => void
+    onPackRestored(callback: (result: import('./ui/notices.tsx').RestoreResult) => void): () => void
+    onPackCaughtUp(callback: (info: { pack: string }) => void): () => void
+    onPackChanged(callback: (info: { ok: boolean; replaced: string }) => void): () => void
+    onPackCommand(callback: (name: string) => void): () => void
+    onTabSwitch(callback: (name: string) => void): () => void
+    onPickRequest(callback: () => void): () => void
+    onPaneData(callback: (paneId: string, data: string) => void): () => void
+    onPaneResized(callback: (paneId: string, cols: number, rows: number) => void): () => void
+    onScreenState(callback: (next: ScreenState) => void): () => void
+    onScreenBranches(callback: (next: Record<string, string | null>) => void): () => void
+    onScreenPaneStatus(callback: (next: Record<string, string | null>) => void): () => void
+    onScreenResync(callback: () => void): () => void
+    onScreenDisconnected(callback: () => void): () => void
+    onScreenCommand(callback: (name: string) => void): () => void
+    onLanguage(callback: (next: I18nPayload) => void): () => void
     // 옆 브라우저(src/main/side-browser.mts) — 다 나온 서랍 자리 알리기(main.mts browserRect 가 숫자를 본다) · main 알림들
     browserPlace(rect: { x: number; y: number; width: number; height: number }): void
     onBrowserOpen(callback: (url: string) => void): () => void
