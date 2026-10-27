@@ -1,19 +1,16 @@
 // ── 아테나 에이전트 · 백업에서 되살리기 — 팩 창 ─────────────────
 // main.js createPackWindow 에서 옮겼다(PR3f) — 화면 문구(say) · 코어 팩 명령(runPack) · 되살리기 표시 지우기(disarmRestore — main.js 의 restoreArmedFor)는 인자로 받고,
 // ctx 에 같은 이름(openAthenaAgent · restoreStatus · packRestore · restoreNow)으로 붙인다
-import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
+import * as layout from '../lib/layout.mts'
+import type { Tree } from '../lib/layout.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 import type { RunCoreOptions } from './core-runner.mts'
 
-// layout 은 화면이 <script> 로도 싣는 UMD — main 과 같은 require 캐시의 것을 쓴다(쓰는 함수만 적는다)
-const require = createRequire(import.meta.url)
-const layout: { paneIds(node: unknown): string[] } = require('../lib/layout.js')
-
 // 데몬 답에서 읽는 칸만(모양은 검사하지 않는다 — 옛 main.js 와 같다)
 type Workspace = { id: string; label?: unknown; cwd?: string }
-type StateReply = { result?: { workspaces: Workspace[]; tabs: { workspace: string; tree: unknown }[] }; error?: string }
+type StateReply = { result?: { workspaces: Workspace[]; tabs: { workspace: string; tree: Tree | null }[] }; error?: string }
 type CreatedReply = { result: { root_pane: { id: string }; workspace: { id: string } }; error?: string }
 type SplitReply = { result?: { pane?: { id: string } } }
 type RunReply = { error?: string }

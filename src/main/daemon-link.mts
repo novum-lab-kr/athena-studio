@@ -5,6 +5,7 @@ import * as core from '../lib/core.mts'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 import type { Say } from '../lib/pack.mts'
+import type { Tree } from '../lib/layout.mts'
 import { MONITOR_LABEL } from './monitor-logs.mts'
 
 type Ensured = Awaited<ReturnType<typeof daemonClient.ensureDaemon>>
@@ -16,7 +17,7 @@ export type DaemonCall = <T = unknown>(op: string, args?: object) => Promise<Cal
 // 데몬 pane 목록(pane list) 한 줄 — 읽는 칸만
 export type DaemonPane = { id: string; tab_id?: string | null; label?: string; name?: string; title?: string; agent?: string | null; agent_status?: string; cwd?: string; foreground_cwd?: string }
 // 데몬 화면 상태(state) — 읽는 칸만
-export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: string }[]; tabs: { id: string; workspace: string; tree: unknown }[] }
+export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: string }[]; tabs: { id: string; workspace: string; tree: Tree | null }[] }
 
 // 화면이 넘기는 pane 크기(cols · rows) — 그대로 데몬에 넘긴다
 export type Size = Record<string, unknown> | undefined
@@ -32,7 +33,7 @@ export type PackCtx = {
   connectDaemon(): Promise<Connection>
   isAttached(): boolean
   attachScreen(): Promise<unknown>
-  detachScreen(): void
+  detachScreen(): Promise<void>
   daemonCall: DaemonCall
   peekCall(op: string, args?: object): Promise<Called>
   notifyDaemon(op: string, args?: object): unknown
@@ -148,11 +149,12 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   }
 
   // 창 닫기 · 앱 종료 — 연결만 끊는다(데몬·셸·에이전트는 계속 돈다)
+  // 옛 연결이 실제로 닫히면 풀린다 — 닫힘 알림(screen:disconnected)이 다음 screen:resync 보다 늦게 가지 않게 기다릴 수 있다
   ctx.detachScreen = () => {
-    if (!daemon) return
+    if (!daemon) return Promise.resolve()
     const current = daemon
     daemon = null
-    current.close()
+    return current.close()
   }
 
   const daemonCall: DaemonCall = async <T,>(op: string, args?: object) => {

@@ -3,15 +3,14 @@
 //   node scripts/athena.mjs pack <명령> … --json → `progress: <단계ID> <설명>` 줄들 + 마지막 줄 JSON · 실패 종료 1 + { ok:false, error, message }
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import * as i18n from './i18n.mts'
 
-// 문구 — say(키, 자리 값). 사전 · 자리 채우기는 i18n.js
+// 문구 — say(키, 자리 값). 사전 · 자리 채우기는 i18n.mts
 export type Say = (key: string, values?: Record<string, unknown>) => string
 type Dictionary = Record<string, string>
-type I18n = { translator(dictionary: Dictionary, fallback: Dictionary): Say }
 
-// i18n.js 는 화면이 <script> 로도 싣는 UMD · 사전은 JSON — main 과 같은 require 캐시의 것을 쓴다
+// 사전은 JSON — main 과 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
-const i18n: I18n = require('./i18n.js')
 const KOREAN: Dictionary = require('../i18n/ko.json')
 
 // 코어 `pack … --json` 결과 — 읽는 칸만, 모양은 칸마다 따로 본다

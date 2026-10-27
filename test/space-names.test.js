@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const names = require('../src/lib/space-names')
+const names = require('../src/lib/space-names.mts')
 
 test('브랜치: / 앞 접두어 하나만 뗀다', () => {
   assert.equal(names.shortBranch('feat/fsd-work'), 'fsd-work')
