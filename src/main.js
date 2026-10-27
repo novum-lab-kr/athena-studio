@@ -6,9 +6,9 @@ const { execFile, spawn } = require('child_process')
 const fs = require('fs')
 const http = require('http')
 const path = require('path')
-const core = require('./lib/core')
+const core = require('./lib/core.mts')
 const studioHome = require('./lib/studio-home')
-const packModel = require('./lib/pack')
+const packModel = require('./lib/pack.mts')
 const agentFeed = require('./lib/agent-feed.mts')
 const trayModel = require('./lib/tray-model.mts')
 const screenModel = require('./lib/screen-model')
@@ -24,7 +24,7 @@ const workModel = require('./lib/work-model.mts')
 const paneDetail = require('./lib/pane-detail.mts')
 const tokenUsage = require('./lib/token-usage.mts')
 const layout = require('./lib/layout')
-const appUpdate = require('./lib/app-update')
+const appUpdate = require('./lib/app-update.mts')
 const versionModel = require('./lib/version')
 
 const isMac = process.platform === 'darwin'
@@ -719,7 +719,7 @@ function showCoreUpdateNotice(parentWindow) {
 }
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) ─────────────
-// 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.js),
+// 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.mts),
 // scripts/dev-app.js restart 를 떼어 띄운 뒤 앱을 끈다 — 도우미가 앱이 끝나길 기다려 npm install(필요할 때 · heavy.sh 줄 서기) → 다시 켠다.
 // 다시 켜면 코어 번들을 새로 만들고 켤 때 본체를 업데이트한다(데몬 · pane 은 그대로 — 쉬는 세션은 막지 않는다 · D1)
 const APP_ROOT = path.join(__dirname, '..')

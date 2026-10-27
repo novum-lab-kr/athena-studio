@@ -1,3 +1,4 @@
+// @ts-check
 // 앱·CLI ↔ 데몬 통신 — 유닉스 소켓 위의 줄 단위 JSON. 그리고 데몬 CLI(athena-studio-cli) 인자 해석.
 // 데몬 CLI 는 코어(athena/)의 studio 화면 계층이 부른다 — 바꾸면 그쪽도 같이
 //
@@ -16,12 +17,18 @@ const PROTOCOL = 5
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 
+/** @param {unknown} message */
 function encode(message) {
   return `${JSON.stringify(message)}\n`
 }
 
 // 조각으로 오는 글을 줄로 모아 JSON 하나씩 넘긴다. 깨진 줄은 onInvalid 로(연결을 끊지 않는다)
 // 소켓은 setEncoding('utf8') 로 받는다 — 여러 바이트 글자가 조각 사이에서 잘리지 않게
+/**
+ * @param {(message: unknown) => void} onMessage
+ * @param {(line: string) => void} [onInvalid]
+ * @returns {(chunk: string) => void}
+ */
 function createDecoder(onMessage, onInvalid = () => {}) {
   let pending = ''
   return function feed(chunk) {
@@ -45,11 +52,20 @@ function createDecoder(onMessage, onInvalid = () => {}) {
   }
 }
 
+/**
+ * @param {unknown} id
+ * @param {string} code
+ * @param {unknown} message
+ */
 function errorReply(id, code, message) {
   return { id, ok: false, error: { code: ERROR_CODES.includes(code) ? code : 'internal', message: String(message) } }
 }
 
 // hello 응답 판정: ok · mismatch(데몬을 다시 띄워야 한다 — 그러면 모든 pane 이 닫힌다, S3) · invalid
+/**
+ * @param {{ ok?: unknown, result?: { protocol?: unknown } | null } | null | undefined} reply
+ * @param {number} [expected]
+ */
 function checkHello(reply, expected = PROTOCOL) {
   if (!reply || reply.ok !== true || !reply.result || !Number.isInteger(reply.result.protocol)) return 'invalid'
   return reply.result.protocol === expected ? 'ok' : 'mismatch'
@@ -57,6 +73,7 @@ function checkHello(reply, expected = PROTOCOL) {
 
 // ── 데몬 CLI 인자 ─────────────────────────────────────────────────────
 class UsageError extends Error {
+  /** @param {string} message */
   constructor(message) {
     super(message)
     this.code = 'usage'
@@ -64,6 +81,7 @@ class UsageError extends Error {
 }
 
 // 데몬에 못 붙으면 3 — 코어 화면 계층이 unavailable 로 옮긴다. 그 밖 실패는 1
+/** @param {unknown} code */
 function exitCodeFor(code) {
   return code === 'unavailable' ? 3 : 1
 }
@@ -85,18 +103,28 @@ const RAW_OPS = ['pane run', 'pane send-text', 'pane send-keys', 'pane rename', 
 const VALUE_FLAGS = ['--target', '--direction', '--ratio', '--cwd', '--env', '--lines', '--source', '--match', '--regex', '--timeout', '--label', '--workspace']
 const BOOL_FLAGS = ['--focus', '--no-focus']
 
+/**
+ * 옵션 이름(앞 -- 뗀 것) → 값. --env 만 여러 번 · 켜기 옵션은 true
+ * @typedef {{ env?: string[], target?: string, direction?: string, ratio?: string, cwd?: string, lines?: string, source?: string,
+ *   match?: string, regex?: string, timeout?: string, label?: string, workspace?: string, focus?: boolean, 'no-focus'?: boolean }} CliFlags
+ */
+
+/** @param {string[]} words */
 function parseFlags(words) {
+  /** @type {CliFlags} */
   const flags = {}
+  /** @type {string[]} */
   const positional = []
   for (let index = 0; index < words.length; index++) {
-    const word = words[index]
+    const word = /** @type {string} */ (words[index])
     if (VALUE_FLAGS.includes(word)) {
       if (index + 1 >= words.length) throw new UsageError(`${word} 에 값이 없다`)
-      const value = words[++index]
+      const value = /** @type {string} */ (words[++index])
       if (word === '--env') (flags.env = flags.env || []).push(value)
-      else flags[word.slice(2)] = value
+      // 이름을 글자로 골라 넣는다(VALUE_FLAGS · BOOL_FLAGS 안의 이름만 온다)
+      else /** @type {Record<string, string | boolean>} */ (flags)[word.slice(2)] = value
     } else if (BOOL_FLAGS.includes(word)) {
-      flags[word.slice(2)] = true
+      /** @type {Record<string, string | boolean>} */ (flags)[word.slice(2)] = true
     } else if (word.startsWith('--')) {
       throw new UsageError(`모르는 옵션: ${word}`)
     } else {
@@ -107,12 +135,21 @@ function parseFlags(words) {
 }
 
 // 정확히 count 개 — 모자라면 없다고, 남으면 남는다고 거절한다(남는 낱말을 조용히 버리면 실수가 숨는다)
+/**
+ * @param {string[]} positional
+ * @param {number} count
+ * @param {string} what
+ */
 function needPositional(positional, count, what) {
   if (positional.length < count) throw new UsageError(`${what} 가 없다`)
   if (positional.length > count) throw new UsageError(`남는 인자: ${positional.slice(count).join(' ')}`)
   return positional
 }
 
+/**
+ * @param {string | undefined} value
+ * @param {string} flag
+ */
 function positiveInt(value, flag) {
   if (value === undefined) return undefined
   const number = Number(value)
@@ -120,6 +157,7 @@ function positiveInt(value, flag) {
   return number
 }
 
+/** @param {CliFlags} flags */
 function focusFlag(flags) {
   if (flags.focus) return true
   if (flags['no-focus']) return false
@@ -127,15 +165,17 @@ function focusFlag(flags) {
 }
 
 // argv(실행 파일 뒤) → {op, args} — 데몬에 보낼 요청. self·version 은 데몬에 묻지 않고 CLI 가 답한다(local: true)
+/** @param {string[]} argv */
 function parseCli(argv) {
-  if (!argv.length || ['-h', '--help', 'help'].includes(argv[0])) return { op: 'help', local: true }
+  // 아래 argv[0] 은 늘 있다(빈 argv 는 첫 줄에서 돌려보낸다)
+  if (!argv.length || ['-h', '--help', 'help'].includes(/** @type {string} */ (argv[0]))) return { op: 'help', local: true }
   if (argv[0] === 'version') return { op: 'version', local: true }
   if (argv[0] === 'self') return { op: 'self', local: true }
   if (argv[0] === 'open-url') {
     if (argv.length !== 2) throw new UsageError('open-url <주소>')
     return { op: 'open-url', args: { url: argv[1] } }
   }
-  if (!['pane', 'tab', 'workspace'].includes(argv[0]) || argv.length < 2) throw new UsageError(`모르는 동작: ${argv.slice(0, 2).join(' ')}`)
+  if (!['pane', 'tab', 'workspace'].includes(/** @type {string} */ (argv[0])) || argv.length < 2) throw new UsageError(`모르는 동작: ${argv.slice(0, 2).join(' ')}`)
 
   const op = `${argv[0]} ${argv[1]}`
   const rest = argv.slice(2)
@@ -166,6 +206,7 @@ function parseCli(argv) {
       ratio = Number(flags.ratio)
       if (!(ratio > 0 && ratio < 1)) throw new UsageError(`--ratio 는 0 과 1 사이: ${flags.ratio}`)
     }
+    /** @type {Record<string, string>} */
     const env = {}
     for (const pair of flags.env || []) {
       const equals = pair.indexOf('=')
@@ -187,7 +228,7 @@ function parseCli(argv) {
       try {
         new RegExp(flags.regex)
       } catch (error) {
-        throw new UsageError(`--regex 를 읽지 못했다: ${error.message}`)
+        throw new UsageError(`--regex 를 읽지 못했다: ${/** @type {Error} */ (error).message}`)
       }
     }
     return {
@@ -214,6 +255,7 @@ function parseCli(argv) {
 }
 
 // pane 셸이 받은 환경 변수로 답하는 self — 데몬에 묻지 않는다(screen.py self_info 와 같은 모양)
+/** @param {Record<string, string | undefined>} env */
 function selfInfo(env) {
   const inside = env.ATHENA_STUDIO === '1'
   return {

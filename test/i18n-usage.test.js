@@ -10,7 +10,7 @@ const read = (file) => fs.readFileSync(path.join(ROOT, file), 'utf8')
 const korean = JSON.parse(read('src/i18n/ko.json'))
 const HANGUL = /[가-힣]/
 
-const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.js', 'src/lib/tray-model.mts']
+const SCRIPT_FILES = ['src/main.js', 'src/renderer/renderer.js', 'src/renderer/tray.js', 'src/lib/pack.mts', 'src/lib/tray-model.mts']
 const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
@@ -19,7 +19,7 @@ const ALLOWED = {
   'src/main.js': ['🛰 에이전트 모니터', '일감 시작 (포트', '[JSON 이 아닌 마지막 줄]', '잘못된 경계 값', '/모르는 동작/', '앱 화면에서만 부를 수 있어요'],
   // 본체 출력 해석 중 던지고 바로 잡는 내부 예외
   // · 본체 new-branch.sh 출력 맞추기(워크트리 자리 · 이미 있음)
-  'src/lib/pack.js': ["new Error('객체가 아님')", '워크트리:', '워크트리 경로가 이미 있다:', "'이미 있다'", "'로컬'", "'(커밋 없음)'"],
+  'src/lib/pack.mts': ["new Error('객체가 아님')", '워크트리:', '워크트리 경로가 이미 있다:', "'이미 있다'", "'로컬'", "'(커밋 없음)'"],
 }
 
 // 주석을 뺀 줄 — 줄 전체 주석과 ' // ' 뒤(주소의 :// 는 앞에 공백이 없어 남는다)
@@ -74,7 +74,7 @@ test('화면 문구: HTML 의 한국어는 data-i18n 이 덮는 기본 글뿐이
 
 test('순수 로직: pack · tray-model 은 넘긴 언어의 say 로 쓴다(안 넘기면 한국어)', () => {
   const i18n = require('../src/lib/i18n')
-  const pack = require('../src/lib/pack')
+  const pack = require('../src/lib/pack.mts')
   const tray = require('../src/lib/tray-model.mts')
   const english = i18n.translator(JSON.parse(read('src/i18n/en.json')), korean)
   assert.equal(pack.packErrorText({ ok: false, error: 'locked' }, english), 'Packs are being swapped elsewhere — try again when it finishes')
