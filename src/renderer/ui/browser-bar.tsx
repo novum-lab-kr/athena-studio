@@ -1,5 +1,5 @@
 // 옆 브라우저 막대(.browser-bar — 뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기)와 알림 줄(#browser-error)
-// PR-R12. 서랍 껍데기(열기 · 닫기 · 스르륵 · 너비 끌기 · 페이지 자리 알리기 placeBrowserView · 탭 줄 열기 단추 · 서랍의 loading 클래스 · 제목)는 renderer.js 그대로.
+// PR-R12. 서랍 껍데기(열기 · 닫기 · 스르륵 · 너비 끌기 · 페이지 자리 알리기 placeBrowserView · 탭 줄 열기 단추 · 서랍의 loading 클래스 · 제목)는 바닐라 browser.ts.
 // 실제 페이지는 main 의 WebContentsView(src/main/side-browser.mts)라 여기서는 막대 · 알림 줄만 그린다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다(서랍을 닫아도 주소 칸은 남는다)
 import { flushSync } from 'react-dom'
@@ -31,7 +31,7 @@ export function mount(bar: HTMLElement, error: HTMLElement, next: BrowserActions
   mountIsland(error, <ErrorLine />)
 }
 
-// 주소 칸의 글 — 비었으면 처음 여는 것(renderer.js toggleBrowserPanel 이 주소 칸부터 포커스)
+// 주소 칸의 글 — 비었으면 처음 여는 것(browser.ts toggleBrowserPanel 이 주소 칸부터 포커스)
 export function url(): string {
   return view.get().url
 }

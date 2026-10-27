@@ -94,6 +94,46 @@ declare global {
   // 이미지 미리 고르기(packs.mts ctx.packPickIcon) — 미리보기 dataUrl 만(파일은 main 이 들고 있다)
   type PackPickIconReply = { ok?: boolean; canceled?: boolean; dataUrl?: string; text?: string }
 
+  // 사람에게 묻는 요청(src/lib/requests.mts StudioRequest — main work.mts requestsState) · [작업] 목록으로 읽으면 waited(기다린 시간 글)가 더 붙는다.
+  // plan · html · pane · answer 는 코어 출력을 모양 검사 없이 옮긴 칸이라 unknown(answer 는 work.mts deliveryLine 이 읽는 모양)
+  type WorkRequestView = {
+    id: string
+    kind: string
+    title: string
+    body: string
+    options: { label: string; desc: string; recommended: boolean }[]
+    plan: unknown
+    html: unknown
+    pane: unknown
+    state: string
+    rev: number
+    createdAt: string
+    answer: { choice?: unknown; text?: unknown } | null
+    waited?: string
+  }
+  type WorkRequestsState = { supported: boolean; requests: WorkRequestView[] }
+  // [작업] 목록의 작업 하나(src/lib/work-model.mts WorkItem)
+  type WorkItemView = {
+    id: string | undefined
+    title: string
+    line: string
+    state: 'wait' | 'work' | 'blocked' | 'idle' | 'done'
+    grade: 'formal' | 'light'
+    maintenance: boolean
+    html: string | null
+    agents: unknown[]
+    mtime: number
+    doneAt: number
+  }
+  // [작업] 팝업 목록(src/main/work.mts ctx.workState — 요청 + work-model.mts workList)
+  type WorkView = { supported: boolean; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
+  // 작업 상세(work.mts ctx.workDetail — 계획서 원문에서 몇 줄 · work-model.mts planDetail)
+  type WorkDetailReply =
+    | { ok: false; error: string }
+    | { ok: true; id: string; why: string; decided: string[]; progress: { checked: number; total: number; now: string }; validation: string; results: string[]; next: string; blocked: string }
+  // 앱에서 답하기 · 다시 보내기(work.mts answerRequest · redeliverRequest) — delivered: 그 pane 에 넣었는지(없으면 답만 저장)
+  type WorkAnswerReply = { ok: boolean; error?: string; message?: string; delivered?: boolean }
+
   interface StudioApi {
     // 화면 · 언어 — preload 가 sendSync · send 로 부르는 것은 값이 없다
     i18n(): I18nPayload
@@ -154,6 +194,32 @@ declare global {
     closeWindow(): Promise<unknown>
     // 옆 브라우저 뷰를 잠깐 떼기(대화상자가 위를 덮을 때 — src/main/side-browser.mts)
     browserHide(): void
+    // 옆 브라우저(src/main/side-browser.mts) — 다 나온 서랍 자리 알리기(main.mts browserRect 가 숫자를 본다) · main 알림들
+    browserPlace(rect: { x: number; y: number; width: number; height: number }): void
+    onBrowserOpen(callback: (url: string) => void): () => void
+    onBrowserReset(callback: () => void): () => void
+    onBrowserToggle(callback: () => void): () => void
+    onBrowserState(callback: (next: import('./ui/browser-bar.tsx').BrowserState) => void): () => void
+    onBrowserError(callback: (message: string) => void): () => void
+    onBrowserClose(callback: () => void): () => void
+    // [작업] 팝업 · 요청(src/main/work.mts) — 창이 없을 때의 { error } 는 이 창에서 부르면 오지 않는다
+    workGet(): Promise<WorkView>
+    workRequests(): Promise<WorkRequestsState>
+    onWorkRequests(callback: (next: WorkRequestsState) => void): () => void
+    workAnswer(id: string, answer: { choice: string; text: string }): Promise<WorkAnswerReply>
+    workRedeliver(id: string): Promise<WorkAnswerReply>
+    workDetail(id: string): Promise<WorkDetailReply>
+    // 트레이에서 요청을 누르면(src/main/tray.mts openRequestFromTray) — id 가 없으면 [작업] 팝업
+    onWorkOpen(callback: (id: string | null) => void): () => void
+    // 일감 페이지 메뉴(work.mts openBoardSection · openDiagrams)
+    openBoardSection(section: string): Promise<unknown>
+    openDiagrams(): Promise<{ ok: boolean; error?: string; message?: string }>
+    // pane [상세] 아이콘을 달 pane(src/main/pane-watch.mts paneBound — lib/pane-detail.mts bindings)
+    paneBound(): Promise<Record<string, 'agent' | 'lead'>>
+    onPaneBound(callback: (next: Record<string, 'agent' | 'lead'>) => void): () => void
+    // ⚙ 앱 업데이트 상태(src/main/app-updater.mts appUpdateView) — 창이 없으면 { error }(main.mts handle)
+    appUpdateStatus(): Promise<AppUpdateView & { error?: string }>
+    onAppUpdate(callback: (next: AppUpdateView) => void): () => void
   }
 
   const studio: StudioApi

@@ -2,7 +2,8 @@
 // renderer.js 에서 옮김(R3e · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. packs 를 바꾸는 바깥 쪽은 setPacks(읽는 쪽은 이름 그대로)
 import { $, el, say } from './core.ts'
 import { POPUP_ICONS, refreshPackList } from './pack-switch.ts'
-import { browserOpen, lineIcon, placeBrowserView, spaceColor, spaceInitials } from './renderer.js'
+import { browserOpen, placeBrowserView } from './browser.ts'
+import { lineIcon, spaceColor, spaceInitials } from './renderer.js'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
 
