@@ -8,14 +8,14 @@ import type { ChildProcess } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
+import * as i18n from '../lib/i18n.mts'
 import * as daemonClient from '../daemon-client.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 
-// studio-home · screen-model 은 JS · i18n 은 화면이 <script> 로도 싣는 UMD — main 과 같은 require 캐시의 것을 쓴다
+// studio-home · screen-model 은 JS — main 과 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
 const studioHome: typeof import('../lib/studio-home.js') = require('../lib/studio-home.js')
 const screenModel: typeof import('../lib/screen-model.js') = require('../lib/screen-model.js')
-const i18n: { FALLBACK_LANGUAGE: string } = require('../lib/i18n.js')
 
 type App = { getPath(name: 'home' | 'userData'): string }
 type Dialog = Pick<typeof import('electron').dialog, 'showMessageBox'>

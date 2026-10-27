@@ -76,7 +76,7 @@ test('화면 문구: HTML 의 한국어는 data-i18n 이 덮는 기본 글뿐이
 })
 
 test('순수 로직: pack · tray-model 은 넘긴 언어의 say 로 쓴다(안 넘기면 한국어)', () => {
-  const i18n = require('../src/lib/i18n')
+  const i18n = require('../src/lib/i18n.mts')
   const pack = require('../src/lib/pack.mts')
   const tray = require('../src/lib/tray-model.mts')
   const english = i18n.translator(JSON.parse(read('src/i18n/en.json')), korean)

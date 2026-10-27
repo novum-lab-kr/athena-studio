@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const layout = require('../src/lib/layout')
+const layout = require('../src/lib/layout.mts')
 
 const area = { x: 0, y: 0, width: 100, height: 40 }
 

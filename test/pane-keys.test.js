@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { paneKeyOverride, holdWhileComposing, createComposingKeys } = require('../src/lib/pane-keys')
+const { paneKeyOverride, holdWhileComposing, createComposingKeys } = require('../src/lib/pane-keys.mts')
 
 const key = (name, mods = {}) => ({ key: name, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
 

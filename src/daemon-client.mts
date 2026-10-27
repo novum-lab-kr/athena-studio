@@ -76,8 +76,14 @@ class DaemonConnection {
     if (!this.socket.destroyed) this.socket.write(protocol.encode({ op, args }))
   }
 
-  close(): void {
+  // 닫기 — 소켓이 실제로 닫히면(위 close 처리 · onClose 가 돈 뒤) 풀리는 약속을 돌려준다
+  close(): Promise<void> {
+    const closed = new Promise<void>((resolve) => {
+      if (this.socket.destroyed) resolve()
+      else this.socket.once('close', () => resolve())
+    })
     this.socket.end()
+    return closed
   }
 
   // 답 없는 데몬 — 상대가 닫아 주지 않아도 바로 끊는다(반쯤 열린 소켓이 쌓이지 않게)
