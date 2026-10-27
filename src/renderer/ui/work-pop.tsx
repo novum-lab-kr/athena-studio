@@ -1,18 +1,17 @@
 // [작업] 팝업 몸통(work-pop-body) — 나를 기다리는 것(사람에게 묻는 요청) · 진행 중 · 최근 끝난 것
-// PR-R6. 팝업 껍데기(열기 · 닫기 · 머리줄 팩 이름 · Esc · 바깥 누르기 · 첫 버튼 포커스)와 데이터 읽기(workGet · onWorkRequests)는 renderer.js 그대로.
+// PR-R6. 팝업 껍데기(열기 · 닫기 · 머리줄 팩 이름 · Esc · 바깥 누르기 · 첫 버튼 포커스)와 데이터 읽기(workGet · onWorkRequests)는 바닐라 work.ts.
 // 바닐라가 목록을 읽거나 요청이 바뀌면 setWork 로 넣고, 여기서는 그리기만 한다. 줄을 누르면 바닐라의 요청 답하기 · 작업 상세를 부른다
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { ReactNode } from 'react'
 import type { Say } from './bridge.ts'
 
-// main 의 requestsState · workState(src/main/work.mts) 중 화면이 읽는 칸만 — 요청은 src/lib/requests.mts StudioRequest(+ waited),
-// 작업은 src/lib/work-model.mts WorkItem. 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
-type WorkRequest = { id: string; kind: string; title: string; state: string; waited?: string }
+// main 의 requestsState · workState(src/main/work.mts) — 모양은 studio-api.d.ts(WorkRequestView · WorkItemView). 줄을 누르면 바닐라(work.ts · detail.ts)가 같은 값을 받아 더 많은 칸을 읽는다
+type WorkRequest = WorkRequestView
 type WorkState = 'wait' | 'work' | 'blocked' | 'idle' | 'done'
-type WorkItem = { id: string | undefined; title: string; line: string; state: WorkState }
+type WorkItem = WorkItemView
 type WorkData = { boardUp: boolean; doing: WorkItem[]; done: WorkItem[] }
 
-// 줄을 누르면 — 바닐라가 넘긴다(요청 답하기 대화상자 · 작업 상세 대화상자는 renderer.js 그대로)
+// 줄을 누르면 — 바닐라가 넘긴다(요청 답하기 대화상자 detail.ts · 작업 상세 대화상자 work.ts)
 export type WorkActions = { openRequest: (request: WorkRequest) => void; openWorkDetail: (item: WorkItem) => void }
 
 // data: 마지막으로 읽은 목록(workGet — 아직 없으면 null · 읽는 중) · requests: 요청 목록(목록을 읽었으면 그 요청, 아니면 onWorkRequests 의 것)

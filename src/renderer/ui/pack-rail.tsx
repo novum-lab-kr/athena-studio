@@ -35,7 +35,7 @@ export type PackRailActions = {
   add: () => void
 }
 
-// rows — 지금 팩이 목록에 없으면 앞에 더한 줄(renderer.js packRows) · selectedId — 바꾸는 중인 팩이 있으면 그 팩, 없으면 지금 팩
+// rows — 지금 팩이 목록에 없으면 앞에 더한 줄(pack-switch.ts packRows) · selectedId — 바꾸는 중인 팩이 있으면 그 팩, 없으면 지금 팩
 export type PackRailView = {
   rows: PackItem[]
   current: PackItem | null

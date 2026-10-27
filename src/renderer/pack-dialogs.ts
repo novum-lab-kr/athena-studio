@@ -4,7 +4,7 @@ import { $, el, say } from './core.ts'
 import { POPUP_ICONS, refreshPackList } from './pack-switch.ts'
 import { spaceColor, spaceInitials } from './space-actions.ts'
 import { lineIcon } from './side-panels.ts'
-import { browserOpen, placeBrowserView } from './renderer.js'
+import { browserOpen, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
 

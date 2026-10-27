@@ -1,5 +1,5 @@
 // pane [상세] 몸통(pane-detail-body) — 계획서에 묶인 pane 의 상세(에이전트 pane) · 맡긴 일 목록(아테나 pane)
-// 껍데기(아이콘 · 열기 · 닫기 · Esc · 바깥 누르기 · 머리줄 · [← 맡긴 일] · 위치 · 미끄러지기 · 포커스)는 renderer.js 그대로, 몸통만 여기서 그린다.
+// 껍데기(아이콘 · 열기 · 닫기 · Esc · 바깥 누르기 · 머리줄 · [← 맡긴 일] · 위치 · 미끄러지기 · 포커스)는 바닐라 detail.ts, 몸통만 여기서 그린다.
 // 열려 있는 동안 3초마다 다시 읽는다(main ctx.paneDetail — 일감 카드 · 계획서 · pane 화면 글, 모델 호출 없음)
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
@@ -203,7 +203,7 @@ function PrLink({ url }: { url: string }) {
   return <button className="pd-link" type="button" onClick={() => void studio.openUrl(url)}>{url.replace(/^https:\/\/github\.com\//, '')}</button>
 }
 
-// 일감 [작업] 팝업의 한 줄과 같은 모양(renderer.js workRow)
+// 일감 [작업] 팝업의 한 줄과 같은 모양(ui/work-pop.tsx WorkRow)
 function WorkRow({ className = '', title, meta, state, kindLabel = '', onClick, say }: { className?: string; title: string; meta?: string; state?: string; kindLabel?: string; onClick: () => void; say: Say }) {
   return (
     <button className={`work-row ${className}`.trim()} type="button" onClick={onClick}>

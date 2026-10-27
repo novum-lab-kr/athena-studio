@@ -1,5 +1,5 @@
 // ⚙ 설정 팝업 몸통(settings-pop-body) — 이 창 팩의 레포별 PR 자동 리뷰 · 머지 + 앱 업데이트 줄
-// 첫 React 화면(PR-R4). 팝업 껍데기(열기 · 닫기 · 머리줄 팩 이름 · Esc · 바깥 누르기)는 renderer.js 그대로, 몸통만 여기서 그린다
+// 첫 React 화면(PR-R4). 팝업 껍데기(열기 · 닫기 · 머리줄 팩 이름 · Esc · 바깥 누르기)는 바닐라 work.ts, 몸통만 여기서 그린다
 // 읽기는 main 이 pack.json 을 바로, 바꾸기는 코어 pack set-auto-merge. 바꿀 때마다 pack.json 을 다시 읽어 그린다(파일이 정본)
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { createStore, mountIsland, showToast, useSay, useStore } from './bridge.ts'
@@ -114,7 +114,7 @@ function Switch({ id, kind, label, checked, onClick }: { id: string; kind: 'repo
   )
 }
 
-// ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜진다(⚙ 의 점은 renderer.js)
+// ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜진다(⚙ 의 점은 work.ts)
 // 누르면 main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
 function reasonText(say: Say, reason: string | null, branch: string | null): string {
   if (reason === 'not-main') return say('settings.appUpdateNotMain', { branch: branch || '-' })

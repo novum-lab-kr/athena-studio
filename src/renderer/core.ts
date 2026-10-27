@@ -1,5 +1,5 @@
 // 작업 창 화면(index.html)의 공용 — 요소 찾기 · 만들기 · 문구(say) · 알림 · 처음 화면 칸 · 아테나 폴더 상태 · 지금 탭
-// renderer.js 를 기능별로 나누는 중(R3 — 계획서 "R3 나누기"). 이 파일은 다른 묶음을 import 하지 않는다 — 묶음끼리 서로 부르는 순환 import 에서 맨 먼저 다 읽혀야 한다
+// 옛 renderer.js 를 기능별로 나눈 묶음의 공용(R3 — 계획서 "R3 나누기"). 이 파일은 다른 묶음을 import 하지 않는다 — 묶음끼리 서로 부르는 순환 import 에서 맨 먼저 다 읽혀야 한다
 // 다른 묶음이 값을 바꾸는 변수는 여기서 export let + setX — 읽는 쪽은 이름 그대로(ES 모듈 바인딩), 바꾸는 쪽만 setX
 import * as StudioI18n from '../lib/i18n.mts'
 import { StudioUi } from './ui/index.ts'

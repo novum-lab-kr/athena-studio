@@ -1,5 +1,5 @@
 // 알림(#toast — pane 위에 따로 뜨는 한 줄) · 작업 창 상태 줄(#screen-status — 데몬에 못 붙었을 때) · 되살리기 결과 고르기
-// PR-R12. 칸 자리(index.html)와 대화상자(packAlert)는 renderer.js 그대로. 알림의 칸 속성(종류 · role · 숨김) · 사라지는 타이머 · 마우스 올려 기다리기는 여기서 한다.
+// PR-R12. 칸 자리(index.html)와 대화상자(packAlert)는 바닐라 pack-dialogs.ts. 알림의 칸 속성(종류 · role · 숨김) · 사라지는 타이머 · 마우스 올려 기다리기는 여기서 한다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다
 import { Fragment } from 'react'
 import { flushSync } from 'react-dom'
@@ -70,7 +70,7 @@ type RestoreItem = { status?: string; name?: string; agent?: string; renamed?: s
 export type RestoreResult = { ok?: boolean; text?: string; message?: string; worktrees?: RestoreItem[]; sessions?: RestoreItem[]; athena?: unknown[] }
 export type PackAlert = (title: string, text?: string) => unknown
 
-// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유(대화상자는 renderer.js packAlert).
+// 되살린 결과 — 다 됐으면 알림 한 줄, 못 한 것이 있으면 항목마다 이유(대화상자는 pack-dialogs.ts packAlert).
 // 대화상자의 promise 를 그대로 돌려준다 — 가져오기 흐름(runPackFlow)이 확인을 누를 때까지 잠금을 쥔다
 export function showRestoreResult(result: RestoreResult, alert: PackAlert): unknown {
   if (!result.ok) return alert(say('pack.restore.failed'), result.text || result.message)

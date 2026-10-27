@@ -10,7 +10,8 @@ import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRa
 import { initTips } from './tips.ts'
 import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
 import { applySideFolds, closePreview, explorerActions, setPanelHidden } from './side-panels.ts'
-import { initBrowser, initWork } from './renderer.js'
+import { initBrowser } from './browser.ts'
+import { initWork } from './work.ts'
 import { StudioUi } from './ui/index.ts'
 
 export let branches: Record<string, string | null> = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다

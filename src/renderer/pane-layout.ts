@@ -9,7 +9,8 @@ import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
 import { renderDividers, reportTabSize, treeForLayout } from './dividers.ts'
 import { StudioUi } from './ui/index.ts'
 import { spaceColor } from './space-actions.ts'
-import { browserOpen, syncDetailButton } from './renderer.js'
+import { browserOpen } from './browser.ts'
+import { syncDetailButton } from './detail.ts'
 
 // 크기를 비교할 pane 메타 — 데몬 상태의 pane(없으면 빈 것 · 답이 늦어 다시 볼 때는 null)
 type PaneSizeInfo = { cols?: number; rows?: number } | null | undefined
