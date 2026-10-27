@@ -470,12 +470,20 @@ export const globToRegExp = (pattern) => {
 }
 const matchesAny = (path, patterns) => patterns.some((pattern) => globToRegExp(pattern).test(path))
 
-// .gitattributes 에서 linguist-generated 로 표시한 패턴(-linguist-generated · =false 는 뺀다)
-export const linguistGeneratedPatterns = (attributesText) => String(attributesText ?? '').split('\n').flatMap((line) => {
+// .gitattributes 의 linguist-generated 규칙을 순서대로 — [{ pattern, on }]. 켬: linguist-generated · =true / 끔: -linguist-generated · !linguist-generated · =false
+// git 처럼 뒤 규칙이 앞 규칙을 덮는다(linguistGenerated) — "* linguist-generated" 뒤 "src/** -linguist-generated" 면 src 는 생성물 아님
+export const linguistGeneratedRules = (attributesText) => String(attributesText ?? '').split('\n').flatMap((line) => {
   const [pattern, ...attrs] = line.trim().split(/\s+/)
   if (!pattern || pattern.startsWith('#')) return []
-  return attrs.some((attr) => attr === 'linguist-generated' || attr === 'linguist-generated=true') ? [pattern] : []
+  let on = null
+  for (const attr of attrs) {
+    if (attr === 'linguist-generated' || attr === 'linguist-generated=true') on = true
+    else if (attr === '-linguist-generated' || attr === '!linguist-generated' || attr.startsWith('linguist-generated=')) on = false
+  }
+  return on === null ? [] : [{ pattern, on }]
 })
+// 그 경로의 최종 linguist-generated — 맞는 규칙 중 마지막 것
+export const linguistGenerated = (path, rules) => rules.reduce((state, rule) => (globToRegExp(rule.pattern).test(path) ? rule.on : state), false)
 
 // 팩 레포 설정의 생성물 경로 — pack.json 레포 항목 "generated": ["<패턴>", …](문자열이 아닌 것은 버린다)
 export const repoGeneratedPatterns = (config, repoName) => {
@@ -517,7 +525,7 @@ export const splitDiff = (diff) => {
 export const generatedReason = (file, { patterns = [], attributes = [] } = {}) => {
   if (!file.path) return ''
   if (matchesAny(file.path, patterns)) return '팩 설정 생성물'
-  if (matchesAny(file.path, attributes)) return 'linguist-generated'
+  if (linguistGenerated(file.path, attributes)) return 'linguist-generated'
   if (LOCKFILES.has(baseName(file.path))) return 'lockfile'
   if (MINIFIED.test(file.path)) return '압축본 · 소스맵'
   if (DATA_EXT.test(file.path) && (file.text.length > DATA_FILE_CHARS || file.longest > LONG_LINE)) return file.longest > LONG_LINE ? `데이터 파일 · 아주 긴 줄(${file.longest}자)` : `큰 데이터 파일(${file.text.length}자)`
@@ -535,6 +543,7 @@ const shortenLongLines = (text) => {
   return { text: out, count }
 }
 
+// attributes — linguistGeneratedRules 결과(PR base 쪽 .gitattributes — PR 이 스스로 바꾼 것은 쓰지 않는다)
 // → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed }], complete }
 export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
   const generated = []
@@ -584,3 +593,5 @@ export const omittedSection = (packed) => {
 export const PARTIAL_APPROVAL = '잘린 diff 승인'
 export const partialApproval = (summary, packed) => summary.verdict === 'approve' && !packed.complete
 export const partialCount = (packed) => packed.truncated.length + packed.dropped.length
+// 이 라운드에 못 본 코드 파일 경로 — history 에 남겨 다음 라운드가 증분 대신 PR 전체 diff 를 다시 보게 한다
+export const missedFiles = (packed) => [...packed.truncated, ...packed.dropped].map((item) => item.path || '(경로 모름)')

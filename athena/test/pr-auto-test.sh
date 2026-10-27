@@ -198,7 +198,7 @@ EOF
 
 # ── 큰 diff — 생성물은 빼고 코드 파일부터 · 잘린 승인은 머지 승인 아님(이슈 20261025 · syung#12 · syung#23) ──
 node --input-type=module - <<'EOF' || FAIL=1
-import { packDiff, splitDiff, generatedReason, globToRegExp, linguistGeneratedPatterns, repoGeneratedPatterns, omittedSection, partialApproval, partialCount, PARTIAL_APPROVAL, reviewComment, aggregate, validReview } from './scripts/lib/pr-auto.mjs'
+import { packDiff, splitDiff, generatedReason, globToRegExp, linguistGeneratedRules, linguistGenerated, missedFiles, repoGeneratedPatterns, omittedSection, partialApproval, partialCount, PARTIAL_APPROVAL, reviewComment, aggregate, validReview } from './scripts/lib/pr-auto.mjs'
 import { buildPrompt } from './scripts/pr-auto.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -232,8 +232,10 @@ console.log('\n생성물 판별 기준(docs/pr-auto.md "큰 diff")')
 const one = (path, extra = {}) => ({ path, text: 'x', longest: 10, ...extra })
 check('팩 레포 "generated" 패턴이 먼저(작은 파일도) — data/** · *.gen.ts', generatedReason(one('data/a/b.txt'), { patterns: ['data/**'] }) === '팩 설정 생성물' && generatedReason(one('src/api/x.gen.ts'), { patterns: ['*.gen.ts'] }) === '팩 설정 생성물' && generatedReason(one('src/data/b.txt'), { patterns: ['data/**'] }) === '')
 check('repoGeneratedPatterns — 그 레포 항목의 문자열 배열만(없으면 [])', JSON.stringify(repoGeneratedPatterns({ repos: [{ name: 'syung', generated: ['data/fare/**', 3, ''] }, { name: 'x', generated: 'data' }] }, 'syung')) === '["data/fare/**"]' && repoGeneratedPatterns({ repos: [{ name: 'x', generated: 'data' }] }, 'x').length === 0 && repoGeneratedPatterns({}, 'y').length === 0)
-const attrs = linguistGeneratedPatterns('# 주석\nweb/stations.js linguist-generated\n*.pb.go linguist-generated=true\nvendor/** -linguist-generated\nx.js linguist-generated=false\n')
-check('.gitattributes linguist-generated — 켠 것만 · 그 경로는 생성물', JSON.stringify(attrs) === '["web/stations.js","*.pb.go"]' && generatedReason(one('web/stations.js'), { attributes: attrs }) === 'linguist-generated' && generatedReason(one('api/a.pb.go'), { attributes: attrs }) === 'linguist-generated', JSON.stringify(attrs))
+const attrs = linguistGeneratedRules('# 주석\nweb/stations.js linguist-generated\n*.pb.go linguist-generated=true\nvendor/** -linguist-generated\nx.js linguist-generated=false\ny.js !linguist-generated\nREADME.md text\n')
+check('.gitattributes linguist-generated — 켬 · 끔 규칙을 순서대로(속성 없는 줄은 뺌) · 켠 경로는 생성물', JSON.stringify(attrs.map((rule) => `${rule.pattern}:${rule.on}`)) === '["web/stations.js:true","*.pb.go:true","vendor/**:false","x.js:false","y.js:false"]' && generatedReason(one('web/stations.js'), { attributes: attrs }) === 'linguist-generated' && generatedReason(one('api/a.pb.go'), { attributes: attrs }) === 'linguist-generated' && generatedReason(one('x.js'), { attributes: attrs }) === '', JSON.stringify(attrs))
+const wide = linguistGeneratedRules('* linguist-generated\nsrc/** -linguist-generated\nsrc/gen/** linguist-generated\n')
+check('.gitattributes — 뒤 규칙이 덮는다: "*" 켬 뒤 "src/**" 끔이면 src 코드는 리뷰 · 그 뒤 "src/gen/**" 켬은 다시 생성물', linguistGenerated('dist/a.js', wide) && !linguistGenerated('src/app.mjs', wide) && linguistGenerated('src/gen/api.ts', wide) && generatedReason(one('src/app.mjs'), { attributes: wide }) === '' && !linguistGenerated('a.js', []))
 check('lockfile · 압축본 · 소스맵', generatedReason(one('package-lock.json')) === 'lockfile' && generatedReason(one('apps/web/pnpm-lock.yaml')) === 'lockfile' && generatedReason(one('dist/app.min.js')) === '압축본 · 소스맵' && generatedReason(one('dist/app.js.map')) === '압축본 · 소스맵')
 check('데이터 확장자는 크거나(2만 자 넘음) 아주 긴 줄일 때만 — 작은 설정 JSON 은 코드처럼 리뷰', generatedReason(one('package.json')) === '' && generatedReason(one('data/x.csv', { text: 'x'.repeat(20_001) })).startsWith('큰 데이터 파일') && generatedReason(one('a.json', { longest: 1001 })).startsWith('데이터 파일 · 아주 긴 줄'))
 check('glob — / 없는 패턴은 어느 폴더든 · 끝 / 는 폴더 아래 · 앞 / 는 맨 위만', globToRegExp('*.lock').test('a/b/c.lock') && globToRegExp('gen/').test('gen/a/b.ts') && globToRegExp('/gen/*.ts').test('gen/a.ts') && !globToRegExp('/gen/*.ts').test('x/gen/a.ts') && globToRegExp('**/fixtures/**').test('a/fixtures/b.json'))
@@ -247,6 +249,7 @@ const ok = (name, review) => ({ name, status: 'ok', review: validReview(review) 
 const approve = { verdict: 'approve', summary: '좋다', findings: [], decisions: [] }
 const changes = { verdict: 'changes', summary: '고칠 것', findings: [{ file: 'a.js', line: 3, problem: 'p', fix: 'f', severity: 'blocking' }], decisions: [] }
 const both = aggregate([ok('claude', approve), ok('codex', approve)])
+check('못 본 파일 목록(missedFiles) — 잘린 · 빠진 파일 경로(history 에 남겨 다음 라운드가 전체 diff 를 다시 본다)', JSON.stringify(missedFiles(over)) === JSON.stringify([...over.truncated, ...over.dropped].map((item) => item.path)) && missedFiles(packed).length === 0)
 check('잘린 diff + 둘 다 승인 → 잘린 승인(머지 승인 아님) · 다 넣었으면 그대로 승인 · 수정 필요는 그대로 보낸다', partialApproval(both, over) && !partialApproval(both, packed) && !partialApproval(aggregate([ok('claude', approve), ok('codex', changes)]), over) && partialCount(over) === over.truncated.length + over.dropped.length && PARTIAL_APPROVAL === '잘린 diff 승인')
 const partialComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both, partial: partialCount(over) })
 check('PR 댓글 — 다 넣지 못한 파일 수 · 이 승인은 머지 승인으로 세지 않는다 · 다 넣었으면 그 줄 없음', partialComment.includes(`코드 파일 ${partialCount(over)}개를 다 넣지 못했다`) && partialComment.includes('머지 승인으로 세지 않고') && !reviewComment({ sha: 'a', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both }).includes('다 넣지 못했다'), partialComment)
@@ -513,6 +516,22 @@ OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$T
 expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 둘 다 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "큰 생성물 + 작은 코드 — 생성물만 빼고 다 넣었으면 평소 승인 길(머지 확인 요청)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+# PR 이 스스로 .gitattributes 에 "src/** linguist-generated" 를 더해도 판별은 base(origin/dev) 쪽 — src 코드는 그대로 리뷰(PR #62 자동 리뷰 지적 1)
+ATTR_BLOB="$(printf 'src/** linguist-generated\n' | git -C "$WT" hash-object -w --stdin)"
+ATTR_TREE="$(printf '100644 blob %s\t.gitattributes\n' "$ATTR_BLOB" | git -C "$WT" mktree)"
+ATTR_HEAD="$(G -C "$WT" commit-tree "$ATTR_TREE" -p "$MIXED" -m attrs)"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$ATTR_HEAD" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "PR HEAD 의 .gitattributes 는 쓰지 않음 — src/fare.mjs 는 생성물로 안 빠지고 본문이 프롬프트에" 'grep -q "export const fare" "$TMP/prompt.txt" && ! grep -q "src/fare.mjs\` · .*생성물이라 생략" "$TMP/prompt.txt" && echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json$"' "$OUT"
+# 지난 라운드가 코드 파일을 다 못 봤으면(history missed) 2라운드는 증분이 아니라 PR 전체 diff 를 다시(지적 2) — 다시 넣어도 넘치면 또 잘린 승인
+mkdir -p "$QUEUE/history"; printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":["src/b.mjs"]}' "$SHA" > "$QUEUE/history/web-7.json"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "지난 라운드 못 본 파일 있음 → 2라운드는 PR 전체 diff(증분 아님) · 프롬프트에 그렇게" 'grep -q "지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다" "$TMP/prompt.txt" && grep -q "export const fare" "$TMP/prompt.txt" && echo "$OUT" | grep -q "라운드 2/3"' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "전체를 다시 넣어도 넘치면 2라운드 승인도 잘린 diff 승인(머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인"' "$OUT"
+printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":[]}' "$SHA" > "$QUEUE/history/web-7.json"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "지난 라운드가 다 봤으면 2라운드는 지금처럼 증분 diff(gh pr diff 안 씀)" 'grep -q "이후 바뀐 것만" "$TMP/prompt.txt" && ! grep -q "전체를 다시" "$TMP/prompt.txt"' "$OUT"
+rm -f "$QUEUE/history/web-7.json"
 cp "$TMP/plan.keep" "$CORE/$PLANF"   # 뒤 시험은 앞의 계획서 줄(충돌 검증 대기)을 그대로 쓴다
 # merge 커밋은 스테이징 전체를 검사한다(지정 파일만이 아니라) — 충돌 표시가 남은 파일을 미리 스테이징하고 인자에서 빼도 거부
 echo dev3 > "$TMP/dev-side/b.txt" && G -C "$TMP/dev-side" add b.txt && G -C "$TMP/dev-side" commit -q -m dev3 && G -C "$TMP/dev-side" push -q origin dev 2>/dev/null
