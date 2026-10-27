@@ -29,7 +29,7 @@ type BoardMetrics = { current?: { waitMs?: unknown } }
 // 알림 대상 — 묶인 알림(trayModel.bundle)의 target 에 계획서 결정 콘솔(html)이 올 수도 있다
 type TrayNotice = Notice & { target: Notice['target'] & { html?: string | null } }
 
-// 팩 창 문맥(main.js createPackWindow) 중 메뉴 막대가 쓰는 것만
+// 팩 창 문맥(main.mts createPackWindow) 중 메뉴 막대가 쓰는 것만
 export type TrayCtx = {
   win: BrowserWindow | null
   athenaDir: string | null
@@ -414,7 +414,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
     notification.show()
   }
 
-  // main.js 가 부르는 것 — tray · trayWindow 는 바뀌는 값이라 함수로 읽는다
+  // main.mts 가 부르는 것 — tray · trayWindow 는 바뀌는 값이라 함수로 읽는다
   return {
     createTray,
     refreshTray,

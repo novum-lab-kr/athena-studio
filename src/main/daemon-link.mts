@@ -21,7 +21,7 @@ export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: str
 // 화면이 넘기는 pane 크기(cols · rows) — 그대로 데몬에 넘긴다
 export type Size = Record<string, unknown> | undefined
 
-// 팩 창 문맥(main.js createPackWindow 의 ctx) — 이 파일들이 읽는 칸 · 붙이는 칸만
+// 팩 창 문맥(main.mts createPackWindow 의 ctx) — 이 파일들이 읽는 칸 · 붙이는 칸만
 export type PackCtx = {
   athenaDir: string | null
   win: Window | null
@@ -60,7 +60,7 @@ type LinkDeps = {
 }
 
 // say — 화면 문구 · daemonPaths — 데몬 자리 · daemonErrorText — 데몬 오류를 화면 글로 · askRestartDaemon — 프로토콜이 다를 때 묻기(창이 여럿이어도 한 번) ·
-// setDaemonOld — 옛 데몬에 붙어 쓰는 중인지(main.js daemonOld) · releaseHeldWindows — 맞는 데몬이면 미뤄 둔 창 열기 · openUrl — 데몬 open-url 알림
+// setDaemonOld — 옛 데몬에 붙어 쓰는 중인지(main.mts daemonOld) · releaseHeldWindows — 맞는 데몬이면 미뤄 둔 창 열기 · openUrl — 데몬 open-url 알림
 export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld, releaseHeldWindows, openUrl }: LinkDeps): void {
   const send = ctx.send
   let daemon: Connection | null = null // DaemonConnection

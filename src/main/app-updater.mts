@@ -29,7 +29,7 @@ const APP_ROOT = path.join(import.meta.dirname, '..', '..')
 export const APP_UPDATE_CHECK_MS = 30 * 60 * 1000
 const APP_UPDATE_FETCH_GAP_MS = 60 * 1000 // 팝업을 자주 열어도 origin 은 이만큼에 한 번만 받는다
 
-// app — 앱 정보 · 끄기 · dialog — 알림 창 · say — 화면 문구 · studio — 스튜디오 집 자리(heavy.sh) · packWindows — 열린 팩 창(main.js 의 Set 그대로)
+// app — 앱 정보 · 끄기 · dialog — 알림 창 · say — 화면 문구 · studio — 스튜디오 집 자리(heavy.sh) · packWindows — 열린 팩 창(main.mts 의 Set 그대로)
 export function createAppUpdater({ app, dialog, say, studio, packWindows }: { app: App; dialog: Dialog; say: Say; studio: { core: string }; packWindows: Iterable<PackWindow> }) {
   const appUpdateLogFile = () => path.join(app.getPath('userData'), 'app-update.log')
   let appUpdateStatus: Status = { state: 'unavailable', behind: 0, branch: null, reason: null }

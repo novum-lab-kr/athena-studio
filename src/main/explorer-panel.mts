@@ -16,7 +16,7 @@ const fileIcons: typeof import('../lib/file-icons.js') = require('../lib/file-ic
 // 데몬 state 답에서 읽는 칸만(모양은 검사하지 않는다 — 옛 main.js 와 같다)
 type StateReply = { result?: { workspaces: { id: string; cwd: string }[] } }
 
-// 팩 창 문맥(main.js createPackWindow) 중 Explorer 가 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 Explorer 가 읽는 것 · 붙이는 것
 export type ExplorerCtx = {
   daemonCall(op: string, args?: Record<string, unknown>): Promise<unknown>
   explorerList?: unknown

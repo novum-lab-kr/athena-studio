@@ -8,10 +8,10 @@ import type { BrowserWindow, Session, WebContents } from 'electron'
 import * as core from '../lib/core.mts'
 import type { Say } from '../lib/pack.mts'
 
-// 화면이 알려 주는 서랍 자리(CSS 픽셀 — main.js browserRect 가 숫자로 걸렀다)
+// 화면이 알려 주는 서랍 자리(CSS 픽셀 — main.mts browserRect 가 숫자로 걸렀다)
 type Rect = { x: number; y: number; width: number; height: number }
 
-// 팩 창 문맥(main.js createPackWindow) 중 옆 브라우저가 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 옆 브라우저가 읽는 것 · 붙이는 것
 export type SideBrowserCtx = {
   athenaDir: string | null
   win: BrowserWindow | null

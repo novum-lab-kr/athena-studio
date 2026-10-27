@@ -1,7 +1,7 @@
 // ── 일감 · 사람에게 묻는 요청 · [작업] 팝업 — 팩 창 ──────────────────
 // main.js createPackWindow 에서 옮겼다(PR3f) — 화면 문구(say) · 코어 명령(runCore · runPack) · 일감 띄우기 · 끄기(startBoard · stopStaleBoard) ·
 // 메뉴 막대 알리기(trayRequestsChanged) · 앱 설정(appConfig · saveAppConfig)은 인자로 받는다.
-// 이 창 일감 포트(packBoardPort)와 요청 목록(requestsState)은 main.js 의 창 변수 그대로 — 데몬 연결 · pane [상세] · 팩 바꾸기도 읽고 쓴다(읽기 · 쓰기 함수로 받는다).
+// 이 창 일감 포트(packBoardPort)와 요청 목록(requestsState)은 main.mts 의 창 변수 그대로 — 데몬 연결 · pane [상세] · 팩 바꾸기도 읽고 쓴다(읽기 · 쓰기 함수로 받는다).
 // ctx 에 같은 이름(boardPortNow · openBoardExternal · ensureBoard · refreshRequests · requestsNow · stopRequests · watchRequests · workState ·
 // answerRequest · redeliverRequest · openPlan · openBoardSection · openDiagrams · workDetail · prepareBoardPort)으로 붙인다
 import fs from 'node:fs'
@@ -27,7 +27,7 @@ type BoardState = { cards?: unknown }
 type BoardCard = { text?: unknown }
 type PaneListReply = { result?: { panes?: unknown } }
 
-// 팩 창 문맥(main.js createPackWindow) 중 일감 · 요청 · [작업] 이 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 일감 · 요청 · [작업] 이 읽는 것 · 붙이는 것
 export type WorkCtx = {
   athenaDir: string | null
   win: BrowserWindow | null

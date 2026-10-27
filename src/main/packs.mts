@@ -1,7 +1,7 @@
 // ── 회사 팩 · 팩 표시 이름 · 이미지 — 팩 창 ─────────────────────────
 // main.js createPackWindow 에서 옮겼다(PR3g) — electron(app · dialog · Menu) · 화면 문구(say) · 스튜디오 집 자리(studio) · 코어 팩 명령(runPack · contractBlock) ·
 // 열린 팩 창(packWindows · openPackIds · refreshAllPacks) · 창 찾기 · 열기(ctxOfBody · openBody)는 인자로 받는다.
-// main.js 의 값 — 옛 데몬 표시(daemonOld) · 되살리기 표시(restoreArmedFor) · [Finder 에서 보기] 파일(lastPackFile) · 켤 때 시작 화면(launchWelcome — 창 변수)은 읽기 · 쓰기 함수로 받는다.
+// main.mts 의 값 — 옛 데몬 표시(daemonOld) · 되살리기 표시(restoreArmedFor) · [Finder 에서 보기] 파일(lastPackFile) · 켤 때 시작 화면(launchWelcome — 창 변수)은 읽기 · 쓰기 함수로 받는다.
 // ctx 에 같은 이름(refreshPacks · packTask · packNew · packInspect · packImport · packExport · packOpen · packIcon · repoIcon · packSetName · packPickIcon ·
 // packSetIcon · repoSetName · repoSetIcon · deletePack · packContextMenu)으로 붙인다
 import path from 'node:path'
@@ -27,7 +27,7 @@ type PaneListReply = { result?: { panes?: { id: string; agent?: unknown }[] } } 
 // 우클릭 메뉴를 띄울 자리(화면이 준 것 — 정수일 때만 쓴다)
 type Point = { x?: unknown; y?: unknown } | null
 
-// 팩 창 문맥(main.js createPackWindow) 중 회사 팩이 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 회사 팩이 읽는 것 · 붙이는 것
 export type PacksCtx = {
   athenaDir: string | null
   win: BrowserWindow | null

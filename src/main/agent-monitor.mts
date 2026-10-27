@@ -1,6 +1,6 @@
 // ── 에이전트 모니터 — 팩 창 ──
 // main.js 에서 옮겼다(PR3e) — createPackWindow 의 ctx 에 같은 이름으로 붙인다(installAgentMonitor).
-// 모니터 상태(monitor — main.js 가 만들어 팩을 바꿀 때 비운다)와 기록 찾기(findMonitorLogs)는 인자로 받는다
+// 모니터 상태(monitor — main.mts 가 만들어 팩을 바꿀 때 비운다)와 기록 찾기(findMonitorLogs)는 인자로 받는다
 import { MONITOR_MINUTES, MONITOR_KEEP, readNewLines, tailEvents, readSubagentMeta, openTail, monitorSessions } from './monitor-logs.mts'
 import type { FoundLog, Monitor, MonitorEvent } from './monitor-logs.mts'
 import type { PackCtx } from './daemon-link.mts'

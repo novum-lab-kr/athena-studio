@@ -18,7 +18,7 @@ export type PackRepo = { name: string; agent: string | null; linked: boolean; di
 type ScriptRun = { ok: boolean; stdout: string; stderr: string; code: number | string | null | undefined }
 type RunPack = (args: string[], options: RunCoreOptions) => Promise<PackResult>
 
-// 팩 창 문맥(main.js createPackWindow) 중 팩 레포가 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 팩 레포가 읽는 것 · 붙이는 것
 export type PackReposCtx = {
   athenaDir: string | null
   packRepos?: () => Promise<PackRepo[]>
