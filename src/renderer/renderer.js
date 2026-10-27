@@ -321,17 +321,6 @@ function foldButton(side, title, onClick, collapsed = false) {
   return button
 }
 
-// spaces 머리줄의 + — 새 작업 공간(⌘⇧T · [파일] 메뉴와 같다)
-function addSpaceButton() {
-  const button = document.createElement('button')
-  button.className = 'fold-button'
-  button.append(lineIcon(['M12 5v14', 'M5 12h14']))
-  button.dataset.tip = say('spaces.newTitle', { key: state.tabKey })
-  button.setAttribute('aria-label', button.dataset.tip)
-  button.addEventListener('click', () => runCommand('new-workspace'))
-  return button
-}
-
 // 툴팁 — data-tip 버튼 위에 잠깐 머물면 버튼 아래 가운데에 띄운다(화면 밖으로 나가면 안쪽으로 당기고, 아래가 모자라면 위로 · 세로 아이콘 줄은 오른쪽)
 // 아이콘 버튼(글자가 거의 없는 button)의 title 도 여기로 옮겨 같은 툴팁으로 — 기본 title 툴팁은 탭 줄 등에서 안 뜬다
 const TIP_SELECTOR = '[data-tip], button[title], .studio-tab .close[title]' // 탭의 ✕ 는 button 이 아니라 span
@@ -426,91 +415,12 @@ function orderedWorkspaces() {
   return [...athena, ...screen.workspaces.filter((workspace) => !athena.includes(workspace))]
 }
 
-// 접힌 왼쪽 — 작업 공간마다 아이콘 하나
-function spaceRail() {
-  const rows = orderedWorkspaces().map((workspace) => {
-    const button = document.createElement('button')
-    button.className = 'space-icon'
-    button.setAttribute('aria-current', String(workspace.id === screen.activeWorkspace))
-    button.style.setProperty('--space-color', spaceColor(workspace.label)) // 색은 레포 name 으로 — 표시 이름을 바꿔도 그대로
-    const athena = isAthenaWorkspace(workspace)
-    const repo = athena ? null : packRepoOf(workspace.label) // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지를 쓰지 않는다
-    const name = repo ? repoLabel(repo) : workspace.label
-    const image = spaceImage(workspace, repo, 180)
-    if (image) button.append(image)
-    else button.textContent = spaceInitials(name)
-    button.title = [name, branches[workspace.id]].filter(Boolean).join('\n')
-    button.addEventListener('click', () => {
-      if (currentTab !== 'work') switchTab('work')
-      studio.workspaceSelect(workspace.id)
-    })
-    return button
-  })
-  const add = document.createElement('button')
-  add.className = 'space-icon add'
-  add.textContent = '＋'
-  add.dataset.tip = say('spaces.newTitle', { key: state.tabKey })
-  add.setAttribute('aria-label', add.dataset.tip)
-  add.addEventListener('click', () => runCommand('new-workspace'))
-  return [foldButton('left', say('spaces.expand', { key: state.tabKey }), () => setSpacesCollapsed(false), true), ...rows, add]
-}
-
-// 펼친 spaces 에서 레포 밑에 그 작업 공간의 pane 들 — 탭 순서, 탭 안은 분할 순서. 접은 레포는 기억해 둔다
-const foldedSpaces = new Set(readFoldedSpaces())
-
-function readFoldedSpaces() {
-  try {
-    const saved = JSON.parse(localStorage.getItem('studio.spacesFolded') || '[]')
-    return Array.isArray(saved) ? saved.map(String) : []
-  } catch {
-    return []
-  }
-}
-
-function setSpaceFolded(workspaceId, folded) {
-  if (folded) foldedSpaces.add(workspaceId)
-  else foldedSpaces.delete(workspaceId)
-  try {
-    localStorage.setItem('studio.spacesFolded', JSON.stringify([...foldedSpaces]))
-  } catch {}
-  renderSides()
-}
-
+// 작업 공간의 pane 들 — 탭 순서, 탭 안은 분할 순서(왼쪽 작업 공간 목록 · 작업 공간 닫기)
 function workspacePanes(workspaceId) {
   const meta = new Map(screen.panes.filter(isTabPane).map((pane) => [pane.id, pane]))
   return screen.tabs
     .filter((tab) => tab.workspace === workspaceId)
     .flatMap((tab) => StudioLayout.paneIds(tab.tree).filter((id) => meta.has(id)).map((id) => ({ ...meta.get(id), tab: tab.id })))
-}
-
-// pane 줄 — 누르면 그 탭(작업 공간도 따라 바뀐다)을 열고 그 pane 에 포커스
-function spacePaneRow(pane, repo) {
-  const button = document.createElement('button')
-  button.className = 'space space-pane'
-  button.dataset.pane = pane.id
-  button.setAttribute('aria-current', String(pane.id === screen.focused))
-  // 왼쪽 브랜치(길면 …) · 오른쪽 끝 역할 — 전체 이름은 툴팁
-  const row = StudioSpaceNames.paneRow(pane, repo)
-  // 앞 점 — 일하는 중(초록) · 그 밖(회색)
-  const status = document.createElement('span')
-  status.className = `space-status ${paneStatus[pane.id] || ''}`
-  const label = document.createElement('span')
-  label.className = 'space-label'
-  label.textContent = row.branch
-  button.title = row.tip
-  button.append(status, label)
-  if (row.role) {
-    const role = document.createElement('span')
-    role.className = 'space-role'
-    role.textContent = row.role
-    button.append(role)
-  }
-  button.addEventListener('click', async () => {
-    if (currentTab !== 'work') switchTab('work')
-    await studio.tabSelect(pane.tab)
-    focusPane(pane.id)
-  })
-  return button
 }
 
 // 팩 레포 중 아직 작업 공간(에이전트 pane)이 없는 것 — 흐리게. 누르면 아테나에게 /call <그 레포 에이전트>
@@ -527,88 +437,6 @@ function repoLabel(repo) {
 }
 function packRepoOf(label) {
   return packRepos.find((repo) => repo.name === label) || null
-}
-
-// 레포 이미지 — main 이 확인한 iconPath 를 data URL 로 받는다. iconUpdatedAt 이 바뀌면 다시 받는다(팩 이미지 packIconImage 와 같은 방식)
-const repoIconCache = new Map() // name → { stamp, dataUrl }
-const repoIconPending = new Set()
-function repoIconImage(repo) {
-  if (!repo.iconPath) return null
-  const stamp = `${repo.iconPath}|${repo.iconUpdatedAt || ''}`
-  const cached = repoIconCache.get(repo.name)
-  if (cached && cached.stamp === stamp) {
-    if (!cached.dataUrl) return null
-    const image = el('img', 'pack-icon-image')
-    image.src = cached.dataUrl
-    image.alt = ''
-    image.draggable = false
-    return image
-  }
-  if (!repoIconPending.has(repo.name)) {
-    repoIconPending.add(repo.name)
-    studio
-      .repoIcon(repo.name)
-      .then((result) => repoIconCache.set(repo.name, { stamp, dataUrl: (result && result.dataUrl) || null }))
-      .catch(() => repoIconCache.set(repo.name, { stamp, dataUrl: null })) // 실패도 적어 둔다 — 다시 그릴 때마다 또 요청하지 않게
-      .finally(() => {
-        repoIconPending.delete(repo.name)
-        if (attached) renderSides()
-      })
-  }
-  return null // 받는 동안은 두 글자
-}
-
-// 아테나 작업 공간 로고 — 늘 우리 로고(화이트판). 팩에 같은 이름 레포가 있어도 그 레포 이미지 · 이름으로 바꾸지 않는다.
-// 작은 칸이라 크기에 맞는 파일을 쓴다(펼친 줄 14px → 32 · 접힌 rail 32px → 180)
-function athenaLogoImage(size) {
-  const image = el('img', 'pack-icon-image space-athena-logo')
-  image.src = `assets/logo/athena-white-${size}.png`
-  image.alt = ''
-  image.draggable = false
-  return image
-}
-
-// 작업 공간 줄 이미지 — 아테나 작업 공간은 아테나 로고, 그 밖엔 이미지를 정한 팩 레포만(없거나 받는 중이면 null)
-function spaceImage(workspace, repo, size) {
-  if (workspace && isAthenaWorkspace(workspace)) return athenaLogoImage(size)
-  return (repo && repoIconImage(repo)) || null
-}
-
-// 펼친 spaces 레포 줄 앞 칸 — 이미지가 있으면 이미지, 없으면 접힌 칸과 같은 색 · 두 글자 배지(꺾쇠 대신)
-function repoRowIcon(workspace, repo) {
-  const image = spaceImage(workspace, repo, 32)
-  const icon = el('span', image ? 'space-repo-icon' : 'space-repo-icon space-repo-badge')
-  if (image) {
-    icon.append(image)
-    return icon
-  }
-  const label = workspace ? workspace.label : repo.name
-  icon.style.setProperty('--space-color', spaceColor(label)) // 색은 레포 name 으로 — 접힌 칸(spaceRail)과 같다
-  icon.textContent = spaceInitials(repoLabel(repo) || label)
-  return icon
-}
-
-function idleRepoRows() {
-  const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
-  return packRepos.filter((repo) => !labels.has(repo.name)).map((repo) => {
-    const button = el('button', `space space-repo space-idle${repo.linked ? '' : ' unlinked'}`)
-    // 툴팁은 없다 — 못 부르는 레포(연결 안 됨 · 에이전트 없음)만 누르면 이유를 알림으로
-    const blocked = !repo.linked ? say('spaces.repoUnlinked', { repo: repo.name }) : !repo.agent ? say('spaces.callNoAgent', { repo: repo.name }) : null
-    const text = el('span', 'space-text')
-    text.append(el('span', 'space-label', repoLabel(repo)))
-    button.append(repoRowIcon(null, repo), text)
-    if (repo.linked && repo.agent) button.append(el('span', 'space-call', say('spaces.call')))
-    button.addEventListener('contextmenu', (event) => {
-      event.preventDefault()
-      spaceMenu({ workspace: null, repo: repo.name }, event)
-    })
-    button.addEventListener('click', () => {
-      if (blocked) return showToast(blocked, 'info')
-      if (currentTab !== 'work') switchTab('work')
-      runPackFlow(() => callRepoAgent(repo))
-    })
-    return button
-  })
 }
 
 // 후보 브랜치 설명 — 로컬 · 10/18 · 마지막 커밋 제목(없으면 "아직 커밋 없음") · 워크트리 있음
@@ -762,70 +590,50 @@ async function callRepoAgent(repo) {
 }
 
 function renderSides() {
-  const spaces = $('spaces')
-  if (spaces.classList.contains('collapsed')) {
-    spaces.replaceChildren(...spaceRail())
-    if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
-    return
-  }
-  // 왼쪽: 작업 공간(레포)만
-  const title = document.createElement('div')
-  title.className = 'side-title with-fold'
-  const titleText = document.createElement('span')
-  titleText.textContent = 'spaces'
-  const actions = document.createElement('span')
-  actions.className = 'side-title-actions'
-  actions.append(addSpaceButton(), foldButton('left', say('spaces.collapse', { key: state.tabKey }), () => setSpacesCollapsed(true)))
-  title.append(titleText, actions)
-  const rows = orderedWorkspaces().flatMap((workspace) => {
-    const panes = workspacePanes(workspace.id)
-    const folded = foldedSpaces.has(workspace.id)
-    const button = document.createElement('button')
-    const current = workspace.id === screen.activeWorkspace
-    button.className = 'space space-repo'
-    button.setAttribute('aria-current', String(current))
-    if (panes.length) button.setAttribute('aria-expanded', String(!folded))
-    // 레포 줄은 이름만 쓴 머리글 — 브랜치는 툴팁(에이전트 브랜치는 밑의 pane 줄에)
-    button.title = [workspace.cwd, branches[workspace.id]].filter(Boolean).join('\n')
-    const text = document.createElement('span')
-    text.className = 'space-text'
-    const label = document.createElement('span')
-    label.className = 'space-label'
-    const athena = isAthenaWorkspace(workspace)
-    const repo = athena ? null : packRepoOf(workspace.label) // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
-    label.textContent = repoLabel(repo) || workspace.label
-    text.append(label)
-    // 머리글을 누르면 그 레포의 pane 줄을 접고 편다(pane 이 없으면 그 레포를 고른다). 앞 칸은 이미지 또는 두 글자 배지(꺾쇠는 없다).
-    // 접으면 모두 숨기고 머리글에 — 숨긴 수(+N) · 지금 보는 pane 이 안에 있으면 머리글을 밝게 · 일하는 pane 이 있으면 초록 점
-    const shown = folded ? [] : panes
-    button.append(repoRowIcon(workspace, repo), text)
-    if (folded && panes.length) {
-      if (panes.some((pane) => pane.id === screen.focused)) button.classList.add('holds-focus')
-      const count = el('span', 'space-fold-count', `+${panes.length}`)
-      if (panes.some((pane) => paneStatus[pane.id] === 'working')) count.prepend(el('span', 'space-status working'))
-      button.append(count)
-    }
-    button.addEventListener('click', () => {
-      if (currentTab !== 'work') switchTab('work')
-      if (panes.length) return setSpaceFolded(workspace.id, !folded)
-      studio.workspaceSelect(workspace.id)
-    })
-    // 우클릭 — 작업 공간 닫기 · (팩 레포면) 팩에서 빼기
-    button.addEventListener('contextmenu', (event) => {
-      event.preventDefault()
-      spaceMenu({ workspace, repo: repo ? repo.name : null }, event)
-    })
-    if (!shown.length) return [button]
-    // pane 줄은 레포 머리글 밑에
-    const children = document.createElement('div')
-    children.className = 'space-children'
-    children.append(...shown.map((pane) => spacePaneRow(pane, workspace.label)))
-    return [button, children]
+  // 왼쪽: 작업 공간(레포)만 — 그리기는 React(ui/spaces.tsx). 접기 · 펴기(collapsed 클래스)는 여기서
+  const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
+  StudioUi.spaces.render({
+    collapsed: $('spaces').classList.contains('collapsed'),
+    tabKey: state.tabKey,
+    active: screen.activeWorkspace,
+    focused: screen.focused,
+    workspaces: orderedWorkspaces().map((workspace) => {
+      const athena = isAthenaWorkspace(workspace)
+      // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
+      const repo = athena ? null : packRepoOf(workspace.label)
+      return { id: workspace.id, label: workspace.label, cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
+    }),
+    idleRepos: packRepos.filter((repo) => !labels.has(repo.name)),
+    paneStatus,
   })
-  spaces.replaceChildren(title, ...rows, ...idleRepoRows())
 
   // 오른쪽: 지금 작업 공간의 Explorer — 작업 공간이 바뀌면 따라간다
   if (explorerView.workspace !== screen.activeWorkspace) resetExplorer()
+}
+
+// 왼쪽 작업 공간 목록(React)에 넘기는 바닐라 도우미 · 누른 뒤의 일
+function spacesActions() {
+  return {
+    spaceColor,
+    spaceInitials,
+    paneRow: StudioSpaceNames.paneRow,
+    foldIcons: { paths: PANEL_ICONS.left, fill: PANEL_FILLS.left },
+    toWork: () => {
+      if (currentTab !== 'work') switchTab('work')
+    },
+    selectWorkspace: (id) => studio.workspaceSelect(id),
+    selectPane: async (pane) => {
+      await studio.tabSelect(pane.tab)
+      focusPane(pane.id)
+    },
+    newWorkspace: () => runCommand('new-workspace'),
+    setCollapsed: setSpacesCollapsed,
+    menu: (target, event) => spaceMenu({ workspace: screen.workspaces.find((workspace) => workspace.id === target.workspace) || null, repo: target.repo }, event),
+    callRepo: (repo) => runPackFlow(() => callRepoAgent(repo)),
+    iconLoaded: () => {
+      if (attached) renderSides()
+    },
+  }
 }
 
 // ── 오른쪽 Explorer (파일 · 변경) ──
@@ -1493,7 +1301,7 @@ function focusPane(paneId) {
   screen = { ...screen, focused: paneId }
   studio.paneFocus(paneId)
   for (const [id, view] of views) view.el.classList.toggle('focused', id === paneId)
-  for (const row of document.querySelectorAll('.space-pane')) row.setAttribute('aria-current', String(row.dataset.pane === paneId))
+  StudioUi.spaces.focus(paneId) // 왼쪽 pane 줄 표시(React)
   views.get(paneId).term.focus()
 }
 
@@ -3263,6 +3071,7 @@ async function init() {
     paneStatus = next
     if (attached) renderSides()
   })
+  StudioUi.spaces.setup($('spaces'), spacesActions())
   applySideFolds()
   $('side-open').addEventListener('click', () => setPanelHidden(false))
   $('preview-close').addEventListener('click', closePreview)

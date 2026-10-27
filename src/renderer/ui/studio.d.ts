@@ -44,6 +44,8 @@ declare global {
     paneDetail(paneId: string): Promise<PaneDetailView | undefined>
     workOpenPlan(id: string, html: string | null): Promise<unknown>
     openUrl(url: string): Promise<unknown>
+    // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
+    repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>
   }
 
   const studio: StudioApi

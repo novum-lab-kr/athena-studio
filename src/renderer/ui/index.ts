@@ -6,8 +6,9 @@ import * as paneDetail from './pane-detail.tsx'
 import * as settings from './settings-pop.tsx'
 import * as work from './work-pop.tsx'
 import * as welcome from './pack-welcome.tsx'
+import * as spaces from './spaces.tsx'
 
-const StudioUi = { connect, textsChanged, monitor, settings, work, paneDetail, welcome }
+const StudioUi = { connect, textsChanged, monitor, settings, work, paneDetail, welcome, spaces }
 
 declare global {
   // renderer.js 가 읽는 전역 이름
