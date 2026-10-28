@@ -17,7 +17,7 @@ function fakeBody(root, name) {
   return dir
 }
 
-function setup(t, runPack) {
+function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-refresh-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const bodies = { acme: fakeBody(root, 'acme'), globex: fakeBody(root, 'globex') }
@@ -30,7 +30,7 @@ function setup(t, runPack) {
     packAbort: null,
     send: (channel, value) => sent.push({ channel, value }),
     packProgress: () => {},
-    daemonCall: async () => ({ result: { panes: [] } }),
+    daemonCall,
     rebindBody: () => ({}),
     packRepos: async () => [],
     show: () => {},
@@ -56,8 +56,8 @@ function setup(t, runPack) {
     restoreArmedFor: () => null,
     disarmRestore: () => {},
     setLastPackFile: () => {},
-    launchWelcome: () => false,
-    setLaunchWelcome: () => {},
+    launchWelcome: () => welcome,
+    setLaunchWelcome: (value) => (welcome = value),
   })
   return { ctx, bodies, sent }
 }
@@ -102,4 +102,38 @@ test('팩 목록: 본체가 그대로면 한 번만 읽는다', async (t) => {
   const state = await ctx.refreshPacks()
   assert.equal(state.current.id, 'acme')
   assert.deepEqual(calls, [bodies.acme])
+})
+
+test('팩 목록: 시작 화면 판단(데몬 pane 목록)을 기다리는 사이 본체가 바뀌어도 옛 목록을 버린다', async (t) => {
+  const calls = []
+  let releasePanes
+  const panesDone = new Promise((resolve) => (releasePanes = resolve))
+  let firstPanes = true
+  const { ctx, bodies, sent } = setup(
+    t,
+    async (args, options, all) => {
+      calls.push(options.dir)
+      return listOf(all, options.dir)
+    },
+    {
+      // 켤 때 시작 화면을 아직 정하지 않았다(null) — 첫 목록이 데몬 pane 목록을 기다린다
+      welcome: null,
+      daemonCall: async () => {
+        if (firstPanes) {
+          firstPanes = false
+          await panesDone
+        }
+        return { result: { panes: [] } }
+      },
+    },
+  )
+  const stale = ctx.refreshPacks() // acme 본체 목록은 받았고 pane 목록을 기다리는 중
+  await new Promise((resolve) => setImmediate(resolve))
+  ctx.athenaDir = bodies.globex // 그사이 rebindBody
+  releasePanes()
+  const late = await stale
+  assert.equal(late.current.id, 'globex')
+  assert.equal(ctx.packState.current.id, 'globex')
+  assert.ok(sent.filter((item) => item.channel === 'pack:state').every((item) => item.value.current.id === 'globex'))
+  assert.deepEqual(calls, [bodies.acme, bodies.globex])
 })
