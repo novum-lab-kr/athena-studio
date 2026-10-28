@@ -43,6 +43,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
   - 일감 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
+  - 일감 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 일감 서버 · 가짜 claude · gh)
   - 역할마다 모델(`scripts/lib/models.mjs` · `athena_config.py` `model_of` · `delegate.sh` `--model` · 팩 `models`)을 고쳤으면 `test/models-test.sh`(몇 초 · 진짜 claude 를 부르지 않는다)
   - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
