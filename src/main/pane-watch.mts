@@ -119,7 +119,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
       todo,
       // 이 계획서에 묶인 대화 기록 전부(작업 · 리뷰 세션) — 계획서 → 기록 찾기는 코어 learn-review.mjs findTranscripts 와 같은 규칙
       tokens: tokenView(paneTokens.peekPlan([ctx.athenaDir, core.realDir(ctx.athenaDir as string)], plan.id)),
-      plan: { id: plan.id, html: plan.html || null, title: record.title || plan.title, created: Number(plan.created) || 0, readable: Boolean(card), ...(record as Record<string, unknown>) }, // record 의 title 이 앞 title 을 덮는다(옛 코드 그대로 — 타입 검사가 겹친 칸을 막아 캐스트)
+      plan: paneDetail.detailPlan(plan, record, Boolean(card)),
     }
   }
 

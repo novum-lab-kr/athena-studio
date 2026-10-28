@@ -156,3 +156,19 @@ test('계획서 기록: 요청(## 지시) · 진행 · 다음 · 막힘(없음 �
   const formal = detail.planRecord('# 큰 일\n## 1. 개요\n- 요청 사항(사용자):\n  1. 이름 바꾸기\n  2. 상세 보기\n- 대상: x\n')
   assert.deepEqual(formal.request, ['이름 바꾸기', '상세 보기'])
 })
+
+test('상세 계획서 칸: 원문 제목이 비면 일감 카드 제목 · 있으면 원문 제목 · 나머지 원문 칸은 그대로', () => {
+  const card = plan('plans/task/a.md', { title: '카드 제목', created: 5, html: 'plans/task/a.html' })
+  // 원문을 못 읽음 — 빈 제목이 카드 제목을 덮지 않는다
+  const unread = detail.detailPlan(card, detail.planRecord(''), false)
+  assert.equal(unread.title, '카드 제목')
+  assert.equal(unread.readable, false)
+  assert.deepEqual(unread.progress, [])
+  // 원문 제목이 있으면 그쪽
+  const read = detail.detailPlan(card, detail.planRecord('# 원문 제목\n## Checkpoint\n- Status: done\n'), true)
+  assert.equal(read.title, '원문 제목')
+  assert.equal(read.status, 'done')
+  assert.equal(read.id, 'plans/task/a.md')
+  assert.equal(read.html, 'plans/task/a.html')
+  assert.equal(read.created, 5)
+})
