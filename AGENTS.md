@@ -18,7 +18,7 @@ npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목�
 npm run typecheck # 타입 검사(tsc — tsconfig.json · src/renderer/tsconfig.json · athena/jsconfig.json)
 npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(실제 pty)
 ```
-패키징 스크립트는 아직 없다(빌드는 화면만 — 아래 "TypeScript"). 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
+맥 배포판은 `npm run package:mac`(electron-builder · `scripts/package-mac.js` → `dist/release/` · README "배포판 (맥)"). 앱 코드 빌드는 화면만 — 아래 "TypeScript". 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
 
 ## TypeScript (섞어 쓰는 중)
 - **앱 Node 쪽은 빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. 데몬 띄우기는 JS 때와 같다

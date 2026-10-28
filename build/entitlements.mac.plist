@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  배포판 서명 권한(hardened runtime) — scripts/package-mac.js 가 앱 본체와 helper(entitlementsInherit) 모두에 쓴다.
+  - allow-jit · allow-unsigned-executable-memory: V8(화면 · 데몬 · CLI 모두 Electron 의 V8 — 데몬 · CLI 는 ELECTRON_RUN_AS_NODE 로 같은 실행 파일)
+  - disable-library-validation: 1단계 ad-hoc 서명(-)에는 꼭 필요하다(electron-builder 문서 — 없으면 hardened runtime 이 팀 ID 없는 라이브러리를 막아 앱이 안 켜진다).
+    node-pty 의 pty.node 를 데몬(Electron as node)이 불러오므로 Developer ID 서명(2단계)에서도 남겨 둔다 — 빼려면 2단계에서 공증 뒤 pane 열기로 확인하고 뺀다
+  pane 셸은 node-pty 의 spawn-helper(따로 서명되는 실행 파일)가 /bin/zsh 등을 띄우는 것이라 이 권한을 물려받지 않는다
+-->
+<plist version="1.0">
+  <dict>
+    <key>com.apple.security.cs.allow-jit</key>
+    <true/>
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+    <key>com.apple.security.cs.disable-library-validation</key>
+    <true/>
+  </dict>
+</plist>
