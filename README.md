@@ -12,8 +12,25 @@ npm install   # node-pty 맥 prebuild 를 쓴다(Xcode 빌드 필요 없음) · 
 npm start     # 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — 메뉴 막대 · Dock · ⌘Tab 이름이 Athena
 ```
 - `npm install`(postinstall)은 node-pty `spawn-helper` 실행 권한을 고치고(`scripts/fix-spawn-helper.js`), Electron.app 을 `.dev-app/Athena.app` 으로 복제해 이름 · 아이콘을 바꾸고 다시 서명한다(`scripts/dev-app.js` — Electron 버전 · 아이콘이 바뀌면 `npm start` 때 다시 만든다, 못 만들면 Electron 이름 그대로 켠다).
-- `npm start` 는 켜기 전에 이 레포 `athena/` 의 **커밋된** 기록으로 코어 번들(`.dev-app/resources/athena-core.bundle`)을 만들고, 화면(`src/renderer`)을 Vite 로 `dist/renderer/`(git 무시)에 빌드한다(`vite.config.mts` · 1초 안쪽 · 손으로는 `npm run build:renderer`). 화면을 고쳤으면 앱을 다시 켠다(따로 지켜보며 다시 빌드하지 않는다). 빌드가 실패하면 이전 빌드로 켜고 경고하고, 이전 빌드도 없으면 켜지 않는다. 배포판 · 패키징은 아직 없다.
+- `npm start` 는 켜기 전에 이 레포 `athena/` 의 **커밋된** 기록으로 코어 번들(`.dev-app/resources/athena-core.bundle`)을 만들고, 화면(`src/renderer`)을 Vite 로 `dist/renderer/`(git 무시)에 빌드한다(`vite.config.mts` · 1초 안쪽 · 손으로는 `npm run build:renderer`). 화면을 고쳤으면 앱을 다시 켠다(따로 지켜보며 다시 빌드하지 않는다). 빌드가 실패하면 이전 빌드로 켜고 경고하고, 이전 빌드도 없으면 켜지 않는다. 배포판은 아래 "배포판 (맥)".
 - 처음 켜면 묻지 않고 번들을 스튜디오 집에 풀어 쓴다. 안 됐을 때만 [다시 시도] · [이미 받은 아테나 폴더 고르기…] 가 뜬다.
+
+## 배포판 (맥)
+```sh
+npm run package:mac                    # arm64 · x64 둘 다 → dist/release/(git 무시)
+npm run package:mac -- --arch arm64    # 칩 하나만 · --version X.Y.Z 로 번호를 줄 수 있다
+```
+- 만드는 것: `Athena-Studio-mac-arm64.dmg` · `-x64.dmg` · 같은 이름 `.zip`(칩마다 따로 · universal 아님). 이름 Athena Studio · 번들 ID `kr.novum-lab.athena-studio` · 최소 macOS 13(Ventura — Electron 44 의 최소)
+- `scripts/package-mac.js` 가 화면 빌드(`dist/renderer`) → 코어 번들(`athena/` 의 **커밋된** 기록 → `dist/package/athena-core.bundle` → 앱 `Contents/Resources/athena-core.bundle`) → electron-builder 순으로 돈다. 버전은 git 태그(`git describe` — 태그 커밋이면 `0.13.36`, 뒤 커밋이 있으면 `0.13.36+1`)로 앱 `app.getVersion()` 이 그 번호
+- asar 를 쓰지 않는다 — 데몬 · 데몬 CLI(`bin/athena-studio-cli` 셸 스크립트)를 파일 경로로 띄우고 코어가 그 CLI 를 셸로 부른다. 퓨즈: RunAsNode 켬(데몬 · CLI · 일감 · 코어 명령이 `ELECTRON_RUN_AS_NODE` 로 이 앱의 Electron 을 node 로 쓴다) · NODE_OPTIONS · `--inspect` 끔
+- 서명: `CSC_LINK`(.p12) · `CSC_KEY_PASSWORD` 가 있으면 Developer ID, 없으면 이 컴퓨터용(ad-hoc) — ad-hoc 판은 다른 맥에서 Gatekeeper 가 막는다. hardened runtime + `build/entitlements.mac.plist`(JIT · 서명 안 된 실행 메모리 · 라이브러리 검사 끄기). 공증은 `APPLE_API_KEY`(.p8 경로) · `APPLE_API_KEY_ID` · `APPLE_API_ISSUER` 가 모두 있을 때 electron-builder 가 한다
+- 배포판은 ⚙ 앱 업데이트를 끈다(개발 체크아웃 전용 · `src/main/app-updater.mts`)
+- 손님 맥에 필요한 것(코드 근거):
+  - `git` — 처음 켤 때 코어 번들을 `git clone` 으로 푼다(`src/lib/studio-home.js` `installCore`). 없으면 맥이 Xcode Command Line Tools 설치를 띄운다
+  - `python3` — 코어 훅(`athena/.claude/settings.json`) · 화면 계층(`athena/scripts/lib/screen.py`). Command Line Tools 에 들어 있다
+  - `claude` 또는 `codex` — 작업 창이 처음 켜는 에이전트(`src/lib/core.mts` `availableAgents` · 없으면 켜지 않는다)
+  - `node` — 코어 스크립트(`athena/bin/athena` · `delegate.sh` · `scripts/*.mjs`)가 PATH 의 node 를 부른다. 앱이 직접 부르는 팩 명령 · 일감은 node 가 없으면 앱의 Electron 으로 돈다
+  - (선택) `gh` — PR 올리기(`ship.sh`)
 
 ## 스튜디오 집과 데이터
 ```
@@ -24,11 +41,11 @@ npm start     # 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — �
 ```
 회사 레포 클론은 홈 아래(`reposRoot`)에 둔다 — 스튜디오 집 밖이다.
 
-| | 개발 앱(`npm start`) | 배포판(나중) |
+| | 개발 앱(`npm start`) | 배포판(`npm run package:mac`) |
 |---|---|---|
 | 앱 데이터(설정 `config.json` · 데몬 소켓 · 로그) | `~/Library/Application Support/Athena Studio Dev/` | `~/Library/Application Support/Athena Studio/` |
 | 데몬 접속 파일 | `~/.athena-studio/daemon-dev.json` | `~/.athena-studio/daemon.json` |
-| 번들 ID | `kr.novum-lab.athena-studio.dev` | (패키징 때) |
+| 번들 ID | `kr.novum-lab.athena-studio.dev` | `kr.novum-lab.athena-studio` |
 
 스튜디오 집의 코어 · 본체 · 데이터는 개발 앱과 배포판이 **같이 쓴다**.
 
@@ -64,7 +81,7 @@ npm start     # 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — �
 - 팩 본체 코어가 앱보다 옛 버전이라 명령을 모르면(사용법만 찍어 "알 수 없는 답") 앱이 그 본체 `version` 의 약속 번호 · `capabilities` 를 보고 "이 팩 본체 코어가 옛 버전이라 아직 안 돼요" 로 알린다(`src/lib/pack.mts` `coreTooOld` · 오류 코드 `core-old`). 앱을 다시 켜면 코어 업데이트가 그 본체를 올린다.
 
 ## 버전
-SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 은 태그가 없을 때의 시작값 0.1.0 · 올리지 않는다). main 에 머지되면(사람이 GitHub 에서 머지해도 · 자동 머지 흐름이 머지해도) 워크플로 `.github/workflows/release.yml` 이 `scripts/release-version.js` 로 그 커밋에 다음 태그를 달고 GitHub Release(PR 제목 · 링크)를 만든다 — 그 커밋의 PR 제목 타입이 `feat` 이거나 `!` 가 붙으면 가운데(0.Y+1.0), 그 밖은 끝자리(0.Y.Z+1), 기준은 가장 높은 `v*` 태그. main 에 파일을 고치는 커밋은 만들지 않고, 이미 태그가 있는 커밋은 건너뛴다. 실행마다 기준 태그 뒤 아직 태그 없는 main 커밋을 오래된 순으로 모두 채우므로 머지가 몰려 실행이 취소돼도 빠지지 않는다(계산은 `src/lib/version.js` · 미리 보기 `node scripts/release-version.js --sha <커밋> --dry-run`). 앱은 `git describe` 로 읽는다 — 태그 커밋이면 `0.2.1`, 그 뒤 커밋이 3개 더 있으면 `0.2.1+3`, 태그가 없거나 배포판이면 `package.json` 값. `npm start` 가 켤 때 origin 의 `v*` 태그를 먼저 받고(못 받으면 있는 태그로) 정한 번호 하나를 ⚙ 앱 업데이트 줄 · 맥 메뉴 [Athena 정보] · 코어 번들에 같이 쓴다 — ⚙ 확인이 나중에 태그를 더 받아도 지금 번호는 다시 켤 때까지 그대로(새 번호는 `현재 → 새` 로만). 코어는 번들의 버전 ref 로 읽는다(코어 `version --json` 의 `version` — `athena/docs/pack.md` "코어 업데이트 · 되돌리기 · 버전"). 약속 번호(`CONTRACT`) · 데몬 `PROTOCOL` 과는 따로다.
+SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 은 태그가 없을 때의 시작값 0.1.0 · 올리지 않는다). main 에 머지되면(사람이 GitHub 에서 머지해도 · 자동 머지 흐름이 머지해도) 워크플로 `.github/workflows/release.yml` 이 `scripts/release-version.js` 로 그 커밋에 다음 태그를 달고 GitHub Release(PR 제목 · 링크)를 만든다 — 그 커밋의 PR 제목 타입이 `feat` 이거나 `!` 가 붙으면 가운데(0.Y+1.0), 그 밖은 끝자리(0.Y.Z+1), 기준은 가장 높은 `v*` 태그. main 에 파일을 고치는 커밋은 만들지 않고, 이미 태그가 있는 커밋은 건너뛴다. 실행마다 기준 태그 뒤 아직 태그 없는 main 커밋을 오래된 순으로 모두 채우므로 머지가 몰려 실행이 취소돼도 빠지지 않는다(계산은 `src/lib/version.js` · 미리 보기 `node scripts/release-version.js --sha <커밋> --dry-run`). 앱은 `git describe` 로 읽는다 — 태그 커밋이면 `0.2.1`, 그 뒤 커밋이 3개 더 있으면 `0.2.1+3`, 태그가 없으면 `package.json` 값. 배포판은 만들 때 정한 태그 번호(`app.getVersion()` — 위 "배포판 (맥)"). `npm start` 가 켤 때 origin 의 `v*` 태그를 먼저 받고(못 받으면 있는 태그로) 정한 번호 하나를 ⚙ 앱 업데이트 줄 · 맥 메뉴 [Athena 정보] · 코어 번들에 같이 쓴다 — ⚙ 확인이 나중에 태그를 더 받아도 지금 번호는 다시 켤 때까지 그대로(새 번호는 `현재 → 새` 로만). 코어는 번들의 버전 ref 로 읽는다(코어 `version --json` 의 `version` — `athena/docs/pack.md` "코어 업데이트 · 되돌리기 · 버전"). 약속 번호(`CONTRACT`) · 데몬 `PROTOCOL` 과는 따로다.
 
 ## 문제가 생기면
 | 메뉴 | 하는 일 |
@@ -97,7 +114,7 @@ SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 
 | `src/daemon/` · `src/daemon-client.mts` · `bin/athena-studio-cli` | 데몬(`main.mts` 소켓 서버 · `pane.mts` pty + 화면 버퍼 · `cli.js`) · 띄우기 · 붙기 · 버전 확인 · 코어 화면 계층이 pane 을 다루는 CLI |
 | `src/lib/` | Electron 없이 도는 순수 로직(`npm test`) — `studio-home.js`(스튜디오 집 · 번들 · 업데이트 판단 · 초기화) · `app-update.mts`(⚙ 앱 업데이트 — 뒤처짐 · 빨리 감기) · `version.js`(버전 번호 — 태그 계산 · describe) · `pack.mts`(팩 명령 출력 · 오류 · 약속 번호 · 이름 · 아이콘 · 시작 화면) · `core.mts`(설정 · 에이전트 고르기 · 자식 환경 · 포트) · `protocol.js`(데몬 통신) · `layout.mts`(분할 트리) · `screen-model.js` · `explorer.mts` · `file-icons.js` · `viewer.mts` · `agent-feed.mts`(모니터 피드) · `tray-model.mts`(트레이 요약 · 알림) · `tray-icon.mts` · `i18n.mts` · `space-names.mts` · `pane-keys.mts` |
 | `src/i18n/<언어>.json` | 화면 문구 사전 4개(ko · en · ja · zh — 일 · 중은 검수 전 `draft`) |
-| `scripts/` | `dev-app.js`(개발용 Athena.app · 코어 번들 · 화면 빌드 · 켜기) · `fix-spawn-helper.js` · `fake-pack.js`(개발용 가짜 본체) |
+| `scripts/` | `dev-app.js`(개발용 Athena.app · 코어 번들 · 화면 빌드 · 켜기) · `fix-spawn-helper.js` · `fake-pack.js`(개발용 가짜 본체) · `package-mac.js`(맥 배포판 — electron-builder) |
 | `test/` | `node:test` — 순수 로직 + 데몬 통합(맥 · 실제 pty) |
 
 ## 검사
