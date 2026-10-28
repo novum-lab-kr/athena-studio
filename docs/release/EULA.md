@@ -1,9 +1,10 @@
-# Athena Studio — End User License Agreement (DRAFT)
+# Athena Studio — End User License Agreement
 
-Last updated: [date]
+Last updated: October 28, 2026
 
 This End User License Agreement ("Agreement") is between you and
-[Company legal name] ("Novum Lab", "we"). By installing or using Athena Studio
+Minchang Sung, who publishes Athena Studio under the name Novum Lab
+("Novum Lab", "we"). By installing or using Athena Studio
 ("App"), you agree to this Agreement. If you do not agree, do not install or
 use the App.
 
@@ -57,8 +58,8 @@ This Agreement ends if you breach it or stop using the App. On termination you
 must stop using and delete the App. Sections 2, 5, 6, 7, and 9 survive.
 
 ## 9. Governing law
-This Agreement is governed by the laws of [the Republic of Korea]. Disputes
-will be resolved in the courts of [Seoul Central District Court], unless
+This Agreement is governed by the laws of the Republic of Korea. Disputes
+will be resolved in the courts of Seoul Central District Court, unless
 consumer protection law in your country requires otherwise.
 
 ## 10. Changes
@@ -67,4 +68,4 @@ App or by email. Continuing to use the App after changes take effect means you
 accept them.
 
 ## 11. Contact
-[Company legal name] · [address] · [contact email]
+Minchang Sung (Novum Lab) · mcsung.novum@gmail.com
