@@ -3,6 +3,7 @@
   "productName": "Athena Studio",
   "version": "0.1.0",
   "private": true,
+  "license": "UNLICENSED",
   "description": "아테나(AI 에이전트 개발팀) 데스크톱 앱 — 작업 창(자체 터미널) · 일감을 한 창에",
   "main": "src/main.mts",
   "engines": {
