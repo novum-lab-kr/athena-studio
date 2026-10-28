@@ -39,8 +39,12 @@ You may not:
   (for example git) on your computer. Your use of those services is governed
   by their own terms; you are responsible for your accounts with them and
   any fees they charge.
-- Your code, files, and repositories stay yours. [The App does not send your
-  code or files to Novum Lab servers. — confirm before publishing]
+- Optional: if you add your own TypeSafe Jev key, the App sends QA error
+  details and learning notes to TypeSafe Jev (api.typesafe.ai). These may
+  include parts of your code. Jev's own terms apply. Without a key, nothing is
+  sent to TypeSafe Jev.
+- Your code, files, and repositories stay yours. The App does not send your
+  code or files to Novum Lab servers.
 - You are responsible for reviewing changes, commits, and pull requests made
   by agents you run in the App.
 
