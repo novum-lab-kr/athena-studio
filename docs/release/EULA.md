@@ -17,8 +17,8 @@ You may not:
 - copy, modify, or create derivative works of the App, except as allowed by law;
 - reverse engineer, decompile, or disassemble the App, except to the extent
   the law expressly permits despite this restriction;
-- rent, lease, resell, sublicense, or share your account or license key;
-- remove or bypass license checks, notices, or security features.
+- rent, lease, resell, sublicense, or share or redistribute the App;
+- remove or bypass notices or security features.
 
 ## 3. Third-party services and your content
 - The App runs AI agents (for example Claude Code) and developer tools
