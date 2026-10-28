@@ -116,6 +116,7 @@ SemVer 0.x — 정본은 git 태그 `vX.Y.Z` 하나다(`package.json` `version` 
 | `src/i18n/<언어>.json` | 화면 문구 사전 4개(ko · en · ja · zh — 일 · 중은 검수 전 `draft`) |
 | `scripts/` | `dev-app.js`(개발용 Athena.app · 코어 번들 · 화면 빌드 · 켜기) · `fix-spawn-helper.js` · `fake-pack.js`(개발용 가짜 본체) · `package-mac.js`(맥 배포판 — electron-builder) |
 | `test/` | `node:test` — 순수 로직 + 데몬 통합(맥 · 실제 pty) |
+| `docs/release/` · `LICENSE` | 배포판 문서 — 손님용 사용 약관 초안 `EULA.md`(영어 · 법률 검토 전) · 홈페이지에 넘기는 고정 주소 · 부탁 `homepage-handoff.md` · 레포 루트 `LICENSE`(모든 권리 보유) |
 
 ## 검사
 ```sh
