@@ -229,6 +229,7 @@
   "monitor.empty": "暂无可显示的活动",
   "monitor.noAgents": "没有正在运行的智能体 — 启动后会显示在这里",
   "monitor.finalReport": "发送最终报告",
+  "monitor.githubIssue": "GitHub issue #{n} · {title} — 已导入 · Athena 处理中",
   "board.title": "待办",
   "board.openTitle": "待办页面 — 问题 · QA · 学习 · 指标 · 归档",
   "board.openFailed": "无法打开待办",

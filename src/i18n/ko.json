@@ -229,6 +229,7 @@
   "monitor.empty": "아직 보일 활동이 없어요",
   "monitor.noAgents": "돌고 있는 에이전트가 없어요 — 뜨면 여기에 붙어요",
   "monitor.finalReport": "최종 보고 전송",
+  "monitor.githubIssue": "GitHub 이슈 #{n} · {title} — 가져옴 · 아테나가 처리 중",
   "board.title": "일감",
   "board.openTitle": "일감 페이지 — 이슈 · QA · 학습 · 지표 · 아카이브",
   "board.openFailed": "일감을 열지 못했어요",

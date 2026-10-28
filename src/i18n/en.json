@@ -229,6 +229,7 @@
   "monitor.empty": "No activity to show yet",
   "monitor.noAgents": "No agents are running — they will appear here when they start",
   "monitor.finalReport": "Sent final report",
+  "monitor.githubIssue": "GitHub issue #{n} · {title} — imported · Athena on it",
   "board.title": "Worklist",
   "board.openTitle": "Worklist pages — Issues · QA · Learning · Metrics · Archive",
   "board.openFailed": "Could not open the worklist",

@@ -5,7 +5,9 @@ import path from 'node:path'
 // 기록 JSON 의 객체 하나(모양은 칸마다 따로 본다)
 type Loose = Record<string, unknown>
 
-export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null }
+// github — 일감 GitHub 이슈 감시가 아테나에 맡긴 이슈(githubIssueEvents). 화면이 이 칸으로 문구를 지어 보인다(text 는 제목)
+export type GithubIssueMark = { repo: string; number: number; title: string }
+export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; github?: GithubIssueMark }
 
 export const TOOL_ICON: Record<string, string> = { Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
 
@@ -84,4 +86,23 @@ export function parseLine(line: string): unknown {
 // cwd → ~/.claude/projects 아래 폴더 이름(영문·숫자 밖은 '-')
 export function projectDirName(cwd: unknown): string {
   return String(cwd || '').replace(/[^A-Za-z0-9]/g, '-')
+}
+
+// 일감 GET /api/github-issues 의 issues → 모니터 이벤트. seen 에 없던 것만(창마다 · 한 번씩) · since(ms) 보다 오래된 것은 빼고 기억만.
+// 모양이 다른 칸은 건너뛴다(일감은 다른 본체 코드일 수 있다)
+export function githubIssueEvents(issues: unknown, seen: Set<string>, since: number): FeedEvent[] {
+  if (!Array.isArray(issues)) return []
+  const list: unknown[] = issues
+  const events: FeedEvent[] = []
+  for (const item of list) {
+    if (!isLoose(item) || typeof item.repo !== 'string' || !Number.isInteger(item.number) || typeof item.at !== 'string') continue
+    const key = `${item.repo}#${item.number}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const at = Date.parse(item.at)
+    if (Number.isNaN(at) || at < since) continue
+    const title = oneLine(item.title)
+    events.push({ kind: 'say', icon: '📥', name: 'GitHub', text: title, at: item.at, github: { repo: item.repo, number: Number(item.number), title } })
+  }
+  return events
 }

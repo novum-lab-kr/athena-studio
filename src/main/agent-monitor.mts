@@ -4,6 +4,11 @@
 import { MONITOR_MINUTES, MONITOR_KEEP, readNewLines, tailEvents, readSubagentMeta, openTail, monitorSessions } from './monitor-logs.mts'
 import type { FoundLog, Monitor, MonitorEvent } from './monitor-logs.mts'
 import type { PackCtx } from './daemon-link.mts'
+import { fetchBoardJson } from './board.mts'
+import { githubIssueEvents } from '../lib/agent-feed.mts'
+
+// 일감 GitHub 이슈 감시가 아테나에 맡긴 것을 읽는 간격 — 일감은 5분마다 확인하니 15초면 넉넉하다
+const GITHUB_EVERY_MS = 15000
 
 type FindMonitorLogs = (monitor: Monitor, allSessions: boolean, athenaDir: string | null) => Promise<FoundLog[]>
 
@@ -41,6 +46,13 @@ export function installAgentMonitor(ctx: PackCtx, { monitor, findMonitorLogs }: 
             changed = true
           }
         }
+      }
+      // GitHub 이슈 — 일감(이 창의 본체)이 가져와 아테나에 맡긴 것을 한 줄씩(처음 본 것만 · 일감이 꺼져 있으면 건너뛴다)
+      if (Date.now() - monitor.lastGithub > GITHUB_EVERY_MS) {
+        monitor.lastGithub = Date.now()
+        const reply = (await fetchBoardJson(ctx.boardPortNow(), '/api/github-issues')) as { issues?: unknown } | null
+        const since = Math.max(Date.now() - MONITOR_MINUTES * 60000, monitor.floor)
+        for (const event of githubIssueEvents(reply?.issues, monitor.githubSeen, since)) fresh.push({ id: ++monitor.seq, session: 'github', ...event })
       }
       for (const tail of monitor.tails.values()) {
         // 한 파일이 사라지거나 못 읽어도 다른 세션은 계속

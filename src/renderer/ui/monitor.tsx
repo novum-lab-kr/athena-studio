@@ -10,7 +10,8 @@ import type { Say } from './bridge.ts'
 // main 이 보내는 monitor:update(src/main/agent-monitor.mts) — 세션은 src/main/monitor-logs.mts MonitorSession,
 // 이벤트는 MonitorEvent(src/lib/agent-feed.mts FeedEvent + id · session). 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
 type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
-type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null }
+// github — 일감 GitHub 이슈 감시가 아테나에 맡긴 이슈(session 'github' · src/main/agent-monitor.mts)
+type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; github?: { repo: string; number: number; title: string } }
 export type MonitorUpdate = { reset?: boolean; sessions?: MonitorSession[]; events?: MonitorEvent[] }
 
 // 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색(space-actions.ts spaceColor)
@@ -157,7 +158,13 @@ function monitorTime(at: string | null): string {
 }
 
 // 서브에이전트 보고(SubagentHandback)는 입력이 없어 main(agent-feed)이 고정 문구를 준다 — 화면 언어로 바꿔 보인다
-const eventText = (say: Say, event: MonitorEvent) => (event.kind === 'tool' && event.name === 'SubagentHandback' ? say('monitor.finalReport') : event.text)
+// GitHub 이슈 줄도 main 은 제목만 준다 — 화면 언어로 한 줄을 짓는다
+function eventText(say: Say, event: MonitorEvent): string {
+  if (event.github) return say('monitor.githubIssue', { n: event.github.number, title: event.github.title })
+  return event.kind === 'tool' && event.name === 'SubagentHandback' ? say('monitor.finalReport') : event.text
+}
+// GitHub 이슈 줄은 세션(대화 기록)이 없다 — 이름표는 GitHub
+const GITHUB_LABEL = 'GitHub'
 
 function Feed() {
   const say = useSay()
@@ -168,7 +175,7 @@ function Feed() {
   return (
     <>
       {events.map((event) => (
-        <MonitorRow key={event.id} event={event} label={labels.get(event.session) ?? '?'} text={eventText(say, event)} />
+        <MonitorRow key={event.id} event={event} label={labels.get(event.session) ?? (event.github ? GITHUB_LABEL : '?')} text={eventText(say, event)} />
       ))}
     </>
   )
