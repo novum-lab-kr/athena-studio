@@ -83,7 +83,7 @@ import {
 } from './lib/packs.mjs'
 import { maskText } from './qa/live.mjs'
 import { ackRequest, answerRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { screenSync } from './lib/screen.mjs'
+import { callerPane } from './lib/screen.mjs'
 
 const ROOT = ATHENA_ROOT
 const [command, sub] = process.argv.slice(2)
@@ -338,13 +338,6 @@ const requestId = () => {
   if (!id || id.startsWith('--')) throw new PackError('usage', `사용: athena request ${sub} <id> [--json]`)
   return id
 }
-const currentPane = () => {
-  try {
-    return screenSync(['pane', 'current']).pane.id
-  } catch {
-    return ''
-  }
-}
 const requestCommands = {
   open: () => {
     const recommend = flag('recommend')
@@ -359,7 +352,7 @@ const requestCommands = {
       body: bodyFile ? readFileSync(resolve(bodyFile), 'utf8') : flag('body'),
       options,
       links: { plan: flag('plan'), html: flag('html'), issue: flag('issue') },
-      pane: flag('pane') || currentPane(),
+      pane: flag('pane') || callerPane(),  // 부른 pane — 화면 밖이면 포커스된 pane(lib/screen.mjs)
       dedupeKey: flag('key'),
     })
   },

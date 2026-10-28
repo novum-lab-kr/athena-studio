@@ -4,6 +4,7 @@
 //   await screenText(['pane', 'read', id])      → 화면 글 그대로 · 실패면 null
 //   screenSync(['pane', 'current'])               → { pane: {...} } · 실패면 예외
 //   screenName()                                  → 안내 글에 쓸 화면 이름(지금 백엔드)
+//   callerPane(options)                           → 부른 pane id(scripts/screen self) · 화면 밖이면 포커스된 pane(pane current) · 둘 다 없으면 ''
 //   nameLeadPane(title)                           → 아테나 pane 이름을 '🧭 아테나 · <제목>' 으로(에이전트 pane · 화면 밖이면 안 함 · 실패는 조용히)
 //   openUrl(url) · openUrlSync(url)               → 주소 열기(studio 면 그 창 옆 브라우저 · 아니면 기본 브라우저 — scripts/screen open-url)
 import { execFile, execFileSync, spawn } from 'node:child_process'
@@ -51,6 +52,23 @@ export const nameLeadPane = (title) => {
     const label = `🧭 아테나 · ${title.slice(0, 30).trim()}`
     screenSync(['pane', 'rename', paneId, label], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] })
     return label
+  } catch {
+    return ''
+  }
+}
+
+// 이 명령을 부른 pane — 결정 콘솔 · 요청 · QA 런이 답을 돌려보낼 곳(GitHub #107).
+// pane current 는 '포커스된 pane'(사용자가 보고 있는 다른 pane 일 수 있다)이라 먼저 self(부른 pane)를 보고,
+// 화면 밖(self 의 pane_id 가 빔 — 현황판 서버 등)일 때만 지금처럼 pane current 로 넘어간다. options 는 screenSync 에 그대로(stdio 등)
+export const callerPane = (options = {}) => {
+  try {
+    const paneId = screenSync(['self'], { timeout: 5000, ...options }).pane_id
+    if (paneId) return paneId
+  } catch {
+    // self 를 못 부르면 pane current 로 넘어간다
+  }
+  try {
+    return screenSync(['pane', 'current'], options).pane?.id ?? ''
   } catch {
     return ''
   }

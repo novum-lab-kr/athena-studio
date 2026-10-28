@@ -9,7 +9,7 @@
   3. 이 아테나 폴더의 athena.config.json "screen"(studio·none — pane 밖에서만 쓰인다. auto · 모르는 값이면 다음으로)
   4. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
   5. 그 밖                                           → none
-  pane 밖이어도 백엔드는 골라진다(plan-html 의 pane current · 현황판의 pane list).
+  pane 밖이어도 백엔드는 골라진다(plan-html 이 화면 밖에서 부르는 pane current · 현황판의 pane list).
   "pane 안인가" 는 inside() 가 따로 답한다(studio: ATHENA_STUDIO=1 + 데몬 CLI).
 
 납작한 JSON(백엔드 모양을 감춘다 — id 는 불투명한 문자열, 부르는 쪽이 id 를 쪼개 읽지 않는다):

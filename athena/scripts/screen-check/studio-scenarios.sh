@@ -152,11 +152,16 @@ sc_studio_compact() {
   STEP_STDIN="$WORK/payload.json" step studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- python3 scripts/hooks/compact-checkpoint.py post
 }
 sc_studio_plan_html() { step studio "${IN_STUDIO[@]}" -- node scripts/plan-html.mjs plans/refactor/20261003-lead.md --add "$WORK/decisions.json"; }
+# 부른 pane(p2)과 포커스된 pane(p1 — fixture pane_current)이 다를 때 — 보낼 pane · 요청 pane 은 부른 p2 여야 한다(GitHub #107)
+sc_studio_caller_pane() {
+  step studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add "$WORK/decisions.json"
+  step studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/athena.mjs request open --kind question --title 검사
+}
 sc_studio_server() { board_server studio p2 p8; }   # Studio pane 환경(IN)으로 띄운다
 
 SCENARIOS+=(studio_self studio_ops studio_errors studio_node studio_board studio_board_outside studio_monitor studio_guide
   studio_up studio_up_firstrun studio_delegate_newws studio_delegate_existing studio_delegate_sized studio_delegate_here studio_delegate_outside
-  studio_workspace_up studio_setup_check studio_compact studio_plan_html studio_server)
+  studio_workspace_up studio_setup_check studio_compact studio_plan_html studio_caller_pane studio_server)
 
 # 탭 밖 고정 칸(dock — 앱 하단 에이전트 모니터, 프로토콜 3): pane list 에 tab_id·workspace_id 가 null 인 '🛰 에이전트 모니터' 가 섞인다
 # 탭·workspace 로 거르면 빠지고(pane 밖 self 의 '' 와도 맞지 않는다) · 이름표로 찾으면 잡혀 모니터를 새로 띄우지 않고 그 칸을 다시 쓴다

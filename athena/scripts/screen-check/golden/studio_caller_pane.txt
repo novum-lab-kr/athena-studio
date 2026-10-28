@@ -1,0 +1,13 @@
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_STUDIO_PANE_ID=p2 node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add <WORK>/decisions.json
+--- exit 0
+--- stdout
+plans/task/20261001-fe-test.html · 결정 0/1 확정 · 보낼 pane p2
+   요청 r-<ID> · open
+--- stderr
+--- screen
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli ATHENA_STUDIO_PANE_ID=p2 node scripts/athena.mjs request open --kind question --title 검사
+--- exit 0
+--- stdout
+✅ r-<ID> · question · open · pane p2 — 검사
+--- stderr
+--- screen
