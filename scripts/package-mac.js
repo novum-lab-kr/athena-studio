@@ -4,6 +4,9 @@
 //     1. 화면 빌드(vite → dist/renderer · scripts/dev-app.js 와 같은 설정)
 //     2. 코어 번들 — 레포 athena/ 의 커밋된 기록(HEAD:athena)을 git 번들로 dist/package/ 에 만들고 extraResources 로
 //        앱 Contents/Resources/athena-core.bundle 에 넣는다(src/lib/studio-home.js coreBundlePath 의 배포판 자리)
+//     2-1. 앱 안 업데이트 설정 — dist/package/app-update.yml(피드 = 공개 레포 최신 Release 고정 주소)을 Contents/Resources/ 에.
+//          electron-updater 가 피드 · 받기 캐시 자리를 여기서 읽는다(src/main/app-updater.mts). electron-builder publish 설정은 쓰지 않는다 —
+//          켜면 .dmg 항목까지 든 latest-mac.yml · blockmap 을 같이 만드는데, latest-mac.yml 은 release-files.js updater 가 최종 .zip 으로 만든다
 //     3. 제3자 고지 — scripts/third-party-notices.js 가 package-lock · node_modules 를 읽어 dist/package/THIRD_PARTY_NOTICES.txt 를 만들고
 //        extraResources 로 앱 Contents/Resources/ 에(약관 docs/release/EULA.md 5절 · LICENSE 가 가리킨다)
 //     4. electron-builder — 이름 Athena Studio · 번들 ID kr.novum-lab.athena-studio · 파일 이름 Athena-Studio-mac-<arch>.dmg · .zip
@@ -29,6 +32,12 @@ const ARCHES = ['arm64', 'x64']
 const SIGNING_ENV = ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']
 
 const APP_ID = 'kr.novum-lab.athena-studio'
+// 공개 자리(홈페이지 고정 주소와 같은 곳) — 앱 안 업데이트 피드는 그 최신 Release 의 파일(latest-mac.yml · .zip)
+const RELEASES_REPO = 'novum-lab-kr/athena-studio-releases'
+const UPDATE_FEED_URL = `https://github.com/${RELEASES_REPO}/releases/latest/download`
+const UPDATE_CONFIG_NAME = 'app-update.yml'
+// 받은 .zip 을 두는 캐시 폴더 이름(~/Library/Caches/<이것>) — electron-builder 가 쓰는 꼴(<이름>-updater)과 같게
+const UPDATER_CACHE_DIR = 'athena-studio-updater'
 const PRODUCT_NAME = 'Athena Studio' // src/lib/studio-home.js appIdentity({ packaged: true }).name 과 같다(앱 데이터 폴더 이름)
 // Electron 44 는 macOS 13(Ventura) 이상 — Electron v44 breaking-changes "Removed: macOS 12 support" · Electron.app Info.plist LSMinimumSystemVersion 13.0
 const MINIMUM_MACOS = '13.0'
@@ -65,6 +74,11 @@ function resolveVersion({ explicit = null, described = null }) {
   return version.DISPLAY_RE.test(value) ? value : null
 }
 
+// 앱 안 app-update.yml — electron-updater generic provider(AppUpdater.loadUpdateConfig 가 YAML 로 읽는다 · JSON 도 YAML 이다)
+function updateConfig() {
+  return `${JSON.stringify({ provider: 'generic', url: UPDATE_FEED_URL, updaterCacheDirName: UPDATER_CACHE_DIR }, null, 2)}\n`
+}
+
 // 서명 · 공증 환경 변수 중 빈 것의 이름 — 값은 보지 않고 있는지만
 /** @param {Record<string, string | undefined>} env */
 function signingMissing(env) {
@@ -73,10 +87,10 @@ function signingMissing(env) {
 
 /**
  * electron-builder 설정. 서명 · 공증은 환경 변수로 갈린다(위 머리 주석)
- * @param {{ appVersion: string, coreBundle: string, noticesFile: string, signed: boolean }} options
+ * @param {{ appVersion: string, coreBundle: string, updateConfigFile: string, noticesFile: string, signed: boolean }} options
  * @returns {import('electron-builder').Configuration}
  */
-function builderConfig({ appVersion, coreBundle, noticesFile, signed }) {
+function builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, signed }) {
   const split = version.splitDisplay(appVersion)
   return {
     appId: APP_ID,
@@ -87,9 +101,11 @@ function builderConfig({ appVersion, coreBundle, noticesFile, signed }) {
     directories: { output: path.relative(ROOT, OUTPUT), buildResources: 'build' },
     files: FILES,
     // 코어 번들 — process.resourcesPath/athena-core.bundle(studio-home.js coreBundlePath · CORE_BUNDLE_NAME)
+    // 업데이트 설정 — process.resourcesPath/app-update.yml(electron-updater 가 읽는 자리 · 서명 전에 들어가 서명에 포함된다)
     // 제3자 고지 — process.resourcesPath/THIRD_PARTY_NOTICES.txt(Electron · Chromium 고지 LICENSE.electron.txt · LICENSES.chromium.html 은 electron-builder 가 같은 자리에 옮긴다)
     extraResources: [
       { from: coreBundle, to: studioHome.CORE_BUNDLE_NAME },
+      { from: updateConfigFile, to: UPDATE_CONFIG_NAME },
       { from: noticesFile, to: notices.FILE_NAME },
     ],
     // asar 를 쓰지 않는다 — 데몬(src/daemon/main.mts) · CLI(bin/athena-studio-cli 셸 스크립트 → src/daemon/cli.js) 를
@@ -160,6 +176,8 @@ async function main(args) {
   const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out: coreBundle, version: appVersion, log: (line) => console.log(`[package] ${line}`) })
   if (!made.ok) throw new Error(`코어 번들을 만들지 못했다(${made.error}) — ${made.message || ''}`)
   console.log(`[package] 코어 번들 ${String(made.commit).slice(0, 12)} · ${appVersion}`)
+  const updateConfigFile = path.join(STAGING, UPDATE_CONFIG_NAME)
+  fs.writeFileSync(updateConfigFile, updateConfig())
 
   const noticesFile = path.join(STAGING, notices.FILE_NAME)
   const written = notices.writeNotices({ root: ROOT, out: noticesFile, appVersion })
@@ -172,7 +190,7 @@ async function main(args) {
   // .app 서명 직후 공증 · staple(Developer ID 판만) — staple 결과는 이 .app 을 담을 .zip 이름으로 staple.json 에
   /** @param {import('electron-builder').AfterPackContext} context */
   const afterSign = (context) => notarizeMac.afterSign(context, { recordName: artifactName(builder.Arch[context.arch], 'zip') })
-  const config = { ...builderConfig({ appVersion, coreBundle, noticesFile, signed }), ...(signed ? { afterSign } : {}) }
+  const config = { ...builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, signed }), ...(signed ? { afterSign } : {}) }
   // 칩마다 따로 — 한 번에 넘기면 universal 이 아니라 각자 만든다(파일 이름에 ${arch})
   const archEnum = { arm64: builder.Arch.arm64, x64: builder.Arch.x64 }
   const targets = builder.Platform.MAC.createTarget(['dmg', 'zip'], ...arches.map((arch) => archEnum[/** @type {'arm64' | 'x64'} */ (arch)]))
@@ -187,4 +205,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { APP_ID, PRODUCT_NAME, MINIMUM_MACOS, SIGNING_ENV, artifactName, resolveVersion, signingMissing, builderConfig }
+module.exports = { APP_ID, PRODUCT_NAME, MINIMUM_MACOS, SIGNING_ENV, RELEASES_REPO, UPDATE_FEED_URL, UPDATE_CONFIG_NAME, UPDATER_CACHE_DIR, artifactName, resolveVersion, signingMissing, updateConfig, builderConfig }

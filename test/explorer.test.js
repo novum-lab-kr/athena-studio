@@ -70,3 +70,15 @@ test('바이너리 어림', () => {
   assert.equal(explorer.looksBinary(Buffer.from('hello\nworld')), false)
   assert.equal(explorer.looksBinary(Buffer.from([0x89, 0x50, 0x00, 0x47])), true)
 })
+
+test('작업 공간 폴더 대신 볼 pane 폴더: 그 작업 공간만 · 포커스 먼저 · cwd 다음 foreground_cwd · 빈 값 · 겹침 빼기', () => {
+  const panes = [
+    { workspace_id: 'w1', focused: true, cwd: '/other', foreground_cwd: '/other' },
+    { workspace_id: 'w47', focused: false, cwd: '/gone', foreground_cwd: '/gone' },
+    { workspace_id: 'w47', focused: true, cwd: '/focused', foreground_cwd: '/focused/sub' },
+    { workspace_id: null, focused: false, cwd: '/dock', foreground_cwd: null },
+    { workspace_id: 'w47', focused: false, cwd: '', foreground_cwd: null },
+  ]
+  assert.deepEqual(explorer.paneFolders(panes, 'w47'), ['/focused', '/focused/sub', '/gone'])
+  assert.deepEqual(explorer.paneFolders([], 'w47'), [])
+})

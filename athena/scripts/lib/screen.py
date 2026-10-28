@@ -13,9 +13,10 @@
   "pane 안인가" 는 inside() 가 따로 답한다(studio: ATHENA_STUDIO=1 + 데몬 CLI).
 
 납작한 JSON(백엔드 모양을 감춘다 — id 는 불투명한 문자열, 부르는 쪽이 id 를 쪼개 읽지 않는다):
-  Pane      {id, tab_id, workspace_id, label, name, pane_title, cwd, foreground_cwd, focused, agent, agent_status, title}
+  Pane      {id, tab_id, workspace_id, label, name, pane_title, cwd, foreground_cwd, focused, agent, agent_status, title, cols, rows}
             label 은 백엔드가 준 이름표 그대로(없으면 null) — name·pane_title 로 채우지 않는다(도구 pane 찾기가 이름표만 본다).
-            title 은 터미널 제목, pane_title 은 백엔드의 pane 제목 필드
+            title 은 터미널 제목, pane_title 은 백엔드의 pane 제목 필드.
+            cols · rows 는 pane 크기(글자 칸 수 — 2026-10-28 더함 · 추가만). 옛 데몬은 이 칸이 없다 — 부르는 쪽은 없거나 null 이면 크기를 모르는 것으로 다룬다(delegate.sh 배치)
   Tab       {id, workspace_id, label}
   Workspace {id, label, active_tab_id, focused}
   Self      {inside, backend, pane_id, tab_id, workspace_id}

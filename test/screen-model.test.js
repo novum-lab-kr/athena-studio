@@ -8,6 +8,21 @@ test('id: 종류마다 1 부터 · 다시 쓰지 않음 · [\\w:] 만', () => {
   assert.match(ids.next('p'), /^[\w:]+$/)
 })
 
+test('id: 36진수 소문자 — p230 다음 p6f · 예전 10진 id 와 같은 글자(숫자만)는 건너뛴다 · 카운터는 10진 숫자', () => {
+  const saved = []
+  const ids = model.createIdGen({ p: 230 }, (counters) => saved.push(counters))
+  assert.equal(ids.next('p'), 'p6f')
+  assert.deepEqual(saved.at(-1), { p: 231 })
+  const fresh = model.createIdGen()
+  const made = Array.from({ length: 40 }, () => fresh.next('t'))
+  assert.deepEqual(made.slice(0, 11), ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 'ta', 'tb'])
+  assert.equal(made[34], 'tz')
+  assert.equal(made[35], 't1a') // 36('10') ~ 45('19') 는 예전 t10 ~ t19 와 겹쳐 건너뛴다
+  assert.ok(made.every((id) => /^t[0-9a-z]+$/.test(id) && (id.length < 3 || /[a-z]/.test(id.slice(1)))))
+  assert.equal(model.createIdGen({ w: 1295 }).next('w'), 'w10a') // 1296('100') ~ 1305('109') 는 건너뛴다
+  assert.equal(model.createIdGen({ p: 46654 }).next('p'), 'pzzz') // 4글자 끝
+})
+
 test('id: 지난 데몬 번호에서 이어서 센다 · 바뀔 때마다 알린다 · 이상한 값은 버린다', () => {
   const saved = []
   const ids = model.createIdGen({ p: 4, t: 2, bad: -1, 'x-y': 3, w: 'a' }, (counters) => saved.push(counters))
@@ -16,11 +31,11 @@ test('id: 지난 데몬 번호에서 이어서 센다 · 바뀔 때마다 알린
   assert.deepEqual([model.createIdGen(null).next('p'), model.createIdGen('x').next('p')], ['p1', 'p1'])
 })
 
-test('납작한 Pane: 화면 계층 screen.py _pane 과 같은 12개 키 · 빈 값은 null', () => {
-  // 아테나 scripts/lib/screen.py `_pane` 키 순서 그대로 — 바뀌면 코어 계약이 바뀐 것
-  const expected = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title']
+test('납작한 Pane: 화면 계층 screen.py 계약과 같은 14개 키 · 빈 값은 null', () => {
+  // 아테나 scripts/lib/screen.py 머리 계약(Pane) 키 순서 그대로 — 바뀌면 코어 계약이 바뀐 것. cols · rows 는 뒤에 더했다(추가만)
+  const expected = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows']
   assert.deepEqual(model.PANE_KEYS, expected)
-  const pane = model.flatPane({ id: 'p1', tabId: 't1', workspaceId: 'w2', label: '', cwd: '/a', foregroundCwd: '/a/b', focused: 1, agent: 'claude', agentStatus: 'idle', title: '' })
+  const pane = model.flatPane({ id: 'p1', tabId: 't1', workspaceId: 'w2', label: '', cwd: '/a', foregroundCwd: '/a/b', focused: 1, agent: 'claude', agentStatus: 'idle', title: '', cols: 80, rows: 24 })
   assert.deepEqual(Object.keys(pane), expected)
   assert.deepEqual(pane, {
     id: 'p1',
@@ -35,8 +50,11 @@ test('납작한 Pane: 화면 계층 screen.py _pane 과 같은 12개 키 · 빈 
     agent: 'claude',
     agent_status: 'idle',
     title: null,
+    cols: 80,
+    rows: 24,
   })
   assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).agent, null)
+  assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).cols, null)
   assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).workspace_id, null)
 })
 

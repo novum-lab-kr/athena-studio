@@ -20,6 +20,8 @@ test('목록: 열린 것(open · answered)만 · 오래된 것 먼저 · 화면 
   const first = result.requests[0]
   assert.equal(first.plan, 'plans/task/x.md')
   assert.equal(first.pane, 'w1:p3')
+  // 36진수 pane id(2026-10-28 — p6f)도 그대로 옮긴다(앱은 pane list 의 id 와 글자 그대로 비교해 넣는다 — main/work.mts deliverToPane)
+  assert.equal(requests.normalizeRequests({ ok: true, requests: [sample({ pane: 'p6f' })] }).requests[0].pane, 'p6f')
   assert.deepEqual(first.options.map((option) => option.label), ['있다', '없다'])
   assert.equal(first.options[1].recommended, true)
 })

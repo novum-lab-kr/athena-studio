@@ -4,7 +4,8 @@
 //   node scripts/release-files.js check [--version X.Y.Z]     버전을 정하고(비우면 git 태그) CHANGELOG 에 그 버전 절이 있는지 — 없으면 1. 버전을 찍는다
 //   node scripts/release-files.js notes --version X.Y.Z --out <파일>   그 버전 절 본문(Release 본문)
 //   node scripts/release-files.js manifest --version X.Y.Z --dir dist/release --out <파일>   latest.json(.dmg 기준 · 크기 · sha256)
-// 순수 부분(releaseVersion · changelogSection · buildManifest · releaseDate)은 test/release-files.test.js 가 본다
+//   node scripts/release-files.js updater --version X.Y.Z --dir dist/release --out <파일>    latest-mac.yml(앱 안 업데이트 피드 · .zip 기준 · 크기 · sha512)
+// 순수 부분(releaseVersion · changelogSection · buildManifest · buildUpdaterFeed · releaseDate)은 test/release-files.test.js 가 본다
 const crypto = require('crypto')
 const fs = require('fs')
 const path = require('path')
@@ -17,6 +18,8 @@ const CHANGELOG = path.join(ROOT, 'CHANGELOG.md')
 const ARCHES = ['arm64', 'x64']
 // 날짜는 한국 날짜로(CHANGELOG 제목 날짜와 같은 기준) — latest.json "date" 는 YYYY-MM-DD(docs/release/homepage-handoff.md 1절)
 const DATE_ZONE = 'Asia/Seoul'
+// 앱 안 업데이트 피드 파일 — electron-updater 맥 채널 이름(latest + -mac · providers/Provider.getCustomChannelName)
+const UPDATER_FEED = 'latest-mac.yml'
 
 // 올릴 버전 — 명시값 > git 태그. 공개 Release 는 태그와 같은 번호만(X.Y.Z) — 0.15.1+2 같은 태그 뒤 커밋은 null
 /** @param {{ explicit?: string | null, described?: string | null }} options */
@@ -65,16 +68,37 @@ function buildManifest({ appVersion, date, files }) {
   }
 }
 
-/** @param {string} file @returns {Promise<string>} */
-function sha256Of(file) {
+/**
+ * latest-mac.yml — electron-updater 가 읽는 꼴(UpdateInfo: version · files[url · sha512 · size] · path · sha512 · releaseDate).
+ * JSON 으로 쓴다(JSON 은 YAML 이라 electron-updater 의 js-yaml 이 그대로 읽고, publish-release.js 는 JSON.parse 로 다시 맞춘다).
+ * url 은 피드 주소(releases/latest/download)에 붙는 파일 이름 · 앱이 이름에 arm64 가 든 것(애플 실리콘)과 없는 것(인텔)을 고른다(MacUpdater.filterFilesForArch).
+ * .dmg 는 넣지 않는다 — 맥 업데이트는 .zip 만 쓰고(MacUpdater findFile zip), .dmg 는 올리기 전에 staple 로 바뀐다
+ * @param {{ appVersion: string, releaseDate: string, files: { arch: string, size: number, sha512: string }[] }} options
+ */
+function buildUpdaterFeed({ appVersion, releaseDate, files }) {
+  const listed = files.map(({ arch, size, sha512 }) => ({ url: packageMac.artifactName(arch, 'zip'), sha512, size }))
+  const first = listed[0]
+  if (!first) throw new Error('.zip 이 하나도 없다')
+  // path · sha512 는 옛 electron-updater 용 맨 위 값(files[0] 과 같다)
+  return { version: appVersion, files: listed, path: first.url, sha512: first.sha512, releaseDate }
+}
+
+/** @param {string} file @param {'sha256' | 'sha512'} [algorithm] @param {'hex' | 'base64'} [encoding] @returns {Promise<string>} */
+function hashOf(file, algorithm = 'sha256', encoding = 'hex') {
   return new Promise((resolve, reject) => {
-    const hash = crypto.createHash('sha256')
+    const hash = crypto.createHash(algorithm)
     fs.createReadStream(file)
       .on('data', (chunk) => hash.update(chunk))
       .on('error', reject)
-      .on('end', () => resolve(hash.digest('hex')))
+      .on('end', () => resolve(hash.digest(encoding)))
   })
 }
+
+/** @param {string} file */
+const sha256Of = (file) => hashOf(file, 'sha256', 'hex')
+// electron-updater 가 맞추는 꼴 — sha512 base64
+/** @param {string} file */
+const sha512Of = (file) => hashOf(file, 'sha512', 'base64')
 
 /** @param {string[]} args @param {string} name */
 function argValue(args, name) {
@@ -132,7 +156,19 @@ async function main(args) {
     writeOut(argValue(args, '--out'), `${JSON.stringify(buildManifest({ appVersion, date: releaseDate(new Date()), files }), null, 2)}\n`)
     return
   }
-  throw new Error('명령: check · notes · manifest')
+  if (command === 'updater') {
+    const appVersion = requireVersion(args)
+    const dir = argValue(args, '--dir') || path.join(ROOT, 'dist', 'release')
+    const files = []
+    for (const arch of ARCHES) {
+      const file = path.join(dir, packageMac.artifactName(arch, 'zip'))
+      if (!fs.existsSync(file)) throw new Error(`${path.relative(ROOT, file)} 가 없다 — 두 칩(--arch all)을 다 만든 뒤에 올린다`)
+      files.push({ arch, size: fs.statSync(file).size, sha512: await sha512Of(file) })
+    }
+    writeOut(argValue(args, '--out'), `${JSON.stringify(buildUpdaterFeed({ appVersion, releaseDate: new Date().toISOString(), files }), null, 2)}\n`)
+    return
+  }
+  throw new Error('명령: check · notes · manifest · updater')
 }
 
 if (require.main === module) {
@@ -142,4 +178,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { ARCHES, releaseVersion, headingCovers, changelogSection, releaseDate, buildManifest, sha256Of }
+module.exports = { ARCHES, UPDATER_FEED, releaseVersion, headingCovers, changelogSection, releaseDate, buildManifest, buildUpdaterFeed, sha256Of, sha512Of }

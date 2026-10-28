@@ -792,6 +792,8 @@ export class Daemon {
         agent,
         agentStatus: model.agentStatus({ agent, screenLines: pane.lines('visible'), lastOutputAt: pane.lastOutputAt, now }),
         title: pane.title,
+        cols: pane.size.cols,
+        rows: pane.size.rows,
       })
     })
   }

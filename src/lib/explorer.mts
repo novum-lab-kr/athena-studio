@@ -80,3 +80,13 @@ export function cleanRelative(relative: unknown): string | null {
 export function looksBinary(buffer: Buffer): boolean {
   return buffer.subarray(0, 8000).includes(0)
 }
+
+// 작업 공간 폴더가 없을 때(그 폴더였던 워크트리를 지웠다 등) 대신 볼 폴더 후보 — 그 작업 공간의 pane 폴더, 포커스된 pane 먼저 · 나머지는 목록 순.
+// pane 마다 처음 연 폴더(cwd) 다음 지금 앞쪽 프로세스 폴더(foreground_cwd). 다른 작업 공간 · 탭 밖 고정 칸 pane 은 보지 않는다
+export type PaneFolder = { workspace_id?: unknown; focused?: unknown; cwd?: unknown; foreground_cwd?: unknown }
+export function paneFolders(panes: readonly PaneFolder[], workspaceId: string): string[] {
+  const mine = panes.filter((pane) => pane.workspace_id === workspaceId)
+  const ordered = [...mine.filter((pane) => pane.focused), ...mine.filter((pane) => !pane.focused)]
+  const folders = ordered.flatMap((pane) => [pane.cwd, pane.foreground_cwd]).filter((folder): folder is string => typeof folder === 'string' && folder !== '')
+  return [...new Set(folders)]
+}

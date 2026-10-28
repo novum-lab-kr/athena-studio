@@ -1,4 +1,6 @@
-// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) ─────────────
+// ── 앱 업데이트(⚙ 설정 팝업 맨 아래 — 개발 앱 체크아웃 · 결정 D2 / 배포판 · 계획서 5단계) ─────────────
+// 배포판(app.isPackaged)이면 lib/release-update.mts — electron-updater 로 공개 레포 최신 Release 의 .zip 을 받아(sha512) Squirrel.Mac 이
+// 서명(같은 번들 ID · Team ID)을 확인한 뒤 바꿔 다시 켠다. 아래 git 흐름은 개발 앱 체크아웃만
 // main.js 에서 옮겼다(PR3c) — electron(app · dialog) · 화면 문구(say) · 스튜디오 집 자리 · 팩 창 목록은 createAppUpdater 인자로 받는다.
 // 앱 레포가 origin/main 보다 뒤처졌으면 창마다 알린다(⚙ 점 · [업데이트] 켜짐). 누르면 main 을 빨리 감기로만 받고(lib/app-update.mts),
 // scripts/dev-app.js restart 를 떼어 띄운 뒤 앱을 끈다 — 도우미가 앱이 끝나길 기다려 npm install(필요할 때 · heavy.sh 줄 서기) → 다시 켠다.
@@ -9,6 +11,8 @@ import { spawn } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import * as appUpdate from '../lib/app-update.mts'
+import { createReleaseUpdate } from '../lib/release-update.mts'
+import type { Logger, Native, Updater } from '../lib/release-update.mts'
 import type { PullResult, UpdateStatus } from '../lib/app-update.mts'
 import type { Say } from '../lib/pack.mts'
 
@@ -46,12 +50,41 @@ export function createAppUpdater({ app, dialog, say, studio, packWindows }: { ap
     return appVersionCache
   }
   const appUpdateEnabled = () => !app.isPackaged && appUpdate.isCheckout(APP_ROOT)
-  const appUpdateView = () => ({ ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
+
+  // 배포판 — 처음 부를 때 electron-updater 를 싣는다(개발판에서는 싣지 않는다). 기록은 개발판 업데이트와 같은 app-update.log
+  let release: ReturnType<typeof createReleaseUpdate> | null = null
+  let releaseCheckedAt = 0
+  function releaseUpdate(): ReturnType<typeof createReleaseUpdate> {
+    if (release) return release
+    const { autoUpdater } = require('electron-updater') as { autoUpdater: Updater }
+    const native = (require('electron') as { autoUpdater: Native }).autoUpdater
+    release = createReleaseUpdate({ updater: autoUpdater, native, version: appVersion(), onChange: sendAppUpdate, log: fileLogger() })
+    return release
+  }
+  function fileLogger(): Logger {
+    const write = (level: string) => (message?: unknown) => {
+      try {
+        fs.mkdirSync(path.dirname(appUpdateLogFile()), { recursive: true })
+        fs.appendFileSync(appUpdateLogFile(), `${new Date().toISOString()} [${level}] ${message instanceof Error ? message.stack || message.message : String(message)}\n`)
+      } catch {
+        // 기록을 못 남겨도 업데이트는 계속한다
+      }
+    }
+    return { info: write('info'), warn: write('warn'), error: write('error') }
+  }
+
+  const appUpdateView = () => (app.isPackaged ? releaseUpdate().view() : { ...appUpdateStatus, version: appVersion(), running: appUpdateRunning })
   function sendAppUpdate(): void {
     for (const each of packWindows) each.send('app-update:status', appUpdateView())
   }
 
   function checkAppUpdate(): Promise<ReturnType<typeof appUpdateView>> {
+    if (app.isPackaged) {
+      // 피드(latest-mac.yml)는 작다 — 그래도 팝업을 자주 열면 이만큼에 한 번만 묻는다
+      if (Date.now() - releaseCheckedAt < APP_UPDATE_FETCH_GAP_MS) return Promise.resolve(appUpdateView())
+      releaseCheckedAt = Date.now()
+      return releaseUpdate().check()
+    }
     if (!appUpdateEnabled() || appUpdateRunning) return Promise.resolve(appUpdateView())
     if (appUpdateChecking) return appUpdateChecking
     const fetch = Date.now() - appUpdateFetchedAt > APP_UPDATE_FETCH_GAP_MS
@@ -70,6 +103,7 @@ export function createAppUpdater({ app, dialog, say, studio, packWindows }: { ap
 
   // [업데이트] — 받기 → 도우미 띄우기 → 앱 끄기. 못 하면 { ok: false, reason } (팝업이 까닭을 보인다)
   async function runAppUpdate(): Promise<{ ok: boolean; reason?: string }> {
+    if (app.isPackaged) return releaseUpdate().run()
     if (!appUpdateEnabled()) return { ok: false, reason: 'unavailable' }
     if (appUpdateRunning) return { ok: false, reason: 'running' }
     appUpdateRunning = true

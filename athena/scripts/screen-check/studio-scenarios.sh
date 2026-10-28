@@ -128,6 +128,8 @@ PY
 }
 sc_studio_delegate_newws()    { step studio-newws,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe "버튼 고쳐 줘 (긴급)" --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
 sc_studio_delegate_existing() { step studio-existing,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe --plan plans/task/20261001-fe-test.md --down; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
+# 나눌 자리 자동 — 탭에서 가장 큰 pane(p4 70×40 · 첫 pane p3 이 아니다)을 긴 쪽으로(70 < 40×2 → 아래로)
+sc_studio_delegate_sized()    { step studio-existing,studio-sized,studio "${IN_STUDIO[@]}" -- scripts/delegate.sh fe --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
 sc_studio_delegate_here()     { step studio "${IN_STUDIO[@]}" -- scripts/delegate.sh reviewer --here --plan plans/task/20261001-fe-test.md; cat "$COPY/plans/task/20261001-fe-test.md" >> "$RESULT"; cleanup_runner; }
 sc_studio_delegate_outside()  { step studio "${LIVE[@]}" -- scripts/delegate.sh fe "조사" --plan plans/task/20261001-fe-test.md; }
 sc_studio_workspace_up() {
@@ -153,7 +155,7 @@ sc_studio_plan_html() { step studio "${IN_STUDIO[@]}" -- node scripts/plan-html.
 sc_studio_server() { board_server studio p2 p8; }   # Studio pane 환경(IN)으로 띄운다
 
 SCENARIOS+=(studio_self studio_ops studio_errors studio_node studio_board studio_board_outside studio_monitor studio_guide
-  studio_up studio_up_firstrun studio_delegate_newws studio_delegate_existing studio_delegate_here studio_delegate_outside
+  studio_up studio_up_firstrun studio_delegate_newws studio_delegate_existing studio_delegate_sized studio_delegate_here studio_delegate_outside
   studio_workspace_up studio_setup_check studio_compact studio_plan_html studio_server)
 
 # 탭 밖 고정 칸(dock — 앱 하단 에이전트 모니터, 프로토콜 3): pane list 에 tab_id·workspace_id 가 null 인 '🛰 에이전트 모니터' 가 섞인다

@@ -4,7 +4,7 @@
 // Electron main 진입점(package.json main) — ES 모듈(.mts · 빌드 없음 · Electron 44 가 타입만 지우고 읽는다).
 // Electron 은 이 파일을 끝까지 읽은 뒤에 ready 를 낸다(2026-10-27 실측 — 맨 위 await 1.5초를 넣어도 ready 전) — 아래 app.setName · setPath 는 그대로 ready 전이다.
 // 가져온 모듈은 이 파일 본문보다 먼저 돈다 — src/main/*.mts 는 맨 위에서 함수 · 상수만 만든다(app 자리를 읽지 않는다)
-import { app, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, MenuItemConstructorOptions, Session, WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
@@ -922,6 +922,12 @@ app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
 app.on('before-quit', () => {
+  quitting = true
+  for (const ctx of packWindows) ctx.detachScreen()
+})
+// 배포판 업데이트(Squirrel.Mac quitAndInstall — src/lib/release-update.mts)는 창을 먼저 다 닫고 끈다 —
+// 맥 마지막 창 닫기를 숨기기로 바꾸는 가로채기(pack-window.mts 'close')에 막혀 교체가 멈추지 않게 그 전에 끄는 중으로
+autoUpdater.on('before-quit-for-update', () => {
   quitting = true
   for (const ctx of packWindows) ctx.detachScreen()
 })

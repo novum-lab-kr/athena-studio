@@ -56,6 +56,10 @@ check('계획서 줄은 그대로 — Work ref pane · 브랜치 · Review pane'
   { id: 'plans/task/x.md', workRefs: '/w · 🌿 feat/x · pane p1 (fe)\n/w2 · 🌿 feat/y · pane p9 (be)', review: '/w · 🌿 feat/x · pane p3 (reviewer) · 띄움 2026-10-27 10:00' },
   [{ id: 'p1', role: 'agent', agent: 'fe', branch: 'z' }, { id: 'p2', role: 'agent', agent: 'be', branch: 'feat/y' }, { id: 'p3', role: 'agent', agent: 'reviewer', branch: 'feat/x' }, { id: 'p4', role: 'agent', agent: 'fe', branch: 'feat/y-2' }],
   [], PROTECTED), ['p1', 'p2', 'p3']))
+check('36진수 pane id(p6f · 2026-10-28) — Work ref · Review 줄로 묶이고 p6 · p6fa 같은 앞뒤 id 는 안 묶임', same(boundPaneIds(
+  { id: 'plans/task/b36.md', workRefs: '/w · 🌿 feat/q · pane p6f (fe)', review: '/w · 🌿 feat/q · pane p7a (reviewer) · 띄움 2026-10-28 10:00' },
+  [{ id: 'p6f', role: 'agent', agent: 'fe', branch: 'z' }, { id: 'p7a', role: 'agent', agent: 'reviewer', branch: 'z' }, { id: 'p6', role: 'agent', agent: 'fe', branch: 'z' }, { id: 'p6fa', role: 'agent', agent: 'fe', branch: 'z' }],
+  [], PROTECTED), ['p6f', 'p7a']))
 check('보호 브랜치(main)는 브랜치로 묶지 않음', same(boundPaneIds({ id: 'a', workRefs: 'athena 메인 체크아웃 · 🌿 main', review: '' }, [{ id: 'p5', role: 'agent', agent: 'fe', branch: 'main' }], [], PROTECTED), []))
 
 console.log()
