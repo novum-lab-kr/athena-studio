@@ -33,7 +33,8 @@ import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { screen } from './lib/screen.mjs'
+import { screen, screenText } from './lib/screen.mjs'
+import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
@@ -373,8 +374,17 @@ const ask = (planFile, { key, title, body, options = [] }) => {
 // 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 일감 readPanes 와 같은 기준).
 // 둘 다 없거나 못 보내면 지금처럼 요청으로 남긴다. 같은 key 로 같은 글(같은 HEAD · 제목)을 이미 보냈으면 다시 보내지 않는다
 const NOTIFIED_FILE = join(QUEUE_DIR, 'notified.json')
+// 질문 · 고르기 창이 떠 있어 미룬 알림 — 파일 하나씩(처리기가 꺼져도 남는다 · 처리기가 30초마다 다시 넣어 본다)
+const NOTICE_DIR = join(QUEUE_DIR, 'notices')
 const readNotified = () => {
   try { return JSON.parse(readFileSync(NOTIFIED_FILE, 'utf8')) } catch { return {} }
+}
+// 중복 방지 기록 — 넣었거나 미룬 대기열에 받았을 때만 · 임시 파일에 쓰고 바꿔 끼운다(쓰다 끊겨도 깨진 파일이 남지 않게)
+const markNotified = (key, mark) => {
+  mkdirSync(QUEUE_DIR, { recursive: true })
+  const staging = `${NOTIFIED_FILE}.${process.pid}`
+  writeFileSync(staging, JSON.stringify({ ...readNotified(), [key]: mark }, null, 2))
+  renameSync(staging, NOTIFIED_FILE)
 }
 const leadPaneOf = (planFile) => {
   const planPath = join(ROOT, planFile)
@@ -393,19 +403,65 @@ const athenaPane = async (planFile) => {
   if (lead && panes.some((pane) => pane.id === lead)) return lead
   return panes.find((pane) => pane.agent === 'claude' && isRootDir(pane.cwd) && !/^🤖/.test(pane.label || pane.name || ''))?.id ?? ''
 }
+const pendingNotices = () => (existsSync(NOTICE_DIR) ? readdirSync(NOTICE_DIR).filter((name) => name.endsWith('.json')).sort().map((name) => join(NOTICE_DIR, name)) : [])
+const readNotice = (file) => {
+  try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
+}
+// 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · Enter 만 실패) · 'failed'(글을 못 썼다).
+// 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 일감 pane-delivery 와 같은 판정 menuOpen).
+// 화면을 못 읽으면(null) 창 여부를 모르니 일감처럼 바로 넣는다. 글 → Enter 두 단계 — 글만 들어갔으면(typed) 다음에 Enter 부터
+const deliverNotice = async (pane, notice, file = '') => {
+  if (menuOpen(await screenText(['pane', 'read', pane, '--lines', '40']))) return 'wait'
+  if (!notice.typed) {
+    if (!(await screen(['pane', 'send-text', pane, notice.text]))) return 'failed'
+    notice.typed = true
+    if (file) writeFileSync(file, JSON.stringify(notice))
+    await new Promise((done) => setTimeout(done, 300))
+  }
+  return (await screen(['pane', 'send-keys', pane, 'Enter'])) ? 'sent' : 'wait'
+}
+const queueNotice = (notice) => {
+  mkdirSync(NOTICE_DIR, { recursive: true })
+  const file = join(NOTICE_DIR, `${Date.now()}-${createHash('sha1').update(`${notice.key}\n${notice.mark}`).digest('hex').slice(0, 8)}.json`)
+  writeFileSync(file, JSON.stringify(notice))
+  return file
+}
 const notify = async (planFile, { key, sha, title, body }) => {
   const mark = `${sha}|${title}`
   if (readNotified()[key] === mark) return console.log(`  ⏭ 아테나에 이미 알렸다: ${title}`)
   const text = masked(`[자동 리뷰 → 아테나] ${title} — ${body}`).replace(/\s*\n\s*/g, ' ').trim()
   const pane = await athenaPane(planFile)
-  if (pane && (await sendToPane(pane, text))) {
-    mkdirSync(QUEUE_DIR, { recursive: true })
-    writeFileSync(NOTIFIED_FILE, JSON.stringify({ ...readNotified(), [key]: mark }, null, 2))
+  const notice = { plan: planFile, key, mark, title, body, text, pane, typed: false }
+  // 먼저 미룬 알림이 있으면 차례를 지켜 뒤에 줄 선다
+  const result = !pane ? 'failed' : pendingNotices().length ? 'wait' : await deliverNotice(pane, notice)
+  if (result === 'sent') {
+    markNotified(key, mark)
     console.log(`  → 아테나 pane ${pane} 에 알렸다: ${title}`)
     return
   }
-  console.log('  ⚠️ 아테나 pane 이 없어 요청으로 남긴다')
+  if (result === 'wait') {
+    queueNotice(notice)
+    markNotified(key, mark)
+    console.log(`  ⏳ 아테나 pane ${pane} 에 질문 · 고르기 창이 떠 있어(또는 앞 알림이 기다려) 미뤘다 — 처리기가 창이 닫히면 넣는다: ${title}`)
+    if (!watcherAlive()) launchWatcher()
+    return
+  }
+  console.log('  ⚠️ 아테나 pane 이 없거나 보내지 못해 요청으로 남긴다')
   ask(planFile, { key, title, body })
+}
+// 미룬 알림을 차례대로 넣어 본다 — 처리기가 30초마다. 받을 pane 은 그때 다시 고른다(닫혔으면 다른 아테나 pane · 아무도 없으면 요청으로)
+export const flushNotices = async () => {
+  for (const file of pendingNotices()) {
+    const notice = readNotice(file)
+    if (!notice) { rmSync(file, { force: true }); continue }
+    const pane = await athenaPane(notice.plan)
+    if (pane !== notice.pane) Object.assign(notice, { pane, typed: false })
+    const result = pane ? await deliverNotice(pane, notice, file) : 'failed'
+    if (result === 'wait') return   // 차례를 지킨다 — 뒤 알림을 앞질러 넣지 않는다
+    rmSync(file, { force: true })
+    if (result === 'sent') console.log(`  ✅ 미룬 알림을 아테나 pane ${pane} 에 넣었다: ${notice.title}`)
+    else ask(notice.plan, { key: notice.key, title: notice.title, body: notice.body })
+  }
 }
 
 // ── 한 PR 처리 ─────────────────────────────────────────────────────────
@@ -855,7 +911,7 @@ const kick = () => {
   restoreClaims()
   const pending = existsSync(CONFIRM_DIR) && readdirSync(CONFIRM_DIR).some((file) => file.endsWith('.json'))
   const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => file.endsWith('.json'))
-  if (pending || queued) launchWatcher()
+  if (pending || queued || pendingNotices().length) launchWatcher()
 }
 
 const watch = async () => {
@@ -877,6 +933,7 @@ const watch = async () => {
     if (Date.now() - confirmAt > CONFIRM_POLL_MS) {
       confirmAt = Date.now()
       try { await checkConfirms() } catch (error) { console.log(`  ⚠️ 머지 확인 보기 실패: ${error.message}`) }
+      try { await flushNotices() } catch (error) { console.log(`  ⚠️ 미룬 알림 넣기 실패: ${error.message}`) }
     }
     const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort()[0]
     if (!next) { await new Promise((done) => setTimeout(done, 5000)); continue }

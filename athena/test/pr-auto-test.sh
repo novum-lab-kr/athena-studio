@@ -599,7 +599,9 @@ cp -R "$SRC/scripts" "$CORE/scripts"
 cat > "$CORE/scripts/screen" <<'SH'
 #!/bin/sh
 [ -n "$FAKE_SCREEN_LOG" ] && echo "screen $*" >> "$FAKE_SCREEN_LOG"
-if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"; else echo '{}'; fi
+if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
+elif [ "$1 $2" = "pane read" ]; then printf '%s\n' "${FAKE_PANE_TEXT:-}"   # 화면 글 — 질문 창 흉내
+else echo '{}'; fi
 SH
 chmod +x "$CORE/scripts/screen"
 # FAKE_VERIFY_KILL — 검증 도중 부른 쪽(node)을 죽인다(머지 직전 확인 중에 처리기가 꺼진 경우)
@@ -627,6 +629,8 @@ chmod +x "$BIN/gh"
 merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no> <계획서 줄 기대(정규식)> [환경…]
   local name="$1" extra="$2" want="$3" line="$4"; shift 4
   rm -rf "$CORE/.requests" "$CORE/.events.jsonl" "$TMP/queue-confirm" "$GH_LOG.views" "$CORE/plans/task/"*; : > "$GH_LOG"
+  # WATCHER_HELD=1 — 처리기가 이미 도는 것처럼(미룬 알림이 진짜 처리기를 띄우지 않게)
+  [ "${WATCHER_HELD:-0}" = 1 ] && mkdir -p "$TMP/queue-confirm/.watcher.lock" && echo $$ > "$TMP/queue-confirm/.watcher.lock/pid"
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n%s' "$WT" "${AUTO_LINE:+$AUTO_LINE
 }" "${EXTRA_PLAN:-}" > "$CORE/plans/task/x.md"
@@ -676,7 +680,7 @@ env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(com
   && echo "  ✔ 검증 도중 처리기가 죽으면 잡은 파일이 남고(머지 안 함) 되돌려 다시 본다" || { echo "  ✖ 검증 도중 죽은 뒤 잡은 파일 남기기 — 남은 것: $(ls "$TMP/queue-confirm/confirm")"; FAIL=1; }
 merge_case "autoMergeConfirm: false 라도 머지 직전에 새 커밋 → 머지 안 함" ', "autoMergeConfirm": false' no '바로 머지' FAKE_GH_HEAD_AFTER=1
 merge_case "autoMergeConfirm: false 라도 검증 실패 → 머지 안 함" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
-[ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 아테나 pane 이 없으면 검증 못 함도 지금처럼 요청으로 남긴다" || { echo "  ✖ 아테나 pane 이 없는데 요청이 없다"; FAIL=1; }
+grep -q '"title": "자동 리뷰 승인 · 검증 못 함' "$CORE/.requests"/*.json 2>/dev/null && echo "  ✔ 아테나 pane 이 없으면 검증 못 함도 지금처럼 요청으로 남긴다" || { echo "  ✖ 아테나 pane 이 없는데 요청이 없다"; FAIL=1; }
 
 # 고를 것 없는 상태 알림은 요청으로 열지 않고 아테나 pane 에(2026-10-28 사용자) — 요청은 머지 확인 · 결정 콘솔만
 SLOG="$TMP/screen.log"
@@ -692,6 +696,22 @@ env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="
   "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
 ! grep -q "send-text" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "이미 알렸다" "$TMP/merge.out" \
   && echo "  ✔ 같은 알림은 다시 보내지 않음(요청도 안 엶)" || { echo "  ✖ 같은 알림을 또 보냈다"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
+# 아테나 pane 에 질문 · 고르기 창이 떠 있으면 넣지 않고 미룬다(#100 — 글이 창에 먹히고 Enter 가 1번을 고른다) · 처리기가 창이 닫히면 넣는다
+: > "$SLOG"
+MENU='  ❯ 1. 예
+    2. 아니오
+  Enter to select · ↑/↓ to navigate · Esc to cancel'
+WATCHER_HELD=1 merge_case "검증 못 함 + 아테나 pane 에 질문 창 → 미룸" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$MENU"
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "send-text\|send-keys" "$SLOG" && [ "$(ls "$TMP/queue-confirm/notices" 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && grep -q "pr-auto:web#7" "$TMP/queue-confirm/notified.json" \
+  && echo "  ✔ 질문 창이 떠 있으면 글 · Enter 를 넣지 않고 미룬 대기열(notices/)에 · 중복 방지는 받은 뒤에 기록" || { echo "  ✖ 질문 창 미루기"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
+flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$1" \
+  "$(command -v node)" --input-type=module -e "await (await import('./scripts/pr-auto.mjs')).flushNotices()" > "$TMP/flush.out" 2>&1); }
+: > "$SLOG"; flush_notices "$MENU"
+! grep -q "send-text" "$SLOG" && [ -n "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] \
+  && echo "  ✔ 창이 아직 떠 있으면 처리기도 넣지 않고 기다린다" || { echo "  ✖ 창이 떠 있는데 넣었다"; sed 's/^/      /' "$SLOG"; FAIL=1; }
+: > "$SLOG"; flush_notices "> "
+grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함" "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
+  && echo "  ✔ 창이 닫히면 처리기가 미룬 알림을 넣고 대기열에서 지운다" || { echo "  ✖ 미룬 알림 넣기"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; FAIL=1; }
 # 계획서 Lead pane 이 살아 있으면 그쪽이 먼저
 : > "$SLOG"
 EXTRA_PLAN="- Lead pane: p91
