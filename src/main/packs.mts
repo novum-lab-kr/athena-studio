@@ -99,12 +99,17 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     setLaunchWelcome(packModel.welcomeOnLaunch({ list: listed, agentPanes }))
   }
 
-  ctx.refreshPacks = async () => {
+  const refreshPacks = async (): Promise<PackState> => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) {
       ctx.packState = { supported: false }
     } else {
-      const listed = packModel.normalizePackList(await runPack(['list'], { dir: ctx.athenaDir }))
+      const dir = ctx.athenaDir
+      const listed = packModel.normalizePackList(await runPack(['list'], { dir }))
+      // 읽는 사이 이 창이 다른 본체로 다시 묶였으면(팩 바꾸기 — 처음 여는 팩은 rebindBody 전에 refreshAllPacks 가 돈다) 옛 본체 목록이다.
+      // 늦게 끝난 옛 목록이 새 팩 상태를 덮으면 팩 줄이 옛 팩으로 돌아가고 창이 그 팩으로 묶인 줄 안다 — 버리고 지금 본체로 다시 읽는다
+      if (ctx.athenaDir !== dir) return refreshPacks()
       await decideLaunchWelcome(listed)
+      if (ctx.athenaDir !== dir) return refreshPacks() // 시작 화면 판단(데몬 pane 목록)을 기다리는 사이에도 바뀔 수 있다
       // welcome — 팩이 하나도 없을 때 시작 화면 · launchWelcome — 켤 때 시작 화면(팩이 있어도) · recent — 시작 화면 '내 팩' 목록. 규칙은 pack.js 한 곳에서만
       ctx.packState = { ...listed, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome() === true, recent: packModel.recentPacks(listed as Parameters<typeof packModel.recentPacks>[0]) }
     }
@@ -112,6 +117,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })
     return { ...ctx.packState, openIds: openPackIds() }
   }
+  ctx.refreshPacks = refreshPacks
 
   // 한 번에 하나 — 같은 요청이 두 번 와도 두 번째는 busy
   ctx.packTask = async <T,>(name: string, work: (signal: AbortSignal) => Promise<T>) => {
