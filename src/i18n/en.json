@@ -104,6 +104,7 @@
   "error.daemonDisconnected": "Lost connection to the daemon",
   "error.daemonAttach": "Could not connect to the daemon — log: {path}",
   "error.workspaceMissing": "That workspace does not exist",
+  "error.workspaceFolderMissing": "The folder is gone",
   "error.pathUnreadable": "This path cannot be read",
   "error.outsideWorkspace": "Outside the workspace",
   "error.notFile": "Not a file",

@@ -104,6 +104,7 @@
   "error.daemonDisconnected": "デーモンとの接続が切れました",
   "error.daemonAttach": "デーモンに接続できませんでした — ログ: {path}",
   "error.workspaceMissing": "存在しないワークスペースです",
+  "error.workspaceFolderMissing": "フォルダがありません",
   "error.pathUnreadable": "読み取れないパスです",
   "error.outsideWorkspace": "ワークスペースの外です",
   "error.notFile": "ファイルではありません",

@@ -104,6 +104,7 @@
   "error.daemonDisconnected": "与守护进程的连接已断开",
   "error.daemonAttach": "无法连接到守护进程 — 日志:{path}",
   "error.workspaceMissing": "该工作区不存在",
+  "error.workspaceFolderMissing": "文件夹不存在",
   "error.pathUnreadable": "无法读取此路径",
   "error.outsideWorkspace": "不在工作区内",
   "error.notFile": "不是文件",

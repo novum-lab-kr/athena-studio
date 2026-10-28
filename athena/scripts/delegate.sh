@@ -18,7 +18,7 @@
 #   레포·브랜치·변경 개수를 보여준다 (scripts/statusline.sh).
 #   scripts/delegate.sh <에이전트명> "<프롬프트>"           # 프롬프트까지 넣어 바로 시작
 #   scripts/delegate.sh <에이전트명> --cwd <경로>          # 워크트리 등 다른 디렉터리에서 연다
-#   scripts/delegate.sh <에이전트명> "<프롬프트>" --down    # 오른쪽 대신 아래로 분할
+#   scripts/delegate.sh <에이전트명> "<프롬프트>" --down    # 아래로 분할(주면 아래 "나눌 자리" 기준을 쓰지 않는다)
 #
 # 에이전트명은 .claude/agents/<이름>.md 의 name 이다 (reviewer 등).
 # 결과는 pane 에서 보고, 아테나는 `scripts/screen pane read <id>` 로 읽는다.
@@ -27,12 +27,12 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
-AGENT=""; PROMPT=""; DIR="right"; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""
+AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)
       if [ "${2:-}" = new ]; then [ $# -ge 3 ] || { echo "--plan new 에 요약이 없다" >&2; exit 2; }; PLAN_NEW="$3"; shift 3; else [ $# -ge 2 ] || { echo "--plan 에 경로가 없다" >&2; exit 2; }; PLAN="$2"; shift 2; fi ;;
-    --down) DIR="down"; shift ;;
+    --down) DIR="down"; DIR_GIVEN=1; shift ;;
     --here) HERE=1; shift ;;
     --cwd)  [ $# -ge 2 ] || { echo "--cwd 에 경로가 없다" >&2; exit 2; }; WORKDIR="$2"; shift 2 ;;
     --resume) [ $# -ge 2 ] || { echo "--resume 에 세션 id 가 없다" >&2; exit 2; }; RESUME="$2"; shift 2 ;;   # 닫힌 에이전트 pane 을 그 대화 그대로 다시 연다(claude --resume <세션 id>) — 지시문은 다시 보내지 않는다
@@ -239,7 +239,10 @@ for w in rows:
 
   if [ -z "$WS" ]; then
     # 새로 만들면 기본 탭이 하나 딸려 온다. 그 탭을 그대로 쓴다 (빈 탭을 남기지 않는다)
-    CREATED="$("$SCREEN" workspace create --label "$REPO_NAME" --cwd "$WORKDIR" --no-focus 2>/dev/null)"
+    # workspace 폴더는 레포 메인 체크아웃(실제 경로) — 이 작업의 워크트리로 만들면 작업이 끝나 워크트리를 지운 뒤
+    # 그 workspace 의 Explorer 가 없는 폴더를 본다(2026-10-28 w47). pane 은 실행기가 워크트리로 cd 하니 그대로 워크트리에서 돈다
+    WS_DIR="$(cd "$REPO_DIR" && pwd -P)" || WS_DIR="$WORKDIR"
+    CREATED="$("$SCREEN" workspace create --label "$REPO_NAME" --cwd "$WS_DIR" --no-focus 2>/dev/null)"
     WS="$(printf '%s' "$CREATED" | python3 -c "
 import sys, json
 try: print(json.load(sys.stdin)['workspace']['id'])
@@ -266,11 +269,24 @@ import sys, json
 try: print(json.load(sys.stdin)['workspace']['active_tab_id'])
 except Exception: pass
 ")"
-    BASE="$("$SCREEN" pane list 2>/dev/null | python3 -c "
+    # 나눌 자리 — 그 탭에서 가장 큰 pane(cols×rows)을 긴 쪽으로 반 나눈다. 늘 첫 pane 만 오른쪽으로 쪼개면
+    # 맨 왼쪽만 가늘어지고 아래가 빈다(2026-10-28). 글자 칸은 세로가 가로의 약 2배라(터미널 13px · 줄 높이 1 —
+    # D2Coding 반각 0.5em ≈ 6.5px × 줄 ≈ 15px · SF Mono 0.6em ≈ 7.8px) 화면에서 가로가 긴지는 cols 와 rows×2 로 본다.
+    # 2개면 좌우 · 3~4개면 바둑판에 가깝다. --down 을 주면 방향은 그것 · 크기를 모르면(옛 데몬) 예전처럼 첫 pane 을 오른쪽으로
+    PICK="$("$SCREEN" pane list 2>/dev/null | python3 -c "
 import sys, json
-for p in json.load(sys.stdin)['panes']:
-    if p.get('tab_id') == '$TAB': print(p['id']); break
+try: panes = [p for p in json.load(sys.stdin)['panes'] if p.get('tab_id') == '$TAB']
+except Exception: sys.exit()
+if not panes: sys.exit()
+size = lambda p: (p.get('cols'), p.get('rows'))
+known = all(isinstance(c, int) and isinstance(r, int) and c > 0 and r > 0 for c, r in map(size, panes))
+if not known:
+    print(panes[0]['id'], ''); sys.exit()
+best = max(panes, key=lambda p: p['cols'] * p['rows'])   # 같으면 앞의 것
+print(best['id'], 'right' if best['cols'] >= best['rows'] * 2 else 'down')
 ")"
+    BASE="${PICK%% *}"; AUTO_DIR="${PICK#* }"
+    [ "$DIR_GIVEN" = 0 ] && [ -n "$AUTO_DIR" ] && DIR="$AUTO_DIR"
     if [ -n "$BASE" ]; then
       PANE="$("$SCREEN" pane split --target "$BASE" --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus 2>/dev/null | python3 -c "
 import sys, json

@@ -13,8 +13,9 @@ import type { Say } from '../lib/pack.mts'
 const require = createRequire(import.meta.url)
 const fileIcons: typeof import('../lib/file-icons.js') = require('../lib/file-icons.js')
 
-// 데몬 state 답에서 읽는 칸만(모양은 검사하지 않는다 — 옛 main.js 와 같다)
+// 데몬 state · pane list 답에서 읽는 칸만(모양은 검사하지 않는다 — 옛 main.js 와 같다)
 type StateReply = { result?: { workspaces: { id: string; cwd: string }[] } }
+type PaneListReply = { result?: { panes?: explorer.PaneFolder[] } }
 
 // 팩 창 문맥(main.mts createPackWindow) 중 Explorer 가 읽는 것 · 붙이는 것
 export type ExplorerCtx = {
@@ -31,7 +32,15 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
     const state = (await ctx.daemonCall('state')) as StateReply
     const workspace = state.result && state.result.workspaces.find((entry) => entry.id === String(workspaceId))
     if (!workspace) throw new Error(say('error.workspaceMissing'))
-    return fs.promises.realpath(workspace.cwd)
+    const own = await fs.promises.realpath(workspace.cwd).catch(() => null)
+    if (own) return own
+    // 작업 공간 폴더가 없다(그 폴더였던 워크트리를 작업이 끝나 지웠다 — 2026-10-28 w47) — 그 작업 공간의 살아 있는 pane 폴더로 대신 본다
+    const panes = ((await ctx.daemonCall('pane list')) as PaneListReply).result?.panes ?? []
+    for (const folder of explorer.paneFolders(panes, workspace.id)) {
+      const real = await fs.promises.realpath(folder).catch(() => null)
+      if (real && (await fs.promises.stat(real).then((stat) => stat.isDirectory(), () => false))) return real
+    }
+    throw new Error(say('error.workspaceFolderMissing'))
   }
 
   ctx.explorerList = async (workspaceId: unknown, relative: unknown) => {

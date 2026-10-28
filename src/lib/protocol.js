@@ -13,6 +13,8 @@
 //     상태 · 출력 · 목록은 그 본체 것만 · CLI 는 부른 pane 의 본체만 본다
 // open-url(CLI 가 부르는 동작 · 데몬 → 앱 알림)은 번호를 올리지 않았다 — 앱이 보내는 요청이 아니라 앱은 옛 데몬에 기대지 않고,
 // 옛 데몬은 CLI 에 '모르는 동작'(usage)으로 답해 아테나 화면 계층이 기본 브라우저로 떨어진다(번호를 올리면 켤 때 데몬을 다시 띄워 pane 이 모두 닫힌다)
+// 납작한 Pane 의 cols · rows(pane 크기 · 2026-10-28)도 번호를 올리지 않았다 — 응답에 칸만 더했고(추가만) 앱은 이 칸을 읽지 않는다.
+// 읽는 쪽(아테나 delegate.sh)은 칸이 없으면(옛 데몬) 예전 배치(탭 첫 pane 을 오른쪽으로)로 돌아간다
 const PROTOCOL = 5
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
