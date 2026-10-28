@@ -24,7 +24,8 @@
 #   --yes                실제로 보낸다. 없으면 미리보기만
 #   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
 #                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
-#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · 충돌로 검증 대기(CONFLICTING) ·
+#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · 충돌로 검증 대기(CONFLICTING)
+#                        (줄이 그 밖이어도 GitHub mergeable 이 지금 CONFLICTING 이면 충돌 풀기로) ·
 #                        HEAD 가 commit.sh 로 기록된 커밋(충돌이면 base 를 합친 merge 커밋만 — 부모 둘 · 첫 부모 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안)
 #                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
@@ -284,6 +285,15 @@ PYEOF
     conflict*) CONFLICT_BASE="${AUTO_STATE#conflict }"; CONFLICT_BASE="${CONFLICT_BASE# }"
       [ -n "$CONFLICT_BASE" ] || fail "PR #$PR_NUMBER 의 base 를 계획서 PR 줄에서 못 찾았다 — 충돌 풀기 push 는 base 를 합친 merge 커밋인지 확인한 뒤에만" ;;
     no-pr) fail "PR #$PR_NUMBER 이 계획서 PR 줄에 없다 — 이 계획서의 PR 이 아니다" ;;
+    no-request)
+      # 줄은 충돌이 아니지만 GitHub 가 지금 CONFLICTING 이면 충돌 풀기로 받는다 — 줄이 다른 이유(예: 검증 대기 — 워크트리 HEAD 가 다름)로 멈춘 뒤
+      # base 가 앞서 나가 충돌이 생기면, 같은 HEAD 는 다시 보지 않아 줄이 충돌로 바뀌지 않는다(athena-studio#97 · 2026-10-28). 받는 것은 위와 같은 merge 커밋 하나뿐
+      GH_MERGE="$(cd "$TOP" && gh pr view "$PR_NUMBER" --json mergeable,baseRefName 2>/dev/null | python3 -c 'import json,sys
+try: data = json.load(sys.stdin)
+except Exception: sys.exit(0)
+if data.get("mergeable") == "CONFLICTING" and data.get("baseRefName"): print(data["baseRefName"])' 2>/dev/null)"
+      [ -n "$GH_MERGE" ] || fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄 · GitHub 도 충돌 아님) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때"
+      CONFLICT_BASE="$GH_MERGE" ;;
     *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
   esac
   if [ -n "$BODY_FILE" ]; then [ -f "$BODY_FILE" ] || fail "본문 파일이 없다: $BODY_FILE"; check_body "$BODY_FILE"; fi

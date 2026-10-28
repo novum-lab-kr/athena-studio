@@ -33,7 +33,8 @@ import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { screen } from './lib/screen.mjs'
+import { screen, screenText } from './lib/screen.mjs'
+import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
@@ -298,6 +299,23 @@ const headTree = (worktree, org, repo, sha) => {
   return remote.ok && /^[0-9a-f]{40}$/.test(remote.out.trim()) ? remote.out.trim() : ''
 }
 
+// PR 브랜치를 체크아웃한 워크트리 — 계획서 하나에 PR 이 여럿이면 Work ref 는 마지막 작업(다른 PR)의 워크트리를 가리킨다.
+// athena-studio#97(2026-10-28): Work ref 가 #99 의 워크트리(머지 뒤 지워짐)라 같은 HEAD 검증이 "워크트리 HEAD 가 PR HEAD 와 다름" 으로 멈추고,
+// base 를 합친 merge 커밋도 isBaseMerge 가 워크트리를 못 찾아 base 합침이 아니라 라운드 4/3 상한 멈춤이 됐다.
+// Work ref 워크트리가 그 브랜치면 그대로 · 아니면 그 레포(Work ref 워크트리 · repos/<레포>)의 워크트리 목록에서 그 브랜치를 찾는다 · 못 찾으면 Work ref 그대로
+const prWorktree = (repo, branch, worktree) => {
+  if (!branch) return worktree
+  if (worktree && existsSync(worktree) && git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD']) === branch) return worktree
+  for (const dir of [worktree, join(ROOT, 'repos', repo)]) {
+    if (!dir || !existsSync(dir)) continue
+    const listed = git(dir, ['worktree', 'list', '--porcelain'])
+    const found = (listed ?? '').split(/\n\s*\n/).find((block) => block.split('\n').includes(`branch refs/heads/${branch}`))
+    const path = found?.match(/^worktree (.+)$/m)?.[1]
+    if (path && existsSync(path)) return path
+  }
+  return worktree
+}
+
 const writeAutoLine = (planPath, entry) => updatePlan(planPath, (current) => withAutoLine(current, { ...entry, stamp: stamp() }))
 // 사람이 정할 결정이 남아 있나 — 둘 중 하나라도면 아직이다(모든 머지 경로가 부른다)
 //   ① plan-html.mjs 가 계획서마다 연 결정 요청(dedupeKey plan:<계획서>)이 열려 있거나 답만 받음(open · answered)
@@ -367,6 +385,113 @@ const ask = (planFile, { key, title, body, options = [] }) => {
   }
 }
 
+// 고를 것이 없는 상태 알림(상한 멈춤 · 일부만 승인 · 합의 못 냄 · 수정 지시 보낼 pane 없음 · 검증 못 함 · 머지 못 함) —
+// 요청(작업 알림 · [작업] 팝업 · 확인 필요)으로 열지 않고 아테나 pane 에 한 줄로 보낸다. 아테나가 이어받는다(사람에게 되묻지 않는다 · 2026-10-28 사용자).
+// 요청은 사람이 고를 것이 있는 것만 — 머지 확인(머지/보류) · 결정 필요(결정 콘솔).
+// 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 일감 readPanes 와 같은 기준).
+// 둘 다 없거나 못 보내면 지금처럼 요청으로 남긴다. 같은 key 로 같은 글(같은 HEAD · 제목)을 이미 보냈으면 다시 보내지 않는다
+// 이름이 .json 으로 끝나면 안 된다 — 처리기(watch)와 --kick 이 QUEUE_DIR 의 *.json 을 리뷰 작업으로 본다(PR #103 자동 리뷰 라운드 2)
+const NOTIFIED_FILE = join(QUEUE_DIR, '.notified')
+// 질문 · 고르기 창이 떠 있어 미룬 알림 — 파일 하나씩(처리기가 꺼져도 남는다 · 처리기가 30초마다 다시 넣어 본다)
+const NOTICE_DIR = join(QUEUE_DIR, 'notices')
+const readNotified = () => {
+  try { return JSON.parse(readFileSync(NOTIFIED_FILE, 'utf8')) } catch { return {} }
+}
+// 중복 방지 기록 — 넣었거나 미룬 대기열에 받았을 때만 · 임시 파일에 쓰고 바꿔 끼운다(쓰다 끊겨도 깨진 파일이 남지 않게)
+const markNotified = (key, mark) => {
+  mkdirSync(QUEUE_DIR, { recursive: true })
+  const staging = `${NOTIFIED_FILE}.${process.pid}`
+  writeFileSync(staging, JSON.stringify({ ...readNotified(), [key]: mark }, null, 2))
+  renameSync(staging, NOTIFIED_FILE)
+}
+// 다시 돌린 결과는 다시 알린다(PR #103 결정 R1 · 2026-10-28) — 이 PR 을 새로 처리할 때(새 HEAD · "- Auto review:" 줄을 지움 · 본문 고침) 그 key 의 기록을 지운다.
+// 그래서 막는 것은 같은 처리 안의 중복뿐이다
+const clearNotified = (key) => {
+  const recorded = readNotified()
+  if (!(key in recorded)) return
+  delete recorded[key]
+  const staging = `${NOTIFIED_FILE}.${process.pid}`
+  writeFileSync(staging, JSON.stringify(recorded, null, 2))
+  renameSync(staging, NOTIFIED_FILE)
+}
+const leadPaneOf = (planFile) => {
+  const planPath = join(ROOT, planFile)
+  const line = existsSync(planPath) ? readFileSync(planPath, 'utf8').match(/^-\s*Lead pane:\s*([\w:-]+)/m)?.[1] : ''
+  if (line) return line
+  const htmlPath = planPath.replace(/\.md$/, '.html')
+  return existsSync(htmlPath) ? readFileSync(htmlPath, 'utf8').match(/"(?:leadPane|hermesPane)":\s*"([^"]*)"/)?.[1] ?? '' : ''
+}
+const isRootDir = (dir) => {
+  try { return Boolean(dir) && realpathSync(dir) === REAL_ROOT } catch { return false }
+}
+const athenaPane = async (planFile) => {
+  const listed = await screen(['pane', 'list'])
+  const panes = listed?.panes ?? []
+  const lead = leadPaneOf(planFile)
+  if (lead && panes.some((pane) => pane.id === lead)) return lead
+  return panes.find((pane) => pane.agent === 'claude' && isRootDir(pane.cwd) && !/^🤖/.test(pane.label || pane.name || ''))?.id ?? ''
+}
+const pendingNotices = () => (existsSync(NOTICE_DIR) ? readdirSync(NOTICE_DIR).filter((name) => name.endsWith('.json')).sort().map((name) => join(NOTICE_DIR, name)) : [])
+const readNotice = (file) => {
+  try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
+}
+// 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · Enter 만 실패) · 'failed'(글을 못 썼다).
+// 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 일감 pane-delivery 와 같은 판정 menuOpen).
+// 화면을 못 읽으면(null) 창 여부를 모르니 일감처럼 바로 넣는다. 글 → Enter 두 단계 — 글만 들어갔으면(typed) 다음에 Enter 부터
+const deliverNotice = async (pane, notice, file = '') => {
+  if (menuOpen(await screenText(['pane', 'read', pane, '--lines', '40']))) return 'wait'
+  if (!notice.typed) {
+    if (!(await screen(['pane', 'send-text', pane, notice.text]))) return 'failed'
+    notice.typed = true
+    if (file) writeFileSync(file, JSON.stringify(notice))
+    await new Promise((done) => setTimeout(done, 300))
+  }
+  return (await screen(['pane', 'send-keys', pane, 'Enter'])) ? 'sent' : 'wait'
+}
+const queueNotice = (notice) => {
+  mkdirSync(NOTICE_DIR, { recursive: true })
+  const file = join(NOTICE_DIR, `${Date.now()}-${createHash('sha1').update(`${notice.key}\n${notice.mark}`).digest('hex').slice(0, 8)}.json`)
+  writeFileSync(file, JSON.stringify(notice))
+  return file
+}
+const notify = async (planFile, { key, sha, title, body }) => {
+  const mark = `${sha}|${title}`
+  if (readNotified()[key] === mark) return console.log(`  ⏭ 아테나에 이미 알렸다: ${title}`)
+  const text = masked(`[자동 리뷰 → 아테나] ${title} — ${body}`).replace(/\s*\n\s*/g, ' ').trim()
+  const pane = await athenaPane(planFile)
+  const notice = { plan: planFile, key, mark, title, body, text, pane, typed: false }
+  // 먼저 미룬 알림이 있으면 차례를 지켜 뒤에 줄 선다
+  const result = !pane ? 'failed' : pendingNotices().length ? 'wait' : await deliverNotice(pane, notice)
+  if (result === 'sent') {
+    markNotified(key, mark)
+    console.log(`  → 아테나 pane ${pane} 에 알렸다: ${title}`)
+    return
+  }
+  if (result === 'wait') {
+    queueNotice(notice)
+    markNotified(key, mark)
+    console.log(`  ⏳ 아테나 pane ${pane} 에 질문 · 고르기 창이 떠 있어(또는 앞 알림이 기다려) 미뤘다 — 처리기가 창이 닫히면 넣는다: ${title}`)
+    if (!watcherAlive()) launchWatcher()
+    return
+  }
+  console.log('  ⚠️ 아테나 pane 이 없거나 보내지 못해 요청으로 남긴다')
+  ask(planFile, { key, title, body })
+}
+// 미룬 알림을 차례대로 넣어 본다 — 처리기가 30초마다. 받을 pane 은 그때 다시 고른다(닫혔으면 다른 아테나 pane · 아무도 없으면 요청으로)
+export const flushNotices = async () => {
+  for (const file of pendingNotices()) {
+    const notice = readNotice(file)
+    if (!notice) { rmSync(file, { force: true }); continue }
+    const pane = await athenaPane(notice.plan)
+    if (pane !== notice.pane) Object.assign(notice, { pane, typed: false })
+    const result = pane ? await deliverNotice(pane, notice, file) : 'failed'
+    if (result === 'wait') return   // 차례를 지킨다 — 뒤 알림을 앞질러 넣지 않는다
+    rmSync(file, { force: true })
+    if (result === 'sent') console.log(`  ✅ 미룬 알림을 아테나 pane ${pane} 에 넣었다: ${notice.title}`)
+    else ask(notice.plan, { key: notice.key, title: notice.title, body: notice.body })
+  }
+}
+
 // ── 한 PR 처리 ─────────────────────────────────────────────────────────
 const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const { path: planPath, file: planFile } = planPathOf(planArg)
@@ -389,8 +514,12 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (head && !pr.headRefOid.startsWith(head)) return console.log(`⏭  ${repo}#${number} — 그새 새 커밋(${pr.headRefOid.slice(0, 7)}) · 그 커밋은 따로 들어온다`)
   const sha = pr.headRefOid
   if (!dryRun && !needsReview(planText, repo, number, sha)) return console.log(`⏭  ${repo}#${number} @${sha.slice(0, 7)} — 이미 봤거나 사람이 이어받았다`)
+  if (!dryRun) clearNotified(`pr-auto:${repo}#${number}`)
   const known = autoLines(planText).get(`${repo}#${number}`)
-  const ref = workRefOf(planText)
+  // Work ref 의 워크트리가 이 PR 브랜치가 아닐 수 있다 — 계획서 하나에 PR 이 여럿이면 마지막 작업(다른 PR)의 것(prWorktree)
+  const workRef = workRefOf(planText)
+  const ref = { ...workRef, worktree: prWorktree(repo, pr.headRefName, workRef.worktree) }
+  if (ref.worktree !== workRef.worktree) console.log(`  ↪ PR 브랜치 ${pr.headRefName} 의 워크트리 ${ref.worktree}(Work ref 는 ${workRef.worktree || '없음'})`)
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
@@ -398,11 +527,11 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
 
   // base 합침은 상한을 넘은 라운드여도 멈추거나 이어받지 않고 한 번 리뷰한다
   if (isTakeoverRound(round) && !baseMerge && !grantsTakeover(known?.result)) {
-    // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 사람에게
-    if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${MAX_ROUNDS}(직전이 ${TAKEOVER}가 아님) · 사람에게 요청`)
+    // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 아테나에(notify)
+    if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${MAX_ROUNDS}(직전이 ${TAKEOVER}가 아님) · 아테나에 알림`)
     writeAutoLine(planPath, { repo, number, sha, round, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
     logEvent(ROOT, 'auto.stop', { ...base, reason: 'rounds' })
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 상한(${MAX_ROUNDS}) 넘음 — ${repo}#${number}`, body: `직전 결과(${known?.result ?? '없음'})가 ${TAKEOVER}가 아니라 리뷰 없이 머지하지 않는다. 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 상한(${MAX_ROUNDS}) 넘음 — ${repo}#${number}`, body: `직전 결과(${known?.result ?? '없음'})가 ${TAKEOVER}가 아니라 리뷰 없이 머지하지 않는다. 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).` })
     return
   }
   if (isTakeoverRound(round) && !baseMerge) {
@@ -451,7 +580,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const partial = partialApproval(summary, packed)
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
-    console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 사람에게 요청` : plannedAction(summary, round)}`)
+    console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 아테나에 알림` : plannedAction(summary, round)}`)
     console.log('(--dry-run — 댓글 · 계획서 · pane · 요청 · 머지 모두 하지 않았다)')
     return
   }
@@ -464,11 +593,11 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const line = { repo, number, sha, round, note }
 
   if (partial) {
-    // 리뷰어가 diff 일부만 보고 승인했다 — PR 전체 승인이 아니라 머지 조건 ①로 세지 않고 사람에게(이슈 20261025 · syung#12 에서 잘린 승인으로 결함을 놓침)
+    // 리뷰어가 diff 일부만 보고 승인했다 — PR 전체 승인이 아니라 머지 조건 ①로 세지 않고 아테나에(notify · 이슈 20261025 · syung#12 에서 잘린 승인으로 결함을 놓침)
     const missed = missedFiles(packed)
     writeAutoLine(planPath, { ...line, result: `${PARTIAL_APPROVAL} — 사람 확인(못 본 코드 파일 ${missed.length}개)` })
     logEvent(ROOT, 'auto.stop', { ...base, reason: 'partial-diff' })
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 — diff 가 길어 일부만 보고 승인 · ${repo}#${number}`, body: `리뷰어 둘 다 승인했지만 diff 가 길어(${MAX_DIFF_CHARS}자 넘음 · 생성물 ${packed.generated.length}개는 이미 뺐다) 아래 코드 파일을 다 보지 못했다 — 머지 승인으로 세지 않는다.\n${missed.map((path) => `- ${path}`).join('\n')}\n사람이 리뷰하고 머지하거나(gh pr view ${number} --repo ${org}/${repo}), 생성물 경로를 팩 레포 "generated" 에 적은 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 — diff 가 길어 일부만 보고 승인 · ${repo}#${number}`, body: `리뷰어 둘 다 승인했지만 diff 가 길어(${MAX_DIFF_CHARS}자 넘음 · 생성물 ${packed.generated.length}개는 이미 뺐다) 아래 코드 파일을 다 보지 못했다 — 머지 승인으로 세지 않는다.\n${missed.map((path) => `- ${path}`).join('\n')}\n사람이 리뷰하고 머지하거나(gh pr view ${number} --repo ${org}/${repo}), 생성물 경로를 팩 레포 "generated" 에 적은 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
     return
   }
   if (summary.verdict === 'approve') {
@@ -476,10 +605,10 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     return prepareMerge({ planPath, planFile, repo, number, sha, round, note, ref, pr, org, summary, config })
   }
   if (summary.verdict === 'insufficient') {
-    // 리뷰어 하나라도 답하지 못해(실패 · 로그인 안 됨) 합의(결정 D2 — 둘 다 승인)를 못 냈다 — 머지하지 않고 사람에게
+    // 리뷰어 하나라도 답하지 못해(실패 · 로그인 안 됨) 합의(결정 D2 — 둘 다 승인)를 못 냈다 — 머지하지 않고 아테나에(notify)
     writeAutoLine(planPath, { ...line, result: `리뷰어 부족(승인 ${summary.approvals}/${REVIEWERS.length})` })
     logEvent(ROOT, 'auto.stop', { ...base, reason: 'reviewers' })
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 합의 못 냄 — ${repo}#${number}`, body: `승인 ${summary.approvals}/${REVIEWERS.length}(둘 다 승인해야 머지). 리뷰어: ${reviewerBrief(results)}\n${results.filter((result) => result.status !== 'ok').map((result) => `- ${result.name}: ${result.reason}`).join('\n')}\n사람이 리뷰하고 머지하거나, 리뷰어를 고친 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 합의 못 냄 — ${repo}#${number}`, body: `승인 ${summary.approvals}/${REVIEWERS.length}(둘 다 승인해야 머지). 리뷰어: ${reviewerBrief(results)}\n${results.filter((result) => result.status !== 'ok').map((result) => `- ${result.name}: ${result.reason}`).join('\n')}\n사람이 리뷰하고 머지하거나, 리뷰어를 고친 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
     return
   }
   logEvent(ROOT, 'review', { ...base, verdict: summary.verdict === 'decision' ? '결정 필요' : '수정 필요' })
@@ -526,7 +655,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     if (pane) await sendToPane(pane, decisionNotice({ agent: ref.agent, repo, number, sha, count: summary.decisions.length, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))
     return
   }
-  // 수정 필요(결정이 같이 있어도 — 결정 A) — 작업 에이전트에 지시. pane 이 없으면 사람에게
+  // 수정 필요(결정이 같이 있어도 — 결정 A) — 작업 에이전트에 지시. pane 이 없으면 아테나에(notify)
   const instruction = masked(fixInstruction({
     agent: ref.agent || '작업 에이전트', org, repo, number, sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions,
     humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT,
@@ -535,7 +664,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     console.log(`  → 수정 지시를 pane ${pane} 에 보냈다`)
     logEvent(ROOT, 'auto.fix', { ...base, pane })
   } else {
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 수정 지시를 보낼 pane 이 없다 — ${repo}#${number}`, body: `작업 에이전트 pane 을 찾지 못했다(Work ref pane ${ref.pane || '없음'}). 에이전트를 다시 열고 아래를 전한다:\n${instruction}` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 수정 지시를 보낼 pane 이 없다 — ${repo}#${number}`, body: `작업 에이전트 pane 을 찾지 못했다(Work ref pane ${ref.pane || '없음'}). 에이전트를 다시 열고 아래를 전한다:\n${instruction}` })
   }
 }
 
@@ -549,7 +678,7 @@ const autoResult = (verdict, takeover, atLimit) => {
 
 const plannedAction = (summary, round) => {
   if (summary.verdict === 'approve') return '안 정한 결정 · 같은 HEAD 검증(reuse.sh 엄격) · 충돌 확인 → 머지 확인 요청(맥 알림 · [작업] 팝업)'
-  if (summary.verdict === 'insufficient') return `머지하지 않음 — 리뷰어 부족(승인 ${summary.approvals}/${REVIEWERS.length}) · 사람에게 요청`
+  if (summary.verdict === 'insufficient') return `머지하지 않음 — 리뷰어 부족(승인 ${summary.approvals}/${REVIEWERS.length}) · 아테나에 알림`
   const parts = []
   if (summary.autoDecisions.length) parts.push(`추천안으로 자동 확정 ${summary.autoDecisions.length}개(계획서 Decisions)`)
   if (summary.verdict === 'decision') parts.push(`결정 콘솔에 ${summary.decisions.length}개 덧붙임`)
@@ -605,19 +734,19 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     // 검증을 못 했으면 머지 확인을 묻지 않는다 — 같은 HEAD 는 다시 감지되지 않으니(계획서 줄) 새 커밋이 오거나 사람이 그 줄을 지워야 다시 본다
     writeAutoLine(planPath, { ...line, result: `검증 대기 — ${verify.why}` })
     logEvent(ROOT, 'auto.stop', { plan: planFile, repo, pr: number, sha: sha.slice(0, 7), reason: 'verify', why: verify.why })
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 검증 못 함 — ${repo}#${number}`, body: `${takeover ? `리뷰 상한 뒤 이어받은 커밋(리뷰 없음)` : `리뷰는 승인(${summary.approvals}/${REVIEWERS.length})`}인데 같은 HEAD 검증을 못 했다: ${verify.why}. 머지하지 않았다. ${RETRY_HINT}` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 검증 못 함 — ${repo}#${number}`, body: `${takeover ? `리뷰 상한 뒤 이어받은 커밋(리뷰 없음)` : `리뷰는 승인(${summary.approvals}/${REVIEWERS.length})`}인데 같은 HEAD 검증을 못 했다: ${verify.why}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
   pr.mergeable = await settledMergeable(org, repo, number, pr.mergeable)
   if (pr.mergeable !== 'MERGEABLE') {
     writeAutoLine(planPath, { ...line, result: `검증 대기 — 충돌 확인 ${pr.mergeable}` })
     if (pr.mergeable === 'CONFLICTING') {
-      // 충돌이면 작업 에이전트에 base 를 합쳐 풀게 한다 — 사람 요청은 그대로 연다(pane 이 없거나 에이전트가 못 풀 때 사람이 본다)
+      // 충돌이면 작업 에이전트에 base 를 합쳐 풀게 한다 — 아테나에도 알린다(pane 이 없거나 에이전트가 못 풀 때 아테나가 이어받는다)
       const pane = await agentPane({ planFile, ref })
       const sent = pane && (await sendToPane(pane, masked(conflictNotice({ agent: ref.agent || '작업 에이전트', repo, number, sha, base: pr.baseRefName, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))))
-      console.log(sent ? `  → 충돌 — base 를 합쳐 풀라고 pane ${pane} 에 보냈다` : '  ⚠️ 충돌 — 작업 pane 이 없어 사람 요청만 연다')
+      console.log(sent ? `  → 충돌 — base 를 합쳐 풀라고 pane ${pane} 에 보냈다` : '  ⚠️ 충돌 — 작업 pane 이 없어 아테나에만 알린다')
     }
-    ask(planFile, { key: `pr-auto:${repo}#${number}`, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
   const job = { plan: planFile, repo, number, sha, round, note, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true } : {}) }
@@ -814,7 +943,7 @@ const kick = () => {
   restoreClaims()
   const pending = existsSync(CONFIRM_DIR) && readdirSync(CONFIRM_DIR).some((file) => file.endsWith('.json'))
   const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => file.endsWith('.json'))
-  if (pending || queued) launchWatcher()
+  if (pending || queued || pendingNotices().length) launchWatcher()
 }
 
 const watch = async () => {
@@ -836,6 +965,7 @@ const watch = async () => {
     if (Date.now() - confirmAt > CONFIRM_POLL_MS) {
       confirmAt = Date.now()
       try { await checkConfirms() } catch (error) { console.log(`  ⚠️ 머지 확인 보기 실패: ${error.message}`) }
+      try { await flushNotices() } catch (error) { console.log(`  ⚠️ 미룬 알림 넣기 실패: ${error.message}`) }
     }
     const next = readdirSync(QUEUE_DIR).filter((file) => file.endsWith('.json')).sort()[0]
     if (!next) { await new Promise((done) => setTimeout(done, 5000)); continue }
