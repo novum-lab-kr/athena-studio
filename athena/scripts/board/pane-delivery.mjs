@@ -1,5 +1,5 @@
 // @ts-check
-// 일감이 pane 에 지시를 넣는 순서 — 결정 콘솔 · 레포 고르기 콘솔 [이대로 진행] · 이슈 [작업 시작] 등(/api/action).
+// 현황판이 pane 에 지시를 넣는 순서 — 결정 콘솔 · 레포 고르기 콘솔 [이대로 진행] · 이슈 [작업 시작] 등(/api/action).
 //
 // GitHub #100(2026-10-28 진짜 claude 2.1.312 로 재현): 받는 pane 에 질문 · 고르기 창(AskUserQuestion · 권한 묻기)이 떠 있을 때
 // 글 + Enter 를 넣으면 글은 창에 먹혀 사라지고 Enter 가 창의 1번 선택지를 고른다 — 고른 결과는 전달되지 않고 묻지 않은 답이 들어간다.
@@ -116,7 +116,7 @@ export const createDelivery = ({ readPane, typeText, pressEnter, paneExists, log
     return 'queued'
   }
 
-  // 미룬 지시를 넣어 본다 — 일감이 몇 초마다 부른다. pane 이 닫혔으면 버린다
+  // 미룬 지시를 넣어 본다 — 현황판이 몇 초마다 부른다. pane 이 닫혔으면 버린다
   const tick = async () => {
     await Promise.all(
       [...waiting.keys()].map((paneId) =>

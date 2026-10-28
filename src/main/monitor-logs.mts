@@ -37,7 +37,7 @@ export type Monitor = {
   seq: number
   agentCwds: string[]
   floor: number
-  // GitHub 이슈 감시 — 일감 /api/github-issues 를 마지막으로 읽은 때 · 이미 줄로 낸 이슈(repo#번호)
+  // GitHub 이슈 감시 — 현황판 /api/github-issues 를 마지막으로 읽은 때 · 이미 줄로 낸 이슈(repo#번호)
   lastGithub: number
   githubSeen: Set<string>
 }

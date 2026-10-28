@@ -5,7 +5,7 @@
  *   node scripts/new-plan.mjs --agent <에이전트> --summary "<한 줄 요약>" [--issue issues/…md] [--prompt-file <파일>] [--status in_progress] [--no-pane-name]
  *   → 만든 계획서 경로를 한 줄 출력 (plans/task/YYYYMMDD-<에이전트>-<요약>.md)
  *   아테나 pane 에서 부르면 그 pane 이름을 '🧭 아테나 · <요약>' 으로 바꾼다(에이전트 pane · 화면 밖은 안 함 — lib/screen.mjs nameLeadPane).
- *   --no-pane-name : 바꾸지 않는다 — 일감 서버처럼 부른 pane 이 그 작업을 맡지 않을 때
+ *   --no-pane-name : 바꾸지 않는다 — 현황판 서버처럼 부른 pane 이 그 작업을 맡지 않을 때
  *
  * 정식 계획서(md + html 결정 콘솔 — scripts/plan-html.mjs)는 새 기능·여러 레포·API·구조 변경용이다(docs/plan-template.md).
  * 이 스크립트는 문구 수정·버그 하나·확인·조사·직접 부른 에이전트 작업용 경량판(docs/plan-template-light.md)만 만든다.
@@ -34,7 +34,7 @@ if (!summary) {
   process.exit(2)
 }
 
-// 작업자(사람) — 일감 카드에 👤 로 뜬다
+// 작업자(사람) — 현황판 카드에 👤 로 뜬다
 const owner = (() => {
   try {
     return execFileSync('git', ['-C', ROOT, 'config', 'user.name'], { encoding: 'utf8' }).trim()

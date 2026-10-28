@@ -88,7 +88,7 @@ async function register() {
   chmodSync(JEV_KEY_FILE, 0o600)
   say(`✅ 저장했어요 — ${JEV_KEY_FILE} (이 컴퓨터에만 · 권한 600)${code === 200 ? '' : ' · 확인은 못 했으니 나중에 --status --check 로 다시 보세요'}`)
   if (process.env.TYPESAFE_API_KEY) say('   참고: 환경 변수 TYPESAFE_API_KEY 가 있어서 그게 먼저 쓰여요')
-  say('   일감·배우기 검토는 다시 켜지 않아도 다음 판정부터 Jev 를 써요. 이 창은 닫아도 돼요')
+  say('   현황판·배우기 검토는 다시 켜지 않아도 다음 판정부터 Jev 를 써요. 이 창은 닫아도 돼요')
 }
 
 try {

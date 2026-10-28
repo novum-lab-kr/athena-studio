@@ -37,7 +37,7 @@
  *   athena pack backup --with-work [--out <폴더>] [--json] · athena pack restore --with-work <파일> [--new|--replace] [--json]
  *   athena pack backup --with-work --panes <pane,…>             위 + 그 pane 들의 에이전트 대화 · 팩 워크트리(미커밋 변경 · push 안 한 커밋) — 되살리기 정보
  *   athena pack restore-work [--dry-run|--no-agents|--discard|--ack <세션>] [--json]  가져온 되살리기 정보로 워크트리 · 대화 기록 · 에이전트 pane 되살리기(본체에서)
- *   athena pack board-token --json                 떠 있는 일감의 쓰기 토큰·포트
+ *   athena pack board-token --json                 떠 있는 현황판의 쓰기 토큰·포트
  *   athena pack migrate [--yes] [--json]           옛 구조 본체를 여러 팩 구조로(--yes 없으면 계획만)
  *   athena pack test-setup [--json]                테스트 데이터(ATHENA_DATA_DIR · 이름에 test)를 지우고 fixture 팩 acme·globex 등록
  *
@@ -305,7 +305,7 @@ const human = {
   },
   update: (result) => {
     console.log(`${result.status === 'complete' ? '✅' : '⚠️'} ${result.rollbackOf ? `되돌리기(${result.rollbackOf})` : `업데이트 → ${result.targetCore?.slice(0, 7)}`} · ${result.status} · ${result.operationId}`)
-    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 일감 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}${body.status === 'updated' && body.working?.length ? ` · 일하는 중이던 세션 ${body.working.length}개 — 바로 올림` : ''}${body.services?.learnStopped?.length ? ' · 학습 검토 끔' : ''}${body.services?.qaStopped?.length ? ' · QA 끔' : ''}`)
+    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}${body.status === 'updated' && body.working?.length ? ` · 일하는 중이던 세션 ${body.working.length}개 — 바로 올림` : ''}${body.services?.learnStopped?.length ? ' · 학습 검토 끔' : ''}${body.services?.qaStopped?.length ? ' · QA 끔' : ''}`)
   },
 }
 const runPack = async (name, work) => {
@@ -325,7 +325,7 @@ const runPack = async (name, work) => {
     process.exit(1)
   }
 }
-// pack use --start-board · CLI 용 — 연 본체의 일감을 띄운다(스튜디오는 자기가 띄운다). 포트는 그 본체가 정한다
+// pack use --start-board · CLI 용 — 연 본체의 현황판을 띄운다(스튜디오는 자기가 띄운다). 포트는 그 본체가 정한다
 const startBoard = (body) => {
   const env = { ...process.env, ATHENA_BOARD_NO_BROWSER: '1' }
   delete env.ATHENA_BOARD_PORT

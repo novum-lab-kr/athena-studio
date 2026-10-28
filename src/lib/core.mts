@@ -9,7 +9,7 @@ type WindowsConfig = { windows?: unknown; athenaDir?: unknown } | null | undefin
 // 데몬 상태의 작업 공간에서 읽는 칸만
 type Workspace = { label?: unknown; cwd?: string }
 
-// 일감 기본 포트는 4701(옛 본체만 · 팩 본체는 코어가 정한다)
+// 현황판 기본 포트는 4701(옛 본체만 · 팩 본체는 코어가 정한다)
 export const DEFAULT_CONFIG: { athenaDir: string | null; boardPort: number } = { athenaDir: null, boardPort: 4701 }
 
 // 앱 설정(userData/config.json). 깨졌거나 없으면 기본값
@@ -82,7 +82,7 @@ export function sameDir(left: string | null | undefined, right: string | null | 
 
 
 // 이 컴퓨터 설정(athena.config.json · git 무시)이 없으면 팩 없는 최소 설정을 만든다.
-// 아테나는 이 파일이 없으면 일감이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다.
+// 아테나는 이 파일이 없으면 현황판이 뜨지 않고, 팩이 없으면 claude · codex 를 켤 때 /setup 이 시작된다.
 // screen: 'studio' — 아테나가 화면(pane · 탭)을 스튜디오 데몬으로 다루게 고정한다(아테나 쪽 키).
 // reposRoot(레포 클론이 있는 폴더)는 reposRootFor 가 정한다. 이미 있는 설정은 건드리지 않는다
 export function ensureAthenaConfig(dir: string, reposRoot = '..'): boolean {
@@ -120,7 +120,7 @@ export function isInside(dir: string | null | undefined, root: string | null | u
   return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative))
 }
 
-// 일감 포트 고르기 — 저장된 포트부터 차례로 본다(다른 아테나 일감 등이 쥐고 있으면 다음 번호)
+// 현황판 포트 고르기 — 저장된 포트부터 차례로 본다(다른 아테나 현황판 등이 쥐고 있으면 다음 번호)
 const BOARD_PORT_SPAN = 20
 
 export function boardPortCandidates(start: unknown): number[] {
@@ -136,7 +136,7 @@ export function parseLsofPath(output: unknown): string | null {
   return line ? line.slice(1) : null
 }
 
-// 스튜디오가 만든 아테나 설정(screen: studio)에만 고른 일감 포트를 적는다 — pane 안의 아테나가 이 값으로 일감을 찾는다.
+// 스튜디오가 만든 아테나 설정(screen: studio)에만 고른 현황판 포트를 적는다 — pane 안의 아테나가 이 값으로 현황판을 찾는다.
 // 스튜디오가 만들지 않은 설정은 건드리지 않는다. 바꿨으면 true · 없으면 false · 읽거나 쓰지 못하면 throw
 export function setAthenaBoardPort(dir: string, port: number): boolean {
   const file = path.join(dir, 'athena.config.json')
@@ -203,7 +203,7 @@ export function childEnv(baseEnv: Env, extra: Env = {}): Env {
   const env: Env = {}
   for (const [key, value] of Object.entries(baseEnv)) {
     if (key.startsWith('CLAUDE_CODE_')) continue
-    // 스튜디오 pane 안에서 앱을 켰을 때의 표시 — pane 셸·일감에는 데몬·main 이 새 값을 다시 넣는다
+    // 스튜디오 pane 안에서 앱을 켰을 때의 표시 — pane 셸·현황판에는 데몬·main 이 새 값을 다시 넣는다
     if (key === 'ATHENA_STUDIO' || key.startsWith('ATHENA_STUDIO_')) continue
     if (INHERITED_SESSION_KEYS.includes(key)) continue
     env[key] = value
@@ -280,8 +280,8 @@ export function openTarget(rawUrl: string): 'deny' | 'panel' | 'external' {
   return LOCAL_HOSTS.includes(new URL(rawUrl).hostname) ? 'panel' : 'external'
 }
 
-// 옆 브라우저의 결정 콘솔(일감이 주는 /plans/….html)이 [이대로 진행] 으로 pane 에 보내기를 마쳤나 —
-// 같은 localhost 일감의 POST /api/action 이 200 이면 보냄(실패면 콘솔이 [프롬프트로 복사] 로 바뀌니 서랍을 두어야 한다)
+// 옆 브라우저의 결정 콘솔(현황판이 주는 /plans/….html)이 [이대로 진행] 으로 pane 에 보내기를 마쳤나 —
+// 같은 localhost 현황판의 POST /api/action 이 200 이면 보냄(실패면 콘솔이 [프롬프트로 복사] 로 바뀌니 서랍을 두어야 한다)
 export function isConsoleSent({ method, url, statusCode, pageUrl }: { method: string; url: string; statusCode: number; pageUrl: string }): boolean {
   if (method !== 'POST' || statusCode !== 200) return false
   try {

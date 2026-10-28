@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 일감 자동 완료 · 자동 보관 판정 시험 — scripts/board/plan-bind.mjs(남은 단계 · 묶인 pane)를 server.mjs 와 같은 입력 모양으로.
+# 현황판 자동 완료 · 자동 보관 판정 시험 — scripts/board/plan-bind.mjs(남은 단계 · 묶인 pane)를 server.mjs 와 같은 입력 모양으로.
 # 2026-10-27 사고 재현: 단계 PR 하나가 머지된 틈에 진행 중 계획서가 완료 · 보관됐다(남은 단계를 안 봄 · 같은 계획서로 다시 띄워
 # Work ref 가 마지막 pane 으로 바뀌어 일하던 다른 pane 을 못 봄). 임시 폴더 · gh · 화면을 부르지 않는다 · 몇 초
 #

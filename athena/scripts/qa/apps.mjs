@@ -83,7 +83,7 @@ export function packageManager(root) {
  * 로컬 서버 설정 — routes/<앱>.json 의 server 블록. 없는 값은 기본값.
  *   port        작업(head) 서버 포트 — 기본 3291
  *   basePort    기준(base) 서버 포트 — 기본 port + 1
- *   localPorts  사람이 따로 띄워 둔 dev 서버 포트 — 일감 [로그인] 이 port 다음으로 찾아 본다
+ *   localPorts  사람이 따로 띄워 둔 dev 서버 포트 — 현황판 [로그인] 이 port 다음으로 찾아 본다
  *   dev         띄우는 명령(앱 폴더에서, {port} 를 바꿔 넣는다) — 기본 ["<pm exec>", "next", "dev", "-p", "{port}"]
  *   prepare     dev 전에 돌릴 package.json 스크립트 — "gen:relay" 또는 { "script": "gen:env", "unless": ".env" }(그 파일이 앱 폴더에 있으면 건너뜀). 기본 없음
  *   tokenCookie 로그인했으면 생기는 쿠키 이름(앞부분) — 세션이 살아 있나·만료 시각을 이걸로 본다. 없으면 세션 파일이 있으면 살아 있다고 본다
@@ -138,7 +138,7 @@ export function codeConventions(app, routes) {
   }
 }
 
-// 옛 설정 경고 — 팩을 옮기다 빠뜨린 것. 지금 동작은 기본값으로 계속 돈다(막지 않는다). run.mjs 는 시작할 때 찍고 일감 QA 탭은 앱 옆에 보인다
+// 옛 설정 경고 — 팩을 옮기다 빠뜨린 것. 지금 동작은 기본값으로 계속 돈다(막지 않는다). run.mjs 는 시작할 때 찍고 현황판 QA 탭은 앱 옆에 보인다
 //   팩 qa.repo 가 남음 · routes 에 server 블록이 없음 · server.tokenCookie 가 비어 있음
 export function packQaWarnings(config) {
   return config.qa?.repo ? [`팩 pack.json 의 qa.repo("${config.qa.repo}")는 더 읽지 않아요 — QA 대상은 등록한 레포에서 정해져요(지워도 돼요 · docs/pack.md)`] : []

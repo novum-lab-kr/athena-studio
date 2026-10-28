@@ -200,7 +200,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       const result = (await runPack(['import', token, `--${choice}`], { dir: ctx.athenaDir, onProgress: ctx.packProgress })) as Imported
       refreshAllPacks()
       if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
-      // 열린 창의 팩을 바꿨으면 그 창 일감을 새로
+      // 열린 창의 팩을 바꿨으면 그 창 현황판을 새로
       const replaced = result.imported && result.imported.id
       for (const each of packWindows) if (replaced && each.packState.current && each.packState.current.id === replaced) each.send('pack:changed', { ok: true, replaced })
       return result

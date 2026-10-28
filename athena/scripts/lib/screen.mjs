@@ -40,7 +40,7 @@ export const openUrl = (url) => spawn(SCREEN, ['open-url', url], { stdio: 'ignor
 // 주소 열기 — 끝날 때까지 기다린다 · 실패면 예외
 export const openUrlSync = (url) => execFileSync(SCREEN, ['open-url', url], { stdio: 'ignore', timeout: 30000 })
 
-// 아테나 pane 이름을 맡은 계획서 제목으로 — 일감 [작업 시작](board/server.mjs openHermesPane)과 같은 형식 '🧭 아테나 · <제목 앞 30자>'.
+// 아테나 pane 이름을 맡은 계획서 제목으로 — 현황판 [작업 시작](board/server.mjs openHermesPane)과 같은 형식 '🧭 아테나 · <제목 앞 30자>'.
 // 에이전트 pane(ATHENA_AGENT — delegate.sh 가 넣는다)이면 건드리지 않고, 화면 밖(부른 pane 없음)이면 아무것도 안 한다.
 // 실패는 조용히 — 바꾼 이름을 돌려주고 못 바꾸면 ''
 export const nameLeadPane = (title) => {

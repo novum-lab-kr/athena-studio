@@ -1,5 +1,5 @@
-// ── 일감 — 공용 도우미 ────────────────────────────────────
-// main.js 에서 옮겼다(PR3b) — 화면 문구(say) · 일감 로그 자리 · 데몬 자리 · 팩 명령(runPack)은 createBoard 인자로 받는다
+// ── 현황판 — 공용 도우미 ────────────────────────────────────
+// main.js 에서 옮겼다(PR3b) — 화면 문구(say) · 현황판 로그 자리 · 데몬 자리 · 팩 명령(runPack)은 createBoard 인자로 받는다
 import fs from 'node:fs'
 import http from 'node:http'
 import path from 'node:path'
@@ -24,7 +24,7 @@ export function isBoardUp(port: number): Promise<boolean> {
 }
 
 // scripts/board.sh 는 브라우저를 열므로 쓰지 않고 server.mjs 를 직접 띄운다.
-// 앱을 닫아도 일감은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
+// 앱을 닫아도 현황판은 계속 돈다(board.sh 의 백그라운드 실행과 같다)
 // 포트 정하기 · 띄우기가 겹치지 않게 한 줄로 세운다(창이 여럿이어도 — 포트를 서로 고르다 겹치지 않게)
 let boardQueue: Promise<unknown> = Promise.resolve()
 export function queueBoard<T>(work: () => T | Promise<T>): Promise<T> {
@@ -58,7 +58,7 @@ function runLsof(args: string[]): Promise<{ failed: boolean; stdout: string }> {
   )
 }
 
-// 일감이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
+// 현황판이 지금 팩 · 세대 것인지(옛 본체면 legacy — 지금처럼). 아니면 토큰으로 끄고 다시 띄운다
 export function boardJson(port: number, pathName: string, { method = 'GET', headers = {} }: { method?: string; headers?: Record<string, string> } = {}): Promise<BoardReply> {
   return new Promise((resolve) => {
     const request = http.request({ host: '127.0.0.1', port, path: pathName, method, headers, timeout: 3000 }, (response) => {
@@ -79,11 +79,11 @@ export function boardJson(port: number, pathName: string, { method = 'GET', head
   })
 }
 
-// say — 화면 문구 · boardLogFile — 일감 로그 자리 · daemonPaths — 데몬 소켓 자리 · runPack — 코어 팩 명령(main.mts)
-// 일감에 넘길 환경 — 일감은 pane 밖에서 pane 목록을 묻는다. 화면 계층(screen.py)이 studio 데몬을 고르게 자리를 넘긴다(S4).
+// say — 화면 문구 · boardLogFile — 현황판 로그 자리 · daemonPaths — 데몬 소켓 자리 · runPack — 코어 팩 명령(main.mts)
+// 현황판에 넘길 환경 — 현황판은 pane 밖에서 pane 목록을 묻는다. 화면 계층(screen.py)이 studio 데몬을 고르게 자리를 넘긴다(S4).
 // ATHENA_STUDIO_ENDPOINT — 접속 파일 자리. 화면 계층은 pane 밖이면 이 파일로 studio 를 알아본다(없으면 ~/.athena-studio/daemon.json —
 // 개발판은 daemon-dev.json 을 써서, 안 넘기면 none 이 되어 pane 목록을 못 읽는다)
-// ATHENA_STUDIO_BODY — 일감이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
+// ATHENA_STUDIO_BODY — 현황판이 CLI 로 띄우는 pane 이 이 본체(팩) 창에 속하게(protocol 5 · pane 밖이라 부른 pane 이 없다)
 export function boardEnvExtra({ port, paths, athenaDir, nodePath }: { port: number; paths: { socket: string; endpoint: string }; athenaDir: string; nodePath: string | null }): Record<string, string> {
   const extra: Record<string, string> = {
     ATHENA_BOARD_PORT: String(port),
@@ -104,7 +104,7 @@ export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: 
     const logFile = boardLogFile()
     fs.mkdirSync(path.dirname(logFile), { recursive: true })
     const log = fs.openSync(logFile, 'a')
-    fs.writeSync(log, `\n── ${new Date().toISOString()} 일감 시작 (포트 ${port})\n`)
+    fs.writeSync(log, `\n── ${new Date().toISOString()} 현황판 시작 (포트 ${port})\n`)
 
     const nodePath = core.findExecutable('node', process.env.PATH)
     const env = core.childEnv(process.env, boardEnvExtra({ port, paths: daemonPaths(), athenaDir, nodePath }))
@@ -154,7 +154,7 @@ export function createBoard({ say, boardLogFile, daemonPaths, runPack }: { say: 
   return { startBoard, stopStaleBoard }
 }
 
-// 일감 GET 하나 → JSON(실패면 null) — main.js 메뉴 막대 묶음에서 옮겼다(PR3d · 팩 창도 쓴다)
+// 현황판 GET 하나 → JSON(실패면 null) — main.js 메뉴 막대 묶음에서 옮겼다(PR3d · 팩 창도 쓴다)
 export function fetchBoardJson(port: number, pathName: string): Promise<unknown> {
   return new Promise((resolve) => {
     let settled = false

@@ -17,7 +17,7 @@ import { StudioUi } from './ui/index.ts'
 export let branches: Record<string, string | null> = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 export let paneStatus: Record<string, string | null> = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
 
-// 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 일감을 새로(창의 본체 · pane 은 그대로)
+// 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
 function onPackChanged(): void {
   refreshPackList()
 }
@@ -55,7 +55,7 @@ export function renderState(): void {
   $('board-tab').dataset.tip = say('board.openTitle')
   const ready = state!.valid
   panels.setup.hidden = ready
-  $<HTMLButtonElement>('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 일감을 못 연다
+  $<HTMLButtonElement>('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
   $<HTMLButtonElement>('diagrams-open').disabled = !ready || welcomeShown() // 다이어그램도 팩에 들어간 뒤에만
   $<HTMLButtonElement>('work-tab').disabled = !ready || welcomeShown()
   $<HTMLButtonElement>('settings-tab').disabled = !ready || welcomeShown() // 설정은 팩에 들어간 뒤에만(그 팩의 pack.json)

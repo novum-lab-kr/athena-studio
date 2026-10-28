@@ -1,7 +1,7 @@
 // ── 아테나 폴더 — 팩 창 ───────────────────────────────────────
 // main.js createPackWindow 에서 옮겼다(PR3g) — electron(app · dialog) · 화면 문구(say) · 스튜디오 집 자리(studio) · 코어 준비(athenaReposRoot · prepareStudioCore · coreInstallError) ·
 // 창 찾기(ctxOfBody) · 창 목록 저장(saveWindows) · 에이전트 답 언어(syncAgentLanguage) · 메뉴 막대(hasTray · pollTray)는 인자로 받는다.
-// 이 창 일감 포트(packBoardPort) · 에이전트 모니터(monitor)는 main.mts 의 창 변수 그대로 — 쓰기 함수(setPackBoardPort) · 같은 객체로 받는다. 작업 공간 브랜치 캐시는 ctx.resetBranches(pane-watch.mts)로 비운다.
+// 이 창 현황판 포트(packBoardPort) · 에이전트 모니터(monitor)는 main.mts 의 창 변수 그대로 — 쓰기 함수(setPackBoardPort) · 같은 객체로 받는다. 작업 공간 브랜치 캐시는 ctx.resetBranches(pane-watch.mts)로 비운다.
 // ctx 에 같은 이름(pickAthenaDir · rebindBody · installAthena)으로 붙인다
 import type { BrowserWindow } from 'electron'
 import * as core from '../lib/core.mts'
@@ -89,7 +89,7 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
 
   // 이 창을 다른 본체(팩)로 다시 묶는다(한 창에서 팩을 바꿔 본다).
   // 이전 본체의 pane · 에이전트는 닫지 않는다(데몬에서 계속 돌고, 다시 오면 그 본체의 보던 자리 그대로). 화면은 돌려준 상태로 다시 붙는다(attach{body}) —
-  // 작업 공간 · 일감 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
+  // 작업 공간 · 현황판 포트 · 옆 브라우저 · 에이전트 모니터 · 팩 상태가 새 본체 것으로
   function rebindBody(dir: string): AthenaState {
     try {
       core.ensureAthenaConfig(dir, athenaReposRoot(dir))

@@ -11,7 +11,7 @@ contextBridge.exposeInMainWorld('trayPanel', /** @type {Record<string, (...value
     ipcRenderer.on('i18n:changed', handler)
     return () => ipcRenderer.removeListener('i18n:changed', handler)
   },
-  // main 이 보내는 요약(에이전트 · 확인 필요 · 사용량 · 칸반 · 일감)
+  // main 이 보내는 요약(에이전트 · 확인 필요 · 사용량 · 칸반 · 현황판)
   onUpdate: (/** @type {(data: unknown) => void} */ callback) => {
     const handler = (/** @type {import('electron').IpcRendererEvent} */ _event, /** @type {unknown} */ data) => callback(data)
     ipcRenderer.on('tray:update', handler)

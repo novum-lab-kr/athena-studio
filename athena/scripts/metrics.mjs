@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 작업 지표 — 이 본체 팩의 사건 기록(state/events.jsonl · docs/events.md)을 계획서마다 묶어 보여 준다. 일감 [지표] 탭과 같은 계산
+ * 작업 지표 — 이 본체 팩의 사건 기록(state/events.jsonl · docs/events.md)을 계획서마다 묶어 보여 준다. 현황판 [지표] 탭과 같은 계산
  *
  *   node scripts/metrics.mjs              # 최근 7일 · 지난 7일과 비교
  *   node scripts/metrics.mjs --days 30

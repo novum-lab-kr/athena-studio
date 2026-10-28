@@ -134,11 +134,11 @@ function startTabRename(button: HTMLButtonElement, tab: ScreenTab, shown: string
 }
 
 // ── 탭 ──────────────────────────────────────────────────
-// 일감은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
+// 현황판은 앱 안에 띄우지 않고 기본 브라우저로 연다(⌘2 · 탭 줄 아이콘 · 트레이) — 작업 창에서는 작업만
 export function switchTab(name: string): void {
   if (!state || !state.valid) return
   if (name === 'board') {
-    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 일감을 열지 않는다
+    if (!welcomeShown()) studio.openBoard() // 팩을 고르기 전에는 현황판을 열지 않는다
     return
   }
   setCurrentTab('work')

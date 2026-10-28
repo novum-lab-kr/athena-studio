@@ -7,7 +7,7 @@
 #
 # 보는 것(docs/requests.md): 열기 · 자리(팩 데이터 state/requests) · 같은 키는 고치기 · rev 충돌 · 두 번 답하기 거절 · ack(두 번 불러도 됨) ·
 # 대화로 답하면 바로 delivered · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
-# 결정 콘솔 [이대로 진행](일감 /api/action + plan)이 답을 적기 · 사용법 오류
+# 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기 · 사용법 오류
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/requests-test.XXXXXX")" && pwd -P)"
@@ -90,7 +90,7 @@ check "하나만 정하면 열린 채" 'A request list | grep -q "plan:plans/fea
 node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D2='다' > /dev/null 2>&1
 check "다 정하면 delivered(답 기록)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-y.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and \"D1=가\" in r[-1][\"answer\"][\"choice\"] else 1)"'
 
-section "결정 콘솔 [이대로 진행] → 일감이 답을 적는다"
+section "결정 콘솔 [이대로 진행] → 현황판이 답을 적는다"
 printf '# 기능 Z\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-z.md
 node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
 bash scripts/board.sh >/dev/null 2>&1
@@ -116,10 +116,10 @@ check "줄마다 형식 · 시각 · 팩" 'python3 -c "import json,sys; es=[json
 node scripts/lib/events.mjs verify repo=r1 ok=false strict=true failed='lint|test'
 check "셸에서 남기기 — 참거짓은 참거짓으로" 'tail -1 "$EV" | python3 -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if e[\"type\"]==\"verify\" and e[\"ok\"] is False and e[\"strict\"] is True and e[\"failed\"]==\"lint|test\" else 1)"' "$(tail -1 "$EV")"
 M="$(curl -s 'http://127.0.0.1:47730/api/metrics?days=7')"
-check "일감 /api/metrics — 요청 사건을 세고 계획서에 제목을 붙인다" 'echo "$M" | python3 -c "import json,sys; m=json.load(sys.stdin); p=[x for x in m[\"plans\"] if x[\"plan\"]==\"plans/task/20261021-x.md\"]; sys.exit(0 if m[\"events\"]>0 and m[\"current\"][\"asks\"]>=5 and p and p[0][\"title\"]==\"일\" and p[0][\"exists\"] else 1)"' "$M"
-check "일감 /api/state — 주 본체라 [정비] 탭을 보인다(maintenance)" '[ "$(curl -s http://127.0.0.1:47730/api/state | field maintenance)" = True ]'
+check "현황판 /api/metrics — 요청 사건을 세고 계획서에 제목을 붙인다" 'echo "$M" | python3 -c "import json,sys; m=json.load(sys.stdin); p=[x for x in m[\"plans\"] if x[\"plan\"]==\"plans/task/20261021-x.md\"]; sys.exit(0 if m[\"events\"]>0 and m[\"current\"][\"asks\"]>=5 and p and p[0][\"title\"]==\"일\" and p[0][\"exists\"] else 1)"' "$M"
+check "현황판 /api/state — 주 본체라 [정비] 탭을 보인다(maintenance)" '[ "$(curl -s http://127.0.0.1:47730/api/state | field maintenance)" = True ]'
 check "scripts/metrics.mjs — 요약을 찍는다" 'node scripts/metrics.mjs | grep -q "작업당 질문" && [ "$(node scripts/metrics.mjs --all --json | field days)" = "" ]'
-# 위에서 띄운 일감도 훑을 때마다 같은 일을 한다 — 끄고 본 기록을 지운 뒤 처음부터
+# 위에서 띄운 현황판도 훑을 때마다 같은 일을 한다 — 끄고 본 기록을 지운 뒤 처음부터
 pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; sleep 1
 rm -f .pack-data/state/plan-status.json
 BEFORE="$(wc -l < "$EV")"

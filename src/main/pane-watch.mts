@@ -17,7 +17,7 @@ import type { DaemonPane, PackCtx } from './daemon-link.mts'
 const require = createRequire(import.meta.url)
 const screenModel: typeof import('../lib/screen-model.js') = require('../lib/screen-model.js')
 
-// 일감 /api/state · /api/history · /api/card — 읽는 칸만
+// 현황판 /api/state · /api/history · /api/card — 읽는 칸만
 type BoardState = { cards?: unknown; panes?: paneDetail.LeadOptions['panes'] }
 type BoardHistory = { items?: unknown[] }
 type BoardCard = { text?: unknown }
@@ -41,7 +41,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     }
     for (const id of paneSince.keys()) if (!alive.has(id)) paneSince.delete(id)
   }
-  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 일감이 떠 있을 때만 읽는다(띄우지는 않는다). 꺼졌으면 지난 값을 둔다
+  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 현황판이 떠 있을 때만 읽는다(띄우지는 않는다). 꺼졌으면 지난 값을 둔다
   const PANE_BOUND_MS = 5000
   let paneBound = {}
   let paneBoundAt = 0
@@ -72,7 +72,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     return record && typeof record.session === 'string' ? record.session : ''
   }
   // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.
-  // 재료: 일감 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
+  // 재료: 현황판 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
   ctx.paneDetail = async (paneId: string) => {
     if (!/^[\w:]+$/.test(paneId)) return { ok: false, error: 'bad-id' }
     const port = ctx.boardPortNow()

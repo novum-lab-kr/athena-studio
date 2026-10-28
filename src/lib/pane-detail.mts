@@ -1,9 +1,9 @@
-// pane [상세] — 일감 `/api/state` 카드 · pane 화면 글 · 계획서 원문으로 "지금 · 결과 · 내가 할 일 · PR · 기록"을 만든다.
+// pane [상세] — 현황판 `/api/state` 카드 · pane 화면 글 · 계획서 원문으로 "지금 · 결과 · 내가 할 일 · PR · 기록"을 만든다.
 // 요약을 위해 모델을 부르지 않는다 — 화면에 이미 있는 글과 계획서 줄만 고른다. Electron 없이 돌아 `npm test` 로 검사한다
 const REPORT_MAX_LINES = 30
 const LINE_MAX = 160
 
-// 일감 카드에서 여기서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
+// 현황판 카드에서 여기서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
 export type DetailCard = {
   id?: string
   kind?: string
@@ -21,7 +21,7 @@ export type DetailCard = {
 }
 // 계획서 하나 — agents 는 늘 배열 · 이슈에 붙은 것은 issue 에 이슈 id
 export type DetailPlan = DetailCard & { agents: string[]; issue?: string }
-// 일감 /api/state panes 에서 읽는 칸만
+// 현황판 /api/state panes 에서 읽는 칸만
 type BoardPane = { id: string; agent?: string; role?: string }
 // 보관한 계획서 기록(최근 것)
 type HistoryItem = { dir?: string; title?: string; summary?: string; leadPane?: unknown; archivedAt?: unknown }
@@ -56,7 +56,7 @@ function planCards(cards: unknown): DetailPlan[] {
 }
 
 // pane id → 'agent'(그 계획서를 하는 에이전트 pane) | 'lead'(그 계획서를 맡긴 아테나 pane). 둘 다면 agent
-// panes: 일감 /api/state panes — role 'hermes'(본체 루트에서 도는 claude · 위임 이름표 없음 — 일감 readPanes)는
+// panes: 현황판 /api/state panes — role 'hermes'(본체 루트에서 도는 claude · 위임 이름표 없음 — 현황판 readPanes)는
 // 아테나 pane 이라 맡긴 일이 지금 없어도(다 끝나 보관돼 카드에서 빠져도) 'lead' 로 둔다
 export function bindings(cards: unknown, panes: unknown = []): Record<string, 'agent' | 'lead'> {
   const result: Record<string, 'agent' | 'lead'> = {}
@@ -83,14 +83,14 @@ export function agentPlan(cards: unknown, paneId: string): DetailPlan | null {
 }
 
 const sameDay = (left: number, right: number): boolean => new Date(left).toDateString() === new Date(right).toDateString()
-// 보관 시각(일감 archive.mjs — 'YYYY-MM-DD HH:MM' 서울 시각) → ms
+// 보관 시각(현황판 archive.mjs — 'YYYY-MM-DD HH:MM' 서울 시각) → ms
 const archivedMs = (value: unknown): number => {
   const match = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2})/)
   return match ? Date.parse(`${match[1]}-${match[2]}-${match[3]}T${match[4]}:${match[5]}:00+09:00`) : 0
 }
 
 // 아테나 pane 이 맡긴 일 — 계획서마다 한 줄: 나를 기다림(wait) · 지금(now) · 끝남(done — 오늘 끝난 것과 오늘 보관한 것)
-// panes: 일감 /api/state panes(에이전트 이름) · since: pane id → 지금 상태가 된 시각(ms) · waitingPlans: 열린 요청이 있는 계획서 id
+// panes: 현황판 /api/state panes(에이전트 이름) · since: pane id → 지금 상태가 된 시각(ms) · waitingPlans: 열린 요청이 있는 계획서 id
 export function leadRows(cards: unknown, history: unknown, paneId: string, { panes = [], since = {}, status = {}, waitingPlans = new Set(), now = Date.now() }: LeadOptions = {}): LeadRow[] {
   const rows: LeadRow[] = []
   const seen = new Set<string | undefined>()
@@ -241,8 +241,8 @@ export function planRecord(text: unknown) {
   }
 }
 
-// [상세] 의 계획서 칸 — 계획서 원문 줄(record) 위에 일감 카드 값을 얹는다.
-// 제목은 원문 제목이 비면(원문을 못 읽었거나 # 줄이 없으면) 일감 카드 제목으로 — 펼치기 뒤에 두어 원문의 빈 제목이 덮지 않게 한다
+// [상세] 의 계획서 칸 — 계획서 원문 줄(record) 위에 현황판 카드 값을 얹는다.
+// 제목은 원문 제목이 비면(원문을 못 읽었거나 # 줄이 없으면) 현황판 카드 제목으로 — 펼치기 뒤에 두어 원문의 빈 제목이 덮지 않게 한다
 export function detailPlan(plan: DetailPlan & { html?: string; created?: unknown }, record: ReturnType<typeof planRecord>, readable: boolean) {
   return { ...record, id: plan.id, html: plan.html || null, title: record.title || plan.title || '', created: Number(plan.created) || 0, readable }
 }

@@ -98,7 +98,7 @@ A=/tmp/archify/archify
 for k in flow-light flow-formal compact; do
   node $A/bin/archify.mjs validate workflow docs/diagrams/athena-$k.workflow.json --quality standard --json
   node $A/bin/archify.mjs deliver  workflow docs/diagrams/athena-$k.workflow.json docs/diagrams/athena-$k.html --quality standard --json
-  node scripts/diagram-theme.mjs docs/diagrams/athena-$k.html   # 아테나 테마(한글 글꼴 · 일감 색) — deliver 할 때마다
+  node scripts/diagram-theme.mjs docs/diagrams/athena-$k.html   # 아테나 테마(한글 글꼴 · 현황판 색) — deliver 할 때마다
 done
 
 # 레포 구조 (architecture) — sources 를 쓰므로 --repo-root 가 필요하다
@@ -109,7 +109,7 @@ node $A/bin/archify.mjs deliver  architecture docs/diagrams/<서비스>.architec
 node scripts/diagram-theme.mjs docs/diagrams/<서비스>.html
 ```
 
-**테마**: archify 결과에 `scripts/diagram-theme.css` 를 덧씌운다(`scripts/diagram-theme.mjs` — 고정폭 대신 한글 본문 글꼴 · 일감과 같은 색 · 조금 큰 글자 · 둥근 상자). archify 의 배치 · 확대 · 검색 · 내보내기는 그대로이고, 여러 번 입혀도 같다. 다시 deliver 하면 테마가 빠지니 deliver 할 때마다 입힌다
+**테마**: archify 결과에 `scripts/diagram-theme.css` 를 덧씌운다(`scripts/diagram-theme.mjs` — 고정폭 대신 한글 본문 글꼴 · 현황판과 같은 색 · 조금 큰 글자 · 둥근 상자). archify 의 배치 · 확대 · 검색 · 내보내기는 그대로이고, 여러 번 입혀도 같다. 다시 deliver 하면 테마가 빠지니 deliver 할 때마다 입힌다
 
 **근거 점검**: `node scripts/check-diagrams.mjs` 가 고정 커밋과 운영 기준 ref 를 비교해 경로 변경·줄 이동·운영에 없는 커밋을 알려준다. `/sync` 3.5단계에서 돈다.
 

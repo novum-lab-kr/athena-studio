@@ -195,7 +195,7 @@ declare global {
     // 에이전트 모니터 — 보일 때만 main 이 따라 읽는다(src/main/agent-monitor.mts setMonitorWatch · monitor:update). 돌려준 함수는 듣기 그만
     monitorWatch(on: boolean): void
     onMonitorUpdate(callback: (update: import('./ui/monitor.tsx').MonitorUpdate) => void): () => void
-    // 일감을 기본 브라우저로(src/main/work.mts openBoardExternal) · 지금 탭 알리기(ui:tab — 답 없음)
+    // 현황판을 기본 브라우저로(src/main/work.mts openBoardExternal) · 지금 탭 알리기(ui:tab — 답 없음)
     openBoard(): Promise<{ ok: boolean }>
     reportTab(tab: string): void
 
@@ -291,7 +291,7 @@ declare global {
     workDetail(id: string): Promise<WorkDetailReply>
     // 트레이에서 요청을 누르면(src/main/tray.mts openRequestFromTray) — id 가 없으면 [작업] 팝업
     onWorkOpen(callback: (id: string | null) => void): () => void
-    // 일감 페이지 메뉴(work.mts openBoardSection · openDiagrams)
+    // 현황판 페이지 메뉴(work.mts openBoardSection · openDiagrams)
     openBoardSection(section: string): Promise<unknown>
     openDiagrams(): Promise<{ ok: boolean; error?: string; message?: string }>
     // pane [상세] 아이콘을 달 pane(src/main/pane-watch.mts paneBound — lib/pane-detail.mts bindings)

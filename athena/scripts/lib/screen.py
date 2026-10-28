@@ -7,9 +7,9 @@
   1. ATHENA_SCREEN=studio|none                      → 그 값(회귀 검사 · 한 번만 바꿀 때 · auto 면 다음으로)
   2. ATHENA_STUDIO=1(Studio pane 안)                → studio
   3. 이 아테나 폴더의 athena.config.json "screen"(studio·none — pane 밖에서만 쓰인다. auto · 모르는 값이면 다음으로)
-  4. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 일감 · 일반 터미널)
+  4. Studio 데몬 접속 파일(~/.athena-studio/daemon.json — pid·소켓이 살아 있을 때) → studio   (pane 밖 현황판 · 일반 터미널)
   5. 그 밖                                           → none
-  pane 밖이어도 백엔드는 골라진다(plan-html 의 pane current · 일감의 pane list).
+  pane 밖이어도 백엔드는 골라진다(plan-html 의 pane current · 현황판의 pane list).
   "pane 안인가" 는 inside() 가 따로 답한다(studio: ATHENA_STUDIO=1 + 데몬 CLI).
 
 납작한 JSON(백엔드 모양을 감춘다 — id 는 불투명한 문자열, 부르는 쪽이 id 를 쪼개 읽지 않는다):
@@ -101,7 +101,7 @@ class NoneBackend(Backend):
 
 def _studio_endpoint():
     """Athena Studio 데몬 접속 파일(~/.athena-studio/daemon.json — 데몬이 쓴다: socket · cli · node · pid).
-    pane 밖(앱이 띄우지 않은 일감 · 일반 터미널)에서 studio 를 알아보는 데 쓴다. 데몬이 죽고 파일만 남았으면 없는 것으로 친다
+    pane 밖(앱이 띄우지 않은 현황판 · 일반 터미널)에서 studio 를 알아보는 데 쓴다. 데몬이 죽고 파일만 남았으면 없는 것으로 친다
     (pid 가 없거나 소켓이 없으면) — 낡은 파일 하나로 없는 데몬을 부르지 않게. ATHENA_STUDIO_ENDPOINT 로 자리를 바꿀 수 있다(회귀 검사용)"""
     path = os.environ.get('ATHENA_STUDIO_ENDPOINT') or os.path.join(os.path.expanduser('~'), '.athena-studio', 'daemon.json')
     try:

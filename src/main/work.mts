@@ -1,7 +1,7 @@
-// ── 일감 · 사람에게 묻는 요청 · [작업] 팝업 — 팩 창 ──────────────────
-// main.js createPackWindow 에서 옮겼다(PR3f) — 화면 문구(say) · 코어 명령(runCore · runPack) · 일감 띄우기 · 끄기(startBoard · stopStaleBoard) ·
+// ── 현황판 · 사람에게 묻는 요청 · [작업] 팝업 — 팩 창 ──────────────────
+// main.js createPackWindow 에서 옮겼다(PR3f) — 화면 문구(say) · 코어 명령(runCore · runPack) · 현황판 띄우기 · 끄기(startBoard · stopStaleBoard) ·
 // 메뉴 막대 알리기(trayRequestsChanged) · 앱 설정(appConfig · saveAppConfig)은 인자로 받는다.
-// 이 창 일감 포트(packBoardPort)와 요청 목록(requestsState)은 main.mts 의 창 변수 그대로 — 데몬 연결 · pane [상세] · 팩 바꾸기도 읽고 쓴다(읽기 · 쓰기 함수로 받는다).
+// 이 창 현황판 포트(packBoardPort)와 요청 목록(requestsState)은 main.mts 의 창 변수 그대로 — 데몬 연결 · pane [상세] · 팩 바꾸기도 읽고 쓴다(읽기 · 쓰기 함수로 받는다).
 // ctx 에 같은 이름(boardPortNow · openBoardExternal · ensureBoard · refreshRequests · requestsNow · stopRequests · watchRequests · workState ·
 // answerRequest · redeliverRequest · openPlan · openBoardSection · openDiagrams · workDetail · prepareBoardPort)으로 붙인다
 import fs from 'node:fs'
@@ -20,14 +20,14 @@ import type { StudioRequest } from '../lib/requests.mts'
 
 export type RequestsState = { supported: boolean; requests: StudioRequest[] }
 type RunCore = (args: string[], options: RunCoreOptions) => Promise<PackResult>
-// 일감을 찾거나 띄운 결과(ensureBoard) — 성공 · 실패 모두 url, 실패면 error(띄우다 실패했으면 log 도)
+// 현황판을 찾거나 띄운 결과(ensureBoard) — 성공 · 실패 모두 url, 실패면 error(띄우다 실패했으면 log 도)
 type BoardResult = { ok: boolean; url: string; started?: boolean; error?: string; log?: string }
-// 일감 /api/state · /api/card 에서 읽는 칸만
+// 현황판 /api/state · /api/card 에서 읽는 칸만
 type BoardState = { cards?: unknown }
 type BoardCard = { text?: unknown }
 type PaneListReply = { result?: { panes?: unknown } }
 
-// 팩 창 문맥(main.mts createPackWindow) 중 일감 · 요청 · [작업] 이 읽는 것 · 붙이는 것
+// 팩 창 문맥(main.mts createPackWindow) 중 현황판 · 요청 · [작업] 이 읽는 것 · 붙이는 것
 export type WorkCtx = {
   athenaDir: string | null
   win: BrowserWindow | null
@@ -76,12 +76,12 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   const refreshRequests = () => (ctx.refreshRequests as NonNullable<WorkCtx['refreshRequests']>)()
   const openBoardExternal = () => (ctx.openBoardExternal as NonNullable<WorkCtx['openBoardExternal']>)()
 
-  // ── 일감 ──
-  // 지금 일감 포트 — 팩 지원 본체면 본체가 정한 값(pack status · 본체마다 다르다), 옛 본체면 앱 설정
+  // ── 현황판 ──
+  // 지금 현황판 포트 — 팩 지원 본체면 본체가 정한 값(pack status · 본체마다 다르다), 옛 본체면 앱 설정
   const boardPortNow = () => packBoardPort() || appConfig().boardPort
   ctx.boardPortNow = boardPortNow
 
-  // 일감을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
+  // 현황판을 띄우거나(이미 떠 있으면 그대로) 기본 브라우저로 연다 — 못 열면 이 창에 알린다
   ctx.openBoardExternal = async () => {
     const result = await ensureBoard()
     if (result.ok) {
@@ -101,7 +101,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   }
 
   // ── 사람에게 묻는 요청 · [작업] 팝업 데이터 ──
-  // 요청은 코어 명령(request list)으로 읽는다 — 일감이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
+  // 요청은 코어 명령(request list)으로 읽는다 — 현황판이 꺼져 있어도 센다. 요청 폴더(팩 데이터 state/requests · 옛 구조 .requests)가
   // 바뀌면 바로, 놓칠 때를 대비해 REQUESTS_POLL_MS 마다. request 명령이 없는 옛 코어면 supported:false(요청 없음)
   let requestsWatch: fs.FSWatcher | null = null
   let requestsTimer: NodeJS.Timeout | undefined
@@ -176,7 +176,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     refreshRequests()
   }
 
-  // [작업] 팝업 — 일감을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
+  // [작업] 팝업 — 현황판을 띄우고(이미 떠 있으면 그대로) 카드를 읽어 목록으로. 요청은 그때 한 번 더 읽는다
   ctx.workState = async () => {
     const board = await ensureBoard()
     const state = board.ok ? ((await fetchBoardJson(boardPortNow(), '/api/state')) as BoardState | null) : null
@@ -221,7 +221,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!known || !known.answer) return { ok: false, error: 'not-found' }
     return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer as { choice?: unknown; text?: unknown })) }
   }
-  // 계획서 열기 — 결정 콘솔(html)이 있으면 일감 주소로 브라우저에, 없으면 md 를 기본 앱으로
+  // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소로 브라우저에, 없으면 md 를 기본 앱으로
   ctx.openPlan = async (id: string, html: string | null) => {
     const safe = (value: unknown, ext: string): value is string => typeof value === 'string' && value.startsWith('plans/') && value.endsWith(ext) && !value.split('/').includes('..')
     if (safe(html, '.html')) {
@@ -231,7 +231,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
     return null
   }
-  // 일감 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 일감 탭 이름을 주소 끝 #<탭> 으로
+  // 현황판 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 현황판 탭 이름을 주소 끝 #<탭> 으로
   const BOARD_SECTIONS = ['now', 'qa', 'learn', 'metrics', 'history']
   ctx.openBoardSection = async (section: string) => {
     const result = await ensureBoard()
@@ -247,7 +247,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
   }
 
-  // 작업 상세 — 계획서 원문(일감 /api/card)에서 몇 줄만. plans/ 안의 .md 만
+  // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
   ctx.workDetail = async (id: string) => {
     if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
     const card = (await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)) as BoardCard | null
@@ -255,7 +255,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     return { ok: true, id, ...workModel.planDetail(card.text) }
   }
 
-  // 일감은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 일감 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
+  // 현황판은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.
   // 팩 지원 본체면 포트는 본체가 정하니 읽기만 하고 본체 설정에 쓰지 않는다(setAthenaBoardPort 는 옛 본체에서만)
   ctx.prepareBoardPort = () => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return
@@ -266,7 +266,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     }).catch(() => {})
   }
 
-  // 옛 본체 — 저장된 포트부터 차례로. 이 아테나 폴더에서 도는 일감이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것이 쥐고 있으면 다음 번호
+  // 옛 본체 — 저장된 포트부터 차례로. 이 아테나 폴더에서 도는 현황판이면 그대로 쓰고, 비었으면 거기 띄우고, 다른 것이 쥐고 있으면 다음 번호
   async function findBoardPort(dir: string): Promise<{ error: string } | { port: number; owner: 'ours' | 'free' }> {
     const ports = core.boardPortCandidates(appConfig().boardPort)
     for (const port of ports) {
@@ -283,22 +283,22 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
 
   async function findOrStartBoard(dir: string): Promise<BoardResult> {
     const result = await findOrStartBoardFor(dir)
-    // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 일감을 보여 주지 않는다
+    // 띄우거나 기다리는 사이 아테나 폴더가 바뀌었으면 예전 폴더의 현황판을 보여 주지 않는다
     if (ctx.athenaDir !== dir) return { ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirChangedReload', { key: reloadKey() }) }
     return result
   }
 
-  // 팩 지원 본체인지 · 일감 포트 — pack status(가볍다). 옛 본체면 null
+  // 팩 지원 본체인지 · 현황판 포트 — pack status(가볍다). 옛 본체면 null
   async function refreshPackStatus(dir: string): Promise<{ boardPort: number; current: { id?: unknown; generation?: unknown } | null } | null> {
     const status = await runPack(['status'], { dir })
     setPackBoardPort(packModel.statusBoardPort(status))
     const port = packBoardPort()
-    // current 도 같이 — 일감 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 일감을 끄지 않게)
+    // current 도 같이 — 현황판 판단은 방금 읽은 이 값으로(목록을 못 읽었거나 시작 직후에도 멀쩡한 현황판을 끄지 않게)
     return port ? { boardPort: port, current: (status.current as { id?: unknown; generation?: unknown } | undefined) || null } : null
   }
 
-  // 팩 지원 본체의 일감 — 포트는 본체가 정한다(본체 하나에 일감 하나). 떠 있는 일감이 이 본체 팩 · 세대 것이면
-  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 일감이 아닌 것이 쥐고 있으면 오류
+  // 팩 지원 본체의 현황판 — 포트는 본체가 정한다(본체 하나에 현황판 하나). 떠 있는 현황판이 이 본체 팩 · 세대 것이면
+  // 누가 띄웠든(board.sh · 스튜디오) 같이 쓰고, 다른 팩 것이면 토큰으로 끄고 다시 띄운다. 그 포트를 현황판이 아닌 것이 쥐고 있으면 오류
   async function packBoard(port: number, dir: string, current: { id?: unknown; generation?: unknown } | null): Promise<BoardResult> {
     const url = core.boardUrl(port)
     if (await isBoardUp(port)) {

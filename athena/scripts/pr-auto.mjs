@@ -6,8 +6,8 @@
  *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run]
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
- *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 일감이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
- *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(일감이 5분마다)
+ *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
+ *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
  *   node scripts/pr-auto.mjs --watch     뒤에서 돈다 — 대기열을 차례로 · 머지 확인 답을 30초마다 본다. 처리기는 하나만
  *
  * 안전
@@ -388,7 +388,7 @@ const ask = (planFile, { key, title, body, options = [] }) => {
 // 고를 것이 없는 상태 알림(상한 멈춤 · 일부만 승인 · 합의 못 냄 · 수정 지시 보낼 pane 없음 · 검증 못 함 · 머지 못 함) —
 // 요청(작업 알림 · [작업] 팝업 · 확인 필요)으로 열지 않고 아테나 pane 에 한 줄로 보낸다. 아테나가 이어받는다(사람에게 되묻지 않는다 · 2026-10-28 사용자).
 // 요청은 사람이 고를 것이 있는 것만 — 머지 확인(머지/보류) · 결정 필요(결정 콘솔).
-// 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 일감 readPanes 와 같은 기준).
+// 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 현황판 readPanes 와 같은 기준).
 // 둘 다 없거나 못 보내면 지금처럼 요청으로 남긴다. 같은 key 로 같은 글(같은 HEAD · 제목)을 이미 보냈으면 다시 보내지 않는다
 // 이름이 .json 으로 끝나면 안 된다 — 처리기(watch)와 --kick 이 QUEUE_DIR 의 *.json 을 리뷰 작업으로 본다(PR #103 자동 리뷰 라운드 2)
 const NOTIFIED_FILE = join(QUEUE_DIR, '.notified')
@@ -436,8 +436,8 @@ const readNotice = (file) => {
   try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
 }
 // 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · Enter 만 실패) · 'failed'(글을 못 썼다).
-// 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 일감 pane-delivery 와 같은 판정 menuOpen).
-// 화면을 못 읽으면(null) 창 여부를 모르니 일감처럼 바로 넣는다. 글 → Enter 두 단계 — 글만 들어갔으면(typed) 다음에 Enter 부터
+// 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 현황판 pane-delivery 와 같은 판정 menuOpen).
+// 화면을 못 읽으면(null) 창 여부를 모르니 현황판처럼 바로 넣는다. 글 → Enter 두 단계 — 글만 들어갔으면(typed) 다음에 Enter 부터
 const deliverNotice = async (pane, notice, file = '') => {
   if (menuOpen(await screenText(['pane', 'read', pane, '--lines', '40']))) return 'wait'
   if (!notice.typed) {
@@ -919,7 +919,7 @@ const enqueue = (planArg, prArg, head) => {
   }
   mkdirSync(QUEUE_DIR, { recursive: true })
   const digest = createHash('sha1').update(`${planArg}\n${prArg}\n${head}`).digest('hex').slice(0, 8)
-  // 같은 계획서 · PR · HEAD 는 한 번만 — ship.sh(push 직후)와 일감(5분 안전망)이 둘 다 넣어도 겹치지 않게.
+  // 같은 계획서 · PR · HEAD 는 한 번만 — ship.sh(push 직후)와 현황판(5분 안전망)이 둘 다 넣어도 겹치지 않게.
   // 대기 · 처리 중이면 여기서 막고, 끝났으면 처리기(하나 · 차례로)가 계획서 "- Auto review:" 줄(needsReview)로 건너뛴다
   if (readdirSync(QUEUE_DIR).some((file) => file.includes(`-${digest}`) && /\.json(\.working)?$/.test(file))) return console.log('🤖 이미 자동 리뷰 대기열에 있다')
   writeFileSync(join(QUEUE_DIR, `${Date.now()}-${digest}.json`), JSON.stringify({ plan: planArg, pr: prArg, head, root: REAL_ROOT, packId: BOOT_PATHS.packId }))
@@ -978,7 +978,7 @@ const watch = async () => {
       if (foreign) throw new Error(`다른 체크아웃(${job.root})의 일이다`)
       await handle(job.plan, job.pr, { head: job.head })
     } catch (error) {
-      // 다시 돌리지 않는다 — 같은 HEAD 는 일감이 다시 넣지 않으니 failed/ 에 이유와 함께 남긴다(사람이 보고 대기열로 옮기면 다시)
+      // 다시 돌리지 않는다 — 같은 HEAD 는 현황판이 다시 넣지 않으니 failed/ 에 이유와 함께 남긴다(사람이 보고 대기열로 옮기면 다시)
       console.log(`  ⚠️ ${error.message}`)
       mkdirSync(FAILED_DIR, { recursive: true })
       writeFileSync(join(FAILED_DIR, next), JSON.stringify({ ...job, failedAt: new Date().toISOString(), lastError: masked(error.message) }, null, 2))

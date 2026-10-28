@@ -149,7 +149,7 @@ for (const entry of wanted) {
     timeoutMs: 30000,
     profiles: {
       logout: { session: null, note: '로그인 안 한 상태' },
-      ...(signIn ? { login: { session: 'login', note: '로그인한 상태 — 일감 QA 탭에서 로그인' } } : {})
+      ...(signIn ? { login: { session: 'login', note: '로그인한 상태 — 현황판 QA 탭에서 로그인' } } : {})
     },
     routes: Object.fromEntries(dynamic.map((screen) => [screen.route, { samples: [], note: '동적 라우트 — samples 에 실제 주소를 적어 주세요' }]))
   }

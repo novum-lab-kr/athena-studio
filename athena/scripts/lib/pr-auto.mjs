@@ -1,4 +1,4 @@
-// PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs)의 순수 로직 — 일감(감지)과 자동 흐름이 같이 쓴다. 파일 · 네트워크를 건드리지 않는다
+// PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs)의 순수 로직 — 현황판(감지)과 자동 흐름이 같이 쓴다. 파일 · 네트워크를 건드리지 않는다
 //
 //   계획서 표시 줄(PR 마다 한 줄 · 바꿔 쓴다)
 //     - Auto review: <레포>#<번호> @<sha7> · <결과> · 라운드 <k>/<상한> · <YYYY-MM-DD HH:MM>
@@ -261,7 +261,7 @@ export const withPendingDecisionLine = (planText, entry) => {
 }
 export const withoutPendingDecisionLine = (planText, repo, number) => String(planText).split('\n').filter((row) => !isPendingRow(row, repo, number)).join('\n')
 
-// 이 HEAD 를 자동 흐름이 다시 봐야 하나 — 일감 감지 · 대기열이 같이 쓴다
+// 이 HEAD 를 자동 흐름이 다시 봐야 하나 — 현황판 감지 · 대기열이 같이 쓴다
 export const needsReview = (planText, repo, number, headSha) => {
   const known = autoLines(planText).get(`${repo}#${number}`)
   if (!known) return true
@@ -269,15 +269,15 @@ export const needsReview = (planText, repo, number, headSha) => {
   if (known.result.startsWith(BODY_EDITED)) return true
   return !String(headSha).startsWith(known.sha)
 }
-// ── 대상 계획서 Status — ship.sh(push 직후) · 일감(안전망)이 같이 쓴다 ─────────────
+// ── 대상 계획서 Status — ship.sh(push 직후) · 현황판(안전망)이 같이 쓴다 ─────────────
 // 진행 중 · 리뷰면 그대로 대상. 완료(done) · 계획(planned)이면 이어 올린 PR 이다 — Status 를 ready_for_review 로 되돌린 뒤 대상으로
 // (2026-10-26 PR #28 재현 — #27 머지로 done 이 된 계획서에서 추가 요청의 새 PR 이 대기열에 안 들어갔다. 에이전트가 요청마다 in_progress 로 되돌리기를 놓쳐도 막히지 않게).
-// 되돌리면 일감 카드 · 머지 뒤 자동 done 이 그대로 돈다. 막힘(blocked)은 사람이 풀 때까지 대상 아님 — 풀면(in_progress · ready_for_review) 일감이 잡는다
+// 되돌리면 현황판 카드 · 머지 뒤 자동 done 이 그대로 돈다. 막힘(blocked)은 사람이 풀 때까지 대상 아님 — 풀면(in_progress · ready_for_review) 현황판이 잡는다
 export const AUTO_REVIEW_STATUSES = ['in_progress', 'ready_for_review']
 export const REOPEN_STATUSES = ['done', 'planned']
 export const REOPEN_STATUS = 'ready_for_review'
 const STATUS_WORD = /planned|in_progress|blocked|ready_for_review|done/
-// 계획서 Checkpoint 의 Status 값(일감 readPlan 과 같은 읽기 — ** · ` 는 걷고 첫 상태 낱말)
+// 계획서 Checkpoint 의 Status 값(현황판 readPlan 과 같은 읽기 — ** · ` 는 걷고 첫 상태 낱말)
 export const planStatusOf = (planText) => {
   const raw = String(planText ?? '').match(/^-\s*Status:\s*(.+)$/m)?.[1] ?? ''
   return raw.replace(/[*`]/g, '').match(STATUS_WORD)?.[0] ?? ''
@@ -298,7 +298,7 @@ export const reopenedPlan = (planText, { note, stamp, by }) => {
 }
 
 // 계획서 잠금 안에서 부른다 — 지금 내용(최신 Status)으로 다시 판정하고, 되돌릴 때만 바꾼 글을 준다.
-// 일감이 PR 을 조회하는 사이 사람이 blocked 로 옮겼으면 skip(상태도 대기열도 건드리지 않는다 · PR #29 자동 리뷰 지적).
+// 현황판이 PR 을 조회하는 사이 사람이 blocked 로 옮겼으면 skip(상태도 대기열도 건드리지 않는다 · PR #29 자동 리뷰 지적).
 // 되돌리기는 레포 하나짜리 계획서만 — 여러 레포 작업은 사람이 올린다
 // → { action: 'review' | 'reopened' | 'skip', text }
 export const claimAutoReview = (planText, { config, repoName, number, stamp, by }) => {

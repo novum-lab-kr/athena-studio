@@ -5,7 +5,7 @@ const os = require('os')
 const path = require('path')
 const board = require('../src/main/board.mts')
 
-// 앱이 띄운 일감은 pane 밖에서 화면 계층으로 pane 목록을 읽는다 — 접속 파일 자리를 넘겨야 개발판(daemon-dev.json)에서도 studio 가 골라진다
+// 앱이 띄운 현황판은 pane 밖에서 화면 계층으로 pane 목록을 읽는다 — 접속 파일 자리를 넘겨야 개발판(daemon-dev.json)에서도 studio 가 골라진다
 test('boardEnvExtra 는 데몬 소켓 · 접속 파일 · CLI · 본체 자리를 넘긴다', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-studio-'))
   const paths = { socket: '/s/daemon.sock', endpoint: '/h/.athena-studio/daemon-dev.json' }

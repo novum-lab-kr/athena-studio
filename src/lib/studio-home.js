@@ -72,7 +72,7 @@ function coreBundlePath(options) {
   return path.join(/** @type {string} */ (resourcesDir(options)), CORE_BUNDLE_NAME)
 }
 
-// 스튜디오 데이터의 일감 포트 기준(코어 레지스트리 portBase)
+// 스튜디오 데이터의 현황판 포트 기준(코어 레지스트리 portBase)
 const STUDIO_PORT_BASE = 4800
 
 // ── git ──
@@ -385,7 +385,7 @@ function panesState({ panes, pids, waiting = [], now = new Date() }) {
 }
 
 // ── 초기화(메뉴 보기 › 스튜디오 초기화) — 처음 켠 것처럼 ──
-// 끌 일감(코어 + 팩마다)과 지울 자리. 스튜디오 집 안 것만 — 회사 레포 클론(홈 아래)은 건드리지 않는다
+// 끌 현황판(코어 + 팩마다)과 지울 자리. 스튜디오 집 안 것만 — 회사 레포 클론(홈 아래)은 건드리지 않는다
 /** @param {Layout} layout */
 function resetPlan(layout) {
   const registry = readJson(path.join(layout.data, 'config.json')) || {}

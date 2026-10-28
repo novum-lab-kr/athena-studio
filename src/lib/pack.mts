@@ -181,7 +181,7 @@ export function iconMime(head: unknown): string | null {
   return null
 }
 
-// pack status 의 일감 포트 — 본체가 정한다(5.3: ATHENA_BOARD_PORT → 본체 설정 boardPort → 4700). 없거나 이상하면 null(옛 본체 — 앱 설정으로)
+// pack status 의 현황판 포트 — 본체가 정한다(5.3: ATHENA_BOARD_PORT → 본체 설정 boardPort → 4700). 없거나 이상하면 null(옛 본체 — 앱 설정으로)
 export function statusBoardPort(result: PackResult | null | undefined): number | null {
   const port = result && result.ok === true ? result.boardPort : null
   return typeof port === 'number' && Number.isInteger(port) && port > 0 && port < 65536 ? port : null
@@ -216,7 +216,7 @@ export function recentPacks(list: { packs?: unknown; current?: { id?: unknown } 
   return sorted.slice(0, limit).map((pack) => ({ id: pack.id, name: packLabel(pack), repos: pack.repos, updatedAt: pack.updatedAt || null, current: pack.id === currentId }))
 }
 
-// 일감 /api/state 의 pack 이 지금 팩 · 세대와 같은가 — legacy(옛 본체 · pack 없음) · current · stale
+// 현황판 /api/state 의 pack 이 지금 팩 · 세대와 같은가 — legacy(옛 본체 · pack 없음) · current · stale
 export function boardIdentity(boardState: { pack?: unknown } | null | undefined, current: { id?: unknown; generation?: unknown } | null | undefined): 'legacy' | 'current' | 'stale' {
   const pack = boardState && boardState.pack
   if (!pack || typeof pack !== 'object') return 'legacy'

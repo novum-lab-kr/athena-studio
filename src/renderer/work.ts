@@ -1,4 +1,4 @@
-// 탭 줄 팝업 껍데기 — [작업](요청 수 점 · 열기 · 닫기 · 작업 상세) · 일감 페이지 메뉴 · ⚙ 설정 · 답 전달 알림 · 이벤트 묶기(initWork)
+// 탭 줄 팝업 껍데기 — [작업](요청 수 점 · 열기 · 닫기 · 작업 상세) · 현황판 페이지 메뉴 · ⚙ 설정 · 답 전달 알림 · 이벤트 묶기(initWork)
 // renderer.js 에서 옮김(R3d · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. 몸통은 React(ui/work-pop.tsx · ui/settings-pop.tsx)
 import { $, el, say, showToast, state } from './core.ts'
 import { packDialog, packLabel, packs } from './pack-dialogs.ts'
@@ -7,9 +7,9 @@ import { welcomeShown } from './pack-switch.ts'
 import { backPaneDetail, closePaneDetail, detailPane, goToPane, openRequest, paneLive, setPaneBound, syncDetailButtons } from './detail.ts'
 import { StudioUi } from './ui/index.ts'
 
-// ── [작업] 팝업 · 일감 페이지 메뉴 ────────────────────────────
+// ── [작업] 팝업 · 현황판 페이지 메뉴 ────────────────────────────
 // 칸반 대신 탭 줄 [작업] — 나를 기다리는 것(사람에게 묻는 요청) · 진행 중 · 최근 끝난 것. 작업을 누르면 상세, 질문을 누르면 앱 안에서 바로 답한다.
-// 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(일감을 띄운다)
+// 요청 수는 main 이 요청 폴더를 보다가 바뀔 때 알린다(onWorkRequests) · 목록 전체는 팝업을 열 때 읽는다(현황판을 띄운다)
 export let workRequests: WorkRequestsState = { supported: false, requests: [] }
 let workData: WorkView | null = null // 마지막으로 읽은 목록(workGet) — 진행 중 숫자
 

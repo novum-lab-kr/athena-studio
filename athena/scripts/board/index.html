@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>일감</title>
+<title>현황판</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <style>
   :root {
@@ -265,7 +265,7 @@
   /* QA 탭 */
   .qa-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
   .qa-top .sub { color: var(--muted); font-size: 12px; flex: 1 1 260px; }
-  /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 일감 색을 쓴다 */
+  /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 현황판 색을 쓴다 */
   .qa-top select, .tc-filter select { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); }
   .qa-top select option, .tc-filter select option { background: var(--panel); color: var(--text); }
   .qa-warn { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--warn); }
@@ -368,7 +368,7 @@
 </head>
 <body>
 <header>
-  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span>일감
+  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span>현황판
     <span class="tip" role="tooltip"><span id="live-state"></span><span id="updated"></span><span id="sync"></span></span></h1>
   <nav class="tabs" role="tablist" aria-label="보기">
     <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
@@ -585,7 +585,7 @@
   // 카드 상태별 액션 — 아테나에게 보낼 지시문 초안. 보내기 전에 창에서 고칠 수 있다
   // 이슈 [작업 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
   const INVESTIGATE = (card) => `${card.id} 이슈를 맡는다. 순서대로 한다: ① git status --short --branch 로 담당 레포의 현재 브랜치·미커밋 변경을 먼저 보고한다(체크아웃·stash 하지 않는다) ② 이슈의 근거를 기준 ref 에서 git show·ls-tree 로 확인한다 ③ ${card.type === 'check' ? '확인 결과를 이슈 파일 끝에 "## 확인 결과 (날짜 · 에이전트)" 절로 파일:줄 근거와 함께 적는다' : '원인과 고칠 범위를 정리해 보고한다 — 코드는 수정하지 않는다(계획서 승인 뒤 아테나가 브랜치를 만들어 다시 맡긴다)'}. 이슈 파일 말고는 수정하지 않는다. 커밋하지 않는다.`;
-  // [QA 실행] — 아테나·에이전트를 거치지 않고 일감 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
+  // [QA 실행] — 아테나·에이전트를 거치지 않고 현황판 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
   const QA_ACTION = ['QA 실행', (card) => `영향 화면 QA 시뮬레이션을 돌려요.\n대상: ${card.workRef || '(Work ref 없음)'}\n바뀐 파일 → 영향 화면을 찾아 작업·기준 dev 서버로 데스크톱·모바일 검사 + 스크린샷 비교. 진행은 QA 탭에서 실시간으로 보여요.`, 'qa'];
   const ACTIONS = {
     issue: {
@@ -1041,7 +1041,7 @@
     box.innerHTML = `<div class="metric-groups">${groups}</div>`
       + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
       + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
-      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 일감이 켜져 있을 때만 기록</p></div>`;
+      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
   };
   document.getElementById('metrics-days').addEventListener('change', loadMetrics);
   // ── QA 탭 — .qa-runs/ 런 목록 + 런 하나의 화면 카드. 돌고 있는 동안만 1.5초마다 다시 읽는다
@@ -1734,7 +1734,7 @@
     });
   });
 
-  // 브라우저 기본 confirm 대신 일감 안의 확인 창 — 무엇이 남았는지 ✓/✗ 로 보여 준다
+  // 브라우저 기본 confirm 대신 현황판 안의 확인 창 — 무엇이 남았는지 ✓/✗ 로 보여 준다
   const askConfirm = ({ title, message = '', items = [], yes }) =>
     new Promise((resolve) => {
       const dialog = document.getElementById('confirm');
@@ -1804,7 +1804,7 @@
       // 받는 곳 안내는 이슈 팝업(route)이 채운다
     } else if (mode === 'qa') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      to.innerHTML = `→ <b>QA 시뮬레이션</b> (scripts/qa/run.mjs) 를 일감 서버가 뒤에서 돌려요 · 한 번에 하나 · 아테나는 거치지 않아요${card?.workRef ? `<br>워크트리 <code>${esc(card.workRef.split(' ')[0])}</code>` : ''}<br>아래 글은 안내라 고쳐도 보내지지 않아요`;
+      to.innerHTML = `→ <b>QA 시뮬레이션</b> (scripts/qa/run.mjs) 를 현황판 서버가 뒤에서 돌려요 · 한 번에 하나 · 아테나는 거치지 않아요${card?.workRef ? `<br>워크트리 <code>${esc(card.workRef.split(' ')[0])}</code>` : ''}<br>아래 글은 안내라 고쳐도 보내지지 않아요`;
     } else if (mode === 'review') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
       to.innerHTML = `→ <b>reviewer</b> 를 계획서의 담당 레포 workspace 에 새 pane 으로 띄워요${card?.workRef ? `<br>대상 <code>${esc(card.workRef)}</code>` : ''} · 아테나는 거치지 않아요`;

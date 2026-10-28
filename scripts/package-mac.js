@@ -113,7 +113,7 @@ function builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, 
     asar: false,
     // node-pty 는 N-API prebuild(darwin-arm64 · darwin-x64)를 들고 온다 — Electron 용으로 다시 컴파일하지 않는다(x64 를 arm64 맥에서 만들 때도)
     npmRebuild: false,
-    // 퓨즈 — RunAsNode 는 켜 둔다(데몬 · 데몬 CLI · 일감 · 코어 명령을 node 가 없으면 이 앱의 Electron 으로 ELECTRON_RUN_AS_NODE=1 로 돌린다).
+    // 퓨즈 — RunAsNode 는 켜 둔다(데몬 · 데몬 CLI · 현황판 · 코어 명령을 node 가 없으면 이 앱의 Electron 으로 ELECTRON_RUN_AS_NODE=1 로 돌린다).
     // 나머지는 이 앱이 쓰지 않는 바깥 손잡이라 끈다(NODE_OPTIONS · --inspect). asar 를 안 쓰니 asar 관련은 끈 채로
     electronFuses: {
       runAsNode: true,

@@ -159,12 +159,12 @@
   <p class="sub">이 폴더에서 <code>claude</code> 를 켜면 그 Claude 가 아테나가 된다. 아테나는 직접 코드를 고치지 않고 담당 에이전트에게 맡긴다.</p>
 
   <div class="flow">
-    <div class="step"><div class="dot">💬</div><div class="body"><b>요청</b><span>그냥 말하기 · <code>/call 에이전트</code> · 일감 이슈 카드 [작업 시작] — 세 갈래</span></div></div>
+    <div class="step"><div class="dot">💬</div><div class="body"><b>요청</b><span>그냥 말하기 · <code>/call 에이전트</code> · 현황판 이슈 카드 [작업 시작] — 세 갈래</span></div></div>
     <div class="step"><div class="dot">🧭</div><div class="body"><b>아테나가 레포를 고른다</b><span>팩 라우팅(<code>pack/ROUTING.md</code>) 규칙으로 고른다 · 같은 말이 여러 레포를 가리키면 되묻는다</span></div></div>
     <div class="step"><div class="dot">📋</div><div class="body"><b>계획서</b><span>작은 일은 경량(바로 진행) · 큰 일은 정식(결정 콘솔에서 고르고 [이대로 진행]) — 모든 일이 계획서 하나에 묶인다</span></div></div>
     <div class="step"><div class="dot">🌿</div><div class="body"><b>작업 브랜치</b><span>개발 브랜치에서 워크트리로 새로 딴다 — 메인 체크아웃은 건드리지 않는다</span></div></div>
     <div class="step"><div class="dot">🤖</div><div class="body"><b>담당 에이전트가 옆 pane 에서 작업</b><span>작업 → 검증 스크립트 → 리뷰(정식은 자동 · 경량은 "리뷰해줘") → "PR 올려줘"(커밋까지 한 번에)</span></div></div>
-    <div class="step"><div class="dot">📊</div><div class="body"><b>일감 <code>/board</code></b><span>서비스 · 정비 · QA · 학습 · 아카이브 — 진행 상황, PR 머지되면 자동 완료</span></div></div>
+    <div class="step"><div class="dot">📊</div><div class="body"><b>현황판 <code>/board</code></b><span>서비스 · 정비 · QA · 학습 · 아카이브 — 진행 상황, PR 머지되면 자동 완료</span></div></div>
     <div class="step learn"><div class="dot">📚</div><div class="body"><b>학습</b><span>작업하다 밟은 함정을 공책에 남겨 다음 작업이 읽는다 — 4절</span></div></div>
   </div>
 
@@ -201,7 +201,7 @@
 ├── plans/ · issues/          <span class="c">계획서 · 이슈 — 각자 로컬</span>
 ├── archive/                  <span class="c">끝나서 보관한 일 — git 으로 팀에</span>
 ├── repos/                    <span class="c">담당 레포 링크</span>
-└── scripts/                  <span class="c">계획서 · 브랜치 · 커밋/PR · 검증 · 일감 · 학습</span></pre>
+└── scripts/                  <span class="c">계획서 · 브랜치 · 커밋/PR · 검증 · 현황판 · 학습</span></pre>
 </section>
 
 <!-- 3 -->
@@ -235,7 +235,7 @@
   <div class="grid g3">
     <div class="card"><span class="tag ours">① 작업한 에이전트</span><p><b>언제</b> 작업 끝(PR 미리보기) · 사용자가 바로잡을 때 · 같은 오류 3번</p><p>그 자리에서 학습 후보를 올린다. 맥락을 가장 잘 안다.</p></div>
     <div class="card"><span class="tag ours">② 배우기 검토자</span><p><b>언제</b> 내 작업의 PR 이 머지되면 자동</p><p>계획서 · 대화 · 최종 코드 · 리뷰 댓글을 읽고 빠진 것을 보탠다. 머지 안 된 시도는 배우지 않는다.</p></div>
-    <div class="card"><span class="tag ours">③ 사람</span><p><b>언제</b> 아무 때나</p><p>일감 [학습] 탭에서 [넣기] · [고쳐서 넣기] · [버리기]. <b>넣어야만</b> 공책에 들어간다.</p></div>
+    <div class="card"><span class="tag ours">③ 사람</span><p><b>언제</b> 아무 때나</p><p>현황판 [학습] 탭에서 [넣기] · [고쳐서 넣기] · [버리기]. <b>넣어야만</b> 공책에 들어간다.</p></div>
   </div>
 
   <div class="card" style="margin-top:14px">
@@ -250,7 +250,7 @@
   </div>
 
   <h3 id="two" style="margin-top:28px;scroll-margin-top:16px">학습은 두 가지 — 저장 규정이 다르다</h3>
-  <p class="sub" style="margin-bottom:12px">일감 [학습] 탭이 둘로 나뉘는 이유. <b>아테나 학습</b>은 팀 공책에, <b>클로드 학습</b>은 내 컴퓨터의 Claude 메모리에 쌓인다. 둘 다 "아무거나 저장하지 않는다"가 원칙이지만, 지키는 방법이 다르다.</p>
+  <p class="sub" style="margin-bottom:12px">현황판 [학습] 탭이 둘로 나뉘는 이유. <b>아테나 학습</b>은 팀 공책에, <b>클로드 학습</b>은 내 컴퓨터의 Claude 메모리에 쌓인다. 둘 다 "아무거나 저장하지 않는다"가 원칙이지만, 지키는 방법이 다르다.</p>
   <div class="table-wrap">
     <table>
       <thead><tr><th></th><th class="ours">🧭 아테나 학습</th><th>🧠 클로드 학습</th></tr></thead>
@@ -344,7 +344,7 @@
     <div class="card"><h3>Hermes Agent 를 설치해야 하나요?</h3><p>아니요. 레포를 받고 <code>claude</code> 를 켜면 끝이다. 레포 연결도 알아서 한다.</p></div>
     <div class="card"><h3>그럼 "아테나"라고 불러도 되나요?</h3><p>우리 도구 이름이 아테나다. 다만 "Hermes Agent 를 도입했다"가 아니라 <b>"학습 구조를 참고했다"</b>가 맞다.</p></div>
     <div class="card"><h3>내가 배운 것이 팀에 바로 퍼지나요?</h3><p>[넣기] 후 "커밋해줘" 해서 main 에 올라가면 팀 전체가 다음 작업부터 읽는다. 그 전엔 내 컴퓨터에만 있다.</p></div>
-    <div class="card"><h3>잘못 배운 건 어떻게 지우나요?</h3><p>일감 [학습] 탭 → "학습한 내용"에서 고치거나 지운다. git 기록이 있어 되돌릴 수도 있다.</p></div>
+    <div class="card"><h3>잘못 배운 건 어떻게 지우나요?</h3><p>현황판 [학습] 탭 → "학습한 내용"에서 고치거나 지운다. git 기록이 있어 되돌릴 수도 있다.</p></div>
     <div class="card"><h3>내 말버릇·취향도 배우나요?</h3><p>공용 공책엔 안 들어간다. 그런 건 각자 Claude 메모리가 맡는다. 다만 메모리에도 <b>오래 유효한 운영 규칙만</b> 남긴다(<a href="#two">4절</a>). [학습] 탭 "클로드 학습"에서 본다.</p></div>
     <div class="card"><h3>더 자세히 보려면?</h3><p>시작하기 <code>/guide 시작하기</code> · 사용법 <code>/guide 열기</code> · 학습 기준 <code>docs/knowledge/common/learning.md</code></p></div>
   </div>

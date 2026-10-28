@@ -64,7 +64,7 @@ function requestMeta(say: Say, request: WorkRequest): string {
   return [request.state === 'answered' ? say('work.notDelivered') : '', request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · ')
 }
 
-// 일감이 꺼져 있으면 알림 한 줄 · 진행 중(비었으면 일감이 떠 있을 때만 "없어요") · 최근 끝난 것(있을 때만)
+// 현황판이 꺼져 있으면 알림 한 줄 · 진행 중(비었으면 현황판이 떠 있을 때만 "없어요") · 최근 끝난 것(있을 때만)
 function WorkLists({ data, say, actions }: { data: WorkData; say: Say; actions: WorkActions }) {
   return (
     <>

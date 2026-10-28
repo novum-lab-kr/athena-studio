@@ -2,7 +2,7 @@
  * QA 이력 리포트 — run.json 을 사람이 보는 HTML 로 만든다.
  *   .qa-runs/<런 id>/report.html  런 하나 (화면 카드 · 작업/기준/차이 스크린샷 · 문제 원문 · 영향 경로)
  *   .qa-runs/index.html           전체 이력 (최신순 · 계획서 · 브랜치 · 결과 요약)
- * run.mjs 가 끝날 때 부르고, history.mjs 가 다시 만든다. 일감 QA 탭도 같은 run.json 을 읽는다.
+ * run.mjs 가 끝날 때 부르고, history.mjs 가 다시 만든다. 현황판 QA 탭도 같은 run.json 을 읽는다.
  */
 import { readFileSync, writeFileSync, readdirSync, existsSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -164,7 +164,7 @@ export function buildReport(runDir) {
     : ''
   const body = `<p class="sub"><a href="../index.html">← QA 이력</a></p>
 <h1>${run.kind === 'suite' ? '전체 검수' : 'QA'} ${escape(run.app)} · ${escape(run.branch)} @${escape(run.head)}</h1>
-<div class="sub">${when(run.startedAt)} · ${run.base ? `기준 ${escape(run.base.ref)}@${escape(run.base.sha)}` : '기준 비교 없음'}${run.plan ? ` · 계획서 ${escape(run.plan)}` : ''} · 세션 프로필 ${escape(run.profile ?? '')} (${run.session === 'saved' ? '저장된 세션' : '세션 없음'})${run.kind === 'suite' ? ' · 비교: 승인한 기준 사진 — 승인은 <code>node scripts/qa/approve.mjs ' + escape(run.id) + '</code> 또는 일감 QA 탭' : ''}</div>
+<div class="sub">${when(run.startedAt)} · ${run.base ? `기준 ${escape(run.base.ref)}@${escape(run.base.sha)}` : '기준 비교 없음'}${run.plan ? ` · 계획서 ${escape(run.plan)}` : ''} · 세션 프로필 ${escape(run.profile ?? '')} (${run.session === 'saved' ? '저장된 세션' : '세션 없음'})${run.kind === 'suite' ? ' · 비교: 승인한 기준 사진 — 승인은 <code>node scripts/qa/approve.mjs ' + escape(run.id) + '</code> 또는 현황판 QA 탭' : ''}</div>
 <div class="chips">${ORDER.filter((status) => run.summary?.[status]).map((status) => `<span class="chip">${STATUS[status].icon} ${STATUS[status].label} ${run.summary[status]}</span>`).join('')}<span class="chip">영향 화면 ${new Set(run.screens.map((screen) => screen.route)).size} / 전체 ${run.totalScreens || '?'}</span></div>
 ${run.status === 'error' ? `<p class="problems">오류 — ${escape(run.error)}</p>` : ''}
 ${changed}
