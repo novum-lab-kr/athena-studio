@@ -9,7 +9,7 @@ import { dirname, join } from 'node:path'
 export const GITHUB_ISSUES_EVERY_MS = 5 * 60 * 1000
 const IMPORT_PER_TICK = 10   // 한 주기 · 한 레포에 가져오는 수 — 스팸이 몰려도 파일이 한꺼번에 쌓이지 않게(남은 것은 다음 주기)
 const HANDOFF_PER_TICK = 2   // 한 주기에 아테나 pane 을 여는 수 — pane 이 수십 개 뜨지 않게
-const LIST_LIMIT = 50
+const PER_PAGE = 100   // 한 쪽에 받는 수 — gh api --paginate 가 쪽을 끝까지 넘긴다(열린 이슈가 몇 개든 다 본다)
 const BODY_MAX = 20_000
 const TITLE_MAX = 120
 const RECENT_HOURS = 24
@@ -17,7 +17,8 @@ const RECENT_KEEP = 20
 const SEEN_KEEP = 2000
 
 /** @typedef {{ number: number, title: string, body: string, url: string, author: string, labels: string[], createdAt: string }} GithubIssue */
-/** @typedef {{ repo: string, number: number, issue: string, title: string, at?: string }} WatchEntry */
+/** written — 이슈 파일까지 썼나(가져오기 기록을 먼저 남기고 파일을 쓴다 · 그 사이 꺼지면 다시 켤 때 이것으로 고친다) · at — 아테나에 맡긴 시각
+ * @typedef {{ repo: string, number: number, issue: string, title: string, written?: boolean, at?: string }} WatchEntry */
 /** @typedef {{ repos: Record<string, { seen: number[] }>, pending: WatchEntry[], recent: WatchEntry[] }} WatchState */
 
 /** 켠 레포 이름 — pack.json 레포의 "githubIssues": true 만(없으면 꺼짐)
@@ -37,19 +38,25 @@ export const oneLine = (value, max = TITLE_MAX) => {
  * @param {string} title */
 const frontTitle = (title) => oneLine(title).replace(/\s+#+/g, ' ').trim() || '(제목 없음)'
 
-/** gh issue list --json 출력 → 이슈 목록(모양이 다르면 null)
+// gh api --paginate 의 --jq — 쪽마다 이슈 하나를 한 줄 JSON 으로(PR 은 뺀다 · REST 이슈 목록에 PR 도 섞여 온다)
+export const ISSUE_JQ = '.[] | select(.pull_request == null) | {number, title, body, url: .html_url, author: {login: .user.login}, labels: [.labels[] | {name}], createdAt: .created_at}'
+
+/** gh api 출력(한 줄에 이슈 하나) → 이슈 목록. 깨진 줄이 하나라도 있으면 null(일부만 보고 본 번호를 잘못 남기지 않게)
  * @param {string | null} stdout @returns {GithubIssue[] | null} */
-export const parseIssueList = (stdout) => {
-  let raw
-  try {
-    raw = JSON.parse(stdout ?? '')
-  } catch {
-    return null
-  }
-  if (!Array.isArray(raw)) return null
-  return raw
-    .filter((item) => item && Number.isInteger(item.number) && item.number > 0)
-    .map((item) => ({
+export const parseIssueLines = (stdout) => {
+  if (stdout === null) return null
+  /** @type {GithubIssue[]} */
+  const issues = []
+  for (const line of stdout.split('\n')) {
+    if (!line.trim()) continue
+    let item
+    try {
+      item = JSON.parse(line)
+    } catch {
+      return null
+    }
+    if (!item || !Number.isInteger(item.number) || item.number <= 0) continue
+    issues.push({
       number: item.number,
       title: typeof item.title === 'string' ? item.title : '',
       body: typeof item.body === 'string' ? item.body : '',
@@ -57,7 +64,9 @@ export const parseIssueList = (stdout) => {
       author: typeof item.author?.login === 'string' ? item.author.login : '',
       labels: Array.isArray(item.labels) ? item.labels.map((/** @type {{ name?: unknown } | null} */ label) => (typeof label?.name === 'string' ? label.name : '')).filter(Boolean) : [],
       createdAt: typeof item.createdAt === 'string' ? item.createdAt : '',
-    }))
+    })
+  }
+  return issues
 }
 
 /** 이미 가져온 번호 — issues/ · issues/archive/ 파일과 archive/ 폴더 이름의 -<레포>-gh<번호>
@@ -207,9 +216,9 @@ export const createGithubIssueWatch = ({ root, issuesDir, archiveDir, stateFile,
 
   /** @param {WatchState} state @param {string} repo */
   const importRepo = async (state, repo) => {
-    const out = await run('gh', ['issue', 'list', '--repo', `${org}/${repo}`, '--state', 'open', '--limit', String(LIST_LIMIT), '--json', 'number,title,body,author,labels,url,createdAt'], { timeout: 30_000 })
-    if (out === null) return fail(repo, 'gh issue list 가 실패했다(gh 없음 · 인증 · 네트워크)')
-    const list = parseIssueList(out)
+    const out = await run('gh', ['api', '--paginate', `repos/${org}/${repo}/issues?state=open&per_page=${PER_PAGE}`, '--jq', ISSUE_JQ], { timeout: 60_000 })
+    if (out === null) return fail(repo, 'gh api 가 실패했다(gh 없음 · 인증 · 네트워크)')
+    const list = parseIssueLines(out)
     if (!list) return fail(repo, 'gh 출력을 읽지 못했다')
     failures.delete(repo)
     const entry = (state.repos[repo] ??= { seen: [] })
@@ -225,11 +234,18 @@ export const createGithubIssueWatch = ({ root, issuesDir, archiveDir, stateFile,
       if (imported >= IMPORT_PER_TICK) break
       const file = issueFile({ org, repo, issue, now: now() })
       const path = join(issuesDir, file.name)
+      // 기록 먼저(written: false) → 파일 → written: true. 그 사이 꺼져도 다시 켤 때 recoverImports 가 맞춘다
+      /** @type {WatchEntry} */
+      const pending = { repo, number: issue.number, issue: `issues/${file.name}`, title: oneLine(issue.title, 80), written: false }
+      seen.add(issue.number)
+      entry.seen = [...seen].sort((left, right) => left - right).slice(-SEEN_KEEP)
+      state.pending.push(pending)
+      writeWatchState(stateFile, state)
       mkdirSync(issuesDir, { recursive: true })
       if (!existsSync(path)) writeFileSync(path, file.text)
-      seen.add(issue.number)
+      pending.written = true
+      writeWatchState(stateFile, state)
       imported += 1
-      state.pending.push({ repo, number: issue.number, issue: `issues/${file.name}`, title: oneLine(issue.title, 80) })
       log(`📥 GitHub 이슈 가져옴 ${org}/${repo}#${issue.number} → issues/${file.name}`)
     }
     entry.seen = [...seen].sort((left, right) => left - right).slice(-SEEN_KEEP)
@@ -237,9 +253,11 @@ export const createGithubIssueWatch = ({ root, issuesDir, archiveDir, stateFile,
 
   /** @param {WatchState} state */
   const handOffPending = async (state) => {
+    const queue = state.pending
+    /** @type {WatchEntry[]} */
     const left = []
     let opened = 0
-    for (const entry of state.pending) {
+    for (const [index, entry] of queue.entries()) {
       // 그 사이 사람이 지웠으면(휴지통) 맡기지 않는다
       if (!existsSync(join(root, entry.issue))) continue
       if (opened >= HANDOFF_PER_TICK) {
@@ -257,8 +275,28 @@ export const createGithubIssueWatch = ({ root, issuesDir, archiveDir, stateFile,
       }
       log(`🧭 GitHub 이슈 ${entry.repo}#${entry.number} → 아테나 pane ${result.pane ?? ''}`.trim())
       state.recent.push({ ...entry, at: now().toISOString() })
+      // 맡긴 것은 바로 적는다 — 이 주기 끝 전에 꺼져도 다시 켤 때 같은 이슈로 pane 을 또 열지 않게
+      state.pending = [...left, ...queue.slice(index + 1)]
+      writeWatchState(stateFile, state)
     }
     state.pending = left
+  }
+
+  // 가져오기 도중 꺼진 것 맞추기 — 기록만 있고(written: false) 파일이 있으면 쓴 것으로, 파일이 없으면 기록 · 본 번호를 지워 다시 가져온다.
+  // written 칸이 없는 옛 기록은 다 쓴 것으로 본다
+  /** @param {WatchState} state */
+  const recoverImports = (state) => {
+    state.pending = state.pending.filter((entry) => {
+      if (entry.written !== false) return true
+      if (existsSync(join(root, entry.issue))) {
+        entry.written = true
+        return true
+      }
+      const repoState = state.repos[entry.repo]
+      if (repoState) repoState.seen = repoState.seen.filter((number) => number !== entry.number)
+      log(`↩️ GitHub 이슈 ${entry.repo}#${entry.number} 가져오기가 도중에 끊겼다 — 다시 가져온다`)
+      return false
+    })
   }
 
   const tick = async () => {
@@ -267,6 +305,7 @@ export const createGithubIssueWatch = ({ root, issuesDir, archiveDir, stateFile,
     ticking = true
     try {
       const state = readWatchState(stateFile)
+      recoverImports(state)
       for (const repo of names) await importRepo(state, repo)
       await handOffPending(state)
       const since = now().getTime() - RECENT_HOURS * 3600_000

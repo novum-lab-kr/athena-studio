@@ -33,10 +33,18 @@ cat > "$TMP/issues.json" <<'JSON'
 ]
 JSON
 
+# gh api --paginate --jq 가 내는 모양(한 줄에 이슈 하나)으로 · 열린 이슈 60개짜리(한 번에 50개만 보던 때의 회귀)도
+node -e '
+const fs = require("node:fs")
+const [src, out, many] = process.argv.slice(1)
+fs.writeFileSync(out, JSON.parse(fs.readFileSync(src, "utf8")).map((item) => JSON.stringify(item)).join("\n") + "\n")
+fs.writeFileSync(many, Array.from({ length: 60 }, (_, index) => JSON.stringify({ number: 200 + index, title: `많은 이슈 ${index}`, body: "", url: "", author: { login: "bulk" }, labels: [], createdAt: "2026-10-28T00:00:00Z" })).join("\n") + "\n")
+' "$TMP/issues.json" "$TMP/issues.ndjson" "$TMP/many.ndjson"
+
 echo "── 감시 모듈"
 mkdir -p "$TMP/unit/issues" "$TMP/unit/archive"
 printf -- '---\ntitle: x\n---\n' > "$TMP/unit/issues/20261028-demo-gh100-이미-있는-것.md"
-PATH="$TMP/bin:$PATH" GH_LOG="$TMP/gh-unit.log" GH_OUT="$TMP/issues.json" node --input-type=module - "$SRC/scripts/board/github-issues.mjs" "$TMP/unit" "$TMP" <<'EOF'
+PATH="$TMP/bin:$PATH" GH_LOG="$TMP/gh-unit.log" GH_OUT="$TMP/issues.ndjson" node --input-type=module - "$SRC/scripts/board/github-issues.mjs" "$TMP/unit" "$TMP" <<'EOF'
 import { execFile } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
@@ -62,7 +70,7 @@ await watcher.tick()
 const files = readdirSync(join(root, 'issues')).sort()
 check('새 번호만 가져옴 — 이미 있는 gh100 은 건너뜀', JSON.stringify(files.map((name) => name.match(/gh(\d+)/)?.[1])) === '["100","101","102","103"]', files.join(' '))
 const gh = readFileSync(join(tmp, 'gh-unit.log'), 'utf8').trim().split('\n')
-check('켠 레포만 gh 로 읽음(열린 것 · 50개)', gh.length === 1 && gh[0].startsWith('issue list --repo acme/demo --state open --limit 50 --json'), gh.join(' | '))
+check('켠 레포만 gh 로 읽음 — 열린 것 · 쪽을 끝까지(--paginate)', gh.length === 1 && gh[0].startsWith('api --paginate repos/acme/demo/issues?state=open&per_page=100 --jq '), gh.join(' | '))
 check('한 주기에 아테나는 2개까지 — 101 · 102', JSON.stringify(handed.map((entry) => entry.issueId.match(/gh(\d+)/)[1])) === '["101","102"]')
 
 const file101 = files.find((name) => name.includes('gh101'))
@@ -107,6 +115,39 @@ await again.tick(); await again.tick()
 check('gh 실패 → 예외 없이 일감 로그 한 줄(같은 실패는 한 번)', logs.slice(before).filter((line) => line.includes('GitHub 이슈 확인 실패')).length === 1, logs.slice(before).join(' | '))
 delete process.env.GH_EXIT
 
+// 가져오기 도중 꺼짐 — 기록(written: false)은 남았는데 ① 파일을 못 씀 ② 파일은 씀. 다시 켜면 ① 다시 가져오고 ② 그대로 맡긴다
+rmSync(join(root, 'issues'), { recursive: true, force: true }); rmSync(join(root, 'state.json'), { force: true })
+const { mkdirSync, writeFileSync } = await import('node:fs')
+mkdirSync(join(root, 'issues'))
+writeFileSync(join(root, 'issues', '20261028-demo-gh102.md'), '---\ntitle: x\n---\n')
+writeFileSync(join(root, 'state.json'), JSON.stringify({
+  repos: { demo: { seen: [100, 101, 102, 103] } },
+  pending: [
+    { repo: 'demo', number: 101, issue: 'issues/20261028-demo-gh101.md', title: 'a', written: false },
+    { repo: 'demo', number: 102, issue: 'issues/20261028-demo-gh102.md', title: 'b', written: false },
+  ],
+  recent: [],
+}))
+clock = new Date('2026-10-28T06:00:00Z')
+handOffResult = { pane: 'p11' }
+handed.length = 0
+const restarted = make()
+await restarted.tick()
+check('도중에 끊긴 가져오기 — 파일 없음(101)은 다시 가져와 맡기고, 파일 있음(102)은 그대로 맡김', existsSync(join(root, 'issues', '20261028-demo-gh101.md')) && JSON.stringify(handed.map((entry) => entry.issueId).sort()) === '["issues/20261028-demo-gh101.md","issues/20261028-demo-gh102.md"]', JSON.stringify(handed.map((entry) => entry.issueId)))
+const afterRestart = JSON.parse(readFileSync(join(root, 'state.json'), 'utf8'))
+check('끝난 뒤 기록 — 101 · 102 는 맡김(recent) · 남은 기록은 모두 written', afterRestart.recent.map((entry) => entry.number).sort().join() === '101,102' && afterRestart.pending.every((entry) => entry.written === true), JSON.stringify(afterRestart))
+
+// 열린 이슈 60개 — 한 주기 10개씩, 50번째 뒤(255 · 259)도 결국 다 가져온다
+process.env.GH_OUT = join(tmp, 'many.ndjson')
+rmSync(join(root, 'issues'), { recursive: true, force: true }); rmSync(join(root, 'state.json'), { force: true })
+const bulk = make()
+await bulk.tick()
+check('60개 — 첫 주기는 10개만', readdirSync(join(root, 'issues')).length === 10)
+for (let round = 0; round < 6; round += 1) await bulk.tick()
+const bulkFiles = readdirSync(join(root, 'issues'))
+check('60개 — 50개 너머(gh255 · gh259)까지 모두 가져옴', bulkFiles.length === 60 && bulkFiles.some((name) => name.includes('gh259')) && bulkFiles.some((name) => name.includes('gh255')), String(bulkFiles.length))
+process.env.GH_OUT = join(tmp, 'issues.ndjson')
+
 // 꺼진 레포만 — gh 를 부르지 않음
 const off = make([])
 const ghBefore = readFileSync(join(tmp, 'gh-unit.log'), 'utf8').split('\n').length
@@ -130,7 +171,7 @@ cp "$SRC/scripts/screen-check/fake-bin/athena-studio-cli" "$TMP/bin/"
 SCREEN_LOG="$TMP/screen.log"
 : > "$SCREEN_LOG"
 PORT=$((47000 + RANDOM % 900))
-(cd "$CORE" && PATH="$TMP/bin:$PATH" GH_LOG="$TMP/gh-server.log" GH_OUT="$TMP/issues.json" \
+(cd "$CORE" && PATH="$TMP/bin:$PATH" GH_LOG="$TMP/gh-server.log" GH_OUT="$TMP/issues.ndjson" \
   ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock \
   ATHENA_STUDIO_CLI="$TMP/bin/athena-studio-cli" ATHENA_STUDIO_ENDPOINT="$TMP/no-studio/daemon.json" \
   FAKE_SCREEN_FIXTURE="$SRC/scripts/screen-check/fixtures/studio" FAKE_SCREEN_LOG="$SCREEN_LOG" FAKE_ATHENA="$CORE" \
@@ -149,8 +190,8 @@ const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} 
 const read = (path) => { try { return readFileSync(path, 'utf8') } catch { return '' } }
 const files = readdirSync(join(core, 'issues')).sort()
 check('issues/ 에 새 번호만(101 · 102 · 103)', JSON.stringify(files.map((name) => name.match(/gh(\d+)/)?.[1])) === '["100","101","102","103"]', `${files.join(' ')}\n${read(join(tmp, 'server.log'))}`)
-const gh = read(join(tmp, 'gh-server.log')).trim().split('\n').filter((line) => line.startsWith('issue list'))
-check('켠 레포(demo)만 gh 로 읽음 — quiet 는 안 읽음', gh.length >= 1 && gh.every((line) => line.includes('--repo acme/demo ')), gh.join(' | '))
+const gh = read(join(tmp, 'gh-server.log')).trim().split('\n').filter((line) => line.startsWith('api '))
+check('켠 레포(demo)만 gh 로 읽음 — quiet 는 안 읽음', gh.length >= 1 && gh.every((line) => line.includes(' repos/acme/demo/issues?')), gh.join(' | '))
 const screen = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
 const splits = screen.filter((args) => args[1] === 'pane' && args[2] === 'split')
 const runs = screen.filter((args) => args[1] === 'pane' && args[2] === 'run')
