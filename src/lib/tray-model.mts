@@ -19,7 +19,7 @@ type LinkedPlan = { id?: unknown; grade?: string; status?: string; doneAt?: unkn
 type TrayCard = { id?: string; kind?: string; title?: string; status?: string; html?: string | null; archived?: boolean; column?: string; doneAt?: unknown; mtime?: unknown; linkedPlan?: LinkedPlan }
 type TrayRequest = { id: string; kind?: string; title: string; state?: string }
 // 일감 header.usage — 도구마다 창(5시간 · 주간 …)
-type UsageWindow = { label?: string; percent?: unknown; resetsAt?: ResetsAt }
+type UsageWindow = { label?: string; minutes?: unknown; percent?: unknown; resetsAt?: ResetsAt }
 type UsageTool = { id?: string; label?: string; windows?: UsageWindow[] }
 type ResetsAt = string | number | Date | null | undefined
 
@@ -162,6 +162,17 @@ export function doneByHour(cards: unknown, now: number = Date.now()): { hours: n
   return { hours, total }
 }
 
+// 창 이름 — 일감이 준 창 길이(분)로 지금 언어에 맞춰 짓는다. 길이가 없으면(옛 코어) 일감이 준 label(한국어) 그대로
+export function windowName(window: UsageWindow, say: Say = koreanSay): string | undefined {
+  const minutes = window.minutes
+  if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes <= 0) return window.label
+  if (minutes === 300) return say('tray.usage.window.fiveHours')
+  if (minutes === 10080) return say('tray.usage.window.weekly')
+  if (minutes % 1440 === 0) return say('tray.usage.window.days', { count: minutes / 1440 })
+  if (minutes % 60 === 0) return say('tray.usage.window.hours', { count: minutes / 60 })
+  return say('tray.usage.window.minutes', { count: minutes })
+}
+
 // 일감 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
 export function usageItems(usage: unknown, now: number = Date.now(), say: Say = koreanSay): UsageItem[] {
   const items: UsageItem[] = []
@@ -170,7 +181,7 @@ export function usageItems(usage: unknown, now: number = Date.now(), say: Say = 
     const label = tool.label || tool.id
     for (const window of tool.windows || []) {
       if (typeof window.percent !== 'number') continue
-      items.push({ tool: label, toolId: String(tool.id || ''), window: window.label, percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now, say) })
+      items.push({ tool: label, toolId: String(tool.id || ''), window: windowName(window, say), percent: Math.max(0, Math.min(100, Math.round(window.percent))), reset: resetClock(window.resetsAt, now, say) })
     }
   }
   return items

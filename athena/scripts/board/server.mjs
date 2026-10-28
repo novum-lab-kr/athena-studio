@@ -760,9 +760,10 @@ const toMinute = (ms) => Math.floor(ms / 60_000) * 60_000
 const readClaudeUsage = () => {
   try {
     const { at, rate_limits: limits } = JSON.parse(readFileSync(join(ROOT, '.board-usage.json'), 'utf8'))
-    const windows = [['five_hour', '5시간'], ['seven_day', '주간']]
+    // minutes 는 화면이 언어에 맞춰 창 이름을 지을 때 쓴다(스튜디오 메뉴 막대 — label 은 한국어 일감 화면용)
+    const windows = [['five_hour', 300], ['seven_day', 10080]]
       .filter(([key]) => typeof limits?.[key]?.used_percentage === 'number')
-      .map(([key, label]) => ({ label, percent: Math.round(limits[key].used_percentage), resetsAt: toMs(limits[key].resets_at) }))
+      .map(([key, minutes]) => ({ label: windowLabel(minutes), minutes, percent: Math.round(limits[key].used_percentage), resetsAt: toMs(limits[key].resets_at) }))
     return windows.length ? { at: toMinute(at * 1000), windows } : null
   } catch {
     return null // 아직 statusline 이 한 번도 안 돌았거나 래퍼가 연결되지 않음
@@ -962,6 +963,23 @@ const refresh = (again = true) => {
 }
 
 const TOKEN = randomBytes(16).toString('hex')
+// 스튜디오 언어 — 앱이 본체 .claude/settings.local.json 의 language 에 적는 값(hooks/language.py 와 같은 곳).
+// 결정 콘솔이 UI 글자를 이 언어로 고른다. 내줄 때마다 다시 읽어 앱에서 언어를 바꾸면 새로고침에 따라온다. 없거나 모르는 값이면 한국어
+const STUDIO_LANGS = { korean: 'ko', english: 'en', japanese: 'ja', chinese: 'zh' }
+const studioLang = () => {
+  try {
+    const settings = JSON.parse(readFileSync(join(ROOT, '.claude/settings.local.json'), 'utf8'))
+    return STUDIO_LANGS[String(settings?.language ?? '').trim().toLowerCase()] ?? 'ko'
+  } catch {
+    return 'ko'
+  }
+}
+// 결정 콘솔 html 의 </head> 앞에 언어(· 토큰)를 넣는다 — 보관된 콘솔은 토큰 없이(읽기 전용)
+const withConsoleGlobals = (html, token) => {
+  const lines = [`window.ATHENA_LANG = ${JSON.stringify(studioLang())}`]
+  if (token) lines.push(`window.ATHENA_BOARD_TOKEN = ${JSON.stringify(token)}`)
+  return html.replace('</head>', `<script>${lines.join('; ')}</script>\n</head>`)
+}
 // 서버가 다시 뜨면 토큰이 바뀐다 — 열려 있던 브라우저가 알아채고 새로고침하도록 기동 번호를 따로 준다(토큰은 SSE 로 내보내지 않는다)
 const BOOT = randomBytes(6).toString('hex')
 // 화면이 쓰는 회사 값 — 화면에 직접 적지 않고 설정에서 넣는다(</script> 가 끼지 않게 < 는 이스케이프)
@@ -1942,7 +1960,7 @@ const handleRequest = async (request, response) => {
     const path = safeDecodedPath(url.pathname)
     if (path && path.startsWith(join(ROOT, 'archive') + sep) && existsSync(path)) {
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-      response.end(readFileSync(path))
+      response.end(withConsoleGlobals(readFileSync(path, 'utf8'), null))
       return
     }
   }
@@ -1951,7 +1969,7 @@ const handleRequest = async (request, response) => {
   if (url.pathname.startsWith('/plans/') && url.pathname.endsWith('.html')) {
     const path = safeDecodedPath(url.pathname)
     if (path && insideDir(path, 'plans')) {
-      const html = readFileSync(path, 'utf8').replace('</head>', `<script>window.ATHENA_BOARD_TOKEN = ${JSON.stringify(TOKEN)}</script>\n</head>`)
+      const html = withConsoleGlobals(readFileSync(path, 'utf8'), TOKEN)
       response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
       response.end(html)
       return

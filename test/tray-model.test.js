@@ -127,3 +127,13 @@ test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 
   assert.deepEqual(found, [{ kind: 'request', title: '결정이 필요해요', body: '제목 b', target: { request: 'b' } }])
   assert.deepEqual(notifier.updateRequests([open('a'), open('b', 'decision')]), [])
 })
+
+test('사용량 창 이름: 일감이 준 창 길이(분)로 지금 언어에 맞춰 짓고, 길이가 없으면(옛 코어) label 그대로', () => {
+  const i18n = require('../src/lib/i18n.mts')
+  const korean = require('../src/i18n/ko.json')
+  const englishSay = i18n.translator(require('../src/i18n/en.json'), korean)
+  const usage = [{ id: 'claude', label: 'Claude', windows: [{ label: '5시간', minutes: 300, percent: 42 }, { label: '주간', minutes: 10080, percent: 18 }] },
+    { id: 'codex', label: 'Codex', windows: [{ label: '2일', minutes: 2880, percent: 1 }, { label: '3시간', minutes: 180, percent: 2 }, { label: '90분', minutes: 90, percent: 3 }, { label: '주간', percent: 9 }] }]
+  assert.deepEqual(tray.usageItems(usage, 0, englishSay).map((item) => item.window), ['5h', 'Weekly', '2d', '3h', '90m', '주간'])
+  assert.deepEqual(tray.usageItems(usage, 0).map((item) => item.window), ['5시간', '주간', '2일', '3시간', '90분', '주간'])
+})
