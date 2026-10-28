@@ -229,6 +229,7 @@
   "monitor.empty": "まだ表示する活動はありません",
   "monitor.noAgents": "動いているエージェントはありません — 起動するとここに表示されます",
   "monitor.finalReport": "最終報告を送信",
+  "monitor.githubIssue": "GitHub issue #{n} · {title} — 取り込み済み · Athena が対応中",
   "board.title": "作業リスト",
   "board.openTitle": "作業リストのページ — イシュー · QA · 学習 · 指標 · アーカイブ",
   "board.openFailed": "作業リストを開けませんでした",

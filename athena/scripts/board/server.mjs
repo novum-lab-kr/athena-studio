@@ -29,6 +29,7 @@
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
+ *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
  *                      결정 콘솔이 plan(계획서 경로)을 같이 주면 그 계획서의 결정 요청에 답을 적고(answered) 지시 앞에 [요청 <id>] 를 붙인다(docs/requests.md)
  *     정식 계획서 결정 콘솔(/plans/*.html)의 [이대로 진행] 도 이걸로 PLAN.leadPane 에 보낸다
@@ -60,6 +61,7 @@ import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { createDelivery } from './pane-delivery.mjs'
+import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -1135,6 +1137,21 @@ const openHermesPane = async (issueId, text) => {
   return { pane }
 }
 
+// GitHub 이슈 감시(github-issues.mjs) — 팩 레포에 "githubIssues": true 를 켠 것만. 처음 본 열린 이슈를 issues/ 로 가져오고
+// 위 openHermesPane(일감 [작업 시작 → 아테나] 와 같은 길)으로 새 아테나 pane 에 맡긴다. 규칙 정본 docs/github-issues.md
+const githubIssues = createGithubIssueWatch({
+  root: ROOT,
+  issuesDir: join(ROOT, 'issues'),
+  archiveDir: join(ROOT, 'archive'),
+  // 여러 팩이면 <팩 데이터>/state(팩마다 따로) · 옛 구조면 본체
+  stateFile: BOOT_PACK ? join(BOOT_PATHS.state, 'github-issues.json') : join(ROOT, '.board-github-issues.json'),
+  org: ORG,
+  repos: () => (ORG ? watchedRepos(config) : []),
+  run,
+  handOff: openHermesPane,
+  canRun: () => !staleGeneration(),
+})
+
 // 담당 에이전트를 레포 workspace 에 띄운다 — delegate.sh 가 workspace 찾기·pane 이름·임시 파일을 다 한다
 // 디스패치는 몇 초~수십 초 걸린다 — 작업 번호를 바로 돌려주고, 단계마다 SSE(event: job)로 진행을 밀어 준다
 const jobs = new Map()
@@ -1853,6 +1870,12 @@ const handleRequest = async (request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     return response.end(JSON.stringify({ dir: memoryDir.replace(homedir(), '~'), items: listMemory() }))
   }
+  // GitHub 이슈 감시가 아테나에 맡긴 것(최근 24시간) — 스튜디오 AGENT MONITOR 가 읽는다. /api/state 처럼 읽기 전용 · 토큰 없음
+  if (url.pathname === '/api/github-issues') {
+    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    response.end(JSON.stringify({ issues: githubIssues.recent() }))
+    return
+  }
   if (url.pathname === '/api/viewers') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
     response.end(JSON.stringify({ viewers: clients.size }))
@@ -2023,5 +2046,8 @@ createServer((request, response) => {
   await refresh()
   setInterval(() => refresh(false), POLL_MS)
   setInterval(() => delivery.tick().catch((error) => console.error(`⚠️ 미룬 지시 넣기 실패: ${error.message}`)), 2000)
+  // 첫 갱신(pane 목록) 뒤 한 번 · 그 뒤 5분마다 — 켠 레포가 없으면 아무것도 안 한다
+  githubIssues.tick()
+  setInterval(() => githubIssues.tick(), GITHUB_ISSUES_EVERY_MS)
   console.log(`아테나 일감: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })

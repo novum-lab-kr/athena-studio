@@ -39,3 +39,21 @@ test('세션 이름표 · 줄 읽기 · 폴더 이름', () => {
   assert.equal(feed.parseLine('{깨짐'), null)
   assert.equal(feed.projectDirName('/Users/me/Library/Application Support/Athena Studio/athena'), '-Users-me-Library-Application-Support-Athena-Studio-athena')
 })
+
+test('GitHub 이슈 감시 → 모니터 이벤트: 처음 본 것만 · 오래된 것 · 이상한 칸은 빼고', () => {
+  const seen = new Set()
+  const since = Date.parse('2026-10-28T10:00:00Z')
+  const issues = [
+    { repo: 'athena-studio', number: 101, title: '팩\n만들기 버그', issue: 'issues/x.md', at: '2026-10-28T12:00:00Z' },
+    { repo: 'athena-studio', number: 90, title: '옛 이슈', issue: 'issues/y.md', at: '2026-10-28T08:00:00Z' },
+    { repo: 'athena-studio', number: 'x', title: '깨짐', at: '2026-10-28T12:00:00Z' },
+    null,
+  ]
+  assert.deepEqual(feed.githubIssueEvents(issues, seen, since), [
+    { kind: 'say', icon: '📥', name: 'GitHub', text: '팩 만들기 버그', at: '2026-10-28T12:00:00Z', github: { repo: 'athena-studio', number: 101, title: '팩 만들기 버그' } },
+  ])
+  // 오래된 것도 본 것으로 기억 — 다음에 다시 보여 주지 않는다
+  assert.deepEqual([...seen].sort(), ['athena-studio#101', 'athena-studio#90'])
+  assert.deepEqual(feed.githubIssueEvents(issues, seen, since), [])
+  assert.deepEqual(feed.githubIssueEvents(null, seen, since), [])
+})

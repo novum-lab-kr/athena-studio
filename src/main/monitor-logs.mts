@@ -37,6 +37,9 @@ export type Monitor = {
   seq: number
   agentCwds: string[]
   floor: number
+  // GitHub 이슈 감시 — 일감 /api/github-issues 를 마지막으로 읽은 때 · 이미 줄로 낸 이슈(repo#번호)
+  lastGithub: number
+  githubSeen: Set<string>
 }
 export type FoundLog = { file: string; pane: boolean; stat: fs.Stats }
 export type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
@@ -49,7 +52,7 @@ const MONITOR_HEAD_BYTES = 64 * 1024 // 처음 붙을 때 파일 끝에서 이�
 const MONITOR_CHUNK_BYTES = 4 * 1024 * 1024
 export const MONITOR_KEEP = 300
 const MONITOR_TEXT_MAX = 300
-export const newMonitor = (): Monitor => ({ watching: false, timer: null, ticking: false, lastScan: 0, lastFullScan: 0, tails: new Map(), tailSeq: 0, events: [], seq: 0, agentCwds: [], floor: 0 })
+export const newMonitor = (): Monitor => ({ watching: false, timer: null, ticking: false, lastScan: 0, lastFullScan: 0, tails: new Map(), tailSeq: 0, events: [], seq: 0, agentCwds: [], floor: 0, lastGithub: 0, githubSeen: new Set() })
 
 async function readDir(dir: string): Promise<fs.Dirent[]> {
   try {
