@@ -3,8 +3,8 @@
 Last updated: October 28, 2026
 
 This End User License Agreement ("Agreement") is between you and
-Minchang Sung, who publishes Athena Studio under the name Novum Lab
-("Novum Lab", "we"). By installing or using Athena Studio
+Novum Lab (representative: Eunju Kim, Business Registration No. 496-37-01619,
+Seoul, Republic of Korea) ("Novum Lab", "we"). By installing or using Athena Studio
 ("App"), you agree to this Agreement. If you do not agree, do not install or
 use the App.
 
@@ -68,4 +68,4 @@ App or by email. Continuing to use the App after changes take effect means you
 accept them.
 
 ## 11. Contact
-Minchang Sung (Novum Lab) · mcsung.novum@gmail.com
+Novum Lab · mcsung@novum-lab.com

@@ -7,7 +7,9 @@
 //     2-1. 앱 안 업데이트 설정 — dist/package/app-update.yml(피드 = 공개 레포 최신 Release 고정 주소)을 Contents/Resources/ 에.
 //          electron-updater 가 피드 · 받기 캐시 자리를 여기서 읽는다(src/main/app-updater.mts). electron-builder publish 설정은 쓰지 않는다 —
 //          켜면 .dmg 항목까지 든 latest-mac.yml · blockmap 을 같이 만드는데, latest-mac.yml 은 release-files.js updater 가 최종 .zip 으로 만든다
-//     3. electron-builder — 이름 Athena Studio · 번들 ID kr.novum-lab.athena-studio · 파일 이름 Athena-Studio-mac-<arch>.dmg · .zip
+//     3. 제3자 고지 — scripts/third-party-notices.js 가 package-lock · node_modules 를 읽어 dist/package/THIRD_PARTY_NOTICES.txt 를 만들고
+//        extraResources 로 앱 Contents/Resources/ 에(약관 docs/release/EULA.md 5절 · LICENSE 가 가리킨다)
+//     4. electron-builder — 이름 Athena Studio · 번들 ID kr.novum-lab.athena-studio · 파일 이름 Athena-Studio-mac-<arch>.dmg · .zip
 //   버전: --version 이 없으면 git 태그(git describe — 태그 커밋이면 0.13.35, 뒤 커밋이 있으면 0.13.35+1). 앱 app.getVersion() 이 이 번호
 //   서명: CSC_LINK(+ CSC_KEY_PASSWORD) 가 있으면 그 Developer ID 인증서로, 없으면 이 컴퓨터용(ad-hoc '-') — 1단계는 ad-hoc
 //         공증: APPLE_API_KEY(.p8 파일 경로) · APPLE_API_KEY_ID · APPLE_API_ISSUER 가 모두 있으면 afterSign 훅(scripts/notarize-mac.js)이 notarytool 로
@@ -20,6 +22,7 @@ const path = require('path')
 const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
 const notarizeMac = require('./notarize-mac')
+const notices = require('./third-party-notices')
 
 const ROOT = path.join(__dirname, '..')
 const OUTPUT = path.join(ROOT, 'dist', 'release')
@@ -84,10 +87,10 @@ function signingMissing(env) {
 
 /**
  * electron-builder 설정. 서명 · 공증은 환경 변수로 갈린다(위 머리 주석)
- * @param {{ appVersion: string, coreBundle: string, updateConfigFile: string, signed: boolean }} options
+ * @param {{ appVersion: string, coreBundle: string, updateConfigFile: string, noticesFile: string, signed: boolean }} options
  * @returns {import('electron-builder').Configuration}
  */
-function builderConfig({ appVersion, coreBundle, updateConfigFile, signed }) {
+function builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, signed }) {
   const split = version.splitDisplay(appVersion)
   return {
     appId: APP_ID,
@@ -99,9 +102,11 @@ function builderConfig({ appVersion, coreBundle, updateConfigFile, signed }) {
     files: FILES,
     // 코어 번들 — process.resourcesPath/athena-core.bundle(studio-home.js coreBundlePath · CORE_BUNDLE_NAME)
     // 업데이트 설정 — process.resourcesPath/app-update.yml(electron-updater 가 읽는 자리 · 서명 전에 들어가 서명에 포함된다)
+    // 제3자 고지 — process.resourcesPath/THIRD_PARTY_NOTICES.txt(Electron · Chromium 고지 LICENSE.electron.txt · LICENSES.chromium.html 은 electron-builder 가 같은 자리에 옮긴다)
     extraResources: [
       { from: coreBundle, to: studioHome.CORE_BUNDLE_NAME },
       { from: updateConfigFile, to: UPDATE_CONFIG_NAME },
+      { from: noticesFile, to: notices.FILE_NAME },
     ],
     // asar 를 쓰지 않는다 — 데몬(src/daemon/main.mts) · CLI(bin/athena-studio-cli 셸 스크립트 → src/daemon/cli.js) 를
     // 경로로 띄우고, 코어(파이썬 screen.py)가 그 CLI 경로를 셸로 실행한다. asar 안 파일은 셸 · 다른 프로세스가 실행할 수 없다
@@ -174,6 +179,10 @@ async function main(args) {
   const updateConfigFile = path.join(STAGING, UPDATE_CONFIG_NAME)
   fs.writeFileSync(updateConfigFile, updateConfig())
 
+  const noticesFile = path.join(STAGING, notices.FILE_NAME)
+  const written = notices.writeNotices({ root: ROOT, out: noticesFile, appVersion })
+  console.log(`[package] 제3자 고지 ${written.count}개${written.vendored.length ? ` · 넣어 둔 upstream 원문: ${written.vendored.join(' · ')}` : ''}${written.reconstructed.length ? ` · package.json 으로 만든 MIT 원문: ${written.reconstructed.join(' · ')}` : ''}`)
+
   const signed = Boolean(process.env.CSC_LINK)
   console.log(`[package] ${appVersion} · ${arches.join(' · ')} · 서명 ${signed ? 'Developer ID(CSC_LINK)' : 'ad-hoc(이 컴퓨터용 — 손님 맥에서는 Gatekeeper 가 막는다)'}`)
   fs.rmSync(OUTPUT, { recursive: true, force: true })
@@ -181,7 +190,7 @@ async function main(args) {
   // .app 서명 직후 공증 · staple(Developer ID 판만) — staple 결과는 이 .app 을 담을 .zip 이름으로 staple.json 에
   /** @param {import('electron-builder').AfterPackContext} context */
   const afterSign = (context) => notarizeMac.afterSign(context, { recordName: artifactName(builder.Arch[context.arch], 'zip') })
-  const config = { ...builderConfig({ appVersion, coreBundle, updateConfigFile, signed }), ...(signed ? { afterSign } : {}) }
+  const config = { ...builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, signed }), ...(signed ? { afterSign } : {}) }
   // 칩마다 따로 — 한 번에 넘기면 universal 이 아니라 각자 만든다(파일 이름에 ${arch})
   const archEnum = { arm64: builder.Arch.arm64, x64: builder.Arch.x64 }
   const targets = builder.Platform.MAC.createTarget(['dmg', 'zip'], ...arches.map((arch) => archEnum[/** @type {'arm64' | 'x64'} */ (arch)]))

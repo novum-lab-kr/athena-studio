@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const pkg = require('../scripts/package-mac')
 const studioHome = require('../src/lib/studio-home')
 
-const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', updateConfigFile: '/tmp/stage/app-update.yml', signed: false }
+const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', updateConfigFile: '/tmp/stage/app-update.yml', noticesFile: '/tmp/stage/THIRD_PARTY_NOTICES.txt', signed: false }
 
 test('파일 이름은 홈페이지 고정 주소와 같은 꼴 — Athena-Studio-mac-<arch>.<ext>', () => {
   assert.equal(pkg.artifactName('arm64', 'dmg'), 'Athena-Studio-mac-arm64.dmg')
@@ -24,11 +24,12 @@ test('이름 · 번들 ID · 최소 macOS(Electron 44 = 13.0)', () => {
   assert.equal(config.mac.minimumSystemVersion, '13.0')
 })
 
-test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core.bundle)로 들어간다', () => {
+test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core.bundle) · 제3자 고지는 resourcesPath/THIRD_PARTY_NOTICES.txt 로 들어간다', () => {
   const config = pkg.builderConfig(base)
   assert.deepEqual(config.extraResources, [
     { from: base.coreBundle, to: studioHome.CORE_BUNDLE_NAME },
     { from: base.updateConfigFile, to: 'app-update.yml' },
+    { from: base.noticesFile, to: 'THIRD_PARTY_NOTICES.txt' },
   ])
   assert.equal(studioHome.coreBundlePath({ appRoot: '/x', packaged: true, resourcesPath: '/R' }), `/R/${config.extraResources[0].to}`)
 })

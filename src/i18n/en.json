@@ -52,6 +52,7 @@
   "menu.pane.toggleSpaces": "Toggle Workspaces Sidebar",
   "menu.pane.togglePanel": "Toggle Explorer",
   "menu.app.about": "About {name}",
+  "menu.app.notices": "Third-Party Notices",
   "menu.app.services": "Services",
   "menu.app.hide": "Hide {name}",
   "menu.app.hideOthers": "Hide Others",

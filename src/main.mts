@@ -633,6 +633,14 @@ function languageMenu(): MenuItemConstructorOptions[] {
   })
 }
 
+// 배포판 Resources 의 THIRD_PARTY_NOTICES.txt 를 기본 앱(텍스트 편집기)으로 연다 — 못 열면 이유를 알림 창으로
+function openThirdPartyNotices(): void {
+  const file = path.join(process.resourcesPath, 'THIRD_PARTY_NOTICES.txt')
+  shell.openPath(file).then((error) => {
+    if (error) dialog.showMessageBox({ type: 'warning', message: say('menu.app.notices'), detail: `${file}\n${error}` }).catch(() => null)
+  })
+}
+
 // Electron role 항목도 라벨을 사전에서 준다(role 기본 라벨은 영어 고정이라 앱 언어와 어긋난다)
 function appMenu(): MenuItemConstructorOptions {
   const name = 'Athena' // 보이는 이름(트레이 · 정보 창과 같다) — app.getName() 은 데이터 폴더 이름 Athena Studio
@@ -640,6 +648,8 @@ function appMenu(): MenuItemConstructorOptions {
     role: 'appMenu',
     submenu: [
       { role: 'about', label: say('menu.app.about', { name }) },
+      // 제3자 고지 — 배포판에만 있다(scripts/package-mac.js 가 Resources 에 넣는다 · 약관 EULA 5절이 가리킨다)
+      ...(app.isPackaged ? [{ label: say('menu.app.notices'), click: () => openThirdPartyNotices() }] : []),
       { type: 'separator' },
       { role: 'services', label: say('menu.app.services') },
       { type: 'separator' },

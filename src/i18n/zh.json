@@ -52,6 +52,7 @@
   "menu.pane.toggleSpaces": "折叠/展开左侧工作区",
   "menu.pane.togglePanel": "折叠/展开右侧 Explorer",
   "menu.app.about": "关于 {name}",
+  "menu.app.notices": "第三方声明",
   "menu.app.services": "服务",
   "menu.app.hide": "隐藏 {name}",
   "menu.app.hideOthers": "隐藏其他",

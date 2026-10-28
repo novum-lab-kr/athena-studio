@@ -52,6 +52,7 @@
   "menu.pane.toggleSpaces": "左のワークスペースを折りたたむ・展開",
   "menu.pane.togglePanel": "右の Explorer を折りたたむ・展開",
   "menu.app.about": "{name} について",
+  "menu.app.notices": "サードパーティ通知",
   "menu.app.services": "サービス",
   "menu.app.hide": "{name} を非表示",
   "menu.app.hideOthers": "ほかを非表示",
