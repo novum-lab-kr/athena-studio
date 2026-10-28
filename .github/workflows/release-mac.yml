@@ -1,5 +1,8 @@
 # 맥 배포판 — Developer ID 서명 · 공증 · staple 까지 만들어 Actions artifact 로 남긴다(손으로 돌린다 · 계획서 plans/feature/20261028-배포판-패키징-서명-다운로드 D6 · D7 · 2단계)
-# 공개 레포에 올리기 · latest.json 은 3단계 몫 — 여기서는 만들고 확인만 한다
+# release(기본 켬)면 확인 뒤 latest.json · Release 본문(release-notes.md = CHANGELOG.md 그 minor 절 '## X.Y' — 패치 번호는 맞추지 않는다)도 만들어 같은 artifact 에 넣는다(3단계)
+#   공개 레포 novum-lab-kr/athena-studio-releases 에 올리기는 여기서 하지 않는다 — 로컬에서 scripts/publish-release.js --run <실행 id> 가
+#   사용자 gh 로그인으로 이 artifact 를 받아 다시 확인하고 올린다(토큰 Secret 을 두지 않는다 · 계획서 Decisions)
+#   버전 = 실행 시점 git 태그 그대로. CHANGELOG 에 그 minor 절이 없으면 · 버전이 태그 번호(X.Y.Z)가 아니면 만들기 전에 멈춘다(분을 쓰기 전에). 시험 실행은 release 를 끈다
 #
 # 시간(= 돈): 비공개 레포라 macOS 러너는 1분이 10분으로 센다(Free 2,000분 → macOS 약 200분/월). 그래서
 #   - 두 칩을 러너 하나에서 — electron-builder 가 arm64 러너에서 x64 판도 만든다(npmRebuild 끔 · node-pty 는 두 칩 prebuild 를 들고 온다).
@@ -17,6 +20,11 @@ on:
         description: '앱 버전 X.Y.Z — 비우면 git 태그(git describe)'
         required: false
         default: ''
+      release:
+        description: 'latest.json · Release 본문도 만들기(버전 X.Y.Z · CHANGELOG 절 확인) — 끄면 시험(.dmg · .zip 만)'
+        type: boolean
+        required: false
+        default: true
 permissions:
   contents: read
 concurrency:
@@ -38,6 +46,19 @@ jobs:
         with:
           node-version: 24 # Electron 44 의 Node 와 같은 줄 · .mts 타입 지우기(22.18+)
           cache: npm
+
+      - name: 배포 버전 · CHANGELOG 확인
+        # release 일 때만 — 버전(비우면 git 태그)이 X.Y.Z 이고 CHANGELOG.md 에 그 minor 절(## X.Y)이 있어야 한다. node 내장만 쓰니 npm ci 전에 돈다
+        id: release
+        if: inputs.release
+        env:
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -- check
+          [ -n "$VERSION_INPUT" ] && set -- "$@" --version "$VERSION_INPUT"
+          version=$(node scripts/release-files.js "$@")
+          echo "배포 버전: $version"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Electron · electron-builder 캐시
         uses: actions/cache@v4
@@ -78,7 +99,8 @@ jobs:
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
-          VERSION_INPUT: ${{ inputs.version }}
+          # release 면 앞 단계가 정한 번호(Release · latest.json 과 같은 번호) · 아니면 입력 칸(비우면 git 태그)
+          VERSION_INPUT: ${{ steps.release.outputs.version || inputs.version }}
         run: |
           set -- --arch all --require-signing
           [ -n "$VERSION_INPUT" ] && set -- "$@" --version "$VERSION_INPUT"
@@ -140,15 +162,27 @@ jobs:
           ls -l dist/release/*.dmg dist/release/*.zip
           shasum -a 256 dist/release/*.dmg dist/release/*.zip
 
+      - name: latest.json · Release 본문
+        # 확인을 마친 .dmg 로 크기 · sha256 을 잰다 — publish-release.js 가 받은 뒤 다시 잰다
+        if: inputs.release
+        env:
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          node scripts/release-files.js notes --version "$VERSION" --out dist/release/release-notes.md
+          node scripts/release-files.js manifest --version "$VERSION" --dir dist/release --out dist/release/latest.json
+          cat dist/release/latest.json
+
       - uses: actions/upload-artifact@v4
         with:
           name: Athena-Studio-mac
           path: |
             dist/release/*.dmg
             dist/release/*.zip
+            dist/release/latest.json
+            dist/release/release-notes.md
           if-no-files-found: error
           compression-level: 0 # 이미 압축된 파일 — 다시 누르지 않는다
-          retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 공개 자리는 3단계
+          retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 손님용은 publish-release.js 가 공개 레포에
 
       - name: 공증 키 지우기
         if: always()

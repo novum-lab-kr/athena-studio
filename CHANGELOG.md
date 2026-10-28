@@ -4,6 +4,17 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 시작점: 홈페이지 창이 athena-studio GitHub 릴리스 v0.2.0 ~ v0.13.34(2026-10-26 ~ 28) 제목에서 손님에게 보이는 것만 골라 영어로 요약(2026-10-28). 홈페이지 /releases 와 같은 내용 -->
 
+<!-- 0.15: 첫 배포판 — #80 ~ #88 머지에서 손님에게 보이는 것만(개발판 전용 수정 · refactor · 문서는 뺌). 배포판 Release 본문은 그 minor 절(## X.Y) — 범위 끝은 올릴 때 실제 태그로 채우거나 열어 둔다 -->
+
+## 0.15 (v0.15.0 – · Oct 28, 2026)
+
+### New
+- Athena Studio is available as a Mac app for Apple Silicon and Intel (macOS 13 Ventura or later). It is signed and notarized by Apple, so it opens without a security warning.
+
+### Fixed
+- Switching to a pack for the first time no longer shows the previous pack's state when an older list finishes loading late.
+- Pane details keep the plan's title even when the plan has an empty title line.
+
 ## 0.13 (v0.13.0 – v0.13.34 · Oct 27–28, 2026)
 
 ### New
