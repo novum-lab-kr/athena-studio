@@ -52,6 +52,7 @@
   "menu.pane.toggleSpaces": "왼쪽 작업 공간 접기·펴기",
   "menu.pane.togglePanel": "오른쪽 Explorer 접기·펴기",
   "menu.app.about": "{name} 정보",
+  "menu.app.notices": "제3자 고지",
   "menu.app.services": "서비스",
   "menu.app.hide": "{name} 가리기",
   "menu.app.hideOthers": "기타 가리기",

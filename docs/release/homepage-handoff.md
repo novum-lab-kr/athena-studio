@@ -33,5 +33,5 @@ latest.json 모양:
 
 ## 3. 라이선스 · 약관 (초안 · 법률 검토 전)
 - 레포 루트 `LICENSE`(소스 — 모든 권리 보유) · `docs/release/EULA.md`(손님용 사용 약관 · 영어)
-- 홈페이지에 약관 페이지(/terms 등)를 둘 거면 `docs/release/EULA.md` 를 쓰면 된다 — `[ ]` 빈칸(이름 · 이메일 · 준거법 · 날짜)은 다 채움(2026-10-28 · 주소는 넣지 않음)
+- 홈페이지에 약관 페이지(/terms 등)를 둘 거면 `docs/release/EULA.md` 를 쓰면 된다 — `[ ]` 빈칸(이름 · 이메일 · 준거법 · 날짜)은 다 채움(2026-10-28 · 주소는 넣지 않음) · 당사자는 사업자 Novum Lab(대표 Eunju Kim · 사업자등록번호 496-37-01619 · 연락 mcsung@novum-lab.com — 홈페이지 하단과 같게 · 2026-10-28 바꿈) · 약관 5절이 가리키는 제3자 고지는 배포판 앱 `Contents/Resources/THIRD_PARTY_NOTICES.txt`(맥 메뉴 [Athena → Third-Party Notices])
 - 구독은 나중 계획 — 생기면 EULA 에 절을 더하고 홈페이지에 알린다
