@@ -299,6 +299,23 @@ const headTree = (worktree, org, repo, sha) => {
   return remote.ok && /^[0-9a-f]{40}$/.test(remote.out.trim()) ? remote.out.trim() : ''
 }
 
+// PR 브랜치를 체크아웃한 워크트리 — 계획서 하나에 PR 이 여럿이면 Work ref 는 마지막 작업(다른 PR)의 워크트리를 가리킨다.
+// athena-studio#97(2026-10-28): Work ref 가 #99 의 워크트리(머지 뒤 지워짐)라 같은 HEAD 검증이 "워크트리 HEAD 가 PR HEAD 와 다름" 으로 멈추고,
+// base 를 합친 merge 커밋도 isBaseMerge 가 워크트리를 못 찾아 base 합침이 아니라 라운드 4/3 상한 멈춤이 됐다.
+// Work ref 워크트리가 그 브랜치면 그대로 · 아니면 그 레포(Work ref 워크트리 · repos/<레포>)의 워크트리 목록에서 그 브랜치를 찾는다 · 못 찾으면 Work ref 그대로
+const prWorktree = (repo, branch, worktree) => {
+  if (!branch) return worktree
+  if (worktree && existsSync(worktree) && git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD']) === branch) return worktree
+  for (const dir of [worktree, join(ROOT, 'repos', repo)]) {
+    if (!dir || !existsSync(dir)) continue
+    const listed = git(dir, ['worktree', 'list', '--porcelain'])
+    const found = (listed ?? '').split(/\n\s*\n/).find((block) => block.split('\n').includes(`branch refs/heads/${branch}`))
+    const path = found?.match(/^worktree (.+)$/m)?.[1]
+    if (path && existsSync(path)) return path
+  }
+  return worktree
+}
+
 const writeAutoLine = (planPath, entry) => updatePlan(planPath, (current) => withAutoLine(current, { ...entry, stamp: stamp() }))
 // 사람이 정할 결정이 남아 있나 — 둘 중 하나라도면 아직이다(모든 머지 경로가 부른다)
 //   ① plan-html.mjs 가 계획서마다 연 결정 요청(dedupeKey plan:<계획서>)이 열려 있거나 답만 받음(open · answered)
@@ -373,7 +390,8 @@ const ask = (planFile, { key, title, body, options = [] }) => {
 // 요청은 사람이 고를 것이 있는 것만 — 머지 확인(머지/보류) · 결정 필요(결정 콘솔).
 // 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 일감 readPanes 와 같은 기준).
 // 둘 다 없거나 못 보내면 지금처럼 요청으로 남긴다. 같은 key 로 같은 글(같은 HEAD · 제목)을 이미 보냈으면 다시 보내지 않는다
-const NOTIFIED_FILE = join(QUEUE_DIR, 'notified.json')
+// 이름이 .json 으로 끝나면 안 된다 — 처리기(watch)와 --kick 이 QUEUE_DIR 의 *.json 을 리뷰 작업으로 본다(PR #103 자동 리뷰 라운드 2)
+const NOTIFIED_FILE = join(QUEUE_DIR, '.notified')
 // 질문 · 고르기 창이 떠 있어 미룬 알림 — 파일 하나씩(처리기가 꺼져도 남는다 · 처리기가 30초마다 다시 넣어 본다)
 const NOTICE_DIR = join(QUEUE_DIR, 'notices')
 const readNotified = () => {
@@ -487,7 +505,10 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const sha = pr.headRefOid
   if (!dryRun && !needsReview(planText, repo, number, sha)) return console.log(`⏭  ${repo}#${number} @${sha.slice(0, 7)} — 이미 봤거나 사람이 이어받았다`)
   const known = autoLines(planText).get(`${repo}#${number}`)
-  const ref = workRefOf(planText)
+  // Work ref 의 워크트리가 이 PR 브랜치가 아닐 수 있다 — 계획서 하나에 PR 이 여럿이면 마지막 작업(다른 PR)의 것(prWorktree)
+  const workRef = workRefOf(planText)
+  const ref = { ...workRef, worktree: prWorktree(repo, pr.headRefName, workRef.worktree) }
+  if (ref.worktree !== workRef.worktree) console.log(`  ↪ PR 브랜치 ${pr.headRefName} 의 워크트리 ${ref.worktree}(Work ref 는 ${workRef.worktree || '없음'})`)
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)

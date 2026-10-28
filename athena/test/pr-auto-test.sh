@@ -375,7 +375,7 @@ cat > "$BIN/gh" <<'SH'
 echo "gh $*" >> "$FAKE_LOG"
 case "$1 $2" in
   "pr list") echo 7 ;;
-  "pr view") printf '{"state":"OPEN","isDraft":false,"headRefOid":"%s","mergeable":"MERGEABLE","baseRefName":"dev"}\n' "$FAKE_HEAD" ;;
+  "pr view") printf '{"state":"OPEN","isDraft":false,"headRefOid":"%s","headRefName":"feat/x","mergeable":"%s","baseRefName":"dev"}\n' "$FAKE_HEAD" "${FAKE_MERGEABLE:-MERGEABLE}" ;;
   "pr diff") [ -n "${FAKE_DIFF:-}" ] && cat "$FAKE_DIFF" || exit 1 ;;
   "pr edit"|"pr merge"|"pr ready") ;;
   *) exit 1 ;;
@@ -492,6 +492,11 @@ G -C "$WT" reset -q -- z.txt; rm -f "$WT/z.txt" "$WT/y.txt"
 write_plan '검증 대기 — 워크트리를 못 찾음' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
 expect "충돌이 아닌 검증 대기면 --auto-push 거절" '[ $CODE != 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ]' "$OUT"
+# athena-studio#97 — 줄이 다른 이유(워크트리 HEAD 다름)로 검증 대기인 사이 base 와 충돌이 생기면 줄은 그대로다. GitHub 가 지금 CONFLICTING 이면 merge 커밋을 받는다
+write_plan "검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름" p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
+OUT="$(FAKE_MERGEABLE=CONFLICTING ship)"; CODE=$?
+expect "줄이 충돌이 아니어도 GitHub 가 CONFLICTING 이면 base 를 합친 merge 커밋을 빨리 감기 push(#97)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ]' "$OUT"
+git -C "$TMP/origin.git" update-ref refs/heads/feat/x "$SHA2"; rm -f "$QUEUE"/*.json   # 아래 시험은 push 전 상태에서
 write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
 expect "충돌로 검증 대기면 merge 커밋을 빨리 감기 push · 그 HEAD 가 대기열에" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ] && grep -lq "$MERGE_COMMIT" "$QUEUE"/*.json' "$OUT"
@@ -500,6 +505,13 @@ rm -f "$QUEUE"/*.json
 sed -i.bak "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 충돌 확인 CONFLICTING · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "base 합침 — 라운드 3/3 그대로 · 멈춤 · 이어받음 아님 · 리뷰를 돈다" 'echo "$OUT" | grep -q "라운드 3/3 · base 합침" && ! echo "$OUT" | grep -q "멈춤" && ! echo "$OUT" | grep -q "리뷰 없이 같은 HEAD 검증"' "$OUT"
+# athena-studio#97 모양 — 계획서 하나에 PR 이 여럿이라 Work ref 가 다른 PR 의 (지워진) 워크트리 · 줄은 "검증 대기 — 워크트리 HEAD 다름 · 3/3".
+# PR 브랜치(feat/x)를 체크아웃한 워크트리를 레포 워크트리 목록에서 찾아 base 합침으로 본다
+GONEF="plans/task/20261025-web-fe-gone.md"
+sed -e "s|^- Work ref: [^ ]*|- Work ref: $TMP/gone-wt|" -e "s|^- Auto review: .*|- Auto review: web#7 @${SHA2:0:7} · 검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름 · 라운드 3/3 · 2026-10-26 10:00|" "$CORE/$PLANF" > "$CORE/$GONEF"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$GONEF" --pr web#7 --dry-run 2>&1)"
+expect "Work ref 가 지워진 다른 워크트리여도 PR 브랜치 워크트리로 base 합침(#97 — 라운드 3/3 · 멈춤 아님)" 'echo "$OUT" | grep -q "라운드 3/3 · base 합침" && echo "$OUT" | grep -q "PR 브랜치 feat/x 의 워크트리 $WT" && ! echo "$OUT" | grep -q "멈춤"' "$OUT"
+rm -f "$CORE/$GONEF"
 sed -i.bak "s|^- Auto review: web#7 @[0-9a-f]* |- Auto review: web#7 @${SHA:0:7} |" "$CORE/$PLANF" && rm -f "$CORE/$PLANF.bak"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MERGE_COMMIT" FAKE_CODEX=ok node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "첫 부모가 지난번 본 HEAD 가 아니면 base 합침 아님 — 평소처럼 라운드 4/3(멈춤)" 'echo "$OUT" | grep -q "라운드 4/3" && ! echo "$OUT" | grep -q "base 합침"' "$OUT"
@@ -689,7 +701,7 @@ ATHENA_PANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"
 merge_case "검증 못 함 + 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
 [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — " "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
   && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄 · 작업 pane(🤖)에는 안 보냄" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
-# 같은 key · 같은 HEAD · 같은 제목이면 다시 보내지 않는다 — 계획서 줄을 지우고 다시 돌려도(대기열 폴더의 notified.json)
+# 같은 key · 같은 HEAD · 같은 제목이면 다시 보내지 않는다 — 계획서 줄을 지우고 다시 돌려도(대기열 폴더의 .notified)
 : > "$SLOG"
 sed -i.bak '/^- Auto review:/d' "$CORE/plans/task/x.md" && rm -f "$CORE/plans/task/x.md.bak"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" \
@@ -702,7 +714,7 @@ MENU='  ❯ 1. 예
     2. 아니오
   Enter to select · ↑/↓ to navigate · Esc to cancel'
 WATCHER_HELD=1 merge_case "검증 못 함 + 아테나 pane 에 질문 창 → 미룸" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$MENU"
-[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "send-text\|send-keys" "$SLOG" && [ "$(ls "$TMP/queue-confirm/notices" 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && grep -q "pr-auto:web#7" "$TMP/queue-confirm/notified.json" \
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "send-text\|send-keys" "$SLOG" && [ "$(ls "$TMP/queue-confirm/notices" 2>/dev/null | wc -l | tr -d ' ')" = 1 ] && grep -q "pr-auto:web#7" "$TMP/queue-confirm/.notified" \
   && echo "  ✔ 질문 창이 떠 있으면 글 · Enter 를 넣지 않고 미룬 대기열(notices/)에 · 중복 방지는 받은 뒤에 기록" || { echo "  ✖ 질문 창 미루기"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
 flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" FAKE_PANE_TEXT="$1" \
   "$(command -v node)" --input-type=module -e "await (await import('./scripts/pr-auto.mjs')).flushNotices()" > "$TMP/flush.out" 2>&1); }
@@ -712,6 +724,11 @@ flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="
 : > "$SLOG"; flush_notices "> "
 grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함" "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
   && echo "  ✔ 창이 닫히면 처리기가 미룬 알림을 넣고 대기열에서 지운다" || { echo "  ✖ 미룬 알림 넣기"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; FAIL=1; }
+# 중복 방지 기록(.notified)은 리뷰 작업이 아니다 — 대기열에 그것만 있으면 --kick 이 처리기를 띄우지 않는다(PR #103 라운드 2)
+KQ="$TMP/queue-kick"; rm -rf "$KQ"; mkdir -p "$KQ"; cp "$TMP/queue-confirm/.notified" "$KQ/"
+(cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$KQ" "$(command -v node)" scripts/pr-auto.mjs --kick > "$TMP/kick.out" 2>&1)
+[ -s "$KQ/.notified" ] && [ ! -e "$KQ/.launching" ] && ! grep -q "처리기를 뒤에서 시작" "$TMP/kick.out" && [ -z "$(ls "$KQ" | grep '\.json$')" ] \
+  && echo "  ✔ 기록 파일만 있으면 --kick 이 처리기를 띄우지 않는다(*.json 모양이 아님)" || { echo "  ✖ 기록 파일을 작업으로 봤다"; ls -a "$KQ"; cat "$TMP/kick.out"; FAIL=1; }
 # 계획서 Lead pane 이 살아 있으면 그쪽이 먼저
 : > "$SLOG"
 EXTRA_PLAN="- Lead pane: p91
