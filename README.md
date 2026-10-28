@@ -5,6 +5,8 @@ Athena Studio — 아테나(AI 에이전트 개발팀) 데스크톱 앱. 작업 
 > 이 레포를 고치는 에이전트 · 개발자는 [`AGENTS.md`](AGENTS.md)(개발 규칙 · 함께 고칠 곳 · 함정 · 수동 확인)도 본다.
 > `athena/CLAUDE.md` · `athena/AGENTS.md` 는 코어 본체에서 켜는 아테나(팀 리드) 문서라 다르다.
 
+버그 · 기능 제안은 [Issues](https://github.com/novum-lab-kr/athena-studio/issues/new/choose) 양식으로, 보안 문제는 공개 이슈 말고 [비공개 신고](https://github.com/novum-lab-kr/athena-studio/security/advisories/new)로 — [`SECURITY.md`](SECURITY.md).
+
 ## 켜기 (맥)
 필요한 것: Node · npm · git(코어 번들을 `git subtree` 로 만든다) · `claude` 또는 `codex`(작업 창이 처음에 켜는 에이전트).
 ```sh
