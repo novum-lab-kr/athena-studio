@@ -240,3 +240,9 @@ export function planRecord(text: unknown) {
     reviewResult: field(checkpoint, 'Review result'),
   }
 }
+
+// [상세] 의 계획서 칸 — 계획서 원문 줄(record) 위에 일감 카드 값을 얹는다.
+// 제목은 원문 제목이 비면(원문을 못 읽었거나 # 줄이 없으면) 일감 카드 제목으로 — 펼치기 뒤에 두어 원문의 빈 제목이 덮지 않게 한다
+export function detailPlan(plan: DetailPlan & { html?: string; created?: unknown }, record: ReturnType<typeof planRecord>, readable: boolean) {
+  return { ...record, id: plan.id, html: plan.html || null, title: record.title || plan.title || '', created: Number(plan.created) || 0, readable }
+}
