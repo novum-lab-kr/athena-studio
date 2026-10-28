@@ -163,7 +163,7 @@ async function main(args) {
 
   const noticesFile = path.join(STAGING, notices.FILE_NAME)
   const written = notices.writeNotices({ root: ROOT, out: noticesFile, appVersion })
-  console.log(`[package] 제3자 고지 ${written.count}개${written.vendored.length ? ` · 넣어 둔 upstream 원문: ${written.vendored.join(' · ')}` : ''}`)
+  console.log(`[package] 제3자 고지 ${written.count}개${written.vendored.length ? ` · 넣어 둔 upstream 원문: ${written.vendored.join(' · ')}` : ''}${written.reconstructed.length ? ` · package.json 으로 만든 MIT 원문: ${written.reconstructed.join(' · ')}` : ''}`)
 
   const signed = Boolean(process.env.CSC_LINK)
   console.log(`[package] ${appVersion} · ${arches.join(' · ')} · 서명 ${signed ? 'Developer ID(CSC_LINK)' : 'ad-hoc(이 컴퓨터용 — 손님 맥에서는 Gatekeeper 가 막는다)'}`)

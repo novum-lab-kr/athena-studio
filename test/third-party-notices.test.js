@@ -6,7 +6,7 @@ const os = require('os')
 const path = require('path')
 const notices = require('../scripts/third-party-notices')
 
-/** 가짜 레포: 운영 의존성 alpha(LICENSE) · beta(LICENSE.md + NOTICE · 하위 자리에 같은 버전 한 번 더) · gamma(라이선스 파일 없음 — 레포에 넣어 둔 upstream 원문) · 깔리지 않은 선택 의존성 · dev 의존성 */
+/** 가짜 레포: 운영 의존성 alpha(LICENSE) · beta(LICENSE.md + NOTICE · 하위 자리에 같은 버전 한 번 더) · gamma(라이선스 파일 없음 — 레포에 넣어 둔 upstream 원문) · delta(파일 없음 · MIT + author — 표준 문구로 만든 원문) · 깔리지 않은 선택 의존성 · dev 의존성 */
 function fakeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notices-test-'))
   const write = (rel, text) => {
@@ -22,6 +22,7 @@ function fakeRepo() {
       'node_modules/beta': { version: '2.0.0' },
       'node_modules/alpha/node_modules/beta': { version: '2.0.0' },
       'node_modules/gamma': { version: '3.0.0', optional: true },
+      'node_modules/delta': { version: '4.0.0' },
       'node_modules/missing-optional': { version: '1.0.0', optional: true },
       'node_modules/devtool': { version: '9.0.0', dev: true },
       'node_modules/electron': { version: '44.0.0', dev: true },
@@ -37,6 +38,7 @@ function fakeRepo() {
   manifest('node_modules/gamma', { name: 'gamma', version: '3.0.0', license: 'ISC' })
   write('build/third-party-licenses/gamma@3.0.0.LICENSE', 'ISC License\r\nCopyright (c) Gamma\r\n')
   write('build/third-party-licenses/gamma@2.0.0.LICENSE', '옛 버전 원문')
+  manifest('node_modules/delta', { name: 'delta', version: '4.0.0', license: 'MIT', author: 'Delta Person <d@example.com> (https://example.com)' })
   manifest('node_modules/devtool', { name: 'devtool', version: '9.0.0', license: 'MIT' })
   write('node_modules/devtool/LICENSE', 'dev only')
   manifest('node_modules/electron', { name: 'electron', version: '44.0.0', license: 'MIT', repository: 'https://github.com/electron/electron' })
@@ -60,8 +62,9 @@ test('고지 파일 — 깔린 운영 의존성 원문 · 같은 이름 버전�
   try {
     const out = path.join(root, 'dist', notices.FILE_NAME)
     const result = notices.writeNotices({ root, out, appVersion: '0.15.9' })
-    assert.equal(result.count, 4) // electron + alpha · beta · gamma
+    assert.equal(result.count, 5) // electron + alpha · beta · gamma · delta
     assert.deepEqual(result.vendored, ['gamma@3.0.0'])
+    assert.deepEqual(result.reconstructed, ['delta@4.0.0'])
     const text = fs.readFileSync(out, 'utf8')
     assert.match(text, /^Athena Studio 0\.15\.9 — Third-Party Notices/)
     assert.match(text, /electron 44\.0\.0\nLicense: MIT\nSource: https:\/\/github\.com\/electron\/electron/)
@@ -73,9 +76,37 @@ test('고지 파일 — 깔린 운영 의존성 원문 · 같은 이름 버전�
     assert.match(text, /NOTICE\n-+\nBeta notice/)
     assert.equal(text.match(/^beta 2\.0\.0$/gm)?.length, 1)
     assert.match(text, /gamma 3\.0\.0\nLicense: ISC\nLicense text: from the source repository[^\n]*\n=+\n\nISC License\nCopyright \(c\) Gamma/)
-    for (const absent of ['devtool', 'dev only', 'missing-optional', '고지가 아니다', '옛 버전 원문', 'does not include a license file. It is']) assert.ok(!text.includes(absent), absent)
+    assert.match(text, /delta 4\.0\.0\nLicense: MIT\nLicense text: reconstructed from package\.json[^\n]*\n=+\n\nMIT License\n\nCopyright \(c\) Delta Person\n\nPermission is hereby granted/)
+    for (const absent of ['d@example.com', 'https://example.com', 'devtool', 'dev only', 'missing-optional', '고지가 아니다', '옛 버전 원문', 'does not include a license file. It is']) assert.ok(!text.includes(absent), absent)
     // 순서: Electron 다음 이름순
     assert.ok(text.indexOf('electron 44') < text.indexOf('alpha 1') && text.indexOf('alpha 1') < text.indexOf('beta 2') && text.indexOf('beta 2') < text.indexOf('gamma 3'))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('package.json author 이름 — 문자열(메일 · 주소 빼고) · 객체 · 없음', () => {
+  assert.equal(notices.authorName('Vladimir Krivosheev <develar@gmail.com> (https://x.dev)'), 'Vladimir Krivosheev')
+  assert.equal(notices.authorName({ name: 'Vladimir Krivosheev', email: 'x@y' }), 'Vladimir Krivosheev')
+  assert.equal(notices.authorName(undefined), '')
+  assert.equal(notices.authorName({ email: 'x@y' }), '')
+})
+
+test('원문 파일 없는 MIT 라도 author 가 없거나 MIT 가 아니면 만들지 않는다 · 넣어 둔 upstream 원문이 먼저', () => {
+  const root = fakeRepo()
+  try {
+    const out = path.join(root, 'dist', notices.FILE_NAME)
+    // upstream 원문을 넣어 두면 그쪽을 쓴다
+    fs.writeFileSync(path.join(root, 'build', 'third-party-licenses', 'delta@4.0.0.LICENSE'), 'Delta upstream')
+    assert.deepEqual(notices.writeNotices({ root, out }).reconstructed, [])
+    assert.match(fs.readFileSync(out, 'utf8'), /Delta upstream/)
+    fs.rmSync(path.join(root, 'build', 'third-party-licenses', 'delta@4.0.0.LICENSE'))
+    // author 가 없으면 저작권자를 모르니 멈춘다
+    fs.writeFileSync(path.join(root, 'node_modules', 'delta', 'package.json'), JSON.stringify({ name: 'delta', version: '4.0.0', license: 'MIT' }))
+    assert.throws(() => notices.writeNotices({ root, out }), /delta@4\.0\.0 → build\/third-party-licenses\/delta@4\.0\.0\.LICENSE/)
+    // MIT 가 아니면 author 가 있어도 멈춘다
+    fs.writeFileSync(path.join(root, 'node_modules', 'delta', 'package.json'), JSON.stringify({ name: 'delta', version: '4.0.0', license: 'BSD-3-Clause', author: 'Delta Person' }))
+    assert.throws(() => notices.writeNotices({ root, out }), /delta@4\.0\.0/)
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }
