@@ -6,7 +6,7 @@ const os = require('os')
 const path = require('path')
 const notices = require('../scripts/third-party-notices')
 
-/** 가짜 레포: 운영 의존성 alpha(LICENSE) · beta(LICENSE.md + NOTICE · 하위 자리에 같은 버전 한 번 더) · gamma(라이선스 파일 없음) · 깔리지 않은 선택 의존성 · dev 의존성 */
+/** 가짜 레포: 운영 의존성 alpha(LICENSE) · beta(LICENSE.md + NOTICE · 하위 자리에 같은 버전 한 번 더) · gamma(라이선스 파일 없음 — 레포에 넣어 둔 upstream 원문) · 깔리지 않은 선택 의존성 · dev 의존성 */
 function fakeRepo() {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'notices-test-'))
   const write = (rel, text) => {
@@ -35,6 +35,8 @@ function fakeRepo() {
   write('node_modules/beta/licensed-users.txt', '고지가 아니다')
   manifest('node_modules/alpha/node_modules/beta', { name: 'beta', version: '2.0.0', license: 'Apache-2.0' })
   manifest('node_modules/gamma', { name: 'gamma', version: '3.0.0', license: 'ISC' })
+  write('build/third-party-licenses/gamma@3.0.0.LICENSE', 'ISC License\r\nCopyright (c) Gamma\r\n')
+  write('build/third-party-licenses/gamma@2.0.0.LICENSE', '옛 버전 원문')
   manifest('node_modules/devtool', { name: 'devtool', version: '9.0.0', license: 'MIT' })
   write('node_modules/devtool/LICENSE', 'dev only')
   manifest('node_modules/electron', { name: 'electron', version: '44.0.0', license: 'MIT', repository: 'https://github.com/electron/electron' })
@@ -59,7 +61,7 @@ test('고지 파일 — 깔린 운영 의존성 원문 · 같은 이름 버전�
     const out = path.join(root, 'dist', notices.FILE_NAME)
     const result = notices.writeNotices({ root, out, appVersion: '0.15.9' })
     assert.equal(result.count, 4) // electron + alpha · beta · gamma
-    assert.deepEqual(result.withoutFile, ['gamma@3.0.0'])
+    assert.deepEqual(result.vendored, ['gamma@3.0.0'])
     const text = fs.readFileSync(out, 'utf8')
     assert.match(text, /^Athena Studio 0\.15\.9 — Third-Party Notices/)
     assert.match(text, /electron 44\.0\.0\nLicense: MIT\nSource: https:\/\/github\.com\/electron\/electron/)
@@ -70,12 +72,38 @@ test('고지 파일 — 깔린 운영 의존성 원문 · 같은 이름 버전�
     assert.match(text, /LICENSE\.md\n-+\nApache text/)
     assert.match(text, /NOTICE\n-+\nBeta notice/)
     assert.equal(text.match(/^beta 2\.0\.0$/gm)?.length, 1)
-    assert.match(text, /gamma 3\.0\.0\nLicense: ISC\n=+\n\n\(This package does not include a license file/)
-    for (const absent of ['devtool', 'dev only', 'missing-optional', '고지가 아니다']) assert.ok(!text.includes(absent), absent)
+    assert.match(text, /gamma 3\.0\.0\nLicense: ISC\nLicense text: from the source repository[^\n]*\n=+\n\nISC License\nCopyright \(c\) Gamma/)
+    for (const absent of ['devtool', 'dev only', 'missing-optional', '고지가 아니다', '옛 버전 원문', 'does not include a license file. It is']) assert.ok(!text.includes(absent), absent)
     // 순서: Electron 다음 이름순
     assert.ok(text.indexOf('electron 44') < text.indexOf('alpha 1') && text.indexOf('alpha 1') < text.indexOf('beta 2') && text.indexOf('beta 2') < text.indexOf('gamma 3'))
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('넣어 둔 원문 파일 이름 — 이름의 / 는 __ · 버전까지', () => {
+  assert.equal(notices.vendoredFileName('@xterm/headless', '6.0.0'), '@xterm__headless@6.0.0.LICENSE')
+  assert.equal(notices.vendoredFileName('gamma', '3.0.0'), 'gamma@3.0.0.LICENSE')
+})
+
+test('라이선스 원문을 못 찾은 패키지가 있으면 만들지 않는다 — 버전이 다른 원문은 쓰지 않는다', () => {
+  const root = fakeRepo()
+  try {
+    fs.rmSync(path.join(root, 'build', 'third-party-licenses', 'gamma@3.0.0.LICENSE'))
+    const out = path.join(root, 'dist', notices.FILE_NAME)
+    assert.throws(() => notices.writeNotices({ root, out }), /라이선스 원문이 없는 패키지[\s\S]*gamma@3\.0\.0 → build\/third-party-licenses\/gamma@3\.0\.0\.LICENSE/)
+    assert.ok(!fs.existsSync(out))
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})
+
+test('이 레포 — 운영 의존성 모두 라이선스 원문이 있다(넣어 둔 upstream 원문이 지금 버전과 맞다)', { skip: !fs.existsSync(path.join(__dirname, '..', 'node_modules', 'electron', 'package.json')) && 'node_modules 없음' }, () => {
+  const { packages } = notices.collectPackages({ root: path.join(__dirname, '..') })
+  for (const name of ['@xterm/addon-serialize', '@xterm/headless']) {
+    const pkg = packages.find((each) => each.name === name)
+    assert.ok(pkg, name)
+    assert.match(pkg.files[0].text, /Copyright \(c\) 2017-2019, The xterm\.js authors[\s\S]*Permission is hereby granted/)
   }
 })
 
