@@ -836,10 +836,11 @@ const installedClis = () => {
   }
   return AI_CLIS.filter((cli) => installedCache.ids.includes(cli.id))
 }
+// minutes 도 넘긴다 — 스튜디오 메뉴 막대가 이 값으로 언어에 맞는 창 이름을 짓는다(빠지면 한국어 label 로 돌아감)
 const readUsage = () =>
   installedClis().map((cli) => {
     const usage = cli.read()
-    return { id: cli.id, label: cli.label, at: usage?.at ?? null, windows: usage?.windows.map(({ label, percent, resetsAt }) => ({ label, percent, resetsAt })) ?? [] }
+    return { id: cli.id, label: cli.label, at: usage?.at ?? null, windows: usage?.windows.map(({ label, minutes, percent, resetsAt }) => ({ label, minutes, percent, resetsAt })) ?? [] }
   })
 
 // ── 모으기 ──────────────────────────────────────────────────────────────
