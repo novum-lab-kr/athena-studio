@@ -99,7 +99,8 @@ function Section({ title, count, empty = '', children }: { title: string; count:
   )
 }
 
-function WorkRow({ className = '', title, meta, state, kindLabel = '', onClick }: { className?: string; title: string; meta: string; state?: WorkState; kindLabel?: string; onClick: () => void }) {
+// 작업 한 줄 — [작업] 팝업과 pane [상세](ui/pane-detail.tsx — 내가 할 일 · 맡긴 일)가 같이 쓴다
+export function WorkRow({ className = '', title, meta = '', state, kindLabel = '', onClick }: { className?: string; title: string; meta?: string; state?: WorkState; kindLabel?: string; onClick: () => void }) {
   const say = useSay()
   return (
     <button className={`work-row ${className}`.trim()} type="button" onClick={onClick}>
