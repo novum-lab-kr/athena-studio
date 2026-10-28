@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const pkg = require('../scripts/package-mac')
 const studioHome = require('../src/lib/studio-home')
 
-const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', signed: false }
+const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', updateConfigFile: '/tmp/stage/app-update.yml', signed: false }
 
 test('파일 이름은 홈페이지 고정 주소와 같은 꼴 — Athena-Studio-mac-<arch>.<ext>', () => {
   assert.equal(pkg.artifactName('arm64', 'dmg'), 'Athena-Studio-mac-arm64.dmg')
@@ -26,8 +26,21 @@ test('이름 · 번들 ID · 최소 macOS(Electron 44 = 13.0)', () => {
 
 test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core.bundle)로 들어간다', () => {
   const config = pkg.builderConfig(base)
-  assert.deepEqual(config.extraResources, [{ from: base.coreBundle, to: studioHome.CORE_BUNDLE_NAME }])
+  assert.deepEqual(config.extraResources, [
+    { from: base.coreBundle, to: studioHome.CORE_BUNDLE_NAME },
+    { from: base.updateConfigFile, to: 'app-update.yml' },
+  ])
   assert.equal(studioHome.coreBundlePath({ appRoot: '/x', packaged: true, resourcesPath: '/R' }), `/R/${config.extraResources[0].to}`)
+})
+
+test('앱 안 업데이트 설정 — generic 피드 = 공개 레포 최신 Release 고정 주소 · 캐시 폴더 이름 · electron-builder publish 는 끈 채로', () => {
+  // electron-updater 는 이 파일을 YAML 로 읽는다(JSON 은 YAML 이다)
+  assert.deepEqual(JSON.parse(pkg.updateConfig()), {
+    provider: 'generic',
+    url: 'https://github.com/novum-lab-kr/athena-studio-releases/releases/latest/download',
+    updaterCacheDirName: 'athena-studio-updater',
+  })
+  assert.equal(pkg.builderConfig(base).publish, null)
 })
 
 test('RunAsNode 퓨즈는 켜 둔다 — 데몬 · CLI 가 ELECTRON_RUN_AS_NODE 로 돈다 · asar 없음', () => {

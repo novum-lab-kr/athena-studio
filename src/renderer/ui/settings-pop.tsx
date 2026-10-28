@@ -114,8 +114,8 @@ function Switch({ id, kind, label, checked, onClick }: { id: string; kind: 'repo
   )
 }
 
-// ── 앱 업데이트(설정 맨 아래 · 개발 앱 체크아웃만) — origin/main 보다 뒤처졌을 때만 [업데이트] 가 켜진다(⚙ 의 점은 work.ts)
-// 누르면 main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
+// ── 앱 업데이트(설정 맨 아래) — 개발 앱 체크아웃은 origin/main 보다 뒤처졌을 때 · 배포판은 공개 레포에 새 버전이 있을 때만 [업데이트] 가 켜진다(⚙ 의 점은 work.ts)
+// 개발판: main 받기(빨리 감기만) → 필요하면 npm install → 앱 다시 켜기 / 배포판: .zip 받기(sha512) → 서명 확인 · 바꾸기 · 다시 켜기(main runAppUpdate). 못 하면 까닭을 회색 한 줄로
 function reasonText(say: Say, reason: string | null, branch: string | null): string {
   if (reason === 'not-main') return say('settings.appUpdateNotMain', { branch: branch || '-' })
   if (reason === 'dirty') return say('settings.appUpdateDirty')
@@ -123,6 +123,11 @@ function reasonText(say: Say, reason: string | null, branch: string | null): str
   if (reason === 'fetch-failed') return say('settings.appUpdateFetchFailed')
   if (reason === 'ff-failed') return say('settings.appUpdateFfFailed')
   if (reason === 'restart-failed') return say('settings.appUpdateRestartFailed')
+  // 배포판(src/lib/release-update.mts)
+  if (reason === 'check-failed') return say('settings.appUpdateCheckFailed')
+  if (reason === 'download-failed') return say('settings.appUpdateDownloadFailed')
+  if (reason === 'checksum-failed') return say('settings.appUpdateChecksumFailed')
+  if (reason === 'install-failed') return say('settings.appUpdateInstallFailed')
   return ''
 }
 
@@ -130,8 +135,8 @@ function updateNote(say: Say, status: AppUpdateView, failure: string | null): st
   if (status.running) return say('settings.appUpdateRunning')
   if (failure) return reasonText(say, failure, status.branch) || say('settings.appUpdateCurrent')
   if (status.reason && status.state === 'behind') return reasonText(say, status.reason, status.branch)
-  // origin 에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
-  if (status.reason === 'fetch-failed') return reasonText(say, status.reason, status.branch)
+  // origin(개발판) · 피드(배포판)에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
+  if (status.reason === 'fetch-failed' || status.reason === 'check-failed') return reasonText(say, status.reason, status.branch)
   // origin/main 에 새 버전 태그가 있으면 '0.2.1 → 0.3.0' · 아직 없으면 커밋 수
   if (status.state === 'behind' && status.latest) return say('settings.appUpdateNewVersion', { current: status.version || '-', next: status.latest })
   if (status.state === 'behind') return say('settings.appUpdateBehind', { count: status.behind })

@@ -71,6 +71,41 @@ test('latest.json 모양 — version · date · minMacOS(배포판 최소 macOS)
   })
 })
 
+test('latest-mac.yml(앱 안 업데이트 피드) — .zip 만 · 이름 · sha512 · 크기 · 맨 위 path/sha512 = 첫 파일', () => {
+  const feed = release.buildUpdaterFeed({
+    appVersion: '0.15.9',
+    releaseDate: '2026-10-28T12:00:00.000Z',
+    files: [
+      { arch: 'arm64', size: 10, sha512: 'A+/=' },
+      { arch: 'x64', size: 20, sha512: 'B+/=' },
+    ],
+  })
+  assert.equal(release.UPDATER_FEED, 'latest-mac.yml')
+  assert.deepEqual(feed, {
+    version: '0.15.9',
+    files: [
+      { url: 'Athena-Studio-mac-arm64.zip', sha512: 'A+/=', size: 10 },
+      { url: 'Athena-Studio-mac-x64.zip', sha512: 'B+/=', size: 20 },
+    ],
+    path: 'Athena-Studio-mac-arm64.zip',
+    sha512: 'A+/=',
+    releaseDate: '2026-10-28T12:00:00.000Z',
+  })
+  // 인텔 판 이름에는 arm64 가 없어야 한다 — electron-updater 가 이름으로 칩을 고른다
+  assert.ok(!feed.files[1].url.includes('arm64'))
+  assert.throws(() => release.buildUpdaterFeed({ appVersion: '0.15.9', releaseDate: 'x', files: [] }), /zip/)
+})
+
+test('sha512 는 electron-updater 꼴(base64)', async () => {
+  const file = path.join(require('os').tmpdir(), `release-files-${process.pid}.bin`)
+  fs.writeFileSync(file, 'abc')
+  try {
+    assert.equal(await release.sha512Of(file), require('crypto').createHash('sha512').update('abc').digest('base64'))
+  } finally {
+    fs.rmSync(file, { force: true })
+  }
+})
+
 test('날짜는 한국 날짜 YYYY-MM-DD', () => {
   // UTC 10-27 16:00 = 한국 10-28 01:00
   assert.equal(release.releaseDate(new Date('2026-10-27T16:00:00Z')), '2026-10-28')

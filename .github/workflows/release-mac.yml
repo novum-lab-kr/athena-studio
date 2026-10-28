@@ -1,5 +1,6 @@
 # 맥 배포판 — Developer ID 서명 · 공증 · staple 까지 만들어 Actions artifact 로 남긴다(손으로 돌린다 · 계획서 plans/feature/20261028-배포판-패키징-서명-다운로드 D6 · D7 · 2단계)
 # release(기본 켬)면 확인 뒤 latest.json · Release 본문(release-notes.md = CHANGELOG.md 그 minor 절 '## X.Y' — 패치 번호는 맞추지 않는다)도 만들어 같은 artifact 에 넣는다(3단계)
+#   · 앱 안 업데이트 피드 latest-mac.yml(.zip 두 개의 크기 · sha512 — 배포판 ⚙ 업데이트가 읽는다 · 5단계)도 같이
 #   공개 레포 novum-lab-kr/athena-studio-releases 에 올리기는 여기서 하지 않는다 — 로컬에서 scripts/publish-release.js --run <실행 id> 가
 #   사용자 gh 로그인으로 이 artifact 를 받아 다시 확인하고 올린다(토큰 Secret 을 두지 않는다 · 계획서 Decisions)
 #   버전 = 실행 시점 git 태그 그대로. CHANGELOG 에 그 minor 절이 없으면 · 버전이 태그 번호(X.Y.Z)가 아니면 만들기 전에 멈춘다(분을 쓰기 전에). 시험 실행은 release 를 끈다
@@ -170,15 +171,16 @@ jobs:
           ls -l dist/release/*.dmg dist/release/*.zip
           shasum -a 256 dist/release/*.dmg dist/release/*.zip
 
-      - name: latest.json · Release 본문
-        # 확인을 마친 .dmg 로 크기 · sha256 을 잰다 — publish-release.js 가 받은 뒤 다시 잰다
+      - name: latest.json · latest-mac.yml · Release 본문
+        # 확인을 마친 .dmg 로 크기 · sha256(latest.json) · .zip 으로 크기 · sha512(latest-mac.yml)를 잰다 — publish-release.js 가 받은 뒤 다시 잰다
         if: inputs.release
         env:
           VERSION: ${{ steps.release.outputs.version }}
         run: |
           node scripts/release-files.js notes --version "$VERSION" --out dist/release/release-notes.md
           node scripts/release-files.js manifest --version "$VERSION" --dir dist/release --out dist/release/latest.json
-          cat dist/release/latest.json
+          node scripts/release-files.js updater --version "$VERSION" --dir dist/release --out dist/release/latest-mac.yml
+          cat dist/release/latest.json dist/release/latest-mac.yml
 
       - uses: actions/upload-artifact@v4
         with:
@@ -187,6 +189,7 @@ jobs:
             dist/release/*.dmg
             dist/release/*.zip
             dist/release/latest.json
+            dist/release/latest-mac.yml
             dist/release/release-notes.md
             dist/release/staple.json
           if-no-files-found: error
