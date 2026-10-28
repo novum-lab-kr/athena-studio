@@ -6,6 +6,7 @@ import type { ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
+import { WorkRow } from './work-pop.tsx'
 
 // 바닐라가 넘기는 것 — 다른 pane 상세 열기 · pane 으로 가기 · 요청 열기는 바닐라 화면(탭 · pane · 대화상자)에 닿는다
 export type PaneDetailActions = {
@@ -203,22 +204,6 @@ function PrLink({ url }: { url: string }) {
   return <button className="pd-link" type="button" onClick={() => void studio.openUrl(url)}>{url.replace(/^https:\/\/github\.com\//, '')}</button>
 }
 
-// 일감 [작업] 팝업의 한 줄과 같은 모양(ui/work-pop.tsx WorkRow)
-function WorkRow({ className = '', title, meta, state, kindLabel = '', onClick, say }: { className?: string; title: string; meta?: string; state?: string; kindLabel?: string; onClick: () => void; say: Say }) {
-  return (
-    <button className={`work-row ${className}`.trim()} type="button" onClick={onClick}>
-      <span className="work-row-main">
-        <span className="work-row-title">
-          {kindLabel ? <span className="work-kind">{kindLabel}</span> : null}
-          {title}
-        </span>
-        {meta ? <span className="work-row-meta">{meta}</span> : null}
-      </span>
-      {state ? <span className="work-state" data-state={state}>{say(`work.state.${state}`)}</span> : null}
-    </button>
-  )
-}
-
 // 에이전트 pane — 맨 위 사람 몫(내가 할 일 · 막힘), 그다음 한눈 요약(상태 · 몇 분째 · 지금 한 줄 · 다음 · PR),
 // 그 아래 결과 · PR · 리뷰 · 계획서를 펼쳐 둔다(접지 않는다 — 사용자 2026-10-27). 긴 글만 [더 보기]
 function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDetailAgent; say: Say }) {
@@ -232,8 +217,8 @@ function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDe
       {/* 내가 할 일 — 있으면 맨 위 */}
       {detail.todo.length || question ? (
         <Section title={say('pane.detail.section.todo')}>
-          {detail.todo.map((request) => <WorkRow key={request.id} className="ask" kindLabel={say(`work.kind.${request.kind}`)} title={request.title} onClick={() => actions.openRequest(request.id)} say={say} />)}
-          {question ? <WorkRow className="ask" title={say(`pane.detail.todo.${now.reason}`)} onClick={() => actions.goToPane(paneId)} say={say} /> : null}
+          {detail.todo.map((request) => <WorkRow key={request.id} className="ask" kindLabel={say(`work.kind.${request.kind}`)} title={request.title} onClick={() => actions.openRequest(request.id)} />)}
+          {question ? <WorkRow className="ask" title={say(`pane.detail.todo.${now.reason}`)} onClick={() => actions.goToPane(paneId)} /> : null}
         </Section>
       ) : null}
       {/* 막힘 — 사람이 풀어야 해서 요약보다 위에 눈에 띄게 */}
@@ -313,7 +298,6 @@ function LeadSections({ paneId, detail, container, say }: { paneId: string; deta
                 meta={[row.who, row.what, row.sinceMs ? say('pane.detail.since', { time: spanLabel(say, row.sinceMs) }) : '', row.archived ? say('pane.detail.lead.archived') : ''].filter(Boolean).join(' · ')}
                 state={ROW_STATE[group]}
                 onClick={() => openRow(row)}
-                say={say}
               />
             ))}
           </Section>
