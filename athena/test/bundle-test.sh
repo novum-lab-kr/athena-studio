@@ -9,7 +9,7 @@
 # 보는 것: 번들 → 주 본체 clone · 레지스트리 bodiesDir(상대 경로는 데이터 폴더 기준)로 팩 본체 자리 · portBase 포트 범위 ·
 # update --from <번들>(전체 · 앞 커밋을 전제로 한 얇은 번들) · deploy.source · 업데이트 전후 사용자 데이터(<데이터>/packs) 해시 동일 ·
 # 본체 안 진짜 파일(설정·상태 파일·.migrate-*)이 업데이트에 안 건드려짐 · dirty 는 기본 건너뜀 · --backup-dirty 는 사본 뒤 교체(backedUp) ·
-# 되돌리기 · 팩 작업 중인 본체 건너뜀(일하는 세션은 올림 — bodies-test) · 백업 기본 자리(<데이터>/backups/packs) · 일감 포트·로그 이름
+# 되돌리기 · 팩 작업 중인 본체 건너뜀(일하는 세션은 올림 — bodies-test) · 백업 기본 자리(<데이터>/backups/packs) · 현황판 포트·로그 이름
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bundle-test.XXXXXX")" && pwd -P)"
@@ -81,7 +81,7 @@ R="$(J "$CORE" pack open globex)"; BODY_G="$APP/bodies/globex"
 check "globex 본체 = <앱>/bodies/globex · created · 포트 portBase+2" '[ "$(echo "$R" | field body)" = "$BODY_G" ] && [ "$(echo "$R" | field created)" = True ] && [ "$(echo "$R" | field boardPort)" = "$((PORT_BASE+2))" ]' "$R"
 check "<주 본체>-globex 는 만들지 않음 · 같은 저장소 워크트리" '[ ! -e "$APP/core-globex" ] && git -C "$CORE" worktree list | grep -q "$BODY_G"'
 check "globex 본체는 detached · 번들 커밋(origin/main = 번들)" '[ "$(git -C "$BODY_G" rev-parse --abbrev-ref HEAD)" = HEAD ] && [ "$(git -C "$BODY_G" rev-parse HEAD)" = "$C0" ]'
-check "일감 포트·로그 이름(board.sh url · 파이썬 board_port)" '[ "$("$BODY_G/scripts/board.sh" url)" = "http://localhost:$((PORT_BASE+2))" ] && [ "$("$CORE/scripts/board.sh" url)" = "http://localhost:$PORT_BASE" ] && grep -q "hermes-board-\$PORT.log" "$CORE/scripts/board.sh"'
+check "현황판 포트·로그 이름(board.sh url · 파이썬 board_port)" '[ "$("$BODY_G/scripts/board.sh" url)" = "http://localhost:$((PORT_BASE+2))" ] && [ "$("$CORE/scripts/board.sh" url)" = "http://localhost:$PORT_BASE" ] && grep -q "hermes-board-\$PORT.log" "$CORE/scripts/board.sh"'
 R="$(J "$CORE" pack new)"; NEW="$(echo "$R" | field id)"; NEWBODY="$(echo "$R" | field body)"
 check "pack new 도 bodiesDir 안(포트 portBase+4)" '[ "$NEWBODY" = "$APP/bodies/$NEW" ] && [ -d "$NEWBODY" ] && [ "$(echo "$R" | field boardPort)" = "$((PORT_BASE+4))" ]' "$R"
 R="$(J "$CORE" pack discard "$NEW")"

@@ -8,7 +8,7 @@
  *
  * archive/ 는 git 에 커밋한다(진행 중 계획서 plans/** 는 로컬 산출물이라 커밋하지 않는다).
  * 이슈의 plan: 과 계획서의 Issue: 는 새 위치로 고쳐 서로를 가리키게 한다.
- * 일감 [아카이브](server.mjs) · 30일 안전망(archive-plans.sh) · 예전 plans/archive·issues/archive 이전이 모두 이 함수를 쓴다.
+ * 현황판 [아카이브](server.mjs) · 30일 안전망(archive-plans.sh) · 예전 plans/archive·issues/archive 이전이 모두 이 함수를 쓴다.
  *
  * 사용: node scripts/board/archive.mjs <issues/…md | plans/…md> [--dry-run] [--no-commit]   보관한 것만 로컬 커밋(push 는 안 함)
  *       node scripts/board/archive.mjs --migrate [--dry-run]   예전 plans/archive/**·issues/archive/* 를 이 형태로 옮긴다
@@ -133,7 +133,7 @@ export const commitArchive = (results) => {
   }
 }
 
-// ── 히스토리(일감) ─────────────────────────────────────────────────────
+// ── 히스토리(현황판) ─────────────────────────────────────────────────────
 const section = (text, heading) => text.match(new RegExp(`^#{2,3}\\s*${heading}[^\\n]*\\n([\\s\\S]*?)(?=^#{1,3} |$(?![\\s\\S]))`, 'm'))?.[1].trim() ?? ''
 const front = (text) =>
   Object.fromEntries(

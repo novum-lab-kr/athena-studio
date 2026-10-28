@@ -1,5 +1,5 @@
-// Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 일감 서버 · 아테나 폴더 설정
-// 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 일감 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
+// Athena Studio 메인 프로세스 — 창 · 메뉴(단축키) · 작업 창(데몬에 붙기) · 현황판 서버 · 아테나 폴더 설정
+// 창마다 팩 하나 — 창마다 그 팩 본체(athenaDir) · 데몬 연결(본체로 묶임) · 현황판 · 옆 브라우저 · 모니터를 따로 갖는다(createPackWindow).
 // 앱 전체에 하나인 것: 언어 · 앱 설정 · 데몬 프로세스 · 메뉴 · 메뉴 막대(Tray — 앞에 있는 창의 팩만)
 // Electron main 진입점(package.json main) — ES 모듈(.mts · 빌드 없음 · Electron 44 가 타입만 지우고 읽는다).
 // Electron 은 이 파일을 끝까지 읽은 뒤에 ready 를 낸다(2026-10-27 실측 — 맨 위 await 1.5초를 넣어도 ready 전) — 아래 app.setName · setPath 는 그대로 ready 전이다.
@@ -142,7 +142,7 @@ const APP_BACKGROUND = '#16171a'
 // Ctrl 조합은 pane 안(셸·에이전트) 몫이라 앱 단축키는 Cmd(맥) · Alt(그 밖)로만 건다
 const TAB_KEY = isMac ? 'Command' : 'Alt'
 
-// 앱 설정(언어 · 열린 팩 창 목록 windows · 옛 일감 포트 …) — 켤 때(whenReady) 읽는다. 그 전에는 null 이고 쓰는 곳은 모두 그 뒤
+// 앱 설정(언어 · 열린 팩 창 목록 windows · 옛 현황판 포트 …) — 켤 때(whenReady) 읽는다. 그 전에는 null 이고 쓰는 곳은 모두 그 뒤
 let config = null as unknown as AppConfig
 const packWindows = new Set<PackWindow>() // 열린 팩 창 — createPackWindow 의 문맥
 let lastFocused: PackWindow | null = null // 마지막으로 앞에 있던 팩 창(메뉴 · 메뉴 막대가 이 창 기준)
@@ -315,7 +315,7 @@ async function restartDaemon(): Promise<void> {
   for (const each of packWindows) each.send('screen:resync')
 }
 
-// 스튜디오 초기화(메뉴 보기) — 처음 켠 것처럼: 일감 · 데몬(모든 pane · 에이전트)을 끄고 스튜디오 집의 코어 · 본체 · 팩 데이터 ·
+// 스튜디오 초기화(메뉴 보기) — 처음 켠 것처럼: 현황판 · 데몬(모든 pane · 에이전트)을 끄고 스튜디오 집의 코어 · 본체 · 팩 데이터 ·
 // 이 앱의 데몬 파일을 지운 뒤 창 목록을 비우고 앱을 다시 띄운다. 회사 레포 클론 · 언어 설정 · 다른 앱의 접속 파일은 둔다
 async function resetStudio(): Promise<void> {
   const ctx = frontCtx()
@@ -330,7 +330,7 @@ async function resetStudio(): Promise<void> {
   })
   if (choice.response !== 1) return
   quitting = true // 창이 닫히며 창 목록을 다시 적지 않게
-  // 일감은 본체가 있을 때 그 토큰으로 끈다(지운 뒤에는 끌 방법이 없다)
+  // 현황판은 본체가 있을 때 그 토큰으로 끈다(지운 뒤에는 끌 방법이 없다)
   for (const board of plan.boards) await stopStaleBoard(board.port, board.dir).catch(() => false)
   const connection = ctx ? await ctx.connectDaemon().catch(() => null) : null
   if (connection) await connection.call('shutdown').catch(() => null)
@@ -347,8 +347,8 @@ async function resetStudio(): Promise<void> {
   app.exit(0)
 }
 
-// ── 공용 도우미 — src/main/*.mts(에이전트 모니터 기록 읽기 · Explorer · 파일 뷰어 · 일감) ─────
-// 쓰는 것(기록 폴더 · 화면 문구 · 일감 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
+// ── 공용 도우미 — src/main/*.mts(에이전트 모니터 기록 읽기 · Explorer · 파일 뷰어 · 현황판) ─────
+// 쓰는 것(기록 폴더 · 화면 문구 · 현황판 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
 const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
 const { resolveInside } = createFiles({ say })
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
@@ -400,7 +400,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   syncAgentLanguage(ctx.athenaDir)
   // ── 데몬 연결 · pane · 작업 공간 · 에이전트 모니터 · pane [상세] · 따라잡기 — src/main/*.mts(ctx 에 같은 이름으로 붙는다) ──
   let launchWelcome: boolean | null = welcome ? null : false // 켤 때 시작 화면 — 첫 창만 정한다(null = 아직 안 정함)
-  let packBoardPort: number | null = null // 이 본체 일감 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
+  let packBoardPort: number | null = null // 이 본체 현황판 포트(pack status) — 옛 본체면 null(앱 설정 boardPort)
   const monitor = newMonitor()
 
   const send = (channel: string, ...args: unknown[]): void => {
@@ -437,8 +437,8 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡기(catchUpBody)
   installCatchUp(ctx, { studio: STUDIO, runPack: runPack as unknown as Parameters<typeof installCatchUp>[1]['runPack'], packLogFile })
 
-  // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 일감 · 요청 · [작업] — src/main/*.mts ──
-  // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 일감 · 앱 설정)은 인자로 넘긴다
+  // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 현황판 · 요청 · [작업] — src/main/*.mts ──
+  // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 현황판 · 앱 설정)은 인자로 넘긴다
   installExplorer(ctx, { say, resolveInside })
   installAthenaAgent(ctx, { say, runPack, disarmRestore: () => (restoreArmedFor = null) })
   installPackRepos(ctx, { say, runPack, daemonPaths })

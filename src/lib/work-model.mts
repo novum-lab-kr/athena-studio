@@ -1,9 +1,9 @@
-// [작업] 팝업 — 일감 서버 `/api/state` 의 카드(계획서 · 이슈)를 목록으로, `/api/card` 의 계획서 원문을 상세로.
+// [작업] 팝업 — 현황판 서버 `/api/state` 의 카드(계획서 · 이슈)를 목록으로, `/api/card` 의 계획서 원문을 상세로.
 // 칸반 칸 대신 "진행 중 · 최근 끝난 것" 두 묶음과 한 줄 요약만 — 자세한 건 계획서 · pane 으로 간다
 const RECENT_DONE_MS = 24 * 3600000
 const RECENT_DONE_MAX = 5
 
-// 일감 카드에서 여기서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
+// 현황판 카드에서 여기서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
 export type BoardCard = {
   id?: string
   kind?: string
@@ -83,7 +83,7 @@ export function workList(cards: unknown, requests: unknown = [], now: number = D
     html: plan.html || null,
     agents: Array.isArray(plan.agents) ? plan.agents : [],
     mtime: Number(plan.mtime) || 0,
-    // 완료로 바뀐 시각(일감 사건 기록) — 없으면(기록 전에 끝난 것) 파일을 마지막으로 고친 시각
+    // 완료로 바뀐 시각(현황판 사건 기록) — 없으면(기록 전에 끝난 것) 파일을 마지막으로 고친 시각
     doneAt: Number(plan.doneAt) || Number(plan.mtime) || 0,
   }))
   // done 은 진행 중 묶음에 들지 않는다 — 칸을 채워 두는 것뿐

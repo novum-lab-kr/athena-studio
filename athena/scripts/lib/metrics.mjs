@@ -1,5 +1,5 @@
 // 작업 지표 — 사건 기록(state/events.jsonl · docs/events.md)을 계획서마다 묶고 기간 숫자를 낸다.
-// 일감 [지표] 탭(/api/metrics)과 scripts/metrics.mjs 가 같이 쓴다. 파일을 읽지 않는 순수 계산이다
+// 현황판 [지표] 탭(/api/metrics)과 scripts/metrics.mjs 가 같이 쓴다. 파일을 읽지 않는 순수 계산이다
 //
 //   summarize(events, { now, days })   days 가 없으면 전체 기간(지난 기간 비교 없음)
 //

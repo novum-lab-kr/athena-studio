@@ -10,7 +10,7 @@ import type { Say } from './bridge.ts'
 // main 이 보내는 monitor:update(src/main/agent-monitor.mts) — 세션은 src/main/monitor-logs.mts MonitorSession,
 // 이벤트는 MonitorEvent(src/lib/agent-feed.mts FeedEvent + id · session). 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
 type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
-// github — 일감 GitHub 이슈 감시가 아테나에 맡긴 이슈(session 'github' · src/main/agent-monitor.mts)
+// github — 현황판 GitHub 이슈 감시가 아테나에 맡긴 이슈(session 'github' · src/main/agent-monitor.mts)
 type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; github?: { repo: string; number: number; title: string } }
 export type MonitorUpdate = { reset?: boolean; sessions?: MonitorSession[]; events?: MonitorEvent[] }
 

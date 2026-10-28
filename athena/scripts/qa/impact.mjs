@@ -13,7 +13,7 @@
  *   --base   비교 기준 ref. 기본은 그 앱의 prBase(origin/<prBase>) — merge-base 부터의 변경 + 미커밋 + 추적 안 된 파일
  *   --files  변경 파일을 직접 준다(모노레포 루트 기준, 쉼표). 주면 git 을 보지 않는다
  *   --all    변경과 무관하게 화면 전부(전체 검수 — run.mjs --suite)
- *   --json   결과를 JSON 으로 (runner·일감이 읽는다). 없으면 사람이 읽는 표
+ *   --json   결과를 JSON 으로 (runner·현황판이 읽는다). 없으면 사람이 읽는 표
  *   --events 화면마다 코드에 있는 트래킹 이벤트 목록(events) 을 덧붙인다 — 화면 파일에서 import 를 앞으로 따라가며
  *            sendViewEvent·sendClickEvent·sendScrollEvent('이름') 과 ScrollEventWrapper sectionId 를 모은다.
  *            순수 재수출 파일(barrel index.ts)은 건너뛴다(안 쓰는 컴포넌트까지 붙지 않게) — 그래서 근사치다

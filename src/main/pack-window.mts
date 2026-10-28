@@ -42,7 +42,7 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
 
   ctx.show = (tab) => {
     if (!ctx.win || ctx.win.isDestroyed()) return
-    // 일감은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
+    // 현황판은 창을 앞으로 가져오지 않고 기본 브라우저로 — 화면(시작 화면이면 열지 않음)이 정한다
     if (tab === 'board') return send('tab:switch', 'board')
     if (ctx.win.isMinimized()) ctx.win.restore()
     ctx.win.show()

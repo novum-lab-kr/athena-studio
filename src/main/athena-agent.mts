@@ -86,7 +86,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, disarmRe
 
   // ── 백업에서 되살리기 ──
   // 코어 pack restore-work(본체에서) — 워크트리(미커밋 변경 · push 안 한 커밋) → 대화 기록 → 에이전트 pane(delegate.sh --resume).
-  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(일감과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
+  // 에이전트 pane 을 띄우니 데몬 접속 값을 넘긴다(현황판과 같은 값 + 화면 계층 studio). 결과의 athena[] 는 위 openAthenaAgent 가 잇는다
   ctx.restoreStatus = () => runPack(['restore-work', '--dry-run'], { dir: ctx.athenaDir })
   ctx.packRestore = async ({ discard = false }: { discard?: boolean } = {}): Promise<Restore> => {
     disarmRestore()

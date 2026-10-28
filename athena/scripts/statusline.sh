@@ -11,7 +11,7 @@
 
 payload=$(cat)
 
-# 일감 AI 사용량 — 아테나 폴더의 세션은 프로젝트 설정 때문에 이 파일이 statusline 이라
+# 현황판 AI 사용량 — 아테나 폴더의 세션은 프로젝트 설정 때문에 이 파일이 statusline 이라
 # 사용자 설정의 래퍼(scripts/board/statusline.sh)가 돌지 않는다. 여기서 기록만 시킨다(실패해도 상태바는 그대로)
 printf '%s' "$payload" | ATHENA_USAGE_ONLY=1 /bin/sh "$(dirname "$0")/board/statusline.sh" >/dev/null 2>&1
 

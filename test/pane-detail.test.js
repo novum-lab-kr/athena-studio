@@ -21,7 +21,7 @@ test('묶인 pane: 에이전트 pane 은 agent · 맡긴 아테나 pane 은 lead
   assert.equal(detail.samePane('p6fa', 'p6f'), false)
 })
 
-test('아테나 pane(일감 role hermes)은 맡긴 일이 다 보관돼 카드에 없어도 lead · 에이전트 · 그 밖 pane 은 그대로', () => {
+test('아테나 pane(현황판 role hermes)은 맡긴 일이 다 보관돼 카드에 없어도 lead · 에이전트 · 그 밖 pane 은 그대로', () => {
   const cards = [plan('plans/task/a.md', { status: 'done', agents: ['p82'] })]
   const panes = [
     { kind: 'pane', id: 'p67', role: 'hermes' },
@@ -161,7 +161,7 @@ test('계획서 기록: 요청(## 지시) · 진행 · 다음 · 막힘(없음 �
   assert.deepEqual(formal.request, ['이름 바꾸기', '상세 보기'])
 })
 
-test('상세 계획서 칸: 원문 제목이 비면 일감 카드 제목 · 있으면 원문 제목 · 나머지 원문 칸은 그대로', () => {
+test('상세 계획서 칸: 원문 제목이 비면 현황판 카드 제목 · 있으면 원문 제목 · 나머지 원문 칸은 그대로', () => {
   const card = plan('plans/task/a.md', { title: '카드 제목', created: 5, html: 'plans/task/a.html' })
   // 원문을 못 읽음 — 빈 제목이 카드 제목을 덮지 않는다
   const unread = detail.detailPlan(card, detail.planRecord(''), false)

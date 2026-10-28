@@ -1,5 +1,5 @@
 // Athena Studio 데몬 — pane(셸 pty)을 갖고 앱보다 오래 산다. 앱을 닫아도 셸·에이전트는 계속 돈다(rules.md 필수).
-// 앱이 떼어 띄운다(detached · unref, 일감과 같은 방식). 앱·CLI 는 유닉스 소켓으로 말한다(src/lib/protocol.js).
+// 앱이 떼어 띄운다(detached · unref, 현황판과 같은 방식). 앱·CLI 는 유닉스 소켓으로 말한다(src/lib/protocol.js).
 // 띄우기: <node> src/daemon/main.mts --socket <경로> --endpoint <경로> [--cli <athena-studio-cli 경로>]
 //   (앱은 Electron 을 node 로 — ELECTRON_RUN_AS_NODE=1, S2. 표준 출력·오류는 앱이 daemon.log 로 돌린다)
 import fs from 'node:fs'
@@ -146,7 +146,7 @@ export class Daemon {
     log(`데몬 시작 pid ${process.pid} · 소켓 ${this.socketPath} · 프로토콜 ${protocol.PROTOCOL}`)
   }
 
-  // pane 밖(앱이 띄우지 않은 일감 · 일반 터미널)에서 데몬을 찾는 접속 파일(S4)
+  // pane 밖(앱이 띄우지 않은 현황판 · 일반 터미널)에서 데몬을 찾는 접속 파일(S4)
   writeEndpoint() {
     if (!this.endpointPath) return
     fs.mkdirSync(path.dirname(this.endpointPath), { recursive: true, mode: 0o700 })
@@ -254,7 +254,7 @@ export class Daemon {
   }
 
   // 이 요청이 보는 본체 — 묶인 앱 연결이면 그 본체, CLI 는 부른 pane(ATHENA_STUDIO_PANE_ID)의 본체,
-  // pane 밖(일감)이면 CLI 가 실어 온 ATHENA_STUDIO_BODY, 다 없으면 null(전부)
+  // pane 밖(현황판)이면 CLI 가 실어 온 ATHENA_STUDIO_BODY, 다 없으면 null(전부)
   scopeOf(client: Client, message: Message): string | null {
     if (client.body) return client.body
     const caller = message && message.caller ? this.panes.get(message.caller) : null

@@ -26,7 +26,7 @@ import { dropRepoIcons } from './pack-repo-look.mjs'
 export { PackError, alive }
 
 // ── 고정 링크 · 팩 자리 ─────────────────────────────────────────────────
-// 본체 이름 → 팩 데이터 안 자리. 상태 파일(일감 휴지통·학습 수·Jev 캐시·QA 결과)도 팩마다 따로
+// 본체 이름 → 팩 데이터 안 자리. 상태 파일(현황판 휴지통·학습 수·Jev 캐시·QA 결과)도 팩마다 따로
 export const FIXED_LINKS = [
   ['pack', 'pack'], ['plans', 'plans'], ['issues', 'issues'], ['repos', 'repos'], ['.worktrees', 'worktrees'],
   ['archive', 'pack/archive'], ['.sync', 'pack/sync'],
@@ -103,7 +103,7 @@ export const updateRegistry = (data, mutate) => {
     return result
   } finally { release() }
 }
-// 그 팩의 세대 +1(팩에 링크를 처음 걸 때 · 팩이 바뀔 때) — 그 팩을 연 일감·학습 검토만 stale 이 된다
+// 그 팩의 세대 +1(팩에 링크를 처음 걸 때 · 팩이 바뀔 때) — 그 팩을 연 현황판·학습 검토만 stale 이 된다
 export const bumpGeneration = (registry, id) => {
   registry.packs[id] = { ...(registry.packs[id] ?? {}) }
   registry.packs[id].generation = (registry.packs[id].generation ?? 0) + 1
@@ -214,7 +214,7 @@ export const bodyLinksOk = (body) => isLink(join(body, ACTIVE_LINK)) && FIXED_LI
   if (name === '.worktrees' && existsSync(path) && !isLink(path)) return true
   return isLink(path) && readlinkSync(path) === join(ACTIVE_LINK, inner)
 })
-// 본체 일감 포트 — 그 본체에서 boardPort() 가 돌려줄 값(레지스트리 정본 → 본체 설정 → portBase). 부른 본체는 env 까지
+// 본체 현황판 포트 — 그 본체에서 boardPort() 가 돌려줄 값(레지스트리 정본 → 본체 설정 → portBase). 부른 본체는 env 까지
 const bodyBoardPort = (root, body, entry, registry) => {
   if (!body) return entry?.boardPort ?? null
   if (realOr(body) === realOr(root)) return boardPort(root)
@@ -463,8 +463,8 @@ export const readPanesState = (file, nowMs = Date.now()) => {
 // 팩을 바꾸면(attach · import --replace) 안 되는 것 — QA·학습 검토는 코어가 끈다. 모르면(unknown) 막는다
 export const BLOCKING = new Set(['agent', 'athena', 'codex', 'heavy', 'switch', 'unknown'])
 
-// ── 일감 · 학습 검토 · QA 끄기 ────────────────────────────────────────
-// 일감은 포트로 찾되, 그 프로세스가 **이 본체**의 server.mjs 인지 인자로 확인한 뒤에만 끈다(다른 본체 일감을 끄지 않게)
+// ── 현황판 · 학습 검토 · QA 끄기 ────────────────────────────────────────
+// 현황판은 포트로 찾되, 그 프로세스가 **이 본체**의 server.mjs 인지 인자로 확인한 뒤에만 끈다(다른 본체 현황판을 끄지 않게)
 const boardPids = (root) => {
   const port = boardPort(root)
   let pids = []
@@ -1115,7 +1115,7 @@ export const importToken = async (root, token, mode, { report = () => {} } = {})
   }
 
   // --replace — 기존 팩을 자동 백업한 뒤 팩 폴더만 바꾼다(작업 기록은 그대로 이어서).
-  // 그 팩의 본체(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy 검사·일감 끄기·링크 다시
+  // 그 팩의 본체(어느 본체에서 불렀든)를 기준으로 팩 잠금·busy 검사·현황판 끄기·링크 다시
   const id = conflict.id
   const slot = join(data, 'packs', id)
   const release = takePackLock(data, id, `pack import --replace ${id}`)
@@ -1356,12 +1356,12 @@ export const restoreWithWork = async (root, file, mode, options = {}) => {
   }
 }
 
-// ── 일감 토큰 ────────────────────────────────────────────────────────
+// ── 현황판 토큰 ────────────────────────────────────────────────────────
 export const boardToken = (root) => {
   const where = paths(root)
   const file = join(where.mode === 'packs' ? where.state : root, where.mode === 'packs' ? 'board-token' : '.board-token')
   const saved = readJson(file)
-  if (!saved || !alive(saved.pid)) throw new PackError('not-found', '떠 있는 일감이 없다')
+  if (!saved || !alive(saved.pid)) throw new PackError('not-found', '떠 있는 현황판이 없다')
   return { ok: true, token: saved.token, port: saved.port ?? boardPort(root) }
 }
 
@@ -1537,7 +1537,7 @@ export const testSetup = async (root, { report = () => {} } = {}) => {
   }
   saveRegistry(data, registry)
 
-  // 본체 설정 — 데이터 폴더 · 일감 포트(4710). screen 은 넣지 않는다(pane 안 표시로 고른다)
+  // 본체 설정 — 데이터 폴더 · 현황판 포트(4710). screen 은 넣지 않는다(pane 안 표시로 고른다)
   const config = bodyConfig(root)
   writeJsonAtomic(join(root, 'athena.config.json'), { $comment: '테스트 본체 설정 — pack test-setup 이 썼다(docs/pack.md "여러 팩 테스트")', ...config, dataDir: data, boardPort: config.boardPort ?? 4710 })
   const result = await attachPack(root, 'acme', { report })

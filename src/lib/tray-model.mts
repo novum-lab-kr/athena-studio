@@ -1,5 +1,5 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
-// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 일감 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
+// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
 import { createRequire } from 'node:module'
 import * as i18n from './i18n.mts'
 
@@ -14,11 +14,11 @@ const KOREAN: Dictionary = require('../i18n/ko.json')
 // 데몬 pane 에서 읽는 칸만
 export type TrayPane = { id: string; label?: string; agent?: string; agent_status?: string; workspace_id?: string }
 type Workspace = { id: string; label: string }
-// 일감 카드에서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
+// 현황판 카드에서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
 type LinkedPlan = { id?: unknown; grade?: string; status?: string; doneAt?: unknown }
 type TrayCard = { id?: string; kind?: string; title?: string; status?: string; html?: string | null; archived?: boolean; column?: string; doneAt?: unknown; mtime?: unknown; linkedPlan?: LinkedPlan }
 type TrayRequest = { id: string; kind?: string; title: string; state?: string }
-// 일감 header.usage — 도구마다 창(5시간 · 주간 …)
+// 현황판 header.usage — 도구마다 창(5시간 · 주간 …)
 type UsageWindow = { label?: string; minutes?: unknown; percent?: unknown; resetsAt?: ResetsAt }
 type UsageTool = { id?: string; label?: string; windows?: UsageWindow[] }
 type ResetsAt = string | number | Date | null | undefined
@@ -56,7 +56,7 @@ export function liveCards(cards: unknown): LiveCard[] {
   return plans
 }
 
-// 칸반 칸별 수 — 일감이 보여 주는 카드(이슈 · 계획서) 그대로
+// 칸반 칸별 수 — 현황판이 보여 주는 카드(이슈 · 계획서) 그대로
 function columnCounts(cards: unknown): Record<string, number> {
   const columns: Record<string, number> = {}
   const list: (TrayCard | null | undefined)[] = Array.isArray(cards) ? cards : []
@@ -105,7 +105,7 @@ export function summarize({ panes = [], workspaces = [], cards = [], requests = 
   const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'waiting').length
   return {
     counts,
-    // 지난 7일 평균 답 대기(일감 지표) — 확인 필요 머리줄에 붙인다. 일감이 꺼졌거나 기록이 없으면 ''
+    // 지난 7일 평균 답 대기(현황판 지표) — 확인 필요 머리줄에 붙인다. 현황판이 꺼졌거나 기록이 없으면 ''
     avgWait: boardUp && typeof waitMs === 'number' ? say('tray.attention.avgWait', { time: waitText(waitMs, say) }) : '',
     // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
     attention,
@@ -162,7 +162,7 @@ export function doneByHour(cards: unknown, now: number = Date.now()): { hours: n
   return { hours, total }
 }
 
-// 창 이름 — 일감이 준 창 길이(분)로 지금 언어에 맞춰 짓는다. 길이가 없으면(옛 코어) 일감이 준 label(한국어) 그대로
+// 창 이름 — 현황판이 준 창 길이(분)로 지금 언어에 맞춰 짓는다. 길이가 없으면(옛 코어) 현황판이 준 label(한국어) 그대로
 export function windowName(window: UsageWindow, say: Say = koreanSay): string | undefined {
   const minutes = window.minutes
   if (typeof minutes !== 'number' || !Number.isInteger(minutes) || minutes <= 0) return window.label
@@ -173,7 +173,7 @@ export function windowName(window: UsageWindow, say: Say = koreanSay): string | 
   return say('tray.usage.window.minutes', { count: minutes })
 }
 
-// 일감 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
+// 현황판 header.usage → [{ tool, toolId, window, percent, reset }] — 패널 막대용(toolId 로 도구 색)
 export function usageItems(usage: unknown, now: number = Date.now(), say: Say = koreanSay): UsageItem[] {
   const items: UsageItem[] = []
   const tools: UsageTool[] = Array.isArray(usage) ? usage : []

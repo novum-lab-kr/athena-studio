@@ -59,7 +59,7 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
     browserAttached = false
   }
 
-  // 작업 창 · 일감 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지 — 창끼리 같은 저장소),
+  // 작업 창 · 현황판 오른쪽에서 스르륵 나오는 서랍. 페이지는 main 의 WebContentsView 가 그리고(아무 사이트 · 로그인 쿠키 유지 — 창끼리 같은 저장소),
   // 화면은 서랍 안 자리(#browser-slot)의 사각형만 알려 준다. 페이지에는 preload · Node 를 넘기지 않는다
   function ensureBrowserView(): WebContentsView {
     if (browserView && !browserView.webContents.isDestroyed()) return browserView

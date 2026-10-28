@@ -11,12 +11,12 @@
   이 파일 하나가 작업계획서의 라이프사이클 전체를 담는다.
     (1) 승인 전 → 머리(제목·요약·상태) 아래 "결정 콘솔"에서 선택지를 고르고
                   [이대로 진행] — 결정이 PLAN.leadPane(계획서를 만든 아테나 pane)에 바로
-                  입력된다. .md 본문은 그 아래 "계획서 전문"으로 렌더링된다. 일감 주소
+                  입력된다. .md 본문은 그 아래 "계획서 전문"으로 렌더링된다. 현황판 주소
                   (scripts/board.sh open <이 파일>)로 열어야 보낼 수 있고, 보낼 수 없으면
                   [프롬프트로 복사] 로 바뀐다
     (2) 확정 후 → 각 결정에 decided 값을 채우면 결정 카드가 "확정" 으로 잠기고(고른 것만
                   보이고 나머지는 접힘), 아래 .md 본문이 "읽기용 계획서"로 유지된다.
-  색은 시스템 설정을 따른다 — 라이트는 일감 종이색, 다크는 Athena Studio 앱과 같은 값.
+  색은 시스템 설정을 따른다 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱과 같은 값.
   스타일 · 스크립트는 plan-html.mjs 가 계획서를 맞출 때마다 이 템플릿 것으로 바꿔 쓴다
   (PLAN · plan-md 두 블록만 그 계획서 것) — 기존 계획서도 다음 갱신 때 새 모양이 된다.
 
@@ -91,7 +91,7 @@ const PLAN = {
 </script>
 
 <style>
-  /* 색 — 라이트는 일감 종이색, 다크는 Athena Studio 앱(src/renderer/style.css)과 같은 값. 시스템 설정(prefers-color-scheme)을 따른다 */
+  /* 색 — 라이트는 현황판 종이색, 다크는 Athena Studio 앱(src/renderer/style.css)과 같은 값. 시스템 설정(prefers-color-scheme)을 따른다 */
   :root {
     color-scheme: light;
     --bg: #f5f3ee;
@@ -417,8 +417,8 @@ const PLAN = {
   const allConfirmed = () => PLAN.decisions.length > 0 &&
     PLAN.decisions.every((dec) => !dec.required || isConfirmed(dec));
 
-  // --- 화면 글자(UI) — 스튜디오 언어로. 일감이 이 파일을 내줄 때 window.ATHENA_LANG(본체 .claude/settings.local.json 의 language)을 넣는다.
-  // 일감을 거치지 않고 열면(file:// 등) 값이 없어 한국어. 계획서 내용(PLAN 제목 · 결정 · 본문)과 보낼 프롬프트는 번역하지 않는다
+  // --- 화면 글자(UI) — 스튜디오 언어로. 현황판이 이 파일을 내줄 때 window.ATHENA_LANG(본체 .claude/settings.local.json 의 language)을 넣는다.
+  // 현황판을 거치지 않고 열면(file:// 등) 값이 없어 한국어. 계획서 내용(PLAN 제목 · 결정 · 본문)과 보낼 프롬프트는 번역하지 않는다
   // (프롬프트 머리 '[작업계획서 결정사항 확정]' 은 에이전트 지시문이 찾는 글이다)
   const TEXTS = {
     ko: {
@@ -440,7 +440,7 @@ const PLAN = {
       barLeft: '<b>결정 대기</b> · 필수 {count}개를 고르고 [이대로 진행]',
       barAllPicked: '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요',
       barConfirmed: '<b>확정됨</b> · 아래 결정대로 진행합니다',
-      sendFailed: '보내지 못했어요', noPane: '보낼 pane 이 계획서에 적혀 있지 않아요', noBoard: '일감 주소로 열지 않아 바로 보낼 수 없어요',
+      sendFailed: '보내지 못했어요', noPane: '보낼 pane 이 계획서에 적혀 있지 않아요', noBoard: '현황판 주소로 열지 않아 바로 보낼 수 없어요',
     },
     en: {
       'type.feature': 'Feature', 'type.bugfix': 'Bug fix', 'type.refactor': 'Refactor', 'type.task': 'Task',
@@ -742,7 +742,7 @@ const PLAN = {
   });
 
   // 의존성 없는 경량 마크다운 렌더러 (중첩목록 미지원)
-  // 따옴표까지 이스케이프한다 — 일감이 토큰을 넣어 주는 페이지라 본문 링크로 속성이 깨지면 /api/* 를 부를 수 있다
+  // 따옴표까지 이스케이프한다 — 현황판이 토큰을 넣어 주는 페이지라 본문 링크로 속성이 깨지면 /api/* 를 부를 수 있다
   function mdEscape(str) {
     return String(str).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
   }
@@ -855,10 +855,10 @@ const PLAN = {
     toastTimer = setTimeout(() => toast.classList.remove('show'), 1600);
   }
 
-  // --- [이대로 진행]: 일감 서버(/api/action)를 거쳐 계획서를 만든 아테나 pane 에 입력한다 ---
-  // 토큰은 일감이 이 파일을 서빙할 때 넣어 준다. file:// 로 열었거나 보낼 pane 이 없으면 복사로 바꾼다
+  // --- [이대로 진행]: 현황판 서버(/api/action)를 거쳐 계획서를 만든 아테나 pane 에 입력한다 ---
+  // 토큰은 현황판이 이 파일을 서빙할 때 넣어 준다. file:// 로 열었거나 보낼 pane 이 없으면 복사로 바꾼다
   let sent = false;
-  let queued = false; // 일감이 받았지만 pane 에 질문 창이 떠 있어 닫히면 넣는다(GitHub #100)
+  let queued = false; // 현황판이 받았지만 pane 에 질문 창이 떠 있어 닫히면 넣는다(GitHub #100)
   let sending = false;
   let sendError = '';
   const boardToken = window.ATHENA_BOARD_TOKEN || '';
@@ -877,7 +877,7 @@ const PLAN = {
       const response = await fetch('/api/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Board-Token': boardToken },
-        // plan — 일감이 이 계획서의 결정 요청에 답을 적는다(scripts/lib/requests.mjs)
+        // plan — 현황판이 이 계획서의 결정 요청에 답을 적는다(scripts/lib/requests.mjs)
         body: JSON.stringify({ pane: PLAN.leadPane, plan: PLAN.mdFile, text: buildPrompt() }),
       });
       const result = await response.json().catch(() => ({}));

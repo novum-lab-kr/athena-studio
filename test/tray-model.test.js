@@ -24,7 +24,7 @@ test('요약: 확인 필요(요청만) · 막힘은 계획서만 · 에이전트
   assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle'], ['claude', 'athena', 'idle']])
   assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
   assert.equal(summary.idleAgents, 2)
-  // 평균 답 대기 — 일감이 떠 있고 값이 있을 때만 확인 필요 머리줄에
+  // 평균 답 대기 — 현황판이 떠 있고 값이 있을 때만 확인 필요 머리줄에
   assert.equal(summary.avgWait, '')
   assert.equal(tray.summarize({ boardUp: true, waitMs: 3.2 * 3600000 }).avgWait, ' · 평균 대기 3.2시간')
   assert.equal(tray.summarize({ boardUp: false, waitMs: 3600000 }).avgWait, '')
@@ -128,7 +128,7 @@ test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 
   assert.deepEqual(notifier.updateRequests([open('a'), open('b', 'decision')]), [])
 })
 
-test('사용량 창 이름: 일감이 준 창 길이(분)로 지금 언어에 맞춰 짓고, 길이가 없으면(옛 코어) label 그대로', () => {
+test('사용량 창 이름: 현황판이 준 창 길이(분)로 지금 언어에 맞춰 짓고, 길이가 없으면(옛 코어) label 그대로', () => {
   const i18n = require('../src/lib/i18n.mts')
   const korean = require('../src/i18n/ko.json')
   const englishSay = i18n.translator(require('../src/i18n/en.json'), korean)

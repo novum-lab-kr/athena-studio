@@ -60,7 +60,7 @@ body {
   -webkit-app-region: drag;
 }
 body[data-platform="darwin"] .tabbar { padding-left: 80px; } /* 맥 신호등 버튼 자리 */
-/* 탭 줄 오른쪽 도구 버튼(📋 일감 토글 · 🌐 브라우저) — 일감은 data-tab 으로 탭 전환에 낀다 */
+/* 탭 줄 오른쪽 도구 버튼(📋 현황판 토글 · 🌐 브라우저) — 현황판은 data-tab 으로 탭 전환에 낀다 */
 .tabbar-tool {
   -webkit-app-region: no-drag;
   height: 28px;
@@ -91,9 +91,9 @@ body[data-platform="darwin"] .tabbar { padding-left: 80px; } /* 맥 신호등 �
   pointer-events: none;
 }
 .tip[hidden] { display: none; }
-.tabbar-tool:disabled { opacity: 0.35; cursor: default; background: transparent; color: var(--muted); } /* 시작 화면 동안 일감 · 브라우저 */
+.tabbar-tool:disabled { opacity: 0.35; cursor: default; background: transparent; color: var(--muted); } /* 시작 화면 동안 현황판 · 브라우저 */
 .tabbar-tool svg { fill: none; stroke: currentColor; stroke-width: 1.2; }
-.tabbar-tool[aria-selected="true"] { background: var(--surface-active); color: var(--text); } /* 일감 아이콘이 열린 탭일 때 */
+.tabbar-tool[aria-selected="true"] { background: var(--surface-active); color: var(--text); } /* 현황판 아이콘이 열린 탭일 때 */
 .spacer { flex: 1; }
 main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면 밖에서 들어오는 옆 브라우저가 가로 스크롤을 만들지 않게 */
 .panel { position: absolute; inset: 0; }
@@ -1250,7 +1250,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space-status { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .space-status.working { background: var(--success); }
 
-/* ── [작업] 팝업 · 일감 페이지 메뉴 ─────────────────────────────
+/* ── [작업] 팝업 · 현황판 페이지 메뉴 ─────────────────────────────
    탭 줄 [작업] — 나를 기다리는 것이 있으면 왼쪽 위 모서리에 금색 점만(숫자 없음 · 사용자). 팝업은 버튼 아래에 붙는 창(모달 아님) */
 .tabbar-tool.work-tool { position: relative; width: auto; display: inline-flex; align-items: center; gap: 6px; padding: 0 8px; font: 12.5px var(--font-ui); }
 .work-ask { position: absolute; top: 3px; left: 3px; width: 7px; height: 7px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--bar); pointer-events: none; }

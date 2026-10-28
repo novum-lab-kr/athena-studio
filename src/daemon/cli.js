@@ -95,7 +95,7 @@ async function main(argv, env) {
   /** @type {Result} */
   let result
   try {
-    // 부른 pane 이 없을 때(일감 등 pane 밖) 어느 본체(팩) 것인지 — 앱이 일감 환경에 넣는다(protocol 5)
+    // 부른 pane 이 없을 때(현황판 등 pane 밖) 어느 본체(팩) 것인지 — 앱이 현황판 환경에 넣는다(protocol 5)
     result = await request(socket, parsed.op, parsed.args, env.ATHENA_STUDIO_PANE_ID || null, env.ATHENA_STUDIO_BODY || null)
   } catch (caught) {
     const error = /** @type {Failure} */ (caught)

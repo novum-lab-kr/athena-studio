@@ -1,7 +1,7 @@
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 ───────────────────
 // main.js 에서 옮겼다(PR3d) — 화면 문구(say) · 앞 창 찾기(frontCtx) · 열린 팩 창(packWindows) · 지난 창 다시 열기(openSavedWindows)는 setupTray 인자로 받는다
 // 맥 상단 메뉴 막대 아이콘 — 누르면 확인 필요 · 에이전트 · 사용량 · 바로가기. 막힘 · 응답 끝 · 리뷰 대기 · 완료는 맥 알림.
-// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 일감 상태(/api/state — 일감을 띄우지는 않는다)를 본다.
+// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
 import fs from 'node:fs'
 import path from 'node:path'
@@ -23,7 +23,7 @@ const electronScreen = (): typeof import('electron').screen => require('electron
 type Workspace = { id: string; label: string }
 type PeekReply = { result?: { panes: TrayPane[]; workspaces: Workspace[]; focused: string | null; text?: unknown } }
 type RequestsState = { supported: boolean; requests: unknown[] }
-// 일감 /api/state · /api/metrics 에서 읽는 칸만
+// 현황판 /api/state · /api/metrics 에서 읽는 칸만
 type BoardState = { cards?: unknown[]; header?: { usage?: unknown[] } }
 type BoardMetrics = { current?: { waitMs?: unknown } }
 // 알림 대상 — 묶인 알림(trayModel.bundle)의 target 에 계획서 결정 콘솔(html)이 올 수도 있다
@@ -253,7 +253,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
           trayState.boardOkAt = Date.now()
           trayState.cards = board.cards || []
           trayState.usage = (board.header && board.header.usage) || []
-          // 평균 답 대기(지난 7일 · 일감 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
+          // 평균 답 대기(지난 7일 · 현황판 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
           if (Date.now() - trayState.metricsAt > 5 * 60000) {
             trayState.metricsAt = Date.now()
             const metrics = (await fetchBoardJson(ctx.boardPortNow(), '/api/metrics?days=7')) as BoardMetrics | null
@@ -296,7 +296,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
     )
   }
 
-  // 일감이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
+  // 현황판이 떠 있으면 그 상태를 읽는다 — 어떤 실패든 한 번 null(0건으로 치지 않는다)
   function fetchBoardState(port: number): Promise<unknown> {
     return fetchBoardJson(port, '/api/state')
   }
@@ -368,7 +368,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
     await ctx.daemonCall('focus', { pane: String(paneId) })
   }
 
-  // 계획서 결정 콘솔이 있으면 옆 브라우저로, 없으면 일감 탭
+  // 계획서 결정 콘솔이 있으면 옆 브라우저로, 없으면 현황판 탭
   function openCardFromTray(html: string | null | undefined) {
     const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : frontCtx()
     if (!ctx) return

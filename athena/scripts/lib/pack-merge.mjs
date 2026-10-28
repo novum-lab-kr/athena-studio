@@ -6,7 +6,7 @@
 // main 직접 레포("direct": true)는 PR 이 없어 대상이 아니다(not-applicable).
 // 파일은 글자 단위로 고친다 — 그 레포 항목의 두 키만 넣고 빼고, 다른 키 · 순서 · 들여쓰기 · 한 줄로 쓴 항목 모양은 그대로 둔다.
 // 명령 입구 scripts/athena.mjs(pack set-auto-merge) · 스튜디오 앱 ⚙ 설정이 이 명령을 부른다. 글자 고치기 도구(repoObject · setKey · deleteKey)는 pack-repo-look.mjs 도 쓴다.
-// 일감 · pr-auto.mjs 는 확인할 때마다 pack.json 을 새로 읽으므로 다시 띄울 필요가 없다
+// 현황판 · pr-auto.mjs 는 확인할 때마다 pack.json 을 새로 읽으므로 다시 띄울 필요가 없다
 import { isDeepStrictEqual } from 'node:util'
 import { readFileSync, renameSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'

@@ -146,7 +146,7 @@ function renderPackWelcome(): void {
   const on = welcomeShown()
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
-  // 일감 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
+  // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
   $<HTMLButtonElement>('board-tab').disabled = !state || !state.valid || on
   $<HTMLButtonElement>('diagrams-open').disabled = !state || !state.valid || on
   $<HTMLButtonElement>('browser-toggle').disabled = on
@@ -234,7 +234,7 @@ async function openOrSwitchPack(id: string, { newWindow, name }: { newWindow: bo
   return result
 }
 
-// 이 창이 다른 본체로 다시 묶였다 — 상태 · 일감 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
+// 이 창이 다른 본체로 다시 묶였다 — 상태 · 현황판 · 옆 브라우저 · 작업 창을 그 팩 것으로. 처음 온 팩이면 아테나 에이전트를 켜고(/setup 포함),
 // 다녀온 팩이면 보던 자리 그대로(keepView)
 export async function applySwitchedPack(next: AthenaState): Promise<void> {
   setState(next)

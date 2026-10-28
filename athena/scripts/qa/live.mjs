@@ -1,6 +1,6 @@
 /**
  * 실시간 호출 기록 — QA 브라우저가 보내는 API 호출(GraphQL 연산·보낸 값·응답 상태, REST)과 트래킹 이벤트를
- * .qa-runs/<런>/live.jsonl 에 한 줄씩 쌓는다. 일감 /qa-live?id=<런> 창이 이 파일을 따라 읽어 옆에서 보여 준다.
+ * .qa-runs/<런>/live.jsonl 에 한 줄씩 쌓는다. 현황판 /qa-live?id=<런> 창이 이 파일을 따라 읽어 옆에서 보여 준다.
  *
  *   const live = createLiveLog(runDir)
  *   live.attach(context, 'desktop')     그 컨텍스트의 호출을 기록

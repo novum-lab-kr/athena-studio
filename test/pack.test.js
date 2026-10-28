@@ -149,7 +149,7 @@ test('레포 표시 이름 · 이미지: 규칙에 맞는 displayName 만 · ico
   assert.deepEqual(pack.repoLook(null), { displayName: null, icon: null })
 })
 
-test('일감 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 current (A→B→A 의 옛 A 는 stale)', () => {
+test('현황판 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 current (A→B→A 의 옛 A 는 stale)', () => {
   const current = { id: 'acme', generation: 3 }
   assert.equal(pack.boardIdentity({ cards: [] }, current), 'legacy')
   assert.equal(pack.boardIdentity({ pack: { id: 'acme', generation: 3 } }, current), 'current')
@@ -158,7 +158,7 @@ test('일감 판단: pack 이 없으면 legacy, 팩 · 세대가 같아야 curre
   assert.equal(pack.boardIdentity({ pack: { id: 'acme', generation: 3 } }, null), 'stale')
 })
 
-test('일감 포트: pack status 의 boardPort 만 · 실패 · 이상한 값은 null(옛 본체 — 앱 설정)', () => {
+test('현황판 포트: pack status 의 boardPort 만 · 실패 · 이상한 값은 null(옛 본체 — 앱 설정)', () => {
   assert.equal(pack.statusBoardPort({ ok: true, boardPort: 4710 }), 4710)
   assert.equal(pack.statusBoardPort({ ok: true }), null)
   assert.equal(pack.statusBoardPort({ ok: true, boardPort: '4710' }), null)

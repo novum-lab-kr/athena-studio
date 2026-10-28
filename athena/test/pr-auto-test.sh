@@ -146,14 +146,14 @@ check('Status — 진행 중 · 리뷰는 그대로 대상 · 완료 · 계획�
   ['in_progress', 'ready_for_review'].every((status) => autoReviewAction(status) === 'review') && ['done', 'planned'].every((status) => autoReviewAction(status) === 'reopen')
   && autoReviewAction('blocked') === 'skip' && autoReviewAction('') === 'skip')
 check('Status 읽기 — 설명 · 굵게 · 코드 표시가 붙어도 첫 상태 낱말', planStatusOf('## Checkpoint\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n') === 'done' && planStatusOf('- Status: **`ready_for_review`**\n') === 'ready_for_review' && planStatusOf('본문만\n') === '')
-const doneText = '# x\n## Checkpoint\n- Updated: 2026-10-26 10:00 / 일감 자동(PR 머지)\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n- Agent: web-fe\n'
+const doneText = '# x\n## Checkpoint\n- Updated: 2026-10-26 10:00 / 현황판 자동(PR 머지)\n- Status: done — 자동 — PR #27 이 main 에 머지됨\n- Agent: web-fe\n'
 const reopened = reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: 'ship.sh(이어 올린 PR)' })
 check('되돌리기 — Status 줄 · Updated 줄만 바꿈 · 다시 읽으면 대상', reopened === `# x\n## Checkpoint\n- Updated: 2026-10-26 11:00 / ship.sh(이어 올린 PR)\n- Status: ${REOPEN_STATUS} — 이어 올린 PR web#28 자동 리뷰 대기(완료에서 되돌림)\n- Agent: web-fe\n` && autoReviewAction(planStatusOf(reopened)) === 'review', reopened)
-const claimOpts = { config: { repos: [{ name: 'web', agents: ['web-fe'], autoMerge: true }, { name: 'api', agents: ['api-be'] }] }, repoName: 'web', number: '28', stamp: '2026-10-26 11:00', by: '일감 자동(이어 올린 PR)' }
+const claimOpts = { config: { repos: [{ name: 'web', agents: ['web-fe'], autoMerge: true }, { name: 'api', agents: ['api-be'] }] }, repoName: 'web', number: '28', stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' }
 const blockedNow = doneText.replace(/^- Status:.*$/m, '- Status: blocked — 사용자 답 기다림')
-check('일감 — 잠금 안 최신 Status 로 다시 판정: 조회 사이 blocked 로 바뀌면 skip · 글 그대로(PR #29 지적)', claimAutoReview(blockedNow, claimOpts).action === 'skip' && claimAutoReview(blockedNow, claimOpts).text === blockedNow)
-check('일감 — done 은 되돌림(ship.sh 와 같은 글) · 리뷰는 그대로 · 여러 레포 계획서는 되돌리지 않음',
-  claimAutoReview(doneText, claimOpts).action === 'reopened' && claimAutoReview(doneText, claimOpts).text === reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: '일감 자동(이어 올린 PR)' })
+check('현황판 — 잠금 안 최신 Status 로 다시 판정: 조회 사이 blocked 로 바뀌면 skip · 글 그대로(PR #29 지적)', claimAutoReview(blockedNow, claimOpts).action === 'skip' && claimAutoReview(blockedNow, claimOpts).text === blockedNow)
+check('현황판 — done 은 되돌림(ship.sh 와 같은 글) · 리뷰는 그대로 · 여러 레포 계획서는 되돌리지 않음',
+  claimAutoReview(doneText, claimOpts).action === 'reopened' && claimAutoReview(doneText, claimOpts).text === reopenedPlan(doneText, { note: reopenNote('web', '28'), stamp: '2026-10-26 11:00', by: '현황판 자동(이어 올린 PR)' })
   && claimAutoReview(reopened, claimOpts).action === 'review'
   && claimAutoReview(doneText.replace('- Agent: web-fe', '- Agent: web-fe · api-be'), claimOpts).action === 'skip')
 
@@ -443,7 +443,7 @@ OUT="$(run_confirms '')"
 expect "pane 이 없으면 보내지 않는다(닫힌 세션을 다시 열지 않음) · 계획서 줄은 머지됨" '! grep -q "send-text" "$FLOG" && ! grep -q "delegate" "$FLOG" && grep -q "· 머지됨 — squash → dev ·" "$CORE/$PLANF"' "$OUT
 $(cat "$FLOG")"
 
-# push 하자마자 대기열에(지시 1) — --auto-push 로 새 커밋을 올리면 그 HEAD 가 바로 대기열에 · 같은 HEAD 를 또 넣어도(일감 안전망) 하나만
+# push 하자마자 대기열에(지시 1) — --auto-push 로 새 커밋을 올리면 그 HEAD 가 바로 대기열에 · 같은 HEAD 를 또 넣어도(현황판 안전망) 하나만
 echo more > "$WT/b.txt" && G -C "$WT" add b.txt && G -C "$WT" commit -q -m y
 SHA2="$(git -C "$WT" rev-parse HEAD)"
 write_plan '수정 필요' p3; printf -- '- `%s` feat/x · 시험2 · push 안 함\n' "${SHA2:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
@@ -451,7 +451,7 @@ OUT="$(ship)"; CODE=$?
 expect "--auto-push 새 커밋 → push · 그 HEAD 가 바로 대기열에(5분 감지를 기다리지 않음)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ] && [ "$(grep -l "$SHA2" "$QUEUE"/*.json 2>/dev/null | wc -l | tr -d " ")" = 1 ]' "$OUT
 $(ls "$QUEUE")"
 OUT="$(cd "$CORE" && "${ENVS[@]}" node scripts/pr-auto.mjs --enqueue --plan "$PLANF" --pr web#7 --head "$SHA2" 2>&1)"
-expect "일감이 같은 HEAD 를 또 넣어도 하나만(이미 대기열에 있다)" 'echo "$OUT" | grep -q "이미" && [ "$(ls "$QUEUE"/*.json | wc -l | tr -d " ")" = 1 ]' "$OUT"
+expect "현황판이 같은 HEAD 를 또 넣어도 하나만(이미 대기열에 있다)" 'echo "$OUT" | grep -q "이미" && [ "$(ls "$QUEUE"/*.json | wc -l | tr -d " ")" = 1 ]' "$OUT"
 rm -f "$QUEUE"/*.json
 
 # 충돌 풀기(2026-10-26 · PR #21 재현) — base 를 합친 merge 중이면 commit.sh 가 merge 커밋을 만들고, ship.sh --auto-push 가 충돌로 검증 대기인 PR 에 올린다

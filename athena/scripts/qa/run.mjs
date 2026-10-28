@@ -25,10 +25,10 @@
  *   --profiles a,b      세션 상태 여럿을 동시에(dev 서버 하나 공유)
  *   --tc-picks <파일>    변경분 TC(/qa-tc <앱> <브랜치> 가 만든 .qa-runs/tc-picks/<앱>@<브랜치>.json) — 영향 QA 에서 기본으로 그 브랜치 파일을 찾는다.
  *                       그 TC 에 걸린 흐름 씬을 화면 검사 뒤에 돌리고, 씬이 없는 TC 는 "사람이 확인" 으로 남긴다
- *   --live              창 없이 돌고, 일감 /qa-live?id=<런> 한 페이지에 화면(데스크톱·모바일·씬)·API 호출·Mixpanel 이벤트를 실시간으로 — 일감이 떠 있으면 그 페이지를 연다
+ *   --live              창 없이 돌고, 현황판 /qa-live?id=<런> 한 페이지에 화면(데스크톱·모바일·씬)·API 호출·Mixpanel 이벤트를 실시간으로 — 현황판이 떠 있으면 그 페이지를 연다
  *
  * 무거운 명령이라 scripts/heavy.sh 잠금을 잡고 돈다 — 다른 세션의 install·build·QA 가 돌면 끝날 때까지 기다린다(그동안 run.json 은 아직 없다).
- * 산출물: .qa-runs/<런 id>/run.json · shots/*.png · server-*.log (git 무시). 일감 QA 탭이 run.json 을 읽는다.
+ * 산출물: .qa-runs/<런 id>/run.json · shots/*.png · server-*.log (git 무시). 현황판 QA 탭이 run.json 을 읽는다.
  * 판정(D8): 통과 pass · 화면 변화 changed · 실패 fail(기준에 없던 에러) · 이동됨 redirected · 로그인 필요 login · 샘플 필요 sample
  */
 import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, realpathSync, openSync, appendFileSync, readdirSync, copyFileSync } from 'node:fs'
@@ -138,7 +138,7 @@ function prepareSuiteTree() {
 
 // --profiles logout,login,verified — 세션 상태 여럿을 동시에. dev 서버는 하나(첫 상태의 런이 띄우고 --keep-servers),
 // 나머지 상태는 그 서버(--head-url)를 같이 쓴다. 이 프로세스가 heavy.sh 잠금을 쥐고 있으니 자식 런은 잠금 없이(ATHENA_HEAVY_HELD) 돈다.
-// 런은 상태마다 따로(.qa-runs/<id>) 생기고 run.group 으로 묶인다 — 일감 /qa-live?group=<묶음 id> 가 한 화면에 보여 준다
+// 런은 상태마다 따로(.qa-runs/<id>) 생기고 run.group 으로 묶인다 — 현황판 /qa-live?group=<묶음 id> 가 한 화면에 보여 준다
 // --flow — QA 세션 흐름(D18~D20): ① 비로그인(logout) 검수 → ② 로그인 상태들을 routes profiles 순서대로 전부(예: login → verified, 2026-10-07 사용자 결정).
 // 단계마다 세션이 살아 있으면 그대로(D18), 없거나 만료면 라이브 화면에 "로그인해 주세요" 를 띄우고 보이는 로그인 창을 연다(D19) → 사용자가 로그인하면
 // 저장 → ③ 그 세션으로 검수(로그인을 안 하면 그 단계만 건너뜀) → ④ 끝나면 라이브 화면이 실패 리포트 모달을 띄운다(D20). 진행 상태는 .qa-runs/<묶음>/group.json
@@ -375,11 +375,11 @@ let runId = baseRunId
 for (let suffix = 2; existsSync(join(HERMES, '.qa-runs', runId)); suffix += 1) runId = `${baseRunId}-${suffix}`
 const runDir = join(HERMES, '.qa-runs', runId)
 mkdirSync(join(runDir, 'shots'), { recursive: true })
-// 실시간 호출 기록(live.jsonl) — 일감 /qa-live 창이 따라 읽는다
+// 실시간 호출 기록(live.jsonl) — 현황판 /qa-live 창이 따라 읽는다
 const live = createLiveLog(runDir)
 const run = {
   id: runId,
-  // 라이브 화면 [중단] 이 이 프로세스를 끈다(일감 /api/qa-stop)
+  // 라이브 화면 [중단] 이 이 프로세스를 끈다(현황판 /api/qa-stop)
   pid: process.pid,
   app: appName,
   kind: suite ? 'suite' : 'impact',
@@ -439,7 +439,7 @@ const setPhase = (phase) => {
 // 보이는 창 배치 — 뷰포트별 창의 왼쪽 위치(흐름 씬도 같은 자리에 띄운다)
 const windowLefts = {}
 
-// --live — 일감이 떠 있으면 실시간 페이지를 연다(Studio 면 그 창 옆 브라우저 · 아니면 기본 브라우저 — 안 떠 있으면 주소만 알린다)
+// --live — 현황판이 떠 있으면 실시간 페이지를 연다(Studio 면 그 창 옆 브라우저 · 아니면 기본 브라우저 — 안 떠 있으면 주소만 알린다)
 async function openLivePage() {
   // 묶음(--profiles)이면 부모가 묶음 화면을 연다
   if (option('group')) return
@@ -447,7 +447,7 @@ async function openLivePage() {
   const liveUrl = `${board}/qa-live?id=${runId}`
   const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
   if (up) openUrl(liveUrl)
-  say(up ? `📺 실시간 화면 — ${liveUrl}` : `📺 일감이 꺼져 있다 — scripts/board.sh 로 띄운 뒤 ${liveUrl}`)
+  say(up ? `📺 실시간 화면 — ${liveUrl}` : `📺 현황판이 꺼져 있다 — scripts/board.sh 로 띄운 뒤 ${liveUrl}`)
 }
 
 // 저장한 세션의 로그인 토큰(server.tokenCookie) 만료 시각 — 지났으면 그 시각(ms), 아니면 null. 쿠키 값은 읽지 않는다
@@ -621,7 +621,7 @@ const isOwnRequest = (url, origin) => url.startsWith(origin) || OWN_HOSTS.some((
 // 보이는 창 모드(--headed) — 창 하나에서 화면을 차례로 옮겨 가며, 위에 진행 표시를 띄우고 천천히 훑는다
 // --watch = 창은 띄우되 빠르게(멈춤·천천히 스크롤 없이) — 전체 검수를 지켜보기용
 const watch = flag('watch')
-// --live = 창 없이 돌면서 화면·API 호출·트래킹 이벤트를 일감 한 페이지(/qa-live)에 실시간으로 — QA 자동화 도구 화면
+// --live = 창 없이 돌면서 화면·API 호출·트래킹 이벤트를 현황판 한 페이지(/qa-live)에 실시간으로 — QA 자동화 도구 화면
 const liveView = flag('live')
 const headed = flag('headed') || watch
 const slowMs = watch ? 0 : Number(option('slow') || 700)
@@ -1150,7 +1150,7 @@ async function main() {
     run.base = { ref: baseRef, sha: baseSha.slice(0, 9) }
   }
 
-  // 만료된 세션 — 라이브 화면(일감에서 시작)이면 멈추지 않고 첫 화면 검사 전에 로그인 창을 띄운다(guardSession).
+  // 만료된 세션 — 라이브 화면(현황판에서 시작)이면 멈추지 않고 첫 화면 검사 전에 로그인 창을 띄운다(guardSession).
   // 라이브 화면 없이(명령줄) 돌면 로그인 화면만 찍고 실패로 남으니 서버를 띄우기 전에 멈춘다
   const sessionPath = profile.session ? sessionFileOf(HERMES, appName, profile.session, target, serverUrl) : null
   const expiredAt = sessionPath && existsSync(sessionPath) ? expiredSessionAt(sessionPath) : null
@@ -1389,7 +1389,7 @@ function loadScenarios() {
     .map((name) => expandScenario(dir, { file: name, ...JSON.parse(readFileSync(join(dir, name), 'utf8')) }))
     .filter((scenario) => !only || only.some((key) => scenario.file.includes(key)))
     .filter((scenario) => !stageOnly || (scenario.profile ?? 'logout') === profileName)
-    // 고른 TC(--tc-picks — 영향 QA 의 변경분 TC · 일감 [선택한 TC만 검수])가 있으면 그 TC 에 걸린 씬만
+    // 고른 TC(--tc-picks — 영향 QA 의 변경분 TC · 현황판 [선택한 TC만 검수])가 있으면 그 TC 에 걸린 씬만
     .filter((scenario) => !pickIds || (scenario.tc ?? []).some((id) => pickIds.has(id)))
 }
 // 씬이 돌 뷰포트 — 씬 파일 "viewports": ["desktop"] 처럼 적으면 그것만, 없으면 화면 검사와 같은 전부(데스크톱·모바일).
@@ -1453,7 +1453,7 @@ async function runScenarioOn(browser, origin, scenario, entry) {
   saveRun()
   const scenarioProfile = profiles[entry.profile] ?? { session: null }
   const sessionFile = scenarioProfile.session ? sessionFileOf(HERMES, appName, scenarioProfile.session, target, serverUrl) : null
-  // 씬 세션이 없거나 만료 — 라이브로 보고 있으면(일감에서 시작) 로그인 창을 띄워 받고 이어 간다. 뷰포트 둘이 동시에 와도 창은 하나
+  // 씬 세션이 없거나 만료 — 라이브로 보고 있으면(현황판에서 시작) 로그인 창을 띄워 받고 이어 간다. 뷰포트 둘이 동시에 와도 창은 하나
   if (sessionFile && liveView && (!existsSync(sessionFile) || expiredSessionAt(sessionFile))) {
     entry.status = 'running'
     entry.steps = [{ label: `🔑 세션 ${entry.profile} ${existsSync(sessionFile) ? '만료' : '없음'} — 로그인 창에서 로그인해 주세요`, ok: true, detail: '' }]
@@ -1471,7 +1471,7 @@ async function runScenarioOn(browser, origin, scenario, entry) {
     say(`🔒 ${where} ${entry.name}`)
     return
   }
-  // 사람 단계(실제 본인인증·간편인증)가 있는 씬 — 라이브 화면으로 보고 있으면(일감에서 시작) 창 없이 도는 중이어도 이 씬만 보이는 창으로 열어 사람을 기다린다
+  // 사람 단계(실제 본인인증·간편인증)가 있는 씬 — 라이브 화면으로 보고 있으면(현황판에서 시작) 창 없이 도는 중이어도 이 씬만 보이는 창으로 열어 사람을 기다린다
   const hasHuman = (scenario.steps ?? []).some((step) => step && typeof step === 'object' && 'human' in step)
   const humanWindow = hasHuman && !headed && liveView
   const humanBrowser = humanWindow ? await chromium.launch({ headless: false }) : null
@@ -1595,7 +1595,7 @@ function writeQaResult(line) {
   writeFileSync(planFile, updated)
 }
 
-// 중간에 끄면(Ctrl+C·kill) dev 서버를 남기지 않고 런을 '중단' 으로 닫는다 — 일감이 계속 ⏳ 로 보이지 않게
+// 중간에 끄면(Ctrl+C·kill) dev 서버를 남기지 않고 런을 '중단' 으로 닫는다 — 현황판이 계속 ⏳ 로 보이지 않게
 for (const signal of ['SIGINT', 'SIGTERM']) {
   process.on(signal, () => {
     run.status = 'error'

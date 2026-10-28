@@ -28,22 +28,22 @@ function load() {
 
 const save = (state) => fs.writeFileSync(STATE_FILE, JSON.stringify(state, null, 2))
 
-// 팩마다 본체(contract 2) 흉내 — 가짜 본체는 ATHENA_FAKE_BODIES(없으면 임시 폴더) 아래 <id>/ 에 아테나 폴더 모양만(CLAUDE.md · 일감 서버) 만든다.
-// 처음 부른 본체(가짜 본체가 아닌 cwd)는 지금 팩의 '주 본체'로 기억한다. 일감 포트는 ATHENA_BOARD_PORT(없으면 4701) 부터 본체마다 2씩
+// 팩마다 본체(contract 2) 흉내 — 가짜 본체는 ATHENA_FAKE_BODIES(없으면 임시 폴더) 아래 <id>/ 에 아테나 폴더 모양만(CLAUDE.md · 현황판 서버) 만든다.
+// 처음 부른 본체(가짜 본체가 아닌 cwd)는 지금 팩의 '주 본체'로 기억한다. 현황판 포트는 ATHENA_BOARD_PORT(없으면 4701) 부터 본체마다 2씩
 const BODIES_DIR = process.env.ATHENA_FAKE_BODIES || path.join(os.tmpdir(), 'athena-studio-fake-bodies')
 const FAKE_BOARD = `import http from 'node:http'
 const pack = JSON.parse(process.env.FAKE_PACK_JSON || '{}')
 http.createServer((request, response) => {
   if (request.url.startsWith('/api/state')) { response.setHeader('content-type', 'application/json'); return response.end(JSON.stringify({ pack })) }
   response.setHeader('content-type', 'text/html; charset=utf-8')
-  response.end('<body style="background:#1b1c20;color:#ddd;font:14px sans-serif;padding:24px">가짜 일감 — ' + (pack.id || '?') + '</body>')
+  response.end('<body style="background:#1b1c20;color:#ddd;font:14px sans-serif;padding:24px">가짜 현황판 — ' + (pack.id || '?') + '</body>')
 }).listen(Number(process.env.ATHENA_BOARD_PORT), '127.0.0.1')
 `
 function ensureFakeBody(id) {
   const dir = path.join(BODIES_DIR, id)
   fs.mkdirSync(path.join(dir, 'scripts', 'board'), { recursive: true })
   fs.writeFileSync(path.join(dir, 'CLAUDE.md'), `# 가짜 본체 — ${id}\n`)
-  // 일감은 /api/state 에 이 본체 팩을 답한다(스튜디오가 '다른 팩 일감' 으로 보고 끄지 않게)
+  // 현황판은 /api/state 에 이 본체 팩을 답한다(스튜디오가 '다른 팩 현황판' 으로 보고 끄지 않게)
   fs.writeFileSync(path.join(dir, 'scripts', 'board', 'server.mjs'), FAKE_BOARD.replace("process.env.FAKE_PACK_JSON || '{}'", `'${JSON.stringify({ id, generation: 1 })}'`))
   return dir
 }
@@ -61,7 +61,7 @@ function callerPack(state) {
     if (realDir(body) !== cwd) continue
     if (state.current && id === state.current.id) return state.current
     const pack = state.packs.find((item) => item.id === id)
-    return pack ? { ...pack, generation: 1 } : state.current // 가짜 본체 일감도 세대 1 로 답한다
+    return pack ? { ...pack, generation: 1 } : state.current // 가짜 본체 현황판도 세대 1 로 답한다
   }
   return state.current
 }
@@ -121,7 +121,7 @@ async function main() {
       return done({ ok: true, current: mine ? { ...mine, ...(mine.id === (state.current && state.current.id) ? state.current : {}) } : null, switching: false, packs })
     }
     case 'status': {
-      // 일감 포트는 본체가 정한다(5.3) — 가짜는 ATHENA_BOARD_PORT → 4701(스튜디오 기본과 같게)
+      // 현황판 포트는 본체가 정한다(5.3) — 가짜는 ATHENA_BOARD_PORT → 4701(스튜디오 기본과 같게)
       const boardPort = Number(process.env.ATHENA_BOARD_PORT) || 4701
       // 데이터 폴더 — 가짜는 ATHENA_DATA_DIR → 임시 폴더(파일은 만들지 않는다)
       const dataDir = process.env.ATHENA_DATA_DIR || path.join(os.tmpdir(), 'athena-studio-fake-data')
@@ -242,12 +242,12 @@ async function main() {
       return done({ ok: true, id, repo: arg, iconPath: path.join(assets, `${arg}.${kind}`) })
     }
     case 'board-token':
-      return done({ ok: false, error: 'not-found', message: '가짜 모드에는 일감 토큰이 없어요' }, 1)
+      return done({ ok: false, error: 'not-found', message: '가짜 모드에는 현황판 토큰이 없어요' }, 1)
     case 'use': {
       const target = findPack(arg)
       if (!target) fail('not-found', `팩 ${arg} 이 없어요`)
       if ((state.busy || []).length) fail('busy', '작업이 남아 있어요', { busy: state.busy })
-      for (const [step, text] of [['lock', '잠금'], ['check', '사전 검사'], ['stop', '일감 끄기'], ['link', '링크 바꾸기']]) {
+      for (const [step, text] of [['lock', '잠금'], ['check', '사전 검사'], ['stop', '현황판 끄기'], ['link', '링크 바꾸기']]) {
         progress(step, text)
         await sleep(400)
       }

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# 아테나 일감(scripts/board/server.mjs)을 띄우고 브라우저로 연다.
+# 아테나 현황판(scripts/board/server.mjs)을 띄우고 브라우저로 연다.
 # 사용: scripts/board.sh          → 서버가 없으면 백그라운드로 띄우고 브라우저를 연다
 #       scripts/board.sh stop     → 서버를 끈다
 #       scripts/board.sh url      → 주소만 출력
-#       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 일감 주소로 연다
+#       scripts/board.sh open <plans/…html|md> → (서버가 없으면 띄우고) 정식 계획서 결정 콘솔을 현황판 주소로 연다
 #                                  [이대로 진행] 이 아테나 pane 으로 보내려면 이 주소로 열어야 한다
 # 브라우저는 화면 계층 scripts/screen open-url 로 연다 — Athena Studio 면 그 창의 옆 브라우저, 그 밖은 기본 브라우저(open)
 #
 # 포트는 여러 팩이면 레지스트리 packs.<id>.boardPort → 본체 boardPort → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700(옛 구조는 env 먼저). 이미 떠 있으면 새로 띄우지 않고 브라우저만 연다.
-# 여러 팩 — 떠 있는 일감의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
-# 서버는 pane 없이 백그라운드(nohup)로 띄운다(사용자 결정 2026-10-18 — 앱 일감 탭이 보여 준다). 로그는 /tmp/hermes-board.log(포트 4700) ·
-# 다른 포트면 /tmp/hermes-board-<포트>.log(포트는 본체마다 달라 — 여러 본체의 일감 로그가 서로 덮지 않는다).
+# 여러 팩 — 떠 있는 현황판의 /api/state.pack(팩·세대)이 지금 팩과 다르면 끄고 다시 띄운다(같으면 그대로)
+# 서버는 pane 없이 백그라운드(nohup)로 띄운다(사용자 결정 2026-10-18 — 앱 현황판 탭이 보여 준다). 로그는 /tmp/hermes-board.log(포트 4700) ·
+# 다른 포트면 /tmp/hermes-board-<포트>.log(포트는 본체마다 달라 — 여러 본체의 현황판 로그가 서로 덮지 않는다).
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 # 포트 순서는 athena_config.board_port(여러 팩: 레지스트리 → 본체 설정 → ATHENA_BOARD_PORT → 레지스트리 portBase → 4700 · 옛 구조: env 먼저)
@@ -33,11 +33,11 @@ case "${1:-}" in
   stop)
     # 포트를 잡고 있는 node 만 끈다. `pkill -f server.mjs` 는 명령줄에 그 경로가 든 프로세스(지시문에 경로가 적힌 에이전트 세션)까지 죽였다
     PIDS="$(lsof -ti "tcp:$PORT" -sTCP:LISTEN 2>/dev/null | while read -r pid; do ps -o comm= -p "$pid" | grep -q node && echo "$pid"; done)"
-    if [ -n "$PIDS" ]; then kill $PIDS && echo "일감을 껐다"; else echo "떠 있는 일감이 없다"; fi
+    if [ -n "$PIDS" ]; then kill $PIDS && echo "현황판을 껐다"; else echo "떠 있는 현황판이 없다"; fi
     exit 0 ;;
 esac
 
-# 떠 있는 일감이 지금 팩·세대의 것인가(옛 구조 본체면 늘 그렇다고 본다)
+# 떠 있는 현황판이 지금 팩·세대의 것인가(옛 구조 본체면 늘 그렇다고 본다)
 same_pack() {
   curl -s --max-time 2 "$URL/api/state" | python3 -c '
 import json, sys
@@ -50,7 +50,7 @@ pack = state.get("pack")
 sys.exit(0 if pack and pack.get("id") == where["packId"] and pack.get("generation") == where["generation"] else 1)' "$ATHENA_DIR"
 }
 if is_up && ! same_pack; then
-  echo "떠 있는 일감이 다른 팩·세대의 것이라 다시 띄운다"
+  echo "떠 있는 현황판이 다른 팩·세대의 것이라 다시 띄운다"
   "$0" stop >/dev/null
   for _ in $(seq 1 20); do is_up || break; sleep 0.2; done
 fi

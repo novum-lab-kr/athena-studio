@@ -135,7 +135,7 @@ if [ -z "$PROMPT" ] && [ -n "$PLAN_ISSUE" ] && [ -f "$ATHENA_DIR/$PLAN_ISSUE" ];
 elif [ -z "$PROMPT" ]; then
   PLAN_HEADER="${PLAN_HEADER}지금은 지시가 없다. 브랜치·미커밋 상태만 확인해 한 줄로 보고하고 사용자의 요청을 기다린다. 첫 요청을 받으면 계획서의 제목(# 줄)과 '## 지시' 절을 그 요청으로 바꿔 적고 진행한다. "
 fi
-# 지시가 있든 없든(일감 [작업 시작]도) — 범위가 커지면 멈춘다
+# 지시가 있든 없든(현황판 [작업 시작]도) — 범위가 커지면 멈춘다
 PLAN_HEADER="${PLAN_HEADER}요청이 여러 레포·API·구조 변경으로 커지면 멈추고 정식 계획서가 필요하다고 알린다. 버그 수정이면 AGENTS.md 5절대로 재현부터 확인하고 수정 전·후를 같은 방법으로 비교한다. "
 fi
 PROMPT="$PLAN_HEADER${PROMPT}"
@@ -386,7 +386,7 @@ PYEOF
   echo "export ATHENA_AGENT=$(shq "$AGENT")"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
   echo "export ATHENA_PLAN=$(shq "$PLAN")"
-  # 여러 팩 — 어느 팩·세대에서 띄웠는지(일감·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
+  # 여러 팩 — 어느 팩·세대에서 띄웠는지(현황판·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
   [ -n "${PACK_ID:-}" ] && echo "export ATHENA_PACK_ID=$(shq "$PACK_ID") ATHENA_SWITCH_GEN=$(shq "${PACK_GEN:-0}")"
   [ -n "$EXTRA_FILES" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
@@ -415,7 +415,7 @@ PANE_TITLE="🤖 $AGENT"
 [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ] && PANE_TITLE="$PANE_TITLE · $BRANCH_NAME"
 "$SCREEN" pane rename "$PANE" "$PANE_TITLE" >/dev/null 2>&1 || true
 
-# 계획서 Work ref 에 어디서 누가 도는지 적는다 — 일감이 이 pane 을 카드에 붙인다
+# 계획서 Work ref 에 어디서 누가 도는지 적는다 — 현황판이 이 pane 을 카드에 붙인다
 # 아테나 pane 에서 띄웠으면 그 pane 도 한 번만 적는다(- Lead pane:) — 앱의 아테나 pane [상세] 가 이 pane 이 맡긴 일을 모은다
 ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" <<'PYEOF'
 import os, sys, re
@@ -428,7 +428,7 @@ def record(text):
     return text
 def record_ref(text):
     if agent == 'reviewer':
-        # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(일감이 이 pane 도 카드에 붙인다)
+        # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(현황판이 이 pane 도 카드에 붙인다)
         # 띄운 시각 — review-wait.sh 가 "이 시각 뒤에 적힌 결론" 을 찾는다(기다리기를 늦게 시작해도 이미 끝난 결론을 놓치지 않게)
         stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
         line = f"- Review: {cwd} · 🌿 {branch} · pane {pane} (reviewer) · 띄움 {stamp}"

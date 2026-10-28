@@ -110,5 +110,5 @@ export async function blockThirdParty(context) {
   })
 }
 
-// 잡힌 이벤트 중 from 번째부터 — 리포트·일감에는 이름과 줄인 속성만
+// 잡힌 이벤트 중 from 번째부터 — 리포트·현황판에는 이름과 줄인 속성만
 export const eventsSince = (page, from) => (page.__qaEvents ?? []).slice(from).map(({ name, props }) => ({ name, props: shortProps(props) }))

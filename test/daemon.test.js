@@ -293,7 +293,7 @@ test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 �
     assert.equal((await appB.call('state')).result.workspaces.some((workspace) => workspace.id === made.workspace.id), false)
     assert.equal((await appA.call('state')).result.focused, tabA.pane) // --no-focus 면 A 의 보던 곳 그대로
 
-    // pane 밖(일감)에서 부른 CLI 는 ATHENA_STUDIO_BODY 의 본체 — 만든 작업 공간이 그 창에만
+    // pane 밖(현황판)에서 부른 CLI 는 ATHENA_STUDIO_BODY 의 본체 — 만든 작업 공간이 그 창에만
     const fromBoard = JSON.parse((await cli(daemon.socket, ['workspace', 'create', '--label', 'qa', '--cwd', dir, '--no-focus'], { ATHENA_STUDIO_BODY: bodyB })).stdout)
     assert.ok((await appB.call('state')).result.workspaces.some((workspace) => workspace.id === fromBoard.workspace.id))
     assert.equal((await appA.call('state')).result.workspaces.some((workspace) => workspace.id === fromBoard.workspace.id), false)
@@ -334,7 +334,7 @@ test('데몬 open-url: 그 본체에 붙은 앱 창 하나에만 알리고 {ok, 
     await waitFor(() => appA.events.some((event) => event.event === 'open-url' && event.url === url), 'A 알림')
     const appB = await connect(daemon.socket)
     await appB.call('attach', { body: bodyB })
-    // 일감(pane 밖)은 ATHENA_STUDIO_BODY 의 본체 창만
+    // 현황판(pane 밖)은 ATHENA_STUDIO_BODY 의 본체 창만
     const before = appA.events.length
     assert.deepEqual(JSON.parse((await cli(daemon.socket, ['open-url', url], { ATHENA_STUDIO_BODY: bodyB })).stdout), { ok: true, target: 'panel' })
     await waitFor(() => appB.events.some((event) => event.event === 'open-url'), 'B 알림')

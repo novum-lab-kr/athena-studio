@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# GitHub 이슈 감시 시험 — scripts/board/github-issues.mjs(가져오기 · 아테나에 맡기기)와 그걸 붙인 일감 서버 한 주기.
+# GitHub 이슈 감시 시험 — scripts/board/github-issues.mjs(가져오기 · 아테나에 맡기기)와 그걸 붙인 현황판 서버 한 주기.
 # 가짜 gh(PATH 앞 · 출력은 파일에서) · 가짜 화면 CLI(scripts/screen-check/fake-bin) · 임시 폴더 · GitHub · 진짜 화면을 건드리지 않는다 · 몇 초
 #
 # 사용: test/github-issues-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -112,7 +112,7 @@ check('24시간 지난 것은 recent 에서 빠짐', again.recent().length === 0
 process.env.GH_EXIT = '1'
 const before = logs.length
 await again.tick(); await again.tick()
-check('gh 실패 → 예외 없이 일감 로그 한 줄(같은 실패는 한 번)', logs.slice(before).filter((line) => line.includes('GitHub 이슈 확인 실패')).length === 1, logs.slice(before).join(' | '))
+check('gh 실패 → 예외 없이 현황판 로그 한 줄(같은 실패는 한 번)', logs.slice(before).filter((line) => line.includes('GitHub 이슈 확인 실패')).length === 1, logs.slice(before).join(' | '))
 delete process.env.GH_EXIT
 
 // 가져오기 도중 꺼짐 — 기록(written: false)은 남았는데 ① 파일을 못 씀 ② 파일은 씀. 다시 켜면 ① 다시 가져오고 ② 그대로 맡긴다
@@ -157,7 +157,7 @@ process.exit(fail)
 EOF
 UNIT=$?
 
-echo "── 일감 서버 한 주기"
+echo "── 현황판 서버 한 주기"
 CORE="$TMP/core"
 mkdir -p "$CORE"
 rsync -a --exclude .git --exclude node_modules --exclude /repos --exclude /plans --exclude /issues --exclude /archive --exclude /.worktrees \
@@ -196,7 +196,7 @@ const screen = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).
 const splits = screen.filter((args) => args[1] === 'pane' && args[2] === 'split')
 const runs = screen.filter((args) => args[1] === 'pane' && args[2] === 'run')
 const renames = screen.filter((args) => args[1] === 'pane' && args[2] === 'rename')
-check('아테나 pane 띄우기 — 일감 [작업 시작] 과 같은 길(split → rename → run) 2번', splits.length === 2 && runs.length === 2 && renames.length === 2 && renames.every((args) => args[4].startsWith('🧭 아테나 · ')), JSON.stringify(screen.filter((args) => args[2] !== 'list')))
+check('아테나 pane 띄우기 — 현황판 [작업 시작] 과 같은 길(split → rename → run) 2번', splits.length === 2 && runs.length === 2 && renames.length === 2 && renames.every((args) => args[4].startsWith('🧭 아테나 · ')), JSON.stringify(screen.filter((args) => args[2] !== 'list')))
 let recent = []
 try { recent = JSON.parse(read(join(tmp, 'recent.json'))).issues } catch {}
 check('GET /api/github-issues — 맡긴 것(모니터 줄 재료)', JSON.stringify(recent.map((entry) => [entry.repo, entry.number])) === '[["demo",101],["demo",102]]' && recent.every((entry) => entry.at && entry.title), JSON.stringify(recent))

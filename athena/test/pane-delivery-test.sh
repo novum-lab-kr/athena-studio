@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 일감이 pane 에 지시를 넣는 순서 시험 — scripts/board/pane-delivery.mjs(질문 · 고르기 창이 떠 있으면 미뤘다가 닫히면 넣기).
+# 현황판이 pane 에 지시를 넣는 순서 시험 — scripts/board/pane-delivery.mjs(질문 · 고르기 창이 떠 있으면 미뤘다가 닫히면 넣기).
 # GitHub #100 재현 모양: 레포 고르기 콘솔 [이대로 진행] 을 누를 때 아테나 pane 에 AskUserQuestion 창이 떠 있으면
 # 글은 창에 먹히고 Enter 가 1번 선택지를 골랐다. 가짜 화면 · 가짜 넣기로 — 화면 · claude 를 부르지 않는다 · 몇 초
 #

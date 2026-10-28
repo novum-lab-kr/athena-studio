@@ -54,7 +54,7 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
     }))
   }
   // ⚙ 설정 — 이 창 본체 팩의 레포별 자동 머지. 읽기는 pack.json 을 바로(packRepos 와 같은 자리), 쓰기는 코어 명령(pack set-auto-merge)으로만.
-  // 일감 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
+  // 현황판 · pr-auto 는 확인할 때마다 pack.json 을 새로 읽으므로 따로 알리지 않는다
   ctx.mergeSettings = async () => {
     // 읽기 실패 · 망가진 JSON 모두 null — 팝업이 '읽지 못했어요' 를 보이게(then 의 두 번째 인자는 JSON.parse 오류를 못 잡는다)
     const pack: { repos?: unknown } | null = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
@@ -69,7 +69,7 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
     if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
     return result
   }
-  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(일감과 같은 값 + studio · pane 안 표시)
+  // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
   ctx.studioEnv = () => {
     const paths = daemonPaths()
     return { ATHENA_SCREEN: 'studio', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: paths.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath, ATHENA_STUDIO_BODY: core.realDir(ctx.athenaDir as string) }
