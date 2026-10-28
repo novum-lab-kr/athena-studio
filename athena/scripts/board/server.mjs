@@ -58,7 +58,8 @@ import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
-import { screen, screenName } from '../lib/screen.mjs'
+import { screen, screenName, screenText } from '../lib/screen.mjs'
+import { createDelivery } from './pane-delivery.mjs'
 import { boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -1070,10 +1071,24 @@ const sendToPane = async (paneId, text) => {
   if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
   if (!oneLine || oneLine.length > 2000) return '지시문이 비어 있거나 너무 길어요'
-  if ((await screen(['pane', 'send-text', target.id, oneLine])) === null) return `${screenName()} 로 입력을 보내지 못했어요`
-  await screen(['pane', 'send-keys', target.id, 'Enter'])
+  // 질문 · 고르기 창이 떠 있으면 바로 넣지 않고 닫힌 뒤에(GitHub #100 — pane-delivery.mjs)
+  const result = await delivery.submit(target.id, oneLine)
+  if (result === 'sent') return null
+  if (result === 'queued') return { queued: true }
+  return result
+}
+const typeIntoPane = async (paneId, text) => {
+  if ((await screen(['pane', 'send-text', paneId, text])) === null) return `${screenName()} 로 입력을 보내지 못했어요`
+  await screen(['pane', 'send-keys', paneId, 'Enter'])
   return null
 }
+const delivery = createDelivery({
+  readPane: (paneId) => screenText(['pane', 'read', paneId, '--lines', '40']),
+  sendNow: typeIntoPane,
+  // 아직 pane 목록을 모르면 버리지 않는다
+  paneExists: (paneId) => !snapshot || (snapshot.panes ?? []).some((pane) => pane.id === paneId),
+  log: (message) => console.log(message),
+})
 
 // 결정 콘솔 [이대로 진행] — 그 계획서의 결정 요청(plan:<경로>)에 사람이 답했다고 적고, 지시 앞에 요청 번호를 붙인다.
 // 에이전트가 plan-html.mjs --decide 로 확정하면 요청이 delivered 로 닫힌다. 요청이 없거나(옛 계획서) 못 적어도 지시는 그대로 보낸다
@@ -1945,10 +1960,11 @@ const handleRequest = async (request, response) => {
       return reply(200, { ok: true, ...result })
     }
     const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? '')) : ''
-    const error = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
-    if (error) return reply(400, { error })
+    const outcome = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
+    if (typeof outcome === 'string') return reply(400, { error: outcome })
     await refresh()
-    return reply(200, { ok: true })
+    // queued — 받는 pane 에 질문 · 고르기 창이 떠 있어 닫히면 넣는다(콘솔이 그렇게 알린다 · 옛 콘솔은 보냄으로 본다)
+    return reply(200, { ok: true, ...(outcome?.queued ? { queued: true } : {}) })
   }
   // 탭 아이콘(아테나 로고) — /favicon.ico 도 같은 그림을 준다(링크 줄이 없는 결정 콘솔에서 브라우저가 스스로 찾는다)
   if (url.pathname === '/favicon.png' || url.pathname === '/favicon.ico') {
@@ -2009,5 +2025,6 @@ createServer((request, response) => {
   writeTokenFile()
   await refresh()
   setInterval(() => refresh(false), POLL_MS)
+  setInterval(() => delivery.tick().catch((error) => console.error(`⚠️ 미룬 지시 넣기 실패: ${error.message}`)), 2000)
   console.log(`아테나 일감: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })

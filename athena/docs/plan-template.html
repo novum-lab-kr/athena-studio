@@ -433,6 +433,7 @@ const PLAN = {
       customInput: '직접 입력', othersShow: '다른 선택지 {count}개 보기', othersHide: '다른 선택지 접기',
       progressRequired: '필수 {done}/{total}', progressOptional: '선택 {count}개',
       statusSent: '<b>{pane} 에 보냈어요.</b> 확정되면 이 화면이 잠깁니다.',
+      statusQueued: '<b>{pane} 에 질문 창이 떠 있어요.</b> 그 창에 답하면 이어서 넣어요.',
       statusError: '{error} — 복사해서 {pane} pane 에 붙여넣어 주세요.', paneFallback: '담당',
       statusAllPicked: '<b>모두 골랐어요.</b> {pane} pane 에 보냅니다.',
       statusLeft: '필수 <b>{count}개</b> 남음 · ', jumpTo: '{title}로 이동',
@@ -453,6 +454,7 @@ const PLAN = {
       customInput: 'Type your own', othersShow: 'Show {count} other options', othersHide: 'Hide other options',
       progressRequired: 'Required {done}/{total}', progressOptional: '{count} optional',
       statusSent: '<b>Sent to {pane}.</b> This page locks once confirmed.',
+      statusQueued: '<b>{pane} is showing a question.</b> This is sent right after it is answered.',
       statusError: '{error} — copy it and paste into the {pane} pane.', paneFallback: 'owner',
       statusAllPicked: '<b>All picked.</b> Sending to the {pane} pane.',
       statusLeft: '<b>{count}</b> required left · ', jumpTo: 'Go to {title}',
@@ -473,6 +475,7 @@ const PLAN = {
       customInput: '直接入力', othersShow: 'ほかの選択肢 {count}件を表示', othersHide: 'ほかの選択肢を閉じる',
       progressRequired: '必須 {done}/{total}', progressOptional: '任意 {count}件',
       statusSent: '<b>{pane} に送りました。</b> 確定するとこの画面はロックされます。',
+      statusQueued: '<b>{pane} に質問が表示されています。</b> その質問に答えると続けて送ります。',
       statusError: '{error} — コピーして {pane} pane に貼り付けてください。', paneFallback: '担当',
       statusAllPicked: '<b>すべて選びました。</b> {pane} pane に送ります。',
       statusLeft: '必須 残り<b>{count}件</b> · ', jumpTo: '{title} へ移動',
@@ -493,6 +496,7 @@ const PLAN = {
       customInput: '自行输入', othersShow: '查看其他 {count} 个选项', othersHide: '收起其他选项',
       progressRequired: '必选 {done}/{total}', progressOptional: '可选 {count} 个',
       statusSent: '<b>已发送到 {pane}。</b> 确定后此页面会锁定。',
+      statusQueued: '<b>{pane} 正在显示一个问题。</b> 回答后会接着发送。',
       statusError: '{error} — 请复制后粘贴到 {pane} pane。', paneFallback: '负责',
       statusAllPicked: '<b>都选好了。</b> 将发送到 {pane} pane。',
       statusLeft: '必选还剩 <b>{count} 个</b> · ', jumpTo: '前往 {title}',
@@ -678,7 +682,7 @@ const PLAN = {
       (required.length ? t('progressRequired', { done: required.length - left.length, total: required.length }) : '') +
       (required.length && optional ? ' · ' : '') + (optional ? t('progressOptional', { count: optional }) : '');
     const status = document.getElementById('status');
-    if (sent) status.innerHTML = t('statusSent', { pane: escapeText(PLAN.leadPane) });
+    if (sent) status.innerHTML = t(queued ? 'statusQueued' : 'statusSent', { pane: escapeText(PLAN.leadPane) });
     else if (sendError) status.innerHTML = t('statusError', { error: escapeText(sendError), pane: escapeText(PLAN.leadPane || t('paneFallback')) });
     else if (left.length === 0) status.innerHTML = t('statusAllPicked', { pane: escapeText(PLAN.leadPane) });
     else {
@@ -854,6 +858,7 @@ const PLAN = {
   // --- [이대로 진행]: 일감 서버(/api/action)를 거쳐 계획서를 만든 아테나 pane 에 입력한다 ---
   // 토큰은 일감이 이 파일을 서빙할 때 넣어 준다. file:// 로 열었거나 보낼 pane 이 없으면 복사로 바꾼다
   let sent = false;
+  let queued = false; // 일감이 받았지만 pane 에 질문 창이 떠 있어 닫히면 넣는다(GitHub #100)
   let sending = false;
   let sendError = '';
   const boardToken = window.ATHENA_BOARD_TOKEN || '';
@@ -878,6 +883,7 @@ const PLAN = {
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || t('sendFailed') + ' (' + response.status + ')');
       sent = true;
+      queued = Boolean(result.queued);
       document.getElementById('btn-send').textContent = t('sentButton');
     } catch (error) {
       fallbackToCopy(error.message || t('sendFailed'));

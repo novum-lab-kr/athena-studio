@@ -47,6 +47,7 @@
 --- hermes-new
 {"ok":true,"pane":"p9"}
 --- screen (pane list 뺌)
+["@studio", "pane", "read", "p2", "--lines", "40"]
 ["@studio", "pane", "send-text", "p2", "첫 줄 둘째 줄"]
 ["@studio", "pane", "send-keys", "p2", "Enter"]
 ["@studio", "pane", "split", "--target", "p1", "--direction", "right", "--ratio", "0.5", "--cwd", "<ATHENA>", "--no-focus"]
