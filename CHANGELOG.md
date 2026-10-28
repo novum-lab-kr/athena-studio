@@ -6,7 +6,31 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.15: 첫 배포판 — #80 ~ #88 머지에서 손님에게 보이는 것만(개발판 전용 수정 · refactor · 문서는 뺌). 배포판 Release 본문은 그 minor 절(## X.Y) — 범위 끝은 올릴 때 실제 태그로 채우거나 열어 둔다 -->
 
-## 0.15 (v0.15.0 – · Oct 28, 2026)
+<!-- 0.16 · 0.17: v0.15.9..main 머지(#97 ~ #103)를 태그 v0.16.* · v0.17.* 경계로 나눠 손님에게 보이는 것만(빌드 · 올리기 스크립트 · 번호 체계 같은 내부는 뺌). 0.17 범위 끝은 열어 둔다 -->
+
+## 0.17 (v0.17.0 – · Oct 28, 2026)
+
+### New
+- Athena can watch a repository's open GitHub issues: when turned on, new issues are imported as work items and handed to Athena, and the agent monitor shows a line for each.
+- The Mac app's menu has a Third-Party Notices item with the license texts of the open-source software it includes.
+
+### Improved
+- The license terms were updated.
+- Work alerts show only things you need to decide. Status updates from automatic pull request reviews go to the Athena pane instead.
+
+## 0.16 (v0.16.0 – v0.16.2 · Oct 28, 2026)
+
+### New
+- The Mac app updates itself from Settings (⚙): when a new version is out, press Update to download it, verify it, and restart. If anything fails, the current version keeps running and a short reason is shown.
+
+### Improved
+- New agent panes split the largest pane along its longer side.
+
+### Fixed
+- The Explorer opens for workspaces whose folder was deleted, using the pane's folder instead or saying the folder is gone.
+- Choices from the decision console and repository picker are no longer lost when an agent is showing a question. They are sent once the question closes.
+
+## 0.15 (v0.15.0 – v0.15.9 · Oct 28, 2026)
 
 ### New
 - Athena Studio is available as a Mac app for Apple Silicon and Intel (macOS 13 Ventura or later). It is signed and notarized by Apple, so it opens without a security warning.
