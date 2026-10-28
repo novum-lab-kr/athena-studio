@@ -129,7 +129,10 @@ jobs:
             [ -n "$id" ] && xcrun notarytool log "$id" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" || true
           done
           [ "$failed" = 0 ] || exit 1
-          for dmg in dist/release/*.dmg; do xcrun stapler staple -v "$dmg"; done
+          # 공증이 Accepted 여도 표(ticket)가 CloudKit(api.apple-cloudkit.com)에 퍼지기 전이거나 연결이 끊기면 staple 이 Error 68 로 진다
+          # (실행 40636468435 — NSURLError -1005) · 30초 간격 최대 6번 다시 시도한다
+          retry() { local n=1; until "$@"; do [ "$n" -ge 6 ] && return 1; echo "::warning::다시 시도 $n/5 (30초 뒤): $*"; sleep 30; n=$((n + 1)); done; }
+          for dmg in dist/release/*.dmg; do retry xcrun stapler staple -v "$dmg"; done
 
       - name: 확인 — codesign · spctl · stapler
         # 계획서 7절 성공 조건: accepted · source=Notarized Developer ID · 팀 AQUDD2QFNC
@@ -137,27 +140,29 @@ jobs:
           set -euo pipefail
           # 명령 출력을 로그에 남기고, 그 안에 기대한 줄이 없으면 멈춘다
           expect() { local want="$1"; shift; local out; out=$("$@" 2>&1) || true; echo "$out"; grep -qE "$want" <<<"$out" || { echo "::error::기대한 줄 없음 ($want): $*"; return 1; }; }
+          # stapler validate 도 CloudKit 에 묻는다 — 앞 단계 staple 과 같이 30초 간격 최대 6번
+          retry() { local n=1; until "$@"; do [ "$n" -ge 6 ] && return 1; echo "::warning::다시 시도 $n/5 (30초 뒤): $*"; sleep 30; n=$((n + 1)); done; }
           for app in dist/release/mac*/"Athena Studio.app"; do
             echo "── $app"
             lipo -archs "$app/Contents/MacOS/Athena Studio"
             codesign --verify --deep --strict --verbose=2 "$app"
             expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$app"
             expect 'source=Notarized Developer ID' spctl -a -vv -t exec "$app"
-            xcrun stapler validate "$app"
+            retry xcrun stapler validate "$app"
           done
           for dmg in dist/release/*.dmg; do
             echo "── $dmg"
             codesign --verify --strict --verbose=2 "$dmg"
             expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$dmg"
             expect 'source=Notarized Developer ID' spctl -a -vv -t open --context context:primary-signature "$dmg"
-            xcrun stapler validate "$dmg"
+            retry xcrun stapler validate "$dmg"
           done
           for zip in dist/release/*.zip; do
             echo "── $zip"
             out="$RUNNER_TEMP/unzip-$(basename "$zip" .zip)"
             ditto -x -k "$zip" "$out"
             codesign --verify --deep --strict --verbose=2 "$out/Athena Studio.app"
-            xcrun stapler validate "$out/Athena Studio.app"
+            retry xcrun stapler validate "$out/Athena Studio.app"
           done
           ls -l dist/release/*.dmg dist/release/*.zip
           shasum -a 256 dist/release/*.dmg dist/release/*.zip
@@ -183,6 +188,21 @@ jobs:
           if-no-files-found: error
           compression-level: 0 # 이미 압축된 파일 — 다시 누르지 않는다
           retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 손님용은 publish-release.js 가 공개 레포에
+
+      - name: 실패해도 만든 파일 남기기
+        # 앞 단계가 지면(예: staple) 만든 .dmg · .zip · 공증 로그를 다른 이름으로 남긴다 — 손으로 staple 하거나 원인을 보게.
+        # 이름을 달리해 publish-release.js(Athena-Studio-mac 만 받는다)가 확인 안 된 파일을 올리지 않게 한다
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Athena-Studio-mac-failed
+          path: |
+            dist/release/*.dmg
+            dist/release/*.zip
+            dist/release/*.notary.log
+          if-no-files-found: ignore
+          compression-level: 0
+          retention-days: 7
 
       - name: 공증 키 지우기
         if: always()
