@@ -5,4 +5,3 @@ plans/refactor/20261003-lead.html · 결정 0/1 확정 · 보낼 pane p1
    요청 r-<ID> · open
 --- stderr
 --- screen
-["@studio", "pane", "current"]

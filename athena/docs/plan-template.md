@@ -7,7 +7,7 @@
 ## ⚠️ md + html 결정 콘솔 (필수)
 
 - html 은 `node scripts/plan-html.mjs <md> --data <PLAN.json>` 으로 만든다 — `docs/plan-template.html` 을 복사해 **두 블록만** 채운다(스타일/스크립트는 그대로)
-  - **[A] `<script id="plan-data">`의 `PLAN`**: title/type/scope/summary + `decisions[]`(`.md` "사용자 결정 사항"과 1:1) + `leadPane`(계획서를 만든 아테나 pane — 비우면 `scripts/screen pane current`)
+  - **[A] `<script id="plan-data">`의 `PLAN`**: title/type/scope/summary + `decisions[]`(`.md` "사용자 결정 사항"과 1:1) + `leadPane`(계획서를 만든 아테나 pane — 비우면 부른 pane `scripts/screen self` · 화면 밖이면 `scripts/screen pane current`)
   - **[B] `<script id="plan-md">`**: `.md` 본문 그대로
 - **현황판 주소로 연다**: `scripts/board.sh open <md>` (꺼져 있으면 띄운다). 대화에는 `.md` 경로와 결정마다 제목·추천 한 줄씩만
 - 사용자가 고르고 **[이대로 진행]** → 현황판 서버(`/api/action`)가 `leadPane` 에 결정 프롬프트를 입력한다. `file://` 로 열었거나 그 pane 이 없으면 버튼이 [프롬프트로 복사] 로 바뀐다

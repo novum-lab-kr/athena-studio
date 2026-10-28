@@ -47,7 +47,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 
 | 명령 | 하는 일 |
 |---|---|
-| `request open --kind decision\|question --title <글> [--body <글>\|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …] [--recommend <라벨>] [--plan …] [--html …] [--issue …] [--pane <id>] [--key <키>]` | 연다. `--pane` 이 없으면 지금 pane(`scripts/screen pane current`) |
+| `request open --kind decision\|question --title <글> [--body <글>\|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …] [--recommend <라벨>] [--plan …] [--html …] [--issue …] [--pane <id>] [--key <키>]` | 연다. `--pane` 이 없으면 부른 pane(`scripts/screen self`) · 화면 밖이면 포커스된 pane(`scripts/screen pane current`) |
 | `request list [--all]` | 열린 것(open · answered) · `--all` 은 닫힌 것까지 |
 | `request show <id>` | 하나 |
 | `request answer <id> --by board\|app\|chat [--choice <라벨>] [--text <글>] [--rev <n>]` | 사람의 답 |

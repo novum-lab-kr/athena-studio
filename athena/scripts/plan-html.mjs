@@ -9,7 +9,7 @@
  *   node scripts/plan-html.mjs <plans/…md> --decide r1='<label>' [r2='<label>' …]  # 확정을 기록한다 — 그 id 에만 decided 를 채우고 나머지는 그대로
  *                                                               (--data 로 PLAN 전체를 바꾸면 기존 결정이 지워진다 — 확정에는 이걸 쓴다)
  *   처음 만들 때(--data · plans/setup/ 고르기 콘솔 제외) 아테나 pane 에서 부르면 그 pane 이름을 '🧭 아테나 · <md 제목>' 으로 바꾼다(lib/screen.mjs nameLeadPane)
- *   옵션 --pane <id> : [이대로 진행] 이 보낼 pane(계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트). 없으면 PLAN.leadPane(옛 계획서는 hermesPane) → 없으면 화면 계층의 지금 pane(`scripts/screen pane current`)
+ *   옵션 --pane <id> : [이대로 진행] 이 보낼 pane(계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트). 없으면 PLAN.leadPane(옛 계획서는 hermesPane) → 없으면 부른 pane(`scripts/screen self`) → 화면 밖이면 포커스된 pane(`scripts/screen pane current`)
  *
  * PLAN.json 은 title·type·scope·summary·decisions[] (형식은 docs/plan-template.html 헤더 주석). mdFile 은 자동으로 채운다.
  * 치환은 헤더 주석이 끝난 뒤에서만 한다 — 주석 안의 블록 이름까지 바꾸면 PLAN 이 주석에 갇혀 빈 화면이 된다.
@@ -21,7 +21,7 @@ import { dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { acquirePlanLock, releaseLock, writeAtomic } from './lib/plan-update.mjs'
 import { syncPlanRequest } from './lib/requests.mjs'
-import { nameLeadPane, screenSync } from './lib/screen.mjs'
+import { callerPane, nameLeadPane, screenSync } from './lib/screen.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const argv = process.argv.slice(2)
@@ -214,13 +214,6 @@ for (const pair of decides) {
 }
 plan.mdFile = mdFile
 
-const currentPane = () => {
-  try {
-    return screenSync(['pane', 'current']).pane.id
-  } catch {
-    return ''
-  }
-}
 const previousPane = (() => {
   try {
     const previous = parsePlanLiteral(current[2])
@@ -240,7 +233,8 @@ const paneExists = (id) => {
     return false
   }
 }
-const nowPane = currentPane()
+// 지금 pane — 부른 pane(self) · 화면 밖이면 포커스된 pane(lib/screen.mjs callerPane)
+const nowPane = callerPane()
 const usable = (id) => Boolean(id) && (!nowPane || id === nowPane || paneExists(id))
 plan.leadPane = addPath
   ? option('pane') || nowPane || savedPane || previousPane

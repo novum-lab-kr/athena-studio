@@ -41,12 +41,11 @@ import { PNG } from 'pngjs'
 import { buildReport, buildIndex } from './report.mjs'
 import { runScenario, placeWindow, guardMutations, describe as describeStep } from './scenario.mjs'
 import { baselineDir, readBaselineProblems } from './baseline.mjs'
-import { openUrl } from '../lib/screen.mjs'
+import { callerPane, openUrl } from '../lib/screen.mjs'
 import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from './tracking.mjs'
 import { createLiveLog, startScreencast } from './live.mjs'
 import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
 import { boardPort, isSwitching, loadConfig } from '../lib/config.mjs'
-import { screenSync } from '../lib/screen.mjs'
 import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings, codeConventions } from './apps.mjs'
 
 const QA_DIR = dirname(fileURLToPath(import.meta.url))
@@ -153,13 +152,8 @@ if (flag('flow')) {
   const groupId = `${stamp.getFullYear()}${two(stamp.getMonth() + 1)}${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}-${appName}-group`
   const groupDir = join(HERMES, '.qa-runs', groupId)
   mkdirSync(groupDir, { recursive: true })
-  let pane = ''
-  try {
-    // 화면 계층의 지금 pane — [담당 에이전트에게 조사 맡기기] 가 이 pane(이 런을 띄운 아테나)으로 보낸다
-    pane = screenSync(['pane', 'current'], { stdio: ['ignore', 'pipe', 'ignore'] }).pane?.id ?? ''
-  } catch {
-    pane = ''
-  }
+  // 이 런을 띄운 pane(아테나) — [담당 에이전트에게 조사 맡기기] 가 이리 보낸다. 화면 밖이면 포커스된 pane(lib/screen.mjs callerPane)
+  const pane = callerPane({ stdio: ['ignore', 'pipe', 'ignore'] })
   const group = {
     id: groupId, app: appName, mode: 'flow', pane, pid: process.pid, startedAt: stamp.toISOString(), finishedAt: null,
     target,

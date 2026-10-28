@@ -29,7 +29,7 @@
 
      [A] script#plan-data 의 PLAN 객체
          - title/type/scope/mdFile/summary
-         - leadPane : [이대로 진행] 이 보낼 pane id — 계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트 (scripts/screen pane current, 예 'w2:p33')
+         - leadPane : [이대로 진행] 이 보낼 pane id — 계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트 (비우면 부른 pane — scripts/screen self, 화면 밖이면 scripts/screen pane current · 예 'w2:p33')
          - decisions[] : .md "사용자 결정 사항"과 1:1
            · 승인 전: options[] 만 채운다 (decided 생략)
            · 확정 후: 각 결정에 decided 를 채운다
