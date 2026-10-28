@@ -3,17 +3,18 @@
 //   node scripts/publish-release.js --run <release-mac 실행 id> [--dry-run]
 //   node scripts/publish-release.js --from <이미 받은 artifact 폴더> [--dry-run]
 //     1. 실행 확인 — release-mac 워크플로 · main · 끝남 · 성공(--run 일 때)
-//     2. artifact Athena-Studio-mac 받기(gh run download) → .dmg 2 · .zip 2 · latest.json · release-notes.md
-//     3. 다시 확인 — 이름 · 크기 · sha256 을 latest.json 과 맞추고 version · date · minMacOS 모양
+//     2. artifact Athena-Studio-mac 받기(gh run download) → .dmg 2 · .zip 2 · latest.json · latest-mac.yml · release-notes.md
+//     3. 다시 확인 — 이름 · 크기 · sha256 을 latest.json 과 맞추고 version · date · minMacOS 모양.
+//        latest-mac.yml(앱 안 업데이트 피드)은 .zip 이름 · 크기 · sha512 와 버전(latest.json 과 같은 번호)을 맞춘다 — .zip 은 이 뒤로 바뀌지 않는다
 //     3-1. .dmg 를 이 맥에서 staple — CI 가 CloudKit 연결 끊김으로 못 붙였을 수 있다(staple.json · scripts/notarize-mac.js).
 //          stapler validate 가 이미 통과면 그대로 · 아니면 staple(티켓만 받는다 — 자격 증명 필요 없음) → validate →
 //          spctl 이 'accepted · Notarized Developer ID' 여야 올린다. staple 로 파일이 바뀌면 latest.json 의 size · sha256 을 다시 쓴다
 //          .zip 안 .app 은 CI 에서 못 붙였으면 그대로 올리고 알린다(손님 맥이 처음 켤 때 온라인으로 공증을 확인한다)
 //     4. 공개 레포에 같은 태그(Release · 초안 · git 태그)가 이미 있으면 멈춘다 — 덮지 않는다
 //     5. --dry-run 이면 여기까지 하고 올릴 명령만 찍는다
-//     6. gh release create v<버전> --draft(파일 5개 · 본문 release-notes.md) → 다 올라가면 공개 · --latest
+//     6. gh release create v<버전> --draft(파일 6개 · 본문 release-notes.md) → 다 올라가면 공개 · --latest
 //        (중간에 끊겨도 releases/latest 가 반쪽 Release 를 가리키지 않게. 남은 초안은 찍어 주는 명령으로 지운 뒤 다시)
-//     7. 고정 주소 확인 — releases/latest/download/<.dmg> 가 받아지고 latest.json 이 이번 버전(계획서 7절)
+//     7. 고정 주소 확인 — releases/latest/download/<.dmg> 가 받아지고 latest.json · latest-mac.yml 이 이번 버전(계획서 7절)
 // gh 는 셸을 거치지 않고 부른다. 순수 부분(checkRun · checkFiles · createArgs)은 test/publish-release.test.js
 const { execFileSync } = require('child_process')
 const fs = require('fs')
@@ -24,7 +25,7 @@ const packageMac = require('./package-mac')
 const notarizeMac = require('./notarize-mac')
 
 const SOURCE_REPO = 'novum-lab-kr/athena-studio'
-const RELEASES_REPO = 'novum-lab-kr/athena-studio-releases'
+const RELEASES_REPO = packageMac.RELEASES_REPO // 앱 안 업데이트 피드(app-update.yml)와 같은 자리
 const WORKFLOW = 'release-mac'
 const ARTIFACT = 'Athena-Studio-mac'
 const MANIFEST = 'latest.json'
@@ -33,7 +34,7 @@ const NOTES = 'release-notes.md'
 const LOCAL_RETRY = { tries: 3, delayMs: 10_000 }
 
 /** @typedef {{ status?: string, conclusion?: string, workflowName?: string, headBranch?: string }} RunInfo */
-/** @typedef {{ name: string, exists: boolean, size?: number, sha256?: string }} Measured */
+/** @typedef {{ name: string, exists: boolean, size?: number, sha256?: string, sha512?: string }} Measured */
 
 // 올려도 되는 실행인지 — 아니면 이유
 /** @param {RunInfo} run */
@@ -45,13 +46,50 @@ function checkRun(run) {
   return null
 }
 
-/** 올릴 파일 이름 — .dmg 2 · .zip 2 · latest.json */
+const FEED = files.UPDATER_FEED
+
+/** 올릴 파일 이름 — .dmg 2 · .zip 2 · latest.json · latest-mac.yml */
 function assetNames() {
   return [
     ...files.ARCHES.map((arch) => packageMac.artifactName(arch, 'dmg')),
     ...files.ARCHES.map((arch) => packageMac.artifactName(arch, 'zip')),
     MANIFEST,
+    FEED,
   ]
+}
+
+// 재서 맞추는 파일(.dmg · .zip) — latest.json · latest-mac.yml 은 그 둘을 가리키는 쪽
+const measuredNames = () => assetNames().filter((name) => name !== MANIFEST && name !== FEED)
+
+/**
+ * latest-mac.yml(JSON 꼴)이 받은 .zip · 이번 버전과 맞는지 — 틀린 것마다 한 줄
+ * @param {{ feed: unknown, appVersion: unknown, measured: Measured[] }} options
+ * @returns {string[]}
+ */
+function checkFeed({ feed, appVersion, measured }) {
+  if (!feed || typeof feed !== 'object') return [`${FEED} 가 객체가 아니다`]
+  /** @type {string[]} */
+  const errors = []
+  const data = /** @type {Record<string, unknown>} */ (feed)
+  if (data.version !== appVersion) errors.push(`${FEED} version 이 latest.json 과 다르다 — ${String(data.version)} · ${String(appVersion)}`)
+  const listed = Array.isArray(data.files) ? data.files : []
+  if (listed.length !== files.ARCHES.length) errors.push(`${FEED} files 가 ${files.ARCHES.length}개가 아니다: ${listed.length}개`)
+  const byName = new Map(measured.map((item) => [item.name, item]))
+  for (const arch of files.ARCHES) {
+    const name = packageMac.artifactName(arch, 'zip')
+    const entry = listed.find((item) => item && typeof item === 'object' && item.url === name)
+    if (!entry) {
+      errors.push(`${FEED} files 에 ${name} 가 없다`)
+      continue
+    }
+    const real = byName.get(name)
+    if (!real?.exists) continue
+    if (entry.size !== real.size) errors.push(`${FEED} ${name} 크기가 다르다 — ${String(entry.size)} · 받은 파일 ${real.size}`)
+    if (entry.sha512 !== real.sha512) errors.push(`${FEED} ${name} sha512 가 다르다 — ${String(entry.sha512)} · 받은 파일 ${String(real.sha512)}`)
+  }
+  const first = listed[0]
+  if (first && (data.path !== first.url || data.sha512 !== first.sha512)) errors.push(`${FEED} 맨 위 path · sha512 가 files[0] 과 다르다`)
+  return errors
 }
 
 /**
@@ -63,7 +101,7 @@ function checkFiles({ manifest, notes, measured }) {
   /** @type {string[]} */
   const errors = []
   const byName = new Map(measured.map((item) => [item.name, item]))
-  for (const name of assetNames().filter((each) => each !== MANIFEST)) {
+  for (const name of measuredNames()) {
     if (!byName.get(name)?.exists) errors.push(`${name} 가 없다`)
   }
   if (!notes.trim()) errors.push(`${NOTES} 가 비었다`)
@@ -158,13 +196,15 @@ function argValue(args, name) {
 async function measure(dir) {
   /** @type {Measured[]} */
   const result = []
-  for (const name of assetNames().filter((each) => each !== MANIFEST)) {
+  for (const name of measuredNames()) {
     const file = path.join(dir, name)
     if (!fs.existsSync(file)) {
       result.push({ name, exists: false })
       continue
     }
-    result.push({ name, exists: true, size: fs.statSync(file).size, sha256: name.endsWith('.dmg') ? await files.sha256Of(file) : undefined })
+    // .dmg 는 latest.json 의 sha256(hex) · .zip 은 latest-mac.yml 의 sha512(base64 — electron-updater 가 받은 뒤 맞추는 값)
+    const dmg = name.endsWith('.dmg')
+    result.push({ name, exists: true, size: fs.statSync(file).size, ...(dmg ? { sha256: await files.sha256Of(file) } : { sha512: await files.sha512Of(file) }) })
   }
   return result
 }
@@ -188,6 +228,16 @@ async function stapleDmgs(dir) {
   }
 }
 
+// JSON 꼴 파일 읽기 — 못 읽으면 null(checkFeed 가 '객체가 아니다' 로 알린다)
+/** @param {string} file */
+function parseJson(file) {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    return null
+  }
+}
+
 /** @param {string} url */
 async function rangeStatus(url) {
   const response = await fetch(url, { headers: { Range: 'bytes=0-0' }, redirect: 'follow' })
@@ -204,10 +254,13 @@ async function checkFixedUrls(appVersion) {
     console.log(`[publish] ${url} → ${status}`)
     if (status !== 200 && status !== 206) throw new Error(`고정 주소가 ${status}: ${url}`)
   }
-  const response = await fetch(`${base}/${MANIFEST}`, { redirect: 'follow' })
-  const latest = response.ok ? /** @type {{ version?: unknown }} */ (await response.json()) : {}
-  console.log(`[publish] ${base}/${MANIFEST} → ${response.status} · version ${String(latest.version)}`)
-  if (latest.version !== appVersion) throw new Error(`latest.json 이 이번 버전 ${appVersion} 이 아니다: ${String(latest.version)}`)
+  // latest.json(홈페이지) · latest-mac.yml(앱 안 업데이트 — JSON 꼴) 둘 다 이번 버전이어야 한다
+  for (const name of [MANIFEST, FEED]) {
+    const response = await fetch(`${base}/${name}`, { redirect: 'follow' })
+    const latest = response.ok ? /** @type {{ version?: unknown }} */ (JSON.parse(await response.text())) : {}
+    console.log(`[publish] ${base}/${name} → ${response.status} · version ${String(latest.version)}`)
+    if (latest.version !== appVersion) throw new Error(`${name} 이 이번 버전 ${appVersion} 이 아니다: ${String(latest.version)}`)
+  }
 }
 
 /** @param {string[]} args */
@@ -233,7 +286,10 @@ async function main(args) {
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
   const notesFile = path.join(dir, NOTES)
   const notes = fs.existsSync(notesFile) ? fs.readFileSync(notesFile, 'utf8') : ''
-  const errors = checkFiles({ manifest, notes, measured: await measure(dir) })
+  const feedFile = path.join(dir, FEED)
+  if (!fs.existsSync(feedFile)) throw new Error(`${FEED} 가 없다 — 앱 안 업데이트 피드를 만드는 release-mac 으로 다시 돈 실행인지 본다: ${dir}`)
+  const firstMeasure = await measure(dir)
+  const errors = [...checkFiles({ manifest, notes, measured: firstMeasure }), ...checkFeed({ feed: parseJson(feedFile), appVersion: manifest.version, measured: firstMeasure })]
   if (errors.length) throw new Error(`받은 파일이 맞지 않는다:\n  - ${errors.join('\n  - ')}`)
 
   // 받은 파일이 CI 가 만든 그대로임을 본 뒤에 staple — 파일이 바뀌면 latest.json 을 다시 쓰고 한 번 더 맞춘다
@@ -281,4 +337,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SOURCE_REPO, RELEASES_REPO, checkRun, assetNames, checkFiles, updateManifest, unstapledZips, createArgs }
+module.exports = { SOURCE_REPO, RELEASES_REPO, checkRun, assetNames, checkFiles, checkFeed, updateManifest, unstapledZips, createArgs }
