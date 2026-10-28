@@ -1,6 +1,6 @@
 // @ts-check
 // 맥 배포판 만들기 — electron-builder 로 .dmg · .zip(칩마다 따로). 결과는 dist/release/(git 무시)
-//   npm run package:mac [-- --arch arm64|x64|all] [--version X.Y.Z]
+//   npm run package:mac [-- --arch arm64|x64|all] [--version X.Y.Z] [--require-signing]
 //     1. 화면 빌드(vite → dist/renderer · scripts/dev-app.js 와 같은 설정)
 //     2. 코어 번들 — 레포 athena/ 의 커밋된 기록(HEAD:athena)을 git 번들로 dist/package/ 에 만들고 extraResources 로
 //        앱 Contents/Resources/athena-core.bundle 에 넣는다(src/lib/studio-home.js coreBundlePath 의 배포판 자리)
@@ -8,7 +8,9 @@
 //   버전: --version 이 없으면 git 태그(git describe — 태그 커밋이면 0.13.35, 뒤 커밋이 있으면 0.13.35+1). 앱 app.getVersion() 이 이 번호
 //   서명: CSC_LINK(+ CSC_KEY_PASSWORD) 가 있으면 그 Developer ID 인증서로, 없으면 이 컴퓨터용(ad-hoc '-') — 1단계는 ad-hoc
 //         공증: APPLE_API_KEY(.p8 파일 경로) · APPLE_API_KEY_ID · APPLE_API_ISSUER 가 모두 있으면 electron-builder 가 notarytool 로(2단계)
-// 순수 부분(builderConfig · artifactName · resolveVersion)은 test/package-mac.test.js 가 Electron · electron-builder 없이 본다
+//         — 앱(.app)만 공증 · staple 한다. .dmg 는 같은 인증서로 서명만 하고(dmg.sign) 공증 · staple 은 워크플로(.github/workflows/release-mac.yml)가 한다
+//         --require-signing: 위 다섯 값 중 하나라도 비면 만들지 않는다(CI 에서 Secrets 가 빠져 ad-hoc 판이 조용히 나오지 않게 — 값은 찍지 않고 이름만)
+// 순수 부분(builderConfig · artifactName · resolveVersion · signingMissing)은 test/package-mac.test.js 가 Electron · electron-builder 없이 본다
 const fs = require('fs')
 const path = require('path')
 const studioHome = require('../src/lib/studio-home')
@@ -18,6 +20,8 @@ const ROOT = path.join(__dirname, '..')
 const OUTPUT = path.join(ROOT, 'dist', 'release')
 const STAGING = path.join(ROOT, 'dist', 'package')
 const ARCHES = ['arm64', 'x64']
+// 서명 · 공증에 필요한 환경 변수 — electron-builder 관례 이름(계획서 3절 · Secrets 이름과 같다. APPLE_API_KEY 만 Secret APPLE_API_KEY_P8 을 파일로 쓴 경로)
+const SIGNING_ENV = ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER']
 
 const APP_ID = 'kr.novum-lab.athena-studio'
 const PRODUCT_NAME = 'Athena Studio' // src/lib/studio-home.js appIdentity({ packaged: true }).name 과 같다(앱 데이터 폴더 이름)
@@ -54,6 +58,12 @@ function artifactName(arch, ext) {
 function resolveVersion({ explicit = null, described = null }) {
   const value = String(explicit || described || '').replace(/^v/, '')
   return version.DISPLAY_RE.test(value) ? value : null
+}
+
+// 서명 · 공증 환경 변수 중 빈 것의 이름 — 값은 보지 않고 있는지만
+/** @param {Record<string, string | undefined>} env */
+function signingMissing(env) {
+  return SIGNING_ENV.filter((name) => !env[name])
 }
 
 /**
@@ -101,7 +111,8 @@ function builderConfig({ appVersion, coreBundle, signed }) {
       entitlements: ENTITLEMENTS,
       entitlementsInherit: ENTITLEMENTS,
     },
-    dmg: { artifactName: 'Athena-Studio-mac-${arch}.${ext}' },
+    // Developer ID 판이면 .dmg 도 같은 인증서로 서명한다(만드는 동안만 있는 임시 키체인이라 여기서) — 공증 · staple 은 워크플로
+    dmg: { artifactName: 'Athena-Studio-mac-${arch}.${ext}', sign: signed },
     publish: null,
   }
 }
@@ -120,6 +131,11 @@ async function buildRenderer() {
 /** @param {string[]} args */
 async function main(args) {
   if (process.platform !== 'darwin') throw new Error('맥 배포판은 맥에서만 만든다')
+  // 화면 빌드 · 코어 번들 전에 — CI 분을 쓰기 전에 멈춘다
+  if (args.includes('--require-signing')) {
+    const missing = signingMissing(process.env)
+    if (missing.length) throw new Error(`서명 · 공증 값이 비었다: ${missing.join(' · ')} — --require-signing 이라 ad-hoc 으로 만들지 않는다`)
+  }
   const archArg = argValue(args, '--arch') || 'all'
   const arches = archArg === 'all' ? ARCHES : [archArg]
   if (!arches.every((arch) => ARCHES.includes(arch))) throw new Error(`--arch 는 ${ARCHES.join(' · ')} · all 중 하나: ${archArg}`)
@@ -153,4 +169,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { APP_ID, PRODUCT_NAME, MINIMUM_MACOS, artifactName, resolveVersion, builderConfig }
+module.exports = { APP_ID, PRODUCT_NAME, MINIMUM_MACOS, SIGNING_ENV, artifactName, resolveVersion, signingMissing, builderConfig }

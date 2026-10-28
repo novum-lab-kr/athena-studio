@@ -46,6 +46,16 @@ test('서명 — 인증서가 없으면 ad-hoc(-) · 있으면 identity 를 비�
   const signed = pkg.builderConfig({ ...base, signed: true })
   assert.equal('identity' in signed.mac, false)
   assert.equal(signed.mac.entitlements, signed.mac.entitlementsInherit)
+  // .dmg 는 Developer ID 판일 때만 서명(공증 · staple 은 워크플로) — ad-hoc 판은 서명하지 않는다
+  assert.equal(adhoc.dmg.sign, false)
+  assert.equal(signed.dmg.sign, true)
+})
+
+test('--require-signing — 서명 · 공증 값 다섯 중 빈 것의 이름만 돌려준다', () => {
+  const full = Object.fromEntries(pkg.SIGNING_ENV.map((name) => [name, 'x']))
+  assert.deepEqual(pkg.signingMissing(full), [])
+  assert.deepEqual(pkg.signingMissing({ ...full, CSC_KEY_PASSWORD: '', APPLE_API_ISSUER: undefined }), ['CSC_KEY_PASSWORD', 'APPLE_API_ISSUER'])
+  assert.deepEqual(pkg.signingMissing({}), ['CSC_LINK', 'CSC_KEY_PASSWORD', 'APPLE_API_KEY', 'APPLE_API_KEY_ID', 'APPLE_API_ISSUER'])
 })
 
 test('버전 — 명시값 > git 태그 · CFBundleVersion 은 +N 을 뗀 숫자', () => {
