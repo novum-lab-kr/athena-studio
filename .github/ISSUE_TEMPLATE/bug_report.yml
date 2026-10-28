@@ -62,6 +62,5 @@ body:
     attributes:
       label: Logs and screenshots (optional)
       description: Paste relevant log lines or attach screenshots. Remove any secrets, tokens or company code first.
-      render: text
     validations:
       required: false
