@@ -4,11 +4,13 @@
 const path = require('path')
 
 // 납작한 Pane 의 키 — screen.py `_pane` 과 같은 12개, 같은 순서
-const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title']
+const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows']
 
 // id 는 다시 쓰지 않는다. [\w:] 만 · 'hermes' 로 시작하지 않는다(일감의 가짜 id)
 // start 로 지난 데몬이 남긴 번호를 받아 이어서 센다 — 데몬을 다시 띄워도 p1 부터 다시 매기지 않게(계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게).
-// onChange 는 번호가 바뀔 때마다 지금 번호 전체를 받는다(데몬이 파일에 남긴다)
+// onChange 는 번호가 바뀔 때마다 지금 번호 전체를 받는다(데몬이 파일에 남긴다 — 카운터는 10진 숫자 그대로)
+// id 글자는 36진수 소문자(2026-10-28 — p230 다음 p6f · 접두 빼고 3글자로 46,655 까지). 10 이상인데 36진수가 숫자만인 번호
+// (36 → '10' · 1296 → '100')는 건너뛴다 — 예전 10진 id(p10 · p100)와 같은 글자가 되어 계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게
 /**
  * @param {unknown} [start]
  * @param {((counters: Record<string, number>) => void) | null} [onChange]
@@ -22,9 +24,11 @@ function createIdGen(start = {}, onChange = null) {
   return {
     /** @param {string} prefix */
     next(prefix) {
-      counters[prefix] = (counters[prefix] || 0) + 1
+      let number = (counters[prefix] || 0) + 1
+      while (number >= 10 && /^\d+$/.test(number.toString(36))) number += 1
+      counters[prefix] = number
       if (onChange) onChange({ ...counters })
-      return `${prefix}${counters[prefix]}`
+      return `${prefix}${number.toString(36)}`
     },
   }
 }
@@ -42,7 +46,7 @@ const orNull = (value) => (value === undefined || value === null || value === ''
 
 /**
  * 데몬 pane 정보에서 읽는 칸만(모양은 검사하지 않는다)
- * @param {{ id: unknown, tabId: unknown, workspaceId?: unknown, label?: unknown, cwd?: unknown, foregroundCwd?: unknown, focused?: unknown, agent?: unknown, agentStatus?: unknown, title?: unknown }} info
+ * @param {{ id: unknown, tabId: unknown, workspaceId?: unknown, label?: unknown, cwd?: unknown, foregroundCwd?: unknown, focused?: unknown, agent?: unknown, agentStatus?: unknown, title?: unknown, cols?: unknown, rows?: unknown }} info
  */
 function flatPane(info) {
   return {
@@ -58,6 +62,9 @@ function flatPane(info) {
     agent: orNull(info.agent),
     agent_status: orNull(info.agentStatus),
     title: orNull(info.title),
+    // pane 크기(글자 칸) — 에이전트 pane 을 어느 pane 의 어느 쪽으로 나눌지 고르는 데 쓴다(delegate.sh). 모르면 null
+    cols: orNull(info.cols),
+    rows: orNull(info.rows),
   }
 }
 

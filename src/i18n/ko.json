@@ -104,6 +104,7 @@
   "error.daemonDisconnected": "데몬 연결이 끊겼어요",
   "error.daemonAttach": "데몬에 붙지 못했어요 — 로그: {path}",
   "error.workspaceMissing": "없는 작업 공간이에요",
+  "error.workspaceFolderMissing": "폴더가 없어요",
   "error.pathUnreadable": "읽을 수 없는 경로예요",
   "error.outsideWorkspace": "작업 공간 밖이에요",
   "error.notFile": "파일이 아니에요",

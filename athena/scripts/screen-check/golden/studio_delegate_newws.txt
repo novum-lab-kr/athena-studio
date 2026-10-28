@@ -5,7 +5,7 @@ p7  (fe — 계획서 plans/task/20261001-fe-test.md · 새 workspace 'shop-web'
 --- stderr
 --- screen
 ["@studio", "workspace", "list"]
-["@studio", "workspace", "create", "--label", "shop-web", "--cwd", "<ATHENA>", "--no-focus"]
+["@studio", "workspace", "create", "--label", "shop-web", "--cwd", "<ATHENA>/repos/shop-web", "--no-focus"]
 ["@studio", "tab", "rename", "t3", "shop-web"]
 ["@studio", "pane", "list"]
 ["@studio", "pane", "run", "p7", "'<TMP>/hermes-runner.X'"]

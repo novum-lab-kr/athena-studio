@@ -15,6 +15,10 @@ test('묶인 pane: 에이전트 pane 은 agent · 맡긴 아테나 pane 은 lead
   assert.deepEqual(detail.bindings(cards), { p87: 'agent', p67: 'lead', p33: 'lead', p90: 'agent' })
   assert.equal(detail.samePane('w2:p33', 'p33'), true)
   assert.equal(detail.samePane('p333', 'p33'), false)
+  // 36진수 id(2026-10-28 — p230 다음 p6f)도 같다
+  assert.deepEqual(detail.bindings([plan('plans/task/d.md', { agents: ['p6f'], leadPane: 'w1:p1a' })]), { p6f: 'agent', p1a: 'lead' })
+  assert.equal(detail.samePane('w1:p6f', 'p6f'), true)
+  assert.equal(detail.samePane('p6fa', 'p6f'), false)
 })
 
 test('아테나 pane(일감 role hermes)은 맡긴 일이 다 보관돼 카드에 없어도 lead · 에이전트 · 그 밖 pane 은 그대로', () => {

@@ -122,11 +122,13 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
     assert.equal(waited.stdout, 'studio=1:p2:42\n')
     assert.match((await cli(daemon.socket, ['pane', 'read', 'p2', '--lines', '20'])).stdout, /^studio=1:p2:42$/m)
 
-    // 납작한 Pane 12키 · 포커스는 그대로 p1(--no-focus) · 이름표
+    // 납작한 Pane 14키 · 포커스는 그대로 p1(--no-focus) · 이름표 · 크기(탭 100×30 을 0.25 : 0.75 로 — 높이는 그대로)
     assert.equal((await cli(daemon.socket, ['pane', 'rename', 'p2', '🤖 test · branch'])).code, 0)
     const list = JSON.parse((await cli(daemon.socket, ['pane', 'list'])).stdout).panes
     assert.deepEqual(list.map((pane) => [pane.id, pane.focused, pane.label]), [['p1', true, null], ['p2', false, '🤖 test · branch']])
-    assert.equal(Object.keys(list[0]).length, 12)
+    assert.equal(Object.keys(list[0]).length, 14)
+    assert.deepEqual(list.map((pane) => pane.rows), [30, 30])
+    assert.ok(list[1].cols > list[0].cols * 2 && list[0].cols + list[1].cols <= 100, JSON.stringify(list.map((pane) => pane.cols)))
     assert.equal((await cli(daemon.socket, ['pane', 'is-shell', 'p2'])).code, 0)
     assert.equal(JSON.parse((await cli(daemon.socket, ['pane', 'current'])).stdout).pane.id, 'p1')
 
