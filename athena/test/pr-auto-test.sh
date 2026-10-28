@@ -701,13 +701,13 @@ ATHENA_PANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"
 merge_case "검증 못 함 + 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
 [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — " "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
   && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄 · 작업 pane(🤖)에는 안 보냄" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
-# 같은 key · 같은 HEAD · 같은 제목이면 다시 보내지 않는다 — 계획서 줄을 지우고 다시 돌려도(대기열 폴더의 .notified)
+# 다시 돌린 결과는 다시 알린다(결정 R1) — 계획서 줄을 지우고 다시 돌리면 그 PR 의 .notified 기록을 지우고 같은 HEAD · 제목도 다시 보낸다
 : > "$SLOG"
 sed -i.bak '/^- Auto review:/d' "$CORE/plans/task/x.md" && rm -f "$CORE/plans/task/x.md.bak"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" \
   "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
-! grep -q "send-text" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "이미 알렸다" "$TMP/merge.out" \
-  && echo "  ✔ 같은 알림은 다시 보내지 않음(요청도 안 엶)" || { echo "  ✖ 같은 알림을 또 보냈다"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
+grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && ! grep -q "이미 알렸다" "$TMP/merge.out" \
+  && echo "  ✔ 줄을 지워 다시 돌리면 기록을 지우고 같은 HEAD · 제목도 다시 알림(R1 · 요청은 안 엶)" || { echo "  ✖ 다시 돌린 결과를 다시 알리지 않았다"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
 # 아테나 pane 에 질문 · 고르기 창이 떠 있으면 넣지 않고 미룬다(#100 — 글이 창에 먹히고 Enter 가 1번을 고른다) · 처리기가 창이 닫히면 넣는다
 : > "$SLOG"
 MENU='  ❯ 1. 예

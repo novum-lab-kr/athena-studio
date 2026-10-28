@@ -404,6 +404,16 @@ const markNotified = (key, mark) => {
   writeFileSync(staging, JSON.stringify({ ...readNotified(), [key]: mark }, null, 2))
   renameSync(staging, NOTIFIED_FILE)
 }
+// 다시 돌린 결과는 다시 알린다(PR #103 결정 R1 · 2026-10-28) — 이 PR 을 새로 처리할 때(새 HEAD · "- Auto review:" 줄을 지움 · 본문 고침) 그 key 의 기록을 지운다.
+// 그래서 막는 것은 같은 처리 안의 중복뿐이다
+const clearNotified = (key) => {
+  const recorded = readNotified()
+  if (!(key in recorded)) return
+  delete recorded[key]
+  const staging = `${NOTIFIED_FILE}.${process.pid}`
+  writeFileSync(staging, JSON.stringify(recorded, null, 2))
+  renameSync(staging, NOTIFIED_FILE)
+}
 const leadPaneOf = (planFile) => {
   const planPath = join(ROOT, planFile)
   const line = existsSync(planPath) ? readFileSync(planPath, 'utf8').match(/^-\s*Lead pane:\s*([\w:-]+)/m)?.[1] : ''
@@ -504,6 +514,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (head && !pr.headRefOid.startsWith(head)) return console.log(`⏭  ${repo}#${number} — 그새 새 커밋(${pr.headRefOid.slice(0, 7)}) · 그 커밋은 따로 들어온다`)
   const sha = pr.headRefOid
   if (!dryRun && !needsReview(planText, repo, number, sha)) return console.log(`⏭  ${repo}#${number} @${sha.slice(0, 7)} — 이미 봤거나 사람이 이어받았다`)
+  if (!dryRun) clearNotified(`pr-auto:${repo}#${number}`)
   const known = autoLines(planText).get(`${repo}#${number}`)
   // Work ref 의 워크트리가 이 PR 브랜치가 아닐 수 있다 — 계획서 하나에 PR 이 여럿이면 마지막 작업(다른 PR)의 것(prWorktree)
   const workRef = workRefOf(planText)
