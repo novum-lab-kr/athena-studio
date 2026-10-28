@@ -28,13 +28,24 @@ check('빈 입력칸 → 안 떠 있음', !menuOpen(IDLE))
 check('못 읽음(null) → 안 떠 있음 — 지금처럼 바로', !menuOpen(null))
 check('창 글이 위로 밀려 끝 12줄 밖이면 → 안 떠 있음', !menuOpen(ASKING + '\n' + Array.from({ length: 12 }, (_, index) => `줄 ${index}`).join('\n')))
 
+// sent — 끝까지 넣은 지시(글 + Enter) · typed — 글 쓰기 기록(중복 입력 확인) · readDelay — 화면 읽기가 느린 척(겹침 재현)
 const fake = () => {
-  const state = { screens: new Map(), sent: [], panes: new Set(['p1', 'p2']), failNext: false }
+  const state = { screens: new Map(), sent: [], typed: [], panes: new Set(['p1', 'p2']), failType: 0, failEnter: 0, readDelay: 0, box: new Map() }
   const delivery = createDelivery({
-    readPane: async (paneId) => state.screens.get(paneId) ?? null,
-    sendNow: async (paneId, text) => {
-      if (state.failNext) { state.failNext = false; return '보내지 못했어요' }
-      state.sent.push([paneId, text])
+    readPane: async (paneId) => {
+      if (state.readDelay) await new Promise((resolve) => setTimeout(resolve, state.readDelay))
+      return state.screens.get(paneId) ?? null
+    },
+    typeText: async (paneId, text) => {
+      if (state.failType) { state.failType -= 1; return '보내지 못했어요' }
+      state.typed.push([paneId, text])
+      state.box.set(paneId, text)
+      return null
+    },
+    pressEnter: async (paneId) => {
+      if (state.failEnter) { state.failEnter -= 1; return 'Enter 를 보내지 못했어요' }
+      state.sent.push([paneId, state.box.get(paneId)])
+      state.box.delete(paneId)
       return null
     },
     paneExists: (paneId) => state.panes.has(paneId),
@@ -75,11 +86,44 @@ const fake = () => {
   state.screens.set('p1', ASKING)
   await delivery.submit('p1', '미룸')
   state.screens.set('p1', IDLE)
-  state.failNext = true
+  state.failType = 1
   await delivery.tick()
-  check('넣다 실패하면 남겨 두고', delivery.pending('p1') === 1 && state.sent.length === 0)
+  check('미룬 글 쓰기가 실패하면 남겨 두고', delivery.pending('p1') === 1 && state.sent.length === 0)
   await delivery.tick()
   check('다음 차례에 다시 넣는다', delivery.pending('p1') === 0 && same(state.sent, [['p1', '미룸']]))
+}
+{
+  const { state, delivery } = fake()
+  state.screens.set('p1', IDLE)
+  state.failType = 1
+  const result = await delivery.submit('p1', '바로')
+  check('바로 넣다 글 쓰기가 실패하면 오류로 돌려주고 남기지 않는다(콘솔이 복사로 바뀐다)', result === '보내지 못했어요' && delivery.pending('p1') === 0, String(result))
+}
+{
+  const { state, delivery } = fake()
+  state.screens.set('p1', IDLE)
+  state.failEnter = 1
+  const result = await delivery.submit('p1', '글은 들어감')
+  check('Enter 만 실패하면 전달 완료로 치지 않는다(미룸)', result === 'queued' && delivery.pending('p1') === 1 && state.sent.length === 0, String(result))
+  await delivery.tick()
+  check('다음 차례에 Enter 부터 — 글을 두 번 쓰지 않는다', delivery.pending('p1') === 0 && same(state.sent, [['p1', '글은 들어감']]) && state.typed.length === 1, JSON.stringify(state.typed))
+}
+{
+  const { state, delivery } = fake()
+  state.screens.set('p1', ASKING)
+  state.readDelay = 30
+  const results = await Promise.all([delivery.submit('p1', '첫째'), delivery.submit('p1', '둘째')])
+  check('창이 뜬 pane 에 겹쳐 온 두 지시 — 둘 다 미뤄지고 덮이지 않는다', same(results, ['queued', 'queued']) && delivery.pending('p1') === 2, JSON.stringify(results))
+  state.screens.set('p1', IDLE)
+  await delivery.tick()
+  check('창이 닫히면 둘 다 들어온 차례대로', same(state.sent, [['p1', '첫째'], ['p1', '둘째']]), JSON.stringify(state.sent))
+}
+{
+  const { state, delivery } = fake()
+  state.screens.set('p1', IDLE)
+  state.readDelay = 30
+  const results = await Promise.all([delivery.submit('p1', '첫째'), delivery.submit('p1', '둘째'), delivery.tick()])
+  check('비어 있는 pane 에 겹쳐 온 두 지시 + tick — 차례대로 한 번씩', same(results.slice(0, 2), ['sent', 'sent']) && same(state.sent, [['p1', '첫째'], ['p1', '둘째']]) && state.typed.length === 2, JSON.stringify(state.sent))
 }
 {
   const { state, delivery } = fake()

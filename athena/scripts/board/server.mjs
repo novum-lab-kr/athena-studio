@@ -1077,14 +1077,11 @@ const sendToPane = async (paneId, text) => {
   if (result === 'queued') return { queued: true }
   return result
 }
-const typeIntoPane = async (paneId, text) => {
-  if ((await screen(['pane', 'send-text', paneId, text])) === null) return `${screenName()} 로 입력을 보내지 못했어요`
-  await screen(['pane', 'send-keys', paneId, 'Enter'])
-  return null
-}
 const delivery = createDelivery({
   readPane: (paneId) => screenText(['pane', 'read', paneId, '--lines', '40']),
-  sendNow: typeIntoPane,
+  // 글 · Enter 를 따로 확인한다 — Enter 만 실패하면 글을 다시 쓰지 않고 Enter 부터 다시(pane-delivery.mjs)
+  typeText: async (paneId, text) => ((await screen(['pane', 'send-text', paneId, text])) === null ? `${screenName()} 로 입력을 보내지 못했어요` : null),
+  pressEnter: async (paneId) => ((await screen(['pane', 'send-keys', paneId, 'Enter'])) === null ? `${screenName()} 로 Enter 를 보내지 못했어요` : null),
   // 아직 pane 목록을 모르면 버리지 않는다
   paneExists: (paneId) => !snapshot || (snapshot.panes ?? []).some((pane) => pane.id === paneId),
   log: (message) => console.log(message),
