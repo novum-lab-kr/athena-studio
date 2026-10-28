@@ -57,3 +57,22 @@ test('gh release create 인자 — 공개 레포 · 초안 · 본문 파일 · �
   assert.equal(args[args.indexOf('--notes-file') + 1], '/d/release-notes.md')
   assert.deepEqual(args.slice(-5), ['/d/Athena-Studio-mac-arm64.dmg', '/d/Athena-Studio-mac-x64.dmg', '/d/Athena-Studio-mac-arm64.zip', '/d/Athena-Studio-mac-x64.zip', '/d/latest.json'])
 })
+
+test('staple 로 바뀐 .dmg — latest.json 크기 · sha256 을 새 값으로 · 받은 manifest 는 그대로', () => {
+  const original = manifest()
+  const files = measured()
+  files[1] = { ...files[1], size: 25, sha256: 'd'.repeat(64) }
+  const { manifest: next, changed } = publish.updateManifest(original, files)
+  assert.deepEqual(changed, ['Athena-Studio-mac-x64.dmg'])
+  assert.deepEqual(next.files[1], { arch: 'x64', name: 'Athena-Studio-mac-x64.dmg', size: 25, sha256: 'd'.repeat(64) })
+  assert.deepEqual(next.files[0], original.files[0])
+  assert.equal(original.files[1].size, 20)
+  assert.deepEqual(publish.checkFiles({ manifest: next, notes: 'x', measured: files }), [])
+  assert.deepEqual(publish.updateManifest(original, measured()).changed, [])
+})
+
+test('.zip 안 .app 미staple — staple.json 의 false · 빠진 이름 · 파일 없으면 모름(null)', () => {
+  assert.deepEqual(publish.unstapledZips({ 'Athena-Studio-mac-arm64.zip': true, 'Athena-Studio-mac-x64.zip': true }), [])
+  assert.deepEqual(publish.unstapledZips({ 'Athena-Studio-mac-arm64.zip': false, 'Athena-Studio-mac-x64.dmg': true }), ['Athena-Studio-mac-arm64.zip', 'Athena-Studio-mac-x64.zip'])
+  assert.equal(publish.unstapledZips(null), null)
+})

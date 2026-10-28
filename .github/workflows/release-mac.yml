@@ -11,6 +11,10 @@
 #   - npm ci --ignore-scripts — Electron 실행 파일(개발용)을 받지 않는다. 배포판의 Electron 은 electron-builder 가 칩마다 따로 받는다(위 캐시)
 #   - 공증 대기가 길어져도 timeout-minutes 에서 끊는다
 #
+# 공증은 꼭 성공해야 하고(Accepted 가 아니면 멈춘다) staple 은 넉넉히 다시 시도하되 끝내 못 붙여도 멈추지 않는다 —
+#   러너 → Apple CloudKit 연결이 자주 끊겨(Error 68 · NSURLError -1005 · 실행 40636468435 .dmg · 40645585766 .app) 공증은 됐는데 staple 만 지는 일이 잦다.
+#   못 붙인 것은 artifact 의 staple.json 에 false(미staple)로 남기고, publish-release.js 가 올리기 전에 로컬 맥에서 .dmg 에 다시 붙인다(scripts/notarize-mac.js)
+#
 # Secrets(값은 로그에 찍지 않는다 — 있는지만 본다): CSC_LINK(.p12 base64) · CSC_KEY_PASSWORD · APPLE_API_KEY_P8(.p8 내용) · APPLE_API_KEY_ID · APPLE_API_ISSUER
 name: release-mac
 on:
@@ -93,7 +97,7 @@ jobs:
           if ! grep -q 'BEGIN PRIVATE KEY' "$key"; then echo "::error::APPLE_API_KEY_P8 가 .p8 파일 내용 모양이 아니다(BEGIN PRIVATE KEY 줄 없음)"; exit 1; fi
           echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
 
-      - name: 만들기 · 서명 · 앱 공증(electron-builder)
+      - name: 만들기 · 서명 · 앱 공증(electron-builder + notarize-mac.js 훅)
         env:
           CSC_LINK: ${{ secrets.CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
@@ -107,7 +111,8 @@ jobs:
           npm run package:mac -- "$@"
 
       - name: .dmg 공증 · staple
-        # electron-builder 는 .app 만 공증 · staple 한다(.zip 은 staple 된 .app 을 묶은 것). .dmg 는 서명만 돼 있어 여기서 공증해 붙인다 — 두 칩을 같이 올려 기다리는 시간을 겹친다
+        # 앞 단계는 .app 만 공증 · staple 한다(.zip 은 그 .app 을 묶은 것). .dmg 는 서명만 돼 있어 여기서 공증해 붙인다 — 두 칩을 같이 올려 기다리는 시간을 겹친다
+        # 공증이 Accepted 가 아니면 멈춘다 · staple 은 notarize-mac.js 가 다시 시도하고 못 붙여도 0(staple.json 에 false · 경고)
         env:
           APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
           APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
@@ -129,41 +134,39 @@ jobs:
             [ -n "$id" ] && xcrun notarytool log "$id" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" || true
           done
           [ "$failed" = 0 ] || exit 1
-          # 공증이 Accepted 여도 표(ticket)가 CloudKit(api.apple-cloudkit.com)에 퍼지기 전이거나 연결이 끊기면 staple 이 Error 68 로 진다
-          # (실행 40636468435 — NSURLError -1005) · 30초 간격 최대 6번 다시 시도한다
-          retry() { local n=1; until "$@"; do [ "$n" -ge 6 ] && return 1; echo "::warning::다시 시도 $n/5 (30초 뒤): $*"; sleep 30; n=$((n + 1)); done; }
-          for dmg in dist/release/*.dmg; do retry xcrun stapler staple -v "$dmg"; done
+          node scripts/notarize-mac.js staple --record dist/release dist/release/*.dmg
 
-      - name: 확인 — codesign · spctl · stapler
+      - name: 확인 — codesign · spctl · staple
         # 계획서 7절 성공 조건: accepted · source=Notarized Developer ID · 팀 AQUDD2QFNC
+        # 서명 · 팀은 멈춘다. spctl 은 staple 이 없으면 CloudKit 에 묻는다(연결이 끊기면 거절로 나온다) — 그래서 경고만(공증은 앞 단계 Accepted 로 이미 확인)
+        # staple 은 앞 단계들이 validate 까지 한 결과(staple.json)를 보여 준다 — 미staple 은 경고 · publish-release.js 가 올리기 전에 다시 붙인다
         run: |
           set -euo pipefail
-          # 명령 출력을 로그에 남기고, 그 안에 기대한 줄이 없으면 멈춘다
+          # 명령 출력을 로그에 남기고, 그 안에 기대한 줄이 없으면 멈춘다(soft 면 경고만)
           expect() { local want="$1"; shift; local out; out=$("$@" 2>&1) || true; echo "$out"; grep -qE "$want" <<<"$out" || { echo "::error::기대한 줄 없음 ($want): $*"; return 1; }; }
-          # stapler validate 도 CloudKit 에 묻는다 — 앞 단계 staple 과 같이 30초 간격 최대 6번
-          retry() { local n=1; until "$@"; do [ "$n" -ge 6 ] && return 1; echo "::warning::다시 시도 $n/5 (30초 뒤): $*"; sleep 30; n=$((n + 1)); done; }
+          soft() { local want="$1"; shift; local out; out=$("$@" 2>&1) || true; echo "$out"; grep -qE "$want" <<<"$out" || echo "::warning::기대한 줄 없음 — 네트워크(CloudKit) 문제일 수 있다 ($want): $*"; }
           for app in dist/release/mac*/"Athena Studio.app"; do
             echo "── $app"
             lipo -archs "$app/Contents/MacOS/Athena Studio"
             codesign --verify --deep --strict --verbose=2 "$app"
             expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$app"
-            expect 'source=Notarized Developer ID' spctl -a -vv -t exec "$app"
-            retry xcrun stapler validate "$app"
+            soft 'source=Notarized Developer ID' spctl -a -vv -t exec "$app"
           done
           for dmg in dist/release/*.dmg; do
             echo "── $dmg"
             codesign --verify --strict --verbose=2 "$dmg"
             expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$dmg"
-            expect 'source=Notarized Developer ID' spctl -a -vv -t open --context context:primary-signature "$dmg"
-            retry xcrun stapler validate "$dmg"
+            soft 'source=Notarized Developer ID' spctl -a -vv -t open --context context:primary-signature "$dmg"
           done
           for zip in dist/release/*.zip; do
             echo "── $zip"
             out="$RUNNER_TEMP/unzip-$(basename "$zip" .zip)"
             ditto -x -k "$zip" "$out"
             codesign --verify --deep --strict --verbose=2 "$out/Athena Studio.app"
-            retry xcrun stapler validate "$out/Athena Studio.app"
           done
+          echo "── staple(true = 붙음 · false = 미staple — .zip 은 안의 .app)"
+          cat dist/release/staple.json
+          node -e 'const s=require("./dist/release/staple.json");for(const [n,ok] of Object.entries(s)) if(!ok) console.log(`::warning::미staple: ${n} (공증은 됨)`)'
           ls -l dist/release/*.dmg dist/release/*.zip
           shasum -a 256 dist/release/*.dmg dist/release/*.zip
 
@@ -185,6 +188,7 @@ jobs:
             dist/release/*.zip
             dist/release/latest.json
             dist/release/release-notes.md
+            dist/release/staple.json
           if-no-files-found: error
           compression-level: 0 # 이미 압축된 파일 — 다시 누르지 않는다
           retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 손님용은 publish-release.js 가 공개 레포에
@@ -200,6 +204,7 @@ jobs:
             dist/release/*.dmg
             dist/release/*.zip
             dist/release/*.notary.log
+            dist/release/staple.json
           if-no-files-found: ignore
           compression-level: 0
           retention-days: 7

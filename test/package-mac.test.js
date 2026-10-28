@@ -49,6 +49,8 @@ test('서명 — 인증서가 없으면 ad-hoc(-) · 있으면 identity 를 비�
   // .dmg 는 Developer ID 판일 때만 서명(공증 · staple 은 워크플로) — ad-hoc 판은 서명하지 않는다
   assert.equal(adhoc.dmg.sign, false)
   assert.equal(signed.dmg.sign, true)
+  // electron-builder 공증은 끈다 — staple 이 지면 빌드가 멈춰서 afterSign 훅(notarize-mac.js)이 공증 · staple 한다
+  assert.equal(signed.mac.notarize, false)
 })
 
 test('--require-signing — 서명 · 공증 값 다섯 중 빈 것의 이름만 돌려준다', () => {

@@ -7,14 +7,16 @@
 //     3. electron-builder — 이름 Athena Studio · 번들 ID kr.novum-lab.athena-studio · 파일 이름 Athena-Studio-mac-<arch>.dmg · .zip
 //   버전: --version 이 없으면 git 태그(git describe — 태그 커밋이면 0.13.35, 뒤 커밋이 있으면 0.13.35+1). 앱 app.getVersion() 이 이 번호
 //   서명: CSC_LINK(+ CSC_KEY_PASSWORD) 가 있으면 그 Developer ID 인증서로, 없으면 이 컴퓨터용(ad-hoc '-') — 1단계는 ad-hoc
-//         공증: APPLE_API_KEY(.p8 파일 경로) · APPLE_API_KEY_ID · APPLE_API_ISSUER 가 모두 있으면 electron-builder 가 notarytool 로(2단계)
-//         — 앱(.app)만 공증 · staple 한다. .dmg 는 같은 인증서로 서명만 하고(dmg.sign) 공증 · staple 은 워크플로(.github/workflows/release-mac.yml)가 한다
+//         공증: APPLE_API_KEY(.p8 파일 경로) · APPLE_API_KEY_ID · APPLE_API_ISSUER 가 모두 있으면 afterSign 훅(scripts/notarize-mac.js)이 notarytool 로
+//         — 앱(.app)만 공증하고 staple 은 다시 시도하되 끝내 못 붙여도 멈추지 않는다(dist/release/staple.json 에 false · electron-builder 의 공증은 끈다 — mac.notarize).
+//         .dmg 는 같은 인증서로 서명만 하고(dmg.sign) 공증 · staple 은 워크플로(.github/workflows/release-mac.yml)가 한다
 //         --require-signing: 위 다섯 값 중 하나라도 비면 만들지 않는다(CI 에서 Secrets 가 빠져 ad-hoc 판이 조용히 나오지 않게 — 값은 찍지 않고 이름만)
 // 순수 부분(builderConfig · artifactName · resolveVersion · signingMissing)은 test/package-mac.test.js 가 Electron · electron-builder 없이 본다
 const fs = require('fs')
 const path = require('path')
 const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
+const notarizeMac = require('./notarize-mac')
 
 const ROOT = path.join(__dirname, '..')
 const OUTPUT = path.join(ROOT, 'dist', 'release')
@@ -110,6 +112,8 @@ function builderConfig({ appVersion, coreBundle, signed }) {
       hardenedRuntime: true,
       entitlements: ENTITLEMENTS,
       entitlementsInherit: ENTITLEMENTS,
+      // electron-builder(@electron/notarize)는 공증 뒤 staple 이 지면 빌드를 멈춘다 — 공증 · staple 은 main 이 거는 afterSign 훅(notarize-mac.js)이 한다
+      notarize: false,
     },
     // Developer ID 판이면 .dmg 도 같은 인증서로 서명한다(만드는 동안만 있는 임시 키체인이라 여기서) — 공증 · staple 은 워크플로
     dmg: { artifactName: 'Athena-Studio-mac-${arch}.${ext}', sign: signed },
@@ -154,7 +158,10 @@ async function main(args) {
   console.log(`[package] ${appVersion} · ${arches.join(' · ')} · 서명 ${signed ? 'Developer ID(CSC_LINK)' : 'ad-hoc(이 컴퓨터용 — 손님 맥에서는 Gatekeeper 가 막는다)'}`)
   fs.rmSync(OUTPUT, { recursive: true, force: true })
   const builder = require('electron-builder')
-  const config = builderConfig({ appVersion, coreBundle, signed })
+  // .app 서명 직후 공증 · staple(Developer ID 판만) — staple 결과는 이 .app 을 담을 .zip 이름으로 staple.json 에
+  /** @param {import('electron-builder').AfterPackContext} context */
+  const afterSign = (context) => notarizeMac.afterSign(context, { recordName: artifactName(builder.Arch[context.arch], 'zip') })
+  const config = { ...builderConfig({ appVersion, coreBundle, signed }), ...(signed ? { afterSign } : {}) }
   // 칩마다 따로 — 한 번에 넘기면 universal 이 아니라 각자 만든다(파일 이름에 ${arch})
   const archEnum = { arm64: builder.Arch.arm64, x64: builder.Arch.x64 }
   const targets = builder.Platform.MAC.createTarget(['dmg', 'zip'], ...arches.map((arch) => archEnum[/** @type {'arm64' | 'x64'} */ (arch)]))
