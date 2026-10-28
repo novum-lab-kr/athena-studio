@@ -354,31 +354,31 @@ const PLAN = {
     <p class="plan-summary" id="p-summary"></p>
     <div class="statusbar" id="statusbar">
       <span class="dot"></span><span id="statusbar-text"></span>
-      <a class="jump" id="jump-doc" href="#plan-doc" style="display:none">계획서 전문 ↓</a>
+      <a class="jump" id="jump-doc" href="#plan-doc" style="display:none" data-t="jumpDoc">계획서 전문 ↓</a>
     </div>
   </header>
 
   <section id="decisions-wrap">
     <div class="section-head">
-      <h2 class="section-title" id="decisions-title">결정</h2>
+      <h2 class="section-title" id="decisions-title" data-t="decisions">결정</h2>
       <span class="progress" id="progress"></span>
     </div>
     <div id="decisions"></div>
 
     <div class="card" id="notes-card">
-      <h3 class="card-title">추가 메모 <span class="tag">선택</span></h3>
-      <p class="card-desc">결정 외에 전달할 제약 · 우선순위 · 주의사항</p>
-      <textarea class="notes-area" id="notes" aria-label="추가 메모" placeholder="예: 마이그레이션은 이번 배포에 넣지 말 것"></textarea>
+      <h3 class="card-title"><span data-t="notesTitle">추가 메모</span> <span class="tag" data-t="optionalTag">선택</span></h3>
+      <p class="card-desc" data-t="notesDesc">결정 외에 전달할 제약 · 우선순위 · 주의사항</p>
+      <textarea class="notes-area" id="notes" aria-label="추가 메모" placeholder="예: 마이그레이션은 이번 배포에 넣지 말 것" data-t-aria-label="notesTitle" data-t-placeholder="notesPlaceholder"></textarea>
     </div>
 
     <details class="preview">
-      <summary>보낼 프롬프트 미리보기</summary>
+      <summary data-t="previewSummary">보낼 프롬프트 미리보기</summary>
       <pre class="prompt-out" id="preview"></pre>
     </details>
   </section>
 
   <details class="plan-doc" id="plan-doc" open style="display:none">
-    <summary id="body-title">계획서 전문</summary>
+    <summary id="body-title" data-t="bodyTitle">계획서 전문</summary>
     <article class="plan-body" id="plan-body"></article>
   </details>
 </div>
@@ -387,12 +387,12 @@ const PLAN = {
   <div class="actionbar-inner">
     <div class="status" id="status" aria-live="polite"></div>
     <div class="actions">
-      <button id="btn-copy" style="display:none">프롬프트로 복사</button>
-      <button class="primary" id="btn-send">이대로 진행</button>
+      <button id="btn-copy" style="display:none" data-t="copyButton">프롬프트로 복사</button>
+      <button class="primary" id="btn-send" data-t="sendButton">이대로 진행</button>
     </div>
   </div>
 </div>
-<div class="toast" id="toast" role="status">복사되었습니다</div>
+<div class="toast" id="toast" role="status" data-t="toast">복사되었습니다</div>
 
 <script>
 (function () {
@@ -417,19 +417,112 @@ const PLAN = {
   const allConfirmed = () => PLAN.decisions.length > 0 &&
     PLAN.decisions.every((dec) => !dec.required || isConfirmed(dec));
 
+  // --- 화면 글자(UI) — 스튜디오 언어로. 일감이 이 파일을 내줄 때 window.ATHENA_LANG(본체 .claude/settings.local.json 의 language)을 넣는다.
+  // 일감을 거치지 않고 열면(file:// 등) 값이 없어 한국어. 계획서 내용(PLAN 제목 · 결정 · 본문)과 보낼 프롬프트는 번역하지 않는다
+  // (프롬프트 머리 '[작업계획서 결정사항 확정]' 은 에이전트 지시문이 찾는 글이다)
+  const TEXTS = {
+    ko: {
+      'type.feature': '기능', 'type.bugfix': '버그 수정', 'type.refactor': '리팩터링', 'type.task': '작업',
+      docTitle: '{title} — 작업계획서', scope: '영향 범위 · {scope}', source: '원본',
+      reviewSummary: '리뷰 뒤 다시 결정할 사항',
+      jumpDoc: '계획서 전문 ↓', decisions: '결정', decisionsConfirmed: '확정된 결정',
+      notesTitle: '추가 메모', optionalTag: '선택', notesDesc: '결정 외에 전달할 제약 · 우선순위 · 주의사항',
+      notesPlaceholder: '예: 마이그레이션은 이번 배포에 넣지 말 것', previewSummary: '보낼 프롬프트 미리보기', bodyTitle: '계획서 전문',
+      copyButton: '프롬프트로 복사', sendButton: '이대로 진행', sentButton: '보냄', toast: '복사되었습니다',
+      required: '필수', multi: '복수 선택', single: '택1', recommended: '추천', picked: '골랐음', confirmed: '확정',
+      customInput: '직접 입력', othersShow: '다른 선택지 {count}개 보기', othersHide: '다른 선택지 접기',
+      progressRequired: '필수 {done}/{total}', progressOptional: '선택 {count}개',
+      statusSent: '<b>{pane} 에 보냈어요.</b> 확정되면 이 화면이 잠깁니다.',
+      statusError: '{error} — 복사해서 {pane} pane 에 붙여넣어 주세요.', paneFallback: '담당',
+      statusAllPicked: '<b>모두 골랐어요.</b> {pane} pane 에 보냅니다.',
+      statusLeft: '필수 <b>{count}개</b> 남음 · ', jumpTo: '{title}로 이동',
+      barLeft: '<b>결정 대기</b> · 필수 {count}개를 고르고 [이대로 진행]',
+      barAllPicked: '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요',
+      barConfirmed: '<b>확정됨</b> · 아래 결정대로 진행합니다',
+      sendFailed: '보내지 못했어요', noPane: '보낼 pane 이 계획서에 적혀 있지 않아요', noBoard: '일감 주소로 열지 않아 바로 보낼 수 없어요',
+    },
+    en: {
+      'type.feature': 'Feature', 'type.bugfix': 'Bug fix', 'type.refactor': 'Refactor', 'type.task': 'Task',
+      docTitle: '{title} — Work plan', scope: 'Scope · {scope}', source: 'Source',
+      reviewSummary: 'Decisions to make again after review',
+      jumpDoc: 'Full plan ↓', decisions: 'Decisions', decisionsConfirmed: 'Confirmed decisions',
+      notesTitle: 'Extra notes', optionalTag: 'Optional', notesDesc: 'Constraints · priorities · cautions beyond the decisions',
+      notesPlaceholder: 'e.g. Leave the migration out of this release', previewSummary: 'Preview the prompt to send', bodyTitle: 'Full plan',
+      copyButton: 'Copy as prompt', sendButton: 'Proceed', sentButton: 'Sent', toast: 'Copied',
+      required: 'Required', multi: 'Pick any', single: 'Pick one', recommended: 'Recommended', picked: 'Picked', confirmed: 'Confirmed',
+      customInput: 'Type your own', othersShow: 'Show {count} other options', othersHide: 'Hide other options',
+      progressRequired: 'Required {done}/{total}', progressOptional: '{count} optional',
+      statusSent: '<b>Sent to {pane}.</b> This page locks once confirmed.',
+      statusError: '{error} — copy it and paste into the {pane} pane.', paneFallback: 'owner',
+      statusAllPicked: '<b>All picked.</b> Sending to the {pane} pane.',
+      statusLeft: '<b>{count}</b> required left · ', jumpTo: 'Go to {title}',
+      barLeft: '<b>Waiting for decisions</b> · pick {count} required, then [Proceed]',
+      barAllPicked: '<b>Waiting for decisions</b> · all picked — send with [Proceed] below',
+      barConfirmed: '<b>Confirmed</b> · work proceeds with the decisions below',
+      sendFailed: "Couldn't send", noPane: 'The plan has no pane to send to', noBoard: "Not opened from the worklist, so it can't send directly",
+    },
+    ja: {
+      'type.feature': '機能', 'type.bugfix': 'バグ修正', 'type.refactor': 'リファクタリング', 'type.task': '作業',
+      docTitle: '{title} — 作業計画書', scope: '影響範囲 · {scope}', source: '原本',
+      reviewSummary: 'レビュー後にもう一度決めること',
+      jumpDoc: '計画書の全文 ↓', decisions: '決定', decisionsConfirmed: '確定した決定',
+      notesTitle: '追加メモ', optionalTag: '任意', notesDesc: '決定以外に伝える制約 · 優先順位 · 注意点',
+      notesPlaceholder: '例: マイグレーションは今回のリリースに入れない', previewSummary: '送るプロンプトのプレビュー', bodyTitle: '計画書の全文',
+      copyButton: 'プロンプトとしてコピー', sendButton: 'この内容で進める', sentButton: '送信済み', toast: 'コピーしました',
+      required: '必須', multi: '複数選択', single: '1つ選択', recommended: 'おすすめ', picked: '選択済み', confirmed: '確定',
+      customInput: '直接入力', othersShow: 'ほかの選択肢 {count}件を表示', othersHide: 'ほかの選択肢を閉じる',
+      progressRequired: '必須 {done}/{total}', progressOptional: '任意 {count}件',
+      statusSent: '<b>{pane} に送りました。</b> 確定するとこの画面はロックされます。',
+      statusError: '{error} — コピーして {pane} pane に貼り付けてください。', paneFallback: '担当',
+      statusAllPicked: '<b>すべて選びました。</b> {pane} pane に送ります。',
+      statusLeft: '必須 残り<b>{count}件</b> · ', jumpTo: '{title} へ移動',
+      barLeft: '<b>決定待ち</b> · 必須 {count}件を選んで [この内容で進める]',
+      barAllPicked: '<b>決定待ち</b> · すべて選びました — 下の [この内容で進める] で送ってください',
+      barConfirmed: '<b>確定</b> · 下の決定どおりに進めます',
+      sendFailed: '送れませんでした', noPane: '送り先の pane が計画書に書かれていません', noBoard: '作業リストのアドレスで開いていないため直接送れません',
+    },
+    zh: {
+      'type.feature': '功能', 'type.bugfix': '修复缺陷', 'type.refactor': '重构', 'type.task': '任务',
+      docTitle: '{title} — 工作计划书', scope: '影响范围 · {scope}', source: '原文',
+      reviewSummary: '评审后需要重新决定的事项',
+      jumpDoc: '计划书全文 ↓', decisions: '决定', decisionsConfirmed: '已确定的决定',
+      notesTitle: '补充备注', optionalTag: '可选', notesDesc: '决定之外要传达的约束 · 优先级 · 注意事项',
+      notesPlaceholder: '例: 迁移不要放进这次发布', previewSummary: '预览要发送的提示', bodyTitle: '计划书全文',
+      copyButton: '复制为提示', sendButton: '按此进行', sentButton: '已发送', toast: '已复制',
+      required: '必选', multi: '多选', single: '单选', recommended: '推荐', picked: '已选', confirmed: '已确定',
+      customInput: '自行输入', othersShow: '查看其他 {count} 个选项', othersHide: '收起其他选项',
+      progressRequired: '必选 {done}/{total}', progressOptional: '可选 {count} 个',
+      statusSent: '<b>已发送到 {pane}。</b> 确定后此页面会锁定。',
+      statusError: '{error} — 请复制后粘贴到 {pane} pane。', paneFallback: '负责',
+      statusAllPicked: '<b>都选好了。</b> 将发送到 {pane} pane。',
+      statusLeft: '必选还剩 <b>{count} 个</b> · ', jumpTo: '前往 {title}',
+      barLeft: '<b>等待决定</b> · 选好 {count} 个必选项后点 [按此进行]',
+      barAllPicked: '<b>等待决定</b> · 都选好了 — 用下方 [按此进行] 发送',
+      barConfirmed: '<b>已确定</b> · 按下面的决定进行',
+      sendFailed: '没能发送', noPane: '计划书里没有写要发送的 pane', noBoard: '不是从待办地址打开的,无法直接发送',
+    },
+  };
+  const LANG = Object.prototype.hasOwnProperty.call(TEXTS, window.ATHENA_LANG) ? window.ATHENA_LANG : 'ko';
+  // {자리} 채우기 — 값은 부르는 쪽이 이스케이프해서 넘긴다(innerHTML 로 쓰는 글이 있다)
+  const t = (key, values) => String(TEXTS[LANG][key] ?? TEXTS.ko[key] ?? key)
+    .replace(/\{(\w+)\}/g, (whole, name) => (values && name in values ? String(values[name]) : whole));
+  document.documentElement.lang = LANG;
+  document.querySelectorAll('[data-t]').forEach((node) => { node.textContent = t(node.dataset.t); });
+  document.querySelectorAll('[data-t-placeholder]').forEach((node) => { node.placeholder = t(node.dataset.tPlaceholder); });
+  document.querySelectorAll('[data-t-aria-label]').forEach((node) => { node.setAttribute('aria-label', t(node.dataset.tAriaLabel)); });
+
   // --- 머리 ---
-  const TYPE_LABELS = { feature: '기능', bugfix: '버그 수정', refactor: '리팩터링', task: '작업' };
   document.getElementById('p-title').textContent = PLAN.title;
-  document.title = PLAN.title + ' — 작업계획서';
-  document.getElementById('p-summary').textContent = PLAN.summary || '';
+  document.title = t('docTitle', { title: PLAN.title });
+  document.getElementById('p-summary').textContent = PLAN.summary === TEXTS.ko.reviewSummary ? t('reviewSummary') : (PLAN.summary || '');
   const typeBadge = document.getElementById('p-type');
-  typeBadge.textContent = TYPE_LABELS[PLAN.type] || PLAN.type;
+  typeBadge.textContent = TEXTS.ko['type.' + PLAN.type] ? t('type.' + PLAN.type) : PLAN.type;
   typeBadge.classList.add('type-' + PLAN.type);
   const scopeBadge = document.getElementById('p-scope');
-  if (PLAN.scope && PLAN.scope !== '-') scopeBadge.textContent = '영향 범위 · ' + PLAN.scope;
+  if (PLAN.scope && PLAN.scope !== '-') scopeBadge.textContent = t('scope', { scope: PLAN.scope });
   else scopeBadge.remove();
   const mdLink = document.getElementById('p-mdlink');
-  mdLink.innerHTML = '원본 <code>' + escapeText(PLAN.mdFile.split('/').pop()) + '</code>';
+  mdLink.innerHTML = escapeText(t('source')) + ' <code>' + escapeText(PLAN.mdFile.split('/').pop()) + '</code>';
   mdLink.title = PLAN.mdFile;
   mdLink.href = PLAN.mdFile.split('/').pop();
 
@@ -443,8 +536,8 @@ const PLAN = {
     const card = el('div', 'card' + (confirmed ? ' confirmed' : ''));
     card.dataset.id = dec.id;
     card.id = 'decision-' + dec.id;
-    const tags = (dec.required ? '<span class="tag required">필수</span>' : '') +
-      '<span class="tag pick-tag">' + (dec.type === 'multi' ? '복수 선택' : '택1') + '</span>';
+    const tags = (dec.required ? '<span class="tag required">' + escapeText(t('required')) + '</span>' : '') +
+      '<span class="tag pick-tag">' + escapeText(t(dec.type === 'multi' ? 'multi' : 'single')) + '</span>';
     card.appendChild(el('div', 'card-head',
       '<h3 class="card-title">' + escapeText(dec.title) + '</h3><span class="tags">' + tags + '</span>'));
     if (dec.desc) card.appendChild(el('p', 'card-desc', escapeText(dec.desc)));
@@ -459,10 +552,10 @@ const PLAN = {
       row.setAttribute('role', dec.type === 'multi' ? 'checkbox' : 'radio');
       if (preset.includes(opt.label)) row.classList.add('selected');
       row.setAttribute('aria-checked', String(preset.includes(opt.label)));
-      const rec = opt.recommended ? '<span class="rec">추천</span>' : '';
+      const rec = opt.recommended ? '<span class="rec">' + escapeText(t('recommended')) + '</span>' : '';
       const desc = opt.desc ? '<div class="opt-desc">' + escapeText(opt.desc) + '</div>' : '';
       const customField = opt.custom
-        ? '<input class="custom-input" placeholder="직접 입력" aria-label="' + escapeText(opt.label) + ' — 직접 입력" />' : '';
+        ? '<input class="custom-input" placeholder="' + escapeText(t('customInput')) + '" aria-label="' + escapeText(opt.label) + ' — ' + escapeText(t('customInput')) + '" />' : '';
       row.innerHTML =
         '<div class="marker" aria-hidden="true"></div>' +
         '<div class="opt-body"><div class="opt-label">' + escapeText(opt.label) + rec + '</div>' +
@@ -490,11 +583,11 @@ const PLAN = {
     // 확정된 카드는 고른 것만 — 나머지는 펼쳐 볼 수 있게
     const others = dec.options.length - preset.filter((label) => dec.options.some((opt) => opt.label === label)).length;
     if (confirmed && others > 0) {
-      const more = el('button', 'others', '다른 선택지 ' + others + '개 보기');
+      const more = el('button', 'others', escapeText(t('othersShow', { count: others })));
       more.type = 'button';
       more.addEventListener('click', () => {
         const open = card.classList.toggle('show-all');
-        more.textContent = open ? '다른 선택지 접기' : '다른 선택지 ' + others + '개 보기';
+        more.textContent = open ? t('othersHide') : t('othersShow', { count: others });
       });
       card.appendChild(more);
     }
@@ -572,33 +665,33 @@ const PLAN = {
       const decided = state[dec.id].picks.size > 0;
       if (decided) {
         tag.classList.add('done');
-        tag.textContent = isConfirmed(dec) ? '확정' : '골랐음';
+        tag.textContent = t(isConfirmed(dec) ? 'confirmed' : 'picked');
       } else {
         tag.classList.remove('done');
-        tag.textContent = dec.type === 'multi' ? '복수 선택' : '택1';
+        tag.textContent = t(dec.type === 'multi' ? 'multi' : 'single');
       }
     });
     const required = PLAN.decisions.filter((dec) => dec.required);
     const optional = PLAN.decisions.length - required.length;
     const left = unresolved();
     document.getElementById('progress').textContent =
-      (required.length ? '필수 ' + (required.length - left.length) + '/' + required.length : '') +
-      (required.length && optional ? ' · ' : '') + (optional ? '선택 ' + optional + '개' : '');
+      (required.length ? t('progressRequired', { done: required.length - left.length, total: required.length }) : '') +
+      (required.length && optional ? ' · ' : '') + (optional ? t('progressOptional', { count: optional }) : '');
     const status = document.getElementById('status');
-    if (sent) status.innerHTML = '<b>' + escapeText(PLAN.leadPane) + ' 에 보냈어요.</b> 확정되면 이 화면이 잠깁니다.';
-    else if (sendError) status.innerHTML = escapeText(sendError) + ' — 복사해서 ' + escapeText(PLAN.leadPane || '담당') + ' pane 에 붙여넣어 주세요.';
-    else if (left.length === 0) status.innerHTML = '<b>모두 골랐어요.</b> ' + escapeText(PLAN.leadPane) + ' pane 에 보냅니다.';
+    if (sent) status.innerHTML = t('statusSent', { pane: escapeText(PLAN.leadPane) });
+    else if (sendError) status.innerHTML = t('statusError', { error: escapeText(sendError), pane: escapeText(PLAN.leadPane || t('paneFallback')) });
+    else if (left.length === 0) status.innerHTML = t('statusAllPicked', { pane: escapeText(PLAN.leadPane) });
     else {
-      status.innerHTML = '필수 <b>' + left.length + '개</b> 남음 · ';
-      const link = el('a', '', escapeText(left[0].title) + '로 이동');
+      status.innerHTML = t('statusLeft', { count: left.length });
+      const link = el('a', '', t('jumpTo', { title: escapeText(left[0].title) }));
       link.href = '#decision-' + left[0].id;
       link.addEventListener('click', (ev) => { ev.preventDefault(); jumpTo(left[0]); });
       status.appendChild(link);
     }
     if (!allConfirmed()) {
       document.getElementById('statusbar-text').innerHTML = left.length
-        ? '<b>결정 대기</b> · 필수 ' + left.length + '개를 고르고 [이대로 진행]'
-        : '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요';
+        ? t('barLeft', { count: left.length })
+        : t('barAllPicked');
     }
     document.getElementById('btn-copy').disabled = left.length > 0;
     document.getElementById('btn-send').disabled = left.length > 0 || sent || sending;
@@ -612,8 +705,8 @@ const PLAN = {
     const barText = document.getElementById('statusbar-text');
     if (confirmed) {
       bar.className = 'statusbar confirmed';
-      barText.innerHTML = '<b>확정됨</b> · 아래 결정대로 진행합니다';
-      document.getElementById('decisions-title').textContent = '확정된 결정';
+      barText.innerHTML = t('barConfirmed');
+      document.getElementById('decisions-title').textContent = t('decisionsConfirmed');
       // 확정되면 메모 · 미리보기 · 액션 바를 감춰 읽기용으로
       document.getElementById('notes-card').style.display = 'none';
       document.querySelector('details.preview').style.display = 'none';
@@ -783,18 +876,18 @@ const PLAN = {
         body: JSON.stringify({ pane: PLAN.leadPane, plan: PLAN.mdFile, text: buildPrompt() }),
       });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || '보내지 못했어요 (' + response.status + ')');
+      if (!response.ok) throw new Error(result.error || t('sendFailed') + ' (' + response.status + ')');
       sent = true;
-      document.getElementById('btn-send').textContent = '보냄';
+      document.getElementById('btn-send').textContent = t('sentButton');
     } catch (error) {
-      fallbackToCopy(error.message || '보내지 못했어요');
+      fallbackToCopy(error.message || t('sendFailed'));
     } finally {
       sending = false;
       render();
     }
   }
-  if (!PLAN.leadPane) fallbackToCopy('보낼 pane 이 계획서에 적혀 있지 않아요');
-  else if (!boardToken) fallbackToCopy('일감 주소로 열지 않아 바로 보낼 수 없어요');
+  if (!PLAN.leadPane) fallbackToCopy(t('noPane'));
+  else if (!boardToken) fallbackToCopy(t('noBoard'));
   document.getElementById('btn-send').addEventListener('click', sendToHermes);
   document.getElementById('btn-copy').addEventListener('click', () => copy(buildPrompt()));
   document.getElementById('notes').addEventListener('input', render);
