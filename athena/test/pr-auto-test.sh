@@ -595,7 +595,13 @@ echo; echo "머지 확인(autoMergeConfirm)"
 # 실제 경로로 — 맥 임시 폴더(/var → /private/var · TMPDIR 끝의 //)면 pr-auto.mjs 의 "직접 실행" 판정이 어긋나 아무것도 안 한다
 CORE="$(cd "$TMP" && pwd -P)/core-confirm"; mkdir -p "$CORE/plans/task"
 cp -R "$SRC/scripts" "$CORE/scripts"
-printf '#!/bin/sh\n[ "$1 $2" = "pane list" ] && echo '"'"'{"panes":[]}'"'"' || echo '"'"'{}'"'"'\n' > "$CORE/scripts/screen"; chmod +x "$CORE/scripts/screen"
+# 가짜 화면 — FAKE_PANES(JSON 조각)를 pane 목록으로 · 부른 것은 FAKE_SCREEN_LOG 에(없으면 버림)
+cat > "$CORE/scripts/screen" <<'SH'
+#!/bin/sh
+[ -n "$FAKE_SCREEN_LOG" ] && echo "screen $*" >> "$FAKE_SCREEN_LOG"
+if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"; else echo '{}'; fi
+SH
+chmod +x "$CORE/scripts/screen"
 # FAKE_VERIFY_KILL — 검증 도중 부른 쪽(node)을 죽인다(머지 직전 확인 중에 처리기가 꺼진 경우)
 printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -z "$FAKE_VERIFY_FAIL" ]\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
 WT="$TMP/wt-confirm"; mkdir -p "$WT"
@@ -670,6 +676,33 @@ env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(com
   && echo "  ✔ 검증 도중 처리기가 죽으면 잡은 파일이 남고(머지 안 함) 되돌려 다시 본다" || { echo "  ✖ 검증 도중 죽은 뒤 잡은 파일 남기기 — 남은 것: $(ls "$TMP/queue-confirm/confirm")"; FAIL=1; }
 merge_case "autoMergeConfirm: false 라도 머지 직전에 새 커밋 → 머지 안 함" ', "autoMergeConfirm": false' no '바로 머지' FAKE_GH_HEAD_AFTER=1
 merge_case "autoMergeConfirm: false 라도 검증 실패 → 머지 안 함" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1
+[ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 아테나 pane 이 없으면 검증 못 함도 지금처럼 요청으로 남긴다" || { echo "  ✖ 아테나 pane 이 없는데 요청이 없다"; FAIL=1; }
+
+# 고를 것 없는 상태 알림은 요청으로 열지 않고 아테나 pane 에(2026-10-28 사용자) — 요청은 머지 확인 · 결정 콘솔만
+SLOG="$TMP/screen.log"
+ATHENA_PANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🧭 아테나\"},{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🤖 web-fe · feat/x\"}"
+: > "$SLOG"
+merge_case "검증 못 함 + 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — " "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
+  && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄 · 작업 pane(🤖)에는 안 보냄" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
+# 같은 key · 같은 HEAD · 같은 제목이면 다시 보내지 않는다 — 계획서 줄을 지우고 다시 돌려도(대기열 폴더의 notified.json)
+: > "$SLOG"
+sed -i.bak '/^- Auto review:/d' "$CORE/plans/task/x.md" && rm -f "$CORE/plans/task/x.md.bak"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG" \
+  "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
+! grep -q "send-text" "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "이미 알렸다" "$TMP/merge.out" \
+  && echo "  ✔ 같은 알림은 다시 보내지 않음(요청도 안 엶)" || { echo "  ✖ 같은 알림을 또 보냈다"; sed 's/^/      /' "$SLOG" "$TMP/merge.out"; FAIL=1; }
+# 계획서 Lead pane 이 살아 있으면 그쪽이 먼저
+: > "$SLOG"
+EXTRA_PLAN="- Lead pane: p91
+" merge_case "Lead pane(p91)이 살아 있으면 그 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="{\"id\":\"p91\"},$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
+grep -q "^screen pane send-text p91 \[자동 리뷰 → 아테나\]" "$SLOG" && ! grep -q "send-text p50 " "$SLOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
+  && echo "  ✔ Lead pane 에 보냄(다른 아테나 pane 이 아니라)" || { echo "  ✖ Lead pane 알림"; sed 's/^/      /' "$SLOG"; FAIL=1; }
+# 머지 확인(고를 것 있음)은 아테나 pane 이 있어도 지금처럼 요청
+: > "$SLOG"
+merge_case "머지 확인은 아테나 pane 이 있어도 요청으로" "" no '머지 확인 대기' FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
+grep -lq '"label": "머지"' "$CORE/.requests"/*.json 2>/dev/null && ! grep -q "send-text p50 " "$SLOG" \
+  && echo "  ✔ 머지 확인 요청([머지]/[보류])은 그대로 · 아테나 pane 에 안 보냄" || { echo "  ✖ 머지 확인 요청"; FAIL=1; }
 
 # 앞 리뷰 승인 이어받기(지시 2) — 계획서 "- Review result:" 가 같은 내용(tree)으로 승인이면 Claude 를 부르지 않고 그 승인을 쓴다(Codex 는 돈다)
 echo; echo "앞 리뷰 승인 이어받기"
