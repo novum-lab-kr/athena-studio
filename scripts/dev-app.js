@@ -173,12 +173,21 @@ function makeBundle() {
 // 실패해도 이전 빌드(dist/renderer)는 그대로 남는다. 돌려주는 값: built(새로 만듦) · previous(실패 · 이전 빌드로) · missing(실패 · 이전 빌드도 없음)
 const RENDERER_OUT = path.join(ROOT, 'dist', 'renderer')
 const RENDERER_NEXT = path.join(ROOT, 'dist', 'renderer-next')
+// vite.build 는 이 프로세스의 NODE_ENV 를 production 으로 바꿔 둔다 — 그대로 두면 켜는 앱 → 데몬 → 모든 pane 셸로 물려져
+// 그 안의 npm install(⚙ 업데이트 도우미 · 에이전트)이 devDependencies(electron · vite)를 지운다(2026-10-29). 빌드가 끝나면 되돌린다
 async function buildRenderer() {
   const started = Date.now()
+  const hadNodeEnv = Object.hasOwn(process.env, 'NODE_ENV')
+  const nodeEnv = process.env.NODE_ENV
   try {
     fs.rmSync(RENDERER_NEXT, { recursive: true, force: true })
     const vite = await import('vite')
-    await vite.build({ configFile: path.join(ROOT, 'vite.config.mts'), logLevel: 'warn', build: { outDir: RENDERER_NEXT } })
+    try {
+      await vite.build({ configFile: path.join(ROOT, 'vite.config.mts'), logLevel: 'warn', build: { outDir: RENDERER_NEXT } })
+    } finally {
+      if (hadNodeEnv) process.env.NODE_ENV = nodeEnv
+      else delete process.env.NODE_ENV
+    }
     fs.rmSync(RENDERER_OUT, { recursive: true, force: true })
     fs.renameSync(RENDERER_NEXT, RENDERER_OUT)
     console.log(`[dev-app] 화면 빌드 → ${path.relative(ROOT, RENDERER_OUT)} (${Date.now() - started}ms)`)
@@ -251,13 +260,24 @@ async function restart(args) {
   }
   // 앱이 이 도우미를 node 대신 Electron(ELECTRON_RUN_AS_NODE)으로 띄웠으면 — 켤 앱에 물려주지 않는다
   delete process.env.ELECTRON_RUN_AS_NODE
+  // 이 수정 전 앱은 화면 빌드가 남긴 NODE_ENV=production 을 물려받아 켜져 있다(buildRenderer 주석) — 다시 켤 앱 · pane 에 또 물려주지 않는다.
+  // 앱 코드는 NODE_ENV 를 읽지 않는다(화면 번들의 production 은 vite.build 가 따로 정한다)
+  if (process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
   if (args.includes('--install')) {
     const heavy = valueOf('--heavy')
     const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-    const [file, list] = heavy && fs.existsSync(heavy) ? ['bash', [heavy, npm, 'install']] : [npm, ['install']]
+    // --include=dev — 개발 앱은 devDependencies(electron · vite)로 켜진다. NODE_ENV=production · npmrc omit=dev 가 있어도 지우지 않게
+    const install = [npm, 'install', '--include=dev']
+    const [file, list] = heavy && fs.existsSync(heavy) ? ['bash', [heavy, ...install]] : [install[0], install.slice(1)]
     console.log(`[dev-app] ${[file, ...list].join(' ')}`)
     try {
       execFileSync(file, list, { cwd: ROOT, stdio: 'inherit' })
+      // 끝났다고 다 깔린 것은 아니다 — 켜는 데 꼭 필요한 것이 없으면 알린다(그래도 이전 빌드 · .dev-app 으로 켜 본다)
+      const missing = ['electron', 'vite'].filter((name) => !fs.existsSync(path.join(ROOT, 'node_modules', name, 'package.json')))
+      if (missing.length) {
+        console.error(`[dev-app] npm install 뒤에 ${missing.join(' · ')} 이(가) 없어요 — 레포에서 npm install --include=dev 를 다시 돌려 주세요`)
+        process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
+      }
     } catch (error) {
       console.error(`[dev-app] npm install 실패: ${error.message}`)
       process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
