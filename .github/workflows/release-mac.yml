@@ -1,0 +1,155 @@
+# 맥 배포판 — Developer ID 서명 · 공증 · staple 까지 만들어 Actions artifact 로 남긴다(손으로 돌린다 · 계획서 plans/feature/20261028-배포판-패키징-서명-다운로드 D6 · D7 · 2단계)
+# 공개 레포에 올리기 · latest.json 은 3단계 몫 — 여기서는 만들고 확인만 한다
+#
+# 시간(= 돈): 비공개 레포라 macOS 러너는 1분이 10분으로 센다(Free 2,000분 → macOS 약 200분/월). 그래서
+#   - 두 칩을 러너 하나에서 — electron-builder 가 arm64 러너에서 x64 판도 만든다(npmRebuild 끔 · node-pty 는 두 칩 prebuild 를 들고 온다).
+#     러너를 칩마다 나누면 체크아웃 · npm ci · 화면 빌드 · 코어 번들을 두 번 하고 분 단위 올림도 두 번 붙는다
+#   - npm 캐시(setup-node) · Electron zip · electron-builder 도구 캐시(actions/cache — package-lock.json 이 같으면 다시 받지 않는다)
+#   - npm ci --ignore-scripts — Electron 실행 파일(개발용)을 받지 않는다. 배포판의 Electron 은 electron-builder 가 칩마다 따로 받는다(위 캐시)
+#   - 공증 대기가 길어져도 timeout-minutes 에서 끊는다
+#
+# Secrets(값은 로그에 찍지 않는다 — 있는지만 본다): CSC_LINK(.p12 base64) · CSC_KEY_PASSWORD · APPLE_API_KEY_P8(.p8 내용) · APPLE_API_KEY_ID · APPLE_API_ISSUER
+name: release-mac
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '앱 버전 X.Y.Z — 비우면 git 태그(git describe)'
+        required: false
+        default: ''
+permissions:
+  contents: read
+concurrency:
+  group: release-mac
+  cancel-in-progress: false
+jobs:
+  build:
+    runs-on: macos-15 # Apple Silicon — x64 판도 여기서 만든다
+    timeout-minutes: 60
+    env:
+      # 인증서 팀 — 다른 인증서로 서명됐으면 확인 단계가 멈춘다(Developer ID Application: minchang sung (AQUDD2QFNC))
+      TEAM_ID: AQUDD2QFNC
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # 코어 번들(git subtree split)에 athena/ 기록이 · 버전에 태그가 필요하다
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24 # Electron 44 의 Node 와 같은 줄 · .mts 타입 지우기(22.18+)
+          cache: npm
+
+      - name: Electron · electron-builder 캐시
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/electron
+            ~/Library/Caches/electron-builder
+          key: electron-mac-${{ hashFiles('package-lock.json') }}
+
+      - name: 의존성
+        # 설치 스크립트를 돌리지 않으므로 node-pty spawn-helper 실행 권한만 따로 붙인다(postinstall 첫 줄과 같다)
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          node scripts/fix-spawn-helper.js
+
+      - name: 공증 키 파일
+        # Secret 이 비었으면 이름만 알리고 멈춘다 · .p8 은 러너 임시 폴더에 나만 읽게 쓰고 마지막 단계에서 지운다
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_P8: ${{ secrets.APPLE_API_KEY_P8 }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          missing=""
+          for name in CSC_LINK CSC_KEY_PASSWORD APPLE_API_KEY_P8 APPLE_API_KEY_ID APPLE_API_ISSUER; do
+            [ -n "${!name}" ] || missing="$missing $name"
+          done
+          if [ -n "$missing" ]; then echo "::error::비어 있는 Secret:$missing"; exit 1; fi
+          key="$RUNNER_TEMP/AuthKey.p8"
+          ( umask 077; printf '%s\n' "$APPLE_API_KEY_P8" > "$key" )
+          if ! grep -q 'BEGIN PRIVATE KEY' "$key"; then echo "::error::APPLE_API_KEY_P8 가 .p8 파일 내용 모양이 아니다(BEGIN PRIVATE KEY 줄 없음)"; exit 1; fi
+          echo "APPLE_API_KEY=$key" >> "$GITHUB_ENV"
+
+      - name: 만들기 · 서명 · 앱 공증(electron-builder)
+        env:
+          CSC_LINK: ${{ secrets.CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.CSC_KEY_PASSWORD }}
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+          VERSION_INPUT: ${{ inputs.version }}
+        run: |
+          set -- --arch all --require-signing
+          [ -n "$VERSION_INPUT" ] && set -- "$@" --version "$VERSION_INPUT"
+          npm run package:mac -- "$@"
+
+      - name: .dmg 공증 · staple
+        # electron-builder 는 .app 만 공증 · staple 한다(.zip 은 staple 된 .app 을 묶은 것). .dmg 는 서명만 돼 있어 여기서 공증해 붙인다 — 두 칩을 같이 올려 기다리는 시간을 겹친다
+        env:
+          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
+          APPLE_API_ISSUER: ${{ secrets.APPLE_API_ISSUER }}
+        run: |
+          pids=""
+          for dmg in dist/release/*.dmg; do
+            xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" --wait --timeout 30m > "$dmg.notary.log" 2>&1 &
+            pids="$pids $!"
+          done
+          failed=0
+          for pid in $pids; do wait "$pid" || failed=1; done
+          for log in dist/release/*.notary.log; do echo "── $log"; cat "$log"; done
+          for dmg in dist/release/*.dmg; do
+            grep -q 'status: Accepted' "$dmg.notary.log" && continue
+            echo "::error::공증 실패: $dmg"
+            failed=1
+            # 거절 이유(애플 로그)를 같이 남긴다 — 다시 돌리기 전에 원인을 보게
+            id=$(sed -n 's/^ *id: //p' "$dmg.notary.log" | head -1)
+            [ -n "$id" ] && xcrun notarytool log "$id" --key "$APPLE_API_KEY" --key-id "$APPLE_API_KEY_ID" --issuer "$APPLE_API_ISSUER" || true
+          done
+          [ "$failed" = 0 ] || exit 1
+          for dmg in dist/release/*.dmg; do xcrun stapler staple -v "$dmg"; done
+
+      - name: 확인 — codesign · spctl · stapler
+        # 계획서 7절 성공 조건: accepted · source=Notarized Developer ID · 팀 AQUDD2QFNC
+        run: |
+          set -euo pipefail
+          # 명령 출력을 로그에 남기고, 그 안에 기대한 줄이 없으면 멈춘다
+          expect() { local want="$1"; shift; local out; out=$("$@" 2>&1) || true; echo "$out"; grep -qE "$want" <<<"$out" || { echo "::error::기대한 줄 없음 ($want): $*"; return 1; }; }
+          for app in dist/release/mac*/"Athena Studio.app"; do
+            echo "── $app"
+            lipo -archs "$app/Contents/MacOS/Athena Studio"
+            codesign --verify --deep --strict --verbose=2 "$app"
+            expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$app"
+            expect 'source=Notarized Developer ID' spctl -a -vv -t exec "$app"
+            xcrun stapler validate "$app"
+          done
+          for dmg in dist/release/*.dmg; do
+            echo "── $dmg"
+            codesign --verify --strict --verbose=2 "$dmg"
+            expect "^TeamIdentifier=$TEAM_ID$" codesign -dv --verbose=2 "$dmg"
+            expect 'source=Notarized Developer ID' spctl -a -vv -t open --context context:primary-signature "$dmg"
+            xcrun stapler validate "$dmg"
+          done
+          for zip in dist/release/*.zip; do
+            echo "── $zip"
+            out="$RUNNER_TEMP/unzip-$(basename "$zip" .zip)"
+            ditto -x -k "$zip" "$out"
+            codesign --verify --deep --strict --verbose=2 "$out/Athena Studio.app"
+            xcrun stapler validate "$out/Athena Studio.app"
+          done
+          ls -l dist/release/*.dmg dist/release/*.zip
+          shasum -a 256 dist/release/*.dmg dist/release/*.zip
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Athena-Studio-mac
+          path: |
+            dist/release/*.dmg
+            dist/release/*.zip
+          if-no-files-found: error
+          compression-level: 0 # 이미 압축된 파일 — 다시 누르지 않는다
+          retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 공개 자리는 3단계
+
+      - name: 공증 키 지우기
+        if: always()
+        run: rm -f "$RUNNER_TEMP/AuthKey.p8"
