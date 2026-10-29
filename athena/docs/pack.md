@@ -176,6 +176,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
       // "autoMergeConfirm": false,       // autoMerge 가 true 일 때만 — 머지 직전 사람 확인 없이 바로 머지(docs/pr-auto.md "켜기") · 없거나 true 면 확인
       // "githubIssues": true,             // GitHub 이슈 감시 — 현황판이 5분마다 열린 이슈를 issues/ 로 가져와 새 아테나 pane 에 맡긴다(docs/github-issues.md) · 기본 꺼짐
       // "generated": ["data/fare/**"],  // (선택) PR 자동 리뷰가 diff 본문에서 뺄 생성물 경로(gitattributes 식 패턴 · 크기 무관) — 없으면 일반 기준만(docs/pr-auto.md "큰 diff")
+      // "redCheck": { "tests": ["test/**/*.test.js"], "run": "node --test {files}" },   // (선택) red-check — 아래 "redCheck"
       // "direct": true,                   // main 직접 — 브랜치·워크트리·PR 없이 메인 체크아웃의 prBase 에서 바로 작업·커밋, ship.sh 가 빨리 감기 push(git.md "작업 브랜치 만들기")
       "branchName": { "pattern": "feature/v{version}/{ticket}", "versionFile": "app.config.js", "versionRegex": "^\\s*version:\\s*\"([0-9.]+)\"" } },
     { "name": "api", "agents": ["api-be"], "branch": "prd", "prBase": "dev", "kind": "single", "layer": "be", "appDir": "src" }
@@ -185,6 +186,11 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 - `kind`: `single` · `monorepo`(앱마다 에이전트·브랜치, 커밋 검증은 바뀐 앱마다) · `packages`(발행 패키지 — 커밋 검증에 패키지 이름 필요)
 - `layer: "be"` — 백엔드. PR 범위 규칙이 없으면 `src/features/<기능>`·`src/<모듈>`
+- `redCheck` — red-check(이번 PR 의 테스트가 구현 없이도 통과하는지 · `scripts/verify/red-check.sh`) 설정. `ship.sh` 가 PR 올릴 때(미리보기 · `--yes` · `--auto-push`) 돌리고 결과를 계획서 Validation · PR 본문에 남긴다 — **막지 않는다**(경고만). 칸이 없는 레포는 건너뛴다. 결과 뜻 · 예외는 `docs/knowledge/common/verify.md` "red-check"
+  - `tests` — 테스트 파일 글롭 배열(레포 맨 위 기준 · gitattributes 식 — `/` 가 없으면 어느 폴더의 이름이든 · `**` 는 폴더를 넘는다). 여기 맞는 바뀐 파일이 테스트, 나머지가 구현
+  - `run` — 테스트 파일 **하나**를 돌리는 셸 명령. `{files}` 자리에 인용한 경로가 들어간다(파일마다 한 번씩 · 레포 맨 위에서 · 300초 넘으면 `error`). 끝 코드 0 = 통과
+  - 테스트 종류가 여럿이면 배열 — `[{ "tests": ["tests/*.test.mjs"], "run": "node --test {files}" }, { "tests": ["tests/test_*.py"], "run": "python3 -m unittest {files}" }]`. 바뀐 테스트 파일은 글롭이 맞는 첫 항목으로 돈다
+  - 임시 워크트리에는 지금 트리의 `node_modules` · `.venv` · `venv`(레포 맨 위와 테스트 파일이 든 폴더들)만 링크한다 — 다른 준비가 필요한 테스트(빌드 결과 · 생성물)는 `run` 이 직접 준비한다(안 하면 base 에서 준비물이 없어 실패해 `ok` 로 잘못 보일 수 있다)
 - `mobile: true` — 모바일 앱(react-native · expo — `athena init` 이 package.json 으로 정한다). 지금은 `athena scaffold` 가 앱 층 기준(`docs/knowledge/common/coding.md` "앱 (모바일)")을 프로필 · `rules.md` 뼈대에 싣는 데만 쓴다
 - `models` — 역할마다 Claude 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름). 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
   | 역할 | 어디에 붙나 | 이상한 값이면 |
