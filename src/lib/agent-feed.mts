@@ -34,8 +34,11 @@ export function sessionLabel(record: unknown): string | null {
   if (!isLoose(record) || typeof record.cwd !== 'string' || !record.cwd) return null
   const cwd = record.cwd
   const worktree = cwd.match(/\/(?:\.worktrees|packs\/[^/]+\/worktrees)\/([^/]+)\//)
-  const repo = worktree ? worktree[1] : path.basename(cwd)
-  const branch = record.gitBranch || path.basename(cwd)
+  // 아테나 본체(~/.athena-studio/bodies/<id> 와 그 아래) — 폴더 이름이 본체 id 라 'athena' 로
+  const isBody = /\/\.athena-studio\/bodies\/[^/]+(?:\/|$)/.test(cwd)
+  const folderName = isBody ? 'athena' : path.basename(cwd)
+  const repo = worktree ? worktree[1] : folderName
+  const branch = record.gitBranch || folderName
   return `${repo}·${branch}`
 }
 

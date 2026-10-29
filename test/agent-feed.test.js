@@ -31,6 +31,10 @@ test('세션 이름표 · 줄 읽기 · 폴더 이름', () => {
   // 여러 팩 구조 — 워크트리는 스튜디오 집 데이터 폴더(packs/<팩>/worktrees/<레포>/<슬러그>) · 하위 폴더에서 연 세션도 같은 레포
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/data/packs/novum-lab/worktrees/athena-studio/feat-modern-code-rules', gitBranch: 'feat/modern-code-rules' }), 'athena-studio·feat/modern-code-rules')
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/data/packs/novum-lab/worktrees/athena-studio/feat-modern-code-rules/src/lib', gitBranch: 'feat/modern-code-rules' }), 'athena-studio·feat/modern-code-rules')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-20261025-184407', gitBranch: 'main' }), 'athena·main')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-20261025-184407/scripts', gitBranch: 'main' }), 'athena·main')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-20261025-184407' }), 'athena·athena')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-1/.worktrees/web/x/src', gitBranch: 'x' }), 'web·x')
   assert.equal(feed.sessionLabel({}), null)
   assert.deepEqual(feed.subagentInfo({ description: 'Fill skeleton: web', agentType: 'general-purpose', finished: true }), { label: '🤖 Fill skeleton: web', finished: true })
   assert.deepEqual(feed.subagentInfo({ agentType: 'reviewer' }), { label: '🤖 reviewer', finished: false })
