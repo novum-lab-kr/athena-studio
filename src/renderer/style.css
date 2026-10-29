@@ -898,7 +898,8 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 .browser-url:focus { border-color: var(--accent); }
 .browser-error { flex: none; padding: 4px 10px; color: #f28b82; font-size: 12px; border-bottom: 1px solid var(--line); }
 .browser-error[hidden] { display: none; }
-.browser-slot { flex: 1; min-height: 0; background: #fff; }
+/* 페이지(WebContentsView)가 붙기 전 · 서랍이 나오는 동안 보이는 바탕 — 흰색이면 번쩍인다. 붙은 뒤엔 뷰가 덮는다 */
+.browser-slot { flex: 1; min-height: 0; background: var(--bg); }
 
 /* 팩 — 맨 왼쪽 세로 줄 · 대화상자 · 진행 표시 */
 .pack-rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 48px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--bg); overflow-y: auto; }
