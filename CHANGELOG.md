@@ -12,7 +12,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.20 ~ 0.25: v0.19.2..main 머지(#117 ~ #129)를 한 절(0.25)로 — 공개 배포판은 0.19.2 다음이 0.25 라서. 손님에게 보이는 것만(개발 앱 다시 켜기 #118 · 규칙 문서 정리 #123 은 뺌) -->
 
-<!-- 0.28: v0.25.1..main 머지(#131 ~ #140)에서 손님에게 보이는 것만(규칙 문서 #139 · 테스트 · 데모는 뺌). 범위 끝은 열어 둔다 -->
+<!-- 0.28: v0.25.1..main 머지(#131 ~ #144)에서 손님에게 보이는 것만(규칙 문서 #139 · 테스트 · 데모는 뺌). 범위 끝은 열어 둔다 -->
 
 ## 0.28 (v0.26.0 – · Oct 29, 2026)
 
@@ -28,6 +28,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - The side browser no longer flashes white when the board or a decision console opens, including while the panel slides out.
 - Commands that kill processes by name (`pkill`, `killall`) or with a zero or negative target are blocked for agents, so one cannot stop unrelated processes.
 - The secret-leak guard no longer blocks harmless `ps` commands.
+- Opening a decision console from the Work popup now uses the side browser instead of your outside browser.
+- In the agent monitor, Athena's own session shows as `athena` instead of a folder name.
+- Work, Settings, and Board menu popups are no longer hidden while the side browser is open.
 
 ## 0.25 (v0.20.0 – v0.25.1 · Oct 29, 2026)
 
