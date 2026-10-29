@@ -9,25 +9,28 @@
  *     pane id 는 데몬이 파일에 이어 세어(src/daemon/main.mts createIdGen) 다시 쓰이지 않지만, 집을 초기화하면 처음부터라
  *     기록의 에이전트와 지금 pane 이름의 에이전트가 같을 때만 묶는다
  *
- * 남은 단계: Checkpoint Progress 맨 앞 칸(`- [ ]` · 들여 쓴 하위 칸은 세지 않는다)이 하나라도 비어 있으면 남은 일이 있다.
+ * 남은 단계: Checkpoint Progress 의 빈 칸(`- [ ]`)이 하나라도 있으면 남은 일이 있다 — 맨 앞 칸이든 들여 쓴 하위 칸(깊이 무관)이든.
+ *   하위 칸도 센다(2026-10-29 — 맨 앞 칸은 다 [x] 인데 남은 일이 하위 칸에만 있던 배포판 계획서가 PR 머지 뒤 완료 · 보관됐다).
+ *   진행 표시 숫자(checked/total)는 맨 앞 칸 기준 그대로 — 화면이 바뀌지 않게 판정(open)만 넓힌다.
  *   2026-10-27 실제 계획서 64개(보관 58 · 진행 6)로 세어 봄 — PR 머지로 끝난 계획서는 거의 모두 맨 앞 칸을 다 채웠고(빈 칸 남은 2개도
  *   실제로 못 한 확인 단계), Next 는 끝난 계획서도 거의 모두 "머지 뒤 확인" 같은 글이 있어 기준이 못 된다
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Progress 절 글 → 맨 앞 칸 수. 칸이 없으면 null
+/** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함, 남은 단계 판정). 맨 앞 칸이 없으면 null
  * @param {string} progress
- * @returns {{ checked: number, total: number } | null} */
+ * @returns {{ checked: number, total: number, open: number } | null} */
 export const progressOf = (progress) => {
   const checked = (progress.match(/^- \[x\]/gim) ?? []).length
   const total = (progress.match(/^- \[[ x]\]/gim) ?? []).length
-  return total ? { checked, total } : null
+  const open = (progress.match(/^[ \t]*- \[ \]/gm) ?? []).length
+  return total ? { checked, total, open } : null
 }
 
-/** 남은 단계(빈 맨 앞 칸)가 있나
- * @param {{ checked: number, total: number } | null | undefined} progress */
-export const hasOpenSteps = (progress) => Boolean(progress && progress.checked < progress.total)
+/** 남은 단계(빈 칸 — 맨 앞 칸 · 하위 칸)가 있나
+ * @param {{ checked: number, total: number, open?: number } | null | undefined} progress */
+export const hasOpenSteps = (progress) => Boolean(progress && (progress.checked < progress.total || (progress.open ?? 0) > 0))
 
 /** @typedef {{ pane: string, agent: string, plan: string }} PaneSession */
 
