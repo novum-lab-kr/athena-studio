@@ -190,6 +190,8 @@ declare global {
     paneContextMenu(point: { x: number; y: number }, title: string): Promise<string | null | { error: string }>
     paneFocus(paneId: string): void
     paneInput(paneId: string, data: string): void
+    // 끌어다 놓은 파일 → 경로(preload webUtils.getPathForFile) · 디스크 파일이 아니면 ''
+    pathForFile(file: File): string
     // 크기 요청(main.mts pane:resize — 답은 pane:resized 알림으로 온다)
     paneResize(paneId: string, cols: number, rows: number): void
     // 에이전트 모니터 — 보일 때만 main 이 따라 읽는다(src/main/agent-monitor.mts setMonitorWatch · monitor:update). 돌려준 함수는 듣기 그만
