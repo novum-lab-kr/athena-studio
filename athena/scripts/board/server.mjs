@@ -315,7 +315,7 @@ const prInfo = async (repoName, number) => {
 
 // 계획서의 PR 이 전부 머지되면(GitHub state MERGED — 어느 base 든) 계획서를 자동으로 완료로. 하나라도 열려 있으면(OPEN·확인 실패) 그대로 둔다.
 // 머지 없이 닫힌 것(CLOSED — 취소·다른 PR 로 대체)은 판정에서 빼고, 머지된 PR 이 하나도 없으면 옮기지 않는다.
-// Progress 에 남은 단계(빈 맨 앞 칸 `- [ ]`)가 있으면 옮기지 않는다 — 단계 PR 사이 틈에 완료 · 보관되지 않게(plan-bind.mjs hasOpenSteps).
+// Progress 에 남은 단계(빈 칸 `- [ ]` — 맨 앞 칸 · 들여 쓴 하위 칸 모두)가 있으면 옮기지 않는다 — 단계 PR 사이 틈에 완료 · 보관되지 않게(plan-bind.mjs hasOpenSteps).
 // 진행 중·리뷰 계획서만, Status 줄만 바꾼다(정식이면 html 사본도)
 // 학습 루프 5단계 — 내 계획서의 PR 이 모두 머지되면 배우기 검토자 대기열에 넣는다(scripts/learn-review.mjs).
 // 표시는 PR 번호 묶음(merged-<번호들>) — 계획서 "- Learn review:" 줄에 같은 표시가 있으면 learn-review 가 건너뛴다
@@ -386,11 +386,11 @@ const autoDonePlans = async (plans) => {
     }))
     const counted = infos.filter((info) => info.state !== 'CLOSED')
     if (!counted.length || counted.some((info) => info.state !== 'MERGED')) return
-    // 남은 단계(Progress 의 빈 맨 앞 칸)가 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
+    // 남은 단계(Progress 의 빈 칸 — 하위 칸 포함 · 2026-10-29)가 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
     // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 칸을 다 채우거나 사람이 완료로 옮기면 그때 끝난다(plan-bind.mjs)
     if (hasOpenSteps(plan.progress)) {
       const key = `${plan.id}@${mergedMark(counted)}`
-      if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 단계 ${plan.progress.total - plan.progress.checked}개`) }
+      if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 빈 칸 ${plan.progress.open}개`) }
       return
     }
     // 마지막으로 머지된 PR 을 사유에 적는다

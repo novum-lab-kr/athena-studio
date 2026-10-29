@@ -36,8 +36,15 @@ check('pane 기록 폴더가 없으면 빈 목록', same(readPaneSessions(`${ses
 
 // ── 남은 단계 ──
 const stepsLeft = progressOf('- [x] 1단계 규칙\n- [ ] 2단계 전환\n  - [x] PR1\n  - [ ] PR-R1\n- [ ] 3단계')
-check('사고 계획서 모양(맨 앞 칸 1/3) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(stepsLeft) && same(stepsLeft, { checked: 1, total: 3 }), JSON.stringify(stepsLeft))
-check('맨 앞 칸 다 채움(하위 칸만 빔) → 남은 단계 없음 → 지금처럼 자동 완료', !hasOpenSteps(progressOf('- [x] 구현\n  - [ ] 덤\n- [X] 검증')))
+check('사고 계획서 모양(맨 앞 칸 1/3) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(stepsLeft) && stepsLeft?.checked === 1 && stepsLeft?.total === 3, JSON.stringify(stepsLeft))
+// 2026-10-29 배포판 계획서 사고 — 맨 앞 칸은 다 [x] 인데 3단계 · 5단계 하위 칸이 비어 있는 채로 PR 머지 뒤 완료 · 보관됐다
+const subLeft = progressOf('- [x] 1단계\n- [x] 3단계 서명\n  - [x] 인증서\n  - [ ] 공증\n- [x] 5단계 다운로드\n    - [ ] 페이지 링크')
+check('맨 앞 칸 다 채움 + 하위 칸 빔(들여쓰기 깊이 무관) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(subLeft), JSON.stringify(subLeft))
+check('진행 숫자는 맨 앞 칸 기준 그대로(3/3)', subLeft?.checked === 3 && subLeft?.total === 3, JSON.stringify(subLeft))
+check('하위 칸까지 다 채움 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(progressOf('- [x] 구현\n  - [x] 덤\n\t- [X] 탭 하위\n- [X] 검증')))
+const onlySub = progressOf('  - [ ] 남은 작업\n  - [x] 끝난 작업')
+check('들여 쓴 칸만 있고 빈 칸이 있음(맨 앞 칸 없음) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(onlySub) && onlySub?.total === 0 && onlySub?.open === 1, JSON.stringify(onlySub))
+check('들여 쓴 칸만 있고 다 채움 → null(지금처럼 남은 단계 없음)', progressOf('  - [x] 끝난 작업') === null)
 check('칸이 하나도 없음 → 남은 단계 없음(지금처럼)', !hasOpenSteps(progressOf('- 구현 끝\n- 검증 끝')) && progressOf('') === null)
 
 // ── 묶인 pane ── 사고 때 Work ref 는 마지막으로 띄운 p132(닫힘)만 · 일하던 p130 은 다른 브랜치
