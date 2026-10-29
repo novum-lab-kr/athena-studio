@@ -7,15 +7,20 @@ import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
 import { WorkRow } from './work-pop.tsx'
+import { rowTarget } from '../../lib/pane-detail.mts'
 
 // 바닐라가 넘기는 것 — 다른 pane 상세 열기 · pane 으로 가기 · 요청 열기는 바닐라 화면(탭 · pane · 대화상자)에 닿는다
 export type PaneDetailActions = {
   openPane: (paneId: string, from: { paneId: string; scroll: number }) => void
+  openPlan: (plan: PlanRef, from: { paneId: string; scroll: number }) => void // 담당 pane 이 없는 줄 — 같은 칸에서 그 계획서
   goToPane: (paneId: string) => void // 상세를 닫고 그 pane 으로
   paneLive: (paneId: string) => boolean
   openRequest: (id: string) => void
   setLabel: (text: string) => void // 머리줄 pane 이름
 }
+
+// 맡긴 일 줄에서 연 계획서 — id 는 plans/**.md 또는 archive/<이름>
+export type PlanRef = { id: string; title: string }
 
 const PANE_DETAIL_REFRESH_MS = 3000
 // 긴 글은 이만큼만 보이고 [더 보기]
@@ -25,13 +30,13 @@ const DETAIL_DOT: Record<string, string> = { work: 'work', idle: 'idle', stop: '
 const ROW_STATE = { wait: 'wait', now: 'work', done: 'done' } as const
 
 // 무엇을 보이나 — seq 는 열 때마다 1 씩(같은 pane 을 다시 열어도 바로 다시 읽게) · live 가 false 면 닫히는 중(다시 읽지 않고 그린 글만 남긴다)
-type Target = { paneId: string; restore: number | null; seq: number; live: boolean }
+type Target = { paneId: string; restore: number | null; seq: number; live: boolean; plan: PlanRef | null }
 const target = createStore<Target | null>(null)
 // [더 보기] 한 글 — `${paneId}:${key}`. 3초 갱신 · 다른 pane 으로 옮겨 가도 그대로 둔다(창이 열려 있는 동안)
 const expanded = createStore<ReadonlySet<string>>(new Set())
 const expand = (key: string) => expanded.set(new Set([...expanded.get(), key]))
 
-const noActions: PaneDetailActions = { openPane: () => {}, goToPane: () => {}, paneLive: () => false, openRequest: () => {}, setLabel: () => {} }
+const noActions: PaneDetailActions = { openPane: () => {}, openPlan: () => {}, goToPane: () => {}, paneLive: () => false, openRequest: () => {}, setLabel: () => {} }
 let actions = noActions
 let unmount: (() => void) | null = null
 
@@ -41,18 +46,18 @@ function unmountNow(): void {
 }
 
 // 상세를 연다 — 처음 열거나 닫히는 중이면 새로 띄우고(읽는 중부터), 열려 있으면 그 pane 으로 바꾼다(다른 pane 이면 읽는 중부터)
-// restore: 뒤로 가기로 돌아올 때 맞출 스크롤 — 그 pane 을 처음 그릴 때 한 번
-export function open(container: HTMLElement, paneId: string, restore: number | null, next: PaneDetailActions): void {
+// restore: 뒤로 가기로 돌아올 때 맞출 스크롤 — 그 pane 을 처음 그릴 때 한 번 · plan: 맡긴 일 줄에서 연 계획서(paneId 는 그 아테나 pane)
+export function open(container: HTMLElement, paneId: string, restore: number | null, next: PaneDetailActions, plan: PlanRef | null = null): void {
   actions = next
   const current = target.get()
   if (!unmount || !current || !current.live) {
     unmountNow()
     expanded.set(new Set())
-    target.set({ paneId, restore, seq: 1, live: true })
+    target.set({ paneId, restore, seq: 1, live: true, plan })
     unmount = mountIsland(container, <PaneDetail container={container} />)
     return
   }
-  flushSync(() => target.set({ paneId, restore, seq: current.seq + 1, live: true }))
+  flushSync(() => target.set({ paneId, restore, seq: current.seq + 1, live: true, plan }))
 }
 
 // 닫기 시작 — 다시 읽기를 멈춘다. 그린 글은 미끄러져 나가는 동안 그대로 둔다
@@ -72,7 +77,8 @@ export function close(): void {
 function PaneDetail({ container }: { container: HTMLElement }) {
   const current = useStore(target)
   if (!current) return null
-  // 다른 pane 이면 처음부터(읽는 중) — key 로 상태를 버린다
+  // 다른 pane · 다른 계획서면 처음부터(읽는 중) — key 로 상태를 버린다
+  if (current.plan) return <PlanView key={`${current.paneId}:${current.plan.id}`} plan={current.plan} live={current.live} seq={current.seq} />
   return <PaneView key={current.paneId} container={container} target={current} />
 }
 
@@ -222,12 +228,7 @@ function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDe
         </Section>
       ) : null}
       {/* 막힘 — 사람이 풀어야 해서 요약보다 위에 눈에 띄게 */}
-      {plan.blocked.length ? (
-        <div className="pd-alert">
-          <span className="pd-alert-key">{say('pane.detail.record.blocked')}</span>
-          {plan.blocked.map((line, index) => <span key={index} className="pd-alert-line">{line}</span>)}
-        </div>
-      ) : null}
+      <BlockedAlert plan={plan} say={say} />
       {/* 한눈 요약 — 상태 · 까닭 · 걸린 시간 · 지금 하는 일 한 줄 · 다음 할 일 · PR */}
       <section className="pd-glance">
         <div className="pd-now">
@@ -253,6 +254,28 @@ function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDe
           {report.more}
         </Section>
       ) : null}
+      <PlanRecordSections paneId={paneId} plan={plan} openable say={say} />
+    </>
+  )
+}
+
+// 막힘 — 있으면 눈에 띄게(에이전트 pane 은 요약 위 · 계획서 보기는 맨 위)
+function BlockedAlert({ plan, say }: { plan: PaneDetailPlan; say: Say }) {
+  if (!plan.blocked.length) return null
+  return (
+    <div className="pd-alert">
+      <span className="pd-alert-key">{say('pane.detail.record.blocked')}</span>
+      {plan.blocked.map((line, index) => <span key={index} className="pd-alert-line">{line}</span>)}
+    </div>
+  )
+}
+
+// PR · 자동 리뷰, 그리고 계획서 기록(요청 · 진행 · 다음 · 검증 — 막힘은 BlockedAlert) — 에이전트 pane 상세와 맡긴 일 줄의 계획서 보기가 같이 쓴다
+// openable: 제목을 눌러 원본을 연다(plans/ 밖의 보관본은 열 원본이 없다)
+function PlanRecordSections({ paneId, plan, openable, say }: { paneId: string; plan: PaneDetailPlan; openable: boolean; say: Say }) {
+  const title = plan.title || plan.id
+  return (
+    <>
       {/* PR · 자동 리뷰 */}
       <Section title={say('pane.detail.section.pr')}>
         {plan.prs.map((url) => <PrLink key={url} url={url} />)}
@@ -260,9 +283,11 @@ function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDe
         {plan.reviewResult ? <p className="pd-line">{`${say('pane.detail.review')} · ${plan.reviewResult}`}</p> : null}
         {!plan.prs.length && !plan.autoReview.length && !plan.reviewResult ? <p className="pd-muted">{say('pane.detail.prNone')}</p> : null}
       </Section>
-      {/* 계획서 기록 — 요청 · 진행 · 다음 · 검증(막힘은 위에) */}
+      {/* 계획서 기록 */}
       <Section title={say('pane.detail.section.record')}>
-        <button className="pd-link pd-plan" type="button" title={say('pane.detail.openPlan')} onClick={() => void studio.workOpenPlan(plan.id, plan.html)}>{plan.title || plan.id}</button>
+        {openable
+          ? <button className="pd-link pd-plan" type="button" title={say('pane.detail.openPlan')} onClick={() => void studio.workOpenPlan(plan.id, plan.html)}>{title}</button>
+          : <p className="pd-line pd-plan">{title}</p>}
         {!plan.readable ? <p className="pd-muted">{say('work.detail.unreadable')}</p> : null}
         <DetailField paneId={paneId} field="request" lines={plan.request} say={say} />
         <DetailField paneId={paneId} field="progress" lines={plan.progress.map((item) => `${item.done ? '✓' : '○'} ${item.text}`)} say={say} />
@@ -273,11 +298,43 @@ function AgentSections({ paneId, detail, say }: { paneId: string; detail: PaneDe
   )
 }
 
-// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 계획서) · 그 상세 머리에 [← 맡긴 일]
+// 맡긴 일 줄의 계획서 — 담당 pane 이 없는 줄(진행 중 · 끝남 · 보관)을 같은 칸에서 읽기 전용으로. 열려 있는 동안 3초마다 다시 읽는다
+function PlanView({ plan, live, seq }: { plan: PlanRef; live: boolean; seq: number }) {
+  const say = useSay()
+  // null — 읽는 중
+  const [view, setView] = useState<Awaited<ReturnType<typeof studio.planDetail>> | null>(null)
+  useEffect(() => {
+    if (!live) return undefined
+    let alive = true
+    const load = async () => {
+      const next = await studio.planDetail(plan.id, plan.title)
+      if (alive) setView(next || { ok: false })
+    }
+    const timer = setInterval(load, PANE_DETAIL_REFRESH_MS)
+    void load()
+    return () => {
+      alive = false
+      clearInterval(timer)
+    }
+  }, [plan.id, plan.title, seq, live])
+  if (!view) return <p className="work-empty">{say('work.loading')}</p>
+  if (!view.ok) return <p className="work-empty">{say('pane.detail.error.default')}</p>
+  const key = `plan:${plan.id}`
+  return (
+    <>
+      <BlockedAlert plan={view.plan} say={say} />
+      <PlanRecordSections paneId={key} plan={view.plan} openable={plan.id.startsWith('plans/')} say={say} />
+    </>
+  )
+}
+
+// 아테나 pane — 맡긴 일 목록. 줄을 누르면 그 에이전트 pane 상세로(pane 이 없으면 같은 칸에서 그 계획서) · 그 상세 머리에 [← 맡긴 일]
 function LeadSections({ paneId, detail, container, say }: { paneId: string; detail: PaneDetailLead; container: HTMLElement; say: Say }) {
   const openRow = (row: PaneDetailLeadRow) => {
-    if (row.paneId && actions.paneLive(row.paneId)) return actions.openPane(row.paneId, { paneId, scroll: container.scrollTop })
-    if (row.id && row.id.startsWith('plans/')) void studio.workOpenPlan(row.id, null)
+    const from = { paneId, scroll: container.scrollTop }
+    const next = rowTarget(row, actions.paneLive)
+    if (next && next.to === 'pane') return actions.openPane(next.paneId, from)
+    if (next) return actions.openPlan({ id: next.id, title: row.title }, from)
     return undefined
   }
   return (

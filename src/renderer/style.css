@@ -1412,7 +1412,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pd-sec .work-field { grid-template-columns: 52px 1fr; font-size: 12.5px; }
 .pd-sec .work-field-line { overflow-wrap: anywhere; }
 /* 정리해서 보여 주기(2026-10-27) — 맨 위 사람 몫 · 한눈 요약 카드, 그 아래 절은 펼쳐 둔다 · 긴 글은 [더 보기] */
-.pane-detail-back { flex: none; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0 8px 0 6px; border: 1px solid var(--popup-line); border-radius: 6px; background: transparent; color: var(--popup-text); font: inherit; font-size: 12px; cursor: pointer; }
+.pane-detail-back { flex: none; display: inline-flex; align-items: center; gap: 4px; width: 24px; height: 24px; padding: 0; justify-content: center; border: 1px solid var(--popup-line); border-radius: 6px; background: transparent; color: var(--popup-text); font: inherit; font-size: 12px; cursor: pointer; }
 .pane-detail-back[hidden] { display: none; }
 .pane-detail-back:hover, .pane-detail-back:focus-visible { background: var(--popup-hover); outline: none; }
 .pd-glance { margin: 8px 6px 4px; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); }

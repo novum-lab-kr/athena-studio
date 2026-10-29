@@ -246,3 +246,27 @@ export function planRecord(text: unknown) {
 export function detailPlan(plan: DetailPlan & { html?: string; created?: unknown }, record: ReturnType<typeof planRecord>, readable: boolean) {
   return { ...record, id: plan.id, html: plan.html || null, title: record.title || plan.title || '', created: Number(plan.created) || 0, readable }
 }
+
+// ── 맡긴 일 줄 → 같은 상세 칸에서 계획서 보기 ─────────────────────────────
+// 줄을 누르면: 담당 pane 이 살아 있으면 그 pane 상세, 아니면(진행 중인데 pane 없음 · 끝남 · 보관) 계획서 — 바깥 앱으로 열지 않는다
+export type RowTarget = { to: 'pane'; paneId: string } | { to: 'plan'; id: string }
+export function rowTarget(row: { id?: string | undefined; paneId?: string | null }, paneLive: (paneId: string) => boolean): RowTarget | null {
+  if (row.paneId && paneLive(row.paneId)) return { to: 'pane', paneId: row.paneId }
+  return row.id ? { to: 'plan', id: row.id } : null
+}
+
+// 줄 id 가 가리키는 자리 — 계획서(plans/**.md · 현황판 /api/card) 또는 보관 폴더(archive/<이름> · /api/history/item). 그 밖 · ".." 는 거절
+export type PlanSource = { kind: 'plan'; id: string } | { kind: 'archive'; dir: string }
+export function planSource(id: unknown): PlanSource | null {
+  if (typeof id !== 'string' || id.includes('\0')) return null
+  const parts = id.split('/')
+  if (parts.includes('..')) return null
+  if (/^plans\/.+\.md$/.test(id)) return { kind: 'plan', id }
+  if (parts.length === 2 && parts[0] === 'archive' && parts[1] && parts[1] !== '.') return { kind: 'archive', dir: id }
+  return null
+}
+
+// 줄에서 연 계획서 칸 — 에이전트 pane 상세의 계획서 칸과 같은 모양(detailPlan). 줄 제목은 원문 제목이 비었을 때만 쓴다. text 가 null 이면 못 읽음
+export function rowPlan(id: string, title: string, text: string | null) {
+  return detailPlan({ id, title, agents: [] }, planRecord(text), text !== null)
+}

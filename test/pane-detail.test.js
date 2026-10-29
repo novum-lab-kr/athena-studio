@@ -176,3 +176,30 @@ test('상세 계획서 칸: 원문 제목이 비면 현황판 카드 제목 · �
   assert.equal(read.html, 'plans/task/a.html')
   assert.equal(read.created, 5)
 })
+
+// 맡긴 일 줄을 누르면 — 담당 pane 이 살아 있으면 그 pane 상세, 아니면(진행 중인데 pane 없음 · 끝남 · 보관) 같은 칸에서 계획서. 바깥 앱으로 열지 않는다
+test('맡긴 일 줄 열기: pane 이 살아 있으면 pane · 없으면 계획서 · 보관된 줄도 계획서 · id 가 없으면 아무것도 안 함', () => {
+  const live = (paneId) => paneId === 'p87'
+  assert.deepEqual(detail.rowTarget({ id: 'plans/task/a.md', paneId: 'p87' }, live), { to: 'pane', paneId: 'p87' })
+  // 진행 중인데 pane 이 없는 줄(데몬 재시작으로 옛 번호 · 아직 안 띄움 · 닫았지만 완료 전)
+  assert.deepEqual(detail.rowTarget({ id: 'plans/task/a.md', paneId: 'p99' }, live), { to: 'plan', id: 'plans/task/a.md' })
+  assert.deepEqual(detail.rowTarget({ id: 'plans/task/a.md', paneId: null }, live), { to: 'plan', id: 'plans/task/a.md' })
+  // 끝나서 보관된 줄 — id 가 archive 폴더 이름
+  assert.deepEqual(detail.rowTarget({ id: 'archive/kept', paneId: null, archived: true }, live), { to: 'plan', id: 'archive/kept' })
+  assert.equal(detail.rowTarget({ id: undefined, paneId: null }, live), null)
+})
+
+test('줄이 가리키는 계획서 자리: plans/*.md · archive/<이름> 만 · .. 와 다른 자리는 거절', () => {
+  assert.deepEqual(detail.planSource('plans/task/a.md'), { kind: 'plan', id: 'plans/task/a.md' })
+  assert.deepEqual(detail.planSource('archive/20261029-kept'), { kind: 'archive', dir: 'archive/20261029-kept' })
+  for (const bad of ['plans/../x.md', 'plans/task/a.txt', 'archive/../x', 'archive/a/b', 'archive/', 'archive/..', 'archive/.', '/etc/passwd', 'issues/a.md', '', 'archive/a\0b', undefined, 7]) {
+    assert.equal(detail.planSource(bad), null, String(bad))
+  }
+})
+
+test('줄에서 연 계획서 칸: 원문 기록 + 줄 제목 · 원문이 없으면 읽을 수 없음', () => {
+  const read = detail.rowPlan('archive/kept', '줄 제목', '# 원문\n## Checkpoint\n- Status: done\n- PR: https://github.com/a/b/pull/3\n### Next\n1. 없음\n')
+  assert.deepEqual([read.id, read.html, read.title, read.readable, read.status, read.prs], ['archive/kept', null, '원문', true, 'done', ['https://github.com/a/b/pull/3']])
+  const unread = detail.rowPlan('archive/kept', '줄 제목', null)
+  assert.deepEqual([unread.title, unread.readable, unread.progress], ['줄 제목', false, []])
+})

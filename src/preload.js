@@ -107,6 +107,8 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // pane [상세] — 계획서에 묶인 pane id → agent · lead / 그 pane 의 상세(열려 있는 동안 화면이 다시 부른다)
   paneBound: () => ipcRenderer.invoke('pane:bound'),
   paneDetail: (paneId) => ipcRenderer.invoke('pane:detail', paneId),
+  // 맡긴 일 줄의 계획서(pane 이 없는 줄) — 같은 상세 칸에서 읽기 전용
+  planDetail: (id, title) => ipcRenderer.invoke('pane:plan-detail', id, title),
   onPaneBound: listen('screen:pane-bound'),
   onWorkRequests: listen('work:requests'),
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)

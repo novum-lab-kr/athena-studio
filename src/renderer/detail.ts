@@ -9,7 +9,7 @@ import { packDialog } from './pack-dialogs.ts'
 import type { PackDialogAction } from './pack-dialogs.ts'
 import { closePops, reportDelivery, workRequests } from './work.ts'
 import { StudioUi } from './ui/index.ts'
-import type { PaneDetailActions } from './ui/pane-detail.tsx'
+import type { PaneDetailActions, PlanRef } from './ui/pane-detail.tsx'
 
 // ── pane [상세] ─────────────────────────────────────────────
 // 계획서에 묶인 pane(그 계획서를 하는 에이전트 · 맡긴 아테나) 머리 줄 오른쪽 아이콘 → 작업 창 위에 오른쪽에서 뜨는 팝업.
@@ -55,7 +55,8 @@ function togglePaneDetail(paneId: string): void {
 }
 
 // from: 아테나 목록에서 들어올 때 돌아갈 자리 · restore: 뒤로 가기로 돌아올 때 맞출 스크롤
-function openPaneDetail(paneId: string, { from = null, restore = null }: { from?: { paneId: string; scroll: number } | null; restore?: number | null } = {}): void {
+// plan: 담당 pane 이 없는 맡긴 일 줄의 계획서(paneId 는 그 아테나 pane)
+function openPaneDetail(paneId: string, { from = null, restore = null, plan = null }: { from?: { paneId: string; scroll: number } | null; restore?: number | null; plan?: PlanRef | null } = {}): void {
   closePops()
   const pop = $('pane-detail')
   const first = detailPane === null
@@ -65,7 +66,7 @@ function openPaneDetail(paneId: string, { from = null, restore = null }: { from?
   const bar = document.querySelector('.tabbar')
   pop.style.top = `${Math.round(bar ? bar.getBoundingClientRect().bottom : 0)}px`
   // 처음이거나 다른 pane 이면 읽는 중부터 · 같은 pane 이면 그린 것을 두고 바로 다시 읽는다
-  StudioUi.paneDetail.open($('pane-detail-body'), paneId, restore, paneDetailActions)
+  StudioUi.paneDetail.open($('pane-detail-body'), paneId, restore, paneDetailActions, plan)
   if (first) {
     pop.hidden = false
     requestAnimationFrame(() => pop.classList.add('open'))
@@ -103,6 +104,7 @@ export function closePaneDetail(): void {
 // React 몸통이 부르는 바닐라 쪽 — 다른 pane 상세 · pane 으로 가기 · 요청 대화상자 · 머리줄 이름
 const paneDetailActions: PaneDetailActions = {
   openPane: (paneId, from) => openPaneDetail(paneId, { from }),
+  openPlan: (plan, from) => openPaneDetail(from.paneId, { from, plan }),
   goToPane: (paneId) => {
     closePaneDetail()
     goToPane(paneId)

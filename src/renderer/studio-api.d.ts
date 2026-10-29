@@ -208,6 +208,8 @@ declare global {
     checkAppUpdate(): Promise<unknown>
     runAppUpdate(): Promise<{ ok: boolean; reason?: string } | undefined>
     paneDetail(paneId: string): Promise<PaneDetailView | undefined>
+    // main 의 ctx.planDetail(src/main/pane-watch.mts) — 맡긴 일 줄의 계획서(plans/**.md · archive/<이름>)
+    planDetail(id: string, title: string): Promise<{ ok: true; plan: PaneDetailPlan } | { ok: false; error?: string } | undefined>
     workOpenPlan(id: string, html: string | null): Promise<unknown>
     openUrl(url: string): Promise<unknown>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
