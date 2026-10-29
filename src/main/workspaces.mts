@@ -26,6 +26,16 @@ type WorkspaceDeps = { app: App; dialog: Dialog; Menu: MenuApi; say: Say; studio
 export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio, tabKey, runCore }: WorkspaceDeps): void {
   const daemonCall = ctx.daemonCall
 
+  // 새 탭(＋ · ⌘T · 빈 창이면 셸 탭 하나) — 보던 작업 공간이 없으면(새 데몬 · 다시 붙기) 아테나 폴더 작업 공간을 athena 이름으로(core.newTabRequest)
+  // 겹친 요청은 main 이 아테나 폴더마다 한 줄로 세워 부른다(screenQueue) — 앞 요청이 끝난 뒤 state 를 읽는다
+  ctx.newTab = async (size: Size) => {
+    if (!core.checkAthenaDir(ctx.athenaDir).ok) return daemonCall('tab new', { defaultCwd: ctx.athenaDir, ...size })
+    const state = await daemonCall<DaemonState & { activeWorkspace?: string | null }>('state')
+    if (state.error) return state
+    const request = core.newTabRequest(state.result, ctx.athenaDir as string, size)
+    return daemonCall(request.op, request.args)
+  }
+
   // pane 닫기(⌘W) — 에이전트가 돌고 있으면 묻는다(S6)
   ctx.closePane = async (paneId: string) => {
     const info = await daemonCall<{ pane?: DaemonPane }>('pane get', { pane: paneId })

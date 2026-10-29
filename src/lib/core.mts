@@ -272,6 +272,31 @@ export function findAthenaWorkspace<W extends Workspace>(workspaces: W[] | null 
   return (workspaces || []).find((workspace) => workspace.label === ATHENA_WORKSPACE && sameDir(workspace.cwd, athenaDir)) || null
 }
 
+// 앱의 ＋ · ⌘T 가 데몬에 보낼 요청. 보던 작업 공간이 없으면(새 데몬 · 마지막 탭을 닫음) 데몬 tab new 는 폴더 이름으로 작업 공간을 새로 만든다 —
+// 아테나 폴더면 그 이름이 athena 가 아니라 로고 · 모니터 · 아테나 판정(findAthenaWorkspace)이 빠진다. 그래서 그때는
+// 이 아테나 폴더의 athena 작업 공간이 있으면 거기에 탭을 붙이고, 없으면 athena 이름으로 만든다(셸만 — 에이전트는 켜지 않는다)
+type NewTabState = { workspaces?: (Workspace & { id: string })[] | null; activeWorkspace?: string | null }
+type DaemonRequest = { op: string; args: Record<string, unknown> }
+export function newTabRequest(state: NewTabState | null | undefined, athenaDir: string, size: Record<string, unknown> = {}): DaemonRequest {
+  if (!state || state.activeWorkspace) return { op: 'tab new', args: { defaultCwd: athenaDir, ...size } }
+  const athena = findAthenaWorkspace(state.workspaces, athenaDir)
+  if (athena) return { op: 'tab new', args: { workspace: athena.id, ...size } }
+  return { op: 'workspace create', args: { label: ATHENA_WORKSPACE, cwd: athenaDir, focus: true, ...size } }
+}
+
+// 같은 열쇠의 일을 하나씩 — 앞 일이 끝난 뒤(실패해도) 다음 일을 시작한다.
+// main 이 아테나 폴더마다 아테나 켜기 · 새 탭을 한 줄로 세운다 — 겹치면 둘 다 빈 상태를 읽고 아테나 작업 공간 · 에이전트를 둘 만든다
+export function keyedQueue(): <T>(key: string, work: () => Promise<T>) => Promise<T> {
+  const tails = new Map<string, Promise<unknown>>()
+  return <T,>(key: string, work: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(key) || Promise.resolve()).then(work)
+    const tail = run.catch(() => {})
+    tails.set(key, tail)
+    tail.then(() => tails.get(key) === tail && tails.delete(key))
+    return run
+  }
+}
+
 // 링크를 어디서 열지: localhost(계획서 · 테스트 화면)는 옆 브라우저(panel), 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 

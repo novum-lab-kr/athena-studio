@@ -176,6 +176,19 @@ test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 �
   assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
 
+test('새 탭 요청: 보던 작업 공간이 없으면 아테나 폴더 작업 공간을 athena 이름으로(새 데몬 · 다시 붙기)', () => {
+  const dir = '/Users/me/.athena-studio/bodies/new-20261025-184407'
+  const size = { cols: 80, rows: 24 }
+  // 보던 작업 공간이 있으면 예전 그대로 — 데몬이 그 작업 공간에 탭을 붙인다
+  assert.deepEqual(core.newTabRequest({ workspaces: [{ id: 'w1', label: 'web', cwd: '/x' }], activeWorkspace: 'w1' }, dir, size), { op: 'tab new', args: { defaultCwd: dir, ...size } })
+  // 빈 데몬 — 폴더 이름이 아니라 athena 로 만든다
+  assert.deepEqual(core.newTabRequest({ workspaces: [], activeWorkspace: null }, dir, size), { op: 'workspace create', args: { label: 'athena', cwd: dir, focus: true, ...size } })
+  // 보던 곳은 없지만 이 아테나 폴더의 athena 작업 공간이 있으면 거기에 탭(둘을 만들지 않는다)
+  assert.deepEqual(core.newTabRequest({ workspaces: [{ id: 'w2', label: 'athena', cwd: dir }], activeWorkspace: null }, dir, size), { op: 'tab new', args: { workspace: 'w2', ...size } })
+  // 다른 아테나 폴더의 athena 는 고르지 않는다
+  assert.equal(core.newTabRequest({ workspaces: [{ id: 'w3', label: 'athena', cwd: '/Users/me/athena' }], activeWorkspace: null }, dir).op, 'workspace create')
+})
+
 test('링크 열 곳: localhost 는 옆 브라우저, 그 밖 http(s) 는 기본 브라우저, 나머지는 막기 · 주소창', () => {
   assert.equal(core.openTarget('http://localhost:4701/plans/a/plan.html'), 'panel')
   assert.equal(core.openTarget('http://127.0.0.1:3000/'), 'panel')
