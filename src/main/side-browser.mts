@@ -22,6 +22,7 @@ export type SideBrowserCtx = {
   openInBrowser?: (url: string) => void
   placeBrowser?: (rect: Rect | null) => void
   hideBrowser?: () => void
+  boardPortNow?: () => number
   browserCommand?: (name: string, value: string) => { url?: string; error?: string }
 }
 
@@ -70,14 +71,18 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
     browserView = new WebContentsView({
       webPreferences: { partition: browserPartition, contextIsolation: true, sandbox: true, nodeIntegration: false },
     })
-    // 빈 페이지일 땐 앱 배경색(흰 판이 튀지 않게). 웹 페이지로 가면 흰색 — 배경을 안 정한 사이트가 어두운 바탕에 검은 글씨가 되지 않게
+    // 빈 페이지 · 이 창 현황판 서버 페이지는 앱 배경색(흰 판이 튀지 않게). 그 밖(바깥 사이트 · 사용자 localhost 앱)은 흰색 — core.browserBackground
     const view = browserView
-    const fitBackground = (url: string) => view.setBackgroundColor(core.isWebUrl(url) ? '#ffffff' : appBackground)
+    const fitBackground = (url: string) => view.setBackgroundColor(core.browserBackground(url, appBackground, ctx.boardPortNow?.() ?? 0))
     fitBackground('')
     watchConsoleSends(browserSession)
     const contents = browserView.webContents
     contents.on('did-navigate', (_event, url) => fitBackground(url))
     // 이 팩에서 보던 페이지가 있으면 그걸로(팩을 바꿨다 돌아오면)
+    // 불러오기 시작 때 미리 칠한다 — 이동이 확정(did-navigate)되기 전 첫 그림이 흰색으로 나오지 않게
+    contents.on('did-start-navigation', (_event, url, _inPlace, isMainFrame) => {
+      if (isMainFrame) fitBackground(url)
+    })
     const remembered = ctx.athenaDir ? browserUrls.get(core.realDir(ctx.athenaDir)) : null
     if (remembered) contents.loadURL(remembered)
     // http(s) 밖으로는 움직이지 않는다 — 안쪽 프레임까지
