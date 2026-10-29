@@ -52,3 +52,8 @@
 ## 대화 압축 (Claude Code)
 
 훅이 맡는다 — `scripts/hooks/compact-checkpoint.py`. 압축 직전에 이 pane 에 묶인 계획서(Work ref · Review 의 `pane <id>`, 정식 html `leadPane`)의 Checkpoint 에 `- Auto snapshot:` 한 줄(시각 · 브랜치 · HEAD · 미커밋 파일)을 갱신하고, 압축 직후 "요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라" 를 대화에 넣는다. 압축 뒤에는 `AGENTS.md` 2.6 의 1~4 를 그대로 한다. 스냅샷은 기계적 상태일 뿐이라 Progress · Next 를 대신하지 않는다.
+
+**언제 압축하나** — 문맥이 200k 토큰이면 자동 압축 창이 찬 것으로 본다(`autoCompactWindow: 200000`).
+- 값: 코어 `.claude/settings.json` 한 곳. 본체에서 켜는 아테나 세션은 프로젝트 설정으로, 담당 에이전트 pane 은 `delegate.sh` 가 만드는 `--settings` 파일로 같은 값을 받는다(reviewer 는 짧게 끝나 따로 넣지 않는다 — 본체 안에서 띄우면 프로젝트 설정으로 실린다)
+- 이유: 기본(1M 모델)은 수십만 토큰까지 커진 채로 응답마다 다시 읽어 비용의 대부분이 캐시 읽기다 — 긴 세션의 응답당 문맥을 줄인다(2026-10-29 `plans/feature/20261029-긴-세션-자동-압축-당기기.md`)
+- 그 세션만 바꾸기: `/autocompact <값>`(예 `/autocompact 400k`) · 기본으로 되돌리기 `/autocompact auto`. 환경 변수 `CLAUDE_CODE_AUTO_COMPACT_WINDOW` 가 있으면 설정 파일보다 먼저다
