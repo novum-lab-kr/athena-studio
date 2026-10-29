@@ -57,6 +57,8 @@ const ALLOWED = [
   'ls # pkill foo',
   'echo ok # 설명; pkill foo',
   'echo ok # $(pkill foo) | xargs kill',
+  'echo \\\n# 설명; pkill foo',
+  'echo ok \\\n# 설명; pkill foo',
   'echo ${#PATH} 12',
   'echo 123 | xargs -n 1 kill',
 ];

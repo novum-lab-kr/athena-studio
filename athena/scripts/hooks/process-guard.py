@@ -153,11 +153,13 @@ def strip_comments(text):
             if char == quote:
                 quote = ''
             out.append(char)
+        elif char == '\\' and text[index + 1:index + 2] == '\n':
+            index += 2; escaped = was_escaped; continue   # 줄 연속 — 셸이 지운다. 앞 글자가 그대로 단어 경계가 된다
         elif char == '\\' and index + 1 < len(text):
             out.append(text[index:index + 2]); index += 2; escaped = True; continue
         elif char in ('"', "'"):
             quote = char; out.append(char)
-        elif char == '#' and not was_escaped and (index == 0 or text[index - 1] in ' \t\n;|&('):
+        elif char == '#' and not was_escaped and (not out or out[-1] in ' \t\n;|&('):
             while index < len(text) and text[index] != '\n':
                 index += 1
             continue
