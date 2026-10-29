@@ -36,7 +36,8 @@ if (typeof args.dir !== 'string' || !args.dir) { console.error('사용: node scr
 const started = Date.now()
 /** @param {string} cwd @param {string[]} gitArgs */
 const git = (cwd, gitArgs) => {
-  const run = spawnSync('git', ['-c', 'core.quotePath=false', '-C', cwd, ...gitArgs], { encoding: 'utf8' })
+  // 출력 버퍼 제한 없음 — 기본 1 MiB 를 넘는 출력(큰 diff 목록 등)이 잘려 실패로 보이지 않게
+  const run = spawnSync('git', ['-c', 'core.quotePath=false', '-C', cwd, ...gitArgs], { encoding: 'utf8', maxBuffer: Infinity })
   return { ok: run.status === 0, out: (run.stdout ?? '').trim(), err: (run.stderr ?? '').trim() }
 }
 /** @param {string} path */
@@ -97,11 +98,12 @@ const changed = (args.committed
   ? git(top, ['diff', '--name-only', '--no-renames', base, 'HEAD']).out.split('\n')
   : [...git(top, ['diff', '--name-only', '--no-renames', base]).out.split('\n'), ...git(top, ['ls-files', '--others', '--exclude-standard']).out.split('\n')]
 ).filter(Boolean)
-/** @typedef {{ kind: 'file', data: Buffer, mode: number } | { kind: 'link' } | { kind: 'missing' }} Source */
+/** @typedef {{ kind: 'file', data: Buffer, mode: number } | { kind: 'link' } | { kind: 'missing' } | { kind: 'unreadable', reason: string }} Source */
 /** @type {Map<string, Source>} */
 const sources = new Map()
 /**
- * 파일 원본 — --committed 면 HEAD 트리, 아니면 작업 트리. 경로가 심볼릭 링크(작업 트리는 경로 중간 칸 포함)면 link
+ * 파일 원본 — --committed 면 HEAD 트리, 아니면 작업 트리. 경로가 심볼릭 링크(작업 트리는 경로 중간 칸 포함)면 link ·
+ * 있는데 읽지 못했으면 unreadable(없는 것으로 치지 않는다 — 조용히 빠지지 않게 error 로 보고)
  * @param {string} path
  * @returns {Source}
  */
@@ -115,8 +117,11 @@ const sourceOf = (path) => {
     const mode = git(top, ['ls-tree', 'HEAD', '--', path]).out.split(/\s/)[0] ?? ''
     if (mode === '120000') found = { kind: 'link' }
     else if (mode === '100644' || mode === '100755') {
-      const blob = spawnSync('git', ['-C', top, 'cat-file', 'blob', `HEAD:${path}`])
-      if (blob.status === 0) found = { kind: 'file', data: blob.stdout, mode: mode === '100755' ? 0o755 : 0o644 }
+      // 버퍼 제한 없이 — 1 MiB 를 넘는 테스트 파일도 읽는다
+      const blob = spawnSync('git', ['-C', top, 'cat-file', 'blob', `HEAD:${path}`], { maxBuffer: Infinity })
+      found = blob.status === 0 && !blob.error
+        ? { kind: 'file', data: blob.stdout, mode: mode === '100755' ? 0o755 : 0o644 }
+        : { kind: 'unreadable', reason: blob.error?.message ?? String(blob.stderr ?? '').trim().split('\n')[0] ?? `exit ${blob.status}` }
     }
   } else {
     let current = top
@@ -130,7 +135,9 @@ const sourceOf = (path) => {
       try {
         const stat = statSync(current)
         if (stat.isFile()) found = { kind: 'file', data: readFileSync(current), mode: stat.mode & 0o777 }
-      } catch { /* 없음 */ }
+      } catch (error) {
+        found = { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) }
+      }
     }
   }
   sources.set(path, found)
@@ -144,6 +151,11 @@ const inline = impl.filter((path) => {
   return source.kind === 'file' && isInlineTest(path, source.data.toString('utf8'))
 })
 if (inline.length) finish({ result: 'unsupported', files: inline, base })
+const unreadable = tests.filter((path) => sourceOf(path).kind === 'unreadable')
+if (unreadable.length) {
+  const first = /** @type {{ reason: string }} */ (sourceOf(unreadable[0] ?? ''))
+  finish({ result: 'error', detail: `테스트 파일을 읽지 못했다 — ${first.reason}`, files: unreadable, base })
+}
 const linkedTests = tests.filter((path) => sourceOf(path).kind === 'link')
 if (linkedTests.length) finish({ result: 'unsupported', detail: '테스트 경로가 심볼릭 링크', files: linkedTests, base })
 if (!tests.length) finish({ result: 'no-tests', impl: impl.length, base })

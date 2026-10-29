@@ -117,6 +117,14 @@ printf 'def twice(value):\n    """\n    >>> twice(2)\n    4\n    """\n    return
 OUT="$(red --spec "$NODE_SPEC" --json --committed)"
 check "--committed — 커밋 안 된 doctest 구현은 인라인 판별에 넣지 않는다" '[ "$(json_field result <<<"$OUT")" = non-discriminating ]' "$OUT"
 
+# 1 MiB 넘는 테스트 파일 — 버퍼 제한에 걸려 조용히 빠지지 않는다(커밋된 큰 테스트를 HEAD 에서 읽어 돌린다)
+case_branch big-test
+printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+{ printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { add } from '../lib/math.mjs'\ntest('add', () => assert.equal(add(1, 2), 3))\n"; node -e 'const line = "// " + "x".repeat(97) + "\n"; process.stdout.write(line.repeat(12000))'; } > test/big.test.mjs
+git add -A && git commit -qm big
+OUT="$(red --spec "$NODE_SPEC" --json --committed)"
+check "--committed — 1 MiB 넘는 테스트도 읽어 돌린다(ok assertion)" '[ "$(wc -c < test/big.test.mjs | tr -d " ")" -gt 1048576 ] && [ "$(json_field result <<<"$OUT")" = ok ] && grep -q "ok (assertion)" <<<"$OUT"' "$OUT · $(cat "$TMP/stderr")"
+
 echo "▶ 심볼릭 링크 — 따라가 덮어쓰지 않고 unsupported"
 # base 에 테스트 자리가 구현을 가리키는 링크 — 이번 브랜치가 그 자리를 진짜 테스트 파일로 바꿨다
 git checkout -q -f main && git clean -qfdx && git checkout -q -b link-base
