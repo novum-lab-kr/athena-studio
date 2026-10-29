@@ -146,9 +146,10 @@ function renderPackWelcome(): void {
   const on = welcomeShown()
   $('pack-welcome').hidden = !on
   document.body.classList.toggle('pack-welcome-on', on)
-  // 현황판 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다
-  $<HTMLButtonElement>('board-tab').disabled = !state || !state.valid || on
-  $<HTMLButtonElement>('diagrams-open').disabled = !state || !state.valid || on
+  // 현황판 · 다이어그램 · 작업 · 설정 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다.
+  // 이 버튼들은 여기 한 곳에서만 정한다(renderState 도 renderPackRail → 여기를 부른다 — 같은 팩으로 들어갈 때 일부만 켜지던 것)
+  const packOff = !state || !state.valid || on
+  for (const id of ['board-tab', 'diagrams-open', 'work-tab', 'settings-tab']) $<HTMLButtonElement>(id).disabled = packOff
   $<HTMLButtonElement>('browser-toggle').disabled = on
   if (on && browserOpen) closeBrowserPanel()
   // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
