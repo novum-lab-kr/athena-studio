@@ -61,7 +61,7 @@ test('알림: 사람이 고를 것만 — 일하다 멈춤 · 카드 리뷰·완
   busy.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 1000)
   const bundled = tray.bundle(busy.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 1000 + tray.WAIT_HOLD_MS))
   assert.equal(bundled.length, 1)
-  assert.equal(bundled[0].title, '입력을 기다려요 (2건)')
+  assert.equal(bundled[0].title, '입력을 기다립니다 (2건)')
 })
 
 test('입력 대기: 에이전트 줄 맨 위 · 머리줄 수 · 대기 수에서 빼고 · 이어지면 한 번 알리고 풀릴 때까지 다시 안 알린다', () => {
@@ -83,7 +83,7 @@ test('입력 대기: 에이전트 줄 맨 위 · 머리줄 수 · 대기 수에�
   // 이어지면 한 번(누르면 그 pane)
   notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 70000)
   const waiting = notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 70000 + tray.WAIT_HOLD_MS)
-  assert.deepEqual(waiting, [{ kind: 'waiting', title: '입력을 기다려요', body: 'claude · athena — 권한 질문이나 고르기 창이 떠 있어요', target: { pane: 'p2' } }])
+  assert.deepEqual(waiting, [{ kind: 'waiting', title: '입력을 기다립니다', body: 'claude · athena — 권한 질문이나 고르기 창이 떠 있습니다', target: { pane: 'p2' } }])
   assert.deepEqual(notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'waiting')], names }, 200000), [])
   // 풀린 뒤(작업 중) 다시 막히면 또 한 번
   notifier.update({ panes: [pane('p1', 'waiting'), pane('p2', 'working')], names }, 210000)
@@ -124,7 +124,7 @@ test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 
   assert.deepEqual(notifier.updateRequests([open('a')]), [])
   assert.deepEqual(notifier.updateRequests(null), [])
   const found = notifier.updateRequests([open('a'), open('b', 'decision'), { id: 'c', state: 'answered', title: 'x' }])
-  assert.deepEqual(found, [{ kind: 'request', title: '결정이 필요해요', body: '제목 b', target: { request: 'b' } }])
+  assert.deepEqual(found, [{ kind: 'request', title: '결정이 필요합니다', body: '제목 b', target: { request: 'b' } }])
   assert.deepEqual(notifier.updateRequests([open('a'), open('b', 'decision')]), [])
 })
 
