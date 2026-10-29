@@ -115,3 +115,15 @@ test('아테나 켜기 뒤 새 탭(빈 창 셸 탭)은 그 athena 작업 공간�
   ])
   assert.deepEqual(tab, { op: 'tab new', args: { workspace: daemon.workspaces[0].id } })
 })
+
+test('옛 버그로 폴더 이름이 붙은 아테나 작업 공간이 있으면 새로 만들지 않고 그리로 옮긴다(#120 후속)', async (t) => {
+  const { root, daemon, makeCtx } = setup(t)
+  const body = fakeBody(root, 'new-20261025-184407')
+  daemon.workspaces.push({ id: 'w9', label: 'new-20261025-184407', cwd: body, body })
+  const ctx = makeCtx(body)
+  const result = await ctx.openAthenaAgent({})
+  assert.equal(result.focused, true)
+  assert.deepEqual(daemon.workspaces.map((entry) => entry.id), ['w9'])
+  assert.equal(started(daemon).length, 0)
+  assert.deepEqual(daemon.calls.filter((call) => call.op === 'workspace select').map((call) => call.args.workspace), ['w9'])
+})
