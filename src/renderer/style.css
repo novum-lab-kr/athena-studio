@@ -165,7 +165,8 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 /* pane 영역 — 분할 트리를 픽셀 사각형으로 바꿔 절대 위치로 놓는다 */
 .work-area { display: flex; flex: 1; min-height: 0; }
 .panes { position: relative; flex: 1; min-width: 0; min-height: 0; margin: 4px 0 0 4px; }
-.pane { position: absolute; display: flex; flex-direction: column; border: 1px solid transparent; }
+/* isolation — xterm 안의 z-index(세로 스크롤바 11 등)를 pane 안에 가둔다. 안 가두면 왼쪽 pane 스크롤바가 보일 때 경계(z-index 5) 잡는 자리 왼쪽을 덮어 끌기가 안 먹힌다 */
+.pane { position: absolute; isolation: isolate; display: flex; flex-direction: column; border: 1px solid transparent; }
 .pane[hidden] { display: none; }
 /* pane 사이 경계 — 끌어서 크기 바꾸기(더블클릭 반반) */
 .pane-divider { position: absolute; z-index: 5; }
