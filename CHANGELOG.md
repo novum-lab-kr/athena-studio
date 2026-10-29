@@ -10,7 +10,26 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.17 끝 · 0.18 · 0.19: v0.17.6..main 머지(#109 ~ #115)를 태그 v0.17.7 · v0.18.* · v0.19.* 경계로 나눠 손님에게 보이는 것만(#115 README 정리는 앱 밖이라 뺌). 0.19 범위 끝은 열어 둔다 -->
 
-## 0.19 (v0.19.0 – · Oct 29, 2026)
+<!-- 0.20 ~ 0.25: v0.19.2..main 머지(#117 ~ #129)를 한 절(0.25)로 — 공개 배포판은 0.19.2 다음이 0.25 라서. 손님에게 보이는 것만(개발 앱 다시 켜기 #118 · 규칙 문서 정리 #123 은 뺌) -->
+
+## 0.25 (v0.20.0 – · Oct 29, 2026)
+
+### New
+- Drag files or folders from Finder onto a pane to paste their paths into its input line. Nothing is sent until you press Enter.
+- When a pull request is opened, Athena warns if the tests added in it would also pass without the change (shown in the plan's validation and the PR description). It never blocks the PR.
+
+### Improved
+- Light tasks run on a lighter model, and a review after "needs changes" can use a stronger one (set per pack under `models`).
+- Long agent sessions compact automatically earlier, at 200k tokens, for Athena and agent panes.
+- In the Athena pane's details, task rows without a pane (in progress, finished, archived) open their plan in the same panel, with a back arrow to the task list.
+- The Athena pane is named `<repo> · <plan title>` instead of an Athena prefix.
+
+### Fixed
+- The background process no longer shows a nameless icon in the Dock.
+- After the background process restarts or the app updates, the app no longer creates an extra workspace named after a folder instead of the `athena` workspace; older workspaces with that name show as `athena`.
+- Placeholder lines in an unedited plan template are no longer counted as remaining steps, and work that ends without a pull request is reported as done.
+
+## 0.19 (v0.19.0 – v0.19.2 · Oct 29, 2026)
 
 ### New
 - Right-clicking a pane shows its number and name at the top of the menu, so you can find the pane a report mentions.
