@@ -117,6 +117,16 @@ printf 'def twice(value):\n    """\n    >>> twice(2)\n    4\n    """\n    return
 OUT="$(red --spec "$NODE_SPEC" --json --committed)"
 check "--committed — 커밋 안 된 doctest 구현은 인라인 판별에 넣지 않는다" '[ "$(json_field result <<<"$OUT")" = non-discriminating ]' "$OUT"
 
+# 이번 브랜치에서 테스트를 지움(작업 트리 모드) — 지운 테스트는 없음으로(error 아님) · 구현만 바뀐 것으로 no-tests
+case_branch delete-test
+git rm -q test/mul.test.mjs
+printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+git add -A && git commit -qm delete
+OUT="$(red --spec "$NODE_SPEC" --json)"
+check "테스트를 지운 브랜치 — error 가 아니라 no-tests(지운 테스트는 돌리지도 구현으로 치지도 않음)" '[ "$(json_field result <<<"$OUT")" = no-tests ] && grep -q "구현 1개" <<<"$OUT"' "$OUT · $(cat "$TMP/stderr")"
+OUT="$(red --spec "$NODE_SPEC" --json --committed)"
+check "(--committed 도 같다)" '[ "$(json_field result <<<"$OUT")" = no-tests ]' "$OUT"
+
 # 1 MiB 넘는 테스트 파일 — 버퍼 제한에 걸려 조용히 빠지지 않는다(커밋된 큰 테스트를 HEAD 에서 읽어 돌린다)
 case_branch big-test
 printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs

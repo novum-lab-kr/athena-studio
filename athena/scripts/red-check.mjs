@@ -136,7 +136,9 @@ const sourceOf = (path) => {
         const stat = statSync(current)
         if (stat.isFile()) found = { kind: 'file', data: readFileSync(current), mode: stat.mode & 0o777 }
       } catch (error) {
-        found = { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) }
+        // 없는 파일(이번 브랜치에서 지운 테스트 · 경로 중간이 파일)은 없음 — 그 밖의 오류만 읽지 못함(error)
+        const code = error && typeof error === 'object' && 'code' in error ? error.code : ''
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') found = { kind: 'unreadable', reason: error instanceof Error ? error.message : String(error) }
       }
     }
   }
