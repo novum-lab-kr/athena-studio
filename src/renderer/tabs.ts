@@ -6,23 +6,25 @@ import { newTab, screen, setScreen, starting } from './screen.ts'
 import { focusCurrentTerminal, layoutPanes } from './pane-layout.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { renderSides } from './space-actions.ts'
+import { pickAthenaWorkspace } from '../lib/athena-workspace.mts'
 
 export function activeWorkspace(): ScreenWorkspace | null {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
 }
 
-// 아테나 폴더의 작업 공간인가 — 이름이 athena 이고 지금 아테나 폴더인 것(main 의 core.findAthenaWorkspace 와 같은 규칙).
-// 아테나 폴더를 바꿔 예전 폴더의 athena 작업 공간이 남아 있으면 그쪽엔 모니터를 안 보인다.
+// 아테나 폴더의 작업 공간인가 — main 의 core.findAthenaWorkspace 와 같은 규칙(../lib/athena-workspace.mts):
+// 지금 아테나 폴더의 athena 작업 공간, 없으면 옛 버그로 그 폴더 이름이 붙은 작업 공간.
+// 아테나 폴더를 바꿔 예전 폴더의 작업 공간이 남아 있으면 그쪽엔 모니터를 안 보인다.
 // 화면은 심볼릭 링크를 못 풀어서 적어 둔 경로 · main 이 푼 경로(athenaRealDir) 둘 중 하나와 글자로 맞춰 본다.
-// 폴더가 맞는 것이 하나도 없으면(새 작업 공간을 만들기 전 잠깐 등) 예전처럼 이름만 본다
+// 폴더가 맞는 것이 하나도 없으면(새 작업 공간을 만들기 전 잠깐 등) 예전처럼 이름(athena)만 본다
 const trimSlash = (dir: string | null | undefined): string => String(dir || '').replace(/\/+$/, '')
 
 export function isAthenaWorkspace(workspace: ScreenWorkspace | null | undefined): boolean {
-  if (!workspace || !state || workspace.label !== state.athenaWorkspace) return false
-  const wanted = [state.athenaDir, state.athenaRealDir].filter(Boolean).map(trimSlash)
-  const sameFolder = (entry: ScreenWorkspace) => wanted.includes(trimSlash(entry.cwd))
-  const anyMatch = screen.workspaces.some((entry) => entry.label === state!.athenaWorkspace && sameFolder(entry))
-  return anyMatch ? sameFolder(workspace) : true
+  if (!workspace || !state) return false
+  const dirs = [state.athenaDir, state.athenaRealDir]
+  const wanted = dirs.filter(Boolean).map(trimSlash)
+  const athena = pickAthenaWorkspace(screen.workspaces, dirs, (cwd) => wanted.includes(trimSlash(cwd)))
+  return athena ? athena.id === workspace.id : workspace.label === state.athenaWorkspace
 }
 
 export function activeTab(): ScreenTab | null {

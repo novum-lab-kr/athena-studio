@@ -176,6 +176,19 @@ test('athena 작업 공간: 이름이 athena 이고 지금 아테나 폴더인 �
   assert.equal(core.findAthenaWorkspace(undefined, dir), null)
 })
 
+test('athena 작업 공간: athena 가 없으면 옛 버그로 아테나 폴더 이름이 붙은 것(#120 후속) · 둘 다 있으면 athena 먼저', () => {
+  const dir = '/Users/me/.athena-studio/bodies/new-20261025-184407'
+  const old = { label: 'new-20261025-184407', id: 'w1', cwd: dir }
+  assert.equal(core.findAthenaWorkspace([old], dir).id, 'w1')
+  assert.equal(core.findAthenaWorkspace([old], `${dir}/`).id, 'w1')
+  assert.equal(core.findAthenaWorkspace([old, { label: 'athena', id: 'w2', cwd: dir }], dir).id, 'w2')
+  // 폴더 이름이어도 다른 폴더면 아니다 · 같은 폴더여도 다른 이름이면 아니다
+  assert.equal(core.findAthenaWorkspace([{ label: 'new-20261025-184407', id: 'w3', cwd: '/elsewhere/new-20261025-184407' }], dir), null)
+  assert.equal(core.findAthenaWorkspace([{ label: 'web', id: 'w4', cwd: dir }], dir), null)
+  // 새 탭도 그 작업 공간에 붙는다(athena 를 또 만들지 않는다)
+  assert.deepEqual(core.newTabRequest({ workspaces: [old], activeWorkspace: null }, dir), { op: 'tab new', args: { workspace: 'w1' } })
+})
+
 test('새 탭 요청: 보던 작업 공간이 없으면 아테나 폴더 작업 공간을 athena 이름으로(새 데몬 · 다시 붙기)', () => {
   const dir = '/Users/me/.athena-studio/bodies/new-20261025-184407'
   const size = { cols: 80, rows: 24 }
@@ -303,3 +316,15 @@ test('다시 켜기 환경: childEnv 로 걷어 내고 켤 때 읽는 값(스튜
   assert.equal('ATHENA_STUDIO_HOME' in core.relaunchEnv({ PATH: '/bin', ATHENA_STUDIO_HOME: '' }), false)
 })
 
+
+test('아테나 작업 공간 규칙(화면과 같이 쓰는 athena-workspace.mts): 글자로 폴더 맞추기 · 푼 경로의 폴더 이름도', () => {
+  const rule = require('../src/lib/athena-workspace.mts')
+  const dirs = ['/link/body', '/real/new-20261025-184407']
+  const inFolder = (cwd) => dirs.includes(cwd.replace(/\/+$/, ''))
+  assert.equal(rule.folderName('/a/b/'), 'b')
+  assert.equal(rule.folderName(null), '')
+  assert.equal(rule.pickAthenaWorkspace([{ id: 'w1', label: 'new-20261025-184407', cwd: '/real/new-20261025-184407' }], dirs, inFolder).id, 'w1')
+  assert.equal(rule.pickAthenaWorkspace([{ id: 'w1', label: 'body', cwd: '/link/body/' }, { id: 'w2', label: 'athena', cwd: '/real/new-20261025-184407' }], dirs, inFolder).id, 'w2')
+  assert.equal(rule.pickAthenaWorkspace([{ id: 'w3', label: 'athena', cwd: '/other' }], dirs, inFolder), null)
+  assert.equal(rule.pickAthenaWorkspace(null, dirs, inFolder), null)
+})
