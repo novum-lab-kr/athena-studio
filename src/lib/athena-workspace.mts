@@ -5,6 +5,11 @@ export const ATHENA_WORKSPACE = 'athena'
 // 판정에 읽는 칸만
 export type AthenaCandidate = { label?: unknown; cwd?: unknown }
 
+// 화면에 보이는 작업 공간 이름 — 아테나 작업 공간이면 옛 이름(본체 폴더 이름)이어도 athena. 표시 전용(데몬 label · 레포 매칭에는 쓰지 않는다)
+export function displayLabel(label: unknown, isAthena: boolean): string {
+  return isAthena ? ATHENA_WORKSPACE : String(label ?? '')
+}
+
 // 폴더 이름(맨 끝 칸) — 끝 '/' 는 떼고 본다
 export function folderName(dir: string | null | undefined): string {
   return String(dir || '').replace(/\/+$/, '').split('/').pop() || ''
@@ -22,4 +27,9 @@ export function pickAthenaWorkspace<W extends AthenaCandidate>(
   const here = (workspaces || []).filter((workspace) => typeof workspace.cwd === 'string' && inFolder(workspace.cwd))
   const names = new Set(dirs.map(folderName).filter(Boolean))
   return here.find((workspace) => workspace.label === ATHENA_WORKSPACE) || here.find((workspace) => names.has(String(workspace.label))) || null
+}
+
+// 표시용 사본 — 뽑은 아테나 작업 공간(athena)의 label 만 athena 로 바꾼다(메뉴 막대 · 알림이 이름을 읽는 목록)
+export function withDisplayLabels<W extends AthenaCandidate>(workspaces: readonly W[], athena: W | null): W[] {
+  return workspaces.map((workspace) => (workspace === athena ? { ...workspace, label: ATHENA_WORKSPACE } : workspace))
 }

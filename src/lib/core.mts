@@ -1,7 +1,7 @@
 // Electron 없이 돌아가는 순수 로직 — 서버에서 `npm test` 로 검사한다.
 import fs from 'node:fs'
 import path from 'node:path'
-import { ATHENA_WORKSPACE, pickAthenaWorkspace } from './athena-workspace.mts'
+import { ATHENA_WORKSPACE, pickAthenaWorkspace, withDisplayLabels } from './athena-workspace.mts'
 
 // 앱 설정 — 아는 칸만 모양을 맞추고 나머지 칸은 그대로 둔다(windows 등)
 export type AppConfig = { [key: string]: unknown; athenaDir: string | null; boardPort: number }
@@ -272,6 +272,12 @@ export function claudeAtEmptyPrompt(text: unknown): boolean {
 // 이름이 athena 인 것이 먼저, 없으면 옛 버그로 폴더 이름이 붙은 것. 아테나 폴더를 바꿨으면 예전 폴더의 작업 공간은 건드리지 않는다
 export function findAthenaWorkspace<W extends Workspace>(workspaces: W[] | null | undefined, athenaDir: string): W | null {
   return pickAthenaWorkspace(workspaces, [athenaDir, realDir(athenaDir)], (cwd) => sameDir(cwd, athenaDir))
+}
+
+// 화면에 보일 이름용 사본 — 아테나 작업 공간의 label 이 옛 폴더 이름이어도 athena 로(표시 전용)
+export function displayWorkspaces<W extends Workspace>(workspaces: W[] | null | undefined, athenaDir: string): W[] {
+  const list = workspaces || []
+  return withDisplayLabels(list, findAthenaWorkspace(list, athenaDir))
 }
 
 // 앱의 ＋ · ⌘T 가 데몬에 보낼 요청. 보던 작업 공간이 없으면(새 데몬 · 마지막 탭을 닫음) 데몬 tab new 는 폴더 이름으로 작업 공간을 새로 만든다 —

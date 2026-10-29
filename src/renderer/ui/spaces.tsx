@@ -13,7 +13,8 @@ export type SpaceRepo = { name: string; agent: string | null; linked: boolean; d
 export type SpacePane = { id: string; label?: string | null; title?: string | null; tab: string }
 export type SpaceWorkspace = {
   id: string
-  label: string
+  label: string // 데몬 label — 레포 매칭 · 색 · pane 역할 같은 내부 값
+  name: string // 화면에 보이는 이름(아테나 작업 공간은 늘 athena)
   cwd: string
   athena: boolean // 아테나 작업 공간 — 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다(repo 는 늘 null)
   repo: SpaceRepo | null
@@ -188,7 +189,7 @@ function Rail({ view, shell, say }: Part) {
     <>
       <FoldButton title={say('spaces.expand', { key: view.tabKey })} collapsed onClick={() => shell.setCollapsed(false)} shell={shell} />
       {view.workspaces.map((workspace) => {
-        const name = workspace.repo ? repoLabel(workspace.repo) : workspace.label
+        const name = workspace.repo ? repoLabel(workspace.repo) : workspace.name
         const image = spaceImage(workspace.athena, workspace.repo, 180)
         return (
           <button
@@ -247,7 +248,7 @@ function RepoRowIcon({ workspace, repo, shell }: { workspace: SpaceWorkspace | n
   return (
     // 색은 레포 name 으로 — 접힌 칸과 같다
     <span key="badge" className="space-repo-icon space-repo-badge" style={colorStyle(shell.spaceColor(label))}>
-      {shell.spaceInitials(repoLabel(repo) || label)}
+      {shell.spaceInitials(repoLabel(repo) || (workspace ? workspace.name : label))}
     </span>
   )
 }
@@ -281,7 +282,7 @@ function WorkspaceRows({ workspace, folded, view, shell }: Part & { workspace: S
       >
         <RepoRowIcon workspace={workspace} repo={workspace.repo} shell={shell} />
         <span className="space-text">
-          <span className="space-label">{repoLabel(workspace.repo) || workspace.label}</span>
+          <span className="space-label">{repoLabel(workspace.repo) || workspace.name}</span>
         </span>
         {hidden ? (
           <span className="space-fold-count">

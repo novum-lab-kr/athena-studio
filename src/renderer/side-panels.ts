@@ -8,6 +8,7 @@ import { renderSides } from './space-actions.ts'
 import { StudioUi } from './ui/index.ts'
 import type { ExplorerActions } from './ui/explorer.tsx'
 import { welcomeShown } from './pack-switch.ts'
+import { workspaceName } from './tabs.ts'
 import { fitEdgeSizes } from './edge-resize.ts'
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
@@ -26,7 +27,10 @@ export const PANEL_FILLS = {
 // 칸 몸통(머리줄 · 폴더 트리 · 변경 목록)과 그 상태 · 읽기는 React(ui/explorer.tsx · PR-R9). 여기는 껍데기 — 접기 · 펴기 · 3초 타이머 · 미리보기(뷰어)
 export function explorerActions(): ExplorerActions {
   return {
-    workspaceOf: (id) => screen.workspaces.find((entry) => entry.id === id),
+    workspaceOf: (id) => {
+      const found = screen.workspaces.find((entry) => entry.id === id)
+      return found && { label: workspaceName(found), cwd: found.cwd }
+    },
     tabKey: () => state!.tabKey,
     foldIcon: PANEL_ICONS.right,
     openPreview,
