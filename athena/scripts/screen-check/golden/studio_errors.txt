@@ -39,6 +39,13 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stderr
 --- screen
 ["@studio", "pane", "is-shell", "p3"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 보고 --enter
+--- exit 1
+--- stdout
+--- stderr
+{"error": "unavailable", "message": "studio pane send-text: 데몬에 붙지 못했다(ENOENT): /tmp/athena-studio.sock"}
+--- screen
+["@studio", "pane", "send-text", "p2", "보고"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane list
 --- exit 1
 --- stdout

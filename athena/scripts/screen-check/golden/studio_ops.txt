@@ -113,6 +113,25 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 --- stderr
 --- screen
 ["@studio", "pane", "send-text", "p2", "첫 줄 --no-focus"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 [a → b] 보고 --enter
+--- exit 0
+--- stdout
+--- stderr
+--- screen
+["@studio", "pane", "send-text", "p2", "[a → b] 보고"]
+["@studio", "pane", "send-keys", "p2", "Enter"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 --enter
+--- exit 0
+--- stdout
+--- stderr
+--- screen
+["@studio", "pane", "send-text", "p2", "--enter"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 글 --enter 더
+--- exit 2
+--- stdout
+--- stderr
+{"error": "usage", "message": "pane send-text <pane> <글> [--enter]"}
+--- screen
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-keys p2 C-c Enter
 --- exit 0
 --- stdout

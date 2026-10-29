@@ -57,6 +57,9 @@ sc_studio_ops() {
   step studio "${IN_STUDIO[@]}" -- $S pane run p9 env "ATHENA_BOARD_PORT=4700" node /x/server.mjs
   step studio "${IN_STUDIO[@]}" -- $S pane run p9 less -R --format x
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "첫 줄 --no-focus"
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 보고" --enter
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 --enter
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 글 --enter 더
   step studio "${IN_STUDIO[@]}" -- $S pane send-keys p2 C-c Enter
   step studio "${IN_STUDIO[@]}" -- $S pane rename p9 "📋 현황판"
   step studio "${IN_STUDIO[@]}" -- $S pane close p9
@@ -81,6 +84,8 @@ sc_studio_errors() {
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane list
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane split --target self --direction down --format id
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane is-shell p3
+  # 글 넣기가 실패하면 --enter 라도 Enter 를 보내지 않는다(로그에 send-text 한 줄뿐)
+  step studio-down,studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "보고" --enter
   step studio-broken,studio "${IN_STUDIO[@]}" -- $S pane list
   step studio-down,studio "${IN_STUDIO[@]}" -- python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); import screen
 try: screen.list_panes()
