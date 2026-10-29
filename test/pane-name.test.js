@@ -16,6 +16,12 @@ test('레포 하나면 표시 이름 · 없으면 name', async () => {
   assert.equal(repoLabelOfAgents(config, ['shop-fe', 'web-pkg']), 'novum-web')
 })
 
+test('표시 이름이 같은 서로 다른 레포도 +N 으로 센다', async () => {
+  const { repoLabelOfAgents } = await load()
+  const same = { repos: [{ name: 'a', displayName: '웹', agents: ['a-fe'] }, { name: 'b', displayName: '웹', agents: ['b-fe'] }] }
+  assert.equal(repoLabelOfAgents(same, ['a-fe', 'b-fe', 'a-fe']), '웹 +1')
+})
+
 test('여러 레포는 적힌 순서의 첫 레포 +N · 모르면 빈 값', async () => {
   const { repoLabelOfAgents } = await load()
   assert.equal(repoLabelOfAgents(config, ['web-fe', 'syung-fe']), 'novum-web +1')
