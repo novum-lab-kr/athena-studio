@@ -6,9 +6,29 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.15: 첫 배포판 — #80 ~ #88 머지에서 손님에게 보이는 것만(개발판 전용 수정 · refactor · 문서는 뺌). 배포판 Release 본문은 그 minor 절(## X.Y) — 범위 끝은 올릴 때 실제 태그로 채우거나 열어 둔다 -->
 
-<!-- 0.16 · 0.17: v0.15.9..main 머지(#97 ~ #103)를 태그 v0.16.* · v0.17.* 경계로 나눠 손님에게 보이는 것만(빌드 · 올리기 스크립트 · 번호 체계 같은 내부는 뺌). 0.17 범위 끝은 열어 둔다 -->
+<!-- 0.16 · 0.17: v0.15.9..main 머지(#97 ~ #103)를 태그 v0.16.* · v0.17.* 경계로 나눠 손님에게 보이는 것만(빌드 · 올리기 스크립트 · 번호 체계 같은 내부는 뺌) -->
 
-## 0.17 (v0.17.0 – · Oct 28, 2026)
+<!-- 0.17 끝 · 0.18 · 0.19: v0.17.6..main 머지(#109 ~ #115)를 태그 v0.17.7 · v0.18.* · v0.19.* 경계로 나눠 손님에게 보이는 것만(#115 README 정리는 앱 밖이라 뺌). 0.19 범위 끝은 열어 둔다 -->
+
+## 0.19 (v0.19.0 – · Oct 29, 2026)
+
+### New
+- Right-clicking a pane shows its number and name at the top of the menu, so you can find the pane a report mentions.
+
+## 0.18 (v0.18.0 – v0.18.3 · Oct 29, 2026)
+
+### New
+- Drag the edges to resize the workspace list on the left, the Explorer on the right, and the monitor at the bottom.
+
+### Improved
+- Resize handles no longer light up with a colored box; only the cursor changes.
+
+### Fixed
+- Dragging the border between panes is no longer blocked by the left pane's scrollbar.
+- The details icon in a pane's header shows even when the board is not running.
+- The Work and Settings buttons at the top right are no longer left disabled after leaving the start screen.
+
+## 0.17 (v0.17.0 – v0.17.7 · Oct 28–29, 2026)
 
 ### New
 - Athena can watch a repository's open GitHub issues: when turned on, new issues are imported as work items and handed to Athena, and the agent monitor shows a line for each.
@@ -17,6 +37,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Improved
 - The license terms were updated.
 - Work alerts show only things you need to decide. Status updates from automatic pull request reviews go to the Athena pane instead.
+
+### Fixed
+- Plans with sub-steps left are no longer completed automatically.
 
 ## 0.16 (v0.16.0 – v0.16.2 · Oct 28, 2026)
 
