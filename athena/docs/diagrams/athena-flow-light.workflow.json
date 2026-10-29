@@ -62,7 +62,7 @@
       }
     ],
     "output": "docs/diagrams/athena-flow-light.html",
-    "subtitle": "대부분의 작업 — 레포 하나 · 문구 · 버그 하나 · 조사 · /call. 계획서는 자동 기록, 지시가 곧 승인. pane 에서 작업 → 리뷰(\"리뷰해줘\") → 커밋 → PR (원본: CLAUDE.md · 정식은 athena-flow-formal)"
+    "subtitle": "대부분의 작업 — 레포 하나 · 문구 · 버그 하나 · 조사 · /call. 계획서는 자동 기록, 지시가 곧 승인. pane 에서 작업 → 리뷰(\"리뷰해줘\") → 커밋 → PR (원본: CLAUDE.md · docs/workflow.md · 정식은 athena-flow-formal)"
   },
   "lanes": [
     {

@@ -178,6 +178,6 @@ packs/<회사>/
 |---|---|
 | 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 `/<이름>` 으로 바로 뜬다 (`call/SKILL.md` 를 복사해 시작) |
 | 에이전트 | 레포 담당은 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
-| 같이 고칠 곳 | `CLAUDE.md` 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
+| 같이 고칠 곳 | `CLAUDE.md` Skills 줄 · `docs/workflow.md` 명령 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
 
 상세: `docs/extending.md`

@@ -64,7 +64,7 @@
       }
     ],
     "output": "docs/diagrams/athena-flow-formal.html",
-    "subtitle": "새 기능 · 여러 레포 · API · 구조 변경. 정식 계획서(md + 결정 콘솔) → [이대로 진행] 으로 승인 → 순차 디스패치 → 아테나가 교차 리뷰·PR 순서 (원본: CLAUDE.md · 대부분의 작업은 athena-flow-light)"
+    "subtitle": "새 기능 · 여러 레포 · API · 구조 변경. 정식 계획서(md + 결정 콘솔) → [이대로 진행] 으로 승인 → 순차 디스패치 → 아테나가 교차 리뷰·PR 순서 (원본: CLAUDE.md · docs/workflow.md · 대부분의 작업은 athena-flow-light)"
   },
   "lanes": [
     {

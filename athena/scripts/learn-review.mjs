@@ -344,7 +344,7 @@ const shadowJev = async (planFile, planText, prMaterial, transcript) => {
 
 // ── learn 이슈 쓰기 — 같은 target 열린 이슈면 덧붙인다 ─────────────────────
 const slug = (text) => text.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase()
-// AGENTS.md 6절과 같은 꼴(파일#절) — 같은 절일 때만 합친다
+// learning.md 8절 target 과 같은 꼴(파일#절) — 같은 절일 때만 합친다
 const issueTarget = (item) => (item.kind === 'skill' ? `skill:${slug(item.skill)}` : `docs/knowledge/${item.knowledge}/${item.kind}.md#${item.section.replace(/^#+\s*/, '').trim() || '기타'}`)
 // 카드 제목 — 규칙의 첫 문장만, 길면 자른다(본문에 전체가 있다)
 const cardTitle = (rule) => clip((rule.replace(/\n/g, ' ').match(/^.+?(?:다\.|\.\s)/) ?? [rule])[0].replace(/\.\s*$/, '').trim(), 80)

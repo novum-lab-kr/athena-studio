@@ -10,7 +10,7 @@ settings 의 claudeMdExcludes 로 그것들을 빼고 여기서 만든 컨텍스
 
 사용: scripts/agent-context.py <에이전트명> <athena 루트> <워크트리> <agents.json 출력> <context.md 출력> <settings.json 출력>
 """
-import json, shlex, sys, pathlib
+import json, re, shlex, sys, pathlib
 import os
 
 agent, hermes_dir, workdir, agents_out, context_out, settings_out = sys.argv[1:7]
@@ -29,7 +29,14 @@ if meta.get("tools"):
     definition["tools"] = [tool.strip() for tool in meta["tools"].split(",") if tool.strip()]
 pathlib.Path(agents_out).write_text(json.dumps({agent: definition}, ensure_ascii=False), encoding="utf-8")
 
-# 공통 규칙: AGENTS.md + .claude/rules/*.md. CLAUDE.md 는 아테나(팀리드) 전용이라 넣지 않는다
+# 공통 규칙: AGENTS.md(아테나 전용 구간을 뺀 것) + .claude/rules/*.md. CLAUDE.md 는 아테나(팀리드) 전용이라 넣지 않는다.
+# AGENTS.md 의 <!-- lead-only … --> ~ <!-- /lead-only --> 는 첫 실행 · 여러 팩 본체 · 라우팅 · /sync 처럼
+# 아테나만 쓰는 절이다 — 에이전트에게는 매 응답 다시 읽는 비용만 늘린다(2026-10-29 규칙 문서 다이어트).
+# 디스패치 프로토콜은 .claude/rules 가 아니라 docs/dispatch.md 라 여기 들어오지 않는다
+LEAD_ONLY = re.compile(r"<!-- lead-only\b.*?<!-- /lead-only -->\n?", re.S)
+def agent_rules(text):
+    return LEAD_ONLY.sub("", text)
+
 parts = [
     "# 아테나 작업 컨텍스트 (워크트리 실행)",
     f"- 아테나 루트: `{hermes_dir}` — 아래 문서의 `docs/`, `scripts/`, `plans/`, `issues/` 상대 경로는 모두 여기 기준이다",
@@ -37,7 +44,7 @@ parts = [
     "- 검증 스크립트는 아테나 루트의 `scripts/verify/*.sh` 를 절대 경로로 실행한다. "
     "환경변수 `ATHENA_VERIFY_DIR` 가 이 워크트리를 가리키므로 워크트리가 검증된다",
     "",
-    (hermes / "AGENTS.md").read_text(encoding="utf-8"),
+    agent_rules((hermes / "AGENTS.md").read_text(encoding="utf-8")),
 ]
 for rule in sorted((hermes / ".claude/rules").glob("*.md")):
     parts += ["", rule.read_text(encoding="utf-8")]
