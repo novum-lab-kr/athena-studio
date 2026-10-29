@@ -2,7 +2,7 @@
 // renderer.js 에서 옮김(R3f · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. 진입점(entry.ts)이 마지막에 싣는다 — 이 파일 맨 끝 init() 은 다른 묶음을 다 읽은 뒤에 돈다
 import { $, applyStaticTexts, currentTab, panels, say, setI18nState, setState, showToast, state } from './core.ts'
 import { views } from './terminal.ts'
-import { attach, attached, attaching, runCommand, screen, setAttached, setReattachOnKey, showRestoreResult, startScreen } from './screen.ts'
+import { attached, attaching, reattachScreen, runCommand, screen, setAttached, setReattachOnKey, showRestoreResult, startScreen } from './screen.ts'
 import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
@@ -191,7 +191,7 @@ async function init(): Promise<void> {
     // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
     if (attached) refreshPackRepos()
   }, 3000)
-  studio.onScreenResync(() => state!.valid && attach())
+  studio.onScreenResync(() => state!.valid && reattachScreen())
   studio.onScreenDisconnected(() => {
     setAttached(false)
     setReattachOnKey(true)

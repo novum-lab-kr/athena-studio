@@ -284,6 +284,19 @@ export function newTabRequest(state: NewTabState | null | undefined, athenaDir: 
   return { op: 'workspace create', args: { label: ATHENA_WORKSPACE, cwd: athenaDir, focus: true, ...size } }
 }
 
+// 같은 열쇠의 일을 하나씩 — 앞 일이 끝난 뒤(실패해도) 다음 일을 시작한다.
+// main 이 아테나 폴더마다 아테나 켜기 · 새 탭을 한 줄로 세운다 — 겹치면 둘 다 빈 상태를 읽고 아테나 작업 공간 · 에이전트를 둘 만든다
+export function keyedQueue(): <T>(key: string, work: () => Promise<T>) => Promise<T> {
+  const tails = new Map<string, Promise<unknown>>()
+  return <T,>(key: string, work: () => Promise<T>): Promise<T> => {
+    const run = (tails.get(key) || Promise.resolve()).then(work)
+    const tail = run.catch(() => {})
+    tails.set(key, tail)
+    tail.then(() => tails.get(key) === tail && tails.delete(key))
+    return run
+  }
+}
+
 // 링크를 어디서 열지: localhost(계획서 · 테스트 화면)는 옆 브라우저(panel), 그 밖의 http(s) 는 기본 브라우저, 나머지는 막는다
 const LOCAL_HOSTS = ['localhost', '127.0.0.1', '[::1]']
 

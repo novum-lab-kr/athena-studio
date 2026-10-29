@@ -75,7 +75,28 @@ export async function attach(): Promise<boolean> {
 
 export function reattach(): void {
   reattachOnKey = false
-  attach()
+  reattachScreen()
+}
+
+// 다시 붙기(데몬 다시 띄우기 · 끊긴 뒤 키 입력 · 메뉴 다시 붙기 · 메뉴 막대) — 이 본체 작업 공간이 하나도 없으면(새 데몬) 처음 켤 때처럼
+// 아테나 에이전트를 새 대화로 켠다(사용자 결정 R1 · 2026-10-29). 그동안은 빈 창 셸 탭을 만들지 않고(starting), 겹쳐 불러도 한 번만 돈다
+let reattaching: Promise<boolean> | null = null
+export function reattachScreen(): Promise<boolean> {
+  if (reattaching) return reattaching
+  reattaching = (async () => {
+    starting = true
+    try {
+      if (!(await attach())) return false
+      if (!screen.workspaces.length && !welcomeShown()) await openAgent()
+      return true
+    } finally {
+      starting = false
+    }
+  })().finally(() => {
+    reattaching = null
+    ensureSomeTab()
+  })
+  return reattaching
 }
 
 export async function newTab(): Promise<void> {
