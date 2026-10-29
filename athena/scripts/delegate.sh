@@ -363,6 +363,7 @@ else
   GUARD_HOOKS=()
   [ "$AGENT" != reviewer ] && GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/commit-guard.py")
   GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
+  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/process-guard.py")   # pkill · killall · 0/음수 대상 kill 차단(GH #133) — 모든 세션
   # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
   # pane ↔ 대화 기록(팩 백업이 되살릴 때 --resume) — 첫 인자
   # 자동 압축 시점(reviewer 제외 · 짧게 끝난다) — 본체 .claude/settings.json 의 autoCompactWindow 를 그대로 옮긴다(값은 그 한 곳).
