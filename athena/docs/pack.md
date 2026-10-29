@@ -112,7 +112,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `update --rollback [<operationId>]` | 그 업데이트(없으면 본체를 하나라도 바꾼 마지막 업데이트 — 실패·바꾼 것 없는 기록은 건너뛴다)가 **바꾼 본체만**, 지금도 그 실행의 커밋에 있을 때 보존 ref 로 되돌린다(아니면 `moved`). 주 본체는 되돌리지 않는다(`main` — 정비 체크아웃은 손으로). 배포 커밋은 본체를 하나라도 실제로 되돌렸고 지금 배포 커밋이 그 업데이트의 것일 때만 그 전으로(아니면 그대로) |
 | `version` | 이 본체 코어 커밋 · `version`(스튜디오 버전 — 아래) · `contract`(3) · `dirty` · `dataFormats` · `capabilities`(`update-from-bundle` · `backup-dirty` · `bodies-dir` · `port-base` · `idle-panes`(`update --panes-state`) · `update-busy`(일해도 올림 · `working[]`) · `repo-look`(`set-repo-name` · `set-repo-icon`) 가 있으면 위 손잡이를 안다 — 스튜디오는 모르는 명령에 옛 코어가 사용법만 찍으면(`bad-output`) 이 목록 · `contract` 로 "본체 코어가 옛 버전"(`core-old`)을 가린다) · `deploy`(`source` 포함). 스튜디오는 `contract` 가 다르면 안내한다 |
 
-- **스튜디오 버전**(`version` · 텍스트 출력은 `버전 0.2.1`): 앱이 코어 번들을 만들 때 앱 버전(아래 README "버전")을 `refs/athena/version/<버전>` → 코어 커밋으로 싣고, 앱이 켤 때 · `update --from` 이 그 ref 를 주 본체로 받는다(팩 본체는 같은 저장소라 같이 본다). `version` 은 이 본체 HEAD 를 가리키는 것 중 가장 높은 번호 — 없으면(옛 번들 · 고친 코어) `null`. 약속 번호 · 데이터 형식과는 따로다(맞는지 보는 번호가 아니다)
+- **스튜디오 버전**(`version` · 텍스트 출력은 `버전 0.2.1`): 앱이 코어 번들을 만들 때 앱 버전(athena-studio 레포 `docs/development.md` "버전")을 `refs/athena/version/<버전>` → 코어 커밋으로 싣고, 앱이 켤 때 · `update --from` 이 그 ref 를 주 본체로 받는다(팩 본체는 같은 저장소라 같이 본다). `version` 은 이 본체 HEAD 를 가리키는 것 중 가장 높은 번호 — 없으면(옛 번들 · 고친 코어) `null`. 약속 번호 · 데이터 형식과는 따로다(맞는지 보는 번호가 아니다)
 - **데이터 형식**: `<데이터>/config.json` 의 `formatVersion` 이 이 코어의 `dataFormats` 밖이면 쓰기 명령은 `data-incompatible`(읽기는 된다) — 형식을 바꾸는 코어는 모든 본체를 함께 올린다
 
 ## 여러 팩 테스트 (진짜 스튜디오 집 `~/.athena-studio` 를 건드리지 않고)

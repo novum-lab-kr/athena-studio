@@ -1,6 +1,6 @@
 # athena-studio — 개발 안내 (Claude Code · Codex 공통)
 
-이 레포를 **고치는** 에이전트용 정본. Codex 는 이 파일을, Claude Code 는 `CLAUDE.md`(이 파일을 불러온다)를 읽는다. 앱이 무엇인지 · 화면 · 데이터 자리는 [`README.md`](README.md).
+이 레포를 **고치는** 에이전트용 정본. Codex 는 이 파일을, Claude Code 는 `CLAUDE.md`(이 파일을 불러온다)를 읽는다. 앱이 무엇인지는 [`README.md`](README.md)(제품 소개 · [한국어](README.ko.md)), 켜기 · 배포판 · 화면 · 데이터 자리 · 구조는 [`docs/development.md`](docs/development.md).
 
 > **`athena/CLAUDE.md` · `athena/AGENTS.md` · `athena/.claude/rules/` 는 따르지 않는다.** 코어 본체에서 아테나(팀 리드)를 켤 때의 페르소나 규칙이다("직접 코드를 작성하지 않는다" · 계획서 · `commit.sh` 등). 이 레포에서 `athena/` 코드를 고칠 때도 이 문서가 기준이다 — 그 파일들은 고칠 대상일 뿐이다.
 
@@ -18,7 +18,7 @@ npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목�
 npm run typecheck # 타입 검사(tsc — tsconfig.json · src/renderer/tsconfig.json · athena/jsconfig.json)
 npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합(실제 pty)
 ```
-맥 배포판은 `npm run package:mac`(electron-builder · `scripts/package-mac.js` → `dist/release/` · README "배포판 (맥)"). 앱 코드 빌드는 화면만 — 아래 "TypeScript". 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
+맥 배포판은 `npm run package:mac`(electron-builder · `scripts/package-mac.js` → `dist/release/` · `docs/development.md` "배포판 (맥)"). 앱 코드 빌드는 화면만 — 아래 "TypeScript". 서버 · CI 에서는 Electron 을 띄우지 않는다 — 화면 확인은 맥에서. Node 22.18 이상(`.mts` 를 타입 지우기로 바로 읽는다 — 아래 "TypeScript").
 
 ## TypeScript (섞어 쓰는 중)
 - **앱 Node 쪽은 빌드 없음** — Electron 44(Node 24)가 `.mts` 를 타입만 지우고 바로 실행한다. 데몬 띄우기는 JS 때와 같다
@@ -60,8 +60,8 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) — renderer 새 파일(`.ts`)은 진입점에서 import 하면 `check` 끝의 화면 빌드가 본다 |
 | 새 `.mts` 파일 · JS → `.mts` 옮기기 | `package.json` `check` 의 `scripts/check-ts.js` 줄 · 부르는 곳의 `require` 경로(확장자까지) · 테스트의 `require` |
 | 순수 로직 | `src/lib/` 에 두고 `test/<이름>.test.js` — Electron 없이 돈다 |
-| 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · README "스튜디오 집과 데이터" |
-| 메뉴 · 단축키 · 화면 동작 | README "화면" · "팩" · "문제가 생기면" |
+| 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · `docs/development.md` "스튜디오 집과 데이터" |
+| 메뉴 · 단축키 · 화면 동작 | `docs/development.md` "화면" · "팩" · "문제가 생기면" |
 
 ## 함정
 - **화면은 `dist/renderer/` 를 연다** — `npm start` 를 거치지 않고 `electron .` 으로 바로 켜면(화면 확인 스크립트 등) 빌드가 돌지 않는다. 빌드가 없으면 빈 창 · 있으면 옛 화면이다 — 먼저 `npm run build:renderer`
