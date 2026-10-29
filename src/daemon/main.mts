@@ -888,7 +888,7 @@ function failure(code: string, message: string): Failure {
 }
 
 async function main(): Promise<void> {
-  process.title = 'athena-studio-daemon'
+  // process.title 은 붙이지 않는다 — 맥에서 제목을 바꾸면 LaunchServices 가 Electron 번들(LSUIElement 없음)을 Foreground 앱으로 등록해 Dock 에 아이콘이 뜬다
   const args = parseArgs(process.argv.slice(2))
   const defaults = defaultPaths()
   const daemon = new Daemon({ socket: args.socket || defaults.socket, endpoint: args.endpoint || defaults.endpoint, cli: args.cli })
