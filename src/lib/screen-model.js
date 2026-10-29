@@ -10,7 +10,8 @@ const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title'
 // start 로 지난 데몬이 남긴 번호를 받아 이어서 센다 — 데몬을 다시 띄워도 p1 부터 다시 매기지 않게(계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게).
 // onChange 는 번호가 바뀔 때마다 지금 번호 전체를 받는다(데몬이 파일에 남긴다 — 카운터는 10진 숫자 그대로)
 // id 글자는 36진수 소문자(2026-10-28 — p230 다음 p6f · 접두 빼고 3글자로 46,655 까지). 10 이상인데 36진수가 숫자만인 번호
-// (36 → '10' · 1296 → '100')는 건너뛴다 — 예전 10진 id(p10 · p100)와 같은 글자가 되어 계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게
+// (36 → '10' · 1296 → '100')는 건너뛴다 — 예전 10진 id(p10 · p100)와 같은 글자가 되어 계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게.
+// 숫자가 하나도 없는(글자만인) 번호(10 → 'a' · 28 → 's')도 건너뛴다 — id 에 늘 숫자가 하나 이상 들어가 ps · pwd 같은 명령어 이름과 겹치지 않게(gh134). 이미 만든 id · 저장된 카운터는 그대로
 /**
  * @param {unknown} [start]
  * @param {((counters: Record<string, number>) => void) | null} [onChange]
@@ -25,7 +26,7 @@ function createIdGen(start = {}, onChange = null) {
     /** @param {string} prefix */
     next(prefix) {
       let number = (counters[prefix] || 0) + 1
-      while (number >= 10 && /^\d+$/.test(number.toString(36))) number += 1
+      while (number >= 10 && /^\d+$|^[a-z]+$/.test(number.toString(36))) number += 1
       counters[prefix] = number
       if (onChange) onChange({ ...counters })
       return `${prefix}${number.toString(36)}`

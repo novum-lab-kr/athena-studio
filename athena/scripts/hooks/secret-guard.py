@@ -56,6 +56,10 @@ SECRET_VAR = r"\$\{?\w*(TOKEN|KEY|SECRET|PASSWORD|PASSWD|PASS|AUTH|CREDENTIAL)\w
 # 값을 가리는 sed 치환 — 보통 작은따옴표 안에 있어 원래 글자에서 찾는다. 읽는 명령과 같은 파이프라인(; && || 줄바꿈으로 나뉘기 전)에 있어야 통과
 MASK = r"s[/|#][^/|#]*(=|:)\)?\.\*[/|#][^/|#]*(\*{3}|MASK|숨김|<redacted>)"
 
+# 명령 자리 — 줄 처음 · ; & | ( ` 줄바꿈 $( 뒤 · sh|bash -c " 안, 그 뒤 앞붙임(sudo/env/command/exec/time/nice/xargs/watch/timeout — 경로 · 값을 받는 옵션 -u root · 맨 숫자 인자 timeout 5 포함) · VAR=값 · 경로(/bin/ps)까지.
+# ps · pgrep 은 인자 자리의 글자(send-keys ps Enter · docs/ps · grep x ps)에는 걸리지 않게 이 자리에서만 본다
+CMD_POSITION = r"(?:^|[;&|(`\n]|\b(?:sh|bash|zsh)\s+-\w*c\s+[\"'])\s*(?:(?:\S*/)?(?:sudo|env|command|exec|time|nohup|nice|xargs|watch|timeout)\s+(?:-\S+(?:\s+[^-\s;&|]\S*)?\s+)*(?:\d\S*\s+)?|\w+=\S*\s+)*(?:\S*/)?"
+
 rules = [
     (r"\b(npm|pnpm|yarn)\s+config\s+(get|list|ls)\b", "패키지 매니저 설정 출력(config get/list)은 토큰을 찍는다"),
     (r"\bnpm\s+whoami\b.*--verbose", "npm whoami --verbose 는 토큰을 찍을 수 있다"),
@@ -67,9 +71,9 @@ rules = [
     (r"\bgit\s+credential\s+fill\b", "git 자격 증명을 꺼낸다"),
     (r"\bsecurity\s+find-\w+-password\b[^;&|]*-w\b", "키체인 비밀번호를 꺼낸다"),
     # 프로세스 목록의 전체 인자·환경 변수 — 편집기 helper 등은 인자에 환경 변수(GITHUB_TOKEN=…)를 통째로 싣는다(2026-10-02 pgrep -fl 사고)
-    (r"\bpgrep\b[^;&|]*\s-(\w*l\w*f|\w*f\w*l|\w*a)\w*\b|\bpgrep\b[^;&|]*\s-\w*l\w*\b[^;&|]*\s-\w*f|\bpgrep\b[^;&|]*\s-\w*f\w*\b[^;&|]*\s-\w*l", "프로세스 전체 인자를 출력한다(환경 변수·토큰이 섞여 나온다) — pid 만 pgrep -f, 이름은 ps -o pid=,comm="),
+    (rf"{CMD_POSITION}pgrep\b(?:[^;&|]*\s-(?:\w*l\w*f|\w*f\w*l|\w*a)\w*\b|[^;&|]*\s-\w*l\w*\b[^;&|]*\s-\w*f|[^;&|]*\s-\w*f\w*\b[^;&|]*\s-\w*l)", "프로세스 전체 인자를 출력한다(환경 변수·토큰이 섞여 나온다) — pid 만 pgrep -f, 이름은 ps -o pid=,comm="),
     # macOS ps: -e/-E 환경 변수, -f/-j·BSD u 전체 인자, -o command|args 전체 인자
-    (r"\bps\b[^;&|]*(\s-[a-zA-Z]*[eEfj][a-zA-Z]*\b|\s-[a-zA-Z]*o\s*\S*\b(command|args|cmd)\b)|\bps\s+[a-zA-Z]*[eu][a-zA-Z]*\b","프로세스 전체 인자·환경 변수를 출력한다 — ps -axo pid=,ppid=,comm= 처럼 명령 이름만 본다"),
+    (rf"{CMD_POSITION}ps\b(?:[^;&|]*(?:\s-[a-zA-Z]*[eEfj][a-zA-Z]*\b|\s-[a-zA-Z]*o\s*\S*\b(?:command|args|cmd)\b)|\s+[a-zA-Z]*[eu][a-zA-Z]*\b)","프로세스 전체 인자·환경 변수를 출력한다 — ps -axo pid=,ppid=,comm= 처럼 명령 이름만 본다"),
 ]
 for pattern, reason in rules:
     if re.search(pattern, text):

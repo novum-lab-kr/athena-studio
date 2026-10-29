@@ -15,12 +15,23 @@ test('id: 36진수 소문자 — p230 다음 p6f · 예전 10진 id 와 같은 �
   assert.deepEqual(saved.at(-1), { p: 231 })
   const fresh = model.createIdGen()
   const made = Array.from({ length: 40 }, () => fresh.next('t'))
-  assert.deepEqual(made.slice(0, 11), ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 'ta', 'tb'])
-  assert.equal(made[34], 'tz')
-  assert.equal(made[35], 't1a') // 36('10') ~ 45('19') 는 예전 t10 ~ t19 와 겹쳐 건너뛴다
-  assert.ok(made.every((id) => /^t[0-9a-z]+$/.test(id) && (id.length < 3 || /[a-z]/.test(id.slice(1)))))
+  assert.deepEqual(made.slice(0, 11), ['t1', 't2', 't3', 't4', 't5', 't6', 't7', 't8', 't9', 't1a', 't1b'])
+  assert.equal(made[34], 't1z') // 10 ~ 35 는 글자만('a' ~ 'z')이라 건너뛰고, 36('10') ~ 45('19') 는 예전 t10 ~ t19 와 겹쳐 건너뛴다
+  assert.equal(made[35], 't2a')
+  assert.ok(made.every((id) => /^t[0-9a-z]+$/.test(id) && /\d/.test(id.slice(1)) && (id.length < 3 || /[a-z]/.test(id.slice(1)))))
   assert.equal(model.createIdGen({ w: 1295 }).next('w'), 'w10a') // 1296('100') ~ 1305('109') 는 건너뛴다
-  assert.equal(model.createIdGen({ p: 46654 }).next('p'), 'pzzz') // 4글자 끝
+  assert.equal(model.createIdGen({ p: 46654 }).next('p'), 'p100a') // 46655('zzz') 는 글자만이라 건너뛰고 · 46656 ~ 은 숫자만('1000' …)이라 건너뛴다
+})
+
+test('id: 숫자가 하나도 없는(글자만인) id 는 건너뛴다 — ps · pwd 같은 명령어 이름과 겹치지 않게 · 저장된 카운터는 그대로', () => {
+  const saved = []
+  const ids = model.createIdGen({ p: 27 }, (counters) => saved.push(counters)) // 28 = 's' → 'ps' 가 될 번호
+  assert.equal(ids.next('p'), 'p1a')
+  assert.deepEqual(saved.at(-1), { p: 46 }) // 10 ~ 35(글자만) · 36 ~ 45('10' ~ '19', 숫자만)를 건너뛴 다음 번호
+  const fresh = model.createIdGen()
+  const made = Array.from({ length: 200 }, () => fresh.next('p'))
+  assert.ok(made.every((id) => /\d/.test(id.slice(1))))
+  assert.ok(!made.includes('ps'))
 })
 
 test('id: 지난 데몬 번호에서 이어서 센다 · 바뀔 때마다 알린다 · 이상한 값은 버린다', () => {
