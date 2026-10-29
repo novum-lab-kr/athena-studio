@@ -313,6 +313,16 @@ export function openTarget(rawUrl: string): 'deny' | 'panel' | 'external' {
   return LOCAL_HOSTS.includes(new URL(rawUrl).hostname) ? 'panel' : 'external'
 }
 
+// 옆 브라우저 뷰의 바탕색 — 이 창 현황판 서버(localhost · 127.0.0.1 · [::1] 의 boardPort: 현황판 · 결정 콘솔 · 계획서, 다크를 따른다)와
+// 빈 페이지는 앱 배경색으로 시작해 흰 번쩍임이 없다. 그 밖의 주소(바깥 사이트 · 사용자의 localhost 개발 앱)는 흰색 —
+// 배경을 안 정한 페이지가 어두운 바탕에 검은 글씨가 되지 않게
+export function browserBackground(rawUrl: string, appBackground: string, boardPort: number): string {
+  if (!isWebUrl(rawUrl)) return appBackground
+  const { hostname, port, protocol } = new URL(rawUrl)
+  const urlPort = port || (protocol === 'https:' ? '443' : '80')
+  return LOCAL_HOSTS.includes(hostname) && urlPort === String(boardPort) ? appBackground : '#ffffff'
+}
+
 // 옆 브라우저의 결정 콘솔(현황판이 주는 /plans/….html)이 [이대로 진행] 으로 pane 에 보내기를 마쳤나 —
 // 같은 localhost 현황판의 POST /api/action 이 200 이면 보냄(실패면 콘솔이 [프롬프트로 복사] 로 바뀌니 서랍을 두어야 한다)
 export function isConsoleSent({ method, url, statusCode, pageUrl }: { method: string; url: string; statusCode: number; pageUrl: string }): boolean {

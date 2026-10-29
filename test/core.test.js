@@ -342,3 +342,11 @@ test('화면에 보이는 아테나 작업 공간 이름: 옛 폴더 이름 labe
   assert.equal(rule.displayLabel('new-20261025-184407', true), 'athena')
   assert.equal(rule.displayLabel('web', false), 'web')
 })
+
+test('browserBackground — 이 창 현황판 서버만 앱 배경색 · 나머지는 흰색', () => {
+  assert.equal(core.browserBackground('http://localhost:4701/plans/a/plan.html', '#111', 4701), '#111')
+  assert.equal(core.browserBackground('http://127.0.0.1:4701/', '#111', 4701), '#111')
+  assert.equal(core.browserBackground('', '#111', 4701), '#111')
+  assert.equal(core.browserBackground('http://localhost:3000/', '#111', 4701), '#ffffff')
+  assert.equal(core.browserBackground('https://github.com/x', '#111', 4701), '#ffffff')
+})
