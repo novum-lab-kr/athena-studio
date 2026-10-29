@@ -33,8 +33,8 @@ const APP_ROOT = path.join(import.meta.dirname, '..', '..')
 export const APP_UPDATE_CHECK_MS = 30 * 60 * 1000
 const APP_UPDATE_FETCH_GAP_MS = 60 * 1000 // 팝업을 자주 열어도 origin 은 이만큼에 한 번만 받는다
 
-// app — 앱 정보 · 끄기 · dialog — 알림 창 · say — 화면 문구 · studio — 스튜디오 집 자리(heavy.sh) · packWindows — 열린 팩 창(main.mts 의 Set 그대로)
-export function createAppUpdater({ app, dialog, say, studio, packWindows }: { app: App; dialog: Dialog; say: Say; studio: { core: string }; packWindows: Iterable<PackWindow> }) {
+// app — 앱 정보 · 끄기 · dialog — 알림 창 · say — 화면 문구 · language — 지금 앱 언어(도우미 맥 알림 문구) · studio — 스튜디오 집 자리(heavy.sh) · packWindows — 열린 팩 창(main.mts 의 Set 그대로)
+export function createAppUpdater({ app, dialog, say, language, studio, packWindows }: { app: App; dialog: Dialog; say: Say; language: () => string; studio: { core: string }; packWindows: Iterable<PackWindow> }) {
   const appUpdateLogFile = () => path.join(app.getPath('userData'), 'app-update.log')
   let appUpdateStatus: Status = { state: 'unavailable', behind: 0, branch: null, reason: null }
   let appUpdateRunning = false
@@ -116,7 +116,8 @@ export function createAppUpdater({ app, dialog, say, studio, packWindows }: { ap
       return pulled
     }
     const nodePath = core.findExecutable('node', process.env.PATH)
-    const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid)]
+    // --lang — 앱이 꺼진 사이 도우미가 띄우는 맥 알림(heavy.sh 대기 · install 포기 · 실패)을 지금 앱 언어로
+    const args = [path.join(APP_ROOT, 'scripts', 'dev-app.js'), 'restart', '--after', String(process.pid), '--lang', language()]
     const heavy = path.join(studio.core, 'scripts', 'heavy.sh')
     if (pulled.install) args.push('--install', ...(fs.existsSync(heavy) ? ['--heavy', heavy] : []))
     // 자식 환경은 childEnv 로 — 다시 켜진 앱이 켤 때 읽는 값(격리 실행 ATHENA_STUDIO_HOME 등)만 다시 싣는다(core.relaunchEnv)
