@@ -130,6 +130,20 @@ observe '[{"id":"plans/task/a.md","grade":"light","status":"in_progress"},{"id":
 observe '[{"id":"plans/task/a.md","grade":"light","status":"in_progress"},{"id":"plans/task/b.md","grade":"light","status":"planned"}]'
 check "바뀐 것 · 새로 생긴 것만 한 번씩(같으면 안 남김)" 'python3 -c "import json,sys; es=[json.loads(l) for l in open(sys.argv[1])][int(sys.argv[2]):]; sys.exit(0 if [(e[\"plan\"],e[\"from\"],e[\"to\"]) for e in es]==[(\"plans/task/a.md\",\"planned\",\"in_progress\"),(\"plans/task/b.md\",None,\"planned\")] else 1)" "$EV" "$BEFORE"' "$(tail -2 "$EV")"
 
+section "에이전트 고르기 질문(scripts/hooks/ask-to-request.py)"
+ASK_EVENT='{"tool_name":"AskUserQuestion","tool_input":{"questions":[{"question":"어느 방식으로 할까요?","header":"방식","multiSelect":true,"options":[{"label":"A 안 (Recommended)","description":"작게 고친다","preview":"diff A"},{"label":"B 안","description":"크게 고친다"}]},{"question":"브랜치는?","header":"브랜치","multiSelect":false,"options":[{"label":"main","description":"기준"},{"label":"dev","description":"개발"}]}]}}'
+BEFORE_ASK="$(ls "$DIR" | wc -l)"
+ATHENA_AGENT= python3 scripts/hooks/ask-to-request.py <<< "$ASK_EVENT" > "$WORK/ask-athena.out"
+check "아테나 세션(ATHENA_AGENT 없음)은 그대로 — 요청도 안 열고 막지도 않는다" '[ ! -s "$WORK/ask-athena.out" ] && [ "$(ls "$DIR" | wc -l)" = "$BEFORE_ASK" ]'
+ATHENA_AGENT=athena-studio-fe ATHENA_PLAN=plans/task/20261021-x.md python3 scripts/hooks/ask-to-request.py <<< "$ASK_EVENT" > "$WORK/ask-agent.out"
+check "에이전트 세션 — 질문마다 요청이 열린다(2개)" '[ "$(( $(ls "$DIR" | wc -l) - BEFORE_ASK ))" = 2 ]'
+check "도구는 막고 요청 번호를 안내한다(deny)" 'python3 -c "import json,sys; o=json.load(open(sys.argv[1]))[\"hookSpecificOutput\"]; sys.exit(0 if o[\"permissionDecision\"]==\"deny\" and o[\"permissionDecisionReason\"].count(\"r-20\")==2 and \"ack\" in o[\"permissionDecisionReason\"] else 1)" "$WORK/ask-agent.out"' "$(cat "$WORK/ask-agent.out")"
+AQ="$(python3 -c 'import json,sys,re; print(re.findall(r"r-\d{8}-\d{6}-\w{4}", json.load(open(sys.argv[1]))["hookSpecificOutput"]["permissionDecisionReason"])[0])' "$WORK/ask-agent.out")"
+check "질문 · 선택지(설명 · 추천 표시 · 미리보기) · 계획서가 요청에 담긴다" 'A request show "$AQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; o=r[\"options\"]; sys.exit(0 if r[\"kind\"]==\"question\" and r[\"state\"]==\"open\" and r[\"title\"]==\"어느 방식으로 할까요?\" and [x[\"label\"] for x in o]==[\"A 안\",\"B 안\"] and o[0].get(\"recommended\") and o[0][\"desc\"]==\"작게 고친다\" and \"diff A\" in r[\"body\"] and \"여러 개\" in r[\"body\"] and r[\"links\"][\"plan\"]==\"plans/task/20261021-x.md\" else 1)"'
+check "[작업] 팝업 답 경로 그대로 — 고르면 answered, 받으면 ack → delivered" '[ "$(A request answer "$AQ" --by app --choice "A 안" --text "B 도 같이" | field request.state)" = answered ] && [ "$(A request ack "$AQ" | field request.state)" = delivered ]'
+ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
+check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
+
 section "사용법 · 약속"
 node scripts/athena.mjs request open --title x --json > /dev/null 2>&1; check "종류 없으면 사용법 오류(2)" '[ $? -eq 2 ]'
 node scripts/athena.mjs request ack nope --json > /dev/null 2>&1; check "번호 모양이 아니면 사용법 오류(2)" '[ $? -eq 2 ]'

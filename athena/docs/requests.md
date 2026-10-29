@@ -36,6 +36,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 - **질문을 열 때** — 사용자에게 묻는 것과 같은 턴에:
   `bin/athena request open --kind question --title '<무엇을 정해야 하나 한 줄>' --body-file <근거 · 확인한 것 · 추천안> [--plan <계획서>] [--option '<라벨> :: <설명>' … --recommend <라벨>]`
   돌려받은 `request.id` 를 계획서 Blocked 줄에 같이 적는다
+- **고르기 질문은 AskUserQuestion 으로** — 위임 에이전트 세션은 `scripts/hooks/ask-to-request.py`(PreToolUse)가 AskUserQuestion 을 잡아 질문마다 `question` 요청을 열고(계획서 = `ATHENA_PLAN` · 추천 `(Recommended)` 표시 · 설명 포함) 도구는 막는다. 답은 평소처럼 `[요청 <id>] … 답:` 으로 오니 받자마자 `request ack`. 여러 개 고르기(multiSelect)는 단일 선택 + 메모, 선택지 미리보기는 본문 끝, 직접 입력(Other)은 팝업의 메모칸이 맡는다. 아테나 pane 은 대상이 아니다. 요청을 열지 못하면 막지 않고 원래 고르기 창이 뜬다
 - **사용자가 대화로 답하면** — `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
 - **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`
