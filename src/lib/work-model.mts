@@ -124,7 +124,8 @@ export type PlanDetail = {
 }
 
 // 계획서 원문 → { why, decided, progress: { checked, total, now }, validation, results, next, blocked }
-export function planDetail(text: unknown): PlanDetail {
+// templateLines — 코어 현황판이 알려 주는 고치지 않은 템플릿 자리 줄(plan-bind.mjs TEMPLATE_PLACEHOLDER_LINES). 이 줄은 진행 칸으로 세지 않는다
+export function planDetail(text: unknown, templateLines: string[] = []): PlanDetail {
   const source = String(text || '')
   // 왜 — 개요의 "요청 사항:" 줄, 없으면 제목 아래 첫 문단(Checkpoint 전)
   let why = field(source, '요청 사항')
@@ -132,7 +133,7 @@ export function planDetail(text: unknown): PlanDetail {
     const intro = (source.split(/^## /m)[0] ?? '').split('\n').slice(1).map((line) => line.trim()).filter((line) => line && !line.startsWith('>') && !line.startsWith('#'))
     why = plain(intro[0] || '')
   }
-  const progressLines = section(source, 'Progress').map((line) => line.trim()).filter((line) => /^-\s+\[[ xX]\]/.test(line))
+  const progressLines = section(source, 'Progress').map((line) => line.trim()).filter((line) => /^-\s+\[[ xX]\]/.test(line) && !templateLines.includes(line))
   const checked = progressLines.filter((line) => /^-\s+\[[xX]\]/.test(line)).length
   const current = progressLines.find((line) => /^-\s+\[ \]/.test(line))
   const decided = bullets(section(source, 'Decisions')).filter((line) => !isNone(line))

@@ -24,7 +24,8 @@ printf '{ "pane": "p180", "agent": "fe", "plan": "%s" }' "$PLAN" > "$TMP/pane-se
 
 node --input-type=module - "$SRC/scripts/board/plan-bind.mjs" "$TMP/pane-sessions" "$PLAN" <<'EOF'
 const [modPath, sessionsDir, planId] = process.argv.slice(2)
-const { boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
+import { readFileSync } from 'node:fs'
+const { TEMPLATE_PLACEHOLDER_LINES, boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
 const PROTECTED = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
@@ -46,6 +47,16 @@ const onlySub = progressOf('  - [ ] 남은 작업\n  - [x] 끝난 작업')
 check('들여 쓴 칸만 있고 빈 칸이 있음(맨 앞 칸 없음) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(onlySub) && onlySub?.total === 0 && onlySub?.open === 1, JSON.stringify(onlySub))
 check('들여 쓴 칸만 있고 다 채움 → null(지금처럼 남은 단계 없음)', progressOf('  - [x] 끝난 작업') === null)
 check('칸이 하나도 없음 → 남은 단계 없음(지금처럼)', !hasOpenSteps(progressOf('- 구현 끝\n- 검증 끝')) && progressOf('') === null)
+
+// 2026-10-29 — 고치지 않은 템플릿 자리 줄이 남은 단계로 세져 PR 이 다 머지돼도 자동 완료가 안 됐다
+const templateText = readFileSync(modPath.replace(/scripts\/board\/plan-bind\.mjs$/, 'docs/plan-template-light.md'), 'utf8')
+check('템플릿 자리 줄이 docs/plan-template-light.md 에 글자 그대로 있다(템플릿을 바꾸면 TEMPLATE_PLACEHOLDER_LINES 도)', TEMPLATE_PLACEHOLDER_LINES.length === 3 && TEMPLATE_PLACEHOLDER_LINES.every((line) => templateText.split('\n').includes(line)))
+const [placeholderWork, placeholderVerify, placeholderBasis] = TEMPLATE_PLACEHOLDER_LINES
+const untouched = progressOf(`- [x] 담당 레포 브랜치·미커밋 상태 확인\n${placeholderWork}\n${placeholderVerify}\n${placeholderBasis}`)
+check('고치지 않은 자리 줄 3개만 남음 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(untouched) && untouched?.checked === 1 && untouched?.total === 1 && untouched?.open === 0, JSON.stringify(untouched))
+check('자리 줄만 있으면 칸이 없는 것과 같다(null)', progressOf(`${placeholderWork}\n${placeholderVerify}`) === null)
+check('자리 줄 말고 진짜 빈 칸이 있으면 그대로 남은 단계', hasOpenSteps(progressOf(`- [x] 구현\n- [ ] 머지 뒤 앱 화면 확인\n${placeholderWork}`)))
+check('자리 줄을 한 글자라도 고쳤으면 보통 칸(빈 칸이면 남은 단계)', hasOpenSteps(progressOf(`- [x] 구현\n${placeholderWork.replace('(작업)', '로그인 고치기')}`)))
 
 // ── 묶인 pane ── 사고 때 Work ref 는 마지막으로 띄운 p132(닫힘)만 · 일하던 p130 은 다른 브랜치
 const plan = { id: planId, workRefs: '/w/feat-b · 🌿 feat/b · pane p132 (fe)', review: '' }

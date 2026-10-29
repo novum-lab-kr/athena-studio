@@ -62,7 +62,7 @@ import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
-import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -1676,7 +1676,8 @@ const handleRequest = async (request, response) => {
       const planPath = planId ? safePath(planId, 'plans') : null
       if (planPath) plan = { id: planId, text: readFileSync(planPath, 'utf8') }
     }
-    return response.end(JSON.stringify({ id, text, plan }))
+    // templateLines — 고치지 않은 템플릿 자리 줄(앱 [작업] 상세가 진행 칸에서 뺀다 · 규칙은 plan-bind.mjs 한 곳)
+    return response.end(JSON.stringify({ id, text, plan, templateLines: TEMPLATE_PLACEHOLDER_LINES }))
   }
   if (url.pathname === '/api/qa/runs') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
