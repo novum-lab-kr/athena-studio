@@ -28,7 +28,7 @@
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
- *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(🧭 아테나 · <이슈>)을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
+ *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(이름은 '<레포> · <이슈 제목>')을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
  *                      결정 콘솔이 plan(계획서 경로)을 같이 주면 그 계획서의 결정 요청에 답을 적고(answered) 지시 앞에 [요청 <id>] 를 붙인다(docs/requests.md)
@@ -60,6 +60,7 @@ import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText } from '../lib/screen.mjs'
+import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
@@ -1088,8 +1089,9 @@ const openHermesPane = async (issueId, text) => {
   } catch {
     return { error: `새 pane 을 열지 못했어요 (${screenName()} pane split)` }
   }
-  const title = (readIssue(issuePath)?.title ?? basename(issueId, '.md')).slice(0, 30)
-  await screen(['pane', 'rename', pane, `🧭 아테나 · ${title}`])
+  const issue = readIssue(issuePath)
+  const paneName = paneNameOf(issue?.title ?? basename(issueId, '.md'), repoLabelOfValue(config, issue?.repo))
+  if (paneName) await screen(['pane', 'rename', pane, paneName])
   // 지시문은 따옴표·줄바꿈이 섞여 있어 파일로 넘긴다(delegate.sh 와 같은 방식). 끝나면 러너가 지운다
   const stamp = randomBytes(4).toString('hex')
   const promptFile = join(tmpdir(), `hermes-issue-prompt-${stamp}`)

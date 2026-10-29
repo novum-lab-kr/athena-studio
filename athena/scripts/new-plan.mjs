@@ -4,7 +4,7 @@
  *
  *   node scripts/new-plan.mjs --agent <에이전트> --summary "<한 줄 요약>" [--issue issues/…md] [--prompt-file <파일>] [--status in_progress] [--no-pane-name]
  *   → 만든 계획서 경로를 한 줄 출력 (plans/task/YYYYMMDD-<에이전트>-<요약>.md)
- *   아테나 pane 에서 부르면 그 pane 이름을 '🧭 아테나 · <요약>' 으로 바꾼다(에이전트 pane · 화면 밖은 안 함 — lib/screen.mjs nameLeadPane).
+ *   아테나 pane 에서 부르면 그 pane 이름을 '<레포> · <요약 앞 30자>'(레포는 --agent 가 맡은 레포 · 모르면 요약만)로 바꾼다(에이전트 pane · 화면 밖은 안 함 — lib/screen.mjs nameLeadPane).
  *   --no-pane-name : 바꾸지 않는다 — 현황판 서버처럼 부른 pane 이 그 작업을 맡지 않을 때
  *
  * 정식 계획서(md + html 결정 콘솔 — scripts/plan-html.mjs)는 새 기능·여러 레포·API·구조 변경용이다(docs/plan-template.md).
@@ -80,5 +80,5 @@ for (let count = 1; !file; count += 1) {
   }
 }
 // 출력은 경로 한 줄뿐이다(delegate.sh 가 받는다) — 이름 바꾸기는 아무것도 찍지 않는다
-if (!argv.includes('--no-pane-name')) nameLeadPane(summary)
+if (!argv.includes('--no-pane-name')) nameLeadPane(summary, { agents: agent ? [agent] : [] })
 console.log(file.replace(ROOT + '/', ''))

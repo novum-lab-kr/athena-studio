@@ -80,7 +80,7 @@ argument-hint: "<인자 예시>"
   | 바꾸기 | `pane split --target <id\|self\|focused>` · `pane run` · `pane send-text` · `pane send-keys` · `pane rename` · `pane close` · `tab rename`·`tab close` · `workspace create` |
 
 - **브라우저 열기도 화면 계층으로** — `scripts/screen open-url <주소|파일>`(node `openUrl()`·`openUrlSync()`). `open`·`xdg-open` 을 직접 부르지 않는다. studio 면 데몬 op `open-url` → 그 본체에 붙은 앱 창이 주소를 연다(localhost 는 옆 브라우저 · 그 밖 http(s) 는 기본 브라우저 · 결과 `{ok, target:"panel"|"external", via:"studio"}`). none·http(s) 가 아닌 것(파일)·옛 데몬(op 모름)·붙은 앱 창 없음이면 기본 브라우저(`open` → 없으면 `xdg-open` · `via` 가 그 이름)로 떨어진다 — 부르는 쪽은 이것 하나만 부른다
-- **pane 이름** — 에이전트 pane 은 `🤖 <에이전트> · <브랜치>`(`delegate.sh` · `new-branch.sh`), 아테나 pane 은 계획서를 새로 만들 때 `🧭 아테나 · <제목 앞 30자>`(`new-plan.mjs` · 정식 html 을 처음 만드는 `plan-html.mjs` → `screen.mjs` `nameLeadPane()` — `ATHENA_AGENT` 가 있거나 화면 밖이면 안 함 · 실패는 조용히 · 현황판 서버는 `--no-pane-name`)
+- **pane 이름** — 에이전트 pane 은 `🤖 <에이전트> · <브랜치>`(`delegate.sh` · `new-branch.sh`), 아테나 pane 은 계획서를 새로 만들 때 `<레포> · <제목 앞 30자>`(레포는 맡은 계획서에서 — 경량은 `Agent:` 줄, 정식은 작업 배분 표 담당 칸의 에이전트 → 팩 레포 표시 이름(`displayName`) 또는 name, 여러 레포는 첫 레포 `+N`(예 `syung +1`) · 모르면 제목만 · `lib/pane-name.mjs`)(`new-plan.mjs` · 정식 html 을 처음 만드는 `plan-html.mjs` → `screen.mjs` `nameLeadPane()` — `ATHENA_AGENT` 가 있거나 화면 밖이면 안 함 · 실패는 조용히 · 현황판 서버는 `--no-pane-name`)
 - `pane run` 은 단어를 **따옴표 없이 공백으로 이어 붙인 한 줄**을 그 pane 셸에 친다. 따옴표가 필요한 명령은 실행기 파일을 만들어 그 경로 하나만 넘긴다(`delegate.sh` 방식)
 - `--target self` 는 부른 pane(모르면 포커스된 pane), `focused` 는 포커스된 pane. 뒤에서 도는 스크립트는 self 를 쓴다 — 포커스된 pane 은 사용자가 보고 있는 엉뚱한 곳일 수 있다
 - 출력 형식: `--format json`(기본) · `id`(첫 대상의 id 한 줄) · `ids`(한 줄에 하나). id 는 불투명한 문자열 — 쪼개 읽지 않는다(workspace 는 `workspace_id`·`tab get` 으로)

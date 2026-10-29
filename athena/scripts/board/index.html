@@ -1782,7 +1782,7 @@
         if (choice === 'hermes') {
           // 떠 있는 아테나 대화에 섞지 않고 새 아테나 pane 을 열어 처리한다(/api/hermes-new)
           ask(title, text, 'hermes-new', agent, id);
-          document.getElementById('ask-to').innerHTML = `→ 받는 곳 <b>새 아테나 pane</b> (🧭 아테나 · 이슈 제목) — 판단 → 계획서 → prBase 브랜치 → 담당 에이전트까지 이어서 처리해요. 지금 하던 아테나 대화에는 끼어들지 않아요 ${picker('hermes')}`;
+          document.getElementById('ask-to').innerHTML = `→ 받는 곳 <b>새 아테나 pane</b> (이름은 '레포 · 이슈 제목') — 판단 → 계획서 → prBase 브랜치 → 담당 에이전트까지 이어서 처리해요. 지금 하던 아테나 대화에는 끼어들지 않아요 ${picker('hermes')}`;
         } else {
           ask(title, INVESTIGATE(card), 'dispatch', agent, id);
           document.getElementById('ask-to').innerHTML += ` ${picker('investigate')}`;

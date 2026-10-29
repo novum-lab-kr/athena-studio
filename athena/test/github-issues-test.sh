@@ -196,7 +196,7 @@ const screen = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).
 const splits = screen.filter((args) => args[1] === 'pane' && args[2] === 'split')
 const runs = screen.filter((args) => args[1] === 'pane' && args[2] === 'run')
 const renames = screen.filter((args) => args[1] === 'pane' && args[2] === 'rename')
-check('아테나 pane 띄우기 — 현황판 [작업 시작] 과 같은 길(split → rename → run) 2번', splits.length === 2 && runs.length === 2 && renames.length === 2 && renames.every((args) => args[4].startsWith('🧭 아테나 · ')), JSON.stringify(screen.filter((args) => args[2] !== 'list')))
+check('아테나 pane 띄우기 — 현황판 [작업 시작] 과 같은 길(split → rename → run) 2번', splits.length === 2 && runs.length === 2 && renames.length === 2 && renames.every((args) => /^demo · /.test(args[4]) && !args[4].includes('🧭')), JSON.stringify(screen.filter((args) => args[2] !== 'list')))
 let recent = []
 try { recent = JSON.parse(read(join(tmp, 'recent.json'))).issues } catch {}
 check('GET /api/github-issues — 맡긴 것(모니터 줄 재료)', JSON.stringify(recent.map((entry) => [entry.repo, entry.number])) === '[["demo",101],["demo",102]]' && recent.every((entry) => entry.at && entry.title), JSON.stringify(recent))
