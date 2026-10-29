@@ -328,3 +328,17 @@ test('아테나 작업 공간 규칙(화면과 같이 쓰는 athena-workspace.mt
   assert.equal(rule.pickAthenaWorkspace([{ id: 'w3', label: 'athena', cwd: '/other' }], dirs, inFolder), null)
   assert.equal(rule.pickAthenaWorkspace(null, dirs, inFolder), null)
 })
+
+test('화면에 보이는 아테나 작업 공간 이름: 옛 폴더 이름 label 도 athena · 다른 작업 공간과 원본은 그대로(#122 후속)', () => {
+  const dir = '/Users/me/.athena-studio/bodies/new-20261025-184407'
+  const old = { label: 'new-20261025-184407', id: 'w1', cwd: dir }
+  const web = { label: 'web', id: 'w2', cwd: '/Users/me/web' }
+  const shown = core.displayWorkspaces([old, web], dir)
+  assert.deepEqual(shown.map((workspace) => workspace.label), ['athena', 'web'])
+  assert.equal(old.label, 'new-20261025-184407') // 데몬 label 원본은 건드리지 않는다
+  assert.equal(shown[1], web)
+  assert.deepEqual(core.displayWorkspaces(null, dir), [])
+  const rule = require('../src/lib/athena-workspace.mts')
+  assert.equal(rule.displayLabel('new-20261025-184407', true), 'athena')
+  assert.equal(rule.displayLabel('web', false), 'web')
+})

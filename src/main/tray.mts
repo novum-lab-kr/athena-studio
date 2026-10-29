@@ -240,7 +240,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
       if (listed.result && state.result) {
         trayState.panes = await markWaiting(ctx, listed.result.panes, trayState.panes)
         if (ctx !== trayState.ctx) return
-        trayState.workspaces = state.result.workspaces
+        trayState.workspaces = core.displayWorkspaces(state.result.workspaces, ctx.athenaDir as string)
         trayState.focused = state.result.focused
         trayHistory.push({ at: Date.now(), working: trayState.panes.filter((pane) => pane.agent && pane.agent_status === 'working').length })
         while (trayHistory.length && Date.now() - (trayHistory[0]?.at ?? 0) > 30 * 60000) trayHistory.shift()

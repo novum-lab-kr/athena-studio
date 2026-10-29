@@ -5,7 +5,7 @@ import * as StudioSpaceNames from '../lib/space-names.mts'
 import { $, currentTab, el, say, showToast, state } from './core.ts'
 import { isTabPane } from './terminal.ts'
 import { attached, estimateCells, focusPane, runCommand, screen } from './screen.ts'
-import { isAthenaWorkspace, switchTab } from './tabs.ts'
+import { isAthenaWorkspace, switchTab, workspaceName } from './tabs.ts'
 import { PANEL_FILLS, PANEL_ICONS, setSpacesCollapsed } from './side-panels.ts'
 import { StudioUi } from './ui/index.ts'
 import type { SpacePane, SpaceRepo, SpacesActions } from './ui/spaces.tsx'
@@ -121,7 +121,7 @@ async function closeWorkspace(workspace: ScreenWorkspace): Promise<void> {
   const panes = workspacePanes(workspace.id)
   const agents = panes.filter((pane) => paneStatus[pane.id])
   if (agents.length) {
-    const ok = await packDialog({ title: say('spaces.closeWorkspaceTitle', { name: workspace.label }), body: [el('p', 'muted', say('spaces.closeWorkspaceNote', { count: agents.length }))], actions: [{ label: say('spaces.closeWorkspaceYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }] })
+    const ok = await packDialog({ title: say('spaces.closeWorkspaceTitle', { name: workspaceName(workspace) }), body: [el('p', 'muted', say('spaces.closeWorkspaceNote', { count: agents.length }))], actions: [{ label: say('spaces.closeWorkspaceYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }] })
     if (!ok) return
   }
   const result = await studio.workspaceClose(workspace.id)
@@ -220,7 +220,7 @@ export function renderSides(): void {
       const athena = isAthenaWorkspace(workspace)
       // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
       const repo = athena ? null : packRepoOf(workspace.label)
-      return { id: workspace.id, label: workspace.label, cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
+      return { id: workspace.id, label: workspace.label, name: workspaceName(workspace), cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
     }),
     idleRepos: packRepos.filter((repo) => !labels.has(repo.name)),
     paneStatus,

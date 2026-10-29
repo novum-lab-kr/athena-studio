@@ -6,7 +6,7 @@ import { newTab, screen, setScreen, starting } from './screen.ts'
 import { focusCurrentTerminal, layoutPanes } from './pane-layout.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { renderSides } from './space-actions.ts'
-import { pickAthenaWorkspace } from '../lib/athena-workspace.mts'
+import { displayLabel, pickAthenaWorkspace } from '../lib/athena-workspace.mts'
 
 export function activeWorkspace(): ScreenWorkspace | null {
   return screen.workspaces.find((workspace) => workspace.id === screen.activeWorkspace) || null
@@ -25,6 +25,11 @@ export function isAthenaWorkspace(workspace: ScreenWorkspace | null | undefined)
   const wanted = dirs.filter(Boolean).map(trimSlash)
   const athena = pickAthenaWorkspace(screen.workspaces, dirs, (cwd) => wanted.includes(trimSlash(cwd)))
   return athena ? athena.id === workspace.id : workspace.label === state.athenaWorkspace
+}
+
+// 화면에 보이는 작업 공간 이름 — 아테나 작업 공간은 옛 이름이어도 athena(표시 전용 · 레포 매칭은 workspace.label 그대로)
+export function workspaceName(workspace: ScreenWorkspace): string {
+  return displayLabel(workspace.label, isAthenaWorkspace(workspace))
 }
 
 export function activeTab(): ScreenTab | null {

@@ -137,3 +137,11 @@ test('사용량 창 이름: 현황판이 준 창 길이(분)로 지금 언어에
   assert.deepEqual(tray.usageItems(usage, 0, englishSay).map((item) => item.window), ['5h', 'Weekly', '2d', '3h', '90m', '주간'])
   assert.deepEqual(tray.usageItems(usage, 0).map((item) => item.window), ['5시간', '주간', '2일', '3시간', '90분', '주간'])
 })
+
+test('메뉴 막대 요약: 아테나 작업 공간은 옛 폴더 이름이어도 athena 로 보인다', () => {
+  const core = require('../src/lib/core.mts')
+  const dir = '/Users/me/.athena-studio/bodies/new-20261025-184407'
+  const workspaces = core.displayWorkspaces([{ id: 'w1', label: 'new-20261025-184407', cwd: dir }], dir)
+  const summary = tray.summarize({ panes: [{ id: 'p1', agent: 'claude', agent_status: 'working', workspace_id: 'w1', label: 'athena' }], workspaces })
+  assert.equal(summary.agents[0].workspace, 'athena')
+})
