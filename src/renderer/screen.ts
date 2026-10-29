@@ -91,7 +91,11 @@ async function splitPane(paneId: string, direction: 'right' | 'down'): Promise<v
 // pane 우클릭 메뉴(main) — 대상은 포커스된 pane 이 아니라 우클릭한 그 pane
 export async function paneMenu(paneId: string, event: MouseEvent): Promise<unknown> {
   if (!state || !state.valid || !attached) return
-  const action = await studio.paneContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) })
+  // 맨 위 제목 — 데몬 pane 번호 · 머리줄과 같은 이름(pane-layout.ts) · 이름이 없으면 번호만
+  const info = screen.panes.find((pane) => pane.id === paneId)
+  const name = info?.label || info?.title || ''
+  const title = name && name !== paneId ? `${paneId} · ${name}` : paneId
+  const action = await studio.paneContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) }, title)
   if (action === 'split-right' || action === 'split-down') return splitPane(paneId, action === 'split-down' ? 'down' : 'right')
   if (action === 'close-pane') return studio.paneClose(paneId)
 }
