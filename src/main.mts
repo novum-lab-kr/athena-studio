@@ -84,6 +84,7 @@ type MainCalls = {
   callStart(name: string, options: { branch: string; reuse: boolean }): Promise<unknown>
   packRestore(options: { discard: boolean }): Promise<unknown>
   openAthenaAgent(size: Record<string, unknown>, options: { keepView: boolean }): Promise<unknown>
+  newTab(size: Size): Promise<unknown>
   closeTab(tabId: string): Promise<unknown>
   newWorkspace(size: Size): Promise<unknown>
   deletePack(id: string, options: { withWorktrees: boolean }): Promise<unknown>
@@ -817,7 +818,7 @@ handle('pack:restore-disarm', () => (restoreArmedFor = null))
 handle('pack:restore-now', (ctx) => ctx.restoreNow())
 handle('pack:restore-discard', (ctx) => ctx.packRestore({ discard: true }))
 handle('agent:open', (ctx, size: Loose, options: Loose) => ctx.openAthenaAgent(cellSize(size), { keepView: Boolean(options && options.keepView) }))
-handle('tab:new', (ctx, size: Loose) => ctx.daemonCall('tab new', { defaultCwd: ctx.athenaDir, ...cellSize(size) }))
+handle('tab:new', (ctx, size: Loose) => ctx.newTab(cellSize(size)))
 handle('tab:select', (ctx, tabId: unknown) => ctx.daemonCall('tab select', { tab: String(tabId) }))
 handle('tab:close', (ctx, tabId: unknown) => ctx.closeTab(String(tabId)))
 // 탭 이름 바꾸기 — 비우면 데몬이 이름을 지워 화면이 기본 이름(탭 N)을 쓴다
