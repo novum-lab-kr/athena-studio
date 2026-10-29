@@ -8,14 +8,14 @@
 //   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]
 //                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려(1분 넘게 살아 있으면 멈춤) → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
 //                                   → start 와 같이 켠다. install · 화면 빌드가 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed · build-failed)
-//                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패는 맥 알림으로(--lang 언어 · src/lib/update-notice.js)
+//                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패는 맥 알림으로(--lang 언어 · src/lib/update-notice.mts)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { execFileSync, spawn } = require('child_process')
 const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
-const updateNotice = require('../src/lib/update-notice')
+const updateNotice = require('../src/lib/update-notice.mts')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -237,7 +237,7 @@ async function start(args, { fromUpdate = false } = {}) {
   for (const name of ['SIGINT', 'SIGTERM', 'SIGUSR2']) process.on(name, () => child && child.kill(name))
 }
 
-// 맥 알림 하나 — 앱이 꺼진 사이라 화면 · 트레이가 없다(src/lib/update-notice.js). 맥이 아니거나 못 띄워도 업데이트는 계속한다
+// 맥 알림 하나 — 앱이 꺼진 사이라 화면 · 트레이가 없다(src/lib/update-notice.mts). 맥이 아니거나 못 띄워도 업데이트는 계속한다
 function createNotice(language) {
   const say = updateNotice.translator(updateNotice.pickLanguage(language, Intl.DateTimeFormat().resolvedOptions().locale))
   return (event) => {

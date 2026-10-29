@@ -1,7 +1,7 @@
 // 개발 앱 ⚙ 업데이트 — 앱이 꺼진 사이 도우미(scripts/dev-app.js restart)가 띄우는 맥 알림의 순수 로직
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const notice = require('../src/lib/update-notice')
+const notice = require('../src/lib/update-notice.mts')
 
 test('parseWaitLine: heavy.sh 잠금 대기 줄 → 무엇이 도는지 짧은 이름', () => {
   assert.deepEqual(notice.parseWaitLine('⏳ 대기 0초 — 다른 무거운 명령이 도는 중: athena-studio-fe · /Users/x/athena/scripts/verify/syung.sh'), { kind: 'lock', what: 'syung.sh' })
