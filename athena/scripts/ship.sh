@@ -131,16 +131,24 @@ auto_review_now() {   # <PR 번호>
 # 미리보기 · --yes · --auto-push 가 부른다(main 직접 레포는 PR 이 없어 부르지 않는다). 커밋된 것(base..HEAD)만 본다 — PR 에 올라가는 것.
 # 결과는 계획서 Validation 의 "- red-check:" 줄(레포 · 브랜치마다 한 줄 — PR 본문 "검증" 절 · reviewer · PR 자동 리뷰가 계획서로 본다)에 남기고,
 # 사람이 봐야 하는 결과(non-discriminating · unsupported · error)면 PR 본문 "확인 필요" 에 한 줄(red_check_body).
-# 같은 HEAD 면 미리보기 결과를 다시 쓴다(<git dir>/hermes-red-check — --yes 때 테스트를 또 돌리지 않게. merge-base 는 HEAD 로 정해진다)
+# 같은 열쇠면 미리보기 결과를 다시 쓴다(<git dir>/hermes-red-check — --yes 때 테스트를 또 돌리지 않게).
+# 열쇠 = HEAD + merge-base(origin/<prBase>) + redCheck 칸 내용 — 셋 중 하나라도 바뀌면 다시 돈다. error 는 기록하지 않는다(원인을 고치면 다시 돈다)
 RED_RESULT=""; RED_TEXT=""
 red_check_now() {
-  local cache json parsed
-  # 팩에 redCheck 칸이 없는 레포는 줄을 서지 않고 건너뛴다 — 계획서 · 본문에도 남기지 않는다
-  if [ "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, repo_entry; print(1 if repo_entry(load(sys.argv[1]), sys.argv[2]).get("redCheck") is not None else 0)' "$ATHENA_DIR" "$REPO" 2>/dev/null)" != 1 ]; then
+  local cache json parsed spec pr_base merge_base key
+  # 팩의 이 레포 prBase · redCheck 칸(JSON · 정렬) — 칸이 없으면 줄을 서지 않고 건너뛴다(계획서 · 본문에도 남기지 않는다)
+  spec="$(python3 -c 'import json, sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, repo_entry
+entry = repo_entry(load(sys.argv[1]), sys.argv[2])
+base = entry.get("prBase") or next((app.get("prBase") for app in (entry.get("apps") or {}).values() if app.get("prBase")), "")
+print(base); print(json.dumps(entry["redCheck"], sort_keys=True, ensure_ascii=False) if entry.get("redCheck") is not None else "")' "$ATHENA_DIR" "$REPO" 2>/dev/null)"
+  pr_base="$(sed -n 1p <<<"$spec")"; spec="$(sed -n 2p <<<"$spec")"
+  if [ -z "$spec" ]; then
     RED_RESULT=skip; RED_TEXT="⏭ 건너뜀(규칙) — 팩 $REPO 에 redCheck 칸 없음"; return 0
   fi
+  merge_base="$(git -C "$TOP" merge-base "origin/$pr_base" HEAD 2>/dev/null)"
+  key="$HEAD_FULL ${merge_base:-?} $(printf '%s' "$spec" | git hash-object --stdin)"
   cache="$(git -C "$TOP" rev-parse --absolute-git-dir)/hermes-red-check"
-  if [ -f "$cache" ] && [ "$(sed -n 1p "$cache")" = "$HEAD_FULL" ]; then
+  if [ -n "$merge_base" ] && [ -f "$cache" ] && [ "$(sed -n 1p "$cache")" = "$key" ]; then
     json="$(sed -n 2p "$cache")"
   else
     echo "red-check 이번 테스트를 base 에서 돌려 본다(구현 없이도 통과하는지 · heavy.sh 줄 서기)…"
@@ -150,7 +158,7 @@ red_check_now() {
   parsed="$(node -e 'try { const data = JSON.parse(process.argv[1]); if (!data.result || !data.text) throw 0; process.stdout.write(`${data.result}\n${data.text}`) } catch { process.exit(1) }' "$json" 2>/dev/null)" \
     || { json=""; parsed="error"$'\n'"⚠️ error — red-check 를 돌리지 못했다(scripts/verify/red-check.sh)"; }
   RED_RESULT="$(sed -n 1p <<<"$parsed")"; RED_TEXT="$(sed -n 2p <<<"$parsed")"
-  [ -n "$json" ] && printf '%s\n%s\n' "$HEAD_FULL" "$json" > "$cache"
+  if [ -n "$json" ] && [ -n "$merge_base" ] && [ "$RED_RESULT" != error ]; then printf '%s\n%s\n' "$key" "$json" > "$cache"; else rm -f "$cache"; fi
   node --input-type=module -e '
     const [lib, update, plan, repo, branch, sha, text, stamp] = process.argv.slice(1)
     const { withPlanLine } = await import(lib)
@@ -160,15 +168,19 @@ red_check_now() {
     || echo "⚠️ red-check 결과를 계획서 Validation 에 적지 못했다 — 보고에 결과 줄을 그대로 적는다" >&2
 }
 red_check_attention() { case "$RED_RESULT" in non-discriminating|unsupported|error) return 0 ;; *) return 1 ;; esac; }
-# 본문 파일 <입력> 에 red-check 경고 줄을 넣어 <출력> 에 쓴다(사람이 봐야 하는 결과일 때만 · 이미 red-check 줄이 있으면 그대로)
+# 본문 파일 <입력> 의 "확인 필요" 를 지금 결과에 맞춰 <출력> 에 쓴다 — 사람이 봐야 하는 결과면 red-check 경고 줄을 넣거나(전에 넣은 줄은 바꾼다),
+# 아니면 전에 넣은 red-check 경고 줄을 지운다. 칸 없는 레포(건너뜀)는 손대지 않는다. 바뀐 게 없으면 1(부르는 쪽이 원래 파일을 그대로 쓴다)
 red_check_body() {
-  red_check_attention || { [ "$1" = "$2" ] || cp "$1" "$2"; return 0; }
+  [ "$RED_RESULT" != skip ] || return 1
   node --input-type=module -e '
-    const [lib, input, output, text] = process.argv.slice(1)
+    const [lib, input, output, text, attention] = process.argv.slice(1)
     const { readFileSync, writeFileSync } = await import("node:fs")
-    const { withBodyNote, bodyNote } = await import(lib)
-    writeFileSync(output, withBodyNote(readFileSync(input, "utf8"), bodyNote(text)))
-  ' "$ATHENA_DIR/scripts/lib/red-check.mjs" "$1" "$2" "$RED_TEXT"
+    const { withBodyNote, withoutBodyNote, bodyNote } = await import(lib)
+    const before = readFileSync(input, "utf8")
+    const after = attention === "1" ? withBodyNote(before, bodyNote(text)) : withoutBodyNote(before)
+    if (after === before) process.exit(1)
+    writeFileSync(output, after)
+  ' "$ATHENA_DIR/scripts/lib/red-check.mjs" "$1" "$2" "$RED_TEXT" "$(red_check_attention && echo 1 || echo 0)"
 }
 [ "$TOP" != "$MAIN" ] || [ -n "$DIRECT" ] || fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 작업한 브랜치만 올린다"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다"
@@ -362,7 +374,7 @@ if data.get("mergeable") == "CONFLICTING" and data.get("baseRefName"): print(dat
   # red-check — 고친 커밋으로 다시(같은 HEAD 면 지난 결과) · 계획서 줄을 자동 리뷰가 본다. 본문을 바꿀 때만 본문에도(경고만)
   red_check_now
   echo "red-check $RED_TEXT"
-  if [ -n "$BODY_FILE" ] && red_check_attention; then
+  if [ -n "$BODY_FILE" ]; then
     RED_BODY="$(git -C "$TOP" rev-parse --absolute-git-dir)/hermes-pr-body.auto.md"
     red_check_body "$BODY_FILE" "$RED_BODY" && check_body "$RED_BODY" && BODY_FILE="$RED_BODY"
   fi
@@ -508,7 +520,7 @@ body = f"""## 작업 내용
 """
 out.write_text(body, encoding='utf-8')
 PYEOF
-[ $YES = 1 ] || red_check_body "$DRAFT" "$DRAFT" || echo "⚠️ red-check 경고 줄을 본문 초안 \"확인 필요\" 에 넣지 못했다 — 손으로 적는다" >&2
+[ $YES = 1 ] || red_check_body "$DRAFT" "$DRAFT" || true
 
 # ── 5. 미리보기 ──────────────────────────────────────────────────────────
 if [ $YES = 0 ]; then
@@ -549,10 +561,8 @@ BODY="${BODY_FILE:-$DRAFT}"
 if [ -z "$BODY_FILE" ] && [ "$(cat "$DRAFT.head" 2>/dev/null)" != "$HEAD_FULL" ]; then
   fail "미리보기 뒤에 HEAD 가 바뀌었다 — 초안이 지금 커밋과 맞지 않는다. 미리보기부터 다시"
 fi
-# red-check 경고는 에이전트가 정리한 본문(--body-file)에도 빠지지 않게 — 그 파일은 두고 사본에 넣는다
-if red_check_attention; then
-  red_check_body "$BODY" "$DRAFT.final" && BODY="$DRAFT.final" || echo "⚠️ red-check 경고 줄을 본문 \"확인 필요\" 에 넣지 못했다 — PR 을 올린 뒤 본문에 손으로 적는다" >&2
-fi
+# red-check 경고는 에이전트가 정리한 본문(--body-file)에도 빠지지 않게(지난 경고 줄은 지금 결과로) — 그 파일은 두고 사본에
+red_check_body "$BODY" "$DRAFT.final" && BODY="$DRAFT.final"
 check_body "$BODY"
 for base in "${BASES[@]}"; do
   git -C "$TOP" ls-remote --exit-code --heads origin "$base" >/dev/null 2>&1 || fail "원격에 base 브랜치가 없다: $base"

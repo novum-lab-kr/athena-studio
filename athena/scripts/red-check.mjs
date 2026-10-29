@@ -7,14 +7,16 @@
 //   --dir    검사할 작업 트리(레포 맨 위 · 워크트리)
 //   --repo   팩 레포 이름 — 없으면 --dir 의 메인 체크아웃이 가리키는 repos/<레포> 링크로 찾는다
 //   --base   기준 ref — 없으면 origin/<팩 prBase>. base 커밋 = merge-base <기준 ref> HEAD (fetch 하지 않는다 — ship.sh 가 먼저 한다)
-//   --committed  바뀐 파일을 base..HEAD(커밋된 것)만 — ship.sh 가 PR 에 올라가는 것만 보려고(미추적 파일은 PR 에 안 들어간다)
+//   --committed  바뀐 파일 · 테스트 내용 · 인라인 테스트 판별을 모두 HEAD 트리에서(작업 트리의 미커밋 수정 · 삭제는 보지 않는다)
+//                — ship.sh 가 PR 에 올라가는 것만 보려고
 //   --json   { result, text, row, seconds, base, files } 한 줄(ship.sh 가 읽는다). 없으면 검증 표와 같은 모양 한 줄
 //   --spec   팩 redCheck 칸 대신 쓸 값(시험용 — test/red-check-test.sh)
 // 바뀐 파일 = base..작업 트리(커밋 + 미커밋 + 미추적 · 무시 제외) · --committed 면 base..HEAD
+// 테스트 경로가 심볼릭 링크를 거치면(원본 · base 임시 워크트리 어느 쪽이든) 복사하지 않고 unsupported — 링크를 따라 구현 · 바깥 파일을 덮지 않게
 // 임시 워크트리 = <워크트리 자리>/.red-check/<레포>-<임의> (ATHENA_WORKTREE_ROOT → 팩 데이터 worktrees → <athena>/.worktrees — new-branch.sh 와 같은 자리) · 끝나면(실패 · 끊김도) 지운다
 // 자세한 진행(파일마다 결과 · 실패 로그 끝)은 stderr. exit 0 = ok · no-tests · test-only · skip / 1 = non-discriminating · unsupported · error / 2 = 사용법
 import { spawn, spawnSync } from 'node:child_process'
-import { copyFileSync, existsSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
 import { randomBytes } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import { ATHENA_ROOT, loadConfig, paths } from './lib/config.mjs'
@@ -95,13 +97,55 @@ const changed = (args.committed
   ? git(top, ['diff', '--name-only', '--no-renames', base, 'HEAD']).out.split('\n')
   : [...git(top, ['diff', '--name-only', '--no-renames', base]).out.split('\n'), ...git(top, ['ls-files', '--others', '--exclude-standard']).out.split('\n')]
 ).filter(Boolean)
-const { groups, tests, impl } = splitChanged(changed, spec, (path) => existsSync(join(top, path)))
+/** @typedef {{ kind: 'file', data: Buffer, mode: number } | { kind: 'link' } | { kind: 'missing' }} Source */
+/** @type {Map<string, Source>} */
+const sources = new Map()
+/**
+ * 파일 원본 — --committed 면 HEAD 트리, 아니면 작업 트리. 경로가 심볼릭 링크(작업 트리는 경로 중간 칸 포함)면 link
+ * @param {string} path
+ * @returns {Source}
+ */
+const sourceOf = (path) => {
+  const known = sources.get(path)
+  if (known) return known
+  /** @type {Source} */
+  let found = { kind: 'missing' }
+  if (args.committed) {
+    // "<mode> <type> <sha>\t<경로>" — 120000 = 심볼릭 링크 · 그 밖(서브모듈 등)은 파일이 아니다
+    const mode = git(top, ['ls-tree', 'HEAD', '--', path]).out.split(/\s/)[0] ?? ''
+    if (mode === '120000') found = { kind: 'link' }
+    else if (mode === '100644' || mode === '100755') {
+      const blob = spawnSync('git', ['-C', top, 'cat-file', 'blob', `HEAD:${path}`])
+      if (blob.status === 0) found = { kind: 'file', data: blob.stdout, mode: mode === '100755' ? 0o755 : 0o644 }
+    }
+  } else {
+    let current = top
+    let linked = false
+    for (const part of path.split('/')) {
+      current = join(current, part)
+      try { if (lstatSync(current).isSymbolicLink()) { linked = true; break } } catch { current = ''; break }
+    }
+    if (linked) found = { kind: 'link' }
+    else if (current) {
+      try {
+        const stat = statSync(current)
+        if (stat.isFile()) found = { kind: 'file', data: readFileSync(current), mode: stat.mode & 0o777 }
+      } catch { /* 없음 */ }
+    }
+  }
+  sources.set(path, found)
+  return found
+}
+const { groups, tests, impl } = splitChanged(changed, spec, (path) => sourceOf(path).kind !== 'missing')
 
 const inline = impl.filter((path) => {
-  if (!/\.(py|rs)$/.test(path) || !existsSync(join(top, path))) return false
-  try { return isInlineTest(path, readFileSync(join(top, path), 'utf8')) } catch { return false }
+  if (!/\.(py|rs)$/.test(path)) return false
+  const source = sourceOf(path)
+  return source.kind === 'file' && isInlineTest(path, source.data.toString('utf8'))
 })
 if (inline.length) finish({ result: 'unsupported', files: inline, base })
+const linkedTests = tests.filter((path) => sourceOf(path).kind === 'link')
+if (linkedTests.length) finish({ result: 'unsupported', detail: '테스트 경로가 심볼릭 링크', files: linkedTests, base })
 if (!tests.length) finish({ result: 'no-tests', impl: impl.length, base })
 if (!impl.length) finish({ result: 'test-only', files: tests, base })
 
@@ -116,16 +160,45 @@ const cleanup = () => {
   rmSync(scratch, { recursive: true, force: true })
   git(top, ['worktree', 'prune'])
 }
-for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) process.on(signal, () => { cleanup(); process.exit(130) })
+// 돌고 있는 테스트 프로세스 묶음(detached — 우리가 끄지 않으면 부모가 끝나도 남는다)
+let runningGroup = 0
+const stopRunning = () => {
+  if (!runningGroup) return
+  try { process.kill(-runningGroup, 'SIGKILL') } catch { /* 이미 끝남 */ }
+  runningGroup = 0
+}
+// 끊기면(heavy.sh 감시 · Ctrl+C) 테스트 묶음을 끄고 임시 워크트리를 지운 뒤 끝낸다 — 잠금이 풀린 뒤 테스트가 남아 다른 일과 겹치지 않게
+for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM', 'SIGHUP'])) process.on(signal, () => { stopRunning(); cleanup(); process.exit(130) })
 process.on('exit', cleanup)
 
 mkdirSync(scratchRoot, { recursive: true })
 cleaned = false
 const added = git(top, ['worktree', 'add', '--detach', '--quiet', scratch, base])
 if (!added.ok) finish({ result: 'error', detail: `임시 워크트리를 만들지 못했다 — ${added.err.split('\n')[0] ?? ''}`, base })
+// base 쪽 경로가 심볼릭 링크를 거치면 쓰지 않는다(링크를 따라 구현 · 임시 워크트리 밖을 덮는다) — 하나라도 있으면 unsupported
+/** @param {string} path */
+const linkedInScratch = (path) => {
+  let current = scratch
+  for (const part of path.split('/')) {
+    current = join(current, part)
+    try { if (lstatSync(current).isSymbolicLink()) return true } catch { return false }
+  }
+  return false
+}
+const linkedBase = tests.filter(linkedInScratch)
+if (linkedBase.length) finish({ result: 'unsupported', detail: 'base 에서 테스트 경로가 심볼릭 링크', files: linkedBase, base })
 for (const file of tests) {
-  mkdirSync(dirname(join(scratch, file)), { recursive: true })
-  copyFileSync(join(top, file), join(scratch, file))
+  const source = sourceOf(file)
+  if (source.kind !== 'file') continue
+  const target = join(scratch, file)
+  try {
+    mkdirSync(dirname(target), { recursive: true })
+    rmSync(target, { force: true })
+    // wx = 새로 만들 때만(O_EXCL) — 그 사이 링크가 생겨도 따라가지 않는다
+    writeFileSync(target, source.data, { flag: 'wx', mode: source.mode })
+  } catch (error) {
+    finish({ result: 'error', detail: `테스트 파일을 임시 워크트리에 쓰지 못했다(${file}) — ${error instanceof Error ? error.message : String(error)}`, base })
+  }
 }
 // 의존성 — 레포 맨 위와 테스트 파일이 든 폴더들(모노레포 앱 · 하위 패키지)의 node_modules · .venv 를 지금 트리 것으로 링크
 const depRoots = new Set([''])
@@ -150,6 +223,7 @@ for (const folder of depRoots) {
  */
 const runOne = (command) => new Promise((done) => {
   const child = spawn('sh', ['-c', command], { cwd: scratch, env: { ...process.env, CI: '1' }, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+  runningGroup = child.pid ?? 0
   let output = ''
   /** @param {Buffer} chunk */
   const take = (chunk) => { output = (output + chunk.toString('utf8')).slice(-200_000) }
@@ -160,8 +234,8 @@ const runOne = (command) => new Promise((done) => {
     timedOut = true
     try { process.kill(-(child.pid ?? 0), 'SIGKILL') } catch { child.kill('SIGKILL') }
   }, TIMEOUT_SECONDS * 1000)
-  child.on('error', (error) => { clearTimeout(timer); done({ code: 127, timedOut, output: `${output}\n${error.message}` }) })
-  child.on('close', (code) => { clearTimeout(timer); done({ code, timedOut, output }) })
+  child.on('error', (error) => { clearTimeout(timer); runningGroup = 0; done({ code: 127, timedOut, output: `${output}\n${error.message}` }) })
+  child.on('close', (code) => { clearTimeout(timer); runningGroup = 0; done({ code, timedOut, output }) })
 })
 
 /** @type {{ file: string, outcome: 'fail' | 'pass' | 'error', kind?: string, reason?: string }[]} */

@@ -11,7 +11,7 @@
 //   non-discriminating  base 에서도 통과 — 그 테스트가 이번 변경을 검사하지 않는다
 //   no-tests            바뀐 테스트 파일이 없다
 //   test-only           구현은 그대로이고 테스트만 바뀌었다 — 돌리지 않는다(테스트만 고친 PR 은 정상)
-//   unsupported         테스트와 구현이 한 파일(doctest · Rust #[cfg(test)]) — 나눌 수 없어 사람이 리뷰
+//   unsupported         테스트와 구현이 한 파일(doctest · Rust #[cfg(test)]) · 테스트 경로가 심볼릭 링크 — 나눌 수 없거나 안전하게 복사할 수 없어 사람이 리뷰
 //   error               설정이 틀림 · 기준 ref 없음 · 명령이 없음 · 시간 넘김 — 통과로 치지 않는다
 //   skip                팩에 redCheck 칸이 없는 레포
 // D1(경고만) — 어느 결과도 PR 을 막지 않는다. ATTENTION 결과면 PR 본문 "확인 필요" 에 적는다
@@ -137,7 +137,7 @@ export const resultText = (report) => {
     case 'test-only':
       return `${icon} test-only — 구현은 그대로이고 테스트만 바뀜(${files.length}개) — 돌리지 않음`
     case 'unsupported':
-      return `${icon} unsupported — 테스트와 구현이 한 파일: ${listOf(files)} — 사람이 리뷰`
+      return `${icon} unsupported — ${report.detail ?? '테스트와 구현이 한 파일'}: ${listOf(files)} — 사람이 리뷰`
     case 'skip':
       return `${icon} 건너뜀(규칙) — ${report.detail ?? '팩에 redCheck 칸 없음'}`
     default:
@@ -189,8 +189,10 @@ export const withPlanLine = (planText, entry) => {
   return lines.join('\n')
 }
 
+// bodyNote 가 만든 줄 — "- red-check <결과> …"(설명 글에 red-check 낱말이 나오는 것과 가른다)
+const BODY_NOTE_RE = new RegExp(`^- red-check (${RESULTS.join('|')})(\\s|\\(|$)`)
 /**
- * PR 본문 "## 확인 필요" 절에 red-check 경고 줄을 넣는다(이미 red-check 줄이 있으면 그대로). 절 내용이 "- 없음" 하나면 바꾼다
+ * PR 본문 "## 확인 필요" 절에 red-check 경고 줄을 넣는다. 전에 넣은 red-check 줄이 있으면 지금 경고로 바꾸고, 절 내용이 "- 없음" 하나면 그 줄을 바꾼다
  * @param {string} body
  * @param {string} note  한 줄(- 로 시작)
  */
@@ -201,7 +203,8 @@ export const withBodyNote = (body, note) => {
   let end = head + 1
   while (end < lines.length && !/^#{1,2} |^---\s*$/.test(lines[end] ?? '')) end += 1
   const section = lines.slice(head + 1, end)
-  if (section.some((row) => row.includes('red-check'))) return String(body)
+  const previous = section.findIndex((row) => BODY_NOTE_RE.test(row))
+  if (previous >= 0) { lines[head + 1 + previous] = note; return lines.join('\n') }
   const filled = section.filter((row) => row.trim())
   if (filled.length === 1 && /^- 없음\s*$/.test(filled[0] ?? '')) {
     const index = head + 1 + section.findIndex((row) => row.trim())
@@ -210,6 +213,22 @@ export const withBodyNote = (body, note) => {
   }
   lines.splice(head + 1, 0, note)
   return lines.join('\n')
+}
+
+/**
+ * PR 본문 "## 확인 필요" 절에서 전에 넣은 red-check 경고 줄을 지운다(지금 결과가 경고가 아닐 때). 절이 비면 "- 없음"
+ * @param {string} body
+ */
+export const withoutBodyNote = (body) => {
+  const lines = String(body).split('\n')
+  const head = lines.findIndex((row) => row === '## 확인 필요')
+  if (head < 0) return String(body)
+  let end = head + 1
+  while (end < lines.length && !/^#{1,2} |^---\s*$/.test(lines[end] ?? '')) end += 1
+  const kept = lines.slice(head + 1, end).filter((row) => !BODY_NOTE_RE.test(row))
+  if (kept.length === end - head - 1) return String(body)
+  const filled = kept.some((row) => row.trim()) ? kept : ['- 없음', ...kept]
+  return [...lines.slice(0, head + 1), ...filled, ...lines.slice(end)].join('\n')
 }
 
 /** 결과 칸 글 → PR 본문 "확인 필요" 줄 @param {string} text */

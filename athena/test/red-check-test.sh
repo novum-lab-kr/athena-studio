@@ -99,6 +99,55 @@ check "error — 기준 ref 가 없다" '[ "$(json_field result <<<"$OUT")" = er
 OUT="$(red --spec null)"; CODE=$?
 check "건너뜀 — redCheck 칸 없음 · 표 한 줄 · exit 0" 'grep -qE "^\| \`red-check\` \| ⏭ 건너뜀\(규칙\) — 팩 fake 에 redCheck 칸 없음 \| [0-9]+s \|$" <<<"$OUT" && [ $CODE = 0 ]' "$OUT"
 
+echo "▶ --committed — HEAD 트리에서 읽는다(미커밋 수정 · 삭제는 보지 않음)"
+case_branch committed-weak
+printf '// 주석만\nexport const add = (left, right) => left - right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { mul } from '../lib/math.mjs'\ntest('mul one', () => assert.equal(mul(1, 3), 3))\n" > test/mul.test.mjs
+git add -A && git commit -qm weak
+# 작업 트리에서만 테스트를 단정이 실패하는 것으로 바꾼다 — PR(HEAD)에는 약한 테스트
+printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { add } from '../lib/math.mjs'\ntest('add', () => assert.equal(add(1, 2), 3))\n" > test/mul.test.mjs
+OUT="$(red --spec "$NODE_SPEC" --json --committed)"
+check "--committed — 미커밋 수정이 아니라 커밋된 테스트 내용을 돌린다(non-discriminating)" '[ "$(json_field result <<<"$OUT")" = non-discriminating ]' "$OUT · $(cat "$TMP/stderr")"
+OUT="$(red --spec "$NODE_SPEC" --json)"
+check "(--committed 없이는 작업 트리 내용 — ok)" '[ "$(json_field result <<<"$OUT")" = ok ]' "$OUT"
+rm test/mul.test.mjs
+OUT="$(red --spec "$NODE_SPEC" --json --committed)"
+check "--committed — 작업 트리에서 지운 커밋된 테스트도 돌린다" '[ "$(json_field result <<<"$OUT")" = non-discriminating ] && grep -q "test/mul.test.mjs" <<<"$OUT"' "$OUT"
+printf 'def twice(value):\n    """\n    >>> twice(2)\n    4\n    """\n    return value * 2\n' > lib/twice.py
+OUT="$(red --spec "$NODE_SPEC" --json --committed)"
+check "--committed — 커밋 안 된 doctest 구현은 인라인 판별에 넣지 않는다" '[ "$(json_field result <<<"$OUT")" = non-discriminating ]' "$OUT"
+
+echo "▶ 심볼릭 링크 — 따라가 덮어쓰지 않고 unsupported"
+# base 에 테스트 자리가 구현을 가리키는 링크 — 이번 브랜치가 그 자리를 진짜 테스트 파일로 바꿨다
+git checkout -q -f main && git clean -qfdx && git checkout -q -b link-base
+ln -s ../lib/math.mjs test/linked.test.mjs && git add -A && git commit -qm link && git push -q origin HEAD:link-base-main 2>/dev/null
+git checkout -q -b link-replace
+rm test/linked.test.mjs
+printf "import { test } from 'node:test'\ntest('x', () => {})\n" > test/linked.test.mjs
+printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+git add -A && git commit -qm replace
+OUT="$(node "$SRC/scripts/red-check.mjs" --dir "$TMP/repo" --repo fake --base origin/link-base-main --spec "$NODE_SPEC" --json 2>"$TMP/stderr")"; CODE=$?
+check "base 쪽 테스트 경로가 링크 → unsupported · exit 1" '[ "$(json_field result <<<"$OUT")" = unsupported ] && grep -q "base 에서 테스트 경로가 심볼릭 링크" <<<"$OUT" && [ $CODE = 1 ]' "$OUT · $(cat "$TMP/stderr")"
+check "(링크가 가리키던 구현 · 레포 파일은 그대로)" 'grep -q "left + right" lib/math.mjs && [ "$(git worktree list | wc -l | tr -d " ")" = 1 ]' "$(cat lib/math.mjs; git worktree list)"
+case_branch link-source
+mkdir -p "$TMP/outside" && printf "import { test } from 'node:test'\ntest('x', () => {})\n" > "$TMP/outside/evil.test.mjs"
+ln -s "$TMP/outside/evil.test.mjs" test/evil.test.mjs
+printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+OUT="$(red --spec "$NODE_SPEC" --json)"
+check "원본 테스트가 링크 → unsupported(돌리지 않음)" '[ "$(json_field result <<<"$OUT")" = unsupported ] && grep -q "테스트 경로가 심볼릭 링크: test/evil.test.mjs" <<<"$OUT"' "$OUT"
+
+echo "▶ 끊김 — 돌던 테스트 묶음을 끄고 임시 워크트리를 지운다"
+case_branch signal
+printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
+printf "import { test } from 'node:test'\ntest('x', () => {})\n" > test/x.test.mjs
+SIG_SPEC="$(printf '{"tests":["test/*.test.mjs"],"run":"echo $$ > %s/sh.pid; sleep 60 & echo $! > %s/sleep.pid; wait; true {files}"}' "$TMP" "$TMP")"
+node "$SRC/scripts/red-check.mjs" --dir "$TMP/repo" --repo fake --base origin/main --spec "$SIG_SPEC" >/dev/null 2>&1 &
+RC_PID=$!
+for _ in $(seq 100); do [ -s "$TMP/sleep.pid" ] && break; sleep 0.1; done
+kill -TERM "$RC_PID"; wait "$RC_PID" 2>/dev/null
+sleep 0.3
+check "SIGTERM — 테스트 셸 · 그 자식(sleep)까지 꺼짐 · 임시 워크트리 지움" '[ -s "$TMP/sleep.pid" ] && ! kill -0 "$(cat "$TMP/sh.pid")" 2>/dev/null && ! kill -0 "$(cat "$TMP/sleep.pid")" 2>/dev/null && [ "$(git worktree list | wc -l | tr -d " ")" = 1 ] && [ -z "$(ls -A "$TMP/worktrees/.red-check" 2>/dev/null)" ]' "$(git worktree list; ls -A "$TMP/worktrees/.red-check")"
+
 echo "▶ 여러 종류(node · python) — 배열 칸 · 첫 맞는 항목의 run"
 case_branch two-kinds
 printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
@@ -142,6 +191,16 @@ check "PR 본문 — 이미 red-check 줄이 있으면 그대로(두 번 넣지 
 BODY2=$'## 확인 필요\n- 리뷰 승인 전\n'
 OUTD="$(helper 'process.stdout.write(lib.withBodyNote(process.argv[2], process.argv[3]))' "$BODY2" "$NOTE")"
 check "PR 본문 — 다른 항목이 있으면 맨 위에 더한다" '[ "$(sed -n 2p <<<"$OUTD" | cut -c1-12)" = "- red-check " ] && grep -q "리뷰 승인 전" <<<"$OUTD"' "$OUTD"
+NOTE2="$(helper 'process.stdout.write(lib.bodyNote("⚠️ error — 300초를 넘겨 껐다"))')"
+OUTE="$(helper 'process.stdout.write(lib.withBodyNote(process.argv[2], process.argv[3]))' "$OUTB" "$NOTE2")"
+check "PR 본문 — 전에 넣은 red-check 줄은 지금 경고로 바꾼다(한 줄)" '[ "$(grep -c "^- red-check " <<<"$OUTE")" = 1 ] && grep -q "^- red-check error — 300초" <<<"$OUTE"' "$OUTE"
+BODY3=$'## 확인 필요\n- 이 PR 은 red-check 설명 문서를 고친다\n'
+OUTF="$(helper 'process.stdout.write(lib.withBodyNote(process.argv[2], process.argv[3]))' "$BODY3" "$NOTE")"
+check "PR 본문 — 설명 글에 red-check 낱말이 있어도 경고 줄을 더한다" 'grep -q "^- red-check non-discriminating" <<<"$OUTF" && grep -q "red-check 설명 문서" <<<"$OUTF"' "$OUTF"
+OUTG="$(helper 'process.stdout.write(lib.withoutBodyNote(process.argv[2]))' "$OUTB")"
+check "PR 본문 — 경고가 아니게 되면 전에 넣은 줄을 지우고 비면 \"- 없음\"" '! grep -q "^- red-check " <<<"$OUTG" && grep -qx -- "- 없음" <<<"$OUTG"' "$OUTG"
+OUTH="$(helper 'process.stdout.write(lib.withoutBodyNote(process.argv[2]))' "$OUTF")"
+check "PR 본문 — 지울 때 설명 글은 남긴다" '! grep -q "^- red-check non" <<<"$OUTH" && grep -q "red-check 설명 문서" <<<"$OUTH" && ! grep -qx -- "- 없음" <<<"$OUTH"' "$OUTH"
 check "결과 칸 — 로컬 절대 경로가 없다(PR 본문 검사에 걸리지 않게)" '! grep -qE "/Users/|/private/|\.worktrees/" <<<"$NEW3$OUTB"'
 
 echo "▶ ship.sh — 미리보기 · --yes · --auto-push 에서 돌고 계획서 · 본문에 남긴다(가짜 코어 · 가짜 gh)"
@@ -187,6 +246,15 @@ printf '## 작업 내용\n시험\n\n## 변경 사항\n- a\n\n## 검증\n- 통과
 OUT="$(sship --base main --title 'test(fake): 시험' --body-file "$TMP/agent-body.md" --no-review-ok --yes)"; CODE=$?
 check "--yes — 에이전트 본문에도 경고 줄을 넣어 보낸다(그 파일은 그대로) · 테스트를 다시 돌리지 않음(같은 HEAD)" '[ $CODE = 0 ] && grep -q "^- red-check non-discriminating" "$SBODY" && cmp -s "$TMP/agent-body.md" "$TMP/agent-body.orig" && ! grep -q "base 에서 돌려 본다" <<<"$OUT"' "$OUT
 $(cat "$SBODY" 2>/dev/null)"
+# 캐시 — 같은 HEAD 라도 redCheck 칸이 바뀌면 다시 돈다 · error 는 기록하지 않아 다음에 다시 돈다
+set_config '{"tests":["test/**/*.test.mjs"],"run":"no-such-runner-xyz {files}"}'
+OUT="$(sship)"
+check "캐시 — 칸이 바뀌면 같은 HEAD 라도 다시 돈다(error)" 'grep -q "base 에서 돌려 본다" <<<"$OUT" && grep -q "^red-check ⚠️ error" <<<"$OUT"' "$OUT"
+OUT="$(sship)"
+check "캐시 — error 는 재사용하지 않고 다시 돈다" 'grep -q "base 에서 돌려 본다" <<<"$OUT"' "$OUT"
+set_config "$NODE_SPEC"
+OUT="$(sship)"
+check "캐시 — 칸을 되돌리면 다시 돌고 그 결과는 재사용(셋째 미리보기는 안 돈다)" 'grep -q "base 에서 돌려 본다" <<<"$OUT" && ! grep -q "base 에서 돌려 본다" <<<"$(sship)"' "$OUT"
 # --auto-push — 자동 리뷰가 수정을 보낸 PR 에 고친 커밋(진짜 검사하는 테스트)을 올리면 다시 돌아 계획서 줄이 ok 로
 printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > "$WTS/lib/math.mjs"
 printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { add } from '../lib/math.mjs'\ntest('add', () => assert.equal(add(1, 2), 3))\n" > "$WTS/test/add.test.mjs"
