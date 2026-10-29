@@ -138,6 +138,24 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     }
   }
 
+  // 맡긴 일 줄의 계획서 — pane 이 없는 줄(진행 중 · 끝남 · 보관)을 같은 상세 칸에서 읽기 전용으로 보인다. 바깥 앱으로 열지 않는다.
+  // 계획서(plans/**.md)는 현황판 /api/card, 보관(archive/<이름>)은 /api/history/item 의 plan.md — 경로는 planSource 가 걸러 주고 현황판도 한 번 더 막는다
+  ctx.planDetail = async (id: string, title: string) => {
+    const source = paneDetail.planSource(id)
+    if (!source) return { ok: false, error: 'bad-id' }
+    const port = ctx.boardPortNow()
+    let text: string | null = null
+    if (source.kind === 'plan') {
+      const card = (await fetchBoardJson(port, `/api/card?id=${encodeURIComponent(source.id)}`)) as BoardCard | null
+      if (card && typeof card.text === 'string') text = card.text
+    } else {
+      const item = (await fetchBoardJson(port, `/api/history/item?dir=${encodeURIComponent(source.dir)}`)) as { plan?: unknown } | null
+      if (item && typeof item.plan === 'string') text = item.plan
+    }
+    if (text === null) return { ok: false, error: 'not-found' }
+    return { ok: true, plan: paneDetail.rowPlan(id, title, text) }
+  }
+
   // 보일 때만(startPanesPolling 이 2초마다 부른다) pane 목록(에이전트가 도는 폴더 → 모니터)과 작업 공간 브랜치를 갱신한다
   ctx.pollPanes = async () => {
     if (!ctx.win || ctx.win.isDestroyed() || !ctx.win.isVisible() || ctx.win.isMinimized() || !ctx.isAttached()) return

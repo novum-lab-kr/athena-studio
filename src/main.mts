@@ -109,6 +109,7 @@ type MainCalls = {
   workDetail(id: string): Promise<unknown>
   paneBound(): unknown
   paneDetail(paneId: string): Promise<unknown>
+  planDetail(id: string, title: string): Promise<unknown>
   pollPanes(): Promise<unknown>
   prepareBoardPort(): void
   watchRequests(): void
@@ -875,6 +876,7 @@ handle('work:detail', (ctx, id: unknown) => ctx.workDetail(String(id || '')))
 // pane [상세] — 계획서에 묶인 pane(머리 줄 아이콘) · 그 pane 의 상세
 handle('pane:bound', (ctx) => ctx.paneBound())
 handle('pane:detail', (ctx, paneId: unknown) => ctx.paneDetail(String(paneId || '')))
+handle('pane:plan-detail', (ctx, id: unknown, title: unknown) => ctx.planDetail(String(id || ''), String(title || '').slice(0, 300)))
 listen('ui:tab', (ctx, tab: unknown) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url: unknown) => openUrl(ctx, String(url)))
 // 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)
