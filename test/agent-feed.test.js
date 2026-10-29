@@ -35,6 +35,7 @@ test('세션 이름표 · 줄 읽기 · 폴더 이름', () => {
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-20261025-184407/scripts', gitBranch: 'main' }), 'athena·main')
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-20261025-184407' }), 'athena·athena')
   assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-1/.worktrees/web/x/src', gitBranch: 'x' }), 'web·x')
+  assert.equal(feed.sessionLabel({ cwd: '/Users/me/.athena-studio/bodies/new-1/.worktrees/web/x/src' }), 'web·src')
   assert.equal(feed.sessionLabel({}), null)
   assert.deepEqual(feed.subagentInfo({ description: 'Fill skeleton: web', agentType: 'general-purpose', finished: true }), { label: '🤖 Fill skeleton: web', finished: true })
   assert.deepEqual(feed.subagentInfo({ agentType: 'reviewer' }), { label: '🤖 reviewer', finished: false })

@@ -38,7 +38,8 @@ export function sessionLabel(record: unknown): string | null {
   const isBody = /\/\.athena-studio\/bodies\/[^/]+(?:\/|$)/.test(cwd)
   const folderName = isBody ? 'athena' : path.basename(cwd)
   const repo = worktree ? worktree[1] : folderName
-  const branch = record.gitBranch || folderName
+  // 브랜치 대체값은 워크트리면 기존대로 폴더 이름, 본체일 때만 athena
+  const branch = record.gitBranch || (worktree ? path.basename(cwd) : folderName)
   return `${repo}·${branch}`
 }
 
