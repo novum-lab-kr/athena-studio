@@ -787,14 +787,13 @@ button:focus-visible {
 /* 에이전트 모니터 — 머리줄(세션 칩) + 활동 피드. 접으면 머리줄만 */
 .dock.collapsed { height: 29px; } /* 접힘 — 머리줄 아래 1px 여백 */
 .dock.collapsed .monitor-feed { display: none; }
-/* 칸 경계 손잡이(edge-resize.ts) — 폭 0 인 자리에 6px 잡을 곳을 띄운다 · 옆 브라우저 손잡이와 같은 모양(올리면 · 끄는 동안 금색) */
+/* 칸 경계 손잡이(edge-resize.ts) — 폭 0 인 자리에 6px 잡을 곳을 띄운다 · 올리거나 끌어도 색 없이 커서만 바뀐다 */
 .edge-resize { position: relative; z-index: 6; flex: none; }
 .edge-resize::before { content: ""; position: absolute; }
 .edge-resize.x { width: 0; }
 .edge-resize.x::before { top: 0; bottom: 0; left: -3px; width: 6px; cursor: ew-resize; }
 .edge-resize.y { position: absolute; top: 0; right: 0; left: 0; height: 0; }
 .edge-resize.y::before { top: -3px; right: 0; left: 0; height: 6px; cursor: ns-resize; }
-.edge-resize:hover::before, .edge-resize.dragging::before { background: var(--accent); opacity: 0.6; }
 /* 접힌 칸 · 숨은 칸에는 손잡이를 두지 않는다 */
 .spaces.collapsed + .edge-resize, .edge-resize:has(+ .side-panel[hidden]), .dock.collapsed .edge-resize { display: none; }
 /* 끄는 동안 — 터미널 위를 지나가도 커서 · 글자 고르기가 바뀌지 않게 */
