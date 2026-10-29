@@ -18,14 +18,15 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
-/** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함, 남은 단계 판정). 맨 앞 칸이 없으면 null
+/** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함, 남은 단계 판정).
+ * 칸이 하나도 없으면 null. 들여 쓴 빈 칸만 있어도 { checked: 0, total: 0, open } 을 돌려준다(남은 단계 · 화면은 total 0 이면 숫자를 안 보인다)
  * @param {string} progress
  * @returns {{ checked: number, total: number, open: number } | null} */
 export const progressOf = (progress) => {
   const checked = (progress.match(/^- \[x\]/gim) ?? []).length
   const total = (progress.match(/^- \[[ x]\]/gim) ?? []).length
   const open = (progress.match(/^[ \t]*- \[ \]/gm) ?? []).length
-  return total ? { checked, total, open } : null
+  return total || open ? { checked, total, open } : null
 }
 
 /** 남은 단계(빈 칸 — 맨 앞 칸 · 하위 칸)가 있나
