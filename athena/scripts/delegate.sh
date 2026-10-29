@@ -369,8 +369,11 @@ else
   # 본체 안이면 프로젝트 설정으로도 실리지만, 프로젝트 설정을 못 찾는 폴더에서 띄워도 같은 값이 걸리게 여기서도 넣는다
   WINDOW_FROM=""
   [ "$AGENT" != reviewer ] && WINDOW_FROM="$ATHENA_DIR/.claude/settings.json"
-  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[4:]]}],"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "${GUARD_HOOKS[@]}"
+  # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다(reviewer 제외 · scripts/hooks/ask-to-request.py)
+  ASK_HOOK=""
+  [ "$AGENT" != reviewer ] && ASK_HOOK="$ATHENA_DIR/scripts/hooks/ask-to-request.py"
+  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[5:]]}]+([{"matcher":"AskUserQuestion","hooks":[command(sys.argv[4])]}] if sys.argv[4] else []),"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
+    "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "$ASK_HOOK" "${GUARD_HOOKS[@]}"
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
 fi

@@ -63,6 +63,8 @@ settings = {"claudeMdExcludes": excludes}
 settings["statusLine"] = {"type": "command", "command": f"/bin/sh {script('scripts/statusline.sh')}", "padding": 0}
 if agent != "reviewer":
     settings["hooks"] = guard
+    # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다 (scripts/hooks/ask-to-request.py — 위임 에이전트만)
+    guard["PreToolUse"].append({"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/ask-to-request.py')}"}]})
     # 자동 압축 시점 — 워크트리는 본체 프로젝트 설정이 안 실려 따로 넣는다. 값은 본체 .claude/settings.json 한 곳에서 읽는다
     # (reviewer 는 짧게 끝나 넣지 않는다 · docs/knowledge/common/context.md "대화 압축")
     window = json.loads((hermes / ".claude/settings.json").read_text(encoding="utf-8")).get("autoCompactWindow")
