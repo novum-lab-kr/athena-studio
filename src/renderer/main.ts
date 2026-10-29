@@ -7,7 +7,7 @@ import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks } from './pack-dialogs.ts'
-import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand, welcomeShown } from './pack-switch.ts'
+import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
 import { initTips } from './tips.ts'
 import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
 import { applySideFolds, closePreview, explorerActions, setPanelHidden } from './side-panels.ts'
@@ -56,11 +56,7 @@ export function renderState(): void {
   $('board-tab').dataset.tip = say('board.openTitle')
   const ready = state!.valid
   panels.setup.hidden = ready
-  $<HTMLButtonElement>('board-tab').disabled = !ready || welcomeShown() // 시작 화면(팩 고르기) 동안은 현황판을 못 연다
-  $<HTMLButtonElement>('diagrams-open').disabled = !ready || welcomeShown() // 다이어그램도 팩에 들어간 뒤에만
-  $<HTMLButtonElement>('work-tab').disabled = !ready || welcomeShown()
-  $<HTMLButtonElement>('settings-tab').disabled = !ready || welcomeShown() // 설정은 팩에 들어간 뒤에만(그 팩의 pack.json)
-  renderPackRail()
+  renderPackRail() // 오른쪽 위 현황판 · 다이어그램 · 작업 · 설정 버튼도 여기서(pack-switch.ts renderPackWelcome — 시작 화면과 한 규칙)
   if (!ready) {
     panels.work.hidden = true
   }
