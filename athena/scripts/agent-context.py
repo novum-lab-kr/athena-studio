@@ -54,10 +54,12 @@ pathlib.Path(context_out).write_text("\n".join(parts), encoding="utf-8")
 excludes = [str(hermes / "CLAUDE.md"), str(hermes / "AGENTS.md"), str(hermes / ".claude/rules/**")]
 # FE 세션 보호 훅 — git commit 직접·add -A 는 commit.sh 로 안내, push·gh pr 차단 (scripts/hooks/commit-guard.py)
 # 시크릿 출력 차단 훅은 reviewer 포함 모든 세션에 (scripts/hooks/secret-guard.py — 토큰은 무조건 노출 금지)
+# 프로세스 종료 보호 훅도 모든 세션에 (scripts/hooks/process-guard.py — pkill · killall · 0/음수 대상 kill 차단, GH #133)
 # 훅 명령은 셸이 읽으므로 경로를 셸 따옴표로 감싼다(경로에 공백·' 가 있어도 깨지지 않게)
 def script(rel): return shlex.quote(str(hermes / rel))
 secret_hook = {"type": "command", "command": f"python3 {script('scripts/hooks/secret-guard.py')}"}
-guard = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/commit-guard.py')}"}, secret_hook]}]}
+process_hook = {"type": "command", "command": f"python3 {script('scripts/hooks/process-guard.py')}"}
+guard = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/commit-guard.py')}"}, secret_hook, process_hook]}]}
 settings = {"claudeMdExcludes": excludes}
 # 하단 상태바 — 워크트리는 hermes 프로젝트 설정 밖이라 따로 넣는다(레포·브랜치·변경 수·모델, scripts/statusline.sh)
 settings["statusLine"] = {"type": "command", "command": f"/bin/sh {script('scripts/statusline.sh')}", "padding": 0}
@@ -69,7 +71,7 @@ if agent != "reviewer":
     if window:
         settings["autoCompactWindow"] = window
 else:
-    settings["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [secret_hook]}]}
+    settings["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [secret_hook, process_hook]}]}
 # 대화 압축 전후 — 직전에 계획서 Checkpoint 에 상태 한 줄, 직후에 계획서부터 다시 읽게 (scripts/hooks/compact-checkpoint.py)
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]
