@@ -5,6 +5,7 @@ import { views } from './terminal.ts'
 import { attach, attached, attaching, runCommand, screen, setAttached, setReattachOnKey, showRestoreResult, startScreen } from './screen.ts'
 import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
+import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand, welcomeShown } from './pack-switch.ts'
 import { initTips } from './tips.ts'
@@ -205,6 +206,7 @@ async function init(): Promise<void> {
   const packsReady = initPacks()
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
   new ResizeObserver(() => layoutPanes()).observe($('dock'))
+  initEdgeResize()
   if (state!.valid) {
     switchTab('work')
     // 팩 목록(켤 때 시작 화면인지)을 먼저 — 시작 화면이면 고를 때까지 아테나 에이전트를 켜지 않는다(startScreen)

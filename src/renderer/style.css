@@ -395,8 +395,9 @@ body[data-platform="darwin"] .tabbar {
   font-size: 13px;
 }
 
-.spaces { width: 224px; }
-.side-panel { width: 248px; }
+/* 너비는 끌어서 바꾼다 — edge-resize.ts 가 --spaces-width · --side-width 를 정한다(기본값은 거기 defaultSize 와 같게) */
+.spaces { width: var(--spaces-width, 224px); }
+.side-panel { width: var(--side-width, 248px); }
 
 .side-title {
   margin: 0 4px 8px;
@@ -781,11 +782,24 @@ button:focus-visible {
 }
 
 /* 가운데 맨 아래 고정 칸 — 에이전트 모니터(탭 밖 · athena 작업 공간에서만 보임) */
-.dock { flex: none; display: flex; flex-direction: column; height: 170px; border-top: 1px solid var(--line); background: var(--bg); }
+.dock { position: relative; flex: none; display: flex; flex-direction: column; height: var(--dock-height, 170px); border-top: 1px solid var(--line); background: var(--bg); }
 .dock[hidden] { display: none; }
 /* 에이전트 모니터 — 머리줄(세션 칩) + 활동 피드. 접으면 머리줄만 */
 .dock.collapsed { height: 29px; } /* 접힘 — 머리줄 아래 1px 여백 */
 .dock.collapsed .monitor-feed { display: none; }
+/* 칸 경계 손잡이(edge-resize.ts) — 폭 0 인 자리에 6px 잡을 곳을 띄운다 · 옆 브라우저 손잡이와 같은 모양(올리면 · 끄는 동안 금색) */
+.edge-resize { position: relative; z-index: 6; flex: none; }
+.edge-resize::before { content: ""; position: absolute; }
+.edge-resize.x { width: 0; }
+.edge-resize.x::before { top: 0; bottom: 0; left: -3px; width: 6px; cursor: ew-resize; }
+.edge-resize.y { position: absolute; top: 0; right: 0; left: 0; height: 0; }
+.edge-resize.y::before { top: -3px; right: 0; left: 0; height: 6px; cursor: ns-resize; }
+.edge-resize:hover::before, .edge-resize.dragging::before { background: var(--accent); opacity: 0.6; }
+/* 접힌 칸 · 숨은 칸에는 손잡이를 두지 않는다 */
+.spaces.collapsed + .edge-resize, .edge-resize:has(+ .side-panel[hidden]), .dock.collapsed .edge-resize { display: none; }
+/* 끄는 동안 — 터미널 위를 지나가도 커서 · 글자 고르기가 바뀌지 않게 */
+body.edge-resizing-x, body.edge-resizing-x * { cursor: ew-resize !important; user-select: none; }
+body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; user-select: none; }
 /* 머리줄 — 내용과 같은 바탕(경계선 없음) · 선 아이콘 + 대문자 작은 제목(사용자가 시안 5 를 고름) */
 .monitor-head { display: flex; flex: none; align-items: center; gap: 8px; height: 28px; padding: 0 8px; font-size: 12px; }
 .dock:not(.collapsed) .monitor-head { border-bottom: 1px solid var(--line); } /* 열렸을 때만 머리줄 아랫선 */

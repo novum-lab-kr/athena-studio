@@ -48,6 +48,8 @@
       <!-- 팩 세로 줄 — 팩마다 이름 두 글자 아이콘(지금 팩 강조) · 누르면 갈아 끼우기 · 맨 아래 + 는 새로 만들기 · 가져오기 · 내보내기 -->
       <nav id="pack-rail" class="pack-rail" aria-label="팩" data-i18n-aria-label="pack.title" hidden></nav>
       <aside id="spaces" class="spaces" aria-label="작업 공간" data-i18n-aria-label="spaces.label"></aside>
+      <!-- 칸 경계 손잡이 — 끌어서 너비 · 높이 바꾸기 · 더블클릭 기본 크기(edge-resize.ts) -->
+      <div id="spaces-resize" class="edge-resize x" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비" data-i18n-title="side.resizeHint"></div>
       <div class="center">
         <nav id="studio-tabs" class="studio-tabs"></nav>
         <div class="work-area">
@@ -72,6 +74,7 @@
         <div id="screen-status" class="screen-status" hidden></div>
         <!-- 가운데 맨 아래 — 에이전트 모니터(앱 화면 · Claude 기록을 main 이 따라 읽는다 · athena 작업 공간에서만 보임) -->
         <section id="dock" class="dock monitor">
+          <div id="dock-resize" class="edge-resize y" title="끌어서 높이 바꾸기 · 더블클릭하면 기본 높이" data-i18n-title="monitor.resizeHint"></div>
           <div class="monitor-head">
             <span class="monitor-title"><svg class="monitor-icon" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="2"/><path d="M16.2 7.8a6 6 0 0 1 0 8.4M7.8 16.2a6 6 0 0 1 0-8.4M19 5a10 10 0 0 1 0 14M5 19A10 10 0 0 1 5 5"/></svg>MONITOR</span>
             <div id="monitor-sessions" class="monitor-sessions"></div>
@@ -80,6 +83,7 @@
           <div id="monitor-feed" class="monitor-feed"></div>
         </section>
       </div>
+      <div id="side-resize" class="edge-resize x" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비" data-i18n-title="side.resizeHint"></div>
       <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널" data-i18n-aria-label="side.label"></aside>
       <!-- 오른쪽을 접으면 남는 좁은 줄 — 누르면 다시 편다 -->
       <aside id="side-rail" class="side-rail" hidden>

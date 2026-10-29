@@ -8,6 +8,7 @@ import { renderSides } from './space-actions.ts'
 import { StudioUi } from './ui/index.ts'
 import type { ExplorerActions } from './ui/explorer.tsx'
 import { welcomeShown } from './pack-switch.ts'
+import { fitEdgeSizes } from './edge-resize.ts'
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
 // 접기·펴기 버튼 아이콘 — 칸 머리에 붙는다(그리기는 React — 왼쪽 ui/spaces.tsx · 오른쪽 ui/explorer.tsx). 패널 아이콘(네모 + 세로선 · 사용자가 시안 5 를 고름) · 접힌 칸은 그쪽을 칠한다
@@ -131,6 +132,7 @@ export function setPanelHidden(hidden: boolean): void {
   $('side-rail').hidden = !hidden
   localStorage.setItem('studio.panelHidden', hidden ? '1' : '0')
   if (!hidden) StudioUi.explorer.render()
+  fitEdgeSizes() // 한쪽을 펴거나 접으면 다른 쪽이 쓸 수 있는 폭이 바뀐다
   requestAnimationFrame(layoutPanes)
 }
 
@@ -141,6 +143,7 @@ export function applySideFolds(): void {
   $('spaces').classList.toggle('collapsed', welcome || localStorage.getItem('studio.spacesCollapsed') === '1')
   $('side-panel').hidden = panelHidden
   $('side-rail').hidden = !panelHidden
+  fitEdgeSizes() // 한쪽을 펴거나 접으면 다른 쪽이 쓸 수 있는 폭이 바뀐다
   if (!attached) return
   renderSides()
   if (!panelHidden) StudioUi.explorer.render()
@@ -152,5 +155,6 @@ export function setSpacesCollapsed(collapsed: boolean): void {
   $('spaces').classList.toggle('collapsed', collapsed)
   localStorage.setItem('studio.spacesCollapsed', collapsed ? '1' : '0')
   renderSides()
+  fitEdgeSizes() // 한쪽을 펴거나 접으면 다른 쪽이 쓸 수 있는 폭이 바뀐다
   requestAnimationFrame(layoutPanes)
 }
