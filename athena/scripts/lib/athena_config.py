@@ -180,7 +180,7 @@ def is_protected(cfg, repo_name, branch):
 
 
 # 역할마다 Claude 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
-MODEL_ROLES = ('athena', 'agent', 'reviewer', 'prReview', 'prReviewSecond', 'learnReview')
+MODEL_ROLES = ('athena', 'agent', 'agentLight', 'reviewer', 'reviewerEscalated', 'prReview', 'prReviewSecond', 'learnReview')
 # fullmatch 로만 검사한다 — match 와 $ 는 끝 줄바꿈('sonnet\n')을 통과시켜 JS 판정과 갈린다
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*')
 
@@ -220,12 +220,63 @@ def profile_model(profile_path):
     return ''
 
 
-def agent_model(athena_dir, agent):
+def _tree_repo_branch(athena_dir, work_dir):
+    """작업 트리의 (레포, 브랜치) — scripts/review-result.sh 가 "- Review result:" 줄에 적는 📦 · 🌿 와 같은 방법.
+    레포는 워크트리의 메인 체크아웃을 가리키는 repos/<이름> 링크, 못 찾으면 메인 체크아웃 폴더 이름. git 이 아니면 ('', '')."""
+    import subprocess
+    def git(*args):
+        result = subprocess.run(['git', '-C', work_dir, *args], capture_output=True, text=True)
+        return result.stdout.strip() if result.returncode == 0 else None
+    if not work_dir or git('rev-parse', '--short', 'HEAD') is None:
+        return '', ''
+    branch = git('symbolic-ref', '--short', '-q', 'HEAD') or 'detached'
+    listing = git('worktree', 'list', '--porcelain') or ''
+    main = next((row[len('worktree '):] for row in listing.splitlines() if row.startswith('worktree ')), '')
+    main = os.path.realpath(main) if main and os.path.isdir(main) else ''
+    repo = os.path.basename(main or work_dir.rstrip('/'))
+    links = os.path.join(athena_dir, 'repos')
+    for name in sorted(os.listdir(links)) if os.path.isdir(links) else []:
+        if main and os.path.realpath(os.path.join(links, name)) == main:
+            repo = name
+    return repo, branch
+
+
+def review_needs_fix(plan_text, repo, branch):
+    """계획서의 같은 레포 · 브랜치 "- Review result:" 마지막 줄이 수정 필요인가(scripts/review-wait.sh 와 같은 줄 고르기)."""
+    if not repo or not branch:
+        return False
+    mark = f'📦 {repo} · 🌿 {branch} '
+    rows = [row for row in plan_text.splitlines() if row.startswith('- Review result:') and mark in row]
+    return bool(rows) and rows[-1][len('- Review result:'):].lstrip().startswith('수정 필요')
+
+
+def model_role(athena_dir, agent, plan='', work_dir=''):
+    """(역할, 대신 쓸 역할) — reviewer 는 같은 레포 · 브랜치 리뷰 결론이 수정 필요면 reviewerEscalated(없으면 reviewer),
+    그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(없으면 agent). 그 밖은 대신 쓸 역할 없음(계획서 2026-10-29 D1 · D2)."""
+    if agent == 'reviewer':
+        if plan:
+            try:
+                with open(os.path.join(athena_dir, plan), encoding='utf-8') as handle:
+                    text = handle.read()
+            except OSError:
+                text = ''
+            if review_needs_fix(text, *_tree_repo_branch(athena_dir, work_dir)):
+                return 'reviewerEscalated', 'reviewer'
+        return 'reviewer', None
+    if plan.startswith('plans/task/'):
+        return 'agentLight', 'agent'
+    return 'agent', None
+
+
+def agent_model(athena_dir, agent, plan='', work_dir=''):
     """delegate.sh 가 붙일 --model 값 — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다), 없으면 팩 models 의
-    reviewer(reviewer) · agent(그 밖의 에이전트), 그것도 없으면 ''(--model 을 붙이지 않는다).
+    model_role 역할 값(비었으면 대신 쓸 역할 값), 그것도 없으면 ''(--model 을 붙이지 않는다).
+    plan 은 본체 기준 논리 경로(plans/…md), work_dir 은 띄울 작업 트리(reviewer 의 리뷰 결론을 레포 · 브랜치로 고른다).
     프로필 값도 --model 로 넘긴다 — 워크트리에서 띄우면 프로필을 --agents JSON 으로 다시 만들어 넘기는데(agent-context.py) 거기에는 model 이 없다."""
     # 팩 models 는 프로필 값이 있어도 먼저 전체를 검사한다 — 잘못된 값이 프로필 뒤에 숨어 그냥 넘어가지 않게
-    pack_model = model_of(load(athena_dir), 'reviewer' if agent == 'reviewer' else 'agent')
+    cfg = load(athena_dir)
+    role, fallback = model_role(athena_dir, agent, plan, work_dir)
+    pack_model = model_of(cfg, role) or (model_of(cfg, fallback) if fallback else '')
     profile = os.path.join(athena_dir, '.claude', 'agents', f'{agent}.md')
     own = profile_model(profile)
     if own:
