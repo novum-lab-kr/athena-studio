@@ -8,7 +8,7 @@
  *                                                               html 이 없으면(경량 계획서) 템플릿으로 새로 만든다. 결정.json 은 decisions[] 배열(또는 { decisions: [] })
  *   node scripts/plan-html.mjs <plans/…md> --decide r1='<label>' [r2='<label>' …]  # 확정을 기록한다 — 그 id 에만 decided 를 채우고 나머지는 그대로
  *                                                               (--data 로 PLAN 전체를 바꾸면 기존 결정이 지워진다 — 확정에는 이걸 쓴다)
- *   처음 만들 때(--data · plans/setup/ 고르기 콘솔 제외) 아테나 pane 에서 부르면 그 pane 이름을 '🧭 아테나 · <md 제목>' 으로 바꾼다(lib/screen.mjs nameLeadPane)
+ *   처음 만들 때(--data · plans/setup/ 고르기 콘솔 제외) 아테나 pane 에서 부르면 그 pane 이름을 '<레포> · <md 제목 앞 30자>'(레포는 작업 배분 표의 담당 에이전트 → 레포 · 모르면 제목만)로 바꾼다(lib/screen.mjs nameLeadPane)
  *   옵션 --pane <id> : [이대로 진행] 이 보낼 pane(계획서를 만든 아테나, 리뷰 뒤 결정이면 그 작업 에이전트). 없으면 PLAN.leadPane(옛 계획서는 hermesPane) → 없으면 부른 pane(`scripts/screen self`) → 화면 밖이면 포커스된 pane(`scripts/screen pane current`)
  *
  * PLAN.json 은 title·type·scope·summary·decisions[] (형식은 docs/plan-template.html 헤더 주석). mdFile 은 자동으로 채운다.
@@ -254,7 +254,7 @@ writeAtomic(htmlPath, head + body)
 // --add(리뷰 뒤 결정)는 작업 에이전트 · pr-auto 가 부르니 빼고, plans/setup/ 은 작업 계획서가 아니라 뺀다
 if (existing === null && !addPath && !mdFile.startsWith('plans/setup/')) {
   const title = readFileSync(mdPath, 'utf8').match(/^#\s+(.+)$/m)?.[1]?.trim() || plan.title || ''
-  const label = nameLeadPane(title)
+  const label = nameLeadPane(title, { planText: readFileSync(mdPath, 'utf8') })
   if (label) console.log(`   🏷  pane 이름: ${label}`)
 }
 const decided = (plan.decisions ?? []).filter((decision) => decision.decided != null).length
