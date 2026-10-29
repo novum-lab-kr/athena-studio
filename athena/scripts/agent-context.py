@@ -63,6 +63,11 @@ settings = {"claudeMdExcludes": excludes}
 settings["statusLine"] = {"type": "command", "command": f"/bin/sh {script('scripts/statusline.sh')}", "padding": 0}
 if agent != "reviewer":
     settings["hooks"] = guard
+    # 자동 압축 시점 — 워크트리는 본체 프로젝트 설정이 안 실려 따로 넣는다. 값은 본체 .claude/settings.json 한 곳에서 읽는다
+    # (reviewer 는 짧게 끝나 넣지 않는다 · docs/knowledge/common/context.md "대화 압축")
+    window = json.loads((hermes / ".claude/settings.json").read_text(encoding="utf-8")).get("autoCompactWindow")
+    if window:
+        settings["autoCompactWindow"] = window
 else:
     settings["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [secret_hook]}]}
 # 대화 압축 전후 — 직전에 계획서 Checkpoint 에 상태 한 줄, 직후에 계획서부터 다시 읽게 (scripts/hooks/compact-checkpoint.py)

@@ -365,8 +365,12 @@ else
   GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
   # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
   # pane ↔ 대화 기록(팩 백업이 되살릴 때 --resume) — 첫 인자
-  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; json.dump({"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[3:]]}],"SessionStart":[{"hooks":[command(sys.argv[2])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[2])]}]}}, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" "$ATHENA_DIR/scripts/hooks/pane-session.py" "${GUARD_HOOKS[@]}"
+  # 자동 압축 시점(reviewer 제외 · 짧게 끝난다) — 본체 .claude/settings.json 의 autoCompactWindow 를 그대로 옮긴다(값은 그 한 곳).
+  # 본체 안이면 프로젝트 설정으로도 실리지만, 프로젝트 설정을 못 찾는 폴더에서 띄워도 같은 값이 걸리게 여기서도 넣는다
+  WINDOW_FROM=""
+  [ "$AGENT" != reviewer ] && WINDOW_FROM="$ATHENA_DIR/.claude/settings.json"
+  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[4:]]}],"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
+    "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "${GUARD_HOOKS[@]}"
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
 fi
