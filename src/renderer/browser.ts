@@ -4,6 +4,7 @@ import { $, currentTab } from './core.ts'
 import { views } from './terminal.ts'
 import { screen } from './screen.ts'
 import { modalOpen } from './pack-dialogs.ts'
+import { popOpen } from './work.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { StudioUi } from './ui/index.ts'
 import type { BrowserState } from './ui/browser-bar.tsx'
@@ -56,6 +57,7 @@ export function closeBrowserPanel(): void {
 // 다 나온 서랍의 자리 — 슬라이드 중(transform)이면 아직 붙이지 않는다
 export function placeBrowserView(): void {
   if (modalOpen()) return // 대화상자 위를 덮지 않게 — 닫힐 때 syncModal 이 다시 붙인다
+  if (popOpen()) return // 탭 줄 팝업 위를 덮지 않게 — 닫힐 때 closePops 가 다시 붙인다
   if (!browserOpen || browserTimer || $('browser').hidden || $('browser').classList.contains('resizing')) return
   const rect = $('browser-slot').getBoundingClientRect()
   if (rect.width < 1 || rect.height < 1) return
