@@ -380,7 +380,7 @@ USAGE = """사용: scripts/screen <동작> …   (결과는 납작한 JSON · �
   pane wait-output <pane> (--match T | --regex R) [--timeout MS] [--lines N] [--source S] [--raw]
   pane split --target <id|self|focused> --direction right|down [--ratio R] [--cwd D] [--env K=V]… [--focus|--no-focus]
   pane run <pane> <단어>…                      단어를 공백으로 이어 붙인 한 줄을 그 pane 셸에 친다(따옴표 없음)
-  pane send-text <pane> <글> · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
+  pane send-text <pane> <글> [--enter](글 뒤 Enter 까지) · pane send-keys <pane> <키>… (Enter · C-c) · pane rename <pane> <이름> · pane close <pane>
   tab list [--workspace W] · tab get <tab> · tab rename <tab> <이름> · tab close <tab>
   workspace list · workspace get <w> · workspace create --label L --cwd D [--focus|--no-focus]
   open-url <주소>                              studio 면 그 본체 창의 옆 브라우저(localhost) · 못 하면(none · 옛 데몬) 기본 브라우저(open)
@@ -502,7 +502,13 @@ def _dispatch(screen, words, flags, positional, raw_rest):
         return None, 0
     if op == 'pane send-text':
         _need(raw_rest, 2, 'pane 과 글')
+        # 끝의 --enter 는 글 넣기 뒤 Enter 까지 한 명령으로(글 넣기가 실패하면 예외로 빠져 Enter 를 보내지 않는다).
+        # 글 자리가 '--enter' 인 경우(인자 둘)는 글이다 — 셋일 때 마지막만 플래그
+        if len(raw_rest) > 3 or (len(raw_rest) == 3 and raw_rest[2] != '--enter'):
+            raise ScreenError('usage', 'pane send-text <pane> <글> [--enter]')
         screen.send_text(raw_rest[0], raw_rest[1])
+        if len(raw_rest) == 3:
+            screen.send_keys(raw_rest[0], ['Enter'])
         return None, 0
     if op == 'pane send-keys':
         _need(raw_rest, 2, 'pane 과 키')

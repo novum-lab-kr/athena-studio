@@ -97,10 +97,12 @@ if [ -z "${ATHENA_AGENT:-}" ]; then
   LEAD_PANE="$( (eval "$("$SCREEN" self --format sh 2>/dev/null)"; printf '%s' "${SCREEN_PANE_ID:-}") 2>/dev/null )"
 fi
 if [ -n "$LEAD_PANE" ]; then
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $SCREEN pane send-text $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' 다음 $SCREEN pane send-keys $LEAD_PANE Enter — 보냈다고 한 줄 알린다. "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $SCREEN pane send-text $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' --enter — 보냈다고 한 줄 알린다. "
 else
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text '[$AGENT → 아테나] …' 다음 pane send-keys Enter). 못 찾을 때만 사용자에게 알린다. "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text <pane> '[$AGENT → 아테나] …' --enter). 못 찾으면 아래대로 요청으로 남긴다. "
 fi
+# 아테나에게 보내기가 실패하면 우회하지 않고 요청으로 남긴다(GitHub 이슈 #134) — 반쯤 전달되거나 사라지지 않게
+LEAD_RULE="${LEAD_RULE}아테나 pane 으로 보내기가 실패하면(명령 실패 · 훅 차단 · 아테나 pane 없음) 우회하지 말고 ① 계획서 Checkpoint(Blocked 또는 결과 절)에 보낼 글을 그대로 적고 ② $ATHENA_DIR/bin/athena request open --kind question --title '<한 줄>' --body-file <파일> --plan $ATHENA_DIR/$PLAN 로 요청을 열어 현황판에 뜨게 한 뒤 ③ 보고 끝에 그랬다고 한 줄 적는다. "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(main 직접 레포 제외)일 때만 지시에 싣는다.
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
@@ -440,8 +442,12 @@ sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update 
 plan, cwd, branch, pane, agent, lead = sys.argv[1:7]
 def record(text):
     text = record_ref(text)
-    if lead and agent != 'reviewer' and not re.search(r'^- Lead pane:', text, re.M):
-        text = re.sub(r'^(- Work ref:.*)$', lambda match: f'- Lead pane: {lead}\n' + match.group(1), text, count=1, flags=re.M)
+    if lead and agent != 'reviewer':
+        if not re.search(r'^- Lead pane:', text, re.M):
+            text = re.sub(r'^(- Work ref:.*)$', lambda match: f'- Lead pane: {lead}\n' + match.group(1), text, count=1, flags=re.M)
+        else:
+            # 다시 맡길 때 아테나 pane 이 바뀌었으면 지금 값으로(같으면 그대로)
+            text = re.sub(r'^- Lead pane:.*$', lambda match: f'- Lead pane: {lead}', text, count=1, flags=re.M)
     return text
 def record_ref(text):
     if agent == 'reviewer':
