@@ -159,8 +159,9 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
   })
 
   // pane(터미널) 우클릭 — 고른 동작 이름(split-right · split-down · close-pane · null). 동작은 화면이 우클릭한 그 pane 으로 한다.
-  // 단축키는 앱 메뉴(보기 · 파일)에 이미 걸려 있어 여기서는 보여 주기만 한다
-  ctx.paneContextMenu = (point: Point = null) => new Promise<string | null>((resolve) => {
+  // 단축키는 앱 메뉴(보기 · 파일)에 이미 걸려 있어 여기서는 보여 주기만 한다.
+  // title(화면이 만든 'p7h · 머리줄 이름')은 맨 위에 누를 수 없는 제목 한 줄로 — 보고에 나온 pane 번호를 화면에서 찾게
+  ctx.paneContextMenu = (point: Point = null, title = '') => new Promise<string | null>((resolve) => {
     if (!ctx.win) return resolve(null)
     let chosen: string | null = null
     const pick = (action: string) => () => {
@@ -168,6 +169,7 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
       resolve(action)
     }
     const menu = Menu.buildFromTemplate([
+      ...(title ? [{ label: title, enabled: false }, { type: 'separator' } as const] : []),
       { label: say('menu.pane.splitRight'), accelerator: `${tabKey}+D`, registerAccelerator: false, click: pick('split-right') },
       { label: say('menu.pane.splitDown'), accelerator: `${tabKey}+Shift+D`, registerAccelerator: false, click: pick('split-down') },
       { type: 'separator' },

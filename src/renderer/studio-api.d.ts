@@ -186,8 +186,8 @@ declare global {
     workspaceNew(size: CellSize | null): Promise<WorkspaceNewReply>
     paneSplit(paneId: string, direction: 'right' | 'down'): Promise<DaemonReply>
     paneClose(paneId: string): Promise<CloseReply>
-    // 우클릭 메뉴(workspaces.mts paneContextMenu) — 고른 항목 이름 · 안 고르면 null
-    paneContextMenu(point: { x: number; y: number }): Promise<string | null | { error: string }>
+    // 우클릭 메뉴(workspaces.mts paneContextMenu) — title 은 맨 위 회색 제목(pane 번호 · 이름) · 고른 항목 이름 · 안 고르면 null
+    paneContextMenu(point: { x: number; y: number }, title: string): Promise<string | null | { error: string }>
     paneFocus(paneId: string): void
     paneInput(paneId: string, data: string): void
     // 크기 요청(main.mts pane:resize — 답은 pane:resized 알림으로 온다)

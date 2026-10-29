@@ -96,7 +96,7 @@ type MainCalls = {
   explorerStatus(workspaceId: unknown): Promise<unknown>
   explorerOpen(workspaceId: unknown, relative: unknown): Promise<unknown>
   closePane(paneId: string): Promise<unknown>
-  paneContextMenu(point: Point): Promise<unknown>
+  paneContextMenu(point: Point, title?: string): Promise<unknown>
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
   refreshRequests(): Promise<unknown>
@@ -837,7 +837,7 @@ handle('explorer:status', (ctx, workspaceId: unknown) => guarded(() => ctx.explo
 handle('explorer:open', (ctx, workspaceId: unknown, relative: unknown) => guarded(() => ctx.explorerOpen(workspaceId, relative)))
 handle('pane:split', (ctx, paneId: unknown, direction: unknown) => ctx.daemonCall('pane split', { target: String(paneId), direction: direction === 'down' ? 'down' : 'right' }))
 handle('pane:close', (ctx, paneId: unknown) => ctx.closePane(String(paneId)))
-handle('pane:context-menu', (ctx, point: unknown) => ctx.paneContextMenu(point && typeof point === 'object' ? (point as Point) : null))
+handle('pane:context-menu', (ctx, point: unknown, title: unknown) => ctx.paneContextMenu(point && typeof point === 'object' ? (point as Point) : null, typeof title === 'string' ? title.slice(0, 200) : ''))
 listen('pane:focus', (ctx, paneId: unknown) => ctx.notifyDaemon('focus', { pane: String(paneId) }))
 listen('pane:input', (ctx, paneId: unknown, data: unknown) => {
   if (typeof data === 'string') ctx.notifyDaemon('input', { pane: String(paneId), data })
