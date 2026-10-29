@@ -5,6 +5,7 @@ import { packDialog, packLabel, packs } from './pack-dialogs.ts'
 import type { PackDialogAction } from './pack-dialogs.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { backPaneDetail, closePaneDetail, detailPane, goToPane, openRequest, paneLive, setPaneBound, syncDetailButtons } from './detail.ts'
+import { browserOpen, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 
 // ── [작업] 팝업 · 현황판 페이지 메뉴 ────────────────────────────
@@ -30,7 +31,15 @@ function placeUnder(pop: HTMLElement, button: HTMLElement): void {
 }
 
 let popBefore: Element | null = null
-export function closePops(): void {
+// 팝업이 떠 있는 동안 — 옆 브라우저는 네이티브 뷰라 z-index 로 못 이기니 잠깐 뗀다(browser.ts placeBrowserView 도 이 동안 붙이지 않는다)
+export const popOpen = (): boolean => !$('work-pop').hidden || !$('board-menu').hidden || !$('settings-pop').hidden
+function syncPopBrowser(): void {
+  if (!browserOpen) return
+  if (popOpen()) studio.browserHide()
+  else placeBrowserView() // 대화상자가 떠 있으면 placeBrowserView 가 붙이지 않는다(닫힐 때 syncModal 이 붙인다)
+}
+// 팝업만 닫는다 — 브라우저는 건드리지 않는다(팝업 → 팝업 · 팝업 → 대화상자로 넘어갈 때 번쩍이지 않게)
+function hidePops(): void {
   for (const [pop, button] of [['work-pop', 'work-tab'], ['board-menu', 'board-tab'], ['settings-pop', 'settings-tab']] as [string, string][]) {
     if ($(pop).hidden) continue
     $(pop).hidden = true
@@ -42,13 +51,18 @@ export function closePops(): void {
   if (popBefore instanceof HTMLElement && popBefore.isConnected) popBefore.focus({ preventScroll: true })
   popBefore = null
 }
+export function closePops(): void {
+  hidePops()
+  syncPopBrowser()
+}
 function openPop(pop: string, button: string): void {
-  closePops()
+  hidePops()
   popBefore = document.activeElement
   placeUnder($(pop), $(button))
   $(pop).hidden = false
   $(button).setAttribute('aria-expanded', 'true')
   $(button).classList.add('active')
+  syncPopBrowser()
 }
 
 // 몸통(work-pop-body)은 React(ui/work-pop.tsx) — 여기는 머리줄 팩 이름과 그릴 값 넘기기만
@@ -81,7 +95,7 @@ function toggleBoardMenu(): void {
 
 // 작업 상세 — 계획서에서 왜 · 정한 것 · 진행 · 검증 · 결과 · 다음
 async function openWorkDetail(item: WorkItemView): Promise<void> {
-  closePops()
+  hidePops() // 브라우저는 뗀 채로 둔다 — 곧 대화상자가 뜬다(닫히면 syncModal 이 붙인다)
   const detail = await studio.workDetail(item.id as string)
   const body = []
   if (!detail || !detail.ok) body.push(el('p', 'muted', say('work.detail.unreadable')))
