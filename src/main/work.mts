@@ -45,6 +45,7 @@ export type WorkCtx = {
   answerRequest?: unknown
   redeliverRequest?: unknown
   openPlan?: unknown
+  openInBrowser?: (url: string) => void
   openBoardSection?: unknown
   openDiagrams?: unknown
   workDetail?: unknown
@@ -221,12 +222,17 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!known || !known.answer) return { ok: false, error: 'not-found' }
     return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer as { choice?: unknown; text?: unknown })) }
   }
-  // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소로 브라우저에, 없으면 md 를 기본 앱으로
+  // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소를 이 창 옆 브라우저에, 없으면 md 를 기본 앱으로
   ctx.openPlan = async (id: string, html: string | null) => {
     const safe = (value: unknown, ext: string): value is string => typeof value === 'string' && value.startsWith('plans/') && value.endsWith(ext) && !value.split('/').includes('..')
     if (safe(html, '.html')) {
       const board = await ensureBoard()
-      if (board.ok) return shell.openExternal(`${board.url.replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}`)
+      const url = board.ok ? `${board.url.replace(/\/$/, '')}/${html.split('/').map(encodeURIComponent).join('/')}` : null
+      if (url && ctx.openInBrowser) {
+        ctx.openInBrowser(url)
+        return null
+      }
+      if (url) return shell.openExternal(url)
     }
     if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
     return null
