@@ -2,8 +2,10 @@
 // main.js 에서 옮겼다(PR3e) — createPackWindow 의 ctx 에 같은 이름으로 붙인다(installPaneWatch). 데몬 요청은 ctx.daemonCall(daemon-link) 로.
 // 쓰는 것(모니터 상태 — 에이전트가 도는 폴더 · 대화 기록 토큰)은 인자로 받는다
 import fs from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
 import * as paneDetail from '../lib/pane-detail.mts'
 import * as tokenUsage from '../lib/token-usage.mts'
@@ -21,6 +23,8 @@ const screenModel: typeof import('../lib/screen-model.js') = require('../lib/scr
 type BoardState = { cards?: unknown; panes?: paneDetail.LeadOptions['panes'] }
 type BoardHistory = { items?: unknown[] }
 type BoardCard = { text?: unknown }
+// 본체 코어 scripts/board/plan-bind.mjs — 현황판이 /api/state 의 cards · panes 를 만드는 같은 함수. 옛 코어에는 bindingSources 가 없다
+type PlanBind = { bindingSources?: (input: { root: string; panes: DaemonPane[]; sessionsDir: string; home: string }) => BoardState }
 
 // monitor — 이 창의 모니터 상태(에이전트가 도는 폴더를 적는다) · paneTokens — 대화 기록 토큰(창 사이에 같이 쓴다)
 export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monitor: Monitor; paneTokens: TokenUsage }): void {
@@ -41,12 +45,23 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     }
     for (const id of paneSince.keys()) if (!alive.has(id)) paneSince.delete(id)
   }
-  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 현황판이 떠 있을 때만 읽는다(띄우지는 않는다). 꺼졌으면 지난 값을 둔다
+  // 계획서에 묶인 pane(머리 줄 [상세] 아이콘) — 현황판이 떠 있으면 /api/state 를 읽는다(띄우지는 않는다).
+  // 꺼져 있으면(앱을 막 켰을 때 등) 본체 코어의 같은 함수(plan-bind.mjs bindingSources)로 계획서 · pane 기록을 직접 읽어 정한다.
+  // 그것도 못 하면(옛 코어 · 본체 없음) 지난 값을 둔다
   const PANE_BOUND_MS = 5000
   let paneBound = {}
   let paneBoundAt = 0
-  const refreshPaneBound = async () => {
-    const state = (await fetchBoardJson(ctx.boardPortNow(), '/api/state')) as BoardState | null
+  const localBindingSources = async (panes: DaemonPane[]): Promise<BoardState | null> => {
+    if (!ctx.athenaDir) return null
+    const root = path.resolve(ctx.athenaDir)
+    const planBind = (await import(pathToFileURL(path.join(root, 'scripts', 'board', 'plan-bind.mjs')).href)) as PlanBind
+    if (typeof planBind.bindingSources !== 'function') return null
+    // pane 기록은 여러 팩 구조에서만 있다(<본체>/.pack-data/state/pane-sessions) — 없으면 plan-bind 가 빈 목록으로 본다
+    return planBind.bindingSources({ root, panes, sessionsDir: path.join(root, '.pack-data', 'state', 'pane-sessions'), home: os.homedir() })
+  }
+  const refreshPaneBound = async (panes: DaemonPane[] | null) => {
+    const board = (await fetchBoardJson(ctx.boardPortNow(), '/api/state')) as BoardState | null
+    const state = board || (panes ? await localBindingSources(panes) : null)
     if (!state || !Array.isArray(state.cards)) return
     const next = paneDetail.bindings(state.cards, state.panes)
     if (JSON.stringify(next) === JSON.stringify(paneBound)) return
@@ -135,7 +150,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     }
     if (Date.now() - paneBoundAt > PANE_BOUND_MS) {
       paneBoundAt = Date.now()
-      refreshPaneBound().catch(() => {})
+      refreshPaneBound(listed.result ? listed.result.panes : null).catch(() => {})
     }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)

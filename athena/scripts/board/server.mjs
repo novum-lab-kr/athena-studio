@@ -62,7 +62,7 @@ import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
-import { boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } from './plan-bind.mjs'
+import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -85,7 +85,6 @@ const staleGeneration = () => {
 // 워크트리 자리 — 본체 .worktrees(옛 구조 · 옮긴 본체의 기존 워크트리) + 여러 팩이면 지금 팩 데이터의 worktrees(새 워크트리)
 const WORKTREE_ROOTS = [...new Set([join(ROOT, '.worktrees'), BOOT_PATHS.worktrees].map((dir) => { try { return realpathSync(dir) } catch { return dir } }))]
 const POLL_MS = 3000
-const DONE_KEEP_DAYS = 14 // 완료 칸에 남겨 두는 기간
 const SUBAGENT_ACTIVE_SEC = 90 // 로그가 이 안에 바뀌었으면 "작업 중"
 const SUBAGENT_RECENT_MIN = 30 // 이 안에 끝난 백그라운드 에이전트까지 보여준다
 
@@ -141,8 +140,6 @@ const section = (text, heading) => {
   const match = text.match(new RegExp(`^###\\s*${heading}\\s*\\n([\\s\\S]*?)(?=^##|$(?![\\s\\S]))`, 'm'))
   return match ? match[1].trim() : ''
 }
-const field = (text, name) => text.match(new RegExp(`^-\\s*${name}:\\s*(.+)$`, 'm'))?.[1].trim() ?? ''
-const plain = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').trim()
 
 // 이 계획서가 어떻게 시작됐나 — 이슈 [작업 시작] · /call · /qa-tc · 아테나 대화(정식·경량). 카드·팝업에 한 줄로
 const planOrigin = (path, text, rawAgent, issueField) => {
@@ -156,18 +153,13 @@ const planOrigin = (path, text, rawAgent, issueField) => {
   if (agent === 'athena' || agent === 'hermes') return '🧭 아테나 대화 (정비)'
   return `🧭 아테나 대화${agent ? ` → ${agent}` : ''}`
 }
-const leadPaneOfHtml = (path) => {
-  const html = path.replace(/\.md$/, '.html')
-  if (!existsSync(html)) return ''
-  return (readText(html) || '').match(/"(?:leadPane|hermesPane)":\s*"([^"]*)"/)?.[1] ?? ''
-}
 const readPlan = (path) => {
   const text = readText(path)
   if (!text) return null
   const archived = path.includes('/archive/')
-  const checkpoint = text.match(/^## Checkpoint\s*\n([\s\S]*?)(?=^## (?!#))/m)?.[1] ?? ''
+  const checkpoint = checkpointOf(text)
   const statusRaw = plain(field(checkpoint, 'Status'))
-  const status = archived ? 'done' : (statusRaw.match(/planned|in_progress|blocked|ready_for_review|done/)?.[0] ?? 'planned')
+  const status = statusOf(checkpoint, archived)
   const progress = progressOf(section(checkpoint, 'Progress'))
   const blocked = plain(section(checkpoint, 'Blocked').split('\n')[0] ?? '').replace(/^-\s*/, '')
   const next = plain(section(checkpoint, 'Next').split('\n').find((line) => line.trim()) ?? '').replace(/^\d+\.\s*/, '')
@@ -189,12 +181,8 @@ const readPlan = (path) => {
     column: STATUS_COLUMN[status] ?? 'plan',
     blocked: status === 'blocked' || (blocked && !/^없음/.test(blocked)) ? blocked || '막힘' : '',
     next,
-    workRef: plain(field(checkpoint, 'Work ref')),
-    // 여러 레포 계획서는 에이전트마다 Work ref 줄이 있다 — pane 을 붙일 때는 모두 본다
-    workRefs: [...checkpoint.matchAll(/^-\s*Work ref:\s*(.+)$/gm)].map((match) => plain(match[1].trim())).join('\n'),
-    review: plain(field(checkpoint, 'Review')),
-    // 이 일을 맡긴 아테나 pane — 정식은 결정 콘솔 PLAN.leadPane(옛 계획서 hermesPane), 경량은 delegate.sh 가 적는 "- Lead pane:" 줄
-    leadPane: plain(field(checkpoint, 'Lead pane')) || leadPaneOfHtml(path),
+    // Work ref · Review · 맡긴 아테나 pane — pane 을 묶는 줄(plan-bind.mjs — 스튜디오 앱도 같은 함수로 읽는다)
+    ...planRefs(path, checkpoint),
     // PR 줄은 여러 개일 수 있다(레포·앱마다 하나) — 전부 모은다
     pr: [...checkpoint.matchAll(/^-\s*PR:\s*(.+)$/gm)].map((match) => plain(match[1])).join('\n'),
     issue: plain(field(checkpoint, 'Issue')).match(/issues\/\S+\.md/)?.[0] ?? '',
@@ -598,25 +586,8 @@ const readPanes = async () => {
   const listed = await screen(['pane', 'list', '--agent-only'])
   if (!listed) return { available: false, panes: [] }
   try {
-    const panes = listed.panes
-      .map((pane) => {
-        // pane 이름은 label (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>') — 없으면 name · pane 제목
-        const name = pane.label || pane.name || pane.pane_title || ''
-        const delegated = name.match(/^🤖\s*(\S+)(?:\s*·\s*(.+))?$/)
-        return {
-          kind: 'pane',
-          id: pane.id,
-          tool: pane.agent,
-          status: pane.agent_status || 'unknown',
-          // 위임 pane 은 에이전트 이름, athena 루트의 claude 는 아테나(팀리드), 그 밖은 도구 이름
-          agent: delegated?.[1] || (pane.agent === 'claude' && pane.cwd === ROOT ? '아테나' : pane.agent),
-          role: delegated ? 'agent' : pane.agent === 'claude' && pane.cwd === ROOT ? 'hermes' : 'other',
-          branch: delegated?.[2] || '',
-          title: pane.title || '',
-          cwd: pane.cwd?.replace(homedir(), '~') || '',
-          focused: Boolean(pane.focused),
-        }
-      })
+    // 현황판 pane 모양(plan-bind.mjs boardPaneOf — 스튜디오 앱도 같은 함수로)
+    const panes = listed.panes.map((pane) => boardPaneOf(pane, ROOT, homedir()))
     return { available: true, panes }
   } catch {
     return { available: false, panes: [] }
@@ -847,15 +818,13 @@ const readUsage = () =>
   })
 
 // ── 모으기 ──────────────────────────────────────────────────────────────
-// 보호 브랜치(statusline.sh 와 같은 목록)는 여러 계획서가 같이 쓰므로 브랜치로는 붙이지 않는다.
-// athena 자체 작업은 모두 main 이라, 그냥 포함 검사를 하면 main 에서 도는 pane 하나가 hermes 계획서 전부를 진행 중으로 끌고 갔다
-const PROTECTED_BRANCH = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
+// 보호 브랜치 목록(PROTECTED_BRANCH)은 plan-bind.mjs
 
 const collect = async () => {
   const now = Date.now()
   // archive 는 보드에서 치운 것 — 보이지 않는다
   // plans/setup/ 은 첫 실행 고르기 콘솔(scripts/setup-pick.mjs) — 작업 계획서가 아니라 칸반에 올리지 않는다(콘솔 주소 /plans/setup/*.html 은 그대로 열린다)
-  const plans = listFiles(join(ROOT, 'plans'), (path) => path.endsWith('.md') && !path.includes('/plans/archive/') && !path.includes('/plans/setup/'))
+  const plans = planFiles(join(ROOT, 'plans'))
     .map(readPlan)
     .filter(Boolean)
     .filter((plan) => plan.column !== 'done' || now - plan.mtime < DONE_KEEP_DAYS * 86_400_000)
