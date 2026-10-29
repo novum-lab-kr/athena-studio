@@ -5,15 +5,17 @@
 //   node scripts/dev-app.js start   (npm start) Athena.app 으로 켠다 — 맥이 아니거나 만들지 못했으면 Electron 그대로.
 //                                   켜기 전에 레포 athena/(스튜디오 코어)에서 코어 번들을 만들어 앱 리소스 자리에 두고(src/lib/studio-home.js)
 //                                   화면(src/renderer)을 Vite 로 dist/renderer 에 빌드한다(vite.config.mts). 빌드가 실패하면 이전 빌드로 켜고 경고 · 이전 빌드가 없으면 켜지 않는다
-//   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>]
+//   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]
 //                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려(1분 넘게 살아 있으면 멈춤) → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
 //                                   → start 와 같이 켠다. install · 화면 빌드가 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed · build-failed)
+//                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패는 맥 알림으로(--lang 언어 · src/lib/update-notice.mts)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
 const { execFileSync, spawn } = require('child_process')
 const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
+const updateNotice = require('../src/lib/update-notice.mts')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -235,6 +237,51 @@ async function start(args, { fromUpdate = false } = {}) {
   for (const name of ['SIGINT', 'SIGTERM', 'SIGUSR2']) process.on(name, () => child && child.kill(name))
 }
 
+// 맥 알림 하나 — 앱이 꺼진 사이라 화면 · 트레이가 없다(src/lib/update-notice.mts). 맥이 아니거나 못 띄워도 업데이트는 계속한다
+function createNotice(language) {
+  const say = updateNotice.translator(updateNotice.pickLanguage(language, Intl.DateTimeFormat().resolvedOptions().locale))
+  return (event) => {
+    const { title, body } = updateNotice.noticeText(say, event)
+    console.log(`[dev-app] 알림: ${body}`)
+    if (process.platform !== 'darwin') return
+    try {
+      spawn('osascript', updateNotice.notifyArgs(title, body), { stdio: 'ignore' }).on('error', () => {})
+    } catch {}
+  }
+}
+
+// npm install(heavy.sh 줄 서기 포함)을 돌리며 출력은 그대로 기록(app-update.log)에 넘기고, heavy.sh 가 처음 "⏳ 대기" 를 찍을 때 한 번만 알린다
+// (30초마다 다시 찍어도 다시 띄우지 않는다 · "▶ 차례" 뒤 npm 출력은 보지 않는다). → 종료 코드(못 띄웠으면 1)
+function runInstall(file, list, notice) {
+  return new Promise((resolve) => {
+    let waiting = true
+    let rest = ''
+    const child = spawn(file, list, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
+    // 글자 단위로 받는다 — 덩어리 경계에서 한글(여러 바이트)이 잘리지 않게
+    child.stdout.setEncoding('utf8')
+    child.stdout.on('data', (chunk) => {
+      process.stdout.write(chunk)
+      if (!waiting) return
+      const lines = (rest + chunk).split('\n')
+      rest = lines.pop() || ''
+      for (const line of lines) {
+        if (line.startsWith('▶')) waiting = false
+        const wait = waiting && updateNotice.parseWaitLine(line)
+        if (wait) {
+          waiting = false
+          notice(wait)
+        }
+      }
+    })
+    child.stderr.on('data', (chunk) => process.stderr.write(chunk))
+    child.on('error', (error) => {
+      console.error(`[dev-app] ${file} 을(를) 띄우지 못했어요: ${error.message}`)
+      resolve(1)
+    })
+    child.on('close', (code, signal) => resolve(signal ? 1 : (code ?? 1)))
+  })
+}
+
 // 앱 업데이트 뒤 다시 켜기 — 옛 앱이 끝난 뒤에(같은 앱 데이터 · node_modules 를 쓰는 동안 바꾸지 않게)
 async function restart(args) {
   const valueOf = (name) => {
@@ -270,17 +317,21 @@ async function restart(args) {
     const install = [npm, 'install', '--include=dev']
     const [file, list] = heavy && fs.existsSync(heavy) ? ['bash', [heavy, ...install]] : [install[0], install.slice(1)]
     console.log(`[dev-app] ${[file, ...list].join(' ')}`)
-    try {
-      execFileSync(file, list, { cwd: ROOT, stdio: 'inherit' })
+    const notice = createNotice(valueOf('--lang'))
+    const code = await runInstall(file, list, notice)
+    if (code === 0) {
       // 끝났다고 다 깔린 것은 아니다 — 켜는 데 꼭 필요한 것이 없으면 알린다(그래도 이전 빌드 · .dev-app 으로 켜 본다)
       const missing = ['electron', 'vite'].filter((name) => !fs.existsSync(path.join(ROOT, 'node_modules', name, 'package.json')))
       if (missing.length) {
         console.error(`[dev-app] npm install 뒤에 ${missing.join(' · ')} 이(가) 없어요 — 레포에서 npm install --include=dev 를 다시 돌려 주세요`)
         process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
+        notice({ kind: 'install-failed' })
       }
-    } catch (error) {
-      console.error(`[dev-app] npm install 실패: ${error.message}`)
+    } else {
+      // heavy.sh 75 = 최대 대기(ATHENA_HEAVY_WAIT)를 넘겨 포기 · 그 밖은 npm install 실패. 켠 뒤 앱 알림(install-failed)은 그대로
+      console.error(`[dev-app] npm install ${code === 75 ? '포기(대기 시간 초과)' : '실패'}: 종료 코드 ${code}`)
       process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
+      notice({ kind: code === 75 ? 'gave-up' : 'install-failed' })
     }
   }
   await start([], { fromUpdate: true })
@@ -291,6 +342,6 @@ if (command === 'make') make()
 else if (command === 'start') start(rest)
 else if (command === 'restart') restart(rest)
 else {
-  console.error('사용: node scripts/dev-app.js make | start | restart --after <pid> [--install] [--heavy <heavy.sh>]')
+  console.error('사용: node scripts/dev-app.js make | start | restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]')
   process.exit(2)
 }
