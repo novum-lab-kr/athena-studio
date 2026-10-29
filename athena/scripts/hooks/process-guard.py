@@ -142,10 +142,11 @@ XARGS_VALUE_OPTS = {'-n', '-I', '-i', '-L', '-l', '-P', '-s', '-E', '-e', '-d', 
 
 
 def strip_comments(text):
-    """셸 주석(단어 시작의 # 부터 줄 끝)을 지운다 — 따옴표 안 · 이스케이프 · $# · ${#x} 는 주석이 아니다"""
-    out, quote, index = [], '', 0
+    """셸 주석(단어 시작의 # 부터 줄 끝)을 지운다 — 따옴표 안 · 이스케이프된 공백 뒤(`foo\\ #bar`) · $# · ${#x} 는 주석이 아니다"""
+    out, quote, index, escaped = [], '', 0, False
     while index < len(text):
         char = text[index]
+        was_escaped, escaped = escaped, False
         if quote:
             if quote == '"' and char == '\\' and index + 1 < len(text):
                 out.append(text[index:index + 2]); index += 2; continue
@@ -153,10 +154,10 @@ def strip_comments(text):
                 quote = ''
             out.append(char)
         elif char == '\\' and index + 1 < len(text):
-            out.append(text[index:index + 2]); index += 2; continue
+            out.append(text[index:index + 2]); index += 2; escaped = True; continue
         elif char in ('"', "'"):
             quote = char; out.append(char)
-        elif char == '#' and (index == 0 or text[index - 1] in ' \t\n;|&('):
+        elif char == '#' and not was_escaped and (index == 0 or text[index - 1] in ' \t\n;|&('):
             while index < len(text) and text[index] != '\n':
                 index += 1
             continue

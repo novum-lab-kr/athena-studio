@@ -31,6 +31,7 @@ const BLOCKED = [
   'ps -axo pid=,comm= | grep Foo | xargs -- kill',
   'echo ok # 설명\npkill foo',
   'echo "#" && pkill foo',
+  'echo foo\\ #bar; pkill foo',
   'kill $(pgrep -f foo)',
   'kill -9 `pgrep foo`',
   'sh -c "pkill foo"',
