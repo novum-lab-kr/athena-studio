@@ -189,12 +189,15 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 - `models` — 역할마다 Claude 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름). 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
   | 역할 | 어디에 붙나 | 이상한 값이면 |
   |---|---|---|
-  | `agent` | 담당 에이전트 pane(`scripts/delegate.sh`) | 띄우지 않는다 |
+  | `agent` | 담당 에이전트 pane(`scripts/delegate.sh`) — 정식 계획서(`plans/{feature,bugfix,refactor}/…`) 작업 | 띄우지 않는다 |
+  | `agentLight` | 담당 에이전트 pane — 경량 계획서(`plans/task/…`)로 띄울 때. 없으면 `agent` 값 | 띄우지 않는다 |
   | `reviewer` | reviewer pane(`scripts/delegate.sh`) | 띄우지 않는다 |
+  | `reviewerEscalated` | reviewer pane — 그 계획서 Checkpoint 의 같은 레포 · 브랜치 `- Review result:` 마지막 줄이 `수정 필요` 일 때(고친 뒤 다시 리뷰). 레포 · 브랜치는 띄울 작업 트리(`--cwd`)로 `scripts/review-result.sh` 와 같은 방법으로 고른다. 없으면 `reviewer` 값 | 띄우지 않는다 |
   | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs` · Codex 는 `~/.codex/config.toml` 그대로). 없으면 기본 모델 — 단 Codex 를 처음부터 못 쓰는 사람의 Claude 두 번 모드에서는 `opus` | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
   | `prReviewSecond` | PR 자동 리뷰 두 번째 자리 — Codex 가 없거나 로그인 안 된 사람에게만 Codex 대신 도는 Claude. 없으면 `sonnet`. `prReview`(또는 그 기본 `opus`)와 같은 모델이 되면 대신하지 않는다(`docs/pr-auto.md` "Codex 가 없는 사람") | 첫 자리 Claude 리뷰어 실패 → 리뷰어 부족 |
   | `learnReview` | 배우기 검토(`scripts/learn-review.mjs`) | 그 검토 실패(다시 해 본 뒤 failed/) |
   | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |
+  - 값 예(경량 · 다시 리뷰만 나누기): `"models": { "learnReview": "sonnet", "agentLight": "sonnet", "reviewer": "sonnet", "reviewerEscalated": "opus" }` — `agent` 를 비워 두면 정식 작업은 기본 모델. 키를 지우면 그 자리는 지금과 같다(`agentLight` → `agent` · `reviewerEscalated` → `reviewer` → 기본 모델). 모델은 띄울 때 정해진다 — 이미 떠 있는 pane 은 그대로
   - 에이전트 하나만 다르게 하려면 그 프로필(`.claude/agents/<이름>.md`) frontmatter `model:` — 있으면 팩 값보다 이긴다(`inherit` 은 없는 것과 같다). delegate.sh 가 그 값을 `--model` 로 넘긴다(워크트리에서 띄울 때 다시 만드는 프로필에는 `model` 이 없어서)
 
 ## QA 대상 앱

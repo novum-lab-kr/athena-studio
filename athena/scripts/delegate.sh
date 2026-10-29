@@ -195,23 +195,25 @@ PYEOF
   fi
 fi
 
-# 역할마다 모델(팩 pack.json "models" · scripts/lib/models.mjs) — reviewer 는 reviewer, 그 밖은 agent. 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다 · athena_config.agent_model).
-# 값이 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게)
-MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
-import sys
-sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import agent_model
-try:
-    print(agent_model(sys.argv[1], sys.argv[2]))
-except ValueError as error:
-    print(error, file=sys.stderr); sys.exit(1)
-PYEOF
-)" || { echo "모델 설정이 이상해서 띄우지 않는다 — 팩 pack.json \"models\" 를 고친다(docs/pack.md \"pack.json\")" >&2; exit 2; }
-
 WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 [ -d "$WORKDIR" ] || { echo "디렉터리가 없다: $WORKDIR"; exit 2; }
 # 상대 경로면 절대 경로로 — 실행기는 pane 의 시작 폴더(이미 그 폴더)에서 다시 cd 하므로 상대 경로는 어긋난다.
 # 실제 경로로 푼다 — 본체의 repos/·.worktrees 는 여러 팩 구조에서 지금 팩을 가리키는 링크라, 링크 경로로 Work ref 에 적으면 팩을 갈아 끼운 뒤 다른 팩을 가리킨다
 WORKDIR="$(cd "$WORKDIR" && pwd -P)"
+
+# 역할마다 모델(팩 pack.json "models" · scripts/lib/models.mjs · athena_config.agent_model) — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다).
+# 그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(값 없으면 agent) · 정식이면 agent. reviewer 는 이 계획서의 같은 레포 · 브랜치
+# "- Review result:" 가 수정 필요면 reviewerEscalated(값 없으면 reviewer) · 아니면 reviewer(계획서 2026-10-29 D1 · D2). 레포 · 브랜치는 띄울 작업 트리(WORKDIR)로 고른다.
+# 값이 다 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게)
+MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" "$PLAN" "$WORKDIR" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import agent_model
+try:
+    print(agent_model(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]))
+except ValueError as error:
+    print(error, file=sys.stderr); sys.exit(1)
+PYEOF
+)" || { echo "모델 설정이 이상해서 띄우지 않는다 — 팩 pack.json \"models\" 를 고친다(docs/pack.md \"pack.json\")" >&2; exit 2; }
 
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
