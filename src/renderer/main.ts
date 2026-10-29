@@ -203,6 +203,12 @@ async function init(): Promise<void> {
   new ResizeObserver(() => layoutPanes()).observe($('panes'))
   new ResizeObserver(() => layoutPanes()).observe($('dock'))
   initEdgeResize()
+  // 파일을 pane 밖(창 아무 데)에 놓아도 페이지가 그 파일로 이동하지 않게 — pane 위에 놓으면 terminal.ts 가 경로를 넣는다
+  for (const type of ['dragover', 'drop'] as const) {
+    document.addEventListener(type, (event) => {
+      if (event.dataTransfer?.types.includes('Files')) event.preventDefault()
+    })
+  }
   if (state!.valid) {
     switchTab('work')
     // 팩 목록(켤 때 시작 화면인지)을 먼저 — 시작 화면이면 고를 때까지 아테나 에이전트를 켜지 않는다(startScreen)

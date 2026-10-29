@@ -1,6 +1,6 @@
 // @ts-check
 // 화면(renderer)에 열어 주는 기능 — Node 는 넘기지 않고 이 함수들만
-const { contextBridge, ipcRenderer } = require('electron')
+const { contextBridge, ipcRenderer, webUtils } = require('electron')
 
 // 화면에 넘기는 값은 main 이 받아 검사한다 — 여기서는 그대로 넘긴다(그래서 매개변수는 unknown)
 /** @typedef {Record<string, (...values: unknown[]) => unknown>} Bridge */
@@ -91,6 +91,8 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   paneContextMenu: (point, title) => ipcRenderer.invoke('pane:context-menu', point, title),
   paneFocus: (paneId) => ipcRenderer.send('pane:focus', paneId),
   paneInput: (paneId, data) => ipcRenderer.send('pane:input', paneId, data),
+  // pane 에 끌어다 놓은 파일의 경로(File.path 는 Electron 32 에서 빠졌다 — webUtils) · 디스크 파일이 아니면 ''
+  pathForFile: (file) => webUtils.getPathForFile(/** @type {File} */ (file)),
   paneResize: (paneId, cols, rows) => ipcRenderer.send('pane:resize', paneId, cols, rows),
   openBoard: () => ipcRenderer.invoke('board:open'),
   // [작업] 팝업 — 목록 · 계획서 상세 · 요청이 바뀌면 { supported, requests }

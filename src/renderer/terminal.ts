@@ -5,6 +5,7 @@ import * as FitAddon from '@xterm/addon-fit'
 import * as WebLinksAddon from '@xterm/addon-web-links'
 import * as Unicode11Addon from '@xterm/addon-unicode11'
 import * as StudioPaneKeys from '../lib/pane-keys.mts'
+import { dropText } from '../lib/drop-paths.mts'
 import { $ } from './core.ts'
 import { focusPane, paneMenu, reattach, reattachOnKey } from './screen.ts'
 import { paneDetailButton } from './detail.ts'
@@ -107,6 +108,22 @@ export function ensureView(paneId: string): PaneView {
   el.addEventListener('mousedown', () => focusPane(paneId))
   // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
   el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
+  // 파인더 등에서 끌어다 놓은 파일 · 폴더 — 경로를 놓은 이 pane 입력줄에(맥 터미널처럼 이스케이프 · Enter 는 치지 않는다).
+  // 붙여넣기로 보내 Claude Code 가 이미지 경로를 첨부로 알아본다. 창의 다른 자리에 놓을 때 막기는 main.ts
+  el.addEventListener('dragover', (event) => {
+    if (!event.dataTransfer?.types.includes('Files')) return
+    event.preventDefault()
+    event.dataTransfer.dropEffect = 'copy'
+  })
+  el.addEventListener('drop', (event) => {
+    const files = [...(event.dataTransfer?.files ?? [])]
+    if (!files.length) return
+    event.preventDefault()
+    event.stopPropagation()
+    const text = dropText(files.map((file) => studio.pathForFile(file)))
+    focusPane(paneId)
+    if (text) views.get(paneId)?.term.paste(text)
+  })
   const view: PaneView = { term, fit, el, head, headLabel, detailButton, body, shown: false, sent: null }
   term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
