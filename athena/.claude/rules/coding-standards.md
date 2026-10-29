@@ -1,12 +1,10 @@
 # 공통 코드 규칙
 
-정본은 `docs/knowledge/common/coding.md`(팀 공통) → `docs/knowledge/<레포>/rules.md`(레포) → 레포 원문 문서 순이며 뒤가 우선한다. 아래는 아테나가 늘 기억할 요약.
+정본은 `docs/knowledge/common/coding.md`(팀 공통) → `docs/knowledge/<레포>/rules.md`(레포) → 레포 원문 문서 순이며 뒤가 우선한다. 아래는 늘 기억할 요약.
 
 ## 작업 원칙
 - 작업 전 반드시 기존 코드 패턴을 분석하고 그 패턴을 따른다 — 구조 · 이름 · 폴더 · 라이브러리는 기존 패턴, **언어 · 타입 · 문법 수준은 아래 "언어 · 타입 · 최신 문법" 이 먼저**
-- 요청 범위 밖의 대규모 정리, 의존성 업그레이드, 파일 이동, 전역 포맷팅 금지
-- 포맷은 **작업한 파일만** 적용 (`prettier --write <파일>`)
-- 각 에이전트는 자신의 담당 레포 안에서만 수정한다. 다른 레포·공유 패키지 수정이 필요하면 아테나에 보고한다
+- 범위 · 포맷(작업한 파일만 — `prettier --write <파일>`) · 담당 레포 밖 금지는 `AGENTS.md` 5절
 
 ## 언어 · 타입 · 최신 문법 (상세 `coding.md` "언어 · 타입" · "최신 문법" · "층별 기준")
 - 새 레포 · 새 프로젝트는 TypeScript `strict`(Python 은 타입 힌트 + pyright) · `tsconfig` `strict` · `noUncheckedIndexedAccess` · `target` ES2022 이상
@@ -30,5 +28,4 @@
 - 같은 오류 3회 반복 시 접근 방식을 전면 재검토하고 아테나에 보고
 
 ## 보안
-- `.env*`, 토큰, 키 파일 내용은 출력·커밋하지 않는다
-- **토큰·키·비밀번호는 무조건 노출 금지.** 값은 어떤 경로로든 출력하지 않는다 — 파일 읽기(`.npmrc`·`.env*`·키 파일, `git show/diff/log` 포함), `npm/pnpm/yarn config get·list`, `printenv`·`env`, 프로세스 전체 인자(`pgrep -fl`·`ps aux`·`ps -ef` — 환경 변수가 섞여 나온다, `ps -axo pid=,comm=` 만), `echo $…TOKEN`, `gh auth token`, 로그·보고·커밋 메시지·계획서 모두. 확인이 필요하면 **있는지·참조 형태(`${…}`)·길이·HTTP 상태 코드만** 본다(`curl -s -o /dev/null -w '%{http_code}'`). 봐야 하면 `sed 's/_authToken=.*/_authToken=***/'` 로 가린 뒤. 실수로 노출되면 즉시 멈추고 사용자에게 알려 폐기·재발급을 권한다. 모든 세션(아테나·FE·reviewer)에 `scripts/hooks/secret-guard.py` 가 걸려 흔한 경로를 막는다(보안 경계는 아니다 — 규칙이 우선)
+- 비밀값(토큰 · 키 · 비밀번호 · `.env*`) 노출 금지 — 정본 `AGENTS.md` 5절. 서버 전용 값 · storage 는 `coding.md` "보안"

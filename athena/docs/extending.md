@@ -51,7 +51,7 @@ argument-hint: "<인자 예시>"
 | 파일 | 고칠 곳 |
 |---|---|
 | `AGENTS.md` | 담당 레포 표, 라우팅 기준 (도구 무관 공통 문서) |
-| `CLAUDE.md` | 서브에이전트 표, Skills 표 |
+| `CLAUDE.md` | 서브에이전트 줄, Skills 줄 (설명은 `docs/workflow.md` "명령" 표) |
 | `README.md` | 팀 표, 사용 목록, 구조 |
 | `docs/playbook.html` | 팀 구성·슬래시 커맨드·폴더 구조 섹션, 헤더의 `agents N · skills N` |
 

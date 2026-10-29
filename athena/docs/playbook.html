@@ -660,10 +660,10 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 
     <section id="rules">
       <h2>규칙</h2>
-      <p>규칙은 세 층입니다. <strong>팀 공통</strong>(<code>docs/knowledge/common/</code>: 코드·Git·보고) → <strong>레포 규칙</strong>(<code>docs/knowledge/&lt;레포&gt;/rules.md</code>: 공통과 다른 점) → <strong>레포 원문</strong>(레포 안 <code>CLAUDE.md</code>·<code>AGENTS.md</code>·규칙 문서 등). 충돌하면 뒤가 우선합니다. 아래 <code>.claude/rules/</code>는 아테나 자신의 운영 규칙 요약입니다.</p>
+      <p>규칙은 세 층입니다. <strong>팀 공통</strong>(<code>docs/knowledge/common/</code>: 코드·Git·보고) → <strong>레포 규칙</strong>(<code>docs/knowledge/&lt;레포&gt;/rules.md</code>: 공통과 다른 점) → <strong>레포 원문</strong>(레포 안 <code>CLAUDE.md</code>·<code>AGENTS.md</code>·규칙 문서 등). 충돌하면 뒤가 우선합니다. 아래는 아테나 자신의 운영 규칙 요약입니다 — 늘 실리는 것은 <code>AGENTS.md</code>(공통) · <code>CLAUDE.md</code>(아테나) · <code>.claude/rules/coding-standards.md</code>(코드) 셋이고, 자세한 절차는 필요할 때 읽는 <code>docs/</code> 문서로 나눴습니다(2026-10-29).</p>
       <div class="rules">
         <div class="rule">
-          <h3>git-workflow</h3>
+          <h3>Git (<code>AGENTS.md</code> 5절)</h3>
           <ul>
             <li>FE 에이전트는 사용자가 pane 에서 "커밋해줘" · "PR 올려줘" 라고 할 때만 <code>scripts/commit.sh</code> 로 로컬 커밋(지정 파일만·엄격 검증·계획서 기록). push·PR 은 "PR 올려줘" 일 때 <code>scripts/ship.sh</code> 로 — 그 한 마디로 커밋 → 제목·본문 정리 → 묻지 않고 draft(레포 하나짜리)</li>
             <li>PR 제목 <code>type(범위): 티켓 요약</code> · 본문 공통 템플릿 (<code>git.md</code> "PR 제목·본문")</li>
@@ -672,7 +672,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           </ul>
         </div>
         <div class="rule">
-          <h3>coding-standards</h3>
+          <h3>코드 (<code>.claude/rules/coding-standards.md</code>)</h3>
           <ul>
             <li>기존 패턴 분석 후 그 패턴을 따름</li>
             <li>범위 밖 정리·의존성 업그레이드·파일 이동·전역 포맷팅 금지</li>
@@ -683,7 +683,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           </ul>
         </div>
         <div class="rule">
-          <h3>dispatch-protocol</h3>
+          <h3>디스패치 (<code>docs/dispatch.md</code>)</h3>
           <ul>
             <li>계획서(정식은 승인 후 · 경량은 지시가 곧 승인)가 있어야 디스패치 — <code>delegate.sh --plan</code> 필수</li>
             <li>독립 작업은 한 응답에서 동시 호출</li>
@@ -691,11 +691,11 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
           </ul>
         </div>
         <div class="rule">
-          <h3>language</h3>
+          <h3>언어 (<code>AGENTS.md</code> 6절)</h3>
           <ul>
             <li>한국어로 소통, 주석도 한국어</li>
             <li>영어는 코드·파일명·기술 용어만</li>
-            <li>불확실하면 "추측입니다"라고 명시</li>
+            <li>확인 못 한 것은 "확인 못 함"이라고 명시(추측으로 구현하지 않음)</li>
           </ul>
         </div>
       </div>
@@ -713,7 +713,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 ├── repos/                     <span class="c">레포 심볼릭 링크 (scripts/setup.sh 생성, gitignore)</span>
 ├── .claude/
 │   ├── agents/                <span class="c">reviewer · learn-reviewer (코어) + 레포 담당 에이전트 (팩에서 링크)</span>
-│   ├── rules/                 <span class="c">language · coding-standards · git-workflow · dispatch-protocol</span>
+│   ├── rules/                 <span class="c">coding-standards (언어 · Git 은 AGENTS.md · 디스패치는 docs/dispatch.md)</span>
 │   ├── skills/                <span class="c">call · board · sync · diagram · guide · monitor · setup (코어) + 회사 스킬 (팩에서 링크)</span>
 │   └── settings.json
 ├── .sync/
@@ -774,7 +774,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
         <div class="rule">
           <h3>같이 갱신할 곳</h3>
           <ul>
-            <li><code>CLAUDE.md</code>의 팀 표·Skills 표</li>
+            <li><code>CLAUDE.md</code>의 서브에이전트 줄·Skills 줄 (설명은 <code>docs/workflow.md</code> "명령" 표)</li>
             <li><code>README.md</code></li>
             <li><code>docs/playbook.html</code> (이 문서)</li>
           </ul>
