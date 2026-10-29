@@ -11,6 +11,7 @@
  *
  * 남은 단계: Checkpoint Progress 의 빈 칸(`- [ ]`)이 하나라도 있으면 남은 일이 있다 — 맨 앞 칸이든 들여 쓴 하위 칸(깊이 무관)이든.
  *   하위 칸도 센다(2026-10-29 — 맨 앞 칸은 다 [x] 인데 남은 일이 하위 칸에만 있던 배포판 계획서가 PR 머지 뒤 완료 · 보관됐다).
+ *   고치지 않은 템플릿 자리 줄(TEMPLATE_PLACEHOLDER_LINES)은 센 적 없는 것으로 본다(2026-10-29 — PR 이 다 머지돼도 자리 줄 3개 때문에 영영 자동 완료가 안 됐다).
  *   진행 표시 숫자(checked/total)는 맨 앞 칸 기준 그대로 — 화면이 바뀌지 않게 판정(open)만 넓힌다.
  *   2026-10-27 실제 계획서 64개(보관 58 · 진행 6)로 세어 봄 — PR 머지로 끝난 계획서는 거의 모두 맨 앞 칸을 다 채웠고(빈 칸 남은 2개도
  *   실제로 못 한 확인 단계), Next 는 끝난 계획서도 거의 모두 "머지 뒤 확인" 같은 글이 있어 기준이 못 된다
@@ -97,14 +98,27 @@ export const boardPaneOf = (pane, root, home) => {
   }
 }
 
+/** 경량 계획서 템플릿(docs/plan-template-light.md)이 Progress 에 넣는 자리 줄 — 에이전트가 고치지 않고 남기면 남은 단계로 세지 않는다.
+ * 판별: 고치지 않은 빈 칸 줄(`- [ ] …`)이 아래 원문과 글자 그대로 같을 때만(앞뒤 공백 무시). 한 글자라도 고쳤거나 [x] 로 채웠으면 보통 칸.
+ * 템플릿 줄을 바꾸면 여기도 같이(athena/test/board-auto-test.sh 가 템플릿 파일에 이 줄이 그대로 있는지 본다) */
+export const TEMPLATE_PLACEHOLDER_LINES = [
+  '- [ ] (작업) → 확인: (방법) → 성공 조건: (기대 결과)',
+  '- [ ] 표준 검증 + 동작 확인 결과 기록 — 실행 못 한 것은 이유',
+  '- [ ] 근거 확인 — 외부 계약·제품 정책·기본 동작을 근거 없이 넣지 않았나. 확인 못 한 것은 Blocked 에 적고 완료로 보고하지 않는다(`AGENTS.md` 5절)',
+]
+/** 고치지 않은 템플릿 자리 줄인가 @param {string} line */
+export const isTemplatePlaceholder = (line) => TEMPLATE_PLACEHOLDER_LINES.includes(line.trim())
+
 /** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함, 남은 단계 판정).
- * 칸이 하나도 없으면 null. 들여 쓴 빈 칸만 있어도 { checked: 0, total: 0, open } 을 돌려준다(남은 단계 · 화면은 total 0 이면 숫자를 안 보인다)
+ * 고치지 않은 템플릿 자리 줄은 어느 쪽에도 세지 않는다. 칸이 하나도 없으면 null. 들여 쓴 빈 칸만 있어도 { checked: 0, total: 0, open } 을 돌려준다(남은 단계 · 화면은 total 0 이면 숫자를 안 보인다)
  * @param {string} progress
  * @returns {{ checked: number, total: number, open: number } | null} */
 export const progressOf = (progress) => {
-  const checked = (progress.match(/^- \[x\]/gim) ?? []).length
-  const total = (progress.match(/^- \[[ x]\]/gim) ?? []).length
-  const open = (progress.match(/^[ \t]*- \[ \]/gm) ?? []).length
+  const lines = progress.split('\n').filter((line) => !isTemplatePlaceholder(line))
+  const count = (/** @type {RegExp} */ pattern) => lines.filter((line) => pattern.test(line)).length
+  const checked = count(/^- \[x\]/i)
+  const total = count(/^- \[[ x]\]/i)
+  const open = count(/^[ \t]*- \[ \]/)
   return total || open ? { checked, total, open } : null
 }
 

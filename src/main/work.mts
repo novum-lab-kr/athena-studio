@@ -24,7 +24,7 @@ type RunCore = (args: string[], options: RunCoreOptions) => Promise<PackResult>
 type BoardResult = { ok: boolean; url: string; started?: boolean; error?: string; log?: string }
 // 현황판 /api/state · /api/card 에서 읽는 칸만
 type BoardState = { cards?: unknown }
-type BoardCard = { text?: unknown }
+type BoardCard = { text?: unknown; templateLines?: unknown }
 type PaneListReply = { result?: { panes?: unknown } }
 
 // 팩 창 문맥(main.mts createPackWindow) 중 현황판 · 요청 · [작업] 이 읽는 것 · 붙이는 것
@@ -252,7 +252,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
     const card = (await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)) as BoardCard | null
     if (!card || typeof card.text !== 'string') return { ok: false, error: 'not-found' }
-    return { ok: true, id, ...workModel.planDetail(card.text) }
+    return { ok: true, id, ...workModel.planDetail(card.text, Array.isArray(card.templateLines) ? card.templateLines.filter((line): line is string => typeof line === 'string') : []) }
   }
 
   // 현황판은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.

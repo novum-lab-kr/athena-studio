@@ -103,3 +103,10 @@ test('상세: 요청 사항이 없으면 제목 아래 첫 문단 · 비어 있�
   assert.deepEqual(empty.progress, { checked: 0, total: 0, now: '' })
   assert.deepEqual(empty.decided, [])
 })
+
+test('상세: 고치지 않은 템플릿 자리 줄은 진행 칸으로 세지 않는다(코어가 알려 준 줄)', () => {
+  const placeholder = '- [ ] (작업) → 확인: (방법) → 성공 조건: (기대 결과)'
+  const text = `# 일\n\n## Checkpoint\n- Status: done\n\n### Progress\n- [x] 구현\n${placeholder}\n\n### Next\n1. 없음\n`
+  assert.deepEqual(work.planDetail(text).progress, { checked: 1, total: 2, now: '(작업) → 확인: (방법) → 성공 조건: (기대 결과)' })
+  assert.deepEqual(work.planDetail(text, [placeholder]).progress, { checked: 1, total: 1, now: '' })
+})
