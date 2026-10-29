@@ -25,6 +25,12 @@ const BLOCKED = [
   'kill -TERM -1234',
   'pgrep -f foo | xargs kill',
   'pgrep foo | xargs kill -9',
+  'pgrep foo | xargs -n 1 kill',
+  'pgrep foo | xargs -I {} kill {}',
+  'pgrep foo | xargs -P4 -n1 kill -9',
+  'ps -axo pid=,comm= | grep Foo | xargs -- kill',
+  'echo ok # 설명\npkill foo',
+  'echo "#" && pkill foo',
   'kill $(pgrep -f foo)',
   'kill -9 `pgrep foo`',
   'sh -c "pkill foo"',
@@ -48,6 +54,10 @@ const ALLOWED = [
   'git commit -m "docs: pkill 금지"',
   'echo 123 | xargs kill',
   'ls # pkill foo',
+  'echo ok # 설명; pkill foo',
+  'echo ok # $(pkill foo) | xargs kill',
+  'echo ${#PATH} 12',
+  'echo 123 | xargs -n 1 kill',
 ];
 
 for (const command of BLOCKED) {

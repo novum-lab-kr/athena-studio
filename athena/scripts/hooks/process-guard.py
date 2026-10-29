@@ -137,6 +137,45 @@ def strip_prefix(tokens):
     return tokens[index:]
 
 
+XARGS_VALUE_OPTS = {'-n', '-I', '-i', '-L', '-l', '-P', '-s', '-E', '-e', '-d', '-a', '-J', '-R', '-S',
+                    '--max-args', '--replace', '--max-lines', '--max-procs', '--max-chars', '--eof', '--delimiter', '--arg-file'}
+
+
+def strip_comments(text):
+    """셸 주석(단어 시작의 # 부터 줄 끝)을 지운다 — 따옴표 안 · 이스케이프 · $# · ${#x} 는 주석이 아니다"""
+    out, quote, index = [], '', 0
+    while index < len(text):
+        char = text[index]
+        if quote:
+            if quote == '"' and char == '\\' and index + 1 < len(text):
+                out.append(text[index:index + 2]); index += 2; continue
+            if char == quote:
+                quote = ''
+            out.append(char)
+        elif char == '\\' and index + 1 < len(text):
+            out.append(text[index:index + 2]); index += 2; continue
+        elif char in ('"', "'"):
+            quote = char; out.append(char)
+        elif char == '#' and (index == 0 or text[index - 1] in ' \t\n;|&('):
+            while index < len(text) and text[index] != '\n':
+                index += 1
+            continue
+        else:
+            out.append(char)
+        index += 1
+    return ''.join(out)
+
+
+def xargs_command(args):
+    """xargs 뒤 토큰에서 옵션(값 있는 옵션은 값까지)을 건너뛰고 실제 실행 명령 토큰들을 돌려준다"""
+    index = 0
+    while index < len(args) and args[index].startswith('-') and args[index] != '--':
+        index += 2 if args[index] in XARGS_VALUE_OPTS else 1
+    if index < len(args) and args[index] == '--':
+        index += 1
+    return strip_prefix(args[index:])
+
+
 def kill_reason(args, piece):
     """kill 뒤 토큰들. 0·음수 대상(전체·프로세스 그룹)이나 이름으로 찾은 pid 면 이유를 돌려준다"""
     if re.search(r'\b(pgrep|pidof)\b', piece):
@@ -159,6 +198,7 @@ def kill_reason(args, piece):
 def check(text, depth=0):
     if depth > 5:
         return ''
+    text = strip_comments(text)
     for inner in inner_commands(text):
         reason = check(inner, depth + 1)
         if reason:
@@ -183,9 +223,9 @@ def check(text, depth=0):
             if reason:
                 return reason
         if name == 'xargs':
-            rest = [token for token in tokens[1:] if not token.startswith('-')]
+            run = xargs_command(tokens[1:])
             fed_by_echo = position > 0 and os.path.basename((strip_prefix(tokens_of(pieces[position - 1])) or [''])[0]) in ('echo', 'printf')
-            if rest and os.path.basename(rest[0]) == 'kill' and position > 0 and not fed_by_echo:
+            if run and os.path.basename(run[0]) in ('kill', 'pkill', 'killall') and position > 0 and not fed_by_echo:
                 return f'파이프로 받은 pid 를 xargs kill 로 확인 없이 죽이면 안 된다. {HOW_TO}'
     return ''
 
