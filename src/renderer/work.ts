@@ -95,7 +95,7 @@ function toggleBoardMenu(): void {
 
 // 작업 상세 — 계획서에서 왜 · 정한 것 · 진행 · 검증 · 결과 · 다음
 async function openWorkDetail(item: WorkItemView): Promise<void> {
-  hidePops() // 브라우저는 뗀 채로 둔다 — 곧 대화상자가 뜬다(닫히면 syncModal 이 붙인다)
+  // 조회를 기다리는 동안 팝업을 둔다 — 브라우저를 뗀 채로 유지(팝업 · 대화상자 어느 쪽도 없는 틈이 생기면 크기 감시가 다시 붙인다)
   const detail = await studio.workDetail(item.id as string)
   const body = []
   if (!detail || !detail.ok) body.push(el('p', 'muted', say('work.detail.unreadable')))
@@ -127,6 +127,7 @@ async function openWorkDetail(item: WorkItemView): Promise<void> {
     field('results', detail.results)
     field('next', detail.next)
   }
+  hidePops() // 대화상자를 여는 같은 동기 구간에서 팝업을 내린다 — 대화상자가 바로 브라우저를 뗀다(닫히면 syncModal 이 붙인다)
   const actions: PackDialogAction[] = [{ label: say('work.detail.openPlan'), value: 'plan' }]
   if (item.html) actions.push({ label: say('work.detail.console'), value: 'console' })
   const pane = item.agents.find(paneLive)
