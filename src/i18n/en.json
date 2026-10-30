@@ -584,7 +584,7 @@
   "work.detail.console": "Decision console",
   "work.detail.goPane": "Go to pane",
   "board.menu.qa": "QA",
-  "board.menu.qaNote": "Run checks · compare screens",
+  "board.menu.qaNote": "TC results by flow",
   "board.menu.learn": "Learning",
   "board.menu.learnNote": "Accept or discard what agents learned",
   "board.menu.metrics": "Metrics",

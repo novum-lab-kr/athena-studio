@@ -41,12 +41,13 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 앱을 고쳤으면 `npm run check` · `npm run typecheck` · `npm test`. node-pty 를 못 불러오면 데몬 통합 테스트가 **skip** 된다(`test/daemon.test.js`) — 통과 숫자만 보지 말고 skip 이 없는지 본다
 - `npm test` 는 코어를 보지 않는다. `athena/` 를 고쳤으면 고친 곳에 맞는 코어 검사를 따로(`athena/` 에서):
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
+  - QA 실행기 · 현황판 QA 탭(`scripts/qa/` · `server.mjs` `/api/qa/flows` · `/api/qa-run`)을 고쳤으면 `test/qa-test.sh`(몇 초~1분 · 임시 레포 · 가짜 서버 · Playwright 가 있으면 FE 도)
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)
-  - 무거운 명령 줄서기(`athena/scripts/heavy.sh` 자리 · 메모리 여유 조건 · `scripts/lib/packs.mjs` · `server.mjs` 의 잠금 읽기)를 고쳤으면 `test/heavy-test.sh`(약 45초 · 임시 잠금 경로 · 가짜 memory_pressure)
+  - 무거운 명령 줄서기(`athena/scripts/heavy.sh` 자리 · 메모리 여유 · CPU 부하 조건 · `scripts/lib/packs.mjs` · `server.mjs` 의 잠금 읽기)를 고쳤으면 `test/heavy-test.sh`(약 60초 · 임시 잠금 경로 · 가짜 memory_pressure · 가짜 sysctl 부하)
   - 역할마다 모델(`scripts/lib/models.mjs` · `athena_config.py` `model_of` · `delegate.sh` `--model` · 팩 `models`)을 고쳤으면 `test/models-test.sh`(몇 초 · 진짜 claude 를 부르지 않는다)
   - red-check(`scripts/red-check.mjs` · `scripts/lib/red-check.mjs` · `scripts/verify/red-check.sh` · `ship.sh` 의 red-check 연결)를 고쳤으면 `test/red-check-test.sh`(몇 초 · 가짜 레포 · 가짜 gh)
   - 검증 범위 판정(`athena/scripts/verify/_lib.sh` `verify_scope_*` · `verify_key` · `scope-tests.mjs`)을 고쳤으면 `test/verify-scope-test.sh`(몇 초 · 임시 git 레포)

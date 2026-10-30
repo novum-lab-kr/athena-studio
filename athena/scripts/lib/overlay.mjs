@@ -15,12 +15,8 @@ export const OVERLAY = [
   { from: 'skills', to: '.claude/skills', each: true },
   { from: 'knowledge', to: 'docs/knowledge', each: true },
   { from: 'docs', to: 'docs', each: true },
-  { from: 'diagrams', to: 'docs/diagrams', each: true },
   { from: 'verify', to: 'scripts/verify', each: true },
   { from: 'scripts', to: 'scripts', each: true },
-  { from: 'qa/docs', to: 'docs/qa' },
-  { from: 'qa/routes', to: 'scripts/qa/routes' },
-  { from: 'qa/scenarios', to: 'scripts/qa/scenarios' },
   { from: 'sync', to: '.sync', legacyOnly: true },
   { from: 'archive', to: 'archive', legacyOnly: true },
 ]

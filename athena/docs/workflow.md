@@ -4,7 +4,7 @@
 
 ## 1. 요청 · 계획서
 - **요청은 세 갈래로 들어온다.** ① 대화 — 담당자를 모르거나 여러 레포 · 기능 · 버그 원인 찾기면 그냥 말한다(아테나가 라우팅 · 계획서) ② `/call <에이전트>` — 담당자를 알 때. pane 을 먼저 띄우고 요청은 그 pane 에서 ③ 현황판 이슈 카드의 [작업 시작] — 기본은 아테나가 받아 처리한다(팝업에서 "담당 에이전트로 바로(조사만)" 도 고를 수 있다)
-- sync · 리뷰 · 다이어그램 작업에서 찾았지만 그 자리에서 고치지 않은 것은 `docs/issues.md` "등록 기준"대로 — 보안 · 버그(high)만 바로 `issues/*.md`, 나머지는 "이슈 후보"로 보여 주고 사용자가 고른다
+- sync · 리뷰 작업에서 찾았지만 그 자리에서 고치지 않은 것은 `docs/issues.md` "등록 기준"대로 — 보안 · 버그(high)만 바로 `issues/*.md`, 나머지는 "이슈 후보"로 보여 주고 사용자가 고른다
 - 시작 줄: `📋 경량으로 진행합니다 — <이유> · <계획서 경로>`(정식으로 하려면 "정식으로") / `📋 정식으로 진행합니다 — <이유> · 결정 N개 · <경로>`. `/call` 은 경량으로 시작하고 브랜치를 물을 때 같은 줄을 붙인다
 - 새 기능 · API · 구조 변경은 대개 정할 것이 있어 정식이 되지만, 이름이 아니라 "사용자가 정할 것이 있나 · 여러 레포 · 담당을 맞추나" 로 판단한다. 경량으로 하다 정할 것이 생기면 같은 작업을 정식으로 옮긴다(경량판에 그 경로)
 - **정식** — `plans/{feature,bugfix,refactor}/YYYYMMDD-제목.md`(`docs/plan-template.md`) + 같은 이름 `.html` 결정 콘솔(`node scripts/plan-html.mjs` — `docs/plan-template.html` 복사, `PLAN.decisions[]` · `leadPane` · `plan-md`). 개요 다음에 **Checkpoint**(Status / Work ref / Progress / Next / Blocked / Validation / Decisions / Commits)
@@ -48,14 +48,13 @@
 |---|---|
 | `/call` | `/call <에이전트>` — 담당 에이전트를 그 레포 workspace 에 pane 으로 바로 띄운다. 브랜치를 먼저 물어 워크트리를 만들고 그 폴더에서 띄운다. 요청 · 커밋 · 리뷰 · PR 은 pane 에서 직접(빈 지시 경량 계획서) |
 | `/monitor` | 백그라운드 서브에이전트 · 워크트리 pane 에이전트 로그를 어디서 보는지 — Athena Studio 는 앱 아래 AGENT MONITOR 칸, 화면 밖이면 직접 실행할 명령(`/monitor 30` = 최근 30분) |
-| `/board` | 현황판 — 로컬 서버를 띄워 브라우저에서 실시간으로. 첫 화면은 **해결할 이슈 목록**(`issues/` — 학습 후보 제외 · 열린 이슈는 [작업 시작] · 시작한 이슈는 맡은 pane) · **[QA]**(QA 시뮬레이션 런 — 영향 화면 카드 · 작업 · 기준 · 차이 스크린샷 · 대상은 팩 `qa`) · **[학습]**(아테나 학습: 후보 넣기 · 버리기 · 학습한 내용 수정 · 삭제 / 클로드 학습: Claude Code 메모리) · **[아카이브]** · **[지표]**(완료 · 평균 소요 · 작업당 질문 · 평균 답 대기 · 검증 실패율 · 리뷰 반려율 — `docs/events.md`). 계획서 칸반 · [정비] 탭은 없다(2026-10-26) — 계획서 진행은 Studio [작업] 팝업과 pane [상세]. 서버는 화면을 안 열어도 PR 머지 자동 완료 · 끝난 일 자동 보관 · 학습 대기열을 맡는다(`/board stop`) |
-| `/sync` | 담당 레포의 운영 기준 브랜치를 훑어 지문을 만들고 사실마다 정한 정본(knowledge · config · 지문)만 갱신. 파생 문서는 `node scripts/build-derived.mjs`, 다이어그램 근거 점검은 `node scripts/check-diagrams.mjs` |
-| `/diagram` | 다이어그램 다시 그리기 — 운영 기준 코드로 구조 · 화면 맵 · 요청 흐름(팩이 정한 서비스는 심층까지)을 그리고 검증 · 목록 갱신, 그리다 찾은 문제는 등록 기준대로 `issues/`(나머지는 이슈 후보). `/diagram brand` 처럼 서비스를 주거나 비우면 전체. `/diagram 점검` 은 근거만 점검 |
+| `/board` | 현황판 — 로컬 서버를 띄워 브라우저에서 실시간으로. 첫 화면은 **해결할 이슈 목록**(`issues/` — 학습 후보 제외 · 열린 이슈는 [작업 시작] · 시작한 이슈는 맡은 pane) · **[QA]**(서비스 → 층 → 흐름별 TC 결과 · 실패 원문 · 문서 링크 · [실행]) · **[학습]**(아테나 학습: 후보 넣기 · 버리기 · 학습한 내용 수정 · 삭제 / 클로드 학습: Claude Code 메모리) · **[아카이브]** · **[지표]**(완료 · 평균 소요 · 작업당 질문 · 평균 답 대기 · 검증 실패율 · 리뷰 반려율 — `docs/events.md`). 계획서 칸반 · [정비] 탭은 없다(2026-10-26) — 계획서 진행은 Studio [작업] 팝업과 pane [상세]. 서버는 화면을 안 열어도 PR 머지 자동 완료 · 끝난 일 자동 보관 · 학습 대기열을 맡는다(`/board stop`) |
+| `/sync` | 담당 레포의 운영 기준 브랜치를 훑어 지문을 만들고 사실마다 정한 정본(knowledge · config · 지문)만 갱신. 파생 문서는 `node scripts/build-derived.mjs`, 바뀐 코드에 닿는 흐름 찾기는 `node scripts/qa/affected.mjs` · 확정(`--accept`)하면 바뀐 서비스의 TC 가 뒤에서 돈다 |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" 표 — 팩 `skills/` 가 `.claude/skills/` 에 링크된다 |
 | `/guide` | 오른쪽 pane 에 가이드 메뉴(문서 · 스킬 목록 · 실행 · 에이전트 · 라우팅). `/guide <파일>` 은 뷰어, `/guide 설명` 은 아테나 구조 설명 HTML, `/guide 열기` 는 플레이북, `/guide 시작하기` 는 시작하기 가이드, `/guide 그림` 은 **다이어그램 목록**(작업 흐름 경량 · 정식 + 팩 서비스 × 구조 · 화면 맵 · 요청 흐름) |
 
 ## 말로 하는 일 (커맨드가 없는 것)
-- 전체 검수 — "<앱> 전체 검수 돌려줘" → `node scripts/qa/run.mjs --suite --app <앱>`(요청할 때만 · 현황판 QA 탭 [전체 검수 시작] 도 같다 · `verify.md` "QA 시뮬레이션")
+- QA — "<서비스> QA 돌려줘" → `scripts/heavy.sh node scripts/qa/run.mjs --service <서비스>`(현황판 QA 탭 [실행] 도 같다 · 형식과 옵션 `docs/knowledge/common/qa-flows.md`)
 - 기능 · 버그 → 1단계 · 리뷰("리뷰해줘") → 5단계 `delegate.sh reviewer` · 현황("현황 알려줘") → `git.md` "현황 점검" · 브랜치 → 3단계(`git.md` "작업 브랜치 만들기")
 - 팩 백업("팩 백업해줘") → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — 여러 팩 구조면 `pack backup --with-work` · `pack restore --with-work <파일>`(팩만은 `pack export`) — `docs/pack.md` "백업 · 되살리기"
 - 여러 팩("팩 목록" · "팩 열어줘 <id>") → `bin/athena pack list` · `pack open <id>` — 팩마다 본체(`~/.athena-studio/bodies/<id>`)가 따로라 동시에 켠다. 열린 본체 폴더에서 아테나를 켠다(스튜디오는 창마다 팩)

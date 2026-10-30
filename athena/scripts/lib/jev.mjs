@@ -11,7 +11,6 @@
  *   node scripts/lib/jev.mjs --report      # 쓰임새별 호출 수·실패·입력 토큰·추정 비용, 배우기 검토 나란히 판정 표
  *
  * 쓰는 곳 (도입 2026-10-15 — 틀려도 되돌릴 수 있고 눈에 띄는 곳만 Jev 단독)
- *   qa-explain       QA 미분류 오류의 원인 추정(scripts/qa/explain.mjs · board/server.mjs) — 표시만, 원문·판정은 그대로
  *   learn-dedupe     학습 후보가 공책 기존 줄과 같은지(scripts/board/learn.mjs) — 아주 높으면 휴지통, 중간이면 [학습] 탭 힌트
  *   learn-review     배우기 검토 나란히 판정(scripts/learn-review.mjs) — 건너뛰지 않고 기록만, 놓치는 비율을 잰 뒤 바꾼다
  *
@@ -23,13 +22,13 @@
  *   ATHENA_JEV=off     키가 있어도 끈다
  *   TYPESAFE_API_URL   주소 바꾸기(시험용 가짜 서버) — 기본 https://api.typesafe.ai/v1/systemone
  *
- * 보내는 글은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 한 번 더 가린다(qa/live.mjs maskText). 보내는 글 자체는 기록하지 않는다
+ * 보내는 글은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 한 번 더 가린다(lib/mask.mjs maskText). 보내는 글 자체는 기록하지 않는다
  */
 import { appendFileSync, existsSync, readFileSync } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { maskText } from '../qa/live.mjs'
+import { maskText } from './mask.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '../..')
 export const JEV_LOG = join(ROOT, '.jev-log.jsonl')

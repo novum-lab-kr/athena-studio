@@ -49,7 +49,7 @@
 .board-jev-learn.json
 .jev-log.jsonl
 
-# QA 시뮬레이션 (scripts/qa) — 의존성·런 결과·로그인 세션(쿠키, 절대 커밋 금지)
+# QA (scripts/qa) — 의존성·결과 · 옛 로그인 세션(쿠키, 절대 커밋 금지)
 scripts/qa/node_modules/
 /.qa-runs
 /.qa-auth
@@ -64,6 +64,6 @@ scripts/qa/node_modules/
 # 파이썬 바이트코드 — scripts/lib 의 athena_config·plan_update 를 불러오면 생긴다
 __pycache__/
 
-# oh-my-claudecode 세션 상태(어느 폴더에든 생긴다) · 팩에서 만드는 다이어그램 목록(회사 이름이 들어간다 — scripts/build-diagram-index.mjs)
+# oh-my-claudecode 세션 상태(어느 폴더에든 생긴다) · 만들어 쓰는 다이어그램 목록(scripts/build-diagram-index.mjs)
 .omc/
 docs/diagrams/index.html

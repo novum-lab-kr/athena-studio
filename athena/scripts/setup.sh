@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 팀원 최초 설정: athena.config.json 의 레포들을 repos/<name> 심볼릭 링크로 연결하고 도구를 점검한다.
 # 사용: scripts/setup.sh [--root <레포들이 있는 폴더>] [--links-only]   (기본: athena.config.json 의 reposRoot, 보통 hermes 상위 폴더)
-#   --links-only  레포 링크만 — 도구 점검·QA 의존성·Chromium 설치는 하지 않는다
+#   --links-only  레포 링크만 — 도구 점검·QA 도구·Chromium 설치는 하지 않는다
 #                 (세션 시작 훅 setup-check.py 가 빠진 링크를 이어 줄 때 쓴다 — 공용 도구를 말없이 바꾸지 않게)
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd)"
@@ -57,7 +57,7 @@ done
 
 
 echo
-echo "QA 시뮬레이션 도구 (scripts/qa — Playwright·dependency-cruiser):"
+echo "QA 도구 (scripts/qa — Playwright):"
 if [ -d "$ATHENA_DIR/scripts/qa/node_modules" ]; then
   echo "  ✔ 의존성 있음"
 elif command -v npm >/dev/null 2>&1 && (cd "$ATHENA_DIR/scripts/qa" && "$ATHENA_DIR/scripts/heavy.sh" npm ci --silent >/dev/null 2>&1); then
@@ -69,7 +69,6 @@ if [ -d "$ATHENA_DIR/scripts/qa/node_modules/playwright" ]; then
   if (cd "$ATHENA_DIR/scripts/qa" && npx --no-install playwright install chromium >/dev/null 2>&1); then echo "  ✔ Chromium 준비"
   else echo "  ✖ Chromium 설치 실패 — cd scripts/qa && npx playwright install chromium"; failed=$((failed+1)); fi
 fi
-echo "  · 로그인 세션은 각자 한 번: node scripts/qa/login.mjs (이메일 로그인 — docs/knowledge/common/verify.md \"QA 시뮬레이션\")"
 
 echo
 if [ "$missing" -gt 0 ]; then echo "⚠️  레포 $missing 개가 연결되지 않았습니다. 해당 에이전트는 동작하지 않습니다."; fi
