@@ -374,6 +374,26 @@ CODEX_PURE="$(node --input-type=module -e "
   const top = codexUserSettings('# c\nmodel = \"m-1\" # x\n[a]\nmodel_reasoning_effort = \"low\"\n')
   const bad = codexUserSettings('model = \"a b\"\nmodel_reasoning_effort = \"x\\\\\"\"')
   console.log(JSON.stringify([top, codexModelArgs(top), bad, codexModelArgs(bad)]))")"
+# 여러 줄 문자열(''' · """) 안의 model · [표] 는 설정이 아니다 — 파일로 만들어 읽는다
+cat > "$TMP/multi.toml" <<'TOML'
+model = "real"
+developer_instructions = '''
+model = "other"
+[table]
+model_reasoning_effort = "low"
+'''
+notes = """one
+[x]
+"""
+model_reasoning_effort = "high"
+[t]
+model = "late"
+TOML
+MULTI_PURE="$(node --input-type=module -e "
+  import { readFileSync } from 'node:fs'
+  const { codexUserSettings } = await import('./scripts/lib/pr-auto.mjs')
+  console.log(JSON.stringify(codexUserSettings(readFileSync(process.argv[1], 'utf8'))))" "$TMP/multi.toml")"
+[ "$MULTI_PURE" = '{"model":"real","effort":"high"}' ] && echo "  ✔ 여러 줄 문자열 안의 model · [표] 는 무시 (문자열 뒤 최상위 값은 읽음)" || { echo "  ✖ 여러 줄 문자열 처리 이상: $MULTI_PURE"; FAIL=1; }
 [ "$CODEX_PURE" = '[{"model":"m-1","effort":""},["-m","m-1"],{"model":"","effort":""},[]]' ] && echo "  ✔ 첫 [표] 앞 두 값만 · 이상한 값 무시" || { echo "  ✖ 설정 해석 이상: $CODEX_PURE"; FAIL=1; }
 
 # ── 가짜 본체로 — ship.sh --auto-push --body-file(결정 D2) · 머지 결과 pane 알림 ─────────────────────

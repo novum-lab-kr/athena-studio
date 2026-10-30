@@ -56,14 +56,23 @@ export const lineupNote = ({ first, second }) => {
 const CODEX_SETTING_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
 export const codexUserSettings = (tomlText) => {
   const settings = { model: '', effort: '' }
+  let open = ''   // 여러 줄 문자열 안이면 닫는 글자(""" 또는 ''') — 그 안의 줄은 키도 [표]도 아니다
   for (const raw of String(tomlText ?? '').split('\n')) {
+    if (open) {
+      if (raw.includes(open)) open = ''
+      continue
+    }
     const line = raw.trim()
     if (line.startsWith('[')) break
     const match = line.match(/^(model|model_reasoning_effort)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/)
-    if (!match) continue
-    const value = match[2] ?? match[3]
-    if (!CODEX_SETTING_VALUE.test(value)) continue
-    settings[match[1] === 'model' ? 'model' : 'effort'] = value
+    if (match) {
+      const value = match[2] ?? match[3]
+      if (CODEX_SETTING_VALUE.test(value)) settings[match[1] === 'model' ? 'model' : 'effort'] = value
+      continue
+    }
+    const value = line.replace(/^[^=]*=\s*/, '')
+    const delimiter = ['"""', "'''"].find((quote) => line.includes('=') && value.startsWith(quote))
+    if (delimiter && !value.slice(3).includes(delimiter)) open = delimiter
   }
   return settings
 }
