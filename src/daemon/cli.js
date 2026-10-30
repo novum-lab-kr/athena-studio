@@ -1,7 +1,7 @@
 // @ts-check
 // athena-studio-cli — 아테나 화면 계층(scripts/lib/screen.py studio 백엔드)이 부르는 데몬 CLI.
 // 출력은 화면 계층의 납작한 JSON 그대로(stdout 한 줄). 실패는 종료 1(데몬에 못 붙으면 3) + stderr {"error","message"}.
-// 소켓 찾기: ATHENA_STUDIO_SOCKET(pane 셸) → 접속 파일 ~/.athena-studio/daemon.json(pane 밖, S4)
+// 소켓 찾기: ATHENA_STUDIO_HOME(격리 실행 — 그 집의 접속 파일만) → ATHENA_STUDIO_SOCKET(pane 셸) → 접속 파일 ~/.athena-studio/daemon.json(pane 밖, S4)
 const fs = require('fs')
 const net = require('net')
 const os = require('os')
@@ -16,17 +16,30 @@ const protocol = require('../lib/protocol')
 // 실패 — code 는 protocol.ERROR_CODES 하나(못 붙으면 unavailable)
 /** @typedef {Error & { code?: string }} Failure */
 
-// ATHENA_STUDIO_ENDPOINT — 격리 실행(개발 · 회귀 검사)의 접속 파일 자리(앱 · 아테나 screen.py 와 같은 변수)
-const ENDPOINT = process.env.ATHENA_STUDIO_ENDPOINT || path.join(os.homedir(), '.athena-studio', 'daemon.json')
+// 접속 파일 후보 — ATHENA_STUDIO_ENDPOINT 가 있으면 그 자리(격리 실행 · 회귀 검사 · 앱 · 아테나 screen.py 와 같은 변수)
+// 없고 ATHENA_STUDIO_HOME 이 있으면 그 집의 개발 앱 → 배포판 접속 파일(src/lib/studio-home.js appIdentity 의 endpointName)
+/** @param {Env} env */
+function endpointFiles(env) {
+  if (env.ATHENA_STUDIO_ENDPOINT) return [env.ATHENA_STUDIO_ENDPOINT]
+  if (env.ATHENA_STUDIO_HOME) return ['daemon-dev.json', 'daemon.json'].map((name) => path.join(path.resolve(String(env.ATHENA_STUDIO_HOME)), name))
+  return [path.join(os.homedir(), '.athena-studio', 'daemon.json')]
+}
 
+// 격리 실행(ATHENA_STUDIO_HOME)이면 pane 셸에 남은 ATHENA_STUDIO_SOCKET 보다 그 집의 접속 파일이 먼저다 — 안 그러면
+// 격리하려는 CLI 가 사용자 앱의 데몬을 부른다. 그 집 접속 파일이 없으면 사용자 데몬으로 돌아가지 않고 못 찾았다고 답한다
 /** @param {Env} env */
 function socketPath(env) {
-  if (env.ATHENA_STUDIO_SOCKET) return env.ATHENA_STUDIO_SOCKET
-  try {
-    return JSON.parse(fs.readFileSync(ENDPOINT, 'utf8')).socket || null
-  } catch {
-    return null
+  const isolated = Boolean(env.ATHENA_STUDIO_HOME)
+  if (env.ATHENA_STUDIO_SOCKET && !isolated) return env.ATHENA_STUDIO_SOCKET
+  for (const file of endpointFiles(env)) {
+    try {
+      const socket = JSON.parse(fs.readFileSync(file, 'utf8')).socket
+      if (socket) return socket
+    } catch {
+      // 다음 후보
+    }
   }
+  return null
 }
 
 /**
@@ -91,7 +104,7 @@ async function main(argv, env) {
     return undefined
   }
   const socket = socketPath(env)
-  if (!socket) return fail('unavailable', 'Athena Studio 데몬을 찾지 못했다(ATHENA_STUDIO_SOCKET · ~/.athena-studio/daemon.json 없음)')
+  if (!socket) return fail('unavailable', 'Athena Studio 데몬을 찾지 못했다(ATHENA_STUDIO_SOCKET · ~/.athena-studio/daemon.json — 격리 실행이면 ATHENA_STUDIO_HOME 의 접속 파일 — 없음)')
   /** @type {Result} */
   let result
   try {
@@ -110,4 +123,5 @@ async function main(argv, env) {
   return undefined
 }
 
-main(process.argv.slice(2), process.env)
+module.exports = { socketPath }
+if (require.main === module) main(process.argv.slice(2), process.env)
