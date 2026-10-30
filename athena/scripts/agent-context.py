@@ -83,4 +83,9 @@ settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "
 # 답 언어 — 메시지마다 본체 .claude/settings.local.json 의 language(스튜디오 앱 언어)를 다시 읽어 넣는다 (scripts/hooks/language.py)
 settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"},
                                                      {"type": "command", "command": f"python3 {script('scripts/hooks/pane-session.py')}"}]}]
+# 끝 알림 — 에이전트가 한 차례를 끝내면 띄운 아테나 pane 에 한 줄(scripts/hooks/agent-done-notify.py — 위임 에이전트만, reviewer 는 계획서 줄로 알린다)
+if agent != "reviewer":
+    notify = lambda mode: {"type": "command", "command": f"python3 {script('scripts/hooks/agent-done-notify.py')} {mode}"}
+    settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(notify("prompt"))
+    settings["hooks"]["Stop"] = [{"hooks": [notify("stop")]}]
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")
