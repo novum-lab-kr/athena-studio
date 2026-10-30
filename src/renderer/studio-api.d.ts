@@ -204,8 +204,8 @@ declare global {
     openBoard(): Promise<{ ok: boolean }>
     reportTab(tab: string): void
 
-    explorerList(workspaceId: string | null, relative: string): Promise<{ entries: ExplorerEntry[] } | { error: string }>
-    explorerStatus(workspaceId: string): Promise<{ git: boolean; changes: ExplorerChange[] } | { error: string }>
+    explorerList(workspaceId: string | null, relative: string, paneId?: string | null): Promise<{ entries: ExplorerEntry[] } | { error: string }>
+    explorerStatus(workspaceId: string, paneId?: string | null): Promise<{ git: boolean; changes: ExplorerChange[]; root: string; branch: string | null } | { error: string }>
     mergeSettings(): Promise<{ ok: boolean; repos: MergeRepo[] } | undefined>
     setAutoMerge(repo: string, values: { auto?: AutoFlow; review?: boolean; merge?: MergeMode }): Promise<{ ok: boolean; text?: string } | undefined>
     checkAppUpdate(): Promise<unknown>
@@ -255,7 +255,7 @@ declare global {
     workspaceOpenDir(dir: string, size: CellSize | null): Promise<DaemonReply>
     packCallInfo(name: string): Promise<CallInfo>
     packCallStart(name: string, options: { branch: string; reuse: boolean }): Promise<CallStartReply>
-    explorerOpen(workspaceId: string | null, relative: string): Promise<ExplorerPreview>
+    explorerOpen(workspaceId: string | null, relative: string, paneId?: string | null): Promise<ExplorerPreview>
     // 시작 · 아테나 폴더 · 팩 만들기 · 가져오기 · 내보내기(R3f — main.ts · pack-transfer.ts) — main.mts handle(athena:state · athena:pick · athena:install ·
     // pack:new · pack:inspect · pack:import · pack:export · pack:restore-now · pack:restore-arm · pack:restore-disarm)
     athenaState(): Promise<AthenaState>

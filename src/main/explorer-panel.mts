@@ -15,7 +15,7 @@ const fileIcons: typeof import('../lib/file-icons.js') = require('../lib/file-ic
 
 // 데몬 state · pane list 답에서 읽는 칸만(모양은 검사하지 않는다 — 옛 main.js 와 같다)
 type StateReply = { result?: { workspaces: { id: string; cwd: string }[] } }
-type PaneListReply = { result?: { panes?: explorer.PaneFolder[] } }
+type PaneListReply = { result?: { panes?: (explorer.PaneFolder & { id?: unknown })[] } }
 
 // 팩 창 문맥(main.mts createPackWindow) 중 Explorer 가 읽는 것 · 붙이는 것
 export type ExplorerCtx = {
@@ -28,7 +28,30 @@ export type ExplorerCtx = {
 type ExplorerDeps = { say: Say; resolveInside: (root: string, relative: unknown) => Promise<{ real: string; clean: string }> }
 
 export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: ExplorerDeps): void {
-  async function workspaceRoot(workspaceId: unknown): Promise<string> {
+  // 폴더인 실제 경로, 아니면 null
+  async function existingDir(folder: unknown): Promise<string | null> {
+    if (typeof folder !== 'string' || folder === '') return null
+    const real = await fs.promises.realpath(folder).catch(() => null)
+    return real && (await fs.promises.stat(real).then((stat) => stat.isDirectory(), () => false)) ? real : null
+  }
+
+  // 보는 폴더 — pane 을 골랐으면 그 pane 의 폴더(foreground_cwd → cwd), 없거나 지워졌으면 작업 공간 폴더.
+  // 화면이 폴더를 넘기지 않는다 — pane id 로 데몬 목록에서 찾는다(그 작업 공간의 pane 만)
+  async function workspaceRoot(workspaceId: unknown, paneId?: unknown): Promise<string> {
+    if (typeof paneId === 'string' && paneId !== '') {
+      const panes = ((await ctx.daemonCall('pane list')) as PaneListReply).result?.panes ?? []
+      const pane = panes.find((entry) => entry.id === paneId && entry.workspace_id === String(workspaceId))
+      if (pane) {
+        for (const folder of [pane.foreground_cwd, pane.cwd]) {
+          const real = await existingDir(folder)
+          if (real) return real
+        }
+      }
+    }
+    return workspaceFolder(workspaceId)
+  }
+
+  async function workspaceFolder(workspaceId: unknown): Promise<string> {
     const state = (await ctx.daemonCall('state')) as StateReply
     const workspace = state.result && state.result.workspaces.find((entry) => entry.id === String(workspaceId))
     if (!workspace) throw new Error(say('error.workspaceMissing'))
@@ -43,8 +66,8 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
     throw new Error(say('error.workspaceFolderMissing'))
   }
 
-  ctx.explorerList = async (workspaceId: unknown, relative: unknown) => {
-    const root = await workspaceRoot(workspaceId)
+  ctx.explorerList = async (workspaceId: unknown, relative: unknown, paneId?: unknown) => {
+    const root = await workspaceRoot(workspaceId, paneId)
     const { real, clean } = await resolveInside(root, relative)
     const roots = await explorerRoots(root)
     const dirents = await fs.promises.readdir(real, { withFileTypes: true })
@@ -65,15 +88,17 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
     return { entries: explorer.sortEntries(clean === '.' && roots.length > 1 ? explorer.packBodyEntries(shown) : shown) }
   }
 
-  // 작업 공간 폴더 기준 git 변경. git 레포가 아니면 git: false
-  ctx.explorerStatus = async (workspaceId: unknown) => {
-    const root = await workspaceRoot(workspaceId)
+  // 보는 폴더 기준 git 변경. git 레포가 아니면 git: false
+  // root(보는 폴더 — 화면이 바뀐 걸 알아채는 열쇠) · branch(그 폴더의 브랜치, 없으면 null)도 같이 준다
+  ctx.explorerStatus = async (workspaceId: unknown, paneId?: unknown) => {
+    const root = await workspaceRoot(workspaceId, paneId)
     const top = await runGit(root, ['rev-parse', '--show-toplevel'])
-    if (top === null) return { git: false, changes: [] }
+    if (top === null) return { git: false, changes: [], root, branch: null }
+    const branch = ((await runGit(root, ['branch', '--show-current'])) ?? '').trim() || ((await runGit(root, ['rev-parse', '--short', 'HEAD'])) ?? '').trim() || null
     const prefix = path.relative(await fs.promises.realpath(top.trim()), root)
     // 새 폴더는 한 줄(`dir/`)로 — 안의 파일을 다 세면 .omc/ 같은 폴더 하나로 수백 줄이 된다(git 기본과 같다)
     const output = await runGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])
-    if (output === null) return { git: true, changes: [] }
+    if (output === null) return { git: true, changes: [], root, branch }
     const all = explorer.relativeToWorkspace(explorer.parseGitStatus(output), prefix.split(path.sep).join('/'))
     // 팩 본체의 git 은 코어 레포다 — 코어 변경은 빼고 팩 내용 쪽만
     const changes = (await explorerRoots(root)).length > 1 ? explorer.packBodyChanges(all) : all
@@ -81,13 +106,15 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
     const manifest = fileIcons.loadManifest()
     return {
       git: true,
+      root,
+      branch,
       changes: changes.map((change) => ({ ...change, ...fileIcons.iconFor(manifest, change.path.split('/').filter(Boolean).pop(), change.path.endsWith('/')) })),
     }
   }
 
   // 미리보기 — 이미지는 그림, 바뀐 파일은 diff(옛·새 줄 번호), 그 밖은 내용(앞 512KB). 바이너리는 안내만
-  ctx.explorerOpen = async (workspaceId: unknown, relative: unknown) => {
-    const root = await workspaceRoot(workspaceId)
+  ctx.explorerOpen = async (workspaceId: unknown, relative: unknown, paneId?: unknown) => {
+    const root = await workspaceRoot(workspaceId, paneId)
     const { real, clean } = await resolveInside(root, relative)
     const stat = await fs.promises.stat(real)
     if (!stat.isFile()) throw new Error(say('error.notFile'))

@@ -226,8 +226,8 @@ export function renderSides(): void {
     paneStatus,
   })
 
-  // 오른쪽: 지금 작업 공간의 Explorer — 작업 공간이 바뀌면 따라간다
-  if (StudioUi.explorer.workspace() !== screen.activeWorkspace) StudioUi.explorer.reset(screen.activeWorkspace)
+  // 오른쪽: 지금 작업 공간 · 포커스된 pane 의 Explorer — 작업 공간이나 포커스 pane 이 바뀌면 따라간다
+  if (StudioUi.explorer.workspace() !== screen.activeWorkspace || StudioUi.explorer.pane() !== screen.focused) StudioUi.explorer.reset(screen.activeWorkspace, screen.focused)
 }
 
 // 왼쪽 작업 공간 목록(React)에 넘기는 바닐라 도우미 · 누른 뒤의 일
