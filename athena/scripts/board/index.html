@@ -65,16 +65,28 @@
   .empty { color: var(--muted); font-size: 13px; padding: 10px 2px; }
   @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
   /* 해결할 이슈 목록 — 한 줄에 제목 · 레포 · 중요도 · 등록일 · 상태(작업 시작 / 진행 중) */
-  .issue-list { display: grid; gap: 6px; }
-  .issue-row { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; }
+  .issue-list { display: grid; gap: 8px; }
+  /* 왼쪽 띠 = 중요도(high 빨강 · medium 노랑 · low 회색) — 훑기만 해도 급한 것이 먼저 보이게 */
+  .issue-row { --sev: var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--sev); border-radius: 10px; padding: 12px 14px; }
+  .issue-row[data-severity="high"] { --sev: var(--bad); }
+  .issue-row[data-severity="medium"] { --sev: var(--warn); }
+  .issue-row[data-severity="low"] { --sev: var(--idle); }
+  /* 시작한(진행 중) 이슈 — 열린 이슈와 배경으로 구분 */
+  .issue-row.started { background: color-mix(in srgb, var(--ok) 7%, var(--panel)); }
   .issue-row.flash { animation: flash 1.2s ease-out; }
-  .issue-row .title { font-weight: 600; line-height: 1.35; cursor: pointer; }
+  .issue-row .title { font-size: 15px; font-weight: 650; line-height: 1.4; cursor: pointer; }
   .issue-row .title:hover { color: var(--accent); }
   .issue-row .sub { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
+  .issue-row .sub .pill.repo { color: var(--accent); font-weight: 600; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
+  .issue-row .sub .pill.sev { font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
+  .issue-row .sub .pill.sev.bad { color: #fff; background: var(--bad); border-color: var(--bad); }
+  .issue-row .sub .pill.sev.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
   .issue-row .state { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; grid-row: span 2; }
-  .issue-row .summary { font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .issue-head { display: flex; align-items: baseline; gap: 8px; }
-  .issue-head .count { color: var(--muted); font-weight: 500; }
+  .issue-row .state .btn.primary { font-size: 13px; font-weight: 600; padding: 5px 14px; }
+  .issue-row .summary { font-size: 12.5px; color: color-mix(in srgb, var(--text) 72%, var(--bg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .issue-head { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); }
+  .issue-head .count { font-size: 12px; font-weight: 700; color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); border-radius: 999px; padding: 0 8px; }
+  .issue-head .count:empty { display: none; }
   @media (min-width: 721px) and (min-height: 560px) {
     body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     header { flex: none; }
@@ -1925,7 +1937,7 @@
   const severityPill = (severity) => {
     if (!severity) return '';
     const level = { high: 'bad', medium: 'warn' }[severity] || '';
-    return `<span class="pill ${level}">${esc(severity)}</span>`;
+    return `<span class="pill sev ${level}">${esc(severity)}</span>`;
   };
   // 상태 칸 — 열린 이슈는 [작업 시작](기존 처리 흐름), 시작한 이슈는 진행 중 + 맡은 pane
   const issueState = (card, panes) => {
@@ -1945,11 +1957,11 @@
   const issueRow = (card, panes) => {
     const created = card.created || card.mtime;
     const origin = issueOrigin(card.source);
-    return `<div class="issue-row" data-key="${esc(card.id)}">
+    return `<div class="issue-row${card.status === 'open' ? '' : ' started'}" data-key="${esc(card.id)}" data-severity="${esc(card.severity || '')}">
       <div class="title" title="누르면 요청·진행·결과를 볼 수 있어요">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
       <div class="state">${issueState(card, panes)}</div>
       <div class="sub">
-        ${card.repo ? `<span class="pill">${esc(card.repo)}</span>` : ''}
+        ${card.repo ? `<span class="pill repo">${esc(card.repo)}</span>` : ''}
         ${severityPill(card.severity)}
         <span title="${esc(new Date(created).toLocaleString('ko-KR', { hour12: false }))}">등록 ${clock(created)}</span>
         ${origin ? `<span title="${esc(card.source)}">${origin.icon} ${esc(origin.label)}</span>` : ''}
