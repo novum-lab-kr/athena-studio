@@ -66,7 +66,7 @@
 레포마다 `scripts/verify/<레포>.sh [<앱>]`(무거우니 `heavy.sh` 가 줄 세운다) — 결과 표를 그대로 모아 보여 준다. ❌·⏭ 은 통과로 치지 않고 "확인 필요"(설치 안 됨·스크립트 없음 등)로 남긴다. 설치는 사용자에게 묻고 한다.
 
 ## 7. 지문 기준선
-`node scripts/sync-fingerprint.mjs`(fetch 한다 — 사용자에게 한 줄 알린다) → 리포트 확인 → `node scripts/sync-fingerprint.mjs --accept` → `node scripts/build-derived.mjs`(`docs/services.md` 스택 표가 채워진다). 이후는 평소 `/sync`(`.claude/skills/sync/SKILL.md`).
+`node scripts/sync-fingerprint.mjs`(fetch 한다 — 사용자에게 한 줄 알린다) → 리포트 확인 → `node scripts/sync-fingerprint.mjs --accept` → `node scripts/build-derived.mjs`(`docs/services.md` 스택 표가 채워진다). 리포트에 `⚠️ 기준 ref … 읽을 수 없어 건너뛴다` 가 있으면(원격이 없거나 기준 브랜치를 아직 push 하지 않은 레포) 그 레포는 지문이 없다 — 원격을 연결하고 커밋한 뒤 다시 실행하거나 `--accept` 전에 사용자에게 알린다. 이후는 평소 `/sync`(`.claude/skills/sync/SKILL.md`).
 
 ## 7-2. (선택) Jev 키 — 사람마다 본인 키
 Jev(TypeSafe 의 판정 모델)는 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정에 쓴다(`docs/knowledge/common/learning.md` 6절). **없어도 그대로 돈다.** 유료라 키는 사람마다 본인 것(사용량은 키 주인에게 청구 · 나눠 쓰지 않는다).
