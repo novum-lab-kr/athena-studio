@@ -368,21 +368,9 @@ else
   # hermes 안에서 띄워도 보호 훅을 건다 — FE 는 commit-guard(git commit 직접·add -A → commit.sh, push·gh pr 차단) + secret-guard,
   # reviewer 는 secret-guard 만(토큰·키 값은 어떤 세션에서도 출력하지 않는다)
   SETTINGS_FILE="$(mktemp -t hermes-settings)" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "mktemp 실패"; exit 1; }
-  GUARD_HOOKS=()
-  [ "$AGENT" != reviewer ] && GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/commit-guard.py")
-  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
-  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/process-guard.py")   # pkill · killall · 0/음수 대상 kill 차단(GH #133) — 모든 세션
-  # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
-  # pane ↔ 대화 기록(팩 백업이 되살릴 때 --resume) — 첫 인자
-  # 자동 압축 시점(reviewer 제외 · 짧게 끝난다) — 본체 .claude/settings.json 의 autoCompactWindow 를 그대로 옮긴다(값은 그 한 곳).
-  # 본체 안이면 프로젝트 설정으로도 실리지만, 프로젝트 설정을 못 찾는 폴더에서 띄워도 같은 값이 걸리게 여기서도 넣는다
-  WINDOW_FROM=""
-  [ "$AGENT" != reviewer ] && WINDOW_FROM="$ATHENA_DIR/.claude/settings.json"
-  # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다(reviewer 제외 · scripts/hooks/ask-to-request.py)
-  ASK_HOOK=""
-  [ "$AGENT" != reviewer ] && ASK_HOOK="$ATHENA_DIR/scripts/hooks/ask-to-request.py"
-  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[5:]]}]+([{"matcher":"AskUserQuestion","hooks":[command(sys.argv[4])]}] if sys.argv[4] else []),"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; notify=lambda mode: {"type":"command","command":command(__import__("os").path.join(__import__("os").path.dirname(sys.argv[3]),"agent-done-notify.py"))["command"]+" "+mode}; sys.argv[4] and (settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(notify("prompt")), settings["hooks"].update(Stop=[{"hooks":[notify("stop")]}])); window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "$ASK_HOOK" "${GUARD_HOOKS[@]}"
+  # 훅 목록은 agent-context.py 와 같은 한 곳 — scripts/lib/agent_hooks.py (보호 훅 · 고르기 질문 → 요청 · pane 기록 · 끝 알림 · 자동 압축 시점. reviewer 는 읽기 전용이라 일부 제외)
+  python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" inline "$SETTINGS_FILE" "$ATHENA_DIR" "$AGENT" \
+    || { rm -f "$PROMPT_FILE" "$RUNNER" "$SETTINGS_FILE"; echo "에이전트 훅 설정 생성 실패"; exit 1; }
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
 fi
