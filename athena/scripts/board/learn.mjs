@@ -306,7 +306,7 @@ const buildBatches = (candidates) => {
   }
   return [...areas].map(([notebook, entries]) => ({
     notebook,
-    items: [...entries.values()].map(({ id, title, rule, scope, strengthen, created, dups }) => ({ id, title, rule, scope, strengthen, created, dups: dups.map((dup) => dup.id) })),
+    items: [...entries.values()].map(({ id, title, rule, scope, strengthen, created, dups, explain, why, where, basis, signal, source, target, notebook, jev }) => ({ id, title, rule, scope, strengthen, created, explain, why, where, basis, signal, source, target, notebook, jev, dups: dups.map((dup) => dup.id) })),
   })).sort((left, right) => right.items.length - left.items.length)
 }
 
@@ -341,6 +341,58 @@ export const applyBatch = (ids = []) => {
     }
   }
   return result
+}
+
+// ── 묶음 줄 수정 — 후보 파일만 고친다(공책에는 넣지 않는다). 같은 문장으로 합쳐진 후보(ids)는 모두 같게 고친다
+const sectionRange = (lines, names) => {
+  const start = lines.findIndex((line) => names.some((name) => line === `## ${name}`))
+  if (start < 0) return null
+  const next = lines.findIndex((line, index) => index > start && /^## /.test(line))
+  return { start, end: next < 0 ? lines.length : next }
+}
+const setSection = (text, names, value) => {
+  const lines = text.split('\n')
+  const range = sectionRange(lines, names)
+  if (!range) return `${text.trimEnd()}\n\n## ${names[0]}\n${value}\n`
+  const tail = range.end < lines.length ? [''] : []
+  lines.splice(range.start, range.end - range.start, `## ${lines[range.start].slice(3)}`, value, ...tail)
+  return lines.join('\n')
+}
+export const editCandidates = (ids = [], edits = {}) => {
+  const fields = Object.fromEntries(Object.entries(edits).filter(([key, value]) => ['title', 'explain', 'why', 'rule'].includes(key) && typeof value === 'string' && value.trim()))
+  const targets = []
+  for (const id of ids) {
+    const path = inside(id, 'issues')
+    if (!path || !isLearnIssue(path)) return { error: '학습 후보를 찾지 못했어요' }
+    const text = readFileSync(path, 'utf8')
+    if (!batchable(view(id, text))) return { error: '묶음에 들어가는 후보만 고칠 수 있어요' }
+    targets.push({ path, text })
+  }
+  for (const { path, text } of targets) {
+    let next = text
+    if (fields.title) next = next.replace(/^(---\n[\s\S]*?^title:).*$/m, (_, head) => `${head} ${oneLine(fields.title)}`)
+    if (fields.explain) next = setSection(next, ['무엇을 배웠나'], fields.explain.trim())
+    if (fields.why) next = setSection(next, ['왜 중요한가', '모르면'], fields.why.trim())
+    if (fields.rule) {
+      // 기존 줄을 고치는 후보면 "(새 줄이 아니라 …)" 꼬리표는 그대로 둔다
+      const lines = next.split('\n')
+      const range = sectionRange(lines, ['공책에 넣을 문장'])
+      const tag = range ? (lines.slice(range.start + 1, range.end).join('\n').match(/\n?(\(새 줄이 아니라 기존 줄을 고친다: [\s\S]*\))\s*$/) ?? [])[1] : ''
+      next = setSection(next, ['공책에 넣을 문장'], `${oneLine(fields.rule)}${tag ? `\n${tag}` : ''}`)
+    }
+    writeFileSync(path, next)
+  }
+  return { ok: true, edited: targets.length }
+}
+
+// 합쳐진 후보 전부를 버린다 — 하나만 버리면 남은 후보가 다시 나타난다
+export const discardMany = (ids = []) => {
+  for (const id of ids) {
+    const path = inside(id, 'issues')
+    if (!path || !isLearnIssue(path)) return { error: '학습 후보를 찾지 못했어요' }
+  }
+  for (const id of ids) discardLearn(id)
+  return { ok: true, discarded: ids.length }
 }
 
 export const discardLearn = (id) => {

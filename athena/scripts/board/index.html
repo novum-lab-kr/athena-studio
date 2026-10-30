@@ -211,8 +211,16 @@
   .learn-batch { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 16px; display: grid; gap: 6px; }
   .learn-batch .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
   .learn-batch .top .grow { flex: 1; font-weight: 600; font-size: 14px; }
-  .learn-batch label.row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.5; padding: 4px 0; border-top: 1px solid var(--line); cursor: pointer; }
-  .learn-batch label.row input { margin-top: 4px; }
+  .learn-batch .row { display: grid; gap: 6px; font-size: 13px; line-height: 1.5; padding: 6px 0; border-top: 1px solid var(--line); }
+  .learn-batch .row .head { display: flex; align-items: flex-start; gap: 8px; }
+  .learn-batch .row .head input[type=checkbox] { margin-top: 4px; }
+  .learn-batch .row .head .main { flex: 1; min-width: 0; }
+  .learn-batch .row .detail { display: grid; gap: 8px; margin-left: 24px; }
+  .learn-batch .row .detail .label { font-size: 11.5px; color: var(--muted); font-weight: 600; margin-bottom: 2px; }
+  .learn-batch .row .detail .text { font-size: 13px; line-height: 1.6; white-space: pre-wrap; }
+  .learn-batch .row .detail textarea, .learn-batch .row .detail input { font: inherit; width: 100%; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); line-height: 1.5; font-size: 13px; }
+  .learn-batch .row .detail textarea { min-height: 64px; resize: vertical; }
+  .learn-batch .row .acts { display: flex; gap: 6px; flex-wrap: wrap; margin-left: 24px; }
   .learn-batch .row .rule-line { color: var(--muted); font-size: 12px; }
   .learn-group { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 -2px; }
   /* 히스토리·메모리 행 — 날짜·작업자·종류 배지는 행 세로 가운데, 메모리 배지는 오른쪽 끝 칸. 칸이 행 높이만큼 늘어나지 않게 align-self 로 */
@@ -1632,30 +1640,85 @@
     if (act === 'save') openLearned(id, false); else document.getElementById('detail').close();
   });
   // 레포별 묶음 — 그 레포 공책에 넣을 후보를 모아 한 번에 넣는다(빼고 싶은 건 체크 해제). 같은 문장은 서버가 하나로 합쳐 보낸다
+  // 줄마다 내용 보기 · 수정 · 삭제 — 수정은 공책에 넣지 않고 묶음에 남는다. 다시 그릴 때 체크 해제 · 펼침을 잃지 않게 id 로 기억한다
+  const batchUnchecked = new Set();
+  const batchOpen = new Set();
+  let batchEditing = '';
+  const batchIdsOf = (item) => [item.id, ...item.dups];
+  const batchItems = () => (learnData.batches || []).flatMap((batch) => batch.items);
+  const batchRow = (item) => {
+    const editing = batchEditing === item.id;
+    const open = editing || batchOpen.has(item.id);
+    const pills = `${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="정확히 같은 문장이라 하나로 합쳤어요">같은 문장 ${item.dups.length + 1}개 합침</span>` : ''}${item.strengthen ? ' <span class="pill">기존 줄 고침</span>' : ''}${item.jev ? ` <span class="pill" title="${esc(item.jev.line)}">🤖 겹쳐 보여요 ${Math.round(item.jev.score * 100)}%</span>` : ''}`;
+    let detail = '';
+    if (editing) {
+      detail = `<div class="detail">${learnField('title', '제목', item.title, true)}${learnField('explain', '무엇을 배웠나', item.explain, true, 4)}${learnField('why', '왜 중요한가 — 모르면', item.why, true, 2)}${learnField('rule', '공책에 넣을 문장 (에이전트가 읽는 한 줄)', item.rule, true, 2)}</div>
+      <div class="acts"><button type="button" class="btn primary" data-batch-act="save">저장</button><button type="button" class="btn" data-batch-act="cancel">취소</button></div>`;
+    } else if (open) {
+      const extra = `${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="근거 종류">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}`;
+      detail = `<div class="detail">${extra ? `<div>${extra}</div>` : ''}${learnField('explain', '무엇을 배웠나', item.explain, false)}${learnField('why', '왜 중요한가 — 모르면', item.why, false)}${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.jev ? `<div class="lc-block warn"><h5>🤖 기존 줄과 겹쳐 보여요 — Jev ${Math.round(item.jev.score * 100)}% (추정)</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}${item.where ? `<div class="where">어디서 배웠나 · ${esc(item.where.replace(/^- /gm, ''))}</div>` : ''}</div>`;
+    }
+    const buttons = editing ? '' : `<div class="acts"><button type="button" class="btn" data-batch-act="toggle">${open ? '접기' : '내용 보기'}</button><button type="button" class="btn" data-batch-act="edit">수정</button><button type="button" class="btn danger" data-batch-act="remove">삭제</button></div>`;
+    return `<div class="row" data-id="${esc(item.id)}"><div class="head"><input type="checkbox" value="${esc(item.id)}"${batchUnchecked.has(item.id) ? '' : ' checked'}><div class="main"><b>${esc(item.title)}</b>${pills}<div class="rule-line">${esc(item.rule)}</div></div></div>${detail}${buttons}</div>`;
+  };
   const renderBatches = () => {
     const box = document.getElementById('learn-batches');
-    const batches = (learnData.batches || []).filter((batch) => batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0) > 1);
+    const batches = learnData.batches || [];
+    const valid = new Set(batchItems().map((item) => item.id));
+    for (const set of [batchUnchecked, batchOpen]) for (const id of set) if (!valid.has(id)) set.delete(id);
+    if (!valid.has(batchEditing)) batchEditing = '';
     box.innerHTML = batches.map((batch, index) => `<div class="learn-batch" data-batch="${index}">
       <div class="top"><span class="grow">📦 ${esc(batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, ''))} 공책에 넣을 묶음 <span class="n">${batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0)}개</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
-      ${batch.items.map((item) => `<label class="row"><input type="checkbox" value="${esc(item.id)}" checked><span><b>${esc(item.title)}</b>${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="정확히 같은 문장이라 하나로 합쳤어요">같은 문장 ${item.dups.length + 1}개 합침</span>` : ''}${item.strengthen ? ' <span class="pill">기존 줄 고침</span>' : ''}<div class="rule-line">${esc(item.rule)}</div></span></label>`).join('')}
+      ${batch.items.map(batchRow).join('')}
     </div>`).join('');
     box.querySelectorAll('.learn-batch').forEach((el) => updateBatchButton(el));
   };
   const updateBatchButton = (el) => {
-    const count = el.querySelectorAll('input:checked').length;
+    const count = el.querySelectorAll('input[type=checkbox]:checked').length;
     const button = el.querySelector('[data-batch-apply]');
     button.textContent = `묶음 넣기 (${count}개)`;
     button.disabled = !count;
   };
   document.getElementById('learn-batches').addEventListener('change', (event) => {
     const el = event.target.closest('.learn-batch');
-    if (el) updateBatchButton(el);
+    if (!el) return;
+    if (event.target.matches('input[type=checkbox]')) {
+      if (event.target.checked) batchUnchecked.delete(event.target.value); else batchUnchecked.add(event.target.value);
+    }
+    updateBatchButton(el);
   });
   document.getElementById('learn-batches').addEventListener('click', async (event) => {
+    const actButton = event.target.closest('[data-batch-act]');
+    if (actButton) {
+      const row = actButton.closest('.row');
+      const id = row.dataset.id;
+      const item = batchItems().find((entry) => entry.id === id);
+      const act = actButton.dataset.batchAct;
+      if (!item) return;
+      if (act === 'toggle') { if (batchOpen.has(id)) batchOpen.delete(id); else batchOpen.add(id); renderBatches(); return; }
+      if (act === 'edit') { batchEditing = id; renderBatches(); return; }
+      if (act === 'cancel') { batchEditing = ''; renderBatches(); return; }
+      if (act === 'remove' && !confirm('이 학습 후보를 버릴까요? (휴지통으로 — 되살릴 수 있어요)')) return;
+      actButton.disabled = true;
+      try {
+        if (act === 'save') {
+          const edits = Object.fromEntries([...row.querySelectorAll('[data-k]')].map((field) => [field.dataset.k, field.value]));
+          await api('/api/learn-candidate-edit', { ids: batchIdsOf(item), edits });
+          batchEditing = '';
+          toast('고쳤어요 — 묶음에 남아 있어요');
+        } else {
+          await api('/api/learn-discard', { ids: batchIdsOf(item) });
+        }
+      } catch (error) {
+        alert(error.message || String(error));
+      }
+      await loadLearn();
+      return;
+    }
     const button = event.target.closest('[data-batch-apply]');
     if (!button) return;
     const el = button.closest('.learn-batch');
-    const ids = [...el.querySelectorAll('input:checked')].map((input) => input.value);
+    const ids = [...el.querySelectorAll('input[type=checkbox]:checked')].map((input) => input.value);
     if (!ids.length || !confirm(`선택한 ${ids.length}개를 이 레포 공책에 넣을까요? (같은 문장은 하나로 합쳐져요)`)) return;
     button.disabled = true;
     try {
@@ -1676,9 +1739,13 @@
     jevBox.hidden = !stats.jevDiscarded;
     jevBox.innerHTML = stats.jevDiscarded ? `🤖 Jev 가 공책에 이미 있는 내용이라고 본 후보 ${stats.jevDiscarded}개를 버렸어요 — 잘못 버렸으면 .board-trash/&lt;날짜&gt;/issues/ 에서 issues/ 로 옮기면 돌아와요${(stats.jevRecent || []).slice(0, 5).map((entry) => `<br>· ${esc(entry.at)} ${esc(entry.title)} (${Math.round(entry.score * 100)}%) ← ${esc(entry.line)}`).join('')}` : '';
     document.getElementById('learn-learned-count').textContent = learned.length;
-    document.getElementById('learn-candidates').innerHTML = candidates.length
-      ? candidates.map((item) => learnCard(item, 'candidate', learnEditing === item.id)).join('')
-      : '<div class="empty-history">학습 후보가 없어요 — 에이전트가 작업을 끝낼 때, 배우기 검토자가 내 PR 이 머지됐을 때 올립니다</div>';
+    // 묶음에 올라간 후보는 묶음에서만 보인다 — 아래 낱개에는 스킬 · 정리 후보처럼 묶음에 못 들어가는 것만
+    const batched = new Set(batchItems().flatMap(batchIdsOf));
+    const singles = candidates.filter((item) => !batched.has(item.id));
+    const emptyText = candidates.length ? '' : '<div class="empty-history">학습 후보가 없어요 — 에이전트가 작업을 끝낼 때, 배우기 검토자가 내 PR 이 머지됐을 때 올립니다</div>';
+    document.getElementById('learn-candidates').innerHTML = singles.length
+      ? singles.map((item) => learnCard(item, 'candidate', learnEditing === item.id)).join('')
+      : emptyText;
     const groups = new Map();
     for (const item of learned) groups.set(areaOf(item), [...(groups.get(areaOf(item)) || []), item]);
     document.getElementById('learn-learned').innerHTML = learned.length
