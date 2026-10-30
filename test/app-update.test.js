@@ -108,6 +108,10 @@ test('앱 업데이트: 설치 스크립트 넷이 바뀌면 install · 그 밖�
   }
   assert.equal(changed({ check: 'b', postinstall: 'node p' }), false)
   assert.equal(changed({ check: 'a' }), true) // 설치 스크립트를 지움
+  // 일반 scripts 필드의 최초 추가 · 전체 삭제는 양방향 모두 설치 아님
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x' }), pkg({ name: 'x', scripts: { check: 'a' } })), false)
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x', scripts: { check: 'a' } }), pkg({ name: 'x' })), false)
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x', scripts: {} }), pkg({ name: 'x', scripts: { check: 'a' } })), false)
   assert.equal(appUpdate.installRelevantChanged(pkg({ b: 1, a: 2 }), pkg({ a: 2, b: 1 })), false) // 키 순서
   assert.throws(() => appUpdate.installRelevantChanged('{', '{}'))
 })

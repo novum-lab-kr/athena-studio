@@ -132,7 +132,8 @@ function installView(value: unknown, top = true): unknown {
     if (top && key === 'scripts') {
       const kept: Record<string, unknown> = {}
       if (child && typeof child === 'object') for (const name of INSTALL_SCRIPTS) if (name in child) kept[name] = (child as Record<string, unknown>)[name]
-      sorted[key] = kept
+      // 설치 스크립트가 하나도 없으면 scripts 키 자체를 생략 — 일반 scripts 의 추가 · 삭제가 차이로 잡히지 않게
+      if (Object.keys(kept).length) sorted[key] = kept
     } else sorted[key] = installView(child, false)
   }
   return sorted
