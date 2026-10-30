@@ -59,13 +59,12 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
 | 이렇게 하면 | 일어나는 일 |
 |---|---|
 | 그냥 말하기 — "목록 페이지네이션 버그 원인 찾아줘" | 아테나가 라우팅 → 계획서 → 디스패치 → 리뷰 → 보고 |
-| `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → QA 초안 → 검증 → 지문 → 다이어그램 (팩이 없으면 Studio pane 에서 켤 때 저절로 시작된다) |
+| `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → 흐름 문서 · TC 초안 → 검증 → 지문 (팩이 없으면 Studio pane 에서 켤 때 저절로 시작된다) |
 | `/call <에이전트>` | 담당 에이전트를 pane 에 바로. 요청·"커밋해줘"·"PR 올려줘" 까지 그 pane 에서 |
 | `/board` | 현황판(`localhost:4700`) — 서비스 · 정비 · QA · 학습 · 아카이브 |
-| `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 플레이북 · 다이어그램 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
+| `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 플레이북 · 작업 흐름 그림 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
 | `/monitor` | 백그라운드·pane 에이전트 로그 실시간 — Studio 는 앱 아래 AGENT MONITOR 칸 |
 | `/sync` | 운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이) |
-| `/diagram` | 서비스 다이어그램 다시 그리기 |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" |
 | "현황 알려줘" · "리뷰해줘" · "○○ 전체 검수 돌려줘" | 말로 하는 것 |
 
@@ -102,7 +101,7 @@ athena/                        ← 코어
 ├── .claude/
 │   ├── agents/                reviewer · learn-reviewer + 레포 담당 에이전트(팩)
 │   ├── rules/                 언어 · 코드 · Git · 디스패치 규칙
-│   └── skills/                /setup /call /board /sync /diagram /guide /monitor + 회사 스킬(팩)
+│   └── skills/                /setup /call /board /sync /guide /monitor + 회사 스킬(팩)
 │
 ├── docs/
 │   ├── knowledge/             지식 노트 — 에이전트가 일할 때 읽는다
@@ -112,7 +111,7 @@ athena/                        ← 코어
 │   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
 │   ├── playbook.html          그림으로 보는 사용법 (/guide 열기 — 팩 판이 있으면 그것)
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
-│   ├── diagrams/              작업 흐름 그림 + 서비스 다이어그램(팩) (/guide 그림)
+│   ├── diagrams/              아테나 작업 흐름 그림 (/guide 그림)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
 │   ├── pack.md                팩 형식 · 여러 팩 · 여러 팩 테스트
 │   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준
@@ -137,7 +136,7 @@ athena/                        ← 코어
     ├── 검증 · QA
     │   ├── verify/_lib.sh · _nest.sh · _generic.sh   검증 공용(표 형식 · NestJS · 새 레포 기본)
     │   ├── verify/<레포>.sh               레포별 표준 검증(팩)
-    │   └── qa/                            QA 시뮬레이션 (Playwright) — 화면 목록·씬은 팩
+    │   └── qa/                            QA 실행기 — 레포 docs/flows 의 TC 를 층별로(FE Playwright · BE HTTP)
     ├── 현황판 · 화면
     │   ├── board.sh · board/              현황판 서버·화면 (/board)
     │   ├── guide-menu.sh · guide-pane.sh  가이드 메뉴 (/guide)
@@ -154,7 +153,7 @@ athena/                        ← 코어
     ├── 지식 문서
     │   ├── sync-fingerprint.mjs           /sync — 운영 브랜치 지문 (기준은 .sync — 팩)
     │   ├── build-derived.mjs              지문 → 팩의 서비스 맵·플레이북 표
-    │   └── check-diagrams.mjs · build-diagram-index.mjs · diagram-coverage.mjs
+    │   └── build-diagram-index.mjs
     ├── lib/                               설정 읽기(코어 + 팩 합치기) · 팩 링크 너머 git · init·scaffold
     ├── athena.mjs                         bin/athena 본체
     ├── hooks/                             시작 점검(팩 없으면 /setup 안내) · 화면 세팅 · 커밋·push 보호 · 비밀값 노출 막기 · 대화 압축 전후 계획서 저장
@@ -165,9 +164,9 @@ athena/                        ← 코어
 
 ```
 packs/<회사>/
-├── pack.json        레포 목록 · 브랜치 · 에이전트 · 회사 값(GitHub 조직·QA·PR 범위 …)
+├── pack.json        레포 목록 · 브랜치 · 에이전트 · 회사 값(GitHub 조직·PR 범위 …)
 ├── ROUTING.md       담당 레포·에이전트 표 · 라우팅 규칙 · 검증 명령 · 회사 스킬
-├── agents/ skills/ knowledge/ verify/ diagrams/ docs/ qa/ sync/ archive/
+├── agents/ skills/ knowledge/ verify/ docs/ sync/ archive/
 ├── guide/           회사 판 안내 HTML (있으면 /guide 가 이걸 연다)
 └── hooks/           (선택) delegate.sh 에 넣을 환경값
 ```

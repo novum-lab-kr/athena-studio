@@ -19,12 +19,7 @@
  *   - POST /api/worktree-remove 끝난 이슈의 워크트리를 지운다(미커밋 변경이 있으면 거부)
  *   - POST /api/delete 카드를 휴지통(.board-trash/<날짜>/)으로 옮긴다 — 이슈면 연결된 경량 계획서·워크트리도. 되돌릴 수 있게 지우지 않는다
  *   - POST /api/archive 끝난 카드를 archive/<이름>/ 한 폴더로 보관 — issue.md · plan.md(· plan.html) · meta.json(archive.mjs), 이슈 워크트리 정리. 보드에서 사라지고 히스토리 탭에 뜬다
- *   - GET  /api/qa/runs      QA 시뮬레이션 런 목록(.qa-runs/) · /api/qa/run?id= 런 하나 · /qa-runs/<id>/<파일> 스크린샷·리포트
- *   - GET  /qa-live?id=      QA 자동화 도구 화면 — 실시간 화면(live/*.jpg)·API 호출·Mixpanel 이벤트(/api/qa/live?id=&since=) 한 페이지
- *   - GET  /api/qa/tc        QA TC 목록(docs/qa/tc/<앱>.md "B) TC" 표 · 앱별 흐름 씬 파일)
- *   - GET  /api/qa/sessions?app=&target=&server=  고른 앱·대상의 로그인 세션 상태(있음·만료 시각만, 쿠키 값은 안 읽음) · POST /api/qa-logout 세션 파일을 .qa-auth/.trash 로(다음 검수에 로그인 창) · POST /api/qa-login 로그인 창을 띄워 세션을 새로 저장
- *   - GET  /api/qa/apps      전체 검수할 수 있는 앱·세션 프로필 · POST /api/qa-suite [전체 검수](요청할 때만) · POST /api/qa-approve [기준으로 승인]
- *   - POST /api/qa-start     계획서 카드 [QA 실행] — Work ref 워크트리로 scripts/qa/run.mjs 를 뒤에서 돌린다(한 번에 하나)
+ *   - GET  /api/qa/flows     QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(scripts/qa/flows.mjs overview) · POST /api/qa-run 흐름 TC 실행(scripts/qa/run.mjs · 한 번에 하나)
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,batch,discard,edit,candidate-edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
@@ -48,12 +43,8 @@ import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { summarize } from '../lib/metrics.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
-import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
-import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
-import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
+import { overview as qaOverview } from '../qa/flows.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
-import { approveRun as approveQaRun } from '../qa/baseline.mjs'
-import { explainProblems, guessCause } from '../qa/explain.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
@@ -143,12 +134,11 @@ const section = (text, heading) => {
   return match ? match[1].trim() : ''
 }
 
-// 이 계획서가 어떻게 시작됐나 — 이슈 [작업 시작] · /call · /qa-tc · 아테나 대화(정식·경량). 카드·팝업에 한 줄로
+// 이 계획서가 어떻게 시작됐나 — 이슈 [작업 시작] · /call · 아테나 대화(정식·경량). 카드·팝업에 한 줄로
 const planOrigin = (path, text, rawAgent, issueField) => {
   const title = text.match(/^#\s+(.+)$/m)?.[1] ?? ''
   const agent = rawAgent.startsWith('(') ? '' : rawAgent   // "(정해지지 않음)" 같은 자리표시는 없는 것으로
   if (/issues\/\S+\.md/.test(issueField)) return '📌 이슈 [작업 시작]'
-  if (/QA TC/.test(title)) return `🧪 /qa-tc${agent ? ` · ${agent}` : ''}`
   // /call 이 만든 계획서 — 제목은 에이전트가 작업을 시작하며 바꾸므로 파일 이름(…-작업-pane-에서-지시)으로 본다
   if (/작업 \(pane 에서 지시\)\s*$/.test(title) || /-작업-pane-에서-지시\.md$/.test(path)) return `📞 /call ${agent}`.trim()
   if (path.split('/').at(-2) !== 'task') return '🧭 아테나 · 정식 계획'
@@ -327,30 +317,6 @@ const enqueueLearn = (planId, mark, infos = []) => {
 const mergedMark = (infos) => `merged-${infos.map((info) => info.number).sort().join('-')}`
 
 // ── Jev(scripts/lib/jev.mjs) — 키(TYPESAFE_API_KEY)가 없으면 아무것도 하지 않는다 ─────────────
-// QA 미분류 오류의 원인 추정 캐시 — 묶음 키(unknownKey) → { cause, confidence, model } · 실패는 { failedAt } 로 두고 10분 뒤 다시 묻는다
-const QA_GUESS_FILE = join(ROOT, '.board-jev-qa.json')
-const QA_GUESS_RETRY_MS = 10 * 60 * 1000
-const QA_GUESS_PER_REQUEST = 5
-const qaGuessing = new Set()
-const readQaGuesses = () => {
-  try { return JSON.parse(readFileSync(QA_GUESS_FILE, 'utf8')) } catch { return {} }
-}
-const askQaGuesses = (reasons, guesses) => {
-  if (!jevEnabled()) return
-  const now = Date.now()
-  const missing = reasons.filter((reason) => reason.unknownKey && !qaGuessing.has(reason.unknownKey))
-    .filter((reason) => { const known = guesses[reason.unknownKey]; return !known || (known.failedAt && now - known.failedAt > QA_GUESS_RETRY_MS) })
-    .slice(0, QA_GUESS_PER_REQUEST)
-  for (const reason of missing) {
-    qaGuessing.add(reason.unknownKey)
-    guessCause(reason).then((guess) => {
-      // 물은 사이 다른 묶음이 먼저 써 뒀을 수 있다 — 지금 파일을 다시 읽어 이 키만 바꾼다
-      const current = readQaGuesses()
-      current[reason.unknownKey] = guess ?? { failedAt: Date.now() }
-      writeAtomic(QA_GUESS_FILE, JSON.stringify(current))
-    }).catch(() => {}).finally(() => qaGuessing.delete(reason.unknownKey))
-  }
-}
 // 학습 후보가 공책 기존 줄과 같은지(scripts/board/learn.mjs checkLearnWithJev) — 1분에 한 번, 겹쳐 돌지 않게(한 번에 후보 몇 개까지는 learn.mjs JEV_PER_RUN)
 const LEARN_JEV_EVERY_MS = 60 * 1000
 let learnJevAt = 0
@@ -963,13 +929,10 @@ const BOOT = randomBytes(6).toString('hex')
 const PAGE_CONFIG = JSON.stringify({
   githubOrg: ORG,
   agents: [...AGENT_NAMES],
-  // QA 대상 앱 이름 → 화면 이름 — 팩에 등록한 화면 레포에서(scripts/qa/apps.mjs)
-  qaApps: Object.fromEntries(listQaApps(config).map((entry) => [entry.app, entry.label])),
-  qaExampleUrl: config.qa?.exampleUrl ?? 'https://dev.example.com',
 }).replace(/</g, '\\u003c')
 const FAVICON = readFileSync(join(ROOT, 'scripts/board/favicon.png'))
 const page = readFileSync(join(ROOT, 'scripts/board/index.html'), 'utf8').replace('__BOARD_TOKEN__', TOKEN).replace('__BOARD_BOOT__', BOOT)
-  .replace('__BOARD_CONFIG__', () => PAGE_CONFIG).replaceAll('__BOARD_QA_EXAMPLE__', () => JSON.parse(PAGE_CONFIG).qaExampleUrl)
+  .replace('__BOARD_CONFIG__', () => PAGE_CONFIG)
 
 // ── 쓰기: 카드 이동 ──────────────────────────────────────────────────────
 const PLAN_STATUS_OF = { plan: 'planned', doing: 'in_progress', review: 'ready_for_review', done: 'done' }
@@ -1048,7 +1011,7 @@ const setPlanStatus = (id, status, note = '', doneMark = '') => {
 // ── 쓰기: 아테나에게 지시 ───────────────────────────────────────────────
 const sendToPane = async (paneId, text) => {
   const panes = snapshot?.panes ?? []
-  // 'hermes' 또는 보낼 수 없는 pane(현황판 pane 등)을 주면 떠 있는 아테나 pane 으로 — QA 라이브 [조사 맡기기] 가 쓴다
+  // 'hermes' 또는 보낼 수 없는 pane(현황판 pane 등)을 주면 떠 있는 아테나 pane 으로
   const target = panes.find((pane) => pane.id === paneId && pane.role !== 'other') ?? (paneId === 'hermes' || paneId.startsWith('hermes:') ? panes.find((pane) => pane.role === 'hermes') : null)
   if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
@@ -1336,59 +1299,12 @@ const safeDecodedPath = (pathname) => {
   }
 }
 
-// ── QA 시뮬레이션 (scripts/qa) ─────────────────────────────
+// ── QA (scripts/qa — 흐름 문서 · TC) ─────────────────────────────
+const QA_RUNS_DIR = join(ROOT, '.qa-runs')
 let qaChild = null
-const QA_ID = /^\d{8}-\d{6}-[\w-]+$/
-const QA_TYPES = { '.png': 'image/png', '.jpg': 'image/jpeg', '.html': 'text/html; charset=utf-8', '.json': 'application/json; charset=utf-8', '.log': 'text/plain; charset=utf-8' }
-// 목록에는 요약만 — 화면별 상세는 런 하나를 열 때
-// 끝나지 않았는데 2분 넘게 run.json 이 그대로면 죽은 런 — 목록에 계속 ⏳ 로 남지 않게 '중단' 으로 보여 준다
-const qaStale = (run) => ['preparing', 'running'].includes(run.status) && Date.now() - statSync(join(QA_RUNS_DIR, run.id, 'run.json')).mtimeMs > 120_000
-const qaSummary = (run) => ({
-  id: run.id, kind: run.kind ?? 'impact', app: run.app, plan: run.plan, branch: run.branch, head: run.head, base: run.base, profile: run.profile, group: run.group ?? null,
-  target: run.target ?? 'local', serverUrl: run.serverUrl ?? null, urls: run.urls ?? null,
-  status: run.status, phase: run.phase, error: run.error, startedAt: run.startedAt, finishedAt: run.finishedAt, summary: run.summary,
-  screens: run.screens?.length ?? 0, finished: (run.screens ?? []).filter((screen) => !['queued', 'running'].includes(screen.status)).length,
-  ...(qaStale(run) ? { status: 'error', error: '응답 없음 — 중단된 런' } : {})
-})
-// 돌고 있는 런 — run.json 이 2분 안에 갱신됐고 끝나지 않은 것(로컬 서버 포트를 쓰고 무겁기 때문에 한 번에 하나)
-function activeQaRun() {
-  for (const run of listQaRuns().slice(0, 5)) {
-    if (!['preparing', 'running'].includes(run.status)) continue
-    const fresh = Date.now() - statSync(join(QA_RUNS_DIR, run.id, 'run.json')).mtimeMs < 120_000
-    if (fresh) return run
-  }
-  return null
-}
-// 계획서 카드 → QA 대상: Work ref 맨 앞의 워크트리(절대 경로) + 담당 에이전트의 앱(팩에 등록한 레포의 앱 — routes/<앱>.json 이 있는 것만).
-// 담당 에이전트로 못 찾으면 워크트리가 어느 레포의 것인지(.worktrees/<레포>/…)로 고른다 — 그 레포 앱이 하나일 때만
-function startQaRun(planId) {
-  const path = safePath(planId, 'plans')
-  if (!path) return { error: '계획서를 찾지 못했어요' }
-  const text = readFileSync(path, 'utf8')
-  const workRef = text.match(/^- Work ref:\s*(\S+)/m)?.[1] ?? ''
-  const worktree = workRef.replace(/`/g, '')
-  if (!worktree.startsWith('/') || !existsSync(worktree)) return { error: 'Work ref 에 워크트리 경로가 없어요 — 담당 에이전트가 브랜치를 만든 뒤에 돌릴 수 있어요' }
-  const agent = text.match(/^- Agent:\s*(\S+)/m)?.[1] ?? ''
-  const realTree = (() => { try { return realpathSync(worktree) } catch { return worktree } })()
-  const treeRoot = WORKTREE_ROOTS.find((dir) => realTree.startsWith(dir + sep)) ?? join(ROOT, '.worktrees')
-  const repoOfTree = relative(treeRoot, realTree).split(sep)[0]
-  const sameRepo = listQaApps(config).filter((entry) => entry.repo === repoOfTree && entry.configured)
-  const app = (appOfAgent(config, agent) ?? (sameRepo.length === 1 ? sameRepo[0] : null))?.app
-  if (!app || !findQaApp(config, app)?.configured) return { error: `QA 시뮬레이션 설정이 있는 앱이 아니에요 (scripts/qa/routes/<앱>.json — 없으면 node scripts/qa/init-app.mjs --app <앱>)${agent ? ` — 이 계획서는 ${agent}` : ''}` }
-  // 방금 띄운 런은 run.json 을 쓰기 전일 수 있다 — 이 서버가 띄운 프로세스가 살아 있으면 먼저 거부
-  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 현황판이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
-  const running = activeQaRun()
-  if (running) return { error: `다른 QA 가 돌고 있어요 — ${running.id} (${running.phase})` }
-  mkdirSync(QA_RUNS_DIR, { recursive: true })
-  const log = join(QA_RUNS_DIR, 'launch.log')
-  writeFileSync(log, `${new Date().toISOString()} ${planId} ${worktree} ${app}\n`, { flag: 'a' })
-  const child = spawn(process.execPath, [join(ROOT, 'scripts', 'qa', 'run.mjs'), '--cwd', worktree, '--app', app, '--plan', planId], { cwd: ROOT, detached: true, stdio: 'ignore' })
-  child.unref()
-  qaChild = child
-  return { ok: true, app, worktree }
-}
+const qaChildAlive = () => Boolean(qaChild && qaChild.exitCode === null && qaChild.signalCode === null)
 
-// 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지 + 이 현황판이 띄운 QA 가 기다리는 중인지
+// 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지
 function heavyLockState() {
   const lock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
   // 자리 여럿(1번 <잠금>, 2번부터 <잠금>.2 …) — 쓰는 중인 자리의 what 을 " / " 로 잇는다
@@ -1400,256 +1316,29 @@ function heavyLockState() {
       if (what) holders.push(what)
     } catch { /* 비었거나 잡는 중 */ }
   }
-  const holder = holders.join(' / ')
-  const launched = Boolean(qaChild && qaChild.exitCode === null && qaChild.signalCode === null)
-  return { holder, waiting: launched && !activeQaRun() }
+  return holders.join(' / ')
 }
 
-// 전체 검수 가능한 앱 — 팩에 등록한 화면 레포의 앱 중 scripts/qa/routes/<앱>.json 이 있는 것. 프로필마다 세션이 저장돼 있는지
-function qaApps() {
-  return listQaApps(config).filter((entry) => entry.configured).map(({ app, label }) => {
-    const config = readRoutes(app)
-    // 세션은 대상(D21 — 로컬 서버·dev 서버)마다 따로 저장된다
-    const profiles = Object.entries(config.profiles ?? {}).filter(([key]) => !key.startsWith('$')).map(([key, settings]) => ({
-      name: key, note: settings.note ?? '',
-      session: !settings.session || existsSync(join(ROOT, '.qa-auth', `${app}.${settings.session}.json`))
-    }))
-    const scenarioDir = join(ROOT, 'scripts', 'qa', 'scenarios', app)
-    return { app, label, profiles, devUrl: config.devUrl ?? null, local: config.local !== false, scenarios: existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((file) => file.endsWith('.json')).length : 0, warnings: routesWarnings(app, config) }
-  })
+function qaFlows() {
+  const data = qaOverview(config, ROOT, QA_RUNS_DIR)
+  // 띄웠는데 아직 run.json 이 없으면 무거운 명령 차례를 기다리는 중이다
+  return { ...data, waiting: qaChildAlive() && !data.running, heavy: heavyLockState() }
 }
-// QA 로그인 세션 상태 — 고른 앱·대상(로컬·서버 주소)의 세션 프로필마다 있는지·만료 시각. 쿠키 값은 읽지 않고 로그인 토큰(routes server.tokenCookie)의 만료 시각만 본다
-function qaSessions(app, target, server) {
-  const file = join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)
-  if (!/^[\w-]+$/.test(app) || !existsSync(file)) return { error: '앱 설정이 없어요' }
-  let serverUrl = null
-  if (target === 'server') {
-    const checked = checkServerUrl(server || '')
-    if (checked.error) return { error: checked.error }
-    serverUrl = checked.url
-  }
-  const config = JSON.parse(readFileSync(file, 'utf8'))
-  const profiles = Object.entries(config.profiles ?? {}).filter(([key]) => !key.startsWith('$')).map(([name, settings]) => {
-    if (!settings.session) return { name, state: 'none' }
-    const path = sessionFileOf(ROOT, app, settings.session, target, serverUrl)
-    if (!existsSync(path)) return { name, state: 'missing' }
-    try {
-      const { cookies = [] } = JSON.parse(readFileSync(path, 'utf8'))
-      const token = sessionToken(cookies, serverSettings(config))
-      const expiresAt = token ? token.expires * 1000 : null
-      return { name, state: expiresAt && expiresAt < Date.now() ? 'expired' : 'valid', expiresAt, savedAt: statSync(path).mtimeMs }
-    } catch { return { name, state: 'missing' } }
-  })
-  return { app, target, profiles }
-}
-// QA 세션 로그아웃 — 그 세션 파일을 .qa-auth/.trash 로 옮긴다(지우지 않는다 — 되살릴 수 있다). 다음 검수 차례에 로그인 창이 뜬다. 돌고 있는 런이 있으면 막는다
-function logoutQaSession(app, target, server, profileName) {
-  const file = join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)
-  if (!/^[\w-]+$/.test(app) || !existsSync(file)) return { error: '앱 설정이 없어요' }
-  if (activeQaRun()) return { error: 'QA 가 돌고 있어요 — 끝난 뒤에 로그아웃해 주세요' }
-  let serverUrl = null
-  if (target === 'server') {
-    const checked = checkServerUrl(server || '')
-    if (checked.error) return { error: checked.error }
-    serverUrl = checked.url
-  }
-  const settings = JSON.parse(readFileSync(file, 'utf8')).profiles?.[profileName]
-  if (!settings?.session) return { error: '로그인이 없는 세션이에요' }
-  const path = sessionFileOf(ROOT, app, settings.session, target, serverUrl)
-  if (!existsSync(path)) return { error: '저장된 세션이 없어요' }
-  // macOS 휴지통(~/.Trash)은 권한에 막힐 수 있어 .qa-auth/.trash 에 둔다(git 무시 · 되살리려면 이름에서 시각을 빼고 되돌린다)
-  const trash = join(ROOT, '.qa-auth', '.trash')
-  mkdirSync(trash, { recursive: true, mode: 0o700 })
-  const stamp = new Date().toISOString().replace(/[-:]/g, '').slice(0, 15)
-  renameSync(path, join(trash, `${basename(path, '.json')}.${stamp}.json`))
-  return { ok: true, file: basename(path) }
-}
-// QA 다시 로그인 — 그 세션의 로그인 창(scripts/qa/login.mjs)을 띄운다. 사용자가 로그인을 마치면 세션 파일이 새로 저장된다.
-// 서버 대상은 그 주소로, 로컬은 떠 있는 로컬 서버(routes server.port → server.localPorts)로. 로그인 창은 한 번에 하나
-let qaLoginChild = null
-async function loginQaSession(app, target, server, profileName) {
-  const file = join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)
-  if (!/^[\w-]+$/.test(app) || !existsSync(file)) return { error: '앱 설정이 없어요' }
-  if (qaLoginChild && qaLoginChild.exitCode === null) return { error: '로그인 창이 이미 열려 있어요 — 그 창에서 마치거나 닫아 주세요' }
-  const routes = JSON.parse(readFileSync(file, 'utf8'))
-  const settings = routes.profiles?.[profileName]
-  if (!settings?.session) return { error: '로그인이 없는 세션이에요' }
-  const local = serverSettings(routes)
-  let url
-  if (target === 'server') {
-    const checked = checkServerUrl(server || '')
-    if (checked.error) return { error: checked.error }
-    url = checked.url
-  } else {
-    for (const candidate of [local.port, ...local.localPorts].map((port) => `http://localhost:${port}`)) {
-      if (await fetch(candidate, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)) { url = candidate; break }
-    }
-  }
-  // 로컬 서버가 꺼져 있으면 login.mjs 가 qa-base 로 잠깐 띄운다(--start-local) — 무거운 명령이라 heavy.sh 로(검수가 돌면 차례를 기다린다)
-  const startLocal = target !== 'server' && !url
-  if (startLocal) url = `http://localhost:${local.port}`
-  const args = [join(ROOT, 'scripts', 'qa', 'login.mjs'), '--app', app, '--profile', settings.session, ...(target === 'server' ? ['--server', url] : ['--url', url]), ...(startLocal ? ['--start-local'] : [])]
-  qaLoginChild = startLocal
-    ? spawn(join(ROOT, 'scripts', 'heavy.sh'), [process.execPath, ...args], { cwd: ROOT, stdio: 'ignore', env: { ...process.env, ATHENA_AGENT: 'qa-login' } })
-    : spawn(process.execPath, args, { cwd: ROOT, stdio: 'ignore' })
-  return { ok: true, url, startLocal }
-}
-// QA 중단 — 라이브 화면 [⏹ 중단]. run.json·group.json 의 pid 를 끈다(node 프로세스인지 확인).
-// 흐름(묶음)이면 다음 단계로 넘어가지 않게 묶음 프로세스를 먼저 끄고, 도는 단계 런을 끈다(런은 SIGTERM 에서 서버를 끄고 '중단됨' 으로 남는다)
-function stopQaRun(id, groupId) {
-  const isNode = (pid) => {
-    if (!Number.isInteger(pid) || pid <= 1) return false
-    try { return /node$/.test(execFileSync('ps', ['-o', 'comm=', '-p', String(pid)], { encoding: 'utf8' }).trim()) } catch { return false }
-  }
-  const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
-  const stopped = []
-  if (groupId) {
-    if (!QA_ID.test(groupId)) return { error: '묶음 id 가 올바르지 않아요' }
-    const groupFile = join(QA_RUNS_DIR, groupId, 'group.json')
-    const group = readJson(groupFile)
-    if (!group) return { error: '묶음을 찾지 못했어요' }
-    if (isNode(group.pid)) { process.kill(group.pid, 'SIGTERM'); stopped.push(group.pid) }
-    for (const stage of group.stages ?? []) if (['queued', 'running', 'waiting-login'].includes(stage.status)) { stage.status = 'skipped'; stage.reason = '라이브 화면에서 중단' }
-    group.finishedAt = new Date().toISOString()
-    writeFileSync(groupFile, `${JSON.stringify(group, null, 2)}\n`)
-    for (const run of listQaRuns().filter((entry) => entry.group === groupId && entry.status === 'running')) {
-      if (isNode(run.pid)) { process.kill(run.pid, 'SIGTERM'); stopped.push(run.pid) }
-    }
-    // 로컬 흐름은 첫 단계가 남긴 dev 서버(routes server.port)를 묶음 프로세스가 끝에 끈다 — 묶음을 껐으니 여기서 끈다
-    if (group.target !== 'server') {
-      try {
-        const port = serverSettings(readRoutes(group.app ?? '')).port
-        const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
-        const processGroup = Number(execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim())
-        if (processGroup > 1) process.kill(-processGroup, 'SIGTERM')
-      } catch { /* 이미 꺼졌다 */ }
-    }
-  } else {
-    if (!QA_ID.test(id)) return { error: '런 id 가 올바르지 않아요' }
-    const run = readJson(join(QA_RUNS_DIR, id, 'run.json'))
-    if (!run) return { error: '런을 찾지 못했어요' }
-    if (!['preparing', 'running'].includes(run.status)) return { error: '이미 끝난 런이에요' }
-    if (isNode(run.pid)) { process.kill(run.pid, 'SIGTERM'); stopped.push(run.pid) }
-  }
-  if (!stopped.length) return { error: '끌 프로세스를 찾지 못했어요 — 이 기능 전에 시작한 런이면 터미널에서 끊어 주세요' }
-  return { ok: true, stopped: stopped.length }
-}
-// QA TC 목록 — docs/qa/tc/<앱>.md 의 "B) TC" 표를 행 단위로. 문서가 정본이고 여기서는 읽기만 한다
-const QA_TC_APPS = listQaApps(config).map((entry) => entry.app)   // 팩에 등록한 화면 레포의 앱 — docs/qa/tc/<앱>.md 가 있는 것만 보인다
-const tableCells = (line) => line.trim().replace(/^\||\|$/g, '').split(/(?<!\\)\|/).map((cell) => cell.replace(/\\\|/g, '|').trim())
-function qaTestCases() {
-  const dir = join(ROOT, 'docs', 'qa', 'tc')
-  const apps = []
-  for (const app of QA_TC_APPS) {
-    const file = join(dir, `${app}.md`)
-    if (!existsSync(file)) continue
-    const lines = readFileSync(file, 'utf8').split('\n')
-    const start = lines.findIndex((line) => line.startsWith('## B) TC'))
-    const cases = []
-    let header = null
-    for (const line of lines.slice(start + 1)) {
-      if (line.startsWith('## ')) break
-      if (!line.startsWith('|')) { header = null; continue }
-      const cells = tableCells(line)
-      if (!header) { header = cells; continue }
-      if (cells.every((cell) => /^-+$/.test(cell)) || header[0] !== 'ID') continue
-      const value = Object.fromEntries(header.map((name, index) => [name, cells[index] ?? '']))
-      cases.push({
-        id: value.ID, kind: value['분류'], title: value['제목'], session: value['세션'] || 'logout', viewport: value['뷰포트'],
-        pre: value['사전 조건'], steps: value['단계'], expect: value['기대 결과'], auto: value['자동화'], prio: value['우선'], ref: value['근거']
-      })
-    }
-    const scenarioDir = join(ROOT, 'scripts', 'qa', 'scenarios', app)
-    const scenarios = existsSync(scenarioDir) ? readdirSync(scenarioDir).filter((name) => name.endsWith('.json')).sort() : []
-    // TC 마다 그 TC 를 검사하는 흐름 씬(씬 파일의 "tc") — [선택한 TC만 검수] 가 이 씬들만 돌린다
-    // 여정(include 로 부품 씬을 불러오는 씬)은 tc 를 적지 않았으면 부품들의 tc 를 모은다 — run.mjs expandScenario 와 같은 규칙
-    const readScene = (dir, name) => { try { return JSON.parse(readFileSync(join(dir, name), 'utf8')) } catch { return null } }
-    const sceneTcs = (dir, name, depth = 0) => {
-      const scene = readScene(dir, name)
-      if (!scene) return []
-      if (scene.tc?.length || depth > 3) return scene.tc ?? []
-      const found = new Set()
-      for (const step of scene.steps ?? []) {
-        for (const id of step?.section ? step.tc ?? [] : []) found.add(id)
-        if (!step?.include) continue
-        const prefix = String(step.include)
-        const inDraft = prefix.startsWith('_draft/')
-        const base = inDraft ? join(dir, '_draft') : dir
-        const part = existsSync(base) ? readdirSync(base).filter((file) => file.endsWith('.json')).sort().find((file) => file.startsWith(inDraft ? prefix.slice(7) : prefix)) : null
-        if (part) for (const id of sceneTcs(base, part, depth + 1)) found.add(id)
-      }
-      return [...found]
-    }
-    const scenarioTcs = scenarios.map((name) => [name, sceneTcs(scenarioDir, name)])
-    // 여정 = 부품 씬을 include 하는 씬. TC 를 골라 검수할 때는 작은 씬이 있으면 그것만, 없을 때만 여정을 돌린다
-    const journeys = scenarios.filter((name) => (readScene(scenarioDir, name)?.steps ?? []).some((step) => step?.include))
-    for (const item of cases) {
-      item.scenarioFiles = scenarioTcs.filter(([, tcs]) => tcs.includes(item.id)).map(([name]) => name)
-      const parts = item.scenarioFiles.filter((name) => !journeys.includes(name))
-      item.runFiles = parts.length ? parts : item.scenarioFiles
-    }
-    // 여정 카드 — 구간마다 하는 일(부품 씬·TC·모드)
-    const findPart = (prefix) => {
-      const inDraft = prefix.startsWith('_draft/')
-      const base = inDraft ? join(scenarioDir, '_draft') : scenarioDir
-      const name = existsSync(base) ? readdirSync(base).filter((file) => file.endsWith('.json')).sort().find((file) => file.startsWith(inDraft ? prefix.slice(7) : prefix)) : null
-      return name ? { base, name, scene: readScene(base, name) } : null
-    }
-    const journeyCards = journeys.map((file) => {
-      const scene = readScene(scenarioDir, file) ?? {}
-      const sections = []
-      let current = null
-      for (const step of scene.steps ?? []) {
-        if (step?.section) { current = { title: step.section, desc: step.desc ?? '', parts: [], steps: 0, tcs: new Set(step.tc ?? []), modes: new Set() }; sections.push(current); continue }
-        if (!current) { current = { title: '(시작)', parts: [], steps: 0, tcs: new Set(), modes: new Set() }; sections.push(current) }
-        if (step?.only) current.modes.add(step.only)
-        if (step?.include) {
-          const part = findPart(String(step.include))
-          current.parts.push({ file: part?.name ?? String(step.include), name: part?.scene?.name ?? '(없음)', only: step.only ?? '' })
-          for (const id of part ? sceneTcs(part.base, part.name) : []) current.tcs.add(id)
-          current.steps += part?.scene?.steps?.length ?? 0
-        } else current.steps += 1
-      }
-      return { file, name: scene.name ?? file, why: scene.why ?? '', sections: sections.map((section) => ({ ...section, tcs: [...section.tcs], modes: [...section.modes] })) }
-    })
-    apps.push({ app, doc: `docs/qa/tc/${app}.md`, cases, scenarios, journeys, journeyCards, routes: existsSync(join(ROOT, 'scripts', 'qa', 'routes', `${app}.json`)) })
-  }
-  return apps
-}
-// [전체 검수] — 최신 개발 브랜치(qa-base)로 화면 전부 + 흐름 씬. 한 번에 하나
-// target: local | server(주소 입력 — dev·stg·dev-1~3·PR 미리보기, 운영은 거부) (D21) · flow: 비로그인 → 로그인 상태 전부 차례로(세션 없으면 그 차례에 로그인 요청) → 실패 리포트(D18~D20). 라이브 화면(--live)으로 연다
-function startQaSuite(app, profile, target = 'local', flow = false, server = '', tcs = [], journey = null) {
-  const known = qaApps().find((entry) => entry.app === app)
-  if (target === 'local' && known && !known.local) return { error: `${app} 은 로컬 서버로 돌릴 수 없어요 — 서버를 고르고 주소를 넣어 주세요` }
-  const checked = target === 'server' ? checkServerUrl(server || known?.devUrl || '') : null
-  if (checked?.error) return { error: checked.error }
-  if (!known) return { error: `전체 검수 설정이 없는 앱이에요 — scripts/qa/routes/${app}.json` }
-  if (profile && !known.profiles.some((entry) => entry.name === profile)) return { error: `프로필 ${profile} 이 없어요` }
-  if (qaChild && qaChild.exitCode === null && qaChild.signalCode === null) return { error: '이 현황판이 띄운 QA 가 아직 돌고 있어요 — QA 탭에서 진행을 보세요' }
-  const running = activeQaRun()
-  if (running) return { error: `다른 QA 가 돌고 있어요 — ${running.id} (${running.phase})` }
-  mkdirSync(QA_RUNS_DIR, { recursive: true })
-  writeFileSync(join(QA_RUNS_DIR, 'launch.log'), `${new Date().toISOString()} suite ${app} ${profile ?? ''}\n`, { flag: 'a' })
-  // [선택한 TC만 검수] — 고른 TC 를 검사하는 흐름 씬만(화면 검사 없이). 고른 목록은 .qa-runs/tc-picks/ 에 남긴다
-  const picked = [...new Set(tcs.map(String).filter((id) => /^[A-Z]+-\d+$/.test(id)))]
-  let pickArgs = []
-  if (picked.length) {
-    const picksDir = join(QA_RUNS_DIR, 'tc-picks')
-    mkdirSync(picksDir, { recursive: true })
-    const picksFile = join(picksDir, `${app}@board-${Date.now()}.json`)
-    writeFileSync(picksFile, `${JSON.stringify({ app, from: 'board', tcs: picked.map((id) => ({ id })) }, null, 2)}\n`)
-    const caseOf = new Map((qaTestCases().find((entry) => entry.app === app)?.cases ?? []).map((item) => [item.id, item]))
-    const files = [...new Set(picked.flatMap((id) => caseOf.get(id)?.runFiles ?? []))]
-    pickArgs = ['--tc-picks', picksFile, '--scenarios-only', ...(files.length ? ['--scenarios', files.map((name) => name.replace(/\.json$/, '')).join(',')] : [])]
-  }
-  // 여정 카드 [▶ 자동]·[▶ 실제] — 그 여정 씬만(화면 검사 없이), 모드
-  const journeyArgs = journey?.file && /^[\w가-힣.-]+\.json$/.test(journey.file)
-    ? ['--scenarios-only', '--scenarios', journey.file.replace(/\.json$/, ''), '--mode', journey.mode === 'real' ? 'real' : 'auto']
-    : []
-  const args = [join(ROOT, 'scripts', 'qa', 'run.mjs'), '--suite', '--app', app, '--live', ...(checked ? ['--server', checked.url] : []), ...(flow && !picked.length && !journeyArgs.length ? ['--flow'] : profile ? ['--profile', profile] : []), ...pickArgs, ...journeyArgs]
-  qaChild = spawn(process.execPath, args, { cwd: ROOT, detached: true, stdio: 'ignore' })
+
+// [실행] — 서비스 하나(또는 그 안의 층 · 흐름). 대상 트리 · 서버는 실행기가 정한다(운영 기준 ref · 로컬 서버)
+function startQa(service, layer, flow) {
+  const { services, running } = qaOverview(config, ROOT, QA_RUNS_DIR)
+  if (!services.some((entry) => entry.name === service)) return { error: `모르는 서비스예요: ${service}` }
+  if (layer && !['fe', 'be'].includes(layer)) return { error: '실행할 수 있는 층은 fe · be 예요' }
+  if (flow && !/^[\w.-]+$/.test(flow)) return { error: '흐름 이름이 올바르지 않아요' }
+  if (qaChildAlive() || running) return { error: 'QA 가 이미 돌고 있어요' }
+  const args = [process.execPath, join(ROOT, 'scripts/qa/run.mjs'), '--service', service]
+  if (layer) args.push('--layer', layer)
+  if (flow) args.push('--flow', flow)
+  qaChild = spawn(join(ROOT, 'scripts/heavy.sh'), args, { cwd: ROOT, detached: true, stdio: 'ignore' })
+  qaChild.on('error', () => { qaChild = null })
   qaChild.unref()
-  return { ok: true, app, target, server: checked?.url ?? null, flow, profile: flow ? '(흐름)' : profile || '(기본)' }
+  return { ok: true }
 }
 
 const allowed = (request) => {
@@ -1695,134 +1384,9 @@ const handleRequest = async (request, response) => {
     // templateLines — 고치지 않은 템플릿 자리 줄(앱 [작업] 상세가 진행 칸에서 뺀다 · 규칙은 plan-bind.mjs 한 곳)
     return response.end(JSON.stringify({ id, text, plan, templateLines: TEMPLATE_PLACEHOLDER_LINES }))
   }
-  if (url.pathname === '/api/qa/runs') {
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ runs: listQaRuns().slice(0, 60).map(qaSummary), heavy: heavyLockState() }))
-  }
-  if (url.pathname === '/api/qa/sessions') {
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify(qaSessions(String(url.searchParams.get('app') ?? ''), url.searchParams.get('target') === 'server' ? 'server' : 'local', String(url.searchParams.get('server') ?? ''))))
-  }
-  if (url.pathname === '/api/qa/apps') {
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ apps: qaApps(), warnings: packQaWarnings(config) }))
-  }
-  // QA 실시간 페이지(QA 자동화 도구 화면) — 화면·API 호출·트래킹 이벤트를 한 페이지에
-  if (url.pathname === '/qa-live') {
-    response.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' })
-    // 토큰을 넣어 준다 — 실패 리포트 모달의 [담당 에이전트에게 조사 맡기기] 가 /api/action 으로 아테나 pane 에 보낸다
-    return response.end(readFileSync(join(ROOT, 'scripts/board/qa-live.html'), 'utf8').replace('</head>', `<script>window.ATHENA_BOARD_TOKEN = ${JSON.stringify(TOKEN)}</script>\n</head>`))
-  }
-  // 실시간 화면 스트림(MJPEG) — live/<칸>.jpg 가 바뀔 때마다 이어서 보낸다. <img src> 하나로 끊김 없이 그려진다
-  if (url.pathname === '/api/qa/stream') {
-    const id = String(url.searchParams.get('id') ?? '')
-    const slot = String(url.searchParams.get('slot') ?? '')
-    if (!QA_ID.test(id) || !/^[\w-]+$/.test(slot)) {
-      response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-      return response.end('not found')
-    }
-    const file = join(QA_RUNS_DIR, id, 'live', `${slot}.jpg`)
-    response.writeHead(200, { 'Content-Type': 'multipart/x-mixed-replace; boundary=frame', 'Cache-Control': 'no-store', Connection: 'keep-alive' })
-    let lastModified = 0
-    const sendFrame = () => {
-      try {
-        const modified = statSync(file).mtimeMs
-        if (modified === lastModified) return
-        lastModified = modified
-        const frame = readFileSync(file)
-        response.write(`--frame\r\nContent-Type: image/jpeg\r\nContent-Length: ${frame.length}\r\n\r\n`)
-        response.write(frame)
-        response.write('\r\n')
-      } catch {
-        // 아직 프레임이 없거나 바꿔 쓰는 중 — 다음 차례에
-      }
-    }
-    // 런이 끝나면 스트림을 닫는다 — 브라우저는 한 주소에 연결을 6개까지만 열어서, 끝난 런의 스트림이 남아 있으면
-    // 현황판의 다른 페이지(결정 콘솔 등)가 열리지 않고 계속 돈다. 2초마다 run.json 을 보고, 끝났으면 마지막 프레임까지 보낸 뒤 닫는다
-    const runFile = join(QA_RUNS_DIR, id, 'run.json')
-    let ticks = 0
-    const timer = setInterval(() => {
-      sendFrame()
-      ticks += 1
-      if (ticks % 40 !== 0) return
-      try {
-        const status = JSON.parse(readFileSync(runFile, 'utf8')).status
-        if (status === 'done' || status === 'error') {
-          clearInterval(timer)
-          response.end()
-        }
-      } catch {
-        // run.json 을 바꿔 쓰는 중 — 다음 차례에
-      }
-    }, 50)
-    request.on('close', () => clearInterval(timer))
-    return sendFrame()
-  }
-  // 실시간 호출 기록 — live.jsonl 을 since(바이트) 뒤부터. 다음에 since 로 next 를 넘긴다
-  if (url.pathname === '/api/qa/live') {
-    const id = String(url.searchParams.get('id') ?? '')
-    const file = join(QA_RUNS_DIR, id, 'live.jsonl')
-    const since = Math.max(0, Number(url.searchParams.get('since')) || 0)
-    let lines = []
-    let next = since
-    if (QA_ID.test(id) && existsSync(file)) {
-      const buffer = readFileSync(file)
-      const end = buffer.lastIndexOf(10) + 1
-      if (end > since) {
-        lines = buffer.subarray(since, end).toString('utf8').split('\n').filter(Boolean).map((line) => {
-          try {
-            return JSON.parse(line)
-          } catch {
-            return null
-          }
-        }).filter(Boolean)
-        next = end
-      }
-    }
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ lines, next }))
-  }
-  if (url.pathname === '/api/qa/tc') {
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ apps: qaTestCases() }))
-  }
-  if (url.pathname === '/api/qa/run') {
-    const id = String(url.searchParams.get('id') ?? '')
-    const file = join(QA_RUNS_DIR, id, 'run.json')
-    const ok = QA_ID.test(id) && existsSync(file)
-    response.writeHead(ok ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    if (!ok) return response.end(JSON.stringify({ error: 'QA 런을 찾지 못했어요' }))
-    // 실패 문구를 사람이 읽는 원인으로 묶어 붙인다(scripts/qa/explain.mjs) — run.json 원문은 그대로
-    // 정규식이 모르는 묶음은 Jev 추정을 캐시에서 붙이고, 아직 없으면 뒤에서 물어 둔다(다음 새로고침에 보인다)
-    try {
-      const run = JSON.parse(readFileSync(file, 'utf8'))
-      const guesses = readQaGuesses()
-      for (const screen of run.screens ?? []) {
-        if (!screen.problems?.length) continue
-        screen.reasons = explainProblems(screen.problems, guesses)
-        askQaGuesses(screen.reasons, guesses)
-      }
-      return response.end(JSON.stringify(run))
-    } catch {
-      return response.end(readFileSync(file))
-    }
-  }
-  // QA 스크린샷·리포트 — .qa-runs/<런 id>/ 안의 png·html·json·log 만(경로 탈출 404)
-  if (url.pathname.startsWith('/qa-runs/')) {
-    let inner = ''
-    try {
-      inner = decodeURIComponent(url.pathname.slice('/qa-runs/'.length))
-    } catch {
-      inner = ''
-    }
-    const path = join(QA_RUNS_DIR, inner)
-    const type = QA_TYPES[path.slice(path.lastIndexOf('.'))]
-    if (inner && type && QA_ID.test(inner.split('/')[0]) && path.startsWith(QA_RUNS_DIR + sep) && existsSync(path) && statSync(path).isFile()) {
-      response.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' })
-      return response.end(readFileSync(path))
-    }
-    response.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' })
-    return response.end('not found')
+  if (url.pathname === '/api/qa/flows') {
+    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
+    return response.end(JSON.stringify(qaFlows()))
   }
   // board.sh 가 이미 보고 있는 탭이 있는지 묻는다 — 있으면 새 탭을 열지 않는다
   // 히스토리 — 보관된 일(archive/). 누를 때만 읽는다
@@ -1873,7 +1437,7 @@ const handleRequest = async (request, response) => {
     response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
-  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-start', '/api/qa-suite', '/api/qa-approve', '/api/qa-logout', '/api/qa-login', '/api/qa-stop', '/api/learn-apply', '/api/learn-batch', '/api/learn-discard', '/api/learn-edit', '/api/learn-candidate-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown'].includes(url.pathname)) {
+  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-run', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-candidate-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown', '/api/learn-batch'].includes(url.pathname)) {
     const reply = (code, body) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
@@ -1903,30 +1467,8 @@ const handleRequest = async (request, response) => {
         })
       return reply(202, { ok: true, job: job.id })
     }
-    if (url.pathname === '/api/qa-suite') {
-      const result = startQaSuite(String(body.app ?? ''), String(body.profile ?? ''), body.target === 'server' ? 'server' : 'local', Boolean(body.flow), String(body.server ?? ''), Array.isArray(body.tcs) ? body.tcs : [], body.journey ?? null)
-      return reply(result.error ? 400 : 202, result)
-    }
-    if (url.pathname === '/api/qa-stop') {
-      const result = stopQaRun(String(body.id ?? ''), body.group ? String(body.group) : '')
-      return reply(result.error ? 400 : 200, result)
-    }
-    if (url.pathname === '/api/qa-login') {
-      const result = await loginQaSession(String(body.app ?? ''), body.target === 'server' ? 'server' : 'local', String(body.server ?? ''), String(body.profile ?? ''))
-      return reply(result.error ? 400 : 202, result)
-    }
-    if (url.pathname === '/api/qa-logout') {
-      const result = logoutQaSession(String(body.app ?? ''), body.target === 'server' ? 'server' : 'local', String(body.server ?? ''), String(body.profile ?? ''))
-      return reply(result.error ? 400 : 200, result)
-    }
-    if (url.pathname === '/api/qa-approve') {
-      const id = String(body.id ?? '')
-      if (!QA_ID.test(id)) return reply(400, { error: '런 id 가 올바르지 않아요' })
-      const result = approveQaRun(id, body.key ? [String(body.key)] : null)
-      return reply(result.error ? 400 : 200, result.error ? result : { ok: true, screens: result.screens, shots: result.shots })
-    }
-    if (url.pathname === '/api/qa-start') {
-      const result = startQaRun(String(body.id ?? ''))
+    if (url.pathname === '/api/qa-run') {
+      const result = startQa(String(body.service ?? ''), String(body.layer ?? ''), String(body.flow ?? ''))
       return reply(result.error ? 400 : 202, result)
     }
     if (url.pathname.startsWith('/api/learn-')) {

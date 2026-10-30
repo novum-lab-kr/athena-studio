@@ -584,7 +584,7 @@
   "work.detail.console": "결정 콘솔",
   "work.detail.goPane": "pane 으로 가기",
   "board.menu.qa": "QA",
-  "board.menu.qaNote": "검수 실행 · 화면 비교",
+  "board.menu.qaNote": "흐름별 TC 결과",
   "board.menu.learn": "학습",
   "board.menu.learnNote": "에이전트가 배운 것 넣기 · 버리기",
   "board.menu.metrics": "지표",

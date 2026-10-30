@@ -29,3 +29,12 @@ export const maskSecrets = (text) => {
   return { masked, count }
 }
 
+// maskSecrets 에 더해 값 이름만 보고(cookie · session_id · Basic …) 넓게 가린다 — 로그 · QA 결과 · Jev 로 보내는 글에 쓴다
+const SECRET_WORD = String.raw`[\w-]*(?:pass(?:word|wd)?|token|secret|api[-_]?key|authori[sz]ation|auth(?!or)|credential|cookie|session[-_]?id|private[-_]?key|otp)[\w-]*`
+
+/** @param {unknown} text */
+export const maskText = (text) => maskSecrets(String(text ?? '')).masked
+  .replace(new RegExp(`(${SECRET_WORD})=([^&;\\s"']+)`, 'gi'), '$1=***')
+  .replace(new RegExp(`("${SECRET_WORD}"\\s*:\\s*)"[^"]*"`, 'gi'), '$1"***"')
+  .replace(/\b(Bearer|Basic)\s+[\w.~+/=-]+/gi, '$1 ***')
+  .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+/g, '***')

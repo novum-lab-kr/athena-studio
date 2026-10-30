@@ -19,6 +19,6 @@ argument-hint: "(없음) | <파일> | 설명 | 열기 | 시작하기 | 그림"
 | `설명` / `구조` | `scripts/screen open-url <athena-explained.html>` — 아테나 구조 설명(무엇이고 어떻게 돌아가나 · Hermes Agent 와의 차이)을 브라우저로. 열었다는 한 줄만 답한다 |
 | `열기` / `open` | `scripts/screen open-url <playbook.html>` — 플레이북을 브라우저로. 열었다는 한 줄만 답한다 |
 | `시작하기` / `온보딩` | `scripts/screen open-url <onboarding.html>` — 시작하기 가이드(원본 `ONBOARDING.md`)를 브라우저로. 열었다는 한 줄만 답한다 |
-| `그림` / `다이어그램` | `scripts/screen open-url docs/diagrams/index.html` — 다이어그램 목록(작업 흐름 경량·정식 + 팩 서비스 × 구조·화면 맵·요청 흐름). 열었다는 한 줄만 답한다 |
+| `그림` / `다이어그램` | `scripts/screen open-url docs/diagrams/index.html` — 다이어그램 목록(아테나 작업 흐름 경량 · 정식 · 압축 전후). 열었다는 한 줄만 답한다 |
 
 그 밖의 질문(어느 에이전트가 무엇을 하나, 작업 흐름, 스킬·에이전트 추가 방법)은 메뉴를 띄우지 말고 `AGENTS.md`·`CLAUDE.md`·`docs/extending.md` 에서 해당 절을 찾아 그대로 보여 주고 원본 경로를 한 줄 덧붙인다.
