@@ -19,14 +19,27 @@ const updateNotice = require('../src/lib/update-notice.mts')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
-const DEV_APP_VERSION = 2 // 만드는 방법이 바뀌면 올린다(있던 복사본을 다시 만든다)
-const BUNDLE_ID = 'kr.novum-lab.athena-studio.dev'
+const DEV_APP_VERSION = 3 // 만드는 방법이 바뀌면 올린다(있던 복사본을 다시 만든다)
+const BASE_BUNDLE_ID = 'kr.novum-lab.athena-studio.dev'
 const SOURCE = path.join(ROOT, 'node_modules', 'electron', 'dist', 'Electron.app')
 const TARGET = path.join(ROOT, '.dev-app', `${APP_NAME}.app`)
 const BINARY = path.join(TARGET, 'Contents', 'MacOS', 'Electron')
 // 무엇으로 만들었는지 — 번들 밖에 둔다(번들 안에 쓰면 서명이 깨진다)
 const MARKER = path.join(ROOT, '.dev-app', `${APP_NAME}.json`)
 const ICON = path.join(ROOT, 'src', 'renderer', 'assets', 'logo', 'athena-app-icon.png') // 1024 · 둥근 사각형 앱 아이콘
+
+// git 워크트리의 복사본은 번들 ID 를 따로 준다 — 같은 ID 복사본이 여럿이면 맥이 알림 · Dock · Finder 에서 아무거나 골라 켠다.
+// 메인 체크아웃은 옛 ID 그대로(맥 알림 허용 설정을 잃지 않게). 앱 데이터 · 데몬 접속 파일은 번들 ID 가 아니라 appIdentity(studio-home.js)가 정하니 갈리지 않는다
+function bundleId() {
+  try {
+    const git = (flag) => execFileSync('git', ['rev-parse', flag], { cwd: ROOT, encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    if (path.resolve(ROOT, git('--git-dir')) === path.resolve(ROOT, git('--git-common-dir'))) return BASE_BUNDLE_ID
+  } catch {
+    return BASE_BUNDLE_ID
+  }
+  return `${BASE_BUNDLE_ID}.${crypto.createHash('sha256').update(fs.realpathSync(ROOT)).digest('hex').slice(0, 8)}`
+}
+const BUNDLE_ID = bundleId()
 
 function electronVersion() {
   try {
@@ -46,7 +59,7 @@ function iconHash() {
 
 // 지금 Electron · 아이콘으로 만든 것이면 다시 만들 필요 없다
 function wanted() {
-  return { electron: electronVersion(), icon: iconHash(), name: APP_NAME, bundleId: BUNDLE_ID, arch: process.arch, version: DEV_APP_VERSION }
+  return { electron: electronVersion(), icon: iconHash(), name: APP_NAME, bundleId: BUNDLE_ID, root: ROOT, arch: process.arch, version: DEV_APP_VERSION }
 }
 
 function isCurrent() {
@@ -134,6 +147,13 @@ function build() {
     for (const [key, value] of [['CFBundleName', APP_NAME], ['CFBundleDisplayName', APP_NAME], ['CFBundleIdentifier', BUNDLE_ID]]) {
       execFileSync('plutil', ['-replace', key, '-string', value, plist], { stdio: 'ignore' })
     }
+    // 인자 없이 켜져도(알림 · Dock · Finder) Electron 기본 창이 아니라 이 레포 앱이 뜨게 — Resources/app 이 있으면 Electron 이 default_app 대신 그걸 연다.
+    // 이름 · 버전은 레포 package.json 과 같게, main 은 레포 진입점을 가리킨다(레포가 옮겨지면 marker 의 root 가 달라 다시 만든다)
+    const appDir = path.join(building, 'Contents', 'Resources', 'app')
+    fs.mkdirSync(appDir, { recursive: true })
+    const repoPackage = require(path.join(ROOT, 'package.json'))
+    const main = path.relative(appDir, path.join(ROOT, repoPackage.main))
+    fs.writeFileSync(path.join(appDir, 'package.json'), JSON.stringify({ name: repoPackage.name, version: repoPackage.version, main }, null, 2) + '\n')
     if (fs.existsSync(ICON)) makeIcns(ICON, path.join(building, 'Contents', 'Resources', 'electron.icns'))
     // Info.plist 를 바꾸면 서명이 깨져 애플 실리콘에서 안 켜진다 — 이 컴퓨터용(ad-hoc)으로 다시 서명하고 확인
     execFileSync('codesign', ['--force', '--deep', '--sign', '-', building], { stdio: 'ignore' })
