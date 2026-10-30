@@ -73,6 +73,24 @@ test('업데이트가 겹쳐도(두 번) 둘 다 끝나야 열린다', async () 
   assert.equal(released, true)
 })
 
+test('겹친 업데이트 중 하나만 시간 초과돼도 다른 쪽이 도는 동안 문은 닫혀 있다', async () => {
+  const gate = createUpdateGate({ maxMs: 60 })
+  gate.run(() => new Promise(() => {})) // 멈춘 업데이트(끝나지 않음) — 60ms 뒤 시간 초과
+  await new Promise((resolve) => setTimeout(resolve, 30))
+  let finishSecond
+  const second = gate.run(() => new Promise((resolve) => (finishSecond = resolve))) // 둘째는 90ms 에 시간 초과
+  let released = false
+  const waiting = gate.wait().then(() => (released = true))
+  await new Promise((resolve) => setTimeout(resolve, 45)) // 75ms — 첫째만 시간 초과
+  assert.equal(released, false)
+  assert.equal(gate.active(), true)
+  finishSecond()
+  await second
+  await waiting
+  assert.equal(released, true)
+  assert.equal(gate.active(), false)
+})
+
 // ── 대기 입구 — 빠뜨리면 팩 작업이 옛 코어로 돈다. 입구를 바꾸면 이 시험과 계획서 표를 같이 고친다 ──
 const read = (file) => fs.readFileSync(path.join(__dirname, '..', 'src', file), 'utf8')
 
@@ -88,7 +106,7 @@ test('팩 명령 입구 — 밖으로 내보내는 runCore 는 문을 기다리�
 
 test('현황판 · 새 에이전트 · 자동 따라잡기 입구가 문을 본다', () => {
   assert.match(read('main/work.mts'), /ctx\.ensureBoard = async \(\) => \{[\s\S]*?await waitCoreUpdate\(\)[\s\S]*?queueBoard\(/)
-  assert.match(read('main/athena-agent.mts'), /await waitCoreUpdate\(\)\s*\n\s*const decision = core\.agentDecision/)
+  assert.match(read('main/athena-agent.mts'), /await waitCoreUpdate\(\)[\s\S]*?findAthenaWorkspace[\s\S]*?const decision = core\.agentDecision/)
   assert.match(read('main/catch-up.mts'), /if \(!force && updating\(\)\) return null/)
 })
 

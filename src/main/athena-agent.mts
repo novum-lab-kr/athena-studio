@@ -57,6 +57,14 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     // agentDecision 은 { none } | { agent } — 읽는 칸을 같이 적는다
     // 새 에이전트 pane 을 시작하기 전 — 코어 업데이트가 도는 중이면 끝날 때까지(옛 코어로 시작한 에이전트를 업데이트가 막거나 건너뛰지 않게). 있던 작업 공간으로 옮기기만 하는 위 경로는 기다리지 않는다
     await waitCoreUpdate()
+    // 기다리는 사이 다른 호출이 작업 공간을 만들었을 수 있다 — 다시 확인해 있으면 새로 만들지 않고 그리로(중복 아테나 방지)
+    const after = (await daemonCall('state')) as StateReply
+    const createdMeanwhile = after.error ? null : core.findAthenaWorkspace(after.result!.workspaces, ctx.athenaDir as string)
+    if (createdMeanwhile) {
+      if (keepView) return { existing: true, restore }
+      await daemonCall('workspace select', { workspace: createdMeanwhile.id })
+      return { focused: true, restore }
+    }
     const decision = core.agentDecision(core.availableAgents(process.env.PATH)) as { none?: true; agent?: string }
     const created = (await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })) as CreatedReply
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }

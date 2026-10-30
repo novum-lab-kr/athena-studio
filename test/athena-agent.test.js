@@ -49,9 +49,9 @@ function setup(t) {
     fs.rmSync(root, { recursive: true, force: true })
   })
   const daemon = fakeDaemon()
-  const makeCtx = (athenaDir) => {
+  const makeCtx = (athenaDir, waitCoreUpdate = async () => {}) => {
     const ctx = { athenaDir, daemonCall: daemon.callFor(athenaDir), packTask: (_name, work) => work(), packProgress() {}, studioEnv: () => ({}) }
-    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), waitCoreUpdate: async () => {}, disarmRestore() {} })
+    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), waitCoreUpdate, disarmRestore() {} })
     return ctx
   }
   return { root, daemon, makeCtx }
@@ -126,4 +126,24 @@ test('옛 버그로 폴더 이름이 붙은 아테나 작업 공간이 있으면
   assert.deepEqual(daemon.workspaces.map((entry) => entry.id), ['w9'])
   assert.equal(started(daemon).length, 0)
   assert.deepEqual(daemon.calls.filter((call) => call.op === 'workspace select').map((call) => call.args.workspace), ['w9'])
+})
+
+test('코어 업데이트를 기다리는 사이 다른 호출이 아테나 작업 공간을 만들었으면 새로 만들지 않고 그리로 옮긴다', async (t) => {
+  for (const keepView of [false, true]) {
+    const { root, daemon, makeCtx } = setup(t)
+    const body = fakeBody(root, `body-${keepView}`)
+    // 기다리는 동안 다른 호출이 만든 작업 공간
+    const ctx = makeCtx(body, async () => {
+      daemon.workspaces.push({ id: 'w9', label: 'athena', cwd: body, body })
+    })
+    const result = await ctx.openAthenaAgent({}, { keepView })
+    assert.deepEqual(daemon.workspaces.map((entry) => entry.id), ['w9'])
+    assert.equal(started(daemon).length, 0)
+    if (keepView) {
+      assert.equal(result.existing, true)
+    } else {
+      assert.equal(result.focused, true)
+      assert.deepEqual(daemon.calls.filter((call) => call.op === 'workspace select').map((call) => call.args.workspace), ['w9'])
+    }
+  }
 })

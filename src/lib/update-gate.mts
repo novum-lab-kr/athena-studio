@@ -38,7 +38,8 @@ export function createUpdateGate({ maxMs = 6 * 60000, onChange = () => {}, timer
       const timer = timers.setTimeout(() => {
         gaveUp = true
         setRunning(Math.max(0, running - 1))
-        release()
+        // 다른 업데이트가 아직 돌고 있으면 문은 그대로 닫아 둔다(그쪽이 끝나거나 시간 초과될 때 푼다)
+        if (running === 0) release()
       }, maxMs)
       try {
         return await task()
