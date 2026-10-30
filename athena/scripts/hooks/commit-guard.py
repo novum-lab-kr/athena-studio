@@ -390,6 +390,27 @@ def assigned(name):
     return bool(re.search(r'\beval\b', command)) or any(re.search(pattern, command) for pattern in patterns)
 
 
+def literal_assignment(name):
+    """이 명령 안에서 변수에 글자 그대로의 값을 딱 한 번 넣었을 때 그 값 — `A=/abs` · `A="/abs"` · `A='/abs'` 가 `;` · `&&` · 줄바꿈 앞의
+    독립한 문장일 때만(`A=x cmd` 앞붙임은 같은 조각의 $A 에 안 보인다). 명령 치환 · 다른 변수 · 글롭이 든 값 · 대입이 둘 이상 · eval 이면 None"""
+    escaped = re.escape(name)
+    if re.search(r'\beval\b', command) or len(re.findall(rf'(?<![\w$]){escaped}\+?=', command)) != 1:
+        return None
+    others = [
+        rf'\$\{{{escaped}:?=',
+        rf'\b(?:export|declare|typeset|readonly|local|unset|read|getopts|mapfile|readarray|for|select|printf\s+-v)\b[^;&|\n]*\b{escaped}\b',
+    ]
+    if any(re.search(pattern, command) for pattern in others):
+        return None
+    matched = re.search(
+        rf'(?:^|[;\n]|&&)[ \t]*{escaped}=(?:"([^"$`\\]*)"|\'([^\']*)\'|([^\s\'"$`\\;&|<>(){{}}*?\[~#]+))[ \t]*(?:;|&&|\n)',
+        command)
+    if not matched:
+        return None
+    value = next(group for group in matched.groups() if group is not None)
+    return value if value.startswith('/') else None
+
+
 def expand_word(raw):
     """셸이 실제로 풀어 주는 부분만 푼다 — 작은따옴표 · 역슬래시로 보호된 $VAR · ~ 는 글자 그대로,
     큰따옴표 안의 ~ 도 그대로. 풀 수 없으면(미정의 변수 · 명령 치환 · 글롭 · 이 명령 안에서 값을 넣는 변수) None"""
@@ -418,9 +439,17 @@ def expand_word(raw):
             if not matched:
                 return None
             name = matched.group(1) or matched.group(2)
-            if name in ('PWD', 'OLDPWD') or name not in os.environ or assigned(name):
+            if name in ('PWD', 'OLDPWD'):
                 return None
-            out.append(os.environ[name]); index += matched.end(); continue
+            if assigned(name):
+                value = literal_assignment(name)
+                if value is None:
+                    return None
+            elif name in os.environ:
+                value = os.environ[name]
+            else:
+                return None
+            out.append(value); index += matched.end(); continue
         elif char == '~' and not quote and index == 0:
             if following not in ('', '/') or assigned('HOME'):
                 return None
@@ -458,7 +487,7 @@ def check(text, depth=0):
             words = raw_words(piece)
             raw = words[len(all_tokens) - len(tokens)] if len(words) == len(all_tokens) else None
             if resolve_script_path(raw, tokens[0]) != ALLOWED_SCRIPTS[name]:
-                return f'{name} 은 아테나(athena) 레포의 scripts/{name} 만 실행한다: {ALLOWED_SCRIPTS[name]}'
+                return f'{name} 은 아테나(athena) 레포의 scripts/{name} 만 실행한다: {ALLOWED_SCRIPTS[name]} — 절대 경로로 부르세요'
             if name == 'ship.sh' and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
                 return 'ship.sh --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'
             continue
