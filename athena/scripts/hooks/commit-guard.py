@@ -391,8 +391,8 @@ def assigned(name):
 
 
 def literal_assignment(name):
-    """이 명령 안에서 변수에 글자 그대로의 값을 딱 한 번 넣었을 때 그 값 — `A=/abs` · `A="/abs"` · `A='/abs'` 가 `;` · `&&` · 줄바꿈 앞의
-    독립한 문장일 때만(`A=x cmd` 앞붙임은 같은 조각의 $A 에 안 보인다). 명령 치환 · 다른 변수 · 글롭이 든 값 · 대입이 둘 이상 · eval 이면 None"""
+    """이 명령 안에서 변수에 글자 그대로의 값을 딱 한 번 넣었을 때 그 값 — `A=/abs` · `A="/abs"` · `A='/abs'` 가 **명령 맨 앞 문장**이고 `;` · `&&` ·
+    줄바꿈으로 끝날 때만(맨 앞이라야 항상 실행되고 호출보다 먼저다 — 뒤쪽 대입 · `false && A=…` · if 안 · 서브셸 · 따옴표 안의 글자는 믿지 않는다. `A=x cmd` 앞붙임도 제외). 명령 치환 · 다른 변수 · 글롭이 든 값 · 대입이 둘 이상 · eval 이면 None"""
     escaped = re.escape(name)
     if re.search(r'\beval\b', command) or len(re.findall(rf'(?<![\w$]){escaped}\+?=', command)) != 1:
         return None
@@ -402,8 +402,8 @@ def literal_assignment(name):
     ]
     if any(re.search(pattern, command) for pattern in others):
         return None
-    matched = re.search(
-        rf'(?:^|[;\n]|&&)[ \t]*{escaped}=(?:"([^"$`\\]*)"|\'([^\']*)\'|([^\s\'"$`\\;&|<>(){{}}*?\[~#]+))[ \t]*(?:;|&&|\n)',
+    matched = re.match(
+        rf'\A\s*{escaped}=(?:"([^"$`\\]*)"|\'([^\']*)\'|([^\s\'"$`\\;&|<>(){{}}*?\[~#]+))[ \t]*(?:;|&&|\n)',
         command)
     if not matched:
         return None

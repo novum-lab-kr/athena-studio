@@ -57,6 +57,18 @@ check block "변수 대입 값이 백틱" 'A=`echo /tmp/evil`; $A/scripts/commit
 check block "변수 대입 값이 다른 변수" 'A=$HOME; $A/scripts/commit.sh -m m'
 check block "변수 대입 값이 다른 파일 경로" 'A=/tmp/evil; $A/scripts/commit.sh -m m'
 check block "변수를 두 번 대입" "A=$ROOT; A=/tmp/evil; \$A/scripts/commit.sh -m m"
+check block "호출 뒤의 대입" "\$COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m; COMMIT_GUARD_TEST_ROOT=/tmp/x; A=$ROOT; true"
+check block "호출 뒤의 변수 대입" "\$A/scripts/commit.sh -m m; A=$ROOT;"
+check block "false && 뒤의 대입" "false && A=$ROOT; \$A/scripts/commit.sh -m m"
+check block "따옴표 안 문자열의 대입" "echo ';A=$ROOT;'; \$A/scripts/commit.sh -m m"
+check block "if 안의 대입" "if false; then
+A=$ROOT
+fi
+\$A/scripts/commit.sh -m m"
+check block "서브셸 안의 대입" "(
+A=$ROOT
+)
+\$A/scripts/commit.sh -m m"
 check block "앞붙임 대입은 같은 조각의 \$A 에 안 보인다" "A=$ROOT \$A/scripts/commit.sh -m m"
 check block "export 로 바꾼 \$VAR 경로" 'export COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
 check block "대입한 \$VAR 경로" 'COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
