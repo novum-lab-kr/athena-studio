@@ -20,7 +20,7 @@ type BusyItem = { kind?: unknown; what?: unknown; pid?: unknown }
 export type PackEntry = { [key: string]: unknown; id: string; name?: unknown; displayName?: unknown; empty?: boolean; updatedAt?: unknown; repos?: unknown; iconPath?: unknown }
 export type PackList = { supported: true; legacy: boolean; switching: boolean; current: PackEntry | null; packs: PackEntry[] } | { supported: false; error: unknown }
 // pack.json repos[] 하나 — 읽는 칸만
-type Repo = { name?: unknown; displayName?: unknown; icon?: unknown; apps?: unknown; agents?: unknown; packagesAgent?: unknown; direct?: unknown; autoMerge?: unknown; autoMergeConfirm?: unknown; autoReview?: unknown; autoMergeManual?: unknown; branch?: unknown; prBase?: unknown }
+type Repo = { name?: unknown; displayName?: unknown; icon?: unknown; apps?: unknown; agents?: unknown; packagesAgent?: unknown; direct?: unknown; autoMerge?: unknown; autoPr?: unknown; autoMergeConfirm?: unknown; autoReview?: unknown; autoMergeManual?: unknown; branch?: unknown; prBase?: unknown }
 
 // 문구는 사전(src/i18n)에서 — 부르는 쪽이 지금 언어의 say 를 넘긴다(없으면 한국어 · 테스트)
 const koreanSay = i18n.translator(KOREAN, KOREAN)
@@ -127,7 +127,7 @@ export function contractOf(result: PackResult | null | undefined): { contract: n
 }
 
 // 약속 번호를 올리지 않고 나중에 더한 명령 → 그 명령을 아는 코어의 손잡이(코어 version capabilities · athena/scripts/lib/bodies.mjs CAPABILITIES)
-const COMMAND_CAPABILITIES: Record<string, string> = { 'pack set-repo-name': 'repo-look', 'pack set-repo-icon': 'repo-look', 'pack set-auto-merge': 'merge-flow' }
+const COMMAND_CAPABILITIES: Record<string, string> = { 'pack set-repo-name': 'repo-look', 'pack set-repo-icon': 'repo-look', 'pack set-auto-merge': 'pr-off-merge' }
 const commandName = (argv: string[]) => (argv[0] === 'pack' ? `pack ${argv[1]}` : String(argv[0] || ''))
 // "알 수 없는 답"이 온 명령 · 그 본체의 version 결과 → 본체 코어가 옛 버전이라 그 명령을 모르나.
 // 약속 번호가 낮으면(명령 없음 → 1 포함) 옛 코어 · 같으면 그 명령의 손잡이가 capabilities 에 없을 때만. version 을 못 물었으면(일시 실패) 모름 → false
@@ -245,14 +245,15 @@ export function repoAgent(repo: Repo | null | undefined): string | null {
   return agent || null
 }
 
-// ⚙ 설정 — 레포별 PR · 자동 리뷰 · 머지(pack.json "autoMerge" · "autoReview" · "autoMergeConfirm" · "autoMergeManual" — 뜻은 코어 docs/pr-auto.md "켜기").
+// ⚙ 설정 — 레포별 PR · 자동 리뷰 · 머지(pack.json "autoMerge" · "autoPr" · "autoReview" · "autoMergeConfirm" · "autoMergeManual" — 뜻은 코어 docs/pr-auto.md "켜기").
+// autoMerge = 자동 흐름이 있나(키 없음 = 없음) · autoPr = 자동 PR 켬(false 키만 끔 = PR 없이 바로 머지 — autoMerge 와 같이 있을 때).
 // main 직접 레포("direct": true)는 PR 이 없어 목록에서 뺀다. releaseOnMerge — 작업 base(prBase)가 운영 브랜치(branch)와 같아 머지가 곧 운영 반영
 type MergeMode = 'auto' | 'confirm' | 'manual'
 function mergeModeOf(repo: Repo): MergeMode {
   if (repo.autoMergeManual === true) return 'manual'
   return repo.autoMergeConfirm === false ? 'auto' : 'confirm'
 }
-export function mergeSettings(pack: { repos?: unknown } | null | undefined): { name: unknown; autoMerge: boolean; review: boolean; mergeMode: MergeMode; releaseOnMerge: boolean; prBase: string }[] {
+export function mergeSettings(pack: { repos?: unknown } | null | undefined): { name: unknown; autoMerge: boolean; autoPr: boolean; review: boolean; mergeMode: MergeMode; releaseOnMerge: boolean; prBase: string }[] {
   if (!pack || !Array.isArray(pack.repos)) return []
   const repos: (Repo | null)[] = pack.repos
   return repos
@@ -260,6 +261,7 @@ export function mergeSettings(pack: { repos?: unknown } | null | undefined): { n
     .map((repo) => ({
       name: repo.name,
       autoMerge: repo.autoMerge === true,
+      autoPr: repo.autoPr !== false,
       review: repo.autoReview !== false,
       mergeMode: mergeModeOf(repo),
       releaseOnMerge: typeof repo.branch === 'string' && repo.branch !== '' && repo.prBase === repo.branch,

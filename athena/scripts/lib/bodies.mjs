@@ -25,8 +25,9 @@ export const CONTRACT = 3
 // update-from-bundle 부터는 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
 // idle-panes — update --panes-state <파일>(쉬는 pane 의 세션은 일하는 중으로 세지 않는다 · 결정 D1)
 // update-busy — update 가 일하는 세션이 있어도 본체를 올린다(entry.working · 2026-10-26) · repo-look — pack set-repo-name · set-repo-icon
+// pr-off-merge — pack set-auto-merge --auto off|none(PR 끔 바로 머지 · 자동 흐름 없음) · pack.json "autoPr"
 // (앱은 모르는 명령에 옛 코어가 사용법만 찍으면 이 이름들로 "본체 코어가 옛 버전" 을 가린다 — 앱 src/lib/pack.js COMMAND_CAPABILITIES)
-export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base', 'idle-panes', 'update-busy', 'repo-look', 'merge-flow']
+export const CAPABILITIES = ['open', 'update', 'rollback', 'discard', 'contract', 'update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base', 'idle-panes', 'update-busy', 'repo-look', 'merge-flow', 'pr-off-merge']
 
 const git = (dir, args, { quiet = true } = {}) => execFileSync('git', ['-C', dir, ...args], {
   encoding: 'utf8', stdio: ['ignore', 'pipe', quiet ? 'ignore' : 'pipe'], env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },

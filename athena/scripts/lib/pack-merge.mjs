@@ -1,6 +1,7 @@
 // 레포별 PR · 자동 리뷰 · 머지 설정 — 팩 pack.json 레포 항목의 키들(뜻의 정본 docs/pr-auto.md "켜기" · 판정 lib/pr-auto.mjs prFlow)
 //
-//   "autoMerge": true            끝나면 PR 켬 · 끄면 키를 지운다(없으면 PR · 리뷰 · 머지 모두 꺼짐)
+//   "autoMerge": true            자동 흐름 켬(없으면 PR · 리뷰 · 머지 모두 꺼짐 — 키 없는 pack.json 은 이대로 자동 흐름 없음)
+//   "autoPr": false              PR 끔 — autoMerge 와 같이 있을 때만: PR · 리뷰 없이 작업 브랜치를 prBase 에 바로 머지(머지 설정은 그대로). 켜면 키를 지운다
 //   "autoReview": false          리뷰 끔 · 켜면 키를 지운다(없으면 켬)
 //   "autoMergeConfirm": false    확인 없이 머지 · 확인 후로 돌리면 키를 지운다(없으면 확인 후)
 //   "autoMergeManual": true      사람이 직접 머지 · 돌리면 키를 지운다
@@ -22,7 +23,7 @@ const MERGE_KEYS = {
   confirm: [['autoMergeConfirm', null], ['autoMergeManual', null]],
   manual: [['autoMergeConfirm', null], ['autoMergeManual', 'true']],
 }
-const USAGE = '사용: athena pack set-auto-merge <레포> [--auto on|off] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]'
+const USAGE = '사용: athena pack set-auto-merge <레포> [--auto on|off|none] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]'
 
 // on|off → true|false · 없으면 null(바꾸지 않음)
 const onOff = (value, name) => {
@@ -30,6 +31,13 @@ const onOff = (value, name) => {
   if (value === 'on') return true
   if (value === 'off') return false
   throw new PackError('usage', `--${name} 는 on 또는 off`)
+}
+
+// --auto 값마다 키 — on: 자동 PR 켬 · off: 자동 PR 끔(PR 없이 바로 머지 — autoMerge 는 켠 채 autoPr:false) · none: 자동 흐름 없음(둘 다 지운다 — 키 없는 pack.json 과 같다)
+const AUTO_KEYS = {
+  on: [['autoMerge', 'true'], ['autoPr', null]],
+  off: [['autoMerge', 'true'], ['autoPr', 'false']],
+  none: [['autoMerge', null], ['autoPr', null]],
 }
 
 // ── JSON 글자 위치 읽기 — JSON.parse 를 통과한 글만 넣는다(모양 검사는 하지 않는다) ─────────────
@@ -113,13 +121,13 @@ export const deleteKey = (text, object, key) => {
 
 // --id 가 있으면 그 팩, 없으면 부른 본체의 팩(pack-look.mjs lookTarget 과 같은 기준)
 export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '', review = '', merge = '' } = {}) => {
-  const autoMerge = onOff(auto, 'auto')
+  if (auto && !Object.hasOwn(AUTO_KEYS, auto)) throw new PackError('usage', '--auto 는 on · off · none')
   const ask = onOff(confirm, 'confirm')
   const reviewOn = onOff(review, 'review')
   if (!repo) throw new PackError('usage', USAGE)
   if (merge && !Object.hasOwn(MERGE_KEYS, merge)) throw new PackError('usage', '--merge 는 auto · confirm · manual')
   if (merge && ask !== null) throw new PackError('usage', '--merge 와 --confirm 은 같이 쓰지 않는다')
-  if (autoMerge === null && ask === null && reviewOn === null && !merge) throw new PackError('usage', '--auto · --review · --merge · --confirm 중 하나는 있어야 한다')
+  if (!auto && ask === null && reviewOn === null && !merge) throw new PackError('usage', '--auto · --review · --merge · --confirm 중 하나는 있어야 한다')
   const target = lookTarget(where, id)
   const work = () => {
     const file = join(target.packDir, 'pack.json')
@@ -130,7 +138,7 @@ export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '
     if (entry.direct === true) throw new PackError('not-applicable', `${repo} 는 main 직접 레포라 PR 이 없다 — 자동 머지 대상이 아니다`)
     // 바꿀 것 — [키, 넣을 값(null 이면 지우기)]
     const changes = []
-    if (autoMerge !== null) changes.push(['autoMerge', autoMerge ? 'true' : null])
+    if (auto) changes.push(...AUTO_KEYS[auto])
     if (reviewOn !== null) changes.push(['autoReview', reviewOn ? null : 'false'])
     if (ask !== null) changes.push(['autoMergeConfirm', ask ? null : 'false'])
     if (merge) changes.push(...MERGE_KEYS[merge])
@@ -145,7 +153,7 @@ export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '
     const temp = `${file}.${process.pid}.tmp`
     writeFileSync(temp, text)
     renameSync(temp, file)
-    return { ok: true, id: target.id, repo, autoMerge: entry.autoMerge === true, autoMergeConfirm: entry.autoMergeConfirm !== false, autoReview: entry.autoReview !== false, mergeMode: mergeModeOf(entry) }
+    return { ok: true, id: target.id, repo, autoMerge: entry.autoMerge === true, autoPr: entry.autoPr !== false, autoMergeConfirm: entry.autoMergeConfirm !== false, autoReview: entry.autoReview !== false, mergeMode: mergeModeOf(entry) }
   }
   // 여러 팩 구조 — 팩 작업 잠금 안에서(열기 · 업데이트 · 이름 바꾸기와 겹치지 않게)
   if (!target.data) return work()
