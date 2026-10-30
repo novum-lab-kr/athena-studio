@@ -63,6 +63,7 @@ export const codexUserSettings = (tomlText) => {
       continue
     }
     const line = raw.trim()
+    if (line.startsWith('#')) continue   // 주석 줄 — 안의 """ 는 문자열 시작이 아니다
     if (line.startsWith('[')) break
     const match = line.match(/^(model|model_reasoning_effort)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/)
     if (match) {

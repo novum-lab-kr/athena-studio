@@ -376,6 +376,8 @@ CODEX_PURE="$(node --input-type=module -e "
   console.log(JSON.stringify([top, codexModelArgs(top), bad, codexModelArgs(bad)]))")"
 # 여러 줄 문자열(''' · """) 안의 model · [표] 는 설정이 아니다 — 파일로 만들어 읽는다
 cat > "$TMP/multi.toml" <<'TOML'
+# example = '''
+# notes = """
 model = "real"
 developer_instructions = '''
 model = "other"
