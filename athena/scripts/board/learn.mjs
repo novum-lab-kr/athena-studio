@@ -10,6 +10,8 @@
  *   화면 범위  후보 scope(코드 폴더)가 있으면 — 그 화면 파일(gotchas/<폴더>.md)이 있으면 거기, 없으면 공통 공책에 "[화면 <폴더>]" 를 붙여 넣는다
  *             (나중에 gotchas-check 가 같은 화면 줄을 세어 떼자고 한다). 수정·삭제는 공책 묶음(gotchas.md + gotchas/*.md)에서 표시로 찾는다
  *   정리 후보  kind: tidy (scripts/gotchas-check.mjs) — 낡은 줄 [지우기]·[그대로 두기], 다 처리하면 닫는다. 넣기·버리기 수에 세지 않는다
+ *   묶음 넣기  applyBatch — 레포(공책)별로 열린 후보를 묶어 보여 주고(listLearn batches) 고른 것을 한꺼번에 넣는다. 한 개씩은 applyLearn 과 똑같다.
+ *             target·공책에 넣을 문장·화면 범위·strengthen 이 모두 같은 후보는 하나로 합친다(대표 하나만 넣고 나머지는 기록에 덧붙인 뒤 휴지통)
  *   Jev 중복  checkLearnWithJev — 후보가 공책 기존 줄에 이미 담겼는지 Jev 가 본다(키가 있을 때만, scripts/lib/jev.mjs).
  *             아주 높으면(JEV_DISCARD_MIN) 휴지통으로 — 기존 줄은 공책에 그대로라 잃는 것이 없다. 중간이면 카드에 "겹쳐 보여요" 만.
  *             넣기·고치기·지우기는 Jev 가 하지 않는다(공책은 모든 에이전트가 작업마다 읽는다)
@@ -121,7 +123,7 @@ export const listLearn = () => {
       })
       .sort((left, right) => right.applied.localeCompare(left.applied))
     : []
-  return { candidates, learned, stats: readStats(), uncommitted: uncommitted() }
+  return { candidates, batches: buildBatches(candidates), learned, stats: readStats(), uncommitted: uncommitted() }
 }
 
 // ── 안전한 경로 ──────────────────────────────────────────────────────────
@@ -265,7 +267,7 @@ export const applyLearn = (id, edits = {}) => {
     writeFileSync(ledgerPath, `${ledger.trimEnd()}\n\n## 덧붙임 (${today()} · ${item.source})\n- ${oneLine(item.explain)}\n- 이전 문장: ${bare(found.row)}\n`)
     toTrash(path)
     bumpStat('applied')
-    return { ok: true, notebook: relative(ROOT, notebook), inherited: found.learnedId }
+    return { ok: true, notebook: relative(ROOT, notebook), inherited: found.learnedId, ledger: found.learnedId }
   }
   // 같은 id 가 이미 있으면(같은 날 같은 문장) 접미사를 붙여 기존 기록·줄을 덮지 않는다
   let lid = basename(path, '.md')
@@ -284,7 +286,61 @@ export const applyLearn = (id, edits = {}) => {
   writeFileSync(join(LEARNED, `${item.lid}.md`), ledgerText(item, { applied: today(), original, by: gitUser() }))
   toTrash(path)
   bumpStat('applied')
-  return { ok: true, notebook: relative(ROOT, destination), strengthened: Boolean(original) }
+  return { ok: true, notebook: relative(ROOT, destination), strengthened: Boolean(original), ledger: item.lid }
+}
+
+// ── 묶음 넣기 — 레포(공책)별 묶음 · 같은 문장 합치기 ──────────────────────────
+// 합치는 기준은 정확히 같은 것만 — target(공책#절) · 공책에 넣을 문장 · 화면 범위 · strengthen 이 모두 같을 때
+const dupKey = (item) => [item.target, oneLine(item.rule), item.scope, oneLine(item.strengthen)].join('\n')
+// 묶음에 올릴 후보 — 공책 함정(스킬·정리 후보 제외) · 문장이 있고 공책 위치가 맞는 것
+const batchable = (item) => !item.skill && !item.tidy && item.rule.trim() && notebookPath(item.target)
+const buildBatches = (candidates) => {
+  const areas = new Map()
+  for (const item of candidates.filter(batchable)) {
+    const entries = areas.get(item.notebook) ?? new Map()
+    const key = dupKey(item)
+    const entry = entries.get(key) ?? { ...item, dups: [] }
+    if (entries.has(key)) entry.dups.push({ id: item.id, source: item.source })
+    entries.set(key, entry)
+    areas.set(item.notebook, entries)
+  }
+  return [...areas].map(([notebook, entries]) => ({
+    notebook,
+    items: [...entries.values()].map(({ id, title, rule, scope, strengthen, created, dups }) => ({ id, title, rule, scope, strengthen, created, dups: dups.map((dup) => dup.id) })),
+  })).sort((left, right) => right.items.length - left.items.length)
+}
+
+export const applyBatch = (ids = []) => {
+  const open = existsSync(ISSUES)
+    ? readdirSync(ISSUES).filter((file) => isLearnIssue(file)).map((file) => ({ file, text: readFileSync(join(ISSUES, file), 'utf8') }))
+      .filter(({ text }) => !/^status:\s*(done|wontfix)/m.test(text)).map(({ file, text }) => view(`issues/${file}`, text))
+    : []
+  const byKey = new Map()
+  for (const item of open.filter(batchable)) byKey.set(dupKey(item), [...(byKey.get(dupKey(item)) ?? []), item])
+  const done = new Set()
+  const result = { ok: true, applied: 0, merged: 0, errors: [] }
+  for (const id of ids) {
+    const item = open.find((entry) => entry.id === id)
+    if (!item || !batchable(item) || done.has(id)) continue
+    const same = byKey.get(dupKey(item)) ?? [item]
+    const applied = applyLearn(id)
+    if (applied.error) {
+      result.errors.push({ id, error: applied.error })
+      continue
+    }
+    result.applied += 1
+    done.add(id)
+    // 같은 문장 후보는 방금 넣은 기록에 덧붙이고 휴지통으로 — 따로 넣거나 버린 수에 세지 않는다
+    for (const dup of same.filter((entry) => entry.id !== id)) {
+      const ledgerPath = join(LEARNED, `${applied.ledger}.md`)
+      if (existsSync(ledgerPath)) writeFileSync(ledgerPath, `${readFileSync(ledgerPath, 'utf8').trimEnd()}\n\n## 덧붙임 (${today()} · ${dup.source})\n- 같은 문장이라 하나로 합쳤어요 (${dup.id})\n`)
+      const dupPath = inside(dup.id, 'issues')
+      if (dupPath) toTrash(dupPath)
+      done.add(dup.id)
+      result.merged += 1
+    }
+  }
+  return result
 }
 
 export const discardLearn = (id) => {

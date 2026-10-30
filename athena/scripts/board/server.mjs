@@ -27,7 +27,7 @@
  *   - POST /api/qa-start     계획서 카드 [QA 실행] — Work ref 워크트리로 scripts/qa/run.mjs 를 뒤에서 돌린다(한 번에 하나)
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
- *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
+ *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,batch,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(이름은 '<레포> · <이슈 제목>')을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
@@ -47,7 +47,7 @@ import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './ar
 import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { summarize } from '../lib/metrics.mjs'
-import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
+import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { listRuns as listQaRuns, RUNS_DIR as QA_RUNS_DIR } from '../qa/report.mjs'
 import { checkServerUrl, sessionFileOf } from '../qa/targets.mjs'
 import { listQaApps, findQaApp, appOfAgent, readRoutes, serverSettings, sessionToken, packQaWarnings, routesWarnings } from '../qa/apps.mjs'
@@ -1859,7 +1859,7 @@ const handleRequest = async (request, response) => {
     response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
-  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-start', '/api/qa-suite', '/api/qa-approve', '/api/qa-logout', '/api/qa-login', '/api/qa-stop', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown'].includes(url.pathname)) {
+  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-start', '/api/qa-suite', '/api/qa-approve', '/api/qa-logout', '/api/qa-login', '/api/qa-stop', '/api/learn-apply', '/api/learn-batch', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown'].includes(url.pathname)) {
     const reply = (code, body) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
@@ -1918,7 +1918,7 @@ const handleRequest = async (request, response) => {
     if (url.pathname.startsWith('/api/learn-')) {
       const id = String(body.id ?? '')
       const edits = typeof body.edits === 'object' && body.edits ? body.edits : {}
-      const action = { '/api/learn-apply': () => applyLearn(id, edits), '/api/learn-discard': () => discardLearn(id), '/api/learn-edit': () => editLearned(id, edits), '/api/learn-remove': () => removeLearned(id), '/api/learn-tidy': () => tidyLine(id, Number(body.index), body.act === 'remove' ? 'remove' : 'keep', String(body.line ?? '')) }[url.pathname]
+      const action = { '/api/learn-apply': () => applyLearn(id, edits), '/api/learn-batch': () => applyBatch(Array.isArray(body.ids) ? body.ids.map(String) : []), '/api/learn-discard': () => discardLearn(id), '/api/learn-edit': () => editLearned(id, edits), '/api/learn-remove': () => removeLearned(id), '/api/learn-tidy': () => tidyLine(id, Number(body.index), body.act === 'remove' ? 'remove' : 'keep', String(body.line ?? '')) }[url.pathname]
       let result
       try {
         result = action()
