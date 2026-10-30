@@ -626,4 +626,9 @@ if [ -n "$PR_FAILED" ]; then
   echo "⚠️ push 는 됐고${PR_LINES:+ 연 PR 은 계획서에 적었지만,} base${PR_FAILED} 의 PR 을 만들지 못했다 — 사용자에게 알린다(같은 명령을 다시 돌리면 열린 PR 은 건너뛰고 나머지만 만든다)" >&2
   exit 1
 fi
-echo "   draft 다. 리뷰어 지정·Ready 전환은 GitHub 에서"
+if [ "$AUTO_ON" = 1 ]; then
+  echo "   draft 다. 자동 리뷰가 승인하면 머지까지 한다 — 사용자에게 머지를 부탁하지 않는다."
+  echo "   gh pr view <번호> --json state 로 확인해 '머지하겠습니다(자동 리뷰 중)' / '머지됐습니다' 로 보고한다"
+else
+  echo "   draft 다. 리뷰어 지정·Ready 전환은 GitHub 에서"
+fi
