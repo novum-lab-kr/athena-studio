@@ -540,6 +540,7 @@
   "work.section.done": "最近完了したもの",
   "work.empty": "進行中の作業はありません",
   "work.loading": "読み込み中…",
+  "work.requestsError": "リクエスト一覧を読めませんでした ({error}) — 新しい質問が表示されないことがあります",
   "work.boardDown": "作業リストを起動できず、作業一覧を読めませんでした",
   "work.foot": "クリックで詳細 · 過去の作業はアーカイブへ",
   "work.footPages": "QA · 学習 · アーカイブ →",

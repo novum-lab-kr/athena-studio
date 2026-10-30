@@ -308,6 +308,8 @@ const human = {
     for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}${body.status === 'updated' && body.working?.length ? ` · 일하는 중이던 세션 ${body.working.length}개 — 바로 올림` : ''}${body.services?.learnStopped?.length ? ' · 학습 검토 끔' : ''}${body.services?.qaStopped?.length ? ' · QA 끔' : ''}`)
   },
 }
+// 출력이 파이프에 다 나간 뒤 끝난다 — console.log 직후 process.exit() 하면 64KB 넘는 출력이 잘린다
+const finish = (code) => { process.exitCode = code; process.stdout.write('', () => process.exit(code)) }
 const runPack = async (name, work) => {
   try {
     checkContract(name)
@@ -315,14 +317,14 @@ const runPack = async (name, work) => {
     if (asJson) console.log(JSON.stringify(result))
     else if (human[name]) human[name](result)
     else console.log(JSON.stringify(result, null, 2))
-    process.exit(result.ok === false ? 1 : 0)
+    finish(result.ok === false ? 1 : 0)
   } catch (error) {
     const code = error instanceof PackError ? error.code : 'failed'
-    if (code === 'usage') { console.error(error.message); process.exit(2) }
+    if (code === 'usage') { console.error(error.message); return finish(2) }
     const body = { ok: false, error: code, message: error.message, ...(error.extra ?? {}) }
     if (asJson) console.log(JSON.stringify(body))
     else console.error(`❌ ${error.message}${error.extra?.busy ? `\n${error.extra.busy.map((item) => `   - ${item.what}`).join('\n')}` : ''}`)
-    process.exit(1)
+    finish(1)
   }
 }
 // pack use --start-board · CLI 용 — 연 본체의 현황판을 띄운다(스튜디오는 자기가 띄운다). 포트는 그 본체가 정한다

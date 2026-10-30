@@ -8,7 +8,7 @@
 //   팩 세대가 바뀐 뒤(가져오기 --replace 등) 만든 요청에 온 답은 거절한다(stale) — 현황판 쓰기의 409 와 같은 규칙
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { paths } from './config.mjs'
 import { logEvent } from './events.mjs'
 import { PackError, takeLock } from './lock.mjs'
@@ -78,6 +78,15 @@ const cleanOptions = (options) => (Array.isArray(options) ? options : [])
   .filter((option) => option && String(option.label || '').trim())
   .map((option) => ({ label: String(option.label).trim(), ...(option.desc ? { desc: String(option.desc) } : {}), ...(option.recommended ? { recommended: true } : {}) }))
 
+// 계획서 경로 — 본체 기준 논리 경로(plans/…md)로 저장한다. 본체 안의 절대 경로는 상대로 바꾼다(밖이면 그대로 — 읽을 때 resolve 가 맞게 푼다)
+const logicalPlan = (root, plan) => {
+  const text = String(plan || '').trim()
+  if (!text) return null
+  if (!isAbsolute(text)) return text
+  const inside = relative(resolve(root), text)
+  return inside && !inside.startsWith('..') && !isAbsolute(inside) ? inside : text
+}
+
 // 열기 — { kind, title, body?, options?, links?: { plan, html, issue }, pane?, dedupeKey? }
 export const openRequest = (root, input) => {
   const kind = String(input.kind || '')
@@ -90,7 +99,7 @@ export const openRequest = (root, input) => {
     title,
     body: String(input.body || ''),
     options: cleanOptions(input.options),
-    links: { plan: input.links?.plan || null, html: input.links?.html || null, issue: input.links?.issue || null },
+    links: { plan: logicalPlan(root, input.links?.plan), html: input.links?.html || null, issue: input.links?.issue || null },
     pane: input.pane || null,
   }
   const dedupeKey = String(input.dedupeKey || '').trim() || null
@@ -124,12 +133,15 @@ export const openRequest = (root, input) => {
   })
 }
 
-// 목록 — 기본은 열린 것(open · answered). 계획서가 없어졌거나 done 이 된 요청은 이때 expired 로 닫는다
+// 목록 — 기본은 열린 것(open · answered). 계획서가 없어졌거나 done 이 된 요청은 이때 expired 로 닫는다.
+// 단 사람의 답을 기다리는 질문(open · question)은 계획서 상태만으로 닫지 않는다 — 답 없이 사라지면 에이전트가 영원히 기다린다(docs/requests.md).
+// 계획서가 done 이어도 사람이 취소하거나 답할 때까지 [작업] 에 남는다. 결정 콘솔(decision)과 답이 이미 온 요청은 계획서와 함께 닫는다
 export const listRequests = (root, { all = false } = {}) => withLock(root, (dir) => {
   const requests = readAll(dir)
   for (const request of requests) {
     if (!LIVE.includes(request.state) || !request.links?.plan) continue
-    const planFile = join(root, request.links.plan)
+    if (request.state === 'open' && request.kind === 'question') continue
+    const planFile = resolve(root, request.links.plan)
     const text = existsSync(planFile) ? readFileSync(planFile, 'utf8') : null
     if (text !== null && !/^- Status:\s*done\b/m.test(text)) continue
     Object.assign(request, { state: 'expired', closedReason: text === null ? '계획서가 없어졌다' : '계획서가 done', rev: request.rev + 1, updatedAt: now() })

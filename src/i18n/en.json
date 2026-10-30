@@ -540,6 +540,7 @@
   "work.section.done": "Recently finished",
   "work.empty": "Nothing in progress",
   "work.loading": "Loading…",
+  "work.requestsError": "Couldn't read the request list ({error}) — new questions may be missing",
   "work.boardDown": "Couldn't start the worklist, so the work list is unavailable",
   "work.foot": "Click for details · past work is in Archive",
   "work.footPages": "QA · Learning · Archive →",

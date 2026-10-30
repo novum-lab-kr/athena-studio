@@ -445,7 +445,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   installAthenaAgent(ctx, { say, runPack, disarmRestore: () => (restoreArmedFor = null) })
   installPackRepos(ctx, { say, runPack, daemonPaths })
   // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
-  let requestsState: RequestsState = { supported: false, requests: [] }
+  let requestsState: RequestsState = { supported: false, requests: [], error: null }
   installWork(ctx, {
     say,
     runCore,
@@ -464,6 +464,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     setPackBoardPort: (port) => (packBoardPort = port),
     requestsState: () => requestsState,
     setRequestsState: (next) => (requestsState = next),
+    logRequestsError: (line) => fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} requests ${line}\n`, () => {}),
   })
   const boardPortNow = ctx.boardPortNow
 

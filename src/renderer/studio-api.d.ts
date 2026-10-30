@@ -146,7 +146,8 @@ declare global {
     answer: { choice?: unknown; text?: unknown } | null
     waited?: string
   }
-  type WorkRequestsState = { supported: boolean; requests: WorkRequestView[] }
+  // error — 요청 목록을 못 읽은 까닭(없으면 null). 비어 보여도 "요청 없음" 이 아니라 "읽지 못함"
+  type WorkRequestsState = { supported: boolean; requests: WorkRequestView[]; error?: string | null }
   // [작업] 목록의 작업 하나(src/lib/work-model.mts WorkItem)
   type WorkItemView = {
     id: string | undefined
@@ -161,7 +162,7 @@ declare global {
     doneAt: number
   }
   // [작업] 팝업 목록(src/main/work.mts ctx.workState — 요청 + work-model.mts workList)
-  type WorkView = { supported: boolean; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
+  type WorkView = { supported: boolean; requestsError: string | null; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
   // 작업 상세(work.mts ctx.workDetail — 계획서 원문에서 몇 줄 · work-model.mts planDetail)
   type WorkDetailReply =
     | { ok: false; error: string }

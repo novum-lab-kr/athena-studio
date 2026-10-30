@@ -18,7 +18,8 @@ import type { PackResult, Say } from '../lib/pack.mts'
 import type { RunCoreOptions } from './core-runner.mts'
 import type { StudioRequest } from '../lib/requests.mts'
 
-export type RequestsState = { supported: boolean; requests: StudioRequest[] }
+// error — 마지막 읽기가 실패한 까닭(코어 오류 코드) · 성공하면 null. "요청 없음" 과 "읽지 못함" 을 화면이 가르게
+export type RequestsState = { supported: boolean; requests: StudioRequest[]; error: string | null }
 type RunCore = (args: string[], options: RunCoreOptions) => Promise<PackResult>
 // 현황판을 찾거나 띄운 결과(ensureBoard) — 성공 · 실패 모두 url, 실패면 error(띄우다 실패했으면 log 도)
 type BoardResult = { ok: boolean; url: string; started?: boolean; error?: string; log?: string }
@@ -67,10 +68,12 @@ type WorkDeps = {
   setPackBoardPort: (port: number | null) => void
   requestsState: () => RequestsState
   setRequestsState: (next: RequestsState) => void
+  // 요청 목록을 못 읽었을 때 한 줄(pack.log) — 같은 오류가 이어지면 한 번만
+  logRequestsError: (line: string) => void
 }
 
 export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
-  const { say, runCore, runPack, startBoard, stopStaleBoard, reloadKey, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState } = deps
+  const { say, runCore, runPack, startBoard, stopStaleBoard, reloadKey, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState, logRequestsError } = deps
   const send = ctx.send
   // ctx 에 붙인 것을 이 안에서 부를 때(옛 main.js 처럼 ctx 로 찾는다)
   const ensureBoard = () => (ctx.ensureBoard as NonNullable<WorkCtx['ensureBoard']>)()
@@ -118,10 +121,15 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!core.checkAthenaDir(dir).ok) return requestsState()
     requestsBusy = (async () => {
       const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir }))
-      // 그새 팩을 바꿨거나 일시 실패(잠금 · 시간 초과)면 지난 목록을 그대로 둔다
-      if (dir !== ctx.athenaDir || (next.error && next.supported)) return requestsState()
-      const changed = next.supported !== requestsState().supported || JSON.stringify(next.requests) !== JSON.stringify(requestsState().requests)
-      setRequestsState({ supported: next.supported, requests: next.requests })
+      // 그새 팩을 바꿨으면 버린다
+      if (dir !== ctx.athenaDir) return requestsState()
+      const before = requestsState()
+      const error = next.error ? String(next.error) : null
+      if (error && error !== before.error) logRequestsError(`list failed ${error} supported=${next.supported}`)
+      // 일시 실패(잠금 · 시간 초과)면 지난 목록을 그대로 두되 실패는 알린다 — 옛 코어(supported:false)는 목록을 비운다
+      const requests = error && next.supported ? before.requests : next.requests
+      const changed = next.supported !== before.supported || error !== before.error || JSON.stringify(requests) !== JSON.stringify(before.requests)
+      setRequestsState({ supported: next.supported, requests, error })
       if (changed) {
         send('work:requests', requestsState())
         trayRequestsChanged(ctx)
@@ -166,7 +174,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   // 창이 본체를 열 때 · 다른 팩으로 다시 묶을 때 — 지난 팩의 요청은 지우고 새로 읽는다
   ctx.watchRequests = () => {
     ;(ctx.stopRequests as NonNullable<WorkCtx['stopRequests']>)()
-    setRequestsState({ supported: false, requests: [] })
+    setRequestsState({ supported: false, requests: [], error: null })
     send('work:requests', requestsState())
     if (!ctx.athenaDir) return
     watchRequestsDir()
@@ -184,6 +192,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     const requests = await refreshRequests()
     return {
       supported: requests.supported,
+      requestsError: requests.error,
       requests: requests.requests.map((request) => ({ ...request, waited: requestsModel.waitedLabel(request.createdAt, Date.now(), say) })),
       boardUp: Boolean(state),
       boardError: board.ok ? null : board.error || null,
