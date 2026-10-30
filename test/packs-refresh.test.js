@@ -17,10 +17,11 @@ function fakeBody(root, name) {
   return dir
 }
 
-function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false } = {}) {
+function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false, refreshAllPacks = () => {}, withData = true } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-refresh-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const bodies = { acme: fakeBody(root, 'acme'), globex: fakeBody(root, 'globex') }
+  if (withData) fs.mkdirSync(path.join(root, 'data'), { recursive: true }) // 감시는 설치 때 데이터 폴더가 있어야 바로 걸린다(없으면 5초 주기 재시도)
   const sent = []
   const ctx = {
     athenaDir: bodies.acme,
@@ -44,12 +45,12 @@ function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }
     dialog: { showOpenDialog: stub },
     Menu: { buildFromTemplate: stub },
     say: (key) => key,
-    studio: { root, core: root },
+    studio: { root, core: root, data: path.join(root, 'data') },
     runPack: (args, options) => runPack(args, options, bodies),
     contractBlock: async () => null,
     packWindows: new Set([ctx]),
     openPackIds: () => [],
-    refreshAllPacks: () => {},
+    refreshAllPacks,
     ctxOfBody: () => null,
     openBody: () => ({}),
     daemonOld: () => false,
@@ -59,7 +60,8 @@ function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }
     launchWelcome: () => welcome,
     setLaunchWelcome: (value) => (welcome = value),
   })
-  return { ctx, bodies, sent }
+  t.after(() => ctx.stopPackWatch && ctx.stopPackWatch())
+  return { ctx, bodies, sent, data: path.join(root, 'data') }
 }
 
 // pack list 흉내 — current 는 부른 본체의 팩
@@ -136,4 +138,99 @@ test('팩 목록: 시작 화면 판단(데몬 pane 목록)을 기다리는 사�
   assert.equal(ctx.packState.current.id, 'globex')
   assert.ok(sent.filter((item) => item.channel === 'pack:state').every((item) => item.value.current.id === 'globex'))
   assert.deepEqual(calls, [bodies.acme, bodies.globex])
+})
+
+// 새 팩의 /setup 이 앱을 거치지 않고 임시 id(new-…)를 회사 이름으로 바꾼다 — 팩 줄에 남은 옛 id 로 열면 not-found 가 온다(GitHub #169).
+// 그때 모든 창의 목록을 새로 읽어 팩 줄이 지금 목록으로 맞춰져야 한다
+test('팩 열기: 옛 id 로 not-found 가 오면 모든 창의 목록을 다시 읽는다', async (t) => {
+  let refreshed = 0
+  const { ctx } = setup(
+    t,
+    async (args) => (args[0] === 'open' ? { ok: false, error: 'not-found' } : { ok: true }),
+    { refreshAllPacks: () => (refreshed += 1) },
+  )
+  const result = await ctx.packOpen('new-20261030-1')
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'not-found')
+  assert.equal(refreshed, 1)
+})
+
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
+// 조건이 참이 될 때까지 기다린다(감시 디바운스 300ms)
+async function until(check, ms = 3000) {
+  const end = Date.now() + ms
+  while (Date.now() < end) {
+    if (check()) return true
+    await sleep(50)
+  }
+  return check()
+}
+
+// 창이 계속 앞에 있어도(focus 가 다시 오지 않아도) pane 안 /setup 이 레지스트리를 바꾸면 목록을 다시 읽는다 — 레지스트리는 임시 파일 → rename 으로 쓴다
+test('팩 목록: 레지스트리(config.json)가 바뀌면 창이 앞에 있어도 목록을 다시 읽는다', async (t) => {
+  let lists = 0
+  const { ctx, data } = setup(t, async (args, options, all) => {
+    lists += 1
+    return listOf(all, options.dir)
+  })
+  fs.writeFileSync(path.join(data, 'config.json'), '{}')
+  await sleep(500)
+  assert.ok(ctx.stopPackWatch)
+  const before = lists
+  fs.writeFileSync(path.join(data, 'config.json.1.tmp'), '{"a":1}') // 다른 파일은 무시
+  await sleep(500)
+  assert.equal(lists, before)
+  fs.renameSync(path.join(data, 'config.json.1.tmp'), path.join(data, 'config.json')) // renameNewSlot 의 저장 방식
+  assert.ok(await until(() => lists > before), '레지스트리가 바뀌었는데 목록을 다시 읽지 않았다')
+})
+
+test('팩 목록: 데이터 폴더가 아직 없어도 오류 없이 설치되고, 창을 닫으면(stopPackWatch) 더는 읽지 않는다', async (t) => {
+  let lists = 0
+  const { ctx, data } = setup(
+    t,
+    async (args, options, all) => {
+      lists += 1
+      return listOf(all, options.dir)
+    },
+    { withData: false },
+  )
+  assert.equal(fs.existsSync(data), false)
+  fs.mkdirSync(data, { recursive: true })
+  ctx.stopPackWatch()
+  const before = lists
+  fs.writeFileSync(path.join(data, 'config.json'), '{}')
+  await sleep(700)
+  assert.equal(lists, before)
+})
+
+// 창 focus — 레지스트리를 놓쳐도(감시 실패) 앞으로 올 때 한 번 더 맞춘다. electron 을 흉내 내 창 설치만 돈다
+test('창 focus: 앞으로 오면 팩 목록을 다시 읽는다', async () => {
+  const handlers = {}
+  globalThis.__fakeBrowserWindow = class {
+    constructor() {
+      this.webContents = { on: () => {} }
+    }
+    loadFile() {}
+    on(name, handler) {
+      handlers[name] = handler
+    }
+  }
+  // electron 모듈만 가짜로 — Node 의 모듈 훅(ESM 도 거친다)
+  const hook = require('node:module').registerHooks({
+    resolve: (specifier, context, next) => (specifier === 'electron' ? { url: 'data:text/javascript,export const BrowserWindow = globalThis.__fakeBrowserWindow', shortCircuit: true } : next(specifier, context)),
+  })
+  try {
+    const { installPackWindow } = require('../src/main/pack-window.mts')
+    let refreshed = 0
+    const ctx = { win: null, packState: {}, send: () => {}, stopRequests: () => {}, dropBrowser: () => {}, detachScreen: () => {}, refreshPacks: async () => (refreshed += 1) }
+    installPackWindow(ctx, {
+      packWindows: new Set([ctx]), openPackIds: () => [], saveWindows: () => {}, openUrl: () => {}, hasTray: () => false, pollTray: () => {},
+      monitor: { timer: null }, appIcon: '', appBackground: '#000', quitting: () => false, lastFocused: () => null, setLastFocused: () => {},
+    })
+    handlers.focus()
+    assert.equal(refreshed, 1)
+  } finally {
+    hook.deregister()
+    delete globalThis.__fakeBrowserWindow
+  }
 })

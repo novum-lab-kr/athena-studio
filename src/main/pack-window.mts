@@ -15,8 +15,10 @@ export type PackWindowCtx = {
   packState: Record<string, unknown>
   send(channel: string, ...values: unknown[]): void
   stopRequests(): void
+  stopPackWatch?: () => void
   dropBrowser(): void
   detachScreen(): void
+  refreshPacks?: () => Promise<unknown>
   show?: (tab?: string) => void
   close?: () => void
 }
@@ -82,6 +84,8 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
   win.on('focus', () => {
     setLastFocused(ctx)
     if (hasTray()) pollTray() // 메뉴 막대는 앞 창의 팩만 — 창을 바꾸면 바로 다시 읽는다
+    // 팩 목록도 다시 읽는다 — pane 안 /setup 이 임시 id(new-…)를 회사 이름으로 바꾸는 것은 앱을 거치지 않아 알 길이 이것뿐이다
+    if (ctx.refreshPacks) ctx.refreshPacks().catch(() => {})
   })
   // 맥은 마지막 창을 닫아도 메뉴 막대에 남는다(숨기기) — 완전히 끄는 것은 [Athena 종료] · ⌘Q. 창이 여럿이면 그 창만 닫는다
   win.on('close', (event) => {
@@ -93,6 +97,7 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
     ctx.win = null
     clearInterval(monitor.timer as NodeJS.Timeout)
     ctx.stopRequests()
+    if (ctx.stopPackWatch) ctx.stopPackWatch()
     // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
     ctx.dropBrowser()
     ctx.detachScreen()
