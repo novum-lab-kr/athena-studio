@@ -89,3 +89,13 @@ test('CHANGELOG.md 의 모든 줄에 한국어 · 일본어 · 중국어 번역�
     assert.deepEqual(Object.keys(map).filter((text) => !english.includes(text)), [], `${lang}: CHANGELOG 에 없는 번역`)
   }
 })
+
+test('CHANGELOG.md: 공개 배포판 0.28.7 → 0.32 는 0.32 절 줄만 고른다(0.28 절은 안 나온다)', () => {
+  const sections = notes.parseChangelog(fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8'))
+  const section032 = sections.find((section) => section.minor[0] === 0 && section.minor[1] === 32)
+  assert.ok(section032 && section032.notes.length > 0)
+  assert.deepEqual(notes.notesBetween(sections, '0.28.7', '0.32.0'), section032.notes)
+  const picked = notes.pickNotes(notes.notesBetween(sections, '0.28.7', '0.32.0'), (text) => text)
+  assert.equal(picked.shown.length, notes.NOTE_LIMIT)
+  assert.equal(picked.rest.count, section032.notes.length - notes.NOTE_LIMIT)
+})

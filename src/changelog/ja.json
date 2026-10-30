@@ -1,4 +1,11 @@
 {
+  "After Athena's core updates, an in-app popup shows the previous and new versions, what's new, and how the update went, with working sessions listed by agent name.": "アテナのコアが更新されると、アプリ内ポップアップに以前と新しいバージョン、アップデート内容、更新結果が表示されます。作業中だったセッションはエージェント名で表示されます。",
+  "In packs without the Athena Studio repository, a bug report about Athena itself becomes a GitHub issue draft with private details hidden. Athena shows you the draft and opens it on GitHub for you to review and submit.": "Athena Studio リポジトリのないパックでアテナ自体のバグを報告すると、個人情報を隠した GitHub Issue の下書きになります。アテナが下書きを見せて GitHub で開くので、確認して自分で投稿します。",
+  "Athena hands a new task to an idle agent pane for the same repository instead of opening another pane.": "同じリポジトリのエージェント pane が待機中なら、新しい pane を開かずにその pane へ新しいタスクを続けて送ります。",
+  "Agent panes start without MCP servers, so each reply uses fewer tokens. Reviewer panes keep them.": "エージェント pane を MCP サーバーなしで起動するため、返答ごとのトークンが減ります。レビュアー pane はそのまま使います。",
+  "The PR automation switches in Settings are named for what they turn on: \"Auto PR · review\" and \"Merge right after approval\". The warning line under them is gone.": "設定の PR 自動化スイッチの名前が、オンにする内容そのままになりました:「自動 PR・レビュー」「承認されたらすぐマージ」。その下の警告行はなくなりました。",
+  "The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.": "コミットメッセージが複数行のときや、パスに `~` や変数を使ったときに、コミットガードがアテナのコミットスクリプトを誤ってブロックしていた問題を修正しました。",
+  "In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review takes it through to merge, and the agent reports its state.": "自動マージをオンにしたリポジトリでは、エージェントが自分の開いた PR のマージを頼まなくなりました。自動レビューがマージまで進め、エージェントは PR の状態を報告します。",
   "When an agent asks you a question in its pane, the question now also shows up as a request in Work, so you can pick an answer there.": "エージェントが pane で質問すると、その質問が[作業]にもリクエストとして表示され、そこで答えを選べます。",
   "Reports to the Athena pane now arrive in one step. If the Athena pane can't be found, the report is kept as a request instead of being lost.": "アテナ pane への報告が一度に届きます。アテナ pane が見つからないときは、報告を失わずリクエストとして残します。",
   "Delegating a task again updates which pane is the lead.": "タスクを再度委任すると、どの pane がリードかも更新されます。",
