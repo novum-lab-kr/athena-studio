@@ -72,13 +72,13 @@ test('줄 세우기: 같은 열쇠는 앞 일이 끝난 뒤(실패해도) · 다
   assert.deepEqual(order, ['b1', 'a1', 'a2'])
 })
 
-test('겹친 아테나 켜기: 줄 없이는 둘 다 만들고, 줄을 거치면 한 번만 켜고 둘째는 그 작업 공간으로 옮긴다', async (t) => {
-  // 줄 없이 — 고치기 전 모양(둘 다 빈 state 를 읽는다)
+test('겹친 아테나 켜기: 줄 없이도(창 문맥 직렬화) 하나만 만들고, 줄을 거쳐도 한 번만 켜고 둘째는 그 작업 공간으로 옮긴다', async (t) => {
+  // 바깥 줄 없이
   {
     const { root, daemon, makeCtx } = setup(t)
     const ctx = makeCtx(fakeBody(root, 'body'))
     await Promise.all([ctx.openAthenaAgent({}), ctx.openAthenaAgent({})])
-    assert.equal(daemon.workspaces.length, 2)
+    assert.equal(daemon.workspaces.length, 1) // 창 문맥 안에서 직렬화 — 바깥 줄 없이도 하나
   }
   const { root, daemon, makeCtx } = setup(t)
   const ctx = makeCtx(fakeBody(root, 'body'))
@@ -146,4 +146,20 @@ test('코어 업데이트를 기다리는 사이 다른 호출이 아테나 작�
       assert.deepEqual(daemon.calls.filter((call) => call.op === 'workspace select').map((call) => call.args.workspace), ['w9'])
     }
   }
+})
+
+test('업데이트 대기에서 함께 풀린 두 호출도 작업 공간 · 에이전트가 하나만 생긴다', async (t) => {
+  const { root, daemon, makeCtx } = setup(t)
+  let open
+  const gate = new Promise((resolve) => (open = resolve))
+  const ctx = makeCtx(fakeBody(root, 'body'), () => gate)
+  const first = ctx.openAthenaAgent({})
+  const second = ctx.openAthenaAgent({ cols: 80 })
+  await new Promise((resolve) => setTimeout(resolve, 10))
+  open() // 문이 열려 대기하던 호출이 동시에 풀린다
+  const results = await Promise.all([first, second])
+  assert.deepEqual(daemon.workspaces.map((entry) => entry.label), ['athena'])
+  assert.equal(started(daemon).length, 1)
+  assert.equal(results[0].started, 'claude')
+  assert.equal(results[1].focused, true)
 })

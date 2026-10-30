@@ -40,7 +40,14 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
   // ── 아테나 에이전트 ──
   // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
   // keepView — 팩을 바꿔 돌아왔을 때: 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
-  ctx.openAthenaAgent = async (size: Record<string, unknown>, { keepView = false }: { keepView?: boolean } = {}) => {
+  // 같은 창 문맥에서 '찾기 → (업데이트 대기) → 재확인 → 작업 공간 만들기 → 에이전트 시작' 은 한 번에 하나만 — 대기하던 두 호출이 함께 풀려도 둘 다 '없음'으로 보고 둘 만들지 않게
+  let agentTail: Promise<unknown> = Promise.resolve()
+  ctx.openAthenaAgent = (size: Record<string, unknown>, options: { keepView?: boolean } = {}) => {
+    const run = agentTail.then(() => openAthenaAgentNow(size, options))
+    agentTail = run.catch(() => {})
+    return run
+  }
+  const openAthenaAgentNow = async (size: Record<string, unknown>, { keepView = false }: { keepView?: boolean } = {}) => {
     if (!core.checkAthenaDir(ctx.athenaDir).ok) return { skipped: true }
     const state = (await daemonCall('state')) as StateReply
     if (state.error) return { error: state.error }
