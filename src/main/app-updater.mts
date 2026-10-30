@@ -85,7 +85,7 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     return { info: write('info'), warn: write('warn'), error: write('error') }
   }
 
-  const appUpdateView = () => (app.isPackaged ? releaseUpdate().view() : { ...appUpdateStatus, version: appVersion(), running: appUpdateRunning, phase: appUpdatePhase, installFailure: appUpdateInstallFailure })
+  const appUpdateView = () => (app.isPackaged ? releaseUpdate().view() : { ...appUpdateStatus, version: appVersion(), running: appUpdateRunning, phase: appUpdatePhase, installFailure: appUpdateInstallFailure, installPending: appInstall.readPending(APP_ROOT) !== null })
   function sendAppUpdate(): void {
     for (const each of packWindows) each.send('app-update:status', appUpdateView())
   }
@@ -122,15 +122,18 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     appUpdatePhase = null
     appUpdateInstallFailure = null
     sendAppUpdate()
+    // 끝나지 않은 설치(실패 · 포기 · 강제 종료 · 앱 종료로 표시가 남았다)는 받을 것이 없어도(current) 다시 설치한다
+    const resumeInstall = appInstall.readPending(APP_ROOT) !== null
     const pulled = await appUpdate.pullMain({ repoRoot: APP_ROOT }).catch(() => ({ ok: false, reason: 'ff-failed' }) as PullResult)
-    if (!pulled.ok) {
+    if (!pulled.ok && !(resumeInstall && pulled.reason === 'current')) {
       appUpdateRunning = false
       appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
       sendAppUpdate()
       return pulled
     }
-    logLine(`app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${pulled.install ? ' · npm install (app running)' : ''}`)
-    if (!pulled.install) return relaunch()
+    const needInstall = resumeInstall || (pulled.ok && pulled.install)
+    logLine(pulled.ok ? `app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${needInstall ? ' · npm install (app running)' : ''}` : 'app update: retry unfinished npm install (app running)')
+    if (!needInstall) return relaunch()
     const installed = await installWhileRunning()
     if (installed) return installed
     // 설치가 끝났다 — 다시 시작할지 묻는다. [나중에] 면 ⚙ 줄에 다시 시작 버튼이 남는다
@@ -174,14 +177,13 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
       }
     } else if (outcome === 'killed') failure = 'install-killed'
     else failure = outcome === 'gave-up' ? 'install-gave-up' : 'install-failed'
-    // 강제 종료는 진짜 실패와 따로 적는다 — 끊긴 설치 표시는 남겨 다음에 켤 때 다시 시도한다
-    if (failure !== 'install-killed') appInstall.clearPending(APP_ROOT)
+    // 표시는 성공했을 때만 지운다 — 실패 · 포기 · 강제 종료 · 앱 종료로 끝나면 남겨 [업데이트] 를 다시 누르거나 다음에 켤 때 다시 설치한다(받기는 이미 끝났다)
+    if (!failure) appInstall.clearPending(APP_ROOT)
     appUpdateRunning = false
     appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
     if (failure && quitting) {
-      // 앱이 꺼지는 중에 끝낸 설치 — 알림 창 없이 끊긴 설치 표시를 남긴다(다음에 켤 때 다시 시도)
+      // 앱이 꺼지는 중에 끝낸 설치 — 알림 창 없이 끝낸다(표시는 위에서 이미 남겼다 — 다음에 켤 때 다시 시도)
       logLine('npm install stopped because the app is quitting (retried next launch)')
-      appInstall.writePending(APP_ROOT, { at: new Date().toISOString(), heavy: heavyFile, lang: language() })
       return { ok: false, reason: failure }
     }
     if (failure) {

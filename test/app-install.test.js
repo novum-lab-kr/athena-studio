@@ -30,7 +30,7 @@ test('createLineWatcher: 대기는 한 번만 · 차례가 오면 알리고 그 
   watch('⏳ 대기 0초 — 부하 12.3 > 한도 9.6 (코어 8)\n⏳ 대기 3')
   watch('0초 — 부하 12.0 > 한도 9.6 (코어 8)\n')
   watch('▶ 차례 — 40초 기다림\n⏳ 대기 0초 — 부하 99 > 한도 1 (코어 1)\n')
-  assert.deepEqual(events, ['load', 'load', 'turn']) // 호출하는 쪽이 첫 대기만 쓴다(30초마다 다시 오는 줄은 phase 만 같은 값으로)
+  assert.deepEqual(events, ['load', 'turn']) // 대기 줄이 여러 번 와도(30초마다 다시 찍는다) onWait 는 첫 줄에서만 · 차례 감지는 계속
 })
 
 test('끊긴 설치 표시: 쓰고 · 읽고 · 지운다', () => {

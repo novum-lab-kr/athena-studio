@@ -40,6 +40,7 @@ export function missingModules(root: string): string[] {
 // heavy.sh 출력 한 줄씩 읽기 — "⏳ 대기" 를 처음 찍을 때 onWait 한 번(30초마다 다시 찍어도 다시 부르지 않는다) · "▶ 차례" 에 onTurn
 export function createLineWatcher({ onWait, onTurn }: { onWait: (event: WaitEvent) => void; onTurn: () => void }): (chunk: string) => void {
   let waiting = true
+  let notified = false
   let rest = ''
   return (chunk) => {
     if (!waiting) return // 차례 뒤 npm 출력은 보지 않는다
@@ -52,7 +53,10 @@ export function createLineWatcher({ onWait, onTurn }: { onWait: (event: WaitEven
         return
       }
       const wait = parseWaitLine(line)
-      if (wait) onWait(wait)
+      if (wait && !notified) {
+        notified = true
+        onWait(wait)
+      }
     }
   }
 }

@@ -559,6 +559,7 @@
   "settings.appUpdateChecksumFailed": "받은 파일의 체크섬이 맞지 않습니다",
   "settings.appUpdateInstallFailed": "설치하지 못했습니다 — 기록: app-update.log",
   "settings.appUpdateWaiting": "설치 대기 중…",
+  "settings.appUpdateInstallPending": "설치가 끝나지 않았습니다 — [업데이트] 로 다시 설치",
   "settings.appUpdateInstalling": "설치 중…",
   "settings.appUpdateReady": "설치 끝 — 다시 시작하면 새 버전으로 켜집니다",
   "settings.appUpdateRestart": "다시 시작",

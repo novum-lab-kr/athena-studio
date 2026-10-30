@@ -167,6 +167,7 @@ function updateNote(say: Say, status: AppUpdateView, failure: string | null): st
   if (status.reason && status.state === 'behind') return reasonText(say, status.reason, status.branch)
   if (status.phase === 'ready') return say('settings.appUpdateReady')
   if (status.installFailure) return reasonText(say, status.installFailure, status.branch)
+  if (status.installPending) return say('settings.appUpdateInstallPending')
   // origin(개발판) · 피드(배포판)에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
   if (status.reason === 'fetch-failed' || status.reason === 'check-failed') return reasonText(say, status.reason, status.branch)
   // origin/main 에 새 버전 태그가 있으면 '0.2.1 → 0.3.0' · 아직 없으면 커밋 수
@@ -206,7 +207,7 @@ function AppUpdate({ say }: { say: Say }) {
             {say('settings.appUpdateRestart')}
           </button>
         ) : (
-          <button className="settings-app-button" type="button" data-key="app-update" disabled={status.state !== 'behind' || status.running} onClick={runAppUpdate}>
+          <button className="settings-app-button" type="button" data-key="app-update" disabled={(status.state !== 'behind' && !status.installPending) || status.running} onClick={runAppUpdate}>
             {say('settings.appUpdateButton')}
           </button>
         )}

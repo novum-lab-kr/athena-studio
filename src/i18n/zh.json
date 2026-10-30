@@ -559,6 +559,7 @@
   "settings.appUpdateChecksumFailed": "下载文件的校验和不匹配",
   "settings.appUpdateInstallFailed": "无法安装 — 记录: app-update.log",
   "settings.appUpdateWaiting": "等待安装…",
+  "settings.appUpdateInstallPending": "安装未完成 — 点击更新重新安装",
   "settings.appUpdateInstalling": "正在安装…",
   "settings.appUpdateReady": "安装完成 — 重启后使用新版本",
   "settings.appUpdateRestart": "重启",
