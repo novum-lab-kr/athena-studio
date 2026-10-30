@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+// @ts-check
 /**
  * 아테나 자체 버그를 어디에 올릴지 정하고, GitHub 이슈 초안 화면을 연다 (docs/issues.md "아테나 자체 이슈").
  *
@@ -19,11 +20,16 @@ import { openUrlSync } from './lib/screen.mjs'
 import { buildDraft, hasStudioRepo, redact } from './lib/athena-bug-issue.mjs'
 
 const [command, ...rest] = process.argv.slice(2)
+/** @param {string} name */
 const option = (name) => {
   const index = rest.indexOf(`--${name}`)
   return index >= 0 ? rest[index + 1] ?? '' : ''
 }
 
+/**
+ * @param {string} file
+ * @param {string[]} args
+ */
 const run = (file, args) => {
   try {
     return execFileSync(file, args, { encoding: 'utf8', timeout: 5000 }).trim()
@@ -32,6 +38,7 @@ const run = (file, args) => {
   }
 }
 
+/** @param {string} path */
 const realpathOr = (path) => {
   try {
     return realpathSync(path)
@@ -59,11 +66,12 @@ if (hasStudioRepo(config)) {
 const where = paths(ATHENA_ROOT)
 const scrub = {
   names: [
-    ...config.repos.flatMap((repo) => [repo.name, repo.displayName, ...(repo.agents ?? [])]),
+    ...config.repos.flatMap((/** @type {{ name?: string, displayName?: string, agents?: string[] }} */ repo) => [repo.name, repo.displayName, ...(repo.agents ?? [])]),
     config.company, config.name, where.packId, process.env.USER,
   ],
   paths: [ATHENA_ROOT, where.packDir, where.packData, where.packDataReal, where.dataDir, homedir()].flatMap((path) => (path ? [path, realpathOr(path)] : [])),
 }
+/** @param {string} text */
 const clean = (text) => redact(text, scrub)
 
 let version = ''
