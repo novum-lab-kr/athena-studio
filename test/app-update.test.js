@@ -63,12 +63,57 @@ test('앱 업데이트: 최신이면 current · 뒤처지면 behind(커밋 수) 
   assert.deepEqual(await appUpdate.pullMain({ repoRoot: app, git: gitOrFail }), { ok: false, reason: 'current', branch: 'main' })
 })
 
-test('앱 업데이트: package.json 이 바뀌었으면 install', async () => {
+// package.json 을 통째로 바꿔 올리고 받은 결과의 install 을 돌려준다
+async function installAfter(files) {
   const { app, dev } = repos()
-  push(dev, 'package.json', '\n')
+  for (const [file, text] of Object.entries(files)) fs.writeFileSync(path.join(dev, file), text)
+  run(dev, 'add', '-A')
+  run(dev, 'commit', '-qm', 'edit')
+  run(dev, 'push', '-q', 'origin', 'main')
   const pulled = await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })
   assert.equal(pulled.ok, true)
-  assert.equal(pulled.install, true)
+  return pulled.install
+}
+const pkg = (value) => JSON.stringify(value, null, 2) + '\n'
+
+test('앱 업데이트: 일반 scripts 만 바뀐 package.json 은 install 없음', async () => {
+  const { app, dev } = repos()
+  fs.writeFileSync(path.join(dev, 'package.json'), pkg({ name: 'x', scripts: { check: 'node a' }, dependencies: { a: '1' } }))
+  run(dev, 'add', '-A'); run(dev, 'commit', '-qm', 'base'); run(dev, 'push', '-q', 'origin', 'main')
+  await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })
+  fs.writeFileSync(path.join(dev, 'package.json'), pkg({ name: 'x', scripts: { check: 'node a b', test: 'node t' }, dependencies: { a: '1' } }))
+  run(dev, 'add', '-A'); run(dev, 'commit', '-qm', 'scripts'); run(dev, 'push', '-q', 'origin', 'main')
+  const pulled = await appUpdate.pullMain({ repoRoot: app, git: gitOrFail })
+  assert.equal(pulled.ok, true)
+  assert.equal(pulled.install, false)
+})
+
+test('앱 업데이트: 의존성이 바뀌면 install', async () => {
+  assert.equal(await installAfter({ 'package.json': pkg({ dependencies: { a: '1' } }) }), true)
+})
+
+test('앱 업데이트: lockfile 이 바뀌면 install', async () => {
+  assert.equal(await installAfter({ 'package-lock.json': '{}\n' }), true)
+})
+
+test('앱 업데이트: package.json 을 파싱하지 못하면 안전하게 install', async () => {
+  assert.equal(await installAfter({ 'package.json': '{ not json' }), true)
+})
+
+test('앱 업데이트: 설치 스크립트 넷이 바뀌면 install · 그 밖의 scripts 는 아니다', () => {
+  const base = { name: 'x', scripts: { check: 'a', postinstall: 'node p' } }
+  const changed = (scripts) => appUpdate.installRelevantChanged(pkg(base), pkg({ ...base, scripts }))
+  for (const name of ['preinstall', 'install', 'postinstall', 'prepare']) {
+    assert.equal(changed({ ...base.scripts, [name]: 'node changed' }), true, name)
+  }
+  assert.equal(changed({ check: 'b', postinstall: 'node p' }), false)
+  assert.equal(changed({ check: 'a' }), true) // 설치 스크립트를 지움
+  // 일반 scripts 필드의 최초 추가 · 전체 삭제는 양방향 모두 설치 아님
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x' }), pkg({ name: 'x', scripts: { check: 'a' } })), false)
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x', scripts: { check: 'a' } }), pkg({ name: 'x' })), false)
+  assert.equal(appUpdate.installRelevantChanged(pkg({ name: 'x', scripts: {} }), pkg({ name: 'x', scripts: { check: 'a' } })), false)
+  assert.equal(appUpdate.installRelevantChanged(pkg({ b: 1, a: 2 }), pkg({ a: 2, b: 1 })), false) // 키 순서
+  assert.throws(() => appUpdate.installRelevantChanged('{', '{}'))
 })
 
 test('앱 업데이트: 추적 파일 변경 · main 이 아님 · 로컬 커밋이면 진행하지 않고 까닭(아무것도 안 바꾼다)', async () => {
