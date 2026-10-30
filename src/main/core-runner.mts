@@ -120,8 +120,8 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     const rows: CoreUpdateRow[] = []
     // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
     if (summary.skipped.length) rows.push({ kind: 'skipped', params: {}, chips: summary.skipped.map((entry) => ((entry.blockers || []).length ? `${entry.id} · ${entry.blockers.join(', ')}` : `${entry.id} · ${entry.reason}`)) })
-    for (const entry of summary.working || []) rows.push({ kind: 'working', params: { body: String(entry.id), count: Number(entry.count) }, chips: (entry.sessions || []).map(String) })
-    for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: { body: String(entry.id) }, chips: [], dir: entry.dir ? String(entry.dir) : undefined })
+    for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String)] })
+    for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: {}, chips: [String(entry.id)], dir: entry.dir ? String(entry.dir) : undefined })
     if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })
     return rows
   }
