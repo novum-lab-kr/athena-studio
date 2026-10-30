@@ -192,7 +192,12 @@ if [ $MERGING = 1 ]; then
   done
 fi
 STAGED=1
-[ ${#FILES[@]} = 0 ] || git -C "$TOP" add -- ${FILES[@]+"${FILES[@]}"} || { unstage; fail "git add 실패"; }
+# 디스크에도 인덱스에도 없는 경로(이름 바꾸기의 옛 이름 — 이미 삭제로 스테이징됨)는 git add 가 pathspec 오류를 내므로 뺀다
+ADD_FILES=()
+for file in ${FILES[@]+"${FILES[@]}"}; do
+  if [ -e "$TOP/$file" ] || [ -L "$TOP/$file" ] || git -C "$TOP" ls-files --error-unmatch -- "$file" >/dev/null 2>&1; then ADD_FILES+=("$file"); fi
+done
+[ ${#ADD_FILES[@]} = 0 ] || git -C "$TOP" add -- "${ADD_FILES[@]}" || { unstage; fail "git add 실패"; }
 if [ $MERGING = 1 ]; then
   # merge 커밋 — 스테이징은 merge 결과 전체(base 쪽 변경 + 푼 파일). 미병합 파일이 남았으면 커밋하지 않는다
   UNMERGED="$(git -C "$TOP" diff --name-only --diff-filter=U | tr '\n' ' ')"

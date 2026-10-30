@@ -24,8 +24,10 @@ commit() { "$ATH/scripts/commit.sh" --plan plans/task/p.md --dir "$TMP/wt" --no-
 git -C "$TMP/wt" mv a.txt b.txt
 out="$(commit '이름 바꾸기' b.txt)"; rc=$?
 [ $rc -ne 0 ] && ok "git mv 후 새 이름만 지정하면 거부(옛 이름이 빠진다)" || bad "새 이름만 지정했는데 커밋됨: $out"
-git -C "$TMP/wt" reset -q; git -C "$TMP/wt" mv b.txt a.txt 2>/dev/null; git -C "$TMP/wt" mv a.txt b.txt 2>/dev/null
-git -C "$TMP/wt" status --short >/dev/null
+# 첫 시나리오의 스테이징을 지우고 처음 상태(a.txt 추적)로 되돌린 뒤 실제로 git mv — 실패를 숨기지 않는다
+git -C "$TMP/wt" reset -q --hard; rm -f "$TMP/wt/b.txt"
+git -C "$TMP/wt" mv a.txt b.txt || bad "git mv 준비 실패"
+[ "$(git -C "$TMP/wt" diff --cached --name-status -M | cut -c1)" = R ] || bad "시험 준비 — 이름 바꾸기가 스테이징돼 있지 않다"
 out="$(commit '이름 바꾸기' a.txt b.txt)"; rc=$?
 [ $rc -eq 0 ] && [ "$(git -C "$TMP/wt" log -1 --format=%s)" = '이름 바꾸기' ] && ok "git mv 후 옛 이름 · 새 이름을 지정하면 스테이징을 풀지 않아도 커밋" || bad "이름 바꾸기 커밋 실패(rc=$rc): $out"
 

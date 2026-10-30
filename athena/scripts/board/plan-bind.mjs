@@ -38,10 +38,14 @@ export const checkpointOf = (text) => {
   const start = lines.findIndex((line) => /^## Checkpoint\s*$/.test(line))
   if (start < 0) return ''
   const body = []
-  let fenced = false
+  // 코드 펜스 — 여는 줄의 문자(` 또는 ~)와 길이를 기억하고 같은 문자로 그 길이 이상인 닫는 줄이 나올 때만 끝난다(CommonMark)
+  /** @type {{ char: string, length: number } | null} */
+  let fence = null
   for (const line of lines.slice(start + 1)) {
-    if (/^\s*```/.test(line)) fenced = !fenced
-    else if (!fenced && /^## (?!#)/.test(line)) break
+    const mark = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
+    if (!fence && mark?.[1]) fence = { char: String(mark[1][0]), length: mark[1].length }
+    else if (fence && mark?.[1] && mark[1][0] === fence.char && mark[1].length >= fence.length && !String(mark[2]).trim()) fence = null
+    else if (!fence && /^## (?!#)/.test(line)) break
     body.push(line)
   }
   return body.join('\n')
@@ -215,4 +219,4 @@ export const bindingSources = ({ root, panes, sessionsDir, home, now = Date.now(
 // 자동 완료가 이미 이 PR 묶음(merged-<번호들>)으로 한 번 끝낸 계획서인지 — Checkpoint 의 "- Auto done:" 줄(자동 완료가 쓴다) 또는 "- Learn review:" 줄에 같은 표시가 있으면.
 // 그런 계획서를 사람이 추가 요청으로 in_progress 로 되돌렸는데 새 PR 이 PR 줄에 들어오기 전이면, 같은 머지를 다시 보고 done 으로 덮어쓰지 않는다(2026-10-30)
 /** @param {string} text @param {string} mark */
-export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => match[0].includes(mark))
+export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-\d+(?:-\d+)*/g) ?? []).includes(mark))

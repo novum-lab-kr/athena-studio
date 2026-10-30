@@ -45,12 +45,18 @@ const doneText = '## Checkpoint\n- Status: in_progress\n- Work ref: x\n- Auto do
 check('autoDoneDone — 같은 PR 묶음 표시가 있으면 이미 끝낸 것(되돌린 in_progress 를 덮지 않음)', autoDoneDone(doneText, 'merged-12') === true)
 check('autoDoneDone — 새 PR 이 들어와 표시가 다르면 다시 끝낼 수 있음 · 표시 없는 계획서는 그대로 대상', autoDoneDone(doneText, 'merged-12-15') === false && autoDoneDone('- Status: in_progress\n', 'merged-12') === false)
 check('autoDoneDone — Learn review 줄의 같은 표시도 인정', autoDoneDone('- Learn review: 2026-10-30 merged-7 · 1건\n', 'merged-7') === true)
+check('autoDoneDone — 번호가 접두사로 겹쳐도 정확히 같은 묶음만(merged-123 ≠ merged-12 · merged-12-15 ≠ merged-12)', autoDoneDone('- Auto done: merged-123\n', 'merged-12') === false && autoDoneDone('- Auto done: merged-12-15\n', 'merged-12') === false && autoDoneDone('- Learn review: x merged-12-15 · 1건\n', 'merged-12-15') === true)
 // ── Checkpoint 절 끝 ──
 const fence = '`'.repeat(3)
 const plainPlan = '# t\n\n## Checkpoint\n- Status: in_progress\n\n### Validation\n- ok\n\n## 지시\n본문\n'
 check('Checkpoint — 다음 `## ` 제목에서 끝남', checkpointOf(plainPlan).includes('- ok') && !checkpointOf(plainPlan).includes('본문'), JSON.stringify(checkpointOf(plainPlan)))
 const fencedPlan = `# t\n\n## Checkpoint\n- Status: in_progress\n\n### Validation\n${fence}\n## 검증 결과\n통과\n${fence}\n- 뒤쪽 줄\n\n## 지시\n본문\n`
 check('Checkpoint — 울타리 안의 `## ` 줄은 절을 끊지 않음(Validation 에 붙인 출력)', checkpointOf(fencedPlan).includes('통과') && checkpointOf(fencedPlan).includes('- 뒤쪽 줄') && !checkpointOf(fencedPlan).includes('본문'), JSON.stringify(checkpointOf(fencedPlan)))
+const long = '`'.repeat(4)
+const longPlan = `# t\n\n## Checkpoint\n- Status: in_progress\n${long}md\n${fence}\n## 안쪽 제목\n${fence}\n${long}\n- 뒤쪽 줄\n\n## 지시\n본문\n`
+check('Checkpoint — 백틱 4개 펜스 안의 백틱 3개는 닫힘이 아님', checkpointOf(longPlan).includes('## 안쪽 제목') && checkpointOf(longPlan).includes('- 뒤쪽 줄') && !checkpointOf(longPlan).includes('본문'), JSON.stringify(checkpointOf(longPlan)))
+const tildePlan = '# t\n\n## Checkpoint\n- Status: in_progress\n~~~\n## 틸드 안\n```\n~~~\n- 뒤쪽 줄\n\n## 지시\n본문\n'
+check('Checkpoint — 틸드 펜스 안의 `## ` 도 절을 끊지 않음(다른 문자 펜스는 닫힘이 아님)', checkpointOf(tildePlan).includes('## 틸드 안') && checkpointOf(tildePlan).includes('- 뒤쪽 줄') && !checkpointOf(tildePlan).includes('본문'), JSON.stringify(checkpointOf(tildePlan)))
 check('Checkpoint — 절이 없으면 빈 글', checkpointOf('# t\n\n## 지시\n') === '')
 
 // ── 남은 단계 ──
