@@ -359,7 +359,10 @@ const setSection = (text, names, value) => {
   return lines.join('\n')
 }
 export const editCandidates = (ids = [], edits = {}) => {
-  const fields = Object.fromEntries(Object.entries(edits).filter(([key, value]) => ['title', 'explain', 'why', 'rule'].includes(key) && typeof value === 'string' && value.trim()))
+  // 넘어온 문자열 칸은 비어 있어도 저장한다(설명 · 이유를 비우는 것도 수정). 제목 · 공책 문장만 비울 수 없다
+  const fields = Object.fromEntries(Object.entries(edits).filter(([key, value]) => ['title', 'explain', 'why', 'rule'].includes(key) && typeof value === 'string'))
+  if ('title' in fields && !fields.title.trim()) return { error: '제목이 비어 있어요' }
+  if ('rule' in fields && !fields.rule.trim()) return { error: '공책에 넣을 문장이 비어 있어요' }
   const targets = []
   for (const id of ids) {
     const path = inside(id, 'issues')
@@ -370,10 +373,10 @@ export const editCandidates = (ids = [], edits = {}) => {
   }
   for (const { path, text } of targets) {
     let next = text
-    if (fields.title) next = next.replace(/^(---\n[\s\S]*?^title:).*$/m, (_, head) => `${head} ${oneLine(fields.title)}`)
-    if (fields.explain) next = setSection(next, ['무엇을 배웠나'], fields.explain.trim())
-    if (fields.why) next = setSection(next, ['왜 중요한가', '모르면'], fields.why.trim())
-    if (fields.rule) {
+    if ('title' in fields) next = next.replace(/^(---\n[\s\S]*?^title:).*$/m, (_, head) => `${head} ${oneLine(fields.title)}`)
+    if ('explain' in fields) next = setSection(next, ['무엇을 배웠나'], fields.explain.trim())
+    if ('why' in fields) next = setSection(next, ['왜 중요한가', '모르면'], fields.why.trim())
+    if ('rule' in fields) {
       // 기존 줄을 고치는 후보면 "(새 줄이 아니라 …)" 꼬리표는 그대로 둔다
       const lines = next.split('\n')
       const range = sectionRange(lines, ['공책에 넣을 문장'])

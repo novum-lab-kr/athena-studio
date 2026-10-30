@@ -58,6 +58,11 @@ out.rowInfo = ['explain', 'why', 'where', 'basis', 'signal', 'source'].every((ke
 const gamma = listLearn().batches.find((batch) => batch.notebook.includes('gamma')).items.find((item) => item.dups.length)
 out.edit = editCandidates([gamma.id, ...gamma.dups], { title: '새 제목', explain: '새 설명', why: '새 이유', rule: '감마 규칙 고침.' })
 out.editBad = editCandidates(['issues/20261030-x-learn-skill.md'], { title: 'x' })
+out.editEmptyTitle = editCandidates([gamma.id, ...gamma.dups], { title: '  ' })
+out.editClear = editCandidates([gamma.id, ...gamma.dups], { explain: '', why: '' })
+const cleared = listLearn().candidates.filter((item) => item.id.includes('gamma')).map((item) => [item.title, item.explain, item.why, item.rule].join('/'))
+out.clearedItems = cleared
+out.editRestore = editCandidates([gamma.id, ...gamma.dups], { explain: '새 설명', why: '새 이유' })
 const edited = listLearn()
 out.editedItems = edited.candidates.filter((item) => item.id.includes('gamma')).map((item) => [item.title, item.explain, item.why, item.rule].join('/'))
 out.editedBatch = edited.batches.find((batch) => batch.notebook.includes('gamma')).items.map((item) => item.dups.length)
@@ -86,6 +91,8 @@ check "후보 1개뿐인 공책도 묶음으로 나옴" '[ "$(j o.singleBatch)" 
 check "묶음 줄에 내용 · 판단 정보가 실림" '[ "$(j o.rowInfo)" = true ]'
 check "수정 — 합쳐진 후보 2개 모두 고침" '[ "$(j o.edit.edited)" = 2 ]'
 check "수정 값이 후보 파일에 반영(제목 · 설명 · 이유 · 문장)" '[ "$(j "o.editedItems.filter((x) => x === \"새 제목/새 설명/새 이유/감마 규칙 고침.\").length")" = 2 ]'
+check "제목을 비우면 거절" '[ -n "$(j o.editEmptyTitle.error)" ] && [ "$(j o.editEmptyTitle.error)" != undefined ]'
+check "설명 · 이유는 비워서 저장할 수 있음(합쳐진 2개 모두)" '[ "$(j "o.clearedItems.filter((x) => x === \"새 제목//\"+\"/감마 규칙 고침.\").length")" = 2 ]'
 check "수정해도 같은 문장 합침이 유지됨" '[ "$(j "o.editedBatch.join(\",\")")" = "1,0" ]'
 check "수정은 공책에 넣지 않음" '[ "$(j o.noteUntouched)" = true ]'
 check "묶음 대상이 아닌 후보 수정은 거절" '[ -n "$(j o.editBad.error)" ] && [ "$(j o.editBad.error)" != undefined ]'
