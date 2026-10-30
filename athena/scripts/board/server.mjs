@@ -1381,12 +1381,16 @@ function startQaRun(planId) {
 // 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지 + 이 현황판이 띄운 QA 가 기다리는 중인지
 function heavyLockState() {
   const lock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
-  let holder = ''
-  try {
-    holder = readFileSync(join(lock, 'what'), 'utf8').trim()
-  } catch {
-    holder = ''
+  // 자리 여럿(1번 <잠금>, 2번부터 <잠금>.2 …) — 쓰는 중인 자리의 what 을 " / " 로 잇는다
+  const holders = []
+  for (const dir of [lock, ...[2, 3, 4, 5, 6, 7, 8].map((slot) => `${lock}.${slot}`)]) {
+    if (dir !== lock && !existsSync(dir)) continue
+    try {
+      const what = readFileSync(join(dir, 'what'), 'utf8').trim()
+      if (what) holders.push(what)
+    } catch { /* 비었거나 잡는 중 */ }
   }
+  const holder = holders.join(' / ')
   const launched = Boolean(qaChild && qaChild.exitCode === null && qaChild.signalCode === null)
   return { holder, waiting: launched && !activeQaRun() }
 }
