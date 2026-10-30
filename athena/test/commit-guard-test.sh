@@ -46,7 +46,30 @@ check pass "따옴표 없는 heredoc 의 \\\` 는 글자" "cat <<EOF
 \\\`git push\\\`
 EOF"
 
+check pass "글자 그대로 대입한 변수(;)" "A=$ROOT; \$A/scripts/commit.sh --plan x -- a"
+check pass "글자 그대로 대입한 변수(줄바꿈 · 큰따옴표 · \${})" "A=\"$ROOT\"
+\${A}/scripts/ship.sh --plan x"
+check pass "글자 그대로 대입한 변수(작은따옴표 · &&)" "A='$ROOT' && \$A/scripts/commit.sh -m m -- a"
+
 echo "막아야 할 것 — 계속 막힘"
+check block "변수 대입 값이 명령 치환" 'A=$(echo /tmp/evil); $A/scripts/commit.sh -m m'
+check block "변수 대입 값이 백틱" 'A=`echo /tmp/evil`; $A/scripts/commit.sh -m m'
+check block "변수 대입 값이 다른 변수" 'A=$HOME; $A/scripts/commit.sh -m m'
+check block "변수 대입 값이 다른 파일 경로" 'A=/tmp/evil; $A/scripts/commit.sh -m m'
+check block "변수를 두 번 대입" "A=$ROOT; A=/tmp/evil; \$A/scripts/commit.sh -m m"
+check block "호출 뒤의 대입" "\$COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m; COMMIT_GUARD_TEST_ROOT=/tmp/x; A=$ROOT; true"
+check block "호출 뒤의 변수 대입" "\$A/scripts/commit.sh -m m; A=$ROOT;"
+check block "false && 뒤의 대입" "false && A=$ROOT; \$A/scripts/commit.sh -m m"
+check block "따옴표 안 문자열의 대입" "echo ';A=$ROOT;'; \$A/scripts/commit.sh -m m"
+check block "if 안의 대입" "if false; then
+A=$ROOT
+fi
+\$A/scripts/commit.sh -m m"
+check block "서브셸 안의 대입" "(
+A=$ROOT
+)
+\$A/scripts/commit.sh -m m"
+check block "앞붙임 대입은 같은 조각의 \$A 에 안 보인다" "A=$ROOT \$A/scripts/commit.sh -m m"
 check block "export 로 바꾼 \$VAR 경로" 'export COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
 check block "대입한 \$VAR 경로" 'COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
 check block "HOME 을 바꾼 ~ 경로" 'HOME=/tmp/evil; ~/x/scripts/commit.sh -m m'
