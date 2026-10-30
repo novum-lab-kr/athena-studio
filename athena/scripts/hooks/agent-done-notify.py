@@ -84,9 +84,8 @@ def main() -> None:
         save()
         return
 
-    if state.pop('skip', False):
-        save()
-        return
+    if state.get('skip'):
+        return   # 회신 턴 — 지우지 않는다(새 입력 없이 Stop 이 다시 와도 알리지 않게). 다음 prompt 가 갱신한다
     plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
     if not plan:
         return

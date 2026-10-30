@@ -59,6 +59,8 @@ check "새 입력 뒤 끝난 차례는 같은 내용이어도 다시 알린다" 
 
 hook prompt '{"prompt":"[아테나 p1 → athena-studio-fe] 끝 알림 확인 — 고마워"}'; hook stop
 check "아테나가 알림에 답한 차례는 알리지 않는다(무한 왕복 방지)" "$(sent)" 2
+hook stop; hook stop
+check "회신 턴은 새 입력 없이 Stop 이 다시 와도 알리지 않는다" "$(sent)" 2
 hook prompt '{"prompt":"새 요청"}'; hook stop
 check "그 다음 평범한 입력 뒤에는 다시 알린다" "$(sent)" 3
 
