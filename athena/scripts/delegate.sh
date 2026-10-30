@@ -381,7 +381,7 @@ else
   # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다(reviewer 제외 · scripts/hooks/ask-to-request.py)
   ASK_HOOK=""
   [ "$AGENT" != reviewer ] && ASK_HOOK="$ATHENA_DIR/scripts/hooks/ask-to-request.py"
-  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[5:]]}]+([{"matcher":"AskUserQuestion","hooks":[command(sys.argv[4])]}] if sys.argv[4] else []),"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
+  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[5:]]}]+([{"matcher":"AskUserQuestion","hooks":[command(sys.argv[4])]}] if sys.argv[4] else []),"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; notify=lambda mode: {"type":"command","command":command(__import__("os").path.join(__import__("os").path.dirname(sys.argv[3]),"agent-done-notify.py"))["command"]+" "+mode}; sys.argv[4] and (settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(notify("prompt")), settings["hooks"].update(Stop=[{"hooks":[notify("stop")]}])); window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
     "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "$ASK_HOOK" "${GUARD_HOOKS[@]}"
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
@@ -412,6 +412,8 @@ PYEOF
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
   echo "export ATHENA_AGENT=$(shq "$AGENT")"
+  # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
+  echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
   echo "export ATHENA_PLAN=$(shq "$PLAN")"
   # 여러 팩 — 어느 팩·세대에서 띄웠는지(현황판·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
