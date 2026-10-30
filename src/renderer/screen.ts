@@ -44,6 +44,7 @@ export function focusPane(paneId: string): void {
   studio.paneFocus(paneId)
   for (const [id, view] of views) view.el.classList.toggle('focused', id === paneId)
   StudioUi.spaces.focus(paneId) // 왼쪽 pane 줄 표시(React)
+  if (StudioUi.explorer.workspace() && StudioUi.explorer.pane() !== paneId) StudioUi.explorer.reset(StudioUi.explorer.workspace(), paneId) // 오른쪽 Explorer 가 그 pane 폴더로
   views.get(paneId)!.term.focus()
 }
 

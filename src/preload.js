@@ -82,9 +82,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   monitorWatch: (on) => ipcRenderer.send('monitor:watch', on),
   onMonitorUpdate: listen('monitor:update'),
   // 오른쪽 Explorer — 작업 공간 폴더 안만(main 이 루트를 정한다)
-  explorerList: (workspaceId, relative) => ipcRenderer.invoke('explorer:list', workspaceId, relative),
-  explorerStatus: (workspaceId) => ipcRenderer.invoke('explorer:status', workspaceId),
-  explorerOpen: (workspaceId, relative) => ipcRenderer.invoke('explorer:open', workspaceId, relative),
+  explorerList: (workspaceId, relative, paneId) => ipcRenderer.invoke('explorer:list', workspaceId, relative, paneId),
+  explorerStatus: (workspaceId, paneId) => ipcRenderer.invoke('explorer:status', workspaceId, paneId),
+  explorerOpen: (workspaceId, relative, paneId) => ipcRenderer.invoke('explorer:open', workspaceId, relative, paneId),
   tabSize: (tabId, size) => ipcRenderer.send('tab:size', tabId, size),
   tabRatio: (tabId, path, ratio) => ipcRenderer.invoke('tab:ratio', tabId, path, ratio),
   paneSplit: (paneId, direction) => ipcRenderer.invoke('pane:split', paneId, direction),

@@ -93,9 +93,9 @@ type MainCalls = {
   closeWorkspace(workspaceId: string): Promise<unknown>
   spaceContextMenu(target: { repo: string | null; workspace: string | null }, point: Point): Promise<unknown>
   addRepo(dir: string, name: string | null): Promise<unknown>
-  explorerList(workspaceId: unknown, relative: unknown): Promise<unknown>
-  explorerStatus(workspaceId: unknown): Promise<unknown>
-  explorerOpen(workspaceId: unknown, relative: unknown): Promise<unknown>
+  explorerList(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
+  explorerStatus(workspaceId: unknown, paneId?: unknown): Promise<unknown>
+  explorerOpen(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
   closePane(paneId: string): Promise<unknown>
   paneContextMenu(point: Point, title?: string): Promise<unknown>
   openBoardExternal(): Promise<unknown>
@@ -840,9 +840,9 @@ handle('workspace:close', (ctx, workspaceId: unknown) => ctx.closeWorkspace(Stri
 handle('space:context-menu', (ctx, target: Loose, point: unknown) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? (point as Point) : null))
 handle('pack:add-repo', (ctx, dir: unknown, name: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.addRepo(dir, typeof name === 'string' && name ? name : null) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on: unknown) => ctx.setMonitorWatch(on === true))
-handle('explorer:list', (ctx, workspaceId: unknown, relative: unknown) => guarded(() => ctx.explorerList(workspaceId, relative)))
-handle('explorer:status', (ctx, workspaceId: unknown) => guarded(() => ctx.explorerStatus(workspaceId)))
-handle('explorer:open', (ctx, workspaceId: unknown, relative: unknown) => guarded(() => ctx.explorerOpen(workspaceId, relative)))
+handle('explorer:list', (ctx, workspaceId: unknown, relative: unknown, paneId: unknown) => guarded(() => ctx.explorerList(workspaceId, relative, paneId)))
+handle('explorer:status', (ctx, workspaceId: unknown, paneId: unknown) => guarded(() => ctx.explorerStatus(workspaceId, paneId)))
+handle('explorer:open', (ctx, workspaceId: unknown, relative: unknown, paneId: unknown) => guarded(() => ctx.explorerOpen(workspaceId, relative, paneId)))
 handle('pane:split', (ctx, paneId: unknown, direction: unknown) => ctx.daemonCall('pane split', { target: String(paneId), direction: direction === 'down' ? 'down' : 'right' }))
 handle('pane:close', (ctx, paneId: unknown) => ctx.closePane(String(paneId)))
 handle('pane:context-menu', (ctx, point: unknown, title: unknown) => ctx.paneContextMenu(point && typeof point === 'object' ? (point as Point) : null, typeof title === 'string' ? title.slice(0, 200) : ''))

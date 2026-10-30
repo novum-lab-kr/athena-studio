@@ -18,7 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, defaultBackupDir, paths, portBaseOf, readRegistry } from './config.mjs'
 import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLockDir, takeLock } from './lock.mjs'
-import { isLink, linkOverlay, unlinkOverlay } from './overlay.mjs'
+import { isLink, linkOverlay, removeLink, unlinkOverlay } from './overlay.mjs'
 import { captureRestore, checkRestore, discardRestore, restoreWork } from './restore.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
 import { dropRepoIcons } from './pack-repo-look.mjs'
@@ -541,7 +541,7 @@ export const syncRepos = (root) => {
   const wanted = new Set((pack.repos ?? []).map((repo) => repo.name))
   const removed = []
   for (const name of readdirSync(dir)) {
-    if (!wanted.has(name) && isLink(join(dir, name))) { rmSync(join(dir, name)); removed.push(name) }
+    if (!wanted.has(name) && isLink(join(dir, name))) { removeLink(join(dir, name)); removed.push(name) }
   }
   const repoPaths = { ...(local.repoPaths ?? {}) }
   const remember = (name, path) => {
@@ -572,12 +572,12 @@ export const syncRepos = (root) => {
     const target = targets.get(repo.name)
     const link = join(dir, repo.name)
     if (!target) {
-      if (isLink(link)) rmSync(link)
+      if (isLink(link)) removeLink(link)
       unlinked.push(repo.name)
       continue
     }
     if (isLink(link) && resolve(dir, readlinkSync(link)) === target) { linked.push(repo.name); continue }
-    if (existsSync(link) || isLink(link)) rmSync(link, { recursive: false, force: true })
+    if (existsSync(link) || isLink(link)) removeLink(link)
     symlinkSync(target, link)
     linked.push(repo.name)
   }
@@ -756,7 +756,7 @@ export const attachPack = async (root, id, { report = () => {}, allowEmpty = fal
     } catch (error) {
       report('rollback', `실패 — 걸던 링크를 걷는다: ${error.message}`)
       logSwitch(data, `attach 실패(${error.message}) → 걷음`)
-      rmSync(join(root, ACTIVE_LINK), { force: true })
+      removeLink(join(root, ACTIVE_LINK))
       try { unlinkOverlay(root) } catch { /* 팩 링크 걷기 실패 — 본체를 지우면 같이 사라진다 */ }
       throw new PackError('rollback', `팩을 걸지 못해 되돌렸다 — ${error.message}`, { rolledBack: true, current: null })
     }
@@ -1476,8 +1476,8 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
     } catch (error) {
       // 되돌리기 — 링크를 걷고 옮겨 둔 것을 제자리로, 설정 복원, 데이터 자리 삭제
       report('rollback', `실패 — 되돌린다: ${error.message}`)
-      rmSync(join(root, ACTIVE_LINK), { force: true })
-      for (const [name] of FIXED_LINKS) if (isLink(join(root, name))) rmSync(join(root, name))
+      removeLink(join(root, ACTIVE_LINK))
+      for (const [name] of FIXED_LINKS) if (isLink(join(root, name))) removeLink(join(root, name))
       for (const name of moved) renameSync(join(aside, name), join(root, name))
       writeFileSync(join(root, 'athena.config.json'), `${JSON.stringify(config, null, 2)}\n`)
       rmSync(slot, { recursive: true, force: true })
@@ -1502,7 +1502,7 @@ export const testSetup = async (root, { report = () => {} } = {}) => {
   // 테스트 데이터 안 레포 워크트리 정리는 폴더째 지우는 것으로 충분하다(레포도 테스트 데이터 안에 있다)
   rmSync(data, { recursive: true, force: true })
   mkdirSync(data, { recursive: true })
-  rmSync(join(root, ACTIVE_LINK), { force: true })
+  removeLink(join(root, ACTIVE_LINK))
 
   report('repos', '가짜 레포 만들기')
   const repoSpec = JSON.parse(readFileSync(join(fixtures, 'repos', 'repos.json'), 'utf8'))
