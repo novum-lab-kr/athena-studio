@@ -57,6 +57,8 @@ fire; check '이어 받은 뒤 메시지를 보내도 새 계획서 그대로' "
 fire; check '한 번 더 보내도 그대로' "$(planOf)" 'plans/task/new.md'
 SESSION=99999999-2222-3333-4444-555555555555
 fire; check '/clear 등으로 session id 가 바뀌어도 새 계획서 그대로' "$(planOf)" 'plans/task/new.md'
+python3 scripts/lib/reuse_link.py link "$TMP/athena" pnone plans/task/new.md >/dev/null 2>&1; check '기록이 없는 pane 은 잇지 못하고 비정상 종료(보내기 전에 멈춤)' "$?" 1
+mkdir -p "$TMP/bare"; python3 scripts/lib/reuse_link.py link "$TMP/bare" pf1 plans/task/new.md >/dev/null 2>&1; check '기록 폴더가 없는 본체도 비정상 종료' "$?" 1
 python3 scripts/lib/reuse_link.py rollback "$TMP/athena" pf1 "$UNDO"
 check '보내기 실패 때 되돌리면 옛 계획서' "$(planOf)" 'plans/task/old.md'
 scripts/delegate.sh reviewer --new-branch x/y --plan plans/task/없음.md >/dev/null 2>&1; check '--new-branch 만 주면 pane 을 만들기 전에 종료(2)' "$?" 2
