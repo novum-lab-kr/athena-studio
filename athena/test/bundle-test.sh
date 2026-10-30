@@ -110,7 +110,7 @@ git -C "$DEV" update-ref refs/athena/version/0.9.0 "$C1"
 git -C "$DEV" bundle create -q "$WORK/core-2v.bundle" main refs/athena/version/0.9.0 2>/dev/null
 git -C "$DEV" update-ref -d refs/athena/version/0.9.0
 R="$(J "$CORE" update --from "$WORK/core-2v.bundle")"
-check "버전 ref 를 실은 번들 → 두 본체 version 0.9.0 · 텍스트에도" '[ "$(J "$CORE" version | field version)" = 0.9.0 ] && [ "$(J "$BODY_G" version | field version)" = 0.9.0 ] && (cd "$BODY_G" && node scripts/athena.mjs version --contract 3 2>/dev/null | grep -q "버전 0.9.0")' "$R"
+check "버전 ref 를 실은 번들 → 두 본체 version 0.9.0 · 텍스트에도" '[ "$(J "$CORE" version | field version)" = 0.9.0 ] && [ "$(J "$BODY_G" version | field version)" = 0.9.0 ] && (cd "$BODY_G" && VTXT="$(node scripts/athena.mjs version --contract 3 2>/dev/null)" && grep -q "버전 0.9.0" <<<"$VTXT")' "$R"
 check "없는 번들 → not-found · 번들 아닌 파일 → fetch-failed" '[ "$(J "$CORE" update --from "$WORK/nope.bundle" | field error)" = not-found ] && [ "$(J "$CORE" update --from "$WORK/files.list" | field error)" = fetch-failed ]'
 
 section "얇은 번들(앞 커밋 전제) · dirty 는 기본 건너뜀"
