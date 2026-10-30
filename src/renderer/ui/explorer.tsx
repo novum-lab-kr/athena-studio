@@ -104,8 +104,8 @@ async function refreshStatus(): Promise<void> {
   const result = await studio.explorerStatus(workspaceId, paneId)
   if (started !== generation || 'error' in result) return
   const state = view.get()
-  // 보는 폴더가 바뀌었다(pane 안에서 cd · 폴더가 지워져 작업 공간 폴더로 돌아감) — 펼침 · 읽은 폴더를 비우고 새 폴더로
-  if (state.root !== null && state.root !== result.root) {
+  // 보는 폴더가 정해졌거나 바뀌었다(처음 알게 됨 · pane 안 cd · 폴더가 지워져 작업 공간 폴더로 돌아감) — 이전 요청을 버리고 펼침 · 읽은 폴더를 비운 뒤 새 폴더로 다시 읽는다
+  if (state.root !== result.root) {
     generation++
     actions?.closePreview()
     commit({ ...state, root: result.root, branch: result.branch, children: new Map(), expanded: new Set(['.']), changes: result.changes, git: result.git, statusKey: JSON.stringify(result) })
