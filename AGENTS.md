@@ -11,7 +11,7 @@
 
 ## 명령
 ```sh
-npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기
+npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기 (새 워크트리는 코어 new-branch.sh 가 scripts/worktree-setup.sh 로 npm ci · Electron 설치까지 해 준다)
 npm start         # 코어 번들 · 화면 빌드(dist/renderer) 만들고 개발 앱 켜기(맥)
 npm run build:renderer # 화면만 빌드(vite build — 켤 때 저절로 돈다)
 npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로) · 끝에 화면 빌드(renderer .ts 문법)
@@ -52,6 +52,9 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본)
   - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
+  - 위임 에이전트 훅 설정(`athena/scripts/lib/agent_hooks.py` — `agent-context.py` · `delegate.sh` 가 같이 쓴다)을 고쳤으면 `test/agent-hooks-test.sh`(몇 초)
+  - `commit.sh` 의 미리 올린 변경 판정(이름 바꾸기 포함)을 고쳤으면 `test/commit-staged-test.sh`(몇 초 · 임시 레포)
+  - `pr-auto.mjs` · `learn-review.mjs` 의 직접 실행 판정(`scripts/lib/is-main.mjs`)은 `test/pr-auto-test.sh` 끝의 심볼릭 링크 검사가 본다
   - 자세한 것은 `athena/docs/pack.md` "여러 팩 테스트"
 
 ## 고칠 때 같이 바꾸는 곳
