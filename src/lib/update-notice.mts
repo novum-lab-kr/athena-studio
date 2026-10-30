@@ -8,7 +8,7 @@ import * as i18n from './i18n.mts'
 import type { Dictionary, Say } from './i18n.mts'
 
 export type WaitEvent = { kind: 'lock'; what: string } | { kind: 'load'; load: string }
-export type NoticeEvent = WaitEvent | { kind: 'gave-up' } | { kind: 'install-failed' }
+export type NoticeEvent = WaitEvent | { kind: 'gave-up' } | { kind: 'install-failed' } | { kind: 'killed' }
 
 const I18N_DIR = path.join(import.meta.dirname, '..', 'i18n')
 const SCRIPT_FILE = /\.(sh|m?js|mts|ts|py)$/
@@ -44,14 +44,20 @@ export function commandName(what: string): string {
   return PACKAGE_MANAGERS.has(name) && next && !next.startsWith('-') ? `${name} ${next}` : name
 }
 
+// "자리1: a · b · 자리2: c · d" → "a · b" (자리 표시가 없으면 그대로)
+function firstSlot(text: string): string {
+  return text.replace(/^자리\d+:\s*/, '').split(/ · 자리\d+: /)[0] || ''
+}
+
 // heavy.sh 가 기다리며 찍는 줄(athena/scripts/heavy.sh note) → 잠금 · 부하 대기 | null
 //   "⏳ 대기 30초 — 다른 무거운 명령이 도는 중: <what>" · "⏳ 대기 0초 — 부하 12.3 > 한도 9.6 (코어 8)"
 export function parseWaitLine(line: string): WaitEvent | null {
   const match = /^⏳ 대기 \d+초 — (.*)$/.exec(line.trim())
   if (!match) return null
   const reason = match[1] || ''
-  const lock = /^다른 무거운 명령이 도는 중: (.*)$/.exec(reason)
-  if (lock) return { kind: 'lock', what: commandName(lock[1] || '') }
+  // 옛 heavy.sh 는 "…도는 중: <what>" · 자리가 둘이 된 뒤는 "…도는 중 — 자리1: <what> · 자리2: <what>" — 앞 자리 것을 이름으로
+  const lock = /^다른 무거운 명령이 도는 중(?::| —) (.*)$/.exec(reason)
+  if (lock) return { kind: 'lock', what: commandName(firstSlot(lock[1] || '')) }
   const load = /^부하 (\S+) >/.exec(reason)
   if (load) return { kind: 'load', load: load[1] || '?' }
   return null
@@ -63,6 +69,7 @@ export function noticeText(say: Say, event: NoticeEvent): { title: string; body:
   if (event.kind === 'lock') return { title, body: say('notify.appUpdate.waitLock', { what: event.what }) }
   if (event.kind === 'load') return { title, body: say('notify.appUpdate.waitLoad', { load: event.load }) }
   if (event.kind === 'gave-up') return { title, body: say('notify.appUpdate.gaveUp') }
+  if (event.kind === 'killed') return { title, body: say('notify.appUpdate.installKilled') }
   return { title, body: say('notify.appUpdate.installFailed') }
 }
 

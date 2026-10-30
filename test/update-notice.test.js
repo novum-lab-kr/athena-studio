@@ -10,6 +10,11 @@ test('parseWaitLine: heavy.sh 잠금 대기 줄 → 무엇이 도는지 짧은 �
   assert.deepEqual(notice.parseWaitLine('⏳ 대기 5초 — 다른 무거운 명령이 도는 중: ?'), { kind: 'lock', what: '?' })
 })
 
+test('parseWaitLine: 자리가 둘인 heavy.sh — 앞 자리 것의 이름', () => {
+  assert.deepEqual(notice.parseWaitLine('⏳ 대기 0초 — 다른 무거운 명령이 도는 중 — 자리1: athena-studio-fe · sleep 50 · 자리2: syung-app · xcodebuild -jobs 4 -workspace app.xcworkspace'), { kind: 'lock', what: 'sleep' })
+  assert.deepEqual(notice.parseWaitLine('⏳ 대기 30초 — 다른 무거운 명령이 도는 중 — 자리1: me · npm install --include=dev'), { kind: 'lock', what: 'npm install' })
+})
+
 test('parseWaitLine: 부하 대기 줄 · 대기 줄이 아니면 null', () => {
   assert.deepEqual(notice.parseWaitLine('⏳ 대기 0초 — 부하 12.3 > 한도 9.6 (코어 8)'), { kind: 'load', load: '12.3' })
   assert.equal(notice.parseWaitLine('▶ 차례 — 40초 기다림 · 부하 2.1/9.6'), null)

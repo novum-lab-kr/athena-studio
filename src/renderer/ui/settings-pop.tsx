@@ -148,6 +148,9 @@ function reasonText(say: Say, reason: string | null, branch: string | null): str
   if (reason === 'fetch-failed') return say('settings.appUpdateFetchFailed')
   if (reason === 'ff-failed') return say('settings.appUpdateFfFailed')
   if (reason === 'restart-failed') return say('settings.appUpdateRestartFailed')
+  // 설치(앱을 켠 채) — 강제 종료는 진짜 실패와 따로
+  if (reason === 'install-gave-up') return say('settings.appUpdateInstallGaveUp')
+  if (reason === 'install-killed') return say('settings.appUpdateInstallKilled')
   // 배포판(src/lib/release-update.mts)
   if (reason === 'check-failed') return say('settings.appUpdateCheckFailed')
   if (reason === 'download-failed') return say('settings.appUpdateDownloadFailed')
@@ -157,9 +160,13 @@ function reasonText(say: Say, reason: string | null, branch: string | null): str
 }
 
 function updateNote(say: Say, status: AppUpdateView, failure: string | null): string {
+  if (status.running && status.phase === 'waiting') return say('settings.appUpdateWaiting')
+  if (status.running && status.phase === 'installing') return say('settings.appUpdateInstalling')
   if (status.running) return say('settings.appUpdateRunning')
   if (failure) return reasonText(say, failure, status.branch) || say('settings.appUpdateCurrent')
   if (status.reason && status.state === 'behind') return reasonText(say, status.reason, status.branch)
+  if (status.phase === 'ready') return say('settings.appUpdateReady')
+  if (status.installFailure) return reasonText(say, status.installFailure, status.branch)
   // origin(개발판) · 피드(배포판)에서 못 받았으면 최신인지 모른다 — '최신이에요' 대신 까닭
   if (status.reason === 'fetch-failed' || status.reason === 'check-failed') return reasonText(say, status.reason, status.branch)
   // origin/main 에 새 버전 태그가 있으면 '0.2.1 → 0.3.0' · 아직 없으면 커밋 수
@@ -176,6 +183,13 @@ async function runAppUpdate() {
   appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'ff-failed' })
 }
 
+// 설치가 끝났고 [나중에] 를 골랐을 때 — 다시 시작만 남는다
+async function restartAppUpdate() {
+  const result = await studio.restartAppUpdate()
+  if (result && result.ok) return // 앱이 곧 꺼졌다 다시 켜진다
+  appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'restart-failed' })
+}
+
 function AppUpdate({ say }: { say: Say }) {
   const { status, failure } = useStore(appUpdateStore)
   if (!status || status.state === 'unavailable') return null
@@ -187,11 +201,19 @@ function AppUpdate({ say }: { say: Say }) {
           {/* 지금 버전 — 늘 */}
           {status.version && <span className="settings-app-version">{say('settings.appUpdateVersion', { version: status.version })}</span>}
         </span>
-        <button className="settings-app-button" type="button" data-key="app-update" disabled={status.state !== 'behind' || status.running} onClick={runAppUpdate}>
-          {say('settings.appUpdateButton')}
-        </button>
+        {status.phase === 'ready' && !status.running ? (
+          <button className="settings-app-button" type="button" data-key="app-restart" onClick={restartAppUpdate}>
+            {say('settings.appUpdateRestart')}
+          </button>
+        ) : (
+          <button className="settings-app-button" type="button" data-key="app-update" disabled={status.state !== 'behind' || status.running} onClick={runAppUpdate}>
+            {say('settings.appUpdateButton')}
+          </button>
+        )}
       </div>
       <p className="settings-note settings-app-note">{updateNote(say, status, failure)}</p>
+      {/* 설치 중에만 — npm install 은 진행률을 주지 않아 퍼센트 없이 좌우로 움직인다 */}
+      {status.running && status.phase === 'installing' && <div className="settings-app-gauge" role="progressbar" aria-label={say('settings.appUpdateInstalling')} />}
     </section>
   )
 }

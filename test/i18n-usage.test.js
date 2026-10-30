@@ -23,7 +23,7 @@ const ALLOWED = {
   // 본체 출력 해석 중 던지고 바로 잡는 내부 예외
   // · 본체 new-branch.sh 출력 맞추기(워크트리 자리 · 이미 있음)
   // heavy.sh 가 찍는 대기 줄(athena/scripts/heavy.sh note) 맞추기
-  'src/lib/update-notice.mts': ['⏳ 대기', '다른 무거운 명령이 도는 중', '부하 '],
+  'src/lib/update-notice.mts': ['⏳ 대기', '다른 무거운 명령이 도는 중', '부하 ', '자리'],
   'src/lib/pack.mts': ["new Error('객체가 아님')", '워크트리:', '워크트리 경로가 이미 있다:', "'이미 있다'", "'로컬'", "'(커밋 없음)'"],
 }
 
