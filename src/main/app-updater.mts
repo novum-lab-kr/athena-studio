@@ -8,6 +8,7 @@
 // (옛 순서 — 앱을 끄고 설치 — 는 부하가 높으면 창이 최대 30분 없었다). [나중에] 면 ⚙ 줄에 다시 시작 버튼이 남고 앱을 직접 꺼도 다음에 새 버전으로 켜진다.
 // 설치 대기 · 설치 중에 앱이 꺼지면 "끊긴 설치" 표시(.dev-app/install-pending.json)가 남아 dev-app.js 가 다음에 켤 때 다시 시도한다.
 // 다시 켜면 코어 번들을 새로 만들고 켤 때 본체를 업데이트한다(데몬 · pane 은 그대로 — 쉬는 세션은 막지 않는다 · D1)
+import { Notification } from 'electron'
 import fs from 'node:fs'
 import path from 'node:path'
 import { spawn } from 'node:child_process'
@@ -293,7 +294,9 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     // 도우미가 도는 중에 따로 켜졌으면 창을 열지 않고 끝낸다 — 도우미가 끝나면 앱을 직접 띄운다(옛 앱이 같이 떠 있지 않게)
     if (appInstall.helperRunning(APP_ROOT)) {
       logLine('another restart helper is running — exiting without opening windows')
-      app.quit()
+      // 창 없이 끝나는 까닭을 알린다 — 아무 반응 없이 사라지면 고장으로 보인다
+      if (Notification.isSupported()) new Notification({ title: say('dialog.appUpdate.message'), body: say('notify.appUpdate.finishing'), silent: true }).show()
+      setTimeout(() => app.quit(), 1000)
       return true
     }
     if (!appInstall.shouldRelaunch(APP_ROOT)) return false

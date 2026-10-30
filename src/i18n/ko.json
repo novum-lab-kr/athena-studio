@@ -120,6 +120,7 @@
   "notify.appUpdate.gaveUp": "업데이트 설치 포기 — 대기 시간 초과",
   "notify.appUpdate.installFailed": "업데이트 설치 실패 — npm install",
   "notify.appUpdate.installKilled": "업데이트 설치 강제 종료 — 다음에 켤 때 다시 시도",
+  "notify.appUpdate.finishing": "업데이트를 마무리하는 중 — 잠시 뒤 앱이 켜져요",
   "dialog.packFile.title": "팩 압축 파일 고르기",
   "dialog.packFile.filter": "팩 압축 파일",
   "dialog.packFolder.title": "팩 폴더 고르기 (pack.json 이 있는 폴더)",

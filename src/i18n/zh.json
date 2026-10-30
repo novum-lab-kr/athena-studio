@@ -120,6 +120,7 @@
   "notify.appUpdate.gaveUp": "更新安装已放弃 — 等待超时",
   "notify.appUpdate.installFailed": "更新安装失败 — npm install",
   "notify.appUpdate.installKilled": "更新安装被强制终止 — 下次启动时重试",
+  "notify.appUpdate.finishing": "正在完成更新 — 应用稍后打开",
   "dialog.packFile.title": "选择包压缩文件",
   "dialog.packFile.filter": "包压缩文件",
   "dialog.packFolder.title": "选择包文件夹(含 pack.json 的文件夹)",

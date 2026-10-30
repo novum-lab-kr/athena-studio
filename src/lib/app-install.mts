@@ -3,7 +3,7 @@
 // dev-app.js(CommonJS)가 require 한다 — Node 22.18 이상은 .mts 를 타입만 지우고 읽는다
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { parseWaitLine } from './update-notice.mts'
 import type { WaitEvent } from './update-notice.mts'
 
@@ -153,14 +153,20 @@ export function clearRebuild(root: string): void {
 export const RELAUNCH_GAP_MS = 5 * 60 * 1000
 const relaunchGuardFile = (root: string) => path.join(root, '.dev-app', 'relaunch-guard.json')
 
-// 다시 켜기 도우미(dev-app.js restart)가 도는 동안의 pid 표시 — 그 사이 Dock · Finder 로 켠 앱이 창을 열지 않고 끝나게 한다
-// (도우미가 화면 빌드를 바꾸고 끝나면 앱을 따로 띄운다 — 옛 앱이 같이 떠 있으면 둘이 된다)
+// 다시 켜기 도우미(dev-app.js restart)가 앱을 띄우기 전까지의 표시 — 그 사이 Dock · Finder 로 켠 앱이 창을 열지 않고 끝나게 한다
+// (도우미가 화면 빌드를 바꾸는 동안 옛 앱이 같이 떠 있으면, 도우미가 끝나고 앱을 하나 더 띄워 둘이 된다).
+// 앱을 띄우기 직전에 지운다 — 도우미는 앱이 켜진 내내 살아 있어 그때까지 두면 전원 꺼짐 · 패닉 뒤에도 남는다
 const helperFile = (root: string) => path.join(root, '.dev-app', 'restart-helper.json')
 
-export function writeHelper(root: string, pid = process.pid): void {
+// heavy.sh 최대 대기(30분) + 설치 · 빌드(15분) — 넘으면 표시가 남은 것으로 보고 무시한다
+export const HELPER_MAX_MS = 45 * 60 * 1000
+// ps 의 시작 시각은 초 단위라 표시를 쓴 시각과 이만큼은 어긋날 수 있다
+const START_SKEW_MS = 15 * 1000
+
+export function writeHelper(root: string, pid = process.pid, now = Date.now()): void {
   try {
     fs.mkdirSync(path.dirname(helperFile(root)), { recursive: true })
-    fs.writeFileSync(helperFile(root), JSON.stringify({ pid }) + '\n')
+    fs.writeFileSync(helperFile(root), JSON.stringify({ pid, startedAt: now }) + '\n')
   } catch {
     // 표시를 못 남기면 겹쳐 켜질 수 있을 뿐 — 도우미는 계속 한다
   }
@@ -175,23 +181,37 @@ export function clearHelper(root: string, pid = process.pid): void {
   }
 }
 
-const isProcessAlive = (pid: number): boolean => {
+export type ProcessInfo = { startedAt: number; command: string }
+
+// ps -o lstart=,command= -p <pid> — 없으면 null. lstart 는 "Fri Oct 31 01:22:05 2026"(지역 시각)
+export function inspectProcess(pid: number): ProcessInfo | null {
   try {
-    process.kill(pid, 0)
-    return true
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'EPERM'
+    const result = spawnSync('ps', ['-o', 'lstart=,command=', '-p', String(pid)], { encoding: 'utf8', env: { ...process.env, LC_ALL: 'C' } })
+    const match = /^\s*(\w{3} \w{3}\s+\d+ \d+:\d+:\d+ \d{4})\s+(.*)$/m.exec(result.stdout || '')
+    if (!match) return null
+    const startedAt = Date.parse(match[1] || '')
+    return Number.isFinite(startedAt) ? { startedAt, command: match[2] || '' } : null
+  } catch {
+    return null
   }
 }
 
-// 살아 있는 다른 도우미가 있으면 true — 죽은 pid · 깨진 표시 · 내 pid 는 무시해 앱이 안 뜨는 일이 없게
-export function helperRunning(root: string, alive: (pid: number) => boolean = isProcessAlive, self = process.pid): boolean {
+// 도우미 표시가 지금도 맞는 도우미를 가리키면 true. 아니면(없음 · 깨짐 · 내 pid · 죽은 pid · 다른 프로세스 · 시작 시각이 다름 ·
+// 유효 시간 지남) 표시를 지우고 false — 앱이 안 뜨는 일이 없게
+export function helperRunning(root: string, inspect: (pid: number) => ProcessInfo | null = inspectProcess, self = process.pid, now = Date.now()): boolean {
+  let record: { pid?: unknown; startedAt?: unknown }
   try {
-    const pid = Number(JSON.parse(fs.readFileSync(helperFile(root), 'utf8')).pid)
-    return Number.isInteger(pid) && pid > 0 && pid !== self && alive(pid)
+    record = JSON.parse(fs.readFileSync(helperFile(root), 'utf8'))
   } catch {
     return false
   }
+  const pid = Number(record.pid)
+  const startedAt = Number(record.startedAt)
+  if (pid === self) return false
+  const info = Number.isInteger(pid) && pid > 0 && Number.isFinite(startedAt) && now - startedAt <= HELPER_MAX_MS ? inspect(pid) : null
+  const isHelper = info !== null && /dev-app\.js\s+restart(\s|$)/.test(info.command) && Math.abs(info.startedAt - startedAt) <= START_SKEW_MS
+  if (!isHelper) fs.rmSync(helperFile(root), { force: true })
+  return isHelper
 }
 
 export function shouldRelaunch(root: string, now = Date.now()): boolean {

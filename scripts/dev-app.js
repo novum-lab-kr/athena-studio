@@ -234,6 +234,8 @@ async function buildRenderer() {
   }
 }
 
+let appLaunched = false
+
 async function start(args, { fromUpdate = false, installTried = false } = {}) {
   // 끝나지 않은 업데이트 설치(앱이 꺼짐 · 강제 종료 · 실패 · 포기)가 있으면 다시 시도한다 — 설치가 끝나고 필수 모듈까지 있을 때만 표시를 지운다.
   // restart --install 이 방금 시도한 실행이면 같은 실행에서 두 번 돌지 않게 건너뛴다(실패했으면 표시는 남아 다음에 켤 때 다시)
@@ -271,6 +273,9 @@ async function start(args, { fromUpdate = false, installTried = false } = {}) {
     // 대신 켠 것이 있으면 앞의 것이 끝난 것은 무시한다
     current.on('exit', (code, signal) => child === current && process.exit(signal ? 1 : code || 0))
   }
+  // 도우미 표시는 앱을 띄우기 직전까지만 — 앱이 켜진 내내 남아 있으면 전원 꺼짐 뒤에도 남는다
+  appInstall.clearHelper(ROOT)
+  appLaunched = true
   launch(binary)
   // npm start 를 Ctrl+C 로 끄면 앱도 끈다
   for (const name of ['SIGINT', 'SIGTERM', 'SIGUSR2']) process.on(name, () => child && child.kill(name))
@@ -339,6 +344,14 @@ async function restart(args) {
   // 도우미가 도는 동안 표시를 남긴다 — 그 사이 Dock 으로 켠 앱이 창을 열지 않고 끝나게(src/lib/app-install.mts helperRunning)
   appInstall.writeHelper(ROOT)
   process.on('exit', () => appInstall.clearHelper(ROOT))
+  // 앱을 띄우기 전에 끝나라는 신호를 받으면 표시를 지우고 끝낸다 — 띄운 뒤에는 start 의 핸들러가 앱을 같이 끈다
+  for (const name of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+    process.on(name, () => {
+      if (appLaunched) return
+      appInstall.clearHelper(ROOT)
+      process.exit(1)
+    })
+  }
   const alive = (pid) => {
     try {
       process.kill(pid, 0)

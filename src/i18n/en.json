@@ -120,6 +120,7 @@
   "notify.appUpdate.gaveUp": "Update install skipped — wait timed out",
   "notify.appUpdate.installFailed": "Update install failed — npm install",
   "notify.appUpdate.installKilled": "Update install killed — will retry next launch",
+  "notify.appUpdate.finishing": "Finishing the update — the app will open shortly",
   "dialog.packFile.title": "Choose a Pack Archive",
   "dialog.packFile.filter": "Pack Archive",
   "dialog.packFolder.title": "Choose a Pack Folder (the folder with pack.json)",

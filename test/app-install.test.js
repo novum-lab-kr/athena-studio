@@ -58,22 +58,55 @@ test('다시 빌드 표시 · 켜기 반복 막기: 표시가 있을 때만 · �
   assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS), true)
 })
 
-test('도우미 pid 표시: 살아 있는 다른 도우미만 · 죽은 pid · 깨진 표시 · 내 pid 는 무시', () => {
+test('도우미 표시: 맞는 도우미만 true · 아닌 것은 표시를 지우고 false', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
-  assert.equal(install.helperRunning(root), false) // 표시 없음
+  const file = path.join(root, '.dev-app', 'restart-helper.json')
+  const now = Date.parse('2026-10-31T01:00:00Z')
+  const helper = { startedAt: now - 1000, command: 'node /x/scripts/dev-app.js restart --after 7 --lang ko' }
+  assert.equal(install.helperRunning(root, () => helper, 1, now), false) // 표시 없음
+  install.writeHelper(root, 4242, now - 1000)
+  assert.equal(install.helperRunning(root, () => helper, 1, now), true)
+  assert.equal(fs.existsSync(file), true) // 맞으면 표시는 그대로
+  assert.equal(install.helperRunning(root, () => helper, 4242, now), false) // 내 표시
+  // 살아 있지만 도우미가 아닌 pid(pid 재사용 · 무관한 프로세스)
+  assert.equal(install.helperRunning(root, () => ({ startedAt: now - 1000, command: 'sleep 120' }), 1, now), false)
+  assert.equal(fs.existsSync(file), false)
+  // 도우미 같지만 시작 시각이 다름(같은 pid 를 다른 도우미가 재사용)
+  install.writeHelper(root, 4242, now - 1000)
+  assert.equal(install.helperRunning(root, () => ({ ...helper, startedAt: now - 3600 * 1000 }), 1, now), false)
+  // 죽은 pid
+  install.writeHelper(root, 4242, now - 1000)
+  assert.equal(install.helperRunning(root, () => null, 1, now), false)
+  assert.equal(fs.existsSync(file), false)
+  // 유효 시간 지남
+  install.writeHelper(root, 4242, now - install.HELPER_MAX_MS - 1)
+  assert.equal(install.helperRunning(root, () => ({ ...helper, startedAt: now - install.HELPER_MAX_MS - 1 }), 1, now), false)
+  assert.equal(fs.existsSync(file), false)
+  // 깨진 표시
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, '깨짐')
+  assert.equal(install.helperRunning(root, () => helper, 1, now), false)
+})
+
+test('도우미 표시: 지우기는 내 것만 · 진짜 ps 로 이 프로세스는 도우미가 아니다', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
   install.writeHelper(root, 4242)
-  assert.equal(install.helperRunning(root, () => true, 1), true)
-  assert.equal(install.helperRunning(root, () => false, 1), false) // 죽은 pid 면 앱이 떠야 한다
-  assert.equal(install.helperRunning(root, () => true, 4242), false) // 내 표시
-  install.clearHelper(root, 1) // 남의 표시는 지우지 않는다
-  assert.equal(install.helperRunning(root, () => true, 1), true)
+  install.clearHelper(root, 1) // 남의 표시는 그대로
+  assert.equal(fs.existsSync(path.join(root, '.dev-app', 'restart-helper.json')), true)
   install.clearHelper(root, 4242)
-  assert.equal(install.helperRunning(root, () => true, 1), false)
-  fs.mkdirSync(path.join(root, '.dev-app'), { recursive: true })
-  fs.writeFileSync(path.join(root, '.dev-app', 'restart-helper.json'), '깨짐')
-  assert.equal(install.helperRunning(root, () => true, 1), false)
-  install.writeHelper(root) // 진짜 살아 있는 pid(이 프로세스)로 — 다른 프로세스 입장에서는 true
-  assert.equal(install.helperRunning(root, undefined, 1), true)
+  assert.equal(fs.existsSync(path.join(root, '.dev-app', 'restart-helper.json')), false)
+  const info = install.inspectProcess(process.pid) // 실제 ps — 시작 시각과 명령을 읽는다
+  assert.ok(info && info.startedAt <= Date.now() && /node/.test(info.command))
+  install.writeHelper(root) // 이 시험 프로세스(dev-app.js restart 가 아님)
+  assert.equal(install.helperRunning(root, undefined, 1), false)
+  assert.equal(install.inspectProcess(2 ** 22 + 12345), null)
+})
+
+test('dev-app.js: 도우미 표시를 앱 띄우기 직전에 지우고 · 신호 핸들러가 있다', () => {
+  const source = fs.readFileSync(path.join(__dirname, '..', 'scripts', 'dev-app.js'), 'utf8')
+  const clear = source.indexOf('appInstall.clearHelper(ROOT)\n  appLaunched = true\n  launch(binary)')
+  assert.ok(clear > 0) // launch 바로 앞
+  assert.ok(source.indexOf("'SIGTERM', 'SIGINT', 'SIGHUP'") > 0)
 })
 
 test('missingModules: 켜는 데 꼭 필요한 electron · vite', () => {

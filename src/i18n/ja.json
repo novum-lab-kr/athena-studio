@@ -120,6 +120,7 @@
   "notify.appUpdate.gaveUp": "アップデートのインストール中止 — 待機タイムアウト",
   "notify.appUpdate.installFailed": "アップデートのインストール失敗 — npm install",
   "notify.appUpdate.installKilled": "アップデートのインストールが強制終了 — 次回起動時に再試行",
+  "notify.appUpdate.finishing": "アップデートを仕上げています — まもなくアプリが開きます",
   "dialog.packFile.title": "パックの圧縮ファイルを選択",
   "dialog.packFile.filter": "パック圧縮ファイル",
   "dialog.packFolder.title": "パックのフォルダを選択(pack.json があるフォルダ)",
