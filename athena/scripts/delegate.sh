@@ -44,6 +44,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+[ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
 [ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down]"; exit 2; }
 
 # 계획서 필수 — 없으면 띄우지 않는다
@@ -461,30 +462,32 @@ PYEOF
   if [ -n "$RAW_PROMPT" ]; then REUSE_MSG="${REUSE_MSG}요청: $RAW_PROMPT"; else REUSE_MSG="${REUSE_MSG}계획서 '## 지시' 절이 요청이다 — 비어 있으면 사용자 요청을 기다린다."; fi
   # 한 줄로 — 줄바꿈이 있으면 Enter 로 여러 번 나뉘어 들어간다
   REUSE_MSG="$(printf '%s' "$REUSE_MSG" | tr '\n' ' ')"
-  "$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter >/dev/null || { echo "pane $PANE 에 보내지 못했다" >&2; exit 1; }
-  # 묶음 갱신 — pane 기록의 계획서를 새 계획서로(훅이 매 메시지마다 처음 환경 값으로 덮지 않게 envPlan 을 남긴다) · 앞 계획서 Work ref 에서 이 pane 을 뺀다
-  ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR" "$PANE" "$AGENT" "$PLAN" <<'PYEOF'
-import json, os, pathlib, re, sys
-athena, pane, agent, plan = sys.argv[1:5]
-sys.path.insert(0, athena + '/scripts/lib'); from plan_update import update_plan
-pack_data = pathlib.Path(athena) / '.pack-data'
-record_path = pack_data.resolve() / 'state' / 'pane-sessions' / f'{pane}.json' if pack_data.is_symlink() else None
-old_plan = None
-if record_path and record_path.is_file():
-    try:
-        record = json.loads(record_path.read_text(encoding='utf-8'))
-        old_plan = record.get('plan')
-        record.setdefault('envPlan', old_plan)   # pane 을 처음 띄울 때 환경 값(ATHENA_PLAN) — A→B→C 로 이어도 변하지 않는다
-        record['plan'] = plan
-        temp = record_path.with_name(f'.{pane}.{os.getpid()}.tmp')
-        temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-        os.replace(temp, record_path)
-    except Exception:
-        pass
-if old_plan and old_plan != plan and (pathlib.Path(athena) / old_plan).is_file():
-    # '… · pane <id> (<에이전트>)' 꼬리를 뗀다 — 지운 줄은 pane 이 안 적힌 줄이 돼 다시 묶이지 않는다
-    update_plan(str(pathlib.Path(athena) / old_plan), lambda text: re.sub(rf' · pane {re.escape(pane)} \({re.escape(agent)}\)', '', text))
+  # 묶음 갱신을 먼저 — 지시를 보내면 pane-session.py 훅이 곧바로 돌아 기록을 읽는다(같은 잠금 · scripts/lib/reuse_link.py).
+  # pane 기록의 계획서를 새 계획서로(훅이 처음 환경 값으로 덮지 않게 envPlan 을 남긴다). 보내기가 실패하면 되돌린다
+  OLD_PLAN="$(python3 - "$ATHENA_DIR" "$PANE" <<'PYEOF'
+import json, pathlib, sys
+pack_data = pathlib.Path(sys.argv[1]) / '.pack-data'
+path = pack_data.resolve() / 'state' / 'pane-sessions' / f'{sys.argv[2]}.json' if pack_data.is_symlink() else None
+try:
+    print(json.loads(path.read_text(encoding='utf-8')).get('plan') or '')
+except Exception:
+    print('')
 PYEOF
+)"
+  UNDO="$(python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" link "$ATHENA_DIR" "$PANE" "$PLAN")" || { echo "pane 기록을 새 계획서로 잇지 못해 보내지 않는다" >&2; exit 1; }
+  if ! "$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter >/dev/null; then
+    python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" rollback "$ATHENA_DIR" "$PANE" "$UNDO" || true
+    echo "pane $PANE 에 보내지 못했다(pane 기록은 되돌렸다)" >&2; exit 1
+  fi
+  # 앞 계획서 Work ref 에서 '· pane <id> (<에이전트>)' 꼬리를 뗀다 — 지운 줄은 pane 이 안 적힌 줄이 돼 다시 묶이지 않는다
+  if [ -n "$OLD_PLAN" ] && [ "$OLD_PLAN" != "$PLAN" ] && [ -f "$ATHENA_DIR/$OLD_PLAN" ]; then
+    python3 - "$ATHENA_DIR" "$PANE" "$AGENT" "$OLD_PLAN" <<'PYEOF'
+import pathlib, re, sys
+athena, pane, agent, old_plan = sys.argv[1:5]
+sys.path.insert(0, athena + '/scripts/lib'); from plan_update import update_plan
+update_plan(str(pathlib.Path(athena) / old_plan), lambda text: re.sub(rf' · pane {re.escape(pane)} \({re.escape(agent)}\)', '', text))
+PYEOF
+  fi
 fi
 # pane 이름에 실제 브랜치를 적는다. 나란히 놓였을 때 어느 작업인지 이름만 보고 알아야 한다.
 # 워크트리 폴더명이 아니라 git 이 말하는 브랜치를 쓴다 — 메인 체크아웃에서 열면

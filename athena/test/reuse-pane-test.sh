@@ -28,6 +28,7 @@ check('화면을 못 읽으면 → 안 고른다', 'reason' in pickReusable([pan
 check('다른 에이전트 이름표 → 안 고른다', 'reason' in pickReusable([pane('p1', { label: '🤖 be · x' })], 'fe', read({ p1: IDLE })))
 check('에이전트 이름이 앞부분만 같으면 → 안 고른다(fe 가 fe2 를 잡지 않게)', 'reason' in pickReusable([pane('p1', { label: '🤖 fe2 · x' })], 'fe', read({ p1: IDLE })))
 check('claude 가 아닌 pane → 안 고른다', 'reason' in pickReusable([pane('p1', { agent: 'codex' })], 'fe', read({ p1: IDLE })))
+check('focused 필드가 없으면(모름) → 안 고른다', 'reason' in pickReusable([(({ focused, ...rest }) => rest)(pane('p1'))], 'fe', read({ p1: IDLE })))
 check('작업 폴더가 없으면 → 안 고른다', 'reason' in pickReusable([pane('p1', { cwd: '/없는/폴더' })], 'fe', read({ p1: IDLE })))
 check('앞 pane 이 안 되면 다음 쉬는 pane', pickReusable([pane('p1', { focused: true }), pane('p2')], 'fe', read({ p1: IDLE, p2: IDLE })).pane?.id === 'p2')
 
@@ -46,16 +47,17 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/athena/scripts/hooks" "$TMP/athena/scripts/lib" "$TMP/data"
 cp scripts/hooks/pane-session.py "$TMP/athena/scripts/hooks/"; cp scripts/lib/*.py "$TMP/athena/scripts/lib/"
 ln -s "$TMP/data" "$TMP/athena/.pack-data"
-fire() { echo '{"session_id":"11111111-2222-3333-4444-555555555555","cwd":"/tmp"}' | ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pf1 ATHENA_AGENT=fe ATHENA_PLAN=plans/task/old.md python3 "$TMP/athena/scripts/hooks/pane-session.py"; }
+SESSION=11111111-2222-3333-4444-555555555555
+fire() { echo "{\"session_id\":\"$SESSION\",\"cwd\":\"/tmp\"}" | ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pf1 ATHENA_AGENT=fe ATHENA_PLAN=plans/task/old.md python3 "$TMP/athena/scripts/hooks/pane-session.py"; }
 planOf() { python3 -c "import json,sys; print(json.load(open('$TMP/data/state/pane-sessions/pf1.json')).get('plan'))"; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (받은 값: $2)"; FAIL=1; fi; }
 fire; check '처음 띄운 pane — 기록은 환경 계획서' "$(planOf)" 'plans/task/old.md'
-python3 - "$TMP/data/state/pane-sessions/pf1.json" <<'PYEOF'
-import json, sys
-path = sys.argv[1]; record = json.load(open(path))
-record.setdefault('envPlan', record['plan']); record['plan'] = 'plans/task/new.md'   # delegate.sh --reuse-pane 이 하는 일
-json.dump(record, open(path, 'w'))
-PYEOF
+UNDO="$(python3 scripts/lib/reuse_link.py link "$TMP/athena" pf1 plans/task/new.md)"   # delegate.sh --reuse-pane 이 하는 일
 fire; check '이어 받은 뒤 메시지를 보내도 새 계획서 그대로' "$(planOf)" 'plans/task/new.md'
 fire; check '한 번 더 보내도 그대로' "$(planOf)" 'plans/task/new.md'
+SESSION=99999999-2222-3333-4444-555555555555
+fire; check '/clear 등으로 session id 가 바뀌어도 새 계획서 그대로' "$(planOf)" 'plans/task/new.md'
+python3 scripts/lib/reuse_link.py rollback "$TMP/athena" pf1 "$UNDO"
+check '보내기 실패 때 되돌리면 옛 계획서' "$(planOf)" 'plans/task/old.md'
+scripts/delegate.sh reviewer --new-branch x/y --plan plans/task/없음.md >/dev/null 2>&1; check '--new-branch 만 주면 pane 을 만들기 전에 종료(2)' "$?" 2
 exit "$FAIL"

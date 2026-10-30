@@ -5,7 +5,7 @@
 // 고르는 기준(모두 맞아야 한다 — 하나라도 모르면 재사용하지 않고 새로 띄운다):
 //   - 이름표가 '🤖 <에이전트>' 로 시작하는 claude pane (delegate.sh 가 붙인 이름 — 에이전트는 레포마다 하나라 같은 레포다)
 //   - agent_status 가 idle (일하는 중 · 모름은 제외)
-//   - 사용자가 보고 있지 않다(focused 아님) — 쓰던 입력에 끼어들지 않게
+//   - 사용자가 보고 있지 않다(focused 가 명시적으로 false — 필드가 없으면 모르니 제외) — 쓰던 입력에 끼어들지 않게
 //   - 화면 끝에 질문 · 고르기 창이 없다(pane-delivery.mjs menuOpen — 데몬 idle 은 질문 기다리는 것도 idle 로 본다)
 //   - 화면을 읽을 수 있다(못 읽으면 창 여부를 모르니 제외)
 import { execFileSync } from 'node:child_process'
@@ -35,7 +35,7 @@ export const pickReusable = (panes, agentName, readText) => {
   const skipped = []
   for (const pane of mine) {
     if (pane.agent_status !== 'idle') { skipped.push(`${pane.id}: ${pane.agent_status || '상태 모름'}`); continue }
-    if (pane.focused) { skipped.push(`${pane.id}: 사용자가 보고 있음`); continue }
+    if (pane.focused !== false) { skipped.push(`${pane.id}: 사용자가 보고 있거나 모름`); continue }
     if (!pane.cwd || !existsSync(pane.cwd)) { skipped.push(`${pane.id}: 작업 폴더를 모름`); continue }
     const text = readText(pane.id)
     if (text === null) { skipped.push(`${pane.id}: 화면을 읽지 못함`); continue }
