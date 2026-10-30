@@ -134,13 +134,13 @@ export const openRequest = (root, input) => {
 }
 
 // 목록 — 기본은 열린 것(open · answered). 계획서가 없어졌거나 done 이 된 요청은 이때 expired 로 닫는다.
-// 단 사람의 답을 기다리는 질문(open · question)은 계획서 상태만으로 닫지 않는다 — 답 없이 사라지면 에이전트가 영원히 기다린다(docs/requests.md).
-// 계획서가 done 이어도 사람이 취소하거나 답할 때까지 [작업] 에 남는다. 결정 콘솔(decision)과 답이 이미 온 요청은 계획서와 함께 닫는다
+// 단 질문(question)은 계획서 상태만으로 닫지 않는다 — 답 없이(open) 또는 받기 전에(answered) 사라지면 에이전트가 영원히 기다린다(docs/requests.md).
+// 계획서가 done 이거나 없어도 에이전트가 ack 하거나 사람이 취소할 때까지 남는다. 결정 콘솔(decision)은 계획서와 함께 닫는다
 export const listRequests = (root, { all = false } = {}) => withLock(root, (dir) => {
   const requests = readAll(dir)
   for (const request of requests) {
     if (!LIVE.includes(request.state) || !request.links?.plan) continue
-    if (request.state === 'open' && request.kind === 'question') continue
+    if (request.kind === 'question') continue
     const planFile = resolve(root, request.links.plan)
     const text = existsSync(planFile) ? readFileSync(planFile, 'utf8') : null
     if (text !== null && !/^- Status:\s*done\b/m.test(text)) continue

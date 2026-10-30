@@ -80,7 +80,12 @@ A request list > /dev/null
 check "계획서 done 이어도 답 기다리는 질문(open)은 그대로 열린 채" '[ "$(A request show "$P" | field request.state)" = open ] && A request list | grep -q "$P"'
 A request answer "$P" --by app --choice x > /dev/null
 A request list > /dev/null
-check "답이 온 요청(answered)은 계획서 done → expired" '[ "$(A request show "$P" | field request.state)" = expired ] && [ "$(A request show "$P" | field request.closedReason)" = "계획서가 done" ]'
+check "답이 온 질문(answered)도 계획서 done 이어도 ack 까지 유지" '[ "$(A request show "$P" | field request.state)" = answered ] && A request list | grep -q "$P"'
+DEC="$(A request open --kind decision --title 결정콘솔 --html plans/x.html --key kd --plan plans/task/20261021-x.md | field request.id)"
+A request answer "$DEC" --by board --choice x > /dev/null
+A request list > /dev/null
+check "결정 콘솔(answered)은 계획서 done → expired" '[ "$(A request show "$DEC" | field request.state)" = expired ] && [ "$(A request show "$DEC" | field request.closedReason)" = "계획서가 done" ]'
+check "유지된 answered 질문은 사람이 cancel 로 거둘 수 있다" '[ "$(A request cancel "$P" --reason 받을-pane-없음 | field request.state)" = cancelled ]'
 MISSING="$(A request open --kind question --title 없는계획서 --plan plans/task/없음.md | field request.id)"
 A request list > /dev/null
 check "계획서가 없어도 답 기다리는 질문은 열린 채" '[ "$(A request show "$MISSING" | field request.state)" = open ]'
@@ -129,7 +134,7 @@ print(" ".join(e["state"] for e in map(json.loads, open(sys.argv[1])) if e["type
 check "팩 데이터 state/events.jsonl 에 남는다" '[ -s "$EV" ]'
 check "요청 흐름이 그대로(열기 · 고쳐 열기 · 답 · 받음 — ack 두 번째는 안 남음)" '[ "$(states "$ID")" = "open open answered delivered" ]' "$(states "$ID")"
 check "대화로 답 → delivered 한 줄(by chat)" '[ "$(states "$Q")" = "open delivered" ] && grep "\"id\":\"$Q\"" "$EV" | tail -1 | grep -q "\"by\":\"chat\""'
-check "취소 · 계획서 done 으로 닫힘도 남는다" '[ "$(states "$C")" = "open cancelled" ] && [ "$(states "$P")" = "open answered expired" ]'
+check "취소(답 온 질문 취소 포함)도 남는다" '[ "$(states "$C")" = "open cancelled" ] && [ "$(states "$P")" = "open answered cancelled" ]'
 check "줄마다 형식 · 시각 · 팩" 'python3 -c "import json,sys; es=[json.loads(l) for l in open(sys.argv[1])]; sys.exit(0 if all(e[\"v\"]==1 and e[\"at\"] and e[\"pack\"]==\"acme\" for e in es) else 1)" "$EV"'
 node scripts/lib/events.mjs verify repo=r1 ok=false strict=true failed='lint|test'
 check "셸에서 남기기 — 참거짓은 참거짓으로" 'tail -1 "$EV" | python3 -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if e[\"type\"]==\"verify\" and e[\"ok\"] is False and e[\"strict\"] is True and e[\"failed\"]==\"lint|test\" else 1)"' "$(tail -1 "$EV")"
@@ -173,7 +178,7 @@ check "deny 안내 — 닫힌 요청은 다시 열라고 알린다(영원히 기
 mv bin/athena bin/athena.real; printf '#!/bin/sh\necho nope >&2; exit 1\n' > bin/athena; chmod +x bin/athena
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< "$ASK_EVENT" > "$WORK/ask-fail.out"
 mv bin/athena.real bin/athena
-check "요청을 못 열면 막지 않고 알린다 + events.jsonl 에 request-hook-failed" 'grep -q additionalContext "$WORK/ask-fail.out" && ! grep -q permissionDecision "$WORK/ask-fail.out" && grep -q request-hook-failed "$EV"' "$(cat "$WORK/ask-fail.out")"
+check "요청을 못 열면 막지 않고 알린다 + events.jsonl 에 request-hook-failed" 'grep -q additionalContext "$WORK/ask-fail.out" && ! grep -q permissionDecision "$WORK/ask-fail.out" && grep request-hook-failed "$EV" | tail -1 | grep -q "pack.:.acme"' "$(cat "$WORK/ask-fail.out")"
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
 check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
 

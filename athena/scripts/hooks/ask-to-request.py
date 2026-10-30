@@ -50,16 +50,11 @@ def plan_of(pane: str) -> str:
 
 
 def log_failure(reason: str) -> None:
-    """훅이 요청을 못 열었다는 흔적 — 팩 데이터 state/events.jsonl 에 한 줄(기록 실패는 무시)"""
+    """훅이 요청을 못 열었다는 흔적 — 기존 사건 기록 진입점(scripts/lib/events.mjs)으로 한 줄 남긴다(pack · 시각 형식이 같다). 기록 실패는 무시"""
     try:
-        base = pack_state()
-        if not base:
-            return
-        import datetime
-        line = {'v': 1, 'at': datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00', 'Z'), 'type': 'request-hook-failed',
-                'agent': os.environ.get('ATHENA_AGENT') or '', 'reason': reason[:300]}
-        with (base / 'events.jsonl').open('a', encoding='utf-8') as handle:
-            handle.write(json.dumps(line, ensure_ascii=False) + '\n')
+        subprocess.run(['node', str(ATHENA_DIR / 'scripts' / 'lib' / 'events.mjs'), 'request-hook-failed',
+                        f"agent={os.environ.get('ATHENA_AGENT') or ''}", f'reason={reason[:300]}'],
+                       capture_output=True, text=True, timeout=10)
     except Exception:
         pass
 
@@ -139,8 +134,11 @@ def main() -> None:
         log_failure(str(error))
         # 일부만 열렸으면 거둔다 — 원래 고르기 창이 그대로 뜨니 같은 질문이 두 곳에 남지 않게
         for request_id in ids:
-            subprocess.run([str(ATHENA_DIR / 'bin' / 'athena'), 'request', 'cancel', request_id, '--reason', '고르기 창으로 대신 물음'],
-                           capture_output=True, text=True, timeout=30)
+            try:
+                subprocess.run([str(ATHENA_DIR / 'bin' / 'athena'), 'request', 'cancel', request_id, '--reason', '고르기 창으로 대신 물음'],
+                               capture_output=True, text=True, timeout=30)
+            except Exception as cancel_error:
+                log_failure(f'요청 {request_id} 거두기 실패: {cancel_error}')
         # 막지 않고 원래 고르기 창을 둔다 — 스튜디오 [작업] 에는 안 올라갔다는 것을 에이전트에게 알린다(이유는 events.jsonl 에도 남았다)
         notice = '질문을 스튜디오 [작업] 에 올리지 못했다(요청 열기 실패) — 이 고르기 창에는 사람이 pane 에서 답한다. 답이 늦으면 아테나에 알린다.'
         print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'additionalContext': notice}}, ensure_ascii=False))

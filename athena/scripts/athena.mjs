@@ -309,7 +309,9 @@ const human = {
   },
 }
 // 출력이 파이프에 다 나간 뒤 끝난다 — console.log 직후 process.exit() 하면 64KB 넘는 출력이 잘린다
-const finish = (code) => { process.exitCode = code; process.stdout.write('', () => process.exit(code)) }
+// stdout · stderr 양쪽의 대기 중인 쓰기가 다 끝난 뒤 끝낸다(runPack 은 모든 분기의 마지막이라 뒤따르는 코드가 없다)
+const flushed = (stream) => new Promise((done) => stream.write('', () => done()))
+const finish = (code) => { process.exitCode = code; Promise.all([flushed(process.stdout), flushed(process.stderr)]).then(() => process.exit(code)) }
 const runPack = async (name, work) => {
   try {
     checkContract(name)
