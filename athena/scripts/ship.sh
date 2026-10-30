@@ -29,6 +29,10 @@
 #                        HEAD 가 commit.sh 로 기록된 커밋(충돌이면 base 를 합친 merge 커밋만 — 부모 둘 · 첫 부모 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안)
 #                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
+#   --direct-merge       (PR 끔 레포 전용 — 팩 레포 "autoMerge": true + "autoPr": false · docs/pr-auto.md "켜기") PR 을 만들지 않고 작업 브랜치를 prBase 에
+#                        squash 로 바로 합쳐 push 한다(scripts/pr-auto.mjs --direct-merge). 머지 설정은 그대로 — 자동 = 바로 · 확인 후 = [작업]에 [머지] 요청 · 직접 = 브랜치까지만.
+#                        같은 HEAD 엄격 검증이 어떤 설정에서도 먼저 통과해야 하고(없거나 못 돌리거나 건너뜀이면 머지 안 함) 충돌 · 안 정한 결정이 있어도 안 한다.
+#                        push 가 거부되면(브랜치 보호 등) 강제로 밀지 않고 실패로 알린다. 제목 · base · 본문 · 미리보기 없음 — "PR 올려줘" 는 이 옵션 없이 평소대로 PR 을 만든다
 #
 # 확인하는 것 (하나라도 걸리면 아무것도 보내지 않는다)
 #   - <워크트리> 가 등록된 워크트리이고 메인 체크아웃이 아니다 · 브랜치에 붙어 있다 · 보호 브랜치가 아니다
@@ -47,7 +51,7 @@ set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
 git() { command git -c core.quotePath=false "$@"; }
 
-PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""; AUTO_PUSH=0
+PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""; AUTO_PUSH=0; DIRECT_MERGE=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan) PLAN="${2:-}"; shift 2 ;;
@@ -58,6 +62,7 @@ while [ $# -gt 0 ]; do
     --no-review-ok) REVIEW_OK=1; shift ;;
     --yes) YES=1; shift ;;
     --auto-push) AUTO_PUSH=1; shift ;;
+    --direct-merge) DIRECT_MERGE=1; shift ;;
     --repo-agent) REPO_AGENT="${2:-}"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "모르는 옵션: $1" >&2; exit 2 ;;
@@ -81,7 +86,7 @@ check_body() {
 . "$ATHENA_DIR/scripts/lib/plan-path.sh"
 PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 [ -f "$ATHENA_DIR/$PLAN" ] && case "$PLAN" in plans/*.md) true ;; *) false ;; esac || fail "계획서가 없다: $PLAN"
-command -v gh >/dev/null 2>&1 || fail "gh CLI 가 없다"
+[ $DIRECT_MERGE = 1 ] || command -v gh >/dev/null 2>&1 || fail "gh CLI 가 없다"
 
 # ── 1. 워크트리·브랜치 (commit.sh 와 같은 규칙) ─────────────────────────────
 TOP="$(git -C "$DIR" rev-parse --show-toplevel 2>/dev/null)" || fail "git 레포가 아니다: $DIR"
@@ -313,6 +318,17 @@ update_plan(plan, lambda text: re.sub(r'^- .*push 안 함.*$', mark, text, flags
 PYEOF
   [ $? = 0 ] || echo "⚠️ push 는 됐지만 계획서 기록에 실패했다 — Commits 줄의 'push 안 함' 을 손으로 고친다" >&2
   echo "✅ push: $REPO · $HEAD_SHA → origin/$DIRECT (main 직접 · PR 없음)"
+  exit 0
+fi
+
+# ── PR 끔 바로 머지 — PR 없이 prBase 에 squash 로 합쳐 push 한다(scripts/pr-auto.mjs --direct-merge · 팩 "autoPr": false) ──────────
+if [ $DIRECT_MERGE = 1 ]; then
+  [ -z "$DIRECT" ] || fail "main 직접 레포는 바로 머지 대상이 아니다(이미 PR 없이 push 한다)"
+  [ -z "$REPO_AGENT" ] || fail "바로 머지는 레포 하나짜리 작업을 그 에이전트가 올린다 — 아테나의 --repo-agent 와 같이 쓰지 않는다"
+  DIRECT_MODE="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, direct_merge_mode; print(direct_merge_mode(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(바로 머지 확인)"
+  [ -n "$DIRECT_MODE" ] || fail "$REPO 는 PR 끔 + 자동 머지 레포가 아니다(pack.json 레포 \"autoMerge\": true + \"autoPr\": false) — \"PR 올려줘\" 면 --direct-merge 없이"
+  echo "── 바로 머지: $REPO · 🌿 $BRANCH @ $HEAD_SHA → PR 없이 prBase (머지 설정 $DIRECT_MODE)"
+  (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다"
   exit 0
 fi
 

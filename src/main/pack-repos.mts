@@ -60,10 +60,10 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
     const pack: { repos?: unknown } | null = await fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
     return { ok: Boolean(pack), repos: packModel.mergeSettings(pack) }
   }
-  ctx.setAutoMerge = async (repo: string, { autoMerge, review, merge }: { autoMerge?: unknown; review?: unknown; merge?: unknown }) => {
+  ctx.setAutoMerge = async (repo: string, { auto, review, merge }: { auto?: unknown; review?: unknown; merge?: unknown }) => {
     if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
     const args = ['set-auto-merge', repo]
-    if (typeof autoMerge === 'boolean') args.push('--auto', autoMerge ? 'on' : 'off')
+    if (auto === 'on' || auto === 'off' || auto === 'direct') args.push('--auto', auto)
     if (typeof review === 'boolean') args.push('--review', review ? 'on' : 'off')
     if (typeof merge === 'string') args.push('--merge', merge)
     const result = await runPack(args, { dir: ctx.athenaDir })

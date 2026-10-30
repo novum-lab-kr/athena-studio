@@ -7,6 +7,8 @@
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
  *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
+ *   node scripts/pr-auto.mjs --direct-merge --plan <plans/…md> --repo <레포> --dir <워크트리>
+ *        PR 끔 레포("autoPr": false) — PR 없이 작업 브랜치를 prBase 에 squash 로 바로 머지한다(ship.sh --direct-merge 가 부른다). 안전 조건은 PR 머지와 같다(검증은 끌 수 없다)
  *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
  *   node scripts/pr-auto.mjs --watch     뒤에서 돈다 — 대기열을 차례로 · 머지 확인 답을 30초마다 본다. 처리기는 하나만
  *
@@ -42,6 +44,7 @@ import {
   BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_OFF, repoFlow, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, codexModelArgs, codexUserSettings, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
+  DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -374,12 +377,14 @@ const agentPane = async ({ planFile, ref }) => {
 }
 
 // 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만)
-const notifyResult = async (job, result) => {
+const notifyResult = async (job, result, direct = false) => {
   const planPath = join(ROOT, job.plan)
   if (!existsSync(planPath)) return
   const ref = workRefOf(readFileSync(planPath, 'utf8'))
   if (!ref.pane || !(await livePanes()).has(ref.pane)) return
-  const sent = await sendToPane(ref.pane, masked(mergeNotice({ agent: ref.agent || '작업 에이전트', repo: job.repo, number: job.number, sha: job.sha, result })))
+  const agent = ref.agent || '작업 에이전트'
+  const text = direct ? directMergeNotice({ agent, repo: job.repo, branch: job.branch, sha: job.sha, result }) : mergeNotice({ agent, repo: job.repo, number: job.number, sha: job.sha, result })
+  const sent = await sendToPane(ref.pane, masked(text))
   console.log(sent ? `  → 결과를 pane ${ref.pane} 에 알렸다` : `  ⚠️ 결과를 pane ${ref.pane} 에 보내지 못했다`)
 }
 
@@ -713,11 +718,13 @@ const unreviewedNote = (job) => {
 const confirmFile = (repo, number) => join(CONFIRM_DIR, `${repo}-${number}.json`)
 
 // 같은 HEAD 로 검증 통과 — 그 브랜치 워크트리가 PR HEAD 와 같고 깨끗할 때만, 엄격 모드 재사용(없으면 검증 스크립트를 돈다)
+// 어떤 설정에서도 건너뛸 수 없다(PR · 바로 머지 공통) — 검증 스크립트가 없거나(종료 2) 못 돌렸거나(status null) 건너뜀(⏭)이 있으면 엄격 모드가 실패로 치고,
+// 바깥 환경의 ATHENA_VERIFY_ALLOW_SKIP 도 비워서 건너뜀을 허용하지 않는다(규칙 건너뜀 ⏭(규칙)만 스크립트 판단으로 통과)
 const verifiedAt = (repo, worktree, sha) => {
   if (!worktree || !existsSync(worktree)) return { ok: false, why: '워크트리를 못 찾음' }
   if (git(worktree, ['rev-parse', 'HEAD']) !== sha) return { ok: false, why: `워크트리 HEAD 가 PR HEAD(${sha.slice(0, 7)})와 다름` }
   if (git(worktree, ['status', '--porcelain', '--untracked-files=no'])) return { ok: false, why: '워크트리에 커밋 안 된 변경' }
-  const run = spawnSync(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1' }, timeout: 60 * 60 * 1000 })
+  const run = spawnSync(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1', ATHENA_VERIFY_ALLOW_SKIP: '' }, timeout: 60 * 60 * 1000 })
   return run.status === 0 ? { ok: true, why: '' } : { ok: false, why: `검증 실패(종료 ${run.status})` }
 }
 
@@ -805,6 +812,141 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   console.log(`  → 머지 확인 요청 ${request.id}`)
 }
 
+// ── PR 끔: 바로 머지 — PR 없이 작업 브랜치를 prBase 에 squash 로 합쳐 push ─────────────────────────
+// 작업 트리 · 로컬 base 브랜치는 건드리지 않는다: fetch → merge-tree 로 충돌 확인 + 합친 트리 → commit-tree(부모 origin/<base>) → 강제 아닌 push.
+// 안전 조건은 PR 머지와 같다: 레포 하나짜리 작업 · 안 정한 결정 없음 · 같은 HEAD 엄격 검증(verifiedAt — 끌 수 없다) · 충돌 없음 · main 직접 레포 제외(prFlow).
+// 머지 설정: auto = 바로 · confirm = [작업]에 [머지] 요청 · manual = 브랜치까지만. push 가 막히면(브랜치 보호 등) 줄 · [작업] 요청으로 알리고 강제로 밀지 않는다
+const directFile = (repo, branch) => join(CONFIRM_DIR, `${repo}-direct-${createHash('sha1').update(branch).digest('hex').slice(0, 10)}.json`)
+const writeDirectLine = (planPath, job, result) => updatePlan(planPath, (current) => withDirectMergeLine(current, { repo: job.repo, branch: job.branch, sha: job.sha, result, stamp: stamp() }))
+const directKey = (job) => `pr-auto-direct:${job.repo}:${job.branch}`
+
+// 바로 머지 실패 · 대기 — 계획서 줄 + 사건 기록 + [작업] 요청(고를 것은 없고 확인만) + 작업 pane 알림
+const directStop = async (job, result, reason, { raise = true } = {}) => {
+  const planPath = join(ROOT, job.plan)
+  if (existsSync(planPath)) writeDirectLine(planPath, job, result)
+  logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, branch: job.branch, sha: job.sha.slice(0, 7), ok: false, direct: true, reason })
+  console.log(`⚠️ 바로 머지 못 함 ${job.repo} ${job.branch}: ${result}`)
+  if (raise) {
+    ask(job.plan, { key: `${directKey(job)}:${job.sha}:${reason}`, title: `바로 머지 못 함 — ${job.repo} ${job.branch} → ${job.base}`, body: `${result}. 머지하지 않았다 — 원인을 해결한 뒤 다시 하거나 사람이 이어받는다(계획서 "- Auto merge:" 줄). 강제 push 는 하지 않는다.`, options: [{ label: '확인', desc: '알았다' }] })
+  }
+  await notifyResult({ ...job, number: 0 }, result, true)
+}
+
+// 머지 직전 확인 + 합치기 + push — 확인 요청에서 [머지] 를 골랐을 때와 설정이 auto 일 때 같은 길
+const performDirectMerge = async (job) => {
+  const config = loadConfig(ROOT)
+  const planPath = join(ROOT, job.plan)
+  const flow = repoFlow(config, job.repo)
+  if (!flow.direct || flow.merge === 'manual') return directStop(job, '검증 대기 — 머지 전에 설정이 바뀜(자동 PR · 머지)', 'recheck', { raise: false })
+  // 확인을 기다리는 동안 prBase 가 바뀌었으면 옛 기준 브랜치에 밀지 않는다
+  if (prBaseOf(config, job.repo) !== job.base) return directStop(job, `검증 대기 — 머지 전에 기준 브랜치(prBase)가 ${job.base} 에서 바뀜`, 'recheck', { raise: false })
+  if (pendingDecisions(job.plan, job.repo, 0)) return directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false })
+  const verify = verifiedAt(job.repo, job.worktree, job.sha)
+  if (!verify.ok) return directStop(job, `검증 대기 — ${verify.why}`, 'verify')
+  const base = job.base
+  if (git(job.worktree, ['fetch', '--quiet', 'origin', base]) === null) return directStop(job, `머지 실패 — origin/${base} 를 가져오지 못함`, 'fetch')
+  const baseRef = `refs/remotes/origin/${base}`
+  if (git(job.worktree, ['merge-base', '--is-ancestor', job.sha, baseRef]) !== null) {
+    // 이미 base 에 들어 있다 — 다시 밀 것이 없다
+    if (existsSync(planPath)) writeDirectLine(planPath, job, `${DIRECT_MERGED} — 이미 ${base} 에 들어 있음`)
+    console.log(`✅ ${job.repo} ${job.branch} 는 이미 ${base} 에 들어 있다`)
+    return { ok: true }
+  }
+  // 종료 0 = 충돌 없음(첫 줄이 합친 트리) · 1 = 충돌 · 그 밖은 실패
+  const merged = spawnSync('git', ['-C', job.worktree, 'merge-tree', '--write-tree', '--no-messages', baseRef, job.sha], { encoding: 'utf8' })
+  if (merged.status === 1) return directStop(job, `검증 대기 — ${base} 와 충돌(base 를 합쳐 푼 뒤 다시)`, 'conflict')
+  const tree = (merged.stdout ?? '').split('\n')[0]
+  if (merged.status !== 0 || !/^[0-9a-f]{40,64}$/.test(tree)) return directStop(job, `머지 실패 — 충돌 확인을 못 함(${firstLine(merged.stderr)})`, 'merge-tree')
+  const planText = existsSync(planPath) ? readFileSync(planPath, 'utf8') : ''
+  const message = masked(directMergeMessage({ title: planTitleOf(planText), branch: job.branch, base }))
+  const commit = spawnSync('git', ['-C', job.worktree, 'commit-tree', tree, '-p', baseRef, '-m', message], { encoding: 'utf8' })
+  const commitSha = (commit.stdout ?? '').trim()
+  if (commit.status !== 0 || !/^[0-9a-f]{40,64}$/.test(commitSha)) return directStop(job, `머지 실패 — 커밋을 만들지 못함(${firstLine(commit.stderr)})`, 'commit-tree')
+  // 강제 아닌 push — 그새 base 가 앞서 갔거나 보호 브랜치면 거부된다(조용히 넘기지 않는다)
+  const pushed = spawnSync('git', ['-C', job.worktree, 'push', '--quiet', 'origin', `${commitSha}:refs/heads/${base}`], { encoding: 'utf8', timeout: 120_000 })
+  if (pushed.status !== 0) return directStop(job, `머지 실패 — ${base} 에 push 가 거부됨(${firstLine(pushed.stderr)})`, 'push')
+  const result = `${DIRECT_MERGED} — squash → ${base} @${commitSha.slice(0, 7)}(PR 없음)`
+  if (existsSync(planPath)) writeDirectLine(planPath, job, result)
+  logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, branch: job.branch, sha: job.sha.slice(0, 7), ok: true, direct: true, base, merged: commitSha.slice(0, 7) })
+  console.log(`✅ 바로 머지 ${job.repo} ${job.branch} → ${base} @${commitSha.slice(0, 7)}`)
+  await notifyResult({ ...job, number: 0 }, result, true)
+  return { ok: true }
+}
+
+// --direct-merge: ship.sh 가 부른다(커밋된 작업 브랜치 · 워크트리). 결과가 실패 · 막힘이면 종료 1
+const directMerge = async (planArg, repo, dir) => {
+  const { path: planPath, file: planFile } = planPathOf(planArg)
+  const config = loadConfig(ROOT)
+  const flow = repoFlow(config, repo)
+  if (!flow.direct) { console.log(`⏭  ${repo} 는 PR 끔 + 자동 머지가 아니다(pack.json 레포 "autoMerge": true + "autoPr": false)`); return false }
+  const planText = readFileSync(planPath, 'utf8')
+  if (!singleRepoPlan(planText, config, repo)) { console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(여러 레포는 사람이)`); return false }
+  const worktree = resolve(dir)
+  const branch = git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])
+  const sha = git(worktree, ['rev-parse', 'HEAD'])
+  const base = prBaseOf(config, repo)
+  if (!branch || !sha || !base) { console.log('⏭  브랜치 · HEAD · prBase 를 알 수 없다'); return false }
+  if (branch === base) { console.log(`⏭  ${branch} 는 기준 브랜치다 — 작업 브랜치가 아니다`); return false }
+  const job = { plan: planFile, repo, branch, sha, base, worktree, root: REAL_ROOT, packId: BOOT_PATHS.packId, direct: true }
+  console.log(`🤖 ${planFile} · ${repo} ${branch} @${sha.slice(0, 7)} → ${base} (PR 없이 바로 머지 · 머지 설정 ${flow.merge})`)
+  if (directMergeDone(planText, repo, branch, sha)) { console.log('⏭  이미 머지됨'); return true }
+  if (flow.merge === 'manual') {
+    writeDirectLine(planPath, job, '브랜치까지만 — 사람이 직접 머지')
+    logEvent(ROOT, 'auto.stop', { plan: planFile, repo, branch, sha: sha.slice(0, 7), reason: 'manual', direct: true })
+    console.log('  → 머지는 사람이 직접(레포 "autoMergeManual": true)')
+    return true
+  }
+  if (flow.merge === 'auto') return Boolean((await performDirectMerge(job))?.ok)
+  // 확인 후 머지 — 검증 · 충돌을 먼저 보고 통과하면 [작업]에 [머지] 요청
+  if (pendingDecisions(planFile, repo, 0)) { await directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false }); return false }
+  const verify = verifiedAt(repo, worktree, sha)
+  if (!verify.ok) { await directStop(job, `검증 대기 — ${verify.why}`, 'verify'); return false }
+  const request = ask(planFile, {
+    key: `${directKey(job)}:${sha}`,
+    title: `머지할까요? ${repo} ${branch} → ${base} (PR 없음)`,
+    body: `같은 HEAD @${sha.slice(0, 7)} 검증 통과. 고르면 PR 없이 ${base} 에 squash 로 바로 합쳐 push 한다(충돌 · 검증은 머지 직전에 한 번 더 본다).`,
+    options: [{ label: '머지', desc: `squash → ${base} 로 push`, recommended: true }, { label: '보류', desc: '머지하지 않는다 — 사람이 이어받는다' }],
+  })
+  if (!request) return false
+  mkdirSync(CONFIRM_DIR, { recursive: true })
+  writeFileSync(directFile(repo, branch), JSON.stringify({ ...job, request: request.id }))
+  writeDirectLine(planPath, job, '머지 확인 대기')
+  console.log(`  → 머지 확인 요청 ${request.id}`)
+  if (!watcherAlive()) launchWatcher()
+  return true
+}
+
+// 머지 확인 답 보기(바로 머지) — checkConfirms 가 parse 한 파일 하나를 넘긴다. HEAD 가 바뀌었거나 설정이 바뀌었으면 거둔다
+const checkDirectConfirm = async (file, job) => {
+  let request
+  try { request = showRequest(ROOT, job.request).request } catch { rmSync(file, { force: true }); return }
+  const config = loadConfig(ROOT)
+  const flow = repoFlow(config, job.repo)
+  const headNow = job.worktree && existsSync(job.worktree) ? git(job.worktree, ['rev-parse', 'HEAD']) : null
+  const stale = !flow.direct || flow.merge === 'manual' || headNow !== job.sha || prBaseOf(config, job.repo) !== job.base
+  if (stale && ['open', 'answered'].includes(request.state)) {
+    try { cancelRequest(ROOT, request.id, { reason: `HEAD · 설정 · 기준 브랜치가 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
+    rmSync(file, { force: true })
+    const planPath = join(ROOT, job.plan)
+    if (headNow === job.sha && existsSync(planPath)) writeDirectLine(planPath, job, '검증 대기 — 머지 전에 설정이 바뀜(자동 PR · 머지)')
+    return
+  }
+  if (['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); return }
+  if (request.state === 'open') return
+  try { ackRequest(ROOT, request.id) } catch { /* 두 번째면 이미 받음 */ }
+  rmSync(file, { force: true })
+  const choice = request.answer?.choice ?? ''
+  if (choice !== '머지') {
+    const result = `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})`
+    const planPath = join(ROOT, job.plan)
+    if (existsSync(planPath)) writeDirectLine(planPath, job, result)
+    logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, branch: job.branch, sha: job.sha.slice(0, 7), ok: false, direct: true, reason: 'held' })
+    await notifyResult({ ...job, number: 0 }, result, true)
+    return
+  }
+  await performDirectMerge(job)
+}
+
 // 머지 확인 답 보기 — 답이 오면 다시 확인하고 머지 · 보류. HEAD 가 바뀌었으면 거둔다.
 // 확인 없는 레포의 파일(noConfirm — 요청 없음)은 [머지] 를 고른 것으로 보고 같은 경로로 간다. only 를 주면 그 파일 하나만
 export const checkConfirms = async (only = '') => {
@@ -818,6 +960,7 @@ export const checkConfirms = async (only = '') => {
     let job
     try { job = JSON.parse(readFileSync(file, 'utf8')) } catch { continue }
     if (job.packId && job.packId !== BOOT_PATHS.packId) continue
+    if (job.direct) { await checkDirectConfirm(file, job); continue }
     // 확인 없는 머지는 파일을 이름 바꾸기로 잡고 한다 — 처리기와 손으로 돌린 한 번(handle)이 같은 PR 을 두 번 머지하지 않게.
     // 끝나면 지우고, 아직 볼 수 없으면(PR 을 못 읽음 · GitHub 가 계산 중) 원래 이름으로 돌려놓는다
     let current = file
@@ -1030,7 +1173,10 @@ if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()
 else if (flag('kick')) kick()
-else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
+else if (flag('direct-merge')) {
+  const done = await directMerge(option('plan'), option('repo'), option('dir'))
+  process.exit(done ? 0 : 1)
+} else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
 else if (option('plan') && option('pr')) await handle(option('plan'), option('pr'), { dryRun: flag('dry-run') })
 else {
   console.error('사용: node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run] | --enqueue --plan … --pr … --head <sha> | --kick | --watch')

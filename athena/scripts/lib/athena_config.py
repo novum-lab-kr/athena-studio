@@ -171,10 +171,23 @@ def auto_flow(cfg, repo_name):
     entry = repo_entry(cfg, repo_name)
     if entry.get('autoMerge') is not True or entry.get('direct'):
         return 'off'
+    if entry.get('autoPr') is False:
+        return 'off'   # PR 끔 — PR 도 자동 리뷰도 없다(바로 머지는 direct_merge_mode · ship.sh --direct-merge)
     manual = entry.get('autoMergeManual') is True
     if entry.get('autoReview') is False and manual:
         return 'off'
     return 'manual' if manual else 'merge'
+
+
+def direct_merge_mode(cfg, repo_name):
+    """PR 끔(autoMerge true + autoPr false · main 직접 레포 제외)이면 머지 방식 'auto' · 'confirm' · 'manual', 아니면 ''.
+    scripts/lib/pr-auto.mjs prFlow 와 같은 기준(docs/pr-auto.md "켜기" — PR 없이 prBase 에 바로 머지)."""
+    entry = repo_entry(cfg, repo_name)
+    if entry.get('autoMerge') is not True or entry.get('direct') or entry.get('autoPr') is not False:
+        return ''
+    if entry.get('autoMergeManual') is True:
+        return 'manual'
+    return 'auto' if entry.get('autoMergeConfirm') is False else 'confirm'
 
 
 def direct_branch(cfg, repo_name):

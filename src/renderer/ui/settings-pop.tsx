@@ -27,7 +27,7 @@ export function close(): void {
   unmount = null
 }
 
-type MergeValues = { autoMerge?: boolean; review?: boolean; merge?: MergeMode }
+type MergeValues = { auto?: AutoFlow; review?: boolean; merge?: MergeMode }
 
 // rows: null — 읽는 중 · false — pack.json 을 못 읽음
 type Rows = MergeRepo[] | null | false
@@ -86,13 +86,13 @@ function MergeSection({ rows, say, save }: { rows: Rows; say: Say; save: SaveMer
   if (!rows.length) return <p className="work-empty">{say('settings.empty')}</p>
   return (
     <>
-      <div className="settings-intro">
-        <h3 className="settings-intro-title">{say('settings.mergeTitle')}</h3>
-      </div>
       {rows.map((repo) => <RepoSection key={repo.name} repo={repo} say={say} save={save} />)}
     </>
   )
 }
+
+// PR 끔 안내 — 머지 설정마다 다르다(자동 = 바로 · 확인 후 · 직접 = 브랜치까지만)
+const PR_OFF_NOTES: Record<MergeMode, string> = { auto: 'settings.prOffAuto', confirm: 'settings.prOffConfirm', manual: 'settings.prOffManual' }
 
 const MERGE_MODES: { mode: MergeMode; label: string }[] = [
   { mode: 'manual', label: 'settings.mergeManual' },
@@ -100,16 +100,19 @@ const MERGE_MODES: { mode: MergeMode; label: string }[] = [
   { mode: 'auto', label: 'settings.mergeAuto' },
 ]
 
-// 레포 묶음 — 자동 PR(autoMerge) · 자동 리뷰 · 머지 3가지. PR 을 끄면 리뷰 · 머지는 꺼진 채 고를 수 없다(저장된 값은 두고 표시만 끔 · 직접)
+// 레포 묶음 — 자동 PR · 자동 리뷰 · 머지 3가지.
+// 흐름은 셋: 자동 PR(pr) · PR 끔(direct — PR · 리뷰 없이 prBase 에 바로 머지, 머지 설정은 그대로) · 자동 흐름 없음(none — autoMerge 키 없음).
+// PR 이 아니면 리뷰는 꺼진 채 고를 수 없다(저장된 값은 두고 표시만 끔). 자동 흐름 없음이면 머지도 고를 수 없다(직접)
 function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: SaveMerge }) {
-  const locked = !repo.autoMerge
-  const review = !locked && repo.review
+  const flow: 'pr' | 'direct' | 'none' = !repo.autoMerge ? 'none' : repo.autoPr ? 'pr' : 'direct'
+  const locked = flow === 'none'
+  const review = flow === 'pr' && repo.review
   const merge: MergeMode = locked ? 'manual' : repo.mergeMode
   return (
     <section className="settings-repo">
       <h4 className="settings-repo-name">{repo.name}</h4>
-      <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={repo.autoMerge} onClick={() => save(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`)} />
-      <Switch id={`${repo.name}:review`} kind="sub" label={say('settings.autoReview')} checked={review} disabled={locked} onClick={() => save(repo, { review: !repo.review }, `${repo.name}:review`)} />
+      <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={flow === 'pr'} onClick={() => save(repo, { auto: flow === 'pr' ? 'direct' : 'on' }, `${repo.name}:auto`)} />
+      <Switch id={`${repo.name}:review`} kind="sub" label={say('settings.autoReview')} checked={review} disabled={flow !== 'pr'} onClick={() => save(repo, { review: !repo.review }, `${repo.name}:review`)} />
       <div className="settings-merge sub" role="radiogroup" aria-label={say('settings.merge')}>
         <span className="settings-switch-label">{say('settings.merge')}</span>
         <span className="settings-merge-modes">
@@ -120,7 +123,9 @@ function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: Sav
           ))}
         </span>
       </div>
-      {repo.autoMerge && !repo.review && repo.mergeMode === 'auto' && <p className="settings-note settings-merge-warning">{say('settings.noReviewWarning')}</p>}
+      {flow === 'none' && <p className="settings-note settings-flow-note">{say('settings.flowNone')}</p>}
+      {flow === 'direct' && <p className="settings-note settings-flow-note">{say(PR_OFF_NOTES[repo.mergeMode], { base: repo.prBase || '-' })}</p>}
+      {flow !== 'none' && !review && repo.mergeMode === 'auto' && <p className="settings-note settings-merge-warning">{say('settings.noReviewWarning')}</p>}
     </section>
   )
 }

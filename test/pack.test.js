@@ -204,12 +204,12 @@ test('⚙ 설정 — 레포별 자동 머지 줄(main 직접 레포 빼기 · �
     ],
   })
   assert.deepEqual(rows, [
-    { name: 'web', autoMerge: true, review: true, mergeMode: 'auto', releaseOnMerge: true, prBase: 'main' },
-    { name: 'api', autoMerge: false, review: true, mergeMode: 'confirm', releaseOnMerge: false, prBase: 'dev' },
+    { name: 'web', autoMerge: true, autoPr: true, review: true, mergeMode: 'auto', releaseOnMerge: true, prBase: 'main' },
+    { name: 'api', autoMerge: false, autoPr: true, review: true, mergeMode: 'confirm', releaseOnMerge: false, prBase: 'dev' },
     // 글자 "true" · "false" 는 켬 · 안 묻기가 아니다(docs/pr-auto.md — 불리언만)
-    { name: 'odd', autoMerge: false, review: true, mergeMode: 'confirm', releaseOnMerge: true, prBase: 'main' },
+    { name: 'odd', autoMerge: false, autoPr: true, review: true, mergeMode: 'confirm', releaseOnMerge: true, prBase: 'main' },
     // 사람이 직접이 자동보다 먼저
-    { name: 'solo', autoMerge: true, review: false, mergeMode: 'manual', releaseOnMerge: true, prBase: 'main' },
+    { name: 'solo', autoMerge: true, autoPr: true, review: false, mergeMode: 'manual', releaseOnMerge: true, prBase: 'main' },
   ])
   assert.deepEqual(pack.mergeSettings(null), [])
   assert.deepEqual(pack.mergeSettings({}), [])
@@ -254,7 +254,11 @@ test('coreTooOld: "알 수 없는 답" 뒤 version 으로 본체 코어가 옛 �
   assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: 3, capabilities: ['repo-look'] }), false)
   // 리뷰 · 머지 나누기(--review · --merge)를 모르는 코어 — 저장 실패가 아니라 옛 코어로 안내한다
   assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: 3, capabilities: ['repo-look'] }), true)
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop'], { ok: true, contract: 3, capabilities: ['merge-flow'] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: 3, capabilities: ['repo-look', 'merge-flow'] }), false)
+  // --auto direct(PR 끔 바로 머지)는 pr-off-merge 손잡이가 있는 코어에만 — 약속 번호는 그대로. on · off 는 옛 코어도 안다
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: 3, capabilities: ['merge-flow'] }), true)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: 3, capabilities: ['merge-flow', 'pr-off-merge'] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'off'], { ok: true, contract: 3, capabilities: ['merge-flow'] }), false)
   // 약속이 낮으면(version 명령이 없는 코어 포함) 옛 코어
   assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop'], { ok: true, contract: 2, capabilities: [] }), true)
   assert.equal(pack.coreTooOld(['pack', 'list'], { ok: false, error: 'bad-output' }), true)

@@ -190,8 +190,10 @@ async function main() {
       if (repo.direct === true) fail('not-applicable', `${arg} 는 main 직접 레포라 PR 이 없다`)
       const auto = flag('--auto')
       const confirm = flag('--confirm')
-      if (auto === 'on') repo.autoMerge = true
-      if (auto === 'off') delete repo.autoMerge
+      // on = 자동 PR · off = 자동 흐름 없음 · direct = PR 끔(바로 머지) — 코어 pack-merge.mjs AUTO_KEYS 와 같다
+      if (auto === 'on') { repo.autoMerge = true; delete repo.autoPr }
+      if (auto === 'off') { delete repo.autoMerge; delete repo.autoPr }
+      if (auto === 'direct') { repo.autoMerge = true; repo.autoPr = false }
       if (confirm === 'on') delete repo.autoMergeConfirm
       if (confirm === 'off') repo.autoMergeConfirm = false
       const review = flag('--review')
@@ -205,7 +207,7 @@ async function main() {
         if (merge === 'manual') repo.autoMergeManual = true
       }
       fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
-      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false, autoReview: repo.autoReview !== false, mergeMode: mergeModeOf(repo) })
+      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoPr: repo.autoPr !== false, autoMergeConfirm: repo.autoMergeConfirm !== false, autoReview: repo.autoReview !== false, mergeMode: mergeModeOf(repo) })
     }
     // 레포 표시 이름 · 이미지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만(set-auto-merge 와 같다). 이미지는 형식만 보고 assets/repos/<레포>.<형식> 으로 복사
     case 'set-repo-name':

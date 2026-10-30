@@ -13,13 +13,17 @@
 | 키 | 값 | 뜻 | 없으면 |
 |---|---|---|---|
 | `autoMerge` | `true` | 끝나면 PR 켬 | PR · 리뷰 · 머지 모두 꺼짐 |
+| `autoPr` | `false` | PR 끔 — PR 없이 `prBase` 에 바로 머지(`autoMerge: true` 일 때만 뜻이 있다) | PR 켬 |
 | `autoReview` | `false` | 리뷰 끔 | 켬 |
 | `autoMergeConfirm` | `false` | 확인 없이 머지 | 확인 후 |
 | `autoMergeManual` | `true` | 사람이 직접 머지(`autoMergeConfirm` 보다 먼저) | 확인 후 |
 
 | PR | 리뷰 | 머지 | 키 | 동작 |
 |---|---|---|---|---|
-| 끔 | - | - | (없음) | 자동 흐름 없음. "PR 올려줘" 는 그대로 되고 그 PR 도 자동 리뷰 없음 |
+| 없음 | - | - | (`autoMerge` 없음) | 자동 흐름 없음(`autoPr: false` 만 있어도 바로 머지하지 않는다). "PR 올려줘" 는 그대로 되고 그 PR 도 자동 리뷰 없음 |
+| 끔(바로 머지) | 건너뜀 | 자동 | `autoMerge` · `autoPr: false` · `autoMergeConfirm: false` | PR 없이 → 검증 · 충돌 확인 → `prBase` 에 바로 squash |
+| 끔(바로 머지) | 건너뜀 | 확인 후 | `autoMerge` · `autoPr: false` | PR 없이 → 검증 · 충돌 확인 → [작업]에 [머지] 요청 |
+| 끔(바로 머지) | 건너뜀 | 직접 | `autoMerge` · `autoPr: false` · `autoMergeManual` | 브랜치까지만 |
 | 켬 | 끔 | 직접 | `autoMerge` · `autoReview: false` · `autoMergeManual` | draft PR 까지 |
 | 켬 | 끔 | 확인 후 | `autoMerge` · `autoReview: false` | 검증 · 충돌 확인 → [머지] 요청 |
 | 켬 | 끔 | 자동 | `autoMerge` · `autoReview: false` · `autoMergeConfirm: false` | 검증 · 충돌 확인 → 바로 squash(⚙ 설정에 경고) |
@@ -27,9 +31,13 @@
 | 켬 | 켬 | 확인 후 | `autoMerge` | 둘 다 승인 · 검증 · 충돌 확인 → [머지] 요청 |
 | 켬 | 켬 | 자동 | `autoMerge` · `autoMergeConfirm: false` | 둘 다 승인 · 검증 · 충돌 확인 → 바로 squash |
 
-리뷰를 끄면 리뷰어 · PR 댓글 · 라운드 없이 머지 단계로 간다(계획서 줄 `리뷰 끔(리뷰 없이 검증만으로 머지) → …`). 머지 안전 조건은 어느 조합이든 같다 — 같은 HEAD 엄격 검증 · 충돌 없음 · 안 정한 결정 없음 · main 직접 레포 제외 · 레포 하나짜리 PR 만. 값은 불리언이어야 한다(글자 `"false"` 는 키 없음과 같다). PR 을 끄면 다른 키는 남기되 뜻이 없다(다시 켜면 그 값으로).
+리뷰를 끄면 리뷰어 · PR 댓글 · 라운드 없이 머지 단계로 간다(계획서 줄 `리뷰 끔(리뷰 없이 검증만으로 머지) → …`). 머지 안전 조건은 어느 조합이든 같다 — 같은 HEAD 엄격 검증 · 충돌 없음 · 안 정한 결정 없음 · main 직접 레포 제외 · 레포 하나짜리 PR 만. 값은 불리언이어야 한다(글자 `"false"` 는 키 없음과 같다). **PR 끔(바로 머지)** — `autoMerge: true` + `autoPr: false`. 끝나면 에이전트가 `commit.sh` 다음 `ship.sh --plan <계획서> --dir <워크트리> --direct-merge` 를 돈다(제목 · base · `--yes` 없음). PR 을 만들지 않고 리뷰도 건너뛴다. 작업 브랜치를 `prBase` 최신과 합친 결과(충돌 없음 확인)를 squash 커밋 하나로 만들어 원격 `prBase` 에 **강제 아닌** push 로 올린다(작업 트리는 건드리지 않는다). 머지 설정은 그대로 — 자동 = 바로 머지 · 확인 후 = [작업]에 [머지] 요청(고르면 머지) · 직접 = 브랜치까지만. 계획서 줄은 `- Auto merge: <레포> <브랜치> @sha7 · 머지됨 — squash → <base> · …`(리뷰 줄 `- Auto review:` 과 다르다). 원격이 push 를 막으면(브랜치 보호 등) 조용히 넘기지 않고 계획서 줄 · [작업] 요청 · 아테나 pane 에 실패로 알린다 — 강제 push 하지 않는다. "PR 올려줘" 는 PR 을 꺼도 그대로 PR 을 만든다(그 PR 은 자동 리뷰 대상이 아니다).
 
-**첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off [--review on|off] [--merge auto|confirm|manual]` · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
+**검증은 어떤 설정 조합에서도 끌 수 없다** — PR 켬 · 끔, 리뷰 켬 · 끔, 머지 자동 · 확인 후 모두 머지 전에 같은 HEAD 엄격 검증(`reuse.sh` `ATHENA_VERIFY_STRICT=1`)이 통과해야 한다. 검증 스크립트가 없거나 · 돌지 못하거나 · 실패하면 머지하지 않고 실패로 알린다(건너뛰기를 허용하는 환경 변수도 처리기가 비운다). 다만 검증 스크립트가 스스로 `⏭ 건너뜀(규칙)` 으로 표시한 단계는 `commit.sh` 와 같이 엄격 모드에서도 통과로 친다(`verify.md`).
+
+자동 흐름을 끄면(`autoMerge` 없음) 다른 키는 남기되 뜻이 없다(다시 켜면 그 값으로).
+
+**첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off|direct [--review on|off] [--merge auto|confirm|manual]` (`on` = 자동 PR · `off` = 자동 흐름 없음 — 예전 뜻 그대로, 옛 앱이 보내도 바로 머지로 바뀌지 않는다 · `direct` = PR 없이 바로 머지) · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
 ```jsonc
 { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true }

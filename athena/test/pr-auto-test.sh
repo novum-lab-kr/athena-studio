@@ -20,7 +20,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -160,6 +160,25 @@ for (const [name, keys, flow, targeted, skips] of flowCases) {
   const one = { repos: [{ name: 'web', ...keys }] }
   check(`조합 — ${name}`, flowOf(keys) === flow && autoMergeRepos(one).has('web') === targeted && skipsMergeConfirm(one, 'web') === skips, `${flowOf(keys)} · 대상 ${autoMergeRepos(one).has('web')} · 확인 건너뜀 ${skipsMergeConfirm(one, 'web')}`)
 }
+// PR 끔("autoPr": false) — autoMerge 와 같이 있을 때만 PR · 리뷰 없이 바로 머지. autoMerge 키가 없으면 절대 바로 머지하지 않는다(호환)
+const directOf = (keys) => { const flow = prFlow({ name: 'web', ...keys }); return `${flow.direct ? '바로' : '아님'}/${flow.pr ? 'PR' : '-'}/${flow.review ? '리뷰' : '-'}/${flow.merge}` }
+const directCases = [
+  ['PR 끔 + 확인(기본)', { autoMerge: true, autoPr: false }, '바로/-/-/confirm'],
+  ['PR 끔 + 자동 머지', { autoMerge: true, autoPr: false, autoMergeConfirm: false }, '바로/-/-/auto'],
+  ['PR 끔 + 직접', { autoMerge: true, autoPr: false, autoMergeManual: true }, '바로/-/-/manual'],
+  ['PR 끔 + 리뷰 켬 키가 있어도 리뷰는 건너뜀', { autoMerge: true, autoPr: false, autoReview: true }, '바로/-/-/confirm'],
+  ['호환 — autoMerge 키 없음 + autoPr false → 자동 흐름 없음(바로 머지 안 함)', { autoPr: false, autoMergeConfirm: false }, '아님/-/-/manual'],
+  ['호환 — 키 없음', {}, '아님/-/-/manual'],
+  ['autoPr true 는 지금처럼 PR', { autoMerge: true, autoPr: true }, '아님/PR/리뷰/confirm'],
+  ['글자 "false" 는 끄는 값이 아님', { autoMerge: true, autoPr: 'false' }, '아님/PR/리뷰/confirm'],
+  ['main 직접 레포는 바로 머지 대상 아님', { autoMerge: true, autoPr: false, direct: true }, '아님/-/-/manual'],
+]
+for (const [name, keys, flow] of directCases) {
+  check(`PR 끔 — ${name}`, directOf(keys) === flow, directOf(keys))
+}
+check('PR 끔 레포는 PR 자동 리뷰 대상이 아니고 바로 머지 대상 목록에만',
+  !autoMergeRepos({ repos: [{ name: 'web', autoMerge: true, autoPr: false }] }).has('web') && directMergeRepos({ repos: [{ name: 'web', autoMerge: true, autoPr: false }, { name: 'api', autoMerge: true }, { name: 'old', autoPr: false }] }).has('web')
+  && !directMergeRepos({ repos: [{ name: 'api', autoMerge: true }, { name: 'old', autoPr: false }] }).size)
 check('Agent 줄이 이 레포 에이전트 하나 → 대상', singleRepoPlan('- Agent: web-fe\n', config, 'web'))
 const formal = '## 6. 작업 배분\n\n| 담당 | 작업 |\n|---|---|\n| api-be | x |\n| web-fe | y |\n| reviewer | z |\n'
 check('작업 배분 표에 다른 레포 에이전트가 있으면 → 대상 아님', !singleRepoPlan(formal, config, 'web'))
@@ -955,6 +974,108 @@ followup_plan 'blocked — 사용자 답 기다림' "$FS3" '- PR: https://github
 OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
 expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+
+# ── PR 끔: PR 없이 바로 머지(autoMerge + "autoPr": false) — 가짜 원격(bare) · gh 없음 · 진짜 GitHub 를 건드리지 않는다 ─────────
+# 안전 조건은 PR 머지와 같다 — 같은 HEAD 엄격 검증은 어떤 설정에서도 돈다(끄는 설정이 없다): 검증 스크립트가 없거나 · 실패하거나 · 건너뛰면 머지하지 않고 실패로 알린다
+echo; echo "PR 끔: 바로 머지(ship.sh --direct-merge → pr-auto.mjs --direct-merge)"
+DCORE="$(cd "$TMP" && pwd -P)/core-direct"; mkdir -p "$DCORE/plans/task"
+cp -R "$SRC/scripts" "$DCORE/scripts"
+cp "$CORE/scripts/screen" "$DCORE/scripts/screen"
+DENVLOG="$TMP/direct-verify-env.log"
+# 가짜 검증 — 부른 환경을 남기고 FAKE_VERIFY_FAIL 이면 실패(엄격 모드의 건너뜀도 종료 비0 이라 같은 길)
+printf '#!/bin/sh\necho "STRICT=$ATHENA_VERIFY_STRICT ALLOW=[$ATHENA_VERIFY_ALLOW_SKIP]" >> "%s"\n[ -z "$FAKE_VERIFY_FAIL" ]\n' "$DENVLOG" > "$DCORE/scripts/verify/reuse.sh"; chmod +x "$DCORE/scripts/verify/reuse.sh"
+DORIGIN="$TMP/d-origin.git"; DWT="$TMP/d-wt"
+git init -q --bare "$DORIGIN" && git init -q "$DWT"
+DG() { git -C "$DWT" -c user.name=t -c user.email=t@t "$@"; }
+DG checkout -q -b main && echo base > "$DWT/f.txt" && DG add f.txt && DG commit -q -m base
+DG remote add origin "$DORIGIN" && DG push -q origin main 2>/dev/null
+DBASE="$(DG rev-parse HEAD)"
+DG checkout -q -b feat/x && echo feat > "$DWT/feat.txt" && DG add feat.txt && DG commit -q -m feat
+DSHA="$(DG rev-parse HEAD)"
+direct_case() {   # <이름> <레포 JSON 조각> <머지 기대 yes|no> <종료 기대> <계획서 줄 기대(정규식)> [환경…]
+  local name="$1" extra="$2" want="$3" wantcode="$4" line="$5"; shift 5
+  rm -rf "$DCORE/.requests" "$DCORE/.events.jsonl" "$TMP/queue-direct" "$DCORE/plans/task/"*; : > "$DENVLOG"
+  mkdir -p "$TMP/queue-direct/.watcher.lock" && echo $$ > "$TMP/queue-direct/.watcher.lock/pid"   # 처리기가 돌고 있는 것처럼
+  rm -f "$DORIGIN/hooks/pre-receive"; [ "${REJECT_PUSH:-0}" = 1 ] && printf '#!/bin/sh\necho "protected branch" >&2\nexit 1\n' > "$DORIGIN/hooks/pre-receive" && chmod +x "$DORIGIN/hooks/pre-receive"
+  git -C "$DORIGIN" update-ref refs/heads/main "$DBASE"   # 매번 처음 base 로
+  DG checkout -q feat/x
+  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main"%s }, { "name": "api", "agents": ["api-be"], "branch": "main", "prBase": "main" } ] }\n' "$extra" > "$DCORE/athena.config.json"
+  printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n- Agent: %s\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n' "${PLAN_AGENT:-web-fe}" "$DWT" > "$DCORE/plans/task/x.md"
+  [ "${PENDING:-0}" = 1 ] && (cd "$DCORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+    const { openRequest } = await import('./scripts/lib/requests.mjs')
+    openRequest('.', { kind: 'decision', title: 'x', body: '- R1', links: { plan: 'plans/task/x.md' }, pane: null, dedupeKey: 'plan:plans/task/x.md' })" >/dev/null)
+  [ "${DIRTY:-0}" = 1 ] && echo dirty >> "$DWT/feat.txt"
+  env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" "$@" \
+    "$(command -v node)" "$DCORE/scripts/pr-auto.mjs" --direct-merge --plan plans/task/x.md --repo web --dir "$DWT" > "$TMP/direct.out" 2>&1
+  local code=$?
+  [ "${DIRTY:-0}" = 1 ] && DG checkout -q -- feat.txt
+  local tip merged=no; tip="$(git -C "$DORIGIN" rev-parse refs/heads/main)"
+  [ "$tip" != "$DBASE" ] && git -C "$DORIGIN" cat-file -e "$tip:feat.txt" 2>/dev/null && merged=yes
+  local got; got="$(grep -o '^- Auto merge: .*' "$DCORE/plans/task/x.md")"
+  if [ "$merged" = "$want" ] && [ "$code" = "$wantcode" ] && { { [ "$line" = '^$' ] && [ -z "$got" ]; } || printf '%s' "$got" | grep -Eq "$line"; }; then echo "  ✔ $name — ${got#- Auto merge: }"
+  else echo "  ✖ $name — 머지 기대 $want · 실제 $merged · 종료 기대 $wantcode · 실제 $code · 줄: $got"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; fi
+}
+direct_requests() { ls "$DCORE/.requests" 2>/dev/null | grep -c json; }
+direct_case "자동 머지 → 검증 · 충돌 확인 뒤 PR 없이 squash 로 base 에 push" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨 — squash → main @[0-9a-f]{7}\(PR 없음\)'
+[ "$(git -C "$DORIGIN" rev-list --count refs/heads/main)" = 2 ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main^)" = "$DBASE" ] && git -C "$DORIGIN" cat-file -e refs/heads/main:f.txt \
+  && echo "  ✔ 머지 커밋은 base 위의 하나(squash) · 작업 브랜치는 원격에 올리지 않음" || { echo "  ✖ squash 커밋 모양"; FAIL=1; }
+[ -z "$(git -C "$DORIGIN" for-each-ref refs/heads/feat 2>/dev/null)" ] && grep -q 'STRICT=1 ALLOW=\[\]' "$DENVLOG" \
+  && echo "  ✔ 검증은 엄격 모드 · 건너뜀 허용 없음으로 돌았다" || { echo "  ✖ 검증 환경(STRICT=1 ALLOW=[]) — $(cat "$DENVLOG")"; FAIL=1; }
+grep -q '"auto.merge".*"direct":true.*"ok":true\|"auto.merge".*"ok":true.*"direct":true' "$DCORE/.events.jsonl" && echo "  ✔ 사건 기록 auto.merge(direct)" || { echo "  ✖ 사건 기록 없음"; FAIL=1; }
+direct_case "같은 HEAD 를 다시 돌리면 이미 머지됨으로 넘김" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨'
+direct_case "건너뜀 허용 환경(ATHENA_VERIFY_ALLOW_SKIP)을 줘도 검증에는 넘기지 않는다" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨' ATHENA_VERIFY_ALLOW_SKIP=all
+grep -q 'STRICT=1 ALLOW=\[\]' "$DENVLOG" && ! grep -q 'ALLOW=\[all\]' "$DENVLOG" && echo "  ✔ 건너뜀 허용 환경이 비워져 검증에 넘어갔다" || { echo "  ✖ 건너뜀 허용이 새어 들어감 — $(cat "$DENVLOG")"; FAIL=1; }
+direct_case "확인 후(기본) → 검증 통과 뒤 [머지] 요청만 · 머지 안 함" ', "autoMerge": true, "autoPr": false' no 0 '머지 확인 대기'
+[ "$(direct_requests)" -ge 1 ] && echo "  ✔ 확인 후 → [작업] 요청이 열림" || { echo "  ✖ 확인 후인데 요청이 없다"; FAIL=1; }
+direct_case "직접 → 브랜치까지만 · 요청 없음" ', "autoMerge": true, "autoPr": false, "autoMergeManual": true' no 0 '브랜치까지만'
+[ "$(direct_requests)" = 0 ] && echo "  ✔ 직접 → 요청 없음" || { echo "  ✖ 직접인데 요청이 열렸다"; FAIL=1; }
+direct_case "호환 — autoMerge 키 없음 + autoPr false → 바로 머지 안 함(자동 흐름 없음)" ', "autoPr": false, "autoMergeConfirm": false' no 1 '^$'
+direct_case "호환 — autoMerge 만(autoPr 키 없음) → 바로 머지 안 함(PR 흐름)" ', "autoMerge": true, "autoMergeConfirm": false' no 1 '^$'
+direct_case "main 직접 레포는 바로 머지 대상 아님" ', "autoMerge": true, "autoPr": false, "direct": true, "autoMergeConfirm": false' no 1 '^$'
+PLAN_AGENT='web-fe, api-be' direct_case "여러 레포 계획서는 대상 아님" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '^$'
+PENDING=1 direct_case "안 정한 결정이 있으면 머지 안 함" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '결정 필요'
+direct_case "검증 실패 → 머지 안 함 · 실패로 알림(줄 · 요청)" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기 — 검증 실패' FAKE_VERIFY_FAIL=1
+[ "$(direct_requests)" -ge 1 ] && echo "  ✔ 검증 실패 → [작업] 요청이 열림" || { echo "  ✖ 검증 실패인데 요청이 없다"; FAIL=1; }
+mv "$DCORE/scripts/verify/reuse.sh" "$DCORE/scripts/verify/reuse.sh.off"
+direct_case "검증 스크립트가 없으면 머지 안 함 · 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기'
+direct_case "검증 스크립트가 없으면 확인 후 설정도 요청을 열지 않고 실패로" ', "autoMerge": true, "autoPr": false' no 1 '검증 대기'
+mv "$DCORE/scripts/verify/reuse.sh.off" "$DCORE/scripts/verify/reuse.sh"
+DIRTY=1 direct_case "워크트리에 커밋 안 된 변경이 있으면 머지 안 함" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기 — 워크트리에 커밋 안 된 변경'
+# 충돌 — base 가 같은 파일을 다르게 고쳐 둠
+DG checkout -q -b conflict-base "$DBASE" && echo "other" > "$DWT/feat.txt" && DG add feat.txt && DG commit -q -m other
+DCONFLICT="$(DG rev-parse HEAD)"; DG push -q origin conflict-base; DG checkout -q feat/x   # 충돌 커밋 객체가 원격에 있어야 base 로 옮길 수 있다
+conflict_origin() { git -C "$DORIGIN" update-ref refs/heads/main "$DCONFLICT"; }
+rm -rf "$DCORE/.requests" "$DCORE/.events.jsonl" "$DCORE/plans/task/"*
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoPr": false, "autoMergeConfirm": false } ] }\n' > "$DCORE/athena.config.json"
+printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n' "$DWT" > "$DCORE/plans/task/x.md"
+conflict_origin
+env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" "$(command -v node)" "$DCORE/scripts/pr-auto.mjs" --direct-merge --plan plans/task/x.md --repo web --dir "$DWT" > "$TMP/direct.out" 2>&1; DCODE=$?
+[ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DCONFLICT" ] && [ "$DCODE" = 1 ] && grep -q '^- Auto merge: .*충돌' "$DCORE/plans/task/x.md" && [ "$(direct_requests)" -ge 1 ] \
+  && echo "  ✔ base 와 충돌 → 머지 안 함 · base 그대로 · 줄 · 요청" || { echo "  ✖ 충돌 처리 — 종료 $DCODE"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+REJECT_PUSH=1 direct_case "base 에 push 가 거부되면(브랜치 보호) 머지 안 함 · 강제 push 없이 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 'push 가 거부됨'
+[ "$(direct_requests)" -ge 1 ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DBASE" ] && echo "  ✔ push 거부 → [작업] 요청이 열림 · 원격 base 그대로" || { echo "  ✖ push 거부 요청 · base"; FAIL=1; }
+rm -f "$DORIGIN/hooks/pre-receive"
+
+# 끝나면 저절로 흐름 지시문(delegate.sh) — PR 끔이면 ship.sh --direct-merge 로, 그냥 켬이면 PR 흐름으로, 키 없음이면 없음
+echo; echo "끝나면 저절로 지시문 (delegate.sh)"
+ICORE="$(cd "$TMP" && pwd -P)/core-instr"; mkdir -p "$ICORE/plans/task" "$ICORE/.claude/agents" && cp -R scripts "$ICORE/scripts"
+printf '#!/bin/sh\ncase "$1" in inside) exit 1 ;; name) echo 가짜화면 ;; esac\nexit 0\n' > "$ICORE/scripts/screen"; chmod +x "$ICORE/scripts/screen"
+printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$ICORE/.claude/agents/web-fe.md"
+printf '# 시험\n\n## Checkpoint\n- Status: in_progress\n' > "$ICORE/plans/task/20261030-a.md"
+instr() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/athena.config.json"; (cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md 2>&1); }
+INSTR_OUT="$(instr ', "autoMerge": true, "autoPr": false')"
+printf '%s' "$INSTR_OUT" | grep -q "ship.sh --plan $ICORE/plans/task/20261030-a.md --dir <워크트리> --direct-merge" \
+  && printf '%s' "$INSTR_OUT" | grep -q "자동 PR 을 껐다" && ! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다" \
+  && echo "  ✔ PR 끔 → 끝나면 ship.sh --direct-merge (PR 흐름 지시 아님)" || { echo "  ✖ PR 끔 지시문"; printf '%s\n' "$INSTR_OUT" | grep -o "이 레포(web).\{0,300\}" | head -3; FAIL=1; }
+INSTR_OUT="$(instr ', "autoMerge": true')"
+printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge 를 돈다" \
+  && echo "  ✔ 자동 PR 켬 → 지금처럼 PR 흐름" || { echo "  ✖ 켬 지시문"; FAIL=1; }
+INSTR_OUT="$(instr '')"
+! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+  && echo "  ✔ autoMerge 키 없음 → 저절로 흐름 지시 없음" || { echo "  ✖ 키 없음 지시문"; FAIL=1; }
+INSTR_OUT="$(instr ', "autoPr": false')"
+! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+  && echo "  ✔ autoMerge 키 없이 autoPr:false 만 → 지시 없음(바로 머지 안 함)" || { echo "  ✖ autoPr 만 지시문"; FAIL=1; }
 
 # 심볼릭 링크(맥 /var → /private/var) · `//` 가 든 경로로 직접 실행해도 import 로 오인하지 않는다(b051a7) — 인자 없이 부르면 사용법이 나와야 한다
 mkdir -p "$TMP/ismain" && ln -s "$SRC" "$TMP/ismain/link"

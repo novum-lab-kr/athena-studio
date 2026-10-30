@@ -122,5 +122,12 @@ EOF"
 check block "작은따옴표 구분자 'E\\OF' 의 종료자 뒤 git push" $'cat <<\'E\\OF\'\nx\nE\\OF\ngit push'
 check block "ship.sh --repo-agent" "$ROOT/scripts/ship.sh --repo-agent x"
 
+# PR 끔 바로 머지(2026-10-30) — ship.sh --direct-merge 는 통과, 다른 경로의 직접 push · 커밋 만들기는 그대로 막는다
+check pass "ship.sh --direct-merge (PR 끔 바로 머지)" "$ROOT/scripts/ship.sh --plan p --dir d --direct-merge"
+check block "git push origin HEAD:main (직접 push)" "git push origin HEAD:main"
+check block "git commit-tree (직접 커밋 만들기)" "git commit-tree abc -p origin/main -m x"
+check block "git update-ref (직접 브랜치 옮기기)" "git update-ref refs/heads/main abc"
+check block "--direct-merge 를 붙인 --repo-agent" "$ROOT/scripts/ship.sh --repo-agent x --direct-merge"
+
 [ "$FAIL" = 0 ] && echo "모두 통과" || echo "실패 있음"
 exit "$FAIL"

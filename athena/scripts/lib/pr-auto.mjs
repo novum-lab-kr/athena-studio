@@ -357,15 +357,21 @@ export const nextRound = (known, headSha) => {
 //   "autoReview": false        리뷰 끔 · 없으면 켬
 //   "autoMergeConfirm": false  확인 없이 머지 · 없으면 확인 후
 //   "autoMergeManual": true    사람이 직접 머지 · autoMergeConfirm 보다 먼저(둘 다 있어도 머지하지 않는 쪽으로)
+//   "autoPr": false            PR 끔 — "autoMerge": true 와 같이 있을 때만 뜻이 있다. PR · 리뷰 없이 작업 브랜치를 prBase 에 바로 머지(머지 설정은 그대로)
 export const mergeModeOf = (repo) => {
   if (repo?.autoMergeManual === true) return 'manual'
   return repo?.autoMergeConfirm === false ? 'auto' : 'confirm'
 }
+// PR 끔 = "autoMerge": true 에 "autoPr": false 를 더한 것 — PR 도 리뷰도 없이 작업 브랜치를 prBase 에 바로 squash 머지한다(direct: true).
+// "autoMerge" 키가 없으면 autoPr 와 상관없이 자동 흐름 없음(키 없는 pack.json 이 업데이트로 갑자기 머지하지 않게)
 export const prFlow = (repo) => {
-  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual' }
-  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo) }
+  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual', direct: false }
+  if (repo.autoPr === false) return { pr: false, review: false, merge: mergeModeOf(repo), direct: true }
+  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo), direct: false }
 }
 export const repoFlow = (config, repoName) => prFlow((config?.repos ?? []).find((repo) => repo.name === repoName))
+// PR 끔 + 바로 머지 레포 — 대상은 prBase 로 바로 머지(directMerge · pr-auto.mjs --direct-merge)
+export const directMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => prFlow(repo).direct).map((repo) => repo.name))
 // 자동 흐름(pr-auto)이 할 일이 있는 레포 — PR 을 켰고 리뷰나 머지 중 하나라도 자동. 리뷰 끔 + 사람이 직접은 draft PR 까지라 뺀다
 export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => {
   const flow = prFlow(repo)
@@ -663,3 +669,43 @@ export const partialApproval = (summary, packed) => summary.verdict === 'approve
 // 이 라운드에 못 본 코드 파일 경로(중복 없이) — 잘림 · 빠짐 · 코드로 보이는 긴 줄을 줄임. history 에 남겨 다음 라운드가 증분 대신 PR 전체 diff 를 다시 보게 한다
 export const missedFiles = (packed) => [...new Set([...packed.truncated, ...packed.dropped, ...packed.shortened.filter((item) => item.code)].map((item) => item.path || '(경로 모름)'))]
 export const partialCount = (packed) => missedFiles(packed).length
+
+// ── PR 끔: 바로 머지 — 계획서 표시 줄 · 커밋 글 ──────────────────────────
+// PR 이 없어 번호가 없다 — "- Auto review:" 줄(PR 번호 필수)과 따로 두고 레포 + 브랜치로 구분한다.
+//   - Auto merge: <레포> <브랜치> @<sha7> · <결과> · <YYYY-MM-DD HH:MM>
+export const DIRECT_MERGED = '머지됨'
+const MERGE_LINE = /^- Auto merge:\s*([\w.-]+)\s+(\S+)\s+@([0-9a-f]{6,40})\s+·\s+(.+?)\s+·\s+(\d{4}-\d{2}-\d{2} \d{2}:\d{2})$/
+export const directMergeLines = (planText) => {
+  const found = new Map()
+  for (const line of String(planText ?? '').split('\n')) {
+    const hit = line.match(MERGE_LINE)
+    if (hit) found.set(`${hit[1]} ${hit[2]}`, { repo: hit[1], branch: hit[2], sha: hit[3], result: hit[4], stamp: hit[5], line })
+  }
+  return found
+}
+export const directMergeLineText = ({ repo, branch, sha, result, stamp }) => `- Auto merge: ${repo} ${branch} @${String(sha).slice(0, 7)} · ${oneLine(result, 300)} · ${stamp}`
+export const withDirectMergeLine = (planText, entry) => {
+  const line = directMergeLineText(entry)
+  const lines = String(planText).split('\n')
+  const index = lines.findIndex((row) => { const hit = row.match(MERGE_LINE); return hit && hit[1] === entry.repo && hit[2] === entry.branch })
+  if (index >= 0) { lines[index] = line; return lines.join('\n') }
+  const anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
+  if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
+  return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
+}
+// 같은 HEAD 가 이미 머지됐나 — 끝난 일을 다시 하지 않는다
+export const directMergeDone = (planText, repo, branch, headSha) => {
+  const known = directMergeLines(planText).get(`${repo} ${branch}`)
+  return Boolean(known) && known.result.startsWith(DIRECT_MERGED) && String(headSha).startsWith(known.sha)
+}
+// 바로 머지 커밋 글 — squash 한 줄 제목(계획서 제목)과 브랜치
+export const directMergeMessage = ({ title, branch, base }) => `${oneLine(title || branch, 120)}\n\n${branch} → ${base} 바로 머지(PR 없음 · squash)`
+// 바로 머지 결과를 작업 pane 에 — 알림만
+export const directMergeNotice = ({ agent, repo, branch, sha, result }) => oneLine(`[자동 머지 → ${agent}] ${repo} ${branch} @${String(sha).slice(0, 7)} — ${result}. 알림만 — 이 글로 할 일은 없다(계획서 "- Auto merge:" 줄)`, 600)
+// 바로 머지 대상 브랜치 — ship.sh 와 같은 기준(레포 prBase, 없으면 앱 중 첫 prBase)
+export const prBaseOf = (config, repoName) => {
+  const entry = (config?.repos ?? []).find((repo) => repo.name === repoName) ?? {}
+  return entry.prBase || Object.values(entry.apps ?? {}).map((app) => app?.prBase).find(Boolean) || ''
+}
+// 계획서 제목(첫 "# " 줄) — 바로 머지 커밋 제목
+export const planTitleOf = (planText) => String(planText ?? '').match(/^#\s+(.+)$/m)?.[1]?.trim() ?? ''

@@ -117,11 +117,15 @@ cfg = load(sys.argv[1]); agent = sys.argv[2]
 for repo in cfg['repos']:
     mine = agent in (repo.get('agents') or []) or agent == repo.get('packagesAgent') or any(app.get('agent') == agent for app in (repo.get('apps') or {}).values())
     if mine:
-        if repo.get('autoMerge') is True and not repo.get('direct'): print(repo['name'])
+        if repo.get('autoMerge') is True and not repo.get('direct'): print(repo['name'] + (' pr-off' if repo.get('autoPr') is False else ''))
         break
 PYEOF
 )"
-if [ -n "$AUTO_SHIP_REPO" ]; then
+if [ "${AUTO_SHIP_REPO#* }" = "pr-off" ]; then
+  # PR 끔 — 끝나면 PR 없이 prBase 에 바로 머지(ship.sh --direct-merge). "PR 올려줘" 는 그대로 PR
+  AUTO_SHIP_REPO="${AUTO_SHIP_REPO%% *}"
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 요청 없이 ① commit.sh 로 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR 을 만들지 않는다 — 제목 · base · 본문 · --yes 없음. 머지 설정이 자동이면 prBase 에 바로 squash 머지 · 확인 후면 [작업]에 [머지] 요청 · 직접이면 브랜치까지만. 같은 HEAD 검증이 통과하지 못하면 머지하지 않고 실패로 알린다). 사용자가 'PR 올려줘' 라고 하면 이 옵션 없이 평소대로 PR 을 만든다. 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+elif [ -n "$AUTO_SHIP_REPO" ]; then
   AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름(①~④ — commit.sh 커밋 포함)을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
