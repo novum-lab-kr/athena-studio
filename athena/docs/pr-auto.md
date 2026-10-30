@@ -69,7 +69,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 | 리뷰어 | 부르는 법 | 도구 |
 |---|---|---|
 | Claude | `claude -p [--model <models.prReview>] --tools "" --strict-mcp-config --no-session-persistence --output-format json --json-schema <형식>` · 답은 `structured_output` | 없음 |
-| Codex | `codex exec --ignore-user-config --disable <도구 기능>… -c web_search="disabled" --sandbox read-only --ephemeral --skip-git-repo-check -C <빈 폴더> --output-schema <파일> -o <파일>`(프롬프트는 표준 입력) · 답은 `-o` 파일 | 없음 — 셸 · 웹 · 사용자 MCP 서버를 끈다(아래) |
+| Codex | `codex exec --ignore-user-config [-m <config.toml model>] [-c model_reasoning_effort=<config.toml 값>] --disable <도구 기능>… -c web_search="disabled" --sandbox read-only --ephemeral --skip-git-repo-check -C <빈 폴더> --output-schema <파일> -o <파일>`(프롬프트는 표준 입력) · 답은 `-o` 파일 | 없음 — 셸 · 웹 · 사용자 MCP 서버를 끈다(아래) |
 
 - **Codex 는 읽기 전용 샌드박스만으로는 도구가 남는다**(2026-10-25 실측 · codex-cli 0.160 — 셸로 `pwd` 가 돌고 · 웹에서 값을 가져오고 · 사용자 MCP 서버 `hostinger_*` 등이 붙었다). 그래서 사용자 `config.toml` 을 안 읽고(`--ignore-user-config` — MCP 서버 · 훅이 빠지고 로그인은 그대로) · 도구를 주는 기능을 끄고(`CODEX_TOOL_FEATURES` — `shell_tool` · `unified_exec` · `apps` · `browser_use` · `computer_use` · `plugins` · `multi_agent` …) · 웹 검색을 끈다(`web_search="disabled"`). 끈 뒤 같은 질문으로 셸 · 웹 · MCP 가 모두 없는 것을 실측했다. Codex 를 올리면 `codex features list` 로 새 도구 기능이 생겼는지 다시 본다
 - 둘 다 빈 임시 폴더에서 돌고 끝나면 지운다. 받는 것: 레포 `rules.md` · `gotchas.md` · 계획서(앞 6000자) · PR 제목 · 본문 · diff(6만 자까지 — 생성물은 빼고 코드 파일부터 · 아래 "큰 diff") — 비밀값 모양은 가린다(`scripts/lib/mask.mjs`). PR 안의 글은 데이터로 넣고 지시로 따르지 않게 한다
@@ -78,7 +78,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 - `severity` — **막는 지적만 막는다**(2026-10-26 사용자 결정 E). `blocking`(막음 — 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 · 승인 기준과 같은 넷)만 수정 필요 · 머지 차단이고 작업 에이전트에 간다. `advisory`(권장 — 그 밖)는 PR 댓글에만(`💡 권장`) 남고 에이전트에 보내지 않는다 · 머지를 막지 않는다 — 권장만 남은 리뷰어는 승인으로 센다(승인 + 권장도 승인 그대로). `severity` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - `kind` — 리뷰어가 결정마다 고른다. `implementation`(구현 세부 — 코드 안의 자리 · 이름 · 구조 · 제한값처럼 제품 동작 · 범위 · 외부 계약 · 데이터가 그대로인 것) · `product`(그 넷 중 하나라도 달라지는 것 · 애매하면 이쪽). `kind` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - 모양이 틀린 답 · 10분 넘김 · 명령 없음 · 0 이 아닌 종료(로그인이 풀려 답을 못 낸 경우 포함)는 그 리뷰어의 **실패** 다. 승인인데 막는 지적 · 결정이 붙은 모순된 답은 승인으로 세지 않는다
-- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml` 의 모델 그대로
+- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml`(`CODEX_HOME` 이 있으면 그 아래) 맨 위의 `model` · `model_reasoning_effort` 두 값만 읽어 `-m` · `-c` 로 넘긴다(`--ignore-user-config` 가 그 두 값도 안 읽게 하니 따로 — 다른 키는 읽지 않는다 · 값이 없거나 파일이 없으면 넘기지 않아 Codex 기본값). 구성 메모에는 모델 이름만 `codex(<모델>)` 로
 - **둘 다 승인해야 머지로 간다.** 하나라도 실패 · 반려면 머지하지 않는다 — 남은 하나로 판정하지 않는다
 
 ### 큰 diff — 생성물은 빼고 코드 파일부터(이슈 20261025 · 2026-10-27 사용자 승인 A)
