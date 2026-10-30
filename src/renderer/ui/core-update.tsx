@@ -67,7 +67,7 @@ function CoreUpdateBody() {
       <div className="cu-body">
         {notes ? (
           <section className="cu-notes">
-            <h3>{say('coreUpdate.notes')}</h3>
+            <h3>{say(notes.recent ? 'coreUpdate.notesRecent' : 'coreUpdate.notes')}</h3>
             <ul>
               {notes.shown.map((note, index) => (
                 <li key={index}>

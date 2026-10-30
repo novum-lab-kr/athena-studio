@@ -247,7 +247,7 @@ test('켤 때 업데이트: 팩이 있으면 코어에 맡긴다 — 손잡이�
   assert.deepEqual(calls, [['version'], ['update', '--from', bundle, '--backup-dirty']])
   assert.equal(updated.fromVersion, '0.25.1') // 팝업의 이전 버전 칩
   assert.equal(updated.state, 'partial')
-  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: [] }])
+  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: [], kinds: [] }])
   assert.deepEqual(updated.summary.updated, ['acme'])
   assert.equal(updated.summary.backedUp[0].dir, '/d/backups/core-edits/upd-1/acme')
   assert.equal(updated.summary.notify, true)
@@ -257,7 +257,7 @@ test('켤 때 업데이트: 팩이 있으면 코어에 맡긴다 — 손잡이�
 test('업데이트 요약: 일하는 세션이 있었지만 바로 올린 본체(working)도 알린다 — 세션 수 · pane 이름', () => {
   const working = [{ kind: 'athena', pid: 11, pane: '🧭 아테나' }, { kind: 'agent', pid: 12, pane: '🤖 shop-fe · feat/x' }, { kind: 'agent', pid: 14, pane: '🤖 shop-fe · fix/y' }, { kind: 'agent', pid: 13, what: '위임 에이전트(claude) — /r' }]
   const summary = home.summarizeUpdate({ ok: true, bodies: [{ id: 'acme', status: 'updated', working }, { id: 'globex', status: 'same', working }, { id: 'initech', status: 'updated', working: [] }], backedUp: [] })
-  assert.deepEqual(summary.working, [{ id: 'acme', count: 4, sessions: ['🧭 아테나', 'shop-fe', '위임 에이전트(claude) — /r'] }])
+  assert.deepEqual(summary.working, [{ id: 'acme', count: 4, sessions: ['🧭 아테나', 'shop-fe'], kinds: ['agent'] }])
   assert.deepEqual(summary.skipped, [])
   assert.equal(summary.notify, true)
   // 옛 코어(working 없음)는 지금처럼
@@ -304,7 +304,9 @@ test('켤 때 업데이트: 코어가 idle-panes 를 알면 데몬 pane 상태 �
   const panesStateFile = async () => '/tmp/panes.json'
   const updated = await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: makeCore(['update-from-bundle', 'backup-dirty', 'idle-panes']), panesStateFile })
   assert.deepEqual(calls[1], ['update', '--from', bundle, '--backup-dirty', '--panes-state', '/tmp/panes.json'])
-  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: ['🧭 아테나', '무거운 명령 잠금(heavy.sh)'] }])
+  assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: ['🧭 아테나'], kinds: ['heavy'] }])
+  // 코어 설명(명령 · 경로가 든 긴 글)은 칩에 들어가지 않는다 — 종류만
+  assert.equal(JSON.stringify(updated.summary).includes('heavy.sh'), false)
   // 손잡이를 모르는 코어 · 상태 파일이 없으면 넘기지 않는다
   calls.length = 0
   await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: makeCore(['update-from-bundle', 'backup-dirty']), panesStateFile })
