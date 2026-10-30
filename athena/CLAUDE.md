@@ -54,6 +54,7 @@
 - **디스패치하기 전에 `docs/dispatch.md` 를 읽는다**(배치 · 프롬프트 필수 사항 · 결과 수신)
 - **먼저 작업 브랜치 · 워크트리** — `git.md` "작업 브랜치 만들기" 를 읽고 `scripts/new-branch.sh` 로 `prBase` 에서 딴다(이미 있으면 상태를 알리고 "이어 쓸까요?" → `--reuse`). 건너뛴 레포에는 디스패치하지 않는다. **main 직접 레포**(`"direct": true`)는 메인 체크아웃으로(같은 레포에 둘 띄우지 않는다). `/call` 도 띄우기 전에 브랜치를 선택지로 묻는다
 - **`scripts/delegate.sh <에이전트> --cwd <워크트리> --plan <계획서>`** — `--plan` 없이는 띄우지 않는다. FE 세션에는 보호 훅(git commit · push · `gh pr create` 직접 · `add -A` 차단)
+- **같은 레포 담당 pane 이 쉬는 중이면 새로 띄우지 않고 이어 보낸다** — `node scripts/reuse-pane.mjs --agent <이름>` 이 pane 을 주면(쉬는 중 · 사용자가 안 봄 · 질문 창 없음) `delegate.sh … --reuse-pane <pane>`. 앞 PR 이 열려 있으면 같은 브랜치에 이어, 머지됐으면 `--new-branch <이름>`(그 워크트리에서 `prBase` 로). 자세히 `docs/dispatch.md` "이어 보내기"
 - 배치는 workspace = 레포, 한 탭에 pane 을 나란히 · `reviewer` · 단발 조사는 `--here`. **레포를 넘는 작업은 순차로**(공유 패키지 먼저) · 독립 서비스는 동시에 · 같은 기능을 여러 서비스에 넣으면 계획서에 **공통 스펙**(문구 · 동작 · env 키). 기본은 프롬프트 없이 pane 을 열고 그 안에서 지시
 
 ### 4단계: 작업 · 커밋 (pane 에서 반복)

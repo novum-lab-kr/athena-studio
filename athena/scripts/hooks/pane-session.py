@@ -45,6 +45,16 @@ def main() -> None:
     }
     folder = pack_data.resolve() / 'state' / 'pane-sessions'
     folder.mkdir(parents=True, exist_ok=True)
+    # 이어 보내기(delegate.sh --reuse-pane)로 다른 계획서를 받은 pane — 기록의 plan 은 새 계획서고 envPlan 은 처음 띄울 때의 환경 값이다.
+    # 같은 세션이고 환경 값이 그대로면 옛 계획서로 되돌리지 않는다(되돌리면 끝난 계획서가 다시 진행 중으로 묶인다)
+    try:
+        previous = json.loads((folder / f'{pane}.json').read_text(encoding='utf-8'))
+        if previous.get('session') == session and previous.get('envPlan') and previous.get('envPlan') == record['plan'] and previous.get('plan'):
+            record['plan'] = previous['plan']
+        if previous.get('session') == session and previous.get('envPlan'):
+            record['envPlan'] = previous['envPlan']
+    except Exception:
+        pass
     temp = folder / f'.{pane}.{os.getpid()}.tmp'
     temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     os.replace(temp, folder / f'{pane}.json')
