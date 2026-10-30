@@ -380,6 +380,10 @@ else
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
 fi
+# 에이전트 창은 MCP 서버를 싣지 않는다(--mcp-config 없는 --strict-mcp-config = 사용자 전역 · 플러그인 · claude.ai 커넥터 MCP 모두 제외).
+# 창마다 도구 목록 · 서버 안내문이 매 답에 붙는 토큰을 줄인다. 아테나 본체 세션은 이 스크립트를 거치지 않아 그대로.
+# reviewer 는 Jira · Confluence(Atlassian 커넥터)를 읽을 수 있어야 해서 제외한다(.claude/agents/reviewer.md tools)
+[ "$AGENT" != reviewer ] && CLAUDE_ARGS="$CLAUDE_ARGS --strict-mcp-config"
 [ -n "${RESUME:-}" ] && CLAUDE_ARGS="$CLAUDE_ARGS --resume $(shq "$RESUME")"
 
 # 팩 훅(설정 hooks.delegateEnv) — 에이전트마다 실행기에 넣을 export 줄을 팩이 정한다(회사 레포 고유 환경값).
