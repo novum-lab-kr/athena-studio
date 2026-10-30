@@ -72,8 +72,9 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   let screenDetached = false
 
   function onDaemonEvent(current: () => Connection | null, message: Reply & { pane?: string; data?: string; state?: unknown; url?: unknown }) {
-    // 이미 떼어 낸 옛 연결의 알림은 버린다 — 새 연결과 같이 오면 출력이 두 번 찍힌다(gh170)
-    if (daemon && current() !== daemon) return
+    // 이미 떼어 낸 옛 연결의 알림은 버린다(새 연결이 붙기 전이어도) — 새 연결과 같이 오면 출력이 두 번 찍힌다(gh170). 아직 묶이지 않은 연결(from 없음)은 받는다
+    const from = current()
+    if (from && from !== daemon) return
     if (message.event === 'data') {
       if (dropOutput) return
       outputQueue.set(message.pane as string, (outputQueue.get(message.pane as string) || '') + message.data)
@@ -99,9 +100,10 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   }
 
   // 연결이 끊기면 화면에 알린다(앱이 스스로 끊은 detachScreen 은 daemon 을 먼저 비운다)
-  // 닫힌 것이 지금 연결이 아니면(옛 연결의 닫힘이 새 연결이 붙은 뒤에 온 것) 아무것도 건드리지 않는다 — 살아 있는 새 연결을 잃으면 다음 요청이 연결을 하나 더 만든다(gh170)
+  // 지금 연결이 아닌 것의 닫힘은 새 연결이 붙었거나 붙는 중이면 아무것도 건드리지 않는다 — 살아 있는 새 연결을 잃으면 다음 요청이 연결을 하나 더 만든다(gh170)
+  // 새 연결이 없을 때 앱이 스스로 끊은 연결의 닫힘은 알린다(데몬 다시 띄우기가 끊김 알림 뒤 resync 를 보낸다)
   function onDaemonClosed(closed: Connection | null) {
-    if (daemon && closed !== daemon) return
+    if (closed !== daemon && (daemon || connecting)) return
     daemon = null
     screenDetached = true
     send('screen:disconnected')

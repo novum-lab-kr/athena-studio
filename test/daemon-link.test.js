@@ -14,13 +14,15 @@ const workDir = () => fs.mkdtempSync('/tmp/asd-link-')
 // 가짜 데몬 — hello · attach 에 ok 로 답하고, 클라이언트가 end 해도 hold 동안은 자기 쪽을 닫지 않는다(느린 닫힘)
 function startFakeDaemon(socketPath) {
   const clients = []
-  const state = { hold: false, released: [] }
+  const state = { hold: false, released: [], helloDelay: 0 }
   const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     const client = { socket, finish: () => socket.end() }
     clients.push(client)
     socket.setEncoding('utf8')
     socket.on('data', protocol.createDecoder((message) => {
-      socket.write(protocol.encode({ id: message.id, ok: true, result: message.op === 'hello' ? { protocol: protocol.PROTOCOL } : {} }))
+      const reply = () => socket.write(protocol.encode({ id: message.id, ok: true, result: message.op === 'hello' ? { protocol: protocol.PROTOCOL } : {} }))
+      if (message.op === 'hello' && state.helloDelay) setTimeout(reply, state.helloDelay)
+      else reply()
     }))
     socket.on('error', () => {})
     socket.on('end', () => {
@@ -121,6 +123,54 @@ test('gh170: 옛 연결의 닫힘이 새 연결이 붙은 뒤에 와도 연결�
     await waitFor(() => dataChunks(sent).length > 0, '출력')
     await sleep(60)
     assert.deepEqual(dataChunks(sent), ['x'], '출력이 한 번만 와야 한다')
+  } finally {
+    await cleanup()
+  }
+})
+
+test('gh170: 떼어 낸 옛 연결이 새 연결이 붙는 중에 닫혀도 끊김 알림은 나가지 않는다', async () => {
+  const { ctx, daemon, sent, cleanup } = await setup()
+  try {
+    await ctx.attachScreen() // 연결 A
+    daemon.state.hold = true
+    const detaching = ctx.detachScreen()
+    daemon.state.helloDelay = 300 // B 의 hello 가 늦다 — 붙는 중
+    const attaching = ctx.attachScreen()
+    await sleep(50)
+    daemon.releaseHeld() // 붙는 중에 A 가 닫힌다
+    await detaching
+    await attaching
+    assert.equal(sent.filter(([channel]) => channel === 'screen:disconnected').length, 0)
+    assert.equal(ctx.screenDetached(), false)
+    assert.equal(daemon.live(), 1)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('gh170: 떼어 낸 뒤 새 연결이 붙기 전에 옛 연결이 보낸 출력은 버린다', async () => {
+  const { ctx, daemon, sent, cleanup } = await setup()
+  try {
+    await ctx.attachScreen() // 연결 A
+    daemon.state.hold = true // A 의 소켓은 한동안 살아 있다
+    const detaching = ctx.detachScreen() // 기다리지 않는다 — 새 연결은 아직 없다
+    daemon.broadcastData('p1', 'late')
+    await sleep(60)
+    assert.deepEqual(dataChunks(sent), [], '떼어 낸 연결의 출력이 화면으로 가면 안 된다')
+    daemon.releaseHeld()
+    await detaching
+  } finally {
+    await cleanup()
+  }
+})
+
+test('앱이 스스로 끊고 새 연결이 없으면 닫힘을 화면에 알린다(데몬 다시 띄우기가 기댄다)', async () => {
+  const { ctx, sent, cleanup } = await setup()
+  try {
+    await ctx.attachScreen()
+    await ctx.detachScreen()
+    assert.equal(sent.filter(([channel]) => channel === 'screen:disconnected').length, 1)
+    assert.equal(ctx.screenDetached(), true)
   } finally {
     await cleanup()
   }
