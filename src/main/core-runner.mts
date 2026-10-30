@@ -113,14 +113,19 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     }
   }
 
+  // 막은 종류(코어 busy kind) — 화면 문구 coreUpdate.busy.<kind> 가 있는 것. 그 밖은 other
+  const BUSY_KINDS = new Set(['athena', 'agent', 'codex', 'qa', 'learn-review', 'heavy', 'switch', 'commit', 'unknown'])
+
   // 켤 때 업데이트 결과 팝업에 보일 줄 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면
   function noticeRows(notice: CoreUpdate): CoreUpdateRow[] {
     const summary = notice.summary
     if (!summary) return [{ kind: notice.state === 'unsupported' ? 'unsupported' : 'notMoved', params: { reason: String(notice.error || notice.state) }, chips: [] }]
     const rows: CoreUpdateRow[] = []
-    // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
-    if (summary.skipped.length) rows.push({ kind: 'skipped', params: {}, chips: summary.skipped.map((entry) => ((entry.blockers || []).length ? `${entry.id} · ${entry.blockers.join(', ')}` : `${entry.id} · ${entry.reason}`)) })
-    for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String)] })
+    // 무엇이 막았는지 — 짝지은 pane 이름 · 없으면 막은 종류의 짧은 말(코어 설명은 명령 · 경로가 들어 길다). 모르면 까닭(busy · dirty …)
+    const kindText = (kind: string) => say(`coreUpdate.busy.${BUSY_KINDS.has(kind) ? kind : 'other'}`)
+    const causesOf = (entry: { blockers?: unknown[]; kinds?: unknown[] }) => [...(entry.blockers || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))]
+    if (summary.skipped.length) rows.push({ kind: 'skipped', params: {}, chips: summary.skipped.map((entry) => (causesOf(entry).length ? `${entry.id} · ${causesOf(entry).join(', ')}` : `${entry.id} · ${entry.reason}`)) })
+    for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))] })
     for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: {}, chips: [String(entry.id)], dir: entry.dir ? String(entry.dir) : undefined })
     if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })
     return rows
@@ -143,7 +148,9 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     // 언어는 보낼 때 고정하지 않는다 — 언어별 번역을 모두 실어 보내고 화면이 지금 언어로 고른다(팝업이 떠 있는 동안 언어를 바꿔도 따라간다)
     const tables = Object.fromEntries(['ko', 'ja', 'zh'].map((lang) => [lang, readJson(path.join(CHANGELOG_DIR, `${lang}.json`))]))
     const picked = releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to), (line) => line)
-    return releaseNotes.withTranslations(picked, tables)
+    const withTables = releaseNotes.withTranslations(picked, tables)
+    // 끝자리만 오른 업데이트면 같은 minor 절 전체라 "업데이트 내역" 이 아니라 "최근 변경" 으로 구분한다
+    return withTables && releaseNotes.isPatchOnly(from, to) ? { ...withTables, recent: true } : withTables
   }
 
   // 알릴 백업 폴더 — 화면이 [폴더 열기] 로 부를 수 있는 것은 이 팝업이 보인 폴더뿐
