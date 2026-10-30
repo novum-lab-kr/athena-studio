@@ -54,6 +54,13 @@
 
 **화면 회귀(screen-check)는 화면 파일이 바뀐 때만** — 코어 레포 검증이 `scripts/verify/changed-screen.sh` 로 판단한다(기준 ref 대비 커밋된 변경 + 미커밋 + 미추적). 화면 파일 = 화면 계층 자체 · screen-check 시나리오가 돌리는 스크립트 · 화면 계층을 부르는 코드 · 그것들이 불러 쓰는 파일. 손으로 적은 목록이 아니라 그때그때 코드에서 찾는다. 늘 돌리려면 검증 인자 `--full`
 
+**검증은 수정한 범위만 돌린다** — 팩 검증 스크립트가 `_lib.sh` 의 `verify_scope_init <레포>` 로 바뀐 파일(`verify_changed_files` 와 같은 셈 — 기준 ref 대비 커밋 + 미커밋 + 미추적)을 읽고, 바뀐 곳에 해당하는 단계만 돌린다. 안 돈 단계는 `skip_step_rule` 로 표에 이유와 함께 남는다(엄격 모드에서도 실패가 아니다). 쓰는 법은 `_lib.sh` 머리 주석(`verify_scope_has` · `verify_scope_only` · `verify_scope_why`).
+- **모르면 전체**: `--full`(또는 `ATHENA_VERIFY_FULL=1`) · 기준 ref 를 못 찾음 · 바뀐 파일 없음 · package.json / lockfile / tsconfig · jsconfig · vite.config · `.nvmrc` · pyproject · `.github/` · `scripts/verify/` 변경
+- **옛 코어 설치본**에는 함수가 없다 — 팩 스크립트는 `declare -F verify_scope_init` 로 확인하고 없으면 전체를 돌린다
+- **athena-studio**: 바뀐 파일이 모두 `athena/` 면 앱 문법 · 루트/renderer 타입 검사 · 앱 시험을 건너뛰고 코어 타입 검사만. 시험은 `scripts/verify/scope-tests.mjs` 가 코드에서 찾아 바뀐 파일에 닿는 것만(앱 `test/*.test.js` · 코어 `athena/test/*.sh`) — 시험 파일의 `import`/`require` · 시험에 적힌 경로를 따라간다. 한계: 셸이 셸을 부르는 것 · 이어 붙여 만든 경로는 못 따라가니 의심되면 `--full`
+- **재사용(`reuse.sh`)**: 통과 열쇠에 기준 merge-base 가 들어간다 — 트리가 같아도 기준이 달라지면(범위가 달라질 수 있어) 다시 돈다
+- 시험: `athena/test/verify-scope-test.sh`
+
 ## QA — 흐름별 TC
 
 레포 `docs/flows/` 의 TC 를 층별로 돌린다(FE Playwright · BE HTTP · 둘 다 로컬 서버 · 앱은 실행 없음). 형식 · 실행 · 설정 정본은 `qa-flows.md`.

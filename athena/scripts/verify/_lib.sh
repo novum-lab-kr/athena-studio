@@ -63,8 +63,10 @@ verify_key() { # verify_key <검증 스크립트> <트리> <인자> — 통과 �
     echo "== pack.json"; [ -f "$pack_json" ] && cat "$pack_json"
   } | shasum | cut -c1-16)"
   # 실행 환경 — Node 버전 건너뜀·python3 없음 건너뜀은 환경으로 정해진다. 환경이 다르면 다시 돌게 열쇠에 넣는다
-  printf 'tree %s\ndir %s\nscript %s\nargs %s\nnode %s\npython3 %s\n' "$tree_hash" "$(cd "$tree" && pwd -P)" "$script_hash" "$args" \
-    "$(node -v 2>/dev/null || echo none)" "$(command -v python3 >/dev/null 2>&1 && echo yes || echo no)" | shasum | cut -c1-24
+  # 기준 merge-base — 범위 검증(verify_scope_init)은 기준 대비 바뀐 파일로 단계를 정한다. 트리가 같아도 기준이 달라지면 범위가 달라지니 열쇠에 넣는다
+  printf 'tree %s\ndir %s\nscript %s\nargs %s\nnode %s\npython3 %s\nbase %s\n' "$tree_hash" "$(cd "$tree" && pwd -P)" "$script_hash" "$args" \
+    "$(node -v 2>/dev/null || echo none)" "$(command -v python3 >/dev/null 2>&1 && echo yes || echo no)" \
+    "$(verify_merge_base "$(basename "$script" .sh)" "$tree" || echo none)" | shasum | cut -c1-24
 }
 
 resolve_repo_dir() { # resolve_repo_dir <메인 체크아웃> — 검증할 트리 경로를 출력한다
@@ -179,17 +181,24 @@ verify_pack_prbase() { # verify_pack_prbase <레포> — 팩 pack.json 의 그 �
   fi
 }
 
+# verify_merge_base <레포> <트리> — 기준 ref 와의 merge-base SHA(못 찾으면 빈 줄 · 1). 기준 ref = 팩 prBase 의 origin/<prBase> → upstream → origin/HEAD → origin/main
+verify_merge_base() {
+  local repo="$1" tree="$2" pr_base base="" candidate merge_base=""
+  pr_base="$(verify_pack_prbase "$repo")"
+  for candidate in ${pr_base:+"origin/$pr_base"} '@{upstream}' origin/HEAD origin/main; do
+    git -C "$tree" rev-parse -q --verify "$candidate^{commit}" >/dev/null 2>&1 && { base="$candidate"; break; }
+  done
+  [ -n "$base" ] && merge_base="$(git -C "$tree" merge-base HEAD "$base" 2>/dev/null)"
+  [ -n "$merge_base" ] && echo "$merge_base"
+}
+
 # verify_changed_files <레포> — 지금 폴더가 든 git 트리에서 바뀐 파일의 절대 경로(실제 경로)를 한 줄에 하나.
 # 기준 ref 를 못 찾으면 미커밋 · 미추적만 내고 1 을 돌려준다(부르는 쪽이 그 사실을 표에 적는다)
 verify_changed_files() {
-  local repo="$1" pr_base base="" candidate merge_base top status=0
+  local repo="$1" merge_base top status=0
   top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
   top="$(cd "$top" && pwd -P)"
-  pr_base="$(verify_pack_prbase "$repo")"
-  for candidate in ${pr_base:+"origin/$pr_base"} '@{upstream}' origin/HEAD origin/main; do
-    git rev-parse -q --verify "$candidate^{commit}" >/dev/null 2>&1 && { base="$candidate"; break; }
-  done
-  merge_base=""; [ -n "$base" ] && merge_base="$(git merge-base HEAD "$base" 2>/dev/null)"
+  merge_base="$(verify_merge_base "$repo" "$top")"
   [ -n "$merge_base" ] || status=1
   {
     [ -n "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only "$merge_base" HEAD
@@ -198,6 +207,51 @@ verify_changed_files() {
     git -c core.quotePath=false -C "$top" ls-files --others --exclude-standard --full-name
   } | sort -u | sed "s#^#$top/#"
   return $status
+}
+
+# ── 수정한 범위만 검증하기 ─────────────────────────────────────────────────
+# 팩 검증 스크립트가 쓴다(코어가 옛 설치본이면 함수가 없다 — declare -F verify_scope_init 로 확인하고 없으면 전체를 돌린다):
+#   if declare -F verify_scope_init >/dev/null; then verify_scope_init "$REPO"; else VERIFY_SCOPE_MODE=full; fi
+#   if [ "$VERIFY_SCOPE_MODE" = scoped ] && ! verify_scope_has '^web/'; then skip_step_rule "<단계>" "$(verify_scope_why '웹')"; else run_step … ; fi
+# verify_scope_init <레포>   → VERIFY_SCOPE_MODE=scoped|full · VERIFY_SCOPE_FILES(트리 맨 위 기준 상대 경로, 한 줄에 하나) · VERIFY_SCOPE_WHY(전체로 돈 이유)
+#   모르면 전체(full): --full(검증 인자) · ATHENA_VERIFY_FULL=1 · 기준 ref 없음 · 바뀐 파일 없음 · package.json / lockfile / tsconfig 같은 설정이나 검증 스크립트가 바뀜
+# verify_scope_has <정규식>  → 바뀐 파일 중 하나라도 맞으면 0 (full 이면 늘 0)
+# verify_scope_only <정규식> → 바뀐 파일이 모두 맞으면 0 (full 이면 늘 1)
+# verify_scope_why <이름>    → skip_step_rule 의 이유 글: "<이름> 쪽 변경 없음 (바뀐 파일 N개)"
+VERIFY_SCOPE_MODE=full; VERIFY_SCOPE_FILES=""; VERIFY_SCOPE_WHY=""
+VERIFY_SCOPE_CONFIG_RE='(^|/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github/.+)$|(^|/)scripts/verify/'
+
+verify_scope_init() { # verify_scope_init <레포> — 지금 폴더(레포 안)에서 부른다
+  local repo="$1" top changed file config=""
+  VERIFY_SCOPE_MODE=full; VERIFY_SCOPE_FILES=""; VERIFY_SCOPE_WHY=""
+  case " ${VERIFY_SCRIPT_ARGS} " in *" --full "*) VERIFY_SCOPE_WHY="--full — 전체를 돌린다"; return 0 ;; esac
+  [ "${ATHENA_VERIFY_FULL:-0}" = 1 ] && { VERIFY_SCOPE_WHY="ATHENA_VERIFY_FULL=1 — 전체를 돌린다"; return 0; }
+  top="$(git rev-parse --show-toplevel 2>/dev/null)" || { VERIFY_SCOPE_WHY="git 트리가 아니라 전체를 돌린다"; return 0; }
+  top="$(cd "$top" && pwd -P)"
+  if ! changed="$(verify_changed_files "$repo")"; then
+    VERIFY_SCOPE_WHY="기준 ref 를 못 찾아 전체를 돌린다"; return 0
+  fi
+  VERIFY_SCOPE_FILES="$(printf '%s\n' "$changed" | grep -v '^$' | sed "s#^$top/##")"
+  if [ -z "$VERIFY_SCOPE_FILES" ]; then
+    VERIFY_SCOPE_WHY="바뀐 파일이 없어 전체를 돌린다"; return 0
+  fi
+  config="$(printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -E "$VERIFY_SCOPE_CONFIG_RE" | head -3 | tr '\n' ' ')"
+  if [ -n "$config" ]; then
+    VERIFY_SCOPE_WHY="설정 · 검증 스크립트가 바뀌어(${config% }) 전체를 돌린다"; return 0
+  fi
+  VERIFY_SCOPE_MODE=scoped
+}
+
+verify_scope_has() {
+  [ "$VERIFY_SCOPE_MODE" = scoped ] || return 0
+  printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -qE "$1"
+}
+verify_scope_only() {
+  [ "$VERIFY_SCOPE_MODE" = scoped ] || return 1
+  ! printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -vqE "$1"
+}
+verify_scope_why() { # verify_scope_why <이름>
+  printf '%s 쪽 변경 없음 (바뀐 파일 %s개 · 전체는 --full)' "$1" "$(printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -c .)"
 }
 
 typecheck_step() {
