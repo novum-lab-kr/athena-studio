@@ -10,7 +10,8 @@
 #
 # 하는 일
 #   1. 공용 잠금 자리(slot) — 기본 2자리(ATHENA_HEAVY_SLOTS · 1 이면 예전처럼 한 대에 하나). 1번은 /tmp/hermes-heavy.lock, 2번은 /tmp/hermes-heavy.lock.2.
-#      빈 자리를 잡고 둘 다 차면 기다린다(레포·워크트리 무관). 둘째 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 40) 이상일 때만 잡는다 — 모자라면 첫 자리를 기다린다
+#      빈 자리를 잡고 둘 다 차면 기다린다(레포·워크트리 무관). 둘째 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 40) 이상이고
+#      1분 부하가 ATHENA_HEAVY_MAX_LOAD(기본 = 코어 수) 미만일 때만 잡는다 — 아니면(못 읽을 때도) 첫 자리를 기다린다(xcodebuild 처럼 코어를 다 쓰는 명령이 겹치면 부하가 폭주한다 — 2026-10-30)
 #   2. 부하 대기 — 1분 부하 평균이 코어 수 × ATHENA_HEAVY_LOAD(기본 1.2) 를 넘으면 내려갈 때까지 기다린다
 #      (다른 세션의 QA dev 서버·Spotlight·보안 프로그램처럼 잠금 밖의 부하도 같이 본다)
 #   3. 명령을 돌리고, 끝나거나 실패하거나 끊겨도 잠금을 푼다. 주인이 죽은 잠금(프로세스 없음)은 치우고 잡는다
@@ -37,6 +38,12 @@ load_now() {
   local value; value="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
   [ -n "$value" ] || value="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
   echo "${value:-0}"
+}
+# 읽은 그대로의 1분 부하 — 못 읽으면 빈 값(둘째 자리 판정은 못 읽으면 안 잡는다)
+load_raw() {
+  local value; value="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
+  [ -n "$value" ] || value="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+  echo "$value"
 }
 # awk 변수 이름 load 는 gawk 예약어라 쓰지 않는다(리눅스에서 부하 대기가 통째로 꺼졌다)
 over_limit() { awk -v current="$(load_now)" -v limit="$LIMIT" 'BEGIN{exit !(current > limit)}'; }
@@ -80,7 +87,19 @@ SLOTS="${ATHENA_HEAVY_SLOTS:-2}"
 case "$SLOTS" in ''|*[!0-9]*) SLOTS=1 ;; esac
 [ "$SLOTS" -ge 1 ] || SLOTS=1
 SECOND_FREE="${ATHENA_HEAVY_SECOND_FREE:-40}"
-extra_slot_ok() { local free; free="$(free_percent)"; [ -n "$free" ] && [ "$free" -ge "$SECOND_FREE" ]; }
+MAX_LOAD="${ATHENA_HEAVY_MAX_LOAD:-$CORES}"
+# 둘째 자리를 못 잡는 이유를 EXTRA_WHY 에 남긴다(잡을 수 있으면 빈 값)
+EXTRA_WHY=""
+extra_slot_ok() {
+  local free current; EXTRA_WHY=""
+  free="$(free_percent)"; current="$(load_raw)"
+  if [ -z "$free" ] || [ "$free" -lt "$SECOND_FREE" ]; then EXTRA_WHY="둘째 자리는 메모리 여유 ${free:-?}% < ${SECOND_FREE}% 라 보류"; fi
+  if [ -z "$current" ]; then EXTRA_WHY="${EXTRA_WHY:+$EXTRA_WHY · }부하를 읽지 못해 둘째 자리 대기"
+  elif awk -v current="$current" -v limit="$MAX_LOAD" 'BEGIN{exit !(current >= limit)}'; then
+    EXTRA_WHY="${EXTRA_WHY:+$EXTRA_WHY · }부하 $current / 코어 $CORES — 둘째 자리 대기"
+  fi
+  [ -z "$EXTRA_WHY" ]
+}
 
 # 1) 공용 잠금 — 빈 자리를 잡는다(1번부터). 둘째 이후 자리는 메모리 여유가 넉넉할 때만
 MYLOCK=""
@@ -100,7 +119,7 @@ while :; do
   for slot in $(seq 1 "$SLOTS"); do
     status="${status:+$status · }자리$slot: $(cat "$(slot_path "$slot")/what" 2>/dev/null || echo '?')"
   done
-  if [ "$SLOTS" -gt 1 ] && [ "$roomy" = no ]; then status="$status · 둘째 자리는 메모리 여유 $(free_percent)% < ${SECOND_FREE}% 라 보류"; fi
+  if [ "$SLOTS" -gt 1 ] && [ "$roomy" = no ]; then status="$status · $EXTRA_WHY"; fi
   note "다른 무거운 명령이 도는 중 — $status"
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "잠금"
   sleep 5

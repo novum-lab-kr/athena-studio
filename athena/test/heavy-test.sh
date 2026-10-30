@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 무거운 명령 줄서기(scripts/heavy.sh) 자리 시험 — 자리 2개가 동시에 잡히는지 · 셋째는 기다리는지 · 여유 부족이면 둘째를 안 잡는지 ·
+# 무거운 명령 줄서기(scripts/heavy.sh) 자리 시험 — 자리 2개가 동시에 잡히는지 · 셋째는 기다리는지 · 여유 부족 · 부하 높음 · 부하 못 읽음이면 둘째를 안 잡는지 ·
 # 낡은 잠금 정리 · SLOTS=1 이면 예전처럼 하나 · 임시 잠금 경로(ATHENA_HEAVY_LOCK) · 가짜 memory_pressure · 몇 초
 #
 # 사용: test/heavy-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -17,6 +17,17 @@ cat > "$TMP/bin/memory_pressure" <<'FAKE'
 echo "System-wide memory free percentage: $(cat "$FREE_FILE")%"
 FAKE
 chmod +x "$TMP/bin/memory_pressure"
+# 가짜 sysctl — $LOAD_FILE 의 값을 1분 부하로, 코어는 4 로 돌려준다(파일이 없으면 읽지 못한 것처럼 실패)
+cat > "$TMP/bin/sysctl" <<'FAKE'
+#!/bin/sh
+case "$*" in
+  "-n hw.ncpu") echo 4 ;;
+  "-n vm.loadavg") [ -s "$LOAD_FILE" ] || exit 1; echo "{ $(cat "$LOAD_FILE") 0.00 0.00 }" ;;
+  *) exit 1 ;;
+esac
+FAKE
+chmod +x "$TMP/bin/sysctl"
+export LOAD_FILE="$TMP/load"; echo 0.5 > "$LOAD_FILE"
 export PATH="$TMP/bin:$PATH" FREE_FILE="$TMP/free" ATHENA_HEAVY_LOAD=1000 ATHENA_HEAVY_MIN_FREE=1
 echo 80 > "$TMP/free"
 
@@ -44,6 +55,32 @@ check "보류 이유가 메시지에 나옴" 'grep -q "둘째 자리는 메모�
 echo 80 > "$TMP/free"
 ATHENA_HEAVY_WAIT=20 "$SRC/scripts/heavy.sh" true > "$TMP/b3.log" 2>&1; code=$?
 check "여유가 돌아오면 둘째 자리로 바로 돎" '[ "$code" = 0 ]'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
+echo "부하가 높으면 둘째를 안 잡음 (부하 6.5 ≥ 코어 4)"
+new_lock f; echo 6.5 > "$LOAD_FILE"
+run_bg 30 "$TMP/f1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/f2.log" 2>&1; code=$?
+check "둘째를 안 잡고 기다리다 포기(75)" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.2" ]'
+check "이유가 메시지에 나옴" 'grep -q "부하 6.5 / 코어 4 — 둘째 자리 대기" "$TMP/f2.log"'
+echo 1.0 > "$LOAD_FILE"
+ATHENA_HEAVY_WAIT=20 "$SRC/scripts/heavy.sh" true > "$TMP/f3.log" 2>&1; code=$?
+check "부하가 내려가면 둘째 자리로 바로 돎" '[ "$code" = 0 ]'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
+echo "기준 변수 ATHENA_HEAVY_MAX_LOAD"
+new_lock g; echo 2.0 > "$LOAD_FILE"
+run_bg 30 "$TMP/g1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+ATHENA_HEAVY_MAX_LOAD=1.5 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/g2.log" 2>&1; code=$?
+check "부하 2.0 ≥ 기준 1.5 면 안 잡음(75)" '[ "$code" = 75 ]'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
+echo "부하를 못 읽으면 둘째를 안 잡음"
+new_lock h; rm -f "$LOAD_FILE"
+run_bg 30 "$TMP/h1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/h2.log" 2>&1; code=$?
+check "둘째를 안 잡고 포기(75) · 이유가 나옴" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.2" ] && grep -q "부하를 읽지 못해" "$TMP/h2.log"'
+echo 0.5 > "$LOAD_FILE"
 kill $(jobs -p) 2>/dev/null; sleep 1
 
 echo "SLOTS=1 은 예전과 같음"
