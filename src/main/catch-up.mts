@@ -12,7 +12,7 @@ type PackReply = { ok?: boolean; busyKnown?: boolean; busy?: { kind?: string }[]
 type RunPack = (args: string[], options: { dir: string | null }) => Promise<PackReply>
 
 // studio — 스튜디오 집 자리(주 본체 · 레지스트리) · runPack — 팩 명령(pack busy · open) · packLogFile — 팩 로그 자리
-export function installCatchUp(ctx: PackCtx, { studio, runPack, packLogFile }: { studio: { core: string; data: string }; runPack: RunPack; packLogFile: () => string }): void {
+export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLogFile }: { updating: () => boolean; studio: { core: string; data: string }; runPack: RunPack; packLogFile: () => string }): void {
   const send = ctx.send
   const daemonCall = ctx.daemonCall
 
@@ -33,6 +33,8 @@ export function installCatchUp(ctx: PackCtx, { studio, runPack, packLogFile }: {
     // 자동 따라잡기가 도는 중이면 — 사용자가 고른 일은 끝날 때까지(최대 1분) 기다렸다 다시 본다(이미 옮겼으면 same)
     for (let tries = 0; force && catchingUp && tries < 60; tries += 1) await new Promise((resolve) => setTimeout(resolve, 1000))
     if (catchingUp) return { ok: false, reason: 'working' }
+    // 코어 업데이트가 도는 중 — 자동 따라잡기는 건너뛴다(업데이트가 끝나면 다음 주기에). 사용자가 고른 일(force)은 아래 팩 명령이 업데이트가 끝날 때까지 기다린다
+    if (!force && updating()) return null
     if (!force && (!panes || Date.now() - catchUpAt < 30000 || Date.now() < catchUpBackoff)) return null
     if (!force) catchUpAt = Date.now()
     if (!panes) return { ok: false, reason: 'failed' }

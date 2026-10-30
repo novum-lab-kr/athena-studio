@@ -81,6 +81,7 @@
   "dialog.pickAthena.message": "CLAUDE.md と scripts/board/server.mjs があるアテナフォルダを選んでください",
   "coreUpdate.title": "アテナが新しいバージョンになりました",
   "coreUpdate.titleKept": "アテナ コアのアップデート",
+  "coreUpdate.running": "コアを更新中",
   "coreUpdate.from": "前のバージョン",
   "coreUpdate.to": "新しいバージョン",
   "coreUpdate.notes": "アップデート内容",

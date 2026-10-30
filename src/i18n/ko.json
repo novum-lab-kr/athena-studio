@@ -81,6 +81,7 @@
   "dialog.pickAthena.message": "CLAUDE.md 와 scripts/board/server.mjs 가 있는 아테나 폴더를 골라 주십시오",
   "coreUpdate.title": "아테나가 새 버전으로 바뀌었어요",
   "coreUpdate.titleKept": "아테나 코어 업데이트",
+  "coreUpdate.running": "코어 업데이트 중",
   "coreUpdate.from": "이전 버전",
   "coreUpdate.to": "새 버전",
   "coreUpdate.notes": "업데이트 내역",

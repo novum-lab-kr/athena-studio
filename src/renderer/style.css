@@ -74,6 +74,8 @@ body[data-platform="darwin"] .tabbar { padding-left: 80px; } /* 맥 신호등 �
   color: var(--muted);
   cursor: pointer;
 }
+.core-updating { -webkit-app-region: no-drag; align-self: center; margin-right: 4px; padding: 2px 8px; border: 1px solid var(--line); border-radius: 10px; color: var(--accent); font-size: 11px; white-space: nowrap; }
+.core-updating[hidden] { display: none; }
 .tabbar-tool:hover, .tabbar-tool.active { background: var(--line); color: var(--text); }
 .tip {
   position: fixed;

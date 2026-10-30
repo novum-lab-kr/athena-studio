@@ -217,6 +217,8 @@ declare global {
     openUrl(url: string): Promise<unknown>
     // 켤 때 코어 업데이트 결과(src/main/core-runner.mts showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만 열린다
     onCoreUpdate(callback: (view: import('../lib/release-notes.mts').CoreUpdateView) => void): () => void
+    onCoreUpdateState(callback: (running: boolean) => void): () => void
+    coreUpdateRunning(): Promise<boolean>
     coreUpdateReveal(dir: string): Promise<boolean>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
     repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>

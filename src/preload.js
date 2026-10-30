@@ -116,6 +116,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
   // 코어 업데이트 팝업 — main 이 켤 때 한 번 보낸다(core-runner showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만
   onCoreUpdate: listen('core-update:show'),
+  // 창을 연 뒤 뒤에서 도는 코어 업데이트 — 탭 줄 "코어 업데이트 중" 표시(켜는 창은 running 으로 처음 값을 묻는다)
+  onCoreUpdateState: listen('core-update:state'),
+  coreUpdateRunning: () => ipcRenderer.invoke('core-update:running'),
   coreUpdateReveal: (dir) => ipcRenderer.invoke('core-update:reveal', dir),
   // 지금 탭(work · board) — 메뉴 막대 알림이 보고 있는 pane 을 건너뛸 때 쓴다
   reportTab: (tab) => ipcRenderer.send('ui:tab', tab),
