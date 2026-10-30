@@ -15,6 +15,7 @@ export type PackWindowCtx = {
   packState: Record<string, unknown>
   send(channel: string, ...values: unknown[]): void
   stopRequests(): void
+  stopPackWatch?: () => void
   dropBrowser(): void
   detachScreen(): void
   refreshPacks?: () => Promise<unknown>
@@ -96,6 +97,7 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
     ctx.win = null
     clearInterval(monitor.timer as NodeJS.Timeout)
     ctx.stopRequests()
+    if (ctx.stopPackWatch) ctx.stopPackWatch()
     // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
     ctx.dropBrowser()
     ctx.detachScreen()

@@ -17,7 +17,7 @@ import type { PackRepo } from './pack-repos.mts'
 
 type CoreRunner = ReturnType<typeof createCoreRunner>
 type RunPack = (args: string[], options: RunCoreOptions) => Promise<PackResult>
-type Layout = { root: string; core: string }
+type Layout = { root: string; core: string; data: string }
 // 이 창 팩 상태(pack list 를 다듬은 것 + 시작 화면 칸) — 읽는 칸만
 export type PackState = { [key: string]: unknown; supported: boolean; current?: PackEntry | null; packs?: PackEntry[] }
 // 코어 결과에서 더 읽는 칸(모양은 검사하지 않는다 — 옛 main.js 와 같다)
@@ -44,6 +44,7 @@ export type PacksCtx = {
   show(tab?: string): void
   restoreNow(): Promise<unknown>
   refreshPacks?: () => Promise<PackState>
+  stopPackWatch?: () => void
   packTask?: <T>(name: string, work: (signal: AbortSignal) => Promise<T>) => Promise<T | { ok: false; error: 'locked'; message: string }>
   packNew?: unknown
   packInspect?: unknown
@@ -118,6 +119,36 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     return { ...ctx.packState, openIds: openPackIds() }
   }
   ctx.refreshPacks = refreshPacks
+
+  // 레지스트리(<데이터>/config.json) 감시 — pane 안 /setup 의 이름 바꾸기(renameNewSlot)는 앱을 거치지 않아 창이 앞에 있어도 목록이 낡는다.
+  // 파일은 임시 파일 → rename 으로 바뀌므로 파일이 아니라 폴더를 감시하고 config.json 이름만 본다(work.mts 요청 폴더 감시와 같은 틀).
+  // 데이터 폴더가 아직 없으면(첫 실행) 주기마다 다시 걸어 본다. 창이 닫히면 stopPackWatch 로 푼다
+  let registryWatch: fs.FSWatcher | null = null
+  let registryKick: NodeJS.Timeout | undefined
+  const watchRegistry = (): void => {
+    if (registryWatch) return
+    try {
+      const watcher = fs.watch(fs.realpathSync(studio.data), (_event, name) => {
+        if (name && name !== 'config.json') return
+        clearTimeout(registryKick)
+        registryKick = setTimeout(() => refreshPacks().catch(() => {}), 300)
+      })
+      registryWatch = watcher
+      watcher.on('error', () => {
+        watcher.close()
+        registryWatch = null
+      })
+    } catch {}
+  }
+  watchRegistry()
+  const registryTimer = setInterval(watchRegistry, 5000)
+  registryTimer.unref()
+  ctx.stopPackWatch = () => {
+    clearInterval(registryTimer)
+    clearTimeout(registryKick)
+    if (registryWatch) registryWatch.close()
+    registryWatch = null
+  }
 
   // 한 번에 하나 — 같은 요청이 두 번 와도 두 번째는 busy
   ctx.packTask = async <T,>(name: string, work: (signal: AbortSignal) => Promise<T>) => {
