@@ -27,9 +27,9 @@ const SOURCE_EXT = 'js|jsx|mjs|cjs|ts|tsx|mts|cts|json|py|rb|go|rs|java|kt|swift
 
 /**
  * @param {string} text
- * @param {{ names?: unknown[], paths?: Array<string | null | undefined> }} [scrub] names: 가릴 이름들(레포 · 팩 · 회사 · 사람) · paths: 가릴 경로(홈 · 팩 · 본체 경로)
+ * @param {{ names?: unknown[], paths?: Array<string | null | undefined>, scripts?: Set<string> }} [scrub] names: 가릴 이름들(레포 · 팩 · 회사 · 사람) · paths: 가릴 경로(홈 · 팩 · 본체 경로) · scripts: 남길 아테나 스크립트 경로(`scripts/board.sh` — 실제 코어에 있는 것만)
  */
-export const redact = (text, { names = [], paths = [] } = {}) => {
+export const redact = (text, { names = [], paths = [], scripts = new Set() } = {}) => {
   let result = String(text ?? '')
   // 코드 조각은 통째로 뺀다 — 블록 · 인라인 모두
   result = result.replace(/```[\s\S]*?(?:```|$)/g, '[코드 생략]').replace(/`[^`\n]*`/g, '[코드 생략]')
@@ -45,12 +45,12 @@ export const redact = (text, { names = [], paths = [] } = {}) => {
     .replace(/[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g, '<메일>')
     .replace(/\bgit@[\w.-]+:[^\s]+/g, '<주소>')
     .replace(/\b(?:https?|ssh|git):\/\/[^\s"'`)\]]+/g, '<주소>')
-  // 상대 파일 경로 — 슬래시가 둘 이상이거나 끝이 파일 확장자. 아테나 스크립트(scripts/…)는 남긴다
+  // 상대 파일 경로 — 슬래시가 둘 이상이거나 끝이 파일 확장자. 실제 코어에 있는 아테나 스크립트 경로(scripts 인자)만 남긴다
   result = result.replace(/(?<![\w<>/.-])(?:\.{1,2}\/)?[\w@.-]+(?:\/[\w@.-]+)+\/?/g, (matched) => {
     const slashes = matched.split('/').length - 1
     const last = matched.replace(/\/$/, '').split('/').pop() ?? ''
     const looksFile = new RegExp(`\\.(?:${SOURCE_EXT})$`, 'i').test(last)
-    if (matched.startsWith('scripts/')) return matched
+    if (scripts.has(matched)) return matched
     return slashes >= 2 || looksFile ? '<경로>' : matched
   })
   // 소스 파일 이름만 따로 쓴 것(internal.js) — 아테나 스크립트(.mjs · .sh · .py)는 남기려고 확장자를 고객 코드에 흔한 것으로 한정

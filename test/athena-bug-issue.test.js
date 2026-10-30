@@ -28,7 +28,7 @@ test('redact: 경로 · 코드 · 비밀 · 메일 · 주소 · 회사 이름을
     'token=abcdef123456 mail a@acme.com git@github.com:acme/api.git https://acme.example/x',
     'Acme broke scripts/new-plan.mjs',
   ].join('\n')
-  const out = redact(text, { names: ['acme'], paths: ['/opt/body'] })
+  const out = redact(text, { names: ['acme'], paths: ['/opt/body'], scripts: new Set(['scripts/new-plan.mjs']) })
   assert.ok(!/kim|acme|abcdef123456|const secret|a@/i.test(out), out)
   assert.ok(out.includes('scripts/new-plan.mjs'))
 })
@@ -48,8 +48,8 @@ test('buildDraft: 템플릿 필드 id 로 주소를 만들고 길면 줄여 표�
 
 test('redact: 인라인 코드 · 상대 파일 경로 · 독립 호스트명 · IP 도 가리고 스크립트 이름은 남긴다', async () => {
   const { redact } = await load()
-  const out = redact('calls `secretFunction()` in src/customer/internal.js and internal.js, host db.internal.example, api.corp.io:8080, 10.0.3.7; see scripts/board.sh', {})
-  assert.ok(!/secretFunction|src\/customer|internal\.js|db\.internal|corp\.io|10\.0\.3\.7/.test(out), out)
+  const out = redact('calls `secretFunction()` in src/customer/internal.js and internal.js, host db.internal.example, api.corp.io:8080, 10.0.3.7; see scripts/board.sh and scripts/customer/internal.js', { scripts: new Set(['scripts/board.sh']) })
+  assert.ok(!/secretFunction|src\/customer|internal\.js|db\.internal|corp\.io|10\.0\.3\.7|customer/.test(out), out)
   assert.ok(out.includes('scripts/board.sh'), out)
 })
 

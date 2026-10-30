@@ -12,7 +12,8 @@
  * 글은 영어 템플릿(.github/ISSUE_TEMPLATE/bug_report.yml)에 들어가니 영어로 쓰면 좋다(필수 아님).
  */
 import { execFileSync } from 'node:child_process'
-import { realpathSync } from 'node:fs'
+import { readdirSync, realpathSync } from 'node:fs'
+import { join } from 'node:path'
 import { homedir } from 'node:os'
 import { ATHENA_ROOT, loadConfig, paths } from './lib/config.mjs'
 import { versionInfo } from './lib/bodies.mjs'
@@ -63,12 +64,31 @@ if (hasStudioRepo(config)) {
   process.exit(3)
 }
 
+// 남길 아테나 스크립트 경로 — 이 코어의 scripts/ 아래 실제 파일(두 단계까지)만. 고객 레포의 scripts/… 는 가린다
+/**
+ * @param {string} dir
+ * @param {string} prefix
+ * @param {number} depth
+ * @returns {string[]}
+ */
+const listScripts = (dir, prefix, depth) => {
+  try {
+    return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+      if (entry.isFile()) return [`${prefix}${entry.name}`]
+      return entry.isDirectory() && depth > 0 ? listScripts(join(dir, entry.name), `${prefix}${entry.name}/`, depth - 1) : []
+    })
+  } catch {
+    return []
+  }
+}
+
 const where = paths(ATHENA_ROOT)
 const scrub = {
   names: [
     ...config.repos.flatMap((/** @type {{ name?: string, displayName?: string, agents?: string[] }} */ repo) => [repo.name, repo.displayName, ...(repo.agents ?? [])]),
     config.company, config.name, where.packId, process.env.USER,
   ],
+  scripts: new Set(listScripts(join(ATHENA_ROOT, 'scripts'), 'scripts/', 1)),
   paths: [ATHENA_ROOT, where.packDir, where.packData, where.packDataReal, where.dataDir, homedir()].flatMap((path) => (path ? [path, realpathOr(path)] : [])),
 }
 /** @param {string} text */
