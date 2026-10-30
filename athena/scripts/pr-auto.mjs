@@ -39,7 +39,7 @@ import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
-  BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
+  BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_OFF, repoFlow, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, codexModelArgs, codexUserSettings, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
@@ -529,8 +529,15 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (ref.worktree !== workRef.worktree) console.log(`  ↪ PR 브랜치 ${pr.headRefName} 의 워크트리 ${ref.worktree}(Work ref 는 ${workRef.worktree || '없음'})`)
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
+  const flow = repoFlow(config, repo)
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${MAX_ROUNDS}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto' }
+
+  // 리뷰 끔 — 리뷰어를 부르지 않고 안 정한 결정 · 같은 HEAD 검증 · 충돌만 본 뒤 머지 단계로. 라운드를 쓰지 않는다(리뷰를 다시 켜도 상한에 걸리지 않게)
+  if (!flow.review) {
+    if (dryRun) return console.log(`── 할 일: ${REVIEW_OFF} — 리뷰 없이 같은 HEAD 검증(reuse.sh 엄격) · 충돌 확인 → 머지 단계\n(--dry-run — 계획서 · pane · 요청 · 머지 모두 하지 않았다)`)
+    return prepareMerge({ planPath, planFile, repo, number, sha, round: 1, ref, pr, org, summary: null, reviewOff: true, config })
+  }
 
   // base 합침은 상한을 넘은 라운드여도 멈추거나 이어받지 않고 한 번 리뷰한다
   if (isTakeoverRound(round) && !baseMerge && !grantsTakeover(known?.result)) {
@@ -587,7 +594,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const partial = partialApproval(summary, packed)
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
-    console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 아테나에 알림` : plannedAction(summary, round)}`)
+    console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 아테나에 알림` : plannedAction(summary, round, flow)}`)
     console.log('(--dry-run — 댓글 · 계획서 · pane · 요청 · 머지 모두 하지 않았다)')
     return
   }
@@ -683,7 +690,8 @@ const autoResult = (verdict, takeover, atLimit) => {
   return atLimit ? `${head} — 리뷰어 부족이라 이어받지 않음` : head
 }
 
-const plannedAction = (summary, round) => {
+const plannedAction = (summary, round, flow) => {
+  if (summary.verdict === 'approve' && flow.merge === 'manual') return '승인까지만 — 머지는 사람이 직접(요청 없음)'
   if (summary.verdict === 'approve') return '안 정한 결정 · 같은 HEAD 검증(reuse.sh 엄격) · 충돌 확인 → 머지 확인 요청(맥 알림 · [작업] 팝업)'
   if (summary.verdict === 'insufficient') return `머지하지 않음 — 리뷰어 부족(승인 ${summary.approvals}/${REVIEWERS.length}) · 아테나에 알림`
   const parts = []
@@ -694,6 +702,11 @@ const plannedAction = (summary, round) => {
   if (takeoverEligible(summary, round)) parts.push(`리뷰 상한 ${MAX_ROUNDS} — 다음 커밋은 ${TAKEOVER}(리뷰 없이 검증만으로 머지 단계)`)
   else if (round >= MAX_ROUNDS) parts.push(`리뷰 상한 ${MAX_ROUNDS} · 리뷰어 부족 — 다음 커밋은 이어받지 않고 멈춤`)
   return parts.join(' · ')
+}
+
+const unreviewedNote = (job) => {
+  if (job.takeover) return `(${TAKEOVER} — 리뷰 없이 검증만으로 머지)`
+  return job.reviewOff ? `(${REVIEW_OFF} — 리뷰 없이 검증만으로 머지)` : ''
 }
 
 // ── 머지 — 검증 · 충돌 확인 → 사람에게 한 번 묻기(결정 D3 · 레포가 autoMergeConfirm: false 면 묻지 않고) → squash(결정 D5) ─────────────
@@ -719,11 +732,16 @@ const settledMergeable = async (org, repo, number, current) => {
 }
 const RETRY_HINT = '원인을 해결한 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다(같은 HEAD 는 다시 감지하지 않는다).'
 
-// summary 가 null 이면 상한 뒤 이어받은 HEAD(리뷰 없음 — 결정 C) — 같은 길 · 줄 · 요청 글만 다르다
-const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note = '', ref, pr, org, summary, config }) => {
+// summary 가 null 이면 리뷰 없이 온 HEAD — 상한 뒤 이어받음(결정 C) 또는 레포가 리뷰 끔(reviewOff). 같은 길 · 줄 · 요청 글만 다르다
+const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note = '', ref, pr, org, summary, reviewOff = false, config }) => {
   const line = { repo, number, sha, round, note }
-  const takeover = summary === null
-  const passed = takeover ? `${TAKEOVER}(리뷰 없이 검증만으로 머지)` : `승인 ${summary.approvals}/${REVIEWERS.length}`
+  const unreviewed = summary === null
+  const takeover = unreviewed && !reviewOff
+  const skipName = reviewOff ? REVIEW_OFF : TAKEOVER
+  const stage = unreviewed ? skipName : '승인'
+  const passed = unreviewed ? `${skipName}(리뷰 없이 검증만으로 머지)` : `승인 ${summary.approvals}/${REVIEWERS.length}`
+  const skipReason = reviewOff ? '레포가 리뷰 끔이라 리뷰 없이' : `${TAKEOVER} — 리뷰 상한(${MAX_ROUNDS}) 뒤 고친 커밋이라 리뷰 없이`
+  const skipNote = reviewOff ? '레포가 리뷰 끔(리뷰 없음)' : '리뷰 상한 뒤 이어받은 커밋(리뷰 없음)'
   if (pendingDecisions(planFile, repo, number)) {
     // 사람이 정할 결정이 결정 콘솔에 남아 있다(결정 A 로 수정이 먼저 올라온 경우) — 묻지도 머지하지도 않는다. 확정 지시를 반영한 커밋이 오면 다시 본다
     // 상한 라운드에서 승인됐으면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — 줄에 그 표시를 남긴다
@@ -736,12 +754,19 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     console.log('  → 결정 콘솔에 안 정한 결정이 있다 — 머지하지 않고 기다린다')
     return
   }
+  if (repoFlow(config, repo).merge === 'manual') {
+    // 머지는 사람이 직접 — 요청도 검증도 하지 않고 줄만 남긴다. 새 커밋이 오면 다시 리뷰한다
+    writeAutoLine(planPath, { ...line, result: `${passed} → 사람이 직접 머지` })
+    logEvent(ROOT, 'auto.stop', { plan: planFile, repo, pr: number, sha: sha.slice(0, 7), reason: 'manual' })
+    console.log('  → 머지는 사람이 직접(레포 "autoMergeManual": true)')
+    return
+  }
   const verify = verifiedAt(repo, ref.worktree, sha)
   if (!verify.ok) {
     // 검증을 못 했으면 머지 확인을 묻지 않는다 — 같은 HEAD 는 다시 감지되지 않으니(계획서 줄) 새 커밋이 오거나 사람이 그 줄을 지워야 다시 본다
     writeAutoLine(planPath, { ...line, result: `검증 대기 — ${verify.why}` })
     logEvent(ROOT, 'auto.stop', { plan: planFile, repo, pr: number, sha: sha.slice(0, 7), reason: 'verify', why: verify.why })
-    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 검증 못 함 — ${repo}#${number}`, body: `${takeover ? `리뷰 상한 뒤 이어받은 커밋(리뷰 없음)` : `리뷰는 승인(${summary.approvals}/${REVIEWERS.length})`}인데 같은 HEAD 검증을 못 했다: ${verify.why}. 머지하지 않았다. ${RETRY_HINT}` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 검증 못 함 — ${repo}#${number}`, body: `${unreviewed ? skipNote : `리뷰는 승인(${summary.approvals}/${REVIEWERS.length})`}인데 같은 HEAD 검증을 못 했다: ${verify.why}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
   pr.mergeable = await settledMergeable(org, repo, number, pr.mergeable)
@@ -753,10 +778,10 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
       const sent = pane && (await sendToPane(pane, masked(conflictNotice({ agent: ref.agent || '작업 에이전트', repo, number, sha, base: pr.baseRefName, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))))
       console.log(sent ? `  → 충돌 — base 를 합쳐 풀라고 pane ${pane} 에 보냈다` : '  ⚠️ 충돌 — 작업 pane 이 없어 아테나에만 알린다')
     }
-    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${takeover ? TAKEOVER : '승인'} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
     return
   }
-  const job = { plan: planFile, repo, number, sha, round, note, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true } : {}) }
+  const job = { plan: planFile, repo, number, sha, round, note, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true } : {}), ...(reviewOff ? { reviewOff: true } : {}) }
   if (skipsMergeConfirm(config, repo)) {
     // 레포가 "autoMergeConfirm": false — 머지 확인 요청을 열지 않고, [머지] 를 고른 것과 같은 경로(다시 확인 → draft 풀기 → squash)로 바로.
     // 확인 대기와 같은 confirm/ 파일로 둔다 — GitHub 가 계산 중(UNKNOWN)이면 처리기가 30초마다 다시 본다(--kick 도 이 파일로 처리기를 띄운다)
@@ -770,7 +795,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   const request = ask(planFile, {
     key: `pr-auto-merge:${repo}#${number}`,
     title: `머지할까요? ${repo}#${number} → ${pr.baseRefName}`,
-    body: `${pr.title}\n${takeover ? `${TAKEOVER} — 리뷰 상한(${MAX_ROUNDS}) 뒤 고친 커밋이라 리뷰 없이` : `자동 리뷰 승인 ${summary.approvals}/${REVIEWERS.length}(${note || 'Claude · Codex'}) ·`} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 squash 머지한다(base ${pr.baseRefName}).`,
+    body: `${pr.title}\n${unreviewed ? skipReason : `자동 리뷰 승인 ${summary.approvals}/${REVIEWERS.length}(${note || 'Claude · Codex'}) ·`} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 squash 머지한다(base ${pr.baseRefName}).`,
     options: [{ label: '머지', desc: `squash 머지 → ${pr.baseRefName}`, recommended: true }, { label: '보류', desc: '머지하지 않는다 — 사람이 이어받는다' }],
   })
   if (!request) return
@@ -809,7 +834,10 @@ export const checkConfirms = async (only = '') => {
     }
     const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName'])
     if (!pr) { release(); continue }
-    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || !autoMergeRepos(config).has(job.repo)
+    // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰다
+    const flowNow = repoFlow(config, job.repo)
+    const settingChanged = !autoMergeRepos(config).has(job.repo) || flowNow.merge === 'manual' || (Boolean(job.reviewOff) && flowNow.review)
+    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged
     if (job.noConfirm && (stale || !skipsMergeConfirm(config, job.repo))) {
       // 그새 PR 이 닫혔거나 · 새 커밋이 왔거나 · 설정이 바뀌었다(자동 머지를 끄거나 확인을 다시 켬) — 묻지 않고 머지하지 않는다.
       // 같은 HEAD 그대로면 줄에 이유를 남긴다(줄을 지우면 지금 설정으로 다시 돈다) · 새 HEAD 는 따로 다시 리뷰된다
@@ -821,6 +849,8 @@ export const checkConfirms = async (only = '') => {
     if (!job.noConfirm && stale && ['open', 'answered'].includes(request.state)) {
       try { cancelRequest(ROOT, request.id, { reason: `PR ${pr.state} · HEAD ${pr.headRefOid.slice(0, 7)} — 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
       rmSync(file, { force: true })
+      // 같은 HEAD 인데 설정만 바뀌었으면 "머지 확인 대기" 줄이 남지 않게(같은 HEAD 는 다시 돌지 않는다)
+      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)' })
       continue
     }
     if (request && ['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); continue }
@@ -869,7 +899,7 @@ export const checkConfirms = async (only = '') => {
       }
     }
     const merged = gh(['pr', 'merge', String(job.number), ...target, '--squash', '--match-head-commit', job.sha])
-    const result = merged.ok ? `머지됨 — squash → ${job.base}${job.takeover ? `(${TAKEOVER} — 리뷰 없이 검증만으로 머지)` : ''}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
+    const result = merged.ok ? `머지됨 — squash → ${job.base}${unreviewedNote(job)}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
     if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
     logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ok: merged.ok, ...(merged.ok ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
     console.log(merged.ok ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)

@@ -286,6 +286,13 @@ check "set-auto-merge on · confirm off → autoMerge true · autoMergeConfirm f
 check "다른 레포 · 다른 키는 그대로" '[ "$(python3 -c "import json,sys; a=json.load(open(sys.argv[1])); b=json.load(open(\"pack/pack.json\")); [r.pop(k,None) for r in b[\"repos\"] for k in (\"autoMerge\",\"autoMergeConfirm\")]; print(a==b)" "$WORK/pack.merge.bak")" = True ]'
 A pack set-auto-merge acme-web --auto off --confirm on >/dev/null
 check "끄고 묻기로 → 두 키 지움 · 파일이 처음과 글자까지 같다" 'cmp -s pack/pack.json "$WORK/pack.merge.bak"'
+R="$(A pack set-auto-merge acme-web --auto on --review off --merge auto)"
+check "--review off · --merge auto → autoReview false · autoMergeConfirm false · mergeMode auto" '[ "$(echo "$R" | field autoReview)" = False ] && [ "$(echo "$R" | field mergeMode)" = auto ] && [ "$(echo "$R" | field autoMergeConfirm)" = False ]' "$R"
+R="$(A pack set-auto-merge acme-web --merge manual)"
+check "--merge manual → autoMergeManual true · autoMergeConfirm 지움" '[ "$(echo "$R" | field mergeMode)" = manual ] && python3 -c "import json,sys; r=[x for x in json.load(open(\"pack/pack.json\"))[\"repos\"] if x[\"name\"]==\"acme-web\"][0]; sys.exit(0 if r[\"autoMergeManual\"] is True and \"autoMergeConfirm\" not in r else 1)"' "$R"
+check "--merge 이상한 값 · --merge 와 --confirm 같이 → 사용법 오류(종료 2)" 'node scripts/athena.mjs pack set-auto-merge acme-web --merge later --json >/dev/null 2>&1; [ $? -eq 2 ] && { node scripts/athena.mjs pack set-auto-merge acme-web --merge auto --confirm on --json >/dev/null 2>&1; [ $? -eq 2 ]; }'
+A pack set-auto-merge acme-web --auto off --review on --merge confirm >/dev/null
+check "모두 되돌리면 파일이 처음과 글자까지 같다" 'cmp -s pack/pack.json "$WORK/pack.merge.bak"'
 check "없는 레포 → not-found" '[ "$(A pack set-auto-merge nope --auto on | field error)" = not-found ]'
 check "on|off 아닌 값 → 사용법 오류(종료 2)" 'node scripts/athena.mjs pack set-auto-merge acme-web --auto yes --json >/dev/null 2>&1; [ $? -eq 2 ]'
 python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['repos'][1]['direct']=True; json.dump(d, open(p,'w'), indent=2)" pack/pack.json

@@ -20,7 +20,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -141,6 +141,25 @@ const confirmConfig = { repos: [
 ] }
 check('확인 없이 머지는 autoMerge 를 켠 레포의 autoMergeConfirm: false 만(키 없음 · 자동 머지 꺼짐 · main 직접 · 글자 "false" 는 확인)',
   skipsMergeConfirm(confirmConfig, 'web') && !['api', 'off', 'app', 'str', 'none'].some((name) => skipsMergeConfirm(confirmConfig, name)))
+// 조합표(docs/pr-auto.md "켜기") — 키마다 판정. 옛 pack.json 3종이 지금과 같은지 포함
+const flowOf = (keys) => { const flow = prFlow({ name: 'web', ...keys }); return `${flow.pr ? '켬' : '끔'}/${flow.review ? '켬' : '끔'}/${flow.merge}` }
+const flowCases = [
+  ['옛 키 없음', {}, '끔/끔/manual', false, false],
+  ['옛 autoMerge', { autoMerge: true }, '켬/켬/confirm', true, false],
+  ['옛 autoMerge + 확인 없음', { autoMerge: true, autoMergeConfirm: false }, '켬/켬/auto', true, true],
+  ['켬/끔/직접', { autoMerge: true, autoReview: false, autoMergeManual: true }, '켬/끔/manual', false, false],
+  ['켬/끔/확인', { autoMerge: true, autoReview: false }, '켬/끔/confirm', true, false],
+  ['켬/끔/자동', { autoMerge: true, autoReview: false, autoMergeConfirm: false }, '켬/끔/auto', true, true],
+  ['켬/켬/직접', { autoMerge: true, autoMergeManual: true }, '켬/켬/manual', true, false],
+  ['PR 끔이면 저장된 다른 키는 뜻이 없다', { autoReview: false, autoMergeConfirm: false }, '끔/끔/manual', false, false],
+  ['직접이 자동보다 먼저', { autoMerge: true, autoMergeManual: true, autoMergeConfirm: false }, '켬/켬/manual', true, false],
+  ['글자 값은 키 없음과 같다', { autoMerge: true, autoReview: 'false', autoMergeManual: 'true', autoMergeConfirm: 'false' }, '켬/켬/confirm', true, false],
+  ['main 직접 레포는 대상 아님', { autoMerge: true, direct: true, autoMergeConfirm: false }, '끔/끔/manual', false, false],
+]
+for (const [name, keys, flow, targeted, skips] of flowCases) {
+  const one = { repos: [{ name: 'web', ...keys }] }
+  check(`조합 — ${name}`, flowOf(keys) === flow && autoMergeRepos(one).has('web') === targeted && skipsMergeConfirm(one, 'web') === skips, `${flowOf(keys)} · 대상 ${autoMergeRepos(one).has('web')} · 확인 건너뜀 ${skipsMergeConfirm(one, 'web')}`)
+}
 check('Agent 줄이 이 레포 에이전트 하나 → 대상', singleRepoPlan('- Agent: web-fe\n', config, 'web'))
 const formal = '## 6. 작업 배분\n\n| 담당 | 작업 |\n|---|---|\n| api-be | x |\n| web-fe | y |\n| reviewer | z |\n'
 check('작업 배분 표에 다른 레포 에이전트가 있으면 → 대상 아님', !singleRepoPlan(formal, config, 'web'))
@@ -705,6 +724,24 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
 merge_case "키 없음 → 머지 확인 요청만(머지 안 함)" "" no '머지 확인 대기'
 [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 키 없음 → 확인 요청이 열림" || { echo "  ✖ 키 없음인데 확인 요청이 없다"; FAIL=1; }
 merge_case "autoMergeConfirm: true → 지금처럼 확인 요청" ', "autoMergeConfirm": true' no '머지 확인 대기'
+# 리뷰 · 머지 나누기(docs/pr-auto.md "켜기") — FAKE_CODEX=ok 라도 리뷰 끔이면 리뷰어를 부르지 않는다(PR 댓글 없음)
+no_comment() { if grep -q '^pr comment' "$GH_LOG"; then echo "  ✖ $1 — 리뷰 댓글이 달렸다"; FAIL=1; else echo "  ✔ $1 — 리뷰 댓글 없음"; fi; }
+no_request() { if [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ]; then echo "  ✖ $1 — 요청이 열렸다"; FAIL=1; else echo "  ✔ $1 — 요청 없음"; fi; }
+merge_case "켬/끔/확인 → 리뷰 없이 머지 확인 요청" ', "autoReview": false' no '리뷰 끔.* → 머지 확인 대기'
+no_comment "켬/끔/확인"
+[ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 켬/끔/확인 → [머지] 요청이 열림" || { echo "  ✖ 켬/끔/확인인데 요청이 없다"; FAIL=1; }
+merge_case "켬/끔/자동 → 검증 · 충돌 뒤 바로 squash" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main\(리뷰 끔'
+no_comment "켬/끔/자동"; no_request "켬/끔/자동"
+merge_case "켬/켬/직접 → 리뷰 승인까지 · 머지 요청 없음" ', "autoMergeManual": true' no '승인 2/2 → 사람이 직접 머지'
+no_request "켬/켬/직접"
+merge_case "직접 + autoMergeConfirm false → 직접이 먼저" ', "autoMergeManual": true, "autoMergeConfirm": false' no '사람이 직접 머지'
+PENDING=1 merge_case "켬/끔/자동 + 안 정한 결정 → 머지 안 함" ', "autoReview": false, "autoMergeConfirm": false' no '결정'
+# 대기 중에 설정이 바뀜 — 켬/끔/확인 건의 [머지] 요청이 열린 채 사람이 직접으로 돌리면 머지하지 않고 요청을 닫는다
+merge_case "켬/끔/확인 대기" ', "autoReview": false' no '머지 확인 대기'
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoReview": false, "autoMergeManual": true } ] }\n' > "$CORE/athena.config.json"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
+  const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 설정이 바뀜' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ]; then echo "  ✔ 대기 중 사람이 직접으로 → 머지 안 함 · 줄 남김 · 대기 파일 없음"; else echo "  ✖ 대기 중 사람이 직접으로"; cat "$TMP/merge.out"; FAIL=1; fi
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
 grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] \
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }
