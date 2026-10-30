@@ -257,6 +257,53 @@ else
   echo "  ⏭ 건너뜀 — 화면 확인(Playwright 없음)"
 fi
 
+# ── 실행기가 죽지 않고 · 죽어도 기록이 남는다 ───────────────────────
+echo "실행기 죽음:"
+CRASH_PORT=$((FE_PORT + 500))
+CRASH_TREE="$TMP/crash-tree"
+mkdir -p "$CRASH_TREE/docs/flows/be"
+cat > "$CRASH_TREE/server.js" <<'EOF'
+require('node:http').createServer((request, response) => response.end('ok')).listen(Number(process.argv[2]), '127.0.0.1')
+EOF
+# 응답 뒤 연결을 닫는 서버(python http.server 와 같다) — 본문을 안 읽은 fetch 가 undici assert(!this.paused) 로 프로세스를 죽였다.
+# 다른 프로세스 서버로는 가끔만 터져서, 실행기 안에 띄워 항상 터지는 조건으로 본다(--reuse-server 로 여기에 붙는다)
+cat > "$TMP/close-server-preload.mjs" <<'EOF'
+import { createServer } from 'node:net'
+const size = 80 * 1024
+const server = createServer((socket) => {
+  socket.on('error', () => {})
+  socket.once('data', () => {
+    socket.write(`HTTP/1.0 200 OK\r\nContent-Type: text/html\r\nContent-Length: ${size}\r\n\r\n`)
+    socket.end(Buffer.alloc(size, 97))
+  })
+})
+await new Promise((ready) => server.listen(Number(process.env.CRASH_PORT), '127.0.0.1', ready))
+EOF
+printf '# 닫는 서버\n## 갈림길\n- **열림**\n' > "$CRASH_TREE/docs/flows/be/01-close.md"
+printf '{ "cases": [ { "id": "CLOSE-1", "branch": "열림", "request": { "path": "/ok" }, "expect": { "status": 200 } } ] }\n' > "$CRASH_TREE/docs/flows/be/01-close.tc.json"
+printf '# 터지는 흐름\n## 갈림길\n- **터짐**\n' > "$CRASH_TREE/docs/flows/be/02-boom.md"
+printf '{ "cases": [ { "id": "BOOM-1", "branch": "터짐", "request": { "path": "/boom" }, "expect": { "status": 200 } } ] }\n' > "$CRASH_TREE/docs/flows/be/02-boom.tc.json"
+printf '{ "be": { "start": "node server.js %s", "url": "http://127.0.0.1:%s", "ready": "/" } }\n' "$CRASH_PORT" "$CRASH_PORT" > "$CRASH_TREE/docs/flows/qa.json"
+# TC 도중 잡히지 않는 예외를 일으킨다 — 실행기 코드에 시험용 구멍을 내지 않으려고 fetch 만 바꿔 끼운다
+cat > "$TMP/crash-preload.mjs" <<'EOF'
+const realFetch = globalThis.fetch
+globalThis.fetch = (url, init) => {
+  if (!String(url).includes('/boom')) return realFetch(url, init)
+  setTimeout(() => { throw new Error('일부러 터짐') }, 0)
+  return new Promise(() => {})
+}
+EOF
+git -C "$CRASH_TREE" init -q -b main
+git -C "$CRASH_TREE" add -A
+git -C "$CRASH_TREE" -c user.name=t -c user.email=t@t commit -qm 시작
+OUT="$(cd "$CORE" && CRASH_PORT="$CRASH_PORT" node --import "$TMP/close-server-preload.mjs" scripts/qa/run.mjs --service demo --cwd "$CRASH_TREE" --layer be --flow 01-close --reuse-server 2>&1)"; CODE=$?
+[ "$CODE" = 0 ] && pass "연결을 닫는 서버를 기다려도 안 죽는다" || fail "연결을 닫는 서버를 기다려도 안 죽는다" "$OUT"
+OUT="$(cd "$CORE" && node --import "$TMP/crash-preload.mjs" scripts/qa/run.mjs --service demo --cwd "$CRASH_TREE" --layer be --flow 02-boom 2>&1)"; CODE=$?
+[ "$CODE" = 1 ] && pass "도중에 터지면 끝 코드 1" || fail "도중에 터지면 끝 코드 1" "code $CODE: $OUT"
+check_run "터진 케이스는 실패로 남는다" 'item("02-boom", "BOOM-1")?.status === "fail" && item("02-boom", "BOOM-1").error.includes("일부러 터짐")'
+check_run "흐름은 오류 · 실행은 끝남으로 남는다" 'flow("02-boom").status === "error" && Boolean(run.finishedAt)'
+curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$CRASH_PORT/" && fail "터져도 띄운 서버를 끈다" || pass "터져도 띄운 서버를 끈다"
+
 # ── 싱크 확정 뒤 자동 실행 ─────────────────────────────────────────
 echo "싱크:"
 (cd "$CORE" && PATH="$TMP/bin:$PATH" node scripts/sync-fingerprint.mjs --repo demo >/dev/null 2>&1)

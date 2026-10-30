@@ -82,7 +82,12 @@ function installIfNeeded(tree, workDir, commit, install) {
 
 /** @param {string} url */
 const answers = async (url) => {
-  try { await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2000) }); return true } catch { return false }
+  try {
+    const response = await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2000) })
+    // 본문을 버린다 — 안 읽어 둔 채 서버가 연결을 닫으면 undici 가 assert(!this.paused) 로 프로세스를 죽인다
+    await response.body?.cancel()
+    return true
+  } catch { return false }
 }
 
 /**
@@ -205,6 +210,22 @@ const finish = () => {
   pruneRuns()
 }
 
+/**
+ * 잡지 못한 예외로 실행기가 죽을 때 — 돌던 케이스를 실패로 · 돌던 흐름을 오류로 적고 끝낸다
+ * @param {unknown} error
+ */
+function dieRecorded(error) {
+  const message = `실행기가 죽었어요: ${errorText(error)}`
+  console.error(message)
+  for (const entry of run.flows) {
+    if (entry.status !== 'running') continue
+    Object.assign(entry, { status: 'error', error: message })
+    for (const item of entry.cases) if (item.status === 'running') Object.assign(item, { status: 'fail', error: message })
+  }
+  finish()
+  Promise.resolve(stopCurrentServer?.()).finally(() => process.exit(1))
+}
+
 async function main() {
   const config = loadConfig(ROOT)
   const all = listServices(config)
@@ -226,6 +247,8 @@ async function main() {
   const id = claimRunId(RUNS_DIR, stamp())
   run = { id, pid: process.pid, startedAt: new Date().toISOString(), finishedAt: null, request: { services: services.map((service) => service.name), layer: layerArg, flow: option('flow') }, flows: [] }
   saveRun()
+  process.once('uncaughtException', dieRecorded)
+  process.once('unhandledRejection', dieRecorded)
   for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
     process.on(signal, () => {
       Promise.resolve(stopCurrentServer?.()).finally(() => { finish(); process.exit(1) })
