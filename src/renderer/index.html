@@ -144,13 +144,13 @@
       <div id="pack-dialog-actions" class="pack-actions"></div>
     </div>
   </div>
-  <!-- 코어 업데이트 결과 팝업 — 몸통은 React(ui/core-update.tsx) -->
-  <div id="core-update" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="core-update-title" tabindex="-1">
-    <div class="pack-box core-update-box"></div>
-  </div>
   <div id="pack-progress" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-busy="true" aria-labelledby="pack-progress-title" tabindex="-1">
     <!-- 몸통(도는 표시 · 제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) -->
     <div class="pack-box"></div>
+  </div>
+  <!-- 코어 업데이트 결과 팝업 — 몸통은 React(ui/core-update.tsx) · 같은 z-index 라 뒤에 있는 쪽이 위: 진행 표시(#pack-progress)와 같이 떠도 이 팝업이 위 -->
+  <div id="core-update" class="pack-overlay" hidden role="dialog" aria-modal="true" aria-labelledby="core-update-title" tabindex="-1">
+    <div class="pack-box core-update-box"></div>
   </div>
 
   <!-- 알림 — 대화상자보다 위(대화상자가 떠 있어도 보이고 닫을 수 있게) -->

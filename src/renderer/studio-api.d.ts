@@ -215,9 +215,6 @@ declare global {
     // 켤 때 코어 업데이트 결과(src/main/core-runner.mts showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만 열린다
     onCoreUpdate(callback: (view: import('../lib/release-notes.mts').CoreUpdateView) => void): () => void
     coreUpdateReveal(dir: string): Promise<boolean>
-    // 켤 때 코어 업데이트 결과(src/main/core-runner.mts showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만 열린다
-    onCoreUpdate(callback: (view: import('../lib/release-notes.mts').CoreUpdateView) => void): () => void
-    coreUpdateReveal(dir: string): Promise<boolean>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
     repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>
     // main 의 browserCommand(src/main/side-browser.mts) — navigate 는 { url } 또는 { error }, 나머지는 {}
