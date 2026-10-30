@@ -43,6 +43,21 @@ test('끊긴 설치 표시: 쓰고 · 읽고 · 지운다', () => {
   install.clearPending(root) // 없어도 괜찮다
 })
 
+test('다시 빌드 표시 · 켜기 반복 막기: 표시가 있을 때만 · 간격 안에는 한 번', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  assert.equal(install.shouldRelaunch(root), false) // 남은 일이 없으면 다시 켜지 않는다
+  install.writeRebuild(root)
+  assert.equal(install.hasRebuild(root), true)
+  assert.equal(install.shouldRelaunch(root, 1000), true)
+  install.markRelaunch(root, 1000)
+  assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS - 1), false) // 방금 한 번 했다
+  assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS), true)
+  install.clearRebuild(root)
+  assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS), false)
+  install.writePending(root, { at: 'x', heavy: '', lang: '' }) // 설치가 끊긴 표시만 있어도 대상
+  assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS), true)
+})
+
 test('missingModules: 켜는 데 꼭 필요한 electron · vite', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
   assert.deepEqual(install.missingModules(root), ['electron', 'vite'])

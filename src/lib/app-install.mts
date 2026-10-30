@@ -129,3 +129,45 @@ export function readPending(root: string): Pending | null {
 export function clearPending(root: string): void {
   fs.rmSync(pendingFile(root), { force: true })
 }
+
+// ── 다시 빌드할 것 표시 — 업데이트로 받은 뒤 아직 화면 · 코어 번들 · 개발 앱(Athena.app)을 새로 맞추지 못했다(start 가 맞추고 지운다).
+// 설치 표시와 따로다: 설치가 끝났어도 `[나중에]` 뒤 Dock · Finder 로 켜면 start 를 거치지 않아 옛 빌드로 뜬다
+export const rebuildFile = (root: string) => path.join(root, '.dev-app', 'rebuild-pending.json')
+
+export function writeRebuild(root: string): void {
+  try {
+    fs.mkdirSync(path.dirname(rebuildFile(root)), { recursive: true })
+    fs.writeFileSync(rebuildFile(root), JSON.stringify({ at: new Date().toISOString() }) + '\n')
+  } catch {
+    // 표시를 못 남겨도 업데이트는 한다
+  }
+}
+
+export const hasRebuild = (root: string): boolean => fs.existsSync(rebuildFile(root))
+
+export function clearRebuild(root: string): void {
+  fs.rmSync(rebuildFile(root), { force: true })
+}
+
+// start 를 거치지 않고 켜진 앱이 끝나지 않은 일(설치 · 다시 빌드)이 남은 것을 보면 도우미로 다시 켠다 — 켜기 반복을 막으려고 이 간격 안에는 한 번만
+export const RELAUNCH_GAP_MS = 5 * 60 * 1000
+const relaunchGuardFile = (root: string) => path.join(root, '.dev-app', 'relaunch-guard.json')
+
+export function shouldRelaunch(root: string, now = Date.now()): boolean {
+  if (!readPending(root) && !hasRebuild(root)) return false
+  try {
+    const at = Number(JSON.parse(fs.readFileSync(relaunchGuardFile(root), 'utf8')).at)
+    return !(Number.isFinite(at) && now - at < RELAUNCH_GAP_MS)
+  } catch {
+    return true
+  }
+}
+
+export function markRelaunch(root: string, now = Date.now()): void {
+  try {
+    fs.mkdirSync(path.dirname(relaunchGuardFile(root)), { recursive: true })
+    fs.writeFileSync(relaunchGuardFile(root), JSON.stringify({ at: now }) + '\n')
+  } catch {
+    // 못 남기면 다음에도 다시 켤 수 있다 — 도우미가 켠 앱은 VIA_START 표시가 있어 그 앱이 또 다시 켜지는 일은 없다
+  }
+}

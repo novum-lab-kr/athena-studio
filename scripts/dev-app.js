@@ -186,10 +186,15 @@ function makeBundle() {
   try {
     const appVersion = version.describeVersion({ repoRoot: ROOT, env: studioHome.gitEnv() }) || require(path.join(ROOT, 'package.json')).version
     const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, version: appVersion, log: (line) => console.log(`[dev-app] ${line}`) })
-    if (!made.ok) console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
-    else if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)}${made.version ? ` · ${made.version}` : ''} → ${path.relative(ROOT, out)}`)
+    if (!made.ok) {
+      console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
+      return false
+    }
+    if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)}${made.version ? ` · ${made.version}` : ''} → ${path.relative(ROOT, out)}`)
+    return true
   } catch (error) {
     console.warn(`[dev-app] 코어 번들을 만들지 못했어요 — ${error.message}`)
+    return false
   }
 }
 
@@ -239,7 +244,7 @@ async function start(args, { fromUpdate = false, installTried = false } = {}) {
   }
   // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
   version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
-  makeBundle()
+  const bundleOk = makeBundle()
   const renderer = await buildRenderer()
   if (renderer === 'missing') {
     process.exitCode = 1
@@ -248,6 +253,10 @@ async function start(args, { fromUpdate = false, installTried = false } = {}) {
   // 앱 ⚙ 업데이트 뒤 다시 켤 때 화면 빌드가 실패했으면 앱에 알린다(npm install 실패를 먼저 알린다)
   if (renderer === 'previous' && fromUpdate && !process.env.ATHENA_STUDIO_APP_UPDATE) process.env.ATHENA_STUDIO_APP_UPDATE = 'build-failed'
   const useDevApp = process.platform === 'darwin' && make()
+  // 맞춘 것이 끝났으면(번들 · 화면 빌드 · 개발 앱) 다시 빌드할 표시를 지운다 — 하나라도 못 했으면 남겨 다음에 켤 때 다시 맞춘다
+  if (bundleOk && renderer === 'built' && (process.platform !== 'darwin' || useDevApp)) appInstall.clearRebuild(ROOT)
+  // 앱이 이 표시로 start 를 거쳐 켜졌는지 안다 — 거치지 않고 켜진 앱만 도우미로 다시 켠다(켜기 반복 방지)
+  process.env.ATHENA_STUDIO_VIA_START = '1'
   const binary = useDevApp ? BINARY : require('electron')
   let child = null
   const launch = (file) => {
@@ -354,7 +363,9 @@ async function restart(args) {
 }
 
 const [command, ...rest] = process.argv.slice(2)
-if (command === 'make') make()
+// 켜 둔 앱 아래에서 도는 npm install(⚙ 업데이트)은 postinstall 의 make 를 건너뛰게 한다 — 실행 중인 Athena.app 을 바꿔 끼우지 않게. 다시 켤 때 start 가 맞춘다
+if (command === 'make' && process.env.ATHENA_STUDIO_SKIP_DEV_APP_MAKE) console.log('[dev-app] 개발 앱 만들기를 건너뛰어요(앱이 켜진 채 설치) — 다시 켤 때 맞춰요')
+else if (command === 'make') make()
 else if (command === 'start') start(rest)
 else if (command === 'restart') restart(rest)
 else {

@@ -132,6 +132,8 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
       return pulled
     }
     const needInstall = resumeInstall || (pulled.ok && pulled.install)
+    // 받았으니 화면 · 코어 번들 · 개발 앱은 다시 맞춰야 한다(start 가 맞추고 지운다) — [나중에] 뒤 Dock 으로 켜져도 알 수 있게 표시
+    appInstall.writeRebuild(APP_ROOT)
     logLine(pulled.ok ? `app update ${pulled.from.slice(0, 12)}..${pulled.to.slice(0, 12)}${needInstall ? ' · npm install (app running)' : ''}` : 'app update: retry unfinished npm install (app running)')
     if (!needInstall) return relaunch()
     const installed = await installWhileRunning()
@@ -159,7 +161,8 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
       file,
       list,
       cwd: APP_ROOT,
-      env: core.childEnv(process.env),
+      // postinstall 의 dev-app.js make 는 건너뛴다 — 켜 둔 .dev-app/Athena.app 을 바꿔 끼우지 않게(다시 켤 때 start 가 맞춘다)
+      env: core.childEnv(process.env, { ATHENA_STUDIO_SKIP_DEV_APP_MAKE: '1' }),
       onSpawn: (pid) => (installPid = pid),
       onOutput: (chunk) => appendLog(chunk),
       watch: appInstall.createLineWatcher({ onWait: () => setPhase('waiting'), onTurn: () => setPhase('installing') }),
@@ -209,7 +212,7 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
 
   // 설치가 끝난 업데이트를 지금 적용 — ⚙ 줄의 [다시 시작] (설치가 필요 없던 업데이트는 runAppUpdate 가 바로 부른다)
   async function restartAppUpdate(): Promise<{ ok: boolean; reason?: string }> {
-    if (app.isPackaged || appUpdatePhase !== 'ready') return { ok: false, reason: 'unavailable' }
+    if (app.isPackaged || appUpdatePhase !== 'ready' || appUpdateRunning) return { ok: false, reason: 'unavailable' }
     return relaunch()
   }
 
@@ -283,5 +286,14 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     return true
   }
 
-  return { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit }
+  // 켤 때 — dev-app.js start 를 거치지 않고(Dock · Finder · 알림) 켜졌는데 끝나지 않은 설치 · 다시 빌드 표시가 있으면 도우미로 다시 켠다. 켠다면 true(창을 열지 않는다).
+  // start 가 켠 앱은 ATHENA_STUDIO_VIA_START 가 있어 건너뛰고, 5분 안에는 한 번만 — 켜기 반복 방지
+  async function relaunchIfUnfinished(): Promise<boolean> {
+    if (!appUpdateEnabled() || process.env.ATHENA_STUDIO_VIA_START || !appInstall.shouldRelaunch(APP_ROOT)) return false
+    appInstall.markRelaunch(APP_ROOT)
+    logLine('launched without dev-app start while an update is unfinished — relaunching through the helper')
+    return (await relaunch()).ok
+  }
+
+  return { relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit }
 }
