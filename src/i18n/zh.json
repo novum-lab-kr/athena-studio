@@ -81,6 +81,7 @@
   "dialog.pickAthena.message": "请选择包含 CLAUDE.md 和 scripts/board/server.mjs 的 Athena 文件夹",
   "coreUpdate.title": "Athena 已切换到新版本",
   "coreUpdate.titleKept": "Athena 核心更新",
+  "coreUpdate.running": "正在更新核心",
   "coreUpdate.from": "旧版本",
   "coreUpdate.to": "新版本",
   "coreUpdate.notes": "更新内容",

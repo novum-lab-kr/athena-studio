@@ -370,7 +370,7 @@ const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 // 아테나 폴더 · 스튜디오 코어 준비 · 코어 · 팩 명령 실행 — src/main/core-runner.mts(PACK_TIMEOUTS 도 거기 — 팩을 바꾸는 명령은 시간이 넘어도 끊지 않는다).
 // 쓰는 것(electron app · dialog · 화면 문구 · 지금 언어 · 스튜디오 집 자리 · 코어 번들 · 데몬 자리 · 팩 로그 자리)은 인자로 넘긴다
-const { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile })
+const { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile, onUpdateState: (running) => { for (const ctx of packWindows) ctx.send('core-update:state', running) } })
 
 // [Finder 에서 보기] — 방금 만든 파일만
 let lastPackFile: string | null = null
@@ -437,12 +437,12 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   // pane [상세] · pane 목록 갱신(pollPanes) · 작업 공간 브랜치
   installPaneWatch(ctx, { monitor, paneTokens })
   // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡기(catchUpBody)
-  installCatchUp(ctx, { studio: STUDIO, runPack: runPack as unknown as Parameters<typeof installCatchUp>[1]['runPack'], packLogFile })
+  installCatchUp(ctx, { studio: STUDIO, updating: () => updateGate.active(), runPack: runPack as unknown as Parameters<typeof installCatchUp>[1]['runPack'], packLogFile })
 
   // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 현황판 · 요청 · [작업] — src/main/*.mts ──
   // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 현황판 · 앱 설정)은 인자로 넘긴다
   installExplorer(ctx, { say, resolveInside })
-  installAthenaAgent(ctx, { say, runPack, disarmRestore: () => (restoreArmedFor = null) })
+  installAthenaAgent(ctx, { say, runPack, waitCoreUpdate: () => updateGate.wait(), disarmRestore: () => (restoreArmedFor = null) })
   installPackRepos(ctx, { say, runPack, daemonPaths })
   // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
   let requestsState: RequestsState = { supported: false, requests: [], error: null }
@@ -452,6 +452,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     runPack,
     startBoard,
     stopStaleBoard,
+    waitCoreUpdate: () => updateGate.wait(),
     reloadKey,
     requestsPollMs: REQUESTS_POLL_MS,
     trayRequestsChanged: (target) => trayRequestsChanged(target as PackWindow),
@@ -791,6 +792,7 @@ handle('pack:import', (ctx, token: unknown, choice: unknown) => ctx.packImport(S
 handle('pack:export', (ctx, kind: unknown) => ctx.packExport(kind === 'backup' ? 'backup' : 'share'))
 handle('pack:reveal', () => packReveal())
 // 코어 업데이트 팝업의 [폴더 열기] — 팝업이 보인 백업 폴더만
+handle('core-update:running', () => updateGate.active())
 handle('core-update:reveal', (_ctx, dir: unknown) => revealCoreUpdateBackup(String(dir)))
 handle('pack:icon', (ctx, id: unknown) => ctx.packIcon(String(id)))
 handle('pack:set-name', (ctx, id: unknown, name: unknown) => ctx.packSetName(String(id), typeof name === 'string' ? name : null))
@@ -898,8 +900,8 @@ app.whenReady().then(async () => {
   // 코어 준비 · 업데이트는 git · node 를 부르므로 로그인 셸 PATH 를 받은 뒤에
   const loginPath = await loadLoginPath()
   if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
-  // 스튜디오 코어 — 처음이면 번들에서 풀고, 있던 본체면 번들이 앞일 때 업데이트(창을 열기 전 · 일하는 본체는 코어가 건너뛴다)
-  const prepared = await prepareStudioCore({ update: true })
+  // 스튜디오 코어 — 처음이면 번들에서 풀고 설정을 채운다(여기까지만 창 앞에서). 있던 본체의 코어 업데이트는 창을 연 뒤 뒤에서(updateStudioCore)
+  const prepared = await prepareStudioCore({ update: false })
   if (prepared.ok && !core.windowDirs(config, core.sameDir).length) {
     config = core.withWindows(config, [STUDIO.core])
     core.saveConfig(configFile(), config)
@@ -913,7 +915,8 @@ app.whenReady().then(async () => {
   buildMenu()
   openSavedWindows()
   const first = frontCtx()
-  void showCoreUpdateNotice(first && first.win)
+  // 코어 업데이트는 창이 뜬 뒤 뒤에서 — 끝나면 표시를 지우고 결과 팝업 → 팩 목록 새로 읽기 → 업데이트가 끈 현황판 다시 띄우기
+  if (prepared.ok) void runCoreUpdateInBackground()
   showAppUpdateNotice(first && first.win)
   checkAppUpdate()
   setInterval(checkAppUpdate, APP_UPDATE_CHECK_MS)
@@ -922,6 +925,17 @@ app.whenReady().then(async () => {
   if (isMac) createTray()
   app.on('activate', () => showWindow())
 })
+
+// 창을 연 뒤 코어 업데이트 — 문이 닫혀 있는 동안 팩 명령 · 현황판 · 새 에이전트 시작은 기다린다(core-runner.mts updateGate)
+async function runCoreUpdateInBackground(): Promise<void> {
+  const { changed } = await updateStudioCore()
+  const front = frontCtx()
+  void showCoreUpdateNotice(front && front.win)
+  if (!changed) return
+  refreshAllPacks()
+  // 업데이트가 새 코어로 올리며 끈 현황판은 다시 띄운다
+  for (const ctx of packWindows) if (ctx.ensureBoard) ctx.ensureBoard().catch(() => {})
+}
 
 let quitting = false
 app.on('window-all-closed', () => {

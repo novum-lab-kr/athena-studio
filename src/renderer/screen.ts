@@ -181,10 +181,13 @@ function tabPaneForCommand(): string | null {
   return ids.includes(screen.focused as string) ? screen.focused : ids[0] || null
 }
 
-export async function startScreen(): Promise<void> {
+// packsReady — 팩 목록을 읽는 중인 일. 코어 업데이트 중에는 팩 명령이 끝날 때까지 기다리므로,
+// 데몬에 붙어 pane 을 보여 주는 것은 먼저 하고 시작 화면 여부(에이전트를 켤지)만 목록 뒤에 본다
+export async function startScreen(packsReady: Promise<unknown> = Promise.resolve()): Promise<void> {
   starting = true
   try {
     if (!(await attach())) return
+    await packsReady.catch(() => {})
     // 시작 화면이 떠 있으면 팩을 고를 때까지 아테나를 켜지 않는다(enterPack 이 켠다)
     if (!welcomeShown()) await openAgent()
   } finally {

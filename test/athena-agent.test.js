@@ -51,7 +51,7 @@ function setup(t) {
   const daemon = fakeDaemon()
   const makeCtx = (athenaDir) => {
     const ctx = { athenaDir, daemonCall: daemon.callFor(athenaDir), packTask: (_name, work) => work(), packProgress() {}, studioEnv: () => ({}) }
-    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), disarmRestore() {} })
+    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), waitCoreUpdate: async () => {}, disarmRestore() {} })
     return ctx
   }
   return { root, daemon, makeCtx }

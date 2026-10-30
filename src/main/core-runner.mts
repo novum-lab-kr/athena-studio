@@ -11,6 +11,7 @@ import * as packModel from '../lib/pack.mts'
 import * as i18n from '../lib/i18n.mts'
 import * as daemonClient from '../daemon-client.mts'
 import * as releaseNotes from '../lib/release-notes.mts'
+import { createUpdateGate } from '../lib/update-gate.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 import type { CoreUpdateRow, CoreUpdateView } from '../lib/release-notes.mts'
 
@@ -52,13 +53,16 @@ function readJson(file: string): Record<string, string> | null {
 
 // app — 홈 · 앱 데이터 자리 · shell — 폴더 열기 · changelog — 내역 원문 파일 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
 // daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.mts)
-export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile }: { app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
+export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile, onUpdateState = () => {} }: { onUpdateState?: (running: boolean) => void; app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
   // ── 아테나 폴더 — 공용 ──────────────────────────────────────
   // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
   const athenaReposRoot = (dir: string) => core.reposRootFor(dir, { studioRoot: studio.root, home: app.getPath('home') })
 
   // 스튜디오 코어 준비 — 없으면 들고 온 번들에서 ~/.athena-studio/core 로 풀고, 본체 설정(dataDir · screen) · 레지스트리 손잡이(bodiesDir · portBase)를 채운다.
   // update: 이미 있던 본체면 번들이 앞일 때 업데이트(켤 때만 — 창을 열기 전, 아무 창도 본체를 쓰지 않을 때). 결과 기록은 pack.log
+  // 코어 업데이트 대기 문 — 업데이트가 도는 동안 팩 명령(runCore · runPack) · 현황판 · 새 에이전트 시작이 끝날 때까지 기다린다(update-gate.mts).
+  // 업데이트 자신의 코어 명령은 runCoreRaw 로 문을 거치지 않는다
+  const updateGate = createUpdateGate({ onChange: onUpdateState })
   let coreUpdateNotice: CoreUpdate | null = null // 켤 때 업데이트에서 알릴 것(건너뛴 본체 · 백업 · 실패) — 첫 창이 뜬 뒤 보여 준다
   // 예외(git 이 없음 · 쓰기 실패 등)도 결과로 — 켤 때 창이 안 뜨는 일이 없게
   async function prepareStudioCore({ update }: { update: boolean }): Promise<Prepared> {
@@ -70,17 +74,44 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
         home: app.getPath('home'),
         update,
         // 업데이트 경로는 약속 번호를 싣지 않는다(studio-home updateCore 가 { contract: false } 를 넘긴다)
-        runCore: (argv, options) => runCore(argv, { ...options, dir: studio.core }),
+        runCore: (argv, options) => runCoreRaw(argv, { ...options, dir: studio.core }),
         panesStateFile: writePanesState,
       })) as Prepared
     } catch (error) {
       result = { ok: fs.existsSync(studio.core), error: 'prepare-failed', message: (error as Error).message, update: null }
     }
     logCore(`prepare ${JSON.stringify({ ok: result.ok, created: result.created, error: result.error, update: result.update && { state: result.update.state, head: result.update.head, target: result.update.target, error: result.update.error } })}`)
-    const updated = result.update
+    noteUpdate(result.update)
+    return result
+  }
+
+  function noteUpdate(updated: CoreUpdate | null | undefined): void {
     if (updated && updated.summary && updated.summary.notify) coreUpdateNotice = updated
     else if (updated && ['unsupported', 'ff-failed', 'diverged', 'fetch-failed'].includes(updated.state)) coreUpdateNotice = updated
-    return result
+  }
+
+  // 창을 연 뒤 뒤에서 도는 코어 업데이트 — 설치 · 설정은 prepareStudioCore({ update: false }) 로 이미 끝났다.
+  // 도는 동안 문이 닫혀 팩 명령 · 현황판 · 새 에이전트 시작이 기다린다. 성공 · 실패 · 예외 모두 문이 열린다(update-gate.mts).
+  // 돌려주는 것: 새 코어로 바뀐 본체가 있는지(현황판 다시 띄우기 · 팩 목록 새로 읽기 판단)
+  async function updateStudioCore(): Promise<{ changed: boolean }> {
+    return updateGate.run(async () => {
+      let changed = false
+      try {
+        const updated = (await studioHome.updateCore({
+          coreDir: studio.core,
+          dataDir: studio.data,
+          bundle: coreBundle,
+          runCore: (argv, options) => runCoreRaw(argv, { ...options, dir: studio.core }),
+          panesStateFile: writePanesState,
+        })) as CoreUpdate
+        logCore(`update ${JSON.stringify({ state: updated.state, head: updated.head, target: updated.target, error: updated.error })}`)
+        noteUpdate(updated)
+        changed = Boolean(updated.summary && updated.summary.updated.length > 0)
+      } catch (error) {
+        logCore(`update failed ${(error as Error).message}`)
+      }
+      return { changed }
+    })
   }
 
   // 켤 때 업데이트 전 — 떠 있는 데몬의 pane 상태를 파일로(코어 update --panes-state · 쉬는 세션은 막지 않는다 · 결정 D1).
@@ -192,7 +223,13 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
   // extraEnv — 화면 계층(데몬)을 써야 하는 명령(restore-work 가 delegate.sh 로 pane 을 띄운다)만 데몬 접속 값을 넘긴다
   // 옛 코어가 모르는 명령이면 사용법만 찍고 끝나 "알 수 없는 답"(bad-output)이 된다 — 그때만 같은 본체에 version 을 물어
   // 약속 번호 · capabilities 로 옛 코어인지 가려 core-old 로 바꾼다(packModel.coreTooOld · 2026-10-26 pack set-repo-icon)
+  // 코어 업데이트 중이면 끝날 때까지 기다렸다 부른다 — 옛 코어로 팩 명령이 돌거나 업데이트의 팩 잠금과 부딪히지 않게(busy 로 건너뜀)
   async function runCore(argv: string[], options: RunCoreOptions = {}): Promise<PackResult> {
+    await updateGate.wait()
+    return runCoreRaw(argv, options)
+  }
+
+  async function runCoreRaw(argv: string[], options: RunCoreOptions = {}): Promise<PackResult> {
     const result = await runCoreOnce(argv, options)
     if (!result || result.error !== 'bad-output' || argv[0] === 'version' || !options.dir) return result
     const version = await runCoreOnce(['version'], { dir: options.dir, contract: false })
@@ -282,5 +319,5 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract < packModel.CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
   }
 
-  return { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock }
+  return { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock }
 }

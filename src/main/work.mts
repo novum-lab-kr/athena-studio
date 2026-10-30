@@ -59,6 +59,7 @@ type WorkDeps = {
   runPack: RunCore
   startBoard: (port: number, athenaDir: string) => Promise<BoardStart>
   stopStaleBoard: (port: number, athenaDir: string) => Promise<boolean>
+  waitCoreUpdate: () => Promise<void> // 코어 업데이트가 도는 동안 기다린다(옛 코어로 현황판을 띄운 뒤 업데이트가 끄지 않게)
   reloadKey: () => string
   requestsPollMs: number
   trayRequestsChanged: (ctx: WorkCtx) => void
@@ -73,7 +74,7 @@ type WorkDeps = {
 }
 
 export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
-  const { say, runCore, runPack, startBoard, stopStaleBoard, reloadKey, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState, logRequestsError } = deps
+  const { say, runCore, runPack, startBoard, stopStaleBoard, waitCoreUpdate, reloadKey, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState, logRequestsError } = deps
   const send = ctx.send
   // ctx 에 붙인 것을 이 안에서 부를 때(옛 main.js 처럼 ctx 로 찾는다)
   const ensureBoard = () => (ctx.ensureBoard as NonNullable<WorkCtx['ensureBoard']>)()
@@ -99,8 +100,11 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     return { ok: false }
   }
 
-  ctx.ensureBoard = () => {
-    if (!core.checkAthenaDir(ctx.athenaDir).ok) return Promise.resolve({ ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirMissing') })
+  ctx.ensureBoard = async () => {
+    if (!core.checkAthenaDir(ctx.athenaDir).ok) return { ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirMissing') }
+    await waitCoreUpdate()
+    // 기다리는 사이 팩을 바꿨을 수 있다 — 줄에 들어갈 때 다시 읽는다
+    if (!core.checkAthenaDir(ctx.athenaDir).ok) return { ok: false, url: core.boardUrl(boardPortNow()), error: say('error.athenaDirMissing') }
     return queueBoard(() => findOrStartBoard(ctx.athenaDir as string))
   }
 

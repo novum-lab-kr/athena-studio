@@ -136,6 +136,9 @@ async function init(): Promise<void> {
   // 코어 업데이트 결과 — main 이 화면을 다 읽자마자(did-finish-load) 한 번 보내므로 첫 await 전에 받을 준비를 한다
   StudioUi.coreUpdate.mount($('core-update').querySelector('.pack-box') as HTMLElement)
   studio.onCoreUpdate(showCoreUpdate)
+  // 코어 업데이트 중 표시 — 바뀔 때 알림을 받고, 처음 값은 한 번 묻는다
+  studio.onCoreUpdateState((running) => ($('core-updating').hidden = !running))
+  studio.coreUpdateRunning().then((running) => ($('core-updating').hidden = !running)).catch(() => {})
   setState(await studio.athenaState())
   renderState()
   initWork()
@@ -214,8 +217,8 @@ async function init(): Promise<void> {
   }
   if (state!.valid) {
     switchTab('work')
-    // 팩 목록(켤 때 시작 화면인지)을 먼저 — 시작 화면이면 고를 때까지 아테나 에이전트를 켜지 않는다(startScreen)
-    packsReady.finally(startScreen)
+    // 데몬에 붙어 pane 을 먼저 보여 주고, 팩 목록(켤 때 시작 화면인지)을 본 뒤 — 시작 화면이면 고를 때까지 아테나 에이전트를 켜지 않는다(startScreen)
+    void startScreen(packsReady)
   } else {
     installAthena()
   }

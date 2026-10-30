@@ -32,9 +32,9 @@ export type AthenaAgentCtx = {
   restoreNow?: unknown
 }
 
-type AthenaAgentDeps = { say: Say; runPack: RunPack; disarmRestore: () => void }
+type AthenaAgentDeps = { say: Say; runPack: RunPack; waitCoreUpdate: () => Promise<void>; disarmRestore: () => void }
 
-export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, disarmRestore }: AthenaAgentDeps): void {
+export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCoreUpdate, disarmRestore }: AthenaAgentDeps): void {
   // 옛 main.js 의 지역 daemonCall 과 같은 함수(ctx.daemonCall 은 창을 만들 때 한 번 붙고 바뀌지 않는다)
   const daemonCall = ctx.daemonCall
   // ── 아테나 에이전트 ──
@@ -55,6 +55,8 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, disarmRe
       return { focused: true, restore }
     }
     // agentDecision 은 { none } | { agent } — 읽는 칸을 같이 적는다
+    // 새 에이전트 pane 을 시작하기 전 — 코어 업데이트가 도는 중이면 끝날 때까지(옛 코어로 시작한 에이전트를 업데이트가 막거나 건너뛰지 않게). 있던 작업 공간으로 옮기기만 하는 위 경로는 기다리지 않는다
+    await waitCoreUpdate()
     const decision = core.agentDecision(core.availableAgents(process.env.PATH)) as { none?: true; agent?: string }
     const created = (await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })) as CreatedReply
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }

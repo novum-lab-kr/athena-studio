@@ -81,6 +81,7 @@
   "dialog.pickAthena.message": "Choose the Athena folder that contains CLAUDE.md and scripts/board/server.mjs",
   "coreUpdate.title": "Athena switched to a new version",
   "coreUpdate.titleKept": "Athena Core Update",
+  "coreUpdate.running": "Updating core",
   "coreUpdate.from": "Previous version",
   "coreUpdate.to": "New version",
   "coreUpdate.notes": "What's new",
