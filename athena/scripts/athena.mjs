@@ -346,8 +346,14 @@ const requestCommands = {
       return { label: label.trim(), desc: desc.join(' :: ').trim(), recommended: label.trim() === recommend }
     })
     const bodyFile = flag('body-file')
+    // 결정 콘솔(--html)이 없는 decision 은 앱이 열 화면이 없다 — question 으로 연다
+    let kind = flag('kind')
+    if (kind === 'decision' && !flag('html')) {
+      kind = 'question'
+      console.error('⚠️ --html 이 없는 decision 은 question 으로 열었다(decision 은 결정 콘솔 전용 · docs/requests.md)')
+    }
     return openRequest(ROOT, {
-      kind: flag('kind'),
+      kind,
       title: flag('title'),
       body: bodyFile ? readFileSync(resolve(bodyFile), 'utf8') : flag('body'),
       options,

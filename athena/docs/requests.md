@@ -56,6 +56,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 | 명령 | 하는 일 |
 |---|---|
 | `request open --kind decision\|question --title <글> [--body <글>\|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …] [--recommend <라벨>] [--plan …] [--html …] [--issue …] [--pane <id>] [--key <키>]` | 연다. `--pane` 이 없으면 부른 pane(`scripts/screen self`) · 화면 밖이면 포커스된 pane(`scripts/screen pane current`) |
+| (`--kind decision` 인데 `--html` 이 없으면) | `question` 으로 바꿔 열고 경고 한 줄 — decision 은 결정 콘솔(`plan-html.mjs`) 전용이라 앱이 열 화면이 없다 |
 | `request list [--all]` | 열린 것(open · answered) · `--all` 은 닫힌 것까지 |
 | `request show <id>` | 하나 |
 | `request answer <id> --by board\|app\|chat [--choice <라벨>] [--text <글>] [--rev <n>]` | 사람의 답 |

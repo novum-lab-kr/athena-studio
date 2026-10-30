@@ -41,6 +41,7 @@ section "열기 · 자리"
 R="$(A request open --kind decision --title '결정 하나' --option 'A :: 첫째' --option B --recommend A --key k1 --pane p1)"
 ID="$(echo "$R" | field request.id)"
 check "열림 · rev 1 · 팩 acme · pane p1" '[ "$(echo "$R" | field request.state)" = open ] && [ "$(echo "$R" | field request.rev)" = 1 ] && [ "$(echo "$R" | field request.pack)" = acme ] && [ "$(echo "$R" | field request.pane)" = p1 ]' "$R"
+check "--html 없는 decision 은 question 으로 열린다 · --html 이 있으면 decision 그대로" '[ "$(echo "$R" | field request.kind)" = question ] && HK="$(A request open --kind decision --title 콘솔 --html plans/x.html --key kh)"; [ "$(echo "$HK" | field request.kind)" = decision ] && A request cancel "$(echo "$HK" | field request.id)" >/dev/null' "$R"
 check "선택지 · 추천 · 설명" '[ "$(echo "$R" | field request.options.0.recommended)" = True ] && [ "$(echo "$R" | field request.options.0.desc)" = 첫째 ] && [ "$(echo "$R" | field request.options.1.label)" = B ]' "$R"
 check "팩 데이터 state/requests/<id>.json · 잠금은 남지 않음" '[ -f "$DIR/$ID.json" ] && [ ! -e "$DIR/.lock" ]'
 R="$(A request open --kind decision --title '결정 하나(고침)' --key k1)"
