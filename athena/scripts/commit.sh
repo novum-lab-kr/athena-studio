@@ -19,7 +19,7 @@
 # 확인하는 것 (하나라도 걸리면 아무것도 바꾸지 않고 멈춘다)
 #   - <워크트리> 가 등록된 git 워크트리이고 메인 체크아웃이 아니다(허용 옵션 제외)
 #   - HEAD 가 브랜치에 붙어 있다(detached 아님) · 보호 브랜치(dev·main·master·stg·frz·prd*·release/*·dev-*)가 아니다
-#   - 원래 스테이징돼 있던 변경이 없다 — 남의 변경이 섞이지 않게
+#   - 원래 스테이징돼 있던 변경이 없다 — 남의 변경이 섞이지 않게(스테이징된 경로가 전부 지정 파일이면 받는다 — git mv 한 이름 바꾸기는 옛 이름 · 새 이름을 둘 다 지정)
 #     예외 — merge 진행 중(MERGE_HEAD 있음)이면 merge 가 스테이징한 변경을 받아 merge 커밋을 만든다(base 를 합쳐 충돌을 푼 뒤 · docs/pr-auto.md).
 #     이때는 파일 없이(-- 만) 불러도 되고, HEAD 와 같은 내용으로 푼 파일도 받는다(merge 결과가 HEAD 와 같아도 merge 커밋).
 #     지정 파일(푼 파일)에 충돌 표시가 남았거나, 스테이징한 뒤 미병합 파일이 남았거나, 커밋될 스테이징 전체에 비밀 파일 · 내용 · 충돌 표시가 있으면 거부. 실패해도 스테이징은 되돌리지 않는다(merge 결과라 되돌리면 base 쪽 변경이 빠진다)
@@ -155,7 +155,12 @@ cleanup() { [ $STAGED = 1 ] && [ $COMMITTED = 0 ] && unstage; rmdir "$LOCK" 2>/d
 trap cleanup EXIT
 trap 'echo "❌ 중단됐다 — 스테이징을 되돌렸다" >&2; exit 130' INT TERM
 
-[ $MERGING = 1 ] || git -C "$TOP" diff --cached --quiet || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다"
+# 이미 스테이징된 변경은 남의 것일 수 있어 거부한다. 단 스테이징된 경로가 전부 지정 파일이면 받는다 — git mv 로 이름을 바꾸면 옛 이름 · 새 이름이 바로 스테이징되는데,
+# 이름 바꾸기는 옛 이름 · 새 이름을 둘 다 지정하는 것으로 충분하다(스테이징을 풀 필요 없음 · 이름 바꾸기를 --no-renames 로 풀어 두 경로를 모두 본다)
+if [ $MERGING = 0 ] && ! git -C "$TOP" diff --cached --quiet; then
+  PRESTAGED_EXTRA="$(git -C "$TOP" diff --cached --no-renames --name-only | grep -vxF -f <(printf '%s\n' ${FILES[@]+"${FILES[@]}"}) || true)"
+  [ -z "$PRESTAGED_EXTRA" ] || fail "원래 스테이징돼 있던 변경이 있다(남의 변경일 수 있다). git -C $TOP diff --cached --stat 으로 확인 — 이 스크립트는 건드리지 않는다. 지정 파일의 변경이면 파일 목록에 같이 넣는다(이름 바꾸기는 옛 이름 · 새 이름 둘 다): $PRESTAGED_EXTRA"
+fi
 # 파일 없이 부르는 것은 merge 커밋일 때만(merge 결과가 이미 다 스테이징돼 있다 — 충돌 파일을 지금 브랜치 내용으로 풀어 HEAD 와 차이가 없을 때 등)
 [ ${#FILES[@]} -gt 0 ] || [ $MERGING = 1 ] || { echo "사용: $0 --plan <plans/…md> --dir <워크트리> -m \"<메시지>\" [--verify …] -- <파일>…" >&2; exit 2; }
 for file in ${FILES[@]+"${FILES[@]}"}; do
