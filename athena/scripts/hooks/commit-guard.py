@@ -224,32 +224,166 @@ def check_gh(args):
     return ''
 
 
-# 종료자는 줄 전체(앞뒤 공백 · 닫는 괄호만 허용)여야 한다 — 본문이 비어 있어도 첫 종료자에서 끝난다
-HEREDOC = re.compile(r'<<(?!<)-?[ \t]*(?P<quote>[\'"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)[^\n]*\n(?P<body>(?:.*?\n)??)(?=[ \t]*(?P=tag)[ \t]*\)*[ \t]*(?:\n|$))', re.S)
+# heredoc 머리줄 — <<EOF · <<-EOF · <<'EOF' · <<"EOF" · <<\EOF (따옴표·역슬래시가 있으면 본문에서 치환이 일어나지 않는다)
+HEREDOC_HEAD = re.compile(r'<<(?!<)(?P<dash>-)?[ \t]*(?P<quote>[\'"\\]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)[\'"]?[^\n]*\n')
+
+
+def arithmetic_spans(view):
+    """(( … )) · $(( … )) 구간 (시작, 끝) — 안의 << 는 heredoc 이 아니라 시프트 연산이다"""
+    spans = []
+    for opened in re.finditer(r'\(\(', view):
+        depth, cursor = 0, opened.start()
+        while cursor < len(view):
+            depth += {'(': 1, ')': -1}.get(view[cursor], 0)
+            if depth == 0:
+                break
+            cursor += 1
+        spans.append((opened.start(), cursor))
+    return spans
+
+
+def heredoc_substitutions(body):
+    """따옴표 없는 heredoc 본문에서 실제로 실행되는 $( … ) · ` … ` 안쪽만 꺼낸다 — \\$( · \\` 는 글자일 뿐이다"""
+    found, index = [], 0
+    while index < len(body):
+        char = body[index]
+        if char == '\\':
+            index += 2
+        elif body.startswith('$(', index):
+            depth, end = 0, index + 1
+            while end < len(body):
+                depth += {'(': 1, ')': -1}.get(body[end], 0)
+                if depth == 0:
+                    break
+                end += 1
+            found.append(body[index + 2:end]); index = end + 1
+        elif char == '`':
+            end = index + 1
+            while end < len(body) and body[end] != '`':
+                end += 2 if body[end] == '\\' else 1
+            found.append(body[index + 1:end]); index = end + 1
+        else:
+            index += 1
+    return found
 
 
 def strip_heredocs(text):
     """heredoc 본문은 명령이 아니라 글이다 — 커밋 메시지 줄이 `commit.sh …` · `git commit …` 로 시작해도 명령으로 보지 않게 지운다.
-    따옴표 · 주석 안의 << 는 heredoc 이 아니다(그 뒤 줄은 실제 명령이다). 따옴표 없는 구분자(<<EOF)의 본문은 안의 $( … ) · ` … ` 만 남긴다(그건 실행된다)"""
+    따옴표 · 주석 · 산술식 안의 << 는 heredoc 이 아니다(그 뒤 줄은 실제 명령이다). 종료자는 셸처럼 줄 전체가 정확히 같아야 한다
+    (<<- 이면 앞의 탭만 뗀다 — 공백 · 닫는 괄호는 안 된다). 종료자가 없으면 끝까지가 본문이다.
+    따옴표 없는 구분자(<<EOF)의 본문은 실제로 실행되는 $( … ) · ` … ` 만 남긴다"""
     view = mask_quotes(text, keep_substitution=True)
+    spans = arithmetic_spans(view)
+    out, position = [], 0
+    for head in HEREDOC_HEAD.finditer(text):
+        start = head.start()
+        if start < position:
+            continue
+        line_start = text.rfind('\n', 0, start) + 1
+        if (view[start:start + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:start])
+                or any(begin <= start <= end for begin, end in spans)):
+            continue
+        body_end, cursor = len(text), head.end()
+        while cursor < len(text):
+            line_end = text.find('\n', cursor)
+            line_end = len(text) if line_end < 0 else line_end
+            line = text[cursor:line_end]
+            if (line.lstrip('\t') if head.group('dash') else line) == head.group('tag'):
+                body_end = cursor
+                break
+            cursor = line_end + 1
+        out.append(text[position:head.end()])
+        if not head.group('quote'):
+            out += [f'$({piece})\n' for piece in heredoc_substitutions(text[head.end():body_end])]
+        position = body_end
+    out.append(text[position:])
+    return ''.join(out)
 
-    def blank(match):
-        line_start = text.rfind('\n', 0, match.start()) + 1
-        if view[match.start():match.start() + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:match.start()]):
-            return match.group(0)
-        head = match.group(0)[:match.start('body') - match.start()]
-        if match.group('quote'):
-            return head
-        body = match.group('body')
-        kept = [body[begin:end] for begin, end in balanced_groups(body, '$(')]
-        kept += re.findall(r'`([^`]*)`', body)
-        return head + ''.join(f'$({piece})\n' for piece in kept)
-    return HEREDOC.sub(blank, text)
+
+def raw_words(piece):
+    """따옴표 · 역슬래시를 그대로 둔 채 공백으로 나눈 단어들 — tokens_of 와 단어 수가 같으면 같은 자리다"""
+    words, current, quote, started, index = [], '', '', False, 0
+    while index < len(piece):
+        char = piece[index]
+        if quote == "'":
+            current += char
+            quote = '' if char == "'" else quote
+        elif char == '\\' and index + 1 < len(piece):
+            current += piece[index:index + 2]; index += 2; started = True; continue
+        elif quote == '"':
+            current += char
+            quote = '' if char == '"' else quote
+        elif char in ('"', "'"):
+            quote = char; current += char; started = True
+        elif char.isspace():
+            if started:
+                words.append(current); current, started = '', False
+        else:
+            current += char; started = True
+        index += 1
+    if started:
+        words.append(current)
+    return words
 
 
-def resolve_script_path(token):
-    """~ · $HOME · ${VAR} 를 셸처럼 풀어 실경로로 만든다 — 셸이 풀어서 실행하는 경로를 같은 이름의 다른 파일로 오인하지 않게"""
-    return os.path.realpath(os.path.join(cwd, os.path.expandvars(os.path.expanduser(token))))
+def assigned(name):
+    """명령 글 안에서 이 변수에 값을 넣는 부분이 있나 — 있으면 훅 프로세스의 값은 셸의 값이 아니다(eval 이 있으면 모른다)"""
+    escaped = re.escape(name)
+    patterns = [
+        rf'(?<![\w$]){escaped}\+?=',
+        rf'\$\{{{escaped}:?=',
+        rf'\b(?:export|declare|typeset|readonly|local|unset|read|getopts|mapfile|readarray|for|select|printf\s+-v)\b[^;&|\n]*\b{escaped}\b',
+    ]
+    return bool(re.search(r'\beval\b', command)) or any(re.search(pattern, command) for pattern in patterns)
+
+
+def expand_word(raw):
+    """셸이 실제로 풀어 주는 부분만 푼다 — 작은따옴표 · 역슬래시로 보호된 $VAR · ~ 는 글자 그대로,
+    큰따옴표 안의 ~ 도 그대로. 풀 수 없으면(미정의 변수 · 명령 치환 · 글롭 · 이 명령 안에서 값을 넣는 변수) None"""
+    out, index, quote = [], 0, ''
+    while index < len(raw):
+        char = raw[index]
+        following = raw[index + 1:index + 2]
+        if quote == "'":
+            if char == "'":
+                quote = ''
+            else:
+                out.append(char)
+        elif char == '\\':
+            if quote == '"' and following not in ('$', '`', '"', '\\', '\n'):
+                out.append(char)
+            else:
+                out.append(following); index += 1
+        elif char == '"':
+            quote = '' if quote else '"'
+        elif char == "'" and not quote:
+            quote = "'"
+        elif char == '`' or (char == '$' and following in ('(', '')):
+            return None
+        elif char == '$':
+            matched = re.match(r'\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))', raw[index:])
+            if not matched:
+                return None
+            name = matched.group(1) or matched.group(2)
+            if name in ('PWD', 'OLDPWD') or name not in os.environ or assigned(name):
+                return None
+            out.append(os.environ[name]); index += matched.end(); continue
+        elif char == '~' and not quote and index == 0:
+            if following not in ('', '/') or assigned('HOME'):
+                return None
+            out.append(os.path.expanduser('~'))
+        elif not quote and char in '*?[{':
+            return None
+        else:
+            out.append(char)
+        index += 1
+    return None if quote else ''.join(out)
+
+
+def resolve_script_path(raw, token):
+    """실행하는 스크립트 경로를 실경로로 — raw(원문 단어)가 있으면 셸이 푸는 만큼만 풀고, 못 풀면 None(= 같은 파일이라 확신할 수 없다)"""
+    expanded = token if raw is None else expand_word(raw)
+    return None if expanded is None else os.path.realpath(os.path.join(cwd, expanded))
 
 
 def check(text, depth=0):
@@ -261,13 +395,16 @@ def check(text, depth=0):
         if reason:
             return reason
     for piece in split_pieces(text):
-        tokens = strip_prefix(tokens_of(piece))
+        all_tokens = tokens_of(piece)
+        tokens = strip_prefix(all_tokens)
         if not tokens:
             continue
         name = os.path.basename(tokens[0])
         if name in ALLOWED_SCRIPTS:
             # 이 아테나 레포의 그 파일일 때만 통과 — ./ship.sh · /tmp/ship.sh 같은 같은 이름의 다른 파일은 막는다
-            if resolve_script_path(tokens[0]) != ALLOWED_SCRIPTS[name]:
+            words = raw_words(piece)
+            raw = words[len(all_tokens) - len(tokens)] if len(words) == len(all_tokens) else None
+            if resolve_script_path(raw, tokens[0]) != ALLOWED_SCRIPTS[name]:
                 return f'{name} 은 아테나(athena) 레포의 scripts/{name} 만 실행한다: {ALLOWED_SCRIPTS[name]}'
             if name == 'ship.sh' and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
                 return 'ship.sh --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'

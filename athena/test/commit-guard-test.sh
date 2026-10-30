@@ -35,7 +35,31 @@ EOF
 check pass "따옴표 메시지에 줄바꿈" "$ROOT/scripts/commit.sh -m 'fix: x
 commit.sh 로 커밋' -- a"
 
+check pass "큰따옴표로 감싼 \$VAR 경로" '"$COMMIT_GUARD_TEST_ROOT"/scripts/commit.sh -m m'
+case "$ROOT" in "$HOME"/*) check pass "~ 경로" "~${ROOT#"$HOME"}/scripts/commit.sh -m m" ;; esac
+check pass "본문의 공백 종료자 모양 줄(' EOF' · 'EOF ' · 'EOF)')은 종료자가 아니다" $'cat <<\'EOF\'\n EOF\nEOF \nEOF)\ngit commit -m x\nEOF'
+check pass "<<- 의 탭 들여쓴 종료자 앞 본문" $'cat <<-\'EOF\'\n\tgit push\n\tEOF'
+check pass "따옴표 없는 heredoc 의 \\\$( 는 글자" "cat <<EOF
+\\\$(git commit -m x)
+EOF"
+check pass "따옴표 없는 heredoc 의 \\\` 는 글자" "cat <<EOF
+\\\`git push\\\`
+EOF"
+
 echo "막아야 할 것 — 계속 막힘"
+check block "export 로 바꾼 \$VAR 경로" 'export COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
+check block "대입한 \$VAR 경로" 'COMMIT_GUARD_TEST_ROOT=/tmp/evil; $COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m'
+check block "HOME 을 바꾼 ~ 경로" 'HOME=/tmp/evil; ~/x/scripts/commit.sh -m m'
+check block "작은따옴표로 보호된 \$VAR 는 글자" "'\$COMMIT_GUARD_TEST_ROOT/scripts/commit.sh' -m m"
+check block "역슬래시로 보호된 \$VAR 는 글자" "\\\$COMMIT_GUARD_TEST_ROOT/scripts/commit.sh -m m"
+check block "큰따옴표 안 ~ 는 글자" '"~/x/scripts/commit.sh" -m m'
+check block "산술식 안 << 뒤의 git push" "echo \$((a<<b))
+git push
+b"
+check block "<<- 종료자 뒤의 git push" $'cat <<-\'EOF\'\nx\n\tEOF\ngit push'
+check block "따옴표 없는 heredoc 의 \\\\\$( 는 실행" "cat <<EOF
+\\\\\$(git commit -m x)
+EOF"
 check block "상대 경로 commit.sh" "scripts/commit.sh -m m"
 check block "다른 위치 commit.sh" "/tmp/commit.sh -m m"
 check block "없는 \$VAR 경로" '$NOPE_UNSET_VAR/scripts/commit.sh -m m'
