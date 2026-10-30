@@ -357,7 +357,7 @@ const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPa
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
 // 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
-const { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows, focusedWindow: () => frontCtx()?.win })
+const { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows, focusedWindow: () => frontCtx()?.win })
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
@@ -942,7 +942,18 @@ let quitting = false
 app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
-app.on('before-quit', () => {
+// 앱 업데이트 설치(npm install)가 도는 중에 끄면 그 설치 트리를 끝낸 것을 확인한 뒤에 끈다 — 남은 npm 이 다음 켤 때의 재시도와 겹치지 않게
+// (처음 끄기 요청은 한 번 미뤘다가 app.quit() 로 다시 — 설치가 없으면 바로)
+let installStopChecked = false
+app.on('before-quit', (event) => {
+  if (!installStopChecked) {
+    installStopChecked = true
+    event.preventDefault()
+    stopInstallBeforeQuit()
+      .catch(() => false)
+      .finally(() => app.quit())
+    return
+  }
   quitting = true
   for (const ctx of packWindows) ctx.detachScreen()
 })

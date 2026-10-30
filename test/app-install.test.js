@@ -65,6 +65,36 @@ test('runInstall: 실제 자식 — 성공 · 실패 코드 · 신호 · 못 띄
   assert.equal((await install.runInstall({ file: '/없는/실행파일', list: [], cwd })).code, 1)
 })
 
+test('runInstall: 넘긴 env 만 자식에게 간다', async () => {
+  process.env.ATHENA_STUDIO_TEST_LEAK = '1'
+  const out = []
+  await install.runInstall({ file: process.execPath, list: ['-e', 'console.log(String(process.env.ATHENA_STUDIO_TEST_LEAK) + process.env.KEPT)'], cwd: os.tmpdir(), env: { KEPT: 'y', PATH: process.env.PATH }, onOutput: (chunk) => out.push(chunk) })
+  delete process.env.ATHENA_STUDIO_TEST_LEAK
+  assert.equal(out.join(''), 'undefinedy\n')
+})
+
+test('stopInstall: 자식의 자식까지 끝나고 돌아온다', { skip: process.platform === 'win32' }, async () => {
+  const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-stop-')), 'grandchild.pid')
+  const parent = `const { spawn } = require('node:child_process'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid)); setInterval(() => {}, 1000)`
+  let pid
+  const run = install.runInstall({ file: process.execPath, list: ['-e', parent], cwd: os.tmpdir(), onSpawn: (value) => (pid = value) })
+  for (let waited = 0; !fs.existsSync(pidFile) && waited < 100; waited++) await new Promise((resolve) => setTimeout(resolve, 50))
+  const grandchild = Number(fs.readFileSync(pidFile, 'utf8'))
+  await install.stopInstall(pid, run, 3000)
+  assert.equal(install.classifyExit(await run), 'killed')
+  // 손자는 같은 그룹 신호를 받은 뒤 비동기로 사라진다 — 잠깐 기다리며 확인
+  const alive = () => {
+    try {
+      process.kill(grandchild, 0)
+      return true
+    } catch {
+      return false
+    }
+  }
+  for (let waited = 0; alive() && waited < 60; waited++) await new Promise((resolve) => setTimeout(resolve, 50))
+  assert.equal(alive(), false)
+})
+
 test('noticeText: 강제 종료 알림은 설치 실패와 다른 문구', () => {
   const say = notice.translator('ko')
   assert.notEqual(notice.noticeText(say, { kind: 'killed' }).body, notice.noticeText(say, { kind: 'install-failed' }).body)

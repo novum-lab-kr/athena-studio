@@ -58,9 +58,10 @@ export function createLineWatcher({ onWait, onTurn }: { onWait: (event: WaitEven
 }
 
 // npm install(heavy.sh 포함) 돌리기 — 출력은 onOutput 으로(없으면 버린다) · 못 띄웠으면 { code: 1 }
-export function runInstall({ file, list, cwd, onOutput, watch, onSpawn }: { file: string; list: string[]; cwd: string; onOutput?: (chunk: string, stream: 'stdout' | 'stderr') => void; watch?: (chunk: string) => void; onSpawn?: (pid: number | undefined) => void }): Promise<InstallExit> {
+// env — 자식 환경(앱은 core.childEnv 로 정리해 넘긴다) · 맥 · 리눅스는 새 프로세스 그룹으로 띄운다(stopInstall 이 트리째 끝낸다)
+export function runInstall({ file, list, cwd, env, onOutput, watch, onSpawn }: { file: string; list: string[]; cwd: string; env?: NodeJS.ProcessEnv; onOutput?: (chunk: string, stream: 'stdout' | 'stderr') => void; watch?: (chunk: string) => void; onSpawn?: (pid: number | undefined) => void }): Promise<InstallExit> {
   return new Promise((resolve) => {
-    const child = spawn(file, list, { cwd, stdio: ['ignore', 'pipe', 'pipe'] })
+    const child = spawn(file, list, { cwd, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32' })
     onSpawn?.(child.pid)
     // 글자 단위로 받는다 — 덩어리 경계에서 한글(여러 바이트)이 잘리지 않게
     child.stdout.setEncoding('utf8')
@@ -79,6 +80,25 @@ export function runInstall({ file, list, cwd, onOutput, watch, onSpawn }: { file
     })
     child.on('close', (code, signal) => resolve({ code, signal }))
   })
+}
+
+// 앱이 꺼질 때 도는 설치를 트리째(heavy.sh · npm · 그 자식) 끝낸다 — 끝난 것을 확인하고 돌아온다.
+// 먼저 TERM(heavy.sh 가 트랩으로 자식까지 정리), graceMs 안에 안 끝나면 KILL. done — runInstall 이 끝나면 풀리는 약속
+export async function stopInstall(pid: number | undefined, done: Promise<unknown>, graceMs = 8000): Promise<void> {
+  if (!pid) return
+  const signalGroup = (signal: NodeJS.Signals) => {
+    try {
+      if (process.platform === 'win32') process.kill(pid, signal)
+      else process.kill(-pid, signal)
+    } catch {
+      // 이미 끝났다
+    }
+  }
+  const waitDone = (ms: number) => Promise.race([done.then(() => true), new Promise<boolean>((resolve) => setTimeout(() => resolve(false), ms))])
+  signalGroup('SIGTERM')
+  if (await waitDone(graceMs)) return
+  signalGroup('SIGKILL')
+  await waitDone(2000)
 }
 
 // ── 끊긴 설치 표시 — 설치를 시작할 때 쓰고 끝나면 지운다. 앱이 꺼져 설치가 끊기면 남아서 다음에 켤 때 다시 시도한다

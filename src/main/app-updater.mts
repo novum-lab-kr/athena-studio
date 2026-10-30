@@ -47,6 +47,9 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
   let appUpdateRunning = false
   let appUpdatePhase: Phase = null
   let appUpdateInstallFailure: InstallFailure = null
+  // 도는 설치를 끝내는 함수(없으면 설치 중이 아니다) · 앱이 꺼지는 중 — 그동안 끝난 설치는 알림 창 없이 끊긴 설치로 남긴다
+  let installStop: (() => Promise<void>) | null = null
+  let quitting = false
   let appUpdateFetchedAt = 0
   let appUpdateChecking: Promise<ReturnType<typeof appUpdateView>> | null = null
 
@@ -148,13 +151,19 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     appInstall.writePending(APP_ROOT, { at: new Date().toISOString(), heavy: heavyFile, lang: language() })
     logLine(`${[file, ...list].join(' ')}`)
     setPhase('installing')
-    const exit = await appInstall.runInstall({
+    let installPid: number | undefined
+    const installRun = appInstall.runInstall({
       file,
       list,
       cwd: APP_ROOT,
+      env: core.childEnv(process.env),
+      onSpawn: (pid) => (installPid = pid),
       onOutput: (chunk) => appendLog(chunk),
       watch: appInstall.createLineWatcher({ onWait: () => setPhase('waiting'), onTurn: () => setPhase('installing') }),
     })
+    installStop = () => appInstall.stopInstall(installPid, installRun)
+    const exit = await installRun
+    installStop = null
     const outcome = appInstall.classifyExit(exit)
     let failure: InstallFailure = null
     if (outcome === 'ok') {
@@ -169,6 +178,12 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     if (failure !== 'install-killed') appInstall.clearPending(APP_ROOT)
     appUpdateRunning = false
     appUpdateStatus = await appUpdate.checkStatus({ repoRoot: APP_ROOT, fetch: false }).catch(() => appUpdateStatus)
+    if (failure && quitting) {
+      // 앱이 꺼지는 중에 끝낸 설치 — 알림 창 없이 끊긴 설치 표시를 남긴다(다음에 켤 때 다시 시도)
+      logLine('npm install stopped because the app is quitting (retried next launch)')
+      appInstall.writePending(APP_ROOT, { at: new Date().toISOString(), heavy: heavyFile, lang: language() })
+      return { ok: false, reason: failure }
+    }
     if (failure) {
       logLine(failure === 'install-killed' ? `npm install killed (signal ${exit.signal || exit.code}) (interrupted, not a failure; retried next launch)` : `npm install ${failure === 'install-gave-up' ? 'gave up (wait limit)' : 'failed'}: exit code ${exit.code}`)
       appUpdatePhase = null
@@ -257,5 +272,14 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
   }
 
-  return { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice }
+  // 앱이 꺼지기 전(main before-quit) — 도는 설치가 있으면 트리째 끝내고(끝난 것을 확인) true. 없으면 false 로 바로 끈다.
+  // 끊긴 설치 표시(install-pending.json)는 남겨 다음에 켤 때 다시 시도한다
+  async function stopInstallBeforeQuit(): Promise<boolean> {
+    if (!installStop) return false
+    quitting = true
+    await installStop()
+    return true
+  }
+
+  return { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit }
 }
