@@ -14,9 +14,33 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.28: v0.25.1..main 머지(#131 ~ #144)에서 손님에게 보이는 것만(규칙 문서 #139 · 테스트 · 데모는 뺌). 범위 끝은 열어 둔다 -->
 
-<!-- 0.32: v0.28.7..main 머지(#146 ~ #155)에서 손님에게 보이는 것만(문서 #145 · 다이어그램 #151 은 뺌 · #152 는 #155 팝업 줄에 · #154 는 #153 설정 줄에 합침). 범위 끝은 열어 둔다 -->
+<!-- 0.32: v0.28.7..main 머지(#146 ~ #155)에서 손님에게 보이는 것만(문서 #145 · 다이어그램 #151 은 뺌 · #152 는 #155 팝업 줄에 · #154 는 #153 설정 줄에 합침). 범위 끝은 v0.32.4 로 닫았다 -->
 
-## 0.32 (v0.28.8 – · Oct 30, 2026)
+<!-- 0.40: v0.32.4..main 머지(#160 ~ #182)에서 손님에게 보이는 것만(개발 앱 묶음 #161 · 검증 범위 #177 #178 은 뺌 · #176 #181 은 PR 설정 줄에 · #172 는 #164 줄에 합침). 범위 끝은 열어 둔다 -->
+
+## 0.40 (v0.32.5 – · Oct 30, 2026)
+
+### New
+- Choose per repository whether Athena opens a pull request, runs the automatic review, and merges, in Settings. Turning auto PR off skips the pull request and review and merges the work branch straight into the base branch once verification passes. Merging can be automatic, ask first in Work, or left to you.
+- When a delegated agent finishes a turn, Athena is notified automatically. The agent's "next prompt" suggestion is turned off, so a leftover suggestion is no longer mistaken for text you were typing.
+- In the Board's Learn tab, candidates are grouped by notebook so you can approve a group at once, view details, edit, or delete them. Fewer new candidates open: a one-off code finding waits until it shows up a second time.
+- QA now runs layered test cases written from each repository's flow documents (front end and back end run; apps are documented only). The old service-diagram skill is removed.
+
+### Improved
+- Heavy commands such as builds and tests can run two at a time. The second slot opens only when memory is free and CPU load is below the core count.
+- New worktrees install dependencies and set up the dev app automatically.
+- Automatic review in Codex now uses the model and reasoning effort from your `~/.codex/config.toml`.
+- Athena's commit script no longer refuses to commit when the only changes already staged are the files you named, including renames.
+
+### Fixed
+- An agent's question no longer disappears from the Work popup. Unanswered questions stay until the agent acknowledges or cancels them, and a failure to read requests is shown instead of an empty list.
+- Switching packs back and forth no longer prints terminal output twice.
+- After a pack is renamed during first setup, the pack in the left list opens instead of showing "pack not found".
+- The commit guard no longer blocks Athena's own commit script when it is called through a variable set to a literal path.
+- The auto PR switch in Settings now saves.
+- The fingerprint step of `/sync` no longer crashes on a repository without its base branch; it skips that repository with a warning and does not confirm stale fingerprints.
+
+## 0.32 (v0.28.8 – v0.32.4 · Oct 30, 2026)
 
 ### New
 - After Athena's core updates, an in-app popup shows the previous and new versions, what's new, and how the update went, with working sessions listed by agent name.
