@@ -25,7 +25,7 @@ printf '{ "pane": "p180", "agent": "fe", "plan": "%s" }' "$PLAN" > "$TMP/pane-se
 node --input-type=module - "$SRC/scripts/board/plan-bind.mjs" "$TMP/pane-sessions" "$PLAN" <<'EOF'
 const [modPath, sessionsDir, planId] = process.argv.slice(2)
 import { readFileSync } from 'node:fs'
-const { TEMPLATE_PLACEHOLDER_LINES, boundPaneIds, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
+const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, boundPaneIds, checkpointOf, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
 const PROTECTED = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
@@ -34,6 +34,30 @@ const same = (left, right) => JSON.stringify(left) === JSON.stringify(right)
 const sessions = readPaneSessions(sessionsDir)
 check('pane 기록 — 계획서가 적힌 것만 · 깨진 파일 · 쓰는 중(.tmp) 건너뜀', same(sessions.map((record) => record.pane).sort(), ['p130', 'p132', 'p140', 'p150']), JSON.stringify(sessions))
 check('pane 기록 폴더가 없으면 빈 목록', same(readPaneSessions(`${sessionsDir}/없음`), []))
+
+// ── 이슈 frontmatter 값 — 따옴표로 감싼 값은 `#` 를 지키고 감싸지 않은 값은 공백 뒤 `#…` 를 주석으로 자름 ──
+const { frontValue } = await import(modPath.replace('board/plan-bind.mjs', 'lib/front-value.mjs'))
+check('frontValue — 감싸지 않은 값은 공백 뒤 # 부터 주석(지금처럼)', frontValue('열림 # 메모') === '열림' && frontValue('로그인 #12 안 됨') === '로그인', frontValue('로그인 #12 안 됨'))
+check('frontValue — 따옴표로 감싸면 # 가 제목에 남음', frontValue('"#12 로그인 안 됨"') === '#12 로그인 안 됨' && frontValue("'로그인 #12 안 됨'") === '로그인 #12 안 됨' && frontValue('"로그인 #12" # 메모') === '로그인 #12')
+check('frontValue — 따옴표가 짝이 아니면 감싼 값이 아님 · 빈 값', frontValue('"로그인 #12') === '"로그인' && frontValue('') === '')
+// ── 자동 완료가 같은 PR 묶음으로 다시 덮지 않음(7b8d4f) ──
+const doneText = '## Checkpoint\n- Status: in_progress\n- Work ref: x\n- Auto done: merged-12\n'
+check('autoDoneDone — 같은 PR 묶음 표시가 있으면 이미 끝낸 것(되돌린 in_progress 를 덮지 않음)', autoDoneDone(doneText, 'merged-12') === true)
+check('autoDoneDone — 새 PR 이 들어와 표시가 다르면 다시 끝낼 수 있음 · 표시 없는 계획서는 그대로 대상', autoDoneDone(doneText, 'merged-12-15') === false && autoDoneDone('- Status: in_progress\n', 'merged-12') === false)
+check('autoDoneDone — Learn review 줄의 같은 표시도 인정', autoDoneDone('- Learn review: 2026-10-30 merged-7 · 1건\n', 'merged-7') === true)
+check('autoDoneDone — 번호가 접두사로 겹쳐도 정확히 같은 묶음만(merged-123 ≠ merged-12 · merged-12-15 ≠ merged-12)', autoDoneDone('- Auto done: merged-123\n', 'merged-12') === false && autoDoneDone('- Auto done: merged-12-15\n', 'merged-12') === false && autoDoneDone('- Learn review: x merged-12-15 · 1건\n', 'merged-12-15') === true)
+// ── Checkpoint 절 끝 ──
+const fence = '`'.repeat(3)
+const plainPlan = '# t\n\n## Checkpoint\n- Status: in_progress\n\n### Validation\n- ok\n\n## 지시\n본문\n'
+check('Checkpoint — 다음 `## ` 제목에서 끝남', checkpointOf(plainPlan).includes('- ok') && !checkpointOf(plainPlan).includes('본문'), JSON.stringify(checkpointOf(plainPlan)))
+const fencedPlan = `# t\n\n## Checkpoint\n- Status: in_progress\n\n### Validation\n${fence}\n## 검증 결과\n통과\n${fence}\n- 뒤쪽 줄\n\n## 지시\n본문\n`
+check('Checkpoint — 울타리 안의 `## ` 줄은 절을 끊지 않음(Validation 에 붙인 출력)', checkpointOf(fencedPlan).includes('통과') && checkpointOf(fencedPlan).includes('- 뒤쪽 줄') && !checkpointOf(fencedPlan).includes('본문'), JSON.stringify(checkpointOf(fencedPlan)))
+const long = '`'.repeat(4)
+const longPlan = `# t\n\n## Checkpoint\n- Status: in_progress\n${long}md\n${fence}\n## 안쪽 제목\n${fence}\n${long}\n- 뒤쪽 줄\n\n## 지시\n본문\n`
+check('Checkpoint — 백틱 4개 펜스 안의 백틱 3개는 닫힘이 아님', checkpointOf(longPlan).includes('## 안쪽 제목') && checkpointOf(longPlan).includes('- 뒤쪽 줄') && !checkpointOf(longPlan).includes('본문'), JSON.stringify(checkpointOf(longPlan)))
+const tildePlan = '# t\n\n## Checkpoint\n- Status: in_progress\n~~~\n## 틸드 안\n```\n~~~\n- 뒤쪽 줄\n\n## 지시\n본문\n'
+check('Checkpoint — 틸드 펜스 안의 `## ` 도 절을 끊지 않음(다른 문자 펜스는 닫힘이 아님)', checkpointOf(tildePlan).includes('## 틸드 안') && checkpointOf(tildePlan).includes('- 뒤쪽 줄') && !checkpointOf(tildePlan).includes('본문'), JSON.stringify(checkpointOf(tildePlan)))
+check('Checkpoint — 절이 없으면 빈 글', checkpointOf('# t\n\n## 지시\n') === '')
 
 // ── 남은 단계 ──
 const stepsLeft = progressOf('- [x] 1단계 규칙\n- [ ] 2단계 전환\n  - [x] PR1\n  - [ ] PR-R1\n- [ ] 3단계')

@@ -35,6 +35,21 @@ PYEOF
 )"
 [ "${WT_STATE%%$'\t'*}" = switching ] && { echo "이 팩을 열거나 업데이트하는 중이라 브랜치·워크트리를 만들지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2; exit 1; }
 WT_ROOT="${WT_STATE#*$'\t'}"
+
+# 워크트리를 만든 뒤 레포가 자기 준비 스크립트(scripts/worktree-setup.sh)를 두었으면 돌린다 — 의존성 설치처럼 레포마다 다른 준비.
+# 안 하면 검증이 "node_modules 없음" 으로 실패하거나 테스트가 조용히 건너뛰어진다. 무거우니 heavy.sh 로 줄을 서고, 실패해도 브랜치 만들기는 성공으로 둔다(알리기만).
+# 건너뛰기: ATHENA_SKIP_WT_SETUP=1
+wt_setup() {
+  local wt="$1"
+  [ -f "$wt/scripts/worktree-setup.sh" ] || return 0
+  [ "${ATHENA_SKIP_WT_SETUP:-}" = 1 ] && { echo "        준비 건너뜀(ATHENA_SKIP_WT_SETUP=1) — 워크트리에서 scripts/worktree-setup.sh"; return 0; }
+  echo "        워크트리 준비 중(scripts/worktree-setup.sh — 몇 분 걸릴 수 있다)…"
+  if (cd "$wt" && "$ROOT/scripts/heavy.sh" bash scripts/worktree-setup.sh); then
+    echo "        ✅ 워크트리 준비 끝"
+  else
+    echo "        ⚠️  워크트리 준비 실패 — 워크트리에서 scripts/worktree-setup.sh 를 다시 돌린다(검증은 이 준비 뒤에)"
+  fi
+}
 # 설정을 못 읽어 자리를 모르면 멈춘다 — 빈 값이면 "/<레포>/…" 처럼 파일 시스템 맨 위에 만들 뻔한다(리뷰 제안 2026-10-18)
 case "$WT_STATE" in ok$'\t'?*|switching$'\t'*) ;; *) echo "❌ 워크트리 자리를 정하지 못했다(설정·팩 확인 — scripts/lib/athena_config.py paths)" >&2; exit 1 ;; esac
 [ -n "$WT_ROOT" ] || { echo "❌ 워크트리 자리가 비었다(설정·팩 확인)" >&2; exit 1; }
@@ -199,6 +214,7 @@ print(hit.group(1) if hit else "")' "$naming")"
       echo "♻️  $label — 이어서: $BRANCH ($([ $local_ref = 1 ] && echo 로컬 브랜치 || echo 원격 추적)) 로 워크트리를 만들었다"
       echo "        워크트리: $wt"
       "$ROOT/scripts/wt-copy-local.sh" "$dir" "$wt"
+      wt_setup "$wt"
       created=$((created+1))
     else
       echo "❌ $label — 이어 쓸 워크트리를 만들지 못했다 (git worktree add)"; skipped=$((skipped+1))
@@ -237,6 +253,7 @@ print(hit.group(1) if hit else "")' "$naming")"
         echo "        워크트리: $wt"
         # git 무시 로컬 파일(.env·.aws 키 등)은 worktree add 가 가져오지 않는다 — 메인 체크아웃에서 복사(이름만 보고)
         "$ROOT/scripts/wt-copy-local.sh" "$dir" "$wt"
+        wt_setup "$wt"
         echo "        디스패치: scripts/delegate.sh <에이전트> --cwd $wt --plan <계획서>"
       else
         echo "❌ $label — 워크트리 생성 실패 (git worktree add)"; skipped=$((skipped+1)); continue

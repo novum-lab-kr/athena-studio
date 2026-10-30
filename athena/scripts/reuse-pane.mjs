@@ -11,6 +11,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
+import { isMainModule } from './lib/is-main.mjs'
 import { fileURLToPath } from 'node:url'
 import { menuOpen } from './board/pane-delivery.mjs'
 
@@ -48,7 +49,7 @@ export const pickReusable = (panes, agentName, readText) => {
 const here = dirname(fileURLToPath(import.meta.url))
 const screen = (/** @type {string[]} */ args) => execFileSync(join(here, 'screen'), args, { encoding: 'utf8', timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMainModule(import.meta.url)) {
   const index = process.argv.indexOf('--agent')
   const agentName = index > 0 ? process.argv[index + 1] : ''
   if (!agentName) { console.error('사용: node scripts/reuse-pane.mjs --agent <에이전트>'); process.exit(2) }

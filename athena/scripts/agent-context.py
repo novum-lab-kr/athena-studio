@@ -13,6 +13,9 @@ settings 의 claudeMdExcludes 로 그것들을 빼고 여기서 만든 컨텍스
 import json, re, shlex, sys, pathlib
 import os
 
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
+import agent_hooks  # 훅 목록은 delegate.sh 와 같은 한 곳(scripts/lib/agent_hooks.py)
+
 agent, hermes_dir, workdir, agents_out, context_out, settings_out = sys.argv[1:7]
 hermes = pathlib.Path(hermes_dir).resolve()
 
@@ -57,35 +60,31 @@ excludes = [str(hermes / "CLAUDE.md"), str(hermes / "AGENTS.md"), str(hermes / "
 # 프로세스 종료 보호 훅도 모든 세션에 (scripts/hooks/process-guard.py — pkill · killall · 0/음수 대상 kill 차단, GH #133)
 # 훅 명령은 셸이 읽으므로 경로를 셸 따옴표로 감싼다(경로에 공백·' 가 있어도 깨지지 않게)
 def script(rel): return shlex.quote(str(hermes / rel))
-secret_hook = {"type": "command", "command": f"python3 {script('scripts/hooks/secret-guard.py')}"}
-process_hook = {"type": "command", "command": f"python3 {script('scripts/hooks/process-guard.py')}"}
-guard = {"PreToolUse": [{"matcher": "Bash", "hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/commit-guard.py')}"}, secret_hook, process_hook]}]}
+guard = {"PreToolUse": agent_hooks.pre_tool_use(hermes, agent)}
 settings = {"claudeMdExcludes": excludes}
 # 하단 상태바 — 워크트리는 hermes 프로젝트 설정 밖이라 따로 넣는다(레포·브랜치·변경 수·모델, scripts/statusline.sh)
 settings["statusLine"] = {"type": "command", "command": f"/bin/sh {script('scripts/statusline.sh')}", "padding": 0}
 if agent != "reviewer":
     settings["hooks"] = guard
-    # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다 (scripts/hooks/ask-to-request.py — 위임 에이전트만)
-    guard["PreToolUse"].append({"matcher": "AskUserQuestion", "hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/ask-to-request.py')}"}]})
     # 자동 압축 시점 — 워크트리는 본체 프로젝트 설정이 안 실려 따로 넣는다. 값은 본체 .claude/settings.json 한 곳에서 읽는다
     # (reviewer 는 짧게 끝나 넣지 않는다 · docs/knowledge/common/context.md "대화 압축")
-    window = json.loads((hermes / ".claude/settings.json").read_text(encoding="utf-8")).get("autoCompactWindow")
+    window = agent_hooks.auto_compact_window(hermes, agent)
     if window:
         settings["autoCompactWindow"] = window
 else:
-    settings["hooks"] = {"PreToolUse": [{"matcher": "Bash", "hooks": [secret_hook, process_hook]}]}
+    settings["hooks"] = guard
 # 대화 압축 전후 — 직전에 계획서 Checkpoint 에 상태 한 줄, 직후에 계획서부터 다시 읽게 (scripts/hooks/compact-checkpoint.py)
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]
 # pane ↔ 대화 기록 — 팩 백업이 되살릴 때 claude --resume 으로 잇는다 (scripts/hooks/pane-session.py)
 settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post"}]},
-                                     {"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/pane-session.py')}"}]}]
+                                     {"hooks": [agent_hooks.pane_session(hermes)]}]
 # 답 언어 — 메시지마다 본체 .claude/settings.local.json 의 language(스튜디오 앱 언어)를 다시 읽어 넣는다 (scripts/hooks/language.py)
 settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"},
-                                                     {"type": "command", "command": f"python3 {script('scripts/hooks/pane-session.py')}"}]}]
+                                                     agent_hooks.pane_session(hermes)]}]
 # 끝 알림 — 에이전트가 한 차례를 끝내면 띄운 아테나 pane 에 한 줄(scripts/hooks/agent-done-notify.py — 위임 에이전트만, reviewer 는 계획서 줄로 알린다)
-if agent != "reviewer":
-    notify = lambda mode: {"type": "command", "command": f"python3 {script('scripts/hooks/agent-done-notify.py')} {mode}"}
-    settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(notify("prompt"))
-    settings["hooks"]["Stop"] = [{"hooks": [notify("stop")]}]
+notify_prompt, notify_stop = agent_hooks.done_notify(hermes, agent)
+settings["hooks"]["UserPromptSubmit"][0]["hooks"] += notify_prompt
+if notify_stop:
+    settings["hooks"]["Stop"] = notify_stop
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")

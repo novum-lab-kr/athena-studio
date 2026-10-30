@@ -27,6 +27,7 @@ import { createInterface } from 'node:readline'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
@@ -651,7 +652,7 @@ const watch = async () => {
 }
 
 // ── 시작 (다른 스크립트·테스트가 import 할 때는 돌지 않는다) ──────────────────
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+const isMain = isMainModule(import.meta.url)
 if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()

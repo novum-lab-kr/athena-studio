@@ -63,7 +63,8 @@ import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
-import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { frontValue } from '../lib/front-value.mjs'
+import { autoDoneDone, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -245,7 +246,7 @@ const readIssue = (path) => {
       .split('\n')
       .map((line) => line.match(/^([\w-]+):\s*(.*)$/))
       .filter(Boolean)
-      .map((match) => [match[1], match[2].replace(/\s+#.*$/, '').trim()]),
+      .map((match) => [match[1], frontValue(match[2])]),
   )
   const body = text.slice(front ? text.indexOf('---', 3) + 3 : 0).trim()
   const status = meta.status || 'open'
@@ -382,11 +383,13 @@ const autoDonePlans = async (plans) => {
       if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 빈 칸 ${plan.progress.open}개`) }
       return
     }
+    // 이 PR 묶음으로 이미 한 번 자동 완료했는데 지금 done 이 아니면 사람이 추가 요청으로 되돌린 것이다 — 새 PR 이 PR 줄에 들어오기 전까지 다시 덮지 않는다
+    if (autoDoneDone(readText(join(ROOT, plan.id)) || '', mergedMark(counted))) return
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))
     const merged = last.mergedAt ? new Date(last.mergedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16) : ''
     const reason = counted.length > 1 ? `자동 — PR ${counted.length}개 모두 머지됨(마지막 #${last.number} → ${last.base}, ${merged})` : `자동 — PR #${last.number} 이 ${last.base} 에 머지됨(${merged})`
-    const error = setPlanStatus(plan.id, 'done', reason)
+    const error = setPlanStatus(plan.id, 'done', reason, mergedMark(counted))
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); return }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
@@ -1001,7 +1004,7 @@ const moveCard = (id, column) => {
 }
 
 // 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
-const setPlanStatus = (id, status, note = '') => {
+const setPlanStatus = (id, status, note = '', doneMark = '') => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
@@ -1018,6 +1021,13 @@ const setPlanStatus = (id, status, note = '') => {
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
       const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
+      // 자동 완료가 본 PR 묶음 표시를 남긴다(autoDoneDone) — 이미 있으면 바꾸고, 없으면 Work ref 줄 아래(없으면 Updated 줄 아래)에
+      if (doneMark) {
+        const markLine = `- Auto done: ${doneMark}`
+        if (/^- Auto done:.*$/m.test(next)) next = next.replace(/^- Auto done:.*$/m, markLine)
+        else if (/^- Work ref:.*$/m.test(next)) next = next.replace(/^(- Work ref:.*)$/m, `$1\n${markLine}`)
+        else if (oldUpdated) next = next.replace(oldUpdated, `${oldUpdated}\n${markLine}`)
+      }
       if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
       writeAtomic(path, next)
       // 정식 계획서의 결정 콘솔 html 안 md 사본(plan-md)도 같이 — 경량 계획서는 html 이 없다

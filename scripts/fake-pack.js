@@ -84,6 +84,22 @@ const fail = (error, message, extra = {}) => {
   done({ ok: false, error, message, ...extra }, 1)
   throw FINISHED // 부른 쪽이 이어서 돌지 않게(stdout 을 다 쓰면 끝난다)
 }
+// 이름 · 이미지 검사는 코어(athena/scripts/lib/pack-look.mjs)와 같은 코드 — 규칙 · 오류 코드 · 순서가 어긋나지 않게 가져다 쓴다(2026-10 5c91d3).
+// 코어가 던지는 PackError(code · message)를 가짜 답으로 바꾼다
+const loadLook = () => import(require('url').pathToFileURL(path.join(__dirname, '..', 'athena', 'scripts', 'lib', 'pack-look.mjs')).href)
+const asFail = (run) => {
+  try {
+    return run()
+  } catch (caught) {
+    if (caught && caught.code && caught.message !== undefined && caught.extra) fail(caught.code, caught.message, caught.extra)
+    throw caught
+  }
+}
+// 이미지 파일 검사 — 코어 setRepoIcon · setIcon 과 같은 순서(파일 있음 → 일반 파일 · 크기 · 형식). 형식(png · jpg · webp)을 돌려준다
+const checkImageFile = (look, file) => {
+  if (!file || !fs.existsSync(file)) fail('not-found', `이미지 파일이 없다: ${file}`)
+  return asFail(() => look.checkImage(file))
+}
 const flag = (name) => {
   const index = process.argv.indexOf(name)
   return index > 0 ? process.argv[index + 1] : null
@@ -141,8 +157,8 @@ async function main() {
         save(state)
       }
       if (sub === 'set-name') {
-        const name = clear ? null : String(arg || '').trim()
-        if (!clear && (name.length < 1 || name.length > 40)) fail('invalid-name', '이름은 1~40자')
+        const look = await loadLook()
+        const name = clear ? null : asFail(() => look.normalizeName(arg))
         sameAsCurrent({ displayName: name })
         return done({ ok: true, id: target.id, displayName: name })
       }
@@ -150,18 +166,7 @@ async function main() {
         sameAsCurrent({ iconPath: null, iconUpdatedAt: new Date().toISOString() })
         return done({ ok: true, id: target.id, iconPath: null })
       }
-      let bytes
-      try {
-        bytes = fs.readFileSync(arg)
-      } catch {
-        fail('invalid-image', '이미지 파일을 읽지 못했어요')
-      }
-      const head = bytes.subarray(0, 12)
-      const isPng = head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))
-      const isJpeg = head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))
-      const isWebp = head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP'
-      if (!isPng && !isJpeg && !isWebp) fail('invalid-image', 'png · jpeg · webp 만')
-      if (bytes.length > 1024 * 1024) fail('image-too-large', '1MB 이하만')
+      checkImageFile(await loadLook(), arg)
       const iconPath = path.resolve(arg)
       sameAsCurrent({ iconPath, iconUpdatedAt: new Date().toISOString() })
       return done({ ok: true, id: target.id, iconPath })
@@ -190,6 +195,20 @@ async function main() {
     // 레포 표시 이름 · 이미지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만(set-auto-merge 와 같다). 이미지는 형식만 보고 assets/repos/<레포>.<형식> 으로 복사
     case 'set-repo-name':
     case 'set-repo-icon': {
+      const look = await loadLook()
+      const clear = process.argv.includes('--clear')
+      const value = process.argv[5] && !process.argv[5].startsWith('--') ? process.argv[5] : null // pack <명령> <레포> <값>
+      // 코어와 같은 순서 — 입력 검사(레포 이름 → 표시 이름 · 이미지)를 먼저 하고, 그다음 팩 · 레포를 본다. 검사에 걸리면 파일은 아무것도 지우지 않는다
+      let kind = null
+      if (sub === 'set-repo-icon') {
+        if (!look.REPO_NAME.test(String(arg ?? ''))) fail('not-found', `이 레포 이름으로는 아이콘 파일을 만들 수 없다(글자·숫자·_ 로 시작하고 . - 만): ${arg}`)
+        if (!clear) kind = checkImageFile(look, value)
+      }
+      let name = null
+      if (sub === 'set-repo-name') {
+        if (!arg) fail('not-found', '레포 이름이 없다')
+        if (!clear) name = asFail(() => look.normalizeName(value))
+      }
       const file = path.join(process.cwd(), 'pack', 'pack.json')
       let pack
       try {
@@ -199,13 +218,8 @@ async function main() {
       }
       const repo = (pack.repos || []).find((item) => item && item.name === arg)
       if (!repo) fail('not-found', `팩에 그런 레포가 없다: ${arg}`)
-      if (sub === 'set-repo-icon' && !/^\w[\w.-]*$/.test(arg)) fail('not-found', `이 레포 이름으로는 아이콘 파일을 만들 수 없다: ${arg}`)
-      const clear = process.argv.includes('--clear')
-      const value = process.argv[5] && !process.argv[5].startsWith('--') ? process.argv[5] : null // pack <명령> <레포> <값>
       const id = (mine && mine.id) || 'fake'
       if (sub === 'set-repo-name') {
-        const name = clear ? null : String(value || '').trim()
-        if (!clear && (name.length < 1 || name.length > 40)) fail('invalid-name', '이름은 1~40자')
         if (name) repo.displayName = name
         else delete repo.displayName
         fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
@@ -213,7 +227,7 @@ async function main() {
       }
       const assets = path.join(process.cwd(), 'pack', 'assets', 'repos')
       const dropOld = () => {
-        for (const kind of ['png', 'jpg', 'webp']) fs.rmSync(path.join(assets, `${arg}.${kind}`), { force: true })
+        for (const extension of ['png', 'jpg', 'webp']) fs.rmSync(path.join(assets, `${arg}.${extension}`), { force: true })
       }
       if (clear) {
         dropOld()
@@ -221,19 +235,7 @@ async function main() {
         fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
         return done({ ok: true, id, repo: arg, iconPath: null })
       }
-      let bytes
-      try {
-        bytes = fs.readFileSync(value)
-      } catch {
-        fail('invalid-image', '이미지 파일을 읽지 못했어요')
-      }
-      const head = bytes.subarray(0, 12)
-      let kind = null
-      if (head.subarray(0, 4).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47]))) kind = 'png'
-      else if (head.subarray(0, 3).equals(Buffer.from([0xff, 0xd8, 0xff]))) kind = 'jpg'
-      else if (head.subarray(0, 4).toString('latin1') === 'RIFF' && head.subarray(8, 12).toString('latin1') === 'WEBP') kind = 'webp'
-      if (!kind) fail('invalid-image', 'png · jpeg · webp 만')
-      if (bytes.length > 1024 * 1024) fail('image-too-large', '1MB 이하만')
+      const bytes = fs.readFileSync(value)
       dropOld() // 검사를 모두 통과한 뒤에만 — 나쁜 이미지면 기존 아이콘이 그대로 남게
       fs.mkdirSync(assets, { recursive: true })
       fs.writeFileSync(path.join(assets, `${arg}.${kind}`), bytes)

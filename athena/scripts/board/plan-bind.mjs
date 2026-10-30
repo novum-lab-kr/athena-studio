@@ -32,7 +32,24 @@ export const plain = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').tri
 /** "- <이름>: 값" 줄의 값 @param {string} text @param {string} name */
 export const field = (text, name) => text.match(new RegExp(`^-\\s*${name}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? ''
 /** 계획서 글 → ## Checkpoint 절 본문 @param {string} text */
-export const checkpointOf = (text) => text.match(/^## Checkpoint\s*\n([\s\S]*?)(?=^## (?!#))/m)?.[1] ?? ''
+// 다음 `## ` 제목에서 끝난다 — 코드 울타리(```) 안의 `## ` 줄(Validation 에 붙인 출력 · 예시)은 제목이 아니라서 절을 끊지 않는다
+export const checkpointOf = (text) => {
+  const lines = String(text).split('\n')
+  const start = lines.findIndex((line) => /^## Checkpoint\s*$/.test(line))
+  if (start < 0) return ''
+  const body = []
+  // 코드 펜스 — 여는 줄의 문자(` 또는 ~)와 길이를 기억하고 같은 문자로 그 길이 이상인 닫는 줄이 나올 때만 끝난다(CommonMark)
+  /** @type {{ char: string, length: number } | null} */
+  let fence = null
+  for (const line of lines.slice(start + 1)) {
+    const mark = line.match(/^ {0,3}(`{3,}|~{3,})(.*)$/)
+    if (!fence && mark?.[1]) fence = { char: String(mark[1][0]), length: mark[1].length }
+    else if (fence && mark?.[1] && mark[1][0] === fence.char && mark[1].length >= fence.length && !String(mark[2]).trim()) fence = null
+    else if (!fence && /^## (?!#)/.test(line)) break
+    body.push(line)
+  }
+  return body.join('\n')
+}
 /** Checkpoint → Status(보관된 계획서는 done) @param {string} checkpoint @param {boolean} archived */
 export const statusOf = (checkpoint, archived) => (archived ? 'done' : (plain(field(checkpoint, 'Status')).match(/planned|in_progress|blocked|ready_for_review|done/)?.[0] ?? 'planned'))
 
@@ -198,3 +215,8 @@ export const bindingSources = ({ root, panes, sessionsDir, home, now = Date.now(
   }
   return { cards, panes: boardPanes }
 }
+
+// 자동 완료가 이미 이 PR 묶음(merged-<번호들>)으로 한 번 끝낸 계획서인지 — Checkpoint 의 "- Auto done:" 줄(자동 완료가 쓴다) 또는 "- Learn review:" 줄에 같은 표시가 있으면.
+// 그런 계획서를 사람이 추가 요청으로 in_progress 로 되돌렸는데 새 PR 이 PR 줄에 들어오기 전이면, 같은 머지를 다시 보고 done 으로 덮어쓰지 않는다(2026-10-30)
+/** @param {string} text @param {string} mark */
+export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-\d+(?:-\d+)*/g) ?? []).includes(mark))
