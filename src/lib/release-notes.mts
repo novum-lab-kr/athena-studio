@@ -11,7 +11,8 @@ export type Note = { kind: NoteKind; text: string }
 // 화면에 보낼 줄 — text 는 영어 원문, texts 는 언어별 번역(없는 언어는 원문). 언어는 화면이 지금 것으로 고른다(보낼 때 고정하지 않는다)
 export type ShownNote = { kind: NoteKind; text: string; texts?: Record<string, string> }
 export type ChangelogSection = { minor: [number, number]; notes: Note[] }
-export type ReleaseNotes = { shown: ShownNote[]; rest: { count: number; kinds: { kind: NoteKind; count: number }[] } | null }
+// recent — 끝자리만 오른 업데이트라 minor 절 전체를 보인다(제목 "최근 변경")
+export type ReleaseNotes = { shown: ShownNote[]; rest: { count: number; kinds: { kind: NoteKind; count: number }[] } | null; recent?: boolean }
 
 const SECTION_RE = /^## (\d+)\.(\d+)\b/
 const HEADING_KINDS: Record<string, NoteKind> = { New: 'new', Improved: 'improved', Fixed: 'fixed' }
@@ -47,12 +48,31 @@ export function minorOf(version: unknown): [number, number] | null {
 
 const afterMinor = (left: [number, number], right: [number, number]): boolean => left[0] !== right[0] ? left[0] > right[0] : left[1] > right[1]
 
+// '0.40.3' · '0.40.3+2' → [0, 40, 3] | null
+function partsOf(version: unknown): [number, number, number] | null {
+  const match = /^v?(\d+)\.(\d+)\.(\d+)/.exec(String(version ?? ''))
+  return match ? [Number(match[1]), Number(match[2]), Number(match[3])] : null
+}
+
+// 같은 minor 에서 끝자리만 올랐다(0.40.0 → 0.40.3). 버전을 모르거나 내려갔거나 같으면 false
+export function isPatchOnly(from: unknown, to: unknown): boolean {
+  const before = partsOf(from)
+  const after = partsOf(to)
+  return Boolean(before && after && before[0] === after[0] && before[1] === after[1] && after[2] > before[2])
+}
+
 // 절 제목의 번호는 그 절이 덮는 마지막 minor 다(## 0.28 = v0.26.0 – … : 0.26 · 0.27 · 0.28 이 한 절). 그래서 한 절은 (바로 아래 절 번호, 자기 번호] 를 덮는다.
-// 이전 버전 minor 보다 크고 새 버전 minor 이하인 칸과 겹치는 절들의 줄을 합친다(최신 절 먼저). 한쪽 버전을 모르거나 minor 가 안 오르면 빈 목록
+// 이전 버전 minor 보다 크고 새 버전 minor 이하인 칸과 겹치는 절들의 줄을 합친다(최신 절 먼저). 한쪽 버전을 모르거나 minor 가 안 오르면 빈 목록(끝자리만 오른 경우는 새 버전 minor 의 절)
 export function notesBetween(sections: ChangelogSection[], from: unknown, to: unknown): Note[] {
   const before = minorOf(from)
   const after = minorOf(to)
-  if (!before || !after || !afterMinor(after, before)) return []
+  if (!before || !after) return []
+  // 끝자리만 오른 업데이트 — 새 버전의 minor 를 덮는 절 하나(minor 가 같아서 아래 범위 계산은 빈 칸이다)
+  if (isPatchOnly(from, to)) return sections.filter((section, index) => {
+    const older = sections[index + 1]
+    return !afterMinor(after, section.minor) && (!older || afterMinor(after, older.minor))
+  }).flatMap((section) => section.notes)
+  if (!afterMinor(after, before)) return []
   return sections.filter((section, index) => {
     const older = sections[index + 1]
     return afterMinor(section.minor, before) && (!older || afterMinor(after, older.minor))

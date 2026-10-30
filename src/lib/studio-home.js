@@ -340,11 +340,14 @@ function summarizeUpdate(result) {
   const loose = /** @type {NonNullable<CoreResult>} */ (result)
   /** @type {UpdateBody[]} */
   const bodies = Array.isArray(result && result.bodies) ? /** @type {UpdateBody[]} */ (loose.bodies) : []
-  // blockers — 그 본체를 막은 것(짝지은 pane 이름 · 없으면 코어 설명). 같은 이름은 한 번만
-  const blockersOf = (/** @type {{ busy?: unknown }} */ entry) => [...new Set((Array.isArray(entry.busy) ? entry.busy : []).map((item) => item && (item.pane || item.what)).filter(Boolean))]
+  // blockers — 그 본체를 막은 것 중 짝지은 pane 이름(같은 이름은 한 번만). 짝지은 pane 이 없는 것은 코어 설명(what)을 칩에 넣지 않는다 —
+  // 명령 · 경로가 그대로 들어가 칩이 커진다(0.40.3, heavy.sh). 대신 종류(kind)만 kinds 로 넘기고 화면이 짧은 말로 바꾼다. 옛 코어도 같은 kind 를 준다
+  const itemsOf = (/** @type {{ busy?: unknown }} */ entry) => (Array.isArray(entry.busy) ? entry.busy : []).filter(Boolean)
+  const blockersOf = (/** @type {{ busy?: unknown }} */ entry) => [...new Set(itemsOf(entry).map((item) => item.pane).filter(Boolean))]
+  const kindsOf = (/** @type {{ busy?: unknown }} */ entry) => [...new Set(itemsOf(entry).filter((item) => !item.pane).map((item) => (typeof item.kind === 'string' && item.kind) || 'other'))]
   // 일하던 세션 줄은 에이전트 이름만 — pane 이름 "🤖 <에이전트> · <브랜치>" 에서 아이콘 · 브랜치를 뗀다(떼고 같으면 한 번만 · count 는 세션 수 그대로)
   const agentNames = (/** @type {unknown[]} */ names) => [...new Set(names.map((name) => String(name).replace(/^🤖\s*/, '').replace(/\s·\s.*$/, '').trim()).filter(Boolean))]
-  const skipped = bodies.filter((entry) => entry.status === 'skipped' && entry.reason !== 'missing').map((entry) => ({ id: entry.id, reason: entry.reason || 'unknown', blockers: blockersOf(entry) }))
+  const skipped = bodies.filter((entry) => entry.status === 'skipped' && entry.reason !== 'missing').map((entry) => ({ id: entry.id, reason: entry.reason || 'unknown', blockers: blockersOf(entry), kinds: kindsOf(entry) }))
   const failed = bodies.filter((entry) => entry.status === 'failed').map((entry) => ({ id: entry.id, error: entry.error || 'unknown' }))
   /** @typedef {{ dir?: unknown, id?: unknown, files?: unknown }} BackedUp */
   // 빈 칸(null)은 filter 가 걸러 낸다
@@ -353,7 +356,7 @@ function summarizeUpdate(result) {
   // sessions — 그 세션들(짝지은 pane 이름 · 없으면 코어 설명). count 는 세션 수 그대로(같은 이름이 둘이어도 둘)
   const working = bodies
     .filter((entry) => entry.status === 'updated' && Array.isArray(entry.working) && entry.working.length)
-    .map((entry) => ({ id: entry.id, count: /** @type {unknown[]} */ (entry.working).length, sessions: agentNames(blockersOf({ busy: entry.working })) }))
+    .map((entry) => ({ id: entry.id, count: /** @type {unknown[]} */ (entry.working).length, sessions: agentNames(blockersOf({ busy: entry.working })), kinds: kindsOf({ busy: entry.working }) }))
   return { updated, skipped, failed, backedUp, working, notify: skipped.length > 0 || failed.length > 0 || backedUp.length > 0 || working.length > 0 || Boolean(result && result.ok === false && !bodies.length) }
 }
 

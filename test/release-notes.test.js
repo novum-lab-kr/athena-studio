@@ -45,15 +45,30 @@ test('notesBetween: 이전 minor 보다 크고 새 minor 이하와 겹치는 절
   // 0.28 절은 v0.26.0 부터 — 새 버전이 0.26 이어도 그 절이다
   assert.deepEqual(texts('0.25.1', '0.26.0'), ['N28', 'F28a', 'F28b'])
   assert.deepEqual(texts('0.20.0', '0.25.1'), ['N25', 'I25'])
-  assert.deepEqual(texts('0.25.0', '0.25.1'), [])
+  assert.deepEqual(texts('0.25.0', '0.25.0+3'), []) // 끝자리가 같으면 없다
   assert.deepEqual(texts('0.19.0', '0.25.1'), ['N25', 'I25'])
+})
+
+test('notesBetween: 끝자리만 오른 업데이트는 새 버전 minor 를 덮는 절 하나 · isPatchOnly', () => {
+  const sections = notes.parseChangelog(SAMPLE)
+  const texts = (from, to) => notes.notesBetween(sections, from, to).map((note) => note.text)
+  assert.deepEqual(texts('0.28.1', '0.28.4'), ['N28', 'F28a', 'F28b'])
+  assert.deepEqual(texts('0.26.0', '0.26.3+2'), ['N28', 'F28a', 'F28b'])
+  assert.deepEqual(texts('0.25.0', '0.25.1'), ['N25', 'I25'])
+  assert.deepEqual(texts('0.22.1', '0.22.2'), ['N25', 'I25'])
+  assert.equal(notes.isPatchOnly('0.40.0', '0.40.3'), true)
+  assert.equal(notes.isPatchOnly('0.40.3', '0.40.3+2'), false)
+  assert.equal(notes.isPatchOnly('0.40.3', '0.40.0'), false)
+  assert.equal(notes.isPatchOnly('0.39.9', '0.40.0'), false)
+  assert.equal(notes.isPatchOnly(null, '0.40.1'), false)
 })
 
 test('notesBetween: 버전을 모르거나 minor 가 오르지 않으면 빈 목록', () => {
   const sections = notes.parseChangelog(SAMPLE)
   assert.deepEqual(notes.notesBetween(sections, null, '0.28.0'), [])
   assert.deepEqual(notes.notesBetween(sections, '0.25.1', null), [])
-  assert.deepEqual(notes.notesBetween(sections, '0.28.1', '0.28.4'), [])
+  assert.deepEqual(notes.notesBetween(sections, '0.28.4', '0.28.1'), []) // 내려감
+  assert.deepEqual(notes.notesBetween(sections, '0.28.4', '0.28.4'), [])
   assert.deepEqual(notes.notesBetween(sections, '0.28.4', '0.25.1'), [])
   assert.deepEqual(notes.notesBetween(sections, 'abc', '0.28.0'), [])
 })
