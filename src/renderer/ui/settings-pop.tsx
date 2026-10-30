@@ -27,6 +27,8 @@ export function close(): void {
   unmount = null
 }
 
+type MergeValues = { autoMerge?: boolean; review?: boolean; merge?: MergeMode }
+
 // rows: null — 읽는 중 · false — pack.json 을 못 읽음
 type Rows = MergeRepo[] | null | false
 
@@ -59,7 +61,7 @@ function SettingsBody({ container }: { container: HTMLElement }) {
     if (target) target.focus({ preventScroll: true })
   }, [focusKey, container])
 
-  const save = async (repo: MergeRepo, values: { autoMerge?: boolean; confirm?: boolean }, key: string) => {
+  const save = async (repo: MergeRepo, values: MergeValues, key: string) => {
     if (saving.current) return
     saving.current = true
     const result = await studio.setAutoMerge(repo.name, values)
@@ -76,7 +78,7 @@ function SettingsBody({ container }: { container: HTMLElement }) {
   )
 }
 
-type SaveMerge = (repo: MergeRepo, values: { autoMerge?: boolean; confirm?: boolean }, key: string) => void
+type SaveMerge = (repo: MergeRepo, values: MergeValues, key: string) => void
 
 function MergeSection({ rows, say, save }: { rows: Rows; say: Say; save: SaveMerge }) {
   if (rows === null) return <p className="work-empty">{say('work.loading')}</p>
@@ -92,20 +94,40 @@ function MergeSection({ rows, say, save }: { rows: Rows; say: Say; save: SaveMer
   )
 }
 
-// 레포 묶음 — 레포 이름 아래 스위치 둘: 자동 PR · 리뷰(autoMerge), 승인되면 바로 머지(= 확인 안 받기 · 자동 PR 이 꺼지면 뜻이 없어 숨긴다)
+const MERGE_MODES: { mode: MergeMode; label: string }[] = [
+  { mode: 'manual', label: 'settings.mergeManual' },
+  { mode: 'confirm', label: 'settings.mergeConfirm' },
+  { mode: 'auto', label: 'settings.mergeAuto' },
+]
+
+// 레포 묶음 — 자동 PR(autoMerge) · 자동 리뷰 · 머지 3가지. PR 을 끄면 리뷰 · 머지는 꺼진 채 고를 수 없다(저장된 값은 두고 표시만 끔 · 직접)
 function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: SaveMerge }) {
+  const locked = !repo.autoMerge
+  const review = !locked && repo.review
+  const merge: MergeMode = locked ? 'manual' : repo.mergeMode
   return (
     <section className="settings-repo">
       <h4 className="settings-repo-name">{repo.name}</h4>
       <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={repo.autoMerge} onClick={() => save(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`)} />
-      {repo.autoMerge && <Switch id={`${repo.name}:confirm`} kind="sub" label={say('settings.mergeNow')} checked={!repo.confirm} onClick={() => save(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`)} />}
+      <Switch id={`${repo.name}:review`} kind="sub" label={say('settings.autoReview')} checked={review} disabled={locked} onClick={() => save(repo, { review: !repo.review }, `${repo.name}:review`)} />
+      <div className="settings-merge sub" role="radiogroup" aria-label={say('settings.merge')}>
+        <span className="settings-switch-label">{say('settings.merge')}</span>
+        <span className="settings-merge-modes">
+          {MERGE_MODES.map(({ mode, label }) => (
+            <button key={mode} className="settings-merge-mode" type="button" data-key={`${repo.name}:merge:${mode}`} role="radio" aria-checked={String(merge === mode) as 'true' | 'false'} disabled={locked} onClick={() => save(repo, { merge: mode }, `${repo.name}:merge:${mode}`)}>
+              {say(label)}
+            </button>
+          ))}
+        </span>
+      </div>
+      {repo.autoMerge && !repo.review && repo.mergeMode === 'auto' && <p className="settings-note settings-merge-warning">{say('settings.noReviewWarning')}</p>}
     </section>
   )
 }
 
-function Switch({ id, kind, label, checked, onClick }: { id: string; kind: 'sub'; label: string; checked: boolean; onClick: () => void }) {
+function Switch({ id, kind, label, checked, disabled = false, onClick }: { id: string; kind: 'sub'; label: string; checked: boolean; disabled?: boolean; onClick: () => void }) {
   return (
-    <button className={`settings-switch ${kind}`} type="button" data-key={id} role="switch" aria-checked={String(checked) as 'true' | 'false'} onClick={onClick}>
+    <button className={`settings-switch ${kind}`} type="button" data-key={id} role="switch" aria-checked={String(checked) as 'true' | 'false'} disabled={disabled} onClick={onClick}>
       <span className="settings-switch-label">{label}</span>
       <span className="settings-switch-track" />
     </button>

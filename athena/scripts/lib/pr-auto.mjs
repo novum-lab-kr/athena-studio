@@ -12,6 +12,7 @@ export const REVIEWERS = ['claude', 'codex']
 // 남은 수정 지적을 에이전트에 보내고, 고친 새 HEAD(라운드 > 상한)는 리뷰 없이 같은 HEAD 검증 · 충돌 확인만으로 승인과 같은 머지 단계로 간다
 export const MAX_ROUNDS = 3
 export const TAKEOVER = '상한 뒤 이어받음'
+export const REVIEW_OFF = '리뷰 끔'
 export const isTakeoverRound = (round) => round > MAX_ROUNDS
 // 상한 라운드가 이어받기를 허락했나 — 그 라운드가 쓴 줄('수정 필요 — 상한 뒤 이어받음…' · '결정 필요 — 상한 뒤 이어받음…')로 시작할 때만.
 // 이어받은 HEAD 가 머지 단계로 간 뒤의 줄('상한 뒤 이어받음(…) → 머지 확인 대기' 등)은 아니다 — 그 뒤 온 커밋은 멈춘다(PR #20 자동 리뷰 지적)
@@ -351,11 +352,27 @@ export const nextRound = (known, headSha) => {
 }
 
 // ── 팩 설정 ────────────────────────────────────────────────────────────
-// 결정 D4 — 레포별 스위치(pack.json 레포의 "autoMerge": true · 기본 꺼짐)
-export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => repo.autoMerge === true && !repo.direct).map((repo) => repo.name))
-// 머지 직전 사람 확인(결정 D3)을 건너뛰는 레포 — 자동 머지를 켰고 "autoMergeConfirm": false 일 때만. 키가 없거나 false 가 아니면 지금처럼 묻는다
-export const skipsMergeConfirm = (config, repoName) => autoMergeRepos(config).has(repoName)
-  && (config?.repos ?? []).some((repo) => repo.name === repoName && repo.autoMergeConfirm === false)
+// 레포별 설정 세 가지(docs/pr-auto.md "켜기") — PR(켬/끔) · 리뷰(켬/끔) · 머지(auto/confirm/manual). 키가 없으면 옛 뜻 그대로:
+//   "autoMerge": true          끝나면 PR 켬 · 없으면 PR · 리뷰 · 머지 모두 꺼짐("PR 올려줘" 는 그대로 된다 · 자동 리뷰만 없다)
+//   "autoReview": false        리뷰 끔 · 없으면 켬
+//   "autoMergeConfirm": false  확인 없이 머지 · 없으면 확인 후
+//   "autoMergeManual": true    사람이 직접 머지 · autoMergeConfirm 보다 먼저(둘 다 있어도 머지하지 않는 쪽으로)
+export const mergeModeOf = (repo) => {
+  if (repo?.autoMergeManual === true) return 'manual'
+  return repo?.autoMergeConfirm === false ? 'auto' : 'confirm'
+}
+export const prFlow = (repo) => {
+  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual' }
+  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo) }
+}
+export const repoFlow = (config, repoName) => prFlow((config?.repos ?? []).find((repo) => repo.name === repoName))
+// 자동 흐름(pr-auto)이 할 일이 있는 레포 — PR 을 켰고 리뷰나 머지 중 하나라도 자동. 리뷰 끔 + 사람이 직접은 draft PR 까지라 뺀다
+export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => {
+  const flow = prFlow(repo)
+  return flow.pr && (flow.review || flow.merge !== 'manual')
+}).map((repo) => repo.name))
+// 머지 직전 사람 확인(결정 D3)을 건너뛰는 레포 — 머지가 자동일 때만
+export const skipsMergeConfirm = (config, repoName) => autoMergeRepos(config).has(repoName) && repoFlow(config, repoName).merge === 'auto'
 
 const repoAgents = (repo) => [
   ...(repo.agents ?? []),

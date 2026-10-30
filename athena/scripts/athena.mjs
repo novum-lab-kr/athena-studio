@@ -23,8 +23,8 @@
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
  *   athena pack set-repo-name <레포> <이름>|--clear [--id <팩>] [--json]     레포 표시 이름(pack.json repos[] displayName · 레포 name 은 그대로)
  *   athena pack set-repo-icon <레포> <이미지>|--clear [--id <팩>] [--json]   레포 아이콘(같은 규칙 → 팩 assets/repos/<레포>.<형식>)
- *   athena pack set-auto-merge <레포> [--auto on|off] [--confirm on|off] [--id <팩>] [--json]
- *                                                  레포별 PR 자동 리뷰 · 머지(pack.json "autoMerge") · 머지 전에 묻기("autoMergeConfirm") — docs/pr-auto.md "켜기"
+ *   athena pack set-auto-merge <레포> [--auto on|off] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]
+ *                                                  레포별 PR · 자동 리뷰 · 머지(pack.json "autoMerge" · "autoReview" · "autoMergeConfirm" · "autoMergeManual") — docs/pr-auto.md "켜기"
  *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--panes-state <파일>] [--json]
  *                                                  앱이 들고 온 코어 번들을 주 본체로 받아 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
  *                                                  --panes-state: 스튜디오가 넘긴 데몬 pane 상태 — 입력을 기다리는 pane 의 세션은 막지 않는다
@@ -431,7 +431,7 @@ const packCommands = {
     if (!repo || (!clear && !file)) throw new PackError('usage', '사용: athena pack set-repo-icon <레포> <이미지 파일>|--clear [--id <팩>] [--json]')
     return setRepoIcon(paths(ROOT), { id: flag('id'), repo, file: clear ? '' : resolve(file), clear })
   },
-  'set-auto-merge': () => setAutoMerge(paths(ROOT), { id: flag('id'), repo: positional()[0], auto: flag('auto'), confirm: flag('confirm') }),
+  'set-auto-merge': () => setAutoMerge(paths(ROOT), { id: flag('id'), repo: positional()[0], auto: flag('auto'), confirm: flag('confirm'), review: flag('review'), merge: flag('merge') }),
   attach: () => {
     if (!positional()[0]) throw new PackError('usage', '사용: athena pack attach <id> [--json]')
     return attachPack(ROOT, positional()[0], { report, allowEmpty: true })

@@ -9,6 +9,11 @@ const path = require('path')
 const STATE_FILE = process.env.ATHENA_STUDIO_FAKE_PACK_STATE || path.join(os.tmpdir(), 'athena-studio-fake-pack.json')
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
+function mergeModeOf(repo) {
+  if (repo.autoMergeManual === true) return 'manual'
+  return repo.autoMergeConfirm === false ? 'auto' : 'confirm'
+}
+
 function load() {
   try {
     return JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'))
@@ -184,8 +189,18 @@ async function main() {
       if (auto === 'off') delete repo.autoMerge
       if (confirm === 'on') delete repo.autoMergeConfirm
       if (confirm === 'off') repo.autoMergeConfirm = false
+      const review = flag('--review')
+      if (review === 'on') delete repo.autoReview
+      if (review === 'off') repo.autoReview = false
+      const merge = flag('--merge')
+      if (merge) {
+        delete repo.autoMergeConfirm
+        delete repo.autoMergeManual
+        if (merge === 'auto') repo.autoMergeConfirm = false
+        if (merge === 'manual') repo.autoMergeManual = true
+      }
       fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
-      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false })
+      return done({ ok: true, id: (mine && mine.id) || 'fake', repo: arg, autoMerge: repo.autoMerge === true, autoMergeConfirm: repo.autoMergeConfirm !== false, autoReview: repo.autoReview !== false, mergeMode: mergeModeOf(repo) })
     }
     // 레포 표시 이름 · 이미지 — 가짜는 부른 본체의 pack/pack.json 이 있을 때만(set-auto-merge 와 같다). 이미지는 형식만 보고 assets/repos/<레포>.<형식> 으로 복사
     case 'set-repo-name':
