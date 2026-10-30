@@ -54,7 +54,9 @@ test('linkOverlay — 다른 곳을 가리키는 폴더 링크를 교체한다',
   linkOverlay(root)
   assert.ok(fs.existsSync(path.join(root, 'packs/other/docs/guides')))
   assert.ok(fs.existsSync(path.join(root, 'packs/co/docs/guides')))
-  assert.ok(!isLink(path.join(root, 'docs/guides')) || fs.readlinkSync(path.join(root, 'docs/guides')).includes('packs/co'))
+  const guides = path.join(root, 'docs/guides')
+  assert.ok(isLink(guides))
+  assert.equal(fs.realpathSync(guides), fs.realpathSync(path.join(root, 'packs/co/docs/guides')))
 })
 
 test('unlinkOverlay — 폴더 링크를 걷고 팩 원본은 남긴다', async (t) => {
