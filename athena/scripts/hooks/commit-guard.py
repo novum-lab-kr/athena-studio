@@ -63,12 +63,7 @@ def mask_quotes(text, keep_substitution):
             elif keep_substitution and (text.startswith('$(', index) or char == '`'):
                 # 치환 구간은 끝까지 그대로 옮긴다 — $( ) 는 괄호 짝을 센다(중첩)
                 if char == '$':
-                    depth, end = 0, index + 1
-                    while end < len(text):
-                        depth += {'(': 1, ')': -1}.get(text[end], 0)
-                        if depth == 0:
-                            break
-                        end += 1
+                    end = closing_paren(text, index + 1)
                 else:
                     end = text.find('`', index + 1)
                 end = len(text) - 1 if end < 0 or end >= len(text) else end
@@ -92,15 +87,18 @@ def balanced_groups(view, opener):
             return spans
         if opener == '(' and index > 0 and view[index - 1] == '$':
             index += 1; continue   # $( 는 치환 쪽에서 본다
-        depth, cursor = 0, index + len(opener) - 1
-        while cursor < len(view):
-            if view[cursor] == '(':
-                depth += 1
-            elif view[cursor] == ')':
-                depth -= 1
-                if depth == 0:
-                    break
-            cursor += 1
+        if opener == '$(':
+            cursor = closing_paren(view, index + 1)   # 치환 안의 따옴표 속 ) 는 세지 않는다
+        else:
+            depth, cursor = 0, index + len(opener) - 1
+            while cursor < len(view):
+                if view[cursor] == '(':
+                    depth += 1
+                elif view[cursor] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                cursor += 1
         spans.append((index + len(opener), cursor))
         index = cursor + 1
 
@@ -224,21 +222,242 @@ def check_gh(args):
     return ''
 
 
+# heredoc 머리줄 — <<EOF · <<-EOF · <<'EOF' · <<"EOF" · <<\EOF (따옴표·역슬래시가 있으면 본문에서 치환이 일어나지 않는다)
+# 구분자는 단어 하나 전체다(<<EOF-X 의 구분자는 EOF-X) — 따옴표 · 역슬래시를 뗀 것이 종료자 줄이다
+HEREDOC_HEAD = re.compile(r'<<(?!<)(?P<dash>-)?[ \t]*(?P<word>(?:\\.|\'[^\']*\'|"[^"]*"|[^\s;&|()<>\'"\\])+)[^\n]*\n')
+
+
+def closing_paren(body, start):
+    """body[start] == '(' 의 짝 ')' 자리 — 안쪽 따옴표 · 역슬래시 속의 괄호는 세지 않고, 큰따옴표 안의 $( … ) · 백틱은
+    새 문맥이라 그 짝까지 통째로 건너뛴다(없으면 len(body))"""
+    depth, quote, index = 0, '', start
+    while index < len(body):
+        char = body[index]
+        if quote == "'":
+            quote = '' if char == "'" else quote
+        elif char == '\\':
+            index += 1
+        elif body.startswith('$(', index):
+            index = closing_paren(body, index + 1)
+        elif char == '`':
+            index += 1
+            while index < len(body) and body[index] != '`':
+                index += 2 if body[index] == '\\' else 1
+        elif quote == '"':
+            quote = '' if char == '"' else quote
+        elif char in ('"', "'"):
+            quote = char
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return len(body)
+
+
+def arithmetic_spans(view):
+    """(( … )) · $(( … )) 구간 (시작, 끝) — 안의 << 는 heredoc 이 아니라 시프트 연산이다"""
+    spans = []
+    for opened in re.finditer(r'\(\(', view):
+        depth, cursor = 0, opened.start()
+        while cursor < len(view):
+            depth += {'(': 1, ')': -1}.get(view[cursor], 0)
+            if depth == 0:
+                break
+            cursor += 1
+        spans.append((opened.start(), cursor))
+    return spans
+
+
+def unquote_word(word):
+    """셸의 인용 제거 — 작은따옴표 안은 그대로(역슬래시 포함), 큰따옴표 안의 역슬래시는 $ ` " \\ 앞에서만 사라지고, 따옴표 밖은 다음 글자를 보호"""
+    out, quote, index = [], '', 0
+    while index < len(word):
+        char = word[index]
+        following = word[index + 1:index + 2]
+        if quote == "'":
+            if char == "'":
+                quote = ''
+            else:
+                out.append(char)
+        elif char == '\\':
+            if quote == '"' and following not in ('$', '`', '"', '\\', '\n'):
+                out.append(char)
+            else:
+                out.append(following); index += 1
+        elif char == '"':
+            quote = '' if quote else '"'
+        elif char == "'" and not quote:
+            quote = "'"
+        else:
+            out.append(char)
+        index += 1
+    return ''.join(out)
+
+
+def heredoc_substitutions(body):
+    """따옴표 없는 heredoc 본문에서 실제로 실행되는 $( … ) · ` … ` 안쪽만 꺼낸다 — \\$( · \\` 는 글자일 뿐이다"""
+    found, index = [], 0
+    while index < len(body):
+        char = body[index]
+        if char == '\\':
+            index += 2
+        elif body.startswith('$(', index):
+            end = closing_paren(body, index + 1)
+            found.append(body[index + 2:end]); index = end + 1
+        elif char == '`':
+            end = index + 1
+            while end < len(body) and body[end] != '`':
+                end += 2 if body[end] == '\\' else 1
+            found.append(body[index + 1:end]); index = end + 1
+        else:
+            index += 1
+    return found
+
+
+def strip_heredocs(text):
+    """heredoc 본문은 명령이 아니라 글이다 — 커밋 메시지 줄이 `commit.sh …` · `git commit …` 로 시작해도 명령으로 보지 않게 지운다.
+    따옴표 · 주석 · 산술식 안의 << 는 heredoc 이 아니다(그 뒤 줄은 실제 명령이다). 종료자는 셸처럼 줄 전체가 정확히 같아야 한다
+    (<<- 이면 앞의 탭만 뗀다 — 공백 · 닫는 괄호는 안 된다). 종료자가 없으면 끝까지가 본문이다.
+    따옴표 없는 구분자(<<EOF)의 본문은 실제로 실행되는 $( … ) · ` … ` 만 남긴다"""
+    view = mask_quotes(text, keep_substitution=True)
+    spans = arithmetic_spans(view)
+    out, position = [], 0
+    for head in HEREDOC_HEAD.finditer(text):
+        start = head.start()
+        if start < position:
+            continue
+        line_start = text.rfind('\n', 0, start) + 1
+        if (view[start:start + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:start])
+                or any(begin <= start <= end for begin, end in spans)):
+            continue
+        tag = unquote_word(head.group('word'))
+        if not tag:
+            continue
+        body_end, cursor = len(text), head.end()
+        while cursor < len(text):
+            line_end = text.find('\n', cursor)
+            line_end = len(text) if line_end < 0 else line_end
+            line = text[cursor:line_end]
+            if (line.lstrip('\t') if head.group('dash') else line) == tag:
+                body_end = cursor
+                break
+            cursor = line_end + 1
+        out.append(text[position:head.end()])
+        if tag == head.group('word'):   # 따옴표 · 역슬래시가 없는 구분자만 본문에서 치환이 일어난다
+            out += [f'$({piece})\n' for piece in heredoc_substitutions(text[head.end():body_end])]
+        position = body_end
+    out.append(text[position:])
+    return ''.join(out)
+
+
+def raw_words(piece):
+    """따옴표 · 역슬래시를 그대로 둔 채 공백으로 나눈 단어들 — tokens_of 와 단어 수가 같으면 같은 자리다"""
+    words, current, quote, started, index = [], '', '', False, 0
+    while index < len(piece):
+        char = piece[index]
+        if quote == "'":
+            current += char
+            quote = '' if char == "'" else quote
+        elif char == '\\' and index + 1 < len(piece):
+            current += piece[index:index + 2]; index += 2; started = True; continue
+        elif quote == '"':
+            current += char
+            quote = '' if char == '"' else quote
+        elif char in ('"', "'"):
+            quote = char; current += char; started = True
+        elif char.isspace():
+            if started:
+                words.append(current); current, started = '', False
+        else:
+            current += char; started = True
+        index += 1
+    if started:
+        words.append(current)
+    return words
+
+
+def assigned(name):
+    """명령 글 안에서 이 변수에 값을 넣는 부분이 있나 — 있으면 훅 프로세스의 값은 셸의 값이 아니다(eval 이 있으면 모른다)"""
+    escaped = re.escape(name)
+    patterns = [
+        rf'(?<![\w$]){escaped}\+?=',
+        rf'\$\{{{escaped}:?=',
+        rf'\b(?:export|declare|typeset|readonly|local|unset|read|getopts|mapfile|readarray|for|select|printf\s+-v)\b[^;&|\n]*\b{escaped}\b',
+    ]
+    return bool(re.search(r'\beval\b', command)) or any(re.search(pattern, command) for pattern in patterns)
+
+
+def expand_word(raw):
+    """셸이 실제로 풀어 주는 부분만 푼다 — 작은따옴표 · 역슬래시로 보호된 $VAR · ~ 는 글자 그대로,
+    큰따옴표 안의 ~ 도 그대로. 풀 수 없으면(미정의 변수 · 명령 치환 · 글롭 · 이 명령 안에서 값을 넣는 변수) None"""
+    out, index, quote = [], 0, ''
+    while index < len(raw):
+        char = raw[index]
+        following = raw[index + 1:index + 2]
+        if quote == "'":
+            if char == "'":
+                quote = ''
+            else:
+                out.append(char)
+        elif char == '\\':
+            if quote == '"' and following not in ('$', '`', '"', '\\', '\n'):
+                out.append(char)
+            else:
+                out.append(following); index += 1
+        elif char == '"':
+            quote = '' if quote else '"'
+        elif char == "'" and not quote:
+            quote = "'"
+        elif char == '`' or (char == '$' and following in ('(', '')):
+            return None
+        elif char == '$':
+            matched = re.match(r'\$(?:\{([A-Za-z_][A-Za-z0-9_]*)\}|([A-Za-z_][A-Za-z0-9_]*))', raw[index:])
+            if not matched:
+                return None
+            name = matched.group(1) or matched.group(2)
+            if name in ('PWD', 'OLDPWD') or name not in os.environ or assigned(name):
+                return None
+            out.append(os.environ[name]); index += matched.end(); continue
+        elif char == '~' and not quote and index == 0:
+            if following not in ('', '/') or assigned('HOME'):
+                return None
+            out.append(os.path.expanduser('~'))
+        elif not quote and char in '*?[{':
+            return None
+        else:
+            out.append(char)
+        index += 1
+    return None if quote else ''.join(out)
+
+
+def resolve_script_path(raw, token):
+    """실행하는 스크립트 경로를 실경로로 — raw(원문 단어)가 있으면 셸이 푸는 만큼만 풀고, 못 풀면 None(= 같은 파일이라 확신할 수 없다)"""
+    expanded = token if raw is None else expand_word(raw)
+    return None if expanded is None else os.path.realpath(os.path.join(cwd, expanded))
+
+
 def check(text, depth=0):
     if depth > 5:
         return ''
+    text = strip_heredocs(text)
     for inner in inner_commands(text):
         reason = check(inner, depth + 1)
         if reason:
             return reason
     for piece in split_pieces(text):
-        tokens = strip_prefix(tokens_of(piece))
+        all_tokens = tokens_of(piece)
+        tokens = strip_prefix(all_tokens)
         if not tokens:
             continue
         name = os.path.basename(tokens[0])
         if name in ALLOWED_SCRIPTS:
             # 이 아테나 레포의 그 파일일 때만 통과 — ./ship.sh · /tmp/ship.sh 같은 같은 이름의 다른 파일은 막는다
-            if os.path.realpath(os.path.join(cwd, tokens[0])) != ALLOWED_SCRIPTS[name]:
+            words = raw_words(piece)
+            raw = words[len(all_tokens) - len(tokens)] if len(words) == len(all_tokens) else None
+            if resolve_script_path(raw, tokens[0]) != ALLOWED_SCRIPTS[name]:
                 return f'{name} 은 아테나(athena) 레포의 scripts/{name} 만 실행한다: {ALLOWED_SCRIPTS[name]}'
             if name == 'ship.sh' and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
                 return 'ship.sh --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'
