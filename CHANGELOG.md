@@ -14,7 +14,24 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.28: v0.25.1..main 머지(#131 ~ #144)에서 손님에게 보이는 것만(규칙 문서 #139 · 테스트 · 데모는 뺌). 범위 끝은 열어 둔다 -->
 
-## 0.28 (v0.26.0 – · Oct 29, 2026)
+<!-- 0.32: v0.28.7..main 머지(#146 ~ #155)에서 손님에게 보이는 것만(문서 #145 · 다이어그램 #151 은 뺌 · #152 는 #155 팝업 줄에 · #154 는 #153 설정 줄에 합침). 범위 끝은 열어 둔다 -->
+
+## 0.32 (v0.29.0 – · Oct 30, 2026)
+
+### New
+- After Athena's core updates, an in-app popup shows the previous and new versions, what's new, and how the update went, with working sessions listed by agent name.
+- In packs without the Athena Studio repository, a bug report about Athena itself becomes a GitHub issue draft with private details hidden. Athena shows you the draft and opens it on GitHub for you to review and submit.
+
+### Improved
+- Athena hands a new task to an idle agent pane for the same repository instead of opening another pane.
+- Agent panes start without MCP servers, so each reply uses fewer tokens. Reviewer panes keep them.
+- The PR automation switches in Settings are named for what they turn on: "Auto PR · review" and "Merge right after approval". The warning line under them is gone.
+
+### Fixed
+- The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.
+- In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review merges it, and the agent reports its state.
+
+## 0.28 (v0.26.0 – v0.28.7 · Oct 29, 2026)
 
 ### New
 - When an agent asks you a question in its pane, the question now also shows up as a request in Work, so you can pick an answer there.
