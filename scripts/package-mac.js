@@ -102,11 +102,13 @@ function builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, 
     files: FILES,
     // 코어 번들 — process.resourcesPath/athena-core.bundle(studio-home.js coreBundlePath · CORE_BUNDLE_NAME)
     // 업데이트 설정 — process.resourcesPath/app-update.yml(electron-updater 가 읽는 자리 · 서명 전에 들어가 서명에 포함된다)
+    // 업데이트 내역 — process.resourcesPath/CHANGELOG.md(코어 업데이트 팝업이 읽는다 · src/main/core-runner.mts changelogFile)
     // 제3자 고지 — process.resourcesPath/THIRD_PARTY_NOTICES.txt(Electron · Chromium 고지 LICENSE.electron.txt · LICENSES.chromium.html 은 electron-builder 가 같은 자리에 옮긴다)
     extraResources: [
       { from: coreBundle, to: studioHome.CORE_BUNDLE_NAME },
       { from: updateConfigFile, to: UPDATE_CONFIG_NAME },
       { from: noticesFile, to: notices.FILE_NAME },
+      { from: path.join(ROOT, 'CHANGELOG.md'), to: 'CHANGELOG.md' },
     ],
     // asar 를 쓰지 않는다 — 데몬(src/daemon/main.mts) · CLI(bin/athena-studio-cli 셸 스크립트 → src/daemon/cli.js) 를
     // 경로로 띄우고, 코어(파이썬 screen.py)가 그 CLI 경로를 셸로 실행한다. asar 안 파일은 셸 · 다른 프로세스가 실행할 수 없다

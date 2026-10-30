@@ -18,7 +18,7 @@ const { execFileSync } = require('child_process')
 // git 실패(execFileSync) — stderr 가 있으면 그것을 알린다
 /** @typedef {{ stderr?: unknown, message?: unknown }} ExecError */
 // 코어 JSON 결과(version · update) — 읽는 칸만, 모양은 칸마다 따로 본다
-/** @typedef {{ ok?: unknown, capabilities?: unknown, bodies?: unknown, backedUp?: unknown } | null | undefined} CoreResult */
+/** @typedef {{ ok?: unknown, version?: unknown, capabilities?: unknown, bodies?: unknown, backedUp?: unknown } | null | undefined} CoreResult */
 /** @typedef {(argv: string[], options: { contract: boolean }) => Promise<CoreResult>} RunCore */
 /** @typedef {{ id?: unknown, status?: unknown, reason?: unknown, error?: unknown, busy?: unknown, working?: unknown }} UpdateBody */
 /** @typedef {{ ok: boolean, dir?: string, files?: string[], error?: string, message?: string }} BackupResult */
@@ -432,7 +432,9 @@ function registryHasPacks(dataDir) {
 async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = null, env = gitEnv() }) {
   const status = bundleStatus({ coreDir, bundle, env })
   if (status.state !== 'ahead') return { state: status.state, head: status.head || null, target: status.target || null }
-  const base = { head: status.head, target: status.target }
+  // fromVersion — 올리기 전 코어의 사람이 읽는 버전(코어 version --json 의 version · 태그가 없거나 부르지 않았으면 null)
+  /** @type {{ head: string | undefined, target: string | undefined, fromVersion: string | null }} */
+  const base = { head: status.head, target: status.target, fromVersion: null }
   const packless = isPackless(coreDir)
   /** @type {CoreUpdate | null} */
   let coreUpdate = null
@@ -441,6 +443,7 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = 
     const version = await runCore(['version'], NO_CONTRACT)
     /** @type {unknown[]} */
     const capabilities = Array.isArray(version && version.capabilities) ? /** @type {unknown[]} */ (/** @type {NonNullable<CoreResult>} */ (version).capabilities) : []
+    if (version && typeof version.version === 'string') base.fromVersion = version.version
     if (!UPDATE_CAPABILITIES.every((name) => capabilities.includes(name))) return { state: 'unsupported', ...base }
     const args = ['update', '--from', bundle, '--backup-dirty']
     const stateFile = panesStateFile && capabilities.includes(IDLE_PANES_CAPABILITY) ? await panesStateFile().catch(() => null) : null

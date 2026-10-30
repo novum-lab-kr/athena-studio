@@ -1,6 +1,7 @@
 // 맥 배포판 설정(scripts/package-mac.js) — electron-builder 를 부르지 않고 설정 모양만 본다
 const test = require('node:test')
 const assert = require('node:assert/strict')
+const path = require('node:path')
 const pkg = require('../scripts/package-mac')
 const studioHome = require('../src/lib/studio-home')
 
@@ -30,6 +31,7 @@ test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core
     { from: base.coreBundle, to: studioHome.CORE_BUNDLE_NAME },
     { from: base.updateConfigFile, to: 'app-update.yml' },
     { from: base.noticesFile, to: 'THIRD_PARTY_NOTICES.txt' },
+    { from: path.join(__dirname, '..', 'CHANGELOG.md'), to: 'CHANGELOG.md' },
   ])
   assert.equal(studioHome.coreBundlePath({ appRoot: '/x', packaged: true, resourcesPath: '/R' }), `/R/${config.extraResources[0].to}`)
 })
