@@ -224,9 +224,38 @@ def check_gh(args):
     return ''
 
 
+# 종료자는 줄 전체(앞뒤 공백 · 닫는 괄호만 허용)여야 한다 — 본문이 비어 있어도 첫 종료자에서 끝난다
+HEREDOC = re.compile(r'<<(?!<)-?[ \t]*(?P<quote>[\'"]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)(?P=quote)[^\n]*\n(?P<body>(?:.*?\n)??)(?=[ \t]*(?P=tag)[ \t]*\)*[ \t]*(?:\n|$))', re.S)
+
+
+def strip_heredocs(text):
+    """heredoc 본문은 명령이 아니라 글이다 — 커밋 메시지 줄이 `commit.sh …` · `git commit …` 로 시작해도 명령으로 보지 않게 지운다.
+    따옴표 · 주석 안의 << 는 heredoc 이 아니다(그 뒤 줄은 실제 명령이다). 따옴표 없는 구분자(<<EOF)의 본문은 안의 $( … ) · ` … ` 만 남긴다(그건 실행된다)"""
+    view = mask_quotes(text, keep_substitution=True)
+
+    def blank(match):
+        line_start = text.rfind('\n', 0, match.start()) + 1
+        if view[match.start():match.start() + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:match.start()]):
+            return match.group(0)
+        head = match.group(0)[:match.start('body') - match.start()]
+        if match.group('quote'):
+            return head
+        body = match.group('body')
+        kept = [body[begin:end] for begin, end in balanced_groups(body, '$(')]
+        kept += re.findall(r'`([^`]*)`', body)
+        return head + ''.join(f'$({piece})\n' for piece in kept)
+    return HEREDOC.sub(blank, text)
+
+
+def resolve_script_path(token):
+    """~ · $HOME · ${VAR} 를 셸처럼 풀어 실경로로 만든다 — 셸이 풀어서 실행하는 경로를 같은 이름의 다른 파일로 오인하지 않게"""
+    return os.path.realpath(os.path.join(cwd, os.path.expandvars(os.path.expanduser(token))))
+
+
 def check(text, depth=0):
     if depth > 5:
         return ''
+    text = strip_heredocs(text)
     for inner in inner_commands(text):
         reason = check(inner, depth + 1)
         if reason:
@@ -238,7 +267,7 @@ def check(text, depth=0):
         name = os.path.basename(tokens[0])
         if name in ALLOWED_SCRIPTS:
             # 이 아테나 레포의 그 파일일 때만 통과 — ./ship.sh · /tmp/ship.sh 같은 같은 이름의 다른 파일은 막는다
-            if os.path.realpath(os.path.join(cwd, tokens[0])) != ALLOWED_SCRIPTS[name]:
+            if resolve_script_path(tokens[0]) != ALLOWED_SCRIPTS[name]:
                 return f'{name} 은 아테나(athena) 레포의 scripts/{name} 만 실행한다: {ALLOWED_SCRIPTS[name]}'
             if name == 'ship.sh' and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
                 return 'ship.sh --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'
