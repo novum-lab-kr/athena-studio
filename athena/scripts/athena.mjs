@@ -23,9 +23,9 @@
  *   athena pack set-icon <이미지>|--clear [--id <팩>] [--json]    팩 아이콘(png·jpeg·webp · 1MB 이하 → 팩 assets/icon.<형식>)
  *   athena pack set-repo-name <레포> <이름>|--clear [--id <팩>] [--json]     레포 표시 이름(pack.json repos[] displayName · 레포 name 은 그대로)
  *   athena pack set-repo-icon <레포> <이미지>|--clear [--id <팩>] [--json]   레포 아이콘(같은 규칙 → 팩 assets/repos/<레포>.<형식>)
- *   athena pack set-auto-merge <레포> [--auto on|off|none] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]
+ *   athena pack set-auto-merge <레포> [--auto on|off|direct] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]
  *                                                  레포별 PR · 자동 리뷰 · 머지(pack.json "autoMerge" · "autoPr" · "autoReview" · "autoMergeConfirm" · "autoMergeManual") — docs/pr-auto.md "켜기"
- *                                                  --auto on = 자동 PR 켬 · off = 자동 PR 끔(PR 없이 prBase 에 바로 머지) · none = 자동 흐름 없음(키 없음)
+ *                                                  --auto on = 자동 PR 켬 · off = 자동 흐름 없음(키 없음 — 옛 뜻 그대로) · direct = PR 없이 prBase 에 바로 머지
  *   athena update --from <git 번들> [--to <커밋>] [--backup-dirty] [--panes-state <파일>] [--json]
  *                                                  앱이 들고 온 코어 번들을 주 본체로 받아 → 본체마다(일하면 건너뜀) 배포 커밋으로 · 기록 <데이터>/updates/
  *                                                  --panes-state: 스튜디오가 넘긴 데몬 pane 상태 — 입력을 기다리는 pane 의 세션은 막지 않는다

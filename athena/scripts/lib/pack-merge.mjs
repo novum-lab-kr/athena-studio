@@ -23,7 +23,7 @@ const MERGE_KEYS = {
   confirm: [['autoMergeConfirm', null], ['autoMergeManual', null]],
   manual: [['autoMergeConfirm', null], ['autoMergeManual', 'true']],
 }
-const USAGE = '사용: athena pack set-auto-merge <레포> [--auto on|off|none] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]'
+const USAGE = '사용: athena pack set-auto-merge <레포> [--auto on|off|direct] [--review on|off] [--merge auto|confirm|manual] [--confirm on|off] [--id <팩>] [--json]'
 
 // on|off → true|false · 없으면 null(바꾸지 않음)
 const onOff = (value, name) => {
@@ -33,11 +33,11 @@ const onOff = (value, name) => {
   throw new PackError('usage', `--${name} 는 on 또는 off`)
 }
 
-// --auto 값마다 키 — on: 자동 PR 켬 · off: 자동 PR 끔(PR 없이 바로 머지 — autoMerge 는 켠 채 autoPr:false) · none: 자동 흐름 없음(둘 다 지운다 — 키 없는 pack.json 과 같다)
+// --auto 값마다 키 — on: 자동 PR 켬 · off: 자동 흐름 없음(둘 다 지운다 — 키 없는 pack.json 과 같다 · 옛 앱이 보내는 off 의 뜻 그대로) · direct: PR 없이 바로 머지(autoMerge 는 켠 채 autoPr:false — 새 값)
 const AUTO_KEYS = {
   on: [['autoMerge', 'true'], ['autoPr', null]],
-  off: [['autoMerge', 'true'], ['autoPr', 'false']],
-  none: [['autoMerge', null], ['autoPr', null]],
+  off: [['autoMerge', null], ['autoPr', null]],
+  direct: [['autoMerge', 'true'], ['autoPr', 'false']],
 }
 
 // ── JSON 글자 위치 읽기 — JSON.parse 를 통과한 글만 넣는다(모양 검사는 하지 않는다) ─────────────
@@ -121,7 +121,7 @@ export const deleteKey = (text, object, key) => {
 
 // --id 가 있으면 그 팩, 없으면 부른 본체의 팩(pack-look.mjs lookTarget 과 같은 기준)
 export const setAutoMerge = (where, { id = '', repo = '', auto = '', confirm = '', review = '', merge = '' } = {}) => {
-  if (auto && !Object.hasOwn(AUTO_KEYS, auto)) throw new PackError('usage', '--auto 는 on · off · none')
+  if (auto && !Object.hasOwn(AUTO_KEYS, auto)) throw new PackError('usage', '--auto 는 on · off · direct')
   const ask = onOff(confirm, 'confirm')
   const reviewOn = onOff(review, 'review')
   if (!repo) throw new PackError('usage', USAGE)

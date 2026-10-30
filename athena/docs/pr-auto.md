@@ -37,7 +37,7 @@
 
 자동 흐름을 끄면(`autoMerge` 없음) 다른 키는 남기되 뜻이 없다(다시 켜면 그 값으로).
 
-**첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off|none [--review on|off] [--merge auto|confirm|manual]` (`on` = 자동 PR · `off` = PR 없이 바로 머지 · `none` = 자동 흐름 없음 — 예전 `off` 의 뜻) · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
+**첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off|direct [--review on|off] [--merge auto|confirm|manual]` (`on` = 자동 PR · `off` = 자동 흐름 없음 — 예전 뜻 그대로, 옛 앱이 보내도 바로 머지로 바뀌지 않는다 · `direct` = PR 없이 바로 머지) · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
 ```jsonc
 { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true }

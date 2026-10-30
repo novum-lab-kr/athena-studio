@@ -63,7 +63,7 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
   ctx.setAutoMerge = async (repo: string, { auto, review, merge }: { auto?: unknown; review?: unknown; merge?: unknown }) => {
     if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
     const args = ['set-auto-merge', repo]
-    if (auto === 'on' || auto === 'off' || auto === 'none') args.push('--auto', auto)
+    if (auto === 'on' || auto === 'off' || auto === 'direct') args.push('--auto', auto)
     if (typeof review === 'boolean') args.push('--review', review ? 'on' : 'off')
     if (typeof merge === 'string') args.push('--merge', merge)
     const result = await runPack(args, { dir: ctx.athenaDir })

@@ -190,10 +190,10 @@ async function main() {
       if (repo.direct === true) fail('not-applicable', `${arg} 는 main 직접 레포라 PR 이 없다`)
       const auto = flag('--auto')
       const confirm = flag('--confirm')
-      // on = 자동 PR · off = PR 끔(바로 머지) · none = 자동 흐름 없음 — 코어 pack-merge.mjs AUTO_KEYS 와 같다
+      // on = 자동 PR · off = 자동 흐름 없음 · direct = PR 끔(바로 머지) — 코어 pack-merge.mjs AUTO_KEYS 와 같다
       if (auto === 'on') { repo.autoMerge = true; delete repo.autoPr }
-      if (auto === 'off') { repo.autoMerge = true; repo.autoPr = false }
-      if (auto === 'none') { delete repo.autoMerge; delete repo.autoPr }
+      if (auto === 'off') { delete repo.autoMerge; delete repo.autoPr }
+      if (auto === 'direct') { repo.autoMerge = true; repo.autoPr = false }
       if (confirm === 'on') delete repo.autoMergeConfirm
       if (confirm === 'off') repo.autoMergeConfirm = false
       const review = flag('--review')

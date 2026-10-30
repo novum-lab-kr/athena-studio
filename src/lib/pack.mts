@@ -127,7 +127,7 @@ export function contractOf(result: PackResult | null | undefined): { contract: n
 }
 
 // 약속 번호를 올리지 않고 나중에 더한 명령 → 그 명령을 아는 코어의 손잡이(코어 version capabilities · athena/scripts/lib/bodies.mjs CAPABILITIES)
-const COMMAND_CAPABILITIES: Record<string, string> = { 'pack set-repo-name': 'repo-look', 'pack set-repo-icon': 'repo-look', 'pack set-auto-merge': 'pr-off-merge' }
+const COMMAND_CAPABILITIES: Record<string, string> = { 'pack set-repo-name': 'repo-look', 'pack set-repo-icon': 'repo-look', 'pack set-auto-merge': 'merge-flow' }
 const commandName = (argv: string[]) => (argv[0] === 'pack' ? `pack ${argv[1]}` : String(argv[0] || ''))
 // "알 수 없는 답"이 온 명령 · 그 본체의 version 결과 → 본체 코어가 옛 버전이라 그 명령을 모르나.
 // 약속 번호가 낮으면(명령 없음 → 1 포함) 옛 코어 · 같으면 그 명령의 손잡이가 capabilities 에 없을 때만. version 을 못 물었으면(일시 실패) 모름 → false
@@ -135,7 +135,10 @@ export function coreTooOld(argv: string[] | null | undefined, versionResult: Pac
   const { contract } = contractOf(versionResult)
   if (contract === null) return false
   if (contract < CONTRACT) return true
-  const needed = COMMAND_CAPABILITIES[commandName(argv || [])]
+  const args = argv || []
+  // --auto direct(PR 끔 바로 머지)는 그 값을 아는 코어만 — 모르는 코어는 사용법 오류만 낸다
+  const directAuto = commandName(args) === 'pack set-auto-merge' && args[args.indexOf('--auto') + 1] === 'direct'
+  const needed = directAuto ? 'pr-off-merge' : COMMAND_CAPABILITIES[commandName(args)]
   const capabilities: unknown[] = versionResult && Array.isArray(versionResult.capabilities) ? versionResult.capabilities : []
   return Boolean(needed) && !capabilities.includes(needed)
 }

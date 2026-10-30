@@ -111,7 +111,7 @@ function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: Sav
   return (
     <section className="settings-repo">
       <h4 className="settings-repo-name">{repo.name}</h4>
-      <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={flow === 'pr'} onClick={() => save(repo, { auto: flow === 'pr' ? 'off' : 'on' }, `${repo.name}:auto`)} />
+      <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={flow === 'pr'} onClick={() => save(repo, { auto: flow === 'pr' ? 'direct' : 'on' }, `${repo.name}:auto`)} />
       <Switch id={`${repo.name}:review`} kind="sub" label={say('settings.autoReview')} checked={review} disabled={flow !== 'pr'} onClick={() => save(repo, { review: !repo.review }, `${repo.name}:review`)} />
       <div className="settings-merge sub" role="radiogroup" aria-label={say('settings.merge')}>
         <span className="settings-switch-label">{say('settings.merge')}</span>

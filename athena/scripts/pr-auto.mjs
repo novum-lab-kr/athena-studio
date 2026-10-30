@@ -838,6 +838,8 @@ const performDirectMerge = async (job) => {
   const planPath = join(ROOT, job.plan)
   const flow = repoFlow(config, job.repo)
   if (!flow.direct || flow.merge === 'manual') return directStop(job, '검증 대기 — 머지 전에 설정이 바뀜(자동 PR · 머지)', 'recheck', { raise: false })
+  // 확인을 기다리는 동안 prBase 가 바뀌었으면 옛 기준 브랜치에 밀지 않는다
+  if (prBaseOf(config, job.repo) !== job.base) return directStop(job, `검증 대기 — 머지 전에 기준 브랜치(prBase)가 ${job.base} 에서 바뀜`, 'recheck', { raise: false })
   if (pendingDecisions(job.plan, job.repo, 0)) return directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false })
   const verify = verifiedAt(job.repo, job.worktree, job.sha)
   if (!verify.ok) return directStop(job, `검증 대기 — ${verify.why}`, 'verify')
@@ -921,9 +923,9 @@ const checkDirectConfirm = async (file, job) => {
   const config = loadConfig(ROOT)
   const flow = repoFlow(config, job.repo)
   const headNow = job.worktree && existsSync(job.worktree) ? git(job.worktree, ['rev-parse', 'HEAD']) : null
-  const stale = !flow.direct || flow.merge === 'manual' || headNow !== job.sha
+  const stale = !flow.direct || flow.merge === 'manual' || headNow !== job.sha || prBaseOf(config, job.repo) !== job.base
   if (stale && ['open', 'answered'].includes(request.state)) {
-    try { cancelRequest(ROOT, request.id, { reason: `HEAD 나 설정이 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
+    try { cancelRequest(ROOT, request.id, { reason: `HEAD · 설정 · 기준 브랜치가 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
     rmSync(file, { force: true })
     const planPath = join(ROOT, job.plan)
     if (headNow === job.sha && existsSync(planPath)) writeDirectLine(planPath, job, '검증 대기 — 머지 전에 설정이 바뀜(자동 PR · 머지)')

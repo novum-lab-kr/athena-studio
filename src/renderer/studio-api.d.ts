@@ -38,7 +38,7 @@ declare global {
 
   type MergeMode = 'auto' | 'confirm' | 'manual'
   type MergeRepo = { name: string; autoMerge: boolean; autoPr: boolean; review: boolean; mergeMode: MergeMode; prBase: string }
-  type AutoFlow = 'on' | 'off' | 'none'
+  type AutoFlow = 'on' | 'off' | 'direct'
   // main 의 appUpdateView(src/main/app-updater.mts) — 개발판 src/lib/app-update.mts UpdateStatus · 배포판 src/lib/release-update.mts ReleaseStatus + running. 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
   type AppUpdateView = { state: 'behind' | 'current' | 'unavailable'; behind: number; branch: string | null; reason: string | null; version: string | null; latest: string | null; running: boolean }
 
