@@ -337,6 +337,7 @@ const today = new Date().toISOString().slice(0, 10)
 report.push(`# Athena sync 리포트 (${today})`, '', '기준 브랜치: 레포별 `origin/<branch>` (athena.config.json). 작업 트리는 읽지 않았다.', '')
 
 let changedCount = 0
+const skippedRepos = []   // 기준 ref 를 읽지 못해 지문을 못 만든 레포
 for (const repo of targets) {
   if (!existsSync(repo.path)) { report.push(`## ${repo.name} (${repo.agents.join(', ')})`, '', `⚠️ repos/${repo.name} 링크가 없다. scripts/setup.sh 를 실행하라`, ''); continue }
   let fetchNote = ''
@@ -349,6 +350,15 @@ for (const repo of targets) {
       if (fetched === null) fetchNote = ` (fetch 실패 — ssh·https 모두, 로컬 ${repo.ref} 참조 사용)`
       else fetchNote = ' (https 로 fetch)'
     }
+  }
+  // 기준 ref(원격 없는 레포 · 아직 push 안 한 레포 · fetch 실패 + 로컬 참조 없음)를 못 읽으면 이 레포만 건너뛴다
+  if (git(repo.path, ['rev-parse', '--verify', '--quiet', `${repo.ref}^{commit}`], { allowFail: true }) === null) {
+    const pendingFile = join(PENDING_DIR, `${repo.name}.json`)
+    // 앞 실행의 pending 이 남아 있으면 --accept 때 이번에 읽지 못한 지문이 확정되니 지운다
+    if (existsSync(pendingFile)) unlinkSync(pendingFile)
+    skippedRepos.push(repo.name)
+    report.push(`## ${repo.name} (${repo.agents.join(', ')})`, '', `⚠️ 기준 ref \`${repo.ref}\` 를 읽을 수 없어 이 레포는 건너뛴다${fetchNote}. 원격(origin)을 연결하고 \`${repo.branch ?? 'dev'}\` 브랜치를 커밋·push 한 뒤 다시 실행하거나, 이 레포를 빼려면 \`--repo\` 로 다른 레포만 고른다`, '')
+    continue
   }
   const snapshot = buildSnapshot(repo)
   const previous = loadJson(join(SNAP_DIR, `${repo.name}.json`))
@@ -390,9 +400,10 @@ for (const repo of targets) {
   report.push('', `### 커밋 (최근 ${Math.min(commits.length, 40)}개)`, '```', ...commits.slice(0, 40), commits.length > 40 ? `... 외 ${commits.length - 40}개` : '', '```', '')
 }
 
-report.push('---', '', changedCount
+const skippedNote = skippedRepos.length ? `⚠️ 기준 ref 를 읽지 못해 건너뛴 레포 ${skippedRepos.length}개(${skippedRepos.join(', ')}) — 이 레포들은 비교하지 못했다. ` : ''
+report.push('---', '', skippedNote + (changedCount
   ? `변경된 레포 ${changedCount}개. 문서 갱신 후 \`node scripts/sync-fingerprint.mjs --accept\` 로 baseline 을 확정한다.`
-  : '모든 레포가 baseline 과 동일. 갱신할 것이 없다.')
+  : skippedRepos.length ? (skippedRepos.length === targets.length ? '읽은 레포가 없다.' : '읽은 레포는 모두 baseline 과 동일.') : '모든 레포가 baseline 과 동일. 갱신할 것이 없다.'))
 
 const text = report.filter((line) => line !== undefined).join('\n')
 writeFileSync(REPORT_PATH, text)
