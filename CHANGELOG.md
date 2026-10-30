@@ -16,7 +16,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.32: v0.28.7..main 머지(#146 ~ #155)에서 손님에게 보이는 것만(문서 #145 · 다이어그램 #151 은 뺌 · #152 는 #155 팝업 줄에 · #154 는 #153 설정 줄에 합침). 범위 끝은 열어 둔다 -->
 
-## 0.32 (v0.29.0 – · Oct 30, 2026)
+## 0.32 (v0.28.8 – · Oct 30, 2026)
 
 ### New
 - After Athena's core updates, an in-app popup shows the previous and new versions, what's new, and how the update went, with working sessions listed by agent name.
@@ -29,7 +29,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.
-- In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review merges it, and the agent reports its state.
+- In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review takes it through to merge, and the agent reports its state.
 
 ## 0.28 (v0.26.0 – v0.28.7 · Oct 29, 2026)
 

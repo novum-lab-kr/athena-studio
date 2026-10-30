@@ -5,7 +5,7 @@
   "Agent panes start without MCP servers, so each reply uses fewer tokens. Reviewer panes keep them.": "代理 pane 启动时不加载 MCP 服务器，每次回复使用的 token 更少。审查者 pane 保持不变。",
   "The PR automation switches in Settings are named for what they turn on: \"Auto PR · review\" and \"Merge right after approval\". The warning line under them is gone.": "设置中的 PR 自动化开关改为按开启的功能命名：“自动 PR · 审查”和“批准后立即合并”。下方的警告行已移除。",
   "The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.": "修复了提交信息有多行，或路径使用 `~` 或变量时，提交保护钩子错误拦截 Athena 自身提交脚本的问题。",
-  "In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review merges it, and the agent reports its state.": "在开启自动合并的仓库中，代理不再请你合并它打开的 PR。自动审查会完成合并，代理会报告 PR 状态。",
+  "In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review takes it through to merge, and the agent reports its state.": "在开启自动合并的仓库中，代理不再请你合并它打开的 PR。自动审查会一路推进到合并，代理会报告 PR 状态。",
   "When an agent asks you a question in its pane, the question now also shows up as a request in Work, so you can pick an answer there.": "当代理在 pane 中提问时，这个问题也会作为请求显示在[工作]中，你可以在那里选择答案。",
   "Reports to the Athena pane now arrive in one step. If the Athena pane can't be found, the report is kept as a request instead of being lost.": "发送到 Athena pane 的报告现在一步到达。如果找不到 Athena pane，报告会保留为请求，不会丢失。",
   "Delegating a task again updates which pane is the lead.": "再次委派任务时，也会更新哪个 pane 是负责人。",

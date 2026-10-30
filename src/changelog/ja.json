@@ -5,7 +5,7 @@
   "Agent panes start without MCP servers, so each reply uses fewer tokens. Reviewer panes keep them.": "エージェント pane を MCP サーバーなしで起動するため、返答ごとのトークンが減ります。レビュアー pane はそのまま使います。",
   "The PR automation switches in Settings are named for what they turn on: \"Auto PR · review\" and \"Merge right after approval\". The warning line under them is gone.": "設定の PR 自動化スイッチの名前が、オンにする内容そのままになりました:「自動 PR・レビュー」「承認されたらすぐマージ」。その下の警告行はなくなりました。",
   "The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.": "コミットメッセージが複数行のときや、パスに `~` や変数を使ったときに、コミットガードがアテナのコミットスクリプトを誤ってブロックしていた問題を修正しました。",
-  "In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review merges it, and the agent reports its state.": "自動マージをオンにしたリポジトリでは、エージェントが自分の開いた PR のマージを頼まなくなりました。自動レビューがマージし、エージェントは PR の状態を報告します。",
+  "In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review takes it through to merge, and the agent reports its state.": "自動マージをオンにしたリポジトリでは、エージェントが自分の開いた PR のマージを頼まなくなりました。自動レビューがマージまで進め、エージェントは PR の状態を報告します。",
   "When an agent asks you a question in its pane, the question now also shows up as a request in Work, so you can pick an answer there.": "エージェントが pane で質問すると、その質問が[作業]にもリクエストとして表示され、そこで答えを選べます。",
   "Reports to the Athena pane now arrive in one step. If the Athena pane can't be found, the report is kept as a request instead of being lost.": "アテナ pane への報告が一度に届きます。アテナ pane が見つからないときは、報告を失わずリクエストとして残します。",
   "Delegating a task again updates which pane is the lead.": "タスクを再度委任すると、どの pane がリードかも更新されます。",
