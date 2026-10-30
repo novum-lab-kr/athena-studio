@@ -25,7 +25,7 @@
  */
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { tmpdir } from 'node:os'
+import { homedir, tmpdir } from 'node:os'
 import { execFile, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -39,7 +39,7 @@ import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import {
   BASE_MERGED, MAX_ROUNDS, REVIEWERS, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
+  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, codexModelArgs, codexUserSettings, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
   validReview, withAutoLine, withDecisionLines, workRefOf,
 } from './lib/pr-auto.mjs'
 
@@ -145,7 +145,11 @@ const CODEX_TOOL_FEATURES = [
   'computer_use', 'in_app_browser', 'plugins', 'remote_plugin', 'multi_agent', 'image_generation', 'view_image', 'hooks', 'skill_search',
   'skill_mcp_dependency_install', 'tool_suggest', 'code_mode_host', 'sleep_tool', 'goals', 'worktrees', 'in_app_local_automation',
 ]
-const reviewWithCodex = async (prompt, workDir) => {   // 모델은 ~/.codex/config.toml 그대로(팩 models 는 Claude 만)
+// 사용자 config.toml(CODEX_HOME 이 있으면 그 아래)의 맨 위 model · model_reasoning_effort — 없으면 비어 있어 Codex 기본값
+const readCodexSettings = () => {
+  try { return codexUserSettings(readFileSync(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml'), 'utf8')) } catch { return codexUserSettings('') }
+}
+const reviewWithCodex = async (prompt, workDir) => {   // 모델 · 생각 강도는 ~/.codex/config.toml 의 맨 위 두 값(팩 models 는 Claude 만)
   const schemaFile = join(workDir, 'codex-schema.json')
   const outFile = join(workDir, 'codex-answer.json')
   writeFileSync(schemaFile, JSON.stringify(REVIEW_SCHEMA))
@@ -153,7 +157,8 @@ const reviewWithCodex = async (prompt, workDir) => {   // 모델은 ~/.codex/con
   // --ignore-user-config(사용자 config.toml 의 MCP 서버 · 훅을 안 읽는다 · 로그인은 그대로) + 도구 기능 끄기 + 웹 검색 끄기 — 끈 뒤 셸 · 웹 · MCP 가 없는 것을 실측했다.
   // 프롬프트는 표준 입력으로(인자 "-" 는 --disable 뒤에서 거절된다) · 세션 저장 없음 · 빈 폴더 — 답(마지막 메시지)만 파일로 받는다
   const disable = CODEX_TOOL_FEATURES.flatMap((feature) => ['--disable', feature])
-  const run = await runCli('codex', ['exec', '--ignore-user-config', ...disable, '-c', 'web_search="disabled"', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', workDir, '--output-schema', schemaFile, '-o', outFile], { input: prompt, cwd: workDir })
+  // --ignore-user-config 가 config.toml 의 model · model_reasoning_effort 도 안 읽게 하니 그 두 값만 따로 넘긴다
+  const run = await runCli('codex', ['exec', '--ignore-user-config', ...codexModelArgs(readCodexSettings()), ...disable, '-c', 'web_search="disabled"', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', workDir, '--output-schema', schemaFile, '-o', outFile], { input: prompt, cwd: workDir })
   return outcome('codex', run, () => JSON.parse(readFileSync(outFile, 'utf8')))
 }
 
@@ -179,6 +184,7 @@ export const planReviewers = (config = {}) => {
     return { slots: [first, second], note: `리뷰어 claude(${why}) + ${second.unavailable ? 'codex(못 씀)' : 'codex'}` }
   }
   const lineup = reviewerSlots({ codex, ...models })
+  if (lineup.second.kind === 'codex' && !lineup.second.unavailable) lineup.second = { ...lineup.second, model: readCodexSettings().model }
   const first = lineup.second.kind === 'codex' ? { name: 'claude', kind: 'claude' } : lineup.first
   return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models.firstModel }, second: lineup.second }) }
 }

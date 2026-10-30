@@ -20,7 +20,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -293,6 +293,7 @@ cat > "$BIN/codex" <<'SH'
 # 돌리기 전 로그인 확인(codex login status — 종료 코드만 본다) · FAKE_CODEX_LOGIN=out 이면 로그인 안 됨
 if [ "$1 $2" = "login status" ]; then [ "${FAKE_CODEX_LOGIN:-in}" = in ]; exit $?; fi
 cat > /dev/null
+[ -n "${FAKE_CODEX_ARGS:-}" ] && echo "$*" > "$FAKE_CODEX_ARGS"
 # 도구 없이 돌리는 옵션(사용자 설정 · 셸 · 웹 끄기)이 빠지면 실패한다 — docs/pr-auto.md "리뷰어"
 case " $* " in *" --ignore-user-config "*) ;; *) echo "도구 끄기 옵션 없음" >&2; exit 9 ;; esac
 case " $* " in *" --disable shell_tool "*) ;; *) echo "셸 끄기 없음" >&2; exit 9 ;; esac
@@ -308,6 +309,8 @@ elif [ "${FAKE_CODEX:-}" = advisory ]; then echo '{"verdict":"changes","summary"
 else echo '{"verdict":"changes","summary":"고칠 것","findings":[{"file":"a.js","line":1,"problem":"p","fix":"f","severity":"blocking"}],"decisions":[]}' > "$out"; fi
 SH
 chmod +x "$BIN/claude" "$BIN/codex"
+# 사용자 진짜 ~/.codex/config.toml 이 구성 메모 · 인자에 섞이지 않게 기본은 빈 CODEX_HOME
+export CODEX_HOME="$TMP/codex-default"; mkdir -p "$CODEX_HOME"
 run_case() {   # <이름> <PATH> <기대 판정> [환경…]
   local name="$1" path="$2" want="$3"; shift 3
   local got
@@ -357,6 +360,21 @@ rm -f "$ARGS_LOG"
 run_case "models 없음 → --model 안 붙임" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok FAKE_CLAUDE_ARGS="$ARGS_LOG"
 case " $(cat "$ARGS_LOG" 2>/dev/null) " in *" --model "*) echo "  ✖ models 없는데 --model 이 붙음"; FAIL=1 ;; *" -p "*) echo "  ✔ claude 인자에 --model 없음" ;; *) echo "  ✖ claude 가 불리지 않음"; FAIL=1 ;; esac
 run_case "models.prReview 이름이 이상함 → 리뷰어 부족(기본 모델로 다시 하지 않음)" "$BIN:/usr/bin:/bin" insufficient FAKE_CODEX=ok FAKE_CONFIG='{"models":{"prReview":"bad name"}}'
+
+# Codex 모델 · 생각 강도 — config.toml 맨 위 두 값만 -m · -c 로 넘긴다(--ignore-user-config 는 그대로)
+CODEX_ARGS="$TMP/codex-args"; CODEX_HOME_DIR="$TMP/codex-home"; mkdir -p "$CODEX_HOME_DIR"
+printf 'model = "gpt-test"\nmodel_reasoning_effort = "high"\n[mcp_servers.x]\nmodel = "other"\n' > "$CODEX_HOME_DIR/config.toml"
+run_case "config.toml 있음 → codex 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok CODEX_HOME="$CODEX_HOME_DIR" FAKE_CODEX_ARGS="$CODEX_ARGS"
+case " $(cat "$CODEX_ARGS" 2>/dev/null) " in *" --ignore-user-config "*"-m gpt-test "*'model_reasoning_effort="high" '*) echo "  ✔ codex 인자에 -m gpt-test · effort high · --ignore-user-config 유지" ;; *) echo "  ✖ codex 인자 이상: $(cat "$CODEX_ARGS" 2>/dev/null)"; FAIL=1 ;; esac
+rm -f "$CODEX_ARGS"; mkdir -p "$TMP/codex-empty"
+run_case "config.toml 없음 → codex 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok CODEX_HOME="$TMP/codex-empty" FAKE_CODEX_ARGS="$CODEX_ARGS"
+case " $(cat "$CODEX_ARGS" 2>/dev/null) " in *" -m "*|*model_reasoning_effort*) echo "  ✖ 설정이 없는데 모델 인자가 붙음: $(cat "$CODEX_ARGS")"; FAIL=1 ;; *" --ignore-user-config "*) echo "  ✔ 설정 없으면 -m · -c 안 붙임" ;; *) echo "  ✖ codex 가 불리지 않음"; FAIL=1 ;; esac
+CODEX_PURE="$(node --input-type=module -e "
+  const { codexModelArgs, codexUserSettings } = await import('./scripts/lib/pr-auto.mjs')
+  const top = codexUserSettings('# c\nmodel = \"m-1\" # x\n[a]\nmodel_reasoning_effort = \"low\"\n')
+  const bad = codexUserSettings('model = \"a b\"\nmodel_reasoning_effort = \"x\\\\\"\"')
+  console.log(JSON.stringify([top, codexModelArgs(top), bad, codexModelArgs(bad)]))")"
+[ "$CODEX_PURE" = '[{"model":"m-1","effort":""},["-m","m-1"],{"model":"","effort":""},[]]' ] && echo "  ✔ 첫 [표] 앞 두 값만 · 이상한 값 무시" || { echo "  ✖ 설정 해석 이상: $CODEX_PURE"; FAIL=1; }
 
 # ── 가짜 본체로 — ship.sh --auto-push --body-file(결정 D2) · 머지 결과 pane 알림 ─────────────────────
 # 코어 scripts/ 를 임시 폴더에 복사하고 화면(scripts/screen) · gh · 검증(reuse.sh)을 가짜로 바꾼다. origin 은 로컬 bare 레포

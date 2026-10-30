@@ -48,8 +48,30 @@ export const reviewerSlots = ({ codex, firstModel = '', secondModel = '' }) => {
 export const lineupNote = ({ first, second }) => {
   const head = `리뷰어 claude${first.model ? `(${first.model})` : ''}`
   if (second.kind === 'claude') return `${head} + claude(${second.model}) — ${second.replaces}`
-  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : ''}`
+  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
 }
+
+// Codex 사용자 설정(config.toml)에서 맨 위(첫 [표] 앞) model · model_reasoning_effort 두 값만 읽는다 — MCP · 훅 같은 다른 키는 읽지 않는다
+// (리뷰는 --ignore-user-config 로 도니 모델만 따로 넘긴다 · docs/pr-auto.md). 이상한 값은 넘기지 않는다
+const CODEX_SETTING_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
+export const codexUserSettings = (tomlText) => {
+  const settings = { model: '', effort: '' }
+  for (const raw of String(tomlText ?? '').split('\n')) {
+    const line = raw.trim()
+    if (line.startsWith('[')) break
+    const match = line.match(/^(model|model_reasoning_effort)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/)
+    if (!match) continue
+    const value = match[2] ?? match[3]
+    if (!CODEX_SETTING_VALUE.test(value)) continue
+    settings[match[1] === 'model' ? 'model' : 'effort'] = value
+  }
+  return settings
+}
+// codex exec 에 붙일 인자 — 값이 없으면 넘기지 않는다(Codex 기본값)
+export const codexModelArgs = ({ model, effort }) => [
+  ...(model ? ['-m', model] : []),
+  ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
+]
 
 // 지적의 등급 — blocking(막음: 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 — 수정 필요 · 머지 차단) · advisory(권장: 그 밖 — PR 댓글에만 · 에이전트에 보내지 않고 머지를 막지 않는다)
 // (2026-10-26 사용자 결정 E — 기준은 리뷰 프롬프트의 승인 기준 "버그 · 보안 · 데이터 위험 · 레포 규칙 위반" 그대로)
