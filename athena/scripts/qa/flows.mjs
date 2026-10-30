@@ -2,7 +2,7 @@
 // 흐름 문서 · TC 를 찾고 읽고 검사한다 · 지난 결과를 모은다 — 실행기(run.mjs) · 현황판(board/server.mjs)이 같이 쓴다.
 // 형식 정본: docs/knowledge/common/qa-flows.md
 import { execFileSync } from 'node:child_process'
-import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs'
+import { existsSync, readdirSync, readFileSync, statSync, mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 
 export const LAYERS = /** @type {const} */ (['fe', 'be', 'app'])
@@ -130,6 +130,23 @@ export function docUrl(service, doc) {
 export const pidAlive = (pid) => {
   if (!pid) return false
   try { process.kill(pid, 0); return true } catch { return false }
+}
+
+/**
+ * 실행 폴더를 잡는다 — 같은 초에 시작한 실행이 앞 실행의 결과를 덮지 않게 이름이 겹치면 번호를 붙인다(이름순 = 시작 순서)
+ * @param {string} runsDir @param {string} stamp
+ */
+export function claimRunId(runsDir, stamp) {
+  mkdirSync(runsDir, { recursive: true })
+  for (let attempt = 1; ; attempt += 1) {
+    const id = attempt === 1 ? `${stamp}-qa` : `${stamp}-qa-${String(attempt).padStart(3, '0')}`
+    try {
+      mkdirSync(join(runsDir, id))
+      return id
+    } catch (error) {
+      if (/** @type {NodeJS.ErrnoException} */ (error).code !== 'EEXIST') throw error
+    }
+  }
 }
 
 /**

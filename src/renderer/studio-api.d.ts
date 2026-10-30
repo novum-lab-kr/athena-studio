@@ -36,7 +36,8 @@ declare global {
   // 아테나 에이전트 켜기(src/main/athena-agent.mts openAthenaAgent)
   type OpenAgentResult = { error?: string; skipped?: boolean; existing?: boolean; focused?: boolean; started?: string; restore?: import('./ui/notices.tsx').RestoreResult | null }
 
-  type MergeRepo = { name: string; autoMerge: boolean; confirm: boolean }
+  type MergeMode = 'auto' | 'confirm' | 'manual'
+  type MergeRepo = { name: string; autoMerge: boolean; review: boolean; mergeMode: MergeMode }
   // main 의 appUpdateView(src/main/app-updater.mts) — 개발판 src/lib/app-update.mts UpdateStatus · 배포판 src/lib/release-update.mts ReleaseStatus + running. 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
   type AppUpdateView = { state: 'behind' | 'current' | 'unavailable'; behind: number; branch: string | null; reason: string | null; version: string | null; latest: string | null; running: boolean }
 
@@ -146,7 +147,8 @@ declare global {
     answer: { choice?: unknown; text?: unknown } | null
     waited?: string
   }
-  type WorkRequestsState = { supported: boolean; requests: WorkRequestView[] }
+  // error — 요청 목록을 못 읽은 까닭(없으면 null). 비어 보여도 "요청 없음" 이 아니라 "읽지 못함"
+  type WorkRequestsState = { supported: boolean; requests: WorkRequestView[]; error?: string | null }
   // [작업] 목록의 작업 하나(src/lib/work-model.mts WorkItem)
   type WorkItemView = {
     id: string | undefined
@@ -161,7 +163,7 @@ declare global {
     doneAt: number
   }
   // [작업] 팝업 목록(src/main/work.mts ctx.workState — 요청 + work-model.mts workList)
-  type WorkView = { supported: boolean; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
+  type WorkView = { supported: boolean; requestsError: string | null; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
   // 작업 상세(work.mts ctx.workDetail — 계획서 원문에서 몇 줄 · work-model.mts planDetail)
   type WorkDetailReply =
     | { ok: false; error: string }
@@ -204,7 +206,7 @@ declare global {
     explorerList(workspaceId: string | null, relative: string): Promise<{ entries: ExplorerEntry[] } | { error: string }>
     explorerStatus(workspaceId: string): Promise<{ git: boolean; changes: ExplorerChange[] } | { error: string }>
     mergeSettings(): Promise<{ ok: boolean; repos: MergeRepo[] } | undefined>
-    setAutoMerge(repo: string, values: { autoMerge?: boolean; confirm?: boolean }): Promise<{ ok: boolean; text?: string } | undefined>
+    setAutoMerge(repo: string, values: { autoMerge?: boolean; review?: boolean; merge?: MergeMode }): Promise<{ ok: boolean; text?: string } | undefined>
     checkAppUpdate(): Promise<unknown>
     runAppUpdate(): Promise<{ ok: boolean; reason?: string } | undefined>
     paneDetail(paneId: string): Promise<PaneDetailView | undefined>

@@ -22,7 +22,7 @@
  *   - GET  /api/qa/flows     QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(scripts/qa/flows.mjs overview) · POST /api/qa-run 흐름 TC 실행(scripts/qa/run.mjs · 한 번에 하나)
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
- *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
+ *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,batch,discard,edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(이름은 '<레포> · <이슈 제목>')을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
@@ -42,7 +42,7 @@ import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './ar
 import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { summarize } from '../lib/metrics.mjs'
-import { applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
+import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { overview as qaOverview } from '../qa/flows.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
@@ -54,7 +54,8 @@ import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
-import { boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { frontValue } from '../lib/front-value.mjs'
+import { autoDoneDone, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -235,7 +236,7 @@ const readIssue = (path) => {
       .split('\n')
       .map((line) => line.match(/^([\w-]+):\s*(.*)$/))
       .filter(Boolean)
-      .map((match) => [match[1], match[2].replace(/\s+#.*$/, '').trim()]),
+      .map((match) => [match[1], frontValue(match[2])]),
   )
   const body = text.slice(front ? text.indexOf('---', 3) + 3 : 0).trim()
   const status = meta.status || 'open'
@@ -348,11 +349,13 @@ const autoDonePlans = async (plans) => {
       if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 빈 칸 ${plan.progress.open}개`) }
       return
     }
+    // 이 PR 묶음으로 이미 한 번 자동 완료했는데 지금 done 이 아니면 사람이 추가 요청으로 되돌린 것이다 — 새 PR 이 PR 줄에 들어오기 전까지 다시 덮지 않는다
+    if (autoDoneDone(readText(join(ROOT, plan.id)) || '', mergedMark(counted))) return
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))
     const merged = last.mergedAt ? new Date(last.mergedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16) : ''
     const reason = counted.length > 1 ? `자동 — PR ${counted.length}개 모두 머지됨(마지막 #${last.number} → ${last.base}, ${merged})` : `자동 — PR #${last.number} 이 ${last.base} 에 머지됨(${merged})`
-    const error = setPlanStatus(plan.id, 'done', reason)
+    const error = setPlanStatus(plan.id, 'done', reason, mergedMark(counted))
     if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); return }
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
@@ -964,7 +967,7 @@ const moveCard = (id, column) => {
 }
 
 // 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
-const setPlanStatus = (id, status, note = '') => {
+const setPlanStatus = (id, status, note = '', doneMark = '') => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
@@ -981,6 +984,13 @@ const setPlanStatus = (id, status, note = '') => {
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
       const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
+      // 자동 완료가 본 PR 묶음 표시를 남긴다(autoDoneDone) — 이미 있으면 바꾸고, 없으면 Work ref 줄 아래(없으면 Updated 줄 아래)에
+      if (doneMark) {
+        const markLine = `- Auto done: ${doneMark}`
+        if (/^- Auto done:.*$/m.test(next)) next = next.replace(/^- Auto done:.*$/m, markLine)
+        else if (/^- Work ref:.*$/m.test(next)) next = next.replace(/^(- Work ref:.*)$/m, `$1\n${markLine}`)
+        else if (oldUpdated) next = next.replace(oldUpdated, `${oldUpdated}\n${markLine}`)
+      }
       if (oldUpdated) next = next.replace(oldUpdated, newUpdated)
       writeAtomic(path, next)
       // 정식 계획서의 결정 콘솔 html 안 md 사본(plan-md)도 같이 — 경량 계획서는 html 이 없다
@@ -1297,11 +1307,16 @@ const qaChildAlive = () => Boolean(qaChild && qaChild.exitCode === null && qaChi
 // 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지
 function heavyLockState() {
   const lock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
-  try {
-    return readFileSync(join(lock, 'what'), 'utf8').trim()
-  } catch {
-    return ''
+  // 자리 여럿(1번 <잠금>, 2번부터 <잠금>.2 …) — 쓰는 중인 자리의 what 을 " / " 로 잇는다
+  const holders = []
+  for (const dir of [lock, ...[2, 3, 4, 5, 6, 7, 8].map((slot) => `${lock}.${slot}`)]) {
+    if (dir !== lock && !existsSync(dir)) continue
+    try {
+      const what = readFileSync(join(dir, 'what'), 'utf8').trim()
+      if (what) holders.push(what)
+    } catch { /* 비었거나 잡는 중 */ }
   }
+  return holders.join(' / ')
 }
 
 function qaFlows() {
@@ -1422,7 +1437,7 @@ const handleRequest = async (request, response) => {
     response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
-  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-run', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown'].includes(url.pathname)) {
+  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-run', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown', '/api/learn-batch'].includes(url.pathname)) {
     const reply = (code, body) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
@@ -1459,7 +1474,7 @@ const handleRequest = async (request, response) => {
     if (url.pathname.startsWith('/api/learn-')) {
       const id = String(body.id ?? '')
       const edits = typeof body.edits === 'object' && body.edits ? body.edits : {}
-      const action = { '/api/learn-apply': () => applyLearn(id, edits), '/api/learn-discard': () => discardLearn(id), '/api/learn-edit': () => editLearned(id, edits), '/api/learn-remove': () => removeLearned(id), '/api/learn-tidy': () => tidyLine(id, Number(body.index), body.act === 'remove' ? 'remove' : 'keep', String(body.line ?? '')) }[url.pathname]
+      const action = { '/api/learn-apply': () => applyLearn(id, edits), '/api/learn-batch': () => applyBatch(Array.isArray(body.ids) ? body.ids.map(String) : []), '/api/learn-discard': () => discardLearn(id), '/api/learn-edit': () => editLearned(id, edits), '/api/learn-remove': () => removeLearned(id), '/api/learn-tidy': () => tidyLine(id, Number(body.index), body.act === 'remove' ? 'remove' : 'keep', String(body.line ?? '')) }[url.pathname]
       let result
       try {
         result = action()

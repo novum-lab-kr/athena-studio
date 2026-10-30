@@ -11,7 +11,7 @@
 
 ## 명령
 ```sh
-npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기
+npm install       # postinstall: spawn-helper 권한 · .dev-app/Athena.app 만들기 (새 워크트리는 코어 new-branch.sh 가 scripts/worktree-setup.sh 로 npm ci · Electron 설치까지 해 준다)
 npm start         # 코어 번들 · 화면 빌드(dist/renderer) 만들고 개발 앱 켜기(맥)
 npm run build:renderer # 화면만 빌드(vite build — 켤 때 저절로 돈다)
 npm run check     # 문법(node --check · .mts 는 scripts/check-ts.js — 목록은 package.json 에 손으로) · 끝에 화면 빌드(renderer .ts 문법)
@@ -47,12 +47,16 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)
+  - 무거운 명령 줄서기(`athena/scripts/heavy.sh` 자리 · 메모리 여유 조건 · `scripts/lib/packs.mjs` · `server.mjs` 의 잠금 읽기)를 고쳤으면 `test/heavy-test.sh`(약 45초 · 임시 잠금 경로 · 가짜 memory_pressure)
   - 역할마다 모델(`scripts/lib/models.mjs` · `athena_config.py` `model_of` · `delegate.sh` `--model` · 팩 `models`)을 고쳤으면 `test/models-test.sh`(몇 초 · 진짜 claude 를 부르지 않는다)
   - red-check(`scripts/red-check.mjs` · `scripts/lib/red-check.mjs` · `scripts/verify/red-check.sh` · `ship.sh` 의 red-check 연결)를 고쳤으면 `test/red-check-test.sh`(몇 초 · 가짜 레포 · 가짜 gh)
   - 시크릿 차단 훅(`athena/scripts/hooks/secret-guard.py`)을 고쳤으면 `test/secret-guard-test.sh`(몇 초 · 훅에 글자만 넣어 막힘 · 통과를 본다)
   - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본)
   - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
+  - 위임 에이전트 훅 설정(`athena/scripts/lib/agent_hooks.py` — `agent-context.py` · `delegate.sh` 가 같이 쓴다)을 고쳤으면 `test/agent-hooks-test.sh`(몇 초)
+  - `commit.sh` 의 미리 올린 변경 판정(이름 바꾸기 포함)을 고쳤으면 `test/commit-staged-test.sh`(몇 초 · 임시 레포)
+  - `pr-auto.mjs` · `learn-review.mjs` 의 직접 실행 판정(`scripts/lib/is-main.mjs`)은 `test/pr-auto-test.sh` 끝의 심볼릭 링크 검사가 본다
   - 자세한 것은 `athena/docs/pack.md` "여러 팩 테스트"
 
 ## 고칠 때 같이 바꾸는 곳

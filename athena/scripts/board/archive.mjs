@@ -17,8 +17,11 @@ import { readFileSync, writeFileSync, existsSync, mkdirSync, renameSync, readdir
 import { join, dirname, basename, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
+import { isMainModule } from '../lib/is-main.mjs'
 import { loadConfig, paths } from '../lib/config.mjs'
 import { gitEach, realRepoPath } from '../lib/git.mjs'
+import { checkpointOf } from './plan-bind.mjs'
+import { frontValue } from '../lib/front-value.mjs'
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 export const ARCHIVE_DIR = 'archive'
@@ -141,7 +144,7 @@ const front = (text) =>
       .split('\n')
       .map((line) => line.match(/^([\w-]+):\s*(.*)$/))
       .filter(Boolean)
-      .map((match) => [match[1], match[2].replace(/\s+#.*$/, '').trim()]),
+      .map((match) => [match[1], frontValue(match[2])]),
   )
 const plainLine = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').trim()
 
@@ -209,7 +212,7 @@ export const listHistory = () => {
       const issueText = exists(join(dir, 'issue.md')) ? read(join(dir, 'issue.md')) : ''
       const planText = exists(join(dir, 'plan.md')) ? read(join(dir, 'plan.md')) : ''
       const issueMeta = front(issueText)
-      const checkpoint = planText.match(/^## Checkpoint\s*\n([\s\S]*?)(?=^## (?!#))/m)?.[1] ?? ''
+      const checkpoint = checkpointOf(planText)
       const agent = plainLine(checkpoint.match(/^-\s*Agent:\s*(.+)$/m)?.[1] ?? '')
       const commits = section(planText, 'Commits').split('\n').filter((line) => /^-\s+\d{4}-\d{2}-\d{2}/.test(line)).map((line) => plainLine(line.replace(/^-\s+/, '')))
       // 요약 — 이슈는 본문 첫 문단, 계획서는 '## 지시'(요청한 것) 첫 줄, 없으면 제목만
@@ -270,7 +273,7 @@ export const migrateOld = ({ dryRun = false } = {}) => {
 }
 
 // CLI
-if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
+if (isMainModule(import.meta.url)) {
   const args = process.argv.slice(2)
   const dryRun = args.includes('--dry-run')
   const results = args.includes('--migrate') ? migrateOld({ dryRun }) : args.filter((arg) => !arg.startsWith('--')).map((id) => archiveBundle(id, { dryRun }))

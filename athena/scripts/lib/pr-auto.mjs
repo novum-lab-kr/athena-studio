@@ -12,6 +12,7 @@ export const REVIEWERS = ['claude', 'codex']
 // 남은 수정 지적을 에이전트에 보내고, 고친 새 HEAD(라운드 > 상한)는 리뷰 없이 같은 HEAD 검증 · 충돌 확인만으로 승인과 같은 머지 단계로 간다
 export const MAX_ROUNDS = 3
 export const TAKEOVER = '상한 뒤 이어받음'
+export const REVIEW_OFF = '리뷰 끔'
 export const isTakeoverRound = (round) => round > MAX_ROUNDS
 // 상한 라운드가 이어받기를 허락했나 — 그 라운드가 쓴 줄('수정 필요 — 상한 뒤 이어받음…' · '결정 필요 — 상한 뒤 이어받음…')로 시작할 때만.
 // 이어받은 HEAD 가 머지 단계로 간 뒤의 줄('상한 뒤 이어받음(…) → 머지 확인 대기' 등)은 아니다 — 그 뒤 온 커밋은 멈춘다(PR #20 자동 리뷰 지적)
@@ -48,8 +49,40 @@ export const reviewerSlots = ({ codex, firstModel = '', secondModel = '' }) => {
 export const lineupNote = ({ first, second }) => {
   const head = `리뷰어 claude${first.model ? `(${first.model})` : ''}`
   if (second.kind === 'claude') return `${head} + claude(${second.model}) — ${second.replaces}`
-  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : ''}`
+  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
 }
+
+// Codex 사용자 설정(config.toml)에서 맨 위(첫 [표] 앞) model · model_reasoning_effort 두 값만 읽는다 — MCP · 훅 같은 다른 키는 읽지 않는다
+// (리뷰는 --ignore-user-config 로 도니 모델만 따로 넘긴다 · docs/pr-auto.md). 이상한 값은 넘기지 않는다
+const CODEX_SETTING_VALUE = /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/
+export const codexUserSettings = (tomlText) => {
+  const settings = { model: '', effort: '' }
+  let open = ''   // 여러 줄 문자열 안이면 닫는 글자(""" 또는 ''') — 그 안의 줄은 키도 [표]도 아니다
+  for (const raw of String(tomlText ?? '').split('\n')) {
+    if (open) {
+      if (raw.includes(open)) open = ''
+      continue
+    }
+    const line = raw.trim()
+    if (line.startsWith('#')) continue   // 주석 줄 — 안의 """ 는 문자열 시작이 아니다
+    if (line.startsWith('[')) break
+    const match = line.match(/^(model|model_reasoning_effort)\s*=\s*(?:"([^"]*)"|'([^']*)')\s*(?:#.*)?$/)
+    if (match) {
+      const value = match[2] ?? match[3]
+      if (CODEX_SETTING_VALUE.test(value)) settings[match[1] === 'model' ? 'model' : 'effort'] = value
+      continue
+    }
+    const value = line.replace(/^[^=]*=\s*/, '')
+    const delimiter = ['"""', "'''"].find((quote) => line.includes('=') && value.startsWith(quote))
+    if (delimiter && !value.slice(3).includes(delimiter)) open = delimiter
+  }
+  return settings
+}
+// codex exec 에 붙일 인자 — 값이 없으면 넘기지 않는다(Codex 기본값)
+export const codexModelArgs = ({ model, effort }) => [
+  ...(model ? ['-m', model] : []),
+  ...(effort ? ['-c', `model_reasoning_effort="${effort}"`] : []),
+]
 
 // 지적의 등급 — blocking(막음: 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 — 수정 필요 · 머지 차단) · advisory(권장: 그 밖 — PR 댓글에만 · 에이전트에 보내지 않고 머지를 막지 않는다)
 // (2026-10-26 사용자 결정 E — 기준은 리뷰 프롬프트의 승인 기준 "버그 · 보안 · 데이터 위험 · 레포 규칙 위반" 그대로)
@@ -319,11 +352,27 @@ export const nextRound = (known, headSha) => {
 }
 
 // ── 팩 설정 ────────────────────────────────────────────────────────────
-// 결정 D4 — 레포별 스위치(pack.json 레포의 "autoMerge": true · 기본 꺼짐)
-export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => repo.autoMerge === true && !repo.direct).map((repo) => repo.name))
-// 머지 직전 사람 확인(결정 D3)을 건너뛰는 레포 — 자동 머지를 켰고 "autoMergeConfirm": false 일 때만. 키가 없거나 false 가 아니면 지금처럼 묻는다
-export const skipsMergeConfirm = (config, repoName) => autoMergeRepos(config).has(repoName)
-  && (config?.repos ?? []).some((repo) => repo.name === repoName && repo.autoMergeConfirm === false)
+// 레포별 설정 세 가지(docs/pr-auto.md "켜기") — PR(켬/끔) · 리뷰(켬/끔) · 머지(auto/confirm/manual). 키가 없으면 옛 뜻 그대로:
+//   "autoMerge": true          끝나면 PR 켬 · 없으면 PR · 리뷰 · 머지 모두 꺼짐("PR 올려줘" 는 그대로 된다 · 자동 리뷰만 없다)
+//   "autoReview": false        리뷰 끔 · 없으면 켬
+//   "autoMergeConfirm": false  확인 없이 머지 · 없으면 확인 후
+//   "autoMergeManual": true    사람이 직접 머지 · autoMergeConfirm 보다 먼저(둘 다 있어도 머지하지 않는 쪽으로)
+export const mergeModeOf = (repo) => {
+  if (repo?.autoMergeManual === true) return 'manual'
+  return repo?.autoMergeConfirm === false ? 'auto' : 'confirm'
+}
+export const prFlow = (repo) => {
+  if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual' }
+  return { pr: true, review: repo.autoReview !== false, merge: mergeModeOf(repo) }
+}
+export const repoFlow = (config, repoName) => prFlow((config?.repos ?? []).find((repo) => repo.name === repoName))
+// 자동 흐름(pr-auto)이 할 일이 있는 레포 — PR 을 켰고 리뷰나 머지 중 하나라도 자동. 리뷰 끔 + 사람이 직접은 draft PR 까지라 뺀다
+export const autoMergeRepos = (config) => new Set((config?.repos ?? []).filter((repo) => {
+  const flow = prFlow(repo)
+  return flow.pr && (flow.review || flow.merge !== 'manual')
+}).map((repo) => repo.name))
+// 머지 직전 사람 확인(결정 D3)을 건너뛰는 레포 — 머지가 자동일 때만
+export const skipsMergeConfirm = (config, repoName) => autoMergeRepos(config).has(repoName) && repoFlow(config, repoName).merge === 'auto'
 
 const repoAgents = (repo) => [
   ...(repo.agents ?? []),

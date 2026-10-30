@@ -27,12 +27,14 @@ import { createInterface } from 'node:readline'
 import { spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs } from './lib/models.mjs'
+import { decideGate, readSeen, seenIdOf, writeSeen } from './lib/learn-seen.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 // 고정 경로 — 세션마다 TMPDIR 이 달라도(샌드박스·pane) 같은 대기열을 보게 한다(heavy.sh 잠금과 같은 방식).
@@ -215,9 +217,10 @@ const LEARN_SCHEMA = {
           evidence: { type: 'string', description: '근거 — basis 가 code 면 파일:줄, run 이면 확인한 실행 결과 한 줄. 비밀값·긴 인용 금지' },
           strengthen: { type: 'string', description: '이미 있는 공책 줄을 고치는 것이면 그 줄을 공책에 적힌 그대로(앞의 "- " 와 <!-- --> 표시는 빼도 된다), 아니면 빈 문자열' },
           ifUnknown: { type: 'string', description: '왜 중요한가 — 모르면 다음 작업에서 구체적으로 무엇이 잘못되나 한 줄(쉬운 말). 구체적으로 못 쓰면 이 항목을 내지 않는다' },
+          repeatOf: { type: 'string', description: '같은 함정이 이미 나왔으면 그 표시 — "한 번 본 후보" 목록의 id(seen-…) 또는 "열린 learn 이슈" 목록의 파일 이름. 대상(target)이 같은 것만 가리킨다. 처음 보는 함정이면 빈 문자열. 비슷해 보여도 내용이 다르면 비운다' },
           signal: { type: 'string', enum: ['correction', 'repeat-error', 'done'] },
         },
-        required: ['kind', 'knowledge', 'scope', 'section', 'skill', 'title', 'explain', 'rule', 'basis', 'evidence', 'strengthen', 'ifUnknown', 'signal'],
+        required: ['kind', 'knowledge', 'scope', 'section', 'skill', 'title', 'explain', 'rule', 'basis', 'evidence', 'strengthen', 'repeatOf', 'ifUnknown', 'signal'],
       },
     },
   },
@@ -273,7 +276,8 @@ const buildPrompt = (planFile, knowledgeDirs, transcript, planText = '', prMater
   }
   const knowledge = knowledgeDirs.map((dir) => `### ${dir}/gotchas.md\n${readIf(join(ROOT, 'docs/knowledge', dir, 'gotchas.md'), 8000)}${screenNotes(dir)}\n### ${dir}/patterns.md (앞부분)\n${readIf(join(ROOT, 'docs/knowledge', dir, 'patterns.md'), 2500)}`).join('\n\n')
   const skills = readdirSync(join(ROOT, '.claude/skills')).filter((name) => !name.startsWith('.')).join(', ')
-  const issues = openLearnIssues().map(({ file, text }) => `- ${file}: ${(text.match(/^title:\s*(.*)$/m) ?? [])[1] ?? ''}`).join('\n') || '(없음)'
+  const issues = openLearnIssues().map(({ file, text }) => `- ${file} [${(text.match(/^target:\s*(.*)$/m) ?? [])[1]?.trim() ?? ''}]: ${(text.match(/^title:\s*(.*)$/m) ?? [])[1] ?? ''}`).join('\n') || '(없음)'
+  const seenText = readSeen(ROOT).map((entry) => `- ${entry.id} [${entry.target}]: ${entry.title} — ${entry.rule}`).join('\n') || '(없음)'
   // 역할은 에이전트 프로필과 같은 꼴의 문서 한 곳 — .claude/agents/learn-reviewer.md (front matter 는 빼고 본문만)
   const role = readFileSync(join(ROOT, '.claude/agents/learn-reviewer.md'), 'utf8').replace(/^---\n[\s\S]*?\n---\n/, '').trim()
   return `${role}
@@ -293,6 +297,9 @@ ${knowledge || '(대상 레포를 알 수 없음)'}
 
 ## 열린 learn 이슈 (중복 판단용)
 ${issues}
+
+## 한 번 본 후보 (basis: code 로 한 번 나왔고 아직 이슈를 열지 않은 것 — 같은 함정이 또 나오면 repeatOf 에 id)
+${seenText}
 
 ## 계획서 — 요청 내용 · 결정 · 진행 · 검증 · 리뷰 결론 (${planFile})
 ${clip(maskSecrets(planText).masked, MAX_PLAN_CHARS)}
@@ -373,6 +380,19 @@ export const writeIssue = (item, planFile, dryRun) => {
   const { masked: rule } = maskSecrets(item.rule)
   const { masked: evidence } = maskSecrets(item.evidence)
   const { masked: strengthen } = maskSecrets(item.strengthen ?? '')
+  // 이슈를 여는 건 실행으로 확인한 것(run)이나 같은 함정이 두 번째 나온 것뿐 — code 한 번짜리는 보관소에 가볍게 남긴다(scripts/lib/learn-seen.mjs)
+  const seen = readSeen(ROOT)
+  const gate = decideGate({ item, target, seen, openIssues: openLearnIssues().map(({ file, text }) => ({ file, target: (text.match(/^target:\s*(.*)$/m) ?? [])[1]?.trim() ?? '' })) })
+  if (gate.action === 'hold') {
+    if (!dryRun) writeSeen(ROOT, [...seen.filter((entry) => entry.id !== seenIdOf(target, rule)), { id: seenIdOf(target, rule), date: today, plan: planFile, target, title: clip(maskSecrets(item.title ?? '').masked.replace(/\n/g, ' '), 90), rule: clip(rule.replace(/\n/g, ' '), 300), evidence: clip(evidence, 200) }])
+    return `${dryRun ? '(예정) ' : ''}보류 — 코드로만 확인한 첫 번째라 이슈를 열지 않고 .sync/learn-seen.json 에 남김(같은 함정이 또 나오면 연다)`
+  }
+  if (gate.action === 'repeat-open') {
+    const path = join(ROOT, 'issues', gate.file)
+    if (!dryRun) writeFileSync(path, `${readFileSync(path, 'utf8').trimEnd()}\n- 반복 +1 (${today} · ${planFile} · 검토자) — ${evidence}\n`)
+    return `${dryRun ? '(예정) ' : ''}반복 +1 → issues/${gate.file}`
+  }
+  const firstSeen = gate.action === 'repeat-seen' ? gate.entry : null
   // 합치는 건 스킬 후보(반복 +1)만 — 함정은 절 이름이 같아도 내용이 다를 수 있다. 같은 내용인지는 검토자가 이미 판단해 내지 않는다
   const existing = item.kind === 'skill' ? openLearnIssues().find(({ text }) => (text.match(/^target:\s*(.*)$/m) ?? [])[1]?.trim() === target) : null
   if (existing) {
@@ -417,9 +437,12 @@ ${maskSecrets(item.ifUnknown ?? '').masked}
 ${rule}
 ${strengthen ? `\n(새 줄이 아니라 기존 줄을 고친다: ${strengthen})\n` : ''}
 ## 어디서 배웠나
-- ${planFile} — ${evidence}
+- ${planFile} — ${evidence}${firstSeen ? `\n- 반복 +1 — 처음 본 곳: ${firstSeen.plan} (${firstSeen.date}) — ${firstSeen.evidence}` : ''}
 ${item.kind === 'skill' ? `\n## 절차\n- (검토자가 본 반복 절차 — 스킬로 만들 때 아테나가 대화·계획서를 보고 채운다)\n- 반복 +1 (${today} · ${planFile} · 검토자)\n` : ''}`
-  if (!dryRun) writeFileSync(join(ROOT, 'issues', file), body)
+  if (!dryRun) {
+    writeFileSync(join(ROOT, 'issues', file), body)
+    if (firstSeen) writeSeen(ROOT, seen.filter((entry) => entry.id !== firstSeen.id))   // 이슈가 됐으니 보관소에서 뺀다
+  }
   return `${dryRun ? '(예정) ' : ''}새 이슈 → issues/${file}`
 }
 
@@ -629,7 +652,7 @@ const watch = async () => {
 }
 
 // ── 시작 (다른 스크립트·테스트가 import 할 때는 돌지 않는다) ──────────────────
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+const isMain = isMainModule(import.meta.url)
 if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()

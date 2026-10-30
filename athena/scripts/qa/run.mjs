@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url'
 import { isSwitching, loadConfig } from '../lib/config.mjs'
 import { maskText } from '../lib/mask.mjs'
 import { errorText, runBeCase, runFeCase } from './cases.mjs'
-import { checkLayerSettings, checkTc, FLOWS_DIR, flowsOfFiles, listFlowFiles, listServices, listTreeFiles, RUN_LAYERS } from './flows.mjs'
+import { claimRunId, checkLayerSettings, checkTc, FLOWS_DIR, flowsOfFiles, listFlowFiles, listServices, listTreeFiles, RUN_LAYERS } from './flows.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
 const RUNS_DIR = join(ROOT, '.qa-runs')
@@ -223,8 +223,7 @@ async function main() {
     if (!services.length) { console.log('돌릴 TC 가 없어요'); return 0 }
   }
 
-  const id = `${stamp()}-qa`
-  mkdirSync(join(RUNS_DIR, id), { recursive: true })
+  const id = claimRunId(RUNS_DIR, stamp())
   run = { id, pid: process.pid, startedAt: new Date().toISOString(), finishedAt: null, request: { services: services.map((service) => service.name), layer: layerArg, flow: option('flow') }, flows: [] }
   saveRun()
   for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {

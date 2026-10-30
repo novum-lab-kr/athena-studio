@@ -68,7 +68,7 @@ function openPop(pop: string, button: string): void {
 // 몸통(work-pop-body)은 React(ui/work-pop.tsx) — 여기는 머리줄 팩 이름과 그릴 값 넘기기만
 function renderWorkPop(): void {
   $('work-pop-title').textContent = say('work.popTitle', { pack: (packs.current && packLabel(packs.current)) || '' })
-  StudioUi.work.setWork(workData, workData ? workData.requests : workRequests.requests)
+  StudioUi.work.setWork(workData, workData ? workData.requests : workRequests.requests, (workData ? workData.requestsError : workRequests.error) || null)
 }
 
 async function toggleWorkPop(): Promise<void> {
@@ -81,7 +81,7 @@ async function toggleWorkPop(): Promise<void> {
   if (first) first.focus({ preventScroll: true })
   workData = await studio.workGet()
   if ($('work-pop').hidden) return renderWorkTab()
-  if (workData && Array.isArray(workData.requests)) workRequests = { supported: workData.supported, requests: workData.requests }
+  if (workData && Array.isArray(workData.requests)) workRequests = { supported: workData.supported, requests: workData.requests, error: workData.requestsError }
   renderWorkTab()
   renderWorkPop()
 }

@@ -20,7 +20,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -84,6 +84,9 @@ check('댓글 — 상한 전 · 승인이면 이어받음 줄 없음', !reviewCo
 check('C — 이어받기는 상한 라운드가 쓴 줄(수정 · 결정 필요 — 상한 뒤 이어받음…)로 시작할 때만 · 머지 단계로 간 뒤의 줄은 아님',
   grantsTakeover(`수정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만)`) && grantsTakeover(`결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · 승인 2/2이지만 …`)
   && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 머지 확인 대기`) && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 바로 머지(확인 없음)`) && !grantsTakeover('검증 대기 — x') && !grantsTakeover(undefined))
+// 결과 문구를 바꾸거나 더할 때 이어받기 판정과 앞부분이 겹치면 리뷰 없는 커밋이 머지 단계로 간다 — 쓰는 결과 머리를 모두 돌려 이어받기를 주는 것은 상한 줄 둘뿐이어야 한다
+const otherResults = ['승인 → 머지 확인 대기', '승인 → 바로 머지(확인 없음)', '수정 필요', '수정 필요 — 리뷰어 부족이라 이어받지 않음', '결정 필요', '결정 필요 — 리뷰어 부족이라 이어받지 않음', '리뷰어 부족', '잘린 diff 승인', '검증 대기', '검증 대기 — 머지 실패(x)', '멈춤 — 라운드 상한(이어받을 수 없음)', '보류 — 사람이 고름(x)', '머지됨 — squash → main', `머지됨 — squash → main(${TAKEOVER} — 리뷰 없이 검증만으로 머지)`, BODY_EDITED, `${TAKEOVER}(리뷰 없이 검증만으로 머지) → 머지 확인 대기`]
+check('C — 이어받기를 주는 결과는 상한 줄 둘뿐 · 다른 결과 문구는 앞부분이 겹쳐도 이어받기를 주지 않음', otherResults.every((result) => !grantsTakeover(result)), otherResults.filter((result) => grantsTakeover(result)).join(' | '))
 const partial = aggregate([ok('claude', changes), { name: 'codex', status: 'failed', reason: 'x' }])
 check('C — 리뷰어가 하나라도 실패한 상한 라운드는 이어받기를 주지 않음(지적은 그대로 보냄)', partial.verdict === 'changes' && partial.findings.length === 1 && !takeoverEligible(partial, MAX_ROUNDS) && takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS) && !takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS - 1))
 const partialInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: MAX_ROUNDS, findings: partial.findings, takeover: false, plan: 'p', worktree: '/wt', athenaDir: '/a' })
@@ -138,6 +141,25 @@ const confirmConfig = { repos: [
 ] }
 check('확인 없이 머지는 autoMerge 를 켠 레포의 autoMergeConfirm: false 만(키 없음 · 자동 머지 꺼짐 · main 직접 · 글자 "false" 는 확인)',
   skipsMergeConfirm(confirmConfig, 'web') && !['api', 'off', 'app', 'str', 'none'].some((name) => skipsMergeConfirm(confirmConfig, name)))
+// 조합표(docs/pr-auto.md "켜기") — 키마다 판정. 옛 pack.json 3종이 지금과 같은지 포함
+const flowOf = (keys) => { const flow = prFlow({ name: 'web', ...keys }); return `${flow.pr ? '켬' : '끔'}/${flow.review ? '켬' : '끔'}/${flow.merge}` }
+const flowCases = [
+  ['옛 키 없음', {}, '끔/끔/manual', false, false],
+  ['옛 autoMerge', { autoMerge: true }, '켬/켬/confirm', true, false],
+  ['옛 autoMerge + 확인 없음', { autoMerge: true, autoMergeConfirm: false }, '켬/켬/auto', true, true],
+  ['켬/끔/직접', { autoMerge: true, autoReview: false, autoMergeManual: true }, '켬/끔/manual', false, false],
+  ['켬/끔/확인', { autoMerge: true, autoReview: false }, '켬/끔/confirm', true, false],
+  ['켬/끔/자동', { autoMerge: true, autoReview: false, autoMergeConfirm: false }, '켬/끔/auto', true, true],
+  ['켬/켬/직접', { autoMerge: true, autoMergeManual: true }, '켬/켬/manual', true, false],
+  ['PR 끔이면 저장된 다른 키는 뜻이 없다', { autoReview: false, autoMergeConfirm: false }, '끔/끔/manual', false, false],
+  ['직접이 자동보다 먼저', { autoMerge: true, autoMergeManual: true, autoMergeConfirm: false }, '켬/켬/manual', true, false],
+  ['글자 값은 키 없음과 같다', { autoMerge: true, autoReview: 'false', autoMergeManual: 'true', autoMergeConfirm: 'false' }, '켬/켬/confirm', true, false],
+  ['main 직접 레포는 대상 아님', { autoMerge: true, direct: true, autoMergeConfirm: false }, '끔/끔/manual', false, false],
+]
+for (const [name, keys, flow, targeted, skips] of flowCases) {
+  const one = { repos: [{ name: 'web', ...keys }] }
+  check(`조합 — ${name}`, flowOf(keys) === flow && autoMergeRepos(one).has('web') === targeted && skipsMergeConfirm(one, 'web') === skips, `${flowOf(keys)} · 대상 ${autoMergeRepos(one).has('web')} · 확인 건너뜀 ${skipsMergeConfirm(one, 'web')}`)
+}
 check('Agent 줄이 이 레포 에이전트 하나 → 대상', singleRepoPlan('- Agent: web-fe\n', config, 'web'))
 const formal = '## 6. 작업 배분\n\n| 담당 | 작업 |\n|---|---|\n| api-be | x |\n| web-fe | y |\n| reviewer | z |\n'
 check('작업 배분 표에 다른 레포 에이전트가 있으면 → 대상 아님', !singleRepoPlan(formal, config, 'web'))
@@ -293,6 +315,7 @@ cat > "$BIN/codex" <<'SH'
 # 돌리기 전 로그인 확인(codex login status — 종료 코드만 본다) · FAKE_CODEX_LOGIN=out 이면 로그인 안 됨
 if [ "$1 $2" = "login status" ]; then [ "${FAKE_CODEX_LOGIN:-in}" = in ]; exit $?; fi
 cat > /dev/null
+[ -n "${FAKE_CODEX_ARGS:-}" ] && echo "$*" > "$FAKE_CODEX_ARGS"
 # 도구 없이 돌리는 옵션(사용자 설정 · 셸 · 웹 끄기)이 빠지면 실패한다 — docs/pr-auto.md "리뷰어"
 case " $* " in *" --ignore-user-config "*) ;; *) echo "도구 끄기 옵션 없음" >&2; exit 9 ;; esac
 case " $* " in *" --disable shell_tool "*) ;; *) echo "셸 끄기 없음" >&2; exit 9 ;; esac
@@ -308,6 +331,8 @@ elif [ "${FAKE_CODEX:-}" = advisory ]; then echo '{"verdict":"changes","summary"
 else echo '{"verdict":"changes","summary":"고칠 것","findings":[{"file":"a.js","line":1,"problem":"p","fix":"f","severity":"blocking"}],"decisions":[]}' > "$out"; fi
 SH
 chmod +x "$BIN/claude" "$BIN/codex"
+# 사용자 진짜 ~/.codex/config.toml 이 구성 메모 · 인자에 섞이지 않게 기본은 빈 CODEX_HOME
+export CODEX_HOME="$TMP/codex-default"; mkdir -p "$CODEX_HOME"
 run_case() {   # <이름> <PATH> <기대 판정> [환경…]
   local name="$1" path="$2" want="$3"; shift 3
   local got
@@ -357,6 +382,43 @@ rm -f "$ARGS_LOG"
 run_case "models 없음 → --model 안 붙임" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok FAKE_CLAUDE_ARGS="$ARGS_LOG"
 case " $(cat "$ARGS_LOG" 2>/dev/null) " in *" --model "*) echo "  ✖ models 없는데 --model 이 붙음"; FAIL=1 ;; *" -p "*) echo "  ✔ claude 인자에 --model 없음" ;; *) echo "  ✖ claude 가 불리지 않음"; FAIL=1 ;; esac
 run_case "models.prReview 이름이 이상함 → 리뷰어 부족(기본 모델로 다시 하지 않음)" "$BIN:/usr/bin:/bin" insufficient FAKE_CODEX=ok FAKE_CONFIG='{"models":{"prReview":"bad name"}}'
+
+# Codex 모델 · 생각 강도 — config.toml 맨 위 두 값만 -m · -c 로 넘긴다(--ignore-user-config 는 그대로)
+CODEX_ARGS="$TMP/codex-args"; CODEX_HOME_DIR="$TMP/codex-home"; mkdir -p "$CODEX_HOME_DIR"
+printf 'model = "gpt-test"\nmodel_reasoning_effort = "high"\n[mcp_servers.x]\nmodel = "other"\n' > "$CODEX_HOME_DIR/config.toml"
+run_case "config.toml 있음 → codex 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok CODEX_HOME="$CODEX_HOME_DIR" FAKE_CODEX_ARGS="$CODEX_ARGS"
+case " $(cat "$CODEX_ARGS" 2>/dev/null) " in *" --ignore-user-config "*"-m gpt-test "*'model_reasoning_effort="high" '*) echo "  ✔ codex 인자에 -m gpt-test · effort high · --ignore-user-config 유지" ;; *) echo "  ✖ codex 인자 이상: $(cat "$CODEX_ARGS" 2>/dev/null)"; FAIL=1 ;; esac
+rm -f "$CODEX_ARGS"; mkdir -p "$TMP/codex-empty"
+run_case "config.toml 없음 → codex 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok CODEX_HOME="$TMP/codex-empty" FAKE_CODEX_ARGS="$CODEX_ARGS"
+case " $(cat "$CODEX_ARGS" 2>/dev/null) " in *" -m "*|*model_reasoning_effort*) echo "  ✖ 설정이 없는데 모델 인자가 붙음: $(cat "$CODEX_ARGS")"; FAIL=1 ;; *" --ignore-user-config "*) echo "  ✔ 설정 없으면 -m · -c 안 붙임" ;; *) echo "  ✖ codex 가 불리지 않음"; FAIL=1 ;; esac
+CODEX_PURE="$(node --input-type=module -e "
+  const { codexModelArgs, codexUserSettings } = await import('./scripts/lib/pr-auto.mjs')
+  const top = codexUserSettings('# c\nmodel = \"m-1\" # x\n[a]\nmodel_reasoning_effort = \"low\"\n')
+  const bad = codexUserSettings('model = \"a b\"\nmodel_reasoning_effort = \"x\\\\\"\"')
+  console.log(JSON.stringify([top, codexModelArgs(top), bad, codexModelArgs(bad)]))")"
+# 여러 줄 문자열(''' · """) 안의 model · [표] 는 설정이 아니다 — 파일로 만들어 읽는다
+cat > "$TMP/multi.toml" <<'TOML'
+# example = '''
+# notes = """
+model = "real"
+developer_instructions = '''
+model = "other"
+[table]
+model_reasoning_effort = "low"
+'''
+notes = """one
+[x]
+"""
+model_reasoning_effort = "high"
+[t]
+model = "late"
+TOML
+MULTI_PURE="$(node --input-type=module -e "
+  import { readFileSync } from 'node:fs'
+  const { codexUserSettings } = await import('./scripts/lib/pr-auto.mjs')
+  console.log(JSON.stringify(codexUserSettings(readFileSync(process.argv[1], 'utf8'))))" "$TMP/multi.toml")"
+[ "$MULTI_PURE" = '{"model":"real","effort":"high"}' ] && echo "  ✔ 여러 줄 문자열 안의 model · [표] 는 무시 (문자열 뒤 최상위 값은 읽음)" || { echo "  ✖ 여러 줄 문자열 처리 이상: $MULTI_PURE"; FAIL=1; }
+[ "$CODEX_PURE" = '[{"model":"m-1","effort":""},["-m","m-1"],{"model":"","effort":""},[]]' ] && echo "  ✔ 첫 [표] 앞 두 값만 · 이상한 값 무시" || { echo "  ✖ 설정 해석 이상: $CODEX_PURE"; FAIL=1; }
 
 # ── 가짜 본체로 — ship.sh --auto-push --body-file(결정 D2) · 머지 결과 pane 알림 ─────────────────────
 # 코어 scripts/ 를 임시 폴더에 복사하고 화면(scripts/screen) · gh · 검증(reuse.sh)을 가짜로 바꾼다. origin 은 로컬 bare 레포
@@ -662,6 +724,24 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
 merge_case "키 없음 → 머지 확인 요청만(머지 안 함)" "" no '머지 확인 대기'
 [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 키 없음 → 확인 요청이 열림" || { echo "  ✖ 키 없음인데 확인 요청이 없다"; FAIL=1; }
 merge_case "autoMergeConfirm: true → 지금처럼 확인 요청" ', "autoMergeConfirm": true' no '머지 확인 대기'
+# 리뷰 · 머지 나누기(docs/pr-auto.md "켜기") — FAKE_CODEX=ok 라도 리뷰 끔이면 리뷰어를 부르지 않는다(PR 댓글 없음)
+no_comment() { if grep -q '^pr comment' "$GH_LOG"; then echo "  ✖ $1 — 리뷰 댓글이 달렸다"; FAIL=1; else echo "  ✔ $1 — 리뷰 댓글 없음"; fi; }
+no_request() { if [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ]; then echo "  ✖ $1 — 요청이 열렸다"; FAIL=1; else echo "  ✔ $1 — 요청 없음"; fi; }
+merge_case "켬/끔/확인 → 리뷰 없이 머지 확인 요청" ', "autoReview": false' no '리뷰 끔.* → 머지 확인 대기'
+no_comment "켬/끔/확인"
+[ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 켬/끔/확인 → [머지] 요청이 열림" || { echo "  ✖ 켬/끔/확인인데 요청이 없다"; FAIL=1; }
+merge_case "켬/끔/자동 → 검증 · 충돌 뒤 바로 squash" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main\(리뷰 끔'
+no_comment "켬/끔/자동"; no_request "켬/끔/자동"
+merge_case "켬/켬/직접 → 리뷰 승인까지 · 머지 요청 없음" ', "autoMergeManual": true' no '승인 2/2 → 사람이 직접 머지'
+no_request "켬/켬/직접"
+merge_case "직접 + autoMergeConfirm false → 직접이 먼저" ', "autoMergeManual": true, "autoMergeConfirm": false' no '사람이 직접 머지'
+PENDING=1 merge_case "켬/끔/자동 + 안 정한 결정 → 머지 안 함" ', "autoReview": false, "autoMergeConfirm": false' no '결정'
+# 대기 중에 설정이 바뀜 — 켬/끔/확인 건의 [머지] 요청이 열린 채 사람이 직접으로 돌리면 머지하지 않고 요청을 닫는다
+merge_case "켬/끔/확인 대기" ', "autoReview": false' no '머지 확인 대기'
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoReview": false, "autoMergeManual": true } ] }\n' > "$CORE/athena.config.json"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
+  const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 설정이 바뀜' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ]; then echo "  ✔ 대기 중 사람이 직접으로 → 머지 안 함 · 줄 남김 · 대기 파일 없음"; else echo "  ✖ 대기 중 사람이 직접으로"; cat "$TMP/merge.out"; FAIL=1; fi
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
 grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] \
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }
@@ -875,6 +955,15 @@ followup_plan 'blocked — 사용자 답 기다림' "$FS3" '- PR: https://github
 OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
 expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+
+# 심볼릭 링크(맥 /var → /private/var) · `//` 가 든 경로로 직접 실행해도 import 로 오인하지 않는다(b051a7) — 인자 없이 부르면 사용법이 나와야 한다
+mkdir -p "$TMP/ismain" && ln -s "$SRC" "$TMP/ismain/link"
+for script in pr-auto.mjs learn-review.mjs; do
+  MAIN_OUT="$(node "$TMP/ismain/link/scripts/$script" 2>&1 </dev/null | head -1)"
+  [ -n "$MAIN_OUT" ] && echo "  ✔ $script — 심볼릭 링크 경로로 실행해도 직접 실행으로 인식" || { echo "  ✖ $script — 심볼릭 링크 경로로 실행하면 아무 출력 없이 끝남(import 로 오인)"; FAIL=1; }
+done
+MAIN_OUT="$(node "$TMP//ismain//link/scripts/pr-auto.mjs" 2>&1 </dev/null | head -1)"
+[ -n "$MAIN_OUT" ] && echo "  ✔ pr-auto.mjs — 경로에 // 가 있어도 직접 실행으로 인식" || { echo "  ✖ pr-auto.mjs — 경로에 // 가 있으면 직접 실행을 놓침"; FAIL=1; }
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL

@@ -132,7 +132,7 @@ athena/                        ← 코어
     │   ├── delegate.sh                    에이전트를 pane 에 띄우기
     │   ├── commit.sh · ship.sh            "커밋해줘" · "PR 올려줘"
     │   ├── review-result.sh               reviewer 결론 기록
-    │   └── heavy.sh                       무거운 명령 한 번에 하나씩
+    │   └── heavy.sh                       무거운 명령 동시에 2개까지
     ├── 검증 · QA
     │   ├── verify/_lib.sh · _nest.sh · _generic.sh   검증 공용(표 형식 · NestJS · 새 레포 기본)
     │   ├── verify/<레포>.sh               레포별 표준 검증(팩)

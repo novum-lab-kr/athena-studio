@@ -18,7 +18,8 @@ trap cleanup EXIT
 pass() { echo "  ✔ $1"; }
 fail() { echo "  ✖ $1"; [ $# -gt 1 ] && echo "$2" | sed 's/^/      /'; FAILED=1; }
 # run.json 을 읽어 JS 식을 평가한다 — 맨 위 변수: run(가장 최근 실행), flow(이름)
-latest_run() { ls -d "$CORE"/.qa-runs/*/ 2>/dev/null | sort | tail -1; }
+# 이름순 = 시작 순서(실행기와 같은 기준 · 끝의 / 를 붙여 정렬하면 x-qa-002 가 x-qa 앞으로 간다)
+latest_run() { local name; name="$(ls "$CORE/.qa-runs" 2>/dev/null | LC_ALL=C sort | tail -1)"; [ -n "$name" ] && echo "$CORE/.qa-runs/$name/"; }
 check_run() { # 이름 식
   node -e '
     const run = JSON.parse(require("fs").readFileSync(process.argv[1] + "run.json", "utf8"))
@@ -110,7 +111,10 @@ git clone -q "$TMP/demo.git" "$CORE/repos/demo"
 # ── 순수 로직 ──────────────────────────────────────────────────────
 echo "순수 로직:"
 (cd "$CORE" && node --input-type=module -e "
-import { checkLayerSettings, checkTc, affectedFlows, docUrl, flowsOfFiles, listServices } from './scripts/qa/flows.mjs'
+import { mkdtempSync, rmSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { claimRunId, checkLayerSettings, checkTc, affectedFlows, docUrl, flowsOfFiles, listServices } from './scripts/qa/flows.mjs'
 import { shapeErrors, bodyErrors } from './scripts/qa/cases.mjs'
 import assert from 'node:assert/strict'
 assert.match(checkLayerSettings({ start: 'x', url: 'https://dev.acme.com' }, 'be'), /로컬 서버만/)
@@ -130,8 +134,13 @@ assert.equal(bodyErrors({ code: 'A' }, { code: 'B' }).length, 1)
 const services = listServices({ repos: [{ name: 'mono', kind: 'monorepo', branch: 'dev', apps: { web: { branch: 'main' }, api: { dir: 'svc/api' } } }, { name: 'pkg', kind: 'packages' }] })
 assert.deepEqual(services.map((item) => [item.name, item.dir, item.branch]), [['web', 'apps/web', 'main'], ['api', 'svc/api', 'dev']])
 assert.equal(docUrl({ remote: 'git@github.com:acme/demo.git', branch: 'main', dir: '' }, 'fe/a b.md'), 'https://github.com/acme/demo/blob/main/docs/flows/fe/a%20b.md')
+const runsDir = mkdtempSync(join(tmpdir(), 'qa-runs-'))
+const claimed = [claimRunId(runsDir, '20261030-000000'), claimRunId(runsDir, '20261030-000000'), claimRunId(runsDir, '20261030-000000')]
+assert.equal(new Set(claimed).size, 3)
+assert.deepEqual([...claimed].sort(), claimed)
+rmSync(runsDir, { recursive: true })
 assert.equal(docUrl({ remote: 'https://gitlab.com/acme/demo', branch: 'main', dir: '' }, 'fe/a.md'), null)
-" && pass "형식 검사 · 로컬만 · 닿는 흐름 · 응답 비교 · 서비스 목록 · 문서 주소") || fail "순수 로직"
+" && pass "형식 검사 · 로컬만 · 닿는 흐름 · 응답 비교 · 서비스 목록 · 문서 주소 · 같은 초 실행 폴더") || fail "순수 로직"
 
 # ── 실행기 BE ──────────────────────────────────────────────────────
 echo "실행기 BE:"

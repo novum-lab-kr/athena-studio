@@ -1,6 +1,6 @@
 # PR 자동 리뷰 · 수정 · 머지
 
-에이전트가 draft PR 을 올린 뒤의 일 — 리뷰 · 고치기 · 머지 — 를 사람 대신 돌린다. 사람은 **머지 직전에 한 번** 누른다(레포가 `"autoMergeConfirm": false` 면 그것도 없이 바로 — 아래 "켜기").
+에이전트가 draft PR 을 올린 뒤의 일 — 리뷰 · 고치기 · 머지 — 를 사람 대신 돌린다. 사람은 **머지 직전에 한 번** 누른다. PR · 리뷰 · 머지는 레포마다 따로 고른다(아래 "켜기").
 
 - 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 · 리뷰어 구성 · 앞 리뷰 이어받기 — 순수 로직) · 대기열 넣기는 `scripts/ship.sh`(push 하자마자) · 놓친 것은 현황판(`scripts/board/server.mjs` `autoReviewPlans` — 5분 안전망) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
 - 시험: `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
@@ -8,7 +8,28 @@
 
 ## 켜기 — 레포마다 (기본 꺼짐)
 
-팩 `pack.json` 의 레포에 `"autoMerge": true`. 없으면 그 레포 PR 은 지금처럼 사람이 한다. **첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 레포마다 켜고 끄거나(아래 머지 전 확인도 같은 곳) `bin/athena pack set-auto-merge <레포> --auto on|off [--confirm on|off]` · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
+레포마다 PR(켬/끔) · 리뷰(켬/끔) · 머지(자동/확인 후/사람이 직접)를 고른다. 없는 키는 옛 뜻 그대로라 새 키가 없는 `pack.json` 은 그대로 돈다.
+
+| 키 | 값 | 뜻 | 없으면 |
+|---|---|---|---|
+| `autoMerge` | `true` | 끝나면 PR 켬 | PR · 리뷰 · 머지 모두 꺼짐 |
+| `autoReview` | `false` | 리뷰 끔 | 켬 |
+| `autoMergeConfirm` | `false` | 확인 없이 머지 | 확인 후 |
+| `autoMergeManual` | `true` | 사람이 직접 머지(`autoMergeConfirm` 보다 먼저) | 확인 후 |
+
+| PR | 리뷰 | 머지 | 키 | 동작 |
+|---|---|---|---|---|
+| 끔 | - | - | (없음) | 자동 흐름 없음. "PR 올려줘" 는 그대로 되고 그 PR 도 자동 리뷰 없음 |
+| 켬 | 끔 | 직접 | `autoMerge` · `autoReview: false` · `autoMergeManual` | draft PR 까지 |
+| 켬 | 끔 | 확인 후 | `autoMerge` · `autoReview: false` | 검증 · 충돌 확인 → [머지] 요청 |
+| 켬 | 끔 | 자동 | `autoMerge` · `autoReview: false` · `autoMergeConfirm: false` | 검증 · 충돌 확인 → 바로 squash(⚙ 설정에 경고) |
+| 켬 | 켬 | 직접 | `autoMerge` · `autoMergeManual` | 리뷰 · 수정 루프까지, 머지 요청 없음(줄 `승인 2/2 → 사람이 직접 머지`) |
+| 켬 | 켬 | 확인 후 | `autoMerge` | 둘 다 승인 · 검증 · 충돌 확인 → [머지] 요청 |
+| 켬 | 켬 | 자동 | `autoMerge` · `autoMergeConfirm: false` | 둘 다 승인 · 검증 · 충돌 확인 → 바로 squash |
+
+리뷰를 끄면 리뷰어 · PR 댓글 · 라운드 없이 머지 단계로 간다(계획서 줄 `리뷰 끔(리뷰 없이 검증만으로 머지) → …`). 머지 안전 조건은 어느 조합이든 같다 — 같은 HEAD 엄격 검증 · 충돌 없음 · 안 정한 결정 없음 · main 직접 레포 제외 · 레포 하나짜리 PR 만. 값은 불리언이어야 한다(글자 `"false"` 는 키 없음과 같다). PR 을 끄면 다른 키는 남기되 뜻이 없다(다시 켜면 그 값으로).
+
+**첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off [--review on|off] [--merge auto|confirm|manual]` · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
 ```jsonc
 { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true }
@@ -21,7 +42,7 @@
 ```
 
 - 머지 뒤 남는 것은 확인하는 경우와 같다 — 계획서 `- Auto review:` 줄(`머지됨 — squash → <base>`) · 사건 기록 `auto.merge`(`confirm: false` 가 붙는다) · PR 리뷰 댓글 · 작업 pane 에 머지 결과 한 줄(아래 "흐름" — pane 이 살아 있을 때만). **머지했다는 맥 알림 · 요청은 따로 없다**(요청은 사람이 답해야 할 때만 연다 — `docs/requests.md` "열지 않는 것"). 현황판은 머지된 PR 의 계획서를 평소처럼 완료로 옮긴다
-- 확인을 끈 사이 다시 켜거나(`autoMergeConfirm` 을 지우거나 `true`) 자동 머지를 끄면, 아직 머지하지 않은 대기 건(GitHub 가 계산 중이던 것)은 머지하지 않고 `검증 대기 — 머지 전에 설정이 바뀜` 으로 남긴다. 그 줄을 지우면 지금 설정으로 다시 돈다
+- 대기 중에 설정을 바꾸면(확인을 다시 켬 · PR 끔 · 사람이 직접으로 · 리뷰 없이 온 건인데 리뷰를 켬) 아직 머지하지 않은 건은 머지하지 않고(열려 있던 [머지] 요청도 닫는다) `검증 대기 — 머지 전에 설정이 바뀜` 으로 남긴다. 그 줄을 지우면 지금 설정으로 다시 돈다
 - 확인 없는 대기 건은 처리기가 이름을 바꿔(`confirm/<레포>-<번호>.json.<pid>`) 잡고 머지한다 — 처리기 하나와 손으로 돌린 한 번이 같은 PR 을 두 번 머지하지 않게. 잡은 파일은 머지 직전 확인 · 머지 결과를 계획서 줄에 적은 뒤에 지운다(도중에 꺼지면 남아 있다가 되돌려진다). 잡은 쪽(처리기 · 손으로 돌린 한 번)이 잡은 채로 끝나면 — 그 pid 가 살아 있지 않으면 — 처리기 시작 · `--kick` · 돌고 있는 처리기의 머지 확인 보기(30초마다) 때 원래 이름으로 돌려놓는다
 
 > 그 레포의 `prBase` 가 운영 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영**이다. 켜기 전에 그 레포의 검증 스크립트가 엄격 모드로 건너뜀 없이 통과하는지 먼저 본다(아래 "머지 조건" ②).
@@ -69,7 +90,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 | 리뷰어 | 부르는 법 | 도구 |
 |---|---|---|
 | Claude | `claude -p [--model <models.prReview>] --tools "" --strict-mcp-config --no-session-persistence --output-format json --json-schema <형식>` · 답은 `structured_output` | 없음 |
-| Codex | `codex exec --ignore-user-config --disable <도구 기능>… -c web_search="disabled" --sandbox read-only --ephemeral --skip-git-repo-check -C <빈 폴더> --output-schema <파일> -o <파일>`(프롬프트는 표준 입력) · 답은 `-o` 파일 | 없음 — 셸 · 웹 · 사용자 MCP 서버를 끈다(아래) |
+| Codex | `codex exec --ignore-user-config [-m <config.toml model>] [-c model_reasoning_effort=<config.toml 값>] --disable <도구 기능>… -c web_search="disabled" --sandbox read-only --ephemeral --skip-git-repo-check -C <빈 폴더> --output-schema <파일> -o <파일>`(프롬프트는 표준 입력) · 답은 `-o` 파일 | 없음 — 셸 · 웹 · 사용자 MCP 서버를 끈다(아래) |
 
 - **Codex 는 읽기 전용 샌드박스만으로는 도구가 남는다**(2026-10-25 실측 · codex-cli 0.160 — 셸로 `pwd` 가 돌고 · 웹에서 값을 가져오고 · 사용자 MCP 서버 `hostinger_*` 등이 붙었다). 그래서 사용자 `config.toml` 을 안 읽고(`--ignore-user-config` — MCP 서버 · 훅이 빠지고 로그인은 그대로) · 도구를 주는 기능을 끄고(`CODEX_TOOL_FEATURES` — `shell_tool` · `unified_exec` · `apps` · `browser_use` · `computer_use` · `plugins` · `multi_agent` …) · 웹 검색을 끈다(`web_search="disabled"`). 끈 뒤 같은 질문으로 셸 · 웹 · MCP 가 모두 없는 것을 실측했다. Codex 를 올리면 `codex features list` 로 새 도구 기능이 생겼는지 다시 본다
 - 둘 다 빈 임시 폴더에서 돌고 끝나면 지운다. 받는 것: 레포 `rules.md` · `gotchas.md` · 계획서(앞 6000자) · PR 제목 · 본문 · diff(6만 자까지 — 생성물은 빼고 코드 파일부터 · 아래 "큰 diff") — 비밀값 모양은 가린다(`scripts/lib/mask.mjs`). PR 안의 글은 데이터로 넣고 지시로 따르지 않게 한다
@@ -78,7 +99,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 - `severity` — **막는 지적만 막는다**(2026-10-26 사용자 결정 E). `blocking`(막음 — 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 · 승인 기준과 같은 넷)만 수정 필요 · 머지 차단이고 작업 에이전트에 간다. `advisory`(권장 — 그 밖)는 PR 댓글에만(`💡 권장`) 남고 에이전트에 보내지 않는다 · 머지를 막지 않는다 — 권장만 남은 리뷰어는 승인으로 센다(승인 + 권장도 승인 그대로). `severity` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - `kind` — 리뷰어가 결정마다 고른다. `implementation`(구현 세부 — 코드 안의 자리 · 이름 · 구조 · 제한값처럼 제품 동작 · 범위 · 외부 계약 · 데이터가 그대로인 것) · `product`(그 넷 중 하나라도 달라지는 것 · 애매하면 이쪽). `kind` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - 모양이 틀린 답 · 10분 넘김 · 명령 없음 · 0 이 아닌 종료(로그인이 풀려 답을 못 낸 경우 포함)는 그 리뷰어의 **실패** 다. 승인인데 막는 지적 · 결정이 붙은 모순된 답은 승인으로 세지 않는다
-- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml` 의 모델 그대로
+- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml`(`CODEX_HOME` 이 있으면 그 아래) 맨 위의 `model` · `model_reasoning_effort` 두 값만 읽어 `-m` · `-c` 로 넘긴다(`--ignore-user-config` 가 그 두 값도 안 읽게 하니 따로 — 다른 키는 읽지 않는다 · 값이 없거나 파일이 없으면 넘기지 않아 Codex 기본값). 구성 메모에는 모델 이름만 `codex(<모델>)` 로
 - **둘 다 승인해야 머지로 간다.** 하나라도 실패 · 반려면 머지하지 않는다 — 남은 하나로 판정하지 않는다
 
 ### 큰 diff — 생성물은 빼고 코드 파일부터(이슈 20261025 · 2026-10-27 사용자 승인 A)

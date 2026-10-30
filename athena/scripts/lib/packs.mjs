@@ -359,13 +359,14 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
     const args = argsOf(row.pid)
     if (args.includes(learnScript) || args.includes(join(root, 'scripts', 'learn-review.mjs'))) busy.push({ kind: 'learn-review', what: '학습 검토(learn-review.mjs)', pid: row.pid })
   }
-  // 무거운 명령 잠금(scripts/heavy.sh — 한 대 공용). 잠금에 적힌 본체(root)가 이 본체일 때만 이 본체 일 —
+  // 무거운 명령 잠금(scripts/heavy.sh — 한 대 공용 · 자리 여럿: 1번 <잠금>, 2번부터 <잠금>.2 …). 잠금에 적힌 본체(root)가 이 본체일 때만 이 본체 일 —
   // root 가 없는 옛 잠금이면 주인의 작업 폴더로 본다(못 읽으면 보수적으로 이 본체 일)
   const heavyLock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
-  const heavy = lockOwnerAt(heavyLock)
-  if (heavy?.alive && !skip(heavy.pid)) {
+  for (const slotDir of [heavyLock, ...[2, 3, 4, 5, 6, 7, 8].map((slot) => `${heavyLock}.${slot}`)]) {
+    const heavy = lockOwnerAt(slotDir)
+    if (!heavy?.alive || skip(heavy.pid)) continue
     let owner = ''
-    try { owner = readFileSync(join(heavyLock, 'root'), 'utf8').trim() } catch { /* 옛 잠금 */ }
+    try { owner = readFileSync(join(slotDir, 'root'), 'utf8').trim() } catch { /* 옛 잠금 */ }
     const cwd = owner ? null : realOr(cwdsOf([heavy.pid]).get(heavy.pid) ?? '')
     if (owner ? realOr(owner) === rootReal : (!cwd || ours(cwd))) busy.push({ kind: 'heavy', what: `무거운 명령 잠금(heavy.sh)${heavy.what ? ` — ${heavy.what}` : ''}`, pid: heavy.pid })
   }

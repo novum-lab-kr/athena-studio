@@ -77,7 +77,29 @@ P="$(A request open --kind question --title 계획서질문 --plan plans/task/20
 check "계획서 진행 중이면 열린 채" 'A request list | grep -q "$P"'
 sed -i.bak 's/in_progress/done/' plans/task/20261021-x.md
 A request list > /dev/null
-check "계획서 done → expired" '[ "$(A request show "$P" | field request.state)" = expired ] && [ "$(A request show "$P" | field request.closedReason)" = "계획서가 done" ]'
+check "계획서 done 이어도 답 기다리는 질문(open)은 그대로 열린 채" '[ "$(A request show "$P" | field request.state)" = open ] && A request list | grep -q "$P"'
+A request answer "$P" --by app --choice x > /dev/null
+A request list > /dev/null
+check "답이 온 질문(answered)도 계획서 done 이어도 ack 까지 유지" '[ "$(A request show "$P" | field request.state)" = answered ] && A request list | grep -q "$P"'
+DEC="$(A request open --kind decision --title 결정콘솔 --html plans/x.html --key kd --plan plans/task/20261021-x.md | field request.id)"
+A request answer "$DEC" --by board --choice x > /dev/null
+A request list > /dev/null
+check "결정 콘솔(answered)은 계획서 done → expired" '[ "$(A request show "$DEC" | field request.state)" = expired ] && [ "$(A request show "$DEC" | field request.closedReason)" = "계획서가 done" ]'
+check "유지된 answered 질문은 사람이 cancel 로 거둘 수 있다" '[ "$(A request cancel "$P" --reason 받을-pane-없음 | field request.state)" = cancelled ]'
+MISSING="$(A request open --kind question --title 없는계획서 --plan plans/task/없음.md | field request.id)"
+A request list > /dev/null
+check "계획서가 없어도 답 기다리는 질문은 열린 채" '[ "$(A request show "$MISSING" | field request.state)" = open ]'
+printf '# 일\n\n## Checkpoint\n- Status: in_progress\n' > plans/task/20261021-abs.md
+ABS="$(A request open --kind question --title 절대경로 --plan "$B/plans/task/20261021-abs.md" | field request.id)"
+check "절대 경로 --plan 은 본체 기준 논리 경로로 저장된다" '[ "$(A request show "$ABS" | field request.links.plan)" = plans/task/20261021-abs.md ]'
+A request answer "$ABS" --by app --choice x > /dev/null
+A request list > /dev/null
+check "논리 경로라 계획서를 찾는다(진행 중이면 answered 그대로)" '[ "$(A request show "$ABS" | field request.state)" = answered ]'
+BIG="$WORK/big"; mkdir -p "$BIG"
+for n in $(seq 1 60); do A request open --kind question --title "채우기 $n $(printf 'x%.0s' $(seq 1 2000))" > /dev/null; done
+node scripts/athena.mjs request list --all --json 2>/dev/null | wc -c | tr -d ' ' > "$BIG/pipe"
+node scripts/athena.mjs request list --all --json > "$BIG/file" 2>/dev/null
+check "--json 출력이 파이프로도 끝까지 나온다(64KB 넘는 목록)" '[ "$(wc -c < "$BIG/file" | tr -d " ")" -gt 70000 ] && [ "$(cat "$BIG/pipe")" = "$(wc -c < "$BIG/file" | tr -d " ")" ]' "파이프 $(cat "$BIG/pipe") · 파일 $(wc -c < "$BIG/file")"
 
 section "결정 콘솔(plan-html.mjs)"
 mkdir -p plans/feature
@@ -112,7 +134,7 @@ print(" ".join(e["state"] for e in map(json.loads, open(sys.argv[1])) if e["type
 check "팩 데이터 state/events.jsonl 에 남는다" '[ -s "$EV" ]'
 check "요청 흐름이 그대로(열기 · 고쳐 열기 · 답 · 받음 — ack 두 번째는 안 남음)" '[ "$(states "$ID")" = "open open answered delivered" ]' "$(states "$ID")"
 check "대화로 답 → delivered 한 줄(by chat)" '[ "$(states "$Q")" = "open delivered" ] && grep "\"id\":\"$Q\"" "$EV" | tail -1 | grep -q "\"by\":\"chat\""'
-check "취소 · 계획서 done 으로 닫힘도 남는다" '[ "$(states "$C")" = "open cancelled" ] && [ "$(states "$P")" = "open expired" ]'
+check "취소(답 온 질문 취소 포함)도 남는다" '[ "$(states "$C")" = "open cancelled" ] && [ "$(states "$P")" = "open answered cancelled" ]'
 check "줄마다 형식 · 시각 · 팩" 'python3 -c "import json,sys; es=[json.loads(l) for l in open(sys.argv[1])]; sys.exit(0 if all(e[\"v\"]==1 and e[\"at\"] and e[\"pack\"]==\"acme\" for e in es) else 1)" "$EV"'
 node scripts/lib/events.mjs verify repo=r1 ok=false strict=true failed='lint|test'
 check "셸에서 남기기 — 참거짓은 참거짓으로" 'tail -1 "$EV" | python3 -c "import json,sys; e=json.load(sys.stdin); sys.exit(0 if e[\"type\"]==\"verify\" and e[\"ok\"] is False and e[\"strict\"] is True and e[\"failed\"]==\"lint|test\" else 1)"' "$(tail -1 "$EV")"
@@ -142,6 +164,21 @@ check "도구는 막고 요청 번호를 안내한다(deny)" 'python3 -c "import
 AQ="$(python3 -c 'import json,sys,re; print(re.findall(r"r-\d{8}-\d{6}-\w{4}", json.load(open(sys.argv[1]))["hookSpecificOutput"]["permissionDecisionReason"])[0])' "$WORK/ask-agent.out")"
 check "질문 · 선택지(설명 · 추천 표시 · 미리보기) · 계획서가 요청에 담긴다" 'A request show "$AQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; o=r[\"options\"]; sys.exit(0 if r[\"kind\"]==\"question\" and r[\"state\"]==\"open\" and r[\"title\"]==\"어느 방식으로 할까요?\" and [x[\"label\"] for x in o]==[\"A 안\",\"B 안\"] and o[0].get(\"recommended\") and o[0][\"desc\"]==\"작게 고친다\" and \"diff A\" in r[\"body\"] and \"여러 개\" in r[\"body\"] and r[\"links\"][\"plan\"]==\"plans/task/20261021-x.md\" else 1)"'
 check "[작업] 팝업 답 경로 그대로 — 고르면 answered, 받으면 ack → delivered" '[ "$(A request answer "$AQ" --by app --choice "A 안" --text "B 도 같이" | field request.state)" = answered ] && [ "$(A request ack "$AQ" | field request.state)" = delivered ]'
+# 이어 보낸 pane — pane 기록의 계획서가 환경 ATHENA_PLAN(옛 계획서)보다 먼저
+printf '# 새\n\n## Checkpoint\n- Status: in_progress\n' > plans/task/20261021-new.md
+mkdir -p .pack-data/state/pane-sessions
+printf '{"plan":"plans/task/20261021-new.md"}\n' > .pack-data/state/pane-sessions/pt1.json
+ATHENA_AGENT=athena-studio-fe ATHENA_PLAN=plans/task/20261021-x.md python3 -c "
+import sys; sys.path.insert(0,'scripts/hooks'); import importlib.util
+spec=importlib.util.spec_from_file_location('hook','scripts/hooks/ask-to-request.py'); m=importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print(m.plan_of('pt1'), m.plan_of('pnone'))" > "$WORK/plan-of.out"
+check "계획서는 pane 기록이 먼저, 기록이 없으면 환경 ATHENA_PLAN" '[ "$(cat "$WORK/plan-of.out")" = "plans/task/20261021-new.md plans/task/20261021-x.md" ]' "$(cat "$WORK/plan-of.out")"
+check "deny 안내 — 닫힌 요청은 다시 열라고 알린다(영원히 기다리지 않게)" 'grep -q "expired" "$WORK/ask-agent.out"'
+# 요청을 못 열면(여기서는 bin/athena 를 가짜로 바꿔) 흔적이 남고 에이전트에게 알린다
+mv bin/athena bin/athena.real; printf '#!/bin/sh\necho nope >&2; exit 1\n' > bin/athena; chmod +x bin/athena
+ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< "$ASK_EVENT" > "$WORK/ask-fail.out"
+mv bin/athena.real bin/athena
+check "요청을 못 열면 막지 않고 알린다 + events.jsonl 에 request-hook-failed" 'grep -q additionalContext "$WORK/ask-fail.out" && ! grep -q permissionDecision "$WORK/ask-fail.out" && grep request-hook-failed "$EV" | tail -1 | grep -q "pack.:.acme"' "$(cat "$WORK/ask-fail.out")"
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
 check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
 

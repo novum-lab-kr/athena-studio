@@ -23,9 +23,11 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
   │                                                 
   ├──(대화로 답함: answer --by chat)──────────────▶ delivered
   ├──(에이전트가 거둠: cancel)──▶ cancelled
-  └──(계획서가 done · 없어짐 — list 가 닫는다)──▶ expired
+  └──(결정 콘솔은 계획서가 done · 없어짐 — list 가 닫는다)──▶ expired
 ```
 
+- **질문(question)은 계획서가 done 이거나 없어도 닫지 않는다** — 답 전(open)이든 답이 온 뒤(answered)든 에이전트가 ack 하거나 취소할 때까지 [작업] 에 남는다(사라지면 에이전트가 영원히 기다리거나 답을 못 받는다). 결정 콘솔(decision)만 계획서와 함께 닫힌다. 받을 pane 이 닫혀 ack 가 안 오면 그대로 남으므로 `request cancel <id>` 로 거둔다(answered 도 된다 — 앱 · 현황판에는 취소 버튼이 없다). 닫힌 요청을 기다리던 에이전트는 `request show <id>` 로 상태를 보고 필요하면 새로 연다
+- `--plan` 은 본체 안의 절대 경로를 줘도 본체 기준 논리 경로(`plans/…md`)로 저장한다
 - 같은 `--key` 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다(`rev` +1). 답을 받은 뒤 다시 열면 답을 지우고 open
 - 답할 때 `--rev` 를 주면 그사이 바뀐 요청에는 답하지 않는다(`conflict`) · 이미 답한 요청에 또 답하면 `conflict`
 - 팩 세대가 바뀐 뒤(가져오기 `--replace` 등) 만든 요청에 온 답은 거절한다(`stale`)
@@ -43,7 +45,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
   4. **추천과 이유 한 줄**
   - 스크립트 · 변수 · 파일 이름 같은 내부 용어는 쓰지 않거나 괄호로 풀어 쓴다. 제목(`--title`)도 "무엇을 정하는지" 한 줄로, 내부 용어 없이. "#133 결정과 묶인다" 처럼 팝업만으로는 알 수 없는 말도 쓰지 않는다
   - AskUserQuestion 으로 물을 때도 같다 — 훅은 질문 · 선택지 설명을 그대로 옮길 뿐이라 배경은 질문 글(`question`)과 선택지 설명(`description`)에 직접 쓴다
-- **고르기 질문은 AskUserQuestion 으로** — 위임 에이전트 세션은 `scripts/hooks/ask-to-request.py`(PreToolUse)가 AskUserQuestion 을 잡아 질문마다 `question` 요청을 열고(계획서 = `ATHENA_PLAN` · 추천 `(Recommended)` 표시 · 설명 포함) 도구는 막는다. 답은 평소처럼 `[요청 <id>] … 답:` 으로 오니 받자마자 `request ack`. 여러 개 고르기(multiSelect)는 단일 선택 + 메모, 선택지 미리보기는 본문 끝, 직접 입력(Other)은 팝업의 메모칸이 맡는다. 아테나 pane 은 대상이 아니다. 요청을 열지 못하면 막지 않고 원래 고르기 창이 뜬다
+- **고르기 질문은 AskUserQuestion 으로** — 위임 에이전트 세션은 `scripts/hooks/ask-to-request.py`(PreToolUse)가 AskUserQuestion 을 잡아 질문마다 `question` 요청을 열고(계획서 = pane 기록(`state/pane-sessions/<pane>.json`)을 먼저 · 없으면 `ATHENA_PLAN`, pane = 부른 pane · 추천 `(Recommended)` 표시 · 설명 포함) 도구는 막는다. 답은 평소처럼 `[요청 <id>] … 답:` 으로 오니 받자마자 `request ack`. 여러 개 고르기(multiSelect)는 단일 선택 + 메모, 선택지 미리보기는 본문 끝, 직접 입력(Other)은 팝업의 메모칸이 맡는다. 아테나 pane 은 대상이 아니다. 요청을 열지 못하면 막지 않고 원래 고르기 창이 뜬다(이유는 팩 데이터 `state/events.jsonl` 에 `request-hook-failed` 로 남고 에이전트에게도 알린다)
 - **사용자가 대화로 답하면** — `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
 - **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`

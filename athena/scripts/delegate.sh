@@ -106,8 +106,8 @@ else
   LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text <pane> '[$AGENT → 아테나] …' --enter). 못 찾으면 아래대로 요청으로 남긴다. "
 fi
 # 아테나에게 보내기가 실패하면 우회하지 않고 요청으로 남긴다(GitHub 이슈 #134) — 반쯤 전달되거나 사라지지 않게
-LEAD_RULE="${LEAD_RULE}아테나 pane 으로 보내기가 실패하면(명령 실패 · 훅 차단 · 아테나 pane 없음) 우회하지 말고 ① 계획서 Checkpoint(Blocked 또는 결과 절)에 보낼 글을 그대로 적고 ② $ATHENA_DIR/bin/athena request open --kind question --title '<한 줄>' --body-file <파일> --plan $ATHENA_DIR/$PLAN 로 요청을 열어 현황판에 뜨게 한 뒤 ③ 보고 끝에 그랬다고 한 줄 적는다. "
-# 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(main 직접 레포 제외)일 때만 지시에 싣는다.
+LEAD_RULE="${LEAD_RULE}아테나 pane 으로 보내기가 실패하면(명령 실패 · 훅 차단 · 아테나 pane 없음) 우회하지 말고 ① 계획서 Checkpoint(Blocked 또는 결과 절)에 보낼 글을 그대로 적고 ② $ATHENA_DIR/bin/athena request open --kind question --title '<한 줄>' --body-file <파일> --plan $PLAN 로 요청을 열어 현황판에 뜨게 한 뒤 ③ 보고 끝에 그랬다고 한 줄 적는다. "
+# 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
 AUTO_SHIP_REPO="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
@@ -122,7 +122,7 @@ for repo in cfg['repos']:
 PYEOF
 )"
 if [ -n "$AUTO_SHIP_REPO" ]; then
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 머지를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름(①~④ — commit.sh 커밋 포함)을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름(①~④ — commit.sh 커밋 포함)을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 끝나면(또는 막히면) 그 계획서의 Status·Progress·Validation·결과 절을 채운다(Status 는 끝나면 ready_for_review, 막히면 blocked. PR 없이 끝나는 일 — 조사·스크린샷처럼 레포 변경이 없는 작업 — 은 마지막 보고 때 done). 커밋은 사용자가 '커밋해줘' 또는 'PR 올려줘' 라고 할 때만 $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>… 로 한다(git commit 직접·git add -A 금지, 거부되면 이유를 그대로 전하고 사용자에게 묻는다). 예외 하나 — '[자동 리뷰 → <나>]' 로 시작하는 지시(PR 자동 리뷰 · 레포가 autoMerge 를 켠 경우)는 그 지시대로 묻지 않고 commit.sh 로 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(그 PR 브랜치에 빨리 감기만 · 새 PR 없음 · PR 본문 지적이면 --body-file <파일> 을 붙여 본문도 바꾼다 · docs/pr-auto.md). ${REVIEW_RULE}리뷰 결론이 나오면 사용자에게 보여 준다. reviewer 보고에 '결정 필요'(선택지가 갈리는 항목, R1·R2…)가 있으면 말로 묻지 말고 결정 콘솔로 보여 준다 — 계획서 md 에 '## 리뷰 뒤 결정' 절(항목·선택지·추천)을 적고, 결정 JSON 을 만들어 node $ATHENA_DIR/scripts/plan-html.mjs <계획서> --add <JSON> → $ATHENA_DIR/scripts/board.sh open <계획서> 로 연 뒤 기다린다. JSON 은 배열 [{ id:'r1', title:'R1 <제목>', desc:'<영향>', type:'single', required:true, options:[{ label:'A <선택지>', desc:'<설명>', recommended:true }, { label:'B …', desc:'…' }] }] — reviewer 의 'A <선택지>' 를 label 로 그대로 옮긴다(형식 정본 docs/plan-template.html 헤더 주석). id 가 이미 있으면 --add 가 다음 번호(r3…)로 바꿔 알려 준다. 사용자가 [이대로 진행] 하면 '[작업계획서 결정사항 확정]' 프롬프트가 이 pane 으로 온다(사용자가 대화로 '추천대로'·'R1 은 B' 처럼 답해도 같다 — 콘솔을 다시 누르라고 하지 않는다) → md '리뷰 뒤 결정' 절에 확정값을 적고 node $ATHENA_DIR/scripts/plan-html.mjs <계획서> --decide r1='<고른 label>' [r2='…'] 로 콘솔에 확정을 기록한다(--data 로 PLAN 전체를 바꾸지 않는다 — 기존 결정이 지워진다). 그다음 고치고, ${REVIEW_AGAIN}'결정 필요' 없이 수정 필요(고칠 방법이 하나)만 있으면 묻지 않고 고친 뒤 무엇을 고쳤는지 한 줄씩 알린다. 사용자가 '리뷰해줘' 라고 할 때도 같다: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN 로 옆에 reviewer pane 을 띄운다(직접 리뷰하지 않는다 — reviewer 가 결론을 계획서 '- Review result:' 줄에 남기고, ship.sh 미리보기에 나온다). 사용자가 'PR 올려줘' 라고 하면 한 번에 끝까지 간다 — 묻지 않는다: ① 커밋 안 된 내 작업 파일이 있으면 commit.sh 로 먼저 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기로 초안을 받고 ③ 작업 내용(계획서 · diff)을 보고 제목(type(범위): 티켓 요약)과 본문 초안 파일을 정리한 뒤 ④ --base <미리보기의 기본 base(prBase) 하나> --title '…' --yes 로 보낸다(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 그 사실을 본문 '확인 필요' 와 보고에 적는다). 다른 base 는 사용자가 말했을 때만. main 직접 레포(PR 없이 기준 브랜치에 바로 push)는 지금처럼 미리보기를 보여 주고 확인받는다. git push·gh pr create 직접 금지, 거부되면 이유를 그대로 전한다. 여러 레포에 걸친 작업이면 ship.sh 가 거부한다 — 아테나에게 직접 요청한다(아래). ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(공통 규칙 AGENTS.md 5절). ${LEAD_RULE}보고는 공통 규칙 6절 순서로 짧게(검증 표는 계획서 Validation 에), 시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. 요청을 여러 번 주고받는다 — 새 요청을 받을 때마다 작업을 시작하기 전에 Status 를 in_progress 로 되돌리고, 그 요청이 끝나면 다시 ready_for_review 로 바꾼다. Progress 에는 요청마다 한 줄씩 더한다. 토큰·키·비밀번호 값은 어떤 경로로든 출력하지 않는다(AGENTS.md 5절 · secret-guard 훅). 무거운 명령(install·build·dev·tsc·test 등)은 앞에 $ATHENA_DIR/scripts/heavy.sh 를 붙인다(AGENTS.md 5절). "
@@ -368,21 +368,9 @@ else
   # hermes 안에서 띄워도 보호 훅을 건다 — FE 는 commit-guard(git commit 직접·add -A → commit.sh, push·gh pr 차단) + secret-guard,
   # reviewer 는 secret-guard 만(토큰·키 값은 어떤 세션에서도 출력하지 않는다)
   SETTINGS_FILE="$(mktemp -t hermes-settings)" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "mktemp 실패"; exit 1; }
-  GUARD_HOOKS=()
-  [ "$AGENT" != reviewer ] && GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/commit-guard.py")
-  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/secret-guard.py")
-  GUARD_HOOKS+=("$ATHENA_DIR/scripts/hooks/process-guard.py")   # pkill · killall · 0/음수 대상 kill 차단(GH #133) — 모든 세션
-  # 훅 명령도 셸이 읽으므로 경로를 셸 따옴표로 감싼다
-  # pane ↔ 대화 기록(팩 백업이 되살릴 때 --resume) — 첫 인자
-  # 자동 압축 시점(reviewer 제외 · 짧게 끝난다) — 본체 .claude/settings.json 의 autoCompactWindow 를 그대로 옮긴다(값은 그 한 곳).
-  # 본체 안이면 프로젝트 설정으로도 실리지만, 프로젝트 설정을 못 찾는 폴더에서 띄워도 같은 값이 걸리게 여기서도 넣는다
-  WINDOW_FROM=""
-  [ "$AGENT" != reviewer ] && WINDOW_FROM="$ATHENA_DIR/.claude/settings.json"
-  # 고르기 질문(AskUserQuestion)을 사람에게 묻는 요청으로 바꿔 [작업] 에 올린다(reviewer 제외 · scripts/hooks/ask-to-request.py)
-  ASK_HOOK=""
-  [ "$AGENT" != reviewer ] && ASK_HOOK="$ATHENA_DIR/scripts/hooks/ask-to-request.py"
-  python3 -c 'import json,shlex,sys; command=lambda path: {"type":"command","command":"python3 "+shlex.quote(path)}; settings={"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[command(path) for path in sys.argv[5:]]}]+([{"matcher":"AskUserQuestion","hooks":[command(sys.argv[4])]}] if sys.argv[4] else []),"SessionStart":[{"hooks":[command(sys.argv[3])]}],"UserPromptSubmit":[{"hooks":[command(sys.argv[3])]}]}}; notify=lambda mode: {"type":"command","command":command(__import__("os").path.join(__import__("os").path.dirname(sys.argv[3]),"agent-done-notify.py"))["command"]+" "+mode}; sys.argv[4] and (settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(notify("prompt")), settings["hooks"].update(Stop=[{"hooks":[notify("stop")]}])); window=json.load(open(sys.argv[2])).get("autoCompactWindow") if sys.argv[2] else None; window and settings.update(autoCompactWindow=window); json.dump(settings, open(sys.argv[1],"w"))' \
-    "$SETTINGS_FILE" "$WINDOW_FROM" "$ATHENA_DIR/scripts/hooks/pane-session.py" "$ASK_HOOK" "${GUARD_HOOKS[@]}"
+  # 훅 목록은 agent-context.py 와 같은 한 곳 — scripts/lib/agent_hooks.py (보호 훅 · 고르기 질문 → 요청 · pane 기록 · 끝 알림 · 자동 압축 시점. reviewer 는 읽기 전용이라 일부 제외)
+  python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" inline "$SETTINGS_FILE" "$ATHENA_DIR" "$AGENT" \
+    || { rm -f "$PROMPT_FILE" "$RUNNER" "$SETTINGS_FILE"; echo "에이전트 훅 설정 생성 실패"; exit 1; }
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
 fi

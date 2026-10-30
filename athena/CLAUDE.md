@@ -60,7 +60,7 @@
 ### 4단계: 작업 · 커밋 (pane 에서 반복)
 - 에이전트가 요청마다 Status 를 `in_progress` ↔ `ready_for_review` 로 옮기고, 같은 검증 스크립트를 돌려 표를 그대로 보고한다. 커밋 · push · PR 은 공통 문서 5절대로 에이전트가 pane 에서(`commit.sh` · `ship.sh`)
 - **레포 하나짜리 작업은 pane 에서 끝까지**(작업 → 리뷰 → 커밋 → PR) — 아테나로 돌아오지 않는다. 리뷰 기준은 공통 문서 6절, 결정 필요 · 수정 필요 처리와 "PR 올려줘" 흐름은 `docs/workflow.md` 4절
-- **PR 자동 리뷰**(`"autoMerge": true` 레포)는 현황판이 draft PR 을 감지해 Claude · Codex 가 리뷰하고 수정 · 머지 확인까지 돈다 — `docs/pr-auto.md`
+- **PR 자동 리뷰**(`"autoMerge": true` 레포)는 현황판이 draft PR 을 감지해 Claude · Codex 가 리뷰하고 수정 · 머지 확인까지 돈다 — 리뷰 끔 · 머지 방식은 레포마다(`docs/pr-auto.md` "켜기")
 
 ### 5단계: 검증 · 보고 · push/PR
 - (여러 레포 · 아테나가 맡은 작업) `reviewer` 에 계획서 + 대상(워크트리면 `--cwd`)을 넘겨 리뷰. **수정 필요는 묻지 않고** 그 에이전트 pane 에 바로 지시하고 사용자에게는 한 줄씩 알린다. **결정 필요**는 같은 정식 계획서에 덧붙여 결정 콘솔로(`plan-html.mjs --add` → `board.sh open`)

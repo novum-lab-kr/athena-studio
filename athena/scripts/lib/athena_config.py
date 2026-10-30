@@ -166,6 +166,17 @@ def is_direct(cfg, repo_name):
     return bool(repo_entry(cfg, repo_name).get('direct'))
 
 
+def auto_flow(cfg, repo_name):
+    """자동 흐름이 할 일 — 'off'(없음 · draft PR 까지) · 'manual'(리뷰만) · 'merge'(머지까지). scripts/lib/pr-auto.mjs prFlow · autoMergeRepos 와 같은 기준(docs/pr-auto.md "켜기")."""
+    entry = repo_entry(cfg, repo_name)
+    if entry.get('autoMerge') is not True or entry.get('direct'):
+        return 'off'
+    manual = entry.get('autoMergeManual') is True
+    if entry.get('autoReview') is False and manual:
+        return 'off'
+    return 'manual' if manual else 'merge'
+
+
 def direct_branch(cfg, repo_name):
     """main 직접 레포가 작업·push 하는 브랜치 — prBase(없으면 branch)."""
     repo = repo_entry(cfg, repo_name)

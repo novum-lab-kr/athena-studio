@@ -92,10 +92,12 @@ REPO="$(basename "$MAIN")"
 for link in "$ATHENA_DIR"/repos/*; do [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$MAIN" ] && REPO="$(basename "$link")"; done
 # main 직접 레포(팩 direct: true)는 PR 없이 메인 체크아웃의 작업 브랜치를 origin 에 빨리 감기로 push 한다(아래 "main 직접" · docs/pack.md)
 DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_direct, direct_branch; c=load(sys.argv[1]); print(direct_branch(c, sys.argv[2]) if is_direct(c, sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(main 직접 확인)"
-# PR 자동 리뷰를 켠 레포인가(팩 "autoMerge": true · main 직접 레포는 대상 아님 — docs/pr-auto.md)
+# 자동 흐름(리뷰 · 머지)이 할 일이 있는 레포인가(docs/pr-auto.md "켜기" — PR 끔 · 리뷰 끔 + 사람이 직접은 없다 · main 직접 레포는 대상 아님)
 AUTO_ON=0
+AUTO_FLOW=off
 if [ -z "$DIRECT" ]; then
-  AUTO_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, repo_entry; print(1 if repo_entry(load(sys.argv[1]), sys.argv[2]).get("autoMerge") is True else 0)' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(autoMerge 확인)"
+  AUTO_FLOW="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, auto_flow; print(auto_flow(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(자동 흐름 확인)"
+  [ "$AUTO_FLOW" = off ] || AUTO_ON=1
 fi
 # push 한 PR 을 자동 리뷰 대기열에 바로 넣는다 — 새 PR · 열린 PR 에 push · --auto-push 모두. 현황판의 PR 감지(5분 캐시)는 놓친 것을 잡는 안전망으로 남는다.
 # 대상은 현황판과 같다 — 켠 레포 · 레포 하나짜리(아테나의 --repo-agent 는 아님) · 계획서 Status 가 in_progress · ready_for_review.
@@ -318,7 +320,7 @@ fi
 if [ $AUTO_PUSH = 1 ]; then
   # 여기 오기 전에 평소 검사를 모두 지났다 — 워크트리 · 보호 브랜치 · 추적 파일 미커밋 · 레포 하나짜리 · HEAD 가 계획서 Commits 에 commit.sh 로 기록된 커밋(위 [ -n "$RECORDED" ])
   [ -z "$DIRECT" ] || fail "main 직접 레포는 자동 흐름 대상이 아니다"
-  [ "$AUTO_ON" = 1 ] || fail "$REPO 는 자동 머지를 켜지 않았다(pack.json 레포 \"autoMerge\": true) — 사용자가 \"PR 올려줘\" 라고 할 때 미리보기부터"
+  [ "$AUTO_ON" = 1 ] || fail "$REPO 는 자동 흐름이 꺼져 있다(docs/pr-auto.md \"켜기\") — 사용자가 \"PR 올려줘\" 라고 할 때 미리보기부터"
   PR_NUMBER="$(cd "$TOP" && gh pr list --head "$BRANCH" --state open --json number --jq '.[0].number' 2>/dev/null)"
   [ -n "$PR_NUMBER" ] || fail "$BRANCH 의 열린 PR 이 없다 — 자동 흐름은 이미 열린 PR 에만 push 한다"
   AUTO_STATE="$(python3 - "$ATHENA_DIR/$PLAN" "$REPO" "$PR_NUMBER" <<'PYEOF'
@@ -626,8 +628,10 @@ if [ -n "$PR_FAILED" ]; then
   echo "⚠️ push 는 됐고${PR_LINES:+ 연 PR 은 계획서에 적었지만,} base${PR_FAILED} 의 PR 을 만들지 못했다 — 사용자에게 알린다(같은 명령을 다시 돌리면 열린 PR 은 건너뛰고 나머지만 만든다)" >&2
   exit 1
 fi
-if [ "$AUTO_ON" = 1 ]; then
-  echo "   draft 다. 자동 리뷰가 승인하면 머지까지 한다 — 사용자에게 머지를 부탁하지 않는다."
+if [ "$AUTO_FLOW" = manual ]; then
+  echo "   draft 다. 자동 리뷰가 돈다 — 머지는 사람이 직접 한다"
+elif [ "$AUTO_ON" = 1 ]; then
+  echo "   draft 다. 자동 흐름이 승인 · 검증하면 머지까지 한다 — 사용자에게 머지를 부탁하지 않는다."
   echo "   gh pr view <번호> --json state 로 확인해 '머지하겠습니다(자동 리뷰 중)' / '머지됐습니다' 로 보고한다"
 else
   echo "   draft 다. 리뷰어 지정·Ready 전환은 GitHub 에서"

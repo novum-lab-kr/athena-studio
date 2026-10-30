@@ -392,7 +392,7 @@ claude</pre></div>
       <h2><span class="no">08</span>꼭 지킬 것</h2>
       <div class="rules">
         <div class="rule"><b>비밀값은 출력하지 않습니다</b><span><code>.npmrc</code>·<code>.env*</code> 내용, <code>printenv</code>, <code>ps aux</code> 결과를 보여 달라고 하지 마세요. 실수로 노출되면 바로 폐기하고 재발급합니다.</span></div>
-        <div class="rule"><b>무거운 명령은 한 번에 하나</b><span>install·build·dev·tsc·test 는 <code>scripts/heavy.sh</code> 로 줄을 섭니다. 에이전트는 알아서 씁니다. 직접 돌릴 때도 앞에 붙이세요. 동시 빌드로 컴퓨터가 멈춘 적이 있습니다.</span></div>
+        <div class="rule"><b>무거운 명령은 동시에 2개까지</b><span>install·build·dev·tsc·test 는 <code>scripts/heavy.sh</code> 로 줄을 섭니다. 에이전트는 알아서 씁니다. 직접 돌릴 때도 앞에 붙이세요. 동시 빌드로 컴퓨터가 멈춘 적이 있습니다.</span></div>
         <div class="rule"><b>모든 작업은 계획서 하나에</b><span>아테나와 <code>/call</code> 이 알아서 만듭니다. 계획서(<code>plans/</code>)는 각자 로컬에만 있고, 공유되는 것은 <code>issues/</code>·<code>archive/</code> 입니다.</span></div>
         <div class="rule"><b>담당 범위 밖은 수정하지 않습니다</b><span>팩 <code>pack.json</code> 에 없는 레포 등은 범위 밖입니다.</span></div>
         <div class="rule"><b>학습은 [넣기]를 눌러야 들어갑니다</b><span>학습 후보는 [학습] 탭에서 골라야 공책에 들어갑니다. 취향이 섞인 후보는 [버리기].</span></div>

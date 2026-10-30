@@ -208,6 +208,12 @@
   .tidy-title .tidy-rest { color: var(--muted); font-weight: 500; font-size: 13px; }
   .pill.learn-area { color: var(--accent); border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
   .pill.learn-skill { color: var(--col-plan); border-color: color-mix(in srgb, var(--col-plan) 40%, transparent); }
+  .learn-batch { border: 1px solid var(--line); border-radius: 10px; background: var(--panel); padding: 12px 16px; display: grid; gap: 6px; }
+  .learn-batch .top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .learn-batch .top .grow { flex: 1; font-weight: 600; font-size: 14px; }
+  .learn-batch label.row { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; line-height: 1.5; padding: 4px 0; border-top: 1px solid var(--line); cursor: pointer; }
+  .learn-batch label.row input { margin-top: 4px; }
+  .learn-batch .row .rule-line { color: var(--muted); font-size: 12px; }
   .learn-group { font-size: 12px; color: var(--muted); font-weight: 600; margin: 6px 0 -2px; }
   /* 히스토리·메모리 행 — 날짜·작업자·종류 배지는 행 세로 가운데, 메모리 배지는 오른쪽 끝 칸. 칸이 행 높이만큼 늘어나지 않게 align-self 로 */
   .h-row > .h-tags { justify-content: flex-end; align-self: center; }
@@ -367,6 +373,7 @@
     <h2>아테나 학습 — 작업하며 알게 된 <b>레포 함정</b>을 서비스별 공책(gotchas)에 넣는다. 에이전트가 작업 전에 읽고, git 으로 팀과 공유된다 (기준: docs/knowledge/common/learning.md)</h2>
     <h3 class="learn-h">학습 후보 <span class="n" id="learn-candidate-count"></span> <span class="hint">넣을지 골라 주세요 — 넣은 것만 공책에 들어갑니다</span></h3>
     <div id="learn-jev" class="where" hidden></div>
+    <div id="learn-batches" class="learn-list"></div>
     <div id="learn-candidates" class="learn-list"><div class="empty-history">불러오는 중이에요…</div></div>
     <h3 class="learn-h">학습한 내용 <span class="n" id="learn-learned-count"></span> <span class="hint">누르면 펼쳐지고 고치거나 지울 수 있어요</span></h3>
     <div id="learn-learned" class="learn-list"></div>
@@ -1134,8 +1141,45 @@
     await loadLearn();
     if (act === 'save') openLearned(id, false); else document.getElementById('detail').close();
   });
+  // 레포별 묶음 — 그 레포 공책에 넣을 후보를 모아 한 번에 넣는다(빼고 싶은 건 체크 해제). 같은 문장은 서버가 하나로 합쳐 보낸다
+  const renderBatches = () => {
+    const box = document.getElementById('learn-batches');
+    const batches = (learnData.batches || []).filter((batch) => batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0) > 1);
+    box.innerHTML = batches.map((batch, index) => `<div class="learn-batch" data-batch="${index}">
+      <div class="top"><span class="grow">📦 ${esc(batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, ''))} 공책에 넣을 묶음 <span class="n">${batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0)}개</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
+      ${batch.items.map((item) => `<label class="row"><input type="checkbox" value="${esc(item.id)}" checked><span><b>${esc(item.title)}</b>${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="정확히 같은 문장이라 하나로 합쳤어요">같은 문장 ${item.dups.length + 1}개 합침</span>` : ''}${item.strengthen ? ' <span class="pill">기존 줄 고침</span>' : ''}<div class="rule-line">${esc(item.rule)}</div></span></label>`).join('')}
+    </div>`).join('');
+    box.querySelectorAll('.learn-batch').forEach((el) => updateBatchButton(el));
+  };
+  const updateBatchButton = (el) => {
+    const count = el.querySelectorAll('input:checked').length;
+    const button = el.querySelector('[data-batch-apply]');
+    button.textContent = `묶음 넣기 (${count}개)`;
+    button.disabled = !count;
+  };
+  document.getElementById('learn-batches').addEventListener('change', (event) => {
+    const el = event.target.closest('.learn-batch');
+    if (el) updateBatchButton(el);
+  });
+  document.getElementById('learn-batches').addEventListener('click', async (event) => {
+    const button = event.target.closest('[data-batch-apply]');
+    if (!button) return;
+    const el = button.closest('.learn-batch');
+    const ids = [...el.querySelectorAll('input:checked')].map((input) => input.value);
+    if (!ids.length || !confirm(`선택한 ${ids.length}개를 이 레포 공책에 넣을까요? (같은 문장은 하나로 합쳐져요)`)) return;
+    button.disabled = true;
+    try {
+      const result = await api('/api/learn-batch', { ids });
+      toast(`공책에 ${result.applied}개 넣었어요${result.merged ? ` · 같은 문장 ${result.merged}개는 합쳤어요` : ''}`);
+      if (result.errors?.length) alert(`넣지 못한 것 ${result.errors.length}개\n${result.errors.map((entry) => `${entry.id}: ${entry.error}`).join('\n')}`);
+    } catch (error) {
+      alert(error.message || String(error));
+    }
+    await loadLearn();
+  });
   const renderLearn = () => {
     const { candidates, learned, stats = {} } = learnData;
+    renderBatches();
     document.getElementById('learn-candidate-count').textContent = candidates.length;
     // Jev 가 공책 기존 줄과 같다고 보고 휴지통으로 옮긴 후보(scripts/board/learn.mjs checkLearnWithJev)
     const jevBox = document.getElementById('learn-jev');
