@@ -16,6 +16,7 @@ import sys
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 묻는 곳은 scripts/lib/screen.py 하나
+from reuse_link import pane_lock  # noqa: E402 — 이어 보내기와 같은 기록 잠금
 SESSION_ID = re.compile(r'^[0-9a-fA-F-]{8,64}$')
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 
@@ -45,9 +46,20 @@ def main() -> None:
     }
     folder = pack_data.resolve() / 'state' / 'pane-sessions'
     folder.mkdir(parents=True, exist_ok=True)
-    temp = folder / f'.{pane}.{os.getpid()}.tmp'
-    temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
-    os.replace(temp, folder / f'{pane}.json')
+    # 이어 보내기(delegate.sh --reuse-pane)로 다른 계획서를 받은 pane — 기록의 plan 은 새 계획서고 envPlan 은 처음 띄울 때의 환경 값이다.
+    # 환경 값이 envPlan 과 같으면(같은 실행 pane — /clear 로 session 이 바뀌어도) 옛 계획서로 되돌리지 않고 plan · envPlan 을 이어 받는다
+    # (되돌리면 끝난 계획서가 다시 진행 중으로 묶인다). 읽기 · 쓰기는 delegate.sh 의 기록 갱신과 같은 잠금으로 직렬화한다
+    with pane_lock(folder, pane):
+        try:
+            previous = json.loads((folder / f'{pane}.json').read_text(encoding='utf-8'))
+            if previous.get('envPlan') and previous.get('envPlan') == record['plan'] and previous.get('plan'):
+                record['plan'] = previous['plan']
+                record['envPlan'] = previous['envPlan']
+        except Exception:
+            pass
+        temp = folder / f'.{pane}.{os.getpid()}.tmp'
+        temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
+        os.replace(temp, folder / f'{pane}.json')
 
 
 if __name__ == '__main__':

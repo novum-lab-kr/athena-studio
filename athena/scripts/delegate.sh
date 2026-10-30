@@ -10,6 +10,7 @@
 #   scripts/delegate.sh <에이전트명> --plan <경로>         # 담당 레포 workspace 의 새 탭에 연다 (기본)
 #   scripts/delegate.sh <에이전트명> --cwd <워크트리>       # 그 워크트리에서 연다
 #   scripts/delegate.sh <에이전트명> --here                # 레포 workspace 로 보내지 않고 지금 탭에 쪼갠다 (단발 조사용)
+#   scripts/delegate.sh <에이전트명> --plan <경로> --reuse-pane <pane> [--new-branch <이름>]  # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다(docs/dispatch.md "이어 보내기" · 고르기 node scripts/reuse-pane.mjs --agent <이름>)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --resume <세션 id> [--cwd <워크트리>]  # 닫힌 pane 을 그 대화 그대로 다시 연다(지시문은 다시 보내지 않는다)
 #
 # 배치 규칙 — workspace = 레포 / 그 안의 한 탭에 pane 을 나란히
@@ -27,13 +28,15 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
-AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""
+AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)
       if [ "${2:-}" = new ]; then [ $# -ge 3 ] || { echo "--plan new 에 요약이 없다" >&2; exit 2; }; PLAN_NEW="$3"; shift 3; else [ $# -ge 2 ] || { echo "--plan 에 경로가 없다" >&2; exit 2; }; PLAN="$2"; shift 2; fi ;;
     --down) DIR="down"; DIR_GIVEN=1; shift ;;
     --here) HERE=1; shift ;;
+    --reuse-pane) [ $# -ge 2 ] || { echo "--reuse-pane 에 pane id 가 없다" >&2; exit 2; }; REUSE_PANE="$2"; shift 2 ;;   # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다
+    --new-branch) [ $# -ge 2 ] || { echo "--new-branch 에 브랜치 이름이 없다" >&2; exit 2; }; NEW_BRANCH="$2"; shift 2 ;;   # --reuse-pane 과 함께 — 그 pane 의 워크트리에서 prBase 로 새 브랜치를 딴다
     --cwd)  [ $# -ge 2 ] || { echo "--cwd 에 경로가 없다" >&2; exit 2; }; WORKDIR="$2"; shift 2 ;;
     --resume) [ $# -ge 2 ] || { echo "--resume 에 세션 id 가 없다" >&2; exit 2; }; RESUME="$2"; shift 2 ;;   # 닫힌 에이전트 pane 을 그 대화 그대로 다시 연다(claude --resume <세션 id>) — 지시문은 다시 보내지 않는다
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
@@ -41,6 +44,7 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+[ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
 [ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down]"; exit 2; }
 
 # 계획서 필수 — 없으면 띄우지 않는다
@@ -140,6 +144,7 @@ fi
 # 지시가 있든 없든(현황판 [작업 시작]도) — 범위가 커지면 멈춘다
 PLAN_HEADER="${PLAN_HEADER}요청이 여러 레포·API·구조 변경으로 커지면 멈추고 정식 계획서가 필요하다고 알린다. 버그 수정이면 AGENTS.md 5절대로 재현부터 확인하고 수정 전·후를 같은 방법으로 비교한다. "
 fi
+RAW_PROMPT="$PROMPT"   # 이어 보내기(--reuse-pane)는 긴 머리말 없이 이 요청만 싣는다
 PROMPT="$PLAN_HEADER${PROMPT}"
 [ -n "${RESUME:-}" ] && PROMPT=""   # 이어 열기 — 계획서 안내는 처음 대화에 이미 있다
 
@@ -225,6 +230,7 @@ if ! "$SCREEN" inside; then
   exit 1
 fi
 
+if [ -z "$REUSE_PANE" ]; then   # ── 새 pane 을 띄우는 길 (끝은 아래 else — 쉬는 pane 에 이어 보내는 길)
 # 배치: workspace = 레포 / 그 안의 한 탭에 pane 을 나란히.
 # 작업(워크트리)마다 탭을 가르지 않는다. 한 화면에서 동시 작업 상황이 다 보이는 쪽이 낫다.
 # --here 이거나 담당 레포가 없으면(reviewer 등) 지금 탭에서 쪼갠다.
@@ -421,6 +427,67 @@ chmod +x "$RUNNER" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "chmod 실패"; exi
 if ! "$SCREEN" pane run "$PANE" "$(shell_line "$RUNNER")" >/dev/null; then   # 셸 한 줄 — TMPDIR 에 띄어쓰기가 있어도
   rm -f "$PROMPT_FILE" "$RUNNER"
   echo "pane 실행 실패 (pane $PANE)"; exit 1
+fi
+else   # ── 쉬는 같은 레포 pane 에 이어 보내기 (docs/dispatch.md "이어 보내기")
+  [ -z "${RESUME:-}" ] || { echo "--reuse-pane 은 --resume 과 같이 쓰지 않는다" >&2; exit 2; }
+  [ "$AGENT" != reviewer ] || { echo "reviewer 는 이어 보내지 않는다(리뷰마다 새 pane)" >&2; exit 2; }
+  # 보내기 직전에 다시 확인 — 고른 뒤 사용자가 그 pane 을 보기 시작했거나 질문 창이 떴을 수 있다. 같은 pane 이 아니면 보내지 않는다
+  PICKED="$(node "$ATHENA_DIR/scripts/reuse-pane.mjs" --agent "$AGENT" 2>&1)" || { echo "이어 보낼 수 없다: $PICKED" >&2; exit 1; }
+  PICKED_PANE="$(printf '%s' "$PICKED" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"])' 2>/dev/null)"
+  [ "$PICKED_PANE" = "$REUSE_PANE" ] || { echo "그 pane($REUSE_PANE)은 지금 이어 보낼 수 없다(쉬는 pane: ${PICKED_PANE:-없음}) — 새로 띄우거나 다시 고른다" >&2; exit 1; }
+  PANE="$REUSE_PANE"; PLACEMENT="쉬는 pane 에 이어 보냄"
+  WORKDIR="$(printf '%s' "$PICKED" | python3 -c 'import sys,json; print(json.load(sys.stdin)["cwd"])')"
+  [ -z "$GIVEN_CWD" ] || [ "$(cd "$GIVEN_CWD" 2>/dev/null && pwd -P)" = "$WORKDIR" ] || { echo "--cwd($GIVEN_CWD)가 그 pane 의 작업 폴더($WORKDIR)와 다르다" >&2; exit 2; }
+  GIVEN_CWD="$WORKDIR"
+  # 앞 작업이 안 끝났을 수 있다 — 미커밋 변경이 있으면 새 브랜치를 따지 않는다(앞 PR 이 열려 있으면 같은 브랜치에 이어 쓴다)
+  if [ -n "$NEW_BRANCH" ]; then
+    [ -z "$(git -C "$WORKDIR" status --porcelain 2>/dev/null)" ] || { echo "그 워크트리에 미커밋 변경이 있어 새 브랜치를 따지 않는다 — 앞 작업을 먼저 끝낸다" >&2; exit 1; }
+    PR_BASE="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
+cfg = load(sys.argv[1]); agent = sys.argv[2]
+for repo in cfg['repos']:
+    if agent in (repo.get('agents') or []) or agent == repo.get('packagesAgent') or any(app.get('agent') == agent for app in (repo.get('apps') or {}).values()):
+        if repo.get('direct'): break
+        print(repo.get('prBase') or repo.get('branch') or ''); break
+PYEOF
+)"
+    [ -n "$PR_BASE" ] || { echo "이 레포의 prBase 를 모르거나 main 직접 레포라 새 브랜치를 따지 않는다" >&2; exit 1; }
+    git -C "$WORKDIR" fetch origin "$PR_BASE" >/dev/null 2>&1 || { echo "origin/$PR_BASE 를 가져오지 못했다" >&2; exit 1; }
+    git -C "$WORKDIR" switch -c "$NEW_BRANCH" "origin/$PR_BASE" >/dev/null 2>&1 || { echo "새 브랜치($NEW_BRANCH)를 만들지 못했다(이미 있는 이름이거나 워크트리 상태 확인)" >&2; exit 1; }
+  fi
+  BRANCH_NOW="$(git -C "$WORKDIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
+  # pane 에는 처음 띄울 때의 긴 지시(커밋 · 리뷰 · 보고 규칙)가 이미 있다 — 새 계획서만 짧게 알린다. 줄바꿈 없이 한 줄(Enter 한 번에 한 지시)
+  REUSE_MSG="[아테나${LEAD_PANE:+ $LEAD_PANE} → $AGENT] 새 요청 — 새 계획서: $ATHENA_DIR/$PLAN . 앞 계획서와 별개다: 먼저 읽고 Checkpoint 의 Next 부터, Status·Progress·Validation·결과는 이 계획서에 쓰고 commit.sh · ship.sh 의 --plan 도 이 계획서다(앞 계획서는 더 고치지 않는다). 작업 폴더 $WORKDIR · 브랜치 ${BRANCH_NOW:-?}. 시작 전에 Status 를 in_progress 로. 커밋 · PR · 보고 규칙은 처음 받은 지시 그대로. ${REVIEW_RULE}"
+  if [ -n "$RAW_PROMPT" ]; then REUSE_MSG="${REUSE_MSG}요청: $RAW_PROMPT"; else REUSE_MSG="${REUSE_MSG}계획서 '## 지시' 절이 요청이다 — 비어 있으면 사용자 요청을 기다린다."; fi
+  # 한 줄로 — 줄바꿈이 있으면 Enter 로 여러 번 나뉘어 들어간다
+  REUSE_MSG="$(printf '%s' "$REUSE_MSG" | tr '\n' ' ')"
+  # 묶음 갱신을 먼저 — 지시를 보내면 pane-session.py 훅이 곧바로 돌아 기록을 읽는다(같은 잠금 · scripts/lib/reuse_link.py).
+  # pane 기록의 계획서를 새 계획서로(훅이 처음 환경 값으로 덮지 않게 envPlan 을 남긴다). 보내기가 실패하면 되돌린다
+  OLD_PLAN="$(python3 - "$ATHENA_DIR" "$PANE" <<'PYEOF'
+import json, pathlib, sys
+pack_data = pathlib.Path(sys.argv[1]) / '.pack-data'
+path = pack_data.resolve() / 'state' / 'pane-sessions' / f'{sys.argv[2]}.json' if pack_data.is_symlink() else None
+try:
+    print(json.loads(path.read_text(encoding='utf-8')).get('plan') or '')
+except Exception:
+    print('')
+PYEOF
+)"
+  UNDO="$(python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" link "$ATHENA_DIR" "$PANE" "$PLAN")" || { echo "pane 기록을 새 계획서로 잇지 못해 보내지 않는다" >&2; exit 1; }
+  if ! "$SCREEN" pane send-text "$PANE" "$REUSE_MSG" --enter >/dev/null; then
+    python3 "$ATHENA_DIR/scripts/lib/reuse_link.py" rollback "$ATHENA_DIR" "$PANE" "$UNDO" || true
+    echo "pane $PANE 에 보내지 못했다(pane 기록은 되돌렸다)" >&2; exit 1
+  fi
+  # 앞 계획서 Work ref 에서 '· pane <id> (<에이전트>)' 꼬리를 뗀다 — 지운 줄은 pane 이 안 적힌 줄이 돼 다시 묶이지 않는다
+  if [ -n "$OLD_PLAN" ] && [ "$OLD_PLAN" != "$PLAN" ] && [ -f "$ATHENA_DIR/$OLD_PLAN" ]; then
+    python3 - "$ATHENA_DIR" "$PANE" "$AGENT" "$OLD_PLAN" <<'PYEOF'
+import pathlib, re, sys
+athena, pane, agent, old_plan = sys.argv[1:5]
+sys.path.insert(0, athena + '/scripts/lib'); from plan_update import update_plan
+update_plan(str(pathlib.Path(athena) / old_plan), lambda text: re.sub(rf' · pane {re.escape(pane)} \({re.escape(agent)}\)', '', text))
+PYEOF
+  fi
 fi
 # pane 이름에 실제 브랜치를 적는다. 나란히 놓였을 때 어느 작업인지 이름만 보고 알아야 한다.
 # 워크트리 폴더명이 아니라 git 이 말하는 브랜치를 쓴다 — 메인 체크아웃에서 열면

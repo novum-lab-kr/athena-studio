@@ -31,6 +31,21 @@
 
 서로 독립적인 서비스 작업은 **한 응답에서 동시에 호출**해 병렬로 돌린다. 무거운 명령(install·build·dev·tsc·test)은 에이전트가 `scripts/heavy.sh` 로 한 대에 하나씩 돌리므로(AGENTS.md 5절) 병렬로 띄워도 된다 — 아테나가 직접 무거운 명령을 돌릴 때도 같다.
 
+## 이어 보내기 — 쉬는 같은 레포 pane 이 있으면 새로 띄우지 않는다
+
+작은 수정마다 계획서 · 브랜치 · pane 을 새로 띄우면 토큰이 많이 든다(2026-10-30 홈페이지 수정). 디스패치 전에 한 번 확인한다.
+
+```bash
+node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane","cwd","branch"} · 없으면 이유(stderr)와 exit 1
+```
+고르는 기준은 모두 맞아야 한다 — 이름표가 `🤖 <에이전트>`(에이전트는 레포마다 하나라 같은 레포) · `agent_status` idle · 사용자가 보고 있지 않음(focused 아님) · 화면 끝에 질문·고르기 창이 없음(데몬 idle 은 질문 기다리는 것도 idle 이라 화면을 읽어 따로 본다) · 화면을 읽을 수 있음. 하나라도 모르면 지금처럼 새로 띄운다.
+
+- **보내기**: `scripts/delegate.sh <에이전트> --plan <새 계획서> --reuse-pane <pane> ["<요청>"]`. 새 pane · 실행기를 만들지 않고 짧은 지시(새 계획서 경로 · 리뷰 규칙 · 요청)를 그 pane 에 한 줄로 넣는다. 처음 받은 긴 지시(커밋 · PR · 보고 규칙)는 그 pane 에 이미 있다. 보내기 직전에 `reuse-pane.mjs` 를 다시 돌려 같은 pane 이 아니면 보내지 않는다
+- **브랜치**: 앞 PR 이 아직 열려 있으면 같은 브랜치에 이어 쓴다(`--new-branch` 없음). 머지됐으면 `--new-branch <이름>` — 같은 워크트리에서 `git switch -c <이름> origin/<prBase>`. 미커밋 변경이 있으면 거부한다(앞 작업을 먼저 끝낸다). main 직접 레포는 새 브랜치를 따지 않는다
+- **계획서**: 같은 작업의 추가 요청이면 그 계획서에 이어 쌓는다(새로 만들지 않고 pane 에 그냥 보낸다). 다른 작업이면 새 경량 계획서를 만들어 `--reuse-pane` 으로
+- **묶음**: 보낼 때 delegate.sh 가 ① 새 계획서 Work ref · Lead pane 을 적고 ② pane 기록(`state/pane-sessions/<pane>.json`)의 `plan` 을 새 계획서로 바꾸고 처음 환경 값을 `envPlan` 에 남기며(훅 `pane-session.py` 가 매 메시지마다 처음 환경 값으로 되돌리지 않는다) ③ 앞 계획서 Work ref 에서 `· pane <id> (<에이전트>)` 를 뗀다. 그래서 끝난 앞 계획서가 이 pane 이 일한다고 다시 진행 중으로 돌아가지 않는다. 자동 완료는 pane 상태를 보지 않고 PR · Progress 로 판정하니, **열린 PR 을 같은 브랜치로 이어 쓰는 두 계획서**는 한쪽이 먼저 끝나지 않게 Progress 를 같이 본다
+- reviewer 는 이어 보내지 않는다(리뷰마다 새 pane). 시험 `test/reuse-pane-test.sh`
+
 ## 프롬프트 필수 포함 사항
 - 승인된 계획서 경로 (`plans/유형/YYYYMMDD-제목.md`)
 - 해당 에이전트가 담당할 작업 범위 (계획서의 작업 배분표 중 자기 행)
