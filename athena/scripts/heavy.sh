@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 무거운 명령을 한 번에 하나씩, 컴퓨터가 버틸 때만 돌린다 — 앞에 붙이기만 하면 된다.
+# 무거운 명령을 동시에 2개까지(ATHENA_HEAVY_SLOTS), 컴퓨터가 버틸 때만 돌린다 — 앞에 붙이기만 하면 된다.
 #
 # 사용:  <athena>/scripts/heavy.sh pnpm install --frozen-lockfile
 #        <athena>/scripts/heavy.sh pnpm --filter plus-web build
@@ -9,7 +9,8 @@
 # 무거운 명령 = pnpm/npm/yarn install, next build·dev, tsc, test, 검증 스크립트(verify/*), relay·gen:relay, pkg:link·pkg:unlink, docker build.
 #
 # 하는 일
-#   1. 공용 잠금(/tmp/hermes-heavy.lock) — 다른 세션이 무거운 명령을 돌리는 중이면 기다린다(레포·워크트리 무관, 한 대에 하나)
+#   1. 공용 잠금 자리(slot) — 기본 2자리(ATHENA_HEAVY_SLOTS · 1 이면 예전처럼 한 대에 하나). 1번은 /tmp/hermes-heavy.lock, 2번은 /tmp/hermes-heavy.lock.2.
+#      빈 자리를 잡고 둘 다 차면 기다린다(레포·워크트리 무관). 둘째 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 40) 이상일 때만 잡는다 — 모자라면 첫 자리를 기다린다
 #   2. 부하 대기 — 1분 부하 평균이 코어 수 × ATHENA_HEAVY_LOAD(기본 1.2) 를 넘으면 내려갈 때까지 기다린다
 #      (다른 세션의 QA dev 서버·Spotlight·보안 프로그램처럼 잠금 밖의 부하도 같이 본다)
 #   3. 명령을 돌리고, 끝나거나 실패하거나 끊겨도 잠금을 푼다. 주인이 죽은 잠금(프로세스 없음)은 치우고 잡는다
@@ -47,40 +48,73 @@ note() {
 }
 give_up() { echo "⛔ ${MAX_WAIT}초를 기다려도 차례가 오지 않았다 — $1. 아테나·사용자에게 알린다" >&2; exit 75; }
 
-# 주인이 없는 잠금 치우기 — 본 주인($1, pid 가 없었으면 빈 값)과 같은지 옮긴 뒤 다시 보고, 그새 다른 쪽이 새로 잡은 것이면 되돌린다
-# (둘이 같은 낡은 잠금을 보고 rm -rf 하면 먼저 치우고 새로 잡은 쪽의 잠금까지 지운다)
+# 자리(slot) — 1번은 예전 그대로 $LOCK, 2번부터는 $LOCK.2 · $LOCK.3 …(잠금을 읽는 다른 스크립트·옛 heavy.sh 와 1번이 호환된다)
+slot_path() { if [ "$1" = 1 ]; then echo "$LOCK"; else echo "$LOCK.$1"; fi; }
+
+# 주인이 없는 잠금 치우기 — 본 주인($2, pid 가 없었으면 빈 값)과 같은지 옮긴 뒤 다시 보고, 그새 다른 쪽이 새로 잡은 것이면 되돌린다
+# (둘이 같은 낡은 잠금을 보고 rm -rf 하면 먼저 치우고 새로 잡은 쪽의 잠금까지 지운다). $1 = 자리 경로
 reclaim() {
-  local stale="$LOCK.stale.$$" taken
-  mv "$LOCK" "$stale" 2>/dev/null || return 0
+  local path="$1" stale="$1.stale.$$" taken
+  mv "$path" "$stale" 2>/dev/null || return 0
   taken="$(cat "$stale/pid" 2>/dev/null || true)"
-  if [ "$taken" != "$1" ]; then mv "$stale" "$LOCK" 2>/dev/null || true; return 0; fi
-  rm -rf "$stale"; echo "🧹 주인이 없는 잠금($([ -n "$1" ] && echo "pid $1" || echo 'pid 를 적기 전에 끝난 것'))을 치웠다"
+  if [ "$taken" != "$2" ]; then mv "$stale" "$path" 2>/dev/null || true; return 0; fi
+  rm -rf "$stale"; echo "🧹 주인이 없는 잠금($([ -n "$2" ] && echo "pid $2" || echo 'pid 를 적기 전에 끝난 것'))을 치웠다"
+}
+# 자리 하나의 낡은 잠금 정리($1 = 경로)
+clear_stale() {
+  [ -d "$1" ] || return 0
+  local owner; owner="$(cat "$1/pid" 2>/dev/null || true)"
+  if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then reclaim "$1" "$owner"; return 0; fi
+  # 잡은 뒤 pid 를 적기 전에 죽은 잠금 — 1분 넘게 pid 가 없으면 치운다(find -mmin 은 macOS·리눅스 공통)
+  if [ -z "$owner" ] && [ -n "$(find "$1" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then reclaim "$1" ""; fi
 }
 
-# 1) 공용 잠금
-while ! mkdir "$LOCK" 2>/dev/null; do
-  owner="$(cat "$LOCK/pid" 2>/dev/null || true)"
-  if [ -n "$owner" ] && ! kill -0 "$owner" 2>/dev/null; then
-    reclaim "$owner"; continue
-  fi
-  # 잡은 뒤 pid 를 적기 전에 죽은 잠금 — 1분 넘게 pid 가 없으면 치운다(find -mmin 은 macOS·리눅스 공통)
-  if [ -z "$owner" ] && [ -n "$(find "$LOCK" -maxdepth 0 -mmin +1 2>/dev/null)" ]; then
-    reclaim ""; continue
-  fi
-  note "다른 무거운 명령이 도는 중: $(cat "$LOCK/what" 2>/dev/null || echo '?')"
+# 메모리 여유 % — macOS memory_pressure, 리눅스 /proc/meminfo(MemAvailable/MemTotal). 둘 다 못 읽으면 빈 값
+free_percent() {
+  local value; value="$(memory_pressure 2>/dev/null | awk -F': ' '/free percentage/{gsub(/%/,"",$2); print $2+0}')"
+  [ -n "$value" ] || value="$(awk '/^MemTotal:/{total=$2} /^MemAvailable:/{avail=$2} END{if (total > 0 && avail != "") printf "%d", avail * 100 / total}' /proc/meminfo 2>/dev/null)"
+  echo "$value"
+}
+# 둘째 자리부터는 메모리 여유가 넉넉할 때만(못 읽으면 보수적으로 안 잡는다)
+SLOTS="${ATHENA_HEAVY_SLOTS:-2}"
+case "$SLOTS" in ''|*[!0-9]*) SLOTS=1 ;; esac
+[ "$SLOTS" -ge 1 ] || SLOTS=1
+SECOND_FREE="${ATHENA_HEAVY_SECOND_FREE:-40}"
+extra_slot_ok() { local free; free="$(free_percent)"; [ -n "$free" ] && [ "$free" -ge "$SECOND_FREE" ]; }
+
+# 1) 공용 잠금 — 빈 자리를 잡는다(1번부터). 둘째 이후 자리는 메모리 여유가 넉넉할 때만
+MYLOCK=""
+while :; do
+  roomy=""
+  for slot in $(seq 1 "$SLOTS"); do
+    path="$(slot_path "$slot")"
+    clear_stale "$path"
+    if [ "$slot" -ge 2 ]; then
+      [ -n "$roomy" ] || { if extra_slot_ok; then roomy=yes; else roomy=no; fi; }
+      [ "$roomy" = yes ] || continue
+    fi
+    if mkdir "$path" 2>/dev/null; then MYLOCK="$path"; break; fi
+  done
+  [ -n "$MYLOCK" ] && break
+  status=""
+  for slot in $(seq 1 "$SLOTS"); do
+    status="${status:+$status · }자리$slot: $(cat "$(slot_path "$slot")/what" 2>/dev/null || echo '?')"
+  done
+  if [ "$SLOTS" -gt 1 ] && [ "$roomy" = no ]; then status="$status · 둘째 자리는 메모리 여유 $(free_percent)% < ${SECOND_FREE}% 라 보류"; fi
+  note "다른 무거운 명령이 도는 중 — $status"
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "잠금"
   sleep 5
 done
 # 무엇이 도는지(what)는 대기 화면·현황판에 보인다 — 인자 속 비밀값(token=… · --password … · Bearer …)은 가려서 적는다(macOS sed 는 대소문자 무시 플래그가 없어 글자마다 [Tt] 로)
 # root — 이 잠금을 쥔 본체(이 스크립트가 든 아테나 체크아웃). 잠금은 한 대 공용이지만 bin/athena pack busy·update 는 그 본체만 일하는 것으로 본다
-(cd "$(dirname "$0")/.." && pwd -P) > "$LOCK/root" 2>/dev/null || true
-echo $$ > "$LOCK/pid"; printf '%s · %s\n' "$WHO" "$*" \
+(cd "$(dirname "$0")/.." && pwd -P) > "$MYLOCK/root" 2>/dev/null || true
+echo $$ > "$MYLOCK/pid"; printf '%s · %s\n' "$WHO" "$*" \
   | sed -E 's/([A-Za-z_-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww]([Oo][Rr])?[Dd]|[Aa][Pp][Ii][_-]?[Kk][Ee][Yy]|[Aa][Uu][Tt][Hh])[A-Za-z_-]*[=:])[^ ]+/\1***/g; s/(--?[A-Za-z-]*([Tt][Oo][Kk][Ee][Nn]|[Ss][Ee][Cc][Rr][Ee][Tt]|[Pp][Aa][Ss][Ss][Ww][Oo][Rr][Dd]|[Aa][Pp][Ii]-?[Kk][Ee][Yy])[A-Za-z-]*) +[^ -][^ ]*/\1 ***/g; s/([Bb][Ee][Aa][Rr][Ee][Rr]|[Bb][Aa][Ss][Ii][Cc]) +[^ ]+/\1 ***/g' \
-  | cut -c1-160 > "$LOCK/what"
+  | cut -c1-160 > "$MYLOCK/what"
 # 내 잠금일 때만 푼다(주인 없는 잠금으로 보고 다른 쪽이 새로 잡았을 수 있다) — 옮긴 뒤 지운다
 cleanup() {
-  [ "$(cat "$LOCK/pid" 2>/dev/null)" = "$$" ] || return 0
-  mv "$LOCK" "$LOCK.done.$$" 2>/dev/null && rm -rf "$LOCK.done.$$"
+  [ "$(cat "$MYLOCK/pid" 2>/dev/null)" = "$$" ] || return 0
+  mv "$MYLOCK" "$MYLOCK.done.$$" 2>/dev/null && rm -rf "$MYLOCK.done.$$"
 }
 trap cleanup EXIT INT TERM HUP
 
@@ -99,12 +133,6 @@ MIN_FREE="${ATHENA_HEAVY_MIN_FREE:-15}"
 # root 아래 자손 pid 들(자기 자신 제외) — ps 의 부모 관계를 거슬러 올라가 root 를 만나면 자손
 descendants() {
   ps -axo pid=,ppid= | awk -v root="$1" '{parent[$1]=$2} END{for (pid in parent) {node=pid; while ((node in parent) && node != 1 && node != 0) {if (parent[node] == root) {print pid; break} node = parent[node]}}}'
-}
-# 메모리 여유 % — macOS memory_pressure, 리눅스 /proc/meminfo(MemAvailable/MemTotal). 둘 다 못 읽으면 빈 값
-free_percent() {
-  local value; value="$(memory_pressure 2>/dev/null | awk -F': ' '/free percentage/{gsub(/%/,"",$2); print $2+0}')"
-  [ -n "$value" ] || value="$(awk '/^MemTotal:/{total=$2} /^MemAvailable:/{avail=$2} END{if (total > 0 && avail != "") printf "%d", avail * 100 / total}' /proc/meminfo 2>/dev/null)"
-  echo "$value"
 }
 memory_warned=0
 stop_all() {
