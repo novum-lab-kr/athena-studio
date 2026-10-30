@@ -226,6 +226,13 @@ unset ATHENA_CLAUDE_HOME
 
 section "레포 하나 더하기 · 빼기(repo add · remove)"
 SRCS="$ATHENA_DATA_DIR/repos-src"; LOCAL="$ATHENA_DATA_DIR/packs/acme/local.json"; cp "$LOCAL" "$WORK/local.add.bak"; cp pack/pack.json "$WORK/pack.add.bak"
+# init --scan(깊이 1 — 본체 옆 .. 에서는 못 찾는 자리) — --root 없이도 팩 local.json 의 reposRoot 를 먼저 읽는다(본체 설정에는 reposRoot 없음)
+mkdir -p "$SRCS/scan-probe" && git -C "$SRCS/scan-probe" init -q -b main
+ROOT_SCAN="$(node scripts/athena.mjs init --scan --json --depth 1 2>/dev/null | python3 -c "import json,sys; print(','.join(r['name'] for r in json.load(sys.stdin)))")"
+check "init --scan — --root 없이 팩 local.json reposRoot 아래를 훑음" 'echo "$ROOT_SCAN" | grep -q scan-probe' "$ROOT_SCAN"
+OUT_ROOT="$(node scripts/athena.mjs init --scan --json --root "$WORK/none" 2>/dev/null)"
+check "init --scan — --root 가 팩 local.json 보다 먼저" '! echo "$OUT_ROOT" | grep -q scan-probe' "$OUT_ROOT"
+rm -rf "$SRCS/scan-probe"
 mkdir -p "$SRCS/team/new-svc" && git -C "$SRCS/team/new-svc" init -q -b main && (cd "$SRCS/team/new-svc" && echo x > README.md && git add . && git -c user.email=t@e.invalid -c user.name=t commit -qm init && git remote add origin https://u:tok@example.com/acme/new-svc.git)
 R="$(A repo add "$SRCS/team/new-svc")"
 check "repo add → pack.json 항목(git 주소 · 토큰 뗌) · 자리 · repos/ 링크" '[ "$(echo "$R" | field repo.name)" = new-svc ] && grep -q "\"new-svc\"" pack/pack.json && grep -q "https://example.com/acme/new-svc.git" pack/pack.json && ! grep -q "tok@" pack/pack.json && grep -q "team/new-svc" "$LOCAL" && [ "$(readlink repos/new-svc)" = "$SRCS/team/new-svc" ] && [ "$(echo "$R" | field linked)" = True ]' "$R"

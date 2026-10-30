@@ -7,7 +7,7 @@
 - Studio pane 밖(일반 터미널)이면 화면 세팅·자동 입력 없이 안내만 한다 — 아무 말이나 입력하면 시작한다
 - 바깥 도구가 띄운 창(환경 변수 `ATHENA_AGENT` 가 있음 — 예: 서버의 관리 창)에서는 돌지 않는다
 
-레포 폴더: 사용자가 준 폴더(없으면 `athena.config.json` 의 `reposRoot`, 그것도 없으면 `..`)
+레포 폴더: 사용자가 준 폴더(없으면 팩 `local.json` 의 `reposRoot`, 그다음 `athena.config.json` 의 `reposRoot`, 그것도 없으면 `..`)
 
 **도구마다 다른 것**
 | | Claude Code | 위임 기능이 없는 도구(Codex 등) |
