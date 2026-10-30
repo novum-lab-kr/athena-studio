@@ -254,9 +254,9 @@ test('켤 때 업데이트: 팩이 있으면 코어에 맡긴다 — 손잡이�
 })
 
 test('업데이트 요약: 일하는 세션이 있었지만 바로 올린 본체(working)도 알린다 — 세션 수 · pane 이름', () => {
-  const working = [{ kind: 'athena', pid: 11, pane: '🧭 아테나' }, { kind: 'agent', pid: 12, pane: '🤖 shop-fe' }, { kind: 'agent', pid: 13, what: '위임 에이전트(claude) — /r' }]
+  const working = [{ kind: 'athena', pid: 11, pane: '🧭 아테나' }, { kind: 'agent', pid: 12, pane: '🤖 shop-fe · feat/x' }, { kind: 'agent', pid: 14, pane: '🤖 shop-fe · fix/y' }, { kind: 'agent', pid: 13, what: '위임 에이전트(claude) — /r' }]
   const summary = home.summarizeUpdate({ ok: true, bodies: [{ id: 'acme', status: 'updated', working }, { id: 'globex', status: 'same', working }, { id: 'initech', status: 'updated', working: [] }], backedUp: [] })
-  assert.deepEqual(summary.working, [{ id: 'acme', count: 3, sessions: ['🧭 아테나', '🤖 shop-fe', '위임 에이전트(claude) — /r'] }])
+  assert.deepEqual(summary.working, [{ id: 'acme', count: 4, sessions: ['🧭 아테나', 'shop-fe', '위임 에이전트(claude) — /r'] }])
   assert.deepEqual(summary.skipped, [])
   assert.equal(summary.notify, true)
   // 옛 코어(working 없음)는 지금처럼
