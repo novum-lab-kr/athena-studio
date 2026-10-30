@@ -229,9 +229,10 @@ async function buildRenderer() {
   }
 }
 
-async function start(args, { fromUpdate = false } = {}) {
-  // 앱을 켠 채 하던 업데이트 설치가 끊겼으면(앱이 꺼짐 · 강제 종료) 다시 시도한다 — 끝나면 표시를 지운다
-  const pending = appInstall.readPending(ROOT)
+async function start(args, { fromUpdate = false, installTried = false } = {}) {
+  // 끝나지 않은 업데이트 설치(앱이 꺼짐 · 강제 종료 · 실패 · 포기)가 있으면 다시 시도한다 — 설치가 끝나고 필수 모듈까지 있을 때만 표시를 지운다.
+  // restart --install 이 방금 시도한 실행이면 같은 실행에서 두 번 돌지 않게 건너뛴다(실패했으면 표시는 남아 다음에 켤 때 다시)
+  const pending = installTried ? null : appInstall.readPending(ROOT)
   if (pending) {
     console.log('[dev-app] 지난 업데이트의 npm install 이 끊겨 다시 시도해요')
     await installDependencies({ heavy: pending.heavy, lang: pending.lang })
@@ -296,9 +297,11 @@ async function installDependencies({ heavy, lang }) {
   })
   const outcome = appInstall.classifyExit(exit)
   if (outcome === 'ok') {
-    appInstall.clearPending(ROOT)
     const missing = appInstall.missingModules(ROOT)
-    if (!missing.length) return
+    if (!missing.length) {
+      appInstall.clearPending(ROOT)
+      return
+    }
     console.error(`[dev-app] npm install 뒤에 ${missing.join(' · ')} 이(가) 없어요 — 레포에서 npm install --include=dev 를 다시 돌려 주세요`)
     process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
     notice({ kind: 'install-failed' })
@@ -311,7 +314,6 @@ async function installDependencies({ heavy, lang }) {
     notice({ kind: 'killed' })
     return
   }
-  appInstall.clearPending(ROOT)
   // heavy.sh 75 = 최대 대기(ATHENA_HEAVY_WAIT)를 넘겨 포기 · 그 밖은 npm install 실패. 켠 뒤 앱 알림은 그대로
   console.error(`[dev-app] npm install ${outcome === 'gave-up' ? '포기(대기 시간 초과)' : '실패'}: 종료 코드 ${exit.code}`)
   process.env.ATHENA_STUDIO_APP_UPDATE = outcome === 'gave-up' ? 'install-gave-up' : 'install-failed'
@@ -346,8 +348,9 @@ async function restart(args) {
   // 이 수정 전 앱은 화면 빌드가 남긴 NODE_ENV=production 을 물려받아 켜져 있다(buildRenderer 주석) — 다시 켤 앱 · pane 에 또 물려주지 않는다.
   // 앱 코드는 NODE_ENV 를 읽지 않는다(화면 번들의 production 은 vite.build 가 따로 정한다)
   if (process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
-  if (args.includes('--install')) await installDependencies({ heavy: valueOf('--heavy'), lang: valueOf('--lang') })
-  await start([], { fromUpdate: true })
+  const install = args.includes('--install')
+  if (install) await installDependencies({ heavy: valueOf('--heavy'), lang: valueOf('--lang') })
+  await start([], { fromUpdate: true, installTried: install })
 }
 
 const [command, ...rest] = process.argv.slice(2)
