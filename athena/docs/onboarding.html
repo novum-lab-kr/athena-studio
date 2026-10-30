@@ -224,7 +224,7 @@ claude</pre></div>
           <p>첫 화면에서 <b>"현황 알려줘"</b> 라고 해 보세요. 레포별 브랜치와 변경 상태가 나오면 준비가 끝난 겁니다.</p>
           <div class="note">따로 셋업하지 않아도 됩니다. <code>claude</code> 를 켜면 <code>reposRoot</code> 아래의 담당 레포를 찾아 <code>repos/&lt;레포&gt;</code> 로 알아서 연결하고, 못 찾은 레포가 있으면 아테나가 위치를 묻습니다. 팩이 없는 새 회사라면 <code>/setup</code> 이 레포 찾기부터 안내합니다.</div>
           <p><b>Studio 창 안에서 켜면 화면이 저절로 잡힙니다.</b> 현황판은 뒤에서 뜨고(앱 📋 현황판 탭이 보여 줍니다), 에이전트 로그는 작업 창 가운데 맨 아래 🛰 AGENT MONITOR 칸이 보여 줍니다. 오른쪽 Explorer 에서 바뀐 파일을 누르면 diff 가 뜹니다. 배우기 검토는 대기열이 생기면 뒤에서 돌고, 가이드 메뉴는 <code>/guide</code> 로 부를 때만 뜹니다. <code>scripts/athena-up.sh</code> — 손으로 다시 돌려도 됩니다. 작업 창에서는 레포마다 <b>작업 공간(workspace)</b>, 그 안에 <b>탭</b>, 탭 안에 <b>pane</b> 이 있습니다.</p>
-          <p><b>QA 시뮬레이션을 쓸 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·claude…)도 점검해 줍니다.</p>
+          <p><b>QA 를 돌릴 때만</b> 한 번 <code>scripts/setup.sh</code> 를 돌립니다 — Playwright·Chromium 을 설치하고 도구(node·pnpm·claude…)도 점검해 줍니다.</p>
           <div class="code"><button class="copy" type="button">복사</button><pre>scripts/setup.sh</pre></div>
         </li>
       </ol>
@@ -275,7 +275,7 @@ claude</pre></div>
         <tbody>
           <tr><td>이슈(첫 화면)</td><td>해결할 이슈 목록 — 작업 중 찾았지만 그 자리에서 고치지 않은 것(학습 후보 제외). [작업 시작] 으로 맡기고, 시작한 이슈는 맡은 pane 이 보입니다</td></tr>
           <tr><td>계획서</td><td>진행은 Studio 의 [작업] 팝업과 pane 머리 줄 [상세] 에서 봅니다. 계획서의 PR 이 모두 머지되면 자동으로 완료로 갑니다</td></tr>
-          <tr><td>QA</td><td>웹 화면 시뮬레이션(대상은 팩 <code>qa</code> 설정). 처음 한 번 QA 탭 로그인 세션 줄의 [로그인] 으로 테스트 계정 로그인을 저장합니다(로컬 서버가 꺼져 있으면 잠깐 띄워 1~3분. 터미널이면 <code>node scripts/qa/login.mjs</code>)</td></tr>
+          <tr><td>QA</td><td>서비스 → 층 → 흐름별 TC 결과. 레포 <code>docs/flows/</code> 의 TC 를 로컬 서버에 대고 돌립니다([실행] · <code>/sync</code> 뒤 자동)</td></tr>
           <tr><td>[학습] 탭</td><td><b>아테나 학습</b> — 작업하며 알게 된 레포 함정을 서비스별 공책에 넣기(후보 [넣기]·[버리기], 학습한 내용 수정·삭제) / <b>클로드 학습</b> — Claude Code 메모리(대화에서 기억한 일하는 방식, 이 컴퓨터에만 있음, 읽기 전용)</td></tr>
           <tr><td>[아카이브] 탭</td><td>끝난 일은 현황판이 자동으로 보관하고(머지 · 배우기 검토 · pane 닫힘 뒤), 지난 일은 이 탭에서 찾습니다</td></tr>
         </tbody>
@@ -378,11 +378,10 @@ claude</pre></div>
         <tbody>
           <tr><td><code>/call &lt;에이전트&gt;</code></td><td>담당 에이전트 pane 바로 띄우기</td></tr>
           <tr><td><code>/board</code></td><td>현황판</td></tr>
-          <tr><td><code>/guide</code></td><td>가이드 메뉴(문서·스킬·에이전트·라우팅). <code>/guide 설명</code> 은 아테나 구조 설명, <code>/guide 시작하기</code> 는 이 가이드, <code>/guide 열기</code> 는 플레이북, <code>/guide 그림</code> 은 서비스 다이어그램</td></tr>
+          <tr><td><code>/guide</code></td><td>가이드 메뉴(문서·스킬·에이전트·라우팅). <code>/guide 설명</code> 은 아테나 구조 설명, <code>/guide 시작하기</code> 는 이 가이드, <code>/guide 열기</code> 는 플레이북, <code>/guide 그림</code> 은 아테나 작업 흐름 그림</td></tr>
           <tr><td><code>/monitor</code></td><td>백그라운드 서브에이전트·<code>/call</code>·디스패치로 띄운 pane 에이전트 로그</td></tr>
           <tr><td>(회사 스킬)</td><td>팩 <code>pack/ROUTING.md</code> "회사 스킬"</td></tr>
           <tr><td><code>/sync</code></td><td>운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이)</td></tr>
-          <tr><td><code>/diagram</code></td><td>서비스 다이어그램 다시 그리기</td></tr>
         </tbody>
       </table></div>
       <p>명령 없이 말로 하는 것: <b>"현황 알려줘"</b> · <b>"리뷰해줘"</b> · <b>"&lt;앱&gt; 전체 검수 돌려줘"</b></p>

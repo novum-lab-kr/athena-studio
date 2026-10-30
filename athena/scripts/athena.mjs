@@ -61,7 +61,7 @@
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
  *   athena repo add <레포 폴더> [--name <이름>] [--json]       이미 있는 팩에 레포 하나 더하기 — pack.json · 자리 · repos/ 링크 · 그 레포 뼈대 · 팩 링크(채우기는 docs/setup.md "레포 하나 더하기")
  *   athena repo remove <레포 이름> [--json]                  팩에서 레포 빼기 — 팩 자동 백업 · pack.json · 자리 · 링크 · 그 레포 에이전트 · 지식 · 검증(레포 폴더는 그대로 · 워크트리가 있으면 거부)
- *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서·다이어그램 표(있는 파일은 그대로) + 링크
+ *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서(있는 파일은 그대로) + 링크
  *
  * 팩 위치는 athena.config.json 의 pack. 링크 목록은 이 컴퓨터의 .git/info/exclude 에 적어 git 이 무시하게 한다
  * (커밋되는 .gitignore 에 회사 경로를 적지 않는다). Claude Code 가 정해진 자리에서만 찾는 것(.claude/agents·skills)과
@@ -81,7 +81,7 @@ import {
   PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate, removeRepo, syncRepos,
   packStatus, relinkBody, renameNewSlot, restoreWithWork, restoreWorkCommand, testSetup,
 } from './lib/packs.mjs'
-import { maskText } from './qa/live.mjs'
+import { maskText } from './lib/mask.mjs'
 import { ackRequest, answerRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
 import { callerPane } from './lib/screen.mjs'
 
@@ -120,7 +120,7 @@ const unlink = () => {
 }
 
 // 코어 파일(git 추적 + 미추적, 링크·팩 제외)에서 팩 names 를 찾는다
-// 걸린 줄은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 가린 뒤 보여 준다 — QA 기록과 같은 기준(qa/live.mjs maskText)
+// 걸린 줄은 비밀값 모양(key=값 · "key":"값" · Bearer · JWT)을 가린 뒤 보여 준다 — QA 기록과 같은 기준(lib/mask.mjs maskText)
 const check = () => {
   const pack = packDir()
   const names = JSON.parse(readFileSync(join(pack, 'pack.json'), 'utf8')).names ?? []

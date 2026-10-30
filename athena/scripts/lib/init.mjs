@@ -326,7 +326,7 @@ const servicesOf = (config) => config.repos.flatMap((repo) => {
   return [{ name: repo.name, repo: repo.name, path: repo.name, branch: repo.branch, agent: (repo.agents ?? []).join(', ') }]
 })
 
-// 팩 단위 문서 — 서비스 소개(docs/services.md) · 다이어그램 서비스 표(diagrams/SERVICES.md) · 다이어그램 목록 카드(diagrams/index.json).
+// 팩 단위 문서 — 서비스 소개(docs/services.md).
 // 표의 사실(스택·브랜치)은 /sync 뒤 build-derived 가 채우고, 소개는 /setup 이 레포 코드를 읽어 채운다(모르면 "확인 필요")
 const packDocs = (config, packDir, made) => {
   const company = config.name ?? basename(packDir)
@@ -352,22 +352,6 @@ const packDocs = (config, packDir, made) => {
     ...(packages.length ? ['', `발행 패키지(${packages.join(', ')})는 화면이 없어 표에서 뺐다 — 소비 레포 쪽에 적는다.`] : []),
     '',
   ].join('\n'), made)
-  writeIfMissing(join(packDir, 'diagrams', 'SERVICES.md'), [
-    '# 다이어그램 서비스 표',
-    '',
-    '/diagram 이 읽는다(서비스 · 레포 · 기준 ref · 가이드 · 심층 폴더). 기준 ref 의 정본은 pack.json — 다르면 pack.json 을 따르고 이 표를 고친다.',
-    '묶음 순서는 위에서부터(한 번에 작업자 5개). 가이드(`docs/diagrams/guides/<서비스>.md`)는 처음 그릴 때 작업자가 만든다(형식 `docs/diagrams/AUTHORING.md` 10절).',
-    '',
-    '| 서비스 | 레포 | 기준 ref | 가이드 | 심층 폴더 |',
-    '|---|---|---|---|---|',
-    ...services.map((service) => `| ${service.name} | ${service.path} | \`${service.branch ?? '?'}\` | \`docs/diagrams/guides/${service.name}.md\` (아직 없음) | — |`),
-    ...(packages.length ? ['', `발행 패키지(${packages.join(', ')})는 화면이 없어 뒤로 미룬다(docs/diagrams/README.md).`] : []),
-    '',
-  ].join('\n'), made)
-  writeIfMissing(join(packDir, 'diagrams', 'index.json'), `${JSON.stringify({
-    $comment: '다이어그램 목록(docs/diagrams/index.html) 카드 — node scripts/build-diagram-index.mjs 가 읽는다. 그린 장이 있는 서비스만 카드가 보인다',
-    groups: [{ title: '서비스', items: services.map((service) => ({ base: service.name, name: service.name, sub: service.path, desc: '' })) }],
-  }, null, 2)}\n`, made)
 }
 
 // pack.json 의 레포마다 뼈대 — 있는 파일은 그대로(덮지 않는다)

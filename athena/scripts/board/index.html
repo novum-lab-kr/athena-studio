@@ -280,96 +280,26 @@
   @media (max-width: 720px) { .history-wrap { grid-template-columns: minmax(0, 1fr); } .h-tree { position: static; max-height: 240px; } }
   @media (max-width: 720px) { .h-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
   @media (max-width: 720px) { header { flex-wrap: wrap; } .usage { margin-left: 0; } main { padding: 12px 16px 32px; } }
-  /* QA 탭 */
-  .qa-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; margin: 0 0 12px; padding: 8px 12px; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; }
-  .qa-top .sub { color: var(--muted); font-size: 12px; flex: 1 1 260px; }
-  /* 콤보박스 — 브라우저 기본(흰 바탕)이면 다크 모드에서 글자가 안 보인다. 현황판 색을 쓴다 */
-  .qa-top select, .tc-filter select { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); }
-  .qa-top select option, .tc-filter select option { background: var(--panel); color: var(--text); }
-  .qa-warn { flex: 1 1 100%; margin: 0; font-size: 12px; color: var(--warn); }
-  .qa-top input { font: inherit; font-size: 12.5px; padding: 4px 8px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); width: 260px; max-width: 100%; }
-  .qa-steps { margin: 4px 0 0; padding-left: 18px; font-size: 11.5px; }
-  .qa-steps .no { color: var(--bad); }
-  .qa-wrap { display: grid; grid-template-columns: 300px 1fr; gap: 14px; align-items: start; }
-  .qa-session { font-size: 12.5px; color: var(--muted); margin: -4px 0 10px; display: flex; flex-wrap: wrap; gap: 4px 14px; align-items: center; }
-  .qa-session .qa-logout { font: inherit; font-size: 11.5px; padding: 0 7px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--text); cursor: pointer; margin-left: 4px; }
-  .qa-session .ok { color: var(--ok); } .qa-session .bad { color: var(--bad); } .qa-session .warn { color: var(--warn); }
-  .qa-runs { display: grid; gap: 6px; max-height: calc(100vh - 170px); overflow-y: auto; }
-  .qa-run { text-align: left; font: inherit; background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; cursor: pointer; color: var(--text); display: grid; gap: 2px; }
-  .qa-run[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .qa-run .sub, .qa-detail .sub { color: var(--muted); font-size: 12px; }
-  .qa-bar { height: 4px; border-radius: 2px; background: var(--line); overflow: hidden; }
-  .qa-bar > span { display: block; height: 100%; background: var(--accent); transition: width .4s; }
-  .qa-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 14px; margin-bottom: 10px; }
-  .qa-head h3 { margin: 0; font-size: 15px; }
-  .qa-chips { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 12px; }
-  .qa-chip { background: var(--panel); border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; font-size: 12px; }
-  .qa-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 10px; }
-  .qa-card { background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--idle); border-radius: 10px; padding: 10px; display: grid; gap: 4px; min-width: 0; }
-  .qa-card.ok { border-left-color: var(--ok); } .qa-card.warn { border-left-color: var(--warn); } .qa-card.bad { border-left-color: var(--bad); } .qa-card.run { border-left-color: var(--accent); }
-  .qa-card .url { font-weight: 600; word-break: break-all; }
-  details.qa-pass { grid-column: 1 / -1; padding: 6px 10px; }
-  details.qa-pass > summary { cursor: pointer; list-style: none; }
-  details.qa-pass > summary::-webkit-details-marker { display: none; }
-  details.qa-pass[open] > summary { margin-bottom: 4px; }
-  .qa-card .why { color: var(--muted); font-size: 11.5px; word-break: break-all; }
-  .qa-card .problem { color: var(--bad); font-size: 11.5px; word-break: break-all; }
-  .qa-shots { display: flex; gap: 6px; overflow-x: auto; }
-  .qa-shots a { flex: 0 0 auto; font-size: 10.5px; color: var(--muted); text-align: center; text-decoration: none; }
-  .qa-shots img { display: block; width: 120px; height: 90px; object-fit: cover; object-position: top; border: 1px solid var(--line); border-radius: 6px; background: #fff; }
-  .qa-events summary { cursor: pointer; font-size: 11.5px; color: #6d28d9; }
-  .qa-events ul { margin: 4px 0 0; padding-left: 16px; font-size: 11px; max-height: 160px; overflow-y: auto; }
-  .qa-events li { word-break: break-all; }
-  .qa-log { margin-top: 12px; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--muted); background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; max-height: 160px; overflow-y: auto; white-space: pre-wrap; }
-  @media (max-width: 720px) { .qa-wrap { grid-template-columns: 1fr; } .qa-runs { max-height: 220px; } }
-  /* QA 탭 안 [런 | TC 목록] 전환 · TC 목록 */
+  /* QA 탭 — 서비스 → 층 → 흐름 */
+  .qa-state { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
+  .qa-state:empty { display: none; }
+  .qa-service { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
+  .qa-service-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
+  .qa-service-head h3 { margin: 0; font-size: 14px; flex: 1; }
+  .qa-layer-name { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; }
+  .qa-flow { border-top: 1px solid var(--line); padding: 6px 0; }
+  .qa-flow-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
+  .qa-flow-name { flex: 1 1 200px; min-width: 0; word-break: break-all; }
+  .qa-flow-name a { color: inherit; }
+  .qa-flow-meta { color: var(--muted); font-size: 12px; }
+  .qa-mark.pass { color: var(--ok); } .qa-mark.fail, .qa-mark.error { color: var(--bad); } .qa-mark.manual, .qa-mark.running { color: var(--warn); } .qa-mark.none { color: var(--muted); }
+  .qa-fail { margin: 6px 0 0; padding: 6px 8px; background: color-mix(in srgb, var(--bad) 8%, transparent); border-radius: 6px; font-size: 12px; }
+  .qa-fail b { display: block; margin-bottom: 2px; }
+  .qa-fail pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .qa-empty { color: var(--muted); font-size: 12.5px; margin: 4px 0; }
   .qa-switch { display: inline-flex; gap: 4px; margin: 0 0 10px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
   .qa-switch button { font: inherit; font-size: 12.5px; border: 0; background: none; color: var(--muted); padding: 4px 14px; border-radius: 999px; cursor: pointer; }
   .qa-switch button[aria-selected="true"] { background: var(--accent); color: #fff; }
-  .tc-apps { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 10px; }
-  .tc-apps button { font: inherit; font-size: 12.5px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 999px; padding: 3px 12px; cursor: pointer; }
-  .tc-apps button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .tc-apps .n { color: var(--muted); font-size: 11.5px; margin-left: 4px; }
-  .tc-filter { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; margin: 0 0 10px; }
-  .tc-filter input { font: inherit; font-size: 12.5px; }
-  .tc-filter input { flex: 1 1 200px; min-width: 0; padding: 4px 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); color: var(--text); }
-  .tc-meta { color: var(--muted); font-size: 12px; margin: 0 0 8px; }
-  .tc-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); }
-  .tc-table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-  .tc-table th { text-align: left; font-weight: 600; color: var(--muted); font-size: 11.5px; padding: 7px 8px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); white-space: nowrap; }
-  .tc-table td { padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
-  .tc-table tr.tc-row { cursor: pointer; }
-  .tc-table tr.tc-row:hover td { background: color-mix(in srgb, var(--accent) 6%, transparent); }
-  .tc-status { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
-  .tc-status button { font: inherit; font-size: 12.5px; background: var(--panel); color: var(--text); border: 1px solid var(--line); border-radius: 8px; padding: 4px 12px; cursor: pointer; }
-  .tc-status button[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-  .tc-status .n { font-weight: 700; margin-left: 4px; }
-  .tc-status .hint { color: var(--muted); font-size: 11.5px; align-self: center; }
-  .tc-auto.smoke { border-color: var(--accent); color: var(--accent); }
-  .tc-auto.todo { color: var(--muted); }
-  .tc-plan { color: var(--muted); font-size: 11px; }
-  details.tc-journey-box > summary { cursor: pointer; font-size: 12.5px; margin: 0 0 8px; }
-  .tc-journeys { display: grid; gap: 10px; margin: 0 0 12px; }
-  .tc-journey { border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 10px; background: var(--panel); padding: 10px 12px; font-size: 12.5px; }
-  .tc-journey .head { display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; }
-  .tc-journey .head b { font-size: 13.5px; }
-  .tc-journey .why { color: var(--muted); margin: 4px 0 8px; }
-  .tc-journey ol { margin: 0; padding-left: 0; list-style: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 6px; }
-  .tc-journey li { border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; }
-  .tc-journey li .title { font-weight: 600; }
-  .tc-journey li .sub { color: var(--muted); font-size: 11.5px; }
-  .tc-journey .mode { font-size: 10.5px; border: 1px solid var(--line); border-radius: 999px; padding: 0 6px; margin-left: 4px; }
-  .tc-check-col, .tc-table td.tc-check { width: 28px; text-align: center; }
-  /* 고르면 화면 아래에 떠 있다 — 긴 표 아래쪽 TC 를 골라도 보이게 */
-  .tc-pick-bar { position: fixed; left: 50%; bottom: 18px; transform: translateX(-50%); z-index: 40; width: max-content; max-width: calc(100vw - 32px); display: flex; flex-wrap: wrap; gap: 6px 10px; align-items: center; padding: 10px 14px; border: 1px solid var(--accent); border-radius: 12px; background: var(--panel); box-shadow: 0 8px 28px rgba(0,0,0,.18); font-size: 12.5px; }
-  .tc-pick-bar[hidden] { display: none; }
-  .tc-pick-bar .sub { color: var(--muted); }
-  .tc-table .id { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; white-space: nowrap; }
-  .tc-table .nowrap { white-space: nowrap; }
-  .tc-table code { font-size: 11.5px; background: color-mix(in srgb, var(--line) 60%, transparent); padding: 0 3px; border-radius: 3px; word-break: break-all; }
-  .tc-prio { font-weight: 700; } .tc-prio.P0 { color: var(--bad); } .tc-prio.P1 { color: var(--warn); } .tc-prio.P2 { color: var(--muted); }
-  .tc-auto { display: inline-block; font-size: 11px; border: 1px solid var(--line); border-radius: 999px; padding: 0 7px; white-space: nowrap; }
-  .tc-auto.done { border-color: var(--ok); color: var(--ok); }
   dialog.tc-guide { width: min(860px, calc(100vw - 32px)); font-size: 12.5px; }
   .tc-guide .body { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 18px; max-height: 70vh; overflow: auto; }
   .tc-guide h4 { margin: 6px 0 4px; font-size: 12.5px; }
@@ -377,11 +307,6 @@
   .tc-guide dt { font-weight: 600; white-space: nowrap; }
   .tc-guide dd { margin: 0; color: var(--muted); }
   .tc-guide .note { grid-column: 1 / -1; color: var(--muted); margin: 0; }
-  .tc-detail td { background: color-mix(in srgb, var(--line) 25%, transparent); }
-  .tc-detail dl { display: grid; grid-template-columns: 80px 1fr; gap: 4px 10px; margin: 0; font-size: 12px; }
-  .tc-detail dt { color: var(--muted); }
-  .tc-detail dd { margin: 0; word-break: break-word; }
-  @media (max-width: 720px) { .tc-table .hide-sm { display: none; } .tc-detail dl { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -390,7 +315,7 @@
     <span class="tip" role="tooltip"><span id="live-state"></span><span id="updated"></span><span id="sync"></span></span></h1>
   <nav class="tabs" role="tablist" aria-label="보기">
     <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
-    <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="QA 시뮬레이션 런 · TC 목록">QA</button>
+    <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="흐름별 TC 결과">QA</button>
     <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 클로드 학습(메모리)">학습</button>
     <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
     <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)">지표</button>
@@ -406,42 +331,9 @@
 </main>
 <main id="view-qa" hidden>
   <section>
-    <h2>QA 시뮬레이션 — 수정한 건의 영향 화면을 실제 브라우저로 (scripts/qa · .qa-runs/)</h2>
-    <div class="qa-switch" role="tablist" aria-label="QA 보기">
-      <button type="button" role="tab" data-qaview="runs" aria-selected="true">런</button>
-      <button type="button" role="tab" data-qaview="tc" aria-selected="false">TC 목록</button>
-    </div>
-    <div class="qa-session" id="qa-session" aria-live="polite"></div>
-    <div id="qa-view-tc" hidden>
-      <div class="tc-apps" id="tc-apps"></div>
-      <div class="tc-status" id="tc-status" role="group" aria-label="자동 검사 상태"></div>
-      <div class="tc-filter">
-        <select id="tc-prio" aria-label="우선"><option value="">우선 전체</option><option>P0</option><option>P1</option><option>P2</option></select>
-        <select id="tc-kind" aria-label="분류"><option value="">분류 전체</option></select>
-        <input type="search" id="tc-search" placeholder="ID·제목·경로·문구 검색" aria-label="TC 검색">
-        <button type="button" class="btn" id="tc-guide-open" title="TC 목록 보는 법 — 우선 P0~P2 · 분류 · 자동화 · 세션 · 뷰포트 뜻" aria-label="TC 목록 보는 법">📖</button>
-      </div>
-      <div class="tc-journeys" id="tc-journeys"></div>
-      <p class="tc-meta" id="tc-meta"></p>
-      <div class="tc-pick-bar" id="tc-pick-bar" hidden></div>
-      <div class="tc-table-wrap"><table class="tc-table"><thead><tr><th class="tc-check-col" title="고른 TC 만 검수"><input type="checkbox" id="tc-check-all" aria-label="보이는 TC 모두 고르기"></th><th>ID</th><th>분류</th><th>제목</th><th class="hide-sm">세션</th><th class="hide-sm">뷰포트</th><th>자동 검사</th><th>우선</th></tr></thead><tbody id="tc-body"><tr><td colspan="8" class="empty-history">불러오는 중이에요…</td></tr></tbody></table></div>
-    </div>
-    <div id="qa-view-runs">
-    <div class="qa-top">
-      <b>전체 검수</b><span class="sub">서비스 화면 전부 + 흐름 씬 · 대상(로컬 서버=최신 개발 브랜치 코드 / dev 서버=배포본)과 진행 방식을 골라 시작 · 승인한 기준 사진과 비교</span>
-      <select id="qa-app" aria-label="앱"></select>
-      <select id="qa-target" aria-label="대상" title="로컬 서버 = 최신 개발 브랜치 코드를 내 컴퓨터에서 · dev 서버 = 배포된 사이트(간편인증 로그인 가능)"><option value="local">🖥 로컬 서버</option><option value="server">☁️ 서버 (주소 입력)</option></select>
-      <input id="qa-server" type="text" placeholder="__BOARD_QA_EXAMPLE__" aria-label="서버 주소" title="dev · stg · dev-1~3 · PR 미리보기 주소 — 운영 주소는 막혀요" hidden>
-      <select id="qa-mode" aria-label="진행 방식" title="흐름 = 비로그인 → 로그인 상태 전부 차례로(routes profiles 순서, 세션이 없거나 만료면 그 차례에 로그인 창) → 실패 리포트"><option value="flow">🧭 흐름(모든 세션 차례로)</option><option value="single">한 세션만</option></select>
-      <select id="qa-profile" aria-label="세션 프로필"></select>
-      <button type="button" class="btn" id="qa-suite">전체 검수 시작</button>
-      <p class="qa-warn" id="qa-warn" hidden></p>
-    </div>
-    <div class="qa-wrap">
-      <nav class="qa-runs" id="qa-runs" aria-label="QA 런"><div class="empty-history">불러오는 중이에요…</div></nav>
-      <div class="qa-detail" id="qa-detail"><div class="empty-history">왼쪽에서 런을 고르세요. 계획서 카드의 [QA 실행] 으로 새로 돌릴 수 있어요</div></div>
-    </div>
-    </div>
+    <h2>QA — 흐름별 TC 결과 (레포 docs/flows · .qa-runs/)</h2>
+    <div class="qa-state" id="qa-state" aria-live="polite"></div>
+    <div id="qa-services"><div class="empty-history">불러오는 중이에요…</div></div>
   </section>
 </main>
 <main id="view-history" hidden>
@@ -506,41 +398,6 @@
   <div class="steps" id="confirm-items"></div>
   <div class="row"><button class="btn" id="confirm-no">취소</button><button class="btn primary" id="confirm-yes"></button></div>
 </dialog>
-<dialog id="tc-guide" class="tc-guide" aria-labelledby="tc-guide-title">
-  <button type="button" class="dialog-x" id="tc-guide-close" aria-label="닫기" title="닫기 (Esc)">×</button>
-  <h3 id="tc-guide-title" tabindex="-1" autofocus>📖 TC 목록 보는 법</h3>
-        <div class="body">
-    <div><h4>우선 — 깨지면 얼마나 큰일인가</h4><dl>
-      <dt class="tc-prio P0">P0</dt><dd>핵심. 깨지면 서비스가 안 된다(가입·로그인·신청·결제·질문·계산 결과). 배포 전에 반드시 본다</dd>
-      <dt class="tc-prio P1">P1</dt><dd>주요 기능. 깨지면 불편하거나 일부가 막히지만 핵심 흐름은 산다(입력 검증·조회·주요 버튼·쿼리 보존)</dd>
-      <dt class="tc-prio P2">P2</dt><dd>부가·드문 경우. 연출·문구·특정 조건·경계 입력(배너 교체·파트너 진입·500자 입력)</dd>
-    </dl></div>
-    <div><h4>분류 — 무엇을 확인하나</h4><dl>
-      <dt>스모크</dt><dd>화면이 열리고 깨지지 않는지</dd>
-      <dt>가드</dt><dd>로그인·본인인증·쿼리 조건에 따라 맞는 곳으로 보내는지</dd>
-      <dt>흐름</dt><dd>누르고 입력하며 끝까지 따라가는지</dd>
-      <dt>계산</dt><dd>입력 → 기대 숫자가 맞는지(계산기)</dd>
-      <dt>에러</dt><dd>잘못된 입력·실패 응답에서 안내가 맞는지</dd>
-      <dt>반응형</dt><dd>모바일·데스크톱 폭에서 배치가 맞는지</dd>
-      <dt>SEO</dt><dd>메타·사이트맵·색인 설정</dd>
-    </dl></div>
-    <div><h4>자동화 — 어떻게 돌리나</h4><dl>
-      <dt>스모크</dt><dd>주소만 바로 열어 본다</dd>
-      <dt>씬</dt><dd>scripts/qa/scenarios 의 단계대로 누르고 입력한다</dd>
-      <dt>더미 응답</dt><dd>API 응답을 가짜로 넣어 본다(GQL·REST) — 실제 신청·결제 없이</dd>
-      <dt>사람 단계</dt><dd>보이는 창에서 사람이 한 단계 진행(본인인증 등)</dd>
-      <dt>수동</dt><dd>서버 설정·계정 상태가 필요해 자동화 밖</dd>
-      <dt>(있음 NN)</dt><dd>씬 NN 으로 이미 자동화됨 — 필터 "자동화됨"</dd>
-    </dl></div>
-    <div><h4>세션 · 뷰포트</h4><dl>
-      <dt>logout</dt><dd>로그인 안 한 상태</dd>
-      <dt>login</dt><dd>로그인만 한 상태</dd>
-      <dt>그 밖</dt><dd>앱이 routes profiles 에 정한 더 깊은 상태(예: 본인인증까지 끝난 상태) — 이름은 앱마다 다르다</dd>
-      <dt>mobile · desktop</dt><dd>그 폭에서만 · <b>둘다</b> 는 두 폭 모두</dd>
-    </dl></div>
-    <p class="note">ID 는 앱 접두사 + 번호(접두사 표는 정본 문서). 행을 누르면 사전 조건·단계·기대 결과·근거(코드 위치)가 펼쳐진다. 정본: docs/qa/tc/README.md "용어"</p>
-  </div>
-</dialog>
 <dialog id="memory-guide" class="tc-guide" aria-labelledby="memory-guide-title">
   <button type="button" class="dialog-x" id="memory-guide-close" aria-label="닫기" title="닫기 (Esc)">×</button>
   <h3 id="memory-guide-title" tabindex="-1" autofocus>📖 메모리 보는 법</h3>
@@ -569,7 +426,7 @@
 <script>
   const TOKEN = '__BOARD_TOKEN__';
   const BOOT = '__BOARD_BOOT__';
-  // 회사 값(GitHub 조직 · 에이전트 목록 · QA 앱) — 서버가 설정에서 채운다
+  // 회사 값(GitHub 조직 · 에이전트 목록) — 서버가 설정에서 채운다
   const ATHENA = __BOARD_CONFIG__;
   const PR_LINK = new RegExp(`github\\.com/${ATHENA.githubOrg ? ATHENA.githubOrg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '[\\w.-]+'}/([\\w.-]+)/pull/(\\d+)`, 'g');
   const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
@@ -604,8 +461,6 @@
   // 카드 상태별 액션 — 아테나에게 보낼 지시문 초안. 보내기 전에 창에서 고칠 수 있다
   // 이슈 [작업 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
   const INVESTIGATE = (card) => `${card.id} 이슈를 맡는다. 순서대로 한다: ① git status --short --branch 로 담당 레포의 현재 브랜치·미커밋 변경을 먼저 보고한다(체크아웃·stash 하지 않는다) ② 이슈의 근거를 기준 ref 에서 git show·ls-tree 로 확인한다 ③ ${card.type === 'check' ? '확인 결과를 이슈 파일 끝에 "## 확인 결과 (날짜 · 에이전트)" 절로 파일:줄 근거와 함께 적는다' : '원인과 고칠 범위를 정리해 보고한다 — 코드는 수정하지 않는다(계획서 승인 뒤 아테나가 브랜치를 만들어 다시 맡긴다)'}. 이슈 파일 말고는 수정하지 않는다. 커밋하지 않는다.`;
-  // [QA 실행] — 아테나·에이전트를 거치지 않고 현황판 서버가 scripts/qa/run.mjs 를 뒤에서 돌린다(Work ref 워크트리 · 계획서 담당 에이전트의 앱)
-  const QA_ACTION = ['QA 실행', (card) => `영향 화면 QA 시뮬레이션을 돌려요.\n대상: ${card.workRef || '(Work ref 없음)'}\n바뀐 파일 → 영향 화면을 찾아 작업·기준 dev 서버로 데스크톱·모바일 검사 + 스크린샷 비교. 진행은 QA 탭에서 실시간으로 보여요.`, 'qa'];
   const ACTIONS = {
     issue: {
       // 아테나가 직접 하지 않는다 — 라우팅 → 브랜치 확인 → 담당 에이전트 pane 디스패치 순서를 지시문에 박는다
@@ -616,10 +471,10 @@
     },
     plan: {
       planned: [['진행 지시', (card) => `${card.id} 계획서대로 진행하자. 결정 사항이 확정됐는지, 대상 레포 브랜치·미커밋 상태를 먼저 확인해 보고하고, 내 확인 뒤 scripts/new-branch.sh 로 워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄워줘(scripts/delegate.sh --cwd). 아테나가 직접 코드를 고치지 않는다.`]],
-      in_progress: [['이어서 진행', (card) => `${card.id} Checkpoint 를 읽고, Work ref 와 현재 워크트리 브랜치·diff 가 맞는지 먼저 확인해 보고해줘. 맞으면 Next 를 담당 에이전트 pane 에 이어서 지시한다.`], QA_ACTION],
+      in_progress: [['이어서 진행', (card) => `${card.id} Checkpoint 를 읽고, Work ref 와 현재 워크트리 브랜치·diff 가 맞는지 먼저 확인해 보고해줘. 맞으면 Next 를 담당 에이전트 pane 에 이어서 지시한다.`]],
       blocked: [['막힌 것 풀기', (card) => `${card.id} 가 막혀 있다(${card.blocked}). 무엇이 필요한지 정리해줘.`]],
       // 아테나를 거치지 않는다 — reviewer 를 계획서의 담당 레포 workspace(워크트리)에 바로 띄운다
-      ready_for_review: [QA_ACTION, ['리뷰 요청', (card) => `이 계획서를 검증해 줘. 계획서의 지시·결정 대비 구현이 맞는지, 담당 레포 rules.md 필수 절·gotchas 를 지켰는지, 범위 밖 변경은 없는지 본다. 검증 스크립트를 돌려(워크트리면 ATHENA_VERIFY_DIR) 출력 표를 붙이고, 계획서 ## Commits 가 있으면 그 커밋과 origin/<prBase>...HEAD 도 본다. 읽기 전용. 보고는 AGENTS.md 6절 형식 + 발견 사항 [심각|중간|낮음] 파일:줄 — 문제 / 근거 / 고칠 것.`, 'review']],
+      ready_for_review: [['리뷰 요청', (card) => `이 계획서를 검증해 줘. 계획서의 지시·결정 대비 구현이 맞는지, 담당 레포 rules.md 필수 절·gotchas 를 지켰는지, 범위 밖 변경은 없는지 본다. 검증 스크립트를 돌려(워크트리면 ATHENA_VERIFY_DIR) 출력 표를 붙이고, 계획서 ## Commits 가 있으면 그 커밋과 origin/<prBase>...HEAD 도 본다. 읽기 전용. 보고는 AGENTS.md 6절 형식 + 발견 사항 [심각|중간|낮음] 파일:줄 — 문제 / 근거 / 고칠 것.`, 'review']],
     },
   };
 
@@ -1063,418 +918,73 @@
       + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
   };
   document.getElementById('metrics-days').addEventListener('change', loadMetrics);
-  // ── QA 탭 — .qa-runs/ 런 목록 + 런 하나의 화면 카드. 돌고 있는 동안만 1.5초마다 다시 읽는다
-  const QA_STATUS = {
-    pass: ['✅', '통과', 'ok'], expected: ['☑️', '기대대로 이동', 'ok'], changed: ['🟡', '화면 변화', 'warn'], fail: ['❌', '실패', 'bad'],
-    redirected: ['↪️', '이동됨', ''], login: ['🔒', '로그인 필요', ''], ci: ['🪪', '본인인증 필요', ''], sample: ['📝', '샘플 필요', ''],
-    queued: ['·', '대기', ''], running: ['⏳', '실행 중', 'run'], new: ['🆕', '기준 없음', 'run'], human: ['🙋', '사람 필요', 'warn'], skip: ['⛔', '건너뜀(부작용)', ''],
-  };
-  const QA_ORDER = ['running', 'fail', 'changed', 'human', 'login', 'ci', 'redirected', 'sample', 'skip', 'new', 'expected', 'pass', 'queued'];
-  // 고른 앱·대상의 로그인 세션 상태 — 저장된 세션이 살아 있으면 로그인 창 없이 돈다
-  const showQaSessions = async () => {
-    const box = document.getElementById('qa-session');
-    const app = document.getElementById('qa-app').value;
-    const target = document.getElementById('qa-target').value;
-    const server = document.getElementById('qa-server').value.trim();
-    if (!app) { box.innerHTML = ''; return; }
-    if (target === 'server' && !server) { box.innerHTML = '🔐 로그인 세션 — 서버 주소를 넣으면 보여요'; return; }
-    let result;
-    try { result = await (await fetch(`/api/qa/sessions?app=${encodeURIComponent(app)}&target=${target}&server=${encodeURIComponent(server)}`)).json(); } catch (error) { box.innerHTML = ''; return; }
-    if (result.error) { box.innerHTML = `🔐 로그인 세션 — ${esc(result.error)}`; return; }
-    const when = (ms) => new Date(ms).toLocaleString('ko-KR', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' });
-    const item = (profile) => {
-      if (profile.state === 'none') return `<span>${esc(profile.name)}: 로그인 필요 없음</span>`;
-      if (profile.state === 'missing') return `<span class="warn">${esc(profile.name)}: 세션 없음 — 시작하면 로그인 창이 떠요</span>`;
-      if (profile.state === 'expired') return `<span class="bad">${esc(profile.name)}: ⛔ 만료(${esc(when(profile.expiresAt))}) — 시작하면 로그인 창이 떠요</span>`;
-      return `<span class="ok">${esc(profile.name)}: ✅ 로그인됨${profile.expiresAt ? ` · ${esc(when(profile.expiresAt))}까지` : ''}</span>`;
-    };
-    // 저장된 세션(로그인됨·만료)에는 [로그아웃] — 세션 파일을 .qa-auth/.trash 로 옮겨 다음 검수 차례에 로그인 창이 뜨게 한다
-    const logoutButton = (profile) => ['valid', 'expired'].includes(profile.state) ? ` <button type="button" class="qa-logout" data-logout="${esc(profile.name)}">로그아웃</button>` : '';
-    // 로그인이 있는 세션에는 [로그인]/[다시 로그인] — 로그인 창을 바로 띄워 세션을 새로 저장한다
-    const loginButton = (profile) => profile.state === 'none' ? '' : ` <button type="button" class="qa-logout" data-login="${esc(profile.name)}">${profile.state === 'missing' ? '로그인' : '다시 로그인'}</button>`;
-    box.innerHTML = `<b>🔐 로그인 세션</b><span class="sub">${esc(app)} · ${target === 'server' ? `☁️ ${esc(server)}` : '🖥 로컬'}</span>${result.profiles.map((profile) => `<span>${item(profile)}${loginButton(profile)}${logoutButton(profile)}</span>`).join('')}`;
-    box.querySelectorAll('[data-login]').forEach((button) => {
-      button.onclick = async () => {
-        const profileName = button.dataset.login;
-        try {
-          const started = await api('/api/qa-login', { app, target, server, profile: profileName });
-          toast(started.startLocal ? `로컬 서버를 띄우는 중이에요(1~3분) — 뜨면 ${profileName} 로그인 창이 열려요` : `${profileName} 로그인 창을 열었어요(${started.url}) — 로그인을 마치면 세션이 저장돼요(10분)`);
-          // 저장되면 줄이 바뀌도록 잠시 동안 다시 본다
-          let tries = 0;
-          const poll = setInterval(() => { tries += 1; showQaSessions(); if (tries >= 60) clearInterval(poll); }, 10000);
-        } catch (error) { toast(`로그인 창을 열지 못했어요: ${error.message}`); }
-      };
-    });
-    box.querySelectorAll('[data-logout]').forEach((button) => {
-      button.onclick = async () => {
-        const profileName = button.dataset.logout;
-        if (!confirm(`${app} · ${target === 'server' ? server : '로컬 서버'} 의 ${profileName} 세션을 로그아웃할까요?\n세션 파일을 .qa-auth/.trash 로 옮겨요(되살릴 수 있어요) — 다음 검수 때 그 차례에 로그인 창이 떠요`)) return;
-        try {
-          await api('/api/qa-logout', { app, target, server, profile: profileName });
-          toast(`${profileName} 세션을 로그아웃했어요 — .qa-auth/.trash 로 옮김`);
-          showQaSessions();
-        } catch (error) { toast(`로그아웃하지 못했어요: ${error.message}`); }
-      };
-    });
-  };
-  // [전체 검수] — 앱·세션 프로필 고르기
-  let qaApps = [];
-  let qaPackWarnings = [];
-  const loadQaApps = async () => {
-    try {
-      const listed = await (await fetch('/api/qa/apps')).json();
-      qaApps = listed.apps || [];
-      qaPackWarnings = listed.warnings || [];
-    } catch (error) { qaApps = []; qaPackWarnings = []; }
-    const appSelect = document.getElementById('qa-app');
-    const current = appSelect.value;
-    appSelect.innerHTML = qaApps.map((entry) => `<option value="${esc(entry.app)}">${esc(entry.app)} (흐름 씬 ${entry.scenarios})</option>`).join('') || '<option value="">설정된 앱 없음</option>';
-    // 앱이 여럿이라 처음엔 마지막에 고른 앱(이 브라우저) — 없으면 첫 앱
-    let rememberedApp = '';
-    try { rememberedApp = localStorage.getItem('board.qaApp') || ''; } catch (error) { rememberedApp = ''; }
-    appSelect.value = current || (qaApps.some((entry) => entry.app === rememberedApp) ? rememberedApp : '');
-    if (!appSelect.value && qaApps.length) appSelect.value = qaApps[0].app;
-    // 대상(로컬·dev 서버)·진행 방식(흐름·한 세션)에 따라 — 로컬로 못 돌리는 앱은 dev 서버만, 흐름이면 세션 고르기를 숨긴다
-    const targetSelect = document.getElementById('qa-target');
-    const modeSelect = document.getElementById('qa-mode');
-    const fillProfiles = () => {
-      const entry = qaApps.find((item) => item.app === appSelect.value);
-      // 옛 설정 경고(팩 qa.repo · routes server 블록 · tokenCookie) — 기본값으로 돌긴 하지만 알린다
-      const warnLines = [...qaPackWarnings, ...(entry?.warnings || [])];
-      const warnBox = document.getElementById('qa-warn');
-      warnBox.hidden = !warnLines.length;
-      warnBox.innerHTML = warnLines.map((line) => `⚠️ ${esc(line)}`).join('<br>');
-      targetSelect.querySelector('[value="local"]').disabled = entry ? !entry.local : false;
-      if (targetSelect.selectedOptions[0]?.disabled) targetSelect.value = 'server';
-      const server = targetSelect.value === 'server';
-      // 서버 주소 — 앱마다 마지막에 쓴 주소를 기억한다(이 브라우저에만), 없으면 설정의 devUrl
-      const serverInput = document.getElementById('qa-server');
-      serverInput.hidden = !server;
-      let remembered = '';
-      try { remembered = localStorage.getItem(`board.qaServer.${appSelect.value}`) || ''; } catch (error) { remembered = ''; }
-      if (server && !serverInput.dataset.app?.includes(appSelect.value)) { serverInput.value = remembered || entry?.devUrl || ''; serverInput.dataset.app = appSelect.value; }
-      document.getElementById('qa-profile').innerHTML = (entry?.profiles || []).map((item) => {
-        // 서버 세션은 주소마다 따로라 미리 알 수 없다 — 흐름으로 돌리면 없을 때 로그인을 요청한다
-        const note = server ? '' : item.session ? '' : ' (세션 없음)';
-        return `<option value="${esc(item.name)}" title="${esc(item.note)}">세션 ${esc(item.name)}${note}</option>`;
-      }).join('');
-      const saved = (entry?.profiles || []).find((item) => item.session && item.name !== 'logout');
-      if (saved) document.getElementById('qa-profile').value = saved.name;
-      document.getElementById('qa-profile').hidden = modeSelect.value === 'flow';
-      showQaSessions();
-    };
-    document.getElementById('qa-server').oninput = () => { clearTimeout(window.qaSessionTimer); window.qaSessionTimer = setTimeout(showQaSessions, 500); };
-    appSelect.onchange = () => {
-      try { localStorage.setItem('board.qaApp', appSelect.value); } catch (error) { /* 기억 못 해도 고르기는 된다 */ }
-      fillProfiles();
-    };
-    targetSelect.onchange = fillProfiles;
-    modeSelect.onchange = fillProfiles;
-    fillProfiles();
-  };
-  document.getElementById('qa-suite').onclick = async () => {
-    const app = document.getElementById('qa-app').value;
-    const profile = document.getElementById('qa-profile').value;
-    const target = document.getElementById('qa-target').value;
-    const server = document.getElementById('qa-server').value.trim();
-    const flow = document.getElementById('qa-mode').value === 'flow';
-    if (!app) return toast('전체 검수 설정(scripts/qa/routes/<앱>.json)이 있는 앱이 없어요');
-    if (target === 'server' && !server) return toast(`서버 주소를 넣어 주세요 — 예: ${ATHENA.qaExampleUrl}`);
-    if (target === 'server') { try { localStorage.setItem(`board.qaServer.${app}`, server); } catch (error) { /* 기억 못 해도 진행 */ } }
-    const what = `${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버(최신 개발 브랜치 코드)'} · ${flow ? '🧭 흐름 — 비로그인 → 로그인 상태 전부 차례로(세션이 없거나 만료면 그 차례에 로그인 창을 띄워요)' : `세션 ${profile}`}`;
-    if (!confirm(`${app} 전체 검수를 시작할까요?\n${what}\n화면 전부라 수십 분 걸릴 수 있어요 · 라이브 화면이 새 탭으로 열려요`)) return;
-    try {
-      await api('/api/qa-suite', { app, profile, target, flow, server });
-      toast(`${app} 전체 검수를 시작했어요 — 무거운 명령 차례를 기다린 뒤 돌아요`);
-      qaSelected = '';
-      setTimeout(loadQa, 1500);
-    } catch (error) { toast(`시작하지 못했어요: ${error.message}`); }
-  };
-  const approveQa = async (id, key) => {
-    if (!confirm(key ? `${key} 화면을 기준 사진으로 승인할까요?` : '이 전체 검수의 화면(기준 없음·변화·통과)을 기준 사진으로 승인할까요? 실패·이동 화면은 올리지 않아요')) return;
-    try {
-      const result = await api('/api/qa-approve', { id, key: key || '' });
-      toast(`기준 승인 — 화면 ${result.screens}개 · 스크린샷 ${result.shots}장`);
-      loadQa();
-    } catch (error) { toast(`승인하지 못했어요: ${error.message}`); }
-  };
-  let qaSelected = '';
+  // ── QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(레포 docs/flows · .qa-runs/). 돌고 있는 동안만 1.5초마다 다시 읽는다
+  const QA_LAYER = { fe: 'FE', be: 'BE', app: '앱 — 체크리스트 · 실행 없음' };
+  const QA_MARK = { pass: '✅ 통과', fail: '❌ 실패', error: '⚠️ 오류', manual: '✋ 사람 확인', running: '⏳ 실행 중' };
   let qaTimer = null;
-  const qaLive = (run) => ['preparing', 'running'].includes(run?.status);
-  const qaSummaryChips = (summary) => QA_ORDER.filter((key) => summary?.[key]).map((key) => `${QA_STATUS[key][0]} ${QA_STATUS[key][1]} ${summary[key]}`).join(' · ');
-  const qaWhen = (iso) => (iso ? new Date(iso).toLocaleString('ko-KR', { hour12: false, month: 'numeric', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '');
-  const stopQa = () => { clearTimeout(qaTimer); qaTimer = null; };
+  const qaWhen = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
+  const qaFlowRow = (service, layer, item) => {
+    const result = item.result;
+    const cases = result?.cases || [];
+    const passed = cases.filter((entry) => entry.status === 'pass').length;
+    const failed = cases.filter((entry) => entry.status === 'fail');
+    const name = item.docUrl ? `<a href="${esc(item.docUrl)}" target="_blank" rel="noopener">${esc(item.flow)}</a>` : esc(item.flow);
+    let mark = '<span class="qa-mark none">— 실행 전</span>';
+    if (layer === 'app') mark = '<span class="qa-mark none">문서</span>';
+    else if (!item.hasTc) mark = '<span class="qa-mark none">TC 없음</span>';
+    else if (result) mark = `<span class="qa-mark ${esc(result.status)}">${esc(QA_MARK[result.status] || result.status)}</span>`;
+    const counts = cases.length ? `<span class="qa-flow-meta">${passed} 통과 · ${failed.length} 실패 · 전체 ${cases.length}</span>` : '';
+    const when = result ? `<span class="qa-flow-meta" title="${esc(result.ref)}">${esc(qaWhen(result.ranAt))}</span>` : '';
+    const run = layer !== 'app' && item.hasTc ? `<button type="button" class="btn" data-qa-service="${esc(service)}" data-qa-layer="${esc(layer)}" data-qa-flow="${esc(item.flow)}">실행</button>` : '';
+    const flowError = result?.error ? `<div class="qa-fail"><pre>${esc(result.error)}</pre></div>` : '';
+    const caseErrors = failed.map((entry) => `<div class="qa-fail"><b>${esc(entry.id)} · ${esc(entry.branch)}</b><pre>${esc(entry.error)}</pre></div>`).join('');
+    return `<div class="qa-flow"><div class="qa-flow-row">${mark}<span class="qa-flow-name">${name}</span>${counts}${when}${run}</div>${flowError}${caseErrors}</div>`;
+  };
+  const renderQa = (data) => {
+    const stateBox = document.getElementById('qa-state');
+    if (data.running) stateBox.textContent = `⏳ 실행 중 · ${data.running.id}`;
+    else if (data.waiting) stateBox.textContent = `⏳ 차례 대기 중${data.heavy ? ` · 지금 ${data.heavy}` : ''}`;
+    else stateBox.textContent = '';
+    const busy = Boolean(data.running || data.waiting);
+    const box = document.getElementById('qa-services');
+    if (!data.services.length) {
+      box.innerHTML = '<div class="empty-history">이 팩에 서비스가 없어요</div>';
+      return busy;
+    }
+    box.innerHTML = data.services.map((service) => {
+      const canRun = service.layers.some((entry) => entry.layer !== 'app' && entry.flows.some((item) => item.hasTc));
+      const layers = service.layers.map((entry) => `<div class="qa-layer-name">${esc(QA_LAYER[entry.layer] || entry.layer)}</div>${entry.flows.map((item) => qaFlowRow(service.name, entry.layer, item)).join('')}`).join('');
+      const empty = service.error ? `<p class="qa-empty">${esc(service.error)}</p>` : '<p class="qa-empty">흐름 문서 없음</p>';
+      return `<div class="qa-service"><div class="qa-service-head"><h3>${esc(service.name)}</h3>${canRun ? `<button type="button" class="btn" data-qa-service="${esc(service.name)}">전체 실행</button>` : ''}</div>${layers || empty}</div>`;
+    }).join('');
+    box.querySelectorAll('button[data-qa-service]').forEach((button) => { button.disabled = busy; });
+    return busy;
+  };
   const loadQa = async () => {
-    stopQa();
-    if (!qaApps.length) loadQaApps();
-    let runs = [];
-    let heavy = {};
+    clearTimeout(qaTimer);
     try {
-      const payload = await (await fetch('/api/qa/runs')).json();
-      runs = payload.runs || [];
-      heavy = payload.heavy || {};
+      const data = await (await fetch('/api/qa/flows')).json();
+      if (renderQa(data)) qaTimer = setTimeout(loadQa, 1500);
     } catch (error) {
-      document.getElementById('qa-runs').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
-      return;
-    }
-    if (!qaSelected && runs.length) qaSelected = (runs.find((run) => run.status !== 'error') || runs[0]).id;
-    // 무거운 명령 차례를 기다리는 중 — 아직 run.json 이 없어 목록에 안 보이므로 맨 위에 따로 알린다
-    const waitingCard = heavy.waiting ? `<div class="qa-run" style="cursor:default"><b>⏳ 차례 대기 중</b><span class="sub">다른 무거운 명령이 끝나면 시작해요${heavy.holder ? ` — 지금: ${esc(heavy.holder)}` : ''}</span></div>` : '';
-    const runButton = (run) => {
-      const percent = run.screens ? Math.round((run.finished / run.screens) * 100) : 0;
-      return `<button type="button" class="qa-run" data-qa="${esc(run.id)}" aria-current="${run.id === qaSelected}">
-        <b>${qaLive(run) ? '⏳ ' : ''}${esc(qaWhen(run.startedAt))} · ${run.kind === 'suite' ? '전체 검수 · ' : ''}${esc(run.app)}</b>
-        <span class="sub">${(run.urls?.head || run.serverUrl) ? `🌐 ${esc(String(run.urls?.head || run.serverUrl).replace(/^https?:\/\//, ''))} · ` : ''}${esc(run.branch)} @${esc(run.head)}${run.profile ? ` · ${esc(run.profile)}` : ''}${run.plan ? ` · ${esc(run.plan.split('/').pop().replace(/\.md$/, ''))}` : ''}</span>
-        <span class="sub">${run.status === 'error' ? `오류 — ${esc(run.error || '')}` : qaLive(run) ? `${esc(run.phase || '')} · ${run.finished}/${run.screens}` : esc(qaSummaryChips(run.summary) || '영향 화면 없음')}</span>
-        ${qaLive(run) ? `<span class="qa-bar"><span style="width:${percent}%"></span></span>` : ''}
-      </button>`;
-    };
-    // 런은 모두 펼쳐 보인다. 중단된 런(오류)만 뺀다 — 도는 중·고른 런은 늘 보인다
-    const interrupted = (run) => run.status === 'error';
-    const shown = runs.filter((run) => qaLive(run) || run.id === qaSelected || !interrupted(run));
-    const hiddenErrors = runs.length - shown.length;
-    const hiddenNote = hiddenErrors ? `<div class="sub" style="padding:4px 2px">중단된 런 ${hiddenErrors}개는 숨겼어요</div>` : '';
-    document.getElementById('qa-runs').innerHTML = waitingCard + (runs.length ? shown.map(runButton).join('') + hiddenNote : '<div class="empty-history">아직 QA 런이 없어요 — 계획서 카드의 [QA 실행] 또는 node scripts/qa/run.mjs</div>');
-    document.querySelectorAll('[data-qa]').forEach((button) => { button.onclick = () => { qaSelected = button.dataset.qa; loadQa(); }; });
-    const live = await loadQaRun(qaSelected);
-    if (live || runs.some(qaLive) || heavy.waiting) qaTimer = setTimeout(loadQa, heavy.waiting ? 4000 : 1500);
-  };
-  const loadQaRun = async (id) => {
-    const box = document.getElementById('qa-detail');
-    if (!id) return false;
-    let run;
-    try {
-      run = await (await fetch(`/api/qa/run?id=${encodeURIComponent(id)}`)).json();
-    } catch (error) {
-      box.innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
-      return false;
-    }
-    if (run.error && !run.id) { box.innerHTML = `<div class="empty-history">${esc(run.error)}</div>`; return false; }
-    const base = `/qa-runs/${encodeURIComponent(run.id)}/`;
-    const counts = {};
-    for (const screen of run.screens || []) counts[screen.status] = (counts[screen.status] || 0) + 1;
-    const screens = [...(run.screens || [])].sort((left, right) => QA_ORDER.indexOf(left.status) - QA_ORDER.indexOf(right.status) || left.distance - right.distance);
-    // 트래킹 이벤트(Mixpanel) — 카드 안에 접어 둔다
-    const qaEvents = (groups) => {
-      const filled = groups.filter(([, events]) => events && events.length);
-      if (!filled.length) return '';
-      const total = filled.reduce((sum, [, events]) => sum + events.length, 0);
-      return `<details class="qa-events"><summary>📊 트래킹 이벤트 ${total}개</summary>${filled.map(([label, events]) => `${label ? `<div class="sub">${esc(label)}</div>` : ''}<ul>${events.map((event) => `<li><b>${esc(event.name)}</b>${event.props ? ` <span class="sub">${esc(event.props)}</span>` : ''}</li>`).join('')}</ul>`).join('')}</details>`;
-    };
-    const cards = screens.map((screen) => {
-      const [icon, label, tone] = QA_STATUS[screen.status] || QA_STATUS.queued;
-      const shots = (screen.viewports || []).flatMap((viewport) => [['작업', viewport.shots.head], ['기준', viewport.shots.base], ['차이', viewport.shots.diff]]
-        .filter(([, file]) => file)
-        .map(([kind, file]) => `<a href="${base}${esc(file)}" target="_blank" rel="noopener"><img loading="lazy" src="${base}${esc(file)}" alt="">${esc(viewport.name)} ${kind}${kind === '차이' && viewport.diff ? ` ${viewport.diff.pixels}px` : ''}</a>`)).join('');
-      const moved = (screen.viewports || []).find((viewport) => screen.url && viewport.finalPath && viewport.finalPath.split('?')[0] !== screen.url.split('?')[0]);
-      return `<div class="qa-card ${tone}">
-        <div class="url">${icon} ${esc(screen.url || screen.route)}</div>
-        <div class="sub">${label}${screen.auth ? ' · 🔒 로그인 화면' : ''}${screen.expect ? ` · 기대 ${screen.expect === 'stay' ? '머무름' : `→ ${esc(screen.expect)}`}` : ''}${moved ? ` · → ${esc(moved.finalPath)}` : ''}${screen.baseProblems ? ` · 기준에도 있던 문제 ${screen.baseProblems}` : ''}</div>
-        <div class="why" title="${esc((screen.via || []).join(' → '))}">${esc(screen.changedFile || '')}${screen.distance ? ` → ${screen.distance}단계` : ''}</div>
-        ${screen.note ? `<div class="why">📝 ${esc(screen.note)}</div>` : ''}
-        ${(screen.reasons || []).slice(0, 3).map((reason) => `<div class="problem"><b>${esc(reason.title)}</b>${reason.count > reason.viewports.length ? ` ×${reason.count}` : ''}${reason.viewports.length ? ` <span class="sub">(${esc(reason.viewports.join('·'))})</span>` : ''}</div>${reason.why ? `<div class="why">${esc(reason.why)}</div>` : ''}`).join('')}${(screen.reasons || []).length > 3 ? `<div class="why">외 원인 ${screen.reasons.length - 3}개 — 라이브 화면 리포트에서</div>` : ''}
-        ${shots ? `<div class="qa-shots">${shots}</div>` : ''}
-        ${qaEvents((screen.viewports || []).map((viewport) => [viewport.name, viewport.events]))}
-        ${run.kind === 'suite' && run.status === 'done' ? (screen.approved ? '<div class="sub">✔ 기준 승인됨</div>' : ['new', 'changed', 'fail', 'redirected'].includes(screen.status) ? `<div><button type="button" class="btn" data-approve="${esc(screen.key)}">이 화면 기준으로 승인</button></div>` : '') : ''}
-      </div>`;
-    }).join('');
-    const scenarioCards = [...(run.scenarios || [])].sort((left, right) => QA_ORDER.indexOf(left.status) - QA_ORDER.indexOf(right.status)).map((scenario) => {
-      const [icon, label, tone] = QA_STATUS[scenario.status] || QA_STATUS.queued;
-      const steps = (scenario.steps || []).map((step) => `<li class="${step.ok ? '' : 'no'}">${step.ok ? '✔' : '✖'} ${esc(step.label)}${step.detail ? ` <span class="sub">${esc(step.detail)}</span>` : ''}</li>`).join('');
-      const shots = (scenario.shots || []).map((shot) => `<a href="${base}${esc(shot.file)}" target="_blank" rel="noopener"><img loading="lazy" src="${base}${esc(shot.file)}" alt="">${esc(shot.name)}</a>`).join('');
-      const detail = `${scenario.why ? `<div class="why">${esc(scenario.why)}</div>` : ''}
-        <ol class="qa-steps">${steps}</ol>
-        ${shots ? `<div class="qa-shots">${shots}</div>` : ''}
-        ${qaEvents([['', scenario.events]])}`;
-      const meta = `${label} · 세션 ${esc(scenario.profile)}${scenario.viewport ? ` · ${esc(scenario.viewport)}` : ''}`;
-      // 통과한 씬은 제목 한 줄 — 누르면 단계·스크린샷이 펼쳐진다
-      if (scenario.status === 'pass') return `<details class="qa-card qa-pass ${tone}"><summary><span class="url">${icon} ${esc(scenario.name)}</span> <span class="sub">${meta}</span></summary>${detail}</details>`;
-      return `<div class="qa-card ${tone}"><div class="url">${icon} ${esc(scenario.name)}</div>
-        <div class="sub">${meta}</div>
-        ${detail}</div>`;
-    }).join('');
-    box.innerHTML = `<div class="qa-head"><h3>${qaLive(run) ? '⏳ ' : ''}${run.kind === 'suite' ? '전체 검수 · ' : ''}${esc(run.app)} · ${esc(run.branch)} @${esc(run.head)}</h3>
-        <span class="sub">${esc(qaWhen(run.startedAt))} · ${(run.urls?.head || run.serverUrl) ? `<a href="${esc(run.urls?.head || run.serverUrl)}" target="_blank" rel="noopener" style="font-weight:600">🌐 ${esc(String(run.urls?.head || run.serverUrl).replace(/^https?:\/\//, ''))}</a> · ` : ''}${run.base ? `기준 ${esc(run.base.ref)}@${esc(run.base.sha)}` : '기준 비교 없음'} · 세션 ${esc(run.profile || '')}${run.plan ? ` · ${esc(run.plan)}` : ''}</span>
-        ${run.status === 'done' ? `<a class="sub" href="${base}report.html" target="_blank" rel="noopener">리포트 열기 ↗</a>` : ''}
-        <a class="sub" href="/qa-live?${run.group ? `group=${encodeURIComponent(run.group)}` : `id=${encodeURIComponent(run.id)}`}" target="_blank" rel="noopener">${run.status === 'done' ? '📋 실패 리포트·라이브 화면 ↗' : '📺 라이브 화면 ↗'}</a></div>
-      <div class="qa-chips"><span class="qa-chip">${esc(run.phase || '')}</span>${QA_ORDER.filter((key) => counts[key]).map((key) => `<span class="qa-chip">${QA_STATUS[key][0]} ${QA_STATUS[key][1]} ${counts[key]}</span>`).join('')}${run.totalScreens ? `<span class="qa-chip">영향 ${new Set((run.screens || []).map((screen) => screen.route)).size} / 전체 ${run.totalScreens}</span>` : ''}</div>
-      ${run.status === 'error' ? `<div class="problem" style="color:var(--bad)">오류 — ${esc(run.error || '')}</div>` : ''}
-      ${run.kind === 'suite' && run.status === 'done' ? `<div style="margin:0 0 10px"><button type="button" class="btn" data-approve-all="1">기준으로 승인 (기준 없음·변화·통과 전부)</button> <span class="sub">승인한 사진이 다음 전체 검수의 비교 기준이 돼요</span></div>` : ''}
-      ${scenarioCards ? `<h3 style="font-size:13px;margin:4px 0 8px">흐름 씬 ${(run.scenarios || []).length}개</h3><div class="qa-grid" style="margin-bottom:14px">${scenarioCards}</div><h3 style="font-size:13px;margin:4px 0 8px">화면 ${(run.screens || []).length}개</h3>` : ''}
-      <div class="qa-grid">${cards || '<div class="empty-history">영향 화면을 찾는 중이거나 없어요</div>'}</div>
-      <div class="qa-log">${esc((run.log || []).slice(-12).join('\n'))}</div>`;
-    box.querySelectorAll('[data-approve]').forEach((button) => { button.onclick = () => approveQa(run.id, button.dataset.approve); });
-    box.querySelectorAll('[data-approve-all]').forEach((button) => { button.onclick = () => approveQa(run.id, ''); });
-    return qaLive(run);
-  };
-  // ── QA TC 목록 — docs/qa/tc/<앱>.md "B) TC" 표(/api/qa/tc). 자동화 칸에 "있음" 이 들어가면 자동화됨
-  const TC_APP_NAME = ATHENA.qaApps;
-  const tcState = { apps: null, app: '', open: new Set(), picked: new Set() };
-  const tcInline = (text) => esc(text).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
-  // 자동화됨 = 이 TC 를 검사하는 흐름 씬(작은 씬·여정)이 실제로 있다 — 문서 자동화 칸의 '(있음 NN)' 표기도 같이 본다
-  const tcDone = (item) => (item.scenarioFiles || []).length > 0 || /있음/.test(item.auto || '');
-  // 자동 검사 상태 — scene: 흐름 씬·여정이 검사 · smoke: 전체 검수의 화면 검사(모든 화면을 열어 깨짐·가드·오류)가 검사 · todo: 수동 확인(사람이 보거나 씬을 만들 것)
-  const tcStatus = (item) => tcDone(item) ? 'scene' : /^스모크/.test(item.auto || '') ? 'smoke' : 'todo';
-  const TC_STATUS = { scene: ['✅', '씬으로 검사', '흐름 씬·여정이 누르고 입력하며 자동으로 확인'], smoke: ['🖥', '화면 검사', '전체 검수에서 화면을 열어 깨짐·가드·오류를 자동으로 확인(누르지는 않음)'], todo: ['✋', '수동 확인', '자동 검사가 없어 사람이 직접 확인 — 씬으로 만들 후보'] };
-  tcState.status = tcState.status || '';
-  const tcCases = () => (tcState.apps || []).filter((entry) => !tcState.app || entry.app === tcState.app).flatMap((entry) => entry.cases.map((item) => ({ ...item, app: entry.app })));
-  // 이 TC 를 지나가는 여정 씬(부품 씬을 include 하는 씬)
-  const tcJourneys = (item) => { const journeys = (tcState.apps || []).find((entry) => entry.app === item.app)?.journeys || []; return (item.scenarioFiles || []).filter((name) => journeys.includes(name)); };
-  // 여정 카드 — 고른 앱의 여정(include 씬): 구간마다 하는 일·부품 씬·TC, [▶ 자동]·[▶ 실제] 실행
-  const renderJourneys = () => {
-    const box = document.getElementById('tc-journeys');
-    const entries = (tcState.apps || []).filter((entry) => !tcState.app || entry.app === tcState.app);
-    const cards = entries.flatMap((entry) => (entry.journeyCards || []).map((card) => ({ ...card, app: entry.app })));
-    const open = tcState.journeysOpen ?? false;
-    box.innerHTML = cards.length ? `<details class="tc-journey-box"${open ? ' open' : ''}><summary>🧭 여정 ${cards.length}개 — 사용자 흐름을 따라 이어서 검사(구간·실행)</summary>${cards.map((card) => `<div class="tc-journey"><div class="head"><b>🧭 ${esc(card.name)}</b><span class="sub">${esc(TC_APP_NAME[card.app] || card.app)} · ${esc(card.file)}</span>
-        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|auto" title="사람 단계(본인인증 등)를 더미 응답으로 — 사람 없이">▶ 자동</button>
-        <button type="button" class="btn" data-journey="${esc(card.app)}|${esc(card.file)}|real" title="사람 단계(본인인증 등)를 사람이 직접(실제 개인정보·실제 외부 연동) — 크롬 창이 따로 떠요">▶ 실제</button></div>
-      ${card.why ? `<div class="why">${esc(card.why)}</div>` : ''}
-      <ol>${card.sections.map((section) => `<li><div class="title">${esc(section.title)}${section.modes.map((mode) => `<span class="mode">${mode === 'real' ? '실제' : '자동'} 갈래</span>`).join('')}</div>
-        ${section.desc ? `<div>${esc(section.desc)}</div>` : ''}
-        <div class="sub">${section.parts.length ? `부품: ${section.parts.map((part) => `${esc(part.file.slice(0, 2))}${part.only ? `(${part.only === 'real' ? '실제' : '자동'})` : ''}`).join(' · ')} · ` : ''}단계 ${section.steps}개</div>
-        ${section.tcs.length ? `<div class="sub">TC ${esc(section.tcs.join(', '))}</div>` : ''}</li>`).join('')}</ol></div>`).join('')}</details>` : '';
-    box.querySelector('details')?.addEventListener('toggle', (event) => { tcState.journeysOpen = event.target.open; });
-    box.querySelectorAll('[data-journey]').forEach((button) => {
-      button.onclick = async () => {
-        const [app, file, mode] = button.dataset.journey.split('|');
-        const target = document.getElementById('qa-target').value;
-        const server = document.getElementById('qa-server').value.trim();
-        if (target === 'server' && !server) return toast('서버 주소를 [런] 의 전체 검수 칸에 넣어 주세요');
-        if (!confirm(`${app} 여정 ${file.slice(0, 2)} 을 ${mode === 'real' ? '실제 모드(사람 단계를 직접 — 크롬 창이 따로 떠요)' : '자동 모드(더미 응답)'} 로 돌릴까요?\n${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버'} · 라이브 화면이 새 탭으로 열려요`)) return;
-        try {
-          // 세션을 안 골랐으면 그 앱의 마지막 프로필(routes profiles 순서 — 보통 가장 깊은 로그인 상태)
-          if (!qaApps.length) await loadQaApps();
-          const lastProfile = (qaApps.find((entry) => entry.app === app)?.profiles || []).at(-1)?.name || '';
-          await api('/api/qa-suite', { app, profile: document.getElementById('qa-profile').value || lastProfile, target, flow: false, server, journey: { file, mode } });
-          toast(`여정 ${file.slice(0, 2)} 을 시작했어요(${mode === 'real' ? '실제' : '자동'})`);
-          qaSelected = '';
-        } catch (error) { toast(`시작하지 못했어요: ${error.message}`); }
-      };
-    });
-  };
-  // 체크박스는 돌릴 흐름 씬이 있는 TC(✅)에만 — 화면 검사·수동 확인 TC 는 [선택한 TC만 검수] 로 돌릴 게 없다
-  const tcRunnable = (item) => (item.runFiles || item.scenarioFiles || []).length > 0;
-  const tcStatusCell = (item) => {
-    const status = tcStatus(item);
-    const parts = (item.runFiles || item.scenarioFiles || []).filter((name) => !tcJourneys(item).includes(name));
-    const journeys = tcJourneys(item).map((name) => ` <span class="tc-auto done" title="${esc(name)}">🧭 여정 ${esc(name.slice(0, 2))}</span>`).join('');
-    if (status === 'scene') return parts.length || !tcJourneys(item).length
-      ? `<span class="tc-auto done" title="${esc((item.scenarioFiles || []).join(', '))}">✅ ${parts.length ? `씬 ${esc(parts.map((name) => name.slice(0, 2)).join('·'))}` : '씬'}</span>${journeys}`
-      : `<span class="tc-auto done" title="${esc(tcJourneys(item).join(', '))}">✅ 🧭 여정 ${esc(tcJourneys(item).map((name) => name.slice(0, 2)).join('·'))}</span>`;
-    if (status === 'smoke') return `<span class="tc-auto smoke" title="전체 검수의 화면 검사가 이 화면들을 열어 확인해요">🖥 화면 검사</span>${journeys}`;
-    return `<span class="tc-auto todo">✋ 수동 확인</span>${item.auto ? ` <span class="tc-plan" title="TC 문서 자동화 칸 — 자동화할 방법(계획)">계획: ${tcInline(item.auto)}</span>` : ''}`;
-  };
-  const renderTc = () => {
-    const apps = tcState.apps || [];
-    const all = apps.flatMap((entry) => entry.cases);
-    document.getElementById('tc-apps').innerHTML = [['', '전체', all]].concat(apps.map((entry) => [entry.app, TC_APP_NAME[entry.app] || entry.app, entry.cases]))
-      .map(([key, label, cases]) => `<button type="button" data-tcapp="${esc(key)}" aria-pressed="${tcState.app === key}">${esc(label)}<span class="n">${cases.length} · ✅ ${cases.filter((item) => tcStatus(item) === 'scene').length} · 🖥 ${cases.filter((item) => tcStatus(item) === 'smoke').length}</span></button>`).join('');
-    document.querySelectorAll('[data-tcapp]').forEach((button) => { button.onclick = () => {
-      tcState.app = button.dataset.tcapp;
-      // 위 🔐 로그인 세션 줄도 그 앱으로(전체 검수 칸의 앱 선택과 같이 맞춘다)
-      const appSelect = document.getElementById('qa-app');
-      if (tcState.app && [...appSelect.options].some((option) => option.value === tcState.app) && appSelect.value !== tcState.app) { appSelect.value = tcState.app; appSelect.onchange?.(); }
-      renderTc();
-    }; });
-    const kindSelect = document.getElementById('tc-kind');
-    const kinds = [...new Set(tcCases().map((item) => item.kind).filter(Boolean))];
-    const keepKind = kindSelect.value;
-    kindSelect.innerHTML = '<option value="">분류 전체</option>' + kinds.map((kind) => `<option>${esc(kind)}</option>`).join('');
-    kindSelect.value = kinds.includes(keepKind) ? keepKind : '';
-    const prio = document.getElementById('tc-prio').value;
-    // 상태 버튼 — 숫자는 우선·분류·검색을 뺀 이 앱 전체 기준
-    const base = tcCases();
-    document.getElementById('tc-status').innerHTML = [['', '전체', '모든 TC']].concat(Object.entries(TC_STATUS).map(([key, [icon, label, why]]) => [key, `${icon} ${label}`, why]))
-      .map(([key, label, why]) => `<button type="button" data-tcstatus="${key}" aria-pressed="${tcState.status === key}" title="${esc(why)}">${esc(label)}<span class="n">${key ? base.filter((item) => tcStatus(item) === key).length : base.length}</span></button>`).join('')
-      + '<span class="hint">✅ 씬·여정이 자동으로 누르며 확인 · 🖥 전체 검수가 화면만 열어 확인 · ✋ 사람이 직접 확인(씬으로 만들 후보)</span>';
-    document.querySelectorAll('[data-tcstatus]').forEach((button) => { button.onclick = () => { tcState.status = button.dataset.tcstatus; renderTc(); }; });
-    const query = document.getElementById('tc-search').value.trim().toLowerCase();
-    const rows = tcCases().filter((item) => (!prio || item.prio === prio) && (!kindSelect.value || item.kind === kindSelect.value)
-      && (!tcState.status || tcStatus(item) === tcState.status)
-      && (!query || Object.values(item).join(' ').toLowerCase().includes(query)));
-    const entry = apps.find((app) => app.app === tcState.app);
-    document.getElementById('tc-meta').innerHTML = entry
-      ? `${esc(entry.doc)} · <span title="${esc(entry.scenarios.map((name) => name.replace(/\.json$/, '')).join('\n'))}">흐름 씬 ${entry.scenarios.length}개</span> · ${rows.length}개 보임 · 행을 누르면 단계·기대 결과`
-      : `docs/qa/tc/*.md · ${rows.length}개 보임 · 행을 누르면 단계·기대 결과`;
-    document.getElementById('tc-body').innerHTML = rows.length ? rows.map((item) => {
-      const key = `${item.app}:${item.id}`;
-      const detail = tcState.open.has(key) ? `<tr class="tc-detail"><td colspan="8"><dl>
-        <dt>사전 조건</dt><dd>${tcInline(item.pre)}</dd><dt>단계</dt><dd>${tcInline(item.steps)}</dd><dt>기대 결과</dt><dd>${tcInline(item.expect)}</dd>
-        <dt>세션·뷰포트</dt><dd>${esc(item.session)} · ${esc(item.viewport)}</dd><dt>근거</dt><dd>${tcInline(item.ref)}</dd></dl></td></tr>` : '';
-      return `<tr class="tc-row" data-tc="${esc(key)}" aria-expanded="${tcState.open.has(key)}"><td class="tc-check">${tcRunnable(item) ? `<input type="checkbox" data-pick="${esc(key)}" ${tcState.picked.has(key) ? 'checked' : ''} aria-label="${esc(item.id)} 고르기" title="돌릴 씬 ${esc((item.runFiles || item.scenarioFiles || []).join(', '))}">` : ''}</td><td class="id">${esc(item.id)}</td><td class="nowrap">${esc(item.kind)}</td><td>${tcInline(item.title)}</td>
-        <td class="hide-sm nowrap">${esc(item.session)}</td><td class="hide-sm nowrap">${esc(item.viewport)}</td>
-        <td>${tcStatusCell(item)}</td><td class="tc-prio ${esc(item.prio)}">${esc(item.prio)}</td></tr>${detail}`;
-    }).join('') : '<tr><td colspan="8" class="empty-history">맞는 TC 가 없어요</td></tr>';
-    document.querySelectorAll('[data-tc]').forEach((row) => {
-      row.onclick = (event) => { if (event.target.closest('.tc-check')) return; const key = row.dataset.tc; if (tcState.open.has(key)) tcState.open.delete(key); else tcState.open.add(key); renderTc(); };
-    });
-    // 고르기 — 체크하면 선택 막대에 [선택한 TC만 검수]
-    document.querySelectorAll('[data-pick]').forEach((box) => {
-      box.onchange = () => { if (box.checked) tcState.picked.add(box.dataset.pick); else tcState.picked.delete(box.dataset.pick); renderPickBar(); };
-    });
-    const checkAll = document.getElementById('tc-check-all');
-    const visibleKeys = rows.filter(tcRunnable).map((item) => `${item.app}:${item.id}`);
-    checkAll.checked = visibleKeys.length > 0 && visibleKeys.every((key) => tcState.picked.has(key));
-    checkAll.disabled = !visibleKeys.length;
-    checkAll.title = visibleKeys.length ? `보이는 TC 중 씬으로 검사하는 ${visibleKeys.length}개 모두 고르기` : '보이는 TC 중 씬으로 검사하는 TC 가 없어요';
-    checkAll.onchange = () => { for (const key of visibleKeys) { if (checkAll.checked) tcState.picked.add(key); else tcState.picked.delete(key); } renderTc(); };
-    renderPickBar();
-    renderJourneys();
-  };
-  // 선택 막대 — 고른 TC 수 · 그걸 검사하는 흐름 씬 수 · [선택한 TC만 검수](대상·서버 주소는 [런] 의 전체 검수 칸 것을 쓴다)
-  const pickedCases = () => (tcState.apps || []).flatMap((entry) => entry.cases.map((item) => ({ ...item, app: entry.app }))).filter((item) => tcState.picked.has(`${item.app}:${item.id}`));
-  const renderPickBar = () => {
-    const bar = document.getElementById('tc-pick-bar');
-    const picked = pickedCases();
-    bar.hidden = !picked.length;
-    if (!picked.length) { bar.innerHTML = ''; return; }
-    const apps = [...new Set(picked.map((item) => item.app))];
-    // 작은 씬이 있으면 그것만, 없으면 여정(runFiles — 서버가 고른다)
-    const scenes = [...new Set(picked.flatMap((item) => item.runFiles || item.scenarioFiles || []))];
-    const target = document.getElementById('qa-target').value;
-    const server = document.getElementById('qa-server').value.trim();
-    // 버튼이 꺼지는 이유 — 글자로 보이게
-    const blocked = apps.length !== 1 ? `한 앱의 TC 만 골라 주세요 — 지금 ${apps.map((app) => TC_APP_NAME[app] || app).join('·')} 가 섞여 있어요` : '';
-    bar.innerHTML = `<b>선택 ${picked.length}개</b><span class="sub">${esc(apps.map((app) => TC_APP_NAME[app] || app).join('·'))} · 흐름 씬 ${scenes.length}개${scenes.length ? ` (${esc(scenes.map((name) => name.slice(0, 2)).join(', '))})` : ''} · 대상 ${target === 'server' ? `☁️ ${esc(server || '서버 주소 없음')}` : '🖥 로컬 서버'}</span>
-      <button type="button" class="btn primary" id="tc-run-picked" ${blocked ? 'disabled' : ''} title="${blocked ? esc(blocked) : '고른 TC 의 흐름 씬만 돌려요(화면 검사 없이)'}">▶ 선택한 TC만 검수</button>${blocked ? `<span class="sub" style="color:var(--warn)">⚠ ${esc(blocked)}</span>` : ''}
-      <button type="button" class="btn" id="tc-clear-picked">선택 해제</button>`;
-    document.getElementById('tc-clear-picked').onclick = () => { tcState.picked.clear(); renderTc(); };
-    document.getElementById('tc-run-picked').onclick = async () => {
-      const app = apps[0];
-      if (target === 'server' && !server) return toast('서버 주소를 [런] 의 전체 검수 칸에 넣어 주세요');
-      if (!confirm(`${app} — 고른 TC ${picked.length}개의 흐름 씬 ${scenes.length}개만 돌릴까요?\n${target === 'server' ? `☁️ 서버 ${server}` : '🖥 로컬 서버'} · 화면 검사 없이 씬만 · 라이브 화면이 새 탭으로 열려요`)) return;
-      try {
-        await api('/api/qa-suite', { app, profile: document.getElementById('qa-profile').value, target, flow: false, server, tcs: picked.map((item) => item.id) });
-        toast(`선택한 TC 검수를 시작했어요 — 씬 ${scenes.length}개`);
-        qaSelected = '';
-      } catch (error) { toast(`시작하지 못했어요: ${error.message}`); }
-    };
-  };
-  const loadTc = async () => {
-    try {
-      const response = await fetch('/api/qa/tc', { cache: 'no-store' });
-      tcState.apps = (await response.json()).apps;
-      renderTc();
-    } catch (error) {
-      document.getElementById('tc-body').innerHTML = `<tr><td colspan="8" class="empty-history">불러오지 못했어요 — ${esc(error.message)}</td></tr>`;
+      document.getElementById('qa-services').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
     }
   };
-  ['tc-prio', 'tc-kind'].forEach((id) => { document.getElementById(id).onchange = renderTc; });
-  document.getElementById('tc-search').oninput = renderTc;
-  document.getElementById('tc-guide-open').onclick = () => document.getElementById('tc-guide').showModal();
-  document.getElementById('tc-guide-close').onclick = () => document.getElementById('tc-guide').close();
+  const stopQa = () => clearTimeout(qaTimer);
+  document.getElementById('qa-services').addEventListener('click', async (event) => {
+    const button = event.target.closest('button[data-qa-service]');
+    if (!button) return;
+    const { qaService: service, qaLayer: layer, qaFlow: flow } = button.dataset;
+    try {
+      await api('/api/qa-run', { service, layer, flow });
+      toast(`QA 를 시작했어요 · ${service}`);
+      loadQa();
+    } catch (error) {
+      toast(`실패: ${error.message}`);
+    }
+  });
   document.getElementById('memory-guide-open').onclick = () => document.getElementById('memory-guide').showModal();
   document.getElementById('memory-guide-close').onclick = () => document.getElementById('memory-guide').close();
-  const showQaView = (view) => {
-    document.getElementById('qa-view-runs').hidden = view !== 'runs';
-    document.getElementById('qa-view-tc').hidden = view !== 'tc';
-    document.querySelectorAll('[data-qaview]').forEach((button) => button.setAttribute('aria-selected', String(button.dataset.qaview === view)));
-    if (view === 'tc') loadTc();
-    try { localStorage.setItem('board.qaView', view); } catch (error) { /* 저장 못 해도 보기는 바뀐다 */ }
-  };
-  document.querySelectorAll('[data-qaview]').forEach((button) => { button.onclick = () => showQaView(button.dataset.qaview); });
-  try { if (localStorage.getItem('board.qaView') === 'tc') showQaView('tc'); } catch (error) { /* 무시 */ }
+
 
   // ── 메모리 탭 — 아테나 auto memory 목록. 누를 때만 읽고, 줄을 누르면 본문
   const MEMORY_TYPE = { user: '👤 사용자', feedback: '💬 피드백', project: '📁 프로젝트', reference: '🔗 참고' };
@@ -1858,9 +1368,6 @@
       if (card?.worktree) to.innerHTML += `<br>워크트리 <code>${esc(card.worktree.rel)}</code> ← ${esc(card.worktree.ref)} (detached${card.worktree.exists ? ', 이미 있어서 그대로 써요' : ', 새로 만들어요'}) · 담당을 바꾸면 그 에이전트의 레포에 만들어요`;
     } else if (mode === 'hermes-new') {
       // 받는 곳 안내는 이슈 팝업(route)이 채운다
-    } else if (mode === 'qa') {
-      const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      to.innerHTML = `→ <b>QA 시뮬레이션</b> (scripts/qa/run.mjs) 를 현황판 서버가 뒤에서 돌려요 · 한 번에 하나 · 아테나는 거치지 않아요${card?.workRef ? `<br>워크트리 <code>${esc(card.workRef.split(' ')[0])}</code>` : ''}<br>아래 글은 안내라 고쳐도 보내지지 않아요`;
     } else if (mode === 'review') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
       to.innerHTML = `→ <b>reviewer</b> 를 계획서의 담당 레포 workspace 에 새 pane 으로 띄워요${card?.workRef ? `<br>대상 <code>${esc(card.workRef)}</code>` : ''} · 아테나는 거치지 않아요`;
@@ -1911,14 +1418,6 @@
         toast(`새 아테나 pane 에서 시작했어요 · ${result.pane}`);
         return;
       }
-      if (pending?.mode === 'qa') {
-        const result = await api('/api/qa-start', { id: pending.id });
-        document.getElementById('ask').close();
-        toast(`QA 를 시작했어요 · ${result.app}`);
-        qaSelected = '';
-        showTab('qa');
-        return;
-      }
       if (pending?.mode === 'review') {
         const result = await api('/api/review', { id: pending.id, text });
         document.getElementById('ask').close();
@@ -1956,7 +1455,7 @@
     if (/seo-health|SEO Health|seo-feedback/i.test(text)) return { icon: '📈', label: 'SEO 리포트 자동(매주)' };
     if (/learn-curator/.test(text)) return { icon: '🧹', label: '학습 정리 자동(/sync 끝)' };
     if (/배우기 검토자|learn-review/.test(text)) return { icon: '📚', label: '배우기 검토자' };
-    if (/^\/?sync\b|\/sync|check-diagrams/.test(text)) return { icon: '🔄', label: '/sync 점검' };
+    if (/^\/?sync\b|\/sync/.test(text)) return { icon: '🔄', label: '/sync 점검' };
     if (/다이어그램/.test(text)) return { icon: '🗺', label: agent ? `다이어그램 작성 · ${agent}` : '다이어그램 작성' };
     if (/QA|씬|검수/.test(text)) return { icon: '🧪', label: agent ? `QA · ${agent}` : 'QA 실행 중 발견' };
     if (/리뷰/.test(text)) return { icon: '🔍', label: agent && agent !== 'reviewer' ? `리뷰 · ${agent}` : '리뷰 중 발견' };
