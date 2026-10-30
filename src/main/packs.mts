@@ -250,7 +250,11 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     if (blocked) return blocked
     return packTask(say('pack.task.open'), async (signal) => {
       const result = await runPack(['open', id], { dir, onProgress: ctx.packProgress, signal })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+      if (!result.ok) {
+        // 옛 id — pane 안 /setup 이 이름을 바꿨다. 팩 줄이 지금 목록으로 맞춰지게 모든 창의 목록을 새로 읽는다
+        if (result.error === 'not-found') refreshAllPacks()
+        return { ...result, text: packModel.packErrorText(result, say) }
+      }
       if (result.created) refreshAllPacks()
       const notes = { unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required', created: result.created === true }
       const other = typeof result.body === 'string' ? ctxOfBody(result.body) : null

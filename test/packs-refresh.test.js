@@ -17,7 +17,7 @@ function fakeBody(root, name) {
   return dir
 }
 
-function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false } = {}) {
+function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false, refreshAllPacks = () => {} } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-refresh-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const bodies = { acme: fakeBody(root, 'acme'), globex: fakeBody(root, 'globex') }
@@ -49,7 +49,7 @@ function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }
     contractBlock: async () => null,
     packWindows: new Set([ctx]),
     openPackIds: () => [],
-    refreshAllPacks: () => {},
+    refreshAllPacks,
     ctxOfBody: () => null,
     openBody: () => ({}),
     daemonOld: () => false,
@@ -136,4 +136,19 @@ test('팩 목록: 시작 화면 판단(데몬 pane 목록)을 기다리는 사�
   assert.equal(ctx.packState.current.id, 'globex')
   assert.ok(sent.filter((item) => item.channel === 'pack:state').every((item) => item.value.current.id === 'globex'))
   assert.deepEqual(calls, [bodies.acme, bodies.globex])
+})
+
+// 새 팩의 /setup 이 앱을 거치지 않고 임시 id(new-…)를 회사 이름으로 바꾼다 — 팩 줄에 남은 옛 id 로 열면 not-found 가 온다(GitHub #169).
+// 그때 모든 창의 목록을 새로 읽어 팩 줄이 지금 목록으로 맞춰져야 한다
+test('팩 열기: 옛 id 로 not-found 가 오면 모든 창의 목록을 다시 읽는다', async (t) => {
+  let refreshed = 0
+  const { ctx } = setup(
+    t,
+    async (args) => (args[0] === 'open' ? { ok: false, error: 'not-found' } : { ok: true }),
+    { refreshAllPacks: () => (refreshed += 1) },
+  )
+  const result = await ctx.packOpen('new-20261030-1')
+  assert.equal(result.ok, false)
+  assert.equal(result.error, 'not-found')
+  assert.equal(refreshed, 1)
 })
