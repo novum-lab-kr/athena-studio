@@ -943,15 +943,20 @@ app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
 // 앱 업데이트 설치(npm install)가 도는 중에 끄면 그 설치 트리를 끝낸 것을 확인한 뒤에 끈다 — 남은 npm 이 다음 켤 때의 재시도와 겹치지 않게
-// (처음 끄기 요청은 한 번 미뤘다가 app.quit() 로 다시 — 설치가 없으면 바로)
-let installStopChecked = false
+// (설치 정리가 끝나기 전의 끄기 요청은 모두 미룬다 — 정리가 끝난 뒤에만 app.quit() 로 다시. 설치가 없으면 바로)
+let installStopDone = false
+let installStopping = false
 app.on('before-quit', (event) => {
-  if (!installStopChecked) {
-    installStopChecked = true
+  if (!installStopDone) {
     event.preventDefault()
+    if (installStopping) return // 정리 중에 다시 끄기를 눌러도 앱이 먼저 꺼지지 않게
+    installStopping = true
     stopInstallBeforeQuit()
       .catch(() => false)
-      .finally(() => app.quit())
+      .finally(() => {
+        installStopDone = true
+        app.quit()
+      })
     return
   }
   quitting = true
