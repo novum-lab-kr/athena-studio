@@ -102,6 +102,9 @@ check "같은 트리 · 다른 기준 → 다른 열쇠" "$([ -n "$KEY_BEFORE" ]
 KEY_AGAIN="$(cd "$WORK" && bash -c 'source "$1/scripts/verify/_lib.sh"; verify_key /x/demo.sh "$2" ""' _ "$SRC" "$WORK")"
 check "같은 트리 · 같은 기준 → 같은 열쇠" "$([ "$KEY_AFTER" = "$KEY_AGAIN" ] && echo 0 || echo 1)" "$KEY_AFTER / $KEY_AGAIN"
 
+KEY_FULL="$(cd "$WORK" && ATHENA_VERIFY_FULL=1 bash -c 'source "$1/scripts/verify/_lib.sh"; verify_key /x/demo.sh "$2" ""' _ "$SRC" "$WORK")"
+check "ATHENA_VERIFY_FULL 값이 다르면 열쇠가 다르다" "$([ -n "$KEY_FULL" ] && [ "$KEY_FULL" != "$KEY_AGAIN" ] && echo 0 || echo 1)" "$KEY_FULL / $KEY_AGAIN"
+
 echo "닿는 시험 고르기 (scope-tests.mjs)"
 git_quiet -C "$WORK" checkout -q -b picks
 picks() { printf '%s\n' "$@" > "$TMP/changed.txt"; node "$SRC/scripts/verify/scope-tests.mjs" "$WORK" "$TMP/changed.txt" | tr '\n' ' '; }
@@ -115,5 +118,14 @@ RESULT="$(picks README.md)"
 check "어떤 시험에도 안 닿는 파일 → 빈 목록" "$([ -z "$RESULT" ] && echo 0 || echo 1)" "$RESULT"
 RESULT="$(picks src/a.js src/b.js)"
 check "여러 파일 → 닿는 시험의 합" "$([ "$RESULT" = "JS test/a.test.js JS test/b.test.js " ] && echo 0 || echo 1)" "$RESULT"
+
+# 삭제 · 이름 바꿈 · 닿는 시험이 없는 앱 소스 → 종료 코드 2(부르는 쪽이 전체를 돈다)
+git -C "$WORK" rm -q src/a.js
+RESULT="$(picks src/a.js 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
+check "지워진 파일이 바뀐 목록에 있으면 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
+git -C "$WORK" reset -q --hard
+echo 'module.exports = 3' > "$WORK/src/orphan.js"
+RESULT="$(picks src/orphan.js 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
+check "닿는 시험이 없는 앱 소스 → 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
 
 exit $FAIL

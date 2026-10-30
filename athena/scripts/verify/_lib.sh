@@ -63,10 +63,11 @@ verify_key() { # verify_key <검증 스크립트> <트리> <인자> — 통과 �
     echo "== pack.json"; [ -f "$pack_json" ] && cat "$pack_json"
   } | shasum | cut -c1-16)"
   # 실행 환경 — Node 버전 건너뜀·python3 없음 건너뜀은 환경으로 정해진다. 환경이 다르면 다시 돌게 열쇠에 넣는다
+  # 전체 강제(ATHENA_VERIFY_FULL) — 값이 다르면 단계가 달라지니 열쇠에 넣는다(범위 통과 기록을 전체 강제가 재사용하지 않게)
   # 기준 merge-base — 범위 검증(verify_scope_init)은 기준 대비 바뀐 파일로 단계를 정한다. 트리가 같아도 기준이 달라지면 범위가 달라지니 열쇠에 넣는다
-  printf 'tree %s\ndir %s\nscript %s\nargs %s\nnode %s\npython3 %s\nbase %s\n' "$tree_hash" "$(cd "$tree" && pwd -P)" "$script_hash" "$args" \
+  printf 'tree %s\ndir %s\nscript %s\nargs %s\nnode %s\npython3 %s\nbase %s\nfull %s\n' "$tree_hash" "$(cd "$tree" && pwd -P)" "$script_hash" "$args" \
     "$(node -v 2>/dev/null || echo none)" "$(command -v python3 >/dev/null 2>&1 && echo yes || echo no)" \
-    "$(verify_merge_base "$(basename "$script" .sh)" "$tree" || echo none)" | shasum | cut -c1-24
+    "$(verify_merge_base "$(basename "$script" .sh)" "$tree" || echo none)" "${ATHENA_VERIFY_FULL:-}" | shasum | cut -c1-24
 }
 
 resolve_repo_dir() { # resolve_repo_dir <메인 체크아웃> — 검증할 트리 경로를 출력한다
