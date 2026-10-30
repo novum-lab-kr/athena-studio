@@ -116,7 +116,6 @@ export function createCoreRunner({ app, dialog, say, language, studio, coreBundl
       lines.push(say(notice.state === 'unsupported' ? 'dialog.coreUpdate.unsupported' : 'dialog.coreUpdate.notMoved', { reason: notice.error || notice.state }))
     }
     if (!lines.length) return
-    lines.push(say('dialog.coreUpdate.log', { path: packLogFile() }))
     const options = { type: 'info' as const, message: say('dialog.coreUpdate.message'), detail: lines.join('\n\n') }
     ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
   }
