@@ -610,15 +610,18 @@ export class Daemon {
     const tab = this.tabOf(base.tabId as string)
     const pane = this.spawnPane({ tabId: tab.id, cwd: cwd || base.cwd, env, ...base.size })
     tab.tree = layout.splitPane(tab.tree, base.id, pane.id, direction, ratio)
-    this.fitTab(tab)
+    this.fitTab(tab, this.paneBody(base) || null)
     // 나눈 pane 의 본체 보는 자리로(부른 쪽이 다른 본체를 볼 수는 없다 — paneIn 이 막는다)
     if (focus !== false) this.activate(this.paneBody(base) || this.viewKeyOf(scope), tab, pane.id)
     this.broadcastState()
     return { pane: (await this.flatPanes([pane]))[0] }
   }
 
-  // 앱이 없을 때도 크기가 맞게 탭 크기를 트리대로 나눠 pty 크기를 정한다(앱이 붙어 있으면 앱이 실제 크기로 다시 알린다)
-  fitTab(tab: Tab): void {
+  // 앱이 없을 때도 크기가 맞게 탭 크기를 트리대로 나눠 pty 크기를 정한다.
+  // 그 탭의 본체를 보는 앱이 붙어 있으면 건드리지 않는다 — 어림(머리 줄 · gap 을 안 뺀 크기)이 실제 칸과 달라, 크기가 안 바뀐 옆 pane 의 pty 가
+  // 어림 → 원래 크기로 흔들려 Claude Code 같은 프로그램이 다시 그리다 화면이 깨진다. 앱이 바뀐 칸마다 실제 크기를 알린다
+  fitTab(tab: Tab, body: string | null = null): void {
+    if ([...this.clients].some((client) => client.attached && !client.socket.destroyed && this.sees(client.body, body))) return
     const rects = layout.computeRects(tab.tree, { x: 0, y: 0, width: tab.size.cols, height: tab.size.rows }, 1)
     for (const [paneId, rect] of Object.entries(rects)) {
       const pane = this.panes.get(paneId)
@@ -670,7 +673,7 @@ export class Daemon {
     const tab = this.tabs.find((entry) => entry.id === pane.tabId)
     if (tab) {
       tab.tree = layout.removePane(tab.tree, paneId)
-      if (tab.tree) this.fitTab(tab)
+      if (tab.tree) this.fitTab(tab, this.paneBody(pane) || null)
       else this.removeTab(tab)
     }
     // 보는 자리마다 — 포커스가 사라졌으면 그 본체 안에서 다시 고른다

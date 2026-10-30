@@ -386,3 +386,40 @@ test('떼어 띄운 데몬은 띄운 쪽이 끝나도 셸과 함께 산다', { s
   }
 })
 
+
+test('앱이 붙어 있으면 분할 · pane 종료가 옆 pane 의 pty 크기를 어림으로 바꾸지 않는다(앱이 실제 칸 크기로 알린다) · 앱이 없으면 트리대로 맞춘다', { skip: ptyMissing || false, timeout: 30000 }, async () => {
+  const dir = workDir()
+  const daemon = startDaemon(dir)
+  try {
+    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    const app = await connect(daemon.socket)
+    await app.call('hello', { protocol: protocol.PROTOCOL })
+    const tab = await app.call('tab new', { label: 'fit', cwd: dir, cols: 100, rows: 30 })
+    const sizes = async () => Object.fromEntries(JSON.parse((await cli(daemon.socket, ['pane', 'list'])).stdout).panes.map((pane) => [pane.id, [pane.cols, pane.rows]]))
+    await app.call('attach')
+
+    // 앱이 붙어 있다 — 분할해도 p1 은 그대로(앱이 실제 칸 크기를 resize 로 알린다)
+    const split = await cli(daemon.socket, ['pane', 'split', '--target', 'self', '--direction', 'right', '--ratio', '0.25', '--no-focus'], { ATHENA_STUDIO_PANE_ID: tab.result.pane })
+    assert.equal(split.code, 0, split.stderr)
+    assert.deepEqual(await sizes(), { p1: [100, 30], p2: [100, 30] })
+
+    // 앱이 p1 을 실제 크기로 줄인 뒤 p2 를 닫으면 — 앱이 붙어 있으니 p1 은 앱이 다시 알릴 때까지 그대로
+    await app.call('resize', { pane: 'p1', cols: 40, rows: 28 })
+    await cli(daemon.socket, ['pane', 'close', 'p2'])
+    await waitFor(async () => Object.keys(await sizes()).length === 1, 'p2 종료')
+    assert.deepEqual(await sizes(), { p1: [40, 28] })
+
+    // 앱이 없으면 트리대로 맞춘다
+    app.close()
+    await waitFor(async () => JSON.parse((await cli(daemon.socket, ['pane', 'list'])).stdout).panes.length === 1, '연결 끊김 뒤 목록')
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    const split2 = await cli(daemon.socket, ['pane', 'split', '--target', 'p1', '--direction', 'right', '--ratio', '0.25', '--no-focus'])
+    assert.equal(split2.code, 0, split2.stderr)
+    const fitted = await sizes()
+    assert.ok(fitted.p1[0] < 40 && fitted.p3[0] > fitted.p1[0], JSON.stringify(fitted))
+  } finally {
+    try {
+      process.kill(daemon.pid, 'SIGTERM')
+    } catch {}
+  }
+})
