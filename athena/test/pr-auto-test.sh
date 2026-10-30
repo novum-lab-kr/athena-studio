@@ -84,6 +84,9 @@ check('댓글 — 상한 전 · 승인이면 이어받음 줄 없음', !reviewCo
 check('C — 이어받기는 상한 라운드가 쓴 줄(수정 · 결정 필요 — 상한 뒤 이어받음…)로 시작할 때만 · 머지 단계로 간 뒤의 줄은 아님',
   grantsTakeover(`수정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만)`) && grantsTakeover(`결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · 승인 2/2이지만 …`)
   && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 머지 확인 대기`) && !grantsTakeover(`${TAKEOVER}(리뷰 없이 검증만으로 머지) → 바로 머지(확인 없음)`) && !grantsTakeover('검증 대기 — x') && !grantsTakeover(undefined))
+// 결과 문구를 바꾸거나 더할 때 이어받기 판정과 앞부분이 겹치면 리뷰 없는 커밋이 머지 단계로 간다 — 쓰는 결과 머리를 모두 돌려 이어받기를 주는 것은 상한 줄 둘뿐이어야 한다
+const otherResults = ['승인 → 머지 확인 대기', '승인 → 바로 머지(확인 없음)', '수정 필요', '수정 필요 — 리뷰어 부족이라 이어받지 않음', '결정 필요', '결정 필요 — 리뷰어 부족이라 이어받지 않음', '리뷰어 부족', '잘린 diff 승인', '검증 대기', '검증 대기 — 머지 실패(x)', '멈춤 — 라운드 상한(이어받을 수 없음)', '보류 — 사람이 고름(x)', '머지됨 — squash → main', `머지됨 — squash → main(${TAKEOVER} — 리뷰 없이 검증만으로 머지)`, BODY_EDITED, `${TAKEOVER}(리뷰 없이 검증만으로 머지) → 머지 확인 대기`]
+check('C — 이어받기를 주는 결과는 상한 줄 둘뿐 · 다른 결과 문구는 앞부분이 겹쳐도 이어받기를 주지 않음', otherResults.every((result) => !grantsTakeover(result)), otherResults.filter((result) => grantsTakeover(result)).join(' | '))
 const partial = aggregate([ok('claude', changes), { name: 'codex', status: 'failed', reason: 'x' }])
 check('C — 리뷰어가 하나라도 실패한 상한 라운드는 이어받기를 주지 않음(지적은 그대로 보냄)', partial.verdict === 'changes' && partial.findings.length === 1 && !takeoverEligible(partial, MAX_ROUNDS) && takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS) && !takeoverEligible(aggregate([ok('claude', changes), ok('codex', approve)]), MAX_ROUNDS - 1))
 const partialInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: MAX_ROUNDS, findings: partial.findings, takeover: false, plan: 'p', worktree: '/wt', athenaDir: '/a' })
@@ -875,6 +878,15 @@ followup_plan 'blocked — 사용자 답 기다림' "$FS3" '- PR: https://github
 OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
 expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
+
+# 심볼릭 링크(맥 /var → /private/var) · `//` 가 든 경로로 직접 실행해도 import 로 오인하지 않는다(b051a7) — 인자 없이 부르면 사용법이 나와야 한다
+mkdir -p "$TMP/ismain" && ln -s "$SRC" "$TMP/ismain/link"
+for script in pr-auto.mjs learn-review.mjs; do
+  MAIN_OUT="$(node "$TMP/ismain/link/scripts/$script" 2>&1 </dev/null | head -1)"
+  [ -n "$MAIN_OUT" ] && echo "  ✔ $script — 심볼릭 링크 경로로 실행해도 직접 실행으로 인식" || { echo "  ✖ $script — 심볼릭 링크 경로로 실행하면 아무 출력 없이 끝남(import 로 오인)"; FAIL=1; }
+done
+MAIN_OUT="$(node "$TMP//ismain//link/scripts/pr-auto.mjs" 2>&1 </dev/null | head -1)"
+[ -n "$MAIN_OUT" ] && echo "  ✔ pr-auto.mjs — 경로에 // 가 있어도 직접 실행으로 인식" || { echo "  ✖ pr-auto.mjs — 경로에 // 가 있으면 직접 실행을 놓침"; FAIL=1; }
 
 [ $FAIL = 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL

@@ -29,6 +29,7 @@ import { tmpdir } from 'node:os'
 import { execFile, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
+import { isMainModule } from './lib/is-main.mjs'
 import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { logEvent } from './lib/events.mjs'
@@ -988,7 +989,7 @@ const watch = async () => {
 }
 
 // ── 시작 ───────────────────────────────────────────────────────────────
-const isMain = process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+const isMain = isMainModule(import.meta.url)
 if (!isMain) {
   // import 만
 } else if (flag('watch')) await watch()
