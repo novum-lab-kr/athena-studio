@@ -71,7 +71,9 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   let dropOutput = false // attach 답이 오기 전 출력 — 되살릴 화면에 이미 들어 있다
   let screenDetached = false
 
-  function onDaemonEvent(message: Reply & { pane?: string; data?: string; state?: unknown; url?: unknown }) {
+  function onDaemonEvent(current: () => Connection | null, message: Reply & { pane?: string; data?: string; state?: unknown; url?: unknown }) {
+    // 이미 떼어 낸 옛 연결의 알림은 버린다 — 새 연결과 같이 오면 출력이 두 번 찍힌다(gh170)
+    if (daemon && current() !== daemon) return
     if (message.event === 'data') {
       if (dropOutput) return
       outputQueue.set(message.pane as string, (outputQueue.get(message.pane as string) || '') + message.data)
@@ -97,7 +99,9 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
   }
 
   // 연결이 끊기면 화면에 알린다(앱이 스스로 끊은 detachScreen 은 daemon 을 먼저 비운다)
-  function onDaemonClosed() {
+  // 닫힌 것이 지금 연결이 아니면(옛 연결의 닫힘이 새 연결이 붙은 뒤에 온 것) 아무것도 건드리지 않는다 — 살아 있는 새 연결을 잃으면 다음 요청이 연결을 하나 더 만든다(gh170)
+  function onDaemonClosed(closed: Connection | null) {
+    if (daemon && closed !== daemon) return
     daemon = null
     screenDetached = true
     send('screen:disconnected')
@@ -108,9 +112,25 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
     if (connecting) return connecting
     connecting = (async () => {
       const paths = daemonPaths()
-      const options = { paths, env: core.childEnv(process.env), onEvent: onDaemonEvent, onClose: onDaemonClosed }
-      let result = await daemonClient.ensureDaemon(options)
-      if (result.status === 'mismatch' && (await askRestartDaemon(result, ctx.win))) result = await daemonClient.ensureDaemon(options)
+      // ensureDaemon 호출마다 따로 — 알림 · 닫힘이 어느 연결 것인지 가린다(버전 확인으로 다시 붙을 때 첫 연결의 닫힘이 둘째 것으로 읽히지 않게)
+      const optionsFor = () => {
+        let own: Connection | null = null
+        return {
+          paths,
+          env: core.childEnv(process.env),
+          onEvent: (message: Reply) => onDaemonEvent(() => own, message),
+          onClose: () => onDaemonClosed(own),
+          bind: (connection: Connection) => (own = connection),
+        }
+      }
+      const connect = async () => {
+        const { bind, ...options } = optionsFor()
+        const ensured = await daemonClient.ensureDaemon(options)
+        bind(ensured.connection)
+        return ensured
+      }
+      let result = await connect()
+      if (result.status === 'mismatch' && (await askRestartDaemon(result, ctx.win))) result = await connect()
       if (result.status === 'ok') {
         setDaemonOld(false)
         releaseHeldWindows()
