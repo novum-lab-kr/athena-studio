@@ -93,6 +93,10 @@ check block "heredoc 치환 안 따옴표 속 ) 뒤의 git push" "cat <<EOF
 EOF"
 check block "구분자 EOF-X 의 종료자 뒤 git push" $'cat <<EOF-X\nx\nEOF-X\ngit push'
 check pass "구분자 EOF-X 본문의 EOF 줄 · git push 는 글" $'cat <<EOF-X\nEOF\ngit push\nEOF-X'
+check block "큰따옴표 안 중첩 치환 속 ) 뒤의 git push" "cat <<EOF
+\$(echo \"\$(echo \")\"; git push)\")
+EOF"
+check block "작은따옴표 구분자 'E\\OF' 의 종료자 뒤 git push" $'cat <<\'E\\OF\'\nx\nE\\OF\ngit push'
 check block "ship.sh --repo-agent" "$ROOT/scripts/ship.sh --repo-agent x"
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || echo "실패 있음"

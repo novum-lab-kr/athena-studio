@@ -63,12 +63,7 @@ def mask_quotes(text, keep_substitution):
             elif keep_substitution and (text.startswith('$(', index) or char == '`'):
                 # 치환 구간은 끝까지 그대로 옮긴다 — $( ) 는 괄호 짝을 센다(중첩)
                 if char == '$':
-                    depth, end = 0, index + 1
-                    while end < len(text):
-                        depth += {'(': 1, ')': -1}.get(text[end], 0)
-                        if depth == 0:
-                            break
-                        end += 1
+                    end = closing_paren(text, index + 1)
                 else:
                     end = text.find('`', index + 1)
                 end = len(text) - 1 if end < 0 or end >= len(text) else end
@@ -92,15 +87,18 @@ def balanced_groups(view, opener):
             return spans
         if opener == '(' and index > 0 and view[index - 1] == '$':
             index += 1; continue   # $( 는 치환 쪽에서 본다
-        depth, cursor = 0, index + len(opener) - 1
-        while cursor < len(view):
-            if view[cursor] == '(':
-                depth += 1
-            elif view[cursor] == ')':
-                depth -= 1
-                if depth == 0:
-                    break
-            cursor += 1
+        if opener == '$(':
+            cursor = closing_paren(view, index + 1)   # 치환 안의 따옴표 속 ) 는 세지 않는다
+        else:
+            depth, cursor = 0, index + len(opener) - 1
+            while cursor < len(view):
+                if view[cursor] == '(':
+                    depth += 1
+                elif view[cursor] == ')':
+                    depth -= 1
+                    if depth == 0:
+                        break
+                cursor += 1
         spans.append((index + len(opener), cursor))
         index = cursor + 1
 
@@ -230,7 +228,8 @@ HEREDOC_HEAD = re.compile(r'<<(?!<)(?P<dash>-)?[ \t]*(?P<word>(?:\\.|\'[^\']*\'|
 
 
 def closing_paren(body, start):
-    """body[start] == '(' 의 짝 ')' 자리 — 안쪽 따옴표 · 역슬래시 속의 괄호는 세지 않는다(없으면 len(body))"""
+    """body[start] == '(' 의 짝 ')' 자리 — 안쪽 따옴표 · 역슬래시 속의 괄호는 세지 않고, 큰따옴표 안의 $( … ) · 백틱은
+    새 문맥이라 그 짝까지 통째로 건너뛴다(없으면 len(body))"""
     depth, quote, index = 0, '', start
     while index < len(body):
         char = body[index]
@@ -238,6 +237,12 @@ def closing_paren(body, start):
             quote = '' if char == "'" else quote
         elif char == '\\':
             index += 1
+        elif body.startswith('$(', index):
+            index = closing_paren(body, index + 1)
+        elif char == '`':
+            index += 1
+            while index < len(body) and body[index] != '`':
+                index += 2 if body[index] == '\\' else 1
         elif quote == '"':
             quote = '' if char == '"' else quote
         elif char in ('"', "'"):
@@ -264,6 +269,32 @@ def arithmetic_spans(view):
             cursor += 1
         spans.append((opened.start(), cursor))
     return spans
+
+
+def unquote_word(word):
+    """셸의 인용 제거 — 작은따옴표 안은 그대로(역슬래시 포함), 큰따옴표 안의 역슬래시는 $ ` " \\ 앞에서만 사라지고, 따옴표 밖은 다음 글자를 보호"""
+    out, quote, index = [], '', 0
+    while index < len(word):
+        char = word[index]
+        following = word[index + 1:index + 2]
+        if quote == "'":
+            if char == "'":
+                quote = ''
+            else:
+                out.append(char)
+        elif char == '\\':
+            if quote == '"' and following not in ('$', '`', '"', '\\', '\n'):
+                out.append(char)
+            else:
+                out.append(following); index += 1
+        elif char == '"':
+            quote = '' if quote else '"'
+        elif char == "'" and not quote:
+            quote = "'"
+        else:
+            out.append(char)
+        index += 1
+    return ''.join(out)
 
 
 def heredoc_substitutions(body):
@@ -302,7 +333,7 @@ def strip_heredocs(text):
         if (view[start:start + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:start])
                 or any(begin <= start <= end for begin, end in spans)):
             continue
-        tag = re.sub(r'[\'"\\]', '', head.group('word'))
+        tag = unquote_word(head.group('word'))
         if not tag:
             continue
         body_end, cursor = len(text), head.end()
