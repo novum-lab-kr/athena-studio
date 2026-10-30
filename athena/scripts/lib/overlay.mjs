@@ -4,7 +4,7 @@
 // 여러 팩: 링크가 본체의 논리 경로 pack/…(= .pack-data/pack/…)를 가리킨다 → 팩을 갈아 끼워도 같은 이름 파일은 그대로 이어진다.
 //          pack · plans · issues · archive · .sync · repos · 상태 파일은 고정 링크(scripts/lib/packs.mjs FIXED_LINKS)라 여기서 다루지 않는다
 import { execFileSync } from 'node:child_process'
-import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { ACTIVE_LINK, paths } from './config.mjs'
 import { takeLock } from './lock.mjs'
@@ -27,6 +27,12 @@ export const FIXED_NAMES = new Set(['pack', 'plans', 'issues', 'repos', '.worktr
 
 const SKIP_WALK = new Set(['.git', 'node_modules', 'repos', '.worktrees', 'packs', ACTIVE_LINK, 'plans', 'issues', 'archive', 'test'])
 export const isLink = (path) => { try { return lstatSync(path).isSymbolicLink() } catch { return false } }
+// 링크 하나 지우기 — 폴더를 가리키는 링크를 rmSync 로 지우면 Node 24.5.0 에서 ERR_FS_EISDIR 이라 링크는 unlinkSync 로 지운다(원본은 건드리지 않는다).
+// 링크가 아니면 예전 rmSync(force) 와 같다 — 없으면 넘어가고, 파일은 지우고, 폴더는 그대로 오류.
+export const removeLink = (path) => {
+  if (isLink(path)) { unlinkSync(path); return }
+  rmSync(path, { force: true })
+}
 const pointsInto = (link, dir) => { try { const real = realpathSync(link); const base = realpathSync(dir); return real === base || real.startsWith(base + '/') } catch { return false } }
 const under = (path, dir) => path === dir || path.startsWith(dir + '/')
 
@@ -110,7 +116,7 @@ export const linkOverlay = (root) => {
     const want = relative(dirname(path), target)
     if (isLink(path)) {
       if (readlinkSync(path) === want) { kept.push(at); continue }
-      rmSync(path)
+      removeLink(path)
     }
     mkdirSync(dirname(path), { recursive: true })
     symlinkSync(want, path)
@@ -119,7 +125,7 @@ export const linkOverlay = (root) => {
   // 팩을 갈아 끼웠으면 옛 팩 링크가 남는다 — 이번 목록에 없는 팩 링크는 지운다
   const wanted = new Set(planned.map(({ at }) => at))
   const stale = packLinks(root).filter((at) => !wanted.has(at))
-  for (const at of stale) rmSync(join(root, at))
+  for (const at of stale) removeLink(join(root, at))
   writeExclude(root, [...made, ...kept])
   return { clash: [], made, kept, stale, packDir, mode: where.mode }
 }
@@ -129,12 +135,12 @@ export const unlinkOverlay = (root) => {
   const where = paths(root)
   const legacyPack = where.mode === 'legacy' ? where.packDir : null
   let removed = 0
-  for (const at of packLinks(root)) { rmSync(join(root, at)); removed += 1 }
+  for (const at of packLinks(root)) { removeLink(join(root, at)); removed += 1 }
   // 옛 구조의 pack · .sync · archive (팩 실제 폴더를 가리키는 것)
   if (legacyPack) {
     for (const name of ['pack', '.sync', 'archive']) {
       const path = join(root, name)
-      if (isLink(path) && (pointsInto(path, legacyPack) || readlinkSync(path).includes('packs/'))) { rmSync(path); removed += 1 }
+      if (isLink(path) && (pointsInto(path, legacyPack) || readlinkSync(path).includes('packs/'))) { removeLink(path); removed += 1 }
     }
   }
   writeExclude(root, [])
