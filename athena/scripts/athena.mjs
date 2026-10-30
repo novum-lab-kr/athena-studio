@@ -57,7 +57,7 @@
  *
  *   새 회사 첫 실행(/setup 스킬이 차례로 부른다)
  *   athena init --scan [--root <폴더>] [--depth <n>] [--json]
- *                                                     reposRoot(기본 ..) 아래 n 단계(기본 3)까지 git 레포를 훑어 추정을 보여 준다(읽기 전용)
+ *                                                     --root → 팩 local.json reposRoot → 본체 설정 reposRoot → .. 아래 n 단계(기본 3)까지 git 레포를 훑어 추정을 보여 준다(읽기 전용)
  *   athena init --pack <회사> --repos <a,b|all> [--names <x,y>] [--org <GitHub 조직>] [--agent <레포>=<이름> …]
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
  *   athena repo add <레포 폴더> [--name <이름>] [--json]       이미 있는 팩에 레포 하나 더하기 — pack.json · 자리 · repos/ 링크 · 그 레포 뼈대 · 팩 링크(채우기는 docs/setup.md "레포 하나 더하기")
@@ -149,7 +149,12 @@ const flag = (name) => { const index = args.indexOf(`--${name}`); return index >
 const flags = (name) => args.flatMap((arg, index) => (arg === `--${name}` ? [args[index + 1]] : [])).filter(Boolean)
 
 const init = () => {
-  const root = flag('root') || local.reposRoot || '..'
+  // 찾는 순서는 packs.mjs syncRepos 와 같다 — --root → 팩 local.json → 본체 설정 → ..
+  // (여러 팩 구조의 reposRoot 는 팩 local.json 에만 있을 수 있다. 옛 구조는 팩 데이터가 없어 건너뛴다)
+  const where = paths(ROOT)
+  let packLocal = {}
+  if (where.mode === 'packs') { try { packLocal = JSON.parse(readFileSync(join(where.packData, 'local.json'), 'utf8')) } catch { /* 없거나 깨짐 — 다음 순서로 */ } }
+  const root = flag('root') || packLocal.reposRoot || local.reposRoot || '..'
   if (args.includes('--scan')) {
     const repos = scanRepos(root, ROOT, Number(flag('depth')) || 3)
     if (args.includes('--json')) { console.log(JSON.stringify(repos, null, 2)); return }
