@@ -28,7 +28,7 @@ import { installPacks } from './main/packs.mts'
 import { installSideBrowser } from './main/side-browser.mts'
 import { installPackWindow } from './main/pack-window.mts'
 import { APP_UPDATE_CHECK_MS, createAppUpdater } from './main/app-updater.mts'
-import { createCoreRunner } from './main/core-runner.mts'
+import { createCoreRunner, changelogFile } from './main/core-runner.mts'
 import { installDaemonLink } from './main/daemon-link.mts'
 import { installWorkspaces } from './main/workspaces.mts'
 import { installAgentMonitor } from './main/agent-monitor.mts'
@@ -370,7 +370,7 @@ const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 // 아테나 폴더 · 스튜디오 코어 준비 · 코어 · 팩 명령 실행 — src/main/core-runner.mts(PACK_TIMEOUTS 도 거기 — 팩을 바꾸는 명령은 시간이 넘어도 끊지 않는다).
 // 쓰는 것(electron app · dialog · 화면 문구 · 지금 언어 · 스튜디오 집 자리 · 코어 번들 · 데몬 자리 · 팩 로그 자리)은 인자로 넘긴다
-const { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, dialog, say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile })
+const { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile })
 
 // [Finder 에서 보기] — 방금 만든 파일만
 let lastPackFile: string | null = null
@@ -789,6 +789,8 @@ handle('pack:inspect', (ctx, kind: unknown, source: unknown) => ctx.packInspect(
 handle('pack:import', (ctx, token: unknown, choice: unknown) => ctx.packImport(String(token), String(choice)))
 handle('pack:export', (ctx, kind: unknown) => ctx.packExport(kind === 'backup' ? 'backup' : 'share'))
 handle('pack:reveal', () => packReveal())
+// 코어 업데이트 팝업의 [폴더 열기] — 팝업이 보인 백업 폴더만
+handle('core-update:reveal', (_ctx, dir: unknown) => revealCoreUpdateBackup(String(dir)))
 handle('pack:icon', (ctx, id: unknown) => ctx.packIcon(String(id)))
 handle('pack:set-name', (ctx, id: unknown, name: unknown) => ctx.packSetName(String(id), typeof name === 'string' ? name : null))
 handle('pack:set-icon', (ctx, id: unknown, clear: unknown, usePicked: unknown) => ctx.packSetIcon(String(id), clear === true, usePicked === true))
@@ -913,7 +915,7 @@ app.whenReady().then(async () => {
   buildMenu()
   openSavedWindows()
   const first = frontCtx()
-  showCoreUpdateNotice(first && first.win)
+  void showCoreUpdateNotice(first && first.win)
   showAppUpdateNotice(first && first.win)
   checkAppUpdate()
   setInterval(checkAppUpdate, APP_UPDATE_CHECK_MS)

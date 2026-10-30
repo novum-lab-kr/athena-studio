@@ -241,10 +241,11 @@ test('켤 때 업데이트: 팩이 있으면 코어에 맡긴다 — 손잡이�
   const result = { ok: false, error: 'partial', bodies: [{ id: 'acme', status: 'updated' }, { id: 'globex', status: 'skipped', reason: 'busy' }], backedUp: [{ id: 'acme', dir: '/d/backups/core-edits/upd-1/acme', files: ['CLAUDE.md'] }] }
   const newCore = async (argv) => {
     calls.push(argv)
-    return argv[0] === 'version' ? { ok: true, capabilities: ['update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base'] } : result
+    return argv[0] === 'version' ? { ok: true, version: '0.25.1', capabilities: ['update-from-bundle', 'backup-dirty', 'bodies-dir', 'port-base'] } : result
   }
   const updated = await home.updateCore({ coreDir, dataDir: tmp(), bundle, runCore: newCore })
   assert.deepEqual(calls, [['version'], ['update', '--from', bundle, '--backup-dirty']])
+  assert.equal(updated.fromVersion, '0.25.1') // 팝업의 이전 버전 칩
   assert.equal(updated.state, 'partial')
   assert.deepEqual(updated.summary.skipped, [{ id: 'globex', reason: 'busy', blockers: [] }])
   assert.deepEqual(updated.summary.updated, ['acme'])

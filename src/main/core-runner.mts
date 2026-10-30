@@ -10,7 +10,9 @@ import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
 import * as i18n from '../lib/i18n.mts'
 import * as daemonClient from '../daemon-client.mts'
+import * as releaseNotes from '../lib/release-notes.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
+import type { CoreUpdateRow, CoreUpdateView } from '../lib/release-notes.mts'
 
 // studio-home · screen-model 은 JS — main 과 같은 require 캐시의 것을 쓴다
 const require = createRequire(import.meta.url)
@@ -18,11 +20,11 @@ const studioHome: typeof import('../lib/studio-home.js') = require('../lib/studi
 const screenModel: typeof import('../lib/screen-model.js') = require('../lib/screen-model.js')
 
 type App = { getPath(name: 'home' | 'userData'): string }
-type Dialog = Pick<typeof import('electron').dialog, 'showMessageBox'>
+type Shell = Pick<typeof import('electron').shell, 'openPath'>
 type ParentWindow = import('electron').BrowserWindow | null | undefined
 type Layout = ReturnType<typeof studioHome.studioLayout>
 // 켤 때 코어 업데이트 결과(studio-home updateCore) — 읽는 칸만
-type CoreUpdate = { state: string; head?: string | null; target?: string | null; error?: unknown; summary?: ReturnType<typeof studioHome.summarizeUpdate> }
+type CoreUpdate = { state: string; head?: string | null; target?: string | null; fromVersion?: string | null; error?: unknown; summary?: ReturnType<typeof studioHome.summarizeUpdate> }
 // prepareCore 결과 — 읽는 칸만(풀기 · 설정 실패 결과와 성공 결과가 섞인다)
 type Prepared = { ok: boolean; created?: boolean; error?: string; message?: string; file?: string; update?: CoreUpdate | null }
 export type Progress = { step: string; text: string }
@@ -36,9 +38,21 @@ function packScript(dir: string): string {
   return path.join(dir, 'scripts', 'athena.mjs')
 }
 
-// app — 홈 · 앱 데이터 자리 · dialog — 알림 창 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
+// 내역 번역 파일(src/changelog/<언어>.json) 자리 · 내역 원문(CHANGELOG.md — 개발 앱은 레포 뿌리, 배포판은 Resources 에 실린다)
+const CHANGELOG_DIR = path.join(import.meta.dirname, '..', 'changelog')
+export const changelogFile = (packaged: boolean, resourcesPath: string): string => (packaged ? path.join(resourcesPath, 'CHANGELOG.md') : path.join(import.meta.dirname, '..', '..', 'CHANGELOG.md'))
+
+function readJson(file: string): Record<string, string> | null {
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8')) as Record<string, string>
+  } catch {
+    return null
+  }
+}
+
+// app — 홈 · 앱 데이터 자리 · shell — 폴더 열기 · changelog — 내역 원문 파일 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
 // daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.mts)
-export function createCoreRunner({ app, dialog, say, language, studio, coreBundle, daemonPaths, packLogFile }: { app: App; dialog: Dialog; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
+export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile }: { app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
   // ── 아테나 폴더 — 공용 ──────────────────────────────────────
   // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
   const athenaReposRoot = (dir: string) => core.reposRootFor(dir, { studioRoot: studio.root, home: app.getPath('home') })
@@ -99,25 +113,64 @@ export function createCoreRunner({ app, dialog, say, language, studio, coreBundl
     }
   }
 
-  // 켤 때 업데이트 결과 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면 한 번 알린다
-  function showCoreUpdateNotice(parentWindow: ParentWindow): void {
+  // 켤 때 업데이트 결과 팝업에 보일 줄 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면
+  function noticeRows(notice: CoreUpdate): CoreUpdateRow[] {
+    const summary = notice.summary
+    if (!summary) return [{ kind: notice.state === 'unsupported' ? 'unsupported' : 'notMoved', params: { reason: String(notice.error || notice.state) }, chips: [] }]
+    const rows: CoreUpdateRow[] = []
+    // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
+    if (summary.skipped.length) rows.push({ kind: 'skipped', params: {}, chips: summary.skipped.map((entry) => ((entry.blockers || []).length ? `${entry.id} · ${entry.blockers.join(', ')}` : `${entry.id} · ${entry.reason}`)) })
+    for (const entry of summary.working || []) rows.push({ kind: 'working', params: { body: String(entry.id), count: Number(entry.count) }, chips: (entry.sessions || []).map(String) })
+    for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: { body: String(entry.id) }, chips: [], dir: entry.dir ? String(entry.dir) : undefined })
+    if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })
+    return rows
+  }
+
+  // 새 코어의 사람이 읽는 버전 — 코어 version --json 의 version(태그가 없으면 null)
+  async function currentCoreVersion(): Promise<string | null> {
+    const result = (await runCore(['version'], { dir: studio.core, contract: false }).catch(() => null)) as { version?: unknown } | null
+    return result && typeof result.version === 'string' ? result.version : null
+  }
+
+  // 이전 → 새 버전 사이 내역 — CHANGELOG.md 의 절을 고르고 지금 언어 번역(없으면 영어)으로. 읽지 못하거나 해당 절이 없으면 null
+  function notesFor(from: string | null, to: string | null): CoreUpdateView['notes'] {
+    let text: string
+    try {
+      text = fs.readFileSync(changelog, 'utf8')
+    } catch {
+      return null
+    }
+    const lang = language()
+    const translations = lang === 'en' ? null : readJson(path.join(CHANGELOG_DIR, `${lang}.json`))
+    return releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to), releaseNotes.translateNote(translations))
+  }
+
+  // 알릴 백업 폴더 — 화면이 [폴더 열기] 로 부를 수 있는 것은 이 팝업이 보인 폴더뿐
+  const revealable = new Set<string>()
+  async function revealCoreUpdateBackup(dir: string): Promise<boolean> {
+    if (!revealable.has(dir)) return false
+    return (await shell.openPath(dir)) === ''
+  }
+
+  // 켤 때 업데이트 결과 — 알릴 것이 있으면 첫 창에 한 번 보낸다(앱 안 팝업 · 화면은 core-update:show 를 받는다). 알릴 것이 없으면 띄우지 않는다
+  async function showCoreUpdateNotice(parentWindow: ParentWindow): Promise<void> {
     const notice = coreUpdateNotice
     coreUpdateNotice = null
     if (!notice) return
-    const lines: string[] = []
-    const summary = notice.summary
-    if (summary) {
-      // 무엇이 막았는지 — 짝지은 pane 이름(없으면 코어 설명). 모르면 까닭(busy · dirty …)
-      if (summary.skipped.length) lines.push(say('dialog.coreUpdate.skipped', { bodies: summary.skipped.map((entry) => `${entry.id}(${(entry.blockers || []).length ? entry.blockers.join(', ') : entry.reason})`).join(', ') }))
-      for (const entry of summary.working || []) lines.push(say('dialog.coreUpdate.working', { body: entry.id, count: entry.count, sessions: entry.sessions.join(', ') }))
-      for (const entry of summary.backedUp) lines.push(say('dialog.coreUpdate.backedUp', { body: entry.id, path: entry.dir }))
-      if (summary.failed.length) lines.push(say('dialog.coreUpdate.failed', { bodies: summary.failed.map((entry) => `${entry.id}(${entry.error})`).join(', ') }))
-    } else {
-      lines.push(say(notice.state === 'unsupported' ? 'dialog.coreUpdate.unsupported' : 'dialog.coreUpdate.notMoved', { reason: notice.error || notice.state }))
-    }
-    if (!lines.length) return
-    const options = { type: 'info' as const, message: say('dialog.coreUpdate.message'), detail: lines.join('\n\n') }
-    ;(parentWindow ? dialog.showMessageBox(parentWindow, options) : dialog.showMessageBox(options)).catch(() => null)
+    const rows = noticeRows(notice)
+    if (!rows.length) return
+    // 제목 · 버전 · 내역은 실제로 새 코어로 바뀐 본체가 있을 때만
+    const changed = Boolean(notice.summary && notice.summary.updated.length > 0)
+    const from = changed ? notice.fromVersion || null : null
+    const to = changed ? await currentCoreVersion() : null
+    const showVersions = Boolean(from && to && from !== to)
+    const view: CoreUpdateView = { changed, from: showVersions ? from : null, to: showVersions ? to : null, notes: showVersions ? notesFor(from, to) : null, rows, releasesUrl: releaseNotes.RELEASES_URL }
+    for (const row of rows) if (row.dir) revealable.add(row.dir)
+    if (!parentWindow || parentWindow.isDestroyed()) return
+    const contents = parentWindow.webContents
+    // 화면이 아직 읽는 중이면 다 읽은 뒤에(화면 진입점이 core-update:show 를 받을 준비를 마친다)
+    if (contents.isLoading()) contents.once('did-finish-load', () => contents.send('core-update:show', view))
+    else contents.send('core-update:show', view)
   }
 
   // 코어를 풀지 못한 까닭 — 화면 문구로
@@ -228,5 +281,5 @@ export function createCoreRunner({ app, dialog, say, language, studio, coreBundl
     return { ok: false, error: 'contract-mismatch', contract: known.contract, text: say(known.contract < packModel.CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract: known.contract }) }
   }
 
-  return { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, coreInstallError, runCore, runPack, contractBlock }
+  return { athenaReposRoot, prepareStudioCore, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock }
 }

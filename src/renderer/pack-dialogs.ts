@@ -7,6 +7,7 @@ import { lineIcon } from './side-panels.ts'
 import { browserOpen, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
+import type { CoreUpdateView } from '../lib/release-notes.mts'
 
 // 대화상자 버튼 하나 — value null 은 취소(Esc 와 같다)
 export type PackDialogAction = { label: string; value: string | null; kind?: 'primary' | 'danger' | 'link' }
@@ -32,7 +33,7 @@ export const setPacks = (next: PackState): void => {
 }
 
 // 대화상자 · 진행 표시가 떠 있는 동안 — 뒤 화면은 inert(포커스 · 클릭 막기), 옆 브라우저는 네이티브 뷰라 위를 덮어서 잠깐 뗀다
-export const modalOpen = (): boolean => !$('pack-dialog').hidden || !$('pack-progress').hidden
+export const modalOpen = (): boolean => !$('pack-dialog').hidden || !$('pack-progress').hidden || !$('core-update').hidden
 function syncModal(): void {
   const open = modalOpen()
   for (const node of document.querySelectorAll<HTMLElement>('body > header, body > main')) node.inert = open
@@ -160,6 +161,30 @@ export const hidePackProgress = (): void => {
   // 이어서 대화상자가 떴으면 그쪽 포커스 그대로
   if ($('pack-dialog').hidden && progressBefore instanceof HTMLElement && progressBefore.isConnected) progressBefore.focus({ preventScroll: true })
   progressBefore = null
+}
+
+// 코어 업데이트 결과 팝업 — 몸통은 React(ui/core-update.tsx), 여기는 보이기 · 숨기기 · 뒤 화면 막기 · Esc · 포커스. 켤 때 main 이 한 번 보낸다
+export function showCoreUpdate(view: CoreUpdateView): void {
+  const overlay = $('core-update')
+  const before = document.activeElement
+  const hide = (): void => {
+    overlay.hidden = true
+    overlay.onkeydown = null
+    StudioUi.coreUpdate.clear()
+    syncModal()
+    if (before instanceof HTMLElement && before.isConnected) before.focus({ preventScroll: true })
+  }
+  StudioUi.coreUpdate.show(view, hide)
+  overlay.onkeydown = (event) => {
+    if (event.key !== 'Escape' || event.isComposing) return
+    event.preventDefault()
+    hide()
+  }
+  overlay.hidden = false
+  syncModal()
+  const confirm = overlay.querySelector<HTMLElement>('[data-confirm]')
+  if (confirm) confirm.focus({ preventScroll: true })
+  else overlay.focus({ preventScroll: true })
 }
 
 const PACK_NAME_MAX = 40 // 표시 이름 1~40자(본체가 다시 검사한다)

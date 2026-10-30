@@ -114,6 +114,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
   onWorkOpen: listen('work:open'),
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
+  // 코어 업데이트 팝업 — main 이 켤 때 한 번 보낸다(core-runner showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만
+  onCoreUpdate: listen('core-update:show'),
+  coreUpdateReveal: (dir) => ipcRenderer.invoke('core-update:reveal', dir),
   // 지금 탭(work · board) — 메뉴 막대 알림이 보고 있는 pane 을 건너뛸 때 쓴다
   reportTab: (tab) => ipcRenderer.send('ui:tab', tab),
   // 옆 브라우저 — 페이지는 main 이 그리고 화면은 서랍 자리만 알린다

@@ -1430,3 +1430,38 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .pd-lead-tokens { margin: 8px 8px 0; }
 .pd-more { display: block; align-self: flex-start; margin-top: 4px; padding: 2px 0; border: 0; background: transparent; color: var(--accent); font: inherit; font-size: 12px; cursor: pointer; }
 .pd-more:hover, .pd-more:focus-visible { text-decoration: underline; outline: none; }
+
+/* 코어 업데이트 결과 팝업 — 머리 · 업데이트 내역 · 결과 상자 · 가운데 [확인] (ui/core-update.tsx) */
+.core-update-box { width: min(480px, 100%); }
+.core-update-box .cu-head { flex: none; display: flex; align-items: center; gap: 14px; padding: 20px 20px 14px; }
+.cu-head-icon { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: 50%; background: var(--popup-gold-bg); border: 1px solid var(--popup-gold-line); color: var(--accent); }
+.cu-head-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.cu-head-text { min-width: 0; }
+.core-update-box h2 { padding: 0; font-size: 15px; }
+.cu-versions { display: flex; align-items: center; gap: 6px; margin: 6px 0 0; font-size: 12px; }
+.cu-arrow { color: var(--popup-muted); }
+.cu-chip { display: inline-block; max-width: 100%; padding: 1px 8px; border: 1px solid var(--popup-line); border-radius: 999px; background: var(--popup-inset); color: var(--popup-text); font-size: 11.5px; line-height: 1.6; overflow-wrap: anywhere; }
+.cu-chip.new { border-color: var(--popup-gold-line); color: var(--accent); }
+.core-update-box .cu-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 0 20px 18px; }
+.cu-notes h3 { margin: 0 0 8px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; letter-spacing: .02em; }
+.cu-notes ul { display: flex; flex-direction: column; gap: 8px; margin: 0; padding: 0; list-style: none; }
+.cu-notes li { display: flex; align-items: flex-start; gap: 10px; font-size: 12.5px; line-height: 1.55; }
+.cu-tag { flex: none; box-sizing: border-box; width: 56px; padding: 1px 0; border-radius: 6px; text-align: center; font-size: 11px; font-weight: 600; line-height: 1.6; background: var(--popup-gold-bg); color: var(--accent); }
+.cu-tag.improved { background: rgb(134 199 163 / 10%); color: var(--success); }
+.cu-tag.fixed { background: rgb(219 181 121 / 10%); color: var(--warning); }
+.cu-note-text { min-width: 0; color: var(--popup-text); }
+.core-update-box .cu-more { margin: 10px 0 0; padding: 0; border: 0; background: transparent; color: var(--accent); font: 500 12px/1.5 var(--font-ui); text-align: left; cursor: pointer; }
+.core-update-box .cu-more:hover { text-decoration: underline; }
+.cu-result { display: flex; flex-direction: column; gap: 10px; margin-top: 14px; padding: 12px; border: 1px solid var(--popup-line); border-radius: 10px; background: var(--popup-inset); }
+.cu-result:empty { display: none; }
+.cu-notes + .cu-result { margin-top: 16px; }
+.cu-row { display: flex; align-items: flex-start; gap: 10px; }
+.cu-row-icon { flex: none; display: grid; place-items: center; width: 18px; height: 18px; margin-top: 1px; border-radius: 50%; }
+.cu-row-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.cu-row-icon.good { background: rgb(134 199 163 / 14%); color: var(--success); }
+.cu-row-icon.warn { background: rgb(219 181 121 / 14%); color: var(--warning); }
+.cu-row-main { flex: 1; min-width: 0; }
+.core-update-box .cu-row-main p { margin: 0; font-size: 12.5px; line-height: 1.55; white-space: normal; }
+.cu-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
+.core-update-box .cu-row .pack-button { flex: none; min-height: 26px; padding: 3px 10px; font-size: 12px; }
+.core-update-box .cu-actions { justify-content: center; }
