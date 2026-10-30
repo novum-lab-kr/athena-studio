@@ -28,6 +28,8 @@ const view = createStore<ExplorerView>({ workspace: null, pane: null, root: null
 let panel: HTMLElement | null = null
 let actions: ExplorerActions | null = null
 let mounted = false
+// 읽기 요청 세대 — 작업 공간 · pane · 보는 폴더가 바뀔 때마다 1 씩. 늦게 온 옛 응답이 새 목록을 덮지 않게
+let generation = 0
 
 // 켤 때 한 번 — 자리와 바닐라 도우미만 받는다. 처음 그리는 것은 바닐라가 처음 render() · reset() 을 부를 때(그 전에는 칸이 빈 채)
 export function setup(container: HTMLElement, next: ExplorerActions): void {
@@ -66,6 +68,7 @@ export function render(): void {
 // 펼침 · 읽은 폴더 · 변경은 비운다 — 다른 워크트리 경로로 잘못 열리지 않게. 열려 있던 미리보기도 닫는다
 export function reset(workspaceId: string | null, paneId: string | null = null): void {
   const state = view.get()
+  generation++
   actions?.closePreview()
   commit({ workspace: workspaceId, pane: paneId, root: null, branch: null, mode: state.mode, children: new Map(), expanded: new Set(['.']), changes: [], git: false, statusKey: '', stamp: state.stamp + 1 })
   if (!workspaceId) return
@@ -74,10 +77,11 @@ export function reset(workspaceId: string | null, paneId: string | null = null):
 }
 
 async function loadFolder(relative: string): Promise<void> {
-  const { workspace: workspaceId, pane: paneId, root } = view.get()
+  const { workspace: workspaceId, pane: paneId } = view.get()
+  const started = generation
   const result = await studio.explorerList(workspaceId, relative, paneId)
-  // 기다리는 사이 작업 공간 · pane · 폴더가 바뀌었으면 버린다(처음 읽을 때는 폴더를 아직 몰라 root 가 null)
-  if (workspaceId !== view.get().workspace || paneId !== view.get().pane || (root !== null && root !== view.get().root)) return
+  // 기다리는 사이 작업 공간 · pane · 폴더가 바뀌었으면(세대가 달라졌으면) 버린다
+  if (started !== generation) return
   const next: Folder = 'error' in result ? { error: result.error } : result.entries
   const state = view.get()
   // 그대로면 다시 그리지 않는다(3초마다 다시 읽는다)
@@ -96,11 +100,13 @@ export function refresh(): void {
 async function refreshStatus(): Promise<void> {
   const { workspace: workspaceId, pane: paneId } = view.get()
   if (!workspaceId) return
+  const started = generation
   const result = await studio.explorerStatus(workspaceId, paneId)
-  if (workspaceId !== view.get().workspace || paneId !== view.get().pane || 'error' in result) return
+  if (started !== generation || 'error' in result) return
   const state = view.get()
   // 보는 폴더가 바뀌었다(pane 안에서 cd · 폴더가 지워져 작업 공간 폴더로 돌아감) — 펼침 · 읽은 폴더를 비우고 새 폴더로
   if (state.root !== null && state.root !== result.root) {
+    generation++
     actions?.closePreview()
     commit({ ...state, root: result.root, branch: result.branch, children: new Map(), expanded: new Set(['.']), changes: result.changes, git: result.git, statusKey: JSON.stringify(result) })
     loadFolder('.')

@@ -35,6 +35,7 @@ export function explorerActions(): ExplorerActions {
     foldIcon: PANEL_ICONS.right,
     openPreview,
     closePreview: () => {
+      previewRequest++ // 열려 있지 않아도 진행 중인 요청은 버린다
       if (!$('preview').hidden) closePreview()
     },
     collapse: () => setPanelHidden(true),
@@ -91,8 +92,13 @@ function viewerLine(row: ViewerRow, diff: boolean): HTMLDivElement {
   return line
 }
 
+// 미리보기 요청 번호 — 닫거나 새로 열 때 1 씩. 늦게 온 옛 응답은 버린다(pane 을 바꾼 뒤 옛 pane 파일이 다시 뜨지 않게)
+let previewRequest = 0
+
 async function openPreview(relative: string): Promise<void> {
+  const request = ++previewRequest
   const result = await studio.explorerOpen(StudioUi.explorer.workspace(), relative, StudioUi.explorer.pane())
+  if (request !== previewRequest) return
   const body = $('preview-body')
   const preview = $('preview')
   $('preview-title').textContent = result.path || relative
@@ -128,6 +134,7 @@ async function openPreview(relative: string): Promise<void> {
 }
 
 export function closePreview(): void {
+  previewRequest++
   $('preview').hidden = true
   const focused = views.get(screen.focused as string)
   if (focused) focused.term.focus()
