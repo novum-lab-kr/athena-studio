@@ -1333,7 +1333,6 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .settings-switch-track::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--popup-text); transition: transform 0.15s; }
 .settings-switch[aria-checked="true"] .settings-switch-track { background: var(--accent); }
 .settings-switch[aria-checked="true"] .settings-switch-track::after { transform: translateX(12px); background: var(--popup-bg); }
-.settings-warn { margin: -2px 8px 4px 22px; color: var(--warning); font-size: 11.5px; }
 /* 앱 업데이트 — 맨 아래 줄. 뒤처졌을 때만 [업데이트] 가 켜지고 ⚙ 에 점(.has-update) */
 .settings-app-update { margin-top: 4px; padding: 6px 0 2px; border-top: 1px solid rgb(255 255 255 / 6%); }
 .settings-app-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 4px 8px; color: var(--popup-text); font: 13px var(--font-ui); }

@@ -503,7 +503,6 @@
   "settings.mergeTitle": "PR 自動化",
   "settings.autoPr": "自動 PR・レビュー",
   "settings.mergeNow": "承認されたらすぐマージ",
-  "settings.releaseWarn": "⚠ マージすると {branch} にそのまま反映されます",
   "settings.empty": "設定できるレポがありません",
   "settings.unreadable": "pack.json を読めませんでした",
   "settings.saveFailed": "保存できませんでした {message}",

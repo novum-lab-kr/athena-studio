@@ -99,8 +99,6 @@ function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: Sav
       <h4 className="settings-repo-name">{repo.name}</h4>
       <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={repo.autoMerge} onClick={() => save(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`)} />
       {repo.autoMerge && <Switch id={`${repo.name}:confirm`} kind="sub" label={say('settings.mergeNow')} checked={!repo.confirm} onClick={() => save(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`)} />}
-      {/* 작업 base 가 운영 브랜치와 같은데 확인을 끄면 머지가 곧 그 브랜치 반영 */}
-      {repo.autoMerge && !repo.confirm && repo.releaseOnMerge && <p className="settings-warn">{say('settings.releaseWarn', { branch: repo.prBase })}</p>}
     </section>
   )
 }

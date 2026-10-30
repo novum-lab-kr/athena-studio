@@ -36,7 +36,7 @@ declare global {
   // 아테나 에이전트 켜기(src/main/athena-agent.mts openAthenaAgent)
   type OpenAgentResult = { error?: string; skipped?: boolean; existing?: boolean; focused?: boolean; started?: string; restore?: import('./ui/notices.tsx').RestoreResult | null }
 
-  type MergeRepo = { name: string; autoMerge: boolean; confirm: boolean; releaseOnMerge: boolean; prBase: string }
+  type MergeRepo = { name: string; autoMerge: boolean; confirm: boolean }
   // main 의 appUpdateView(src/main/app-updater.mts) — 개발판 src/lib/app-update.mts UpdateStatus · 배포판 src/lib/release-update.mts ReleaseStatus + running. 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
   type AppUpdateView = { state: 'behind' | 'current' | 'unavailable'; behind: number; branch: string | null; reason: string | null; version: string | null; latest: string | null; running: boolean }
 

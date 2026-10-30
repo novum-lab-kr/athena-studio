@@ -503,7 +503,6 @@
   "settings.mergeTitle": "PR 自动化",
   "settings.autoPr": "自动 PR · 审查",
   "settings.mergeNow": "批准后立即合并",
-  "settings.releaseWarn": "⚠ 合并后将直接合入 {branch}",
   "settings.empty": "没有可设置的仓库",
   "settings.unreadable": "无法读取 pack.json",
   "settings.saveFailed": "无法保存 {message}",

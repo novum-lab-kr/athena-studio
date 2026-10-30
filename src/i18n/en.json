@@ -503,7 +503,6 @@
   "settings.mergeTitle": "PR automation",
   "settings.autoPr": "Auto PR · review",
   "settings.mergeNow": "Merge right after approval",
-  "settings.releaseWarn": "⚠ Merging goes straight to {branch}",
   "settings.empty": "No repos to set",
   "settings.unreadable": "Couldn't read pack.json",
   "settings.saveFailed": "Couldn't save {message}",

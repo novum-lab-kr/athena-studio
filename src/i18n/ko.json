@@ -503,7 +503,6 @@
   "settings.mergeTitle": "PR 자동화",
   "settings.autoPr": "자동 PR · 리뷰",
   "settings.mergeNow": "승인되면 바로 머지",
-  "settings.releaseWarn": "⚠ 머지하면 {branch} 에 바로 반영됩니다",
   "settings.empty": "설정할 레포가 없습니다",
   "settings.unreadable": "pack.json 을 읽지 못했습니다",
   "settings.saveFailed": "저장하지 못했습니다 {message}",
