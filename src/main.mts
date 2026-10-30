@@ -898,11 +898,12 @@ app.whenReady().then(async () => {
   // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 기준)
   if (!Array.isArray(config.windows)) config = core.withWindows(config, core.windowDirs(config, core.sameDir))
   language = i18n.pickLanguage(config.language, app.getLocale())
-  // dev-app start 를 거치지 않고 켜졌는데 끝나지 않은 업데이트(설치 · 다시 빌드)가 있으면 도우미로 다시 켠다 — 옛 화면 · 번들로 뜨지 않게
-  if (await relaunchIfUnfinished()) return
-  // 코어 준비 · 업데이트는 git · node 를 부르므로 로그인 셸 PATH 를 받은 뒤에
+  // 도우미 · 설치 · git 이 node · npm 을 찾도록 로그인 셸 PATH 를 먼저 받는다(Dock · Finder 로 켜면 최소 PATH 뿐)
   const loginPath = await loadLoginPath()
   if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
+  // dev-app start 를 거치지 않고 켜졌는데 끝나지 않은 업데이트(설치 · 다시 빌드)가 있으면 도우미로 다시 켠다 — 옛 화면 · 번들로 뜨지 않게
+  // (도우미가 이미 돌고 있으면 창을 열지 않고 끝난다)
+  if (await relaunchIfUnfinished()) return
   // 스튜디오 코어 — 처음이면 번들에서 풀고 설정을 채운다(여기까지만 창 앞에서). 있던 본체의 코어 업데이트는 창을 연 뒤 뒤에서(updateStudioCore)
   const prepared = await prepareStudioCore({ update: false })
   if (prepared.ok && !core.windowDirs(config, core.sameDir).length) {

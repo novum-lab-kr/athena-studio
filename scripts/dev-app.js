@@ -336,6 +336,9 @@ async function restart(args) {
     return index >= 0 ? args[index + 1] || '' : ''
   }
   const after = Number(valueOf('--after'))
+  // 도우미가 도는 동안 표시를 남긴다 — 그 사이 Dock 으로 켠 앱이 창을 열지 않고 끝나게(src/lib/app-install.mts helperRunning)
+  appInstall.writeHelper(ROOT)
+  process.on('exit', () => appInstall.clearHelper(ROOT))
   const alive = (pid) => {
     try {
       process.kill(pid, 0)

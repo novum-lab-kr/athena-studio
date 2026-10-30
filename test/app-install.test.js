@@ -58,6 +58,24 @@ test('다시 빌드 표시 · 켜기 반복 막기: 표시가 있을 때만 · �
   assert.equal(install.shouldRelaunch(root, 1000 + install.RELAUNCH_GAP_MS), true)
 })
 
+test('도우미 pid 표시: 살아 있는 다른 도우미만 · 죽은 pid · 깨진 표시 · 내 pid 는 무시', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  assert.equal(install.helperRunning(root), false) // 표시 없음
+  install.writeHelper(root, 4242)
+  assert.equal(install.helperRunning(root, () => true, 1), true)
+  assert.equal(install.helperRunning(root, () => false, 1), false) // 죽은 pid 면 앱이 떠야 한다
+  assert.equal(install.helperRunning(root, () => true, 4242), false) // 내 표시
+  install.clearHelper(root, 1) // 남의 표시는 지우지 않는다
+  assert.equal(install.helperRunning(root, () => true, 1), true)
+  install.clearHelper(root, 4242)
+  assert.equal(install.helperRunning(root, () => true, 1), false)
+  fs.mkdirSync(path.join(root, '.dev-app'), { recursive: true })
+  fs.writeFileSync(path.join(root, '.dev-app', 'restart-helper.json'), '깨짐')
+  assert.equal(install.helperRunning(root, () => true, 1), false)
+  install.writeHelper(root) // 진짜 살아 있는 pid(이 프로세스)로 — 다른 프로세스 입장에서는 true
+  assert.equal(install.helperRunning(root, undefined, 1), true)
+})
+
 test('missingModules: 켜는 데 꼭 필요한 electron · vite', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
   assert.deepEqual(install.missingModules(root), ['electron', 'vite'])

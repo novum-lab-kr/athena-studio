@@ -153,6 +153,47 @@ export function clearRebuild(root: string): void {
 export const RELAUNCH_GAP_MS = 5 * 60 * 1000
 const relaunchGuardFile = (root: string) => path.join(root, '.dev-app', 'relaunch-guard.json')
 
+// 다시 켜기 도우미(dev-app.js restart)가 도는 동안의 pid 표시 — 그 사이 Dock · Finder 로 켠 앱이 창을 열지 않고 끝나게 한다
+// (도우미가 화면 빌드를 바꾸고 끝나면 앱을 따로 띄운다 — 옛 앱이 같이 떠 있으면 둘이 된다)
+const helperFile = (root: string) => path.join(root, '.dev-app', 'restart-helper.json')
+
+export function writeHelper(root: string, pid = process.pid): void {
+  try {
+    fs.mkdirSync(path.dirname(helperFile(root)), { recursive: true })
+    fs.writeFileSync(helperFile(root), JSON.stringify({ pid }) + '\n')
+  } catch {
+    // 표시를 못 남기면 겹쳐 켜질 수 있을 뿐 — 도우미는 계속 한다
+  }
+}
+
+export function clearHelper(root: string, pid = process.pid): void {
+  try {
+    // 내가 쓴 표시만 지운다(다른 도우미가 덮어썼으면 그대로)
+    if (JSON.parse(fs.readFileSync(helperFile(root), 'utf8')).pid === pid) fs.rmSync(helperFile(root), { force: true })
+  } catch {
+    // 없거나 깨졌으면 지울 것이 없다
+  }
+}
+
+const isProcessAlive = (pid: number): boolean => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
+// 살아 있는 다른 도우미가 있으면 true — 죽은 pid · 깨진 표시 · 내 pid 는 무시해 앱이 안 뜨는 일이 없게
+export function helperRunning(root: string, alive: (pid: number) => boolean = isProcessAlive, self = process.pid): boolean {
+  try {
+    const pid = Number(JSON.parse(fs.readFileSync(helperFile(root), 'utf8')).pid)
+    return Number.isInteger(pid) && pid > 0 && pid !== self && alive(pid)
+  } catch {
+    return false
+  }
+}
+
 export function shouldRelaunch(root: string, now = Date.now()): boolean {
   if (!readPending(root) && !hasRebuild(root)) return false
   try {

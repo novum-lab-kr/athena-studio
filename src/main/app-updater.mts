@@ -289,7 +289,14 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
   // 켤 때 — dev-app.js start 를 거치지 않고(Dock · Finder · 알림) 켜졌는데 끝나지 않은 설치 · 다시 빌드 표시가 있으면 도우미로 다시 켠다. 켠다면 true(창을 열지 않는다).
   // start 가 켠 앱은 ATHENA_STUDIO_VIA_START 가 있어 건너뛰고, 5분 안에는 한 번만 — 켜기 반복 방지
   async function relaunchIfUnfinished(): Promise<boolean> {
-    if (!appUpdateEnabled() || process.env.ATHENA_STUDIO_VIA_START || !appInstall.shouldRelaunch(APP_ROOT)) return false
+    if (!appUpdateEnabled() || process.env.ATHENA_STUDIO_VIA_START) return false
+    // 도우미가 도는 중에 따로 켜졌으면 창을 열지 않고 끝낸다 — 도우미가 끝나면 앱을 직접 띄운다(옛 앱이 같이 떠 있지 않게)
+    if (appInstall.helperRunning(APP_ROOT)) {
+      logLine('another restart helper is running — exiting without opening windows')
+      app.quit()
+      return true
+    }
+    if (!appInstall.shouldRelaunch(APP_ROOT)) return false
     appInstall.markRelaunch(APP_ROOT)
     logLine('launched without dev-app start while an update is unfinished — relaunching through the helper')
     return (await relaunch()).ok
