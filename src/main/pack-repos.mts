@@ -29,6 +29,18 @@ export type PackReposCtx = {
   callStart?: unknown
 }
 
+export type MergeChanges = { auto: string | null; review: boolean | null; merge: string | null }
+
+// ⚙ 설정 IPC(settings:set-merge) — 화면이 넘긴 값은 믿지 않고 아는 값만 추려 ctx.setAutoMerge 로 넘긴다
+export function setMergeFromScreen(ctx: { setAutoMerge(repo: string, values: MergeChanges): unknown }, repo: unknown, values: { auto?: unknown; review?: unknown; merge?: unknown } | null | undefined): unknown {
+  const { auto, review, merge } = values || {}
+  return ctx.setAutoMerge(String(repo || ''), {
+    auto: typeof auto === 'string' && ['on', 'off', 'direct'].includes(auto) ? auto : null,
+    review: typeof review === 'boolean' ? review : null,
+    merge: typeof merge === 'string' && ['auto', 'confirm', 'manual'].includes(merge) ? merge : null,
+  })
+}
+
 type PackReposDeps = { say: Say; runPack: RunPack; daemonPaths: () => { socket: string } }
 
 export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths }: PackReposDeps): void {

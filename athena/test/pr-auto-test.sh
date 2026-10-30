@@ -1022,7 +1022,12 @@ direct_case "자동 머지 → 검증 · 충돌 확인 뒤 PR 없이 squash 로 
 [ -z "$(git -C "$DORIGIN" for-each-ref refs/heads/feat 2>/dev/null)" ] && grep -q 'STRICT=1 ALLOW=\[\]' "$DENVLOG" \
   && echo "  ✔ 검증은 엄격 모드 · 건너뜀 허용 없음으로 돌았다" || { echo "  ✖ 검증 환경(STRICT=1 ALLOW=[]) — $(cat "$DENVLOG")"; FAIL=1; }
 grep -q '"auto.merge".*"direct":true.*"ok":true\|"auto.merge".*"ok":true.*"direct":true' "$DCORE/.events.jsonl" && echo "  ✔ 사건 기록 auto.merge(direct)" || { echo "  ✖ 사건 기록 없음"; FAIL=1; }
-direct_case "같은 HEAD 를 다시 돌리면 이미 머지됨으로 넘김" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨'
+# 같은 HEAD 재실행 — direct_case 는 base 와 계획서를 처음으로 되돌리므로 쓰지 않고, 바로 위 머지 결과 그대로 한 번 더 돌린다
+DTIP="$(git -C "$DORIGIN" rev-parse refs/heads/main)"; : > "$DENVLOG"
+env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" \
+  "$(command -v node)" "$DCORE/scripts/pr-auto.mjs" --direct-merge --plan plans/task/x.md --repo web --dir "$DWT" > "$TMP/direct.out" 2>&1; DCODE=$?
+[ "$DCODE" = 0 ] && grep -q '이미 머지됨' "$TMP/direct.out" && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DTIP" ] && [ ! -s "$DENVLOG" ] \
+  && echo "  ✔ 같은 HEAD 를 다시 돌리면 이미 머지됨으로 넘김 · base 그대로 · 검증 다시 안 돎" || { echo "  ✖ 같은 HEAD 재실행 — 종료 $DCODE · 검증 $(cat "$DENVLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 direct_case "건너뜀 허용 환경(ATHENA_VERIFY_ALLOW_SKIP)을 줘도 검증에는 넘기지 않는다" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' yes 0 '머지됨' ATHENA_VERIFY_ALLOW_SKIP=all
 grep -q 'STRICT=1 ALLOW=\[\]' "$DENVLOG" && ! grep -q 'ALLOW=\[all\]' "$DENVLOG" && echo "  ✔ 건너뜀 허용 환경이 비워져 검증에 넘어갔다" || { echo "  ✖ 건너뜀 허용이 새어 들어감 — $(cat "$DENVLOG")"; FAIL=1; }
 direct_case "확인 후(기본) → 검증 통과 뒤 [머지] 요청만 · 머지 안 함" ', "autoMerge": true, "autoPr": false' no 0 '머지 확인 대기'

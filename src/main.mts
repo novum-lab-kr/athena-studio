@@ -21,7 +21,7 @@ import { createFiles, guarded } from './main/files.mts'
 import { createBoard } from './main/board.mts'
 import { installExplorer } from './main/explorer-panel.mts'
 import { installAthenaAgent } from './main/athena-agent.mts'
-import { installPackRepos } from './main/pack-repos.mts'
+import { installPackRepos, setMergeFromScreen } from './main/pack-repos.mts'
 import { installWork } from './main/work.mts'
 import { installAthenaDir } from './main/athena-dir.mts'
 import { installPacks } from './main/packs.mts'
@@ -38,7 +38,7 @@ import { setupTray } from './main/tray.mts'
 import type { PackCtx, Size } from './main/daemon-link.mts'
 import type { ExplorerCtx } from './main/explorer-panel.mts'
 import type { AthenaAgentCtx } from './main/athena-agent.mts'
-import type { PackReposCtx } from './main/pack-repos.mts'
+import type { MergeChanges, PackReposCtx } from './main/pack-repos.mts'
 import type { WorkCtx, RequestsState } from './main/work.mts'
 import type { AthenaDirCtx } from './main/athena-dir.mts'
 import type { PacksCtx } from './main/packs.mts'
@@ -79,7 +79,7 @@ type MainCalls = {
   show(tab?: string): void
   close(): void
   mergeSettings(): Promise<unknown>
-  setAutoMerge(repo: string, values: { autoMerge: boolean | null; review: boolean | null; merge: string | null }): Promise<unknown>
+  setAutoMerge(repo: string, values: MergeChanges): Promise<unknown>
   callInfo(name: string): Promise<unknown>
   callStart(name: string, options: { branch: string; reuse: boolean }): Promise<unknown>
   packRestore(options: { discard: boolean }): Promise<unknown>
@@ -811,11 +811,7 @@ handle('app-update:status', () => appUpdateView())
 handle('app-update:check', () => checkAppUpdate())
 handle('app-update:run', () => runAppUpdate())
 handle('settings:merge', (ctx) => ctx.mergeSettings())
-handle('settings:set-merge', (ctx, repo: unknown, values: Loose) => ctx.setAutoMerge(String(repo || ''), {
-  autoMerge: values && typeof values.autoMerge === 'boolean' ? values.autoMerge : null,
-  review: values && typeof values.review === 'boolean' ? values.review : null,
-  merge: values && typeof values.merge === 'string' && ['auto', 'confirm', 'manual'].includes(values.merge) ? values.merge : null,
-}))
+handle('settings:set-merge', setMergeFromScreen)
 handle('pack:call-info', (ctx, name: unknown) => ctx.callInfo(String(name || '')))
 handle('pack:call-start', (ctx, name: unknown, options: Loose) => ctx.callStart(String(name || ''), { branch: String((options && options.branch) || ''), reuse: Boolean(options && options.reuse) }))
 handle('pack:restore-arm', (ctx, id: unknown) => (restoreArmedFor = typeof id === 'string' && id ? id : null))
