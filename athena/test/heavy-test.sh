@@ -27,6 +27,7 @@ case "$*" in
 esac
 FAKE
 chmod +x "$TMP/bin/sysctl"
+export ATHENA_HEAVY_LOADAVG_FILE="$TMP/no-loadavg"   # 리눅스 /proc/loadavg 대체 경로도 없는 것으로 — 호스트 부하와 무관하게
 export LOAD_FILE="$TMP/load"; echo 0.5 > "$LOAD_FILE"
 export PATH="$TMP/bin:$PATH" FREE_FILE="$TMP/free" ATHENA_HEAVY_LOAD=1000 ATHENA_HEAVY_MIN_FREE=1
 echo 80 > "$TMP/free"

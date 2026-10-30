@@ -33,16 +33,17 @@ LIMIT="$(awk -v cores="$CORES" -v factor="${ATHENA_HEAVY_LOAD:-1.2}" 'BEGIN{prin
 MAX_WAIT="${ATHENA_HEAVY_WAIT:-1800}"
 WHO="${ATHENA_AGENT:-$(basename "$PWD")}"
 
+LOADAVG_FILE="${ATHENA_HEAVY_LOADAVG_FILE:-/proc/loadavg}"  # 시험할 때만 바꾼다
 # 1분 부하 — macOS sysctl, 리눅스 /proc/loadavg. (파이프는 awk 의 성공으로 끝나 || 가 안 걸리므로 빈 값인지로 나눈다)
 load_now() {
   local value; value="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
-  [ -n "$value" ] || value="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+  [ -n "$value" ] || value="$(awk '{print $1}' "$LOADAVG_FILE" 2>/dev/null)"
   echo "${value:-0}"
 }
 # 읽은 그대로의 1분 부하 — 못 읽으면 빈 값(둘째 자리 판정은 못 읽으면 안 잡는다)
 load_raw() {
   local value; value="$(sysctl -n vm.loadavg 2>/dev/null | awk '{print $2}')"
-  [ -n "$value" ] || value="$(awk '{print $1}' /proc/loadavg 2>/dev/null)"
+  [ -n "$value" ] || value="$(awk '{print $1}' "$LOADAVG_FILE" 2>/dev/null)"
   echo "$value"
 }
 # awk 변수 이름 load 는 gawk 예약어라 쓰지 않는다(리눅스에서 부하 대기가 통째로 꺼졌다)
