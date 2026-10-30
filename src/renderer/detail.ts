@@ -131,7 +131,9 @@ export async function goToPane(paneId: unknown): Promise<void> {
 // 질문 · 결정 — 질문은 앱 안에서 바로 답하고, 결정(정식 계획서)은 결정 콘솔로
 export async function openRequest(request: WorkRequestView): Promise<void> {
   closePops()
-  if (request.kind === 'decision') {
+  // 열 결정 콘솔(html)이 없고 선택지가 있는 decision 은 question 과 같은 화면으로 답한다
+  const answerInApp = request.kind === 'decision' && !request.html && request.options.length > 0
+  if (request.kind === 'decision' && !answerInApp) {
     const choice = await packDialog({
       title: request.title,
       subtitle: say('work.kind.decision'),
@@ -189,7 +191,7 @@ export async function openRequest(request: WorkRequestView): Promise<void> {
   const meta = [request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · ')
   const actions: PackDialogAction[] = [{ label: say('work.send'), value: 'send', kind: 'primary' }]
   if (paneLive(request.pane)) actions.unshift({ label: say('work.detail.goPane'), value: 'pane' })
-  const choice = await packDialog({ title: request.title, subtitle: [say('work.kind.question'), meta].filter(Boolean).join(' · '), body, actions, close: true })
+  const choice = await packDialog({ title: request.title, subtitle: [say(request.kind === 'decision' ? 'work.kind.decision' : 'work.kind.question'), meta].filter(Boolean).join(' · '), body, actions, close: true })
   if (choice === 'pane') return goToPane(request.pane)
   if (choice !== 'send') return
   if (!picked && !note.value.trim()) return showToast(say('work.needAnswer'), 'info')
