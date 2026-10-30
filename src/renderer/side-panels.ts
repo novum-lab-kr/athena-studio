@@ -34,6 +34,9 @@ export function explorerActions(): ExplorerActions {
     tabKey: () => state!.tabKey,
     foldIcon: PANEL_ICONS.right,
     openPreview,
+    closePreview: () => {
+      if (!$('preview').hidden) closePreview()
+    },
     collapse: () => setPanelHidden(true),
   }
 }
@@ -89,7 +92,7 @@ function viewerLine(row: ViewerRow, diff: boolean): HTMLDivElement {
 }
 
 async function openPreview(relative: string): Promise<void> {
-  const result = await studio.explorerOpen(StudioUi.explorer.workspace(), relative)
+  const result = await studio.explorerOpen(StudioUi.explorer.workspace(), relative, StudioUi.explorer.pane())
   const body = $('preview-body')
   const preview = $('preview')
   $('preview-title').textContent = result.path || relative

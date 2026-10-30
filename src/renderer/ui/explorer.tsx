@@ -17,12 +17,13 @@ export type ExplorerActions = {
   tabKey: () => string
   foldIcon: string[]
   openPreview: (relative: string) => void
+  closePreview: () => void
   collapse: () => void
 }
 
 // stamp — 바닐라가 render() 로 다시 그리라고 할 때마다 1 씩(작업 공간 이름 · 언어는 바닐라 값이라 그릴 때 읽는다)
-type ExplorerView = { workspace: string | null; mode: Mode; children: Map<string, Folder>; expanded: Set<string>; changes: ExplorerChange[]; git: boolean; statusKey: string; stamp: number }
-const view = createStore<ExplorerView>({ workspace: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '', stamp: 0 })
+type ExplorerView = { workspace: string | null; pane: string | null; root: string | null; branch: string | null; mode: Mode; children: Map<string, Folder>; expanded: Set<string>; changes: ExplorerChange[]; git: boolean; statusKey: string; stamp: number }
+const view = createStore<ExplorerView>({ workspace: null, pane: null, root: null, branch: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '', stamp: 0 })
 
 let panel: HTMLElement | null = null
 let actions: ExplorerActions | null = null
@@ -50,25 +51,33 @@ export function workspace(): string | null {
   return view.get().workspace
 }
 
+// 지금 따라가는 pane(포커스된 pane — 그 pane 의 폴더를 보여 준다)
+export function pane(): string | null {
+  return view.get().pane
+}
+
 // 바닐라 값(작업 공간 이름 · 언어 · 단축키 글자)이 바뀌었거나 칸이 다시 보일 때 — 지금 상태로 다시 그린다
 export function render(): void {
   const state = view.get()
   commit({ ...state, stamp: state.stamp + 1 })
 }
 
-// 작업 공간이 바뀌면 처음부터(고른 보기 — 파일 / 변경 — 는 그대로)
-export function reset(workspaceId: string | null): void {
+// 작업 공간이나 포커스 pane 이 바뀌면 처음부터(고른 보기 — 파일 / 변경 — 는 그대로).
+// 펼침 · 읽은 폴더 · 변경은 비운다 — 다른 워크트리 경로로 잘못 열리지 않게. 열려 있던 미리보기도 닫는다
+export function reset(workspaceId: string | null, paneId: string | null = null): void {
   const state = view.get()
-  commit({ workspace: workspaceId, mode: state.mode, children: new Map(), expanded: new Set(['.']), changes: [], git: false, statusKey: '', stamp: state.stamp + 1 })
+  actions?.closePreview()
+  commit({ workspace: workspaceId, pane: paneId, root: null, branch: null, mode: state.mode, children: new Map(), expanded: new Set(['.']), changes: [], git: false, statusKey: '', stamp: state.stamp + 1 })
   if (!workspaceId) return
   loadFolder('.')
   refreshStatus()
 }
 
 async function loadFolder(relative: string): Promise<void> {
-  const workspaceId = view.get().workspace
-  const result = await studio.explorerList(workspaceId, relative)
-  if (workspaceId !== view.get().workspace) return
+  const { workspace: workspaceId, pane: paneId, root } = view.get()
+  const result = await studio.explorerList(workspaceId, relative, paneId)
+  // 기다리는 사이 작업 공간 · pane · 폴더가 바뀌었으면 버린다(처음 읽을 때는 폴더를 아직 몰라 root 가 null)
+  if (workspaceId !== view.get().workspace || paneId !== view.get().pane || (root !== null && root !== view.get().root)) return
   const next: Folder = 'error' in result ? { error: result.error } : result.entries
   const state = view.get()
   // 그대로면 다시 그리지 않는다(3초마다 다시 읽는다)
@@ -85,14 +94,21 @@ export function refresh(): void {
 }
 
 async function refreshStatus(): Promise<void> {
-  const workspaceId = view.get().workspace
+  const { workspace: workspaceId, pane: paneId } = view.get()
   if (!workspaceId) return
-  const result = await studio.explorerStatus(workspaceId)
-  if (workspaceId !== view.get().workspace || 'error' in result) return
-  const key = JSON.stringify(result)
+  const result = await studio.explorerStatus(workspaceId, paneId)
+  if (workspaceId !== view.get().workspace || paneId !== view.get().pane || 'error' in result) return
   const state = view.get()
+  // 보는 폴더가 바뀌었다(pane 안에서 cd · 폴더가 지워져 작업 공간 폴더로 돌아감) — 펼침 · 읽은 폴더를 비우고 새 폴더로
+  if (state.root !== null && state.root !== result.root) {
+    actions?.closePreview()
+    commit({ ...state, root: result.root, branch: result.branch, children: new Map(), expanded: new Set(['.']), changes: result.changes, git: result.git, statusKey: JSON.stringify(result) })
+    loadFolder('.')
+    return
+  }
+  const key = JSON.stringify(result)
   if (key === state.statusKey) return
-  commit({ ...state, statusKey: key, git: result.git, changes: result.changes })
+  commit({ ...state, statusKey: key, root: result.root, branch: result.branch, git: result.git, changes: result.changes })
 }
 
 function toggleFolder(relative: string): void {
@@ -257,8 +273,8 @@ function ExplorerBody({ actions: shell }: { actions: ExplorerActions }) {
   return (
     <>
       <div className="explorer-head">
-        <span className="explorer-name" title={say('explorer.cwdTitle', { path: workspace.cwd, key: shell.tabKey() })}>
-          {workspace.label}
+        <span className="explorer-name" title={say('explorer.cwdTitle', { path: state.root ?? workspace.cwd, key: shell.tabKey() })}>
+          {state.branch ?? workspace.label}
         </span>
         <ViewButton mode="files" label={say('explorer.files')} current={state.mode} />
         <ViewButton mode="changes" label={count ? say('explorer.changesCount', { count }) : say('explorer.changes')} badge={count} current={state.mode} />
