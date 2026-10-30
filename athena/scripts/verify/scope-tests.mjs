@@ -34,6 +34,13 @@ const tracked = lines(
 const fileSet = new Set(tracked)
 const changed = lines(readFileSync(changedListPath, 'utf8'))
 
+// 지워지거나 이름이 바뀐 파일은 트리에 없어 연결을 못 따라간다 — 그 파일을 쓰던 시험을 놓칠 수 있으니 전체를 돌리게 한다
+const missing = changed.filter((path) => !fileSet.has(path))
+if (missing.length > 0) {
+  console.error(`트리에 없는 바뀐 파일(삭제 · 이름 바꿈): ${missing.slice(0, 5).join(', ')} → 전체`)
+  process.exit(2)
+}
+
 /** 폴더 → 그 아래 파일들 */
 const filesUnder = new Map()
 /** 파일 이름 → 경로들 */
@@ -46,7 +53,7 @@ for (const path of tracked) {
 
 /** @param {string} directory 폴더 바로 아래 파일(하위 폴더 제외) — 40개 넘는 큰 폴더는 시험이 그 폴더 전체에 기대는 게 아니라고 보고 건너뛴다 */
 const directChildren = (directory) => {
-  const inside = (filesUnder.get(directory) ?? []).filter((path) => dirname(path) === directory)
+  const inside = (filesUnder.get(directory) ?? []).filter((/** @type {string} */ path) => dirname(path) === directory)
   return inside.length <= 40 ? inside : []
 }
 
@@ -135,6 +142,18 @@ const tests = [
   ...tracked.filter((path) => /^athena\/test\/[^/]+\.sh$/.test(path)).map((path) => ['SH', path]),
 ]
 const changedSet = new Set(changed)
+/** 바뀐 파일 중 어떤 시험이 닿았는지 */
+const covered = new Set()
 for (const [kind, test] of tests) {
-  if (changedSet.has(test) || [...reach(test ?? '')].some((path) => changedSet.has(path))) console.log(`${kind} ${test}`)
+  const reached = reach(test ?? '')
+  const hits = changed.filter((path) => path === test || reached.has(path))
+  if (hits.length === 0) continue
+  for (const path of hits) covered.add(path)
+  console.log(`${kind} ${test}`)
+}
+// 앱 소스(src · scripts · bin 의 코드)가 바뀌었는데 어떤 시험도 닿지 않으면 고르지 못한 것 — 전체를 돌리게 한다
+const uncovered = changed.filter((path) => /^(?:src|scripts|bin)\/.+\.(?:js|mjs|cjs|mts|ts|tsx|jsx)$/.test(path) && !covered.has(path))
+if (uncovered.length > 0) {
+  console.error(`닿는 시험을 못 찾은 앱 소스: ${uncovered.slice(0, 5).join(', ')} → 전체`)
+  process.exit(2)
 }
