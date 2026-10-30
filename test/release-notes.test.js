@@ -99,3 +99,17 @@ test('CHANGELOG.md: 공개 배포판 0.28.7 → 0.32 는 0.32 절 줄만 고른�
   assert.equal(picked.shown.length, notes.NOTE_LIMIT)
   assert.equal(picked.rest.count, section032.notes.length - notes.NOTE_LIMIT)
 })
+
+test('withTranslations · noteText: 언어별 번역을 싣고 지금 언어로 고른다(없으면 영어)', () => {
+  const picked = notes.pickNotes([{ kind: 'new', text: 'A' }, { kind: 'fixed', text: 'B' }], (text) => text)
+  const withTexts = notes.withTranslations(picked, { ko: { A: '가' }, ja: { A: 'か', B: 'び' }, zh: null })
+  const [first, second] = withTexts.shown
+  assert.equal(first.text, 'A')
+  assert.deepEqual(first.texts, { ko: '가', ja: 'か' })
+  assert.deepEqual(second.texts, { ja: 'び' })
+  assert.equal(notes.noteText(first, 'ko'), '가')
+  assert.equal(notes.noteText(first, 'zh'), 'A')
+  assert.equal(notes.noteText(first, 'en'), 'A')
+  assert.equal(notes.noteText(second, 'ko'), 'B')
+  assert.equal(notes.withTranslations(null, {}), null)
+})

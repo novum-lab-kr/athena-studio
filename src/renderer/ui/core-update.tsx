@@ -3,6 +3,7 @@
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
+import { noteText } from '../../lib/release-notes.mts'
 import type { CoreUpdateRow, CoreUpdateView, NoteKind } from '../../lib/release-notes.mts'
 
 type Shown = { view: CoreUpdateView; close: () => void } | null
@@ -71,7 +72,7 @@ function CoreUpdateBody() {
               {notes.shown.map((note, index) => (
                 <li key={index}>
                   <span className={`cu-tag ${note.kind}`}>{say(`coreUpdate.kind.${note.kind}`)}</span>
-                  <span className="cu-note-text">{note.text}</span>
+                  <span className="cu-note-text">{noteText(note, document.documentElement.lang)}</span>
                 </li>
               ))}
             </ul>

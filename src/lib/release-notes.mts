@@ -8,8 +8,10 @@ export const NOTE_LIMIT = 3
 export type NoteKind = 'new' | 'improved' | 'fixed'
 export const NOTE_KINDS: NoteKind[] = ['new', 'improved', 'fixed']
 export type Note = { kind: NoteKind; text: string }
+// 화면에 보낼 줄 — text 는 영어 원문, texts 는 언어별 번역(없는 언어는 원문). 언어는 화면이 지금 것으로 고른다(보낼 때 고정하지 않는다)
+export type ShownNote = { kind: NoteKind; text: string; texts?: Record<string, string> }
 export type ChangelogSection = { minor: [number, number]; notes: Note[] }
-export type ReleaseNotes = { shown: Note[]; rest: { count: number; kinds: { kind: NoteKind; count: number }[] } | null }
+export type ReleaseNotes = { shown: ShownNote[]; rest: { count: number; kinds: { kind: NoteKind; count: number }[] } | null }
 
 const SECTION_RE = /^## (\d+)\.(\d+)\b/
 const HEADING_KINDS: Record<string, NoteKind> = { New: 'new', Improved: 'improved', Fixed: 'fixed' }
@@ -69,6 +71,23 @@ export function pickNotes(notes: Note[], translate: (text: string) => string, li
 
 export type Translations = Record<string, string>
 export const translateNote = (translations: Translations | null | undefined) => (text: string): string => (translations && translations[text]) || text
+
+// 보일 줄마다 언어별 번역을 붙인다(번역표가 없거나 그 줄이 없는 언어는 뺀다)
+export function withTranslations(picked: ReleaseNotes | null, tables: Record<string, Translations | null>): ReleaseNotes | null {
+  if (!picked) return null
+  const shown = picked.shown.map((note) => {
+    const texts: Record<string, string> = {}
+    for (const [lang, table] of Object.entries(tables)) {
+      const translated = table && table[note.text]
+      if (translated) texts[lang] = translated
+    }
+    return Object.keys(texts).length ? { ...note, texts } : note
+  })
+  return { ...picked, shown }
+}
+
+// 지금 언어로 보일 글 — 번역이 없으면 영어 원문
+export const noteText = (note: ShownNote, lang: string): string => (note.texts && note.texts[lang]) || note.text
 
 // 팝업 결과 상자의 줄 하나 — kind 가 문구 키(coreUpdate.row.<kind>)고, chips 는 글 아래 줄에 모두 보이는 팩 · 세션 이름. dir 은 백업 폴더([폴더 열기])
 export type CoreUpdateRowKind = 'skipped' | 'working' | 'backedUp' | 'failed' | 'unsupported' | 'notMoved'

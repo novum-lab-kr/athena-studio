@@ -140,9 +140,10 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     } catch {
       return null
     }
-    const lang = language()
-    const translations = lang === 'en' ? null : readJson(path.join(CHANGELOG_DIR, `${lang}.json`))
-    return releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to), releaseNotes.translateNote(translations))
+    // 언어는 보낼 때 고정하지 않는다 — 언어별 번역을 모두 실어 보내고 화면이 지금 언어로 고른다(팝업이 떠 있는 동안 언어를 바꿔도 따라간다)
+    const tables = Object.fromEntries(['ko', 'ja', 'zh'].map((lang) => [lang, readJson(path.join(CHANGELOG_DIR, `${lang}.json`))]))
+    const picked = releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to), (line) => line)
+    return releaseNotes.withTranslations(picked, tables)
   }
 
   // 알릴 백업 폴더 — 화면이 [폴더 열기] 로 부를 수 있는 것은 이 팝업이 보인 폴더뿐
