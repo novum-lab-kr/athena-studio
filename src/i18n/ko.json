@@ -540,6 +540,7 @@
   "work.section.done": "최근 완료",
   "work.empty": "진행 중인 작업이 없습니다",
   "work.loading": "불러오는 중…",
+  "work.requestsError": "요청 목록을 읽지 못했습니다 ({error}) — 새 질문이 안 보일 수 있습니다",
   "work.boardDown": "현황판을 띄우지 못해 작업 목록을 못 읽었습니다",
   "work.foot": "누르면 자세히 · 지난 일은 아카이브에서",
   "work.footPages": "QA · 학습 · 아카이브 →",

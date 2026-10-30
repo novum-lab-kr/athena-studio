@@ -540,6 +540,7 @@
   "work.section.done": "最近完成",
   "work.empty": "没有进行中的工作",
   "work.loading": "加载中…",
+  "work.requestsError": "无法读取请求列表 ({error}) — 可能看不到新的提问",
   "work.boardDown": "无法启动待办，读不到工作列表",
   "work.foot": "点击查看详情 · 过去的工作在归档中",
   "work.footPages": "QA · 学习 · 归档 →",

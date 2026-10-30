@@ -9,16 +9,17 @@ import type { Say } from './bridge.ts'
 type WorkRequest = WorkRequestView
 type WorkState = 'wait' | 'work' | 'blocked' | 'idle' | 'done'
 type WorkItem = WorkItemView
-type WorkData = { boardUp: boolean; doing: WorkItem[]; done: WorkItem[] }
+type WorkData = { boardUp: boolean; requestsError?: string | null; doing: WorkItem[]; done: WorkItem[] }
 
 // 줄을 누르면 — 바닐라가 넘긴다(요청 답하기 대화상자 detail.ts · 작업 상세 대화상자 work.ts)
 export type WorkActions = { openRequest: (request: WorkRequest) => void; openWorkDetail: (item: WorkItem) => void }
 
 // data: 마지막으로 읽은 목록(workGet — 아직 없으면 null · 읽는 중) · requests: 요청 목록(목록을 읽었으면 그 요청, 아니면 onWorkRequests 의 것)
-const workStore = createStore<{ data: WorkData | null; requests: WorkRequest[] }>({ data: null, requests: [] })
+const workStore = createStore<{ data: WorkData | null; requests: WorkRequest[]; requestsError: string | null }>({ data: null, requests: [], requestsError: null })
 
-export function setWork(data: WorkData | null, requests: WorkRequest[]): void {
-  workStore.set({ data, requests })
+// requestsError: 요청 목록을 읽지 못한 까닭 — 있으면 "요청 없음" 대신 실패를 보인다
+export function setWork(data: WorkData | null, requests: WorkRequest[], requestsError: string | null = null): void {
+  workStore.set({ data, requests, requestsError })
 }
 
 let unmount: (() => void) | null = null
@@ -37,10 +38,11 @@ export function close(): void {
 
 function WorkBody({ actions }: { actions: WorkActions }) {
   const say = useSay()
-  const { data, requests } = useStore(workStore)
+  const { data, requests, requestsError } = useStore(workStore)
   const waiting = requests.filter((request) => request.state === 'open').length
   return (
     <>
+      {requestsError && <p className="work-empty">{say('work.requestsError', { error: requestsError })}</p>}
       {requests.length > 0 && (
         <Section title={say('work.section.waiting')} count={waiting}>
           {requests.map((request) => (
