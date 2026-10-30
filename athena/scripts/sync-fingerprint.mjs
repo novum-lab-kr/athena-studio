@@ -11,11 +11,12 @@
  * 리포트는 stdout 과 .sync/last-report.md 에 동시에 남는다.
  * /sync 스킬이 이 리포트를 읽고 .claude/agents/*.md, docs/services.md, 팩 guide/playbook.html 을 갱신한 뒤 --accept 를 호출한다.
  */
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './lib/config.mjs'
+import { listServices } from './qa/flows.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
 const SYNC_DIR = join(ROOT, '.sync')
@@ -303,13 +304,29 @@ const commitsBetween = (repo, fromSha, toSha) => {
 const ensureDirs = () => { for (const dir of [SYNC_DIR, SNAP_DIR, PENDING_DIR]) if (!existsSync(dir)) mkdirSync(dir, { recursive: true }) }
 const loadJson = (filePath) => existsSync(filePath) ? JSON.parse(readFileSync(filePath, 'utf8')) : null
 
+// 싱크로 코드가 바뀐 서비스의 흐름 TC 를 뒤에서 돌린다(결과는 현황판 QA 탭) — 기다리지 않고, 실패해도 확정을 막지 않는다
+const startQaAfterSync = (movedRepos) => {
+  const services = listServices(CONFIG).filter((service) => movedRepos.includes(service.repo)).map((service) => service.name)
+  if (!services.length) return
+  const child = spawn(join(ROOT, 'scripts/heavy.sh'), [process.execPath, join(ROOT, 'scripts/qa/run.mjs'), '--service', services.join(','), '--if-tc'], { cwd: ROOT, detached: true, stdio: 'ignore' })
+  child.on('error', () => {})
+  child.unref()
+  console.log(`QA 시작: ${services.join(', ')} — TC 가 있는 서비스만 돌아요 · 결과는 현황판 QA 탭`)
+}
+
 if (ACCEPT) {
   ensureDirs()
   const pendingFiles = existsSync(PENDING_DIR) ? readdirSync(PENDING_DIR).filter((name) => name.endsWith('.json')) : []
   if (!pendingFiles.length) { console.log('확정할 pending 지문이 없습니다. 먼저 인자 없이 실행하세요.'); process.exit(0) }
+  // 커밋이 달라진 레포 — 확정 전에 옛 스냅샷과 비교한다(처음 확정하는 레포는 흐름 TC 를 돌릴 까닭이 없다)
+  const movedRepos = pendingFiles.filter((name) => {
+    const previous = loadJson(join(SNAP_DIR, name))
+    return previous && previous.sha !== loadJson(join(PENDING_DIR, name))?.sha
+  }).map((name) => name.replace(/\.json$/, ''))
   for (const fileName of pendingFiles) renameSync(join(PENDING_DIR, fileName), join(SNAP_DIR, fileName))
   writeFileSync(join(SYNC_DIR, 'state.json'), JSON.stringify({ acceptedAt: new Date().toISOString(), repos: pendingFiles.map((name) => name.replace(/\.json$/, '')) }, null, 2))
   console.log(`baseline 확정: ${pendingFiles.map((name) => name.replace(/\.json$/, '')).join(', ')}`)
+  startQaAfterSync(movedRepos)
   process.exit(0)
 }
 

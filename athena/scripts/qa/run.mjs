@@ -1,1622 +1,262 @@
 #!/usr/bin/env node
+// @ts-check
 /**
- * QA 시뮬레이션 실행 — 영향 화면을 실제 브라우저(Playwright)로 열어 검사하고, 기준 브랜치 화면과 비교한다.
+ * QA 실행기 — 레포 docs/flows/ 의 TC 를 층별로 돌려 .qa-runs/<id>/run.json 에 남긴다(현황판 QA 탭이 읽는다).
+ * FE = Playwright · BE = HTTP 요청, 둘 다 로컬에 띄운 서버에 대고(결정 D6). 앱은 체크리스트 문서라 돌리지 않는다.
+ * 형식 정본: docs/knowledge/common/qa-flows.md
  *
- *   node scripts/qa/run.mjs --cwd <워크트리> [--app <앱>] [--plan <계획서>] [옵션]
- *   앱 = 팩에 등록한 화면 레포(scripts/qa/apps.mjs). 설정 scripts/qa/routes/<앱>.json 이 있는 앱이 하나면 --app 생략 가능
- *
- *   --base <ref>        비교 기준 ref (기본 origin/<prBase>). 그 merge-base 를 기준 화면으로 띄운다
- *   --no-base           기준 화면 비교를 건너뛴다(스모크만)
- *   --files a,b         변경 파일을 직접 준다(impact.mjs 와 같음)
- *   --routes /a,/b      영향 분석 없이 이 화면들만 연다
- *   --head-url <url>    이미 떠 있는 작업 서버를 쓴다(직접 띄우지 않음)
- *   --base-url <url>    이미 떠 있는 기준 서버를 쓴다
- *   --profile <이름>     세션 프로필(routes/<앱>.json profiles — 예: logout · login · verified). 기본은 세션이 저장된 첫 프로필
- *   --keep-servers      끝나도 dev 서버를 끄지 않는다(다음 실행·login.mjs 에서 재사용)
- *   --suite             전체 검수(D11·D12) — 영향 분석 대신 화면 전부 + 흐름 씬(scenarios/<앱>/*.json), 기준 서버 대신 승인한 기준 사진(.qa-baselines/)과 비교.
- *                       --cwd 를 안 주면 최신 origin/<prBase> 의 qa-base 워크트리에서 돈다. 변화는 approve.mjs 로 기준 승인
- *   --headed            브라우저 창을 띄워 여는 모습을 보여 준다(동시 1개 · 창 하나에서 화면 이동 · 진행 표시 · 천천히 스크롤)
- *   --slow <ms>         --headed 의 속도(기본 700 — 클수록 느리다, 0 이면 멈춤 없이)
- *   --watch             창은 띄우되 빠르게(= --headed --slow 0) — 전체 검수를 지켜볼 때
- *   --target server --server <주소>  배포된 서버(dev·stg·dev-1~3·PR 미리보기)로 — 운영 주소는 거부. --server 만 줘도 된다
- *   --mode auto|real    흐름 씬·여정의 "only" 단계를 고른다(기본 auto — 더미 응답, real — 사람 단계(본인인증 등)를 사람이 직접)
- *   --scenarios-only    화면 검사 없이 흐름 씬만(--suite 와 함께) — 예: --suite --app <앱> --profile login --scenarios 05- --scenarios-only --live --headed
- *   --flow              QA 세션 흐름(D18~D20) — 비로그인 검수 → 로그인 상태 전부 차례로(세션 없으면 그 차례에 로그인 창) → 실패 리포트 모달. --live 와 함께
- *   --profiles a,b      세션 상태 여럿을 동시에(dev 서버 하나 공유)
- *   --tc-picks <파일>    변경분 TC(/qa-tc <앱> <브랜치> 가 만든 .qa-runs/tc-picks/<앱>@<브랜치>.json) — 영향 QA 에서 기본으로 그 브랜치 파일을 찾는다.
- *                       그 TC 에 걸린 흐름 씬을 화면 검사 뒤에 돌리고, 씬이 없는 TC 는 "사람이 확인" 으로 남긴다
- *   --live              창 없이 돌고, 현황판 /qa-live?id=<런> 한 페이지에 화면(데스크톱·모바일·씬)·API 호출·Mixpanel 이벤트를 실시간으로 — 현황판이 떠 있으면 그 페이지를 연다
- *
- * 무거운 명령이라 scripts/heavy.sh 잠금을 잡고 돈다 — 다른 세션의 install·build·QA 가 돌면 끝날 때까지 기다린다(그동안 run.json 은 아직 없다).
- * 산출물: .qa-runs/<런 id>/run.json · shots/*.png · server-*.log (git 무시). 현황판 QA 탭이 run.json 을 읽는다.
- * 판정(D8): 통과 pass · 화면 변화 changed · 실패 fail(기준에 없던 에러) · 이동됨 redirected · 로그인 필요 login · 샘플 필요 sample
+ *   scripts/heavy.sh node scripts/qa/run.mjs --service <이름>[,<이름>] | --all
+ *       [--layer fe|be] [--flow <흐름>]
+ *       [--cwd <작업 트리>]     기본은 운영 기준 ref 를 받아 둔 .worktrees/<레포>/qa-base. 머지 전 브랜치를 볼 때
+ *       [--reuse-server]       qa.json url 에 이미 떠 있는 서버를 그대로 쓴다(내가 띄운 서버일 때만)
+ *       [--if-tc]              TC 가 없는 서비스는 조용히 건너뛴다(싱크 뒤 자동 실행)
+ * 끝 코드: 0 모두 통과 · 1 실패나 오류가 있음 · 2 사용법
  */
-import { readFileSync, writeFileSync, renameSync, mkdirSync, existsSync, realpathSync, openSync, appendFileSync, readdirSync, copyFileSync } from 'node:fs'
-import { join, dirname, relative, resolve } from 'node:path'
-import { execFileSync, spawn } from 'node:child_process'
+import { execFileSync, spawn, spawnSync } from 'node:child_process'
+import { closeSync, existsSync, mkdirSync, openSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { chromium } from 'playwright'
-import pixelmatch from 'pixelmatch'
-import { PNG } from 'pngjs'
-import { buildReport, buildIndex } from './report.mjs'
-import { runScenario, placeWindow, guardMutations, describe as describeStep } from './scenario.mjs'
-import { baselineDir, readBaselineProblems } from './baseline.mjs'
-import { callerPane, openUrl } from '../lib/screen.mjs'
-import { captureTracking, blockThirdParty, eventsSince, HIDE_EVENT_PANEL } from './tracking.mjs'
-import { createLiveLog, startScreencast } from './live.mjs'
-import { normalizeTarget, sessionFileOf, targetKey, checkServerUrl } from './targets.mjs'
-import { boardPort, isSwitching, loadConfig } from '../lib/config.mjs'
-import { listQaApps, findQaApp, defaultQaApp, readRoutes, routerDirOf, serverSettings, packageManager, devCommand, sessionToken, hasLoginCookie, packQaWarnings, routesWarnings, codeConventions } from './apps.mjs'
+import { isSwitching, loadConfig } from '../lib/config.mjs'
+import { maskText } from '../lib/mask.mjs'
+import { errorText, runBeCase, runFeCase } from './cases.mjs'
+import { checkLayerSettings, checkTc, FLOWS_DIR, flowsOfFiles, listFlowFiles, listServices, listTreeFiles, RUN_LAYERS } from './flows.mjs'
 
-const QA_DIR = dirname(fileURLToPath(import.meta.url))
-const HERMES = join(QA_DIR, '..', '..')
-// 이 팩을 열거나 업데이트하는 중이면 시작하지 않는다(팩마다 잠금 — bin/athena pack open·update)
-if (isSwitching(HERMES)) {
-  console.error('⚠️  이 팩을 열거나 업데이트하는 중이라 QA 를 시작하지 않는다 — 끝난 뒤 다시(bin/athena pack status)')
-  process.exit(1)
-}
-// 자기 요청 도메인·아이콘 글꼴 — 팩 설정 qa. QA 대상 앱은 팩에 등록한 레포에서(apps.mjs)
-const CONFIG = loadConfig(HERMES)
-const QA = CONFIG.qa ?? {}
+const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..', '..')
+const RUNS_DIR = join(ROOT, '.qa-runs')
+const KEEP_RUNS = 30
+const READY_TIMEOUT_MS = 120_000
+const INSTALL_TIMEOUT_MS = 600_000
+const STAMP_FILE = '.qa-installed'
+
 const argv = process.argv.slice(2)
-const option = (name) => {
-  const index = argv.indexOf(`--${name}`)
-  return index >= 0 ? argv[index + 1] ?? '' : ''
-}
-const flag = (name) => argv.includes(`--${name}`)
+const flag = (/** @type {string} */ name) => argv.includes(`--${name}`)
+const option = (/** @type {string} */ name) => { const at = argv.indexOf(`--${name}`); return at < 0 ? '' : argv[at + 1] ?? '' }
 
-// 무거운 명령 규칙(AGENTS.md 5절) — pnpm install·gen:relay·next dev 두 개를 돌리므로 런 전체를 scripts/heavy.sh 잠금 하나로 감싼다.
-// 잠금이 없으면 heavy.sh 를 거쳐 자기 자신을 다시 띄운다(다른 세션의 install·build·QA 가 끝날 때까지·부하가 내려갈 때까지 기다림)
-if (!process.env.ATHENA_HEAVY_HELD) {
-  const { spawnSync } = await import('node:child_process')
-  const heavy = join(HERMES, 'scripts', 'heavy.sh')
-  const relaunched = spawnSync(heavy, [process.execPath, fileURLToPath(import.meta.url), ...argv], { stdio: 'inherit' })
-  process.exit(relaunched.status ?? 1)
-}
+/** @type {any} */
+let run = null
+/** @type {(() => Promise<void>) | null} */
+let stopCurrentServer = null
 
-const appName = option('app') || defaultQaApp(CONFIG) || ''
-const qaApp = findQaApp(CONFIG, appName)
-const routesConfig = qaApp ? readRoutes(appName) : null
-if (!qaApp || !routesConfig) {
-  const apps = listQaApps(CONFIG)
-  console.error(!qaApp
-    ? `⚠️  ${appName ? `QA 대상 앱이 아니다: ${appName}` : 'QA 대상 앱을 골라 주세요(--app)'} — ${apps.map((entry) => `${entry.app}${entry.configured ? '' : '(설정 전)'}`).join(', ') || '팩에 등록한 화면 레포가 없다'}`
-    : `⚠️  ${appName} 은 QA 설정 전이다 — node scripts/qa/init-app.mjs --app ${appName} 로 scripts/qa/routes/${appName}.json 초안을 만든다`)
-  process.exit(2)
-}
-// 옛 설정이 남아 있으면 한 줄씩 알리고 기본값으로 계속 돈다. 흐름·여러 세션의 자식 런(--group)은 맨 위가 이미 찍었다
-if (!option('group')) for (const line of [...packQaWarnings(CONFIG), ...routesWarnings(appName, routesConfig)]) console.log(`⚠️  ${line}`)
-// 로컬 서버 포트·띄우는 명령·준비 단계·로그인 쿠키 — routes/<앱>.json server
-const SERVER = serverSettings(routesConfig)
-// 코드 관례(routes authGuard·tracking·dataErrors) — 잘못 적었으면 시작 전에 멈춘다. dataErrors 는 run.json 에 담아 라이브 화면 실패 리포트가 쓴다
-let CONVENTIONS
-try {
-  CONVENTIONS = codeConventions(appName, routesConfig)
-} catch (error) {
-  console.error(`⛔ ${error.message}`)
-  process.exit(2)
-}
-const suite = flag('suite')
-// --target local|server (D21) — server 면 dev 서버를 띄우지 않고 배포된 서버를 연다. 주소는 --server <주소>(없으면 routes 의 devUrl)
-const target = option('server') ? 'server' : normalizeTarget(option('target'))
-const serverUrl = (() => {
-  if (target !== 'server') return null
-  const value = option('server') || routesConfig.devUrl
-  if (!value) {
-    console.error(`⚠️  서버 주소가 없다 — --server <주소> 를 주거나 routes/${appName}.json 에 devUrl 을 둔다`)
-    process.exit(2)
-  }
-  const checked = checkServerUrl(value)
-  if (checked.error) {
-    console.error(`⛔ ${checked.error}`)
-    process.exit(2)
-  }
-  return checked.url
-})()
-const git = (args, cwd) => execFileSync('git', args, { cwd, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
-
-// 전체 검수는 지금 개발 브랜치(origin/<prBase>) 그대로를 본다 — qa-base 워크트리를 최신으로 맞춰 쓴다
-function prepareSuiteTree() {
-  const mainCheckout = realpathSync(join(HERMES, 'repos', qaApp.repo))
-  const prBase = qaApp.prBase
-  try {
-    git(['fetch', '--quiet', 'origin', prBase], mainCheckout)
-  } catch {
-    console.log(`⚠️  origin/${prBase} fetch 실패 — 로컬에 있는 ref 로 진행`)
-  }
-  const target = git(['rev-parse', `origin/${prBase}`], mainCheckout)
-  const basePath = join(HERMES, '.worktrees', qaApp.repo, 'qa-base')
-  if (!existsSync(basePath)) {
-    git(['worktree', 'add', '--detach', basePath, target], mainCheckout)
-    execFileSync(join(HERMES, 'scripts', 'wt-copy-local.sh'), [mainCheckout, basePath], { stdio: 'ignore' })
-  } else if (git(['rev-parse', 'HEAD'], basePath) !== target) {
-    git(['checkout', '--detach', '--force', target], basePath)
-  }
-  return basePath
-}
-
-// --profiles logout,login,verified — 세션 상태 여럿을 동시에. dev 서버는 하나(첫 상태의 런이 띄우고 --keep-servers),
-// 나머지 상태는 그 서버(--head-url)를 같이 쓴다. 이 프로세스가 heavy.sh 잠금을 쥐고 있으니 자식 런은 잠금 없이(ATHENA_HEAVY_HELD) 돈다.
-// 런은 상태마다 따로(.qa-runs/<id>) 생기고 run.group 으로 묶인다 — 현황판 /qa-live?group=<묶음 id> 가 한 화면에 보여 준다
-// --flow — QA 세션 흐름(D18~D20): ① 비로그인(logout) 검수 → ② 로그인 상태들을 routes profiles 순서대로 전부(예: login → verified, 2026-10-07 사용자 결정).
-// 단계마다 세션이 살아 있으면 그대로(D18), 없거나 만료면 라이브 화면에 "로그인해 주세요" 를 띄우고 보이는 로그인 창을 연다(D19) → 사용자가 로그인하면
-// 저장 → ③ 그 세션으로 검수(로그인을 안 하면 그 단계만 건너뜀) → ④ 끝나면 라이브 화면이 실패 리포트 모달을 띄운다(D20). 진행 상태는 .qa-runs/<묶음>/group.json
-if (flag('flow')) {
-  const flowRoutes = routesConfig
-  const flowProfiles = Object.entries(flowRoutes.profiles ?? {}).filter(([key]) => !key.startsWith('$'))
-  // 로그인 상태 단계 — 세션이 있는 프로필 전부(routes 순서). flowTargets 로 고를 수 있다
-  const flowTargets = flowRoutes.flowTargets ?? flowProfiles.filter(([, settings]) => settings.session).map(([name]) => name)
-  const tree = option('cwd') || (suite ? prepareSuiteTree() : '')
-  const stamp = new Date()
-  const two = (value) => String(value).padStart(2, '0')
-  const groupId = `${stamp.getFullYear()}${two(stamp.getMonth() + 1)}${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}-${appName}-group`
-  const groupDir = join(HERMES, '.qa-runs', groupId)
-  mkdirSync(groupDir, { recursive: true })
-  // 이 런을 띄운 pane(아테나) — [담당 에이전트에게 조사 맡기기] 가 이리 보낸다. 화면 밖이면 포커스된 pane(lib/screen.mjs callerPane)
-  const pane = callerPane({ stdio: ['ignore', 'pipe', 'ignore'] })
-  const group = {
-    id: groupId, app: appName, mode: 'flow', pane, pid: process.pid, startedAt: stamp.toISOString(), finishedAt: null,
-    target,
-    stages: [{ profile: 'logout', status: 'queued' }, ...flowTargets.map((profile) => ({ profile, status: 'queued' }))],
-    gate: null
-  }
-  const saveGroup = () => writeFileSync(join(groupDir, 'group.json'), `${JSON.stringify(group, null, 2)}\n`)
-  saveGroup()
-  const skip = new Set()
-  argv.forEach((value, index) => {
-    if (value === '--cwd') skip.add(index).add(index + 1)
-    if (value === '--flow') skip.add(index)
-  })
-  const baseArgs = argv.filter((_, index) => !skip.has(index))
-  const devUrl = target === 'server' ? serverUrl : `http://localhost:${SERVER.port}`
-  const launchStage = (stage, extra) => {
-    stage.status = 'running'
-    saveGroup()
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...baseArgs, '--profile', stage.profile, '--cwd', tree, '--group', groupId, '--stage-scenarios', ...extra], {
-      env: { ...process.env, ATHENA_HEAVY_HELD: '1' },
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-    for (const stream of [child.stdout, child.stderr]) {
-      let rest = ''
-      stream.on('data', (chunk) => {
-        const lines = (rest + chunk).split('\n')
-        rest = lines.pop()
-        for (const line of lines) console.log(`[${stage.profile}] ${line}`)
-      })
-    }
-    return new Promise((resolve) => child.on('exit', (code) => {
-      stage.status = code === 0 || code === 1 ? 'done' : 'error'
-      saveGroup()
-      resolve(code ?? 1)
-    }))
-  }
-  // 저장한 세션이 살아 있나(D18) — 파일이 있고 로그인 토큰(server.tokenCookie) 이 만료 전
-  const sessionAlive = (profileName) => {
-    const settings = flowRoutes.profiles?.[profileName]
-    if (!settings?.session) return true
-    const file = sessionFileOf(HERMES, appName, settings.session, target, serverUrl)
-    if (!existsSync(file)) return false
-    const token = sessionToken(JSON.parse(readFileSync(file, 'utf8')).cookies, SERVER)
-    return !token || token.expires * 1000 > Date.now() + 10 * 60 * 1000
-  }
-  console.log(`🧭 QA 세션 흐름 — ${target === 'server' ? `서버 ${devUrl}` : '로컬 서버'} · 비로그인 → ${flowTargets.join(' → ') || '(로그인 상태 없음)'} · 묶음 ${groupId}`)
-  const codes = []
-  // 로컬이면 첫 단계가 dev 서버를 띄우고 남긴다(--keep-servers), dev 서버면 그 주소를 바로 쓴다
-  const logoutDone = launchStage(group.stages[0], target === 'server' ? ['--head-url', devUrl] : ['--keep-servers'])
-  let logoutEnded = false
-  logoutDone.then(() => { logoutEnded = true })
-  // 라이브 화면은 바로 연다 — 로컬 dev 서버가 뜨는 몇 분 동안도 준비 단계가 보이게
-  if (flag('live')) {
-    const board = `http://localhost:${boardPort(HERMES)}`
-    const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-    if (up) openUrl(`${board}/qa-live?group=${groupId}`)
-    console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
-  }
-  const deadline = Date.now() + 10 * 60 * 1000
-  let ready = false
-  while (!ready && !logoutEnded && Date.now() < deadline) {
-    ready = await fetch(devUrl, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)
-    if (!ready) await new Promise((resolve) => setTimeout(resolve, 3000))
-  }
-  // ② 로그인 — 세션이 없거나 만료면 로그인 창을 연다(D19). 사용자가 마치면 저장. 첫 로그인 단계는 비로그인 검수가 도는 동안 미리 연다
-  const loginMessage = (profileName) => {
-    const note = flowRoutes.profiles[profileName]?.note ?? ''
-    const how = target === 'server' ? '로그인(간편인증 가능)' : '이메일 로그인'
-    return `${profileName} 상태로 검수하려면 로그인해 주세요 — 열린 창에서 ${how}을 마치면 이어서 진행해요(10분)${note ? ` · ${note}` : ''}`
-  }
-  const requestStageLogin = (stage) => {
-    const session = flowRoutes.profiles[stage.profile].session
-    group.gate = { profile: stage.profile, status: 'waiting', since: new Date().toISOString(), message: loginMessage(stage.profile) }
-    stage.status = 'waiting-login'
-    saveGroup()
-    console.log(`🔑 ${group.gate.message}`)
-    return new Promise((resolve) => {
-      const login = spawn(process.execPath, [join(QA_DIR, 'login.mjs'), '--app', appName, '--url', devUrl, '--target', target, '--profile', session], { stdio: 'inherit' })
-      login.on('exit', (code) => {
-        group.gate.status = code === 0 ? 'done' : 'failed'
-        saveGroup()
-        resolve(code ?? 1)
-      })
-    })
-  }
-  const loginStages = group.stages.slice(1)
-  const firstLogin = ready && loginStages[0] && !sessionAlive(loginStages[0].profile) ? requestStageLogin(loginStages[0]) : Promise.resolve(0)
-  codes.push(await logoutDone)
-  // ③ 로그인 상태 검수 — 단계마다 차례대로. 로그인을 못 했으면 그 단계만 건너뛴다
-  for (const [index, stage] of loginStages.entries()) {
-    const loginCode = index === 0 ? await firstLogin : ready && !sessionAlive(stage.profile) ? await requestStageLogin(stage) : 0
-    if (!ready || loginCode !== 0 || !sessionAlive(stage.profile)) {
-      stage.status = 'skipped'
-      stage.reason = !ready ? 'dev 서버가 뜨지 않았다' : '로그인을 마치지 않았다'
-      saveGroup()
-      console.log(`⏭  ${stage.profile} 검수 건너뜀 — ${stage.reason}`)
-      continue
-    }
-    codes.push(await launchStage(stage, ['--head-url', devUrl]))
-  }
-  // 로컬이면 첫 단계가 남긴 dev 서버(server.port)를 끈다
-  try {
-    if (target === 'local') {
-      const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${SERVER.port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
-      const groupPid = execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim()
-      if (groupPid) process.kill(-Number(groupPid), 'SIGTERM')
-    }
-  } catch {
-    // 이미 꺼졌다
-  }
-  group.finishedAt = new Date().toISOString()
-  saveGroup()
-  process.exit(Math.max(0, ...codes))
-}
-
-if (option('profiles')) {
-  const names = option('profiles').split(',').map((name) => name.trim()).filter(Boolean)
-  const tree = option('cwd') || (suite ? prepareSuiteTree() : '')
-  const stamp = new Date()
-  const two = (value) => String(value).padStart(2, '0')
-  const groupId = `${stamp.getFullYear()}${two(stamp.getMonth() + 1)}${two(stamp.getDate())}-${two(stamp.getHours())}${two(stamp.getMinutes())}${two(stamp.getSeconds())}-${appName}-group`
-  // 자식에게 넘길 인자 — --profiles 와 그 값은 빼고 상태·묶음·작업 트리를 붙인다
-  const skip = new Set()
-  argv.forEach((value, index) => {
-    if (value === '--profiles' || value === '--cwd') skip.add(index).add(index + 1)
-  })
-  const baseArgs = argv.filter((_, index) => !skip.has(index))
-  const devUrl = target === 'server' ? serverUrl : `http://localhost:${SERVER.port}`
-  const children = []
-  const launch = (name, extra) => {
-    const child = spawn(process.execPath, [fileURLToPath(import.meta.url), ...baseArgs, '--profile', name, '--cwd', tree, '--group', groupId, ...extra], {
-      env: { ...process.env, ATHENA_HEAVY_HELD: '1' },
-      stdio: ['ignore', 'pipe', 'pipe']
-    })
-    // 상태마다 앞에 [이름] 을 붙여 섞여도 구분되게
-    for (const stream of [child.stdout, child.stderr]) {
-      let rest = ''
-      stream.on('data', (chunk) => {
-        const lines = (rest + chunk).split('\n')
-        rest = lines.pop()
-        for (const line of lines) console.log(`[${name}] ${line}`)
-      })
-    }
-    const done = new Promise((resolve) => child.on('exit', (code) => resolve(code ?? 1)))
-    children.push(done)
-    return done
-  }
-  console.log(`👥 세션 상태 ${names.length}개 동시 — ${names.join(', ')} · 묶음 ${groupId}`)
-  const first = launch(names[0], target === 'server' ? ['--head-url', devUrl] : ['--keep-servers'])
-  // 첫 런이 dev 서버를 띄울 때까지(설치·relay 포함) 기다린 뒤 나머지를 그 서버로
-  let firstEnded = false
-  first.then(() => { firstEnded = true })
-  const deadline = Date.now() + 10 * 60 * 1000
-  let ready = false
-  while (!ready && !firstEnded && Date.now() < deadline) {
-    ready = await fetch(devUrl, { redirect: 'manual' }).then((response) => response.status < 500).catch(() => false)
-    if (!ready) await new Promise((resolve) => setTimeout(resolve, 3000))
-  }
-  if (ready) {
-    if (flag('live')) {
-      const board = `http://localhost:${boardPort(HERMES)}`
-      const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-      if (up) openUrl(`${board}/qa-live?group=${groupId}`)
-      console.log(`📺 실시간 화면 — ${board}/qa-live?group=${groupId}`)
-    }
-    for (const name of names.slice(1)) {
-      // 같은 초에 시작하면 런 폴더 이름이 겹칠 수 있어 1초씩 띄운다
-      await new Promise((resolve) => setTimeout(resolve, 1100))
-      launch(name, ['--head-url', devUrl])
-    }
-  } else {
-    console.log('⚠️  첫 런의 dev 서버가 뜨지 않아 나머지 상태는 돌리지 않았다')
-  }
-  const codes = await Promise.all(children)
-  // 첫 런이 남겨 둔(--keep-servers) dev 서버를 끈다 — 이 런이 띄운 server.port 만
-  try {
-    const pid = execFileSync('lsof', ['-nP', '-t', `-iTCP:${SERVER.port}`, '-sTCP:LISTEN'], { encoding: 'utf8' }).trim().split('\n')[0]
-    const groupPid = execFileSync('ps', ['-o', 'pgid=', '-p', pid], { encoding: 'utf8' }).trim()
-    if (groupPid) process.kill(-Number(groupPid), 'SIGTERM')
-  } catch {
-    // 이미 꺼졌다
-  }
-  process.exit(Math.max(...codes))
-}
-
-const cwdOption = option('cwd') || (suite ? prepareSuiteTree() : '')
-if (!cwdOption || !existsSync(cwdOption)) {
-  console.error('사용: node scripts/qa/run.mjs --cwd <워크트리> [--app <앱>] [--plan <계획서>] [--no-base] [--keep-servers]  ·  전체 검수: --suite [--profile <이름>]')
-  process.exit(2)
-}
-const repoRoot = realpathSync(git(['rev-parse', '--show-toplevel'], cwdOption))
-// 앱 폴더(레포 루트 기준) — 모노레포 apps/<앱>, 단일 레포는 '' · 화면 폴더(pages/·app/, src/ 포함)
-const appRel = qaApp.dir
-const routerRel = routerDirOf(join(repoRoot, appRel)) ?? 'pages'
-const planPath = option('plan')
-
-// 세션 프로필 — --profile 이 없으면 로그인 세션이 있는 첫 프로필, 없으면 logout
-const profiles = Object.fromEntries(Object.entries(routesConfig.profiles ?? { logout: { session: null } }).filter(([name]) => !name.startsWith('$')))
-const savedProfile = Object.entries(profiles).find(([, settings]) => settings.session && existsSync(sessionFileOf(HERMES, appName, settings.session, target, serverUrl)))
-const profileName = option('profile') || savedProfile?.[0] || 'logout'
-const profile = profiles[profileName]
-if (!profile) {
-  console.error(`⚠️  프로필 ${profileName} 이 routes/${appName}.json 의 profiles 에 없다 — ${Object.keys(profiles).join(', ')}`)
-  process.exit(2)
-}
-
-// ── 런 기록 ──────────────────────────────────────────────
-const pad = (value) => String(value).padStart(2, '0')
-const now = new Date()
-const baseRunId = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-${appName}`
-// 같은 초에 둘이 시작하면 폴더가 겹친다 — 뒤에 번호를 붙인다
-let runId = baseRunId
-for (let suffix = 2; existsSync(join(HERMES, '.qa-runs', runId)); suffix += 1) runId = `${baseRunId}-${suffix}`
-const runDir = join(HERMES, '.qa-runs', runId)
-mkdirSync(join(runDir, 'shots'), { recursive: true })
-// 실시간 호출 기록(live.jsonl) — 현황판 /qa-live 창이 따라 읽는다
-const live = createLiveLog(runDir)
-const run = {
-  id: runId,
-  // 라이브 화면 [중단] 이 이 프로세스를 끈다(현황판 /api/qa-stop)
-  pid: process.pid,
-  app: appName,
-  kind: suite ? 'suite' : 'impact',
-  plan: planPath ? relative(HERMES, join(process.cwd(), planPath)) : null,
-  cwd: repoRoot,
-  branch: git(['rev-parse', '--abbrev-ref', 'HEAD'], repoRoot).replace(/^HEAD$/, '(detached)'),
-  head: git(['rev-parse', '--short', 'HEAD'], repoRoot),
-  base: null,
-  status: 'preparing', // preparing → running → done | error
-  phase: suite ? '전체 검수 준비' : '영향 화면 찾는 중',
-  startedAt: new Date().toISOString(),
-  finishedAt: null,
-  changed: [],
-  global: [],
-  totalScreens: 0,
-  screens: [],
-  scenarios: [],
-  summary: {},
-  scenarioSummary: {},
-  log: [],
-  // --profiles·--flow 로 함께 돈 런 묶음
-  group: option('group') || null,
-  // D21 — local(내 컴퓨터 next dev) | server(배포된 서버 — serverUrl)
-  target,
-  serverUrl,
-  dataErrors: CONVENTIONS.dataErrors
-}
-// 변경분 TC — 이 브랜치에서 확인할 TC 목록(/qa-tc 변경분 모드가 쓴다). 영향 QA 에서만, 파일이 없으면 예전처럼 화면만
-const tcPicksFile = option('tc-picks') ? resolve(option('tc-picks')) : suite ? null : join(HERMES, '.qa-runs', 'tc-picks', `${appName}@${run.branch.replace(/[^\w.-]+/g, '-')}.json`)
-const tcPicks = tcPicksFile && existsSync(tcPicksFile) ? JSON.parse(readFileSync(tcPicksFile, 'utf8')) : null
-const pickIds = tcPicks ? new Set((tcPicks.tcs ?? []).map((tc) => tc.id)) : null
-if (tcPicks) {
-  run.tcPicks = {
-    file: relative(HERMES, tcPicksFile),
-    head: tcPicks.head ?? null,
-    createdAt: tcPicks.createdAt ?? null,
-    tcs: (tcPicks.tcs ?? []).map((tc) => ({ id: tc.id, title: tc.title ?? '', why: tc.why ?? '', session: tc.session ?? '', status: 'manual', scenarios: [] }))
-  }
-}
 const saveRun = () => {
-  const temporary = join(runDir, 'run.json.tmp')
-  writeFileSync(temporary, `${JSON.stringify(run, null, 2)}\n`)
-  renameSync(temporary, join(runDir, 'run.json'))
-}
-const say = (message) => {
-  const line = `${new Date().toTimeString().slice(0, 8)} ${message}`
-  run.log.push(line)
-  if (run.log.length > 200) run.log.shift()
-  console.log(line)
-  saveRun()
-}
-const setPhase = (phase) => {
-  run.phase = phase
-  say(phase)
+  const file = join(RUNS_DIR, run.id, 'run.json')
+  writeFileSync(`${file}.tmp`, JSON.stringify(run, null, 2))
+  renameSync(`${file}.tmp`, file)
 }
 
-// 보이는 창 배치 — 뷰포트별 창의 왼쪽 위치(흐름 씬도 같은 자리에 띄운다)
-const windowLefts = {}
-
-// --live — 현황판이 떠 있으면 실시간 페이지를 연다(Studio 면 그 창 옆 브라우저 · 아니면 기본 브라우저 — 안 떠 있으면 주소만 알린다)
-async function openLivePage() {
-  // 묶음(--profiles)이면 부모가 묶음 화면을 연다
-  if (option('group')) return
-  const board = `http://localhost:${boardPort(HERMES)}`
-  const liveUrl = `${board}/qa-live?id=${runId}`
-  const up = await fetch(`${board}/api/qa/runs`).then((response) => response.ok).catch(() => false)
-  if (up) openUrl(liveUrl)
-  say(up ? `📺 실시간 화면 — ${liveUrl}` : `📺 현황판이 꺼져 있다 — scripts/board.sh 로 띄운 뒤 ${liveUrl}`)
+// 오래된 실행 기록은 지운다 — 흐름마다 마지막 결과만 쓰니 쌓아 둘 까닭이 없다
+const pruneRuns = () => {
+  const names = readdirSync(RUNS_DIR).filter((name) => existsSync(join(RUNS_DIR, name, 'run.json'))).sort().reverse()
+  for (const name of names.slice(KEEP_RUNS)) rmSync(join(RUNS_DIR, name), { recursive: true, force: true })
 }
 
-// 저장한 세션의 로그인 토큰(server.tokenCookie) 만료 시각 — 지났으면 그 시각(ms), 아니면 null. 쿠키 값은 읽지 않는다
-function expiredSessionAt(file) {
-  const { cookies = [] } = JSON.parse(readFileSync(file, 'utf8'))
-  const token = sessionToken(cookies, SERVER)
-  return token && token.expires * 1000 < Date.now() ? token.expires * 1000 : null
-}
-const expiredMessage = (profileName, session, expiredAt) =>
-  `세션 ${profileName} 만료(${new Date(expiredAt).toLocaleString('ko-KR')}) — node scripts/qa/login.mjs --profile ${session} 로 다시 로그인한다`
+const stamp = () => new Date().toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15)
 
-// ── 1) 영향 화면 ─────────────────────────────────────────
-function loadImpact() {
-  const impactArgs = [join(QA_DIR, 'impact.mjs'), '--cwd', repoRoot, '--app', appName, '--json']
-  const routesOption = option('routes')
-  if (option('files')) impactArgs.push('--files', option('files'))
-  if (option('base')) impactArgs.push('--base', option('base'))
-  // --routes 도 화면 전부를 받아 그 라우트만 고른다 — Pages·App Router 어느 쪽이든 화면 파일·로그인 표시가 impact.mjs 와 같다
-  if (suite || routesOption) impactArgs.push('--all')
-  // 화면마다 코드에 있는 트래킹 이벤트 목록 — 실제로 나간 이벤트와 맞춰 본다
-  impactArgs.push('--events')
-  const impact = JSON.parse(execFileSync(process.execPath, impactArgs, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }))
-  if (!routesOption) return impact
-  const wanted = routesOption.split(',').map((route) => route.trim()).filter(Boolean)
-  const known = new Map(impact.screens.map((screen) => [screen.route, screen]))
-  return {
-    ...impact,
-    changed: [],
-    global: [],
-    totalScreens: 0,
-    screens: wanted.map((route) => ({ ...(known.get(route) ?? { route, file: null, auth: false, via: [] }), distance: 0, changed: '(--routes)' }))
+// 운영 기준 ref 를 그대로 받아 둔 작업 트리 — 메인 체크아웃은 건드리지 않는다
+/** @param {import('./flows.mjs').Service} service */
+function baseTree(service) {
+  const repoDir = join(ROOT, 'repos', service.repo)
+  const tree = join(ROOT, '.worktrees', service.repo, 'qa-base')
+  const git = (/** @type {string} */ cwd, /** @type {string[]} */ args) => execFileSync('git', ['-C', cwd, ...args], { stdio: 'ignore' })
+  git(repoDir, ['fetch', '--quiet', 'origin', service.branch])
+  const ref = `origin/${service.branch}`
+  if (existsSync(join(tree, '.git'))) {
+    git(tree, ['checkout', '--quiet', '--detach', '--force', ref])
+    return tree
   }
+  mkdirSync(dirname(tree), { recursive: true })
+  git(repoDir, ['worktree', 'add', '--quiet', '--detach', tree, ref])
+  execFileSync(join(ROOT, 'scripts', 'wt-copy-local.sh'), [repoDir, tree], { stdio: 'ignore' })
+  return tree
 }
 
-// 라우트 → Pages Router 화면 파일 (/help/faq → <앱 폴더>/pages/help/faq/index.tsx 또는 faq.tsx) · App Router 앱이면 없다(null)
-function pageFileOf(route) {
-  if (!routerRel.endsWith('pages')) return null
-  const base = join(appRel, routerRel, route === '/' ? 'index' : route)
-  return [`${base}.tsx`, join(base, 'index.tsx'), `${base}.ts`, join(base, 'index.ts')].find((candidate) => existsSync(join(repoRoot, candidate))) ?? null
+// 기준 트리가 이 커밋으로 설치된 적이 없으면 install 을 돌린다(--cwd 는 그 트리 주인이 설치해 둔다)
+/** @param {string} tree @param {string} workDir @param {string} commit @param {string | undefined} install */
+function installIfNeeded(tree, workDir, commit, install) {
+  if (!install) return
+  const file = join(tree, STAMP_FILE)
+  if (existsSync(file) && readFileSync(file, 'utf8').trim() === commit) return
+  const done = spawnSync('/bin/sh', ['-c', install], { cwd: workDir, encoding: 'utf8', timeout: INSTALL_TIMEOUT_MS })
+  if (done.status !== 0) throw new Error(`install 실패(${install}):\n${maskText(`${done.stdout}${done.stderr}`).slice(-1500)}`)
+  writeFileSync(file, `${commit}\n`)
 }
 
-// 라우트(파일 기준) → 실제로 열 URL 들. 동적 라우트는 설정의 samples, 단계형은 entry(D6·D8)
-function targetsOf(screen) {
-  const settings = routesConfig.routes?.[screen.route] ?? {}
-  // 열기만 해도 부작용(알림톡·실조회 등)이 있는 화면 — 열지 않고 이유만 남긴다
-  if (settings.skip) return [{ url: null, skip: true, note: settings.note ?? '설정에서 건너뜀' }]
-  if (settings.entry) return [{ url: settings.entry, entry: true, note: settings.note }]
-  if (settings.samples?.length) return settings.samples.map((url) => ({ url, note: settings.note }))
-  if (/\[/.test(screen.route)) return [{ url: null, note: settings.note ?? '동적 라우트 — routes 설정에 샘플 URL 을 적어 주세요' }]
-  return [{ url: screen.route, note: settings.note }]
+/** @param {string} url */
+const answers = async (url) => {
+  try { await fetch(url, { redirect: 'manual', signal: AbortSignal.timeout(2000) }); return true } catch { return false }
 }
 
-// routes.<화면>.samplesFrom: "sitemap" — BE(CMS)가 주소를 주는 동적 화면(랜딩·이벤트 등). 서버가 뜬 뒤 그 앱의 /sitemap.xml 에서
-// 경로 모양이 맞는 주소를 샘플로 받아 '샘플 필요' 항목을 실제 화면들로 바꾼다. samplesLimit(기본 30)개까지
-async function expandSitemapSamples(origin) {
-  const waiting = run.screens.filter((screen) => screen.status === 'sample' && routesConfig.routes?.[screen.route]?.samplesFrom === 'sitemap')
-  if (!waiting.length) return
-  let locations = []
-  try {
-    const xml = await (await fetch(`${origin}/sitemap.xml`)).text()
-    locations = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map((match) => new URL(match[1].trim(), origin).pathname)
-  } catch (error) {
-    say(`⚠️  sitemap.xml 을 못 읽었다 — ${error.message}`)
-    return
+/**
+ * qa.json 대로 서버를 띄운다 — 프로세스 묶음째 끌 수 있게. 돌려주는 함수가 끄기
+ * @param {any} settings @param {string} workDir @param {string} logFile
+ */
+async function startServer(settings, workDir, logFile) {
+  const readyUrl = new URL(settings.ready ?? '/', settings.url).href
+  if (await answers(readyUrl)) {
+    if (flag('reuse-server')) return async () => {}
+    throw new Error(`${settings.url} 에 이미 서버가 떠 있어요 — 다른 코드일 수 있어 돌리지 않아요(그 서버를 끄거나, 내가 띄운 서버면 --reuse-server)`)
   }
-  // 이미 따로 검사하는 고정 화면(/home/reviews 등)은 빼고, 동적 경로 모양에 맞는 것만
-  const fixedRoutes = new Set(run.screens.filter((screen) => !/\[/.test(screen.route)).map((screen) => screen.route))
-  for (const screen of waiting) {
-    const settings = routesConfig.routes[screen.route]
-    const prefix = screen.route.slice(0, screen.route.indexOf('['))
-    const matched = [...new Set(locations.filter((path) => path.startsWith(prefix) && path.length > prefix.length && !fixedRoutes.has(path) && !pageFileOf(path)))]
-    const limit = settings.samplesLimit ?? 30
-    if (!matched.length) {
-      screen.note = `sitemap.xml 에 ${prefix}… 주소가 없다 — 지금 살아 있는 콘텐츠가 없을 수 있다`
-      continue
-    }
-    const entries = matched.slice(0, limit).map((url) => ({ ...screen, key: `${screen.route} ${url}`, url, status: 'queued', note: `sitemap.xml 에서 받은 주소${matched.length > limit ? ` (${matched.length}개 중 ${limit}개)` : ''}`, viewports: [], problems: [] }))
-    run.screens.splice(run.screens.indexOf(screen), 1, ...entries)
-    say(`🗺  ${screen.route} — sitemap.xml 에서 ${entries.length}개${matched.length > limit ? ` (전체 ${matched.length}개)` : ''}`)
+  const log = openSync(logFile, 'a')
+  const child = spawn('/bin/sh', ['-c', settings.start], { cwd: workDir, detached: true, stdio: ['ignore', log, log], env: { ...process.env, ...settings.env } })
+  closeSync(log)
+  let exited = child.exitCode !== null
+  child.on('exit', () => { exited = true })
+  const stop = async () => {
+    if (exited || !child.pid) return
+    try { process.kill(-child.pid, 'SIGTERM') } catch { return }
+    for (let tries = 0; tries < 30 && !exited; tries += 1) await new Promise((done) => setTimeout(done, 100))
+    if (!exited) { try { process.kill(-child.pid, 'SIGKILL') } catch { /* 이미 꺼졌다 */ } }
   }
-  saveRun()
-}
-
-// ── 2) dev 서버 ──────────────────────────────────────────
-const servers = []
-async function waitForServer(url, timeoutMs, label) {
-  const deadline = Date.now() + timeoutMs
+  const deadline = Date.now() + (settings.readyTimeoutSec ? settings.readyTimeoutSec * 1000 : READY_TIMEOUT_MS)
   while (Date.now() < deadline) {
-    try {
-      const response = await fetch(url, { redirect: 'manual' })
-      if (response.status < 500) return
-    } catch {
-      // 아직 안 떴다
-    }
-    await new Promise((resolve) => setTimeout(resolve, 2000))
+    if (await answers(readyUrl)) return stop
+    if (exited) throw new Error(`서버가 바로 꺼졌어요(${settings.start}):\n${maskText(readFileSync(logFile, 'utf8')).slice(-1500)}`)
+    await new Promise((done) => setTimeout(done, 500))
   }
-  throw new Error(`${label} 서버가 ${Math.round(timeoutMs / 1000)}초 안에 뜨지 않았다 — ${relative(HERMES, runDir)}/server-${label}.log`)
+  await stop()
+  throw new Error(`서버가 시간 안에 뜨지 않았어요(${readyUrl}):\n${maskText(readFileSync(logFile, 'utf8')).slice(-1500)}`)
 }
 
-function runStep(command, args, cwd, logFile) {
-  appendFileSync(logFile, `\n$ ${command} ${args.join(' ')}\n`)
-  const output = openSync(logFile, 'a')
-  execFileSync(command, args, { cwd, stdio: ['ignore', output, output] })
+/** Playwright 를 코어 쪽 설치에서 불러 브라우저를 켠다 */
+async function openBrowser() {
+  const installed = join(ROOT, 'scripts', 'qa', 'node_modules', 'playwright', 'index.mjs')
+  if (!existsSync(installed)) throw new Error('Playwright 가 없어요 — scripts/setup.sh 를 한 번 돌려 주세요')
+  const { chromium } = await import(installed)
+  return chromium.launch()
 }
 
-// 새 워크트리에는 node_modules 가 없다 — 영향 분석(tsconfig extends)과 dev 서버 둘 다 필요하다. 패키지 관리자는 lockfile 로
-function ensureDependencies(root, label, logFile = join(runDir, `server-${label}.log`)) {
-  if (existsSync(join(root, 'node_modules'))) return
-  const [command, ...args] = packageManager(root).install
-  setPhase(`${label}: 의존성 설치 (${command} ${args[0]})`)
-  runStep(command, args, root, logFile)
-}
-
-async function startDevServer(root, port, label) {
-  const appDir = join(root, appRel)
-  const logFile = join(runDir, `server-${label}.log`)
-  writeFileSync(logFile, '')
-  ensureDependencies(root, label, logFile)
-  // 준비 단계(routes server.prepare — 예: env 생성·Relay 생성) — 앱 package.json 에 있는 스크립트만. unless 파일이 앱 폴더에 있으면 건너뛴다
-  // (.env 는 워크트리 생성 때 복사된다 — wt-copy-local.sh. 내용은 출력하지 않는다)
-  const manager = packageManager(root)
-  const scripts = JSON.parse(readFileSync(join(appDir, 'package.json'), 'utf8')).scripts ?? {}
-  for (const step of SERVER.prepare) {
-    if (!scripts[step.script] || (step.unless && existsSync(join(appDir, step.unless)))) continue
-    setPhase(`${label}: 준비 (${step.script})`)
-    runStep(manager.run[0], [...manager.run.slice(1), step.script], appDir, logFile)
-  }
-  setPhase(`${label}: dev 서버 기동 :${port}`)
-  const output = openSync(logFile, 'a')
-  const [command, ...args] = devCommand(SERVER, manager, port)
-  const child = spawn(command, args, { cwd: appDir, stdio: ['ignore', output, output], detached: true })
-  servers.push({ child, label })
-  const url = `http://localhost:${port}`
-  await waitForServer(url, 240000, label)
-  say(`${label}: ${url} 준비됨`)
-  return url
-}
-
-// 기준 화면용 워크트리 — merge-base 에 detach 해서 재사용한다(.worktrees/<레포>/qa-base)
-function prepareBaseWorktree(baseSha) {
-  const repoName = qaApp.repo
-  const basePath = join(HERMES, '.worktrees', repoName, 'qa-base')
-  if (!existsSync(basePath)) {
-    git(['worktree', 'add', '--detach', basePath, baseSha], repoRoot)
-    const mainCheckout = realpathSync(join(HERMES, 'repos', repoName))
-    execFileSync(join(HERMES, 'scripts', 'wt-copy-local.sh'), [mainCheckout, basePath], { stdio: 'ignore' })
-  } else if (git(['rev-parse', 'HEAD'], basePath) !== git(['rev-parse', baseSha], repoRoot)) {
-    // 우리 전용 워크트리라 생성물 외 변경이 없다 — 기준 커밋으로 맞춘다
-    git(['checkout', '--detach', '--force', baseSha], basePath)
-  }
-  return basePath
-}
-
-function stopServers() {
-  if (flag('keep-servers')) return
-  for (const { child } of servers) {
-    try {
-      process.kill(-child.pid, 'SIGTERM')
-    } catch {
-      // 이미 꺼졌다
-    }
-  }
-}
-
-// ── 3) 화면 하나 열기 ────────────────────────────────────
-const ignoreConsole = (routesConfig.ignoreConsole ?? []).map((pattern) => new RegExp(pattern))
-const isNoiseRequest = (url) => /\/_next\/webpack-hmr|__nextjs|\/favicon\.ico/.test(url)
-const OWN_HOSTS = (QA.ownHosts ?? []).map((host) => new RegExp(`\\.${host.replace(/\./g, '\\.')}/`))
-const isOwnRequest = (url, origin) => url.startsWith(origin) || OWN_HOSTS.some((pattern) => pattern.test(url))
-
-// 보이는 창 모드(--headed) — 창 하나에서 화면을 차례로 옮겨 가며, 위에 진행 표시를 띄우고 천천히 훑는다
-// --watch = 창은 띄우되 빠르게(멈춤·천천히 스크롤 없이) — 전체 검수를 지켜보기용
-const watch = flag('watch')
-// --live = 창 없이 돌면서 화면·API 호출·트래킹 이벤트를 현황판 한 페이지(/qa-live)에 실시간으로 — QA 자동화 도구 화면
-const liveView = flag('live')
-const headed = flag('headed') || watch
-const slowMs = watch ? 0 : Number(option('slow') || 700)
-const pause = (page, factor = 1) => (headed && slowMs > 0 ? page.waitForTimeout(slowMs * factor) : Promise.resolve())
-
-async function showBanner(page, text, tone = 'run') {
-  // 보이는 창일 때만 — 창 없이 도는 검수에서 사람 단계 씬만 따로 연 창(context.__qaHuman)도 포함
-  if (!headed && !page.context().__qaHuman) return
-  await page
-    .evaluate(
-      ({ text, tone }) => {
-        const colors = { run: '#1f6feb', ok: '#1a7f37', warn: '#bf8700', bad: '#cf222e' }
-        let banner = document.getElementById('__hermes_qa_banner')
-        if (!banner) {
-          banner = document.createElement('div')
-          banner.id = '__hermes_qa_banner'
-          banner.style.cssText = 'position:fixed;left:12px;right:12px;top:12px;z-index:2147483647;padding:10px 14px;border-radius:10px;color:#fff;font:600 14px/1.4 -apple-system,sans-serif;box-shadow:0 6px 20px rgba(0,0,0,.25);pointer-events:none;transition:background .3s'
-          document.documentElement.appendChild(banner)
-        }
-        banner.style.background = colors[tone] ?? colors.run
-        banner.textContent = text
-      },
-      { text, tone }
-    )
-    .catch(() => {})
-}
-const hideBanner = (page) => page.evaluate(() => document.getElementById('__hermes_qa_banner')?.remove()).catch(() => {})
-
-// 브라우저 안에서 도는 화면 품질 검사(page.evaluate) — 바깥 변수를 쓰지 않는다
-function scanVisualQuality() {
-  const problems = []
-  const warnings = []
-  const width = document.documentElement.clientWidth
-  const height = window.innerHeight
-  const visible = (element) => {
-    const style = getComputedStyle(element)
-    const rect = element.getBoundingClientRect()
-    return style.display !== 'none' && style.visibility !== 'hidden' && Number(style.opacity) > 0.05 && rect.width > 1 && rect.height > 1
-  }
-  const label = (element) => (element.innerText || element.getAttribute('aria-label') || element.getAttribute('title') || element.tagName.toLowerCase()).replace(/\s+/g, ' ').trim().slice(0, 30)
-  // QA 가 띄운 것(진행 띠·이벤트 패널)은 뺀다
-  const ours = (element) => Boolean(element.closest('#__hermes_qa_banner, #__hermes_qa_events'))
-
-  // ⓪ 스타일 미적용 — 스타일시트가 하나도 없거나, 본문이 브라우저 기본 글꼴(Times·serif)이면 CSS 가 안 먹은 화면이다
-  const bodyFont = getComputedStyle(document.body).fontFamily
-  if (!document.styleSheets.length) problems.push({ kind: 'css', text: 'CSS 미적용 — 스타일시트가 하나도 없다' })
-  else if (/^\s*("?Times( New Roman)?"?|serif)\s*(,|$)/i.test(bodyFont)) problems.push({ kind: 'css', text: `CSS 미적용으로 보임 — 본문 글꼴이 브라우저 기본(${bodyFont.slice(0, 40)})` })
-
-  // ① 깨진 글자·값 — 화면에 보이는 글자에 � · undefined · null · NaN · [object Object] · 그대로 찍힌 HTML 엔티티 · 템플릿 괄호
-  const BROKEN = [
-    [/\uFFFD/, '깨진 글자(�)'],
-    [/\[object Object\]/, '[object Object]'],
-    [/(^|[^\w가-힣])(undefined|NaN)([^\w가-힣]|$)/, 'undefined·NaN'],
-    [/(^|\s)null(\s|$|원|개|명)/, 'null'],
-    [/&(amp|nbsp|lt|gt|quot|#\d+);/, 'HTML 엔티티가 글자로'],
-    [/\{\{[^}]*\}\}|\$\{[^}]*\}/, '템플릿 괄호가 글자로']
-  ]
-  const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-  const seenBroken = new Set()
-  while (walker.nextNode()) {
-    const node = walker.currentNode
-    const text = node.textContent ?? ''
-    if (!text.trim() || !node.parentElement || ours(node.parentElement) || ['SCRIPT', 'STYLE', 'NOSCRIPT', 'CODE', 'PRE'].includes(node.parentElement.tagName)) continue
-    if (!visible(node.parentElement)) continue
-    for (const [pattern, name] of BROKEN) {
-      const match = text.match(pattern)
-      if (match && !seenBroken.has(name + text.trim().slice(0, 40))) {
-        seenBroken.add(name + text.trim().slice(0, 40))
-        problems.push({ kind: 'text', text: `${name} — "${text.trim().slice(0, 60)}"` })
-      }
-    }
-  }
-
-  const buttons = [...document.querySelectorAll('button, a[href], [role="button"]')].filter((element) => !ours(element) && visible(element)).slice(0, 300)
-  for (const element of buttons) {
-    const rect = element.getBoundingClientRect()
-    // ② 이름 없는 버튼 — 글자·aria-label·title·이미지 alt 가 모두 없다(스크린리더가 읽을 게 없다)
-    const hasName = (element.innerText || '').trim() || element.getAttribute('aria-label') || element.getAttribute('title') || element.getAttribute('aria-labelledby') || element.querySelector('img[alt]:not([alt=""]), svg title')
-    if (!hasName) warnings.push({ kind: 'a11y', text: `이름 없는 버튼 — ${element.tagName.toLowerCase()}${element.className && typeof element.className === 'string' ? `.${element.className.split(' ')[0]}` : ''} (${Math.round(rect.x)},${Math.round(rect.y)})` })
-    // ③ 화면 밖 버튼 — 가로로 화면 밖(가로 슬라이드 속 항목은 부모가 넘침을 숨기면 뺀다)
-    const inScroller = element.closest('[class*="swiper"], [class*="slick"], [class*="carousel"], [class*="scroll"]')
-    if ((rect.right < 0 || rect.left > width) && !inScroller) warnings.push({ kind: 'offscreen', text: `화면 밖 버튼 — "${label(element)}" (x=${Math.round(rect.left)})` })
-    // ④ 가려진 버튼 — 지금 보이는 영역 안인데 가운데를 다른 요소가 덮는다(고정 헤더·하단 바·대화상자는 빼고)
-    const centerX = rect.left + rect.width / 2
-    const centerY = rect.top + rect.height / 2
-    if (centerX > 0 && centerX < width && centerY > 0 && centerY < height) {
-      const top = document.elementFromPoint(centerX, centerY)
-      if (top && top !== element && !element.contains(top) && !top.contains(element) && !ours(top)) {
-        let cover = top
-        let pinned = false
-        while (cover && cover !== document.body) {
-          const position = getComputedStyle(cover).position
-          if (position === 'fixed' || position === 'sticky' || cover.getAttribute('role') === 'dialog' || cover.getAttribute('aria-modal') === 'true') pinned = true
-          cover = cover.parentElement
-        }
-        if (!pinned) warnings.push({ kind: 'covered', text: `가려진 버튼 — "${label(element)}" 위를 ${top.tagName.toLowerCase()} "${label(top)}" 가 덮음` })
-      }
-    }
-  }
-
-  // ⑥ 이미지 — 스크롤을 끝낸 뒤에도 안 뜬 것(지연 로딩 포함)은 문제, 찌그러짐·흐림(원본보다 크게 늘림)·alt 없음은 확인 필요
-  let imageNotes = 0
-  for (const image of document.images) {
-    if (ours(image) || !image.getAttribute('src') && !image.currentSrc) continue
-    const rect = image.getBoundingClientRect()
-    const name = (image.getAttribute('alt') || image.currentSrc || image.src || '').split('?')[0].split('/').pop().slice(0, 50)
-    if (!image.complete && visible(image)) {
-      problems.push({ kind: 'image', text: `이미지가 끝까지 안 뜸 — ${name}` })
-      continue
-    }
-    if (!image.naturalWidth || !visible(image) || imageNotes >= 10) continue
-    const fit = getComputedStyle(image).objectFit
-    const naturalRatio = image.naturalWidth / image.naturalHeight
-    const shownRatio = rect.width / rect.height
-    if (fit === 'fill' && Math.abs(shownRatio / naturalRatio - 1) > 0.15 && !image.currentSrc.endsWith('.svg')) {
-      imageNotes += 1
-      warnings.push({ kind: 'image-ratio', text: `찌그러진 이미지 — ${name} (원본 ${image.naturalWidth}×${image.naturalHeight} → ${Math.round(rect.width)}×${Math.round(rect.height)})` })
-    }
-    const scale = (rect.width * window.devicePixelRatio) / image.naturalWidth
-    if (scale > 2 && rect.width > 80 && !image.currentSrc.endsWith('.svg')) {
-      imageNotes += 1
-      warnings.push({ kind: 'image-lowres', text: `흐린 이미지 — ${name} (원본 ${image.naturalWidth}px 을 ${Math.round(rect.width)}px 로 ${scale.toFixed(1)}배 늘림)` })
-    }
-    if (!image.hasAttribute('alt') && rect.width > 40) {
-      imageNotes += 1
-      warnings.push({ kind: 'a11y', text: `대체 텍스트(alt) 없는 이미지 — ${name}` })
-    }
-  }
-
-  // ⑤ 잘린 글자 — 넘침을 숨긴 칸에서 글자가 칸보다 길다(말줄임(…)으로 의도한 것은 뺀다)
-  let clipped = 0
-  for (const element of document.body.querySelectorAll('p, span, div, button, a, h1, h2, h3, h4, li, label, strong')) {
-    if (clipped >= 8 || ours(element) || !visible(element)) continue
-    if (![...element.childNodes].some((child) => child.nodeType === 3 && child.textContent.trim())) continue
-    const style = getComputedStyle(element)
-    const hidden = ['hidden', 'clip'].includes(style.overflowX) || ['hidden', 'clip'].includes(style.overflowY)
-    if (!hidden || style.textOverflow === 'ellipsis' || Number(style.webkitLineClamp) > 0) continue
-    if (element.scrollWidth > element.clientWidth + 2 || element.scrollHeight > element.clientHeight + 2) {
-      clipped += 1
-      warnings.push({ kind: 'clipped', text: `잘린 글자 — "${label(element)}" (칸 ${element.clientWidth}×${element.clientHeight} · 글자 ${element.scrollWidth}×${element.scrollHeight})` })
-    }
-  }
-  // 같은 내용은 하나로
-  const unique = (list) => [...new Map(list.map((item) => [item.text, item])).values()]
-  return { problems: unique(problems).slice(0, 10), warnings: unique(warnings).slice(0, 20) }
-}
-
-// 아이콘 글자(사용자 정의 영역 U+E000–F8FF)가 실제로 아이콘 글꼴로 그려졌는지 — font-display: optional 이면 첫 방문에 대체 글꼴로
-// 그려져 □ 가 된다(아이콘 글꼴 — 설정 qa.iconFont). 브라우저(CDP)에 실제 렌더 글꼴을 묻는다
-const ICON_FONT = QA.iconFont ? new RegExp(QA.iconFont, 'i') : null
-async function iconFontProblems(page) {
-  const found = []
-  let session = null
-  try {
-    const count = await page.evaluate(() => {
-      const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT)
-      let index = 0
-      while (walker.nextNode() && index < 30) {
-        if (/[\uE000-\uF8FF]/.test(walker.currentNode.textContent)) walker.currentNode.parentElement.setAttribute('data-qa-icon', String(index++))
-      }
-      return index
-    })
-    if (!count) return found
-    session = await page.context().newCDPSession(page)
-    await session.send('DOM.enable')
-    await session.send('CSS.enable')
-    const { root } = await session.send('DOM.getDocument', { depth: 0 })
-    const { nodeIds } = await session.send('DOM.querySelectorAll', { nodeId: root.nodeId, selector: '[data-qa-icon]' })
-    for (const nodeId of nodeIds) {
-      const { fonts } = await session.send('CSS.getPlatformFontsForNode', { nodeId })
-      if (ICON_FONT && fonts.some((font) => ICON_FONT.test(font.familyName))) continue
-      const label = await page.evaluate((index) => {
-        const element = document.querySelector(`[data-qa-icon="${index}"]`)
-        return (element?.closest('a,button') ?? element)?.textContent?.replace(/[\uE000-\uF8FF]/g, '').trim().slice(0, 40) ?? ''
-      }, String(nodeIds.indexOf(nodeId)))
-      found.push({ kind: 'font', text: `아이콘 글꼴 미적용(□) — "${label}" 의 아이콘이 ${fonts.map((font) => font.familyName).join(', ') || '알 수 없는 글꼴'} 로 그려짐` })
-    }
-  } catch {
-    // 글꼴 확인은 보조 검사 — 못 해도 화면 검사는 계속한다
-  } finally {
-    await page.evaluate(() => document.querySelectorAll('[data-qa-icon]').forEach((element) => element.removeAttribute('data-qa-icon'))).catch(() => {})
-    await session?.detach().catch(() => {})
-  }
-  return found
-}
-
-// 트래킹용 스크롤 — 빠르게(화면 높이의 70% 씩, 0.15초) 끝까지 내렸다가 맨 위로. IntersectionObserver 가 각 구역을 보게
-async function trackingSweep(page) {
-  const { scrollHeight, viewportHeight } = await page
-    .evaluate(() => ({ scrollHeight: document.documentElement.scrollHeight, viewportHeight: window.innerHeight }))
-    .catch(() => ({ scrollHeight: 0, viewportHeight: 1 }))
-  if (scrollHeight <= viewportHeight) return
-  const step = Math.max(200, Math.round(viewportHeight * 0.7))
-  for (let top = step; top < scrollHeight + step && top < 40000; top += step) {
-    await page.evaluate((target) => window.scrollTo(0, target), top).catch(() => {})
-    await page.waitForTimeout(150)
-  }
-  await page.evaluate(() => window.scrollTo(0, 0)).catch(() => {})
-  await page.waitForTimeout(150)
-}
-
-// 화면을 위에서 아래로 천천히 내렸다가 다시 올린다 — 사람이 훑어보듯
-async function sweepPage(page) {
-  if (!headed || slowMs === 0) return
-  const { scrollHeight, viewportHeight } = await page
-    .evaluate(() => ({ scrollHeight: document.documentElement.scrollHeight, viewportHeight: window.innerHeight }))
-    .catch(() => ({ scrollHeight: 0, viewportHeight: 1 }))
-  const step = Math.max(200, Math.round(viewportHeight * 0.7))
-  for (let top = step; top < scrollHeight; top += step) {
-    await page.evaluate((target) => window.scrollTo({ top: target, behavior: 'smooth' }), top).catch(() => {})
-    await pause(page, 0.8)
-  }
-  await page.evaluate(() => window.scrollTo({ top: 0, behavior: 'smooth' })).catch(() => {})
-  await pause(page)
-}
-
-async function visit(context, origin, path, shotFile, label, settings = {}) {
-  // 보이는 창이면 창 하나를 계속 쓴다(화면 이동이 그 창에서 보이게). 아니면 화면마다 새 페이지
-  // 보이는 창·실시간 화면이면 컨텍스트마다 페이지 하나를 계속 쓴다(화면 이동이 한 곳에서 보이게)
-  const reusePage = headed || liveView
-  if (reusePage && !context.__qaPage) {
-    context.__qaPage = await context.newPage()
-    if (headed) await placeWindow(context.__qaPage)
-    if (liveView) await startScreencast(context.__qaPage, runDir, context.__qaSlot)
-  }
-  const page = reusePage ? context.__qaPage : await context.newPage()
-  live.write({ where: context.__qaSlot ?? label, kind: 'mark', name: `▶ ${path}`, page: path })
-  const problems = []
-  const onConsole = (message) => {
-    if (message.type() !== 'error') return
-    const text = message.text()
-    // 리소스 로드 실패는 response·requestfailed 가 우리 요청만 골라 잡는다 — 외부 위젯(채널톡 등) 401 이 콘솔로 새지 않게
-    // routes.<화면>.ignoreConsole — 그 화면에서만 환경 탓인 콘솔 에러(예: 공동인증서 프로그램이 없는 QA 브라우저)
-    if (text.startsWith('Failed to load resource') || ignoreConsole.some((pattern) => pattern.test(text)) || (settings.ignoreConsole ?? []).some((pattern) => new RegExp(pattern).test(text))) return
-    const location = message.location()
-    // 위치가 라이브러리(next devtools·relay 등) 안이면 앱 소스가 아니라 쓸모없다 — 그때는 비운다
-    const fromLibrary = !location?.url || /node_modules|\.pnpm|next\/dist/.test(location.url)
-    problems.push({ kind: 'console', text: text.slice(0, 400), at: fromLibrary ? '' : sourceAt(`${location.url}:${location.lineNumber + 1}`) })
-  }
-  const onPageError = (error) => problems.push({ kind: 'pageerror', text: String(error.message).slice(0, 400), at: stackAt(error.stack) })
-  const onResponse = (response) => {
-    const url = response.url()
-    if (response.status() >= 400 && isOwnRequest(url, origin) && !isNoiseRequest(url)) {
-      problems.push({ kind: 'http', text: `${response.status()} ${url.replace(origin, '').slice(0, 200)}` })
-    }
-  }
-  const onRequestFailed = (request) => {
-    const failure = request.failure()?.errorText ?? ''
-    if (failure.includes('ERR_ABORTED') || isNoiseRequest(request.url()) || !isOwnRequest(request.url(), origin)) return
-    problems.push({ kind: 'network', text: `${failure} ${request.url().replace(origin, '').slice(0, 200)}` })
-  }
-  // 이미지는 어느 주소(CDN 등)에서 오든 본다 — <img> 와 CSS 배경 이미지 모두 resourceType image
-  const brokenImageRequests = new Set()
-  // 스타일시트(CSS)·글꼴도 같이 — 못 받으면 화면이 깨져 보인다
-  const brokenStyleRequests = new Set()
-  const onImageResponse = (response) => {
-    const type = response.request().resourceType()
-    if (response.status() < 400) return
-    if (type === 'image') brokenImageRequests.add(`${response.status()} ${response.url().replace(origin, '').slice(0, 160)}`)
-    if (type === 'stylesheet' || type === 'font') brokenStyleRequests.add(`${type === 'font' ? '글꼴' : 'CSS'} ${response.status()} ${response.url().replace(origin, '').slice(0, 160)}`)
-  }
-  const onImageFailed = (request) => {
-    const failure = request.failure()?.errorText ?? ''
-    if (failure.includes('ERR_ABORTED')) return
-    if (request.resourceType() === 'image') brokenImageRequests.add(`${failure} ${request.url().replace(origin, '').slice(0, 160)}`)
-    if (['stylesheet', 'font'].includes(request.resourceType())) brokenStyleRequests.add(`${request.resourceType() === 'font' ? '글꼴' : 'CSS'} ${failure} ${request.url().replace(origin, '').slice(0, 160)}`)
-  }
-  page.on('response', onImageResponse)
-  page.on('requestfailed', onImageFailed)
-  page.on('console', onConsole)
-  page.on('pageerror', onPageError)
-  page.on('response', onResponse)
-  page.on('requestfailed', onRequestFailed)
-
-  const startedAt = Date.now()
-  const eventStart = (page.__qaEvents ?? []).length
-  let timedOut = false
-  try {
-    // 페이지를 계속 쓰면 앞 화면이 늦게 하는 이동(location.replace 등)이 이번 이동을 끊는다(ERR_ABORTED) — 빈 화면으로 한 번 끊고 간다
-    if (reusePage) await page.goto('about:blank').catch(() => {})
-    await page.goto(`${origin}${path}`, { waitUntil: 'load', timeout: routesConfig.timeoutMs }).catch(async (error) => {
-      // 그래도 끊기면 한 번만 다시
-      if (!String(error.message).includes('ERR_ABORTED')) throw error
-      await page.waitForTimeout(1000)
-      await page.goto(`${origin}${path}`, { waitUntil: 'load', timeout: routesConfig.timeoutMs })
-    })
-    // routes.<화면>.networkIdle: false — 요청이 계속 이어지는 화면(dev 의 /404 등)은 조용해지길 기다리지 않는다(15초 낭비)
-    if (settings.networkIdle !== false) await page.waitForLoadState('networkidle', { timeout: 15000 }).catch(() => {})
-    // 클라이언트 가드(AuthGuard)의 replace 를 기다린다
-    await page.waitForTimeout(1500)
-  } catch (error) {
-    timedOut = true
-    problems.push({ kind: 'timeout', text: String(error.message).split('\n')[0].slice(0, 300) })
-  }
-  const landedPath = new URL(page.url()).pathname
-  await showBanner(page, `QA ▶ ${label} · ${path}${landedPath !== path.split('?')[0] ? `  →  ${landedPath} 로 이동됨` : ''}`)
-  await pause(page, 1.5)
-  await sweepPage(page)
-  // 스크롤 이벤트(ScrollEventWrapper — 구역이 50% 보일 때 한 번)가 나가게 한 화면씩 내려 본다. 끝나면 맨 위로
-  await trackingSweep(page)
-  const brokenImages = await page
-    .evaluate(() => [...document.images].filter((image) => image.complete && image.naturalWidth === 0 && image.src).map((image) => image.src))
-    .catch(() => [])
-  for (const source of brokenImages) problems.push({ kind: 'image', text: `깨진 이미지 ${source.replace(origin, '').slice(0, 200)}` })
-  for (const entry of brokenStyleRequests) problems.push({ kind: 'css', text: `스타일 요청 실패 ${entry}` })
-  // 화면의 <img> 로 안 잡히는 것(CSS 배경·다른 주소) — 요청이 실패했거나 4xx·5xx
-  const shownBroken = new Set(brokenImages.map((source) => source.replace(origin, '').slice(0, 160)))
-  for (const entry of brokenImageRequests) {
-    if (![...shownBroken].some((source) => entry.endsWith(source))) problems.push({ kind: 'image', text: `이미지 요청 실패 ${entry}` })
-  }
-  problems.push(...(await iconFontProblems(page)))
-  // 가로 넘침 — 화면보다 넓은 요소가 있으면 옆으로 밀리는 스크롤이 생긴다(모바일에서 흔한 깨짐)
-  const overflow = await page
-    .evaluate(() => {
-      const width = document.documentElement.clientWidth
-      if (document.documentElement.scrollWidth <= width + 1) return null
-      const wide = [...document.body.querySelectorAll('*')].find((element) => element.getBoundingClientRect().right > width + 1 && getComputedStyle(element).position !== 'fixed')
-      return { scroll: document.documentElement.scrollWidth, width, what: wide ? `${wide.tagName.toLowerCase()}${wide.className && typeof wide.className === 'string' ? `.${wide.className.split(' ')[0]}` : ''} "${(wide.textContent ?? '').trim().slice(0, 30)}"` : '' }
-    })
-    .catch(() => null)
-  if (overflow) problems.push({ kind: 'layout', text: `가로 넘침 — 화면 폭 ${overflow.width}px 인데 ${overflow.scroll}px 까지 밀린다${overflow.what ? ` · ${overflow.what}` : ''}` })
-  // 눈으로 보이는 깨짐 — 확실한 것(깨진 글자·값)은 문제, 의도일 수도 있는 것(잘린 글자·가려진·화면 밖·이름 없는 버튼)은 확인 필요(warnings)
-  const quality = await page.evaluate(scanVisualQuality).catch(() => ({ problems: [], warnings: [] }))
-  problems.push(...quality.problems)
-  const warnings = quality.warnings
-  const finalUrl = new URL(page.url())
-  // 진행 표시는 스크린샷에 들어가지 않게 지웠다가, 찍은 뒤 결과로 다시 띄운다
-  await hideBanner(page)
-  await page.screenshot({ path: shotFile, fullPage: true, timeout: 20000, animations: 'disabled', caret: 'hide', style: HIDE_EVENT_PANEL }).catch((error) => problems.push({ kind: 'screenshot', text: String(error.message).split('\n')[0] }))
-  if (headed) {
-    const tone = problems.length ? 'warn' : 'ok'
-    await showBanner(page, `${problems.length ? `⚠️ 확인할 것 ${problems.length}개 — ${problems[0].text}` : '✅ 문제 없음'} · ${label}`, tone)
-    await pause(page, 2)
-    await hideBanner(page)
-  }
-  page.off('response', onImageResponse)
-  page.off('requestfailed', onImageFailed)
-  page.off('console', onConsole)
-  page.off('pageerror', onPageError)
-  page.off('response', onResponse)
-  page.off('requestfailed', onRequestFailed)
-  const events = eventsSince(page, eventStart)
-  const rawEvents = (page.__qaEvents ?? []).slice(eventStart)
-  const scrollSections = rawEvents.filter((event) => event.name.endsWith('_scrolled')).map((event) => String(event.props.section ?? ''))
-  if (!reusePage) await page.close()
-  return { problems, warnings, events, scrollSections, finalPath: `${finalUrl.pathname}${finalUrl.search}`, ms: Date.now() - startedAt, timedOut }
-}
-
-// 두 스크린샷 비교 — 크기가 다르면 겹치는 부분만 비교하고 높이 변화를 따로 적는다
-function compareShots(headFile, baseFile, diffFile) {
-  if (!existsSync(headFile) || !existsSync(baseFile)) return null
-  const headImage = PNG.sync.read(readFileSync(headFile))
-  const baseImage = PNG.sync.read(readFileSync(baseFile))
-  const width = Math.min(headImage.width, baseImage.width)
-  const height = Math.min(headImage.height, baseImage.height)
-  const crop = (image) => {
-    const cropped = new PNG({ width, height })
-    PNG.bitblt(image, cropped, 0, 0, width, height, 0, 0)
-    return cropped
-  }
-  const diffImage = new PNG({ width, height })
-  const differentPixels = pixelmatch(crop(headImage).data, crop(baseImage).data, diffImage.data, width, height, { threshold: 0.1 })
-  writeFileSync(diffFile, PNG.sync.write(diffImage))
-  return {
-    pixels: differentPixels,
-    ratio: Number((differentPixels / (width * height)).toFixed(5)),
-    sizeChanged: headImage.width !== baseImage.width || headImage.height !== baseImage.height,
-    headSize: [headImage.width, headImage.height],
-    baseSize: [baseImage.width, baseImage.height]
-  }
-}
-
-// 로그인 없는 앱(brand·plus)은 signInPath 가 없다
-const isSignPath = (path) => [routesConfig.signInPath, routesConfig.signOutPath].filter(Boolean).some((signPath) => path.startsWith(signPath))
-// 기대 이동 — '=/' 처럼 '=' 로 시작하면 그 경로와 정확히 같아야 하고, 아니면 앞부분이 같으면 된다
-const reachedExpected = (expected, finalPath) => (expected.startsWith('=') ? samePath(expected.slice(1), finalPath) : finalPath.startsWith(expected))
-const samePath = (requested, finalPath) => finalPath.split('?')[0].replace(/\/$/, '') === requested.split('?')[0].replace(/\/$/, '')
-// 에러가 난 곳 — 주소·webpack 접두어를 걷어 앱 소스 경로:줄 로(dev 서버는 원본 경로를 준다). 기준 비교 키에는 넣지 않는다
-const sourceAt = (where) =>
-  String(where)
-    .replace(/^https?:\/\/[^/]+/, '')
-    .replace(/^webpack-internal:\/\/\/(\([^)]+\)\/)?\.?\/?/, '')
-    .replace(/\?[^:]*(?=:\d)/, '')
-    .slice(0, 200)
-// 스택에서 첫 앱 코드 줄(node_modules·_next 밖) — 없으면 첫 줄
-function stackAt(stack) {
-  const frames = String(stack ?? '').split('\n').slice(1).map((line) => line.trim().replace(/^at\s+/, ''))
-  const appFrame = frames.find((frame) => !/node_modules|\.pnpm|next\/dist|\/_next\/static\/chunks\/(webpack|main|framework)/.test(frame)) ?? frames[0] ?? ''
-  const location = appFrame.match(/\(?((?:webpack-internal|https?):\/\/\S+?:\d+)(?::\d+)?\)?$/)?.[1]
-  return location ? `${sourceAt(location)}${appFrame.includes(' (') ? ` (${appFrame.split(' (')[0]})` : ''}` : appFrame.slice(0, 200)
-}
-const problemKey = (problem) => `${problem.kind}:${problem.text.replace(/:\d{4}\b/g, '')}`
-
-const isCiPath = (path) => Boolean(routesConfig.ciPath) && path.startsWith(routesConfig.ciPath)
-
-// 세션 상태(프로필)별 기대 이동 — 화면 설정 expect[프로필] 이 먼저, 없으면 로그인 화면(AuthGuard)에 프로필의 authScreens.
-// 'stay' = 그 화면에 머물러야 한다 · 경로 = 그 경로(앞부분)로 넘어가야 한다 · 없음 = 기대 없이 기존 판정
-function expectationOf(screen) {
-  const routeExpect = routesConfig.routes?.[screen.route]?.expect?.[profileName]
-  if (routeExpect) return routeExpect
-  if (screen.auth && profile.authScreens) return profile.authScreens
-  return null
-}
-
-function judge(target, viewportResults) {
-  if (!target.url) return 'sample'
-  const expected = expectationOf(target)
-  let status = 'pass'
-  for (const result of viewportResults) {
-    const head = result.head
-    const moved = !samePath(target.url, head.finalPath)
-    if (expected && expected !== 'stay') {
-      // 가드가 보내야 할 곳으로 갔는지가 검사 대상이다 — 기대와 다르면 실패
-      // 뷰포트마다 다 본다 — 첫 뷰포트에서 끝내면 나머지 뷰포트가 검사 없이 ✔ 로 남는다
-      if (!reachedExpected(expected, head.finalPath)) {
-        result.newProblems.push({ kind: 'expect', text: `기대 이동 ${expected} — 실제 ${head.finalPath}` })
-        status = 'fail'
-      }
-      continue
-    }
-    if (expected === 'stay' && moved) {
-      result.newProblems.push({ kind: 'expect', text: `이 화면에 머물러야 한다 — 실제 ${head.finalPath}` })
-      status = 'fail'
-      continue
-    }
-    if (status === 'fail') continue
-    // 비로그인(authScreens 가 로그인 경로) 검수에서 로그인 화면으로 갔으면 가드가 제대로 막은 것 — 화면 파일에 AuthGuard 가 없어도(레이아웃·상위에서 막는 화면)
-    if (isSignPath(head.finalPath) && !isSignPath(target.url)) return profile.authScreens && isSignPath(profile.authScreens.replace(/^=/, '')) ? 'expected' : 'login'
-    if (isCiPath(head.finalPath) && !isCiPath(target.url)) return 'ci'
-    // 진입 경로(entry)로 연 단계형 화면은 다음 단계로 넘어가는 게 정상이다
-    if (moved && !target.entry) return 'redirected'
-    if (result.newProblems.length) return 'fail'
-    // 긴 화면에서는 비율이 작게 나온다(제목 한 줄 ≈ 0.1%) — 바뀐 픽셀 수로 본다
-    if (result.diff && (result.diff.pixels >= (routesConfig.diffMinPixels ?? 50) || result.diff.sizeChanged)) status = 'changed'
-  }
-  if (expected && expected !== 'stay' && status === 'pass') return 'expected'
-  return status
-}
-
-// ── 세션 지키기 — 검사 중에 로그인이 풀리면 멈추고 로그인을 받는다 ──────────────
-// 로그인 쿠키(server.tokenCookie)가 검사 컨텍스트에 있는지로 본다. 없으면 run.gate 를 띄우고(라이브 화면 띠) login.mjs 창을 연다 →
-// 저장되면 새 쿠키를 검사 컨텍스트에 넣고 이어 간다. 동시에 여러 화면이 걸려도 로그인 창은 하나(relogin 약속을 같이 기다린다)
-let relogin = null
-let sessionGaveUp = false
-const sessionAlive = async (contextList) => (await Promise.all(contextList.map(async (context) => hasLoginCookie(await context.cookies(), SERVER)))).every(Boolean)
-async function guardSession(contextList, headUrl) {
-  if (!profile.session) return true
-  if (await sessionAlive(contextList)) return true
-  if (sessionGaveUp) return false
-  relogin ??= requestLogin(contextList, headUrl).finally(() => { relogin = null })
-  return relogin
-}
-async function requestLogin(contextList, headUrl, customMessage = '') {
-  const started = run.screens.some((screen) => !['queued', 'running'].includes(screen.status))
-  run.gate = { profile: profileName, status: 'waiting', since: new Date().toISOString(), message: customMessage || `${started ? '로그인이 풀렸어요' : `${profileName} 상태로 검수하려면 로그인해 주세요`} — 열린 창에서 ${started ? '다시 ' : ''}로그인해 주시면 ${started ? '멈춘 화면부터 ' : ''}이어서 검사해요(10분)${profile.note ? ` · ${profile.note}` : ''}` }
-  saveRun()
-  say(`🔑 ${run.gate.message}`)
-  const code = await new Promise((resolve) => {
-    const login = spawn(process.execPath, [join(QA_DIR, 'login.mjs'), '--app', appName, '--url', headUrl, '--target', target, '--profile', profile.session], { stdio: 'inherit' })
-    login.on('exit', (exitCode) => resolve(exitCode ?? 1))
-  })
-  const file = sessionFileOf(HERMES, appName, profile.session, target, serverUrl)
-  if (code !== 0 || !existsSync(file)) {
-    sessionGaveUp = true
-    run.gate.status = 'failed'
+/**
+ * 흐름 하나
+ * @param {any} entry 결과 칸 @param {any} tc @param {string} layer @param {string} baseUrl @param {any} browser
+ */
+async function runFlow(entry, tc, layer, baseUrl, browser) {
+  for (const item of tc.cases) {
+    /** @type {any} */
+    const outcome = { id: item.id, branch: item.branch, title: item.title ?? '', status: 'running', error: '' }
+    entry.cases.push(outcome)
     saveRun()
-    say('⚠️  로그인을 마치지 않았다 — 남은 로그인 화면은 확인하지 못한다')
-    return false
+    const started = Date.now()
+    if (item.manual) Object.assign(outcome, { status: 'manual', error: String(item.manual) })
+    else Object.assign(outcome, await (layer === 'fe' ? runFeCase(item, browser, baseUrl) : runBeCase(item, baseUrl)))
+    outcome.ms = Date.now() - started
+    console.log(`  ${{ pass: '✅', fail: '❌', manual: '✋' }[/** @type {'pass'} */ (outcome.status)] ?? ''} ${item.id} ${item.branch}${outcome.status === 'fail' ? `\n     ${outcome.error.replaceAll('\n', '\n     ')}` : ''}`)
   }
-  const { cookies = [] } = JSON.parse(readFileSync(file, 'utf8'))
-  for (const context of contextList) {
-    await context.clearCookies()
-    await context.addCookies(cookies)
-  }
-  run.gate.status = 'done'
-  saveRun()
-  say('✅ 다시 로그인 — 이어서 검사')
-  return true
+  const statuses = entry.cases.map((/** @type {any} */ item) => item.status)
+  if (statuses.includes('fail')) entry.status = 'fail'
+  else entry.status = statuses.includes('pass') ? 'pass' : 'manual'
 }
 
-// ── 4) 실행 ──────────────────────────────────────────────
-async function main() {
-  if (!option('routes')) ensureDependencies(repoRoot, 'head')
-  const impact = loadImpact()
-  run.changed = impact.changed
-  run.global = impact.global
-  run.totalScreens = impact.totalScreens
-  // D9: 가까운 화면부터 — impact 가 이미 거리순
-  for (const screen of impact.screens) {
-    for (const target of targetsOf(screen)) {
-      run.screens.push({
-        key: `${screen.route}${target.url && target.url !== screen.route ? ` ${target.url}` : ''}`,
-        route: screen.route,
-        url: target.url,
-        entry: Boolean(target.entry),
-        note: target.note ?? null,
-        file: screen.file,
-        distance: screen.distance,
-        changedFile: screen.changed,
-        via: screen.via,
-        auth: screen.auth,
-        codeEvents: impact.events?.[screen.route] ?? [],
-        status: target.skip ? 'skip' : target.url ? 'queued' : 'sample',
-        viewports: [],
-        problems: [],
-        baseProblems: 0
-      })
-    }
+/**
+ * 서비스 하나의 한 층 — 서버를 띄우고 흐름을 차례로. 서버 · 설정 문제는 그 층 흐름 모두에 오류로 남긴다
+ * @param {import('./flows.mjs').Service} service @param {string} layer @param {string} tree @param {string} commit
+ */
+async function runLayer(service, layer, tree, commit) {
+  const workDir = service.dir ? join(tree, service.dir) : tree
+  const flowsRoot = join(workDir, FLOWS_DIR)
+  const wanted = option('flow')
+  const flows = flowsOfFiles(listTreeFiles(flowsRoot)).filter((item) => item.layer === layer && item.tc && (!wanted || item.flow === wanted))
+  if (!flows.length) return
+  console.log(`\n${service.name} · ${layer} — 흐름 ${flows.length}개`)
+  const entries = flows.map((item) => ({ service: service.name, layer, flow: item.flow, doc: item.doc, ref: commit.slice(0, 12), tree: option('cwd') ? 'cwd' : 'base', ranAt: new Date().toISOString(), status: 'running', error: '', cases: /** @type {any[]} */ ([]) }))
+  run.flows.push(...entries)
+  saveRun()
+  const failAll = (/** @type {string} */ message) => {
+    console.log(`  ❌ ${message}`)
+    for (const entry of entries) if (entry.status === 'running') Object.assign(entry, { status: 'error', error: maskText(message) })
   }
-  // --scenarios-only — 화면 검사 없이 흐름 씬만(전체 검수·변경분 TC 와 함께). 씬 하나만 띄워 볼 때(예: 실제 본인인증 씬) 화면 검사 창이 먼저 뜨지 않게
-  const scenariosOnly = flag('scenarios-only') && (suite || Boolean(pickIds))
-  if (scenariosOnly) run.screens = []
-  say(`영향 화면 ${impact.screens.length}개 → 열 화면 ${run.screens.filter((screen) => screen.url).length}개`)
-  // 열 화면이 없어도 sitemap 에서 받을 화면이 있으면 서버를 띄운다
-  const fromSitemap = run.screens.some((screen) => screen.status === 'sample' && routesConfig.routes?.[screen.route]?.samplesFrom === 'sitemap')
-  if (!run.screens.some((screen) => screen.url) && !fromSitemap && !scenariosOnly) return finish()
+  let qaConfig = null
+  try { qaConfig = JSON.parse(readFileSync(join(flowsRoot, 'qa.json'), 'utf8')) } catch { /* 아래 검사가 알린다 */ }
+  const settings = qaConfig?.[layer]
+  const problem = checkLayerSettings(settings, layer)
+  if (problem) return failAll(problem)
 
-  // 작업 트리가 곧 기준 워크트리면 같은 코드라 비교할 게 없고, 한 폴더에 dev 서버 둘은 Next 가 막는다
-  const sameAsBase = repoRoot === join(HERMES, '.worktrees', qaApp.repo, 'qa-base')
-  if (sameAsBase && !flag('no-base') && !suite) say('작업 트리가 기준 워크트리(qa-base)라 전·후 비교를 건너뜀')
-  const useBase = !flag('no-base') && !sameAsBase && !suite
-  if (suite) say(`전체 검수 — ${target === 'server' ? `☁️ 서버 ${serverUrl}` : '🖥 로컬 서버'} · 승인한 기준 사진과 비교 (.qa-baselines/${targetKey(appName, target)}/${profileName})`)
-  if (useBase && !option('base-url')) {
-    const baseRef = option('base') || `origin/${qaApp.prBase}`
-    const baseSha = git(['merge-base', baseRef, 'HEAD'], repoRoot)
-    run.base = { ref: baseRef, sha: baseSha.slice(0, 9) }
-  }
-
-  // 만료된 세션 — 라이브 화면(현황판에서 시작)이면 멈추지 않고 첫 화면 검사 전에 로그인 창을 띄운다(guardSession).
-  // 라이브 화면 없이(명령줄) 돌면 로그인 화면만 찍고 실패로 남으니 서버를 띄우기 전에 멈춘다
-  const sessionPath = profile.session ? sessionFileOf(HERMES, appName, profile.session, target, serverUrl) : null
-  const expiredAt = sessionPath && existsSync(sessionPath) ? expiredSessionAt(sessionPath) : null
-  if (expiredAt && !liveView) throw new Error(expiredMessage(profileName, profile.session, expiredAt))
-  if (expiredAt) say(`🔑 세션 ${profileName} 만료(${new Date(expiredAt).toLocaleString('ko-KR')}) — 화면 검사 전에 로그인 창을 띄운다`)
-
-  // 작업 서버와 기준 서버를 함께 띄운다
-  // dev 서버 대상이면 띄우지 않고 배포본 주소를 쓴다
-  const devTargetUrl = target === 'server' ? serverUrl : null
-  const headUrlPromise = option('head-url') ? Promise.resolve(option('head-url')) : devTargetUrl ? Promise.resolve(devTargetUrl) : startDevServer(repoRoot, SERVER.port, 'head')
-  const baseUrlPromise = !useBase
-    ? Promise.resolve(null)
-    : option('base-url')
-      ? Promise.resolve(option('base-url'))
-      : Promise.resolve().then(() => {
-          setPhase(`base: 기준 워크트리 준비 @ ${run.base.sha}`)
-          return startDevServer(prepareBaseWorktree(run.base.sha), SERVER.basePort, 'base')
-        })
-  const [headUrl, baseUrl] = await Promise.all([headUrlPromise, baseUrlPromise])
-  run.urls = { head: headUrl, base: baseUrl }
-  await expandSitemapSamples(headUrl)
-
-  // D7: 저장해 둔 로그인 세션 (login.mjs). localhost 쿠키라 두 포트가 함께 쓴다
-  // D7: 저장해 둔 세션(login.mjs) — 프로필마다 하나. localhost 쿠키라 두 포트가 함께 쓴다
-  const authFile = profile.session ? sessionFileOf(HERMES, appName, profile.session, target, serverUrl) : null
-  const hasSession = Boolean(authFile && existsSync(authFile))
-  run.profile = profileName
-  run.session = hasSession ? 'saved' : 'none'
-  if (profile.session && !hasSession) {
-    say(`⚠️  프로필 ${profileName} 세션 없음 — node scripts/qa/login.mjs --profile ${profile.session} 로 저장한다. 세션 없이 진행`)
-  } else {
-    say(`세션 프로필 ${profileName}${profile.note ? ` (${profile.note})` : ''}`)
-  }
-
-  run.status = 'running'
-  if (liveView) await openLivePage()
-  if (run.tcPicks) {
-    say(`확인할 TC ${run.tcPicks.tcs.length}개 (${run.tcPicks.file}${run.tcPicks.head && run.tcPicks.head !== run.head ? ` · ⚠️ TC 는 @${run.tcPicks.head} 기준 — 지금 @${run.head}` : ''})`)
-  }
-  if (suite || pickIds) listScenarios(loadScenarios())
-  setPhase('화면 검사 중')
-  const browser = await chromium.launch(headed ? { headless: false, slowMo: Math.round(slowMs / 3) } : {})
-  const contexts = {}
-  // 보이는 창 배치 — 뷰포트 순서대로 왼쪽부터 나란히, 작업은 윗줄·기준은 아랫줄(겹치지 않게)
-  const rowHeight = Math.max(...routesConfig.viewports.map((viewport) => viewport.height)) + 110
-  let windowLeft = 0
-  for (const viewport of routesConfig.viewports) {
-    const contextOptions = { viewport: { width: viewport.width, height: viewport.height }, storageState: hasSession ? authFile : undefined, isMobile: viewport.width < 600, locale: 'ko-KR' }
-    contexts[viewport.name] = { head: await browser.newContext(contextOptions), base: baseUrl ? await browser.newContext(contextOptions) : null }
-    // 화면을 열기만 해도 나가는 mutation(저장·알림톡 등)은 서버에 보내지 않는다 — 막은 것은 로그에 남긴다
-    for (const context of Object.values(contexts[viewport.name]).filter(Boolean)) {
-      await guardMutations(context, (operation) => say(`🛡  막은 mutation ${operation} (${viewport.name})`))
-      // 트래킹(Mixpanel) 이벤트를 잡아 화면마다 남기고, 보이는 창이면 오른쪽 아래에 띄운다(실제 전송은 막는다)
-      const where = `${viewport.name}${context === contexts[viewport.name].base ? ' 기준' : ''}`
-      context.__qaSlot = context === contexts[viewport.name].base ? `${viewport.name}-base` : viewport.name
-      await captureTracking(context, { headed, onEvent: (name, props, page) => live.write({ where, kind: 'event', name, values: props, page: page ? new URL(page.url()).pathname : '' }) })
-      await blockThirdParty(context)
-      live.attach(context, where)
-    }
-    windowLefts[viewport.name] = windowLeft
-    contexts[viewport.name].head.__qaPlace = { left: windowLeft, top: 0, width: viewport.width, height: viewport.height }
-    if (contexts[viewport.name].base) contexts[viewport.name].base.__qaPlace = { left: windowLeft, top: rowHeight, width: viewport.width, height: viewport.height }
-    windowLeft += viewport.width + 30
-  }
-
-  const queue = run.screens.filter((screen) => screen.url)
-  let cursor = 0
-  const sessionContexts = Object.values(contexts).flatMap((pair) => [pair.head, pair.base].filter(Boolean))
-  const worker = async () => {
-    while (cursor < queue.length) {
-      const screen = queue[cursor]
-      cursor += 1
-      const order = cursor
-      screen.status = 'running'
-      saveRun()
-      const slug = screen.key.replace(/[^\w가-힣-]+/g, '_').replace(/^_+|_+$/g, '') || 'root'
-      // 세션 지키기 — 로그인 상태 검수인데 토큰이 없으면 멈추고 로그인을 요청한다(못 하면 이 화면은 '로그인 필요')
-      if (!(await guardSession(sessionContexts, headUrl))) {
-        Object.assign(screen, { status: 'login', note: '로그인이 풀려 확인하지 못했어요 — 로그인 요청에 답이 없었어요' })
-        saveRun()
-        continue
-      }
-      let viewportResults = []
-      for (let attempt = 0; attempt < 2; attempt += 1) {
-      viewportResults = []
-      screen.viewports = []
-      for (const viewport of routesConfig.viewports) {
-        const files = { head: `shots/${slug}.${viewport.name}.head.png`, base: `shots/${slug}.${viewport.name}.base.png`, diff: `shots/${slug}.${viewport.name}.diff.png` }
-        const [head, base] = await Promise.all([
-          visit(contexts[viewport.name].head, headUrl, screen.url, join(runDir, files.head), `${order}/${queue.length} 작업 · ${viewport.name}`, routesConfig.routes?.[screen.route]),
-          baseUrl ? visit(contexts[viewport.name].base, baseUrl, screen.url, join(runDir, files.base), `${order}/${queue.length} 기준 · ${viewport.name}`, routesConfig.routes?.[screen.route]) : Promise.resolve(null)
-        ])
-        // 전체 검수 — 승인한 기준 사진·그때의 문제 목록과 비교(D12)
-        const baselineShot = suite ? join(baselineDir(targetKey(appName, target), profileName), `${slug}.${viewport.name}.png`) : null
-        const hasBaseline = Boolean(baselineShot && existsSync(baselineShot))
-        if (hasBaseline) copyFileSync(baselineShot, join(runDir, files.base))
-        // 기준 화면에도 있던 에러는 이번 변경 탓이 아니다 — 새로 생긴 것만 실패로 센다
-        // routes.<화면>.allowStatus — 그 화면 자신의 응답 코드가 원래 이런 화면(/404 → 404)이면 문제로 세지 않는다
-        const allowStatus = routesConfig.routes?.[screen.route]?.allowStatus ?? []
-        if (allowStatus.length) head.problems = head.problems.filter((problem) => !(problem.kind === 'http' && allowStatus.some((code) => problem.text.startsWith(`${code} ${screen.url.split('?')[0]}`))))
-        // 필수 화면 보기 이벤트(코드의 <PageViewEventLogger pageName='…'>) — 이 화면에 머물렀는데 안 나갔으면 문제
-        if (samePath(screen.url, head.finalPath)) {
-          for (const event of (screen.codeEvents ?? []).filter((item) => item.required)) {
-            if (!(head.events ?? []).some((fired) => fired.name === event.name)) head.problems.push({ kind: 'tracking', text: `필수 화면 보기 이벤트가 안 나감 — ${event.name}`, at: event.at })
-          }
-        }
-        const knownProblems = suite ? readBaselineProblems(targetKey(appName, target), profileName, `${slug}.${viewport.name}`) : base?.problems ?? []
-        const baseKeys = new Set(knownProblems.map(problemKey))
-        const newProblems = head.problems.filter((problem) => !baseKeys.has(problemKey(problem)))
-        const diff = base || hasBaseline ? compareShots(join(runDir, files.head), join(runDir, files.base), join(runDir, files.diff)) : null
-        if (suite && !hasBaseline) screen.noBaseline = true
-        viewportResults.push({ viewport: viewport.name, head, base, newProblems, diff })
-        screen.viewports.push({
-          name: viewport.name,
-          shots: { head: files.head, base: base || (suite && !screen.noBaseline) ? files.base : null, diff: diff ? files.diff : null },
-          slug: `${slug}.${viewport.name}`,
-          headProblems: head.problems,
-          finalPath: head.finalPath,
-          events: head.events,
-          scrollSections: head.scrollSections,
-          warnings: head.warnings ?? [],
-          baseFinalPath: base?.finalPath ?? null,
-          ms: head.ms,
-          diff
-        })
-        saveRun()
-      }
-      // 검사하는 사이에 로그인이 풀렸으면(토큰이 사라짐) 로그인을 받고 이 화면을 한 번 더
-      if (attempt === 0 && profile.session && !(await sessionAlive(sessionContexts)) && (await guardSession(sessionContexts, headUrl))) {
-        say(`🔁 ${screen.key} — 다시 로그인했으니 다시 검사`)
-        continue
-      }
-      break
-      }
-      screen.eventCheck = eventCheckOf(screen)
-      screen.baseProblems = viewportResults.reduce((total, result) => total + result.head.problems.length - result.newProblems.length, 0)
-      screen.expect = expectationOf(screen)
-      screen.status = judge(screen, viewportResults)
-      if (screen.status === 'expected' && !screen.expect) screen.expect = profile.authScreens
-      // 기준 사진이 아직 없는 화면 — 처음 검수. 승인하면 다음부터 기준이 된다
-      if (suite && screen.noBaseline && screen.status === 'pass') screen.status = 'new'
-      screen.problems = viewportResults.flatMap((result) => result.newProblems.map((problem) => ({ ...problem, viewport: result.viewport })))
-      say(`${statusIcon(screen.status)} ${screen.key}${screen.problems.length ? ` — ${screen.problems[0].text}` : ''}`)
-    }
-  }
-  // 시작 전 세션 확인 — 로그인이 필요한 화면 하나를 열어 이 세션이 프로필대로 움직이는지 본다.
-  // 예: login(본인인증 전) 인데 본인인증 화면으로 안 가면 본인인증까지 한 계정이다 → 다른 계정으로 로그인해 달라고 하고, 그래도 안 맞으면 멈춘다
-  if (profile.session && profile.authScreens) {
-    // 확인용 화면 — 본인인증·로그인 화면 자체나 이미 목적지인 화면은 빼고 고른다(거기 머문 걸 '잘 갔다' 로 보면 안 된다)
-    const probe = queue.find((screen) => screen.auth && !screen.entry && !routesConfig.routes?.[screen.route]?.skip
-      && !isCiPath(screen.url) && !isSignPath(screen.url) && !(profile.authScreens !== 'stay' && reachedExpected(profile.authScreens, screen.url)))
-    const probeContext = contexts[routesConfig.viewports[0].name].head
-    const landOn = async () => {
-      const page = await probeContext.newPage()
+  /** @type {any} */
+  let browser = null
+  try {
+    installIfNeeded(tree, workDir, commit, option('cwd') ? undefined : settings.install)
+    if (layer === 'fe') browser = await openBrowser()
+    stopCurrentServer = await startServer(settings, workDir, join(RUNS_DIR, run.id, `server-${service.name}-${layer}.log`))
+    for (const [index, item] of flows.entries()) {
+      const entry = /** @type {any} */ (entries[index])
+      console.log(` ${item.flow}`)
       try {
-        await page.goto(new URL(probe.url, headUrl).href, { waitUntil: 'domcontentloaded', timeout: 30000 })
-        let path = new URL(page.url()).pathname
-        // 가드는 화면을 그린 뒤 이동한다 — 몇 초 동안 바뀌는지 본다
-        for (let tick = 0; tick < 16; tick += 1) {
-          await page.waitForTimeout(500)
-          path = new URL(page.url()).pathname
-          if (!samePath(probe.url, path)) break
-        }
-        return path
-      } finally {
-        await page.close().catch(() => {})
+        const tc = JSON.parse(readFileSync(join(flowsRoot, /** @type {string} */ (item.tc)), 'utf8'))
+        const errors = checkTc(tc, layer, readFileSync(join(flowsRoot, item.doc), 'utf8'))
+        if (errors.length) throw new Error(`TC 형식 오류:\n${errors.join('\n')}`)
+        await runFlow(entry, tc, layer, settings.url, browser)
+      } catch (error) {
+        console.log(`  ❌ ${errorText(error)}`)
+        Object.assign(entry, { status: 'error', error: errorText(error) })
       }
-    }
-    const fits = (path) => profile.authScreens === 'stay'
-      ? samePath(probe.url, path) || (!isCiPath(path) && !isSignPath(path))
-      : reachedExpected(profile.authScreens, path)
-    if (probe && (await guardSession(sessionContexts, headUrl))) {
-      setPhase('세션 확인 중')
-      let path = await landOn().catch(() => null)
-      if (path && !fits(path)) {
-        const want = profile.authScreens === 'stay' ? '로그인 화면에 그대로 머물러야' : `${profile.authScreens} 로 가야`
-        const what = isCiPath(path) ? '본인인증을 안 한 계정' : samePath(probe.url, path) ? '본인인증까지 한 계정' : '다른 상태의 계정'
-        const message = `저장된 ${profileName} 세션이 맞지 않아요 — ${probe.url} 이 ${want} 하는데 ${path} 에 있어요(${what}으로 보여요). 열린 창에서 ${(profile.note || profileName).split(' — ')[0]}(으)로 다시 로그인해 주세요(10분)`
-        say(`⚠️  ${message}`)
-        const relogged = liveView ? await requestLogin(sessionContexts, headUrl, message) : false
-        path = relogged ? await landOn().catch(() => null) : path
-        if (!relogged || (path && !fits(path))) {
-          throw new Error(`세션 ${profileName} 이 프로필과 맞지 않아 멈췄어요 — ${probe.url} 이 ${want} 하는데 ${path} 에 있어요. ${(profile.note || profileName).split(' — ')[0]}(으)로 로그인한 뒤 다시 돌려 주세요`)
-        }
-        say('✅ 세션 확인 — 이제 프로필대로 움직인다')
-      }
-      setPhase('화면 검사 중')
-    }
-  }
-  await Promise.all(Array.from({ length: headed || liveView ? 1 : routesConfig.concurrency ?? 3 }, worker))
-  // 화면 검사 컨텍스트를 닫고 씬으로 — 같은 뷰포트 칸(라이브 화면)·창 자리를 씬이 이어 쓴다
-  if (suite || pickIds) {
-    for (const pair of Object.values(contexts)) {
-      await pair.head.close()
-      await pair.base?.close()
-    }
-    await runScenarios(browser, headUrl)
-  }
-  await browser.close()
-  return finish()
-}
-
-// ── 흐름 씬 (D10·D11) — 씬마다 자기 세션 프로필·뷰포트로 ───────────
-// 이번 런에서 돌릴 흐름 씬 파일들(--scenarios 로 거른다)
-// 여정 펼치기 — "include": "13-" 은 그 씬(이 앱 scenarios/·_draft/ 의 파일 이름 앞부분)의 단계를 그 자리에, "only" 는 --mode 가 맞을 때만.
-// 불러온 씬의 allowMutations 도 합친다. 여정 파일의 "tc" 가 없으면 불러온 씬들의 tc 를 모은다
-const QA_MODE = option('mode') === 'real' ? 'real' : 'auto'
-function expandScenario(dir, scenario, depth = 0) {
-  const steps = []
-  const allow = new Set(scenario.allowMutations ?? [])
-  const tcs = new Set(scenario.tc ?? [])
-  for (const step of scenario.steps ?? []) {
-    if (step.only && step.only !== QA_MODE) continue
-    if (step.section && !scenario.tc) for (const id of step.tc ?? []) tcs.add(id)
-    if (!('include' in step)) { steps.push(step); continue }
-    if (depth > 3) throw new Error(`include 가 너무 깊다 — ${scenario.file}`)
-    const prefix = String(step.include)
-    const inDraft = prefix.startsWith('_draft/')
-    const base = inDraft ? join(dir, '_draft') : dir
-    const name = existsSync(base) ? readdirSync(base).filter((file) => file.endsWith('.json')).sort().find((file) => file.startsWith(inDraft ? prefix.slice(7) : prefix)) : null
-    if (!name) throw new Error(`include ${prefix} — 씬 파일을 못 찾았다 (${scenario.file})`)
-    const part = expandScenario(base, { file: name, ...JSON.parse(readFileSync(join(base, name), 'utf8')) }, depth + 1)
-    for (const inner of part.steps) steps.push(step.label && inner === part.steps[0] ? { ...inner } : inner)
-    for (const operation of part.allowMutations ?? []) allow.add(operation)
-    if (!scenario.tc) for (const id of part.tc ?? []) tcs.add(id)
-  }
-  return { ...scenario, steps, allowMutations: [...allow], tc: [...tcs], mode: QA_MODE }
-}
-function loadScenarios() {
-  const dir = join(QA_DIR, 'scenarios', appName)
-  const files = existsSync(dir) ? readdirSync(dir).filter((name) => name.endsWith('.json')).sort() : []
-  const only = option('scenarios') ? option('scenarios').split(',') : null
-  // 흐름(--flow) 단계에서는 그 단계 세션의 씬만 — 씬은 자기 세션이 정해져 있어 단계마다 다 돌리면 같은 씬이 두 번 돈다
-  const stageOnly = flag('stage-scenarios')
-  return files
-    .map((name) => expandScenario(dir, { file: name, ...JSON.parse(readFileSync(join(dir, name), 'utf8')) }))
-    .filter((scenario) => !only || only.some((key) => scenario.file.includes(key)))
-    .filter((scenario) => !stageOnly || (scenario.profile ?? 'logout') === profileName)
-    // 고른 TC(--tc-picks — 영향 QA 의 변경분 TC · 현황판 [선택한 TC만 검수])가 있으면 그 TC 에 걸린 씬만
-    .filter((scenario) => !pickIds || (scenario.tc ?? []).some((id) => pickIds.has(id)))
-}
-// 씬이 돌 뷰포트 — 씬 파일 "viewports": ["desktop"] 처럼 적으면 그것만, 없으면 화면 검사와 같은 전부(데스크톱·모바일).
-// 사람 단계(human — 실제 본인인증 등)가 있는 씬은 적지 않았으면 첫 뷰포트 하나만 — 사람이 두 번 인증하지 않게(계정 상태도 한 번 바뀌면 끝)
-const scenarioViewports = (scenario) => {
-  const hasHuman = (scenario.steps ?? []).some((step) => step && typeof step === 'object' && 'human' in step)
-  const names = scenario.viewports ?? (hasHuman ? [routesConfig.viewports[0].name] : routesConfig.viewports.map((viewport) => viewport.name))
-  return routesConfig.viewports.filter((viewport) => names.includes(viewport.name))
-}
-// 씬 목록을 미리 run.json 에 — 화면 검사 중에도 체크리스트에 씬과 단계가 보이게. 씬 × 뷰포트마다 한 항목, plan = 씬의 단계 목록
-function listScenarios(scenarios) {
-  if (run.scenarios.length) return
-  for (const scenario of scenarios) {
-    for (const viewport of scenarioViewports(scenario)) {
-      run.scenarios.push({
-        key: `${scenario.file}@${viewport.name}`, file: scenario.file, name: scenario.name, viewport: viewport.name, why: scenario.why ?? '', tc: scenario.tc ?? [],
-        profile: scenario.profile ?? 'logout', status: 'queued', plan: (scenario.steps ?? []).map(describeStep), steps: [], shots: []
-      })
-    }
-  }
-}
-
-async function runScenarios(browser, origin) {
-  const scenarios = loadScenarios()
-  if (!scenarios.length) return
-  listScenarios(scenarios)
-  setPhase(`흐름 씬 ${scenarios.length}개 (뷰포트마다)`)
-  for (const scenario of scenarios) {
-    // 같은 씬을 뷰포트마다 동시에 — 라이브 화면의 데스크톱·모바일 칸(보이는 창이면 그 자리)에 나란히 보인다
-    const entries = run.scenarios.filter((entry) => entry.file === scenario.file)
-    await Promise.all(entries.map((entry) => runScenarioOn(browser, origin, scenario, entry)))
-  }
-}
-
-// 씬 세션 로그인 — 프로필마다 한 번(같은 약속을 같이 기다린다). 라이브 화면 띠(run.gate)·로그인 창(login.mjs)
-const sceneLogins = new Map()
-function loginForScene(profileName, origin) {
-  const settings = profiles[profileName]
-  if (!settings?.session) return Promise.resolve(false)
-  if (sceneLogins.has(profileName)) return sceneLogins.get(profileName)
-  const promise = new Promise((resolve) => {
-    const note = (settings.note ?? '').split(' — ')[0]
-    run.gate = { profile: profileName, status: 'waiting', since: new Date().toISOString(), message: `흐름 씬이 ${profileName} 세션으로 돌아요 — 열린 창에서 ${target === 'server' ? '로그인(간편로그인 가능)' : '이메일 로그인'}${note ? `(${note})` : ''}해 주시면 이어서 진행해요(10분)` }
-    saveRun()
-    say(`🔑 ${run.gate.message}`)
-    const login = spawn(process.execPath, [join(QA_DIR, 'login.mjs'), '--app', appName, '--url', origin, '--target', target, '--profile', settings.session], { stdio: 'inherit' })
-    login.on('exit', (code) => {
-      run.gate.status = code === 0 ? 'done' : 'failed'
-      saveRun()
-      resolve(code === 0)
-    })
-  })
-  sceneLogins.set(profileName, promise)
-  return promise
-}
-
-async function runScenarioOn(browser, origin, scenario, entry) {
-  const viewport = routesConfig.viewports.find((item) => item.name === entry.viewport)
-  const where = `씬 ${scenario.file.slice(0, 2)} · ${viewport.name}`
-  entry.status = 'running'
-  saveRun()
-  const scenarioProfile = profiles[entry.profile] ?? { session: null }
-  const sessionFile = scenarioProfile.session ? sessionFileOf(HERMES, appName, scenarioProfile.session, target, serverUrl) : null
-  // 씬 세션이 없거나 만료 — 라이브로 보고 있으면(현황판에서 시작) 로그인 창을 띄워 받고 이어 간다. 뷰포트 둘이 동시에 와도 창은 하나
-  if (sessionFile && liveView && (!existsSync(sessionFile) || expiredSessionAt(sessionFile))) {
-    entry.status = 'running'
-    entry.steps = [{ label: `🔑 세션 ${entry.profile} ${existsSync(sessionFile) ? '만료' : '없음'} — 로그인 창에서 로그인해 주세요`, ok: true, detail: '' }]
-    saveRun()
-    await loginForScene(entry.profile, origin)
-  }
-  if (sessionFile && !existsSync(sessionFile)) {
-    Object.assign(entry, { status: 'login', steps: [{ label: `세션 ${entry.profile} 없음 — node scripts/qa/login.mjs --profile ${scenarioProfile.session}`, ok: false, detail: '' }] })
-    say(`🔒 ${where} ${entry.name}`)
-    return
-  }
-  const scenarioExpiredAt = sessionFile ? expiredSessionAt(sessionFile) : null
-  if (scenarioExpiredAt) {
-    Object.assign(entry, { status: 'login', steps: [{ label: expiredMessage(entry.profile, scenarioProfile.session, scenarioExpiredAt), ok: false, detail: '' }] })
-    say(`🔒 ${where} ${entry.name}`)
-    return
-  }
-  // 사람 단계(실제 본인인증·간편인증)가 있는 씬 — 라이브 화면으로 보고 있으면(현황판에서 시작) 창 없이 도는 중이어도 이 씬만 보이는 창으로 열어 사람을 기다린다
-  const hasHuman = (scenario.steps ?? []).some((step) => step && typeof step === 'object' && 'human' in step)
-  const humanWindow = hasHuman && !headed && liveView
-  const humanBrowser = humanWindow ? await chromium.launch({ headless: false }) : null
-  if (humanWindow) say(`🙋 ${where} ${entry.name} — 사람 단계가 있어 보이는 창으로 열어요(창에서 직접 진행)`)
-  const context = await (humanBrowser ?? browser).newContext({ viewport: { width: viewport.width, height: viewport.height }, storageState: sessionFile ?? undefined, isMobile: viewport.width < 600, locale: 'ko-KR' })
-  context.__qaHuman = humanWindow
-  // 보이는 창이면 화면 검사 때 그 뷰포트 창 자리에
-  context.__qaPlace = { left: windowLefts[viewport.name] ?? 0, top: 0, width: viewport.width, height: viewport.height }
-  await captureTracking(context, { headed, onEvent: (name, props, page) => live.write({ where, kind: 'event', name, values: props, page: page ? new URL(page.url()).pathname : '' }) })
-  await blockThirdParty(context)
-  live.attach(context, where)
-  live.write({ where, kind: 'mark', name: `▶ 씬 시작 — ${scenario.name}` })
-  const slug = `scenario-${scenario.file.replace(/\.json$/, '').replace(/[^\w가-힣-]+/g, '_')}.${viewport.name}`
-  const result = await runScenario(context, scenario, {
-    origin, slug, runDir, headed: headed || humanWindow, showBanner, hideBanner,
-    // 여정 중간 { "session": "verified" } — 그 프로필의 저장된 세션 쿠키(만료면 null). 값은 기록하지 않는다
-    sessionCookies: async (name) => {
-      const session = profiles[name]?.session
-      const file = session ? sessionFileOf(HERMES, appName, session, target, serverUrl) : null
-      if (!file) return null
-      // 없거나 만료면 라이브로 보고 있을 때 로그인 창을 띄워 받는다
-      if ((!existsSync(file) || expiredSessionAt(file)) && liveView) await loginForScene(name, origin)
-      if (!existsSync(file) || expiredSessionAt(file)) return null
-      return JSON.parse(readFileSync(file, 'utf8')).cookies ?? []
-    },
-    onPage: liveView ? (page) => startScreencast(page, runDir, viewport.name) : null,
-    onStep: (steps) => {
-      entry.steps = steps.map((step) => ({ ...step }))
       saveRun()
     }
-  })
-  await context.close()
-  await humanBrowser?.close()
-  Object.assign(entry, result)
-  const stopped = result.steps.find((step) => !step.ok)
-  say(`${statusIcon(result.status)} ${where} ${entry.name}${stopped ? ` — ${stopped.label}: ${stopped.detail}` : ''}`)
-}
-
-// 이벤트 확인 — 코드에 있는 이벤트(codeEvents)와 실제로 나간 이벤트를 맞춰 본다(뷰포트 합집합).
-// 화면 보기(_viewed) 가 하나도 안 나갔으면 ⚠(그 화면에 머문 경우만). 클릭 이벤트는 누르지 않으니 "누르면 나감" 으로만 센다
-function eventCheckOf(screen) {
-  const fired = new Set(screen.viewports.flatMap((viewport) => (viewport.events ?? []).map((event) => event.name)))
-  const sections = new Set(screen.viewports.flatMap((viewport) => viewport.scrollSections ?? []))
-  const code = screen.codeEvents ?? []
-  const literal = code.filter((event) => event.name)
-  const stayed = screen.viewports.some((viewport) => samePath(screen.url ?? '', viewport.finalPath ?? ''))
-  const expectedSections = code.filter((event) => event.section).map((event) => event.section)
-  return {
-    fired: [...fired],
-    pageView: [...fired].some((name) => name.endsWith('_viewed')),
-    noPageView: stayed && ![...fired].some((name) => name.endsWith('_viewed')),
-    literal: literal.length,
-    literalFired: literal.filter((event) => fired.has(event.name)).length,
-    clicks: literal.filter((event) => event.kind === 'clicked').length,
-    dynamic: code.filter((event) => !event.name && !event.section).length,
-    sections: expectedSections,
-    sectionsMissing: expectedSections.filter((section) => !sections.has(section))
-  }
-}
-
-// 흐름 연결 — 통과한 씬이 지나간 경로를 화면(라우트)에 잇는다. 주소로 바로 열면 데이터·저장소 값이 없어 확인 못 하는 화면
-// (샘플 필요·이동됨·실패)도 흐름 속에서는 열렸으니 screen.flows 에 "어느 씬·뷰포트에서 지나갔다" 를 남긴다
-const routePattern = (route) => new RegExp(`^${route.replace(/\[\.\.\.[^\]]+\]/g, '.+').replace(/\[[^\]]+\]/g, '[^/]+')}/?$`)
-function linkFlows() {
-  const passed = run.scenarios.filter((scenario) => scenario.status === 'pass' && scenario.visited?.length)
-  if (!passed.length) return
-  for (const screen of run.screens) {
-    const pattern = routePattern(screen.route)
-    const flows = passed.filter((scenario) => scenario.visited.some((path) => pattern.test(path))).map((scenario) => `${scenario.file.slice(0, 2)}·${scenario.viewport}`)
-    if (flows.length) screen.flows = [...new Set(flows)]
-  }
-  const linked = run.screens.filter((screen) => screen.flows && ['sample', 'redirected', 'fail', 'skip'].includes(screen.status))
-  if (linked.length) say(`🔗 주소로는 확인 못 했지만 흐름에서 지나간 화면 ${linked.length}개 — ${linked.map((screen) => screen.route).join(', ')}`)
-}
-
-const STATUS_ICONS = { pass: '✅', expected: '☑️', changed: '🟡', fail: '❌', redirected: '↪️', login: '🔒', ci: '🪪', sample: '📝', new: '🆕', human: '🙋', skip: '⛔' }
-const statusIcon = (status) => STATUS_ICONS[status] ?? '·'
-
-// 변경분 TC 마다 결과 — 걸린 씬이 없으면 사람이 확인(manual), 있으면 그 씬들의 결과(하나라도 실패면 실패)
-function settleTcPicks() {
-  if (!run.tcPicks) return
-  for (const tc of run.tcPicks.tcs) {
-    const entries = run.scenarios.filter((entry) => (entry.tc ?? []).includes(tc.id))
-    tc.scenarios = [...new Set(entries.map((entry) => entry.file))]
-    if (!entries.length) tc.status = 'manual'
-    else if (entries.some((entry) => entry.status === 'fail')) tc.status = 'fail'
-    else if (entries.every((entry) => entry.status === 'pass')) tc.status = 'pass'
-    else tc.status = entries.find((entry) => entry.status !== 'pass').status
-  }
-}
-
-function finish() {
-  linkFlows()
-  settleTcPicks()
-  const counts = {}
-  for (const screen of run.screens) counts[screen.status] = (counts[screen.status] ?? 0) + 1
-  run.summary = counts
-  const scenarioCounts = {}
-  for (const scenario of run.scenarios) scenarioCounts[scenario.status] = (scenarioCounts[scenario.status] ?? 0) + 1
-  run.scenarioSummary = scenarioCounts
-  run.status = 'done'
-  run.finishedAt = new Date().toISOString()
-  setPhase('끝')
-  const scenarioLine = run.scenarios.length ? ` · 흐름 씬 ${run.scenarios.length}개(통과 ${scenarioCounts.pass ?? 0} · 실패 ${scenarioCounts.fail ?? 0} · 사람 필요 ${scenarioCounts.human ?? 0} · 로그인 필요 ${scenarioCounts.login ?? 0})` : ''
-  const tcLine = run.tcPicks ? ` · 확인할 TC ${run.tcPicks.tcs.length}개(씬 통과 ${run.tcPicks.tcs.filter((tc) => tc.status === 'pass').length} · 씬 실패 ${run.tcPicks.tcs.filter((tc) => tc.status === 'fail').length} · 사람이 확인 ${run.tcPicks.tcs.filter((tc) => tc.status === 'manual').length})` : ''
-  const line = `${suite ? '전체 검수 ' : ''}[${run.profile}] ${suite ? `기준 없음 ${counts.new ?? 0} · ` : ''}통과 ${counts.pass ?? 0} · 기대대로 이동 ${counts.expected ?? 0} · 변화 ${counts.changed ?? 0} · 실패 ${counts.fail ?? 0} · 이동됨 ${counts.redirected ?? 0} · 로그인 필요 ${counts.login ?? 0} · 본인인증 필요 ${counts.ci ?? 0} · 샘플 필요 ${counts.sample ?? 0}${counts.skip ? ` · 건너뜀(부작용) ${counts.skip}` : ''}${scenarioLine}${tcLine}`
-  console.log(`\n📋 QA ${run.id}\n${line}\n결과: ${relative(HERMES, runDir)}/run.json`)
-  if (run.plan) writeQaResult(line)
-  return counts.fail || scenarioCounts.fail ? 1 : 0
-}
-
-// 계획서 Checkpoint 에 "- QA result:" 한 줄 (있으면 바꾼다)
-function writeQaResult(line) {
-  const planFile = join(HERMES, run.plan)
-  if (!existsSync(planFile)) return
-  const text = readFileSync(planFile, 'utf8')
-  const entry = `- QA result: ${line} · @${run.head}${run.base ? ` vs ${run.base.ref}@${run.base.sha}` : ''} · ${run.id}`
-  const updated = /^- QA result:.*$/m.test(text)
-    ? text.replace(/^- QA result:.*$/m, entry)
-    : text.replace(/^(- Status:.*)$/m, `$1\n${entry}`)
-  writeFileSync(planFile, updated)
-}
-
-// 중간에 끄면(Ctrl+C·kill) dev 서버를 남기지 않고 런을 '중단' 으로 닫는다 — 현황판이 계속 ⏳ 로 보이지 않게
-for (const signal of ['SIGINT', 'SIGTERM']) {
-  process.on(signal, () => {
-    run.status = 'error'
-    run.error = `중단됨 (${signal})`
-    stopServers()
-    saveRun()
-    process.exit(130)
-  })
-}
-
-let exitCode = 0
-try {
-  exitCode = await main()
-} catch (error) {
-  run.status = 'error'
-  run.error = String(error.message)
-  say(`❌ ${error.message}`)
-  exitCode = 2
-} finally {
-  stopServers()
-  saveRun()
-  try {
-    buildReport(runDir)
-    buildIndex()
-    console.log(`🗂  리포트: ${relative(HERMES, runDir)}/report.html · 이력: node scripts/qa/history.mjs`)
   } catch (error) {
-    console.error(`⚠️  리포트를 만들지 못했다 — ${error.message}`)
+    failAll(errorText(error))
+  } finally {
+    await browser?.close()
+    await stopCurrentServer?.()
+    stopCurrentServer = null
+    saveRun()
   }
 }
-process.exit(exitCode)
+
+const finish = () => {
+  run.finishedAt = new Date().toISOString()
+  saveRun()
+  pruneRuns()
+}
+
+async function main() {
+  const config = loadConfig(ROOT)
+  const all = listServices(config)
+  const names = option('service').split(',').filter(Boolean)
+  const layerArg = option('layer')
+  if ((!names.length && !flag('all')) || (layerArg && !RUN_LAYERS.includes(/** @type {'fe'} */ (layerArg))) || (option('cwd') && names.length !== 1)) {
+    console.error('사용: node scripts/qa/run.mjs --service <이름>[,<이름>] | --all [--layer fe|be] [--flow <흐름>] [--cwd <트리 — 서비스 하나일 때만>] [--reuse-server] [--if-tc]')
+    return 2
+  }
+  const unknown = names.filter((name) => !all.some((service) => service.name === name))
+  if (unknown.length) { console.error(`모르는 서비스: ${unknown.join(', ')} — 있는 것: ${all.map((service) => service.name).join(', ')}`); return 2 }
+  if (isSwitching(ROOT)) { console.error('팩을 바꾸는 중이에요 — 끝난 뒤에 돌려 주세요'); return 1 }
+  let services = names.length ? all.filter((service) => names.includes(service.name)) : all
+  if (flag('if-tc')) {
+    services = services.filter((service) => flowsOfFiles(listFlowFiles(ROOT, service).files).some((item) => item.tc))
+    if (!services.length) { console.log('돌릴 TC 가 없어요'); return 0 }
+  }
+
+  const id = `${stamp()}-qa`
+  mkdirSync(join(RUNS_DIR, id), { recursive: true })
+  run = { id, pid: process.pid, startedAt: new Date().toISOString(), finishedAt: null, request: { services: services.map((service) => service.name), layer: layerArg, flow: option('flow') }, flows: [] }
+  saveRun()
+  for (const signal of /** @type {const} */ (['SIGINT', 'SIGTERM'])) {
+    process.on(signal, () => {
+      Promise.resolve(stopCurrentServer?.()).finally(() => { finish(); process.exit(1) })
+    })
+  }
+
+  for (const service of services) {
+    let tree = ''
+    try {
+      tree = option('cwd') ? resolve(option('cwd')) : baseTree(service)
+    } catch (error) {
+      // 기준 트리를 못 만들면 문서 목록으로 흐름마다 오류를 남긴다 — QA 탭에서 보이게
+      const message = `작업 트리를 준비하지 못했어요: ${errorText(error)}`
+      console.log(`\n${service.name} ❌ ${message}`)
+      for (const item of flowsOfFiles(listFlowFiles(ROOT, service).files).filter((flow) => flow.tc)) {
+        run.flows.push({ service: service.name, layer: item.layer, flow: item.flow, doc: item.doc, ref: '', tree: 'base', ranAt: new Date().toISOString(), status: 'error', error: message, cases: [] })
+      }
+      saveRun()
+      continue
+    }
+    const commit = execFileSync('git', ['-C', tree, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).trim()
+    for (const layer of RUN_LAYERS) {
+      if (!layerArg || layerArg === layer) await runLayer(service, layer, tree, commit)
+    }
+  }
+  finish()
+  const bad = run.flows.filter((/** @type {any} */ entry) => ['fail', 'error'].includes(entry.status))
+  console.log(`\n흐름 ${run.flows.length}개 · 문제 ${bad.length}개 · 기록 .qa-runs/${id}/run.json`)
+  return bad.length ? 1 : 0
+}
+
+
+process.exit(await main())

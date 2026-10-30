@@ -4,7 +4,7 @@
  * </head> 바로 앞에 글꼴 링크 + <style id="studio-theme"> 를 넣는다. 이미 입혀져 있으면 바꿔 끼운다(여러 번 돌려도 같다).
  * archify 의 SVG · 배치 · 뷰어 기능(확대 · 검색 · 내보내기)은 건드리지 않는다. archify 결과가 아닌 HTML(목록 index.html 등)은 건너뛴다
  *
- *   node scripts/diagram-theme.mjs <html>…        deliver 직후 · 번들(build-bundle.py)을 만들기 전에
+ *   node scripts/diagram-theme.mjs <html>…        그림을 고친 뒤
  *   node scripts/diagram-theme.mjs --check <html>…  입혀져 있는지만(안 입힌 것이 있으면 1)
  */
 import { readFileSync, writeFileSync } from 'node:fs'

@@ -476,19 +476,6 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 /board stop     # 끄기</code></pre>
         </article>
 
-        <article class="cmd">
-          <div class="cmd-head"><kbd>/diagram <span class="arg">서비스 · 점검 (선택)</span></kbd><span class="tag plain">다이어그램</span></div>
-          <p class="what">담당 서비스의 다이어그램을 <strong>운영 기준 브랜치 코드로 다시 그립니다.</strong> 서비스마다 작업자 하나가 <code>docs/diagrams/AUTHORING.md</code>(공통)와 <code>guides/&lt;서비스&gt;.md</code>(서비스별)를 읽고 구조 · 화면 맵 · 요청 흐름을, 팩이 정한 서비스는 화면 전수 심층 번들까지 고칩니다. 아테나가 archify 검사(9/9) · 화면 전수 대조 · 근거 점검을 다시 돌리고 목록을 갱신합니다. <strong>그리다 찾은 코드 문제는 <code>issues/</code> 에 등록</strong>돼 현황판에 뜹니다. 서비스를 안 주면 전체(서비스마다 작업자 하나, 한 번에 5개씩)라 오래 걸립니다.</p>
-          <div class="flow"><span>기준 ref 체크아웃</span><span>서비스별 작업자</span><span class="hi">검증 · 목록 · 이슈</span></div>
-          <dl>
-            <dt>언제</dt><dd>구조가 크게 바뀐 서비스를 다시 그릴 때, 코드 문제를 훑어 이슈로 모을 때. 변경만 따라가려면 <code>/diagram 점검</code> 이나 <code>/sync</code></dd>
-            <dt>결과</dt><dd>서비스별 validate · 화면 전수 표, 등록한 이슈. 커밋은 확인 후</dd>
-          </dl>
-<pre><code>/diagram &lt;서비스&gt;   # 그 서비스만
-/diagram            # 전체
-/diagram 점검       # 다시 그리지 않고 근거만</code></pre>
-        </article>
-
         <article class="cmd wide">
           <div class="cmd-head"><kbd>/setup <span class="arg">레포 폴더 (선택)</span></kbd><span class="tag">새 회사 첫 실행</span></div>
           <p class="what">팩이 없을 때 한 번 돌립니다(세션 시작 훅이 안내합니다). 기계적인 일은 <code>bin/athena</code> 가, 코드를 읽고 판단하는 일은 아테나와 작업자가 합니다. 이미 팩 레포가 있는 회사면 clone → <code>athena.config.json</code> → <code>bin/athena pack link</code> 만 하고 검증으로 넘어갑니다. <strong>레포는 읽기만 합니다</strong>(fetch·설치는 묻고).</p>
@@ -503,7 +490,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 
         <article class="cmd wide">
           <div class="cmd-head"><kbd>(회사 스킬)</kbd><span class="tag plain">팩</span></div>
-          <p class="what">회사마다 필요한 스킬(리포트를 이슈로 모으기, QA TC 목록 쓰기 등)은 팩에 있고 <code>bin/athena pack link</code> 가 <code>.claude/skills/</code> 자리에 링크로 겁니다. 목록과 쓰는 법은 팩 <code>pack/ROUTING.md</code> "회사 스킬" — <code>/guide</code> 스킬 목록에도 자동으로 나옵니다.</p>
+          <p class="what">회사마다 필요한 스킬(리포트를 이슈로 모으기 등)은 팩에 있고 <code>bin/athena pack link</code> 가 <code>.claude/skills/</code> 자리에 링크로 겁니다. 목록과 쓰는 법은 팩 <code>pack/ROUTING.md</code> "회사 스킬" — <code>/guide</code> 스킬 목록에도 자동으로 나옵니다.</p>
         </article>
 
         <article class="cmd wide">
@@ -511,7 +498,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
           <p class="what">인자 없이 치면 지금 pane 오른쪽에 <strong>가이드 메뉴</strong> pane 을 열어 <strong>선택형 메뉴</strong>를 띄웁니다(같은 탭에 이미 떠 있으면 그 자리에서 다시). 마우스 클릭 또는 ↑/↓·숫자로 골라 Enter, <kbd>q</kbd>로 닫습니다. 항목은 <strong>📘 문서</strong>(구조 설명 · 시작하기 · 플레이북 · 다이어그램 · 확장 가이드)와 <strong>⚡ 실행·확인</strong>(스킬 목록·실행 · 에이전트·담당 레포·라우팅)입니다. 스킬 목록은 <code>.claude/skills/*/SKILL.md</code>를 그때그때 읽으므로 스킬을 추가하면 자동으로 나오고, 고른 뒤 인자를 입력하면 <strong>아래에 새 pane을 열어 별도 아테나 세션</strong>으로 실행합니다. <code>열기</code>는 이 플레이북을, <code>그림</code>은 <strong>다이어그램 목록</strong>(작업 흐름 + 서비스마다 구조·화면 맵·요청 흐름, 팩이 정한 서비스는 심층)을 브라우저로 엽니다. 각 그림은 <strong>대표 화면 하나를 정해 그 코드만</strong> 그린 것이라 같은 앱의 다른 화면에 그대로 옮기면 안 됩니다.</p>
           <div class="flow"><span>메뉴</span><span class="hi">문서 · 스킬 · 에이전트</span></div>
           <dl>
-            <dt>언제</dt><dd>뭘 시킬 수 있는지 훑을 때, 어느 레포 작업인지 헷갈릴 때, 문서·다이어그램을 볼 때</dd>
+            <dt>언제</dt><dd>뭘 시킬 수 있는지 훑을 때, 어느 레포 작업인지 헷갈릴 때, 문서·작업 흐름 그림을 볼 때</dd>
             <dt>결과</dt><dd>메뉴 pane 또는 브라우저. 파일은 수정하지 않음</dd>
           </dl>
 <pre><code>/guide           # 오른쪽 pane 에 메뉴 (Studio/tmux)
@@ -519,7 +506,7 @@ claude          # 레포 연결은 자동 · 팩이 비었으면 /setup 이 레�
 /guide 설명      # docs/athena-explained.html(아테나 구조 설명)을 브라우저로
 /guide 열기      # docs/playbook.html 을 브라우저로
 /guide 시작하기  # docs/onboarding.html(시작하기 가이드)을 브라우저로
-/guide 그림      # 다이어그램 목록</code></pre>
+/guide 그림      # 작업 흐름 그림</code></pre>
         </article>
 
         <article class="cmd wide">
@@ -714,7 +701,7 @@ node scripts/sync-fingerprint.mjs --no-fetch</code></pre>
 ├── .claude/
 │   ├── agents/                <span class="c">reviewer · learn-reviewer (코어) + 레포 담당 에이전트 (팩에서 링크)</span>
 │   ├── rules/                 <span class="c">coding-standards (언어 · Git 은 AGENTS.md · 디스패치는 docs/dispatch.md)</span>
-│   ├── skills/                <span class="c">call · board · sync · diagram · guide · monitor · setup (코어) + 회사 스킬 (팩에서 링크)</span>
+│   ├── skills/                <span class="c">call · board · sync · guide · monitor · setup (코어) + 회사 스킬 (팩에서 링크)</span>
 │   └── settings.json
 ├── .sync/
 │   └── snapshots/             <span class="c">레포별 기준 브랜치 지문 baseline (/sync 비교 기준)</span>

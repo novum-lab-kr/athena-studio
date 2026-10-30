@@ -25,10 +25,8 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 | `skills/<이름>/` | `.claude/skills/` | 회사 스킬 |
 | `knowledge/<레포>/` · `knowledge/company/` · `knowledge/learned/` | `docs/knowledge/` | 레포 지식 5종 · 회사 관례(git·verify·review) · 학습 기록 |
 | `verify/<레포>.sh` | `scripts/verify/` | 검증 스크립트(`_lib.sh`·`_nest.sh` 는 코어) |
-| `diagrams/*` | `docs/diagrams/` | 서비스 다이어그램 · `index.json`(목록 카드) · `SERVICES.md`(/diagram 서비스 표) — 둘 다 `athena scaffold` 가 처음 만든다 |
 | `docs/*` | `docs/` | 회사 안내 문서 · `services.md`(서비스 소개 + 스택 표 — `athena scaffold` 가 처음 만들고 `build-derived` 가 표를 채운다) |
 | `scripts/*` | `scripts/` | 회사 전용 스크립트 |
-| `qa/{docs,routes,scenarios}` | `docs/qa` · `scripts/qa/routes` · `scripts/qa/scenarios` | QA TC·앱별 QA 설정(화면 목록·서버)·흐름 씬 — 초안은 `node scripts/qa/init-app.mjs --all`(/setup 이 부른다) |
 | `sync/` · `archive/` | `.sync` · `archive` | 지문 · 보관한 일 |
 | `hooks/delegate-env.sh` | — | (선택) `delegate.sh` 가 에이전트 실행기에 넣을 export 줄 |
 
@@ -153,7 +151,6 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "github": { "org": "acme-inc" },        // PR 조회·링크 판별
   "trackedDeps": ["^@acme/"],             // 지문에 버전을 남길 사내 패키지(정규식)
   "worktreeCopy": { "include": [".env", ".env.*"] },
-  "qa": { "apps": { "shop-web": "쇼핑" }, "ownHosts": ["acme.com"], "iconFont": "", "exampleUrl": "https://dev.acme.com" },   // apps 는 화면에 보일 이름표만(없어도 된다)
   "derived": { "servicesColumns": ["…"], "playbookOrder": ["…"] },   // 없으면 설정 순서
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
   "models": { "learnReview": "sonnet" },  // 역할마다 Claude 모델(아래 "models") — 없으면 기본 모델 · athena init 이 새 팩에 이 한 줄을 넣는다
@@ -206,12 +203,6 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   - 값 예(경량 · 다시 리뷰만 나누기): `"models": { "learnReview": "sonnet", "agentLight": "sonnet", "reviewer": "sonnet", "reviewerEscalated": "opus" }` — `agent` 를 비워 두면 정식 작업은 기본 모델. 키를 지우면 그 자리는 지금과 같다(`agentLight` → `agent` · `reviewerEscalated` → `reviewer` → 기본 모델). 모델은 띄울 때 정해진다 — 이미 떠 있는 pane 은 그대로
   - 에이전트 하나만 다르게 하려면 그 프로필(`.claude/agents/<이름>.md`) frontmatter `model:` — 있으면 팩 값보다 이긴다(`inherit` 은 없는 것과 같다). delegate.sh 가 그 값을 `--model` 로 넘긴다(워크트리에서 띄울 때 다시 만드는 프로필에는 `model` 이 없어서)
 
-## QA 대상 앱
+## QA 대상 서비스
 
-QA 시뮬레이션(`scripts/qa`) 대상은 **등록한 레포에서 정해진다**(`scripts/qa/apps.mjs`) — 따로 적지 않는다.
-
-- 단일 레포 = 앱 하나(이름은 레포 이름, 바꾸려면 `"qaApp": "<이름>"`) · 앱 폴더는 레포 루트
-- 모노레포 = `apps` 의 앱마다(앱 폴더 `apps/<앱>`, 다르면 `apps.<앱>.dir`)
-- `kind: packages`·`layer: be` 는 화면이 없어 뺀다. Next.js 앱(`app/`·`pages/`, `src/` 포함)만 돌릴 수 있다
-- 앱마다 `qa/routes/<앱>.json` 이 있어야 돌린다(없으면 현황판에 안 보이고 run.mjs 가 초안 명령을 알려 준다). 형식은 `docs/knowledge/common/verify.md` "앱 설정"
-- 예전 `qa.repo`(모노레포 하나 가정)는 더 읽지 않는다. 남아 있거나 routes 에 `server` 블록·`server.tokenCookie` 가 없으면 run.mjs·현황판 QA 탭이 한 줄 경고를 띄운다(기본값으로 계속 돈다)
+QA 는 **등록한 레포에서 정해진다**(`scripts/qa/flows.mjs` `listServices`) — 따로 적지 않는다. 단일 레포 = 서비스 하나 · 모노레포 = `apps` 의 앱마다(폴더 `apps/<앱>`, 다르면 `apps.<앱>.dir`) · `kind: packages` 는 뺀다. 흐름 문서 · TC 는 팩이 아니라 **레포 안** `docs/flows/` 에 있다 — 형식 `docs/knowledge/common/qa-flows.md`. 옛 팩의 `qa/` · `diagrams/` 폴더는 가져오기 · 내보내기가 받아 주지만 더 쓰지 않는다.

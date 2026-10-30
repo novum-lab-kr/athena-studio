@@ -578,7 +578,7 @@
   "work.detail.console": "決定コンソール",
   "work.detail.goPane": "pane へ移動",
   "board.menu.qa": "QA",
-  "board.menu.qaNote": "検収の実行 · 画面比較",
+  "board.menu.qaNote": "フロー別 TC 結果",
   "board.menu.learn": "学習",
   "board.menu.learnNote": "エージェントが学んだことを採用 · 破棄",
   "board.menu.metrics": "指標",

@@ -1205,7 +1205,7 @@ export const claimSlot = (data, base) => {
 
 // ── 내보내기 · 백업 ────────────────────────────────────────────────────
 // 내보내기 허용 목록(설계 ⑦-1 이 정본) — 회사 내용만. 작업 기록·결과물·비밀값·이 컴퓨터 설정은 뺀다
-// 다이어그램 html 은 넣는다 — archify(외부)가 있어야 다시 만들 수 있다(계획서 8절 S6). 목록 index.html 만 뺀다(다시 만든다)
+// 옛 팩의 diagrams · qa 폴더도 그대로 넣는다(지우는 것은 사람 몫). 목록 index.html 만 뺀다(다시 만든다)
 const EXPORT_ALLOW = ['pack.json', 'ROUTING.md', 'README.md', 'assets', 'agents', 'knowledge', 'verify', 'skills', 'docs', 'scripts', 'qa', 'hooks', 'sync/snapshots', 'diagrams']
 const EXPORT_DENY = (rel) => {
   const name = basename(rel)

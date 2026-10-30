@@ -578,7 +578,7 @@
   "work.detail.console": "决策控制台",
   "work.detail.goPane": "前往 pane",
   "board.menu.qa": "QA",
-  "board.menu.qaNote": "运行验收 · 对比画面",
+  "board.menu.qaNote": "按流程的 TC 结果",
   "board.menu.learn": "学习",
   "board.menu.learnNote": "采纳或丢弃代理学到的内容",
   "board.menu.metrics": "指标",

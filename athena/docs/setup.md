@@ -14,9 +14,8 @@
 |---|---|---|
 | 사용자에게 묻기 | AskUserQuestion(한 번에 최대 4문항, 선택지) | 대화로 묻는다 — 같은 질문·선택지를 번호로 보여 주고 답을 기다린다 |
 | 5단계 레포별 작업자 | Agent 도구 `general-purpose` 백그라운드, 한 번에 최대 5개 · `/monitor` 로 보이게 | 레포를 하나씩 직접 읽어 채운다(작업자 지시를 자기 할 일로) |
-| 7-1단계 다이어그램 | `/diagram` | `.claude/skills/diagram/SKILL.md` 절차를 직접 따른다 |
 
-기계적인 일은 `bin/athena` 가, 코드를 읽고 판단하는 일은 아테나(와 작업자)가 한다. 환경 설정이라 계획서 없이 진행하고, 끝에 보고한다. **레포는 읽기만 한다**(fetch·체크아웃·설치도 사용자에게 묻고). 비밀값은 출력하지 않는다.
+기계적인 일은 `bin/athena` 가, 코드를 읽고 판단하는 일은 아테나(와 작업자)가 한다. 환경 설정이라 계획서 없이 진행하고, 끝에 보고한다. **레포는 읽기만 한다**(fetch·체크아웃·설치도 사용자에게 묻고 · 예외는 5-1 흐름 문서 — 워크트리에서 쓰고 커밋 · PR 은 사용자 말로). 비밀값은 출력하지 않는다.
 
 ## 0. 이미 팩이 있는 회사인가
 **여러 팩 구조**(본체에 활성 링크 `.pack-data` 가 있다 — `docs/pack.md` "여러 팩")면 먼저 `bin/athena pack status --json` 을 본다. `current.empty: true` 는 `pack new` 로 만든 **빈 팩 자리**다 — 이 /setup 이 그 자리에 팩을 만든다(3단계 `athena init` 이 `pack/`·`<팩 데이터>/local.json` 에 쓰고 자리 이름을 회사 이름으로 바꾼다).
@@ -45,7 +44,7 @@
 `bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 2단계에서 자동 머지를 켜기로 고른 레포에는 `"autoMerge": true` 를 넣는다(안 고른 레포에는 넣지 않는다 — 없으면 꺼짐). 그다음 `scripts/setup.sh`(repos/ 링크).
 
 ## 4. 뼈대
-`bin/athena scaffold` — 레포마다 `agents/<에이전트>.md`(층 fe · be · app 마다 "코드 기준" · BE 는 보고 "계약 변경" 줄) · `knowledge/<레포>/{rules,structure,gotchas}.md`(`rules.md` 에 "언어 · 타입 상태" 칸) · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리) · `diagrams/SERVICES.md`(/diagram 서비스 표) · `diagrams/index.json`(다이어그램 목록 카드). 있는 파일은 건드리지 않는다.
+`bin/athena scaffold` — 레포마다 `agents/<에이전트>.md`(층 fe · be · app 마다 "코드 기준" · BE 는 보고 "계약 변경" 줄) · `knowledge/<레포>/{rules,structure,gotchas}.md`(`rules.md` 에 "언어 · 타입 상태" 칸) · `verify/<레포>.sh`(코어 `_generic.sh` 호출), 팩 하나에 `docs/services.md`(서비스 소개 · 스택 표 자리). 있는 파일은 건드리지 않는다.
 
 ## 5. 뼈대 채우기 (레포마다 작업자 하나 — 위 표)
 작업자 지시(레포마다 같은 틀):
@@ -58,8 +57,10 @@
 - `ROUTING.md` "어느 레포인지 고르기"(요청 말 → 레포)를 채운다. 같은 말이 여러 레포를 가리키면 "되묻는다"로 적는다
 - `docs/services.md` "서비스 소개" 표의 "확인 필요" 칸을 작업자 보고로 채운다(근거 없는 칸은 그대로). "스택 (자동)" 구간은 손대지 않는다 — 7단계 `build-derived` 가 채운다
 
-## 5-1. QA 초안
-`node scripts/qa/init-app.mjs --all` — 등록한 화면 레포의 앱마다(단일 레포 = 앱 하나, 모노레포 = 앱마다, 백엔드·패키지·Next 아닌 앱은 건너뜀) 운영 기준 ref 의 화면 목록을 읽어 팩 `qa/routes/<앱>.json`(QA 설정 초안)과 `qa/docs/tc/<앱>.md`(화면마다 스모크 TC)를 만들고 링크한다. 있는 파일은 덮지 않는다. 출력의 "확인 필요"(로그인 쿠키 `server.tokenCookie` · `devUrl` · 로그인 경로 · dev 전 준비 스크립트 · 동적 화면 samples)는 5단계 작업자가 읽은 코드로 채울 수 있으면 채우고(근거 파일을 적는다), 아니면 그대로 보고에 남긴다 — 형식 `docs/knowledge/common/verify.md` "앱 설정"
+## 5-1. 흐름 문서 · TC 초안
+사용자에게 묻는다 — "서비스 흐름 문서와 TC 초안을 지금 쓸까요?" · 선택지 `지금 쓴다 (추천)`(description: 레포마다 담당 에이전트가 코드를 읽어 씁니다 · 서비스마다 수 분~수십 분(추측)) / `나중에`(description: "흐름 문서 써줘" 로 언제든).
+- 지금: 레포마다 담당 에이전트를 레포 워크트리에 띄워(`scripts/new-branch.sh` → `scripts/delegate.sh`, 한 번에 최대 5개) 층별로 `docs/flows/{fe,be,app}/<흐름>.md` + `.tc.json`(FE · BE) + `qa.json` + `README.md` 초안을 쓰게 한다 — 형식 `docs/knowledge/common/qa-flows.md`. 코드에서 확인 못 한 칸은 "확인 필요"로 남긴다. 레포에 넣는 파일이라 **커밋 · PR 은 사용자 말로**
+- 나중에: 보고의 "다음" 에 적는다
 
 ## 6. 검증 한 번
 레포마다 `scripts/verify/<레포>.sh [<앱>]`(무거우니 `heavy.sh` 가 줄 세운다) — 결과 표를 그대로 모아 보여 준다. ❌·⏭ 은 통과로 치지 않고 "확인 필요"(설치 안 됨·스크립트 없음 등)로 남긴다. 설치는 사용자에게 묻고 한다.
@@ -67,21 +68,16 @@
 ## 7. 지문 기준선
 `node scripts/sync-fingerprint.mjs`(fetch 한다 — 사용자에게 한 줄 알린다) → 리포트 확인 → `node scripts/sync-fingerprint.mjs --accept` → `node scripts/build-derived.mjs`(`docs/services.md` 스택 표가 채워진다). 이후는 평소 `/sync`(`.claude/skills/sync/SKILL.md`).
 
-## 7-1. 레포별 다이어그램
-사용자에게 묻는다 — "서비스 다이어그램(구조 · 화면 맵 · 요청 흐름)을 지금 그릴까요?" · 선택지 `지금 그린다 (추천)`(description: 서비스 N개 · 작업자 5개씩 · 서비스마다 수 분~수십 분(추측)) / `나중에`(description: 언제든 /diagram).
-- 지금: 다이어그램 절차(`.claude/skills/diagram/SKILL.md` — Claude Code 는 `/diagram`)를 전체 대상으로 그대로 돈다 — 서비스 표는 4단계가 만든 `docs/diagrams/SERVICES.md`, 가이드(`guides/<서비스>.md`)는 작업자가 처음 그리며 만든다. 끝나면 `node scripts/build-diagram-index.mjs`
-- 나중에: 보고의 "다음" 에 다이어그램(`/diagram`)을 적는다
-
 ## 7-2. (선택) Jev 키 — 사람마다 본인 키
-Jev(TypeSafe 의 판정 모델)는 QA 실패 원인 추정 · 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정에 쓴다(`docs/knowledge/common/learning.md` 6절). **없어도 그대로 돈다.** 유료라 키는 사람마다 본인 것(사용량은 키 주인에게 청구 · 나눠 쓰지 않는다).
+Jev(TypeSafe 의 판정 모델)는 학습 후보 중복 자동 버리기 · 배우기 검토 나란히 판정에 쓴다(`docs/knowledge/common/learning.md` 6절). **없어도 그대로 돈다.** 유료라 키는 사람마다 본인 것(사용량은 키 주인에게 청구 · 나눠 쓰지 않는다).
 사용자에게 묻는다 — "TypeSafe Jev 키가 있나요?" · 선택지 `있다 — 지금 등록`(description: 옆에 뜨는 입력 창에 직접 붙여 넣는다 · 대화창에는 넣지 않는다) / `없다 · 나중에`(description: 없어도 그대로 돈다 · 키가 생기면 "Jev 키 등록해줘").
 - 있다: **키를 대화로 받지 않는다.** Studio pane 안이면 `scripts/screen pane split --target self --direction down --cwd <athena> --format id` 로 이 pane 아래에 입력 창을 열고(나온 pane id) `scripts/screen pane run <id> node scripts/jev-key.mjs` — 사용자가 그 창에 붙여 넣고 Enter. 맞는 키인지 그 자리에서 확인하고(틀리면 저장 안 함) `~/.config/athena/typesafe.key`(이 컴퓨터에만 · 권한 600)에 저장한다. 끝나면 `node scripts/jev-key.mjs --status` 로 **있는지·길이만** 확인하고 그 창을 닫는다(`scripts/screen pane close <id>`). Studio pane 밖이면 새 터미널에서 `node scripts/jev-key.mjs` 를 직접 돌리라고 안내한다
 - 사용자가 키를 대화창에 붙여 넣었으면 노출로 본다 — 그 값은 쓰지 않고, 콘솔에서 폐기·재발급한 뒤 입력 창으로 다시 넣자고 알린다(AGENTS.md 5절)
 - 나중에 — **"Jev 키 등록해줘"·"Jev 키 바꿔줘"** 도 이 절 그대로(새 키를 넣으면 덮어쓴다). "Jev 키 지워줘" 는 `node scripts/jev-key.mjs --remove`. 등록·지우기는 현황판·배우기 검토를 다시 켜지 않아도 다음 판정부터 먹는다. 환경 변수 `TYPESAFE_API_KEY` 가 있으면 그게 먼저다
 
 ## 8. 마무리 보고
-- 만든 것: 팩 경로 · 레포·에이전트 표 · 파일 수 · 서비스 문서(`docs/services.md` — 채운 칸·남은 "확인 필요") · 다이어그램(그린 서비스·장 수, 미뤘으면 미룸) · Jev 키(등록함 / 나중에 — "Jev 키 등록해줘")
-- 검증 표 · "확인 필요" 목록(레포별) · QA 초안(앱별 화면 수 · 남은 `$todo`)
+- 만든 것: 팩 경로 · 레포·에이전트 표 · 파일 수 · 서비스 문서(`docs/services.md` — 채운 칸·남은 "확인 필요") · Jev 키(등록함 / 나중에 — "Jev 키 등록해줘")
+- 검증 표 · "확인 필요" 목록(레포별) · 흐름 문서 · TC 초안(서비스별 흐름 수 · 워크트리 · 남은 "확인 필요", 미뤘으면 미룸)
 - 다음: `bin/athena pack check`(코어에 회사 이름이 새지 않았는지) · 팩을 팀과 나누려면 `packs/<회사>` 를 별도 레포로 push(사용자가) · 첫 작업은 평소처럼 말로
 
 ## 레포 하나 더하기 — 이미 팩이 있을 때
@@ -89,5 +85,5 @@ Athena Studio 의 spaces `+` 로 git 레포 폴더를 고르면 앱이 1단계�
 1. (앱이 안 했으면) `bin/athena repo add <레포 폴더> [--name <이름>]` — 훑어 `pack.json` 에 항목(브랜치 · 기준 · 종류 · 층 · git 주소 · 기본 에이전트) · `<팩 데이터>/local.json` 에 자리 · `repos/` 링크 · 그 레포 뼈대(4단계와 같은 파일) · 팩 링크. 같은 이름이 다른 자리에 있으면 `exists` — 사용자에게 다른 이름을 묻고 `--name`
 2. 추정이 맞는지 사용자에게 한 줄로 확인한다(2단계와 같은 표 — 그 레포 한 줄) · 고쳤으면 `pack.json` 그 항목 · 같은 자리에서 **PR 자동 리뷰 · 머지를 켤지** 묻는다(2단계와 같은 안내 · 기본 끔 — 켜면 그 항목에 `"autoMerge": true`)
 3. 그 레포만 5단계(작업자 하나 — 뼈대 채우기) · `ROUTING.md` 표 한 줄과 "어느 레포인지 고르기" · `docs/services.md` 그 서비스 한 줄
-4. 그 레포만 6단계(`scripts/verify/<레포>.sh`) · 7단계(`node scripts/sync-fingerprint.mjs --repo <레포>` → `--accept` → `node scripts/build-derived.mjs`) · 다이어그램은 묻는다(7-1)
+4. 그 레포만 6단계(`scripts/verify/<레포>.sh`) · 7단계(`node scripts/sync-fingerprint.mjs --repo <레포>` → `--accept` → `node scripts/build-derived.mjs`) · 흐름 문서는 묻는다(5-1)
 5. 보고 — 8단계 형식에서 그 레포 것만
