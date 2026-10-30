@@ -225,7 +225,31 @@ def check_gh(args):
 
 
 # heredoc 머리줄 — <<EOF · <<-EOF · <<'EOF' · <<"EOF" · <<\EOF (따옴표·역슬래시가 있으면 본문에서 치환이 일어나지 않는다)
-HEREDOC_HEAD = re.compile(r'<<(?!<)(?P<dash>-)?[ \t]*(?P<quote>[\'"\\]?)(?P<tag>[A-Za-z_][A-Za-z0-9_]*)[\'"]?[^\n]*\n')
+# 구분자는 단어 하나 전체다(<<EOF-X 의 구분자는 EOF-X) — 따옴표 · 역슬래시를 뗀 것이 종료자 줄이다
+HEREDOC_HEAD = re.compile(r'<<(?!<)(?P<dash>-)?[ \t]*(?P<word>(?:\\.|\'[^\']*\'|"[^"]*"|[^\s;&|()<>\'"\\])+)[^\n]*\n')
+
+
+def closing_paren(body, start):
+    """body[start] == '(' 의 짝 ')' 자리 — 안쪽 따옴표 · 역슬래시 속의 괄호는 세지 않는다(없으면 len(body))"""
+    depth, quote, index = 0, '', start
+    while index < len(body):
+        char = body[index]
+        if quote == "'":
+            quote = '' if char == "'" else quote
+        elif char == '\\':
+            index += 1
+        elif quote == '"':
+            quote = '' if char == '"' else quote
+        elif char in ('"', "'"):
+            quote = char
+        elif char == '(':
+            depth += 1
+        elif char == ')':
+            depth -= 1
+            if depth == 0:
+                return index
+        index += 1
+    return len(body)
 
 
 def arithmetic_spans(view):
@@ -250,12 +274,7 @@ def heredoc_substitutions(body):
         if char == '\\':
             index += 2
         elif body.startswith('$(', index):
-            depth, end = 0, index + 1
-            while end < len(body):
-                depth += {'(': 1, ')': -1}.get(body[end], 0)
-                if depth == 0:
-                    break
-                end += 1
+            end = closing_paren(body, index + 1)
             found.append(body[index + 2:end]); index = end + 1
         elif char == '`':
             end = index + 1
@@ -283,17 +302,20 @@ def strip_heredocs(text):
         if (view[start:start + 2] != '<<' or re.search(r'(^|\s)#', view[line_start:start])
                 or any(begin <= start <= end for begin, end in spans)):
             continue
+        tag = re.sub(r'[\'"\\]', '', head.group('word'))
+        if not tag:
+            continue
         body_end, cursor = len(text), head.end()
         while cursor < len(text):
             line_end = text.find('\n', cursor)
             line_end = len(text) if line_end < 0 else line_end
             line = text[cursor:line_end]
-            if (line.lstrip('\t') if head.group('dash') else line) == head.group('tag'):
+            if (line.lstrip('\t') if head.group('dash') else line) == tag:
                 body_end = cursor
                 break
             cursor = line_end + 1
         out.append(text[position:head.end()])
-        if not head.group('quote'):
+        if tag == head.group('word'):   # 따옴표 · 역슬래시가 없는 구분자만 본문에서 치환이 일어난다
             out += [f'$({piece})\n' for piece in heredoc_substitutions(text[head.end():body_end])]
         position = body_end
     out.append(text[position:])
