@@ -1,3 +1,4 @@
+// @ts-check
 /**
  * 배우기 검토 — "한 번 본 code 후보" 보관소와 이슈를 열지 말지 정하는 문.
  *
@@ -12,11 +13,27 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { createHash } from 'node:crypto'
 
+/**
+ * @typedef {{ id: string, date: string, plan: string, target: string, title: string, rule: string, evidence: string }} SeenEntry
+ * @typedef {{ file: string, target: string }} OpenIssue
+ * @typedef {{ action: 'open' } | { action: 'hold' } | { action: 'repeat-open', file: string } | { action: 'repeat-seen', entry: SeenEntry }} Gate
+ */
+
 export const SEEN_MAX = 80   // 오래된 것부터 잊는다 — 가볍게 남기는 보관소라 끝없이 커지지 않게
+/** @param {string} root */
 const seenFile = (root) => join(root, '.sync', 'learn-seen.json')
 
-export const seenIdOf = (rule) => `seen-${createHash('sha1').update(String(rule ?? '').replace(/\s+/g, ' ').trim()).digest('hex').slice(0, 6)}`
+/**
+ * 보관소 id — 같은 문장이라도 target(공책·절)이 다르면 다른 후보다.
+ * @param {string} target
+ * @param {string} rule
+ */
+export const seenIdOf = (target, rule) => `seen-${createHash('sha1').update(`${String(target ?? '').trim()}\n${String(rule ?? '').replace(/\s+/g, ' ').trim()}`).digest('hex').slice(0, 6)}`
 
+/**
+ * @param {string} root
+ * @returns {SeenEntry[]}
+ */
 export const readSeen = (root) => {
   try {
     const list = JSON.parse(readFileSync(seenFile(root), 'utf8'))
@@ -25,6 +42,10 @@ export const readSeen = (root) => {
     return []
   }
 }
+/**
+ * @param {string} root
+ * @param {SeenEntry[]} list
+ */
 export const writeSeen = (root, list) => {
   const path = seenFile(root)
   if (!existsSync(dirname(path))) mkdirSync(dirname(path), { recursive: true })
@@ -37,13 +58,18 @@ export const writeSeen = (root, list) => {
  *   repeat-open  이미 열린 learn 이슈에 "반복 +1" 만 덧붙인다(file)
  *   repeat-seen  한 번 본 후보와 같은 함정 — 이슈를 열고 보관소에서 뺀다(entry)
  *   hold         basis: code 한 번짜리 — 이슈를 열지 않고 보관소에 남긴다
+ * repeatOf 가 가리킨 것은 target 이 같을 때만 같은 함정으로 본다(레포·공책이 다르면 문장이 같아도 다른 후보).
+ * 보관소 조회가 basis: run 검사보다 앞이다 — run 후보가 한 번 본 후보를 가리켜도 처음 본 곳을 남기고 보관소에서 뺀다.
+ * @param {{ item: { kind?: string, basis?: string, repeatOf?: string }, target: string, seen: SeenEntry[], openIssues: OpenIssue[] }} input
+ * @returns {Gate}
  */
-export const decideGate = ({ item, seen, openFiles }) => {
+export const decideGate = ({ item, target, seen, openIssues }) => {
   if (item.kind === 'skill') return { action: 'open' }   // 스킬 후보는 기존대로 target 이 같으면 반복 +1
   const repeatOf = String(item.repeatOf ?? '').trim()
-  if (repeatOf && openFiles.includes(repeatOf)) return { action: 'repeat-open', file: repeatOf }
-  if (item.basis === 'run') return { action: 'open' }
-  const entry = repeatOf ? seen.find((candidate) => candidate.id === repeatOf) : null
+  const openIssue = repeatOf ? openIssues.find((issue) => issue.file === repeatOf && issue.target === target) : null
+  if (openIssue) return { action: 'repeat-open', file: openIssue.file }
+  const entry = repeatOf ? seen.find((candidate) => candidate.id === repeatOf && candidate.target === target) : null
   if (entry) return { action: 'repeat-seen', entry }
+  if (item.basis === 'run') return { action: 'open' }
   return { action: 'hold' }
 }

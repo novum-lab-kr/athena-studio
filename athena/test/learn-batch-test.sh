@@ -27,13 +27,16 @@ OUT="$(cd "$TMP" && node --input-type=module -e "
 import { decideGate } from './scripts/lib/learn-seen.mjs'
 import { applyBatch, listLearn } from './scripts/board/learn.mjs'
 const out = {}
-const seen = [{ id: 'seen-aaaaaa' }]
-const gate = (item) => decideGate({ item, seen, openFiles: ['x-learn-y.md'] }).action
+const seen = [{ id: 'seen-aaaaaa', target: 'T' }]
+const gate = (item) => decideGate({ item, target: 'T', seen, openIssues: [{ file: 'x-learn-y.md', target: 'T' }] }).action
 out.run = gate({ kind: 'gotchas', basis: 'run' })
 out.codeFirst = gate({ kind: 'gotchas', basis: 'code' })
 out.codeSecond = gate({ kind: 'gotchas', basis: 'code', repeatOf: 'seen-aaaaaa' })
 out.openRepeat = gate({ kind: 'gotchas', basis: 'code', repeatOf: 'x-learn-y.md' })
 out.unknownRepeat = gate({ kind: 'gotchas', basis: 'code', repeatOf: 'seen-zzzzzz' })
+out.runSeen = gate({ kind: 'gotchas', basis: 'run', repeatOf: 'seen-aaaaaa' })
+out.otherTarget = decideGate({ item: { kind: 'gotchas', basis: 'code', repeatOf: 'seen-aaaaaa' }, target: 'U', seen, openIssues: [] }).action
+out.otherTargetOpen = decideGate({ item: { kind: 'gotchas', basis: 'code', repeatOf: 'x-learn-y.md' }, target: 'U', seen, openIssues: [{ file: 'x-learn-y.md', target: 'T' }] }).action
 out.skill = gate({ kind: 'skill', basis: 'code' })
 const before = listLearn()
 out.batches = before.batches.map((batch) => batch.notebook + ':' + batch.items.length + ':' + batch.items.map((item) => item.dups.length).join(','))
@@ -48,6 +51,9 @@ check "code 첫 번째는 보류" '[ "$(j o.codeFirst)" = hold ]'
 check "code 두 번째(한 번 본 후보를 가리킴)는 연다" '[ "$(j o.codeSecond)" = repeat-seen ]'
 check "열린 이슈를 가리키면 반복 +1" '[ "$(j o.openRepeat)" = repeat-open ]'
 check "없는 id 를 가리키면 첫 번째와 같이 보류" '[ "$(j o.unknownRepeat)" = hold ]'
+check "run 후보가 한 번 본 후보를 가리켜도 처음 본 곳을 잇는다" '[ "$(j o.runSeen)" = repeat-seen ]'
+check "target 이 다르면 같은 문장이어도 한 번 본 후보로 안 친다" '[ "$(j o.otherTarget)" = hold ]'
+check "target 이 다르면 열린 이슈에도 반복 +1 을 안 붙인다" '[ "$(j o.otherTargetOpen)" = hold ]'
 check "스킬 후보는 기존대로" '[ "$(j o.skill)" = open ]'
 check "묶음은 공책별 · 같은 문장은 하나(합친 수 1)" '[ "$(j "o.batches.join(\"|\")")" = "docs/knowledge/alpha/gotchas.md:2:1,0|docs/knowledge/beta/gotchas.md:1:0" ]'
 check "묶음 넣기 — 2개 넣고 1개 합침" '[ "$(j "o.result.applied+\",\"+o.result.merged+\",\"+o.result.errors.length")" = "2,1,0" ]'

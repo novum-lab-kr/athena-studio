@@ -1634,9 +1634,9 @@
   // 레포별 묶음 — 그 레포 공책에 넣을 후보를 모아 한 번에 넣는다(빼고 싶은 건 체크 해제). 같은 문장은 서버가 하나로 합쳐 보낸다
   const renderBatches = () => {
     const box = document.getElementById('learn-batches');
-    const batches = (learnData.batches || []).filter((batch) => batch.items.length > 1);
+    const batches = (learnData.batches || []).filter((batch) => batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0) > 1);
     box.innerHTML = batches.map((batch, index) => `<div class="learn-batch" data-batch="${index}">
-      <div class="top"><span class="grow">📦 ${esc(batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, ''))} 공책에 넣을 묶음 <span class="n">${batch.items.length}개</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
+      <div class="top"><span class="grow">📦 ${esc(batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, ''))} 공책에 넣을 묶음 <span class="n">${batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0)}개</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
       ${batch.items.map((item) => `<label class="row"><input type="checkbox" value="${esc(item.id)}" checked><span><b>${esc(item.title)}</b>${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="정확히 같은 문장이라 하나로 합쳤어요">같은 문장 ${item.dups.length + 1}개 합침</span>` : ''}${item.strengthen ? ' <span class="pill">기존 줄 고침</span>' : ''}<div class="rule-line">${esc(item.rule)}</div></span></label>`).join('')}
     </div>`).join('');
     box.querySelectorAll('.learn-batch').forEach((el) => updateBatchButton(el));
