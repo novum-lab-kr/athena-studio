@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   appUpdateStatus: () => ipcRenderer.invoke('app-update:status'),
   checkAppUpdate: () => ipcRenderer.invoke('app-update:check'),
   runAppUpdate: () => ipcRenderer.invoke('app-update:run'),
+  restartAppUpdate: () => ipcRenderer.invoke('app-update:restart'),
   onAppUpdate: listen('app-update:status'),
   packCallInfo: (name) => ipcRenderer.invoke('pack:call-info', name),
   packCallStart: (name, options) => ipcRenderer.invoke('pack:call-start', name, options),

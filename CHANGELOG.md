@@ -18,7 +18,21 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.40: v0.32.4..main 머지(#160 ~ #182)에서 손님에게 보이는 것만(개발 앱 묶음 #161 · 검증 범위 #177 #178 은 뺌 · #176 #181 은 PR 설정 줄에 · #172 는 #164 줄에 합침). 범위 끝은 열어 둔다 -->
 
-## 0.40 (v0.32.5 – · Oct 30, 2026)
+## 0.42 (v0.40.5 – · Oct 31, 2026)
+
+### Improved
+- The window opens first on restart, and the core update runs in the background: the tab bar shows "core update in progress", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.
+- The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.
+- A dev-app update skips `npm install` when the dependencies are unchanged.
+- When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and "Later" leaves a Restart button there.
+
+### Fixed
+- The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.
+- `init --scan` now reads the pack's `local.json` repositories root first.
+- Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.
+- A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.
+
+## 0.40 (v0.32.5 – v0.40.4 · Oct 30, 2026)
 
 ### New
 - Choose per repository whether Athena opens a pull request, runs the automatic review, and merges, in Settings. Turning auto PR off skips the pull request and review and merges the work branch straight into the base branch once verification passes. Merging can be automatic, ask first in Work, or left to you.

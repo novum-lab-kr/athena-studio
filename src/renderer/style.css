@@ -1348,6 +1348,12 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .settings-app-button:hover:not(:disabled), .settings-app-button:focus-visible { background: var(--accent); color: var(--popup-bg); outline: none; }
 .settings-app-button:disabled { border-color: rgb(255 255 255 / 14%); color: var(--popup-muted); cursor: default; }
 .settings-app-note { margin: 0 8px 4px; }
+.settings-app-gauge { position: relative; height: 3px; margin: 0 8px 6px; overflow: hidden; border-radius: 2px; background: var(--line); }
+.settings-app-gauge::before { content: ""; position: absolute; top: 0; bottom: 0; left: 30%; width: 40%; border-radius: 2px; background: var(--accent); }
+@media (prefers-reduced-motion: no-preference) {
+  .settings-app-gauge::before { left: -40%; animation: settings-gauge-slide 1.4s ease-in-out infinite alternate; }
+}
+@keyframes settings-gauge-slide { to { left: 100%; } }
 .settings-app-version { margin-left: 8px; color: var(--popup-muted); font-size: 12px; }
 #settings-tab { position: relative; }
 #settings-tab.has-update::after { content: ""; position: absolute; top: 5px; right: 5px; width: 6px; height: 6px; border-radius: 50%; background: var(--accent); }

@@ -81,5 +81,13 @@
   "Automatic review settles implementation details itself, raises all comments at once and blocks only on real problems.": "자동 리뷰가 구현 세부는 스스로 정하고, 의견을 한 번에 다 내고, 진짜 문제일 때만 막아요.",
   "Rename repositories and give them images. Shared through pack export and backup.": "레포 이름을 바꾸고 이미지를 붙일 수 있어요. 팩 내보내기와 백업으로 같이 공유돼요.",
   "Choose a model for each role in a pack: agents, pull request review and learning review.": "팩에서 역할마다 모델을 고를 수 있어요: 에이전트, PR 리뷰, 학습 리뷰.",
-  "Version numbers. Every release is tagged and the app shows its version.": "버전 번호가 생겼어요. 모든 릴리스에 태그가 붙고 앱이 버전을 보여 줘요."
+  "Version numbers. Every release is tagged and the app shows its version.": "버전 번호가 생겼어요. 모든 릴리스에 태그가 붙고 앱이 버전을 보여 줘요.",
+  "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "개발 앱 업데이트에 `npm install` 이 필요하면, 앱을 켜 둔 채로 설치하고 다시 시작하기 전에 물어봐요. 설정 줄에 설치 대기 중 · 설치 중이 보이고, [나중에] 를 누르면 그 줄에 다시 시작 버튼이 남아요.",
+  "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "설치를 강제로 끝낸 것을 더는 설치 실패로 알리지 않아요. 따로 표시하고 앱은 켜 둔 채, 설치는 다음에 켤 때 다시 시도해요.",
+  "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "다시 시작하면 창이 먼저 열리고 코어 업데이트는 뒤에서 돌아요. 탭 줄에 \"코어 업데이트 중\"이 보이고 끝나면 결과 팝업이 떠요. 팩 명령 · 새 에이전트 pane · 따라잡기는 업데이트가 끝날 때까지 기다려요.",
+  "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "코어 업데이트 팝업에 짧은 종류 칩이 보이고, 끝자리만 바뀐 업데이트도 최근 변경을 보여 줘요.",
+  "A dev-app update skips `npm install` when the dependencies are unchanged.": "개발 앱 업데이트에서 의존성이 그대로면 `npm install` 을 건너뛰어요.",
+  "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 실행기가 HTTP 클라이언트의 assert 오류로 죽지 않고, 프로세스가 죽은 케이스는 통과가 아니라 실패로 기록돼요.",
+  "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` 이 팩의 `local.json` 레포 루트를 먼저 읽어요.",
+  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "앱이 붙어 있을 때 pane 을 나누거나 닫아도 옆 pane 의 터미널 크기를 어림으로 바꾸지 않아요."
 }

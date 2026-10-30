@@ -141,7 +141,7 @@ async function openWorkDetail(item: WorkItemView): Promise<void> {
 // ── ⚙ 설정 팝업 — 이 창 팩의 레포별 PR 자동 리뷰 · 머지 + 앱 업데이트 ─────────────────────
 // 몸통(settings-pop-body)은 React(ui/settings-pop.tsx) — 여기는 껍데기(열기 · 닫기 · 머리줄 팩 이름)와 ⚙ 의 업데이트 점만
 function applyAppUpdate(next: AppUpdateView | null): void {
-  $('settings-tab').classList.toggle('has-update', Boolean(next && next.state === 'behind'))
+  $('settings-tab').classList.toggle('has-update', Boolean(next && (next.state === 'behind' || next.phase === 'ready')))
   StudioUi.settings.setAppUpdate(next || null)
 }
 

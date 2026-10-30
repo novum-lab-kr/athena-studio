@@ -81,5 +81,13 @@
   "Automatic review settles implementation details itself, raises all comments at once and blocks only on real problems.": "自動レビューは実装の細部を自分で判断し、指摘を一度にすべて出し、本当の問題のときだけブロックします。",
   "Rename repositories and give them images. Shared through pack export and backup.": "リポジトリの名前を変更し、画像を付けられます。パックのエクスポートとバックアップで共有されます。",
   "Choose a model for each role in a pack: agents, pull request review and learning review.": "パックでロールごとにモデルを選べます: エージェント、PR レビュー、学習レビュー。",
-  "Version numbers. Every release is tagged and the app shows its version.": "バージョン番号が付きました。すべてのリリースにタグが付き、アプリがバージョンを表示します。"
+  "Version numbers. Every release is tagged and the app shows its version.": "バージョン番号が付きました。すべてのリリースにタグが付き、アプリがバージョンを表示します。",
+  "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "開発アプリのアップデートで `npm install` が必要なときは、アプリを起動したままインストールし、再起動の前に確認します。設定の行にインストール待ち・インストール中が表示され、[あとで] を押すとその行に再起動ボタンが残ります。",
+  "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "インストールの強制終了をインストール失敗として通知しなくなりました。別に表示し、アプリは開いたままで、インストールは次回の起動時に再試行します。",
+  "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "再起動するとウィンドウが先に開き、コアのアップデートはバックグラウンドで実行されます。タブバーに「コアのアップデート中」が表示され、終わると結果のポップアップが出ます。パックのコマンド・新しいエージェントのペイン・追いつき処理はアップデートが終わるまで待ちます。",
+  "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "コアのアップデートのポップアップに短い種類のチップが表示され、末尾の番号だけが変わるアップデートでも最近の変更が表示されます。",
+  "A dev-app update skips `npm install` when the dependencies are unchanged.": "開発アプリのアップデートで、依存関係が変わっていなければ `npm install` を省略します。",
+  "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 実行器が HTTP クライアントのアサーションエラーで落ちなくなり、プロセスが終了したケースは成功ではなく失敗として記録されます。",
+  "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` がパックの `local.json` のリポジトリルートを先に読むようになりました。",
+  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "アプリが接続されている間、ペインを分割したり閉じたりしても、隣のペインのターミナルサイズを推測で変更しなくなりました。"
 }

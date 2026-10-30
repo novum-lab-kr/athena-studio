@@ -357,7 +357,7 @@ const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPa
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
 // 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
-const { appVersion, appUpdateView, checkAppUpdate, runAppUpdate, showAppUpdateNotice } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows })
+const { relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows, focusedWindow: () => frontCtx()?.win })
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
@@ -812,6 +812,7 @@ handle('pack:repos', (ctx) => ctx.packRepos())
 handle('app-update:status', () => appUpdateView())
 handle('app-update:check', () => checkAppUpdate())
 handle('app-update:run', () => runAppUpdate())
+handle('app-update:restart', () => restartAppUpdate())
 handle('settings:merge', (ctx) => ctx.mergeSettings())
 handle('settings:set-merge', setMergeFromScreen)
 handle('pack:call-info', (ctx, name: unknown) => ctx.callInfo(String(name || '')))
@@ -897,9 +898,12 @@ app.whenReady().then(async () => {
   // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 기준)
   if (!Array.isArray(config.windows)) config = core.withWindows(config, core.windowDirs(config, core.sameDir))
   language = i18n.pickLanguage(config.language, app.getLocale())
-  // 코어 준비 · 업데이트는 git · node 를 부르므로 로그인 셸 PATH 를 받은 뒤에
+  // 도우미 · 설치 · git 이 node · npm 을 찾도록 로그인 셸 PATH 를 먼저 받는다(Dock · Finder 로 켜면 최소 PATH 뿐)
   const loginPath = await loadLoginPath()
   if (loginPath) process.env.PATH = core.mergePath(loginPath, process.env.PATH)
+  // dev-app start 를 거치지 않고 켜졌는데 끝나지 않은 업데이트(설치 · 다시 빌드)가 있으면 도우미로 다시 켠다 — 옛 화면 · 번들로 뜨지 않게
+  // (도우미가 이미 돌고 있으면 창을 열지 않고 끝난다)
+  if (await relaunchIfUnfinished()) return
   // 스튜디오 코어 — 처음이면 번들에서 풀고 설정을 채운다(여기까지만 창 앞에서). 있던 본체의 코어 업데이트는 창을 연 뒤 뒤에서(updateStudioCore)
   const prepared = await prepareStudioCore({ update: false })
   if (prepared.ok && !core.windowDirs(config, core.sameDir).length) {
@@ -941,7 +945,23 @@ let quitting = false
 app.on('window-all-closed', () => {
   if (!isMac) app.quit()
 })
-app.on('before-quit', () => {
+// 앱 업데이트 설치(npm install)가 도는 중에 끄면 그 설치 트리를 끝낸 것을 확인한 뒤에 끈다 — 남은 npm 이 다음 켤 때의 재시도와 겹치지 않게
+// (설치 정리가 끝나기 전의 끄기 요청은 모두 미룬다 — 정리가 끝난 뒤에만 app.quit() 로 다시. 설치가 없으면 바로)
+let installStopDone = false
+let installStopping = false
+app.on('before-quit', (event) => {
+  if (!installStopDone) {
+    event.preventDefault()
+    if (installStopping) return // 정리 중에 다시 끄기를 눌러도 앱이 먼저 꺼지지 않게
+    installStopping = true
+    stopInstallBeforeQuit()
+      .catch(() => false)
+      .finally(() => {
+        installStopDone = true
+        app.quit()
+      })
+    return
+  }
   quitting = true
   for (const ctx of packWindows) ctx.detachScreen()
 })

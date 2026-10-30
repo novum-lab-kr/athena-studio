@@ -7,8 +7,10 @@
 //                                   화면(src/renderer)을 Vite 로 dist/renderer 에 빌드한다(vite.config.mts). 빌드가 실패하면 이전 빌드로 켜고 경고 · 이전 빌드가 없으면 켜지 않는다
 //   node scripts/dev-app.js restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]
 //                                   (앱 ⚙ [업데이트] 가 떼어 띄운다) 앱(pid)이 끝나길 기다려(1분 넘게 살아 있으면 멈춤) → --install 이면 npm install(--heavy 가 있으면 그 줄 서기로)
-//                                   → start 와 같이 켠다. install · 화면 빌드가 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed · build-failed)
-//                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패는 맥 알림으로(--lang 언어 · src/lib/update-notice.mts)
+//                                   → start 와 같이 켠다. install · 화면 빌드가 실패해도 켜고 앱에 알린다(ATHENA_STUDIO_APP_UPDATE=install-failed · install-gave-up · install-killed · build-failed)
+//                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패 · 강제 종료는 맥 알림으로(--lang 언어 · src/lib/update-notice.mts)
+//                                   새 앱은 설치를 앱을 켠 채 끝내고(src/main/app-updater.mts) --install 없이 부른다 — --install 은 옛 앱(이 흐름을 모르는 첫 업데이트)용으로 남겼다.
+//                                   설치가 끊겼으면(.dev-app/install-pending.json) start 가 켜기 전에 다시 시도한다(src/lib/app-install.mts)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -16,6 +18,7 @@ const { execFileSync, spawn } = require('child_process')
 const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
 const updateNotice = require('../src/lib/update-notice.mts')
+const appInstall = require('../src/lib/app-install.mts')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -183,10 +186,15 @@ function makeBundle() {
   try {
     const appVersion = version.describeVersion({ repoRoot: ROOT, env: studioHome.gitEnv() }) || require(path.join(ROOT, 'package.json')).version
     const made = studioHome.makeCoreBundle({ repoRoot: ROOT, out, version: appVersion, log: (line) => console.log(`[dev-app] ${line}`) })
-    if (!made.ok) console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
-    else if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)}${made.version ? ` · ${made.version}` : ''} → ${path.relative(ROOT, out)}`)
+    if (!made.ok) {
+      console.warn(`[dev-app] 코어 번들을 만들지 못했어요(${made.error}) — ${made.message || ''}`)
+      return false
+    }
+    if (made.built) console.log(`[dev-app] 코어 번들 ${made.commit.slice(0, 12)}${made.version ? ` · ${made.version}` : ''} → ${path.relative(ROOT, out)}`)
+    return true
   } catch (error) {
     console.warn(`[dev-app] 코어 번들을 만들지 못했어요 — ${error.message}`)
+    return false
   }
 }
 
@@ -226,10 +234,19 @@ async function buildRenderer() {
   }
 }
 
-async function start(args, { fromUpdate = false } = {}) {
+let appLaunched = false
+
+async function start(args, { fromUpdate = false, installTried = false } = {}) {
+  // 끝나지 않은 업데이트 설치(앱이 꺼짐 · 강제 종료 · 실패 · 포기)가 있으면 다시 시도한다 — 설치가 끝나고 필수 모듈까지 있을 때만 표시를 지운다.
+  // restart --install 이 방금 시도한 실행이면 같은 실행에서 두 번 돌지 않게 건너뛴다(실패했으면 표시는 남아 다음에 켤 때 다시)
+  const pending = installTried ? null : appInstall.readPending(ROOT)
+  if (pending) {
+    console.log('[dev-app] 지난 업데이트의 npm install 이 끊겨 다시 시도해요')
+    await installDependencies({ heavy: pending.heavy, lang: pending.lang })
+  }
   // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
   version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
-  makeBundle()
+  const bundleOk = makeBundle()
   const renderer = await buildRenderer()
   if (renderer === 'missing') {
     process.exitCode = 1
@@ -238,6 +255,10 @@ async function start(args, { fromUpdate = false } = {}) {
   // 앱 ⚙ 업데이트 뒤 다시 켤 때 화면 빌드가 실패했으면 앱에 알린다(npm install 실패를 먼저 알린다)
   if (renderer === 'previous' && fromUpdate && !process.env.ATHENA_STUDIO_APP_UPDATE) process.env.ATHENA_STUDIO_APP_UPDATE = 'build-failed'
   const useDevApp = process.platform === 'darwin' && make()
+  // 맞춘 것이 끝났으면(번들 · 화면 빌드 · 개발 앱) 다시 빌드할 표시를 지운다 — 하나라도 못 했으면 남겨 다음에 켤 때 다시 맞춘다
+  if (bundleOk && renderer === 'built' && (process.platform !== 'darwin' || useDevApp)) appInstall.clearRebuild(ROOT)
+  // 앱이 이 표시로 start 를 거쳐 켜졌는지 안다 — 거치지 않고 켜진 앱만 도우미로 다시 켠다(켜기 반복 방지)
+  process.env.ATHENA_STUDIO_VIA_START = '1'
   const binary = useDevApp ? BINARY : require('electron')
   let child = null
   const launch = (file) => {
@@ -252,6 +273,9 @@ async function start(args, { fromUpdate = false } = {}) {
     // 대신 켠 것이 있으면 앞의 것이 끝난 것은 무시한다
     current.on('exit', (code, signal) => child === current && process.exit(signal ? 1 : code || 0))
   }
+  // 도우미 표시는 앱을 띄우기 직전까지만 — 앱이 켜진 내내 남아 있으면 전원 꺼짐 뒤에도 남는다
+  appInstall.clearHelper(ROOT)
+  appLaunched = true
   launch(binary)
   // npm start 를 Ctrl+C 로 끄면 앱도 끈다
   for (const name of ['SIGINT', 'SIGTERM', 'SIGUSR2']) process.on(name, () => child && child.kill(name))
@@ -270,36 +294,44 @@ function createNotice(language) {
   }
 }
 
-// npm install(heavy.sh 줄 서기 포함)을 돌리며 출력은 그대로 기록(app-update.log)에 넘기고, heavy.sh 가 처음 "⏳ 대기" 를 찍을 때 한 번만 알린다
-// (30초마다 다시 찍어도 다시 띄우지 않는다 · "▶ 차례" 뒤 npm 출력은 보지 않는다). → 종료 코드(못 띄웠으면 1)
-function runInstall(file, list, notice) {
-  return new Promise((resolve) => {
-    let waiting = true
-    let rest = ''
-    const child = spawn(file, list, { cwd: ROOT, stdio: ['ignore', 'pipe', 'pipe'] })
-    // 글자 단위로 받는다 — 덩어리 경계에서 한글(여러 바이트)이 잘리지 않게
-    child.stdout.setEncoding('utf8')
-    child.stdout.on('data', (chunk) => {
-      process.stdout.write(chunk)
-      if (!waiting) return
-      const lines = (rest + chunk).split('\n')
-      rest = lines.pop() || ''
-      for (const line of lines) {
-        if (line.startsWith('▶')) waiting = false
-        const wait = waiting && updateNotice.parseWaitLine(line)
-        if (wait) {
-          waiting = false
-          notice(wait)
-        }
-      }
-    })
-    child.stderr.on('data', (chunk) => process.stderr.write(chunk))
-    child.on('error', (error) => {
-      console.error(`[dev-app] ${file} 을(를) 띄우지 못했어요: ${error.message}`)
-      resolve(1)
-    })
-    child.on('close', (code, signal) => resolve(signal ? 1 : (code ?? 1)))
+// npm install(heavy.sh 줄 서기 포함) — 출력은 그대로 기록(app-update.log)에 넘기고 heavy.sh 대기는 맥 알림으로 한 번(src/lib/app-install.mts).
+// 시작할 때 "끊긴 설치" 표시를 남기고 끝나면 지운다 — 도우미가 도는 중에 꺼지면 남아서 다음에 켤 때 다시 시도한다.
+// 신호로 끝난 것(강제 종료)은 npm install 실패와 따로 기록 · 알린다. 켜는 데 필요한 것이 없으면 실패로 본다. 설치가 안 됐어도 켠다(이전 빌드 · .dev-app 으로)
+async function installDependencies({ heavy, lang }) {
+  const { file, list } = appInstall.installCommand({ heavy })
+  console.log(`[dev-app] ${[file, ...list].join(' ')}`)
+  const notice = createNotice(lang)
+  appInstall.writePending(ROOT, { at: new Date().toISOString(), heavy: heavy || '', lang: lang || '' })
+  const exit = await appInstall.runInstall({
+    file,
+    list,
+    cwd: ROOT,
+    onOutput: (chunk, stream) => process[stream].write(chunk),
+    watch: appInstall.createLineWatcher({ onWait: notice, onTurn: () => {} }),
   })
+  const outcome = appInstall.classifyExit(exit)
+  if (outcome === 'ok') {
+    const missing = appInstall.missingModules(ROOT)
+    if (!missing.length) {
+      appInstall.clearPending(ROOT)
+      return
+    }
+    console.error(`[dev-app] npm install 뒤에 ${missing.join(' · ')} 이(가) 없어요 — 레포에서 npm install --include=dev 를 다시 돌려 주세요`)
+    process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
+    notice({ kind: 'install-failed' })
+    return
+  }
+  if (outcome === 'killed') {
+    // 신호로 끝났다 — 진짜 실패가 아니라 끊긴 것. 표시를 남겨 다음에 켤 때 다시 시도한다
+    console.error(`[dev-app] npm install 강제 종료(신호 ${exit.signal || exit.code}) — 설치 실패가 아니라 끊긴 것이에요. 다음에 켤 때 다시 시도해요`)
+    process.env.ATHENA_STUDIO_APP_UPDATE = 'install-killed'
+    notice({ kind: 'killed' })
+    return
+  }
+  // heavy.sh 75 = 최대 대기(ATHENA_HEAVY_WAIT)를 넘겨 포기 · 그 밖은 npm install 실패. 켠 뒤 앱 알림은 그대로
+  console.error(`[dev-app] npm install ${outcome === 'gave-up' ? '포기(대기 시간 초과)' : '실패'}: 종료 코드 ${exit.code}`)
+  process.env.ATHENA_STUDIO_APP_UPDATE = outcome === 'gave-up' ? 'install-gave-up' : 'install-failed'
+  notice({ kind: outcome === 'gave-up' ? 'gave-up' : 'install-failed' })
 }
 
 // 앱 업데이트 뒤 다시 켜기 — 옛 앱이 끝난 뒤에(같은 앱 데이터 · node_modules 를 쓰는 동안 바꾸지 않게)
@@ -309,6 +341,17 @@ async function restart(args) {
     return index >= 0 ? args[index + 1] || '' : ''
   }
   const after = Number(valueOf('--after'))
+  // 도우미가 도는 동안 표시를 남긴다 — 그 사이 Dock 으로 켠 앱이 창을 열지 않고 끝나게(src/lib/app-install.mts helperRunning)
+  appInstall.writeHelper(ROOT)
+  process.on('exit', () => appInstall.clearHelper(ROOT))
+  // 앱을 띄우기 전에 끝나라는 신호를 받으면 표시를 지우고 끝낸다 — 띄운 뒤에는 start 의 핸들러가 앱을 같이 끈다
+  for (const name of ['SIGTERM', 'SIGINT', 'SIGHUP']) {
+    process.on(name, () => {
+      if (appLaunched) return
+      appInstall.clearHelper(ROOT)
+      process.exit(1)
+    })
+  }
   const alive = (pid) => {
     try {
       process.kill(pid, 0)
@@ -330,35 +373,15 @@ async function restart(args) {
   // 이 수정 전 앱은 화면 빌드가 남긴 NODE_ENV=production 을 물려받아 켜져 있다(buildRenderer 주석) — 다시 켤 앱 · pane 에 또 물려주지 않는다.
   // 앱 코드는 NODE_ENV 를 읽지 않는다(화면 번들의 production 은 vite.build 가 따로 정한다)
   if (process.env.NODE_ENV === 'production') delete process.env.NODE_ENV
-  if (args.includes('--install')) {
-    const heavy = valueOf('--heavy')
-    const npm = process.platform === 'win32' ? 'npm.cmd' : 'npm'
-    // --include=dev — 개발 앱은 devDependencies(electron · vite)로 켜진다. NODE_ENV=production · npmrc omit=dev 가 있어도 지우지 않게
-    const install = [npm, 'install', '--include=dev']
-    const [file, list] = heavy && fs.existsSync(heavy) ? ['bash', [heavy, ...install]] : [install[0], install.slice(1)]
-    console.log(`[dev-app] ${[file, ...list].join(' ')}`)
-    const notice = createNotice(valueOf('--lang'))
-    const code = await runInstall(file, list, notice)
-    if (code === 0) {
-      // 끝났다고 다 깔린 것은 아니다 — 켜는 데 꼭 필요한 것이 없으면 알린다(그래도 이전 빌드 · .dev-app 으로 켜 본다)
-      const missing = ['electron', 'vite'].filter((name) => !fs.existsSync(path.join(ROOT, 'node_modules', name, 'package.json')))
-      if (missing.length) {
-        console.error(`[dev-app] npm install 뒤에 ${missing.join(' · ')} 이(가) 없어요 — 레포에서 npm install --include=dev 를 다시 돌려 주세요`)
-        process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
-        notice({ kind: 'install-failed' })
-      }
-    } else {
-      // heavy.sh 75 = 최대 대기(ATHENA_HEAVY_WAIT)를 넘겨 포기 · 그 밖은 npm install 실패. 켠 뒤 앱 알림(install-failed)은 그대로
-      console.error(`[dev-app] npm install ${code === 75 ? '포기(대기 시간 초과)' : '실패'}: 종료 코드 ${code}`)
-      process.env.ATHENA_STUDIO_APP_UPDATE = 'install-failed'
-      notice({ kind: code === 75 ? 'gave-up' : 'install-failed' })
-    }
-  }
-  await start([], { fromUpdate: true })
+  const install = args.includes('--install')
+  if (install) await installDependencies({ heavy: valueOf('--heavy'), lang: valueOf('--lang') })
+  await start([], { fromUpdate: true, installTried: install })
 }
 
 const [command, ...rest] = process.argv.slice(2)
-if (command === 'make') make()
+// 켜 둔 앱 아래에서 도는 npm install(⚙ 업데이트)은 postinstall 의 make 를 건너뛰게 한다 — 실행 중인 Athena.app 을 바꿔 끼우지 않게. 다시 켤 때 start 가 맞춘다
+if (command === 'make' && process.env.ATHENA_STUDIO_SKIP_DEV_APP_MAKE) console.log('[dev-app] 개발 앱 만들기를 건너뛰어요(앱이 켜진 채 설치) — 다시 켤 때 맞춰요')
+else if (command === 'make') make()
 else if (command === 'start') start(rest)
 else if (command === 'restart') restart(rest)
 else {

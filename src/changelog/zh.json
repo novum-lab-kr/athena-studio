@@ -81,5 +81,13 @@
   "Automatic review settles implementation details itself, raises all comments at once and blocks only on real problems.": "自动评审会自行决定实现细节，一次性提出所有意见，只在遇到真正的问题时才阻止。",
   "Rename repositories and give them images. Shared through pack export and backup.": "可以重命名仓库并为其添加图片。通过包导出和备份共享。",
   "Choose a model for each role in a pack: agents, pull request review and learning review.": "可以在包中为每个角色选择模型：代理、PR 评审和学习评审。",
-  "Version numbers. Every release is tagged and the app shows its version.": "新增版本号。每个发布都会打标签，应用会显示其版本。"
+  "Version numbers. Every release is tagged and the app shows its version.": "新增版本号。每个发布都会打标签，应用会显示其版本。",
+  "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "开发版应用更新需要 `npm install` 时，会在应用保持运行的情况下安装，并在重新启动前询问。设置行会显示等待安装和安装中，点击“稍后”会在该行保留重新启动按钮。",
+  "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "强制结束安装不再被报告为安装失败：会单独显示，应用保持打开，并在下次启动时重试安装。",
+  "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "重新启动时窗口会先打开，核心更新在后台运行：标签栏显示“核心更新中”，完成后弹出结果。包命令、新的代理面板和追赶会等到更新完成后再进行。",
+  "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "核心更新弹窗显示简短的类型标签，只改动末位版本号的更新也会列出最近的变更。",
+  "A dev-app update skips `npm install` when the dependencies are unchanged.": "开发版应用更新在依赖没有变化时会跳过 `npm install`。",
+  "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 运行器不再因 HTTP 客户端的断言错误而崩溃，进程已退出的用例会记录为失败而不是通过。",
+  "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` 现在会先读取包的 `local.json` 中的仓库根目录。",
+  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "应用已连接时，拆分或关闭面板不再按估算值改变相邻面板的终端大小。"
 }
