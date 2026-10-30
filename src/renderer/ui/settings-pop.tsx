@@ -86,26 +86,26 @@ function MergeSection({ rows, say, save }: { rows: Rows; say: Say; save: SaveMer
     <>
       <div className="settings-intro">
         <h3 className="settings-intro-title">{say('settings.mergeTitle')}</h3>
-        <p className="settings-intro-desc">{say('settings.mergeDesc')}</p>
       </div>
       {rows.map((repo) => <RepoSection key={repo.name} repo={repo} say={say} save={save} />)}
     </>
   )
 }
 
-// 레포 묶음 — 레포 이름 줄이 자동 머지 스위치, 들여쓴 하위 줄이 머지 전 확인(자동 머지가 꺼지면 뜻이 없어 숨긴다)
+// 레포 묶음 — 레포 이름 아래 스위치 둘: 자동 PR · 리뷰(autoMerge), 승인되면 바로 머지(= 확인 안 받기 · 자동 PR 이 꺼지면 뜻이 없어 숨긴다)
 function RepoSection({ repo, say, save }: { repo: MergeRepo; say: Say; save: SaveMerge }) {
   return (
     <section className="settings-repo">
-      <Switch id={`${repo.name}:auto`} kind="repo" label={repo.name} checked={repo.autoMerge} onClick={() => save(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`)} />
-      {repo.autoMerge && <Switch id={`${repo.name}:confirm`} kind="sub" label={say('settings.confirm')} checked={repo.confirm} onClick={() => save(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`)} />}
+      <h4 className="settings-repo-name">{repo.name}</h4>
+      <Switch id={`${repo.name}:auto`} kind="sub" label={say('settings.autoPr')} checked={repo.autoMerge} onClick={() => save(repo, { autoMerge: !repo.autoMerge }, `${repo.name}:auto`)} />
+      {repo.autoMerge && <Switch id={`${repo.name}:confirm`} kind="sub" label={say('settings.mergeNow')} checked={!repo.confirm} onClick={() => save(repo, { confirm: !repo.confirm }, `${repo.name}:confirm`)} />}
       {/* 작업 base 가 운영 브랜치와 같은데 확인을 끄면 머지가 곧 그 브랜치 반영 */}
-      {repo.autoMerge && !repo.confirm && repo.releaseOnMerge && <p className="settings-note">{say('settings.releaseWarn', { branch: repo.prBase })}</p>}
+      {repo.autoMerge && !repo.confirm && repo.releaseOnMerge && <p className="settings-warn">{say('settings.releaseWarn', { branch: repo.prBase })}</p>}
     </section>
   )
 }
 
-function Switch({ id, kind, label, checked, onClick }: { id: string; kind: 'repo' | 'sub'; label: string; checked: boolean; onClick: () => void }) {
+function Switch({ id, kind, label, checked, onClick }: { id: string; kind: 'sub'; label: string; checked: boolean; onClick: () => void }) {
   return (
     <button className={`settings-switch ${kind}`} type="button" data-key={id} role="switch" aria-checked={String(checked) as 'true' | 'false'} onClick={onClick}>
       <span className="settings-switch-label">{label}</span>
