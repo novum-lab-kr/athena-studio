@@ -89,5 +89,6 @@
   "A dev-app update skips `npm install` when the dependencies are unchanged.": "開発アプリのアップデートで、依存関係が変わっていなければ `npm install` を省略します。",
   "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 実行器が HTTP クライアントのアサーションエラーで落ちなくなり、プロセスが終了したケースは成功ではなく失敗として記録されます。",
   "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` がパックの `local.json` のリポジトリルートを先に読むようになりました。",
-  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "アプリが接続されている間、ペインを分割したり閉じたりしても、隣のペインのターミナルサイズを推測で変更しなくなりました。"
+  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "アプリが接続されている間、ペインを分割したり閉じたりしても、隣のペインのターミナルサイズを推測で変更しなくなりました。",
+  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "フォルダを指す古いパックのリンクを削除できず、Node 24.5.0 でコアの更新が失敗する問題を修正しました。"
 }

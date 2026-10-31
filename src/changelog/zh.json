@@ -89,5 +89,6 @@
   "A dev-app update skips `npm install` when the dependencies are unchanged.": "开发版应用更新在依赖没有变化时会跳过 `npm install`。",
   "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 运行器不再因 HTTP 客户端的断言错误而崩溃，进程已退出的用例会记录为失败而不是通过。",
   "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` 现在会先读取包的 `local.json` 中的仓库根目录。",
-  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "应用已连接时，拆分或关闭面板不再按估算值改变相邻面板的终端大小。"
+  "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "应用已连接时，拆分或关闭面板不再按估算值改变相邻面板的终端大小。",
+  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "修复了因无法删除指向文件夹的旧包链接，导致在 Node 24.5.0 上核心更新失败的问题。"
 }

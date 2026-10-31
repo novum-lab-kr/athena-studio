@@ -249,11 +249,11 @@ verify_scope_init() { # verify_scope_init <레포> — 지금 폴더(레포 안)
 
 verify_scope_has() {
   [ "$VERIFY_SCOPE_MODE" = scoped ] || return 0
-  printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -qE "$1"
+  printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -E "$1" >/dev/null
 }
 verify_scope_only() {
   [ "$VERIFY_SCOPE_MODE" = scoped ] || return 1
-  ! printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -vqE "$1"
+  ! printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -vE "$1" >/dev/null
 }
 verify_scope_why() { # verify_scope_why <이름>
   printf '%s 쪽 변경 없음 (바뀐 파일 %s개 · 전체는 --full)' "$1" "$(printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -c .)"
