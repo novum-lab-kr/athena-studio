@@ -4,8 +4,6 @@
 
 # Athena Studio
 
-[![Latest release](https://img.shields.io/github/v/release/novum-lab-kr/athena-studio-releases)](https://github.com/novum-lab-kr/athena-studio-releases/releases/latest)
-
 English · [한국어](README.ko.md)
 
 Athena Studio is a Mac app for running AI coding agents. Tell Athena, the team lead, what you want. It writes a plan, puts an agent on each repository and asks you when something needs deciding. You read the diff and merge.
@@ -44,7 +42,7 @@ The screens are from the English demo project. More on the [homepage](https://at
 
 ## Download
 
-Get the app from the [download page](https://athena.novum-lab.com/download/) or the latest release in [novum-lab-kr/athena-studio-releases](https://github.com/novum-lab-kr/athena-studio-releases/releases/latest).
+Coming soon.
 
 - Free, for macOS 13 Ventura or later, on Apple Silicon and Intel. Signed and notarized by Apple.
 - You need Claude Code or Codex, signed in with your own account. AI usage is billed under your Claude or Codex plan.
@@ -61,7 +59,6 @@ The Mac app updates itself from Settings (⚙).
 
 ## Related Projects
 
-- [novum-lab-kr/athena-studio-releases](https://github.com/novum-lab-kr/athena-studio-releases) — signed and notarized Mac builds (`.dmg` · `.zip`) and the update feed the app reads
 - [athena.novum-lab.com](https://athena.novum-lab.com/) — homepage, docs and release notes
 
 ## License
