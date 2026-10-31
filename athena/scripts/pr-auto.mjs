@@ -996,20 +996,23 @@ export const checkConfirms = async (only = '') => {
     const settingChanged = !autoMergeRepos(config).has(job.repo) || flowNow.merge === 'manual' || (Boolean(job.reviewOff) && flowNow.review) || (Boolean(job.fast) && !flowNow.fast)
     // auto.merge 사건의 공통 칸(빠른 길이면 fast: true)
     const mergeEvent = (extra) => logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ...(job.fast ? { fast: true } : {}), ...extra })
-    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged
+    // 확인한 뒤 PR base 가 바뀜 — 머지 대상이 달라졌다(옛 대기 파일에는 base 가 없을 수 있다)
+    const baseChanged = Boolean(job.base) && pr.baseRefName !== job.base
+    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged || baseChanged
+    const staleLine = baseChanged ? `검증 대기 — 머지 전에 base 가 바뀜(${job.base} → ${pr.baseRefName})` : '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)'
     if (job.noConfirm && (stale || !skipsMergeConfirm(config, job.repo))) {
-      // 그새 PR 이 닫혔거나 · 새 커밋이 왔거나 · 설정이 바뀌었다(자동 머지를 끄거나 확인을 다시 켬) — 묻지 않고 머지하지 않는다.
+      // 그새 PR 이 닫혔거나 · 새 커밋이 왔거나 · base 나 설정이 바뀌었다(자동 머지를 끄거나 확인을 다시 켬) — 묻지 않고 머지하지 않는다.
       // 같은 HEAD 그대로면 줄에 이유를 남긴다(줄을 지우면 지금 설정으로 다시 돈다) · 새 HEAD 는 따로 다시 리뷰된다
       rmSync(current, { force: true })
-      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)' })
+      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: staleLine })
       mergeEvent({ ok: false, reason: 'recheck' })
       continue
     }
     if (!job.noConfirm && stale && ['open', 'answered'].includes(request.state)) {
-      try { cancelRequest(ROOT, request.id, { reason: `PR ${pr.state} · HEAD ${pr.headRefOid.slice(0, 7)} — 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
+      try { cancelRequest(ROOT, request.id, { reason: `PR ${pr.state} · HEAD ${pr.headRefOid.slice(0, 7)} · base ${pr.baseRefName} — 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
       rmSync(file, { force: true })
-      // 같은 HEAD 인데 설정만 바뀌었으면 "머지 확인 대기" 줄이 남지 않게(같은 HEAD 는 다시 돌지 않는다)
-      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)' })
+      // 같은 HEAD 인데 base · 설정만 바뀌었으면 "머지 확인 대기" 줄이 남지 않게(같은 HEAD 는 다시 돌지 않는다)
+      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: staleLine })
       continue
     }
     if (request && ['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); continue }
@@ -1138,7 +1141,8 @@ const kick = () => {
   if (watcherAlive()) return
   restoreClaims()
   const pending = existsSync(CONFIRM_DIR) && readdirSync(CONFIRM_DIR).some((file) => file.endsWith('.json'))
-  const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => file.endsWith('.json'))
+  // *.json.working — 처리기가 리뷰하다 끊긴 일(코어 갱신이 끈 경우 등). 새 처리기가 시작할 때 대기열로 되돌린다
+  const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => /\.json(\.working)?$/.test(file))
   if (pending || queued || pendingNotices().length) launchWatcher()
 }
 

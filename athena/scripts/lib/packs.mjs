@@ -376,6 +376,16 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
   return { busy, known }
 }
 export const busyList = (root, scan, options) => busyScan(root, scan, options).busy
+// 자동 리뷰 처리기 — 이 본체의 scripts/pr-auto.mjs --watch 를 도는 node. 손으로 돌린 한 번(--plan · --direct-merge)은 머지 도중일 수 있어 세지 않는다.
+// busyScan 에 넣지 않는다 — 처리기는 일이 없어도 팩이 바뀔 때까지 살아 있어, 넣으면 pack busy · 되돌리기 · 따라잡기 · 데이터 형식 검사가 늘 "일하는 중" 으로 멈춘다.
+// 그래서 코어를 옮기거나 팩을 갈아 끼우는 쪽이 이 함수로 찾아 직접 끈다
+export const prAutoWatchers = (root, scan = scanProcesses()) => {
+  const scripts = [join(realOr(root), 'scripts', 'pr-auto.mjs'), join(root, 'scripts', 'pr-auto.mjs')]
+  return scan.table.filter((row) => row.comm === 'node' && row.pid !== process.pid).filter((row) => {
+    const args = argsOf(row.pid)
+    return scripts.some((script) => args.includes(script)) && /\s--watch(\s|$)/.test(args)
+  }).map((row) => ({ kind: 'pr-auto', what: '자동 리뷰 처리기(pr-auto.mjs --watch)', pid: row.pid }))
+}
 // ── 업데이트만 — 일하는 중이던 세션 가려내기(결정 D1 · 2026-10-26) ─────────────────────
 // 업데이트는 세션이 있어도 본체를 올린다(사용자 결정 2026-10-26 "일해도 바로 올리기") — 이건 기록 · 알림에 "일하는 중이던 세션" 을 셀 때만 쓴다.
 // panes: 스튜디오가 update --panes-state <파일> 로 넘긴 데몬 pane 상태 [{ id, label, pid(pane 셸), agent, status }].
@@ -479,7 +489,7 @@ const stopPid = async (pid) => {
   if (alive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* 이미 끝났다 */ } }
 }
 export const stopServices = async (root, busy) => {
-  const stopped = { boardStopped: [], learnStopped: [], qaStopped: [] }
+  const stopped = { boardStopped: [], learnStopped: [], qaStopped: [], prAutoStopped: [] }
   const board = boardPids(root)
   for (const pid of board.pids) await stopPid(pid)
   if (board.pids.length) stopped.boardStopped.push(board.port)
@@ -487,6 +497,7 @@ export const stopServices = async (root, busy) => {
     if (item.kind === 'learn-review') { await stopPid(item.pid); stopped.learnStopped.push(item.pid) }
     if (item.kind === 'qa') { await stopPid(item.pid); stopped.qaStopped.push(item.pid) }
   }
+  for (const item of prAutoWatchers(root)) { await stopPid(item.pid); stopped.prAutoStopped.push(item.pid) }
   return stopped
 }
 

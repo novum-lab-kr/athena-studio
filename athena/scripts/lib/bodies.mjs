@@ -16,7 +16,7 @@ import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodiesDirOf, bodyConfig
 import { PackError, alive, gitLockDir, takeLock } from './lock.mjs'
 import { packLook } from './pack-look.mjs'
 import {
-  BLOCKING, bodyOf, busyScan, readPanesState, runningCoreScripts, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
+  BLOCKING, bodyOf, busyScan, prAutoWatchers, readPanesState, runningCoreScripts, settleIdleSessions, checkDataFormat, claimSlot, gitBodies, headOf, readJson, realOr, relinkIn, runInBody, scanProcesses,
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
@@ -215,24 +215,24 @@ const catchUpBody = ({ main, body, id, data, registry, report }) => {
 // ── 본체 하나 옮기기(update · rollback · 따라잡기 공용) ─────────────────────
 // 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
 // → 현황판 끄기 → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
-// rollback · 따라잡기는 무엇이든 돌면 건너뛴다. update 만 아래(사용자 결정 2026-10-26 "일해도 바로 올리기" — 데이터가 깨지는 것만 막는다):
+// rollback · 따라잡기는 무엇이든 돌면 건너뛴다(자동 리뷰 처리기만 빼고 — 늘 살아 있어 막으면 영영 못 옮긴다 · 끄고 옮긴 뒤 다시 띄운다). update 만 아래(사용자 결정 2026-10-26 "일해도 바로 올리기" — 데이터가 깨지는 것만 막는다):
 //   기다림  commit(commit.sh · ship.sh) · heavy(heavy.sh 잠금) — waitUntil 까지(업데이트 하나에 한 번 · UPDATE_WAIT_MS). 그래도 돌면 건너뜀(busy)
 //   막음    switch(그 팩 작업 잠금 — 다른 열기 · 바꾸기 · 업데이트) · 그 밖의 모르는 종류 · ps 를 못 읽음(busy-unknown)
-//   끔      learn-review · qa — 팩 바꾸기처럼 끄고 올린다. 학습 검토는 대기열에 일이 남았으면 새 코드로 다시 띄운다(learn-review --kick)
+//   끔      learn-review · qa · pr-auto — 팩 바꾸기처럼 끄고 올린다. 학습 검토 · 자동 리뷰 처리기는 일이 남았으면 새 코드로 다시 띄운다(--kick)
 //   올림    athena · agent · codex · unknown(작업 폴더 · 인자를 못 읽은 세션) — entry.working 에 남긴다(panes 로 쉬는 pane 의 세션은 뺀다 · settleIdleSessions)
 // 기다리는 상한 — 같은 update 가 git 잠금을 기다리는 값(takeLock waitMs 60_000)과 같다. 시험은 ATHENA_UPDATE_WAIT_MS 로 줄인다
 export const UPDATE_WAIT_MS = 60_000
 const UPDATE_WAIT_KINDS = new Set(['commit', 'heavy'])
-const UPDATE_STOP_KINDS = new Set(['learn-review', 'qa'])
+const UPDATE_STOP_KINDS = new Set(['learn-review', 'qa', 'pr-auto'])
 const UPDATE_SESSION_KINDS = new Set(['athena', 'agent', 'codex', 'unknown'])
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const updateScan = (body) => {
   const scan = scanProcesses()
   const others = busyScan(body, scan, { includeSelf: true }).busy.filter((item) => item.pid !== process.pid)
-  return { scan, all: [...others, ...runningCoreScripts(body, scan)] }
+  return { scan, all: [...others, ...prAutoWatchers(body, scan), ...runningCoreScripts(body, scan)] }
 }
 // 학습 검토 다시 띄우기 — 옮긴 본체의 새 코드로(대기열에 일이 없으면 learn-review 가 아무것도 안 한다)
-const kickLearnReview = (body) => spawnSync(process.execPath, [join(body, 'scripts', 'learn-review.mjs'), '--kick'], { cwd: body, stdio: 'ignore', timeout: 15_000 }).status === 0
+const kickScript = (body, script) => spawnSync(process.execPath, [join(body, 'scripts', script), '--kick'], { cwd: body, stdio: 'ignore', timeout: 15_000 }).status === 0
 export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false, panes = null, waitUntil = Date.now() + UPDATE_WAIT_MS }) => {
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
@@ -260,10 +260,13 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       const working = settleIdleSessions(all.filter((item) => UPDATE_SESSION_KINDS.has(item.kind)), scan.table, panes)
       if (working.length) entry.working = working
     } else {
-      const scanned = busyScan(body, scanProcesses(), { includeSelf: true })
+      const scan = scanProcesses()
+      const scanned = busyScan(body, scan, { includeSelf: true })
       const busy = scanned.busy.filter((item) => item.pid !== process.pid)
       if (!scanned.known) return { ...entry, reason: 'busy-unknown', busy }
       if (busy.length) return { ...entry, reason: 'busy', busy }
+      toStop = prAutoWatchers(body, scan)
+      table = scan.table
     }
     if (from === target) return { ...entry, status: 'same' }
     // 코어 파일을 고쳐 둔 본체 — 기본은 건너뜀(dirty). update --backup-dirty 면 아래 검사를 다 통과한 뒤 사본을 두고 되돌린다(D4)
@@ -274,18 +277,24 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       const branch = gitTry(body, ['symbolic-ref', '-q', '--short', 'HEAD'])
       if (!branch || !gitOk(body, ['merge-base', '--is-ancestor', from, target])) return { ...entry, reason: 'diverged', ...(branch ? { branch } : {}) }
     }
-    // 학습 검토 · QA 는 옛 코드라 끈다 — 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에.
+    // 학습 검토 · QA · 자동 리뷰 처리기는 옛 코드라 끈다 — 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에.
     // 검토하다 끊긴 일(*.json.working)은 다음 감시자가 대기열로 되돌린다(learn-review watch). 학습 검토는 claude -p 를 동기로 불러
     // SIGTERM 을 그 뒤에야 받으니 바로 아래 자식(claude · gh)부터 끈다 — 남기면 결과를 받을 곳 없이 끝까지 돈다
     for (const item of toStop) {
-      if (item.kind === 'learn-review') for (const row of table.filter((each) => each.ppid === item.pid)) stopPidSync(row.pid)
+      const children = table.filter((each) => each.ppid === item.pid)
+      if (item.kind === 'learn-review') for (const row of children) stopPidSync(row.pid)
       stopPidSync(item.pid)
-      const key = item.kind === 'qa' ? 'qaStopped' : 'learnStopped'
+      // 자동 리뷰 처리기는 부모를 먼저 끈다 — 리뷰어를 먼저 끄면 처리기가 "리뷰 실패" 로 계획서에 적고, 같은 HEAD 는 다시 돌지 않는다.
+      // gh 는 남긴다(머지 · 댓글이 반쯤 끊기지 않게)
+      if (item.kind === 'pr-auto') for (const row of children.filter((each) => each.comm !== 'gh')) stopPidSync(row.pid)
+      const keys = { qa: 'qaStopped', 'pr-auto': 'prAutoStopped' }
+      const key = keys[item.kind] ?? 'learnStopped'
       entry.services[key] = [...(entry.services[key] ?? []), item.pid]
     }
-    // 학습 검토를 껐으면 어떻게 끝나든(올림 · 실패 · 이전 커밋으로 되돌림) 그때 본체에 있는 코드로 다시 띄운다 — 꺼진 채 두면 대기열이 멈춘다
+    // 학습 검토 · 처리기를 껐으면 어떻게 끝나든(올림 · 실패 · 이전 커밋으로 되돌림) 그때 본체에 있는 코드로 다시 띄운다 — 꺼진 채 두면 대기열이 멈춘다
     const finish = (result) => {
-      if (entry.services.learnStopped?.length) result.services = { ...result.services, learnKicked: kickLearnReview(body) }
+      if (entry.services.learnStopped?.length) result.services = { ...result.services, learnKicked: kickScript(body, 'learn-review.mjs') }
+      if (entry.services.prAutoStopped?.length) result.services = { ...result.services, prAutoKicked: kickScript(body, 'pr-auto.mjs') }
       return result
     }
     if (dirty) {

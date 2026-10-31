@@ -807,6 +807,20 @@ printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["w
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
   const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
 if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 설정이 바뀜' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ]; then echo "  ✔ 대기 중 사람이 직접으로 → 머지 안 함 · 줄 남김 · 대기 파일 없음"; else echo "  ✖ 대기 중 사람이 직접으로"; cat "$TMP/merge.out"; FAIL=1; fi
+# 대기 중에 PR base 가 바뀜 — 확인한 대상과 다르니 머지하지 않는다(가짜 gh 는 base main 으로 답한다 · 대기 파일을 dev 로 바꿔 흉내)
+merge_case "base 변경 시험 — 확인 대기" '' no '머지 확인 대기'
+BASE_JOB="$(ls "$TMP/queue-confirm/confirm/"*.json | head -1)"
+python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['base']='dev'; json.dump(d, open(p,'w'))" "$BASE_JOB"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
+  const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 base 가 바뀜(dev → main)' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] && grep -lq '"state": *"cancelled"' "$CORE/.requests"/*/request.json "$CORE/.requests"/*.json 2>/dev/null; then echo "  ✔ 확인 대기 중 base 변경 → 머지 안 함 · 요청 닫음 · 줄에 이유"; else echo "  ✖ 확인 대기 중 base 변경"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; ls -R "$CORE/.requests" | head; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
+# 확인 없는 머지도 같다
+rm -rf "$TMP/queue-confirm"; mkdir -p "$TMP/queue-confirm/confirm"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
+printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1,"worktree":"%s","base":"dev","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
+env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
+  const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 base 가 바뀜(dev → main)' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ]; then echo "  ✔ 확인 없는 대기 중 base 변경 → 머지 안 함 · 줄에 이유"; else echo "  ✖ 확인 없는 대기 중 base 변경"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
 grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] \
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }
@@ -874,6 +888,14 @@ KQ="$TMP/queue-kick"; rm -rf "$KQ"; mkdir -p "$KQ"; cp "$TMP/queue-confirm/.noti
 (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$KQ" "$(command -v node)" scripts/pr-auto.mjs --kick > "$TMP/kick.out" 2>&1)
 [ -s "$KQ/.notified" ] && [ ! -e "$KQ/.launching" ] && ! grep -q "처리기를 뒤에서 시작" "$TMP/kick.out" && [ -z "$(ls "$KQ" | grep '\.json$')" ] \
   && echo "  ✔ 기록 파일만 있으면 --kick 이 처리기를 띄우지 않는다(*.json 모양이 아님)" || { echo "  ✖ 기록 파일을 작업으로 봤다"; ls -a "$KQ"; cat "$TMP/kick.out"; FAIL=1; }
+# 리뷰하다 끊긴 일(*.json.working)은 작업이다 — 처리기가 꺼져 있으면 --kick 이 다시 띄운다(코어 갱신이 끈 뒤 · 안 띄우면 같은 HEAD 는 영영 다시 안 돈다)
+KQW="$TMP/queue-kick-working"; rm -rf "$KQW"; mkdir -p "$KQW"
+printf '{"plan":"plans/x.md","pr":"web#1","head":"abc1234","root":"/nonexistent-checkout"}' > "$KQW/0-x.json.working"
+(cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$KQW" "$(command -v node)" scripts/pr-auto.mjs --kick > "$TMP/kick.out" 2>&1)
+for _ in $(seq 1 50); do [ -f "$KQW/.watcher.lock/pid" ] && break; sleep 0.1; done
+grep -q "처리기를 뒤에서 시작" "$TMP/kick.out" && [ -f "$KQW/.watcher.lock/pid" ] \
+  && echo "  ✔ 끊긴 일(*.json.working)만 있어도 --kick 이 처리기를 띄운다" || { echo "  ✖ 끊긴 일이 있는데 처리기를 안 띄웠다"; ls -a "$KQW"; cat "$TMP/kick.out"; FAIL=1; }
+[ -f "$KQW/.watcher.lock/pid" ] && kill "$(cat "$KQW/.watcher.lock/pid")" 2>/dev/null
 # 계획서 Lead pane 이 살아 있으면 그쪽이 먼저
 : > "$SLOG"
 EXTRA_PLAN="- Lead pane: p91

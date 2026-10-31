@@ -4,6 +4,7 @@
 
 - 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 · 리뷰어 구성 · 앞 리뷰 이어받기 — 순수 로직) · 대기열 넣기는 `scripts/ship.sh`(push 하자마자) · 놓친 것은 현황판(`scripts/board/server.mjs` `autoReviewPlans` — 5분 안전망) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
 - 시험: `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
+- 코어 갱신 때 처리기 재시작: `update` · 되돌리기 · 따라잡기가 본체를 옮길 때 `pr-auto.mjs --watch` 를 끄고, 끝나면 그때 본체 코드로 `--kick` 해 일이 남았으면 다시 띄운다(옛 코드로 계속 돌지 않게 · 리뷰하다 끊긴 일은 대기열로 돌아간다). 처리기는 `pack busy` 에 세지 않아 옮기기를 막지 않는다
 - 기록: 처리기 로그 `/tmp/athena-pr-auto-<키>.log` · 대기열 팩 데이터 `state/pr-auto-queue/`(머지 확인 대기 `confirm/` · 실패 `failed/` · PR 마다 지난 리뷰 `history/<레포>-<번호>.json`) · 사건 기록 `state/events.jsonl`(`docs/events.md`)
 
 ## 켜기 — 레포마다 (기본 꺼짐)
