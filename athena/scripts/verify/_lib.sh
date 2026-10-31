@@ -145,6 +145,50 @@ run_step() {
   fi
   STEP_NAMES+=("$name"); STEP_SECS+=("$((SECONDS - start))"); STEP_LOGS+=("$log")
 }
+# 여러 단계를 동시에 — run_steps_parallel <동시 수> <실행 함수> <이름 함수> <인자…>
+#   인자마다 `<실행 함수> <인자>` 를 백그라운드로 돌리고(출력은 단계별 로그 파일) 최대 <동시 수>개를 유지한다.
+#   끝난 순서대로 run_step 과 같은 모양(이름 · ✅/❌ · 소요 · 로그)으로 STEP_* 에 한 줄씩 더한다. 단계 이름은 `<이름 함수> <인자>`
+#   bash 3.2(맥 기본)에서도 돈다 — wait -n 을 쓰지 않고 완료 표시 파일을 본다
+run_steps_parallel() {
+  local jobs="$1" runner="$2" namer="$3"; shift 3
+  local -a args=("$@") names=() logs=() states=()
+  local total=${#args[@]} next=0 finished=0 running=0 index secs code
+  local dir="$VERIFY_LOG_DIR/.parallel"; mkdir -p "$dir"
+  while [ "$finished" -lt "$total" ]; do
+    while [ "$running" -lt "$jobs" ] && [ "$next" -lt "$total" ]; do
+      index=$next; next=$((next + 1))
+      names[$index]="$("$namer" "${args[$index]}")"
+      logs[$index]="$VERIFY_LOG_DIR/$(echo "${names[$index]}" | tr ' /:' '___').log"
+      (
+        start=$SECONDS
+        "$runner" "${args[$index]}" >"${logs[$index]}" 2>&1; code=$?
+        echo "$((SECONDS - start)) $code" > "$dir/$index.tmp" && mv "$dir/$index.tmp" "$dir/$index.done"
+      ) &
+      states[$index]=running; running=$((running + 1))
+    done
+    for index in "${!states[@]}"; do
+      [ "${states[$index]}" = running ] && [ -f "$dir/$index.done" ] || continue
+      read -r secs code < "$dir/$index.done"
+      if [ "$code" = 0 ]; then STEP_RESULTS+=("✅ 통과"); else STEP_RESULTS+=("❌ 실패 (exit $code)"); VERIFY_FAILED=1; fi
+      STEP_NAMES+=("${names[$index]}"); STEP_SECS+=("$secs"); STEP_LOGS+=("${logs[$index]}")
+      states[$index]=done; running=$((running - 1)); finished=$((finished + 1))
+    done
+    [ "$finished" -lt "$total" ] && sleep 0.2
+  done
+  wait
+}
+
+# 동시에 돌릴 개수 — ATHENA_VERIFY_JOBS 가 양의 정수면 그 값, 아니면 코어 수의 절반(최대 4 · 최소 1)
+verify_parallel_jobs() {
+  local jobs="${ATHENA_VERIFY_JOBS:-}" cores
+  case "$jobs" in ''|*[!0-9]*|0) jobs="" ;; esac
+  if [ -z "$jobs" ]; then
+    cores="$(sysctl -n hw.ncpu 2>/dev/null || nproc 2>/dev/null || echo 2)"
+    jobs=$((cores / 2)); [ "$jobs" -gt 4 ] && jobs=4; [ "$jobs" -lt 1 ] && jobs=1
+  fi
+  echo "$jobs"
+}
+
 skip_step() {
   STEP_NAMES+=("$1"); STEP_SECS+=("0"); STEP_LOGS+=("")
   VERIFY_SKIPPED="${VERIFY_SKIPPED:+$VERIFY_SKIPPED|}$1"
