@@ -14,13 +14,15 @@ const workDir = () => fs.mkdtempSync('/tmp/asd-link-')
 // 가짜 데몬 — hello · attach 에 ok 로 답하고, 클라이언트가 end 해도 hold 동안은 자기 쪽을 닫지 않는다(느린 닫힘)
 function startFakeDaemon(socketPath) {
   const clients = []
-  const state = { hold: false, released: [], helloDelay: 0 }
+  const state = { hold: false, released: [], helloDelay: 0, hello: { protocol: protocol.PROTOCOL, codeVersion: protocol.DAEMON_CODE }, ops: [], onReload: null }
   const server = net.createServer({ allowHalfOpen: true }, (socket) => {
     const client = { socket, finish: () => socket.end() }
     clients.push(client)
     socket.setEncoding('utf8')
     socket.on('data', protocol.createDecoder((message) => {
-      const reply = () => socket.write(protocol.encode({ id: message.id, ok: true, result: message.op === 'hello' ? { protocol: protocol.PROTOCOL } : {} }))
+      state.ops.push(message.op)
+      if (message.op === 'daemon reload' && state.onReload) state.onReload()
+      const reply = () => socket.write(protocol.encode({ id: message.id, ok: true, result: message.op === 'hello' ? state.hello : {} }))
       if (message.op === 'hello' && state.helloDelay) setTimeout(reply, state.helloDelay)
       else reply()
     }))
@@ -70,6 +72,7 @@ async function setup() {
   const socket = path.join(dir, 'd.sock')
   const daemon = await startFakeDaemon(socket)
   const sent = []
+  const notices = []
   const ctx = { athenaDir, win: null, send: (channel, ...args) => sent.push([channel, ...args]) }
   installDaemonLink(ctx, {
     say: (key) => key,
@@ -77,6 +80,7 @@ async function setup() {
     daemonErrorText: (error) => error.message,
     askRestartDaemon: async () => false,
     setDaemonOld: () => {},
+    noticeOldCode: () => notices.push('old'),
     releaseHeldWindows: () => {},
     openUrl: () => {},
   })
@@ -85,7 +89,7 @@ async function setup() {
     await daemon.close()
     fs.rmSync(dir, { recursive: true, force: true })
   }
-  return { ctx, daemon, sent, cleanup }
+  return { ctx, daemon, sent, notices, cleanup }
 }
 
 const dataChunks = (sent) => sent.filter(([channel]) => channel === 'pane:data').map(([, , data]) => data)
@@ -171,6 +175,55 @@ test('앱이 스스로 끊고 새 연결이 없으면 닫힘을 화면에 알린
     await ctx.detachScreen()
     assert.equal(sent.filter(([channel]) => channel === 'screen:disconnected').length, 1)
     assert.equal(ctx.screenDetached(), true)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('코드 판 없는 옛 데몬: 교체를 요청하지 않고 안내만 한다', async () => {
+  const { ctx, daemon, notices, cleanup } = await setup()
+  try {
+    daemon.state.hello = { protocol: protocol.PROTOCOL }
+    await ctx.attachScreen()
+    assert.equal(daemon.state.ops.includes('daemon reload'), false)
+    assert.equal(daemon.state.ops.includes('shutdown'), false)
+    assert.deepEqual(notices, ['old'])
+  } finally {
+    await cleanup()
+  }
+})
+
+test('코드 판이 낮은 데몬: 교체를 요청하고 성공하면 안내하지 않는다', async () => {
+  const { ctx, daemon, notices, cleanup } = await setup()
+  try {
+    daemon.state.hello = { protocol: protocol.PROTOCOL, codeVersion: protocol.DAEMON_CODE - 1 }
+    daemon.state.onReload = () => (daemon.state.hello = { protocol: protocol.PROTOCOL, codeVersion: protocol.DAEMON_CODE })
+    await ctx.attachScreen()
+    assert.equal(daemon.state.ops.filter((op) => op === 'daemon reload').length, 1)
+    assert.deepEqual(notices, [])
+  } finally {
+    await cleanup()
+  }
+})
+
+test('코드 판이 낮고 교체가 실패하면(판 그대로) 안내하고 끄지 않는다', async () => {
+  const { ctx, daemon, notices, cleanup } = await setup()
+  try {
+    daemon.state.hello = { protocol: protocol.PROTOCOL, codeVersion: protocol.DAEMON_CODE - 1 }
+    await ctx.attachScreen()
+    assert.deepEqual(notices, ['old'])
+    assert.equal(daemon.state.ops.includes('shutdown'), false)
+  } finally {
+    await cleanup()
+  }
+})
+
+test('최신 데몬: 교체도 안내도 없다', async () => {
+  const { ctx, daemon, notices, cleanup } = await setup()
+  try {
+    await ctx.attachScreen()
+    assert.equal(daemon.state.ops.includes('daemon reload'), false)
+    assert.deepEqual(notices, [])
   } finally {
     await cleanup()
   }

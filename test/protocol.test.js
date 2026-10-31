@@ -138,3 +138,11 @@ test('self: pane 셸 환경 변수로 · 밖이면 빈 값', () => {
   })
   assert.deepEqual(protocol.selfInfo({ ATHENA_STUDIO_PANE_ID: 'p2' }), { inside: false, backend: 'studio', pane_id: '', tab_id: '', workspace_id: '' })
 })
+
+test('codeStatus: 판 없는 옛 데몬 · 낮음 · 같거나 높음', () => {
+  assert.equal(protocol.codeStatus({ protocol: 5 }), 'none')
+  assert.equal(protocol.codeStatus(null), 'none')
+  assert.equal(protocol.codeStatus({ codeVersion: 1 }, 2), 'behind')
+  assert.equal(protocol.codeStatus({ codeVersion: 2 }, 2), 'current')
+  assert.equal(protocol.codeStatus({ codeVersion: 3 }, 2), 'current')
+})

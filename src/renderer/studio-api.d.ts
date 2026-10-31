@@ -219,6 +219,8 @@ declare global {
     // 켤 때 코어 업데이트 결과(src/main/core-runner.mts showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만 열린다
     onCoreUpdate(callback: (view: import('../lib/release-notes.mts').CoreUpdateView) => void): () => void
     onCoreUpdateState(callback: (running: boolean) => void): () => void
+    onOldPanes(listener: (view: import('../lib/open-panes.mts').OldPanesView) => void): void
+    oldPanesCloseAll(): Promise<void>
     coreUpdateRunning(): Promise<boolean>
     coreUpdateReveal(dir: string): Promise<boolean>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)

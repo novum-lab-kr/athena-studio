@@ -8,6 +8,7 @@ import { browserOpen, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
 import type { CoreUpdateView } from '../lib/release-notes.mts'
+import type { OldPanesView } from '../lib/open-panes.mts'
 
 // 대화상자 버튼 하나 — value null 은 취소(Esc 와 같다)
 export type PackDialogAction = { label: string; value: string | null; kind?: 'primary' | 'danger' | 'link' }
@@ -185,6 +186,27 @@ export function showCoreUpdate(view: CoreUpdateView): void {
   const confirm = overlay.querySelector<HTMLElement>('[data-confirm]')
   if (confirm) confirm.focus({ preventScroll: true })
   else overlay.focus({ preventScroll: true })
+}
+
+// 옛 버전 안내 — 닫히는 pane 을 보여 주고 고르게 한다. 처음 포커스 · Esc 는 [나중에](packDialog 규칙) · 닫기는 [지금 모두 닫기] 를 누를 때만
+export async function showOldPanes(view: OldPanesView): Promise<void> {
+  const list = el('ul', 'old-pane-list')
+  for (const row of view.rows) {
+    const item = el('li', 'old-pane')
+    item.title = row.tip
+    const head = el('div', 'old-pane-head')
+    head.append(el('span', 'old-pane-name', row.name))
+    if (row.who) head.append(el('span', 'old-pane-who', row.who))
+    item.append(head)
+    if (row.folder) item.append(el('div', 'old-pane-folder', row.folder))
+    list.append(item)
+  }
+  const body: (string | Node)[] = [el('p', null, say('dialog.oldPanes.detail')), el('p', 'old-pane-count', say('dialog.oldPanes.count', { count: view.total }))]
+  if (view.rows.length) body.push(list)
+  if (view.more) body.push(el('p', 'muted old-pane-more', say('dialog.oldPanes.more', { count: view.more })))
+  body.push(el('p', 'muted', say('dialog.oldPanes.keep')))
+  const answer = await packDialog({ title: say('dialog.oldPanes.message'), body, actions: [{ label: say('common.later'), value: null }, { label: say('dialog.oldPanes.closeAll'), value: 'close', kind: 'danger' }] })
+  if (answer === 'close') await studio.oldPanesCloseAll()
 }
 
 const PACK_NAME_MAX = 40 // 표시 이름 1~40자(본체가 다시 검사한다)

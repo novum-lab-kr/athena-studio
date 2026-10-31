@@ -115,6 +115,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
   onWorkOpen: listen('work:open'),
   openUrl: (url) => ipcRenderer.invoke('open:url', url),
+  // 옛 버전 안내 — main 이 앱을 켜 있는 동안 한 번 보낸다 · 닫기는 사용자가 [지금 모두 닫기] 를 누를 때만
+  onOldPanes: listen('old-panes:show'),
+  oldPanesCloseAll: () => ipcRenderer.invoke('old-panes:close-all'),
   // 코어 업데이트 팝업 — main 이 켤 때 한 번 보낸다(core-runner showCoreUpdateNotice) · [폴더 열기] 는 팝업이 보인 백업 폴더만
   onCoreUpdate: listen('core-update:show'),
   // 창을 연 뒤 뒤에서 도는 코어 업데이트 — 탭 줄 "코어 업데이트 중" 표시(켜는 창은 running 으로 처음 값을 묻는다)

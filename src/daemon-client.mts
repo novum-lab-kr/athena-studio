@@ -137,8 +137,14 @@ export async function ensureDaemon({ paths, env, onEvent, onClose }: { paths: Da
   // code · log 는 앱이 화면 문구(사전)를 고를 때 쓴다 — 글은 CLI · 로그용
   if (!socket) throw Object.assign(new Error(`데몬에 붙지 못했어요 — 로그: ${paths.log}`), { code: 'attach-failed', log: paths.log })
   const connection = new DaemonConnection(socket, { onEvent, onClose })
-  const reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
-  return { connection, hello: reply.result || null, status: protocol.checkHello(reply as Hello), launched }
+  let reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
+  // 새 코드를 가져갈 수 있는 데몬이면 pane 을 끄지 않고 바꿔 끼운다 — 그러면 프로토콜이 달라도 묻지 않아도 된다. 실패하면 옛 코드로 계속 돌고 답이 그대로다
+  const before = protocol.codeStatus(reply.result)
+  if (before === 'behind' || (before === 'current' && protocol.checkHello(reply as Hello) === 'mismatch')) {
+    await connection.request('daemon reload')
+    reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
+  }
+  return { connection, hello: reply.result || null, status: protocol.checkHello(reply as Hello), code: protocol.codeStatus(reply.result), launched }
 }
 
 // 떠 있는 데몬에만 붙는다(없으면 띄우지 않고 null) · 프로토콜이 다르면 끊고 null — 켤 때 코어 업데이트 전 pane 상태 읽기용

@@ -15,6 +15,8 @@ import * as daemonClient from './daemon-client.mts'
 import * as agentLanguage from './lib/agent-language.mts'
 import * as tokenUsage from './lib/token-usage.mts'
 import * as i18n from './lib/i18n.mts'
+import os from 'node:os'
+import { oldPanesNotice } from './lib/open-panes.mts'
 import type { AppConfig } from './lib/core.mts'
 import { newMonitor, createMonitorLogs } from './main/monitor-logs.mts'
 import { createFiles, guarded } from './main/files.mts'
@@ -51,6 +53,7 @@ const require = createRequire(import.meta.url)
 const studioHome: typeof import('./lib/studio-home.js') = require('./lib/studio-home.js')
 type Dictionary = Record<string, string>
 type Ensured = Awaited<ReturnType<typeof daemonClient.ensureDaemon>>
+type DaemonLinkConnection = Ensured['connection']
 
 // 팩 창 문맥(createPackWindow 의 ctx) — 각 묶음(src/main/*.mts)이 읽고 붙이는 칸을 모두 합친 것 + 아래 IPC · 메뉴가 부르는 것
 // (묶음 쪽 타입이 unknown 으로 둔 칸은 여기서 부르는 모양만 적는다 — 모양은 그 묶음의 구현과 같다)
@@ -295,6 +298,25 @@ function askRestartDaemon(result: Ensured, parentWindow: BrowserWindow | null): 
   return restartAsking
 }
 
+// 코드 판이 낮은데 바꿔 끼우지 못한 데몬 — 무엇이 닫히는지 앱 안 화면으로 보여 주고(pack-dialogs.ts showOldPanes), 사용자가 누를 때만 다시 띄운다. 앱을 켜 있는 동안 한 번만 · 닫을 pane 이 없거나 목록을 못 읽으면 띄우지 않는다
+// pane list 는 attach 전 연결(모든 팩을 본다)로 묻는다 — 다시 띄우면 다른 팩의 pane 도 닫힌다
+let oldCodeNoticed = false
+let oldCodeAsking = false // 안내를 보낸 뒤에만 [지금 모두 닫기] 를 받는다
+async function noticeOldCode(connection: DaemonLinkConnection, parentWindow: BrowserWindow | null): Promise<void> {
+  if (oldCodeNoticed) return
+  oldCodeNoticed = true
+  const view = await oldPanesNotice(() => connection.call('pane list'), os.homedir())
+  // 안내를 띄우지 않았으면 "한 번" 을 쓰지 않는다 — 다음 연결 때 다시 본다(그때도 저절로 끄지 않는다)
+  if (!view || !parentWindow || parentWindow.isDestroyed()) {
+    oldCodeNoticed = false
+    return
+  }
+  oldCodeAsking = true
+  const contents = parentWindow.webContents
+  if (contents.isLoading()) contents.once('did-finish-load', () => contents.send('old-panes:show', view))
+  else contents.send('old-panes:show', view)
+}
+
 // 개발용 — 데몬 파일을 고쳤을 때 새로 띄운다(모든 창의 pane 이 닫힌다)
 async function restartDaemon(): Promise<void> {
   const ctx = frontCtx()
@@ -306,7 +328,10 @@ async function restartDaemon(): Promise<void> {
     defaultId: 0,
     cancelId: 0,
   })
-  if (choice.response !== 1) return
+  if (choice.response === 1) await shutdownDaemon(ctx)
+}
+
+async function shutdownDaemon(ctx: ReturnType<typeof frontCtx>): Promise<void> {
   const connection = ctx ? await ctx.connectDaemon().catch(() => null) : null
   if (connection) await connection.call('shutdown').catch(() => null)
   // 옛 연결이 닫혀 화면이 screen:disconnected 를 먼저 받은 뒤에 resync 를 보낸다 — 거꾸로 가면 다시 붙는 중에 끊김 표시로 덮인다
@@ -427,7 +452,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   }
 
   // 데몬 연결(창마다 하나 · 이 창의 본체로 묶인다 · protocol 5) — 옛 데몬 표시(daemonOld)는 main.mts 가 갖는다
-  installDaemonLink(ctx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld: (old) => (daemonOld = old), releaseHeldWindows, openUrl })
+  installDaemonLink(ctx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld: (old) => (daemonOld = old), noticeOldCode, releaseHeldWindows, openUrl })
   const daemonCall = ctx.daemonCall
   // pane · 탭 · 작업 공간 닫기 · 새 작업 공간 · 팩 레포 더하기 · 빼기 · 우클릭 메뉴
   // 묶음은 runCore · runPack 답에서 읽는 칸만 적은 모양으로 받는다(같은 함수)
@@ -792,6 +817,11 @@ handle('pack:import', (ctx, token: unknown, choice: unknown) => ctx.packImport(S
 handle('pack:export', (ctx, kind: unknown) => ctx.packExport(kind === 'backup' ? 'backup' : 'share'))
 handle('pack:reveal', () => packReveal())
 // 코어 업데이트 팝업의 [폴더 열기] — 팝업이 보인 백업 폴더만
+handle('old-panes:close-all', async (ctx) => {
+  if (!oldCodeAsking) return
+  oldCodeAsking = false
+  await shutdownDaemon(ctx)
+})
 handle('core-update:running', () => updateGate.active())
 handle('core-update:reveal', (_ctx, dir: unknown) => revealCoreUpdateBackup(String(dir)))
 handle('pack:icon', (ctx, id: unknown) => ctx.packIcon(String(id)))
