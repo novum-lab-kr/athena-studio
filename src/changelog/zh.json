@@ -1,4 +1,10 @@
 {
+  "Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.": "更新应用或核心时不再关闭窗格：正在运行的窗格会切换到新代码并继续运行。",
+  "If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.": "如果窗格运行的是无法切换的旧版本，Athena 会列出将被关闭的窗格，只有在你选择时才关闭。否则可以继续照常使用。",
+  "A pack can allow specific commands for its repository's agent panes with `permissionsAllow`, so they run without a permission prompt.": "通过包的 `permissionsAllow` 为该仓库的代理窗格允许特定命令后，这些命令无需权限确认即可运行。",
+  "An agent's \"done\" notification now waits until its background commands have finished.": "代理的完成通知现在会等到其后台命令结束后才发送。",
+  "An agent pane can now push review fixes to its open pull request even when no request is waiting on that pull request.": "代理窗格现在可以把审查修改推送到打开的拉取请求，即使该拉取请求没有等待中的请求。",
+  "A decision request without a decision console now stays a decision and opens as a question popup, so you can answer it in the app.": "没有决策控制台的决策请求现在仍保持为决策，并以问题弹窗打开，可直接在应用中回答。",
   "Choose per repository whether Athena opens a pull request, runs the automatic review, and merges, in Settings. Turning auto PR off skips the pull request and review and merges the work branch straight into the base branch once verification passes. Merging can be automatic, ask first in Work, or left to you.": "在设置中可按仓库选择 Athena 是否打开拉取请求、运行自动审查并合并。关闭自动 PR 后，将跳过 PR 和审查，验证通过后直接把工作分支合并到基础分支。合并可以自动进行、先在“工作”中询问，或由你自己完成。",
   "When a delegated agent finishes a turn, Athena is notified automatically. The agent's \"next prompt\" suggestion is turned off, so a leftover suggestion is no longer mistaken for text you were typing.": "委派的代理完成一轮后，Athena 会自动收到通知。代理的“下一条提示”建议已关闭，不会再把残留的建议误当成你正在输入的文字。",
   "In the Board's Learn tab, candidates are grouped by notebook so you can approve a group at once, view details, edit, or delete them. Fewer new candidates open: a one-off code finding waits until it shows up a second time.": "在看板的“学习”标签中，候选项按笔记本分组，可一次批准整组、查看详情、编辑或删除。新候选项减少：只出现一次的代码发现要等到第二次出现才会打开。",
