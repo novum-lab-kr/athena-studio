@@ -48,7 +48,7 @@ Athena Studio는 이미 쓰는 Claude Code나 Codex를 그대로 돌리고, 그 
 
 - 무료 · macOS 13 Ventura 이상 · Apple Silicon과 Intel. Apple 서명 · 공증을 받았어요.
 - Claude Code나 Codex에 내 계정으로 로그인해 두어야 해요. AI 사용료는 쓰는 Claude나 Codex 요금제대로 나가요.
-- git · Python 3(Apple Command Line Tools — 없으면 처음 켤 때 macOS가 설치를 띄워 줘요), Node.js, 그리고 PR 올리기와 자동 리뷰에는 `gh` CLI가 필요해요.
+- git · Python 3(Apple Command Line Tools — 없으면 처음 켤 때 macOS가 설치를 띄워 줘요), Node.js(2026년 10월 Node 보안 패치가 들어간 22.23.4, 24.22.1, 26.12.1 이상), 그리고 PR 올리기와 자동 리뷰에는 `gh` CLI가 필요해요.
 
 맥 앱은 설정(⚙)에서 스스로 업데이트해요.
 

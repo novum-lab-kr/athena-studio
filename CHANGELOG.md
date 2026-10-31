@@ -31,6 +31,10 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - `init --scan` now reads the pack's `local.json` repositories root first.
 - Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.
 - A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.
+- A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.
+
+### Security
+- Updated Electron to 44.10.0, so the Node built into the app is now the security release 24.22.1.
 
 ## 0.40 (v0.32.5 – v0.40.4 · Oct 30, 2026)
 
