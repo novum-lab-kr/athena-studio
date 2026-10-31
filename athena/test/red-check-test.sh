@@ -247,8 +247,8 @@ printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict
 git -C "$WTS" add -A && git -C "$WTS" commit -qm weak
 SS="$(git -C "$WTS" rev-parse HEAD)"
 SPLAN="plans/task/20261029-fake-fe-ship.md"
-ship_plan() {   # <추가 Checkpoint 줄>
-  printf '# 시험 ship\n\n## Checkpoint\n- Status: in_progress\n- Agent: fake-fe\n- Work ref: %s · 🌿 feat/ship · pane p9 (fake-fe)\n%s\n\n### Validation\n- (아직 없음)\n\n## 지시\n- 시험\n\n## Commits\n- `%s` feat/ship · 시험 · ✅ 검증 · push 안 함\n' "$WTS" "${1:-}" "${SS:0:7}" > "$CORE/$SPLAN"
+ship_plan() {   # <추가 Checkpoint 줄> — 본문(## 지시)에 "- Fast path: yes (본문 예시)" 줄을 둬서 ship.sh 가 Checkpoint 줄만 쓰는지 본다
+  printf '# 시험 ship\n\n## Checkpoint\n- Status: in_progress\n- Agent: fake-fe\n- Work ref: %s · 🌿 feat/ship · pane p9 (fake-fe)\n%s\n\n### Validation\n- (아직 없음)\n\n## 지시\n- 시험\n- Fast path: yes (본문 예시)\n\n## Commits\n- `%s` feat/ship · 시험 · ✅ 검증 · push 안 함\n' "$WTS" "${1:-}" "${SS:0:7}" > "$CORE/$SPLAN"
 }
 SLOG="$TMP/ship.log"; SBODY="$TMP/sent-body.md"; QUEUE2="$TMP/queue"; mkdir -p "$QUEUE2/.watcher.lock"; echo $$ > "$QUEUE2/.watcher.lock/pid"
 sship() { (cd "$CORE" && env PATH="$TMP/bin:$PATH" FAKE_LOG="$SLOG" FAKE_BODY="$SBODY" ATHENA_HEAVY_HELD=1 ATHENA_PR_AUTO_QUEUE="$QUEUE2" ATHENA_DATA_DIR="$TMP/data" "${SENV[@]}" bash scripts/ship.sh --plan "$SPLAN" --dir "$WTS" "$@" 2>&1); }
@@ -264,6 +264,8 @@ printf '## 작업 내용\n시험\n\n## 변경 사항\n- a\n\n## 검증\n- 통과
 OUT="$(sship --base main --title 'test(fake): 시험' --body-file "$TMP/agent-body.md" --no-review-ok --yes)"; CODE=$?
 check "--yes — 에이전트 본문에도 경고 줄을 넣어 보낸다(그 파일은 그대로) · 테스트를 다시 돌리지 않음(같은 HEAD)" '[ $CODE = 0 ] && grep -q "^- red-check non-discriminating" "$SBODY" && cmp -s "$TMP/agent-body.md" "$TMP/agent-body.orig" && ! grep -q "base 에서 돌려 본다" <<<"$OUT"' "$OUT
 $(cat "$SBODY" 2>/dev/null)"
+# ⚡ 빠른 길 판정 줄 — 새 PR 때 Checkpoint 절의 Work ref 뒤에 · 본문(## 지시)의 같은 모양 줄은 그대로(PR #200 자동 리뷰 지적)
+check "--yes — Fast path 줄은 Checkpoint 의 Work ref 뒤에 하나 · 본문 예시 줄은 그대로" '[ "$(awk "/^## Checkpoint/,/^## 지시/" "$CORE/$SPLAN" | grep -c "^- Fast path: ")" = 1 ] && awk "/^## Checkpoint/,/^## 지시/" "$CORE/$SPLAN" | grep -A1 "^- Work ref:" | grep -q "^- Fast path: yes (파일 2개)" && grep -qx -e "- Fast path: yes (본문 예시)" "$CORE/$SPLAN"' "$(cat "$CORE/$SPLAN")"
 # 캐시 — 같은 HEAD 라도 redCheck 칸이 바뀌면 다시 돈다 · error 는 기록하지 않아 다음에 다시 돈다
 set_config '{"tests":["test/**/*.test.mjs"],"run":"no-such-runner-xyz {files}"}'
 OUT="$(sship)"

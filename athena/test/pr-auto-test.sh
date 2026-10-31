@@ -12,6 +12,7 @@
 # 안 정한 결정이 결정 콘솔에 있으면 머지 안 함 · 지적은 한 번에(결정 D — 2라운드는 지난 지적 + 지난 HEAD 이후 diff) · 막는 지적만 막기(결정 E — 권장만이면 승인) ·
 # 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로) ·
 # 큰 diff(syung#12 · #23 재현 — 생성물은 빼고 코드 파일부터 · 잘린 · 빠진 파일 목록 · 잘린 diff 승인은 머지 승인 아님)
+# ⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' 면 리뷰어 claude 하나 · 상한 1 · 수정 1회 뒤 새 HEAD 는 리뷰 없이 머지 · 두 번째 수정은 멈춤 · fastPath:false 레포는 옛 흐름 · 판정 fastPathVerdict · 설정 파일 정규식은 _lib.sh 와 원문 비교)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
@@ -20,8 +21,9 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlots, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, takeoverComment, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
+import { readFileSync } from 'node:fs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
 const approve = { verdict: 'approve', summary: '좋다', findings: [], decisions: [] }
@@ -232,6 +234,49 @@ const same = reviewerSlots({ codex: 'missing', firstModel: 'sonnet' })
 check('두 자리가 같은 모델이 되면 대신하지 않음(→ 리뷰어 부족)', same.second.name === 'codex' && Boolean(same.second.unavailable) && Boolean(reviewerSlots({ codex: 'missing', firstModel: 'x', secondModel: 'x' }).second.unavailable))
 check('구성 메모 — 계획서 줄 · 댓글용', lineupNote(pair) === '리뷰어 claude(opus) + claude(sonnet) — Codex 로그인 안 됨' && lineupNote(ready) === '리뷰어 claude + codex', `${lineupNote(pair)} / ${lineupNote(ready)}`)
 check('Claude 두 자리 둘 다 승인 → 승인(둘 다 승인 규칙 그대로)', aggregate([ok('claude', approve), ok('claude-sonnet', approve)]).verdict === 'approve')
+
+console.log('\n⚡ 빠른 길(2026-10-31 D1 · D2 — 작은 PR 은 리뷰어 하나 · 상한 1)')
+check('상수 — 상한 1 · 파일 10개', FAST_MAX_ROUNDS === 1 && FAST_PATH_MAX_FILES === 10 && FAST_PATH === '⚡ 빠른 길')
+const verifyLib = readFileSync('./scripts/verify/_lib.sh', 'utf8').match(/^VERIFY_SCOPE_CONFIG_RE='([^']+)'$/m)?.[1]
+check('설정 파일 정규식은 scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE 원문과 같다', Boolean(verifyLib) && FAST_PATH_CONFIG_RE.source.replace(/\\\//g, '/') === verifyLib, `${FAST_PATH_CONFIG_RE.source.replace(/\\\//g, '/')}\n      ${verifyLib}`)
+check('레포 흐름 — fastPath 없으면 켬 · false 면 끔 · PR 끔 · autoMerge 없음 · main 직접은 늘 false',
+  prFlow({ autoMerge: true }).fast === true && prFlow({ autoMerge: true, fastPath: false }).fast === false && prFlow({ autoMerge: true, autoPr: false }).fast === false
+  && prFlow({}).fast === false && prFlow({ autoMerge: true, direct: true }).fast === false
+  && repoFastPath({ repos: [{ name: 'web' }] }, 'web') === true && repoFastPath({ repos: [{ name: 'web', fastPath: false }] }, 'web') === false)
+const section = (body) => `# x\n## 1. 요청\n${body}\n## 2. 다른 절\n보안 데이터 외부 계약\n`
+check('1절 표기 — 1절 본문의 보안 · 외부 계약 · 데이터만(다른 절은 안 봄 · 없으면 빈 배열)',
+  JSON.stringify(planFastPathFlags(section('로그인 보안 과 데이터 모양'))) === '["보안","데이터"]' && planFastPathFlags(section('문구만')).length === 0 && planFastPathFlags('본문만\n').length === 0)
+const smallFiles = ['src/a.js', 'src/b.js', 'docs/c.md']
+check('판정 — 레포 fastPath false → no', fastPathVerdict({ repoFast: false, files: smallFiles }).fast === false && fastPathVerdict({ repoFast: false, files: smallFiles }).why === '레포 fastPath: false')
+check('판정 — 설정 파일(package.json · .github · scripts/verify) → no · 이유에 경로(최대 3개 + 외 N개)',
+  fastPathVerdict({ files: ['src/a.js', 'package.json'] }).why === '설정 파일 package.json'
+  && fastPathVerdict({ files: ['.github/workflows/ci.yml', 'scripts/verify/web.sh', 'tsconfig.json', 'pnpm-lock.yaml'] }).why === '설정 파일 .github/workflows/ci.yml · scripts/verify/web.sh · tsconfig.json 외 1개'
+  && fastPathVerdict({ files: ['app/vite.config.ts'] }).fast === false)
+check('판정 — 파일 11개 → no · 10개 → yes', fastPathVerdict({ files: Array.from({ length: 11 }, (_, index) => `src/f${index}.js`) }).why === '파일 11개 > 10' && fastPathVerdict({ files: Array.from({ length: 10 }, (_, index) => `src/f${index}.js`) }).fast === true)
+check('판정 — 1절 표기 → no · 모두 통과 → yes (파일 N개)', fastPathVerdict({ files: smallFiles, flagged: ['보안'] }).why === '1절에 보안' && JSON.stringify(fastPathVerdict({ files: smallFiles })) === '{"fast":true,"why":"파일 3개"}')
+check('순서 — 레포 끔 > 설정 파일 > 파일 수 > 1절 표기', fastPathVerdict({ repoFast: false, files: ['package.json'], flagged: ['보안'] }).why === '레포 fastPath: false' && fastPathVerdict({ files: ['package.json'], flagged: ['보안'] }).why.startsWith('설정 파일'))
+const fastLine = fastPathLineText({ fast: true, why: '파일 3개' })
+check('계획서 줄 — "- Fast path: yes (파일 3개)" · 읽기 yes 만 true · no · 없음은 false', fastLine === '- Fast path: yes (파일 3개)' && planFastPath(`## Checkpoint\n${fastLine}\n`) && !planFastPath('- Fast path: no (파일 12개 > 10)\n') && !planFastPath(plan) && fastPathLineText({ fast: false }) === '- Fast path: no')
+const fastOnce = withFastPathLine(plan, { fast: false, why: '파일 12개 > 10' })
+const fastTwice = withFastPathLine(fastOnce, { fast: true, why: '파일 3개' })
+check('계획서 줄 — 없으면 Work ref 바로 뒤 · 있으면 덮어쓰기(줄이 늘지 않음) · Work ref 없으면 끝에',
+  /- Work ref:.*\n- Fast path: no \(파일 12개 > 10\)\n/.test(fastOnce) && (fastTwice.match(/^- Fast path:/gm) ?? []).length === 1 && planFastPath(fastTwice) && !planFastPath(fastOnce)
+  && withFastPathLine('본문만\n', { fast: true, why: 'x' }) === '본문만\n- Fast path: yes (x)\n', fastTwice)
+// Checkpoint 절 밖(본문 예시 · 옛 기록)의 줄은 판정으로 읽지 않고 덮어쓰지도 않는다(PR #200 자동 리뷰 지적)
+const bodyYes = `${plan}\n## 5. 메모\n- 예시: \`- Fast path: yes (파일 2개)\`\n- Fast path: yes (옛 기록)\n`
+const bodyYesWithNo = withFastPathLine(bodyYes, { fast: false, why: '파일 12개 > 10' })
+check('Checkpoint 밖의 yes 줄은 안 읽음 · Checkpoint 에 no 를 쓰면 본문 줄은 그대로 두고 Checkpoint 에만',
+  !planFastPath(bodyYes) && !planFastPath(bodyYesWithNo) && /- Work ref:.*\n- Fast path: no \(파일 12개 > 10\)\n/.test(bodyYesWithNo) && bodyYesWithNo.includes('- Fast path: yes (옛 기록)')
+  && !planFastPath(`- Fast path: yes (Checkpoint 없음)\n# 시험\n`), bodyYesWithNo)
+const noRef = withFastPathLine('# 시험\n## Checkpoint\n- Status: in_progress\n\n## 지시\n- Work ref: 본문\n', { fast: true, why: '파일 1개' })
+check('Checkpoint 에 Work ref 가 없으면 그 절 끝에(본문 Work ref 뒤가 아님) · planFastPath 가 읽음', noRef === '# 시험\n## Checkpoint\n- Status: in_progress\n- Fast path: yes (파일 1개)\n\n## 지시\n- Work ref: 본문\n' && planFastPath(noRef), noRef)
+check('집계 — 리뷰어 하나면 승인 1/1 로 승인 · 둘이면 하나 승인은 부족', aggregate([ok('claude', approve)], 1).verdict === 'approve' && aggregate([ok('claude', approve)], 1).approvals === 1 && aggregate([ok('claude', approve)]).verdict === 'insufficient' && aggregate([ok('claude', changes)], 1).verdict === 'changes')
+const fastComment = reviewComment({ sha: 'abcdef0123', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)], 1), max: FAST_MAX_ROUNDS, reviewers: 1, fast: true })
+check('댓글 — ⚡ 빠른 길 · 라운드 1/1 · 상한 라운드라 이어받음 줄', fastComment.includes('⚡ 빠른 길') && fastComment.includes('라운드 1/1') && fastComment.includes(TAKEOVER), fastComment)
+check('이어받기 댓글 — ⚡ 빠른 길 · 라운드 2/1 · 상한(1)', takeoverComment({ sha: 'abcdef1', round: 2, max: FAST_MAX_ROUNDS, fast: true }).includes('⚡ 빠른 길 · 상한 뒤 이어받음 · 라운드 2/1') && takeoverComment({ sha: 'abcdef1', round: 2, max: FAST_MAX_ROUNDS, fast: true }).includes('리뷰 상한(1)'))
+check('이어받기 판정 — 빠른 길은 1라운드 수정 필요 · 리뷰어 하나로 충분 · 2라운드가 상한 넘음', takeoverEligible(aggregate([ok('claude', changes)], 1), 1, { max: FAST_MAX_ROUNDS, reviewers: 1 }) && !isTakeoverRound(1, FAST_MAX_ROUNDS) && isTakeoverRound(2, FAST_MAX_ROUNDS))
+const fastInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: 1, findings: changes.findings, takeover: true, plan: 'plans/task/x.md', worktree: '/wt', athenaDir: '/a', max: FAST_MAX_ROUNDS })
+check('수정 지시 — 라운드 1/1 · 이어받기 안내', fastInstr.includes('라운드 1/1') && fastInstr.includes(TAKEOVER), fastInstr)
 
 console.log(`\n${pass + fail}개 중 실패 ${fail}`)
 process.exit(fail ? 1 : 0)
@@ -894,6 +939,44 @@ PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤
 merge_case "E — 권장만 남은 수정 필요 → 승인으로 보고 머지 단계(바로 머지)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_CODEX=advisory
 grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null \
   && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
+
+echo; echo "⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' PR 은 리뷰어 claude 하나 · 상한 1)"
+FAST_PLAN="- Fast path: yes (파일 3개)
+"
+rm -f "$CALLED"
+EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 승인 → 바로 머지(리뷰어 하나 · 라운드 1/1)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · ⚡ 빠른 길 — 리뷰어 claude 하나 · 상한 1 · 라운드 1/1' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"type":"auto.merge".*"fast":true' "$CORE/.events.jsonl" && grep -q "⚡ 빠른 길 · 라운드 1/1" "$GH_LOG" \
+  && echo "  ✔ 빠른 길 — Codex 는 안 부름 · auto.merge 사건 fast:true · PR 댓글 ⚡" || { echo "  ✖ 빠른 길 — Codex 호출 · 사건 · 댓글"; grep -o '"type":"auto[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
+rm -f "$CALLED"
+EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 수정 필요(1회) → 지시 · 줄에 이어받음(라운드 1/1)" ', "autoMergeConfirm": false' no '^- Auto review: web#7 @[0-9a-f]+ · 수정 필요 — 상한 뒤 이어받음\(다음 커밋은 리뷰 없이 검증만\) · ⚡ 빠른 길 — 리뷰어 claude 하나 · 상한 1 · 라운드 1/1' FAKE_CLAUDE=changes FAKE_CODEX_CALLED="$CALLED"
+# 가짜 화면엔 pane 이 없어 수정 지시는 사람 요청으로 간다(auto.fix 사건은 pane 에 보냈을 때만) — review 사건에 fast:true
+[ ! -e "$CALLED" ] && grep -q 'b.js:2' "$CORE/.requests"/*.json 2>/dev/null && grep '"type":"review"' "$CORE/.events.jsonl" | grep '"fast":true' | grep -q '"verdict":"수정 필요"' \
+  && echo "  ✔ 빠른 길 — 지적(b.js:2)은 보냄 · Codex 안 부름 · review 사건 fast:true" || { echo "  ✖ 빠른 길 — 수정 지시 · 사건"; grep -o '"type":"[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
+rm -f "$CALLED" "$CLAUDE_LOG"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · ⚡ 빠른 길 — 리뷰어 claude 하나 · 상한 1 · 라운드 1/1 · 2026-10-31 10:00" \
+  EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 고친 새 HEAD → 리뷰 없이 검증만으로 머지(라운드 2/1)" ', "autoMergeConfirm": false' yes "머지됨 — squash → main\(⚡ 빠른 길 · 상한 뒤 이어받음 — 리뷰 없이 검증만으로 머지\) · 라운드 2/1" FAKE_CODEX_CALLED="$CALLED" FAKE_CLAUDE_ARGS="$CLAUDE_LOG"
+[ ! -e "$CALLED" ] && [ ! -s "$CLAUDE_LOG" ] && grep -q '"type":"auto.takeover".*"fast":true' "$CORE/.events.jsonl" && grep -q '"type":"auto.merge".*"fast":true' "$CORE/.events.jsonl" \
+  && echo "  ✔ 빠른 길 — 리뷰어를 부르지 않음 · auto.takeover · auto.merge 사건 fast:true" || { echo "  ✖ 빠른 길 — 이어받기 사건"; grep -o '"type":"auto[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
+AUTO_LINE="- Auto review: web#7 @$OLD7 · ⚡ 빠른 길 · 상한 뒤 이어받음(리뷰 없이 검증만으로 머지) → 머지 확인 대기 · 라운드 2/1 · 2026-10-31 10:00" \
+  EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 두 번째 수정(머지 단계 뒤 또 커밋) → 멈춤 · 아테나가 이어받음" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"type":"auto.stop".*"fast":true' "$CORE/.events.jsonl" && grep -q '"reason":"rounds"' "$CORE/.events.jsonl" \
+  && echo "  ✔ 빠른 길 — auto.stop(rounds) 사건 fast:true" || { echo "  ✖ 빠른 길 — 멈춤 사건"; grep -o '"type":"auto[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
+rm -f "$CALLED"
+# 이어받은 HEAD 에 안 정한 결정이 남아도 빠른 길은 이어받기를 다시 주지 않는다(옛 흐름은 '결정 필요 — 상한 뒤 이어받음…' 으로 다음 커밋도 이어받음) → 그다음 커밋은 라운드 상한 멈춤
+PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 리뷰 없이 검증만) · ⚡ 빠른 길 — 리뷰어 claude 하나 · 상한 1 · 라운드 1/1 · 2026-10-31 10:00" \
+  EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 이어받은 HEAD 에 안 정한 결정 → 머지 대기 · 이어받기는 다시 안 줌" ', "autoMergeConfirm": false' no '결정 필요 — 이어받은 HEAD이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기\(⚡ 빠른 길 — 다음 커밋은 이어받지 않음\) · 라운드 2/1'
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 결정 필요 — 이어받은 HEAD이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기(⚡ 빠른 길 — 다음 커밋은 이어받지 않음) · 라운드 2/1 · 2026-10-31 10:00" \
+  EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 — 결정 뒤 또 커밋(두 번째 수정) → 멈춤 · 아테나가 이어받음" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"type":"auto.stop".*"fast":true' "$CORE/.events.jsonl" && grep -q '"reason":"rounds"' "$CORE/.events.jsonl" \
+  && echo "  ✔ 빠른 길 — 결정 뒤 커밋도 리뷰 없이 머지하지 않음 · auto.stop(rounds)" || { echo "  ✖ 빠른 길 — 결정 뒤 커밋 멈춤"; grep -o '"type":"auto[^}]*' "$CORE/.events.jsonl" | sed 's/^/      /'; FAIL=1; }
+rm -f "$CALLED"
+EXTRA_PLAN="$FAST_PLAN" merge_case "fastPath: false 레포 — 계획서에 yes 가 있어도 옛 흐름(리뷰어 둘 · 라운드 1/3)" ', "autoMergeConfirm": false, "fastPath": false' yes '머지됨 — squash → main · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX_CALLED="$CALLED"
+[ -e "$CALLED" ] && ! grep -q '"fast":true' "$CORE/.events.jsonl" && echo "  ✔ fastPath: false — Codex 도 부름 · 사건에 fast 없음" || { echo "  ✖ fastPath: false — Codex 호출 · 사건"; FAIL=1; }
+rm -f "$CALLED"
+merge_case "계획서에 Fast path 줄 없음 → 옛 흐름(리뷰어 둘)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX_CALLED="$CALLED"
+[ -e "$CALLED" ] && echo "  ✔ Fast path 줄 없음 — Codex 도 부름" || { echo "  ✖ Fast path 줄 없음 — Codex 안 불림"; FAIL=1; }
+EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 + 리뷰 끔 레포 → 지금처럼 리뷰 없이 머지(빠른 길 표시 없음)" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main\(리뷰 끔'
+! grep -q '"fast":true' "$CORE/.events.jsonl" && echo "  ✔ 리뷰 끔 — 사건에 fast 없음" || { echo "  ✖ 리뷰 끔 — 사건에 fast 가 붙음"; FAIL=1; }
 
 # 결정 콘솔 · 대체 요청이 둘 다 실패해도 — 계획서 "- Auto decisions:" 줄(등록 실패)이 남아 머지를 막는다(PR #20 2라운드 지적)
 BLOCK_REQUESTS=1 merge_case "A — 콘솔 · 요청 둘 다 실패 → 결정 필요 · 계획서에 결정 대기(등록 실패)" ', "autoMergeConfirm": false' no '· 결정 필요 · 리뷰어 claude \+ codex · 라운드 1/3' FAKE_CODEX=product

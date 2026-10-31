@@ -107,8 +107,9 @@ check "ATHENA_VERIFY_FULL 값이 다르면 열쇠가 다르다" "$([ -n "$KEY_FU
 
 echo "verify 사건 칸 — plan(ATHENA_PLAN) · ms(source 한 때부터) · scope(verify_scope_init 결과)"
 # 사건 파일을 쓰지 않고 칸만 뽑는다(verify_event_fields) — 줄마다 키=값
+# commit.sh 의 엄격 검증 안에서 돌면 ATHENA_VERIFY_STRICT=1 이 물려와 strict 칸이 바뀐다 — 시험은 늘 비엄격으로
 fields() { # fields [ATHENA_PLAN 값]
-  (cd "$WORK" && ATHENA_PLAN="${1:-}" bash -c '
+  (cd "$WORK" && ATHENA_PLAN="${1:-}" ATHENA_VERIFY_STRICT=0 bash -c '
     source "$1/scripts/verify/_lib.sh"
     verify_scope_init demo
     verify_event_fields demo feature abc123' _ "$SRC")

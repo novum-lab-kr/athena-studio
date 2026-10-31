@@ -47,6 +47,8 @@
 #   (새 PR · --auto-push --body-file — 이미 열린 PR 에 push 만 할 때는 본문을 바꾸지 않고 계획서 줄만). 뜻은 docs/knowledge/common/verify.md "red-check"
 # 그다음: git push -u origin <브랜치> → base 마다 draft PR (이미 열린 PR 이 있으면 push 만 하고 링크를 알린다)
 #         → 계획서 Commits 의 해당 줄 "push 안 함" 을 PR 링크로 바꾸고 Checkpoint 에 "- PR:" 줄을 남긴다
+# ⚡ 빠른 길 판정(docs/pr-auto.md "빠른 길") — 새 PR 을 만들 때 한 번: 바뀐 파일 10개 이하 · 설정 파일 안 건드림 · 계획서 1절에 보안/외부 계약/데이터 없음 · 레포 fastPath 끔 아님
+#   → Checkpoint "- Fast path: yes|no (<이유>)" 줄(있으면 덮어쓴다) · 새 PR 마다 사건 pr.open(plan · repo · pr · sha · fast). 자동 리뷰가 yes 면 리뷰어 하나 · 1라운드로 본다
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
 git() { command git -c core.quotePath=false "$@"; }
@@ -467,6 +469,19 @@ while IFS= read -r ref; do [ -n "$ref" ] && CANDIDATES+=("$ref"); done < <(
 CHANGED_FROM="origin/$PR_BASE"
 git -C "$TOP" rev-parse -q --verify "$CHANGED_FROM" >/dev/null || CHANGED_FROM="$(git -C "$TOP" merge-base HEAD "origin/${BASES[0]:-$PR_BASE}" 2>/dev/null || echo HEAD~1)"
 CHANGED="$(git -C "$TOP" diff --name-status "$CHANGED_FROM"...HEAD 2>/dev/null)"
+# ⚡ 빠른 길 판정 — 기준은 scripts/lib/pr-auto.mjs fastPathVerdict 하나(설정 파일 목록은 verify/_lib.sh 와 같다). 1줄 yes|no · 2줄 이유
+FAST_JUDGE="$(CHANGED="$CHANGED" node --input-type=module -e '
+  const [lib, configLib, root, repo, plan] = process.argv.slice(1)
+  const { fastPathVerdict, planFastPathFlags, repoFastPath } = await import(lib)
+  const { loadConfig } = await import(configLib)
+  const { readFileSync } = await import("node:fs")
+  const files = (process.env.CHANGED ?? "").split("\n").filter((row) => row.trim()).map((row) => row.split("\t").pop())
+  const planText = readFileSync(plan, "utf8")
+  const verdict = fastPathVerdict({ repoFast: repoFastPath(loadConfig(root), repo), files, flagged: planFastPathFlags(planText) })
+  console.log(`${verdict.fast ? "yes" : "no"}\n${verdict.why}`)
+' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/config.mjs" "$ATHENA_DIR" "$REPO" "$ATHENA_DIR/$PLAN" 2>/dev/null)" || FAST_JUDGE=$'no\n판정 실패'
+FAST="$(sed -n 1p <<<"$FAST_JUDGE")"; FAST_WHY="$(sed -n 2p <<<"$FAST_JUDGE")"
+[ "$FAST" = yes ] || FAST=no
 SCOPES="$(SCOPE_SPEC="$SCOPE_SPEC" python3 -c '
 import json, os, re, sys
 spec = json.loads(os.environ["SCOPE_SPEC"] or "{}"); files = [line.split("\t")[-1] for line in sys.stdin.read().splitlines() if line.strip()]
@@ -552,6 +567,7 @@ if [ $YES = 0 ]; then
   echo "리뷰     $REVIEW_NOTE"
   echo "red-check $RED_TEXT"
   red_check_attention && echo "         → 본문 초안 \"확인 필요\" 에 적었다(경고만 — 막지 않는다 · 계획서 Validation 에도)"
+  echo "빠른 길  $FAST ($FAST_WHY)$([ "$AUTO_ON" = 1 ] && [ "$FAST" = yes ] && echo ' — 자동 리뷰어 하나 · 1라운드' || true)"
   [ "$UNTRACKED" = 0 ] || echo "미추적   ⚠️ 커밋 안 된 새 파일 ${UNTRACKED}개 — PR 에 안 들어간다"
   [ "$REQUIRE_CHANGESET" = 1 ] && ! grep -q '\.changeset/.*\.md' <<<"$CHANGED" && echo "changeset ⚠️ .changeset/*.md 가 없다 — 머지가 막힌다(pnpm changeset)"
   echo "제목 제안 $SUGGESTED"
@@ -598,7 +614,7 @@ trap 'rmdir "$LOCK" 2>/dev/null' EXIT
 git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패"
 git -C "$TOP" branch --quiet --set-upstream-to="origin/$BRANCH" "$BRANCH" 2>/dev/null || true
 # base 가 여러 개면 하나가 실패해도 앞에서 만든 PR 은 계획서에 남긴다(그다음에 실패를 알린다 — 다시 돌리면 열린 PR 은 건너뛴다)
-PR_LINES=""; PR_FAILED=""
+PR_LINES=""; NEW_PR_LINES=""; PR_FAILED=""
 for base in "${BASES[@]}"; do
   URL="$(cd "$TOP" && gh pr list --head "$BRANCH" --base "$base" --state open --json url --jq '.[0].url' 2>/dev/null)"
   if [ -n "$URL" ]; then
@@ -606,6 +622,7 @@ for base in "${BASES[@]}"; do
   elif URL="$(cd "$TOP" && gh pr create --draft --base "$base" --head "$BRANCH" --title "$TITLE" --body-file "$BODY")"; then
     URL="$(tail -1 <<<"$URL")"
     echo "✅ draft PR: $URL ($BRANCH → $base)"
+    NEW_PR_LINES="$NEW_PR_LINES$base $URL"$'\n'
   else
     echo "❌ PR 생성 실패(base $base) — push 는 됐다" >&2
     PR_FAILED="$PR_FAILED $base"
@@ -616,29 +633,64 @@ done
 
 # ── 8. 계획서에 기록 ─────────────────────────────────────────────────────
 PUSHED="$(for base in "${BASES[@]}"; do git -C "$TOP" log --pretty=%H "origin/$base"..$HEAD_FULL 2>/dev/null; done | sort -u | tr '\n' ' ')"
-ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$BRANCH" "$PUSHED" "$PR_LINES" <<'PYEOF'
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$(date '+%Y-%m-%d %H:%M')" "$BRANCH" "$PUSHED" "$PR_LINES" "$NEW_PR_LINES" "$FAST" "$FAST_WHY" <<'PYEOF'
 import os, sys, re
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
-plan, stamp, branch, pushed, pr_lines = sys.argv[1:6]
+plan, stamp, branch, pushed, pr_lines, new_pr_lines, fast, fast_why = sys.argv[1:9]
 prs = [line.split(' ', 1) for line in pr_lines.strip().splitlines() if ' ' in line]
+new_prs = [line for line in new_pr_lines.strip().splitlines() if ' ' in line]
+fast_line = f'- Fast path: {fast}' + (f' ({fast_why})' if fast_why else '')
 note = ' · '.join(f'push → {base} PR {url}' for base, url in prs)
 shas = set(pushed.split())
 def mark(match):
     entry = match.group(0)
     hit = re.search(r'`([0-9a-f]{6,})`', entry)
     return entry.replace('push 안 함', note) if hit and any(full.startswith(hit.group(1)) for full in shas) and branch in entry else entry
+def insert_after_anchor(text, line):
+    anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
+    return text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
+def checkpoint_span(text):
+    # "## Checkpoint" 절의 [start, end) — 절이 없으면 None
+    head = re.search(r'^##\s+Checkpoint\s*$', text, re.M)
+    if not head:
+        return None
+    following = re.compile(r'^##\s', re.M).search(text, head.end())
+    return head.start(), following.start() if following else len(text)
+def with_fast_line(text):
+    # lib/pr-auto.mjs withFastPathLine 과 같은 규칙 — Checkpoint 절 안의 줄만 덮어쓰고, 없으면 그 절의 Work ref 뒤 · 그것도 없으면 그 절 끝에.
+    # 본문 예시 · 옛 기록의 같은 모양 줄은 건드리지 않는다(pr-auto 도 Checkpoint 절만 읽는다 · PR #200 자동 리뷰 지적). Checkpoint 절이 없으면 옛 자리(Review/Work ref 뒤 · 끝)
+    span = checkpoint_span(text)
+    if span is None:
+        return insert_after_anchor(text, fast_line)
+    start, end = span
+    section = text[start:end]
+    hit = re.search(r'^- Fast path:.*$', section, re.M)
+    if hit:
+        return text[:start] + section[:hit.start()] + fast_line + section[hit.end():] + text[end:]
+    anchor = re.search(r'^- Work ref:.*$', section, re.M)
+    if anchor:
+        return text[:start] + section[:anchor.end()] + '\n' + fast_line + section[anchor.end():] + text[end:]
+    body = section.rstrip('\n')
+    return text[:start] + body + '\n' + fast_line + section[len(body):] + text[end:]
 def record(text):
     text = re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M)
     for base, url in prs:
         line = f'- PR: {url} ({branch} → {base}, draft · {stamp})'
         if f'- PR: {url}' not in text:
-            anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
-            text = text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
+            text = insert_after_anchor(text, line)
+    # ⚡ 빠른 길 판정은 새 PR 을 만들었을 때만 적는다(이미 열린 PR 에 push 만 하면 그대로) — Checkpoint 절의 같은 줄만 덮어쓴다
+    if new_prs:
+        text = with_fast_line(text)
     return text
 # 잠금 안에서 지금 내용을 다시 읽어 바꾼다 · 정식 계획서면 html 의 md 사본도 맞춘다
 update_plan(plan, record)
 PYEOF
 [ $? = 0 ] || echo "⚠️ PR 은 올라갔지만 계획서 기록에 실패했다 — 계획서에 PR 링크를 손으로 적는다" >&2
+# 사건 pr.open — 새로 만든 PR 마다(리뷰 구간의 시작 · docs/events.md)
+while read -r _ url; do
+  [ -n "${url:-}" ] || continue
+  node "$ATHENA_DIR/scripts/lib/events.mjs" pr.open "plan=$PLAN" "repo=$REPO" "pr=${url##*/pull/}" "sha=${HEAD_FULL:0:7}" "fast=$([ "$FAST" = yes ] && echo true || echo false)" >/dev/null 2>&1 || true
+done <<<"$NEW_PR_LINES"
 while read -r _ url; do [ -n "${url:-}" ] && auto_review_now "${url##*/pull/}"; done <<<"$PR_LINES"
 if [ -n "$PR_FAILED" ]; then
   echo "⚠️ push 는 됐고${PR_LINES:+ 연 PR 은 계획서에 적었지만,} base${PR_FAILED} 의 PR 을 만들지 못했다 — 사용자에게 알린다(같은 명령을 다시 돌리면 열린 PR 은 건너뛰고 나머지만 만든다)" >&2

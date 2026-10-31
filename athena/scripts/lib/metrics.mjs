@@ -15,7 +15,7 @@
 //   stages     구간별 시간(ms · 모르면 null)
 //                work      처음 본 때 → 첫 ready_for_review
 //                verify    그 계획서 verify 사건의 ms 합(plan · ms 칸이 있는 것만 — 옛 기록은 null)
-//                review    첫 리뷰 결론 → 마지막 리뷰 결론(PR 올림 사건이 없어 첫 리뷰까지의 대기는 들어가지 않는다 · 리뷰 1번이면 0)
+//                review    PR 올림(pr.open · ship.sh) → 마지막 리뷰 결론(pr.open 이 없는 옛 기록은 첫 리뷰 결론부터 — 그때는 리뷰 1번이면 0)
 //                mergeWait 마지막 리뷰 결론 → 자동 머지(auto.merge ok · 없으면 마지막 done)
 //   reviewRounds  PR 자동 리뷰 라운드 수(review 사건 중 by: auto — 라운드마다 한 줄)
 //   fixRate    정확도 — auto.fix 수 ÷ auto.merge(ok) 수(머지 1건당 고친 횟수 · 머지가 없으면 null)
@@ -27,7 +27,7 @@ const time = (event) => Date.parse(event.at) || 0
 const emptyPlan = (id) => ({
   plan: id, status: null, firstAt: null, lastAt: null, startAt: null, doneAt: null, leadMs: null,
   asks: 0, answered: 0, waitMs: 0, waiting: 0, waitingSince: null, blocked: 0, verify: { runs: 0, fails: 0 }, reviews: { runs: 0, rejects: 0 }, commits: 0,
-  readyAt: null, firstReviewAt: null, lastReviewAt: null, mergedAt: null, verifyMs: null,
+  readyAt: null, prOpenAt: null, firstReviewAt: null, lastReviewAt: null, mergedAt: null, verifyMs: null,
   stages: { work: null, verify: null, review: null, mergeWait: null },
   reviewRounds: 0, autoFixes: 0, autoMerges: 0, fixRate: null, reverts: null,
 })
@@ -99,6 +99,13 @@ export const groupByPlan = (events) => {
       touch(plan, at)
       continue
     }
+    if (event.type === 'pr.open' && event.plan) {
+      // 리뷰 구간의 시작 — 첫 PR 만(이어 올린 PR 은 같은 계획서의 뒤 일)
+      const plan = planOf(event.plan)
+      plan.prOpenAt ??= at
+      touch(plan, at)
+      continue
+    }
     if (event.type === 'review' && event.plan) {
       const plan = planOf(event.plan)
       plan.reviews.runs += 1
@@ -148,10 +155,12 @@ export const groupByPlan = (events) => {
 // 구간별 시간 — 모르는 구간은 null. 순서가 어긋난 기록(머지 뒤 리뷰 등)은 0 으로
 const planStages = (plan) => {
   const mergeEnd = plan.mergedAt ?? plan.doneAt
+  // 리뷰 구간 시작 — PR 올림(pr.open)이 있으면 그때부터 · 없으면(옛 기록) 첫 리뷰 결론
+  const reviewStart = (item) => item.prOpenAt ?? item.firstReviewAt
   return {
     work: plan.firstAt !== null && plan.readyAt !== null ? Math.max(0, plan.readyAt - plan.firstAt) : null,
     verify: plan.verifyMs,
-    review: plan.firstReviewAt !== null ? plan.lastReviewAt - plan.firstReviewAt : null,
+    review: reviewStart(plan) !== null && plan.lastReviewAt !== null ? Math.max(0, plan.lastReviewAt - reviewStart(plan)) : null,
     mergeWait: plan.lastReviewAt !== null && mergeEnd !== null ? Math.max(0, mergeEnd - plan.lastReviewAt) : null,
   }
 }
