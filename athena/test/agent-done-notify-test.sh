@@ -83,4 +83,39 @@ check "reviewer 는 보내지 않는다" "$(sent)" 4
 env -u ATHENA_AGENT ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 python3 "$BODY/scripts/hooks/agent-done-notify.py" stop </dev/null
 check "ATHENA_AGENT 없는 세션(사람이 쓰는 아테나)은 보내지 않는다" "$(sent)" 4
 
+# 백그라운드 명령 — 대화 기록의 시작 · 끝 기록과 출력 파일을 쥔 진짜 프로세스로 판정한다
+TRANSCRIPT="$WORK/transcript.jsonl"; OUTPUT="$WORK/task1.output"
+python3 - "$TRANSCRIPT" "$OUTPUT" <<'PY'
+import json, sys
+transcript, output = sys.argv[1:3]
+entry = {"type": "user", "toolUseResult": {"backgroundTaskId": "task1"}, "message": {"content": [{"type": "tool_result", "content": f"Output is being written to: {output}"}]}}
+open(transcript, "w").write(json.dumps(entry) + "\n")
+PY
+STOP_JSON="{\"transcript_path\":\"$TRANSCRIPT\"}"
+sleep 60 > "$OUTPUT" 2>&1 &
+SLEEP_PID=$!
+hook prompt '{"prompt":"백그라운드"}'; hook stop "$STOP_JSON"
+check "백그라운드 명령이 도는 중이면 알리지 않는다" "$(sent)" 4
+kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
+hook stop "$STOP_JSON"
+check "끝 기록 없이 프로세스가 죽었으면 알린다(알림이 영영 끊기지 않게)" "$(sent)" 5
+
+sleep 60 > "$OUTPUT" 2>&1 &
+SLEEP_PID=$!
+hook prompt '{"prompt":"끝 기록"}'; hook stop "$STOP_JSON"
+check "다시 도는 중이면 알리지 않는다(last 를 남기지 않았다)" "$(sent)" 5
+printf '%s\n' '{"type":"queue-operation","content":"<task-notification>\n<task-id>task1</task-id>\n<status>completed</status>"}' >> "$TRANSCRIPT"
+hook stop "$STOP_JSON"
+check "끝 기록(task-notification)이 있으면 알린다" "$(sent)" 6
+sed -i.bak '$d' "$TRANSCRIPT"
+hook prompt '{"prompt":"멈춤"}'; hook stop "$STOP_JSON"
+check "끝 기록을 지우면 다시 도는 중으로 본다" "$(sent)" 6
+printf '%s\n' '{"type":"user","toolUseResult":{"message":"Successfully stopped task: task1","task_id":"task1"}}' >> "$TRANSCRIPT"
+hook stop "$STOP_JSON"
+check "TaskStop 기록이 있으면 알린다" "$(sent)" 7
+kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
+
+hook prompt '{"prompt":"기록 없음"}'; hook stop '{"transcript_path":"/없는/경로.jsonl"}'
+check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 8
+
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

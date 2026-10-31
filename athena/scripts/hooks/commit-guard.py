@@ -11,7 +11,7 @@
   - git rebase(--abort·--continue 등 진행 중 정리는 통과) · commit-tree · update-ref → commit.sh 를 거치지 않고 커밋·브랜치를 바꾼다
 통과: 실제로 실행되는 명령(조각의 첫 실행 토큰)이 **이 아테나(athena) 레포의** scripts/commit.sh · scripts/ship.sh 인 조각(경로를 풀어 비교 — 같은 이름의 다른 파일은 막는다),
       gh pr 읽기(view·list·status·checks·diff), gh api 읽기(GET).
-      PR 자동 리뷰의 고친 커밋 push 도 ship.sh --auto-push 로 이 통과 길을 쓴다 — 조건(켠 레포 · 열린 PR · 자동 리뷰의 수정 요청)은 ship.sh 가 본다(docs/pr-auto.md).
+      PR 자동 리뷰의 고친 커밋 push 도 ship.sh --auto-push 로 이 통과 길을 쓴다 — 조건(켠 레포 · 열린 PR · 기록된 커밋)은 ship.sh 가 본다(docs/pr-auto.md).
       PR 끔 레포의 바로 머지도 ship.sh --direct-merge 로 같은 길이다 — 실제 push 는 ship.sh 가 띄운 pr-auto.mjs 가 하므로 이 훅이 걸리지 않는다(다른 경로의 git push · commit-tree · update-ref 는 그대로 막는다).
       자동 머지는 FE 세션이 아니라 scripts/pr-auto.mjs(현황판이 띄우는 처리기)가 하므로 이 훅이 걸리지 않는다.
 그 밖에 막는 것: ship.sh --repo-agent(아테나 전용 — 여러 레포 순서 조율), gh api 쓰기(-X POST 등 · -f/-F 필드 · --input, 붙여 쓴 꼴 포함).

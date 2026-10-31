@@ -22,11 +22,11 @@
 #   --repo-agent <이름>  (아테나 전용) 여러 에이전트가 붙은 계획서에서 이 에이전트의 레포 몫만 올린다.
 #                        FE 세션에서는 보호 훅이 이 옵션을 막는다 — 순서 조율은 아테나가 한다
 #   --yes                실제로 보낸다. 없으면 미리보기만
-#   --auto-push          (PR 자동 리뷰 흐름 전용 — docs/pr-auto.md) 자동 리뷰가 수정 · 결정을 보낸 PR 의 브랜치에 고친 커밋만 빨리 감기로 push 한다.
-#                        사용자 "PR 올려줘" 없이 되는 유일한 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
-#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · 그 PR 의 "- Auto review:" 줄이 수정 필요 · 결정 필요 · 충돌로 검증 대기(CONFLICTING)
-#                        (줄이 그 밖이어도 GitHub mergeable 이 지금 CONFLICTING 이면 충돌 풀기로) ·
-#                        HEAD 가 commit.sh 로 기록된 커밋(충돌이면 base 를 합친 merge 커밋만 — 부모 둘 · 첫 부모 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안)
+#   --auto-push          (자동 흐름을 켠 레포 — docs/pr-auto.md) 이 계획서의 열린 PR 브랜치에 고친 커밋만 빨리 감기로 push 한다(자동 리뷰 · 옆 reviewer · 아테나 지시로 고친 것).
+#                        사용자 "PR 올려줘" 없이 되는 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
+#                        이 브랜치의 열린 PR 이 계획서 PR 줄에 있다 · HEAD 가 commit.sh 로 기록된 커밋. "- Auto review:" 줄의 요청은 없어도 된다.
+#                        단 줄이 충돌로 검증 대기(CONFLICTING)이거나 GitHub mergeable 이 지금 CONFLICTING 이면 충돌 풀기로
+#                        (충돌이면 base 를 합친 merge 커밋만 — 부모 둘 · 첫 부모 origin/<브랜치> · 두 번째 부모가 origin/<PR base> 안)
 #                        --body-file <파일> 을 같이 주면 그 PR 본문도 바꾼다(gh pr edit --body-file · 제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다) —
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
 #   --direct-merge       (PR 끔 레포 전용 — 팩 레포 "autoMerge": true + "autoPr": false · docs/pr-auto.md "켜기") PR 을 만들지 않고 작업 브랜치를 prBase 에
@@ -334,7 +334,7 @@ if [ $DIRECT_MERGE = 1 ]; then
   exit 0
 fi
 
-# ── PR 자동 리뷰 흐름 — 고친 커밋을 그 PR 브랜치에 빨리 감기로만 push 한다(scripts/pr-auto.mjs 가 보낸 지시에서만 · docs/pr-auto.md) ──────────
+# ── 열린 PR 에 이어 올리기 — 고친 커밋을 그 PR 브랜치에 빨리 감기로만 push 한다(docs/pr-auto.md) ──────────
 if [ $AUTO_PUSH = 1 ]; then
   # 여기 오기 전에 평소 검사를 모두 지났다 — 워크트리 · 보호 브랜치 · 추적 파일 미커밋 · 레포 하나짜리 · HEAD 가 계획서 Commits 에 commit.sh 로 기록된 커밋(위 [ -n "$RECORDED" ])
   [ -z "$DIRECT" ] || fail "main 직접 레포는 자동 흐름 대상이 아니다"
@@ -346,7 +346,7 @@ import re, sys, pathlib
 text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8'); repo, number = sys.argv[2:4]
 pr_line = re.search(rf'^- PR:\s*\S*/{re.escape(repo)}/pull/{number}\b', text, re.M)
 auto = re.search(rf'^- Auto review:\s*{re.escape(repo)}#{number}\s+@[0-9a-f]+\s+·\s+(.+?)\s+·', text, re.M)
-# 수정 · 결정 요청, 또는 base 와 충돌해 머지 못 한 "검증 대기"(pr-auto.mjs prepareMerge · 머지 직전 확인) — 충돌은 base 를 합친 merge 커밋으로 푼다
+# 수정 · 결정 요청 / base 와 충돌해 머지 못 한 "검증 대기"(pr-auto.mjs prepareMerge · 머지 직전 확인 — 충돌은 base 를 합친 merge 커밋으로 푼다) / 그 밖(요청 없음)
 # 충돌이면 'conflict <PR base>' — PR base 는 ship.sh 가 남긴 PR 줄 "(<브랜치> → <base>, …)" 에서
 fixes = auto and re.match(r'(수정 필요|결정 필요)', auto.group(1))
 conflict = auto and re.match(r'검증 대기 — .*충돌.*CONFLICTING', auto.group(1))
@@ -370,9 +370,9 @@ PYEOF
 try: data = json.load(sys.stdin)
 except Exception: sys.exit(0)
 if data.get("mergeable") == "CONFLICTING" and data.get("baseRefName"): print(data["baseRefName"])' 2>/dev/null)"
-      [ -n "$GH_MERGE" ] || fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄 · GitHub 도 충돌 아님) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때"
-      CONFLICT_BASE="$GH_MERGE" ;;
-    *) fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청(또는 충돌로 검증 대기)이 없다(계획서 \"- Auto review:\" 줄) — 자동 흐름 밖의 push 는 사용자가 \"PR 올려줘\" 할 때" ;;
+      [ -n "$GH_MERGE" ] || [ -z "$BODY_FILE" ] || fail "PR #$PR_NUMBER 에 자동 리뷰의 수정 · 결정 요청이 없다 — --body-file(본문 고침)은 자동 리뷰가 요청했을 때만"
+      CONFLICT_BASE="$GH_MERGE" ;;   # 충돌이 아니면 비어 있다 — 요청 줄이 없어도 이 계획서의 열린 PR 에 기록된 커밋을 빨리 감기로 올리는 것은 받는다(그 PR 은 이미 올리게 한 것 · 옆 reviewer · 아테나 지시로 고친 커밋)
+    *) fail "PR #$PR_NUMBER 의 계획서 줄을 읽지 못했다 — 올리지 않는다" ;;
   esac
   if [ -n "$BODY_FILE" ]; then [ -f "$BODY_FILE" ] || fail "본문 파일이 없다: $BODY_FILE"; check_body "$BODY_FILE"; fi
   git -C "$TOP" fetch --quiet origin "$BRANCH" 2>/dev/null || fail "fetch 실패 — origin/$BRANCH 를 확인하지 못했다"

@@ -131,9 +131,8 @@ export async function goToPane(paneId: unknown): Promise<void> {
 // 질문 · 결정 — 질문은 앱 안에서 바로 답하고, 결정(정식 계획서)은 결정 콘솔로
 export async function openRequest(request: WorkRequestView): Promise<void> {
   closePops()
-  // 열 결정 콘솔(html)이 없고 선택지가 있는 decision 은 question 과 같은 화면으로 답한다
-  const answerInApp = request.kind === 'decision' && !request.html && request.options.length > 0
-  if (request.kind === 'decision' && !answerInApp) {
+  // 열 결정 콘솔(html)이 없는 decision 은 question 과 같은 화면으로 답한다
+  if (request.kind === 'decision' && request.html) {
     const choice = await packDialog({
       title: request.title,
       subtitle: say('work.kind.decision'),

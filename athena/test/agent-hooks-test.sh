@@ -14,7 +14,7 @@ printf 'rules\n' > "$BODY/AGENTS.md"
 for name in fe reviewer; do printf -- '---\nname: %s\ndescription: x\n---\nbody\n' "$name" > "$BODY/.claude/agents/$name.md"; done
 
 python3 - "$SRC" "$BODY" "$TMP" <<'PY'
-import json, subprocess, sys
+import json, os, subprocess, sys
 src, body, tmp = sys.argv[1:4]
 fail = 0
 def check(label, ok, detail=""):
@@ -46,6 +46,16 @@ reviewer = settings("inline", "reviewer")
 check("reviewer — 끝 알림 · 자동 압축 없음", "Stop" not in reviewer["hooks"] and "autoCompactWindow" not in reviewer)
 fe = settings("inline", "fe")
 check("fe — 끝 알림(prompt · stop)", [c for c in commands(fe["hooks"]["UserPromptSubmit"]) if c.startswith("agent-done-notify")] != [] and "Stop" in fe["hooks"])
+# 팩 permissionsAllow — 키가 없으면 permissions 칸이 없고, 있으면 그 레포 담당 에이전트에게만 두 경로 모두 들어간다
+for mode in ("inline", "context"):
+    check(f"permissionsAllow 없음 — {mode} 에 permissions 없음", "permissions" not in settings(mode, "fe"))
+rule = "Bash(node scripts/publish-release.js:*)"
+os.makedirs(f"{body}/testpack")
+json.dump({"pack": "testpack"}, open(f"{body}/athena.config.json", "w"))
+json.dump({"repos": [{"name": "app", "agents": ["fe"], "permissionsAllow": [rule]}, {"name": "other", "agents": ["be"]}]}, open(f"{body}/testpack/pack.json", "w"))
+for mode in ("inline", "context"):
+    check(f"permissionsAllow 있음 — {mode} 담당 에이전트에 allow", settings(mode, "fe").get("permissions") == {"allow": [rule]}, settings(mode, "fe").get("permissions"))
+    check(f"permissionsAllow 있음 — {mode} reviewer 에는 없음", "permissions" not in settings(mode, "reviewer"))
 sys.exit(fail)
 PY
 status=$?

@@ -198,14 +198,14 @@ PR 전에 reviewer pane 이 돌아(정식 계획서 · 넓은 수정) 계획서 
 
 ## `ship.sh --auto-push`
 
-자동 흐름에서만 쓰는 push — 사용자 "PR 올려줘" 없이 되는 유일한 길이다. 보호 훅(`commit-guard.py`)은 그대로이고, 훅이 통과시키는 `ship.sh` 안에서 아래를 모두 확인한다.
+자동 흐름을 켠 레포의 열린 PR 에 고친 커밋을 이어 올리는 push — 사용자 "PR 올려줘" 없이 된다(자동 리뷰 · 옆 reviewer · 아테나 지시로 고친 커밋. 그 PR 은 이미 올리게 한 것이라 새 공개가 아니다). 보호 훅(`commit-guard.py`)은 그대로이고, 훅이 통과시키는 `ship.sh` 안에서 아래를 모두 확인한다.
 
 - 레포가 `"autoMerge": true` · main 직접 레포가 아님 · 메인 체크아웃 · 보호 브랜치 · detached 가 아님(평소 ship.sh 검사)
 - HEAD 가 `commit.sh` 로 계획서 Commits 에 기록된 커밋 · 추적 파일 미커밋 없음
 - 이 브랜치의 **열린 PR** 이 있고 그 PR 이 계획서 `- PR:` 줄에 있다
-- 그 PR 의 `- Auto review:` 줄이 `수정 필요` · `결정 필요` 로 시작 — 자동 리뷰가 고치라고 한 PR 에만(`… — 상한 뒤 이어받음` · `결정 필요 — … 머지 대기` 도 포함). 또는 **base 와 충돌해 머지 못 한** `검증 대기 — 충돌 확인 CONFLICTING` · `검증 대기 — 머지 직전 확인 실패(충돌 CONFLICTING)` — 그때는 base 를 합친 merge 커밋 하나만 받는다(부모 둘 · 첫 부모가 `origin/<브랜치>` · 두 번째 부모가 `origin/<PR base>` 안 — `isBaseMerge` 와 같은 부모 검사 · PR base 는 계획서 `- PR:` 줄) · 다른 이유의 `검증 대기` 는 거절
+- `- Auto review:` 줄의 수정 · 결정 요청은 없어도 된다. 다만 **base 와 충돌해 머지 못 한** 때 — 줄이 `검증 대기 — 충돌 확인 CONFLICTING` · `검증 대기 — 머지 직전 확인 실패(충돌 CONFLICTING)` 이거나 GitHub mergeable 이 지금 `CONFLICTING` — 는 base 를 합친 merge 커밋 하나만 받는다(부모 둘 · 첫 부모가 `origin/<브랜치>` · 두 번째 부모가 `origin/<PR base>` 안 — `isBaseMerge` 와 같은 부모 검사 · PR base 는 계획서 `- PR:` 줄)
 - `origin/<브랜치>` 에서 **빨리 감기만**(강제 push 없음) · 새 PR · 제목 · base 없음
-- `--body-file <파일>` — 위를 모두 통과한 뒤 그 PR 본문을 `gh pr edit --body-file` 로 바꾼다(제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다 — 필수 절 · 로컬 경로 · 내부 주소 · 비밀값). 본문을 먼저 바꾸고 커밋을 올린다. 올릴 커밋이 없으면 본문만(그때만 `--body-file` 없이는 거절)
+- `--body-file <파일>` — 자동 리뷰의 수정 · 결정 요청(또는 충돌)이 있을 때만. 위를 모두 통과한 뒤 그 PR 본문을 `gh pr edit --body-file` 로 바꾼다(제목 · base 는 그대로 · 본문 검사는 새 PR 과 같다 — 필수 절 · 로컬 경로 · 내부 주소 · 비밀값). 본문을 먼저 바꾸고 커밋을 올린다. 올릴 커밋이 없으면 본문만(그때만 `--body-file` 없이는 거절)
 
 ## 머지 조건 (결정 D3 · D5)
 

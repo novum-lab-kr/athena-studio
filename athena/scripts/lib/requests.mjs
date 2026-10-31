@@ -142,7 +142,9 @@ export const listRequests = (root, { all = false } = {}) => withLock(root, (dir)
   const requests = readAll(dir)
   for (const request of requests) {
     if (!LIVE.includes(request.state) || !request.links?.plan) continue
-    if (request.kind === 'question') continue
+    // 결정 콘솔에 묶인 decision(--html · plan-html 과 pr-auto 의 plan:<계획서> 키)만 계획서와 닫는다 — 콘솔 없는 decision 은 질문처럼 답을 기다린다
+    const consoleBound = request.kind === 'decision' && (request.links?.html || request.dedupeKey?.startsWith('plan:'))
+    if (!consoleBound) continue
     const planFile = resolve(root, request.links.plan)
     const text = existsSync(planFile) ? readFileSync(planFile, 'utf8') : null
     if (text !== null && !/^- Status:\s*done\b/m.test(text)) continue

@@ -9,6 +9,9 @@
 무한 왕복 막기 — 상태는 <팩 데이터>/state/agent-notify/<pane>.json
   - 같은 줄은 사용자 입력이 새로 오기 전에는 다시 보내지 않는다(새 입력이 오면 같은 내용도 다시 알린다 — 같은 계획서에 요청을 이어 받는 경우)
   - 아테나가 이 알림에 답한 입력("[아테나 …] … 끝 알림 …")으로 시작한 차례는 알리지 않는다
+백그라운드 명령이 아직 돌면 그 차례는 알리지 않고 last 도 남기지 않는다 — 명령이 끝나 다시 Stop 이 오면 그때 알린다.
+  대기 목록 = 대화 기록(transcript_path)의 시작 기록(backgroundTaskId · 출력 파일) − 끝 기록(task-notification · TaskStop). 끝 기록이 영영 안 남는 경우가 있어
+  기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있을 때만 "도는 중" 으로 본다. 확인하지 못하면 평소대로 알린다(알림이 영영 끊기지 않게).
 아테나 pane 이 없거나 닫혔으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 
 사용: agent-done-notify.py prompt|stop   (훅 입력은 표준 입력 JSON)
@@ -17,6 +20,8 @@ import json
 import os
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
@@ -56,6 +61,75 @@ def load_json(path: pathlib.Path) -> dict:
         return {}
 
 
+OUTPUT_PATH = re.compile(r'Output is being written to: (\S+\.output)')
+FINISHED_TASK = re.compile(r'<task-notification>\s*<task-id>([^<]+)</task-id>')
+
+
+def tool_result_text(entry: dict) -> str:
+    """user 줄의 tool_result 글을 이어 붙인다 — 출력 파일 경로가 여기 있다"""
+    content = (entry.get('message') or {}).get('content')
+    if not isinstance(content, list):
+        return ''
+    texts = []
+    for block in content:
+        if not isinstance(block, dict) or block.get('type') != 'tool_result':
+            continue
+        inner = block.get('content')
+        if isinstance(inner, str):
+            texts.append(inner)
+        elif isinstance(inner, list):
+            texts += [str(item.get('text') or '') for item in inner if isinstance(item, dict)]
+    return '\n'.join(texts)
+
+
+def pending_outputs(transcript: pathlib.Path) -> list:
+    """시작했는데 끝 기록이 없는 백그라운드 명령의 출력 파일들. 대화 기록은 수백 MB 까지 커서 관련 줄만 JSON 으로 푼다"""
+    started = {}
+    finished = set()
+    with transcript.open('rb') as handle:
+        for raw in handle:
+            if b'<task-notification>' in raw:
+                finished.update(FINISHED_TASK.findall(raw.decode('utf-8', 'replace').replace('\\n', '\n')))
+            if b'"backgroundTaskId"' not in raw and b'"task_id"' not in raw:
+                continue
+            try:
+                entry = json.loads(raw)
+            except ValueError:
+                continue
+            result = entry.get('toolUseResult') if isinstance(entry, dict) else None
+            if not isinstance(result, dict):
+                continue
+            if result.get('task_id'):
+                finished.add(str(result['task_id']))   # TaskStop 은 끝 기록을 따로 남기지 않는다
+            if result.get('backgroundTaskId'):
+                found = OUTPUT_PATH.search(tool_result_text(entry))
+                if found:
+                    started[str(result['backgroundTaskId'])] = found.group(1)
+    return [output for task_id, output in started.items() if task_id not in finished]
+
+
+def output_in_use(output: str) -> bool:
+    """이 출력 파일에 쓰는 프로세스가 있나 — 파일이 없거나 lsof 를 못 돌리면 False"""
+    lsof = shutil.which('lsof', path=f"{os.environ.get('PATH', '')}:/usr/sbin:/usr/bin")
+    if not lsof or not os.path.exists(output):
+        return False
+    try:
+        return bool(subprocess.run([lsof, '-t', output], capture_output=True, text=True, timeout=5).stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def background_running(event: dict) -> bool:
+    """이 세션의 백그라운드 명령이 아직 도는가 — 확인하지 못하면 False(평소대로 알린다)"""
+    transcript = str(event.get('transcript_path') or '')
+    if not transcript:
+        return False
+    try:
+        return any(output_in_use(output) for output in pending_outputs(pathlib.Path(transcript)))
+    except OSError:
+        return False
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else ''
     agent = os.environ.get('ATHENA_AGENT') or ''
@@ -86,6 +160,8 @@ def main() -> None:
 
     if state.get('skip'):
         return   # 회신 턴 — 지우지 않는다(새 입력 없이 Stop 이 다시 와도 알리지 않게). 다음 prompt 가 갱신한다
+    if background_running(event):
+        return   # 아직 도는 명령이 있다 — 끝나서 다음 Stop 이 오면 그때 알린다(last 를 남기지 않는다)
     plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
     if not plan:
         return
