@@ -269,6 +269,83 @@ check "relink 실패로 되돌림(rolledBack) → 학습 검토는 다시 뜸(le
 NEWW="$(lock_pid)"; kill "$NEWW" 2>/dev/null; for _ in $(seq 1 30); do kill -0 "$NEWW" 2>/dev/null || break; sleep 0.1; done
 rm -rf "$LEARN_Q"/*.json "$LEARN_Q"/*.json.working "$LEARN_Q/failed"
 
+section "update — 자동 리뷰 처리기도 끄고 올린다 · 일이 남았으면 새 코드로 다시 띄운다"
+# 앱 · 현황판 · ship.sh 가 띄우는 것과 같은 모양(절대 경로 · --watch). 대기열은 그 팩 데이터의 state/pr-auto-queue
+PR_Q="$ATHENA_DATA_DIR/packs/globex/state/pr-auto-queue"
+pr_watcher() { rm -rf "$PR_Q/.watcher.lock"; (cd "$BODY_B" && exec node "$BODY_B/scripts/pr-auto.mjs" --watch) >/dev/null 2>&1 & PW=$!; for _ in $(seq 1 50); do [ "$(pr_lock)" = "$PW" ] && break; sleep 0.1; done; }
+pr_lock() { cat "$PR_Q/.watcher.lock/pid" 2>/dev/null; }
+pr_stop() { local pid; pid="$(pr_lock)"; [ -n "$pid" ] && kill "$pid" 2>/dev/null; for _ in $(seq 1 30); do [ -n "$pid" ] && kill -0 "$pid" 2>/dev/null || break; sleep 0.1; done; rm -rf "$PR_Q"/*.json "$PR_Q"/*.json.working "$PR_Q/failed"; }
+C3P="$(newcommit "test: 업데이트 3p")"
+pr_watcher
+# 리뷰하다 끊긴 일 — 다른 체크아웃의 일이라 새 처리기는 리뷰어를 부르지 않고 실패로 남긴다
+echo '{"plan":"plans/x.md","pr":"web#1","head":"abc1234","root":"/nonexistent-checkout","packId":"other"}' > "$PR_Q/0-test.json.working"
+check "pack busy 는 처리기를 세지 않는다(앱의 따라잡기 · 되돌리기가 늘 멈추지 않게)" '! J "$BODY_B" pack busy | grep -q "pr-auto"'
+R="$(J "$MAIN" update --from "$(bundle)")"
+for _ in $(seq 1 50); do [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && break; sleep 0.1; done
+check "리뷰 중인 처리기 → 끄고 올림 · prAutoStopped · 끊긴 일이 남아 새 처리기가 뜸(prAutoKicked)" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3P" ] && ! kill -0 "$PW" 2>/dev/null && [ "$(echo "$R" | field bodies.globex.services.prAutoStopped)" = "[$PW]" ] && [ "$(echo "$R" | field bodies.globex.services.prAutoKicked)" = True ] && [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && kill -0 "$(pr_lock)" 2>/dev/null' "$R"
+pr_stop
+C3Q="$(newcommit "test: 업데이트 3q")"
+pr_watcher
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "빈 대기열만 기다리는 처리기 → 끄고 올림 · 다시 띄우지 않음" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3Q" ] && ! kill -0 "$PW" 2>/dev/null && ! { [ -n "$(pr_lock)" ] && kill -0 "$(pr_lock)" 2>/dev/null; }' "$R"
+# 손으로 돌린 한 번(--plan · --direct-merge)은 처리기가 아니다 — 머지 도중일 수 있으니 끄지 않는다
+C3R="$(newcommit "test: 업데이트 3r")"
+PO="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "--watch 가 아닌 실행은 끄지 않는다" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
+kill "$PO" 2>/dev/null
+# 되돌리기도 — 처리기에 막히지 않고, 되돌린 코드로 돌게 끈다
+pr_watcher
+R="$(J "$MAIN" update --rollback)"
+check "되돌리기 → 처리기에 막히지 않음 · 끔" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3Q" ] && ! kill -0 "$PW" 2>/dev/null' "$R"
+pr_watcher
+check "처리기가 돌아도 팩 지우기 · 갈아 끼우기 검사(BLOCKING)에 걸리지 않는다" '(cd "$BODY_B" && node --input-type=module -e "const { busyList, BLOCKING } = await import(\"./scripts/lib/packs.mjs\"); process.exit(busyList(process.cwd()).some((item) => BLOCKING.has(item.kind)) ? 1 : 0)")'
+pr_stop
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "되돌린 뒤 다시 올림" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3R" ]' "$R"
+# 앱의 Electron 으로 도는 처리기(PATH 에 node 가 없을 때) — 프로세스 이름만 다르다. node 사본에 개발판 · 배포판 이름을 붙여 흉내 낸다
+pr_stop
+for RUNTIME in Electron "Athena Studio"; do
+  mkdir -p "$WORK/runtime"; cp "$(command -v node)" "$WORK/runtime/$RUNTIME"
+  rm -rf "$PR_Q/.watcher.lock"; (cd "$BODY_B" && exec "$WORK/runtime/$RUNTIME" "$BODY_B/scripts/pr-auto.mjs" --watch) >/dev/null 2>&1 & PW=$!
+  for _ in $(seq 1 50); do [ "$(pr_lock)" = "$PW" ] && break; sleep 0.1; done
+  echo '{"plan":"plans/x.md","pr":"web#1","head":"abc1234","root":"/nonexistent-checkout","packId":"other"}' > "$PR_Q/0-test.json.working"
+  C3E="$(newcommit "test: 업데이트 3e $RUNTIME")"
+  R="$(J "$MAIN" update --from "$(bundle)")"
+  for _ in $(seq 1 50); do [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && break; sleep 0.1; done
+  check "$RUNTIME 으로 도는 처리기 → 끄고 올림 · 새 처리기가 뜸" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && ! kill -0 "$PW" 2>/dev/null && [ "$(echo "$R" | field bodies.globex.services.prAutoStopped)" = "[$PW]" ] && [ "$(echo "$R" | field bodies.globex.services.prAutoKicked)" = True ] && [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && kill -0 "$(pr_lock)" 2>/dev/null' "$R"
+  kill "$PW" 2>/dev/null; pr_stop
+done
+# 처리기를 끌 때 자식 — gh · git 은 남긴다(머지 · 바로 머지의 push 가 반쯤 끊기지 않게) · 그 밖(리뷰어 · 검증)은 끈다. node 사본 이름으로 흉내 낸다
+for CHILD in gh git reviewer; do cp "$(command -v node)" "$WORK/runtime/$CHILD"; done
+cat > "$WORK/runtime/children.mjs" <<CHILDREN
+import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+for (const name of ['gh', 'git', 'reviewer']) {
+  const child = spawn('$WORK/runtime/' + name, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore', cwd: '$WORK', env: {} })
+  writeFileSync('$WORK/runtime/' + name + '.pid', String(child.pid))
+}
+CHILDREN
+rm -rf "$PR_Q/.watcher.lock"; (cd "$BODY_B" && NODE_OPTIONS="--import $WORK/runtime/children.mjs" exec node "$BODY_B/scripts/pr-auto.mjs" --watch) >/dev/null 2>&1 & PW=$!
+for _ in $(seq 1 50); do [ "$(pr_lock)" = "$PW" ] && [ -s "$WORK/runtime/reviewer.pid" ] && break; sleep 0.1; done
+C3K="$(newcommit "test: 업데이트 3k")"
+R="$(J "$MAIN" update --from "$(bundle)")"
+PID_GH="$(cat "$WORK/runtime/gh.pid")"; PID_GIT="$(cat "$WORK/runtime/git.pid")"; PID_REVIEWER="$(cat "$WORK/runtime/reviewer.pid")"
+check "처리기를 끌 때 gh · git 자식은 남고 리뷰어는 꺼진다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3K" ] && ! kill -0 "$PW" 2>/dev/null && kill -0 "$PID_GH" 2>/dev/null && kill -0 "$PID_GIT" 2>/dev/null && ! kill -0 "$PID_REVIEWER" 2>/dev/null' "$R"
+kill "$PID_GH" "$PID_GIT" "$PID_REVIEWER" 2>/dev/null; pr_stop
+# 같은 이름이어도 --watch 가 아니면 끄지 않는다
+C3F="$(newcommit "test: 업데이트 3f")"
+PO="$("$WORK/runtime/Electron" -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "Electron 으로 돌아도 --watch 가 아니면 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
+kill "$PO" 2>/dev/null
+# 인자에 그 경로를 적었을 뿐인 프로세스(셸 · claude -p 프롬프트)는 처리기가 아니다
+C3G="$(newcommit "test: 업데이트 3g")"
+PO="$(bash -c 'sleep 120; true' "$BODY_B/scripts/pr-auto.mjs --watch" >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "인자에 처리기 경로가 든 셸은 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
+kill "$PO" 2>/dev/null
+
 section "update — 도는 커밋 · 올리기(commit.sh · ship.sh) · 무거운 명령은 잠깐 기다린 뒤 올린다"
 # 셸 흉내 — 인자에 그 본체 스크립트 경로가 보이는 bash(명령이 하나면 bash 가 exec 해 버리니 ; true 를 붙인다)
 fake_script() { local dir="$1" secs="$2" script="$3"; (cd "$dir" && exec bash -c "sleep $secs; true" "$script") >/dev/null 2>&1 & echo $!; }

@@ -311,7 +311,7 @@ const human = {
   },
   update: (result) => {
     console.log(`${result.status === 'complete' ? '✅' : '⚠️'} ${result.rollbackOf ? `되돌리기(${result.rollbackOf})` : `업데이트 → ${result.targetCore?.slice(0, 7)}`} · ${result.status} · ${result.operationId}`)
-    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}${body.status === 'updated' && body.working?.length ? ` · 일하는 중이던 세션 ${body.working.length}개 — 바로 올림` : ''}${body.services?.learnStopped?.length ? ' · 학습 검토 끔' : ''}${body.services?.qaStopped?.length ? ' · QA 끔' : ''}`)
+    for (const body of result.bodies) console.log(`  ${body.id.padEnd(20)} ${body.status}${body.reason ? `(${body.reason})` : ''}${body.error ? `(${body.error})` : ''} ${body.from?.slice(0, 7) ?? '-'} → ${body.to?.slice(0, 7) ?? '-'}${body.services?.boardStopped?.length ? ` · 현황판 끔 :${body.services.boardStopped.join(',')}` : ''}${body.backedUp?.length ? ` · 고친 코어 파일 ${body.backedUp.length}개 사본 ${body.backupDir}` : ''}${body.status === 'updated' && body.working?.length ? ` · 일하는 중이던 세션 ${body.working.length}개 — 바로 올림` : ''}${body.services?.learnStopped?.length ? ' · 학습 검토 끔' : ''}${body.services?.qaStopped?.length ? ' · QA 끔' : ''}${body.services?.prAutoStopped?.length ? ' · 자동 리뷰 처리기 끔' : ''}`)
   },
 }
 // 출력이 파이프에 다 나간 뒤 끝난다 — console.log 직후 process.exit() 하면 64KB 넘는 출력이 잘린다

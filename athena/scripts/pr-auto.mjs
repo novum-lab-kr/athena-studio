@@ -871,6 +871,12 @@ const performDirectMerge = async (job) => {
   if (merged.status === 1) return directStop(job, `검증 대기 — ${base} 와 충돌(base 를 합쳐 푼 뒤 다시)`, 'conflict')
   const tree = (merged.stdout ?? '').split('\n')[0]
   if (merged.status !== 0 || !/^[0-9a-f]{40,64}$/.test(tree)) return directStop(job, `머지 실패 — 충돌 확인을 못 함(${firstLine(merged.stderr)})`, 'merge-tree')
+  // 합쳐도 base 와 같다 — squash 로 이미 들어갔다(push 뒤 줄을 적기 전에 처리기가 꺼진 경우). 빈 커밋을 밀지 않는다
+  if (tree === git(job.worktree, ['rev-parse', `${baseRef}^{tree}`])) {
+    if (existsSync(planPath)) writeDirectLine(planPath, job, `${DIRECT_MERGED} — 이미 ${base} 에 들어 있음`)
+    console.log(`✅ ${job.repo} ${job.branch} 는 이미 ${base} 에 들어 있다`)
+    return { ok: true }
+  }
   const planText = existsSync(planPath) ? readFileSync(planPath, 'utf8') : ''
   const message = masked(directMergeMessage({ title: planTitleOf(planText), branch: job.branch, base }))
   const commit = spawnSync('git', ['-C', job.worktree, 'commit-tree', tree, '-p', baseRef, '-m', message], { encoding: 'utf8' })
@@ -938,7 +944,11 @@ const checkDirectConfirm = async (file, job) => {
   const flow = repoFlow(config, job.repo)
   const headNow = job.worktree && existsSync(job.worktree) ? git(job.worktree, ['rev-parse', 'HEAD']) : null
   const stale = !flow.direct || flow.merge === 'manual' || headNow !== job.sha || prBaseOf(config, job.repo) !== job.base
-  if (stale && ['open', 'answered'].includes(request.state)) {
+  // 결과를 적은 뒤 파일을 지우기 전에 끊겼다 — 다시 밀지 않는다
+  const planNow = join(ROOT, job.plan)
+  if (request.state === 'delivered' && existsSync(planNow) && directMergeDone(readFileSync(planNow, 'utf8'), job.repo, job.branch, job.sha)) { rmSync(file, { force: true }); return }
+  // delivered — 답을 받은 뒤 끊겨 다시 보는 건. 그사이 바뀌었으면 답이 있어도 머지하지 않는다
+  if (stale && ['open', 'answered', 'delivered'].includes(request.state)) {
     try { cancelRequest(ROOT, request.id, { reason: `HEAD · 설정 · 기준 브랜치가 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
     rmSync(file, { force: true })
     const planPath = join(ROOT, job.plan)
@@ -948,18 +958,21 @@ const checkDirectConfirm = async (file, job) => {
   if (['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); return }
   if (request.state === 'open') return
   try { ackRequest(ROOT, request.id) } catch { /* 두 번째면 이미 받음 */ }
-  rmSync(file, { force: true })
+  // 대기 파일은 결과를 적은 뒤에 지운다 — 그 전에 처리기가 꺼지면 새 처리기가 이어받는다(checkConfirms 와 같다)
   const choice = request.answer?.choice ?? ''
   if (choice !== '머지') {
     const result = `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})`
     const planPath = join(ROOT, job.plan)
     if (existsSync(planPath)) writeDirectLine(planPath, job, result)
     logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, branch: job.branch, sha: job.sha.slice(0, 7), ok: false, direct: true, reason: 'held' })
+    rmSync(file, { force: true })
     await notifyResult({ ...job, number: 0 }, result, true)
     return
   }
-  await performDirectMerge(job)
+  try { await performDirectMerge(job) } finally { rmSync(file, { force: true }) }
 }
+
+const isSameHeadMerged = (pr, sha) => pr?.state === 'MERGED' && pr.headRefOid === sha
 
 // 머지 확인 답 보기 — 답이 오면 다시 확인하고 머지 · 보류. HEAD 가 바뀌었으면 거둔다.
 // 확인 없는 레포의 파일(noConfirm — 요청 없음)은 [머지] 를 고른 것으로 보고 같은 경로로 간다. only 를 주면 그 파일 하나만
@@ -975,20 +988,20 @@ export const checkConfirms = async (only = '') => {
     try { job = JSON.parse(readFileSync(file, 'utf8')) } catch { continue }
     if (job.packId && job.packId !== BOOT_PATHS.packId) continue
     if (job.direct) { await checkDirectConfirm(file, job); continue }
-    // 확인 없는 머지는 파일을 이름 바꾸기로 잡고 한다 — 처리기와 손으로 돌린 한 번(handle)이 같은 PR 을 두 번 머지하지 않게.
+    let request = null
+    if (!job.noConfirm) {
+      try { request = showRequest(ROOT, job.request).request } catch { rmSync(file, { force: true }); continue }
+    }
+    // 머지로 갈 수 있는 건(확인 없는 건 · 답이 온 확인 건)은 파일을 이름 바꾸기로 잡고 한다 — 처리기와 손으로 돌린 한 번(handle)이 같은 PR 을 두 번 머지하지 않게.
     // 끝나면 지우고, 아직 볼 수 없으면(PR 을 못 읽음 · GitHub 가 계산 중) 원래 이름으로 돌려놓는다
     let current = file
-    if (job.noConfirm) {
+    if (request?.state !== 'open') {
       current = `${file}.${process.pid}`
       try { renameSync(file, current) } catch { continue }
     }
     const release = () => { if (current !== file) try { renameSync(current, file) } catch { /* 그새 치워졌다 */ } }
     const planPath = join(ROOT, job.plan)
     const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '', ...(job.max ? { max: job.max } : {}) }
-    let request = null
-    if (!job.noConfirm) {
-      try { request = showRequest(ROOT, job.request).request } catch { rmSync(file, { force: true }); continue }
-    }
     const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName'])
     if (!pr) { release(); continue }
     // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰거나 · 빠른 길로 온 건인데 빠른 길을 껐다
@@ -996,37 +1009,48 @@ export const checkConfirms = async (only = '') => {
     const settingChanged = !autoMergeRepos(config).has(job.repo) || flowNow.merge === 'manual' || (Boolean(job.reviewOff) && flowNow.review) || (Boolean(job.fast) && !flowNow.fast)
     // auto.merge 사건의 공통 칸(빠른 길이면 fast: true)
     const mergeEvent = (extra) => logEvent(ROOT, 'auto.merge', { plan: job.plan, repo: job.repo, pr: job.number, sha: job.sha.slice(0, 7), ...(job.fast ? { fast: true } : {}), ...extra })
-    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged
+    // 확인한 뒤 PR base 가 바뀜 — 머지 대상이 달라졌다(옛 대기 파일에는 base 가 없을 수 있다)
+    const baseChanged = Boolean(job.base) && pr.baseRefName !== job.base
+    const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged || baseChanged
+    const staleLine = baseChanged ? `검증 대기 — 머지 전에 base 가 바뀜(${job.base} → ${pr.baseRefName})` : '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)'
+    const mergedResult = `머지됨 — squash → ${job.base}${unreviewedNote(job)}`
+    // 머지까지 갔다가 결과를 적기 전에 끊겨 다시 보는 건 — 같은 HEAD 가 이미 머지됐으면 줄을 맞춘다(그대로 두면 "머지 확인 대기" 에 멈춘다)
+    if (isSameHeadMerged(pr, job.sha) && (job.noConfirm || request.state === 'delivered')) {
+      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: mergedResult })
+      mergeEvent({ ok: true, ...(job.noConfirm ? { confirm: false } : {}) })
+      rmSync(current, { force: true })
+      await notifyResult(job, mergedResult)
+      continue
+    }
     if (job.noConfirm && (stale || !skipsMergeConfirm(config, job.repo))) {
-      // 그새 PR 이 닫혔거나 · 새 커밋이 왔거나 · 설정이 바뀌었다(자동 머지를 끄거나 확인을 다시 켬) — 묻지 않고 머지하지 않는다.
+      // 그새 PR 이 닫혔거나 · 새 커밋이 왔거나 · base 나 설정이 바뀌었다(자동 머지를 끄거나 확인을 다시 켬) — 묻지 않고 머지하지 않는다.
       // 같은 HEAD 그대로면 줄에 이유를 남긴다(줄을 지우면 지금 설정으로 다시 돈다) · 새 HEAD 는 따로 다시 리뷰된다
       rmSync(current, { force: true })
-      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)' })
+      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: staleLine })
       mergeEvent({ ok: false, reason: 'recheck' })
       continue
     }
-    if (!job.noConfirm && stale && ['open', 'answered'].includes(request.state)) {
-      try { cancelRequest(ROOT, request.id, { reason: `PR ${pr.state} · HEAD ${pr.headRefOid.slice(0, 7)} — 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
-      rmSync(file, { force: true })
-      // 같은 HEAD 인데 설정만 바뀌었으면 "머지 확인 대기" 줄이 남지 않게(같은 HEAD 는 다시 돌지 않는다)
-      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)' })
+    // delivered — 답을 받은 뒤 끊겨 다시 보는 건. 그사이 바뀌었으면 답이 있어도 머지하지 않는다
+    if (!job.noConfirm && stale && ['open', 'answered', 'delivered'].includes(request.state)) {
+      try { cancelRequest(ROOT, request.id, { reason: `PR ${pr.state} · HEAD ${pr.headRefOid.slice(0, 7)} · base ${pr.baseRefName} — 확인할 때와 다르다` }) } catch { /* 이미 닫혔다 */ }
+      rmSync(current, { force: true })
+      // 같은 HEAD 인데 base · 설정만 바뀌었으면 "머지 확인 대기" 줄이 남지 않게(같은 HEAD 는 다시 돌지 않는다)
+      if (pr.state === 'OPEN' && pr.headRefOid === job.sha && existsSync(planPath)) writeAutoLine(planPath, { ...line, result: staleLine })
       continue
     }
-    if (request && ['cancelled', 'expired'].includes(request.state)) { rmSync(file, { force: true }); continue }
+    if (request && ['cancelled', 'expired'].includes(request.state)) { rmSync(current, { force: true }); continue }
     if (request?.state === 'open') continue
     const choice = job.noConfirm ? '머지' : request.answer?.choice ?? ''
-    // 확인 요청 건은 답을 받으면 바로 지운다(지금까지와 같다). 확인 없는 건은 잡은 파일을 검증 · 머지 결과를 계획서에 적을 때까지 쥐고 있다가(finish)
-    // 지운다 — 그 사이 이 실행이 죽으면 파일이 잡은 이름 그대로 남아 restoreClaims 가 되돌리고 다시 본다(같은 HEAD 는 재리뷰가 돌지 않으니 여기서 놓치면 끝)
-    const settle = () => {
-      if (request) try { ackRequest(ROOT, request.id) } catch { /* 두 번째면 이미 받음 */ }
-      if (!job.noConfirm) rmSync(current, { force: true })
-    }
-    const finish = () => { if (job.noConfirm) rmSync(current, { force: true }) }
+    // 잡은 파일은 검증 · 머지 결과를 계획서에 적을 때까지 쥐고 있다가(finish) 지운다 — 그 사이 이 실행이 죽으면 파일이 잡은 이름 그대로 남아
+    // restoreClaims 가 되돌리고 다시 본다(같은 HEAD 는 재리뷰가 돌지 않으니 여기서 놓치면 끝). 요청은 답을 받았다고만 적는다(settle)
+    const settle = () => { if (request) try { ackRequest(ROOT, request.id) } catch { /* 두 번째면 이미 받음 */ } }
+    const finish = () => rmSync(current, { force: true })
     if (choice !== '머지') {
       settle()
       const result = `보류 — 사람이 고름(${choice || request.answer?.text || '답 없음'})`
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
       mergeEvent({ ok: false, reason: 'held' })
+      finish()
       await notifyResult(job, result)
       continue
     }
@@ -1058,10 +1082,12 @@ export const checkConfirms = async (only = '') => {
       }
     }
     const merged = gh(['pr', 'merge', String(job.number), ...target, '--squash', '--match-head-commit', job.sha])
-    const result = merged.ok ? `머지됨 — squash → ${job.base}${unreviewedNote(job)}` : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
+    // 실패해도 다시 본다 — 앞 처리기가 꺼질 때 남겨 둔 gh 가 먼저 머지했으면 실패가 아니다
+    const landed = merged.ok || isSameHeadMerged(ghJson(['pr', 'view', String(job.number), ...target, '--json', 'state,headRefOid']), job.sha)
+    const result = landed ? mergedResult : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
     if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
-    mergeEvent({ ok: merged.ok, ...(merged.ok ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
-    console.log(merged.ok ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)
+    mergeEvent({ ok: landed, ...(landed ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
+    console.log(landed ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)
     finish()
     await notifyResult(job, result)
   }
@@ -1138,7 +1164,8 @@ const kick = () => {
   if (watcherAlive()) return
   restoreClaims()
   const pending = existsSync(CONFIRM_DIR) && readdirSync(CONFIRM_DIR).some((file) => file.endsWith('.json'))
-  const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => file.endsWith('.json'))
+  // *.json.working — 처리기가 리뷰하다 끊긴 일(코어 갱신이 끈 경우 등). 새 처리기가 시작할 때 대기열로 되돌린다
+  const queued = existsSync(QUEUE_DIR) && readdirSync(QUEUE_DIR).some((file) => /\.json(\.working)?$/.test(file))
   if (pending || queued || pendingNotices().length) launchWatcher()
 }
 
