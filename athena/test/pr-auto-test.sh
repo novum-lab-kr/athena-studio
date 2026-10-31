@@ -268,6 +268,8 @@ const bodyYesWithNo = withFastPathLine(bodyYes, { fast: false, why: '파일 12�
 check('Checkpoint 밖의 yes 줄은 안 읽음 · Checkpoint 에 no 를 쓰면 본문 줄은 그대로 두고 Checkpoint 에만',
   !planFastPath(bodyYes) && !planFastPath(bodyYesWithNo) && /- Work ref:.*\n- Fast path: no \(파일 12개 > 10\)\n/.test(bodyYesWithNo) && bodyYesWithNo.includes('- Fast path: yes (옛 기록)')
   && !planFastPath(`- Fast path: yes (Checkpoint 없음)\n# 시험\n`), bodyYesWithNo)
+const noRef = withFastPathLine('# 시험\n## Checkpoint\n- Status: in_progress\n\n## 지시\n- Work ref: 본문\n', { fast: true, why: '파일 1개' })
+check('Checkpoint 에 Work ref 가 없으면 그 절 끝에(본문 Work ref 뒤가 아님) · planFastPath 가 읽음', noRef === '# 시험\n## Checkpoint\n- Status: in_progress\n- Fast path: yes (파일 1개)\n\n## 지시\n- Work ref: 본문\n' && planFastPath(noRef), noRef)
 check('집계 — 리뷰어 하나면 승인 1/1 로 승인 · 둘이면 하나 승인은 부족', aggregate([ok('claude', approve)], 1).verdict === 'approve' && aggregate([ok('claude', approve)], 1).approvals === 1 && aggregate([ok('claude', approve)]).verdict === 'insufficient' && aggregate([ok('claude', changes)], 1).verdict === 'changes')
 const fastComment = reviewComment({ sha: 'abcdef0123', round: 1, results: [ok('claude', changes)], summary: aggregate([ok('claude', changes)], 1), max: FAST_MAX_ROUNDS, reviewers: 1, fast: true })
 check('댓글 — ⚡ 빠른 길 · 라운드 1/1 · 상한 라운드라 이어받음 줄', fastComment.includes('⚡ 빠른 길') && fastComment.includes('라운드 1/1') && fastComment.includes(TAKEOVER), fastComment)

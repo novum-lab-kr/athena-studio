@@ -77,14 +77,22 @@ export const planFastPath = (planText) => {
   return index >= 0 && lines[index].match(FAST_LINE)?.[1] === 'yes'
 }
 export const fastPathLineText = ({ fast, why = '' }) => `- Fast path: ${fast ? 'yes' : 'no'}${why ? ` (${oneLine(why, 200)})` : ''}`
-// Checkpoint 절에 같은 줄이 있으면 바꾸고(PR 을 다시 올리면 다시 판정) 없으면 Checkpoint 의 Work ref 뒤에 · Checkpoint 가 없으면 Work ref 뒤 · 그것도 없으면 끝에(그 줄은 planFastPath 가 읽지 않는다)
+// Checkpoint 절에 같은 줄이 있으면 바꾸고(PR 을 다시 올리면 다시 판정) 없으면 그 절의 Work ref 뒤 · 그것도 없으면 그 절 끝에.
+// Checkpoint 절이 없으면 Work ref 뒤 · 끝에(그 줄은 planFastPath 가 읽지 않는다). ship.sh 의 with_fast_line 이 같은 규칙으로 쓴다
 export const withFastPathLine = (planText, entry) => {
   const line = fastPathLineText(entry)
   const lines = String(planText).split('\n')
   const index = checkpointIndex(lines, (row) => FAST_LINE.test(row))
   if (index >= 0) { lines[index] = line; return lines.join('\n') }
-  const inCheckpoint = checkpointIndex(lines, (row) => /^- Work ref:/.test(row))
-  const anchor = inCheckpoint >= 0 ? inCheckpoint : lines.findIndex((row) => /^- Work ref:/.test(row))
+  const range = checkpointRange(lines)
+  if (range) {
+    const anchor = checkpointIndex(lines, (row) => /^- Work ref:/.test(row))
+    let at = anchor >= 0 ? anchor + 1 : range.end
+    if (anchor < 0) while (at > range.start + 1 && lines[at - 1].trim() === '') at -= 1
+    lines.splice(at, 0, line)
+    return lines.join('\n')
+  }
+  const anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
   if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
   return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
 }

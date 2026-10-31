@@ -649,18 +649,38 @@ def mark(match):
 def insert_after_anchor(text, line):
     anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
     return text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text.rstrip('\n') + '\n' + line + '\n'
+def checkpoint_span(text):
+    # "## Checkpoint" 절의 [start, end) — 절이 없으면 None
+    head = re.search(r'^##\s+Checkpoint\s*$', text, re.M)
+    if not head:
+        return None
+    following = re.compile(r'^##\s', re.M).search(text, head.end())
+    return head.start(), following.start() if following else len(text)
+def with_fast_line(text):
+    # lib/pr-auto.mjs withFastPathLine 과 같은 규칙 — Checkpoint 절 안의 줄만 덮어쓰고, 없으면 그 절의 Work ref 뒤 · 그것도 없으면 그 절 끝에.
+    # 본문 예시 · 옛 기록의 같은 모양 줄은 건드리지 않는다(pr-auto 도 Checkpoint 절만 읽는다 · PR #200 자동 리뷰 지적). Checkpoint 절이 없으면 옛 자리(Review/Work ref 뒤 · 끝)
+    span = checkpoint_span(text)
+    if span is None:
+        return insert_after_anchor(text, fast_line)
+    start, end = span
+    section = text[start:end]
+    hit = re.search(r'^- Fast path:.*$', section, re.M)
+    if hit:
+        return text[:start] + section[:hit.start()] + fast_line + section[hit.end():] + text[end:]
+    anchor = re.search(r'^- Work ref:.*$', section, re.M)
+    if anchor:
+        return text[:start] + section[:anchor.end()] + '\n' + fast_line + section[anchor.end():] + text[end:]
+    body = section.rstrip('\n')
+    return text[:start] + body + '\n' + fast_line + section[len(body):] + text[end:]
 def record(text):
     text = re.sub(r'^- .*push 안 함.*$', mark, text, flags=re.M)
     for base, url in prs:
         line = f'- PR: {url} ({branch} → {base}, draft · {stamp})'
         if f'- PR: {url}' not in text:
             text = insert_after_anchor(text, line)
-    # ⚡ 빠른 길 판정은 새 PR 을 만들었을 때만 적는다(이미 열린 PR 에 push 만 하면 그대로) — 같은 줄이 있으면 덮어쓴다
+    # ⚡ 빠른 길 판정은 새 PR 을 만들었을 때만 적는다(이미 열린 PR 에 push 만 하면 그대로) — Checkpoint 절의 같은 줄만 덮어쓴다
     if new_prs:
-        if re.search(r'^- Fast path:.*$', text, re.M):
-            text = re.sub(r'^- Fast path:.*$', lambda _: fast_line, text, count=1, flags=re.M)
-        else:
-            text = insert_after_anchor(text, fast_line)
+        text = with_fast_line(text)
     return text
 # 잠금 안에서 지금 내용을 다시 읽어 바꾼다 · 정식 계획서면 html 의 md 사본도 맞춘다
 update_plan(plan, record)
