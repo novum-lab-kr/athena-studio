@@ -303,6 +303,31 @@ check "처리기가 돌아도 팩 지우기 · 갈아 끼우기 검사(BLOCKING)
 pr_stop
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "되돌린 뒤 다시 올림" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3R" ]' "$R"
+# 앱의 Electron 으로 도는 처리기(PATH 에 node 가 없을 때) — 프로세스 이름만 다르다. node 사본에 개발판 · 배포판 이름을 붙여 흉내 낸다
+pr_stop
+for RUNTIME in Electron "Athena Studio"; do
+  mkdir -p "$WORK/runtime"; cp "$(command -v node)" "$WORK/runtime/$RUNTIME"
+  rm -rf "$PR_Q/.watcher.lock"; (cd "$BODY_B" && exec "$WORK/runtime/$RUNTIME" "$BODY_B/scripts/pr-auto.mjs" --watch) >/dev/null 2>&1 & PW=$!
+  for _ in $(seq 1 50); do [ "$(pr_lock)" = "$PW" ] && break; sleep 0.1; done
+  echo '{"plan":"plans/x.md","pr":"web#1","head":"abc1234","root":"/nonexistent-checkout","packId":"other"}' > "$PR_Q/0-test.json.working"
+  C3E="$(newcommit "test: 업데이트 3e $RUNTIME")"
+  R="$(J "$MAIN" update --from "$(bundle)")"
+  for _ in $(seq 1 50); do [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && break; sleep 0.1; done
+  check "$RUNTIME 으로 도는 처리기 → 끄고 올림 · 새 처리기가 뜸" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && ! kill -0 "$PW" 2>/dev/null && [ "$(echo "$R" | field bodies.globex.services.prAutoStopped)" = "[$PW]" ] && [ "$(echo "$R" | field bodies.globex.services.prAutoKicked)" = True ] && [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && kill -0 "$(pr_lock)" 2>/dev/null' "$R"
+  kill "$PW" 2>/dev/null; pr_stop
+done
+# 같은 이름이어도 --watch 가 아니면 끄지 않는다
+C3F="$(newcommit "test: 업데이트 3f")"
+PO="$("$WORK/runtime/Electron" -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "Electron 으로 돌아도 --watch 가 아니면 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
+kill "$PO" 2>/dev/null
+# 인자에 그 경로를 적었을 뿐인 프로세스(셸 · claude -p 프롬프트)는 처리기가 아니다
+C3G="$(newcommit "test: 업데이트 3g")"
+PO="$(bash -c 'sleep 120; true' "$BODY_B/scripts/pr-auto.mjs --watch" >/dev/null 2>&1 & echo $!)"; sleep 0.3
+R="$(J "$MAIN" update --from "$(bundle)")"
+check "인자에 처리기 경로가 든 셸은 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
+kill "$PO" 2>/dev/null
 
 section "update — 도는 커밋 · 올리기(commit.sh · ship.sh) · 무거운 명령은 잠깐 기다린 뒤 올린다"
 # 셸 흉내 — 인자에 그 본체 스크립트 경로가 보이는 bash(명령이 하나면 bash 가 exec 해 버리니 ; true 를 붙인다)

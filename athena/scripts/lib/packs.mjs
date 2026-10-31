@@ -274,6 +274,13 @@ const ancestorsOf = (table, pid) => {
   for (let current = pid; current && !seen.has(current); current = parent.get(current)) seen.add(current)
   return seen
 }
+// 모든 프로세스의 인자 — 못 읽으면 비어 있다(찾지 못함). 안에서 비교만 하고 어디에도 출력하지 않는다
+const allArgs = () => {
+  try {
+    const rows = execFileSync('ps', ['-axww', '-o', 'pid=,args='], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], maxBuffer: 64 * 1024 * 1024 }).split('\n')
+    return new Map(rows.map((line) => line.trim().match(/^(\d+)\s+(.*)$/)).filter(Boolean).map(([, pid, args]) => [Number(pid), args.trim()]))
+  } catch { return new Map() }
+}
 const argsOf = (pid) => { try { return execFileSync('ps', ['-o', 'args=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' } }
 const cwdsOf = (pids) => {
   const map = new Map()
@@ -376,14 +383,19 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
   return { busy, known }
 }
 export const busyList = (root, scan, options) => busyScan(root, scan, options).busy
-// 자동 리뷰 처리기 — 이 본체의 scripts/pr-auto.mjs --watch 를 도는 node. 손으로 돌린 한 번(--plan · --direct-merge)은 머지 도중일 수 있어 세지 않는다.
+// 자동 리뷰 처리기 — 이 본체의 scripts/pr-auto.mjs --watch 를 도는 node · Electron. 손으로 돌린 한 번(--plan · --direct-merge)은 머지 도중일 수 있어 세지 않는다.
 // busyScan 에 넣지 않는다 — 처리기는 일이 없어도 팩이 바뀔 때까지 살아 있어, 넣으면 pack busy · 되돌리기 · 따라잡기 · 데이터 형식 검사가 늘 "일하는 중" 으로 멈춘다.
 // 그래서 코어를 옮기거나 팩을 갈아 끼우는 쪽이 이 함수로 찾아 직접 끈다
+// 프로세스 이름 목록으로 고르지 않는다 — PATH 에 node 가 없으면 앱의 Electron 으로 돌아 이름이 앱마다 다르다. 인자 모양이 정확히 "<실행 파일> <스크립트> --watch" 인 것만 본다.
+// 실행 파일 자리가 그 프로세스 이름과 같아야 하므로, 인자에 경로를 적었을 뿐인 셸 · claude -p 는 걸리지 않는다
+// 인자는 한 번에 읽는다(allArgs) — 프로세스마다 ps 를 부르면 수백 번 돈다
 export const prAutoWatchers = (root, scan = scanProcesses()) => {
-  const scripts = [join(realOr(root), 'scripts', 'pr-auto.mjs'), join(root, 'scripts', 'pr-auto.mjs')]
-  return scan.table.filter((row) => row.comm === 'node' && row.pid !== process.pid).filter((row) => {
-    const args = argsOf(row.pid)
-    return scripts.some((script) => args.includes(script)) && /\s--watch(\s|$)/.test(args)
+  const suffixes = [join(realOr(root), 'scripts', 'pr-auto.mjs'), join(root, 'scripts', 'pr-auto.mjs')].map((script) => ` ${script} --watch`)
+  const argsByPid = allArgs()
+  return scan.table.filter((row) => row.pid !== process.pid).filter((row) => {
+    const args = argsByPid.get(row.pid) ?? ''
+    const suffix = suffixes.find((each) => args.endsWith(each))
+    return Boolean(suffix) && basename(args.slice(0, -suffix.length)) === row.comm
   }).map((row) => ({ kind: 'pr-auto', what: '자동 리뷰 처리기(pr-auto.mjs --watch)', pid: row.pid }))
 }
 // ── 업데이트만 — 일하는 중이던 세션 가려내기(결정 D1 · 2026-10-26) ─────────────────────
