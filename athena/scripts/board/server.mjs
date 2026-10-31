@@ -55,7 +55,7 @@ import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
-import { autoDoneDone, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -350,7 +350,8 @@ const autoDonePlans = async (plans) => {
       return
     }
     // 이 PR 묶음으로 이미 한 번 자동 완료했는데 지금 done 이 아니면 사람이 추가 요청으로 되돌린 것이다 — 새 PR 이 PR 줄에 들어오기 전까지 다시 덮지 않는다
-    if (autoDoneDone(readText(join(ROOT, plan.id)) || '', mergedMark(counted))) return
+    const planText = readText(join(ROOT, plan.id)) || ''
+    if (autoDoneDone(planText, mergedMark(counted)) && !autoReopenedFor(planText, mergedMark(counted))) return
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))
     const merged = last.mergedAt ? new Date(last.mergedAt).toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16) : ''
@@ -375,6 +376,20 @@ const autoDonePlans = async (plans) => {
     const learnLine = (readText(join(ROOT, plan.id)) || '').match(/^- Learn review:.*$/m)?.[0] ?? ''
     if (!learnLine.includes(mergedMark(infos))) enqueueLearn(plan.id, mergedMark(infos), infos)
   }))
+}
+
+// 자동 완료한 계획서에 Progress 빈 칸이 새로 생기면 진행 중으로 되돌린다(plan-bind.mjs needsAutoReopen — 사람이 옮긴 done · 보관은 건드리지 않는다)
+const autoReopenPlans = (plans) => {
+  for (const plan of plans) {
+    if (plan.archived || plan.status !== 'done') continue
+    const text = readText(join(ROOT, plan.id)) || ''
+    if (!needsAutoReopen(text, plan.status, plan.archived, plan.progress)) continue
+    const error = setPlanStatus(plan.id, 'in_progress', `자동 완료 뒤 Progress 에 빈 칸 ${plan.progress.open}개가 생겨 되돌림`, '', true)
+    if (error) { console.log(`⚠️ 자동 완료 되돌리기 실패 ${plan.id}: ${error}`); continue }
+    console.log(`↩️ 자동 완료 되돌림 ${plan.id} — Progress 빈 칸 ${plan.progress.open}개`)
+    plan.status = 'in_progress'
+    plan.column = 'doing'
+  }
 }
 
 // PR 자동 리뷰 · 수정 · 머지(scripts/pr-auto.mjs · docs/pr-auto.md) — 켠 레포(pack.json "autoMerge": true)의 열린 PR 에
@@ -803,6 +818,7 @@ const collect = async () => {
     .filter(Boolean)
     .filter((issue) => issue.column !== 'done' || now - issue.mtime < DONE_KEEP_DAYS * 86_400_000)
   await autoDonePlans(plans)
+  autoReopenPlans(plans)
   await autoReviewPlans(plans)
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)
@@ -967,7 +983,7 @@ const moveCard = (id, column) => {
 }
 
 // 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
-const setPlanStatus = (id, status, note = '', doneMark = '') => {
+const setPlanStatus = (id, status, note = '', doneMark = '', reopen = false) => {
   const path = safePath(id, 'plans')
   if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
   if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
@@ -982,8 +998,10 @@ const setPlanStatus = (id, status, note = '', doneMark = '') => {
       const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
       const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
       const newStatus = note ? `- Status: ${status} — ${note}` : replaced
-      const newUpdated = `- Updated: ${stamp()} / ${note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
+      const newUpdated = `- Updated: ${stamp()} / ${reopen ? '현황판 자동(완료 되돌림)' : note ? '현황판 자동(PR 머지)' : '현황판에서 이동'}`
       let next = text.replace(oldStatus, newStatus)
+      if (reopen) next = reopenLines(next)
+      if (doneMark) next = clearReopened(next)
       // 자동 완료가 본 PR 묶음 표시를 남긴다(autoDoneDone) — 이미 있으면 바꾸고, 없으면 Work ref 줄 아래(없으면 Updated 줄 아래)에
       if (doneMark) {
         const markLine = `- Auto done: ${doneMark}`

@@ -220,3 +220,26 @@ export const bindingSources = ({ root, panes, sessionsDir, home, now = Date.now(
 // 그런 계획서를 사람이 추가 요청으로 in_progress 로 되돌렸는데 새 PR 이 PR 줄에 들어오기 전이면, 같은 머지를 다시 보고 done 으로 덮어쓰지 않는다(2026-10-30)
 /** @param {string} text @param {string} mark */
 export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-\d+(?:-\d+)*/g) ?? []).includes(mark))
+
+// ── 자동 완료 되돌리기 ──
+// 자동 완료(PR 머지)한 계획서의 Progress 에 빈 칸이 새로 생기면(머지 뒤 추가 요청 · 새 단계) 현황판이 진행 중으로 되돌린다(2026-11-01).
+// 대상은 Checkpoint 에 "- Auto done:" 줄이 있는 done 만 — 사람이 직접 완료로 옮긴 계획서(줄 없음)와 보관된 계획서는 건드리지 않는다.
+// 되돌릴 때 Auto done 줄을 "- Auto reopened: <표시>" 로 바꾼다: ① 이후 사람이 직접 done 으로 옮겨도 다시 되돌리지 않고
+// ② 칸을 다 채우면 같은 PR 묶음 표시여도 다시 자동 완료한다(autoDoneDone 은 사람이 되돌린 in_progress 를 지키려는 것이라 이 표시가 있을 때만 건너뛴다)
+/** 자동 완료 줄의 PR 묶음 표시(merged-…) — 없으면 '' @param {string} text */
+export const autoDoneMark = (text) => String(text).match(/^- Auto done:.*$/m)?.[0].match(/merged-\d+(?:-\d+)*/)?.[0] ?? ''
+
+/** 현황판이 이 계획서를 진행 중으로 되돌려야 하나
+ * @param {string} text 계획서 전문 @param {string} status @param {boolean} archived
+ * @param {{ checked: number, total: number, open?: number } | null | undefined} progress */
+export const needsAutoReopen = (text, status, archived, progress) => !archived && status === 'done' && /^- Auto done:/m.test(text) && hasOpenSteps(progress)
+
+/** 되돌린 뒤 같은 PR 묶음을 다시 자동 완료해도 되나 — 현황판이 되돌릴 때 남긴 "- Auto reopened:" 줄에 같은 표시가 있을 때
+ * @param {string} text @param {string} mark */
+export const autoReopenedFor = (text, mark) => Boolean(mark) && autoDoneMark(String(text).match(/^- Auto reopened:.*$/m)?.[0].replace('Auto reopened', 'Auto done') ?? '') === mark
+
+/** 되돌리기 줄 바꾸기: Auto done → Auto reopened @param {string} text */
+export const reopenLines = (text) => String(text).replace(/^- Auto done:(.*)$/m, '- Auto reopened:$1')
+
+/** 다시 자동 완료할 때: Auto reopened 줄을 지운다(남기면 사람이 이어서 되돌린 in_progress 를 계속 덮는다) @param {string} text */
+export const clearReopened = (text) => String(text).replace(/^- Auto reopened:.*\n/m, '')

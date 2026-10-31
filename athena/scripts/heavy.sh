@@ -54,7 +54,14 @@ note() {
   local now; now=$(date +%s)
   if [ $((now - last_note)) -ge 30 ]; then echo "⏳ 대기 $((now - started))초 — $1"; last_note=$now; fi
 }
-give_up() { echo "⛔ ${MAX_WAIT}초를 기다려도 차례가 오지 않았다 — $1. 아테나·사용자에게 알린다" >&2; exit 75; }
+# 포기 알림은 stdout 에도 마지막 줄로 낸다 — 부르는 쪽이 `| tail` 로 받으면 종료 코드(75)는 파이프 끝 명령의 0 에 덮이고 stderr 도 안 보여
+# 마지막 줄이 "⏳ 대기" 뿐이라 성공처럼 끝난 적이 있다(2026-11-01). 부를 때는 `set -o pipefail` 을 켜거나 파이프로 받지 말고 $? 를 본다
+give_up() {
+  local message="⛔ ${MAX_WAIT}초를 기다려도 차례가 오지 않았다 — $1. 아테나·사용자에게 알린다"
+  echo "$message" >&2
+  echo "❌ 실행되지 않았다(heavy.sh 종료 코드 75) — 아래 결과가 없으면 통과가 아니다: $message"
+  exit 75
+}
 
 # 자리(slot) — 1번은 예전 그대로 $LOCK, 2번부터는 $LOCK.2 · $LOCK.3 …(잠금을 읽는 다른 스크립트·옛 heavy.sh 와 1번이 호환된다)
 slot_path() { if [ "$1" = 1 ]; then echo "$LOCK"; else echo "$LOCK.$1"; fi; }

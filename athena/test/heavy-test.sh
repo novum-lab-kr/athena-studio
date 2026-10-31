@@ -45,6 +45,8 @@ check "첫째 자리를 잡음(pid · what · root)" '[ -s "$ATHENA_HEAVY_LOCK/p
 check "둘째 자리도 동시에 잡음" '[ -s "$ATHENA_HEAVY_LOCK.2/pid" ] && grep -q sleep "$ATHENA_HEAVY_LOCK.2/what" && [ -s "$ATHENA_HEAVY_LOCK.2/root" ]'
 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/a3.log" 2>&1; code=$?
 check "셋째는 기다리다 포기(75)" '[ "$code" = 75 ]'
+ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true 2>/dev/null | tail -1 > "$TMP/a3.tail"
+check "포기하면 stdout 마지막 줄에도 실패(75)가 남음 — stderr 를 버리고 | tail 로 받아도 성공처럼 안 보임" 'grep -q "종료 코드 75" "$TMP/a3.tail"'
 check "대기 메시지에 두 자리 모두 보임" 'grep -q "자리1: .*sleep" "$TMP/a3.log" && grep -q "자리2: .*sleep" "$TMP/a3.log"'
 kill $(jobs -p) 2>/dev/null; sleep 1
 

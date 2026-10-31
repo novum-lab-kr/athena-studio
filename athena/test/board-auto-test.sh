@@ -26,7 +26,7 @@ printf '{ "pane": "p180", "agent": "fe", "plan": "%s" }' "$PLAN" > "$TMP/pane-se
 node --input-type=module - "$SRC/scripts/board/plan-bind.mjs" "$TMP/pane-sessions" "$PLAN" <<'EOF'
 const [modPath, sessionsDir, planId] = process.argv.slice(2)
 import { readFileSync } from 'node:fs'
-const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, boundPaneIds, checkpointOf, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
+const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, autoDoneMark, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boundPaneIds, checkpointOf, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
 const PROTECTED = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
@@ -104,6 +104,25 @@ check('36진수 pane id(p6f · 2026-10-28) — Work ref · Review 줄로 묶이�
   [{ id: 'p6f', role: 'agent', agent: 'fe', branch: 'z' }, { id: 'p7a', role: 'agent', agent: 'reviewer', branch: 'z' }, { id: 'p6', role: 'agent', agent: 'fe', branch: 'z' }, { id: 'p6fa', role: 'agent', agent: 'fe', branch: 'z' }],
   [], PROTECTED), ['p6f', 'p7a']))
 check('보호 브랜치(main)는 브랜치로 묶지 않음', same(boundPaneIds({ id: 'a', workRefs: 'athena 메인 체크아웃 · 🌿 main', review: '' }, [{ id: 'p5', role: 'agent', agent: 'fe', branch: 'main' }], [], PROTECTED), []))
+
+// ── 자동 완료 되돌리기 — 자동 완료한 계획서에 빈 칸이 새로 생기면 진행 중으로(2026-11-01) ──
+const autoText = '## Checkpoint\n- Status: done — 자동 — PR #7 이 main 에 머지됨\n- Work ref: x\n- Auto done: merged-7\n- Learn review: 2026-11-01 merged-7 · 0건\n\n### Progress\n- [x] a\n'
+const openProgress = progressOf('- [x] a\n- [ ] 추가 요청')
+const fullProgress = progressOf('- [x] a\n- [x] 추가 요청')
+check('되돌리기 — 자동 완료(Auto done 줄) + 빈 칸이 새로 생김 → 대상', needsAutoReopen(autoText, 'done', false, openProgress) === true)
+check('되돌리기 — 하위 빈 칸도 대상', needsAutoReopen(autoText, 'done', false, progressOf('- [x] a\n  - [ ] 하위')) === true)
+check('되돌리기 — 칸이 다 차 있으면 대상 아님 · 칸이 없어도 아님', needsAutoReopen(autoText, 'done', false, fullProgress) === false && needsAutoReopen(autoText, 'done', false, null) === false)
+check('되돌리기 — 사람이 직접 옮긴 done(Auto done 줄 없음)은 건드리지 않음', needsAutoReopen('- Status: done\n- Learn review: x merged-7\n', 'done', false, openProgress) === false)
+check('되돌리기 — 보관된 계획서 · done 이 아닌 계획서는 건드리지 않음', needsAutoReopen(autoText, 'done', true, openProgress) === false && needsAutoReopen(autoText, 'in_progress', false, openProgress) === false)
+check('autoDoneMark — Auto done 줄의 PR 묶음 표시', autoDoneMark(autoText) === 'merged-7' && autoDoneMark('- Status: done\n') === '')
+// 되돌린 뒤: 같은 PR 묶음 표시(Auto done · Learn review)가 남아 있어도 칸을 다 채우면 다시 자동 완료할 수 있어야 한다
+const reopened = reopenLines(autoText).replace('done — 자동', 'in_progress — 자동')
+check('되돌린 뒤 — Auto done 줄이 Auto reopened 로 바뀜(표시 유지) · 더는 되돌리기 대상 아님', /^- Auto reopened: merged-7$/m.test(reopened) && !/^- Auto done:/m.test(reopened) && needsAutoReopen(reopened, 'done', false, openProgress) === false)
+check('되돌린 뒤 — autoDoneDone 은 여전히 막지만(Learn review 표시) Auto reopened 가 있으면 다시 완료 허용', autoDoneDone(reopened, 'merged-7') === true && autoReopenedFor(reopened, 'merged-7') === true)
+check('되돌리지 않은(사람이 되돌린) 계획서는 그대로 막음 — Auto reopened 없음', autoReopenedFor(autoText.replace('done — 자동', 'in_progress — 자동'), 'merged-7') === false)
+check('Auto reopened 는 다른 PR 묶음 표시와 맞지 않음', autoReopenedFor(reopened, 'merged-7-9') === false)
+const redone = clearReopened(reopened)
+check('다시 자동 완료하면 Auto reopened 줄을 지움(사람이 다시 되돌린 in_progress 를 계속 덮지 않게)', !/Auto reopened/.test(redone) && /Learn review/.test(redone))
 
 console.log()
 console.log(fail ? 'board-auto-test: 실패 있음' : 'board-auto-test: 모두 통과')
