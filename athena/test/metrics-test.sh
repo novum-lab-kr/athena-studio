@@ -5,7 +5,8 @@
 #
 # 보는 것(docs/events.md): 개입 수(열린 채 고친 것은 안 셈) · 답 대기 · 걸린 시간(처음 본 때 → done) · 시작을 모르면 빼기 ·
 # done 뒤 다시 열리면 안 끝난 것 · 검증을 레포 · 브랜치로 계획서에 잇기 · 리뷰 반려 · 기간 · 지난 기간 비교 ·
-# 구간별 시간(작업 · 검증 · 리뷰 · 머지 대기 — 옛 기록은 null) · 리뷰 라운드 · 정확도(머지당 수정 · 되돌림은 기록 없음)
+# 구간별 시간(작업 · 검증 · 리뷰 · 머지 대기 — 옛 기록은 null) · 리뷰 라운드 · 정확도(머지당 수정 · 되돌림은 기록 없음) ·
+# 리뷰 구간은 PR 올림(pr.open)부터(없는 옛 기록은 첫 리뷰 결론부터)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
@@ -14,7 +15,7 @@ import { summarize, groupByPlan, formatDuration, STAGES } from './scripts/lib/me
 const H = 3_600_000
 const NOW = Date.parse('2026-10-25T12:00:00Z')
 const at = (hoursAgo) => new Date(NOW - hoursAgo * H).toISOString()
-const A = 'plans/task/a.md', B = 'plans/task/b.md', C = 'plans/task/c.md', D = 'plans/task/d.md'
+const A = 'plans/task/a.md', B = 'plans/task/b.md', C = 'plans/task/c.md', D = 'plans/task/d.md', E = 'plans/task/e.md'
 const events = [
   // a — 이번 주에 시작해 끝남: 질문 2번(하나는 열린 채 고침) · 답 대기 1시간 + 3시간 · 막힘 1번 · 검증 2번 중 1번 실패 · 리뷰 반려 1번 · 커밋 1번
   { at: at(30), type: 'plan.status', plan: A, from: null, to: 'planned' },
@@ -57,6 +58,15 @@ const events = [
   // c 에 아직 답이 안 온 질문 둘 — 기다리는 중 2 · 가장 오래된 것부터
   { at: at(4), type: 'request', id: 'r4', state: 'open', plan: C },
   { at: at(1.5), type: 'request', id: 'r5', state: 'open', plan: C },
+  // e — 두 기간 밖(옛날)의 ⚡ 빠른 길: PR 올림(pr.open) 1시간 뒤 리뷰 한 번(수정 필요) → 고친 HEAD 는 리뷰 없이 이어받아 머지. 리뷰 구간은 pr.open 부터
+  { at: at(400), type: 'plan.status', plan: E, from: null, to: 'in_progress' },
+  { at: at(396), type: 'plan.status', plan: E, from: 'in_progress', to: 'ready_for_review' },
+  { at: at(395), type: 'pr.open', plan: E, repo: 'web', pr: '9', sha: 'e000001', fast: true },
+  { at: at(394), type: 'review', plan: E, repo: 'web', branch: 'feat/e', verdict: '수정 필요', by: 'auto', pr: '9', fast: true },
+  { at: at(393.5), type: 'auto.fix', plan: E, repo: 'web', branch: 'feat/e', pr: '9', fast: true },
+  { at: at(393), type: 'auto.takeover', plan: E, repo: 'web', branch: 'feat/e', pr: '9', fast: true },
+  { at: at(392), type: 'auto.merge', plan: E, repo: 'web', pr: '9', ok: true, fast: true },
+  { at: at(391), type: 'plan.status', plan: E, from: 'ready_for_review', to: 'done' },
 ]
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -81,6 +91,8 @@ check('자동 리뷰 라운드 2 · 머지당 수정 1/1', d.reviewRounds === 2 
 check('되돌림은 기록 없음(null)', d.reverts === null)
 check('옛 기록(ready · 자동 리뷰 · ms 없음) — 작업 · 검증 null · 리뷰는 첫 → 마지막 리뷰 1시간 · 머지 대기는 머지가 없어 마지막 리뷰 → done 8시간 · 라운드 0', a.stages.work === null && a.stages.verify === null && a.stages.review === 1 * H && a.stages.mergeWait === 8 * H && a.reviewRounds === 0 && a.fixRate === null, JSON.stringify(a.stages))
 check('구간 순서', STAGES.join() === 'work,verify,review,mergeWait')
+const e = plans[E]
+check('빠른 길(pr.open 있음) — 리뷰 구간은 PR 올림 → 마지막 리뷰 결론 1시간(리뷰 1번이어도 0 이 아니다) · 머지 대기 2시간 · 라운드 1 · 머지당 수정 1', e.stages.review === 1 * H && e.stages.mergeWait === 2 * H && e.reviewRounds === 1 && e.autoFixes === 1 && e.autoMerges === 1, JSON.stringify(e.stages))
 
 console.log('\n기간(최근 7일)')
 const week = summarize(events, { now: NOW, days: 7 })
@@ -96,7 +108,7 @@ check('표에는 이번 기간에 움직인 계획서만(최근 것부터)', wee
 
 console.log('\n전체 · 빈 기록 · 글자')
 const all = summarize(events, { now: NOW })
-check('전체 — 지난 기간 비교 없음 · 계획서 4개', all.previous === null && all.plans.length === 4)
+check('전체 — 지난 기간 비교 없음 · 계획서 5개', all.previous === null && all.plans.length === 5)
 const empty = summarize([], { now: NOW, days: 7 })
 check('빈 기록 — 0 과 빈 값', empty.events === 0 && empty.since === null && empty.current.done === 0 && empty.current.leadMs === null && empty.current.stageMs.verify === null && empty.current.fixRate === null && empty.plans.length === 0)
 check('시간 글자', formatDuration(null) === '—' && formatDuration(4000) === '4초' && formatDuration(20 * 60_000) === '20분' && formatDuration(20 * H) === '20.0시간' && formatDuration(72 * H) === '3.0일')

@@ -667,6 +667,8 @@
       checkpoint(text, 'Owner') ? `<span class="chip">👤 ${esc(checkpoint(text, 'Owner'))}</span>` : '',
       branch ? `<span class="chip">🌿 ${esc(branch)}</span>` : '',
       ...prs.map((pr) => `<span class="chip">🔀 ${esc(pr)}</span>`),
+      // ⚡ 빠른 길 — ship.sh 가 PR 올리기 직전에 판정해 "- Fast path: yes (<이유>)" 로 남긴다(docs/pr-auto.md)
+      checkpoint(text, 'Fast path').startsWith('yes') ? '<span class="chip">⚡ 빠른 길</span>' : '',
       checkpoint(text, 'Updated') ? `<span class="chip">🕒 ${esc(checkpoint(text, 'Updated').split(' / ')[0])}</span>` : '',
     ].join('');
   };

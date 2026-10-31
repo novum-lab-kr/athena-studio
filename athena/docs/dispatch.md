@@ -54,6 +54,9 @@ node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane"
 - 다른 서비스 작업과의 연관성 (공통 UI 패턴 맞추기 등)
 - "커밋은 사용자 요청 시 `scripts/commit.sh` 로만·push/PR 은 요청 시 `scripts/ship.sh` 로만(레포 하나짜리)", "담당 레포 밖 수정 금지" 리마인드
 
+### 지시문은 되풀이하지 않는다 (`delegate.sh` `PLAN_HEADER`)
+`delegate.sh` 가 지시 맨 앞에 박는 머리말은 **스크립트 경로 · 절차 · 5절 원칙**만 싣는다 — 계획서 읽기 · Status/Progress/Validation 채우기 · `commit.sh` · `ship.sh` · 자동 리뷰 예외 · 결정 콘솔 절차 · "PR 올려줘" ①~④ · "추측으로 구현하지 않는다" · "범위가 커지면 멈춘다" · "버그는 재현부터". AGENTS.md 5 · 6절(커밋 · push 직접 금지 · 보고 순서 · 시키지 않은 것 안 더함 · 비밀값 · `heavy.sh`)과 `.claude/rules/*.md` 는 `scripts/agent-context.py` 가 `--append-system-prompt-file` 로 이미 모든 위임 에이전트(reviewer 포함)에 싣는다 — 머리말에 같은 문장을 다시 넣지 않는다(2026-10-31 2단계 빠른 길에서 뺐다 · 지시문이 길면 에이전트가 앞부분을 놓친다). 경량 · 정식 구분 없이 같은 머리말. 바꾸면 `scripts/screen-check/check.sh --record` 로 golden(`delegate_outside` · `studio_delegate_outside`)을 다시 쓰고 diff 가 그 문장뿐인지 본다
+
 ## 결과 수신
 - **끝 알림 — 기다리는 루프를 걸지 않는다.** 위임 에이전트(reviewer 제외)가 한 차례(턴)를 끝내면 Stop 훅(`scripts/hooks/agent-done-notify.py`)이 계획서 Checkpoint 의 `- Lead pane:`(아테나 pane)에 `[<에이전트> → 아테나] 끝 · <pane> · 계획서 <경로> · Status <값> · PR #<번호> <상태>`(PR 은 있을 때만) 한 줄을 입력한다. `pane get` 의 `agent_status` 를 `until` 로 기다리는 루프는 일하는 중에 일찍 풀리거나 끝을 놓쳐 사용자가 물어야 알게 됐다 — 이 알림을 받으면 그 pane 의 계획서 · 결과를 읽고 다음 일을 한다. 아테나 pane 이 없거나 닫혔으면 알림은 조용히 건너뛴다(그때는 `scripts/screen pane list` 로 본다)
 - 같은 줄은 사용자 입력이 새로 오기 전에는 다시 가지 않는다. **알림에 답해 에이전트에 글을 보낼 때는 `[아테나 → <에이전트>] 끝 알림 확인 — …` 로 시작한다** — 그 입력으로 시작한 차례는 다시 알리지 않는다(알림만 오가는 왕복 방지). 새 일을 맡기는 글에는 "끝 알림" 이라는 말을 쓰지 않는다
