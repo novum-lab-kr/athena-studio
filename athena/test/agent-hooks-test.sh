@@ -2,6 +2,7 @@
 # 위임 에이전트 훅 설정 시험 — delegate.sh(본체 안)와 agent-context.py(본체 밖)가 같은 훅을 만드는지(scripts/lib/agent_hooks.py 한 곳) · 몇 초
 #
 # 사용: test/agent-hooks-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT

@@ -325,5 +325,13 @@ PYEOF
 # 측정용 사건 기록(docs/events.md) — 실패해도 커밋은 그대로
 node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
 
+# 끝난 일의 Status — in_progress · planned 면 ready_for_review 로(이미 ready_for_review · done · blocked 는 그대로 · docs/workflow.md 4절). 실패해도 커밋은 그대로
+OLD_STATUS="$(python3 "$ATHENA_DIR/scripts/lib/plan_autofill.py" status "$ATHENA_DIR" "$PLAN" 2>/dev/null || true)"
+if [ -n "$OLD_STATUS" ]; then
+  case "$PLAN" in plans/task/*) PLAN_GRADE=light ;; *) PLAN_GRADE=formal ;; esac
+  node "$ATHENA_DIR/scripts/lib/events.mjs" plan.status plan="$PLAN" grade="$PLAN_GRADE" from="$OLD_STATUS" to=ready_for_review >/dev/null 2>&1 || true
+fi
+
 echo "✅ 커밋했다: $SHA ($REPO · $BRANCH) — $VERIFY_NOTE"
+[ -z "$OLD_STATUS" ] || echo "   계획서 Status: $OLD_STATUS → ready_for_review"
 echo "   push·PR 은 하지 않았다. \"PR 올려줘\" 면 이어서 scripts/ship.sh --plan $PLAN --dir $TOP 미리보기 → 제목 · 본문 정리 → --yes"

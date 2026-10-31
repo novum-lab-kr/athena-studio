@@ -4,6 +4,7 @@
 # (PR 자동 리뷰 Claude 쪽 --model 은 test/pr-auto-test.sh 가짜 리뷰어에서 본다) — 임시 폴더 · 진짜 claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/models-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1

@@ -2,6 +2,7 @@
 # QA 실행기 · 현황판 QA 탭 시험 — 임시 코어 사본 · 임시 레포 · 가짜 서버로 흐름 문서 + TC 가 통과/실패로 QA 탭에 뜨는지 본다.
 # BE 는 언제나 · FE 는 scripts/qa/node_modules 에 Playwright 가 있을 때만(없으면 건너뜀을 표시한다).
 # 사용: test/qa-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1 (KEEP=1 이면 임시 폴더를 남긴다)
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-qa-test.XXXXXX")"

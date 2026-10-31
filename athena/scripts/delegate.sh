@@ -84,6 +84,8 @@ fi
 PLAN="$(plan_rel "$ATHENA_DIR" "$PLAN")"
 case "$PLAN" in plans/*.md) ;; *) echo "계획서는 plans/ 아래 .md 여야 한다: $PLAN" >&2; exit 2 ;; esac
 [ -f "$ATHENA_DIR/$PLAN" ] || { echo "계획서가 없다: $PLAN" >&2; exit 2; }
+# char_count [파일] — 글자 수(바이트 아님 · 셸 언어 설정과 무관). 못 세면 0
+char_count() { python3 -c 'import sys; print(len(open(sys.argv[1] if len(sys.argv) > 1 else 0, encoding="utf-8", errors="replace").read()))' "$@" 2>/dev/null || echo 0; }
 # 자동 리뷰는 정식 계획서(plans/{feature,bugfix,refactor}/ — 여러 레포 작업도 정식이다)의 넓은 수정만. 경량(plans/task/)은 넓은 수정일 때 "리뷰할까요?" 한 줄 — 사용자가 "리뷰해줘" 할 때만.
 # 리뷰 지적 반영 · 문구 · 문서 · 작은 수정 뒤에는 다시 띄우지도 묻지도 않는다(2026-10-25 사용자 "수정 범위가 넓지 않은 이상 리뷰는 하지 말자")
 case "$PLAN" in
@@ -103,10 +105,10 @@ fi
 if [ -n "$LEAD_PANE" ]; then
   LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $SCREEN pane send-text $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' --enter — 보냈다고 한 줄 알린다. "
 else
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text <pane> '[$AGENT → 아테나] …' --enter). 못 찾으면 아래대로 요청으로 남긴다. "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text <pane> '[$AGENT → 아테나] …' --enter). "
 fi
 # 아테나에게 보내기가 실패하면 우회하지 않고 요청으로 남긴다(GitHub 이슈 #134) — 반쯤 전달되거나 사라지지 않게
-LEAD_RULE="${LEAD_RULE}아테나 pane 으로 보내기가 실패하면(명령 실패 · 훅 차단 · 아테나 pane 없음) 우회하지 말고 ① 계획서 Checkpoint(Blocked 또는 결과 절)에 보낼 글을 그대로 적고 ② $ATHENA_DIR/bin/athena request open --kind question --title '<한 줄>' --body-file <파일> --plan $PLAN 로 요청을 열어 현황판에 뜨게 한 뒤 ③ 보고 끝에 그랬다고 한 줄 적는다. "
+LEAD_RULE="${LEAD_RULE}보내기가 실패하면 우회하지 말고 요청으로 남긴다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때' · --plan $PLAN). "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
@@ -124,13 +126,13 @@ PYEOF
 if [ "${AUTO_SHIP_REPO#* }" = "pr-off" ]; then
   # PR 끔 — 끝나면 PR 없이 prBase 에 바로 머지(ship.sh --direct-merge). "PR 올려줘" 는 그대로 PR
   AUTO_SHIP_REPO="${AUTO_SHIP_REPO%% *}"
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 요청 없이 ① commit.sh 로 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR 을 만들지 않는다 — 제목 · base · 본문 · --yes 없음. 머지 설정이 자동이면 prBase 에 바로 squash 머지 · 확인 후면 [작업]에 [머지] 요청 · 직접이면 브랜치까지만. 같은 HEAD 검증이 통과하지 못하면 머지하지 않고 실패로 알린다). 사용자가 'PR 올려줘' 라고 하면 이 옵션 없이 평소대로 PR 을 만든다. 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 요청 없이 ① commit.sh 로 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR · 제목 · base · 본문 · --yes 없음 · 동작은 docs/pr-auto.md). 사용자가 'PR 올려줘' 라고 하면 이 옵션 없이 평소대로 PR 을 만든다. 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 elif [ -n "$AUTO_SHIP_REPO" ]; then
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름(①~④ — commit.sh 커밋 포함)을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
-PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 끝나면(또는 막히면) 그 계획서의 Status·Progress·Validation·결과 절을 채운다(Status 는 끝나면 ready_for_review, 막히면 blocked. PR 없이 끝나는 일 — 조사·스크린샷처럼 레포 변경이 없는 작업 — 은 마지막 보고 때 done). 커밋은 사용자가 '커밋해줘' 또는 'PR 올려줘' 라고 할 때만 $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>… 로 한다(거부되면 이유를 그대로 전하고 사용자에게 묻는다). 예외 하나 — '[자동 리뷰 → <나>]' 로 시작하는 지시(PR 자동 리뷰 · 레포가 autoMerge 를 켠 경우)는 그 지시대로 묻지 않고 commit.sh 로 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(그 PR 브랜치에 빨리 감기만 · 새 PR 없음 · PR 본문 지적이면 --body-file <파일> 을 붙여 본문도 바꾼다 · docs/pr-auto.md). ${REVIEW_RULE}리뷰 결론이 나오면 사용자에게 보여 준다. reviewer 보고에 '결정 필요'(선택지가 갈리는 항목, R1·R2…)가 있으면 말로 묻지 말고 결정 콘솔로 보여 준다 — 계획서 md 에 '## 리뷰 뒤 결정' 절(항목·선택지·추천)을 적고, 결정 JSON 을 만들어 node $ATHENA_DIR/scripts/plan-html.mjs <계획서> --add <JSON> → $ATHENA_DIR/scripts/board.sh open <계획서> 로 연 뒤 기다린다. JSON 은 배열 [{ id:'r1', title:'R1 <제목>', desc:'<영향>', type:'single', required:true, options:[{ label:'A <선택지>', desc:'<설명>', recommended:true }, { label:'B …', desc:'…' }] }] — reviewer 의 'A <선택지>' 를 label 로 그대로 옮긴다(형식 정본 docs/plan-template.html 헤더 주석). id 가 이미 있으면 --add 가 다음 번호(r3…)로 바꿔 알려 준다. 사용자가 [이대로 진행] 하면 '[작업계획서 결정사항 확정]' 프롬프트가 이 pane 으로 온다(사용자가 대화로 '추천대로'·'R1 은 B' 처럼 답해도 같다 — 콘솔을 다시 누르라고 하지 않는다) → md '리뷰 뒤 결정' 절에 확정값을 적고 node $ATHENA_DIR/scripts/plan-html.mjs <계획서> --decide r1='<고른 label>' [r2='…'] 로 콘솔에 확정을 기록한다(--data 로 PLAN 전체를 바꾸지 않는다 — 기존 결정이 지워진다). 그다음 고치고, ${REVIEW_AGAIN}'결정 필요' 없이 수정 필요(고칠 방법이 하나)만 있으면 묻지 않고 고친 뒤 무엇을 고쳤는지 한 줄씩 알린다. 사용자가 '리뷰해줘' 라고 할 때도 같다: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN 로 옆에 reviewer pane 을 띄운다(직접 리뷰하지 않는다 — reviewer 가 결론을 계획서 '- Review result:' 줄에 남기고, ship.sh 미리보기에 나온다). 사용자가 'PR 올려줘' 라고 하면 한 번에 끝까지 간다 — 묻지 않는다: ① 커밋 안 된 내 작업 파일이 있으면 commit.sh 로 먼저 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기로 초안을 받고 ③ 작업 내용(계획서 · diff)을 보고 제목(type(범위): 티켓 요약)과 본문 초안 파일을 정리한 뒤 ④ --base <미리보기의 기본 base(prBase) 하나> --title '…' --yes 로 보낸다(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 그 사실을 본문 '확인 필요' 와 보고에 적는다). 다른 base 는 사용자가 말했을 때만. main 직접 레포(PR 없이 기준 브랜치에 바로 push)는 지금처럼 미리보기를 보여 주고 확인받는다. 거부되면 이유를 그대로 전한다. 여러 레포에 걸친 작업이면 ship.sh 가 거부한다 — 아테나에게 직접 요청한다(아래). ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(공통 규칙 AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. 요청을 여러 번 주고받는다 — 새 요청을 받을 때마다 작업을 시작하기 전에 Status 를 in_progress 로 되돌리고, 그 요청이 끝나면 다시 ready_for_review 로 바꾼다. Progress 에는 요청마다 한 줄씩 더한다. "
+PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 끝나면(또는 막히면) 그 계획서의 Progress(무엇을 했나) · 결과 절(무엇이 달라졌나 · 확인 못 한 것)을 채운다. Validation 줄은 검증 스크립트가, 커밋 뒤 Status ready_for_review 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · PR 없이 끝나는 일(조사·스크린샷처럼 레포 변경이 없는 작업)은 마지막 보고 때 done. 커밋은 사용자가 '커밋해줘' 또는 'PR 올려줘' 라고 할 때만 $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>… 로 한다(거부되면 이유를 그대로 전하고 사용자에게 묻는다). 예외 하나 — '[자동 리뷰 → <나>]' 로 시작하는 지시(PR 자동 리뷰 · 레포가 autoMerge 를 켠 경우)는 그 지시대로 묻지 않고 commit.sh 로 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(그 PR 브랜치에 빨리 감기만 · 새 PR 없음 · PR 본문 지적이면 --body-file <파일> 을 붙여 본문도 바꾼다 · docs/pr-auto.md). ${REVIEW_RULE}리뷰 결론이 나오면 사용자에게 보여 준다. reviewer 보고에 '결정 필요'(선택지가 갈리는 항목, R1·R2…)가 있으면 말로 묻지 말고 결정 콘솔로 보여 주고 확정되면 고친다(절차 $ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'). ${REVIEW_AGAIN}'결정 필요' 없이 수정 필요(고칠 방법이 하나)만 있으면 묻지 않고 고친 뒤 무엇을 고쳤는지 한 줄씩 알린다. 사용자가 '리뷰해줘' 라고 할 때도 같다: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN 로 옆에 reviewer pane 을 띄운다(직접 리뷰하지 않는다 — reviewer 가 결론을 계획서 '- Review result:' 줄에 남기고, ship.sh 미리보기에 나온다). 사용자가 'PR 올려줘' 라고 하면 묻지 않고 끝까지 간다: 안 올린 내 작업을 commit.sh 로 커밋 → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). 다른 base 는 사용자가 말했을 때만 · main 직접 레포의 push 만 미리보기를 보여 주고 확인받는다 · 거부되면 이유를 그대로 전한다 · 여러 레포 작업은 ship.sh 가 거부하니 아테나에게 직접 요청한다. ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(공통 규칙 AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. 요청을 여러 번 주고받는다 — 새 요청을 받을 때마다 작업을 시작하기 전에 Status 를 in_progress 로 되돌린다(끝나면 위대로). Progress 에는 요청마다 한 줄씩 더한다. "
 if [ "$AGENT" = reviewer ]; then
   # reviewer 는 커밋·PR·Status 를 다루지 않는다 — 에이전트용 머리말 대신 리뷰 머리말만 싣는다
   PLAN_HEADER="리뷰할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 리뷰한다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 리뷰를 마치면 결론을 $ATHENA_DIR/scripts/review-result.sh --plan $ATHENA_DIR/$PLAN --dir <리뷰한 트리> --verdict 승인|수정필요 --note '<한 줄 요약>' 로 한 줄 남긴다(ship.sh 가 이 줄과 HEAD 를 대조한다). 그다음 수정 필요(고칠 방법이 하나) / 결정 필요(조사한 뒤에도 사용자가 정해야 하는 것만 — 범위·사용자 동작·외부 계약·제품 정책·데이터가 달라지는 선택. 구현 방법이 여러 개일 뿐이면 하나를 골라 수정 필요로 · R1 <제목> — <영향> 다음 줄부터 A <선택지> ★ — <설명> · B … 형식, 없으면 '결정 필요: 없음') / 제안으로 나눠 보고한다(형식 정본 .claude/agents/reviewer.md 의 보고 형식 절). "
@@ -366,6 +368,7 @@ if [ -n "$CTX_TOP" ] && [ "$(cd "$CTX_TOP" && pwd -P)" != "$ATHENA_REAL" ]; then
   AGENTS_JSON="$(mktemp -t hermes-agents)" && CONTEXT_FILE="$(mktemp -t hermes-context)" && SETTINGS_FILE="$(mktemp -t hermes-settings)" \
     && python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$CTX_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "${AGENTS_JSON:-}" "${CONTEXT_FILE:-}" "${SETTINGS_FILE:-}"; echo "에이전트 컨텍스트 생성 실패"; exit 1; }
+  CONTEXT_CHARS="$(char_count "$CONTEXT_FILE")"
   EXTRA_FILES="$(shq "$AGENTS_JSON") $(shq "$CONTEXT_FILE") $(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="--agents \"\$(cat $(shq "$AGENTS_JSON"))\" $CLAUDE_ARGS --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS --append-system-prompt-file $(shq "$CONTEXT_FILE") --settings $(shq "$SETTINGS_FILE")"
   REPO_DIR="$CTX_TOP"
@@ -457,7 +460,7 @@ PYEOF
   fi
   BRANCH_NOW="$(git -C "$WORKDIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   # pane 에는 처음 띄울 때의 긴 지시(커밋 · 리뷰 · 보고 규칙)가 이미 있다 — 새 계획서만 짧게 알린다. 줄바꿈 없이 한 줄(Enter 한 번에 한 지시)
-  REUSE_MSG="[아테나${LEAD_PANE:+ $LEAD_PANE} → $AGENT] 새 요청 — 새 계획서: $ATHENA_DIR/$PLAN . 앞 계획서와 별개다: 먼저 읽고 Checkpoint 의 Next 부터, Status·Progress·Validation·결과는 이 계획서에 쓰고 commit.sh · ship.sh 의 --plan 도 이 계획서다(앞 계획서는 더 고치지 않는다). 작업 폴더 $WORKDIR · 브랜치 ${BRANCH_NOW:-?}. 시작 전에 Status 를 in_progress 로. 커밋 · PR · 보고 규칙은 처음 받은 지시 그대로. ${REVIEW_RULE}"
+  REUSE_MSG="[아테나${LEAD_PANE:+ $LEAD_PANE} → $AGENT] 새 요청 — 새 계획서: $ATHENA_DIR/$PLAN . 앞 계획서와 별개다: 먼저 읽고 Checkpoint 의 Next 부터, Status·Progress·결과는 이 계획서에 쓰고(Validation 은 검증 스크립트가 이 계획서에 적는다) commit.sh · ship.sh 의 --plan 도 이 계획서다(앞 계획서는 더 고치지 않는다). 작업 폴더 $WORKDIR · 브랜치 ${BRANCH_NOW:-?}. 시작 전에 Status 를 in_progress 로. 커밋 · PR · 보고 규칙은 처음 받은 지시 그대로. ${REVIEW_RULE}"
   if [ -n "$RAW_PROMPT" ]; then REUSE_MSG="${REUSE_MSG}요청: $RAW_PROMPT"; else REUSE_MSG="${REUSE_MSG}계획서 '## 지시' 절이 요청이다 — 비어 있으면 사용자 요청을 기다린다."; fi
   # 한 줄로 — 줄바꿈이 있으면 Enter 로 여러 번 나뉘어 들어간다
   REUSE_MSG="$(printf '%s' "$REUSE_MSG" | tr '\n' ' ')"
@@ -540,6 +543,10 @@ def record_ref(text):
     return text
 update_plan(plan, record)
 PYEOF
+
+# 지시문 크기 — 토큰을 줄인 효과를 숫자로 본다(docs/events.md · 실패해도 띄우기는 그대로). 이어 보내기는 보낸 글, 이어 열기는 0
+node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" pane="$PANE" \
+  promptChars="$(printf '%s' "${REUSE_MSG:-$PROMPT}" | char_count)" contextChars="${CONTEXT_CHARS:-0}" >/dev/null 2>&1 || true
 
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)

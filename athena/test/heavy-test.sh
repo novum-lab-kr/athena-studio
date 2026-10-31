@@ -3,6 +3,7 @@
 # 낡은 잠금 정리 · SLOTS=1 이면 예전처럼 하나 · 임시 잠금 경로(ATHENA_HEAVY_LOCK) · 가짜 memory_pressure · 몇 초
 #
 # 사용: test/heavy-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-heavy-test.XXXXXX")"

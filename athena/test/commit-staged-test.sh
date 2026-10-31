@@ -3,6 +3,7 @@
 # 지정하지 않은 스테이징은 여전히 거부하는지. 임시 레포 · 임시 코어 사본 · 검증 생략(--no-verify) · 몇 초
 #
 # 사용: test/commit-staged-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd -P)"
 TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT

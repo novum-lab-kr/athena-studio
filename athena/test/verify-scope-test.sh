@@ -3,6 +3,7 @@
 # scripts/verify/scope-tests.mjs(바뀐 파일에 닿는 시험 고르기) · verify 사건의 측정 칸(plan · ms · scope — verify_event_fields). 임시 git 레포만 쓴다 · 몇 초
 #
 # 사용: test/verify-scope-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-verify-scope-test.XXXXXX")"

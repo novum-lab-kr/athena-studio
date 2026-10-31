@@ -4,6 +4,7 @@
 # 글은 창에 먹히고 Enter 가 1번 선택지를 골랐다. 가짜 화면 · 가짜 넣기로 — 화면 · claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/pane-delivery-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1

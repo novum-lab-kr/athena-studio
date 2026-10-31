@@ -10,6 +10,7 @@
 # update --from <번들>(전체 · 앞 커밋을 전제로 한 얇은 번들) · deploy.source · 업데이트 전후 사용자 데이터(<데이터>/packs) 해시 동일 ·
 # 본체 안 진짜 파일(설정·상태 파일·.migrate-*)이 업데이트에 안 건드려짐 · dirty 는 기본 건너뜀 · --backup-dirty 는 사본 뒤 교체(backedUp) ·
 # 되돌리기 · 팩 작업 중인 본체 건너뜀(일하는 세션은 올림 — bodies-test) · 백업 기본 자리(<데이터>/backups/packs) · 현황판 포트·로그 이름
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bundle-test.XXXXXX")" && pwd -P)"

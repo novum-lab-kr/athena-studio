@@ -8,6 +8,7 @@
 # 보는 것(계획서 7절 "단계별 확인" · 팩마다 본체 이후): test-setup · 이 본체의 팩 열기·계약 확인 · 팩마다 잠금 · busy(claude·codex) ·
 # (본체 만들기·업데이트·되돌리기는 test/bodies-test.sh) · 나쁜 팩(형식·pack.json 없음·밖 링크·.env·../·ext::) · 같은 팩 충돌·교체 백업 ·
 # 내보내기 허용 목록 · 작업 기록 백업·되살리기 · 옛 아테나 가져오기(원본 그대로) · 옮기기(두 번 돌려도 같음) · 계획서 논리 경로 · 현황판(팩·세대·409·끄기)
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/packs-test.XXXXXX")" && pwd -P)"

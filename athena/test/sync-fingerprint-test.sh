@@ -3,6 +3,7 @@
 # (⚠️ 안내 · 앞 실행의 pending 정리 · 마지막 줄이 "모두 동일" 로 나오지 않음 · 읽은 레포는 정상) — 임시 폴더 · 네트워크 없음 · 몇 초
 #
 # 사용: test/sync-fingerprint-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-sync-fp-test.XXXXXX")"

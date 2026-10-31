@@ -5,6 +5,7 @@
 #   3) 묶음 줄 수정(editCandidates) · 삭제(discardMany) — 합쳐진 후보 전부에 적용 · 묶음 대상은 낱개 목록과 겹치지 않음
 #
 # 사용: test/learn-batch-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-learn-batch-test.XXXXXX")"

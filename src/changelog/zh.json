@@ -84,6 +84,7 @@
   "Version numbers. Every release is tagged and the app shows its version.": "新增版本号。每个发布都会打标签，应用会显示其版本。",
   "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "开发版应用更新需要 `npm install` 时，会在应用保持运行的情况下安装，并在重新启动前询问。设置行会显示等待安装和安装中，点击“稍后”会在该行保留重新启动按钮。",
   "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "强制结束安装不再被报告为安装失败：会单独显示，应用保持打开，并在下次启动时重试安装。",
+  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "在 Node 24.5.0 上，核心更新不再因无法删除指向文件夹的旧包链接而失败。",
   "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "重新启动时窗口会先打开，核心更新在后台运行：标签栏显示“核心更新中”，完成后弹出结果。包命令、新的代理面板和追赶会等到更新完成后再进行。",
   "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "核心更新弹窗显示简短的类型标签，只改动末位版本号的更新也会列出最近的变更。",
   "A dev-app update skips `npm install` when the dependencies are unchanged.": "开发版应用更新在依赖没有变化时会跳过 `npm install`。",
