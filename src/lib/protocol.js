@@ -16,7 +16,13 @@
 // 납작한 Pane 의 cols · rows(pane 크기 · 2026-10-28 · PR #98 결정 R1)도 번호를 올리지 않았다 — 올리면 앱을 업데이트한 모든 사용자가
 // 켤 때 데몬 다시 띄우기(= 진행 중 pane 전부 닫힘)를 강요받는다. 응답에 고를 수 있는 칸만 더했고(추가만) 앱은 이 칸을 읽지 않으며,
 // 읽는 쪽(아테나 delegate.sh)은 칸이 없으면(옛 데몬) 예전 배치(탭 첫 pane 을 오른쪽으로)로 돌아가 깨지는 곳이 없다
+// 'daemon reload' 와 hello 의 codeVersion 도 번호를 올리지 않았다 — 앱은 hello 에 codeVersion 이 있을 때만 부르고 옛 데몬은 없는 칸으로 가려진다.
+// 올리면 이 기능을 받으려는 모든 사용자가 pane 을 닫아야 한다(옛 데몬은 안내만 하고 그대로 쓴다)
 const PROTOCOL = 5
+
+// 데몬 코드 판 — 데몬 동작(src/daemon · 데몬이 쓰는 src/lib)을 고치면 올린다. 앱 버전 · PROTOCOL 과 별개
+// 앱이 hello 로 보고 자기 것보다 낮으면 'daemon reload' 를 요청한다. 칸이 없는 옛 데몬은 바꿔 끼울 수 없어 안내만 한다
+const DAEMON_CODE = 1
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 
@@ -72,6 +78,17 @@ function errorReply(id, code, message) {
 function checkHello(reply, expected = PROTOCOL) {
   if (!reply || reply.ok !== true || !reply.result || !Number.isInteger(reply.result.protocol)) return 'invalid'
   return reply.result.protocol === expected ? 'ok' : 'mismatch'
+}
+
+// hello 결과의 코드 판: none(판 없는 옛 데몬 — 바꿔 끼울 수 없다) · behind(낮다) · current(같거나 높다)
+/**
+ * @param {unknown} hello
+ * @param {number} [expected]
+ */
+function codeStatus(hello, expected = DAEMON_CODE) {
+  const version = hello && typeof hello === 'object' ? /** @type {{ codeVersion?: unknown }} */ (hello).codeVersion : undefined
+  if (!Number.isInteger(version)) return 'none'
+  return /** @type {number} */ (version) < expected ? 'behind' : 'current'
 }
 
 // ── 데몬 CLI 인자 ─────────────────────────────────────────────────────
@@ -272,6 +289,8 @@ function selfInfo(env) {
 
 module.exports = {
   PROTOCOL,
+  DAEMON_CODE,
+  codeStatus,
   ERROR_CODES,
   encode,
   createDecoder,

@@ -56,13 +56,14 @@ type LinkDeps = {
   daemonErrorText: (error: Error & { code?: unknown }) => string
   askRestartDaemon: (result: Ensured, parentWindow: Window | null) => Promise<boolean>
   setDaemonOld: (old: boolean) => void
+  noticeOldCode: (connection: Connection, parentWindow: Window | null) => void
   releaseHeldWindows: () => void
   openUrl: (ctx: PackCtx, url: string) => void
 }
 
 // say — 화면 문구 · daemonPaths — 데몬 자리 · daemonErrorText — 데몬 오류를 화면 글로 · askRestartDaemon — 프로토콜이 다를 때 묻기(창이 여럿이어도 한 번) ·
-// setDaemonOld — 옛 데몬에 붙어 쓰는 중인지(main.mts daemonOld) · releaseHeldWindows — 맞는 데몬이면 미뤄 둔 창 열기 · openUrl — 데몬 open-url 알림
-export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld, releaseHeldWindows, openUrl }: LinkDeps): void {
+// setDaemonOld — 옛 데몬에 붙어 쓰는 중인지(main.mts daemonOld) · noticeOldCode — 코드 판이 낮은 데몬 안내 · releaseHeldWindows — 맞는 데몬이면 미뤄 둔 창 열기 · openUrl — 데몬 open-url 알림
+export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld, noticeOldCode, releaseHeldWindows, openUrl }: LinkDeps): void {
   const send = ctx.send
   let daemon: Connection | null = null // DaemonConnection
   let connecting: Promise<Connection> | null = null
@@ -138,6 +139,8 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
         releaseHeldWindows()
       } else if (result.status === 'mismatch') setDaemonOld(true)
       daemon = daemon || result.connection
+      // 말은 맞지만 코드가 낮고 바꿔 끼우지 못했다 — 알리기만 한다(기다리지 않는다 · 끄지 않는다)
+      if (result.status === 'ok' && result.code !== 'current') noticeOldCode(daemon, ctx.win)
       return daemon
     })().finally(() => (connecting = null))
     return connecting

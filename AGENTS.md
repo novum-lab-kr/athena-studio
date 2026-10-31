@@ -67,6 +67,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 | 바꾸는 것 | 같이 |
 |---|---|
 | 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 5)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.mts` · `src/daemon/cli.js` · `src/daemon-client.mts` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
+| 데몬 동작(`src/daemon/` · 데몬이 쓰는 `src/lib`) | `src/lib/protocol.js` `DAEMON_CODE` 를 올린다 — 앱이 낮은 판을 보면 pane 을 끄지 않고 새 코드로 바꿔 끼운다. 상태는 `daemon.mts` 인스턴스 칸에만(모듈 변수 금지 · 새 칸은 `afterReload`) · `main.mts` 는 바꿔 끼울 수 없으니 거기 약속이 바뀌면 양쪽 `KERNEL_COMPAT` 을 올린다 · `test/daemon-reload.test.js` |
 | 팩 명령 약속(`pack … --json` 출력 · 오류 코드) | 앱 `src/lib/pack.mts` `CONTRACT` 와 코어 `athena/scripts/lib/bodies.mjs` `CONTRACT`(둘 다 3 — 데몬 `PROTOCOL` 과는 별개) · 출력 해석 · `packErrorText` · `scripts/fake-pack.js`(같은 모양으로) · `test/pack.test.js` · 코어 `athena/docs/pack.md` |
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) — renderer 새 파일(`.ts`)은 진입점에서 import 하면 `check` 끝의 화면 빌드가 본다 |
@@ -78,7 +79,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 ## 함정
 - **화면은 `dist/renderer/` 를 연다** — `npm start` 를 거치지 않고 `electron .` 으로 바로 켜면(화면 확인 스크립트 등) 빌드가 돌지 않는다. 빌드가 없으면 빈 창 · 있으면 옛 화면이다 — 먼저 `npm run build:renderer`
 - **번들은 커밋된 `HEAD:athena` 에서 만든다** — `athena/` 의 미커밋 변경은 `npm start` 에 들어가지 않는다. `athena/` 트리가 같으면 다시 만들지 않고, 만들다 실패해도 앱은 이전 번들 · 이미 푼 코어로 켜진다(`[dev-app] 코어 번들을 만들지 못했어요` 경고만). 켜졌다고 최신 코어가 들어간 것이 아니다 — `npm start` 로그를 본다. (커밋이 필요하다는 뜻이지, 사용자에게 묻지 않고 커밋해도 된다는 뜻은 아니다)
-- **데몬은 앱보다 오래 산다** — 데몬 코드(`src/daemon/`)를 고치고 앱만 다시 켜면 옛 데몬에 붙는다. [보기 → 작업 창 데몬 다시 띄우기] 가 필요하고 그러면 pane 이 모두 닫힌다 — 사용자가 에이전트를 돌리는 중이면 먼저 묻는다
+- **데몬은 앱보다 오래 산다** — `DAEMON_CODE` 를 올리면 앱이 켤 때 새 코드로 바꿔 끼운다(pane 유지). 올리지 않았거나 `main.mts` 를 고쳤거나 코드 판이 없는 옛 데몬이면 옛 코드 그대로다. 그때는 [보기 → 작업 창 데몬 다시 띄우기] 가 필요하고 그러면 pane 이 모두 닫힌다 — 사용자가 에이전트를 돌리는 중이면 먼저 묻는다
 - **팩 바꾸기는 pane 을 닫지 않는다** — 창이 다른 본체로 다시 붙을 뿐(`src/main/packs.mts` `packOpen` → `athena-dir.mts` `rebindBody`). pane 이 닫히는 것은 사용자가 pane · 탭을 닫을 때 · 옛 터미널 모니터 칸(데몬 dock) 정리 · 데몬 다시 띄우기 · 스튜디오 초기화뿐이다
 - **창마다 문맥이 따로** — 본체 · 데몬 연결 · 현황판 · 옆 브라우저 · 모니터 · 팩 상태는 창(`ctx`)마다. 팩 상태를 전역으로 두지 않고, IPC 는 보낸 창의 문맥으로 처리한다. 트레이는 별도 preload(`preload-tray.js`)와 보낸 쪽 검사를 유지한다
 - **팩을 바꾸는 명령은 끊지 않는다** — `use` · `new` · `open` · `update` · `import --replace` 는 시간이 넘어도 "오래 걸려요" 만 띄우고 기다린다(`src/main/core-runner.mts` `PACK_TIMEOUTS` 근처). 여기에 일괄 timeout 종료를 넣지 않는다

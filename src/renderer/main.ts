@@ -6,7 +6,7 @@ import { attached, attaching, reattachScreen, runCommand, screen, setAttached, s
 import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
-import { packs, setPacks, showCoreUpdate } from './pack-dialogs.ts'
+import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
 import { initTips } from './tips.ts'
 import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
@@ -136,6 +136,7 @@ async function init(): Promise<void> {
   // 코어 업데이트 결과 — main 이 화면을 다 읽자마자(did-finish-load) 한 번 보내므로 첫 await 전에 받을 준비를 한다
   StudioUi.coreUpdate.mount($('core-update').querySelector('.pack-box') as HTMLElement)
   studio.onCoreUpdate(showCoreUpdate)
+  studio.onOldPanes(showOldPanes)
   // 코어 업데이트 중 표시 — 바뀔 때 알림을 받고, 처음 값은 한 번 묻는다
   studio.onCoreUpdateState((running) => ($('core-updating').hidden = !running))
   studio.coreUpdateRunning().then((running) => ($('core-updating').hidden = !running)).catch(() => {})
