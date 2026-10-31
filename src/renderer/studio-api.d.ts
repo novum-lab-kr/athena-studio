@@ -299,7 +299,7 @@ declare global {
     workGet(): Promise<WorkView>
     workRequests(): Promise<WorkRequestsState>
     onWorkRequests(callback: (next: WorkRequestsState) => void): () => void
-    workAnswer(id: string, answer: { choice: string; text: string }): Promise<WorkAnswerReply>
+    workAnswer(id: string, answer: { choice: string; text: string; rev: number }): Promise<WorkAnswerReply>
     workRedeliver(id: string): Promise<WorkAnswerReply>
     workDetail(id: string): Promise<WorkDetailReply>
     // 트레이에서 요청을 누르면(src/main/tray.mts openRequestFromTray) — id 가 없으면 [작업] 팝업

@@ -52,6 +52,19 @@ test('답하기 인자 — 빈 값은 빼고 rev 는 정수일 때만', () => {
   assert.deepEqual(requests.answerArgs('r-1', { text: '이름은 cancel_note' }), ['request', 'answer', 'r-1', '--by', 'app', '--text', '이름은 cancel_note'])
 })
 
+test('답하기 충돌 — 보여 준 rev 와 지금 rev 가 다르면 conflict · rev 를 안 보낸 호출은 지금처럼', () => {
+  assert.equal(requests.answerRevChanged(2, 3), true)
+  assert.equal(requests.answerRevChanged(2, 2), false)
+  assert.equal(requests.answerRevChanged(undefined, 3), false)
+  assert.equal(requests.answerRevChanged(null, 3), false)
+  assert.equal(requests.answerRevChanged('2', 3), false)
+  assert.equal(requests.answerRevChanged(1.5, 3), false)
+})
+
+test('화면 요청에 rev 가 실린다(답할 때 돌려보낸다)', () => {
+  assert.equal(requests.normalizeRequests({ ok: true, requests: [sample({ rev: 7 })] }).requests[0].rev, 7)
+})
+
 test('pane 에 넣을 한 줄 — 요청 번호 · 줄바꿈 없음', () => {
   const line = requests.deliveryLine(sample(), { choice: '있다', text: '이름은\ncancel_note' })
   assert.equal(line, '[요청 r-20261021-141520-1080] 필드가 있나요? — 답: 있다 · 이름은 cancel_note')

@@ -107,7 +107,9 @@ export const openRequest = (root, input) => {
     const same = dedupeKey ? readAll(dir).find((request) => request.dedupeKey === dedupeKey && LIVE.includes(request.state)) : null
     if (same) {
       // 답을 받은 뒤(answered) 다시 열면 새 질문이다 — 답을 지우고 open 으로
-      const updated = { ...same, ...fields, state: 'open', answer: null, rev: same.rev + 1, updatedAt: now() }
+      // 옵션을 안 준 호출(CLI · 호출자 모두 "없음" 은 빈 배열)은 있던 선택지를 지우지 않는다 — 새로 주면 바꾼다
+      const options = fields.options.length ? fields.options : same.options
+      const updated = { ...same, ...fields, options, state: 'open', answer: null, rev: same.rev + 1, updatedAt: now() }
       save(dir, updated)
       logState(root, updated)
       return { ok: true, request: updated, reused: true }
