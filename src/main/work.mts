@@ -216,9 +216,14 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     return true
   }
   // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
-  ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown } | null) => {
+  ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null) => {
     const known = requestsState().requests.find((request) => request.id === id)
     if (!known) return { ok: false, error: 'not-found' }
+    // 대화상자가 보여 준 요청이 그사이 바뀌었으면 다른 내용에 답이 붙지 않게 코어를 부르지 않는다. 같으면 known.rev 가 곧 받은 rev 다
+    if (requestsModel.answerRevChanged(answer && answer.rev, known.rev)) {
+      refreshRequests()
+      return { ok: false, error: 'conflict' }
+    }
     // 코어 request answer 결과 — 적힌 요청의 answer 만 더 읽는다
     const result = (await runCore(requestsModel.answerArgs(id, { choice: answer && answer.choice, text: answer && answer.text, rev: known.rev }), { dir: ctx.athenaDir })) as PackResult & { request?: { answer?: { choice?: unknown; text?: unknown } | null } }
     if (!result.ok || !result.request) {

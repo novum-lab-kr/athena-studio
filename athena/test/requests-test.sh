@@ -48,6 +48,17 @@ check "팩 데이터 state/requests/<id>.json · 잠금은 남지 않음" '[ -f 
 R="$(A request open --kind decision --title '결정 하나(고침)' --key k1)"
 check "같은 키 → 같은 요청을 고친다(rev 2)" '[ "$(echo "$R" | field request.id)" = "$ID" ] && [ "$(echo "$R" | field reused)" = True ] && [ "$(echo "$R" | field request.rev)" = 2 ]' "$R"
 check "목록에 하나" '[ "$(A request list | field requests | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")" = 1 ]'
+KR="$(A request open --kind question --title '옵션 그대로?' --option 'A :: 첫째' --option B --recommend A --key k-options)"
+KID="$(echo "$KR" | field request.id)"
+KR="$(A request open --kind question --title '옵션 그대로?(고침)' --key k-options)"
+check "옵션 있는 요청을 옵션 없이 다시 열기 → 옵션 유지 · 제목은 고침(rev +1 · reused)" '[ "$(echo "$KR" | field request.id)" = "$KID" ] && [ "$(echo "$KR" | field reused)" = True ] && [ "$(echo "$KR" | field request.rev)" = 2 ] && [ "$(echo "$KR" | field request.title)" = "옵션 그대로?(고침)" ] && [ "$(echo "$KR" | field request.options.0.label)" = A ] && [ "$(echo "$KR" | field request.options.0.recommended)" = True ] && [ "$(echo "$KR" | field request.options.1.label)" = B ]' "$KR"
+check "다시 연 뒤 파일에도 옵션이 남는다" '[ "$(A request show "$KID" | field request.options.1.label)" = B ]'
+KR="$(A request open --kind question --title '옵션 바꿈' --option C --key k-options)"
+check "옵션을 새로 주면 바뀐다(rev +1)" '[ "$(echo "$KR" | field request.rev)" = 3 ] && [ "$(echo "$KR" | field request.options.0.label)" = C ] && [ -z "$(echo "$KR" | field request.options.1.label)" ]' "$KR"
+A request answer "$KID" --by app --choice C > /dev/null
+KR="$(A request open --kind question --title '답 뒤 다시' --key k-options)"
+check "답을 받은 뒤 옵션 없이 다시 열어도 → open · 답 지움 · 옵션 유지" '[ "$(echo "$KR" | field request.state)" = open ] && [ -z "$(echo "$KR" | field request.answer)" ] && [ "$(echo "$KR" | field request.options.0.label)" = C ]' "$KR"
+A request cancel "$KID" > /dev/null
 
 section "답하기 · 받기"
 check "옛 rev 로 답하면 conflict" '[ "$(A request answer "$ID" --by board --choice A --rev 1 | field error)" = conflict ]'

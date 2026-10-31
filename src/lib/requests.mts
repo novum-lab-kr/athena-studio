@@ -95,6 +95,11 @@ export function answerArgs(id: unknown, { choice = '', text = '', rev = null }: 
   return argv
 }
 
+// 대화상자가 보여 준 rev 와 지금 rev 가 다른가 — rev 를 안 보낸 호출(정수가 아님)은 비교하지 않는다
+export function answerRevChanged(shownRev: unknown, currentRev: number): boolean {
+  return Number.isInteger(shownRev) && shownRev !== currentRev
+}
+
 // pane 에 넣을 한 줄 — 에이전트는 [요청 <id>] 를 보고 ack 한다(athena/docs/requests.md "에이전트가 할 일")
 export function deliveryLine(request: { id: string; title: string }, answer: { choice?: unknown; text?: unknown }): string {
   const parts = [answer.choice, answer.text].map((part) => String(part || '').replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)

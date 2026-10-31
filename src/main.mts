@@ -101,7 +101,7 @@ type MainCalls = {
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
   refreshRequests(): Promise<unknown>
-  answerRequest(id: string, answer: { choice: string; text: string }): Promise<unknown>
+  answerRequest(id: string, answer: { choice: string; text: string; rev?: unknown }): Promise<unknown>
   redeliverRequest(id: string): Promise<unknown>
   openPlan(id: string, html: string | null): Promise<unknown>
   openBoardSection(section: string): Promise<unknown>
@@ -870,7 +870,7 @@ handle('board:open', (ctx) => ctx.openBoardExternal())
 // [작업] 팝업 — 목록(요청 + 계획서) · 상세(계획서 id 만 받는다)
 handle('work:get', (ctx) => ctx.workState())
 handle('work:requests', (ctx) => ctx.refreshRequests())
-handle('work:answer', (ctx, id: unknown, answer: Loose) => ctx.answerRequest(String(id || ''), { choice: String((answer && answer.choice) || '').slice(0, 500), text: String((answer && answer.text) || '').slice(0, 1500) }))
+handle('work:answer', (ctx, id: unknown, answer: Loose) => ctx.answerRequest(String(id || ''), { choice: String((answer && answer.choice) || '').slice(0, 500), text: String((answer && answer.text) || '').slice(0, 1500), rev: answer && answer.rev }))
 handle('work:redeliver', (ctx, id: unknown) => ctx.redeliverRequest(String(id || '')))
 handle('work:open-plan', (ctx, id: unknown, html: unknown) => ctx.openPlan(String(id || ''), html ? String(html) : null))
 handle('board:section', (ctx, section: unknown) => ctx.openBoardSection(String(section || '')))

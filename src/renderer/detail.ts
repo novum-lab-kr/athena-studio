@@ -195,7 +195,7 @@ export async function openRequest(request: WorkRequestView): Promise<void> {
   if (choice === 'pane') return goToPane(request.pane)
   if (choice !== 'send') return
   if (!picked && !note.value.trim()) return showToast(say('work.needAnswer'), 'info')
-  const result = await studio.workAnswer(request.id, { choice: picked, text: note.value })
+  const result = await studio.workAnswer(request.id, { choice: picked, text: note.value, rev: request.rev })
   if (!result || !result.ok) return showToast(say(result && result.error === 'conflict' ? 'work.answerConflict' : 'work.answerFailed', { message: (result && result.message) || '' }))
   reportDelivery(result)
 }
