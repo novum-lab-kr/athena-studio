@@ -49,7 +49,7 @@ Get the app from the [download page](https://athena.novum-lab.com/download/) or 
 - Free, for macOS 13 Ventura or later, on Apple Silicon and Intel. Signed and notarized by Apple.
 - You need Claude Code or Codex, signed in with your own account. AI usage is billed under your Claude or Codex plan.
 - git and Python 3 (Apple's Command Line Tools — macOS offers to install them on first launch), Node.js, and the `gh` CLI for pull requests and automatic review.
-- Node.js is used by Athena's scripts. Use a version with the security patch: 22.23.4 or later on 22.x, 24.22.1 or later on 24.x, 26.12.1 or later on 26.x. The Node inside the app is separate and already patched (24.22.1).
+- Node.js is used by Athena's scripts. The Node inside the app is 24.22.1.
 
 The Mac app updates itself from Settings (⚙).
 
