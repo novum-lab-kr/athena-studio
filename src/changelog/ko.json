@@ -84,12 +84,21 @@
   "Version numbers. Every release is tagged and the app shows its version.": "버전 번호가 생겼어요. 모든 릴리스에 태그가 붙고 앱이 버전을 보여 줘요.",
   "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "개발 앱 업데이트에 `npm install` 이 필요하면, 앱을 켜 둔 채로 설치하고 다시 시작하기 전에 물어봐요. 설정 줄에 설치 대기 중 · 설치 중이 보이고, [나중에] 를 누르면 그 줄에 다시 시작 버튼이 남아요.",
   "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "설치를 강제로 끝낸 것을 더는 설치 실패로 알리지 않아요. 따로 표시하고 앱은 켜 둔 채, 설치는 다음에 켤 때 다시 시도해요.",
-  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "폴더를 가리키는 옛 팩 링크를 지우지 못해 Node 24.5.0 에서 코어 업데이트가 실패하지 않아요.",
+  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "폴더를 가리키는 옛 팩 링크를 지우지 못해 Node 24.5.0 에서 코어 업데이트가 실패하던 문제를 고쳤어요.",
   "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "다시 시작하면 창이 먼저 열리고 코어 업데이트는 뒤에서 돌아요. 탭 줄에 \"코어 업데이트 중\"이 보이고 끝나면 결과 팝업이 떠요. 팩 명령 · 새 에이전트 pane · 따라잡기는 업데이트가 끝날 때까지 기다려요.",
   "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "코어 업데이트 팝업에 짧은 종류 칩이 보이고, 끝자리만 바뀐 업데이트도 최근 변경을 보여 줘요.",
   "A dev-app update skips `npm install` when the dependencies are unchanged.": "개발 앱 업데이트에서 의존성이 그대로면 `npm install` 을 건너뛰어요.",
   "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 실행기가 HTTP 클라이언트의 assert 오류로 죽지 않고, 프로세스가 죽은 케이스는 통과가 아니라 실패로 기록돼요.",
   "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` 이 팩의 `local.json` 레포 루트를 먼저 읽어요.",
   "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "앱이 붙어 있을 때 pane 을 나누거나 닫아도 옆 pane 의 터미널 크기를 어림으로 바꾸지 않아요.",
-  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "폴더를 가리키는 옛 팩 링크를 지우지 못해 Node 24.5.0 에서 코어 업데이트가 실패하던 문제를 고쳤어요."
+  "Athena finds each repository's rule documents and loads their full text into agent sessions. You can add or exclude documents in the pack; above 40,000 characters per repository, the largest files are listed instead.": "아테나가 레포마다 규칙 문서를 찾아 원문 그대로 에이전트 세션에 실어요. 팩에서 문서를 더하거나 뺄 수 있고, 레포당 40,000자를 넘으면 큰 파일부터 목록으로만 보여 줘요.",
+  "Small pull requests take a ⚡ fast path, shown as a chip on the Board card: one reviewer and one review, and after one round of fixes the work merges once verification and the conflict check pass. A repository can turn this off.": "작은 PR 은 ⚡ 빠른 길로 가고 현황판 카드에 칩으로 보여요. 리뷰어 하나가 한 번만 리뷰하고, 수정을 한 번 거치면 검증과 충돌 확인만 통과해도 머지돼요. 레포마다 끌 수 있어요.",
+  "The Board's Metrics tab shows time by stage (work, verification, review, merge wait), review rounds and fixes per merge.": "현황판 지표 탭에서 구간별 시간(작업 · 검증 · 리뷰 · 머지 대기), 리뷰 라운드, 머지당 수정을 볼 수 있어요.",
+  "Scripts now fill in a plan's validation line and status, and agent instructions and core test output are shorter.": "계획서의 검증 줄과 상태를 스크립트가 채우고, 에이전트 지시문과 코어 시험 출력이 짧아졌어요.",
+  "Standard verification runs core test suites in parallel — about 5 minutes down to under 2.": "기본 검증이 코어 시험을 동시에 돌려서 약 5분에서 2분 미만으로 줄었어요.",
+  "Athena's commit script no longer refuses a valid worktree when the worktree list is long.": "아테나 커밋 스크립트가 워크트리 목록이 길 때 정상 워크트리를 거부하지 않아요.",
+  "A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.": "코어 업데이트 · 되돌리기 · 따라잡기 때 자동 리뷰 처리기를 끄고, 일이 남았으면 새 코드로 다시 띄워요. 이제 옛 처리기가 [작업] 팝업 질문의 선택지를 없애지 않아요.",
+  "Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.": "자동 머지를 기다리는 동안 PR 의 base 가 바뀌면 머지하지 않아요.",
+  "Reopening a request without options now keeps its existing choices.": "요청을 선택지 없이 다시 열어도 있던 선택지가 그대로 남아요.",
+  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "답하기 창을 연 사이 요청이 바뀌면 답을 보내지 않고 충돌 메시지를 띄워요."
 }

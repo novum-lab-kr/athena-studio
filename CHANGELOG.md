@@ -18,7 +18,27 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.40: v0.32.4..main 머지(#160 ~ #182)에서 손님에게 보이는 것만(개발 앱 묶음 #161 · 검증 범위 #177 #178 은 뺌 · #176 #181 은 PR 설정 줄에 · #172 는 #164 줄에 합침). 범위 끝은 열어 둔다 -->
 
-## 0.42 (v0.40.5 – · Oct 31, 2026)
+<!-- 0.46: v0.42.2..main 머지(#198 ~ #210 · 검증 시간 줄이기)에서 손님에게 보이는 것만(README 만 바뀐 #199 #201 #202 #203 #206 #208 은 뺌). 범위 끝은 열어 둔다 -->
+
+## 0.46 (v0.42.3 – · Nov 1, 2026)
+
+### New
+- Athena finds each repository's rule documents and loads their full text into agent sessions. You can add or exclude documents in the pack; above 40,000 characters per repository, the largest files are listed instead.
+- Small pull requests take a ⚡ fast path, shown as a chip on the Board card: one reviewer and one review, and after one round of fixes the work merges once verification and the conflict check pass. A repository can turn this off.
+
+### Improved
+- The Board's Metrics tab shows time by stage (work, verification, review, merge wait), review rounds and fixes per merge.
+- Scripts now fill in a plan's validation line and status, and agent instructions and core test output are shorter.
+- Standard verification runs core test suites in parallel — about 5 minutes down to under 2.
+
+### Fixed
+- Athena's commit script no longer refuses a valid worktree when the worktree list is long.
+- A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.
+- Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.
+- Reopening a request without options now keeps its existing choices.
+- If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.
+
+## 0.42 (v0.40.5 – v0.42.2 · Oct 31, 2026)
 
 ### Improved
 - The window opens first on restart, and the core update runs in the background: the tab bar shows "core update in progress", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.
