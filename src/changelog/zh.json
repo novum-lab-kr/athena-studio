@@ -84,12 +84,21 @@
   "Version numbers. Every release is tagged and the app shows its version.": "新增版本号。每个发布都会打标签，应用会显示其版本。",
   "When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and \"Later\" leaves a Restart button there.": "开发版应用更新需要 `npm install` 时，会在应用保持运行的情况下安装，并在重新启动前询问。设置行会显示等待安装和安装中，点击“稍后”会在该行保留重新启动按钮。",
   "A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.": "强制结束安装不再被报告为安装失败：会单独显示，应用保持打开，并在下次启动时重试安装。",
-  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "在 Node 24.5.0 上，核心更新不再因无法删除指向文件夹的旧包链接而失败。",
+  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "修复了因无法删除指向文件夹的旧包链接，导致在 Node 24.5.0 上核心更新失败的问题。",
   "The window opens first on restart, and the core update runs in the background: the tab bar shows \"core update in progress\", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.": "重新启动时窗口会先打开，核心更新在后台运行：标签栏显示“核心更新中”，完成后弹出结果。包命令、新的代理面板和追赶会等到更新完成后再进行。",
   "The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.": "核心更新弹窗显示简短的类型标签，只改动末位版本号的更新也会列出最近的变更。",
   "A dev-app update skips `npm install` when the dependencies are unchanged.": "开发版应用更新在依赖没有变化时会跳过 `npm install`。",
   "The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.": "QA 运行器不再因 HTTP 客户端的断言错误而崩溃，进程已退出的用例会记录为失败而不是通过。",
   "`init --scan` now reads the pack's `local.json` repositories root first.": "`init --scan` 现在会先读取包的 `local.json` 中的仓库根目录。",
   "Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.": "应用已连接时，拆分或关闭面板不再按估算值改变相邻面板的终端大小。",
-  "A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.": "修复了因无法删除指向文件夹的旧包链接，导致在 Node 24.5.0 上核心更新失败的问题。"
+  "Athena finds each repository's rule documents and loads their full text into agent sessions. You can add or exclude documents in the pack; above 40,000 characters per repository, the largest files are listed instead.": "Athena 会查找每个仓库的规则文档，并将全文载入智能体会话。可以在包中添加或排除文档；每个仓库超过 40,000 字符时，从最大的文件开始改为仅列出。",
+  "Small pull requests take a ⚡ fast path, shown as a chip on the Board card: one reviewer and one review, and after one round of fixes the work merges once verification and the conflict check pass. A repository can turn this off.": "小型拉取请求走 ⚡ 快速通道，并在看板卡片上显示标签：由一位审查者审查一次，经过一轮修复后，只要验证和冲突检查通过即可合并。可按仓库关闭。",
+  "The Board's Metrics tab shows time by stage (work, verification, review, merge wait), review rounds and fixes per merge.": "看板的指标标签页现在显示各阶段用时（工作、验证、审查、等待合并）、审查轮数和每次合并的修复数。",
+  "Scripts now fill in a plan's validation line and status, and agent instructions and core test output are shorter.": "脚本现在会填写计划的验证行和状态，智能体指令和核心测试输出也更短了。",
+  "Standard verification runs core test suites in parallel — about 5 minutes down to under 2.": "标准验证现在并行运行核心测试，耗时从约 5 分钟缩短到 2 分钟以内。",
+  "Athena's commit script no longer refuses a valid worktree when the worktree list is long.": "Athena 的提交脚本在工作树列表较长时，不再拒绝有效的工作树。",
+  "A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.": "核心更新、回滚或追赶时，现在会停止自动审查进程，如仍有工作则用新代码重新启动，旧进程不再移除 Work 弹窗中问题的选项。",
+  "Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.": "等待自动合并期间，如果拉取请求的基准分支发生变化，将不再合并。",
+  "Reopening a request without options now keeps its existing choices.": "不带选项重新打开请求时，现在会保留原有选项。",
+  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "回答对话框打开期间如果请求发生变化，回答不会发送，并显示冲突提示。"
 }
