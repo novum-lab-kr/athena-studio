@@ -264,7 +264,8 @@ if [ $NO_VERIFY = 0 ]; then
     # 같은 트리 내용·스크립트·인자로 이미 통과했으면 다시 돌리지 않는다(scripts/verify/reuse.sh — 계획서 기록에 "재사용(@시각)")
     REUSE_NOTE="$(mktemp -t hermes-commit-reuse)"
     # shellcheck disable=SC2086
-    if ! ATHENA_VERIFY_STRICT=1 ATHENA_VERIFY_ALLOW_SKIP="$ALLOW_SKIP" ATHENA_VERIFY_DIR="$TOP" ATHENA_VERIFY_REUSE_NOTE="$REUSE_NOTE" \
+    # ATHENA_PLAN — 검증 사건(verify)에 계획서를 남긴다(_lib.sh verify_event_fields · 지표의 검증 구간). pane 환경 값보다 --plan 이 먼저
+    if ! ATHENA_VERIFY_STRICT=1 ATHENA_VERIFY_ALLOW_SKIP="$ALLOW_SKIP" ATHENA_VERIFY_DIR="$TOP" ATHENA_VERIFY_REUSE_NOTE="$REUSE_NOTE" ATHENA_PLAN="$PLAN" \
         "$ATHENA_DIR/scripts/verify/reuse.sh" "$REPO" $target; then
       rm -f "$REUSE_NOTE"
       unstage; fail "검증을 통과하지 못했다(${target:-전체}). 위 표를 보고 고친 뒤 다시 — 건너뛴 단계를 허용하려면 사용자 확인 후 --allow-skip"

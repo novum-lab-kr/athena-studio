@@ -260,6 +260,16 @@
   .metric-lead { display: flex; align-items: center; gap: 8px; font-size: 12.5px; }
   .metric-lead .track { flex: 1; height: 6px; border-radius: 3px; background: color-mix(in srgb, var(--line) 70%, transparent); overflow: hidden; }
   .metric-lead .bar { display: block; height: 100%; border-radius: 3px; background: var(--accent); }
+  /* 구간 막대 — 작업 · 검증 · 리뷰 · 머지 대기 네 토막(모르는 구간은 빠진다 · 다 모르면 한 토막) */
+  .metric-lead .track.stages { display: flex; gap: 1px; }
+  .metric-lead .track.stages .bar { border-radius: 0; }
+  .metric-lead .bar.work { background: var(--col-doing); } .metric-lead .bar.verify { background: var(--col-plan); }
+  .metric-lead .bar.review { background: var(--col-review); } .metric-lead .bar.mergeWait { background: var(--col-done); }
+  .metric-legend { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: 11.5px; color: var(--muted); margin: 0 0 8px; }
+  .metric-legend span::before { content: ''; display: inline-block; width: 10px; height: 6px; border-radius: 2px; margin-right: 5px; vertical-align: middle; }
+  .metric-legend .work::before { background: var(--col-doing); } .metric-legend .verify::before { background: var(--col-plan); }
+  .metric-legend .review::before { background: var(--col-review); } .metric-legend .mergeWait::before { background: var(--col-done); }
+  .metric-legend .note::before { display: none; }
   .metric-lead .text { min-width: 54px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
   .metric-lead.none { color: var(--muted); }
   .metric-chips { display: flex; flex-wrap: wrap; gap: 5px; }
@@ -846,13 +856,16 @@
   // ── 지표 탭 — /api/metrics(scripts/lib/metrics.mjs). 누를 때 · 기간을 바꿀 때만 읽는다
   const metricDuration = (ms) => {
     if (ms === null || ms === undefined) return '—';
-    if (ms < 3_600_000) return `${Math.max(1, Math.round(ms / 60_000))}분`;
+    if (ms < 60_000) return `${Math.round(ms / 1000)}초`;
+    if (ms < 3_600_000) return `${Math.round(ms / 60_000)}분`;
     if (ms < 172_800_000) return `${(ms / 3_600_000).toFixed(1)}시간`;
     return `${(ms / 86_400_000).toFixed(1)}일`;
   };
   const metricRate = (value) => (value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`);
   const metricCount = (value) => (value === null || value === undefined ? '—' : String(Math.round(value * 10) / 10));
   const METRIC_STATUS = { planned: '계획', in_progress: '진행 중', blocked: '막힘', ready_for_review: '리뷰', done: '완료' };
+  // 구간 순서 · 이름(scripts/lib/metrics.mjs STAGES 와 같은 순서) — 막대 토막 · 범례 · 구간 평균 타일
+  const STAGES = [['work', '작업'], ['verify', '검증'], ['review', '리뷰'], ['mergeWait', '머지 대기']];
   // 지난 기간 대비 — 화살표(▲▼)와 글자로 방향을, 색으로 좋고 나쁨을(낮을수록 좋은 숫자는 ▼ 가 초록)
   const metricDelta = (current, before, { rate = false, lowerIsBetter = true } = {}) => {
     if (current === null || current === undefined || before === null || before === undefined) return '';
@@ -892,6 +905,9 @@
         tile('완료', current.done, previous?.done, metricCount, { lowerIsBetter: false }),
         tile('평균 소요', current.leadMs, previous?.leadMs, metricDuration, {}, current.done > current.leadKnown ? `시작 기록 ${current.leadKnown}개 기준` : ''),
       ]),
+      // 구간 평균 — 완료한 계획서 중 그 구간을 아는 것만(옛 기록은 검증 소요가 없다 · "N개 기준")
+      group('구간 평균', STAGES.map(([stage, label]) => tile(label, current.stageMs[stage], previous?.stageMs[stage], metricDuration, {},
+        current.done > current.stageKnown[stage] ? `${current.stageKnown[stage]}개 기준` : ''))),
       group('개입', [
         tile('작업당 질문', current.asksPerDone, previous?.asksPerDone, metricCount),
         tile('평균 답 대기', current.waitMs, previous?.waitMs, metricDuration),
@@ -899,21 +915,40 @@
       group('검증', [
         tile('검증 실패율', current.verifyFailRate, previous?.verifyFailRate, metricRate, { rate: true }, `${current.verifyRuns}회`),
         tile('리뷰 반려율', current.reviewRejectRate, previous?.reviewRejectRate, metricRate, { rate: true }, `${current.reviewRuns}회`),
+        tile('리뷰 라운드 평균', current.reviewRounds, previous?.reviewRounds, metricCount, {},
+          current.done > current.reviewRoundsKnown ? `자동 리뷰 기록 ${current.reviewRoundsKnown}개 기준` : ''),
+      ]),
+      group('정확도', [
+        tile('머지당 수정', current.fixRate, previous?.fixRate, metricCount, {}, `수정 ${current.autoFixes} / 머지 ${current.autoMerges}`),
+        tile('되돌림', null, null, () => '기록 없음', {}, '되돌림 사건이 아직 없음'),
       ]),
     ].join('');
-    // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것 대비 막대로
-    const longest = Math.max(0, ...summary.plans.map((plan) => plan.leadMs ?? 0));
+    // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것(전체 소요 · 구간 합 중 큰 쪽) 대비 막대로
+    const stageSum = (plan) => STAGES.reduce((sum, [stage]) => sum + (plan.stages?.[stage] ?? 0), 0);
+    const longest = Math.max(0, ...summary.plans.map((plan) => Math.max(plan.leadMs ?? 0, stageSum(plan))));
     const chip = (text, warn = false) => `<span class="chip${warn ? ' warn' : ''}">${esc(text)}</span>`;
+    const widthOf = (ms) => `${Math.max(3, ms / longest * 100).toFixed(1)}%`;
+    // 구간 막대 — 아는 구간만 토막으로(토막에 "검증 3초" 설명) · 다 모르면 전체 소요 한 토막 · 그것도 모르면 글자만
+    const leadBar = (plan) => {
+      if (!longest) return null;
+      const known = STAGES.filter(([stage]) => plan.stages?.[stage] !== null && plan.stages?.[stage] !== undefined);
+      if (known.length) {
+        const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(`${label} ${metricDuration(plan.stages[stage])}`)}" style="width:${widthOf(plan.stages[stage])}"></span>`).join('');
+        const text = plan.leadMs !== null ? metricDuration(plan.leadMs) : metricDuration(stageSum(plan));
+        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">${esc(text)}</span></div>`;
+      }
+      if (plan.leadMs === null) return null;
+      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">${esc(metricDuration(plan.leadMs))}</span></div>`;
+    };
     const rows = summary.plans.map((plan) => {
-      const lead = plan.leadMs !== null && longest
-        ? `<div class="metric-lead"><span class="track"><span class="bar" style="width:${Math.max(3, plan.leadMs / longest * 100).toFixed(1)}%"></span></span><span class="text">${esc(metricDuration(plan.leadMs))}</span></div>`
-        : `<div class="metric-lead none">${plan.status === 'done' ? '시작 기록 없음' : '—'}</div>`;
+      const lead = leadBar(plan) ?? `<div class="metric-lead none">${plan.status === 'done' ? '시작 기록 없음' : '—'}</div>`;
       const chips = [
         plan.asks ? chip(`질문 ${plan.asks}`) : '',
         plan.answered ? chip(`답 대기 ${metricDuration(plan.waitMs)}`) : '',
         plan.blocked ? chip(`막힘 ${plan.blocked}`, true) : '',
         plan.verify.runs ? chip(plan.verify.fails ? `검증 실패 ${plan.verify.fails}/${plan.verify.runs}` : `검증 통과 ${plan.verify.runs}`, plan.verify.fails > 0) : '',
         plan.reviews.runs ? chip(plan.reviews.rejects ? `리뷰 반려 ${plan.reviews.rejects}/${plan.reviews.runs}` : '리뷰 승인', plan.reviews.rejects > 0) : '',
+        plan.reviewRounds ? chip(`리뷰 라운드 ${plan.reviewRounds}`) : '',
         plan.commits ? chip(`커밋 ${plan.commits}`) : '',
       ].join('');
       return `<div class="metric-plan"><div><div class="name">${esc(plan.title || plan.plan)}</div><div class="path">${esc(plan.plan)}${plan.exists ? '' : ' · 지금 없음'}</div></div>`
@@ -922,6 +957,7 @@
     }).join('');
     box.innerHTML = `<div class="metric-groups">${groups}</div>`
       + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
+      + `<p class="metric-legend">${STAGES.map(([stage, label]) => `<span class="${stage}">${esc(label)}</span>`).join('')}<span class="note">막대는 아는 구간만 · 옛 기록은 전체 소요 한 토막</span></p>`
       + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
       + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 사건 ${summary.events}개 · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div>`;
   };

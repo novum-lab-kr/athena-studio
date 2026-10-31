@@ -6,7 +6,7 @@
 //   기록에 실패해도 하던 일을 막지 않는다 — 측정은 부가 기능이다
 //
 //   node:  logEvent(root, 'commit', { plan, repo, sha })
-//   셸:    node scripts/lib/events.mjs <종류> 키=값 …     (값 true · false 는 참거짓으로)
+//   셸:    node scripts/lib/events.mjs <종류> 키=값 …     (값 true · false 는 참거짓으로 · ms 는 숫자로)
 import { appendFileSync, mkdirSync, readFileSync, statSync } from 'node:fs'
 import { dirname, join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -87,9 +87,12 @@ export const observePlanStatus = (root, plans) => {
 }
 
 // 셸 스크립트용 — node scripts/lib/events.mjs <종류> 키=값 …
-const parseValue = (value) => {
+// 숫자로 받는 칸은 ms 뿐(sha · pr 처럼 숫자로 보이는 글자 칸을 숫자로 바꾸지 않게 이름으로 정한다)
+const NUMBER_FIELDS = new Set(['ms'])
+const parseValue = (key, value) => {
   if (value === 'true') return true
   if (value === 'false') return false
+  if (NUMBER_FIELDS.has(key) && value !== '' && Number.isFinite(Number(value))) return Number(value)
   return value
 }
 if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
@@ -99,7 +102,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
     for (const pair of pairs) {
       const at = pair.indexOf('=')
       if (at <= 0) continue
-      fields[pair.slice(0, at)] = parseValue(pair.slice(at + 1))
+      fields[pair.slice(0, at)] = parseValue(pair.slice(0, at), pair.slice(at + 1))
     }
     logEvent(ATHENA_ROOT, type, fields)
   }

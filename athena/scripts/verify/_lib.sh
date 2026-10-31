@@ -24,6 +24,8 @@
 #   - 검증 스크립트 = 그 레포 스크립트 + scripts/verify 의 코어 파일 + 팩 pack.json 의 내용
 #   - 실행 환경 = node -v · python3 유무(환경으로 정해지는 건너뜀이 있다)
 #   - 검증 도중 트리가 바뀌었으면(시작·끝 열쇠가 다르면) 기록하지 않는다
+# 측정용 사건 기록(docs/events.md `verify`) — 끝에 plan(ATHENA_PLAN · delegate.sh 가 pane 환경에, commit.sh 가 검증 호출에 넘긴다) ·
+#   ms(이 파일을 source 한 때부터 끝까지 — heavy.sh 줄서기는 들어가지 않는다) · scope(scoped|full) 를 같이 남긴다
 # 출력은 에이전트 보고서의 "검증 결과" 절에 그대로 붙일 수 있는 마크다운이다.
 set -uo pipefail
 VERIFY_LOG_DIR="${VERIFY_LOG_DIR:-$(mktemp -d /tmp/hermes-verify.XXXXXX)}"
@@ -35,6 +37,8 @@ VERIFY_LIB_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
 VERIFY_SCRIPT="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
 VERIFY_SCRIPT_ARGS="$*"
 VERIFY_RECORD="${VERIFY_RECORD:-1}"   # reuse.sh 는 0 으로 두고 source 한다(기록하지 않는다)
+verify_now_ms() { node -e 'process.stdout.write(String(Date.now()))' 2>/dev/null || echo "$(($(date +%s) * 1000))"; }
+VERIFY_START_MS="$(verify_now_ms)"   # 소요 시간의 시작 — 팩 스크립트는 맨 앞에서 source 하니 verify_scope_init 보다 앞이다
 
 verify_pass_dir() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/athena/verify-pass"; }
 
@@ -360,15 +364,24 @@ for item in data.get("generalDiagnostics", []):
   return 0
 }
 
-verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다
-  [ "$VERIFY_RECORD" = 1 ] && command -v node >/dev/null 2>&1 || return 0
+# verify_event_fields <레포명> <브랜치> <sha> — verify 사건의 키=값 칸을 한 줄에 하나(events.mjs 인자 · 시험이 그대로 읽는다)
+#   plan = ATHENA_PLAN(없으면 빈 값 — 옛 기록과 같다) · ms = source 한 때부터 지금까지 · scope = VERIFY_SCOPE_MODE
+verify_event_fields() {
   local failed="" ok=false strict=false i
   for i in "${!STEP_NAMES[@]}"; do
     case "${STEP_RESULTS[$i]}" in ❌*) failed="${failed:+$failed|}${STEP_NAMES[$i]}" ;; esac
   done
   [ "$VERIFY_FAILED" = 0 ] && ok=true
   [ "${ATHENA_VERIFY_STRICT:-0}" = 1 ] && strict=true
-  node "$VERIFY_LIB_DIR/../lib/events.mjs" verify repo="$1" branch="$2" sha="$3" ok="$ok" strict="$strict" failed="$failed" args="$VERIFY_SCRIPT_ARGS" >/dev/null 2>&1 || true
+  printf '%s\n' "repo=$1" "branch=$2" "sha=$3" "ok=$ok" "strict=$strict" "failed=$failed" "args=$VERIFY_SCRIPT_ARGS" \
+    "plan=${ATHENA_PLAN:-}" "ms=$(( $(verify_now_ms) - VERIFY_START_MS ))" "scope=$VERIFY_SCOPE_MODE"
+}
+
+verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다
+  [ "$VERIFY_RECORD" = 1 ] && command -v node >/dev/null 2>&1 || return 0
+  local -a fields=()
+  while IFS= read -r line; do fields+=("$line"); done < <(verify_event_fields "$1" "$2" "$3")
+  node "$VERIFY_LIB_DIR/../lib/events.mjs" verify "${fields[@]}" >/dev/null 2>&1 || true
 }
 
 print_summary() { # print_summary <레포명> <레포경로>

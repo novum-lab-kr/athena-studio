@@ -4,16 +4,17 @@
 # 사용: test/metrics-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #
 # 보는 것(docs/events.md): 개입 수(열린 채 고친 것은 안 셈) · 답 대기 · 걸린 시간(처음 본 때 → done) · 시작을 모르면 빼기 ·
-# done 뒤 다시 열리면 안 끝난 것 · 검증을 레포 · 브랜치로 계획서에 잇기 · 리뷰 반려 · 기간 · 지난 기간 비교
+# done 뒤 다시 열리면 안 끝난 것 · 검증을 레포 · 브랜치로 계획서에 잇기 · 리뷰 반려 · 기간 · 지난 기간 비교 ·
+# 구간별 시간(작업 · 검증 · 리뷰 · 머지 대기 — 옛 기록은 null) · 리뷰 라운드 · 정확도(머지당 수정 · 되돌림은 기록 없음)
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
 node --input-type=module - <<'EOF'
-import { summarize, groupByPlan, formatDuration } from './scripts/lib/metrics.mjs'
+import { summarize, groupByPlan, formatDuration, STAGES } from './scripts/lib/metrics.mjs'
 const H = 3_600_000
 const NOW = Date.parse('2026-10-25T12:00:00Z')
 const at = (hoursAgo) => new Date(NOW - hoursAgo * H).toISOString()
-const A = 'plans/task/a.md', B = 'plans/task/b.md', C = 'plans/task/c.md'
+const A = 'plans/task/a.md', B = 'plans/task/b.md', C = 'plans/task/c.md', D = 'plans/task/d.md'
 const events = [
   // a — 이번 주에 시작해 끝남: 질문 2번(하나는 열린 채 고침) · 답 대기 1시간 + 3시간 · 막힘 1번 · 검증 2번 중 1번 실패 · 리뷰 반려 1번 · 커밋 1번
   { at: at(30), type: 'plan.status', plan: A, from: null, to: 'planned' },
@@ -31,6 +32,18 @@ const events = [
   { at: at(18), type: 'review', plan: A, repo: 'web', branch: 'feat/a', verdict: '승인' },
   { at: at(17), type: 'commit', plan: A, repo: 'web', branch: 'feat/a' },
   { at: at(10), type: 'plan.status', plan: A, from: 'ready_for_review', to: 'done' },
+  // d — 새 기록: ready_for_review 로 작업 구간 · plan 칸 든 verify 의 ms 합이 검증 구간 · 자동 리뷰 2라운드 · 수정 1 · 머지 1
+  //   작업 = 처음 본 때(16h) → ready(12h) = 4시간 · 검증 = 1500 + 2500 ms · 리뷰 = 첫 리뷰(11h) → 마지막(9h) = 2시간 · 머지 대기 = 9h → 8h = 1시간
+  { at: at(16), type: 'plan.status', plan: D, from: null, to: 'in_progress' },
+  { at: at(15), type: 'verify', repo: 'web', branch: 'feat/d', ok: true, plan: D, ms: 1500, scope: 'scoped' },
+  { at: at(14), type: 'verify', repo: 'web', branch: 'feat/d', ok: true, plan: D, ms: '2500', scope: 'full' },
+  { at: at(13), type: 'verify', repo: 'web', branch: 'feat/d', ok: true, plan: D, scope: 'full' },   // 소요를 모르는 줄은 합에서 뺀다
+  { at: at(12), type: 'plan.status', plan: D, from: 'in_progress', to: 'ready_for_review' },
+  { at: at(11), type: 'review', plan: D, repo: 'web', branch: 'feat/d', verdict: '수정 필요', by: 'auto', pr: 7 },
+  { at: at(10.5), type: 'auto.fix', plan: D, repo: 'web', branch: 'feat/d', pr: 7 },
+  { at: at(9), type: 'review', plan: D, repo: 'web', branch: 'feat/d', verdict: '승인', by: 'auto', pr: 7 },
+  { at: at(8), type: 'auto.merge', plan: D, repo: 'web', pr: 7, ok: true },
+  { at: at(7), type: 'plan.status', plan: D, from: 'ready_for_review', to: 'done' },
   // b — 시작은 기록 전(처음 본 때 모름) · 이번 주에 done → 끝낸 작업에는 세고 걸린 시간에서는 뺀다
   { at: at(5), type: 'plan.status', plan: B, from: 'in_progress', to: 'done' },
   // c — 지난주에 끝났다가 이번 주에 다시 열림 → 안 끝난 것
@@ -60,22 +73,33 @@ check('답이 온 요청은 기다리는 중이 아님', a.waiting === 0 && a.wa
 check('done 뒤 다시 열리면 안 끝난 것', plans[C].status === 'in_progress' && plans[C].doneAt === null && plans[C].leadMs === null)
 check('지금 기다리는 요청 2 · 가장 오래된 open 시각', plans[C].waiting === 2 && plans[C].waitingSince === Date.parse(at(4)), JSON.stringify(plans[C]))
 
+console.log('\n구간별 시간 · 리뷰 라운드 · 정확도')
+const d = plans[D]
+check('작업 4시간 · 검증 4초(plan · ms 든 verify 만 합) · 리뷰 2시간 · 머지 대기 1시간', d.stages.work === 4 * H && d.stages.verify === 4000 && d.stages.review === 2 * H && d.stages.mergeWait === 1 * H, JSON.stringify(d.stages))
+check('plan 칸 든 verify 는 레포 · 브랜치의 커밋 없이도 계획서에 붙는다(3번)', d.verify.runs === 3 && d.verify.fails === 0, JSON.stringify(d.verify))
+check('자동 리뷰 라운드 2 · 머지당 수정 1/1', d.reviewRounds === 2 && d.autoFixes === 1 && d.autoMerges === 1 && d.fixRate === 1, JSON.stringify(d))
+check('되돌림은 기록 없음(null)', d.reverts === null)
+check('옛 기록(ready · 자동 리뷰 · ms 없음) — 작업 · 검증 null · 리뷰는 첫 → 마지막 리뷰 1시간 · 머지 대기는 머지가 없어 마지막 리뷰 → done 8시간 · 라운드 0', a.stages.work === null && a.stages.verify === null && a.stages.review === 1 * H && a.stages.mergeWait === 8 * H && a.reviewRounds === 0 && a.fixRate === null, JSON.stringify(a.stages))
+check('구간 순서', STAGES.join() === 'work,verify,review,mergeWait')
+
 console.log('\n기간(최근 7일)')
 const week = summarize(events, { now: NOW, days: 7 })
 check('사건 수 — 시각 없는 줄은 뺀다', week.events === events.length - 1, String(week.events))
-check('끝낸 작업 2(a · b) · 걸린 시간은 아는 1개로 20시간', week.current.done === 2 && week.current.leadKnown === 1 && week.current.leadMs === 20 * H, JSON.stringify(week.current))
-check('작업당 개입 1(a 2 · b 0)', week.current.asksPerDone === 1)
+check('끝낸 작업 3(a · b · d) · 걸린 시간은 아는 2개로 평균 (20 + 9) / 2 시간', week.current.done === 3 && week.current.leadKnown === 2 && week.current.leadMs === 14.5 * H, JSON.stringify(week.current))
+check('작업당 개입 2/3(a 2 · b 0 · d 0)', Math.abs(week.current.asksPerDone - 2 / 3) < 1e-9)
+check('구간 평균은 아는 것만 — 작업 4시간(d 1개) · 검증 4초(d) · 리뷰 1.5시간(a · d) · 머지 대기 4.5시간(a 8 · d 1)', week.current.stageMs.work === 4 * H && week.current.stageKnown.work === 1 && week.current.stageMs.verify === 4000 && week.current.stageKnown.verify === 1 && week.current.stageMs.review === 1.5 * H && week.current.stageKnown.review === 2 && week.current.stageMs.mergeWait === 4.5 * H && week.current.stageKnown.mergeWait === 2, JSON.stringify(week.current.stageMs))
+check('리뷰 라운드 평균 2(자동 리뷰가 있는 d 만) · 머지당 수정 1 · 되돌림 null', week.current.reviewRounds === 2 && week.current.reviewRoundsKnown === 1 && week.current.fixRate === 1 && week.current.autoFixes === 1 && week.current.autoMerges === 1 && week.current.reverts === null, JSON.stringify(week.current))
 check('기간 안의 질문 5번(계획서 없는 것 · 아직 답 없는 것 포함) · 평균 답 대기 2시간', week.current.asks === 5 && week.current.waitMs === 2 * H, JSON.stringify(week.current))
-check('검증 실패율 2/3 · 리뷰 반려율 1/2', Math.abs(week.current.verifyFailRate - 2 / 3) < 1e-9 && week.current.reviewRejectRate === 0.5)
-check('지난 기간 — c 는 다시 열려 끝낸 작업 0', week.previous.done === 0 && week.previous.verifyFailRate === null)
-check('표에는 이번 기간에 움직인 계획서만(최근 것부터)', week.plans.map((plan) => plan.plan).join() === [C, B, A].join(), week.plans.map((plan) => plan.plan).join())
+check('검증 실패율 2/6 · 리뷰 반려율 2/4', Math.abs(week.current.verifyFailRate - 2 / 6) < 1e-9 && week.current.reviewRejectRate === 0.5)
+check('지난 기간 — c 는 다시 열려 끝낸 작업 0 · 구간 평균 없음', week.previous.done === 0 && week.previous.verifyFailRate === null && week.previous.stageMs.work === null && week.previous.reviewRounds === null)
+check('표에는 이번 기간에 움직인 계획서만(최근 것부터)', week.plans.map((plan) => plan.plan).join() === [C, B, D, A].join(), week.plans.map((plan) => plan.plan).join())
 
 console.log('\n전체 · 빈 기록 · 글자')
 const all = summarize(events, { now: NOW })
-check('전체 — 지난 기간 비교 없음 · 계획서 3개', all.previous === null && all.plans.length === 3)
+check('전체 — 지난 기간 비교 없음 · 계획서 4개', all.previous === null && all.plans.length === 4)
 const empty = summarize([], { now: NOW, days: 7 })
-check('빈 기록 — 0 과 빈 값', empty.events === 0 && empty.since === null && empty.current.done === 0 && empty.current.leadMs === null && empty.plans.length === 0)
-check('시간 글자', formatDuration(null) === '—' && formatDuration(20 * 60_000) === '20분' && formatDuration(20 * H) === '20.0시간' && formatDuration(72 * H) === '3.0일')
+check('빈 기록 — 0 과 빈 값', empty.events === 0 && empty.since === null && empty.current.done === 0 && empty.current.leadMs === null && empty.current.stageMs.verify === null && empty.current.fixRate === null && empty.plans.length === 0)
+check('시간 글자', formatDuration(null) === '—' && formatDuration(4000) === '4초' && formatDuration(20 * 60_000) === '20분' && formatDuration(20 * H) === '20.0시간' && formatDuration(72 * H) === '3.0일')
 
 console.log(`\n통과 ${pass} · 실패 ${fail}`)
 process.exit(fail ? 1 : 0)
