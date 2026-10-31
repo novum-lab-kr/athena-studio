@@ -47,6 +47,11 @@ LOWER="$TMP/lower"; mkdir -p "$LOWER"; echo x > "$LOWER/agents.md"
 OUT="$(list "$LOWER" --json '{}')"
 check "대소문자가 다르면 관례 이름이 아니다" '[ -z "$(field "$OUT" docs)" ]' "$OUT"
 
+FENCE="$TMP/fence"; mkdir -p "$FENCE"; for name in tilde long indented double real; do echo "$name" > "$FENCE/$name.md"; done
+printf '~~~\n@tilde.md\n~~~\n\n````\n```\n@long.md\n````\n\n    @indented.md\n\n``@double.md``\n\n@real.md\n' > "$FENCE/CLAUDE.md"
+OUT="$(list "$FENCE" --json '{"add":["tilde.md","long.md","indented.md","double.md","real.md"]}')"; DOCS="$(field "$OUT" docs)"; AUTO="$(field "$OUT" auto)"
+check "코드 블록(물결표 · 긴 울타리 · 들여쓰기) · 겹 백틱 안의 @ 는 auto 가 아니라 실을 목록" 'has_all "$DOCS" tilde.md long.md indented.md double.md && [ "$AUTO" = "CLAUDE.md real.md" ]' "docs=$DOCS auto=$AUTO"
+
 echo "ref 에서 찾기"
 $GIT -C "$REPO" init -q -b main; rm "$REPO/CONTRIBUTING-LINK.md" "$REPO/.env"; $GIT -C "$REPO" add -A; $GIT -C "$REPO" commit -q -m init
 echo later > "$REPO/WORKING-AGREEMENT-NEW.md"; mv "$REPO/WORKING-AGREEMENT.md" "$TMP/moved.md"
@@ -69,6 +74,9 @@ check "공통 규칙 뒤에 절 · 파일마다 <레포>/<경로> · 원문 그�
 check "@ 로 끌어온 AGENTS.md 는 절에 없다" '! grep -qx "## mono/AGENTS.md" "$TMP/c.md" && ! grep -qx "## mono/docs/imported.md" "$TMP/c.md"'
 check "담당 앱 문서만 — 다른 앱은 add 에 있어도 뺀다" 'grep -qx "## mono/apps/web/AGENTS.md" "$TMP/c.md" && ! grep -q "apps/shop" "$TMP/c.md" && grep -qx "## mono/docs/extra.md" "$TMP/c.md"' "$(grep '^## ' "$TMP/c.md")"
 check "상한 안이면 알릴 줄이 없다" '[ -z "$NOTES" ]' "$NOTES"
+ln -s apps/shop/AGENTS.md "$REPO/shop-link.md"; config '{"add":["./apps/shop/AGENTS.md","shop-link.md"]}'; context web-fe >/dev/null
+check "정규화가 필요한 경로 · 링크로도 다른 앱 문서가 안 실린다" '! grep -q "^shop$" "$TMP/c.md"' "$(grep '^## ' "$TMP/c.md")"
+rm "$REPO/shop-link.md"; config '{"add":["docs/extra.md","apps/shop/AGENTS.md"]}'
 context reviewer >/dev/null
 check "담당을 모르면(reviewer) 앱 전부" 'grep -qx "## mono/apps/web/AGENTS.md" "$TMP/c.md" && grep -qx "## mono/apps/shop/AGENTS.md" "$TMP/c.md"'
 python3 -c 'print("큰"*500)' > "$REPO/docs/big.md"
@@ -130,6 +138,14 @@ OUT="$(run)"
 check "문서를 더하고 빼면 규칙 문서 변화" 'echo "$OUT" | grep -q "### 규칙 문서 변화" && echo "$OUT" | grep -q "^+ WORKING-AGREEMENT.md$" && echo "$OUT" | grep -q "^- AGENTS.md$"' "$OUT"
 check "없어진 add 는 빼라고 · 새 문서는 더하라고 제안" 'echo "$OUT" | grep -q "^- AGENTS.md (레포에 없음)$" && echo "$OUT" | grep -q "갱신 제안"' "$OUT"
 check "pack 설정 파일은 스크립트가 고치지 않는다" 'grep -q "\"add\":\[\"AGENTS.md\"\]" "$SYNC/athena.config.json"'
+echo first > "$SYNC/repos/good/extra-rules.md"; $GIT -C "$SYNC/repos/good" add -A; $GIT -C "$SYNC/repos/good" commit -q -m extra; git -C "$SYNC/repos/good" push -q origin dev
+cat > "$SYNC/athena.config.json" <<'JSON'
+{"repos":[{"name":"good","branch":"dev","kind":"single","appDir":"app","agents":["good-fe"],"ruleDocs":{"add":["WORKING-AGREEMENT.md","extra-rules.md"]}}]}
+JSON
+run >/dev/null; run --accept >/dev/null
+echo second > "$SYNC/repos/good/extra-rules.md"; $GIT -C "$SYNC/repos/good" add -A; $GIT -C "$SYNC/repos/good" commit -q -m body; git -C "$SYNC/repos/good" push -q origin dev
+OUT="$(run)"
+check "경로가 같아도 add 문서 본문이 바뀌면 문서 변화로 보고한다" 'echo "$OUT" | grep -q "^~ extra-rules.md$"' "$OUT"
 
 echo "delegate"
 ATH="$TMP/ath"; mkdir -p "$ATH/plans/task" "$ATH/repos" "$ATH/packs/t" "$ATH/.claude/agents"

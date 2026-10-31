@@ -125,10 +125,34 @@ class GitTree:
         return self.blob(self.resolve(rel) or rel)
 
 
+def without_code_blocks(text):
+    """Markdown 코드 블록을 뺀 글 — 백틱 · 물결표 울타리(같은 문자 · 여는 길이 이상으로 닫는다 · 안 닫히면 끝까지)와 들여쓴 블록"""
+    kept = []
+    fence = None
+    previous_blank = True
+    in_indented = False
+    for line in text.split('\n'):
+        if fence:
+            closing = re.match(r' {0,3}(`{3,}|~{3,})[ \t]*$', line)
+            if closing and closing.group(1)[0] == fence[0] and len(closing.group(1)) >= len(fence):
+                fence = None
+            continue
+        opening = re.match(r' {0,3}(`{3,}|~{3,})', line)
+        if opening:
+            fence = opening.group(1)
+            in_indented = False
+            continue
+        blank = not line.strip()
+        in_indented = not blank and re.match(r'(?: {4}|\t)', line) is not None and (previous_blank or in_indented)
+        if not in_indented:
+            kept.append(line)
+        previous_blank = blank
+    return '\n'.join(kept)
+
+
 def imports_of(text):
-    """본문의 @ 참조 — Claude Code 처럼 코드 블록 · 인라인 코드 안은 무시한다"""
-    without_fences = re.sub(r'```.*?```', '', text, flags=re.S)
-    without_code = re.sub(r'`[^`\n]*`', '', without_fences)
+    """본문의 @ 참조 — Claude Code 처럼 코드 블록 · 인라인 코드(백틱 여러 개 포함) 안은 무시한다"""
+    without_code = re.sub(r'(?<!`)(`+)(?!`)[^\n]*?(?<!`)\1(?!`)', '', without_code_blocks(text))
     return re.findall(r'(?:^|\s)@(\S+)', without_code)
 
 
@@ -274,6 +298,14 @@ def repo_entry_for(athena_dir, work_dir):
         return name, {}
 
 
+def in_other_app(tree, raw, other_apps):
+    """팩 add 경로가 대상 밖 앱 것인지 — 적은 모양(./ 등)과 링크가 풀린 자리 둘 다 본다. 못 쓰는 경로는 discover 가 거부하게 둔다"""
+    path = clean_path(raw)
+    if path is None:
+        return False
+    return path.startswith(other_apps) or (tree.resolve(path) or path).startswith(other_apps)
+
+
 def prepare(athena_dir, agent, work_dir):
     """에이전트 세션에 실을 것 — { section: 절 글, listed: 목록으로 돌린 절대 경로들, notes: 디스패치 보고에 낼 줄들 }"""
     repo, entry = repo_entry_for(athena_dir, work_dir)
@@ -281,8 +313,9 @@ def prepare(athena_dir, agent, work_dir):
     add, exclude, max_chars = read_settings(entry, notes)
     dirs, other_apps = targets(entry, agent)
     # 다른 앱 담당의 문서는 이 에이전트의 일이 아니다 — 팩 목록에 앱 문서가 함께 적혀 있어도 그 앱 것만
-    add = [path for path in add if not (isinstance(path, str) and path.startswith(other_apps))] if other_apps else add
     tree = FsTree(work_dir)
+    if other_apps:
+        add = [path for path in add if not in_other_app(tree, path, other_apps)]
     found = discover(tree, dirs, add, exclude)
     loaded = []
     for path in found['docs']:

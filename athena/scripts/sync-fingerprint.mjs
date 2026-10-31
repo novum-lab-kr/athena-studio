@@ -13,7 +13,7 @@
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './lib/config.mjs'
 import { listRuleDocs, ruleDocList } from './lib/rule-docs.mjs'
@@ -236,7 +236,11 @@ const buildSnapshot = (repo) => {
   snapshot.docs = { ...blobIds(repo, DOC_FILES) }
   for (const dirPath of DOC_GLOB_DIRS) Object.assign(snapshot.docs, blobIdsInDir(repo, dirPath))
   const ruleDocs = readRuleDocs(repo)
-  if (ruleDocs) Object.assign(snapshot, ruleDocs)
+  if (ruleDocs) {
+    const { docBlobs, ...lists } = ruleDocs
+    Object.assign(snapshot.docs, docBlobs)
+    Object.assign(snapshot, lists)
+  }
   return snapshot
 }
 
@@ -245,28 +249,33 @@ const readRuleDocs = (repo) => {
   const settings = isPlainObject(repo.ruleDocs) ? repo.ruleDocs : {}
   const add = Array.isArray(settings.add) ? settings.add : []
   const exclude = Array.isArray(settings.exclude) ? settings.exclude : []
-  const appPrefix = (appName) => `apps/${appName}/`
+  // 적은 모양(./apps/…)과 상관없이 앱 기준 브랜치로 읽는다
+  const inApp = (path, appName) => posix.normalize(String(path)).startsWith(`apps/${appName}/`)
   const appNames = Object.keys(repo.apps ?? {})
   const scans = [{
     ref: repo.ref,
     dirs: ['', ...(repo.appDir && repo.appDir !== '.' ? [repo.appDir] : [])],
-    add: add.filter((path) => !appNames.some((appName) => String(path).startsWith(appPrefix(appName))))
+    add: add.filter((path) => !appNames.some((appName) => inApp(path, appName)))
   }, ...appNames.map((appName) => ({
     ref: repo.apps[appName].branch ? `origin/${repo.apps[appName].branch}` : repo.ref,
     dirs: [`apps/${appName}`],
-    add: add.filter((path) => String(path).startsWith(appPrefix(appName)))
+    add: add.filter((path) => inApp(path, appName))
   }))]
   const list = new Set()
   const missing = new Set()
   const refused = new Set()
+  const blobs = {}
   for (const scan of scans) {
     const found = listRuleDocs(repo.path, { ...scan, exclude })
     if (!found) return null
-    for (const path of ruleDocList(found)) list.add(path)
+    const paths = ruleDocList(found)
+    for (const path of paths) list.add(path)
+    // 경로가 같아도 본문이 바뀌면 "규칙·소개 문서 변화" 에 나오게 — DOC_FILES 밖의 문서도 그 문서의 기준 ref 로
+    Object.assign(blobs, blobIds({ ...repo, ref: scan.ref }, paths))
     for (const path of found.missing) missing.add(path)
     for (const path of found.refused) refused.add(path)
   }
-  return { ruleDocs: [...list].sort(), ruleDocsMissing: [...missing].sort(), ruleDocsRefused: [...refused].sort() }
+  return { docBlobs: blobs, ruleDocs: [...list].sort(), ruleDocsMissing: [...missing].sort(), ruleDocsRefused: [...refused].sort() }
 }
 
 // 팩 ruleDocs.add 와 찾은 목록의 차이 — pack.json 은 스크립트가 쓰지 않는다(팩은 사람 · 아테나가 커밋한다). 리포트에 제안만
