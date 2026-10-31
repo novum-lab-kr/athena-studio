@@ -51,6 +51,14 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`
 - 결정 콘솔 요청은 `plan-html.mjs` · 현황판이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)
 
+## 아테나에게 보내지 못했을 때
+
+에이전트가 아테나 pane 으로 넘길 일을 보내지 못하면(명령 실패 · 훅 차단 · 아테나 pane 없음) 우회하지 않고 요청으로 남긴다 — 반쯤 전달되거나 사라지지 않게(GitHub 이슈 #134):
+
+1. 계획서 Checkpoint(Blocked 또는 결과 절)에 보낼 글을 그대로 적는다
+2. `bin/athena request open --kind question --title '<한 줄>' --body-file <파일> --plan <계획서>` 로 요청을 열어 현황판에 뜨게 한다
+3. 보고 끝에 그랬다고 한 줄 적는다
+
 ## 명령
 
 `--json` 이면 마지막 줄 하나가 JSON(`{ ok, request }` · 목록은 `{ ok, requests }`), 실패는 `{ ok:false, error, message }` — `error` 는 `usage`(종료 2) · `not-found` · `conflict` · `stale` · `locked` · `contract-mismatch`. 스튜디오는 팩 명령처럼 `--contract` 를 붙인다.

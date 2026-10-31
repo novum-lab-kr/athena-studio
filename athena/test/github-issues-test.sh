@@ -3,6 +3,7 @@
 # 가짜 gh(PATH 앞 · 출력은 파일에서) · 가짜 화면 CLI(scripts/screen-check/fake-bin) · 임시 폴더 · GitHub · 진짜 화면을 건드리지 않는다 · 몇 초
 #
 # 사용: test/github-issues-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/athena-github-issues-test.XXXXXX")" && pwd -P)"

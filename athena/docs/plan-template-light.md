@@ -9,7 +9,7 @@
 
 - 손으로 쓰지 않는다. `node scripts/new-plan.mjs --agent <에이전트> --summary "<요약>"` 이 만든다. `scripts/delegate.sh --plan new "<요약>"` 과 현황판 [작업 시작] 은 이걸 부른다
 - 작업이 커지면(여러 레포·API 변경·결정이 필요) 정식 계획서로 옮기고 경량판에는 그 경로를 적는다
-- 담당 에이전트는 끝날 때 Checkpoint 의 Status·Progress·Validation 을 채운다. Studio [작업] 팝업 · pane [상세] 가 이 Status 를 따라 바뀐다
+- 담당 에이전트는 끝날 때 Checkpoint 의 Progress·결과를 채운다(Validation 은 검증 스크립트 · 커밋 뒤 Status 는 `commit.sh` 가 적는다). Studio [작업] 팝업 · pane [상세] 가 이 Status 를 따라 바뀐다
 - 버그 수정이면 `AGENTS.md` 5절의 버그 수정 규칙(재현 먼저 · 수정 전·후 비교)을 따른다
 - 경량판은 처음에 html 결정 콘솔이 없다 — 리뷰에서 "결정 필요"가 나오면 그때 같은 계획서에 콘솔이 생긴다(`plan-html.mjs --add`)
 

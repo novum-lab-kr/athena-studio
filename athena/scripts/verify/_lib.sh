@@ -374,7 +374,7 @@ verify_event_fields() {
   [ "$VERIFY_FAILED" = 0 ] && ok=true
   [ "${ATHENA_VERIFY_STRICT:-0}" = 1 ] && strict=true
   printf '%s\n' "repo=$1" "branch=$2" "sha=$3" "ok=$ok" "strict=$strict" "failed=$failed" "args=$VERIFY_SCRIPT_ARGS" \
-    "plan=${ATHENA_PLAN:-}" "ms=$(( $(verify_now_ms) - VERIFY_START_MS ))" "scope=$VERIFY_SCOPE_MODE"
+    "plan=${VERIFY_PLAN:-${ATHENA_PLAN:-}}" "ms=$(( $(verify_now_ms) - VERIFY_START_MS ))" "scope=$VERIFY_SCOPE_MODE"
 }
 
 verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다
@@ -382,6 +382,32 @@ verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정
   local -a fields=()
   while IFS= read -r line; do fields+=("$line"); done < <(verify_event_fields "$1" "$2" "$3")
   node "$VERIFY_LIB_DIR/../lib/events.mjs" verify "${fields[@]}" >/dev/null 2>&1 || true
+}
+
+# verify_plan_resolve — 이 검증의 계획서(이어 보낸 pane 은 환경 값이 앞 계획서다 · plan_autofill.py). 사건 · Validation 이 같은 값을 쓴다
+verify_plan_resolve() {
+  VERIFY_PLAN="${ATHENA_PLAN:-}"
+  [ "$VERIFY_RECORD" = 1 ] && [ -n "$VERIFY_PLAN" ] && command -v python3 >/dev/null 2>&1 || return 0
+  VERIFY_PLAN="$(python3 "$VERIFY_LIB_DIR/../lib/plan_autofill.py" resolve "$VERIFY_LIB_DIR/../.." "$VERIFY_PLAN" 2>/dev/null)" || VERIFY_PLAN="${ATHENA_PLAN:-}"
+}
+
+# verify_validation_line <레포명> <sha> — 계획서 Validation 한 줄(docs/workflow.md 4절 · 시험이 그대로 읽는다)
+verify_validation_line() {
+  local failed=0 i result="통과" scope="${VERIFY_SCOPE_MODE:-full}" secs
+  for i in "${!STEP_NAMES[@]}"; do
+    case "${STEP_RESULTS[$i]}" in ❌*) failed=$((failed + 1)) ;; esac
+  done
+  [ "$VERIFY_FAILED" = 0 ] || result="실패 $failed"
+  secs=$(( ($(verify_now_ms) - VERIFY_START_MS) / 1000 ))
+  printf -- '- %s %s @%s %s (%s · %s초)%s\n' "$(date '+%Y-%m-%d %H:%M')" "$1" "${2:0:7}" "$result" "$scope" "$secs" "${VERIFY_SCRIPT_ARGS:+ — $VERIFY_SCRIPT_ARGS}"
+}
+
+# verify_plan_record <레포명> <sha> — 계획서가 있으면 Validation 에 적는다. 논리 경로(plans/…md)만 받아 시험 · 다른 본체의 계획서를 건드리지 않는다. 실패해도 검증 결과는 그대로
+verify_plan_record() {
+  [ "$VERIFY_RECORD" = 1 ] && command -v python3 >/dev/null 2>&1 || return 0
+  case "${VERIFY_PLAN:-}" in plans/*.md) ;; *) return 0 ;; esac
+  python3 "$VERIFY_LIB_DIR/../lib/plan_autofill.py" validation "$VERIFY_LIB_DIR/../.." "$VERIFY_PLAN" "$(verify_validation_line "$1" "$2")" >/dev/null 2>&1 \
+    || echo "⚠️ 계획서 Validation 기록 실패 — $VERIFY_PLAN" >&2
 }
 
 print_summary() { # print_summary <레포명> <레포경로>
@@ -405,6 +431,8 @@ print_summary() { # print_summary <레포명> <레포경로>
   done
   echo; echo "전체 로그: $VERIFY_LOG_DIR"
   verify_record_pass "$repo" "$path" "$branch" "$sha"
+  verify_plan_resolve
   verify_log_event "$repo" "$branch" "$sha"
+  verify_plan_record "$repo" "$sha"
   [ "$VERIFY_FAILED" = 0 ]
 }

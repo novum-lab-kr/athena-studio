@@ -3,6 +3,7 @@
 #
 # 사용: test/secret-guard-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 #       HOOK=<다른 훅 파일> test/secret-guard-test.sh   (고치기 전 훅과 비교할 때)
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 HOOK="${HOOK:-$SRC/scripts/hooks/secret-guard.py}"

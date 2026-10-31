@@ -2,6 +2,7 @@
 # 다이어그램 테마 시험 — scripts/diagram-theme.mjs 가 archify 결과에만 · 한 번만 입히는지(임시 폴더 · 몇 초)
 #
 # 사용: test/diagram-theme-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d "${TMPDIR:-/tmp}/diagram-theme-test.XXXXXX")"

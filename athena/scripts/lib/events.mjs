@@ -86,9 +86,20 @@ export const observePlanStatus = (root, plans) => {
   } catch { /* 측정 실패는 무시한다 */ }
 }
 
+// 스크립트가 Status 를 바꾼 때(commit.sh) — 사건을 남기고 지난번 본 상태도 맞춰 현황판이 같은 변화를 또 남기지 않게 한다.
+// 본 기록이 아직 없으면 그대로 둔다(현황판의 첫 훑기가 지금 상태를 적는다)
+export const recordPlanStatus = (root, fields) => {
+  logEvent(root, 'plan.status', fields)
+  try {
+    const file = planStatusFile(root)
+    const seen = JSON.parse(readFileSync(file, 'utf8'))
+    writeAtomic(file, `${JSON.stringify({ ...seen, [fields.plan]: fields.to }, null, 2)}\n`)
+  } catch { /* 측정 실패는 무시한다 */ }
+}
+
 // 셸 스크립트용 — node scripts/lib/events.mjs <종류> 키=값 …
-// 숫자로 받는 칸은 ms 뿐(sha · pr 처럼 숫자로 보이는 글자 칸을 숫자로 바꾸지 않게 이름으로 정한다)
-const NUMBER_FIELDS = new Set(['ms'])
+// 숫자로 받는 칸은 이름으로 정한다(sha · pr 처럼 숫자로 보이는 글자 칸을 숫자로 바꾸지 않게)
+const NUMBER_FIELDS = new Set(['ms', 'promptChars', 'contextChars'])
 const parseValue = (key, value) => {
   if (value === 'true') return true
   if (value === 'false') return false
@@ -104,6 +115,7 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
       if (at <= 0) continue
       fields[pair.slice(0, at)] = parseValue(pair.slice(0, at), pair.slice(at + 1))
     }
-    logEvent(ATHENA_ROOT, type, fields)
+    if (type === 'plan.status') recordPlanStatus(ATHENA_ROOT, fields)
+    else logEvent(ATHENA_ROOT, type, fields)
   }
 }

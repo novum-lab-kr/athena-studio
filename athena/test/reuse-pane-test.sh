@@ -3,6 +3,7 @@
 # · plan-bind.mjs(옛 계획서가 다시 묶이지 않기). 가짜 화면 목록 · 임시 폴더 — 화면 · claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/reuse-pane-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1

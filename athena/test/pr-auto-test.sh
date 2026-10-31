@@ -13,6 +13,7 @@
 # 완료된 계획서에 이어 올린 PR(PR #28 재현 — done · planned 는 ready_for_review 로 되돌려 대기열에 · blocked 는 그대로) ·
 # 큰 diff(syung#12 · #23 재현 — 생성물은 빼고 코드 파일부터 · 잘린 · 빠진 파일 목록 · 잘린 diff 승인은 머지 승인 아님)
 # ⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' 면 리뷰어 claude 하나 · 상한 1 · 수정 1회 뒤 새 HEAD 는 리뷰 없이 머지 · 두 번째 수정은 멈춤 · fastPath:false 레포는 옛 흐름 · 판정 fastPathVerdict · 설정 파일 정규식은 _lib.sh 와 원문 비교)
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1

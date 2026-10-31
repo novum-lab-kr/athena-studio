@@ -16,7 +16,8 @@
 | type | 누가 남기나 | 필드 |
 |---|---|---|
 | `request` | `scripts/lib/requests.mjs` — 요청 상태가 바뀔 때마다(열기 · 고쳐 열기 · 답 · 받음 · 취소 · 닫힘) | `id` · `kind` · `state` · `plan` · `by`(board · app · chat) · `rev` |
-| `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
+| `delegate` | `scripts/delegate.sh` — pane 을 띄우거나 이어 보낸 뒤 | `plan` · `agent` · `pane` · `promptChars`(지시문 글자 수 · 이어 열기는 0) · `contextChars`(시스템 프롬프트 파일 글자 수 · 이어 보내기는 0) |
+| `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 · `scripts/commit.sh` — 커밋 뒤 `ready_for_review` 로 바꾸면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
 | `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` · `plan`(환경 `ATHENA_PLAN` — `delegate.sh` 가 pane 에, `commit.sh` 가 검증 호출에 넘긴다 · 없으면 빈 값) · `ms`(소요 — `_lib.sh` 를 source 한 때부터 사건을 남길 때까지 · `heavy.sh` 줄서기는 들어가지 않는다) · `scope`(scoped · full) |
 | `commit` | `scripts/commit.sh` — 커밋한 뒤 | `plan` · `repo` · `branch` · `sha` · `verified` · `verify` |
 | `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) · 빠른 길이면 `fast: true` |
@@ -32,7 +33,7 @@
 
 ## 계획서 상태의 한계
 
-에이전트가 계획서 md 를 직접 고치므로 Status 변화는 고치는 쪽에서 남길 수 없다. 현황판이 훑을 때(켜져 있을 때만) 지난번 본 상태(`state/plan-status.json`)와 비교해 남긴다.
+에이전트가 계획서 md 를 직접 고치는 Status 변화는 고치는 쪽에서 남길 수 없다(`commit.sh` 가 바꾼 것만 바로 남기고 본 기록도 맞춘다). 나머지는 현황판이 훑을 때(켜져 있을 때만) 지난번 본 상태(`state/plan-status.json`)와 비교해 남긴다.
 - 현황판이 꺼져 있던 동안의 변화는 다음에 켜졌을 때의 시각으로 찍힌다 — 그사이 여러 번 바뀌었으면 마지막 것만
 - 처음(본 기록이 없을 때)은 지금 상태만 적어 두고 사건은 남기지 않는다
 

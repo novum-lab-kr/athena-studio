@@ -139,7 +139,7 @@ const reach = (start) => {
 
 const tests = [
   ...tracked.filter((path) => /^test\/[^/]+\.test\.js$/.test(path)).map((path) => ['JS', path]),
-  ...tracked.filter((path) => /^athena\/test\/[^/]+\.sh$/.test(path)).map((path) => ['SH', path]),
+  ...tracked.filter((path) => /^athena\/test\/[^_/][^/]*\.sh$/.test(path)).map((path) => ['SH', path]),
 ]
 const changedSet = new Set(changed)
 /** 바뀐 파일 중 어떤 시험이 닿았는지 */

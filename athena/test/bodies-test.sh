@@ -12,6 +12,7 @@
 # update(일하는 세션이 있어도 올림 · 팩 잠금은 건너뜀 · 주 본체 ff · dirty·diverged) · --rollback(실행 ID 단위) · 링크 실패면 그 본체만 되돌림 ·
 # 열 때 따라잡기 · update --panes-state(쉬는 pane 의 세션은 working 에서 뺌) · 도는 commit.sh · ship.sh · 무거운 명령은 잠깐 기다림 ·
 # 학습 검토 · QA 는 끄고 올림(일이 남았으면 새 코드로 다시) · 데이터 형식이 바뀌는 업데이트는 모두 비었을 때만
+. "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/bodies-test.XXXXXX")" && pwd -P)"

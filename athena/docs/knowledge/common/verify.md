@@ -32,6 +32,10 @@
 
 **사건 기록** — 실제로 돈 검증은 `verify` 사건 한 줄(`docs/events.md` · 재사용은 남기지 않는다)로 남고, 끝에 `plan`(환경 `ATHENA_PLAN` — `delegate.sh` 로 띄운 pane 과 `commit.sh --plan` 의 검증에는 차 있고 사람이 직접 돌리면 빈 값) · `ms`(`_lib.sh` 를 source 한 때부터 — `heavy.sh` 줄서기는 빠진다) · `scope`(scoped · full)가 붙는다. 현황판 [지표] 탭 · `scripts/metrics.mjs` 의 "검증" 구간이 이 `ms` 를 계획서마다 합한 것이다. pane 밖에서 돌린 검증을 계획서에 넣고 싶으면 `ATHENA_PLAN=plans/… scripts/verify/<레포>.sh`
 
+**계획서 Validation 줄** — 실제로 돈 검증은 `ATHENA_PLAN` 이 `plans/…md` 이고 그 파일이 있으면 Validation 절에 `- <시각> <레포> @<sha> 통과|실패 N (<범위> · <초>초) — <인자>` 한 줄을 스스로 적는다(`scripts/lib/plan_autofill.py` · 바로 위가 같은 레포 · sha · 결과면 안 적는다 · 재사용은 안 적는다). 보고의 "검증 결과" 표는 그대로 보고에 붙인다.
+
+**코어 시험 출력** — `athena/test/*-test.sh` 는 `test/_lib.sh` 로 통과 줄(들여 쓴 `✔`)을 숨기고 실패 줄 · 절 제목 · 끝의 `✅ 통과` · 요약 `통과 N · 실패 M · Ns` 만 보인다. 종료 코드는 시험 그대로. 전부 보려면 `ATHENA_TEST_VERBOSE=1`.
+
 ## red-check (이번 테스트가 이번 변경을 정말 검사하나)
 "테스트 추가했고 통과" 가 맞아도 그 테스트가 구현 없이도 통과하면 아무것도 검사하지 않는 것이다. `scripts/verify/red-check.sh --dir <워크트리> [--repo <레포>] [--committed] [--json]` 이 기계로 본다 — 바뀐 파일(기준 `merge-base origin/<prBase> HEAD` 대비 커밋 + 미커밋 + 미추적 · `--committed` 면 HEAD 트리만 — 테스트 내용 · 인라인 판별도 HEAD 에서)을 팩 `redCheck.tests` 글롭으로 테스트/구현으로 나누고, base 로 임시 워크트리를 만들어 **이번 테스트 파일만 지금 내용으로** 복사한 뒤(구현은 base 그대로) 그 파일을 하나씩 `redCheck.run` 으로 돌린다. 임시 워크트리는 끝나면(실패 · 끊김도) 지운다 · heavy.sh 로 줄을 선다. 칸 설정은 `docs/pack.md` "redCheck".
 - **언제** — `ship.sh` 가 PR 올릴 때(미리보기 · `--yes` · `--auto-push` — HEAD · merge-base · `redCheck` 칸이 같으면 지난 결과를 다시 쓴다 · `error` 는 다시 쓰지 않는다). 결과는 미리보기에 한 줄 · 계획서 Validation 의 `- red-check:` 줄(레포 · 브랜치마다 한 줄 — PR 본문 "검증" 절 · reviewer · PR 자동 리뷰가 계획서로 본다)에 남고, 아래 ⚠️ 결과면 PR 본문 "확인 필요" 에 한 줄 들어간다(에이전트가 쓴 `--body-file` 에도 — 그 파일은 두고 사본에). 결과가 경고가 아니게 되면 전에 넣은 그 줄을 지운다. 이미 열린 PR 에 push 만 할 때는 본문을 바꾸지 않고 계획서 줄만 바뀐다. 실행이 끊기면(heavy.sh 감시 · Ctrl+C) 돌던 테스트 묶음을 끄고 임시 워크트리를 지운다. 손으로 돌려 보고에 붙여도 된다
