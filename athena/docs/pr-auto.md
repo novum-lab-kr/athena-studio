@@ -94,16 +94,16 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 
 1. 레포 하나짜리 작업(여러 레포 작업은 `ship.sh` 가 애초에 거부한다)
 2. 바뀐 파일이 10개 이하(`FAST_PATH_MAX_FILES` 상수 — 옵션이 아니다)
-3. 설정 파일을 안 건드림 — 검증 범위 판정과 같은 정규식(`scripts/verify/_lib.sh` `VERIFY_SCOPE_CONFIG_RE` · `package.json` · lock · `tsconfig*` · `.env*` · CI 설정 등)
+3. 설정 파일을 안 건드림 — 검증 범위 판정과 같은 정규식(`scripts/verify/_lib.sh` `VERIFY_SCOPE_CONFIG_RE` · `package.json` · lock · `tsconfig*` · `scripts/verify/` · CI 설정 등 — 그 목록 그대로)
 4. 계획서 1절(`## 1.` 절 본문)에 `보안` · `외부 계약` · `데이터` 낱말이 없음
 
 레포가 `fastPath: false` 면 늘 `no`. 리뷰를 끈 레포(`autoReview: false`)는 지금처럼 리뷰 없이 머지 단계로 간다.
 
-빠른 길 PR 의 처리기(`scripts/pr-auto.mjs`)는 계획서의 `- Fast path: yes` 줄을 읽어:
+빠른 길 PR 의 처리기(`scripts/pr-auto.mjs`)는 계획서 **`## Checkpoint` 절 안의** `- Fast path: yes` 줄을 읽어(본문 예시 · 옛 기록의 같은 줄은 읽지 않고, 덮어쓰기도 Checkpoint 줄만 · Checkpoint 절이 없는 계획서는 늘 옛 흐름):
 - 리뷰어 **Claude 하나**(`REVIEWERS[0]`) · 상한 **1** — 로그 · PR 댓글 · `- Auto review:` 줄에 `⚡ 빠른 길 · 라운드 1/1`, `auto.*` 사건(`auto.fix` · `auto.takeover` · `auto.stop` · `auto.merge`)에 `fast: true`
 - 승인 → 같은 HEAD 검증 · 충돌 확인 → 머지 확인(위 흐름과 같다)
 - 수정 필요(1회) → 작업 pane 에 지시 → 고친 새 HEAD 는 **리뷰 없이** 검증 · 충돌 확인 → 머지 단계(위 "상한 뒤 이어받음" 길 — `auto.takeover`)
-- 그 뒤 또 커밋이 오면(두 번째 수정) → `멈춤 — 라운드 상한`(`auto.stop` `reason: rounds`) · 아테나 pane 에 알림 — 아테나가 이어받는다
+- 그 뒤 또 커밋이 오면(두 번째 수정) → `멈춤 — 라운드 상한`(`auto.stop` `reason: rounds`) · 아테나 pane 에 알림 — 아테나가 이어받는다. 이어받은 HEAD 에 안 정한 결정이 남아 머지 대기가 돼도 옛 흐름과 달리 다음 커밋에 이어받기를 다시 주지 않는다(줄 `결정 필요 — 이어받은 HEAD이지만 … (⚡ 빠른 길 — 다음 커밋은 이어받지 않음)`) — 결정을 반영한 커밋도 멈춤 → 아테나
 - 리뷰 중에 레포 설정이 바뀌어(`fastPath: false`) 빠른 길이 아니게 되면 머지 직전 확인에서 멈춘다(`settingChanged`)
 
 지표(`scripts/lib/metrics.mjs`)의 리뷰 구간은 `ship.sh` 가 PR 을 올린 직후 남기는 `pr.open` 사건(`plan` · `repo` · `pr` · `sha` · `fast`)부터 마지막 리뷰 결론까지다(`pr.open` 이 없는 옛 기록은 첫 리뷰부터). 현황판 계획서 카드에는 `⚡ 빠른 길` 칩이 붙는다.

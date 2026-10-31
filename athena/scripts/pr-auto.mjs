@@ -763,10 +763,14 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     // 사람이 정할 결정이 결정 콘솔에 남아 있다(결정 A 로 수정이 먼저 올라온 경우) — 묻지도 머지하지도 않는다. 확정 지시를 반영한 커밋이 오면 다시 본다
     // 상한 라운드에서 승인됐으면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — 줄에 그 표시를 남긴다
     // 상한 라운드 승인이나 이어받은 HEAD 면 결정을 반영한 다음 커밋도 이어받는다(리뷰 없이 검증만) — grantsTakeover 가 알아보는 '결정 필요 — 상한 뒤 이어받음…' 으로
-    const result = takeover || round >= max
-      ? `결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · ${takeover ? '이어받은 HEAD' : passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
-      : `결정 필요 — ${passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
-    writeAutoLine(planPath, { ...line, result })
+    // ⚡ 빠른 길은 수정 1회만 — 이미 이어받은 HEAD 에는 다시 주지 않는다(줄이 grantsTakeover 모양이 아니라 다음 커밋은 라운드 상한 멈춤 → 아테나 · PR #200 자동 리뷰 지적)
+    const regrant = takeover ? !fast : round >= max
+    const pendingResult = () => {
+      if (regrant) return `결정 필요 — ${TAKEOVER}(다음 커밋은 리뷰 없이 검증만) · ${takeover ? '이어받은 HEAD' : passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
+      if (takeover) return `결정 필요 — 이어받은 HEAD이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기(${FAST_PATH} — 다음 커밋은 이어받지 않음)`
+      return `결정 필요 — ${passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
+    }
+    writeAutoLine(planPath, { ...line, result: pendingResult() })
     logEvent(ROOT, 'auto.stop', { ...stopBase, reason: 'decisions' })
     console.log('  → 결정 콘솔에 안 정한 결정이 있다 — 머지하지 않고 기다린다')
     return

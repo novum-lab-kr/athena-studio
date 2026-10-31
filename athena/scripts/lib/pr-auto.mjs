@@ -55,16 +55,36 @@ export const fastPathVerdict = ({ repoFast = true, files = [], flagged = [] }) =
   return { fast: true, why: `파일 ${files.length}개` }
 }
 //   - Fast path: yes|no (<이유>)
+//   읽기 · 쓰기 모두 "## Checkpoint" 절 안에서만 — 본문 예시 · 옛 기록에 같은 모양의 줄이 있어도 판정으로 읽지 않는다(PR #200 자동 리뷰 지적). Checkpoint 절이 없는 계획서는 빠른 길이 아니다
 const FAST_LINE = /^- Fast path:\s*(yes|no)\b(?:\s*\((.*)\))?\s*$/
-export const planFastPath = (planText) => String(planText ?? '').split('\n').some((line) => line.match(FAST_LINE)?.[1] === 'yes')
+// "## Checkpoint" 절의 줄 범위 [start, end) — 절이 없으면 null
+const checkpointRange = (lines) => {
+  const start = lines.findIndex((row) => /^##\s+Checkpoint\s*$/.test(row))
+  if (start < 0) return null
+  let end = start + 1
+  while (end < lines.length && !/^##\s/.test(lines[end])) end += 1
+  return { start, end }
+}
+const checkpointIndex = (lines, matches) => {
+  const range = checkpointRange(lines)
+  if (!range) return -1
+  for (let index = range.start + 1; index < range.end; index += 1) if (matches(lines[index])) return index
+  return -1
+}
+export const planFastPath = (planText) => {
+  const lines = String(planText ?? '').split('\n')
+  const index = checkpointIndex(lines, (row) => FAST_LINE.test(row))
+  return index >= 0 && lines[index].match(FAST_LINE)?.[1] === 'yes'
+}
 export const fastPathLineText = ({ fast, why = '' }) => `- Fast path: ${fast ? 'yes' : 'no'}${why ? ` (${oneLine(why, 200)})` : ''}`
-// 같은 줄이 있으면 바꾸고(PR 을 다시 올리면 다시 판정) 없으면 Work ref 뒤에
+// Checkpoint 절에 같은 줄이 있으면 바꾸고(PR 을 다시 올리면 다시 판정) 없으면 Checkpoint 의 Work ref 뒤에 · Checkpoint 가 없으면 Work ref 뒤 · 그것도 없으면 끝에(그 줄은 planFastPath 가 읽지 않는다)
 export const withFastPathLine = (planText, entry) => {
   const line = fastPathLineText(entry)
   const lines = String(planText).split('\n')
-  const index = lines.findIndex((row) => FAST_LINE.test(row))
+  const index = checkpointIndex(lines, (row) => FAST_LINE.test(row))
   if (index >= 0) { lines[index] = line; return lines.join('\n') }
-  const anchor = lines.findIndex((row) => /^- Work ref:/.test(row))
+  const inCheckpoint = checkpointIndex(lines, (row) => /^- Work ref:/.test(row))
+  const anchor = inCheckpoint >= 0 ? inCheckpoint : lines.findIndex((row) => /^- Work ref:/.test(row))
   if (anchor >= 0) { lines.splice(anchor + 1, 0, line); return lines.join('\n') }
   return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
 }
