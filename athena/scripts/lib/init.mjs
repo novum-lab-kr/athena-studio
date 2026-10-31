@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { paths } from './config.mjs'
+import { listRuleDocs, ruleDocList } from './rule-docs.mjs'
 
 const git = (dir, args) => {
   try { return execFileSync('git', ['-C', dir, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim() } catch { return '' }
@@ -45,8 +46,12 @@ export const inspectRepo = (dir) => {
     const short = app.replace(/-(web|app)$/, '')
     return [`prd-${short}`, `prd-${app}`, `${short}-prd`, `production-${short}`].find((name) => branches.includes(name)) ?? (pick(BRANCH_ORDER, branches) || prBase)
   }
+  const appDir = ['app', 'src', 'pages'].find((sub) => isDir(join(dir, sub))) ?? ''
+  // 레포 규칙 문서 첫 목록 — 못 찾으면 비워 둔다(세션에 실을 때 다시 찾는다 · 뒤로는 /sync 가 갱신 제안)
+  const ruleDocs = listRuleDocs(dir, { dirs: ['', ...(appDir ? [appDir] : []), ...apps.map((app) => `apps/${app}`)] })
   return {
     name,
+    ruleDocs: ruleDocs ? ruleDocList(ruleDocs) : [],
     // git 주소 — 팩에 적어 두면 다른 컴퓨터에서 폴더 이름이 달라도 이 주소로 레포를 찾는다(https 주소의 사용자 · 토큰은 뗀다)
     remote: origin.replace(/^(https?:\/\/)[^/@]+@/i, '$1'),
     branch: kind === 'monorepo' ? prBase : (pick(BRANCH_ORDER, branches) || branches[0] || ''),
@@ -57,7 +62,7 @@ export const inspectRepo = (dir) => {
     lang: python ? 'python' : (existsSync(join(dir, 'package.json')) ? 'node' : 'unknown'),
     mobile,
     apps,
-    appDir: ['app', 'src', 'pages'].find((sub) => isDir(join(dir, sub))) ?? '',
+    appDir,
     org,
     branches: branches.slice(0, 30),
   }
@@ -179,6 +184,7 @@ export const packEntry = (repo) => {
   if (repo.mobile) entry.mobile = true
   if (repo.lang === 'python') entry.lang = 'python'
   if (repo.appDir) entry.appDir = repo.appDir
+  if (repo.ruleDocs?.length) entry.ruleDocs = { add: repo.ruleDocs }
   return entry
 }
 

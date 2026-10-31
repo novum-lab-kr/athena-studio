@@ -8,7 +8,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 BODY="$TMP/body"
 mkdir -p "$BODY/.claude/agents" "$BODY/.claude/rules" "$BODY/scripts/lib" "$TMP/work"
-cp "$SRC/scripts/agent-context.py" "$BODY/scripts/"; cp "$SRC/scripts/lib/agent_hooks.py" "$BODY/scripts/lib/"
+cp "$SRC/scripts/agent-context.py" "$BODY/scripts/"; cp "$SRC/scripts/lib/agent_hooks.py" "$SRC/scripts/lib/rule_docs.py" "$SRC/scripts/lib/athena_config.py" "$BODY/scripts/lib/"
 printf '{"autoCompactWindow": 123}\n' > "$BODY/.claude/settings.json"
 printf 'rules\n' > "$BODY/AGENTS.md"
 for name in fe reviewer; do printf -- '---\nname: %s\ndescription: x\n---\nbody\n' "$name" > "$BODY/.claude/agents/$name.md"; done

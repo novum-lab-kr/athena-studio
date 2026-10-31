@@ -12,7 +12,7 @@
 못 찾으면 pre 는 아무것도 쓰지 않고, post 는 진행 중 계획서 후보만 알린다(아테나 세션·FE pane 에서만).
 압축·세션 시작을 막거나 늦추지 않는다(항상 exit 0).
 
-사용: compact-checkpoint.py pre|post   (hook 입력 JSON 은 stdin)
+사용: compact-checkpoint.py pre | post [다시 읽을 레포 규칙 문서 경로…]   (hook 입력 JSON 은 stdin)
 """
 import datetime
 import json
@@ -132,7 +132,7 @@ def on_pre(payload: dict) -> None:
     write_snapshot(path, snapshot_line(work_dir_for(text, payload), payload.get('trigger') or '?'))
 
 
-def on_post(payload: dict) -> None:
+def on_post(payload: dict, reread: list) -> None:
     if payload.get('source') not in (None, 'compact'):
         return
     found = find_plan(screen.self_info()['pane_id'])
@@ -155,6 +155,11 @@ def on_post(payload: dict) -> None:
             f'최근 진행 중 계획서: {", ".join(candidates) if candidates else "없음"}'
         )
     else:
+        message = ''
+    # 상한을 넘어 전문을 싣지 못한 레포 규칙 문서 — 읽은 내용이 압축으로 사라졌다(agent-context.py 가 경로를 넘긴다)
+    if reread:
+        message = f'{message} 레포 규칙 문서 다시 읽기: {", ".join(reread)}'.strip()
+    if not message:
         return
     print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': message}}, ensure_ascii=False))
 
@@ -165,7 +170,7 @@ def main() -> None:
     if mode == 'pre':
         on_pre(payload)
     elif mode == 'post':
-        on_post(payload)
+        on_post(payload, sys.argv[2:])
 
 
 if __name__ == '__main__':

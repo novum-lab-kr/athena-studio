@@ -5,7 +5,8 @@
 ## 자동으로 실리는 것
 
 도구마다 다르다(2026-09-17 Claude Code 서브에이전트로 실측 · 2026-10-29 규칙 문서 다이어트 뒤 파일 수만 고침).
-- 자동 주입됨 — `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`(지금 `coding-standards.md` 하나), 에이전트 프로필 본문. 워크트리에서 띄운 에이전트는 `scripts/agent-context.py` 가 만든 공통 규칙 파일(`AGENTS.md` 에서 아테나 전용 구간을 뺀 것 + `.claude/rules/*.md`)을 받는다
+- 자동 주입됨 — `CLAUDE.md`, `AGENTS.md`, `.claude/rules/*.md`(지금 `coding-standards.md` 하나), 에이전트 프로필 본문. 워크트리에서 띄운 에이전트는 `scripts/agent-context.py` 가 만든 공통 규칙 파일(`AGENTS.md` 에서 아테나 전용 구간을 뺀 것 + `.claude/rules/*.md` + 레포 규칙 문서)을 받는다
+- 레포 규칙 문서 — 관례 이름(`AGENTS.md` · `WORKING-AGREEMENT.md` · `CONTRIBUTING.md` · `.ai/*.md` · `.cursorrules` · `.github/copilot-instructions.md` · `.github/agents/*.agent.md` · `.claude/rules/*.md`)과 팩 `ruleDocs`(`docs/pack.md`)로 찾아 원문 그대로 `# 레포 규칙 문서` 절에 싣는다(`scripts/lib/rule_docs.py`). 시스템 프롬프트라 대화 압축에도 남는다. Claude Code 가 스스로 싣는 것(루트 `CLAUDE.md` · `.claude/CLAUDE.md` · `.claude/rules/*.md` 와 그 `@` 참조)은 두 번 싣지 않는다. 합계가 상한(기본 40,000자)을 넘으면 큰 파일부터 "먼저 읽어라" 목록으로 돌리고, 그 파일은 압축 뒤 안내에 "다시 읽기" 로 나온다
 - **자동 주입되지 않음** — `docs/knowledge/**` 전부. `rules.md` 의 "필수" 절과 `gotchas.md` 는 **직접 읽어야 한다**
 
 그래서 팀 공통 코드 규칙(언어 · 타입 · 최신 문법 · 층별 기준 · 변수명 · `any` 금지 · 성능)은 Claude Code 에서는 `.claude/rules/coding-standards.md` 로 항상 들어오지만, **그렇지 않은 도구(Codex 등)는 `docs/knowledge/common/coding.md` 를 직접 읽어야 한다.** 자동 주입을 전제하지 말고, 필요한 규칙이 실제로 눈앞에 있는지 확인한다.

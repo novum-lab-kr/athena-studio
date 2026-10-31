@@ -15,6 +15,7 @@ import os
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent / "lib"))
 import agent_hooks  # 훅 목록은 delegate.sh 와 같은 한 곳(scripts/lib/agent_hooks.py)
+import rule_docs
 
 agent, hermes_dir, workdir, agents_out, context_out, settings_out = sys.argv[1:7]
 hermes = pathlib.Path(hermes_dir).resolve()
@@ -51,6 +52,16 @@ parts = [
 ]
 for rule in sorted((hermes / ".claude/rules").glob("*.md")):
     parts += ["", rule.read_text(encoding="utf-8")]
+# 레포 규칙 문서 원문 — 공통 규칙 뒤에(시스템 프롬프트라 압축에도 남는다 · scripts/lib/rule_docs.py). 못 읽어도 띄우기는 막지 않는다.
+# 알릴 줄은 stdout 으로 — delegate.sh 가 디스패치 보고에 넣는다
+try:
+    rule_docs_result = rule_docs.prepare(hermes_dir, agent, workdir)
+except Exception as error:
+    rule_docs_result = {"section": "", "listed": [], "notes": [f"   📄 레포 규칙 문서를 싣지 못했다: {error}"]}
+if rule_docs_result["section"]:
+    parts += ["", rule_docs_result["section"]]
+for note in rule_docs_result["notes"]:
+    print(note)
 pathlib.Path(context_out).write_text("\n".join(parts), encoding="utf-8")
 
 # 상위 디렉터리에서 자동 로드되는 hermes 문서를 뺀다 (위 컨텍스트에 이미 들어 있다)
@@ -77,7 +88,9 @@ else:
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]
 # pane ↔ 대화 기록 — 팩 백업이 되살릴 때 claude --resume 으로 잇는다 (scripts/hooks/pane-session.py)
-settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post"}]},
+# 전문을 싣지 못하고 목록으로 돌린 규칙 문서는 압축 뒤 다시 읽어야 한다 — 경로를 안내 훅에 넘긴다(전문은 시스템 프롬프트라 남는다)
+reread = "".join(f" {shlex.quote(path)}" for path in rule_docs_result["listed"])
+settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "command", "command": f"{compact_hook} post{reread}"}]},
                                      {"hooks": [agent_hooks.pane_session(hermes)]}]
 # 답 언어 — 메시지마다 본체 .claude/settings.local.json 의 language(스튜디오 앱 언어)를 다시 읽어 넣는다 (scripts/hooks/language.py)
 settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"},

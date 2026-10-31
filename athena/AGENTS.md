@@ -31,13 +31,14 @@
 ## 2. 무엇을 읽고 시작할 것인가
 
 ### 2.1 규칙은 세 층 — 충돌하면 뒤가 우선
-팀 공통 `docs/knowledge/common/`(`coding` · `git` · `reporting` · `verify` · `learning`) → 레포 규칙 `docs/knowledge/<레포>/rules.md`(공통과 다른 점 · 고유 규칙) → 레포 원문(레포 안 `CLAUDE.md` · `.ai/*.md` · `README.md` 등). 레포 원문이 코드와 다르면 **코드를 우선**하고 차이를 보고한다.
+팀 공통 `docs/knowledge/common/`(`coding` · `git` · `reporting` · `verify` · `learning`) → 레포 규칙 `docs/knowledge/<레포>/rules.md`(공통과 다른 점 · 고유 규칙) → 레포 원문(레포 안 `CLAUDE.md` · `.ai/*.md` · `README.md` 등). `rules.md` 에는 레포에 없는 것만 둔다 — 레포 규칙 문서는 원문이 정본이다. 레포 원문이 코드와 다르면 **코드를 우선**하고 차이를 보고한다.
 
 ### 2.2 항상 읽는 것 (작업 크기와 무관)
 knowledge 전체를 미리 읽지 않는다. 대신 아래는 작업이 아무리 작아도 예외 없이 적용된다.
 - 5절 **작업 규칙**
 - 대상 레포 `rules.md` 의 **"필수" 절** · `gotchas.md` **전체**(함정은 어느 작업에서 밟을지 모른다). 공책이 나뉘어 `gotchas/<폴더>.md` 가 있으면 작업할 파일이 그 폴더 안일 때 그 화면 파일도 전부(작업이 다른 폴더로 넓어지면 그 파일도 · `learning.md` 7절)
 - 대상 repo/app/worktree 확인(`git status --short --branch`) · 아테나 **자체** 작업(`repo: athena`)이면 `docs/knowledge/athena/gotchas.md`
+- 레포 규칙 문서(관례 이름 + 팩 `ruleDocs`)는 `delegate.sh` 로 띄운 에이전트 세션에 `# 레포 규칙 문서` 절로 실린다 — 절 끝 "먼저 읽어라" 목록이 있으면 그 파일을 읽는다. 위임 없이 직접 일하는 도구(Codex 등)는 팩 `ruleDocs` 목록을 직접 읽는다
 - `docs/knowledge/**` 는 자동으로 실리지 않는다 — 직접 읽는다. 코드 규칙 요약은 Claude Code 에 자동으로 실리고, 그렇지 않은 도구(Codex 등)는 `docs/knowledge/common/coding.md` 를 직접 읽는다. 무엇이 자동으로 실리는지 · 읽는 법은 헷갈릴 때 `docs/knowledge/common/context.md`
 
 ### 2.3 그다음은 작업 유형에 따라 필요한 절만

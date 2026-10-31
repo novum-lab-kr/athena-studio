@@ -366,7 +366,7 @@ if [ -z "$CTX_TOP" ]; then
 fi
 if [ -n "$CTX_TOP" ] && [ "$(cd "$CTX_TOP" && pwd -P)" != "$ATHENA_REAL" ]; then
   AGENTS_JSON="$(mktemp -t hermes-agents)" && CONTEXT_FILE="$(mktemp -t hermes-context)" && SETTINGS_FILE="$(mktemp -t hermes-settings)" \
-    && python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$CTX_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" \
+    && RULE_DOC_NOTES="$(python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$CTX_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE")" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "${AGENTS_JSON:-}" "${CONTEXT_FILE:-}" "${SETTINGS_FILE:-}"; echo "에이전트 컨텍스트 생성 실패"; exit 1; }
   CONTEXT_CHARS="$(char_count "$CONTEXT_FILE")"
   EXTRA_FILES="$(shq "$AGENTS_JSON") $(shq "$CONTEXT_FILE") $(shq "$SETTINGS_FILE")"
@@ -548,6 +548,8 @@ PYEOF
 node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" pane="$PANE" \
   promptChars="$(printf '%s' "${REUSE_MSG:-$PROMPT}" | char_count)" contextChars="${CONTEXT_CHARS:-0}" >/dev/null 2>&1 || true
 
+# 레포 규칙 문서 안내는 pane 줄보다 앞에 — 현황판이 출력의 마지막 줄을 pane 줄로 읽는다
+if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
 if [ "$AGENT" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
