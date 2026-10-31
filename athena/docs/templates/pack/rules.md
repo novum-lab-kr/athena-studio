@@ -1,6 +1,6 @@
 # {{knowledgeLabel}} 레포 규칙
 
-공통 규칙(`docs/knowledge/common/`)에 더해, 이 레포에서 다른 점과 고유 규칙. 원문: 레포 안 `README.md`·`CLAUDE.md`·`AGENTS.md` 등(있으면).
+공통 규칙(`docs/knowledge/common/`)에 더해, **레포에 없는 것만** 적는다 — 팀 지시 · 레포 밖 약속 · 문서와 코드가 다른 점. 레포 규칙 문서(`AGENTS.md` · `.ai/*.md` 등)는 에이전트 세션에 원문이 실리니 옮겨 적지 않는다(`docs/pack.md` "ruleDocs").
 
 > 뼈대 — `athena scaffold` 가 만들었다({{today}}). "확인 필요" 줄은 `/setup` 또는 첫 작업에서 레포 코드를 읽고 채운다.
 

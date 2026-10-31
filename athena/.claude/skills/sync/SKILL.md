@@ -42,7 +42,8 @@ node scripts/sync-fingerprint.mjs --repo shop # 특정 레포
 | 레포·에이전트·기준 브랜치 매핑 | 팩 `pack.json` | — |
 | 버전·포트·Node/pnpm·Prettier·검증 스크립트·기준 커밋 | **지문**(`.sync/snapshots/`) | `docs/services.md` 자동 표, `pack/guide/playbook.html`(팩 판) 기준 커밋 표·last sync → **`scripts/build-derived.mjs` 가 생성** |
 | 디렉토리·라우트 맵 | `docs/knowledge/<레포>/structure.md` (모노레포는 `<앱>/`) | — |
-| 레포 규칙·필수 제약 | `docs/knowledge/<레포>/rules.md` | — |
+| 레포 규칙 | 레포 원문(목록은 팩 `ruleDocs` — 세션에 자동으로 실린다) | — |
+| 레포에 없는 규칙(팀 지시 · 레포 밖 약속 · 문서와 코드 불일치) | `docs/knowledge/<레포>/rules.md` | — |
 | 함정·문서와 코드의 불일치 | `docs/knowledge/<레포>/gotchas.md` | — |
 | 대표 예시·절차 | `patterns.md` · `workflows.md` | — |
 | 역할·담당 범위·지식 진입 경로 | `.claude/agents/<agent>.md` | — |
@@ -59,7 +60,7 @@ node scripts/sync-fingerprint.mjs --repo shop # 특정 레포
 
 2. **구조가 바뀌었으면** `docs/knowledge/<레포>/structure.md`를 고친다 (지문의 `dirs`/`routes` 변화를 그대로 반영).
 
-3. **레포 규칙 문서가 바뀌었으면**(리포트의 "규칙·소개 문서 변화") 원문을 읽고 `rules.md`를 고친다. `[필수]` 등급 항목이면 `rules.md`의 **"필수" 절**에 넣는다.
+3. **레포 규칙 문서가 바뀌었으면**(리포트의 "규칙·소개 문서 변화" · "규칙 문서 변화" · "팩 `ruleDocs.add` 갱신 제안") 팩 `pack.json` 의 `ruleDocs.add` 목록을 제안대로 갱신한다. 원문은 에이전트 세션에 자동으로 실리니 `rules.md` 에 옮겨 적지 않는다. `rules.md` 의 레포 밖 규칙(팀 지시 · 레포 밖 약속)이 원문과 충돌하면 고치지 말고 "확인 필요"로 표시한다.
 
 4. **에이전트 md 는 역할·담당 범위·지식 진입 경로가 바뀔 때만 고친다.**
    - ⛔ 버전·포트·스택·디렉토리 트리·Prettier 설정을 **다시 넣지 않는다.** 경량화로 걷어낸 것이다

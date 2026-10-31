@@ -13,9 +13,10 @@
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs'
-import { dirname, join } from 'node:path'
+import { dirname, join, posix } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { loadConfig } from './lib/config.mjs'
+import { listRuleDocs, ruleDocList } from './lib/rule-docs.mjs'
 import { listServices } from './qa/flows.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..')
@@ -234,7 +235,70 @@ const buildSnapshot = (repo) => {
 
   snapshot.docs = { ...blobIds(repo, DOC_FILES) }
   for (const dirPath of DOC_GLOB_DIRS) Object.assign(snapshot.docs, blobIdsInDir(repo, dirPath))
+  const ruleDocs = readRuleDocs(repo)
+  if (ruleDocs) {
+    const { docBlobs, ...lists } = ruleDocs
+    Object.assign(snapshot.docs, docBlobs)
+    Object.assign(snapshot, lists)
+  }
   return snapshot
+}
+
+// 레포 규칙 문서 목록 — 앱마다 기준 브랜치가 달라 레포 기준(루트 · appDir)과 앱 기준을 따로 읽는다. 찾는 규칙은 scripts/lib/rule_docs.py. 못 읽으면 null
+const readRuleDocs = (repo) => {
+  const settings = isPlainObject(repo.ruleDocs) ? repo.ruleDocs : {}
+  const add = Array.isArray(settings.add) ? settings.add : []
+  const exclude = Array.isArray(settings.exclude) ? settings.exclude : []
+  // 적은 모양(./apps/…)과 상관없이 앱 기준 브랜치로 읽는다
+  const inApp = (path, appName) => posix.normalize(String(path)).startsWith(`apps/${appName}/`)
+  const appNames = Object.keys(repo.apps ?? {})
+  const scans = [{
+    ref: repo.ref,
+    dirs: ['', ...(repo.appDir && repo.appDir !== '.' ? [repo.appDir] : [])],
+    add: add.filter((path) => !appNames.some((appName) => inApp(path, appName)))
+  }, ...appNames.map((appName) => ({
+    ref: repo.apps[appName].branch ? `origin/${repo.apps[appName].branch}` : repo.ref,
+    dirs: [`apps/${appName}`],
+    add: add.filter((path) => inApp(path, appName))
+  }))]
+  const list = new Set()
+  const missing = new Set()
+  const refused = new Set()
+  const blobs = {}
+  for (const scan of scans) {
+    const found = listRuleDocs(repo.path, { ...scan, exclude })
+    if (!found) return null
+    const paths = ruleDocList(found)
+    for (const path of paths) list.add(path)
+    // 경로가 같아도 본문이 바뀌면 "규칙·소개 문서 변화" 에 나오게 — DOC_FILES 밖의 문서도 그 문서의 기준 ref 로
+    Object.assign(blobs, blobIds({ ...repo, ref: scan.ref }, paths))
+    for (const path of found.missing) missing.add(path)
+    for (const path of found.refused) refused.add(path)
+  }
+  return { docBlobs: blobs, ruleDocs: [...list].sort(), ruleDocsMissing: [...missing].sort(), ruleDocsRefused: [...refused].sort() }
+}
+
+// 팩 ruleDocs.add 와 찾은 목록의 차이 — pack.json 은 스크립트가 쓰지 않는다(팩은 사람 · 아테나가 커밋한다). 리포트에 제안만
+const ruleDocProposal = (repo, snapshot) => {
+  if (!snapshot.ruleDocs) return ['', '### 팩 `ruleDocs.add` 갱신 제안', '- ⚠️ 규칙 문서 목록을 만들지 못했다(python3 · rule_docs.py 확인)']
+  const add = Array.isArray(repo.ruleDocs?.add) ? repo.ruleDocs.add : []
+  const lines = [
+    ...snapshot.ruleDocs.filter((path) => !add.includes(path)).map((path) => `+ ${path}`),
+    ...snapshot.ruleDocsMissing.map((path) => `- ${path} (레포에 없음)`)
+  ]
+  const refused = snapshot.ruleDocsRefused.length ? [`- ⚠️ 위험해서 뺀 경로: ${snapshot.ruleDocsRefused.join(', ')}`] : []
+  if (!lines.length && !refused.length) return []
+  return ['', '### 팩 `ruleDocs.add` 갱신 제안', ...(lines.length ? [`\`${repo.name}\` 항목에 반영한다(docs/pack.md "ruleDocs").`, '```diff', ...lines, '```'] : []), ...refused]
+}
+
+// 이전 지문 대비 — 옛 지문(칸 없음)은 비교하지 않는다
+const ruleDocChanges = (previous, snapshot) => {
+  if (!previous?.ruleDocs || !snapshot.ruleDocs) return []
+  const lines = [
+    ...snapshot.ruleDocs.filter((path) => !previous.ruleDocs.includes(path)).map((path) => `+ ${path}`),
+    ...previous.ruleDocs.filter((path) => !snapshot.ruleDocs.includes(path)).map((path) => `- ${path}`)
+  ]
+  return lines.length ? ['', '### 규칙 문서 변화', '```diff', ...lines, '```'] : []
 }
 
 // pnpm-workspace.yaml 의 `catalog:` 블록만 뽑는다 (의존성 없이 최소 파싱).
@@ -366,14 +430,22 @@ for (const repo of targets) {
 
   report.push(`## ${repo.name} → ${repo.agents.map((agent) => `\`.claude/agents/${agent}.md\``).join(', ')}`, '')
   report.push(`- ${repo.ref}: \`${snapshot.sha}\` ${snapshot.shaDate} "${snapshot.subject}"${fetchNote}`)
+  const proposal = ruleDocProposal(repo, snapshot)
 
   if (!previous) {
     report.push('- **baseline 없음** — 첫 실행. 아래 지문 전체를 에이전트 md 와 대조해 틀린 사실을 고친 뒤 `--accept`.', '')
-    report.push('```json', JSON.stringify({ ...snapshot, docs: Object.keys(snapshot.docs) }, null, 2), '```', '')
+    report.push('```json', JSON.stringify({ ...snapshot, docs: Object.keys(snapshot.docs) }, null, 2), '```')
+    report.push(...proposal, '')
     changedCount += 1
     continue
   }
-  if (previous.sha === snapshot.sha) { report.push('- 변경 없음 (동일 커밋)', ''); continue }
+  if (previous.sha === snapshot.sha) {
+    report.push('- 변경 없음 (동일 커밋)')
+    // 커밋이 같아도 팩 목록이 아직 안 맞으면 알린다(ruleDocs 를 처음 적는 팩 · 제안을 아직 반영하지 않은 팩)
+    report.push(...proposal, '')
+    if (proposal.length) changedCount += 1
+    continue
+  }
 
   changedCount += 1
   const { commits, fileCount, topDirs } = commitsBetween(repo, previous.sha, snapshot.sha)
@@ -381,8 +453,8 @@ for (const repo of targets) {
   if (topDirs.length) report.push(`- 변경 많은 경로: ${topDirs.map(([dir, count]) => `\`${dir}\`(${count})`).join(', ')}`)
 
   const lines = []
-  const { docs: prevDocs, sha: _a, shaDate: _b, subject: _c, ...prevRest } = previous
-  const { docs: nextDocs, sha: _d, shaDate: _e, subject: _f, ...nextRest } = snapshot
+  const { docs: prevDocs, sha: _a, shaDate: _b, subject: _c, ruleDocs: _g, ruleDocsMissing: _h, ruleDocsRefused: _i, ...prevRest } = previous
+  const { docs: nextDocs, sha: _d, shaDate: _e, subject: _f, ruleDocs: _j, ruleDocsMissing: _k, ruleDocsRefused: _l, ...nextRest } = snapshot
   diffValues(prevRest, nextRest, '', lines)
   const docChanges = []
   for (const filePath of new Set([...Object.keys(prevDocs ?? {}), ...Object.keys(nextDocs ?? {})])) {
@@ -397,6 +469,7 @@ for (const repo of targets) {
   if (docChanges.length) {
     report.push('```diff', ...docChanges.sort(), '```', '', `내용 확인: \`git -C repos/${repo.name} diff ${previous.sha}..${snapshot.sha} -- <파일>\``)
   } else report.push('- 없음')
+  report.push(...ruleDocChanges(previous, snapshot), ...proposal)
   report.push('', `### 커밋 (최근 ${Math.min(commits.length, 40)}개)`, '```', ...commits.slice(0, 40), commits.length > 40 ? `... 외 ${commits.length - 40}개` : '', '```', '')
 }
 
