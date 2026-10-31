@@ -316,6 +316,23 @@ for RUNTIME in Electron "Athena Studio"; do
   check "$RUNTIME 으로 도는 처리기 → 끄고 올림 · 새 처리기가 뜸" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && ! kill -0 "$PW" 2>/dev/null && [ "$(echo "$R" | field bodies.globex.services.prAutoStopped)" = "[$PW]" ] && [ "$(echo "$R" | field bodies.globex.services.prAutoKicked)" = True ] && [ -n "$(pr_lock)" ] && [ "$(pr_lock)" != "$PW" ] && kill -0 "$(pr_lock)" 2>/dev/null' "$R"
   kill "$PW" 2>/dev/null; pr_stop
 done
+# 처리기를 끌 때 자식 — gh · git 은 남긴다(머지 · 바로 머지의 push 가 반쯤 끊기지 않게) · 그 밖(리뷰어 · 검증)은 끈다. node 사본 이름으로 흉내 낸다
+for CHILD in gh git reviewer; do cp "$(command -v node)" "$WORK/runtime/$CHILD"; done
+cat > "$WORK/runtime/children.mjs" <<CHILDREN
+import { spawn } from 'node:child_process'
+import { writeFileSync } from 'node:fs'
+for (const name of ['gh', 'git', 'reviewer']) {
+  const child = spawn('$WORK/runtime/' + name, ['-e', 'setTimeout(() => {}, 120000)'], { stdio: 'ignore', cwd: '$WORK', env: {} })
+  writeFileSync('$WORK/runtime/' + name + '.pid', String(child.pid))
+}
+CHILDREN
+rm -rf "$PR_Q/.watcher.lock"; (cd "$BODY_B" && NODE_OPTIONS="--import $WORK/runtime/children.mjs" exec node "$BODY_B/scripts/pr-auto.mjs" --watch) >/dev/null 2>&1 & PW=$!
+for _ in $(seq 1 50); do [ "$(pr_lock)" = "$PW" ] && [ -s "$WORK/runtime/reviewer.pid" ] && break; sleep 0.1; done
+C3K="$(newcommit "test: 업데이트 3k")"
+R="$(J "$MAIN" update --from "$(bundle)")"
+PID_GH="$(cat "$WORK/runtime/gh.pid")"; PID_GIT="$(cat "$WORK/runtime/git.pid")"; PID_REVIEWER="$(cat "$WORK/runtime/reviewer.pid")"
+check "처리기를 끌 때 gh · git 자식은 남고 리뷰어는 꺼진다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3K" ] && ! kill -0 "$PW" 2>/dev/null && kill -0 "$PID_GH" 2>/dev/null && kill -0 "$PID_GIT" 2>/dev/null && ! kill -0 "$PID_REVIEWER" 2>/dev/null' "$R"
+kill "$PID_GH" "$PID_GIT" "$PID_REVIEWER" 2>/dev/null; pr_stop
 # 같은 이름이어도 --watch 가 아니면 끄지 않는다
 C3F="$(newcommit "test: 업데이트 3f")"
 PO="$("$WORK/runtime/Electron" -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3

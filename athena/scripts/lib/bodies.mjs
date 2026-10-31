@@ -285,8 +285,8 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       if (item.kind === 'learn-review') for (const row of children) stopPidSync(row.pid)
       stopPidSync(item.pid)
       // 자동 리뷰 처리기는 부모를 먼저 끈다 — 리뷰어를 먼저 끄면 처리기가 "리뷰 실패" 로 계획서에 적고, 같은 HEAD 는 다시 돌지 않는다.
-      // gh 는 남긴다(머지 · 댓글이 반쯤 끊기지 않게)
-      if (item.kind === 'pr-auto') for (const row of children.filter((each) => each.comm !== 'gh')) stopPidSync(row.pid)
+      // gh · git 은 남긴다(머지 · 댓글 · 바로 머지의 push 가 반쯤 끊기지 않게)
+      if (item.kind === 'pr-auto') for (const row of children.filter((each) => !['gh', 'git'].includes(each.comm))) stopPidSync(row.pid)
       const keys = { qa: 'qaStopped', 'pr-auto': 'prAutoStopped' }
       const key = keys[item.kind] ?? 'learnStopped'
       entry.services[key] = [...(entry.services[key] ?? []), item.pid]

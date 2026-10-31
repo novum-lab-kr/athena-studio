@@ -759,8 +759,10 @@ if [ "$1 $2" = "pr view" ]; then
   [ -n "$FAKE_GH_HEAD_AFTER" ] && [ "$(wc -l < "$GH_LOG.views")" -ge 2 ] && head="ffffffffffffffffffffffffffffffffffffffff"
 fi
 case "$1 $2" in
-  "pr view") printf '{"state":"OPEN","isDraft":true,"headRefOid":"%s","headRefName":"feat/x","baseRefName":"main","mergeable":"MERGEABLE","title":"t","body":""}\n' "$head" ;;
+  # FAKE_PR_STATE — PR 상태(기본 OPEN) · FAKE_MERGE_LANDED — pr merge 는 실패로 끝나지만 PR 은 머지됐다(앞서 남겨 둔 gh 가 먼저 머지함)
+  "pr view") state="${FAKE_PR_STATE:-OPEN}"; [ -f "$GH_LOG.landed" ] && state=MERGED; printf '{"state":"%s","isDraft":true,"headRefOid":"%s","headRefName":"feat/x","baseRefName":"main","mergeable":"MERGEABLE","title":"t","body":""}\n' "$state" "$head" ;;
   "pr diff") echo "diff --git a/a.js b/a.js" ;;
+  "pr merge") [ -n "$FAKE_MERGE_LANDED" ] && : > "$GH_LOG.landed" && exit 1 ;;
 esac
 exit 0
 SH
@@ -888,6 +890,62 @@ KQ="$TMP/queue-kick"; rm -rf "$KQ"; mkdir -p "$KQ"; cp "$TMP/queue-confirm/.noti
 (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$KQ" "$(command -v node)" scripts/pr-auto.mjs --kick > "$TMP/kick.out" 2>&1)
 [ -s "$KQ/.notified" ] && [ ! -e "$KQ/.launching" ] && ! grep -q "처리기를 뒤에서 시작" "$TMP/kick.out" && [ -z "$(ls "$KQ" | grep '\.json$')" ] \
   && echo "  ✔ 기록 파일만 있으면 --kick 이 처리기를 띄우지 않는다(*.json 모양이 아님)" || { echo "  ✖ 기록 파일을 작업으로 봤다"; ls -a "$KQ"; cat "$TMP/kick.out"; FAIL=1; }
+# 사람이 [머지] 를 고른 뒤 검증 · 머지 도중 처리기가 꺼져도(코어 갱신) 대기 파일이 남아 새 처리기가 이어받는다 — 같은 HEAD 는 다시 돌지 않으니 여기서 놓치면 끝
+confirm_run() {   # [환경…] — 처리기의 머지 확인 보기 한 번
+  env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$@" "$(command -v node)" --input-type=module -e "
+    const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+}
+confirm_answer() {   # <고른 것> — 머지 확인 요청 하나에 답한다
+  (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+    const { listRequests, answerRequest } = await import('./scripts/lib/requests.mjs')
+    for (const request of listRequests('.').requests) answerRequest('.', request.id, { choice: process.argv[1], by: 'board' })" "$1" >/dev/null)
+}
+confirm_killed() {   # 머지 확인 대기 → [머지] 답 → 검증 도중 처리기 죽음
+  merge_case "이어받기 준비 — 확인 대기" '' no '머지 확인 대기' >/dev/null
+  confirm_answer 머지
+  : > "$GH_LOG"; rm -f "$GH_LOG.views"
+  ( confirm_run FAKE_VERIFY_KILL=1; true ) 2>/dev/null
+}
+auto_line() { grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; }
+confirm_killed
+[ -n "$(ls "$TMP/queue-confirm/confirm")" ] && ! grep -q '^pr merge' "$GH_LOG" && grep -lq '"state": *"delivered"' "$CORE/.requests"/*.json "$CORE/.requests"/*/request.json 2>/dev/null && echo "  ✔ [머지] 답 뒤 검증 도중 처리기가 죽어도 대기 파일이 남는다" || { echo "  ✖ 답한 뒤 끊기면 대기 파일이 사라졌다"; FAIL=1; }
+confirm_run
+grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && auto_line | grep -q '머지됨 — squash → main' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ 새 처리기가 이어서 머지 · 줄 머지됨 · 파일 없음" || { echo "  ✖ 끊긴 뒤 이어서 머지 — $(auto_line)"; sed 's/^/      /' "$TMP/merge.out"; ls "$TMP/queue-confirm/confirm"; FAIL=1; }
+# 끊긴 사이 base 가 바뀌었으면 답을 받았어도 머지하지 않는다
+confirm_killed
+for claimed_file in "$TMP/queue-confirm/confirm/"*; do python3 -c "import json,sys; p=sys.argv[1]; d=json.load(open(p)); d['base']='dev'; json.dump(d, open(p,'w'))" "$claimed_file"; done
+confirm_run
+! grep -q '^pr merge' "$GH_LOG" && auto_line | grep -q '머지 전에 base 가 바뀜(dev → main)' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ 끊긴 사이 base 변경 → 머지 안 함 · 줄에 이유" || { echo "  ✖ 끊긴 사이 base 변경 — $(auto_line)"; ls "$TMP/queue-confirm/confirm"; FAIL=1; }
+# 끊긴 사이 새 커밋이 왔으면 머지하지 않는다
+confirm_killed
+confirm_run FAKE_SHA=ffffffffffffffffffffffffffffffffffffffff
+[ -n "$(cat "$TMP/merge.out")$(cat "$GH_LOG")" ] && ! grep -q '^pr merge' "$GH_LOG" && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] && ! auto_line | grep -q '머지됨' \
+  && echo "  ✔ 끊긴 사이 새 커밋 → 머지 안 함 · 파일 없음" || { echo "  ✖ 끊긴 사이 새 커밋 — $(auto_line)"; ls "$TMP/queue-confirm/confirm"; FAIL=1; }
+# 머지는 끝났는데 줄을 못 적고 끊김 — 다시 보면 줄을 머지됨으로 맞춘다
+confirm_killed
+confirm_run FAKE_PR_STATE=MERGED
+! grep -q '^pr merge' "$GH_LOG" && auto_line | grep -q '머지됨 — squash → main' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ 이미 머지된 채 다시 보면 줄을 머지됨으로" || { echo "  ✖ 이미 머지된 PR 줄 맞추기 — $(auto_line)"; ls "$TMP/queue-confirm/confirm"; FAIL=1; }
+# 남겨 둔 gh 가 먼저 머지해 이번 pr merge 가 실패해도 — PR 이 머지됐으면 실패로 적지 않는다
+confirm_killed
+confirm_run FAKE_MERGE_LANDED=1; rm -f "$GH_LOG.landed"
+auto_line | grep -q '머지됨 — squash → main' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ pr merge 가 실패해도 PR 이 머지됐으면 줄은 머지됨" || { echo "  ✖ 먼저 머지된 PR 줄 — $(auto_line)"; FAIL=1; }
+# 확인 없는 건도 — 잡은 파일로 다시 봤을 때 이미 머지됐으면 줄을 맞춘다
+merge_case "이어받기 준비 — 확인 없음" ', "autoMergeConfirm": false' yes '머지됨' >/dev/null
+sed -i.bak 's/^- Auto review: .*/- Auto review: web#7 @'"${SHA:0:7}"' 라운드 1 · 승인 → 바로 머지(확인 없음)/' "$CORE/plans/task/x.md"; rm -f "$CORE/plans/task/x.md.bak"
+mkdir -p "$TMP/queue-confirm/confirm"; : > "$GH_LOG"
+printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1,"worktree":"%s","base":"main","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json.999999"
+confirm_run FAKE_PR_STATE=MERGED
+! grep -q '^pr merge' "$GH_LOG" && auto_line | grep -q '머지됨 — squash → main' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ 확인 없는 건도 이미 머지됐으면 줄을 머지됨으로" || { echo "  ✖ 확인 없는 건 이미 머지 — $(auto_line)"; FAIL=1; }
+# 보류를 고른 건은 줄을 적은 뒤 파일이 없다
+merge_case "이어받기 준비 — 보류" '' no '머지 확인 대기' >/dev/null
+confirm_answer 보류; : > "$GH_LOG"; confirm_run
+! grep -q '^pr merge' "$GH_LOG" && auto_line | grep -q '보류 — 사람이 고름(보류)' && [ -z "$(ls "$TMP/queue-confirm/confirm")" ] \
+  && echo "  ✔ 보류 → 줄 남김 · 파일 없음" || { echo "  ✖ 보류 — $(auto_line)"; ls "$TMP/queue-confirm/confirm"; FAIL=1; }
 # 리뷰하다 끊긴 일(*.json.working)은 작업이다 — 처리기가 꺼져 있으면 --kick 이 다시 띄운다(코어 갱신이 끈 뒤 · 안 띄우면 같은 HEAD 는 영영 다시 안 돈다)
 KQW="$TMP/queue-kick-working"; rm -rf "$KQW"; mkdir -p "$KQW"
 printf '{"plan":"plans/x.md","pr":"web#1","head":"abc1234","root":"/nonexistent-checkout"}' > "$KQW/0-x.json.working"
@@ -1147,6 +1205,46 @@ PLAN_AGENT='web-fe, api-be' direct_case "여러 레포 계획서는 대상 아�
 PENDING=1 direct_case "안 정한 결정이 있으면 머지 안 함" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '결정 필요'
 direct_case "검증 실패 → 머지 안 함 · 실패로 알림(줄 · 요청)" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기 — 검증 실패' FAKE_VERIFY_FAIL=1
 [ "$(direct_requests)" -ge 1 ] && echo "  ✔ 검증 실패 → [작업] 요청이 열림" || { echo "  ✖ 검증 실패인데 요청이 없다"; FAIL=1; }
+# 바로 머지 확인 — [머지] 답 뒤 검증 도중 처리기가 꺼져도 대기 파일이 남아 이어받는다(같은 트리는 빈 커밋을 밀지 않는다)
+direct_run() {   # [환경…]
+  env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" "$@" "$(command -v node)" --input-type=module -e "
+    const { checkConfirms } = await import('$DCORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/direct.out" 2>&1
+}
+direct_answered() {   # 확인 대기 → [머지] 답
+  direct_case "이어받기 준비 — 바로 머지 확인" ', "autoMerge": true, "autoPr": false' no 0 '머지 확인 대기' >/dev/null
+  (cd "$DCORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+    const { listRequests, answerRequest } = await import('./scripts/lib/requests.mjs')
+    for (const request of listRequests('.').requests) answerRequest('.', request.id, { choice: '머지', by: 'board' })" >/dev/null)
+}
+direct_line() { grep -o '^- Auto merge: .*' "$DCORE/plans/task/x.md"; }
+direct_confirm_files() { ls "$TMP/queue-direct/confirm" 2>/dev/null; }
+cp "$DCORE/scripts/verify/reuse.sh" "$TMP/direct-reuse.keep"
+printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\nexit 0\n' > "$DCORE/scripts/verify/reuse.sh"
+direct_answered
+( direct_run FAKE_VERIFY_KILL=1; true ) 2>/dev/null
+[ -n "$(direct_confirm_files)" ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DBASE" ] && echo "  ✔ 바로 머지 — 답 뒤 끊겨도 대기 파일이 남는다" || { echo "  ✖ 바로 머지 — 답한 뒤 끊기면 대기 파일이 사라졌다"; FAIL=1; }
+direct_run
+DTIP="$(git -C "$DORIGIN" rev-parse refs/heads/main)"
+[ "$DTIP" != "$DBASE" ] && direct_line | grep -q '머지됨 — squash → main' && [ -z "$(direct_confirm_files)" ] \
+  && echo "  ✔ 바로 머지 — 새 처리기가 이어서 머지 · 파일 없음" || { echo "  ✖ 바로 머지 이어받기 — $(direct_line)"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# 줄을 적었는데 파일을 못 지우고 끊김 — 다시 보면 또 밀지 않고 파일만 치운다
+direct_answered
+direct_run; DTIP="$(git -C "$DORIGIN" rev-parse refs/heads/main)"
+printf '{"plan":"plans/task/x.md","repo":"web","branch":"feat/x","sha":"%s","base":"main","worktree":"%s","root":"%s","packId":null,"direct":true,"request":"%s"}\n' "$DSHA" "$DWT" "$DCORE" "$(cd "$DCORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+  const { listRequests } = await import('./scripts/lib/requests.mjs'); process.stdout.write(listRequests('.', { all: true }).requests.find((each) => each.state === 'delivered')?.id ?? '')")" > "$TMP/queue-direct/confirm/web-direct-x.json"
+direct_run
+[ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DTIP" ] && [ -z "$(direct_confirm_files)" ] && direct_line | grep -q '머지됨' \
+  && echo "  ✔ 바로 머지 — 줄이 머지됨이면 다시 밀지 않고 파일만 치움" || { echo "  ✖ 바로 머지 재진입 — $(direct_line) · 파일 $(direct_confirm_files)"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# push 는 됐는데 줄을 못 적고 끊김 — 합친 트리가 base 와 같으면 빈 커밋을 밀지 않고 머지됨으로
+direct_answered
+direct_run; DTIP="$(git -C "$DORIGIN" rev-parse refs/heads/main)"
+sed -i.bak 's/^- Auto merge: .*/- Auto merge: web feat\/x @'"${DSHA:0:7}"' 머지 확인 대기/' "$DCORE/plans/task/x.md"; rm -f "$DCORE/plans/task/x.md.bak"
+printf '{"plan":"plans/task/x.md","repo":"web","branch":"feat/x","sha":"%s","base":"main","worktree":"%s","root":"%s","packId":null,"direct":true,"request":"%s"}\n' "$DSHA" "$DWT" "$DCORE" "$(cd "$DCORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
+  const { listRequests } = await import('./scripts/lib/requests.mjs'); process.stdout.write(listRequests('.', { all: true }).requests.find((each) => each.state === 'delivered')?.id ?? '')")" > "$TMP/queue-direct/confirm/web-direct-x.json"
+direct_run
+[ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DTIP" ] && [ -z "$(direct_confirm_files)" ] && direct_line | grep -q '머지됨' \
+  && echo "  ✔ 바로 머지 — 이미 들어간 내용이면 빈 커밋을 밀지 않고 머지됨" || { echo "  ✖ 바로 머지 — 빈 커밋 — $(direct_line) · base $(git -C "$DORIGIN" rev-list --count refs/heads/main)개"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+cp "$TMP/direct-reuse.keep" "$DCORE/scripts/verify/reuse.sh"
 mv "$DCORE/scripts/verify/reuse.sh" "$DCORE/scripts/verify/reuse.sh.off"
 direct_case "검증 스크립트가 없으면 머지 안 함 · 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 '검증 대기'
 direct_case "검증 스크립트가 없으면 확인 후 설정도 요청을 열지 않고 실패로" ', "autoMerge": true, "autoPr": false' no 1 '검증 대기'
