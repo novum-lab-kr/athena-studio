@@ -20,7 +20,21 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.46: v0.42.2..main 머지(#198 ~ #210 · 검증 시간 줄이기)에서 손님에게 보이는 것만(README 만 바뀐 #199 #201 #202 #203 #206 #208 은 뺌). 범위 끝은 열어 둔다 -->
 
-## 0.46 (v0.42.3 – · Nov 1, 2026)
+<!-- 0.47: v0.46.4..main 머지(#213 · #214)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험은 개발용 팩 스크립트라 뺌). 범위 끝은 열어 둔다 -->
+
+## 0.47 (v0.47.0 – · Nov 1, 2026)
+
+### New
+- Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.
+- If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.
+- A pack can allow specific commands for its repository's agent panes with `permissionsAllow`, so they run without a permission prompt.
+
+### Fixed
+- An agent's "done" notification now waits until its background commands have finished.
+- An agent pane can now push review fixes to its open pull request even when no request is waiting on that pull request.
+- A decision request without a decision console now stays a decision and opens as a question popup, so you can answer it in the app.
+
+## 0.46 (v0.42.3 – v0.46.4 · Nov 1, 2026)
 
 ### New
 - Athena finds each repository's rule documents and loads their full text into agent sessions. You can add or exclude documents in the pack; above 40,000 characters per repository, the largest files are listed instead.
