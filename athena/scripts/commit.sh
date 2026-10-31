@@ -94,8 +94,9 @@ DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib
 if [ "$TOP" = "$MAIN" ] && [ $ALLOW_MAIN = 0 ]; then
   fail "메인 체크아웃(repos/$REPO)이다. 워크트리에서 커밋하거나, 사용자가 명시하면 --allow-main-checkout"
 fi
-# grep -q 는 찾자마자 끝나 앞 명령이 SIGPIPE(141)를 맞는다 — pipefail 이면 목록이 길 때 등록된 워크트리를 거부한다. 끝까지 읽도록 -q 를 쓰지 않는다
-git -C "$TOP" worktree list --porcelain | grep -xF "worktree $TOP" >/dev/null || [ "$TOP" = "$MAIN" ] || fail "등록된 워크트리가 아니다: $TOP"
+# grep -q 는 찾자마자 끝나 앞 명령이 SIGPIPE(141)를 맞는다 — pipefail 이면 목록이 길 때 등록된 워크트리를 거부한다.
+# >/dev/null 도 GNU grep 은 첫 일치에서 끝내므로, 끝까지 읽는 -c(일치 건수)로 판정한다
+[ "$(git -C "$TOP" worktree list --porcelain | grep -cxF "worktree $TOP")" -gt 0 ] || [ "$TOP" = "$MAIN" ] || fail "등록된 워크트리가 아니다: $TOP"
 BRANCH="$(git -C "$TOP" symbolic-ref --short -q HEAD)" || fail "detached HEAD 다 — 브랜치를 만든 워크트리에서 커밋한다(scripts/new-branch.sh)"
 # 보호 브랜치 — 흔한 운영·개발 이름 + 팩에 적힌 이 레포의 branch·prBase·extraPrBases(scripts/lib/athena_config.py)
 PROTECTED="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, is_protected; print(1 if is_protected(load(sys.argv[1]), sys.argv[2], sys.argv[3]) else 0)' "$ATHENA_DIR" "$REPO" "$BRANCH")" || fail "설정을 읽지 못했다(보호 브랜치 확인)"
@@ -211,10 +212,10 @@ if [ $MERGING = 1 ]; then
       .env.example|.env.sample|.env.template|*.env.example) ;;
       .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|.netrc) fail "merge 결과에 비밀 파일로 보이는 것이 스테이징돼 있다: $staged — 커밋하지 않는다" ;;
     esac
-    git -C "$TOP" show ":$staged" 2>/dev/null | grep -E -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' >/dev/null && fail "merge 결과에 개인키가 든 파일이 있다: $staged — 커밋하지 않는다"
+    [ "$(git -C "$TOP" show ":$staged" 2>/dev/null | grep -cE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----')" -gt 0 ] && fail "merge 결과에 개인키가 든 파일이 있다: $staged — 커밋하지 않는다"
     [ "$sname" = .npmrc ] && git -C "$TOP" show ":$staged" 2>/dev/null | npmrc_literal_token \
       && fail "merge 결과의 $staged 에 토큰 값이 글자 그대로 들어 있다 — 커밋하지 않는다"
-    git -C "$TOP" show ":$staged" 2>/dev/null | grep -E '^(<<<<<<<|>>>>>>>) ' >/dev/null && fail "merge 결과에 충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이 있다: $staged — 충돌을 다 푼 뒤 다시"
+    [ "$(git -C "$TOP" show ":$staged" 2>/dev/null | grep -cE '^(<<<<<<<|>>>>>>>) ')" -gt 0 ] && fail "merge 결과에 충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이 있다: $staged — 충돌을 다 푼 뒤 다시"
   done < <(git -C "$TOP" diff --cached --name-only --diff-filter=ACMR)
   echo "── merge 커밋: MERGE_HEAD ${MERGE_SHA:0:7} 를 합친다(스테이징된 merge 결과 전체 · 지정 파일 ${#FILES[@]}개)"
 else

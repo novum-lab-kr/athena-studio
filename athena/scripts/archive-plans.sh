@@ -102,7 +102,7 @@ while IFS= read -r file; do
   fi
 
   keyword="${basename%.md}"
-  if git -C "$ROOT" log --since="${RECENT_DAYS} days ago" --all --format="%s%n%b" 2>/dev/null | grep -F "$keyword" >/dev/null; then
+  if [ "$(git -C "$ROOT" log --since="${RECENT_DAYS} days ago" --all --format="%s%n%b" 2>/dev/null | grep -cF "$keyword")" -gt 0 ]; then
     echo "보류 (최근 커밋 언급): $basename"
     held=$((held+1))
     continue
