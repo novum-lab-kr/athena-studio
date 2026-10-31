@@ -4,8 +4,6 @@
 
 # Athena Studio
 
-[![Latest release](https://img.shields.io/github/v/release/novum-lab-kr/athena-studio-releases)](https://github.com/novum-lab-kr/athena-studio-releases/releases/latest)
-
 [English](README.md) · 한국어
 
 Athena Studio는 AI 코딩 에이전트를 돌리는 맥 앱이에요. 팀 리드 Athena에게 할 일을 말하면 계획을 세워 레포마다 에이전트를 붙이고, 정할 게 생기면 나에게 물어요. 나는 diff를 보고 머지하면 돼요.
@@ -44,7 +42,7 @@ Athena Studio는 이미 쓰는 Claude Code나 Codex를 그대로 돌리고, 그 
 
 ## 내려받기
 
-[다운로드 페이지](https://athena.novum-lab.com/download/)나 [novum-lab-kr/athena-studio-releases](https://github.com/novum-lab-kr/athena-studio-releases/releases/latest)의 최신 릴리스에서 받아요.
+곧 공개해요.
 
 - 무료 · macOS 13 Ventura 이상 · Apple Silicon과 Intel. Apple 서명 · 공증을 받았어요.
 - Claude Code나 Codex에 내 계정으로 로그인해 두어야 해요. AI 사용료는 쓰는 Claude나 Codex 요금제대로 나가요.
@@ -61,7 +59,6 @@ Athena Studio는 이미 쓰는 Claude Code나 Codex를 그대로 돌리고, 그 
 
 ## 관련 프로젝트
 
-- [novum-lab-kr/athena-studio-releases](https://github.com/novum-lab-kr/athena-studio-releases) — 서명 · 공증된 맥 배포판(`.dmg` · `.zip`)과 앱이 읽는 업데이트 피드
 - [athena.novum-lab.com](https://athena.novum-lab.com/) — 홈페이지 · 문서 · 업데이트 내역
 
 ## 라이선스
