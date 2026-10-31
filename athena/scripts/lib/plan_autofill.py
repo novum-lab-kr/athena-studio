@@ -17,7 +17,7 @@ VALIDATION_HEAD = re.compile(r'^(#{2,3}) Validation[ \t]*$', re.M)
 CHECKPOINT_HEAD = re.compile(r'^## Checkpoint[ \t]*$', re.M)
 STATUS_LINE = re.compile(r'^- Status:[ \t]*(\S+)([^\n]*)$', re.M)   # 값 뒤 메모도 받는다(메모는 그대로 둔다)
 PLACEHOLDER = re.compile(r'^- (?:\(검증 스크립트 출력 표[^\n]*|실행한 검증 / 결과 / 대상 SHA 또는 diff 상태|미실행 검증과 이유)[ \t]*\n', re.M)   # 템플릿의 자리 표시 줄
-DEDUP_KEY = re.compile(r'^- \d{4}-\d\d-\d\d \d\d:\d\d (\S+ @\S+ (?:통과|실패 \d+)) ')   # 시각만 다른 같은 결과
+SAME_RESULT = re.compile(r'^- \d{4}-\d\d-\d\d \d\d:\d\d (\S+ @\S+ (?:통과|실패 \d+)) ')   # 시각만 다른 같은 결과
 
 
 def section_end(text, start, level):
@@ -39,7 +39,7 @@ def with_validation_line(text, line):
     body = PLACEHOLDER.sub('', text[head.end():end]).rstrip()
     rows = body.splitlines()
     last = rows[-1] if rows else ''
-    new_key, last_key = DEDUP_KEY.match(line), DEDUP_KEY.match(last)
+    new_key, last_key = SAME_RESULT.match(line), SAME_RESULT.match(last)
     if new_key and last_key and new_key.group(1) == last_key.group(1):
         return text
     gap = '\n' if last.startswith('|') else ''   # 표 바로 밑에 붙으면 표의 칸으로 읽힌다
