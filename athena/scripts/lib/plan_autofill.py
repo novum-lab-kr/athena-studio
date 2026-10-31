@@ -15,7 +15,7 @@ from plan_update import update_plan  # noqa: E402
 
 VALIDATION_HEAD = re.compile(r'^(#{2,3}) Validation[ \t]*$', re.M)
 CHECKPOINT_HEAD = re.compile(r'^## Checkpoint[ \t]*$', re.M)
-STATUS_LINE = re.compile(r'^- Status:[ \t]*(\S+)[ \t]*$', re.M)
+STATUS_LINE = re.compile(r'^- Status:[ \t]*(\S+)([^\n]*)$', re.M)   # 값 뒤 메모도 받는다(메모는 그대로 둔다)
 PLACEHOLDER = re.compile(r'^- (?:\(검증 스크립트 출력 표[^\n]*|실행한 검증 / 결과 / 대상 SHA 또는 diff 상태|미실행 검증과 이유)[ \t]*\n', re.M)   # 템플릿의 자리 표시 줄
 DEDUP_KEY = re.compile(r'^- \d{4}-\d\d-\d\d \d\d:\d\d (\S+ @\S+ (?:통과|실패 \d+)) ')   # 시각만 다른 같은 결과
 
@@ -54,7 +54,7 @@ def with_ready_status(text):
     found = STATUS_LINE.search(text, start, end)
     if not found or found.group(1) not in ('in_progress', 'planned'):
         return text, None
-    return f"{text[:found.start()]}- Status: ready_for_review{text[found.end():]}", found.group(1)
+    return f"{text[:found.start()]}- Status: ready_for_review{found.group(2)}{text[found.end():]}", found.group(1)
 
 
 def current_plan(athena, env_plan, pane):

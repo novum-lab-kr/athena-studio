@@ -93,6 +93,10 @@ for KEEP in blocked done; do
   plan_with "$KEEP" '### Validation'; commit_one "$KEEP" >/dev/null
   check "$KEEP 는 그대로" '[ "$(status_of)" = "$KEEP" ]'
 done
+printf '# p\n\n## Checkpoint\n- Status: in_progress — 메모\n' > "$FILE"; commit_one 메모진행 >/dev/null
+check "in_progress 뒤 메모 — 값만 바꾸고 메모는 둔다" '[ "$(status_of)" = "ready_for_review — 메모" ]' "$(cat "$FILE")"
+printf '# p\n\n## Checkpoint\n- Status: blocked — 메모\n' > "$FILE"; commit_one 메모막힘 >/dev/null
+check "blocked 뒤 메모 — 그대로 둔다" '[ "$(status_of)" = "blocked — 메모" ]' "$(cat "$FILE")"
 printf '# p\n\n- Status: in_progress\n\n## Checkpoint\n- Status: blocked\n' > "$FILE"; commit_one 다섯 >/dev/null
 check "본문의 Status 줄이 아니라 Checkpoint 의 줄을 본다" '[ "$(sed -n "s/^- Status: //p" "$FILE" | tr "\n" " ")" = "in_progress blocked " ]' "$(cat "$FILE")"
 # 현황판이 같은 변화를 또 남기지 않게 본 기록을 맞춘다
