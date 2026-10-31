@@ -17,7 +17,7 @@
 |---|---|---|
 | `request` | `scripts/lib/requests.mjs` — 요청 상태가 바뀔 때마다(열기 · 고쳐 열기 · 답 · 받음 · 취소 · 닫힘) | `id` · `kind` · `state` · `plan` · `by`(board · app · chat) · `rev` |
 | `plan.status` | 현황판(`scripts/board/server.mjs`) — 훑을 때 지난번 본 Status 와 다르면 | `plan` · `grade`(light · formal) · `from`(새로 생겼으면 null) · `to` |
-| `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` |
+| `verify` | `scripts/verify/_lib.sh` — 검증 스크립트가 실제로 돌았을 때(`reuse.sh` 의 재사용은 안 남김) | `repo` · `branch` · `sha` · `ok` · `strict` · `failed`(실패 단계, `\|` 구분) · `args` · `plan`(환경 `ATHENA_PLAN` — `delegate.sh` 가 pane 에, `commit.sh` 가 검증 호출에 넘긴다 · 없으면 빈 값) · `ms`(소요 — `_lib.sh` 를 source 한 때부터 사건을 남길 때까지 · `heavy.sh` 줄서기는 들어가지 않는다) · `scope`(scoped · full) |
 | `commit` | `scripts/commit.sh` — 커밋한 뒤 | `plan` · `repo` · `branch` · `sha` · `verified` · `verify` |
 | `review` | `scripts/review-result.sh` — 리뷰 결론을 적은 뒤 · `scripts/pr-auto.mjs` — PR 자동 리뷰 결론마다(`by: auto`) | `plan` · `verdict`(승인 · 수정 필요 · 자동 리뷰는 결정 필요도) · `repo` · `branch` · `sha` · `dirty` · 자동이면 `pr` · `by` · `reviewers`(`claude:approve,codex:changes` 꼴 · 앞 리뷰 승인을 이어받은 자리는 `claude:inherited` · Codex 대신 돈 Claude 는 `claude-<모델>:…`) |
 | `auto.fix` | `scripts/pr-auto.mjs` — 수정 지시를 작업 pane 에 보낸 뒤 | `plan` · `repo` · `branch` · `sha` · `pr` · `pane` · `reviewers` |
@@ -27,7 +27,7 @@
 | `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 멈출 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers · rounds — 상한을 넘었는데 이어받을 수정이 없음 · verify · decisions — 결정 콘솔에 안 정한 결정) · `why` |
 | `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` |
 
-`verify` 에는 계획서가 없다 — 검증은 계획서를 모른다. 계획서와 이으려면 같은 `repo` · `branch` 의 `commit` · `review` 를 본다.
+`verify` 의 계획서는 환경 `ATHENA_PLAN` 으로 온다 — `delegate.sh` 로 띄운 pane 과 `commit.sh` 의 커밋 전 검증은 `plan` 이 차고, 사람이 pane 밖에서 직접 돌린 검증은 빈 값이다. `plan` 이 없는 줄(옛 기록 포함)은 같은 `repo` · `branch` 의 `commit` · `review` 로 잇는다. `ms` · `scope` 도 같은 때 생겼으니 옛 기록에는 없다 — 지표는 그 줄의 검증 소요를 모르는 것(null)으로 둔다.
 
 ## 계획서 상태의 한계
 
@@ -51,11 +51,15 @@ node scripts/metrics.mjs --days 30    # --all 전체 · --json
 | 작업당 질문 | 완료한 작업마다 요청이 open 이 된 횟수의 평균 — 열린 채로 고친 것은 세지 않는다 |
 | 평균 답 대기 | 그 기간에 답이 온 요청의 open → answered · delivered |
 | 검증 실패율 · 리뷰 반려율 | 그 기간의 `verify` 중 실패 · `review` 중 수정 필요 |
+| 구간 평균 — 작업 · 검증 · 리뷰 · 머지 대기 | 그 기간에 done 이 된 계획서 중 그 구간을 아는 것만의 평균(모르는 것이 있으면 "N개 기준"). 작업 = 처음 본 때 → 첫 ready_for_review · 검증 = 그 계획서 `verify` 의 `ms` 합(`plan` · `ms` 가 있는 줄만 — 옛 기록은 모름) · 리뷰 = 첫 리뷰 결론 → 마지막 리뷰 결론(PR 올림 사건이 없어 첫 리뷰까지의 대기는 안 들어간다 · 리뷰 1번이면 0) · 머지 대기 = 마지막 리뷰 결론 → `auto.merge` ok(없으면 done) |
+| 리뷰 라운드 평균 | done 계획서 중 자동 리뷰가 있는 것의 `review`(`by: auto`) 수 평균 |
+| 머지당 수정 | 그 기간의 `auto.fix` 수 ÷ `auto.merge`(ok) 수 — 머지가 없으면 — |
+| 되돌림 | 머지 뒤 되돌린 수 — 되돌림 사건이 아직 없어 "기록 없음"(커밋 메시지 `revert` 로 세지 않는다) |
 
-계획서 표는 그 기간에 무슨 사건이든 있었던 계획서다(최근 것부터). 검증은 같은 레포 · 브랜치의 커밋 · 리뷰가 있어야 계획서에 붙는다.
+계획서 표는 그 기간에 무슨 사건이든 있었던 계획서다(최근 것부터). 검증은 `plan` 칸으로 붙고, 없으면 같은 레포 · 브랜치의 커밋 · 리뷰가 있어야 붙는다. 계획서 줄의 막대는 아는 구간만 토막(작업 · 검증 · 리뷰 · 머지 대기)으로 — 다 모르면 전체 소요 한 토막.
 
 ## 셸에서 남기기
 
 ```sh
-node scripts/lib/events.mjs <type> 키=값 …     # 값 true · false 는 참거짓으로, 나머지는 글자
+node scripts/lib/events.mjs <type> 키=값 …     # 값 true · false 는 참거짓으로 · ms 는 숫자로, 나머지는 글자
 ```

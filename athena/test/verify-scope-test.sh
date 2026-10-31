@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 검증을 "수정한 범위만" 돌리는 판정 시험 — scripts/verify/_lib.sh 의 verify_scope_init · verify_scope_only · verify_key 와
-# scripts/verify/scope-tests.mjs(바뀐 파일에 닿는 시험 고르기). 임시 git 레포만 쓴다 · 몇 초
+# scripts/verify/scope-tests.mjs(바뀐 파일에 닿는 시험 고르기) · verify 사건의 측정 칸(plan · ms · scope — verify_event_fields). 임시 git 레포만 쓴다 · 몇 초
 #
 # 사용: test/verify-scope-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 set -uo pipefail
@@ -104,6 +104,27 @@ check "같은 트리 · 같은 기준 → 같은 열쇠" "$([ "$KEY_AFTER" = "$K
 
 KEY_FULL="$(cd "$WORK" && ATHENA_VERIFY_FULL=1 bash -c 'source "$1/scripts/verify/_lib.sh"; verify_key /x/demo.sh "$2" ""' _ "$SRC" "$WORK")"
 check "ATHENA_VERIFY_FULL 값이 다르면 열쇠가 다르다" "$([ -n "$KEY_FULL" ] && [ "$KEY_FULL" != "$KEY_AGAIN" ] && echo 0 || echo 1)" "$KEY_FULL / $KEY_AGAIN"
+
+echo "verify 사건 칸 — plan(ATHENA_PLAN) · ms(source 한 때부터) · scope(verify_scope_init 결과)"
+# 사건 파일을 쓰지 않고 칸만 뽑는다(verify_event_fields) — 줄마다 키=값
+fields() { # fields [ATHENA_PLAN 값]
+  (cd "$WORK" && ATHENA_PLAN="${1:-}" bash -c '
+    source "$1/scripts/verify/_lib.sh"
+    verify_scope_init demo
+    verify_event_fields demo feature abc123' _ "$SRC")
+}
+echo '// 주석' >> "$WORK/athena/scripts/board/server.mjs"
+RESULT="$(fields plans/task/x.md)"
+check "plan 칸 = ATHENA_PLAN" "$(grep -qx 'plan=plans/task/x.md' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+check "scope 칸 = 범위 모드(scoped)" "$(grep -qx 'scope=scoped' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+MS="$(grep '^ms=' <<<"$RESULT" | cut -d= -f2)"
+check "ms 칸은 0 이상 정수" "$([[ "$MS" =~ ^[0-9]+$ ]] && echo 0 || echo 1)" "$RESULT"
+check "기존 칸(repo · branch · sha · ok · strict · failed · args)도 그대로" "$(grep -qx 'repo=demo' <<<"$RESULT" && grep -qx 'branch=feature' <<<"$RESULT" && grep -qx 'sha=abc123' <<<"$RESULT" && grep -qx 'ok=true' <<<"$RESULT" && grep -qx 'strict=false' <<<"$RESULT" && grep -qx 'failed=' <<<"$RESULT" && grep -q '^args=' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+RESULT="$(fields)"
+check "ATHENA_PLAN 이 없으면 plan 칸은 빈 값(옛 기록과 같다)" "$(grep -qx 'plan=' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+reset_tree
+RESULT="$(ATHENA_VERIFY_FULL=1 fields plans/task/x.md)"
+check "전체 모드면 scope=full" "$(grep -qx 'scope=full' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
 
 echo "닿는 시험 고르기 (scope-tests.mjs)"
 git_quiet -C "$WORK" checkout -q -b picks
