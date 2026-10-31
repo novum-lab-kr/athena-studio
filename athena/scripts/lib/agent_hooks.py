@@ -7,6 +7,8 @@ CLI(delegate.sh): python3 agent_hooks.py inline <출력 json> <athena 루트> <�
 """
 import json, pathlib, shlex, sys
 
+import athena_config
+
 
 def command(path):
     """훅 명령 한 줄 — 경로에 공백 · ' 가 있어도 깨지지 않게 셸 따옴표로 감싼다"""
@@ -45,8 +47,22 @@ def auto_compact_window(hermes, agent):
     return json.loads((pathlib.Path(hermes) / ".claude/settings.json").read_text(encoding="utf-8")).get("autoCompactWindow")
 
 
+def permissions_allow(hermes, agent):
+    """이 에이전트가 맡은 레포의 팩 "permissionsAllow"(Claude Code permissions.allow 규칙) — 설정을 못 읽으면 없는 것으로(권한을 넓히지 않는 쪽)"""
+    try:
+        cfg = athena_config.load(str(hermes))
+    except (SystemExit, ValueError, OSError):
+        return []
+    rules = []
+    for entry in cfg.get("repos", []):
+        apps = (entry.get("apps") or {}).values()
+        if agent in (entry.get("agents") or []) or entry.get("packagesAgent") == agent or any(app.get("agent") == agent for app in apps):
+            rules += [rule for rule in entry.get("permissionsAllow") or [] if isinstance(rule, str) and rule]
+    return rules
+
+
 def inline_settings(hermes, agent):
-    """본체 안(hermes 프로젝트 설정이 실리는 곳)에서 띄울 때의 settings — 보호 훅 · pane 기록 · 끝 알림 · 자동 압축만"""
+    """본체 안(hermes 프로젝트 설정이 실리는 곳)에서 띄울 때의 settings — 보호 훅 · pane 기록 · 끝 알림 · 자동 압축 · 팩이 허용한 권한만"""
     notify_prompt, notify_stop = done_notify(hermes, agent)
     hooks = {
         "PreToolUse": pre_tool_use(hermes, agent),
@@ -59,6 +75,9 @@ def inline_settings(hermes, agent):
     window = auto_compact_window(hermes, agent)
     if window:
         settings["autoCompactWindow"] = window
+    allow = permissions_allow(hermes, agent)
+    if allow:
+        settings["permissions"] = {"allow": allow}
     return settings
 
 

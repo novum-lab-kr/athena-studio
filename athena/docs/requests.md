@@ -11,7 +11,7 @@
 
 | 종류 | 누가 · 언제 |
 |---|---|
-| `decision` | **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
+| `decision` | **결정** — `--html` 이 없으면 앱이 질문과 같은 선택지 화면으로 답을 받는다. `--html` 이 있으면 **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
 | `question` | **모아서 묻기**(`AGENTS.md` 5절 "추측으로 개발하지 않는다") — Blocked 에 적고 사용자에게 묻는 바로 그때 연다. 한 번에 묻는 묶음이 요청 하나다 |
 
 열지 않는 것: 진행 보고 · "리뷰할까요?" 같은 한 줄 확인 · 커밋 · PR 확인(사용자가 말할 때만 하는 일) · 끝났다는 알림 · 고를 것이 없는 PR 자동 리뷰 상태 알림(검증 못 함 · 충돌 · 리뷰어 부족 등 — 아테나 pane 으로 보낸다 · `docs/pr-auto.md` "아테나에 알림").
@@ -26,7 +26,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
   └──(결정 콘솔은 계획서가 done · 없어짐 — list 가 닫는다)──▶ expired
 ```
 
-- **질문(question)은 계획서가 done 이거나 없어도 닫지 않는다** — 답 전(open)이든 답이 온 뒤(answered)든 에이전트가 ack 하거나 취소할 때까지 [작업] 에 남는다(사라지면 에이전트가 영원히 기다리거나 답을 못 받는다). 결정 콘솔(decision)만 계획서와 함께 닫힌다. 받을 pane 이 닫혀 ack 가 안 오면 그대로 남으므로 `request cancel <id>` 로 거둔다(answered 도 된다 — 앱 · 현황판에는 취소 버튼이 없다). 닫힌 요청을 기다리던 에이전트는 `request show <id>` 로 상태를 보고 필요하면 새로 연다
+- **질문(question)은 계획서가 done 이거나 없어도 닫지 않는다** — 답 전(open)이든 답이 온 뒤(answered)든 에이전트가 ack 하거나 취소할 때까지 [작업] 에 남는다(사라지면 에이전트가 영원히 기다리거나 답을 못 받는다). 콘솔 없는 decision 도 같다. 결정 콘솔에 묶인 decision(`--html` · `plan:<계획서>` 키)만 계획서와 함께 닫힌다. 받을 pane 이 닫혀 ack 가 안 오면 그대로 남으므로 `request cancel <id>` 로 거둔다(answered 도 된다 — 앱 · 현황판에는 취소 버튼이 없다). 닫힌 요청을 기다리던 에이전트는 `request show <id>` 로 상태를 보고 필요하면 새로 연다
 - `--plan` 은 본체 안의 절대 경로를 줘도 본체 기준 논리 경로(`plans/…md`)로 저장한다
 - 같은 `--key` 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다(`rev` +1). `--option` 을 안 주면 있던 선택지는 그대로다(주면 바뀐다 · 지우는 방법은 없다). 답을 받은 뒤 다시 열면 답을 지우고 open
 - 답할 때 `--rev` 를 주면 그사이 바뀐 요청에는 답하지 않는다(`conflict`) · 이미 답한 요청에 또 답하면 `conflict`
@@ -66,7 +66,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 | 명령 | 하는 일 |
 |---|---|
 | `request open --kind decision\|question --title <글> [--body <글>\|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …] [--recommend <라벨>] [--plan …] [--html …] [--issue …] [--pane <id>] [--key <키>]` | 연다. `--pane` 이 없으면 부른 pane(`scripts/screen self`) · 화면 밖이면 포커스된 pane(`scripts/screen pane current`) |
-| (`--kind decision` 인데 `--html` 이 없으면) | `question` 으로 바꿔 열고 경고 한 줄 — decision 은 결정 콘솔(`plan-html.mjs`) 전용이라 앱이 열 화면이 없다 |
+| (`--kind decision` 인데 `--html` 이 없으면) | decision 그대로 열고 앱이 질문과 같은 선택지 화면으로 답을 받는다 |
 | `request list [--all]` | 열린 것(open · answered) · `--all` 은 닫힌 것까지 |
 | `request show <id>` | 하나 |
 | `request answer <id> --by board\|app\|chat [--choice <라벨>] [--text <글>] [--rev <n>]` | 사람의 답 |

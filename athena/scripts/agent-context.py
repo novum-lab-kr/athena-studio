@@ -100,4 +100,8 @@ notify_prompt, notify_stop = agent_hooks.done_notify(hermes, agent)
 settings["hooks"]["UserPromptSubmit"][0]["hooks"] += notify_prompt
 if notify_stop:
     settings["hooks"]["Stop"] = notify_stop
+# 팩이 이 에이전트의 레포에 허용한 권한(permissionsAllow) — Claude Code 가 다른 설정의 규칙과 합친다
+allow = agent_hooks.permissions_allow(hermes, agent)
+if allow:
+    settings["permissions"] = {"allow": allow}
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")

@@ -42,7 +42,7 @@ section "열기 · 자리"
 R="$(A request open --kind decision --title '결정 하나' --option 'A :: 첫째' --option B --recommend A --key k1 --pane p1)"
 ID="$(echo "$R" | field request.id)"
 check "열림 · rev 1 · 팩 acme · pane p1" '[ "$(echo "$R" | field request.state)" = open ] && [ "$(echo "$R" | field request.rev)" = 1 ] && [ "$(echo "$R" | field request.pack)" = acme ] && [ "$(echo "$R" | field request.pane)" = p1 ]' "$R"
-check "--html 없는 decision 은 question 으로 열린다 · --html 이 있으면 decision 그대로" '[ "$(echo "$R" | field request.kind)" = question ] && HK="$(A request open --kind decision --title 콘솔 --html plans/x.html --key kh)"; [ "$(echo "$HK" | field request.kind)" = decision ] && A request cancel "$(echo "$HK" | field request.id)" >/dev/null' "$R"
+check "--html 없는 decision 도 --html 있는 decision 도 decision 그대로" '[ "$(echo "$R" | field request.kind)" = decision ] && HK="$(A request open --kind decision --title 콘솔 --html plans/x.html --key kh)"; [ "$(echo "$HK" | field request.kind)" = decision ] && A request cancel "$(echo "$HK" | field request.id)" >/dev/null' "$R"
 check "선택지 · 추천 · 설명" '[ "$(echo "$R" | field request.options.0.recommended)" = True ] && [ "$(echo "$R" | field request.options.0.desc)" = 첫째 ] && [ "$(echo "$R" | field request.options.1.label)" = B ]' "$R"
 check "팩 데이터 state/requests/<id>.json · 잠금은 남지 않음" '[ -f "$DIR/$ID.json" ] && [ ! -e "$DIR/.lock" ]'
 R="$(A request open --kind decision --title '결정 하나(고침)' --key k1)"
@@ -97,6 +97,13 @@ DEC="$(A request open --kind decision --title 결정콘솔 --html plans/x.html -
 A request answer "$DEC" --by board --choice x > /dev/null
 A request list > /dev/null
 check "결정 콘솔(answered)은 계획서 done → expired" '[ "$(A request show "$DEC" | field request.state)" = expired ] && [ "$(A request show "$DEC" | field request.closedReason)" = "계획서가 done" ]'
+NOHTML="$(A request open --kind decision --title 콘솔없음 --option A --plan plans/task/20261021-x.md | field request.id)"
+A request list > /dev/null
+check "콘솔 없는 decision 은 계획서 done 이어도 답을 기다린다" '[ "$(A request show "$NOHTML" | field request.state)" = open ]'
+A request cancel "$NOHTML" --reason 시험 > /dev/null
+PLANKEY="$(A request open --kind decision --title 콘솔등록실패 --key plan:plans/task/20261021-x.md --plan plans/task/20261021-x.md | field request.id)"
+A request list > /dev/null
+check "plan:<계획서> 키 decision(자동 리뷰 대체 요청)은 html 이 없어도 계획서 done → expired" '[ "$(A request show "$PLANKEY" | field request.state)" = expired ]'
 check "유지된 answered 질문은 사람이 cancel 로 거둘 수 있다" '[ "$(A request cancel "$P" --reason 받을-pane-없음 | field request.state)" = cancelled ]'
 MISSING="$(A request open --kind question --title 없는계획서 --plan plans/task/없음.md | field request.id)"
 A request list > /dev/null

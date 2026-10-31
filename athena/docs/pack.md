@@ -179,6 +179,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
       // "generated": ["data/fare/**"],  // (선택) PR 자동 리뷰가 diff 본문에서 뺄 생성물 경로(gitattributes 식 패턴 · 크기 무관) — 없으면 일반 기준만(docs/pr-auto.md "큰 diff")
       // "redCheck": { "tests": ["test/**/*.test.js"], "run": "node --test {files}" },   // (선택) red-check — 아래 "redCheck"
       // "ruleDocs": { "add": ["AGENTS.md", "docs/rules.md"], "exclude": [".cursorrules"], "maxChars": 40000 },   // (선택) 레포 규칙 문서 — 아래 "ruleDocs"
+      // "permissionsAllow": ["Bash(node scripts/publish-release.js:*)"],   // (선택) 이 레포 담당 에이전트 pane 에 줄 권한 — 아래 "permissionsAllow"
       // "direct": true,                   // main 직접 — 브랜치·워크트리·PR 없이 메인 체크아웃의 prBase 에서 바로 작업·커밋, ship.sh 가 빨리 감기 push(git.md "작업 브랜치 만들기")
       "branchName": { "pattern": "feature/v{version}/{ticket}", "versionFile": "app.config.js", "versionRegex": "^\\s*version:\\s*\"([0-9.]+)\"" } },
     { "name": "api", "agents": ["api-be"], "branch": "prd", "prBase": "dev", "kind": "single", "layer": "be", "appDir": "src" }
@@ -189,6 +190,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 - `kind`: `single` · `monorepo`(앱마다 에이전트·브랜치, 커밋 검증은 바뀐 앱마다) · `packages`(발행 패키지 — 커밋 검증에 패키지 이름 필요)
 - `layer: "be"` — 백엔드. PR 범위 규칙이 없으면 `src/features/<기능>`·`src/<모듈>`
 - `ruleDocs` — 에이전트 세션에 원문을 실을 레포 규칙 문서(`scripts/lib/rule_docs.py`). 칸이 없으면 관례 이름만 찾는다(`AGENTS.md` · `WORKING-AGREEMENT.md` · `CONTRIBUTING.md` · `.ai/*.md` · `.cursorrules` · `.github/copilot-instructions.md` · `.github/agents/*.agent.md` · `.claude/rules/*.md` — 레포 루트 · `appDir` · 모노레포 `apps/<앱>`). `add` 로 더하고 `exclude` 로 뺀다(`exclude` 가 먼저). 경로는 레포 루트 기준 · 패턴은 받지 않는다 · 절대 경로 · `..` · 레포 밖 링크 · `.git` 안 · 시크릿 파일은 거부한다. `maxChars` 는 레포당 전문 합계 상한(기본 40000) — 넘으면 큰 파일부터 "먼저 읽어라" 목록으로. `athena init` 이 찾은 첫 목록을 `add` 에 적고, `/sync` 리포트가 갱신을 제안한다(`pack.json` 은 스크립트가 고치지 않는다). 동작 `docs/knowledge/common/context.md` "자동으로 실리는 것"
+- `permissionsAllow` — 이 레포 담당 에이전트(`agents`) pane 의 Claude Code 설정 `permissions.allow` 에 넣을 규칙 배열(`scripts/lib/agent_hooks.py` · `--settings` 로 넘긴다 · 다른 설정의 규칙과 합쳐진다). 칸이 없으면 `permissions` 를 넣지 않는다. reviewer 에게는 주지 않는다. 좁은 규칙만 적는다
 - `redCheck` — red-check(이번 PR 의 테스트가 구현 없이도 통과하는지 · `scripts/verify/red-check.sh`) 설정. `ship.sh` 가 PR 올릴 때(미리보기 · `--yes` · `--auto-push`) 돌리고 결과를 계획서 Validation · PR 본문에 남긴다 — **막지 않는다**(경고만). 칸이 없는 레포는 건너뛴다. 결과 뜻 · 예외는 `docs/knowledge/common/verify.md` "red-check"
   - `tests` — 테스트 파일 글롭 배열(레포 맨 위 기준 · gitattributes 식 — `/` 가 없으면 어느 폴더의 이름이든 · `**` 는 폴더를 넘는다). 여기 맞는 바뀐 파일이 테스트, 나머지가 구현
   - `run` — 테스트 파일 **하나**를 돌리는 셸 명령. `{files}` 자리에 인용한 경로가 들어간다(파일마다 한 번씩 · 레포 맨 위에서 · 300초 넘으면 `error`). 끝 코드 0 = 통과

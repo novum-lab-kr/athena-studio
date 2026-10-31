@@ -616,13 +616,20 @@ echo z > "$WT/z.txt" && G -C "$WT" add z.txt && echo y > "$WT/y.txt"
 OUT="$(commit y.txt)"; CODE=$?
 expect "merge 가 아니면 남의 스테이징 거부는 그대로" '[ $CODE != 0 ] && echo "$OUT" | grep -q "원래 스테이징돼 있던 변경이 있다"' "$OUT"
 G -C "$WT" reset -q -- z.txt; rm -f "$WT/z.txt" "$WT/y.txt"
-write_plan '검증 대기 — 워크트리를 못 찾음' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
-OUT="$(ship)"; CODE=$?
-expect "충돌이 아닌 검증 대기면 --auto-push 거절" '[ $CODE != 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$SHA2" ]' "$OUT"
 # athena-studio#97 — 줄이 다른 이유(워크트리 HEAD 다름)로 검증 대기인 사이 base 와 충돌이 생기면 줄은 그대로다. GitHub 가 지금 CONFLICTING 이면 merge 커밋을 받는다
 write_plan "검증 대기 — 워크트리 HEAD 가 PR HEAD(${SHA2:0:7})와 다름" p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(FAKE_MERGEABLE=CONFLICTING ship)"; CODE=$?
 expect "줄이 충돌이 아니어도 GitHub 가 CONFLICTING 이면 base 를 합친 merge 커밋을 빨리 감기 push(#97)" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ]' "$OUT"
+# 요청 줄이 없어도 이 계획서의 열린 PR 에 기록된 커밋을 빨리 감기로 올리는 것은 받는다(옆 reviewer · 아테나 지시로 고친 커밋)
+echo plain > "$WT/plain.txt" && G -C "$WT" add plain.txt && G -C "$WT" commit -q -m plain; PLAIN="$(git -C "$WT" rev-parse HEAD)"
+write_plan '승인 — 머지 대기' p3; : > "$FLOG"
+OUT="$(ship)"; CODE=$?
+expect "요청 줄 없음 + 열린 PR + 기록 없는 커밋은 거절" '[ $CODE != 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$MERGE_COMMIT" ]' "$OUT"
+printf -- '- `%s` feat/x · plain · push 안 함\n' "${PLAIN:0:7}" >> "$CORE/$PLANF"
+OUT="$(ship)"; CODE=$?
+expect "요청 줄 없음 + 열린 PR + 기록된 커밋 → 빨리 감기 push" '[ $CODE = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse feat/x)" = "$PLAIN" ]' "$OUT"
+G -C "$WT" reset -q --hard "$MERGE_COMMIT"; G -C "$TMP/web" fetch -q origin 2>/dev/null
+G -C "$TMP/origin.git" update-ref refs/heads/feat/x "$MERGE_COMMIT"; G -C "$WT" fetch -q origin 2>/dev/null
 git -C "$TMP/origin.git" update-ref refs/heads/feat/x "$SHA2"; rm -f "$QUEUE"/*.json   # 아래 시험은 push 전 상태에서
 write_plan '검증 대기 — 충돌 확인 CONFLICTING' p3; printf -- '- `%s` feat/x · merge dev · push 안 함\n' "${MERGE_COMMIT:0:7}" >> "$CORE/$PLANF"; : > "$FLOG"
 OUT="$(ship)"; CODE=$?
