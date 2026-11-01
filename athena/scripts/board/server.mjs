@@ -21,7 +21,7 @@
  *   - POST /api/archive 끝난 카드를 archive/<이름>/ 한 폴더로 보관 — issue.md · plan.md(· plan.html) · meta.json(archive.mjs), 이슈 워크트리 정리. 보드에서 사라지고 히스토리 탭에 뜬다
  *   - GET  /api/qa/flows     QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(scripts/qa/flows.mjs overview) · POST /api/qa-run 흐름 TC 실행(scripts/qa/run.mjs · 한 번에 하나)
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
- *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<워크스페이스>/memory) 목록·본문 — 읽기 전용
+ *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<원본 레포>/memory · autoMemoryDirectory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,batch,discard,edit,candidate-edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
  *   - POST /api/hermes-new 이슈 [작업 시작] → 아테나: 새 아테나 pane(이름은 '<레포> · <이슈 제목>')을 열어 그 안에서 처리한다 — 떠 있는 아테나 대화에 섞지 않는다
  *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
@@ -53,6 +53,7 @@ import { autoMergeRepos, autoReviewAction, directMergeStatus, prDoneHeldByDirect
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
+import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
@@ -657,11 +658,11 @@ const readPanes = async () => {
   }
 }
 
-const projectDir = join(homedir(), '.claude/projects', ROOT.replace(/[/.]/g, '-'))
+// 대화 기록은 본체 폴더 이름 아래다(메모리는 원본 레포 기준이라 다르다 — claude-paths.mjs)
+const projectDir = projectDirOf(ROOT, homedir())
 
-// 메모리 — 아테나 auto memory(<projectDir>/memory/*.md). 읽기 전용. 제목은 목차(MEMORY.md) 링크 글자, 순서도 목차를 따른다
-const memoryDir = join(projectDir, 'memory')
-const listMemory = () => {
+// 메모리 — 아테나 auto memory(*.md). 읽기 전용. 제목은 목차(MEMORY.md) 링크 글자, 순서도 목차를 따른다
+const listMemory = (memoryDir) => {
   if (!existsSync(memoryDir)) return []
   const index = existsSync(join(memoryDir, 'MEMORY.md')) ? readFileSync(join(memoryDir, 'MEMORY.md'), 'utf8') : ''
   const titles = new Map([...index.matchAll(/\[([^\]]+)\]\(([^)]+\.md)\)/g)].map((match) => [match[2], match[1]]))
@@ -1518,7 +1519,8 @@ const handleRequest = async (request, response) => {
   }
   if (url.pathname === '/api/memory') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
-    return response.end(JSON.stringify({ dir: memoryDir.replace(homedir(), '~'), items: listMemory() }))
+    const memoryDir = memoryDirOf(ROOT, homedir())
+    return response.end(JSON.stringify({ dir: memoryDir.replace(homedir(), '~'), items: listMemory(memoryDir) }))
   }
   // GitHub 이슈 감시가 아테나에 맡긴 것(최근 24시간) — 스튜디오 AGENT MONITOR 가 읽는다. /api/state 처럼 읽기 전용 · 토큰 없음
   if (url.pathname === '/api/github-issues') {
