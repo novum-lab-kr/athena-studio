@@ -109,5 +109,16 @@
   "A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.": "核心更新、回滚或追赶时，现在会停止自动审查进程，如仍有工作则用新代码重新启动，旧进程不再移除 Work 弹窗中问题的选项。",
   "Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.": "等待自动合并期间，如果拉取请求的基准分支发生变化，将不再合并。",
   "Reopening a request without options now keeps its existing choices.": "不带选项重新打开请求时，现在会保留原有选项。",
-  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "回答对话框打开期间如果请求发生变化，回答不会发送，并显示冲突提示。"
+  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "回答对话框打开期间如果请求发生变化，回答不会发送，并显示冲突提示。",
+  "Permission prompts in a pane now appear in Work with a way to jump to that pane. You still allow or deny in the pane, and the Work item closes once you do.": "窗格中的权限确认现在也会显示在“工作”中，并可直接跳转到该窗格。允许或拒绝仍在窗格中操作，选择后“工作”中的项目会关闭。",
+  "If all panes for an unfinished plan have been closed for an hour, the Board creates an open issue for it. Starting that issue continues the same plan.": "未完成计划的所有窗格关闭满一小时后，看板会为其创建一个 open 议题。开始该议题即可继续同一计划。",
+  "Agent Monitor rows now show the model that answered, and times include seconds.": "代理监视器的每一行现在显示作答的模型，时间精确到秒。",
+  "Work's In Progress list now shows only plans with a working or open pane, or an open request.": "“工作”的进行中列表现在只显示有工作中窗格、打开的窗格或未处理请求的计划。",
+  "Questions in the Athena pane now also appear in Work while you are looking at the pane, so you can answer in either place.": "Athena 窗格中的问题现在在你查看该窗格时也会显示在“工作”中，两处都可以回答。",
+  "Lightweight tasks now default to Opus 5.5 unless the pack sets another model. Athena uses Sonnet only for truly simple edits.": "轻量任务的默认模型改为 Opus 5.5（除非包指定了其他模型）。Athena 只在确实很简单的修改时使用 Sonnet。",
+  "A plan now completes automatically when its pull requests are merged even if ordinary unchecked items remain, and Athena is told how many are left. Only unchecked step items hold it open.": "计划的 PR 全部合并后，即使还有普通未勾选项也会自动完成，并告知 Athena 剩余数量。只有未勾选的步骤项才会阻止完成。",
+  "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "只要 Athena 窗口处于焦点，即使其他应用占用了 ⌘⇧J 和 ⌘⇧K，也能移动窗格焦点。",
+  "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "切换窗格时，右侧边栏不再闪现加载状态或错误的标题：新内容准备好之前会保留之前的内容。",
+  "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "没有分支的文件夹，其右侧边栏标题不再显示提交编号，而是显示包名称（包自身的文件夹）或文件夹名称（其他文件夹）。",
+  "A pane running a command in the background now counts as working instead of idle.": "在后台运行命令的窗格现在显示为工作中，而不是空闲。"
 }

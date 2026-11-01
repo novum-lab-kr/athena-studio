@@ -109,5 +109,16 @@
   "A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.": "コアの更新・ロールバック・追いつき処理のときに自動レビュー処理を停止し、作業が残っていれば新しいコードで再起動するようになりました。古い処理が Work ポップアップの質問から選択肢を消すことはなくなりました。",
   "Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.": "自動マージの待機中にプルリクエストのベースが変わった場合、マージしなくなりました。",
   "Reopening a request without options now keeps its existing choices.": "選択肢なしでリクエストを開き直しても、既存の選択肢が保持されるようになりました。",
-  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "回答ダイアログを開いている間にリクエストが変わると、回答は送信されず競合メッセージが表示されます。"
+  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "回答ダイアログを開いている間にリクエストが変わると、回答は送信されず競合メッセージが表示されます。",
+  "Permission prompts in a pane now appear in Work with a way to jump to that pane. You still allow or deny in the pane, and the Work item closes once you do.": "pane の権限確認が [作業] にも表示され、その pane へすぐ移動できるようになりました。許可・拒否は pane で行い、選ぶと [作業] の項目は閉じます。",
+  "If all panes for an unfinished plan have been closed for an hour, the Board creates an open issue for it. Starting that issue continues the same plan.": "未完了の計画書の pane がすべて閉じて 1 時間経つと、ボードが続きの open イシューを作成します。そのイシューを開始すると同じ計画書を続けます。",
+  "Agent Monitor rows now show the model that answered, and times include seconds.": "Agent Monitor の行に回答したモデルを表示し、時刻は秒まで表示するようになりました。",
+  "Work's In Progress list now shows only plans with a working or open pane, or an open request.": "[作業] の進行中リストには、作業中の pane・開いている pane・未回答のリクエストがある計画書だけが表示されるようになりました。",
+  "Questions in the Athena pane now also appear in Work while you are looking at the pane, so you can answer in either place.": "Athena pane の質問は、その pane を見ているときも [作業] に表示され、どちらからでも回答できるようになりました。",
+  "Lightweight tasks now default to Opus 5.5 unless the pack sets another model. Athena uses Sonnet only for truly simple edits.": "軽量タスクの既定モデルが Opus 5.5 になりました(パックで別のモデルを指定した場合はそのモデル)。Athena が Sonnet を使うのは本当に単純な修正のときだけです。",
+  "A plan now completes automatically when its pull requests are merged even if ordinary unchecked items remain, and Athena is told how many are left. Only unchecked step items hold it open.": "計画書の PR がすべてマージされると、通常の未チェック項目が残っていても自動で完了し、残り件数を Athena に通知します。完了を止めるのは未チェックのステップ項目だけです。",
+  "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "Athena のウィンドウにフォーカスがあれば、他のアプリが ⌘⇧J・⌘⇧K を使っている場合でも pane のフォーカスを移動できるようになりました。",
+  "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "pane を切り替えても右サイドバーに読み込み表示や誤ったタイトルがちらつかなくなりました。新しい内容の準備ができるまで前の内容を表示します。",
+  "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "ブランチのないフォルダの右サイドバーのタイトルに、コミット番号ではなくパック名(パック自身のフォルダ)またはフォルダ名(その他のフォルダ)を表示するようになりました。",
+  "A pane running a command in the background now counts as working instead of idle.": "バックグラウンドでコマンドを実行している pane を、待機中ではなく作業中として扱うようになりました。"
 }

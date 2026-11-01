@@ -109,5 +109,16 @@
   "A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.": "코어 업데이트 · 되돌리기 · 따라잡기 때 자동 리뷰 처리기를 끄고, 일이 남았으면 새 코드로 다시 띄워요. 이제 옛 처리기가 [작업] 팝업 질문의 선택지를 없애지 않아요.",
   "Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.": "자동 머지를 기다리는 동안 PR 의 base 가 바뀌면 머지하지 않아요.",
   "Reopening a request without options now keeps its existing choices.": "요청을 선택지 없이 다시 열어도 있던 선택지가 그대로 남아요.",
-  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "답하기 창을 연 사이 요청이 바뀌면 답을 보내지 않고 충돌 메시지를 띄워요."
+  "If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.": "답하기 창을 연 사이 요청이 바뀌면 답을 보내지 않고 충돌 메시지를 띄워요.",
+  "Permission prompts in a pane now appear in Work with a way to jump to that pane. You still allow or deny in the pane, and the Work item closes once you do.": "pane 의 권한 확인 창이 [작업] 에도 올라오고 그 pane 으로 바로 갈 수 있어요. 허용 · 거부는 pane 에서 하고, 고르면 [작업] 항목은 닫혀요.",
+  "If all panes for an unfinished plan have been closed for an hour, the Board creates an open issue for it. Starting that issue continues the same plan.": "끝나지 않은 계획서의 pane 이 모두 닫힌 지 1시간이 지나면 현황판이 이어 갈 open 이슈를 만들어요. 그 이슈를 시작하면 같은 계획서를 이어 가요.",
+  "Agent Monitor rows now show the model that answered, and times include seconds.": "Agent Monitor 줄에 답한 모델이 보이고 시간은 초까지 나와요.",
+  "Work's In Progress list now shows only plans with a working or open pane, or an open request.": "[작업] 진행 중 목록에는 일하는 pane · 열린 pane · 열린 요청이 있는 계획서만 나와요.",
+  "Questions in the Athena pane now also appear in Work while you are looking at the pane, so you can answer in either place.": "아테나 pane 의 질문은 그 pane 을 보고 있을 때도 [작업] 에 함께 올라와서 어느 쪽에서든 답할 수 있어요.",
+  "Lightweight tasks now default to Opus 5.5 unless the pack sets another model. Athena uses Sonnet only for truly simple edits.": "경량 작업의 기본 모델이 Opus 5.5 예요(팩에서 다른 모델을 정하면 그 모델). 아테나는 정말 단순한 수정에만 Sonnet 을 써요.",
+  "A plan now completes automatically when its pull requests are merged even if ordinary unchecked items remain, and Athena is told how many are left. Only unchecked step items hold it open.": "계획서의 PR 이 모두 머지되면 일반 빈 칸이 남아 있어도 자동으로 완료하고, 남은 칸 수를 아테나에게 알려요. 단계 칸이 남아 있을 때만 완료되지 않아요.",
+  "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "Athena 창에 포커스가 있으면 다른 앱이 ⌘⇧J · ⌘⇧K 를 가져간 경우에도 pane 포커스가 옮겨 가요.",
+  "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "pane 을 바꿀 때 오른쪽 사이드바에 읽는 중 표시나 잘못된 제목이 깜빡이지 않아요. 새 내용이 준비될 때까지 이전 내용이 그대로 보여요.",
+  "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "브랜치가 없는 폴더의 오른쪽 사이드바 제목에 커밋 번호 대신 팩 이름(팩 자체 폴더)이나 폴더 이름(그 밖의 폴더)이 나와요.",
+  "A pane running a command in the background now counts as working instead of idle.": "뒤에서 명령을 돌리는 pane 은 쉬는 중이 아니라 작업 중으로 보여요."
 }
