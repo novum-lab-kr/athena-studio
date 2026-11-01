@@ -7,7 +7,7 @@ type Loose = Record<string, unknown>
 
 // github — 현황판 GitHub 이슈 감시가 아테나에 맡긴 이슈(githubIssueEvents). 화면이 이 칸으로 문구를 지어 보인다(text 는 제목)
 export type GithubIssueMark = { repo: string; number: number; title: string }
-export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; github?: GithubIssueMark }
+export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; github?: GithubIssueMark }
 
 export const TOOL_ICON: Record<string, string> = { Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
 
@@ -50,6 +50,25 @@ export function subagentInfo(meta: unknown): { label: string | null; finished: b
   return { label: name ? `🤖 ${name}` : null, finished: meta.finished === true }
 }
 
+// 실제로 답한 모델 — assistant 줄의 message.model(예: claude-sonnet-5-5). 없거나 '<synthetic>' 같은 자리값이면 null
+export function modelOf(record: unknown): string | null {
+  if (!isLoose(record) || record.type !== 'assistant' || !isLoose(record.message)) return null
+  const model = record.message.model
+  return typeof model === 'string' && /^[a-z]/i.test(model) ? model : null
+}
+
+// 모델 id → 짧은 이름(claude-sonnet-5-5 → Sonnet 5.5 · claude-3-5-sonnet-20241022 → Sonnet 3.5). 모르는 모양은 지어내지 않고 id 그대로
+export function modelShortName(model: string | null | undefined): string | null {
+  if (!model) return null
+  const match = model.match(/^claude-(?:(\d+)(?:-(\d{1,2}))?-)?(opus|sonnet|haiku)(?:-(\d+)(?:-(\d{1,2}))?)?(?:-\d{8})?$/)
+  if (!match) return model
+  const [, frontMajor, frontMinor, family, backMajor, backMinor] = match
+  const major = frontMajor ?? backMajor
+  const minor = frontMajor ? frontMinor : backMinor
+  const name = `${family?.[0]?.toUpperCase()}${family?.slice(1)}`
+  return major ? `${name} ${major}${minor ? `.${minor}` : ''}` : name
+}
+
 // 기록 한 줄 → 이벤트 목록 { kind: tool | say | user, icon, name, text, at }
 export function eventsFromRecord(record: unknown): FeedEvent[] {
   // 대화 줄(user · assistant)만 — api-request-blob 같은 기록도 같은 content 를 담고 있어 두 번 찍힌다
@@ -65,15 +84,17 @@ export function eventsFromRecord(record: unknown): FeedEvent[] {
   }
   if (!Array.isArray(content)) return []
   const blocks: unknown[] = content
+  // 답한 모델(assistant 줄에만) — 줄마다 그 줄을 쓴 모델이라 세션 중간에 바꿔도 줄별로 맞다
+  const model = modelShortName(modelOf(record))
   const events: FeedEvent[] = []
   for (const block of blocks) {
     if (!isLoose(block)) continue
     if (block.type === 'tool_use') {
       const name = String(block.name || '')
-      events.push({ kind: 'tool', icon: TOOL_ICON[name] || '•', name, text: summarizeTool(name, block.input), at })
+      events.push({ kind: 'tool', icon: TOOL_ICON[name] || '•', name, text: summarizeTool(name, block.input), at, ...(model && { model }) })
     } else if (block.type === 'text' && record.type === 'assistant') {
       const text = oneLine(block.text)
-      if (text.length > 3) events.push({ kind: 'say', icon: '💬', name: '', text, at })
+      if (text.length > 3) events.push({ kind: 'say', icon: '💬', name: '', text, at, ...(model && { model }) })
     }
   }
   return events

@@ -11,7 +11,7 @@ import type { Say } from './bridge.ts'
 // 이벤트는 MonitorEvent(src/lib/agent-feed.mts FeedEvent + id · session). 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
 type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
 // github — 현황판 GitHub 이슈 감시가 아테나에 맡긴 이슈(session 'github' · src/main/agent-monitor.mts)
-type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; github?: { repo: string; number: number; title: string } }
+type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; github?: { repo: string; number: number; title: string } }
 export type MonitorUpdate = { reset?: boolean; sessions?: MonitorSession[]; events?: MonitorEvent[] }
 
 // 바닐라가 넘긴다 — 작업 공간 아이콘과 같은 이름 색(space-actions.ts spaceColor)
@@ -153,8 +153,8 @@ function SessionChips() {
 
 function monitorTime(at: string | null): string {
   const date = at ? new Date(at) : null
-  if (!date || Number.isNaN(date.getTime())) return '--:--'
-  return `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+  if (!date || Number.isNaN(date.getTime())) return '--:--:--'
+  return [date.getHours(), date.getMinutes(), date.getSeconds()].map((part) => String(part).padStart(2, '0')).join(':')
 }
 
 // 서브에이전트 보고(SubagentHandback)는 입력이 없어 main(agent-feed)이 고정 문구를 준다 — 화면 언어로 바꿔 보인다
@@ -187,7 +187,7 @@ function MonitorRow({ event, label, text }: { event: MonitorEvent; label: string
       <span className="monitor-time">{monitorTime(event.at)}</span>
       <span className="monitor-label">{`[${label}]`}</span>
       <span className="monitor-icon">{event.icon}</span>
-      <span className="monitor-name">{event.name}</span>
+      {event.model && <span className="monitor-model">{event.model}</span>}
       <span className="monitor-text">{text}</span>
     </div>
   )

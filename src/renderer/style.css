@@ -839,8 +839,8 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 .monitor-row:hover { background: rgba(255, 255, 255, 0.03); }
 .monitor-time { flex: none; color: var(--muted); }
 .monitor-label { flex: none; max-width: 32%; overflow: hidden; color: var(--label-color, var(--text)); text-overflow: ellipsis; }
-.monitor-icon { flex: none; width: 18px; text-align: center; }
-.monitor-name { flex: none; min-width: 44px; color: var(--muted); }
+.monitor-model { flex: none; color: var(--muted); font-size: 10px; }
+.monitor-icon { flex: none; width: 16px; text-align: center; }
 .monitor-text { flex: 1; min-width: 0; overflow: hidden; color: var(--text); text-overflow: ellipsis; }
 .monitor-row.user .monitor-text { color: var(--accent); }
 .monitor-row.say .monitor-text { color: var(--muted); }

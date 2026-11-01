@@ -62,3 +62,26 @@ test('GitHub 이슈 감시 → 모니터 이벤트: 처음 본 것만 · 오래�
   assert.deepEqual(feed.githubIssueEvents(issues, seen, since), [])
   assert.deepEqual(feed.githubIssueEvents(null, seen, since), [])
 })
+
+test('모델 — assistant 줄의 message.model 만 · 짧은 이름', () => {
+  assert.equal(feed.modelOf({ type: 'assistant', message: { model: 'claude-sonnet-5-5', content: [] } }), 'claude-sonnet-5-5')
+  assert.equal(feed.modelOf({ type: 'assistant', message: { model: '<synthetic>' } }), null)
+  assert.equal(feed.modelOf({ type: 'user', message: { model: 'claude-opus-5-5' } }), null)
+  assert.equal(feed.modelOf({ type: 'assistant', message: {} }), null)
+  assert.equal(feed.modelOf(null), null)
+  assert.equal(feed.modelShortName('claude-sonnet-5-5'), 'Sonnet 5.5')
+  assert.equal(feed.modelShortName('claude-opus-5-5'), 'Opus 5.5')
+  assert.equal(feed.modelShortName('claude-opus-4-1-20250805'), 'Opus 4.1')
+  assert.equal(feed.modelShortName('claude-sonnet-4-20250514'), 'Sonnet 4')
+  assert.equal(feed.modelShortName('claude-3-5-sonnet-20241022'), 'Sonnet 3.5')
+  // 모르는 모양은 지어내지 않고 그대로
+  assert.equal(feed.modelShortName('gpt-x'), 'gpt-x')
+  assert.equal(feed.modelShortName(null), null)
+})
+
+test('모델 — assistant 줄의 이벤트에만 짧은 이름이 붙는다', () => {
+  const record = { type: 'assistant', message: { model: 'claude-sonnet-5-5', content: [{ type: 'tool_use', name: 'Read', input: { file_path: '/a.js' } }, { type: 'text', text: '읽었어요' }] } }
+  assert.deepEqual(feed.eventsFromRecord(record).map((event) => event.model), ['Sonnet 5.5', 'Sonnet 5.5'])
+  assert.equal('model' in feed.eventsFromRecord({ type: 'assistant', message: { content: [{ type: 'text', text: '모델 없음' }] } })[0], false)
+  assert.equal('model' in feed.eventsFromRecord({ type: 'user', message: { content: '지시' } })[0], false)
+})
