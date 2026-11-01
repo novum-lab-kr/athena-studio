@@ -3,6 +3,7 @@ const assert = require('node:assert/strict')
 const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
+const { execFileSync } = require('node:child_process')
 const { installExplorer } = require('../src/main/explorer-panel.mts')
 const { createFiles } = require('../src/main/files.mts')
 
@@ -12,6 +13,8 @@ const say = (key) => key
 // 가짜 데몬 — state(작업 공간 폴더)와 pane list(살아 있는 pane 폴더)만 답한다
 function fakeCtx(workspaces, panes) {
   const ctx = {
+    athenaDir: null,
+    packState: { supported: false },
     async daemonCall(op) {
       if (op === 'state') return { result: { workspaces } }
       if (op === 'pane list') return { result: { panes } }
@@ -101,4 +104,66 @@ test('pane 폴더 밖 경로는 계속 막는다', async () => {
   await assert.rejects(ctx.explorerOpen('w1', '../secret.md', 'p1'), { message: 'error.outsideWorkspace' })
   await assert.rejects(ctx.explorerList('w1', '..', 'p1'), { message: 'error.outsideWorkspace' })
   await assert.rejects(ctx.explorerOpen('w1', path.join(base, 'secret.md'), 'p1'), { message: 'error.pathUnreadable' })
+})
+
+// 커밋 하나 있는 임시 레포 — detached 면 브랜치 없이 HEAD 만 남는다(아테나 본체 · 이슈 조사 워크트리)
+function gitRepo({ detached }) {
+  const root = tempDir()
+  const git = (...args) => execFileSync('git', args, { cwd: root, stdio: 'ignore' })
+  git('init', '-q', '-b', 'main')
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.com', 'commit', '-q', '--allow-empty', '-m', 'first')
+  if (detached) git('checkout', '-q', '--detach')
+  return root
+}
+
+function bodyCtx(root, { athenaDir = root, packState }) {
+  const ctx = fakeCtx([{ id: 'w1', cwd: root }], [])
+  ctx.athenaDir = athenaDir
+  ctx.packState = packState
+  return ctx
+}
+
+const titleOf = async (ctx) => (await ctx.explorerStatus('w1')).branch
+const shortHead = (root) => execFileSync('git', ['rev-parse', '--short', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim()
+
+test('아테나 본체(detached)를 보면 제목은 팩 이름 — 표시 이름이 아니라 pack.json name', async () => {
+  const root = gitRepo({ detached: true })
+  const packState = { supported: true, body: root, current: { id: 'novum-lab', name: 'novum-lab', displayName: '다른 이름' } }
+  assert.equal(await titleOf(bodyCtx(root, { packState })), 'novum-lab')
+})
+
+test('본체가 아닌 detached 폴더는 폴더 이름', async () => {
+  const root = gitRepo({ detached: true })
+  const body = tempDir()
+  const packState = { supported: true, body, current: { id: 'novum-lab', name: 'novum-lab' } }
+  assert.equal(await titleOf(bodyCtx(root, { athenaDir: body, packState })), path.basename(root))
+})
+
+test('본체 아래 하위 폴더는 본체가 아니다 — 그 폴더 이름', async () => {
+  const root = gitRepo({ detached: true })
+  const sub = path.join(root, 'docs')
+  fs.mkdirSync(sub)
+  const packState = { supported: true, body: root, current: { id: 'novum-lab', name: 'novum-lab' } }
+  const ctx = fakeCtx([{ id: 'w1', cwd: sub }], [])
+  Object.assign(ctx, { athenaDir: root, packState })
+  assert.equal(await titleOf(ctx), 'docs')
+})
+
+test('브랜치에 있는 본체는 브랜치 이름 그대로', async () => {
+  const root = gitRepo({ detached: false })
+  const packState = { supported: true, body: root, current: { id: 'novum-lab', name: 'novum-lab' } }
+  assert.equal(await titleOf(bodyCtx(root, { packState })), 'main')
+})
+
+test('본체인데 팩 이름을 못 얻으면 커밋 번호 — 지금 팩 없음 · 이름 없음 · 목록 못 읽음', async () => {
+  const root = gitRepo({ detached: true })
+  for (const packState of [{ supported: false }, { supported: true, body: root, current: null }, { supported: true, body: root, current: { id: 'x' } }]) {
+    assert.equal(await titleOf(bodyCtx(root, { packState })), shortHead(root))
+  }
+})
+
+test('팩을 바꾼 직후 옛 본체 목록이면 옛 팩 이름을 쓰지 않는다 — 커밋 번호 그대로', async () => {
+  const root = gitRepo({ detached: true })
+  const packState = { supported: true, body: tempDir(), current: { id: 'old', name: 'old' } }
+  assert.equal(await titleOf(bodyCtx(root, { packState })), shortHead(root))
 })

@@ -112,7 +112,8 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       await decideLaunchWelcome(listed)
       if (ctx.athenaDir !== dir) return refreshPacks() // 시작 화면 판단(데몬 pane 목록)을 기다리는 사이에도 바뀔 수 있다
       // welcome — 팩이 하나도 없을 때 시작 화면 · launchWelcome — 켤 때 시작 화면(팩이 있어도) · recent — 시작 화면 '내 팩' 목록. 규칙은 pack.js 한 곳에서만
-      ctx.packState = { ...listed, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome() === true, recent: packModel.recentPacks(listed as Parameters<typeof packModel.recentPacks>[0]) }
+      // body — 이 목록을 읽은 본체(Explorer 제목이 지금 본체의 팩 이름인지 본다)
+      ctx.packState = { ...listed, body: dir, welcome: packModel.showPackWelcome(listed), launchWelcome: launchWelcome() === true, recent: packModel.recentPacks(listed as Parameters<typeof packModel.recentPacks>[0]) }
     }
     // 열린 팩 창들 — 팩 줄의 '열려 있음' 점(다른 창 목록이 바뀌어도 보이게 모든 창에)
     for (const each of packWindows) each.send('pack:state', { ...each.packState, openIds: openPackIds() })

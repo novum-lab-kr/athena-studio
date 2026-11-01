@@ -88,6 +88,7 @@ test('팩 목록: 읽는 사이 다른 본체로 다시 묶이면 옛 목록을 
   const late = await stale
   assert.equal(late.current.id, 'globex')
   assert.equal(ctx.packState.current.id, 'globex')
+  assert.equal(ctx.packState.body, ctx.athenaDir) // 팩 상태는 어느 본체를 읽은 것인지 안다(Explorer 제목)
   // 화면에 간 마지막 상태도 globex — 옛 acme 상태는 보내지 않는다
   const states = sent.filter((item) => item.channel === 'pack:state')
   assert.equal(states.at(-1).value.current.id, 'globex')

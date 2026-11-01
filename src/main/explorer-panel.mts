@@ -4,6 +4,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import * as core from '../lib/core.mts'
 import * as explorer from '../lib/explorer.mts'
 import * as viewer from '../lib/viewer.mts'
 import { explorerRoots, runGit, colorRows } from './files.mts'
@@ -19,6 +20,8 @@ type PaneListReply = { result?: { panes?: (explorer.PaneFolder & { id?: unknown 
 
 // 팩 창 문맥(main.mts createPackWindow) 중 Explorer 가 읽는 것 · 붙이는 것
 export type ExplorerCtx = {
+  athenaDir: string | null
+  packState: { body?: unknown; current?: { name?: unknown } | null }
   daemonCall(op: string, args?: Record<string, unknown>): Promise<unknown>
   explorerList?: unknown
   explorerStatus?: unknown
@@ -66,6 +69,16 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
     throw new Error(say('error.workspaceFolderMissing'))
   }
 
+  // 브랜치가 없는(detached) 폴더의 제목 — 이 창 본체면 팩 이름(pack.json name), 그 밖의 폴더는 폴더 이름.
+  // 팩을 바꾼 직후에는 팩 상태가 아직 옛 본체 것이다 — 옛 팩 이름을 보여 주지 않게 지금 본체를 읽은 상태일 때만 쓰고, 이름을 못 얻은 본체는 커밋 번호
+  async function detachedTitle(root: string): Promise<string | null> {
+    const { athenaDir, packState } = ctx
+    if (!core.sameDir(root, athenaDir)) return path.basename(root)
+    const name = packState.body === athenaDir ? packState.current?.name : null
+    if (typeof name === 'string' && name !== '') return name
+    return ((await runGit(root, ['rev-parse', '--short', 'HEAD'])) ?? '').trim() || null
+  }
+
   ctx.explorerList = async (workspaceId: unknown, relative: unknown, paneId?: unknown) => {
     const root = await workspaceRoot(workspaceId, paneId)
     const { real, clean } = await resolveInside(root, relative)
@@ -89,12 +102,12 @@ export function installExplorer(ctx: ExplorerCtx, { say, resolveInside }: Explor
   }
 
   // 보는 폴더 기준 git 변경. git 레포가 아니면 git: false
-  // root(보는 폴더 — 화면이 바뀐 걸 알아채는 열쇠) · branch(그 폴더의 브랜치, 없으면 null)도 같이 준다
+  // root(보는 폴더 — 화면이 바뀐 걸 알아채는 열쇠) · branch(제목 — 그 폴더의 브랜치, 브랜치가 없으면 detachedTitle)도 같이 준다
   ctx.explorerStatus = async (workspaceId: unknown, paneId?: unknown) => {
     const root = await workspaceRoot(workspaceId, paneId)
     const top = await runGit(root, ['rev-parse', '--show-toplevel'])
     if (top === null) return { git: false, changes: [], root, branch: null }
-    const branch = ((await runGit(root, ['branch', '--show-current'])) ?? '').trim() || ((await runGit(root, ['rev-parse', '--short', 'HEAD'])) ?? '').trim() || null
+    const branch = ((await runGit(root, ['branch', '--show-current'])) ?? '').trim() || (await detachedTitle(root))
     const prefix = path.relative(await fs.promises.realpath(top.trim()), root)
     // 새 폴더는 한 줄(`dir/`)로 — 안의 파일을 다 세면 .omc/ 같은 폴더 하나로 수백 줄이 된다(git 기본과 같다)
     const output = await runGit(root, ['status', '--porcelain=v1', '-z', '--untracked-files=normal'])
