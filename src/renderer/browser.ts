@@ -153,7 +153,7 @@ function initBrowserResize(): void {
 
 export function initBrowser(): void {
   initBrowserResize()
-  StudioUi.browser.mount($('browser').querySelector('.browser-bar') as HTMLElement, $('browser-error'), { close: closeBrowserPanel, place: placeBrowserView })
+  StudioUi.browser.mount($('browser').querySelector('.browser-bar') as HTMLElement, $('browser-error'), $('browser-tabs'), { close: closeBrowserPanel, place: placeBrowserView })
   $('browser-toggle').addEventListener('click', toggleBrowserPanel)
   studio.onBrowserOpen((url) => {
     StudioUi.browser.setUrl(url)
@@ -169,7 +169,8 @@ export function initBrowser(): void {
   studio.onBrowserToggle(toggleBrowserPanel)
   studio.onBrowserState(applyBrowserState)
   studio.onBrowserError(StudioUi.browser.showError)
-  studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보낸 뒤(main 이 알린다)
+  studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보내 남은 콘솔이 없을 때 · 마지막 탭을 닫았을 때(main 이 알린다)
+  studio.onBrowserTabs(StudioUi.browser.applyTabs)
   // 창 크기가 바뀌면 서랍(너비 46%)도 바뀐다 — 다 나와 있을 때만 다시 붙인다
   new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
 }

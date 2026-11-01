@@ -1,6 +1,6 @@
-// 옆 브라우저 막대(.browser-bar — 뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기)와 알림 줄(#browser-error)
+// 옆 브라우저 막대(.browser-bar — 뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 탭 줄(#browser-tabs) · 알림 줄(#browser-error)
 // PR-R12. 서랍 껍데기(열기 · 닫기 · 스르륵 · 너비 끌기 · 페이지 자리 알리기 placeBrowserView · 탭 줄 열기 단추 · 서랍의 loading 클래스 · 제목)는 바닐라 browser.ts.
-// 실제 페이지는 main 의 WebContentsView(src/main/side-browser.mts)라 여기서는 막대 · 알림 줄만 그린다.
+// 실제 페이지는 main 의 WebContentsView(src/main/side-browser.mts)라 여기서는 막대 · 탭 줄 · 알림 줄만 그린다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다(서랍을 닫아도 주소 칸은 남는다)
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
@@ -11,11 +11,16 @@ export type BrowserState = { url?: string; title?: string; canGoBack?: boolean; 
 // 바닐라가 넘긴다 — 서랍 닫기(Esc · ✕) · 페이지 자리 다시 알리기(알림 줄이 생기거나 없어지면 자리가 바뀐다)
 export type BrowserActions = { close: () => void; place: () => void }
 
+// main 이 보내는 browser:tabs(src/main/side-browser.mts sendTabs)
+export type BrowserTabView = { id: number; url: string; title: string; active: boolean }
+
 type BarView = { url: string; canGoBack: boolean; canGoForward: boolean; loading: boolean; error: string }
 const view = createStore<BarView>({ url: '', canGoBack: false, canGoForward: false, loading: false, error: '' })
+const tabsView = createStore<BrowserTabView[]>([])
 
 let urlInput: HTMLInputElement | null = null
 let errorBox: HTMLElement | null = null
+let tabsBox: HTMLElement | null = null
 let actions: BrowserActions = { close: () => {}, place: () => {} }
 
 // 바닐라가 바로 DOM 을 고치던 때처럼 그리기는 바로(flushSync)
@@ -24,11 +29,13 @@ function commit(next: Partial<BarView>): void {
 }
 
 // 켤 때 한 번 — 막대 칸 · 알림 줄 칸에 각각 띄운다(내리지 않는다)
-export function mount(bar: HTMLElement, error: HTMLElement, next: BrowserActions): void {
+export function mount(bar: HTMLElement, error: HTMLElement, tabs: HTMLElement, next: BrowserActions): void {
   actions = next
   errorBox = error
+  tabsBox = tabs
   mountIsland(bar, <Bar />)
   mountIsland(error, <ErrorLine />)
+  mountIsland(tabs, <Tabs />)
 }
 
 // 주소 칸의 글 — 비었으면 처음 여는 것(browser.ts toggleBrowserPanel 이 주소 칸부터 포커스)
@@ -62,6 +69,12 @@ export function applyState(next: BrowserState): void {
     loading: Boolean(next.loading),
   })
   if (next.loading) showError('')
+}
+
+// 탭 줄은 2개 이상일 때만 — 하나면 지금까지와 같은 서랍. 줄이 생기거나 없어지면 페이지 자리는 ResizeObserver(browser.ts)가 다시 맞춘다
+export function applyTabs(next: BrowserTabView[]): void {
+  flushSync(() => tabsView.set(next))
+  if (tabsBox) tabsBox.hidden = next.length < 2
 }
 
 async function navigate(): Promise<void> {
@@ -113,4 +126,31 @@ function Bar() {
 
 function ErrorLine() {
   return <>{useStore(view).error}</>
+}
+
+function Tabs() {
+  const say = useSay()
+  const tabs = useStore(tabsView)
+  return (
+    <div role="tablist" aria-label={say('browser.tabs')} className="browser-tab-list">
+      {tabs.map((tab) => {
+        const label = tab.title || tab.url
+        return (
+          <div key={tab.id} role="tab" aria-selected={tab.active} className={tab.active ? 'browser-tab active' : 'browser-tab'} title={label} onClick={() => studio.browserCommand('tab-select', String(tab.id))}>
+            <span className="browser-tab-title">{label}</span>
+            <button
+              title={say('common.close')}
+              aria-label={say('common.close')}
+              onClick={(event) => {
+                event.stopPropagation()
+                void studio.browserCommand('tab-close', String(tab.id))
+              }}
+            >
+              ✕
+            </button>
+          </div>
+        )
+      })}
+    </div>
+  )
 }

@@ -117,7 +117,8 @@ type MainCalls = {
   prepareBoardPort(): void
   watchRequests(): void
   isBrowserContents(contents: WebContents): boolean
-  openInBrowser(url: string): void
+  openInBrowser(url: string, options?: { background?: boolean }): void
+  closeSentConsole(contents: WebContents): void
   placeBrowser(rect: { x: number; y: number; width: number; height: number } | null): void
   hideBrowser(): void
   browserCommand(name: string, value: string): unknown
@@ -241,7 +242,7 @@ function saveWindows(): void {
 // 옛 데몬(protocol 이 다른 데몬)에 [나중에] 로 그대로 붙어 쓰는 중 — 창을 본체로 묶지 못해 팩 창이 여럿이면 pane 이 섞인다.
 // 그동안은 새 팩 창을 열지 않는다. 창 하나일 때는 지금 그대로 쓴다
 let daemonOld = false
-const browserUrls = new Map() // 본체 실제 경로 → 옆 브라우저에서 마지막으로 보던 주소(팩을 바꿨다 돌아오면)
+const browserUrls = new Map<string, { urls: string[]; active: number }>() // 본체 실제 경로 → 옆 브라우저에 열어 둔 탭 주소(팩을 바꿨다 돌아오면)
 let heldDirs: string[] = [] // 옛 데몬이라 켤 때 다시 열지 않은 팩 창 본체 — 맞는 데몬에 붙으면 연다
 
 // 맞는 데몬에 붙었다 — 미뤄 둔 팩 창을 연다
@@ -452,7 +453,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   }
 
   // 데몬 연결(창마다 하나 · 이 창의 본체로 묶인다 · protocol 5) — 옛 데몬 표시(daemonOld)는 main.mts 가 갖는다
-  installDaemonLink(ctx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld: (old) => (daemonOld = old), noticeOldCode, releaseHeldWindows, openUrl })
+  installDaemonLink(ctx, { say, daemonPaths, daemonErrorText, askRestartDaemon, setDaemonOld: (old) => (daemonOld = old), noticeOldCode, releaseHeldWindows, openUrl: (target, url) => openUrl(target, url, { background: true }) })
   const daemonCall = ctx.daemonCall
   // pane · 탭 · 작업 공간 닫기 · 새 작업 공간 · 팩 레포 더하기 · 빼기 · 우클릭 메뉴
   // 묶음은 runCore · runPack 답에서 읽는 칸만 적은 모양으로 받는다(같은 함수)
@@ -532,7 +533,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     launchWelcome: () => launchWelcome,
     setLaunchWelcome: (value) => (launchWelcome = value),
   })
-  // 옆 브라우저 — 창마다 서랍 하나(뷰는 그 안에 · 본체별 마지막 주소 browserUrls 는 창끼리 같이 쓴다)
+  // 옆 브라우저 — 창마다 서랍 하나(탭 뷰는 그 안에 · 본체별 탭 주소 browserUrls 는 창끼리 같이 쓴다)
   installSideBrowser(ctx, { say, browserUrls, browserPartition: BROWSER_PARTITION, watchConsoleSends, appBackground: APP_BACKGROUND })
   // 창 — 만들고 focus · close · closed 를 건다
   installPackWindow(ctx, {
@@ -576,15 +577,16 @@ function openBody(body: unknown): { error?: string; code?: string; existing?: bo
 // ── 새 창 · 링크 ──────────────────────────────────────────
 // 터미널 링크 · 맨 위 페이지 이동 — localhost(계획서 · 테스트 화면)는 그 창 옆 브라우저, 그 밖 http(s) 는 기본 브라우저
 // ctx — 링크를 연 팩 창(묶음마다 문맥 타입이 달라 object 로 받는다 · 들어오는 것은 모두 createPackWindow 의 ctx)
-function openUrl(ctx: object | null, url: string): 'deny' | 'panel' | 'external' {
+// background — 에이전트가 연 것(open-url). 새 결정 콘솔이 보던 화면을 뺏지 않는다
+function openUrl(ctx: object | null, url: string, options: { background?: boolean } = {}): 'deny' | 'panel' | 'external' {
   const target = core.openTarget(url)
   if (target === 'external') shell.openExternal(url)
-  if (target === 'panel' && ctx) (ctx as PackWindow).openInBrowser(url)
+  if (target === 'panel' && ctx) (ctx as PackWindow).openInBrowser(url, options)
   return target
 }
 
 // 새 창 요청 — 팩 창 · 그 밖 화면에서 온 것은 링크와 같은 규칙(localhost 는 그 창 옆 브라우저, 그 밖 http(s) 는 기본 브라우저).
-// 옆 브라우저 안에서 연 새 창은 같은 뷰로. 새 BrowserWindow 는 만들지 않는다
+// 옆 브라우저 안에서 연 새 창은 같은 탭으로. 새 BrowserWindow 는 만들지 않는다
 app.on('web-contents-created', (_event, contents) => {
   contents.setWindowOpenHandler(({ url }) => {
     const owner = [...packWindows].find((ctx) => ctx.isBrowserContents(contents))
@@ -600,9 +602,9 @@ app.on('web-contents-created', (_event, contents) => {
 })
 
 const BROWSER_PARTITION = 'persist:studio-browser'
-const CONSOLE_CLOSE_MS = 1200 // [이대로 진행] 뒤 '✅ 보냄' 을 잠깐 보여 주고 서랍을 닫는다
+const CONSOLE_CLOSE_MS = 1200 // [이대로 진행] 뒤 '✅ 보냄' 을 잠깐 보여 주고 그 탭을 닫는다
 
-// 결정 콘솔이 보내기를 마치면 그 창의 옆 브라우저 서랍을 닫는다(사용자 요청 2026-10-19). 세션은 창끼리 같이 쓰니 한 번만 건다
+// 결정 콘솔이 보내기를 마치면 그 콘솔 탭만 닫는다(남은 콘솔이 없으면 서랍도 — side-browser.mts closeSentConsole). 세션은 창끼리 같이 쓰니 한 번만 건다
 let consoleWatched = false
 function watchConsoleSends(browserSession: Session): void {
   if (consoleWatched) return
@@ -613,7 +615,7 @@ function watchConsoleSends(browserSession: Session): void {
     const owner = [...packWindows].find((ctx) => ctx.isBrowserContents(contents))
     if (!owner) return
     if (!core.isConsoleSent({ method: details.method, url: details.url, statusCode: details.statusCode, pageUrl: contents.getURL() })) return
-    setTimeout(() => owner.send('browser:close'), CONSOLE_CLOSE_MS)
+    setTimeout(() => owner.closeSentConsole(contents), CONSOLE_CLOSE_MS)
   })
 }
 

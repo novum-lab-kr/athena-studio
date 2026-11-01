@@ -894,6 +894,15 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
   outline: none;
 }
 .browser-url:focus { border-color: var(--accent); }
+.browser-tabs { flex: none; border-bottom: 1px solid var(--line); }
+.browser-tabs[hidden] { display: none; }
+.browser-tab-list { display: flex; gap: 2px; padding: 4px 6px 0; overflow-x: auto; }
+.browser-tab { display: flex; flex: 0 1 180px; align-items: center; gap: 4px; min-width: 90px; height: 26px; padding: 0 4px 0 10px; border-radius: 6px 6px 0 0; color: var(--muted); font-size: 12px; cursor: pointer; }
+.browser-tab:hover { background: var(--line); }
+.browser-tab.active { box-shadow: inset 0 -2px 0 var(--accent); color: var(--text); }
+.browser-tab-title { flex: 1; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.browser-tab button { flex: none; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: none; color: inherit; font-size: 10px; cursor: pointer; }
+.browser-tab button:hover { background: var(--line); color: var(--text); }
 .browser-error { flex: none; padding: 4px 10px; color: #f28b82; font-size: 12px; border-bottom: 1px solid var(--line); }
 .browser-error[hidden] { display: none; }
 /* 페이지(WebContentsView)가 붙기 전 · 서랍이 나오는 동안 보이는 바탕 — 흰색이면 번쩍인다. 붙은 뒤엔 뷰가 덮는다 */

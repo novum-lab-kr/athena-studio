@@ -413,9 +413,13 @@ const PLAN = {
     return Array.isArray(dec.decided) ? dec.decided : [dec.decided];
   };
   const isConfirmed = (dec) => decidedList(dec) !== null;
-  // 모든 필수 결정에 decided 가 채워졌는가 → 확정 모드
-  const allConfirmed = () => PLAN.decisions.length > 0 &&
-    PLAN.decisions.every((dec) => !dec.required || isConfirmed(dec));
+  // 필수 결정이 모두 정해졌는가 → 확정 모드. 필수 표시가 하나도 없으면 결정 전부를 본다
+  // (그러지 않으면 아무것도 안 정한 콘솔이 확정으로 보여 [이대로 진행] 이 처음부터 숨는다)
+  const allConfirmed = () => {
+    const required = PLAN.decisions.filter((dec) => dec.required);
+    const targets = required.length ? required : PLAN.decisions;
+    return targets.length > 0 && targets.every(isConfirmed);
+  };
 
   // --- 화면 글자(UI) — 스튜디오 언어로. 현황판이 이 파일을 내줄 때 window.ATHENA_LANG(본체 .claude/settings.local.json 의 language)을 넣는다.
   // 현황판을 거치지 않고 열면(file:// 등) 값이 없어 한국어. 계획서 내용(PLAN 제목 · 결정 · 본문)과 보낼 프롬프트는 번역하지 않는다

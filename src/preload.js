@@ -136,6 +136,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   onBrowserState: listen('browser:state'),
   onBrowserError: listen('browser:error'),
   onBrowserClose: listen('browser:close'),
+  onBrowserTabs: listen('browser:tabs'),
   onPaneData: listen('pane:data'),
   onPaneResized: listen('pane:resized'),
   onPaneExit: listen('pane:exit'),

@@ -280,6 +280,7 @@
   "browser.toggle": "옆 브라우저 열기·닫기",
   "browser.toggleTitle": "옆 브라우저 열기·닫기 ({key}⇧B)",
   "browser.resizeHint": "끌어서 너비 바꾸기 · 더블클릭하면 기본 너비",
+  "browser.tabs": "열린 페이지",
   "browser.back": "뒤로",
   "browser.forward": "앞으로",
   "browser.stop": "멈추기",

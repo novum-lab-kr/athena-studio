@@ -280,6 +280,7 @@
   "browser.toggle": "打开/关闭侧边浏览器",
   "browser.toggleTitle": "打开/关闭侧边浏览器 ({key}⇧B)",
   "browser.resizeHint": "拖动调整宽度 · 双击恢复默认宽度",
+  "browser.tabs": "已打开的页面",
   "browser.back": "后退",
   "browser.forward": "前进",
   "browser.stop": "停止",
