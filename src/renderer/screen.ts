@@ -122,7 +122,7 @@ export async function paneMenu(paneId: string, event: MouseEvent): Promise<unkno
   if (action === 'close-pane') return studio.paneClose(paneId)
 }
 
-// 메뉴 단축키(⌘T · ⌘D · ⌘⇧D · ⌘W · ⌘⌥방향 · ⌘⇧[ ]) — Ctrl 은 pane 안으로 간다
+// 메뉴 단축키(⌘T · ⌘D · ⌘⇧D · ⌘W · ⌘⇧IJKL · ⌘⇧[ ]) — Ctrl 은 pane 안으로 간다
 export async function runCommand(name: string): Promise<unknown> {
   if (!state || !state.valid || !attached) return
   if (currentTab !== 'work') switchTab('work')
