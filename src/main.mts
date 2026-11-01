@@ -4,7 +4,7 @@
 // Electron main 진입점(package.json main) — ES 모듈(.mts · 빌드 없음 · Electron 44 가 타입만 지우고 읽는다).
 // Electron 은 이 파일을 끝까지 읽은 뒤에 ready 를 낸다(2026-10-27 실측 — 맨 위 await 1.5초를 넣어도 ready 전) — 아래 app.setName · setPath 는 그대로 ready 전이다.
 // 가져온 모듈은 이 파일 본문보다 먼저 돈다 — src/main/*.mts 는 맨 위에서 함수 · 상수만 만든다(app 자리를 읽지 않는다)
-import { app, autoUpdater, BrowserWindow, Menu, dialog, ipcMain, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, Menu, dialog, globalShortcut, ipcMain, shell } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, MenuItemConstructorOptions, Session, WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
@@ -704,6 +704,44 @@ const toFront = (channel: string, ...args: unknown[]) => (): void => {
   if (ctx) ctx.send(channel, ...args)
 }
 
+// pane 이동 단축키 ⌘⇧I J K L — 메뉴 accelerator 로도 달지만 맥에서 ⌘⇧J · ⌘⇧K 는 다른 앱이 전역으로 먼저 가져가는 경우가 있어
+// (실측: 앱 밖 단계에서 사라져 before-input-event 에도 안 온다) 앱 창이 포커스를 가진 동안만 globalShortcut 으로도 받는다
+const PANE_FOCUS_KEYS: ReadonlyArray<{ key: string; command: string }> = [
+  { key: 'J', command: 'focus-left' },
+  { key: 'L', command: 'focus-right' },
+  { key: 'I', command: 'focus-up' },
+  { key: 'K', command: 'focus-down' },
+]
+const registeredPaneKeys = new Set<string>()
+
+function syncPaneShortcuts(): void {
+  const focused = BrowserWindow.getFocusedWindow()
+  const wanted = isMac && !quitting && !!focused && [...packWindows].some((ctx) => ctx.win === focused)
+  if (!wanted) {
+    for (const accelerator of registeredPaneKeys) globalShortcut.unregister(accelerator)
+    registeredPaneKeys.clear()
+    return
+  }
+  for (const { key, command } of PANE_FOCUS_KEYS) {
+    const accelerator = `${TAB_KEY}+Shift+${key}`
+    if (registeredPaneKeys.has(accelerator)) continue
+    try {
+      // 실패해도 메뉴 accelerator 가 그대로 남는다
+      if (globalShortcut.register(accelerator, () => toFront('screen:command', command)())) registeredPaneKeys.add(accelerator)
+    } catch {
+      // 등록하지 못해도 메뉴 단축키로 동작한다
+    }
+  }
+}
+
+function installPaneShortcuts(): void {
+  // 창이 바뀔 때 blur 다음에 focus 가 와서 한 틱 뒤 현재 포커스 창을 보고 맞춘다
+  const resync = (): void => void setImmediate(syncPaneShortcuts)
+  app.on('browser-window-focus', resync)
+  app.on('browser-window-blur', resync)
+  app.on('will-quit', () => globalShortcut.unregisterAll())
+}
+
 function buildMenu(): void {
   const template: MenuItemConstructorOptions[] = [
     ...(isMac ? [appMenu()] : []),
@@ -924,6 +962,7 @@ app.whenReady().then(async () => {
   app.setAboutPanelOptions({ applicationName: 'Athena', applicationVersion: appVersion(), version: appVersion() })
   // Dock 아이콘을 앱 아이콘으로(개발용 Athena.app 번들 아이콘과 같다 — 원본 Electron 으로 켜졌을 때도)
   if (isMac && app.dock) app.dock.setIcon(APP_ICON)
+  installPaneShortcuts()
   config = core.loadConfig(configFile())
   // 예전 설정(athenaDir 하나)은 창 목록 하나로(그 뒤로는 windows 가 기준)
   if (!Array.isArray(config.windows)) config = core.withWindows(config, core.windowDirs(config, core.sameDir))
