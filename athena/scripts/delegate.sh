@@ -112,23 +112,37 @@ LEAD_RULE="${LEAD_RULE}보내기가 실패하면 우회하지 말고 요청으�
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
-AUTO_SHIP_REPO="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
+# 올리는 방식 판정은 팩 설정(athena_config)을 매번 읽는다 — 값은 어디에도 복사해 두지 않는다. "<레포> <종류> <머지 설정>" (종류: pr-off · auto-pr · direct · manual)
+SHIP_INFO="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
 import sys
-sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load, direct_merge_mode
 cfg = load(sys.argv[1]); agent = sys.argv[2]
 for repo in cfg['repos']:
     mine = agent in (repo.get('agents') or []) or agent == repo.get('packagesAgent') or any(app.get('agent') == agent for app in (repo.get('apps') or {}).values())
     if mine:
-        if repo.get('autoMerge') is True and not repo.get('direct'): print(repo['name'] + (' pr-off' if repo.get('autoPr') is False else ''))
+        mode = direct_merge_mode(cfg, repo['name'])
+        if repo.get('direct'): kind = 'direct'
+        elif repo.get('autoMerge') is True: kind = 'pr-off' if repo.get('autoPr') is False else 'auto-pr'
+        else: kind = 'manual'
+        print(f"{repo['name']} {kind} {mode or '-'}")
         break
 PYEOF
 )"
-if [ "${AUTO_SHIP_REPO#* }" = "pr-off" ]; then
+SHIP_KIND="$(awk '{print $2}' <<<"$SHIP_INFO")"; SHIP_MODE="$(awk '{print $3}' <<<"$SHIP_INFO")"
+AUTO_SHIP_REPO=""
+case "$SHIP_KIND" in pr-off|auto-pr) AUTO_SHIP_REPO="$(awk '{print $1}' <<<"$SHIP_INFO")$([ "$SHIP_KIND" = pr-off ] && echo ' pr-off')" ;; esac
+case "$SHIP_KIND" in
+  pr-off) SHIP_LINE="올리는 방식: 바로 머지(PR 끔 · 머지 설정 $SHIP_MODE) — ship.sh --direct-merge. 일반 PR 은 막힌다" ;;
+  auto-pr) SHIP_LINE="올리는 방식: 끝나면 저절로 draft PR(자동 리뷰 · 머지 확인)" ;;
+  direct) SHIP_LINE="올리는 방식: main 직접 레포 — ship.sh 가 빨리 감기 push(PR 없음 · 사용자 확인)" ;;
+  *) SHIP_LINE="올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만 draft PR" ;;
+esac
+if [ "$SHIP_KIND" = pr-off ]; then
   # PR 끔 — 끝나면 PR 없이 prBase 에 바로 머지(ship.sh --direct-merge). "PR 올려줘" 는 그대로 PR
   AUTO_SHIP_REPO="${AUTO_SHIP_REPO%% *}"
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 요청 없이 ① commit.sh 로 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR · 제목 · base · 본문 · --yes 없음 · 동작은 docs/pr-auto.md). 사용자가 'PR 올려줘' 라고 하면 이 옵션 없이 평소대로 PR 을 만든다. 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 요청 없이 ① commit.sh 로 커밋 ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR · 제목 · base · 본문 · --yes 없음 · 동작은 docs/pr-auto.md). 사용자가 'PR 올려줘' 라고 하면 PR 을 만든다 — 평소 PR 명령(미리보기 · --yes)에 --user-pr 을 모두 붙인다(없으면 이 레포는 PR 이 막힌다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 elif [ -n "$AUTO_SHIP_REPO" ]; then
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 위 'PR 올려줘' 흐름을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝내고 검증 스크립트가 통과했을 때 사용자 'PR 올려줘' 없이 'PR 올려줘' 흐름을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
@@ -460,7 +474,7 @@ PYEOF
   fi
   BRANCH_NOW="$(git -C "$WORKDIR" rev-parse --abbrev-ref HEAD 2>/dev/null)"
   # pane 에는 처음 띄울 때의 긴 지시(커밋 · 리뷰 · 보고 규칙)가 이미 있다 — 새 계획서만 짧게 알린다. 줄바꿈 없이 한 줄(Enter 한 번에 한 지시)
-  REUSE_MSG="[아테나${LEAD_PANE:+ $LEAD_PANE} → $AGENT] 새 요청 — 새 계획서: $ATHENA_DIR/$PLAN . 앞 계획서와 별개다: 먼저 읽고 Checkpoint 의 Next 부터, Status·Progress·결과는 이 계획서에 쓰고(Validation 은 검증 스크립트가 이 계획서에 적는다) commit.sh · ship.sh 의 --plan 도 이 계획서다(앞 계획서는 더 고치지 않는다). 작업 폴더 $WORKDIR · 브랜치 ${BRANCH_NOW:-?}. 시작 전에 Status 를 in_progress 로. 커밋 · PR · 보고 규칙은 처음 받은 지시 그대로. ${REVIEW_RULE}"
+  REUSE_MSG="[아테나${LEAD_PANE:+ $LEAD_PANE} → $AGENT] 새 요청 — 새 계획서: $ATHENA_DIR/$PLAN . 앞 계획서와 별개다: 먼저 읽고 Checkpoint 의 Next 부터, Status·Progress·결과는 이 계획서에 쓰고(Validation 은 검증 스크립트가 이 계획서에 적는다) commit.sh · ship.sh 의 --plan 도 이 계획서다(앞 계획서는 더 고치지 않는다). 작업 폴더 $WORKDIR · 브랜치 ${BRANCH_NOW:-?}. 시작 전에 Status 를 in_progress 로. 커밋 · 보고 규칙은 처음 받은 지시 그대로, 올리는 방식은 지금 설정 기준으로 아래가 먼저다(처음 지시의 PR 설명과 다르면 이쪽). ${AUTO_SHIP_RULE:-$SHIP_LINE. }${REVIEW_RULE}"
   if [ -n "$RAW_PROMPT" ]; then REUSE_MSG="${REUSE_MSG}요청: $RAW_PROMPT"; else REUSE_MSG="${REUSE_MSG}계획서 '## 지시' 절이 요청이다 — 비어 있으면 사용자 요청을 기다린다."; fi
   # 한 줄로 — 줄바꿈이 있으면 Enter 로 여러 번 나뉘어 들어간다
   REUSE_MSG="$(printf '%s' "$REUSE_MSG" | tr '\n' ' ')"
@@ -550,6 +564,7 @@ node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" p
 
 # 레포 규칙 문서 안내는 pane 줄보다 앞에 — 현황판이 출력의 마지막 줄을 pane 줄로 읽는다
 if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
+echo "$SHIP_LINE"
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
 if [ "$AGENT" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi

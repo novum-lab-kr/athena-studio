@@ -1146,6 +1146,44 @@ OUT="$(fship FAKE_OPEN_URL=https://github.com/acme/web/pull/8)"; CODE=$?
 expect "blocked 계획서는 push 만 · Status 그대로 · 대기열에 안 넣음" '[ $CODE = 0 ] && grep -q "^- Status: blocked — 사용자 답 기다림" "$CORE/$FPLAN" && ! ls "$FQUEUE"/*.json >/dev/null 2>&1' "$OUT
 $(grep '^- Status' "$CORE/$FPLAN"; ls "$FQUEUE")"
 
+# PR 끔 레포의 일반 PR 차단 — push 전에 막고(오류에 현재 방식 · --direct-merge 명령, 별도 옵션 이름은 없음), 설정은 실행마다 다시 읽는다
+echo; echo "PR 끔 레포의 일반 PR 차단 (--user-pr)"
+echo g1 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g1
+GS1="$(git -C "$WTY" rev-parse HEAD)"
+guard_config() {   # <레포 설정에 더할 조각>
+  printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$CORE/athena.config.json"
+}
+guard_ship() {   # [ship.sh 추가 인자…] — 미리보기가 아니라 --yes 까지 준 일반 PR 명령
+  (cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" ATHENA_PR_AUTO_QUEUE="$FQUEUE" ATHENA_DATA_DIR="$TMP/data" bash scripts/ship.sh --plan "$FPLAN" --dir "$WTY" --base dev --title 'feat(web): 가드' --body-file "$TMP/body.md" --no-review-ok --yes "$@" 2>&1)
+}
+guard_ship_preview() { (cd "$CORE" && env PATH="$FBIN:$PATH" FAKE_LOG="$FLOG" ATHENA_PR_AUTO_QUEUE="$FQUEUE" ATHENA_DATA_DIR="$TMP/data" bash scripts/ship.sh --plan "$FPLAN" --dir "$WTY" "$@" 2>&1); }
+followup_plan 'in_progress' "$GS1"
+guard_config ', "autoMerge": true, "autoPr": false'; : > "$FLOG"
+OUT="$(guard_ship)"; CODE=$?
+expect "PR 끔 + 일반 PR(--yes) → push 전에 실패 · 현재 방식과 --direct-merge 명령 · 별도 옵션 이름은 적지 않음" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포" && echo "$OUT" | grep -q -- "--direct-merge" && ! echo "$OUT" | grep -q -- "--user-pr" && ! grep -q "gh pr create" "$FLOG" && [ "$(git -C "$TMP/origin.git" rev-parse --verify -q refs/heads/feat/y)" != "$GS1" ]' "$OUT"
+OUT="$(guard_ship_preview)"; CODE=$?
+expect "PR 끔 + 미리보기도 막힌다(자동 변환 없음 — 머지하지 않음)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포" && ! grep -q "gh pr create" "$FLOG" && ! grep -q "^- Auto merge:" "$CORE/$FPLAN"' "$OUT"
+OUT="$(guard_ship --user-pr)"; CODE=$?
+expect "PR 끔 + 별도 옵션(--user-pr) → 일반 PR 이 만들어진다" '[ $CODE = 0 ] && grep -q "gh pr create" "$FLOG"' "$OUT"
+echo g2 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g2
+followup_plan 'in_progress' "$(git -C "$WTY" rev-parse HEAD)"
+guard_config ', "autoMerge": true'; : > "$FLOG"
+OUT="$(guard_ship)"; CODE=$?
+expect "설정을 PR 켬으로 바꾼 뒤 같은 명령 → 통과(실행마다 설정을 다시 읽는다)" '[ $CODE = 0 ] && grep -q "gh pr create" "$FLOG"' "$OUT"
+echo g3 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g3
+followup_plan 'in_progress' "$(git -C "$WTY" rev-parse HEAD)"
+guard_config ', "autoMerge": true, "autoPr": false'; : > "$FLOG"
+OUT="$(guard_ship)"; CODE=$?
+expect "다시 PR 끔으로 바꾸면 같은 명령이 막힌다" '[ $CODE != 0 ] && ! grep -q "gh pr create" "$FLOG"' "$OUT"
+guard_config ', "autoPr": false'; : > "$FLOG"
+OUT="$(guard_ship)"; CODE=$?
+expect "autoMerge 키 없이 autoPr:false 만 → PR 끔이 아니다(막지 않음)" '[ $CODE = 0 ] && grep -q "gh pr create" "$FLOG"' "$OUT"
+guard_config ', "autoMerge": true, "autoPr": false'; : > "$FLOG"
+OUT="$(guard_ship --auto-push)"; CODE=$?
+expect "PR 끔 + --auto-push 도 같은 가드(PR 이 없는 레포라 올릴 곳이 없다)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포"' "$OUT"
+OUT="$(guard_ship --repo-agent web-fe)"; CODE=$?
+expect "PR 끔 + --repo-agent(여러 레포 경로)도 일반 PR 이면 막힌다" '[ $CODE != 0 ] && ! grep -q "gh pr create" "$FLOG"' "$OUT"
+
 # ── PR 끔: PR 없이 바로 머지(autoMerge + "autoPr": false) — 가짜 원격(bare) · gh 없음 · 진짜 GitHub 를 건드리지 않는다 ─────────
 # 안전 조건은 PR 머지와 같다 — 같은 HEAD 엄격 검증은 어떤 설정에서도 돈다(끄는 설정이 없다): 검증 스크립트가 없거나 · 실패하거나 · 건너뛰면 머지하지 않고 실패로 알린다
 echo; echo "PR 끔: 바로 머지(ship.sh --direct-merge → pr-auto.mjs --direct-merge)"
@@ -1292,6 +1330,51 @@ INSTR_OUT="$(instr '')"
 INSTR_OUT="$(instr ', "autoPr": false')"
 ! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
   && echo "  ✔ autoMerge 키 없이 autoPr:false 만 → 지시 없음(바로 머지 안 함)" || { echo "  ✖ autoPr 만 지시문"; FAIL=1; }
+
+# 이어 보내기(--reuse-pane) — 처음 받은 지시가 아니라 지금 설정 기준 올리는 방식이 전송문에 실린다 · 디스패치 결과에 올리는 방식 한 줄
+echo; echo "이어 보내기·디스패치 결과의 올리는 방식 (delegate.sh --reuse-pane)"
+mkdir -p "$ICORE/.reuse-data/state/pane-sessions" "$TMP/reuse-wd" && ln -sfn "$ICORE/.reuse-data" "$ICORE/.pack-data"
+printf '{ "pane": "p5", "agent": "web-fe", "plan": "plans/task/old.md" }\n' > "$ICORE/.reuse-data/state/pane-sessions/p5.json"
+printf 'console.log(JSON.stringify({ pane: "p5", cwd: process.env.REUSE_CWD }))\n' > "$ICORE/scripts/reuse-pane.mjs"
+# 화면 안인 척하는 가짜 화면 — 새 pane 은 p9, 보낸 글(send-text)은 로그에
+cat > "$ICORE/scripts/screen" <<SH
+#!/bin/sh
+case "\$1" in
+  inside) exit 0 ;;
+  name) echo 가짜화면 ;;
+  self) exit 0 ;;
+  pane)
+    case "\$2" in
+      split) echo '{"pane":{"id":"p9"}}' ;;
+      send-text) printf '%s\\n' "\$4" >> "$TMP/reuse-sent.log" ;;
+    esac ;;
+esac
+exit 0
+SH
+chmod +x "$ICORE/scripts/screen"
+reuse() {   # 설정 조각 → 이어 보내기 결과(전송문은 $TMP/reuse-sent.log)
+  mkdir -p "$ICORE/pack"   # 여러 팩 구조(.pack-data) — 레포 설정은 팩 pack.json 에서 읽는다
+  printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/pack/pack.json"
+  : > "$TMP/reuse-sent.log"
+  (cd "$ICORE" && env -u ATHENA_AGENT REUSE_CWD="$(cd "$TMP/reuse-wd" && pwd -P)" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --reuse-pane p5 2>&1)
+}
+REUSE_OUT="$(reuse ', "autoMerge": true, "autoPr": false')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
+printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_SENT" | grep -q "지금 설정 기준" && ! printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다" \
+  && echo "  ✔ 이어 보내기(PR 끔) — 전송문에 최신 규칙(ship.sh --direct-merge)이 실린다" || { echo "  ✖ 이어 보내기 PR 끔 전송문"; printf '%s\n' "$REUSE_OUT" | head -5; FAIL=1; }
+printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
+  && echo "  ✔ 디스패치 결과에 올리는 방식 한 줄(바로 머지)" || { echo "  ✖ 디스패치 결과 올리는 방식 줄"; printf '%s\n' "$REUSE_OUT" | tail -4; FAIL=1; }
+REUSE_OUT="$(reuse ', "autoMerge": true')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
+printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다" && ! printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge 를 돈다" && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 끝나면 저절로 draft PR" \
+  && echo "  ✔ 설정이 바뀌면(PR 켬) 이어 보내기 전송문 · 결과 줄도 바뀐다" || { echo "  ✖ 이어 보내기 PR 켬"; FAIL=1; }
+REUSE_OUT="$(reuse '')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
+printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만" && ! printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+  && echo "  ✔ 켜지 않은 레포 — 결과 줄은 사용자가 말할 때만 · 전송문에 저절로 규칙 없음" || { echo "  ✖ 이어 보내기 기본"; FAIL=1; }
+# 새 pane(프롬프트 없이 열기) 쪽도 결과에 같은 줄
+printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev", "autoMerge": true, "autoPr": false }] }\n' > "$ICORE/pack/pack.json"
+mkdir -p "$ICORE/.claude" && cp "$SRC/.claude/settings.json" "$ICORE/.claude/settings.json" 2>/dev/null || echo '{}' > "$ICORE/.claude/settings.json"
+INSTR_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --here 2>&1)"
+printf '%s' "$INSTR_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
+  && echo "  ✔ 새 pane 결과에도 올리는 방식 한 줄" || { echo "  ✖ 새 pane 결과 줄"; printf '%s\n' "$INSTR_OUT" | tail -3; FAIL=1; }
 
 # 심볼릭 링크(맥 /var → /private/var) · `//` 가 든 경로로 직접 실행해도 import 로 오인하지 않는다(b051a7) — 인자 없이 부르면 사용법이 나와야 한다
 mkdir -p "$TMP/ismain" && ln -s "$SRC" "$TMP/ismain/link"

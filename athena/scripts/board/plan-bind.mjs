@@ -119,6 +119,7 @@ export const boardPaneOf = (pane, root, home) => {
  * 판별: 고치지 않은 빈 칸 줄(`- [ ] …`)이 아래 원문과 글자 그대로 같을 때만(앞뒤 공백 무시). 한 글자라도 고쳤거나 [x] 로 채웠으면 보통 칸.
  * 템플릿 줄을 바꾸면 여기도 같이(athena/test/board-auto-test.sh 가 템플릿 파일에 이 줄이 그대로 있는지 본다) */
 export const TEMPLATE_PLACEHOLDER_LINES = [
+  '- [ ] 담당 레포 브랜치·미커밋 상태 확인',
   '- [ ] (작업) → 확인: (방법) → 성공 조건: (기대 결과)',
   '- [ ] 표준 검증 + 동작 확인 결과 기록 — 실행 못 한 것은 이유',
   '- [ ] 근거 확인 — 외부 계약·제품 정책·기본 동작을 근거 없이 넣지 않았나. 확인 못 한 것은 Blocked 에 적고 완료로 보고하지 않는다(`AGENTS.md` 5절)',
@@ -219,7 +220,7 @@ export const bindingSources = ({ root, panes, sessionsDir, home, now = Date.now(
 // 자동 완료가 이미 이 PR 묶음(merged-<번호들>)으로 한 번 끝낸 계획서인지 — Checkpoint 의 "- Auto done:" 줄(자동 완료가 쓴다) 또는 "- Learn review:" 줄에 같은 표시가 있으면.
 // 그런 계획서를 사람이 추가 요청으로 in_progress 로 되돌렸는데 새 PR 이 PR 줄에 들어오기 전이면, 같은 머지를 다시 보고 done 으로 덮어쓰지 않는다(2026-10-30)
 /** @param {string} text @param {string} mark */
-export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-\d+(?:-\d+)*/g) ?? []).includes(mark))
+export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-(?:direct-[0-9a-f]{7}(?:-[0-9a-f]{7})*|\d+(?:-\d+)*)/g) ?? []).includes(mark))
 
 // ── 자동 완료 되돌리기 ──
 // 자동 완료(PR 머지)한 계획서의 Progress 에 빈 칸이 새로 생기면(머지 뒤 추가 요청 · 새 단계) 현황판이 진행 중으로 되돌린다(2026-11-01).
@@ -227,7 +228,7 @@ export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Aut
 // 되돌릴 때 Auto done 줄을 "- Auto reopened: <표시>" 로 바꾼다: ① 이후 사람이 직접 done 으로 옮겨도 다시 되돌리지 않고
 // ② 칸을 다 채우면 같은 PR 묶음 표시여도 다시 자동 완료한다(autoDoneDone 은 사람이 되돌린 in_progress 를 지키려는 것이라 이 표시가 있을 때만 건너뛴다)
 /** 자동 완료 줄의 PR 묶음 표시(merged-…) — 없으면 '' @param {string} text */
-export const autoDoneMark = (text) => String(text).match(/^- Auto done:.*$/m)?.[0].match(/merged-\d+(?:-\d+)*/)?.[0] ?? ''
+export const autoDoneMark = (text) => String(text).match(/^- Auto done:.*$/m)?.[0].match(/merged-(?:direct-[0-9a-f]{7}(?:-[0-9a-f]{7})*|\d+(?:-\d+)*)/)?.[0] ?? ''
 
 /** 현황판이 이 계획서를 진행 중으로 되돌려야 하나
  * @param {string} text 계획서 전문 @param {string} status @param {boolean} archived

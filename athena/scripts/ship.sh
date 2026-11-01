@@ -34,6 +34,10 @@
 #                        같은 HEAD 엄격 검증이 어떤 설정에서도 먼저 통과해야 하고(없거나 못 돌리거나 건너뜀이면 머지 안 함) 충돌 · 안 정한 결정이 있어도 안 한다.
 #                        push 가 거부되면(브랜치 보호 등) 강제로 밀지 않고 실패로 알린다. 제목 · base · 본문 · 미리보기 없음 — "PR 올려줘" 는 이 옵션 없이 평소대로 PR 을 만든다
 #
+#   --user-pr            (PR 끔 레포 전용) 사용자가 직접 "PR 올려줘" 라고 말했을 때만 쓴다 — PR 끔 레포(위 --direct-merge 조건)에서 일반 PR 실행(미리보기 포함)은 기본으로 막힌다.
+#                        이 스크립트는 요청의 출처를 증명하지 못한다(옵션이 있다고 사용자가 말했다는 뜻은 아니다) — 쓰는 에이전트의 책임이고, 막는 쪽은 "실수로 PR 을 만드는 것" 뿐이다.
+#                        설정을 다시 읽는 것은 미리보기 · --yes 마다 + push 직전이다. PR 켠 레포 · main 직접 레포에서는 아무 일도 하지 않는다
+#
 # 확인하는 것 (하나라도 걸리면 아무것도 보내지 않는다)
 #   - <워크트리> 가 등록된 워크트리이고 메인 체크아웃이 아니다 · 브랜치에 붙어 있다 · 보호 브랜치가 아니다
 #   - 추적 파일의 미커밋 변경이 없다 (미추적 파일은 경고만)
@@ -53,7 +57,7 @@ set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
 git() { command git -c core.quotePath=false "$@"; }
 
-PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""; AUTO_PUSH=0; DIRECT_MERGE=0
+PLAN=""; DIR=""; TITLE=""; BODY_FILE=""; REVIEW_OK=0; YES=0; BASES=(); REPO_AGENT=""; AUTO_PUSH=0; DIRECT_MERGE=0; USER_PR=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan) PLAN="${2:-}"; shift 2 ;;
@@ -65,6 +69,7 @@ while [ $# -gt 0 ]; do
     --yes) YES=1; shift ;;
     --auto-push) AUTO_PUSH=1; shift ;;
     --direct-merge) DIRECT_MERGE=1; shift ;;
+    --user-pr) USER_PR=1; shift ;;
     --repo-agent) REPO_AGENT="${2:-}"; shift 2 ;;
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "모르는 옵션: $1" >&2; exit 2 ;;
@@ -333,6 +338,16 @@ if [ $DIRECT_MERGE = 1 ]; then
   (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다"
   exit 0
 fi
+
+# ── PR 끔 레포의 일반 PR 실행 차단 — push 전에 막는다(PR 명령을 바로 머지로 바꿔 주지 않는다) ──────────
+# 판정은 athena_config.direct_merge_mode 하나(autoMerge true + autoPr false · direct 아님). 푸시 직전에 한 번 더 부른다(미리보기 뒤 설정이 바뀐 경우)
+pr_off_check() {
+  local mode
+  [ -z "$DIRECT" ] || return 0
+  mode="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, direct_merge_mode; print(direct_merge_mode(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(PR 끔 확인)"
+  [ -z "$mode" ] || [ $USER_PR = 1 ] || fail "$REPO 는 PR 을 끈 레포다(현재 방식: PR 없이 prBase 에 바로 머지 · 머지 설정 $mode) — scripts/ship.sh --plan $PLAN --dir $DIR --direct-merge 로 올린다. PR 명령은 바로 머지로 바꾸지 않는다"
+}
+pr_off_check
 
 # ── 열린 PR 에 이어 올리기 — 고친 커밋을 그 PR 브랜치에 빨리 감기로만 push 한다(docs/pr-auto.md) ──────────
 if [ $AUTO_PUSH = 1 ]; then
@@ -609,6 +624,7 @@ done
 LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
 mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 미리보기부터 다시"
 trap 'rmdir "$LOCK" 2>/dev/null' EXIT
+pr_off_check   # 미리보기 · red-check 를 기다리는 사이 설정이 바뀌었을 수 있다
 [ "$(git -C "$TOP" rev-parse HEAD)" = "$HEAD_FULL" ] || fail "확인하는 동안 HEAD 가 바뀌었다(${HEAD_SHA} → $(git -C "$TOP" rev-parse --short HEAD)) — 미리보기부터 다시"
 [ -z "$(git -C "$TOP" status --porcelain --untracked-files=no)" ] || fail "확인하는 동안 커밋하지 않은 변경이 생겼다 — 미리보기부터 다시"
 git -C "$TOP" push origin "$HEAD_FULL:refs/heads/$BRANCH" || fail "push 실패"

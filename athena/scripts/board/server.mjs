@@ -49,7 +49,7 @@ import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
-import { autoMergeRepos, autoReviewAction, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
+import { autoMergeRepos, autoReviewAction, directMergeStatus, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
@@ -363,6 +363,20 @@ const autoDonePlans = async (plans) => {
     plan.column = 'done'
     enqueueLearn(plan.id, mergedMark(counted), counted)
   }))
+  // PR 끔(바로 머지) 계획서 — PR 이 없다. "- Auto merge:" 줄이 같은 HEAD 의 머지 성공이면 완료(머지 확인 대기 · 사람이 직접 머지는 완료가 아니다 · lib/pr-auto.mjs directMergeStatus)
+  const directTargets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && !/\/pull\/\d+/.test(plan.pr))
+  for (const plan of directTargets) {
+    const planText = readText(join(ROOT, plan.id)) || ''
+    const direct = directMergeStatus(planText)
+    if (direct.state !== 'done' || hasOpenSteps(plan.progress)) continue
+    if (autoDoneDone(planText, direct.mark) && !autoReopenedFor(planText, direct.mark)) continue
+    const reason = `자동 — ${direct.why}`
+    const error = setPlanStatus(plan.id, 'done', reason, direct.mark)
+    if (error) { console.log(`⚠️ 자동 완료 실패 ${plan.id}: ${error}`); continue }
+    console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
+    plan.status = 'done'
+    plan.column = 'done'
+  }
   // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 그 PR 묶음을 배우지 않았으면(Learn review 줄에 지금 표시가 없음) 넣는다.
   // 줄이 있어도 이어 머지된 PR 이 생겼으면 표시가 달라 다시 넣는다(자동 보관이 그 표시를 기다린다 — autoArchive)
   const learned = plans.filter((plan) => !plan.archived && plan.status === 'done' && /\/pull\/\d+/.test(plan.pr))

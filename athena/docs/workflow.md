@@ -34,8 +34,8 @@
   5. md `리뷰 뒤 결정` 절에 확정값을 적고 `node scripts/plan-html.mjs <계획서> --decide r1='<고른 label>' [r2='…']` 로 콘솔에 확정을 기록한다. `--data` 로 PLAN 전체를 바꾸지 않는다 — 기존 결정이 지워진다
   6. 그다음 고친다. 고친 뒤 다시 리뷰는 위 기준대로(경량은 다시 묻지 않고, 정식은 고친 범위가 넓을 때만)
 - 리뷰 띄우기: `delegate.sh reviewer --cwd <워크트리> --here` → 결론은 `review-result.sh` 로 계획서에 · 기다리기는 `review-wait.sh --plan <계획서> --dir <워크트리>`
-- "PR 올려줘" 한 마디 → 커밋 안 된 작업을 `commit.sh` 로 커밋 → `scripts/ship.sh` 미리보기 초안 → 제목 · 본문 정리 → **묻지 않고** `prBase` 로 draft PR(보고 끝에 📚 배운 것 — `learning.md` 8절 · `git.md` "PR 올리기" · "PR 제목·본문")
-- **PR 자동 리뷰 · 수정 · 머지**(`"autoMerge": true` 레포의 레포 하나짜리 PR · 기본 꺼짐): 켠 레포는 검증이 통과하면 "PR 올려줘" 없이 draft PR 까지 가고, 현황판이 감지해 Claude · Codex 가 리뷰한다. 리뷰 · 머지는 레포마다 끄거나 고를 수 있다. 자동 PR 을 끄면(`autoPr: false`) PR 없이 `ship.sh --direct-merge` 로 `prBase` 에 바로 머지한다(검증은 어느 설정에서도 필수). 라운드 · 상한 · 막는 지적 · 머지 확인은 `docs/pr-auto.md`
+- "PR 올려줘" 한 마디(PR 끔 레포는 같은 명령에 `--user-pr` — 아래) → 커밋 안 된 작업을 `commit.sh` 로 커밋 → `scripts/ship.sh` 미리보기 초안 → 제목 · 본문 정리 → **묻지 않고** `prBase` 로 draft PR(보고 끝에 📚 배운 것 — `learning.md` 8절 · `git.md` "PR 올리기" · "PR 제목·본문")
+- **PR 자동 리뷰 · 수정 · 머지**(`"autoMerge": true` 레포의 레포 하나짜리 PR · 기본 꺼짐): 켠 레포는 검증이 통과하면 "PR 올려줘" 없이 draft PR 까지 가고, 현황판이 감지해 Claude · Codex 가 리뷰한다. 리뷰 · 머지는 레포마다 끄거나 고를 수 있다. 자동 PR 을 끄면(`autoPr: false`) PR 없이 `ship.sh --direct-merge` 로 `prBase` 에 바로 머지한다(검증은 어느 설정에서도 필수). 이 레포에서 일반 PR 실행은 막히고, 사용자가 직접 "PR 올려줘" 라고 한 경우에만 에이전트가 `--user-pr` 를 붙인다 — PR 은 항상 마지막 단계가 아니다(올리는 방식은 레포 설정마다 다르고 `delegate.sh` 결과 줄 · 이어 보내기 전송문이 지금 설정을 알려 준다). 완료는 PR 머지가 아니라 계획서의 `- Auto merge:` 머지 성공으로도 본다(`docs/pr-auto.md`) 라운드 · 상한 · 막는 지적 · 머지 확인은 `docs/pr-auto.md`
 
 ## 5. 검증 · 보고 · push/PR
 - 자동 리뷰가 고를 것 없이 멈추면(리뷰어 부족 · 라운드 상한 · 잘린 diff 승인 · 검증 대기 · 충돌 · 지시를 보낼 pane 없음) `[자동 리뷰 → 아테나] …` 한 줄로 아테나 pane 에 온다 — 아테나가 이어받는다(계획서 `- Auto review:` 줄 · PR 댓글로 원인을 보고 작업 pane 에 지시 · 환경을 고친 뒤 그 줄을 지워 다시 돌리기 · 아테나 pane 이 없으면 요청으로 남는다 — `docs/pr-auto.md` "아테나에 알림")

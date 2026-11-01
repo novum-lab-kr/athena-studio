@@ -75,10 +75,12 @@ check('칸이 하나도 없음 → 남은 단계 없음(지금처럼)', !hasOpen
 
 // 2026-10-29 — 고치지 않은 템플릿 자리 줄이 남은 단계로 세져 PR 이 다 머지돼도 자동 완료가 안 됐다
 const templateText = readFileSync(modPath.replace(/scripts\/board\/plan-bind\.mjs$/, 'docs/plan-template-light.md'), 'utf8')
-check('템플릿 자리 줄이 docs/plan-template-light.md 에 글자 그대로 있다(템플릿을 바꾸면 TEMPLATE_PLACEHOLDER_LINES 도)', TEMPLATE_PLACEHOLDER_LINES.length === 3 && TEMPLATE_PLACEHOLDER_LINES.every((line) => templateText.split('\n').includes(line)))
-const [placeholderWork, placeholderVerify, placeholderBasis] = TEMPLATE_PLACEHOLDER_LINES
-const untouched = progressOf(`- [x] 담당 레포 브랜치·미커밋 상태 확인\n${placeholderWork}\n${placeholderVerify}\n${placeholderBasis}`)
-check('고치지 않은 자리 줄 3개만 남음 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(untouched) && untouched?.checked === 1 && untouched?.total === 1 && untouched?.open === 0, JSON.stringify(untouched))
+const templateOpenLines = templateText.split('\n').filter((line) => /^- \[ \] /.test(line))
+check('템플릿 자리 줄이 docs/plan-template-light.md 에 글자 그대로 있다(템플릿을 바꾸면 TEMPLATE_PLACEHOLDER_LINES 도)', TEMPLATE_PLACEHOLDER_LINES.every((line) => templateOpenLines.includes(line)))
+check('템플릿의 빈 칸 줄(`- [ ]`)이 하나도 빠짐없이 TEMPLATE_PLACEHOLDER_LINES 에 있다(2026-11-01 — 첫 줄 누락 재발 방지)', templateOpenLines.length > 0 && templateOpenLines.every((line) => TEMPLATE_PLACEHOLDER_LINES.includes(line)) && TEMPLATE_PLACEHOLDER_LINES.length === templateOpenLines.length, JSON.stringify(templateOpenLines.filter((line) => !TEMPLATE_PLACEHOLDER_LINES.includes(line))))
+const [placeholderBranch, placeholderWork, placeholderVerify, placeholderBasis] = TEMPLATE_PLACEHOLDER_LINES
+const untouched = progressOf(`- [x] 구현\n${placeholderBranch}\n${placeholderWork}\n${placeholderVerify}\n${placeholderBasis}`)
+check('고치지 않은 자리 줄 4개만 남음 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(untouched) && untouched?.checked === 1 && untouched?.total === 1 && untouched?.open === 0, JSON.stringify(untouched))
 check('자리 줄만 있으면 칸이 없는 것과 같다(null)', progressOf(`${placeholderWork}\n${placeholderVerify}`) === null)
 check('자리 줄 말고 진짜 빈 칸이 있으면 그대로 남은 단계', hasOpenSteps(progressOf(`- [x] 구현\n- [ ] 머지 뒤 앱 화면 확인\n${placeholderWork}`)))
 check('자리 줄을 한 글자라도 고쳤으면 보통 칸(빈 칸이면 남은 단계)', hasOpenSteps(progressOf(`- [x] 구현\n${placeholderWork.replace('(작업)', '로그인 고치기')}`)))
@@ -126,5 +128,20 @@ check('다시 자동 완료하면 Auto reopened 줄을 지움(사람이 다시 �
 
 console.log()
 console.log(fail ? 'board-auto-test: 실패 있음' : 'board-auto-test: 모두 통과')
+// ── 바로 머지(PR 끔) 완료 판정 — 계획서의 "- Auto merge:" 줄 + "## Commits" HEAD 로만(ship.sh 종료 코드가 아니다) ──
+const { directMergeStatus } = await import(modPath.replace('board/plan-bind.mjs', 'lib/pr-auto.mjs'))
+const commitLine = '- 2026-11-01 10:00 · web · 🌿 feat/x · `abc1234def` — feat: 시험 · 검증 통과'
+const mergeLine = (result, sha = 'abc1234') => `- Auto merge: web feat/x @${sha} · ${result} · 2026-11-01 10:05`
+const directPlan = (...rows) => `# 시험\n\n## Checkpoint\n${rows.filter((row) => row.startsWith('- Auto')).join('\n')}\n\n## Commits\n${rows.filter((row) => !row.startsWith('- Auto')).join('\n')}\n`
+const merged = directMergeStatus(directPlan(commitLine, mergeLine('머지됨 — squash → main @def5678(PR 없음)')))
+check('바로 머지 성공(레포 · 브랜치 · HEAD 일치) → 완료 + 표시', merged.state === 'done' && /^merged-direct-abc1234$/.test(merged.mark), JSON.stringify(merged))
+check('머지 확인 대기 → 완료 아님', directMergeStatus(directPlan(commitLine, mergeLine('머지 확인 대기'))).state === 'wait')
+check('브랜치까지만(사람이 직접 머지) → 완료 아님', directMergeStatus(directPlan(commitLine, mergeLine('브랜치까지만 — 사람이 직접 머지'))).state === 'wait')
+check('검증 대기 → 완료 아님', directMergeStatus(directPlan(commitLine, mergeLine('검증 대기 — 같은 HEAD 검증 없음'))).state === 'wait')
+check('머지 뒤 새 커밋이 생기면 완료 아님(HEAD 불일치)', directMergeStatus(directPlan(commitLine, '- 2026-11-01 11:00 · web · 🌿 feat/x · `9999999aaa` — fix: 또', mergeLine('머지됨 — squash → main @def5678(PR 없음)'))).state === 'wait')
+check('Auto merge 줄이 없으면 none(PR 쪽 판정에 맡김)', directMergeStatus(directPlan(commitLine)).state === 'none')
+check('다른 브랜치의 머지 줄만 있으면 완료 아님', directMergeStatus(directPlan(commitLine, '- Auto merge: web feat/other @abc1234 · 머지됨 — squash → main @def5678(PR 없음) · 2026-11-01 10:05')).state === 'wait')
+check('merged-direct 표시도 자동 완료 표시로 인식(완료 → 재개 판정이 같은 길)', autoDoneMark(`- Auto done: 자동 — 시험 (${merged.mark})`) === merged.mark && autoDoneDone(`- Auto done: 자동 — 시험 (${merged.mark})`, merged.mark))
+
 process.exit(fail)
 EOF

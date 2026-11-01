@@ -773,6 +773,30 @@ export const directMergeDone = (planText, repo, branch, headSha) => {
   const known = directMergeLines(planText).get(`${repo} ${branch}`)
   return Boolean(known) && known.result.startsWith(DIRECT_MERGED) && String(headSha).startsWith(known.sha)
 }
+// 바로 머지로 끝난 계획서인가(현황판 자동 완료) — "- Auto merge:" 줄과 "## Commits" 만 본다(ship.sh 종료 코드가 아니다).
+// 완료 = 계획서 Commits 에 나온 (레포 · 브랜치)마다 "머지됨" 줄이 있고, 그 줄의 sha 가 그 브랜치의 마지막 기록 커밋(HEAD)과 같다.
+// 머지 확인 대기 · 브랜치까지만(사람이 직접 머지) · 검증 대기 · 멈춤 · 머지 뒤 새 커밋이 생긴 것은 완료가 아니다. 줄이 없으면 none(PR 쪽 판정에 맡긴다)
+// 반환 { state: 'none' | 'wait' | 'done', why, mark } — mark 는 자동 완료 표시(merged-direct-<sha7>…)
+const COMMIT_ENTRY = /^- .*?·\s*([\w.-]+)\s*·\s*🌿\s*(\S+)\s*·\s*`([0-9a-f]{6,40})`/
+export const directMergeStatus = (planText) => {
+  const lines = directMergeLines(planText)
+  if (!lines.size) return { state: 'none', why: '', mark: '' }
+  const heads = new Map()
+  for (const row of String(planText).split('\n')) {
+    const hit = row.match(COMMIT_ENTRY)
+    if (hit) heads.set(`${hit[1]} ${hit[2]}`, hit[3])
+  }
+  if (!heads.size) return { state: 'wait', why: '계획서 Commits 에 기록된 커밋이 없음', mark: '' }
+  const marks = []
+  for (const [key, head] of heads) {
+    const known = lines.get(key)
+    if (!known) return { state: 'wait', why: `${key} — 바로 머지 기록 없음`, mark: '' }
+    if (!known.result.startsWith(DIRECT_MERGED)) return { state: 'wait', why: `${key} — ${known.result}`, mark: '' }
+    if (!head.startsWith(known.sha)) return { state: 'wait', why: `${key} — 머지한 뒤 새 커밋이 있음(머지 @${known.sha.slice(0, 7)} · 최신 @${head.slice(0, 7)})`, mark: '' }
+    marks.push(known.sha.slice(0, 7))
+  }
+  return { state: 'done', why: `바로 머지됨 ${[...heads.keys()].join(' · ')}`, mark: `merged-direct-${marks.sort().join('-')}` }
+}
 // 바로 머지 커밋 글 — squash 한 줄 제목(계획서 제목)과 브랜치
 export const directMergeMessage = ({ title, branch, base }) => `${oneLine(title || branch, 120)}\n\n${branch} → ${base} 바로 머지(PR 없음 · squash)`
 // 바로 머지 결과를 작업 pane 에 — 알림만
