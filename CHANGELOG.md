@@ -20,7 +20,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.46: v0.42.2..main 머지(#198 ~ #210 · 검증 시간 줄이기)에서 손님에게 보이는 것만(README 만 바뀐 #199 #201 #202 #203 #206 #208 은 뺌). 범위 끝은 열어 둔다 -->
 
-<!-- 0.47: v0.46.4..main 머지(#213 · #214)와 v0.47.2..main 직접 머지 6건(단축키 · PR 끈 레포 PR 차단 · 아테나 pane 질문 · 검증 대기 · 아테나 자체 버그 3개)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험 · 검증 차례 대기 줄이기 · 문서 수정 가볍게 · heavy 종료 코드 · 검증 범위의 .omc · 자동 완료의 Progress 빈 칸은 개발용 스크립트라 뺌). 범위 끝은 열어 둔다 -->
+<!-- 0.47: v0.46.4..main 머지(#213 · #214)와 v0.47.2..main 직접 머지 6건(단축키 · PR 끈 레포 PR 차단 · 아테나 pane 질문 · 검증 대기 · 아테나 자체 버그 3개)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험 · 검증 차례 대기 줄이기 · 문서 수정 가볍게 · heavy 종료 코드 · 검증 범위의 .omc · 자동 완료의 Progress 빈 칸은 개발용 스크립트라 뺌), v0.47.10..main 직접 머지 7건(모니터 모델 · 초 · 사이드바 깜빡임 · ⌘⇧J K · 사이드바 제목 · 사람이 고를 창 · 경량 기본 모델 · 완료 · 진행 중 규칙)에서 손님에게 보이는 것만(다이어그램 · 에이전트 규칙 문구 · 테스트는 뺌). 범위 끝은 열어 둔다 -->
 
 ## 0.47 (v0.47.0 – · Nov 1, 2026)
 
@@ -28,9 +28,16 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.
 - If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.
 - A pack can allow specific commands for its repository's agent panes with `permissionsAllow`, so they run without a permission prompt.
+- Permission prompts in a pane now appear in Work with a way to jump to that pane. You still allow or deny in the pane, and the Work item closes once you do.
+- If all panes for an unfinished plan have been closed for an hour, the Board creates an open issue for it. Starting that issue continues the same plan.
 
 ### Improved
 - Pane focus shortcuts changed from ⌘⌥ + arrow keys to ⌘⇧I J K L (up, left, down, right).
+- Agent Monitor rows now show the model that answered, and times include seconds.
+- Work's In Progress list now shows only plans with a working or open pane, or an open request.
+- Questions in the Athena pane now also appear in Work while you are looking at the pane, so you can answer in either place.
+- Lightweight tasks now default to Opus 5.5 unless the pack sets another model. Athena uses Sonnet only for truly simple edits.
+- A plan now completes automatically when its pull requests are merged even if ordinary unchecked items remain, and Athena is told how many are left. Only unchecked step items hold it open.
 
 ### Fixed
 - An agent's "done" notification now waits until its background commands have finished.
@@ -38,6 +45,10 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - A decision request without a decision console now stays a decision and opens as a question popup, so you can answer it in the app.
 - When auto PR is off, Athena now blocks opening a pull request by mistake and points to the direct merge instead.
 - When an agent asks you to pick an option in the Athena pane and you are not looking at it, the question now goes to Work so you can answer it there.
+- ⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.
+- Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.
+- The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.
+- A pane running a command in the background now counts as working instead of idle.
 
 ## 0.46 (v0.42.3 – v0.46.4 · Nov 1, 2026)
 
