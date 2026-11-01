@@ -307,10 +307,6 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .tree-row .label { overflow: hidden; flex: 1; text-overflow: ellipsis; }
 .tree-row.dotfile .label { color: var(--muted); }
 .tree-row .mark { color: var(--muted); }
-.code-M { color: #e0af68; }
-.code-U, .code-A { color: #9ece6a; }
-.code-D, .code-\! { color: var(--error); }
-.code-R { color: var(--accent); }
 /* 미리보기 — 터미널 pane 오른쪽에 나눠 띄운다 */
 .preview {
   display: flex;
@@ -421,13 +417,6 @@ body[data-platform="darwin"] .tabbar {
 }
 
 .space .dot { font-size: 10px; }
-
-.code-U,
-.code-A {
-  color: var(--success);
-}
-
-.code-M { color: var(--warning); }
 
 /* 터미널 위 탭 — 칸 나눔 + 위 강조선(촘촘 VS Code). 줄 32px · 탭마다 오른쪽 구분선 ·
    선택 탭은 터미널 바탕 + 위 1px 강조선 · ✕·＋ 는 얇은 선 아이콘 · ✕ 는 오른쪽 고정 자리 */
@@ -635,6 +624,13 @@ body[data-platform="darwin"] .tabbar {
 }
 
 .tree-row.dotfile .file-icon { opacity: 0.8; }
+/* git 상태 — 이름과 오른쪽 표시를 같은 색으로(점 파일의 흐린 색보다 먼저) */
+.tree-row[data-change="M"] .label, .tree-row[data-change="M"] .mark { color: var(--warning); }
+.tree-row[data-change="U"] .label, .tree-row[data-change="U"] .mark,
+.tree-row[data-change="A"] .label, .tree-row[data-change="A"] .mark { color: var(--success); }
+.tree-row[data-change="D"] .label, .tree-row[data-change="D"] .mark,
+.tree-row[data-change="!"] .label, .tree-row[data-change="!"] .mark { color: var(--error); }
+.tree-row[data-change="R"] .label, .tree-row[data-change="R"] .mark { color: var(--accent); }
 
 /* 폴더 열기·닫기 — 둥근 단추 꺾쇠(시안 5). 열리면 아래로 돌고, 줄에 마우스를 올리면 동그란 바탕 · 파일 줄은 같은 폭의 빈 자리 */
 .twisty {

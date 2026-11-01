@@ -22,8 +22,10 @@ export type ExplorerActions = {
 }
 
 // stamp — 바닐라가 render() 로 다시 그리라고 할 때마다 1 씩(작업 공간 이름 · 언어는 바닐라 값이라 그릴 때 읽는다)
-type ExplorerView = { workspace: string | null; pane: string | null; root: string | null; branch: string | null; mode: Mode; children: Map<string, Folder>; expanded: Set<string>; changes: ExplorerChange[]; git: boolean; statusKey: string; stamp: number }
-const view = createStore<ExplorerView>({ workspace: null, pane: null, root: null, branch: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '', stamp: 0 })
+// statusFailed — 이 폴더의 git 상태를 못 읽었다(root 를 더 기다리지 않는다) · shown — 새 폴더를 읽는 동안 그대로 보여 주는 이전 내용(준비되면 null)
+type ExplorerView = { workspace: string | null; pane: string | null; root: string | null; branch: string | null; mode: Mode; children: Map<string, Folder>; expanded: Set<string>; changes: ExplorerChange[]; git: boolean; statusKey: string; statusFailed: boolean; shown: Shown | null; stamp: number }
+type Shown = Pick<ExplorerView, 'workspace' | 'root' | 'branch' | 'children' | 'expanded' | 'changes' | 'git' | 'statusFailed'>
+const view = createStore<ExplorerView>({ workspace: null, pane: null, root: null, branch: null, mode: 'files', children: new Map(), expanded: new Set(), changes: [], git: false, statusKey: '', statusFailed: false, shown: null, stamp: 0 })
 
 let panel: HTMLElement | null = null
 let actions: ExplorerActions | null = null
@@ -37,8 +39,22 @@ export function setup(container: HTMLElement, next: ExplorerActions): void {
   actions = next
 }
 
+// 지금 화면에 보이는 내용 — 비우기 전에 잡아 둔다. 읽은 것이 하나도 없으면(처음 열 때) 잡아 둘 것이 없다
+function currentShown(state: ExplorerView): Shown | null {
+  if (state.shown) return state.shown
+  if (!state.children.size) return null
+  const { workspace: shownWorkspace, root, branch, children, expanded, changes, git, statusFailed } = state
+  return { workspace: shownWorkspace, root, branch, children, expanded, changes, git, statusFailed }
+}
+
+// 맨 위 목록과 보는 폴더(또는 상태 읽기 실패)가 모두 왔으면 이전 내용을 내린다 — 제목과 목록이 한 번에 바뀐다
+function settled(next: ExplorerView): ExplorerView {
+  return next.shown && next.children.has('.') && (next.root !== null || next.statusFailed) ? { ...next, shown: null } : next
+}
+
 // 바닐라가 replaceChildren 하던 때처럼 그리기는 바로(flushSync) — 한 번 띄우면 내리지 않는다
-function commit(next: ExplorerView): void {
+function commit(pending: ExplorerView): void {
+  const next = settled(pending)
   if (!mounted && panel && actions) {
     view.set(next)
     mountIsland(panel, <ExplorerBody actions={actions} />)
@@ -65,12 +81,12 @@ export function render(): void {
 }
 
 // 작업 공간이나 포커스 pane 이 바뀌면 처음부터(고른 보기 — 파일 / 변경 — 는 그대로).
-// 펼침 · 읽은 폴더 · 변경은 비운다 — 다른 워크트리 경로로 잘못 열리지 않게. 열려 있던 미리보기도 닫는다
+// 펼침 · 읽은 폴더 · 변경은 비운다 — 다른 워크트리 경로로 잘못 열리지 않게. 새 내용이 올 때까지 화면에는 이전 내용(shown)을 두고 누를 수 없게 한다. 열려 있던 미리보기도 닫는다
 export function reset(workspaceId: string | null, paneId: string | null = null): void {
   const state = view.get()
   generation++
   actions?.closePreview()
-  commit({ workspace: workspaceId, pane: paneId, root: null, branch: null, mode: state.mode, children: new Map(), expanded: new Set(['.']), changes: [], git: false, statusKey: '', stamp: state.stamp + 1 })
+  commit({ workspace: workspaceId, pane: paneId, root: null, branch: null, mode: state.mode, children: new Map(), expanded: new Set(['.']), changes: [], git: false, statusKey: '', statusFailed: false, shown: workspaceId ? currentShown(state) : null, stamp: state.stamp + 1 })
   if (!workspaceId) return
   loadFolder('.')
   refreshStatus()
@@ -102,13 +118,17 @@ async function refreshStatus(): Promise<void> {
   if (!workspaceId) return
   const started = generation
   const result = await studio.explorerStatus(workspaceId, paneId)
-  if (started !== generation || 'error' in result) return
+  if (started !== generation) return
   const state = view.get()
+  if ('error' in result) {
+    if (state.root === null && !state.statusFailed) commit({ ...state, statusFailed: true })
+    return
+  }
   // 보는 폴더가 정해졌거나 바뀌었다(처음 알게 됨 · pane 안 cd · 폴더가 지워져 작업 공간 폴더로 돌아감) — 이전 요청을 버리고 펼침 · 읽은 폴더를 비운 뒤 새 폴더로 다시 읽는다
   if (state.root !== result.root) {
     generation++
     actions?.closePreview()
-    commit({ ...state, root: result.root, branch: result.branch, children: new Map(), expanded: new Set(['.']), changes: result.changes, git: result.git, statusKey: JSON.stringify(result) })
+    commit({ ...state, root: result.root, branch: result.branch, children: new Map(), expanded: new Set(['.']), changes: result.changes, git: result.git, statusKey: JSON.stringify(result), statusFailed: false, shown: currentShown(state) })
     loadFolder('.')
     return
   }
@@ -119,6 +139,7 @@ async function refreshStatus(): Promise<void> {
 
 function toggleFolder(relative: string): void {
   const state = view.get()
+  if (state.shown) return // 이전 내용을 보여 주는 중 — 경로가 새 폴더 기준이 아니다
   const expanded = new Set(state.expanded)
   if (expanded.has(relative)) expanded.delete(relative)
   else {
@@ -157,16 +178,17 @@ function TwistyMark({ state }: { state: Twisty }) {
   )
 }
 
-type RowProps = { depth: number; label: string; mark?: string; markClass?: string; dotfile?: boolean; onClick: () => void; title?: string; icon?: ReactNode; twisty?: Twisty }
+// change — git 상태 글자(M · U · A · D · R · !). 줄의 이름과 표시 색을 정한다(style.css .tree-row[data-change])
+type RowProps = { depth: number; label: string; mark?: string; change?: string; dotfile?: boolean; onClick: () => void; title?: string; icon?: ReactNode; twisty?: Twisty }
 
-function TreeRow({ depth, label, mark, markClass, dotfile, onClick, title, icon, twisty }: RowProps) {
+function TreeRow({ depth, label, mark, change, dotfile, onClick, title, icon, twisty }: RowProps) {
   const folder = twisty === 'open' || twisty === 'closed'
   return (
-    <button className={`tree-row${dotfile ? ' dotfile' : ''}`} style={{ paddingLeft: `${6 + depth * 12}px` }} title={title || label} aria-expanded={folder ? twisty === 'open' : undefined} onClick={onClick}>
+    <button className={`tree-row${dotfile ? ' dotfile' : ''}`} data-change={change || undefined} style={{ paddingLeft: `${6 + depth * 12}px` }} title={title || label} aria-expanded={folder ? twisty === 'open' : undefined} onClick={onClick}>
       {twisty ? <TwistyMark state={twisty} /> : null}
       {icon}
       <span className="label">{label}</span>
-      <span className={`mark ${markClass || ''}`}>{mark || ''}</span>
+      <span className="mark">{mark || ''}</span>
     </button>
   )
 }
@@ -207,7 +229,7 @@ function fileRows(state: ExplorerView, say: Say, openPreview: (relative: string)
             icon={<FileIcon entry={entry} open={open} />}
             label={entry.name}
             mark={folders.has(relative) ? '●' : ''}
-            markClass="code-M"
+            change={folders.has(relative) ? 'M' : undefined}
             dotfile={entry.name.startsWith('.')}
             onClick={() => toggleFolder(relative)}
           />,
@@ -223,7 +245,7 @@ function fileRows(state: ExplorerView, say: Say, openPreview: (relative: string)
             icon={<FileIcon entry={entry} />}
             label={entry.name}
             mark={code}
-            markClass={code ? `code-${code}` : ''}
+            change={code}
             dotfile={entry.name.startsWith('.')}
             onClick={() => openPreview(relative)}
           />,
@@ -239,7 +261,7 @@ function changeRows(state: ExplorerView, say: Say, openPreview: (relative: strin
   if (!state.git) return [<TreeRow key="not-git" depth={0} label={say('explorer.notGit')} onClick={noop} />]
   if (!state.changes.length) return [<TreeRow key="no-changes" depth={0} label={say('explorer.noChanges')} onClick={noop} />]
   return state.changes.map((change) => (
-    <TreeRow key={`change:${change.path}`} depth={0} icon={<FileIcon entry={change} />} label={change.path} mark={change.code} markClass={`code-${change.code}`} onClick={() => openPreview(change.path)} title={change.path} />
+    <TreeRow key={`change:${change.path}`} depth={0} icon={<FileIcon entry={change} />} label={change.path} mark={change.code} change={change.code} onClick={() => openPreview(change.path)} title={change.path} />
   ))
 }
 
@@ -272,15 +294,21 @@ function ViewButton({ mode, label, badge, current }: { mode: Mode; label: string
 function ExplorerBody({ actions: shell }: { actions: ExplorerActions }) {
   const say = useSay()
   const state = useStore(view)
-  const workspace = state.workspace ? shell.workspaceOf(state.workspace) : undefined
-  if (!workspace) return <div className="side-empty">{say('explorer.noWorkspace')}</div>
-  const count = state.changes.length
+  if (!state.workspace || !shell.workspaceOf(state.workspace)) return <div className="side-empty">{say('explorer.noWorkspace')}</div>
+  const display = state.shown ? { ...state, ...state.shown } : state
+  // 이전 내용의 작업 공간이 닫혔으면 지금 작업 공간 이름으로
+  const workspace = (display.workspace && shell.workspaceOf(display.workspace)) || shell.workspaceOf(state.workspace)!
+  // 이전 내용의 줄은 경로가 새 폴더 기준이 아니라 눌러도 열지 않는다
+  const openPreview = state.shown ? noop : shell.openPreview
+  // 보는 폴더를 아직 모르면 비워 둔다 — 작업 공간 이름은 실제 브랜치가 아닐 수 있다
+  const title = display.root === null && !display.statusFailed ? '' : (display.branch ?? workspace.label)
+  const count = display.changes.length
   const collapseTitle = say('explorer.collapse', { key: shell.tabKey() })
   return (
     <>
       <div className="explorer-head">
-        <span className="explorer-name" title={say('explorer.cwdTitle', { path: state.root ?? workspace.cwd, key: shell.tabKey() })}>
-          {state.branch ?? workspace.label}
+        <span className="explorer-name" title={say('explorer.cwdTitle', { path: display.root ?? workspace.cwd, key: shell.tabKey() })}>
+          {title}
         </span>
         <ViewButton mode="files" label={say('explorer.files')} current={state.mode} />
         <ViewButton mode="changes" label={count ? say('explorer.changesCount', { count }) : say('explorer.changes')} badge={count} current={state.mode} />
@@ -288,7 +316,7 @@ function ExplorerBody({ actions: shell }: { actions: ExplorerActions }) {
           <LineIcon paths={shell.foldIcon} />
         </button>
       </div>
-      {state.mode === 'files' ? fileRows(state, say, shell.openPreview) : changeRows(state, say, shell.openPreview)}
+      {state.mode === 'files' ? fileRows(display, say, openPreview) : changeRows(display, say, openPreview)}
     </>
   )
 }
