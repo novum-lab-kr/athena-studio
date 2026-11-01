@@ -170,6 +170,9 @@ function detectAgent(processes, shellPid, argsOf = () => null) {
 const WORKING_MARK = /esc to interrupt/i
 const QUIET_MS = 1500
 const STATUS_TAIL_LINES = 8
+// 뒤에서 도는 셸 — Claude Code 맺음 줄 끝의 개수(실측 2026-11-01 · 2.1.316 '⏵⏵ auto mode on · 2 shells'). 대화 본문에 같은 글이 있어도 잡지 않게 맨 아래 몇 줄에만 본다
+const BACKGROUND_MARK = /·\s*\d+\s+shells?\s*$/
+const BACKGROUND_TAIL_LINES = 3
 
 // screenLines: 화면에 보이는 줄들(위→아래). lastOutputAt·now: ms
 /** @param {{ agent?: unknown, screenLines?: string[] | null, lastOutputAt?: number | null, now: number }} state */
@@ -177,6 +180,7 @@ function agentStatus({ agent, screenLines, lastOutputAt, now }) {
   if (!agent) return 'unknown'
   const tail = (screenLines || []).filter((line) => line.trim()).slice(-STATUS_TAIL_LINES)
   if (tail.some((line) => WORKING_MARK.test(line))) return 'working'
+  if (tail.slice(-BACKGROUND_TAIL_LINES).some((line) => BACKGROUND_MARK.test(line))) return 'working'
   if (lastOutputAt && now - lastOutputAt < QUIET_MS) return 'working'
   return 'idle'
 }

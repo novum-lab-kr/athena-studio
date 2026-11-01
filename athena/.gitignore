@@ -36,6 +36,7 @@
 # 측정용 사건 기록 · 현황판이 본 계획서 상태 — 옛 구조 본체 자리(여러 팩이면 팩 데이터 state/ · scripts/lib/events.mjs)
 /.events.jsonl
 /.board-plan-status.json
+/.board-plan-panes.json
 
 # 현황판 휴지통 (삭제한 이슈·계획서 — 되살릴 수 있게 지우지 않는다 · 여러 팩이면 링크)
 /.board-trash

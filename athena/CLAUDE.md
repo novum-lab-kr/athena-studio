@@ -38,7 +38,7 @@
 
 ## 작업 흐름 (Plan-First)
 
-> 다이어그램 두 장 — **경량** `docs/diagrams/athena-flow-light.html` · **정식** `docs/diagrams/athena-flow-formal.html`(= `/guide 그림`) — 의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow-{light,formal}.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 진행은 현황판(`/board`)에서 실시간으로 본다. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
+> 다이어그램 두 장 — **경량** `docs/diagrams/athena-flow-light.html` · **정식** `docs/diagrams/athena-flow-formal.html`(= `/guide 그림`) — 의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow-{light,formal}.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
 
 ### 1단계: 요청 · 계획서
 - 요청은 대화 · `/call <에이전트>` · 현황판 이슈 [작업 시작] 으로 들어온다. 대상 서비스를 팩 `ROUTING.md` 로 정하고(복수 가능 · 해석이 둘 이상이면 묻는다) 관련 코드를 탐색한다(지식은 필요한 절만 — 공통 문서 2.2~2.3)
@@ -71,7 +71,7 @@
 - **Checkpoint 를 갱신한다**(공통 문서 2.6 시점) — 정식이면 html 도 같은 턴에(`node scripts/plan-html.mjs <md>`)
 
 ### 6단계: 정리
-- 끝난 일은 현황판이 **자동 완료 · 자동 보관**한다(PR 머지 · 배우기 검토 · 묶인 pane 이 모두 닫힘 — 조건은 `docs/workflow.md` 6절). **끝난 pane 은 아테나가 닫는다.** Progress 에 빈 칸(`- [ ]`)이 남으면 자동 완료되지 않으니 다 끝나면 칸을 채우거나 완료로 직접 옮긴다
+- 끝난 일은 현황판이 **자동 완료 · 자동 보관**한다(PR 머지 · 배우기 검토 · 묶인 pane 이 모두 닫힘 — 조건은 `docs/workflow.md` 6절). **끝난 pane 은 아테나가 닫는다.** 자동 완료를 막는 빈 칸은 `N단계` 로 시작하거나 `(단계)` 표시가 있는 칸뿐이다. 끝난 뒤 남은 일은 빈 칸으로 두지 않고 이슈로 올린다(`docs/issues.md` "등록 기준")
 - 이슈가 `완료 가능` 이면 **아테나가 완료로 옮긴다**(덜 찼으면 남은 것을 알린다). 학습 후보 · 스킬 후보는 현황판 [학습] 탭(스킬 후보는 아테나가 만든다 — `docs/extending.md` "학습으로 스킬 만들기")
 
 작업 재개(`/new` 이후)는 공통 문서 2.6.

@@ -26,7 +26,7 @@ printf '{ "pane": "p180", "agent": "fe", "plan": "%s" }' "$PLAN" > "$TMP/pane-se
 node --input-type=module - "$SRC/scripts/board/plan-bind.mjs" "$TMP/pane-sessions" "$PLAN" <<'EOF'
 const [modPath, sessionsDir, planId] = process.argv.slice(2)
 import { readFileSync } from 'node:fs'
-const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, autoDoneMark, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boundPaneIds, checkpointOf, hasOpenSteps, progressOf, readPaneSessions } = await import(modPath)
+const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, autoDoneMark, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boundPaneIds, checkpointOf, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, PANE_CLOSED_ISSUE_MS, progressOf, readPaneSessions } = await import(modPath)
 const PROTECTED = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
@@ -60,18 +60,22 @@ const tildePlan = '# t\n\n## Checkpoint\n- Status: in_progress\n~~~\n## 틸드 �
 check('Checkpoint — 틸드 펜스 안의 `## ` 도 절을 끊지 않음(다른 문자 펜스는 닫힘이 아님)', checkpointOf(tildePlan).includes('## 틸드 안') && checkpointOf(tildePlan).includes('- 뒤쪽 줄') && !checkpointOf(tildePlan).includes('본문'), JSON.stringify(checkpointOf(tildePlan)))
 check('Checkpoint — 절이 없으면 빈 글', checkpointOf('# t\n\n## 지시\n') === '')
 
-// ── 남은 단계 ──
-const stepsLeft = progressOf('- [x] 1단계 규칙\n- [ ] 2단계 전환\n  - [x] PR1\n  - [ ] PR-R1\n- [ ] 3단계')
-check('사고 계획서 모양(맨 앞 칸 1/3) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(stepsLeft) && stepsLeft?.checked === 1 && stepsLeft?.total === 3, JSON.stringify(stepsLeft))
-// 2026-10-29 배포판 계획서 사고 — 맨 앞 칸은 다 [x] 인데 3단계 · 5단계 하위 칸이 비어 있는 채로 PR 머지 뒤 완료 · 보관됐다
-const subLeft = progressOf('- [x] 1단계\n- [x] 3단계 서명\n  - [x] 인증서\n  - [ ] 공증\n- [x] 5단계 다운로드\n    - [ ] 페이지 링크')
-check('맨 앞 칸 다 채움 + 하위 칸 빔(들여쓰기 깊이 무관) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(subLeft), JSON.stringify(subLeft))
-check('진행 숫자는 맨 앞 칸 기준 그대로(3/3)', subLeft?.checked === 3 && subLeft?.total === 3, JSON.stringify(subLeft))
-check('하위 칸까지 다 채움 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(progressOf('- [x] 구현\n  - [x] 덤\n\t- [X] 탭 하위\n- [X] 검증')))
+// ── 남은 단계 — 단계 칸만 자동 완료를 막는다(2026-11-01) ──
+const stageTop = progressOf('- [x] 1단계 규칙\n- [ ] 2단계 전환\n  - [x] PR1\n  - [ ] PR-R1\n- [ ] 3단계')
+check('맨 앞 단계 칸이 비어 있음 → 자동 완료 보류 · 단계 칸만 셈(하위 칸은 일반)', hasOpenSteps(stageTop) && stageTop?.checked === 1 && stageTop?.total === 3 && stageTop?.steps === 2 && stageTop?.open === 3, JSON.stringify(stageTop))
+check('들여 쓴 단계 칸 → 자동 완료 보류', hasOpenSteps(progressOf('- [x] 구현\n  - [ ] 2단계 전환')))
+check('(단계) 표시 → 맨 앞 칸 · 들여 쓴 칸 모두 보류', hasOpenSteps(progressOf('- [ ] 결제 옮기기 (단계)')) && hasOpenSteps(progressOf('- [x] a\n    - [ ] 결제 옮기기 (단계)')))
+check('꾸민 단계 칸(**2단계**)도 단계 칸', hasOpenSteps(progressOf('- [ ] **2단계** 전환')))
+const stageDoneSub = progressOf('- [x] 1단계\n- [x] 3단계 서명\n  - [x] 인증서\n  - [ ] 공증\n- [x] 5단계 다운로드\n    - [ ] 페이지 링크')
+check('단계 칸은 다 채움 + 그 아래 하위 칸만 빔 → 일반 칸 → 자동 완료 · 빈 칸 수는 알림용으로 남음', !hasOpenSteps(stageDoneSub) && stageDoneSub?.open === 2 && stageDoneSub?.checked === 3 && stageDoneSub?.total === 3, JSON.stringify(stageDoneSub))
+const plainLeft = progressOf('- [x] 구현\n- [ ] 머지 뒤 앱 화면 확인')
+check('일반 빈 칸만 있음 → 자동 완료 · 남은 칸 1개', !hasOpenSteps(plainLeft) && plainLeft?.open === 1, JSON.stringify(plainLeft))
+check('문구 가운데의 단계 · 채운 단계 칸은 막지 않음', !hasOpenSteps(progressOf('- [ ] 다음 2단계 확인\n- [x] 3단계 끝')))
+check('칸을 다 채움 → 자동 완료', !hasOpenSteps(progressOf('- [x] 구현\n  - [x] 덤\n\t- [X] 탭 하위\n- [X] 검증')))
 const onlySub = progressOf('  - [ ] 남은 작업\n  - [x] 끝난 작업')
-check('들여 쓴 칸만 있고 빈 칸이 있음(맨 앞 칸 없음) → 남은 단계 있음 → 자동 완료 보류', hasOpenSteps(onlySub) && onlySub?.total === 0 && onlySub?.open === 1, JSON.stringify(onlySub))
-check('들여 쓴 칸만 있고 다 채움 → null(지금처럼 남은 단계 없음)', progressOf('  - [x] 끝난 작업') === null)
-check('칸이 하나도 없음 → 남은 단계 없음(지금처럼)', !hasOpenSteps(progressOf('- 구현 끝\n- 검증 끝')) && progressOf('') === null)
+check('들여 쓴 일반 빈 칸만 있음 → 자동 완료 · 칸 수는 셈', !hasOpenSteps(onlySub) && onlySub?.total === 0 && onlySub?.open === 1, JSON.stringify(onlySub))
+check('들여 쓴 칸만 있고 다 채움 → null', progressOf('  - [x] 끝난 작업') === null)
+check('칸이 하나도 없음 → 남은 단계 없음', !hasOpenSteps(progressOf('- 구현 끝\n- 검증 끝')) && progressOf('') === null)
 
 // 2026-10-29 — 고치지 않은 템플릿 자리 줄이 남은 단계로 세져 PR 이 다 머지돼도 자동 완료가 안 됐다
 const templateText = readFileSync(modPath.replace(/scripts\/board\/plan-bind\.mjs$/, 'docs/plan-template-light.md'), 'utf8')
@@ -80,10 +84,10 @@ check('템플릿 자리 줄이 docs/plan-template-light.md 에 글자 그대로 
 check('템플릿의 빈 칸 줄(`- [ ]`)이 하나도 빠짐없이 TEMPLATE_PLACEHOLDER_LINES 에 있다(2026-11-01 — 첫 줄 누락 재발 방지)', templateOpenLines.length > 0 && templateOpenLines.every((line) => TEMPLATE_PLACEHOLDER_LINES.includes(line)) && TEMPLATE_PLACEHOLDER_LINES.length === templateOpenLines.length, JSON.stringify(templateOpenLines.filter((line) => !TEMPLATE_PLACEHOLDER_LINES.includes(line))))
 const [placeholderBranch, placeholderWork, placeholderVerify, placeholderBasis] = TEMPLATE_PLACEHOLDER_LINES
 const untouched = progressOf(`- [x] 구현\n${placeholderBranch}\n${placeholderWork}\n${placeholderVerify}\n${placeholderBasis}`)
-check('고치지 않은 자리 줄 4개만 남음 → 남은 단계 없음 → 자동 완료', !hasOpenSteps(untouched) && untouched?.checked === 1 && untouched?.total === 1 && untouched?.open === 0, JSON.stringify(untouched))
+check('고치지 않은 자리 줄 4개만 남음 → 남은 단계 없음 → 자동 완료 · 알림 칸도 0', !hasOpenSteps(untouched) && untouched?.checked === 1 && untouched?.total === 1 && untouched?.open === 0, JSON.stringify(untouched))
 check('자리 줄만 있으면 칸이 없는 것과 같다(null)', progressOf(`${placeholderWork}\n${placeholderVerify}`) === null)
-check('자리 줄 말고 진짜 빈 칸이 있으면 그대로 남은 단계', hasOpenSteps(progressOf(`- [x] 구현\n- [ ] 머지 뒤 앱 화면 확인\n${placeholderWork}`)))
-check('자리 줄을 한 글자라도 고쳤으면 보통 칸(빈 칸이면 남은 단계)', hasOpenSteps(progressOf(`- [x] 구현\n${placeholderWork.replace('(작업)', '로그인 고치기')}`)))
+check('자리 줄 말고 일반 빈 칸이 있으면 그것만 알림 칸으로 셈', progressOf(`- [x] 구현\n- [ ] 머지 뒤 앱 화면 확인\n${placeholderWork}`)?.open === 1)
+check('자리 줄을 한 글자라도 고쳤으면 보통 칸(빈 칸이면 셈)', progressOf(`- [x] 구현\n${placeholderWork.replace('(작업)', '로그인 고치기')}`)?.open === 1)
 
 // ── 묶인 pane ── 사고 때 Work ref 는 마지막으로 띄운 p132(닫힘)만 · 일하던 p130 은 다른 브랜치
 const plan = { id: planId, workRefs: '/w/feat-b · 🌿 feat/b · pane p132 (fe)', review: '' }
@@ -107,12 +111,32 @@ check('36진수 pane id(p6f · 2026-10-28) — Work ref · Review 줄로 묶이�
   [], PROTECTED), ['p6f', 'p7a']))
 check('보호 브랜치(main)는 브랜치로 묶지 않음', same(boundPaneIds({ id: 'a', workRefs: 'athena 메인 체크아웃 · 🌿 main', review: '' }, [{ id: 'p5', role: 'agent', agent: 'fe', branch: 'main' }], [], PROTECTED), []))
 
-// ── 자동 완료 되돌리기 — 자동 완료한 계획서에 빈 칸이 새로 생기면 진행 중으로(2026-11-01) ──
+// ── 묶인 pane 이 닫힌 계획서 → 이어 갈 이슈(2026-11-01) ──
+const HOUR = PANE_CLOSED_ISSUE_MS
+const watchPlan = (agents, status = 'in_progress') => ({ id: 'plans/task/x.md', status, agents })
+const opened = nextPaneWatch({}, [watchPlan(['p1'])], 1000)
+check('pane 열림 → 닫힌 시각 없음 · 기록 바뀜', same(opened.watch['plans/task/x.md'], { closedAt: null }) && opened.changed)
+check('pane 을 본 적 없는 계획서 → 기록 없음(옛 계획서가 한꺼번에 이슈가 되지 않음)', same(nextPaneWatch({}, [watchPlan([])], 1000).watch, {}))
+const closed = nextPaneWatch(opened.watch, [watchPlan([])], 5000)
+check('pane 닫힘 → 처음 본 시각을 적고 다음 수집은 그대로 · 파일 안 씀', closed.watch['plans/task/x.md'].closedAt === 5000 && closed.changed && !nextPaneWatch(closed.watch, [watchPlan([])], 9000).changed && nextPaneWatch(closed.watch, [watchPlan([])], 9000).watch['plans/task/x.md'].closedAt === 5000)
+check('다시 열림 → 닫힌 시각 지움', nextPaneWatch(closed.watch, [watchPlan(['p2'])], 9000).watch['plans/task/x.md'].closedAt === null)
+check('done · 없어진 계획서 → 기록에서 뺌', same(nextPaneWatch(closed.watch, [watchPlan([], 'done')], 9000).watch, {}) && same(nextPaneWatch(closed.watch, [], 9000).watch, {}))
+const entry = { closedAt: 1000 }
+const clear = { hasRequest: false, hasIssue: false }
+check('닫힌 지 1시간 전 → 이슈 안 만듦', !followUpDue(entry, 1000 + HOUR - 1, clear))
+check('닫힌 지 1시간 → 이슈 만듦', followUpDue(entry, 1000 + HOUR, clear))
+check('pane 열림(closedAt 없음) · 기록 없음 → 안 만듦', !followUpDue({ closedAt: null }, 1000 + HOUR, clear) && !followUpDue(undefined, 1000 + HOUR, clear))
+check('열린 요청 있음 → 안 만듦', !followUpDue(entry, 1000 + HOUR, { hasRequest: true, hasIssue: false }))
+check('이미 연결 이슈 있음 → 안 만듦', !followUpDue(entry, 1000 + HOUR, { hasRequest: false, hasIssue: true }))
+const made = followUpIssue({ id: 'plans/task/20261101-fe-결제-learn-고치기.md', title: '결제 #12 고치기' }, 'my-web', '2026-11-01')
+check('이슈 파일 — 이름 · open · plan · 레포 · 제목(공백 뒤 # 없음) · 학습 후보로 읽히지 않음', made.name === '20261101-my-web-fe-결제-learn_고치기.md' && /^status: open$/m.test(made.text) && /^plan: plans\/task\/20261101-fe-결제-learn-고치기\.md$/m.test(made.text) && /^repo: my-web$/m.test(made.text) && /^title: 결제 12 고치기$/m.test(made.text), made.name + made.text)
+
+// ── 자동 완료 되돌리기 — 자동 완료한 계획서에 단계 칸이 새로 생기면 진행 중으로(2026-11-01) ──
 const autoText = '## Checkpoint\n- Status: done — 자동 — PR #7 이 main 에 머지됨\n- Work ref: x\n- Auto done: merged-7\n- Learn review: 2026-11-01 merged-7 · 0건\n\n### Progress\n- [x] a\n'
-const openProgress = progressOf('- [x] a\n- [ ] 추가 요청')
+const openProgress = progressOf('- [x] a\n- [ ] 2단계 추가 요청')
 const fullProgress = progressOf('- [x] a\n- [x] 추가 요청')
-check('되돌리기 — 자동 완료(Auto done 줄) + 빈 칸이 새로 생김 → 대상', needsAutoReopen(autoText, 'done', false, openProgress) === true)
-check('되돌리기 — 하위 빈 칸도 대상', needsAutoReopen(autoText, 'done', false, progressOf('- [x] a\n  - [ ] 하위')) === true)
+check('되돌리기 — 자동 완료(Auto done 줄) + 단계 칸이 새로 생김 → 대상', needsAutoReopen(autoText, 'done', false, openProgress) === true)
+check('되돌리기 — 들여 쓴 단계 칸도 대상 · 일반 빈 칸은 대상 아님(남기고 완료한 칸에 왕복하지 않게)', needsAutoReopen(autoText, 'done', false, progressOf('- [x] a\n  - [ ] 하위 (단계)')) === true && needsAutoReopen(autoText, 'done', false, progressOf('- [x] a\n- [ ] 일반 칸\n  - [ ] 하위')) === false)
 check('되돌리기 — 칸이 다 차 있으면 대상 아님 · 칸이 없어도 아님', needsAutoReopen(autoText, 'done', false, fullProgress) === false && needsAutoReopen(autoText, 'done', false, null) === false)
 check('되돌리기 — 사람이 직접 옮긴 done(Auto done 줄 없음)은 건드리지 않음', needsAutoReopen('- Status: done\n- Learn review: x merged-7\n', 'done', false, openProgress) === false)
 check('되돌리기 — 보관된 계획서 · done 이 아닌 계획서는 건드리지 않음', needsAutoReopen(autoText, 'done', true, openProgress) === false && needsAutoReopen(autoText, 'in_progress', false, openProgress) === false)

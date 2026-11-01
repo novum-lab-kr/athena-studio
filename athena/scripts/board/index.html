@@ -479,11 +479,13 @@
   // 카드 상태별 액션 — 아테나에게 보낼 지시문 초안. 보내기 전에 창에서 고칠 수 있다
   // 이슈 [작업 시작] 에서 "담당 에이전트로 바로(조사만)" 를 고르면 쓰는 지시문 — 운영 기준 detached 워크트리에서 조사만, 코드 수정 없음
   const INVESTIGATE = (card) => `${card.id} 이슈를 맡는다. 순서대로 한다: ① git status --short --branch 로 담당 레포의 현재 브랜치·미커밋 변경을 먼저 보고한다(체크아웃·stash 하지 않는다) ② 이슈의 근거를 기준 ref 에서 git show·ls-tree 로 확인한다 ③ ${card.type === 'check' ? '확인 결과를 이슈 파일 끝에 "## 확인 결과 (날짜 · 에이전트)" 절로 파일:줄 근거와 함께 적는다' : '원인과 고칠 범위를 정리해 보고한다 — 코드는 수정하지 않는다(계획서 승인 뒤 아테나가 브랜치를 만들어 다시 맡긴다)'}. 이슈 파일 말고는 수정하지 않는다. 커밋하지 않는다.`;
+  // 계획서에 이미 이어진 이슈(묶인 pane 이 닫혀 현황판이 만든 이슈 등) — 새 계획서를 만들지 않고 그 계획서를 이어 간다
+  const resumeLinkedPlan = (card) => `${card.id} 이슈는 연결된 계획서 ${card.linkedPlan.id} 를 이어 가는 일이다. 새 계획서를 만들지 않는다. Checkpoint 를 읽고, Work ref 와 현재 워크트리 브랜치·diff 가 맞는지 먼저 확인해 보고해줘. 맞으면 Next 를 담당 에이전트 pane 에 이어서 지시한다. 아테나가 직접 코드를 고치지 않는다.`;
   const ACTIONS = {
     issue: {
       // 아테나가 직접 하지 않는다 — 라우팅 → 브랜치 확인 → 담당 에이전트 pane 디스패치 순서를 지시문에 박는다
       // 기본은 아테나가 처리한다(판단 → 계획서 → prBase 브랜치 → 담당 에이전트). 팝업에서 "담당 에이전트로 바로(조사만)" 로 바꿀 수 있다
-      open: [['작업 시작', (card) => `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
+      open: [['작업 시작', (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
       planned: [['계획 보기', (card) => `${card.id} 이슈에 연결된 계획서${card.plan ? ` ${card.plan}` : ''} 상태를 알려줘.`]],
       in_progress: [['진행 상황', (card) => `${card.id} 이슈 진행 상황을 알려줘.`]],
     },
@@ -498,7 +500,7 @@
 
   // hermes 이슈 [작업 시작] — 디스패치하지 않는다. 아테나가 경량 계획서로 바로 고치고, 커밋·push 하면 fix: 로 완료
   const ATHENA_ACTIONS = {
-    open: [['작업 시작', (card) => `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
+    open: [['작업 시작', (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
   };
   const actionsFor = (card) => ((card.scope === 'hermes' && card.kind === 'issue' && ATHENA_ACTIONS[card.status]) || (ACTIONS[card.kind] || {})[card.status] || []);
   const api = async (path, body) => {

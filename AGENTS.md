@@ -44,6 +44,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - QA 실행기 · 현황판 QA 탭(`scripts/qa/` · `server.mjs` `/api/qa/flows` · `/api/qa-run`)을 고쳤으면 `test/qa-test.sh`(몇 초~1분 · 임시 레포 · 가짜 서버 · Playwright 가 있으면 FE 도)
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
+  - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈(`server.mjs` `noteLeftover` · `followUpClosedPlans`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)

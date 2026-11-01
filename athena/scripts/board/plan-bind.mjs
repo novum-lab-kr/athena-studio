@@ -9,12 +9,10 @@
  *     pane id 는 데몬이 파일에 이어 세어(src/daemon/main.mts createIdGen) 다시 쓰이지 않지만, 집을 초기화하면 처음부터라
  *     기록의 에이전트와 지금 pane 이름의 에이전트가 같을 때만 묶는다
  *
- * 남은 단계: Checkpoint Progress 의 빈 칸(`- [ ]`)이 하나라도 있으면 남은 일이 있다 — 맨 앞 칸이든 들여 쓴 하위 칸(깊이 무관)이든.
- *   하위 칸도 센다(2026-10-29 — 맨 앞 칸은 다 [x] 인데 남은 일이 하위 칸에만 있던 배포판 계획서가 PR 머지 뒤 완료 · 보관됐다).
- *   고치지 않은 템플릿 자리 줄(TEMPLATE_PLACEHOLDER_LINES)은 센 적 없는 것으로 본다(2026-10-29 — PR 이 다 머지돼도 자리 줄 3개 때문에 영영 자동 완료가 안 됐다).
- *   진행 표시 숫자(checked/total)는 맨 앞 칸 기준 그대로 — 화면이 바뀌지 않게 판정(open)만 넓힌다.
- *   2026-10-27 실제 계획서 64개(보관 58 · 진행 6)로 세어 봄 — PR 머지로 끝난 계획서는 거의 모두 맨 앞 칸을 다 채웠고(빈 칸 남은 2개도
- *   실제로 못 한 확인 단계), Next 는 끝난 계획서도 거의 모두 "머지 뒤 확인" 같은 글이 있어 기준이 못 된다
+ * 남은 단계(2026-11-01 — PR 8개가 머지됐는데 빈 칸 때문에 며칠째 안 끝났다): 자동 완료를 막는 것은 단계 칸뿐이다 — 빈 칸(`- [ ]`)의 문구가 `N단계` 로 시작하거나 `(단계)` 표시가 있을 때.
+ *   맨 앞 칸 · 들여 쓴 칸 모두 자기 문구로만 본다(단계 칸 아래 하위 칸은 표시가 없으면 일반 칸). 일반 빈 칸은 완료를 막지 않고 Lead pane 에 알린다(남은 일은 이슈로 — docs/issues.md).
+ *   고치지 않은 템플릿 자리 줄(TEMPLATE_PLACEHOLDER_LINES)은 어느 쪽으로도 세지 않는다.
+ *   진행 표시 숫자(checked/total)는 맨 앞 칸 기준 그대로.
  *
  * 스튜디오 앱도 이 파일을 본체에서 바로 불러 쓴다(src/main/pane-watch.mts — 현황판이 꺼져 있을 때 pane 머리줄 [상세] 를 정하려고 · bindingSources).
  *   그래서 node 기본 모듈만 가져온다 — 현황판 서버 · 설정을 읽는 모듈을 여기서 가져오지 않는다
@@ -127,22 +125,30 @@ export const TEMPLATE_PLACEHOLDER_LINES = [
 /** 고치지 않은 템플릿 자리 줄인가 @param {string} line */
 export const isTemplatePlaceholder = (line) => TEMPLATE_PLACEHOLDER_LINES.includes(line.trim())
 
-/** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함, 남은 단계 판정).
- * 고치지 않은 템플릿 자리 줄은 어느 쪽에도 세지 않는다. 칸이 하나도 없으면 null. 들여 쓴 빈 칸만 있어도 { checked: 0, total: 0, open } 을 돌려준다(남은 단계 · 화면은 total 0 이면 숫자를 안 보인다)
+/** 자동 완료를 막는 단계 칸인가 — 빈 칸이고 문구가 `N단계` 로 시작하거나 `(단계)` 표시가 있다(들여쓰기 무관 · 굵게 · 코드 꾸밈은 걷어 낸다) @param {string} line */
+export const isStageStep = (line) => {
+  const words = line.match(/^[ \t]*- \[ \]\s*(.*)$/)?.[1]
+  if (words === undefined) return false
+  const text = plain(words)
+  return /^\d+\s*단계/.test(text) || text.includes('(단계)')
+}
+
+/** Progress 절 글 → 맨 앞 칸 수(checked/total — 진행 표시) + 빈 칸 수(open — 하위 칸 포함) + 그중 단계 칸 수(steps — 자동 완료를 막는다).
+ * 고치지 않은 템플릿 자리 줄은 어느 쪽에도 세지 않는다. 칸이 하나도 없으면 null. 들여 쓴 빈 칸만 있어도 { checked: 0, total: 0, open, steps } 을 돌려준다(화면은 total 0 이면 숫자를 안 보인다)
  * @param {string} progress
- * @returns {{ checked: number, total: number, open: number } | null} */
+ * @returns {{ checked: number, total: number, open: number, steps: number } | null} */
 export const progressOf = (progress) => {
   const lines = progress.split('\n').filter((line) => !isTemplatePlaceholder(line))
   const count = (/** @type {RegExp} */ pattern) => lines.filter((line) => pattern.test(line)).length
   const checked = count(/^- \[x\]/i)
   const total = count(/^- \[[ x]\]/i)
   const open = count(/^[ \t]*- \[ \]/)
-  return total || open ? { checked, total, open } : null
+  return total || open ? { checked, total, open, steps: lines.filter(isStageStep).length } : null
 }
 
-/** 남은 단계(빈 칸 — 맨 앞 칸 · 하위 칸)가 있나
- * @param {{ checked: number, total: number, open?: number } | null | undefined} progress */
-export const hasOpenSteps = (progress) => Boolean(progress && (progress.checked < progress.total || (progress.open ?? 0) > 0))
+/** 남은 단계 칸이 있나 — 자동 완료 · 되돌리기 기준(일반 빈 칸은 보지 않는다)
+ * @param {{ steps?: number } | null | undefined} progress */
+export const hasOpenSteps = (progress) => Boolean(progress?.steps)
 
 /** @typedef {{ pane: string, agent: string, plan: string }} PaneSession */
 
@@ -223,7 +229,7 @@ export const bindingSources = ({ root, panes, sessionsDir, home, now = Date.now(
 export const autoDoneDone = (text, mark) => [...String(text).matchAll(/^- (?:Auto done|Learn review):.*$/gm)].some((match) => /** @type {string[]} */ (match[0].match(/merged-(?:direct-[0-9a-f]{7}(?:-[0-9a-f]{7})*|\d+(?:-\d+)*)/g) ?? []).includes(mark))
 
 // ── 자동 완료 되돌리기 ──
-// 자동 완료(PR 머지)한 계획서의 Progress 에 빈 칸이 새로 생기면(머지 뒤 추가 요청 · 새 단계) 현황판이 진행 중으로 되돌린다(2026-11-01).
+// 자동 완료(PR 머지)한 계획서의 Progress 에 단계 칸이 새로 생기면(머지 뒤 새 단계) 현황판이 진행 중으로 되돌린다(2026-11-01). 일반 빈 칸은 되돌리지 않는다 — 남기고 완료한 칸에 왕복하지 않게.
 // 대상은 Checkpoint 에 "- Auto done:" 줄이 있는 done 만 — 사람이 직접 완료로 옮긴 계획서(줄 없음)와 보관된 계획서는 건드리지 않는다.
 // 되돌릴 때 Auto done 줄을 "- Auto reopened: <표시>" 로 바꾼다: ① 이후 사람이 직접 done 으로 옮겨도 다시 되돌리지 않고
 // ② 칸을 다 채우면 같은 PR 묶음 표시여도 다시 자동 완료한다(autoDoneDone 은 사람이 되돌린 in_progress 를 지키려는 것이라 이 표시가 있을 때만 건너뛴다)
@@ -232,7 +238,7 @@ export const autoDoneMark = (text) => String(text).match(/^- Auto done:.*$/m)?.[
 
 /** 현황판이 이 계획서를 진행 중으로 되돌려야 하나
  * @param {string} text 계획서 전문 @param {string} status @param {boolean} archived
- * @param {{ checked: number, total: number, open?: number } | null | undefined} progress */
+ * @param {{ steps?: number } | null | undefined} progress */
 export const needsAutoReopen = (text, status, archived, progress) => !archived && status === 'done' && /^- Auto done:/m.test(text) && hasOpenSteps(progress)
 
 /** 되돌린 뒤 같은 PR 묶음을 다시 자동 완료해도 되나 — 현황판이 되돌릴 때 남긴 "- Auto reopened:" 줄에 같은 표시가 있을 때
@@ -244,3 +250,42 @@ export const reopenLines = (text) => String(text).replace(/^- Auto done:(.*)$/m,
 
 /** 다시 자동 완료할 때: Auto reopened 줄을 지운다(남기면 사람이 이어서 되돌린 in_progress 를 계속 덮는다) @param {string} text */
 export const clearReopened = (text) => String(text).replace(/^- Auto reopened:.*\n/m, '')
+
+// ── 묶인 pane 이 닫힌 계획서 → 이어 갈 이슈 ──
+// done 이 아닌 계획서의 묶인 pane 이 모두 닫히고 1시간이 지나면 현황판이 그 계획서를 가리키는 open 이슈를 하나 만든다(2026-11-01).
+// 한 번도 묶인 pane 을 본 적 없는 계획서는 대상이 아니다(닫힌 시각을 모른다) — 이 기능을 켠 날 옛 계획서가 한꺼번에 이슈가 되지 않는다
+export const PANE_CLOSED_ISSUE_MS = 3_600_000
+
+/** 지난 기록 + 이번 계획서들 → 계획서별 { closedAt }(열려 있으면 null · 닫힌 것을 처음 본 시각). done · 보관 · 없어진 계획서는 기록에서 뺀다. 바뀌었을 때만 파일에 쓰도록 changed
+ * @param {Record<string, { closedAt: number | null }>} watch
+ * @param {{ id: string, status: string, archived?: boolean, agents: string[] }[]} plans
+ * @param {number} now
+ * @returns {{ watch: Record<string, { closedAt: number | null }>, changed: boolean }} */
+export const nextPaneWatch = (watch, plans, now) => {
+  /** @type {Record<string, { closedAt: number | null }>} */
+  const next = {}
+  for (const plan of plans) {
+    if (plan.archived || plan.status === 'done') continue
+    const entry = watch[plan.id]
+    if (plan.agents.length) next[plan.id] = { closedAt: null }
+    else if (entry) next[plan.id] = { closedAt: entry.closedAt ?? now }
+  }
+  return { watch: next, changed: JSON.stringify(next) !== JSON.stringify(watch) }
+}
+
+/** 지금 이슈를 만들 때인가 — 닫힌 지 1시간이 지났고 열린 요청 · 연결된 이슈가 없다
+ * @param {{ closedAt: number | null } | undefined} entry @param {number} now
+ * @param {{ hasRequest: boolean, hasIssue: boolean }} links */
+export const followUpDue = (entry, now, { hasRequest, hasIssue }) => Boolean(entry?.closedAt) && now - Number(entry?.closedAt) >= PANE_CLOSED_ISSUE_MS && !hasRequest && !hasIssue
+
+/** 이어 갈 이슈 파일 — 이름과 글. 제목은 계획서 제목(공백 뒤 # 은 frontmatter 주석으로 잘리니 걷어 낸다) · 레포는 계획서 기준
+ * @param {{ id: string, title: string }} plan @param {string} repo @param {string} day YYYY-MM-DD */
+export const followUpIssue = (plan, repo, day) => {
+  const slug = (plan.id.split('/').at(-1) ?? plan.id).replace(/\.md$/, '').replace(/^\d{8}-/, '')
+  const title = plan.title.replace(/\s+/g, ' ').replace(/\s+#+/g, ' ').trim()
+  return {
+    // 이름에 -learn- 이 들어가면 학습 후보로 읽혀(learn.mjs isLearnIssue) 현황판 이슈에서 빠진다
+    name: `${day.replaceAll('-', '')}-${repo || 'plan'}-${slug}.md`.replace(/-learn-/g, '-learn_'),
+    text: `---\ntitle: ${title}\nrepo: ${repo}\nstatus: open\nplan: ${plan.id}\nsource: 현황판 자동(묶인 pane 이 닫힌 지 1시간) ${day}\n---\n\n계획서 ${plan.id} 를 이어 간다. 새 계획서를 만들지 않고 그 계획서의 Checkpoint 부터 본다.\n`,
+  }
+}

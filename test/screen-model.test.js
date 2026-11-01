@@ -135,6 +135,9 @@ test('agent_status: 표식 · 출력 정지 · agent 아님', () => {
   assert.equal(model.agentStatus({ agent: 'claude', screenLines: ['❯ '], lastOutputAt: now - 100, now }), 'working')
   assert.equal(model.agentStatus({ agent: 'claude', screenLines: ['❯ '], lastOutputAt: quiet, now }), 'idle')
   assert.equal(model.agentStatus({ agent: 'claude', screenLines: [], lastOutputAt: 0, now }), 'idle')
+  // 뒤에서 셸이 도는 맺음 줄 — 입력칸이 비고 조용해도 일하는 중. 맺음 줄 자리(맨 아래 3줄)에서만 · 대화 본문은 아니다
+  assert.equal(model.agentStatus({ agent: 'claude', screenLines: ['❯ ', '  📁 syung', '  ⏵⏵ auto mode on · 2 shells'], lastOutputAt: quiet, now }), 'working')
+  assert.equal(model.agentStatus({ agent: 'claude', screenLines: ['⏺ 측정 · 2 shells', '❯ ', 'a', 'b', '  ⏵⏵ auto mode on'], lastOutputAt: quiet, now }), 'idle')
   assert.equal(model.agentStatus({ agent: null, screenLines: working, lastOutputAt: now, now }), 'unknown')
   // 표식이 화면 위쪽(끝 8줄 밖)으로 밀려나면 보지 않는다
   const old = ['esc to interrupt', ...Array.from({ length: 8 }, (_, index) => `line ${index}`)]

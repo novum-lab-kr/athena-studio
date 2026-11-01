@@ -1,6 +1,6 @@
 # 사람에게 묻는 요청 (request)
 
-에이전트가 **사람의 판단이 있어야 넘어갈 수 있을 때** 남기는 기록이다. 현황판 · 스튜디오 앱의 "확인 필요" 는 이것만 센다 — Status 글자(`blocked` · `ready_for_review`)나 pane 상태로 "사람 차례"를 짐작하지 않는다.
+에이전트가 **사람의 판단이 있어야 넘어갈 수 있을 때** 남기는 기록이다. 현황판 · 스튜디오 앱의 "확인 필요" 는 이것만 센다 — Status 글자(`blocked` · `ready_for_review`)나 pane 상태로 "사람 차례"를 짐작하지 않는다. 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록 — 열린 요청이 있는 계획서는 [작업] 진행 중에 남는다.
 
 - 코드: `scripts/lib/requests.mjs` · 명령 `bin/athena request …`(아래) · 시험 `test/requests-test.sh`
 - 자리: 여러 팩 구조면 **팩 데이터 `state/requests/<id>.json`**(팩마다 따로 · 본체 링크를 늘리지 않는다), 옛 구조 본체면 `.requests/`

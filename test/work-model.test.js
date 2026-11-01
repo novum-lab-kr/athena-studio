@@ -7,11 +7,11 @@ const plan = (id, extra = {}) => ({ kind: 'plan', id, title: id, status: 'in_pro
 
 test('목록: 진행 중은 답 기다림 → 막힘 → 일하는 중 → 쉬는 중 · 같으면 최근 것 먼저', () => {
   const cards = [
-    plan('plans/task/idle.md', { mtime: NOW - 1000 }),
+    plan('plans/task/idle.md', { mtime: NOW - 1000, agents: ['p1'] }),
     plan('plans/task/work.md', { working: true }),
-    plan('plans/task/blocked.md', { status: 'blocked', blocked: '키가 없다' }),
+    plan('plans/task/blocked.md', { status: 'blocked', blocked: '키가 없다', agents: ['p2'] }),
     plan('plans/feature/wait.md', { grade: 'formal', status: 'planned', column: 'plan' }),
-    plan('plans/task/idle-old.md', { mtime: NOW - 99999 }),
+    plan('plans/task/idle-old.md', { mtime: NOW - 99999, agents: ['p3'] }),
   ]
   const result = work.workList(cards, [{ plan: 'plans/feature/wait.md' }], NOW)
   assert.deepEqual(result.doing.map((item) => item.state), ['wait', 'blocked', 'work', 'idle', 'idle'])
@@ -21,10 +21,25 @@ test('목록: 진행 중은 답 기다림 → 막힘 → 일하는 중 → 쉬�
   assert.equal(result.counts.doing, 5)
 })
 
+test('목록: 진행 중은 pane 이나 요청이 있을 때만 — 없으면 Status 와 상관없이 빠진다', () => {
+  const cards = [
+    plan('plans/task/none.md'),
+    plan('plans/task/blocked-none.md', { status: 'blocked', blocked: '키가 없다' }),
+    plan('plans/task/review-none.md', { status: 'ready_for_review', column: 'review' }),
+    plan('plans/task/idle-pane.md', { agents: ['p1'] }),
+    plan('plans/task/asked.md'),
+    plan('plans/task/done-pane.md', { status: 'done', column: 'done', agents: ['p2'], mtime: NOW - 1000 }),
+  ]
+  const result = work.workList(cards, [{ plan: 'plans/task/asked.md' }], NOW)
+  assert.deepEqual(result.doing.map((item) => item.id), ['plans/task/asked.md', 'plans/task/idle-pane.md'])
+  assert.equal(result.counts.doing, 2)
+  assert.deepEqual(result.done.map((item) => item.id), ['plans/task/done-pane.md'])
+})
+
 test('목록: 한 줄 요약 — 상태 메모 또는 다음 + 진행률', () => {
-  const [item] = work.workList([plan('plans/task/a.md', { next: 'web 맞추기', progress: { checked: 2, total: 3 } })], [], NOW).doing
+  const [item] = work.workList([plan('plans/task/a.md', { next: 'web 맞추기', progress: { checked: 2, total: 3 }, agents: ['p1'] })], [], NOW).doing
   assert.equal(item.line, 'web 맞추기 · 2/3')
-  const [noted] = work.workList([plan('plans/task/b.md', { statusNote: '리뷰 대기', next: '무시' })], [], NOW).doing
+  const [noted] = work.workList([plan('plans/task/b.md', { statusNote: '리뷰 대기', next: '무시', agents: ['p1'] })], [], NOW).doing
   assert.equal(noted.line, '리뷰 대기')
 })
 

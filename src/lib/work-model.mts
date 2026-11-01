@@ -88,7 +88,8 @@ export function workList(cards: unknown, requests: unknown = [], now: number = D
   }))
   // done 은 진행 중 묶음에 들지 않는다 — 칸을 채워 두는 것뿐
   const rank: Record<WorkState, number> = { wait: 0, blocked: 1, work: 2, idle: 3, done: 4 }
-  const doing = items.filter((item) => item.state !== 'done').sort((left, right) => rank[left.state] - rank[right.state] || right.mtime - left.mtime)
+  // 진행 중 = 지금 도는 일 + 내 답을 기다리는 일 — 열린 요청 · 일하는 pane · 묶인 pane(쉬는 중이어도 열려 있으면)이 있는 계획서만
+  const doing = items.filter((item) => item.state === 'wait' || item.state === 'work' || (item.state !== 'done' && item.agents.length > 0)).sort((left, right) => rank[left.state] - rank[right.state] || right.mtime - left.mtime)
   const done = items.filter((item) => item.state === 'done' && now - item.doneAt < RECENT_DONE_MS).sort((left, right) => right.doneAt - left.doneAt).slice(0, RECENT_DONE_MAX)
   return { doing, done, counts: { doing: doing.length } }
 }

@@ -55,7 +55,7 @@ import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
-import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, hasOpenSteps, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
@@ -295,7 +295,7 @@ const prInfo = async (repoName, number) => {
 
 // 계획서의 PR 이 전부 머지되면(GitHub state MERGED — 어느 base 든) 계획서를 자동으로 완료로. 하나라도 열려 있으면(OPEN·확인 실패) 그대로 둔다.
 // 머지 없이 닫힌 것(CLOSED — 취소·다른 PR 로 대체)은 판정에서 빼고, 머지된 PR 이 하나도 없으면 옮기지 않는다.
-// Progress 에 남은 단계(빈 칸 `- [ ]` — 맨 앞 칸 · 들여 쓴 하위 칸 모두)가 있으면 옮기지 않는다 — 단계 PR 사이 틈에 완료 · 보관되지 않게(plan-bind.mjs hasOpenSteps).
+// Progress 에 단계 칸(`N단계` · `(단계)` 표시 — 맨 앞 칸 · 들여 쓴 칸 모두)이 남아 있으면 옮기지 않는다 — 단계 PR 사이 틈에 완료 · 보관되지 않게(plan-bind.mjs hasOpenSteps).
 // 진행 중·리뷰 계획서만, Status 줄만 바꾼다(정식이면 html 사본도)
 // 학습 루프 5단계 — 내 계획서의 PR 이 모두 머지되면 배우기 검토자 대기열에 넣는다(scripts/learn-review.mjs).
 // 표시는 PR 번호 묶음(merged-<번호들>) — 계획서 "- Learn review:" 줄에 같은 표시가 있으면 learn-review 가 건너뛴다
@@ -331,6 +331,19 @@ const checkLearnJev = () => {
   }).catch((error) => console.error(`⚠️ Jev 학습 후보 점검 실패: ${error.message}`)).finally(() => { learnJevRunning = false })
 }
 
+// 일반 빈 칸을 남기고 자동 완료했으면 맡긴 아테나 pane 에 한 줄 — 수집이 끝난 뒤 보낸다(sendToPane 은 snapshot 의 pane 목록을 본다 · flushLeftover)
+const leftoverNotes = []
+const noteLeftover = (plan) => {
+  if (plan.progress?.open) leftoverNotes.push({ pane: plan.leadPane, text: `[현황판 → 아테나] ${plan.id} 자동 완료 — 남은 빈 칸 ${plan.progress.open}개` })
+}
+const flushLeftover = async () => {
+  for (const note of leftoverNotes.splice(0)) {
+    // Lead pane 이 닫혔거나 없으면 떠 있는 아테나 pane 으로
+    let result = note.pane ? await sendToPane(note.pane, note.text) : '맡긴 pane 없음'
+    if (typeof result === 'string') result = await sendToPane('hermes', note.text)
+    if (typeof result === 'string') console.log(`⚠️ 남은 칸 알림 실패: ${note.text} — ${result}`)
+  }
+}
 const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
 const autoDonePlans = async (plans) => {
   const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
@@ -342,11 +355,11 @@ const autoDonePlans = async (plans) => {
     }))
     const counted = infos.filter((info) => info.state !== 'CLOSED')
     if (!counted.length || counted.some((info) => info.state !== 'MERGED')) return
-    // 남은 단계(Progress 의 빈 칸 — 하위 칸 포함 · 2026-10-29)가 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
-    // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 칸을 다 채우거나 사람이 완료로 옮기면 그때 끝난다(plan-bind.mjs)
+    // 남은 단계 칸(`N단계` · `(단계)` 표시 — 2026-11-01)이 있으면 옮기지 않는다 — 단계마다 PR 을 나눠 올리는 계획서가 단계 PR 을 머지한 틈마다
+    // 완료(그 뒤 자동 보관)되던 것(2026-10-27). 일반 빈 칸은 막지 않고 Lead pane 에 알린다(plan-bind.mjs · noteLeftover)
     if (hasOpenSteps(plan.progress)) {
       const key = `${plan.id}@${mergedMark(counted)}`
-      if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 빈 칸 ${plan.progress.open}개`) }
+      if (!openStepsNoted.has(key)) { openStepsNoted.add(key); console.log(`⏸ 자동 완료 보류 ${plan.id} — PR 은 모두 머지됐지만 남은 단계 칸 ${plan.progress.steps}개`) }
       return
     }
     // 이 PR 묶음으로 이미 한 번 자동 완료했는데 지금 done 이 아니면 사람이 추가 요청으로 되돌린 것이다 — 새 PR 이 PR 줄에 들어오기 전까지 다시 덮지 않는다
@@ -363,6 +376,7 @@ const autoDonePlans = async (plans) => {
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
     plan.column = 'done'
+    noteLeftover(plan)
     enqueueLearn(plan.id, mergedMark(counted), counted)
   }))
   // PR 끔(바로 머지) 계획서 — PR 이 없다. "- Auto merge:" 줄이 같은 HEAD 의 머지 성공이면 완료(머지 확인 대기 · 사람이 직접 머지는 완료가 아니다 · lib/pr-auto.mjs directMergeStatus)
@@ -378,6 +392,7 @@ const autoDonePlans = async (plans) => {
     console.log(`✅ 자동 완료 ${plan.id} — ${reason}`)
     plan.status = 'done'
     plan.column = 'done'
+    noteLeftover(plan)
   }
   // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 그 PR 묶음을 배우지 않았으면(Learn review 줄에 지금 표시가 없음) 넣는다.
   // 줄이 있어도 이어 머지된 PR 이 생겼으면 표시가 달라 다시 넣는다(자동 보관이 그 표시를 기다린다 — autoArchive)
@@ -394,15 +409,15 @@ const autoDonePlans = async (plans) => {
   }))
 }
 
-// 자동 완료한 계획서에 Progress 빈 칸이 새로 생기면 진행 중으로 되돌린다(plan-bind.mjs needsAutoReopen — 사람이 옮긴 done · 보관은 건드리지 않는다)
+// 자동 완료한 계획서에 Progress 단계 칸이 새로 생기면 진행 중으로 되돌린다(plan-bind.mjs needsAutoReopen — 사람이 옮긴 done · 보관은 건드리지 않는다)
 const autoReopenPlans = (plans) => {
   for (const plan of plans) {
     if (plan.archived || plan.status !== 'done') continue
     const text = readText(join(ROOT, plan.id)) || ''
     if (!needsAutoReopen(text, plan.status, plan.archived, plan.progress)) continue
-    const error = setPlanStatus(plan.id, 'in_progress', `자동 완료 뒤 Progress 에 빈 칸 ${plan.progress.open}개가 생겨 되돌림`, '', true)
+    const error = setPlanStatus(plan.id, 'in_progress', `자동 완료 뒤 Progress 에 단계 칸 ${plan.progress.steps}개가 생겨 되돌림`, '', true)
     if (error) { console.log(`⚠️ 자동 완료 되돌리기 실패 ${plan.id}: ${error}`); continue }
-    console.log(`↩️ 자동 완료 되돌림 ${plan.id} — Progress 빈 칸 ${plan.progress.open}개`)
+    console.log(`↩️ 자동 완료 되돌림 ${plan.id} — Progress 단계 칸 ${plan.progress.steps}개`)
     plan.status = 'in_progress'
     plan.column = 'doing'
   }
@@ -464,6 +479,53 @@ const autoReviewPlans = async (plans) => {
       console.log(`🤖 자동 리뷰 대기열 ${plan.id} · ${link} @${info.head.slice(0, 7)}`)
     }
   }))
+}
+
+// 묶인 pane 이 닫힌 지 1시간이 지난 계획서 → 그 계획서를 가리키는 open 이슈(plan-bind.mjs nextPaneWatch · followUpDue). 계획서 Status 는 바꾸지 않고 Issue 줄만 잇는다.
+// 닫힌 시각은 현황판을 다시 켜도 남게 파일에 — 바뀔 때만 쓴다
+const PANE_WATCH_FILE = BOOT_PACK ? join(BOOT_PATHS.state, 'plan-panes.json') : join(ROOT, '.board-plan-panes.json')
+let paneWatch = (() => { try { return JSON.parse(readFileSync(PANE_WATCH_FILE, 'utf8')) } catch { return {} } })()
+// 계획서 기준 레포 — Agent 의 담당 레포, 없으면(정식) Work ref 경로의 레포, 코어 자체 작업은 athena
+const planRepo = (plan) => {
+  const agent = plain(field(checkpointOf(readText(join(ROOT, plan.id)) || ''), 'Agent'))
+  const target = workspaceOf(agent)
+  if (target) return target.repo
+  if (plan.scope === 'hermes') return 'athena'
+  return config.repos.find((repo) => plan.workRefs.includes(`/${repo.name}/`))?.name ?? ''
+}
+const openFollowUpIssue = (plan) => {
+  const issue = followUpIssue(plan, planRepo(plan), stamp().slice(0, 10))
+  const id = `issues/${issue.name}`
+  try {
+    writeFileSync(join(ROOT, id), issue.text, { flag: 'wx' })
+    // 계획서 Issue 줄로 잇는다 — 이슈 카드에 합쳐져 [작업 시작] 이 이 계획서를 이어 간다(Status 는 그대로)
+    updatePlan(join(ROOT, plan.id), (text) => (/^- Issue:.*$/m.test(text) ? text.replace(/^- Issue:.*$/m, `- Issue: ${id}`) : text.replace(/^(- Status:.*)$/m, `$1\n- Issue: ${id}`)))
+  } catch (error) {
+    return error.message
+  }
+  console.log(`📌 이어 갈 이슈 ${id} — ${plan.id} 의 묶인 pane 이 닫힌 지 1시간`)
+  return null
+}
+const followUpClosedPlans = (plans, issues, now) => {
+  const next = nextPaneWatch(paneWatch, plans, now)
+  let changed = next.changed
+  paneWatch = next.watch
+  const hasIssue = (plan) => Boolean(plan.issue) || issues.some((issue) => issue.plan === plan.id)
+  const candidates = plans.filter((plan) => followUpDue(paneWatch[plan.id], now, { hasRequest: false, hasIssue: hasIssue(plan) }))
+  if (candidates.length) {
+    // 요청은 후보가 있을 때만 읽는다(잠금을 잡는다) — 못 읽으면 요청이 있는지 모르니 이번에는 만들지 않는다
+    let waiting = null
+    try { waiting = new Set(listRequests(ROOT).requests.map((request) => request.links?.plan).filter(Boolean)) } catch (error) { console.log(`⚠️ 이어 갈 이슈 — 요청을 읽지 못했다: ${error.message}`) }
+    for (const plan of candidates) {
+      if (!waiting || waiting.has(plan.id)) continue
+      const error = openFollowUpIssue(plan)
+      if (error) console.log(`⚠️ 이어 갈 이슈를 만들지 못했다 ${plan.id}: ${error}`)
+      // 닫힘 한 번에 하나 — 실패해도 매 3초 다시 시도하지 않는다
+      delete paneWatch[plan.id]
+      changed = true
+    }
+  }
+  if (changed) { try { writeAtomic(PANE_WATCH_FILE, JSON.stringify(paneWatch)) } catch (error) { console.log(`⚠️ pane 닫힌 시각을 적지 못했다: ${error.message}`) } }
 }
 
 // 끝난 일 자동 보관(archive.mjs — 2026-10-26 결정 D4) — 이어서 쓸 일이 없을 때 그 자리에서 보관한다.
@@ -872,6 +934,8 @@ const collect = async () => {
       for (const list of [plans, issues]) for (let index = list.length - 1; index >= 0; index -= 1) if (archived.has(list[index].id)) list.splice(index, 1)
     }
   }
+  // pane 이 닫혔는지 알 때만 — 팩을 갈아 끼운 뒤 남은 현황판은 쓰지 않는다. 만든 이슈는 다음 수집에 카드로 올라온다
+  if (available && !staleGeneration()) followUpClosedPlans(plans, issues, now)
   // 이슈에 연결된 계획서는 카드를 따로 만들지 않고 이슈 카드 안에 합친다 — 같은 일이 두 장으로 보이지 않게
   const merged = new Set()
   for (const issue of issues) {
@@ -906,12 +970,14 @@ const refreshOnce = async () => {
   if (collectMs > 1500) console.log(`⚠️ 현황판 재계산 ${collectMs}ms`)
   checkLearnJev()
   const hash = createHash('sha1').update(JSON.stringify(state)).digest('hex')
-  if (hash === snapshotHash) return
-  snapshot = state
-  snapshotHash = hash
-  updatedAt = Date.now()
-  const payload = `data: ${JSON.stringify({ ...snapshot, updatedAt, boot: BOOT })}\n\n`
-  for (const client of clients) client.write(payload)
+  if (hash !== snapshotHash) {
+    snapshot = state
+    snapshotHash = hash
+    updatedAt = Date.now()
+    const payload = `data: ${JSON.stringify({ ...snapshot, updatedAt, boot: BOOT })}\n\n`
+    for (const client of clients) client.write(payload)
+  }
+  await flushLeftover()
 }
 // 갱신은 한 번에 하나 — 수집이 3초보다 오래 걸려도 겹치지 않게(먼저 시작한 낡은 수집이 나중 것을 덮거나 자동 완료·학습 대기열을 두 번 돌리지 않게).
 // 도는 중에 요청이 오면(카드 이동 등) 끝난 뒤 한 번 더 돈다. 3초 주기는 도는 중이면 건너뛴다. 오류는 남기고 서버는 계속 돈다
