@@ -797,6 +797,9 @@ export const directMergeStatus = (planText) => {
   }
   return { state: 'done', why: `바로 머지됨 ${[...heads.keys()].join(' · ')}`, mark: `merged-direct-${marks.sort().join('-')}` }
 }
+// PR 과 "- Auto merge:" 기록이 함께 있는 계획서 — PR 이 모두 머지됐어도 바로 머지 쪽이 아직 끝나지 않았으면(머지 확인 대기 등) 완료로 보지 않는다.
+// Auto merge 줄이 없는 계획서(directMergeStatus none)는 건드리지 않는다. 현황판 autoDonePlans 의 PR 갈래가 부른다
+export const prDoneHeldByDirect = (planText) => directMergeStatus(planText).state === 'wait'
 // 바로 머지 커밋 글 — squash 한 줄 제목(계획서 제목)과 브랜치
 export const directMergeMessage = ({ title, branch, base }) => `${oneLine(title || branch, 120)}\n\n${branch} → ${base} 바로 머지(PR 없음 · squash)`
 // 바로 머지 결과를 작업 pane 에 — 알림만

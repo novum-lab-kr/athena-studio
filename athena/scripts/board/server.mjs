@@ -49,7 +49,7 @@ import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
-import { autoMergeRepos, autoReviewAction, directMergeStatus, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
+import { autoMergeRepos, autoReviewAction, directMergeStatus, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
@@ -351,6 +351,8 @@ const autoDonePlans = async (plans) => {
     }
     // 이 PR 묶음으로 이미 한 번 자동 완료했는데 지금 done 이 아니면 사람이 추가 요청으로 되돌린 것이다 — 새 PR 이 PR 줄에 들어오기 전까지 다시 덮지 않는다
     const planText = readText(join(ROOT, plan.id)) || ''
+    // PR 과 바로 머지 기록이 섞인 계획서 — 바로 머지 쪽(새 작업)이 머지 확인 대기 등이면 PR 이 모두 머지됐어도 아직 끝이 아니다
+    if (prDoneHeldByDirect(planText)) return
     if (autoDoneDone(planText, mergedMark(counted)) && !autoReopenedFor(planText, mergedMark(counted))) return
     // 마지막으로 머지된 PR 을 사유에 적는다
     const last = counted.reduce((latest, info) => (info.mergedAt > latest.mergedAt ? info : latest))

@@ -139,6 +139,11 @@ check('머지 확인 대기 → 완료 아님', directMergeStatus(directPlan(com
 check('브랜치까지만(사람이 직접 머지) → 완료 아님', directMergeStatus(directPlan(commitLine, mergeLine('브랜치까지만 — 사람이 직접 머지'))).state === 'wait')
 check('검증 대기 → 완료 아님', directMergeStatus(directPlan(commitLine, mergeLine('검증 대기 — 같은 HEAD 검증 없음'))).state === 'wait')
 check('머지 뒤 새 커밋이 생기면 완료 아님(HEAD 불일치)', directMergeStatus(directPlan(commitLine, '- 2026-11-01 11:00 · web · 🌿 feat/x · `9999999aaa` — fix: 또', mergeLine('머지됨 — squash → main @def5678(PR 없음)'))).state === 'wait')
+// PR 과 바로 머지 기록이 섞인 계획서(2026-11-01 Codex 리뷰) — server.mjs autoDonePlans 의 PR 갈래가 부르는 판정. 기존 PR 은 머지됐어도 새 작업이 머지 확인 대기면 완료로 보지 않는다
+const { prDoneHeldByDirect } = await import(modPath.replace('board/plan-bind.mjs', 'lib/pr-auto.mjs'))
+check('PR + Auto merge(머지 확인 대기) 섞임 → PR 이 머지돼도 완료 보류', prDoneHeldByDirect(directPlan(commitLine, mergeLine('머지 확인 대기'))) === true)
+check('PR + Auto merge(머지됨) 섞임 → 보류 아님(둘 다 끝남)', prDoneHeldByDirect(directPlan(commitLine, mergeLine('머지됨 — squash → main @def5678(PR 없음)'))) === false)
+check('Auto merge 줄 없는 PR 계획서 → 보류 아님(동작 그대로)', prDoneHeldByDirect(directPlan(commitLine)) === false)
 check('Auto merge 줄이 없으면 none(PR 쪽 판정에 맡김)', directMergeStatus(directPlan(commitLine)).state === 'none')
 check('다른 브랜치의 머지 줄만 있으면 완료 아님', directMergeStatus(directPlan(commitLine, '- Auto merge: web feat/other @abc1234 · 머지됨 — squash → main @def5678(PR 없음) · 2026-11-01 10:05')).state === 'wait')
 check('merged-direct 표시도 자동 완료 표시로 인식(완료 → 재개 판정이 같은 길)', autoDoneMark(`- Auto done: 자동 — 시험 (${merged.mark})`) === merged.mark && autoDoneDone(`- Auto done: 자동 — 시험 (${merged.mark})`, merged.mark))

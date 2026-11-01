@@ -413,6 +413,7 @@ if data.get("mergeable") == "CONFLICTING" and data.get("baseRefName"): print(dat
     RED_BODY="$(git -C "$TOP" rev-parse --absolute-git-dir)/hermes-pr-body.auto.md"
     red_check_body "$BODY_FILE" "$RED_BODY" && check_body "$RED_BODY" && BODY_FILE="$RED_BODY"
   fi
+  pr_off_check   # red-check 를 기다리는 사이 설정이 PR 끔으로 바뀌었을 수 있다 — 본문 고침 · push 직전에 다시
   LOCK="$(git -C "$TOP" rev-parse --git-dir)/hermes-commit.lock"
   mkdir "$LOCK" 2>/dev/null || fail "커밋이 진행 중이다($LOCK) — 끝난 뒤 다시"
   trap 'rmdir "$LOCK" 2>/dev/null' EXIT

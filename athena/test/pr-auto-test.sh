@@ -1109,7 +1109,7 @@ cat > "$FBIN/gh" <<'SH'
 #!/bin/sh
 echo "gh $*" >> "$FAKE_LOG"
 case "$1 $2" in
-  "pr list") [ -z "${FAKE_OPEN_URL:-}" ] || echo "$FAKE_OPEN_URL" ;;
+  "pr list") if [ -n "${FAKE_PR_NUMBER:-}" ]; then echo "$FAKE_PR_NUMBER"; else [ -z "${FAKE_OPEN_URL:-}" ] || echo "$FAKE_OPEN_URL"; fi ;;
   "pr create") echo "https://github.com/acme/web/pull/8" ;;
   *) exit 1 ;;
 esac
@@ -1183,6 +1183,22 @@ OUT="$(guard_ship --auto-push)"; CODE=$?
 expect "PR 끔 + --auto-push 도 같은 가드(PR 이 없는 레포라 올릴 곳이 없다)" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포"' "$OUT"
 OUT="$(guard_ship --repo-agent web-fe)"; CODE=$?
 expect "PR 끔 + --repo-agent(여러 레포 경로)도 일반 PR 이면 막힌다" '[ $CODE != 0 ] && ! grep -q "gh pr create" "$FLOG"' "$OUT"
+
+# --auto-push 중 red-check 를 기다리는 사이 설정이 PR 끔으로 바뀌면 실제 push 직전에 다시 막는다(2026-11-01 Codex 리뷰)
+echo g4 > "$WTY/g.txt" && G -C "$WTY" add g.txt && G -C "$WTY" commit -q -m g4
+GS4="$(git -C "$WTY" rev-parse HEAD)"
+followup_plan 'in_progress' "$GS4"
+sed -i.bak 's/머지됨 — squash → dev/수정 필요/' "$CORE/$FPLAN" && rm -f "$CORE/$FPLAN.bak"
+guard_config ', "autoMerge": true, "redCheck": { "tests": ["**/*.test.js"] }'; : > "$FLOG"
+cp "$CORE/scripts/verify/red-check.sh" "$TMP/red-check.sh.orig"
+cat > "$CORE/scripts/verify/red-check.sh" <<SH
+#!/bin/sh
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev", "autoMerge": true, "autoPr": false, "redCheck": { "tests": ["**/*.test.js"] } }] }\n' > "$CORE/athena.config.json"
+echo '{"result":"pass","text":"✅ pass — 시험용"}'
+SH
+OUT="$(FAKE_PR_NUMBER=7 guard_ship --auto-push)"; CODE=$?
+expect "--auto-push 중 red-check 도중 PR 끔으로 바뀌면 push 직전에 막힌다" '[ $CODE != 0 ] && echo "$OUT" | grep -q "PR 을 끈 레포" && [ "$(git -C "$TMP/origin.git" rev-parse --verify -q refs/heads/feat/y)" != "$GS4" ]' "$OUT"
+cp "$TMP/red-check.sh.orig" "$CORE/scripts/verify/red-check.sh"
 
 # ── PR 끔: PR 없이 바로 머지(autoMerge + "autoPr": false) — 가짜 원격(bare) · gh 없음 · 진짜 GitHub 를 건드리지 않는다 ─────────
 # 안전 조건은 PR 머지와 같다 — 같은 HEAD 엄격 검증은 어떤 설정에서도 돈다(끄는 설정이 없다): 검증 스크립트가 없거나 · 실패하거나 · 건너뛰면 머지하지 않고 실패로 알린다
