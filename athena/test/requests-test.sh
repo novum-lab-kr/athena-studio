@@ -198,6 +198,37 @@ mv bin/athena bin/athena.real; printf '#!/bin/sh\necho nope >&2; exit 1\n' > bin
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< "$ASK_EVENT" > "$WORK/ask-fail.out"
 mv bin/athena.real bin/athena
 check "요청을 못 열면 막지 않고 알린다 + events.jsonl 에 request-hook-failed" 'grep -q additionalContext "$WORK/ask-fail.out" && ! grep -q permissionDecision "$WORK/ask-fail.out" && grep request-hook-failed "$EV" | tail -1 | grep -q "pack.:.acme"' "$(cat "$WORK/ask-fail.out")"
+# 아테나 pane(인자 lead · ATHENA_AGENT 없음) — 안 보고 있을 때만 요청. 화면 계층은 시험에서 가짜로 바꿔 끼운다
+lead_ask() { # $1=pane 포커스(true|false|error|nopane)
+  python3 - "$1" <<'PYLEAD'
+import sys, io, json, os, importlib.util
+os.environ.pop('ATHENA_PLAN', None)  # 아테나 세션에는 계획서 환경이 없다
+mode = sys.argv[1]
+sys.argv = ['ask-to-request.py', 'lead']
+spec = importlib.util.spec_from_file_location('hook', 'scripts/hooks/ask-to-request.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.caller_pane = lambda: '' if mode == 'nopane' else 'pt1'
+class Backend:
+    def get_pane(self, pane):
+        if mode == 'error': raise RuntimeError('x')
+        return {'focused': mode == 'true'}
+m.screen.get_backend = lambda: Backend()
+sys.stdin = io.StringIO(os.environ['ASK_EVENT'])
+m.main()
+PYLEAD
+}
+export ASK_EVENT
+rm -f .pack-data/state/pane-sessions/pt1.json
+BEFORE_LEAD="$(ls "$DIR" | wc -l)"
+for mode in true error nopane; do lead_ask $mode > "$WORK/ask-lead-$mode.out"; done
+check "아테나 pane — 보고 있으면 · 포커스를 모르면 · pane 을 모르면 고르기 창 그대로(요청 0 · 출력 없음)" '[ "$(ls "$DIR" | wc -l)" = "$BEFORE_LEAD" ] && [ ! -s "$WORK/ask-lead-true.out" ] && [ ! -s "$WORK/ask-lead-error.out" ] && [ ! -s "$WORK/ask-lead-nopane.out" ]'
+lead_ask false > "$WORK/ask-lead-false.out"
+check "아테나 pane — 안 보고 있으면 질문마다 요청(2개) + 도구 막기" '[ "$(( $(ls "$DIR" | wc -l) - BEFORE_LEAD ))" = 2 ] && grep -q "\"permissionDecision\": \"deny\"" "$WORK/ask-lead-false.out"' "$(cat "$WORK/ask-lead-false.out")"
+LQ="$(python3 -c 'import json,sys,re; print(re.findall(r"r-\d{8}-\d{6}-\w{4}", json.load(open(sys.argv[1]))["hookSpecificOutput"]["permissionDecisionReason"])[0])' "$WORK/ask-lead-false.out")"
+check "계획서 없는 요청이 pane(pt1)에 묶여 열린다" 'A request show "$LQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; sys.exit(0 if r[\"state\"]==\"open\" and not r[\"links\"].get(\"plan\") and r.get(\"pane\")==\"pt1\" else 1)"' "$(A request show "$LQ")"
+check "답은 [작업] 경로 그대로 — answered → ack → delivered" '[ "$(A request answer "$LQ" --by app --choice "A 안" | field request.state)" = answered ] && [ "$(A request ack "$LQ" | field request.state)" = delivered ]'
+BEFORE_DUP="$(ls "$DIR" | wc -l)"
+ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py lead <<< "$ASK_EVENT" > "$WORK/ask-dup.out"
+check "에이전트 세션에서는 lead 설정이 건너뛴다(두 설정이 겹쳐도 한 번만 열림)" '[ ! -s "$WORK/ask-dup.out" ] && [ "$(ls "$DIR" | wc -l)" = "$BEFORE_DUP" ]'
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
 check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
 

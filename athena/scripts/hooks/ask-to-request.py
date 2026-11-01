@@ -5,7 +5,11 @@
 무엇을: 질문마다 `bin/athena request open --kind question` 을 열고(계획서 = ATHENA_PLAN · pane = 부른 pane) 도구는 막는다.
   돌려주는 안내(permissionDecisionReason)가 에이전트에게 간다 — 답은 `[요청 <id>] … 답:` 으로 이 pane 에 오고, 받으면 request ack.
 요청 형식이 못 담는 것: 여러 개 고르기(multiSelect)는 단일 선택 + 메모로(본문에 안내), 선택지 미리보기(preview)는 본문 끝에 붙인다, 직접 입력(Other)은 팝업의 메모칸이 맡는다.
-대상: ATHENA_AGENT 가 있는 세션(위임 에이전트)만. 아테나 pane 은 사람과 직접 대화하니 그대로 둔다. 요청을 열지 못하면 막지 않고 원래 고르기 창을 그대로 둔다(항상 exit 0).
+대상 둘(인자로 가른다 — 같은 세션에 두 설정이 겹쳐 실려도 요청이 두 번 열리지 않게):
+  - 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) — 항상 요청으로 바꾼다
+  - 아테나 pane(인자 `lead` · ATHENA_AGENT 없음 · 본체 .claude/settings.json) — 사용자가 그 pane 을 안 보고 있을 때만(화면 계층 pane get 의 focused 가 거짓).
+    보고 있거나 · 포커스를 모르거나 · pane 을 모르면 고르기 창을 그대로 둔다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
+요청을 열지 못하면 막지 않고 원래 고르기 창을 그대로 둔다(항상 exit 0).
 """
 import json
 import os
@@ -49,11 +53,21 @@ def plan_of(pane: str) -> str:
     return os.environ.get('ATHENA_PLAN') or ''
 
 
+def pane_unwatched(pane: str) -> bool:
+    """사용자가 그 pane 을 안 보고 있다고 확인된 때만 참 — 화면 계층 focused(창의 보는 pane). 모르면(조회 실패 · 값 없음) 거짓 = 고르기 창을 그대로 둔다"""
+    if not pane:
+        return False
+    try:
+        return screen.get_backend().get_pane(pane).get('focused') is False
+    except Exception:
+        return False
+
+
 def log_failure(reason: str) -> None:
     """훅이 요청을 못 열었다는 흔적 — 기존 사건 기록 진입점(scripts/lib/events.mjs)으로 한 줄 남긴다(pack · 시각 형식이 같다). 기록 실패는 무시"""
     try:
         subprocess.run(['node', str(ATHENA_DIR / 'scripts' / 'lib' / 'events.mjs'), 'request-hook-failed',
-                        f"agent={os.environ.get('ATHENA_AGENT') or ''}", f'reason={reason[:300]}'],
+                        f"agent={os.environ.get('ATHENA_AGENT') or 'athena'}", f'reason={reason[:300]}'],
                        capture_output=True, text=True, timeout=10)
     except Exception:
         pass
@@ -119,14 +133,17 @@ def open_request(question: dict, pane: str):
 
 
 def main() -> None:
-    if not os.environ.get('ATHENA_AGENT'):
-        return
+    lead = sys.argv[1:2] == ['lead']
+    if lead == bool(os.environ.get('ATHENA_AGENT')):
+        return  # 아테나 설정(lead)은 에이전트 세션에서, 에이전트 설정은 아테나 세션에서 건너뛴다(같은 세션에 둘 다 실려도 한 번만)
     event = json.load(sys.stdin)
     questions = [item for item in (event.get('tool_input') or {}).get('questions') or [] if isinstance(item, dict) and str(item.get('question') or '').strip()]
     if not questions:
         return
     ids = []
     pane = caller_pane()
+    if lead and not pane_unwatched(pane):
+        return
     try:
         for question in questions:
             ids.append(open_request(question, pane))
