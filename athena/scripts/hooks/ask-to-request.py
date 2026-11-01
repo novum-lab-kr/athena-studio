@@ -7,50 +7,24 @@
 요청 형식이 못 담는 것: 여러 개 고르기(multiSelect)는 단일 선택 + 메모로(본문에 안내), 선택지 미리보기(preview)는 본문 끝에 붙인다, 직접 입력(Other)은 팝업의 메모칸이 맡는다.
 대상 둘(인자로 가른다 — 같은 세션에 두 설정이 겹쳐 실려도 요청이 두 번 열리지 않게):
   - 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) — 항상 요청으로 바꾼다
-  - 아테나 pane(인자 `lead` · ATHENA_AGENT 없음 · 본체 .claude/settings.json) — 사용자가 그 pane 을 안 보고 있을 때만(화면 계층 pane get 의 focused 가 거짓).
-    보고 있거나 · 포커스를 모르거나 · pane 을 모르면 고르기 창을 그대로 둔다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
+  - 아테나 pane(인자 `lead` · ATHENA_AGENT 없음 · 본체 .claude/settings.json) — 사용자가 그 pane 을 안 보고 있으면(화면 계층 pane get 의 focused 가 거짓) 위임 에이전트처럼 요청으로 바꾸고 도구는 막는다.
+    보고 있거나 · 포커스를 모르면 pane 의 고르기 창은 그대로 두고 [작업] 에도 같이 올린다(막으면 보던 사람이 바로 못 고른다). 그때는 pane 에서 고르면 요청을 저절로 거두고(뒤에서 도는 지킴이 pane_request.py close),
+    [작업] 에서 먼저 고르면 답은 pane 의 창이 닫힌 뒤에 들어간다(창이 떠 있는 동안은 현황판이 글을 넣지 않는다 — pane-delivery.mjs). pane 을 모르면 가리킬 곳이 없어 올리지 않는다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
 요청을 열지 못하면 막지 않고 원래 고르기 창을 그대로 둔다(항상 exit 0).
 """
 import json
 import os
 import pathlib
-import re
 import subprocess
 import sys
 import tempfile
 
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
-import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
+import pane_request  # noqa: E402 — pane 알아내기 · 계획서 · 지킬 때의 규칙은 두 훅(고르기 · 권한)이 같이 쓴다
+from pane_request import caller_pane, log_failure, plan_of, screen  # noqa: E402,F401 — screen: 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
 
 RECOMMENDED = '(Recommended)'
-PANE_ID = re.compile(r'^[\w-]{1,32}$')
-
-
-def pack_state():
-    pack_data = ATHENA_DIR / '.pack-data'
-    return pack_data.resolve() / 'state' if pack_data.is_symlink() else None
-
-
-def caller_pane() -> str:
-    try:
-        pane = str(screen.self_info().get('pane_id') or '')
-    except Exception:
-        return ''
-    return pane if PANE_ID.match(pane) else ''
-
-
-def plan_of(pane: str) -> str:
-    """계획서 — pane 기록(이어 보내기로 바뀐 계획서도 따라간다)을 먼저, 없으면 환경 ATHENA_PLAN (agent-done-notify.py 와 같은 순서)"""
-    base = pack_state()
-    if base and pane:
-        try:
-            plan = json.loads((base / 'pane-sessions' / f'{pane}.json').read_text(encoding='utf-8')).get('plan')
-            if plan:
-                return str(plan)
-        except Exception:
-            pass
-    return os.environ.get('ATHENA_PLAN') or ''
 
 
 def pane_unwatched(pane: str) -> bool:
@@ -63,16 +37,6 @@ def pane_unwatched(pane: str) -> bool:
         return False
 
 
-def log_failure(reason: str) -> None:
-    """훅이 요청을 못 열었다는 흔적 — 기존 사건 기록 진입점(scripts/lib/events.mjs)으로 한 줄 남긴다(pack · 시각 형식이 같다). 기록 실패는 무시"""
-    try:
-        subprocess.run(['node', str(ATHENA_DIR / 'scripts' / 'lib' / 'events.mjs'), 'request-hook-failed',
-                        f"agent={os.environ.get('ATHENA_AGENT') or 'athena'}", f'reason={reason[:300]}'],
-                       capture_output=True, text=True, timeout=10)
-    except Exception:
-        pass
-
-
 def clean_label(label: str):
     """Claude Code 는 추천 선택지 라벨 끝에 '(Recommended)' 를 붙이게 한다 — 떼고 추천으로 표시한다."""
     text = str(label or '').strip()
@@ -81,8 +45,12 @@ def clean_label(label: str):
     return text, False
 
 
-def body_of(question: dict) -> str:
-    lines = []
+WATCHED_NOTE = ('지금 그 pane 에도 같은 고르기 창이 떠 있어요. pane 에서 고르면 이 요청은 저절로 닫혀요. '
+                '여기서 먼저 고르면 pane 의 창을 닫은 뒤에 전달돼요(창이 떠 있는 동안은 글이 들어가지 않아요).')
+
+
+def body_of(question: dict, watched: bool = False) -> str:
+    lines = [WATCHED_NOTE, ''] if watched else []
     header = str(question.get('header') or '').strip()
     if header:
         lines.append(f'[{header}]')
@@ -95,7 +63,7 @@ def body_of(question: dict) -> str:
     return '\n'.join(lines)
 
 
-def open_request(question: dict, pane: str):
+def open_request(question: dict, pane: str, watched: bool = False):
     options, recommend = [], None
     for option in question.get('options') or []:
         if not isinstance(option, dict):
@@ -108,7 +76,7 @@ def open_request(question: dict, pane: str):
         if is_recommended and recommend is None:
             recommend = label
     with tempfile.NamedTemporaryFile('w', suffix='.md', delete=False, encoding='utf-8') as handle:
-        handle.write(body_of(question))
+        handle.write(body_of(question, watched))
         body_file = handle.name
     try:
         command = [str(ATHENA_DIR / 'bin' / 'athena'), 'request', 'open', '--kind', 'question', '--title', str(question.get('question') or '').strip(),
@@ -142,11 +110,13 @@ def main() -> None:
         return
     ids = []
     pane = caller_pane()
-    if lead and not pane_unwatched(pane):
-        return
+    # 아테나 pane — 안 보고 있으면 요청으로 바꾸고 막는다. 보고 있거나 포커스를 모르면 pane 창은 두고 [작업] 에도 올린다(막지 않는다)
+    watched = lead and not pane_unwatched(pane)
+    if watched and not pane:
+        return  # pane 을 모르면 창이 닫힌 것을 알아볼 수 없어 요청이 남는다 — 올리지 않는다
     try:
         for question in questions:
-            ids.append(open_request(question, pane))
+            ids.append(open_request(question, pane, watched))
     except Exception as error:
         log_failure(str(error))
         # 일부만 열렸으면 거둔다 — 원래 고르기 창이 그대로 뜨니 같은 질문이 두 곳에 남지 않게
@@ -156,9 +126,14 @@ def main() -> None:
                                capture_output=True, text=True, timeout=30)
             except Exception as cancel_error:
                 log_failure(f'요청 {request_id} 거두기 실패: {cancel_error}')
+        if watched:
+            return  # pane 창은 어차피 그대로 — 올리지 못한 것은 흔적(request-hook-failed)으로만 남긴다
         # 막지 않고 원래 고르기 창을 둔다 — 스튜디오 [작업] 에는 안 올라갔다는 것을 에이전트에게 알린다(이유는 events.jsonl 에도 남았다)
         notice = '질문을 스튜디오 [작업] 에 올리지 못했다(요청 열기 실패) — 이 고르기 창에는 사람이 pane 에서 답한다. 답이 늦으면 아테나에 알린다.'
         print(json.dumps({'hookSpecificOutput': {'hookEventName': 'PreToolUse', 'additionalContext': notice}}, ensure_ascii=False))
+        return
+    if watched:
+        pane_request.spawn(['close', pane, *ids])  # 창은 그대로 — pane 에서 고르면 요청을 거둔다
         return
     listed = ' · '.join(ids)
     reason = (f'질문을 스튜디오 [작업] 에 올렸다(요청 {listed}). 사람이 거기서 고르면 답이 `[요청 <id>] … 답:` 으로 이 pane 에 온다 — 받으면 바로 '

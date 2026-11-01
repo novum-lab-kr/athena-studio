@@ -212,15 +212,24 @@ class Backend:
         if mode == 'error': raise RuntimeError('x')
         return {'focused': mode == 'true'}
 m.screen.get_backend = lambda: Backend()
+m.pane_request.spawn = lambda args: open(os.environ['SPAWN_LOG'], 'a').write(' '.join(map(str, args)) + '\n')  # 지킴이는 띄우지 않고 인자만 적는다
 sys.stdin = io.StringIO(os.environ['ASK_EVENT'])
 m.main()
 PYLEAD
 }
-export ASK_EVENT
+export ASK_EVENT SPAWN_LOG="$WORK/spawn.log"
 rm -f .pack-data/state/pane-sessions/pt1.json
 BEFORE_LEAD="$(ls "$DIR" | wc -l)"
-for mode in true error nopane; do lead_ask $mode > "$WORK/ask-lead-$mode.out"; done
-check "아테나 pane — 보고 있으면 · 포커스를 모르면 · pane 을 모르면 고르기 창 그대로(요청 0 · 출력 없음)" '[ "$(ls "$DIR" | wc -l)" = "$BEFORE_LEAD" ] && [ ! -s "$WORK/ask-lead-true.out" ] && [ ! -s "$WORK/ask-lead-error.out" ] && [ ! -s "$WORK/ask-lead-nopane.out" ]'
+lead_ask nopane > "$WORK/ask-lead-nopane.out"
+check "아테나 pane — pane 을 모르면 고르기 창 그대로(요청 0 · 출력 없음 · 지킴이 없음)" '[ "$(ls "$DIR" | wc -l)" = "$BEFORE_LEAD" ] && [ ! -s "$WORK/ask-lead-nopane.out" ] && [ ! -e "$WORK/spawn.log" ]'
+for mode in true error; do lead_ask $mode > "$WORK/ask-lead-$mode.out"; done
+check "아테나 pane — 보고 있어도 · 포커스를 몰라도 질문마다 요청(4개)을 열고 pane 창은 안 막는다(출력 없음)" '[ "$(( $(ls "$DIR" | wc -l) - BEFORE_LEAD ))" = 4 ] && [ ! -s "$WORK/ask-lead-true.out" ] && [ ! -s "$WORK/ask-lead-error.out" ]'
+WQ="$(A request list | python3 -c "import json,sys; rs=[r for r in json.load(sys.stdin)['requests'] if r['title']=='어느 방식으로 할까요?']; print(rs[0]['id'])")"
+check "보고 있을 때 요청 — pane(pt1)에 묶이고 글에 pane 에도 떠 있다는 안내" 'A request show "$WQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; sys.exit(0 if r[\"pane\"]==\"pt1\" and \"pane 에도 같은 고르기 창\" in r[\"body\"] and [o[\"label\"] for o in r[\"options\"]]==[\"A 안\",\"B 안\"] else 1)"'
+check "pane 창이 닫히면 요청을 거두는 지킴이를 띄운다(close pt1 + 요청 번호 2개)" '[ "$(($(wc -l < "$WORK/spawn.log")))" = 2 ] && grep -q "^close pt1 r-.* r-" "$WORK/spawn.log"' "$(cat "$WORK/spawn.log" 2>/dev/null)"
+for WID in $(A request list | python3 -c "import json,sys; print(' '.join(r['id'] for r in json.load(sys.stdin)['requests'] if r['pane']=='pt1' and r['links'].get('plan') is None and r['state']=='open'))"); do A request cancel "$WID" > /dev/null; done
+rm -f "$WORK/spawn.log"
+BEFORE_LEAD="$(ls "$DIR" | wc -l)"
 lead_ask false > "$WORK/ask-lead-false.out"
 check "아테나 pane — 안 보고 있으면 질문마다 요청(2개) + 도구 막기" '[ "$(( $(ls "$DIR" | wc -l) - BEFORE_LEAD ))" = 2 ] && grep -q "\"permissionDecision\": \"deny\"" "$WORK/ask-lead-false.out"' "$(cat "$WORK/ask-lead-false.out")"
 LQ="$(python3 -c 'import json,sys,re; print(re.findall(r"r-\d{8}-\d{6}-\w{4}", json.load(open(sys.argv[1]))["hookSpecificOutput"]["permissionDecisionReason"])[0])' "$WORK/ask-lead-false.out")"
@@ -231,6 +240,79 @@ ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py lead <<< "
 check "에이전트 세션에서는 lead 설정이 건너뛴다(두 설정이 겹쳐도 한 번만 열림)" '[ ! -s "$WORK/ask-dup.out" ] && [ "$(ls "$DIR" | wc -l)" = "$BEFORE_DUP" ]'
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
 check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
+
+section "권한 확인 창 알림(scripts/hooks/permission-to-request.py · scripts/lib/pane_request.py)"
+# 훅 — 결정을 돌려주지 않고(출력 없음) 지킴이만 띄운다. 화면 계층 · 지킴이는 시험에서 가짜로 바꿔 끼운다
+PERM_EVENT='{"hook_event_name":"PermissionRequest","tool_name":"Write","tool_input":{"file_path":"/tmp/x/plans/task/a.md","content":"SECRET_BODY_TEXT"}}'
+export PERM_EVENT
+perm_hook() { # $1=lead|agent $2=pane('' 이면 모름)
+  python3 - "$1" "$2" <<'PYPERM'
+import sys, io, os, importlib.util
+mode, pane = sys.argv[1], sys.argv[2]
+sys.argv = ['permission-to-request.py'] + (['lead'] if mode == 'lead' else [])
+if mode == 'agent': os.environ['ATHENA_AGENT'] = 'athena-studio-fe'
+else: os.environ.pop('ATHENA_AGENT', None)
+spec = importlib.util.spec_from_file_location('hook', 'scripts/hooks/permission-to-request.py'); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.pane_request.caller_pane = lambda: pane
+def record(args):
+    open(os.environ['SPAWN_LOG'], 'a').write(' '.join(map(str, args)) + '\n')
+    open(os.environ['SPAWN_LOG'] + '.payload', 'w').write(open(args[1]).read())
+m.pane_request.spawn = record
+sys.stdin = io.StringIO(os.environ['PERM_EVENT'])
+m.main()
+PYPERM
+}
+rm -f "$WORK/spawn.log" "$WORK/spawn.log.payload"
+perm_hook agent pg1 > "$WORK/perm-agent.out"
+check "에이전트 세션 — 출력 없음(허용 · 거부를 정하지 않는다) + 지킴이 한 번" '[ ! -s "$WORK/perm-agent.out" ] && [ "$(($(wc -l < "$WORK/spawn.log")))" = 1 ] && grep -q "^permission " "$WORK/spawn.log"' "$(cat "$WORK/perm-agent.out")"
+check "지킴이에 넘긴 글에는 파일 경로만 있고 쓸 내용(content)은 없다" 'grep -q "plans/task/a.md" "$WORK/spawn.log.payload" && ! grep -q SECRET_BODY_TEXT "$WORK/spawn.log.payload"'
+perm_hook lead pg0 > "$WORK/perm-lead.out"
+check "아테나 pane(lead) — 출력 없음 + 지킴이" '[ ! -s "$WORK/perm-lead.out" ] && [ "$(($(wc -l < "$WORK/spawn.log")))" = 2 ]'
+BEFORE_SPAWN="$(($(wc -l < "$WORK/spawn.log")))"
+perm_hook agent "" > "$WORK/perm-nopane.out"
+check "pane 을 모르면 올리지 않는다" '[ "$(($(wc -l < "$WORK/spawn.log")))" = "$BEFORE_SPAWN" ] && [ ! -s "$WORK/perm-nopane.out" ]'
+# 지킴이 — 가짜 화면(읽을 때마다 정해 둔 순서로 창이 떠 있다/없다)
+perm_watch() { # $1=창 순서(예 "1 1 0 0") $2=명령 문구 $3=중간에 [작업] 에서 답하나(yes|no)
+  python3 - "$1" "$2" "$3" <<'PYWATCH'
+import sys, os, json, tempfile
+sys.path.insert(0, 'scripts/lib')
+import pane_request as pr
+seq = [int(x) for x in sys.argv[1].split()]
+command, answer_mid = sys.argv[2], sys.argv[3] == 'yes'
+pr.GRACE_SECONDS = 0; pr.POLL_SECONDS = 0.05
+MENU = 'Do you want to make this edit to a.md?\n 1. Yes\n 2. Yes, allow all edits\n 3. No\n Esc to cancel'
+answered = []
+class Backend:
+    def get_pane(self, pane): return {'focused': True}
+    def read(self, pane, options):
+        value = seq.pop(0) if len(seq) > 1 else seq[0]
+        if answer_mid and len(seq) == 1 and not answered:
+            answered.append(1)
+            for request in pr.athena(['request', 'list']).get('requests', []):
+                if request['title'].startswith('pg1'): pr.athena(['request', 'answer', request['id'], '--by', 'app', '--text', '확인'])
+        return MENU if value else '❯ 입력 대기\n'
+pr.screen.get_backend = lambda: Backend()
+os.environ['ATHENA_AGENT'] = 'athena-studio-fe'
+pr.SEEN_WAIT_SECONDS = 0
+with tempfile.NamedTemporaryFile('w', suffix='.json', delete=False) as handle:
+    json.dump({'pane': 'pg1', 'event': {'tool_name': 'Bash', 'tool_input': {'command': command}}}, handle)
+pr.watch_permission(handle.name)
+if answer_mid: pr.GIVE_UP_SECONDS = 0
+print('payload-deleted' if not os.path.exists(handle.name) else 'payload-left')
+PYWATCH
+}
+perm_list() { A request list --all | python3 -c "import json,sys; print(json.dumps([r for r in json.load(sys.stdin)['requests'] if r['title'].startswith('pg1')]))"; }
+perm_count() { perm_list | python3 -c "import json,sys; print(len(json.load(sys.stdin)))"; }
+PBEFORE="$(perm_count)"
+perm_watch "0" "ls" no > "$WORK/pw1.out"
+check "몇 초 안에 닫힌 창(분류기 자동 허용 등)은 요청을 열지 않는다 + 임시 글 지움" '[ "$(perm_count)" = "$PBEFORE" ] && grep -q payload-deleted "$WORK/pw1.out"'
+perm_watch "1 1 1 0 0 0" "export API_TOKEN=abcd1234efgh5678ijkl && npm publish" no > "$WORK/pw2.out"
+check "창이 그대로면 요청이 열리고(pane pg1 · 쉬운 말 제목) 창이 닫히면 저절로 거둔다" 'perm_list | python3 -c "import json,sys; rs=json.load(sys.stdin)[$PBEFORE:]; r=rs[0]; sys.exit(0 if len(rs)==1 and r[\"state\"]==\"cancelled\" and r[\"pane\"]==\"pg1\" and \"허용 확인 대기\" in r[\"title\"] and \"명령 실행\" in r[\"title\"] and r[\"dedupeKey\"]==\"perm:pg1\" and not r[\"options\"] else 1)"' "$(perm_list)"
+check "요청 글 — 비밀값은 가려지고 허용 · 거부는 여기서 못 한다는 안내" 'perm_list | python3 -c "import json,sys; b=json.load(sys.stdin)[$PBEFORE][\"body\"]; sys.exit(0 if \"abcd1234efgh5678ijkl\" not in b and \"***\" in b and \"허용 · 거부를 할 수 없어요\" in b and \"athena-studio-fe\" in b else 1)"' "$(perm_list)"
+PBEFORE2="$(perm_count)"
+perm_watch "1 1 1" "ls" yes > "$WORK/pw3.out"
+check "[작업] 에서 먼저 답하면 거두지 않는다(answered 로 남아 전달을 기다린다)" 'perm_list | python3 -c "import json,sys; r=json.load(sys.stdin)[$PBEFORE2]; sys.exit(0 if r[\"state\"]==\"answered\" else 1)"' "$(perm_list)"
+check "권한 알림은 pane 에 키를 보내거나 허용을 돌려주지 않는다(코드에 send_keys · send_text · permissionDecision · behavior 없음)" '! grep -q "send_keys\|send_text\|permissionDecision\|behavior" scripts/hooks/permission-to-request.py scripts/lib/pane_request.py'
 
 section "사용법 · 약속"
 node scripts/athena.mjs request open --title x --json > /dev/null 2>&1; check "종류 없으면 사용법 오류(2)" '[ $? -eq 2 ]'

@@ -45,6 +45,9 @@ check("reviewer — secret-guard · process-guard 만(commit-guard · ask-to-req
 reviewer = settings("inline", "reviewer")
 check("reviewer — 끝 알림 · 자동 압축 없음", "Stop" not in reviewer["hooks"] and "autoCompactWindow" not in reviewer)
 fe = settings("inline", "fe")
+for agent in ("fe", "reviewer"):
+    for mode in ("inline", "context"):
+        check(f"{agent} — {mode} 에 권한 확인 알림(PermissionRequest) 훅", commands(settings(mode, agent)["hooks"].get("PermissionRequest", [])) == ["permission-to-request.py"])
 check("fe — 끝 알림(prompt · stop)", [c for c in commands(fe["hooks"]["UserPromptSubmit"]) if c.startswith("agent-done-notify")] != [] and "Stop" in fe["hooks"])
 # 팩 permissionsAllow — 키가 없으면 permissions 칸이 없고, 있으면 그 레포 담당 에이전트에게만 두 경로 모두 들어간다
 for mode in ("inline", "context"):

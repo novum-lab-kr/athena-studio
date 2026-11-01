@@ -84,6 +84,8 @@ if agent != "reviewer":
         settings["autoCompactWindow"] = window
 else:
     settings["hooks"] = guard
+# 권한 확인 창 → [작업] 알림 — reviewer 포함 모든 에이전트 (scripts/hooks/permission-to-request.py)
+settings["hooks"]["PermissionRequest"] = agent_hooks.permission_request(hermes)
 # 대화 압축 전후 — 직전에 계획서 Checkpoint 에 상태 한 줄, 직후에 계획서부터 다시 읽게 (scripts/hooks/compact-checkpoint.py)
 compact_hook = f"python3 {script('scripts/hooks/compact-checkpoint.py')}"
 settings["hooks"]["PreCompact"] = [{"hooks": [{"type": "command", "command": f"{compact_hook} pre"}]}]

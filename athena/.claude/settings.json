@@ -91,6 +91,16 @@
           }
         ]
       }
+    ],
+    "PermissionRequest": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$CLAUDE_PROJECT_DIR/scripts/hooks/permission-to-request.py\" lead"
+          }
+        ]
+      }
     ]
   }
 }

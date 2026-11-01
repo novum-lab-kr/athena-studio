@@ -1,7 +1,7 @@
 """위임 에이전트에 거는 Claude 훅 설정의 한 곳 — delegate.sh(본체 안 작업) 와 agent-context.py(워크트리 등 본체 밖 작업)가 같이 쓴다.
 
 훅을 더하거나 바꿀 때는 여기만 고친다. 두 경로가 각자 목록을 만들면 한쪽만 고친 뒤 다른 경로로 뜬 에이전트에는 훅이 안 걸린다.
-reviewer 는 읽기 전용이라 commit-guard · 고르기 질문 · 끝 알림 · 자동 압축에서 빠지고 secret-guard · process-guard 만 건다.
+reviewer 는 읽기 전용이라 commit-guard · 고르기 질문 · 끝 알림 · 자동 압축에서 빠지고 secret-guard · process-guard 만 건다(권한 확인 알림은 reviewer 도 건다).
 
 CLI(delegate.sh): python3 agent_hooks.py inline <출력 json> <athena 루트> <에이전트>  — 본체 안(프로젝트 설정이 실리는 곳)용 settings 전체
 """
@@ -27,6 +27,11 @@ def pre_tool_use(hermes, agent):
     if agent != "reviewer":
         entries.append({"matcher": "AskUserQuestion", "hooks": [hook(hermes, "scripts/hooks/ask-to-request.py")]})
     return entries
+
+
+def permission_request(hermes):
+    """권한 확인 창 → [작업] 알림(permission-to-request.py) — reviewer 포함 모든 에이전트. 허용 · 거부는 하지 않고 창을 알리기만 한다"""
+    return [{"hooks": [hook(hermes, "scripts/hooks/permission-to-request.py")]}]
 
 
 def pane_session(hermes):
@@ -66,6 +71,7 @@ def inline_settings(hermes, agent):
     notify_prompt, notify_stop = done_notify(hermes, agent)
     hooks = {
         "PreToolUse": pre_tool_use(hermes, agent),
+        "PermissionRequest": permission_request(hermes),
         "SessionStart": [{"hooks": [pane_session(hermes)]}],
         "UserPromptSubmit": [{"hooks": [pane_session(hermes)] + notify_prompt}],
     }
