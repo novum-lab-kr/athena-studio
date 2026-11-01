@@ -142,6 +142,13 @@ waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'; sleep 8
 check "빌드는 끝날 때까지 자리를 쥠" '[ -s "$ATHENA_HEAVY_LOCK/what" ] && ! grep -q "개발 서버 시작 끝" "$TMP/j.log"'
 kill $(jobs -p) 2>/dev/null; sleep 1
 
+echo "npm run start:dev 도 개발 서버로 본다"
+new_lock l
+( "$SRC/scripts/heavy.sh" npm run start:dev > "$TMP/l.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/l.log" 2>/dev/null && break; sleep 0.5; done
+check "start:dev 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/l.log"'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
 echo "기다린 시간·이유를 안쪽 명령에 넘긴다"
 new_lock k
 run_bg 6 "$TMP/k1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'

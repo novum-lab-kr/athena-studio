@@ -255,9 +255,9 @@ verify_changed_files() {
   merge_base="$(verify_merge_base "$repo" "$top")"
   [ -n "$merge_base" ] || status=1
   {
-    [ -n "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only "$merge_base" HEAD
-    git -c core.quotePath=false -C "$top" diff --name-only --cached
-    git -c core.quotePath=false -C "$top" diff --name-only
+    [ -n "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only --no-renames "$merge_base" HEAD
+    git -c core.quotePath=false -C "$top" diff --name-only --no-renames --cached
+    git -c core.quotePath=false -C "$top" diff --name-only --no-renames
     # 미추적 .omc/(OMC 상태 폴더 — 워크트리마다 생긴다)는 바뀐 파일이 아니다. 세면 범위가 전체로 넓어진다(2026-11-01). 이미 추적하는 .omc/ 파일(.omc/skills)은 위 diff 로 그대로 센다
     git -c core.quotePath=false -C "$top" ls-files --others --exclude-standard --full-name | grep -v '^\.omc/'
   } | sort -u | sed "s#^#$top/#"
@@ -303,10 +303,13 @@ verify_scope_init() { # verify_scope_init <레포> — 지금 폴더(레포 안)
 }
 
 # ── 문서만 고친 수정 ───────────────────────────────────────────────────────
+# 이름 바꾸기는 --no-renames 로 원본·새 이름을 모두 센다(a.ts → a.md 가 문서로만 보이면 원본 삭제가 빠진다 — 삭제된 파일이 있으면 전체).
 # 문서 = 확장자 md · mdx · markdown · txt · rst — 단, 도구가 읽는 자리(.claude · .github · scripts · test(s) · fixtures · templates · prompts)는 문서가 아니다(모호하면 지금처럼 돈다).
 # 레포별 정적 문서 = 팩 pack.json repos[].staticDocs(경로 정규식 배열 · 트리 맨 위 기준) — 예: syung ["^web/privacy\\.html$"] (vite.config.mts copyStatic 이 web/ 의 코드 아닌 파일을 그대로 복사한다)
 VERIFY_DOCS_RE='\.(md|mdx|markdown|txt|rst)$'
-VERIFY_DOCS_TOOL_DIR_RE='(^|/)(\.claude|\.github|scripts|tests?|__tests__|fixtures|templates?|prompts?)/'
+VERIFY_DOCS_TOOL_DIR_RE='(^|/)(\.claude|\.github|scripts|tests?|__tests__|fixtures|templates?|prompts?)/|(^|/)docs/knowledge/'
+# 시험 · 빌드 · 코어 시험이 읽는 md 는 문서가 아니다: CHANGELOG.md(package-mac 이 싣고 release-files 가 절을 읽는다) · athena/AGENTS.md · athena/CLAUDE.md(코어 시험이 사본을 만든다) · athena/docs/plan-template-light.md(new-plan.mjs 가 읽고 board-auto-test 가 글자를 비교한다) · docs/knowledge/(learn-review 가 learning.md 를 읽는다)
+VERIFY_DOCS_READ_RE='^(CHANGELOG\.md|athena/(AGENTS|CLAUDE)\.md|athena/docs/plan-template-light\.md)$'
 
 verify_pack_static_docs() { # verify_pack_static_docs <레포> — 팩 pack.json 의 그 레포 staticDocs 를 한 줄에 하나(없으면 빈 줄)
   local pack_json="$VERIFY_LIB_DIR/../../pack/pack.json"
@@ -321,7 +324,7 @@ verify_scope_docs_only() {
   while IFS= read -r file; do
     [ -n "$file" ] || continue
     [ -e "$top/$file" ] || return 1   # 지운 파일은 무엇이 깨졌는지 몰라 지금처럼 돈다
-    if printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_RE" && ! printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_TOOL_DIR_RE"; then continue; fi
+    if printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_RE" && ! printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_TOOL_DIR_RE" && ! printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_READ_RE"; then continue; fi
     matched=1
     while IFS= read -r extra; do
       [ -n "$extra" ] || continue

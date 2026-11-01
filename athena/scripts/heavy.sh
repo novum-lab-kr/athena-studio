@@ -167,7 +167,7 @@ case "$DEV_START" in ''|*[!0-9]*) DEV_START=60 ;; esac
 descendants() {
   ps -axo pid=,ppid= | awk -v root="$1" '{parent[$1]=$2} END{for (pid in parent) {node=pid; while ((node in parent) && node != 1 && node != 0) {if (parent[node] == root) {print pid; break} node = parent[node]}}}'
 }
-# 개발 서버 명령인가 — 첫 낱말이 next·npm·pnpm·yarn·bun·npx·vite 이고, next 는 dev, 패키지 관리자는 낱말 dev(npm run dev · pnpm dev · pnpm --filter x dev), vite 는 build·optimize·preview 가 없을 때.
+# 개발 서버 명령인가 — 첫 낱말이 next·npm·pnpm·yarn·bun·npx·vite 이고, next 는 dev, 패키지 관리자는 낱말 dev(npm run dev · npm run start:dev · pnpm dev · pnpm --filter x dev), vite 는 build·optimize·preview 가 없을 때.
 # 모르면 개발 서버가 아니다(자리를 계속 쥔다 — 예전 그대로)
 is_dev_server() {
   local first word has_dev=0 has_next=0 has_vite=0 has_other=0
@@ -175,7 +175,7 @@ is_dev_server() {
   case "$first" in next|npm|pnpm|yarn|bun|npx|pnpx|vite) ;; *) return 1 ;; esac
   for word in "$@"; do
     case "$word" in
-      dev) has_dev=1 ;;
+      dev|start:dev) has_dev=1 ;;
       next) has_next=1 ;;
       vite) has_vite=1 ;;
       build|optimize|preview|install|test|ci|add|remove) has_other=1 ;;

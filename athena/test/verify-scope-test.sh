@@ -212,6 +212,27 @@ check "pack.json 이 없으면 정적 파일은 문서가 아님 → scoped" "$(
 echo '{ "repos": [{ "name": "demo", "staticDocs": ["^web/privacy\\.html$"] }] }' > "$CORE/pack/pack.json"
 reset_tree
 
+# 시험·빌드·코어 시험이 읽는 md 는 문서가 아니다(엄격 검증이 낮아지면 안 된다)
+echo '- 항목' >> "$WORK/CHANGELOG.md"
+check "CHANGELOG.md 만 바뀜 → docs 아님(package-mac · release-files 가 읽는다)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+mkdir -p "$WORK/athena/docs/knowledge/common"; echo '기준' >> "$WORK/athena/docs/knowledge/common/learning.md"
+check "athena/docs/knowledge/ 아래 md → docs 아님(learn-review 가 읽는다)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+echo '규칙' >> "$WORK/athena/AGENTS.md"
+check "athena/AGENTS.md → docs 아님(코어 시험이 사본을 만든다)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+mkdir -p "$WORK/athena/docs"; echo '틀' >> "$WORK/athena/docs/plan-template-light.md"
+check "athena/docs/plan-template-light.md → docs 아님(new-plan.mjs · board-auto-test 가 읽는다)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+mkdir -p "$WORK/athena/docs"; echo '설명' >> "$WORK/athena/docs/guide.md"
+check "athena/docs/ 의 일반 md 는 그대로 docs" "$([ "$(docscope)" = docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+git -C "$WORK" mv src/a.js src/a.md
+check "a.js → a.md 이름 바꾸기 → 원본이 지워진 것으로 봐 docs 아님" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+git -C "$WORK" reset -q --hard
+reset_tree
+
 # 끝까지 — 검증 스크립트 흉내: 문서만이면 verify_scope_init 이 요약까지 내고 끝낸다(아래 단계는 돌지 않는다)
 cat > "$TMP/fake-verify.sh" <<'FAKE'
 source "$1/scripts/verify/_lib.sh"
@@ -223,6 +244,10 @@ finish() { (cd "$WORK" && ATHENA_VERIFY_STRICT=1 VERIFY_RECORD=0 bash "$TMP/fake
 echo '문장 추가' >> "$WORK/README.md"
 RESULT="$(finish)"
 check "문서만 → 파일 점검 통과 · 시험 단계는 돌지 않음 · 종료 0 (엄격 모드에서도)" "$([[ "$RESULT" == *'문서 파일 점검'*'✅'* && "$RESULT" == *'건너뜀(규칙)'* && "$RESULT" != *'시험이 돌면 안 된다'* && "$RESULT" == *rc=0 ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+echo '- 항목' >> "$WORK/CHANGELOG.md"
+RESULT="$(finish)"
+check "CHANGELOG.md 수정은 엄격 모드에서도 시험 단계가 돈다(건너뛰지 않음)" "$([[ "$RESULT" == *'시험이 돌면 안 된다'* && "$RESULT" != *'문서 파일 점검'* ]] && echo 0 || echo 1)" "$RESULT"
 reset_tree
 printf '<<<<<<< HEAD\n내용\n>>>>>>> x\n' > "$WORK/README.md"
 RESULT="$(finish)"
