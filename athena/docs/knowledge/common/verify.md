@@ -30,7 +30,7 @@
 - 엄격 모드에서는 기록에 건너뜀(⏭, 규칙 건너뜀 제외)이 있으면 그 단계가 모두 `--allow-skip` 에 있을 때만 재사용한다
 - 꼭 다시 돌려야 하면 `reuse.sh` 대신 `scripts/verify/<레포>.sh` 를 부른다
 
-**사건 기록** — 실제로 돈 검증은 `verify` 사건 한 줄(`docs/events.md` · 재사용은 남기지 않는다)로 남고, 끝에 `plan`(환경 `ATHENA_PLAN` — `delegate.sh` 로 띄운 pane 과 `commit.sh --plan` 의 검증에는 차 있고 사람이 직접 돌리면 빈 값) · `ms`(`_lib.sh` 를 source 한 때부터 — `heavy.sh` 줄서기는 빠진다) · `scope`(scoped · full)가 붙는다. 현황판 [지표] 탭 · `scripts/metrics.mjs` 의 "검증" 구간이 이 `ms` 를 계획서마다 합한 것이다. pane 밖에서 돌린 검증을 계획서에 넣고 싶으면 `ATHENA_PLAN=plans/… scripts/verify/<레포>.sh`
+**사건 기록** — 실제로 돈 검증은 `verify` 사건 한 줄(`docs/events.md` · 재사용은 남기지 않는다)로 남고, 끝에 `plan`(환경 `ATHENA_PLAN` — `delegate.sh` 로 띄운 pane 과 `commit.sh --plan` 의 검증에는 차 있고 사람이 직접 돌리면 빈 값) · `ms`(`_lib.sh` 를 source 한 때부터 — `heavy.sh` 줄서기는 빠진다) · `scope`(scoped · full · docs)와 `wait_ms` · `wait_why`(줄서기 시간·마지막 이유 — `ms` 에는 안 들어간다)가 붙는다. 검증 요약 끝에도 `⏳ 줄서기 N초 — 마지막 이유` 한 줄이 남는다(`| tail` · `grep` 으로 걸러도 결과에 남는다). 현황판 [지표] 탭 · `scripts/metrics.mjs` 의 "검증" 구간이 이 `ms` 를 계획서마다 합한 것이다. pane 밖에서 돌린 검증을 계획서에 넣고 싶으면 `ATHENA_PLAN=plans/… scripts/verify/<레포>.sh`
 
 **계획서 Validation 줄** — 실제로 돈 검증은 `ATHENA_PLAN` 이 `plans/…md` 이고 그 파일이 있으면 Validation 절에 `- <시각> <레포> @<sha> 통과|실패 N (<범위> · <초>초) — <인자>` 한 줄을 스스로 적는다(`scripts/lib/plan_autofill.py` · 바로 위가 같은 레포 · sha · 결과면 안 적는다 · 재사용은 안 적는다). 보고의 "검증 결과" 표는 그대로 보고에 붙인다.
 
@@ -86,6 +86,9 @@ scripts/heavy.sh node scripts/qa/run.mjs --service <서비스> [--cwd <워크트
 
 - 대상: `pnpm/npm install` · `next build` · `next dev` · `tsc` · 테스트 · `relay` · `pkg:link/unlink` · `docker build` — 앞에 `<athena>/scripts/heavy.sh` 를 붙여 돌린다
 - 한 대 공용 잠금 **자리 2개**(`ATHENA_HEAVY_SLOTS` 기본 2 · 1 이면 예전처럼 하나 · 1번 `/tmp/hermes-heavy.lock` · 2번 `.lock.2`) — 빈 자리를 잡고 둘 다 차면 기다린다. **둘째 자리는 메모리 여유가 `ATHENA_HEAVY_SECOND_FREE` %(기본 40) 이상이고 1분 부하가 `ATHENA_HEAVY_MAX_LOAD`(기본 = 코어 수) 미만일 때만** 잡고 아니면 첫 자리를 기다린다(못 읽으면 안 잡는다 · 이유는 "부하 N / 코어 M — 둘째 자리 대기" 로 보인다). `xcodebuild` 는 코어를 다 쓰니 `-jobs <코어 절반>` 처럼 코어 일부만 쓰게 한다(2026-10-30 xcodebuild + 검증이 겹쳐 부하 124). 대기 메시지에 자리마다 누가 쓰는지 나온다. 자리마다 137 안전장치 · what/root 기록이 그대로다. 시험 `athena/test/heavy-test.sh`
+- **개발 서버는 시작하는 동안만 자리를 쓴다** — 첫 낱말이 `next`·`npm`·`pnpm`·`yarn`·`bun`·`npx`·`vite` 이고 `next dev` · `npm run dev`(낱말 `dev`) · `vite`(build·optimize·preview 없음)면 개발 서버로 보고, 자손이 TCP 포트를 열었거나(= 요청에 답할 수 있다 — `qa/run.mjs` 가 서버를 "URL 이 답할 때" 시작 끝으로 보는 것과 같은 기준) `ATHENA_HEAVY_DEV_START` 초(기본 60)가 지나면 자리를 놓고 "▶ 개발 서버 시작 끝" 을 찍는다. **감시(자식 300개 · 메모리 15% → 137)는 놓은 뒤에도 끝까지** 간다. 모르는 명령은 예전처럼 끝날 때까지 쥔다. 끄려면 `ATHENA_HEAVY_DEV_RELEASE=0`
+- 기다린 시간·마지막 이유는 안쪽 명령에 `ATHENA_HEAVY_WAIT_SEC` · `ATHENA_HEAVY_WAIT_WHY` 로 넘어가 검증이 결과·사건 기록에 남긴다
+- **문서만 고친 수정**(바뀐 파일이 모두 `.md`·`.mdx`·`.markdown`·`.txt`·`.rst` — 단 `.claude/` `.github/` `scripts/` `test(s)/` `fixtures/` `templates/` `prompts/` 아래는 문서가 아니다 — 이거나 팩 `pack.json` `repos[].staticDocs`(경로 정규식 배열) 에 맞는 정적 파일)은 시험·빌드를 건너뛰고 `scripts/verify/docs-check.mjs` 로 읽기 · UTF-8 · NUL · 충돌 표시만 본다(`scope=docs`). 지운 파일이 있거나 하나라도 아니면 지금처럼 돈다 · `--full` 은 전체
 - 1분 부하가 코어×1.2 를 넘으면 내려갈 때까지 대기, 끝나거나 실패해도 잠금을 푼다
 - **도는 동안 감시해서** 자식 프로세스가 300개를 넘거나 메모리 여유가 15% 아래면 그 명령과 자식을 모두 끄고 137 로 끝낸다 — 그러면 폭주한 것이니 원인을 찾기 전에는 다시 돌리지 않고 알린다
 - 검증 스크립트(`scripts/verify/*.sh`) · `commit.sh` 검증은 스스로 줄을 선다. 기다리는 동안은 코드 작업을 먼저 하고, `next dev` 는 확인이 끝나면 바로 끈다(잠금을 쥐고 있다)

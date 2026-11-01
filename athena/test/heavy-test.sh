@@ -112,4 +112,44 @@ new_lock e; echo 80 > "$TMP/free"
 waitfor '[ -s "$TMP/e.code" ]'
 check "메모리 여유가 MIN_FREE 아래로 떨어지면 137" '[ "$(cat "$TMP/e.code" 2>/dev/null)" = 137 ]'
 
+
+echo "개발 서버는 시작하는 동안만 자리를 쓴다 (포트를 열면 놓고, 감시는 계속)"
+new_lock i; export ATHENA_HEAVY_SLOTS=1; echo 80 > "$TMP/free"
+# 가짜 개발 서버 — next dev / npm run build 라는 이름으로 불리면 TCP 포트를 열고 오래 돈다
+for fake in next npm; do
+  cat > "$TMP/bin/$fake" <<'FAKE'
+#!/bin/sh
+exec node -e "require('net').createServer().listen(0); setTimeout(() => {}, 120000)"
+FAKE
+  chmod +x "$TMP/bin/$fake"
+done
+( ATHENA_HEAVY_MIN_FREE=50 "$SRC/scripts/heavy.sh" next dev > "$TMP/i.log" 2>&1; echo $? > "$TMP/i.code" ) &
+waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+check "개발 서버가 자리를 잡고 시작함" 'grep -q "next dev" "$ATHENA_HEAVY_LOCK/what"'
+waitfor '[ ! -e "$ATHENA_HEAVY_LOCK" ]'; for _ in $(seq 1 40); do [ ! -e "$ATHENA_HEAVY_LOCK" ] && break; sleep 0.5; done
+check "포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/i.log"'
+ATHENA_HEAVY_WAIT=3 "$SRC/scripts/heavy.sh" true > "$TMP/i2.log" 2>&1; code=$?
+check "개발 서버가 도는 중에도 다른 명령이 바로 돎" '[ "$code" = 0 ] && [ ! -s "$TMP/i.code" ]'
+echo 10 > "$TMP/free"
+for _ in $(seq 1 30); do [ -s "$TMP/i.code" ] && break; sleep 0.5; done
+check "자리를 놓은 뒤에도 감시가 계속 — 메모리 여유가 떨어지면 137" '[ "$(cat "$TMP/i.code" 2>/dev/null)" = 137 ]'
+echo 80 > "$TMP/free"
+
+echo "개발 서버가 아닌 명령(npm run build)은 포트를 열어도 자리를 쥔다"
+new_lock j
+( "$SRC/scripts/heavy.sh" npm run build > "$TMP/j.log" 2>&1 ) &
+waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'; sleep 8
+check "빌드는 끝날 때까지 자리를 쥠" '[ -s "$ATHENA_HEAVY_LOCK/what" ] && ! grep -q "개발 서버 시작 끝" "$TMP/j.log"'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
+echo "기다린 시간·이유를 안쪽 명령에 넘긴다"
+new_lock k
+run_bg 6 "$TMP/k1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+ATHENA_HEAVY_WAIT=30 "$SRC/scripts/heavy.sh" bash -c 'echo "WAIT_SEC=$ATHENA_HEAVY_WAIT_SEC"; echo "WAIT_WHY=$ATHENA_HEAVY_WAIT_WHY"' > "$TMP/k2.log" 2>&1
+check "ATHENA_HEAVY_WAIT_SEC 가 기다린 초" 'grep -Eq "^WAIT_SEC=[1-9][0-9]*$" "$TMP/k2.log"'
+check "ATHENA_HEAVY_WAIT_WHY 에 자리를 쥔 쪽이 남음" 'grep -q "^WAIT_WHY=.*자리1: .*sleep" "$TMP/k2.log"'
+ATHENA_HEAVY_WAIT=30 "$SRC/scripts/heavy.sh" bash -c 'echo "WAIT_SEC=$ATHENA_HEAVY_WAIT_SEC"' > "$TMP/k3.log" 2>&1
+check "안 기다리면 0" 'grep -qx "WAIT_SEC=0" "$TMP/k3.log"'
+export ATHENA_HEAVY_SLOTS=2
+
 [ "$FAIL" = 0 ] && echo "전부 통과" || { echo "실패 있음"; exit 1; }

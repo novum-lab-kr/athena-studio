@@ -47,11 +47,11 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)
-  - 무거운 명령 줄서기(`athena/scripts/heavy.sh` 자리 · 메모리 여유 · CPU 부하 조건 · `scripts/lib/packs.mjs` · `server.mjs` 의 잠금 읽기)를 고쳤으면 `test/heavy-test.sh`(약 60초 · 임시 잠금 경로 · 가짜 memory_pressure · 가짜 sysctl 부하)
+  - 무거운 명령 줄서기(`athena/scripts/heavy.sh` 자리 · 메모리 여유 · CPU 부하 조건 · `scripts/lib/packs.mjs` · `server.mjs` 의 잠금 읽기)를 고쳤으면 `test/heavy-test.sh`(약 80초 · 임시 잠금 경로 · 가짜 memory_pressure · 가짜 sysctl 부하 · 가짜 개발 서버 — 개발 서버 자리 놓기 · 대기 시간 환경값)
   - 지문 생성(`athena/scripts/sync-fingerprint.mjs` — 기준 ref 없는 레포 건너뛰기 · pending 정리)을 고쳤으면 `test/sync-fingerprint-test.sh`(몇 초 · 임시 레포 · 네트워크 없음)
   - 역할마다 모델(`scripts/lib/models.mjs` · `athena_config.py` `model_of` · `delegate.sh` `--model` · 팩 `models`)을 고쳤으면 `test/models-test.sh`(몇 초 · 진짜 claude 를 부르지 않는다)
   - red-check(`scripts/red-check.mjs` · `scripts/lib/red-check.mjs` · `scripts/verify/red-check.sh` · `ship.sh` 의 red-check 연결)를 고쳤으면 `test/red-check-test.sh`(몇 초 · 가짜 레포 · 가짜 gh)
-  - 검증 범위 판정(`athena/scripts/verify/_lib.sh` `verify_scope_*` · `verify_key` · `scope-tests.mjs`)을 고쳤으면 `test/verify-scope-test.sh`(몇 초 · 임시 git 레포)
+  - 검증 범위 판정(`athena/scripts/verify/_lib.sh` `verify_scope_*` · `verify_key` · `scope-tests.mjs`)을 고쳤으면 `test/verify-scope-test.sh`(몇 초 · 임시 git 레포 · 문서만 고친 수정 판정 `verify_scope_docs_only` · `docs-check.mjs` · 대기 칸 `wait_ms`)
   - 검증의 코어 시험 동시 실행 · 통과 기록(`athena/scripts/verify/_lib.sh` `run_steps_parallel` · `verify_parallel_jobs` · `core-test-pass.sh` · `athena/test/_lib.sh` 의 기록)을 고쳤으면 `test/verify-parallel-test.sh`(몇 초 · 임시 git 레포). 동시 수는 `ATHENA_VERIFY_JOBS`(기본 코어 수의 절반, 최대 4) · 통과 기록 재사용을 끄려면 `ATHENA_VERIFY_NO_REUSE_CORE=1` · 기록 안 남기기 `ATHENA_TEST_NO_RECORD=1`
   - 레포 규칙 문서 찾기 · 싣기(`athena/scripts/lib/rule_docs.py` · `agent-context.py` 의 규칙 문서 절 · `compact-checkpoint.py` 의 다시 읽기 · `sync-fingerprint.mjs` · `init.mjs` 의 `ruleDocs`)를 고쳤으면 `test/rule-docs-test.sh`(몇 초 · 임시 레포)
   - 시크릿 차단 훅(`athena/scripts/hooks/secret-guard.py`)을 고쳤으면 `test/secret-guard-test.sh`(몇 초 · 훅에 글자만 넣어 막힘 · 통과를 본다)

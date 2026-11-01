@@ -162,4 +162,83 @@ echo 'module.exports = 3' > "$WORK/src/orphan.js"
 RESULT="$(picks src/orphan.js 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
 check "닿는 시험이 없는 앱 소스 → 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
 
+echo "줄서기 시간 칸 — wait_ms · wait_why (ms 와 따로)"
+git -C "$WORK" reset -q --hard; reset_tree   # 앞 시험이 남긴 변경을 치운다
+echo '// 주석' >> "$WORK/athena/scripts/board/server.mjs"
+RESULT="$(ATHENA_HEAVY_WAIT_SEC=12 ATHENA_HEAVY_WAIT_WHY='자리1: a · sleep 부하 3 = x' fields plans/task/x.md)"
+check "wait_ms = 기다린 초 × 1000" "$(grep -qx 'wait_ms=12000' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+check "wait_why = 마지막 이유(= 는 : 로)" "$(grep -qx 'wait_why=자리1: a · sleep 부하 3 : x' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+check "ms 는 줄서기를 포함하지 않는다(source 한 때부터라 12초보다 훨씬 작다)" "$([ "$(grep '^ms=' <<<"$RESULT" | cut -d= -f2)" -lt 12000 ] && echo 0 || echo 1)" "$RESULT"
+RESULT="$(fields plans/task/x.md)"
+check "안 기다렸으면 wait_ms=0 · wait_why 빈 값" "$(grep -qx 'wait_ms=0' <<<"$RESULT" && grep -qx 'wait_why=' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+RESULT="$(ATHENA_HEAVY_WAIT_SEC=abc ATHENA_HEAVY_WAIT_WHY=x fields)"
+check "숫자가 아니면 0" "$(grep -qx 'wait_ms=0' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
+reset_tree
+
+echo "문서만 고친 수정 — 시험·빌드를 건너뛰고 파일 점검만"
+# 코어 사본(+ 팩 pack.json)을 임시로 만들어 staticDocs 를 읽게 한다
+CORE="$TMP/core"; mkdir -p "$CORE/scripts" "$CORE/pack"
+cp -R "$SRC/scripts/verify" "$CORE/scripts/verify"; cp -R "$SRC/scripts/lib" "$CORE/scripts/lib"
+echo '{ "repos": [{ "name": "demo", "staticDocs": ["^web/privacy\\.html$"] }] }' > "$CORE/pack/pack.json"
+# 정적 파일은 기준(origin/main)에 들어 있어야 바뀐 파일로 안 센다 — 원격에 커밋하고 작업 브랜치를 그 위로 옮긴다
+mkdir -p "$ORIGIN/web" "$WORK/scripts"
+echo '<p>x</p>' > "$ORIGIN/web/privacy.html"; echo '<p>y</p>' > "$ORIGIN/web/other.html"
+git_quiet -C "$ORIGIN" add web/privacy.html web/other.html; git_quiet -C "$ORIGIN" commit -m docs-base
+git_quiet -C "$WORK" fetch origin; git_quiet -C "$WORK" reset --hard origin/main   # 앞 시험이 작업 브랜치에 남긴 커밋도 버린다
+mkdir -p "$WORK/scripts"
+docscope() { # docscope [검증 인자…] — 출력: <모드>
+  (cd "$WORK" && VERIFY_SCOPE_DOCS_EXIT=0 bash -c 'source "$1/scripts/verify/_lib.sh"; shift; verify_scope_init demo; echo "$VERIFY_SCOPE_MODE"' _ "$CORE" "$@")
+}
+echo '문장 추가' >> "$WORK/README.md"
+check ".md 만 바뀜 → docs" "$([ "$(docscope)" = docs ] && echo 0 || echo 1)" "$(docscope)"
+check "--full 이면 전체" "$([ "$(docscope --full)" = full ] && echo 0 || echo 1)" "$(docscope --full)"
+echo '// 주석' >> "$WORK/src/a.js"
+check ".md + 코드 → docs 아님(scoped)" "$([ "$(docscope)" = scoped ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+mkdir -p "$WORK/scripts"; echo '문장' >> "$WORK/scripts/NOTE.md"
+check "scripts/ 아래 .md 는 도구가 읽을 수 있어 문서가 아님 → scoped" "$([ "$(docscope)" = scoped ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+git -C "$WORK" rm -q README.md
+check "지운 문서가 있으면 지금처럼(docs 아님)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
+git -C "$WORK" reset -q --hard
+echo '<p>z</p>' >> "$WORK/web/privacy.html"
+check "팩 staticDocs 에 맞는 정적 파일만 바뀜 → docs" "$([ "$(docscope)" = docs ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+echo '<p>z</p>' >> "$WORK/web/other.html"
+check "staticDocs 에 안 맞는 html → docs 아님" "$([ "$(docscope)" = scoped ] && echo 0 || echo 1)" "$(docscope)"
+reset_tree
+echo '<p>z</p>' >> "$WORK/web/privacy.html"; rm "$CORE/pack/pack.json"
+check "pack.json 이 없으면 정적 파일은 문서가 아님 → scoped" "$([ "$(docscope)" = scoped ] && echo 0 || echo 1)" "$(docscope)"
+echo '{ "repos": [{ "name": "demo", "staticDocs": ["^web/privacy\\.html$"] }] }' > "$CORE/pack/pack.json"
+reset_tree
+
+# 끝까지 — 검증 스크립트 흉내: 문서만이면 verify_scope_init 이 요약까지 내고 끝낸다(아래 단계는 돌지 않는다)
+cat > "$TMP/fake-verify.sh" <<'FAKE'
+source "$1/scripts/verify/_lib.sh"
+verify_scope_init demo
+run_step "시험이 돌면 안 된다" false
+print_summary demo "$PWD"
+FAKE
+finish() { (cd "$WORK" && ATHENA_VERIFY_STRICT=1 VERIFY_RECORD=0 bash "$TMP/fake-verify.sh" "$CORE" 2>&1); echo "rc=$?"; }
+echo '문장 추가' >> "$WORK/README.md"
+RESULT="$(finish)"
+check "문서만 → 파일 점검 통과 · 시험 단계는 돌지 않음 · 종료 0 (엄격 모드에서도)" "$([[ "$RESULT" == *'문서 파일 점검'*'✅'* && "$RESULT" == *'건너뜀(규칙)'* && "$RESULT" != *'시험이 돌면 안 된다'* && "$RESULT" == *rc=0 ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+printf '<<<<<<< HEAD\n내용\n>>>>>>> x\n' > "$WORK/README.md"
+RESULT="$(finish)"
+check "충돌 표시가 남은 문서 → 실패(1)" "$([[ "$RESULT" == *'❌'*'충돌 표시'* && "$RESULT" == *rc=1 ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+printf '\xff\xfe' > "$WORK/README.md"
+RESULT="$(finish)"
+check "UTF-8 이 아닌 문서 → 실패(1)" "$([[ "$RESULT" == *'UTF-8'* && "$RESULT" == *rc=1 ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+echo '// 주석' >> "$WORK/src/a.js"
+RESULT="$(finish)"
+check "코드가 바뀌면 그대로 시험 단계가 돈다(검증 범위를 낮추지 않음)" "$([[ "$RESULT" == *'시험이 돌면 안 된다'* ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+echo '문장 추가' >> "$WORK/README.md"
+RESULT="$(cd "$WORK" && ATHENA_HEAVY_WAIT_SEC=75 ATHENA_HEAVY_WAIT_WHY='자리1: x' VERIFY_RECORD=0 bash "$TMP/fake-verify.sh" "$CORE" 2>&1)"
+check "요약 끝에 줄서기 시간·이유가 남음" "$([[ "$RESULT" == *'줄서기 75초'*'자리1: x'* ]] && echo 0 || echo 1)" "$RESULT"
+reset_tree
+
 exit $FAIL

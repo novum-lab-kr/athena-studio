@@ -25,7 +25,9 @@
 #   - 실행 환경 = node -v · python3 유무(환경으로 정해지는 건너뜀이 있다)
 #   - 검증 도중 트리가 바뀌었으면(시작·끝 열쇠가 다르면) 기록하지 않는다
 # 측정용 사건 기록(docs/events.md `verify`) — 끝에 plan(ATHENA_PLAN · delegate.sh 가 pane 환경에, commit.sh 가 검증 호출에 넘긴다) ·
-#   ms(이 파일을 source 한 때부터 끝까지 — heavy.sh 줄서기는 들어가지 않는다) · scope(scoped|full) 를 같이 남긴다
+#   ms(이 파일을 source 한 때부터 끝까지 — heavy.sh 줄서기는 들어가지 않는다) · scope(scoped|full|docs) 를 같이 남긴다
+#   wait_ms · wait_why — heavy.sh 가 환경(ATHENA_HEAVY_WAIT_SEC · ATHENA_HEAVY_WAIT_WHY)으로 넘긴 줄서기 시간과 마지막 이유(ms 와 따로 · 요약에도 한 줄)
+# 문서만 고친 수정(scope=docs) — 바뀐 파일이 모두 문서(.md 등)·팩 staticDocs 면 시험·빌드를 건너뛰고 파일이 깨지지 않았는지(docs-check.mjs)만 본다. verify_scope_init 이 끝까지 처리한다
 # 출력은 에이전트 보고서의 "검증 결과" 절에 그대로 붙일 수 있는 마크다운이다.
 set -uo pipefail
 VERIFY_LOG_DIR="${VERIFY_LOG_DIR:-$(mktemp -d /tmp/hermes-verify.XXXXXX)}"
@@ -38,6 +40,9 @@ VERIFY_SCRIPT="$(cd "$(dirname "$0")" && pwd -P)/$(basename "$0")"
 VERIFY_SCRIPT_ARGS="$*"
 VERIFY_RECORD="${VERIFY_RECORD:-1}"   # reuse.sh 는 0 으로 두고 source 한다(기록하지 않는다)
 verify_now_ms() { node -e 'process.stdout.write(String(Date.now()))' 2>/dev/null || echo "$(($(date +%s) * 1000))"; }
+# heavy.sh 가 줄서며 기다린 시간(초 → ms)·마지막 이유 — 정수가 아니면 0
+VERIFY_WAIT_MS=0; VERIFY_WAIT_WHY=""
+case "${ATHENA_HEAVY_WAIT_SEC:-}" in ''|*[!0-9]*) ;; *) VERIFY_WAIT_MS=$(( ATHENA_HEAVY_WAIT_SEC * 1000 )); VERIFY_WAIT_WHY="${ATHENA_HEAVY_WAIT_WHY:-}" ;; esac
 VERIFY_START_MS="$(verify_now_ms)"   # 소요 시간의 시작 — 팩 스크립트는 맨 앞에서 source 하니 verify_scope_init 보다 앞이다
 
 verify_pass_dir() { echo "${XDG_CACHE_HOME:-$HOME/.cache}/athena/verify-pass"; }
@@ -289,10 +294,58 @@ verify_scope_init() { # verify_scope_init <레포> — 지금 폴더(레포 안)
   if [ -n "$config" ]; then
     VERIFY_SCOPE_WHY="설정 · 검증 스크립트가 바뀌어(${config% }) 전체를 돌린다"; return 0
   fi
+  if verify_scope_docs_only "$repo" "$VERIFY_SCOPE_FILES" "$top"; then
+    VERIFY_SCOPE_MODE=docs
+    [ "${VERIFY_SCOPE_DOCS_EXIT:-1}" = 1 ] && verify_docs_finish "$repo" "$top"   # 시험할 때만 0 으로 둔다
+    return 0
+  fi
   VERIFY_SCOPE_MODE=scoped
 }
 
+# ── 문서만 고친 수정 ───────────────────────────────────────────────────────
+# 문서 = 확장자 md · mdx · markdown · txt · rst — 단, 도구가 읽는 자리(.claude · .github · scripts · test(s) · fixtures · templates · prompts)는 문서가 아니다(모호하면 지금처럼 돈다).
+# 레포별 정적 문서 = 팩 pack.json repos[].staticDocs(경로 정규식 배열 · 트리 맨 위 기준) — 예: syung ["^web/privacy\\.html$"] (vite.config.mts copyStatic 이 web/ 의 코드 아닌 파일을 그대로 복사한다)
+VERIFY_DOCS_RE='\.(md|mdx|markdown|txt|rst)$'
+VERIFY_DOCS_TOOL_DIR_RE='(^|/)(\.claude|\.github|scripts|tests?|__tests__|fixtures|templates?|prompts?)/'
+
+verify_pack_static_docs() { # verify_pack_static_docs <레포> — 팩 pack.json 의 그 레포 staticDocs 를 한 줄에 하나(없으면 빈 줄)
+  local pack_json="$VERIFY_LIB_DIR/../../pack/pack.json"
+  [ -f "$pack_json" ] && command -v node >/dev/null 2>&1 || return 0
+  node -e 'const pack = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); const repo = (pack.repos ?? []).find((item) => item.name === process.argv[2]); for (const pattern of Array.isArray(repo?.staticDocs) ? repo.staticDocs : []) if (typeof pattern === "string") console.log(pattern)' "$pack_json" "$1" 2>/dev/null
+}
+
+# verify_scope_docs_only <레포> <바뀐 파일들> <트리> — 바뀐 파일이 모두 문서·정적 문서면 0. 삭제된 파일이 있거나 하나라도 아니면 1
+verify_scope_docs_only() {
+  local repo="$1" files="$2" top="$3" file extra patterns="" matched
+  patterns="$(verify_pack_static_docs "$repo")"
+  while IFS= read -r file; do
+    [ -n "$file" ] || continue
+    [ -e "$top/$file" ] || return 1   # 지운 파일은 무엇이 깨졌는지 몰라 지금처럼 돈다
+    if printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_RE" && ! printf '%s\n' "$file" | grep -Eq "$VERIFY_DOCS_TOOL_DIR_RE"; then continue; fi
+    matched=1
+    while IFS= read -r extra; do
+      [ -n "$extra" ] || continue
+      printf '%s\n' "$file" | grep -Eq "$extra" && { matched=0; break; }
+    done <<< "$patterns"
+    [ "$matched" = 0 ] || return 1
+  done <<< "$files"
+  return 0
+}
+
+# 문서만 고친 수정의 검증 — 파일 점검(docs-check.mjs)만 돌리고 나머지는 규칙 건너뜀으로 적은 뒤 요약까지 내고 끝낸다(팩 검증 스크립트는 고치지 않고도 같은 길)
+verify_docs_finish() { # verify_docs_finish <레포> <트리>
+  local repo="$1" top="$2" list="$VERIFY_LOG_DIR/docs-changed.txt" count
+  printf '%s\n' "$VERIFY_SCOPE_FILES" > "$list"
+  count="$(grep -c . "$list")"
+  echo "범위: 문서만 바뀜 — 바뀐 파일 ${count}개 · 시험·빌드는 건너뛰고 파일 점검만 (전체는 --full)"
+  run_step "문서 파일 점검 (${count}개)" node "$VERIFY_LIB_DIR/docs-check.mjs" "$top" "$list"
+  skip_step_rule "시험 · 타입 검사 · 빌드" "문서만 바뀜 (바뀐 파일 ${count}개 · 전체는 --full)"
+  print_summary "$repo" "$top"
+  exit $?
+}
+
 verify_scope_has() {
+  [ "$VERIFY_SCOPE_MODE" = docs ] && return 1
   [ "$VERIFY_SCOPE_MODE" = scoped ] || return 0
   [ "$(printf '%s\n' "$VERIFY_SCOPE_FILES" | grep -cE "$1")" -gt 0 ]
 }
@@ -410,7 +463,7 @@ for item in data.get("generalDiagnostics", []):
 }
 
 # verify_event_fields <레포명> <브랜치> <sha> — verify 사건의 키=값 칸을 한 줄에 하나(events.mjs 인자 · 시험이 그대로 읽는다)
-#   plan = ATHENA_PLAN(없으면 빈 값 — 옛 기록과 같다) · ms = source 한 때부터 지금까지 · scope = VERIFY_SCOPE_MODE
+#   plan = ATHENA_PLAN(없으면 빈 값 — 옛 기록과 같다) · ms = source 한 때부터 지금까지(줄서기 제외) · scope = VERIFY_SCOPE_MODE · wait_ms · wait_why = heavy.sh 줄서기 시간·이유
 verify_event_fields() {
   local failed="" ok=false strict=false i
   for i in "${!STEP_NAMES[@]}"; do
@@ -419,7 +472,8 @@ verify_event_fields() {
   [ "$VERIFY_FAILED" = 0 ] && ok=true
   [ "${ATHENA_VERIFY_STRICT:-0}" = 1 ] && strict=true
   printf '%s\n' "repo=$1" "branch=$2" "sha=$3" "ok=$ok" "strict=$strict" "failed=$failed" "args=$VERIFY_SCRIPT_ARGS" \
-    "plan=${VERIFY_PLAN:-${ATHENA_PLAN:-}}" "ms=$(( $(verify_now_ms) - VERIFY_START_MS ))" "scope=$VERIFY_SCOPE_MODE"
+    "plan=${VERIFY_PLAN:-${ATHENA_PLAN:-}}" "ms=$(( $(verify_now_ms) - VERIFY_START_MS ))" "scope=$VERIFY_SCOPE_MODE" \
+    "wait_ms=$VERIFY_WAIT_MS" "wait_why=$(printf '%s' "$VERIFY_WAIT_WHY" | tr '\n=' ' :' | cut -c1-300)"
 }
 
 verify_log_event() { # verify_log_event <레포명> <브랜치> <sha> — 측정용 사건 기록(docs/events.md). reuse.sh 의 재사용은 새 검증이 아니라 남기지 않는다
@@ -474,6 +528,8 @@ print_summary() { # print_summary <레포명> <레포경로>
       tail -40 "${STEP_LOGS[$i]}"; echo '```' ;;
     esac
   done
+  # 줄서기 — heavy.sh 가 30초마다 찍는 "⏳" 줄을 부르는 쪽이 걸러도 결과에는 남는다(실행 시간 소요와 따로)
+  [ "$VERIFY_WAIT_MS" -gt 0 ] && { echo; echo "⏳ 줄서기 $((VERIFY_WAIT_MS / 1000))초(위 소요에는 들어가지 않음)${VERIFY_WAIT_WHY:+ — 마지막 이유: $VERIFY_WAIT_WHY}"; }
   echo; echo "전체 로그: $VERIFY_LOG_DIR"
   verify_record_pass "$repo" "$path" "$branch" "$sha"
   verify_plan_resolve

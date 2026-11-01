@@ -99,7 +99,7 @@ export const recordPlanStatus = (root, fields) => {
 
 // 셸 스크립트용 — node scripts/lib/events.mjs <종류> 키=값 …
 // 숫자로 받는 칸은 이름으로 정한다(sha · pr 처럼 숫자로 보이는 글자 칸을 숫자로 바꾸지 않게)
-const NUMBER_FIELDS = new Set(['ms', 'promptChars', 'contextChars'])
+const NUMBER_FIELDS = new Set(['ms', 'wait_ms', 'promptChars', 'contextChars'])
 const parseValue = (key, value) => {
   if (value === 'true') return true
   if (value === 'false') return false

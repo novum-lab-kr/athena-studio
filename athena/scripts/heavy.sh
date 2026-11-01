@@ -19,7 +19,10 @@
 #      메모리 여유가 ATHENA_HEAVY_MIN_FREE %(기본 15 — macOS memory_pressure · 리눅스 /proc/meminfo, 못 읽으면 한 번 알리고 끈다) 아래로 떨어지면 그 명령과 자식을 모두 끄고 137 로 끝난다
 #      (next dev 가 postcss 작업자를 1609개까지 띄워 메모리 70GB·부하 100 까지 간 일 뒤에 넣었다 — 2026-10-02)
 # 기다리는 동안 30초마다 "⏳ 대기 — 이유" 를 한 줄 찍는다. 최대 대기 ATHENA_HEAVY_WAIT 초(기본 1800) 넘으면 포기하고 75 로 끝난다.
-# next dev 처럼 계속 도는 명령도 잠금을 쥐고 있으니, 확인이 끝나면 바로 끈다(Ctrl+C / kill) — 그래야 다음 차례가 돈다.
+#   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
+#      지나면 자리를 놓고 다음 차례를 돌린다. 감시(4)는 놓은 뒤에도 끝까지 간다. 근거: qa/run.mjs 가 서버를 "URL 이 답할 때" 를 시작 끝으로 보고,
+#      폭주(2026-10-02)는 시작할 때가 아니라 오래 도는 동안 자식이 늘어난 것이다. 놓고 싶지 않으면 ATHENA_HEAVY_DEV_RELEASE=0
+#   6. 기다린 시간·이유는 안쪽 명령에 환경으로 넘긴다(ATHENA_HEAVY_WAIT_SEC · ATHENA_HEAVY_WAIT_WHY) — 검증 스크립트가 결과·사건 기록에 남긴다
 set -uo pipefail
 
 [ $# -gt 0 ] || { echo "사용: scripts/heavy.sh <무거운 명령…>" >&2; exit 2; }
@@ -49,9 +52,10 @@ load_raw() {
 # awk 변수 이름 load 는 gawk 예약어라 쓰지 않는다(리눅스에서 부하 대기가 통째로 꺼졌다)
 over_limit() { awk -v current="$(load_now)" -v limit="$LIMIT" 'BEGIN{exit !(current > limit)}'; }
 
-started=$(date +%s); last_note=0
+started=$(date +%s); last_note=0; LAST_WHY=""
 note() {
   local now; now=$(date +%s)
+  LAST_WHY="$1"   # 30초 줄에 안 찍힌 이유도 마지막 것은 남는다
   if [ $((now - last_note)) -ge 30 ]; then echo "⏳ 대기 $((now - started))초 — $1"; last_note=$now; fi
 }
 # 포기 알림은 stdout 에도 마지막 줄로 낸다 — 부르는 쪽이 `| tail` 로 받으면 종료 코드(75)는 파이프 끝 명령의 0 에 덮이고 stderr 도 안 보여
@@ -157,17 +161,51 @@ waited=$(( $(date +%s) - started ))
 # 3) 실행 + 4) 감시 — 끝나면 trap 이 잠금을 푼다. 안쪽 호출이 다시 기다리지 않게 표시를 넘긴다
 MAX_PROCS="${ATHENA_HEAVY_MAX_PROCS:-300}"
 MIN_FREE="${ATHENA_HEAVY_MIN_FREE:-15}"
+DEV_START="${ATHENA_HEAVY_DEV_START:-60}"
+case "$DEV_START" in ''|*[!0-9]*) DEV_START=60 ;; esac
 # root 아래 자손 pid 들(자기 자신 제외) — ps 의 부모 관계를 거슬러 올라가 root 를 만나면 자손
 descendants() {
   ps -axo pid=,ppid= | awk -v root="$1" '{parent[$1]=$2} END{for (pid in parent) {node=pid; while ((node in parent) && node != 1 && node != 0) {if (parent[node] == root) {print pid; break} node = parent[node]}}}'
 }
+# 개발 서버 명령인가 — 첫 낱말이 next·npm·pnpm·yarn·bun·npx·vite 이고, next 는 dev, 패키지 관리자는 낱말 dev(npm run dev · pnpm dev · pnpm --filter x dev), vite 는 build·optimize·preview 가 없을 때.
+# 모르면 개발 서버가 아니다(자리를 계속 쥔다 — 예전 그대로)
+is_dev_server() {
+  local first word has_dev=0 has_next=0 has_vite=0 has_other=0
+  first="$(basename "$1")"
+  case "$first" in next|npm|pnpm|yarn|bun|npx|pnpx|vite) ;; *) return 1 ;; esac
+  for word in "$@"; do
+    case "$word" in
+      dev) has_dev=1 ;;
+      next) has_next=1 ;;
+      vite) has_vite=1 ;;
+      build|optimize|preview|install|test|ci|add|remove) has_other=1 ;;
+    esac
+  done
+  [ "$has_other" = 0 ] || return 1
+  [ "$first" = vite ] && has_vite=1
+  [ "$first" = next ] && has_next=1
+  [ "$has_vite" = 1 ] && return 0
+  [ "$has_next" = 1 ] && [ "$has_dev" = 1 ] && return 0
+  case "$first" in npm|pnpm|yarn|bun|npx|pnpx) [ "$has_dev" = 1 ] && return 0 ;; esac
+  return 1
+}
+# 자손 중에 TCP 포트를 연 것이 있나 — 개발 서버가 시작을 끝낸 신호
+listening_now() {
+  local pids; pids="$(descendants "$child" | paste -sd, -)"
+  pids="${pids:+$pids,}$child"
+  lsof -nP -a -p "$pids" -iTCP -sTCP:LISTEN 2>/dev/null | grep -q LISTEN
+}
+DEV_SERVER=0; DEV_RELEASED=0
+if [ "${ATHENA_HEAVY_DEV_RELEASE:-1}" != 0 ] && is_dev_server "$@"; then DEV_SERVER=1; fi
 memory_warned=0
 stop_all() {
   local pids; pids="$(descendants "$child") $child"
   kill -TERM $pids 2>/dev/null; sleep 3; kill -KILL $pids 2>/dev/null
 }
-ATHENA_HEAVY_HELD=1 "$@" &
+ATHENA_HEAVY_WAIT_SEC="$waited" ATHENA_HEAVY_WAIT_WHY="$(printf '%s' "$LAST_WHY" | tr '\n\t' '  ' | cut -c1-300)" \
+  ATHENA_HEAVY_HELD=1 "$@" &
 child=$!
+run_started=$(date +%s)
 trap 'stop_all; cleanup; exit 130' INT TERM HUP
 trap cleanup EXIT
 while kill -0 "$child" 2>/dev/null; do
@@ -188,6 +226,14 @@ while kill -0 "$child" 2>/dev/null; do
     echo "   폭주한 것이다. 원인(설정·감시 범위 등)을 먼저 찾고, 다시 돌리기 전에 아테나·사용자에게 알린다" >&2
     stop_all
     exit 137
+  fi
+  # 개발 서버는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나 시작 시간이 지나면 놓는다(감시는 이 루프가 계속)
+  if [ "$DEV_SERVER" = 1 ] && [ "$DEV_RELEASED" = 0 ]; then
+    if listening_now; then why_ready="포트를 열었다"; elif [ $(( $(date +%s) - run_started )) -ge "$DEV_START" ]; then why_ready="시작 시간 ${DEV_START}초가 지났다"; else why_ready=""; fi
+    if [ -n "$why_ready" ]; then
+      cleanup; DEV_RELEASED=1
+      echo "▶ 개발 서버 시작 끝($why_ready) — 자리를 놓았다. 감시(자식 ${MAX_PROCS}개 · 메모리 여유 ${MIN_FREE}%)는 끝까지 계속한다"
+    fi
   fi
 done
 wait "$child"
