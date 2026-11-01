@@ -20,7 +20,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.46: v0.42.2..main 머지(#198 ~ #210 · 검증 시간 줄이기)에서 손님에게 보이는 것만(README 만 바뀐 #199 #201 #202 #203 #206 #208 은 뺌). 범위 끝은 열어 둔다 -->
 
-<!-- 0.47: v0.46.4..main 머지(#213 · #214)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험은 개발용 팩 스크립트라 뺌). 범위 끝은 열어 둔다 -->
+<!-- 0.47: v0.46.4..main 머지(#213 · #214)와 v0.47.2..main 직접 머지 6건(단축키 · PR 끈 레포 PR 차단 · 아테나 pane 질문 · 검증 대기 · 아테나 자체 버그 3개)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험 · 검증 차례 대기 줄이기 · 문서 수정 가볍게 · heavy 종료 코드 · 검증 범위의 .omc · 자동 완료의 Progress 빈 칸은 개발용 스크립트라 뺌). 범위 끝은 열어 둔다 -->
 
 ## 0.47 (v0.47.0 – · Nov 1, 2026)
 
@@ -29,10 +29,15 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.
 - A pack can allow specific commands for its repository's agent panes with `permissionsAllow`, so they run without a permission prompt.
 
+### Improved
+- Pane focus shortcuts changed from ⌘⌥ + arrow keys to ⌘⇧I J K L (up, left, down, right).
+
 ### Fixed
 - An agent's "done" notification now waits until its background commands have finished.
 - An agent pane can now push review fixes to its open pull request even when no request is waiting on that pull request.
 - A decision request without a decision console now stays a decision and opens as a question popup, so you can answer it in the app.
+- When auto PR is off, Athena now blocks opening a pull request by mistake and points to the direct merge instead.
+- When an agent asks you to pick an option in the Athena pane and you are not looking at it, the question now goes to Work so you can answer it there.
 
 ## 0.46 (v0.42.3 – v0.46.4 · Nov 1, 2026)
 
