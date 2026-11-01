@@ -5821,6 +5821,7 @@ html[data-theme="dark"], html[data-theme="dark"][data-preset] {
           <li>&bull; 디스패치 전에 prBase 에서 워크트리를 딴다(.worktrees/&lt;레포&gt;/&lt;슬러그&gt;). 메인 체크아웃은 건드리지 않는다</li>
           <li>&bull; 브랜치가 이미 있으면 상태를 알려 주고 &quot;그대로 이어 쓸까요?&quot; — 건너뛴 레포엔 디스패치하지 않는다</li>
           <li>&bull; delegate.sh --plan 없이는 띄우지 않는다. Work ref 에 워크트리·브랜치·pane 이 적힌다</li>
+          <li>&bull; 경량 기본 모델로 띄우고, 진짜 단순한 수정일 때만 --model sonnet 을 붙인다(문구·스타일 국소 수정과 같은 크기 · 로직·데이터·권한·외부 계약에 안 닿고 원인 조사가 필요 없는 것 · 애매하면 안 붙인다 · --reuse-pane 과 같이 못 쓴다)</li>
           <li>&bull; FE 세션엔 보호 훅 — git commit·push·gh pr create 직접, add -A 차단(commit.sh·ship.sh 로)</li>
           <li>&bull; workspace = 레포, 한 탭에 pane 을 나란히. 공유 패키지 → 소비 레포는 순차로, 서로 독립인 서비스는 동시에</li>
           <li>&bull; 기본은 프롬프트 없이 pane 을 열고 그 안에서 지시한다</li>

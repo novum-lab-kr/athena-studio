@@ -1,6 +1,6 @@
 // 역할마다 Claude 모델 — 팩 pack.json 최상위 "models": { "<역할>": "<모델>" } (docs/pack.md "pack.json" · 계획서 2026-10-26 작업별 모델 배분)
 //   agent       담당 에이전트 pane — 정식 계획서(plans/{feature,bugfix,refactor}/…) 작업(delegate.sh — 에이전트 프로필 frontmatter model: 이 있으면 그게 이긴다)
-//   agentLight  담당 에이전트 pane — 경량 계획서(plans/task/…) 작업. 없으면 agent 값(delegate.sh — 같은 규칙 · 계획서 2026-10-29 D1)
+//   agentLight  담당 에이전트 pane — 경량 계획서(plans/task/…) 작업. 없으면 agent 값 · 그것도 없으면 코어 기본값(delegate.sh — 같은 규칙 · 계획서 2026-10-29 D1)
 //   reviewer    reviewer pane(delegate.sh — 같은 규칙)
 //   reviewerEscalated reviewer pane — 그 계획서의 같은 레포 · 브랜치 "- Review result:" 가 수정 필요일 때(다시 리뷰). 없으면 reviewer 값(같은 규칙 · 2026-10-29 D2)
 //   prReview    PR 자동 리뷰 Claude 쪽(pr-auto.mjs)
@@ -13,6 +13,8 @@
 // 파이썬 쪽 같은 규칙: scripts/lib/athena_config.py model_of
 export const MODEL_ROLES = ['athena', 'agent', 'agentLight', 'reviewer', 'reviewerEscalated', 'prReview', 'prReviewSecond', 'learnReview']
 // 별칭 · 전체 이름 · 클라우드 이름(점 · 콜론 · @ · 슬래시) · 긴 문맥 표시([1m])까지 — 셸에 먹히는 글자와 공백은 안 된다
+// 경량 작업 코어 기본값 · 새 팩 값 — 파이썬 athena_config.DEFAULT_AGENT_LIGHT_MODEL 과 같은 값
+export const DEFAULT_AGENT_LIGHT_MODEL = 'claude-opus-5-5'
 const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/
 
 export const modelOf = (config, role) => {

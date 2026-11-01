@@ -12,6 +12,7 @@
 #   scripts/delegate.sh <에이전트명> --here                # 레포 workspace 로 보내지 않고 지금 탭에 쪼갠다 (단발 조사용)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --reuse-pane <pane> [--new-branch <이름>]  # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다(docs/dispatch.md "이어 보내기" · 고르기 node scripts/reuse-pane.mjs --agent <이름>)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --resume <세션 id> [--cwd <워크트리>]  # 닫힌 pane 을 그 대화 그대로 다시 연다(지시문은 다시 보내지 않는다)
+#   scripts/delegate.sh <에이전트명> --plan <경로> --model <이름>  # 이번 한 번만 이 모델로 띄운다(팩 models · 프로필 model: 보다 먼저 · --reuse-pane 과 같이 못 쓴다)
 #
 # 배치 규칙 — workspace = 레포 / 그 안의 한 탭에 pane 을 나란히
 #   워크트리마다 탭을 가르지 않는다. 한 화면에서 동시 작업 상황이 다 보이는 쪽이 낫다.
@@ -28,7 +29,7 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
-AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""
+AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)
@@ -39,13 +40,23 @@ while [ $# -gt 0 ]; do
     --new-branch) [ $# -ge 2 ] || { echo "--new-branch 에 브랜치 이름이 없다" >&2; exit 2; }; NEW_BRANCH="$2"; shift 2 ;;   # --reuse-pane 과 함께 — 그 pane 의 워크트리에서 prBase 로 새 브랜치를 딴다
     --cwd)  [ $# -ge 2 ] || { echo "--cwd 에 경로가 없다" >&2; exit 2; }; WORKDIR="$2"; shift 2 ;;
     --resume) [ $# -ge 2 ] || { echo "--resume 에 세션 id 가 없다" >&2; exit 2; }; RESUME="$2"; shift 2 ;;   # 닫힌 에이전트 pane 을 그 대화 그대로 다시 연다(claude --resume <세션 id>) — 지시문은 다시 보내지 않는다
+    --model) [ $# -ge 2 ] || { echo "--model 에 모델 이름이 없다" >&2; exit 2; }; MODEL_OVERRIDE="$2"; MODEL_GIVEN=1; shift 2 ;;   # 이번 한 번만 이 모델로 띄운다
     -h|--help) grep '^#' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) if [ -z "$AGENT" ]; then AGENT="$1"; else PROMPT="$1"; fi; shift ;;
   esac
 done
 
 [ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
-[ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down]"; exit 2; }
+[ "$MODEL_GIVEN" = 0 ] || [ -z "$REUSE_PANE" ] || { echo "--model 은 --reuse-pane 과 같이 쓰지 않는다 — 떠 있는 pane 의 모델은 바뀌지 않는다. 그 모델로 띄우려면 새 pane 으로 띄운다" >&2; exit 2; }
+[ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down] [--model <이름>]"; exit 2; }
+# 이름 검사는 팩 models 와 같은 규칙 — 계획서를 만들기 전에 거른다
+if [ "$MODEL_GIVEN" = 1 ]; then
+  python3 - "$ATHENA_DIR" "$MODEL_OVERRIDE" <<'PYEOF' || { echo "--model 이름이 이상해서 띄우지 않는다: $MODEL_OVERRIDE" >&2; exit 2; }
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import valid_model_name
+sys.exit(0 if valid_model_name(sys.argv[2]) else 1)
+PYEOF
+fi
 
 # 계획서 필수 — 없으면 띄우지 않는다
 if [ -z "$PLAN" ] && [ -z "$PLAN_NEW" ]; then
@@ -230,9 +241,9 @@ WORKDIR="${WORKDIR:-$ATHENA_DIR}"
 WORKDIR="$(cd "$WORKDIR" && pwd -P)"
 
 # 역할마다 모델(팩 pack.json "models" · scripts/lib/models.mjs · athena_config.agent_model) — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다).
-# 그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(값 없으면 agent) · 정식이면 agent. reviewer 는 이 계획서의 같은 레포 · 브랜치
+# 그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(값 없으면 agent · 그것도 없으면 코어 기본값) · 정식이면 agent. reviewer 는 이 계획서의 같은 레포 · 브랜치
 # "- Review result:" 가 수정 필요면 reviewerEscalated(값 없으면 reviewer) · 아니면 reviewer(계획서 2026-10-29 D1 · D2). 레포 · 브랜치는 띄울 작업 트리(WORKDIR)로 고른다.
-# 값이 다 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게)
+# 값이 다 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게) · --model 은 이 모두보다 먼저(팩 models 검사는 그대로 돈다)
 MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" "$PLAN" "$WORKDIR" <<'PYEOF'
 import sys
 sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import agent_model
@@ -242,6 +253,7 @@ except ValueError as error:
     print(error, file=sys.stderr); sys.exit(1)
 PYEOF
 )" || { echo "모델 설정이 이상해서 띄우지 않는다 — 팩 pack.json \"models\" 를 고친다(docs/pack.md \"pack.json\")" >&2; exit 2; }
+[ "$MODEL_GIVEN" = 0 ] || MODEL="$MODEL_OVERRIDE"
 
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"

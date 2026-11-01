@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 역할마다 모델 시험 — 팩 pack.json "models" 읽기(scripts/lib/models.mjs · 파이썬 athena_config.model_of 가 같은 판정) ·
-# delegate.sh 가 붙이는 --model(프로필 model: 이 이김 · 이상한 값이면 띄우지 않음 · 경량 → agentLight · 수정 필요 다음 reviewer → reviewerEscalated) · 새 팩 기본값(athena init → learnReview sonnet)
+# delegate.sh 가 붙이는 --model(프로필 model: 이 이김 · 이상한 값이면 띄우지 않음 · 경량 → agentLight · 수정 필요 다음 reviewer → reviewerEscalated) · 경량 코어 기본값 Opus 5.5 · 한 번만 --model · 새 팩 기본값(athena init → learnReview sonnet · agentLight Opus 5.5)
 # (PR 자동 리뷰 Claude 쪽 --model 은 test/pr-auto-test.sh 가짜 리뷰어에서 본다) — 임시 폴더 · 진짜 claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/models-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -85,7 +85,7 @@ OUT="$(run reviewer)"; check "reviewer → models.reviewer" 'printf "%s" "$OUT" 
 OUT="$(run own-fe)"; check "프로필 model: 이 이김(팩 값 대신 haiku)" 'printf "%s" "$OUT" | grep -q "claude --agent own-fe --model haiku"' "$OUT"
 OUT="$(run inh-fe)"; check "프로필 model: inherit 은 없는 것과 같다(팩 값)" 'printf "%s" "$OUT" | grep -q "claude --agent inh-fe --model sonnet"' "$OUT"
 config ''
-OUT="$(run web-fe)"; check "models 없음 → --model 안 붙임" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe \"" && ! printf "%s" "$OUT" | grep -q -- "--model"' "$OUT"
+OUT="$(run web-fe)"; check "models 없음 · 경량 → 코어 기본값 Opus 5.5" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model claude-opus-5-5"' "$OUT"
 
 # 경량 · 정식(계획서 2026-10-29 D1) — 경량 계획서면 agentLight(없으면 agent) · 정식이면 agent
 printf '# 정식\n\n## Checkpoint\n- Status: in_progress\n' > "$CORE/plans/feature/20261029-b.md"
@@ -97,6 +97,7 @@ OUT="$(runp own-fe plans/task/20261026-a.md)"; check "경량이어도 프로필 
 config ', "models": { "agent": "opus" }'
 OUT="$(runp web-fe plans/task/20261026-a.md)"; check "경량인데 agentLight 없음 → models.agent" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model opus"' "$OUT"
 config ', "models": { "agentLight": "sonnet" }'
+OUT="$(runp web-fe plans/task/20261026-a.md)"; check "경량 · 팩 agentLight 값 → 코어 기본값 대신 그 값" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model sonnet"' "$OUT"
 OUT="$(runp web-fe plans/feature/20261029-b.md)"; check "정식인데 agent 없음 → --model 안 붙임(agentLight 로 대신하지 않음)" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe \"" && ! printf "%s" "$OUT" | grep -q -- "--model"' "$OUT"
 
 # reviewer — 그 계획서의 같은 레포 · 브랜치 "- Review result:" 가 수정 필요면 reviewerEscalated(계획서 2026-10-29 D2)
@@ -122,7 +123,25 @@ review_plan "- Review result: 수정 필요 @abc1234 · tree 0123456789ab · �
 OUT="$(runr)"; check "수정 필요인데 reviewerEscalated 없음 → models.reviewer" 'printf "%s" "$OUT" | grep -q "claude --agent reviewer --model sonnet"' "$OUT"
 config ''
 OUT="$(runr)"; check "키가 다 없으면(수정 필요여도) → --model 안 붙임(지금과 같다)" 'printf "%s" "$OUT" | grep -q "claude --agent reviewer \"" && ! printf "%s" "$OUT" | grep -q -- "--model"' "$OUT"
-OUT="$(runp web-fe plans/task/20261026-a.md)"; check "키가 다 없으면 경량도 → --model 안 붙임(지금과 같다)" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe \"" && ! printf "%s" "$OUT" | grep -q -- "--model"' "$OUT"
+OUT="$(runp web-fe plans/task/20261026-a.md)"; check "키가 다 없으면 경량 → 코어 기본값 Opus 5.5" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model claude-opus-5-5"' "$OUT"
+OUT="$(runp web-fe plans/feature/20261029-b.md)"; check "키가 다 없으면 정식 → --model 안 붙임" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe \"" && ! printf "%s" "$OUT" | grep -q -- "--model"' "$OUT"
+
+# --model — 이번 한 번만 · 팩 값 · 프로필보다 먼저 · --reuse-pane 과 같이 못 쓴다
+config ', "models": { "agent": "opus", "agentLight": "claude-opus-5-5" }'
+OUT="$(runp web-fe plans/task/20261026-a.md --model sonnet)"; check "--model sonnet → 팩 값 대신 sonnet" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model sonnet"' "$OUT"
+OUT="$(runp own-fe plans/task/20261026-a.md --model sonnet)"; check "--model 이 프로필 model: 도 이김" 'printf "%s" "$OUT" | grep -q "claude --agent own-fe --model sonnet"' "$OUT"
+OUT="$(runp web-fe plans/task/20261026-a.md)"; check "옵션 없음 → 팩 값(앞 --model 이 남지 않음)" 'printf "%s" "$OUT" | grep -q "claude --agent web-fe --model claude-opus-5-5"' "$OUT"
+for bad in "son net" "sonnet;rm" "" '"'"'-x'"'"'; do
+  OUT="$(runp web-fe plans/task/20261026-a.md --model "$bad")"; CODE=$?
+  check "잘못된 이름('$bad') → 거부(종료 2)" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q -- "--model" && ! printf "%s" "$OUT" | grep -q "claude --agent"' "종료 $CODE · $OUT"
+done
+OUT="$(runp web-fe plans/task/20261026-a.md --model)"; CODE=$?
+check "--model 값 없음 → 거부(종료 2)" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "모델 이름이 없다"' "종료 $CODE · $OUT"
+OUT="$(runp web-fe plans/task/20261026-a.md --model sonnet --reuse-pane pg1)"; CODE=$?
+check "--reuse-pane 과 함께 → 거부(종료 2)" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "떠 있는 pane" && ! printf "%s" "$OUT" | grep -q "claude --agent"' "종료 $CODE · $OUT"
+config ', "models": { "agnet": "sonnet" }'
+OUT="$(runp web-fe plans/task/20261026-a.md --model sonnet)"; CODE=$?
+check "--model 을 줘도 팩 models 가 이상하면 띄우지 않음" '[ "$CODE" = 2 ] && printf "%s" "$OUT" | grep -q "agnet"' "종료 $CODE · $OUT"
 
 config ', "models": { "agent": "son net" }'
 OUT="$(run web-fe)"; CODE=$?
@@ -137,7 +156,7 @@ INIT="$TMP/init"; mkdir -p "$INIT"
 node --input-type=module -e "
   const { initPack } = await import('$SRC/scripts/lib/init.mjs')
   initPack({ athenaRoot: process.argv[1], company: 'acme', repos: [{ name: 'web', branch: 'main', prBase: 'main', kind: 'single' }] })" "$INIT" >/dev/null 2>&1
-check "athena init → models: { learnReview: sonnet } 만" '[ "$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))[\"models\"]))" "$INIT/packs/acme/pack.json" 2>&1)" = "{\"learnReview\": \"sonnet\"}" ]' "$(cat "$INIT/packs/acme/pack.json" 2>&1 | head -20)"
+check "athena init → models: { learnReview: sonnet, agentLight: claude-opus-5-5 }" '[ "$(python3 -c "import json,sys; print(json.dumps(json.load(open(sys.argv[1]))[\"models\"]))" "$INIT/packs/acme/pack.json" 2>&1)" = "{\"learnReview\": \"sonnet\", \"agentLight\": \"claude-opus-5-5\"}" ]' "$(cat "$INIT/packs/acme/pack.json" 2>&1 | head -20)"
 
 echo
 [ "$FAIL" = 0 ] && echo "models-test: 모두 통과" || echo "models-test: 실패 있음"

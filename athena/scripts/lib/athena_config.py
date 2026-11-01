@@ -207,6 +207,13 @@ def is_protected(cfg, repo_name, branch):
 MODEL_ROLES = ('athena', 'agent', 'agentLight', 'reviewer', 'reviewerEscalated', 'prReview', 'prReviewSecond', 'learnReview')
 # fullmatch 로만 검사한다 — match 와 $ 는 끝 줄바꿈('sonnet\n')을 통과시켜 JS 판정과 갈린다
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*')
+# 경량 작업 코어 기본값 — 팩에 agentLight · agent 가 다 없을 때(scripts/lib/models.mjs DEFAULT_AGENT_LIGHT_MODEL 과 같은 값)
+DEFAULT_AGENT_LIGHT_MODEL = 'claude-opus-5-5'
+
+
+def valid_model_name(name):
+    """팩 models 와 같은 규칙의 모델 이름인가 — delegate.sh --model 검사."""
+    return bool(_MODEL_NAME.fullmatch(name))
 
 
 def model_of(cfg, role):
@@ -294,13 +301,15 @@ def model_role(athena_dir, agent, plan='', work_dir=''):
 
 def agent_model(athena_dir, agent, plan='', work_dir=''):
     """delegate.sh 가 붙일 --model 값 — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다), 없으면 팩 models 의
-    model_role 역할 값(비었으면 대신 쓸 역할 값), 그것도 없으면 ''(--model 을 붙이지 않는다).
+    model_role 역할 값(비었으면 대신 쓸 역할 값), 그것도 없으면 경량은 코어 기본값 · 그 밖은 ''(--model 을 붙이지 않는다).
     plan 은 본체 기준 논리 경로(plans/…md), work_dir 은 띄울 작업 트리(reviewer 의 리뷰 결론을 레포 · 브랜치로 고른다).
     프로필 값도 --model 로 넘긴다 — 워크트리에서 띄우면 프로필을 --agents JSON 으로 다시 만들어 넘기는데(agent-context.py) 거기에는 model 이 없다."""
     # 팩 models 는 프로필 값이 있어도 먼저 전체를 검사한다 — 잘못된 값이 프로필 뒤에 숨어 그냥 넘어가지 않게
     cfg = load(athena_dir)
     role, fallback = model_role(athena_dir, agent, plan, work_dir)
     pack_model = model_of(cfg, role) or (model_of(cfg, fallback) if fallback else '')
+    if not pack_model and role == 'agentLight':
+        pack_model = DEFAULT_AGENT_LIGHT_MODEL
     profile = os.path.join(athena_dir, '.claude', 'agents', f'{agent}.md')
     own = profile_model(profile)
     if own:

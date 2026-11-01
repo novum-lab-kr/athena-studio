@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { paths } from './config.mjs'
+import { DEFAULT_AGENT_LIGHT_MODEL } from './models.mjs'
 import { listRuleDocs, ruleDocList } from './rule-docs.mjs'
 
 const git = (dir, args) => {
@@ -251,8 +252,8 @@ export const initPack = ({ athenaRoot, company, repos, names = [], org = '', rep
       names: [...new Set([company, ...names])],
       ...(org ? { github: { org } } : {}),
       worktreeCopy: { include: ['.env', '.env.*', '.claude/settings.local.json'] },
-      // 역할마다 모델(docs/pack.md "pack.json" · scripts/lib/models.mjs) — 새 팩 기본은 배우기 검토만 Sonnet(2026-10-26 결정 D1)
-      models: { learnReview: 'sonnet' },
+      // 역할마다 모델(docs/pack.md "pack.json" · scripts/lib/models.mjs) — 새 팩 기본은 배우기 검토 Sonnet(2026-10-26 결정 D1) · 경량 작업 Opus 5.5
+      models: { learnReview: 'sonnet', agentLight: DEFAULT_AGENT_LIGHT_MODEL },
       repos: entries,
     }
     write(join(pack, 'ROUTING.md'), routingDoc(company, entries))
