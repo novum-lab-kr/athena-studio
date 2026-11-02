@@ -240,6 +240,9 @@ const parsed = autoLines(noted).get('web#7')
 check('계획서 줄에 메모가 붙어도 결과 · 라운드 · 같은 HEAD 판정은 그대로', parsed.result.startsWith('승인 2/2 → 머지 확인 대기 · Claude: 앞 리뷰 승인 이어받음 @abcdef0') && parsed.round === 1 && !needsReview(noted, 'web', '7', 'abcdef0123'), noted)
 
 console.log('\n리뷰어 구성(두 번째 자리 — Codex 없는 사람은 다른 모델 Claude · 사용자 결정 b)')
+const codexPair = reviewerSlots({ claude: 'missing', codex: 'ready', codexFirstModel: 'gpt-test-first', codexSecondModel: 'gpt-test-second' })
+check('Claude 없음 → 다른 모델 Codex 둘 · 자리 이름도 분리', codexPair.first.kind === 'codex' && codexPair.second.kind === 'codex' && codexPair.first.model !== codexPair.second.model && codexPair.first.name !== codexPair.second.name)
+check('Codex 같은 모델 두 번은 리뷰어 부족', Boolean(reviewerSlots({ claude: 'missing', codex: 'ready', codexFirstModel: 'same', codexSecondModel: 'same' }).second.unavailable))
 const ready = reviewerSlots({ codex: 'ready', firstModel: '' })
 check('Codex 를 쓸 수 있으면 지금과 같다(claude + codex · 첫 자리 모델은 팩 값 그대로)', ready.second.name === 'codex' && !ready.second.unavailable && ready.first.model === '' && reviewerSlots({ codex: 'ready', firstModel: 'haiku' }).first.model === 'haiku')
 const pair = reviewerSlots({ codex: 'logged-out' })
@@ -382,6 +385,7 @@ BIN="$TMP/bin"; mkdir -p "$BIN"
 # claude -p --output-format json --json-schema … — structured_output 에 답(learn-review 가 쓰는 꼴)
 cat > "$BIN/claude" <<'SH'
 #!/bin/sh
+if [ "$1 $2" = "auth status" ]; then [ "${FAKE_CLAUDE_LOGIN:-in}" = in ]; exit $?; fi
 if [ -n "${FAKE_PROMPT:-}" ]; then cat > "$FAKE_PROMPT"; else cat > /dev/null; fi
 [ -n "${FAKE_CLAUDE_ARGS:-}" ] && echo "$*" > "$FAKE_CLAUDE_ARGS"
 case "${FAKE_CLAUDE:-approve}" in
@@ -395,6 +399,11 @@ cat > "$BIN/codex" <<'SH'
 #!/bin/sh
 # 돌리기 전 로그인 확인(codex login status — 종료 코드만 본다) · FAKE_CODEX_LOGIN=out 이면 로그인 안 됨
 if [ "$1 $2" = "login status" ]; then [ "${FAKE_CODEX_LOGIN:-in}" = in ]; exit $?; fi
+if [ "$1 $2" = "debug models" ]; then
+  [ "${FAKE_CODEX_CATALOG:-ok}" = fail ] && exit 1
+  echo '{"models":[{"slug":"gpt-test-first","visibility":"list"},{"slug":"hidden","visibility":"hide"},{"slug":"gpt-test-second","visibility":"list"}]}'
+  exit 0
+fi
 cat > /dev/null
 [ -n "${FAKE_CODEX_ARGS:-}" ] && echo "$*" > "$FAKE_CODEX_ARGS"
 # 도구 없이 돌리는 옵션(사용자 설정 · 셸 · 웹 끄기)이 빠지면 실패한다 — docs/pr-auto.md "리뷰어"
@@ -429,9 +438,23 @@ run_case "둘 다 승인 → 승인" "$BIN:/usr/bin:/bin" approve FAKE_CODEX=ok
 run_case "둘 다 답함(claude 승인 · codex 수정 필요) → 수정 필요" "$BIN:/usr/bin:/bin" changes
 ONLY="$TMP/only-claude"; mkdir -p "$ONLY"; cp "$BIN/claude" "$ONLY/"
 # Codex 를 처음부터 못 쓰면 두 번째 자리를 다른 모델 Claude 가(사용자 결정 b — 기본 opus + sonnet · 팩 값이 먼저 · 같으면 리뷰어 부족)
+CODEX_ONLY="$TMP/only-codex"; mkdir -p "$CODEX_ONLY"; cp "$BIN/codex" "$CODEX_ONLY/"
+run_case "Codex 만 → 다른 모델 둘 승인" "$CODEX_ONLY:/usr/bin:/bin" approve FAKE_CODEX=ok FAKE_CONFIG='{"models":{"prReview":{"codex":"gpt-test-first"},"prReviewSecond":{"codex":"gpt-test-second"}}}'
+run_case "Claude 로그아웃 → Codex 둘" "$BIN:/usr/bin:/bin" approve FAKE_CLAUDE_LOGIN=out FAKE_CODEX=ok FAKE_CONFIG='{"models":{"prReview":{"codex":"gpt-test-first"},"prReviewSecond":{"codex":"gpt-test-second"}}}'
+run_case "Codex 만 · 같은 모델 두 개 → 리뷰어 부족" "$CODEX_ONLY:/usr/bin:/bin" insufficient FAKE_CODEX=ok FAKE_CONFIG='{"models":{"prReview":{"codex":"same"},"prReviewSecond":{"codex":"same"}}}'
+MODEL_HOME="$TMP/model-home"; mkdir -p "$MODEL_HOME"
+printf 'model = "gpt-test-first"\n' > "$MODEL_HOME/config.toml"
+run_case "Codex 만 · 사용자 기본+공개 목록의 다른 모델" "$CODEX_ONLY:/usr/bin:/bin" approve FAKE_CODEX=ok CODEX_HOME="$MODEL_HOME"
+SINGLE="$(env PATH="$CODEX_ONLY:/usr/bin:/bin" CODEX_HOME="$MODEL_HOME" FAKE_CODEX=ok FAKE_CODEX_CATALOG=fail "$(command -v node)" --input-type=module -e '
+  const {planReviewers,runReviewers}=await import("./scripts/pr-auto.mjs")
+  const {aggregate}=await import("./scripts/lib/pr-auto.mjs")
+  const lineup=planReviewers(); const results=await runReviewers("리뷰",{},[],lineup.slots)
+  console.log(lineup.slots.length+" "+aggregate(results,lineup.slots.length).verdict+" "+lineup.note)')"
+case "$SINGLE" in '1 approve '*'모델 목록을 읽지 못함'*) echo '  ✔ 목록 실패 → 한 자리 실제 판정·이유 기록';; *) echo "  ✖ 한 자리 전환: $SINGLE"; FAIL=1;; esac
 PAIR_LOG="$TMP/claude-pair"; : > "$PAIR_LOG"
 cat > "$ONLY/claude" <<'SH'
 #!/bin/sh
+if [ "$1 $2" = "auth status" ]; then [ "${FAKE_CLAUDE_LOGIN:-in}" = in ]; exit $?; fi
 cat > /dev/null
 echo "$*" >> "$FAKE_CLAUDE_ARGS"
 echo '{"is_error":false,"structured_output":{"verdict":"approve","summary":"좋다","findings":[],"decisions":[]}}'

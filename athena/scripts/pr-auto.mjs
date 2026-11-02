@@ -32,7 +32,7 @@
  */
 import { closeSync, existsSync, mkdirSync, mkdtempSync, openSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
-import { homedir, tmpdir } from 'node:os'
+import { tmpdir } from 'node:os'
 import { execFile, spawn, spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
@@ -45,10 +45,11 @@ import { screen, screenText } from './lib/screen.mjs'
 import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
+import { codexReviewArgs, readCodexSettings, reviewToolState, codexReviewModels } from './lib/review-cli.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, planFastPath, repoFlow, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, codexModelArgs, codexUserSettings, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
+  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
 } from './lib/pr-auto.mjs'
@@ -149,51 +150,53 @@ const reviewWithClaude = async (prompt, workDir, config, slot = { name: 'claude'
   })
 }
 
-// Codex 에서 끄는 도구 기능(codex features list 에서 켜져 있던 것 중 도구를 주는 것 — 2026-10-25 · codex-cli 0.160)
-const CODEX_TOOL_FEATURES = [
-  'shell_tool', 'unified_exec', 'unified_exec_tty', 'shell_snapshot', 'apps', 'browser_use', 'browser_use_external', 'browser_use_full_cdp_access',
-  'computer_use', 'in_app_browser', 'plugins', 'remote_plugin', 'multi_agent', 'image_generation', 'view_image', 'hooks', 'skill_search',
-  'skill_mcp_dependency_install', 'tool_suggest', 'code_mode_host', 'sleep_tool', 'goals', 'worktrees', 'in_app_local_automation',
-]
-// 사용자 config.toml(CODEX_HOME 이 있으면 그 아래)의 맨 위 model · model_reasoning_effort — 없으면 비어 있어 Codex 기본값
-const readCodexSettings = () => {
-  try { return codexUserSettings(readFileSync(join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'config.toml'), 'utf8')) } catch { return codexUserSettings('') }
-}
-const reviewWithCodex = async (prompt, workDir) => {   // 모델 · 생각 강도는 ~/.codex/config.toml 의 맨 위 두 값(팩 models 는 Claude 만)
+const reviewWithCodex = async (prompt, workDir, config, slot = { name: 'codex' }) => {   // 자리에 모델이 있으면 우선하고 생각 강도는 사용자 설정을 따른다
   const schemaFile = join(workDir, 'codex-schema.json')
   const outFile = join(workDir, 'codex-answer.json')
   writeFileSync(schemaFile, JSON.stringify(REVIEW_SCHEMA))
   // 도구 없이 — 읽기 전용 샌드박스만으로는 셸 읽기 · 웹 · 사용자 MCP 서버가 남는다(2026-10-25 실측, codex-cli 0.160).
   // --ignore-user-config(사용자 config.toml 의 MCP 서버 · 훅을 안 읽는다 · 로그인은 그대로) + 도구 기능 끄기 + 웹 검색 끄기 — 끈 뒤 셸 · 웹 · MCP 가 없는 것을 실측했다.
   // 프롬프트는 표준 입력으로(인자 "-" 는 --disable 뒤에서 거절된다) · 세션 저장 없음 · 빈 폴더 — 답(마지막 메시지)만 파일로 받는다
-  const disable = CODEX_TOOL_FEATURES.flatMap((feature) => ['--disable', feature])
   // --ignore-user-config 가 config.toml 의 model · model_reasoning_effort 도 안 읽게 하니 그 두 값만 따로 넘긴다
-  const run = await runCli('codex', ['exec', '--ignore-user-config', ...codexModelArgs(readCodexSettings()), ...disable, '-c', 'web_search="disabled"', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check', '--color', 'never', '-C', workDir, '--output-schema', schemaFile, '-o', outFile], { input: prompt, cwd: workDir })
-  return outcome('codex', run, () => JSON.parse(readFileSync(outFile, 'utf8')))
+  const run = await runCli('codex', codexReviewArgs(workDir, schemaFile, outFile, slot.model), { input: prompt, cwd: workDir })
+  return outcome(slot.name, run, () => JSON.parse(readFileSync(outFile, 'utf8')))
 }
 
 const REVIEWER_RUN = { claude: reviewWithClaude, codex: reviewWithCodex }
 // Codex 를 처음부터 쓸 수 있나 — 명령이 있고 로그인돼 있나(codex login status 종료 코드 · 출력은 보지 않는다 — 2026-10-26 실측 codex-cli 0.160 · 로그인 0 · 안 됨 1)
-const codexState = () => {
-  if (!has('codex')) return 'missing'
-  return spawnSync('codex', ['login', 'status'], { stdio: 'ignore', timeout: 30_000 }).status === 0 ? 'ready' : 'logged-out'
-}
+const codexState = () => reviewToolState('codex')
 // 리뷰어 자리 둘 — 첫 자리 Claude · 두 번째 자리 Codex 또는 다른 모델 Claude(lib reviewerSlots) · 구성 메모(lineupNote)
 // Codex 가 있으면 첫 자리 모델은 지금처럼 modelArgs(이상한 값이면 그 리뷰어 실패로 드러난다)
 // 팩 models 가 이상하면 기본값으로 덮지 않는다 — 첫 자리를 명시적인 실패(failed)로 둔다. 앞 리뷰 승인 이어받기보다 먼저 보므로(runReviewers)
 // 이어받아도 첫 자리는 실패 → 리뷰어 부족으로 멈춘다. 두 번째 자리도 기본 모델 Claude 로 대신하지 않는다(Codex 가 있으면 Codex 만 돈다 · PR #21 자동 리뷰 지적)
 export const planReviewers = (config = {}) => {
   const codex = codexState()
+  const claude = reviewToolState('claude')
   let models
   try {
-    models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE) }
+    models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE),
+      codexFirstModel: modelOf(config, 'prReview', 'codex'), codexSecondModel: modelOf(config, SECOND_MODEL_ROLE, 'codex') }
   } catch (error) {
     const why = `팩 models 설정 오류 — ${firstLine(error.message)}`
     const first = { name: 'claude', kind: 'claude', failed: why }
     const second = codex === 'ready' ? { name: 'codex', kind: 'codex' } : { name: 'codex', kind: 'codex', unavailable: `Codex 를 못 씀 · 대신할 Claude 도 ${why}` }
     return { slots: [first, second], note: `리뷰어 claude(${why}) + ${second.unavailable ? 'codex(못 씀)' : 'codex'}` }
   }
-  const lineup = reviewerSlots({ codex, ...models })
+  if (claude !== 'ready' && codex === 'ready') {
+    models.codexFirstModel ||= readCodexSettings().model
+    if (!models.codexSecondModel) {
+      const catalog = codexReviewModels()
+      const secondModel = models.codexFirstModel ? catalog.models.find((model) => model !== models.codexFirstModel) : ''
+      if (!secondModel) {
+        const first = { name: 'codex', kind: 'codex', model: models.codexFirstModel }
+        const reason = catalog.reason || (models.codexFirstModel ? '첫 자리와 다른 공개 Codex 모델 없음' : 'Codex 기본 모델 이름을 확인하지 못함')
+        return { slots: [first], note: `리뷰어 codex${first.model ? `(${first.model})` : ''} 하나 — ${reason}` }
+      }
+      models.codexSecondModel = secondModel
+    }
+  }
+  const lineup = reviewerSlots({ codex, claude, ...models })
+  if (claude !== 'ready') return { slots: [lineup.first, lineup.second], note: lineupNote(lineup) }
   if (lineup.second.kind === 'codex' && !lineup.second.unavailable) lineup.second = { ...lineup.second, model: readCodexSettings().model }
   const first = lineup.second.kind === 'codex' ? { name: 'claude', kind: 'claude' } : lineup.first
   return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models.firstModel }, second: lineup.second }) }
@@ -577,8 +580,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // 빠른 길 · 짧은 리뷰는 첫 자리(claude)만 — 두 번째 자리(Codex · 다른 모델 Claude)는 부르지 않는다
   const slots = fast || short ? lineup.slots.slice(0, SHORT_REVIEWERS) : lineup.slots
   // 짧은 리뷰는 리뷰어 하나의 승인으로 판정한다(라운드 상한 max 는 그대로 — 줄 · 댓글의 라운드 4/3 · 2/1)
-  const needed = short ? SHORT_REVIEWERS : limits.reviewers
-  const lineupText = fast ? `${FAST_PATH} — 리뷰어 ${slots[0].name} 하나 · 상한 ${FAST_MAX_ROUNDS}` : lineup.note
+  const needed = slots.length
+  limits.reviewers = needed
+  const lineupText = fast ? `${FAST_PATH} — 리뷰어 ${slots[0].name} 하나 · 상한 ${FAST_MAX_ROUNDS}${lineup.slots.length === 1 ? ` · ${lineup.note}` : ''}` : lineup.note
   const note = [...(baseMerge ? [BASE_MERGED] : []), short ? `${SHORT_REVIEW} — 리뷰어 ${slots[0].name} 하나` : lineupText, ...inherited.map((result) => result.review.summary)].join(' · ')
   console.log(`  ↪ ${note}`)
   // 2라운드부터는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 것만(결정 D) — 지난 기록이 이 PR 의 이전 HEAD 것일 때만
@@ -602,7 +606,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const reviewMs = Date.now() - reviewStartedAt   // 지표의 리뷰 구간(docs/events.md)
   const summary = aggregate(results, needed)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)
-  const singleName = short ? SHORT_REVIEW : '빠른 길'
+  const singleName = short ? SHORT_REVIEW : fast ? '빠른 길' : '사용 가능한 리뷰어'
   const whoApproves = needed === 1 ? `${singleName} — 하나` : '둘 다'
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${needed}(${whoApproves} 승인해야 머지)`)
   const comment = masked(reviewComment({ sha, round, results, summary, lineup: short ? note : lineup.note, partial: partialCount(packed), max: limits.max, reviewers: needed, fast, short }))

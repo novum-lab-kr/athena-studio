@@ -129,7 +129,17 @@ export const SECOND_MODEL_ROLE = 'prReviewSecond'
 export const CLAUDE_PAIR_DEFAULTS = { first: 'opus', second: 'sonnet' }
 // codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · firstModel · secondModel: 팩 models 값('' = 안 적음)
 // 결과: { first: { name, kind, model? }, second: { name, kind, model?, unavailable?, replaces? } } — name 은 댓글 · 사건 기록 · 판정에 쓰는 이름
-export const reviewerSlots = ({ codex, firstModel = '', secondModel = '' }) => {
+export const reviewerSlots = ({ codex, claude = 'ready', firstModel = '', secondModel = '', codexFirstModel = '', codexSecondModel = '' }) => {
+  if (claude !== 'ready') {
+    const why = claude === 'missing' ? 'Claude 설치 안 됨' : 'Claude 로그인 안 됨'
+    const first = { name: 'codex', kind: 'codex', model: codexFirstModel }
+    const second = { name: `codex-${codexSecondModel || 'second'}`, kind: 'codex', model: codexSecondModel, replaces: why }
+    if (codex !== 'ready') return { first: { ...first, unavailable: '로그인된 리뷰 도구 없음' }, second: { ...second, unavailable: '로그인된 리뷰 도구 없음' } }
+    if (!codexFirstModel || !codexSecondModel || codexFirstModel === codexSecondModel) {
+      return { first, second: { ...second, unavailable: '서로 다른 Codex 모델 두 개가 필요함(models.prReview.codex · models.prReviewSecond.codex)' } }
+    }
+    return { first, second }
+  }
   if (codex === 'ready') return { first: { name: 'claude', kind: 'claude', model: firstModel }, second: { name: 'codex', kind: 'codex' } }
   const why = codex === 'missing' ? 'Codex 설치 안 됨' : 'Codex 로그인 안 됨'
   const firstUsed = firstModel || CLAUDE_PAIR_DEFAULTS.first
@@ -140,8 +150,8 @@ export const reviewerSlots = ({ codex, firstModel = '', secondModel = '' }) => {
 }
 // 어떤 구성으로 돌았나 — PR 댓글 · 계획서 "- Auto review:" 줄에 남긴다
 export const lineupNote = ({ first, second }) => {
-  const head = `리뷰어 claude${first.model ? `(${first.model})` : ''}`
-  if (second.kind === 'claude') return `${head} + claude(${second.model}) — ${second.replaces}`
+  const head = `리뷰어 ${first.kind}${first.model ? `(${first.model})` : ''}`
+  if (second.replaces && !second.unavailable) return `${head} + ${second.kind}(${second.model}) — ${second.replaces}`
   return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
 }
 

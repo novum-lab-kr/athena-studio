@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * 학습 루프 3단계 — 배우기 전용 검토자. 작업 대화 기록을 Claude 가 따로 읽고 "다음 작업이 다시 밟을 것"을 뽑아 learn 이슈로 제안한다.
+ * 학습 루프 3단계 — 배우기 전용 검토자. 작업 대화 기록을 Claude 또는 Codex가 따로 읽고 "다음 작업이 다시 밟을 것"을 뽑아 learn 이슈로 제안한다.
  * 학습 루프 3단계 — 배우기 전용 검토자(승인 기반 background review)
  *
  *   node scripts/learn-review.mjs --plan <plans/…md> [--head <sha>] [--dry-run] [--force]
@@ -13,7 +13,7 @@
  *        대기열에 일이 남았고 도는 검토가 없으면 뒤에서 띄운다(코어 업데이트가 옛 검토를 끈 뒤 새 코드로 — bodies.mjs moveBody). 바로 끝난다
  *
  * 안전
- *   - 검토자 Claude 는 도구 없이(--tools "") 줄인 기록만 읽고 JSON 으로만 답한다. 파일은 이 스크립트가 쓴다
+ *   - 검토자는 도구 없이(Claude --tools "" · Codex 도구 기능 차단) 줄인 기록만 읽고 JSON으로만 답한다. 파일은 이 스크립트가 쓴다
  *   - 기록은 사용자 말·에이전트 답·도구 이름과 짧은 인자·도구 오류 첫 줄만. 도구 결과 본문은 넣지 않고 비밀값 모양은 가린다
  *   - 출력·이슈에 대화 원문을 옮기지 않는다(LLM 이 쓴 규칙·근거 한 줄만)
  *   - 같은 계획서·같은 HEAD 는 한 번만(계획서 Checkpoint "- Learn review:" 줄)
@@ -33,7 +33,8 @@ import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 import { maskSecrets } from './lib/mask.mjs'
-import { modelArgs } from './lib/models.mjs'
+import { modelArgs, modelOf } from './lib/models.mjs'
+import { codexReviewArgs, reviewToolState } from './lib/review-cli.mjs'
 import { decideGate, readSeen, seenIdOf, writeSeen } from './lib/learn-seen.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -104,8 +105,9 @@ const firstUserText = async (path) => {
   let seen = 0
   for await (const line of lines) {
     if (++seen > 40) break
-    if (!line.includes('"type":"user"')) continue
     const text = userText(line)
+    // Codex는 작업 지시 앞에 AGENTS.md와 환경 문맥을 사용자 메시지로 저장한다.
+    if (text.startsWith('# AGENTS.md instructions') || text.startsWith('<environment_context>')) continue
     if (text) {
       lines.close()
       return text
@@ -116,8 +118,7 @@ const firstUserText = async (path) => {
 export const findTranscripts = async (planFile) => {
   const found = []
   const headers = [planFile].flatMap((path) => [`이 작업의 계획서: ${join(ROOT, path)} —`, `리뷰할 계획서: ${join(ROOT, path)} —`])
-  if (!existsSync(projectsDir)) return found
-  for (const dir of readdirSync(projectsDir)) {
+  for (const dir of existsSync(projectsDir) ? readdirSync(projectsDir) : []) {
     let files = []
     try { files = readdirSync(join(projectsDir, dir)) } catch { continue }
     for (const file of files) {
@@ -129,13 +130,39 @@ export const findTranscripts = async (planFile) => {
       if (headers.some((header) => start.startsWith(header))) found.push(path)
     }
   }
+  const sessionsDir = join(process.env.CODEX_HOME || join(homedir(), '.codex'), 'sessions')
+  if (existsSync(sessionsDir)) {
+    for (const entry of readdirSync(sessionsDir, { recursive: true, withFileTypes: true })) {
+      if (!entry.isFile() || !/^rollout-.*\.jsonl$/.test(entry.name)) continue
+      const path = join(entry.parentPath, entry.name)
+      const head = stripNoise(await firstUserText(path))
+      if (headers.some((header) => head.startsWith(header))) found.push(path)
+    }
+  }
   return found
 }
 
 // ── 기록 줄이기 ──────────────────────────────────────────────────────────
+// 모니터와 같은 실측 response_item만 쓴다. event_msg 중복과 도구 결과 본문은 넣지 않는다.
+const transcriptRecord = (record) => {
+  if (record.type !== 'response_item') return record
+  const payload = record.payload ?? {}
+  if (payload.type === 'message' && ['user', 'assistant'].includes(payload.role)) {
+    const content = (payload.content ?? []).filter((block) => ['input_text', 'output_text'].includes(block.type) && typeof block.text === 'string')
+      .map((block) => ({ type: 'text', text: block.text }))
+    return { type: payload.role, message: { content } }
+  }
+  if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
+    let input = {}
+    try { input = typeof payload.arguments === 'string' ? JSON.parse(payload.arguments) : payload.arguments ?? {} } catch { /* 깨진 인자는 생략 */ }
+    return { type: 'assistant', message: { content: [{ type: 'tool_use', name: payload.name ?? 'tool', input: { command: input.cmd ?? input.command ?? input.title ?? '' } }] } }
+  }
+  return {}
+}
+
 function userText(line) {
   try {
-    const record = JSON.parse(line)
+    const record = transcriptRecord(JSON.parse(line))
     if (record.type !== 'user') return ''
     const content = record.message?.content
     if (typeof content === 'string') return content
@@ -150,12 +177,12 @@ const clip = (text, size) => (text.length > size ? `${text.slice(0, size)}…` :
 const safeClip = (text, size) => clip(maskSecrets(text).masked, size)
 const stripNoise = (text) => text.replace(/<system-reminder>[\s\S]*?<\/system-reminder>/g, '').replace(/<local-command-[\s\S]*?<\/local-command-[a-z]+>/g, '').trim()
 
-const condense = async (path) => {
+export const condense = async (path) => {
   const out = []
   const lines = createInterface({ input: createReadStream(path, 'utf8'), crlfDelay: Infinity })
   for await (const line of lines) {
     let record
-    try { record = JSON.parse(line) } catch { continue }
+    try { record = transcriptRecord(JSON.parse(line)) } catch { continue }
     const content = record.message?.content
     if (record.type === 'user') {
       if (typeof content === 'string') {
@@ -196,14 +223,16 @@ const fitBudget = (text) => {
 }
 
 // ── 검토자 프롬프트·답 형식 ─────────────────────────────────────────────
-const LEARN_SCHEMA = {
+export const LEARN_SCHEMA = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     items: {
       type: 'array',
       maxItems: 3,
       items: {
         type: 'object',
+        additionalProperties: false,
         properties: {
           kind: { type: 'string', enum: ['gotchas', 'skill'] },
           section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). skill 이면 빈 문자열' },
@@ -313,11 +342,28 @@ ${transcript}
 `
 }
 
-const askReviewer = (prompt) => {
+export const askReviewer = (prompt) => {
+  const currentConfig = loadConfig(ROOT)
+  if (reviewToolState('claude') !== 'ready') {
+    if (reviewToolState('codex') !== 'ready') throw new Error('학습 검토에 쓸 로그인된 Claude 또는 Codex가 없다')
+    const workDir = mkdtempSync(join(tmpdir(), 'athena-learn-codex-'))
+    try {
+      const schemaFile = join(workDir, 'schema.json')
+      const outFile = join(workDir, 'answer.json')
+      writeFileSync(schemaFile, JSON.stringify(LEARN_SCHEMA))
+      const result = spawnSync('codex', codexReviewArgs(workDir, schemaFile, outFile, modelOf(currentConfig, 'learnReview', 'codex')), {
+        input: prompt, cwd: workDir, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 10 * 60 * 1000,
+      })
+      if (result.status !== 0) throw new Error(`codex 학습 검토 실패(코드 ${result.status})`)
+      const answer = JSON.parse(readFileSync(outFile, 'utf8'))
+      if (!Array.isArray(answer.items)) throw new Error('검토자 답 모양이 틀림(JSON 형식)')
+      return { items: answer.items, cost: 0 }
+    } finally { rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
+  }
   // 도구 없이, 세션 저장 없이, 중립 폴더에서(hermes CLAUDE.md·훅을 끌어오지 않게) 한 번 돈다
   // 모델은 팩 pack.json "models.learnReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 검토가 실패한다(기본 모델로 다시 하지 않는다).
   // 설정은 검토마다 새로 읽는다 — 뒤에서 도는 검토 프로세스를 다시 띄우지 않아도 pack.json 을 고친 값이 다음 검토부터 먹는다
-  const result = spawnSync('claude', ['-p', ...modelArgs(loadConfig(ROOT), 'learnReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(LEARN_SCHEMA)], {
+  const result = spawnSync('claude', ['-p', ...modelArgs(currentConfig, 'learnReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(LEARN_SCHEMA)], {
     input: prompt,
     cwd: tmpdir(),
     encoding: 'utf8',
