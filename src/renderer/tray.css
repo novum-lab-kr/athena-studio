@@ -1,5 +1,6 @@
 /* 메뉴 막대 패널(★ Codex 상태 목록형) — 340px · 어두운 반투명(창은 vibrancy) · 작은 글씨 · 색은 상태에만 */
 :root {
+  color-scheme: dark; /* 스크롤바 같은 기본 컨트롤도 어두운 모양으로(style.css 와 같다) */
   --text: #f2f3f5;
   --muted: #9aa1ad;
   --line: rgba(255, 255, 255, 0.1);
@@ -42,8 +43,9 @@ html { background: rgba(20, 21, 25, 0.62); }
 .att .it.b .tx::before { content: "! "; color: var(--warn); font-weight: 700; }
 .att .it .go { flex: none; color: var(--muted); }
 .att em { flex: none; padding: 0 5px; border-radius: 4px; background: rgba(167, 139, 250, 0.2); color: var(--violet); font-size: 10.5px; font-style: normal; }
-/* 에이전트 — 두 줄 행(이름 / 작업 공간) · 많으면 칸 안 스크롤 */
-.agents { max-height: 220px; overflow-y: auto; margin: 0 -12px; padding: 0 12px; }
+/* 에이전트 — 두 줄 행(이름 / 작업 공간) · 많으면 칸 안 스크롤
+   세로만 — .ag 가 hover 바탕을 넓히려고 오른쪽으로 4px 나가서 그냥 두면 가로 스크롤이 생긴다 */
+.agents { max-height: 220px; overflow-x: hidden; overflow-y: auto; margin: 0 -12px; padding: 0 12px; }
 .ag { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 0 7px; width: calc(100% + 8px); height: 44px; margin-left: -4px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
 .ag:hover { background: var(--line); }
 .ag .nm { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
