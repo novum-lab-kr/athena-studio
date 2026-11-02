@@ -36,6 +36,7 @@ export class Pane {
   declare title: string | null
   declare lastOutputAt: number
   declare exited: boolean
+  declare submitting?: boolean
   declare waiters: Set<Waiter>
   declare ptySize: { cols: number; rows: number }
   declare screen: InstanceType<typeof Terminal>

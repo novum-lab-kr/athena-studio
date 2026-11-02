@@ -16,6 +16,7 @@ import { isBoardUp, queueBoard, boardOwner, boardJson, fetchBoardJson } from './
 import type { BoardStart } from './board.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 import type { RunCoreOptions } from './core-runner.mts'
+import type { DaemonCall } from './daemon-link.mts'
 import type { StudioRequest } from '../lib/requests.mts'
 
 // error — 마지막 읽기가 실패한 까닭(코어 오류 코드) · 성공하면 null. "요청 없음" 과 "읽지 못함" 을 화면이 가르게
@@ -34,6 +35,7 @@ export type WorkCtx = {
   win: BrowserWindow | null
   send(channel: string, ...values: unknown[]): void
   peekCall(op: string, args?: Record<string, unknown>): Promise<unknown>
+  daemonCall: DaemonCall
   notifyDaemon(op: string, args: Record<string, unknown>): unknown
   boardPortNow?: () => number
   openBoardExternal?: () => Promise<{ ok: boolean }>
@@ -209,11 +211,8 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     const listed = (await ctx.peekCall('pane list')) as PaneListReply
     const panes: { id?: unknown }[] = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
     if (!panes.some((pane) => pane.id === paneId)) return false
-    ctx.notifyDaemon('input', { pane: paneId, data: line })
-    // 입력창이 붙여 넣은 글을 받은 뒤에 Enter — 같이 보내면 줄바꿈으로 들어가는 에이전트가 있다
-    await new Promise((resolve) => setTimeout(resolve, 150))
-    ctx.notifyDaemon('input', { pane: paneId, data: '\r' })
-    return true
+    const sent = await ctx.daemonCall('pane run', { pane: paneId as string, text: line })
+    return !sent.error
   }
   // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
   ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null) => {

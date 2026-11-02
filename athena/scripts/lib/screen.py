@@ -502,13 +502,15 @@ def _dispatch(screen, words, flags, positional, raw_rest):
         return None, 0
     if op == 'pane send-text':
         _need(raw_rest, 2, 'pane 과 글')
-        # 끝의 --enter 는 글 넣기 뒤 Enter 까지 한 명령으로(글 넣기가 실패하면 예외로 빠져 Enter 를 보내지 않는다).
+        # 끝의 --enter 는 글 + Enter 전송 확인까지 한 명령으로(실패는 종료 코드로 전달).
         # 글 자리가 '--enter' 인 경우(인자 둘)는 글이다 — 셋일 때 마지막만 플래그
         if len(raw_rest) > 3 or (len(raw_rest) == 3 and raw_rest[2] != '--enter'):
             raise ScreenError('usage', 'pane send-text <pane> <글> [--enter]')
-        screen.send_text(raw_rest[0], raw_rest[1])
         if len(raw_rest) == 3:
-            screen.send_keys(raw_rest[0], ['Enter'])
+            # 데몬의 전송 확인 · 재시도와 pane run 이 같은 길을 쓴다. 글은 한 인자로 그대로.
+            screen.run(raw_rest[0], [raw_rest[1]])
+        else:
+            screen.send_text(raw_rest[0], raw_rest[1])
         return None, 0
     if op == 'pane send-keys':
         _need(raw_rest, 2, 'pane 과 키')

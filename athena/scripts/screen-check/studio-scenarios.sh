@@ -84,7 +84,7 @@ sc_studio_errors() {
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane list
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane split --target self --direction down --format id
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane is-shell p3
-  # 글 넣기가 실패하면 --enter 라도 Enter 를 보내지 않는다(로그에 send-text 한 줄뿐)
+  # --enter 는 데몬의 전송 확인까지 한 요청이며 실패를 그대로 옮긴다(로그에 run 한 줄뿐)
   step studio-down,studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "보고" --enter
   step studio-broken,studio "${IN_STUDIO[@]}" -- $S pane list
   step studio-down,studio "${IN_STUDIO[@]}" -- python3 -c 'import sys; sys.path.insert(0, "scripts/lib"); import screen

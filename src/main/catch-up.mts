@@ -84,8 +84,17 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
           await daemonCall('pane send-keys', { pane: item.pane, keys: ['C-c'] })
           continue
         }
-        await daemonCall('pane send-text', { pane: item.pane, text: '/exit' })
-        await daemonCall('pane send-keys', { pane: item.pane, keys: ['Enter'] })
+        const sent = await daemonCall('pane run', { pane: item.pane, text: '/exit' })
+        if (sent.error) {
+          catchUpBackoff = Date.now() + 10 * 60000
+          // 앞 pane 은 이미 나갔을 수 있다. 실제 셸로 돌아온 대화만 되살린다.
+          for (const prior of sessions) {
+            if (!prior.session) continue
+            const shell = await daemonCall<{ shell?: boolean }>('pane is-shell', { pane: prior.pane })
+            if (shell.result?.shell) await daemonCall('pane run', { pane: prior.pane, text: core.resumeCommand(prior.session) })
+          }
+          return { ok: false, reason: 'failed' }
+        }
       }
       // 코어가 보기에 다 끝날 때까지(최대 30초) — pane 은 셸로 돌아와도 claude 의 딸린 프로세스가 잠깐 남는다(2026-10-23 실측)
       let quiet = false

@@ -8,6 +8,7 @@ import path from 'node:path'
 import { execFile, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
+import { submitText } from '../lib/pane-submit.mts'
 import { Pane } from './pane.mts'
 import type { Waiter } from './pane.mts'
 import * as layout from '../lib/layout.mts'
@@ -368,8 +369,7 @@ export class Daemon {
       case 'pane split':
         return this.split(scope, args, message.caller)
       case 'pane run':
-        this.paneIn(scope, args.pane).write(`${args.text}\r`)
-        return undefined
+        return this.submitToPane(this.paneIn(scope, args.pane), String(args.text))
       case 'pane send-text':
         this.paneIn(scope, args.pane).write(String(args.text))
         return undefined
@@ -787,6 +787,27 @@ export class Daemon {
   }
 
   // ── 납작한 Pane (agent · 앞쪽 cwd 는 ps · lsof 로, 1초 캐시) ─────────────
+  async submitToPane(pane: Pane, text: string): Promise<void> {
+    if (pane.submitting) throw failure('unavailable', '이 pane 에 입력을 보내는 중이다')
+    pane.submitting = true
+    try {
+      await submitText(text, {
+        write: (value) => {
+          if (pane.exited) throw failure('not_found', `pane ${pane.id} 이 끝났다`)
+          pane.write(value)
+        },
+        read: async () => {
+          if (pane.exited) throw failure('not_found', `pane ${pane.id} 이 끝났다`)
+          const processes = await this.processes()
+          const text = pane.lines('visible').join('\n')
+          return { agent: model.detectAgent(processes, pane.pid, nodeArgs), text, waiting: model.waitingForInput(text) }
+        },
+      })
+    } finally {
+      pane.submitting = false
+    }
+  }
+
   async flatPanes(panes: Pane[]) {
     const processes = await this.processes()
     const foreground = panes.map((pane) => {

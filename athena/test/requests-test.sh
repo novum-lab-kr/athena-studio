@@ -80,7 +80,7 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
-[ "$1 $2 $3" = "pane send-text pgone" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
+[ "$1 $2 $3" = "pane run pgone" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
 exit 0
 CLIEOF
 chmod +x "$WORK/bin/athena-studio-cli"
@@ -88,12 +88,12 @@ export FAKE_LOG="$WORK/screen.log"; : > "$FAKE_LOG"
 AS() { local caller="$1"; shift; env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$caller" ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/athena.mjs "$@" --json 2>/dev/null | tail -1; }
 QR="$(A request open --kind question --title '어떻게 할까요?' --pane p5 | field request.id)"
 R="$(AS pg1 request answer "$QR" --by chat --choice '워크트리로' --text '새 워크트리에서 다시')"
-check "다른 pane 이 대화로 답 → answered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane send-text p5 \[요청 $QR\] 어떻게 할까요? — 답: 워크트리로 · 새 워크트리에서 다시" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+check "다른 pane 이 대화로 답 → answered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane run p5 \[요청 $QR\] 어떻게 할까요? — 답: 워크트리로 · 새 워크트리에서 다시" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
 check "보낸 뒤 ack → delivered" '[ "$(A request ack "$QR" | field request.state)" = delivered ]'
 : > "$FAKE_LOG"
 QS="$(A request open --kind question --title 같은pane --pane p5 | field request.id)"
 R="$(AS p5 request answer "$QS" --by chat --text 있다)"
-check "묻던 pane 에서 대화로 답 → 바로 delivered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = delivered ] && ! grep -q "send-text" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+check "묻던 pane 에서 대화로 답 → 바로 delivered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = delivered ] && [ ! -s "$FAKE_LOG" ]' "$R | $(cat "$FAKE_LOG")"
 QG="$(A request open --kind question --title 닫힌pane --pane pgone | field request.id)"
 R="$(AS pg1 request answer "$QG" --by chat --text 있다)"
 check "묻던 pane 에 못 보내면 answered 로 남고 sent false(앱에서 다시 보내기)" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = False ]' "$R"

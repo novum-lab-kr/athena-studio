@@ -198,9 +198,7 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
     const pane = tab && layout.paneIds(tab.tree)[0]
     if (!pane) return false
     await daemonCall('workspace select', { workspace: (athena as { id: string }).id })
-    const typed = await daemonCall('pane send-text', { pane, text })
-    if (typed.error) return false
-    await daemonCall('pane send-keys', { pane, keys: ['Enter'] })
-    return true
+    const sent = await daemonCall('pane run', { pane, text })
+    return !sent.error
   }
 }

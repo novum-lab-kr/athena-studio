@@ -106,6 +106,52 @@ const alive = (pid) => {
   }
 }
 
+test('send-text --enter: 실제 pty 의 첫 Enter 무시 재시도 · 실패 종료 코드', { skip: ptyMissing || false, timeout: 30000 }, async () => {
+  const dir = workDir()
+  const daemon = startDaemon(dir)
+  const fakeAgent = path.join(dir, 'codex')
+  fs.writeFileSync(fakeAgent, `
+    process.stdin.setRawMode(true)
+    let text = '', enters = 0
+    function draw() { process.stdout.write('\\x1b[2J\\x1b[H› ' + text + '\\r\\n\\r\\n footer\\r\\n') }
+    draw()
+    process.stdin.on('data', data => {
+      for (const char of data.toString()) {
+        if (char === '\\r') {
+          enters++
+          if (text !== 'never' && enters >= 2) text = ''
+        } else text += char
+      }
+      text = text.replace(/\\x1b\\[20[01]~/g, '')
+      draw()
+    })
+  `)
+  try {
+    await waitForSocket(daemon.socket, '데몬 소켓')
+    const app = await connect(daemon.socket)
+    const pane = (await app.call('tab new', { cwd: dir, cols: 100, rows: 30 })).result.pane
+    await cli(daemon.socket, ['pane', 'run', pane, `'${process.execPath}' '${fakeAgent}'`])
+    await waitFor(async () => JSON.parse((await cli(daemon.socket, ['pane', 'get', pane])).stdout).pane.agent === 'codex', '가짜 Codex 시작')
+    const send = (text) => new Promise((resolve) => {
+      execFile(path.join(ROOT, 'athena', 'scripts', 'screen'), ['pane', 'send-text', pane, text, '--enter'], {
+        env: { ...process.env, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
+      }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }))
+    })
+    assert.equal((await send('retry')).code, 0)
+    assert.match((await cli(daemon.socket, ['pane', 'read', pane, '--source', 'visible'])).stdout, /^›\s*$/m)
+    const failed = await send('never')
+    assert.equal(failed.code, 1)
+    assert.equal(JSON.parse(failed.stderr).error, 'timeout')
+    assert.match(failed.stderr, /입력 전송을 확인하지 못했다/)
+    await app.call('shutdown')
+    app.close()
+    await waitFor(() => !alive(daemon.pid), '데몬 종료')
+  } finally {
+    if (alive(daemon.pid)) process.kill(daemon.pid, 'SIGTERM')
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 · 다시 붙기 · 닫기', { skip: ptyMissing || false, timeout: 30000 }, async () => {
   const dir = workDir()
   const daemon = startDaemon(dir)
