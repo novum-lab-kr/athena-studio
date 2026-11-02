@@ -41,7 +41,7 @@ function setup(t) {
   // PATH 에 claude 하나 — agentDecision 이 claude 를 고르게
   const bin = path.join(root, 'bin')
   fs.mkdirSync(bin)
-  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\n', { mode: 0o755 })
+  fs.writeFileSync(path.join(bin, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
   const savedPath = process.env.PATH
   process.env.PATH = bin
   t.after(() => {
@@ -49,9 +49,9 @@ function setup(t) {
     fs.rmSync(root, { recursive: true, force: true })
   })
   const daemon = fakeDaemon()
-  const makeCtx = (athenaDir, waitCoreUpdate = async () => {}) => {
+  const makeCtx = (athenaDir, waitCoreUpdate = async () => {}, chooseAgent) => {
     const ctx = { athenaDir, daemonCall: daemon.callFor(athenaDir), packTask: (_name, work) => work(), packProgress() {}, studioEnv: () => ({}) }
-    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), waitCoreUpdate, disarmRestore() {} })
+    installAthenaAgent(ctx, { say: (key) => key, runPack: async () => ({ ok: true }), waitCoreUpdate, disarmRestore() {}, chooseAgent })
     return ctx
   }
   return { root, daemon, makeCtx }
@@ -162,4 +162,35 @@ test('업데이트 대기에서 함께 풀린 두 호출도 작업 공간 · 에
   assert.equal(started(daemon).length, 1)
   assert.equal(results[0].started, 'claude')
   assert.equal(results[1].focused, true)
+})
+
+
+test('둘이면 한 번 선택 · 기억한 도구로 재실행 · 취소하면 작업 공간도 만들지 않음', async (t) => {
+  const { root, daemon, makeCtx } = setup(t)
+  fs.writeFileSync(path.join(process.env.PATH, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  const body = fakeBody(root, 'choice')
+  let asked = 0
+  const choose = async () => { asked++; return 'codex' }
+  const ctx = makeCtx(body, async () => {}, choose)
+  assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
+  assert.equal(core.readMainTool(body), 'codex')
+  daemon.workspaces.length = 0
+  assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
+  assert.equal(asked, 1)
+  const cancelBody = fakeBody(root, 'cancel')
+  const cancel = makeCtx(cancelBody, async () => {}, async () => null)
+  assert.equal((await cancel.openAthenaAgent({})).cancelled, true)
+  assert.equal(daemon.workspaces.some((entry) => entry.body === cancelBody), false)
+  assert.equal(core.readMainTool(cancelBody), null)
+})
+
+
+test('로그인된 도구가 없으면 안내하고 재시도할 작업 공간을 남기지 않음', async (t) => {
+  const { root, daemon, makeCtx } = setup(t)
+  fs.writeFileSync(path.join(process.env.PATH, 'claude'), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
+  const ctx = makeCtx(fakeBody(root, 'no-auth'))
+  assert.deepEqual(await ctx.openAthenaAgent({}), { error: 'error.agentNotInstalled' })
+  assert.equal(daemon.workspaces.length, 0)
+  fs.writeFileSync(path.join(process.env.PATH, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  assert.equal((await ctx.openAthenaAgent({})).started, 'claude')
 })

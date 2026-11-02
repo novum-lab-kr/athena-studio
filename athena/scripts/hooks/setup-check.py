@@ -38,6 +38,14 @@ def main() -> None:
     cwd = os.path.realpath(payload.get('cwd') or os.getcwd())
     if cwd != ATHENA_DIR:
         return
+    # 재개·압축을 포함해 실제 리드 세션의 엔진을 기억한다(작업자·다른 cwd 는 위에서 제외).
+    if TOOL in ('claude', 'codex'):
+        import tempfile
+        fd, temp = tempfile.mkstemp(prefix='.athena-main-tool.', dir=ATHENA_DIR)
+        with os.fdopen(fd, 'w', encoding='utf-8') as out:
+            json.dump({'main': TOOL}, out)
+            out.write('\n')
+        os.replace(temp, os.path.join(ATHENA_DIR, '.athena-main-tool.json'))
     if payload.get('source') not in (None, 'startup', 'clear'):
         return
 
@@ -91,10 +99,11 @@ def main() -> None:
     # 기본 위치에 없는 레포만 남았다 — 어디 있는지는 사용자만 안다
     messages.append(f'⚙️  {len(still_missing)}개 레포를 {repos_root} 에서 찾지 못했습니다 ({", ".join(still_missing)}). 아무 말이나 입력하면 아테나가 위치를 물어 연결합니다.')
     system_message = '\n'.join(messages)
+    ask = 'AskUserQuestion' if TOOL == 'claude' else '사용 가능한 질문 도구(없으면 대화)'
     context = (
         f'[setup-check] repos/ 링크 점검: {repos_root} 에서 찾은 레포는 훅이 이미 scripts/setup.sh 로 자동 연결했다. '
         f'남은 {len(still_missing)}개는 그 위치에 없다 — {", ".join(still_missing)}. '
-        '사용자의 첫 메시지가 무엇이든 그 작업보다 먼저 이것을 처리한다(환경 설정이라 계획서 없이 진행한다). 한 줄로 알리고 곧바로 AskUserQuestion 으로 묻는다 — '
+        f'사용자의 첫 메시지가 무엇이든 그 작업보다 먼저 이것을 처리한다(환경 설정이라 계획서 없이 진행한다). 한 줄로 알리고 곧바로 {ask}로 묻는다 — '
         "질문 '이 레포들이 있는 폴더가 어디인가요?', header '레포 위치', 선택지: "
         "'폴더 경로 입력'(description 'Other 에 레포들이 나란히 있는 폴더 경로를 적어 주세요'), "
         "'아직 clone 안 함'(description 'clone 할 레포와 위치를 안내합니다'), '나중에'(description '지금은 건너뜀. 연결 안 된 레포의 에이전트는 동작하지 않음'). "

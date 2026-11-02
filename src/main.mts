@@ -468,7 +468,13 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   // ── 오른쪽 Explorer · 아테나 에이전트 · 되살리기 · 팩 레포 · 현황판 · 요청 · [작업] — src/main/*.mts ──
   // ctx 에 같은 이름으로 붙는다(부르는 쪽 · IPC 는 그대로). 쓰는 것(화면 문구 · 코어 명령 · 현황판 · 앱 설정)은 인자로 넘긴다
   installExplorer(ctx, { say, resolveInside })
-  installAthenaAgent(ctx, { say, runPack, waitCoreUpdate: () => updateGate.wait(), disarmRestore: () => (restoreArmedFor = null) })
+  installAthenaAgent(ctx, { say, runPack, waitCoreUpdate: () => updateGate.wait(), disarmRestore: () => (restoreArmedFor = null), chooseAgent: async () => {
+    const choice = await dialog.showMessageBox(ctx.win as BrowserWindow, {
+      type: 'question', message: say('agent.chooseTitle'), detail: say('agent.chooseDetail'),
+      buttons: ['Claude', 'Codex', say('agent.chooseCancel')], defaultId: 0, cancelId: 2,
+    })
+    return choice.response === 0 ? 'claude' : choice.response === 1 ? 'codex' : null
+  } })
   installPackRepos(ctx, { say, runPack, daemonPaths })
   // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
   let requestsState: RequestsState = { supported: false, requests: [], error: null }

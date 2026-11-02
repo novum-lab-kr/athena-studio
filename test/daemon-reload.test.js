@@ -56,6 +56,8 @@ function setup() {
   const dir = fs.mkdtempSync('/tmp/asd-reload-')
   fs.cpSync(path.join(ROOT, 'src', 'daemon'), path.join(dir, 'src', 'daemon'), { recursive: true })
   fs.cpSync(path.join(ROOT, 'src', 'lib'), path.join(dir, 'src', 'lib'), { recursive: true })
+  fs.mkdirSync(path.join(dir, 'athena', 'scripts', 'lib'), { recursive: true })
+  fs.copyFileSync(path.join(ROOT, 'athena', 'scripts', 'lib', 'main-tool.mjs'), path.join(dir, 'athena', 'scripts', 'lib', 'main-tool.mjs'))
   fs.cpSync(path.join(ROOT, 'bin'), path.join(dir, 'bin'), { recursive: true })
   fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(dir, 'package.json'))
   fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'))

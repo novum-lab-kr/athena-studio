@@ -91,7 +91,7 @@ export const loadConfig = (root = ATHENA_ROOT) => {
     // 여러 팩 구조 — 본체 설정의 pack 은 쓰지 않는다(활성 링크가 정본)
     const { pack: _ignored, ...local } = bodyConfig(root)
     const packFile = join(where.packDir, 'pack.json')
-    if (!existsSync(packFile)) throw new Error(`팩이 아직 없다: ${packFile} — 새 팩이면 claude 를 켜고 /setup`)
+    if (!existsSync(packFile)) throw new Error(`팩이 아직 없다: ${packFile} — 새 팩이면 claude 또는 codex 를 켜고 docs/setup.md 절차로 시작`)
     const pack = JSON.parse(readFileSync(packFile, 'utf8'))
     const packLocal = readJson(join(where.packData, 'local.json')) ?? {}
     return { ...pack, ...local, ...packLocal, repos: pack.repos ?? [], packDir: where.packDir, packId: where.packId, packDataDir: where.packData }

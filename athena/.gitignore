@@ -68,3 +68,7 @@ __pycache__/
 # oh-my-claudecode 세션 상태(어느 폴더에든 생긴다) · 만들어 쓰는 다이어그램 목록(scripts/build-diagram-index.mjs)
 .omc/
 docs/diagrams/index.html
+
+# 본체의 주 도구 — 로컬 세션 기록
+/.athena-main-tool.json
+/.athena-main-tool.*

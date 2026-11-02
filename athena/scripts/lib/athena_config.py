@@ -64,7 +64,7 @@ def load(athena_dir):
         local = {key: value for key, value in body_config(athena_dir).items() if key != 'pack'}
         pack_file = os.path.join(where['packDir'], 'pack.json')
         if not os.path.isfile(pack_file):
-            raise SystemExit(f'팩이 아직 없다: {pack_file} — 새 팩이면 claude 를 켜고 /setup')
+            raise SystemExit(f'팩이 아직 없다: {pack_file} — 새 팩이면 claude 또는 codex 를 켜고 docs/setup.md 절차로 시작')
         with open(pack_file, encoding='utf-8') as pack_json:
             pack = json.load(pack_json)
         pack_local = _read_json(os.path.join(where['packData'], 'local.json')) or {}

@@ -32,13 +32,13 @@ export type AthenaAgentCtx = {
   restoreNow?: unknown
 }
 
-type AthenaAgentDeps = { say: Say; runPack: RunPack; waitCoreUpdate: () => Promise<void>; disarmRestore: () => void }
+type AthenaAgentDeps = { say: Say; runPack: RunPack; waitCoreUpdate: () => Promise<void>; disarmRestore: () => void; chooseAgent?: () => Promise<'claude' | 'codex' | null> }
 
-export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCoreUpdate, disarmRestore }: AthenaAgentDeps): void {
+export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCoreUpdate, disarmRestore, chooseAgent }: AthenaAgentDeps): void {
   // 옛 main.js 의 지역 daemonCall 과 같은 함수(ctx.daemonCall 은 창을 만들 때 한 번 붙고 바뀌지 않는다)
   const daemonCall = ctx.daemonCall
   // ── 아테나 에이전트 ──
-  // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 만들어 묻지 않고 claude(없으면 codex)를 켠다
+  // athena 작업 공간(이 창의 아테나 폴더)이 있으면 그리로 옮기기만 하고, 없으면 설치·로그인을 확인하고 주 도구를 고른다
   // keepView — 팩을 바꿔 돌아왔을 때: 이미 있으면 옮기지 않는다(그 본체에서 보던 자리 그대로)
   // 같은 창 문맥에서 '찾기 → (업데이트 대기) → 재확인 → 작업 공간 만들기 → 에이전트 시작' 은 한 번에 하나만 — 대기하던 두 호출이 함께 풀려도 둘 다 '없음'으로 보고 둘 만들지 않게
   let agentTail: Promise<unknown> = Promise.resolve()
@@ -72,10 +72,17 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
       await daemonCall('workspace select', { workspace: createdMeanwhile.id })
       return { focused: true, restore }
     }
-    const decision = core.agentDecision(core.availableAgents(process.env.PATH)) as { none?: true; agent?: string }
+    const decision = core.agentDecision(await core.authenticatedAgents(), core.readMainTool(ctx.athenaDir as string)) as { none?: true; choose?: true; agent?: 'claude' | 'codex' }
+    if (decision.choose) {
+      const selected = await chooseAgent?.()
+      if (!selected) return { cancelled: true }
+      decision.agent = selected
+    }
+    if (decision.none) return { error: say('error.agentNotInstalled') }
+    // 사용자가 선택한 값은 다음 실행에도 유지한다. 실제 실행 도구는 SessionStart 가 다시 기록한다.
+    if (decision.agent) core.writeMainTool(ctx.athenaDir as string, decision.agent)
     const created = (await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })) as CreatedReply
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
-    if (decision.none) return { error: say('error.agentNotInstalled') }
     // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(claude 만 — 세션 id 는 코어가 모양을 본 값)
     const [first, ...rest] = decision.agent === 'claude' ? athenaSessions : []
     const text = first ? core.resumeCommand(first.session) : decision.agent

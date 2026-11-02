@@ -46,7 +46,7 @@ fi
 failed=0
 echo
 echo "도구 점검:"
-for tool in git node pnpm claude; do
+for tool in git node pnpm; do
   if command -v "$tool" >/dev/null 2>&1; then
     ver="$("$tool" --version 2>/dev/null | head -1)"
     printf '  ✔ %-7s %s\n' "$tool" "$ver"
@@ -54,6 +54,17 @@ for tool in git node pnpm claude; do
     printf '  ✖ %-7s 없음\n' "$tool"
   fi
 done
+
+# 인증 정보는 출력하지 않고 종료 코드만 확인한다. 에이전트 CLI 는 이 둘만 검사한다.
+ready=0
+for tool in claude codex; do
+  if command -v "$tool" >/dev/null 2>&1; then
+    if { [ "$tool" = claude ] && "$tool" auth status >/dev/null 2>&1; } || { [ "$tool" = codex ] && "$tool" login status >/dev/null 2>&1; }; then
+      printf '  ✔ %s 로그인됨\n' "$tool"; ready=$((ready+1))
+    else printf '  ✖ %s 로그인 필요\n' "$tool"; fi
+  else printf '  ✖ %s 없음\n' "$tool"; fi
+done
+if [ "$ready" -eq 0 ]; then failed=$((failed+1)); fi
 
 
 echo
@@ -73,4 +84,4 @@ fi
 echo
 if [ "$missing" -gt 0 ]; then echo "⚠️  레포 $missing 개가 연결되지 않았습니다. 해당 에이전트는 동작하지 않습니다."; fi
 if [ "$failed" -gt 0 ]; then echo "⚠️  도구 설치·패치 $failed 개가 실패했습니다(위 ✖ 줄). 고친 뒤 다시 실행하세요."; fi
-if [ "$missing" -eq 0 ] && [ "$failed" -eq 0 ]; then echo "✅ 준비 완료. athena 폴더에서 claude 를 실행하세요."; else exit 1; fi
+if [ "$missing" -eq 0 ] && [ "$failed" -eq 0 ]; then echo "✅ 준비 완료. athena 폴더에서 로그인한 claude 또는 codex 를 실행하세요."; else exit 1; fi

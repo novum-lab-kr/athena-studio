@@ -52,6 +52,7 @@ const FILES = [
   'bin/**',
   'dist/renderer/**',
   'src/**',
+  'athena/scripts/lib/main-tool.mjs', // 앱과 코어가 공유하는 주 도구 판정
   '!src/renderer/**',
   'src/renderer/assets/logo/**',
   '!node_modules/{react,react-dom,scheduler,shiki,@shikijs}/**',

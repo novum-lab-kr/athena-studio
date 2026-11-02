@@ -1,5 +1,8 @@
 // Electron 없이 돌아가는 순수 로직 — 서버에서 `npm test` 로 검사한다.
 import fs from 'node:fs'
+import { authenticated, TOOLS, toolDecision, readMainTool, writeMainTool } from '../../athena/scripts/lib/main-tool.mjs'
+import type { Tool } from '../../athena/scripts/lib/main-tool.mjs'
+export { readMainTool, writeMainTool }
 import path from 'node:path'
 import { ATHENA_WORKSPACE, pickAthenaWorkspace, withDisplayLabels } from './athena-workspace.mts'
 
@@ -239,10 +242,18 @@ export function availableAgents(pathValue: string | null | undefined, isExecutab
   return AGENTS.filter((name) => findExecutable(name, pathValue, isExecutable))
 }
 
-// 묻지 않고 깔린 것 중 첫 번째(AGENTS 순서라 claude 가 있으면 claude), 없으면 none — 다른 에이전트는 작업 창에서 직접 켠다
-export function agentDecision(available: string[]): { none: true } | { agent: string | undefined } {
-  if (available.length === 0) return { none: true }
-  return { agent: available[0] }
+// 설치 검사와 인증 검사를 분리한다. 로그인 명령의 출력은 버리고 종료 코드만 본다.
+export async function authenticatedAgents(env: NodeJS.ProcessEnv = process.env): Promise<Tool[]> {
+  const ready = await Promise.all(TOOLS.map(async (tool) => {
+    const executable = findExecutable(tool, env.PATH)
+    return executable && await authenticated(executable, tool, childEnv(env)) ? tool : null
+  }))
+  return ready.filter((tool): tool is Tool => tool !== null)
+}
+export function agentDecision(available: Tool[], remembered: Tool | null = null): { none: true } | { choose: true } | { agent: Tool } {
+  const decision = toolDecision(available, remembered)
+  if (decision.choose) return { choose: true }
+  return decision.main ? { agent: decision.main } : { none: true }
 }
 
 // 백업에서 되살린 아테나 대화를 잇는 명령 — 세션 id 모양만 받는다(pane 에 글로 쓰이니 셸 글자가 섞이면 안 된다)

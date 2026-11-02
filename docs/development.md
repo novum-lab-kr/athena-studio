@@ -138,3 +138,8 @@ npm run check   # 문법
 npm test        # 순수 로직 + 데몬 통합(맥 — 실제 pty)
 ```
 화면 확인은 맥에서 한다. 코어(`athena/`)를 고쳤으면 코어 검사도 따로 — [`AGENTS.md`](../AGENTS.md) "검사".
+
+### 아테나의 주 도구
+아테나 작업 공간을 처음 만들 때 Claude와 Codex의 설치·로그인을 확인한다. 하나만 사용 가능하면 바로 켜고, 둘이면 한 번 고른다. 선택은 본체의 `.athena-main-tool.json` (`main`: `claude` 또는 `codex`)에 기억한다. 아테나 작업 공간에서 다른 도구를 직접 켜면 SessionStart가 기록을 바꾼다. 작업자 세션은 기록하지 않는다. 로그인된 도구가 없으면 설치·로그인을 안내한다.
+
+공용 읽기는 `athena/scripts/lib/main-tool.mjs`의 `readMainTool(root)`, 주/부 판정은 `toolDecision(available, remembered)`를 사용한다. 부 도구는 설치·로그인된 다른 도구 하나이며, 없으면 `null`이다. 인증 명령의 출력은 저장하거나 표시하지 않는다.
