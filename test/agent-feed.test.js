@@ -137,7 +137,7 @@ test('앱 모니터: Codex 팩 분리·활성 pane·120분·메타데이터·이
   const make = (name, cwd, options = {}) => {
     const file = path.join(codexSessionsDir, '2026/11/03', `rollout-${name}.jsonl`)
     fs.mkdirSync(path.dirname(file), { recursive: true })
-    const meta = { type: 'session_meta', payload: { cwd, git: { branch: 'fix/monitor' }, padding: options.large ? 'x'.repeat(70000) : '' } }
+    const meta = { type: 'session_meta', payload: { id: name, cwd, git: { branch: 'fix/monitor' }, padding: options.large ? 'x'.repeat(70000) : '' } }
     fs.writeFileSync(file, JSON.stringify(meta)+'\n'+JSON.stringify(codexFixture.records[1])+'\n')
     fs.utimesSync(file, new Date(now-(options.age || 0)), new Date(now-(options.age || 0)))
     return file
@@ -177,6 +177,16 @@ test('앱 모니터: Codex 팩 분리·활성 pane·120분·메타데이터·이
   const item = found.find(v => v.file === active)
   const events = await logs.openTail(monitor, item)
   assert.equal(logs.monitorSessions(monitor)[0].label, 'shop·fix/monitor')
+  const sessionsDir = path.join(tmp, 'pane-sessions')
+  fs.mkdirSync(sessionsDir)
+  fs.writeFileSync(path.join(sessionsDir, 'p1.json'), JSON.stringify({ session: 'active' }))
+  fs.writeFileSync(path.join(sessionsDir, 'p2.json'), JSON.stringify({ session: 'another-session' }))
+  const statuses = await logs.monitorPaneStatuses([{ id: 'p1', agent: 'codex', agent_status: 'waiting' }, { id: 'p2', agent: 'claude', agent_status: 'working' }], sessionsDir)
+  assert.equal(logs.monitorSessions(monitor, statuses)[0].status, 'waiting', '훅의 정확한 세션으로 입력 대기를 연결한다')
+  fs.writeFileSync(path.join(sessionsDir, 'p1.json'), JSON.stringify({ session: 'new-session' }))
+  const changedStatuses = await logs.monitorPaneStatuses([{ id: 'p1', agent: 'codex', agent_status: 'idle' }], sessionsDir)
+  assert.equal(logs.monitorSessions(monitor, changedStatuses)[0].status, undefined, '옛 세션에 새 pane 상태를 붙이지 않는다')
+
   assert.equal(events[0].name, 'Bash')
   const tail = monitor.tails.get(active)
   const message = JSON.stringify(codexFixture.records[6])

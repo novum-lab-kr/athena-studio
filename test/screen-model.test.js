@@ -163,8 +163,20 @@ const WAIT_SCREENS = {
   claudeTrust: [' Quick safety check: Is this a project you created or one you trust?', '', ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel'],
   codexApproval: ['  Would you like to run the following command?', '', '  $ touch codex-probe.txt', '', '', '› 1. Yes, proceed (y)', "  2. Yes, and don't ask again (p)", '  3. No, and tell Codex what to do differently (esc)', '', '  Press enter to confirm or esc to cancel'],
   codexQuestion: ['Question 1/1 (1 unanswered)', 'Which do you choose?', '› 1. Alpha (Recommended) Choose Alpha.', '  2. Beta Choose Beta.', '  3. None of the above', 'tab to add notes | enter to submit answer | esc to interrupt'],
+  codexModel: ['› 1. GPT (current)', '  2. Other', 'enter select · esc back'],
   codexHooks: ['  Hooks need review', '', '› 1. Review hooks', '  2. Trust all and continue', '', '  enter confirm · esc skip'],
 }
+
+test('선택 창은 작업 표식·최근 출력보다 먼저 waiting, 닫힌 뒤 idle·working 복귀', () => {
+  for (const [name, screenLines] of Object.entries(WAIT_SCREENS)) {
+    const agent = name.startsWith('claude') ? 'claude' : 'codex'
+    assert.equal(model.agentStatus({ agent, screenLines, lastOutputAt: 1000, now: 1001 }), 'waiting', name)
+    assert.equal(model.agentStatus({ agent, screenLines: ['Working (1s • esc to interrupt)', ...screenLines], lastOutputAt: 1, now: 10000 }), 'waiting', name)
+  }
+  assert.equal(model.agentStatus({ agent: 'codex', screenLines: ['› Ask Codex to do anything'], now: 10000 }), 'idle')
+  assert.equal(model.agentStatus({ agent: 'codex', screenLines: ['Working (1s • esc to interrupt)'], now: 10000 }), 'working')
+  assert.equal(model.agentStatus({ screenLines: WAIT_SCREENS.codexQuestion, now: 10000 }), 'unknown')
+})
 
 test('입력 대기: 권한 질문 · 고르기 창 · 폴더 신뢰 · Codex 승인은 잡고, 빈 입력칸 · 일하는 중 · 본문 속 같은 글은 빼고', () => {
   for (const [name, lines] of Object.entries(WAIT_SCREENS)) assert.equal(model.waitingForInput(lines.join('\n')), true, name)

@@ -26,12 +26,13 @@ printf '{ "pane": "p180", "agent": "fe", "plan": "%s" }' "$PLAN" > "$TMP/pane-se
 node --input-type=module - "$SRC/scripts/board/plan-bind.mjs" "$TMP/pane-sessions" "$PLAN" <<'EOF'
 const [modPath, sessionsDir, planId] = process.argv.slice(2)
 import { readFileSync } from 'node:fs'
-const { TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, autoDoneMark, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boundPaneIds, checkpointOf, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, PANE_CLOSED_ISSUE_MS, progressOf, readPaneSessions } = await import(modPath)
+const { boardPaneOf, TEMPLATE_PLACEHOLDER_LINES, autoDoneDone, autoDoneMark, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boundPaneIds, checkpointOf, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, PANE_CLOSED_ISSUE_MS, progressOf, readPaneSessions } = await import(modPath)
 const PROTECTED = /^(prd|main|master|dev|dev-ecs|prd-.+|release\/.+)$/
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
 const same = (left, right) => JSON.stringify(left) === JSON.stringify(right)
 
+check('현황판 pane은 입력 대기 waiting을 그대로 전달한다', boardPaneOf({ id: 'pw', agent: 'codex', agent_status: 'waiting', label: '🤖 fe · feat/x' }, '/body', '/home').status === 'waiting')
 const sessions = readPaneSessions(sessionsDir)
 check('pane 기록 — 계획서가 적힌 것만 · 깨진 파일 · 쓰는 중(.tmp) 건너뜀', same(sessions.map((record) => record.pane).sort(), ['p130', 'p132', 'p140', 'p150']), JSON.stringify(sessions))
 check('pane 기록 폴더가 없으면 빈 목록', same(readPaneSessions(`${sessionsDir}/없음`), []))

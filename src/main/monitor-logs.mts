@@ -24,6 +24,7 @@ export type Tail = {
   ino?: number
   codex?: boolean
   codexModel?: string | null
+  sessionId?: string
 }
 export type MonitorEvent = FeedEvent & { id: number; session: string }
 // 창 하나의 모니터 상태 — 창(createPackWindow)이 newMonitor() 로 갖는다
@@ -43,8 +44,8 @@ export type Monitor = {
   lastGithub: number
   githubSeen: Set<string>
 }
-export type FoundLog = { file: string; pane: boolean; stat: fs.Stats; label?: string | null; codex?: boolean }
-export type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
+export type FoundLog = { file: string; pane: boolean; stat: fs.Stats; label?: string | null; codex?: boolean; sessionId?: string }
+export type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number; status?: string }
 
 // 예전 터미널 모니터 칸의 이름표 — 이미 떠 있는 pane 을 찾는 값이라 번역하지 않는다
 export const MONITOR_LABEL = '🛰 에이전트 모니터'
@@ -129,7 +130,7 @@ export function createMonitorLogs({ projectsDir, codexSessionsDir = path.resolve
         if (!entry.isFile() || !entry.name.endsWith('.jsonl')) continue
         const file = path.join(dir, entry.name)
         const stat = await recentFile(file, since)
-        if (stat) found.push({ file, pane: true, stat })
+        if (stat) found.push({ file, pane: true, stat, sessionId: entry.name.slice(0, -'.jsonl'.length) })
         // 서브에이전트 — 평소엔 최근에 움직인 세션만(모든 세션 폴더를 자주 뒤지지 않게)
         if (!stat && !allSessions) continue
         const subDir = path.join(dir, entry.name.replace(/\.jsonl$/, ''), 'subagents')
@@ -151,7 +152,9 @@ export function createMonitorLogs({ projectsDir, codexSessionsDir = path.resolve
       const record = await codexHead(file)
       const meta = agentFeed.codexRecord(record)
       if (typeof meta.cwd !== 'string' || !agentFeed.codexSessionMatches(core.realDir(meta.cwd), body, worktrees, active)) continue
-      found.push({ file, pane: true, stat, label: agentFeed.sessionLabel(record), codex: true })
+      const payload = record && typeof record === 'object' && 'payload' in record ? record.payload : null
+      const sessionId = payload && typeof payload === 'object' && 'id' in payload && typeof payload.id === 'string' ? payload.id : undefined
+      found.push({ file, pane: true, stat, label: agentFeed.sessionLabel(record), codex: true, sessionId })
     }
     return found
   }
@@ -264,7 +267,7 @@ export async function readSubagentMeta(tail: Tail): Promise<void> {
 }
 
 export async function openTail(monitor: Monitor, item: FoundLog): Promise<MonitorEvent[]> {
-  const tail: Tail = { id: `s${++monitor.tailSeq}`, file: item.file, pane: item.pane, codex: item.codex, label: item.label ?? null, finished: false, tools: 0, mtime: item.stat.mtimeMs, offset: Math.max(0, item.stat.size - MONITOR_HEAD_BYTES), rest: Buffer.alloc(0), skipPartial: item.stat.size > MONITOR_HEAD_BYTES }
+  const tail: Tail = { id: `s${++monitor.tailSeq}`, file: item.file, pane: item.pane, codex: item.codex, sessionId: item.sessionId, label: item.label ?? null, finished: false, tools: 0, mtime: item.stat.mtimeMs, offset: Math.max(0, item.stat.size - MONITOR_HEAD_BYTES), rest: Buffer.alloc(0), skipPartial: item.stat.size > MONITOR_HEAD_BYTES }
   if (tail.codex) tail.codexModel = await codexModelBefore(tail.file, tail.offset).catch(() => null)
   await readSubagentMeta(tail)
   const lines = await readNewLines(tail).catch(() => [])
@@ -273,8 +276,20 @@ export async function openTail(monitor: Monitor, item: FoundLog): Promise<Monito
   return events
 }
 
-export function monitorSessions(monitor: Monitor): MonitorSession[] {
+export function monitorSessions(monitor: Monitor, statuses: ReadonlyMap<string, string> = new Map()): MonitorSession[] {
   return [...monitor.tails.values()]
     .sort((left, right) => right.mtime - left.mtime)
-    .map((tail) => ({ id: tail.id, label: tail.label || (tail.pane ? 'pane' : 'agent'), pane: tail.pane, finished: tail.finished, tools: tail.tools, lastAt: tail.mtime }))
+    .map((tail) => ({ id: tail.id, label: tail.label || (tail.pane ? 'pane' : 'agent'), pane: tail.pane, finished: tail.finished, tools: tail.tools, lastAt: tail.mtime, status: tail.sessionId ? statuses.get(tail.sessionId) : undefined }))
+}
+
+// 훅이 기록한 session만 연결한다. 같은 폴더·이름표만으로 다른 pane의 상태를 붙이지 않는다.
+export async function monitorPaneStatuses(panes: { id: string; agent?: string | null; agent_status?: string }[], sessionsDir: string): Promise<Map<string, string>> {
+  const states = await Promise.all(panes.filter(pane => pane.agent && /^[\w-]{1,32}$/.test(pane.id)).map(async pane => {
+    try {
+      const record: unknown = JSON.parse(await fs.promises.readFile(path.join(sessionsDir, `${pane.id}.json`), 'utf8'))
+      if (!record || typeof record !== 'object' || !('session' in record) || typeof record.session !== 'string') return null
+      return [record.session, pane.agent_status || 'unknown'] as const
+    } catch { return null }
+  }))
+  return new Map(states.filter((state): state is readonly [string, string] => state !== null))
 }

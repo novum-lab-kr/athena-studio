@@ -107,6 +107,7 @@ test('화면 글: 지금 하는 일 한 줄은 마지막 말의 첫 줄 · 최�
 test('지금 상태: 고르기 질문 · 요청 · 무거운 명령 대기 · 막힘은 멈춤, 에이전트가 없으면 gone', () => {
   assert.deepEqual(detail.nowState({ agentStatus: 'working' }), { state: 'work', reason: null })
   assert.deepEqual(detail.nowState({ agentStatus: 'working', heavy: true }), { state: 'stop', reason: 'heavy' })
+  assert.deepEqual(detail.nowState({ agentStatus: 'waiting' }), { state: 'stop', reason: 'question' })
   assert.deepEqual(detail.nowState({ agentStatus: 'idle', waiting: true }), { state: 'stop', reason: 'question' })
   assert.deepEqual(detail.nowState({ agentStatus: 'idle', hasRequest: true }), { state: 'stop', reason: 'request' })
   assert.deepEqual(detail.nowState({ agentStatus: 'idle', planStatus: 'blocked' }), { state: 'stop', reason: 'blocked' })

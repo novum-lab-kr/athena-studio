@@ -286,7 +286,7 @@ function WorkspaceRows({ workspace, folded, view, shell }: Part & { workspace: S
         </span>
         {hidden ? (
           <span className="space-fold-count">
-            {panes.some((pane) => view.paneStatus[pane.id] === 'working') ? <span className="space-status working" /> : null}
+            {panes.some((pane) => view.paneStatus[pane.id] === 'waiting') ? <span className="space-status waiting" /> : panes.some((pane) => view.paneStatus[pane.id] === 'working') && <span className="space-status working" />}
             {`+${panes.length}`}
           </span>
         ) : null}

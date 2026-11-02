@@ -78,6 +78,7 @@
   h2 { font-size: 13px; margin: 0 0 8px; color: var(--muted); font-weight: 600; letter-spacing: .02em; }
   /* 카드가 많아져도 한 줄 — 넘치면 가로 스크롤 */
   .pill { font-size: 11px; padding: 1px 7px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); white-space: nowrap; }
+  .pill.waiting { color: var(--warn); border-color: var(--warn); }
   .pill.working { color: var(--ok); border-color: color-mix(in srgb, var(--ok) 40%, transparent); }
   .pill.blocked, .pill.bad { color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
   .pill.ready { color: #fff; background: var(--ok); border-color: var(--ok); }
@@ -1593,7 +1594,7 @@
       const preferred = candidates.find((entry) => attached.includes(entry.id)) || candidates.find((entry) => entry.role === 'hermes') || candidates[0];
       if (!preferred) return toast('지시를 받을 아테나·에이전트 pane 이 없어요');
       targetPane = preferred.id;
-      to.innerHTML = `→ 받는 곳 <select id="ask-pane">${candidates.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === targetPane ? 'selected' : ''}>${esc(entry.agent)} · ${esc(entry.id)}${entry.status === 'working' ? ' (작업 중)' : ''}</option>`).join('')}</select>`;
+      to.innerHTML = `→ 받는 곳 <select id="ask-pane">${candidates.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === targetPane ? 'selected' : ''}>${esc(entry.agent)} · ${esc(entry.id)}${({ working: ' (작업 중)', waiting: ' (입력 대기)' })[entry.status] || ''}</option>`).join('')}</select>`;
       document.getElementById('ask-pane').onchange = (event) => { targetPane = event.target.value; };
     }
     pending = { mode, id: pendingId };
@@ -1709,7 +1710,7 @@
     const handoff = plan?.handoff || card.handoff;
     if (handoff) pills.push(handoff === 'failed' ? '<span class="pill bad">Actions 실패</span>' : `<span class="pill working">${handoff === 'running' ? 'Actions 도는 중' : 'Actions 대기'}</span>`);
     if (card.doneCheck?.ready) pills.push('<span class="pill ready">완료 가능</span>');
-    for (const pane of running) pills.push(`<span class="pill ${pane.status === 'working' ? 'working' : ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}</span>`);
+    for (const pane of running) pills.push(`<span class="pill ${({ working: 'working', waiting: 'waiting' })[pane.status] || ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}${pane.status === 'waiting' ? ' · 입력 대기' : ''}</span>`);
     if (!running.length) pills.push(`<span class="pill">${card.agent ? `🤖 ${esc(card.agent)}` : '담당 미정'} · pane 없음</span>`);
     return pills.join('');
   };

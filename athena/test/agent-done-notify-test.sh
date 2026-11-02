@@ -32,7 +32,9 @@ cat > "$WORK/bin/athena-studio-cli" <<'CLIEOF'
 echo "$*" >> "$FAKE_LOG"
 if [ "$1 $2" = "pane get" ]; then
   case " ${CLOSED:-} " in *" $3 "*) echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1 ;; esac
-  echo "{\"pane\":{\"id\":\"$3\"}}"
+  state=idle
+  [ -f "${WAITING_FILE:-/no-waiting-file}" ] && state=waiting
+  echo "{\"pane\":{\"id\":\"$3\",\"agent_status\":\"$state\"}}"
 fi
 exit 0
 CLIEOF
@@ -42,10 +44,66 @@ export FAKE_LOG="$WORK/log"; : > "$FAKE_LOG"
 hook() {   # <prompt|stop> [입력 JSON] — 에이전트 pane p9 에서
   local input="${2:-}"; [ -n "$input" ] || input='{}'
   printf '%s' "$input" | env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" \
-    ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
+    ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" WAITING_FILE="$WORK/waiting" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
 }
 sent() { grep -c '^pane send-text p1 ' "$FAKE_LOG"; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (기대 $3 · 실제 $2)"; FAIL=1; fi; }
+
+python3 - "$BODY" "$WORK" <<'PYRACE'
+import importlib.util, json, multiprocessing, pathlib, sys, time
+body, work = map(pathlib.Path, sys.argv[1:])
+spec = importlib.util.spec_from_file_location('notify_hook', body / 'scripts/hooks/agent-done-notify.py')
+module = importlib.util.module_from_spec(spec); spec.loader.exec_module(module)
+state_path = work / 'race' / 'p9.json'
+log = work / 'race-sent'
+class Backend:
+    def get_pane(self, pane):
+        time.sleep(0.05)
+        return {'agent_status': 'idle'}
+    def send_text(self, pane, text):
+        with log.open('a') as handle: handle.write('text\n')
+        time.sleep(0.05)
+    def send_keys(self, pane, keys):
+        with log.open('a') as handle: handle.write('enter\n')
+module.screen.get_backend = lambda: Backend()
+line = '같은 문구의 끝 알림'
+module.save_state(state_path, {'turn': 'new-turn', 'pending': {'id': 'new-notice', 'turn': 'new-turn', 'line': line}})
+module.deliver_notice(state_path, 'p9', 'p1', 'old-notice')
+assert not log.exists(), '옛 턴의 작업은 같은 문구여도 보내면 안 됨'
+context = multiprocessing.get_context('fork')
+workers = [context.Process(target=module.deliver_notice, args=(state_path, 'p9', 'p1', 'new-notice')) for index in range(2)]
+for worker in workers: worker.start()
+for worker in workers:
+    worker.join(5)
+    assert worker.exitcode == 0
+assert log.read_text().splitlines() == ['text', 'enter'], '같은 알림을 두 작업이 동시에 보내도 전송은 한 번'
+state = module.load_json(state_path)
+assert state['last'] == line and 'pending' not in state
+module.save_state(state_path, {'turn': 'next-turn', 'last': '', 'pending': {'id': 'next-notice', 'turn': 'next-turn', 'line': line}})
+module.deliver_notice(state_path, 'p9', 'p1', 'new-notice')
+module.deliver_notice(state_path, 'p9', 'p1', 'next-notice')
+assert log.read_text().splitlines() == ['text', 'enter', 'text', 'enter'], '새 턴의 같은 문구는 한 번 새로 보내야 함'
+PYRACE
+check "옛 턴 같은 문구 취소·동시 전송 선점·새 턴 알림 허용" "$?" 0
+
+hook prompt '{"prompt":"선택 중 알림"}'
+touch "$WORK/waiting"
+hook stop
+check "받는 pane이 waiting이면 글·Enter를 보내지 않는다" "$(sent)" 0
+hook stop
+check "같은 대기 알림은 중복 전송하지 않는다" "$(sent)" 0
+rm "$WORK/waiting"
+for attempt in $(seq 1 40); do [ "$(sent)" -eq 1 ] && break; sleep 0.1; done
+check "선택 창이 닫힌 뒤 끝 알림을 한 번 보낸다" "$(sent)" 1
+hook prompt '{"prompt":"선택 중 옛 알림"}'
+touch "$WORK/waiting"
+hook stop
+hook prompt '{"prompt":"이미 다른 요청을 시작함"}'
+rm "$WORK/waiting"
+sleep 2.2
+check "새 입력 뒤에는 기다리던 옛 턴의 알림을 버린다" "$(sent)" 1
+: > "$FAKE_LOG"
+hook prompt '{"prompt":"기존 시험 시작"}'
 
 hook stop
 check "끝나면 아테나 pane(p1)에 한 줄을 보낸다" "$(sent)" 1

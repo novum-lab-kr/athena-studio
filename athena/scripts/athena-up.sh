@@ -30,6 +30,7 @@ if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
   seen_idle=0
   for _ in $(seq 1 180); do
     status="$(pane_status)"
+    if [ "$status" = waiting ] && [ "$seen_idle" = 1 ]; then result="안 보냄 — 선택 창 입력 대기"; break; fi
     if [ "$status" = working ] && [ "$seen_idle" = 1 ]; then result="안 보냄 — 사용자가 먼저 입력"; break; fi
     if [ "$status" = idle ]; then
       seen_idle=1

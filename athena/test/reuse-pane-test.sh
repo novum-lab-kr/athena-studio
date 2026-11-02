@@ -26,6 +26,7 @@ const pane = (id, extra = {}) => ({ id, label: '🤖 fe · feat/a', agent: 'clau
 const read = (map) => (id) => (id in map ? map[id] : null)
 
 check('쉬는 pane → 고른다', pickReusable([pane('p1')], 'fe', read({ p1: IDLE })).pane?.id === 'p1')
+check('입력 대기 waiting은 화면이 비어 보여도 재사용하지 않는다', 'reason' in pickReusable([pane('p1', { agent_status: 'waiting' })], 'fe', read({ p1: IDLE })))
 check('일하는 중 → 안 고른다', 'reason' in pickReusable([pane('p1', { agent_status: 'working' })], 'fe', read({ p1: IDLE })))
 check('사용자가 보는 중(focused) → 안 고른다', 'reason' in pickReusable([pane('p1', { focused: true })], 'fe', read({ p1: IDLE })))
 check('질문 창이 떠 있으면(idle 로 보여도) → 안 고른다', 'reason' in pickReusable([pane('p1')], 'fe', read({ p1: ASKING })))

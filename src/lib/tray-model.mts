@@ -85,7 +85,7 @@ export function summarize({ panes = [], workspaces = [], cards = [], requests = 
   const agents: TrayAgent[] = panes
     .filter((pane): pane is TrayPane => Boolean(pane && pane.agent))
     .map((pane) => ({ id: pane.id, name: agentName(pane), workspace: names.get(pane.workspace_id) || '', status: pane.agent_status || 'idle' }))
-  // 입력 대기 먼저, 그다음 일하는 것 — 데몬은 작업 중 · 대기 · 모름만 정하고, 입력 대기(waiting)는 메뉴 막대가 에이전트 pane 의 화면을 읽어 덧붙인다
+  // 입력 대기 먼저, 그다음 일하는 것 — 데몬의 입력 대기(waiting)를 그대로 쓰고, 메뉴 막대는 옛 데몬의 화면 판정도 보완한다
   const rank: Record<string, number> = { waiting: 0, working: 1 }
   agents.sort((left, right) => (rank[left.status] ?? 2) - (rank[right.status] ?? 2))
   const plans = liveCards(cards)

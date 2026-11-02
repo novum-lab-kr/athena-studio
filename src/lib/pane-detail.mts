@@ -171,13 +171,13 @@ export function screenDigest(text: unknown): { now: string; report: string[]; he
 }
 
 // 지금 — 일하는 중(work) · 쉬는 중(idle) · 멈춤(stop + 까닭) · 에이전트 없음(gone)
-// agentStatus: 데몬 상태(working · idle · null) · waiting: 화면이 고르기 · 권한 질문
+// agentStatus: 데몬 상태(working · waiting · idle · null) · waiting: 화면이 고르기 · 권한 질문
 // (입력창에 보내지 않은 글은 보지 않는다 — Claude Code 의 회색 추천 글까지 잡아 별것 아닌 멈춤을 띄웠다 · 사용자 2026-10-27)
 export type NowInput = { agentStatus: unknown; waiting?: boolean; heavy?: boolean; hasRequest?: boolean; planStatus?: string | undefined }
 export type NowState = { state: 'gone' | 'stop' | 'work' | 'idle'; reason: 'question' | 'request' | 'heavy' | 'blocked' | null }
 export function nowState({ agentStatus, waiting = false, heavy = false, hasRequest = false, planStatus = '' }: NowInput): NowState {
   if (!agentStatus) return { state: 'gone', reason: null }
-  if (waiting) return { state: 'stop', reason: 'question' }
+  if (waiting || agentStatus === 'waiting') return { state: 'stop', reason: 'question' }
   if (hasRequest) return { state: 'stop', reason: 'request' }
   if (agentStatus === 'working') return heavy ? { state: 'stop', reason: 'heavy' } : { state: 'work', reason: null }
   if (planStatus === 'blocked') return { state: 'stop', reason: 'blocked' }

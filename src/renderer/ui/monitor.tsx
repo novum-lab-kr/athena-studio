@@ -9,7 +9,7 @@ import type { Say } from './bridge.ts'
 
 // main 이 보내는 monitor:update(src/main/agent-monitor.mts) — 세션은 src/main/monitor-logs.mts MonitorSession,
 // 이벤트는 MonitorEvent(src/lib/agent-feed.mts FeedEvent + id · session). 그 파일들은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
-type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
+type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number; status?: string }
 // github — 현황판 GitHub 이슈 감시가 아테나에 맡긴 이슈(session 'github' · src/main/agent-monitor.mts)
 type MonitorEvent = { id: number; session: string; kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; github?: { repo: string; number: number; title: string } }
 export type MonitorUpdate = { reset?: boolean; sessions?: MonitorSession[]; events?: MonitorEvent[] }
@@ -63,7 +63,7 @@ function shownEvents(state: MonitorView): MonitorEvent[] {
 }
 
 // 지금 작업 중인 에이전트 — 끝나지 않았고 마지막 움직임이 2분 안
-const isLiveSession = (session: MonitorSession, now: number) => !session.finished && now - session.lastAt < 2 * 60000
+const isLiveSession = (session: MonitorSession, now: number) => !session.finished && (session.status === 'waiting' || session.status === 'working' || (!session.status && now - session.lastAt < 2 * 60000))
 
 // 고른 칩의 세션이 조용해졌으면(칩이 빠진다) 거름을 풀어 전체 로그로
 function liveFilter(filter: string | null, sessions: MonitorSession[], now: number): string | null {
@@ -137,13 +137,13 @@ function SessionChips() {
           return (
             <button
               key={session.id}
-              className={`monitor-chip live${filter === session.id ? ' active' : ''}`}
+              className={`monitor-chip live${session.status === 'waiting' ? ' waiting' : ''}${filter === session.id ? ' active' : ''}`}
               style={{ '--label-color': options.spaceColor(session.label) } as CSSProperties}
               title={say('monitor.sessionTitle', { label: session.label, kind: sessionKind(say, session), tools: session.tools, since })}
               onClick={() => toggleFilter(session.id)}
             >
               <span className="name">{session.label}</span>
-              <span className="count">{`${session.tools} · ${since}`}</span>
+              <span className="count">{session.status === 'waiting' ? say('tray.status.waiting') : `${session.tools} · ${since}`}</span>
             </button>
           )
         })}

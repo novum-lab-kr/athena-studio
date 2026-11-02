@@ -282,13 +282,13 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
 
   // 입력 대기 — 에이전트 pane 의 지금 화면을 읽어 권한 질문 · 고르기 창이면 agent_status 를 waiting 으로(판정 screen-model.waitingForInput).
   // 데몬이 작업 중으로 본 pane 도 읽는다 — Claude 는 권한 질문을 띄운 채 화면을 계속 다시 그려 데몬의 '방금 출력' 판정에 작업 중으로 걸린다(2026-10-25 실측).
-  // 데몬은 그대로 두고 이미 있는 pane read 로만 묻는다(데몬 · 프로토콜을 바꾸면 켤 때 데몬을 다시 띄워 pane 이 모두 닫힌다).
+  // 새 데몬의 waiting 은 그대로 쓴다. 옛 데몬은 pane read 로 보완한다.
   // 못 읽으면 모르는 것 — 지난번에 입력 대기였으면 그대로 둔다(데몬 상태로 되돌리면 알림 기억이 풀려 같은 질문을 다시 알린다). 풀림은 읽은 화면으로만 정한다
   async function markWaiting(ctx: TrayCtx, panes: TrayPane[], before: TrayPane[] = []): Promise<TrayPane[]> {
     const wasWaiting = new Set(before.filter((pane) => pane && pane.agent_status === 'waiting').map((pane) => pane.id))
     return Promise.all(
       panes.map(async (pane) => {
-        if (!pane || !pane.agent) return pane
+        if (!pane || !pane.agent || pane.agent_status === 'waiting') return pane
         const read = await ctx.peekCall('pane read', { pane: pane.id, lines: 40, source: 'visible' })
         if (!read.result || typeof read.result.text !== 'string') return wasWaiting.has(pane.id) ? { ...pane, agent_status: 'waiting' } : pane
         return screenModel.waitingForInput(read.result.text) ? { ...pane, agent_status: 'waiting' } : pane

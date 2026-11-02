@@ -824,6 +824,7 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 }
 .monitor-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--label-color, var(--muted)); }
 .monitor-chip.live { color: var(--text); }
+.monitor-chip.waiting::before { background: var(--warning); }
 .monitor-chip.active { border-color: var(--accent); color: var(--text); }
 .monitor-chip .name { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .monitor-chip .count { color: var(--muted); }
@@ -1282,6 +1283,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .space.space-pane .space-label { flex: 1 1 auto; }
 .space-status { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .space-status.working { background: var(--success); }
+.space-status.waiting { background: var(--warning); }
 
 /* ── [작업] 팝업 · 현황판 페이지 메뉴 ─────────────────────────────
    탭 줄 [작업] — 나를 기다리는 것이 있으면 왼쪽 위 모서리에 금색 점만(숫자 없음 · 사용자). 팝업은 버튼 아래에 붙는 창(모달 아님) */

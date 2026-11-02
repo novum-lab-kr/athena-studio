@@ -987,12 +987,14 @@ const collect = async () => {
   // 에이전트 pane 을 계획서에 붙인다 — delegate.sh 가 Work ref · Review 에 적은 "pane <id>"(없으면 브랜치) + 그 계획서로 띄운 pane 기록(plan-bind.mjs).
   // 같은 계획서로 여러 번 띄우면 Work ref 는 마지막 pane 으로 바뀌어도 기록은 pane 마다 남는다 — 자동 보관이 일하는 pane 을 놓치지 않게
   const sessions = BOOT_PATHS.mode === 'packs' ? readPaneSessions(join(BOOT_PATHS.state, 'pane-sessions')) : []
+  const paneStatuses = new Map(panes.map((pane) => [pane.id, pane.status]))
   for (const plan of plans) {
     plan.agents = boundPaneIds(plan, panes, sessions, PROTECTED_BRANCH)
     // 에이전트가 지금 일하고 있으면 진행 중 칸에 — 요청을 여러 번 주고받으면 계획서 Status 가 리뷰에 머물러 있어도
     // 실제로는 작업 중이다. 파일은 바꾸지 않고 보여 주는 칸만 (끝나 대기로 돌아가면 다시 리뷰 칸)
-    plan.working = plan.agents.some((id) => panes.find((pane) => pane.id === id)?.status === 'working')
-    if (plan.working && (plan.column === 'review' || plan.column === 'done')) plan.column = 'doing'
+    plan.working = plan.agents.some((id) => paneStatuses.get(id) === 'working')
+    plan.waiting = plan.agents.some((id) => paneStatuses.get(id) === 'waiting')
+    if ((plan.working || plan.waiting) && (plan.column === 'review' || plan.column === 'done')) plan.column = 'doing'
   }
   // 끝난 일 자동 보관 — 화면(pane 목록)을 읽었을 때만(pane 이 닫혔는지 알아야 한다)
   if (available) {

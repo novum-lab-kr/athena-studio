@@ -12,6 +12,7 @@
 백그라운드 명령이 아직 돌면 그 차례는 알리지 않고 last 도 남기지 않는다 — 명령이 끝나 다시 Stop 이 오면 그때 알린다.
   대기 목록 = 대화 기록(transcript_path)의 시작 기록(backgroundTaskId · 출력 파일) − 끝 기록(task-notification · TaskStop). 끝 기록이 영영 안 남는 경우가 있어
   기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있을 때만 "도는 중" 으로 본다. 확인하지 못하면 평소대로 알린다(알림이 영영 끊기지 않게).
+아테나 pane 이 선택 창(waiting)을 띄웠으면 뒤에서 닫힐 때까지 기다린다. 새 사용자 입력이 오면 옛 턴의 대기 알림은 버린다.
 아테나 pane 이 없거나 닫혔으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 
 사용: agent-done-notify.py prompt|stop   (훅 입력은 표준 입력 JSON)
@@ -23,9 +24,12 @@ import re
 import shutil
 import subprocess
 import sys
+import time
+import uuid
 
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
+from reuse_link import pane_lock
 import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
@@ -134,9 +138,60 @@ def background_running(event: dict) -> bool:
         return False
 
 
+def save_state(path: pathlib.Path, state: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temp = path.with_name(f'.{path.stem}.{os.getpid()}.tmp')
+    temp.write_text(json.dumps(state, ensure_ascii=False) + '\n', encoding='utf-8')
+    os.replace(temp, path)
+
+
+def deliver_notice(state_path: pathlib.Path, pane: str, lead: str, notice_id: str, wait: bool = False) -> None:
+    """턴·알림 ID와 같은 잠금으로 전송을 선점한다. 옛 작업은 새 알림 문구가 같아도 버린다."""
+    deadline = time.monotonic() + 6 * 3600
+    while time.monotonic() < deadline:
+        with pane_lock(state_path.parent, pane):
+            state = load_json(state_path)
+            pending = state.get('pending')
+            if not isinstance(pending, dict) or pending.get('id') != notice_id or pending.get('turn') != state.get('turn') or pending.get('claimed'):
+                return
+            try:
+                backend = screen.get_backend()
+                target = backend.get_pane(lead)
+                if target.get('agent_status') == 'waiting':
+                    if not wait:
+                        subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), 'deliver', pane, lead, notice_id],
+                                         stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                         start_new_session=True, close_fds=True)
+                        return
+                else:
+                    pending['claimed'] = True
+                    save_state(state_path, state)
+                    backend.send_text(lead, pending['line'])
+                    backend.send_keys(lead, ['Enter'])
+                    state['last'] = pending['line']
+                    state.pop('pending', None)
+                    save_state(state_path, state)
+                    return
+            except Exception:
+                state.pop('pending', None)
+                save_state(state_path, state)
+                return
+        time.sleep(2)
+    with pane_lock(state_path.parent, pane):
+        state = load_json(state_path)
+        if (state.get('pending') or {}).get('id') == notice_id:
+            state.pop('pending', None)
+            save_state(state_path, state)
+
+
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else ''
     agent = os.environ.get('ATHENA_AGENT') or ''
+    if mode == 'deliver' and len(sys.argv) == 5:
+        pane, lead, notice_id = sys.argv[2:]
+        if PANE_ID.fullmatch(pane) and PANE_ID.fullmatch(lead):
+            deliver_notice(ATHENA_DIR / '.pack-data' / 'state' / 'agent-notify' / f'{pane}.json', pane, lead, notice_id, wait=True)
+        return
     if mode not in ('prompt', 'stop') or not agent or agent == 'reviewer':
         return  # reviewer 는 계획서 줄로 결론을 남기고 pane 이 저절로 닫힌다(review-wait.sh)
     pane = str(screen.self_info().get('pane_id') or '')
@@ -147,23 +202,18 @@ def main() -> None:
         return
     base = pack_data.resolve() / 'state'
     state_path = base / 'agent-notify' / f'{pane}.json'
-    state = load_json(state_path)
     event = json.load(sys.stdin)
-
-    def save() -> None:
-        state_path.parent.mkdir(parents=True, exist_ok=True)
-        temp = state_path.with_name(f'.{pane}.{os.getpid()}.tmp')
-        temp.write_text(json.dumps(state, ensure_ascii=False) + '\n', encoding='utf-8')
-        os.replace(temp, state_path)
-
     if mode == 'prompt':
-        state['skip'] = is_ack(str(event.get('prompt') or ''))
-        state['last'] = ''   # 새 입력 — 이 차례가 끝나면 같은 내용이어도 다시 알린다
-        save()
+        with pane_lock(state_path.parent, pane):
+            state = load_json(state_path)
+            state['skip'] = is_ack(str(event.get('prompt') or ''))
+            state['turn'] = uuid.uuid4().hex
+            state.pop('pending', None)
+            state['last'] = ''
+            save_state(state_path, state)
         return
-
-    if state.get('skip'):
-        return   # 회신 턴 — 지우지 않는다(새 입력 없이 Stop 이 다시 와도 알리지 않게). 다음 prompt 가 갱신한다
+    if load_json(state_path).get('skip'):
+        return
     if background_running(event):
         return   # 아직 도는 명령이 있다 — 끝나서 다음 Stop 이 오면 그때 알린다(last 를 남기지 않는다)
     plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
@@ -177,16 +227,18 @@ def main() -> None:
     if not PANE_ID.match(lead) or lead == pane:
         return
     line = notice_line(agent, pane, plan, fields)
-    if state.get('last') == line:
-        return
-    try:
-        screen.get_backend().get_pane(lead)   # 닫힌 pane 이면 예외 — 조용히 넘어간다
-        screen.get_backend().send_text(lead, line)
-        screen.get_backend().send_keys(lead, ['Enter'])
-    except Exception:
-        return
-    state['last'] = line
-    save()
+    with pane_lock(state_path.parent, pane):
+        state = load_json(state_path)
+        if state.get('skip'):
+            return
+        turn = state.setdefault('turn', uuid.uuid4().hex)
+        pending = state.get('pending') or {}
+        if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
+            return
+        notice_id = uuid.uuid4().hex
+        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line}
+        save_state(state_path, state)
+    deliver_notice(state_path, pane, lead, notice_id)
 
 
 if __name__ == '__main__':

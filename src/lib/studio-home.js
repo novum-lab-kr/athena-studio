@@ -373,7 +373,7 @@ const IDLE_PANES_CAPABILITY = 'idle-panes'
 
 // 데몬 pane 상태 → 코어에 넘길 모양 { at, panes:[{ id, label, pid, agent, status }] }.
 // panes: pane list 결과 · pids: pane pids 결과(pane id → 셸 pid) · waiting: 질문 · 고르기 창을 띄운 pane id 들(screen-model waitingForInput).
-// status 는 데몬 agent_status 그대로(idle · working · unknown) — 단 idle 인데 질문을 기다리면 waiting(일하는 중으로 막는다). 셸 pid 를 모르는 pane 은 뺀다
+// status 는 데몬 agent_status 그대로(idle · working · waiting · unknown) — 단 idle 인데 질문을 기다리면 waiting(일하는 중으로 막는다). 셸 pid 를 모르는 pane 은 뺀다
 /** @param {{ panes: unknown, pids: Record<string, unknown> | null | undefined, waiting?: string[], now?: Date }} options */
 function panesState({ panes, pids, waiting = [], now = new Date() }) {
   const waitingIds = new Set(waiting)

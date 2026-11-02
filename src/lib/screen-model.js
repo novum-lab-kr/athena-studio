@@ -178,6 +178,7 @@ const BACKGROUND_TAIL_LINES = 3
 /** @param {{ agent?: unknown, screenLines?: string[] | null, lastOutputAt?: number | null, now: number }} state */
 function agentStatus({ agent, screenLines, lastOutputAt, now }) {
   if (!agent) return 'unknown'
+  if (waitingForInput((screenLines || []).join('\n'))) return 'waiting'
   const tail = (screenLines || []).filter((line) => line.trim()).slice(-STATUS_TAIL_LINES)
   if (tail.some((line) => WORKING_MARK.test(line))) return 'working'
   if (tail.slice(-BACKGROUND_TAIL_LINES).some((line) => BACKGROUND_MARK.test(line))) return 'working'
@@ -186,7 +187,7 @@ function agentStatus({ agent, screenLines, lastOutputAt, now }) {
 }
 
 // ── 입력 대기 (권한 질문 · 고르기 창 · 폴더 신뢰 — 사람이 골라야 이어진다) ─────────
-// agent_status 는 이것을 idle 로 보거나(조용할 때) working 으로 본다(질문 창을 다시 그리는 동안 '방금 출력'). 메뉴 막대가 에이전트 pane 의 화면(pane read --source visible)을 읽어 따로 가린다.
+// agentStatus 가 작업 표식·최근 출력보다 먼저 판정한다. 메뉴 막대는 옛 데몬과 연결했을 때도 같은 판정을 보완한다.
 // 근거는 실측 화면의 맺음 줄(2026-10-25 · Claude Code 2.1.310 · codex-cli 0.160.0):
 //   Claude 권한 질문 'Esc to cancel · Tab to amend' · 고르기 창 'Enter to select · ↑/↓ to navigate · Esc to cancel' ·
 //   폴더 신뢰 'Enter to confirm · Esc to cancel' · Codex 승인 'Press enter to confirm or esc to cancel' · Codex 훅 확인 'enter confirm · esc skip'
