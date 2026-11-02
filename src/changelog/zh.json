@@ -1,4 +1,7 @@
 {
+  "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "自动审查达到轮次上限后，最后的修复仍会先对改动代码进行简短审查，再合并。有阻碍合并的问题或审查失败时，会停止合并。",
+  "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex 会话现在也使用与 Claude 会话相同的提交、机密值和进程保护钩子。",
+  "Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.": "代理监视器现在会同时显示 Claude 和 Codex 会话，包括模型、工具活动和摘要。",
   "Pane focus shortcuts changed from ⌘⌥ + arrow keys to ⌘⇧I J K L (up, left, down, right).": "窗格移动快捷键从 ⌘⌥ + 方向键改为 ⌘⇧I J K L（上、左、下、右）。",
   "Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.": "更新应用或核心时不再关闭窗格：正在运行的窗格会切换到新代码并继续运行。",
   "If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.": "如果窗格运行的是无法切换的旧版本，Athena 会列出将被关闭的窗格，只有在你选择时才关闭。否则可以继续照常使用。",

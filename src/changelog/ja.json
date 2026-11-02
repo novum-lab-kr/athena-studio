@@ -1,4 +1,7 @@
 {
+  "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "自動レビューがラウンド上限に達した後も、最後の修正は変更したコードの短いレビューを受けてからマージされます。重大な指摘やレビューの失敗があれば、マージは止まります。",
+  "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex セッションにも Claude セッションと同じコミット・シークレット・プロセスの保護フックが適用されます。",
+  "Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.": "エージェントモニターに Claude セッションと並んで Codex セッションも表示され、モデル・ツールの使用状況・要約を確認できます。",
   "Pane focus shortcuts changed from ⌘⌥ + arrow keys to ⌘⇧I J K L (up, left, down, right).": "ペイン移動のショートカットが ⌘⌥ + 矢印キーから ⌘⇧I J K L（上、左、下、右）に変わりました。",
   "Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.": "アプリやコアを更新してもペインは閉じません。実行中のペインは新しいコードに切り替わり、そのまま続きます。",
   "If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.": "ペインが切り替えられない古いバージョンで動いている場合は、閉じるペインの一覧を表示し、自分で選んだときだけ閉じます。選ばなければ、そのまま使い続けられます。",

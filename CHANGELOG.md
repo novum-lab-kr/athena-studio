@@ -22,7 +22,14 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.47: v0.46.4..main 머지(#213 · #214)와 v0.47.2..main 직접 머지 6건(단축키 · PR 끈 레포 PR 차단 · 아테나 pane 질문 · 검증 대기 · 아테나 자체 버그 3개)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험 · 검증 차례 대기 줄이기 · 문서 수정 가볍게 · heavy 종료 코드 · 검증 범위의 .omc · 자동 완료의 Progress 빈 칸은 개발용 스크립트라 뺌), v0.47.10..main 직접 머지 7건(모니터 모델 · 초 · 사이드바 깜빡임 · ⌘⇧J K · 사이드바 제목 · 사람이 고를 창 · 경량 기본 모델 · 완료 · 진행 중 규칙)에서 손님에게 보이는 것만(다이어그램 · 에이전트 규칙 문구 · 테스트는 뺌). 범위 끝은 열어 둔다 -->
 
-## 0.47 (v0.47.0 – · Nov 1, 2026)
+## 0.47 (v0.47.20 – · Nov 3, 2026)
+
+### Improved
+- After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.
+- Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.
+- Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.
+
+## 0.47 (v0.47.0 – v0.47.19 · Nov 1, 2026)
 
 ### New
 - Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.
