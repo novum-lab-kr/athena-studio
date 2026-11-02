@@ -1,4 +1,5 @@
 {
+  "When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.": "Claude와 Codex가 둘 다 로그인돼 있으면 아테나를 무엇으로 켤지 묻고 선택을 기억해요. 아테나 작업 공간에서 다른 도구를 켜면 그 선택도 바뀌어요.",
   "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "자동 리뷰가 라운드 상한에 닿은 뒤에도 마지막 수정은 바뀐 코드만 짧게 리뷰하고 머지해요. 막는 지적이 있거나 리뷰에 실패하면 머지하지 않아요.",
   "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex 세션에도 Claude 세션과 같은 커밋 · 비밀값 · 프로세스 보호 훅이 걸려요.",
   "Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.": "에이전트 모니터에 Claude 세션과 함께 Codex 세션의 모델 · 도구 사용 · 요약도 보여요.",

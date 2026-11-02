@@ -1,4 +1,5 @@
 {
+  "When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.": "Claude 和 Codex 均已登录时，Athena 会询问使用哪个工具启动，并记住选择。在 Athena 工作区启动另一个工具会更新此选择。",
   "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "自动审查达到轮次上限后，最后的修复仍会先对改动代码进行简短审查，再合并。有阻碍合并的问题或审查失败时，会停止合并。",
   "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex 会话现在也使用与 Claude 会话相同的提交、机密值和进程保护钩子。",
   "Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.": "代理监视器现在会同时显示 Claude 和 Codex 会话，包括模型、工具活动和摘要。",

@@ -24,6 +24,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ## 0.47 (v0.47.20 – · Nov 3, 2026)
 
+### New
+- When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.
+
 ### Improved
 - After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.
 - Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.
