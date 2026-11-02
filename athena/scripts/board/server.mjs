@@ -51,13 +51,14 @@ import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
-import { autoMergeRepos, autoReviewAction, directMergeStatus, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
+import { autoMergeRepos, autoReviewAction, directMergeStatus, prBaseOf, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
+import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
 import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -382,6 +383,7 @@ const autoDonePlans = async (plans) => {
     plan.column = 'done'
     noteLeftover(plan)
     enqueueLearn(plan.id, mergedMark(counted), counted)
+    await cleanupPlanWorktrees(plan, counted.map((info) => info.head).filter(Boolean))
   }))
   // PR 끔(바로 머지) 계획서 — PR 이 없다. "- Auto merge:" 줄이 같은 HEAD 의 머지 성공이면 완료(머지 확인 대기 · 사람이 직접 머지는 완료가 아니다 · lib/pr-auto.mjs directMergeStatus)
   const directTargets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && !/\/pull\/\d+/.test(plan.pr))
@@ -397,6 +399,7 @@ const autoDonePlans = async (plans) => {
     plan.status = 'done'
     plan.column = 'done'
     noteLeftover(plan)
+    await cleanupPlanWorktrees(plan, [])
   }
   // 사람이 직접 완료로 옮긴 계획서도 — PR 이 모두 머지됐는데 아직 그 PR 묶음을 배우지 않았으면(Learn review 줄에 지금 표시가 없음) 넣는다.
   // 줄이 있어도 이어 머지된 PR 이 생겼으면 표시가 달라 다시 넣는다(자동 보관이 그 표시를 기다린다 — autoArchive)
@@ -532,6 +535,37 @@ const followUpClosedPlans = (plans, issues, now) => {
   if (changed) { try { writeAtomic(PANE_WATCH_FILE, JSON.stringify(paneWatch)) } catch (error) { console.log(`⚠️ pane 닫힌 시각을 적지 못했다: ${error.message}`) } }
 }
 
+// 자동 완료 · 자동 보관한 계획서의 Work ref 워크트리 정리(worktree-cleanup.mjs — 2026-11-02 · 판정은 그 파일 머리말).
+// 지웠으면 · 남겼으면 계획서에 "- Worktree cleanup:" 한 줄. 이미 없는 폴더는 건드리지 않고 줄도 쓰지 않는다
+const repoOfMain = (mainDir) => {
+  const repo = config.repos.find((entry) => { try { return realpathSync(join(ROOT, 'repos', entry.name)) === mainDir } catch { return false } })
+  return repo ? { prBase: prBaseOf(config, repo.name), direct: repo.direct === true } : null
+}
+// 계획서 PR 중 머지된 것의 head(prInfo — 머지된 것은 캐시에 계속 남는다)
+const mergedHeadsOf = async (plan) => {
+  const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
+  const infos = await Promise.all(links.map((link) => prInfo(...link.split('#'))))
+  return infos.filter((info) => info.state === 'MERGED' && info.head).map((info) => info.head)
+}
+const cleanupPlanWorktrees = async (plan, mergedHeads) => {
+  const paths = worktreePathsOf(plan.workRefs || '')
+  if (!paths.some((path) => existsSync(path))) return
+  // 에이전트 pane 만이 아니라 모든 pane — 사람이 연 셸 pane 도 그 폴더를 쓰고 있을 수 있다
+  const listed = await screen(['pane', 'list'])
+  const panes = Array.isArray(listed?.panes) ? listed.panes : null
+  for (const path of paths) {
+    const result = await cleanupWorktree({ path, roots: WORKTREE_ROOTS, repoOf: repoOfMain, requireMerged: true, mergedHeads, panes, checkPanes: true })
+    if (result.state === 'missing') continue
+    const note = result.state === 'removed' ? '지움' : `남김 — ${result.reason}`
+    console.log(`${result.state === 'removed' ? '🧹' : 'ℹ️'} 워크트리 ${note} · ${path} (${plan.id})`)
+    try {
+      updatePlan(join(ROOT, plan.id), (text) => withCleanupLine(text, path, note, stamp()))
+    } catch (error) {
+      console.log(`⚠️ 워크트리 정리 줄을 적지 못했다 ${plan.id}: ${error.message}`)
+    }
+  }
+}
+
 // 끝난 일 자동 보관(archive.mjs — 2026-10-26 결정 D4) — 이어서 쓸 일이 없을 때 그 자리에서 보관한다.
 // 계획서: done · PR 이 모두 머지(머지 없이 닫힌 것은 빼고, 남은 PR 이 없으면 PR 없는 계획서와 같다) · 배우기 검토 끝(또는 대상 아님) · 묶인 에이전트 pane 이 모두 닫힘.
 //   묶인 pane = Work ref · Review 줄의 pane(또는 브랜치) + 그 계획서로 띄운 pane 기록(state/pane-sessions — 같은 계획서로 여러 번 띄워 Work ref 가 덮여도 · plan-bind.mjs)
@@ -562,6 +596,8 @@ const autoArchive = async (plans, issues) => {
   const planIds = new Set(plans.map((plan) => plan.id))
   for (const plan of plans) {
     if (autoArchiveFailed.has(plan.id) || !(await planReadyToArchive(plan))) continue
+    // 보관 전에 워크트리를 판정해 계획서에 한 줄 — 보관된 plan.md(아카이브 기록)에 그대로 남는다
+    await cleanupPlanWorktrees(plan, await mergedHeadsOf(plan))
     const bundle = archiveBundle(plan.id)
     if (bundle.error) { autoArchiveFailed.add(plan.id); console.log(`⚠️ 자동 보관 실패 ${plan.id}: ${bundle.error}`); continue }
     results.push(bundle)
@@ -1334,16 +1370,16 @@ const dispatchReview = async (planId, text) => {
   return { pane: out.trim().split('\n').pop() }
 }
 
+// 이슈 워크트리 — 미커밋 · push 안 된 커밋만 본다(옛 판정 그대로 · 지우기는 계획서 워크트리와 같은 함수 — worktree-cleanup.mjs)
 const removeIssueWorktree = async (issueId, agent) => {
   const worktree = issueWorktree(issueId, agent)
   if (!worktree || !existsSync(worktree.path)) return { error: '지울 워크트리가 없어요' }
-  const dirty = ((await run('git', ['-C', worktree.path, 'status', '--porcelain'])) ?? 'x').trim()
-  if (dirty) return { error: '커밋하지 않은 변경이 있어서 지우지 않았어요 — 직접 확인해 주세요' }
-  // 에이전트가 로컬 커밋을 할 수 있으니, 깨끗해도 원격 어디에도 없는 커밋이 있으면 지우지 않는다
-  const unpushed = ((await run('git', ['-C', worktree.path, 'rev-list', '--count', 'HEAD', '--not', '--remotes'])) ?? '1').trim()
-  if (unpushed !== '0') return { error: `push 하지 않은 커밋이 ${unpushed}개 있어서 지우지 않았어요 — 그 pane 에서 "PR 올려줘"(ship.sh)로 올리거나 직접 확인해 주세요` }
-  if ((await run('git', ['-C', join(ROOT, 'repos', worktree.repo), 'worktree', 'remove', worktree.path])) === null) return { error: '워크트리를 지우지 못했어요 (git worktree remove 실패)' }
-  return { removed: worktree.rel }
+  const result = await cleanupWorktree({ path: worktree.path })
+  if (result.state === 'missing') return { error: '지울 워크트리가 없어요' }
+  if (result.state === 'removed') return { removed: worktree.rel }
+  if (result.reason.startsWith('커밋하지 않은')) return { error: `${result.reason} — 직접 확인해 주세요` }
+  if (result.reason.startsWith('push 하지 않은')) return { error: `${result.reason} — 그 pane 에서 "PR 올려줘"(ship.sh)로 올리거나 직접 확인해 주세요` }
+  return { error: result.reason }
 }
 
 // 삭제는 휴지통으로 옮기기 — plans/ 는 gitignore 라 지우면 되돌릴 수 없다

@@ -111,7 +111,7 @@ scripts/new-branch.sh PROJ-3820 shop-web --dry-run # 먼저 확인 · --in-place
 
 **기록** — `scripts/delegate.sh <에이전트> --cwd <워크트리> --plan <계획서>` 로 띄우면 delegate.sh 가 `Work ref` 줄을 `<워크트리> · 🌿 <브랜치> · pane <id> (<에이전트>)` 로 **통째로 다시 쓴다**(에이전트마다 한 줄 — 여러 레포 계획서는 에이전트마다 Work ref 줄이 따로 생긴다). 그래서 **base SHA**(`new-branch.sh` 출력의 `origin/<base> <sha>`)는 Work ref 가 아니라 Checkpoint `Progress` 에 한 줄로 적는다(`/new` 이후 재개 근거)
 
-**끝난 뒤** — 메인 체크아웃·소스트리에서 보려면 `wt-sync`(같은 `.git` 이라 fetch 불필요). 끝나면 `git -C repos/<레포> worktree remove .worktrees/<레포>/<슬러그>`(현황판 [아카이브]가 이슈 워크트리는 정리한다)
+**끝난 뒤** — 메인 체크아웃·소스트리에서 보려면 `wt-sync`(같은 `.git` 이라 fetch 불필요). 끝나면 `git -C repos/<레포> worktree remove .worktrees/<레포>/<슬러그>`(현황판 [아카이브]가 이슈 워크트리를, 자동 완료 · 자동 보관이 계획서 Work ref 의 워크트리를 정리한다 — 머지 반영 · 미커밋 없음 · 쓰는 pane 없음일 때만 · `docs/workflow.md` 6절 "워크트리 자동 정리")
 
 ## 현황 점검 (아테나 — "현황 알려줘")
 
