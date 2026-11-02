@@ -22,7 +22,7 @@ import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scri
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 # 질문 · 고르기 · 권한 창 표시 — scripts/board/pane-delivery.mjs 의 PROMPT_MENU 와 같은 글
-PROMPT_MENU = re.compile(r'Enter to (select|confirm)|Esc to cancel|↑/↓ to navigate|Do you want to|Type something\.')
+PROMPT_MENU = re.compile(r'enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑/↓ to navigate|Do you want to|Type something\.', re.I)
 GRACE_SECONDS = 4      # 권한 창이 이 시간 안에 닫히면(분류기 자동 허용 · 빠른 응답) 요청을 열지 않는다
 POLL_SECONDS = 2
 GIVE_UP_SECONDS = 6 * 3600

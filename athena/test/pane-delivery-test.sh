@@ -22,12 +22,19 @@ const WORKING = ['❯ Run sleep 25', '⏺ Running 1 shell command…', '  ⎿  $
 const PERMISSION = ['⏺ Bash(rm -rf build)', ' Do you want to proceed?', ' ❯ 1. Yes', '   2. No', ' Esc to cancel'].join('\n')
 const IDLE = ['⏺ 끝났어요', '────', '❯ ', '────', '  ⏵⏵ auto mode on'].join('\n')
 
+const CODEX_QUESTION = 'Question 1/1 (1 unanswered)\nWhich do you choose?\n› 1. Alpha\n  2. Beta\ntab to add notes | enter to submit answer | esc to interrupt'
+const CODEX_APPROVAL = 'Would you like to run the following command?\n› 1. Yes, proceed (y)\n  2. No\nPress enter to confirm or esc to cancel'
+check('Codex 질문 창 → 떠 있음', menuOpen(CODEX_QUESTION))
+check('Codex 허락 창 → 떠 있음', menuOpen(CODEX_APPROVAL))
+
 check('질문 창(AskUserQuestion) → 떠 있음', menuOpen(ASKING))
 check('권한 묻기 창 → 떠 있음', menuOpen(PERMISSION))
 check('일하는 중(도구 실행) → 안 떠 있음 — 바로 넣는다(claude 가 받아 둔다)', !menuOpen(WORKING))
 check('빈 입력칸 → 안 떠 있음', !menuOpen(IDLE))
 check('못 읽음(null) → 안 떠 있음 — 지금처럼 바로', !menuOpen(null))
 check('창 글이 위로 밀려 끝 12줄 밖이면 → 안 떠 있음', !menuOpen(ASKING + '\n' + Array.from({ length: 12 }, (_, index) => `줄 ${index}`).join('\n')))
+
+check('Codex 작업 중 esc to interrupt만으로는 메뉴로 보지 않는다', !menuOpen('› 입력\nWorking (2s • esc to interrupt)'))
 
 // sent — 끝까지 넣은 지시(글 + Enter) · typed — 글 쓰기 기록(중복 입력 확인) · readDelay — 화면 읽기가 느린 척(겹침 재현)
 const fake = () => {
@@ -133,6 +140,14 @@ const fake = () => {
   state.screens.set('p1', IDLE)
   await Promise.all([delivery.tick(), delivery.tick()])
   check('겹쳐 불려도 한 번만 넣는다', same(state.sent, [['p1', '미룸']]), JSON.stringify(state.sent))
+}
+{
+  const { state, delivery } = fake()
+  state.screens.set('p1', CODEX_QUESTION)
+  check('Codex 질문 중 답은 대기열에 남고 선택지를 누르지 않는다', await delivery.submit('p1', '답: Beta') === 'queued' && state.sent.length === 0 && state.typed.length === 0)
+  state.screens.set('p1', IDLE)
+  await delivery.tick()
+  check('Codex 질문 닫힘 뒤 답 한 번 전달', same(state.sent, [['p1', '답: Beta']]) && delivery.pending('p1') === 0)
 }
 process.exit(fail)
 NODE

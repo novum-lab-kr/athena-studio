@@ -190,8 +190,9 @@ function agentStatus({ agent, screenLines, lastOutputAt, now }) {
 // 근거는 실측 화면의 맺음 줄(2026-10-25 · Claude Code 2.1.310 · codex-cli 0.160.0):
 //   Claude 권한 질문 'Esc to cancel · Tab to amend' · 고르기 창 'Enter to select · ↑/↓ to navigate · Esc to cancel' ·
 //   폴더 신뢰 'Enter to confirm · Esc to cancel' · Codex 승인 'Press enter to confirm or esc to cancel' · Codex 훅 확인 'enter confirm · esc skip'
+// Codex 0.166.0 질문: 'tab to add notes | enter to submit answer | esc to interrupt'
 // 맺음 줄은 화면 맨 아래 몇 줄에만 본다(대화 본문에 같은 글이 있어도 잡지 않게) · 고르는 줄(❯ · ›)도 있어야 한다
-const WAIT_FOOTER = /\benter (to )?(select|confirm)\b|\besc (to )?(cancel|skip)\b/i
+const WAIT_FOOTER = /\benter (to )?(select|confirm|submit answer)\b|\besc (to )?(cancel|skip)\b/i
 const WAIT_CURSOR = /^\s*[❯›]\s*\S/
 const WAIT_FOOTER_LINES = 3
 const WAIT_CURSOR_LINES = 20
@@ -201,7 +202,7 @@ const WAIT_CURSOR_LINES = 20
 function waitingForInput(text) {
   const lines = String(text || '').split('\n').filter((line) => line.trim())
   const footer = lines.slice(-WAIT_FOOTER_LINES)
-  if (footer.some((line) => WORKING_MARK.test(line))) return false
+  if (footer.some((line) => WORKING_MARK.test(line) && !/enter to submit answer/i.test(line))) return false
   if (!footer.some((line) => WAIT_FOOTER.test(line))) return false
   return lines.slice(-WAIT_CURSOR_LINES).some((line) => WAIT_CURSOR.test(line))
 }

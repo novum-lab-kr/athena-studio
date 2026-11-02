@@ -23,7 +23,9 @@ const PROTOCOL = 6
 
 // 데몬 코드 판 — 데몬 동작(src/daemon · 데몬이 쓰는 src/lib)을 고치면 올린다. 앱 버전 · PROTOCOL 과 별개
 // 앱이 hello 로 보고 자기 것보다 낮으면 'daemon reload' 를 요청한다. 칸이 없는 옛 데몬은 바꿔 끼울 수 없어 안내만 한다
-const DAEMON_CODE = 4
+// 4 — send-text --enter 가 전송까지 확인
+// 5 — Codex 질문 창의 입력 대기 판정(enter to submit answer)
+const DAEMON_CODE = 5
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

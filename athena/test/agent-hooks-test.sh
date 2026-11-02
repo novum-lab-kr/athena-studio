@@ -70,7 +70,7 @@ for name in ("secret-guard.py", "process-guard.py", "commit-guard.py"):
     pathlib.Path(body, "scripts/hooks").mkdir(exist_ok=True)
     shutil.copyfile(f"{src}/scripts/hooks/{name}", pathlib.Path(body, "scripts/hooks", name))
 codex = json.loads(pathlib.Path(src, ".codex/hooks.json").read_text())
-entries = codex["hooks"].get("PreToolUse", [])
+entries = [entry for entry in codex["hooks"].get("PreToolUse", []) if entry.get("matcher") == "Bash"]
 check("Codex — Bash 실행 전 훅으로 연결", len(entries) == 1 and entries[0].get("matcher") == "Bash", entries)
 handlers = [hook for entry in entries for hook in entry["hooks"]]
 check("Codex — secret · process만 연결(commit은 기존 위임 설정에만)",

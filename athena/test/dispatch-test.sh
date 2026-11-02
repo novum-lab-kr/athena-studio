@@ -86,10 +86,20 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
             text = json.loads(inst.split('=',1)[1])
             check('Codex → 공통 규칙·프로필·레포 원문', all(s in text for s in ['# 레포 규칙 문서','REPO_RULE_SENTINEL','PROFILE_SENTINEL','CLAUDE_RULE_SENTINEL','## 5.']))
             check('Codex → 보호 훅·기록·끝 알림 전달', all(s in (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text() for s in ['commit-guard.py','secret-guard.py','process-guard.py','pane-session.py','agent-done-notify.py']))
+            check('Codex → 질문·허락 요청 훅 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['request_user_input', 'ask-to-request.py', 'PermissionRequest', 'permission-to-request.py']))
             check('Codex → Claude 전용 인자 없음', '--agent' not in args and '--settings' not in args and '--append-system-prompt-file' not in args)
         if remembered is None:
             check(name+' → 실제 주 도구 기록을 새로 쓰지 않는다', not (core / '.athena-main-tool.json').exists())
         check(name+' → 임시 실행기·컨텍스트 정리', not any(root.glob('hermes-*')))
+    profile_path = codex_home / (profiles['agent'] + '.config.toml')
+    with profile_path.open('a') as handle:
+        handle.write('\n[hooks.state."fixture"]\ntrusted_hash = "test-hash"\n')
+    result, got, calls = run('codex', None)
+    regenerated = profile_path.read_text()
+    check('Codex 재디스패치 → [hooks] 표·마커·믿음 기록 유지', result.returncode == 0 and regenerated.startswith('# Athena generated delegation hooks\n[hooks]\n') and '[hooks.state."fixture"]\ntrusted_hash = "test-hash"' in regenerated)
+    before = profile_path.stat().st_mtime_ns
+    run('codex', None)
+    check('같은 훅·믿음 기록이면 프로필을 다시 쓰지 않는다', profile_path.stat().st_mtime_ns == before)
     result, got, calls = run('', None)
     check('기록 없음 · 둘 다 없음 → 안내하고 pane 생성 전 거부', result.returncode==2 and got is None and not calls and '설치·로그인된 위임 도구가 없다' in result.stderr)
     result, got, calls = run('claude,codex','claude',('--engine','codex','--role','reviewer','--model','gpt-test-override'))

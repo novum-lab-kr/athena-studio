@@ -12,7 +12,12 @@
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/requests-test.XXXXXX")" && pwd -P)"
-[ "${KEEP:-}" = 1 ] || trap 'pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; rm -rf "$WORK"' EXIT
+BOARD_PID=''
+stop_board() {
+  if [ -n "$BOARD_PID" ]; then kill "$BOARD_PID" 2>/dev/null || true; wait "$BOARD_PID" 2>/dev/null || true; BOARD_PID=''; fi
+}
+cleanup() { stop_board; [ "${KEEP:-}" = 1 ] || rm -rf "$WORK"; }
+trap cleanup EXIT
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ✖ %s\n' "$1"; [ -n "${2:-}" ] && printf '      %s\n' "$2" | head -c 600 && echo; }
@@ -158,7 +163,9 @@ check "다 정하면 delivered(답 기록)" 'A request list --all | python3 -c "
 section "결정 콘솔 [이대로 진행] → 현황판이 답을 적는다"
 printf '# 기능 Z\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-z.md
 node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
-bash scripts/board.sh >/dev/null 2>&1
+ATHENA_BOARD_PORT=47730 node scripts/board/server.mjs >"$WORK/board.log" 2>&1 &
+BOARD_PID=$!
+for attempt in $(seq 1 40); do curl -sf http://127.0.0.1:47730/api/state >/dev/null && break; sleep 0.1; done
 TOKEN="$(A pack board-token | field token)"
 HDR=(-H "Origin: http://localhost:47730" -H "x-board-token: $TOKEN" -H "content-type: application/json")
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-z.md","text":"[작업계획서 결정사항 확정] 기능 Z"}' http://127.0.0.1:47730/api/action)"
@@ -187,7 +194,7 @@ check "현황판 /api/metrics/work — 시작 날짜 · 리뷰 나눠 작업 안
 check "현황판 /api/state — 주 본체라 [정비] 탭을 보인다(maintenance)" '[ "$(curl -s http://127.0.0.1:47730/api/state | field maintenance)" = True ]'
 check "scripts/metrics.mjs — 요약을 찍는다" 'node scripts/metrics.mjs | grep -q "작업당 질문" && [ "$(node scripts/metrics.mjs --all --json | field days)" = "" ]'
 # 위에서 띄운 현황판도 훑을 때마다 같은 일을 한다 — 끄고 본 기록을 지운 뒤 처음부터
-pkill -f "$WORK/body/scripts/board/server.mjs" 2>/dev/null; sleep 1
+stop_board
 rm -f .pack-data/state/plan-status.json
 BEFORE="$(wc -l < "$EV")"
 observe() { node --input-type=module -e "import { observePlanStatus } from './scripts/lib/events.mjs'; observePlanStatus(process.cwd(), JSON.parse(process.argv[1]))" "$1"; }
@@ -265,6 +272,22 @@ ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py lead <<< "
 check "에이전트 세션에서는 lead 설정이 건너뛴다(두 설정이 겹쳐도 한 번만 열림)" '[ ! -s "$WORK/ask-dup.out" ] && [ "$(ls "$DIR" | wc -l)" = "$BEFORE_DUP" ]'
 ATHENA_AGENT=athena-studio-fe python3 scripts/hooks/ask-to-request.py <<< '{"tool_input":{"questions":[]}}' > "$WORK/ask-empty.out"
 check "질문이 없으면 건드리지 않는다" '[ ! -s "$WORK/ask-empty.out" ]'
+
+section "Codex 질문(request_user_input) — Claude와 같은 요청·답 경로"
+CODEX_ASK_EVENT='{"hook_event_name":"PreToolUse","tool_name":"request_user_input","tool_input":{"questions":[{"id":"choice","header":"선택","question":"Codex 질문 시험","options":[{"label":"Alpha (Recommended)","description":"첫 번째"},{"label":"Beta","description":"두 번째"}]}]}}'
+ATHENA_AGENT=athena-studio-fe ATHENA_PLAN=plans/task/20261021-x.md python3 scripts/hooks/ask-to-request.py <<< "$CODEX_ASK_EVENT" > "$WORK/ask-codex.out"
+CQ="$(python3 -c 'import json,sys,re; print(re.findall(r"r-\d{8}-\d{6}-\w{4}", json.load(open(sys.argv[1]))["hookSpecificOutput"]["permissionDecisionReason"])[0])' "$WORK/ask-codex.out")"
+check "Codex 질문도 도구를 막고 선택지·추천·계획서를 요청에 담는다" 'A request show "$CQ" | python3 -c "import json,sys; request=json.load(sys.stdin)[\"request\"]; sys.exit(0 if request[\"title\"]==\"Codex 질문 시험\" and [option[\"label\"] for option in request[\"options\"]]==[\"Alpha\",\"Beta\"] and request[\"options\"][0][\"recommended\"] and request[\"links\"][\"plan\"]==\"plans/task/20261021-x.md\" else 1)"'
+check "Codex 팝업 답 → answered → ack → delivered" '[ "$(A request answer "$CQ" --by app --choice Beta | field request.state)" = answered ] && [ "$(A request ack "$CQ" | field request.state)" = delivered ]'
+python3 - <<'PYCODEX'
+import sys
+sys.path.insert(0, 'scripts/lib')
+import pane_request
+assert pane_request.menu_open('› 1. Alpha\ntab to add notes | enter to submit answer | esc to interrupt')
+assert pane_request.menu_open('› 1. Yes, proceed (y)\nPress enter to confirm or esc to cancel')
+assert not pane_request.menu_open('Working (2s • esc to interrupt)')
+PYCODEX
+check "지킴이가 Codex 질문·허락 창을 알아보고 작업 중은 제외한다" '[ $? -eq 0 ]'
 
 section "권한 확인 창 알림(scripts/hooks/permission-to-request.py · scripts/lib/pane_request.py)"
 # 훅 — 결정을 돌려주지 않고(출력 없음) 지킴이만 띄운다. 화면 계층 · 지킴이는 시험에서 가짜로 바꿔 끼운다

@@ -265,7 +265,7 @@ export function resumeCommand(session: unknown): string {
 
 // claude 화면이 "아무것도 안 하고 비어 있다" 인가 — 질문 · 고르기 창이 없고 입력칸이 비었을 때만(자리 글 Try "…" 는 빈 것으로).
 // 데몬의 agent_status 는 질문을 기다리는 것도 idle 로 본다 — 그 상태에 /exit 를 치면 사용자가 답하던 창 · 쓰던 글에 들어간다
-const PROMPT_MENU = /Enter to (select|confirm)|Esc to cancel|↑\/↓ to navigate|Do you want to|Type something\./
+const PROMPT_MENU = /enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑\/↓ to navigate|Do you want to|Type something\./i
 const BACKGROUND_WORK = /·\s*[↓↑]\s*[\d.,]+k?\s*tokens|esc to interrupt/i
 export function claudeAtEmptyPrompt(text: unknown): boolean {
   const lines = String(text || '').split('\n').map((line) => line.replace(/\s+$/, '')).filter((line) => line.trim())

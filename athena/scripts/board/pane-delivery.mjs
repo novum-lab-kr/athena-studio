@@ -11,7 +11,7 @@
 // 넣기는 두 단계(글 → Enter) — 글은 들어갔는데 Enter 가 실패하면 글을 다시 쓰지 않고 다음 차례에 Enter 부터 다시 한다.
 
 // 질문 · 고르기 창 표시 — 앱 src/lib/core.mts claudeAtEmptyPrompt 의 PROMPT_MENU 와 같은 글
-const PROMPT_MENU = /Enter to (select|confirm)|Esc to cancel|↑\/↓ to navigate|Do you want to|Type something\./
+const PROMPT_MENU = /enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑\/↓ to navigate|Do you want to|Type something\./i
 
 /**
  * 화면 끝 12줄(빈 줄 빼고)에 질문 · 고르기 창이 떠 있나

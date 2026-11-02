@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""에이전트의 AskUserQuestion 을 사람에게 묻는 요청으로 바꾸는 훅 (Claude Code PreToolUse · AskUserQuestion) — delegate.sh · agent-context.py 가 에이전트 세션에 건다.
+"""에이전트의 고르기 질문을 사람에게 묻는 요청으로 바꾸는 훅 (PreToolUse · Claude AskUserQuestion / Codex request_user_input).
 
 왜: 위임 에이전트가 pane 안에서 고르기 창(AskUserQuestion)으로 물으면 요청이 열리지 않아 스튜디오 [작업] 에 질문이 안 올라온다(2026-10-29).
 무엇을: 질문마다 `bin/athena request open --kind question` 을 열고(계획서 = ATHENA_PLAN · pane = 부른 pane) 도구는 막는다.

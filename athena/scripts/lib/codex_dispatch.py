@@ -2,12 +2,13 @@
 
 공통 규칙과 프로필은 developer_instructions 에 더한다(기본 모델 지시문 교체 금지).
 보호 훅·pane 기록·끝 알림은 본체의 절대 경로를 써 워크트리에서도 동작한다.
-질문·허락 팝업 연결은 별도 단계라 여기에 넣지 않는다.
+질문은 같은 요청 훅으로 [작업] 에 올린다.
 """
 import json
 import hashlib
 import os
 import pathlib
+import re
 import sys
 import tempfile
 
@@ -30,9 +31,12 @@ def settings(root, agent, role, context, definitions):
     prompt, stop = agent_hooks.done_notify(root, 'reviewer' if role == 'reviewer' else agent)
     hooks = {
         'PreToolUse': [{'matcher': 'Bash', 'hooks': guards}],
+        'PermissionRequest': agent_hooks.permission_request(root),
         'SessionStart': [{'hooks': [agent_hooks.pane_session(root)]}],
         'UserPromptSubmit': [{'hooks': [agent_hooks.pane_session(root), agent_hooks.hook(root, 'scripts/hooks/language.py')] + prompt}],
     }
+    if role != 'reviewer':
+        hooks['PreToolUse'].append({'matcher': '^request_user_input$', 'hooks': [agent_hooks.hook(root, 'scripts/hooks/ask-to-request.py')]})
     if stop:
         hooks['Stop'] = stop
     definition = json.loads(pathlib.Path(definitions).read_text(encoding='utf-8'))[agent]
@@ -53,13 +57,21 @@ def hook_profile(root, role, hooks):
     name = 'athena-dispatch-' + hashlib.sha256((str(pathlib.Path(root).resolve()) + ':' + role).encode()).hexdigest()[:20]
     path = home / (name + '.config.toml')
     marker = '# Athena generated delegation hooks\n'
-    content = marker + 'hooks=' + toml(hooks) + '\n'
+    # Codex 는 신뢰 저장 때 TOML 을 표로 다시 쓴다. 루트 inline table 은
+    # 앞 주석까지 표 이름으로 옮길 수 있으므로 처음부터 [hooks] 표를 쓴다.
+    content = marker + '[hooks]\n' + ''.join(key + ' = ' + toml(value) + '\n' for key, value in hooks.items())
     if path.is_symlink():
         raise ValueError('Codex 위임 프로필 자리가 링크라 쓰지 않는다')
     if path.exists():
         old = path.read_text(encoding='utf-8')
         if not old.startswith(marker):
             raise ValueError('Codex 위임 프로필 자리에 다른 파일이 있어 쓰지 않는다')
+        # 신뢰 해시는 Codex 가 관리한다. 훅 정의만 새로 만들고 state 표는
+        # 그대로 둔다(정의가 바뀌었을 때 신뢰 재확인은 Codex 가 판단한다).
+        sections = re.split(r'(?=^\[)', old, flags=re.M)
+        state = ''.join(section for section in sections if re.match(r'^\[hooks\.state(?:\.|\])', section))
+        if state:
+            content += '\n' + state
         if old == content:
             return name
     fd, temp = tempfile.mkstemp(prefix=name + '.', dir=home)

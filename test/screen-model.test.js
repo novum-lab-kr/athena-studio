@@ -162,6 +162,7 @@ const WAIT_SCREENS = {
   claudeQuestion: [' ☐ Color', '', 'Which color do you like?', '', '❯ 1. Red', '     The color red', '  2. Blue', '  3. Type something.', '────', '  4. Chat about this', '', 'Enter to select · ↑/↓ to navigate · Esc to cancel'],
   claudeTrust: [' Quick safety check: Is this a project you created or one you trust?', '', ' ❯ No, exit', '   Yes, I trust this folder', '', ' Enter to confirm · Esc to cancel'],
   codexApproval: ['  Would you like to run the following command?', '', '  $ touch codex-probe.txt', '', '', '› 1. Yes, proceed (y)', "  2. Yes, and don't ask again (p)", '  3. No, and tell Codex what to do differently (esc)', '', '  Press enter to confirm or esc to cancel'],
+  codexQuestion: ['Question 1/1 (1 unanswered)', 'Which do you choose?', '› 1. Alpha (Recommended) Choose Alpha.', '  2. Beta Choose Beta.', '  3. None of the above', 'tab to add notes | enter to submit answer | esc to interrupt'],
   codexHooks: ['  Hooks need review', '', '› 1. Review hooks', '  2. Trust all and continue', '', '  enter confirm · esc skip'],
 }
 
