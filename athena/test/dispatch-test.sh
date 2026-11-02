@@ -100,6 +100,23 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     before = profile_path.stat().st_mtime_ns
     run('codex', None)
     check('같은 훅·믿음 기록이면 프로필을 다시 쓰지 않는다', profile_path.stat().st_mtime_ns == before)
+    # Codex 가 덧붙이는 [tui] 같은 다른 절도 남겨야 띄울 때마다 다시 쓰지 않는다
+    with profile_path.open('a') as handle:
+        handle.write('\n[tui]\nscreen_reader_detection_done = true\n')
+    run('codex', None)
+    before = profile_path.stat().st_mtime_ns
+    run('codex', None)
+    check('Codex 가 덧붙인 [tui] 절 유지·다시 쓰지 않음', '[tui]\nscreen_reader_detection_done = true' in profile_path.read_text() and profile_path.stat().st_mtime_ns == before)
+    # 옛 판(hooks= 인라인)을 Codex 0.166 이 신뢰 저장하며 깨뜨린 머리 — 우리 파일로 알아보고 회복한다
+    hooks_lines = regenerated.split('[hooks]\n', 1)[1].split('\n[', 1)[0]
+    profile_path.write_text('[# Athena generated delegation hooks\nhooks]\n' + hooks_lines + '\n[hooks.state]\n\n[hooks.state."fixture"]\ntrusted_hash = "test-hash"\n')
+    result, got, calls = run('codex', None)
+    recovered = profile_path.read_text()
+    check('깨진 옛 프로필 → 표식 머리로 회복·믿음 기록 유지', result.returncode == 0 and recovered.startswith('# Athena generated delegation hooks\n[hooks]\n') and '[#' not in recovered and '[hooks.state."fixture"]\ntrusted_hash = "test-hash"' in recovered)
+    profile_path.write_text('[other]\nkey = 1\n')
+    result, got, calls = run('codex', None)
+    check('표식 없는 다른 파일은 덮지 않는다', result.returncode != 0 and profile_path.read_text() == '[other]\nkey = 1\n')
+    profile_path.write_text(recovered)
     result, got, calls = run('', None)
     check('기록 없음 · 둘 다 없음 → 안내하고 pane 생성 전 거부', result.returncode==2 and got is None and not calls and '설치·로그인된 위임 도구가 없다' in result.stderr)
     result, got, calls = run('claude,codex','claude',('--engine','codex','--role','reviewer','--model','gpt-test-override'))

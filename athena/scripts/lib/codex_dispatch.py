@@ -64,14 +64,18 @@ def hook_profile(root, role, hooks):
         raise ValueError('Codex 위임 프로필 자리가 링크라 쓰지 않는다')
     if path.exists():
         old = path.read_text(encoding='utf-8')
-        if not old.startswith(marker):
+        # 옛 판(표식 뒤 `hooks=` 인라인 표)은 Codex 0.166 이 신뢰를 저장하며
+        # 첫 줄을 `[# Athena generated delegation hooks` / `hooks]` 로 깨뜨렸다.
+        # 그 모양도 우리가 만든 파일로 알아보고 고쳐 쓴다.
+        if not (old.startswith(marker) or old.startswith('[' + marker + 'hooks]\n')):
             raise ValueError('Codex 위임 프로필 자리에 다른 파일이 있어 쓰지 않는다')
-        # 신뢰 해시는 Codex 가 관리한다. 훅 정의만 새로 만들고 state 표는
-        # 그대로 둔다(정의가 바뀌었을 때 신뢰 재확인은 Codex 가 판단한다).
+        # 신뢰 해시([hooks.state…])·화면 설정([tui]) 같은 Codex 가 덧붙인 절은
+        # 그대로 두고 우리 훅 정의만 새로 쓴다(정의가 바뀌면 신뢰 재확인은 Codex 가 해시로 판단한다).
         sections = re.split(r'(?=^\[)', old, flags=re.M)
-        state = ''.join(section for section in sections if re.match(r'^\[hooks\.state(?:\.|\])', section))
-        if state:
-            content += '\n' + state
+        # 첫 조각은 표식 주석, `[hooks]` 와 깨진 머리(`[# …`)는 우리 훅 정의라 새로 쓴다.
+        kept = ''.join(section for section in sections if section.startswith('[') and not re.match(r'\[(?:hooks\]\s*$|#)', section.split('\n', 1)[0]))
+        if kept:
+            content += '\n' + kept.lstrip('\n')
         if old == content:
             return name
     fd, temp = tempfile.mkstemp(prefix=name + '.', dir=home)
