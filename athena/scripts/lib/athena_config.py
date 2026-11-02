@@ -190,6 +190,11 @@ def direct_merge_mode(cfg, repo_name):
     return 'auto' if entry.get('autoMergeConfirm') is False else 'confirm'
 
 
+def actions_handoff(cfg, repo_name):
+    """Actions 로 넘기는 레포인가 — "actionsHandoff": true + 확인 없는 바로 머지. scripts/lib/handoff.mjs handoffOn 과 같은 기준(docs/pr-auto.md "Actions 로 넘기기")."""
+    return repo_entry(cfg, repo_name).get('actionsHandoff') is True and direct_merge_mode(cfg, repo_name) == 'auto'
+
+
 def direct_branch(cfg, repo_name):
     """main 직접 레포가 작업·push 하는 브랜치 — prBase(없으면 branch)."""
     repo = repo_entry(cfg, repo_name)

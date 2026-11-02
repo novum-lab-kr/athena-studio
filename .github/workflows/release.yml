@@ -4,6 +4,8 @@ name: release
 on:
   push:
     branches: [main]
+  # Actions 로 넘긴 머지는 기본 토큰이라 push 로 시작하지 않는다 — athena-handoff.yml 이 직접 부른다
+  workflow_dispatch:
 permissions:
   contents: write # 태그 · Release 만들기
   pull-requests: read # 머지 커밋의 PR 제목 읽기(gh api …/commits/<sha>/pulls)

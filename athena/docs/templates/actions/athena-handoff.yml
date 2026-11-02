@@ -1,0 +1,99 @@
+# 넘긴 작업을 검증해 기준 브랜치에 머지한다(docs/pr-auto.md "Actions 로 넘기기"). 레포에 .github/workflows/athena-handoff.yml 로 복사하고 아래 ← 표시만 고친다.
+# 시작: ship.sh 가 작업 커밋을 handoff/<브랜치> 로 push 한다. pull_request 로 시작하지 않으니 포크 PR 에서는 돌지 않는다.
+# 차례: 머지는 강제 없는 push 라 앞선 머지와 겹치면 거부되고 다시 합쳐 본다. concurrency 로 줄 세우지 않는다 — GitHub 은 대기 실행을 하나만 남기고 취소해 넘긴 일이 사라진다.
+# 공개 레포는 로그가 누구에게나 보인다 — 검증 단계에서 비밀값을 출력하지 않고, 꼭 필요한 값만 그 단계 env 로 넘긴다.
+name: athena-handoff
+on:
+  push:
+    branches: ['handoff/**']
+permissions:
+  contents: read
+# 같은 브랜치를 다시 넘기면 옛 실행은 필요 없다 — 다른 브랜치끼리는 막지 않는다
+concurrency:
+  group: athena-handoff-${{ github.ref }}
+  cancel-in-progress: true
+env:
+  BASE_BRANCH: main # ← 팩 pack.json 의 prBase
+  DEPLOY_WORKFLOW: '' # ← 머지 뒤 부를 workflow 파일 이름(예 deploy.yml · 그 파일에 workflow_dispatch 필요). 없으면 빈 값
+jobs:
+  verify:
+    if: github.event.deleted == false && github.event.repository.fork == false
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      # ← 이 단계를 레포의 전체 검증으로 바꾼다. 그대로 두면 실패해 머지되지 않는다
+      - name: 전체 검증
+        run: |
+          echo '전체 검증 단계를 아직 채우지 않았다 — .github/workflows/athena-handoff.yml'
+          exit 1
+  merge:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: 같은 HEAD 를 squash 로 머지
+        # >>> merge
+        run: |
+          work_branch="${GITHUB_REF_NAME#handoff/}"
+          subject="$(git log -1 --format=%s "$GITHUB_SHA")"
+          export GIT_AUTHOR_NAME GIT_AUTHOR_EMAIL GIT_COMMITTER_NAME GIT_COMMITTER_EMAIL
+          GIT_AUTHOR_NAME="$(git log -1 --format=%an "$GITHUB_SHA")"
+          GIT_AUTHOR_EMAIL="$(git log -1 --format=%ae "$GITHUB_SHA")"
+          GIT_COMMITTER_NAME='github-actions[bot]'
+          GIT_COMMITTER_EMAIL='41898282+github-actions[bot]@users.noreply.github.com'
+          merged=0
+          for attempt in 1 2 3 4 5; do
+            git fetch --quiet origin "$BASE_BRANCH"
+            base_sha="$(git rev-parse FETCH_HEAD)"
+            if git merge-base --is-ancestor "$GITHUB_SHA" "$base_sha"; then
+              echo "이미 $BASE_BRANCH 에 들어 있다"
+              merged=1
+              break
+            fi
+            merge_status=0
+            tree="$(git merge-tree --write-tree --no-messages "$base_sha" "$GITHUB_SHA")" || merge_status=$?
+            if [ "$merge_status" = 1 ]; then
+              echo "::error::$BASE_BRANCH 와 충돌 — 기준 브랜치를 합쳐 푼 뒤 다시 넘긴다"
+              exit 1
+            fi
+            [ "$merge_status" = 0 ] || { echo "::error::충돌 확인을 못 함"; exit 1; }
+            tree="${tree%%$'\n'*}"
+            if [ "$tree" = "$(git rev-parse "$base_sha^{tree}")" ]; then
+              echo "이미 $BASE_BRANCH 에 들어 있다"
+              merged=1
+              break
+            fi
+            commit_sha="$(git commit-tree "$tree" -p "$base_sha" -m "$subject" -m "$work_branch → $BASE_BRANCH 넘겨서 머지(PR 없음 · squash)")"
+            if git push --quiet origin "$commit_sha:refs/heads/$BASE_BRANCH"; then
+              echo "머지함 @$commit_sha"
+              merged=1
+              break
+            fi
+            echo "push 거부 — 다시 합쳐 본다($attempt/5)"
+            sleep "$((attempt * 5))"
+          done
+          [ "$merged" = 1 ] || { echo "::error::$BASE_BRANCH 에 push 하지 못했다"; exit 1; }
+          git push --quiet origin --delete "$GITHUB_REF_NAME" || echo "넘김 브랜치를 지우지 못했다 — 머지는 끝났다"
+        # <<< merge
+  deploy:
+    needs: merge
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: write
+    steps:
+      # 기본 토큰으로 한 push 는 다른 workflow 를 시작하지 않는다. workflow_dispatch 는 예외라 여기서 직접 부른다
+      - name: 배포 시작
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -n "$DEPLOY_WORKFLOW" ] || { echo '부를 배포 없음'; exit 0; }
+          gh workflow run "$DEPLOY_WORKFLOW" --repo "$GITHUB_REPOSITORY" --ref "$BASE_BRANCH"

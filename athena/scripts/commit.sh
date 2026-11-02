@@ -246,7 +246,14 @@ OUTSIDE="$(git -C "$TOP" status --porcelain -z --untracked-files=all | tr '\0' '
 
 # ── 3. 엄격 검증 ────────────────────────────────────────────────────────
 VERIFY_NOTE="검증 생략(사용자 지시)"; RESULTS=""
-if [ $NO_VERIFY = 0 ]; then
+# Actions 로 넘기는 레포 — 전체 검증은 넘긴 뒤 Actions 가 같은 HEAD 로 돌린다(docs/pr-auto.md "Actions 로 넘기기"). workflow 가 아직 커밋되지 않았으면 여기서 돌린다
+HANDOFF_VERIFY=0
+if [ $NO_VERIFY = 0 ] && git -C "$TOP" cat-file -e HEAD:.github/workflows/athena-handoff.yml 2>/dev/null \
+  && [ -n "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, actions_handoff; print(1 if actions_handoff(load(sys.argv[1]), sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO" 2>/dev/null)" ]; then
+  HANDOFF_VERIFY=1
+  VERIFY_NOTE="전체 검증은 넘긴 뒤 Actions 에서"
+fi
+if [ $NO_VERIFY = 0 ] && [ $HANDOFF_VERIFY = 0 ]; then
   SCRIPT="$ATHENA_DIR/scripts/verify/$REPO.sh"
   [ -x "$SCRIPT" ] || { unstage; fail "검증 스크립트가 없다: scripts/verify/$REPO.sh"; }
   if [ -z "$VERIFY_ARGS" ] && [ "$REPO_KIND" = monorepo ]; then
@@ -325,7 +332,7 @@ if not update_plan(plan, add_commit):
 PYEOF
 [ $? = 0 ] || echo "⚠️ 커밋은 됐지만 계획서 기록에 실패했다 — 다시 커밋하지 말고 계획서 ## Commits 에 손으로 적는다: $SHA" >&2
 # 측정용 사건 기록(docs/events.md) — 실패해도 커밋은 그대로
-node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
+node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] || [ "$HANDOFF_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
 
 # 끝난 일의 Status — in_progress · planned 면 ready_for_review 로(이미 ready_for_review · done · blocked 는 그대로 · docs/workflow.md 4절). 실패해도 커밋은 그대로
 OLD_STATUS="$(python3 "$ATHENA_DIR/scripts/lib/plan_autofill.py" status "$ATHENA_DIR" "$PLAN" 2>/dev/null || true)"

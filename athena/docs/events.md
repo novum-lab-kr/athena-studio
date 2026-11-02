@@ -27,7 +27,8 @@
 | `pr.open` | `scripts/ship.sh` — 새 draft PR 을 만든 직후(이미 열린 PR 에 push 만 할 때는 안 남김) — 리뷰 구간의 시작 | `plan` · `repo` · `pr` · `sha` · `fast`(⚡ 빠른 길 판정 — `docs/pr-auto.md` "빠른 길") |
 | `auto.takeover` | `scripts/pr-auto.mjs` — 리뷰 상한 뒤 이어받은 HEAD 를 리뷰 없이 머지 단계로 넘길 때(빠른 길은 1라운드 수정 뒤 고친 HEAD) | `plan` · `repo` · `branch` · `sha` · `pr` · 빠른 길이면 `fast: true` |
 | `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 멈출 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers · rounds — 상한을 넘었는데 이어받을 수정이 없음 · verify · decisions — 결정 콘솔에 안 정한 결정) · `why` · 빠른 길이면 `fast: true` |
-| `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` · 빠른 길이면 `fast: true` |
+| `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` · 빠른 길이면 `fast: true` · 넘긴 작업은 `handoff: true` · `run` · 성공이면 `mergedAt` · `handoffMs` |
+| `handoff` | `scripts/pr-auto.mjs --handoff` — 작업을 Actions 로 넘긴 뒤 | `plan` · `repo` · `branch` · `sha` · `base` |
 
 `verify` 의 계획서는 환경 `ATHENA_PLAN` 으로 온다 — `delegate.sh` 로 띄운 pane 과 `commit.sh` 의 커밋 전 검증은 `plan` 이 차고, 사람이 pane 밖에서 직접 돌린 검증은 빈 값이다. `plan` 이 없는 줄(옛 기록 포함)은 같은 `repo` · `branch` 의 `commit` · `review` 로 잇는다. `ms` · `scope` 도 같은 때 생겼으니 옛 기록에는 없다 — 지표는 그 줄의 검증 소요를 모르는 것(null)으로 둔다.
 

@@ -46,6 +46,7 @@ import { scanSessions, workTotals } from '../lib/session-work.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { overview as qaOverview } from '../qa/flows.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
+import { createHandoffWatch, handoffStateOf, HANDOFF_EVERY_MS } from '../lib/handoff.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
@@ -182,6 +183,7 @@ const readPlan = (path) => {
     issue: plain(field(checkpoint, 'Issue')).match(/issues\/\S+\.md/)?.[0] ?? '',
     origin: planOrigin(path, text, plain(field(checkpoint, 'Agent')), plain(field(checkpoint, 'Issue'))),
     updated: plain(field(checkpoint, 'Updated')),
+    handoff: handoffStateOf(checkpoint),
     progress,
     archived,
     mtime,
@@ -974,7 +976,7 @@ const collect = async () => {
     // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 위해 만든 것(Issue:)일 때만 합친다
     if (issue.status === 'open' && plan.issue !== issue.id) continue
     merged.add(plan.id)
-    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents, leadPane: plan.leadPane }
+    issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents, leadPane: plan.leadPane, handoff: plan.handoff }
     // 계획서가 리뷰 단계면 이슈 카드도 리뷰 칸에
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'
     if (plan.working && issue.column !== 'done') issue.column = 'doing'
@@ -1223,6 +1225,20 @@ const githubIssues = createGithubIssueWatch({
   run,
   handOff: openHermesPane,
   canRun: () => !staleGeneration(),
+})
+
+// Actions 로 넘긴 작업 결과 읽기(lib/handoff.mjs) — 넘긴 일이 있을 때만 gh 를 부른다. 실패 원문은 맡았던 pane 으로, 없으면 같은 워크트리로 새로 띄운다
+const handoffs = createHandoffWatch({
+  root: ROOT,
+  org: ORG,
+  run,
+  sendToPane,
+  openPane: (agent, plan, worktree, text) => new Promise((done) => {
+    execFile(join(ROOT, 'scripts/delegate.sh'), [agent, text, '--plan', plan, '--cwd', worktree], { cwd: ROOT, timeout: 60_000 }, (error) => done(!error))
+  }),
+  logEvent: (type, fields) => logEvent(ROOT, type, fields),
+  stamp,
+  canRun: () => Boolean(ORG) && !staleGeneration(),
 })
 
 // 담당 에이전트를 레포 workspace 에 띄운다 — delegate.sh 가 workspace 찾기·pane 이름·임시 파일을 다 한다
@@ -1712,5 +1728,7 @@ createServer((request, response) => {
   // 첫 갱신(pane 목록) 뒤 한 번 · 그 뒤 5분마다 — 켠 레포가 없으면 아무것도 안 한다
   githubIssues.tick()
   setInterval(() => githubIssues.tick(), GITHUB_ISSUES_EVERY_MS)
+  handoffs.tick()
+  setInterval(() => handoffs.tick(), HANDOFF_EVERY_MS)
   console.log(`아테나 현황판: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })

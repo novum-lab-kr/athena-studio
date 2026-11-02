@@ -84,6 +84,10 @@ resolve_repo_dir() { # resolve_repo_dir <메인 체크아웃> — 검증할 트�
   # 다른 레포 워크트리를 가리키면 엉뚱한 트리를 검증하게 되므로 무시하고 메인 체크아웃을 쓴다.
   local main_dir="$1" target="${ATHENA_VERIFY_DIR:-}" main_common target_common
   if [ -z "$target" ]; then echo "$main_dir"; verify_mark_start "$main_dir"; return; fi
+  # git 없는 폴더 — 맥 실행기(scripts/local-finish.mjs)가 켠다. 견줄 git 정보가 없으니 진짜 git 밖인 폴더만 그대로 쓴다
+  if [ "${ATHENA_VERIFY_GITLESS:-0}" = 1 ] && [ -d "$target" ] && ! git -C "$target" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    (cd "$target" && pwd -P); verify_mark_start "$target"; return
+  fi
   main_common="$(cd "$main_dir" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)"
   target_common="$(cd "$target" 2>/dev/null && cd "$(git rev-parse --git-common-dir 2>/dev/null)" 2>/dev/null && pwd -P)"
   if [ -n "$main_common" ] && [ "$main_common" = "$target_common" ]; then

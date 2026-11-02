@@ -1335,16 +1335,16 @@ printf '# 시험\n\n## Checkpoint\n- Status: in_progress\n' > "$ICORE/plans/task
 instr() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/athena.config.json"; (cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md 2>&1); }
 INSTR_OUT="$(instr ', "autoMerge": true, "autoPr": false')"
 printf '%s' "$INSTR_OUT" | grep -q "ship.sh --plan $ICORE/plans/task/20261030-a.md --dir <워크트리> --direct-merge" \
-  && printf '%s' "$INSTR_OUT" | grep -q "자동 PR 을 껐다" && ! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다" \
+  && printf '%s' "$INSTR_OUT" | grep -q "자동 PR 을 껐다" && ! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" \
   && echo "  ✔ PR 끔 → 끝나면 ship.sh --direct-merge (PR 흐름 지시 아님)" || { echo "  ✖ PR 끔 지시문"; printf '%s\n' "$INSTR_OUT" | grep -o "이 레포(web).\{0,300\}" | head -3; FAIL=1; }
 INSTR_OUT="$(instr ', "autoMerge": true')"
-printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge 를 돈다" \
+printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge" \
   && echo "  ✔ 자동 PR 켬 → 지금처럼 PR 흐름" || { echo "  ✖ 켬 지시문"; FAIL=1; }
 INSTR_OUT="$(instr '')"
-! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" \
   && echo "  ✔ autoMerge 키 없음 → 저절로 흐름 지시 없음" || { echo "  ✖ 키 없음 지시문"; FAIL=1; }
 INSTR_OUT="$(instr ', "autoPr": false')"
-! printf '%s' "$INSTR_OUT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" \
   && echo "  ✔ autoMerge 키 없이 autoPr:false 만 → 지시 없음(바로 머지 안 함)" || { echo "  ✖ autoPr 만 지시문"; FAIL=1; }
 
 # 이어 보내기(--reuse-pane) — 처음 받은 지시가 아니라 지금 설정 기준 올리는 방식이 전송문에 실린다 · 디스패치 결과에 올리는 방식 한 줄
@@ -1375,15 +1375,18 @@ reuse() {   # 설정 조각 → 이어 보내기 결과(전송문은 $TMP/reuse-
   (cd "$ICORE" && env -u ATHENA_AGENT REUSE_CWD="$(cd "$TMP/reuse-wd" && pwd -P)" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --reuse-pane p5 2>&1)
 }
 REUSE_OUT="$(reuse ', "autoMerge": true, "autoPr": false')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
-printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_SENT" | grep -q "지금 설정 기준" && ! printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다" \
+printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_SENT" | grep -q "지금 설정 기준" && ! printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다" \
   && echo "  ✔ 이어 보내기(PR 끔) — 전송문에 최신 규칙(ship.sh --direct-merge)이 실린다" || { echo "  ✖ 이어 보내기 PR 끔 전송문"; printf '%s\n' "$REUSE_OUT" | head -5; FAIL=1; }
 printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
   && echo "  ✔ 디스패치 결과에 올리는 방식 한 줄(바로 머지)" || { echo "  ✖ 디스패치 결과 올리는 방식 줄"; printf '%s\n' "$REUSE_OUT" | tail -4; FAIL=1; }
 REUSE_OUT="$(reuse ', "autoMerge": true')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
-printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다" && ! printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge 를 돈다" && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 끝나면 저절로 draft PR" \
+printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 끝나면 저절로 draft PR" \
   && echo "  ✔ 설정이 바뀌면(PR 켬) 이어 보내기 전송문 · 결과 줄도 바뀐다" || { echo "  ✖ 이어 보내기 PR 켬"; FAIL=1; }
+REUSE_OUT="$(reuse ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false, "actionsHandoff": true')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
+printf '%s' "$REUSE_SENT" | grep -q "Actions 로 넘긴다" && printf '%s' "$REUSE_SENT" | grep -q "결과를 기다리지 말고" && printf '%s' "$REUSE_SENT" | grep -q "리뷰와 화면 확인을 먼저" && printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: Actions 로 넘기기" \
+  && echo "  ✔ Actions 로 넘기는 레포 — 넘긴 뒤 기다리지 않는다는 규칙 · 결과 줄" || { echo "  ✖ 이어 보내기 Actions 넘기기"; printf '%s\n' "$REUSE_OUT" | tail -4; FAIL=1; }
 REUSE_OUT="$(reuse '')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
-printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만" && ! printf '%s' "$REUSE_SENT" | grep -q "PR 올리기를 켰다\|자동 PR 을 껐다" \
+printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만" && ! printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다\|자동 PR 을 껐다" \
   && echo "  ✔ 켜지 않은 레포 — 결과 줄은 사용자가 말할 때만 · 전송문에 저절로 규칙 없음" || { echo "  ✖ 이어 보내기 기본"; FAIL=1; }
 # 새 pane(프롬프트 없이 열기) 쪽도 결과에 같은 줄
 printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev", "autoMerge": true, "autoPr": false }] }\n' > "$ICORE/pack/pack.json"

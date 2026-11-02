@@ -46,6 +46,7 @@ const spreadText = (item) => `평균 ${known(item.avgMs)} · 중앙값 ${known(i
 console.log(`기간: ${periodText()} · 기록 시작 ${summary.since.slice(0, 10)} · 사건 ${summary.events}개`)
 console.log(`  완료           ${compare(current.done, previous?.done, count)}`)
 console.log(`  소요(시작→첫 머지) ${spreadText(current.lead)} — 머지 ${current.merged} · done 기준 ${current.doneOnly} · 시작 기록 없어 빠짐 ${current.noStart}`)
+if (current.handoffToMerge.count) console.log(`  넘김→머지 ${spreadText(current.handoffToMerge)} — ${current.handoffToMerge.count}건`)
 console.log(`  머지→완료 표시 ${spreadText(current.mergeToDone)} — ${current.mergeToDone.count}건 · 첫 머지 뒤 커밋 ${current.followUps}건`)
 console.log(`  작업당 질문    ${compare(current.asksPerDone, previous?.asksPerDone, count)}`)
 console.log(`  평균 답 대기   ${compare(current.waitMs, previous?.waitMs, formatDuration)}`)

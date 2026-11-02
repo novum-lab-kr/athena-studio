@@ -162,9 +162,11 @@ export const groupByPlan = (events) => {
     if (event.type === 'auto.merge' && event.plan && event.ok === true) {
       const plan = planOf(event.plan)
       plan.autoMerges += 1
-      plan.mergedAt ??= at
-      plan.lastMergeAt = at
-      touch(plan, at)
+      // 넘긴 작업은 현황판이 늦게 볼 수 있어 Actions 가 머지를 끝낸 시각을 쓴다
+      const mergedAt = Date.parse(event.mergedAt ?? '') || at
+      plan.mergedAt ??= mergedAt
+      plan.lastMergeAt = mergedAt
+      touch(plan, mergedAt)
     }
   }
   // 아직 답이 안 온 요청(open) — 계획서마다
@@ -335,6 +337,7 @@ const windowTotals = (events, plans, from, to, picked = null) => {
     followUps: done.filter((plan) => plan.followUp).length,
     lead: spread(done.map((plan) => plan.leadMs).filter((value) => value !== null)),
     mergeToDone: spread(done.map((plan) => plan.mergeToDoneMs).filter((value) => value !== null)),
+    handoffToMerge: spread(happened.filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.handoffMs === 'number').map((event) => event.handoffMs)),
     stages,
     reviewRounds: average(rounds),
     reviewRoundsKnown: rounds.length,
