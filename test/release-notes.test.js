@@ -128,3 +128,38 @@ test('withTranslations · noteText: 언어별 번역을 싣고 지금 언어로 
   assert.equal(notes.noteText(second, 'ko'), 'B')
   assert.equal(notes.withTranslations(null, {}), null)
 })
+
+test('notesBetween: 같은 minor의 두 절을 패치 범위와 경계에 맞게 고른다', () => {
+  const sections = notes.parseChangelog(`## 0.47 (v0.47.20 – · Nov 3, 2026)
+### New
+- Latest
+## 0.47 (v0.47.0 – v0.47.19 · Nov 1, 2026)
+### Fixed
+- Older
+## 0.46 (v0.42.3 – v0.46.4 · Nov 1, 2026)
+### Improved
+- Earlier
+`)
+  const texts = (from, to) => notes.notesBetween(sections, from, to).map(note => note.text)
+  assert.deepEqual(texts('0.47.38', '0.47.39'), ['Latest'])
+  assert.deepEqual(texts('0.47.18', '0.47.19'), ['Older'])
+  assert.deepEqual(texts('0.47.19', '0.47.20'), ['Latest'])
+  assert.deepEqual(texts('0.47.18', '0.47.21'), ['Latest', 'Older'])
+  assert.deepEqual(texts('0.46.4', '0.47.19'), ['Older'])
+  assert.deepEqual(texts('0.46.4', '0.47.20'), ['Latest', 'Older'])
+  const picked = notes.withTranslations(notes.pickNotes(notes.notesBetween(sections, '0.47.38', '0.47.39'), text => text), { ko: { Latest: '최신' }, ja: { Latest: '最新' }, zh: { Latest: '最新' } })
+  assert.deepEqual(picked.shown[0].texts, { ko: '최신', ja: '最新', zh: '最新' })
+})
+
+test('CHANGELOG.md: 0.47.38 → 0.47.39는 최신 0.47 절과 그 번역만 고른다', () => {
+  const sections = notes.parseChangelog(fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8'))
+  const latest = sections.find(section => section.range?.from.join('.') === '0.47.20')
+  assert.ok(latest)
+  const selected = notes.notesBetween(sections, '0.47.38', '0.47.39')
+  assert.deepEqual(selected, latest.notes)
+  const tables = Object.fromEntries(['ko', 'ja', 'zh'].map(lang => [lang, JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', `${lang}.json`), 'utf8'))]))
+  const picked = notes.withTranslations(notes.pickNotes(selected, text => text), tables)
+  for (const note of picked.shown) {
+    for (const lang of ['ko', 'ja', 'zh']) assert.equal(notes.noteText(note, lang), tables[lang][note.text])
+  }
+})
