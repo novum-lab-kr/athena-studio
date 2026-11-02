@@ -26,7 +26,7 @@ Athena Studio runs the Claude Code or Codex you already use, and adds a team lea
 
 - **Several repositories at once** — one request can touch web, api and mobile. Athena splits it, and an agent works on each repository at the same time, on its own branch.
 - **You step in only to decide** — agents bring their questions to one Work list, so you don't scroll through terminals to find who is waiting on you.
-- **Checked before it merges** — agents run tests before they open a pull request. In repositories where you turn it on, automatic review asks for fixes before the merge.
+- **Checked before it merges** — agents run tests before they open a pull request. In repositories where you turn it on, automatic review asks for fixes before the merge. When reviews hit their limit, the last fix gets one more short look at what changed before it merges.
 - **Learns each repository** — notes you keep after a task are read by the next task in that repository.
 
 When an agent has a question, it shows up in Work and a red dot shows in the menu bar. Send your answer and the agent continues.

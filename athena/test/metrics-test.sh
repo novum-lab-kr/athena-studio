@@ -60,7 +60,7 @@ const events = [
   // c 에 아직 답이 안 온 질문 둘 — 기다리는 중 2 · 가장 오래된 것부터
   { at: at(4), type: 'request', id: 'r4', state: 'open', plan: C },
   { at: at(1.5), type: 'request', id: 'r5', state: 'open', plan: C },
-  // e — 두 기간 밖(옛날)의 ⚡ 빠른 길: PR 올림(pr.open) 1시간 뒤 리뷰 한 번(수정 필요) → 고친 HEAD 는 리뷰 없이 이어받아 머지. 리뷰 구간은 pr.open 부터
+  // e — 두 기간 밖(옛날)의 ⚡ 빠른 길: PR 올림(pr.open) 1시간 뒤 리뷰 한 번(수정 필요) → 고친 HEAD 는 상한 뒤 이어받아 머지(짧은 리뷰 전의 옛 기록이라 그 HEAD 의 review 사건은 없다). 리뷰 구간은 pr.open 부터
   { at: at(400), type: 'plan.status', plan: E, from: null, to: 'in_progress' },
   { at: at(396), type: 'plan.status', plan: E, from: 'in_progress', to: 'ready_for_review' },
   { at: at(395), type: 'pr.open', plan: E, repo: 'web', pr: '9', sha: 'e000001', fast: true },
@@ -96,6 +96,20 @@ check('옛 기록(ms 없는 검증 · 시작 모르는 수동 리뷰) — 작업
 check('구간 순서', STAGES.join() === 'work,verify,wait,review,mergeWait')
 const e = plans[E]
 check('빠른 길(pr.open 있음) — 리뷰 구간은 PR 올림 → 결론 1시간 · 머지 대기 3시간(작업 끝 396h → 머지 392h 에서 리뷰 뺌) · 라운드 1 · 머지당 수정 1', e.stages.review === 1 * H && e.stages.mergeWait === 3 * H && e.reviewRounds === 1 && e.autoFixes === 1 && e.autoMerges === 1, JSON.stringify(e.stages))
+
+// f — 짧은 리뷰가 생긴 뒤의 상한 뒤 이어받음: 상한 라운드(수정 필요) → 고친 HEAD 의 짧은 리뷰(review short:true · 승인)도 자동 리뷰 한 번으로 센다. 위 기간 숫자에 섞지 않게 따로
+const F = 'plans/task/f.md'
+const shortEvents = [
+  { at: at(50), type: 'plan.status', plan: F, from: null, to: 'in_progress' },
+  { at: at(48), type: 'pr.open', plan: F, repo: 'web', pr: '11', sha: 'f000001' },
+  { at: at(47), type: 'review', plan: F, repo: 'web', branch: 'feat/f', verdict: '수정 필요', by: 'auto', pr: '11' },
+  { at: at(46), type: 'auto.fix', plan: F, repo: 'web', branch: 'feat/f', pr: '11' },
+  { at: at(45), type: 'review', plan: F, repo: 'web', branch: 'feat/f', verdict: '승인', by: 'auto', pr: '11', short: true },
+  { at: at(45), type: 'auto.takeover', plan: F, repo: 'web', branch: 'feat/f', pr: '11', review: '승인' },
+  { at: at(44), type: 'auto.merge', plan: F, repo: 'web', pr: '11', ok: true },
+]
+const f = Object.fromEntries(groupByPlan(shortEvents).map((plan) => [plan.plan, plan]))[F]
+check('짧은 리뷰(review short:true)도 자동 리뷰 라운드 · 리뷰 횟수로 센다 — 라운드 2 · 리뷰 2 중 반려 1 · 머지 1', f.reviewRounds === 2 && f.reviews.runs === 2 && f.reviews.rejects === 1 && f.autoMerges === 1, JSON.stringify({ rounds: f.reviewRounds, reviews: f.reviews, merges: f.autoMerges }))
 
 console.log('\n기간(최근 7일)')
 const week = summarize(events, { now: NOW, days: 7 })
