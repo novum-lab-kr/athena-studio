@@ -183,6 +183,8 @@ declare global {
     // 탭 이름(main.mts tab:rename → 데몬 tab rename) · 탭 전체 크기 알리기(tab:size — 답 없음)
     tabRename(tabId: string, label: string): Promise<DaemonReply>
     tabSize(tabId: string, size: CellSize): void
+    // pane 을 같은 탭 다른 pane 의 그 쪽에 끼워 넣기(main.mts pane:move)
+    paneMove(paneId: string, target: string, side: import('../lib/layout.mts').DropSide): Promise<DaemonReply>
     // pane 경계 비율(main.mts tab:ratio) — 옛 데몬이 동작을 모르면 { unsupported: true } · 값이 잘못되면 { error }
     tabRatio(tabId: string, path: string[], ratio: number): Promise<DaemonReply & { unsupported?: boolean }>
     workspaceSelect(workspaceId: string): Promise<DaemonReply>

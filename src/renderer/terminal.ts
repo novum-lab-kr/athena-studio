@@ -9,6 +9,7 @@ import { dropText } from '../lib/drop-paths.mts'
 import { $ } from './core.ts'
 import { focusPane, paneMenu, reattach, reattachOnKey } from './screen.ts'
 import { paneDetailButton } from './detail.ts'
+import { startPaneDrag } from './pane-drag.ts'
 
 // 크기를 바꾸는 동안 옛 화면을 덮어 두는 틀(pane-layout.ts holdForRedraw)
 export type PaneHold = { still: HTMLElement; releasing?: boolean; start?: number; timer?: number }
@@ -106,6 +107,8 @@ export function ensureView(paneId: string): PaneView {
   })
   // 누른 pane 으로 포커스(데몬에도 알려 pane current · split --target focused 가 맞게)
   el.addEventListener('mousedown', () => focusPane(paneId))
+  // 머리줄을 끌면 같은 탭 안 다른 pane 옆으로 옮긴다 — 그냥 누르기는 위 포커스 그대로
+  head.addEventListener('pointerdown', (event) => startPaneDrag(event, paneId, head))
   // 우클릭 메뉴 — 나누기 · 닫기. xterm 의 우클릭 단어 선택(맥 기본)은 그대로 두고 메뉴만 덧띄운다
   el.addEventListener('contextmenu', (event) => paneMenu(paneId, event))
   // 파인더 등에서 끌어다 놓은 파일 · 폴더 — 경로를 놓은 이 pane 입력줄에(맥 터미널처럼 이스케이프 · Enter 는 치지 않는다).

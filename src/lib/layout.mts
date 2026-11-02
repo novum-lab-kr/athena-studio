@@ -8,6 +8,8 @@ export type Direction = 'right' | 'down'
 export type Leaf = { pane: string }
 export type Branch = { split: Direction; ratio: number; first: Tree; second: Tree }
 export type Tree = Leaf | Branch
+// pane 을 끼워 넣을 쪽
+export type DropSide = 'left' | 'right' | 'up' | 'down'
 export type Rect = { x: number; y: number; width: number; height: number }
 // 나눌 넓이 — x · y 가 없으면 0
 export type Area = { x?: number; y?: number; width: number; height: number }
@@ -19,6 +21,8 @@ type Node = Tree | null | undefined
 export const DIRECTIONS: readonly Direction[] = ['right', 'down']
 export const DEFAULT_RATIO = 0.5
 
+const DROP_SIDES: readonly DropSide[] = ['left', 'right', 'up', 'down']
+const isDropSide = (value: unknown): value is DropSide => (DROP_SIDES as readonly unknown[]).includes(value)
 const isDirection = (value: unknown): value is Direction => (DIRECTIONS as readonly unknown[]).includes(value)
 
 export function leaf(paneId: string): Leaf {
@@ -71,6 +75,39 @@ export function removePane(node: Node, paneId: string): Tree | null {
   if (!first) return second
   if (!second) return first
   return { ...node, first, second }
+}
+
+// target 잎을 branch 로 바꾼 새 트리 — target 이 있는 것을 확인한 뒤에 부른다
+function replaceLeaf(node: Tree, targetId: string, branch: Branch): Tree {
+  if (isLeaf(node)) return node.pane === targetId ? branch : node
+  return { ...node, first: replaceLeaf(node.first, targetId, branch), second: replaceLeaf(node.second, targetId, branch) }
+}
+
+// pane 을 빼서(형제가 자리를 차지) target 의 side 쪽에 절반으로 끼운 새 트리.
+// 자기 자신 · 없는 pane · 모르는 쪽이면 null(원래 트리는 바꾸지 않는다) — 소켓으로 바로 오는 값이다
+export function movePane(node: Node, paneId: string, targetId: string, side: unknown): Tree | null {
+  if (!isDropSide(side) || paneId === targetId || !hasPane(node, paneId) || !hasPane(node, targetId)) return null
+  const moved = leaf(paneId)
+  const target = leaf(targetId)
+  const before = side === 'left' || side === 'up'
+  const branch: Branch = { split: side === 'left' || side === 'right' ? 'right' : 'down', ratio: DEFAULT_RATIO, first: before ? moved : target, second: before ? target : moved }
+  return replaceLeaf(removePane(node, paneId) as Tree, targetId, branch)
+}
+
+// 점이 든 pane — 사이 gap 위 · 영역 밖이면 null
+export function paneAt(rects: Record<string, Rect>, x: number, y: number): string | null {
+  for (const [paneId, rect] of Object.entries(rects)) {
+    if (x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height) return paneId
+  }
+  return null
+}
+
+// 점에서 가장 가까운 쪽 — 칸 크기로 나눠 재서 네 쪽 영역이 대각선으로 갈린다(가운데도 어느 한 쪽)
+export function dropSide(rect: Rect, x: number, y: number): DropSide {
+  const fromLeft = (x - rect.x) / Math.max(1, rect.width)
+  const fromTop = (y - rect.y) / Math.max(1, rect.height)
+  const distances: [DropSide, number][] = [['left', fromLeft], ['right', 1 - fromLeft], ['up', fromTop], ['down', 1 - fromTop]]
+  return distances.reduce((nearest, entry) => (entry[1] < nearest[1] ? entry : nearest))[0]
 }
 
 // 길이 total 을 ratio 로 나눈다(사이 gap 을 빼고). 양쪽 모두 1 이상 — 칸이 모자라면 0 도 나온다

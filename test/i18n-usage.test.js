@@ -16,7 +16,7 @@ const HTML_FILES = ['src/renderer/index.html', 'src/renderer/tray.html']
 // 범위 밖이라 한국어로 두는 글 — 파일별로 그 줄에 들어 있는 글 조각
 const ALLOWED = {
   // 예전 터미널 모니터 칸 이름표(이미 떠 있는 pane 을 찾는 값) · 현황판 로그 머리줄 · pack.log 원문 표시 · 내부 IPC 오류 · 데몬 오류 글 맞추기
-  'src/main.mts': ['잘못된 경계 값', '/모르는 동작/', '앱 화면에서만 부를 수 있어요'],
+  'src/main.mts': ['잘못된 경계 값', '잘못된 pane 옮기기 값', '/모르는 동작/', '앱 화면에서만 부를 수 있어요'],
   'src/main/monitor-logs.mts': ['🛰 에이전트 모니터'],
   'src/main/board.mts': ['현황판 시작 (포트'],
   'src/main/core-runner.mts': ['[JSON 이 아닌 마지막 줄]'],

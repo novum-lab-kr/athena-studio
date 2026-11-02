@@ -86,6 +86,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   explorerStatus: (workspaceId, paneId) => ipcRenderer.invoke('explorer:status', workspaceId, paneId),
   explorerOpen: (workspaceId, relative, paneId) => ipcRenderer.invoke('explorer:open', workspaceId, relative, paneId),
   tabSize: (tabId, size) => ipcRenderer.send('tab:size', tabId, size),
+  paneMove: (paneId, target, side) => ipcRenderer.invoke('pane:move', paneId, target, side),
   tabRatio: (tabId, path, ratio) => ipcRenderer.invoke('tab:ratio', tabId, path, ratio),
   paneSplit: (paneId, direction) => ipcRenderer.invoke('pane:split', paneId, direction),
   paneClose: (paneId) => ipcRenderer.invoke('pane:close', paneId),

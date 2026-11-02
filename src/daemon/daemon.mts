@@ -49,6 +49,7 @@ type Args = {
   command?: string
   target?: string
   direction?: string
+  side?: unknown
   env?: Record<string, string>
   keys?: string[]
   source?: string
@@ -341,6 +342,8 @@ export class Daemon {
         return this.ensureDock(scope, args)
       case 'tab ratio':
         return this.setTabRatio(this.tabIn(scope, args.tab).id, args.path, args.ratio)
+      case 'pane move':
+        return this.movePane(scope, args.pane, args.target, args.side)
       case 'tab size':
         return this.setTabSize(this.tabIn(scope, args.tab).id, (args.cols as number) | 0, (args.rows as number) | 0)
       // pane 을 끄지 않고 이 데몬이 띄워진 자리의 새 파일을 읽어 바꿔 끼운다(앱만 쓴다) — 경로를 받지 않는다
@@ -581,6 +584,20 @@ export class Daemon {
     const tree = layout.setRatio(tab.tree, path, ratio)
     if (!tree) throw failure('usage', `없는 경계: ${JSON.stringify(path)}`)
     tab.tree = tree
+    this.broadcastState()
+    return undefined
+  }
+
+  // 앱에서 pane 머리줄을 끌어 놓은 결과 — 같은 탭 안에서 트리만 바꾼다(pty 는 그대로). 크기는 앱이 새 칸에 맞춰 알린다(fitTab)
+  movePane(scope: Scope, paneId: string | undefined, targetId: string | undefined, side: unknown): undefined {
+    const pane = this.paneIn(scope, paneId)
+    const target = this.paneIn(scope, targetId)
+    if (!pane.tabId || pane.tabId !== target.tabId) throw failure('usage', `같은 탭의 pane 이 아니다: ${paneId} · ${targetId}`)
+    const tab = this.tabOf(pane.tabId)
+    const tree = layout.movePane(tab.tree, pane.id, target.id, side)
+    if (!tree) throw failure('usage', `옮길 수 없다: ${paneId} → ${targetId} ${String(side)}`)
+    tab.tree = tree
+    this.fitTab(tab, this.paneBody(pane) || null)
     this.broadcastState()
     return undefined
   }

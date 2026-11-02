@@ -96,13 +96,13 @@ test('교체: pid · 입출력 · 연결 · 배치 유지, 크기 신호 없음,
     const before = layoutOf((await app.call('state')).result)
     const job = /job=(\d+)/.exec(await paneText(app, tab.pane))[1]
 
-    daemon.edit('lib/protocol.js', 'const DAEMON_CODE = 2', 'const DAEMON_CODE = 3')
+    daemon.edit('lib/protocol.js', 'const DAEMON_CODE = 3', 'const DAEMON_CODE = 4')
     daemon.edit('daemon/daemon.mts', "pane.resize(Math.max(2, rect.width), Math.max(2, rect.height))", "pane.resize(50, 11)")
     daemon.edit('daemon/daemon.mts', "if ([...this.clients].some((client) => client.attached && !client.socket.destroyed && this.sees(client.body, body))) return\n", '')
     const reloaded = await app.call('daemon reload')
-    assert.deepEqual(reloaded.result, { ok: true, codeVersion: 3 })
+    assert.deepEqual(reloaded.result, { ok: true, codeVersion: 4 })
 
-    assert.equal((await app.call('hello')).result.codeVersion, 3)
+    assert.equal((await app.call('hello')).result.codeVersion, 4)
     assert.deepEqual((await app.call('pane pids')).result.pids, pids, 'pty 프로세스가 같다')
     assert.equal(process.kill(daemon.pid, 0), true)
     process.kill(Number(job), 0)

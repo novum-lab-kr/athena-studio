@@ -7,6 +7,7 @@ import type { PaneView } from './terminal.ts'
 import { screen } from './screen.ts'
 import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
 import { renderDividers, reportTabSize, treeForLayout } from './dividers.ts'
+import { syncPaneDrag } from './pane-drag.ts'
 import { StudioUi } from './ui/index.ts'
 import { spaceColor } from './space-actions.ts'
 import { browserOpen } from './browser.ts'
@@ -29,6 +30,7 @@ export function layoutPanes(): void {
   const area = { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }
   const rects = tree ? StudioLayout.computeRects(tree, area, PANE_GAP) : {}
   renderDividers(tab, tree, area)
+  syncPaneDrag(tab)
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]

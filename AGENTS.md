@@ -71,7 +71,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 ## 고칠 때 같이 바꾸는 곳
 | 바꾸는 것 | 같이 |
 |---|---|
-| 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 5)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.mts` · `src/daemon/cli.js` · `src/daemon-client.mts` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
+| 데몬 ↔ 앱 · CLI 통신(요청 · 응답 · 알림 형식, 요청 하나 더하기도) | `src/lib/protocol.js` `PROTOCOL`(지금 6)을 올리고 그 위 주석에 한 줄 · `src/daemon/main.mts` · `src/daemon/cli.js` · `src/daemon-client.mts` · 코어 화면 계층 `athena/scripts/lib/screen.py`(CLI 를 부른다) · `athena/scripts/screen-check/fake-bin/athena-studio-cli` · `test/protocol.test.js` · `test/daemon.test.js`. 번호가 다르면 켤 때 데몬 다시 띄우기를 묻고, 사용자가 고르면 **pane 이 모두 닫힌다**(고르지 않으면 옛 데몬에 붙어 바꾸기 · 새 창이 막힌다) — `open-url` 처럼 올리지 않은 예외는 이유를 주석에 남긴 것만, 일반 규칙으로 넓히지 않는다 |
 | 데몬 동작(`src/daemon/` · 데몬이 쓰는 `src/lib`) | `src/lib/protocol.js` `DAEMON_CODE` 를 올린다 — 앱이 낮은 판을 보면 pane 을 끄지 않고 새 코드로 바꿔 끼운다. 상태는 `daemon.mts` 인스턴스 칸에만(모듈 변수 금지 · 새 칸은 `afterReload`) · `main.mts` 는 바꿔 끼울 수 없으니 거기 약속이 바뀌면 양쪽 `KERNEL_COMPAT` 을 올린다 · `test/daemon-reload.test.js` |
 | 팩 명령 약속(`pack … --json` 출력 · 오류 코드) | 앱 `src/lib/pack.mts` `CONTRACT` 와 코어 `athena/scripts/lib/bodies.mjs` `CONTRACT`(둘 다 3 — 데몬 `PROTOCOL` 과는 별개) · 출력 해석 · `packErrorText` · `scripts/fake-pack.js`(같은 모양으로) · `test/pack.test.js` · 코어 `athena/docs/pack.md` |
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
@@ -99,7 +99,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - `--user-data-dir=<…>` · `ATHENA_STUDIO_ENDPOINT=<…>` 를 따로 주면 그 자리가 먼저다. 이 둘만으로는 앱 데이터 · 접속 파일만 갈리고 코어 · 데이터는 진짜 `~/.athena-studio` 를 쓴다 — 격리하려면 `ATHENA_STUDIO_HOME`
 
 ## 수동 확인 — 팩
-**공통** — 켜진 개발 앱을 끈다(같은 앱 데이터 · 접속 파일을 쓴다). 데몬이 protocol 5 보다 옛 것이면 [보기 → 작업 창 데몬 다시 띄우기] 를 한 번(pane 이 닫힌다 — 하던 에이전트 작업을 끝낸 뒤). 옛 데몬이면 바꾸기 · 새 창 · 새 팩이 막힌다.
+**공통** — 켜진 개발 앱을 끈다(같은 앱 데이터 · 접속 파일을 쓴다). 데몬이 protocol 6 보다 옛 것이면 [보기 → 작업 창 데몬 다시 띄우기] 를 한 번(pane 이 닫힌다 — 하던 에이전트 작업을 끝낸 뒤). 옛 데몬이면 바꾸기 · 새 창 · 새 팩이 막힌다.
 
 **A. 가짜 본체로 화면 흐름** — `ATHENA_STUDIO_FAKE_PACK=1 npm start`(격리하려면 `ATHENA_STUDIO_HOME` 도). 스튜디오 코어는 그대로 준비되고 팩 명령만 `scripts/fake-pack.js` 가 같은 `--json` 모양으로 답한다.
 - 가짜도 파일을 만든다: 상태 `$TMPDIR/athena-studio-fake-pack.json`, 가짜 본체 `$TMPDIR/athena-studio-fake-bodies/<id>/`(`CLAUDE.md` · 현황판 서버). 처음으로 돌리려면 둘 다 지운다. `ATHENA_STUDIO_HOME` 으로 옮겨지지 않는다(그리고 `ATHENA_STUDIO_FAKE_PACK_STATE` 는 `childEnv` 가 걷어 내 앱을 거쳐서는 안 먹는다)

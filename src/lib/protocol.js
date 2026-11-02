@@ -18,11 +18,12 @@
 // 읽는 쪽(아테나 delegate.sh)은 칸이 없으면(옛 데몬) 예전 배치(탭 첫 pane 을 오른쪽으로)로 돌아가 깨지는 곳이 없다
 // 'daemon reload' 와 hello 의 codeVersion 도 번호를 올리지 않았다 — 앱은 hello 에 codeVersion 이 있을 때만 부르고 옛 데몬은 없는 칸으로 가려진다.
 // 올리면 이 기능을 받으려는 모든 사용자가 pane 을 닫아야 한다(옛 데몬은 안내만 하고 그대로 쓴다)
-const PROTOCOL = 5
+// 6 — 'pane move'(앱에서 pane 머리줄을 끌어 옮기기). DAEMON_CODE 도 같이 올려서 코드 판이 있는 데몬은 pane 을 끄지 않고 바꿔 끼운다
+const PROTOCOL = 6
 
 // 데몬 코드 판 — 데몬 동작(src/daemon · 데몬이 쓰는 src/lib)을 고치면 올린다. 앱 버전 · PROTOCOL 과 별개
 // 앱이 hello 로 보고 자기 것보다 낮으면 'daemon reload' 를 요청한다. 칸이 없는 옛 데몬은 바꿔 끼울 수 없어 안내만 한다
-const DAEMON_CODE = 2
+const DAEMON_CODE = 3
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

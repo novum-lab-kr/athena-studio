@@ -936,6 +936,11 @@ handle('tab:ratio', async (ctx, tabId: unknown, path: unknown, ratio: unknown) =
   if (reply.error && reply.code === 'usage' && /모르는 동작/.test(reply.error)) return { unsupported: true }
   return reply
 })
+// pane 머리줄을 끌어 놓은 결과 — 값 모양은 데몬이 트리에 넣기 전에 다시 본다
+handle('pane:move', (ctx, paneId: unknown, target: unknown, side: unknown) => {
+  if (typeof paneId !== 'string' || typeof target !== 'string' || typeof side !== 'string') return { error: '잘못된 pane 옮기기 값' }
+  return ctx.daemonCall('pane move', { pane: paneId, target, side })
+})
 handle('board:open', (ctx) => ctx.openBoardExternal())
 // [작업] 팝업 — 목록(요청 + 계획서) · 상세(계획서 id 만 받는다)
 handle('work:get', (ctx) => ctx.workState())

@@ -174,6 +174,9 @@ main { position: relative; flex: 1; min-height: 0; overflow: hidden; } /* 화면
 .pane-divider { position: absolute; z-index: 5; }
 .pane-divider.right { cursor: col-resize; }
 .pane-divider.down { cursor: row-resize; }
+/* pane 머리줄을 끄는 동안 놓을 자리(pane-drag.ts) — 터미널 위에 덮기만 하고 포인터는 머리줄이 잡고 있다 */
+.pane-drop-preview { position: absolute; z-index: 6; box-sizing: border-box; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 25%, transparent); pointer-events: none; }
+body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; user-select: none; }
 .pane.focused { border-color: var(--focus-line); }
 .pane-head {
   height: 22px;

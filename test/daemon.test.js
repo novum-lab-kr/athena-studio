@@ -169,6 +169,23 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
     assert.equal((await again.call('attach')).result.state.tabs[0].tree.ratio, 0.6)
     assert.equal((await again.call('tab ratio', { tab: 't1', path: ['first'], ratio: 0.5 })).error.code, 'usage')
 
+    // 앱에서 pane 을 끌어 옮긴 결과 — 트리가 바뀌고 pty 는 그대로 · 잘못된 값은 트리를 건드리지 않는다
+    const pidsBefore = (await again.call('pane pids')).result.pids
+    const treeBefore = (await again.call('attach')).result.state.tabs[0].tree
+    assert.equal((await again.call('pane move', { pane: 'p2', target: 'p1', side: 'left' })).ok, true)
+    assert.deepEqual((await again.call('attach')).result.state.tabs[0].tree, { split: 'right', ratio: 0.5, first: { pane: 'p2' }, second: { pane: 'p1' } })
+    assert.deepEqual((await again.call('pane pids')).result.pids, pidsBefore)
+    await waitFor(() => again.events.some((event) => event.event === 'state' && event.state.tabs[0]?.tree?.first?.pane === 'p2'), '옮긴 트리 상태 알림')
+    assert.equal((await again.call('pane move', { pane: 'p2', target: 'p2', side: 'left' })).error.code, 'usage')
+    assert.equal((await again.call('pane move', { pane: 'p2', target: 'p1', side: 'center' })).error.code, 'usage')
+    assert.equal((await again.call('pane move', { pane: 'p2', target: 'p9', side: 'left' })).error.code, 'not_found')
+    const otherTab = (await again.call('tab new', { cols: 80, rows: 24 })).result
+    assert.equal((await again.call('pane move', { pane: 'p2', target: otherTab.pane, side: 'left' })).error.code, 'usage')
+    await again.call('tab close', { tab: otherTab.tab })
+    await waitFor(async () => (await again.call('state')).result.tabs.length === 1, '다른 탭 닫힘')
+    assert.equal((await again.call('pane move', { pane: 'p2', target: 'p1', side: 'right' })).ok, true)
+    assert.deepEqual((await again.call('attach')).result.state.tabs[0].tree.first, treeBefore.first)
+
     // 닫으면 트리에서 빠지고 형제가 자리를 차지 · 앱에 exit 알림
     assert.equal((await cli(daemon.socket, ['pane', 'close', 'p2'])).code, 0)
     await waitFor(() => again.events.some((event) => event.event === 'exit' && event.pane === 'p2'), 'p2 exit 알림')
