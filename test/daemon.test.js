@@ -42,6 +42,21 @@ async function waitFor(check, what, limitMs = 5000) {
   throw new Error(`${what} 를 기다리다 시간 초과`)
 }
 
+// 소켓 파일은 bind 때 생긴다. listen 뒤 실제 연결이 성공할 때까지 기다린다.
+function waitForSocket(socket, what = '데몬 소켓') {
+  return waitFor(() => new Promise((resolve) => {
+    const connection = net.connect(socket)
+    connection.once('connect', () => {
+      connection.destroy()
+      resolve(true)
+    })
+    connection.once('error', () => {
+      connection.destroy()
+      resolve(false)
+    })
+  }), what)
+}
+
 // 앱처럼 소켓으로 직접 — 한 연결에서 요청하고 알림도 모은다
 function connect(socket) {
   return new Promise((resolve, reject) => {
@@ -95,7 +110,7 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
   const dir = workDir()
   const daemon = startDaemon(dir)
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const app = await connect(daemon.socket)
 
     const hello = await app.call('hello', { protocol: protocol.PROTOCOL })
@@ -219,7 +234,7 @@ test('데몬을 다시 띄워도 id 를 처음부터 다시 매기지 않는다(
   const dir = workDir()
   let daemon = startDaemon(dir)
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const first = await connect(daemon.socket)
     await first.call('hello', { protocol: protocol.PROTOCOL })
     assert.deepEqual((await first.call('tab new', { label: 'athena', cwd: dir, cols: 100, rows: 30 })).result, { workspace: 'w1', tab: 't1', pane: 'p1' })
@@ -228,7 +243,7 @@ test('데몬을 다시 띄워도 id 를 처음부터 다시 매기지 않는다(
     await waitFor(() => !alive(daemon.pid), '데몬 종료')
 
     daemon = startDaemon(dir)
-    await waitFor(() => fs.existsSync(daemon.socket), '다시 띄운 데몬 소켓')
+    await waitForSocket(daemon.socket, '다시 띄운 데몬 소켓')
     const second = await connect(daemon.socket)
     await second.call('hello', { protocol: protocol.PROTOCOL })
     assert.deepEqual((await second.call('tab new', { label: 'athena', cwd: dir, cols: 100, rows: 30 })).result, { workspace: 'w2', tab: 't2', pane: 'p2' })
@@ -247,7 +262,7 @@ test('데몬 창-본체 묶음(protocol 5): 연결마다 자기 본체 작업 �
   const bodyA = path.join(dir, 'athena-a')
   const bodyB = path.join(dir, 'athena-b')
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const appA = await connect(daemon.socket)
     const appB = await connect(daemon.socket)
     await appA.call('attach', { body: bodyA })
@@ -343,7 +358,7 @@ test('데몬 open-url: 그 본체에 붙은 앱 창 하나에만 알리고 {ok, 
   const bodyB = path.join(dir, 'athena-b')
   const url = 'http://localhost:4802/plans/setup/pick.html'
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const appA = await connect(daemon.socket)
     await appA.call('attach', { body: bodyA })
     // 창이 하나면 본체를 모르는 호출(일반 터미널)도 그 창으로
@@ -390,7 +405,7 @@ test('떼어 띄운 데몬은 띄운 쪽이 끝나도 셸과 함께 산다', { s
     console.log(child.pid)`
   const daemonPid = await new Promise((resolve, reject) => execFile(process.execPath, ['-e', launcher], (error, stdout) => (error ? reject(error) : resolve(Number(stdout.trim())))))
   try {
-    await waitFor(() => fs.existsSync(path.join(dir, 'd.sock')), '데몬 소켓')
+    await waitForSocket(path.join(dir, 'd.sock'), '데몬 소켓')
     const app = await connect(path.join(dir, 'd.sock'))
     await app.call('tab new', { cwd: dir })
     app.close() // 앱이 떨어져도
@@ -408,7 +423,7 @@ test('앱이 붙어 있으면 분할 · pane 종료가 옆 pane 의 pty 크기�
   const dir = workDir()
   const daemon = startDaemon(dir)
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const app = await connect(daemon.socket)
     await app.call('hello', { protocol: protocol.PROTOCOL })
     const tab = await app.call('tab new', { label: 'fit', cwd: dir, cols: 100, rows: 30 })

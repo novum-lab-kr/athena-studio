@@ -27,6 +27,21 @@ async function waitFor(check, what, limitMs = 8000) {
   throw new Error(`${what} 를 기다리다 시간 초과`)
 }
 
+// 소켓 파일은 bind 때 생긴다. listen 뒤 실제 연결이 성공할 때까지 기다린다.
+function waitForSocket(socket, what = '데몬 소켓') {
+  return waitFor(() => new Promise((resolve) => {
+    const connection = net.connect(socket)
+    connection.once('connect', () => {
+      connection.destroy()
+      resolve(true)
+    })
+    connection.once('error', () => {
+      connection.destroy()
+      resolve(false)
+    })
+  }), what)
+}
+
 function connect(socket) {
   return new Promise((resolve, reject) => {
     const connection = net.connect(socket)
@@ -85,7 +100,7 @@ async function runIn(app, pane, command, regex) {
 test('교체: pid · 입출력 · 연결 · 배치 유지, 크기 신호 없음, 크기 · 종료는 새 코드로', { skip: ptyMissing || false, timeout: 60000 }, async () => {
   const daemon = setup()
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const app = await connect(daemon.socket)
     const tab = (await app.call('tab new', { cwd: daemon.dir, cols: 100, rows: 30 })).result
     const split = (await app.call('pane split', { target: tab.pane, direction: 'right', cwd: daemon.dir })).result.pane.id
@@ -141,7 +156,7 @@ test('교체: pid · 입출력 · 연결 · 배치 유지, 크기 신호 없음,
 test('깨뜨린 새 코드 · 호환 판 불일치: 옛 코드로 계속 돌고 pane 이 안 꺼진다', { skip: ptyMissing || false, timeout: 40000 }, async () => {
   const daemon = setup()
   try {
-    await waitFor(() => fs.existsSync(daemon.socket), '데몬 소켓')
+    await waitForSocket(daemon.socket, '데몬 소켓')
     const app = await connect(daemon.socket)
     const tab = (await app.call('tab new', { cwd: daemon.dir })).result
     const pids = (await app.call('pane pids')).result.pids

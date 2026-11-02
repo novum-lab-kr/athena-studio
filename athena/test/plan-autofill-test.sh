@@ -127,7 +127,13 @@ SH
 chmod +x "$FAKE_SCREEN"
 printf '# d\n\n## Checkpoint\n- Status: in_progress\n- Work ref: 없음\n' > "$ATH/plans/task/d.md"
 : > "$EVENTS"
-OUT="$(cd "$ATH" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/d.md --cwd "$TMP/wt" --here 지시문 2>&1)"; RC=$?
+# 실제 설치·로그인 상태에 기대지 않고, 기록 없는 기존 사용자의 두 도구 상태를 재현한다.
+mkdir -p "$TMP/dispatch-bin"
+for tool in claude codex; do
+  printf '#!/bin/sh\nexit 0\n' > "$TMP/dispatch-bin/$tool"
+  chmod +x "$TMP/dispatch-bin/$tool"
+done
+OUT="$(cd "$ATH" && env -u ATHENA_AGENT PATH="$TMP/dispatch-bin:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/d.md --cwd "$TMP/wt" --here 지시문 2>&1)"; RC=$?
 ROW="$(grep '"type":"delegate"' "$EVENTS" | tail -1)"
 check "delegate 사건 — 글자 수가 숫자 칸" 'printf "%s" "$ROW" | grep -Eq "\"plan\":\"plans/task/d.md\"" && printf "%s" "$ROW" | grep -Eq "\"agent\":\"web-fe\"" && printf "%s" "$ROW" | grep -Eq "\"promptChars\":[1-9][0-9]*" && printf "%s" "$ROW" | grep -Eq "\"contextChars\":[1-9][0-9]*"' "rc=$RC · $ROW · $OUT"
 

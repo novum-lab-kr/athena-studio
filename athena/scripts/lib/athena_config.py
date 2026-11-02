@@ -208,7 +208,7 @@ def is_protected(cfg, repo_name, branch):
     return branch in protected_branches(cfg, repo_name) or branch.startswith(PROTECTED_PREFIXES)
 
 
-# 역할마다 Claude 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
+# 역할과 엔진마다 모델 — 팩 pack.json 최상위 "models"(scripts/lib/models.mjs 와 같은 규칙 · docs/pack.md "pack.json")
 MODEL_ROLES = ('athena', 'agent', 'agentLight', 'reviewer', 'reviewerEscalated', 'prReview', 'prReviewSecond', 'learnReview')
 # fullmatch 로만 검사한다 — match 와 $ 는 끝 줄바꿈('sonnet\n')을 통과시켜 JS 판정과 갈린다
 _MODEL_NAME = re.compile(r'[A-Za-z0-9][A-Za-z0-9._:@/\[\]-]*')
@@ -221,8 +221,10 @@ def valid_model_name(name):
     return bool(_MODEL_NAME.fullmatch(name))
 
 
-def model_of(cfg, role):
-    """역할의 모델 이름 — 없으면 ''. 형식이 이상하면(모르는 역할 · 문자열 아님 · 빈 값 · 공백 · 따옴표 등) ValueError(무시하지 않는다)."""
+def model_of(cfg, role, engine="claude"):
+    """역할·엔진의 모델 이름. 문자열은 기존 Claude 값, 객체는 엔진별 값 — 없으면 ''. 형식이 이상하면(모르는 역할 · 문자열 아님 · 빈 값 · 공백 · 따옴표 등) ValueError(무시하지 않는다)."""
+    if engine not in ('claude', 'codex'):
+        raise ValueError(f'모르는 엔진: {engine}')
     if role not in MODEL_ROLES:
         raise ValueError(f'모르는 모델 역할: {role}')
     models = cfg.get('models')
@@ -233,12 +235,17 @@ def model_of(cfg, role):
     for key, value in models.items():
         if key not in MODEL_ROLES:
             raise ValueError(f'pack.json "models" 에 모르는 역할: {key}(가능: {" · ".join(MODEL_ROLES)})')
-        if not isinstance(value, str) or not _MODEL_NAME.fullmatch(value):
-            raise ValueError(f'pack.json "models.{key}" 모델 이름이 이상하다: {json.dumps(value, ensure_ascii=False)}')
-    return models.get(role, '')
+        values = value if isinstance(value, dict) else {'claude': value}
+        if not values or any(tool not in ('claude', 'codex') for tool in values):
+            raise ValueError(f'pack.json models.{key} 엔진은 claude · codex 만 쓴다')
+        for name in values.values():
+            if not isinstance(name, str) or not _MODEL_NAME.fullmatch(name):
+                raise ValueError(f'pack.json models.{key} 모델 이름이 이상하다')
+    value = models.get(role, '')
+    return value.get(engine, '') if isinstance(value, dict) else (value if engine == 'claude' else '')
 
 
-def profile_model(profile_path):
+def profile_model(profile_path, engine="claude"):
     """에이전트 프로필 frontmatter 의 model: 값 — 없거나 inherit 면 ''(inherit 는 띄운 쪽 모델을 따른다는 뜻이라 팩 값을 쓴다)."""
     try:
         with open(profile_path, encoding='utf-8') as handle:
@@ -249,7 +256,7 @@ def profile_model(profile_path):
         return ''
     front = text.split('---', 2)[1] if text.count('---') >= 2 else ''
     for line in front.splitlines():
-        match = re.match(r'^model:\s*(.*?)\s*$', line)
+        match = re.match(r'^(?:' + ('codexModel' if engine == 'codex' else 'model') + r'):\s*(.*?)\s*$', line)
         if match:
             value = match.group(1).strip('\'"')
             return '' if value in ('', 'inherit') else value
@@ -286,10 +293,10 @@ def review_needs_fix(plan_text, repo, branch):
     return bool(rows) and rows[-1][len('- Review result:'):].lstrip().startswith('수정 필요')
 
 
-def model_role(athena_dir, agent, plan='', work_dir=''):
+def model_role(athena_dir, agent, plan='', work_dir='', dispatch_role=None):
     """(역할, 대신 쓸 역할) — reviewer 는 같은 레포 · 브랜치 리뷰 결론이 수정 필요면 reviewerEscalated(없으면 reviewer),
     그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(없으면 agent). 그 밖은 대신 쓸 역할 없음(계획서 2026-10-29 D1 · D2)."""
-    if agent == 'reviewer':
+    if dispatch_role == 'reviewer' or (dispatch_role is None and agent == 'reviewer'):
         if plan:
             try:
                 with open(os.path.join(athena_dir, plan), encoding='utf-8') as handle:
@@ -304,19 +311,19 @@ def model_role(athena_dir, agent, plan='', work_dir=''):
     return 'agent', None
 
 
-def agent_model(athena_dir, agent, plan='', work_dir=''):
+def agent_model(athena_dir, agent, plan='', work_dir='', engine='claude', dispatch_role=None):
     """delegate.sh 가 붙일 --model 값 — 프로필 frontmatter model: 이 있으면 그 값(프로필이 이긴다), 없으면 팩 models 의
     model_role 역할 값(비었으면 대신 쓸 역할 값), 그것도 없으면 경량은 코어 기본값 · 그 밖은 ''(--model 을 붙이지 않는다).
     plan 은 본체 기준 논리 경로(plans/…md), work_dir 은 띄울 작업 트리(reviewer 의 리뷰 결론을 레포 · 브랜치로 고른다).
     프로필 값도 --model 로 넘긴다 — 워크트리에서 띄우면 프로필을 --agents JSON 으로 다시 만들어 넘기는데(agent-context.py) 거기에는 model 이 없다."""
     # 팩 models 는 프로필 값이 있어도 먼저 전체를 검사한다 — 잘못된 값이 프로필 뒤에 숨어 그냥 넘어가지 않게
     cfg = load(athena_dir)
-    role, fallback = model_role(athena_dir, agent, plan, work_dir)
-    pack_model = model_of(cfg, role) or (model_of(cfg, fallback) if fallback else '')
-    if not pack_model and role == 'agentLight':
+    role, fallback = model_role(athena_dir, agent, plan, work_dir, dispatch_role)
+    pack_model = model_of(cfg, role, engine) or (model_of(cfg, fallback, engine) if fallback else '')
+    if not pack_model and role == 'agentLight' and engine == 'claude':
         pack_model = DEFAULT_AGENT_LIGHT_MODEL
     profile = os.path.join(athena_dir, '.claude', 'agents', f'{agent}.md')
-    own = profile_model(profile)
+    own = profile_model(profile, engine)
     if own:
         if not _MODEL_NAME.fullmatch(own):
             raise ValueError(f'{profile} 의 model: 이름이 이상하다: {json.dumps(own, ensure_ascii=False)}')

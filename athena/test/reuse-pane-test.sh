@@ -32,7 +32,13 @@ check('질문 창이 떠 있으면(idle 로 보여도) → 안 고른다', 'reas
 check('화면을 못 읽으면 → 안 고른다', 'reason' in pickReusable([pane('p1')], 'fe', read({})))
 check('다른 에이전트 이름표 → 안 고른다', 'reason' in pickReusable([pane('p1', { label: '🤖 be · x' })], 'fe', read({ p1: IDLE })))
 check('에이전트 이름이 앞부분만 같으면 → 안 고른다(fe 가 fe2 를 잡지 않게)', 'reason' in pickReusable([pane('p1', { label: '🤖 fe2 · x' })], 'fe', read({ p1: IDLE })))
-check('claude 가 아닌 pane → 안 고른다', 'reason' in pickReusable([pane('p1', { agent: 'codex' })], 'fe', read({ p1: IDLE })))
+check('기본 Claude 엔진은 Codex pane 을 고르지 않는다', 'reason' in pickReusable([pane('p1', { agent: 'codex' })], 'fe', read({ p1: IDLE })))
+check('Codex 엔진은 Codex pane 을 고른다', pickReusable([pane('p1', { agent: 'codex' })], 'fe', read({ p1: IDLE }), 'codex').pane?.id === 'p1')
+for (const menu of ['Would you like to run the following command?\n› 1. Yes, proceed (y)\nPress enter to confirm or esc to cancel', 'Hooks need review\n› 1. Review hooks\nenter confirm · esc skip', 'Select model\n› 1. Test\nPress enter to select']) {
+  check('Codex 선택 창은 재사용하지 않는다', 'reason' in pickReusable([pane('p1', { agent: 'codex' })], 'fe', read({ p1: menu }), 'codex'))
+}
+check('Codex 엔진은 Claude pane 을 고르지 않는다', 'reason' in pickReusable([pane('p1')], 'fe', read({ p1: IDLE }), 'codex'))
+check('reviewer 역할은 재사용하지 않는다', 'reason' in pickReusable([pane('p1')], 'fe', read({ p1: IDLE }), 'claude', 'reviewer'))
 check('focused 필드가 없으면(모름) → 안 고른다', 'reason' in pickReusable([(({ focused, ...rest }) => rest)(pane('p1'))], 'fe', read({ p1: IDLE })))
 check('작업 폴더가 없으면 → 안 고른다', 'reason' in pickReusable([pane('p1', { cwd: '/없는/폴더' })], 'fe', read({ p1: IDLE })))
 check('앞 pane 이 안 되면 다음 쉬는 pane', pickReusable([pane('p1', { focused: true }), pane('p2')], 'fe', read({ p1: IDLE, p2: IDLE })).pane?.id === 'p2')

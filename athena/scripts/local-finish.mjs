@@ -97,28 +97,32 @@ const run = ({ plan, dir, repo, pane, marker }) => {
   })
   const output = `${result.stdout ?? ''}${result.stderr ?? ''}`
   process.stdout.write(output)
-  rmSync(marker, { force: true })
-  const planText = existsSync(planPath) ? readFileSync(planPath, 'utf8') : ''
-  const lead = planText.match(/^- Lead pane:\s*(\S+)/m)?.[1] ?? ''
-  const head = `[맥 실행기 → ${pane || lead || '작업 pane'}] ${repo} (${dir})`
-  if (result.status !== 0) {
-    const sent = notify([pane, lead], `${head} 전체 검증 실패 — 계획서 ${plan}. 고친 뒤 다시 local-finish 를 부른다. 원문: ${failureText(output)}`)
-    console.log(`❌ 검증 실패 — Status 는 그대로${sent ? '' : ' · pane 에 전하지 못함'}`)
-    return 1
-  }
-  // 잠금 안에서 지금 내용으로 다시 판단한다 — 검증하는 동안 계획서가 바뀌었을 수 있다
-  let held = ''
-  updatePlan(planPath, (/** @type {string} */ text) => {
-    held = holdReason(text)
-    return held ? null : withDoneStatus(text, repo)
-  })
-  if (held) {
-    notify([pane, lead], `${head} 전체 검증은 통과했지만 완료로 바꾸지 않았다 — ${held}. 계획서 ${plan}`)
-    console.log(`⏸ 완료 표시 보류 — ${held}`)
+  try {
+    const planText = existsSync(planPath) ? readFileSync(planPath, 'utf8') : ''
+    const lead = planText.match(/^- Lead pane:\s*(\S+)/m)?.[1] ?? ''
+    const head = `[맥 실행기 → ${pane || lead || '작업 pane'}] ${repo} (${dir})`
+    if (result.status !== 0) {
+      const sent = notify([pane, lead], `${head} 전체 검증 실패 — 계획서 ${plan}. 고친 뒤 다시 local-finish 를 부른다. 원문: ${failureText(output)}`)
+      console.log(`❌ 검증 실패 — Status 는 그대로${sent ? '' : ' · pane 에 전하지 못함'}`)
+      return 1
+    }
+    // 잠금 안에서 지금 내용으로 다시 판단한다 — 검증하는 동안 계획서가 바뀌었을 수 있다
+    let held = ''
+    updatePlan(planPath, (/** @type {string} */ text) => {
+      held = holdReason(text)
+      return held ? null : withDoneStatus(text, repo)
+    })
+    if (held) {
+      notify([pane, lead], `${head} 전체 검증은 통과했지만 완료로 바꾸지 않았다 — ${held}. 계획서 ${plan}`)
+      console.log(`⏸ 완료 표시 보류 — ${held}`)
+      return 0
+    }
+    console.log(`✅ 완료 표시 — ${plan}`)
     return 0
+  } finally {
+    // 표시가 사라지면 관찰자는 완료로 본다 — 계획서 갱신·알림·출력을 마친 뒤 지운다.
+    rmSync(marker, { force: true })
   }
-  console.log(`✅ 완료 표시 — ${plan}`)
-  return 0
 }
 
 /** @param {{ plan: string, dir: string, repo: string }} job */

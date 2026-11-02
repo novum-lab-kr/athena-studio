@@ -74,14 +74,14 @@ test('업데이트가 겹쳐도(두 번) 둘 다 끝나야 열린다', async () 
 })
 
 test('겹친 업데이트 중 하나만 시간 초과돼도 다른 쪽이 도는 동안 문은 닫혀 있다', async () => {
-  const gate = createUpdateGate({ maxMs: 60 })
-  gate.run(() => new Promise(() => {})) // 멈춘 업데이트(끝나지 않음) — 60ms 뒤 시간 초과
-  await new Promise((resolve) => setTimeout(resolve, 30))
+  const gate = createUpdateGate({ maxMs: 400 })
+  gate.run(() => new Promise(() => {})) // 멈춘 업데이트(끝나지 않음) — 400ms 뒤 시간 초과
+  await new Promise((resolve) => setTimeout(resolve, 200))
   let finishSecond
-  const second = gate.run(() => new Promise((resolve) => (finishSecond = resolve))) // 둘째는 90ms 에 시간 초과
+  const second = gate.run(() => new Promise((resolve) => (finishSecond = resolve))) // 둘째는 600ms 에 시간 초과
   let released = false
   const waiting = gate.wait().then(() => (released = true))
-  await new Promise((resolve) => setTimeout(resolve, 45)) // 75ms — 첫째만 시간 초과
+  await new Promise((resolve) => setTimeout(resolve, 300)) // 500ms — 첫째만 시간 초과(앞뒤 100ms 여유)
   assert.equal(released, false)
   assert.equal(gate.active(), true)
   finishSecond()

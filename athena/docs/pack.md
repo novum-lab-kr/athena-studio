@@ -153,7 +153,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "worktreeCopy": { "include": [".env", ".env.*"] },
   "derived": { "servicesColumns": ["…"], "playbookOrder": ["…"] },   // 없으면 설정 순서
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
-  "models": { "learnReview": "sonnet" },  // 역할마다 Claude 모델(아래 "models") — 없으면 기본 모델 · athena init 이 새 팩에 이 한 줄을 넣는다
+  "models": { "learnReview": "sonnet" },  // 역할·엔진별 모델(아래 "models") — 없으면 기본 모델 · athena init 이 새 팩에 이 한 줄을 넣는다
   "repos": [
     { "name": "admin-web", "agents": ["admin-fe"], "branch": "prd", "prBase": "dev", "kind": "single", "appDir": "app",
       "remote": "git@github.com:acme-inc/admin-web.git",   // (선택) git 주소 — 폴더 이름이 달라도 이 주소로 레포를 찾는다. athena init 이 적고, 내보내기 · 백업 사본에 채운다
@@ -199,7 +199,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   - 테스트 종류가 여럿이면 배열 — `[{ "tests": ["tests/*.test.mjs"], "run": "node --test {files}" }, { "tests": ["tests/test_*.py"], "run": "python3 -m unittest {files}" }]`. 바뀐 테스트 파일은 글롭이 맞는 첫 항목으로 돈다
   - 임시 워크트리에는 지금 트리의 `node_modules` · `.venv` · `venv`(레포 맨 위와 테스트 파일이 든 폴더들)만 링크한다 — 다른 준비가 필요한 테스트(빌드 결과 · 생성물)는 `run` 이 직접 준비한다(안 하면 base 에서 준비물이 없어 실패해 `ok` 로 잘못 보일 수 있다)
 - `mobile: true` — 모바일 앱(react-native · expo — `athena init` 이 package.json 으로 정한다). 지금은 `athena scaffold` 가 앱 층 기준(`docs/knowledge/common/coding.md` "앱 (모바일)")을 프로필 · `rules.md` 뼈대에 싣는 데만 쓴다
-- `models` — 역할마다 Claude 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름). 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델 · 경량 작업만 아래 표의 코어 기본값). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
+- `models` — 역할마다 모델(`scripts/lib/models.mjs` · 파이썬 `athena_config.model_of`). 기존 문자열 값은 Claude Code `--model` 이 받는 이름(`opus` · `sonnet` · `haiku` 또는 전체 이름)이다. Codex 모델은 아래의 엔진별 객체로 나눈다. 역할이 없거나 `models` 가 없으면 `--model` 을 붙이지 않는다(기본 모델 · 경량 작업만 아래 표의 코어 기본값). 모르는 역할 · 빈 값 · 공백 · 따옴표가 든 이름은 무시하지 않고 그 자리에서 실패한다(아래). 팀이 같이 쓰는 값이라 팩에 둔다 — 고친 값은 다음에 띄울 때부터 먹는다
   | 역할 | 어디에 붙나 | 이상한 값이면 |
   |---|---|---|
   | `agent` | 담당 에이전트 pane(`scripts/delegate.sh`) — 정식 계획서(`plans/{feature,bugfix,refactor}/…`) 작업 | 띄우지 않는다 |
@@ -212,6 +212,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |
   - 값 예(경량 · 다시 리뷰만 나누기): `"models": { "learnReview": "sonnet", "agentLight": "claude-opus-5-5", "reviewer": "sonnet", "reviewerEscalated": "opus" }` — `agent` 를 비워 두면 정식 작업은 기본 모델. 키를 지우면 그 자리는 대신 쓰는 값으로 간다(`agentLight` → `agent` → 코어 기본값 `claude-opus-5-5` · `reviewerEscalated` → `reviewer` → 기본 모델). 모델은 띄울 때 정해진다 — 이미 떠 있는 pane 은 그대로
   - 에이전트 하나만 다르게 하려면 그 프로필(`.claude/agents/<이름>.md`) frontmatter `model:` — 있으면 팩 값보다 이긴다(`inherit` 은 없는 것과 같다). delegate.sh 가 그 값을 `--model` 로 넘긴다(워크트리에서 띄울 때 다시 만드는 프로필에는 `model` 이 없어서)
+  - 엔진별 값은 `"agent": { "claude": "opus", "codex": "<Codex 모델 이름>" }` 모양이다. 기존 문자열 값은 Claude 용이며 Codex 에 넘기지 않는다. 선택한 엔진의 값이 없으면 그 엔진 기본 모델을 쓴다(경량 Claude 기본값은 그대로). 프로필의 `model:` 은 Claude, `codexModel:` 은 Codex 용이다.
   - 한 번만 다르게 하려면 `delegate.sh --model <이름>` — 팩 값 · 프로필보다 먼저고 이름 규칙은 팩 값과 같다. `--reuse-pane` 과는 같이 못 쓴다(떠 있는 pane 의 모델은 바뀌지 않는다)
 
 ## QA 대상 서비스

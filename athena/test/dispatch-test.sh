@@ -1,0 +1,110 @@
+#!/usr/bin/env bash
+# delegate.sh 실제 실행기까지 가짜 화면·CLI 로 실행한다. 사용자 pane·레포·인증 정보는 읽거나 쓰지 않는다.
+. "$(dirname "$0")/_lib.sh"
+set -uo pipefail
+cd "$(dirname "$0")/.." || exit 1
+python3 - "$PWD" <<'PY'
+import json, os, pathlib, shlex, shutil, subprocess, sys, tempfile
+src = pathlib.Path(sys.argv[1])
+fail = 0
+
+def check(name, ok):
+    global fail
+    print(('  ✔ ' if ok else '  ✖ ') + name, flush=True)
+    if not ok: fail = 1
+
+with tempfile.TemporaryDirectory(prefix='dispatch-test-') as tmp:
+    root = pathlib.Path(tmp); core = root / 'core'; work = root / "repo with ' quote"
+    shutil.copytree(src / 'scripts', core / 'scripts', ignore=shutil.ignore_patterns('__pycache__'))
+    shutil.copytree(src / '.claude', core / '.claude')
+    shutil.copy(src / 'AGENTS.md', core / 'AGENTS.md')
+    work.mkdir(); (core / 'repos').mkdir(); (core / 'repos/web').symlink_to(work)
+    (work / 'CLAUDE.md').write_text('@AGENTS.md\nCLAUDE_RULE_SENTINEL\n')
+    (work / 'AGENTS.md').write_text('# REPO_RULE_SENTINEL\n레포 원문 규칙\n')
+    (core / '.claude/agents/fe.md').write_text('---\nname: fe\ndescription: 시험\nmodel: sonnet\ncodexModel: gpt-test-profile\n---\nPROFILE_SENTINEL\n')
+    (core / 'plans/task').mkdir(parents=True)
+    plan = core / 'plans/task/test.md'
+    (root / 'data').mkdir(); (core / '.pack-data').symlink_to(root / 'data')
+    bin_dir = root / 'bin'; bin_dir.mkdir()
+    cli = '''#!/usr/bin/env python3
+import json, os, pathlib, sys
+engine = pathlib.Path(sys.argv[0]).name
+if sys.argv[1:3] in (['auth', 'status'], ['login', 'status']):
+    sys.exit(0 if engine in os.environ['READY_TOOLS'].split(',') else 1)
+pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':sys.argv[1:], 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT')}))
+'''
+    for tool in ('claude', 'codex'):
+        p = bin_dir / tool; p.write_text(cli); p.chmod(0o755)
+    screen = '''#!/usr/bin/env python3
+import json, os, pathlib, shlex, subprocess, sys
+a=sys.argv[1:]
+with open(os.environ['SCREEN_LOG'], 'a') as f: f.write(json.dumps(a)+'\\n')
+if a == ['inside']: sys.exit(0)
+if a[:1] == ['self']: print('SCREEN_PANE_ID=lead1'); sys.exit(0)
+if a == ['workspace','list']: print(json.dumps({'workspaces':[{'id':'web-ws','label':'web'}]}))
+elif a[:2] == ['workspace','get']: print(json.dumps({'workspace':{'active_tab_id':'web-tab'}}))
+elif a[:2] == ['pane','list']: print(json.dumps({'panes':[{'id':'web-pane','tab_id':'web-tab','cols':100,'rows':30}]}))
+elif a[:2] == ['pane','split']: print(json.dumps({'pane':{'id':'new-pane'}}))
+elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).returncode)
+'''
+    (core / 'scripts/screen').write_text(screen); (core / 'scripts/screen').chmod(0o755)
+    capture = root / 'capture.json'; log = root / 'screen.jsonl'
+    codex_home = root / 'codex-home'; codex_home.mkdir()
+    (codex_home / 'config.toml').write_text('# USER_CONFIG_SENTINEL\n')
+    (codex_home / 'hooks.json').write_text('{"hooks":{}}\n')
+    profiles = {}
+    env = dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], CAPTURE=str(capture), SCREEN_LOG=str(log), ATHENA_TEST_NO_RECORD='1', TMPDIR=str(root)+'/', CODEX_HOME=str(codex_home))
+    env.pop('ATHENA_AGENT', None)
+    cfg = {'repos':[{'name':'web','agents':['fe'],'prBase':'main','autoMerge':True,'autoPr':False,'ruleDocs':{'add':['AGENTS.md']}}], 'models':{'agentLight':{'claude':'opus','codex':'gpt-test-pack'},'reviewer':{'claude':'sonnet','codex':'gpt-test-review'}}}
+    (core / 'pack').mkdir()
+    (core / 'pack/pack.json').write_text(json.dumps(cfg))
+    (core / 'athena.config.json').write_text(json.dumps({'dataDir': str(root / 'data')}))
+    def run(ready, remembered=None, extra=()):
+        plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n')
+        capture.unlink(missing_ok=True); log.write_text('')
+        saved = core / '.athena-main-tool.json'
+        if remembered: saved.write_text(json.dumps({'main':remembered}))
+        else: saved.unlink(missing_ok=True)
+        env['READY_TOOLS'] = ready
+        result = subprocess.run(['bash',str(core/'scripts/delegate.sh'),'fe','TASK_SENTINEL', '--plan','plans/task/test.md','--cwd',str(work),*extra],env=env,cwd=core,capture_output=True,text=True)
+        return result, json.loads(capture.read_text()) if capture.exists() else None, [json.loads(line) for line in log.read_text().splitlines()]
+    for ready, remembered, expected in [('claude',None,'claude'),('codex',None,'codex'),('claude,codex',None,'claude'),('claude,codex','claude','claude'),('claude,codex','codex','codex')]:
+        result, got, calls = run(ready, remembered)
+        name = ready + ' / ' + str(remembered)
+        check(name+' → 엔진·작업자·프로필 분리', result.returncode == 0 and got and got['engine']==expected and got['role']=='agent' and got['agent']=='fe')
+        check(name+' → 담당 레포 workspace 에 분할', any(a[:2]==['pane','split'] and a[a.index('--target')+1]=='web-pane' for a in calls))
+        if not got: continue
+        args = got['args']; prompt = args[-1]
+        check(name+' → 같은 계획서·완료 순서·아테나 보고 지시', all(s in prompt for s in ['TASK_SENTINEL','plans/task/test.md','commit.sh','ship.sh','--direct-merge','lead1','묻지 않고']))
+        check(name+' → 프로필 모델 전달', args[args.index('--model')+1] == ('sonnet' if expected=='claude' else 'gpt-test-profile'))
+        if expected=='codex':
+            profile = args[args.index('--profile')+1]
+            check('Codex → 본체·역할별 프로필 이름 유지', not profiles or profiles.get('agent') == profile)
+            profiles['agent'] = profile
+            settings = [args[i+1] for i,a in enumerate(args[:-1]) if a=='-c']
+            inst = next(v for v in settings if v.startswith('developer_instructions='))
+            text = json.loads(inst.split('=',1)[1])
+            check('Codex → 공통 규칙·프로필·레포 원문', all(s in text for s in ['# 레포 규칙 문서','REPO_RULE_SENTINEL','PROFILE_SENTINEL','CLAUDE_RULE_SENTINEL','## 5.']))
+            check('Codex → 보호 훅·기록·끝 알림 전달', all(s in (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text() for s in ['commit-guard.py','secret-guard.py','process-guard.py','pane-session.py','agent-done-notify.py']))
+            check('Codex → Claude 전용 인자 없음', '--agent' not in args and '--settings' not in args and '--append-system-prompt-file' not in args)
+        if remembered is None:
+            check(name+' → 실제 주 도구 기록을 새로 쓰지 않는다', not (core / '.athena-main-tool.json').exists())
+        check(name+' → 임시 실행기·컨텍스트 정리', not any(root.glob('hermes-*')))
+    result, got, calls = run('', None)
+    check('기록 없음 · 둘 다 없음 → 안내하고 pane 생성 전 거부', result.returncode==2 and got is None and not calls and '설치·로그인된 위임 도구가 없다' in result.stderr)
+    result, got, calls = run('claude,codex','claude',('--engine','codex','--role','reviewer','--model','gpt-test-override'))
+    check('명시 엔진·리뷰 역할·모델 우선', result.returncode==0 and got and got['engine']=='codex' and got['role']=='reviewer' and got['args'][got['args'].index('--model')+1]=='gpt-test-override')
+    if got:
+        args = got['args']
+        settings = (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text()
+        check('Codex 리뷰 → commit 보호·끝 알림 없음, 시크릿·프로세스 보호 있음', 'commit-guard.py' not in settings and 'agent-done-notify.py' not in settings and 'secret-guard.py' in settings and 'process-guard.py' in settings)
+        check('리뷰 → 작업자 Work ref 유지', '- Work ref: pending' in plan.read_text() and '- Review:' in plan.read_text())
+    result, got, calls = run('claude,codex','codex',('--engine','claude'))
+    check('명시 Claude 엔진은 기록한 Codex 보다 먼저', result.returncode==0 and got and got['engine']=='claude')
+    result, got, calls = run('claude',None,('--engine','codex'))
+    check('명시 엔진이 로그인 안 됨 → pane 생성 없음', result.returncode==2 and not calls)
+    result, got, calls = run('codex',None,('--resume','11111111-2222-3333-4444-555555555555'))
+    check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got['args'][:2]==['resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
+    check('기존 사용자 설정·훅 파일 유지', (codex_home / 'config.toml').read_text() == '# USER_CONFIG_SENTINEL\n' and (codex_home / 'hooks.json').read_text() == '{"hooks":{}}\n')
+sys.exit(fail)
+PY

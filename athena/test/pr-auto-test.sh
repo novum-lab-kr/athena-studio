@@ -1465,6 +1465,7 @@ rm -f "$DORIGIN/hooks/pre-receive"
 echo; echo "끝나면 저절로 지시문 (delegate.sh)"
 ICORE="$(cd "$TMP" && pwd -P)/core-instr"; mkdir -p "$ICORE/plans/task" "$ICORE/.claude/agents" && cp -R scripts "$ICORE/scripts"
 printf '#!/bin/sh\ncase "$1" in inside) exit 1 ;; name) echo 가짜화면 ;; esac\nexit 0\n' > "$ICORE/scripts/screen"; chmod +x "$ICORE/scripts/screen"
+printf '{"main":"claude"}\n' > "$ICORE/.athena-main-tool.json"
 printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$ICORE/.claude/agents/web-fe.md"
 printf '# 시험\n\n## Checkpoint\n- Status: in_progress\n' > "$ICORE/plans/task/20261030-a.md"
 instr() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/athena.config.json"; (cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md 2>&1); }

@@ -68,6 +68,35 @@ for index in $(seq 1 "$CASE_COUNT"); do
 done
 check "modelArgs — 없으면 [] · 있으면 [--model, 값]" 'printf "%s\n" "$JS_OUT" | grep -qx "args-none	\[\]" && printf "%s\n" "$JS_OUT" | grep -qx "args-some	\[\"--model\",\"haiku\"\]"' "$JS_OUT"
 
+# 엔진별 값도 JS·Python 이 같은 판정. 기존 문자열을 Codex 모델로 넘기지 않는다.
+node --input-type=module - "$SRC" <<'JS' || FAIL=1
+import { execFileSync } from 'node:child_process'
+import { modelOf } from './scripts/lib/models.mjs'
+const cases = [
+  [{models:{agent:'sonnet'}}, 'codex', ''],
+  [{models:{agent:{claude:'opus',codex:'gpt-test'}}}, 'codex', 'gpt-test'],
+  [{models:{agent:{claude:'opus',codex:'gpt-test'}}}, 'claude', 'opus'],
+  [{models:{agent:{codex:'gpt-test'}}}, 'claude', ''],
+  [{models:{agent:{codex:'bad model'}}}, 'claude', 'ERR'],
+  [{models:{agent:{other:'x'}}}, 'codex', 'ERR'],
+  [{models:{agent:{}}}, 'codex', 'ERR'],
+  [{models:{agent:[]}}, 'codex', 'ERR'],
+]
+let failed = false
+for (const [config, engine, expected] of cases) {
+  let js; try { js = modelOf(config, 'agent', engine) } catch { js = 'ERR' }
+  const py = execFileSync('python3', ['-c', `import json,sys
+sys.path.insert(0, sys.argv[1]+'/scripts/lib')
+from athena_config import model_of
+try: print(model_of(json.loads(sys.argv[2]), 'agent', sys.argv[3]))
+except ValueError: print('ERR')`, process.argv[2], JSON.stringify(config), engine], {encoding:'utf8'}).trim()
+  const ok = js === expected && py === expected
+  console.log(`  ${ok ? '✔' : '✖'} 엔진별 모델 ${engine} ${JSON.stringify(config)} → ${expected || '(기본값)'}`)
+  failed ||= !ok
+}
+process.exitCode = failed ? 1 : 0
+JS
+
 # ── delegate.sh — 가짜 본체(코어 scripts 복사 · 화면 밖) 에서 직접 실행 안내 줄로 붙는 --model 을 본다 ─────────
 echo; echo "delegate.sh"
 CORE="$TMP/core"; mkdir -p "$CORE/plans/task" "$CORE/plans/feature" "$CORE/.claude/agents" && cp -R scripts "$CORE/scripts"
@@ -77,6 +106,12 @@ printf -- '---\nname: reviewer\ndescription: 리뷰\n---\n본문\n' > "$CORE/.cl
 printf -- '---\nname: own-fe\ndescription: 따로\nmodel: haiku\n---\n본문\n' > "$CORE/.claude/agents/own-fe.md"
 printf -- '---\nname: inh-fe\ndescription: 따름\nmodel: inherit\n---\n본문\n' > "$CORE/.claude/agents/inh-fe.md"
 printf '# 시험\n\n## Checkpoint\n- Status: in_progress\n' > "$CORE/plans/task/20261026-a.md"
+# 인증 출력은 읽지 않고 가짜 명령의 종료 코드만 본다.
+mkdir -p "$TMP/bin"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/bin/claude"
+printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/codex"
+chmod +x "$TMP/bin/claude" "$TMP/bin/codex"
+export PATH="$TMP/bin:$PATH"
 config() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe", "own-fe", "inh-fe"], "prBase": "main" }]%s }\n' "$1" > "$CORE/athena.config.json"; }
 run() { (cd "$CORE" && env -u ATHENA_AGENT bash scripts/delegate.sh "$1" --plan plans/task/20261026-a.md 2>&1); }
 config ', "models": { "agent": "sonnet", "reviewer": "opus" }'

@@ -14,6 +14,8 @@
 #   scripts/delegate.sh <에이전트명> --plan <경로> --resume <세션 id> [--cwd <워크트리>]  # 닫힌 pane 을 그 대화 그대로 다시 연다(지시문은 다시 보내지 않는다)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --model <이름>  # 이번 한 번만 이 모델로 띄운다(팩 models · 프로필 model: 보다 먼저 · --reuse-pane 과 같이 못 쓴다)
 #
+#   --engine claude|codex       # 엔진만 선택(생략하면 본체 주 도구 · 쓸 수 있는 도구)
+#   --role agent|reviewer        # 작업자·읽기 전용 리뷰 역할(기본: reviewer 프로필은 reviewer, 그 밖은 agent)
 # 배치 규칙 — workspace = 레포 / 그 안의 한 탭에 pane 을 나란히
 #   워크트리마다 탭을 가르지 않는다. 한 화면에서 동시 작업 상황이 다 보이는 쪽이 낫다.
 #   각 pane 은 "🤖 <에이전트> · <워크트리>" 로 이름이 붙고, 하단 상태바가
@@ -29,11 +31,13 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
-AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0
+AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0; ENGINE=""; ROLE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)
       if [ "${2:-}" = new ]; then [ $# -ge 3 ] || { echo "--plan new 에 요약이 없다" >&2; exit 2; }; PLAN_NEW="$3"; shift 3; else [ $# -ge 2 ] || { echo "--plan 에 경로가 없다" >&2; exit 2; }; PLAN="$2"; shift 2; fi ;;
+    --engine) [ $# -ge 2 ] || { echo "--engine 값이 없다" >&2; exit 2; }; ENGINE="$2"; shift 2 ;;
+    --role) [ $# -ge 2 ] || { echo "--role 값이 없다" >&2; exit 2; }; ROLE="$2"; shift 2 ;;
     --down) DIR="down"; DIR_GIVEN=1; shift ;;
     --here) HERE=1; shift ;;
     --reuse-pane) [ $# -ge 2 ] || { echo "--reuse-pane 에 pane id 가 없다" >&2; exit 2; }; REUSE_PANE="$2"; shift 2 ;;   # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다
@@ -46,6 +50,10 @@ while [ $# -gt 0 ]; do
   esac
 done
 
+case "$ENGINE" in ''|claude|codex) ;; *) echo "--engine 은 claude · codex 만 쓴다" >&2; exit 2 ;; esac
+[ -n "$ROLE" ] || { if [ "$AGENT" = reviewer ]; then ROLE=reviewer; else ROLE=agent; fi; }
+case "$ROLE" in agent|reviewer) ;; *) echo "--role 은 agent · reviewer 만 쓴다(리드 실행은 아테나 시작 경로)" >&2; exit 2 ;; esac
+[ "$AGENT" != reviewer ] || [ "$ROLE" = reviewer ] || { echo "reviewer 프로필은 reviewer 역할로만 띄운다" >&2; exit 2; }
 [ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
 [ "$MODEL_GIVEN" = 0 ] || [ -z "$REUSE_PANE" ] || { echo "--model 은 --reuse-pane 과 같이 쓰지 않는다 — 떠 있는 pane 의 모델은 바뀌지 않는다. 그 모델로 띄우려면 새 pane 으로 띄운다" >&2; exit 2; }
 [ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down] [--model <이름>]"; exit 2; }
@@ -84,6 +92,8 @@ if [ "$PACK_SWITCH" = switching ]; then
   echo "이 팩을 열거나 업데이트하는 중이라 에이전트를 띄우지 않는다 — 끝난 뒤 다시(bin/athena pack status)" >&2
   exit 1
 fi
+
+ENGINE="$(node "$ATHENA_DIR/scripts/dispatch-engine.mjs" "$ATHENA_DIR" "$ENGINE")" || exit 2
 
 if [ -n "$PLAN_NEW" ]; then
   PROMPT_TMP="$(mktemp -t hermes-plan-prompt)"; printf '%s' "$PROMPT" > "$PROMPT_TMP"
@@ -162,7 +172,7 @@ fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
 PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 새 요청마다 시작 전에 Status 를 in_progress 로, Progress 에 한 줄. 끝나면(또는 막히면) Progress · 결과 절을 채운다. 작업 중에는 고친 부분만 확인한다(전체 검증 AGENTS.md 4절). Validation 줄은 검증 스크립트가, 커밋 뒤 Status 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · 레포 변경이 없는 일은 마지막 보고 때 done. 커밋: $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>…(사용자가 '커밋해줘' · 'PR 올려줘' 라고 할 때 · 거부되면 이유를 그대로 전하고 묻는다). '[자동 리뷰 → <나>]' 지시만 묻지 않고 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(docs/pr-auto.md). ${REVIEW_RULE}리뷰: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN (직접 리뷰하지 않는다 · '리뷰해줘' 도 같다). 결론은 사용자에게 보여 준다 — 결정 필요는 말로 묻지 말고 결정 콘솔로($ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'), 수정 필요만 있으면 묻지 않고 고쳐 한 줄씩 알린다. ${REVIEW_AGAIN}'PR 올려줘' 는 묻지 않고 끝까지: commit.sh → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). main 직접 레포의 push 만 확인받는다 · 여러 레포 작업은 아테나에게 요청한다. ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. "
-if [ "$AGENT" = reviewer ]; then
+if [ "$ROLE" = reviewer ]; then
   # reviewer 는 커밋·PR·Status 를 다루지 않는다 — 에이전트용 머리말 대신 리뷰 머리말만 싣는다
   PLAN_HEADER="리뷰할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 리뷰한다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 리뷰를 마치면 결론을 $ATHENA_DIR/scripts/review-result.sh --plan $ATHENA_DIR/$PLAN --dir <리뷰한 트리> --verdict 승인|수정필요 --note '<한 줄 요약>' 로 한 줄 남긴다(ship.sh 가 이 줄과 HEAD 를 대조한다). 그다음 수정 필요(고칠 방법이 하나) / 결정 필요(조사한 뒤에도 사용자가 정해야 하는 것만 — 범위·사용자 동작·외부 계약·제품 정책·데이터가 달라지는 선택. 구현 방법이 여러 개일 뿐이면 하나를 골라 수정 필요로 · R1 <제목> — <영향> 다음 줄부터 A <선택지> ★ — <설명> · B … 형식, 없으면 '결정 필요: 없음') / 제안으로 나눠 보고한다(형식 정본 .claude/agents/reviewer.md 의 보고 형식 절). "
   SKIP_AGENT_HEADER=1
@@ -178,7 +188,7 @@ elif [ -z "$PROMPT" ]; then
   PLAN_HEADER="${PLAN_HEADER}지금은 지시가 없다. 브랜치·미커밋 상태만 확인해 한 줄로 보고하고 사용자의 요청을 기다린다. 첫 요청을 받으면 계획서의 제목(# 줄)과 '## 지시' 절을 그 요청으로 바꿔 적고 진행한다. "
 fi
 # git 없는 프로젝트(결정 D4) — commit.sh · ship.sh 를 못 쓰니 뒷일을 맥 실행기로 넘긴다
-if [ "$AGENT" != reviewer ] && [ -n "$WORKDIR" ] && [ "$WORKDIR" != "$ATHENA_DIR" ] && [ -d "$WORKDIR" ] && ! git -C "$WORKDIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+if [ "$ROLE" != reviewer ] && [ -n "$WORKDIR" ] && [ "$WORKDIR" != "$ATHENA_DIR" ] && [ -d "$WORKDIR" ] && ! git -C "$WORKDIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
   PLAN_HEADER="${PLAN_HEADER}이 폴더는 git 이 없다 — 작업을 끝냈으면 전체 검증을 직접 돌리지 말고 node $ATHENA_DIR/scripts/local-finish.mjs --plan $ATHENA_DIR/$PLAN --dir $WORKDIR 로 넘기고 보고한다. 검증과 완료 표시는 뒤에서 돌고 실패 원문만 이 pane 으로 온다. "
 fi
 # 지시가 있든 없든(현황판 [작업 시작]도) — 범위가 커지면 멈춘다
@@ -211,7 +221,7 @@ PYEOF
 # reviewer 는 담당 레포가 없다 — 계획서를 보고 **어느 에이전트·레포 작업인지** 정해 그 레포 workspace 에 띄운다.
 # Agent: 의 에이전트 → config 의 레포, Work ref: 맨 앞이 실제 폴더면(워크트리) 그곳을 cwd 로 (검증 스크립트도 그걸 본다).
 # 아테나 자체 작업(Agent: hermes 등)이면 레포가 없으니 지금 탭에 둔다.
-if [ "$AGENT" = reviewer ] && [ "$HERE" = 0 ]; then
+if [ "$ROLE" = reviewer ] && [ "$HERE" = 0 ]; then
   REVIEW_TARGET="$(python3 - "$ATHENA_DIR/$PLAN" "$ATHENA_DIR" <<'PYEOF'
 import re, sys, pathlib
 sys.path.insert(0, sys.argv[2] + '/scripts/lib'); from athena_config import load
@@ -252,11 +262,11 @@ WORKDIR="$(cd "$WORKDIR" && pwd -P)"
 # 그 밖의 에이전트는 경량 계획서(plans/task/…)면 agentLight(값 없으면 agent · 그것도 없으면 코어 기본값) · 정식이면 agent. reviewer 는 이 계획서의 같은 레포 · 브랜치
 # "- Review result:" 가 수정 필요면 reviewerEscalated(값 없으면 reviewer) · 아니면 reviewer(계획서 2026-10-29 D1 · D2). 레포 · 브랜치는 띄울 작업 트리(WORKDIR)로 고른다.
 # 값이 다 없으면 지금처럼 기본 모델 · 형식이 이상하면 띄우지 않는다(기본 모델로 몰래 돌지 않게) · --model 은 이 모두보다 먼저(팩 models 검사는 그대로 돈다)
-MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" "$PLAN" "$WORKDIR" <<'PYEOF'
+MODEL="$(python3 - "$ATHENA_DIR" "$AGENT" "$PLAN" "$WORKDIR" "$ENGINE" "$ROLE" <<'PYEOF'
 import sys
 sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import agent_model
 try:
-    print(agent_model(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]))
+    print(agent_model(sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], sys.argv[5], sys.argv[6]))
 except ValueError as error:
     print(error, file=sys.stderr); sys.exit(1)
 PYEOF
@@ -266,7 +276,9 @@ PYEOF
 if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
   MODEL_HINT="${MODEL:+ --model $MODEL}"
-  if [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT \"$PROMPT\")"
+  if [ "$ENGINE" = codex ]; then
+    echo "  (cd $WORKDIR && codex$MODEL_HINT) — 공통 규칙·프로필·계획서 지시는 화면 안에서 delegate.sh 로 전달한다"
+  elif [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT \"$PROMPT\")"
   else echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT)"; fi
   exit 1
 fi
@@ -398,20 +410,22 @@ CTX_TOP="$WORK_TOP"
 if [ -z "$CTX_TOP" ]; then
   case "$WORKDIR/" in "$ATHENA_REAL"/*) ;; *) CTX_TOP="$WORKDIR" ;; esac
 fi
-if [ -n "$CTX_TOP" ] && [ "$(cd "$CTX_TOP" && pwd -P)" != "$ATHENA_REAL" ]; then
+if [ "$ENGINE" = codex ] || { [ -n "$CTX_TOP" ] && [ "$(cd "$CTX_TOP" && pwd -P)" != "$ATHENA_REAL" ]; }; then
+  CTX_TOP="${CTX_TOP:-$WORKDIR}"
   AGENTS_JSON="$(mktemp -t hermes-agents)" && CONTEXT_FILE="$(mktemp -t hermes-context)" && SETTINGS_FILE="$(mktemp -t hermes-settings)" \
-    && RULE_DOC_NOTES="$(python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$CTX_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE")" \
+    && RULE_DOC_NOTES="$(python3 "$ATHENA_DIR/scripts/agent-context.py" "$AGENT" "$ATHENA_DIR" "$CTX_TOP" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$ROLE" "$ENGINE")" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "${AGENTS_JSON:-}" "${CONTEXT_FILE:-}" "${SETTINGS_FILE:-}"; echo "에이전트 컨텍스트 생성 실패"; exit 1; }
   CONTEXT_CHARS="$(char_count "$CONTEXT_FILE")"
   EXTRA_FILES="$(shq "$AGENTS_JSON") $(shq "$CONTEXT_FILE") $(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="--agents \"\$(cat $(shq "$AGENTS_JSON"))\" $CLAUDE_ARGS --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS --append-system-prompt-file $(shq "$CONTEXT_FILE") --settings $(shq "$SETTINGS_FILE")"
-  REPO_DIR="$CTX_TOP"
+  [ "$CTX_TOP" = "$ATHENA_REAL" ] || REPO_DIR="$CTX_TOP"
 else
   # hermes 안에서 띄워도 보호 훅을 건다 — FE 는 commit-guard(git commit 직접·add -A → commit.sh, push·gh pr 차단) + secret-guard,
   # reviewer 는 secret-guard 만(토큰·키 값은 어떤 세션에서도 출력하지 않는다)
   SETTINGS_FILE="$(mktemp -t hermes-settings)" || { rm -f "$PROMPT_FILE" "$RUNNER"; echo "mktemp 실패"; exit 1; }
   # 훅 목록은 agent-context.py 와 같은 한 곳 — scripts/lib/agent_hooks.py (보호 훅 · 고르기 질문 → 요청 · pane 기록 · 끝 알림 · 자동 압축 시점. reviewer 는 읽기 전용이라 일부 제외)
-  python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" inline "$SETTINGS_FILE" "$ATHENA_DIR" "$AGENT" \
+  HOOK_AGENT="$AGENT"; [ "$ROLE" = reviewer ] && HOOK_AGENT=reviewer
+  python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" inline "$SETTINGS_FILE" "$ATHENA_DIR" "$HOOK_AGENT" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "$SETTINGS_FILE"; echo "에이전트 훅 설정 생성 실패"; exit 1; }
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
   CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
@@ -419,8 +433,19 @@ fi
 # 에이전트 창은 MCP 서버를 싣지 않는다(--mcp-config 없는 --strict-mcp-config = 사용자 전역 · 플러그인 · claude.ai 커넥터 MCP 모두 제외).
 # 창마다 도구 목록 · 서버 안내문이 매 답에 붙는 토큰을 줄인다. 아테나 본체 세션은 이 스크립트를 거치지 않아 그대로.
 # reviewer 는 Jira · Confluence(Atlassian 커넥터)를 읽을 수 있어야 해서 제외한다(.claude/agents/reviewer.md tools)
-[ "$AGENT" != reviewer ] && CLAUDE_ARGS="$CLAUDE_ARGS --strict-mcp-config"
+[ "$ROLE" != reviewer ] && CLAUDE_ARGS="$CLAUDE_ARGS --strict-mcp-config"
 [ -n "${RESUME:-}" ] && CLAUDE_ARGS="$CLAUDE_ARGS --resume $(shq "$RESUME")"
+
+# Codex 는 Claude 전용 인자를 받지 않는다. 동일 컨텍스트·프로필을 개발자 지시로,
+# 보호 훅·pane 기록을 CLI 설정으로 넘기고 프로젝트의 리드 AGENTS 자동 로드는 끈다.
+if [ "$ENGINE" = codex ]; then
+  CODEX_PROFILE="$(python3 "$ATHENA_DIR/scripts/lib/codex_dispatch.py" "$ATHENA_DIR" "$AGENT" "$ROLE" "$CONTEXT_FILE" "$AGENTS_JSON" "$SETTINGS_FILE")" \
+    || { echo "Codex 컨텍스트 생성 실패" >&2; rm -f "$PROMPT_FILE" "$RUNNER" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$SETTINGS_FILE.instructions" "$SETTINGS_FILE.hooks"; exit 1; }
+  EXTRA_FILES="$EXTRA_FILES $(shq "$SETTINGS_FILE.instructions")"
+  CODEX_ARGS="--profile $(shq "$CODEX_PROFILE") -c \"\$(cat $(shq "$SETTINGS_FILE.instructions"))\" -c project_doc_max_bytes=0 --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS"
+  [ -n "$MODEL" ] && CODEX_ARGS="$CODEX_ARGS --model $(shq "$MODEL")"
+  [ -n "${RESUME:-}" ] && CODEX_ARGS="resume $(shq "$RESUME") $CODEX_ARGS"
+fi
 
 # 팩 훅(설정 hooks.delegateEnv) — 에이전트마다 실행기에 넣을 export 줄을 팩이 정한다(회사 레포 고유 환경값).
 # 인자: <에이전트> <아테나 폴더>. 출력 줄을 그대로 실행기에 넣는다
@@ -441,7 +466,7 @@ PYEOF
   echo 'trap cleanup EXIT INT TERM'
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
-  echo "export ATHENA_AGENT=$(shq "$AGENT")"
+  echo "export ATHENA_AGENT=$(shq "$AGENT") ATHENA_ROLE=$(shq "$ROLE") ATHENA_ENGINE=$(shq "$ENGINE")"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
   echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
@@ -451,7 +476,10 @@ PYEOF
   # git 레포가 아닌 폴더(WORK_TOP 빈 값)는 빈 경로를 넘기지 않는다 — 검증 스크립트는 메인 체크아웃 기본값대로
   [ -n "$EXTRA_FILES" ] && [ -n "$WORK_TOP" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
-  if [ -n "$PROMPT" ]; then
+  if [ "$ENGINE" = codex ]; then
+    if [ -n "$PROMPT" ]; then echo "codex $CODEX_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
+    else echo "codex $CODEX_ARGS"; fi
+  elif [ -n "$PROMPT" ]; then
     echo "claude $CLAUDE_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
   else
     echo "claude $CLAUDE_ARGS"
@@ -466,9 +494,9 @@ if ! "$SCREEN" pane run "$PANE" "$(shell_line "$RUNNER")" >/dev/null; then   # �
 fi
 else   # ── 쉬는 같은 레포 pane 에 이어 보내기 (docs/dispatch.md "이어 보내기")
   [ -z "${RESUME:-}" ] || { echo "--reuse-pane 은 --resume 과 같이 쓰지 않는다" >&2; exit 2; }
-  [ "$AGENT" != reviewer ] || { echo "reviewer 는 이어 보내지 않는다(리뷰마다 새 pane)" >&2; exit 2; }
+  [ "$ROLE" != reviewer ] || { echo "reviewer 는 이어 보내지 않는다(리뷰마다 새 pane)" >&2; exit 2; }
   # 보내기 직전에 다시 확인 — 고른 뒤 사용자가 그 pane 을 보기 시작했거나 질문 창이 떴을 수 있다. 같은 pane 이 아니면 보내지 않는다
-  PICKED="$(node "$ATHENA_DIR/scripts/reuse-pane.mjs" --agent "$AGENT" 2>&1)" || { echo "이어 보낼 수 없다: $PICKED" >&2; exit 1; }
+  PICKED="$(node "$ATHENA_DIR/scripts/reuse-pane.mjs" --agent "$AGENT" --engine "$ENGINE" --role "$ROLE" 2>&1)" || { echo "이어 보낼 수 없다: $PICKED" >&2; exit 1; }
   PICKED_PANE="$(printf '%s' "$PICKED" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"])' 2>/dev/null)"
   [ "$PICKED_PANE" = "$REUSE_PANE" ] || { echo "그 pane($REUSE_PANE)은 지금 이어 보낼 수 없다(쉬는 pane: ${PICKED_PANE:-없음}) — 새로 띄우거나 다시 고른다" >&2; exit 1; }
   PANE="$REUSE_PANE"; PLACEMENT="쉬는 pane 에 이어 보냄"
@@ -537,18 +565,19 @@ fi
 BRANCH_FROM="${GIVEN_CWD:-${REPO_DIR:-$WORKDIR}}"
 BRANCH_NAME="$(git -C "$BRANCH_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 PANE_TITLE="🤖 $AGENT"
+[ "$ROLE" = reviewer ] && PANE_TITLE="🤖 reviewer"
 [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ] && PANE_TITLE="$PANE_TITLE · $BRANCH_NAME"
 "$SCREEN" pane rename "$PANE" "$PANE_TITLE" >/dev/null 2>&1 || true
 
 # 계획서 Work ref 에 어디서 누가 도는지 적는다 — 현황판이 이 pane 을 카드에 붙인다
 # 아테나 pane 에서 띄웠으면 그 pane 도 한 번만 적는다(- Lead pane:) — 앱의 아테나 pane [상세] 가 이 pane 이 맡긴 일을 모은다
-ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" <<'PYEOF'
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" "$ROLE" <<'PYEOF'
 import os, sys, re
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
-plan, cwd, branch, pane, agent, lead = sys.argv[1:7]
+plan, cwd, branch, pane, agent, lead, role = sys.argv[1:8]
 def record(text):
     text = record_ref(text)
-    if lead and agent != 'reviewer':
+    if lead and role != 'reviewer':
         if not re.search(r'^- Lead pane:', text, re.M):
             text = re.sub(r'^(- Work ref:.*)$', lambda match: f'- Lead pane: {lead}\n' + match.group(1), text, count=1, flags=re.M)
         else:
@@ -556,7 +585,7 @@ def record(text):
             text = re.sub(r'^- Lead pane:.*$', lambda match: f'- Lead pane: {lead}', text, count=1, flags=re.M)
     return text
 def record_ref(text):
-    if agent == 'reviewer':
+    if role == 'reviewer':
         # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(현황판이 이 pane 도 카드에 붙인다)
         # 띄운 시각 — review-wait.sh 가 "이 시각 뒤에 적힌 결론" 을 찾는다(기다리기를 늦게 시작해도 이미 끝난 결론을 놓치지 않게)
         stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -582,7 +611,7 @@ update_plan(plan, record)
 PYEOF
 
 # 지시문 크기 — 토큰을 줄인 효과를 숫자로 본다(docs/events.md · 실패해도 띄우기는 그대로). 이어 보내기는 보낸 글, 이어 열기는 0
-node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" pane="$PANE" \
+node "$ATHENA_DIR/scripts/lib/events.mjs" delegate plan="$PLAN" agent="$AGENT" engine="$ENGINE" role="$ROLE" pane="$PANE" \
   promptChars="$(printf '%s' "${REUSE_MSG:-$PROMPT}" | char_count)" contextChars="${CONTEXT_CHARS:-0}" >/dev/null 2>&1 || true
 
 # 레포 규칙 문서 안내는 pane 줄보다 앞에 — 현황판이 출력의 마지막 줄을 pane 줄로 읽는다
@@ -590,4 +619,4 @@ if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
 echo "$SHIP_LINE"
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
-if [ "$AGENT" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
+if [ "$ROLE" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi

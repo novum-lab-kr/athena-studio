@@ -51,6 +51,7 @@ rsync -a --exclude .git --exclude .omc --exclude /repos --exclude /plans --exclu
   --exclude /scripts/screen-check "$ATHENA_DIR/" "$TEMPLATE/"
 (
   cd "$TEMPLATE" || exit 1
+  printf '{"main":"claude"}\n' > .athena-main-tool.json
   printf '{\n  "reposRoot": "..",\n  "repos": [{ "name": "shop-web", "agents": ["fe"] }]\n}\n' > athena.config.json
   printf -- '---\nname: fe\ndescription: 검사용 에이전트\n---\n검사용\n' > .claude/agents/fe.md
   mkdir -p repos/shop-web plans/task plans/refactor issues

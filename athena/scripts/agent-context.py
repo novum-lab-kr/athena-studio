@@ -18,6 +18,9 @@ import agent_hooks  # 훅 목록은 delegate.sh 와 같은 한 곳(scripts/lib/a
 import rule_docs
 
 agent, hermes_dir, workdir, agents_out, context_out, settings_out = sys.argv[1:7]
+role = sys.argv[7] if len(sys.argv) > 7 else ("reviewer" if agent == "reviewer" else "agent")
+engine = sys.argv[8] if len(sys.argv) > 8 else "claude"
+hook_agent = "reviewer" if role == "reviewer" else agent
 hermes = pathlib.Path(hermes_dir).resolve()
 
 # 에이전트 md 의 frontmatter(name/description/tools)와 본문을 나눈다
@@ -55,7 +58,7 @@ for rule in sorted((hermes / ".claude/rules").glob("*.md")):
 # 레포 규칙 문서 원문 — 공통 규칙 뒤에(시스템 프롬프트라 압축에도 남는다 · scripts/lib/rule_docs.py). 못 읽어도 띄우기는 막지 않는다.
 # 알릴 줄은 stdout 으로 — delegate.sh 가 디스패치 보고에 넣는다
 try:
-    rule_docs_result = rule_docs.prepare(hermes_dir, agent, workdir)
+    rule_docs_result = rule_docs.prepare(hermes_dir, agent, workdir, engine)
 except Exception as error:
     rule_docs_result = {"section": "", "listed": [], "notes": [f"   📄 레포 규칙 문서를 싣지 못했다: {error}"]}
 if rule_docs_result["section"]:
@@ -71,15 +74,15 @@ excludes = [str(hermes / "CLAUDE.md"), str(hermes / "AGENTS.md"), str(hermes / "
 # 프로세스 종료 보호 훅도 모든 세션에 (scripts/hooks/process-guard.py — pkill · killall · 0/음수 대상 kill 차단, GH #133)
 # 훅 명령은 셸이 읽으므로 경로를 셸 따옴표로 감싼다(경로에 공백·' 가 있어도 깨지지 않게)
 def script(rel): return shlex.quote(str(hermes / rel))
-guard = {"PreToolUse": agent_hooks.pre_tool_use(hermes, agent)}
+guard = {"PreToolUse": agent_hooks.pre_tool_use(hermes, hook_agent)}
 settings = {"claudeMdExcludes": excludes}
 # 하단 상태바 — 워크트리는 hermes 프로젝트 설정 밖이라 따로 넣는다(레포·브랜치·변경 수·모델, scripts/statusline.sh)
 settings["statusLine"] = {"type": "command", "command": f"/bin/sh {script('scripts/statusline.sh')}", "padding": 0}
-if agent != "reviewer":
+if role != "reviewer":
     settings["hooks"] = guard
     # 자동 압축 시점 — 워크트리는 본체 프로젝트 설정이 안 실려 따로 넣는다. 값은 본체 .claude/settings.json 한 곳에서 읽는다
     # (reviewer 는 짧게 끝나 넣지 않는다 · docs/knowledge/common/context.md "대화 압축")
-    window = agent_hooks.auto_compact_window(hermes, agent)
+    window = agent_hooks.auto_compact_window(hermes, hook_agent)
     if window:
         settings["autoCompactWindow"] = window
 else:
@@ -98,7 +101,7 @@ settings["hooks"]["SessionStart"] = [{"matcher": "compact", "hooks": [{"type": "
 settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command": f"python3 {script('scripts/hooks/language.py')}"},
                                                      agent_hooks.pane_session(hermes)]}]
 # 끝 알림 — 에이전트가 한 차례를 끝내면 띄운 아테나 pane 에 한 줄(scripts/hooks/agent-done-notify.py — 위임 에이전트만, reviewer 는 계획서 줄로 알린다)
-notify_prompt, notify_stop = agent_hooks.done_notify(hermes, agent)
+notify_prompt, notify_stop = agent_hooks.done_notify(hermes, hook_agent)
 settings["hooks"]["UserPromptSubmit"][0]["hooks"] += notify_prompt
 if notify_stop:
     settings["hooks"]["Stop"] = notify_stop

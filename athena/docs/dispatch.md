@@ -78,3 +78,10 @@ node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane"
 - 리뷰 수정 필요·다음 레포에 넘길 계약 변경처럼 승인된 범위 안의 후속 지시는 묻지 않고 그 pane 에 직접 보낸다(`scripts/screen pane send-text <pane> '<글>' --enter`) — 사용자를 전달 창구로 쓰지 않는다
 - 에이전트가 막혀 넘긴 요청(`[<에이전트> → 아테나]` — 보호 훅이 막은 merge, 여러 레포 작업의 push·PR)은 사용자 지시가 담겨 있으면 아테나가 처리하고 결과를 그 pane 에 돌려준다
 - 여러 서비스에 걸친 작업은 `reviewer`로 교차 정합성 확인
+
+### 위임 엔진과 역할
+`delegate.sh <프로필> --engine claude|codex --role agent|reviewer --plan <계획서>` 로 엔진과 역할을 별도로 고른다. 엔진 생략 시 설치·로그인된 도구와 본체 `.athena-main-tool.json` 의 주 도구를 따른다. 기록이 없으면 쓸 수 있는 도구가 하나일 때 그것을, 둘 다일 때 기존 동작대로 Claude 를 쓴다. 둘 다 쓸 수 없으면 안내하고 멈춘다. `--engine` 을 명시하면 기록·기본 선택보다 먼저 적용하며, 그 도구를 쓸 수 없을 때 다른 엔진으로 바꾸지 않는다. 역할 기본값은 reviewer 프로필이면 reviewer, 그 밖은 agent 다. 리드는 아테나 시작 경로로 켜며 이 명령으로 만들지 않는다.
+
+Codex 도 담당 레포 workspace 의 같은 탭에 pane 으로 뜬다. 공통 규칙·프로필·레포 규칙 문서는 `developer_instructions`, 계획서·완료 순서·아테나 보고는 Claude 와 같은 첫 지시로 전달한다. Claude 의 자동 `@` 가져오기에 기대지 않고 그 원문도 명시적으로 싣는다. 대상 레포의 `.codex` 설정과 기존 사용자 `config.toml`·`hooks.json` 은 고치지 않는다. 훅은 `$CODEX_HOME/athena-dispatch-<본체·역할 지문>.config.toml` 전용 프로필로 전달한다(Codex 의 프로필 파일 지원 필요 · 0.166에서 확인). 같은 내용·이름을 유지해 신뢰 기록을 재사용한다. 보호 훅·pane 기록·끝 알림은 본체의 절대 경로로 전달한다. 처음 보는 훅은 Codex 자체 창에서 확인해야 실행된다(질문·허락 팝업 통일은 후속 단계).
+
+`reuse-pane.mjs --agent <프로필> [--engine claude|codex]` 도 같은 엔진을 선택한다. 역할·엔진이 맞고 입력 가능한 같은 레포 pane 만 잇는다. 리뷰는 매번 새 pane 이다. `--resume <세션>` 은 Codex 에서는 `codex resume` 으로 열고 첫 지시를 다시 보내지 않는다. `--model` 은 선택한 엔진으로만 전달한다(팩·프로필 모델보다 우선).

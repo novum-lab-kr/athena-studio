@@ -16,6 +16,7 @@ import { existsSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import { isMainModule } from './lib/is-main.mjs'
 import { fileURLToPath } from 'node:url'
+import { dispatchEngine } from './dispatch-engine.mjs'
 import { menuOpen } from './board/pane-delivery.mjs'
 
 /**
@@ -41,13 +42,15 @@ export const isMainCheckout = (dir) => {
  * @param {ScreenPane[]} panes 화면 pane 목록
  * @param {string} agentName 에이전트 이름
  * @param {(paneId: string) => string | null} readText pane 화면 글(못 읽으면 null)
+ * @param {string} engine 엔진(claude · codex)
+ * @param {string} role 역할(agent · reviewer) — reviewer 는 재사용하지 않는다
  * @returns {{ pane: ScreenPane, cwd: string } | { reason: string }}
  */
-export const pickReusable = (panes, agentName, readText) => {
+export const pickReusable = (panes, agentName, readText, engine = "claude", role = "agent") => {
   const mine = panes.filter((pane) => {
     const name = pane.label || pane.name || pane.pane_title || ''
     const match = name.match(/^🤖\s*(\S+)/)
-    return pane.agent === 'claude' && match?.[1] === agentName
+    return pane.agent === engine && match?.[1] === agentName && role === 'agent'
   })
   if (!mine.length) return { reason: `쉬는 ${agentName} pane 이 없다` }
   const skipped = []
@@ -58,7 +61,9 @@ export const pickReusable = (panes, agentName, readText) => {
     if (!cwd || !existsSync(cwd)) { skipped.push(`${pane.id}: 작업 폴더를 모름`); continue }
     const text = readText(pane.id)
     if (text === null) { skipped.push(`${pane.id}: 화면을 읽지 못함`); continue }
-    if (menuOpen(text)) { skipped.push(`${pane.id}: 질문 창이 떠 있음`); continue }
+    // Codex 의 승인·훅 신뢰·모델 선택 창도 idle 이다. 글+Enter 가 선택지를 누르지 않게 막는다.
+    const codexMenu = engine === 'codex' && /(?:press )?enter (?:to (?:confirm|select)|confirm)|esc (?:to )?(?:cancel|skip)|Hooks need review|Would you like to run|Select (?:model|reasoning)/i.test(text.split('\n').slice(-16).join('\n'))
+    if (menuOpen(text) || codexMenu) { skipped.push(`${pane.id}: 질문 창이 떠 있음`); continue }
     return { pane, cwd }
   }
   return { reason: skipped.join(' · ') }
@@ -71,15 +76,26 @@ if (isMainModule(import.meta.url)) {
   const index = process.argv.indexOf('--agent')
   const agentName = index > 0 ? process.argv[index + 1] : ''
   if (!agentName) { console.error('사용: node scripts/reuse-pane.mjs --agent <에이전트>'); process.exit(2) }
+  const option = (/** @type {string} */ name, /** @type {string} */ fallback) => {
+    const at = process.argv.indexOf(name)
+    return at < 0 ? fallback : process.argv[at + 1] || ''
+  }
+  let engine = option('--engine', '')
+  const role = option('--role', 'agent')
+  if (!engine) {
+    try { engine = await dispatchEngine(join(here, '..')) }
+    catch (error) { console.error(error instanceof Error ? error.message : String(error)); process.exit(2) }
+  }
+  if (!['claude', 'codex'].includes(engine) || !['agent', 'reviewer'].includes(role)) { console.error('엔진·역할 값이 이상하다'); process.exit(2) }
   try {
     /** @type {ScreenPane[]} */
     const panes = JSON.parse(screen(['pane', 'list', '--agent-only'])).panes ?? []
     const picked = pickReusable(panes, agentName, (paneId) => {
       try { return screen(['pane', 'read', paneId, '--lines', '40']) } catch { return null }
-    })
+    }, engine, role)
     if ('reason' in picked) { console.error(picked.reason); process.exit(1) }
     const branch = (() => { try { return execFileSync('git', ['-C', picked.cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], { encoding: 'utf8' }).trim() } catch { return '' } })()
-    console.log(JSON.stringify({ pane: picked.pane.id, cwd: picked.cwd, branch, mainCheckout: isMainCheckout(picked.cwd) }))
+    console.log(JSON.stringify({ pane: picked.pane.id, cwd: picked.cwd, branch, mainCheckout: isMainCheckout(picked.cwd), engine, role }))
   } catch {
     console.error('화면 pane 목록을 읽지 못했다')
     process.exit(1)

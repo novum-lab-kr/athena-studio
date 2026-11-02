@@ -167,7 +167,11 @@ exit 0
 SH
 chmod +x "$ATH/scripts/screen"
 printf '# d\n\n## Checkpoint\n- Status: in_progress\n- Work ref: 없음\n' > "$ATH/plans/task/d.md"
-dispatch() { (cd "$ATH" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/d.md --cwd "$DEL" --here 지시문 2>&1); }
+mkdir -p "$TMP/cli-bin"
+printf '#!/bin/sh\nexit 0\n' > "$TMP/cli-bin/claude"
+printf '#!/bin/sh\nexit 1\n' > "$TMP/cli-bin/codex"
+chmod +x "$TMP/cli-bin/claude" "$TMP/cli-bin/codex"
+dispatch() { (cd "$ATH" && env -u ATHENA_AGENT PATH="$TMP/cli-bin:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/d.md --cwd "$DEL" --here 지시문 2>&1); }
 chars_of_last() { grep '"type":"delegate"' "$ATH/.events.jsonl" | tail -1 | sed -E 's/.*"contextChars":([0-9]+).*/\1/'; }
 pack_with '{"add":["big.md"]}'; OUT="$(dispatch)"; WHOLE="$(chars_of_last)"
 check "상한 안이면 안내 줄 없음 · 마지막 pane 줄 그대로" '! echo "$OUT" | grep -q "📄" && echo "$OUT" | grep -Eq "^p9  \(web-fe"' "$OUT"

@@ -1,4 +1,5 @@
-// 역할마다 Claude 모델 — 팩 pack.json 최상위 "models": { "<역할>": "<모델>" } (docs/pack.md "pack.json" · 계획서 2026-10-26 작업별 모델 배분)
+// @ts-check
+// 역할과 엔진마다 모델 — 팩 pack.json 최상위 "models": { "<역할>": "<모델>" } (docs/pack.md "pack.json" · 계획서 2026-10-26 작업별 모델 배분)
 //   agent       담당 에이전트 pane — 정식 계획서(plans/{feature,bugfix,refactor}/…) 작업(delegate.sh — 에이전트 프로필 frontmatter model: 이 있으면 그게 이긴다)
 //   agentLight  담당 에이전트 pane — 경량 계획서(plans/task/…) 작업. 없으면 agent 값 · 그것도 없으면 코어 기본값(delegate.sh — 같은 규칙 · 계획서 2026-10-29 D1)
 //   reviewer    reviewer pane(delegate.sh — 같은 규칙)
@@ -8,7 +9,8 @@
 //   learnReview 배우기 검토(learn-review.mjs)
 //   athena      아테나 — 코어가 띄우지 않으니 기록만(읽는 곳 없음)
 // 어느 역할로 띄울지(경량 · 수정 필요 판정 · 없으면 대신 쓰는 값)는 delegate.sh 만 정한다 — 파이썬 athena_config.agent_model
-// 값은 Claude Code --model 이 받는 이름(opus · sonnet · haiku 또는 전체 이름). 없으면 --model 을 붙이지 않는다(기본 모델).
+// 문자열 값은 기존 Claude 모델. { claude: 이름, codex: 이름 } 은 엔진별 값이며 다른 엔진 값으로 대신하지 않는다.
+// 값이 없으면 엔진 기본 모델(경량 Claude 만 코어 기본값).
 // 형식이 이상하면(모르는 역할 · 문자열 아님 · 빈 값 · 공백 · 따옴표 등) 무시하지 않고 오류 — 기본 모델로 몰래 돌지 않게.
 // 파이썬 쪽 같은 규칙: scripts/lib/athena_config.py model_of
 export const MODEL_ROLES = ['athena', 'agent', 'agentLight', 'reviewer', 'reviewerEscalated', 'prReview', 'prReviewSecond', 'learnReview']
@@ -17,20 +19,28 @@ export const MODEL_ROLES = ['athena', 'agent', 'agentLight', 'reviewer', 'review
 export const DEFAULT_AGENT_LIGHT_MODEL = 'claude-opus-5-5'
 const MODEL_NAME = /^[A-Za-z0-9][A-Za-z0-9._:@/[\]-]*$/
 
-export const modelOf = (config, role) => {
+/** @param {{models?: unknown} | null | undefined} config @param {string} role @param {string} engine */
+export const modelOf = (config, role, engine = 'claude') => {
+  if (!['claude', 'codex'].includes(engine)) throw new Error(`모르는 엔진: ${engine}`)
   if (!MODEL_ROLES.includes(role)) throw new Error(`모르는 모델 역할: ${role}`)
   const models = config?.models
   if (models === undefined || models === null) return ''
   if (typeof models !== 'object' || Array.isArray(models)) throw new Error('pack.json "models" 는 { "<역할>": "<모델>" } 모양이어야 한다')
   for (const [key, value] of Object.entries(models)) {
     if (!MODEL_ROLES.includes(key)) throw new Error(`pack.json "models" 에 모르는 역할: ${key}(가능: ${MODEL_ROLES.join(' · ')})`)
-    if (typeof value !== 'string' || !MODEL_NAME.test(value)) throw new Error(`pack.json "models.${key}" 모델 이름이 이상하다: ${JSON.stringify(value)}`)
+    const values = typeof value === 'object' && value !== null && !Array.isArray(value) ? value : { claude: value }
+    if (!Object.keys(values).length || Object.keys(values).some((tool) => !['claude', 'codex'].includes(tool))) throw new Error(`pack.json models.${key} 엔진은 claude · codex 만 쓴다`)
+    for (const name of Object.values(values)) {
+      if (typeof name !== 'string' || !MODEL_NAME.test(name)) throw new Error(`pack.json models.${key} 모델 이름이 이상하다`)
+    }
   }
-  return models[role] ?? ''
+  const value = /** @type {Record<string, string | Record<string, string>>} */ (models)[role]
+  return typeof value === 'object' ? value[engine] ?? '' : engine === 'claude' ? value ?? '' : ''
 }
 
 // claude 인자 — 값이 없으면 빈 배열
-export const modelArgs = (config, role) => {
-  const model = modelOf(config, role)
+/** @param {{models?: unknown} | null | undefined} config @param {string} role @param {string} engine */
+export const modelArgs = (config, role, engine = 'claude') => {
+  const model = modelOf(config, role, engine)
   return model ? ['--model', model] : []
 }

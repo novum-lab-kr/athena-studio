@@ -306,7 +306,7 @@ def in_other_app(tree, raw, other_apps):
     return path.startswith(other_apps) or (tree.resolve(path) or path).startswith(other_apps)
 
 
-def prepare(athena_dir, agent, work_dir):
+def prepare(athena_dir, agent, work_dir, engine="claude"):
     """에이전트 세션에 실을 것 — { section: 절 글, listed: 목록으로 돌린 절대 경로들, notes: 디스패치 보고에 낼 줄들 }"""
     repo, entry = repo_entry_for(athena_dir, work_dir)
     notes = []
@@ -318,7 +318,9 @@ def prepare(athena_dir, agent, work_dir):
         add = [path for path in add if not in_other_app(tree, path, other_apps)]
     found = discover(tree, dirs, add, exclude)
     loaded = []
-    for path in found['docs']:
+    # Codex 는 Claude 의 @ 가져오기를 하지 않는다 — 같은 원문을 명시적으로 싣는다.
+    include_auto = engine == 'codex' and os.path.realpath(work_dir) != os.path.realpath(athena_dir)
+    for path in found['docs'] + (found['auto'] if include_auto else []):
         try:
             loaded.append((path, tree.read(path)))
         except (UnicodeDecodeError, OSError):
