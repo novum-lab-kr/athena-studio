@@ -177,6 +177,10 @@ if [ -z "$PROMPT" ] && [ -n "$PLAN_ISSUE" ] && [ -f "$ATHENA_DIR/$PLAN_ISSUE" ];
 elif [ -z "$PROMPT" ]; then
   PLAN_HEADER="${PLAN_HEADER}지금은 지시가 없다. 브랜치·미커밋 상태만 확인해 한 줄로 보고하고 사용자의 요청을 기다린다. 첫 요청을 받으면 계획서의 제목(# 줄)과 '## 지시' 절을 그 요청으로 바꿔 적고 진행한다. "
 fi
+# git 없는 프로젝트(결정 D4) — commit.sh · ship.sh 를 못 쓰니 뒷일을 맥 실행기로 넘긴다
+if [ "$AGENT" != reviewer ] && [ -n "$WORKDIR" ] && [ "$WORKDIR" != "$ATHENA_DIR" ] && [ -d "$WORKDIR" ] && ! git -C "$WORKDIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  PLAN_HEADER="${PLAN_HEADER}이 폴더는 git 이 없다 — 작업을 끝냈으면 전체 검증을 직접 돌리지 말고 node $ATHENA_DIR/scripts/local-finish.mjs --plan $ATHENA_DIR/$PLAN --dir $WORKDIR 로 넘기고 보고한다. 검증과 완료 표시는 뒤에서 돌고 실패 원문만 이 pane 으로 온다. "
+fi
 # 지시가 있든 없든(현황판 [작업 시작]도) — 범위가 커지면 멈춘다
 PLAN_HEADER="${PLAN_HEADER}요청이 여러 레포·API·구조 변경으로 커지면 멈추고 정식 계획서가 필요하다고 알린다. 버그 수정이면 AGENTS.md 5절대로 재현부터 확인하고 수정 전·후를 같은 방법으로 비교한다. "
 fi
