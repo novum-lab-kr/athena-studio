@@ -1,6 +1,7 @@
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/delegate.sh reviewer --here --plan plans/task/20261001-fe-test.md
 --- exit 0
 --- stdout
+올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만 draft PR
 p9  (reviewer — 계획서 plans/task/20261001-fe-test.md · 현재 탭 · cwd: <ATHENA>)
    결론 기다리기: <ATHENA>/scripts/review-wait.sh --plan plans/task/20261001-fe-test.md --dir <ATHENA>
 --- stderr

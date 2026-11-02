@@ -74,10 +74,10 @@ Checkpoint 는 단계 완료 · 차단 변화 · 리뷰 반영 · 세션 종료(
 `docs/knowledge/<레포>/`(모노레포는 `<레포>/<앱>/`) — `structure.md`(디렉토리 · 라우트 · 스크립트 맵) · `patterns.md`("이런 걸 만들 땐 이 파일을 따라라") · `workflows.md`(반복 작업 체크리스트) · `gotchas.md`(함정 · 이력 · 문서와 코드 불일치 · 설치만 되고 안 쓰는 라이브러리). 레포마다 관례가 달라 다른 레포의 패턴을 가져오지 않는다. `.claude/agents/<이름>.md` 는 역할 · 담당 범위 · 지식 진입점이지 기술 사실의 정본이 아니다(frontmatter 는 Claude 전용 · 본문은 도구 무관).
 
 ## 4. 검증
-에이전트와 리뷰어가 **같은 스크립트**로 검증하고 그 출력 표를 그대로 붙인다.
+**전체 검증은 작업이 끝날 때 한 번만 돌린다.** 작업 중에는 고친 부분만 빠르게 확인하고(그 파일의 테스트 · 문법 · 화면) 요청마다 전체 검증을 돌리지 않는다. 커밋하는 작업은 `commit.sh` 의 엄격 검증이 그 한 번이라 직전에 따로 돌리지 않고, 커밋이 없는 작업(git 이 없는 폴더 등)은 끝날 때 검증 스크립트를 직접 한 번 돌린다. 실패해 고쳤을 때만 다시 돈다. 돌았으면 그 출력 표를 그대로 붙이고, 아직이면 `전체 검증 미실행(커밋 때 돈다)` 으로 보고한다. 리뷰어와 머지는 `reuse.sh` 로 부르니 같은 트리면 다시 돌지 않는다 — 머지 전 같은 HEAD 엄격 검증 조건은 그대로다.
 ```bash
-scripts/verify/<레포>.sh [<앱|패키지…>]          # 에이전트 — 목록 · 인자는 pack/ROUTING.md "검증 스크립트"
-scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어 · commit.sh — 같은 트리로 이미 통과했으면 ♻️ 재사용
+scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어 · commit.sh · 머지 — 같은 트리로 이미 통과했으면 ♻️ 재사용
+scripts/verify/<레포>.sh [<앱|패키지…>]          # 커밋이 없는 작업이 끝날 때 · 사용자가 시킬 때 — 목록 · 인자는 pack/ROUTING.md "검증 스크립트"
 ```
 워크트리는 `ATHENA_VERIFY_DIR=<워크트리>` 를 붙인다(없으면 메인 체크아웃을 검증한다). Node 버전(`.nvmrc`) · 생성물이 없으면 타입 검사 건너뜀 · 재사용 열쇠 · `⏭ 건너뜀(규칙)` 은 실행 전 · 결과가 이상할 때 `docs/knowledge/common/verify.md`. **실행하지 못한 검증을 통과한 것처럼 보고하지 않는다.**
 
@@ -99,7 +99,7 @@ scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어 · commit.s
 - **멈춘 명령은 TaskStop 이나 확인한 pid 의 `kill <pid>` 로만 끈다** — `pkill` · `killall` · 이름으로 찾아 죽이기 금지(macOS pkill 은 패턴 뒤 옵션을 패턴으로 읽고 `-f` 는 `/Applications` 경로까지 맞춘다). 모든 세션에 `scripts/hooks/process-guard.py` 가 걸린다(`verify.md` "무거운 명령")
 - **커밋은 사용자가 요청할 때만 `scripts/commit.sh` 로만** — 지정 파일만 · 워크트리 · 보호 브랜치 제외 · 엄격 검증 · 계획서 `## Commits` 기록. `git commit` 직접 · `add -A` · merge · stash 같은 쓰기는 보호 훅이 막는다 — 꼭 필요하면 아테나 pane 에 이유와 함께 직접 요청한다(거부 이유 · 막는 목록 `git.md`). 커밋 메시지는 레포 최근 관례 · 언어 설정(기본 한국어) · 티켓이 있으면 `feat: PROJ-1234 설명`
 - **push · PR 은 사용자가 "PR 올려줘" 라고 할 때만 `scripts/ship.sh` 로만**(레포 하나짜리 작업만 · 여러 레포는 아테나가 순서를 정해 올린다 — `ship.sh` 가 거부하면 아테나 pane 에 직접 요청). **한 마디로 끝까지**: 커밋 안 된 작업은 `commit.sh` 로 먼저 → 미리보기 초안 → 작업 내용으로 제목(`type(범위): 티켓 요약`) · 본문(`git.md` "PR 제목·본문") 정리 → **묻지 않고** `prBase` 로 draft PR. 리뷰 승인 전이면 그대로 올리고 본문 "확인 필요" · 보고에 적는다(main 직접 레포의 push 만 확인받는다)
-  - **끝나면 저절로 PR**(`"autoMerge": true` 레포의 레포 하나짜리 작업만): 요청을 끝내고 검증이 통과하면 "PR 올려줘" 없이 같은 흐름을 묻지 않고 돈다 — 열린 PR 이 있으면 push 만 · 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(지시문은 그 레포일 때만 이 문장을 싣는다). **자동 PR 을 끈 레포**(`autoPr: false`)는 PR 대신 `ship.sh --plan … --dir … --direct-merge` — PR 없이 `prBase` 에 바로 머지(머지 설정 자동일 때 · 확인 후는 [작업] 요청 · 직접은 브랜치까지만 · 같은 HEAD 엄격 검증 필수 · 강제 push 없음 · `docs/pr-auto.md`). 이 레포에서 일반 PR 실행은 push 전에 막히고(오류에 현재 방식과 `--direct-merge`), 사용자가 직접 "PR 올려줘" 라고 한 경우에만 같은 명령에 `--user-pr` 를 붙인다(요청 출처를 스크립트가 증명하지 못하는 한계 · `docs/pr-auto.md`). 이 길이 push 의 유일한 예외고 다른 직접 push 는 금지
+  - **끝나면 저절로 PR**(`"autoMerge": true` 레포의 레포 하나짜리 작업만): 요청을 끝내면 "PR 올려줘" 없이 같은 흐름을 묻지 않고 돈다(`commit.sh` 의 엄격 검증이 그 한 번) — 열린 PR 이 있으면 push 만 · 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(지시문은 그 레포일 때만 이 문장을 싣는다). **자동 PR 을 끈 레포**(`autoPr: false`)는 PR 대신 `ship.sh --plan … --dir … --direct-merge` — PR 없이 `prBase` 에 바로 머지(머지 설정 자동일 때 · 확인 후는 [작업] 요청 · 직접은 브랜치까지만 · 같은 HEAD 엄격 검증 필수 · 강제 push 없음 · `docs/pr-auto.md`). 이 레포에서 일반 PR 실행은 push 전에 막히고(오류에 현재 방식과 `--direct-merge`), 사용자가 직접 "PR 올려줘" 라고 한 경우에만 같은 명령에 `--user-pr` 를 붙인다(요청 출처를 스크립트가 증명하지 못하는 한계 · `docs/pr-auto.md`). 이 길이 push 의 유일한 예외고 다른 직접 push 는 금지
   - **PR 자동 리뷰 예외**(같은 레포): `[자동 리뷰 → <나>]` 로 온 수정 지시는 묻지 않고 고쳐 `commit.sh` → `ship.sh --auto-push`(그 PR 브랜치에 빨리 감기만). 머지는 에이전트가 하지 않는다 — Claude · Codex 둘 다 승인 + 같은 HEAD 검증 + 충돌 없음 + 사람의 [머지](레포가 `"autoMergeConfirm": false` 면 바로 · 리뷰 끔 · 사람이 직접 등 레포 설정은 `docs/pr-auto.md` "켜기") 뒤 자동 흐름이 squash 로(`docs/pr-auto.md`). 사람 세션의 보호 훅은 그대로
 - **토큰 · 키 · 비밀번호는 무조건 노출 금지**(`.env*` · 토큰 · 키 파일 내용은 출력 · 커밋하지 않는다). 값은 어떤 경로로든 출력하지 않는다 — 파일 읽기(`.npmrc` · `.env*` · 키 파일, `git show/diff/log` 포함), `npm/pnpm/yarn config get·list`, `printenv` · `env`, 프로세스 전체 인자(`pgrep -fl` · `ps aux` · `ps -ef` — 환경 변수가 섞인다, `ps -axo pid=,comm=` 만), `echo $…TOKEN`, `gh auth token`, 로그 · 보고 · 커밋 메시지 · 계획서 모두. 확인은 **있는지 · 참조 형태(`${…}`) · 길이 · HTTP 상태 코드만**(`curl -s -o /dev/null -w '%{http_code}'`), 봐야 하면 `sed 's/_authToken=.*/_authToken=***/'` 로 가린 뒤. 실수로 노출되면 즉시 멈추고 알려 폐기 · 재발급을 권한다. 모든 세션에 `scripts/hooks/secret-guard.py` 가 걸려 흔한 경로를 막는다(보안 경계는 아니다 — 규칙이 우선)
 - **아테나 스크립트에서 화면(pane · 탭 · workspace)은 `scripts/screen` 으로만** — 데몬 CLI 를 직접 부르지 않는다(pane 결과 읽기도 `scripts/screen pane read <id>` · 자세히 `docs/extending.md` "화면 계층")
@@ -108,7 +108,7 @@ scripts/verify/reuse.sh <레포> [<앱|패키지…>]    # 리뷰어 · commit.s
 사용자가 먼저 알고 싶은 것부터, 쉬운 말로 짧게(자세히 `docs/knowledge/common/reporting.md`).
 1. **무엇이 달라졌나** — 요청 항목별 완료 / 미완료 / 다르게 한 것과 이유
 2. **어디서 확인하나** — 화면 주소 · PR · 바뀐 파일(경로)
-3. **검증 결과** — 실패는 원문, 실행 못 한 것은 "실행 못 함". Validation 줄은 검증 스크립트가 계획서에 적는다
+3. **검증 결과** — 실패는 원문, 실행 못 한 것은 "실행 못 함", 아직 돌리지 않은 전체 검증은 "전체 검증 미실행(커밋 때 돈다)". Validation 줄은 검증 스크립트가 계획서에 적는다
 4. **남은 일 · 위험** — 사용자가 해야 할 것(맨 위), 확인 못 해 멈춘 것(무엇을 모르는지 · 확인에 필요한 것), 범위 밖 수정 필요, 다른 서비스 영향. 추측으로 처리한 부분은 있으면 안 된다
 
 - 승인된 범위 안의 후속 일(리뷰 지적 반영 · 재검증 · 다른 pane 에 전달 · Status 갱신)은 끝내고 나서 보고한다. 묻는 것은 범위 · 사용자 동작 · 외부 계약 · 데이터가 달라질 때와 커밋 · push · PR 뿐. 다른 pane(아테나 포함)에 넘길 일은 사용자에게 부탁하지 않고 직접 보낸다(`scripts/screen pane send-text <pane> '[<나> → <받는 쪽>] …' --enter`)

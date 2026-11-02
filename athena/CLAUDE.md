@@ -59,7 +59,7 @@
 - 배치는 workspace = 레포, 한 탭에 pane 을 나란히 · `reviewer` · 단발 조사는 `--here`. **레포를 넘는 작업은 순차로**(공유 패키지 먼저) · 독립 서비스는 동시에 · 같은 기능을 여러 서비스에 넣으면 계획서에 **공통 스펙**(문구 · 동작 · env 키). 기본은 프롬프트 없이 pane 을 열고 그 안에서 지시
 
 ### 4단계: 작업 · 커밋 (pane 에서 반복)
-- 에이전트가 요청마다 Status 를 `in_progress` ↔ `ready_for_review` 로 옮기고, 같은 검증 스크립트를 돌려 표를 그대로 보고한다. 커밋 · push · PR 은 공통 문서 5절대로 에이전트가 pane 에서(`commit.sh` · `ship.sh`)
+- 에이전트가 요청마다 Status 를 `in_progress` ↔ `ready_for_review` 로 옮기고, 작업 중에는 고친 부분만 확인한다. 전체 검증은 끝날 때 한 번(`commit.sh` 의 엄격 검증 · 공통 문서 4절)이고 돌았으면 표를 그대로 보고한다. 커밋 · push · PR 은 공통 문서 5절대로 에이전트가 pane 에서(`commit.sh` · `ship.sh`)
 - **레포 하나짜리 작업은 pane 에서 끝까지**(작업 → 리뷰 → 커밋 → PR) — 아테나로 돌아오지 않는다. 리뷰 기준은 공통 문서 6절, 결정 필요 · 수정 필요 처리와 "PR 올려줘" 흐름은 `docs/workflow.md` 4절. PR 은 항상 마지막 단계가 아니다 — 올리는 방식(PR · 바로 머지 · main 직접)은 레포 설정마다 달라 디스패치 결과의 한 줄이 알려 준다(`docs/dispatch.md`)
 - **PR 자동 리뷰**(`"autoMerge": true` 레포)는 현황판이 draft PR 을 감지해 Claude · Codex 가 리뷰하고 수정 · 머지 확인까지 돈다 — 리뷰 끔 · 머지 방식은 레포마다(`docs/pr-auto.md` "켜기")
 

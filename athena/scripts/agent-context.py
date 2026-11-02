@@ -45,7 +45,7 @@ parts = [
     "# 아테나 작업 컨텍스트 (워크트리 실행)",
     f"- 아테나 루트: `{hermes_dir}` — 아래 문서의 `docs/`, `scripts/`, `plans/`, `issues/` 상대 경로는 모두 여기 기준이다",
     f"- 작업 디렉토리(워크트리): `{workdir}` — 코드 변경은 여기서만 한다. 에이전트 프로필의 `repos/<레포>` 는 메인 체크아웃이므로 수정하지 않는다",
-    "- 검증 스크립트는 아테나 루트의 `scripts/verify/*.sh` 를 절대 경로로 실행한다. "
+    "- 전체 검증은 끝날 때 한 번(`AGENTS.md` 4절). 검증 스크립트는 아테나 루트의 `scripts/verify/*.sh` 를 절대 경로로 실행한다. "
     "환경변수 `ATHENA_VERIFY_DIR` 가 이 워크트리를 가리키므로 워크트리가 검증된다",
     "",
     agent_rules((hermes / "AGENTS.md").read_text(encoding="utf-8")),

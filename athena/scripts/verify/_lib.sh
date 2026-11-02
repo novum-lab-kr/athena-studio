@@ -76,7 +76,7 @@ verify_key() { # verify_key <검증 스크립트> <트리> <인자> — 통과 �
   # 기준 merge-base — 범위 검증(verify_scope_init)은 기준 대비 바뀐 파일로 단계를 정한다. 트리가 같아도 기준이 달라지면 범위가 달라지니 열쇠에 넣는다
   printf 'tree %s\ndir %s\nscript %s\nargs %s\nnode %s\npython3 %s\nbase %s\nfull %s\n' "$tree_hash" "$(cd "$tree" && pwd -P)" "$script_hash" "$args" \
     "$(node -v 2>/dev/null || echo none)" "$(command -v python3 >/dev/null 2>&1 && echo yes || echo no)" \
-    "$(verify_merge_base "$(basename "$script" .sh)" "$tree" || echo none)" "${ATHENA_VERIFY_FULL:-}" | shasum | cut -c1-24
+    "$(verify_merge_base_after_commit "$(basename "$script" .sh)" "$tree" || echo none)" "${ATHENA_VERIFY_FULL:-}" | shasum | cut -c1-24
 }
 
 resolve_repo_dir() { # resolve_repo_dir <메인 체크아웃> — 검증할 트리 경로를 출력한다
@@ -246,16 +246,33 @@ verify_merge_base() {
   [ -n "$merge_base" ] && echo "$merge_base"
 }
 
+# verify_merge_base_after_commit <레포> <트리> — 지금 트리를 커밋한 뒤의 merge-base. 평소엔 verify_merge_base 와 같다
+# merge 중이면 커밋 뒤 merge-base 가 앞으로 옮겨 가므로, 부모만 같은 커밋을 임시로 만들어 미리 구한다 — 그래야 merge 커밋의 엄격 검증 기록을 커밋 뒤 머지 조건이 재사용한다
+verify_merge_base_after_commit() {
+  local repo="$1" tree="$2" merge_head probe base candidate pr_base
+  merge_head="$(git -C "$tree" rev-parse -q --verify MERGE_HEAD 2>/dev/null)"
+  [ -n "$merge_head" ] || { verify_merge_base "$repo" "$tree"; return; }
+  probe="$(git -C "$tree" -c user.name=athena -c user.email=athena@localhost commit-tree 'HEAD^{tree}' -p HEAD -p "$merge_head" -m probe 2>/dev/null)" || return 1
+  pr_base="$(verify_pack_prbase "$repo")"
+  for candidate in ${pr_base:+"origin/$pr_base"} '@{upstream}' origin/HEAD origin/main; do
+    git -C "$tree" rev-parse -q --verify "$candidate^{commit}" >/dev/null 2>&1 && { base="$candidate"; break; }
+  done
+  [ -n "${base:-}" ] && git -C "$tree" merge-base "$probe" "$base" 2>/dev/null
+}
+
 # verify_changed_files <레포> — 지금 폴더가 든 git 트리에서 바뀐 파일의 절대 경로(실제 경로)를 한 줄에 하나.
 # 기준 ref 를 못 찾으면 미커밋 · 미추적만 내고 1 을 돌려준다(부르는 쪽이 그 사실을 표에 적는다)
 verify_changed_files() {
-  local repo="$1" merge_base top status=0
+  local repo="$1" merge_base after_commit top status=0
   top="$(git rev-parse --show-toplevel 2>/dev/null)" || return 1
   top="$(cd "$top" && pwd -P)"
   merge_base="$(verify_merge_base "$repo" "$top")"
   [ -n "$merge_base" ] || status=1
+  after_commit="$(verify_merge_base_after_commit "$repo" "$top")"
   {
     [ -n "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only --no-renames "$merge_base" HEAD
+    # merge 중이면 커밋 뒤 범위(옮겨 간 merge-base 기준)까지 넣는다 — 재사용되는 기록이 커밋 뒤에 돌 범위를 빠짐없이 덮게
+    [ -n "$after_commit" ] && [ "$after_commit" != "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only --no-renames "$after_commit"
     git -c core.quotePath=false -C "$top" diff --name-only --no-renames --cached
     git -c core.quotePath=false -C "$top" diff --name-only --no-renames
     # 미추적 .omc/(OMC 상태 폴더 — 워크트리마다 생긴다)는 바뀐 파일이 아니다. 세면 범위가 전체로 넓어진다(2026-11-01). 이미 추적하는 .omc/ 파일(.omc/skills)은 위 diff 로 그대로 센다
