@@ -107,7 +107,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 - 그 뒤 또 커밋이 오면(두 번째 수정) → `멈춤 — 라운드 상한`(`auto.stop` `reason: rounds`) · 아테나 pane 에 알림 — 아테나가 이어받는다. 이어받은 HEAD 에 안 정한 결정이 남아 머지 대기가 돼도 옛 흐름과 달리 다음 커밋에 이어받기를 다시 주지 않는다(줄 `결정 필요 — 이어받은 HEAD이지만 … (⚡ 빠른 길 — 다음 커밋은 이어받지 않음)`) — 결정을 반영한 커밋도 멈춤 → 아테나
 - 리뷰 중에 레포 설정이 바뀌어(`fastPath: false`) 빠른 길이 아니게 되면 머지 직전 확인에서 멈춘다(`settingChanged`)
 
-지표(`scripts/lib/metrics.mjs`)의 리뷰 구간은 `ship.sh` 가 PR 을 올린 직후 남기는 `pr.open` 사건(`plan` · `repo` · `pr` · `sha` · `fast`)부터 마지막 리뷰 결론까지다(`pr.open` 이 없는 옛 기록은 첫 리뷰부터). 현황판 계획서 카드에는 `⚡ 빠른 길` 칩이 붙는다.
+지표(`scripts/lib/metrics.mjs`)의 리뷰 구간은 리뷰 한 번의 시작 → 결론이다 — `review` 사건의 `ms`(리뷰어를 돌린 시간)로 잰다. `ms` 가 없는 옛 기록은 직전 커밋 · `auto.push` · `ship.sh` 가 PR 을 올린 직후 남기는 `pr.open` 사건(`plan` · `repo` · `pr` · `sha` · `fast`)부터. 현황판 계획서 카드에는 `⚡ 빠른 길` 칩이 붙는다.
 
 **언제 시작하나** — `ship.sh` 가 켠 레포의 PR 브랜치에 push 하면(새 draft PR · 이미 열린 PR 에 push · `--auto-push`) 그 자리에서 그 PR · 새 HEAD 를 대기열에 넣는다(대상은 위 "무엇이 대상인가" 와 같다 — 레포 하나짜리 · Status `in_progress` · `ready_for_review`, 완료 · 계획 계획서면 `ready_for_review` 로 되돌린 뒤). push 직후 GitHub 가 PR HEAD 를 아직 옛 커밋으로 답하면 처리기가 몇 번(5초 간격 3번) 다시 묻는다. 현황판의 PR 감지(5분 캐시)는 놓친 것(대기열 넣기 실패 · 다른 곳에서 push)을 잡는 안전망으로 남는다 — 같은 대상 규칙(완료 · 계획 계획서의 열린 PR 에 리뷰 안 한 HEAD 가 있으면 레포 하나짜리일 때 `ready_for_review` 로 되돌리고 넣는다). **같은 HEAD 는 한 번만** — 대기 · 처리 중인 같은 일(계획서 · PR · HEAD)은 `--enqueue` 가 막고, 처리기는 하나가 차례로 돌며 끝난 HEAD 는 계획서 `- Auto review:` 줄로 건너뛴다. 그래서 `ship.sh` 와 현황판이 둘 다 넣어도 리뷰는 한 번이다.
 

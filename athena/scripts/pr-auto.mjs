@@ -599,7 +599,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (packed.generated.length) console.log(`  ↪ 생성물 ${packed.generated.length}개는 diff 본문에서 뺐다: ${packed.generated.map((item) => item.path).slice(0, 5).join(', ')}${packed.generated.length > 5 ? ' …' : ''}`)
   if (!packed.complete) console.log(`  ⚠️ diff 가 길어 코드 파일 ${partialCount(packed)}개를 다 넣지 못했다 — 승인이어도 머지 승인으로 세지 않는다`)
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null, fullAgain })
+  const reviewStartedAt = Date.now()
   const results = await runReviewers(prompt, config, inherited, slots)
+  const reviewMs = Date.now() - reviewStartedAt   // 지표의 리뷰 구간(docs/events.md)
   const summary = aggregate(results, limits.reviewers)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${limits.reviewers}(${fast ? '빠른 길 — 하나' : '둘 다'} 승인해야 머지)`)
@@ -628,7 +630,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     return
   }
   if (summary.verdict === 'approve') {
-    logEvent(ROOT, 'review', { ...base, verdict: '승인' })
+    logEvent(ROOT, 'review', { ...base, verdict: '승인', ms: reviewMs })
     return prepareMerge({ planPath, planFile, repo, number, sha, round, note, ref, pr, org, summary, config, ...limits, fast })
   }
   if (summary.verdict === 'insufficient') {
@@ -638,7 +640,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 합의 못 냄 — ${repo}#${number}`, body: `승인 ${summary.approvals}/${limits.reviewers}(${fast ? '빠른 길 — 리뷰어가 답해야' : '둘 다 승인해야'} 머지). 리뷰어: ${reviewerBrief(results)}\n${results.filter((result) => result.status !== 'ok').map((result) => `- ${result.name}: ${result.reason}`).join('\n')}\n사람이 리뷰하고 머지하거나, 리뷰어를 고친 뒤 계획서의 "- Auto review:" 줄을 지우면 다시 돈다.` })
     return
   }
-  logEvent(ROOT, 'review', { ...base, verdict: summary.verdict === 'decision' ? '결정 필요' : '수정 필요' })
+  logEvent(ROOT, 'review', { ...base, verdict: summary.verdict === 'decision' ? '결정 필요' : '수정 필요', ms: reviewMs })
   const takeover = takeoverEligible(summary, round, limits)
   // 구현 세부 결정은 추천안으로 확정(결정 B) — 계획서 Decisions 에 남기고 수정 지시에 싣는다(PR 댓글에는 reviewComment 가 이미 적었다)
   if (summary.autoDecisions.length) {

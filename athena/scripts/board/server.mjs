@@ -41,7 +41,8 @@ import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
 import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
-import { summarize } from '../lib/metrics.mjs'
+import { groupByPlan, parseSinceDate, summarize } from '../lib/metrics.mjs'
+import { scanSessions, workTotals } from '../lib/session-work.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { overview as qaOverview } from '../qa/flows.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
@@ -660,6 +661,33 @@ const readPanes = async () => {
 
 // 대화 기록은 본체 폴더 이름 아래다(메모리는 원본 레포 기준이라 다르다 — claude-paths.mjs)
 const projectDir = projectDirOf(ROOT, homedir())
+
+// 지표 기간 — days=1|7|30|all · since=YYYY-MM-DD(틀린 날짜는 무시) · review=with|without
+const metricsPeriod = (url) => {
+  const review = url.searchParams.get('review')
+  return {
+    days: url.searchParams.get('days') === 'all' ? null : Number(url.searchParams.get('days')) || 7,
+    since: parseSinceDate(url.searchParams.get('since')),
+    review: review === 'with' || review === 'without' ? review : null,
+  }
+}
+// 세션 훑기는 한 번에 하나만 — 바뀌지 않은 세션은 캐시(임시 폴더 · 지워져도 다시 센다)
+let workScan = Promise.resolve()
+const metricsWork = async ({ days, since, review }) => {
+  const from = since ?? (days ? Date.now() - days * 86_400_000 : -Infinity)
+  const scan = workScan.catch(() => {}).then(() => scanSessions({
+    projectsDir: join(homedir(), '.claude/projects'),
+    worktrees: paths(ROOT).worktrees,
+    cachePath: join(tmpdir(), `athena-metrics-sessions-${bodyIdOf(ROOT)}.json`),
+    from,
+  }))
+  workScan = scan
+  const sessions = await scan
+  const picked = review
+    ? new Set(groupByPlan(readEvents(ROOT)).filter((plan) => plan.reviewed === (review === 'with')).map((plan) => plan.plan))
+    : null
+  return workTotals(sessions, { from, picked })
+}
 
 // 메모리 — 아테나 auto memory(*.md). 읽기 전용. 제목은 목차(MEMORY.md) 링크 글자, 순서도 목차를 따른다
 const listMemory = (memoryDir) => {
@@ -1502,8 +1530,7 @@ const handleRequest = async (request, response) => {
   }
   // 지표 — 사건 기록(state/events.jsonl)을 계획서마다 묶은 숫자(scripts/lib/metrics.mjs). 누를 때만 읽는다
   if (url.pathname === '/api/metrics') {
-    const days = url.searchParams.get('days') === 'all' ? null : Number(url.searchParams.get('days')) || 7
-    const summary = summarize(readEvents(ROOT), { days })
+    const summary = summarize(readEvents(ROOT), metricsPeriod(url))
     // 제목은 계획서에서 — 지웠거나 보관했으면 경로만
     for (const plan of summary.plans) {
       const text = plan.plan.startsWith('plans/') && !plan.plan.includes('..') ? readText(join(ROOT, plan.plan)) : null
@@ -1512,6 +1539,12 @@ const handleRequest = async (request, response) => {
     }
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     return response.end(JSON.stringify(summary))
+  }
+  // 작업 안쪽 — 세션 기록을 읽어 오래 걸릴 수 있어 /api/metrics 와 따로(화면이 뒤늦게 채운다)
+  if (url.pathname === '/api/metrics/work') {
+    const work = await metricsWork(metricsPeriod(url))
+    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
+    return response.end(JSON.stringify(work))
   }
   if (url.pathname === '/api/learn') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })

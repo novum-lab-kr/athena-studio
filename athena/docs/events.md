@@ -39,26 +39,31 @@
 
 ## 보기 — 현황판 [지표] 탭 · scripts/metrics.mjs
 
-계산은 `scripts/lib/metrics.mjs` 하나(시험 `test/metrics-test.sh`) — 현황판 [지표] 탭(`/api/metrics?days=7|30|all`)과 명령이 같이 쓴다.
+계산은 `scripts/lib/metrics.mjs` 하나(시험 `test/metrics-test.sh`) — 현황판 [지표] 탭(`/api/metrics?days=1|7|30|all&since=YYYY-MM-DD&review=with|without`)과 명령이 같이 쓴다. 작업 안쪽은 `scripts/lib/session-work.mjs`(`/api/metrics/work` · 탭만).
 
 ```sh
 node scripts/metrics.mjs              # 최근 7일 · 지난 7일과 비교
-node scripts/metrics.mjs --days 30    # --all 전체 · --json
+node scripts/metrics.mjs --days 30    # --all 전체 · --since 2026-11-01 · --review with|without · --json
 ```
 
 | 숫자 | 뜻 |
 |---|---|
-| 완료 | 그 기간에 done 이 된 계획서(done 뒤 다시 열렸으면 빼고) |
-| 평균 소요 | 처음 본 때(`plan.status` from null) → done. 기록 전에 시작한 계획서는 뺀다(칸에 "시작 기록 N개 기준") |
+| 완료 | 그 기간에 끝(첫 머지 · 머지 없으면 done)이 든 계획서 |
+| 시작 → 첫 머지 | 대표 소요 — 처음 본 때(`plan.status` from null) → 첫 `auto.merge` ok, 머지 없으면 done. 평균 · 중앙값 · p75(선형 보간). 머지 / done 기준 / 시작 기록 없어 빠진 건수를 같이 적는다 |
+| 머지 → 완료 표시 | 마지막 머지 → done. 소요와 따로(첫 머지 뒤 이어 한 일이 있으면 그 시간도 들어 "첫 머지 뒤 커밋 N건" 을 같이 적는다) |
 | 작업당 질문 | 완료한 작업마다 요청이 open 이 된 횟수의 평균 — 열린 채로 고친 것은 세지 않는다 |
 | 평균 답 대기 | 그 기간에 답이 온 요청의 open → answered · delivered |
 | 검증 실패율 · 리뷰 반려율 | 그 기간의 `verify` 중 실패 · `review` 중 수정 필요 |
-| 구간 평균 — 작업 · 검증 · 리뷰 · 머지 대기 | 그 기간에 done 이 된 계획서 중 그 구간을 아는 것만의 평균(모르는 것이 있으면 "N개 기준"). 작업 = 처음 본 때 → 첫 ready_for_review · 검증 = 그 계획서 `verify` 의 `ms` 합(`plan` · `ms` 가 있는 줄만 — 옛 기록은 모름) · 리뷰 = PR 올림(`pr.open`) → 마지막 리뷰 결론(`pr.open` 이 없는 옛 기록은 첫 리뷰 결론부터 — 그때는 리뷰 1번이면 0) · 머지 대기 = 마지막 리뷰 결론 → `auto.merge` ok(없으면 done) |
+| 구간 — 작업 · 검증 · 답 대기 · 리뷰 · 머지 대기 | 계획서마다 시작 → 끝을 나눈다(다 알면 합 = 소요). 한 순간은 한 구간에만 — 겹치면 검증 > 리뷰 > 머지 대기 > 답 대기 > 작업. 검증 = `verify` 의 `at - ms - wait_ms` → `at`(줄서기 포함) · 리뷰 = 한 번의 시작 → 결론(시작은 `review.ms` · 없으면 수동은 직전 reviewer `delegate`, 옛 자동은 직전 `commit` · `auto.push` · `pr.open`) · 머지 대기 = 작업 끝(첫 머지 전 마지막 `commit` · ready_for_review) → 첫 머지 · 답 대기 = 요청 open → 닫힘 · 작업 = 나머지. 있었던 건만 집계해 "N건 중 M건". 소요를 모르는 줄이 든 계획서는 그 구간과 작업이 0 이 아니라 모름 |
 | 리뷰 라운드 평균 | done 계획서 중 자동 리뷰가 있는 것의 `review`(`by: auto`) 수 평균 |
 | 머지당 수정 | 그 기간의 `auto.fix` 수 ÷ `auto.merge`(ok) 수 — 머지가 없으면 — |
 | 되돌림 | 머지 뒤 되돌린 수 — 되돌림 사건이 아직 없어 "기록 없음"(커밋 메시지 `revert` 로 세지 않는다) |
 
-계획서 표는 그 기간에 무슨 사건이든 있었던 계획서다(최근 것부터). 검증은 `plan` 칸으로 붙고, 없으면 같은 레포 · 브랜치의 커밋 · 리뷰가 있어야 붙는다. 계획서 줄의 막대는 아는 구간만 토막(작업 · 검증 · 리뷰 · 머지 대기)으로 — 다 모르면 전체 소요 한 토막.
+계획서 표는 그 기간에 무슨 사건이든 있었던 계획서다(최근 것부터). 검증은 `plan` 칸으로 붙고, 없으면 같은 레포 · 브랜치의 커밋 · 리뷰가 있어야 붙는다. 계획서 줄의 막대는 아는 구간만 토막으로 — 다 모르면 전체 소요 한 토막.
+
+리뷰 있음 · 없음은 끝(첫 머지 · done) 전에 `review` 가 있었나로 가른다. 지난 기간은 같은 길이의 앞 기간이다.
+
+**작업 안쪽** — Claude 세션 기록(`~/.claude/projects/<워크트리 폴더>/*.jsonl`)을 나눈 합계: 생각·작성(응답 하나 — message id 가 같은 줄들과 그 앞 대기 · 파일 고치기 포함) · 검증·커밋 · 끝날 때까지 기다리기(`until` · `while` + `sleep`, 맨 앞 `sleep`, `review-wait.sh`, Monitor) · 그 밖의 명령 · 파일 읽기. 한 세션 안에서는 겹치지 않고 기간 밖은 잘라 낸다. 세션끼리는 더하기만 해 동시에 돌면 실제 경과보다 클 수 있다. 세션은 `delegate.sh` 의 첫머리 지시(`이 작업의 계획서:` · `새 계획서:`)로 계획서에 잇는다 — reviewer · 표시 없는 세션은 건수만, AskUserQuestion(사람 대기) · 서브에이전트 줄 · Codex 세션은 세지 않는다.
 
 ## 셸에서 남기기
 
