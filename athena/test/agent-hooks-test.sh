@@ -14,7 +14,7 @@ printf 'rules\n' > "$BODY/AGENTS.md"
 for name in fe reviewer; do printf -- '---\nname: %s\ndescription: x\n---\nbody\n' "$name" > "$BODY/.claude/agents/$name.md"; done
 
 python3 - "$SRC" "$BODY" "$TMP" <<'PY'
-import json, os, subprocess, sys
+import json, os, pathlib, shutil, subprocess, sys
 src, body, tmp = sys.argv[1:4]
 fail = 0
 def check(label, ok, detail=""):
@@ -59,6 +59,42 @@ json.dump({"repos": [{"name": "app", "agents": ["fe"], "permissionsAllow": [rule
 for mode in ("inline", "context"):
     check(f"permissionsAllow 있음 — {mode} 담당 에이전트에 allow", settings(mode, "fe").get("permissions") == {"allow": [rule]}, settings(mode, "fe").get("permissions"))
     check(f"permissionsAllow 있음 — {mode} reviewer 에는 없음", "permissions" not in settings(mode, "reviewer"))
+# Codex는 exec_command도 Bash · tool_input.command로 전달한다(공식 Hooks 문서).
+# 실제 설정의 명령을 공백 든 경로·하위 폴더에서 실행해 git 루트 경로 해석도 확인한다.
+codex_body = pathlib.Path(tmp) / "codex body"
+(codex_body / "scripts/hooks").mkdir(parents=True)
+(codex_body / "nested").mkdir()
+subprocess.run(["git", "init", "-q", str(codex_body)], check=True)
+for name in ("secret-guard.py", "process-guard.py", "commit-guard.py"):
+    shutil.copyfile(f"{src}/scripts/hooks/{name}", codex_body / "scripts/hooks" / name)
+    pathlib.Path(body, "scripts/hooks").mkdir(exist_ok=True)
+    shutil.copyfile(f"{src}/scripts/hooks/{name}", pathlib.Path(body, "scripts/hooks", name))
+codex = json.loads(pathlib.Path(src, ".codex/hooks.json").read_text())
+entries = codex["hooks"].get("PreToolUse", [])
+check("Codex — Bash 실행 전 훅으로 연결", len(entries) == 1 and entries[0].get("matcher") == "Bash", entries)
+handlers = [hook for entry in entries for hook in entry["hooks"]]
+check("Codex — secret · process만 연결(commit은 기존 위임 설정에만)",
+      [hook["command"].split("/")[-1].rstrip('"') for hook in handlers] == ["secret-guard.py", "process-guard.py"])
+for name, denied, allowed in (
+    ("secret-guard.py", "cat .env", "ps -axo pid=,comm="),
+    ("process-guard.py", "pkill example", "echo pkill"),
+    ("commit-guard.py", "git commit -m example", "git status --short"),
+):
+    # commit은 Codex 공통 설정에 추가하지 않고 기존 위임 대상(fe)의 훅으로만 시험한다.
+    configured = [hook["command"] for hook in handlers if name in hook["command"]]
+    command = configured[0] if configured else None
+    if name == "commit-guard.py":
+        command = next(hook["command"] for entry in fe["hooks"]["PreToolUse"] for hook in entry["hooks"] if name in hook["command"])
+    for text, expected in ((denied, 2), (allowed, 0)):
+        payload = {"session_id": "codex-test", "turn_id": "turn-test", "tool_use_id": "call-test",
+                   "hook_event_name": "PreToolUse", "tool_name": "Bash",
+                   "cwd": str(codex_body / "nested"), "permission_mode": "default",
+                   "tool_input": {"command": text}}
+        result = subprocess.run(command, shell=True, cwd=codex_body / "nested", input=json.dumps(payload),
+                                text=True, capture_output=True) if command else None
+        check(f"Codex 입력 — {name} {expected=}", result is not None and result.returncode == expected)
+        if expected == 2:
+            check(f"Codex 입력 — {name} 차단 이유는 stderr", result is not None and bool(result.stderr.strip()))
 sys.exit(fail)
 PY
 status=$?

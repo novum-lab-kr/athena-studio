@@ -4,10 +4,11 @@
       scripts/agent-monitor.py --recent [분]      최근 N분(기본 120) 안에 수정된 로그 자동 선택 — 10초마다 새 로그도 찾는다
         · 백그라운드 서브에이전트(subagents/agent-*.jsonl)
         · pane 세션(delegate.sh·/call) — 워크트리(.worktrees/)에서 연 세션 로그. 아테나 폴더에서 연 세션은 넣지 않는다
+        · Codex 워크트리 세션(~/.codex/sessions/**/rollout-*.jsonl)도 같은 규칙으로 따라간다
       scripts/agent-monitor.py --stay --recent [분] 로그가 없어도 기다리고, 분 넘게 조용한 세션은 빼고, 10분(MONITOR_IDLE_ALERT_SEC) 조용해지면 한 줄 표시
 한 줄 = [라벨] 도구 · 요약. 라벨은 서브에이전트면 첫 user 프롬프트의 대상 레포/앱, pane 세션이면 워크트리의 레포·브랜치.
 """
-import sys, os, json, time, glob, re, unicodedata, shutil
+import sys, os, json, time, glob, re, unicodedata, shutil, fnmatch
 
 RESET="\x1b[0m"; DIM="\x1b[2m"; BOLD="\x1b[1m"
 COLORS=["\x1b[38;5;80m","\x1b[38;5;222m","\x1b[38;5;150m","\x1b[38;5;213m","\x1b[38;5;208m","\x1b[38;5;117m","\x1b[38;5;180m","\x1b[38;5;120m"]
@@ -52,8 +53,27 @@ def label_from_prompt(text):
 def cols():
     try: return max(40, shutil.get_terminal_size().columns)
     except Exception: return 100
+def patch_changes(patch):
+    """패치 본문을 보관하지 않고 헤더의 작업·경로만 남긴다."""
+    if not isinstance(patch, str): return []
+    changes, started = [], False
+    for line in patch.splitlines():
+        if line == "*** Begin Patch":
+            started = True; continue
+        if not started: continue
+        if line == "*** End Patch": break
+        file = re.match(r"^\*\*\* (Add|Update|Delete) File: (.+)$", line)
+        move = re.match(r"^\*\*\* Move to: (.+)$", line)
+        if file: changes.append({"kind": file[1], "path": file[2].strip()})
+        elif move: changes.append({"kind": "Move", "path": move[1].strip()})
+    return changes
+
 def summarize_tool(name, inp):
     n = cols() - 26  # 라벨·아이콘·도구명 자리 제외
+    if name=="apply_patch":
+        changes = inp.get("changes") if isinstance(inp.get("changes"), list) else []
+        summary = " · ".join(f"{change.get('kind', '')} {change.get('path', '')}" for change in changes if isinstance(change, dict))
+        return clip(summary or "apply_patch", n)
     if name=="Bash": return clip(inp.get("description") or inp.get("command",""), n)
     if name in ("Read",): return clip(inp.get("file_path",""), n)
     if name=="Grep": return clip(f"{inp.get('pattern','')}  in {inp.get('path','')}", n)
@@ -63,6 +83,19 @@ def summarize_tool(name, inp):
     return clip(json.dumps(inp, ensure_ascii=False), n)
 
 PANE_BACKLOG=5   # pane 세션은 기록이 길어서 처음엔 마지막 몇 줄만 보여 주고 이어서 따라간다
+WORKTREE_RE = re.compile(r"/(?:\.worktrees|packs/[^/]+/worktrees)/([^/]+)/")
+
+def codex_meta(path):
+    """Codex 기록 첫머리의 세션 메타데이터만 읽는다. 대화 본문은 탐색에 쓰지 않는다."""
+    try:
+        with open(path, encoding="utf-8") as f:
+            line = f.readline(1024 * 1024 + 1)
+            if not line.endswith("\n") or len(line.encode("utf-8")) > 1024 * 1024: return {}
+            first = json.loads(line)
+        if first.get("type") == "session_meta" and isinstance(first.get("payload"), dict):
+            return first["payload"]
+    except (OSError, ValueError, AttributeError): pass
+    return {}
 
 def pane_label(path):
     """pane 세션 로그의 cwd·gitBranch 로 '레포·브랜치' 라벨을 만든다"""
@@ -71,11 +104,19 @@ def pane_label(path):
             for line in f:
                 try: d=json.loads(line)
                 except Exception: continue
+                if d.get("type") == "session_meta":
+                    d = d.get("payload") or {}
+                    branch = (d.get("git") or {}).get("branch")
+                else:
+                    branch = d.get("gitBranch")
                 cwd=d.get("cwd") or ""
                 if not cwd: continue
-                m=re.search(r"/(?:\.worktrees|packs/[^/]+/worktrees)/([^/]+)/", cwd)   # 본체 안 .worktrees · 여러 팩 구조의 packs/<팩>/worktrees
-                repo=m.group(1) if m else os.path.basename(cwd)
-                branch=d.get("gitBranch") or os.path.basename(cwd)
+                m=WORKTREE_RE.search(cwd)   # 본체 안 .worktrees · 여러 팩 구조의 packs/<팩>/worktrees
+                folder=os.path.basename(cwd)
+                if not m and d.get("cwd") and re.search(r"/\.athena-studio/bodies/[^/]+(?:/|$)", cwd) and "git" in d:
+                    folder="athena"
+                repo=m.group(1) if m else folder
+                branch=branch or folder
                 return f"{repo}·{branch}"
     except Exception: pass
     return "pane"
@@ -84,7 +125,7 @@ class Tail:
     def __init__(self, path, idx, pane=False):
         self.path=path; self.f=open(path,"r",encoding="utf-8"); self.color=COLORS[idx%len(COLORS)]
         self.pane=pane; self.label=pane_label(path) if pane else None
-        self.done=False; self.tools=0
+        self.done=False; self.tools=0; self.model=None
     def read_new(self):
         lines=[]
         while True:
@@ -95,12 +136,75 @@ class Tail:
             lines.append(line)
         return lines
 
+def codex_model(d):
+    """모델 문맥이 없는 줄은 None, 명시적으로 비었으면 빈 문자열로 이전 모델을 지운다."""
+    if not isinstance(d, dict) or not isinstance(d.get("payload"), dict): return None
+    p = d["payload"]
+    context = p if d.get("type") == "turn_context" else p.get("thread_settings") if d.get("type") == "event_msg" and p.get("type") == "thread_settings_applied" else None
+    if not isinstance(context, dict) or "model" not in context: return None
+    model = context["model"]
+    return model if isinstance(model, str) and re.match(r"^[a-z]", model, re.I) else ""
+
+def tool_icon(name, inp):
+    if name == "apply_patch" and isinstance(inp.get("changes"), list) and inp["changes"]:
+        return TOOL_ICON["Write"] if all(change.get("kind") == "Add" for change in inp["changes"]) else TOOL_ICON["Edit"]
+    return TOOL_ICON.get(name, "•")
+
+def codex_message(d, model=None):
+    """실측한 response_item을 기존 렌더러 입력으로 바꾼다. event_msg는 중복이라 표시하지 않는다."""
+    if not isinstance(d, dict): return {}
+    p = d.get("payload")
+    if not isinstance(p, dict): return {}
+    if d.get("type") == "session_meta":
+        git = p.get("git") if isinstance(p.get("git"), dict) else {}
+        return {"cwd": p.get("cwd"), "gitBranch": git.get("branch")}
+    if d.get("type") != "response_item": return {}
+    stamp = {"timestamp": d["timestamp"]} if isinstance(d.get("timestamp"), str) else {}
+    model_part = {"model": model} if isinstance(model, str) and re.match(r"^[a-z]", model, re.I) else {}
+    kind = p.get("type")
+    if kind == "message" and p.get("role") in ("user", "assistant"):
+        content = p.get("content")
+        if not isinstance(content, list): return {}
+        text = "\n".join(block.get("text", "") for block in content
+                         if isinstance(block, dict) and block.get("type") in ("input_text", "output_text") and isinstance(block.get("text"), str))
+        return {**stamp, "type": p["role"], "message": {**(model_part if p["role"] == "assistant" else {}), "content": text if p["role"] == "user" else [{"type": "text", "text": text}]}}
+    if kind not in ("function_call", "custom_tool_call"): return {}
+    name = p.get("name") if isinstance(p.get("name"), str) and p["name"] else "tool"
+    if kind == "function_call":
+        try:
+            inp = p.get("arguments")
+            if inp is None: inp = {}
+            if isinstance(inp, str): inp = json.loads(inp)
+        except ValueError: return {}
+        if not isinstance(inp, dict): return {}
+    else:
+        inp = {"input": p.get("input") if p.get("input") is not None else ""}
+    if name.rsplit(".", 1)[-1] == "apply_patch":
+        name = "apply_patch"
+        patch = inp.get("patch") if inp.get("patch") is not None else inp.get("input")
+        inp = {"changes": patch_changes(patch)}
+    elif name.rsplit(".", 1)[-1] in ("exec_command", "shell_command", "shell"):
+        name = "Bash"
+        command = inp.get("cmd") or inp.get("command") or ""
+        if isinstance(command, list): command = " ".join(str(part) for part in command)
+        inp = {"command": command, "description": inp.get("description") or inp.get("title")}
+    elif inp.get("title"):
+        # code-mode 등은 실행 코드 전체 대신 도구가 제공한 짧은 설명을 쓴다.
+        inp = {"title": inp["title"]}
+    return {**stamp, "type": "assistant", "message": {**model_part, "content": [{"type": "tool_use", "name": name, "input": inp}]}}
+
 def render(tails, line):
     try: d=json.loads(line)
     except Exception: return []
+    if not isinstance(d, dict): return []
+    model = codex_model(d)
+    if model is not None: tails.model = model or None
+    is_codex = d.get("type") == "response_item"
+    if is_codex: d = codex_message(d, tails.model)
     out=[]
     msg=d.get("message") or {}
     content=msg.get("content")
+    model_text=(msg.get("model") + " ") if is_codex and isinstance(msg.get("model"), str) else ""
     t=tails
     if d.get("type")=="user" and t.label is None and isinstance(content,str):
         t.label=label_from_prompt(content); out.append(f"{t.color}{BOLD}[{t.label}]{RESET} {DIM}시작{RESET}")
@@ -114,23 +218,61 @@ def render(tails, line):
     for block in content:
         bt=block.get("type")
         if bt=="tool_use":
-            t.tools+=1; name=block.get("name",""); icon=TOOL_ICON.get(name,"•")
-            out.append(f"{t.color}[{t.label or 'agent'}]{RESET} {icon} {name:<6} {DIM}{summarize_tool(name, block.get('input') or {})}{RESET}")
+            t.tools+=1; name=block.get("name",""); icon=tool_icon(name, block.get("input") or {})
+            out.append(f"{t.color}[{t.label or 'agent'}]{RESET} {icon} {name:<6} {DIM}{model_text}{summarize_tool(name, block.get('input') or {})}{RESET}")
             if name=="SubagentHandback": t.done=True
         elif bt=="text" and d.get("type")=="assistant":
             txt=block.get("text","").strip()
-            if txt and len(txt)>3: out.append(f"{t.color}[{t.label or 'agent'}]{RESET} 💬 {clip(txt, cols()-22)}")
+            if txt and len(txt)>3: out.append(f"{t.color}[{t.label or 'agent'}]{RESET} 💬 {model_text}{clip(txt, cols()-22)}")
     return out
+
+PANE_PROJECT_PATTERNS = ("*--worktrees-*", "*-packs-*-worktrees-*")
+
+def project_dir_name(cwd):
+    return re.sub(r"[^A-Za-z0-9]", "-", cwd)
+
+def terminal_project_matches(name, active_names):
+    """터미널 모니터는 기존대로 모든 팩 워크트리와 활성 에이전트 pane을 본다."""
+    return name in active_names or any(fnmatch.fnmatchcase(name, pattern) for pattern in PANE_PROJECT_PATTERNS)
+
+def active_agent_cwds():
+    """앱과 같은 화면 계층의 agent·foreground_cwd/cwd만 읽는다. 화면 밖이면 워크트리 탐색을 계속한다."""
+    try:
+        sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), "lib"))
+        import screen
+        return [pane.get("foreground_cwd") or pane.get("cwd") for pane in screen.list_panes(timeout=3)
+                if pane.get("agent") and isinstance(pane.get("foreground_cwd") or pane.get("cwd"), str)]
+    except Exception: return []
+
+def codex_session_matches(cwd, body, worktrees, active=()):
+    """터미널의 Claude 선택 규칙. 앱의 팩 창 범위와 구분해 fixture로 비교한다."""
+    if not cwd: return False
+    active_names = {project_dir_name(value) for value in active if not body or os.path.realpath(value) != os.path.realpath(body)}
+    return terminal_project_matches(project_dir_name(cwd), active_names)
 
 def find_recent(mins):
     """최근 mins 분 안에 바뀐 (경로, pane 세션 여부) 목록"""
     root=os.path.expanduser("~/.claude/projects")
     subagents=[(p,False) for p in glob.glob(f"{root}/*/*/subagents/agent-*.jsonl")]
-    # 워크트리 세션 폴더 — 옛 <본체>/.worktrees/… → '…--worktrees-…' · 여러 팩 구조 …/packs/<팩>/worktrees/… → '…-packs-<팩>-worktrees-…'
-    panes=[(p,True) for pattern in ("*--worktrees-*","*-packs-*-worktrees-*") for p in glob.glob(f"{root}/{pattern}/*.jsonl")]
+    athena_root=os.path.realpath(os.path.join(os.path.dirname(__file__), ".."))
+    active=active_agent_cwds()
+    active_names={project_dir_name(cwd) for cwd in active if os.path.realpath(cwd) != athena_root}
+    # 기존 모든 팩 워크트리 패턴 + 화면 계층에서 받은 일반 에이전트 pane 폴더.
+    panes=[(p,True) for project in glob.glob(f"{root}/*")
+           if terminal_project_matches(os.path.basename(project), active_names)
+           for p in glob.glob(f"{project}/*.jsonl")]
     panes=list(dict.fromkeys(panes))
     now=time.time()
     found=[(p,pane) for p,pane in subagents+panes if now-os.path.getmtime(p) < mins*60]
+    codex_root=os.path.expanduser("~/.codex/sessions")
+    worktrees_root=os.path.realpath(os.path.join(athena_root, ".worktrees"))
+    for p in glob.iglob(f"{codex_root}/**/rollout-*.jsonl", recursive=True):
+        try:
+            if now-os.path.getmtime(p) >= mins*60: continue
+            cwd=codex_meta(p).get("cwd")
+            if isinstance(cwd, str) and codex_session_matches(cwd, athena_root, worktrees_root, active):
+                found.append((p, True))
+        except OSError: continue   # 탐색 도중 지워진 기록은 다음 주기에 다시 본다
     found.sort(key=lambda item: os.path.getmtime(item[0]))
     return found
 

@@ -1,4 +1,4 @@
-// 에이전트 모니터 — Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl) 한 줄을 화면에 보일 이벤트로.
+// 에이전트 모니터 — Claude Code(~/.claude/projects)·Codex(~/.codex/sessions) 기록 한 줄을 화면 이벤트로.
 // 아테나 scripts/agent-monitor.py 와 같은 규칙(도구 아이콘 · 요약 · pane 세션의 사용자 지시). Electron 없이 돌아 `npm test` 로 검사한다
 import path from 'node:path'
 
@@ -18,9 +18,30 @@ function isLoose(value: unknown): value is Loose {
 // 한 줄로 — 줄바꿈·연속 공백을 하나로
 const oneLine = (value: unknown): string => String(value || '').split(/\s+/).filter(Boolean).join(' ')
 
+// 패치는 헤더의 작업·경로만 남긴다. 추가/삭제한 줄은 정규화 결과에도 넣지 않는다.
+function patchChanges(patch: unknown): { kind: string; path: string }[] {
+  if (typeof patch !== 'string') return []
+  const changes: { kind: string; path: string }[] = []
+  let started = false
+  for (const line of patch.split(/\r?\n/)) {
+    if (line === '*** Begin Patch') { started = true; continue }
+    if (!started) continue
+    if (line === '*** End Patch') break
+    const file = line.match(/^\*\*\* (Add|Update|Delete) File: (.+)$/)
+    const move = line.match(/^\*\*\* Move to: (.+)$/)
+    if (file) changes.push({ kind: file[1]!, path: file[2]!.trim() })
+    else if (move) changes.push({ kind: 'Move', path: move[1]!.trim() })
+  }
+  return changes
+}
+
 // 도구 입력 → 한 줄 요약(명령은 설명이 있으면 설명을 먼저)
 export function summarizeTool(name: string, input: unknown): string {
   const value: Loose = isLoose(input) ? input : {}
+  if (name === 'apply_patch') {
+    const changes = Array.isArray(value.changes) ? value.changes : []
+    return changes.filter(isLoose).map(change => `${oneLine(change.kind)} ${oneLine(change.path)}`).join(' · ') || 'apply_patch'
+  }
   if (name === 'Bash') return oneLine(value.description || value.command)
   if (name === 'Read' || name === 'Edit' || name === 'Write') return oneLine(value.file_path)
   if (name === 'Grep' || name === 'Glob') return oneLine(`${value.pattern || ''}  in ${value.path || ''}`)
@@ -29,8 +50,74 @@ export function summarizeTool(name: string, input: unknown): string {
   return oneLine(JSON.stringify(value))
 }
 
+// Codex가 기록한 모델만 사용한다. 모델 문맥이 없는 줄은 undefined, 명시적으로 비었으면 null.
+export function codexModelOf(record: unknown): string | null | undefined {
+  if (!isLoose(record) || !isLoose(record.payload)) return undefined
+  const value = record.payload
+  const context = record.type === 'turn_context' ? value :
+    record.type === 'event_msg' && value.type === 'thread_settings_applied' && isLoose(value.thread_settings) ? value.thread_settings : null
+  if (!context || !('model' in context)) return undefined
+  return typeof context.model === 'string' && /^[a-z]/i.test(context.model) ? context.model : null
+}
+
+function toolIcon(name: string, input: unknown): string {
+  if (name === 'apply_patch' && isLoose(input) && Array.isArray(input.changes) && input.changes.length) {
+    return input.changes.every(change => isLoose(change) && change.kind === 'Add') ? TOOL_ICON.Write! : TOOL_ICON.Edit!
+  }
+  return TOOL_ICON[name] || '•'
+}
+
+// Codex rollout은 session_meta / response_item의 payload에 같은 정보를 담는다.
+// event_msg는 같은 응답을 다시 담으므로 response_item만 기존 Claude 입력으로 정규화한다.
+export function codexRecord(record: unknown, model?: string | null): Loose {
+  if (!isLoose(record) || !isLoose(record.payload)) return {}
+  const value = record.payload
+  if (record.type === 'session_meta') {
+    return { cwd: value.cwd ?? null, gitBranch: (isLoose(value.git) ? value.git.branch : null) ?? null }
+  }
+  if (record.type !== 'response_item') return {}
+  const stamp = typeof record.timestamp === 'string' ? { timestamp: record.timestamp } : {}
+  const modelPart = typeof model === 'string' && /^[a-z]/i.test(model) ? { model } : {}
+  if (value.type === 'message' && (value.role === 'user' || value.role === 'assistant') && Array.isArray(value.content)) {
+    const text = value.content.filter((block): block is Loose => isLoose(block) && (block.type === 'input_text' || block.type === 'output_text') && typeof block.text === 'string').map(block => block.text).join('\n')
+    return { ...stamp, type: value.role, message: { ...(value.role === 'assistant' ? modelPart : {}), content: value.role === 'user' ? text : [{ type: 'text', text }] } }
+  }
+  if (value.type !== 'function_call' && value.type !== 'custom_tool_call') return {}
+  let name = typeof value.name === 'string' && value.name ? value.name : 'tool'
+  let input: Loose
+  if (value.type === 'function_call') {
+    try {
+      const args: unknown = typeof value.arguments === 'string' ? JSON.parse(value.arguments) : value.arguments ?? {}
+      if (!isLoose(args) || Array.isArray(args)) return {}
+      input = args
+    } catch { return {} }
+  } else input = { input: value.input ?? '' }
+  if (name.split('.').at(-1) === 'apply_patch') {
+    name = 'apply_patch'
+    input = { changes: patchChanges(input.patch ?? input.input) }
+  } else if (['exec_command', 'shell_command', 'shell'].includes(name.split('.').at(-1) || '')) {
+    name = 'Bash'
+    const cmd = input.cmd || input.command || ''
+    input = { command: Array.isArray(cmd) ? cmd.map(String).join(' ') : cmd, description: input.description || input.title || null }
+  } else if (input.title) input = { title: input.title }
+  return { ...stamp, type: 'assistant', message: { ...modelPart, content: [{ type: 'tool_use', name, input }] } }
+}
+
+// 기존 앱의 본체·팩 워크트리·활성 pane 판정을 Codex에도 그대로 적용한다.
+// Python 모니터와 공통 fixture로 같은 입력의 판정·정규화를 비교한다.
+export function codexSessionMatches(cwd: string, body: string | null, worktrees: string | null, active: readonly string[]): boolean {
+  if (!cwd) return false
+  const name = projectDirName(cwd)
+  const bodyName = body ? projectDirName(body) : null
+  const worktreesName = worktrees ? projectDirName(worktrees) : null
+  return active.some(dir => projectDirName(dir) === name) ||
+    Boolean(worktreesName && name.startsWith(`${worktreesName}-`)) ||
+    Boolean(bodyName && (name === bodyName || name.startsWith(`${bodyName}--`)))
+}
+
 // 기록의 cwd · gitBranch → '레포·브랜치'(워크트리면 그 레포 — 본체 안 .worktrees/<레포>/ · 여러 팩 구조의 packs/<팩>/worktrees/<레포>/)
 export function sessionLabel(record: unknown): string | null {
+  if (isLoose(record) && record.type === 'session_meta') record = codexRecord(record)
   if (!isLoose(record) || typeof record.cwd !== 'string' || !record.cwd) return null
   const cwd = record.cwd
   const worktree = cwd.match(/\/(?:\.worktrees|packs\/[^/]+\/worktrees)\/([^/]+)\//)
@@ -71,6 +158,7 @@ export function modelShortName(model: string | null | undefined): string | null 
 
 // 기록 한 줄 → 이벤트 목록 { kind: tool | say | user, icon, name, text, at }
 export function eventsFromRecord(record: unknown): FeedEvent[] {
+  if (isLoose(record) && record.type === 'response_item') record = codexRecord(record)
   // 대화 줄(user · assistant)만 — api-request-blob 같은 기록도 같은 content 를 담고 있어 두 번 찍힌다
   if (!isLoose(record) || (record.type !== 'user' && record.type !== 'assistant')) return []
   const at = typeof record.timestamp === 'string' ? record.timestamp : null
@@ -91,7 +179,7 @@ export function eventsFromRecord(record: unknown): FeedEvent[] {
     if (!isLoose(block)) continue
     if (block.type === 'tool_use') {
       const name = String(block.name || '')
-      events.push({ kind: 'tool', icon: TOOL_ICON[name] || '•', name, text: summarizeTool(name, block.input), at, ...(model && { model }) })
+      events.push({ kind: 'tool', icon: toolIcon(name, block.input), name, text: summarizeTool(name, block.input), at, ...(model && { model }) })
     } else if (block.type === 'text' && record.type === 'assistant') {
       const text = oneLine(block.text)
       if (text.length > 3) events.push({ kind: 'say', icon: '💬', name: '', text, at, ...(model && { model }) })

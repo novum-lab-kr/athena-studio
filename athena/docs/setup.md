@@ -3,7 +3,7 @@
 아테나 폴더에서 Claude Code 든 Codex 든 처음 켰는데 **팩이 없으면**(`athena.config.json` 이 없거나 `pack` 이 없거나, 팩 `pack.json` 의 `repos` 가 비었으면) 이 절차를 돈다.
 - **Athena Studio 창의 pane 에서 아테나 본체 폴더로 `claude`·`codex` 를 켜기만 하면 된다** — 세션 시작 훅이 화면을 세팅하고(`scripts/hooks/workspace-up.py` → `athena-up.sh`), 끝나면 그 pane 에 첫 실행 지시를 대신 입력한다(Claude `/setup` · Codex "docs/setup.md 절차를 0단계부터"). 에이전트가 입력을 기다릴 때(화면이 본 `agent_status` idle)만, 새로 켠 세션에서만 보내고, 사용자가 먼저 말을 걸었으면 보내지 않는다(결과는 `$TMPDIR/hermes-up.log`)
 - Claude Code: 훅은 `.claude/settings.json`, 안내는 `scripts/hooks/setup-check.py`, `/setup` 스킬이 이 문서를 따른다
-- Codex: 훅은 `.codex/hooks.json`(같은 스크립트를 `--tool codex` 로 — 처음 켤 때 폴더·훅을 믿을지 한 번 묻는다). 훅이 안 돌면 `AGENTS.md` 맨 앞 "첫 실행" 이 이 문서로 보낸다
+- Codex: 훅은 `.codex/hooks.json`(시작 훅은 같은 스크립트를 `--tool codex` 로). `/hooks` 에서 한 번 믿음 표시해야 돈다(훅이 바뀌면 다시 확인). Bash 실행 전 `secret-guard` · `process-guard` 를 걸지만 `write_stdin` 후속 입력은 검사하지 않는다. 훅이 안 돌면 `AGENTS.md` 맨 앞 "첫 실행" 이 이 문서로 보낸다
 - Studio pane 밖(일반 터미널)이면 화면 세팅·자동 입력 없이 안내만 한다 — 아무 말이나 입력하면 시작한다
 - 바깥 도구가 띄운 창(환경 변수 `ATHENA_AGENT` 가 있음 — 예: 서버의 관리 창)에서는 돌지 않는다
 

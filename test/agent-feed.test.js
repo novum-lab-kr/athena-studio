@@ -85,3 +85,155 @@ test('모델 — assistant 줄의 이벤트에만 짧은 이름이 붙는다', (
   assert.equal('model' in feed.eventsFromRecord({ type: 'assistant', message: { content: [{ type: 'text', text: '모델 없음' }] } })[0], false)
   assert.equal('model' in feed.eventsFromRecord({ type: 'user', message: { content: '지시' } })[0], false)
 })
+
+// 앱과 Python은 같은 가짜 기록·팩 범위 fixture로 판정이 같은지 확인한다.
+const fs = require('node:fs')
+const os = require('node:os')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const logs = require('../src/main/monitor-logs.mts')
+const codexFixture = require('../athena/test/fixtures/codex-monitor.json')
+
+test('Codex 기록 → 기존 한 줄 이벤트 · 앱과 Python 정규화 일치', () => {
+  const records = codexFixture.records
+  assert.equal(feed.sessionLabel(records[0]), 'shop·fix/monitor')
+  const events = records.flatMap(feed.eventsFromRecord)
+  assert.deepEqual(events.map(({ kind, name, text }) => ({ kind, name, text })), [
+    { kind: 'tool', name: 'Bash', text: 'git status --short' },
+    { kind: 'tool', name: 'Bash', text: '상태 확인' },
+    { kind: 'tool', name: 'exec', text: '{"title":"수정 확인"}' },
+    { kind: 'tool', name: 'apply_patch', text: 'Update demo.py' },
+    { kind: 'user', name: '', text: '모니터를 고쳐 주세요' },
+    { kind: 'say', name: '', text: '수정을 확인했습니다' },
+  ])
+  assert.equal(events[0].at, '2026-11-03T01:00:00Z')
+  const result = spawnSync('python3', ['-c', `
+import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('monitor',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+f=json.load(sys.stdin)
+print(json.dumps({'records':[m.codex_message(r) for r in f['records']], 'scope':[m.codex_session_matches(v['cwd'],v['body'],v['worktrees'],v['active']) for v in f['scope']]}))
+`, path.join(__dirname, '../athena/scripts/agent-monitor.py')], { input: JSON.stringify(codexFixture), encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  const python = JSON.parse(result.stdout)
+  assert.deepEqual(records.map(feed.codexRecord), python.records)
+  for (const [index, value] of codexFixture.scope.entries()) {
+    assert.equal(feed.codexSessionMatches(value.cwd, value.body, value.worktrees, value.active), value.expectedApp)
+    assert.equal(python.scope[index], value.expectedPython)
+  }
+})
+
+test('앱 모니터: Codex 팩 분리·활성 pane·120분·메타데이터·이어 읽기', async (t) => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-monitor-test-')))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const projectsDir = path.join(tmp, '.claude/projects')
+  const codexSessionsDir = path.join(tmp, '.codex/sessions')
+  const body = path.join(tmp, 'body')
+  const worktrees = path.join(tmp, 'packs/demo/worktrees')
+  fs.mkdirSync(body)
+  fs.mkdirSync(worktrees, { recursive: true })
+  fs.symlinkSync(worktrees, path.join(body, '.worktrees'))
+  const now = Date.now()
+  const make = (name, cwd, options = {}) => {
+    const file = path.join(codexSessionsDir, '2026/11/03', `rollout-${name}.jsonl`)
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    const meta = { type: 'session_meta', payload: { cwd, git: { branch: 'fix/monitor' }, padding: options.large ? 'x'.repeat(70000) : '' } }
+    fs.writeFileSync(file, JSON.stringify(meta)+'\n'+JSON.stringify(codexFixture.records[1])+'\n')
+    fs.utimesSync(file, new Date(now-(options.age || 0)), new Date(now-(options.age || 0)))
+    return file
+  }
+  const active = make('active', path.join(worktrees, 'shop/fix'), { large: true })
+  const other = make('other', path.join(tmp, 'packs/other/worktrees/shop/fix'))
+  const old = make('old', path.join(worktrees, 'shop/old'), { age: 121*60000 })
+  const lead = make('lead', body)
+  const ordinary = path.join(tmp, 'plain/shop')
+  const pane = make('pane', ordinary)
+  const bad = make('bad', path.join(worktrees, 'shop/bad'))
+  fs.writeFileSync(bad, '{unfinished')
+  const claude = path.join(projectsDir, feed.projectDirName(path.join(worktrees, 'shop/fix')), 'claude.jsonl')
+  fs.mkdirSync(path.dirname(claude), { recursive: true })
+  fs.writeFileSync(claude, JSON.stringify({ type: 'assistant', cwd: path.join(worktrees, 'shop/fix'), gitBranch: 'fix/claude', message: { content: [{ type: 'text', text: 'Claude 유지' }] } })+'\n')
+  const sub = path.join(claude.replace(/\.jsonl$/, ''), 'subagents/agent-child.jsonl')
+  fs.mkdirSync(path.dirname(sub), { recursive: true })
+  fs.writeFileSync(sub, JSON.stringify({ type: 'assistant', message: { content: [{ type: 'text', text: '서브에이전트 유지' }] } })+'\n')
+  const counterparts = [body, ordinary].map((cwd) => {
+    const file = path.join(projectsDir, feed.projectDirName(cwd), 'claude.jsonl')
+    fs.mkdirSync(path.dirname(file), { recursive: true })
+    fs.writeFileSync(file, JSON.stringify({ cwd, type: 'assistant', message: { content: [] } })+'\n')
+    return file
+  })
+  const otherClaude = path.join(projectsDir, feed.projectDirName(path.join(tmp, 'packs/other/worktrees/shop/fix')), 'claude.jsonl')
+  fs.mkdirSync(path.dirname(otherClaude), { recursive: true })
+  fs.writeFileSync(otherClaude, JSON.stringify({ type: 'assistant', message: { content: [] } })+'\n')
+  const monitor = logs.newMonitor()
+  monitor.agentCwds = [ordinary]
+  const finder = logs.createMonitorLogs({ projectsDir, codexSessionsDir })
+  const found = await finder.findMonitorLogs(monitor, true, body)
+  assert.deepEqual(new Set(found.map(v => v.file)), new Set([active, pane, lead, claude, sub, ...counterparts]))
+  assert.ok(!found.some(v => [other, old, bad].includes(v.file)))
+  for (const [codexFile, claudeFile] of [[lead, counterparts[0]], [pane, counterparts[1]], [other, otherClaude]]) {
+    assert.equal(found.some(v => v.file === codexFile), found.some(v => v.file === claudeFile))
+  }
+  const item = found.find(v => v.file === active)
+  const events = await logs.openTail(monitor, item)
+  assert.equal(logs.monitorSessions(monitor)[0].label, 'shop·fix/monitor')
+  assert.equal(events[0].name, 'Bash')
+  const tail = monitor.tails.get(active)
+  const message = JSON.stringify(codexFixture.records[6])
+  fs.appendFileSync(active, message.slice(0, -1))
+  assert.deepEqual(await logs.readNewLines(tail), [])
+  fs.appendFileSync(active, message.slice(-1)+'\n')
+  assert.deepEqual(logs.tailEvents(monitor, tail, await logs.readNewLines(tail)).map(v => v.text), ['수정을 확인했습니다'])
+  assert.deepEqual(await logs.readNewLines(tail), [])
+  monitor.floor = now + 60000
+  assert.deepEqual(await finder.findMonitorLogs(monitor, true, body), [])
+})
+
+test('Codex apply_patch 요약은 작업·경로만: 추가·수정·삭제·이동·잘못된 입력', () => {
+  const patch = '*** Begin Patch\n*** Add File: new.txt\n+FAKE_PATCH_MARKER\n*** Update File: old.txt\n@@\n-FAKE_PATCH_MARKER\n+changed\n*** Move to: moved.txt\n*** Delete File: gone.txt\n*** End Patch'
+  const call = (name, type, input) => ({ type: 'response_item', payload: { name, type, ...(type === 'custom_tool_call' ? { input } : { arguments: JSON.stringify({ patch: input }) }) } })
+  for (const record of [call('apply_patch', 'custom_tool_call', patch), call('functions.apply_patch', 'function_call', patch)]) {
+    const normalized = feed.codexRecord(record)
+    const event = feed.eventsFromRecord(record)[0]
+    assert.equal(event.text, 'Add new.txt · Update old.txt · Move moved.txt · Delete gone.txt')
+    assert.equal(JSON.stringify(normalized).includes('FAKE_PATCH_MARKER'), false)
+    assert.equal(event.text.includes('changed'), false)
+  }
+  for (const bad of ['FAKE_PATCH_MARKER', '+*** Add File: FAKE_PATCH_MARKER', null]) {
+    const event = feed.eventsFromRecord(call('apply_patch', 'custom_tool_call', bad))[0]
+    assert.equal(event.text, 'apply_patch')
+  }
+})
+
+test('Codex 패치 종류에 맞는 Claude 도구 아이콘 · 본문 비노출 유지', () => {
+  for (const [kind, icon] of [['Add', '📝'], ['Update', '✏️'], ['Delete', '✏️']]) {
+    const patch = `*** Begin Patch\n*** ${kind} File: demo.txt\n+FAKE_PATCH_MARKER\n*** End Patch`
+    const event = feed.eventsFromRecord({ type: 'response_item', payload: { type: 'custom_tool_call', name: 'apply_patch', input: patch } })[0]
+    assert.equal(event.icon, icon)
+    assert.equal(event.text.includes('FAKE_PATCH_MARKER'), false)
+  }
+  assert.equal(feed.eventsFromRecord(codexFixture.records[1])[0].icon, '⚙')
+})
+
+test('Codex 모델: 긴 기록 시작 앞 문맥 복원 · 변경 이후 행만 변경 · 사용자 줄 제외', async (t) => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'monitor-model-test-'))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const file = path.join(tmp, 'rollout-model.jsonl')
+  const line = (value) => JSON.stringify(value)+'\n'
+  fs.writeFileSync(file, line(codexFixture.records[0])+line({ type: 'turn_context', payload: { model: 'codex-model-a' } })+line({ type: 'response_item', payload: { type: 'reasoning', padding: 'x'.repeat(70000) } })+line(codexFixture.records[1]))
+  const monitor = logs.newMonitor()
+  const initial = await logs.openTail(monitor, { file, pane: true, codex: true, stat: fs.statSync(file) })
+  assert.equal(initial[0].model, 'codex-model-a')
+  const tail = monitor.tails.get(file)
+  const next = logs.tailEvents(monitor, tail, [line({ type: 'event_msg', payload: { type: 'thread_settings_applied', thread_settings: { model: 'codex-model-b' } } }), line(codexFixture.records[4]), line(codexFixture.records[5])])
+  assert.equal(next[0].model, 'codex-model-b')
+  assert.equal(next[0].icon, '✏️')
+  assert.equal(next[1].model, undefined)
+  assert.equal(initial[0].model, 'codex-model-a')
+  const changed = logs.tailEvents(monitor, tail, [line({ type: 'turn_context', payload: { model: 'codex-model-c' } }), line(codexFixture.records[6])])
+  assert.equal(changed[0].model, 'codex-model-c')
+  const noModel = logs.tailEvents(monitor, tail, [line({ type: 'turn_context', payload: { model: null } }), line(codexFixture.records[1])])
+  assert.equal(noModel[0].model, undefined)
+  fs.writeFileSync(file, line({ type: 'turn_context', payload: { model: 'codex-model-new' } })+line(codexFixture.records[1]))
+  assert.equal(logs.tailEvents(monitor, tail, await logs.readNewLines(tail))[0].model, 'codex-model-new')
+})

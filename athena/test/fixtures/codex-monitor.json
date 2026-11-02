@@ -1,0 +1,192 @@
+{
+  "records": [
+    {
+      "type": "session_meta",
+      "payload": {
+        "cwd": "/tmp/packs/demo/worktrees/shop/fix-monitor",
+        "git": {
+          "branch": "fix/monitor"
+        }
+      }
+    },
+    {
+      "type": "response_item",
+      "timestamp": "2026-11-03T01:00:00Z",
+      "payload": {
+        "type": "function_call",
+        "name": "exec_command",
+        "arguments": "{\"cmd\": \"git status --short\"}"
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": "functions.shell",
+        "arguments": "{\"command\": [\"git\", \"status\"], \"description\": \"\\uc0c1\\ud0dc \\ud655\\uc778\"}"
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": "exec",
+        "arguments": "{\"code\": \"fake code\", \"title\": \"\\uc218\\uc815 \\ud655\\uc778\"}"
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "apply_patch",
+        "input": "*** Begin Patch\n*** Update File: demo.py\n*** End Patch"
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "모니터를 고쳐 주세요"
+          }
+        ]
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "role": "assistant",
+        "content": [
+          {
+            "type": "output_text",
+            "text": "수정을 확인했습니다"
+          }
+        ]
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "message",
+        "role": "user",
+        "content": [
+          {
+            "type": "input_text",
+            "text": "<environment_context>가짜 시스템</environment_context>"
+          }
+        ]
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": "exec_command",
+        "arguments": "{"
+      }
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call_output",
+        "output": "가짜 출력"
+      }
+    },
+    {
+      "type": "event_msg",
+      "payload": {
+        "type": "item_completed",
+        "item": {
+          "type": "AgentMessage",
+          "text": "중복"
+        }
+      }
+    },
+    {
+      "type": "session_meta",
+      "payload": {}
+    },
+    {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": null,
+        "arguments": []
+      }
+    }
+  ],
+  "scope": [
+    {
+      "cwd": "/tmp/packs/demo/worktrees/shop/fix/src",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/packs/demo/worktrees",
+      "active": [],
+      "expectedApp": true,
+      "expectedPython": true
+    },
+    {
+      "cwd": "/tmp/packs/other/worktrees/shop/fix",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/packs/demo/worktrees",
+      "active": [],
+      "expectedApp": false,
+      "expectedPython": true
+    },
+    {
+      "cwd": "/tmp/body/.worktrees/shop/fix",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/body/.worktrees",
+      "active": [],
+      "expectedApp": true,
+      "expectedPython": true
+    },
+    {
+      "cwd": "/tmp/body",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/body/.worktrees",
+      "active": [
+        "/tmp/body"
+      ],
+      "expectedApp": true,
+      "expectedPython": false
+    },
+    {
+      "cwd": "/tmp/ordinary/shop",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/body/.worktrees",
+      "active": [
+        "/tmp/ordinary/shop"
+      ],
+      "expectedApp": true,
+      "expectedPython": true
+    },
+    {
+      "cwd": "/tmp/ordinary/shop",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/body/.worktrees",
+      "active": [],
+      "expectedApp": false,
+      "expectedPython": false
+    },
+    {
+      "cwd": "/tmp/packs/demo/worktrees2/shop/fix",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/packs/demo/worktrees",
+      "active": [],
+      "expectedApp": false,
+      "expectedPython": false
+    },
+    {
+      "cwd": "/tmp/body",
+      "body": "/tmp/body",
+      "worktrees": "/tmp/body/.worktrees",
+      "active": [],
+      "expectedApp": true,
+      "expectedPython": false
+    }
+  ]
+}

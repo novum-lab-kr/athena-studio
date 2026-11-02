@@ -1,5 +1,5 @@
 // ── 에이전트 모니터 — 기록 읽기(창마다 따로 따라간다) ───────────────
-// Claude Code 대화 기록(~/.claude/projects/<폴더>/<세션>.jsonl)을 따라 읽어 화면에 이벤트로 보낸다 — 아테나 agent-monitor.py 와 같은 대상:
+// Claude Code(~/.claude/projects)·Codex(~/.codex/sessions)의 JSONL을 따라 읽어 화면에 이벤트로 보낸다 — 아테나 agent-monitor.py 와 같은 대상:
 // 서브에이전트(<세션>/subagents/agent-*.jsonl) · 워크트리 세션 · 지금 에이전트가 도는 pane 폴더의 세션. 최근 120분 안에 바뀐 것만.
 // 팩 창마다 그 본체(·그 .worktrees 가 가리키는 워크트리) 폴더의 세션만 — 다른 팩 본체의 세션은 그 팩 창 몫이다
 // main.js 에서 옮겼다(PR3b) — 기록 폴더 자리는 createMonitorLogs 인자로 받는다
@@ -22,6 +22,8 @@ export type Tail = {
   rest: Buffer
   skipPartial: boolean
   ino?: number
+  codex?: boolean
+  codexModel?: string | null
 }
 export type MonitorEvent = FeedEvent & { id: number; session: string }
 // 창 하나의 모니터 상태 — 창(createPackWindow)이 newMonitor() 로 갖는다
@@ -41,7 +43,7 @@ export type Monitor = {
   lastGithub: number
   githubSeen: Set<string>
 }
-export type FoundLog = { file: string; pane: boolean; stat: fs.Stats }
+export type FoundLog = { file: string; pane: boolean; stat: fs.Stats; label?: string | null; codex?: boolean }
 export type MonitorSession = { id: string; label: string; pane: boolean; finished: boolean; tools: number; lastAt: number }
 
 // 예전 터미널 모니터 칸의 이름표 — 이미 떠 있는 pane 을 찾는 값이라 번역하지 않는다
@@ -78,8 +80,36 @@ function ownProject(name: string, bodyName: string | null, worktreesName: string
   return Boolean(bodyName) && (name === bodyName || name.startsWith(`${bodyName}--`))
 }
 
+// 연/월/일 아래 rollout만 찾는다. 없는 폴더·바뀌는 파일은 다른 기록 읽기를 막지 않는다.
+async function* codexFiles(dir: string): AsyncGenerator<string> {
+  for (const entry of await readDir(dir)) {
+    const file = path.join(dir, entry.name)
+    if (entry.isDirectory()) yield* codexFiles(file)
+    else if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) yield file
+  }
+}
+
+// 끝부분만 tail해도 라벨은 첫 메타데이터에서 확보한다. 대화 파일 전체를 읽지 않는다.
+async function codexHead(file: string): Promise<unknown> {
+  let handle: fs.promises.FileHandle | undefined
+  try {
+    handle = await fs.promises.open(file, 'r')
+    const parts: Buffer[] = []
+    for (let offset = 0; offset < MONITOR_LINE_MAX; offset += 8192) {
+      const buffer = Buffer.alloc(8192)
+      const { bytesRead } = await handle.read(buffer, 0, buffer.length, offset)
+      if (!bytesRead) return null
+      const part = buffer.subarray(0, bytesRead)
+      const newline = part.indexOf(10)
+      parts.push(newline < 0 ? part : part.subarray(0, newline))
+      if (newline >= 0) return agentFeed.parseLine(Buffer.concat(parts).toString('utf8'))
+    }
+  } catch {} finally { await handle?.close() }
+  return null
+}
+
 // projectsDir — Claude Code 대화 기록 자리(~/.claude/projects)
-export function createMonitorLogs({ projectsDir }: { projectsDir: string }) {
+export function createMonitorLogs({ projectsDir, codexSessionsDir = path.resolve(projectsDir, '../../.codex/sessions') }: { projectsDir: string; codexSessionsDir?: string }) {
   // allSessions — 부모 세션이 조용해도 서브에이전트는 오래 돌 수 있어서, 가끔(1분)은 모든 세션의 서브에이전트를 자기 수정 시각으로 본다
   async function findMonitorLogs(monitor: Monitor, allSessions: boolean, athenaDir: string | null): Promise<FoundLog[]> {
     const root = projectsDir
@@ -111,6 +141,18 @@ export function createMonitorLogs({ projectsDir }: { projectsDir: string }) {
         }
       }
     }
+    // Codex는 프로젝트별 폴더가 없으므로 먼저 수정 시각을 보고 첫 session_meta의 cwd로 팩을 가른다.
+    const body = athenaDir ? core.realDir(athenaDir) : null
+    const worktrees = athenaDir ? core.realDir(path.join(athenaDir, '.worktrees')) : null
+    const active = monitor.agentCwds.map(core.realDir)
+    for await (const file of codexFiles(codexSessionsDir)) {
+      const stat = await recentFile(file, since)
+      if (!stat) continue
+      const record = await codexHead(file)
+      const meta = agentFeed.codexRecord(record)
+      if (typeof meta.cwd !== 'string' || !agentFeed.codexSessionMatches(core.realDir(meta.cwd), body, worktrees, active)) continue
+      found.push({ file, pane: true, stat, label: agentFeed.sessionLabel(record), codex: true })
+    }
     return found
   }
 
@@ -121,21 +163,26 @@ export function createMonitorLogs({ projectsDir }: { projectsDir: string }) {
 // 파일이 바뀌었으면(inode) 처음 붙을 때처럼 끝부분부터, 줄바꿈 없이 너무 긴 줄은 버린다(메모리가 끝없이 늘지 않게)
 const MONITOR_LINE_MAX = 1024 * 1024
 
-export async function readNewLines(tail: Tail): Promise<string[]> {
+export async function readNewLines(tail: Tail, limit?: number): Promise<string[]> {
   const stat = await fs.promises.stat(tail.file)
   tail.mtime = stat.mtimeMs
+  let reset = false
   if (tail.ino !== undefined && stat.ino !== tail.ino) {
     tail.offset = Math.max(0, stat.size - MONITOR_HEAD_BYTES)
     tail.rest = Buffer.alloc(0)
     tail.skipPartial = tail.offset > 0
+    reset = true
   } else if (stat.size < tail.offset) {
     tail.offset = 0
     tail.rest = Buffer.alloc(0)
     tail.skipPartial = false
+    reset = true
   }
+  if (tail.codex && reset) tail.codexModel = await codexModelBefore(tail.file, tail.offset).catch(() => null)
   tail.ino = stat.ino
-  if (stat.size === tail.offset) return []
-  const length = Math.min(stat.size - tail.offset, MONITOR_CHUNK_BYTES)
+  const size = Math.min(stat.size, limit ?? stat.size)
+  if (size <= tail.offset) return []
+  const length = Math.min(size - tail.offset, MONITOR_CHUNK_BYTES)
   const buffer = Buffer.alloc(length)
   const handle = await fs.promises.open(tail.file, 'r')
   let bytesRead = 0
@@ -167,11 +214,29 @@ export async function readNewLines(tail: Tail): Promise<string[]> {
   return lines.filter((line) => line.trim() && line.length <= MONITOR_LINE_MAX)
 }
 
+// 처음 tail할 지점보다 앞에 기록된 모델 문맥도 복원한다. 기존 제한된 읽기를 재사용해 전체 파일을 메모리에 올리지 않는다.
+async function codexModelBefore(file: string, before: number): Promise<string | null> {
+  const history: Tail = { id: '', file, pane: true, label: null, finished: false, tools: 0, mtime: 0, offset: 0, rest: Buffer.alloc(0), skipPartial: false }
+  let model: string | null = null
+  while (history.offset < before) {
+    const previous = history.offset
+    for (const line of await readNewLines(history, before)) {
+      const found = agentFeed.codexModelOf(agentFeed.parseLine(line))
+      if (found !== undefined) model = found
+    }
+    if (history.offset === previous) break
+  }
+  return model
+}
+
 export function tailEvents(monitor: Monitor, tail: Tail, lines: readonly string[]): MonitorEvent[] {
   const events: MonitorEvent[] = []
   for (const line of lines) {
-    const record = agentFeed.parseLine(line)
+    let record = agentFeed.parseLine(line)
     if (!record) continue
+    const model = agentFeed.codexModelOf(record)
+    if (model !== undefined) tail.codexModel = model
+    if (typeof record === 'object' && record !== null && 'type' in record && record.type === 'response_item') record = agentFeed.codexRecord(record, tail.codexModel)
     if (!tail.label) tail.label = agentFeed.sessionLabel(record)
     for (const event of agentFeed.eventsFromRecord(record)) {
       if (event.kind === 'tool') tail.tools += 1
@@ -199,7 +264,8 @@ export async function readSubagentMeta(tail: Tail): Promise<void> {
 }
 
 export async function openTail(monitor: Monitor, item: FoundLog): Promise<MonitorEvent[]> {
-  const tail: Tail = { id: `s${++monitor.tailSeq}`, file: item.file, pane: item.pane, label: null, finished: false, tools: 0, mtime: item.stat.mtimeMs, offset: Math.max(0, item.stat.size - MONITOR_HEAD_BYTES), rest: Buffer.alloc(0), skipPartial: item.stat.size > MONITOR_HEAD_BYTES }
+  const tail: Tail = { id: `s${++monitor.tailSeq}`, file: item.file, pane: item.pane, codex: item.codex, label: item.label ?? null, finished: false, tools: 0, mtime: item.stat.mtimeMs, offset: Math.max(0, item.stat.size - MONITOR_HEAD_BYTES), rest: Buffer.alloc(0), skipPartial: item.stat.size > MONITOR_HEAD_BYTES }
+  if (tail.codex) tail.codexModel = await codexModelBefore(tail.file, tail.offset).catch(() => null)
   await readSubagentMeta(tail)
   const lines = await readNewLines(tail).catch(() => [])
   const events = tailEvents(monitor, tail, lines).slice(-MONITOR_BACKLOG)

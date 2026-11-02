@@ -377,7 +377,7 @@ async function resetStudio(): Promise<void> {
 
 // ── 공용 도우미 — src/main/*.mts(에이전트 모니터 기록 읽기 · Explorer · 파일 뷰어 · 현황판) ─────
 // 쓰는 것(기록 폴더 · 화면 문구 · 현황판 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
-const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
+const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects'), codexSessionsDir: path.join(app.getPath('home'), '.codex', 'sessions') })
 const { resolveInside } = createFiles({ say })
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
 
