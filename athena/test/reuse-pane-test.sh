@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 쉬는 같은 레포 pane 에 이어 보내기 시험 — scripts/reuse-pane.mjs(고르기) · scripts/hooks/pane-session.py(이어 받은 계획서가 옛 계획서로 되돌아가지 않기)
+# 쉬는 같은 레포 pane 에 이어 보내기 시험 — scripts/reuse-pane.mjs(고르기 · 작업 폴더는 foreground_cwd · 메인 체크아웃 판정) · scripts/hooks/pane-session.py(이어 받은 계획서가 옛 계획서로 되돌아가지 않기)
 # · plan-bind.mjs(옛 계획서가 다시 묶이지 않기). 가짜 화면 목록 · 임시 폴더 — 화면 · claude 를 부르지 않는다 · 몇 초
 #
 # 사용: test/reuse-pane-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -11,7 +11,11 @@ FAIL=0
 
 node --input-type=module - "$SRC/scripts/reuse-pane.mjs" "$SRC/scripts/board/plan-bind.mjs" <<'NODE' || FAIL=1
 const [pickPath, bindPath] = process.argv.slice(2)
-const { pickReusable } = await import(pickPath)
+const { pickReusable, isMainCheckout } = await import(pickPath)
+const { mkdtempSync, rmSync } = await import('node:fs')
+const { tmpdir } = await import('node:os')
+const { join } = await import('node:path')
+const { execFileSync } = await import('node:child_process')
 const { boundPaneIds, PROTECTED_BRANCH } = await import(bindPath)
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
@@ -32,6 +36,19 @@ check('claude 가 아닌 pane → 안 고른다', 'reason' in pickReusable([pane
 check('focused 필드가 없으면(모름) → 안 고른다', 'reason' in pickReusable([(({ focused, ...rest }) => rest)(pane('p1'))], 'fe', read({ p1: IDLE })))
 check('작업 폴더가 없으면 → 안 고른다', 'reason' in pickReusable([pane('p1', { cwd: '/없는/폴더' })], 'fe', read({ p1: IDLE })))
 check('앞 pane 이 안 되면 다음 쉬는 pane', pickReusable([pane('p1', { focused: true }), pane('p2')], 'fe', read({ p1: IDLE, p2: IDLE })).pane?.id === 'p2')
+// 새 workspace 의 첫 pane — 처음 연 폴더(cwd)는 메인 체크아웃 · 실행기가 cd 한 워크트리는 foreground_cwd(2026-11-02 pm5)
+const MAIN = mkdtempSync(join(tmpdir(), 'reuse-main-'))
+const TREE = mkdtempSync(join(tmpdir(), 'reuse-tree-'))
+check('작업 폴더는 앞쪽 프로세스 폴더(foreground_cwd)', pickReusable([pane('p1', { cwd: MAIN, foreground_cwd: TREE })], 'fe', read({ p1: IDLE })).cwd === TREE)
+check('foreground_cwd 가 없으면 cwd', pickReusable([pane('p1', { cwd: MAIN })], 'fe', read({ p1: IDLE })).cwd === MAIN)
+// 메인 체크아웃인지 — 진짜 git 레포 · 워크트리로
+const git = (...args) => execFileSync('git', args, { stdio: 'ignore' })
+git('-C', MAIN, 'init', '-q'); git('-C', MAIN, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'x')
+const WT = join(TREE, 'wt'); git('-C', MAIN, 'worktree', 'add', '-q', WT, '-b', 'feat/x')
+check('메인 체크아웃 → mainCheckout 참', isMainCheckout(MAIN) === true)
+check('워크트리 → mainCheckout 거짓', isMainCheckout(WT) === false)
+check('git 레포가 아니면 → 거짓', isMainCheckout(tmpdir()) === false)
+rmSync(MAIN, { recursive: true, force: true }); rmSync(TREE, { recursive: true, force: true })
 
 // 묶음 — 옛 계획서 줄에서 pane 꼬리를 떼고 기록이 새 계획서를 가리키면 옛 계획서는 다시 묶이지 않는다
 const boardPane = { id: 'pf1', role: 'agent', agent: 'fe', branch: 'feat/b' }

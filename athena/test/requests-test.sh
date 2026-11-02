@@ -6,7 +6,7 @@
 #       KEEP=1 test/requests-test.sh     → 임시 폴더를 남긴다
 #
 # 보는 것(docs/requests.md): 열기 · 자리(팩 데이터 state/requests) · 같은 키는 고치기 · rev 충돌 · 두 번 답하기 거절 · ack(두 번 불러도 됨) ·
-# 대화로 답하면 바로 delivered · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
+# 대화로 답하면 바로 delivered(다른 pane 이 대신 답하면 묻던 pane 에 넣고 answered — 가짜 화면 CLI) · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
 # 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기 · 사용법 오류
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
@@ -75,6 +75,29 @@ section "질문 · 대화로 답 · 취소"
 Q="$(A request open --kind question --title '이 필드가 있나요?' --body '근거 …' | field request.id)"
 R="$(A request answer "$Q" --by chat --text '있다')"
 check "대화로 답 → 바로 delivered" '[ "$(echo "$R" | field request.state)" = delivered ] && [ -n "$(echo "$R" | field request.deliveredAt)" ]' "$R"
+# 다른 pane(아테나)이 대화로 대신 답하면 묻던 pane 은 답을 못 봤다 — 그 pane 에 한 줄을 넣고 answered(에이전트가 ack). 가짜 화면 CLI 로 본다
+mkdir -p "$WORK/bin"
+cat > "$WORK/bin/athena-studio-cli" <<'CLIEOF'
+#!/usr/bin/env bash
+echo "$*" >> "$FAKE_LOG"
+[ "$1 $2 $3" = "pane send-text pgone" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
+exit 0
+CLIEOF
+chmod +x "$WORK/bin/athena-studio-cli"
+export FAKE_LOG="$WORK/screen.log"; : > "$FAKE_LOG"
+AS() { local caller="$1"; shift; env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$caller" ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/athena.mjs "$@" --json 2>/dev/null | tail -1; }
+QR="$(A request open --kind question --title '어떻게 할까요?' --pane p5 | field request.id)"
+R="$(AS pg1 request answer "$QR" --by chat --choice '워크트리로' --text '새 워크트리에서 다시')"
+check "다른 pane 이 대화로 답 → answered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane send-text p5 \[요청 $QR\] 어떻게 할까요? — 답: 워크트리로 · 새 워크트리에서 다시" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+check "보낸 뒤 ack → delivered" '[ "$(A request ack "$QR" | field request.state)" = delivered ]'
+: > "$FAKE_LOG"
+QS="$(A request open --kind question --title 같은pane --pane p5 | field request.id)"
+R="$(AS p5 request answer "$QS" --by chat --text 있다)"
+check "묻던 pane 에서 대화로 답 → 바로 delivered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = delivered ] && ! grep -q "send-text" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+QG="$(A request open --kind question --title 닫힌pane --pane pgone | field request.id)"
+R="$(AS pg1 request answer "$QG" --by chat --text 있다)"
+check "묻던 pane 에 못 보내면 answered 로 남고 sent false(앱에서 다시 보내기)" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = False ]' "$R"
+A request cancel "$QG" > /dev/null
 C="$(A request open --kind question --title 취소할것 | field request.id)"
 check "취소 → cancelled · 이유" '[ "$(A request cancel "$C" --reason 필요없음 | field request.closedReason)" = 필요없음 ]'
 check "취소한 것 다시 취소 → conflict" '[ "$(A request cancel "$C" | field error)" = conflict ]'

@@ -49,7 +49,8 @@
  *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지면 expired 로 닫는다
  *   athena request show <id> [--json]
  *   athena request answer <id> --by board|app|chat [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
- *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered
+ *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered —
+ *                                                  묻던 pane 이 아닌 곳(아테나 pane 등)에서 부르면 그 pane 에 답 한 줄을 넣고 answered(ack 를 기다린다 · 못 넣으면 sent false)
  *   athena request ack <id> [--json]               에이전트가 답을 받았다(answered → delivered · 두 번 불러도 된다)
  *   athena request cancel <id> [--reason <글>] [--json]
  *
@@ -83,8 +84,8 @@ import {
   packStatus, relinkBody, renameNewSlot, restoreWithWork, restoreWorkCommand, testSetup,
 } from './lib/packs.mjs'
 import { maskText } from './lib/mask.mjs'
-import { ackRequest, answerRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { callerPane } from './lib/screen.mjs'
+import { ackRequest, answerRequest, cancelRequest, deliveryLine, listRequests, openRequest, showRequest } from './lib/requests.mjs'
+import { callerPane, screenSync } from './lib/screen.mjs'
 
 const ROOT = ATHENA_ROOT
 const [command, sub] = process.argv.slice(2)
@@ -368,13 +369,46 @@ const requestCommands = {
   },
   list: () => listRequests(ROOT, { all: args.includes('--all') }),
   show: () => showRequest(ROOT, requestId()),
-  answer: () => answerRequest(ROOT, requestId(), { choice: flag('choice'), text: flag('text'), by: flag('by'), rev: flag('rev') === '' ? null : Number(flag('rev')) }),
+  answer: () => {
+    const id = requestId()
+    const by = flag('by')
+    const answer = { choice: flag('choice'), text: flag('text'), by, rev: flag('rev') === '' ? null : Number(flag('rev')) }
+    // 대화로 답(by chat)인데 부른 곳이 묻던 pane 이 아니면 — 다른 pane(아테나)이 대신 답한 것이라 묻던 pane 은 답을 못 봤다.
+    // 그때는 answered 로 적고 앱과 같은 한 줄을 그 pane 에 넣는다(2026-11-02 — delivered 로만 바뀌고 쉬던 pm5 에 아무것도 안 들어갔다)
+    const askedPane = by === 'chat' ? showRequest(ROOT, id).request.pane : null
+    if (!askedPane || selfPane() === askedPane) return answerRequest(ROOT, id, answer)
+    const result = answerRequest(ROOT, id, { ...answer, relayed: true })
+    return { ...result, sent: sendToPane(askedPane, deliveryLine(result.request, result.request.answer)) }
+  },
   ack: () => ackRequest(ROOT, requestId()),
   cancel: () => cancelRequest(ROOT, requestId(), { reason: flag('reason') }),
 }
+// 부른 pane(scripts/screen self) — 화면 밖이면 ''. callerPane 과 달리 포커스된 pane 으로 넘어가지 않는다(사용자가 보던 다른 pane 을 '부른 곳' 으로 보면 안 된다)
+const selfPane = () => {
+  try {
+    return screenSync(['self'], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).pane_id || ''
+  } catch {
+    return ''
+  }
+}
+// pane 에 한 줄 넣고 Enter — 못 넣으면 false(답은 answered 로 저장돼 있어 앱 [작업] 에서 다시 보낼 수 있다)
+const sendToPane = (paneId, line) => {
+  try {
+    screenSync(['pane', 'send-text', paneId, line, '--enter'], { timeout: 8000, stdio: ['ignore', 'pipe', 'ignore'] })
+    return true
+  } catch {
+    return false
+  }
+}
 const requestLine = (request) => `${request.id} · ${request.kind} · ${request.state}${request.pane ? ` · pane ${request.pane}` : ''} — ${request.title}`
 
-for (const name of ['open', 'show', 'answer', 'ack', 'cancel']) human[`request ${name}`] = (result) => console.log(`✅ ${requestLine(result.request)}`)
+for (const name of ['open', 'show', 'ack', 'cancel']) human[`request ${name}`] = (result) => console.log(`✅ ${requestLine(result.request)}`)
+// answer — 묻던 pane 에 넣었는지(sent)를 따로 알린다. 'delivered · pane …' 줄만으로는 보낸 것처럼 읽혔다
+human['request answer'] = (result) => {
+  console.log(`✅ ${requestLine(result.request)}`)
+  if (result.sent === true) console.log(`   📨 pane ${result.request.pane} 에 답을 넣었다 — 에이전트가 ack 하면 delivered`)
+  if (result.sent === false) console.log(`   ⚠️ pane ${result.request.pane} 에 답을 넣지 못했다 — 답은 저장됐다(앱 [작업] 에서 다시 보내기 · 또는 scripts/screen pane send-text)`)
+}
 
 const packCommands = {
   'restore-work': () => restoreWorkCommand(ROOT, { dryRun: args.includes('--dry-run'), agents: !args.includes('--no-agents'), discard: args.includes('--discard'), ack: flags('ack'), report }),

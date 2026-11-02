@@ -21,7 +21,8 @@
 ```
 open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이전트가 받음: ack)──▶ delivered
   │                                                 
-  ├──(대화로 답함: answer --by chat)──────────────▶ delivered
+  ├──(대화로 답함: answer --by chat — 묻던 pane 에서)──▶ delivered
+  ├──(다른 pane 이 대화로 대신 답함: answer --by chat)──▶ answered(묻던 pane 에 한 줄을 넣는다) ──(ack)──▶ delivered
   ├──(에이전트가 거둠: cancel)──▶ cancelled
   └──(결정 콘솔은 계획서가 done · 없어짐 — list 가 닫는다)──▶ expired
 ```
@@ -48,6 +49,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 - **고르기 질문은 AskUserQuestion 으로** — 위임 에이전트 세션은 `scripts/hooks/ask-to-request.py`(PreToolUse)가 AskUserQuestion 을 잡아 질문마다 `question` 요청을 열고(계획서 = pane 기록(`state/pane-sessions/<pane>.json`)을 먼저 · 없으면 `ATHENA_PLAN`, pane = 부른 pane · 추천 `(Recommended)` 표시 · 설명 포함) 도구는 막는다. 답은 평소처럼 `[요청 <id>] … 답:` 으로 오니 받자마자 `request ack`. 여러 개 고르기(multiSelect)는 단일 선택 + 메모, 선택지 미리보기는 본문 끝, 직접 입력(Other)은 팝업의 메모칸이 맡는다. **아테나 pane** 은 본체 `.claude/settings.json` 의 같은 훅(`ask-to-request.py lead`)이 맡는다 — 사용자가 그 pane 을 안 보고 있으면(화면 계층 `pane get` 의 `focused` 가 거짓) 에이전트처럼 요청으로 바꾸고 도구는 막는다. **보고 있거나 포커스를 모르면 pane 의 고르기 창은 그대로 두고 [작업] 에도 같이 올린다**(막으면 보던 사람이 바로 못 고른다) — 뒤에서 도는 지킴이(`scripts/lib/pane_request.py close`)가 pane 에서 고르면 요청을 저절로 거두고, [작업] 에서 먼저 고르면 답은 pane 창이 닫힌 뒤에 들어간다(창이 떠 있는 동안 현황판은 글을 넣지 않는다 — `pane-delivery.mjs`). pane 을 모르면 올리지 않는다. 계획서가 없는 대화면 계획서 없는 요청으로 열리고, 답은 같은 `[요청 <id>] … 답:` 으로 그 pane 에 오니 받자마자 `request ack`. 요청을 열지 못하면 막지 않고 원래 고르기 창이 뜬다(이유는 팩 데이터 `state/events.jsonl` 에 `request-hook-failed` 로 남고 에이전트에게도 알린다)
 - **권한 확인 창은 알림으로** — Claude Code 가 "Do you want to make this edit…" 처럼 사람에게 허용을 물으면(1 Yes / 2 Yes, always / 3 No) `scripts/hooks/permission-to-request.py`(PermissionRequest · 모든 위임 에이전트 + 아테나 pane `lead`)가 그 pane 에서 "허용 확인 대기" 요청을 연다. 허용 규칙 · 자동 허용 도구는 이 훅까지 오지 않아 안 뜨고, 창이 4초 안에 닫혀도(자동 허용 등) 열지 않는다. 같은 pane 은 요청 하나(`--key perm:<pane>`)를 고쳐 쓴다. 글에는 묻는 일 한 줄(명령 · 파일 경로 — 비밀값은 `mask.mjs` 로 가림, 파일 쓰기 내용은 싣지 않음)만 담고 선택지는 없다. **[작업] 에서는 허용 · 거부를 하지 않는다** — 답을 허용으로 바꿔 돌려주거나 pane 에 키를 대신 누르는 길은 만들지 않았다(잘못 허용될 수 있어서). [pane 으로 가기] 로 가서 그 창에서 고르면 요청은 저절로 닫힌다. 훅은 아무 결정도 돌려주지 않아 창은 그대로 뜬다
 - **사용자가 대화로 답하면** — `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
+- **아테나가 에이전트 pane 의 질문에 대화로 대신 답하면** — 같은 명령을 아테나 pane 에서 부른다. 부른 pane(`scripts/screen self`)이 요청의 pane 이 아니면 묻던 pane 은 답을 못 본 것이라, 앱과 같은 `[요청 <id>] <제목> — 답: …` 한 줄을 그 pane 에 넣고 answered 로 둔다(에이전트가 ack → delivered). 넣지 못하면 `sent: false` · "넣지 못했다" 를 알리고 answered 로 남는다 — 앱 [작업] 의 다시 보내기로 보낸다. 출력의 `delivered · pane <id>` 는 상태와 묻던 pane 일 뿐 보냈다는 뜻이 아니다 — 보냈는지는 📨 줄(`--json` 이면 `sent`)로 본다(2026-11-02 pm5 — 예전에는 delivered 로만 바뀌고 쉬던 pane 에 아무것도 안 들어갔다)
 - **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
 - **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`
 - 결정 콘솔 요청은 `plan-html.mjs` · 현황판이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)

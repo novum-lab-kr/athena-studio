@@ -489,6 +489,9 @@ for repo in cfg['repos']:
 PYEOF
 )"
     [ -n "$PR_BASE" ] || { echo "이 레포의 prBase 를 모르거나 main 직접 레포라 새 브랜치를 따지 않는다" >&2; exit 1; }
+    # 메인 체크아웃이면 따지 않는다 — 메인 체크아웃이 작업 브랜치로 바뀌고 commit.sh 가 커밋을 거부한다(2026-11-02 pm5). main 직접 레포는 위에서 이미 멈춘다
+    MAIN_CHECKOUT="$(printf '%s' "$PICKED" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("mainCheckout", True))')"
+    [ "$MAIN_CHECKOUT" = False ] || { echo "그 pane 의 작업 폴더($WORKDIR)가 레포 메인 체크아웃이라 새 브랜치를 따지 않는다 — new-branch.sh 로 워크트리를 만들고 새 pane 으로 띄운다" >&2; exit 1; }
     git -C "$WORKDIR" fetch origin "$PR_BASE" >/dev/null 2>&1 || { echo "origin/$PR_BASE 를 가져오지 못했다" >&2; exit 1; }
     git -C "$WORKDIR" switch -c "$NEW_BRANCH" "origin/$PR_BASE" >/dev/null 2>&1 || { echo "새 브랜치($NEW_BRANCH)를 만들지 못했다(이미 있는 이름이거나 워크트리 상태 확인)" >&2; exit 1; }
   fi

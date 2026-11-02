@@ -3,6 +3,7 @@
 //   자리: 여러 팩 구조면 팩 데이터 state/requests/<id>.json(팩마다 · 본체 링크를 늘리지 않는다), 옛 구조면 본체 .requests/
 //   흐름: open → answered(사람이 답함) → delivered(에이전트가 받음 · ack) / cancelled / expired
 //         대화로 답을 받았으면(answer --by chat) 에이전트가 이미 받은 것이라 바로 delivered
+//         — 단 다른 pane(아테나)이 대신 대화로 답했으면(relayed) 묻던 pane 은 아직 못 봤으니 answered(그 pane 에 보내고 ack 를 기다린다)
 //   쓰기는 이 모듈로만 — 폴더 잠금 + 원자 저장 + rev(고칠 때마다 +1). 답할 때 rev 를 주면 그사이 바뀐 요청에는 답하지 않는다(conflict)
 //   같은 dedupeKey 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다
 //   팩 세대가 바뀐 뒤(가져오기 --replace 등) 만든 요청에 온 답은 거절한다(stale) — 현황판 쓰기의 409 와 같은 규칙
@@ -157,8 +158,9 @@ export const listRequests = (root, { all = false } = {}) => withLock(root, (dir)
 
 export const showRequest = (root, id) => withLock(root, (dir) => ({ ok: true, request: mustGet(dir, id) }))
 
-// 답하기 — { choice?, text?, by, rev? }. 대화로 받은 답(by chat)은 바로 delivered
-export const answerRequest = (root, id, { choice = '', text = '', by = '', rev = null } = {}) => {
+// 답하기 — { choice?, text?, by, rev?, relayed? }. 대화로 받은 답(by chat)은 바로 delivered.
+// relayed = 묻던 pane 이 아닌 곳에서 대화로 답했다 — 묻던 pane 에 보내야 하니 answered 로 둔다(athena.mjs request answer)
+export const answerRequest = (root, id, { choice = '', text = '', by = '', rev = null, relayed = false } = {}) => {
   if (!ANSWER_BY.includes(by)) throw new PackError('usage', `--by 는 ${ANSWER_BY.join(' · ')} 중 하나다`)
   if (!String(choice).trim() && !String(text).trim()) throw new PackError('usage', '답(--choice 또는 --text)이 필요하다')
   const where = paths(root)
@@ -171,12 +173,18 @@ export const answerRequest = (root, id, { choice = '', text = '', by = '', rev =
     }
     const at = now()
     const answer = { choice: String(choice).trim() || null, text: String(text).trim() || null, by, at }
-    const delivered = by === 'chat'
+    const delivered = by === 'chat' && !relayed
     Object.assign(request, { state: delivered ? 'delivered' : 'answered', answer, deliveredAt: delivered ? at : null, rev: request.rev + 1, updatedAt: at })
     save(dir, request)
     logState(root, request)
     return { ok: true, request }
   })
+}
+
+// pane 에 넣을 한 줄 — 에이전트는 [요청 <id>] 를 보고 ack 한다. 앱(src/lib/requests.mts deliveryLine)과 같은 모양
+export const deliveryLine = (request, answer) => {
+  const parts = [answer?.choice, answer?.text].map((part) => String(part || '').replace(/\s*\n\s*/g, ' ').trim()).filter(Boolean)
+  return `[요청 ${request.id}] ${request.title} — 답: ${parts.join(' · ')}`.slice(0, 2000)
 }
 
 // 받음 — 에이전트가 답을 받았다. 같은 요청을 두 번 받아도 그대로(already)
