@@ -5845,6 +5845,7 @@ html[data-theme="dark"], html[data-theme="dark"][data-preset] {
           <li>&bull; 정식이어도 레포 하나짜리면 경량과 같이 pane 에서 PR 까지 간다</li>
           <li>&bull; 넓은 수정(새 기능 · 구조 변경 · 여러 파일 로직 · 보안 · 데이터 · 외부 계약)을 보고하면 에이전트가 묻지 않고 리뷰를 띄운다(자동 리뷰 — 정식 계획서만, 경량은 &quot;리뷰해줘&quot; 할 때. 리뷰 지적 반영 · 문구 · 작은 수정 뒤에는 다시 띄우지 않는다. 리뷰어는 같은 트리로 통과한 검증을 재사용). 결정 필요(선택지가 갈림)는 같은 계획서 결정 콘솔에 덧붙여 보여 준다(plan-html.mjs --add · [이대로 진행] 은 그 에이전트 pane 으로)</li>
           <li>&bull; PR 자동 리뷰(켠 레포 &quot;autoMerge&quot;: true 의 레포 하나짜리 PR 만 · 기본 꺼짐) — draft PR 이 올라오면 현황판이 감지해 Claude · Codex 가 리뷰한다. 수정 필요는 [자동 리뷰 → 에이전트] 로 그 pane 에 가고, 에이전트는 그 지시에 한해 묻지 않고 commit.sh → ship.sh --auto-push(새 커밋을 다시 리뷰 · 본문 지적이면 --body-file · 에이전트에는 막는 지적만, 권장은 PR 댓글에만 · 2라운드부터는 지난 지적 + 바뀐 diff 만). 결정 필요는 결정 콘솔로(같은 라운드의 수정은 기다리지 않고 보내고 · 구현 세부 결정은 추천안으로 자동 확정). 상한 3 을 넘으면 멈추지 않고 고친 커밋을 리뷰 없이 같은 HEAD 검증만으로 머지 단계로. 켠 레포는 끝나고 검증이 통과하면 &quot;PR 올려줘&quot; 없이 draft PR 까지 간다. 머지 결과는 작업 pane 에 한 줄</li>
+          <li>&bull; Actions 로 넘기는 레포(actionsHandoff): commit.sh → ship.sh --direct-merge 로 넘기면 pane 은 다음 일. 전체 검증 → prBase 머지 → 배포 시작은 Actions, 결과 읽기 · 완료 표시 · 실패 원문 전달은 현황판. 넓은 수정의 리뷰와 화면 확인은 넘기기 전에</li>
         </ul>
       </div>
 
@@ -5861,6 +5862,7 @@ html[data-theme="dark"], html[data-theme="dark"][data-preset] {
           <li>&bull; 📚 배운 것 — 끝내는 보고(PR 을 올린 보고 · 여러 레포면 아테나에 넘기는 마지막 보고) · 사용자 교정 · 같은 오류 3회 때 learn 이슈(repo: athena · kind: knowledge). 기록 금지 목록·중복이면 기존 규칙 강화, 반복 절차는 스킬 후보. PR 이 머지되면 배우기 검토자(별도 Claude · pane 하나)가 계획서·대화·바뀐 코드·리뷰 댓글을 읽고 빠진 것을 보탠다</li>
           <li>&bull; Checkpoint 를 단계 완료·차단·리뷰 반영·/new 직전에 갱신한다</li>
           <li>&bull; 자동 머지 — Claude · Codex 둘 다 승인 + 같은 HEAD 검증 통과 + 충돌 없음이면 머지 확인 요청(맥 알림 · [작업] 팝업) → 사람이 [머지] 를 고르면 squash(레포가 autoMergeConfirm: false 면 묻지 않고 바로 · 리뷰 끔 · 사람이 직접은 레포마다 고른다 — pr-auto.md 켜기). 하나라도 실패 · 반려면 머지하지 않는다</li>
+          <li>&bull; 넘긴 일의 결과를 아테나가 기다리며 감시하지 않는다 — 실패 원문은 맡았던 pane 으로 가고, 에이전트는 하던 일을 마친 뒤 그 워크트리에서 고쳐 다시 넘긴다</li>
         </ul>
       </div>
 

@@ -126,13 +126,14 @@ AUTO_SHIP_RULE=""
 # 올리는 방식 판정은 팩 설정(athena_config)을 매번 읽는다 — 값은 어디에도 복사해 두지 않는다. "<레포> <종류> <머지 설정>" (종류: pr-off · auto-pr · direct · manual)
 SHIP_INFO="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
 import sys
-sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load, direct_merge_mode
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load, direct_merge_mode, actions_handoff
 cfg = load(sys.argv[1]); agent = sys.argv[2]
 for repo in cfg['repos']:
     mine = agent in (repo.get('agents') or []) or agent == repo.get('packagesAgent') or any(app.get('agent') == agent for app in (repo.get('apps') or {}).values())
     if mine:
         mode = direct_merge_mode(cfg, repo['name'])
         if repo.get('direct'): kind = 'direct'
+        elif actions_handoff(cfg, repo['name']): kind = 'handoff'
         elif repo.get('autoMerge') is True: kind = 'pr-off' if repo.get('autoPr') is False else 'auto-pr'
         else: kind = 'manual'
         print(f"{repo['name']} {kind} {mode or '-'}")
@@ -141,23 +142,26 @@ PYEOF
 )"
 SHIP_KIND="$(awk '{print $2}' <<<"$SHIP_INFO")"; SHIP_MODE="$(awk '{print $3}' <<<"$SHIP_INFO")"
 AUTO_SHIP_REPO=""
-case "$SHIP_KIND" in pr-off|auto-pr) AUTO_SHIP_REPO="$(awk '{print $1}' <<<"$SHIP_INFO")$([ "$SHIP_KIND" = pr-off ] && echo ' pr-off')" ;; esac
+case "$SHIP_KIND" in pr-off|auto-pr|handoff) AUTO_SHIP_REPO="$(awk '{print $1}' <<<"$SHIP_INFO")" ;; esac
 case "$SHIP_KIND" in
   pr-off) SHIP_LINE="올리는 방식: 바로 머지(PR 끔 · 머지 설정 $SHIP_MODE) — ship.sh --direct-merge. 일반 PR 은 막힌다" ;;
+  handoff) SHIP_LINE="올리는 방식: Actions 로 넘기기 — ship.sh --direct-merge 후 다음 일(검증 · 머지 · 배포는 Actions)" ;;
   auto-pr) SHIP_LINE="올리는 방식: 끝나면 저절로 draft PR(자동 리뷰 · 머지 확인)" ;;
   direct) SHIP_LINE="올리는 방식: main 직접 레포 — ship.sh 가 빨리 감기 push(PR 없음 · 사용자 확인)" ;;
   *) SHIP_LINE="올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만 draft PR" ;;
 esac
-if [ "$SHIP_KIND" = pr-off ]; then
+if [ "$SHIP_KIND" = handoff ]; then
+  # Actions 로 넘기기 — 넘기면 끝. 결과는 현황판이 읽고 실패만 pane 으로 온다(docs/pr-auto.md "Actions 로 넘기기")
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 Actions 로 넘긴다 — 레포 하나짜리 작업을 끝냈으면 넓은 수정의 리뷰와 화면 확인을 먼저 끝내고, 묻지 않고 ① commit.sh(맥 전체 검증 없음) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge. 넘긴 뒤 결과를 기다리지 말고 보고하고 다음 지시를 받는다. 실패 원문이 이 pane 으로 오면 하던 일을 마친 뒤 그 워크트리에서 고쳐 같은 명령으로 다시 넘긴다. 'PR 올려줘' 일 때만 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없으면 넘기지 않는다. "
+elif [ "$SHIP_KIND" = pr-off ]; then
   # PR 끔 — 끝나면 PR 없이 prBase 에 바로 머지(ship.sh --direct-merge). "PR 올려줘" 는 그대로 PR
-  AUTO_SHIP_REPO="${AUTO_SHIP_REPO%% *}"
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다(pack.json autoMerge + autoPr:false · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝냈을 때 사용자 요청 없이 ① commit.sh 로 커밋(전체 검증은 여기서 한 번 — 따로 돌리지 않는다) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge 를 돈다(PR · 제목 · base · 본문 · --yes 없음 · 동작은 docs/pr-auto.md). 사용자가 'PR 올려줘' 라고 하면 PR 을 만든다 — 평소 PR 명령(미리보기 · --yes)에 --user-pr 을 모두 붙인다(없으면 이 레포는 PR 이 막힌다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다 — 레포 하나짜리 작업을 끝냈으면 묻지 않고 ① commit.sh(전체 검증은 여기서 한 번) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge(PR · 제목 · base · 본문 · --yes 없음). 'PR 올려줘' 일 때만 평소 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
 elif [ -n "$AUTO_SHIP_REPO" ]; then
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 올리기를 켰다(pack.json autoMerge · docs/pr-auto.md) — 레포 하나짜리 작업이면 요청을 끝냈을 때 사용자 'PR 올려줘' 없이 'PR 올려줘' 흐름(전체 검증은 그 안의 commit.sh 에서 한 번 — 따로 돌리지 않는다)을 묻지 않고 그대로 돈다(이미 열린 PR 이 있으면 ship.sh 가 그 브랜치에 push 만 한다). 조사만 했거나 바뀐 게 없으면 올리지 않고, 검증이 실패하면 올리지 않고 보고한다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 을 올린다 — 레포 하나짜리 작업을 끝냈으면 말이 없어도 'PR 올려줘' 흐름을 묻지 않고 돈다(열린 PR 이 있으면 push 만). 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
-PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 끝나면(또는 막히면) 그 계획서의 Progress(무엇을 했나) · 결과 절(무엇이 달라졌나 · 확인 못 한 것)을 채운다. 작업 중에는 고친 부분만 확인하고 전체 검증은 끝날 때 한 번(commit.sh 의 엄격 검증 · 커밋이 없는 작업은 끝날 때 직접 한 번 · AGENTS.md 4절) — 커밋 전 보고에는 '전체 검증 미실행(커밋 때 돈다)' 이라고 쓴다. Validation 줄은 검증 스크립트가, 커밋 뒤 Status ready_for_review 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · PR 없이 끝나는 일(조사·스크린샷처럼 레포 변경이 없는 작업)은 마지막 보고 때 done. 커밋은 사용자가 '커밋해줘' 또는 'PR 올려줘' 라고 할 때만 $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>… 로 한다(거부되면 이유를 그대로 전하고 사용자에게 묻는다). 예외 하나 — '[자동 리뷰 → <나>]' 로 시작하는 지시(PR 자동 리뷰 · 레포가 autoMerge 를 켠 경우)는 그 지시대로 묻지 않고 commit.sh 로 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(그 PR 브랜치에 빨리 감기만 · 새 PR 없음 · PR 본문 지적이면 --body-file <파일> 을 붙여 본문도 바꾼다 · docs/pr-auto.md). ${REVIEW_RULE}리뷰 결론이 나오면 사용자에게 보여 준다. reviewer 보고에 '결정 필요'(선택지가 갈리는 항목, R1·R2…)가 있으면 말로 묻지 말고 결정 콘솔로 보여 주고 확정되면 고친다(절차 $ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'). ${REVIEW_AGAIN}'결정 필요' 없이 수정 필요(고칠 방법이 하나)만 있으면 묻지 않고 고친 뒤 무엇을 고쳤는지 한 줄씩 알린다. 사용자가 '리뷰해줘' 라고 할 때도 같다: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN 로 옆에 reviewer pane 을 띄운다(직접 리뷰하지 않는다 — reviewer 가 결론을 계획서 '- Review result:' 줄에 남기고, ship.sh 미리보기에 나온다). 사용자가 'PR 올려줘' 라고 하면 묻지 않고 끝까지 간다: 안 올린 내 작업을 commit.sh 로 커밋 → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). 다른 base 는 사용자가 말했을 때만 · main 직접 레포의 push 만 미리보기를 보여 주고 확인받는다 · 거부되면 이유를 그대로 전한다 · 여러 레포 작업은 ship.sh 가 거부하니 아테나에게 직접 요청한다. ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(공통 규칙 AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. 요청을 여러 번 주고받는다 — 새 요청을 받을 때마다 작업을 시작하기 전에 Status 를 in_progress 로 되돌린다(끝나면 위대로). Progress 에는 요청마다 한 줄씩 더한다. "
+PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkpoint 의 Next 부터 한다. 새 요청마다 시작 전에 Status 를 in_progress 로, Progress 에 한 줄. 끝나면(또는 막히면) Progress · 결과 절을 채운다. 작업 중에는 고친 부분만 확인한다(전체 검증 AGENTS.md 4절). Validation 줄은 검증 스크립트가, 커밋 뒤 Status 는 commit.sh 가 적는다 — 직접 바꾸는 것은 막히면 blocked · 커밋 없이 끝나면 ready_for_review · 레포 변경이 없는 일은 마지막 보고 때 done. 커밋: $ATHENA_DIR/scripts/commit.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> -m '<레포 관례 메시지>' -- <바꾼 파일>…(사용자가 '커밋해줘' · 'PR 올려줘' 라고 할 때 · 거부되면 이유를 그대로 전하고 묻는다). '[자동 리뷰 → <나>]' 지시만 묻지 않고 커밋하고 그 지시의 ship.sh --auto-push 로 올린다(docs/pr-auto.md). ${REVIEW_RULE}리뷰: $ATHENA_DIR/scripts/delegate.sh reviewer --cwd <워크트리> --here --plan $ATHENA_DIR/$PLAN (직접 리뷰하지 않는다 · '리뷰해줘' 도 같다). 결론은 사용자에게 보여 준다 — 결정 필요는 말로 묻지 말고 결정 콘솔로($ATHENA_DIR/docs/workflow.md 4절 '리뷰 뒤 결정 콘솔'), 수정 필요만 있으면 묻지 않고 고쳐 한 줄씩 알린다. ${REVIEW_AGAIN}'PR 올려줘' 는 묻지 않고 끝까지: commit.sh → $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> 미리보기 → 제목 · 본문 정리(git.md 'PR 올리기') → 같은 명령에 --base <미리보기의 기본 base> --title '…' --yes(리뷰 줄이 ⚠️ 면 --no-review-ok 를 붙이고 본문 '확인 필요' 와 보고에 적는다). main 직접 레포의 push 만 확인받는다 · 여러 레포 작업은 아테나에게 요청한다. ${AUTO_SHIP_RULE}추측으로 구현하지 않는다 — 모르는 사실은 확인하고, 그래도 모르면 그 부분만 멈추고 Blocked 에 적어 모아 묻는다(AGENTS.md 5절). ${LEAD_RULE}시키지 않은 문구·기능은 더하지 않는다. 로그인·인증처럼 사람이 해야 하는 단계면 멈추고 무엇을 어디서 할지 알린다. "
 if [ "$AGENT" = reviewer ]; then
   # reviewer 는 커밋·PR·Status 를 다루지 않는다 — 에이전트용 머리말 대신 리뷰 머리말만 싣는다
   PLAN_HEADER="리뷰할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 리뷰한다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 리뷰를 마치면 결론을 $ATHENA_DIR/scripts/review-result.sh --plan $ATHENA_DIR/$PLAN --dir <리뷰한 트리> --verdict 승인|수정필요 --note '<한 줄 요약>' 로 한 줄 남긴다(ship.sh 가 이 줄과 HEAD 를 대조한다). 그다음 수정 필요(고칠 방법이 하나) / 결정 필요(조사한 뒤에도 사용자가 정해야 하는 것만 — 범위·사용자 동작·외부 계약·제품 정책·데이터가 달라지는 선택. 구현 방법이 여러 개일 뿐이면 하나를 골라 수정 필요로 · R1 <제목> — <영향> 다음 줄부터 A <선택지> ★ — <설명> · B … 형식, 없으면 '결정 필요: 없음') / 제안으로 나눠 보고한다(형식 정본 .claude/agents/reviewer.md 의 보고 형식 절). "

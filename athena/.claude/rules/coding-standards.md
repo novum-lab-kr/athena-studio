@@ -10,7 +10,7 @@
 - 새 레포 · 새 프로젝트는 TypeScript `strict`(Python 은 타입 힌트 + pyright) · `tsconfig` `strict` · `noUncheckedIndexedAccess` · `target` ES2022 이상
 - 기존 레포는 레포 `rules.md` "언어 · 타입 상태"(JS + JSDoc · `checkJs` / 섞어 쓰는 중 / TS)를 따르고 새 파일 · 고친 곳은 그 상태의 최신 쪽으로. 칸이 없으면 지금 코드가 상태(빌드 없는 레포에 `.ts` 를 만들지 않는다). 전환 PR 은 동작을 바꾸지 않는다
 - 최신 문법(ES2015+)이 기본 — `const` / `let`(`var` 금지) · 화살표 함수 · 구조 분해 · 스프레드 · 템플릿 문자열 · `async` / `await` · `?.` · `??` · 클래스 필드 · 최신 Array / Object 메서드 · ES 모듈. CommonJS 레포의 모듈 방식은 `rules.md` 상태대로(바꾸면 새 파일부터)
-- 새로 만들 때의 층별 기본값(레포 `rules.md` 가 다르게 정하면 그쪽이 먼저) — FE: 웹 서비스 Next.js · 앱 안 화면 · 단일 페이지 도구 Vite + React / BE: OpenAPI 계약 · 하위 호환(추가만) · 경계에서 입력 검증 · 오류 `{ code, message }` · 비밀값은 환경 변수 · UTC 저장 · 마이그레이션 · JSON 로그 · `/health` — Node 는 TS · NestJS(큰 서버) · Fastify(작은 서비스) · zod, Python 은 3.12+ · 타입 힌트 · pyright · ruff · uv · FastAPI + pydantic v2 / 앱: React Native + Expo · TS `strict` · 비밀 키는 앱에 넣지 않는다
+- 새로 만들 때의 층별 기본값(FE · BE · 앱)은 `coding.md` "층별 기준"
 
 ## 변수명 / 가독성
 - 1개 문자 변수명 금지 (반복문 변수 포함)
