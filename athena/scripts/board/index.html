@@ -963,6 +963,7 @@
       group('소요', [
         tile('완료', current.done, previous?.done, metricCount, { lowerIsBetter: false }),
         spreadTile('시작 → 첫 머지', current.lead, previous?.lead, `머지 ${current.merged} · done 기준 ${current.doneOnly} · 시작 기록 없어 빠짐 ${current.noStart}`),
+        ...(current.handoffToMerge?.count ? [spreadTile('넘김 → 머지', current.handoffToMerge, previous?.handoffToMerge, `${current.handoffToMerge.count}건`)] : []),
         spreadTile('머지 → 완료 표시', current.mergeToDone, previous?.mergeToDone, `${current.mergeToDone.count}건 · 첫 머지 뒤 커밋 ${current.followUps}건`),
       ], true),
       // 구간 — 끝낸 계획서 중 그 구간이 있었던 것(N건 중 M건) · 소요를 모르는 옛 기록은 시간에서 빠진다
@@ -1705,6 +1706,8 @@
     const running = (plan?.agents || []).map((id) => panes.find((pane) => pane.id === id)).filter(Boolean);
     const pills = [`<span class="pill working">진행 중</span>`];
     if (plan?.status === 'blocked' || card.blocked) pills.push('<span class="pill bad">막힘</span>');
+    const handoff = plan?.handoff || card.handoff;
+    if (handoff) pills.push(handoff === 'failed' ? '<span class="pill bad">Actions 실패</span>' : `<span class="pill working">${handoff === 'running' ? 'Actions 도는 중' : 'Actions 대기'}</span>`);
     if (card.doneCheck?.ready) pills.push('<span class="pill ready">완료 가능</span>');
     for (const pane of running) pills.push(`<span class="pill ${pane.status === 'working' ? 'working' : ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}</span>`);
     if (!running.length) pills.push(`<span class="pill">${card.agent ? `🤖 ${esc(card.agent)}` : '담당 미정'} · pane 없음</span>`);

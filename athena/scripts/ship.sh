@@ -334,6 +334,12 @@ if [ $DIRECT_MERGE = 1 ]; then
   [ -z "$REPO_AGENT" ] || fail "바로 머지는 레포 하나짜리 작업을 그 에이전트가 올린다 — 아테나의 --repo-agent 와 같이 쓰지 않는다"
   DIRECT_MODE="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, direct_merge_mode; print(direct_merge_mode(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(바로 머지 확인)"
   [ -n "$DIRECT_MODE" ] || fail "$REPO 는 PR 끔 + 자동 머지 레포가 아니다(pack.json 레포 \"autoMerge\": true + \"autoPr\": false) — \"PR 올려줘\" 면 --direct-merge 없이"
+  HANDOFF_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, actions_handoff; print(1 if actions_handoff(load(sys.argv[1]), sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(Actions 넘기기 확인)"
+  if [ -n "$HANDOFF_ON" ]; then
+    echo "── Actions 로 넘기기: $REPO · 🌿 $BRANCH @ $HEAD_SHA"
+    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --handoff --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "넘기지 못했다 — 위 이유를 본다"
+    exit 0
+  fi
   echo "── 바로 머지: $REPO · 🌿 $BRANCH @ $HEAD_SHA → PR 없이 prBase (머지 설정 $DIRECT_MODE)"
   (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다"
   exit 0

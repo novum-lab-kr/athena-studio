@@ -7,6 +7,8 @@
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
  *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
+ *   node scripts/pr-auto.mjs --handoff --plan <plans/…md> --repo <레포> --dir <워크트리>
+ *        Actions 로 넘기기("actionsHandoff": true · ship.sh --direct-merge 가 부른다) — handoff/<브랜치> 로 push 만 하고 끝난다
  *   node scripts/pr-auto.mjs --direct-merge --plan <plans/…md> --repo <레포> --dir <워크트리>
  *        PR 끔 레포("autoPr": false) — PR 없이 작업 브랜치를 prBase 에 squash 로 바로 머지한다(ship.sh --direct-merge 가 부른다). 안전 조건은 PR 머지와 같다(검증은 끌 수 없다)
  *   node scripts/pr-auto.mjs --kick      머지 확인을 기다리는 일이 있는데 처리기가 없으면 띄운다(현황판이 5분마다)
@@ -42,6 +44,7 @@ import { screen, screenText } from './lib/screen.mjs'
 import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
+import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, REVIEWERS, REVIEW_OFF, planFastPath, repoFlow, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, codexModelArgs, codexUserSettings, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm, takeoverComment,
@@ -938,6 +941,38 @@ const directMerge = async (planArg, repo, dir) => {
   return true
 }
 
+// --handoff: ship.sh 가 부른다 — 커밋을 handoff/<브랜치> 로 push 하고 바로 끝난다. 검증 · 머지는 Actions, 결과 읽기는 현황판(lib/handoff.mjs)
+const handOff = (planArg, repo, dir) => {
+  const { path: planPath, file: planFile } = planPathOf(planArg)
+  const config = loadConfig(ROOT)
+  if (!handoffOn(config, repo)) { console.log(`⏭  ${repo} 는 Actions 넘기기를 켜지 않았다(pack.json 레포 "actionsHandoff": true · 확인 없는 바로 머지)`); return false }
+  const planText = readFileSync(planPath, 'utf8')
+  if (!singleRepoPlan(planText, config, repo)) { console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(여러 레포는 사람이)`); return false }
+  const worktree = resolve(dir)
+  const branch = git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])
+  const sha = git(worktree, ['rev-parse', 'HEAD'])
+  const base = prBaseOf(config, repo)
+  if (!branch || !sha || !base) { console.log('⏭  브랜치 · HEAD · prBase 를 알 수 없다'); return false }
+  if (branch === base) { console.log(`⏭  ${branch} 는 기준 브랜치다 — 작업 브랜치가 아니다`); return false }
+  if (directMergeDone(planText, repo, branch, sha)) { console.log('⏭  이미 머지됨'); return true }
+  if (pendingDecisions(planFile, repo, 0)) { console.log('⏭  결정 콘솔에 안 정한 결정이 있어 넘기지 않았다'); return false }
+  if (git(worktree, ['cat-file', '-e', `${sha}:.github/workflows/${HANDOFF_WORKFLOW}`]) === null) { console.log(`⏭  이 커밋에 .github/workflows/${HANDOFF_WORKFLOW} 가 없다 — 넘겨도 돌지 않는다`); return false }
+  const ref = `refs/heads/${HANDOFF_PREFIX}${branch}`
+  const file = handoffFile(ROOT, repo, branch)
+  const previous = existsSync(file) ? readFileSync(file, 'utf8') : null
+  mkdirSync(dirname(file), { recursive: true })
+  writeFileSync(file, JSON.stringify({ plan: planFile, repo, branch, sha, base, worktree, at: new Date().toISOString() }))
+  const undo = () => { if (previous === null) rmSync(file, { force: true }); else writeFileSync(file, previous) }
+  // 같은 HEAD 를 다시 넘기면 push 가 아무 일도 하지 않아 실행이 안 생긴다 — 넘김 브랜치만 지우고 다시 민다
+  if ((git(worktree, ['ls-remote', 'origin', ref]) ?? '').startsWith(sha)) git(worktree, ['push', '--quiet', 'origin', '--delete', `${HANDOFF_PREFIX}${branch}`])
+  const pushed = spawnSync('git', ['-C', worktree, 'push', '--quiet', 'origin', `${sha}:${ref}`], { encoding: 'utf8', timeout: 120_000 })
+  if (pushed.status !== 0) { undo(); console.log(`❌ ${HANDOFF_PREFIX}${branch} push 가 거부됐다(${firstLine(pushed.stderr)}) — 강제 push 는 하지 않는다`); return false }
+  writeDirectLine(planPath, { repo, branch, sha }, `${HANDOFF_WAITING} — 넘김`)
+  logEvent(ROOT, 'handoff', { plan: planFile, repo, branch, sha: sha.slice(0, 7), base })
+  console.log(`✅ 넘겼다: ${repo} ${branch} @${sha.slice(0, 7)} → Actions(검증 · ${base} 머지). 결과는 현황판이 계획서에 적고 실패하면 이 pane 으로 보낸다 — 다음 일을 받아도 된다`)
+  return true
+}
+
 // 머지 확인 답 보기(바로 머지) — checkConfirms 가 parse 한 파일 하나를 넘긴다. HEAD 가 바뀌었거나 설정이 바뀌었으면 거둔다
 const checkDirectConfirm = async (file, job) => {
   let request
@@ -1221,7 +1256,8 @@ else if (flag('kick')) kick()
 else if (flag('direct-merge')) {
   const done = await directMerge(option('plan'), option('repo'), option('dir'))
   process.exit(done ? 0 : 1)
-} else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
+} else if (flag('handoff')) process.exit(handOff(option('plan'), option('repo'), option('dir')) ? 0 : 1)
+else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
 else if (option('plan') && option('pr')) await handle(option('plan'), option('pr'), { dryRun: flag('dry-run') })
 else {
   console.error('사용: node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run] | --enqueue --plan … --pr … --head <sha> | --kick | --watch')
