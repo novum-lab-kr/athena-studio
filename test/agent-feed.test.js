@@ -247,3 +247,72 @@ test('Codex 모델: 긴 기록 시작 앞 문맥 복원 · 변경 이후 행만 
   fs.writeFileSync(file, line({ type: 'turn_context', payload: { model: 'codex-model-new' } })+line(codexFixture.records[1]))
   assert.equal(logs.tailEvents(monitor, tail, await logs.readNewLines(tail))[0].model, 'codex-model-new')
 })
+
+test('모니터 만료 세션의 줄을 main·화면에서 함께 지우고 재진입 때 중복하지 않는다', async (context) => {
+  const fs = require('node:fs')
+  const os = require('node:os')
+  const path = require('node:path')
+  const { installAgentMonitor } = require('../src/main/agent-monitor.mts')
+  const logs = require('../src/main/monitor-logs.mts')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-monitor-expiry-'))
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  let now = Date.now()
+  context.mock.method(Date, 'now', () => now)
+  let tick
+  context.mock.method(global, 'setInterval', (callback) => { tick = callback; return 0 })
+  const file = path.join(root, 'session.jsonl')
+  const line = (text) => `${JSON.stringify({ type: 'assistant', timestamp: new Date(now).toISOString(), message: { content: [{ type: 'text', text }] } })}\n`
+  fs.writeFileSync(file, line('이전 기록입니다'))
+  const monitor = logs.newMonitor()
+  const sent = []
+  let visibleEvents = []
+  const ctx = {
+    athenaDir: null,
+    win: { isDestroyed: () => false, isVisible: () => true },
+    daemonCall: async () => ({ result: { panes: [] } }),
+    boardPortNow: () => { throw new Error('이 시험에서 현황판을 부르지 않는다') },
+    send: (channel, update) => {
+      assert.equal(channel, 'monitor:update')
+      assert.equal(update.error, undefined)
+      sent.push(update)
+      // 화면의 기존 reset/증분 수신 방식으로 이름표가 남는지 확인한다.
+      visibleEvents = update.reset ? [...update.events] : [...visibleEvents, ...update.events]
+    },
+  }
+  installAgentMonitor(ctx, { monitor, findMonitorLogs: async () => {
+    const stat = fs.statSync(file)
+    return stat.mtimeMs >= now - logs.MONITOR_MINUTES * 60000 ? [{ file, pane: true, stat, label: 'Codex' }] : []
+  } })
+  const settle = async () => {
+    for (let attempt = 0; monitor.ticking && attempt < 100; attempt += 1) await new Promise(setImmediate)
+    assert.equal(monitor.ticking, false, '모니터 갱신이 끝난다')
+  }
+  monitor.lastGithub = now
+  ctx.setMonitorWatch(true)
+  context.after(() => ctx.setMonitorWatch(false))
+  await settle()
+  assert.deepEqual(visibleEvents.map(event => event.text), ['이전 기록입니다'])
+  const oldSession = sent.at(-1).sessions[0].id
+  const github = { id: ++monitor.seq, session: 'github', kind: 'say', icon: '', name: '', text: 'GitHub 이슈', at: new Date(now).toISOString(), github: { repo: 'test/repo', number: 1, title: '이슈' } }
+  monitor.events.push(github)
+  visibleEvents.push(github)
+
+  now += (logs.MONITOR_MINUTES + 1) * 60000
+  monitor.lastGithub = now
+  await tick()
+  const expired = sent.at(-1)
+  const labels = new Map(expired.sessions.map(session => [session.id, session.label]))
+  assert.deepEqual(visibleEvents.map(event => labels.get(event.session) ?? (event.github ? 'GitHub' : '?')), ['GitHub'], '만료 뒤 [?] 줄이 남지 않는다')
+  assert.deepEqual(monitor.events, [github], 'main에도 만료 이벤트가 남지 않는다')
+  assert.equal(expired.reset, true, '기존 reset으로 화면의 누적 줄도 정리한다')
+
+  fs.appendFileSync(file, line('다시 시작합니다'))
+  fs.utimesSync(file, new Date(now), new Date(now))
+  now += 11000
+  await tick()
+  assert.notEqual(sent.at(-1).sessions[0].id, oldSession)
+  assert.deepEqual(visibleEvents.map(event => event.text).sort(), ['GitHub 이슈', '다시 시작합니다', '이전 기록입니다'].sort(), '다시 읽은 backlog는 한 번씩만 나온다')
+  assert.equal(visibleEvents.some(event => event.session === oldSession), false)
+  await tick()
+  assert.equal(visibleEvents.length, 3, '다음 갱신에도 같은 줄을 덧붙이지 않는다')
+})

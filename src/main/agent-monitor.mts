@@ -25,6 +25,7 @@ export function installAgentMonitor(ctx: PackCtx, { monitor, findMonitorLogs }: 
     monitor.ticking = true
     try {
       const fresh: MonitorEvent[] = []
+      const removedSessions = new Set<string>()
       let changed = false
       const listed = await ctx.daemonCall<{ panes: DaemonPane[] }>('pane list')
       if (ctx.athenaDir && listed.result?.panes) {
@@ -52,6 +53,7 @@ export function installAgentMonitor(ctx: PackCtx, { monitor, findMonitorLogs }: 
         for (const [file, tail] of monitor.tails) {
           if (tail.mtime < since && (!tail.sessionId || paneStatuses.get(tail.sessionId) !== 'waiting')) {
             monitor.tails.delete(file)
+            removedSessions.add(tail.id)
             changed = true
           }
         }
@@ -69,12 +71,17 @@ export function installAgentMonitor(ctx: PackCtx, { monitor, findMonitorLogs }: 
           fresh.push(...tailEvents(monitor, tail, await readNewLines(tail)))
         } catch {}
       }
-      const events = fresh.sort((left, right) => String(left.at).localeCompare(String(right.at)))
+      // 세션만 지우면 옛 줄의 이름표를 찾을 수 없으므로, 누적 줄도 같은 갱신으로 바꾼다.
+      if (removedSessions.size) monitor.events = monitor.events.filter((event) => !removedSessions.has(event.session))
+      const events = fresh.filter((event) => !removedSessions.has(event.session)).sort((left, right) => String(left.at).localeCompare(String(right.at)))
       if (events.length) {
         monitor.events = [...monitor.events, ...events].sort((left, right) => String(left.at).localeCompare(String(right.at)) || left.id - right.id).slice(-MONITOR_KEEP)
         changed = true
       }
-      if (changed) send('monitor:update', { sessions: sessions(), events })
+      if (changed) {
+        if (removedSessions.size) send('monitor:update', { reset: true, sessions: sessions(), events: monitor.events })
+        else send('monitor:update', { sessions: sessions(), events })
+      }
     } catch (error) {
       send('monitor:update', { sessions: sessions(), events: [], error: (error as Error).message })
     } finally {
