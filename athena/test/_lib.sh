@@ -41,9 +41,16 @@ athena_test_guard() {
 #   확인한 pid 만 kill. 돌고 있는 같은 시험의 서버는 부모가 그 시험 셸이라(ppid 1 아님) 건드리지 않는다
 #   사용: 임시 폴더를 만든 직후 athena_test_reap "$TMP"   (TMP = mktemp -d ".../<시험 이름>.XXXXXX")
 athena_test_reap() {
-  local prefix pid ppid comm cwd
+  local prefix base name suffix pid ppid comm cwd
   prefix="$(cd "$1" && pwd -P)" || return 0
-  prefix="${prefix%.*}."
+  # 마지막 경로 요소가 '<시험 이름>.<6자 이상>' 모양일 때만 — 아니면(넓은 폴더를 넘겼거나 모양이 다르면) 아무것도 끄지 않는다
+  base="${prefix##*/}"
+  name="${base%.*}"
+  suffix="${base##*.}"
+  [ "$name" != "$base" ] && [ ${#suffix} -ge 6 ] || return 0
+  case "$name" in '' | tmp | *[!A-Za-z0-9-]*) return 0 ;; esac
+  case "$suffix" in *[!A-Za-z0-9]*) return 0 ;; esac
+  prefix="${prefix%/*}/$name."
   while read -r pid ppid comm; do
     [ "$ppid" = 1 ] || continue
     case "$comm" in node | */node) ;; *) continue ;; esac
