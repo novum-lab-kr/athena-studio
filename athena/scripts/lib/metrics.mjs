@@ -349,6 +349,8 @@ const windowTotals = (events, plans, from, to, picked = null) => {
     asks,
     waitMs: average(waits),
     verifyRuns: verify.length,
+    verifyPasses: verify.filter((event) => event.ok === true).length,
+    verifyFails: verify.filter((event) => event.ok === false).length,
     verifyFailRate: ratio(verify.filter((event) => event.ok === false).length, verify.length),
     reviewRuns: reviews.length,
     reviewRejectRate: ratio(reviews.filter((event) => event.verdict === '수정 필요').length, reviews.length),
@@ -365,6 +367,7 @@ export const summarize = (events, { now = Date.now(), days = null, since = null,
     ? new Set(plans.filter((plan) => plan.reviewed === (review === 'with')).map((plan) => plan.plan))
     : null
   return {
+    until: new Date(now).toISOString(),
     days: since === null ? days : null,
     from: from === -Infinity ? null : new Date(from).toISOString(),
     review: picked ? review : null,
@@ -372,6 +375,8 @@ export const summarize = (events, { now = Date.now(), days = null, since = null,
     events: valid.length,
     current: windowTotals(valid, plans, from, Infinity, picked),
     previous: span ? windowTotals(valid, plans, from - span, from, picked) : null,
+    // 선 그래프의 이전 기간 비교에 필요한 완료 시각만 보낸다(원문·전체 계획서 중복 없음).
+    previousCompleted: span ? plans.filter((plan) => plan.endAt !== null && plan.endAt >= from - span && plan.endAt < from && (picked === null || picked.has(plan.plan))).map((plan) => plan.endAt) : null,
     // 이 기간에 무슨 일이든 있었던 계획서 — 최근에 움직인 것부터
     plans: plans.filter((plan) => plan.lastAt !== null && plan.lastAt >= from && (picked === null || picked.has(plan.plan))).sort((left, right) => right.lastAt - left.lastAt),
   }
