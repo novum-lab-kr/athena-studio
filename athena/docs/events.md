@@ -29,6 +29,7 @@
 | `auto.stop` | `scripts/pr-auto.mjs` — 머지로 가지 못하고 멈출 때 | `plan` · `repo` · `pr` · `sha` · `reason`(reviewers — 상한 뒤 짧은 리뷰의 실패도 · rounds — 상한을 넘었는데 이어받을 수정이 없음 · short-review — 상한 뒤 짧은 리뷰에 막는 지적 · 결정, 또는 짧은 리뷰 표식 없는 옛 이어받음 대기를 되돌리지 못함 · verify · decisions — 결정 콘솔에 안 정한 결정) · `why` · 빠른 길이면 `fast: true` |
 | `auto.merge` | `scripts/pr-auto.mjs` — 머지 확인 답을 처리한 뒤(확인 없는 레포는 승인 뒤 바로) | `plan` · `repo` · `pr` · `sha` · `ok` · 실패면 `reason`(held — 보류 · recheck — 직전 확인 실패 · 확인 없는 머지 전에 PR · 설정이 바뀜 · gh) · 확인 없이 머지한 것(레포 `autoMergeConfirm: false`)이면 `confirm: false` · 빠른 길이면 `fast: true` · 넘긴 작업은 `handoff: true` · `run` · 성공이면 `mergedAt` · `handoffMs` |
 | `handoff` | `scripts/pr-auto.mjs --handoff` — 작업을 Actions 로 넘긴 뒤 | `plan` · `repo` · `branch` · `sha` · `base` |
+| `lead-send-unsent` | `scripts/lead-send.py` — 아테나 pane 에 넣지 못해(또는 넣었는지 몰라) 요청 대신 기록만 할 때(`docs/requests.md` "아테나에게 보내지 못했을 때") | `lead` · `from` · `plan` · `reason` · `written`(계획서 결과 절에 적었나) · 못 적었으면 `text`(글 앞 1000자) |
 
 `verify` 의 계획서는 환경 `ATHENA_PLAN` 으로 온다 — `delegate.sh` 로 띄운 pane 과 `commit.sh` 의 커밋 전 검증은 `plan` 이 차고, 사람이 pane 밖에서 직접 돌린 검증은 빈 값이다. `plan` 이 없는 줄(옛 기록 포함)은 같은 `repo` · `branch` 의 `commit` · `review` 로 잇는다. `ms` · `scope` 도 같은 때 생겼으니 옛 기록에는 없다 — 지표는 그 줄의 검증 소요를 모르는 것(null)으로 둔다.
 
