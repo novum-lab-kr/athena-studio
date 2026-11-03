@@ -42,6 +42,7 @@ import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './ar
 import { answerRequest, listRequests } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { groupByPlan, parseSinceDate, summarize } from '../lib/metrics.mjs'
+import { planTitles } from './plan-titles.mjs'
 import { scanSessions, workTotals } from '../lib/session-work.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { overview as qaOverview } from '../qa/flows.mjs'
@@ -1592,13 +1593,10 @@ const handleRequest = async (request, response) => {
   }
   // 지표 — 사건 기록(state/events.jsonl)을 계획서마다 묶은 숫자(scripts/lib/metrics.mjs). 누를 때만 읽는다
   if (url.pathname === '/api/metrics') {
-    const summary = summarize(readEvents(ROOT), metricsPeriod(url))
-    // 제목은 계획서에서 — 지웠거나 보관했으면 경로만
-    for (const plan of summary.plans) {
-      const text = plan.plan.startsWith('plans/') && !plan.plan.includes('..') ? readText(join(ROOT, plan.plan)) : null
-      plan.title = text ? plain(text.match(/^#\s+(.+)$/m)?.[1] ?? '') : ''
-      plan.exists = Boolean(text)
-    }
+    const now = Date.now()
+    const summary = summarize(readEvents(ROOT), { ...metricsPeriod(url), now })
+    const titles = planTitles(ROOT, summary.plans.map((plan) => plan.plan))
+    for (const plan of summary.plans) Object.assign(plan, titles.get(plan.plan))
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     return response.end(JSON.stringify(summary))
   }
