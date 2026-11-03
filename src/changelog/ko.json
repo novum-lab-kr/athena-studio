@@ -1,4 +1,7 @@
 {
+  "The Board's Metrics tab now highlights average task, pull request, review and verification times, with medians, 75th percentiles, sample counts and calculation details. The task timeline has been removed.": "현황판 [지표] 탭에서 작업 · PR · 리뷰 · 검증의 평균 소요 시간을 크게 보여 줘요. 중앙값 · p75 · 집계 건수와 계산 기준도 함께 볼 수 있고, 작업 타임라인은 없앴어요.",
+  "Decision consoles now check their target pane so decisions are not sent using an outdated pane identifier.": "결정 콘솔에서 보낼 pane 을 확인해 오래된 pane 식별자로 결정을 보내지 않도록 고쳤어요.",
+  "Instructions to agents now follow the repository's current review and merge settings, including whether merging needs confirmation.": "에이전트에게 보내는 안내가 머지 확인 여부를 포함해 레포의 현재 리뷰 · 머지 설정을 따르도록 고쳤어요.",
   "The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.": "현황판 [지표] 탭에서 소요 시간 · 작업 상태 · 검증 결과 · 날짜별 완료 흐름을 그래프와 작업 타임라인으로 볼 수 있어요. 보관된 계획서도 제목으로 보여요.",
   "Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.": "에이전트 모니터에서 Codex code-mode 도구 호출을 앱 언어로 짧게 요약해 보여 줘요.",
   "The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.": "현황판 [QA] 탭과 코어 QA 실행기를 없앴어요. 레포 검증은 계속 사용할 수 있어요.",
