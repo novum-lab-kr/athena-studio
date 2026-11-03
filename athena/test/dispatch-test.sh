@@ -31,7 +31,7 @@ import json, os, pathlib, sys
 engine = pathlib.Path(sys.argv[0]).name
 if sys.argv[1:3] in (['auth', 'status'], ['login', 'status']):
     sys.exit(0 if engine in os.environ['READY_TOOLS'].split(',') else 1)
-pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':sys.argv[1:], 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT')}))
+pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':sys.argv[1:], 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT'), 'bootstrap':os.environ.get('ATHENA_NOTIFY_BOOTSTRAP')}))
 '''
     for tool in ('claude', 'codex'):
         p = bin_dir / tool; p.write_text(cli); p.chmod(0o755)
@@ -59,14 +59,18 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     (core / 'pack').mkdir()
     (core / 'pack/pack.json').write_text(json.dumps(cfg))
     (core / 'athena.config.json').write_text(json.dumps({'dataDir': str(root / 'data')}))
-    def run(ready, remembered=None, extra=()):
+    def run(ready, remembered=None, extra=(), prompt="TASK_SENTINEL", issue=False):
         plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n')
+        if issue:
+            (core / 'issues').mkdir(exist_ok=True)
+            (core / 'issues/test.md').write_text('# 연결 이슈\n')
+            plan.write_text(plan.read_text() + '- Issue: issues/test.md\n')
         capture.unlink(missing_ok=True); log.write_text('')
         saved = core / '.athena-main-tool.json'
         if remembered: saved.write_text(json.dumps({'main':remembered}))
         else: saved.unlink(missing_ok=True)
         env['READY_TOOLS'] = ready
-        result = subprocess.run(['bash',str(core/'scripts/delegate.sh'),'fe','TASK_SENTINEL', '--plan','plans/task/test.md','--cwd',str(work),*extra],env=env,cwd=core,capture_output=True,text=True)
+        result = subprocess.run(['bash',str(core/'scripts/delegate.sh'),'fe',*([prompt] if prompt is not None else []), '--plan','plans/task/test.md','--cwd',str(work),*extra],env=env,cwd=core,capture_output=True,text=True)
         return result, json.loads(capture.read_text()) if capture.exists() else None, [json.loads(line) for line in log.read_text().splitlines()]
     for ready, remembered, expected in [('claude',None,'claude'),('codex',None,'codex'),('claude,codex',None,'claude'),('claude,codex','claude','claude'),('claude,codex','codex','codex')]:
         result, got, calls = run(ready, remembered)
@@ -132,6 +136,12 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     check('명시 엔진이 로그인 안 됨 → pane 생성 없음', result.returncode==2 and not calls)
     result, got, calls = run('codex',None,('--resume','11111111-2222-3333-4444-555555555555'))
     check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got['args'][:2]==['resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
+    for engine in ('claude', 'codex'):
+        for prompt, issue, bootstrap in ((None, False, '1'), (None, True, '0'), ('실제 요청', False, '0')):
+            result, got, calls = run(engine, prompt=prompt, issue=issue)
+            check(f'{engine} — {prompt=}, {issue=} → 시작 안내 표시 {bootstrap}', result.returncode == 0 and got and got['bootstrap'] == bootstrap)
+    result, got, calls = run('codex', prompt=None, extra=('--resume', '11111111-2222-3333-4444-555555555555'))
+    check('지시 없는 resume 은 다음 실제 요청을 시작 안내로 보지 않는다', result.returncode == 0 and got and got['bootstrap'] == '0')
     check('기존 사용자 설정·훅 파일 유지', (codex_home / 'config.toml').read_text() == '# USER_CONFIG_SENTINEL\n' and (codex_home / 'hooks.json').read_text() == '{"hooks":{}}\n')
 sys.exit(fail)
 PY

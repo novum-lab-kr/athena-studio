@@ -44,7 +44,7 @@ export FAKE_LOG="$WORK/log"; : > "$FAKE_LOG"
 hook() {   # <prompt|stop> [입력 JSON] — 에이전트 pane p9 에서
   local input="${2:-}"; [ -n "$input" ] || input='{}'
   printf '%s' "$input" | env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" \
-    ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" WAITING_FILE="$WORK/waiting" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
+    ATHENA_NOTIFY_BOOTSTRAP="${BOOTSTRAP:-0}" ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" WAITING_FILE="$WORK/waiting" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
 }
 sent() { grep -c '^pane send-text p1 ' "$FAKE_LOG"; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (기대 $3 · 실제 $2)"; FAIL=1; fi; }
@@ -85,6 +85,21 @@ module.deliver_notice(state_path, 'p9', 'p1', 'next-notice')
 assert log.read_text().splitlines() == ['text', 'enter', 'text', 'enter'], '새 턴의 같은 문구는 한 번 새로 보내야 함'
 PYRACE
 check "옛 턴 같은 문구 취소·동시 전송 선점·새 턴 알림 허용" "$?" 0
+
+hook stop
+hook stop
+check "첫 지시 전 Stop 은 끝 알림을 보내지 않는다" "$(sent)" 0
+: > "$FAKE_LOG"
+rm -f "$DATA/state/agent-notify/p9.json"
+
+BOOTSTRAP=1 hook prompt '{"prompt":"지금은 지시가 없다. 브랜치 확인 후 기다린다"}'
+BOOTSTRAP=1 hook stop
+check "작업 지시 없는 시작 안내 턴은 끝 알림을 보내지 않는다" "$(sent)" 0
+BOOTSTRAP=1 hook prompt '{"prompt":"첫 실제 요청"}'
+BOOTSTRAP=1 hook stop
+check "시작 안내 뒤 실제 요청부터 끝 알림을 보낸다" "$(sent)" 1
+: > "$FAKE_LOG"
+rm -f "$DATA/state/agent-notify/p9.json"
 
 hook prompt '{"prompt":"선택 중 알림"}'
 touch "$WORK/waiting"

@@ -7,6 +7,7 @@
 계획서는 pane 기록(state/pane-sessions/<pane>.json — 이어 보내기로 바뀐 계획서도 따라간다)을 먼저, 없으면 환경 ATHENA_PLAN.
 
 무한 왕복 막기 — 상태는 <팩 데이터>/state/agent-notify/<pane>.json
+  - 첫 입력 전 Stop · 지시 없이 띄운 시작 안내(ATHENA_NOTIFY_BOOTSTRAP)는 알리지 않는다
   - 같은 줄은 사용자 입력이 새로 오기 전에는 다시 보내지 않는다(새 입력이 오면 같은 내용도 다시 알린다 — 같은 계획서에 요청을 이어 받는 경우)
   - 아테나가 이 알림에 답한 입력("[아테나 …] … 끝 알림 …")으로 시작한 차례는 알리지 않는다
 백그라운드 명령이 아직 돌면 그 차례는 알리지 않고 last 도 남기지 않는다 — 명령이 끝나 다시 Stop 이 오면 그때 알린다.
@@ -206,14 +207,16 @@ def main() -> None:
     if mode == 'prompt':
         with pane_lock(state_path.parent, pane):
             state = load_json(state_path)
-            state['skip'] = is_ack(str(event.get('prompt') or ''))
+            bootstrap = not state.get('turn') and os.environ.get('ATHENA_NOTIFY_BOOTSTRAP') == '1'
+            state['skip'] = bootstrap or is_ack(str(event.get('prompt') or ''))
             state['turn'] = uuid.uuid4().hex
             state.pop('pending', None)
             state['last'] = ''
             save_state(state_path, state)
         return
-    if load_json(state_path).get('skip'):
-        return
+    initial = load_json(state_path)
+    if not initial.get('turn') or initial.get('skip'):
+        return  # 첫 사용자 입력(prompt) 전의 idle 은 끝난 작업이 아니다
     if background_running(event):
         return   # 아직 도는 명령이 있다 — 끝나서 다음 Stop 이 오면 그때 알린다(last 를 남기지 않는다)
     plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
@@ -229,9 +232,9 @@ def main() -> None:
     line = notice_line(agent, pane, plan, fields)
     with pane_lock(state_path.parent, pane):
         state = load_json(state_path)
-        if state.get('skip'):
+        if not state.get('turn') or state.get('skip'):
             return
-        turn = state.setdefault('turn', uuid.uuid4().hex)
+        turn = state['turn']
         pending = state.get('pending') or {}
         if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
             return

@@ -106,7 +106,7 @@
 
   /* 설치 단계 — 실제 순서라 번호를 붙인다 */
   ol.steps { list-style: none; margin: 16px 0 0; padding: 0; counter-reset: step; display: grid; gap: 0; }
-  ol.steps > li { position: relative; padding: 0 0 22px 44px; counter-increment: step; }
+  ol.steps > li { min-width: 0; position: relative; padding: 0 0 22px 44px; counter-increment: step; }
   ol.steps > li::before {
     content: counter(step); position: absolute; left: 0; top: 0;
     width: 28px; height: 28px; border-radius: 50%;

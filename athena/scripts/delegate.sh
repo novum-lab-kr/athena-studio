@@ -31,6 +31,7 @@ ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴�
 SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane 은 이걸로만 다룬다
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
+NOTIFY_BOOTSTRAP=0
 AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0; ENGINE=""; ROLE=""
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -186,6 +187,7 @@ PLAN_ISSUE="$(sed -n 's/^- Issue:[[:space:]]*\(issues\/[^[:space:]]*\.md\).*/\1/
 if [ -z "$PROMPT" ] && [ -n "$PLAN_ISSUE" ] && [ -f "$ATHENA_DIR/$PLAN_ISSUE" ]; then
   PLAN_HEADER="${PLAN_HEADER}이 계획서는 이슈 $ATHENA_DIR/$PLAN_ISSUE 에 연결돼 있다 — 지시문이 따로 없어도 이슈(근거·할 일)와 계획서 Progress·Next 가 할 일이다. 요청을 기다리지 말고 브랜치·미커밋 상태를 한 줄로 보고한 뒤 곧바로 Next 부터 진행한다. 시작할 때 계획서 '## 지시' 절을 '이슈 $PLAN_ISSUE 처리 — 계획서 Progress·Next 대로' 로 채우고 Status 를 in_progress 로 바꾼다. 계획서에 '확인을 받은 뒤' 라고 적힌 단계(수정안 확정 등)에서는 멈추고 사용자에게 묻는다. 이슈 파일의 status 는 바꾸지 않는다(아테나가 옮긴다). "
 elif [ -z "$PROMPT" ]; then
+  NOTIFY_BOOTSTRAP=1
   PLAN_HEADER="${PLAN_HEADER}지금은 지시가 없다. 브랜치·미커밋 상태만 확인해 한 줄로 보고하고 사용자의 요청을 기다린다. 첫 요청을 받으면 계획서의 제목(# 줄)과 '## 지시' 절을 그 요청으로 바꿔 적고 진행한다. "
 fi
 # git 없는 프로젝트(결정 D4) — commit.sh · ship.sh 를 못 쓰니 뒷일을 맥 실행기로 넘긴다
@@ -197,7 +199,7 @@ PLAN_HEADER="${PLAN_HEADER}요청이 여러 레포·API·구조 변경으로 커
 fi
 RAW_PROMPT="$PROMPT"   # 이어 보내기(--reuse-pane)는 긴 머리말 없이 이 요청만 싣는다
 PROMPT="$PLAN_HEADER${PROMPT}"
-[ -n "${RESUME:-}" ] && PROMPT=""   # 이어 열기 — 계획서 안내는 처음 대화에 이미 있다
+[ -n "${RESUME:-}" ] && { PROMPT=""; NOTIFY_BOOTSTRAP=0; }   # 이어 열기 — 계획서 안내는 처음 대화에 이미 있다
 
 GIVEN_PROMPT="$PROMPT"
 GIVEN_CWD="$WORKDIR"
@@ -468,6 +470,8 @@ PYEOF
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
   echo "export ATHENA_AGENT=$(shq "$AGENT") ATHENA_ROLE=$(shq "$ROLE") ATHENA_ENGINE=$(shq "$ENGINE")"
+  # 지시 없이 띄운 첫 안내는 작업 완료가 아니다 — 실제 요청을 받은 턴부터 끝 알림을 보낸다.
+  echo "export ATHENA_NOTIFY_BOOTSTRAP=$NOTIFY_BOOTSTRAP"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
   echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)

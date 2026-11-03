@@ -351,8 +351,9 @@ const flushLeftover = async () => {
   }
 }
 const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
-const autoDonePlans = async (plans) => {
-  const targets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
+const autoDonePlans = async (plans, panesAvailable) => {
+  // pane 목록을 읽지 못하면 닫힘을 확인할 수 없다.
+  const targets = plans.filter((plan) => panesAvailable && !plan.agents.length && !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && /\/pull\/\d+/.test(plan.pr))
   await Promise.all(targets.map(async (plan) => {
     const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
     const infos = await Promise.all(links.map(async (link) => {
@@ -387,7 +388,7 @@ const autoDonePlans = async (plans) => {
     await cleanupPlanWorktrees(plan, counted.map((info) => info.head).filter(Boolean))
   }))
   // PR 끔(바로 머지) 계획서 — PR 이 없다. "- Auto merge:" 줄이 같은 HEAD 의 머지 성공이면 완료(머지 확인 대기 · 사람이 직접 머지는 완료가 아니다 · lib/pr-auto.mjs directMergeStatus)
-  const directTargets = plans.filter((plan) => !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && !/\/pull\/\d+/.test(plan.pr))
+  const directTargets = plans.filter((plan) => panesAvailable && !plan.agents.length && !plan.archived && (plan.status === 'ready_for_review' || plan.status === 'in_progress') && !/\/pull\/\d+/.test(plan.pr))
   for (const plan of directTargets) {
     const planText = readText(join(ROOT, plan.id)) || ''
     const direct = directMergeStatus(planText)
@@ -963,7 +964,11 @@ const collect = async () => {
     .map(readIssue)
     .filter(Boolean)
     .filter((issue) => issue.column !== 'done' || now - issue.mtime < DONE_KEEP_DAYS * 86_400_000)
-  await autoDonePlans(plans)
+  // 자동 완료보다 먼저 묶인 pane 을 확인한다 — working · idle · waiting 모두 살아 있으면 보류한다.
+  const [{ available, panes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
+  const sessions = BOOT_PATHS.mode === 'packs' ? readPaneSessions(join(BOOT_PATHS.state, 'pane-sessions')) : []
+  for (const plan of plans) plan.agents = boundPaneIds(plan, panes, sessions, PROTECTED_BRANCH)
+  await autoDonePlans(plans, available)
   autoReopenPlans(plans)
   await autoReviewPlans(plans)
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
@@ -971,7 +976,6 @@ const collect = async () => {
   // 완료로 바뀐 시각 — 사건 기록에 없으면(기록 전에 끝난 것) null, 앱은 그때 mtime 을 쓴다
   const done = doneTimes(ROOT)
   for (const plan of plans) plan.doneAt = plan.status === 'done' ? done.get(plan.id) ?? null : null
-  const [{ available, panes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
   await Promise.all([...plans, ...issues].map(async (card) => { card.owner = await ownerOf(card.owner, join(ROOT, card.id)) }))
   const subagents = readSubagents()
 
@@ -987,10 +991,8 @@ const collect = async () => {
   }
   // 에이전트 pane 을 계획서에 붙인다 — delegate.sh 가 Work ref · Review 에 적은 "pane <id>"(없으면 브랜치) + 그 계획서로 띄운 pane 기록(plan-bind.mjs).
   // 같은 계획서로 여러 번 띄우면 Work ref 는 마지막 pane 으로 바뀌어도 기록은 pane 마다 남는다 — 자동 보관이 일하는 pane 을 놓치지 않게
-  const sessions = BOOT_PATHS.mode === 'packs' ? readPaneSessions(join(BOOT_PATHS.state, 'pane-sessions')) : []
   const paneStatuses = new Map(panes.map((pane) => [pane.id, pane.status]))
   for (const plan of plans) {
-    plan.agents = boundPaneIds(plan, panes, sessions, PROTECTED_BRANCH)
     // 에이전트가 지금 일하고 있으면 진행 중 칸에 — 요청을 여러 번 주고받으면 계획서 Status 가 리뷰에 머물러 있어도
     // 실제로는 작업 중이다. 파일은 바꾸지 않고 보여 주는 칸만 (끝나 대기로 돌아가면 다시 리뷰 칸)
     plan.working = plan.agents.some((id) => paneStatuses.get(id) === 'working')
