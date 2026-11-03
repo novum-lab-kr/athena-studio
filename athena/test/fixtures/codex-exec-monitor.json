@@ -1,0 +1,279 @@
+[
+  {
+    "label": "명령",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd: \"git status --short\", workdir: \"/tmp/repo\", max_output_tokens: 1000}))"
+      }
+    },
+    "text": "명령 실행 · git status --short"
+  },
+  {
+    "label": "설명 우선",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd: \"echo PRIVATE_MARKER\", title: \"변경 파일 확인\"}))"
+      }
+    },
+    "text": "명령 실행 · 변경 파일 확인"
+  },
+  {
+    "label": "description",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd: 'git diff', description: '차이 확인'}))"
+      }
+    },
+    "text": "명령 실행 · 차이 확인"
+  },
+  {
+    "label": "파일",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.view_image({path: \"/tmp/screen.png\"}))"
+      }
+    },
+    "text": "이미지 확인 · /tmp/screen.png"
+  },
+  {
+    "label": "여러 작업",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"git status\"})); text(await tools.exec_command({cmd:\"git diff\"}));"
+      }
+    },
+    "text": "명령 실행 · git status · 외 1개 작업"
+  },
+  {
+    "label": "복잡한 코드",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "const command = buildCommand(); text(await tools.exec_command({cmd: command}))"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "템플릿 보간",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd: `echo ${PRIVATE_MARKER}`}))"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "문자열 속 가짜 호출",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "const fake = 'tools.exec_command({cmd:\"PRIVATE_MARKER\"})';"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "실행 금지",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "globalThis.MONITOR_MUST_NOT_RUN = true; throw new Error(\"PRIVATE_MARKER\")"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "알 수 없는 도구",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.unknown_tool({input:\"PRIVATE_MARKER\"}))"
+      }
+    },
+    "text": "도구 실행"
+  },
+  {
+    "label": "이스케이프",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd: \"rg \\\"hello\\\" src/main.mts\"}))"
+      }
+    },
+    "text": "명령 실행 · rg \"hello\" src/main.mts"
+  },
+  {
+    "label": "주석",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "// tools.exec_command({cmd:\"PRIVATE_MARKER\"})\ntext(await tools.exec_command({cmd:\"git diff --stat\"}))"
+      }
+    },
+    "text": "명령 실행 · git diff --stat"
+  },
+  {
+    "label": "기존 title",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": "exec",
+        "arguments": "{\"code\": \"PRIVATE_MARKER\", \"title\": \"수정 확인\"}"
+      }
+    },
+    "text": "수정 확인"
+  },
+  {
+    "label": "파일 패치",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.apply_patch(\"*** Begin Patch\\n*** Update File: src/demo.mts\\n@@\\n+PRIVATE_MARKER\\n*** End Patch\"))"
+      }
+    },
+    "text": "파일 변경 · Update src/demo.mts"
+  },
+  {
+    "label": "계산한 경로는 생략",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"git status\",workdir:load(\"cwd\")}))"
+      }
+    },
+    "text": "명령 실행 · git status"
+  },
+  {
+    "label": "계산한 명령",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"echo \" + PRIVATE_MARKER}))"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "객체 안 주석",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({/* 설명 */ cmd:\"git status\", env:{SAFE:true}}))"
+      }
+    },
+    "text": "명령 실행 · git status"
+  },
+  {
+    "label": "깨진 문자열",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"PRIVATE_MARKER}))"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "보간 없는 템플릿",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:`git diff --stat`}))"
+      }
+    },
+    "text": "명령 실행 · git diff --stat"
+  },
+  {
+    "label": "제목 계산은 생략",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"git diff\",title:\"PRIVATE_MARKER\" + name}))"
+      }
+    },
+    "text": "명령 실행 · git diff"
+  },
+  {
+    "label": "제공된 제목 우선",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "title": "파일 확인",
+        "input": "PRIVATE_MARKER"
+      }
+    },
+    "text": "파일 확인"
+  },
+  {
+    "label": "잘못된 제목 타입",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "function_call",
+        "name": "functions.exec",
+        "arguments": "{\"title\": {\"raw\": \"PRIVATE_MARKER\"}, \"code\": \"PRIVATE_MARKER\"}"
+      }
+    },
+    "text": "명령 실행"
+  },
+  {
+    "label": "제어 문자 제거",
+    "record": {
+      "type": "response_item",
+      "payload": {
+        "type": "custom_tool_call",
+        "name": "functions.exec",
+        "input": "text(await tools.exec_command({cmd:\"git \\x1bstatus\"}))"
+      }
+    },
+    "text": "명령 실행 · git status"
+  }
+]

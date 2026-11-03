@@ -39,9 +39,9 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 
 ## 검사
 - 앱을 고쳤으면 `npm run check` · `npm run typecheck` · `npm test`. node-pty 를 못 불러오면 데몬 통합 테스트가 **skip** 된다(`test/daemon.test.js`) — 통과 숫자만 보지 말고 skip 이 없는지 본다
+- 터미널 저장·복원·재접속을 고쳤으면 `test/daemon-reload.test.js` · `test/daemon.test.js`로 화면 내용과 입력 모드(마우스 추적·인코딩 등)를 함께 확인한다. 이전 구현에서 실패·수정 뒤 통과하는 회귀 시험을 남기고, `scope-tests.mjs`의 표준 시험 선택에 포함되는지 확인한다. 격리 화면에서는 재접속 전후 실제 휠 전달도 비교한다(일반 셸·마우스 비사용·기본·SGR 모드). 실제 Claude/Codex 확인은 `docs/development.md`의 재접속 절차를 따르고 격리 실험 결과와 구분한다.
 - `npm test` 는 코어를 보지 않는다. `athena/` 를 고쳤으면 고친 곳에 맞는 코어 검사를 따로(`athena/` 에서):
   - `test/packs-test.sh`(본체 하나 · 약 1분) · `test/requests-test.sh`(사람에게 묻는 요청 · 약 30초) · `test/bodies-test.sh`(여러 본체 · update · 약 2분) · `test/bundle-test.sh`(번들 코어 · 약 1분) — 모두 임시 폴더에서 돌고 지운다(`KEEP=1` 이면 남김)
-  - QA 실행기 · 현황판 QA 탭(`scripts/qa/` · `server.mjs` `/api/qa/flows` · `/api/qa-run`)을 고쳤으면 `test/qa-test.sh`(몇 초~1분 · 임시 레포 · 가짜 서버 · Playwright 가 있으면 FE 도)
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
   - 끝난 작업 워크트리 정리(`scripts/board/worktree-cleanup.mjs` — 계획서 자동 완료 · 자동 보관 · 이슈 [아카이브] 가 같이 쓴다)를 고쳤으면 `test/worktree-cleanup-test.sh`(몇 초 · 임시 git 레포 · 머지됨 · 미커밋 · 안 올린 커밋 · pane 사용 중 · direct)

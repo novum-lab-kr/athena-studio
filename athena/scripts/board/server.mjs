@@ -19,7 +19,6 @@
  *   - POST /api/worktree-remove 끝난 이슈의 워크트리를 지운다(미커밋 변경이 있으면 거부)
  *   - POST /api/delete 카드를 휴지통(.board-trash/<날짜>/)으로 옮긴다 — 이슈면 연결된 경량 계획서·워크트리도. 되돌릴 수 있게 지우지 않는다
  *   - POST /api/archive 끝난 카드를 archive/<이름>/ 한 폴더로 보관 — issue.md · plan.md(· plan.html) · meta.json(archive.mjs), 이슈 워크트리 정리. 보드에서 사라지고 히스토리 탭에 뜬다
- *   - GET  /api/qa/flows     QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(scripts/qa/flows.mjs overview) · POST /api/qa-run 흐름 TC 실행(scripts/qa/run.mjs · 한 번에 하나)
  *   - GET  /api/history      보관된 일 목록 · /api/history/item?dir= 한 건의 이슈·계획서 원문
  *   - GET  /api/memory       아테나 메모리(~/.claude/projects/<원본 레포>/memory · autoMemoryDirectory) 목록·본문 — 읽기 전용
  *   - GET  /api/learn        [학습] 탭 — 학습 후보·학습한 내용·넣기/버리기 수 · POST /api/learn-{apply,batch,discard,edit,candidate-edit,remove,tidy}(learn.mjs — tidy 는 공책 정리 후보의 줄 하나 지우기·그대로 두기)
@@ -44,7 +43,6 @@ import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { groupByPlan, parseSinceDate, summarize } from '../lib/metrics.mjs'
 import { scanSessions, workTotals } from '../lib/session-work.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
-import { overview as qaOverview } from '../qa/flows.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { createHandoffWatch, handoffStateOf, HANDOFF_EVERY_MS } from '../lib/handoff.mjs'
 import { jevEnabled } from '../lib/jev.mjs'
@@ -1490,48 +1488,6 @@ const safeDecodedPath = (pathname) => {
   }
 }
 
-// ── QA (scripts/qa — 흐름 문서 · TC) ─────────────────────────────
-const QA_RUNS_DIR = join(ROOT, '.qa-runs')
-let qaChild = null
-const qaChildAlive = () => Boolean(qaChild && qaChild.exitCode === null && qaChild.signalCode === null)
-
-// 무거운 명령 잠금(scripts/heavy.sh) — QA 는 이 차례를 기다린다. 지금 누가 쥐고 있는지
-function heavyLockState() {
-  const lock = process.env.ATHENA_HEAVY_LOCK || '/tmp/hermes-heavy.lock'
-  // 자리 여럿(1번 <잠금>, 2번부터 <잠금>.2 …) — 쓰는 중인 자리의 what 을 " / " 로 잇는다
-  const holders = []
-  for (const dir of [lock, ...[2, 3, 4, 5, 6, 7, 8].map((slot) => `${lock}.${slot}`)]) {
-    if (dir !== lock && !existsSync(dir)) continue
-    try {
-      const what = readFileSync(join(dir, 'what'), 'utf8').trim()
-      if (what) holders.push(what)
-    } catch { /* 비었거나 잡는 중 */ }
-  }
-  return holders.join(' / ')
-}
-
-function qaFlows() {
-  const data = qaOverview(config, ROOT, QA_RUNS_DIR)
-  // 띄웠는데 아직 run.json 이 없으면 무거운 명령 차례를 기다리는 중이다
-  return { ...data, waiting: qaChildAlive() && !data.running, heavy: heavyLockState() }
-}
-
-// [실행] — 서비스 하나(또는 그 안의 층 · 흐름). 대상 트리 · 서버는 실행기가 정한다(운영 기준 ref · 로컬 서버)
-function startQa(service, layer, flow) {
-  const { services, running } = qaOverview(config, ROOT, QA_RUNS_DIR)
-  if (!services.some((entry) => entry.name === service)) return { error: `모르는 서비스예요: ${service}` }
-  if (layer && !['fe', 'be'].includes(layer)) return { error: '실행할 수 있는 층은 fe · be 예요' }
-  if (flow && !/^[\w.-]+$/.test(flow)) return { error: '흐름 이름이 올바르지 않아요' }
-  if (qaChildAlive() || running) return { error: 'QA 가 이미 돌고 있어요' }
-  const args = [process.execPath, join(ROOT, 'scripts/qa/run.mjs'), '--service', service]
-  if (layer) args.push('--layer', layer)
-  if (flow) args.push('--flow', flow)
-  qaChild = spawn(join(ROOT, 'scripts/heavy.sh'), args, { cwd: ROOT, detached: true, stdio: 'ignore' })
-  qaChild.on('error', () => { qaChild = null })
-  qaChild.unref()
-  return { ok: true }
-}
-
 const allowed = (request) => {
   const origin = request.headers.origin
   const okOrigin = origin === `http://localhost:${PORT}` || origin === `http://127.0.0.1:${PORT}`
@@ -1574,10 +1530,6 @@ const handleRequest = async (request, response) => {
     }
     // templateLines — 고치지 않은 템플릿 자리 줄(앱 [작업] 상세가 진행 칸에서 뺀다 · 규칙은 plan-bind.mjs 한 곳)
     return response.end(JSON.stringify({ id, text, plan, templateLines: TEMPLATE_PLACEHOLDER_LINES }))
-  }
-  if (url.pathname === '/api/qa/flows') {
-    response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8' })
-    return response.end(JSON.stringify(qaFlows()))
   }
   // board.sh 가 이미 보고 있는 탭이 있는지 묻는다 — 있으면 새 탭을 열지 않는다
   // 히스토리 — 보관된 일(archive/). 누를 때만 읽는다
@@ -1635,7 +1587,7 @@ const handleRequest = async (request, response) => {
     response.end(JSON.stringify({ ...snapshot, updatedAt, boot: BOOT, ...(BOOT_PACK ? { pack: BOOT_PACK } : {}) }))
     return
   }
-  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/qa-run', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-candidate-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown', '/api/learn-batch'].includes(url.pathname)) {
+  if (request.method === 'POST' && ['/api/move', '/api/action', '/api/dispatch', '/api/review', '/api/worktree-remove', '/api/delete', '/api/archive', '/api/hermes-new', '/api/learn-apply', '/api/learn-discard', '/api/learn-edit', '/api/learn-candidate-edit', '/api/learn-remove', '/api/learn-tidy', '/api/shutdown', '/api/learn-batch'].includes(url.pathname)) {
     const reply = (code, body) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
@@ -1664,10 +1616,6 @@ const handleRequest = async (request, response) => {
           await refresh()
         })
       return reply(202, { ok: true, job: job.id })
-    }
-    if (url.pathname === '/api/qa-run') {
-      const result = startQa(String(body.service ?? ''), String(body.layer ?? ''), String(body.flow ?? ''))
-      return reply(result.error ? 400 : 202, result)
     }
     if (url.pathname.startsWith('/api/learn-')) {
       const id = String(body.id ?? '')

@@ -11,7 +11,7 @@
 # 무거운 명령 잠금은 쥔 본체만 · import --replace 는 그 팩 본체 기준(C1) · 경로 검증표(C11) · version ·
 # update(일하는 세션이 있어도 올림 · 팩 잠금은 건너뜀 · 주 본체 ff · dirty·diverged) · --rollback(실행 ID 단위) · 링크 실패면 그 본체만 되돌림 ·
 # 열 때 따라잡기 · update --panes-state(쉬는 pane 의 세션은 working 에서 뺌) · 도는 commit.sh · ship.sh · 무거운 명령은 잠깐 기다림 ·
-# 학습 검토 · QA 는 끄고 올림(일이 남았으면 새 코드로 다시) · 데이터 형식이 바뀌는 업데이트는 모두 비었을 때만
+# 학습 검토는 끄고 올림(일이 남았으면 새 코드로 다시) · 데이터 형식이 바뀌는 업데이트는 모두 비었을 때만
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -393,12 +393,8 @@ check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "잠금이 상한 안에 풀림 → 기다린 뒤 올림 · B 는 C3H" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
 wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
-C3I="$(newcommit "test: 업데이트 3i")"
-sleep 60 & QP=$!; mkdir -p "$BODY_B/.qa-runs/t1"; echo "{\"pid\": $QP}" > "$BODY_B/.qa-runs/t1/run.json"; sleep 0.2
-R="$(J "$MAIN" update --from "$(bundle)")"
-check "도는 QA 실행 → 끄고 올림 · qaStopped · B 는 C3I" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3I" ] && [ "$(echo "$R" | field bodies.globex.services.qaStopped)" = "[$QP]" ] && ! kill -0 "$QP" 2>/dev/null' "$R"
-wait "$QP" 2>/dev/null; rm -rf "$BODY_B/.qa-runs/t1"
-C3C="$C3I"   # 아래 데이터 형식 절은 B 의 마지막 커밋을 C3C 로 본다
+
+C3C="$C3H"   # 아래 데이터 형식 절은 B 의 마지막 커밋을 C3C 로 본다
 
 section "데이터 형식이 바뀌는 업데이트 — 모든 본체가 비었을 때만(D10)"
 sed -i.bak 's/export const DATA_FORMATS = \[1, 1\]/export const DATA_FORMATS = [2, 2]/' "$DEV/scripts/lib/config.mjs" && rm -f "$DEV/scripts/lib/config.mjs.bak"

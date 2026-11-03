@@ -108,6 +108,7 @@ test('교체: pid · 입출력 · 연결 · 배치 유지, 크기 신호 없음,
     // 옆 pane 에 크기 변경 신호(SIGWINCH)를 세는 기록기
     await runIn(app, split, `trap 'echo WINCH >> ${daemon.dir}/winch' WINCH; echo ready=$((1+1))`, '^ready=2$')
     await runIn(app, tab.pane, 'sleep 300 & echo job=$!', '^job=\\d+$')
+    await runIn(app, tab.pane, "printf '\\033[?1000h\\033[?1006hMOUSE_READY\\n'", '^MOUSE_READY$')
     const pids = (await app.call('pane pids')).result.pids
     const layoutOf = (state) => ({ ...state, panes: state.panes.map(({ title, ...pane }) => pane) }) // 제목은 셸이 스스로 바꾼다
     const before = layoutOf((await app.call('state')).result)
@@ -120,6 +121,9 @@ test('교체: pid · 입출력 · 연결 · 배치 유지, 크기 신호 없음,
     assert.deepEqual(reloaded.result, { ok: true, codeVersion: protocol.DAEMON_CODE + 1 })
 
     assert.equal((await app.call('hello')).result.codeVersion, protocol.DAEMON_CODE + 1)
+    const reattached = (await app.call('attach')).result.snapshots
+    assert.ok(reattached[tab.pane].includes('\x1b[?1006h'), '교체 뒤 재접속에도 요청한 SGR 복원')
+    assert.equal(reattached[split].includes('\x1b[?1006h'), false, '일반 셸에는 SGR을 강제하지 않는다')
     assert.deepEqual((await app.call('pane pids')).result.pids, pids, 'pty 프로세스가 같다')
     assert.equal(process.kill(daemon.pid, 0), true)
     process.kill(Number(job), 0)
@@ -188,5 +192,65 @@ test('깨뜨린 새 코드 · 호환 판 불일치: 옛 코드로 계속 돌고 
     app.close()
   } finally {
     daemon.end()
+  }
+})
+
+// 복원 계약의 소비처: src/renderer/screen.ts 의 새 화면 쓰기 · src/renderer/terminal.ts 의 입력 전달.
+// 표준 시험 선택도 이 소비처 변경에 같은 복원 회귀를 연결한다.
+test('재접속 snapshot은 마우스 추적과 요청한 인코딩을 함께 복원한다', async (t) => {
+  const { Pane } = require('../src/daemon/pane.mts')
+  const { Terminal } = require('@xterm/headless')
+  const { SerializeAddon } = require('@xterm/addon-serialize')
+  const write = (term, data) => new Promise(resolve => term.write(data, resolve))
+  const mode = async (term, number) => {
+    let response = ''
+    const listener = term.onData(data => { response += data })
+    await write(term, `\x1b[?${number}$p`)
+    listener.dispose()
+    return response
+  }
+  for (const [label, sequence, encoding] of [
+    ['일반 셸', '', null],
+    ['기본 마우스', '\x1b[?1000h', null],
+    ['일반 키보드/붙여넣기', '\x1b[?1h\x1b[?2004h', null],
+    ['마우스 추적만 해제', '\x1b[?1006h\x1b[?1000h\x1b[?1000l', 1006],
+    ['soft reset', '\x1b[?1000;1006h\x1b[!p', 1006],
+    ['SGR 마우스', '\x1b[?1049h\x1b[?1000h\x1b[?1006h', 1006],
+    ['SGR 픽셀', '\x1b[?1003h\x1b[?1016h', 1016],
+    ['SGR 해제', '\x1b[?1000h\x1b[?1006h\x1b[?1006l', null],
+    ['묶인 모드', '\x1b[?1000;1006h', 1006],
+    ['픽셀에서 SGR', '\x1b[?1016h\x1b[?1006h', 1006],
+    ['픽셀 해제', '\x1b[?1006h\x1b[?1016l', null],
+    ['터미널 초기화', '\x1b[?1000;1006h\x1bc', null],
+  ]) {
+    await t.test(label, async () => {
+      const source = new Terminal({ cols: 100, rows: 30, allowProposedApi: true })
+      const restored = new Terminal({ cols: 100, rows: 30, allowProposedApi: true })
+      const serializer = new SerializeAddon()
+      source.loadAddon(serializer)
+      // 코드 교체 전부터 있던 pane처럼 새 추적 상태 없이 시작한다.
+      const pane = Object.assign(Object.create(Pane.prototype), { screen: source, serializer })
+      try {
+        await write(source, sequence + '화면 유지')
+        if (pane.prepareSnapshot) await pane.prepareSnapshot()
+        await write(restored, pane.snapshot())
+        assert.deepEqual(restored.modes, source.modes, '기존 키보드·붙여넣기·마우스 모드 유지')
+        assert.equal(restored.buffer.active.type, source.buffer.active.type)
+        for (const number of [1006, 1016]) {
+          assert.equal(await mode(restored, number), await mode(source, number), `${number} 인코딩`)
+        }
+        if (!encoding) assert.equal(pane.snapshot().includes('\x1b[?1006h'), false, 'SGR을 강제하지 않는다')
+        // 등록 이후 출력이 청크 경계에서 나뉘어도 xterm parser가 처리한 상태를 복원한다.
+        if (pane.prepareSnapshot) {
+          await write(source, '\x1b[?10')
+          await write(source, '06h')
+          await write(source, '\x1b[?1006l')
+          const next = new Terminal({ allowProposedApi: true })
+          try { await write(next, pane.snapshot()); assert.equal(await mode(next, 1006), '\x1b[?1006;2$y') } finally { next.dispose() }
+          await write(source, '\x1b[?1006h\x1bc')
+          assert.equal(pane.snapshot().includes('\x1b[?1006h'), false, 'reset 뒤 인코딩도 초기화한다')
+        }
+      } finally { source.dispose(); restored.dispose() }
+    })
   }
 })

@@ -9,7 +9,7 @@ type Loose = Record<string, unknown>
 export type GithubIssueMark = { repo: string; number: number; title: string }
 export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; github?: GithubIssueMark }
 
-export const TOOL_ICON: Record<string, string> = { Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
+export const TOOL_ICON: Record<string, string> = { Exec: '⚙', Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
 
 function isLoose(value: unknown): value is Loose {
   return Boolean(value) && typeof value === 'object'
@@ -42,12 +42,95 @@ export function summarizeTool(name: string, input: unknown): string {
     const changes = Array.isArray(value.changes) ? value.changes : []
     return changes.filter(isLoose).map(change => `${oneLine(change.kind)} ${oneLine(change.path)}`).join(' · ') || 'apply_patch'
   }
-  if (name === 'Bash') return oneLine(value.description || value.command)
+  if (name === 'Bash' || name === 'Exec') return oneLine(value.description || value.command)
   if (name === 'Read' || name === 'Edit' || name === 'Write') return oneLine(value.file_path)
   if (name === 'Grep' || name === 'Glob') return oneLine(`${value.pattern || ''}  in ${value.path || ''}`)
   if (name === 'SubagentHandback') return '최종 보고 전송'
   if (name === 'Agent') return oneLine(value.description || value.subagent_type)
   return oneLine(JSON.stringify(value))
+}
+
+// code-mode 리터럴의 제어 문자는 모니터·터미널에 그대로 보내지 않는다.
+const execText = (value: unknown): string => oneLine(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+
+// 단순한 code-mode 도구 호출만 읽는다. 문자열·주석 속 호출은 해석하지 않고,
+// 변수 계산·제어 흐름 등은 실행하거나 추측하지 않고 기본 안내로 돌린다.
+function execSummary(code: unknown): string {
+  if (typeof code !== 'string' || code.length > 64_000) return '명령 실행'
+  type Token = { raw: string; text?: string }
+  const tokens: Token[] = []
+  const pattern = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[A-Za-z_$][\w$]*|[^\s]/g
+  for (const match of code.matchAll(pattern)) {
+    const raw = match[0]
+    if (raw.startsWith('//') || raw.startsWith('/*')) continue
+    let text: string | undefined
+    if (raw.length >= 2 && /^["'`]/.test(raw) && raw.at(-1) === raw[0]) {
+      if (raw[0] === '`' && raw.includes('${')) return '명령 실행'
+      let valid = true
+      text = raw.slice(1, -1).replace(/\\(u[\da-fA-F]{4}|x[\da-fA-F]{2}|[\s\S])/g, (_escape, part: string) => {
+        const escapes: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0', '\\': '\\', '"': '"', "'": "'", '`': '`', '\n': '' }
+        if (/^(?:u[\da-fA-F]{4}|x[\da-fA-F]{2})$/.test(part)) return String.fromCharCode(parseInt(part.slice(1), 16))
+        if (part in escapes) return escapes[part]!
+        valid = false
+        return ''
+      })
+      if (!valid) return '명령 실행'
+    }
+    tokens.push({ raw, ...(text !== undefined && { text }) })
+  }
+  let index = 0
+  const take = (raw: string): boolean => {
+    if (tokens[index]?.raw !== raw) return false
+    index += 1
+    return true
+  }
+  const summaries: string[] = []
+  while (index < tokens.length) {
+    const wrapped = take('text')
+    if (wrapped && !take('(')) return '명령 실행'
+    take('await')
+    if (!take('tools') || !take('.')) return '명령 실행'
+    const method = tokens[index++]?.raw
+    if (!method || !/^[\w$]+$/.test(method) || !take('(')) return '명령 실행'
+    const patch = tokens[index]?.text
+    if (patch !== undefined) index += 1
+    else if (!take('{')) return '명령 실행'
+    const fields: Record<string, string> = {}
+    while (patch === undefined && tokens[index]?.raw !== '}') {
+      const key = tokens[index++]
+      if (!key || !/^[\w$]+$/.test(key.text ?? key.raw) || !take(':')) return '명령 실행'
+      const start = index
+      const closing: string[] = []
+      while (index < tokens.length) {
+        const token = tokens[index]!
+        if (token.text === undefined) {
+          if (closing.length === 0 && [',', '}'].includes(token.raw)) break
+          if (['(', '[', '{'].includes(token.raw)) closing.push({ '(': ')', '[': ']', '{': '}' }[token.raw]!)
+          else if ([')', ']', '}'].includes(token.raw) && closing.pop() !== token.raw) return '명령 실행'
+        }
+        index += 1
+      }
+      if (closing.length || index === start) return '명령 실행'
+      const literal = index === start + 1 ? tokens[start]?.text : undefined
+      delete fields[key.text ?? key.raw]
+      if (literal !== undefined) fields[key.text ?? key.raw] = literal
+      if (!take(',')) break
+    }
+    if ((patch === undefined && !take('}')) || !take(')') || (wrapped && !take(')'))) return '명령 실행'
+    take(';')
+    const title = execText(fields.title || fields.description).slice(0, 120)
+    if (['exec_command', 'shell_command', 'shell'].includes(method)) {
+      const command = execText((fields.cmd || fields.command || '').split(/\r?\n/)[0]).slice(0, 120)
+      summaries.push(title || command ? `명령 실행 · ${title || command}` : '명령 실행')
+    } else if (method === 'view_image') {
+      const file = execText(fields.path).slice(0, 120)
+      summaries.push(title || file ? `이미지 확인 · ${title || file}` : '이미지 확인')
+    } else if (method === 'apply_patch') {
+      const changes = patchChanges(patch).map(change => `${change.kind} ${execText(change.path)}`).join(' · ').slice(0, 120)
+      summaries.push(changes ? `파일 변경 · ${changes}` : '파일 변경')
+    } else summaries.push(title ? `도구 실행 · ${title}` : '도구 실행')
+  }
+  return summaries.length > 1 ? `${summaries[0]} · 외 ${summaries.length - 1}개 작업` : summaries[0] || '명령 실행'
 }
 
 // Codex가 기록한 모델만 사용한다. 모델 문맥이 없는 줄은 undefined, 명시적으로 비었으면 null.
@@ -95,6 +178,10 @@ export function codexRecord(record: unknown, model?: string | null): Loose {
   if (name.split('.').at(-1) === 'apply_patch') {
     name = 'apply_patch'
     input = { changes: patchChanges(input.patch ?? input.input) }
+  } else if (name.split('.').at(-1) === 'exec') {
+    name = 'Exec'
+    const title = [input.title, input.description, value.title, value.description].find(item => typeof item === 'string' && item.trim())
+    input = { description: execText(title).slice(0, 160) || execSummary(input.input ?? input.code) }
   } else if (['exec_command', 'shell_command', 'shell'].includes(name.split('.').at(-1) || '')) {
     name = 'Bash'
     const cmd = input.cmd || input.command || ''

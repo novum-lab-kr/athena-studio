@@ -1,9 +1,0 @@
-{
-  "name": "athena-qa",
-  "private": true,
-  "type": "module",
-  "description": "QA 실행기 — 흐름 문서의 FE TC 를 Playwright 로 돌린다",
-  "dependencies": {
-    "playwright": "1.63.0"
-  }
-}

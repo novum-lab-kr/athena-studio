@@ -12,7 +12,7 @@ import sys, os, json, time, glob, re, unicodedata, shutil, fnmatch
 
 RESET="\x1b[0m"; DIM="\x1b[2m"; BOLD="\x1b[1m"
 COLORS=["\x1b[38;5;80m","\x1b[38;5;222m","\x1b[38;5;150m","\x1b[38;5;213m","\x1b[38;5;208m","\x1b[38;5;117m","\x1b[38;5;180m","\x1b[38;5;120m"]
-TOOL_ICON={"Bash":"⚙","Read":"📖","Grep":"🔍","Glob":"📁","Edit":"✏️","Write":"📝","Agent":"🤖","WebFetch":"🌐","SubagentHandback":"📨"}
+TOOL_ICON={"Exec":"⚙","Bash":"⚙","Read":"📖","Grep":"🔍","Glob":"📁","Edit":"✏️","Write":"📝","Agent":"🤖","WebFetch":"🌐","SubagentHandback":"📨"}
 
 def width(s): return sum(2 if unicodedata.east_asian_width(c) in ("W","F") else 1 for c in s)
 def clip(s, n):
@@ -74,7 +74,7 @@ def summarize_tool(name, inp):
         changes = inp.get("changes") if isinstance(inp.get("changes"), list) else []
         summary = " · ".join(f"{change.get('kind', '')} {change.get('path', '')}" for change in changes if isinstance(change, dict))
         return clip(summary or "apply_patch", n)
-    if name=="Bash": return clip(inp.get("description") or inp.get("command",""), n)
+    if name in ("Bash", "Exec"): return clip(inp.get("description") or inp.get("command",""), n)
     if name in ("Read",): return clip(inp.get("file_path",""), n)
     if name=="Grep": return clip(f"{inp.get('pattern','')}  in {inp.get('path','')}", n)
     if name=="Glob": return clip(f"{inp.get('pattern','')}  in {inp.get('path','')}", n)
@@ -136,6 +136,86 @@ class Tail:
             lines.append(line)
         return lines
 
+def exec_text(value):
+    # 리터럴 제어 문자를 터미널에 그대로 보내지 않는다.
+    return re.sub(r'[\x00-\x1f\x7f-\x9f]', '', ' '.join((value or '').split()))
+
+def exec_summary(code):
+    """단순 도구 호출의 리터럴만 읽는다. 코드를 실행하거나 동적인 값을 추측하지 않는다."""
+    fallback = "명령 실행"
+    if not isinstance(code, str) or len(code) > 64000: return fallback
+    pattern = r'''//[^\r\n]*|/\*[\s\S]*?\*/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[A-Za-z_$][\w$]*|[^\s]'''
+    tokens = []
+    for match in re.finditer(pattern, code):
+        raw = match[0]
+        if raw.startswith(("//", "/*")): continue
+        text = None
+        if len(raw) >= 2 and raw[0] in "\"'`" and raw[-1] == raw[0]:
+            if raw[0] == '`' and '${' in raw: return fallback
+            valid = [True]
+            def decode(escaped):
+                part = escaped[1]
+                escapes = {'n': '\n', 'r': '\r', 't': '\t', 'b': '\b', 'f': '\f', 'v': '\v', '0': '\0', '\\': '\\', '"': '"', "'": "'", '`': '`', '\n': ''}
+                if re.fullmatch(r'(?:u[\da-fA-F]{4}|x[\da-fA-F]{2})', part): return chr(int(part[1:], 16))
+                if part in escapes: return escapes[part]
+                valid[0] = False
+                return ''
+            text = re.sub(r'\\(u[\da-fA-F]{4}|x[\da-fA-F]{2}|[\s\S])', decode, raw[1:-1])
+            if not valid[0]: return fallback
+        tokens.append({'raw': raw, **({'text': text} if text is not None else {})})
+    index, summaries = 0, []
+    def peek(): return tokens[index]['raw'] if index < len(tokens) else None
+    def take(raw):
+        nonlocal index
+        if peek() != raw: return False
+        index += 1
+        return True
+    while index < len(tokens):
+        wrapped = take('text')
+        if wrapped and not take('('): return fallback
+        take('await')
+        if not take('tools') or not take('.'): return fallback
+        method = peek()
+        index += 1
+        if not method or not re.fullmatch(r'[\w$]+', method) or not take('('): return fallback
+        patch = tokens[index].get('text') if index < len(tokens) else None
+        if patch is not None: index += 1
+        elif not take('{'): return fallback
+        fields = {}
+        while patch is None and peek() != '}':
+            if index >= len(tokens): return fallback
+            key = tokens[index].get('text', tokens[index]['raw'])
+            index += 1
+            if not re.fullmatch(r'[\w$]+', key) or not take(':'): return fallback
+            start, closing = index, []
+            while index < len(tokens):
+                token = tokens[index]
+                raw = token['raw']
+                if 'text' not in token:
+                    if not closing and raw in (',', '}'): break
+                    if raw in ('(', '[', '{'): closing.append({'(': ')', '[': ']', '{': '}'}[raw])
+                    elif raw in (')', ']', '}') and (not closing or closing.pop() != raw): return fallback
+                index += 1
+            if closing or index == start: return fallback
+            literal = tokens[start].get('text') if index == start + 1 else None
+            fields.pop(key, None)
+            if literal is not None: fields[key] = literal
+            if not take(','): break
+        if (patch is None and not take('}')) or not take(')') or (wrapped and not take(')')): return fallback
+        take(';')
+        title = exec_text(fields.get('title') or fields.get('description'))[:120]
+        if method in ('exec_command', 'shell_command', 'shell'):
+            command = exec_text(re.split(r'\r?\n', fields.get('cmd') or fields.get('command') or '')[0])[:120]
+            summaries.append(f"명령 실행 · {title or command}" if title or command else fallback)
+        elif method == 'view_image':
+            file = exec_text(fields.get('path'))[:120]
+            summaries.append(f"이미지 확인 · {title or file}" if title or file else '이미지 확인')
+        elif method == 'apply_patch':
+            changes = ' · '.join(f"{change['kind']} {exec_text(change['path'])}" for change in patch_changes(patch))[:120]
+            summaries.append(f"파일 변경 · {changes}" if changes else '파일 변경')
+        else: summaries.append(f"도구 실행 · {title}" if title else '도구 실행')
+    return f"{summaries[0]} · 외 {len(summaries) - 1}개 작업" if len(summaries) > 1 else summaries[0] if summaries else fallback
+
 def codex_model(d):
     """모델 문맥이 없는 줄은 None, 명시적으로 비었으면 빈 문자열로 이전 모델을 지운다."""
     if not isinstance(d, dict) or not isinstance(d.get("payload"), dict): return None
@@ -183,6 +263,10 @@ def codex_message(d, model=None):
         name = "apply_patch"
         patch = inp.get("patch") if inp.get("patch") is not None else inp.get("input")
         inp = {"changes": patch_changes(patch)}
+    elif name.rsplit(".", 1)[-1] == "exec":
+        name = "Exec"
+        title = next((value for value in (inp.get("title"), inp.get("description"), p.get("title"), p.get("description")) if isinstance(value, str) and value.strip()), '')
+        inp = {"description": exec_text(title)[:160] if title else exec_summary(inp.get("input", inp.get("code")))}
     elif name.rsplit(".", 1)[-1] in ("exec_command", "shell_command", "shell"):
         name = "Bash"
         command = inp.get("cmd") or inp.get("command") or ""

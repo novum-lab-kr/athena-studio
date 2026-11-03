@@ -26,6 +26,7 @@ import { dropRepoIcons } from './pack-repo-look.mjs'
 export { PackError, alive }
 
 // ── 고정 링크 · 팩 자리 ─────────────────────────────────────────────────
+// 이전 QA 상태 링크도 기존 데이터를 보존하기 위해 유지한다.
 // 본체 이름 → 팩 데이터 안 자리. 상태 파일(현황판 휴지통·학습 수·Jev 캐시·QA 결과)도 팩마다 따로
 export const FIXED_LINKS = [
   ['pack', 'pack'], ['plans', 'plans'], ['issues', 'issues'], ['repos', 'repos'], ['.worktrees', 'worktrees'],
@@ -36,7 +37,7 @@ export const FIXED_LINKS = [
   ['.qa-runs', 'state/qa-runs'], ['.qa-auth', 'state/qa-auth'], ['.qa-baselines', 'state/qa-baselines'],
 ]
 const SLOT_DIRS = ['pack/archive', 'pack/sync', 'plans/bugfix', 'plans/feature', 'plans/refactor', 'plans/task', 'issues', 'repos', 'worktrees',
-  'state/board-trash', 'state/qa-runs', 'state/qa-auth', 'state/qa-baselines']
+  'state/board-trash']
 
 export const ensureSlot = (slot) => { for (const sub of SLOT_DIRS) mkdirSync(join(slot, sub), { recursive: true }) }
 
@@ -352,14 +353,6 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
       else if (AGENT_FLAG.test(args)) busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
     } else busy.push({ kind: 'agent', what: `위임 에이전트(claude) — ${real}`, pid: row.pid })
   }
-  // QA 런 — 이 본체 팩 상태의 run.json 이 running 이고 그 pid 가 살아 있으면
-  const runs = join(root, '.qa-runs')
-  if (existsSync(runs)) {
-    for (const name of readdirSync(runs)) {
-      const run = readJson(join(runs, name, 'run.json')) ?? readJson(join(runs, name, 'group.json'))
-      if (run && !run.finishedAt && alive(run.pid) && !skip(run.pid)) busy.push({ kind: 'qa', what: `QA 실행 ${name}`, pid: run.pid })
-    }
-  }
   // 학습 검토 — 이 본체의 scripts/learn-review.mjs 를 도는 node
   const learnScript = join(rootReal, 'scripts', 'learn-review.mjs')
   for (const row of table.filter((item) => item.comm === 'node' && !skip(item.pid))) {
@@ -483,10 +476,10 @@ export const readPanesState = (file, nowMs = Date.now()) => {
   return state.panes
 }
 
-// 팩을 바꾸면(attach · import --replace) 안 되는 것 — QA·학습 검토는 코어가 끈다. 모르면(unknown) 막는다
+// 팩을 바꾸면(attach · import --replace) 안 되는 것 — 학습 검토는 코어가 끈다. 모르면(unknown) 막는다
 export const BLOCKING = new Set(['agent', 'athena', 'codex', 'heavy', 'switch', 'unknown'])
 
-// ── 현황판 · 학습 검토 · QA 끄기 ────────────────────────────────────────
+// ── 현황판 · 학습 검토 끄기 ────────────────────────────────────────
 // 현황판은 포트로 찾되, 그 프로세스가 **이 본체**의 server.mjs 인지 인자로 확인한 뒤에만 끈다(다른 본체 현황판을 끄지 않게)
 const boardPids = (root) => {
   const port = boardPort(root)
@@ -501,13 +494,13 @@ const stopPid = async (pid) => {
   if (alive(pid)) { try { process.kill(pid, 'SIGKILL') } catch { /* 이미 끝났다 */ } }
 }
 export const stopServices = async (root, busy) => {
+  // qaStopped는 이전 코어 출력 형식과의 호환을 위한 빈 배열이다.
   const stopped = { boardStopped: [], learnStopped: [], qaStopped: [], prAutoStopped: [] }
   const board = boardPids(root)
   for (const pid of board.pids) await stopPid(pid)
   if (board.pids.length) stopped.boardStopped.push(board.port)
   for (const item of busy) {
     if (item.kind === 'learn-review') { await stopPid(item.pid); stopped.learnStopped.push(item.pid) }
-    if (item.kind === 'qa') { await stopPid(item.pid); stopped.qaStopped.push(item.pid) }
   }
   for (const item of prAutoWatchers(root)) { await stopPid(item.pid); stopped.prAutoStopped.push(item.pid) }
   return stopped

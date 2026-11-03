@@ -64,13 +64,12 @@
 |---|---|
 | `/call` | `/call <에이전트>` — 담당 에이전트를 그 레포 workspace 에 pane 으로 바로 띄운다. 브랜치를 먼저 물어 워크트리를 만들고 그 폴더에서 띄운다. 요청 · 커밋 · 리뷰 · PR 은 pane 에서 직접(빈 지시 경량 계획서) |
 | `/monitor` | 백그라운드 서브에이전트 · 워크트리 pane 에이전트 로그를 어디서 보는지 — Athena Studio 는 앱 아래 AGENT MONITOR 칸, 화면 밖이면 직접 실행할 명령(`/monitor 30` = 최근 30분) |
-| `/board` | 현황판 — 로컬 서버를 띄워 브라우저에서 실시간으로. 첫 화면은 **해결할 이슈 목록**(`issues/` — 학습 후보 제외 · 열린 이슈는 [작업 시작] · 시작한 이슈는 맡은 pane) · **[QA]**(서비스 → 층 → 흐름별 TC 결과 · 실패 원문 · 문서 링크 · [실행]) · **[학습]**(아테나 학습: 후보 넣기 · 버리기 · 학습한 내용 수정 · 삭제 / 개인 메모리: Claude · Codex 메모리, 최신 날짜순·출처 로고·전체/Claude/Codex 필터·읽기 전용) · **[아카이브]** · **[지표]**(완료 · 평균 소요 · 작업당 질문 · 평균 답 대기 · 검증 실패율 · 리뷰 반려율 — `docs/events.md`). 계획서 칸반 · [정비] 탭은 없다(2026-10-26) — 계획서 진행은 Studio [작업] 팝업과 pane [상세]. 서버는 화면을 안 열어도 PR 머지 자동 완료 · 끝난 일 자동 보관 · 학습 대기열을 맡는다(`/board stop`) |
-| `/sync` | 담당 레포의 운영 기준 브랜치를 훑어 지문을 만들고 사실마다 정한 정본(knowledge · config · 지문)만 갱신. 파생 문서는 `node scripts/build-derived.mjs`, 바뀐 코드에 닿는 흐름 찾기는 `node scripts/qa/affected.mjs` · 확정(`--accept`)하면 바뀐 서비스의 TC 가 뒤에서 돈다 |
+| `/board` | 현황판 — 로컬 서버를 띄워 브라우저에서 실시간으로. 첫 화면은 **해결할 이슈 목록**(`issues/` — 학습 후보 제외 · 열린 이슈는 [작업 시작] · 시작한 이슈는 맡은 pane) · **[학습]**(아테나 학습: 후보 넣기 · 버리기 · 학습한 내용 수정 · 삭제 / 개인 메모리: Claude · Codex 메모리, 최신 날짜순·출처 로고·전체/Claude/Codex 필터·읽기 전용) · **[아카이브]** · **[지표]**(완료 · 평균 소요 · 작업당 질문 · 평균 답 대기 · 검증 실패율 · 리뷰 반려율 — `docs/events.md`). 계획서 칸반 · [정비] 탭은 없다(2026-10-26) — 계획서 진행은 Studio [작업] 팝업과 pane [상세]. 서버는 화면을 안 열어도 PR 머지 자동 완료 · 끝난 일 자동 보관 · 학습 대기열을 맡는다(`/board stop`) |
+| `/sync` | 담당 레포의 운영 기준 브랜치를 훑어 지문을 만들고 사실마다 정한 정본(knowledge · config · 지문)만 갱신. 파생 문서는 `node scripts/build-derived.mjs`, 바뀐 코드에 닿는 흐름 문서는 담당 에이전트가 갱신한다 |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" 표 — 팩 `skills/` 가 `.claude/skills/` 에 링크된다 |
 | `/guide` | 오른쪽 pane 에 가이드 메뉴(문서 · 스킬 목록 · 실행 · 에이전트 · 라우팅). `/guide <파일>` 은 뷰어, `/guide 설명` 은 아테나 구조 설명 HTML, `/guide 시작하기` 는 시작하기 가이드, `/guide 그림` 은 **다이어그램 목록**(작업 흐름 경량 · 정식 + 팩 서비스 × 구조 · 화면 맵 · 요청 흐름) |
 
 ## 말로 하는 일 (커맨드가 없는 것)
-- QA — "<서비스> QA 돌려줘" → `scripts/heavy.sh node scripts/qa/run.mjs --service <서비스>`(현황판 QA 탭 [실행] 도 같다 · 형식과 옵션 `docs/knowledge/common/qa-flows.md`)
 - 기능 · 버그 → 1단계 · 리뷰("리뷰해줘") → 5단계 `delegate.sh reviewer` · 현황("현황 알려줘") → `git.md` "현황 점검" · 브랜치 → 3단계(`git.md` "작업 브랜치 만들기")
 - 팩 백업("팩 백업해줘") → `bin/athena pack backup` · 되살리기 `bin/athena pack restore <파일>` — 여러 팩 구조면 `pack backup --with-work` · `pack restore --with-work <파일>`(팩만은 `pack export`) — `docs/pack.md` "백업 · 되살리기"
 - 여러 팩("팩 목록" · "팩 열어줘 <id>") → `bin/athena pack list` · `pack open <id>` — 팩마다 본체(`~/.athena-studio/bodies/<id>`)가 따로라 동시에 켠다. 열린 본체 폴더에서 아테나를 켠다(스튜디오는 창마다 팩)

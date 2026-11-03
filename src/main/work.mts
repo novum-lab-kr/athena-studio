@@ -254,7 +254,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (safe(id, '.md') && ctx.athenaDir) return shell.openPath(path.join(ctx.athenaDir, id))
     return null
   }
-  // 현황판 페이지(칸반 · QA · 학습 · 지표 · 아카이브) — 현황판 탭 이름을 주소 끝 #<탭> 으로
+  // 현황판 페이지(칸반 · 학습 · 지표 · 아카이브) — 현황판 탭 이름을 주소 끝 #<탭> 으로
   const BOARD_SECTIONS = ['now', 'qa', 'learn', 'metrics', 'history']
   ctx.openBoardSection = async (section: string) => {
     const result = await ensureBoard()

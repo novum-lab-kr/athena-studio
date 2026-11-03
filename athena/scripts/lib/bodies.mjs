@@ -213,17 +213,17 @@ const catchUpBody = ({ main, body, id, data, registry, report }) => {
 }
 
 // ── 본체 하나 옮기기(update · rollback · 따라잡기 공용) ─────────────────────
-// 팩 잠금(새 위임·브랜치·QA 를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
+// 팩 잠금(새 위임·브랜치를 막는다) → busy 다시(부른 쪽 포함 · 모르면 건너뜀) → dirty(backupDirty 면 사본 뒤 되돌림) → (update) 이전 커밋 ref 보존
 // → 현황판 끄기 → checkout(팩 본체 --detach · 주 본체 merge --ff-only) → 새 코드로 relink → 실패하면 이 본체만 이전 커밋으로
 // rollback · 따라잡기는 무엇이든 돌면 건너뛴다(자동 리뷰 처리기만 빼고 — 늘 살아 있어 막으면 영영 못 옮긴다 · 끄고 옮긴 뒤 다시 띄운다). update 만 아래(사용자 결정 2026-10-26 "일해도 바로 올리기" — 데이터가 깨지는 것만 막는다):
 //   기다림  commit(commit.sh · ship.sh) · heavy(heavy.sh 잠금) — waitUntil 까지(업데이트 하나에 한 번 · UPDATE_WAIT_MS). 그래도 돌면 건너뜀(busy)
 //   막음    switch(그 팩 작업 잠금 — 다른 열기 · 바꾸기 · 업데이트) · 그 밖의 모르는 종류 · ps 를 못 읽음(busy-unknown)
-//   끔      learn-review · qa · pr-auto — 팩 바꾸기처럼 끄고 올린다. 학습 검토 · 자동 리뷰 처리기는 일이 남았으면 새 코드로 다시 띄운다(--kick)
+//   끔      learn-review · pr-auto — 팩 바꾸기처럼 끄고 올린다. 학습 검토 · 자동 리뷰 처리기는 일이 남았으면 새 코드로 다시 띄운다(--kick)
 //   올림    athena · agent · codex · unknown(작업 폴더 · 인자를 못 읽은 세션) — entry.working 에 남긴다(panes 로 쉬는 pane 의 세션은 뺀다 · settleIdleSessions)
 // 기다리는 상한 — 같은 update 가 git 잠금을 기다리는 값(takeLock waitMs 60_000)과 같다. 시험은 ATHENA_UPDATE_WAIT_MS 로 줄인다
 export const UPDATE_WAIT_MS = 60_000
 const UPDATE_WAIT_KINDS = new Set(['commit', 'heavy'])
-const UPDATE_STOP_KINDS = new Set(['learn-review', 'qa', 'pr-auto'])
+const UPDATE_STOP_KINDS = new Set(['learn-review', 'pr-auto'])
 const UPDATE_SESSION_KINDS = new Set(['athena', 'agent', 'codex', 'unknown'])
 const sleepSync = (ms) => Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms)
 const updateScan = (body) => {
@@ -277,7 +277,7 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       const branch = gitTry(body, ['symbolic-ref', '-q', '--short', 'HEAD'])
       if (!branch || !gitOk(body, ['merge-base', '--is-ancestor', from, target])) return { ...entry, reason: 'diverged', ...(branch ? { branch } : {}) }
     }
-    // 학습 검토 · QA · 자동 리뷰 처리기는 옛 코드라 끈다 — 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에.
+    // 학습 검토 · 자동 리뷰 처리기는 옛 코드라 끈다 — 건너뛸 수 있는 검사(busy · same · dirty · diverged)를 다 지난 뒤, 본체를 건드리기(사본 · reset · rollback ref) 전에.
     // 검토하다 끊긴 일(*.json.working)은 다음 감시자가 대기열로 되돌린다(learn-review watch). 학습 검토는 claude -p 를 동기로 불러
     // SIGTERM 을 그 뒤에야 받으니 바로 아래 자식(claude · gh)부터 끈다 — 남기면 결과를 받을 곳 없이 끝까지 돈다
     for (const item of toStop) {
@@ -287,7 +287,7 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
       // 자동 리뷰 처리기는 부모를 먼저 끈다 — 리뷰어를 먼저 끄면 처리기가 "리뷰 실패" 로 계획서에 적고, 같은 HEAD 는 다시 돌지 않는다.
       // gh · git 은 남긴다(머지 · 댓글 · 바로 머지의 push 가 반쯤 끊기지 않게)
       if (item.kind === 'pr-auto') for (const row of children.filter((each) => !['gh', 'git'].includes(each.comm))) stopPidSync(row.pid)
-      const keys = { qa: 'qaStopped', 'pr-auto': 'prAutoStopped' }
+      const keys = { 'pr-auto': 'prAutoStopped' }
       const key = keys[item.kind] ?? 'learnStopped'
       entry.services[key] = [...(entry.services[key] ?? []), item.pid]
     }

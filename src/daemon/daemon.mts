@@ -119,6 +119,7 @@ export class Daemon {
 
   // 새 코드로 바뀐 직후(main.mts) — 던지면 옛 코드로 되돌린다. pane 크기 · 입출력은 건드리지 않는다
   afterReload(): void {
+    for (const pane of this.panes.values()) void pane.prepareSnapshot()
     this.state()
     this.writeEndpoint() // 접속 파일의 프로토콜 번호를 새 코드에 맞춘다
     log(`코드 교체 — 코드 판 ${protocol.DAEMON_CODE} · 프로토콜 ${protocol.PROTOCOL}`)
@@ -470,8 +471,9 @@ export class Daemon {
 
   // 지금 상태 + pane 마다 되살릴 화면. 이 응답 뒤로 같은 소켓에 실시간 출력이 이어진다(빈틈 없음)
   // 앱 창이 붙는다 — body(그 창의 아테나 본체 실제 경로)를 주면 그 본체 것만 보고 받는다(protocol 5). 안 주면 전부
-  attach(client: Client, { body }: Args = {}) {
+  async attach(client: Client, { body }: Args = {}) {
     client.body = typeof body === 'string' && body ? body : null
+    await Promise.all(this.visiblePanes(client.body).map((pane) => pane.prepareSnapshot()))
     const snapshots: Record<string, string> = {}
     for (const pane of this.visiblePanes(client.body)) snapshots[pane.id] = pane.snapshot()
     client.attached = true

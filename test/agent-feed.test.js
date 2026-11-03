@@ -101,7 +101,7 @@ test('Codex 기록 → 기존 한 줄 이벤트 · 앱과 Python 정규화 일�
   assert.deepEqual(events.map(({ kind, name, text }) => ({ kind, name, text })), [
     { kind: 'tool', name: 'Bash', text: 'git status --short' },
     { kind: 'tool', name: 'Bash', text: '상태 확인' },
-    { kind: 'tool', name: 'exec', text: '{"title":"수정 확인"}' },
+    { kind: 'tool', name: 'Exec', text: '수정 확인' },
     { kind: 'tool', name: 'apply_patch', text: 'Update demo.py' },
     { kind: 'user', name: '', text: '모니터를 고쳐 주세요' },
     { kind: 'say', name: '', text: '수정을 확인했습니다' },
@@ -315,4 +315,33 @@ test('모니터 만료 세션의 줄을 main·화면에서 함께 지우고 재�
   assert.equal(visibleEvents.some(event => event.session === oldSession), false)
   await tick()
   assert.equal(visibleEvents.length, 3, '다음 갱신에도 같은 줄을 덧붙이지 않는다')
+})
+
+
+test('Codex functions.exec는 코드를 실행하지 않고 작업만 요약하며 Python과 일치', () => {
+  const fixture = require('../athena/test/fixtures/codex-exec-monitor.json')
+  for (const { label, record, text } of fixture) {
+    const event = feed.eventsFromRecord(record)[0]
+    assert.equal(event.text, text, label)
+    assert.equal(event.icon, '⚙', label)
+    assert.equal(event.text.includes('PRIVATE_MARKER'), false, label)
+    assert.equal(event.text.includes('tools.'), false, label)
+  }
+  assert.equal(globalThis.MONITOR_MUST_NOT_RUN, undefined)
+  const result = spawnSync('python3', ['-c', `
+import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('monitor',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+fixture=json.load(sys.stdin)
+rows=[]
+for item in fixture:
+    record=m.codex_message(item['record'])
+    block=record['message']['content'][0]
+    rows.append({'record':record,'text':m.summarize_tool(block['name'],block['input'])})
+print(json.dumps(rows))
+`, path.join(__dirname, '../athena/scripts/agent-monitor.py')], { input: JSON.stringify(fixture), encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  const python = JSON.parse(result.stdout)
+  assert.deepEqual(python.map(item => item.record), fixture.map(item => feed.codexRecord(item.record)))
+  assert.deepEqual(python.map(item => item.text), fixture.map(item => item.text))
 })
