@@ -8,7 +8,8 @@
 //
 // 차례 지키기: 지시는 submit 이 부르자마자(기다리기 전에) pane 대기열에 동기로 올린다. 화면 확인 · 넣기는 pane 마다 잠금 하나 아래에서
 // submit 과 tick 이 차례로 한다 — 같은 pane 에 두 지시가 겹쳐 와도 덮이지 않고 순서가 바뀌지 않는다.
-// 넣기는 두 단계(글 → Enter) — 글은 들어갔는데 Enter 가 실패하면 글을 다시 쓰지 않고 다음 차례에 Enter 부터 다시 한다.
+// 넣기는 공통 전송 경로 한 번(글 + Enter · 데몬이 전송을 확인하고 같은 입력이 남았을 때만 Enter 를 다시 누른다 — lib/screen.mjs submitToPane).
+// 데몬이 쓰기 전에 거절하면(질문 창 · 다른 전송 중) 대기열에 두고 다음 차례에 다시, 그 밖의 실패는 글이 들어갔는지 모르니 다시 보내지 않는다.
 
 // 질문 · 고르기 창 표시 — 앱 src/lib/core.mts claudeAtEmptyPrompt 의 PROMPT_MENU 와 같은 글
 const PROMPT_MENU = /enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑\/↓ to navigate|Do you want to|Type something\./i
@@ -28,19 +29,18 @@ export const menuOpen = (text) =>
 /**
  * @typedef {{
  *   readPane: (paneId: string) => Promise<string | null>,
- *   typeText: (paneId: string, text: string) => Promise<string | null>,
- *   pressEnter: (paneId: string) => Promise<string | null>,
+ *   send: (paneId: string, text: string) => Promise<string>,
  *   paneExists: (paneId: string) => boolean,
  *   log?: (message: string) => void,
  * }} DeliveryDeps
  * readPane — 화면 글(못 읽으면 null — 그때는 창 여부를 모르니 지금처럼 바로 넣는다)
- * typeText · pressEnter — 글 쓰기 · Enter 누르기 · 실패면 오류 글
+ * send — 글 + Enter · 'sent' · 'wait'(안 들어감 — 다시 보내도 된다) · 그 밖은 실패 글(들어갔는지 모른다)
  */
 
-/** @typedef {{ text: string, typed: boolean, done: boolean, error: string | null }} Entry */
+/** @typedef {{ text: string, done: boolean, error: string | null }} Entry */
 
 /** @param {DeliveryDeps} deps */
-export const createDelivery = ({ readPane, typeText, pressEnter, paneExists, log = () => {} }) => {
+export const createDelivery = ({ readPane, send, paneExists, log = () => {} }) => {
   /** @type {Map<string, Entry[]>} pane → 아직 다 못 넣은 지시(들어온 차례) */
   const waiting = new Map()
   /** @type {Map<string, Promise<void>>} pane → 마지막에 건 일(잠금) */
@@ -64,30 +64,21 @@ export const createDelivery = ({ readPane, typeText, pressEnter, paneExists, log
   /**
    * 대기열 앞에서부터 넣는다 — 창이 떠 있거나 실패하면 멈춘다. 잠금 안에서만 부른다
    * @param {string} paneId
-   * @param {Entry | null} owner 지금 submit 한 지시 — 그 글 쓰기가 실패하면 대기열에서 빼고 오류로 돌려준다(콘솔이 복사로 바뀐다)
+   * @param {Entry | null} owner 지금 submit 한 지시 — 보내기가 실패하면 대기열에서 빼고 오류로 돌려준다(콘솔이 복사로 바뀐다)
    */
   const flush = async (paneId, owner) => {
     const queue = waiting.get(paneId)
     while (queue?.length) {
       if (menuOpen(await readPane(paneId))) break
       const entry = /** @type {Entry} */ (queue[0])
-      if (!entry.typed) {
-        const error = await typeText(paneId, entry.text)
-        if (error) {
-          if (entry === owner) {
-            queue.shift()
-            entry.error = error
-          } else {
-            log(`⚠️ ${paneId} 에 미룬 지시를 넣지 못했다 — ${error} · 다음 차례에 다시`)
-          }
-          break
-        }
-        entry.typed = true
-      }
-      const error = await pressEnter(paneId)
-      if (error) {
-        // 글은 이미 입력칸에 있다 — 다시 쓰지 않고 다음 차례에 Enter 부터
-        log(`⚠️ ${paneId} 에 Enter 를 넣지 못했다 — ${error} · 다음 차례에 Enter 부터 다시`)
+      const result = await send(paneId, entry.text)
+      // 데몬이 쓰기 전에 거절했다(창이 막 떴다 · 다른 전송 중) — 글은 안 들어갔으니 다음 차례에 다시
+      if (result === 'wait') break
+      if (result !== 'sent') {
+        // 글이 입력칸에 들어갔는지 모른다 — 다시 보내면 두 번 들어갈 수 있어 대기열에서 뺀다
+        queue.shift()
+        if (entry === owner) entry.error = result
+        else log(`⚠️ ${paneId} 에 미룬 지시를 넣었는지 확인하지 못했다 — ${result} · 다시 보내지 않는다(입력칸을 확인)`)
         break
       }
       queue.shift()
@@ -104,7 +95,7 @@ export const createDelivery = ({ readPane, typeText, pressEnter, paneExists, log
    */
   const submit = async (paneId, text) => {
     /** @type {Entry} */
-    const entry = { text, typed: false, done: false, error: null }
+    const entry = { text, done: false, error: null }
     // 기다리기 전에 동기로 줄 선다 — 겹쳐 온 지시가 서로 덮지 않게
     const queue = waiting.get(paneId) ?? []
     queue.push(entry)
@@ -112,7 +103,7 @@ export const createDelivery = ({ readPane, typeText, pressEnter, paneExists, log
     await withLock(paneId, () => flush(paneId, entry))
     if (entry.done) return 'sent'
     if (entry.error) return entry.error
-    log(`⏳ ${paneId} 에 질문 · 고르기 창이 떠 있거나 넣기가 덜 끝나 다음 차례에 넣는다`)
+    log(`⏳ ${paneId} 에 질문 · 고르기 창이 떠 있거나 다른 전송 중이라 다음 차례에 넣는다`)
     return 'queued'
   }
 

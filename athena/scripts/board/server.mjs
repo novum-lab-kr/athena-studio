@@ -52,7 +52,7 @@ import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, directMergeStatus, prBaseOf, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
-import { screen, screenName, screenText } from '../lib/screen.mjs'
+import { screen, screenName, screenText, submitToPane } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
@@ -676,11 +676,17 @@ const doneCheck = async (issue) => {
     checks.push({ label: items.length ? `## 현재 항목 ${resolved.length}/${items.length} 해결` : '## 현재 항목 절', ok: items.length > 0 && resolved.length === items.length })
   } else if (issue.type === 'code') {
     const planPath = issue.plan ? join(ROOT, issue.plan) : ''
-    const planDone = planPath && existsSync(planPath) && /^- Status:.*\bdone\b/m.test(readText(planPath) ?? '')
-    checks.push({ label: 'plan: 계획서 Status done', ok: Boolean(planDone) })
-    const repoName = (issue.worktree?.repo || workspaceOf(issue.agent)?.repo || issue.repo.split('/')[0])
-    const merged = issue.pr ? (await prState(repoName, issue.pr)) === 'MERGED' : false
-    checks.push({ label: issue.pr ? `pr: ${issue.pr} MERGED` : 'pr: PR 번호', ok: merged })
+    const planText = planPath && existsSync(planPath) ? readText(planPath) ?? '' : ''
+    checks.push({ label: 'plan: 계획서 Status done', ok: /^- Status:.*\bdone\b/m.test(planText) })
+    // PR 끔(바로 머지) 레포는 PR 이 없다 — pr: 이 비었으면 계획서 "- Auto merge:" 줄로(자동 완료와 같은 기준 · lib/pr-auto.mjs directMergeStatus)
+    const direct = issue.pr ? null : directMergeStatus(planText)
+    if (direct && direct.state !== 'none') {
+      checks.push({ label: `바로 머지: ${direct.why}`, ok: direct.state === 'done' })
+    } else {
+      const repoName = (issue.worktree?.repo || workspaceOf(issue.agent)?.repo || issue.repo.split('/')[0])
+      const merged = issue.pr ? (await prState(repoName, issue.pr)) === 'MERGED' : false
+      checks.push({ label: issue.pr ? `pr: ${issue.pr} MERGED` : 'pr: PR 번호', ok: merged })
+    }
   }
   return { ready: checks.every((check) => check.ok), checks }
 }
@@ -1196,9 +1202,8 @@ const sendToPane = async (paneId, text) => {
 }
 const delivery = createDelivery({
   readPane: (paneId) => screenText(['pane', 'read', paneId, '--lines', '40']),
-  // 글 · Enter 를 따로 확인한다 — Enter 만 실패하면 글을 다시 쓰지 않고 Enter 부터 다시(pane-delivery.mjs)
-  typeText: async (paneId, text) => ((await screen(['pane', 'send-text', paneId, text])) === null ? `${screenName()} 로 입력을 보내지 못했어요` : null),
-  pressEnter: async (paneId) => ((await screen(['pane', 'send-keys', paneId, 'Enter'])) === null ? `${screenName()} 로 Enter 를 보내지 못했어요` : null),
+  // 공통 전송 경로(글 + Enter 전송 확인 — lib/screen.mjs submitToPane) · 쓰기 전 거절은 미뤘다 다시(pane-delivery.mjs)
+  send: (paneId, text) => submitToPane(paneId, text),
   // 아직 pane 목록을 모르면 버리지 않는다
   paneExists: (paneId) => !snapshot || (snapshot.panes ?? []).some((pane) => pane.id === paneId),
   log: (message) => console.log(message),

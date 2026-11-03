@@ -63,6 +63,13 @@ plan 20261101-recent '방금 닫힘' 없음 '' '- [ ] 구현'
 plan 20261101-linked '연결 이슈 있음' issues/20261101-demo-linked.md '' '- [ ] 구현'
 plan 20261101-asked '요청 있음' 없음 '' '- [ ] 구현'
 printf -- '---\ntitle: 연결\nrepo: demo\nstatus: open\nplan: plans/task/20261101-linked.md\n---\n' > "$CORE/issues/20261101-demo-linked.md"
+# PR 끔(바로 머지) 레포의 코드 이슈 — PR 없이 "- Auto merge:" 줄로 끝난 계획서면 완료 가능 · 머지 확인 대기면 아님
+DIRECT_COMMIT=$'\n\n## Commits\n- 2026-11-01 10:00 · demo · 🌿 feat/d · `abc1234def` — fix: 시험 · 검증 통과'
+plan 20261101-direct-done '바로 머지 끝' issues/20261101-demo-direct-done.md "- Auto merge: demo feat/d @abc1234 · 머지됨 — squash → main @def5678(PR 없음) · 2026-11-01 10:05$DIRECT_COMMIT" '- [x] 구현'
+plan 20261101-direct-wait '바로 머지 대기' issues/20261101-demo-direct-wait.md "- Auto merge: demo feat/d @abc1234 · 머지 확인 대기 · 2026-11-01 10:05$DIRECT_COMMIT" '- [x] 구현'
+for name in direct-done direct-wait; do
+  printf -- '---\ntitle: %s\nrepo: demo\nkind: code\nstatus: open\nplan: plans/task/20261101-%s.md\n---\n' "$name" "$name" > "$CORE/issues/20261101-demo-$name.md"
+done
 
 # 닫힌 시각 기록 — 2시간 전 셋 · 10분 전 하나
 NOW_MS=$(($(date +%s) * 1000))
@@ -122,13 +129,15 @@ check('칸 없음 → done', status('20261101-empty') === 'done', log)
 for (const kind of ['pr', 'direct']) for (const state of ['working', 'idle', 'waiting']) {
   check(`살아 있는 pane ${kind} ${state} → 완료 보류`, status(`20261101-live-${kind}-${state}`) === 'in_progress', log)
 }
-const sent = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((args) => args[1] === 'pane' && args[2] === 'send-text')
+const sent = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line))
+  // 글 넣기는 공통 전송 경로(scripts/screen pane send-text --enter → 데몬 CLI pane run)
+  .filter((args) => args[1] === 'pane' && args[2] === 'run')
 const notes = sent.filter((args) => args[4]?.startsWith('[현황판 → 아테나]'))
 check('일반 칸을 남긴 계획서만 Lead pane 에 한 줄 — 계획서 · 남은 칸 수', notes.length === 1 && notes[0][3] === 'p1' && notes[0][4] === '[현황판 → 아테나] plans/task/20261101-plain.md 자동 완료 — 남은 빈 칸 2개', JSON.stringify(sent))
 
 console.log('── 이어 갈 이슈')
 const files = readdirSync(join(core, 'issues')).sort()
-const created = files.filter((name) => name !== '20261101-demo-linked.md')
+const created = files.filter((name) => !['20261101-demo-linked.md', '20261101-demo-direct-done.md', '20261101-demo-direct-wait.md'].includes(name))
 check('닫힌 지 1시간 지난 계획서만 이슈 하나 — 방금 닫힘 · 연결 이슈 있음 · 요청 있음은 안 만듦', created.length === 1 && /^\d{8}-demo-old\.md$/.test(created[0]), `${files.join(' ')}\n${log}`)
 const issue = read(join(core, 'issues', created[0] ?? 'x'))
 check('이슈 — 제목은 계획서 제목 · 레포는 계획서 기준 · open · 계획서를 가리킴', /^title: 오래 닫힘$/m.test(issue) && /^repo: demo$/m.test(issue) && /^status: open$/m.test(issue) && /^plan: plans\/task\/20261101-old\.md$/m.test(issue), issue)
@@ -138,6 +147,15 @@ check('만든 계획서는 기록에서 빠져 또 만들지 않음 · 1시간 �
 const cards = JSON.parse(read(join(tmp, 'state.json')) || '{}').cards ?? []
 const card = cards.find((item) => item.kind === 'issue' && item.id === `issues/${created[0]}`)
 check('이슈 카드에 계획서가 붙음 — [작업 시작] 이 이 계획서를 이어 간다', card?.linkedPlan?.id === 'plans/task/20261101-old.md', JSON.stringify(cards.map((item) => [item.kind, item.id, item.linkedPlan?.id])))
+console.log('── 바로 머지 레포의 코드 이슈 완료 배지')
+const doneCheckOf = (state, name) => (state.cards ?? []).find((item) => item.kind === 'issue' && item.id === `issues/20261101-demo-${name}.md`)?.doneCheck
+const directReady = async () => {
+  const ok = await waitUntil((state) => doneCheckOf(state, 'direct-done')?.ready === true)
+  const state = await (await fetch(`http://127.0.0.1:${port}/api/state`)).json()
+  check('PR 없이 바로 머지로 끝난 계획서 → 완료 가능', ok, JSON.stringify(doneCheckOf(state, 'direct-done')))
+  const wait = doneCheckOf(state, 'direct-wait')
+  check('바로 머지가 머지 확인 대기 → 완료 가능 아님', wait && wait.ready === false, JSON.stringify(wait))
+}
 // 같은 서버에서 pane 목록 실패 → pane 닫힘 확인까지 이어서 본다.
 const waitUntil = async (predicate) => {
   for (let attempt = 0; attempt < 80; attempt += 1) {
@@ -165,7 +183,7 @@ const verifyClosure = async () => {
     check(`pane 모두 닫힘 ${kind} ${state} → done`, /^- Status: done/m.test(text), text)
   }
 }
-verifyClosure().then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
+directReady().then(verifyClosure).then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
 EOF
 code=$?
 [ "$code" = 0 ] && echo "✅ 통과"

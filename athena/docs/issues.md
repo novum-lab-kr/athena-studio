@@ -65,7 +65,7 @@ reason:                 # wontfix: 하지 않는 이유
 |---|---|
 | `check` | `## 확인 결과` 절이 있다 · `## 후속` 절의 모든 줄이 `- [x]` 이거나 존재하는 `issues/…md` 를 가리킨다(후속이 없으면 `- [x] 없음`) |
 | `knowledge` · `diagram` · **`repo: athena`**(kind 무관) | `fix:` 의 커밋이 전부 hermes `origin/main` 에 들어 있다 |
-| `code` | `plan:` 계획서 Status 가 `done` · `pr:` 이 GitHub 에서 MERGED |
+| `code` | `plan:` 계획서 Status 가 `done` · `pr:` 이 GitHub 에서 MERGED(PR 끔 · 바로 머지 레포는 `pr:` 없이 계획서 `- Auto merge:` 줄이 같은 HEAD 의 `머지됨`) |
 | `seo` | `## 현재 항목` 의 모든 줄이 `- [x]`(해결) — 해결 판정은 `/seo-feedback` 이 직전 리포트와 비교해 한다 |
 | `wontfix` | `reason:` 이 비어 있지 않다 |
 
