@@ -183,6 +183,52 @@ const withReview = summarize(events, { now: NOW, days: 7, review: 'with' })
 const withoutReview = summarize(events, { now: NOW, days: 7, review: 'without' })
 check('리뷰 있음 — a · d · 없음 — b(건수 합이 전체) · 비율도 그 계획서 사건만', withReview.current.done === 2 && withoutReview.current.done === 1 && withReview.current.reviewRuns === 4 && withoutReview.current.reviewRuns === 0 && withReview.current.verifyRuns === 5, JSON.stringify(withReview.current.verifyRuns))
 
+console.log('\nPR 생성 → 성공 머지 · 평균 카드의 집계 근거')
+const prPlan = 'plans/task/pr-reviewed.md', plainPrPlan = 'plans/task/pr-plain.md'
+const prEvent = (hoursAgo, type, repo, pr, plan = prPlan, extra = {}) => ({ at: at(hoursAgo), type, repo, pr, plan, ...extra })
+const prEvents = [
+  { at: at(100), type: 'plan.status', plan: prPlan, from: null, to: 'in_progress' },
+  { at: at(400), type: 'plan.status', plan: plainPrPlan, from: null, to: 'in_progress' },
+  { at: at(15), type: 'review', plan: prPlan, ms: H, verdict: '승인' },
+  prEvent(60, 'pr.open', 'web', 1), prEvent(50, 'pr.open', 'web', '1'),
+  prEvent(10, 'auto.merge', 'web', '1', prPlan, { ok: true }),
+  prEvent(9, 'auto.merge', 'web', 1, prPlan, { ok: true }),
+  prEvent(40, 'pr.open', 'web', 2), prEvent(8, 'auto.merge', 'web', 2, prPlan, { ok: true }),
+  prEvent(30, 'pr.open', 'api', 1, plainPrPlan), prEvent(7, 'auto.merge', 'api', 1, plainPrPlan, { ok: true }),
+  prEvent(6, 'auto.merge', 'web', 3, prPlan, { ok: true }),
+  prEvent(5, 'pr.open', 'web', 4), prEvent(6.5, 'auto.merge', 'web', 4, prPlan, { ok: true }),
+  prEvent(4, 'pr.open', 'web', 5), prEvent(3, 'auto.merge', 'web', 5, prPlan, { ok: false }),
+  prEvent(3, 'pr.open', 'web', 6), prEvent(0, 'auto.merge', 'web', 6, prPlan, { ok: true }),
+  prEvent(200, 'pr.open', 'web', 7, plainPrPlan), prEvent(168, 'auto.merge', 'web', 7, plainPrPlan, { ok: true }),
+  prEvent(370, 'pr.open', 'web', 8, plainPrPlan), prEvent(200, 'auto.merge', 'web', 8, plainPrPlan, { ok: true }),
+  prEvent(20, 'pr.open', 'web', 10), prEvent(1, 'auto.merge', 'web', 10, prPlan, { ok: true, mergedAt: at(12) }),
+  prEvent(2, 'pr.open', 'web', 11), prEvent(2, 'auto.merge', 'web', 11, prPlan, { ok: true }),
+  prEvent(1, 'auto.merge', '', '', prPlan, { ok: true }),
+]
+const prWeek = summarize(prEvents.toReversed(), { now: NOW, days: 7 })
+check('PR은 repo+번호로 연결 · 복수 PR 각각 · 숫자/문자 번호와 중복 생성/머지는 한 번 · 기간 밖 생성 포함', prWeek.current.pr.count === 6 && prWeek.current.pr.had === 8 && prWeek.current.pr.avgMs === 145 / 6 * H, JSON.stringify(prWeek.current.pr))
+check('PR 생성 누락·역전은 0 아닌 제외 · 실패 머지는 완료 아님 · PR 없는 직접 머지는 제외', prWeek.current.pr.missingOpen === 1 && prWeek.current.pr.invalidOrder === 1 && prWeek.current.pr.unmerged === 1)
+check('PR 시작 경계 포함·끝 경계 제외 · 이전 같은 기간도 성공 머지 시각 기준', prWeek.previous.pr.count === 1 && prWeek.previous.pr.avgMs === 170 * H)
+check('PR은 mergedAt 우선 · 0초 정상 · 평균/중앙값/p75 별도', prWeek.current.pr.p50Ms === 27.5 * H && prWeek.current.pr.p75Ms === 32 * H)
+const reviewedPrs = summarize(prEvents, { now: NOW, days: 7, review: 'with' })
+const plainPrs = summarize(prEvents, { now: NOW, days: 7, review: 'without' })
+check('PR 리뷰 필터는 기존 작업 리뷰 유무 기준 · 현재/이전 동일 적용', reviewedPrs.current.pr.count === 4 && plainPrs.current.pr.count === 2 && reviewedPrs.previous.pr.count === 0 && plainPrs.previous.pr.count === 1)
+check('빈 PR 기록은 평균 null · 집계/누락 0', empty.current.pr.avgMs === null && empty.current.pr.count === 0 && empty.current.pr.had === 0)
+const noPlanPrs = [prEvent(2, 'pr.open', 'web', 20, null), prEvent(1, 'auto.merge', 'web', 20, null, { ok: true })]
+check('계획서 연결 없는 PR은 전체에만 · 필터에서는 추측하지 않음', summarize(noPlanPrs, { now: NOW }).current.pr.count === 1 && summarize(noPlanPrs, { now: NOW, review: 'with' }).current.pr.count === 0)
+const conflictingPrs = [prEvent(2, 'pr.open', 'web', 20), prEvent(1, 'auto.merge', 'web', 20, plainPrPlan, { ok: true })]
+check('생성/머지의 계획서 연결이 서로 다르면 필터에서 제외', summarize(conflictingPrs, { now: NOW, review: 'without' }).current.pr.count === 0)
+const overlapEvents = [
+  { at: at(10), type: 'plan.status', plan: prPlan, from: null, to: 'in_progress' },
+  { at: at(5), type: 'verify', plan: prPlan, ms: H, wait_ms: H, ok: true },
+  { at: at(5), type: 'verify', plan: prPlan, ms: H, wait_ms: H, ok: true },
+  { at: at(4), type: 'review', plan: prPlan, ms: 3 * H, verdict: '승인' },
+  { at: at(4), type: 'review', plan: prPlan, ms: 3 * H, verdict: '승인' },
+  { at: at(1), type: 'plan.status', plan: prPlan, from: 'in_progress', to: 'done' },
+]
+const overlap = summarize(overlapEvents, { now: NOW }).current
+check('검증 줄서기 포함·동일 중복 구간 한 번·검증/리뷰 겹침은 검증 우선 · 작업당 누적', overlap.stages.verify.avgMs === 2 * H && overlap.stages.review.avgMs === H && overlap.stages.verify.count === 1 && overlap.stages.review.count === 1)
+
 console.log('\n작업 안쪽(세션 기록)')
 const T0 = Date.parse('2026-10-25T00:00:00Z')
 const stamp = (seconds) => new Date(T0 + seconds * 1000).toISOString()

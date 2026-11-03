@@ -30,7 +30,7 @@ summary.plans.forEach((plan) => { plan.title = `제목 ${plan.plan.at(-4)}`; pla
 const html = readFileSync('./scripts/board/index.html', 'utf8')
 const esc = html.match(/  const esc = .+;/)[0]
 const functions = html.slice(html.indexOf('  const metricDuration ='), html.indexOf('  let metricsController'))
-const api = runInNewContext(`${esc}\n${functions}\n({metricCharts,metricBuckets,metricHistogram,metricStates,metricVerify,metricStages,metricTimeline})`, { Date })
+const api = runInNewContext(`${esc}\n${functions}\n({metricCharts,metricBuckets,metricHistogram,metricStates,metricVerify,metricStages})`, { Date })
 check('기준 시각은 입력 now, 이전 완료 목록은 이전 집계 개수와 일치', () => {
   assert.equal(summary.until, at(NOW)); assert.equal(summary.previousCompleted.length, summary.previous.done)
   assert.deepEqual(summary.previousCompleted, [FROM - hourMs])
@@ -84,24 +84,35 @@ check('검증 도넛은 통과/실패/모름의 배타적 개수', () => {
 })
 check('단계 없음과 시간 모름, 0초를 구별', () => {
   const copy = structuredClone(summary)
-  copy.current.stages.work = { had: 1, count: 0, p50Ms: null, p75Ms: null }
-  copy.current.stages.verify = { had: 1, count: 1, p50Ms: 0, p75Ms: 0 }
+  copy.current.stages.work = { had: 1, count: 0, avgMs: null, p50Ms: null, p75Ms: null }
+  copy.current.stages.verify = { had: 1, count: 1, avgMs: 0, p50Ms: 0, p75Ms: 0 }
   const stages = api.metricStages(copy)
   assert.match(stages, /시간 모름/); assert.match(stages, /없었던 단계/); assert.match(stages, /0초/)
 })
-check('타임라인은 시작 모름/끝 모름에 선을 만들지 않음', () => {
+check('평균 카드 네 개와 계산 기준 · 타임라인 제거', () => {
   const copy = structuredClone(summary)
-  copy.plans = [ { ...copy.plans[0], startAt: null, endAt: null, status: null, leadMs: null }, { ...copy.plans[0], startAt: NOW - hourMs, endAt: null, status: 'done', leadMs: null } ]
-  const timeline = api.metricTimeline(copy)
-  assert.match(timeline, /시작·끝 시각 모름/); assert.match(timeline, /끝 시각 모름/)
-  assert.equal((timeline.match(/<line /g) || []).length, 0)
+  copy.current.lead = { avgMs: 3 * hourMs, p50Ms: hourMs, p75Ms: 4 * hourMs, count: 3 }
+  copy.previous.lead = { avgMs: 6 * hourMs, p50Ms: hourMs, p75Ms: 8 * hourMs, count: 3 }
+  const output = api.metricCharts(copy, 1000)
+  assert.equal((output.match(/class="metric-kpi"/g) || []).length, 4)
+  assert.match(output, /전체 작업 평균<\/span><strong>3시간/)
+  assert.match(output, /PR 평균/); assert.match(output, /리뷰 평균 · 작업당/); assert.match(output, /검증 평균 · 작업당/)
+  assert.match(output, /중앙값 1시간 · p75 4시간/); assert.match(output, /이전 평균 6시간/); assert.match(output, /▼ 50%/)
+  assert.match(output, /줄서기 포함/); assert.match(output, /겹친 구간은 한 번/); assert.match(output, /repo\+pr/)
+  assert.ok(!output.includes('작업 타임라인')); assert.ok(!html.includes('const metricTimeline'))
 })
-check('완료 없는 열린 작업은 분포에 안 넣고 타임라인 점선으로 표시', () => {
+check('단계 막대도 평균을 표시 · 평균이 p75보다 커도 범위 안', () => {
+  const copy = structuredClone(summary)
+  copy.current.stages.review = { had: 1, count: 1, avgMs: 10 * hourMs, p50Ms: hourMs, p75Ms: 2 * hourMs }
+  const output = api.metricStages(copy)
+  assert.match(output, /검토받기<\/b><span>10시간/)
+  assert.match(output, /중앙값 1시간/); assert.ok([...output.matchAll(/<rect[^>]*width="([\d.]+)"/g)].every((match) => Number(match[1]) <= 1000))
+})
+check('완료 없는 열린 작업은 분포에 넣지 않음', () => {
   const copy = structuredClone(summary)
   copy.plans = [{ ...copy.plans[0], startAt: NOW - hourMs, endAt: null, status: 'in_progress', leadMs: null }]
   copy.current.done = 0
   assert.match(api.metricHistogram(copy, 320), /끝낸 작업이 없어요/)
-  assert.match(api.metricTimeline(copy), /stroke-dasharray/)
 })
 check('0초 완료는 분포의 첫 구간에 포함', () => {
   const copy = structuredClone(summary)
@@ -114,7 +125,7 @@ check('제목은 이스케이프하고 파일명을 대체 표시하지 않음',
   const copy = structuredClone(summary); copy.plans[0].title = '<img onerror="boom">'
   copy.plans[1].title = ''
   const output = api.metricCharts(copy, 390)
-  assert.ok(!output.includes('<img')); assert.match(output, /제목을 확인할 수 없는 계획서/)
+  assert.ok(!output.includes('<img')); assert.match(output, /&lt;img/)
   assert.ok(!output.includes('plans/task/'))
 })
 check('데스크톱/모바일 및 빈/전체/미래기간에 비정상 SVG 수치 없음', () => {
