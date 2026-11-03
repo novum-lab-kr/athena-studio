@@ -4,6 +4,7 @@
 //   node scripts/publish-release.js --from <이미 받은 artifact 폴더> [--dry-run]
 //     1. 실행 확인 — release-mac 워크플로 · main · 끝남 · 성공(--run 일 때)
 //     2. artifact Athena-Studio-mac 받기(gh run download) → .dmg 2 · .zip 2 · latest.json · latest-mac.yml · release-notes.md
+//        받은 폴더(tmpdir/athena-studio-release-*)는 끝나면 지운다 — 올렸든 · --dry-run 이든 · 실패했든(--from 폴더는 그대로)
 //     3. 다시 확인 — 이름 · 크기 · sha256 을 latest.json 과 맞추고 version · date · minMacOS 모양.
 //        latest-mac.yml(앱 안 업데이트 피드)은 .zip 이름 · 크기 · sha512 와 버전(latest.json 과 같은 번호)을 맞춘다 — .zip 은 이 뒤로 바뀌지 않는다
 //     3-1. .dmg 를 이 맥에서 staple — CI 가 CloudKit 연결 끊김으로 못 붙였을 수 있다(staple.json · scripts/notarize-mac.js).
@@ -272,15 +273,39 @@ async function main(args) {
   if (process.platform !== 'darwin') throw new Error('맥에서 돌린다 — 올리기 전에 .dmg 를 xcrun stapler · spctl 로 확인한다')
   if (runId && !/^\d+$/.test(runId)) throw new Error(`--run 은 숫자 실행 id: ${runId}`)
 
-  let dir = from ? path.resolve(from) : ''
-  if (runId) {
-    const run = /** @type {RunInfo} */ (JSON.parse(gh(['run', 'view', runId, '--repo', SOURCE_REPO, '--json', 'status,conclusion,workflowName,headBranch,headSha,url'])))
-    const reason = checkRun(run)
-    if (reason) throw new Error(`실행 ${runId}: ${reason}`)
-    dir = fs.mkdtempSync(path.join(os.tmpdir(), 'athena-studio-release-'))
+  if (from) return publishDir(path.resolve(from), dryRun)
+  const run = /** @type {RunInfo} */ (JSON.parse(gh(['run', 'view', runId, '--repo', SOURCE_REPO, '--json', 'status,conclusion,workflowName,headBranch,headSha,url'])))
+  const reason = checkRun(run)
+  if (reason) throw new Error(`실행 ${runId}: ${reason}`)
+  // 받은 배포 파일(한 번에 약 570MB)은 올린 뒤 · 실패해도 지운다 — 지우지 않아 tmpdir 에 쌓였다(2026-11-03 26개 약 5.2GB)
+  await withTempDir('athena-studio-release-', async (dir) => {
     console.log(`[publish] 실행 ${runId} artifact ${ARTIFACT} 받기 → ${dir}`)
     gh(['run', 'download', runId, '--repo', SOURCE_REPO, '--name', ARTIFACT, '--dir', dir])
+    await publishDir(dir, dryRun)
+  })
+}
+
+/**
+ * os.tmpdir() 아래 <prefix>XXXXXX 를 만들어 work 에 넘기고, 끝나면(work 가 실패해도) 지운다
+ * @param {string} prefix
+ * @param {(dir: string) => Promise<void>} work
+ */
+async function withTempDir(prefix, work) {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+  try {
+    await work(dir)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+    console.log(`[publish] 받은 폴더 지움 — ${dir}`)
   }
+}
+
+/**
+ * 받은 artifact 폴더를 확인 · staple 하고 올린다(--from 은 사용자 폴더라 지우지 않는다)
+ * @param {string} dir
+ * @param {boolean} dryRun
+ */
+async function publishDir(dir, dryRun) {
   const manifestFile = path.join(dir, MANIFEST)
   if (!fs.existsSync(manifestFile)) throw new Error(`${MANIFEST} 가 없다 — release 를 켜고 돈 실행인지 본다: ${dir}`)
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
@@ -337,4 +362,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SOURCE_REPO, RELEASES_REPO, checkRun, assetNames, checkFiles, checkFeed, updateManifest, unstapledZips, createArgs }
+module.exports = { SOURCE_REPO, RELEASES_REPO, withTempDir, checkRun, assetNames, checkFiles, checkFeed, updateManifest, unstapledZips, createArgs }
