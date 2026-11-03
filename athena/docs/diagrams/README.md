@@ -1,6 +1,8 @@
 # 다이어그램
 
-아테나 자체 작업 흐름 그림만 둔다(경량 · 정식 · 대화 압축 전후 — `/guide 그림`). 서비스 흐름은 그림 도구 없이 각 레포 `docs/flows/` 의 문서로 남긴다 — 형식 `docs/knowledge/common/qa-flows.md`.
+현재 팩 서비스 그림은 `/diagram`(Claude)·`$diagram`(Codex)으로 생성·점검한다. 절차는 [AUTHORING.md](AUTHORING.md), 서비스·가이드·카드는 `pack/diagrams/`에 둔다. 기존 우측 상단 다이어그램 메뉴와 `/guide 그림`은 `docs/diagrams/index.html`을 연다.
+
+아테나 자체 작업 흐름 그림(경량 · 정식 · 대화 압축 전후)은 이 폴더에 유지한다. 아래는 이 기존 그림의 재생성 절차다.
 
 ## 다시 만들기
 
@@ -26,7 +28,7 @@ done
 
 **테마**: archify 결과에 `scripts/diagram-theme.css` 를 덧씌운다(`scripts/diagram-theme.mjs` — Athena Studio 앱 디자인: 고정폭 대신 시스템 글꼴 · 앱 색 토큰(`src/renderer/style.css` `:root`) · 조금 큰 글자 · 둥근 상자). archify 의 배치 · 확대 · 검색 · 내보내기는 그대로이고, 여러 번 입혀도 같다. 다시 deliver 하면 테마가 빠지니 deliver 할 때마다 입힌다
 
-그림을 더하면 `scripts/build-diagram-index.mjs` 의 카드를 고치고 다시 돌린다.
+서비스 그림을 더하면 `pack/diagrams/index.json`에 카드를 등록하고 `node scripts/build-diagram-index.mjs`를 실행한다. 파일이 있는 서비스 링크와 기존 작업 흐름 카드가 함께 나온다.
 
 **`validate` 가 9개 검사를 모두 통과해야 showcase 합격이다.** 4개만 나오면 기본 검증이지 합격이 아니다. `deliver` 가 0 이 아닌 종료 코드를 내면 실패이며, 이전 HTML 이 그대로 남는다.
 

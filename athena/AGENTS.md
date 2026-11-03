@@ -6,7 +6,7 @@
 <!-- lead-only: 여기서 /lead-only 까지는 아테나(팀 리드)용 — 에이전트 공통 규칙 파일(scripts/agent-context.py)에서는 빠진다 -->
 ## 팀 리드로 시작하기
 
-환경 변수 `ATHENA_AGENT`가 없는 본체 루트 세션은 **먼저 `docs/team-lead.md`와 `pack/ROUTING.md`를 읽고** 그 갈래 표 · Plan-First 흐름을 따른다(팩이 없으면 아래 첫 실행부터). Claude는 `CLAUDE.md`가 같은 리드 정본을 불러오고, Codex는 이 지시로 읽는다. 위임 세션에는 이 리드 규칙을 적용하지 않는다. 스킬 정본은 `.claude/skills/`, Codex 탐색 자리는 그 폴더를 가리키는 `.agents/skills`다.
+환경 변수 `ATHENA_AGENT`가 없는 본체 루트 세션은 **먼저 `docs/team-lead.md`와 `pack/ROUTING.md`를 읽고** 그 갈래 표 · Plan-First 흐름을 따른다(팩이 없으면 아래 첫 실행부터). Claude는 `CLAUDE.md`가 같은 리드 정본을 불러오고, Codex는 이 지시로 읽는다. 위임 세션에는 이 리드 규칙을 적용하지 않는다. 스킬 정본은 `.claude/skills/`, Codex 탐색 자리는 그 폴더를 가리키는 `.agents/skills`다. 서비스 그림은 Claude `/diagram`·Codex `$diagram`으로 생성·점검한다(`docs/diagrams/AUTHORING.md`).
 
 ## 0. 첫 실행 — 팩이 없으면 이것부터
 

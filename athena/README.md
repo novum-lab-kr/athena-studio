@@ -105,7 +105,7 @@ athena/                        ← 코어
 ├── .claude/
 │   ├── agents/                reviewer · learn-reviewer + 레포 담당 에이전트(팩)
 │   ├── rules/                 언어 · 코드 · Git · 디스패치 규칙
-│   └── skills/                /setup /call /board /sync /guide /monitor + 회사 스킬(팩)
+│   └── skills/                /setup /call /board /sync /guide /monitor /diagram + 회사 스킬(팩)
 │
 ├── docs/
 │   ├── team-lead.md           Claude · Codex 공통 아테나 역할 · 흐름 · 스킬
@@ -115,7 +115,7 @@ athena/                        ← 코어
 │   │   └── <레포>/ · company/ · learned/   레포 지식 · 회사 관례 · 학습 기록(팩)
 │   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
-│   ├── diagrams/              아테나 작업 흐름 그림 (/guide 그림)
+│   ├── diagrams/              아테나 작업 흐름·서비스 목록 (/guide 그림 · /diagram)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
 │   ├── pack.md                팩 형식 · 여러 팩 · 여러 팩 테스트
 │   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준
@@ -169,7 +169,7 @@ athena/                        ← 코어
 packs/<회사>/
 ├── pack.json        레포 목록 · 브랜치 · 에이전트 · 회사 값(GitHub 조직·PR 범위 …)
 ├── ROUTING.md       담당 레포·에이전트 표 · 라우팅 규칙 · 검증 명령 · 회사 스킬
-├── agents/ skills/ knowledge/ verify/ docs/ sync/ archive/
+├── agents/ skills/ knowledge/ verify/ docs/ diagrams/ sync/ archive/
 ├── guide/           회사 판 안내 HTML (있으면 /guide 가 이걸 연다)
 └── hooks/           (선택) delegate.sh 에 넣을 환경값
 ```
