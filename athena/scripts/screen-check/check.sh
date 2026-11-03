@@ -105,10 +105,10 @@ PORT_ENV=(ATHENA_BOARD_PORT=47999 ATHENA_BOARD_NO_BROWSER=1)
 sc_board_outside()  { STEP_WAIT="#nohup" step - "${PORT_ENV[@]}" -- scripts/board.sh; }   # nohup 은 &로 뒤에서 돈다 — 기록이 다음 시나리오로 새지 않게 기다린다
 sc_monitor_outside(){ step - -- scripts/monitor-pane.sh; }
 sc_guide_menu() {
-  # ask_claude 는 shell_line(scripts/lib/shell-line.sh)을 쓴다 — 함수만 잘라 내니 도우미도 같이 싣는다 · Studio pane 안 · 밖
-  { cat "$COPY/scripts/lib/shell-line.sh"; extract scripts/guide-menu.sh '^ask_claude\\(\\)' '^}'; } > "$WORK/ask.sh"
-  step studio "${IN[@]}" ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_claude "/board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
-  step - ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_claude "/board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
+  # ask_agent 는 shell_line(scripts/lib/shell-line.sh)을 쓴다 — 함수만 잘라 내니 도우미도 같이 싣는다 · Studio pane 안 · 밖
+  { cat "$COPY/scripts/lib/shell-line.sh"; extract scripts/guide-menu.sh '^ask_agent\(\)' '^}'; } > "$WORK/ask.sh"
+  step studio "${IN[@]}" ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_agent "board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
+  step - ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_agent "board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
 }
 sc_new_branch() {
   extract scripts/new-branch.sh '^# 에이전트 pane 안에서 브랜치를 새로 정했으면' '^fi$' > "$WORK/rename.sh"

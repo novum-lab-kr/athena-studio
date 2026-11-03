@@ -44,6 +44,20 @@ PR='- PR: https://github.com/acme/demo/pull/7'
 plan 20261101-stage '단계 칸' 없음 "$PR" '- [x] 1단계\n- [ ] 2단계 전환'
 plan 20261101-plain '일반 칸' 없음 "$PR" '- [x] 구현\n- [ ] 문서\n- [ ] 정리'
 plan 20261101-empty '칸 없음' 없음 "$PR" '- 구현 끝'
+# 살아 있는 작업 pane p2 — working/idle/waiting 모두 닫힐 때까지 자동 완료를 막는다
+for state in working idle waiting; do
+  pane=p2
+  [ "$state" != idle ] || pane=p4
+  [ "$state" != waiting ] || pane=p5
+  for kind in pr direct; do
+    record="$PR"
+    if [ "$kind" = direct ]; then
+      record=$'- Auto merge: demo feat/x @abc1234 · 머지됨 — squash → main @def5678(PR 없음) · 2026-11-01 10:05\n\n## Commits\n- 2026-11-01 10:00 · demo · 🌿 feat/x · `abc1234def` — fix: 시험 · 검증 통과'
+    fi
+    record="- Work ref: /tmp · pane $pane (fe)"$'\n'"$record"
+    plan "20261101-live-$kind-$state" "살아 있는 pane $kind $state" 없음 "$record" '- [ ] 후속 배포'
+  done
+done
 plan 20261101-old '오래 닫힘' 없음 '' '- [ ] 구현'
 plan 20261101-recent '방금 닫힘' 없음 '' '- [ ] 구현'
 plan 20261101-linked '연결 이슈 있음' issues/20261101-demo-linked.md '' '- [ ] 구현'
@@ -60,13 +74,24 @@ import { openRequest } from './scripts/lib/requests.mjs'
 openRequest(process.cwd(), { kind: 'question', title: '물음', links: { plan: 'plans/task/20261101-asked.md' } })
 ") || { echo "  ✖ 요청을 만들지 못했다"; exit 1; }
 
+mkdir -p "$TMP/fixture"
+cp "$SRC/scripts/screen-check/fixtures/studio/"* "$TMP/fixture/"
+node - "$TMP/fixture/pane_list.json" <<'FIXTURE'
+const fs = require('node:fs')
+const file = process.argv[2]
+const fixture = JSON.parse(fs.readFileSync(file, 'utf8'))
+for (const [id, state] of [['p4', 'idle'], ['p5', 'waiting']]) {
+  fixture.panes.push({ ...fixture.panes[1], id, agent_status: state, label: `🤖 fe · feat/${id}` })
+}
+fs.writeFileSync(file, JSON.stringify(fixture))
+FIXTURE
 SCREEN_LOG="$TMP/screen.log"
 : > "$SCREEN_LOG"
 PORT=$((47900 + RANDOM % 90))
 (cd "$CORE" && PATH="$TMP/bin:$PATH" \
   ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock \
   ATHENA_STUDIO_CLI="$TMP/bin/athena-studio-cli" ATHENA_STUDIO_ENDPOINT="$TMP/no-studio/daemon.json" \
-  FAKE_SCREEN_FIXTURE="$SRC/scripts/screen-check/fixtures/studio" FAKE_SCREEN_LOG="$SCREEN_LOG" FAKE_ATHENA="$CORE" \
+  FAKE_SCREEN_FIXTURE="$TMP/fixture" FAKE_SCREEN_LOG="$SCREEN_LOG" FAKE_ATHENA="$CORE" \
   ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
 SERVER_PID=$!
 for _ in $(seq 1 100); do
@@ -79,10 +104,10 @@ for _ in $(seq 1 50); do
   sleep 0.2
 done
 
-node - "$TMP" "$CORE" <<'EOF'
-const { readFileSync, readdirSync } = require('node:fs')
+node - "$TMP" "$CORE" "$PORT" <<'EOF'
+const { readFileSync, readdirSync, writeFileSync } = require('node:fs')
 const { join } = require('node:path')
-const [tmp, core] = process.argv.slice(2)
+const [tmp, core, port] = process.argv.slice(2)
 let fail = 0
 const check = (name, ok, detail = '') => { console.log(`  ${ok ? '✔' : '✖'} ${name}`); if (!ok) { fail = 1; if (detail) console.log(`      ${detail}`) } }
 const read = (path) => { try { return readFileSync(path, 'utf8') } catch { return '' } }
@@ -94,6 +119,9 @@ console.log('── 자동 완료')
 check('단계 칸 있음 → 그대로', status('20261101-stage') === 'in_progress', log)
 check('일반 칸만 있음 → done', status('20261101-plain') === 'done', log)
 check('칸 없음 → done', status('20261101-empty') === 'done', log)
+for (const kind of ['pr', 'direct']) for (const state of ['working', 'idle', 'waiting']) {
+  check(`살아 있는 pane ${kind} ${state} → 완료 보류`, status(`20261101-live-${kind}-${state}`) === 'in_progress', log)
+}
 const sent = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).map((line) => JSON.parse(line)).filter((args) => args[1] === 'pane' && args[2] === 'send-text')
 const notes = sent.filter((args) => args[4]?.startsWith('[현황판 → 아테나]'))
 check('일반 칸을 남긴 계획서만 Lead pane 에 한 줄 — 계획서 · 남은 칸 수', notes.length === 1 && notes[0][3] === 'p1' && notes[0][4] === '[현황판 → 아테나] plans/task/20261101-plain.md 자동 완료 — 남은 빈 칸 2개', JSON.stringify(sent))
@@ -110,7 +138,34 @@ check('만든 계획서는 기록에서 빠져 또 만들지 않음 · 1시간 �
 const cards = JSON.parse(read(join(tmp, 'state.json')) || '{}').cards ?? []
 const card = cards.find((item) => item.kind === 'issue' && item.id === `issues/${created[0]}`)
 check('이슈 카드에 계획서가 붙음 — [작업 시작] 이 이 계획서를 이어 간다', card?.linkedPlan?.id === 'plans/task/20261101-old.md', JSON.stringify(cards.map((item) => [item.kind, item.id, item.linkedPlan?.id])))
-process.exit(fail)
+// 같은 서버에서 pane 목록 실패 → pane 닫힘 확인까지 이어서 본다.
+const waitUntil = async (predicate) => {
+  for (let attempt = 0; attempt < 80; attempt += 1) {
+    const response = await fetch(`http://127.0.0.1:${port}/api/state`)
+    if (predicate(await response.json())) return true
+    await new Promise((resolve) => setTimeout(resolve, 200))
+  }
+  return false
+}
+const verifyClosure = async () => {
+  writeFileSync(join(tmp, 'fixture/pane_list.exit'), '1')
+  check('pane 목록 실패 주기 확인', await waitUntil((state) => !state.screen))
+  for (const kind of ['pr', 'direct']) for (const state of ['working', 'idle', 'waiting']) {
+    check(`pane 목록 실패 ${kind} ${state} → 완료 보류`, status(`20261101-live-${kind}-${state}`) === 'in_progress')
+  }
+  const fixtureFile = join(tmp, 'fixture/pane_list.json')
+  const fixture = JSON.parse(read(fixtureFile))
+  fixture.panes = fixture.panes.filter((pane) => pane.id === 'p1')
+  writeFileSync(fixtureFile, JSON.stringify(fixture))
+  writeFileSync(join(tmp, 'fixture/pane_list.exit'), '0')
+  check('pane 닫힘 뒤 다시 수집', await waitUntil((state) => state.screen && !state.cards.some((card) => card.id.includes('20261101-live-') && card.status !== 'done')))
+  for (const kind of ['pr', 'direct']) for (const state of ['working', 'idle', 'waiting']) {
+    const name = `20261101-live-${kind}-${state}`
+    const text = plan(name) || read(join(core, 'archive', name, 'plan.md'))
+    check(`pane 모두 닫힘 ${kind} ${state} → done`, /^- Status: done/m.test(text), text)
+  }
+}
+verifyClosure().then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
 EOF
 code=$?
 [ "$code" = 0 ] && echo "✅ 통과"
