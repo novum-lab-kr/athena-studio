@@ -234,17 +234,17 @@ export const LEARN_SCHEMA = {
         type: 'object',
         additionalProperties: false,
         properties: {
-          kind: { type: 'string', enum: ['gotchas', 'skill'] },
-          section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). skill 이면 빈 문자열' },
-          knowledge: { type: 'string', description: 'knowledge 폴더(예 <레포> 또는 모노레포 <레포>/<앱>). skill 이면 빈 문자열' },
-          scope: { type: 'string', description: '어디에 걸리나 — 레포 어디서든 밟으면 "common", 특정 화면을 만질 때만이면 그 코드 폴더(예 app/orders · pages/auth · src/screens/tabs). 애매하면 common. skill 이면 빈 문자열' },
+          kind: { type: 'string', enum: ['gotchas', 'skill', 'guard'], description: 'gotchas 공책 함정 · skill 스킬 후보 · guard 정비 후보(구조 · 훅 · 검증 스크립트 · lint · 테스트로 막을 수 있는 것 — 학습 기준 1-2)' },
+          section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). skill · guard 면 빈 문자열' },
+          knowledge: { type: 'string', description: 'knowledge 폴더(예 <레포> 또는 모노레포 <레포>/<앱>). guard 면 막을 곳이 있는 영역(레포 또는 athena). skill 이면 빈 문자열' },
+          scope: { type: 'string', description: '어디에 걸리나 — 레포 어디서든 밟으면 "common", 특정 화면을 만질 때만이면 그 코드 폴더(예 app/orders · pages/auth · src/screens/tabs). 애매하면 common. skill · guard 면 빈 문자열' },
           skill: { type: 'string', description: 'kind 가 skill 일 때 스킬 이름(소문자·숫자·-). 아니면 빈 문자열' },
           title: { type: 'string', description: '무엇을 학습했는지 쉬운 한 줄(파일명·함수명 대신 무슨 일이 생기나로). 50자 안팎' },
           explain: { type: 'string', description: '무엇을 배웠나 — 그 작업을 모르는 사람도 알게 2~3문장. 배경부터 짧게, 용어는 풀어서. 대화·로그 문장을 그대로 붙이지 않는다' },
-          rule: { type: 'string', description: '공책(gotchas)에 실제로 들어갈 한 줄 — 규칙 + 이유 한 마디. 에이전트가 읽고 바로 행동할 수 있게' },
+          rule: { type: 'string', description: '공책(gotchas)에 실제로 들어갈 한 줄 — 규칙 + 이유 한 마디. 에이전트가 읽고 바로 행동할 수 있게. guard 면 무엇을 어디에 박을지 한 줄(파일 · 검사 · 막혔을 때 보일 해결법)' },
           basis: { type: 'string', enum: ['code', 'run', 'user-said'], description: '근거 종류 — code(코드·설정·문서 파일:줄) · run(에러 메시지·요청 기록·테스트 결과) · user-said(사용자가 그렇게 말한 것뿐). 사용자 말만 있으면 반드시 user-said' },
           evidence: { type: 'string', description: '근거 — basis 가 code 면 파일:줄, run 이면 확인한 실행 결과 한 줄. 비밀값·긴 인용 금지' },
-          strengthen: { type: 'string', description: '이미 있는 공책 줄을 고치는 것이면 그 줄을 공책에 적힌 그대로(앞의 "- " 와 <!-- --> 표시는 빼도 된다), 아니면 빈 문자열' },
+          strengthen: { type: 'string', description: '이미 있는 공책 줄을 고치는 것이면 그 줄을 공책에 적힌 그대로(앞의 "- " 와 <!-- --> 표시는 빼도 된다), 아니면 빈 문자열. guard 면 빈 문자열' },
           ifUnknown: { type: 'string', description: '왜 중요한가 — 모르면 다음 작업에서 구체적으로 무엇이 잘못되나 한 줄(쉬운 말). 구체적으로 못 쓰면 이 항목을 내지 않는다' },
           repeatOf: { type: 'string', description: '같은 함정이 이미 나왔으면 그 표시 — "한 번 본 후보" 목록의 id(seen-…) 또는 "열린 learn 이슈" 목록의 파일 이름. 대상(target)이 같은 것만 가리킨다. 처음 보는 함정이면 빈 문자열. 비슷해 보여도 내용이 다르면 비운다' },
           signal: { type: 'string', enum: ['correction', 'repeat-error', 'done'] },
@@ -398,7 +398,11 @@ const shadowJev = async (planFile, planText, prMaterial, transcript) => {
 // ── learn 이슈 쓰기 — 같은 target 열린 이슈면 덧붙인다 ─────────────────────
 const slug = (text) => text.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '').toLowerCase()
 // learning.md 8절 target 과 같은 꼴(파일#절) — 같은 절일 때만 합친다
-const issueTarget = (item) => (item.kind === 'skill' ? `skill:${slug(item.skill)}` : `docs/knowledge/${item.knowledge}/${item.kind}.md#${item.section.replace(/^#+\s*/, '').trim() || '기타'}`)
+const issueTarget = (item) => {
+  if (item.kind === 'skill') return `skill:${slug(item.skill)}`
+  if (item.kind === 'guard') return `guard:${item.knowledge}`
+  return `docs/knowledge/${item.knowledge}/${item.kind}.md#${item.section.replace(/^#+\s*/, '').trim() || '기타'}`
+}
 // 카드 제목 — 규칙의 첫 문장만, 길면 자른다(본문에 전체가 있다)
 const cardTitle = (rule) => clip((rule.replace(/\n/g, ' ').match(/^.+?(?:다\.|\.\s)/) ?? [rule])[0].replace(/\.\s*$/, '').trim(), 80)
 
@@ -425,7 +429,8 @@ export const writeIssue = (item, planFile, dryRun) => {
   const target = issueTarget(item)
   const { masked: rule } = maskSecrets(item.rule)
   const { masked: evidence } = maskSecrets(item.evidence)
-  const { masked: strengthen } = maskSecrets(item.strengthen ?? '')
+  // 정비 후보는 공책 줄을 고치지 않는다 — strengthen 은 공책 함정에만
+  const { masked: strengthen } = maskSecrets(item.kind === 'gotchas' ? item.strengthen ?? '' : '')
   // 이슈를 여는 건 실행으로 확인한 것(run)이나 같은 함정이 두 번째 나온 것뿐 — code 한 번짜리는 보관소에 가볍게 남긴다(scripts/lib/learn-seen.mjs)
   const seen = readSeen(ROOT)
   const gate = decideGate({ item, target, seen, openIssues: openLearnIssues().map(({ file, text }) => ({ file, target: (text.match(/^target:\s*(.*)$/m) ?? [])[1]?.trim() ?? '' })) })
@@ -467,7 +472,7 @@ severity: low
 signal: review
 source: ${planFile} (배우기 검토자 · ${item.signal})
 basis: ${item.basis}
-target: ${target}${item.kind !== 'skill' && scopeOf(item) !== 'common' ? `\nscope: ${scopeOf(item)}` : ''}${strengthen ? `\nstrengthen: ${strengthen.replace(/\n/g, ' ')}` : ''}
+target: ${target}${item.kind === 'gotchas' && scopeOf(item) !== 'common' ? `\nscope: ${scopeOf(item)}` : ''}${strengthen ? `\nstrengthen: ${strengthen.replace(/\n/g, ' ')}` : ''}
 plan:
 fix:
 reason:
@@ -479,7 +484,7 @@ ${maskSecrets(item.explain ?? '').masked}
 ## 왜 중요한가
 ${maskSecrets(item.ifUnknown ?? '').masked}
 
-## 공책에 넣을 문장
+## ${item.kind === 'guard' ? '정비할 곳' : '공책에 넣을 문장'}
 ${rule}
 ${strengthen ? `\n(새 줄이 아니라 기존 줄을 고친다: ${strengthen})\n` : ''}
 ## 어디서 배웠나
@@ -529,7 +534,7 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
   const { items, cost } = askReviewer(buildPrompt(planFile, knowledgeDirs, transcript, planText, prMaterial))
   console.log(`  검토자 답 ${items.length}건 · 비용 $${Number(cost).toFixed(3)}`)
   const written = items.map((item) => writeIssue(item, planFile, dryRun))
-  const results = items.map((item, index) => `  - [${item.signal}·${item.kind}${item.kind !== 'skill' ? `·${scopeOf(item)}` : ''}] ${maskSecrets(item.title ?? '').masked}\n    무엇을 배웠나: ${maskSecrets(item.explain ?? '').masked}\n    왜 중요한가: ${maskSecrets(item.ifUnknown ?? '').masked}\n    공책 문장: ${maskSecrets(item.rule).masked}\n    근거(${item.basis}): ${maskSecrets(item.evidence ?? '').masked}\n    ${written[index]}`)
+  const results = items.map((item, index) => `  - [${item.signal}·${item.kind}${item.kind === 'gotchas' ? `·${scopeOf(item)}` : ''}] ${maskSecrets(item.title ?? '').masked}\n    무엇을 배웠나: ${maskSecrets(item.explain ?? '').masked}\n    왜 중요한가: ${maskSecrets(item.ifUnknown ?? '').masked}\n    공책 문장: ${maskSecrets(item.rule).masked}\n    근거(${item.basis}): ${maskSecrets(item.evidence ?? '').masked}\n    ${written[index]}`)
   if (results.length) console.log(results.join('\n'))
   // Jev 나란히 판정의 실제 결과 — 점수가 낮은데 이슈가 나온 작업이 거름망이 놓쳤을 것(node scripts/lib/jev.mjs --report)
   if (jevScore !== undefined) logJev({ purpose: 'learn-review-outcome', plan: planFile, jev: jevScore, items: items.length, written: written.filter((line) => !line.startsWith('건너뜀')).length, dryRun })

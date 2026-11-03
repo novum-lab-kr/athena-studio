@@ -76,4 +76,23 @@ assert.ok(text.includes('🔧 exec_command: node --check'))
 assert.ok(!text.includes('중복 금지') && !text.includes('결과 본문 금지'))
 console.log('  ✔ Codex 기록 검색·요약 — 계획서 구분, 중복·도구 결과 제외')
 JS
+mkdir -p "$TASK_TMP/docs/knowledge/athena" "$TASK_TMP/issues" "$TASK_TMP/.claude/skills"
+echo '# 함정' > "$TASK_TMP/docs/knowledge/athena/gotchas.md"
+"$TASK_NODE" --input-type=module <<'JS'
+import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
+import { writeIssue } from './scripts/learn-review.mjs'
+import { listLearn, applyLearn } from './scripts/board/learn.mjs'
+const item = { kind: 'guard', knowledge: 'athena', section: '', scope: 'app/x', skill: '', title: '직접 커밋 막기', explain: '설명', rule: 'commit-guard.py 에 직접 커밋을 막고 commit.sh 를 안내', basis: 'run', evidence: '직접 커밋됨', strengthen: '옛 줄', repeatOf: '', ifUnknown: '또 직접 커밋', signal: 'done' }
+const file = writeIssue(item, 'plans/task/t.md', false).match(/issues\/(\S+\.md)/)[1]
+const text = readFileSync(`issues/${file}`, 'utf8')
+assert.match(text, /^target: guard:athena$/m)
+assert.match(text, /^## 정비할 곳\n.*commit-guard/m)
+assert.ok(!/^scope:|^strengthen:|## 공책에 넣을 문장/m.test(text))
+const card = listLearn().candidates.find((candidate) => candidate.id === `issues/${file}`)
+assert.equal(card.guard, true)
+assert.equal(card.rule, item.rule)
+assert.match(applyLearn(`issues/${file}`).error, /정비 후보/)
+console.log('  ✔ 정비 후보(guard) — 이슈 쓰기 · [학습] 탭 읽기 · 공책에 넣기 거부')
+JS
 echo '✅ 통과'
