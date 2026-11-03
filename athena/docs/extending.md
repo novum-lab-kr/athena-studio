@@ -93,7 +93,7 @@ argument-hint: "<인자 예시>"
 - 백엔드 기능(`capabilities`): studio 는 `agent-status` · `process-info` · `workspaces`, none 은 없음
 - studio 백엔드(`StudioBackend`) — 데몬 CLI `athena-studio-cli`(계약 정본: 스튜디오 앱 `src/lib/protocol.js`)를 부른다. 출력이 이미 납작한 JSON 이라 읽기만 한다
   - CLI 찾기: `ATHENA_STUDIO_CLI`(pane 셸) → 접속 파일의 `cli` → PATH 의 `athena-studio-cli`. 접속 파일로 찾으면 `socket`·`node` 를 `ATHENA_STUDIO_SOCKET`·`ATHENA_STUDIO_NODE` 로 넘긴다(CLI 래퍼가 그 node — 앱의 Electron — 로 돈다)
-  - self: `ATHENA_STUDIO_PANE_ID`·`_TAB_ID`·`_WORKSPACE_ID`(데몬에 묻지 않음). id 는 `p<n>`·`t<n>`·`w<n>`
+  - self: 환경의 pane·탭·workspace ID를 그대로 읽는다(오프라인 대화 기록용이며 존재를 보장하지 않음). 전송 대상을 고르는 `callerPane()` 은 `pane get` 으로 존재를 검증하며, ID가 없거나 확인에 실패하면 포커스로 대체하지 않는다. 화면 밖(`inside: false`)일 때만 기존 `pane current` 대안을 쓴다. 결정 콘솔의 `--pane <id>` 도 존재를 검증하고, 자동으로 대상을 확인하지 못하면 복사 대안을 제공한다. `--add` 는 현재 대화를 모를 때 옛 작성자 pane 으로 보내지 않는다.
   - 탭 밖 고정 칸(데몬 프로토콜 3 `dock` — 앱 하단 에이전트 모니터): `pane list` 에 `tab_id`·`workspace_id` 가 null 이고 이름표가 `🛰 에이전트 모니터` 인 pane 이 섞인다. 탭·workspace 로 거르면 빠지고, 이름표로 찾으면 잡힌다. 지금 앱은 모니터를 앱 화면(AGENT MONITOR 칸)으로 그리고 남은 고정 칸은 닫으므로, `monitor-pane.sh`·`athena-up.sh` 는 모니터 pane 을 띄우지 않는다. 고정 칸은 나눌 수 없다(데몬이 `usage`) — 부르는 쪽은 `--target self`·탭의 pane 을 쓴다. 화면 계층은 프로토콜 번호를 보지 않는다(같은 앱의 CLI 를 쓰므로 맞추는 건 앱 몫)
   - 실패: CLI 가 종료 1 + 표준오류 `{"error","message"}` 로 말하면 그 code(`usage`·`not_found`·`timeout`·`unavailable`·`internal`) 그대로, 종료 3(데몬에 못 붙음)은 `unavailable`, 약속 밖 출력이면 그 출력·종료 코드를 그대로 흘려보낸다
   - `pane read` 는 `--lines`·`--source visible|recent` 만(`--read-format`·`--ansi`·`--raw` 는 CLI 가 `usage` 로 거절)
