@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 실제 지표 집계와 SVG 렌더를 VM에서 검사한다. 브라우저·서버·사용자 데이터는 열지 않는다.
+# 실제 지표 집계와 차트·작업 목록 렌더를 VM에서 검사한다. 브라우저·서버·사용자 데이터는 열지 않는다.
 . "$(dirname "$0")/_lib.sh"
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
@@ -55,12 +55,13 @@ check('오래된 전체 기간은 최대14개 구간, 미래 시작일은 빈 �
   assert.ok(api.metricBuckets({ ...summary, from: new Date(2026, 0, 1).toISOString() }).length <= 14)
   assert.equal(api.metricBuckets({ ...summary, from: at(NOW + hourMs) }).length, 0)
 })
-check('분포는 시간을 아는 완료 작업만 점으로 표시', () => {
+check('분포는 시간을 아는 완료 작업만 개수·비중으로 표시', () => {
   const hist = api.metricHistogram(summary, 600)
   assert.match(hist, /시간 기록 1개 \/ 완료 2개/)
-  assert.equal((hist.match(/<circle /g) || []).length, 1)
+  assert.equal((hist.match(/class="metric-distribution-row"/g) || []).length, 6)
+  assert.match(hist, /1개<\/b> · 100%/); assert.match(hist, /시간 미기록 1개/); assert.ok(!hist.includes('<circle'))
 })
-check('1일 이상 분포 좌표는 작업 수만큼만 최댓값을 읽음', () => {
+check('많은 작업의 시간대 집계는 선형으로 계산', () => {
   const copy = structuredClone(summary)
   const planCount = 200
   let leadReads = 0
@@ -72,6 +73,15 @@ check('1일 이상 분포 좌표는 작업 수만큼만 최댓값을 읽음', ()
   copy.current.lead = { p50Ms: 28 * hourMs, p75Ms: 30 * hourMs, count: planCount }
   api.metricHistogram(copy, 600)
   assert.ok(leadReads < planCount * 30, `소요 필드 접근 ${leadReads}회`)
+})
+check('시간대 경계는 다음 구간에 한 번만 포함하고 비중의 분모는 시간 기록 수', () => {
+  const copy = structuredClone(summary)
+  copy.plans = [0, hourMs, 2 * hourMs, 4 * hourMs, 8 * hourMs, 24 * hourMs, null].map((leadMs) => ({ ...copy.plans[0], endAt: NOW - 1, leadMs }))
+  copy.current.done = 7
+  const output = api.metricHistogram(copy)
+  assert.equal((output.match(/<b>1개<\/b> · 17%/g) || []).length, 6)
+  assert.match(output, /시간 기록 6개 \/ 완료 7개/)
+  assert.match(output, /시간 미기록 1개/)
 })
 check('현재 상태는 미확인 상태까지 포함하며 선택기간임을 명시', () => {
   const states = api.metricStates(summary)
@@ -119,13 +129,13 @@ check('0초 완료는 분포의 첫 구간에 포함', () => {
   copy.plans = [{ ...copy.plans[0], startAt: NOW - hourMs, endAt: NOW - hourMs, leadMs: 0, mergedAt: null }]
   copy.current.lead = { p50Ms: 0, p75Ms: 0, count: 1 }
   const hist = api.metricHistogram(copy, 320)
-  assert.match(hist, /0초/); assert.equal((hist.match(/<circle /g) || []).length, 1)
+  assert.match(hist, /0초/); assert.match(hist, /1개<\/b> · 100%/)
 })
 check('제목은 이스케이프하고 파일명을 대체 표시하지 않음', () => {
   const copy = structuredClone(summary); copy.plans[0].title = '<img onerror="boom">'
   copy.plans[1].title = ''
   const output = api.metricCharts(copy, 390)
-  assert.ok(!output.includes('<img')); assert.match(output, /&lt;img/)
+  assert.ok(!output.includes('<img'))
   assert.ok(!output.includes('plans/task/'))
 })
 check('데스크톱/모바일 및 빈/전체/미래기간에 비정상 SVG 수치 없음', () => {
@@ -159,11 +169,48 @@ await (async () => {
   check('기간을 바꾸면 이전 fetch를 취소', () => assert.equal(requests[0].signal.aborted, true))
   requests[1].resolve({ ok: true, json: async () => summary }); await Promise.all([first, second])
   check('취소된 오류는 새 화면을 덮지 않음', () => { assert.match(node('metrics').innerHTML, /작업별 걸린 시간 분포/); assert.equal(node('metrics').attrs['aria-busy'], 'false') })
+  check('전체 작업은 기본 펼침 · 전체 경과와 다섯 단계는 숫자/미기록으로 표시', () => {
+    const output = node('metrics').innerHTML
+    assert.match(output, /<details open class="metric-details metric-all-plans"/)
+    assert.match(output, /전체 경과 60분/); assert.match(output, /전체 경과 미기록/)
+    assert.match(output, /<dt>검증<\/dt><dd>3초/)
+    assert.match(output, /<dt>작업<\/dt><dd>시간 모름/)
+    assert.match(output, /<dt>리뷰<\/dt><dd>없음/)
+    assert.equal((output.match(/class="metric-plan-stages"/g) || []).length, summary.plans.length)
+  })
   node('metrics-review').value = 'with'; node('metrics-since').value = '2026-11-01'
   const third = loader.loadMetrics()
   requests[2].resolve({ ok: false, status: 500 }); await third
   check('날짜/리뷰 필터를 전달하고 HTTP 오류를 표시', () => { assert.match(requests[2].url, /review=with/); assert.match(requests[2].url, /since=2026-11-01/); assert.ok(!requests[2].url.includes('days=')); assert.match(node('metrics').innerHTML, /HTTP 500/) })
-  const fourth = loader.loadMetrics(); requests[3].resolve({ ok: true, json: async () => ({ events: 0 }) }); await fourth
+  const escapedSummary = structuredClone(summary)
+  escapedSummary.plans[0].title = '<img onerror="boom">'
+  const escapedLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => escapedSummary }); await escapedLoad
+  check('작업 목록 제목을 이스케이프', () => { assert.match(node('metrics').innerHTML, /&lt;img/); assert.ok(!node('metrics').innerHTML.includes('<img')) })
+  const zeroSummary = structuredClone(summary)
+  zeroSummary.plans = [{ ...summary.plans[0], leadMs: 0, stages: { work: 0, verify: null, wait: null, review: null, mergeWait: null }, stageHad: { work: true, verify: true } }]
+  const zeroLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => zeroSummary }); await zeroLoad
+  check('전체 경과·단계의 0초는 미기록과 구분', () => {
+    assert.match(node('metrics').innerHTML, /전체 경과 0초/)
+    assert.match(node('metrics').innerHTML, /<dt>작업<\/dt><dd>0초/)
+    assert.match(node('metrics').innerHTML, /<dt>검증<\/dt><dd>시간 모름/)
+    assert.ok(!/NaN|Infinity/.test(node('metrics').innerHTML))
+  })
+  const partialSummary = structuredClone(zeroSummary)
+  partialSummary.plans[0].leadMs = null; partialSummary.plans[0].stages.work = 1000
+  const partialLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => partialSummary }); await partialLoad
+  check('단계 일부만 알려져도 단계 합을 전체 경과로 표시하지 않음', () => {
+    assert.match(node('metrics').innerHTML, /전체 경과 미기록/)
+    assert.ok(!node('metrics').innerHTML.includes('전체 경과 1초'))
+    assert.match(node('metrics').innerHTML, /<dt>작업<\/dt><dd>1초/)
+  })
+  const manySummary = structuredClone(summary)
+  manySummary.plans = Array.from({ length: 294 }, (_, index) => ({ ...summary.plans[0], plan: `plans/task/${index}.md` }))
+  const manyLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => manySummary }); await manyLoad
+  check('294개 작업을 기본 목록에서 모두 표시', () => {
+    assert.match(node('metrics').innerHTML, /전체 작업 294개/)
+    assert.equal((node('metrics').innerHTML.match(/data-plan=/g) || []).length, 294)
+  })
+  const fourth = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => ({ events: 0 }) }); await fourth
   check('빈 기록은 오류 없이 빈 상태로 표시', () => assert.match(node('metrics').innerHTML, /아직 작업 기록이 없어요/))
 })()
 console.log(`✅ 통과 ${count}`)

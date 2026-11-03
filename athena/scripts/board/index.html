@@ -302,7 +302,6 @@
   .metric-svg text, .metric-panel svg text { font-family: inherit; font-variant-numeric: tabular-nums; }
   .metric-chart-empty { padding: 28px 8px; font-size: 12px; color: var(--muted); text-align: center; }
   .metric-key { display: flex; gap: 12px; flex-wrap: wrap; font-size: 11px; color: var(--accent); }
-  .metric-key.distribution-key { color: var(--metric-brand); }
   .metric-key .previous { color: var(--muted); }
   .metric-stack { overflow: hidden; border-radius: 6px; }
   .metric-stack svg { display: block; width: 100%; height: 32px; }
@@ -320,6 +319,22 @@
   .metric-stage-label b { font-weight: 600; } .metric-stage-label small { color: var(--muted); font-size: 11px; }
   .metric-stage-item p { margin: 3px 0 4px; color: var(--muted); font-size: 10.5px; }
   .metric-stage-plot svg { display: block; width: 100%; height: 18px; }
+  .metric-distribution { list-style: none; padding: 0; margin: 0; display: grid; gap: 14px; }
+  .metric-distribution-row { display: grid; grid-template-columns: 88px minmax(0, 1fr) 102px; gap: 10px; align-items: center; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .metric-distribution-track { height: 14px; background: var(--line); border-radius: 4px; overflow: hidden; }
+  .metric-distribution-track > span { display: block; height: 100%; background: var(--metric-brand); border-radius: inherit; }
+  .metric-distribution-count { text-align: right; color: var(--muted); }
+  .metric-distribution-count b { color: var(--text); }
+  .metric-plan-stages { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: 8px 20px; margin: 0; font-size: 12px; font-variant-numeric: tabular-nums; }
+  .metric-plan-stages > div { display: flex; gap: 6px; }
+  .metric-plan-stages dt { color: var(--muted); } .metric-plan-stages dd { margin: 0; }
+  .metric-all-plans .metric-plan > div { min-width: 0; }
+  .metric-all-plans .metric-plan .name { white-space: normal; overflow-wrap: anywhere; }
+  @media (max-width: 560px) {
+    .metric-distribution-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; }
+    .metric-distribution-track { grid-row: 2; grid-column: 1 / -1; }
+    .metric-distribution-count { grid-row: 1; grid-column: 2; }
+  }
   .metric-details { margin-bottom: 4px; }
   .metric-details > summary { padding: 12px 0; color: var(--muted); cursor: pointer; font-size: 12px; }
   .metric-details > summary:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
@@ -989,42 +1004,21 @@
     }
     return buckets;
   };
-  const metricTitle = (plan) => plan.title || '제목을 확인할 수 없는 계획서';
   const metricDate = (at) => Number.isFinite(at) ? new Date(at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }).replace(/\.$/, '') : '—';
   const metricSvg = (width, height, label, body, stretch = false) => `<svg${stretch ? ' preserveAspectRatio="none"' : ''} xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}"><title>${esc(label)}</title>${body}</svg>`;
   const metricText = (positionX, positionY, text, anchor = 'start', color = 'var(--muted)', size = 11) => `<text x="${positionX}" y="${positionY}" text-anchor="${anchor}" fill="${color}" font-size="${size}">${esc(text)}</text>`;
   const metricLine = (startX, startY, endX, endY, color = 'var(--line)', dash = '') => `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="${color}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
   const metricEmpty = (text) => `<div class="metric-chart-empty">${esc(text)}</div>`;
   const metricPanel = (title, note, body, size = '') => `<section class="metric-panel ${size}"><div class="metric-panel-head"><h3>${esc(title)}</h3><p>${esc(note)}</p></div>${body}</section>`;
-  const metricHistogram = (summary, width) => {
+  const metricHistogram = (summary) => {
     const from = Date.parse(summary.from || summary.since);
     const plans = summary.plans.filter((plan) => plan.endAt !== null && plan.endAt >= from && plan.leadMs !== null && plan.leadMs >= 0);
     if (!plans.length) return metricEmpty(summary.current.done ? `완료 ${summary.current.done}개 중 걸린 시간을 아는 작업이 없어요.` : '선택한 기간에 끝낸 작업이 없어요.');
     const hourMs = 3_600_000, bins = [[0, hourMs, '1시간 미만'], [hourMs, 2 * hourMs, '1–2시간'], [2 * hourMs, 4 * hourMs, '2–4시간'], [4 * hourMs, 8 * hourMs, '4–8시간'], [8 * hourMs, 24 * hourMs, '8시간–1일'], [24 * hourMs, Infinity, '1일 이상']];
     const counts = bins.map(([lowerBound, upperBound]) => plans.filter((plan) => plan.leadMs >= lowerBound && plan.leadMs < upperBound).length);
-    const top = 28, bottom = 180, left = 32, right = width - 12, binWidth = (right - left) / 6, highest = Math.max(1, ...counts);
-    const countY = (count) => bottom - count / highest * (bottom - top);
-    const longestLeadMs = plans.reduce((longest, plan) => Math.max(longest, plan.leadMs), 0);
-    const location = (ms) => {
-      const itemIndex = bins.findIndex(([lowerBound, upperBound]) => ms >= lowerBound && ms < upperBound);
-      const [lowerBound, upperBound] = bins[itemIndex];
-      const end = Number.isFinite(upperBound) ? upperBound : Math.max(lowerBound + hourMs, longestLeadMs);
-      return left + binWidth * (itemIndex + .12 + .76 * Math.min(1, Math.max(0, (ms - lowerBound) / (end - lowerBound))));
-    };
-    let body = '';
-    for (const value of [...new Set([0, Math.ceil(highest / 2), highest])]) body += metricLine(left, countY(value), right, countY(value)) + metricText(left - 8, countY(value) + 4, value, 'end');
-    counts.forEach((count, itemIndex) => {
-      body += `<rect x="${left + binWidth * (itemIndex + .15)}" y="${countY(count)}" width="${binWidth * .7}" height="${bottom - countY(count)}" rx="3" fill="var(--metric-brand)" opacity=".65"><title>${esc(bins[itemIndex][2])} ${count}개</title></rect>`;
-      body += metricText(left + binWidth * (itemIndex + .5), countY(count) - 8, count, 'middle', 'var(--text)', 12);
-      body += metricText(left + binWidth * (itemIndex + .5), bottom + 19, width < 450 ? ['1시간↓', '1–2시간', '2–4시간', '4–8시간', '8–24시간', '1일↑'][itemIndex] : bins[itemIndex][2], 'middle', 'var(--muted)', width < 450 ? 9 : 11);
-    });
-    plans.forEach((plan, itemIndex) => {
-      body += `<circle cx="${location(plan.leadMs)}" cy="${222 + (itemIndex % 3 - 1) * 8}" r="4" fill="${plan.mergedAt !== null ? 'var(--metric-brand)' : 'var(--panel)'}" stroke="var(--metric-brand)" stroke-width="1.5"><title>${esc(metricTitle(plan))} · ${esc(metricDuration(plan.leadMs))} · ${plan.mergedAt !== null ? '코드 반영까지' : '완료 표시까지'}</title></circle>`;
-    });
-    for (const [value, dash, color] of [[summary.current.lead.p50Ms, '', 'var(--warn)'], [summary.current.lead.p75Ms, '4 3', 'var(--muted)']]) {
-      if (value !== null && value >= 0) body += metricLine(location(value), top - 10, location(value), 242, color, dash);
-    }
-    return `<div class="metric-svg">${metricSvg(width, 252, `소요 시간 분포 · 시간 기록 ${plans.length}개`, body)}</div><div class="metric-key distribution-key"><span>● 코드 반영까지</span><span>○ 완료 표시까지</span></div><p class="metric-chart-note">가운데 ${esc(metricDuration(summary.current.lead.p50Ms))} · 75%가 ${esc(metricDuration(summary.current.lead.p75Ms))} 이내 · 시간 기록 ${plans.length}개 / 완료 ${summary.current.done}개</p><p class="metric-chart-note">처음 기록 → 코드 첫 반영(없으면 완료 표시). 막대는 작업 수, 점 하나는 작업 하나예요. 칸 너비는 시간 길이가 아닌 시간대 순서예요.</p>`;
+    const highest = Math.max(1, ...counts);
+    const rows = counts.map((count, itemIndex) => `<li class="metric-distribution-row"><span>${esc(bins[itemIndex][2])}</span><span class="metric-distribution-track"><span style="width:${count / highest * 100}%"></span></span><span class="metric-distribution-count"><b>${count}개</b> · ${Math.round(count / plans.length * 100)}%</span></li>`).join('');
+    return `<ol class="metric-distribution" aria-label="소요 시간대별 완료 작업 수와 비중">${rows}</ol><p class="metric-chart-note">중앙값 ${esc(metricDuration(summary.current.lead.p50Ms))} · p75 ${esc(metricDuration(summary.current.lead.p75Ms))} · 시간 기록 ${plans.length}개 / 완료 ${summary.current.done}개</p><p class="metric-chart-note">처음 기록 → 코드 첫 반영(없으면 완료 표시). 비중은 시간을 아는 완료 작업 ${plans.length}개 기준 · 시간 미기록 ${summary.current.done - plans.length}개는 분포에서 제외해요. 0초는 1시간 미만에 포함해요.</p>`;
   };
   const metricStates = (summary) => {
     const definitions = [['planned', '계획', 'var(--col-plan)'], ['in_progress', '진행 중', 'var(--col-doing)'], ['blocked', '막힘', 'var(--bad)'], ['ready_for_review', '리뷰', 'var(--col-review)'], ['done', '완료', 'var(--col-done)'], ['unknown', '상태 모름', 'var(--muted)']];
@@ -1101,7 +1095,7 @@
     if (!summary.events) return metricEmpty('아직 작업 기록이 없어요.');
     const current = summary.current, previous = summary.previous;
     const from = Date.parse(summary.from || summary.since), until = Date.parse(summary.until);
-    const columns = width >= 900, histWidth = Math.max(290, Math.floor(columns ? width * .66 - 45 : width - 36)), lineWidth = Math.max(290, Math.floor(columns ? width * .42 - 45 : width - 36));
+    const columns = width >= 900, lineWidth = Math.max(290, Math.floor(columns ? width * .42 - 45 : width - 36));
     const knownOpen = summary.plans.filter((plan) => ['planned', 'in_progress', 'blocked', 'ready_for_review'].includes(plan.status)).length;
     const unknownStatus = summary.plans.filter((plan) => !METRIC_STATUS[plan.status]).length;
     let countChange = '전체 기간';
@@ -1142,7 +1136,7 @@
     return `<div id="metric-visuals"><p class="metric-context" title="${esc(new Date(from).toLocaleString('ko-KR') + ' ~ ' + new Date(until).toLocaleString('ko-KR'))}">${esc(context)}</p><div class="metric-kpis">${cards}</div>`
       + `<p class="metric-context">끝낸 작업 ${current.done}개 · ${esc(countChange)} · 열린 작업 ${knownOpen}개${unknownStatus ? ` · 상태 모름 ${unknownStatus}개` : ''} · 검증 ${current.verifyPasses}/${current.verifyRuns}회 통과</p>`
       + '<p class="metric-context">리뷰·검증은 완료 작업의 시작부터 첫 반영(없으면 완료 표시)까지 누적해요. 겹친 구간은 한 번만 세며 검증 → 리뷰 → 머지 대기 → 답 대기 → 작업 순으로 나눠요. 단계가 없던 작업과 시간을 모르는 기록은 해당 평균에서 제외해요. PR 시간은 이 구간들과 겹치므로 더하지 않아요.</p>'
-      + `<div class="metric-analytics">${metricPanel('작업별 걸린 시간 분포', '막대 = 그 시간대의 완료 작업 수 · 점 = 작업 하나', metricHistogram(summary, histWidth), 'metric-span8')}<div class="metric-side metric-span4">${metricPanel('지금 상태', '선택한 기간에 기록된 작업의 현재 상태', metricStates(summary))}${metricPanel('검증 결과', '선택한 기간에 실행된 검증 · 통과/실패/모름', metricVerify(summary))}</div>${metricPanel('날짜별 끝낸 작업', '코드 첫 반영 · 반영 기록이 없으면 완료 표시 기준', metricTrend(summary, lineWidth), 'metric-span5')}${metricPanel('단계별 걸린 시간', '독립 막대 = 평균 · 가는 선 끝 = p75', metricStages(summary), 'metric-span7')}</div></div>`;
+      + `<div class="metric-analytics">${metricPanel('작업별 걸린 시간 분포', '시간대별 완료 작업 수 · 비중은 시간 기록이 있는 작업 기준', metricHistogram(summary), 'metric-span8')}<div class="metric-side metric-span4">${metricPanel('지금 상태', '선택한 기간에 기록된 작업의 현재 상태', metricStates(summary))}${metricPanel('검증 결과', '선택한 기간에 실행된 검증 · 통과/실패/모름', metricVerify(summary))}</div>${metricPanel('날짜별 끝낸 작업', '코드 첫 반영 · 반영 기록이 없으면 완료 표시 기준', metricTrend(summary, lineWidth), 'metric-span5')}${metricPanel('단계별 걸린 시간', '독립 막대 = 평균 · 가는 선 끝 = p75', metricStages(summary), 'metric-span7')}</div></div>`;
   };
   let metricsController = null;
   let metricsSummary = null;
@@ -1230,18 +1224,18 @@
     const widthOf = (ms) => `${Math.max(1, ms / longest * 100).toFixed(1)}%`;
     // 구간 막대 — 아는 구간만 토막으로(토막에 "검증 3초" 설명) · 다 모르면 전체 소요 한 토막 · 그것도 모르면 글자만
     const leadBar = (plan) => {
-      if (!longest) return null;
+      if (!longest) return `<div class="metric-lead none">전체 경과 ${plan.leadMs == null ? '미기록' : esc(metricDuration(plan.leadMs))}</div>`;
       const known = STAGES.filter(([stage]) => (plan.stages?.[stage] ?? 0) > 0);
       if (known.length) {
         const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(`${label} ${metricDuration(plan.stages[stage])}`)}" style="width:${widthOf(plan.stages[stage])}"></span>`).join('');
-        const text = plan.leadMs !== null ? metricDuration(plan.leadMs) : metricDuration(stageSum(plan));
-        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">${esc(text)}</span></div>`;
+        const text = plan.leadMs != null ? metricDuration(plan.leadMs) : '미기록';
+        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">전체 경과 ${esc(text)}</span></div>`;
       }
       if (plan.leadMs === null) return null;
-      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">${esc(metricDuration(plan.leadMs))}</span></div>`;
+      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">전체 경과 ${esc(metricDuration(plan.leadMs))}</span></div>`;
     };
     const rows = summary.plans.map((plan) => {
-      const lead = leadBar(plan) ?? `<div class="metric-lead none">${plan.status === 'done' ? '시작 기록 없음' : '—'}</div>`;
+      const lead = leadBar(plan) ?? `<div class="metric-lead none">전체 경과 미기록</div>`;
       const chips = [
         plan.asks ? chip(`질문 ${plan.asks}`) : '',
         plan.answered ? chip(`답 대기 ${metricDuration(plan.waitMs)}`) : '',
@@ -1254,14 +1248,20 @@
       ].join('');
       return `<div class="metric-plan" data-plan="${esc(plan.plan)}"><div><div class="name${plan.title ? '' : ' unavailable'}" title="${esc(plan.title || '제목을 확인할 수 없는 계획서')}">${esc(plan.title || '제목을 확인할 수 없는 계획서')}</div>${plan.archived ? '<div class="metric-note">보관됨</div>' : !plan.exists ? '<div class="metric-note">원본 없음</div>' : ''}</div>`
         + `<span class="metric-status ${esc(plan.status ?? '')}">${esc(METRIC_STATUS[plan.status] ?? plan.status ?? '—')}</span>${lead}`
-        + `<div class="metric-chips">${chips || '<span class="quiet">기록 없음</span>'}</div></div>`;
+        + `<div class="metric-chips">${chips || '<span class="quiet">기록 없음</span>'}</div>`
+        + `<dl class="metric-plan-stages">${STAGES.map(([stage, label]) => {
+          let value = '시간 모름';
+          if (plan.stageHad?.[stage] === false) value = '없음';
+          else if (plan.stages?.[stage] != null) value = metricDuration(plan.stages[stage]);
+          return `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
+        }).join('')}</dl></div>`;
     }).join('');
     const workQuery = new URLSearchParams(query);
     metricsSummary = summary;
     metricsWidth = box.clientWidth;
     box.innerHTML = metricCharts(summary, Math.max(320, metricsWidth))
-      + `<details class="metric-details metric-all-plans"><summary>전체 작업 ${summary.plans.length}개 보기</summary>`
-      + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3>`
+      + `<details open class="metric-details metric-all-plans"><summary>전체 작업 ${summary.plans.length}개</summary>`
+      + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3><p class="metric-note">전체 경과: 처음 기록 → 코드 첫 반영(없으면 완료 표시). 단계별 시간은 이 구간을 나눈 값이며 실제 세션 시간과 달라요. 없음은 해당 단계 기록이 없는 경우, 시간 모름은 소요를 확인할 수 없는 경우예요.</p>`
       + `<p class="metric-legend">${STAGES.map(([stage, label]) => `<span class="${stage}">${esc(label)}</span>`).join('')}<span class="note">막대는 아는 구간만 · 다 모르면 전체 소요 한 토막</span></p>`
       + (rows ? `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${rows}</div>` : '<div class="empty-history">이 기간 계획서 없음</div>')
       + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div></details>`
@@ -1289,7 +1289,7 @@
       if (!kinds) return;
       const line = document.createElement('div');
       line.className = 'metric-work';
-      line.textContent = workLine(kinds);
+      line.textContent = `Claude 세션 기록 · ${workLine(kinds) || '기록된 소요 없음'}`;
       row.append(line);
     });
   };
