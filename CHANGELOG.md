@@ -26,6 +26,20 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.48 (v0.47.53 –): v0.47.52..main 머지(#217 ~ #220)에서 손님에게 보이는 것만 — #218 의 규칙 문서(원칙 이름표 · 묻기 전에 돌려 보기 · guards.md · 같은 오류 3번), #219 의 red-check Python 시험, #220 의 시험 임시 폴더 지우기, #217 의 화면 점검 시험은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.49: v0.48.4..b1eb653 머지(#224 ~ #228)에서 사용자에게 보이는 변경만. 배포 파일 정리 #223 · 내부 검증 변경은 뺐다. 범위 끝은 열어 둔다 -->
+
+## 0.49 (v0.49.0 – · Nov 3, 2026)
+
+### Improved
+- The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.
+- Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.
+- The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.
+- When a core update skips a busy body, the app now waits for the blocking work to finish and retries the update automatically.
+
+### Fixed
+- Scroll input in panes is restored correctly after reconnecting, including terminal mouse tracking modes.
+- Messages that cannot be delivered to Athena now stay queued without creating a question in Work.
+
 ## 0.48 (v0.47.53 – · Nov 3, 2026)
 
 ### New
