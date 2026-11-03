@@ -292,9 +292,31 @@ export const spread = (values) => {
   return { avgMs: average(sorted), p50Ms: percentile(sorted, 0.5), p75Ms: percentile(sorted, 0.75), count: sorted.length }
 }
 
+// PR 번호는 레포 안에서만 유일하다. 중복 기록은 가장 이른 생성·성공 머지로 묶는다.
+// 생성 기록이 없어도 성공 머지는 남겨 제외 건수를 알린다. 실패 머지만 있는 것은 완료 PR이 아니다.
+const groupPullRequests = (events) => {
+  const pulls = new Map()
+  for (const event of events) {
+    if (event.type !== 'pr.open' && !(event.type === 'auto.merge' && event.ok === true)) continue
+    const number = String(event.pr ?? '').trim()
+    if (!event.repo || !/^[1-9]\d*$/.test(number)) continue
+    const key = `${event.repo}\t${number}`
+    if (!pulls.has(key)) pulls.set(key, { openedAt: null, mergedAt: null, plans: new Set() })
+    const pull = pulls.get(key)
+    if (event.plan) pull.plans.add(event.plan)
+    if (event.type === 'pr.open') {
+      pull.openedAt = pull.openedAt === null ? time(event) : Math.min(pull.openedAt, time(event))
+    } else {
+      const mergedAt = Date.parse(event.mergedAt ?? '') || time(event)
+      pull.mergedAt = pull.mergedAt === null ? mergedAt : Math.min(pull.mergedAt, mergedAt)
+    }
+  }
+  return [...pulls.values()]
+}
+
 // 한 기간 [from, to) 의 숫자 — 끝낸 작업은 그 기간에 끝(첫 머지 · 머지 없으면 done)이 든 계획서, 비율은 그 기간에 일어난 사건으로.
 // picked 가 있으면 그 계획서들만(리뷰 있음 · 없음) — 계획서를 모르는 사건은 뺀다
-const windowTotals = (events, plans, from, to, picked = null) => {
+const windowTotals = (events, plans, pulls, from, to, picked = null) => {
   const inside = (at) => at >= from && at < to
   const kept = (planId) => picked === null || (planId && picked.has(planId))
   const done = plans.filter((plan) => plan.endAt !== null && inside(plan.endAt) && kept(plan.plan))
@@ -329,6 +351,10 @@ const windowTotals = (events, plans, from, to, picked = null) => {
   const rounds = done.map((plan) => plan.reviewRounds).filter((value) => value > 0)
   const autoFixes = happened.filter((event) => event.type === 'auto.fix').length
   const autoMerges = happened.filter((event) => event.type === 'auto.merge' && event.ok === true).length
+  // 계획서 필터는 기존 작업 필터와 동일하다. 연결이 없거나 서로 다른 계획서가 기록되면 필터에서 추측하지 않는다.
+  const keptPull = (pull) => picked === null || (pull.plans.size === 1 && picked.has([...pull.plans][0]))
+  const mergedPulls = pulls.filter((pull) => pull.mergedAt !== null && inside(pull.mergedAt) && keptPull(pull))
+  const knownPulls = mergedPulls.filter((pull) => pull.openedAt !== null && pull.openedAt <= pull.mergedAt)
   return {
     done: done.length,
     merged: done.filter((plan) => plan.mergedAt !== null).length,
@@ -336,6 +362,13 @@ const windowTotals = (events, plans, from, to, picked = null) => {
     noStart: done.filter((plan) => plan.leadMs === null).length,
     followUps: done.filter((plan) => plan.followUp).length,
     lead: spread(done.map((plan) => plan.leadMs).filter((value) => value !== null)),
+    pr: {
+      ...spread(knownPulls.map((pull) => pull.mergedAt - pull.openedAt)),
+      had: mergedPulls.length,
+      missingOpen: mergedPulls.filter((pull) => pull.openedAt === null).length,
+      invalidOrder: mergedPulls.filter((pull) => pull.openedAt !== null && pull.openedAt > pull.mergedAt).length,
+      unmerged: pulls.filter((pull) => pull.mergedAt === null && inside(pull.openedAt) && keptPull(pull)).length,
+    },
     mergeToDone: spread(done.map((plan) => plan.mergeToDoneMs).filter((value) => value !== null)),
     handoffToMerge: spread(happened.filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.handoffMs === 'number').map((event) => event.handoffMs)),
     stages,
@@ -360,6 +393,7 @@ const windowTotals = (events, plans, from, to, picked = null) => {
 export const summarize = (events, { now = Date.now(), days = null, since = null, review = null } = {}) => {
   const valid = events.filter((event) => event && event.type && time(event))
   const plans = groupByPlan(valid)
+  const pulls = groupPullRequests(valid)
   const firstAt = valid.length ? Math.min(...valid.map(time)) : null
   const from = since ?? (days ? now - days * DAY : -Infinity)
   const span = from === -Infinity ? null : Math.max(0, now - from)
@@ -373,8 +407,8 @@ export const summarize = (events, { now = Date.now(), days = null, since = null,
     review: picked ? review : null,
     since: firstAt === null ? null : new Date(firstAt).toISOString(),
     events: valid.length,
-    current: windowTotals(valid, plans, from, Infinity, picked),
-    previous: span ? windowTotals(valid, plans, from - span, from, picked) : null,
+    current: windowTotals(valid, plans, pulls, from, now, picked),
+    previous: span ? windowTotals(valid, plans, pulls, from - span, from, picked) : null,
     // 선 그래프의 이전 기간 비교에 필요한 완료 시각만 보낸다(원문·전체 계획서 중복 없음).
     previousCompleted: span ? plans.filter((plan) => plan.endAt !== null && plan.endAt >= from - span && plan.endAt < from && (picked === null || picked.has(plan.plan))).map((plan) => plan.endAt) : null,
     // 이 기간에 무슨 일이든 있었던 계획서 — 최근에 움직인 것부터
