@@ -235,7 +235,7 @@ export const LEARN_SCHEMA = {
         additionalProperties: false,
         properties: {
           kind: { type: 'string', enum: ['gotchas', 'skill', 'guard'], description: 'gotchas 공책 함정 · skill 스킬 후보 · guard 정비 후보(구조 · 훅 · 검증 스크립트 · lint · 테스트로 막을 수 있는 것 — 학습 기준 1-2)' },
-          section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). skill · guard 면 빈 문자열' },
+          section: { type: 'string', description: '그 knowledge 파일에서 넣을 절 제목(## 제목 글자 그대로, 새 절이면 지을 이름). guard 면 정비 이름(무엇을 막나 — 짧게 · 같은 정비는 같은 이름). skill 이면 빈 문자열' },
           knowledge: { type: 'string', description: 'knowledge 폴더(예 <레포> 또는 모노레포 <레포>/<앱>). guard 면 막을 곳이 있는 영역(레포 또는 athena). skill 이면 빈 문자열' },
           scope: { type: 'string', description: '어디에 걸리나 — 레포 어디서든 밟으면 "common", 특정 화면을 만질 때만이면 그 코드 폴더(예 app/orders · pages/auth · src/screens/tabs). 애매하면 common. skill · guard 면 빈 문자열' },
           skill: { type: 'string', description: 'kind 가 skill 일 때 스킬 이름(소문자·숫자·-). 아니면 빈 문자열' },
@@ -400,7 +400,8 @@ const slug = (text) => text.replace(/\//g, '-').replace(/[^a-z0-9-]/gi, '').toLo
 // learning.md 8절 target 과 같은 꼴(파일#절) — 같은 절일 때만 합친다
 const issueTarget = (item) => {
   if (item.kind === 'skill') return `skill:${slug(item.skill)}`
-  if (item.kind === 'guard') return `guard:${item.knowledge}`
+  // 정비 후보는 영역 안에서 정비 이름(section)으로 가른다 — 같은 영역의 다른 정비가 한 이슈로 합쳐지지 않게. 이름이 없으면 규칙 해시
+  if (item.kind === 'guard') return `guard:${item.knowledge}#${item.section.replace(/^#+\s*/, '').trim() || createHash('sha1').update(item.rule ?? '').digest('hex').slice(0, 6)}`
   return `docs/knowledge/${item.knowledge}/${item.kind}.md#${item.section.replace(/^#+\s*/, '').trim() || '기타'}`
 }
 // 카드 제목 — 규칙의 첫 문장만, 길면 자른다(본문에 전체가 있다)

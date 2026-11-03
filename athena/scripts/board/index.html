@@ -1260,7 +1260,7 @@
     if (item.guard) return '🔧';
     return '📚';
   };
-  // 정비 후보(target: guard:<영역>)는 공책 문장 대신 정비할 곳을 보인다 — learning.md 1-2
+  // 정비 후보(target: guard:<영역>#<이름>)는 공책 문장 대신 정비할 곳을 보인다 — learning.md 1-2
   const ruleView = (item) => item.guard
     ? `<div><div class="label">정비할 곳 — 공책 대신 여기에 박아 막는다</div><div class="rule">${esc(item.rule)}</div></div>`
     : `<div><div class="label">공책에 들어갈 문장 ${item.strengthen ? '— 기존 줄을 고친다' : ''}</div><div class="rule">${esc(item.rule)}</div>${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.original ? `<div class="where">고치기 전 줄: ${esc(item.original)}</div>` : ''}</div>`;

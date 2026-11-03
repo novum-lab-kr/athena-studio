@@ -61,7 +61,7 @@ const firstSection = (sections, ...names) => names.map((name) => sections[name])
 // 1단계 형식(본문 한 줄 + 근거)도 읽는다
 const view = (id, text, extra = {}) => {
   const { meta, sections, body } = parse(text)
-  // 정비 후보(target: guard:<영역>)는 공책 문장 대신 '정비할 곳'(무엇을 어디에 박을지)
+  // 정비 후보(target: guard:<영역>#<이름>)는 공책 문장 대신 '정비할 곳'(무엇을 어디에 박을지)
   const rule = firstSection(sections, '공책에 넣을 문장', '정비할 곳') || sections._intro?.split('\n')[0] || ''
   return {
     id,

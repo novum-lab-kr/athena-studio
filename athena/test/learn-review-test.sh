@@ -83,10 +83,10 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { writeIssue } from './scripts/learn-review.mjs'
 import { listLearn, applyLearn } from './scripts/board/learn.mjs'
-const item = { kind: 'guard', knowledge: 'athena', section: '', scope: 'app/x', skill: '', title: '직접 커밋 막기', explain: '설명', rule: 'commit-guard.py 에 직접 커밋을 막고 commit.sh 를 안내', basis: 'run', evidence: '직접 커밋됨', strengthen: '옛 줄', repeatOf: '', ifUnknown: '또 직접 커밋', signal: 'done' }
+const item = { kind: 'guard', knowledge: 'athena', section: '직접 커밋', scope: 'app/x', skill: '', title: '직접 커밋 막기', explain: '설명', rule: 'commit-guard.py 에 직접 커밋을 막고 commit.sh 를 안내', basis: 'run', evidence: '직접 커밋됨', strengthen: '옛 줄', repeatOf: '', ifUnknown: '또 직접 커밋', signal: 'done' }
 const file = writeIssue(item, 'plans/task/t.md', false).match(/issues\/(\S+\.md)/)[1]
 const text = readFileSync(`issues/${file}`, 'utf8')
-assert.match(text, /^target: guard:athena$/m)
+assert.match(text, /^target: guard:athena#직접 커밋$/m)
 assert.match(text, /^## 정비할 곳\n.*commit-guard/m)
 assert.ok(!/^scope:|^strengthen:|## 공책에 넣을 문장/m.test(text))
 const card = listLearn().candidates.find((candidate) => candidate.id === `issues/${file}`)
