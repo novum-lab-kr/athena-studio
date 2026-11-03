@@ -2,7 +2,7 @@
 """위임 에이전트 끝 알림 훅 (UserPromptSubmit · Stop) — delegate.sh · agent-context.py 가 위임 에이전트 세션(ATHENA_AGENT)에만 건다.
 
 에이전트가 한 차례(턴)를 끝내면(Stop) 그 pane 을 띄운 아테나 pane 에 한 줄을 입력한다:
-  [<에이전트> → 아테나] 끝 · <pane> · 계획서 <경로> · Status <값> · PR <번호 · 상태>(있을 때만) · 머지 <레포 브랜치 결과>(PR 끔 레포의 바로 머지 — "- Auto merge:" 줄이 있을 때만)
+  [<에이전트> → 아테나] 끝 · <pane> · 계획서 <경로> · Status <값> · PR <번호 · 상태>(있을 때만 · 상태는 gh 로 물은 실제 값, 못 물으면 계획서 값 + "(기록 기준)") · 머지 <레포 브랜치 결과>(PR 끔 레포의 바로 머지 — "- Auto merge:" 줄이 있을 때만)
 아테나 pane 은 계획서 Checkpoint 의 "- Lead pane:" 줄(delegate.sh 가 적는다)에서 읽는다 — 새 기록을 만들지 않는다.
 계획서는 pane 기록(state/pane-sessions/<pane>.json — 이어 보내기로 바뀐 계획서도 따라간다)을 먼저, 없으면 환경 ATHENA_PLAN.
 
@@ -42,13 +42,54 @@ def is_ack(prompt: str) -> bool:
     return prompt.lstrip().startswith('[아테나') and ACK_MARK in prompt
 
 
+GH_TIMEOUT = 3   # 초 — 훅이 느려지거나 네트워크가 없을 때 막히지 않게
+
+
+def gh_pr_state(url: str):
+    """gh 로 PR 실제 상태(draft · open · merged · closed)를 묻는다 — gh 가 없거나 실패 · 시간 초과면 None.
+    시간이 넘으면 gh 와 그 자식까지 프로세스 묶음째 끈다(자식이 출력 파이프를 쥐고 남으면 기다림이 끝나지 않는다)"""
+    gh = shutil.which('gh', path=f"{os.environ.get('PATH', '')}:/opt/homebrew/bin:/usr/local/bin")
+    if not gh:
+        return None
+    try:
+        proc = subprocess.Popen([gh, 'pr', 'view', url, '--json', 'state,isDraft'], stdin=subprocess.DEVNULL,
+                                stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True, start_new_session=True)
+    except OSError:
+        return None
+    try:
+        out, _ = proc.communicate(timeout=GH_TIMEOUT)
+    except subprocess.TimeoutExpired:
+        try:
+            os.killpg(proc.pid, 9)
+        except OSError:
+            pass
+        proc.wait()
+        return None
+    if proc.returncode != 0:
+        return None
+    try:
+        data = json.loads(out)
+    except ValueError:
+        return None
+    state = str(data.get('state') or '').lower() if isinstance(data, dict) else ''
+    if state == 'open' and data.get('isDraft') is True:
+        return 'draft'
+    return state if state in ('open', 'merged', 'closed') else None
+
+
+def pr_state(url: str, number: str, recorded: str) -> str:
+    """'#<번호> <상태>' — 상태는 gh 로 물은 실제 값, 못 물으면 계획서 값에 '(기록 기준)'"""
+    actual = gh_pr_state(url)
+    return f'#{number} {actual}' if actual else f'#{number} {recorded} (기록 기준)'
+
+
 def plan_fields(text: str) -> dict:
     """계획서에서 Lead pane · Status · 마지막 PR 한 줄(번호 · 상태)을 읽는다"""
     def line(label: str):
         found = re.search(rf'^- {label}:[ \t]*(.*)$', text, re.M)
         return found.group(1).strip() if found else ''
-    prs = re.findall(r'^- PR:[ \t]*\S*/pull/(\d+)\b[^\n]*?,\s*([^·)\n]+)', text, re.M)
-    pr = f'#{prs[-1][0]} {prs[-1][1].strip()}' if prs else ''
+    prs = re.findall(r'^- PR:[ \t]*(\S*/pull/(\d+))\b[^\n]*?,\s*([^·)\n]+)', text, re.M)
+    pr = pr_state(prs[-1][0], prs[-1][1], prs[-1][2].strip()) if prs else ''
     # 바로 머지(PR 끔) — "- Auto merge: <레포> <브랜치> @<sha7> · <결과> · <시각>" 줄마다 "레포 브랜치 결과". 완료 판단은 현황판이 같은 줄로 한다(ship.sh 종료 코드가 아니다)
     merges = [f'{hit.group(1)} {hit.group(2)} {hit.group(3).strip()}' for hit in re.finditer(r'^- Auto merge:[ \t]*(\S+)[ \t]+(\S+)[ \t]+@[0-9a-f]+[ \t]+·[ \t]+(.+?)[ \t]+·[ \t]+\d{4}-\d{2}-\d{2} \d{2}:\d{2}[ \t]*$', text, re.M)]
     return {'lead': line('Lead pane').split()[0] if line('Lead pane') else '', 'status': line('Status').split()[0] if line('Status') else '', 'pr': pr, 'merge': ' / '.join(merges)}

@@ -39,12 +39,25 @@ fi
 exit 0
 CLIEOF
 chmod +x "$WORK/bin/athena-studio-cli"
+# 가짜 gh — 끝 알림이 PR 실제 상태를 묻는다. FAKE_GH 로 답을 고른다(기본은 실패 — 진짜 GitHub 를 부르지 않게 항상 PATH 앞에 둔다)
+cat > "$WORK/bin/gh" <<'GHEOF'
+#!/usr/bin/env bash
+echo "gh $*" >> "$FAKE_LOG"
+case "${FAKE_GH:-fail}" in
+  merged) echo '{"isDraft":false,"state":"MERGED"}' ;;
+  draft) echo '{"isDraft":true,"state":"OPEN"}' ;;
+  open) echo '{"isDraft":false,"state":"OPEN"}' ;;
+  slow) sleep 20; echo '{"isDraft":false,"state":"MERGED"}' ;;
+  *) echo 'gh: 네트워크 없음' >&2; exit 1 ;;
+esac
+GHEOF
+chmod +x "$WORK/bin/gh"
 export FAKE_LOG="$WORK/log"; : > "$FAKE_LOG"
 
 hook() {   # <prompt|stop> [입력 JSON] — 에이전트 pane p9 에서
   local input="${2:-}"; [ -n "$input" ] || input='{}'
   printf '%s' "$input" | env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" \
-    ATHENA_NOTIFY_BOOTSTRAP="${BOOTSTRAP:-0}" ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" WAITING_FILE="$WORK/waiting" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
+    ATHENA_NOTIFY_BOOTSTRAP="${BOOTSTRAP:-0}" ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" FAKE_GH="${FAKE_GH:-fail}" PATH="$WORK/bin:$PATH" WAITING_FILE="$WORK/waiting" CLOSED="${CLOSED:-}" python3 "$BODY/scripts/hooks/agent-done-notify.py" "$1"
 }
 sent() { grep -c '^pane send-text p1 ' "$FAKE_LOG"; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (기대 $3 · 실제 $2)"; FAIL=1; fi; }
@@ -122,7 +135,7 @@ hook prompt '{"prompt":"기존 시험 시작"}'
 
 hook stop
 check "끝나면 아테나 pane(p1)에 한 줄을 보낸다" "$(sent)" 1
-check "글에 에이전트 · pane · 계획서 · Status · PR 이 든다" "$(grep -c '\[athena-studio-fe → 아테나\] 끝 · p9 · 계획서 plans/task/x.md · Status ready_for_review · PR #7 draft' "$FAKE_LOG")" 1
+check "글에 에이전트 · pane · 계획서 · Status · PR 이 든다" "$(grep -c '\[athena-studio-fe → 아테나\] 끝 · p9 · 계획서 plans/task/x.md · Status ready_for_review · PR #7 draft (기록 기준)' "$FAKE_LOG")" 1
 check "Enter 도 보낸다" "$(grep -c '^pane send-keys p1 Enter' "$FAKE_LOG")" 1
 
 hook stop
@@ -201,5 +214,22 @@ kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
 
 hook prompt '{"prompt":"기록 없음"}'; hook stop '{"transcript_path":"/없는/경로.jsonl"}'
 check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 11
+
+# PR 실제 상태 — 알림을 만들 때 gh 로 묻고, 못 물으면 계획서 값에 "(기록 기준)"
+last_sent() { grep '^pane send-text p1 ' "$FAKE_LOG" | tail -1; }
+FAKE_GH=merged hook prompt '{"prompt":"머지 뒤"}'; FAKE_GH=merged hook stop
+check "머지된 PR 은 계획서가 draft 여도 merged 로 알린다" "$(last_sent | grep -c 'PR #7 merged$')" 1
+check "gh 에는 계획서 PR 주소로 상태를 묻는다" "$(grep -q '^gh pr view https://github.com/o/r/pull/7 --json state,isDraft$' "$FAKE_LOG" && echo 1 || echo 0)" 1
+FAKE_GH=draft hook prompt '{"prompt":"draft"}'; FAKE_GH=draft hook stop
+check "열린 draft PR 은 draft 로 알린다" "$(last_sent | grep -c 'PR #7 draft$')" 1
+FAKE_GH=open hook prompt '{"prompt":"open"}'; FAKE_GH=open hook stop
+check "draft 를 푼 열린 PR 은 open 으로 알린다" "$(last_sent | grep -c 'PR #7 open$')" 1
+FAKE_GH=fail hook prompt '{"prompt":"실패"}'; FAKE_GH=fail hook stop
+check "gh 가 실패하면 계획서 값에 (기록 기준)" "$(last_sent | grep -c 'PR #7 draft (기록 기준)$')" 1
+started=$(date +%s)
+FAKE_GH=slow hook prompt '{"prompt":"느림"}'; FAKE_GH=slow hook stop
+elapsed=$(( $(date +%s) - started ))
+check "gh 가 느리면 기다리지 않고 (기록 기준)" "$(last_sent | grep -c 'PR #7 draft (기록 기준)$')" 1
+check "느린 gh 에도 훅이 6초 안에 끝난다(실제 ${elapsed}초)" "$([ "$elapsed" -lt 6 ] && echo 1 || echo 0)" 1
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

@@ -26,6 +26,7 @@
  *   - GET  /api/github-issues GitHub 이슈 감시(github-issues.mjs · 팩 레포 "githubIssues": true)가 5분마다 가져와 새 아테나 pane 에 맡긴 것(최근 24시간) — 스튜디오 모니터가 읽는다
  *   - POST /api/action 이미 떠 있는 아테나·에이전트 pane 에 지시문을 입력한다(scripts/screen pane send-text + Enter)
  *                      결정 콘솔이 plan(계획서 경로)을 같이 주면 그 계획서의 결정 요청에 답을 적고(answered) 지시 앞에 [요청 <id>] 를 붙인다(docs/requests.md)
+ *                      decisions(콘솔이 보여 준 결정 id)가 지금 html 의 결정과 다르면 답을 적지도 넣지도 않고 409 { stale: true } — 없으면(옛 콘솔) 지금처럼 받는다
  *     정식 계획서 결정 콘솔(/plans/*.html)의 [이대로 진행] 도 이걸로 PLAN.leadPane 에 보낸다
  *   브라우저가 보내기 전에 지시문을 보여주고 고치게 한다
  * 다른 사이트가 localhost 로 요청을 보내 아테나에 지시를 넣지 못하게, 서버를 띄울 때마다 만드는 토큰과
@@ -1223,6 +1224,26 @@ const consoleAnswer = (plan, text) => {
   }
 }
 
+// 결정 콘솔의 판 — 콘솔은 보낼 때 자기가 보여 준 결정 id 목록을 같이 보낸다. 지금 html 의 결정 id 와 다르면(콘솔을 연 뒤 결정이 더해지거나 빠졌다) 받지 않는다.
+// 판 표시가 없는 옛 콘솔 · 지금 판을 읽지 못한 html(손으로 만든 PLAN 블록 등 — plan-html.mjs 가 쓴 블록은 JSON)은 지금처럼 받는다
+const PLAN_DATA_BLOCK = /<script id="plan-data">\nconst PLAN = ([\s\S]*?)\n<\/script>/
+const planDecisionIds = (plan) => {
+  try {
+    const html = readFileSync(join(ROOT, plan.replace(/\.md$/, '.html')), 'utf8')
+    const decisions = JSON.parse(html.slice(html.indexOf('-->') + 3).match(PLAN_DATA_BLOCK)?.[1] ?? '').decisions
+    return Array.isArray(decisions) ? decisions.map((decision) => String(decision?.id ?? '')) : null
+  } catch {
+    return null
+  }
+}
+const staleConsole = (plan, sentIds) => {
+  if (!Array.isArray(sentIds) || !/^plans\/[^\0]+\.md$/.test(plan) || plan.split('/').includes('..')) return false
+  const nowIds = planDecisionIds(plan)
+  if (!nowIds) return false
+  const sent = new Set(sentIds.map(String))
+  return sent.size !== new Set(nowIds).size || nowIds.some((id) => !sent.has(id))
+}
+
 // 이슈 [작업 시작] → 아테나: 떠 있는 아테나 pane 에 끼워 넣지 않고 **새 아테나 pane** 을 열어 그 안에서 처리한다.
 // 하던 대화 한가운데에 다른 이슈가 섞이지 않게 — 이슈 하나에 세션 하나. 자리는 아테나 pane 옆(없으면 현황판 pane 옆)
 const openHermesPane = async (issueId, text) => {
@@ -1651,6 +1672,8 @@ const handleRequest = async (request, response) => {
       await refresh()
       return reply(200, { ok: true, ...result })
     }
+    // 낡은 결정 콘솔 — 답을 적지도(요청을 닫지도) pane 에 넣지도 않는다. 콘솔이 stale 을 보고 새로 고치라고 알린다
+    if (url.pathname === '/api/action' && staleConsole(String(body.plan ?? ''), body.decisions)) return reply(409, { error: '계획서가 바뀌었어요 — 새로 고쳐 주세요', stale: true })
     const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? '')) : ''
     const outcome = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
     if (typeof outcome === 'string') return reply(400, { error: outcome })
