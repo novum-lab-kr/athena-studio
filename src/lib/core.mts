@@ -258,9 +258,16 @@ export function agentDecision(available: Tool[], remembered: Tool | null = null)
 
 // 백업에서 되살린 아테나 대화를 잇는 명령 — 세션 id 모양만 받는다(pane 에 글로 쓰이니 셸 글자가 섞이면 안 된다)
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i
+// 공유 Codex 서버는 먼저 실행한 pane 환경을 재사용할 수 있어 pane 별 서버로 실행한다.
+export function agentCommand(engine: unknown): string {
+  if (engine === 'codex') return 'codex --no-daemon'
+  if (engine === 'claude') return 'claude'
+  throw new Error('bad engine')
+}
+
 export function resumeCommand(session: unknown, engine: unknown = 'claude'): string {
   if (!SESSION_ID.test(String(session || ''))) throw new Error('bad session id')
-  if (engine === 'codex') return `codex resume ${session}`
+  if (engine === 'codex') return `${agentCommand(engine)} resume ${session}`
   if (engine !== 'claude') throw new Error('bad engine')
   return `claude --resume ${session}`
 }

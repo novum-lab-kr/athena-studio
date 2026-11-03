@@ -354,8 +354,11 @@ test('browserBackground — 이 창 현황판 서버만 앱 배경색 · 나머�
 
 test('도구별 재개 명령과 빈 입력: Codex도 쓰던 글·질문·작업 중은 막는다', () => {
   const session = '12345678-abcd-1234-abcd-123456789abc'
+  assert.equal(core.agentCommand('codex'), 'codex --no-daemon')
+  assert.equal(core.agentCommand('claude'), 'claude')
+  assert.throws(() => core.agentCommand('other'))
   assert.equal(core.resumeCommand(session), `claude --resume ${session}`)
-  assert.equal(core.resumeCommand(session, 'codex'), `codex resume ${session}`)
+  assert.equal(core.resumeCommand(session, 'codex'), `codex --no-daemon resume ${session}`)
   assert.throws(() => core.resumeCommand(session, 'other'))
   assert.throws(() => core.resumeCommand('$(bad)', 'codex'))
   assert.equal(core.agentAtEmptyPrompt('› \n\n  gpt-6 medium · 90% left', 'codex'), true)

@@ -90,7 +90,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
     // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(세션 도구·id는 코어가 확인한 값)
     const [first, ...rest] = athenaSessions
-    const text = first ? core.resumeCommand(first.session, first.engine) : decision.agent
+    const text = first ? core.resumeCommand(first.session, first.engine) : core.agentCommand(decision.agent)
     const run = (await daemonCall('pane run', { pane: created.result.root_pane.id, text })) as RunReply
     if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
     if (first) await ackRestore([first.session])

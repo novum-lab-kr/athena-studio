@@ -9,6 +9,7 @@ SRC="$(cd "$(dirname "$0")/.." && pwd -P)"
 TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT
 ATH="$TMP/ath"; mkdir -p "$ATH/plans/task" "$ATH/plans/feature" "$ATH/repos" "$ATH/packs/t" "$ATH/.claude/agents"
 cp -R "$SRC/scripts" "$ATH/"
+cp "$SRC/test/fixtures/lead-screen.py" "$ATH/scripts/lib/screen.py"   # 사용자 pane 환경 대신 격리한 발신자
 printf '{"pack":"packs/t","reposRoot":".."}\n' > "$ATH/athena.config.json"
 printf '{"formatVersion":1,"id":"t","name":"t","repos":[{"name":"main","branch":"main","prBase":"main","kind":"single","agents":["web-fe"]}]}\n' > "$ATH/packs/t/pack.json"
 cp "$SRC/AGENTS.md" "$ATH/AGENTS.md"; cp "$SRC/.claude/settings.json" "$ATH/.claude/settings.json"

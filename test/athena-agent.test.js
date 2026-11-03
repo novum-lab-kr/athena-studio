@@ -174,6 +174,7 @@ test('둘이면 한 번 선택 · 기억한 도구로 재실행 · 취소하면 
   const choose = async () => { asked++; return 'codex' }
   const ctx = makeCtx(body, async () => {}, choose)
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
+  assert.equal(started(daemon)[0].args.text, 'codex --no-daemon')
   assert.equal(core.readMainTool(body), 'codex')
   daemon.workspaces.length = 0
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
@@ -207,7 +208,7 @@ test('백업의 Codex 아테나 대화는 선택창 없이 Codex로 재개한다
   ctx.restoreForPack = 'demo'
   ctx.packRestore = async () => ({ ok: true, athena: [{ session, engine: 'codex' }] })
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
-  assert.equal(started(daemon)[0].args.text, `codex resume ${session}`)
+  assert.equal(started(daemon)[0].args.text, `codex --no-daemon resume ${session}`)
 })
 
 test('본체 따라잡기: Claude·Codex 모두 빈 입력·같은 엔진 기록일 때만 종료 후 같은 대화 재개', async (t) => {

@@ -146,6 +146,8 @@ npm test        # 순수 로직 + 데몬 통합(맥 — 실제 pty)
 화면 확인은 맥에서 한다. 코어(`athena/`)를 고쳤으면 코어 검사도 따로 — [`AGENTS.md`](../AGENTS.md) "검사".
 
 ### 아테나의 주 도구
+Codex 새 실행과 재개는 `--no-daemon`으로 pane마다 독립 실행한다. Codex 0.166의 공유 서버를 쓰면 새 pane에서도 먼저 실행한 pane ID가 셸 스냅샷·도구 환경에 남는 현상을 확인했다. 앱의 새 실행·백업 복원·본체 따라잡기와 코어 위임 실행에 같은 방어를 적용한다. 기존 공유 서버나 사용자 대화는 종료하지 않는다. 각 실행의 서버·MCP 초기화 자원은 추가로 들며, 전용 서버에 `--remote`로 붙는 경로와 `--no-daemon`을 함께 사용하면 안 된다.
+
 아테나 작업 공간을 처음 만들 때 Claude와 Codex의 설치·로그인을 확인한다. 하나만 사용 가능하면 바로 켜고, 둘이면 한 번 고른다. 선택은 본체의 `.athena-main-tool.json` (`main`: `claude` 또는 `codex`)에 기억한다. 아테나 작업 공간에서 다른 도구를 직접 켜면 SessionStart가 기록을 바꾼다. 작업자 세션은 기록하지 않는다. 로그인된 도구가 없으면 설치·로그인을 안내한다.
 
 공용 읽기는 `athena/scripts/lib/main-tool.mjs`의 `readMainTool(root)`, 주/부 판정은 `toolDecision(available, remembered)`를 사용한다. 부 도구는 설치·로그인된 다른 도구 하나이며, 없으면 `null`이다. 인증 명령의 출력은 저장하거나 표시하지 않는다.

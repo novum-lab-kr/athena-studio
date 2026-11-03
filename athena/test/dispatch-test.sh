@@ -37,6 +37,7 @@ with tempfile.TemporaryDirectory(prefix='dispatch-test-') as tmp:
     root = pathlib.Path(tmp); core = root / 'core'; work = root / "repo with ' quote"
     shutil.copytree(src / 'scripts', core / 'scripts', ignore=shutil.ignore_patterns('__pycache__'))
     shutil.copytree(src / '.claude', core / '.claude')
+    shutil.copy(src / 'test/fixtures/lead-screen.py', core / 'scripts/lib/screen.py')
     shutil.copy(src / 'AGENTS.md', core / 'AGENTS.md')
     work.mkdir(); (core / 'repos').mkdir(); (core / 'repos/web').symlink_to(work)
     (work / 'CLAUDE.md').write_text('@AGENTS.md\nCLAUDE_RULE_SENTINEL\n')
@@ -75,6 +76,8 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     profiles = {}
     env = dict(os.environ, PATH=str(bin_dir)+':'+os.environ['PATH'], CAPTURE=str(capture), SCREEN_LOG=str(log), ATHENA_TEST_NO_RECORD='1', TMPDIR=str(root)+'/', CODEX_HOME=str(codex_home))
     env.pop('ATHENA_AGENT', None)
+    env.pop('CODEX_THREAD_ID', None)
+    env['FAKE_LEAD_PANE'] = 'lead1'
     cfg = {'repos':[{'name':'web','agents':['fe'],'prBase':'main','autoMerge':True,'autoPr':False,'ruleDocs':{'add':['AGENTS.md']}}], 'models':{'agentLight':{'claude':'opus','codex':'gpt-test-pack'},'reviewer':{'claude':'sonnet','codex':'gpt-test-review'}}}
     (core / 'pack').mkdir()
     (core / 'pack/pack.json').write_text(json.dumps(cfg))
@@ -111,6 +114,7 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
             check('Codex → 공통 규칙·프로필·레포 원문', all(s in text for s in ['# 레포 규칙 문서','REPO_RULE_SENTINEL','PROFILE_SENTINEL','CLAUDE_RULE_SENTINEL','## 5.']))
             check('Codex → 보호 훅·기록·끝 알림 전달', all(s in (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text() for s in ['commit-guard.py','secret-guard.py','process-guard.py','pane-session.py','agent-done-notify.py']))
             check('Codex → 질문·허락 요청 훅 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['request_user_input', 'ask-to-request.py', 'PermissionRequest', 'permission-to-request.py']))
+            check('Codex → 공유 서버를 재사용하지 않음', '--no-daemon' in args and '--remote' not in args)
             check('Codex → Claude 전용 인자 없음', '--agent' not in args and '--settings' not in args and '--append-system-prompt-file' not in args)
         if remembered is None:
             check(name+' → 실제 주 도구 기록을 새로 쓰지 않는다', not (core / '.athena-main-tool.json').exists())
@@ -155,7 +159,7 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     result, got, calls = run('claude',None,('--engine','codex'))
     check('명시 엔진이 로그인 안 됨 → pane 생성 없음', result.returncode==2 and not calls)
     result, got, calls = run('codex',None,('--resume','11111111-2222-3333-4444-555555555555'))
-    check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got['args'][:2]==['resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
+    check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got['args'][:3]==['--no-daemon','resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
     for engine in ('claude', 'codex'):
         for prompt, issue, bootstrap in ((None, False, '1'), (None, True, '0'), ('실제 요청', False, '0')):
             result, got, calls = run(engine, prompt=prompt, issue=issue)
@@ -182,6 +186,10 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
                     ok = result.returncode == 0 and line in result.stdout and line in sent
                     check(f'{engine} / 재사용={reuse} / {manual=} / {confirm=} / {review=} → 현재 설정 안내', ok)
                     if not ok: print(f'{result.returncode=}\n{result.stdout[-600:]}\n{result.stderr[-600:]}\n전송문: {sent[-600:]}', flush=True)
+    env['FAKE_LEAD_CLOSED'] = '1'
+    result, got, calls = run('codex')
+    check('닫힌 발신자는 실제 위임 경로에서 pane 생성 전 거부', result.returncode == 1 and got is None and not calls and '아테나 발신자를 확인하지 못해' in result.stderr)
+    env.pop('FAKE_LEAD_CLOSED')
     check('기존 사용자 설정·훅 파일 유지', (codex_home / 'config.toml').read_text() == '# USER_CONFIG_SENTINEL\n' and (codex_home / 'hooks.json').read_text() == '{"hooks":{}}\n')
 sys.exit(fail)
 PY
