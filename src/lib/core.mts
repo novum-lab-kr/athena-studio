@@ -258,9 +258,32 @@ export function agentDecision(available: Tool[], remembered: Tool | null = null)
 
 // 백업에서 되살린 아테나 대화를 잇는 명령 — 세션 id 모양만 받는다(pane 에 글로 쓰이니 셸 글자가 섞이면 안 된다)
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i
-export function resumeCommand(session: unknown): string {
+export function resumeCommand(session: unknown, engine: unknown = 'claude'): string {
   if (!SESSION_ID.test(String(session || ''))) throw new Error('bad session id')
+  if (engine === 'codex') return `codex resume ${session}`
+  if (engine !== 'claude') throw new Error('bad engine')
   return `claude --resume ${session}`
+}
+
+// Codex 0.166 입력칸: › 한 줄과 그 아래 이어 쓰는 줄. 실측 기본 자리 글도 빈 것으로 본다.
+// 모르는 화면·선택 창·작업 중에는 비었다고 추정하지 않는다.
+export function agentAtEmptyPrompt(text: unknown, engine: unknown): boolean {
+  if (engine === 'claude') return claudeAtEmptyPrompt(text)
+  if (engine !== 'codex') return false
+  const lines = String(text || '').split('\n').map((line) => line.trimEnd())
+  const tail = lines.slice(-20)
+  if (tail.some((line) => PROMPT_MENU.test(line) || BACKGROUND_WORK.test(line))) return false
+  const prompt = tail.findLastIndex((line) => /^›/.test(line))
+  if (prompt < 0) return false
+  const typed = tail[prompt]?.replace(/^\s*›/, '').trim()
+  if (typed && typed !== 'Ask Codex to do anything') return false
+  // 본문에서 상태줄처럼 보이는 첫 줄을 찾으면 미전송 글을 잘라 버린다.
+  // 맨 아래의 상태줄을 한 번만 떼고 남은 모든 줄을 검사한다. 모르는 footer는 막는 쪽이다.
+  const after = tail.slice(prompt + 1)
+  while (after.length && !after.at(-1)?.trim()) after.pop()
+  if (/^\s*\? for shortcuts(?:\s.*)?$/.test(after.at(-1) || '')) after.pop()
+  if (/^\s*(?:GPT-|gpt-)\S+\s+(?:minimal|low|medium|high|xhigh|max)\b.*$/.test(after.at(-1) || '')) after.pop()
+  return after.every((line) => !line.trim())
 }
 
 // claude 화면이 "아무것도 안 하고 비어 있다" 인가 — 질문 · 고르기 창이 없고 입력칸이 비었을 때만(자리 글 Try "…" 는 빈 것으로).

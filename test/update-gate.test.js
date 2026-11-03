@@ -106,7 +106,7 @@ test('팩 명령 입구 — 밖으로 내보내는 runCore 는 문을 기다리�
 
 test('현황판 · 새 에이전트 · 자동 따라잡기 입구가 문을 본다', () => {
   assert.match(read('main/work.mts'), /ctx\.ensureBoard = async \(\) => \{[\s\S]*?await waitCoreUpdate\(\)[\s\S]*?queueBoard\(/)
-  assert.match(read('main/athena-agent.mts'), /await waitCoreUpdate\(\)[\s\S]*?findAthenaWorkspace[\s\S]*?const decision = core\.agentDecision/)
+  assert.match(read('main/athena-agent.mts'), /await waitCoreUpdate\(\)[\s\S]*?findAthenaWorkspace[\s\S]*?core\.agentDecision\(/)
   assert.match(read('main/catch-up.mts'), /if \(!force && updating\(\)\) return null/)
 })
 

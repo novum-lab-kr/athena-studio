@@ -130,7 +130,7 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
         if (!pane.agent || pane.agent_status !== 'idle') continue
         const read = (await connection.call('pane read', { pane: pane.id, lines: 40, source: 'visible' }).catch(() => null)) as { text?: unknown } | null
         const text = read && typeof read.text === 'string' ? read.text : null
-        const empty = text !== null && !screenModel.waitingForInput(text) && (pane.agent !== 'claude' || core.claudeAtEmptyPrompt(text))
+        const empty = text !== null && !screenModel.waitingForInput(text) && core.agentAtEmptyPrompt(text, pane.agent)
         if (!empty) busy.push(pane.id)
       }
       const state = studioHome.panesState({ panes, pids: (shells && shells.pids) || {}, waiting: busy })

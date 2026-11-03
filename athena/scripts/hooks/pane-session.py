@@ -41,7 +41,7 @@ def main() -> None:
         'cwd': os.path.realpath(str(event.get('cwd') or os.getcwd())),
         # 위임 에이전트는 delegate.sh 가 ATHENA_AGENT · ATHENA_PLAN 을 넘긴다 — 없으면 본체에서 켠 아테나
         'agent': os.environ.get('ATHENA_AGENT') or 'athena',
-        'engine': os.environ.get('ATHENA_ENGINE') or 'claude',
+        'engine': 'codex' if '--tool=codex' in sys.argv else (os.environ.get('ATHENA_ENGINE') or 'claude'),
         'role': os.environ.get('ATHENA_ROLE') or ('agent' if os.environ.get('ATHENA_AGENT') else 'lead'),
         'plan': os.environ.get('ATHENA_PLAN') or None,
         'at': datetime.datetime.now(datetime.timezone.utc).isoformat(),

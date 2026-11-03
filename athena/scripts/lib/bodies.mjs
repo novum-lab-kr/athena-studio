@@ -20,8 +20,8 @@ import {
   takePackLock, updateRegistry, writeWorkBackup,
 } from './packs.mjs'
 
-// 약속 번호 — 2 팩마다 본체 · 3 pack set-auto-merge(레포별 자동 머지) · 오류 코드 not-applicable. 스튜디오 src/lib/pack.js CONTRACT 와 같이 올린다
-export const CONTRACT = 3
+// 약속 번호 — 2 팩마다 본체 · 3 pack set-auto-merge(레포별 자동 머지) · 오류 코드 not-applicable · 4 restore-work의 도구별 대화 복원. 스튜디오 src/lib/pack.mts CONTRACT 와 같이 올린다
+export const CONTRACT = 4
 // update-from-bundle 부터는 하위 호환으로 더한 것 — 스튜디오는 이 이름으로 손잡이를 아는 코어인지 본다
 // idle-panes — update --panes-state <파일>(쉬는 pane 의 세션은 일하는 중으로 세지 않는다 · 결정 D1)
 // update-busy — update 가 일하는 세션이 있어도 본체를 올린다(entry.working · 2026-10-26) · repo-look — pack set-repo-name · set-repo-icon

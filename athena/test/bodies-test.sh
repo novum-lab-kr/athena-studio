@@ -47,7 +47,7 @@ newcommit() { printf '%s\n' "${3:-$1}" >> "$DEV/${2:-docs/bodies-test-note.md}";
 
 # bundle — 원격 main 을 git 번들로(스튜디오 앱이 코어를 들고 오는 방식 · update 는 --from <번들> 로만 받는다)
 bundle() { rm -f "$WORK/core.bundle"; git -C "$ORIGIN" bundle create "$WORK/core.bundle" main >/dev/null 2>&1; echo "$WORK/core.bundle"; }
-J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 3 2>/dev/null | tail -1); }
+J() { (cd "$1" && shift && node scripts/athena.mjs "$@" --json --contract 4 2>/dev/null | tail -1); }
 field() { python3 -c 'import json,sys
 d=json.loads(sys.stdin.read() or "{}")
 for k in sys.argv[1].split("."):
@@ -77,7 +77,7 @@ R1="$(cat "$WORK/open1.json")"; R2="$(cat "$WORK/open2.json")"
 check "동시에 두 번 열어도 본체 하나(하나는 created · 다른 하나는 locked 또는 그대로)" '[ "$(git -C "$MAIN" worktree list | grep -c "athena-globex")" = 1 ] && { [ "$(echo "$R1" | field created)" = True ] || [ "$(echo "$R2" | field created)" = True ]; } && for r in "$R1" "$R2"; do e="$(echo "$r" | field error)"; [ -z "$e" ] || [ "$e" = locked ] || exit 1; done' "$R1 / $R2"
 R="$(J "$MAIN" pack open globex)"
 check "다시 열면 created false · state ready · 포트 4702" '[ "$(echo "$R" | field created)" = False ] && [ "$(echo "$R" | field state)" = ready ] && [ "$(echo "$R" | field body)" = "$BODY_B" ] && [ "$(echo "$R" | field boardPort)" = 4702 ]' "$R"
-check "결과에 bodyId · core · contract · dataDir · generation" '[ -n "$(echo "$R" | field bodyId)" ] && [ "$(echo "$R" | field core)" = "$C0" ] && [ "$(echo "$R" | field contract)" = 3 ] && [ "$(echo "$R" | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(echo "$R" | field generation)" = 1 ]' "$R"
+check "결과에 bodyId · core · contract · dataDir · generation" '[ -n "$(echo "$R" | field bodyId)" ] && [ "$(echo "$R" | field core)" = "$C0" ] && [ "$(echo "$R" | field contract)" = 4 ] && [ "$(echo "$R" | field dataDir)" = "$ATHENA_DATA_DIR" ] && [ "$(echo "$R" | field generation)" = 1 ]' "$R"
 check "본체 B 는 detached · 배포 커밋(origin/main)" '[ "$(git -C "$BODY_B" rev-parse --abbrev-ref HEAD)" = HEAD ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C0" ]'
 check "본체 B 설정에 boardPort · dataDir" 'python3 -c "import json,sys; d=json.load(open(sys.argv[1])); sys.exit(0 if d[\"boardPort\"]==4702 and d[\"dataDir\"]==sys.argv[2] else 1)" "$BODY_B/athena.config.json" "$ATHENA_DATA_DIR"'
 check "본체 B 가 globex · 주 본체는 acme 그대로" '[ "$(basename "$(readlink "$BODY_B/.pack-data")")" = globex ] && [ "$(basename "$(readlink "$MAIN/.pack-data")")" = acme ]'
@@ -90,7 +90,7 @@ EXCL="$(cd "$MAIN" && cd "$(git rev-parse --git-common-dir)" && pwd)/info/exclud
 check "git exclude 는 본체마다 구간(남의 구간을 지우지 않음)" 'grep -q "athena pack links (athena pack link 가 관리) · $MAIN\$" "$EXCL" && grep -q "athena pack links (athena pack link 가 관리) · $BODY_B\$" "$EXCL"'
 
 section "실패하면 만들던 본체를 지움 · pack new · discard"
-R="$(cd "$MAIN" && ATHENA_PACK_FAIL_AT=open node scripts/athena.mjs pack new --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_PACK_FAIL_AT=open node scripts/athena.mjs pack new --json --contract 4 2>/dev/null | tail -1)"
 check "만들다 실패 → rollback · 본체·자리·워크트리 없음" '[ "$(echo "$R" | field error)" = rollback ] && [ -z "$(ls -d "$WORK"/athena-new-* 2>/dev/null)" ] && [ -z "$(ls "$ATHENA_DATA_DIR/packs" | grep "^new-")" ] && ! git -C "$MAIN" worktree list | grep -q athena-new' "$R"
 R="$(J "$MAIN" pack new)"; NEW="$(echo "$R" | field id)"; NEWBODY="$(echo "$R" | field body)"
 check "pack new → 빈 자리 + 본체(created · previous=acme)" '[ "$(echo "$R" | field created)" = True ] && [ "$(echo "$R" | field previous)" = acme ] && [ -L "$NEWBODY/.pack-data" ] && [ "$(basename "$(readlink "$NEWBODY/.pack-data")")" = "$NEW" ]' "$R"
@@ -125,7 +125,7 @@ R="$(J "$BODY_B" pack list)"
 check "본체 B 에서 불러도 같은 body · current 는 globex" '[ "$(echo "$R" | field packs.acme.body)" = "$MAIN" ] && [ "$(echo "$R" | field current.id)" = globex ]' "$R"
 check "status.body · boardPort 는 부른 본체" '[ "$(J "$BODY_B" pack status | field body)" = "$BODY_B" ] && [ "$(J "$BODY_B" pack status | field boardPort)" = 4702 ]'
 V1="$(J "$MAIN" version)"; V2="$(J "$BODY_B" version)"
-check "version — contract 3 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 3 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
+check "version — contract 4 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 4 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
 
 section "한 본체가 일해도 다른 본체는 열리고 비어 있음"
 CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; sleep 0.5
@@ -159,7 +159,7 @@ VOUT="$(bash "$BODY_B/scripts/verify/globex-shop.sh" 2>&1)"
 check "팩 링크 검증 스크립트(본체 경로로 부름) → B 의 repos 에서 통과" 'echo "$VOUT" | grep -q "✅ 통과"' "$(echo "$VOUT" | tail -8)"
 
 section "update — 일하는 세션이 있어도 올리고, 팩 작업 잠금은 건너뛴다 · 주 본체는 ff"
-check "--from 없이는 usage · 종료 2(원격에서 받는 길 없음)" '(cd "$MAIN" && node scripts/athena.mjs update --json --contract 3 >/dev/null 2>&1); [ $? = 2 ]'
+check "--from 없이는 usage · 종료 2(원격에서 받는 길 없음)" '(cd "$MAIN" && node scripts/athena.mjs update --json --contract 4 >/dev/null 2>&1); [ $? = 2 ]'
 C1="$(newcommit "test: 업데이트 1")"
 # 다른 쪽이 globex 팩 작업 잠금을 쥐고 있다(열기 · 바꾸기 중) — 같은 팩 데이터를 두 곳이 동시에 쓰면 깨진다
 PLOCK="$ATHENA_DATA_DIR/locks/globex.lock"; mkdir -p "$PLOCK"; sleep 60 & PL=$!; echo "$PL" > "$PLOCK/pid"; echo "pack open globex" > "$PLOCK/what"
@@ -190,7 +190,7 @@ check "없는 실행 → rollback-unavailable" '[ "$(J "$MAIN" update --rollback
 
 section "링크 실패면 그 본체만 이전 커밋으로 · dirty · diverged"
 C3="$(newcommit "test: 업데이트 3")"
-R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3" node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "새 코드 relink 실패 → 둘 다 rolledBack · 커밋 그대로 · status failed" '[ "$(echo "$R" | field status)" = failed ] && [ "$(echo "$R" | field bodies.globex.rolledBack)" = True ] && [ "$(echo "$R" | field bodies.acme.rolledBack)" = True ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C1" ] && [ "$(git -C "$MAIN" rev-parse HEAD)" = "$C2" ] && [ "$(git -C "$MAIN" rev-parse --abbrev-ref HEAD)" = main ]' "$R"
 check "모두 실패한 update 는 배포 커밋을 옮기지 않음 · 열어도 따라잡기 안 함" '[ "$(python3 -c "import json,sys; print(json.load(open(sys.argv[1]))[\"deploy\"][\"commit\"])" "$ATHENA_DATA_DIR/config.json")" = "$C1" ] && [ -z "$(J "$MAIN" pack open globex | field updated)" ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C1" ]'
 OPF="$(echo "$R" | field operationId)"
@@ -263,7 +263,7 @@ kill "$LW" 2>/dev/null; wait "$LW" 2>/dev/null
 C3E2="$(newcommit "test: 업데이트 3e2")"
 watcher
 echo '{"plan":"plans/x.md","head":"y","root":"/nonexistent-checkout","attempts":0}' > "$LEARN_Q/0-fail.json"
-R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3E2" node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_RELINK_FAIL_AT="$C3E2" node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 for _ in $(seq 1 50); do [ -n "$(lock_pid)" ] && [ "$(lock_pid)" != "$LW" ] && break; sleep 0.1; done
 check "relink 실패로 되돌림(rolledBack) → 학습 검토는 다시 뜸(learnKicked) · B 는 C3E" '[ "$(echo "$R" | field bodies.globex.error)" = verify-failed ] && [ "$(echo "$R" | field bodies.globex.rolledBack)" = True ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3E" ] && [ "$(echo "$R" | field bodies.globex.services.learnKicked)" = True ] && ! kill -0 "$LW" 2>/dev/null && [ -n "$(lock_pid)" ] && [ "$(lock_pid)" != "$LW" ] && kill -0 "$(lock_pid)" 2>/dev/null' "$R"
 NEWW="$(lock_pid)"; kill "$NEWW" 2>/dev/null; for _ in $(seq 1 30); do kill -0 "$NEWW" 2>/dev/null || break; sleep 0.1; done
@@ -352,27 +352,27 @@ fake_script() { local dir="$1" secs="$2" script="$3"; (cd "$dir" && exec bash -c
 C3F="$(newcommit "test: 업데이트 3f")"
 FS="$(fake_script "$WORK" 2 "$BODY_B/scripts/commit.sh")"; sleep 0.3
 START=$(date +%s)
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "곧 끝나는 커밋(절대 경로) → 끝날 때까지 기다린 뒤 올림 · B 는 C3F" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ] && [ $(( $(date +%s) - START )) -ge 1 ]' "$R"
 wait "$FS" 2>/dev/null
 C3G="$(newcommit "test: 업데이트 3g")"
 FS="$(fake_script "$BODY_B" 60 scripts/ship.sh)"; sleep 0.3
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "상한까지 안 끝나는 올리기(상대 경로 · 본체 안) → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"commit\"" && echo "$R" | grep -q "ship.sh" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # scripts 폴더 안에서 bash commit.sh — 작업 폴더 기준으로 풀면 이 본체 스크립트(자동 리뷰 1차)
 FS="$(fake_script "$BODY_B/scripts" 60 commit.sh)"; sleep 0.3
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "scripts 폴더에서 bash commit.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # 본체 밖 폴더에서 ../<본체>/scripts/ship.sh(자동 리뷰 1차)
 mkdir -p "$WORK/elsewhere"; REL_B="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$BODY_B" "$WORK/elsewhere")"
 FS="$(fake_script "$WORK/elsewhere" 60 "$REL_B/scripts/ship.sh")"; sleep 0.3
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "본체 밖에서 ../<본체>/scripts/ship.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "ship.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 FS="$(fake_script "$WORK" 60 scripts/ship.sh)"; sleep 0.3
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "본체 밖 폴더의 scripts/ship.sh 는 세지 않음 → 올림 · B 는 C3G" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # 공백이 든 상대 경로 — bash "../my body/scripts/commit.sh"(본체로 가는 링크 이름에 공백 · 자동 리뷰 2차). 끝날 때까지 기다린 뒤 올린다
@@ -380,17 +380,17 @@ C3G2="$(newcommit "test: 업데이트 3g2")"
 ln -s "$BODY_B" "$WORK/my body"
 FS="$(fake_script "$WORK/elsewhere" 8 "../my body/scripts/commit.sh")"; sleep 0.3
 START=$(date +%s)
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "공백 든 상대 경로의 commit.sh 도 찾음 → 상한(1.5초) 안 끝나면 skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "그 실행이 끝날 때까지 기다린 뒤 올림 · B 는 C3G2" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ] && ! kill -0 "$FS" 2>/dev/null && [ $(( $(date +%s) - START )) -ge 2 ]' "$R"
 wait "$FS" 2>/dev/null; rm -f "$WORK/my body"
 C3H="$(newcommit "test: 업데이트 3h")"
 mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(busy · heavy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"heavy\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ]' "$R"
 (sleep 2; kill "$H" 2>/dev/null) &
-R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 3 2>/dev/null | tail -1)"
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "잠금이 상한 안에 풀림 → 기다린 뒤 올림 · B 는 C3H" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
 wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
 C3I="$(newcommit "test: 업데이트 3i")"

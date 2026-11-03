@@ -112,7 +112,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
       fetchBoardJson(port, `/api/card?id=${encodeURIComponent(plan.id as string)}`) as Promise<BoardCard | null>,
     ])
     const visibleText = visible.result && typeof visible.result.text === 'string' ? visible.result.text : ''
-    const digest = paneDetail.screenDigest(recent.result && typeof recent.result.text === 'string' ? recent.result.text : '')
+    const digest = paneDetail.screenDigest(recent.result && typeof recent.result.text === 'string' ? recent.result.text : '', pane.agent)
     const record = paneDetail.planRecord(card && typeof card.text === 'string' ? card.text : '')
     const waiting = screenModel.waitingForInput(visibleText)
     const todo = open.filter((request) => request.plan === plan.id || request.pane === paneId).map((request) => ({ id: request.id, kind: request.kind, title: request.title }))

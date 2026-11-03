@@ -15,7 +15,8 @@ type CreatedReply = { result: { root_pane: { id: string }; workspace: { id: stri
 type SplitReply = { result?: { pane?: { id: string } } }
 type RunReply = { error?: string }
 // pack restore-work 결과 — 되살린 아테나 대화(athena[] · 세션 id 는 코어가 모양을 본 값)만 더 읽는다
-type Restore = PackResult & { athena?: { session: unknown }[] }
+type RestoredSession = { session: unknown; engine?: 'claude' | 'codex' }
+type Restore = PackResult & { athena?: RestoredSession[] }
 type RunPack = (args: string[], options: RunCoreOptions) => Promise<PackResult>
 
 // 팩 창 문맥(main.mts createPackWindow) 중 아테나 에이전트 · 되살리기가 읽는 것 · 붙이는 것
@@ -72,7 +73,11 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
       await daemonCall('workspace select', { workspace: createdMeanwhile.id })
       return { focused: true, restore }
     }
-    const decision = core.agentDecision(await core.authenticatedAgents(), core.readMainTool(ctx.athenaDir as string)) as { none?: true; choose?: true; agent?: 'claude' | 'codex' }
+    const available = await core.authenticatedAgents()
+    const restoreEngine = athenaSessions.length ? (athenaSessions[0]?.engine || 'claude') : null
+    const decision = (restoreEngine
+      ? (available.includes(restoreEngine) ? { agent: restoreEngine } : { none: true })
+      : core.agentDecision(available, core.readMainTool(ctx.athenaDir as string))) as { none?: true; choose?: true; agent?: 'claude' | 'codex' }
     if (decision.choose) {
       const selected = await chooseAgent?.()
       if (!selected) return { cancelled: true }
@@ -83,9 +88,9 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     if (decision.agent) core.writeMainTool(ctx.athenaDir as string, decision.agent)
     const created = (await daemonCall('workspace create', { label: core.ATHENA_WORKSPACE, cwd: ctx.athenaDir, focus: true, ...size })) as CreatedReply
     if (created.error) return { error: say('error.athenaWorkspaceCreate', { message: created.error }) }
-    // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(claude 만 — 세션 id 는 코어가 모양을 본 값)
-    const [first, ...rest] = decision.agent === 'claude' ? athenaSessions : []
-    const text = first ? core.resumeCommand(first.session) : decision.agent
+    // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(세션 도구·id는 코어가 확인한 값)
+    const [first, ...rest] = athenaSessions
+    const text = first ? core.resumeCommand(first.session, first.engine) : decision.agent
     const run = (await daemonCall('pane run', { pane: created.result.root_pane.id, text })) as RunReply
     if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
     if (first) await ackRestore([first.session])
@@ -94,14 +99,14 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
   }
 
   // 아테나 작업 공간이 이미 있으면 — 되살린 아테나 대화마다 첫 pane 옆에 pane 을 하나 쪼개 잇는다
-  async function resumeAthenaBeside(workspace: { id: string }, sessions: { session: unknown }[]): Promise<void> {
+  async function resumeAthenaBeside(workspace: { id: string }, sessions: RestoredSession[]): Promise<void> {
     const state = (await daemonCall('state')) as StateReply
     const tab = state.result && state.result.tabs.find((entry) => entry.workspace === workspace.id)
     const base = tab && layout.paneIds(tab.tree)[0]
     if (!base) return
     for (const item of sessions) {
       const split = (await daemonCall('pane split', { target: base, direction: 'right', ratio: 0.5, cwd: ctx.athenaDir, focus: false })) as SplitReply
-      const run = split.result && split.result.pane ? ((await daemonCall('pane run', { pane: split.result.pane.id, text: core.resumeCommand(item.session) })) as RunReply) : null
+      const run = split.result && split.result.pane ? ((await daemonCall('pane run', { pane: split.result.pane.id, text: core.resumeCommand(item.session, item.engine) })) as RunReply) : null
       if (run && !run.error) await ackRestore([item.session])
     }
   }
@@ -128,7 +133,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     if (!result.ok || !(result.athena || []).length) return result
     const state = (await daemonCall('state')) as StateReply
     const existing = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir as string)
-    if (existing) await resumeAthenaBeside(existing, result.athena as { session: unknown }[])
+    if (existing) await resumeAthenaBeside(existing, result.athena as RestoredSession[])
     return result
   }
 }

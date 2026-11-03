@@ -56,6 +56,7 @@ import { screen, screenName, screenText } from '../lib/screen.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
+import { codexMemorySources } from './codex-memory.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
@@ -1607,7 +1608,8 @@ const handleRequest = async (request, response) => {
   if (url.pathname === '/api/memory') {
     response.writeHead(200, { 'Content-Type': 'application/json; charset=utf-8', 'Cache-Control': 'no-store' })
     const memoryDir = memoryDirOf(ROOT, homedir())
-    return response.end(JSON.stringify({ dir: memoryDir.replace(homedir(), '~'), items: listMemory(memoryDir) }))
+    const sources = [{ source: 'claude', label: 'Claude', dir: memoryDir, items: listMemory(memoryDir) }, ...codexMemorySources()]
+    return response.end(JSON.stringify({ dir: memoryDir.replace(homedir(), '~'), items: sources[0].items, sources: sources.map((source) => ({ ...source, dir: source.dir.replace(homedir(), '~') })) }))
   }
   // GitHub 이슈 감시가 아테나에 맡긴 것(최근 24시간) — 스튜디오 AGENT MONITOR 가 읽는다. /api/state 처럼 읽기 전용 · 토큰 없음
   if (url.pathname === '/api/github-issues') {

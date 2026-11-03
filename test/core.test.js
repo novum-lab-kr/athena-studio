@@ -350,3 +350,28 @@ test('browserBackground — 이 창 현황판 서버만 앱 배경색 · 나머�
   assert.equal(core.browserBackground('http://localhost:3000/', '#111', 4701), '#ffffff')
   assert.equal(core.browserBackground('https://github.com/x', '#111', 4701), '#ffffff')
 })
+
+test('도구별 재개 명령과 빈 입력: Codex도 쓰던 글·질문·작업 중은 막는다', () => {
+  const session = '12345678-abcd-1234-abcd-123456789abc'
+  assert.equal(core.resumeCommand(session), `claude --resume ${session}`)
+  assert.equal(core.resumeCommand(session, 'codex'), `codex resume ${session}`)
+  assert.throws(() => core.resumeCommand(session, 'other'))
+  assert.throws(() => core.resumeCommand('$(bad)', 'codex'))
+  assert.equal(core.agentAtEmptyPrompt('› \n\n  gpt-6 medium · 90% left', 'codex'), true)
+  assert.equal(core.agentAtEmptyPrompt('› Ask Codex to do anything\n\n  GPT-6.1-Sol medium · /tmp', 'codex'), true)
+  assert.equal(core.agentAtEmptyPrompt('› 수정해줘\n\n  gpt-6 medium', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('› \n  두 번째 줄\n\n  gpt-6 medium', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('› 1. 허락\nPress enter to confirm or esc to cancel', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('• Working (esc to interrupt)\n› ', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('셸', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('› ', 'unknown'), false)
+})
+
+test('Codex 여러 줄 초안에 상태줄 같은 문장이 있어도 맨 아래 footer만 제외한다', () => {
+  for (const draft of ['gpt-6 작업을 이어줘', '90% left 아직 보내지 않은 글', '? for shortcuts 아직 보내지 않은 글', 'GPT-6.1-Sol medium · 입력 중인 글']) {
+    assert.equal(core.agentAtEmptyPrompt(`› \n  ${draft}\n\n  GPT-6.1-Sol medium · /tmp/demo\n  ? for shortcuts`, 'codex'), false, draft)
+  }
+  assert.equal(core.agentAtEmptyPrompt('› \n\n  GPT-6.1-Sol medium · /tmp/demo\n  ? for shortcuts', 'codex'), true)
+  assert.equal(core.agentAtEmptyPrompt('› \n  모르는 상태줄', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('› 초안\n  › \n\n  GPT-6.1-Sol medium · /tmp/demo', 'codex'), false)
+})

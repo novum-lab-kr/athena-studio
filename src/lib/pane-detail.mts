@@ -124,22 +124,27 @@ export function leadRows(cards: unknown, history: unknown, paneId: string, { pan
 // ── 화면 글 → 지금 하는 일 한 줄 · 최근 보고 ─────────────────────────────
 // Claude Code 화면: 에이전트의 말과 도구는 '⏺ ' 로 시작하고, 말의 둘째 줄부터는 두 칸 들여 쓴다.
 // 도구 줄은 '⏺ Bash(…)' · '⏺ User answered …' 모양, 접힌 도구는 '  Ran 2 shell commands' 같은 한 줄이다.
-// 다른 도구(codex 등)는 모양을 모르니 비워 둔다(지금 상태 · 계획서 기록은 그대로 보인다)
+// Codex 0.166은 말·도구 모두 • 로 시작한다. 실행·탐색·수정 묶음은 말에서 뺀다.
 const TOOL_BLOCK = /^⏺ ([A-Za-z][\w-]*\(|User answered\b)/
 const COLLAPSED_TOOL = /^(Ran|Read|Made|Searched for|Listed|Wrote|Edited|Updated|Found|Fetched) \d+\b/
+const CODEX_TOOL = /^• (?:Ran\b|Explored\b|Edited\b|Added\b|Deleted\b|Updated Plan\b|Called\b|Calling\b|Searched\b|Searching\b|Viewed\b|Viewing\b|Waiting\b|Spawned\b|Sent input\b)/
 const HEAVY_WAIT = /⏳ 대기 \d+초/
 
-function sayBlocks(lines: readonly string[]): string[][] {
+function sayBlocks(lines: readonly string[], engine: unknown): string[][] {
   const blocks: string[][] = []
   let current: string[] | null = null
   for (const raw of lines) {
     const line = raw.replace(/\s+$/, '')
-    if (line.startsWith('⏺ ')) {
-      current = TOOL_BLOCK.test(line) ? null : [line.slice(2)]
+    if ((engine === 'claude' && line.startsWith('⏺ ')) || (engine === 'codex' && line.startsWith('• '))) {
+      current = (engine === 'codex' ? CODEX_TOOL : TOOL_BLOCK).test(line) ? null : [line.slice(2)]
       if (current) blocks.push(current)
       continue
     }
     if (!current) continue
+    if (engine === 'codex' && /^\s*(?:Worked for\b|Working\b.*esc to interrupt|[─━]{3,})/.test(line)) {
+      current = null
+      continue
+    }
     // 첫 칸에 글자가 오면(입력 줄 ❯ · 상태 줄 ✻ · 구분선) 말이 끝났다
     if (line && !/^\s/.test(line)) {
       current = null
@@ -156,9 +161,9 @@ function sayBlocks(lines: readonly string[]): string[][] {
   })
 }
 
-export function screenDigest(text: unknown): { now: string; report: string[]; heavy: boolean } {
+export function screenDigest(text: unknown, engine: unknown = 'claude'): { now: string; report: string[]; heavy: boolean } {
   const lines = String(text || '').split('\n')
-  const blocks = sayBlocks(lines)
+  const blocks = sayBlocks(lines, engine)
   const last = blocks[blocks.length - 1] || []
   const first = last.find((line) => line.trim()) || ''
   // 최근 보고 — 가장 최근의 여러 줄짜리 말(마지막 말이 '돌리는 중입니다' 같은 한 줄이어도 앞의 보고를 보여 준다)

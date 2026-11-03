@@ -207,6 +207,19 @@
   .learn-card .actions { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
   .learn-card textarea, .learn-card input { font: inherit; width: 100%; padding: 7px 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); line-height: 1.5; font-size: 13px; }
   .learn-card textarea { min-height: 64px; resize: vertical; }
+  .memory-heading { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin: 8px 0 16px; }
+  .memory-heading h2 { margin: 0 0 4px; color: var(--text); font-size: 15px; }
+  .memory-heading .where { margin: 0; color: var(--muted); font-size: 12px; }
+  .memory-heading .btn { flex: none; color: var(--muted); }
+  .memory-filter button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+  #memory .h-row { grid-template-columns: 104px minmax(0, 1fr) max-content; }
+  #memory .h-date { display: flex; align-items: center; gap: 6px; width: 104px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  #memory .h-date > span:first-child { flex: none; width: 10ch; }
+  .memory-logo { display: inline-flex; align-items: center; flex: none; }
+  .memory-logo .logo { width: 1em; height: 1em; }
+  #memory .h-tags { flex-wrap: nowrap; align-items: center; gap: 4px; white-space: nowrap; justify-self: end; }
+  #memory .h-tags .pill { flex: none; }
+  @media (max-width: 720px) { .memory-heading { align-items: flex-start; } #memory .h-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
   /* 클로드 학습 상세 팝업 — 구역 카드 */
   .lc-block { border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; background: var(--bg); }
   .lc-block h5 { margin: 0 0 4px; font-size: 11.5px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
@@ -367,7 +380,7 @@
   <nav class="tabs" role="tablist" aria-label="보기">
     <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
     <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="흐름별 TC 결과">QA</button>
-    <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 클로드 학습(메모리)">학습</button>
+    <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 개인 메모리(Claude · Codex)">학습</button>
     <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
     <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)">지표</button>
   </nav>
@@ -423,8 +436,8 @@
 <main id="view-learn" hidden>
   <section>
     <div class="qa-switch" role="tablist" aria-label="학습 보기">
-      <button type="button" role="tab" data-learnview="hermes" aria-selected="true">🧭 아테나 학습</button>
-      <button type="button" role="tab" data-learnview="claude" aria-selected="false">🤖 클로드 학습</button>
+      <button type="button" role="tab" data-learnview="hermes" aria-selected="true">아테나 학습</button>
+      <button type="button" role="tab" data-learnview="claude" aria-selected="false">개인 메모리</button>
     </div>
     <div id="learn-view-hermes">
     <h2>아테나 학습 — 작업하며 알게 된 <b>레포 함정</b>을 서비스별 공책(gotchas)에 넣는다. 에이전트가 작업 전에 읽고, git 으로 팀과 공유된다 (기준: docs/knowledge/common/learning.md)</h2>
@@ -436,8 +449,15 @@
     <div id="learn-learned" class="learn-list"></div>
     </div>
     <div id="learn-view-claude" hidden>
-    <h2>클로드 학습 — Claude Code 가 대화에서 기억한 <b>일하는 방식·피드백</b>(메모리). 이 컴퓨터에서 나만 보고 레포에는 안 올라간다 (<span id="memory-dir">~/.claude/projects/…/memory</span>, 읽기 전용)
-      <button type="button" class="btn" id="memory-guide-open" title="메모리 보는 법 — 사용자 · 피드백 · 프로젝트 · 참고 뜻" aria-label="메모리 보는 법">📖</button></h2>
+    <div class="memory-heading">
+      <div><h2>개인 메모리</h2><p class="where">대화에서 기억한 내용 · 이 컴퓨터에만 저장 · 읽기 전용</p></div>
+      <button type="button" class="btn" id="memory-guide-open" title="메모리 보는 법 — 사용자 · 피드백 · 프로젝트 · 참고 뜻">메모리 보는 법</button>
+    </div>
+    <div id="memory-filter" class="qa-switch memory-filter" role="group" aria-label="메모리 출처">
+      <button type="button" data-memory-source="all" aria-pressed="true">전체</button>
+      <button type="button" data-memory-source="claude" aria-pressed="false">Claude</button>
+      <button type="button" data-memory-source="codex" aria-pressed="false">Codex</button>
+    </div>
     <div id="memory" class="history"><div class="empty-history">불러오는 중이에요…</div></div>
   </div>
   </section>
@@ -459,7 +479,7 @@
   <button type="button" class="dialog-x" id="memory-guide-close" aria-label="닫기" title="닫기 (Esc)">×</button>
   <h3 id="memory-guide-title" tabindex="-1" autofocus>📖 메모리 보는 법</h3>
   <div class="body">
-    <div><h4>종류 — 무엇을 기억해 두었나</h4><dl>
+    <div><h4>Claude 메모리 종류 — 무엇을 기억해 두었나</h4><dl>
       <dt><span class="pill mem-user">👤 사용자</span></dt><dd>사용자에 대한 것 — 역할, 잘 아는 분야, 쓰는 도구, 선호하는 방식</dd>
       <dt><span class="pill mem-feedback">💬 피드백</span></dt><dd>사용자가 일하는 방식을 바로잡거나 "이렇게 해" 하고 확인해 준 것. 이유와 적용 방법을 같이 적는다</dd>
       <dt><span class="pill mem-project">📁 프로젝트</span></dt><dd>코드·git 기록에 남지 않는 목표·제약·기한</dd>
@@ -1133,9 +1153,12 @@
 
 
   // ── 메모리 탭 — 아테나 auto memory 목록. 누를 때만 읽고, 줄을 누르면 본문
+  const MEMORY_SOURCE = { claude: 'Claude', codex: 'Codex' };
   const MEMORY_TYPE = { user: '👤 사용자', feedback: '💬 피드백', project: '📁 프로젝트', reference: '🔗 참고' };
   const memoryPill = (type) => `<span class="pill mem-${esc(type || 'none')}">${esc(MEMORY_TYPE[type] || type || '?')}</span>`;
   let memoryItems = [];
+  let memorySources = [];
+  let memorySource = 'all';
   // 메모리 본문을 구역으로 — "**Why:**" · "**How to apply:**" · "관련: [[…]]" 을 찾아 카드로. 꼴이 다르면 그대로 마크다운
   const memoryDetail = (item) => {
     const body = item.body || '';
@@ -1155,32 +1178,43 @@
     return `<div class="md-sections">${summary}${block('📌', '내용', main)}${block('💡', '왜', whyText, 'warn')}${block('🛠', '이렇게 적용', howText)}${related ? `<div><h5 style="margin:0 0 4px;font-size:11.5px;color:var(--muted)">관련 기억</h5><div class="chips">${related}</div></div>` : ''}</div>`;
   };
   const openMemory = (file) => {
-    const item = memoryItems.find((entry) => entry.file === file);
+    const item = memoryItems.find((entry) => entry.id === file);
     if (!item) return;
     document.getElementById('detail-title').textContent = item.title;
-    document.getElementById('detail-meta').innerHTML = `<div class="chips">${memoryPill(item.type)}<span class="chip">수정 ${esc(item.updated)}</span><span class="chip">${esc(item.file)}</span></div>`;
+    document.getElementById('detail-meta').innerHTML = `<div class="chips">${item.type ? memoryPill(item.type) : ''}<span class="chip">수정 ${esc(item.updated)}</span><span class="chip">${esc(item.file)}</span></div>`;
     document.getElementById('detail-body').innerHTML = memoryDetail(item);
     document.getElementById('detail').showModal();
   };
-  const loadMemory = async () => {
+  const renderMemory = () => {
     const box = document.getElementById('memory');
+    document.querySelectorAll('[data-memory-source]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.memorySource === memorySource)));
+    const shown = memoryItems.filter((item) => memorySource === 'all' || item.source === memorySource);
+    if (!shown.length) { box.innerHTML = '<div class="empty-history">저장된 메모리가 없어요</div>'; return; }
+    box.innerHTML = shown.map((item) => {
+      const summary = item.description || item.body.split('\n').map((line) => line.trim()).find((line) => line && !/^#/.test(line)) || '';
+      return `<button type="button" class="h-row" data-file="${esc(item.id)}">
+        <span class="h-date"><span>${esc(item.updated)}</span><span class="memory-logo" title="${esc(item.sourceDir)}">${cliLogo({ id: item.source, label: MEMORY_SOURCE[item.source] || item.source })}</span></span>
+        <span class="h-main"><span class="h-title">${esc(item.title)}</span><span class="h-sum">${esc(summary)}</span></span>
+        <span class="h-tags">${item.type ? memoryPill(item.type) : ''}</span>
+      </button>`;
+    }).join('');
+    box.querySelectorAll('.h-row').forEach((row) => { row.onclick = () => openMemory(row.dataset.file); });
+  };
+  document.querySelectorAll('[data-memory-source]').forEach((button) => {
+    button.onclick = () => { memorySource = button.dataset.memorySource; renderMemory(); };
+  });
+  const loadMemory = async () => {
     try {
       const response = await fetch('/api/memory');
       const data = await response.json();
-      memoryItems = data.items || [];
-      if (data.dir) document.getElementById('memory-dir').textContent = data.dir;
+      memorySources = data.sources || [{ source: 'claude', label: 'Claude', dir: data.dir, items: data.items || [] }];
+      memoryItems = memorySources.flatMap((source, index) => source.items.map((item) => ({ ...item, id: `${index}:${item.file}`, source: source.source, sourceDir: source.dir })))
+        .sort((left, right) => right.updated.localeCompare(left.updated));
     } catch (error) {
-      box.innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      document.getElementById('memory').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
       return;
     }
-    if (!memoryItems.length) { box.innerHTML = '<div class="empty-history">저장된 메모리가 없어요</div>'; return; }
-    box.innerHTML = memoryItems.map((item) => `
-      <button type="button" class="h-row" data-file="${esc(item.file)}">
-        <span class="h-date">${esc(item.updated)}</span>
-        <span class="h-main"><span class="h-title">${esc(item.title)}</span><span class="h-sum">${esc(item.description)}</span></span>
-        <span class="h-tags">${memoryPill(item.type)}</span>
-      </button>`).join('');
-    box.querySelectorAll('.h-row').forEach((row) => { row.onclick = () => openMemory(row.dataset.file); });
+    renderMemory();
   };
 
   // ── 학습 탭 — 학습 후보(넣기·고쳐서 넣기·버리기)와 학습한 내용(수정·삭제). 누를 때만 읽는다
@@ -1473,7 +1507,7 @@
     await loadLearn();
   });
 
-  // 학습 탭 안 — 아테나 학습(공책) / 클로드 학습(메모리)
+  // 학습 탭 안 — 아테나 학습(공책) / 개인 메모리(Claude · Codex)
   let learnView = 'hermes';
   const showLearnView = (view) => {
     learnView = view;

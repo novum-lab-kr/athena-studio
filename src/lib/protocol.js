@@ -26,7 +26,8 @@ const PROTOCOL = 6
 // 4 — send-text --enter 가 전송까지 확인
 // 5 — Codex 질문 창의 입력 대기 판정(enter to submit answer)
 // 6 — 선택 창 대기 waiting
-const DAEMON_CODE = 6
+// 7 — 공통 core의 도구별 빈 입력·재개 판정
+const DAEMON_CODE = 7
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

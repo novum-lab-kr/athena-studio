@@ -45,3 +45,19 @@ test('set-repo-icon — 레포 이름 검사가 먼저, 코어처럼 PNG 는 8�
   assert.equal(run('set-repo-icon', '../x', write('a.png', PNG)).error, 'not-found')
   assert.equal(run('set-repo-icon', 'shop', write('half.png', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47]), Buffer.alloc(16)]))).error, 'invalid-image')
 })
+
+test('가짜 코어도 앱과 같은 약속4를 알리고 약속3 복원 호출은 거부한다', async (t) => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'fake-contract-'))
+  t.after(() => fs.rmSync(dir, { recursive:true, force:true }))
+  const env = { ...process.env,TMPDIR:dir }
+  delete env.ATHENA_FAKE_CONTRACT
+  delete env.ATHENA_CONTRACT
+  const version = spawnSync(process.execPath,[FAKE,'version','--json'],{cwd:dir,env,encoding:'utf8'})
+  assert.equal(version.status,0)
+  const reply = JSON.parse(version.stdout.trim().split('\n').pop())
+  assert.equal(reply.contract,require('../src/lib/pack.mts').CONTRACT)
+  assert.equal(reply.contract,(await import('../athena/scripts/lib/bodies.mjs')).CONTRACT)
+  const restored = spawnSync(process.execPath,[FAKE,'pack','restore-work','--json'],{cwd:dir,env:{...env,ATHENA_CONTRACT:'3'},encoding:'utf8'})
+  assert.equal(restored.status,1)
+  assert.equal(JSON.parse(restored.stdout.trim().split('\n').pop()).error,'contract-mismatch')
+})

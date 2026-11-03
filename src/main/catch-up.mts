@@ -18,7 +18,7 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
 
   // 팩 본체가 주 본체 코어보다 뒤처졌으면 따라잡는다 — 앱 업데이트는 일하는 본체를 건너뛰고, 그 뒤에는 앱이 새 번들을 들고 오지 않는 한 다시 하지 않는다.
   // 30초에 한 번 HEAD 둘만 본다. 뒤처졌을 때: 본체 안 에이전트(워크트리)가 있거나 아테나가 일하는 중이면 기다린다.
-  // 아테나가 쉬는 중이면 그 대화를 기억하고 잠깐 끄고(/exit) → pack open(본체 따라잡기) → 같은 대화로 다시 켠다(claude --resume) — 사용자가 손댈 일 없게
+  // 아테나가 쉬는 중이면 그 대화를 기억하고 잠깐 끄고(/exit) → pack open(본체 따라잡기) → 같은 대화로 다시 켠다(도구별 resume) — 사용자가 손댈 일 없게
   let catchUpAt = 0
   let catchUpBackoff = 0 // 해 봤는데 못 옮겼으면 10분 쉰다 — 아테나를 30초마다 껐다 켜지 않게
   let catchingUp = false
@@ -53,24 +53,27 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
     const inBody = panes.filter((pane) => pane.agent && (under(pane.foreground_cwd || pane.cwd, realBody) || under(pane.foreground_cwd || pane.cwd, packData)))
     const athenaPanes = inBody.filter((pane) => under(pane.foreground_cwd || pane.cwd, realBody))
     // force(사용자가 고른 일) — 일하는 중이어도 이 팩의 에이전트를 모두 멈추고 옮긴다(화면이 미리 알린다). 아래 기다리기 검사는 건너뛴다
-    // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · claude 가 아니면(되살릴 수 없다) 다음에
-    if (!force && (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => pane.agent !== 'claude' || pane.agent_status !== 'idle'))) return { ok: false, reason: 'working' }
+    // 워크트리 에이전트가 있거나 · 누가 일하는 중이거나 · 지원하지 않는 도구면(되살릴 수 없다) 다음에
+    if (!force && (inBody.length !== athenaPanes.length || athenaPanes.some((pane) => !['claude', 'codex'].includes(pane.agent || '') || pane.agent_status !== 'idle'))) return { ok: false, reason: 'working' }
     // 화면으로도 — 질문 · 고르기 창이 떠 있거나 쓰다 만 글이 있으면 건드리지 않는다
     for (const pane of force ? [] : athenaPanes) {
       const read = await daemonCall<{ text?: unknown }>('pane read', { pane: pane.id, lines: 40 })
-      if (!read.result || !core.claudeAtEmptyPrompt(read.result.text)) return { ok: false, reason: 'working' }
+      if (!read.result || !core.agentAtEmptyPrompt(read.result.text, pane.agent)) return { ok: false, reason: 'working' }
     }
     // 코어 기준으로도 아테나 말고 바쁜 것이 없어야 시작한다(레포 · 워크트리 에이전트 · 무거운 명령)
     const before = await coreBusy()
     if (!force && (!before || before.some((item) => item.kind !== 'athena'))) return { ok: false, reason: 'working' }
-    const sessions: { pane: string; session: string | null }[] = []
+    const sessions: { pane: string; session: string | null; engine: string }[] = []
     for (const pane of force ? inBody : athenaPanes) {
-      const record: { session?: string } | null = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
+      const record: { session?: string; engine?: string } | null = await fs.promises.readFile(path.join(packData, 'state', 'pane-sessions', `${pane.id}.json`), 'utf8').then(JSON.parse, () => null)
       // 어느 대화인지 모르면 끄지 않는다 — force 면 끄고 다시 켜지는 않는다
-      if (!record || !record.session) {
+      if (!record || !record.session || (record.engine || 'claude') !== pane.agent) {
         if (!force) return { ok: false, reason: 'unknown-session' }
-        sessions.push({ pane: pane.id, session: null })
-      } else sessions.push({ pane: pane.id, session: record.session })
+        sessions.push({ pane: pane.id, session: null, engine: pane.agent || '' })
+      } else {
+        try { core.resumeCommand(record.session, record.engine || 'claude') } catch { return { ok: false, reason: 'unknown-session' } }
+        sessions.push({ pane: pane.id, session: record.session, engine: record.engine || 'claude' })
+      }
     }
     catchingUp = true
     try {
@@ -91,7 +94,7 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
           for (const prior of sessions) {
             if (!prior.session) continue
             const shell = await daemonCall<{ shell?: boolean }>('pane is-shell', { pane: prior.pane })
-            if (shell.result?.shell) await daemonCall('pane run', { pane: prior.pane, text: core.resumeCommand(prior.session) })
+            if (shell.result?.shell) await daemonCall('pane run', { pane: prior.pane, text: core.resumeCommand(prior.session, prior.engine) })
           }
           return { ok: false, reason: 'failed' }
         }
@@ -109,7 +112,7 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
       const opened: PackReply = quiet ? await runPack(['open', packId], { dir: studio.core }) : { ok: false, error: 'still-busy' }
       if (!opened.ok || !opened.updated) catchUpBackoff = Date.now() + 10 * 60000
       fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
-      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session) })
+      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session, item.engine) })
       if (opened.ok && opened.updated) send('pack:caught-up', { pack: (ctx.packState.current as { displayName?: string; name?: string }).displayName || (ctx.packState.current as { name?: string }).name || packId })
       return opened.ok && opened.updated ? { ok: true } : { ok: false, reason: opened.error === 'still-busy' ? 'still-busy' : 'failed' }
     } finally {

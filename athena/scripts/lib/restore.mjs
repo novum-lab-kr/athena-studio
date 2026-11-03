@@ -9,8 +9,10 @@ import { cpSync, existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, re
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve, sep } from 'node:path'
 import { PackError } from './lock.mjs'
+import { codexSessionExists } from './codex-local.mjs'
 
-const RESTORE_VERSION = 1
+// 2 — 대화 도구(engine)를 보존한다. 옛 코어가 Codex를 Claude로 해석하지 못하게 한다.
+const RESTORE_VERSION = 2
 const SESSION_ID = /^[0-9a-f][0-9a-f-]{7,63}$/i
 const AGENT_NAME = /^[\w-]{1,64}$/
 const PLAN_PATH = /^plans\/[^\0]+\.md$/
@@ -105,17 +107,19 @@ export const captureRestore = (root, packData, top, { panes = [], report = () =>
     if (!record || !SESSION_ID.test(record.session ?? '') || typeof record.cwd !== 'string') { missing.push(pane); continue }
     const agent = AGENT_NAME.test(record.agent ?? '') ? record.agent : 'athena'
     const plan = typeof record.plan === 'string' && PLAN_PATH.test(record.plan) ? record.plan : null
+    const engine = record.engine || 'claude'
+    if (!['claude', 'codex'].includes(engine)) { missing.push(pane); continue }
     const project = claudeProjectDir(record.cwd)
     const log = join(project, `${record.session}.jsonl`)
     let transcript = false
-    if (existsSync(log) && add(statSync(log).size)) {
+    if (engine === 'claude' && existsSync(log) && add(statSync(log).size)) {
       mkdirSync(join(out, 'transcripts'), { recursive: true })
       cpSync(log, join(out, 'transcripts', `${record.session}.jsonl`))
       // 하위 에이전트 기록(<세션>/subagents/…)도 — 링크는 따라가지 않는다
       if (existsSync(join(project, record.session))) cpSync(join(project, record.session), join(out, 'transcripts', record.session), { recursive: true, filter: (path) => !lstatSync(path).isSymbolicLink() })
       transcript = true
-    } else if (existsSync(log)) warnings.push(`대화 기록이 너무 커서 뺐다 — ${agent}`)
-    sessions.push({ agent, session: record.session, plan, cwd: placeOf(root, packData, record.cwd), transcript })
+    } else if (engine === 'claude' && existsSync(log)) warnings.push(`대화 기록이 너무 커서 뺐다 — ${agent}`)
+    sessions.push({ agent, engine, session: record.session, plan, cwd: placeOf(root, packData, record.cwd), transcript })
   }
   // 2) 워크트리 — HEAD · 브랜치 · staged · unstaged · 추적 안 하는 파일 · push 안 한 커밋(bundle)
   const worktrees = []
@@ -170,9 +174,10 @@ export const checkRestore = (dir) => {
   const file = join(dir, 'restore.json')
   const data = readJson(file)
   const bad = (why) => { throw new PackError('unsafe', `백업의 되살리기 정보가 이상하다 — ${why}`) }
-  if (!data || data.version !== RESTORE_VERSION || !Array.isArray(data.sessions) || !Array.isArray(data.worktrees)) bad('restore.json 모양')
+  if (!data || ![1, RESTORE_VERSION].includes(data.version) || !Array.isArray(data.sessions) || !Array.isArray(data.worktrees)) bad('restore.json 모양')
   if (data.sessions.length > 100 || data.worktrees.length > 200) bad('항목이 너무 많다')
   for (const item of data.sessions) {
+    if ((data.version === RESTORE_VERSION || item.engine !== undefined) && !['claude', 'codex'].includes(item.engine)) bad('지원하지 않는 대화 도구')
     if (!SESSION_ID.test(item?.session ?? '') || !AGENT_NAME.test(item?.agent ?? '')) bad(`세션 ${JSON.stringify(item?.session)}`)
     if (item.plan !== null && !(typeof item.plan === 'string' && PLAN_PATH.test(item.plan) && !item.plan.split('/').includes('..'))) bad(`계획서 ${JSON.stringify(item.plan)}`)
     if (typeof item.cwd !== 'string' || item.cwd.includes('\0') || item.cwd.split('/').includes('..')) bad(`폴더 ${JSON.stringify(item.cwd)}`)
@@ -349,13 +354,16 @@ export const restoreWork = (root, packData, { dryRun = false, agents = true, ack
     if (progress.sessions[item.session]?.status === 'done') continue
     const cwd = resolvePlace(root, packData, item.cwd)
     if (!cwd || !existsSync(cwd)) { sessions.push({ session: item.session, agent: item.agent, status: 'skipped', reason: 'cwd-missing', message: `폴더가 없다 — ${item.cwd}` }); continue }
-    const transcript = restoreTranscript(dir, item, cwd)
-    if (item.agent === 'athena') { athena.push({ session: item.session, cwd, transcript }); continue }
+    const engine = item.engine || 'claude'
+    // Codex는 로컬 기록이 있을 때만 잇는다. 다른 컴퓨터로 대화를 옮기지는 않는다(D7).
+    if (engine === 'codex' && !codexSessionExists(item.session)) { sessions.push({ session: item.session, agent: item.agent, engine, status: 'skipped', reason: 'local-session-missing', message: '이 컴퓨터에 Codex 대화 기록이 없다' }); continue }
+    const transcript = engine === 'codex' ? 'present' : restoreTranscript(dir, item, cwd)
+    if (item.agent === 'athena') { athena.push({ session: item.session, engine, cwd, transcript }); continue }
     if (!agents) { sessions.push({ session: item.session, agent: item.agent, status: 'skipped', reason: 'agents-off' }); continue }
     if (!item.plan || !existsSync(join(root, item.plan))) { sessions.push({ session: item.session, agent: item.agent, status: 'skipped', reason: 'plan-missing', message: `계획서가 없다 — ${item.plan ?? '(없음)'}` }); continue }
     report('agent', `에이전트 다시 열기 — ${item.agent}`)
     // delegate.sh 가 그 레포 작업 공간에 pane 을 놓고 claude --resume 으로 잇는다(지시문은 다시 보내지 않는다) — 인자로만 넘긴다(셸 글로 잇지 않는다)
-    const run = spawnSync('bash', [join(root, 'scripts', 'delegate.sh'), item.agent, '--plan', item.plan, '--resume', item.session, '--cwd', cwd], { cwd: root, encoding: 'utf8', timeout: 120000 })
+    const run = spawnSync('bash', [join(root, 'scripts', 'delegate.sh'), item.agent, '--engine', engine, '--plan', item.plan, '--resume', item.session, '--cwd', cwd], { cwd: root, encoding: 'utf8', timeout: 120000 })
     const result = run.status === 0 ? { status: 'done', pane: (run.stdout.match(/^(\S+)\s/m) ?? [])[1] ?? null } : { status: 'failed', reason: 'delegate', message: `${run.stdout ?? ''}${run.stderr ?? ''}`.trim().slice(-300) }
     sessions.push({ session: item.session, agent: item.agent, transcript, ...result })
     if (result.status === 'done') progress.sessions[item.session] = result

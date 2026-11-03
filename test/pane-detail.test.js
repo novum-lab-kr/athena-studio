@@ -204,3 +204,13 @@ test('줄에서 연 계획서 칸: 원문 기록 + 줄 제목 · 원문이 없�
   const unread = detail.rowPlan('archive/kept', '줄 제목', null)
   assert.deepEqual([unread.title, unread.readable, unread.progress], ['줄 제목', false, []])
 })
+
+test('Codex 상세: 말만 요약하고 도구 출력·질문·입력은 보고에 섞지 않는다', () => {
+  const screen = '• 확인했습니다.\n\n  - 바꾼 파일: src/a.ts\n  - 검증: 통과\n\n• Ran npm test\n  └ 내부 출력\n› 보내지 않은 글\n\n  GPT-6.1-Sol medium'
+  const digest = detail.screenDigest(screen, 'codex')
+  assert.equal(digest.now, '확인했습니다.')
+  assert.deepEqual(digest.report, ['확인했습니다.', '', '- 바꾼 파일: src/a.ts', '- 검증: 통과'])
+  assert.deepEqual(detail.screenDigest('• Explored\n  └ Read a.ts\n› ', 'codex').report, [])
+  assert.equal(detail.screenDigest('• 지금 확인 중입니다.', 'codex').now, '지금 확인 중입니다.')
+  assert.equal(detail.screenDigest('• Ran heavy.sh\n  └ ⏳ 대기 3초', 'codex').heavy, true)
+})

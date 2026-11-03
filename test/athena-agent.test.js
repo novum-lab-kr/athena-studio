@@ -6,6 +6,7 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const core = require('../src/lib/core.mts')
+const ORIGINAL_PATH = process.env.PATH
 const { installAthenaAgent } = require('../src/main/athena-agent.mts')
 
 // 아테나 본체로 보이는 폴더(core.checkAthenaDir — CLAUDE.md · scripts/board/server.mjs)
@@ -193,4 +194,67 @@ test('로그인된 도구가 없으면 안내하고 재시도할 작업 공간�
   assert.equal(daemon.workspaces.length, 0)
   fs.writeFileSync(path.join(process.env.PATH, 'claude'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
   assert.equal((await ctx.openAthenaAgent({})).started, 'claude')
+})
+
+test('백업의 Codex 아테나 대화는 선택창 없이 Codex로 재개한다', async (t) => {
+  const { root, daemon, makeCtx } = setup(t)
+  fs.unlinkSync(path.join(process.env.PATH, 'claude'))
+  fs.writeFileSync(path.join(process.env.PATH, 'codex'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })
+  const body = fakeBody(root, 'restore-codex')
+  const ctx = makeCtx(body)
+  const session = '12345678-abcd-1234-abcd-123456789abc'
+  // 새 본체에서 실제 restore-work가 돌려주는 대화 정보
+  ctx.restoreForPack = 'demo'
+  ctx.packRestore = async () => ({ ok: true, athena: [{ session, engine: 'codex' }] })
+  assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
+  assert.equal(started(daemon)[0].args.text, `codex resume ${session}`)
+})
+
+test('본체 따라잡기: Claude·Codex 모두 빈 입력·같은 엔진 기록일 때만 종료 후 같은 대화 재개', async (t) => {
+  const savedPath = process.env.PATH
+  process.env.PATH = ORIGINAL_PATH
+  t.after(() => { process.env.PATH = savedPath })
+  const { installCatchUp } = require('../src/main/catch-up.mts')
+  const { execFileSync } = require('node:child_process')
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'catch-up-parity-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const base = path.join(root, 'core'), body = path.join(root, 'body'), pack = path.join(root, 'pack'), data = path.join(root, 'data')
+  const git = (...args) => execFileSync('git', ['-c','user.name=test','-c','user.email=test@example.invalid', ...args], { encoding:'utf8', stdio:['ignore','pipe','pipe'] }).trim()
+  git('init', base)
+  git('-C', base, 'commit', '--allow-empty', '-m', 'base')
+  git('clone', base, body)
+  git('-C', base, 'commit', '--allow-empty', '-m', 'next')
+  const target = git('-C', base, 'rev-parse', 'HEAD')
+  fs.mkdirSync(path.join(pack,'state','pane-sessions'), {recursive:true})
+  fs.mkdirSync(data)
+  fs.symlinkSync(pack,path.join(body,'.pack-data'))
+  fs.writeFileSync(path.join(data,'config.json'), JSON.stringify({deploy:{commit:target}}))
+  const session = '12345678-abcd-1234-abcd-123456789abc'
+  for (const engine of ['claude','codex']) {
+    const prompt = engine === 'claude' ? '❯ ' : '› Ask Codex to do anything\n\n  GPT-6.1-Sol medium'
+    for (const scenario of ['typed','wrong-engine','ready']) {
+      const commands = []
+      let reads = 0
+      const recordEngine = scenario === 'wrong-engine' ? (engine === 'claude' ? 'codex' : 'claude') : engine
+      fs.writeFileSync(path.join(pack,'state','pane-sessions','p1.json'), JSON.stringify({session,engine:recordEngine}))
+      const ctx = { athenaDir:body, packState:{current:{id:'demo'}}, packBusy:false, send() {},
+        daemonCall: async (op,args) => {
+          if (op === 'pane read') return {result:{text: scenario === 'typed' ? (engine === 'claude' ? '❯ 보내지 않은 글' : '› 보내지 않은 글') : prompt}}
+          if (op === 'pane run') commands.push(args.text)
+          return {result:{}}
+        } }
+      installCatchUp(ctx, {studio:{core:base,data}, updating:()=>false,packLogFile:()=>path.join(root,'pack.log'),runPack:async(args)=>{
+        if (args[0] === 'busy') return {ok:true,busy:reads++ ? [] : [{kind:'athena'}]}
+        return {ok:true,updated:true}
+      }})
+      const result = await ctx.catchUpBody([{id:'p1',cwd:body,agent:engine,agent_status:'idle'}], {force:false})
+      if (scenario === 'ready') {
+        assert.equal(result.ok,true)
+        assert.deepEqual(commands,['/exit',core.resumeCommand(session,engine)])
+      } else {
+        assert.equal(result.ok,false)
+        assert.deepEqual(commands,[])
+      }
+    }
+  }
 })

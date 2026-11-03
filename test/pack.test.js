@@ -172,7 +172,7 @@ test('비교 줄: 있는 정보만 이어 쓴다', () => {
 })
 
 test('코어 약속 번호: version 결과 → contract · 옛 코어(명령 없음 · 실패)는 1', () => {
-  assert.equal(pack.CONTRACT, 3)
+  assert.equal(pack.CONTRACT, 4)
   assert.deepEqual(pack.contractOf({ ok: true, core: 'abc', contract: 2 }), { contract: 2, core: 'abc' })
   assert.deepEqual(pack.contractOf({ ok: true, contract: 3 }), { contract: 3, core: null })
   assert.deepEqual(pack.contractOf({ ok: false, error: 'bad-output' }), { contract: 1, core: null })
@@ -249,23 +249,28 @@ test('git status 머리줄 풀기 — 원격과 비교', () => {
 test('coreTooOld: "알 수 없는 답" 뒤 version 으로 본체 코어가 옛 버전인지 가린다', () => {
   const repoIcon = ['pack', 'set-repo-icon', 'shop', '/tmp/a.png']
   // 약속이 같고 손잡이가 없으면 옛 코어(set-repo-icon 전 코어 · 2026-10-26)
-  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: 3, capabilities: ['update', 'idle-panes'] }), true)
+  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: pack.CONTRACT, capabilities: ['update', 'idle-panes'] }), true)
   // 손잡이가 있으면 진짜 이상한 답 — 그대로 둔다
-  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: 3, capabilities: ['repo-look'] }), false)
+  assert.equal(pack.coreTooOld(repoIcon, { ok: true, contract: pack.CONTRACT, capabilities: ['repo-look'] }), false)
   // 리뷰 · 머지 나누기(--review · --merge)를 모르는 코어 — 저장 실패가 아니라 옛 코어로 안내한다
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: 3, capabilities: ['repo-look'] }), true)
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: 3, capabilities: ['repo-look', 'merge-flow'] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: pack.CONTRACT, capabilities: ['repo-look'] }), true)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--review', 'off'], { ok: true, contract: pack.CONTRACT, capabilities: ['repo-look', 'merge-flow'] }), false)
   // --auto direct(PR 끔 바로 머지)는 pr-off-merge 손잡이가 있는 코어에만 — 약속 번호는 그대로. on · off 는 옛 코어도 안다
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: 3, capabilities: ['merge-flow'] }), true)
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: 3, capabilities: ['merge-flow', 'pr-off-merge'] }), false)
-  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'off'], { ok: true, contract: 3, capabilities: ['merge-flow'] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: pack.CONTRACT, capabilities: ['merge-flow'] }), true)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'direct'], { ok: true, contract: pack.CONTRACT, capabilities: ['merge-flow', 'pr-off-merge'] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop', '--auto', 'off'], { ok: true, contract: pack.CONTRACT, capabilities: ['merge-flow'] }), false)
   // 약속이 낮으면(version 명령이 없는 코어 포함) 옛 코어
   assert.equal(pack.coreTooOld(['pack', 'set-auto-merge', 'shop'], { ok: true, contract: 2, capabilities: [] }), true)
   assert.equal(pack.coreTooOld(['pack', 'list'], { ok: false, error: 'bad-output' }), true)
   // 손잡이를 따로 두지 않은 명령은 약속이 같으면 옛 코어로 보지 않는다
-  assert.equal(pack.coreTooOld(['pack', 'list'], { ok: true, contract: 3, capabilities: [] }), false)
+  assert.equal(pack.coreTooOld(['pack', 'list'], { ok: true, contract: pack.CONTRACT, capabilities: [] }), false)
   // version 을 못 물었으면(시간 초과 등) 모름 — 옛 코어라고 단정하지 않는다
   assert.equal(pack.coreTooOld(repoIcon, { ok: false, error: 'timeout' }), false)
   assert.equal(pack.ERROR_CODES.includes('core-old'), true)
   assert.match(pack.packErrorText({ ok: false, error: 'core-old' }), /옛 버전/)
+})
+
+test('도구별 대화 복원은 약속4부터: 구버전 코어는 복원 전에 걸러진다', () => {
+  assert.equal(pack.coreTooOld(['pack','restore-work'], {ok:true,contract:3,capabilities:[]}), true)
+  assert.equal(pack.coreTooOld(['pack','restore-work'], {ok:true,contract:4,capabilities:[]}), false)
 })

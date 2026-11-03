@@ -387,7 +387,7 @@ const { relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppU
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
-// 약속: 코어 `pack … --json` 출력(contract 3 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
+// 약속: 코어 `pack … --json` 출력(contract 4 · 코어는 athena/). 팩 파일 · 링크는 직접 만지지 않는다.
 // 가져오기에서 [열고 작업 되살리기] — 되살릴 팩 id. 그 팩을 연 창이 아테나를 켤 때(openAthenaAgent) 한 번 되살리고 지운다
 let restoreArmedFor: string | null = null
 // 사람에게 묻는 요청 — 요청 폴더 감시를 놓칠 때를 대비해 이만큼마다 한 번 더 읽는다

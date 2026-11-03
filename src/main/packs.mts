@@ -249,10 +249,10 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     if (picked.canceled || !picked.filePaths[0]) return { canceled: true }
     const args = kind === 'backup' ? ['backup', '--with-work', '--out', picked.filePaths[0]] : ['export', '--out', picked.filePaths[0]]
     // 내 백업 — 이 창의 살아 있는 pane(데몬 상태는 이 본체 것만)을 넘겨 그 pane 의 에이전트 대화를 담게(코어 lib/restore.mjs)
-    // claude 가 도는 pane 만 — 기록이 없는 pane 은 결과 restore.missing 으로 돌아온다(훅이 생기기 전에 켠 세션)
+    // 두 도구 모두 — 기록이 없는 pane 은 결과 restore.missing 으로 돌아온다(훅이 생기기 전에 켠 세션)
     if (kind === 'backup') {
       const listed = (await daemonCall('pane list').catch(() => null)) as PaneListReply
-      const panes = ((listed && listed.result && listed.result.panes) || []).filter((pane) => pane.agent === 'claude').map((pane) => pane.id)
+      const panes = ((listed && listed.result && listed.result.panes) || []).filter((pane) => pane.agent === 'claude' || pane.agent === 'codex').map((pane) => pane.id)
       if (panes.length) args.push('--panes', panes.join(','))
     }
     return packTask(kind === 'backup' ? say('pack.task.backup') : say('pack.task.export'), async () => {
