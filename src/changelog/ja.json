@@ -1,4 +1,12 @@
 {
+  "Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.": "ミスをフック・検証スクリプト・テストで防げる場合、学習レビューはメモ候補の代わりに整備候補を出します。ボードの[学習]タブに🔧カードで表示され、ボタンでアテナに整備を任せられます。",
+  "When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.": "レビューが以前と同じ種類の問題を再び見つけると、次回それを事前に捕まえるチェックをどこに置くかも提案します。",
+  "Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.": "今見ているpaneの許可プロンプトはmacOS通知を表示しません。[作業]にはそのまま表示されます。",
+  "Instructions queued on the Board, automatic review notices and Athena's first instruction at startup now go through the same checked delivery as other messages to panes.": "ボードに溜めた指示・自動レビューの通知・起動時にアテナへ送る最初の指示も、他のpaneへの送信と同じく届いたか確認する経路で送ります。",
+  "The Board no longer completes a plan automatically while a pane tied to it is still open, and waits when it cannot read the pane list.": "計画書に紐づいたpaneがまだ開いている間、ボードはその計画書を自動で完了せず、pane一覧を読めないときは待ちます。",
+  "Agents no longer send a finished notification before they have received their first instruction.": "エージェントが最初の指示を受け取る前に終了通知を送らなくなりました。",
+  "Issues for repositories that merge to main without a pull request now show as ready to complete once the work is merged.": "PRなしでmainに直接マージするリポジトリのイシューも、マージされると完了可能と表示されます。",
+  "Text in the getting-started guide and the compact workflow diagram no longer overflows its boxes.": "はじめにガイドとcompactワークフロー図の文字が枠からはみ出さなくなりました。",
   "When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.": "Claude と Codex の両方にサインインしている場合、Athena を起動するツールを選ぶと、その選択が保存されます。Athena ワークスペースで別のツールを起動すると、選択も切り替わります。",
   "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "自動レビューがラウンド上限に達した後も、最後の修正は変更したコードの短いレビューを受けてからマージされます。重大な指摘やレビューの失敗があれば、マージは止まります。",
   "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex セッションにも Claude セッションと同じコミット・シークレット・プロセスの保護フックが適用されます。",
