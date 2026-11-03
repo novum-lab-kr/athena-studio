@@ -168,7 +168,7 @@ fi
 for file in ${FILES[@]+"${FILES[@]}"}; do
   # 글자 그대로 쓰므로 [ ] 는 받는다(동적 라우트). * ? 는 셸 glob 이 덜 펼쳐진 것일 수 있어 거부
   case "$file" in *'*'*|*'?'*|/*|../*|*/../*) fail "파일은 워크트리 기준 글자 그대로의 상대 경로만: $file" ;; esac
-  [ -d "$TOP/$file" ] && fail "디렉터리는 받지 않는다: $file"
+  [ -d "$TOP/$file" ] && [ ! -L "$TOP/$file" ] && fail "디렉터리는 받지 않는다: $file"
   # merge 중에는 merge 가 이미 스테이징한 파일(base 쪽 변경 · 푼 파일)도 받는다 — status 가 HEAD 와 다르면 바뀐 것
   # merge 중에는 HEAD 와 같은 내용으로 푼 파일(지금 브랜치 쪽을 고른 충돌)도 받는다 — 아래 미병합 · 스테이징 전체 검사가 본다
   [ $MERGING = 1 ] || [ -n "$(git -C "$TOP" status --porcelain -- "$file")" ] || fail "바뀐 게 없는 파일이다: $file"
@@ -179,7 +179,8 @@ for file in ${FILES[@]+"${FILES[@]}"}; do
     .env|.env.*|*.pem|*.key|*.p12|*.pfx|id_rsa*|id_ed25519*|.netrc)
       fail "비밀 파일로 보인다: $file — 커밋하지 않는다(필요하면 사용자가 직접 확인하고 커밋)" ;;
   esac
-  if [ -f "$TOP/$file" ]; then
+  # 링크의 커밋 내용은 대상 경로다. 대상 파일의 내용을 읽거나 검사하지 않는다.
+  if [ ! -L "$TOP/$file" ] && [ -f "$TOP/$file" ]; then
     grep -qE -- '-----BEGIN [A-Z ]*PRIVATE KEY-----' "$TOP/$file" 2>/dev/null && fail "개인키가 들어 있다: $file — 커밋하지 않는다"
     [ "$name" = .npmrc ] && npmrc_literal_token < "$TOP/$file" \
       && fail "토큰 값이 글자 그대로 들어 있다: $file — \${NPM_TOKEN} 같은 참조로 바꾼 뒤 커밋"
@@ -190,7 +191,7 @@ HEAD_BEFORE="$(git -C "$TOP" rev-parse HEAD)"
 if [ $MERGING = 1 ]; then
   # 충돌 표시가 남은 파일은 스테이징하기 전에 거부한다 — git add 하면 미병합 표시가 사라져 다음에 알아보기 어렵다
   for file in ${FILES[@]+"${FILES[@]}"}; do
-    [ -f "$TOP/$file" ] && grep -qE '^(<<<<<<<|>>>>>>>) ' "$TOP/$file" 2>/dev/null && fail "충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이다: $file — 충돌을 다 푼 뒤 다시"
+    [ ! -L "$TOP/$file" ] && [ -f "$TOP/$file" ] && grep -qE '^(<<<<<<<|>>>>>>>) ' "$TOP/$file" 2>/dev/null && fail "충돌 표시(<<<<<<< · >>>>>>>)가 남은 파일이다: $file — 충돌을 다 푼 뒤 다시"
   done
 fi
 STAGED=1
@@ -232,8 +233,12 @@ untracked_names > "$UNTRACKED_LIST"
 # 파일마다 git 을 부르면 미추적 파일이 수천 개일 때 몇 분씩 걸린다 — 존재 확인은 셸 내장, 해시는 git 한 번(--stdin-paths)
 untracked_state() {
   {
-    while IFS= read -r path; do [ -f "$TOP/$path" ] && printf '%s\n' "$path"; done < "$UNTRACKED_LIST" | git -C "$TOP" hash-object --stdin-paths
-    while IFS= read -r path; do [ -f "$TOP/$path" ] || printf 'gone %s\n' "$path"; done < "$UNTRACKED_LIST"
+    while IFS= read -r path; do [ ! -L "$TOP/$path" ] && [ -f "$TOP/$path" ] && printf '%s\n' "$path"; done < "$UNTRACKED_LIST" | git -C "$TOP" hash-object --stdin-paths
+    while IFS= read -r path; do
+      if [ -L "$TOP/$path" ]; then printf 'link %s %s\n' "$path" "$(readlink "$TOP/$path")"
+      elif [ ! -f "$TOP/$path" ]; then printf 'gone %s\n' "$path"
+      fi
+    done < "$UNTRACKED_LIST"
   } | shasum | cut -c1-12
 }
 tree_state() { printf '%s|%s|%s|%s' "$(git -C "$TOP" diff --cached | shasum | cut -c1-12)" "$(git -C "$TOP" diff | shasum | cut -c1-12)" "$(git -C "$TOP" status --porcelain --untracked-files=no | shasum | cut -c1-12)" "$(untracked_state)"; }

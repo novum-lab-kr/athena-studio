@@ -10,10 +10,10 @@
 레포 폴더: 사용자가 준 폴더(없으면 팩 `local.json` 의 `reposRoot`, 그다음 `athena.config.json` 의 `reposRoot`, 그것도 없으면 `..`)
 
 **도구마다 다른 것**
-| | Claude Code | 위임 기능이 없는 도구(Codex 등) |
+| | Claude Code | Codex |
 |---|---|---|
-| 사용자에게 묻기 | AskUserQuestion(한 번에 최대 4문항, 선택지) | 대화로 묻는다 — 같은 질문·선택지를 번호로 보여 주고 답을 기다린다 |
-| 5단계 레포별 작업자 | Agent 도구 `general-purpose` 백그라운드, 한 번에 최대 5개 · `/monitor` 로 보이게 | 레포를 하나씩 직접 읽어 채운다(작업자 지시를 자기 할 일로) |
+| 사용자에게 묻기 | AskUserQuestion(한 번에 최대 4문항, 선택지) | request_user_input(사용할 수 없는 모드면 공통 요청 `bin/athena request` — `docs/requests.md`) |
+| 5단계 레포별 작업자 | Agent 도구 `general-purpose` 백그라운드, 한 번에 최대 5개 · `/monitor` 로 보이게 | `scripts/delegate.sh <담당자> --cwd <본체> --plan <setup 계획서>`로 pane에 위임. 5단계 지시와 팩 문서만 채울 범위를 명시하고 서비스 코드는 고치지 않는다 |
 
 기계적인 일은 `bin/athena` 가, 코드를 읽고 판단하는 일은 아테나(와 작업자)가 한다. 환경 설정이라 계획서 없이 진행하고, 끝에 보고한다. **레포는 읽기만 한다**(fetch·체크아웃·설치도 사용자에게 묻고 · 예외는 5-1 흐름 문서 — 워크트리에서 쓰고 커밋 · PR 은 사용자 말로). 비밀값은 출력하지 않는다.
 

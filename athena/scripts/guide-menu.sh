@@ -23,19 +23,22 @@ pause() { printf '\n%s↩  아무 키나 누르면 메뉴로 돌아갑니다%s' 
 section() { # section <파일> <시작 정규식> <끝 정규식>  → 시작~끝 직전까지 출력
   awk -v s="$2" -v e="$3" '$0 ~ s {p=1} p && $0 ~ e && !($0 ~ s) {exit} p' "$1"
 }
-ask_claude() { # ask_claude <프롬프트>  — 기존 아테나 pane 을 건드리지 않고 **새 pane** 에 별도 Claude 세션을 띄워 실행
+ask_agent() { # ask_agent <스킬 이름과 인자> — 주 도구로 새 아테나 pane을 띄운다
   # 화면 계층(scripts/screen) — 메뉴 pane 이 아니라 포커스된 pane(사용자가 보고 있는 곳) 아래를 가른다
-  if "$ATHENA_DIR/scripts/screen" inside && command -v claude >/dev/null 2>&1; then
-    local out new_pane
+  local engine prompt out new_pane
+  engine="$(node "$ATHENA_DIR/scripts/dispatch-engine.mjs" "$ATHENA_DIR")" || return 1
+  prompt="/$1"
+  [ "$engine" != codex ] || prompt="\$$1"
+  if "$ATHENA_DIR/scripts/screen" inside; then
     out="$("$ATHENA_DIR/scripts/screen" pane split --target focused --direction down --ratio 0.5 --cwd "$ATHENA_DIR" --focus 2>&1)" || {
       printf '%s⚠️ pane 분할 실패:%s %s\n' "$YELLOW" "$RESET" "$out"; return 1; }
     new_pane="$(printf '%s' "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
     sleep 1
-    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" "$(shell_line claude "$1")" >/dev/null   # 셸 한 줄 — '/guide 설명' 이 낱말 둘로 쪼개지지 않게
+    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" "$(shell_line "$engine" "$prompt")" >/dev/null   # 셸 한 줄 — '/guide 설명' 이 낱말 둘로 쪼개지지 않게
     "$ATHENA_DIR/scripts/screen" pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
-    printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$1"
+    printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$prompt"
   else
-    printf '%s%s 밖이거나 claude 명령이 없습니다. 채팅에 직접 붙여넣으세요:%s\n\n  %s\n' "$YELLOW" "$("$ATHENA_DIR/scripts/screen" name)" "$RESET" "$1"
+    printf '%s%s 밖입니다. 채팅에 직접 붙여넣으세요:%s\n\n  %s\n' "$YELLOW" "$("$ATHENA_DIR/scripts/screen" name)" "$RESET" "$prompt"
   fi
 }
 
@@ -108,7 +111,7 @@ act_skills() { # 스킬 목록 → 골라서 실행하거나 SKILL.md 보기
         printf '인자 (없으면 Enter): '
       fi
       read -r args
-      ask_claude "/${names[$idx]}${args:+ $args}"
+      ask_agent "${names[$idx]}${args:+ $args}"
       pause ;;
   esac
 }

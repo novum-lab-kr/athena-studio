@@ -342,8 +342,8 @@ export const busyScan = (root, scan = scanProcesses(), { includeSelf = false } =
     }
     const real = realOr(cwd)
     if (!ours(real)) continue
-    if (row.comm === 'codex') busy.push({ kind: 'codex', what: `Codex 세션 — ${real}`, pid: row.pid })
-    else if (inside(real, rootReal) && !inside(real, legacyWorktrees)) busy.push({ kind: 'athena', what: `본체에서 도는 아테나 세션(claude) — ${real}`, pid: row.pid })
+    if (inside(real, rootReal) && !inside(real, legacyWorktrees)) busy.push({ kind: 'athena', engine: row.comm, what: `본체에서 도는 아테나 세션(${row.comm}) — ${real}`, pid: row.pid })
+    else if (row.comm === 'codex') busy.push({ kind: 'codex', what: `Codex 세션 — ${real}`, pid: row.pid })
     else if (onlyRepoMain(real)) {
       // 레포 메인 체크아웃 안 claude 는 아테나가 띄운 에이전트(delegate.sh — --agent/--agents 인자)일 때만 센다.
       // 사용자가 그 폴더에서 직접 켠 claude 는 이 본체 일이 아니다(결정 D1 · 2026-10-25). 인자를 못 읽으면 모른다(보수적)
@@ -423,7 +423,7 @@ export const settleIdleSessions = (busy, table, panes) => {
     if (!SESSION_KINDS.has(item.kind) || !item.pid) { kept.push(item); continue }
     const pane = paneOf(item.pid)
     if (!pane) { kept.push(item); continue }
-    if (pane.status === 'idle' && pane.agent === paneAgentOf(item.kind)) continue
+    if (pane.status === 'idle' && pane.agent === (item.engine ?? paneAgentOf(item.kind))) continue
     kept.push({ ...item, pane: String(pane.label || pane.id || ''), paneStatus: String(pane.status || 'unknown') })
   }
   return kept

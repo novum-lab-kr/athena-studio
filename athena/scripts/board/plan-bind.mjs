@@ -91,19 +91,19 @@ export const planFiles = (dir) => {
 
 /** 화면 pane 하나 → 현황판 pane 모양(server.mjs readPanes · /api/state panes). 위임 pane 은 이름표 '🤖 <에이전트> · <브랜치>'
  * @param {{ id: string, label?: string | null, name?: string | null, pane_title?: string | null, agent?: string | null, agent_status?: string | null, title?: string | null, cwd?: string | null, focused?: boolean }} pane
- * @param {string} root 본체 폴더 — 여기서 도는 claude 가 아테나
+ * @param {string} root 본체 폴더 — 여기서 도는 Claude · Codex가 아테나
  * @param {string} home 홈 폴더(cwd 를 ~ 로 줄여 보인다) */
 export const boardPaneOf = (pane, root, home) => {
   // pane 이름은 label (delegate.sh 가 붙인 '🤖 <에이전트> · <브랜치>') — 없으면 name · pane 제목
   const name = pane.label || pane.name || pane.pane_title || ''
   const delegated = name.match(/^🤖\s*(\S+)(?:\s*·\s*(.+))?$/)
-  const lead = pane.agent === 'claude' && pane.cwd === root
+  const lead = (pane.agent === 'claude' || pane.agent === 'codex') && pane.cwd === root
   return {
     kind: 'pane',
     id: pane.id,
     tool: pane.agent,
     status: pane.agent_status || 'unknown',
-    // 위임 pane 은 에이전트 이름, athena 루트의 claude 는 아테나(팀리드), 그 밖은 도구 이름
+    // 위임 pane 은 에이전트 이름, athena 루트의 Claude · Codex는 아테나(팀리드), 그 밖은 도구 이름
     agent: delegated?.[1] || (lead ? '아테나' : pane.agent),
     role: delegated ? 'agent' : lead ? 'hermes' : 'other',
     branch: delegated?.[2] || '',

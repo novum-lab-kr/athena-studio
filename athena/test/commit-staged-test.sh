@@ -38,5 +38,33 @@ out="$(commit '남의 스테이징' b.txt)"; rc=$?
 [ $rc -ne 0 ] && echo "$out" | grep -q 'other.txt' && ok "지정하지 않은 스테이징(other.txt)은 여전히 거부 · 이름을 알려 줌" || bad "남의 스테이징이 섞여 커밋됨(rc=$rc): $out"
 [ "$(git -C "$TMP/wt" diff --cached --name-only)" = other.txt ] && ok "거부해도 남의 스테이징은 그대로" || bad "남의 스테이징이 바뀜"
 
+# 링크는 대상의 파일들이 아니라 링크 자체 한 개만 커밋한다. 진짜 디렉터리 거부는 유지한다.
+git -C "$TMP/wt" reset -q --hard
+rm -f "$TMP/wt/other.txt"
+mkdir -p "$TMP/skill-source" "$TMP/wt/real-directory"
+printf '정본\n' > "$TMP/skill-source/SKILL.md"
+printf '실제 파일\n' > "$TMP/wt/real-directory/file.txt"
+ln -s ../skill-source "$TMP/wt/skill-link"
+out="$(commit '스킬 디렉터리 링크' skill-link)"; rc=$?
+[ $rc -eq 0 ] && [ "$(git -C "$TMP/wt" ls-tree HEAD skill-link | cut -d' ' -f1)" = 120000 ] \
+  && [ "$(git -C "$TMP/wt" show HEAD:skill-link)" = ../skill-source ] \
+  && [ "$(git -C "$TMP/wt" diff-tree --no-commit-id --name-only -r HEAD)" = skill-link ] \
+  && ok "디렉터리 링크 하나만 커밋 · 대상 폴더는 읽거나 포함하지 않음" || bad "디렉터리 링크 커밋 실패(rc=$rc): $out"
+before="$(git -C "$TMP/wt" rev-parse HEAD)"
+out="$(commit '실제 디렉터리' real-directory)"; rc=$?
+[ $rc -ne 0 ] && echo "$out" | grep -q '디렉터리는 받지 않는다' \
+  && [ "$(git -C "$TMP/wt" rev-parse HEAD)" = "$before" ] \
+  && ok "진짜 디렉터리는 계속 거부 · 커밋 없음" || bad "실제 디렉터리 거부 실패(rc=$rc): $out"
+
+# 대상 파일은 커밋 내용이 아니다. 내용 검사·미추적 파일 지문도 링크 너머를 읽지 않아야 한다.
+printf '%s%s%s\n' '-----BEGIN ' 'FAKE PRIVATE KEY' '-----' > "$TMP/link-target.txt"
+ln -s ../link-target.txt "$TMP/wt/file-link"
+ln -s ../link-target.txt "$TMP/wt/untracked-file-link"
+ln -s ../not-created "$TMP/wt/broken-link"
+out="$(commit '파일 링크와 끊긴 링크' file-link broken-link)"; rc=$?
+[ $rc -eq 0 ] && [ "$(git -C "$TMP/wt" show HEAD:file-link)" = ../link-target.txt ] \
+  && [ "$(git -C "$TMP/wt" show HEAD:broken-link)" = ../not-created ] \
+  && ok "파일 링크·끊긴 링크도 대상 대신 링크를 커밋 · 비밀 내용 검사는 건너뜀" || bad "파일 링크 커밋 실패(rc=$rc): $out"
+
 [ $FAIL -eq 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL
