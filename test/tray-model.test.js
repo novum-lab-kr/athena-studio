@@ -128,6 +128,17 @@ test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 
   assert.deepEqual(notifier.updateRequests([open('a'), open('b', 'decision')]), [])
 })
 
+test('알림: 허락 창 요청(perm: 키)만 target 에 pane 을 싣는다 — 보고 있는 pane 이면 부르는 쪽(tray.mts lookingAt)이 거른다', () => {
+  const notifier = new tray.Notifier()
+  notifier.updateRequests([])
+  const found = notifier.updateRequests([
+    { id: 'p', kind: 'question', state: 'open', title: '허락', pane: 'p3', permission: true },
+    { id: 'q', kind: 'question', state: 'open', title: '질문', pane: 'p3', permission: false },
+    { id: 'n', kind: 'question', state: 'open', title: 'pane 없음', pane: null, permission: true },
+  ])
+  assert.deepEqual(found.map((item) => item.target), [{ request: 'p', pane: 'p3' }, { request: 'q' }, { request: 'n' }])
+})
+
 test('사용량 창 이름: 현황판이 준 창 길이(분)로 지금 언어에 맞춰 짓고, 길이가 없으면(옛 코어) label 그대로', () => {
   const i18n = require('../src/lib/i18n.mts')
   const korean = require('../src/i18n/ko.json')

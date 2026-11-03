@@ -4,13 +4,14 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { spawnSync } = require('node:child_process')
+const { tempDir } = require('./temp-dirs')
 
 // 가짜 팩 명령이 코어와 같은 검사 · 같은 오류 코드 · 같은 순서로 답하는지(5c91d3 — 이름은 길이만 보고, 아이콘은 검사 전에 옛 것을 지웠다)
 const FAKE = path.join(__dirname, '..', 'scripts', 'fake-pack.js')
 const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(16)])
 
 const setup = () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-fake-pack-'))
+  const dir = tempDir('asd-fake-pack-')
   fs.mkdirSync(path.join(dir, 'pack'))
   fs.writeFileSync(path.join(dir, 'pack', 'pack.json'), JSON.stringify({ repos: [{ name: 'shop' }] }, null, 2))
   const run = (...args) => {

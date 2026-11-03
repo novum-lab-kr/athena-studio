@@ -26,6 +26,15 @@ test('목록: 열린 것(open · answered)만 · 오래된 것 먼저 · 화면 
   assert.equal(first.options[1].recommended, true)
 })
 
+test('목록: 허락 창 알림(코어 키 perm:<pane>)이면 permission · 다른 키 · 키 없음은 아님', () => {
+  const [perm, other, none] = requests.normalizeRequests({ ok: true, requests: [
+    sample({ id: 'r-1', dedupeKey: 'perm:p3', createdAt: '2026-10-21T01:00:00.000Z' }),
+    sample({ id: 'r-2', dedupeKey: 'plan:plans/task/x.md', createdAt: '2026-10-21T02:00:00.000Z' }),
+    sample({ id: 'r-3', createdAt: '2026-10-21T03:00:00.000Z' }),
+  ] }).requests
+  assert.deepEqual([perm.permission, other.permission, none.permission], [true, false, false])
+})
+
 test('목록: request 명령이 없는 옛 코어는 supported:false · 일시 실패는 supported 유지', () => {
   assert.equal(requests.normalizeRequests({ ok: false, error: 'usage' }).supported, false)
   assert.equal(requests.normalizeRequests({ ok: false, error: 'bad-output' }).supported, false)

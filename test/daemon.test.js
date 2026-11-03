@@ -501,5 +501,6 @@ test('앱이 붙어 있으면 분할 · pane 종료가 옆 pane 의 pty 크기�
     try {
       process.kill(daemon.pid, 'SIGTERM')
     } catch {}
+    fs.rmSync(dir, { recursive: true, force: true })
   }
 })

@@ -6,6 +6,7 @@ const os = require('node:os')
 const path = require('node:path')
 const install = require('../src/lib/app-install.mts')
 const notice = require('../src/lib/update-notice.mts')
+const { tempDir } = require('./temp-dirs')
 
 test('classifyExit: 신호로 끝난 것(강제 종료)은 진짜 실패와 따로', () => {
   assert.equal(install.classifyExit({ code: 0, signal: null }), 'ok')
@@ -17,7 +18,7 @@ test('classifyExit: 신호로 끝난 것(강제 종료)은 진짜 실패와 따�
 })
 
 test('installCommand: heavy.sh 가 있으면 줄 서기로 · 없으면 npm 바로', () => {
-  const heavy = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-')), 'heavy.sh')
+  const heavy = path.join(tempDir('app-install-'), 'heavy.sh')
   fs.writeFileSync(heavy, '')
   assert.deepEqual(install.installCommand({ heavy, platform: 'darwin' }), { file: 'bash', list: [heavy, 'npm', 'install', '--include=dev'] })
   assert.deepEqual(install.installCommand({ heavy: '/없는/heavy.sh', platform: 'darwin' }), { file: 'npm', list: ['install', '--include=dev'] })
@@ -34,7 +35,7 @@ test('createLineWatcher: 대기는 한 번만 · 차례가 오면 알리고 그 
 })
 
 test('끊긴 설치 표시: 쓰고 · 읽고 · 지운다', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  const root = tempDir('app-install-')
   assert.equal(install.readPending(root), null)
   install.writePending(root, { at: '2026-10-30T00:00:00Z', heavy: '/h/heavy.sh', lang: 'ko' })
   assert.deepEqual(install.readPending(root), { at: '2026-10-30T00:00:00Z', heavy: '/h/heavy.sh', lang: 'ko' })
@@ -44,7 +45,7 @@ test('끊긴 설치 표시: 쓰고 · 읽고 · 지운다', () => {
 })
 
 test('다시 빌드 표시 · 켜기 반복 막기: 표시가 있을 때만 · 간격 안에는 한 번', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  const root = tempDir('app-install-')
   assert.equal(install.shouldRelaunch(root), false) // 남은 일이 없으면 다시 켜지 않는다
   install.writeRebuild(root)
   assert.equal(install.hasRebuild(root), true)
@@ -59,7 +60,7 @@ test('다시 빌드 표시 · 켜기 반복 막기: 표시가 있을 때만 · �
 })
 
 test('도우미 표시: 맞는 도우미만 true · 아닌 것은 표시를 지우고 false', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  const root = tempDir('app-install-')
   const file = path.join(root, '.dev-app', 'restart-helper.json')
   const now = Date.parse('2026-10-31T01:00:00Z')
   const helper = { startedAt: now - 1000, command: 'node /x/scripts/dev-app.js restart --after 7 --lang ko' }
@@ -89,7 +90,7 @@ test('도우미 표시: 맞는 도우미만 true · 아닌 것은 표시를 지�
 })
 
 test('도우미 표시: 지우기는 내 것만 · 진짜 ps 로 이 프로세스는 도우미가 아니다', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  const root = tempDir('app-install-')
   install.writeHelper(root, 4242)
   install.clearHelper(root, 1) // 남의 표시는 그대로
   assert.equal(fs.existsSync(path.join(root, '.dev-app', 'restart-helper.json')), true)
@@ -110,7 +111,7 @@ test('dev-app.js: 도우미 표시를 앱 띄우기 직전에 지우고 · 신�
 })
 
 test('missingModules: 켜는 데 꼭 필요한 electron · vite', () => {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-'))
+  const root = tempDir('app-install-')
   assert.deepEqual(install.missingModules(root), ['electron', 'vite'])
   for (const name of ['electron', 'vite']) {
     fs.mkdirSync(path.join(root, 'node_modules', name), { recursive: true })
@@ -140,7 +141,7 @@ test('runInstall: 넘긴 env 만 자식에게 간다', async () => {
 })
 
 test('stopInstall: 자식의 자식까지 끝나고 돌아온다', { skip: process.platform === 'win32' }, async () => {
-  const pidFile = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'app-install-stop-')), 'grandchild.pid')
+  const pidFile = path.join(tempDir('app-install-stop-'), 'grandchild.pid')
   const parent = `const { spawn } = require('node:child_process'); const child = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('node:fs').writeFileSync(${JSON.stringify(pidFile)}, String(child.pid)); setInterval(() => {}, 1000)`
   let pid
   const run = install.runInstall({ file: process.execPath, list: ['-e', parent], cwd: os.tmpdir(), onSpawn: (value) => (pid = value) })

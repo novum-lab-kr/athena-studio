@@ -4,8 +4,9 @@ const fs = require('fs')
 const os = require('os')
 const path = require('path')
 const core = require('../src/lib/core.mts')
+const { tempDir } = require('./temp-dirs')
 
-const tmp = () => fs.mkdtempSync(path.join(os.tmpdir(), 'athena-studio-'))
+const tmp = () => tempDir('athena-studio-')
 
 test('설정: 없거나 깨진 파일은 기본값', () => {
   const dir = tmp()
