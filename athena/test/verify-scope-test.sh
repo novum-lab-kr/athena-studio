@@ -169,7 +169,8 @@ RESULT="$(ATHENA_HEAVY_WAIT_SEC=12 ATHENA_HEAVY_WAIT_WHY='자리1: a · sleep �
 check "wait_ms = 기다린 초 × 1000" "$(grep -qx 'wait_ms=12000' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
 check "wait_why = 마지막 이유(= 는 : 로)" "$(grep -qx 'wait_why=자리1: a · sleep 부하 3 : x' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
 check "ms 는 줄서기를 포함하지 않는다(source 한 때부터라 12초보다 훨씬 작다)" "$([ "$(grep '^ms=' <<<"$RESULT" | cut -d= -f2)" -lt 12000 ] && echo 0 || echo 1)" "$RESULT"
-RESULT="$(fields plans/task/x.md)"
+# 바깥 검증(commit.sh)이 줄을 서다 들어오면 그 값이 물려 들어온다 — 이 단계만 지운다
+RESULT="$(unset ATHENA_HEAVY_WAIT_SEC ATHENA_HEAVY_WAIT_WHY; fields plans/task/x.md)"
 check "안 기다렸으면 wait_ms=0 · wait_why 빈 값" "$(grep -qx 'wait_ms=0' <<<"$RESULT" && grep -qx 'wait_why=' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
 RESULT="$(ATHENA_HEAVY_WAIT_SEC=abc ATHENA_HEAVY_WAIT_WHY=x fields)"
 check "숫자가 아니면 0" "$(grep -qx 'wait_ms=0' <<<"$RESULT" && echo 0 || echo 1)" "$RESULT"
