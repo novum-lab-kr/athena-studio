@@ -13,7 +13,8 @@ cleanup() {
   [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP"
 }
 trap cleanup EXIT
-mkdir -p "$TMP/bin"
+athena_test_reap "$TMP"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
+mkdir -p "$TMP/bin" "$TMP/home"
 
 # 가짜 gh — 받은 인자를 $GH_LOG 에 한 줄씩, 출력은 $GH_OUT 파일, 종료 코드는 $GH_EXIT
 cat > "$TMP/bin/gh" <<'SH'
@@ -172,12 +173,14 @@ cp "$SRC/scripts/screen-check/fake-bin/athena-studio-cli" "$TMP/bin/"
 SCREEN_LOG="$TMP/screen.log"
 : > "$SCREEN_LOG"
 PORT=$((47000 + RANDOM % 900))
-(cd "$CORE" && PATH="$TMP/bin:$PATH" GH_LOG="$TMP/gh-server.log" GH_OUT="$TMP/issues.ndjson" \
+# 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게(가짜 화면 CLI python3 가 그 HOME 에 캐시를 쓰지 않게 PYTHONDONTWRITEBYTECODE)
+(cd "$CORE" && PATH="$TMP/bin:$PATH" HOME="$TMP/home" PYTHONDONTWRITEBYTECODE=1 GH_LOG="$TMP/gh-server.log" GH_OUT="$TMP/issues.ndjson" \
   ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock \
   ATHENA_STUDIO_CLI="$TMP/bin/athena-studio-cli" ATHENA_STUDIO_ENDPOINT="$TMP/no-studio/daemon.json" \
   FAKE_SCREEN_FIXTURE="$SRC/scripts/screen-check/fixtures/studio" FAKE_SCREEN_LOG="$SCREEN_LOG" FAKE_ATHENA="$CORE" \
   ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
 SERVER_PID=$!
+athena_test_guard "$SERVER_PID"
 for _ in $(seq 1 100); do
   curl -s "http://127.0.0.1:$PORT/api/github-issues" -o "$TMP/recent.json" 2>/dev/null && grep -q '"number":102' "$TMP/recent.json" && break
   sleep 0.2

@@ -18,6 +18,7 @@ stop_board() {
 }
 cleanup() { stop_board; [ "${KEEP:-}" = 1 ] || rm -rf "$WORK"; }
 trap cleanup EXIT
+athena_test_reap "$WORK"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
 PASS=0; FAIL=0
 ok()   { PASS=$((PASS+1)); printf '  ✔ %s\n' "$1"; }
 bad()  { FAIL=$((FAIL+1)); printf '  ✖ %s\n' "$1"; [ -n "${2:-}" ] && printf '      %s\n' "$2" | head -c 600 && echo; }
@@ -163,8 +164,11 @@ check "다 정하면 delivered(답 기록)" 'A request list --all | python3 -c "
 section "결정 콘솔 [이대로 진행] → 현황판이 답을 적는다"
 printf '# 기능 Z\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-z.md
 node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
-ATHENA_BOARD_PORT=47730 node scripts/board/server.mjs >"$WORK/board.log" 2>&1 &
+# 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게
+mkdir -p "$WORK/home"
+HOME="$WORK/home" ATHENA_BOARD_PORT=47730 node scripts/board/server.mjs >"$WORK/board.log" 2>&1 &
 BOARD_PID=$!
+athena_test_guard "$BOARD_PID"
 for attempt in $(seq 1 40); do curl -sf http://127.0.0.1:47730/api/state >/dev/null && break; sleep 0.1; done
 TOKEN="$(A pack board-token | field token)"
 HDR=(-H "Origin: http://localhost:47730" -H "x-board-token: $TOKEN" -H "content-type: application/json")
