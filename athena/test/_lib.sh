@@ -24,3 +24,34 @@ if [ "${ATHENA_TEST_VERBOSE:-0}" != 1 ] && [ -z "${ATHENA_TEST_FILTERED:-}" ]; t
   [ "$athena_test_code" = 0 ] && [ -n "$athena_test_key" ] && "$athena_test_helper" record "$athena_test_tree" "$athena_test_name" "$athena_test_key" "$((SECONDS - athena_test_start))" 2>/dev/null
   exit "$athena_test_code"
 fi
+
+# 시험이 띄운 서버(현황판 등) 지키기 — 시험 셸이 SIGKILL · 시간 초과로 끝나면 EXIT trap 이 돌지 않아 서버가 ppid 1 고아로 남는다
+#   (2026-11-03 재현: board-plan-followup-test 를 SIGKILL 하면 server.mjs 가 남음 · 그런 고아 69개가 열린 파일 한도를 채워 ENFILE).
+#   시험 셸이 사라지면 그 pid 를 끈다 · 서버가 먼저 끝나면(정상 cleanup) 지킴이도 끝난다. 출력은 막는다 — 필터 파이프(awk)를 붙잡지 않게
+#   사용: 서버를 & 로 띄운 직후 athena_test_guard "$SERVER_PID"
+athena_test_guard() {
+  local owner=$$ target=$1
+  (
+    while kill -0 "$owner" 2>/dev/null && kill -0 "$target" 2>/dev/null; do sleep 1; done
+    kill "$target" 2>/dev/null
+  ) </dev/null >/dev/null 2>&1 &
+}
+
+# 전에 끊긴 같은 시험이 남긴 고아 서버 끄기 — ppid 1 · 이름 node · 작업 폴더가 같은 이름의 임시 폴더(mktemp 의 .XXXXXX 만 다른 것) 아래인 것만,
+#   확인한 pid 만 kill. 돌고 있는 같은 시험의 서버는 부모가 그 시험 셸이라(ppid 1 아님) 건드리지 않는다
+#   사용: 임시 폴더를 만든 직후 athena_test_reap "$TMP"   (TMP = mktemp -d ".../<시험 이름>.XXXXXX")
+athena_test_reap() {
+  local prefix pid ppid comm cwd
+  prefix="$(cd "$1" && pwd -P)" || return 0
+  prefix="${prefix%.*}."
+  while read -r pid ppid comm; do
+    [ "$ppid" = 1 ] || continue
+    case "$comm" in node | */node) ;; *) continue ;; esac
+    if [ -e "/proc/$pid/cwd" ]; then
+      cwd="$(readlink "/proc/$pid/cwd" 2>/dev/null)"
+    else
+      cwd="$(lsof -a -p "$pid" -d cwd -Fn 2>/dev/null | sed -n 's/^n//p')"
+    fi
+    case "$cwd" in "$prefix"*) kill "$pid" 2>/dev/null ;; esac
+  done < <(ps -axo pid=,ppid=,comm= 2>/dev/null)
+}

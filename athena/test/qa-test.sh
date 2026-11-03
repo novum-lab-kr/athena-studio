@@ -16,6 +16,7 @@ cleanup() {
   [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP"
 }
 trap cleanup EXIT
+athena_test_reap "$TMP"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
 pass() { echo "  ✔ $1"; }
 fail() { echo "  ✖ $1"; [ $# -gt 1 ] && echo "$2" | sed 's/^/      /'; FAILED=1; }
 # run.json 을 읽어 JS 식을 평가한다 — 맨 위 변수: run(가장 최근 실행), flow(이름)
@@ -188,8 +189,11 @@ mkdir -p "$TMP/bin"
 for name in claude gh; do printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/$name"; chmod +x "$TMP/bin/$name"; done
 PORT=$((47000 + RANDOM % 900))
 export ATHENA_HEAVY_LOCK="$TMP/heavy.lock"
-(cd "$CORE" && PATH="$TMP/bin:$PATH" ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
+# 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게
+mkdir -p "$TMP/home"
+(cd "$CORE" && PATH="$TMP/bin:$PATH" HOME="$TMP/home" ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
 SERVER_PID=$!
+athena_test_guard "$SERVER_PID"
 for _ in $(seq 1 60); do curl -s "http://127.0.0.1:$PORT/api/qa/flows" -o "$TMP/flows.json" 2>/dev/null && grep -q '"services"' "$TMP/flows.json" && break; sleep 0.5; done
 check_flows() {
   curl -s "http://127.0.0.1:$PORT/api/qa/flows" -o "$TMP/flows.json"

@@ -9,11 +9,18 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/athena-board-followup-test.XXXXXX")" && pwd -P)"
 SERVER_PID=''
 cleanup() {
-  [ -n "$SERVER_PID" ] && kill "$SERVER_PID" 2>/dev/null
+  [ -n "$SERVER_PID" ] && { kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null; }
+  # 서버가 따로 띄운 배우기 검토 프로세스(detached) — 잠금 안의 pid. 끝날 때까지 잠깐 기다린다(임시 폴더를 지우는 중에 대기열을 쓰지 않게)
+  local learn_pid
+  learn_pid="$(cat "$TMP/learn-queue/.watcher.lock/pid" 2>/dev/null)"
+  if [ -n "$learn_pid" ] && kill "$learn_pid" 2>/dev/null; then
+    for _ in $(seq 1 20); do kill -0 "$learn_pid" 2>/dev/null || break; sleep 0.1; done
+  fi
   [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP"
 }
 trap cleanup EXIT
-mkdir -p "$TMP/bin"
+athena_test_reap "$TMP"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
+mkdir -p "$TMP/bin" "$TMP/home"
 
 # 가짜 gh — PR 조회는 모두 머지됨, 그 밖에는 빈 목록
 cat > "$TMP/bin/gh" <<'SH'
@@ -24,6 +31,9 @@ case "$*" in
 esac
 SH
 chmod +x "$TMP/bin/gh"
+# 가짜 claude · codex(로그인 안 됨) — PR 이 머지됐다고 보면 서버가 배우기 검토(learn-review.mjs)를 띄운다. 진짜 CLI 로 검토하지 않게
+# (2026-11-03 실측: 이 시험이 /tmp 에 남긴 검토 로그 73개 중 69개가 진짜 claude 를 불렀다 — 한 번에 $0.005~0.16)
+for name in claude codex; do printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/$name"; chmod +x "$TMP/bin/$name"; done
 cp "$SRC/scripts/screen-check/fake-bin/athena-studio-cli" "$TMP/bin/"
 
 CORE="$TMP/core"
@@ -95,12 +105,15 @@ FIXTURE
 SCREEN_LOG="$TMP/screen.log"
 : > "$SCREEN_LOG"
 PORT=$((47900 + RANDOM % 90))
-(cd "$CORE" && PATH="$TMP/bin:$PATH" \
+# 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게.
+# 가짜 화면 CLI(python3)가 그 HOME 에 캐시를 쓰다 cleanup 의 rm 과 겹치지 않게 PYTHONDONTWRITEBYTECODE
+(cd "$CORE" && PATH="$TMP/bin:$PATH" HOME="$TMP/home" ATHENA_LEARN_QUEUE="$TMP/learn-queue" PYTHONDONTWRITEBYTECODE=1 \
   ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock \
   ATHENA_STUDIO_CLI="$TMP/bin/athena-studio-cli" ATHENA_STUDIO_ENDPOINT="$TMP/no-studio/daemon.json" \
   FAKE_SCREEN_FIXTURE="$TMP/fixture" FAKE_SCREEN_LOG="$SCREEN_LOG" FAKE_ATHENA="$CORE" \
   ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
 SERVER_PID=$!
+athena_test_guard "$SERVER_PID"
 for _ in $(seq 1 100); do
   grep -q '자동 완료 — 남은 빈 칸' "$SCREEN_LOG" && ls "$CORE/issues" | grep -q 'demo-old' && break
   sleep 0.2

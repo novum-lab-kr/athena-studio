@@ -16,8 +16,9 @@ cleanup() {
   [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP"
 }
 trap cleanup EXIT
+athena_test_reap "$TMP"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
 
-mkdir -p "$CORE" "$TMP/bin"
+mkdir -p "$CORE" "$TMP/bin" "$TMP/home"
 cp -R "$SRC/." "$CORE/"
 # statusline.sh 가 떨구는 모양 — 5시간 · 7일 창
 now=$(date +%s)
@@ -27,8 +28,10 @@ printf '{"at":%s,"rate_limits":{"five_hour":{"used_percentage":12.4,"resets_at":
 for name in claude gh; do printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/$name"; chmod +x "$TMP/bin/$name"; done
 
 PORT=$((47000 + RANDOM % 900))
-(cd "$CORE" && PATH="$TMP/bin:$PATH" ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
+# 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게
+(cd "$CORE" && PATH="$TMP/bin:$PATH" HOME="$TMP/home" ATHENA_BOARD_PORT=$PORT exec node scripts/board/server.mjs > "$TMP/server.log" 2>&1) &
 SERVER_PID=$!
+athena_test_guard "$SERVER_PID"
 for _ in $(seq 1 60); do
   curl -s "http://127.0.0.1:$PORT/api/state" -o "$TMP/state.json" 2>/dev/null && grep -q '"header"' "$TMP/state.json" && break
   sleep 0.5
