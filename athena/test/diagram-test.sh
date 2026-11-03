@@ -5,6 +5,7 @@ set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 node --input-type=module - "$SRC" <<'JS'
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -59,8 +60,20 @@ try {
     scaffold({ athenaRoot: source, packDir, config })
     assert.equal(readFileSync(manifest, 'utf8'), '{}')
   })
-  const { plannedLinks } = await import(pathToFileURL(join(source, 'scripts/lib/overlay.mjs')))
+  const { plannedLinks, linkOverlay } = await import(pathToFileURL(join(source, 'scripts/lib/overlay.mjs')))
   check('팩 목록·가이드·그림을 overlay에 포함', () => assert.ok(plannedLinks(root, 'legacy', join(root, 'pack')).some(link => link.at === 'docs/diagrams/sample.html')))
+  check('기존 팩을 다시 링크해도 코어 diagram 정본을 유지하고 양쪽 도구가 같은 새 규칙을 읽는다', () => {
+    put('pack/skills/local/SKILL.md', '# 팩 전용 스킬')
+    put('athena.config.json', JSON.stringify({ pack: 'legacy-pack' }))
+    cpSync(join(root, 'pack'), join(root, 'legacy-pack'), { recursive: true })
+    rmSync(join(root, 'pack'), { recursive: true })
+    const result = linkOverlay(root)
+    assert.deepEqual(result.clash, [])
+    const claude = join(root, '.claude/skills/diagram/SKILL.md')
+    assert.equal(readFileSync(claude, 'utf8'), readFileSync(join(source, '.claude/skills/diagram/SKILL.md'), 'utf8'))
+    assert.equal(realpathSync(claude), realpathSync(join(root, '.agents/skills/diagram/SKILL.md')))
+    assert.equal(realpathSync(join(root, '.agents/skills/local/SKILL.md')), realpathSync(join(root, 'pack/skills/local/SKILL.md')))
+  })
   const repo = join(root, 'repos/sample')
   mkdirSync(repo, { recursive: true })
   const git = (...args) => execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8' }).trim()
@@ -72,6 +85,26 @@ try {
   const spec = { diagram_type: 'architecture', meta: { repository: { url: 'https://example.test/sample.git', revision } }, components: [{ sources: [{ path: 'source.js', line: 1 }] }] }
   put('pack/diagrams/sample.architecture.json', JSON.stringify(spec))
   check('고정 근거와 현재 운영 ref 일치', () => { const result = run('check-diagrams.mjs', '--strict'); assert.equal(result.status, 0, result.stdout + result.stderr); assert.match(result.stdout, /sample.architecture.json/) })
+  check('근거가 최신이어도 공통 디자인 증거가 없으면 --design은 실패', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 1))
+  put('pack/diagrams/sample.archify.html', '<html><head></head><body><svg data-quality-profile="showcase"></svg></body></html>')
+  assert.equal(run('diagram-theme.mjs', '--output', join(root, 'pack/diagrams/sample.html'), join(root, 'pack/diagrams/sample.archify.html')).status, 0)
+  // 브라우저 실행 대신 해시를 가진 시험용 영수증으로 점검기의 결합만 검증한다.
+  const artifact = readFileSync(join(root, 'pack/diagrams/sample.html'))
+  const browser = { evidenceKind: 'automated-browser', status: 'pass', artifact: { sha256: createHash('sha256').update(artifact).digest('hex'), bytes: artifact.length } }
+  put('pack/diagrams/sample.visual-check.json', JSON.stringify(browser))
+  check('현재 테마 최종본과 해시가 일치하는 브라우저 증거만 인정', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 0))
+  browser.artifact.sha256 = 'stale'
+  put('pack/diagrams/sample.visual-check.json', JSON.stringify(browser))
+  check('과거 캡처의 pass 영수증을 최종본 성공으로 재사용하지 않음', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 1))
+  browser.artifact.sha256 = createHash('sha256').update(artifact).digest('hex')
+  browser.status = 'skipped'
+  put('pack/diagrams/sample.visual-check.json', JSON.stringify(browser))
+  check('브라우저 미실행을 디자인 통과로 보고하지 않음', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 1))
+  browser.status = 'pass'
+  put('pack/diagrams/sample.visual-check.json', JSON.stringify(browser))
+  put('pack/diagrams/sample.sequence.json', JSON.stringify({ diagram_type: 'sequence' }))
+  check('sequence는 구조 HTML의 증거를 대신 쓰지 않고 별도 최종 HTML을 요구한다', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 1))
+  rmSync(join(root, 'pack/diagrams/sample.sequence.json'))
   put('pack/pack.json', JSON.stringify({ repos: [{ name: 'sample', branch: 'main' }] }))
   check('remote가 없는 팩은 실제 origin으로 정상 근거를 찾는다', () => { const result = run('check-diagrams.mjs', '--strict'); assert.equal(result.status, 0, result.stdout + result.stderr) })
   put('repos/sample/source.js', 'export const changed = true\n'); git('commit', '-qam', '근거 변경'); git('update-ref', 'refs/remotes/origin/main', 'HEAD')
