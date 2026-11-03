@@ -85,13 +85,17 @@ export const nameLeadPane = (title, plan = {}) => {
 
 // 이 명령을 부른 pane — 결정 콘솔 · 요청 · QA 런이 답을 돌려보낼 곳(GitHub #107).
 // pane current 는 '포커스된 pane'(사용자가 보고 있는 다른 pane 일 수 있다)이라 먼저 self(부른 pane)를 보고,
-// 화면 밖(self 의 pane_id 가 빔 — 현황판 서버 등)일 때만 지금처럼 pane current 로 넘어간다. options 는 screenSync 에 그대로(stdio 등)
+// 화면 밖(self.inside === false — 현황판 서버 등)일 때만 pane current 로 넘어간다. options 는 screenSync 에 그대로(stdio 등)
 export const callerPane = (options = {}) => {
   try {
-    const paneId = screenSync(['self'], { timeout: 5000, ...options }).pane_id
-    if (paneId) return paneId
+    const self = screenSync(['self'], { timeout: 5000, ...options })
+    if (self.pane_id) {
+      return screenSync(['pane', 'get', self.pane_id], { timeout: 5000, ...options }).pane?.id === self.pane_id ? self.pane_id : ''
+    }
+    // 화면 밖임을 확인한 경우에만 기존 포커스 대안을 쓴다. self 실패·pane 안의 빈 ID 는 다른 대화로 보내지 않는다.
+    if (self.inside !== false) return ''
   } catch {
-    // self 를 못 부르면 pane current 로 넘어간다
+    return ''
   }
   try {
     return screenSync(['pane', 'current'], options).pane?.id ?? ''

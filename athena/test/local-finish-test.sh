@@ -14,7 +14,8 @@ cat > "$ATH/scripts/screen" <<SCRIPT
 #!/bin/sh
 case "\$1" in
   self) echo '{"pane_id":"pX"}' ;;
-  pane) echo "\$@" >> "$SENT" ;;
+  pane)
+    if [ "\$2" = get ]; then echo '{"pane":{"id":"pX"}}'; else echo "\$@" >> "$SENT"; fi ;;
 esac
 SCRIPT
 chmod +x "$ATH/scripts/screen"

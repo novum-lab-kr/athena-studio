@@ -86,6 +86,10 @@ mkdir -p "$WORK/bin"
 cat > "$WORK/bin/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
 echo "$*" >> "$FAKE_LOG"
+if [ "$1 $2" = "pane get" ]; then
+  [ "$3" = pgone ] && exit 1
+  printf '{"pane":{"id":"%s"}}\n' "$3"
+fi
 [ "$1 $2 $3" = "pane run pgone" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
 exit 0
 CLIEOF
@@ -153,17 +157,17 @@ section "결정 콘솔(plan-html.mjs)"
 mkdir -p plans/feature
 printf '# 기능\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-y.md
 printf '{"title":"기능 Y","type":"feature","scope":"-","summary":"-","decisions":[{"id":"D1","title":"하나","type":"single","required":true,"options":[{"label":"가"},{"label":"나"}]},{"id":"D2","title":"둘","type":"single","required":true,"options":[{"label":"다"}]}]}' > "$WORK/plan.json"
-node scripts/plan-html.mjs plans/feature/20261021-y.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-y.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
 R="$(A request list)"
 check "안 정한 결정 → decision 요청(키 plan:<경로> · html · pane)" 'echo "$R" | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-y.md\"]; sys.exit(0 if len(r)==1 and r[0][\"kind\"]==\"decision\" and r[0][\"links\"][\"html\"]==\"plans/feature/20261021-y.html\" and r[0][\"pane\"]==\"p9\" else 1)"' "$R"
-node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D1='가' > /dev/null 2>&1
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D1='가' > /dev/null 2>&1
 check "하나만 정하면 열린 채" 'A request list | grep -q "plan:plans/feature/20261021-y.md"'
-node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D2='다' > /dev/null 2>&1
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-y.md --decide D2='다' > /dev/null 2>&1
 check "다 정하면 delivered(답 기록)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-y.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and \"D1=가\" in r[-1][\"answer\"][\"choice\"] else 1)"'
 
 section "결정 콘솔 [이대로 진행] → 현황판이 답을 적는다"
 printf '# 기능 Z\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-z.md
-node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-z.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
 # 서버는 임시 HOME 으로 — 진짜 ~/.claude/projects · ~/.codex/sessions 대화 기록을 읽지 않게
 mkdir -p "$WORK/home"
 HOME="$WORK/home" ATHENA_BOARD_PORT=47730 node scripts/board/server.mjs >"$WORK/board.log" 2>&1 &
@@ -177,7 +181,7 @@ R="$(A request list)"
 check "pane 이 없어 보내지는 못해도(400) 답은 적힘(answered · by board)" '[ "$CODE" = 400 ] && echo "$R" | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[0][\"state\"]==\"answered\" and r[0][\"answer\"][\"by\"]==\"board\" else 1)"' "$CODE $R"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"../etc/x.md","text":"x"}' http://127.0.0.1:47730/api/action)"
 check "plans/ 밖 경로는 요청을 건드리지 않는다" '[ "$CODE" = 400 ]'
-node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
 check "확정하면 delivered(콘솔 답은 그대로)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and r[-1][\"answer\"][\"by\"]==\"board\" else 1)"'
 
 section "사건 기록(docs/events.md)"

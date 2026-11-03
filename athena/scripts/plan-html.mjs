@@ -224,21 +224,36 @@ const previousPane = (() => {
 })()
 // 리뷰 뒤 결정(--add)은 그 결정을 덧붙인 pane(작업 에이전트)으로 보낸다 — 처음 계획서를 만든 아테나가 아니라
 const savedPane = plan.leadPane || plan.hermesPane
-// 저장된 pane 이 지금 화면에 없으면 버린다 — 화면(스튜디오 데몬 등)을 다시 띄우면 옛 id 가 사라져 [이대로 진행] 이 보낼 곳을 못 찾았다.
-// 지금 pane 을 모르면(화면 계층을 못 부름) 확인할 수 없으니 그대로 둔다
-const paneExists = (id) => {
+// not_found는 부재가 확인된 것이고, 연결 실패·시간 초과는 확인 불가다(R1).
+// 저장값·명시값은 확인 불가일 때 유지하되 경고한다. 부른 pane의 검증 실패는 callerPane에서 여전히 거부한다.
+const paneState = (id) => {
   try {
-    return screenSync(['pane', 'get', id]).pane?.id === id
-  } catch {
-    return false
+    return screenSync(['pane', 'get', id], { timeout: 5000, stdio: ['ignore', 'pipe', 'pipe'] }).pane?.id === id ? 'found' : 'unknown'
+  } catch (error) {
+    try {
+      const failure = JSON.parse(String(error.stderr ?? '').trim().split('\n').at(-1) ?? '')
+      if (failure?.error === 'not_found') return 'missing'
+    } catch { /* 구조화된 오류가 아니면 존재를 확인하지 못한 것이다 */ }
+    return 'unknown'
   }
 }
 // 지금 pane — 부른 pane(self) · 화면 밖이면 포커스된 pane(lib/screen.mjs callerPane)
-const nowPane = callerPane()
-const usable = (id) => Boolean(id) && (!nowPane || id === nowPane || paneExists(id))
-plan.leadPane = addPath
-  ? option('pane') || nowPane || savedPane || previousPane
-  : option('pane') || [savedPane, previousPane].find(usable) || nowPane
+const nowPane = option('pane') ? '' : callerPane({ stdio: ['ignore', 'pipe', 'ignore'] })
+const usable = (id) => {
+  if (!id) return false
+  const state = paneState(id)
+  if (state === 'unknown') console.error(`⚠️  경고: pane ${id}의 존재를 확인하지 못했다 — 저장값·명시값은 유지한다. 전송 실패 시 프롬프트를 복사한다`)
+  return state !== 'missing'
+}
+const explicitPane = option('pane')
+if (explicitPane && !usable(explicitPane)) {
+  console.error(`⚠️  보낼 pane 을 확인하지 못했다: ${explicitPane} — 대상 pane 을 확인해 --pane 으로 지정하거나 프롬프트를 복사한다`)
+  process.exit(1)
+}
+// --add 는 지금 결정을 덧붙인 대화가 대상이다. 그 대화를 모르면 옛 작성자에게 보내지 않는다.
+const candidates = addPath ? [nowPane] : [savedPane, previousPane, nowPane]
+plan.leadPane = explicitPane || candidates.find(usable) || ''
+if (!plan.leadPane) console.error('⚠️  보낼 pane 을 확인하지 못했다 — 콘솔의 [프롬프트로 복사]를 사용하거나 확인한 대상 pane 을 --pane 으로 지정한다')
 // 틀을 늘 지금 템플릿으로 다시 쓰므로 옛 이름(hermesPane)을 읽는 콘솔 코드는 남지 않는다
 delete plan.hermesPane
 

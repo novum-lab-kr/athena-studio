@@ -160,8 +160,8 @@ sc_studio_compact() {
 sc_studio_plan_html() { step studio "${IN_STUDIO[@]}" -- node scripts/plan-html.mjs plans/refactor/20261003-lead.md --add "$WORK/decisions.json"; }
 # 부른 pane(p2)과 포커스된 pane(p1 — fixture pane_current)이 다를 때 — 보낼 pane · 요청 pane 은 부른 p2 여야 한다(GitHub #107)
 sc_studio_caller_pane() {
-  step studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add "$WORK/decisions.json"
-  step studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/athena.mjs request open --kind question --title 검사
+  step studio-p2,studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/plan-html.mjs plans/task/20261001-fe-test.md --add "$WORK/decisions.json"
+  step studio-p2,studio "${IN_STUDIO[@]}" ATHENA_STUDIO_PANE_ID=p2 -- node scripts/athena.mjs request open --kind question --title 검사
 }
 sc_studio_server() { board_server studio p2 p8; }   # Studio pane 환경(IN)으로 띄운다
 
