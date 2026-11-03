@@ -61,7 +61,8 @@ const firstSection = (sections, ...names) => names.map((name) => sections[name])
 // 1단계 형식(본문 한 줄 + 근거)도 읽는다
 const view = (id, text, extra = {}) => {
   const { meta, sections, body } = parse(text)
-  const rule = firstSection(sections, '공책에 넣을 문장') || sections._intro?.split('\n')[0] || ''
+  // 정비 후보(target: guard:<영역>#<이름>)는 공책 문장 대신 '정비할 곳'(무엇을 어디에 박을지)
+  const rule = firstSection(sections, '공책에 넣을 문장', '정비할 곳') || sections._intro?.split('\n')[0] || ''
   return {
     id,
     title: meta.title || basename(id, '.md'),
@@ -71,6 +72,7 @@ const view = (id, text, extra = {}) => {
     signal: meta.signal || '',
     basis: meta.basis || '',
     skill: (meta.target || '').startsWith('skill:'),
+    guard: (meta.target || '').startsWith('guard:'),
     scope: meta.scope && meta.scope !== 'common' ? meta.scope : '',
     tidy: meta.kind === 'tidy' ? tidyData(text) : null,
     explain: firstSection(sections, '무엇을 배웠나') || (sections._intro && sections._intro !== rule ? sections._intro : ''),
@@ -248,6 +250,7 @@ export const applyLearn = (id, edits = {}) => {
   if (!path || !isLearnIssue(path)) return { error: '학습 후보를 찾지 못했어요' }
   const item = view(id, readFileSync(path, 'utf8'))
   if (item.skill) return { error: '스킬 후보는 [아테나에게 맡기기]로 — 아테나가 스킬 파일을 만든다' }
+  if (item.guard) return { error: '정비 후보는 [아테나에게 정비 맡기기]로 — 공책이 아니라 훅 · 검증 · 테스트에 박는다' }
   Object.assign(item, Object.fromEntries(Object.entries(edits).filter(([key, value]) => ['title', 'explain', 'why', 'rule'].includes(key) && typeof value === 'string' && value.trim())))
   if (!item.rule.trim()) return { error: '공책에 넣을 문장이 비어 있어요' }
   const notebook = notebookPath(item.target)

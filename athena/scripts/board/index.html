@@ -1220,7 +1220,11 @@
   // ── 학습 탭 — 학습 후보(넣기·고쳐서 넣기·버리기)와 학습한 내용(수정·삭제). 누를 때만 읽는다
   const BASIS = { code: '근거: 코드', run: '근거: 실행 결과', 'user-said': '근거: 사용자 말' };
   const SIGNAL = { done: '작업 끝', correction: '사용자 교정', 'repeat-error': '반복 오류', review: '배우기 검토자', tidy: '공책 점검' };
-  const areaOf = (item) => item.skill ? `스킬 ${item.target.slice(6)}` : (item.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, '').replace(/\.md$/, '') || '?');
+  const areaOf = (item) => {
+    if (item.skill) return `스킬 ${item.target.slice(6)}`;
+    if (item.guard) return `정비 ${item.target.slice(6)}`;
+    return (item.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, '').replace(/\.md$/, '') || '?');
+  };
   const signalOf = (item) => SIGNAL[item.signal] || SIGNAL[(item.source.match(/·\s*([\w-]+)\)\s*$/) || [])[1]] || '';
   let learnData = { candidates: [], learned: [] };
   const learnField = (key, label, value, editing, rows) => editing
@@ -1251,14 +1255,25 @@
       <div class="actions">${split.length ? '<button class="btn primary" data-act="tidy-split">🧹 아테나에게 나누기 맡기기</button>' : ''}<button class="btn" data-act="discard">후보 닫기</button></div>
     </div>`;
   };
+  const learnIcon = (item) => {
+    if (item.skill) return '🛠';
+    if (item.guard) return '🔧';
+    return '📚';
+  };
+  // 정비 후보(target: guard:<영역>#<이름>)는 공책 문장 대신 정비할 곳을 보인다 — learning.md 1-2
+  const ruleView = (item) => item.guard
+    ? `<div><div class="label">정비할 곳 — 공책 대신 여기에 박아 막는다</div><div class="rule">${esc(item.rule)}</div></div>`
+    : `<div><div class="label">공책에 들어갈 문장 ${item.strengthen ? '— 기존 줄을 고친다' : ''}</div><div class="rule">${esc(item.rule)}</div>${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.original ? `<div class="where">고치기 전 줄: ${esc(item.original)}</div>` : ''}</div>`;
   const learnCard = (item, mode, editing) => {
     if (mode === 'candidate' && item.tidy) return tidyCard(item);
-    const pills = `<span class="pill ${item.skill ? 'learn-skill' : 'learn-area'}">${item.skill ? '🛠' : '📚'} ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="근거 종류">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}${item.scope ? `<span class="pill" title="이 화면(코드 폴더)을 만질 때만 걸리는 함정">🖥 ${esc(item.scope)}</span>` : ''}<span class="pill">${esc(item.applied || item.created || '')}</span>`;
+    const icon = learnIcon(item);
+    const pills = `<span class="pill ${item.skill || item.guard ? 'learn-skill' : 'learn-area'}">${icon} ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="근거 종류">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}${item.scope ? `<span class="pill" title="이 화면(코드 폴더)을 만질 때만 걸리는 함정">🖥 ${esc(item.scope)}</span>` : ''}<span class="pill">${esc(item.applied || item.created || '')}</span>`;
     const ruleBox = editing
       ? learnField('rule', '공책에 넣을 문장 (에이전트가 읽는 한 줄)', item.rule, true, 2)
-      : `<div><div class="label">공책에 들어갈 문장 ${item.strengthen ? '— 기존 줄을 고친다' : ''}</div><div class="rule">${esc(item.rule)}</div>${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.original ? `<div class="where">고치기 전 줄: ${esc(item.original)}</div>` : ''}</div>`;
+      : ruleView(item);
     let buttons;
     if (editing) buttons = `<button class="btn primary" data-act="${mode === 'candidate' ? 'apply' : 'save'}">${mode === 'candidate' ? '고친 대로 넣기' : '저장'}</button><button class="btn" data-act="cancel">취소</button>`;
+    else if (mode === 'candidate' && item.guard) buttons = `<button class="btn primary" data-act="guard">🔧 아테나에게 정비 맡기기</button><button class="btn danger" data-act="discard">버리기</button>`;
     else if (mode === 'candidate' && item.skill) buttons = `<button class="btn primary" data-act="skill">🛠 아테나에게 스킬 만들기 맡기기</button><button class="btn danger" data-act="discard">버리기</button>`;
     else if (mode === 'candidate') buttons = `<button class="btn primary" data-act="apply">넣기</button><button class="btn" data-act="edit">고쳐서 넣기</button><button class="btn danger" data-act="discard">버리기</button>`;
     else buttons = `<button class="btn" data-act="edit">수정</button><button class="btn danger" data-act="remove">삭제</button>`;
@@ -1486,10 +1501,11 @@
     }
     if (act === 'discard' && !confirm(card.querySelector('[data-act="tidy-split"], [data-act="tidy-remove"]') ? '이 정리 후보를 닫을까요? (남은 줄은 그대로 두고 후보만 휴지통으로 — 다음 점검 때 다시 올라올 수 있어요)' : '이 학습 후보를 버릴까요? (휴지통으로 — 되살릴 수 있어요)')) return;
     if (act === 'remove' && !confirm('이 학습을 공책에서 뺄까요? (기록은 휴지통으로 — 되살릴 수 있어요)')) return;
-    const path = { apply: '/api/learn-apply', save: '/api/learn-edit', discard: '/api/learn-discard', remove: '/api/learn-remove', skill: '/api/hermes-new', 'tidy-split': '/api/hermes-new' }[act];
-    // 아테나 pane 에 보낼 지시 — 스킬 만들기·공책 나누기
+    const path = { apply: '/api/learn-apply', save: '/api/learn-edit', discard: '/api/learn-discard', remove: '/api/learn-remove', skill: '/api/hermes-new', guard: '/api/hermes-new', 'tidy-split': '/api/hermes-new' }[act];
+    // 아테나 pane 에 보낼 지시 — 스킬 만들기·정비·공책 나누기
     const hermesText = {
       skill: `학습 후보 ${id} 의 스킬 후보로 스킬을 만들어 주세요 — docs/extending.md "학습으로 스킬 만들기" 틀, 기존 스킬에 넣을 수 있으면 그쪽으로`,
+      guard: `학습 후보 ${id} 의 "정비할 곳" 대로 같은 실수를 구조 · 훅 · 검증 스크립트 · 테스트로 막아 주세요 — docs/knowledge/common/learning.md 1-2 (새 검사는 그 실수를 되살렸을 때 실제로 실패하는지 확인 · 그 레포 작업이면 담당 에이전트에게 맡기기). 막고 나면 이 후보 이슈의 status 를 done 으로 바꿔 주세요`,
       'tidy-split': `공책 정리 후보 ${id} 의 "나눌까요" 대로 공책을 나눠 주세요 — docs/knowledge/common/learning.md 7-2 (그 화면 줄만 gotchas/<폴더>.md 로 옮기기만 · 문장·학습 표시는 그대로 · gotchas.md 맨 위 화면 목차). 끝나면 node scripts/gotchas-check.mjs --write 로 후보를 닫아 주세요`,
     }[act];
     const body = hermesText ? { id, text: hermesText } : { id, edits: card.querySelector('[data-k]') ? edits() : {} };
