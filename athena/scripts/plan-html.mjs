@@ -257,6 +257,7 @@ if (!plan.leadPane) console.error('⚠️  보낼 pane 을 확인하지 못했�
 // 틀을 늘 지금 템플릿으로 다시 쓰므로 옛 이름(hermesPane)을 읽는 콘솔 코드는 남지 않는다
 delete plan.hermesPane
 
+// PLAN 블록은 JSON 으로 쓴다 — 현황판이 /api/action 에서 이 블록의 결정 id 를 JSON 으로 읽어 콘솔 판과 비교한다(board/server.mjs planDecisionIds)
 // PLAN 안의 < 는 \u003c 로 — 문자열에 </script> 가 있어도 블록이 끊기지 않게
 const planJson = JSON.stringify(plan, null, 2).replace(/</g, '\\u003c')
 body = body.replace(planBlock, (_, open, __, close) => `${open}const PLAN = ${planJson}\n${close}`)

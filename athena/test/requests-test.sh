@@ -181,6 +181,15 @@ R="$(A request list)"
 check "pane 이 없어 보내지는 못해도(400) 답은 적힘(answered · by board)" '[ "$CODE" = 400 ] && echo "$R" | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[0][\"state\"]==\"answered\" and r[0][\"answer\"][\"by\"]==\"board\" else 1)"' "$CODE $R"
 CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"../etc/x.md","text":"x"}' http://127.0.0.1:47730/api/action)"
 check "plans/ 밖 경로는 요청을 건드리지 않는다" '[ "$CODE" = 400 ]'
+# 낡은 콘솔 — 콘솔을 연 뒤 결정이 더해졌으면(콘솔 판 D1 · 지금 D1 · D2) 받지 않고 요청도 닫지 않는다
+printf '# 기능 W\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-w.md
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-w.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+wstate() { A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-w.md\"]; print(r[-1][\"state\"] if r else \"\")"; }
+OUT="$(curl -s -w '\n%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-w.md","decisions":["D1"],"text":"[작업계획서 결정사항 확정] 기능 W"}' http://127.0.0.1:47730/api/action)"
+check "낡은 콘솔(결정 판이 다름) → 409 · stale · 계획서가 바뀌었어요" '[ "$(echo "$OUT" | tail -1)" = 409 ] && echo "$OUT" | head -1 | grep -q "\"stale\":true" && echo "$OUT" | head -1 | grep -q "계획서가 바뀌었어요"' "$OUT"
+check "낡은 콘솔의 답으로는 요청을 닫지 않는다(open 그대로)" '[ "$(wstate)" = open ]' "$(wstate)"
+OUT="$(curl -s -w '\n%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-w.md","decisions":["D2","D1"],"text":"[작업계획서 결정사항 확정] 기능 W"}' http://127.0.0.1:47730/api/action)"
+check "판이 같으면(순서 무관) 받아 답을 적는다(pane 이 없어 400 · answered)" '[ "$(echo "$OUT" | tail -1)" = 400 ] && [ "$(wstate)" = answered ]' "$OUT $(wstate)"
 env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
 check "확정하면 delivered(콘솔 답은 그대로)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and r[-1][\"answer\"][\"by\"]==\"board\" else 1)"'
 

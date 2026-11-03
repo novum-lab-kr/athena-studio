@@ -440,6 +440,7 @@ const PLAN = {
       statusQueued: '<b>{pane} 에 질문 창이 떠 있어요.</b> 그 창에 답하면 이어서 넣어요.',
       statusError: '{error} — 복사해서 {pane} pane 에 붙여넣어 주세요.', paneFallback: '담당',
       statusAllPicked: '<b>모두 골랐어요.</b> {pane} pane 에 보냅니다.',
+      statusStale: '<b>계획서가 바뀌었어요.</b> 새로 고쳐 주세요.',
       statusLeft: '필수 <b>{count}개</b> 남음 · ', jumpTo: '{title}로 이동',
       barLeft: '<b>결정 대기</b> · 필수 {count}개를 고르고 [이대로 진행]',
       barAllPicked: '<b>결정 대기</b> · 다 골랐어요 — 아래 [이대로 진행] 으로 보내 주세요',
@@ -461,6 +462,7 @@ const PLAN = {
       statusQueued: '<b>{pane} is showing a question.</b> This is sent right after it is answered.',
       statusError: '{error} — copy it and paste into the {pane} pane.', paneFallback: 'owner',
       statusAllPicked: '<b>All picked.</b> Sending to the {pane} pane.',
+      statusStale: '<b>The plan has changed.</b> Please reload this page.',
       statusLeft: '<b>{count}</b> required left · ', jumpTo: 'Go to {title}',
       barLeft: '<b>Waiting for decisions</b> · pick {count} required, then [Proceed]',
       barAllPicked: '<b>Waiting for decisions</b> · all picked — send with [Proceed] below',
@@ -482,6 +484,7 @@ const PLAN = {
       statusQueued: '<b>{pane} に質問が表示されています。</b> その質問に答えると続けて送ります。',
       statusError: '{error} — コピーして {pane} pane に貼り付けてください。', paneFallback: '担当',
       statusAllPicked: '<b>すべて選びました。</b> {pane} pane に送ります。',
+      statusStale: '<b>計画書が変わりました。</b> 再読み込みしてください。',
       statusLeft: '必須 残り<b>{count}件</b> · ', jumpTo: '{title} へ移動',
       barLeft: '<b>決定待ち</b> · 必須 {count}件を選んで [この内容で進める]',
       barAllPicked: '<b>決定待ち</b> · すべて選びました — 下の [この内容で進める] で送ってください',
@@ -503,6 +506,7 @@ const PLAN = {
       statusQueued: '<b>{pane} 正在显示一个问题。</b> 回答后会接着发送。',
       statusError: '{error} — 请复制后粘贴到 {pane} pane。', paneFallback: '负责',
       statusAllPicked: '<b>都选好了。</b> 将发送到 {pane} pane。',
+      statusStale: '<b>计划书已更改。</b> 请刷新页面。',
       statusLeft: '必选还剩 <b>{count} 个</b> · ', jumpTo: '前往 {title}',
       barLeft: '<b>等待决定</b> · 选好 {count} 个必选项后点 [按此进行]',
       barAllPicked: '<b>等待决定</b> · 都选好了 — 用下方 [按此进行] 发送',
@@ -686,7 +690,8 @@ const PLAN = {
       (required.length ? t('progressRequired', { done: required.length - left.length, total: required.length }) : '') +
       (required.length && optional ? ' · ' : '') + (optional ? t('progressOptional', { count: optional }) : '');
     const status = document.getElementById('status');
-    if (sent) status.innerHTML = t(queued ? 'statusQueued' : 'statusSent', { pane: escapeText(PLAN.leadPane) });
+    if (stale) status.innerHTML = t('statusStale');
+    else if (sent) status.innerHTML = t(queued ? 'statusQueued' : 'statusSent', { pane: escapeText(PLAN.leadPane) });
     else if (sendError) status.innerHTML = t('statusError', { error: escapeText(sendError), pane: escapeText(PLAN.leadPane || t('paneFallback')) });
     else if (left.length === 0) status.innerHTML = t('statusAllPicked', { pane: escapeText(PLAN.leadPane) });
     else {
@@ -697,12 +702,12 @@ const PLAN = {
       status.appendChild(link);
     }
     if (!allConfirmed()) {
-      document.getElementById('statusbar-text').innerHTML = left.length
+      document.getElementById('statusbar-text').innerHTML = stale ? t('statusStale') : left.length
         ? t('barLeft', { count: left.length })
         : t('barAllPicked');
     }
-    document.getElementById('btn-copy').disabled = left.length > 0;
-    document.getElementById('btn-send').disabled = left.length > 0 || sent || sending;
+    document.getElementById('btn-copy').disabled = left.length > 0 || stale;
+    document.getElementById('btn-send').disabled = left.length > 0 || sent || sending || stale;
     document.getElementById('preview').textContent = buildPrompt();
   }
 
@@ -865,6 +870,7 @@ const PLAN = {
   let queued = false; // 현황판이 받았지만 pane 에 질문 창이 떠 있어 닫히면 넣는다(GitHub #100)
   let sending = false;
   let sendError = '';
+  let stale = false; // 콘솔을 연 뒤 계획서 결정이 바뀌었다 — 새로 고쳐야 보낼 수 있다
   const boardToken = window.ATHENA_BOARD_TOKEN || '';
   function fallbackToCopy(reason) {
     sendError = reason;
@@ -882,9 +888,14 @@ const PLAN = {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-Board-Token': boardToken },
         // plan — 현황판이 이 계획서의 결정 요청에 답을 적는다(scripts/lib/requests.mjs)
-        body: JSON.stringify({ pane: PLAN.leadPane, plan: PLAN.mdFile, text: buildPrompt() }),
+        // decisions — 이 콘솔의 판(보여 준 결정 id). 그사이 결정이 바뀌었으면 현황판이 409 stale 로 돌려준다
+        body: JSON.stringify({ pane: PLAN.leadPane, plan: PLAN.mdFile, decisions: PLAN.decisions.map((dec) => dec.id), text: buildPrompt() }),
       });
       const result = await response.json().catch(() => ({}));
+      if (response.status === 409 && result.stale) {
+        stale = true;
+        return;
+      }
       if (!response.ok) throw new Error(result.error || t('sendFailed') + ' (' + response.status + ')');
       sent = true;
       queued = Boolean(result.queued);
