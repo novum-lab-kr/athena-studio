@@ -100,8 +100,19 @@ test('팩 명령 입구 — 밖으로 내보내는 runCore 는 문을 기다리�
   assert.match(runner, /const runPack = \(args: string\[\], options: RunCoreOptions\) => runCore\(/)
   // 업데이트 · prepare 의 코어 명령은 문을 거치지 않는다(거치면 자기 자신을 기다려 멈춘다)
   assert.doesNotMatch(runner, /runCore: \(argv, options\) => runCore\(/)
-  assert.equal((runner.match(/runCore: \(argv, options\) => runCoreRaw\(/g) || []).length, 2)
+  // 켤 때 준비 · 켤 때 업데이트 · 건너뛴 본체 다시 올리기
+  assert.equal((runner.match(/runCore: \(argv, options\) => runCoreRaw\(/g) || []).length, 3)
   assert.match(runner, /updateGate\.run\(/)
+})
+
+test('다시 올리기가 본체별 결과 없이 끝나면 대기를 남기고 이유가 붙은 실패 줄로 알린다', () => {
+  const runner = read('main/core-runner.mts')
+  // 대기는 pendingAfterRetry 로만 바꾸고(본체별 결과가 없으면 남긴다) · 알림은 그 failure 로 맞춘 결과로
+  assert.match(runner, /const next = studioHome\.pendingAfterRetry\(pending, /)
+  assert.match(runner, /coreUpdateNotice = \{ \.\.\.outcome, result: failure, summary: studioHome\.summarizeUpdate\(failure\) \}/)
+  // 팝업 줄은 같은 판단(updateFailure)으로 notMoved — null · bodies 누락도 빈 팝업이 아니다
+  assert.match(runner, /studioHome\.updateFailure\(notice\.result/)
+  assert.match(runner, /if \(failure\) rows\.push\(\{ kind: 'notMoved', params: \{ reason: failure\.error \}/)
 })
 
 test('현황판 · 새 에이전트 · 자동 따라잡기 입구가 문을 본다', () => {

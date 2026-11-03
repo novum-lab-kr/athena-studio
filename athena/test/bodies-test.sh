@@ -393,6 +393,12 @@ check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "잠금이 상한 안에 풀림 → 기다린 뒤 올림 · B 는 C3H" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
 wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
+# 이미 대상 커밋인 본체는 바빠도 기다리지 않고 same — 앱이 건너뛴 본체만 다시 올리는 update 가 이 본체 때문에 막히지 않게
+mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
+START=$(date +%s)
+R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
+check "이미 대상(C3H)인 B 는 잠금이 있어도 기다리지 않고 same" '[ "$(echo "$R" | field bodies.globex.status)" = same ] && [ $(( $(date +%s) - START )) -lt 10 ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
+kill "$H" 2>/dev/null; wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
 
 C3C="$C3H"   # 아래 데이터 형식 절은 B 의 마지막 커밋을 C3C 로 본다
 

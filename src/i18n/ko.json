@@ -98,6 +98,8 @@
   "coreUpdate.kind.fixed": "수정",
   "coreUpdate.more": "외 {count}개 더 보기",
   "coreUpdate.row.skipped": "이번에 건너뛴 본체예요. 앱을 다시 켜거나 그 팩을 열 때 따라잡아요.",
+  "coreUpdate.row.waiting": "작업 중이라 미뤄 둔 본체예요. 그 작업이 끝나면 앱이 알아서 새 코어로 바꿔요.",
+  "coreUpdate.row.caughtUp": "미뤄 둔 본체도 새 코어로 바꿨어요.",
   "coreUpdate.row.working": "일하던 세션 {count}개도 바로 올렸어요.",
   "coreUpdate.row.backedUp": "고쳐 둔 코어 파일은 백업하고 새 코어로 바꿨어요.",
   "coreUpdate.row.failed": "새 코어로 바꾸지 못한 본체가 있어요.",
