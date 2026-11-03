@@ -1,9 +1,8 @@
 # Athena — 프론트·백엔드 에이전트 팀 워크스페이스
 
-Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴더에서 `claude` 를 켜면 **아테나**가 되어, 요청을 받아 어느 레포 일인지 고르고 → 계획서를 쓰고 → 담당 FE 에이전트에게 맡기고 → 리뷰까지 받아 보고한다.
+Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴더에서 `claude` 또는 `codex` 를 켜면 **아테나**가 되어, 요청을 받아 어느 레포 일인지 고르고 → 계획서를 쓰고 → 담당 FE 에이전트에게 맡기고 → 리뷰까지 받아 보고한다.
 
 > 처음이면 **`ONBOARDING.md`**(화면: `/guide 시작하기`) · 그림으로 보는 사용법은 `docs/playbook.html`(`/guide 열기`)
-> Nous Research 의 오픈소스 Hermes Agent 와는 다른 것이다(예전 이름 "헤르메스"가 같았을 뿐) — 따로 설치하지 않는다.
 
 ## 한눈에
 
@@ -54,7 +53,11 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
 
 - 팩은 앱의 팩 메뉴(`▣ <팩> ▾`)·시작 화면에서 만들거나(새 회사) 가져온다(압축 파일 · 팩 폴더 · git 레포)
 - 창의 아테나 pane 에서 `claude`(또는 `codex`)를 켜면 화면 세팅 → 팩이 없으면 첫 실행(/setup)이 저절로 시작된다 · 레포 연결도 자동
+- 설치·로그인된 도구가 하나면 바로 쓰고, 둘이면 처음 한 번 주 도구를 골라 본체별로 기억한다(나머지는 부 도구). 아테나 pane 에서 다른 도구를 켜면 주 도구도 바뀐다. 위임은 주 도구를 따르며 Claude · Codex 모두 레포 workspace 의 별도 pane 에 뜬다
+- Codex 보호 훅은 `/hooks` 에서 신뢰를 확인한다. 첫 Bash 명령만 검사하며 `write_stdin` 후속 입력은 검사하지 않는다
 - 코어 업데이트는 앱과 함께 온다 — 새 앱을 켜면 `bin/athena update --from <번들>` 로 본체마다 맞춘다(일하는 본체는 건너뛴다)
+
+명령 표는 Claude Code 의 `/명령` 기준이며, Codex 에서는 `$setup` · `$call` · `$guide` 등 같은 스킬이나 자연어로 요청한다. 질문·허락 대기는 Studio [작업] 팝업에 뜬다 — 질문은 팝업에서 답하고, 허락은 [pane 으로 가기] 뒤 원래 창에서 고른다. 같은 컴퓨터에서 두 도구의 대화를 재개하며, Codex 대화를 다른 컴퓨터로 옮겨 이어 하기는 아직 안 됨.
 
 | 이렇게 하면 | 일어나는 일 |
 |---|---|
@@ -84,7 +87,7 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
                                        다음 작업이 시작 전에 읽는다
 ```
 
-다시 마주치고 · 모르면 실제로 잘못되고 · 코드만 봐서는 모르는 **코드 함정**만, 근거가 코드·실행 결과일 때만. 취향은 공용 공책에 넣지 않는다(Claude 메모리 몫). 기준 정본 `docs/knowledge/common/learning.md` · 채점 `node scripts/learn-eval.mjs`
+다시 마주치고 · 모르면 실제로 잘못되고 · 코드만 봐서는 모르는 **코드 함정**만, 근거가 코드·실행 결과일 때만. 취향은 공용 공책에 넣지 않는다(Claude · Codex 개인 메모리 몫). 현황판 [학습] → [개인 메모리]에서 최신 날짜순으로 함께 읽고, 출처 로고·전체/Claude/Codex 필터로 구분한다. 배우기 검토는 Claude 를 먼저 쓰고 없으면 Codex 를 쓴다. PR 자동 리뷰도 Claude 부재 시 Codex 두 모델로 실행하며, 모델 목록을 못 읽거나 다른 모델을 고를 수 없으면 한 자리의 실제 결과로 판정한다(`docs/pr-auto.md`). 기준 정본 `docs/knowledge/common/learning.md` · 채점 `node scripts/learn-eval.mjs`
 
 ## 구조
 
@@ -93,7 +96,8 @@ Claude Code 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴�
 ```
 athena/                        ← 코어
 ├── AGENTS.md                  공통 규칙·지식 진입점 (Codex 등 다른 도구도 읽는다)
-├── CLAUDE.md                  Claude Code 전용 — 아테나 역할 · 흐름 · 스킬. 회사 라우팅은 @pack/ROUTING.md 로 불러온다
+├── CLAUDE.md                  Claude Code 진입점 — AGENTS.md · docs/team-lead.md 를 불러온다
+├── .agents/skills/            Codex 스킬 링크 — .claude/skills 의 같은 정본
 ├── ONBOARDING.md              시작하기 가이드
 ├── athena.config.example.json 이 컴퓨터 설정 예시 → athena.config.json 으로 복사(git 무시) — 팩 위치 · reposRoot
 ├── bin/athena                 init(레포 찾기·팩 만들기) · scaffold(뼈대) · pack link · pack check
@@ -104,6 +108,7 @@ athena/                        ← 코어
 │   └── skills/                /setup /call /board /sync /guide /monitor + 회사 스킬(팩)
 │
 ├── docs/
+│   ├── team-lead.md           Claude · Codex 공통 아테나 역할 · 흐름 · 스킬
 │   ├── knowledge/             지식 노트 — 에이전트가 일할 때 읽는다
 │   │   ├── common/            팀 공통 (coding · git · verify · reporting · learning)
 │   │   ├── athena/            아테나 자체 함정 공책
@@ -175,7 +180,7 @@ packs/<회사>/
 
 | 추가할 것 | 방법 |
 |---|---|
-| 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 `/<이름>` 으로 바로 뜬다 (`call/SKILL.md` 를 복사해 시작) |
+| 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 Claude 에서 `/<이름>`. Codex 는 `.agents/skills/<이름>` 링크로 같은 정본을 `$<이름>` 으로 부른다 (`call/SKILL.md` 를 복사해 시작) |
 | 에이전트 | 레포 담당은 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
 | 같이 고칠 곳 | `CLAUDE.md` Skills 줄 · `docs/workflow.md` 명령 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
 

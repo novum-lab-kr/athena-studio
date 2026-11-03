@@ -4,6 +4,7 @@
 - **Athena Studio 창의 pane 에서 아테나 본체 폴더로 `claude`·`codex` 를 켜기만 하면 된다** — 세션 시작 훅이 화면을 세팅하고(`scripts/hooks/workspace-up.py` → `athena-up.sh`), 끝나면 그 pane 에 첫 실행 지시를 대신 입력한다(Claude `/setup` · Codex "docs/setup.md 절차를 0단계부터"). 에이전트가 입력을 기다릴 때(화면이 본 `agent_status` idle)만, 새로 켠 세션에서만 보내고, 사용자가 먼저 말을 걸었으면 보내지 않는다(결과는 `$TMPDIR/hermes-up.log`)
 - Claude Code: 훅은 `.claude/settings.json`, 안내는 `scripts/hooks/setup-check.py`, `/setup` 스킬이 이 문서를 따른다
 - Codex: 훅은 `.codex/hooks.json`(시작 훅은 같은 스크립트를 `--tool codex` 로). `/hooks` 에서 한 번 믿음 표시해야 돈다(훅이 바뀌면 다시 확인). Bash 실행 전 `secret-guard` · `process-guard` 를 걸지만 `write_stdin` 후속 입력은 검사하지 않는다. 훅이 안 돌면 `AGENTS.md` 맨 앞 "첫 실행" 이 이 문서로 보낸다
+- 앱은 설치·로그인된 도구가 하나면 바로 쓰고, 둘이면 처음 한 번 주 도구를 물어 본체 `.athena-main-tool.json` 에 기억한다. 나머지는 부 도구다. 아테나 pane 에서 다른 도구를 켜면 시작 훅이 주 도구 기록을 바꾼다. 위임·가이드 실행도 이 주 도구를 따른다
 - Studio pane 밖(일반 터미널)이면 화면 세팅·자동 입력 없이 안내만 한다 — 아무 말이나 입력하면 시작한다
 - 바깥 도구가 띄운 창(환경 변수 `ATHENA_AGENT` 가 있음 — 예: 서버의 관리 창)에서는 돌지 않는다
 
@@ -33,12 +34,12 @@
 - **넣을 레포** — 찾은 레포를 **전부, 찾은 순서 그대로** 보여 주고 사용자가 고른다. 아테나가 미리 빼거나(아테나 복사본·연구용 등) 추천하지 않는다 — 맨 위 "전체" 로 모두 고를 수 있다(사용자 결정 2026-10-17: 질문 창 4칸에 맞춰 아테나가 갈라 보여 주던 것을 없앴다)
   - `node scripts/setup-pick.mjs [--root <폴더>] [--depth <n>]` — 고르기 콘솔(`plans/setup/<날짜>-첫-실행-레포-고르기.md` + html, 체크박스 · 맨 위 "전체 (N개)")을 만든다 → `scripts/board.sh open <md>` 로 연다. 대화에는 "레포 N개를 콘솔에 띄웠다" 한 줄만
   - 사용자가 고르고 [이대로 진행] 을 누르면 이 pane 에 `1. 넣을 레포: a, b, …` 가 들어온다("전체 (N개)" 가 있으면 전부). 현황판이 안 떠 있으면 콘솔이 [프롬프트로 복사] 로 바뀐다 — 사용자가 붙여 넣는다
-  - 대화로만 묻는 도구(Codex 등)는 같은 목록을 번호로 **전부** 보여 주고 "번호들 또는 전체" 로 받는다
+  - 고르기 콘솔을 쓸 수 없는 경우에는 같은 목록을 번호로 **전부** 보여 주고 "번호들 또는 전체" 로 받는다
 - 나머지는 한 번에 최대 4문항으로 묻는다
 - **회사 이름**(팩 폴더 이름, 영문 소문자) · **회사를 가리키는 말**(names — 서비스·브랜드 이름, `pack check` 가 코어에서 찾는다)
 - **추정이 틀린 레포** — 기준 브랜치(운영 반영분)·작업 base(PR 대상)·종류·층. 고칠 게 있으면 그 레포만 다시 묻는다
 - **에이전트 이름** — 기본은 `<레포>-fe|be`, 모노레포는 `<앱>-fe` + `<레포>-packages-fe`. 바꾸려면 `--agent <레포>=<이름>` · `--agent <레포>/<앱>=<이름>`
-- **PR 자동 리뷰 · 머지를 켤 레포**(`docs/pr-auto.md`) — 고른 레포 중에서 여러 개 고르기 · **기본은 아무것도 안 켠다**(고르지 않으면 지금처럼 PR 뒤는 사람이 · 나중에 Athena Studio 앱 ⚙ 설정에서도 바꿀 수 있다). 켜면 그 레포의 레포 하나짜리 PR 을 Claude · Codex 가 리뷰하고 고치고, 둘 다 승인 + 같은 HEAD 검증 + 충돌 없음이면 사람이 [머지] 를 한 번 눌러 squash 머지한다. 물을 때 레포마다 한 줄로 알린다: 작업 base(`prBase`)가 기준 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영** · main 직접 레포(`direct`)는 PR 이 없어 고를 수 없다 · Claude · Codex 가 이 컴퓨터에 로그인돼 있어야 돈다(`claude auth status` · `codex login status` 로 있는지만 본다 — 로그인 창을 띄우는 실행은 하지 않는다)
+- **PR 자동 리뷰 · 머지를 켤 레포**(`docs/pr-auto.md`) — 고른 레포 중에서 여러 개 고르기 · **기본은 아무것도 안 켠다**(고르지 않으면 지금처럼 PR 뒤는 사람이 · 나중에 Athena Studio 앱 ⚙ 설정에서도 바꿀 수 있다). 켜면 그 레포의 레포 하나짜리 PR 을 Claude · Codex 가 리뷰하고 고치고(Claude 를 못 쓰면 Codex 두 모델), 구성된 리뷰어 모두 승인 + 같은 HEAD 검증 + 충돌 없음이면 사람이 [머지] 를 한 번 눌러 squash 머지한다. 물을 때 레포마다 한 줄로 알린다: 작업 base(`prBase`)가 기준 브랜치(`branch`)와 같으면 **머지가 곧 운영 반영** · main 직접 레포(`direct`)는 PR 이 없어 고를 수 없다 · Claude 또는 Codex 가 이 컴퓨터에 설치·로그인돼 있어야 돈다. Codex 만 쓸 때 모델 목록을 못 읽거나 다른 모델을 고를 수 없으면 한 자리의 실제 결과로 판정하고 이유를 남긴다(`claude auth status` · `codex login status` 로 있는지만 본다 — 로그인 창을 띄우는 실행은 하지 않는다)
 
 ## 3. 팩 만들기
 `bin/athena init --pack <회사> --repos <a,b,…> [--names <x,y>] [--org <조직>] [--agent …]` → `packs/<회사>/pack.json`·`ROUTING.md`·`athena.config.json`·링크(여러 팩 구조면 지금 팩 자리 `pack/`·`<팩 데이터>/local.json` — pack.json 에 `formatVersion`·`id` 도 쓴다). 추정을 고쳤으면 `packs/<회사>/pack.json` 해당 레포를 직접 고친다(형식 `docs/pack.md`). 2단계에서 자동 머지를 켜기로 고른 레포에는 `"autoMerge": true` 를 넣는다(안 고른 레포에는 넣지 않는다 — 없으면 꺼짐 · 리뷰 · 머지를 나눠 고르는 키는 `docs/pr-auto.md` "켜기"). 그다음 `scripts/setup.sh`(repos/ 링크).

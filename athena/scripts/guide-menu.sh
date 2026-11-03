@@ -181,12 +181,12 @@ DESCS=(
   ".claude/agents/* · AGENTS.md"
 )
 HELPS=(
-  "아테나가 무엇이고 어떻게 돌아가는지 한 장으로 — 요청부터 PR 까지의 흐름 · 에이전트(레포 담당은 팩) · 안전장치 · 아테나가 아는 것 · 학습 구조, 그리고 오픈소스 Hermes Agent 와 무엇이 다른지. 팩 판이 있으면 pack/guide/, 없으면 docs/ 의 athena-explained.html 을 기본 브라우저에서 연다"
-  "처음 받는 팀원용 시작하기 가이드(준비물 · 설치 · 처음 써 보기 · 현황판 · 학습 · 꼭 지킬 것 · 막힐 때)를 기본 브라우저에서 연다. 원본은 ONBOARDING.md"
+  "아테나가 무엇이고 어떻게 돌아가는지 한 장으로 — 요청부터 PR 까지의 흐름 · 에이전트(레포 담당은 팩) · 안전장치 · 아테나가 아는 것 · 학습 구조. 팩 판이 있으면 pack/guide/, 없으면 docs/ 의 athena-explained.html 을 기본 브라우저에서 연다"
+  "처음 받는 팀원용 Claude · Codex 시작하기 가이드(준비물 · 주 도구 선택 · 처음 써 보기 · 질문과 허락 · 개인 메모리 · 막힐 때)를 기본 브라우저에서 연다. 원본은 ONBOARDING.md"
   "플레이북 HTML(팩 판이 있으면 pack/guide/playbook.html, 없으면 docs/playbook.html)을 기본 브라우저에서 연다 — 팀 구성·라우팅·커맨드·작업 흐름·아테나가 아는 것·FAQ"
   "다이어그램 목록을 브라우저로 연다. 아테나 작업 흐름 두 장(경량 — 대부분의 작업 / 정식 — 여러 레포·결정 콘솔, 단계별 규칙이 카드에 들어 있다)과 대화 압축 전후 그림이 있다."
   "스킬·에이전트를 추가하는 방법과 같이 갱신할 문서 목록. docs/extending.md 를 마크다운 뷰어로 연다 (q 로 닫기)"
-  "아테나에게 시킬 수 있는 슬래시 커맨드 목록. 이름·인자·설명을 .claude/skills 에서 그때그때 읽어오니 스킬을 추가하면 여기에도 바로 나온다. 번호를 고르면 새 pane 에 별도 아테나 세션을 띄워 실행하거나(⏎) SKILL.md 본문을 볼 수 있다(v)"
+  "Claude · Codex 에서 함께 쓰는 스킬 목록. 이름·인자·설명을 .claude/skills 에서 그때그때 읽어오니 스킬을 추가하면 여기에도 바로 나온다. 번호를 고르면 새 pane 에 주 도구의 별도 아테나 세션을 띄워 실행하거나(Claude /스킬 · Codex \$스킬 · ⏎) SKILL.md 본문을 볼 수 있다(v)"
   "FE 에이전트 전원의 담당 레포·포트와 라우팅 문장을 .claude/agents 에서 읽어 보여주고, 그 아래에 AGENTS.md 의 '어느 레포인지 고르기' 기준을 붙인다. 어떤 요청이 어느 서비스인지 헷갈릴 때"
 )
 ACTIONS=(act_explained act_onboarding act_playbook act_diagram act_extending act_skills act_agents)

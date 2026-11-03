@@ -1,6 +1,6 @@
 # 디스패치 프로토콜
 
-> 아테나가 에이전트를 띄우기(`scripts/delegate.sh`) **전에** 읽는다. 2026-10-29 늘 실리던 `.claude/rules/dispatch-protocol.md` 에서 옮겼다(뜻은 그대로 · 매번 지킬 요지는 `CLAUDE.md` 3단계).
+> 아테나가 에이전트를 띄우기(`scripts/delegate.sh`) **전에** 읽는다. 2026-10-29 늘 실리던 `.claude/rules/dispatch-protocol.md` 에서 옮겼다(뜻은 그대로 · 매번 지킬 요지는 `docs/team-lead.md` 3단계(Claude · Codex 공통)).
 
 ## 전제
 **모든 디스패치는 계획서 하나에 묶인다.** 사용자가 정할 것이 있거나 여러 레포·담당을 맞춰야 하면 정식 계획서(md + html 결정 콘솔, 결정은 콘솔의 [이대로 진행] 으로 확정)를 승인받은 뒤, 아니면 경량 계획서(`plans/task/…`, `docs/plan-template-light.md`)로 — 경량판은 사용자 지시가 곧 승인이다. **계획서 없이 디스패치하는 예외는 없다.** `scripts/delegate.sh` 는 `--plan <경로>` 또는 `--plan new "<요약>"` 없이는 띄우지 않는다
@@ -21,7 +21,7 @@
 - **레포를 넘는 작업은 순차로 보낸다.** 공유 패키지를 먼저 끝내고 그 결과를 소비 레포 에이전트에 넘긴다. 두 workspace 를 동시에 띄우지 않는다
 - 어느 workspace·탭에 띄웠는지 사용자에게 한 줄 알린다
 
-**기본은 보이는 pane**: `scripts/delegate.sh <에이전트명> --plan <계획서>` 으로 화면(Athena Studio) pane 에 `claude --agent <이름>` 세션을 띄운다(사용자가 진행 과정을 볼 수 있다). **프롬프트 없이 열어 그 pane 안에서 작업을 지시하는 것이 기본**이다 — 대화를 이어가며 범위를 좁힐 수 있다. 한 번에 끝나는 조사라면 두 번째 인자로 프롬프트를 실어 보낸다. 워크트리에서 작업하면 `--cwd <경로>`. 여러 에이전트를 병렬로 보낼 때는 pane 을 여러 개 연다. 결과는 `scripts/screen pane read <id>` 로 읽고, 완료 대기는 `scripts/screen pane wait-output <id> --match <글자>` 또는 사용자에게 알린다. **reviewer 결론은 pane 이 아니라 `scripts/review-wait.sh --plan <계획서> --dir <트리>` 로 기다린다** — reviewer 를 띄운 직후 부르면 계획서의 `- Review result:` 줄이 새로 적힐 때 그 줄을 출력하고 끝난다(끝난 reviewer pane 은 1분 뒤 저절로 닫히고, 그 줄은 새로 더해지지 않고 바꿔 써진다 — pane 화면·줄 수를 기다리는 반복을 직접 짜지 않는다)(pane 은 화면 계층 `scripts/screen` 으로만 다룬다 — 데몬 CLI 를 직접 부르지 않는다).
+**기본은 보이는 pane**: `scripts/delegate.sh <에이전트명> --plan <계획서>` 으로 화면(Athena Studio) pane 에 주 도구의 세션(Claude `claude --agent <이름>` · Codex 별도 프로필)을 띄운다(사용자가 진행 과정을 볼 수 있다). **프롬프트 없이 열어 그 pane 안에서 작업을 지시하는 것이 기본**이다 — 대화를 이어가며 범위를 좁힐 수 있다. 한 번에 끝나는 조사라면 두 번째 인자로 프롬프트를 실어 보낸다. 워크트리에서 작업하면 `--cwd <경로>`. 여러 에이전트를 병렬로 보낼 때는 pane 을 여러 개 연다. 결과는 `scripts/screen pane read <id>` 로 읽고, 완료 대기는 `scripts/screen pane wait-output <id> --match <글자>` 또는 사용자에게 알린다. **reviewer 결론은 pane 이 아니라 `scripts/review-wait.sh --plan <계획서> --dir <트리>` 로 기다린다** — reviewer 를 띄운 직후 부르면 계획서의 `- Review result:` 줄이 새로 적힐 때 그 줄을 출력하고 끝난다(끝난 reviewer pane 은 1분 뒤 저절로 닫히고, 그 줄은 새로 더해지지 않고 바꿔 써진다 — pane 화면·줄 수를 기다리는 반복을 직접 짜지 않는다)(pane 은 화면 계층 `scripts/screen` 으로만 다룬다 — 데몬 CLI 를 직접 부르지 않는다).
 
 reviewer 닫기 감시는 명령 실행 그룹과 별도 세션으로 띄운다(`review-result.sh` → `scripts/lib/reviewer-autoclose.sh`). Claude·Codex 모두 5초마다 상태를 보고, 60초 연속 `idle`이면 닫는다. `working`·`waiting`이면 시간을 다시 세고, 30분 동안 쉬지 않으면 감시를 끝낸다.
 
@@ -35,7 +35,7 @@ reviewer 닫기 감시는 명령 실행 그룹과 별도 세션으로 띄운다(
 
 ## 모델 — 진짜 단순한 수정만 `--model sonnet`
 
-모델은 팩 `models` · 프로필 `model:` 로 정해진다(`docs/pack.md` "pack.json"). 경량 작업의 기본은 Opus 5.5 다. 아테나는 **진짜 단순한 수정일 때만** `scripts/delegate.sh <에이전트> --cwd <워크트리> --plan <계획서> --model sonnet` 으로 띄운다.
+모델은 팩 `models` · 프로필 `model:` 로 정해진다(`docs/pack.md` "pack.json"). 모델은 선택한 엔진의 값을 따른다. Claude 경량 작업의 기본은 Opus 5.5 다. 아테나는 **Claude 엔진의 진짜 단순한 수정일 때만** `scripts/delegate.sh <에이전트> --cwd <워크트리> --plan <계획서> --model sonnet` 으로 띄운다.
 
 - **진짜 단순한 수정** = 문구 · 스타일 국소 수정이나 그와 같은 크기의 일로, 로직 · 데이터 · 권한 · 외부 계약에 닿지 않고 원인 조사가 필요 없는 것. 애매하면 붙이지 않는다
 - `--model` 은 이번 한 번 띄울 때만 쓰고 팩 값 · 프로필보다 먼저다. 이름이 이상하면 띄우지 않는다
@@ -48,7 +48,7 @@ reviewer 닫기 감시는 명령 실행 그룹과 별도 세션으로 띄운다(
 ```bash
 node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane","cwd","branch","mainCheckout"} · 없으면 이유(stderr)와 exit 1
 ```
-고르는 기준은 모두 맞아야 한다 — 이름표가 `🤖 <에이전트>`(에이전트는 레포마다 하나라 같은 레포) · `agent_status` idle · 사용자가 보고 있지 않음(focused 아님) · 화면 끝에 질문·고르기 창이 없음(데몬 idle 은 질문 기다리는 것도 idle 이라 화면을 읽어 따로 본다) · 화면을 읽을 수 있음. 하나라도 모르면 지금처럼 새로 띄운다. `cwd` 는 pane 이 실제로 일하는 폴더 — 화면 목록의 `foreground_cwd`(앞쪽 프로세스 폴더)이고 없을 때만 `cwd`(처음 연 폴더)다. 레포 workspace 를 새로 만들 때 쓰는 첫 pane 은 처음 연 폴더가 메인 체크아웃이고 실행기가 워크트리로 `cd` 하기 때문이다(2026-11-02 — `cwd` 만 보고 메인 체크아웃에 새 브랜치를 땄다).
+고르는 기준은 모두 맞아야 한다 — 이름표가 `🤖 <에이전트>`(에이전트는 레포마다 하나라 같은 레포) · `agent_status` idle · 사용자가 보고 있지 않음(focused 아님) · 화면 끝에 질문·고르기 창이 없음(선택 창은 `waiting`이며 재사용하지 않는다. 화면도 읽어 확인한다) · 화면을 읽을 수 있음. 하나라도 모르면 지금처럼 새로 띄운다. `cwd` 는 pane 이 실제로 일하는 폴더 — 화면 목록의 `foreground_cwd`(앞쪽 프로세스 폴더)이고 없을 때만 `cwd`(처음 연 폴더)다. 레포 workspace 를 새로 만들 때 쓰는 첫 pane 은 처음 연 폴더가 메인 체크아웃이고 실행기가 워크트리로 `cd` 하기 때문이다(2026-11-02 — `cwd` 만 보고 메인 체크아웃에 새 브랜치를 땄다).
 
 - **보내기**: `scripts/delegate.sh <에이전트> --plan <새 계획서> --reuse-pane <pane> ["<요청>"]`. 새 pane · 실행기를 만들지 않고 짧은 지시(새 계획서 경로 · 리뷰 규칙 · 요청)를 그 pane 에 한 줄로 넣는다. 처음 받은 긴 지시(커밋 · PR · 보고 규칙)는 그 pane 에 이미 있다. 보내기 직전에 `reuse-pane.mjs` 를 다시 돌려 같은 pane 이 아니면 보내지 않는다
 - **브랜치**: 앞 PR 이 아직 열려 있으면 같은 브랜치에 이어 쓴다(`--new-branch` 없음). 머지됐으면 `--new-branch <이름>` — 같은 워크트리에서 `git switch -c <이름> origin/<prBase>`. 미커밋 변경이 있으면 거부한다(앞 작업을 먼저 끝낸다). 그 작업 폴더가 레포 메인 체크아웃이어도 거부한다(`mainCheckout` — 워크트리를 만들어 새 pane 으로). main 직접 레포는 새 브랜치를 따지 않는다
@@ -66,7 +66,7 @@ node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane"
 - "커밋은 사용자 요청 시 `scripts/commit.sh` 로만·push/PR 은 요청 시 `scripts/ship.sh` 로만(레포 하나짜리)", "담당 레포 밖 수정 금지" 리마인드
 
 ### 지시문은 되풀이하지 않는다 (`delegate.sh` `PLAN_HEADER`)
-`delegate.sh` 가 지시 맨 앞에 박는 머리말은 **스크립트 경로 · 절차 · 5절 원칙**만 싣는다 — 계획서 읽기 · Progress/결과 채우기(Validation · 커밋 뒤 Status 는 스크립트 몫) · `commit.sh` · `ship.sh` 명령줄 · 자동 리뷰 예외 · 결정 콘솔은 `docs/workflow.md` 4절 · 보내기 실패는 `docs/requests.md` 를 가리키는 한 줄 · "추측으로 구현하지 않는다" · "범위가 커지면 멈춘다" · "버그는 재현부터". AGENTS.md 5 · 6절(커밋 · push 직접 금지 · 보고 순서 · 시키지 않은 것 안 더함 · 비밀값 · `heavy.sh`)과 `.claude/rules/*.md` 는 `scripts/agent-context.py` 가 `--append-system-prompt-file` 로 이미 모든 위임 에이전트(reviewer 포함)에 싣는다 — 머리말에 같은 문장을 다시 넣지 않는다(2026-10-31 빠른 길 2 · 3단계에서 뺐다 · 지시문이 길면 에이전트가 앞부분을 놓친다). 경량 · 정식 구분 없이 같은 머리말. 바꾸면 `scripts/screen-check/check.sh --record` 로 golden(`delegate_outside` · `studio_delegate_outside`)을 다시 쓰고 diff 가 그 문장뿐인지 본다
+`delegate.sh` 가 지시 맨 앞에 박는 머리말은 **스크립트 경로 · 절차 · 5절 원칙**만 싣는다 — 계획서 읽기 · Progress/결과 채우기(Validation · 커밋 뒤 Status 는 스크립트 몫) · `commit.sh` · `ship.sh` 명령줄 · 자동 리뷰 예외 · 결정 콘솔은 `docs/workflow.md` 4절 · 보내기 실패는 `docs/requests.md` 를 가리키는 한 줄 · "추측으로 구현하지 않는다" · "범위가 커지면 멈춘다" · "버그는 재현부터". AGENTS.md 5 · 6절(커밋 · push 직접 금지 · 보고 순서 · 시키지 않은 것 안 더함 · 비밀값 · `heavy.sh`)과 `.claude/rules/*.md` 는 `scripts/agent-context.py` 가 모든 위임 에이전트(reviewer 포함)에 싣는다(Claude `--append-system-prompt-file` · Codex `developer_instructions`) — 머리말에 같은 문장을 다시 넣지 않는다(2026-10-31 빠른 길 2 · 3단계에서 뺐다 · 지시문이 길면 에이전트가 앞부분을 놓친다). 경량 · 정식 구분 없이 같은 머리말. 바꾸면 `scripts/screen-check/check.sh --record` 로 golden(`delegate_outside` · `studio_delegate_outside`)을 다시 쓰고 diff 가 그 문장뿐인지 본다
 
 ## 결과 수신
 - **끝 알림 — 기다리는 루프를 걸지 않는다.** 위임 에이전트(reviewer 제외)가 한 차례(턴)를 끝내면 Stop 훅(`scripts/hooks/agent-done-notify.py`)이 계획서 Checkpoint 의 `- Lead pane:`(아테나 pane)에 `[<에이전트> → 아테나] 끝 · <pane> · 계획서 <경로> · Status <값> · PR #<번호> <상태>`(PR 은 있을 때만) 한 줄을 입력한다. `pane get` 의 `agent_status` 를 `until` 로 기다리는 루프는 일하는 중에 일찍 풀리거나 끝을 놓쳐 사용자가 물어야 알게 됐다 — 이 알림을 받으면 그 pane 의 계획서 · 결과를 읽고 다음 일을 한다. 아테나 pane 이 없거나 닫혔으면 알림은 조용히 건너뛴다(그때는 `scripts/screen pane list` 로 본다)
@@ -84,6 +84,6 @@ node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane"
 ### 위임 엔진과 역할
 `delegate.sh <프로필> --engine claude|codex --role agent|reviewer --plan <계획서>` 로 엔진과 역할을 별도로 고른다. 엔진 생략 시 설치·로그인된 도구와 본체 `.athena-main-tool.json` 의 주 도구를 따른다. 기록이 없으면 쓸 수 있는 도구가 하나일 때 그것을, 둘 다일 때 기존 동작대로 Claude 를 쓴다. 둘 다 쓸 수 없으면 안내하고 멈춘다. `--engine` 을 명시하면 기록·기본 선택보다 먼저 적용하며, 그 도구를 쓸 수 없을 때 다른 엔진으로 바꾸지 않는다. 역할 기본값은 reviewer 프로필이면 reviewer, 그 밖은 agent 다. 리드는 아테나 시작 경로로 켜며 이 명령으로 만들지 않는다.
 
-Codex 도 담당 레포 workspace 의 같은 탭에 pane 으로 뜬다. 공통 규칙·프로필·레포 규칙 문서는 `developer_instructions`, 계획서·완료 순서·아테나 보고는 Claude 와 같은 첫 지시로 전달한다. Claude 의 자동 `@` 가져오기에 기대지 않고 그 원문도 명시적으로 싣는다. 대상 레포의 `.codex` 설정과 기존 사용자 `config.toml`·`hooks.json` 은 고치지 않는다. 훅은 `$CODEX_HOME/athena-dispatch-<본체·역할 지문>.config.toml` 전용 프로필로 전달한다(Codex 의 프로필 파일 지원 필요 · 0.166에서 확인). 같은 내용·이름을 유지해 신뢰 기록을 재사용한다. 보호 훅·pane 기록·끝 알림은 본체의 절대 경로로 전달한다. 처음 보는 훅은 Codex 자체 창에서 확인해야 실행된다(질문·허락 팝업 통일은 후속 단계).
+Codex 도 담당 레포 workspace 의 같은 탭에 pane 으로 뜬다. 공통 규칙·프로필·레포 규칙 문서는 `developer_instructions`, 계획서·완료 순서·아테나 보고는 Claude 와 같은 첫 지시로 전달한다. Claude 의 자동 `@` 가져오기에 기대지 않고 그 원문도 명시적으로 싣는다. 대상 레포의 `.codex` 설정과 기존 사용자 `config.toml`·`hooks.json` 은 고치지 않는다. 훅은 `$CODEX_HOME/athena-dispatch-<본체·역할 지문>.config.toml` 전용 프로필로 전달한다(Codex 의 프로필 파일 지원 필요 · 0.166에서 확인). 같은 내용·이름을 유지해 신뢰 기록을 재사용한다. 보호 훅·pane 기록·끝 알림은 본체의 절대 경로로 전달한다. 처음 보는 훅은 Codex 자체 창에서 신뢰를 확인해야 실행된다(`/hooks`). 보호 훅은 첫 Bash 명령만 검사하며 `write_stdin` 후속 입력은 검사하지 않는다. 두 도구의 질문·허락 대기는 Studio [작업] 팝업에 뜬다. 질문은 팝업에서 답하고, 허락은 [pane 으로 가기] 뒤 원래 창에서 고른다(`docs/requests.md`).
 
-`reuse-pane.mjs --agent <프로필> [--engine claude|codex]` 도 같은 엔진을 선택한다. 역할·엔진이 맞고 입력 가능한 같은 레포 pane 만 잇는다. 리뷰는 매번 새 pane 이다. `--resume <세션>` 은 Codex 에서는 `codex resume` 으로 열고 첫 지시를 다시 보내지 않는다. `--model` 은 선택한 엔진으로만 전달한다(팩·프로필 모델보다 우선).
+`reuse-pane.mjs --agent <프로필> [--engine claude|codex]` 도 같은 엔진을 선택한다. 역할·엔진이 맞고 입력 가능한 같은 레포 pane 만 잇는다. 리뷰는 매번 새 pane 이다. `--resume <세션>` 은 Codex 에서는 `codex resume` 으로 열고 첫 지시를 다시 보내지 않는다. 같은 컴퓨터의 기록으로 재개하며, Codex 대화를 다른 컴퓨터로 옮겨 이어 하기는 아직 안 됨. `--model` 은 선택한 엔진으로만 전달한다(팩·프로필 모델보다 우선).

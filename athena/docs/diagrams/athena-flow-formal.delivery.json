@@ -7,11 +7,11 @@
   "input": "docs/diagrams/athena-flow-formal.workflow.json",
   "output": "docs/diagrams/athena-flow-formal.html",
   "specification": {
-    "sha256": "495ca1415c4f2d0fcd6fd8a2430f7761fe7df2029437985543dac0e64fd2410b",
-    "bytes": 20998
+    "sha256": "e715cead570abcef6a86b5a395ced78ff9282c6d77b458a2c73e2b6458b47792",
+    "bytes": 23773
   },
   "artifact": {
-    "sha256": "2b8f54ff6dd5ecfc89daf2407cd1fc6b8ff14d0c21fb251adef331be7f35cfea",
-    "bytes": 854011
+    "sha256": "422a26bcc4cabc4fa2015dc4f32d7c9cc2ac0a5e25fcd9235967b71f1f83bc42",
+    "bytes": 856995
   }
 }

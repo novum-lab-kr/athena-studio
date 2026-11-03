@@ -7,11 +7,11 @@
   "input": "docs/diagrams/athena-flow-light.workflow.json",
   "output": "docs/diagrams/athena-flow-light.html",
   "specification": {
-    "sha256": "5b4143789328601b117c85262a78285e68841a6710e18aee03c8f643b5d0a039",
-    "bytes": 16928
+    "sha256": "228999c3412c9dbd9c8155eaebf2317eb0d4e1cb32eda8eb1cbb8836aabeebaa",
+    "bytes": 18991
   },
   "artifact": {
-    "sha256": "94048c86160df323452038785517a1db9aeda630ca2254bc14e2f01e6b043728",
-    "bytes": 846841
+    "sha256": "616123b55c7557ef610f42daa6dcfa58968dd92cc911017c733943a14e48e34e",
+    "bytes": 849197
   }
 }
