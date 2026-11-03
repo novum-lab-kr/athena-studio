@@ -171,8 +171,10 @@ echo "▶ 여러 종류(node · python) — 배열 칸 · 첫 맞는 항목의 r
 case_branch two-kinds
 printf 'export const add = (left, right) => left + right\nexport const mul = (left, right) => left * right\n' > lib/math.mjs
 printf "import { test } from 'node:test'\nimport assert from 'node:assert/strict'\nimport { add } from '../lib/math.mjs'\ntest('add', () => assert.equal(add(1, 2), 3))\n" > test/add.test.mjs
-printf 'import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertEqual(1, 1)\n' > test/test_py.py
-OUT="$(red --spec '[{"tests":["test/*.test.mjs"],"run":"node --test {files}"},{"tests":["test/test_*.py"],"run":"python3 -m unittest {files}"}]' --json)"
+# 파일을 바로 실행한다 — `python3 -m unittest test/test_py.py` 는 `test.test_py` 를 import 하는데,
+# stdlib `test` 패키지가 있는 Python(Homebrew 3.13 등)에서는 그쪽이 이겨 로컬 파일을 못 찾는다
+printf 'import unittest\nclass T(unittest.TestCase):\n    def test_ok(self):\n        self.assertEqual(1, 1)\nif __name__ == "__main__":\n    unittest.main()\n' > test/test_py.py
+OUT="$(red --spec '[{"tests":["test/*.test.mjs"],"run":"node --test {files}"},{"tests":["test/test_*.py"],"run":"python3 {files}"}]' --json)"
 check "배열 칸 — node 는 base 실패 · python 은 base 통과 → non-discriminating(python 파일)" '[ "$(json_field result <<<"$OUT")" = non-discriminating ] && grep -q "test/test_py.py" <<<"$OUT" && grep -q "base 에서 실패(assertion): test/add.test.mjs" "$TMP/stderr"' "$OUT · $(cat "$TMP/stderr")"
 
 echo "▶ 정리 · 의존성 · 래퍼"

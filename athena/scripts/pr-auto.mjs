@@ -41,7 +41,7 @@ import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { screen, screenText } from './lib/screen.mjs'
+import { screen, screenText, submitToPane } from './lib/screen.mjs'
 import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
@@ -362,12 +362,8 @@ const livePanes = async () => {
   const listed = await screen(['pane', 'list'])
   return new Set((listed?.panes ?? []).map((pane) => pane.id))
 }
-const sendToPane = async (pane, text) => {
-  const sent = await screen(['pane', 'send-text', pane, text])
-  if (!sent) return false
-  await new Promise((done) => setTimeout(done, 300))
-  return Boolean(await screen(['pane', 'send-keys', pane, 'Enter']))
-}
+// 글 + Enter 를 공통 전송 경로로(전송 확인까지 — lib/screen.mjs submitToPane) · 확인되면 true
+const sendToPane = async (pane, text) => (await submitToPane(pane, text)) === 'sent'
 // 작업 에이전트 pane — Work ref 의 pane 이 살아 있으면 그것, 아니면 그 계획서 대화를 --resume 으로 다시 연다(scripts/hooks/pane-session.py 기록)
 const agentPane = async ({ planFile, ref }) => {
   if (ref.pane && (await livePanes()).has(ref.pane)) return ref.pane
@@ -458,18 +454,14 @@ const pendingNotices = () => (existsSync(NOTICE_DIR) ? readdirSync(NOTICE_DIR).f
 const readNotice = (file) => {
   try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
 }
-// 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · Enter 만 실패) · 'failed'(글을 못 썼다).
+// 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · 데몬이 쓰기 전에 거절) · 'failed'(보내지 못했다 — 요청으로 남긴다).
 // 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 현황판 pane-delivery 와 같은 판정 menuOpen).
-// 화면을 못 읽으면(null) 창 여부를 모르니 현황판처럼 바로 넣는다. 글 → Enter 두 단계 — 글만 들어갔으면(typed) 다음에 Enter 부터
-const deliverNotice = async (pane, notice, file = '') => {
+// 화면을 못 읽으면(null) 창 여부를 모르니 현황판처럼 바로 넣는다. 넣기는 공통 전송 경로 한 번(글 + Enter 전송 확인 — lib/screen.mjs submitToPane).
+// 옛 판이 글만 넣고 미룬 알림(typed)은 빈 글로 — 입력칸에 남은 글의 전송만 확인한다(데몬 pane-submit.mts · 글을 두 번 넣지 않게)
+const deliverNotice = async (pane, notice) => {
   if (menuOpen(await screenText(['pane', 'read', pane, '--lines', '40']))) return 'wait'
-  if (!notice.typed) {
-    if (!(await screen(['pane', 'send-text', pane, notice.text]))) return 'failed'
-    notice.typed = true
-    if (file) writeFileSync(file, JSON.stringify(notice))
-    await new Promise((done) => setTimeout(done, 300))
-  }
-  return (await screen(['pane', 'send-keys', pane, 'Enter'])) ? 'sent' : 'wait'
+  const result = await submitToPane(pane, notice.typed ? '' : notice.text)
+  return result === 'sent' || result === 'wait' ? result : 'failed'
 }
 const queueNotice = (notice) => {
   mkdirSync(NOTICE_DIR, { recursive: true })
@@ -482,7 +474,7 @@ const notify = async (planFile, { key, sha, title, body }) => {
   if (readNotified()[key] === mark) return console.log(`  ⏭ 아테나에 이미 알렸다: ${title}`)
   const text = masked(`[자동 리뷰 → 아테나] ${title} — ${body}`).replace(/\s*\n\s*/g, ' ').trim()
   const pane = await athenaPane(planFile)
-  const notice = { plan: planFile, key, mark, title, body, text, pane, typed: false }
+  const notice = { plan: planFile, key, mark, title, body, text, pane }
   // 먼저 미룬 알림이 있으면 차례를 지켜 뒤에 줄 선다
   const result = !pane ? 'failed' : pendingNotices().length ? 'wait' : await deliverNotice(pane, notice)
   if (result === 'sent') {
@@ -507,7 +499,7 @@ export const flushNotices = async () => {
     if (!notice) { rmSync(file, { force: true }); continue }
     const pane = await athenaPane(notice.plan)
     if (pane !== notice.pane) Object.assign(notice, { pane, typed: false })
-    const result = pane ? await deliverNotice(pane, notice, file) : 'failed'
+    const result = pane ? await deliverNotice(pane, notice) : 'failed'
     if (result === 'wait') return   // 차례를 지킨다 — 뒤 알림을 앞질러 넣지 않는다
     rmSync(file, { force: true })
     if (result === 'sent') console.log(`  ✅ 미룬 알림을 아테나 pane ${pane} 에 넣었다: ${notice.title}`)

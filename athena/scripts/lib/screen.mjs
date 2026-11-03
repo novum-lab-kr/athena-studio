@@ -2,6 +2,7 @@
 // 계약·백엔드 고르기는 파이썬 쪽 정본 scripts/lib/screen.py 에 있다 — 여기는 부르고 JSON 을 읽기만 한다.
 //   await screen(['pane', 'list'])                → { panes: [...] } · 실패면 null (바꾸는 동작은 성공하면 {})
 //   await screenText(['pane', 'read', id])      → 화면 글 그대로 · 실패면 null
+//   await submitToPane(id, text)                  → 글 + Enter 공통 전송 — 'sent' · 'wait'(안 들어감 · 다시 보내도 됨) · 실패 글
 //   screenSync(['pane', 'current'])               → { pane: {...} } · 실패면 예외
 //   screenName()                                  → 안내 글에 쓸 화면 이름(지금 백엔드)
 //   callerPane(options)                           → 부른 pane id(scripts/screen self) · 화면 밖이면 포커스된 pane(pane current) · 둘 다 없으면 ''
@@ -32,6 +33,28 @@ export const screen = (args, options = {}) =>
 export const screenText = (args, options = {}) =>
   new Promise((resolve) => {
     execFile(SCREEN, args, { encoding: 'utf8', timeout: 5000, maxBuffer: 16 * 1024 * 1024, ...options }, (error, stdout) => resolve(error ? null : stdout))
+  })
+
+// 글 + Enter 를 공통 전송 경로로 — scripts/screen pane send-text <pane> <글> --enter(데몬 pane run: 글이 들어갔는지 · 입력칸이 비었는지 확인하고
+// 같은 입력이 남았을 때만 Enter 를 다시 누른다 · lead-send.py 와 같은 길). 돌려주는 값:
+//   'sent' — 전송 확인 · 'wait' — 데몬이 쓰기 전에 거절했다(질문 창이 열려 있음 · 다른 전송 중 — 글은 안 들어갔으니 나중에 다시 보내도 된다)
+//   그 밖의 글 — 실패(글이 입력칸에 들어갔는지 모른다 — 같은 글을 다시 보내지 않는다)
+// 데몬이 전송 확인 · Enter 재시도를 하느라 몇 초 걸려 시간 한도는 screen() 보다 넉넉히
+const NOT_WRITTEN = ['입력을 기다리는 질문이 열려 있다', '이 pane 에 입력을 보내는 중이다']
+export const submitToPane = (paneId, text, options = {}) =>
+  new Promise((resolve) => {
+    execFile(SCREEN, ['pane', 'send-text', paneId, text, '--enter'], { encoding: 'utf8', timeout: 30000, ...options }, (error, _stdout, stderr) => {
+      if (!error) return resolve('sent')
+      let failure = {}
+      try {
+        failure = JSON.parse(String(stderr ?? '').trim().split('\n').at(-1) ?? '') ?? {}
+      } catch {
+        // 약속한 모양({"error","message"})이 아니면 아래에서 오류 글로
+      }
+      const message = typeof failure.message === 'string' ? failure.message : ''
+      if (failure.error === 'unavailable' && NOT_WRITTEN.some((mark) => message.includes(mark))) return resolve('wait')
+      resolve(message || `pane ${paneId} 에 입력을 보내지 못했다`)
+    })
   })
 
 export const screenSync = (args, options = {}) => parse(execFileSync(SCREEN, args, { encoding: 'utf8', ...options }))

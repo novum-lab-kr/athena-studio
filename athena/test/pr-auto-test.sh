@@ -598,7 +598,7 @@ confirm() {   # <답> — 요청을 열고 답한 뒤 머지 확인 대기 파�
 run_confirms() { (cd "$CORE" && "${ENVS[@]}" FAKE_PANES="$1" node --input-type=module -e "await (await import('./scripts/pr-auto.mjs')).checkConfirms()" 2>&1); }
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 머지
 OUT="$(run_confirms '{"id":"p3"}')"
-expect "머지 → squash · pane p3 에 '[자동 리뷰 → web-fe] … 머지됨' 한 줄" 'grep -q "gh pr merge 7 .*--squash" "$FLOG" && grep -q "screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @$S7 — 머지됨" "$FLOG" && grep -q "screen pane send-keys p3 Enter" "$FLOG"' "$OUT
+expect "머지 → squash · pane p3 에 '[자동 리뷰 → web-fe] … 머지됨' 한 줄" 'grep -q "gh pr merge 7 .*--squash" "$FLOG" && grep -q "screen pane send-text p3 \[자동 리뷰 → web-fe\] PR web#7 @$S7 — 머지됨" "$FLOG" && grep -q -e "--enter\$" "$FLOG" && ! grep -q "send-keys" "$FLOG"' "$OUT
 $(cat "$FLOG")"
 write_plan '승인 2/2 → 머지 확인 대기' p3; : > "$FLOG"; confirm 보류
 OUT="$(run_confirms '{"id":"p3"}')"
@@ -786,6 +786,9 @@ cat > "$CORE/scripts/screen" <<'SH'
 [ -n "$FAKE_SCREEN_LOG" ] && echo "screen $*" >> "$FAKE_SCREEN_LOG"
 if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
 elif [ "$1 $2" = "pane read" ]; then printf '%s\n' "${FAKE_PANE_TEXT:-}"   # 화면 글 — 질문 창 흉내
+# 공통 전송 경로 실패 흉내 — refuse: 데몬이 쓰기 전에 거절 · lost: 전송을 확인 못 함(scripts/screen 이 stderr 에 적는 모양)
+elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = refuse ]; then echo '{"error": "unavailable", "message": "studio pane run: 입력을 기다리는 질문이 열려 있다"}' >&2; exit 1
+elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = lost ]; then echo '{"error": "timeout", "message": "studio pane run: 입력 전송을 확인하지 못했다 — pane 입력칸을 확인해 주세요"}' >&2; exit 1
 else echo '{}'; fi
 SH
 chmod +x "$CORE/scripts/screen"
@@ -906,7 +909,7 @@ SLOG="$TMP/screen.log"
 ATHENA_PANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🧭 아테나\"},{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$CORE\",\"label\":\"🤖 web-fe · feat/x\"}"
 : > "$SLOG"
 merge_case "검증 못 함 + 아테나 pane 있음 → 요청 없이 아테나 pane 에" ', "autoMergeConfirm": false' no '검증 대기' FAKE_VERIFY_FAIL=1 FAKE_PANES="$ATHENA_PANE" FAKE_SCREEN_LOG="$SLOG"
-[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — " "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
+[ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함 — web#7 — .* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && ! grep -q "send-text p3 " "$SLOG" \
   && echo "  ✔ 요청 없음 · 살아 있는 아테나 pane(p50)에 한 줄 · 작업 pane(🤖)에는 안 보냄" || { echo "  ✖ 아테나 pane 알림"; ls "$CORE/.requests" 2>/dev/null; sed 's/^/      /' "$SLOG"; FAIL=1; }
 # 다시 돌린 결과는 다시 알린다(결정 R1) — 계획서 줄을 지우고 다시 돌리면 그 PR 의 .notified 기록을 지우고 같은 HEAD · 제목도 다시 보낸다
 : > "$SLOG"
@@ -929,8 +932,18 @@ flush_notices() { (cd "$CORE" && env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="
 ! grep -q "send-text" "$SLOG" && [ -n "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] \
   && echo "  ✔ 창이 아직 떠 있으면 처리기도 넣지 않고 기다린다" || { echo "  ✖ 창이 떠 있는데 넣었다"; sed 's/^/      /' "$SLOG"; FAIL=1; }
 : > "$SLOG"; flush_notices "> "
-grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함" "$SLOG" && grep -q "^screen pane send-keys p50 Enter" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
+grep -q "^screen pane send-text p50 \[자동 리뷰 → 아테나\] 자동 리뷰 승인 · 검증 못 함.* --enter$" "$SLOG" && ! grep -q "send-keys" "$SLOG" && [ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] \
   && echo "  ✔ 창이 닫히면 처리기가 미룬 알림을 넣고 대기열에서 지운다" || { echo "  ✖ 미룬 알림 넣기"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; FAIL=1; }
+# 공통 전송 경로의 실패 갈래 — 데몬이 쓰기 전에 거절하면(질문 창 · 다른 전송 중) 미룬 알림을 남겨 두고, 전송을 확인 못 하면 다시 넣지 않고 요청으로
+mkdir -p "$TMP/queue-confirm/notices"
+printf '%s' '{"plan":"plans/task/x.md","key":"pr-auto:web#7:send","mark":"m","title":"전송 실패 흉내","body":"본문","text":"[자동 리뷰 → 아테나] 전송 실패 흉내 — 본문","pane":"p50"}' > "$TMP/queue-confirm/notices/1-send.json"
+: > "$SLOG"; FAKE_SEND_FAIL=refuse flush_notices "> "
+[ -n "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && grep -q "^screen pane send-text p50 .* --enter$" "$SLOG" \
+  && echo "  ✔ 데몬이 쓰기 전에 거절하면 미룬 알림을 남겨 둔다(요청 안 엶)" || { echo "  ✖ 쓰기 전 거절"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; FAIL=1; }
+: > "$SLOG"; FAKE_SEND_FAIL=lost flush_notices "> "
+[ -z "$(ls "$TMP/queue-confirm/notices" 2>/dev/null)" ] && grep -q '"title": "전송 실패 흉내"' "$CORE/.requests"/*.json 2>/dev/null && [ "$(grep -c "send-text" "$SLOG")" = 1 ] \
+  && echo "  ✔ 전송을 확인 못 하면 다시 넣지 않고 요청으로 남긴다" || { echo "  ✖ 확인 못 한 전송"; sed 's/^/      /' "$SLOG" "$TMP/flush.out"; ls "$CORE/.requests" 2>/dev/null; FAIL=1; }
+rm -rf "$CORE/.requests"
 # 중복 방지 기록(.notified)은 리뷰 작업이 아니다 — 대기열에 그것만 있으면 --kick 이 처리기를 띄우지 않는다(PR #103 라운드 2)
 KQ="$TMP/queue-kick"; rm -rf "$KQ"; mkdir -p "$KQ"; cp "$TMP/queue-confirm/.notified" "$KQ/"
 (cd "$CORE" && env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$KQ" "$(command -v node)" scripts/pr-auto.mjs --kick > "$TMP/kick.out" 2>&1)

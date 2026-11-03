@@ -36,7 +36,8 @@ if [ -n "${ATHENA_FIRST_RUN:-}" ] && [ -n "${SCREEN_PANE_ID:-}" ]; then
       seen_idle=1
       sleep 0.5   # 입력창이 그려질 틈
       if [ "$(pane_status)" = idle ]; then
-        "$SCREEN" pane send-text "$SCREEN_PANE_ID" "$FIRST_PROMPT" >/dev/null 2>&1 && sleep 0.5 && "$SCREEN" pane send-keys "$SCREEN_PANE_ID" Enter >/dev/null 2>&1 && result="보냄"
+        # 글 + Enter 를 공통 전송 경로로(데몬이 전송을 확인하고 같은 입력이 남았을 때만 Enter 를 다시 누른다)
+        "$SCREEN" pane send-text "$SCREEN_PANE_ID" "$FIRST_PROMPT" --enter >/dev/null 2>&1 && result="보냄"
         break
       fi
     fi
