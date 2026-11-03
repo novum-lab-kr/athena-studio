@@ -40,7 +40,7 @@ node scripts/sync-fingerprint.mjs --repo shop # 특정 레포
 | 사실 | 정본 | 파생 |
 |---|---|---|
 | 레포·에이전트·기준 브랜치 매핑 | 팩 `pack.json` | — |
-| 버전·포트·Node/pnpm·Prettier·검증 스크립트·기준 커밋 | **지문**(`.sync/snapshots/`) | `docs/services.md` 자동 표, `pack/guide/playbook.html`(팩 판) 기준 커밋 표·last sync → **`scripts/build-derived.mjs` 가 생성** |
+| 버전·포트·Node/pnpm·Prettier·검증 스크립트·기준 커밋 | **지문**(`.sync/snapshots/`) | `docs/services.md` 자동 표 → **`scripts/build-derived.mjs` 가 생성** |
 | 디렉토리·라우트 맵 | `docs/knowledge/<레포>/structure.md` (모노레포는 `<앱>/`) | — |
 | 레포 규칙 | 레포 원문(목록은 팩 `ruleDocs` — 세션에 자동으로 실린다) | — |
 | 레포에 없는 규칙(팀 지시 · 레포 밖 약속 · 문서와 코드 불일치) | `docs/knowledge/<레포>/rules.md` | — |
@@ -52,11 +52,10 @@ node scripts/sync-fingerprint.mjs --repo shop # 특정 레포
 
 1. **지문에서 나오는 사실은 손으로 옮겨 적지 않는다.** 문서 갱신 대신 아래를 돌린다:
    ```bash
-   node scripts/build-derived.mjs          # 지문 → services.md 자동 표, playbook 기준 커밋 표·last sync
+   node scripts/build-derived.mjs          # 지문 → services.md 자동 표
    node scripts/build-derived.mjs --check  # 쓰지 않고 차이만 확인
    ```
    pending 지문이 있으면 그것을 우선 읽는다(곧 확정할 값으로 문서를 만든다). 마커(`<!-- BEGIN:generated:... -->`) 안은 **직접 편집하지 않는다.**
-   이 스크립트는 마커 밖 서술이 지문과 어긋나면 경고만 낸다. 그 경고는 사람이 판단해 고친다.
 
 2. **구조가 바뀌었으면** `docs/knowledge/<레포>/structure.md`를 고친다 (지문의 `dirs`/`routes` 변화를 그대로 반영).
 

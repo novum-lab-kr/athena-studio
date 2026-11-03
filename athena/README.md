@@ -156,7 +156,7 @@ athena/                        ← 코어
     │   └── learn-eval.mjs                 학습 품질 채점 (정답지는 팩)
     ├── 지식 문서
     │   ├── sync-fingerprint.mjs           /sync — 운영 브랜치 지문 (기준은 .sync — 팩)
-    │   ├── build-derived.mjs              지문 → 팩의 서비스 맵·플레이북 표
+    │   ├── build-derived.mjs              지문 → 팩의 서비스 맵 표
     │   └── build-diagram-index.mjs
     ├── lib/                               설정 읽기(코어 + 팩 합치기) · 팩 링크 너머 git · init·scaffold
     ├── athena.mjs                         bin/athena 본체

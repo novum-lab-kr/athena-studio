@@ -9,7 +9,7 @@
  *   node scripts/sync-fingerprint.mjs --repo shop # 특정 레포만 (이름 일부 매칭)
  *
  * 리포트는 stdout 과 .sync/last-report.md 에 동시에 남는다.
- * /sync 스킬이 이 리포트를 읽고 .claude/agents/*.md, docs/services.md, 팩 guide/playbook.html 을 갱신한 뒤 --accept 를 호출한다.
+ * /sync 스킬이 이 리포트를 읽고 .claude/agents/*.md, docs/services.md 를 갱신한 뒤 --accept 를 호출한다.
  */
 import { execFileSync, spawn } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync, readdirSync, renameSync, unlinkSync } from 'node:fs'

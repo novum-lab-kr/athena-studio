@@ -151,7 +151,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   "github": { "org": "acme-inc" },        // PR 조회·링크 판별
   "trackedDeps": ["^@acme/"],             // 지문에 버전을 남길 사내 패키지(정규식)
   "worktreeCopy": { "include": [".env", ".env.*"] },
-  "derived": { "servicesColumns": ["…"], "playbookOrder": ["…"] },   // 없으면 설정 순서
+  "derived": { "servicesColumns": ["…"] },   // 없으면 설정 순서
   "hooks": { "delegateEnv": "hooks/delegate-env.sh" },
   "models": { "learnReview": "sonnet" },  // 역할·엔진별 모델(아래 "models") — 없으면 기본 모델 · athena init 이 새 팩에 이 한 줄을 넣는다
   "repos": [

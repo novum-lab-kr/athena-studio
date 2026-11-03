@@ -10,10 +10,9 @@
  *
  * 생성 구간은 문서 안에서 주석 마커로 감싼다:
  *   md   : <!-- BEGIN:generated:<이름> --> ... <!-- END:generated:<이름> -->
- *   html : 같은 형식
  *
  * 지문에 없는 사실(데이터 계층·상태 관리·UI·폼·인증 등 사람이 판단해 쓴 서술)은
- * 생성하지 않는다. 대신 마커 밖에 두고, 버전·포트 같은 숫자가 지문과 어긋나면 경고만 낸다.
+ * 생성하지 않는다 — 마커 밖에 두고 사람이 고친다.
  */
 import { readFileSync, writeFileSync, existsSync, readdirSync, realpathSync } from 'node:fs'
 import { join, dirname } from 'node:path'
@@ -187,49 +186,6 @@ const servicesTable = () => {
   return lines.join('\n')
 }
 
-// 이름 여럿을 공통 앞뒤 토막으로 줄인다 — ['web-a-fe', 'web-b-fe'] → 'web-*-fe (2)' (토막은 '-' 단위)
-const namePattern = (names) => {
-  if (names.length < 2) return names[0] ?? dash
-  const parts = names.map((name) => name.split('-'))
-  let head = 0
-  while (parts.every((part) => part.length > head + 1 && part[head] === parts[0][head])) head += 1
-  let tail = 0
-  while (parts.every((part) => part.length > head + tail + 1 && part.at(-1 - tail) === parts[0].at(-1 - tail))) tail += 1
-  return [...parts[0].slice(0, head), '*', ...(tail ? parts[0].slice(-tail) : [])].join('-') + ` (${names.length})`
-}
-
-// ---- playbook 기준 커밋 표 ----
-const baselineRows = () => {
-  const order = config.derived?.playbookOrder ?? config.repos.filter((repo) => repo.layer !== 'be').map((repo) => repo.name)
-  return order
-    .filter((name) => snaps[name])
-    .map((name) => {
-      const snapshot = snaps[name]
-      const entry = config.repos.find((item) => item.name === name) ?? {}
-      const agent = entry.kind === 'monorepo' ? namePattern(agentsFor(name).split(', ')) : agentsFor(name) || dash
-      const branch = (snapshot.branch ?? '').replace('origin/', '')
-      const label = entry.kind === 'packages' ? `${name} (${branch})` : name
-      const sha = snapshot.apps ? `앱별 ${namePattern(Object.values(entry.apps ?? {}).map((app) => app.branch)).replace(/ \(\d+\)$/, '')}` : short(snapshot.sha)
-      const subject = (snapshot.subject ?? '').slice(0, 58)
-      const extra = snapshot.apps ? `packages 는 dev ${short(snapshot.sha)}` : subject
-      return `            <tr><td>${label}</td><td class="name">${agent}</td><td class="name">${sha}</td><td>${snapshot.shaDate ?? dash}</td><td>${escapeHtml(extra)}</td></tr>`
-    })
-    .join('\n')
-}
-const escapeHtml = (text) => String(text).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-
-/** last sync 는 실행일이 아니라 **지문이 확정된 시각**이다.
- *  실행일을 쓰면 문서를 안 고쳐도 날짜만 바뀌어 --check 가 실패하고,
- *  실제 sync 없이 생성만 다시 돌려도 최신 날짜가 붙는다. */
-const lastSyncDate = () => {
-  try {
-    const state = JSON.parse(readFileSync(join(ROOT, '.sync/state.json'), 'utf8'))
-    if (state.acceptedAt) return String(state.acceptedAt).slice(0, 10)
-  } catch { /* state.json 이 없으면 지문 날짜로 폴백 */ }
-  const dates = Object.values(snaps).map((s) => s.shaDate).filter(Boolean).sort()
-  return dates.length ? dates[dates.length - 1] : '(미확정)'
-}
-
 // ---- 마커 치환 ----
 const replaceBlock = (text, name, body) => {
   const pattern = new RegExp(`(<!-- BEGIN:generated:${name}[^>]*-->)([\\s\\S]*?)(<!-- END:generated:${name} -->)`)
@@ -244,21 +200,13 @@ const replaceBlock = (text, name, body) => {
   return { text: next, found: true, changed }
 }
 
-// 생성 대상은 팩 파일만 — 코어 파일에 회사 표를 써 넣지 않는다(docs/services.md 는 팩 링크, 플레이북은 팩 guide/ 판)
-const PLAYBOOK = 'pack/guide/playbook.html'
+// 생성 대상은 팩 파일만 — 코어 파일에 회사 표를 써 넣지 않는다(docs/services.md 는 팩 링크)
 const inPack = (file) => {
   if (!config.packDir || !existsSync(join(ROOT, file))) return false
   try { return realpathSync(join(ROOT, file)).startsWith(realpathSync(config.packDir) + '/') } catch { return false }
 }
 const allTargets = [
-  { file: 'docs/services.md', blocks: { 'stack-table': servicesTable() } },
-  {
-    file: PLAYBOOK,
-    blocks: {
-      'baseline-rows': baselineRows(),
-      'last-sync': `      <span>last sync ${lastSyncDate()}</span>`
-    }
-  }
+  { file: 'docs/services.md', blocks: { 'stack-table': servicesTable() } }
 ]
 const targets = allTargets.filter((target) => inPack(target.file))
 for (const target of allTargets) if (!targets.includes(target)) console.log(`  건너뜀: ${target.file} (팩에 없다)`)
@@ -296,41 +244,8 @@ if (missing.length) {
 }
 if (!CHECK_ONLY) for (const item of planned) { writeFileSync(item.path, item.text); wrote += 1 }
 
-// ---- 마커 밖 사실 검증 (생성하지 않고 경고만) ----
-const warnings = []
-const playbookPath = join(ROOT, PLAYBOOK)
-if (inPack(PLAYBOOK)) {
-  const html = readFileSync(playbookPath, 'utf8')
-  // 문서 전체에서 값을 찾으면 다른 레포의 같은 값에 가려 drift 를 놓친다.
-  // (실제로 Next 15.5 를 99.5 로 바꿔도 다른 곳의 "Next 15" 때문에 통과했다)
-  // 그래서 그 레포 이름이 들어 있는 행(<tr>) 안에서만 대조한다.
-  const rowFor = (name) => {
-    const rows = html.match(/<tr>[\s\S]*?<\/tr>/g) || []
-    return rows.filter((row) => row.includes(name)).join('\n')
-  }
-  for (const [name, snapshot] of Object.entries(snaps)) {
-    const row = rowFor(name)
-    if (!row) { warnings.push(`playbook.html: ${name} 을 언급하는 행이 없다 (표에서 빠졌을 수 있음)`); continue }
-    // 패키지 레포는 dev 서버가 없어 지문의 port 가 의미 없다 (기본값이 잡힌다)
-    // 백엔드는 플레이북에 포트 행이 없다(브랜치 표에 한 줄로 묶임) — 포트는 knowledge·지문이 정본
-    const { kind, layer } = config.repos.find((item) => item.name === name) || {}
-    const port = (snapshot.apps || kind === 'packages' || layer === 'be') ? null : snapshot.port
-    if (port && !row.includes(String(port))) {
-      warnings.push(`playbook.html: ${name} 행의 포트가 지문(${port})과 다르다`)
-    }
-    const next = snapshot.apps ? resolveDep(snapshot, 'next', Object.keys(snapshot.apps)[0]) : resolveDep(snapshot, 'next')
-    if (next) {
-      const major = next.split('.')[0]
-      if (/Next/.test(row) && !new RegExp(`Next\\s*${major}`).test(row)) {
-        warnings.push(`playbook.html: ${name} 행의 Next major 가 지문(${major})과 다르다`)
-      }
-    }
-  }
-}
-
 console.log('')
-if (warnings.length) { console.log('⚠️ 마커 밖 사실이 지문과 어긋날 수 있음 (자동 수정 안 함):'); warnings.forEach((item) => console.log(`  - ${item}`)) }
-if (!warnings.length) console.log('✅ 마커·마커 밖 사실 모두 이상 없음')
+console.log('✅ 마커 이상 없음')
 
 if (CHECK_ONLY) {
   console.log(drift ? `\n차이 ${drift}곳. \`node scripts/build-derived.mjs\` 로 갱신하세요.` : '\n파생 문서가 지문과 일치합니다.')
