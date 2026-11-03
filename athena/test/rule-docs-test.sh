@@ -150,6 +150,7 @@ check "경로가 같아도 add 문서 본문이 바뀌면 문서 변화로 보�
 echo "delegate"
 ATH="$TMP/ath"; mkdir -p "$ATH/plans/task" "$ATH/repos" "$ATH/packs/t" "$ATH/.claude/agents"
 cp -R "$SRC/scripts" "$ATH/"; cp "$SRC/AGENTS.md" "$ATH/AGENTS.md"; cp "$SRC/.claude/settings.json" "$ATH/.claude/settings.json"
+cp "$SRC/test/fixtures/lead-screen.py" "$ATH/scripts/lib/screen.py"   # 사용자 pane 환경 대신 격리한 발신자
 printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$ATH/.claude/agents/web-fe.md"
 printf '{"pack":"packs/t","reposRoot":".."}\n' > "$ATH/athena.config.json"
 DEL="$TMP/delrepo"; git init -q -b main "$DEL"; echo agreement > "$DEL/WORKING-AGREEMENT.md"; python3 -c 'print("큰"*500)' > "$DEL/big.md"

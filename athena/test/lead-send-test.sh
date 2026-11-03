@@ -2,7 +2,7 @@
 # 에이전트 → 아테나 보내기 시험 — scripts/lead-send.py(받을 수 없으면 모아 뒀다 넣기 · 요청은 열지 않음 · 못 넣으면 계획서 기록).
 # 가짜 화면 CLI · 가짜 bin/athena · 임시 본체 사본으로 — 화면 · claude 를 부르지 않는다 · 15초 안팎
 #   바로 보냄 · 선택 창이면 모아 둠 → 닫히면 차례대로 넣음 · 앞에 미룬 글 뒤에 줄 섬
-#   받을 pane 이 닫힘 → 계획서 Lead pane · 하나뿐인 아테나 pane · 보고 있는 아테나 pane 으로 / 여러 개면 기록만 / 없으면 모아 뒀다 생기면 넣음
+#   받을 pane 이 닫힘 → 계획서의 명시한 Lead pane 만 허용 / 유일·focused 대체 금지 / 같은 담당 복귀·명시 재배정만 허용
 #   오래 기다림 · 전송 확인 실패(다시 넣지 않음) · 옛 구조는 기록만 · 어느 갈래도 요청(question)을 열지 않음 · 사용법
 #
 # 사용: test/lead-send-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -77,6 +77,49 @@ reset() {
   printf '# x\n\n## Checkpoint\n- Status: in_progress\n- Lead pane: %s\n\n## 결과\n- (요약)\n\n## Commits\n- (없음)\n' "${1:-p1}" > "$PLAN"
 }
 
+echo "▶ 위임 발신자의 ID·역할·대화 검증 — delegate.sh --caller 경로"
+python3 - "$BODY" <<'PYTEST'
+import importlib.util, os, pathlib, sys
+root = pathlib.Path(sys.argv[1])
+spec = importlib.util.spec_from_file_location('lead_send', root / 'scripts/lead-send.py')
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+class Backend:
+    def self_info(self):
+        return {'inside': True, 'pane_id': 'p1'}
+    def get_pane(self, pane):
+        if pane == 'closed':
+            raise ValueError('없는 pane')
+        return {'id': pane, 'cwd': str(root), 'agent': 'codex'}
+backend = Backend()
+module.screen.get_backend = lambda: backend
+module.pane_session = lambda pane: 'session-a'
+os.environ['CODEX_THREAD_ID'] = 'session-a'
+assert module.caller_lead() == ('p1', 'session-a')
+for identity, record, thread in [
+    ('closed', {}, 'session-a'),
+    ('p1', {'cwd': '/other', 'agent': 'codex'}, 'session-a'),
+    ('p1', {'cwd': str(root), 'agent': 'codex', 'label': '🤖 worker'}, 'session-a'),
+    ('p1', {'cwd': str(root), 'agent': 'codex'}, 'session-b'),
+]:
+    backend.self_info = lambda: {'inside': True, 'pane_id': identity}
+    def get_pane(pane):
+        if identity == 'closed':
+            raise ValueError('없는 pane')
+        return {'id': pane, **record}
+    backend.get_pane = get_pane
+    os.environ['CODEX_THREAD_ID'] = thread
+    try:
+        module.caller_lead()
+    except ValueError:
+        continue
+    raise AssertionError((identity, record, thread))
+backend.self_info = lambda: {'inside': False}
+assert module.caller_lead() == ('', '')
+print('  ✔ 정상 담당·닫힌 ID·다른 본체·위임 pane·다른 대화·화면 밖')
+PYTEST
+check "위임 발신자 검증" "$?" 0
+
 echo "▶ 바로 보냄"
 reset
 out="$(lead_send '[fe → 아테나] 끝 A')"; code=$?
@@ -132,61 +175,65 @@ check "✅ 출력" "${out:0:1}" "✅"
 check "p3 에 넣음" "$(count "$WORK/sent" '^SENT p3 계획서 아테나로')" 1
 check "요청 없음" "$(count "$WORK/requests")" 0
 
-echo "▶ 받을 pane 이 닫힘 · 떠 있는 아테나 pane 이 하나 → 그 pane 으로(위임 · 다른 폴더 · 셸은 빼고)"
-reset
-echo p1 > "$WORK/closed"
-panes 'p5:claude:body:🤖 athena-studio-fe · x:true' 'p6:claude:other:다른 곳:true' p7::body:셸:true p2:claude:body:아테나:false
-out="$(lead_send '하나뿐인 아테나로')"
-check "✅ 출력" "${out:0:1}" "✅"
-check "p2 에 넣음" "$(count "$WORK/sent" '^SENT p2 하나뿐인 아테나로')" 1
-check "요청 없음" "$(count "$WORK/requests")" 0
+echo "▶ 닫힌 담당을 유일·focused 다른 대화로 대체하지 않음"
+for layout in single focused; do
+  reset
+  echo p1 > "$WORK/closed"
+  panes p2:codex:body:아테나:true
+  [ "$layout" = single ] || panes p2:codex:body:아테나:true p4:claude:body:아테나:false
+  out="$(lead_send '대체하면 안 되는 글')"
+  check "$layout 대기" "${out:0:1}" "⏳"
+  sleep 2.5
+  check "$layout 다른 대화에 넣지 않음" "$(count "$WORK/sent")" 0
+  # 같은 담당이 돌아오면 대기하던 글이 전달된다.
+  rm -f "$WORK/closed"
+  wait_until '[ "$(queued)" = 0 ]'
+  check "$layout 원래 담당에게 넣음" "$(count "$WORK/sent" '^SENT p1 대체하면 안 되는 글')" 1
+done
 
-echo "▶ 여러 개 · 보고 있는 아테나 pane 이 하나 → 그 pane 으로"
-reset
-echo p1 > "$WORK/closed"
-panes p2:claude:body:아테나:false p4:codex:body:아테나:true
-out="$(lead_send '보고 있는 아테나로')"
-check "✅ 출력" "${out:0:1}" "✅"
-check "p4 에 넣음" "$(count "$WORK/sent" '^SENT p4 보고 있는 아테나로')" 1
+echo "▶ 잘못된 인자가 살아 있어도 계획서 담당을 우선"
+reset p3
+out="$(lead_send '명시한 담당으로')"
+check "p3에만 넣음" "$(count "$WORK/sent" '^SENT p3 명시한 담당으로')" 1
+check "p1에는 넣지 않음" "$(count "$WORK/sent" '^SENT p1 ')" 0
 
-echo "▶ 여러 개 · 보고 있는 아테나 pane 이 없음 → 넣지 않고 계획서 · 사건 기록만"
-reset
-echo p1 > "$WORK/closed"
-panes p2:claude:body:아테나:false p4:codex:body:아테나:false
-out="$(lead_send '고를 수 없는 글')"; code=$?
-check "종료 0" "$code" 0
-check "⚠️ 출력" "${out:0:2}" "⚠️"
-check "넣지 않음" "$(count "$WORK/sent")" 0
-check "요청 없음" "$(count "$WORK/requests")" 0
-check "계획서 결과 절에 글" "$(grep -c '여러 개라 고르지 못했어요: 고를 수 없는 글$' "$PLAN")" 1
-check "결과 절 안(Commits 앞)" "$(awk '/^## 결과/{on=1} /^## Commits/{on=0} on && /고를 수 없는 글/' "$PLAN" | wc -l | tr -d ' ')" 1
-check "사건 기록" "$(count "$EVENTS" '"type":"lead-send-unsent".*"written":true')" 1
-check "대기열 없음" "$(queued)" 0
-
-echo "▶ 떠 있는 아테나 pane 이 없음 → 모아 뒀다 생기면 넣음"
-reset
-echo p1 > "$WORK/closed"
-out="$(lead_send '없는 pane')"; code=$?
-check "종료 0" "$code" 0
-check "⏳ 출력" "${out:0:1}" "⏳"
-check "대기열 하나" "$(queued)" 1
-sleep 2.5
-check "아테나가 없는 동안 안 넣음" "$(count "$WORK/sent")" 0
-panes 'p2:claude:body:새 아테나:false'
-wait_until '[ "$(queued)" = 0 ]'
-check "새 아테나 pane 에 넣음" "$(count "$WORK/sent" '^SENT p2 없는 pane')" 1
-check "요청 없음" "$(count "$WORK/requests")" 0
-check "기록 없음" "$(plan_lines p1)" 0
-
-echo "▶ 기다리는 동안 pane 이 닫힘 → 하나뿐인 아테나 pane 으로"
+echo "▶ 대기 중 명시 재배정만 따라감"
 reset
 touch "$WORK/waiting"
-lead_send '닫힐 pane' > /dev/null
-panes p2:claude:body:아테나:false
-echo p1 > "$WORK/closed"; rm -f "$WORK/waiting"
+lead_send '재배정한 글' > /dev/null
+echo p1 > "$WORK/closed"
+panes p2:codex:body:아테나:true
+rm -f "$WORK/waiting"
+sleep 2.5
+check "계획서 변경 전 넣지 않음" "$(count "$WORK/sent")" 0
+sed -i '' 's/Lead pane: p1/Lead pane: p2/' "$PLAN"
 wait_until '[ "$(queued)" = 0 ]'
-check "p2 에 넣음" "$(count "$WORK/sent" '^SENT p2 닫힐 pane')" 1
-check "요청 없음" "$(count "$WORK/requests")" 0
+check "계획서 재배정 후 p2에 넣음" "$(count "$WORK/sent" '^SENT p2 재배정한 글')" 1
+
+echo "▶ 대기 중 같은 pane의 대화가 바뀌면 기록만"
+reset
+mkdir -p "$DATA/state/pane-sessions"
+printf '{"session":"session-a"}' > "$DATA/state/pane-sessions/p1.json"
+touch "$WORK/waiting"
+lead_send '옛 대화 보고' > /dev/null
+printf '{"session":"session-b"}' > "$DATA/state/pane-sessions/p1.json"
+rm -f "$WORK/waiting"
+wait_until '[ "$(queued)" = 0 ]'
+check "새 대화에 넣지 않음" "$(count "$WORK/sent")" 0
+check "계획서에 소유권 오류" "$(grep -c '담당 대화가 바뀌었거나 확인되지 않아요: 옛 대화 보고$' "$PLAN")" 1
+rm -f "$DATA/state/pane-sessions/p1.json"
+
+echo "▶ 계획서에 묶인 담당 대화가 바뀌면 즉시 전송하지 않음"
+reset
+mkdir -p "$DATA/state/pane-sessions"
+printf '{"session":"session-b"}' > "$DATA/state/pane-sessions/p1.json"
+sed -i '' '/Lead pane: p1/a\
+- Lead session: session-a\
+' "$PLAN"
+out="$(lead_send '다른 대화로 보내지 않음')"
+check "⚠️ 기록" "${out:0:2}" "⚠️"
+check "새 대화에 넣지 않음" "$(count "$WORK/sent")" 0
+rm -f "$DATA/state/pane-sessions/p1.json"
 
 echo "▶ 너무 오래 못 넣음 → 계획서 기록만"
 reset
