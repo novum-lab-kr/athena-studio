@@ -27,7 +27,7 @@ node "$A/bin/archify.mjs" visual-check pack/diagrams/<서비스>.html --json
 
 ## 점검·목록
 
-`node scripts/check-diagrams.mjs --strict`는 현재 팩의 타입별 JSON을 찾아 architecture의 고정 커밋·근거 파일/줄·현재 운영 ref를 확인한다. 관련 파일 전체 비교이므로 변경이 있으면 보수적으로 재대조를 요구한다. 커밋만 뒤처져도 자동 repin하지 않는다. 코드 의미·화면 전수·Archify 레이아웃 검증을 대체하지 않는다. sequence 등 자동 근거 미지원 타입은 가이드의 코드 대조가 필요하다. 읽지 못한 JSON·기준 ref·근거는 성공으로 처리하지 않는다.
+`node scripts/check-diagrams.mjs --strict`는 현재 팩의 타입별 JSON을 찾아 architecture의 고정 커밋·근거 파일/줄·현재 운영 ref를 확인한다. 그림의 `<레포>/<앱>` 서비스 경로로 운영 branch를 한 번 정하고 공용 코드 근거에도 같은 branch를 적용한다. 기존 서비스 ID는 유일한 앱 폴더 근거로 앱을 좁히며 여러 앱이 섞여 대상이 불명확하면 서비스 경로 지정을 요구한다. 관련 파일 전체 비교이므로 변경이 있으면 보수적으로 재대조를 요구한다. 커밋만 뒤처져도 자동 repin하지 않는다. 코드 의미·화면 전수·Archify 레이아웃 검증을 대체하지 않는다. sequence 등 자동 근거 미지원 타입은 가이드의 코드 대조가 필요하다. 읽지 못한 JSON·기준 ref·근거는 성공으로 처리하지 않는다.
 
 카드는 기존 `index.json` 형식을 따른다:
 
