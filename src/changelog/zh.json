@@ -1,4 +1,7 @@
 {
+  "The Board's Metrics tab now highlights average task, pull request, review and verification times, with medians, 75th percentiles, sample counts and calculation details. The task timeline has been removed.": "看板的“指标”标签页现在突出显示任务、PR、审查和验证的平均耗时，并提供中位数、p75、样本数量和计算说明。任务时间线已移除。",
+  "Decision consoles now check their target pane so decisions are not sent using an outdated pane identifier.": "决策控制台现在检查目标 pane，避免使用过时的 pane 标识发送决策。",
+  "Instructions to agents now follow the repository's current review and merge settings, including whether merging needs confirmation.": "发送给代理的说明现在遵循仓库当前的审查和合并设置，包括合并是否需要确认。",
   "The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.": "看板的“指标”页新增耗时、工作状态、验证结果和每日完成情况图表，以及任务时间线。已归档的计划也会显示标题。",
   "Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.": "代理监视器会用应用语言简要显示 Codex code-mode 工具调用。",
   "The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.": "移除了看板的“QA”页和核心 QA 运行器。仓库验证仍可使用。",

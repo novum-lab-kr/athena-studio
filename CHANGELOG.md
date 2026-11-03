@@ -28,6 +28,17 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.49: v0.48.4..b1eb653 머지(#224 ~ #228)에서 사용자에게 보이는 변경만. 배포 파일 정리 #223 · 내부 검증 변경은 뺐다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.50: 공개 v0.49.3 이후 PR230 · 231 · 232의 사용자 변경만. 범위 끝은 열어 둔다 -->
+
+## 0.50 (v0.50.0 – · Nov 3, 2026)
+
+### Improved
+- The Board's Metrics tab now highlights average task, pull request, review and verification times, with medians, 75th percentiles, sample counts and calculation details. The task timeline has been removed.
+
+### Fixed
+- Decision consoles now check their target pane so decisions are not sent using an outdated pane identifier.
+- Instructions to agents now follow the repository's current review and merge settings, including whether merging needs confirmation.
+
 ## 0.49 (v0.49.0 – · Nov 3, 2026)
 
 ### Improved

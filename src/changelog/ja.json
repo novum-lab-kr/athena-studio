@@ -1,4 +1,7 @@
 {
+  "The Board's Metrics tab now highlights average task, pull request, review and verification times, with medians, 75th percentiles, sample counts and calculation details. The task timeline has been removed.": "ボードの「指標」タブで、作業・PR・レビュー・検証の平均所要時間を大きく表示します。中央値・p75・集計件数・計算基準も確認でき、作業タイムラインは削除しました。",
+  "Decision consoles now check their target pane so decisions are not sent using an outdated pane identifier.": "決定コンソールで送信先の pane を確認し、古い pane 識別子で決定を送信しないようにしました。",
+  "Instructions to agents now follow the repository's current review and merge settings, including whether merging needs confirmation.": "エージェントへの案内が、マージの確認が必要かどうかを含め、リポジトリの現在のレビュー・マージ設定に従うようにしました。",
   "The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.": "ボードの［指標］タブに所要時間・作業状態・検証結果・日別の完了数のグラフと作業タイムラインを追加しました。アーカイブ済みの計画書もタイトルで表示します。",
   "Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.": "エージェントモニターでCodexのcode-modeツール呼び出しをアプリの言語で簡潔に表示します。",
   "The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.": "ボードの［QA］タブとコアのQA実行機能を削除しました。リポジトリの検証は引き続き利用できます。",
