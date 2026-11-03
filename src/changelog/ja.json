@@ -1,4 +1,10 @@
 {
+  "The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.": "ボードの［指標］タブに所要時間・作業状態・検証結果・日別の完了数のグラフと作業タイムラインを追加しました。アーカイブ済みの計画書もタイトルで表示します。",
+  "Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.": "エージェントモニターでCodexのcode-modeツール呼び出しをアプリの言語で簡潔に表示します。",
+  "The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.": "ボードの［QA］タブとコアのQA実行機能を削除しました。リポジトリの検証は引き続き利用できます。",
+  "When a core update skips a busy body, the app now waits for the blocking work to finish and retries the update automatically.": "コアの更新で作業中の本体をスキップした場合、その作業が終わるのを待ってアプリが自動で更新を再試行します。",
+  "Scroll input in panes is restored correctly after reconnecting, including terminal mouse tracking modes.": "paneへの再接続後も、ターミナルのマウス追跡モードに応じたスクロール入力が正しく復元されます。",
+  "Messages that cannot be delivered to Athena now stay queued without creating a question in Work.": "アテナにすぐ送れないメッセージは、［作業］に質問を作らず送信待ちのまま保持します。",
   "Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.": "ミスをフック・検証スクリプト・テストで防げる場合、学習レビューはメモ候補の代わりに整備候補を出します。ボードの[学習]タブに🔧カードで表示され、ボタンでアテナに整備を任せられます。",
   "When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.": "レビューが以前と同じ種類の問題を再び見つけると、次回それを事前に捕まえるチェックをどこに置くかも提案します。",
   "Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.": "今見ているpaneの許可プロンプトはmacOS通知を表示しません。[作業]にはそのまま表示されます。",

@@ -1,4 +1,10 @@
 {
+  "The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.": "看板的“指标”页新增耗时、工作状态、验证结果和每日完成情况图表，以及任务时间线。已归档的计划也会显示标题。",
+  "Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.": "代理监视器会用应用语言简要显示 Codex code-mode 工具调用。",
+  "The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.": "移除了看板的“QA”页和核心 QA 运行器。仓库验证仍可使用。",
+  "When a core update skips a busy body, the app now waits for the blocking work to finish and retries the update automatically.": "核心更新跳过忙碌的本体后，应用会等待阻塞更新的工作结束，再自动重试更新。",
+  "Scroll input in panes is restored correctly after reconnecting, including terminal mouse tracking modes.": "重新连接 pane 后，会正确恢复滚动输入，包括终端的鼠标跟踪模式。",
+  "Messages that cannot be delivered to Athena now stay queued without creating a question in Work.": "无法立即发送给雅典娜的消息会留在发送队列中，不再在“工作”中创建问题。",
   "Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.": "当错误可以用钩子、验证脚本或测试拦住时，学习审查会提出整备候选，而不是笔记候选。看板的[学习]标签页以🔧卡片显示，并可用按钮交给雅典娜处理。",
   "When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.": "审查再次发现与之前同类的问题时，会同时建议在哪里加入能提前发现它的检查。",
   "Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.": "正在查看的 pane 中的权限提示不再弹出 macOS 通知，[工作]中仍会显示。",
