@@ -32,6 +32,49 @@ for file in "$SRC"/docs/diagrams/*.html; do
   T --check "$file" > /dev/null; check "코어 다이어그램에 지금 테마: $(basename "$file")" '[ $? -eq 0 ]'
 done
 
+# CSS 문구 대신 실제 브라우저의 SVG computed fill로 8px/9px 라벨을 확인한다.
+node --input-type=module - "$SRC" "$WORK" <<'JS'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+const [source, work] = process.argv.slice(2)
+const candidates = [process.env.ARCHIFY_CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome']
+const chrome = candidates.find(file => file && existsSync(file))
+if (!chrome) {
+  console.log('  ⏭ SVG 라벨 computed style 실행 못 함 — Chrome/Chromium 없음')
+  process.exit(77)
+}
+const css = readFileSync(join(source, 'scripts/diagram-theme.css'), 'utf8')
+const fixture = join(work, 'labels.html')
+writeFileSync(fixture, `<html><head><style>.t-backend { fill: var(--backend-stroke); } ${css}</style></head><body>
+<svg><text id="eight" class="t-backend" font-size="8">구조 요청</text><text id="nine" class="t-backend" font-size="9">pane:split invoke</text></svg><span id="accent" style="color:var(--arrow-emphasis)"></span><pre id="result"></pre>
+<script>
+const results = ['light','dark'].map(theme => {
+ document.documentElement.dataset.theme = theme;
+ return {theme, expected:getComputedStyle(document.getElementById('accent')).color, labels:['eight','nine'].map(id=>({id,fill:getComputedStyle(document.getElementById(id)).fill,size:getComputedStyle(document.getElementById(id)).fontSize,weight:getComputedStyle(document.getElementById(id)).fontWeight}))};
+});
+document.getElementById('result').textContent = JSON.stringify(results);
+</script></body></html>`)
+const flags = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${join(work, 'chrome-label-profile')}`, '--dump-dom', pathToFileURL(fixture).href]
+if (process.getuid?.() === 0) flags.unshift('--no-sandbox')
+const result = spawnSync(chrome, flags, { encoding:'utf8', timeout:30000, maxBuffer:2*1024*1024 })
+assert.equal(result.status, 0, 'Chrome 라벨 회귀 실행 실패')
+const json = result.stdout.match(/<pre id="result">([^<]+)<\/pre>/)?.[1]
+assert.ok(json, 'computed style 결과 없음')
+for (const row of JSON.parse(json)) {
+ for (const label of row.labels) assert.equal(label.fill, row.expected, `${row.theme} ${label.id}: 요청 라벨은 강조 읽기색이어야 함`)
+ assert.equal(row.labels[1].size, '9px', '9px 메시지는 크기 유지')
+ assert.equal(row.labels[1].weight, '400', '9px 메시지는 굵기 유지')
+}
+console.log('  ✔ 밝음/어두움 8px·9px SVG 요청 라벨 computed fill')
+JS
+BROWSER_STATUS=$?
+if [ "$BROWSER_STATUS" -ne 77 ]; then
+  check "실제 브라우저 SVG 라벨 색 회귀" '[ "$BROWSER_STATUS" -eq 0 ]'
+fi
+
 # 원본/최종 분리와 영수증·캡처 수명은 실제 파일로 검증한다.
 node --input-type=module - "$SRC" "$WORK" <<'JS'
 import assert from 'node:assert/strict'
