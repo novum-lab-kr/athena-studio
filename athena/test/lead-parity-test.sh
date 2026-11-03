@@ -38,9 +38,9 @@ try {
     assert.ok(routingImport, 'Claude 라우팅 import')
     assert.equal(resolve(root, 'docs', routingImport), join(root, 'pack/ROUTING.md'))
   })
-  check('복사된 본체에서도 여섯 Codex 스킬은 Claude 정본을 가리킨다', () => {
+  check('복사된 본체에서도 일곱 Codex 스킬은 Claude 정본을 가리킨다', () => {
     assert.ok(lstatSync(join(root, '.agents/skills')).isSymbolicLink())
-    for (const name of ['call', 'monitor', 'board', 'sync', 'guide', 'setup']) {
+    for (const name of ['call', 'monitor', 'board', 'sync', 'guide', 'setup', 'diagram']) {
       assert.equal(realpathSync(join(root, '.agents/skills', name, 'SKILL.md')), realpathSync(join(root, '.claude/skills', name, 'SKILL.md')))
     }
   })

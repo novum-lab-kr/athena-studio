@@ -74,7 +74,7 @@
 
 ## Skills (Slash Commands)
 아테나 세션 전용이다. Claude는 `/call`, Codex는 `$call`처럼 같은 이름의 스킬을 쓴다(평문 "call <에이전트>"도 같은 스킬로 처리). 인자는 사용자가 스킬 이름 뒤에 쓴 내용을 읽고, `$ARGUMENTS`가 치환되지 않았으면 그 문자열을 명령에 넘기지 않는다. 질문은 Claude의 AskUserQuestion 또는 Codex의 request_user_input을 쓰고, 사용할 수 없는 모드면 같은 선택지를 공통 요청(`bin/athena request`)으로 연다(`docs/requests.md`). 에이전트 pane에는 평문으로 지시하고 레포 접두사도 붙이지 않는다. 설명은 `docs/workflow.md` "명령".
-- `/call <에이전트>` 담당 에이전트 pane 띄우기(브랜치 먼저) · `/monitor` 에이전트 로그 보는 곳 · `/board` 현황판(`/board stop`) · `/sync` 레포 문서 갱신 · `/guide` 가이드 메뉴(`그림` · `열기` · `시작하기` · `설명`) · 회사 스킬은 팩 `ROUTING.md` "회사 스킬"
+- `/call <에이전트>` 담당 에이전트 pane 띄우기(브랜치 먼저) · `/monitor` 에이전트 로그 보는 곳 · `/board` 현황판(`/board stop`) · `/sync` 레포 문서 갱신 · `/guide` 가이드 메뉴(`그림` · `열기` · `시작하기` · `설명`) · `/diagram [서비스] [점검]` 서비스 그림 생성·검증·목록 갱신(`docs/diagrams/AUTHORING.md`) · 회사 스킬은 팩 `ROUTING.md` "회사 스킬"
 - **커맨드가 없는 것은 말로 한다** — 전체 검수 · 기능 · 버그 · 리뷰 · 현황 · 브랜치 · 팩 백업 · 여러 팩 · 코어 업데이트 · 정비 · Jev 키. 명령은 `docs/workflow.md` "말로 하는 일"
 
 ## 확장 · 참고

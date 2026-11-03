@@ -15,6 +15,7 @@ export const OVERLAY = [
   { from: 'skills', to: '.claude/skills', each: true },
   { from: 'knowledge', to: 'docs/knowledge', each: true },
   { from: 'docs', to: 'docs', each: true },
+  { from: 'diagrams', to: 'docs/diagrams', each: true },
   { from: 'verify', to: 'scripts/verify', each: true },
   { from: 'scripts', to: 'scripts', each: true },
   { from: 'sync', to: '.sync', legacyOnly: true },

@@ -217,4 +217,8 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 
 ## 서비스 흐름 문서
 
-서비스 흐름 문서는 팩이 아니라 **레포 안** `docs/flows/` 에 있다 — 형식 `docs/knowledge/common/qa-flows.md`. 옛 팩의 `qa/` · `diagrams/` 폴더는 가져오기 · 내보내기가 받아 주지만 더 쓰지 않는다.
+서비스 흐름 문서는 팩이 아니라 **레포 안** `docs/flows/` 에 있다 — 형식 `docs/knowledge/common/qa-flows.md`. 옛 팩의 `qa/` 폴더는 가져오기 · 내보내기가 받아 주지만 더 쓰지 않는다. 서비스 그림은 아래의 팩 `diagrams/` 경로를 사용한다.
+
+## 서비스 다이어그램
+
+`diagrams/`는 서비스 그림·가이드·목록 카드의 팩 정본이다. `SERVICES.md`와 `guides/<서비스>.md`, `index.json`을 사용하며 새 팩 init은 서비스 표와 카드 뼈대를 만든다. 기존 팩은 필요한 항목만 추가한다. `pack link`가 각 항목을 본체 `docs/diagrams/`에 연결한다. 목록 `index.html`은 코어 `node scripts/build-diagram-index.mjs`가 현재 팩 원본을 읽어 다시 만든다. 생성·검증 절차는 `docs/diagrams/AUTHORING.md`, 명령은 Claude `/diagram`·Codex `$diagram`이다.

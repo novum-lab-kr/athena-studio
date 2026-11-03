@@ -1,13 +1,43 @@
 #!/usr/bin/env node
+// @ts-check
 // docs/diagrams/index.html 을 실제 파일 목록에서 만든다.
-// 아테나 자체 그림(작업 흐름 · 압축 전후) 카드뿐이다 — 서비스 흐름은 각 레포 docs/flows/ 가 맡는다.
+// 팩 서비스 카드와 기존 아테나 작업 흐름을 함께 보여 준다.
 //   node scripts/build-diagram-index.mjs
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { dirname, join, relative, resolve, sep } from 'node:path';
+import { paths } from './lib/config.mjs';
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = join(ROOT, 'docs/diagrams');
+
+// 팩 경로는 공통 설정 해석기를 따른다. 팩이 없는 코어에서도 기존 흐름 목록은 만든다.
+const packDir = paths(ROOT).packDir;
+const serviceDir = packDir ? join(packDir, 'diagrams') : DIR;
+const manifest = join(serviceDir, 'index.json');
+/** @param {unknown} value */
+const esc = (value) => String(value ?? '').replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll("'", '&#39;');
+/** @param {string} file */
+const link = (file) => {
+  // 팩 데이터가 지정한 상대 HTML만 허용한다. 외부 URL·상위 경로는 카드로 만들지 않는다.
+  if (typeof file !== 'string' || !file.endsWith('.html') || file.includes('\\') || file.split('/').some((part) => !part || part === '..' || part === '.') || /^[\/]|:/.test(file)) throw new Error('다이어그램 파일은 팩 안 상대 HTML 경로여야 한다');
+  const full = resolve(serviceDir, file);
+  if (!existsSync(full)) return '';
+  return relative(DIR, full).split(sep).map((part) => encodeURIComponent(part)).join('/');
+};
+const groups = existsSync(manifest) ? JSON.parse(readFileSync(manifest, 'utf8')).groups ?? [] : [];
+const types = [{ suffix: '.html', label: '구조' }, { suffix: '.domains.html', label: '화면 맵' }, { suffix: '.sequence.html', label: '요청 흐름' }];
+const serviceSections = groups.map((/** @type {{title: string, items: {base: string, name: string, sub?: string, desc?: string, extra?: {file: string, label: string}[]}[]}} */ group) => {
+  const cards = group.items.map((item) => {
+    const entries = [...types.map((type) => ({ file: item.base + type.suffix, label: type.label })), ...(item.extra ?? [])];
+    const pills = entries.map((entry) => {
+      const href = link(entry.file);
+      return href ? `<a class="pill" href="${esc(href)}">${esc(entry.label)}</a>` : '';
+    }).filter(Boolean);
+    return pills.length ? `<div class="card"><div class="t">${esc(item.name)}</div><div class="s">${esc(item.sub)}</div><div class="d">${esc(item.desc)}</div><div class="pills">${pills.join('')}</div></div>` : '';
+  }).filter(Boolean);
+  return cards.length ? `<h2>${esc(group.title)}</h2><div class="grid">${cards.join('\n')}</div>` : '';
+}).join('\n');
 
 const html = `<!doctype html>
 <html lang="ko">
@@ -65,7 +95,8 @@ const html = `<!doctype html>
 <body>
   <div class="wrap">
     <h1>아테나 다이어그램</h1>
-    <p class="lead">아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 흐름은 각 레포 <code>docs/flows/</code> 에 있다.</p>
+    <p class="lead">서비스 구조·요청 흐름과 아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.</p>
+    ${serviceSections}
     <h2>작업 흐름</h2>
     <div class="grid">
       <div class="card">
@@ -97,4 +128,4 @@ const html = `<!doctype html>
 </html>
 `;
 writeFileSync(join(DIR, 'index.html'), html);
-console.log('✅ index.html — 아테나 흐름 3(경량·정식·압축 전후)');
+console.log('✅ index.html — 팩 서비스 + 아테나 흐름 3(경량·정식·압축 전후)');

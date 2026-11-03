@@ -41,9 +41,11 @@ test('removeLink — 없는 경로는 넘어가고 일반 파일은 지운다', 
 test('linkOverlay — 이번 목록에 없는 옛 폴더 링크를 정리하고 팩 원본은 남긴다', async (t) => {
   const { linkOverlay } = await overlayUrl()
   const root = fakeBody(t)
+  fs.symlinkSync('../../packs/co/diagrams/guides', path.join(root, 'docs/diagrams/old-guides'))
   const result = linkOverlay(root)
-  assert.ok(result.stale.includes('docs/diagrams/guides'))
-  assert.equal(isLink(path.join(root, 'docs/diagrams/guides')), false)
+  assert.ok(result.stale.includes('docs/diagrams/old-guides'))
+  assert.equal(isLink(path.join(root, 'docs/diagrams/old-guides')), false)
+  assert.equal(fs.realpathSync(path.join(root, 'docs/diagrams/guides')), fs.realpathSync(path.join(root, 'packs/co/diagrams/guides')))
   assert.ok(fs.existsSync(path.join(root, 'packs/co/diagrams/guides/keep.txt')))
 })
 
