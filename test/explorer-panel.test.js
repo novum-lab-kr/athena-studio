@@ -6,6 +6,7 @@ const path = require('node:path')
 const { execFileSync } = require('node:child_process')
 const { installExplorer } = require('../src/main/explorer-panel.mts')
 const { createFiles } = require('../src/main/files.mts')
+const temp = require('./temp-dirs')
 
 // 문구는 키 그대로 — 어느 문구를 냈는지 본다
 const say = (key) => key
@@ -26,7 +27,7 @@ function fakeCtx(workspaces, panes) {
 }
 
 function tempDir() {
-  return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'explorer-panel-')))
+  return fs.realpathSync(temp.tempDir('explorer-panel-'))
 }
 
 const pane = (id, workspace, cwd, focused = false) => ({ id, tab_id: 't1', workspace_id: workspace, cwd, foreground_cwd: cwd, focused })

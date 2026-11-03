@@ -17,7 +17,7 @@ type Workspace = { id: string; label: string }
 // 현황판 카드에서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
 type LinkedPlan = { id?: unknown; grade?: string; status?: string; doneAt?: unknown }
 type TrayCard = { id?: string; kind?: string; title?: string; status?: string; html?: string | null; archived?: boolean; column?: string; doneAt?: unknown; mtime?: unknown; linkedPlan?: LinkedPlan }
-type TrayRequest = { id: string; kind?: string; title: string; state?: string }
+type TrayRequest = { id: string; kind?: string; title: string; state?: string; pane?: unknown; permission?: boolean }
 // 현황판 header.usage — 도구마다 창(5시간 · 주간 …)
 type UsageWindow = { label?: string; minutes?: unknown; percent?: unknown; resetsAt?: ResetsAt }
 type UsageTool = { id?: string; label?: string; windows?: UsageWindow[] }
@@ -191,12 +191,18 @@ export function usageItems(usage: unknown, now: number = Date.now(), say: Say = 
 // 알림 — 사람이 고르거나 답할 것만: pane 의 입력 대기 · 새로 열린 요청(질문 · 결정).
 // 응답 끝남 · 리뷰 · 완료는 알리지 않는다(사용자 2026-10-26 — 알림이 너무 많다). 메뉴 막대 패널 · 칸반 숫자로는 그대로 보인다.
 // 처음 본 상태는 알리지 않고(켤 때 기준만 잡는다), 같은 변화는 한 번만, 한 번에 여러 건이면 묶는다
+// 요청 알림을 누르면 열 곳 — 허락 창 알림은 pane 도(보고 있으면 거를 때 쓴다)
+function requestTarget(request: TrayRequest): Notice['target'] {
+  return request.permission && typeof request.pane === 'string' && request.pane ? { request: request.id, pane: request.pane } : { request: request.id }
+}
+
 export class Notifier {
   ready = false
   panes = new Map<string, { status: string; since: number; notified: boolean }>() // id → { status, since, notified }
   requests: Set<string> | null = null // 본 요청 id — 처음 본 목록은 알리지 않는다(켤 때 기준)
 
-  // 새로 열린 요청만 한 번 — [{ kind: 'request', title, body, target: { request } }]. requests 가 null 이면(못 읽음) 기억 그대로
+  // 새로 열린 요청만 한 번 — [{ kind: 'request', title, body, target: { request, pane? } }]. requests 가 null 이면(못 읽음) 기억 그대로.
+  // 허락 창 알림만 target 에 pane 을 싣는다 — 부르는 쪽이 지금 그 pane 을 보고 있으면 거른다(다른 요청은 보고 있어도 알린다)
   updateRequests(requests: unknown, say: Say = koreanSay): Notice[] {
     if (!Array.isArray(requests)) return []
     const list: (TrayRequest | null | undefined)[] = requests
@@ -204,7 +210,7 @@ export class Notifier {
     const known = this.requests
     this.requests = new Set(open.map((request) => request.id))
     if (known === null) return []
-    return open.filter((request) => !known.has(request.id)).map((request) => ({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: { request: request.id } }))
+    return open.filter((request) => !known.has(request.id)).map((request) => ({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: requestTarget(request) }))
   }
 
   // 반환: [{ kind: 'waiting', title, body, target: { pane } }] — 묶기(bundle)는 부르는 쪽이 거른 뒤에

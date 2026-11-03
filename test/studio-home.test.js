@@ -7,8 +7,9 @@ const os = require('os')
 const path = require('path')
 const { execFileSync } = require('child_process')
 const home = require('../src/lib/studio-home')
+const { tempDir } = require('./temp-dirs')
 
-const tmp = () => fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'studio-home-')))
+const tmp = () => fs.realpathSync(tempDir('studio-home-'))
 const env = home.gitEnv()
 const run = (cwd, ...args) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...args], { cwd, env, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 

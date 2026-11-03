@@ -4,10 +4,11 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const { socketPath } = require('../src/daemon/cli')
+const { tempDir } = require('./temp-dirs')
 
 // 격리 실행(ATHENA_STUDIO_HOME)에서도 pane 셸에 남은 ATHENA_STUDIO_SOCKET 이 사용자 데몬을 부르던 것(isolated-cli-socket)
 const homeWith = (fileName, socket) => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-cli-socket-'))
+  const home = tempDir('asd-cli-socket-')
   fs.writeFileSync(path.join(home, fileName), JSON.stringify({ socket }))
   return home
 }
@@ -25,7 +26,7 @@ test('ATHENA_STUDIO_HOME — 배포판 daemon.json 도 읽고 개발 앱 파일�
 })
 
 test('ATHENA_STUDIO_HOME 의 접속 파일이 없으면 사용자 데몬(ATHENA_STUDIO_SOCKET)으로 돌아가지 않고 못 찾음', () => {
-  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-cli-socket-'))
+  const home = tempDir('asd-cli-socket-')
   assert.equal(socketPath({ ATHENA_STUDIO_SOCKET: '/user/real.sock', ATHENA_STUDIO_HOME: home }), null)
 })
 

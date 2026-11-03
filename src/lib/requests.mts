@@ -17,6 +17,8 @@ export type StudioRequest = {
   plan: unknown
   html: unknown
   pane: unknown
+  // 허락 창 알림인지 — 코어 허락 훅이 여는 요청(키 perm:<pane> · athena/scripts/lib/pane_request.py watch_permission)
+  permission: boolean
   state: string
   rev: number
   createdAt: string
@@ -58,6 +60,7 @@ export function normalizeRequests(result: unknown): NormalizedRequests {
         plan: (links && links.plan) || null,
         html: (links && links.html) || null,
         pane: request.pane || null,
+        permission: typeof request.dedupeKey === 'string' && request.dedupeKey.startsWith('perm:'),
         state: request.state,
         rev: Number(request.rev) || 0,
         createdAt: String(request.createdAt || ''),

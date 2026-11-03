@@ -5,13 +5,14 @@ const fs = require('node:fs')
 const os = require('node:os')
 const path = require('node:path')
 const tokens = require('../src/lib/token-usage.mts')
+const { tempDir } = require('./temp-dirs')
 
 const answer = (id, usage, block = 'text') => JSON.stringify({ type: 'assistant', message: { id, content: [{ type: block }], usage } })
 const user = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
 const USAGE = { input_tokens: 10, output_tokens: 90, cache_creation_input_tokens: 1000, cache_read_input_tokens: 4000 }
 
 function tempProjects() {
-  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'token-usage-'))
+  const root = tempDir('token-usage-')
   fs.mkdirSync(path.join(root, '-a'))
   fs.mkdirSync(path.join(root, '-b'))
   return root

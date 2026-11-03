@@ -388,11 +388,13 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
     ctx.send('work:open', id)
   }
 
-  // 앞 창(메뉴 막대가 보는 창)의 요청이 바뀌면 — 새로 열린 것만 맥 알림 한 번(창이 여럿이어도 메뉴 막대가 보는 창 것만) · 메뉴 막대 다시 그리기
+  // 앞 창(메뉴 막대가 보는 창)의 요청이 바뀌면 — 새로 열린 것만 맥 알림 한 번(창이 여럿이어도 메뉴 막대가 보는 창 것만) · 메뉴 막대 다시 그리기.
+  // 지금 보고 있는 pane 의 허락 창 알림은 뺀다(target.pane 은 허락 창 알림에만 있다 — [작업] 목록 · 배지에는 그대로 남는다)
   function trayRequestsChanged(ctx: TrayCtx) {
     if (!tray || ctx !== trayState.ctx) return
     const now = ctx.requestsNow()
-    for (const item of trayModel.bundle(trayNotifier.updateRequests(now.supported ? now.requests : null, say), say)) notify(item)
+    const found = trayNotifier.updateRequests(now.supported ? now.requests : null, say)
+    for (const item of trayModel.bundle(found.filter((entry) => !lookingAt(entry)), say)) notify(item)
     refreshTray()
     if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
   }
