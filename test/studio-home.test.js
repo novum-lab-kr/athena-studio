@@ -356,6 +356,32 @@ test('건너뛴 본체: 막던 pid 가 다 끝나면 다시 · pid 를 모르면
   assert.equal(home.retryDue([], { alive, now: 60000 }), false)
 })
 
+test('건너뛴 본체: 잠금을 놓고도 pid 가 살아 있으면(heavy.sh 개발 서버) 5분 뒤 한 번 다시', () => {
+  // heavy.sh 는 개발 서버 시작이 끝나면 잠금을 놓지만 감시하느라 끝까지 산다 — pid 만 보면 서버를 끌 때까지 영영 기다린다
+  const [globex] = home.pendingFromUpdate({ bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'heavy', pid: 21 }] }] }, 0)
+  const alive = (pid) => pid === 21
+  assert.equal(home.retryDue([globex], { alive, now: 60000 }), false)
+  assert.equal(home.retryDue([globex], { alive, now: 5 * 60000 - 1 }), false)
+  assert.equal(home.retryDue([globex], { alive, now: 5 * 60000 }), true)
+})
+
+test('건너뛴 본체: 다시 올리기가 통째로 실패하면 대기를 지우지 않는다', () => {
+  const [globex] = home.pendingFromUpdate({ bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'heavy', pid: 21 }] }] }, 0)
+  // 본체별 결과 없음(명령 실패 · 결과 누락) — 남기고 이번 시각부터 1분 뒤 다시
+  for (const result of [{ ok: false, error: 'bad-output' }, null, undefined, { ok: true }]) {
+    const next = home.pendingAfterRetry([globex], result, 1000)
+    assert.equal(next.answered, false)
+    assert.deepEqual(next.pending, [{ id: 'globex', pids: [], timed: true, since: 1000, causes: [{ kind: 'heavy' }] }])
+    assert.equal(home.retryDue(next.pending, { alive: () => false, now: 1000 + 59999 }), false)
+    assert.equal(home.retryDue(next.pending, { alive: () => false, now: 1000 + 60000 }), true)
+  }
+  // 본체별 결과가 오면 그것으로 — 올렸으면 대기가 비고 · 또 바쁘면 새 pid 로
+  assert.deepEqual(home.pendingAfterRetry([globex], { ok: true, bodies: [{ id: 'globex', status: 'updated' }] }, 2000), { pending: [], answered: true })
+  const again = home.pendingAfterRetry([globex], { ok: false, bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'commit', pid: 33 }] }] }, 2000)
+  assert.equal(again.answered, true)
+  assert.deepEqual(again.pending.map((entry) => entry.pids), [[33]])
+})
+
 test('건너뛴 본체: 다시 켰을 때 번들 커밋보다 뒤(조상)인 팩 본체만 찾는다', () => {
   const repo = studioRepo()
   const bundle = path.join(repo, 'core.bundle')

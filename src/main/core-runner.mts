@@ -135,6 +135,8 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
   let lastRetry = 0
   // 다음 다시 올리기 결과를 (바뀐 것이 없어도) 팝업으로 — 앱을 다시 켰는데 아직 뒤처진 본체가 있을 때 한 번, 지금 상태를 보이게
   let announceNext = false
+  // 다시 올리기 명령이 통째로 실패한 것을 이미 알렸나 — 대기는 남겨 두고 또 시도하니, 이어서 실패해도 팝업은 한 번만(본체별 결과가 오면 다시 알릴 수 있게 푼다)
+  let failureNoted = false
   const alive = (pid: number): boolean => {
     try {
       process.kill(pid, 0)
@@ -170,10 +172,12 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
         return retried
       } catch (error) {
         logCore(`retry failed ${(error as Error).message}`)
-        return null
+        // 던진 것도 명령 전체 실패로 — 아래에서 대기를 남기고 이유를 알린다
+        const result = { ok: false, error: (error as Error).message || 'retry-failed' }
+        const failed: CoreUpdate = { state: 'partial', result, summary: studioHome.summarizeUpdate(result) }
+        return failed
       }
     })
-    if (!outcome) return
     const summary = outcome.summary
     logCore(`retry ${JSON.stringify({ state: outcome.state, updated: summary && summary.updated, skipped: summary && summary.skipped.map((entry) => `${entry.id}:${entry.reason}`), failed: summary && summary.failed.map((entry) => entry.id) })}`)
     if (!summary) {
@@ -183,7 +187,16 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
       coreUpdateNotice = outcome
       return onCaughtUp({ changed: false, notice: true })
     }
-    pending = studioHome.pendingFromUpdate(outcome.result as Parameters<typeof studioHome.pendingFromUpdate>[0])
+    // 본체별 결과가 왔을 때만 대기를 바꾼다 — 명령 전체 실패 · 결과 누락이면 기존 대기를 남기고(조금 뒤 또 시도) 실패 이유를 한 번 알린다
+    const next = studioHome.pendingAfterRetry(pending, outcome.result as Parameters<typeof studioHome.pendingAfterRetry>[1])
+    pending = next.pending
+    if (!next.answered) {
+      if (failureNoted) return
+      failureNoted = true
+      coreUpdateNotice = outcome
+      return onCaughtUp({ changed: false, notice: true })
+    }
+    failureNoted = false
     if (!pending.length) stopRetry()
     const changed = summary.updated.length > 0
     // 알릴 때 — 미뤄 둔 본체를 올렸거나 · 이제는 기다려도 안 되는 것(고쳐 둠 · 갈라짐 · 실패)이 남았거나 · 다시 켠 뒤 첫 시도
@@ -248,6 +261,9 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))] })
     for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: {}, chips: [String(entry.id)], dir: entry.dir ? String(entry.dir) : undefined })
     if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })
+    // 코어 update 가 본체별 결과 없이 통째로 실패했으면(ok:false · bodies 없음) 그 이유 — 빈 팝업으로 두지 않는다
+    const result = notice.result as { ok?: unknown; error?: unknown; bodies?: unknown } | null | undefined
+    if (!rows.length && result && result.ok === false && !Array.isArray(result.bodies)) rows.push({ kind: 'notMoved', params: { reason: String(result.error || notice.state) }, chips: [] })
     return rows
   }
 

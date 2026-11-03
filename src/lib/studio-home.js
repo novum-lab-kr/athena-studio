@@ -450,9 +450,12 @@ async function runBundleUpdate({ bundle, runCore, panesStateFile = null }) {
 // ── 건너뛴 본체 다시 올리기 ──
 // 코어 update 는 무거운 명령(heavy.sh 잠금) · 커밋(commit.sh · ship.sh)이 1분 넘게 돌면 그 본체를 건너뛴다(busy). 켤 때 한 번뿐이면
 // 주 본체가 이미 새 코어라 다음 켤 때도 다시 부르지 않는다 — 앱이 건너뛴 본체를 기억해 두고 막던 것이 끝나면 update 를 다시 부른다(사용자 결정 2026-11-03).
-// 막은 것(busy[])에 pid 가 있으면 그 pid 가 모두 끝났을 때, pid 를 모르는 막음(팩 작업 잠금 · ps 를 못 읽음)은 UPDATE_RETRY_IDLE_MS 뒤에
+// 막은 것(busy[])에 pid 가 있으면 그 pid 가 모두 끝났을 때, pid 를 모르는 막음(팩 작업 잠금 · ps 를 못 읽음)은 UPDATE_RETRY_IDLE_MS 뒤에.
+// pid 가 살아 있어도 UPDATE_RETRY_STALE_MS 가 지나면 한 번 다시 부른다 — pid 는 잠금을 쥔 프로세스일 뿐 잠금 자체가 아니다(heavy.sh 개발 서버는
+// 시작이 끝나면 잠금을 놓고도 감시하느라 끝까지 산다). 진짜 잠금은 코어 update 가 다시 본다(아직 바쁘면 다시 건너뛰고 새로 기다린다)
 const UPDATE_RETRY_REASONS = new Set(['busy', 'busy-unknown'])
 const UPDATE_RETRY_IDLE_MS = 60000
+const UPDATE_RETRY_STALE_MS = 5 * 60000
 /** @typedef {{ id: string, pids: number[], timed: boolean, since: number, causes: { pane?: string, kind: string }[] }} PendingBody */
 /**
  * update 결과 → 다시 올릴 본체(건너뛴 까닭이 busy · busy-unknown 인 것만 — dirty · diverged · 실패는 기다려도 풀리지 않는다)
@@ -477,12 +480,31 @@ function pendingFromUpdate(result, now = Date.now()) {
 }
 
 /**
- * 다시 올릴 때가 됐나 — 본체 하나라도 막던 pid 가 다 끝났고 · pid 를 모르는 막음이면 UPDATE_RETRY_IDLE_MS 가 지났으면
+ * 다시 올릴 때가 됐나 — 본체 하나라도 막던 pid 가 다 끝났고 · pid 를 모르는 막음이면 UPDATE_RETRY_IDLE_MS 가 지났으면.
+ * pid 가 살아 있어도 UPDATE_RETRY_STALE_MS 가 지났으면(잠금은 이미 놓았을 수 있다 — 코어가 다시 본다)
  * @param {PendingBody[]} pending
  * @param {{ alive: (pid: number) => boolean, now?: number }} options
  */
 function retryDue(pending, { alive, now = Date.now() }) {
-  return pending.some((entry) => entry.pids.every((pid) => !alive(pid)) && (!entry.timed || now - entry.since >= UPDATE_RETRY_IDLE_MS))
+  return pending.some((entry) => {
+    const waited = now - entry.since
+    if (waited >= UPDATE_RETRY_STALE_MS) return true
+    return entry.pids.every((pid) => !alive(pid)) && (!entry.timed || waited >= UPDATE_RETRY_IDLE_MS)
+  })
+}
+
+/**
+ * 다시 올린 뒤 남은 대기 — 코어가 본체별 결과(bodies[])를 돌려줬을 때만 그것으로 바꾼다.
+ * 명령 전체가 실패했거나(결과 없음 · ok:false 에 bodies 없음) 결과가 빠졌으면 기존 대기를 지우지 않고 남겨 둔다 —
+ * 이번 시각부터 다시 기다린다(pid 는 이미 끝났을 수 있으니 pid 를 모르는 막음처럼 UPDATE_RETRY_IDLE_MS 뒤에)
+ * @param {PendingBody[]} previous
+ * @param {CoreResult | undefined} result
+ * @param {number} [now]
+ * @returns {{ pending: PendingBody[], answered: boolean }}
+ */
+function pendingAfterRetry(previous, result, now = Date.now()) {
+  if (result && Array.isArray(result.bodies)) return { pending: pendingFromUpdate(result, now), answered: true }
+  return { pending: previous.map((entry) => ({ ...entry, pids: [], timed: true, since: now })), answered: false }
 }
 
 /**
@@ -653,6 +675,7 @@ module.exports = {
   updateCore,
   pendingFromUpdate,
   retryDue,
+  pendingAfterRetry,
   behindBodies,
   retryUpdate,
   prepareCore,
