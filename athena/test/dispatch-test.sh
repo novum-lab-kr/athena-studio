@@ -4,7 +4,7 @@
 set -uo pipefail
 cd "$(dirname "$0")/.." || exit 1
 python3 - "$PWD" <<'PY'
-import json, os, pathlib, shlex, shutil, subprocess, sys, tempfile
+import itertools, json, os, pathlib, shlex, shutil, subprocess, sys, tempfile
 src = pathlib.Path(sys.argv[1])
 fail = 0
 
@@ -12,6 +12,26 @@ def check(name, ok):
     global fail
     print(('  ✔ ' if ok else '  ✖ ') + name, flush=True)
     if not ok: fail = 1
+
+# Python 안내 판정과 실제 JS 흐름을 기본값·엄격한 boolean 판정까지 비교한다.
+sys.path.insert(0, str(src / 'scripts/lib'))
+from athena_config import auto_flow, direct_merge_mode, merge_mode
+entries = [dict(zip(('autoMerge', 'autoPr', 'direct', 'autoMergeManual', 'autoMergeConfirm', 'autoReview'), values), name='web')
+           for values in itertools.product((None, False, True), repeat=6)]
+flows = json.loads(subprocess.check_output(['node', '--input-type=module', '-e',
+    "import {prFlow} from './scripts/lib/pr-auto.mjs'; let data=''; for await (const chunk of process.stdin) data+=chunk; console.log(JSON.stringify(JSON.parse(data).map(prFlow)))"],
+    input=json.dumps(entries), text=True, cwd=src))
+def expected_auto_flow(flow):
+    if not flow['pr']: return 'off'
+    if flow['merge'] != 'manual': return 'merge'
+    if flow['review']: return 'manual'
+    return 'off'
+
+check('설정 729조합 → Python 안내와 JS 실제 흐름 우선순위 일치', all(
+    (merge_mode({'repos':[entry]}, 'web') == flow['merge'] if entry['autoMerge'] is True and not entry['direct'] else True)
+    and direct_merge_mode({'repos':[entry]}, 'web') == (flow['merge'] if flow['direct'] else '')
+    and auto_flow({'repos':[entry]}, 'web') == expected_auto_flow(flow)
+    for entry, flow in zip(entries, flows)))
 
 with tempfile.TemporaryDirectory(prefix='dispatch-test-') as tmp:
     root = pathlib.Path(tmp); core = root / 'core'; work = root / "repo with ' quote"
@@ -142,6 +162,26 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
             check(f'{engine} — {prompt=}, {issue=} → 시작 안내 표시 {bootstrap}', result.returncode == 0 and got and got['bootstrap'] == bootstrap)
     result, got, calls = run('codex', prompt=None, extra=('--resume', '11111111-2222-3333-4444-555555555555'))
     check('지시 없는 resume 은 다음 실제 요청을 시작 안내로 보지 않는다', result.returncode == 0 and got and got['bootstrap'] == '0')
+    # 같은 팩 설정을 바꿔 재디스패치한다 — 새 pane / 재사용 pane · 두 엔진에 같은 안내가 실려야 한다.
+    (core / 'scripts/reuse-pane.mjs').write_text('console.log(JSON.stringify({pane:"web-pane",cwd:process.env.REUSE_CWD}))\n')
+    env['REUSE_CWD'] = str(work.resolve())
+    records = root / 'data/state/pane-sessions'
+    records.mkdir(parents=True, exist_ok=True)
+    (records / 'web-pane.json').write_text(json.dumps({'pane':'web-pane', 'agent':'fe', 'plan':'plans/task/test.md'}))
+    for engine in ('claude', 'codex'):
+        for reuse in (False, True):
+            for manual, confirm, mode_text in ((False, False, '확인 없이 자동 머지'), (False, True, '확인 후 머지'), (True, False, '사람이 직접 머지')):
+                for review in (True, False):
+                    repo = cfg['repos'][0]
+                    repo.update(autoPr=True, autoMergeManual=manual, autoMergeConfirm=confirm, autoReview=review)
+                    (core / 'pack/pack.json').write_text(json.dumps(cfg))
+                    extra = ('--reuse-pane', 'web-pane') if reuse else ()
+                    result, got, calls = run(engine, extra=extra)
+                    sent = next((call[3] for call in calls if call[:2] == ['pane', 'send-text']), '') if reuse else (got['args'][-1] if got else '')
+                    line = f"올리는 방식: 끝나면 저절로 draft PR({'자동 리뷰' if review else '리뷰 끔'} · {mode_text})"
+                    ok = result.returncode == 0 and line in result.stdout and line in sent
+                    check(f'{engine} / 재사용={reuse} / {manual=} / {confirm=} / {review=} → 현재 설정 안내', ok)
+                    if not ok: print(f'{result.returncode=}\n{result.stdout[-600:]}\n{result.stderr[-600:]}\n전송문: {sent[-600:]}', flush=True)
     check('기존 사용자 설정·훅 파일 유지', (codex_home / 'config.toml').read_text() == '# USER_CONFIG_SENTINEL\n' and (codex_home / 'hooks.json').read_text() == '{"hooks":{}}\n')
 sys.exit(fail)
 PY

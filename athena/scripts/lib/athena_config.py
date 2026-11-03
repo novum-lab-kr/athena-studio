@@ -185,6 +185,12 @@ def direct_merge_mode(cfg, repo_name):
     entry = repo_entry(cfg, repo_name)
     if entry.get('autoMerge') is not True or entry.get('direct') or entry.get('autoPr') is not False:
         return ''
+    return merge_mode(cfg, repo_name)
+
+
+def merge_mode(cfg, repo_name):
+    """머지 방식 — scripts/lib/pr-auto.mjs mergeModeOf 와 같은 우선순위(직접 > 확인 없이 > 확인 후)."""
+    entry = repo_entry(cfg, repo_name)
     if entry.get('autoMergeManual') is True:
         return 'manual'
     return 'auto' if entry.get('autoMergeConfirm') is False else 'confirm'
