@@ -51,7 +51,14 @@ import json, os, pathlib, sys
 engine = pathlib.Path(sys.argv[0]).name
 if sys.argv[1:3] in (['auth', 'status'], ['login', 'status']):
     sys.exit(0 if engine in os.environ['READY_TOOLS'].split(',') else 1)
-pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':sys.argv[1:], 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT'), 'bootstrap':os.environ.get('ATHENA_NOTIFY_BOOTSTRAP')}))
+if engine == 'codex' and sys.argv[1:2] == ['app-server']:
+    for line in sys.stdin: pass
+    sys.exit(0)
+args = sys.argv[1:]
+remote = '--remote' in args
+if remote:
+    index = args.index('--remote'); del args[index:index+2]
+pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':args, 'remote':remote, 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT'), 'bootstrap':os.environ.get('ATHENA_NOTIFY_BOOTSTRAP')}))
 '''
     for tool in ('claude', 'codex'):
         p = bin_dir / tool; p.write_text(cli); p.chmod(0o755)
@@ -111,6 +118,7 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
             check('Codex → 공통 규칙·프로필·레포 원문', all(s in text for s in ['# 레포 규칙 문서','REPO_RULE_SENTINEL','PROFILE_SENTINEL','CLAUDE_RULE_SENTINEL','## 5.']))
             check('Codex → 보호 훅·기록·끝 알림 전달', all(s in (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text() for s in ['commit-guard.py','secret-guard.py','process-guard.py','pane-session.py','agent-done-notify.py']))
             check('Codex → 질문·허락 요청 훅 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['request_user_input', 'ask-to-request.py', 'PermissionRequest', 'permission-to-request.py']))
+            check('Codex → 압축 전 기록·압축 후 재확인 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['PreCompact', 'compact-checkpoint.py', 'codex-context.py', 'compact|resume']))
             check('Codex → Claude 전용 인자 없음', '--agent' not in args and '--settings' not in args and '--append-system-prompt-file' not in args)
         if remembered is None:
             check(name+' → 실제 주 도구 기록을 새로 쓰지 않는다', not (core / '.athena-main-tool.json').exists())

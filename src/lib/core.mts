@@ -199,7 +199,7 @@ function defaultIsExecutable(file: string): boolean {
 // 자기를 하위 세션으로 알고(대화 기록 저장 꺼짐) 아테나가 관리 창(ATHENA_AGENT)으로 알아 첫 실행·화면 세팅을 건너뛴다.
 // 아테나 delegate.sh 실행기가 에이전트 pane 에 넣는 값(ATHENA_REPO_DIR · ATHENA_VERIFY_DIR)도 — 남으면 상태줄(statusline.sh)이
 // cwd 보다 그 레포를 먼저 보고, 검증 스크립트가 그 워크트리를 본다
-const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AGENT', 'ATHENA_REPO_DIR', 'ATHENA_VERIFY_DIR']
+const INHERITED_SESSION_KEYS = ['ELECTRON_RUN_AS_NODE', 'CLAUDECODE', 'ATHENA_AGENT', 'ATHENA_CODEX_CONTEXT', 'ATHENA_REPO_DIR', 'ATHENA_VERIFY_DIR']
 
 type Env = Record<string, string | undefined>
 

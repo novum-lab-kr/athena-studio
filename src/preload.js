@@ -100,6 +100,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // [작업] 팝업 — 목록 · 계획서 상세 · 요청이 바뀌면 { supported, requests }
   workGet: () => ipcRenderer.invoke('work:get'),
   workRequests: () => ipcRenderer.invoke('work:requests'),
+  workApprove: (id, generation, choice) => ipcRenderer.invoke('work:approve', id, generation, choice),
   workAnswer: (id, answer) => ipcRenderer.invoke('work:answer', id, answer),
   workRedeliver: (id) => ipcRenderer.invoke('work:redeliver', id),
   workOpenPlan: (id, html) => ipcRenderer.invoke('work:open-plan', id, html),

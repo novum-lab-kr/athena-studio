@@ -1,3 +1,4 @@
+import { codexSessionCommand } from '../lib/codex-approvals.mts'
 // ── 팩 본체 따라잡기 — 팩 창 ──
 // main.js 에서 옮겼다(PR3e) — createPackWindow 의 ctx 에 같은 이름으로 붙인다(installCatchUp). 데몬 요청은 ctx.daemonCall(daemon-link) 로.
 // 쓰는 것(스튜디오 집 자리 · 팩 명령 · 팩 로그 자리)은 인자로 받는다
@@ -94,7 +95,7 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
           for (const prior of sessions) {
             if (!prior.session) continue
             const shell = await daemonCall<{ shell?: boolean }>('pane is-shell', { pane: prior.pane })
-            if (shell.result?.shell) await daemonCall('pane run', { pane: prior.pane, text: core.resumeCommand(prior.session, prior.engine) })
+            if (shell.result?.shell) await daemonCall('pane run', { pane: prior.pane, text: codexSessionCommand(ctx.athenaDir, core.resumeCommand(prior.session, prior.engine)) })
           }
           return { ok: false, reason: 'failed' }
         }
@@ -112,7 +113,7 @@ export function installCatchUp(ctx: PackCtx, { studio, updating, runPack, packLo
       const opened: PackReply = quiet ? await runPack(['open', packId], { dir: studio.core }) : { ok: false, error: 'still-busy' }
       if (!opened.ok || !opened.updated) catchUpBackoff = Date.now() + 10 * 60000
       fs.appendFile(packLogFile(), `\n── ${new Date().toISOString()} catch-up ${packId} ${JSON.stringify({ ok: opened.ok, updated: opened.updated || null, error: opened.error || null })}\n`, () => {})
-      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: core.resumeCommand(item.session, item.engine) })
+      for (const item of sessions) if (item.session) await daemonCall('pane run', { pane: item.pane, text: codexSessionCommand(ctx.athenaDir, core.resumeCommand(item.session, item.engine)) })
       if (opened.ok && opened.updated) send('pack:caught-up', { pack: (ctx.packState.current as { displayName?: string; name?: string }).displayName || (ctx.packState.current as { name?: string }).name || packId })
       return opened.ok && opened.updated ? { ok: true } : { ok: false, reason: opened.error === 'still-busy' ? 'still-busy' : 'failed' }
     } finally {

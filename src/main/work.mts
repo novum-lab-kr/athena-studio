@@ -10,6 +10,8 @@ import { createRequire } from 'node:module'
 import { dialog, shell } from 'electron'
 import type { BrowserWindow, MessageBoxOptions } from 'electron'
 import * as core from '../lib/core.mts'
+import { pendingApprovals, respondApproval } from '../lib/codex-approvals.mts'
+import type { CodexApproval } from '../lib/codex-approvals.mts'
 import * as packModel from '../lib/pack.mts'
 import * as requestsModel from '../lib/requests.mts'
 import * as workModel from '../lib/work-model.mts'
@@ -49,6 +51,7 @@ export type WorkCtx = {
   workState?: unknown
   answerRequest?: unknown
   redeliverRequest?: unknown
+  approveRequest?: (id: string, generation: string, choice: number) => Promise<{ ok: boolean; error?: string }>
   openPlan?: unknown
   openInBrowser?: (url: string) => void
   openBoardSection?: unknown
@@ -122,16 +125,21 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   let requestsAgain = false
   let coreRequests: StudioRequest[] = []
   let permissionRequests: StudioRequest[] = []
+  let codexApprovals: CodexApproval[] = []
+  let codexRequests: StudioRequest[] = []
   const permissions = requestsModel.createPermissionTracker()
   let permissionTimer: NodeJS.Timeout | undefined
   let permissionGeneration = 0
   let permissionBusy: number | null = null
   const publishRequests = (supported: boolean, error: string | null) => {
     const before = requestsState()
-    const notified = new Set(coreRequests.filter((request) => request.permission).map((request) => request.pane))
+    const directPanes = new Set(codexRequests.map((request) => request.pane))
+    const visibleCore = coreRequests.filter((request) => !request.permission || !directPanes.has(request.pane))
+    const visiblePermissions = permissionRequests.filter((request) => !directPanes.has(request.pane))
+    const notified = new Set(visibleCore.filter((request) => request.permission).map((request) => request.pane))
     const kinds = new Map(permissionRequests.map((request) => [request.pane, request.permissionKind]))
-    const requests = [...coreRequests.map((request) => request.permission ? { ...request, permissionKind: kinds.get(request.pane) || request.permissionKind } : request), ...permissionRequests.filter((request) => !notified.has(request.pane))].map((request) => requestsModel.permissionView(request, say))
-    const next = { supported: supported || permissionRequests.length > 0, requests, error }
+    const requests = [...codexRequests, ...visibleCore.map((request) => request.permission ? { ...request, permissionKind: kinds.get(request.pane) || request.permissionKind } : request), ...visiblePermissions.filter((request) => !notified.has(request.pane))].map((request) => requestsModel.permissionView(request, say))
+    const next = { supported: supported || permissionRequests.length > 0 || codexRequests.length > 0, requests, error }
     setRequestsState(next)
     if (JSON.stringify(next) !== JSON.stringify(before)) {
       send('work:requests', next)
@@ -164,6 +172,20 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       if (dir !== ctx.athenaDir || generation !== permissionGeneration) return
       const tracked = permissions.observe(observations, Date.now())
       permissionRequests = tracked.requests
+      const livePanes = new Set(listed.result.panes.map((entry) => entry.id))
+      const approvals = await pendingApprovals(dir, livePanes)
+      if (dir !== ctx.athenaDir || generation !== permissionGeneration) return
+      codexApprovals = approvals
+      codexRequests = approvals.map((approval) => ({
+        id: `codex-approval:${approval.token}`, kind: 'question', permission: true, pane: approval.pane,
+        title: typeof approval.params.command === 'string' ? approval.params.command : say('work.permission.notice'),
+        body: [approval.params.reason, approval.params.message, approval.params.command, approval.params.cwd,
+          ...(Array.isArray(approval.params.questions) ? approval.params.questions.map((question: unknown) => question && typeof question === 'object' && 'question' in question ? String(question.question) : '') : []),
+          JSON.stringify(Object.fromEntries(Object.entries(approval.params).filter(([key]) => !['threadId', 'turnId', 'itemId', 'approvalId', 'startedAtMs', 'reason', 'message', 'command', 'cwd', 'availableDecisions', 'proposedExecpolicyAmendment', 'proposedNetworkPolicyAmendments', 'questions', 'isBlocking', 'autoResolutionMs'].includes(key))), null, 2),
+          approval.item && JSON.stringify(approval.item, null, 2)].filter((value) => typeof value === 'string' && value !== '{}').join('\n\n'),
+        options: [], plan: null, html: null, state: 'open', rev: 1, createdAt: new Date(typeof approval.params.startedAtMs === 'number' ? approval.params.startedAtMs : approval.receivedAtMs ?? Date.now()).toISOString(), answer: null,
+        codexApproval: { token: approval.token, generation: approval.generation, thread: String(approval.params.threadId), choices: approval.choices },
+      }))
       for (const request of coreRequests) {
         if (!request.permission || typeof request.pane !== 'string') continue
         if (!tracked.alive.has(request.pane) || tracked.closed.has(request.pane)) {
@@ -230,6 +252,8 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     clearInterval(permissionTimer)
     permissions.reset()
     permissionRequests = []
+    codexApprovals = []
+    codexRequests = []
     coreRequests = []
     if (requestsWatch) requestsWatch.close()
     requestsWatch = null
@@ -274,6 +298,18 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!panes.some((pane) => pane.id === paneId)) return false
     const sent = await ctx.daemonCall('pane run', { pane: paneId as string, text: line })
     return !sent.error
+  }
+  // 공식 승인 전용 IPC. 일반 질문/다시 보내기와 완전히 다른 경로로 원래 연결에만 답한다.
+  ctx.approveRequest = async (id, generation, choice) => {
+    const dir = ctx.athenaDir
+    const approval = codexApprovals.find((entry) => `codex-approval:${entry.token}` === id && entry.generation === generation)
+    if (!dir || !approval) return { ok: false, error: 'conflict' }
+    const listed = await ctx.peekCall('pane list') as PaneListReply
+    const panes: { id?: unknown }[] = Array.isArray(listed.result?.panes) ? listed.result.panes : []
+    if (dir !== ctx.athenaDir || !panes.some((pane) => pane.id === approval.pane)) return { ok: false, error: 'conflict' }
+    const ok = await respondApproval(dir, approval, choice)
+    await refreshPermissions()
+    return { ok, error: ok ? undefined : 'conflict' }
   }
   // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
   ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null) => {

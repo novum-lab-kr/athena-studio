@@ -92,11 +92,13 @@ const makePermissionWork = () => {
   const screenModel = require('../src/lib/screen-model.js')
   const file = process.env.ATHENA_PERMISSION_BASE_WORK || path.join(__dirname, '../src/main/work.mts')
   const source = stripTypeScriptTypes(fs.readFileSync(file, 'utf8')).replace(/^import .*$/gm, '').replace(/^const screenModel\s*=.*$/gm, '').replace('export function installWork', 'function installWork')
+  let approvals = []
   let now = 0, state = { supported: true, requests: [], error: null }, rows = [], failed = false
   const panes = new Map(), intervals = new Map(), calls = [], sent = []
   class Clock extends Date { static now() { return now } }
   const { installWork } = vm.runInNewContext(source + '\n({installWork})', {
     fs, path, Date: Clock, requestsModel: requests, screenModel,
+    pendingApprovals: async () => approvals, respondApproval: async (...args) => { calls.push(['approval', ...args]); return true },
     core: { checkAthenaDir: () => ({ ok: true }) },
     setInterval: (callback, ms) => { intervals.set(ms, callback); return ms }, clearInterval: (ms) => intervals.delete(ms),
     setTimeout, clearTimeout,
@@ -117,6 +119,7 @@ const makePermissionWork = () => {
     }, requestsPollMs: 30000, trayRequestsChanged: () => {}, requestsState: () => state, setRequestsState: (next) => { state = next }, logRequestsError: () => {},
   })
   return { ctx, calls, sent, panes, intervals,
+    setApprovals: (value) => { approvals = value },
     setRows: (value) => { rows = value }, fail: (value) => { failed = value }, state: () => state,
     async start() { ctx.watchRequests(); await new Promise(setImmediate); await ctx.refreshRequests(); await new Promise(setImmediate) },
     async tick(ms) { now += ms; const poll = intervals.get(2000); if (poll) await poll(); await new Promise(setImmediate) },
@@ -235,4 +238,25 @@ test('긴 승인창: 제목이 화면 밖으로 밀려도 waiting이면 기존 �
   assert.equal(fixture.state().requests.length, 2)
   assert.equal(fixture.calls.filter((args) => args[1] === 'cancel').length, 0)
   fixture.ctx.stopRequests()
+})
+
+
+test('실제 작업 경로: 공식 승인은 전용 응답만 사용 · 일반 질문/PTY 우회 차단', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('p1', browserPrompt)
+  const approval = { token: 'token1', generation: 'generation1', pane: 'p1', body: '/fixture/body',
+    method: 'item/commandExecution/requestApproval', params: { command: 'echo fixture' }, choices: [{ key: 'accept' }] }
+  fixture.setApprovals([approval])
+  await fixture.start(); await fixture.tick(4000)
+  const visible = fixture.state().requests
+  assert.equal(visible.length, 1)
+  assert.ok(visible[0].codexApproval)
+  assert.equal((await fixture.ctx.answerRequest(visible[0].id, { choice: 'accept', rev: 1 })).ok, false)
+  assert.equal((await fixture.ctx.approveRequest(visible[0].id, 'old-generation', 0)).ok, false)
+  assert.equal((await fixture.ctx.approveRequest(visible[0].id, approval.generation, 0)).ok, true)
+  assert.equal(fixture.calls.filter((args) => args[0] === 'approval').length, 1)
+  assert.ok(!fixture.calls.some((args) => args[0] === 'daemon' || args[1] === 'answer'))
+  fixture.ctx.athenaDir = '/other'
+  fixture.ctx.stopRequests()
+  assert.equal((await fixture.ctx.approveRequest(visible[0].id, approval.generation, 0)).ok, false)
 })

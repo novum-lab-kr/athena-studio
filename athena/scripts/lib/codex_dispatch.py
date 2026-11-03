@@ -32,7 +32,9 @@ def settings(root, agent, role, context, definitions):
     hooks = {
         'PreToolUse': [{'matcher': 'Bash', 'hooks': guards}],
         'PermissionRequest': agent_hooks.permission_request(root),
-        'SessionStart': [{'hooks': [agent_hooks.pane_session(root)]}],
+        'PreCompact': [{'hooks': [agent_hooks.hook(root, 'scripts/hooks/compact-checkpoint.py', 'pre')]}],
+        'SessionStart': [{'hooks': [agent_hooks.pane_session(root)]},
+                         {'matcher': 'compact|resume', 'hooks': [{**agent_hooks.hook(root, 'scripts/hooks/codex-context.py'), 'additionalContextLimit': 100000}]}],
         'UserPromptSubmit': [{'hooks': [agent_hooks.pane_session(root), agent_hooks.hook(root, 'scripts/hooks/language.py')] + prompt}],
     }
     if role != 'reviewer':
@@ -47,7 +49,7 @@ def settings(root, agent, role, context, definitions):
 
 
 def hook_profile(root, role, hooks):
-    """-c hooks 는 훅 소스로 발견되지 않는다. 전용 프로필 파일을 안정된 이름으로 만든다.
+    """TUI 전용 프로필 파일을 안정된 이름으로 만든다. 서버 중계에는 같은 훅을 sessionFlags로 전달한다.
 
     본체·역할별로 같은 이름과 내용을 유지해 사용자의 훅 신뢰 기록을 재사용한다.
     사용자 config.toml·hooks.json 은 건드리지 않고, 우리가 만든 파일만 갱신한다.
@@ -92,5 +94,8 @@ def hook_profile(root, role, hooks):
 if __name__ == '__main__':
     root, agent, role, context, definitions, out = sys.argv[1:7]
     instructions, hooks = settings(root, agent, role, context, definitions)
+    pathlib.Path(out + '.context.json').write_text(json.dumps(instructions, ensure_ascii=False), encoding='utf-8')
+    os.chmod(out + '.context.json', 0o600)
+    pathlib.Path(out + '.hooks').write_text(json.dumps(hooks, ensure_ascii=False), encoding='utf-8')
     pathlib.Path(out + '.instructions').write_text('developer_instructions=' + toml(instructions), encoding='utf-8')
     print(hook_profile(root, role, hooks))

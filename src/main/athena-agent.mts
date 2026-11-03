@@ -1,3 +1,4 @@
+import { codexSessionCommand } from '../lib/codex-approvals.mts'
 // ── 아테나 에이전트 · 백업에서 되살리기 — 팩 창 ─────────────────
 // main.js createPackWindow 에서 옮겼다(PR3f) — 화면 문구(say) · 코어 팩 명령(runPack) · 되살리기 표시 지우기(disarmRestore — main.js 의 restoreArmedFor)는 인자로 받고,
 // ctx 에 같은 이름(openAthenaAgent · restoreStatus · packRestore · restoreNow)으로 붙인다
@@ -91,7 +92,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     // 되살린 아테나 대화가 있으면 첫 것을 이 pane 에서 잇는다(세션 도구·id는 코어가 확인한 값)
     const [first, ...rest] = athenaSessions
     const text = first ? core.resumeCommand(first.session, first.engine) : decision.agent
-    const run = (await daemonCall('pane run', { pane: created.result.root_pane.id, text })) as RunReply
+    const run = (await daemonCall('pane run', { pane: created.result.root_pane.id, text: codexSessionCommand(ctx.athenaDir, text) })) as RunReply
     if (run.error) return { error: say('error.agentStart', { agent: decision.agent }) }
     if (first) await ackRestore([first.session])
     if (rest.length) await resumeAthenaBeside({ id: created.result.workspace.id }, rest)
@@ -106,7 +107,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     if (!base) return
     for (const item of sessions) {
       const split = (await daemonCall('pane split', { target: base, direction: 'right', ratio: 0.5, cwd: ctx.athenaDir, focus: false })) as SplitReply
-      const run = split.result && split.result.pane ? ((await daemonCall('pane run', { pane: split.result.pane.id, text: core.resumeCommand(item.session, item.engine) })) as RunReply) : null
+      const run = split.result && split.result.pane ? ((await daemonCall('pane run', { pane: split.result.pane.id, text: codexSessionCommand(ctx.athenaDir, core.resumeCommand(item.session, item.engine)) })) as RunReply) : null
       if (run && !run.error) await ackRestore([item.session])
     }
   }

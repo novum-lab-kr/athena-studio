@@ -138,7 +138,7 @@ test('터미널 환경: TERM · COLORTERM', () => {
 })
 
 test('자식 환경: 앱을 에이전트 세션 안에서 켜도 세션 표시는 넘기지 않는다', () => {
-  const env = core.childEnv({ PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', ATHENA_AGENT: 'x', CLAUDE_CONFIG_DIR: '/c' })
+  const env = core.childEnv({ PATH: '/bin', CLAUDECODE: '1', CLAUDE_CODE_CHILD_SESSION: '1', CLAUDE_CODE_ENTRYPOINT: 'cli', ATHENA_AGENT: 'x', ATHENA_CODEX_CONTEXT: '/other-session/context.json', CLAUDE_CONFIG_DIR: '/c' })
   assert.deepEqual(env, { PATH: '/bin', CLAUDE_CONFIG_DIR: '/c' })
 })
 
@@ -306,7 +306,7 @@ test('claude 화면이 비어 있나 — 질문 · 고르기 창 · 쓰다 만 �
 })
 
 test('다시 켜기 환경: childEnv 로 걷어 내고 켤 때 읽는 값(스튜디오 집 · 접속 파일 · 가짜 팩)만 다시 싣는다', () => {
-  const base = { PATH: '/bin', HOME: '/h', CLAUDECODE: '1', ATHENA_AGENT: 'x', ELECTRON_RUN_AS_NODE: '1', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: '/s', ATHENA_STUDIO_PANE_ID: 'p1', ATHENA_STUDIO_APP_UPDATE: 'install-failed', ATHENA_STUDIO_HOME: '/tmp/iso', ATHENA_STUDIO_ENDPOINT: '/tmp/iso/d.json', ATHENA_STUDIO_FAKE_PACK: '1' }
+  const base = { PATH: '/bin', HOME: '/h', CLAUDECODE: '1', ATHENA_AGENT: 'x', ATHENA_CODEX_CONTEXT: '/other-session/context.json', ELECTRON_RUN_AS_NODE: '1', ATHENA_STUDIO: '1', ATHENA_STUDIO_SOCKET: '/s', ATHENA_STUDIO_PANE_ID: 'p1', ATHENA_STUDIO_APP_UPDATE: 'install-failed', ATHENA_STUDIO_HOME: '/tmp/iso', ATHENA_STUDIO_ENDPOINT: '/tmp/iso/d.json', ATHENA_STUDIO_FAKE_PACK: '1' }
   const env = core.relaunchEnv(base)
   assert.deepEqual(
     Object.keys(env).sort(),

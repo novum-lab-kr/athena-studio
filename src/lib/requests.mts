@@ -21,6 +21,7 @@ export type StudioRequest = {
   // 허락 창 알림인지 — 코어 허락 훅이 여는 요청(키 perm:<pane> · athena/scripts/lib/pane_request.py watch_permission)
   permission: boolean
   permissionKind?: PermissionKind
+  codexApproval?: { token: string; generation: string; thread: string; choices: { key: string; label?: string; description?: string; detail?: unknown }[] }
   state: string
   rev: number
   createdAt: string
@@ -158,7 +159,7 @@ export function createPermissionTracker() {
 
 // 옛 코어 알림도 같은 안전한 표시로 맞춘다. 도구 입력·화면 원문을 표시나 로그로 복사하지 않는다.
 export function permissionView(request: StudioRequest, say: (key: string, values?: Record<string, unknown>) => string): StudioRequest {
-  if (!request.permission) return request
+  if (!request.permission || request.codexApproval) return request
   const kind = request.permissionKind || 'permission'
   return { ...request, title: say(`work.permission.title.${kind}`, { pane: String(request.pane || '') }),
     body: `${say(`work.permission.body.${kind}`)}\n\n${say('work.permission.unavailable')}`, options: [], answer: null }
