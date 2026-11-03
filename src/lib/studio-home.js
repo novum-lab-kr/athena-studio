@@ -429,6 +429,98 @@ function registryHasPacks(dataDir) {
   return Boolean(registry && registry.packs && typeof registry.packs === 'object' && Object.keys(registry.packs).length)
 }
 
+// 설치된 코어(주 본체 코드)로 update --from <번들> — 번들 업데이트를 모르면(4.1 손잡이 없음) coreUpdate: null.
+// fromVersion — 올리기 전 코어의 사람이 읽는 버전(코어 version --json 의 version · 태그가 없으면 null)
+/** @param {{ bundle: string, runCore: RunCore, panesStateFile?: (() => Promise<string | null>) | null }} options */
+async function runBundleUpdate({ bundle, runCore, panesStateFile = null }) {
+  const version = await runCore(['version'], NO_CONTRACT)
+  /** @type {unknown[]} */
+  const capabilities = Array.isArray(version && version.capabilities) ? /** @type {unknown[]} */ (/** @type {NonNullable<CoreResult>} */ (version).capabilities) : []
+  const fromVersion = version && typeof version.version === 'string' ? version.version : null
+  if (!UPDATE_CAPABILITIES.every((name) => capabilities.includes(name))) return { fromVersion, coreUpdate: null }
+  const args = ['update', '--from', bundle, '--backup-dirty']
+  const stateFile = panesStateFile && capabilities.includes(IDLE_PANES_CAPABILITY) ? await panesStateFile().catch(() => null) : null
+  if (stateFile) args.push('--panes-state', stateFile)
+  const result = await runCore(args, NO_CONTRACT)
+  /** @type {CoreUpdate} */
+  const coreUpdate = { result, summary: summarizeUpdate(result) }
+  return { fromVersion, coreUpdate }
+}
+
+// ── 건너뛴 본체 다시 올리기 ──
+// 코어 update 는 무거운 명령(heavy.sh 잠금) · 커밋(commit.sh · ship.sh)이 1분 넘게 돌면 그 본체를 건너뛴다(busy). 켤 때 한 번뿐이면
+// 주 본체가 이미 새 코어라 다음 켤 때도 다시 부르지 않는다 — 앱이 건너뛴 본체를 기억해 두고 막던 것이 끝나면 update 를 다시 부른다(사용자 결정 2026-11-03).
+// 막은 것(busy[])에 pid 가 있으면 그 pid 가 모두 끝났을 때, pid 를 모르는 막음(팩 작업 잠금 · ps 를 못 읽음)은 UPDATE_RETRY_IDLE_MS 뒤에
+const UPDATE_RETRY_REASONS = new Set(['busy', 'busy-unknown'])
+const UPDATE_RETRY_IDLE_MS = 60000
+/** @typedef {{ id: string, pids: number[], timed: boolean, since: number, causes: { pane?: string, kind: string }[] }} PendingBody */
+/**
+ * update 결과 → 다시 올릴 본체(건너뛴 까닭이 busy · busy-unknown 인 것만 — dirty · diverged · 실패는 기다려도 풀리지 않는다)
+ * @param {CoreResult} result
+ * @param {number} [now]
+ * @returns {PendingBody[]}
+ */
+function pendingFromUpdate(result, now = Date.now()) {
+  const loose = /** @type {NonNullable<CoreResult>} */ (result)
+  /** @type {UpdateBody[]} */
+  const bodies = Array.isArray(result && result.bodies) ? /** @type {UpdateBody[]} */ (loose.bodies) : []
+  return bodies
+    .filter((entry) => entry.status === 'skipped' && UPDATE_RETRY_REASONS.has(String(entry.reason)))
+    .map((entry) => {
+      /** @type {{ pid?: unknown, pane?: unknown, kind?: unknown }[]} */
+      const items = (Array.isArray(entry.busy) ? entry.busy : []).filter(Boolean)
+      const pids = [...new Set(items.map((item) => item.pid).filter((pid) => Number.isInteger(pid) && /** @type {number} */ (pid) > 0))].map(Number)
+      const timed = entry.reason === 'busy-unknown' || !items.length || items.some((item) => !(Number.isInteger(item.pid) && /** @type {number} */ (item.pid) > 0))
+      const causes = items.map((item) => ({ ...(typeof item.pane === 'string' && item.pane ? { pane: item.pane } : {}), kind: (typeof item.kind === 'string' && item.kind) || 'other' }))
+      return { id: String(entry.id), pids, timed, since: now, causes }
+    })
+}
+
+/**
+ * 다시 올릴 때가 됐나 — 본체 하나라도 막던 pid 가 다 끝났고 · pid 를 모르는 막음이면 UPDATE_RETRY_IDLE_MS 가 지났으면
+ * @param {PendingBody[]} pending
+ * @param {{ alive: (pid: number) => boolean, now?: number }} options
+ */
+function retryDue(pending, { alive, now = Date.now() }) {
+  return pending.some((entry) => entry.pids.every((pid) => !alive(pid)) && (!entry.timed || now - entry.since >= UPDATE_RETRY_IDLE_MS))
+}
+
+/**
+ * 앱을 다시 켰을 때 — 주 본체는 이미 번들과 같아 update 를 부르지 않았지만, 팩 본체가 번들 커밋보다 뒤(그 조상)면 건너뛴 본체로 본다(바로 한 번 다시)
+ * @param {{ dataDir: string, bundle: string, env?: NodeJS.ProcessEnv, now?: number }} options
+ * @returns {PendingBody[]}
+ */
+function behindBodies({ dataDir, bundle, env = gitEnv(), now = Date.now() }) {
+  const target = bundleHead(bundle, { env })
+  const registry = readJson(path.join(dataDir, 'config.json'))
+  if (!target || !registry || !registry.packs || typeof registry.packs !== 'object') return []
+  /** @type {PendingBody[]} */
+  const found = []
+  for (const [id, entry] of Object.entries(registry.packs)) {
+    const body = entry && typeof entry.body === 'string' ? entry.body : ''
+    if (!body || !fs.existsSync(body)) continue
+    let head = ''
+    try {
+      head = git(['rev-parse', 'HEAD'], { cwd: body, env })
+    } catch {
+      continue
+    }
+    if (head && head !== target && gitOk(['merge-base', '--is-ancestor', head, target], { cwd: body, env })) found.push({ id, pids: [], timed: false, since: now, causes: [] })
+  }
+  return found
+}
+
+/**
+ * 건너뛴 본체 다시 올리기 — 주 본체가 이미 번들과 같아도 코어 update 를 부른다(이미 대상인 본체는 코어가 same 으로 둔다)
+ * @param {{ bundle: string, runCore: RunCore, panesStateFile?: (() => Promise<string | null>) | null }} options
+ */
+async function retryUpdate({ bundle, runCore, panesStateFile = null }) {
+  const ran = await runBundleUpdate({ bundle, runCore, panesStateFile })
+  if (!ran.coreUpdate) return { state: 'unsupported', fromVersion: ran.fromVersion }
+  const result = ran.coreUpdate.result
+  return { state: result && result.ok ? 'updated' : 'partial', fromVersion: ran.fromVersion, ...ran.coreUpdate }
+}
+
 // panesStateFile: async () → 데몬 pane 상태 파일 경로 | null(데몬 없음 · 못 읽음) — 코어가 idle-panes 를 알 때만 부른다
 /** @typedef {{ result: CoreResult, summary: ReturnType<typeof summarizeUpdate> }} CoreUpdate */
 /** @param {{ coreDir: string, dataDir: string, bundle: string, runCore: RunCore, panesStateFile?: (() => Promise<string | null>) | null, env?: NodeJS.ProcessEnv }} options */
@@ -442,17 +534,10 @@ async function updateCore({ coreDir, dataDir, bundle, runCore, panesStateFile = 
   /** @type {CoreUpdate | null} */
   let coreUpdate = null
   if (!packless || registryHasPacks(dataDir)) {
-    // 설치된 코어(주 본체 코드)가 번들 업데이트를 아는가(4.1 손잡이)
-    const version = await runCore(['version'], NO_CONTRACT)
-    /** @type {unknown[]} */
-    const capabilities = Array.isArray(version && version.capabilities) ? /** @type {unknown[]} */ (/** @type {NonNullable<CoreResult>} */ (version).capabilities) : []
-    if (version && typeof version.version === 'string') base.fromVersion = version.version
-    if (!UPDATE_CAPABILITIES.every((name) => capabilities.includes(name))) return { state: 'unsupported', ...base }
-    const args = ['update', '--from', bundle, '--backup-dirty']
-    const stateFile = panesStateFile && capabilities.includes(IDLE_PANES_CAPABILITY) ? await panesStateFile().catch(() => null) : null
-    if (stateFile) args.push('--panes-state', stateFile)
-    const result = await runCore(args, NO_CONTRACT)
-    coreUpdate = { result, summary: summarizeUpdate(result) }
+    const ran = await runBundleUpdate({ bundle, runCore, panesStateFile })
+    base.fromVersion = ran.fromVersion
+    if (!ran.coreUpdate) return { state: 'unsupported', ...base }
+    coreUpdate = ran.coreUpdate
   }
   // 팩이 있는 본체면 위에서 coreUpdate 를 늘 채운다
   if (!packless) return { state: /** @type {CoreUpdate} */ (coreUpdate).result && /** @type {CoreUpdate} */ (coreUpdate).result?.ok ? 'updated' : 'partial', ...coreUpdate, ...base }
@@ -566,6 +651,10 @@ module.exports = {
   summarizeUpdate,
   panesState,
   updateCore,
+  pendingFromUpdate,
+  retryDue,
+  behindBodies,
+  retryUpdate,
   prepareCore,
   makeCoreBundle,
   syncVersionRefs,

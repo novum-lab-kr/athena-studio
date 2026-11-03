@@ -23,7 +23,7 @@ export function clear(): void {
   shown.set(null)
 }
 
-const ROW_TONE: Record<CoreUpdateRow['kind'], 'good' | 'warn'> = { skipped: 'warn', working: 'good', backedUp: 'good', failed: 'warn', unsupported: 'warn', notMoved: 'warn' }
+const ROW_TONE: Record<CoreUpdateRow['kind'], 'good' | 'warn'> = { skipped: 'warn', waiting: 'warn', caughtUp: 'good', working: 'good', backedUp: 'good', failed: 'warn', unsupported: 'warn', notMoved: 'warn' }
 
 function RowIcon({ tone }: { tone: 'good' | 'warn' }) {
   return (

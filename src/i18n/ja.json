@@ -98,6 +98,8 @@
   "coreUpdate.kind.fixed": "修正",
   "coreUpdate.more": "ほか {count} 件を見る",
   "coreUpdate.row.skipped": "今回スキップした本体です。アプリを再起動するか、そのパックを開くと追いつきます。",
+  "coreUpdate.row.waiting": "作業中のため後回しにした本体です。その作業が終わるとアプリが自動で新しいコアに切り替えます。",
+  "coreUpdate.row.caughtUp": "後回しにした本体も新しいコアに切り替えました。",
   "coreUpdate.row.working": "作業中だったセッション {count} 件もすぐに更新しました。",
   "coreUpdate.row.backedUp": "編集していたコアファイルをバックアップして、新しいコアに切り替えました。",
   "coreUpdate.row.failed": "新しいコアに切り替えられなかった本体があります。",

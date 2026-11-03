@@ -25,7 +25,8 @@ type Shell = Pick<typeof import('electron').shell, 'openPath'>
 type ParentWindow = import('electron').BrowserWindow | null | undefined
 type Layout = ReturnType<typeof studioHome.studioLayout>
 // 켤 때 코어 업데이트 결과(studio-home updateCore) — 읽는 칸만
-type CoreUpdate = { state: string; head?: string | null; target?: string | null; fromVersion?: string | null; error?: unknown; summary?: ReturnType<typeof studioHome.summarizeUpdate> }
+type CoreUpdate = { state: string; head?: string | null; target?: string | null; fromVersion?: string | null; error?: unknown; result?: unknown; summary?: ReturnType<typeof studioHome.summarizeUpdate>; caughtUp?: boolean }
+type PendingBody = ReturnType<typeof studioHome.pendingFromUpdate>[number]
 // prepareCore 결과 — 읽는 칸만(풀기 · 설정 실패 결과와 성공 결과가 섞인다)
 type Prepared = { ok: boolean; created?: boolean; error?: string; message?: string; file?: string; update?: CoreUpdate | null }
 export type Progress = { step: string; text: string }
@@ -53,7 +54,7 @@ function readJson(file: string): Record<string, string> | null {
 
 // app — 홈 · 앱 데이터 자리 · shell — 폴더 열기 · changelog — 내역 원문 파일 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
 // daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.mts)
-export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile, onUpdateState = () => {} }: { onUpdateState?: (running: boolean) => void; app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
+export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile, onUpdateState = () => {}, onCaughtUp = () => {} }: { onUpdateState?: (running: boolean) => void; onCaughtUp?: (outcome: { changed: boolean; notice: boolean }) => void; app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
   // ── 아테나 폴더 — 공용 ──────────────────────────────────────
   // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
   const athenaReposRoot = (dir: string) => core.reposRootFor(dir, { studioRoot: studio.root, home: app.getPath('home') })
@@ -107,11 +108,90 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
         logCore(`update ${JSON.stringify({ state: updated.state, head: updated.head, target: updated.target, error: updated.error })}`)
         noteUpdate(updated)
         changed = Boolean(updated.summary && updated.summary.updated.length > 0)
+        // 건너뛴 본체를 기억해 둔다 — 코어 update 를 불렀으면 그 결과에서, 주 본체가 이미 같아 부르지 않았으면 번들보다 뒤인 팩 본체(지난번에 건너뛰고 앱이 꺼진 것)
+        if (updated.result !== undefined) pending = studioHome.pendingFromUpdate(updated.result as Parameters<typeof studioHome.pendingFromUpdate>[0])
+        else if (updated.state === 'same') {
+          pending = studioHome.behindBodies({ dataDir: studio.data, bundle: coreBundle })
+          announceNext = pending.length > 0
+        }
       } catch (error) {
         logCore(`update failed ${(error as Error).message}`)
       }
+      startRetry()
       return { changed }
     })
+  }
+
+  // ── 건너뛴 본체 다시 올리기 ──
+  // 켤 때 업데이트가 무거운 명령 · 커밋 때문에 건너뛴 본체를, 막던 것이 끝나면 앱이 스스로 다시 올린다(사람 손 없이 · 사용자 결정 2026-11-03).
+  // 이미 도는 앱 main 에 붙인다(새 상주 프로세스 없음) — RETRY_TICK_MS 마다 막던 pid 가 끝났는지만 보고(가볍다), 때가 되면 코어 update 를 한 번.
+  // 다시 부를 때는 짧게만 기다린다(RETRY_WAIT_MS) — 문이 닫힌 동안 팩 명령 · 새 에이전트 시작이 기다리니까. 아직 바쁘면 다시 건너뛰고 새 pid 로 또 기다린다.
+  // 사용자 pane 은 끄지 않는다 — 쉬는 세션 · 일하는 세션 판단은 켤 때와 같다(--panes-state)
+  const RETRY_TICK_MS = 15000
+  const RETRY_GAP_MS = 30000
+  const RETRY_WAIT_MS = '5000'
+  let pending: PendingBody[] = []
+  let retryTimer: ReturnType<typeof setInterval> | null = null
+  let lastRetry = 0
+  // 다음 다시 올리기 결과를 (바뀐 것이 없어도) 팝업으로 — 앱을 다시 켰는데 아직 뒤처진 본체가 있을 때 한 번, 지금 상태를 보이게
+  let announceNext = false
+  const alive = (pid: number): boolean => {
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (error) {
+      // EPERM — 있지만 내 것이 아님(살아 있다)
+      return (error as NodeJS.ErrnoException).code === 'EPERM'
+    }
+  }
+  function startRetry(): void {
+    if (!pending.length || retryTimer) return
+    logCore(`retry wait ${JSON.stringify(pending.map((entry) => ({ id: entry.id, pids: entry.pids, timed: entry.timed })))}`)
+    retryTimer = setInterval(() => void retryTick(), RETRY_TICK_MS)
+    retryTimer.unref()
+  }
+  function stopRetry(): void {
+    if (retryTimer) clearInterval(retryTimer)
+    retryTimer = null
+  }
+  async function retryTick(): Promise<void> {
+    if (!pending.length) return stopRetry()
+    if (updateGate.active() || Date.now() - lastRetry < RETRY_GAP_MS || !studioHome.retryDue(pending, { alive })) return
+    lastRetry = Date.now()
+    const announce = announceNext
+    announceNext = false
+    const outcome = await updateGate.run(async () => {
+      try {
+        const retried = (await studioHome.retryUpdate({
+          bundle: coreBundle,
+          runCore: (argv, options) => runCoreRaw(argv, { ...options, dir: studio.core, extraEnv: { ATHENA_UPDATE_WAIT_MS: RETRY_WAIT_MS } }),
+          panesStateFile: writePanesState,
+        })) as CoreUpdate
+        return retried
+      } catch (error) {
+        logCore(`retry failed ${(error as Error).message}`)
+        return null
+      }
+    })
+    if (!outcome) return
+    const summary = outcome.summary
+    logCore(`retry ${JSON.stringify({ state: outcome.state, updated: summary && summary.updated, skipped: summary && summary.skipped.map((entry) => `${entry.id}:${entry.reason}`), failed: summary && summary.failed.map((entry) => entry.id) })}`)
+    if (!summary) {
+      // 설치된 코어가 번들 업데이트를 모른다 — 기다려도 안 풀린다. 알리고 그만
+      pending = []
+      stopRetry()
+      coreUpdateNotice = outcome
+      return onCaughtUp({ changed: false, notice: true })
+    }
+    pending = studioHome.pendingFromUpdate(outcome.result as Parameters<typeof studioHome.pendingFromUpdate>[0])
+    if (!pending.length) stopRetry()
+    const changed = summary.updated.length > 0
+    // 알릴 때 — 미뤄 둔 본체를 올렸거나 · 이제는 기다려도 안 되는 것(고쳐 둠 · 갈라짐 · 실패)이 남았거나 · 다시 켠 뒤 첫 시도
+    const stuck = summary.failed.length > 0 || summary.skipped.some((entry) => !RETRY_REASONS.has(String(entry.reason)))
+    if (changed || stuck || summary.backedUp.length > 0 || announce) {
+      coreUpdateNotice = { ...outcome, caughtUp: changed }
+      onCaughtUp({ changed, notice: true })
+    } else onCaughtUp({ changed, notice: false })
   }
 
   // 켤 때 업데이트 전 — 떠 있는 데몬의 pane 상태를 파일로(코어 update --panes-state · 쉬는 세션은 막지 않는다 · 결정 D1).
@@ -145,6 +225,8 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
   }
 
   // 막은 종류(코어 busy kind) — 화면 문구 coreUpdate.busy.<kind> 가 있는 것. 그 밖은 other
+  // 바빠서 건너뜀 — 앱이 기다렸다 다시 올리는 까닭(studio-home pendingFromUpdate 와 같다)
+  const RETRY_REASONS = new Set(['busy', 'busy-unknown'])
   const BUSY_KINDS = new Set(['athena', 'agent', 'codex', 'qa', 'learn-review', 'heavy', 'switch', 'commit', 'unknown'])
 
   // 켤 때 업데이트 결과 팝업에 보일 줄 — 본체를 건너뛰었거나 · 일하는 세션이 있었지만 바로 올렸거나 · 고친 코어 파일을 백업했거나 · 못 했으면
@@ -155,7 +237,14 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     // 무엇이 막았는지 — 짝지은 pane 이름 · 없으면 막은 종류의 짧은 말(코어 설명은 명령 · 경로가 들어 길다). 모르면 까닭(busy · dirty …)
     const kindText = (kind: string) => say(`coreUpdate.busy.${BUSY_KINDS.has(kind) ? kind : 'other'}`)
     const causesOf = (entry: { blockers?: unknown[]; kinds?: unknown[] }) => [...(entry.blockers || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))]
-    if (summary.skipped.length) rows.push({ kind: 'skipped', params: {}, chips: summary.skipped.map((entry) => (causesOf(entry).length ? `${entry.id} · ${causesOf(entry).join(', ')}` : `${entry.id} · ${entry.reason}`)) })
+    const chipOf = (entry: (typeof summary.skipped)[number]) => (causesOf(entry).length ? `${entry.id} · ${causesOf(entry).join(', ')}` : `${entry.id} · ${entry.reason}`)
+    // 미뤄 둔 본체를 나중에 올렸으면(다시 올리기) 그 본체들
+    if (notice.caughtUp && summary.updated.length) rows.push({ kind: 'caughtUp', params: {}, chips: summary.updated.map(String) })
+    // 바빠서 건너뛴 본체는 앱이 기다렸다 다시 올린다(waiting) · 그 밖의 까닭은 기다려도 안 풀린다(skipped)
+    const waiting = summary.skipped.filter((entry) => RETRY_REASONS.has(String(entry.reason)))
+    const skipped = summary.skipped.filter((entry) => !RETRY_REASONS.has(String(entry.reason)))
+    if (waiting.length) rows.push({ kind: 'waiting', params: {}, chips: waiting.map(chipOf) })
+    if (skipped.length) rows.push({ kind: 'skipped', params: {}, chips: skipped.map(chipOf) })
     for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))] })
     for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: {}, chips: [String(entry.id)], dir: entry.dir ? String(entry.dir) : undefined })
     if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })

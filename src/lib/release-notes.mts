@@ -122,7 +122,7 @@ export function withTranslations(picked: ReleaseNotes | null, tables: Record<str
 export const noteText = (note: ShownNote, lang: string): string => (note.texts && note.texts[lang]) || note.text
 
 // 팝업 결과 상자의 줄 하나 — kind 가 문구 키(coreUpdate.row.<kind>)고, chips 는 글 아래 줄에 모두 보이는 팩 · 세션 이름. dir 은 백업 폴더([폴더 열기])
-export type CoreUpdateRowKind = 'skipped' | 'working' | 'backedUp' | 'failed' | 'unsupported' | 'notMoved'
+export type CoreUpdateRowKind = 'skipped' | 'waiting' | 'caughtUp' | 'working' | 'backedUp' | 'failed' | 'unsupported' | 'notMoved'
 export type CoreUpdateRow = { kind: CoreUpdateRowKind; params: Record<string, string | number>; chips: string[]; dir?: string }
 // main → 화면(core-update:show). changed — 코어가 새 버전으로 바뀌었다(제목 · 버전 칩 · 내역을 보인다). from · to · notes 는 모르면 null(그 칸을 숨긴다)
 export type CoreUpdateView = { changed: boolean; from: string | null; to: string | null; notes: ReleaseNotes | null; rows: CoreUpdateRow[]; releasesUrl: string }

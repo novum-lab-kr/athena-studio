@@ -100,7 +100,8 @@ test('팩 명령 입구 — 밖으로 내보내는 runCore 는 문을 기다리�
   assert.match(runner, /const runPack = \(args: string\[\], options: RunCoreOptions\) => runCore\(/)
   // 업데이트 · prepare 의 코어 명령은 문을 거치지 않는다(거치면 자기 자신을 기다려 멈춘다)
   assert.doesNotMatch(runner, /runCore: \(argv, options\) => runCore\(/)
-  assert.equal((runner.match(/runCore: \(argv, options\) => runCoreRaw\(/g) || []).length, 2)
+  // 켤 때 준비 · 켤 때 업데이트 · 건너뛴 본체 다시 올리기
+  assert.equal((runner.match(/runCore: \(argv, options\) => runCoreRaw\(/g) || []).length, 3)
   assert.match(runner, /updateGate\.run\(/)
 })
 

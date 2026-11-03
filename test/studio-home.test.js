@@ -317,6 +317,86 @@ test('켤 때 업데이트: 코어가 idle-panes 를 알면 데몬 pane 상태 �
   assert.deepEqual(calls[1], ['update', '--from', bundle, '--backup-dirty'])
 })
 
+test('건너뛴 본체: busy · busy-unknown 만 기다린다 — 막은 pid 를 모으고 pid 를 모르는 막음은 시간으로', () => {
+  const result = {
+    ok: false,
+    bodies: [
+      { id: 'acme', status: 'updated' },
+      { id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'heavy', pid: 21 }, { kind: 'commit', pid: 22, pane: '🤖 fe' }, { kind: 'heavy', pid: 21 }] },
+      { id: 'initech', status: 'skipped', reason: 'busy', busy: [{ kind: 'switch', what: '팩 작업 잠금' }] },
+      { id: 'umbrella', status: 'skipped', reason: 'busy-unknown', busy: [] },
+      { id: 'hooli', status: 'skipped', reason: 'diverged' },
+      { id: 'old', status: 'skipped', reason: 'missing' },
+    ],
+  }
+  const pending = home.pendingFromUpdate(result, 1000)
+  assert.deepEqual(pending, [
+    { id: 'globex', pids: [21, 22], timed: false, since: 1000, causes: [{ kind: 'heavy' }, { pane: '🤖 fe', kind: 'commit' }, { kind: 'heavy' }] },
+    { id: 'initech', pids: [], timed: true, since: 1000, causes: [{ kind: 'switch' }] },
+    { id: 'umbrella', pids: [], timed: true, since: 1000, causes: [] },
+  ])
+  assert.deepEqual(home.pendingFromUpdate(null), [])
+  assert.deepEqual(home.pendingFromUpdate({ ok: true, bodies: [{ id: 'acme', status: 'same' }] }), [])
+})
+
+test('건너뛴 본체: 막던 pid 가 다 끝나면 다시 · pid 를 모르면 1분 뒤', () => {
+  const [globex, initech] = home.pendingFromUpdate({ bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'heavy', pid: 21 }, { kind: 'commit', pid: 22 }] }, { id: 'initech', status: 'skipped', reason: 'busy', busy: [{ kind: 'switch' }] }] }, 0)
+  const running = new Set([21, 22])
+  const alive = (pid) => running.has(pid)
+  assert.equal(home.retryDue([globex], { alive, now: 1 }), false)
+  running.delete(21)
+  assert.equal(home.retryDue([globex], { alive, now: 1 }), false)
+  running.delete(22)
+  assert.equal(home.retryDue([globex], { alive, now: 1 }), true)
+  assert.equal(home.retryDue([initech], { alive, now: 59999 }), false)
+  assert.equal(home.retryDue([initech], { alive, now: 60000 }), true)
+  // 하나라도 때가 되면 다시(코어 update 는 모든 본체를 본다)
+  running.add(21)
+  assert.equal(home.retryDue([globex, initech], { alive, now: 60000 }), true)
+  assert.equal(home.retryDue([], { alive, now: 60000 }), false)
+})
+
+test('건너뛴 본체: 다시 켰을 때 번들 커밋보다 뒤(조상)인 팩 본체만 찾는다', () => {
+  const repo = studioRepo()
+  const bundle = path.join(repo, 'core.bundle')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const coreDir = path.join(tmp(), 'core')
+  home.installCore({ bundle, coreDir })
+  const bodies = tmp()
+  const behind = path.join(bodies, 'acme')
+  run(coreDir, 'worktree', 'add', '-q', '--detach', behind, 'HEAD')
+  commitCore(repo, 'P.md', 'p\n')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  // 주 본체는 이미 새 코어(켤 때 updateCore 가 same 으로 본 상태)
+  run(coreDir, 'fetch', '-q', bundle, 'main:refs/remotes/origin/main')
+  run(coreDir, 'merge', '-q', '--ff-only', 'refs/remotes/origin/main')
+  const current = path.join(bodies, 'globex')
+  run(coreDir, 'worktree', 'add', '-q', '--detach', current, 'HEAD')
+  const dataDir = tmp()
+  fs.writeFileSync(path.join(dataDir, 'config.json'), JSON.stringify({ packs: { acme: { body: behind }, globex: { body: current }, gone: { body: path.join(bodies, 'gone') } } }))
+  assert.deepEqual(home.behindBodies({ dataDir, bundle, now: 5 }), [{ id: 'acme', pids: [], timed: false, since: 5, causes: [] }])
+  assert.deepEqual(home.behindBodies({ dataDir: tmp(), bundle }), [])
+})
+
+test('건너뛴 본체 다시 올리기: 주 본체가 같아도 코어 update 를 부르고 · 손잡이를 모르면 unsupported', async () => {
+  const calls = []
+  const makeCore = (capabilities, result) => async (argv, options) => {
+    calls.push({ argv, contract: options.contract })
+    return argv[0] === 'version' ? { ok: true, version: '0.48.0', capabilities } : result
+  }
+  const done = await home.retryUpdate({ bundle: '/b/core.bundle', runCore: makeCore(['update-from-bundle', 'backup-dirty'], { ok: true, bodies: [{ id: 'globex', status: 'updated' }], backedUp: [] }) })
+  assert.equal(done.state, 'updated')
+  assert.equal(done.fromVersion, '0.48.0')
+  assert.deepEqual(done.summary.updated, ['globex'])
+  assert.deepEqual(calls.map((call) => call.argv), [['version'], ['update', '--from', '/b/core.bundle', '--backup-dirty']])
+  assert.ok(calls.every((call) => call.contract === false))
+  const still = await home.retryUpdate({ bundle: '/b/core.bundle', runCore: makeCore(['update-from-bundle', 'backup-dirty'], { ok: false, bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'heavy', pid: 9 }] }] }) })
+  assert.equal(still.state, 'partial')
+  assert.deepEqual(home.pendingFromUpdate(still.result).map((entry) => entry.pids), [[9]])
+  const old = await home.retryUpdate({ bundle: '/b/core.bundle', runCore: makeCore([], null) })
+  assert.equal(old.state, 'unsupported')
+})
+
 test('pane 상태: 데몬 agent_status 그대로 · 질문을 기다리면 waiting · 셸 pid 모르는 pane 은 뺀다', () => {
   const panes = [
     { id: 'p1', label: '🧭 아테나', agent: 'claude', agent_status: 'idle' },

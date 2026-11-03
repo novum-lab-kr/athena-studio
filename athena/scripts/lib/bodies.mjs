@@ -236,10 +236,13 @@ const kickScript = (body, script) => spawnSync(process.execPath, [join(body, 'sc
 export const moveBody = ({ main, body, id, data, target, requestedTo, operationId, mode, isMain = false, lockHeld = false, backupDirty = false, panes = null, waitUntil = Date.now() + UPDATE_WAIT_MS }) => {
   const from = headOf(body)
   const entry = { id, body, main: isMain, status: 'skipped', from, requestedTo, to: from, rollbackTo: null, services: { boardStopped: [] } }
+  // update 로 이미 대상에 있는 본체는 바쁨으로 기다리거나 건너뛰지 않는다(same · working 은 그대로 센다) — 옮길 것이 없는데 busy 로 남기면,
+  // 건너뛴 본체만 다시 올리는 update(앱)가 이 본체도 대기로 센다
+  const already = mode === 'update' && Boolean(from) && from === target
   let release = () => {}
   if (!lockHeld) {
     try { release = takePackLock(data, id, `${mode} ${operationId}`) } catch (error) {
-      if (error.code === 'locked') return { ...entry, reason: 'busy', busy: [{ kind: 'switch', what: error.message }] }
+      if (error.code === 'locked') return already ? { ...entry, status: 'same' } : { ...entry, reason: 'busy', busy: [{ kind: 'switch', what: error.message }] }
       throw error
     }
   }
@@ -248,13 +251,13 @@ export const moveBody = ({ main, body, id, data, target, requestedTo, operationI
     let table = []
     if (mode === 'update') {
       let { scan, all } = updateScan(body)
-      while (scan.known && all.some((item) => UPDATE_WAIT_KINDS.has(item.kind)) && Date.now() < waitUntil) {
+      while (!already && scan.known && all.some((item) => UPDATE_WAIT_KINDS.has(item.kind)) && Date.now() < waitUntil) {
         sleepSync(1000)
         ;({ scan, all } = updateScan(body))
       }
-      if (!scan.known) return { ...entry, reason: 'busy-unknown', busy: all }
+      if (!scan.known) return already ? { ...entry, status: 'same' } : { ...entry, reason: 'busy-unknown', busy: all }
       const blocking = all.filter((item) => !UPDATE_SESSION_KINDS.has(item.kind) && !UPDATE_STOP_KINDS.has(item.kind))
-      if (blocking.length) return { ...entry, reason: 'busy', busy: blocking }
+      if (blocking.length && !already) return { ...entry, reason: 'busy', busy: blocking }
       toStop = all.filter((item) => UPDATE_STOP_KINDS.has(item.kind))
       table = scan.table
       const working = settleIdleSessions(all.filter((item) => UPDATE_SESSION_KINDS.has(item.kind)), scan.table, panes)
