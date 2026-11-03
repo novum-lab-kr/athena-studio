@@ -146,3 +146,8 @@ test('codeStatus: 판 없는 옛 데몬 · 낮음 · 같거나 높음', () => {
   assert.equal(protocol.codeStatus({ codeVersion: 2 }, 2), 'current')
   assert.equal(protocol.codeStatus({ codeVersion: 3 }, 2), 'current')
 })
+
+test('SPACES 앞 작업 상태 · 뒤 셸 분리 계약은 protocol 7부터', () => {
+  assert.ok(protocol.PROTOCOL >= 7)
+  assert.equal(protocol.checkHello({ ok: true, result: { protocol: 6 } }), 'mismatch')
+})

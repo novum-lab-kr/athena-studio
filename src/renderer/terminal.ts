@@ -19,6 +19,8 @@ export type PaneView = {
   el: HTMLDivElement
   head: HTMLDivElement
   headLabel: HTMLSpanElement
+  headShells: HTMLSpanElement
+  headShellCount: HTMLSpanElement
   detailButton: HTMLElement
   body: HTMLDivElement
   shown: boolean
@@ -67,8 +69,18 @@ export function ensureView(paneId: string): PaneView {
   head.className = 'pane-head'
   const headLabel = document.createElement('span')
   headLabel.className = 'pane-head-label'
+  const headShells = document.createElement('span')
+  headShells.className = 'pane-head-shells'
+  headShells.hidden = true
+  headShells.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m4 6 6 6-6 6M12 18h8"/></svg>'
+  const headShellCount = document.createElement('span')
+  headShells.append(headShellCount)
+  const dragHandle = document.createElement('span')
+  dragHandle.className = 'pane-drag-handle'
+  dragHandle.setAttribute('aria-hidden', 'true')
+  dragHandle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
   const detailButton = paneDetailButton(paneId)
-  head.append(headLabel, detailButton)
+  head.append(headLabel, headShells, dragHandle, detailButton)
   const body = document.createElement('div')
   body.className = 'pane-body'
   el.append(head, body)
@@ -127,7 +139,7 @@ export function ensureView(paneId: string): PaneView {
     focusPane(paneId)
     if (text) views.get(paneId)?.term.paste(text)
   })
-  const view: PaneView = { term, fit, el, head, headLabel, detailButton, body, shown: false, sent: null }
+  const view: PaneView = { term, fit, el, head, headLabel, headShells, headShellCount, detailButton, body, shown: false, sent: null }
   term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
   return view

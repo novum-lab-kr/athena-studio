@@ -15,7 +15,7 @@ type Window = import('electron').BrowserWindow
 export type Called<T = unknown> = { result?: T; error?: string; code?: unknown }
 export type DaemonCall = <T = unknown>(op: string, args?: object) => Promise<Called<T>>
 // 데몬 pane 목록(pane list) 한 줄 — 읽는 칸만
-export type DaemonPane = { id: string; tab_id?: string | null; label?: string; name?: string; title?: string; agent?: string | null; agent_status?: string; cwd?: string; foreground_cwd?: string }
+export type DaemonPane = { id: string; tab_id?: string | null; label?: string; name?: string; title?: string; agent?: string | null; agent_status?: string; foreground_status?: string | null; background_shells?: number; cwd?: string; foreground_cwd?: string }
 // 데몬 화면 상태(state) — 읽는 칸만
 export type DaemonState = { workspaces: { id: string; label?: unknown; cwd?: string }[]; tabs: { id: string; workspace: string; tree: Tree | null }[] }
 

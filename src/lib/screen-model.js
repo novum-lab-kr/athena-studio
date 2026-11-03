@@ -3,8 +3,8 @@
 // pty·소켓 없이 테스트한다(test/screen-model.test.js).
 const path = require('path')
 
-// 납작한 Pane 의 키 — screen.py `_pane` 과 같은 12개, 같은 순서
-const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows']
+// 납작한 Pane 의 키 — screen.py `_pane` 과 같은 16개, 같은 순서
+const PANE_KEYS = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows', 'foreground_status', 'background_shells']
 
 // id 는 다시 쓰지 않는다. [\w:] 만 · 'hermes' 로 시작하지 않는다(현황판의 가짜 id)
 // start 로 지난 데몬이 남긴 번호를 받아 이어서 센다 — 데몬을 다시 띄워도 p1 부터 다시 매기지 않게(계획서에 남은 옛 pane id 가 새 pane 을 가리키지 않게).
@@ -47,7 +47,7 @@ const orNull = (value) => (value === undefined || value === null || value === ''
 
 /**
  * 데몬 pane 정보에서 읽는 칸만(모양은 검사하지 않는다)
- * @param {{ id: unknown, tabId: unknown, workspaceId?: unknown, label?: unknown, cwd?: unknown, foregroundCwd?: unknown, focused?: unknown, agent?: unknown, agentStatus?: unknown, title?: unknown, cols?: unknown, rows?: unknown }} info
+ * @param {{ id: unknown, tabId: unknown, workspaceId?: unknown, label?: unknown, cwd?: unknown, foregroundCwd?: unknown, focused?: unknown, agent?: unknown, agentStatus?: unknown, foregroundStatus?: unknown, backgroundShells?: number, title?: unknown, cols?: unknown, rows?: unknown }} info
  */
 function flatPane(info) {
   return {
@@ -66,6 +66,8 @@ function flatPane(info) {
     // pane 크기(글자 칸) — 에이전트 pane 을 어느 pane 의 어느 쪽으로 나눌지 고르는 데 쓴다(delegate.sh). 모르면 null
     cols: orNull(info.cols),
     rows: orNull(info.rows),
+    foreground_status: orNull(info.foregroundStatus),
+    background_shells: info.backgroundShells ?? 0,
   }
 }
 
@@ -171,17 +173,28 @@ const WORKING_MARK = /esc to interrupt/i
 const QUIET_MS = 1500
 const STATUS_TAIL_LINES = 8
 // 뒤에서 도는 셸 — Claude Code 맺음 줄 끝의 개수(실측 2026-11-01 · 2.1.316 '⏵⏵ auto mode on · 2 shells'). 대화 본문에 같은 글이 있어도 잡지 않게 맨 아래 몇 줄에만 본다
-const BACKGROUND_MARK = /·\s*\d+\s+shells?\s*$/
+const BACKGROUND_MARK = /·\s*(\d+)\s+shells?\s*$/
 const BACKGROUND_TAIL_LINES = 3
 
+/** @param {{ agent?: unknown, screenLines?: string[] | null }} state */
+function backgroundShells({ agent, screenLines }) {
+  if (agent !== 'claude' && agent !== 'codex') return 0
+  const tail = (screenLines || []).filter((line) => line.trim()).slice(-BACKGROUND_TAIL_LINES)
+  for (const line of tail) {
+    const match = line.match(BACKGROUND_MARK)
+    if (match) return Number(match[1])
+  }
+  return 0
+}
+
 // screenLines: 화면에 보이는 줄들(위→아래). lastOutputAt·now: ms
-/** @param {{ agent?: unknown, screenLines?: string[] | null, lastOutputAt?: number | null, now: number }} state */
-function agentStatus({ agent, screenLines, lastOutputAt, now }) {
+/** @param {{ agent?: unknown, screenLines?: string[] | null, lastOutputAt?: number | null, now: number, includeBackground?: boolean }} state */
+function agentStatus({ agent, screenLines, lastOutputAt, now, includeBackground = true }) {
   if (!agent) return 'unknown'
   if (waitingForInput((screenLines || []).join('\n'))) return 'waiting'
   const tail = (screenLines || []).filter((line) => line.trim()).slice(-STATUS_TAIL_LINES)
   if (tail.some((line) => WORKING_MARK.test(line))) return 'working'
-  if (tail.slice(-BACKGROUND_TAIL_LINES).some((line) => BACKGROUND_MARK.test(line))) return 'working'
+  if (includeBackground && tail.slice(-BACKGROUND_TAIL_LINES).some((line) => BACKGROUND_MARK.test(line))) return 'working'
   if (lastOutputAt && now - lastOutputAt < QUIET_MS) return 'working'
   return 'idle'
 }
@@ -251,6 +264,7 @@ module.exports = {
   detectAgent,
   QUIET_MS,
   agentStatus,
+  backgroundShells,
   waitingForInput,
   DEFAULT_READ_LINES,
   formatRead,

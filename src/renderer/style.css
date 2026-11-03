@@ -1398,6 +1398,11 @@ body.pack-welcome-on .studio-tabs { display: none; }
 /* pane [상세] — 머리 줄 오른쪽 아이콘(계획서에 묶인 pane 만) */
 .pane-head { display: flex; align-items: center; gap: 6px; }
 .pane-head-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-head-shells { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
+.pane-head-shells[hidden] { display: none; }
+.pane-head-shells svg { width: 14px; height: 14px; }
+.pane-drag-handle { flex: none; display: inline-flex; width: 14px; height: 14px; color: var(--muted); cursor: grab; }
+.pane-drag-handle svg { width: 100%; height: 100%; }
 .pane-detail-btn { flex: none; display: inline-grid; place-items: center; width: 18px; height: 18px; padding: 0; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; }
 .pane-detail-btn[hidden] { display: none; }
 .pane-detail-btn svg { width: 14px; height: 14px; }

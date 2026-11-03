@@ -286,7 +286,7 @@ declare global {
     onPaneResized(callback: (paneId: string, cols: number, rows: number) => void): () => void
     onScreenState(callback: (next: ScreenState) => void): () => void
     onScreenBranches(callback: (next: Record<string, string | null>) => void): () => void
-    onScreenPaneStatus(callback: (next: Record<string, string | null>) => void): () => void
+    onScreenPaneStatus(callback: (next: Record<string, { status: string | null; backgroundShells: number }>) => void): () => void
     onScreenResync(callback: () => void): () => void
     onScreenDisconnected(callback: () => void): () => void
     onScreenCommand(callback: (name: string) => void): () => void

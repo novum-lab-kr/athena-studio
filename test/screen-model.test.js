@@ -42,9 +42,9 @@ test('id: 지난 데몬 번호에서 이어서 센다 · 바뀔 때마다 알린
   assert.deepEqual([model.createIdGen(null).next('p'), model.createIdGen('x').next('p')], ['p1', 'p1'])
 })
 
-test('납작한 Pane: 화면 계층 screen.py 계약과 같은 14개 키 · 빈 값은 null', () => {
+test('납작한 Pane: 화면 계층 screen.py 계약과 같은 16개 키 · 빈 값은 null', () => {
   // 아테나 scripts/lib/screen.py 머리 계약(Pane) 키 순서 그대로 — 바뀌면 코어 계약이 바뀐 것. cols · rows 는 뒤에 더했다(추가만)
-  const expected = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows']
+  const expected = ['id', 'tab_id', 'workspace_id', 'label', 'name', 'pane_title', 'cwd', 'foreground_cwd', 'focused', 'agent', 'agent_status', 'title', 'cols', 'rows', 'foreground_status', 'background_shells']
   assert.deepEqual(model.PANE_KEYS, expected)
   const pane = model.flatPane({ id: 'p1', tabId: 't1', workspaceId: 'w2', label: '', cwd: '/a', foregroundCwd: '/a/b', focused: 1, agent: 'claude', agentStatus: 'idle', title: '', cols: 80, rows: 24 })
   assert.deepEqual(Object.keys(pane), expected)
@@ -63,6 +63,8 @@ test('납작한 Pane: 화면 계층 screen.py 계약과 같은 14개 키 · 빈 
     title: null,
     cols: 80,
     rows: 24,
+    foreground_status: null,
+    background_shells: 0,
   })
   assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).agent, null)
   assert.equal(model.flatPane({ id: 'p2', tabId: 't1' }).cols, null)
@@ -210,4 +212,17 @@ test('기다리기 맞추기: match · regex · 둘 다 없으면 예외', () =>
   assert.equal(model.findMatch('x', { regex: 'y' }), null)
   assert.throws(() => model.findMatch('x', {}), /--match/)
   assert.throws(() => model.findMatch('x', { regex: '(' }))
+})
+
+test('SPACES: 맺음 줄 뒤 셸은 쉬는 표시와 별도로 센다', () => {
+  const state = { agent: 'claude', screenLines: ['❯ ', '  📁 syung', '  ⏵⏵ auto mode on · 1 shell'], lastOutputAt: 1000, now: 10000 }
+  assert.equal(model.agentStatus(state), 'working')
+  assert.equal(model.agentStatus({ ...state, includeBackground: false }), 'idle')
+  assert.equal(model.backgroundShells(state), 1)
+  assert.equal(model.backgroundShells({ ...state, screenLines: ['❯', '⏵⏵ auto mode on · 2 shells'] }), 2)
+  assert.equal(model.agentStatus({ ...state, screenLines: WAIT_SCREENS.codexQuestion, includeBackground: false }), 'waiting')
+  assert.equal(model.agentStatus({ ...state, screenLines: ['esc to interrupt', ...state.screenLines], includeBackground: false }), 'working')
+  assert.equal(model.agentStatus({ ...state, lastOutputAt: 9999, includeBackground: false }), 'working')
+  assert.equal(model.backgroundShells({ ...state, agent: 'codex' }), 1)
+  assert.equal(model.backgroundShells({ ...state, screenLines: ['本文 · 2 shells', '❯', 'a', 'b', '⏵⏵ auto mode on'] }), 0)
 })

@@ -4,7 +4,7 @@ import { $, applyStaticTexts, currentTab, panels, say, setI18nState, setState, s
 import { views } from './terminal.ts'
 import { attached, attaching, reattachScreen, runCommand, screen, setAttached, setReattachOnKey, showRestoreResult, startScreen } from './screen.ts'
 import { applyState, renderTabs, switchTab } from './tabs.ts'
-import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, sendPaneSize } from './pane-layout.ts'
+import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
@@ -16,6 +16,7 @@ import { initWork } from './work.ts'
 import { StudioUi } from './ui/index.ts'
 
 export let branches: Record<string, string | null> = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
+export let paneBackgroundShells: Record<string, number> = {}
 export let paneStatus: Record<string, string | null> = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
 
 // 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
@@ -121,6 +122,7 @@ function applyLanguage(next: I18nPayload): void {
   setI18nState(next)
   applyStaticTexts()
   StudioUi.textsChanged()
+  syncPaneShells()
   if (setupTitleKey) setSetupTitle(setupTitleKey)
   if (!state) return
   renderState()
@@ -183,8 +185,12 @@ async function init(): Promise<void> {
     if (attached) renderSides()
   })
   studio.onScreenPaneStatus((next) => {
-    if (JSON.stringify(next) === JSON.stringify(paneStatus)) return
-    paneStatus = next
+    const statuses = Object.fromEntries(Object.entries(next).map(([id, activity]) => [id, activity.status]))
+    const shells = Object.fromEntries(Object.entries(next).map(([id, activity]) => [id, activity.backgroundShells]))
+    if (JSON.stringify(statuses) === JSON.stringify(paneStatus) && JSON.stringify(shells) === JSON.stringify(paneBackgroundShells)) return
+    paneStatus = statuses
+    paneBackgroundShells = shells
+    syncPaneShells()
     if (attached) renderSides()
   })
   StudioUi.spaces.setup($('spaces'), spacesActions())

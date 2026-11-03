@@ -163,7 +163,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     if (listed.result) {
       monitor.agentCwds = listed.result.panes.filter((pane) => pane.agent).map((pane) => pane.foreground_cwd || pane.cwd).filter((dir): dir is string => Boolean(dir))
       // spaces pane 줄 앞 점 — 에이전트가 없는 pane 은 null
-      send('screen:pane-status', Object.fromEntries(listed.result.panes.map((pane) => [pane.id, pane.agent ? pane.agent_status : null])))
+      send('screen:pane-status', Object.fromEntries(listed.result.panes.map((pane) => [pane.id, { status: pane.agent ? (pane.foreground_status ?? pane.agent_status ?? null) : null, backgroundShells: pane.background_shells ?? 0 }])))
       trackPaneSince(listed.result.panes)
     }
     if (Date.now() - paneBoundAt > PANE_BOUND_MS) {

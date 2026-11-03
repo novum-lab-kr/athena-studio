@@ -820,6 +820,7 @@ export class Daemon {
     return panes.map((pane, index) => {
       const agent = model.detectAgent(processes, pane.pid, nodeArgs)
       const tab = this.tabs.find((entry) => entry.id === pane.tabId)
+      const activity = { agent, screenLines: pane.lines('visible'), lastOutputAt: pane.lastOutputAt, now }
       return model.flatPane({
         id: pane.id,
         tabId: pane.tabId,
@@ -829,7 +830,9 @@ export class Daemon {
         foregroundCwd: cwds[foreground[index] as number] || null,
         focused: pane.id === this.view(this.paneBody(pane) || this.lastKey).focusedPane,
         agent,
-        agentStatus: model.agentStatus({ agent, screenLines: pane.lines('visible'), lastOutputAt: pane.lastOutputAt, now }),
+        agentStatus: model.agentStatus(activity),
+        foregroundStatus: model.agentStatus({ ...activity, includeBackground: false }),
+        backgroundShells: model.backgroundShells(activity),
         title: pane.title,
         cols: pane.size.cols,
         rows: pane.size.rows,

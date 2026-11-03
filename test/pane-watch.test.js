@@ -38,7 +38,7 @@ test('현황판이 꺼져 있어도 계획서에 묶인 pane 을 알린다(머�
   const port = await closedPort()
   const panes = [
     { id: 'p1', agent: 'claude', agent_status: 'idle', cwd: root },
-    { id: 'p7', label: '🤖 athena-studio-fe · fix/bug', agent: 'claude', agent_status: 'working', cwd: '/wt' },
+    { id: 'p7', label: '🤖 athena-studio-fe · fix/bug', agent: 'claude', agent_status: 'working', foreground_status: 'idle', background_shells: 1, cwd: '/wt' },
     { id: 'p9', label: '🤖 reviewer · fix/bug', agent: 'claude', agent_status: 'idle', cwd: '/wt' },
     { id: 'p5', label: '🤖 other-fe · fix/other', agent: 'claude', agent_status: 'idle', cwd: '/x' },
     { id: 'p3', agent: null, cwd: root },
@@ -55,6 +55,10 @@ test('현황판이 꺼져 있어도 계획서에 묶인 pane 을 알린다(머�
   }
   installPaneWatch(ctx, { monitor: {}, paneTokens: {} })
   await ctx.pollPanes()
+  const activity = sent.find(([channel]) => channel === 'screen:pane-status')[1]
+  assert.deepEqual(activity.p7, { status: 'idle', backgroundShells: 1 })
+  assert.deepEqual(activity.p1, { status: 'idle', backgroundShells: 0 })
+  assert.equal(panes[1].agent_status, 'working', '현황판·재사용이 받는 판정은 유지')
   // 묶인 pane 계산은 기다리지 않고 돈다 — 알림이 올 때까지
   for (let tries = 0; tries < 50 && !sent.some(([channel]) => channel === 'screen:pane-bound'); tries += 1) await new Promise((resolve) => setTimeout(resolve, 20))
   const bound = sent.find(([channel]) => channel === 'screen:pane-bound')

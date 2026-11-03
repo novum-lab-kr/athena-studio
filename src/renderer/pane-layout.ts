@@ -1,10 +1,11 @@
 // pane 배치 — 분할 트리를 픽셀 사각형으로 · 크기 요청(pane 마다 하나씩) · 크기를 바꾸는 동안 옛 화면 덮기 · 지금 pane 으로 포커스 · 에이전트 모니터 칸 껍데기
 // renderer.js 에서 옮김(R3b · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. 경계(분할선)는 dividers.ts
 import * as StudioLayout from '../lib/layout.mts'
-import { $, currentTab, panels } from './core.ts'
+import { $, currentTab, panels, say } from './core.ts'
 import { PANE_GAP, redrawAfterHidden, views } from './terminal.ts'
 import type { PaneView } from './terminal.ts'
 import { screen } from './screen.ts'
+import { paneBackgroundShells } from './main.ts'
 import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
 import { renderDividers, reportTabSize, treeForLayout } from './dividers.ts'
 import { syncPaneDrag } from './pane-drag.ts'
@@ -13,12 +14,26 @@ import { spaceColor } from './space-actions.ts'
 import { browserOpen } from './browser.ts'
 import { syncDetailButton } from './detail.ts'
 
+// pane 제목줄의 뒤 셸 개수·툴팁 — 상태 알림과 언어 변경 때 갱신한다
+export function syncPaneShells(): void {
+  for (const [paneId, view] of views) {
+    const count = paneBackgroundShells[paneId] || 0
+    view.headShells.hidden = count === 0
+    view.headShellCount.textContent = count > 0 ? String(count) : ''
+    const tip = count > 0 ? say('pane.backgroundShells', { count }) : ''
+    view.headShells.dataset.tip = tip
+    if (tip) view.headShells.setAttribute('aria-label', tip)
+    else view.headShells.removeAttribute('aria-label')
+  }
+}
+
 // 크기를 비교할 pane 메타 — 데몬 상태의 pane(없으면 빈 것 · 답이 늦어 다시 볼 때는 null)
 type PaneSizeInfo = { cols?: number; rows?: number } | null | undefined
 
 // 트리 → 픽셀 사각형. 보이는 pane 만 fit 하고, 칸 수가 바뀐 것만 데몬에 알린다
 export function layoutPanes(): void {
   if (panels.work.hidden) return
+  syncPaneShells()
   // 하단 칸(에이전트 모니터)은 작업 공간이 있으면 어느 공간이든 — 공간이 없으면 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
   const showDock = Boolean(activeWorkspace())
   $('dock').hidden = !showDock
@@ -42,7 +57,7 @@ export function layoutPanes(): void {
     if (rect) Object.assign(view.el.style, { left: `${rect.x}px`, top: `${rect.y}px`, width: `${rect.width}px`, height: `${rect.height}px` })
     view.el.classList.toggle('focused', paneId === screen.focused)
     const info: Partial<ScreenPane> = meta.get(paneId) || {}
-    view.headLabel.textContent = info.label || info.title || paneId
+    view.headLabel.textContent = `[${paneId}] ${info.label || info.title || paneId}`
     syncDetailButton(paneId, view)
     if (!view.shown) redrawAfterHidden(view)
     view.shown = true

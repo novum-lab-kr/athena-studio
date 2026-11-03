@@ -8,7 +8,7 @@
                       어디에도 없으면 빈 출력 · 0 (바꾸는 동작은 진짜 CLI 도 출력이 없다)
   FAKE_ATHENA         응답 안의 @ATHENA@ 를 이 경로로 바꾼다(작업 트리 사본)
   FAKE_STUDIO_SHOW_ENV=1  화면 계층이 넘긴 ATHENA_STUDIO_SOCKET · ATHENA_STUDIO_NODE 도 ["#studio-env", …] 로 적는다(접속 파일 검사)
-진짜 CLI 의 계약(정본: athena-studio src/lib/protocol.js · 계획서 4절 "2) 데몬 CLI")과 같은 모양으로 fixture 를 쓴다 — 납작한 JSON 그대로.
+진짜 CLI 의 계약(정본: athena-studio src/lib/protocol.js · 계획서 4절 "2) 데몬 CLI")과 같은 모양으로 fixture 를 쓴다 — 납작한 JSON 그대로. protocol 7의 foreground_status · background_shells도 fixture에 있으면 그대로 전달한다.
 """
 import json
 import os
