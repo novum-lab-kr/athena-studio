@@ -254,3 +254,30 @@ test('재접속 snapshot은 마우스 추적과 요청한 인코딩을 함께 �
     })
   }
 })
+
+test('기존 pane의 초기화가 진행 중인 CSI·OSC·DCS 청크를 바꾸지 않는다', async (t) => {
+  const { Pane } = require('../src/daemon/pane.mts')
+  const { Terminal } = require('@xterm/headless')
+  const { SerializeAddon } = require('@xterm/addon-serialize')
+  const write = (term, data) => new Promise(resolve => term.write(data, resolve))
+  for (const [label, first, last, sgr] of [
+    ['CSI 설정', '\x1b[?1000h\x1b[?10', '06hHELLO', true],
+    ['CSI 해제', '\x1b[?1006h\x1b[?10', '06lHELLO', false],
+    ['OSC 제목', '\x1b]0;par', 'tial\x07HELLO', false],
+    ['DCS 응답', '\x1bP$q', 'm\x1b\\HELLO', false],
+  ]) {
+    await t.test(label, async () => {
+      const screen = new Terminal({ cols: 80, rows: 10, allowProposedApi: true })
+      const serializer = new SerializeAddon()
+      screen.loadAddon(serializer)
+      const pane = Object.assign(Object.create(Pane.prototype), { screen, serializer })
+      try {
+        await write(screen, first)
+        await pane.prepareSnapshot()
+        await write(screen, last)
+        assert.equal(screen.buffer.active.getLine(0).translateToString(true), 'HELLO')
+        assert.equal(pane.snapshot().includes('\x1b[?1006h'), sgr)
+      } finally { screen.dispose() }
+    })
+  }
+})

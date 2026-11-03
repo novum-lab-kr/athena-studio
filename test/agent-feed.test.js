@@ -320,9 +320,14 @@ test('모니터 만료 세션의 줄을 main·화면에서 함께 지우고 재�
 
 test('Codex functions.exec는 코드를 실행하지 않고 작업만 요약하며 Python과 일치', () => {
   const fixture = require('../athena/test/fixtures/codex-exec-monitor.json')
-  for (const { label, record, text } of fixture) {
+  for (const { label, record, summary, text } of fixture) {
     const event = feed.eventsFromRecord(record)[0]
-    assert.equal(event.text, text, label)
+    assert.deepEqual(event.exec, summary, label)
+    assert.equal(event.text, summary.value, label)
+    const { execSummaryText } = require('../src/lib/monitor-text.mts')
+    const i18n = require('../src/lib/i18n.mts')
+    const say = i18n.translator(require('../src/i18n/ko.json'))
+    assert.equal(execSummaryText(say, event.exec), text, label)
     assert.equal(event.icon, '⚙', label)
     assert.equal(event.text.includes('PRIVATE_MARKER'), false, label)
     assert.equal(event.text.includes('tools.'), false, label)
@@ -344,4 +349,28 @@ print(json.dumps(rows))
   const python = JSON.parse(result.stdout)
   assert.deepEqual(python.map(item => item.record), fixture.map(item => feed.codexRecord(item.record)))
   assert.deepEqual(python.map(item => item.text), fixture.map(item => item.text))
+})
+
+
+test('code-mode 시스템 요약은 화면 언어로, 원문 title·명령은 그대로', () => {
+  const { execSummaryText } = require('../src/lib/monitor-text.mts')
+  const { translator } = require('../src/lib/i18n.mts')
+  const fixture = require('../athena/test/fixtures/codex-exec-monitor.json')
+  const first = feed.eventsFromRecord(fixture[0].record)[0]
+  const expected = { ko: '명령 실행', en: 'Run command', ja: 'コマンド実行', zh: '运行命令' }
+  for (const lang of ['ko', 'en', 'ja', 'zh']) {
+    const say = translator(require(`../src/i18n/${lang}.json`))
+    assert.equal(execSummaryText(say, first.exec), `${expected[lang]} · git status --short`)
+    const provided = feed.eventsFromRecord(fixture.find(item => item.label === '기존 title').record)[0]
+    assert.equal(execSummaryText(say, provided.exec), '수정 확인', '제공된 title은 번역하지 않는다')
+    for (const item of fixture) {
+      const event = feed.eventsFromRecord(item.record)[0]
+      const text = execSummaryText(say, event.exec)
+      assert.equal(text.includes('PRIVATE_MARKER'), false)
+      assert.equal(/\{(?:n|text)\}/.test(text), false)
+    }
+  }
+  const english = translator(require('../src/i18n/en.json'))
+  const batch = feed.eventsFromRecord(fixture.find(item => item.label === '여러 작업').record)[0]
+  assert.equal(execSummaryText(english, batch.exec), 'Run command · git status · 1 more')
 })

@@ -74,7 +74,15 @@ def summarize_tool(name, inp):
         changes = inp.get("changes") if isinstance(inp.get("changes"), list) else []
         summary = " · ".join(f"{change.get('kind', '')} {change.get('path', '')}" for change in changes if isinstance(change, dict))
         return clip(summary or "apply_patch", n)
-    if name in ("Bash", "Exec"): return clip(inp.get("description") or inp.get("command",""), n)
+    if name == "Exec":
+        summary = inp.get('summary') or {}
+        value = summary.get('value', '')
+        if summary.get('kind') == 'provided': return clip(value, n)
+        label = {'command': '명령 실행', 'image': '이미지 확인', 'patch': '파일 변경', 'tool': '도구 실행'}.get(summary.get('kind'), '도구 실행')
+        text = f"{label} · {value}" if value else label
+        count = summary.get('count', 1)
+        return clip(f"{text} · 외 {count - 1}개 작업" if count > 1 else text, n)
+    if name == "Bash": return clip(inp.get("description") or inp.get("command", ""), n)
     if name in ("Read",): return clip(inp.get("file_path",""), n)
     if name=="Grep": return clip(f"{inp.get('pattern','')}  in {inp.get('path','')}", n)
     if name=="Glob": return clip(f"{inp.get('pattern','')}  in {inp.get('path','')}", n)
@@ -142,7 +150,7 @@ def exec_text(value):
 
 def exec_summary(code):
     """단순 도구 호출의 리터럴만 읽는다. 코드를 실행하거나 동적인 값을 추측하지 않는다."""
-    fallback = "명령 실행"
+    fallback = {'kind': 'command', 'value': '', 'count': 1}
     if not isinstance(code, str) or len(code) > 64000: return fallback
     pattern = r'''//[^\r\n]*|/\*[\s\S]*?\*/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[A-Za-z_$][\w$]*|[^\s]'''
     tokens = []
@@ -206,15 +214,15 @@ def exec_summary(code):
         title = exec_text(fields.get('title') or fields.get('description'))[:120]
         if method in ('exec_command', 'shell_command', 'shell'):
             command = exec_text(re.split(r'\r?\n', fields.get('cmd') or fields.get('command') or '')[0])[:120]
-            summaries.append(f"명령 실행 · {title or command}" if title or command else fallback)
+            summaries.append({'kind': 'command', 'value': title or command})
         elif method == 'view_image':
             file = exec_text(fields.get('path'))[:120]
-            summaries.append(f"이미지 확인 · {title or file}" if title or file else '이미지 확인')
+            summaries.append({'kind': 'image', 'value': title or file})
         elif method == 'apply_patch':
             changes = ' · '.join(f"{change['kind']} {exec_text(change['path'])}" for change in patch_changes(patch))[:120]
-            summaries.append(f"파일 변경 · {changes}" if changes else '파일 변경')
-        else: summaries.append(f"도구 실행 · {title}" if title else '도구 실행')
-    return f"{summaries[0]} · 외 {len(summaries) - 1}개 작업" if len(summaries) > 1 else summaries[0] if summaries else fallback
+            summaries.append({'kind': 'patch', 'value': changes})
+        else: summaries.append({'kind': 'tool', 'value': title})
+    return {**summaries[0], 'count': len(summaries)} if summaries else fallback
 
 def codex_model(d):
     """모델 문맥이 없는 줄은 None, 명시적으로 비었으면 빈 문자열로 이전 모델을 지운다."""
@@ -266,7 +274,7 @@ def codex_message(d, model=None):
     elif name.rsplit(".", 1)[-1] == "exec":
         name = "Exec"
         title = next((value for value in (inp.get("title"), inp.get("description"), p.get("title"), p.get("description")) if isinstance(value, str) and value.strip()), '')
-        inp = {"description": exec_text(title)[:160] if title else exec_summary(inp.get("input", inp.get("code")))}
+        inp = {"summary": {"kind": "provided", "value": exec_text(title)[:160], "count": 1} if title else exec_summary(inp.get("input", inp.get("code")))}
     elif name.rsplit(".", 1)[-1] in ("exec_command", "shell_command", "shell"):
         name = "Bash"
         command = inp.get("cmd") or inp.get("command") or ""

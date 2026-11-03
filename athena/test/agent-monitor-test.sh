@@ -98,7 +98,7 @@ with tempfile.TemporaryDirectory() as tmp:
         for item in fixture:
             record = m.codex_message(item["record"])
             block = record["message"]["content"][0]
-            check(f"code-mode 요약 — {item['label']}", block["name"] == "Exec" and block["input"] == {"description": item["text"]})
+            check(f"code-mode 요약 — {item['label']}", block["name"] == "Exec" and block["input"] == {"summary": item["summary"]})
             rendered = " ".join(m.render(t, json.dumps(item["record"])))
             check(f"code-mode 내부 코드 비노출 — {item['label']}", "PRIVATE_MARKER" not in rendered and "tools." not in rendered and "⚙" in rendered)
         check("Codex 잘못된 arguments는 건너뜀", m.render(t, row("response_item", {"type": "function_call", "name": "exec_command", "arguments": "{"})) == [])

@@ -117,10 +117,15 @@ export class Pane {
   }
 
   // serialize가 빠뜨리는 마우스 인코딩만 공개 parser API로 관찰한다.
-  // 코드 교체 전부터 있던 pane은 DECRQM으로 현재 상태를 읽어 시작한다(pty로 보내지 않는다).
+  // xterm 6의 공개 모드 API에는 인코딩이 없다. 실제 parser에 조회를 쓰면 미완성 CSI를 끊으므로
+  // 고정된 xterm의 읽기 전용 상태만 읽는다. 의존성 변경 시 복원 회귀가 이 계약을 확인한다.
   prepareSnapshot(): Promise<void> {
     if (this.mouseEncodingReady) return this.mouseEncodingReady
+    const terminal = this.screen as unknown as { _core?: { coreMouseService?: { activeEncoding?: unknown } } }
+    const encoding = terminal._core?.coreMouseService?.activeEncoding
     this.mouseEncoding = null
+    if (encoding === 'SGR') this.mouseEncoding = 1006
+    else if (encoding === 'SGR_PIXELS') this.mouseEncoding = 1016
     for (const final of ['h', 'l']) {
       this.screen.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
         for (const mode of params) {
@@ -133,17 +138,7 @@ export class Pane {
       this.mouseEncoding = null
       return false
     })
-    this.mouseEncodingReady = new Promise((resolve) => {
-      const listener = this.screen.onData((data) => {
-        for (const match of data.matchAll(/\x1b\[\?(1006|1016);1\$y/g)) {
-          this.mouseEncoding = match[1] === '1006' ? 1006 : 1016
-        }
-      })
-      this.screen.write('\x1b[?1006$p\x1b[?1016$p', () => {
-        listener.dispose()
-        resolve()
-      })
-    })
+    this.mouseEncodingReady = Promise.resolve()
     return this.mouseEncodingReady
   }
 
