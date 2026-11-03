@@ -189,9 +189,9 @@ def exec_summary(code):
             if not re.fullmatch(r'[\w$]+', key) or not take(':'): return fallback
             start, closing = index, []
             while index < len(tokens):
-                token = tokens[index]
-                raw = token['raw']
-                if 'text' not in token:
+                lexeme = tokens[index]
+                raw = lexeme['raw']
+                if 'text' not in lexeme:
                     if not closing and raw in (',', '}'): break
                     if raw in ('(', '[', '{'): closing.append({'(': ')', '[': ']', '{': '}'}[raw])
                     elif raw in (')', ']', '}') and (not closing or closing.pop() != raw): return fallback

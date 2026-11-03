@@ -51,6 +51,7 @@
 .jev-log.jsonl
 
 # 옛 QA 결과 · 로그인 세션 보호(쿠키, 절대 커밋 금지)
+scripts/qa/node_modules/
 /.qa-runs
 /.qa-auth
 /.qa-baselines

@@ -9,7 +9,7 @@ repos/<레포> 링크가 athena.config.json 목록대로 다 있으면 아무것
   - 기본 레포 루트(reposRoot, 보통 hermes 상위 폴더)에서 찾은 것은 묻지 않고 scripts/setup.sh 로 바로 연결한다
   - 거기에도 없는 레포가 남으면 터미널 안내(systemMessage) + 아테나 지시(additionalContext) — 첫 응답에서 폴더 위치를 묻는다
 FE 에이전트 세션(claude --agent), 바깥 도구가 띄운 세션(ATHENA_AGENT 가 있음 — 예: 서버의 nhm 창), athena 루트가 아닌 cwd(레포·워크트리)에서는 조용히 넘어간다.
-자동 연결은 링크만 한다(setup.sh --links-only) — 공용 도구 점검는 사용자가 /setup·setup.sh 로 직접.
+자동 연결은 링크만 한다(setup.sh --links-only) — 공용 도구 점검은 사용자가 /setup·setup.sh 로 직접.
 어떤 오류가 나도 세션 시작을 막지 않는다(항상 exit 0).
 """
 import json

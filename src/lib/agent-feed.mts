@@ -102,11 +102,11 @@ function execSummary(code: unknown): string {
       const start = index
       const closing: string[] = []
       while (index < tokens.length) {
-        const token = tokens[index]!
-        if (token.text === undefined) {
-          if (closing.length === 0 && [',', '}'].includes(token.raw)) break
-          if (['(', '[', '{'].includes(token.raw)) closing.push({ '(': ')', '[': ']', '{': '}' }[token.raw]!)
-          else if ([')', ']', '}'].includes(token.raw) && closing.pop() !== token.raw) return '명령 실행'
+        const lexeme = tokens[index]!
+        if (lexeme.text === undefined) {
+          if (closing.length === 0 && [',', '}'].includes(lexeme.raw)) break
+          if (['(', '[', '{'].includes(lexeme.raw)) closing.push({ '(': ')', '[': ']', '{': '}' }[lexeme.raw]!)
+          else if ([')', ']', '}'].includes(lexeme.raw) && closing.pop() !== lexeme.raw) return '명령 실행'
         }
         index += 1
       }
