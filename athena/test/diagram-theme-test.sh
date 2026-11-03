@@ -24,7 +24,7 @@ cp "$WORK/a.html" "$WORK/once.html"
 T "$WORK/a.html" > /dev/null
 check "두 번 입혀도 같다" 'cmp -s "$WORK/a.html" "$WORK/once.html"'
 T --check "$WORK/a.html" > /dev/null; check "입힌 뒤 --check → 0" '[ $? -eq 0 ]'
-sed -i.bak 's/IBM Plex Sans KR", "Apple/IBM Plex Sans KR", "OLD/' "$WORK/a.html"
+sed -i.bak 's/BlinkMacSystemFont, "Apple/BlinkMacSystemFont, "OLD/' "$WORK/a.html"
 T --check "$WORK/a.html" > /dev/null; check "옛 테마면 --check → 1(다시 입히라고)" '[ $? -eq 1 ]'
 T > /dev/null 2>&1; check "파일 없이 부르면 사용법(2)" '[ $? -eq 2 ]'
 for file in "$SRC"/docs/diagrams/*.html; do

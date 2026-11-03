@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * 다이어그램 테마 — archify 가 deliver 로 만든 HTML 에 아테나 테마(scripts/diagram-theme.css)를 덧씌운다.
- * </head> 바로 앞에 글꼴 링크 + <style id="studio-theme"> 를 넣는다. 이미 입혀져 있으면 바꿔 끼운다(여러 번 돌려도 같다).
+ * </head> 바로 앞에 <style id="studio-theme"> 를 넣는다(글꼴은 시스템 글꼴 — 바깥에서 받지 않는다). 이미 입혀져 있으면 바꿔 끼운다(여러 번 돌려도 같다).
  * archify 의 SVG · 배치 · 뷰어 기능(확대 · 검색 · 내보내기)은 건드리지 않는다. archify 결과가 아닌 HTML(목록 index.html 등)은 건너뛴다
  *
  *   node scripts/diagram-theme.mjs <html>…        그림을 고친 뒤
@@ -22,7 +22,6 @@ if (!files.length) {
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'diagram-theme.css'), 'utf8')
 const BLOCK = [
   '<!-- studio-theme -->',
-  '<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap">',
   `<style id="studio-theme">\n${css}</style>`,
   '<!-- /studio-theme -->',
 ].join('\n')

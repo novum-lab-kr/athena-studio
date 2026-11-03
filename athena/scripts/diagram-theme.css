@@ -1,12 +1,13 @@
 /* 아테나 다이어그램 테마 — archify 결과 HTML 에 덧씌운다(archify 는 그대로 · scripts/diagram-theme.mjs 가 끼워 넣는다).
-   한글 본문 글꼴 · 현황판과 같은 색 · 조금 큰 글자 · 면을 채운 둥근 상자. 프리셋(classic 등)과 상관없이 같은 모습 */
+   Athena Studio 앱 디자인(src/renderer/style.css :root — 시스템 글꼴 · 차콜 면 · 금색 강조 · 둥글기 6/8px) · 조금 큰 글자 · 면을 채운 둥근 상자.
+   프리셋(classic 등)과 상관없이 같은 모습 */
 
-/* 글꼴 — 고정폭(JetBrains Mono) 대신 한글 본문 글꼴. 코드처럼 보여야 하는 것은 없다 */
+/* 글꼴 — 앱 --font-ui(시스템 글꼴). 고정폭(JetBrains Mono) 대신 · 바깥 글꼴을 받아 오지 않는다 */
 body, svg text, .toolbar button, .card, .legend {
-  font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", "Noto Sans KR", system-ui, sans-serif !important;
+  font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif !important;
   letter-spacing: 0 !important;
 }
-h1 { font-family: "IBM Plex Sans KR", "Apple SD Gothic Neo", system-ui, sans-serif !important; font-weight: 700 !important; letter-spacing: -.01em !important; }
+h1 { font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif !important; font-weight: 700 !important; letter-spacing: -.01em !important; }
 
 /* 글자 크기 — 상자 이름 · 설명 · 화살표 이름을 한 단계씩 */
 svg text[data-node-label] { font-size: 13px !important; font-weight: 700 !important; }
@@ -19,14 +20,16 @@ svg text[font-size="8"] { font-size: 10px !important; font-weight: 500; fill: va
 svg text[font-size="8"].t-backend { fill: var(--arrow-emphasis); font-weight: 600; }
 svg text[font-size="8"].t-messagebus { fill: var(--text-muted); }
 
-/* 상자 — 모서리를 둥글게 · 테두리는 얇게(상자는 stroke-width 1.5 · 범례 색 칸은 1 이라 둥글게 하지 않는다) */
-svg rect[class^="c-"][stroke-width="1.5"] { rx: 10px; ry: 10px; stroke-width: 1.2px; }
+/* 상자 — 모서리는 앱 --radius(6px) · 테두리는 얇게(상자는 stroke-width 1.5 · 범례 색 칸은 1 이라 둥글게 하지 않는다)
+   c-mask(상자 뒤 가림판)도 같은 둥글기여야 모서리 밖으로 비치지 않는다 */
+svg rect[class^="c-"][stroke-width="1.5"], svg rect.c-mask { rx: 6px; ry: 6px; }
+svg rect[class^="c-"][stroke-width="1.5"] { stroke-width: 1.2px; }
 
 /* 경계(스튜디오 집 같은 구역) — 옅은 면 · 차분한 점선 · 이름은 보통 글자색 */
 svg .c-region { fill: var(--lane-fill) !important; stroke: var(--lane-stroke) !important; stroke-dasharray: 6 4 !important; }
 svg text[data-boundary-label] { fill: var(--text-muted); font-size: 10.5px !important; }
 
-/* 색 — 라이트(현황판 토큰) */
+/* 색 — 라이트(현황판 토큰 그대로 · 앱은 다크뿐이라 라이트는 글꼴 · 둥글기만 앱을 따른다 — 2026-11-03 사용자 결정) */
 html[data-theme="light"], html[data-theme="light"][data-preset] {
   --bg: #f5f3ee; --panel: #ffffff; --panel-border: #e4e0d6; --grid: rgba(35, 33, 29, .035);
   --text: #23211d; --text-muted: #76716a; --text-dim: #8e897f; --text-faint: #b3ada2;
@@ -41,17 +44,36 @@ html[data-theme="light"], html[data-theme="light"][data-preset] {
   --security-fill: #fbe9e7; --security-stroke: #d1463b;
 }
 
-/* 색 — 다크 */
+/* 색 — 다크(Athena Studio 앱 토큰 · src/renderer/style.css :root 값을 그대로 옮긴다 — 앱이 바뀌면 여기도)
+   앱 토큰: 바탕 --bg #16171a · 면 --bar #1f2125 · 누름 --hover #28292d · 활성 면 --surface-active #313338 · 선 --line #2e3137 ·
+   글자 --text #e8e6e1 · 흐린 글자 --muted #9a968e · 금색 --accent #c9ad78 · 금빛 면 --selected #2d2a23 · 포커스 선 --focus-line #8c7a58 ·
+   --success #86c7a3 · --warning #dbb579 · --error #e58c99 · 제목 --popup-title #f3ead6 · 대화상자 --popup-bg #1f2024
+   옅은 면 · 흐린 글자는 앱 토큰을 섞어(color-mix · 투명도) 만든다 — 앱에 없는 새 색은 쓰지 않는다 */
 html[data-theme="dark"], html[data-theme="dark"][data-preset] {
-  --bg: #141518; --panel: #1b1c20; --panel-border: #2e3137; --grid: rgba(232, 230, 225, .03);
-  --text: #e8e6e1; --text-muted: #9b978f; --text-dim: #85817a; --text-faint: #5f5c57;
-  --mask: #1b1c20; --arrow: #6d6a64; --arrow-emphasis: #79a1f0;
-  --lane-fill: rgba(121, 161, 240, .04); --lane-stroke: #3a3d44;
-  --frontend-fill: #1e2943; --frontend-stroke: #79a1f0;
-  --backend-fill: #24262b; --backend-stroke: #4a4e57;
-  --database-fill: #262036; --database-stroke: #a08ce0;
-  --messagebus-fill: #2e2618; --messagebus-stroke: #e0a83a;
-  --external-fill: #222326; --external-stroke: #6d6a64;
-  --cloud-fill: #1b2e23; --cloud-stroke: #4fbf82;
-  --security-fill: #351f1d; --security-stroke: #ec6b60;
+  color-scheme: dark;
+  --bg: #16171a; --panel: #1f2125; --panel-border: #2e3137; --grid: rgb(255 255 255 / 3%);
+  --text: #e8e6e1; --text-muted: #9a968e;
+  --text-dim: color-mix(in srgb, #9a968e 70%, #16171a); --text-faint: color-mix(in srgb, #9a968e 80%, #16171a);
+  --mask: #1f2125; --arrow: color-mix(in srgb, #9a968e 65%, #1f2125); --arrow-emphasis: #c9ad78;
+  --lane-fill: rgb(255 255 255 / 2%); --lane-stroke: #313338;
+  /* 사람(요청 · 승인) — 앱 선택 칸처럼 금빛 면 · 금색 테두리 */
+  --frontend-fill: #2d2a23; --frontend-stroke: #c9ad78;
+  /* 작업 단계 — 앱 면 · 흐린 테두리 */
+  --backend-fill: #28292d; --backend-stroke: color-mix(in srgb, #9a968e 45%, #28292d);
+  /* 파일 · 기록 — 성공 초록 · 거부 · 멈춤 — 오류 분홍 · 대기 — 경고 노랑 */
+  --database-fill: rgb(134 199 163 / 8%); --database-stroke: #86c7a3;
+  --security-fill: rgb(229 140 153 / 8%); --security-stroke: #e58c99;
+  --messagebus-fill: rgb(219 181 121 / 8%); --messagebus-stroke: #dbb579;
+  --cloud-fill: rgb(134 199 163 / 8%); --cloud-stroke: #86c7a3;
+  --external-fill: #1f2125; --external-stroke: #9a968e;
+  /* 도구 막대 · 메뉴 — 앱 탭 줄 · 대화상자 */
+  --toolbar-bg: #1f2125; --toolbar-border: #2e3137; --toolbar-text: #e8e6e1; --toolbar-hover: #28292d; --toolbar-menu-bg: #1f2024;
+  --guide-accent: #c9ad78; --lens-color: #c9ad78;
 }
+
+/* 다크 겉면 — signal-flow 프리셋의 남색 빛 그라데이션 · 큰 그림자를 걷어 앱처럼 평평한 면 · 얇은 선 · 앱 둥글기(--radius-lg 8px) */
+html[data-theme="dark"] body { background-image: none !important; -webkit-font-smoothing: antialiased; }
+html[data-theme="dark"] .diagram-container { background: var(--panel) !important; box-shadow: none !important; border-radius: 8px !important; }
+html[data-theme="dark"] .card { background: var(--panel) !important; box-shadow: none !important; border-radius: 8px !important; }
+html[data-theme="dark"] .card:hover { border-color: rgb(201 173 120 / 38%) !important; background: rgb(201 173 120 / 7%) !important; }
+html[data-theme="dark"] h1 { color: #f3ead6; }

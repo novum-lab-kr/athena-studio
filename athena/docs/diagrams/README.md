@@ -19,12 +19,12 @@ A=/tmp/archify/archify
 for k in flow-light flow-formal compact; do
   node $A/bin/archify.mjs validate workflow docs/diagrams/athena-$k.workflow.json --quality standard --json
   node $A/bin/archify.mjs deliver  workflow docs/diagrams/athena-$k.workflow.json docs/diagrams/athena-$k.html --quality standard --json
-  node scripts/diagram-theme.mjs docs/diagrams/athena-$k.html   # 아테나 테마(한글 글꼴 · 현황판 색) — deliver 할 때마다
+  node scripts/diagram-theme.mjs docs/diagrams/athena-$k.html   # 아테나 테마(Athena Studio 앱 디자인) — deliver 할 때마다
 done
 
 ```
 
-**테마**: archify 결과에 `scripts/diagram-theme.css` 를 덧씌운다(`scripts/diagram-theme.mjs` — 고정폭 대신 한글 본문 글꼴 · 현황판과 같은 색 · 조금 큰 글자 · 둥근 상자). archify 의 배치 · 확대 · 검색 · 내보내기는 그대로이고, 여러 번 입혀도 같다. 다시 deliver 하면 테마가 빠지니 deliver 할 때마다 입힌다
+**테마**: archify 결과에 `scripts/diagram-theme.css` 를 덧씌운다(`scripts/diagram-theme.mjs` — Athena Studio 앱 디자인: 고정폭 대신 시스템 글꼴 · 앱 색 토큰(`src/renderer/style.css` `:root`) · 조금 큰 글자 · 둥근 상자). archify 의 배치 · 확대 · 검색 · 내보내기는 그대로이고, 여러 번 입혀도 같다. 다시 deliver 하면 테마가 빠지니 deliver 할 때마다 입힌다
 
 그림을 더하면 `scripts/build-diagram-index.mjs` 의 카드를 고치고 다시 돌린다.
 
