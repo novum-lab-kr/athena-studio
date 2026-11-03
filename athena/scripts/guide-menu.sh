@@ -155,17 +155,15 @@ PY
 guide_file() { if [ -f "pack/guide/$1" ]; then echo "pack/guide/$1"; else echo "docs/$1"; fi; }
 act_explained() { local f; f="$(guide_file athena-explained.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f(아테나 구조 설명)을 열었습니다."; pause; }
 act_onboarding() { local f; f="$(guide_file onboarding.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f(시작하기 가이드)을 열었습니다."; pause; }
-act_playbook()  { local f; f="$(guide_file playbook.html)"; "$ATHENA_DIR/scripts/screen" open-url "$f" >/dev/null && echo "브라우저에서 $f 을 열었습니다."; pause; }
 act_diagram()   { "$ATHENA_DIR/scripts/screen" open-url docs/diagrams/index.html >/dev/null && echo "브라우저에서 다이어그램 목록을 열었습니다."; pause; }
 act_extending() { view_md docs/extending.md; }
 
 # ---------- 메뉴 ----------
 # 항목: 아이콘 | 제목 | 설명 | 동작
-ICONS=( "🧭" "🚀" "🌐" "🔀" "📘" "⚡" "👥" )
+ICONS=( "🧭" "🚀" "🔀" "📘" "⚡" "👥" )
 TITLES=(
   "아테나 구조 설명"
   "시작하기"
-  "플레이북"
   "작업 흐름 그림"
   "확장 가이드"
   "스킬 목록 · 실행"
@@ -174,7 +172,6 @@ TITLES=(
 DESCS=(
   "$(guide_file athena-explained.html)"
   "$(guide_file onboarding.html)"
-  "$(guide_file playbook.html)"
   "docs/diagrams/index.html"
   "docs/extending.md"
   ".claude/skills/*"
@@ -183,15 +180,14 @@ DESCS=(
 HELPS=(
   "아테나가 무엇이고 어떻게 돌아가는지 한 장으로 — 요청부터 PR 까지의 흐름 · 에이전트(레포 담당은 팩) · 안전장치 · 아테나가 아는 것 · 학습 구조. 팩 판이 있으면 pack/guide/, 없으면 docs/ 의 athena-explained.html 을 기본 브라우저에서 연다"
   "처음 받는 팀원용 Claude · Codex 시작하기 가이드(준비물 · 주 도구 선택 · 처음 써 보기 · 질문과 허락 · 개인 메모리 · 막힐 때)를 기본 브라우저에서 연다. 원본은 ONBOARDING.md"
-  "플레이북 HTML(팩 판이 있으면 pack/guide/playbook.html, 없으면 docs/playbook.html)을 기본 브라우저에서 연다 — 팀 구성·라우팅·커맨드·작업 흐름·아테나가 아는 것·FAQ"
   "다이어그램 목록을 브라우저로 연다. 아테나 작업 흐름 두 장(경량 — 대부분의 작업 / 정식 — 여러 레포·결정 콘솔, 단계별 규칙이 카드에 들어 있다)과 대화 압축 전후 그림이 있다."
   "스킬·에이전트를 추가하는 방법과 같이 갱신할 문서 목록. docs/extending.md 를 마크다운 뷰어로 연다 (q 로 닫기)"
   "Claude · Codex 에서 함께 쓰는 스킬 목록. 이름·인자·설명을 .claude/skills 에서 그때그때 읽어오니 스킬을 추가하면 여기에도 바로 나온다. 번호를 고르면 새 pane 에 주 도구의 별도 아테나 세션을 띄워 실행하거나(Claude /스킬 · Codex \$스킬 · ⏎) SKILL.md 본문을 볼 수 있다(v)"
   "FE 에이전트 전원의 담당 레포·포트와 라우팅 문장을 .claude/agents 에서 읽어 보여주고, 그 아래에 AGENTS.md 의 '어느 레포인지 고르기' 기준을 붙인다. 어떤 요청이 어느 서비스인지 헷갈릴 때"
 )
-ACTIONS=(act_explained act_onboarding act_playbook act_diagram act_extending act_skills act_agents)
+ACTIONS=(act_explained act_onboarding act_diagram act_extending act_skills act_agents)
 # 그룹: "시작인덱스|제목"
-MENU_GROUPS=( "0|📘  문서" "5|⚡  실행 · 확인" )
+MENU_GROUPS=( "0|📘  문서" "4|⚡  실행 · 확인" )
 sel=0; n=${#TITLES[@]}
 ROW_OF=()   # ROW_OF[i] = i번 항목이 그려진 화면 행(1-based). 클릭 매핑에 사용
 

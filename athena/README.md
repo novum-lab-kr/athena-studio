@@ -2,7 +2,7 @@
 
 Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴더에서 `claude` 또는 `codex` 를 켜면 **아테나**가 되어, 요청을 받아 어느 레포 일인지 고르고 → 계획서를 쓰고 → 담당 FE 에이전트에게 맡기고 → 리뷰까지 받아 보고한다.
 
-> 처음이면 **`ONBOARDING.md`**(화면: `/guide 시작하기`) · 그림으로 보는 사용법은 `docs/playbook.html`(`/guide 열기`)
+> 처음이면 **`ONBOARDING.md`**(화면: `/guide 시작하기`)
 
 ## 한눈에
 
@@ -65,7 +65,7 @@ Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**.
 | `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → 흐름 문서 · TC 초안 → 검증 → 지문 (팩이 없으면 Studio pane 에서 켤 때 저절로 시작된다) |
 | `/call <에이전트>` | 담당 에이전트를 pane 에 바로. 요청·"커밋해줘"·"PR 올려줘" 까지 그 pane 에서 |
 | `/board` | 현황판(`localhost:4700`) — 서비스 · 정비 · QA · 학습 · 아카이브 |
-| `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 플레이북 · 작업 흐름 그림 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
+| `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 작업 흐름 그림 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
 | `/monitor` | 백그라운드·pane 에이전트 로그 실시간 — Studio 는 앱 아래 AGENT MONITOR 칸 |
 | `/sync` | 운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이) |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" |
@@ -114,7 +114,6 @@ athena/                        ← 코어
 │   │   ├── athena/            아테나 자체 함정 공책
 │   │   └── <레포>/ · company/ · learned/   레포 지식 · 회사 관례 · 학습 기록(팩)
 │   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
-│   ├── playbook.html          그림으로 보는 사용법 (/guide 열기 — 팩 판이 있으면 그것)
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
 │   ├── diagrams/              아테나 작업 흐름 그림 (/guide 그림)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
@@ -182,6 +181,6 @@ packs/<회사>/
 |---|---|
 | 스킬 | `.claude/skills/<이름>/SKILL.md` — 만들면 Claude 에서 `/<이름>`. Codex 는 `.agents/skills/<이름>` 링크로 같은 정본을 `$<이름>` 으로 부른다 (`call/SKILL.md` 를 복사해 시작) |
 | 에이전트 | 레포 담당은 팩 `agents/<이름>.md`(+ `pack.json` 에 레포·에이전트) — 새 레포면 `bin/athena scaffold`. `description` 이 라우팅 문장. 안에 `: `(콜론+공백)를 쓰면 YAML 이 깨진다 |
-| 같이 고칠 곳 | `CLAUDE.md` Skills 줄 · `docs/workflow.md` 명령 표 · `AGENTS.md` · 이 README · `docs/playbook.html` — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
+| 같이 고칠 곳 | `CLAUDE.md` Skills 줄 · `docs/workflow.md` 명령 표 · `AGENTS.md` · 이 README — 아테나에게 "방금 추가한 거 문서에도 반영해줘" |
 
 상세: `docs/extending.md`

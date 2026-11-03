@@ -78,6 +78,6 @@
 - **커맨드가 없는 것은 말로 한다** — 전체 검수 · 기능 · 버그 · 리뷰 · 현황 · 브랜치 · 팩 백업 · 여러 팩 · 코어 업데이트 · 정비 · Jev 키. 명령은 `docs/workflow.md` "말로 하는 일"
 
 ## 확장 · 참고
-- 스킬 정본 `.claude/skills/<이름>/SKILL.md`(Codex는 `.agents/skills` 링크로 같은 파일을 읽는다) · 에이전트 `.claude/agents/<이름>.md`(description 이 라우팅 문장 · 콜론+공백 금지) — 추가하면 이 문서 · `AGENTS.md` · `README.md` · `docs/playbook.html` 을 함께 갱신한다(`/sync` 는 athena 자체 구조를 잡지 않는다 · 상세 `docs/extending.md`)
+- 스킬 정본 `.claude/skills/<이름>/SKILL.md`(Codex는 `.agents/skills` 링크로 같은 파일을 읽는다) · 에이전트 `.claude/agents/<이름>.md`(description 이 라우팅 문장 · 콜론+공백 금지) — 추가하면 이 문서 · `AGENTS.md` · `README.md` 를 함께 갱신한다(`/sync` 는 athena 자체 구조를 잡지 않는다 · 상세 `docs/extending.md`)
 - 지식 `docs/knowledge/README.md` · 서비스 맵 `docs/services.md`(팩) · 팩 형식 `docs/pack.md` · 첫 실행 `docs/setup.md` · 계획서 템플릿 `docs/plan-template.{md,html}` · 작업 흐름 자세히 `docs/workflow.md` · 디스패치 `docs/dispatch.md`
-- 사용 가이드 `docs/playbook.html`(`/guide 열기`) · 시작하기 `ONBOARDING.md` · `docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)
+- 시작하기 `ONBOARDING.md` · `docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)

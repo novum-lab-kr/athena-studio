@@ -213,7 +213,7 @@ sc_studio_open_url() {
   local url="http://localhost:47999/plans/refactor/20261003-lead.html"
   step studio "${IN_STUDIO[@]}" -- $S open-url "$url"
   step studio "${LIVE[@]}" -- $S open-url "$url"
-  step studio "${IN_STUDIO[@]}" -- $S open-url docs/playbook.html
+  step studio "${IN_STUDIO[@]}" -- $S open-url docs/onboarding.html
   step studio-oldurl,studio "${IN_STUDIO[@]}" -- $S open-url "$url"
   step studio-noapp,studio "${LIVE[@]}" -- $S open-url "$url"
   step studio-down "${IN_STUDIO[@]}" -- $S open-url "$url"

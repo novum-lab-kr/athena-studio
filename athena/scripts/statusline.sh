@@ -3,9 +3,6 @@
 #
 #   📁 my-web  🌿 feature/PROJ-1234  ✎2 +1 -1  ⇡3  ⧉worktree
 #
-# **기호·색의 뜻은 docs/playbook.html 의 "작업 흐름 → pane 하단 상태바" 가 정본이다.**
-# 여기에 같은 표를 다시 적지 않는다. 표시를 바꾸면 그쪽도 같이 고친다.
-#
 # 대상 레포는 delegate.sh 가 넣어준 ATHENA_REPO_DIR 을 먼저 보고, 없으면 payload 의 cwd 로 찾는다.
 # 에이전트→레포 매핑의 정본은 athena.config.json 이며 여기서 다시 적지 않는다.
 

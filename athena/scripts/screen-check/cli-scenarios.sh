@@ -28,7 +28,7 @@ sc_cli_usage() {
 # 주소 열기 — none 은 기본 브라우저(가짜 open 이 ["#open", 주소] 로 적는다) · 주소가 없으면 usage
 sc_cli_open_url() {
   step - -- $S open-url "http://localhost:47999/plans/refactor/20261003-lead.html"
-  step - ATHENA_SCREEN=none -- $S open-url docs/playbook.html
+  step - ATHENA_SCREEN=none -- $S open-url docs/onboarding.html
   step - -- $S open-url
 }
 SCENARIOS+=(cli_none cli_usage cli_open_url)

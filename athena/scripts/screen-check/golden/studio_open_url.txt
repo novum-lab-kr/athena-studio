@@ -12,13 +12,13 @@ $ ATHENA_STUDIO_ENDPOINT=<WORK>/studio/live.json scripts/screen open-url http://
 --- stderr
 --- screen
 ["@studio", "open-url", "http://localhost:47999/plans/refactor/20261003-lead.html"]
-$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen open-url docs/playbook.html
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen open-url docs/onboarding.html
 --- exit 0
 --- stdout
 {"ok": true, "target": "external", "via": "open"}
 --- stderr
 --- screen
-["#open", "docs/playbook.html"]
+["#open", "docs/onboarding.html"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen open-url http://localhost:47999/plans/refactor/20261003-lead.html
 --- exit 0
 --- stdout

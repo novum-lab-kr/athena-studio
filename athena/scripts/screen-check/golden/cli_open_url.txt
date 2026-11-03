@@ -5,13 +5,13 @@ $ scripts/screen open-url http://localhost:47999/plans/refactor/20261003-lead.ht
 --- stderr
 --- screen
 ["#open", "http://localhost:47999/plans/refactor/20261003-lead.html"]
-$ ATHENA_SCREEN=none scripts/screen open-url docs/playbook.html
+$ ATHENA_SCREEN=none scripts/screen open-url docs/onboarding.html
 --- exit 0
 --- stdout
 {"ok": true, "target": "external", "via": "open"}
 --- stderr
 --- screen
-["#open", "docs/playbook.html"]
+["#open", "docs/onboarding.html"]
 $ scripts/screen open-url
 --- exit 2
 --- stdout
