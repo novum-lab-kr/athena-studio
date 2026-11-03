@@ -22,9 +22,27 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.47: v0.46.4..main 머지(#213 · #214)와 v0.47.2..main 직접 머지 6건(단축키 · PR 끈 레포 PR 차단 · 아테나 pane 질문 · 검증 대기 · 아테나 자체 버그 3개)에서 손님에게 보이는 것만(#214 의 전체 검증 코어 시험 · 검증 차례 대기 줄이기 · 문서 수정 가볍게 · heavy 종료 코드 · 검증 범위의 .omc · 자동 완료의 Progress 빈 칸은 개발용 스크립트라 뺌), v0.47.10..main 직접 머지 7건(모니터 모델 · 초 · 사이드바 깜빡임 · ⌘⇧J K · 사이드바 제목 · 사람이 고를 창 · 경량 기본 모델 · 완료 · 진행 중 규칙)에서 손님에게 보이는 것만(다이어그램 · 에이전트 규칙 문구 · 테스트는 뺌). 범위 끝은 열어 둔다 -->
 
-<!-- 0.47 (v0.47.20 –): 태그 v0.47.20 ~ v0.47.51 직접 머지 32건(공개판 v0.47.34 뒤 17건 포함)에서 손님에게 보이는 것만 — 짧은 리뷰 · Codex 보호 훅 · 모니터 · 주 도구 고르기는 v0.47.34 때 넣었다. 공개 배포 커밋 3d8f9c8 · 69edac6 과 개발용 코드만 바뀐 3425044(팩 판 플레이북 생성)는 뺐다. 9af38f0 · 1fd7377 · 24904c9 는 가이드 · 그림 한 줄에, 4e60508 · 59bdb96 은 Codex 리드 · 위임 한 줄에 합쳤다. 범위 끝은 열어 둔다 -->
+<!-- 0.47 (v0.47.20 –): 태그 v0.47.20 ~ v0.47.51 직접 머지 32건(공개판 v0.47.34 뒤 17건 포함)에서 손님에게 보이는 것만 — 짧은 리뷰 · Codex 보호 훅 · 모니터 · 주 도구 고르기는 v0.47.34 때 넣었다. 공개 배포 커밋 3d8f9c8 · 69edac6 과 개발용 코드만 바뀐 3425044(팩 판 플레이북 생성)는 뺐다. 9af38f0 · 1fd7377 · 24904c9 는 가이드 · 그림 한 줄에, 4e60508 · 59bdb96 은 Codex 리드 · 위임 한 줄에 합쳤다. 범위 끝은 공개판 v0.47.52 로 닫았다 -->
 
-## 0.47 (v0.47.20 – · Nov 3, 2026)
+<!-- 0.48 (v0.47.53 –): v0.47.52..main 머지(#217 ~ #220)에서 손님에게 보이는 것만 — #218 의 규칙 문서(원칙 이름표 · 묻기 전에 돌려 보기 · guards.md · 같은 오류 3번), #219 의 red-check Python 시험, #220 의 시험 임시 폴더 지우기, #217 의 화면 점검 시험은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
+
+## 0.48 (v0.47.53 – · Nov 3, 2026)
+
+### New
+- Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.
+
+### Improved
+- When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.
+- Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.
+- Instructions queued on the Board, automatic review notices and Athena's first instruction at startup now go through the same checked delivery as other messages to panes.
+
+### Fixed
+- The Board no longer completes a plan automatically while a pane tied to it is still open, and waits when it cannot read the pane list.
+- Agents no longer send a finished notification before they have received their first instruction.
+- Issues for repositories that merge to main without a pull request now show as ready to complete once the work is merged.
+- Text in the getting-started guide and the compact workflow diagram no longer overflows its boxes.
+
+## 0.47 (v0.47.20 – v0.47.52 · Nov 3, 2026)
 
 ### New
 - When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.

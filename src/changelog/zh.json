@@ -1,4 +1,12 @@
 {
+  "Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.": "当错误可以用钩子、验证脚本或测试拦住时，学习审查会提出整备候选，而不是笔记候选。看板的[学习]标签页以🔧卡片显示，并可用按钮交给雅典娜处理。",
+  "When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.": "审查再次发现与之前同类的问题时，会同时建议在哪里加入能提前发现它的检查。",
+  "Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.": "正在查看的 pane 中的权限提示不再弹出 macOS 通知，[工作]中仍会显示。",
+  "Instructions queued on the Board, automatic review notices and Athena's first instruction at startup now go through the same checked delivery as other messages to panes.": "看板中排队的指示、自动审查通知以及启动时发给雅典娜的第一条指示，现在也和其他发往 pane 的消息一样走会确认送达的路径。",
+  "The Board no longer completes a plan automatically while a pane tied to it is still open, and waits when it cannot read the pane list.": "计划书绑定的 pane 仍打开时，看板不会自动完成该计划书；读取不到 pane 列表时会等待。",
+  "Agents no longer send a finished notification before they have received their first instruction.": "代理在收到第一条指示之前不再发送完成通知。",
+  "Issues for repositories that merge to main without a pull request now show as ready to complete once the work is merged.": "不经 PR 直接合并到 main 的仓库，其议题在合并后也会显示为可完成。",
+  "Text in the getting-started guide and the compact workflow diagram no longer overflows its boxes.": "入门指南和 compact 工作流程图中的文字不再溢出框外。",
   "When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.": "Claude 和 Codex 均已登录时，Athena 会询问使用哪个工具启动，并记住选择。在 Athena 工作区启动另一个工具会更新此选择。",
   "After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.": "自动审查达到轮次上限后，最后的修复仍会先对改动代码进行简短审查，再合并。有阻碍合并的问题或审查失败时，会停止合并。",
   "Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.": "Codex 会话现在也使用与 Claude 会话相同的提交、机密值和进程保护钩子。",
