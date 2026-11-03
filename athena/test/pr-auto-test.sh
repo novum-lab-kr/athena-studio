@@ -1509,6 +1509,7 @@ rm -f "$DORIGIN/hooks/pre-receive"
 # 끝나면 저절로 흐름 지시문(delegate.sh) — PR 끔이면 ship.sh --direct-merge 로, 그냥 켬이면 PR 흐름으로, 키 없음이면 없음
 echo; echo "끝나면 저절로 지시문 (delegate.sh)"
 ICORE="$(cd "$TMP" && pwd -P)/core-instr"; mkdir -p "$ICORE/plans/task" "$ICORE/.claude/agents" && cp -R scripts "$ICORE/scripts"
+cp "$SRC/test/fixtures/lead-screen.py" "$ICORE/scripts/lib/screen.py"   # 사용자 pane 환경 대신 격리한 발신자
 printf '#!/bin/sh\ncase "$1" in inside) exit 1 ;; name) echo 가짜화면 ;; esac\nexit 0\n' > "$ICORE/scripts/screen"; chmod +x "$ICORE/scripts/screen"
 printf '{"main":"claude"}\n' > "$ICORE/.athena-main-tool.json"
 printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$ICORE/.claude/agents/web-fe.md"

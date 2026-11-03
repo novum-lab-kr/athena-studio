@@ -120,18 +120,19 @@ case "$PLAN" in
 esac
 # 아테나 pane — 에이전트가 넘길 일을 사용자에게 전해 달라고 하지 않고 직접 보내게 지시에 싣는다.
 # 아테나 pane 에서 불렀을 때만(에이전트 pane 이 reviewer 를 띄울 때는 그 pane 이 아테나가 아니다)
-LEAD_PANE=""
+LEAD_PANE=""; LEAD_SESSION=""
 if [ -z "${ATHENA_AGENT:-}" ]; then
-  LEAD_PANE="$( (eval "$("$SCREEN" self --format sh 2>/dev/null)"; printf '%s' "${SCREEN_PANE_ID:-}") 2>/dev/null )"
+  LEAD_IDENTITY="$(python3 "$ATHENA_DIR/scripts/lead-send.py" --caller)" || exit 1
+  read -r LEAD_PANE LEAD_SESSION <<< "$LEAD_IDENTITY"
 fi
 if [ -n "$LEAD_PANE" ]; then
   LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $ATHENA_DIR/scripts/lead-send.py $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' — 보냈다고 한 줄 알린다. "
 else
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 $ATHENA_DIR/scripts/lead-send.py <pane> '[$AGENT → 아테나] …'). "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 계획서에 명시한 담당 아테나 pane 에 직접 보낸다(담당을 확인한 뒤 $ATHENA_DIR/scripts/lead-send.py <pane> '[$AGENT → 아테나] …'). "
 fi
-# 아테나가 지금 못 받으면(질문 · 고르기 창) lead-send.py 가 모아 뒀다 넣고, 아테나 pane 이 닫혔으면 지금 아테나 pane 으로 · 못 넣으면 계획서에 기록한다(GitHub 이슈 #134) —
+# 아테나가 지금 못 받으면(질문 · 고르기 창) lead-send.py 가 모아 뒀다 넣고, 아테나 pane 이 닫혔으면 명시한 담당을 기다리고 · 못 넣으면 계획서에 기록한다(GitHub 이슈 #134) —
 # 요청은 열지 않는다(고를 것 없는 질문이 [작업]에 쌓이지 않게 · 2026-11-03). 명령 자체가 실패했을 때만 에이전트가 계획서에 적는다
-LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 지금 아테나 pane 에 넣거나 생길 때까지 모아 두고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
+LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 닫혔으면 같은 담당의 복귀 또는 계획서의 명시한 재배정을 기다리고, 넣지 못하면 계획서 결과 절에 기록한다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
@@ -292,7 +293,7 @@ if ! "$SCREEN" inside; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
   MODEL_HINT="${MODEL:+ --model $MODEL}"
   if [ "$ENGINE" = codex ]; then
-    echo "  (cd $WORKDIR && codex$MODEL_HINT) — 공통 규칙·프로필·계획서 지시는 화면 안에서 delegate.sh 로 전달한다"
+    echo "  (cd $WORKDIR && codex --no-daemon$MODEL_HINT) — 공통 규칙·프로필·계획서 지시는 화면 안에서 delegate.sh 로 전달한다"
   elif [ -n "$PROMPT" ]; then echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT \"$PROMPT\")"
   else echo "  (cd $WORKDIR && claude --agent $AGENT$MODEL_HINT)"; fi
   exit 1
@@ -495,8 +496,8 @@ PYEOF
   [ -n "$EXTRA_FILES" ] && [ -n "$WORK_TOP" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
   if [ "$ENGINE" = codex ]; then
-    if [ -n "$PROMPT" ]; then echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") $CODEX_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
-    else echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") $CODEX_ARGS"; fi
+    if [ -n "$PROMPT" ]; then echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") --no-daemon $CODEX_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
+    else echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") --no-daemon $CODEX_ARGS"; fi
   elif [ -n "$PROMPT" ]; then
     echo "claude $CLAUDE_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
   else
@@ -589,10 +590,10 @@ PANE_TITLE="🤖 $AGENT"
 
 # 계획서 Work ref 에 어디서 누가 도는지 적는다 — 현황판이 이 pane 을 카드에 붙인다
 # 아테나 pane 에서 띄웠으면 그 pane 도 한 번만 적는다(- Lead pane:) — 앱의 아테나 pane [상세] 가 이 pane 이 맡긴 일을 모은다
-ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" "$ROLE" <<'PYEOF'
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" "$ROLE" "$LEAD_SESSION" <<'PYEOF'
 import os, sys, re
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
-plan, cwd, branch, pane, agent, lead, role = sys.argv[1:8]
+plan, cwd, branch, pane, agent, lead, role, lead_session = sys.argv[1:9]
 def record(text):
     text = record_ref(text)
     if lead and role != 'reviewer':
@@ -601,6 +602,9 @@ def record(text):
         else:
             # 다시 맡길 때 아테나 pane 이 바뀌었으면 지금 값으로(같으면 그대로)
             text = re.sub(r'^- Lead pane:.*$', lambda match: f'- Lead pane: {lead}', text, count=1, flags=re.M)
+        text = re.sub(r'^- Lead session:.*\n?', '', text, flags=re.M)
+        if lead_session:
+            text = re.sub(r'^(- Lead pane:.*)$', lambda match: match.group(1) + f'\n- Lead session: {lead_session}', text, count=1, flags=re.M)
     return text
 def record_ref(text):
     if role == 'reviewer':

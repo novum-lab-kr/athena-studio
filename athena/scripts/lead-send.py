@@ -8,12 +8,10 @@
 - 보냈다 → 끝
 - 아테나 pane 이 살아 있는데 지금 못 받는다(질문 · 고르기 창 · 다른 전송 중) → 대기열에 두고, 뒤에서 처리기가
   창이 닫히면 들어온 차례대로 넣는다. 앞에 미룬 글이 있으면 새 글도 뒤에 줄 선다(차례를 지킨다)
-- 받을 아테나 pane 이 닫혔다 → 지금 아테나 pane 을 고른다(lead_target):
-  ① 계획서 "- Lead pane:" 줄(delegate.sh 가 다시 맡길 때 갱신)의 pane 이 살아 있으면 거기
-  ② 아니면 떠 있는 아테나 pane(본체 루트의 claude · codex · 🤖 이름 아님 — 현황판 plan-bind.mjs boardPaneOf 와 같은 기준)이 하나뿐이면 거기
-  ③ 여러 개면 그중 사용자가 보고 있는(focused) pane 이 하나일 때만 거기 — 아니면 아무 데나 넣지 않고 기록만
-  ④ 하나도 없으면 대기열 → 아테나 pane 이 생기면 넣는다
-- 기록만 — 전송을 확인하지 못했다(글이 입력칸에 남았을 수 있어 다시 넣지 않는다) · 아테나 pane 을 하나로 못 골랐다 · 6시간을 넘겼다 ·
+- 담당은 계획서 "- Lead pane:"가 우선이다. 없으면 명시한 인자를 쓴다. 유일/focused pane 으로 대체하지 않는다.
+- 담당이 닫혔다 → 원래 담당 또는 계획서에 명시적으로 재배정한 담당을 기다린다.
+- 계획서 Lead session 또는 대기열에 저장한 대화가 달라졌다 → 새 대화로 넣지 않고 기록한다.
+- 기록만 — 전송을 확인하지 못했다(글이 입력칸에 남았을 수 있어 다시 넣지 않는다) · 담당 대화가 달라졌다 · 6시간을 넘겼다 ·
   옛 구조(팩 데이터 없음)에서 못 보냈다 → 계획서 결과 절에 글 그대로 한 줄 + 사건 기록(state/events.jsonl `lead-send-unsent`)
 기다리는 값은 기존 장치 그대로 — 2초마다 · 최대 6시간(pane_request.py POLL_SECONDS · GIVE_UP_SECONDS · agent-done-notify.py 와 같다).
 결정 기록: plans/task/20261103-athena-studio-fe-에이전트가-아테나에-못-보낸-보고를-작업-질문으로-띄우지-않기.md(docs/requests.md "아테나에게 보내지 못했을 때")
@@ -44,10 +42,10 @@ PANE_ID = re.compile(r'^[\w-]{1,32}$')
 NOT_WRITTEN = ('입력을 기다리는 질문이 열려 있다', '이 pane 에 입력을 보내는 중이다')
 POLL_SECONDS = pane_request.POLL_SECONDS
 GIVE_UP_SECONDS = int(os.environ.get('ATHENA_LEAD_SEND_GIVE_UP') or pane_request.GIVE_UP_SECONDS)
-# lead_target 이 pane 대신 돌려주는 값
-NO_LEAD = 'none'     # 떠 있는 아테나 pane 이 없다(또는 목록을 못 읽었다) — 기다린다
-MANY_LEADS = 'many'  # 여러 개인데 하나로 못 골랐다 — 기록만
-MANY_REASON = '받을 아테나 pane 이 닫혔고 떠 있는 아테나 pane 이 여러 개라 고르지 못했어요'
+# 담당 pane 을 임의로 고르지 않는다. 대화 소유권을 확인하지 못하면 기록만 한다.
+NO_LEAD = 'none'
+WRONG_SESSION = 'wrong-session'
+SESSION_REASON = '담당 대화가 바뀌었거나 확인되지 않아요'
 
 
 def queue_dir():
@@ -82,43 +80,64 @@ def plan_lead(plan: str) -> str:
     if path is None:
         return ''
     try:
-        found = re.search(r'^- Lead pane:\s*(\S+)', path.read_text(encoding='utf-8'), re.M)
+        found = re.search(r'^- Lead pane:[ \t]*(\S+)', path.read_text(encoding='utf-8'), re.M)
     except OSError:
         return ''
     return found.group(1) if found and PANE_ID.fullmatch(found.group(1)) else ''
 
 
-def lead_panes(me: str):
-    """떠 있는 아테나 pane — 본체 루트에서 도는 claude · codex 이고 위임 이름표(🤖)가 아닌 것(plan-bind.mjs boardPaneOf 와 같은 기준).
-    목록을 못 읽으면 None"""
+def pane_session(pane: str) -> str:
+    base = pane_request.pack_state()
+    if base is None:
+        return ''
     try:
-        panes = screen.get_backend().list_panes()
-    except Exception:
-        return None
-    root = os.path.realpath(ATHENA_DIR)
-    found = []
-    for pane in panes:
-        name = str(pane.get('label') or pane.get('name') or pane.get('pane_title') or '')
-        cwd = str(pane.get('cwd') or '')
-        if pane.get('agent') in ('claude', 'codex') and cwd and os.path.realpath(cwd) == root and not name.startswith('🤖') and pane.get('id') != me:
-            found.append(pane)
-    return found
+        return str(json.loads((base / 'pane-sessions' / f'{pane}.json').read_text(encoding='utf-8')).get('session') or '')
+    except (OSError, ValueError):
+        return ''
 
 
-def lead_target(lead: str, plan: str, me: str) -> str:
-    """보낼 아테나 pane — 받을 pane 이 살아 있으면 그대로, 닫혔으면 ①~④(머리 주석). pane id · NO_LEAD · MANY_LEADS"""
-    if alive(lead):
-        return lead
+def plan_session(plan: str) -> str:
+    path = plan_file(plan)
+    if path is None:
+        return ''
+    found = re.search(r'^- Lead session:[ \t]*(\S+)', path.read_text(encoding='utf-8'), re.M)
+    return found.group(1) if found else ''
+
+
+def caller_lead() -> tuple[str, str]:
+    """위임의 발신자 검증 — 환경 ID 를 존재·본체·역할·가능한 대화 기록과 대조한다."""
+    backend = screen.get_backend()
+    info = backend.self_info()
+    pane = str(info.get('pane_id') or '')
+    if not info.get('inside'):
+        return '', ''
+    if not PANE_ID.fullmatch(pane):
+        raise ValueError('부른 pane ID 를 확인하지 못했다')
+    found = backend.get_pane(pane)
+    name = str(found.get('label') or found.get('name') or found.get('pane_title') or '')
+    if (found.get('id') != pane or found.get('agent') not in ('claude', 'codex')
+            or not found.get('cwd') or os.path.realpath(str(found.get('cwd') or '')) != str(ATHENA_DIR)
+            or name.startswith('🤖')):
+        raise ValueError('부른 pane 이 이 본체의 아테나가 아니다')
+    session = pane_session(pane)
+    thread = os.environ.get('CODEX_THREAD_ID') or ''
+    if thread and thread != session:
+        raise ValueError('부른 Codex 대화와 pane 기록이 일치하지 않는다')
+    return pane, session
+
+
+def lead_target(lead: str, plan: str, me: str, session: str = '') -> str:
+    """계획서의 명시한 담당만 따라간다. 포커스·후보 수는 소유권 근거가 아니다."""
     planned = plan_lead(plan)
-    if planned and planned not in (lead, me) and alive(planned):
-        return planned
-    panes = lead_panes(me)
-    if not panes:
-        return NO_LEAD
-    if len(panes) == 1:
-        return str(panes[0]['id'])
-    focused = [pane for pane in panes if pane.get('focused') is True]
-    return str(focused[0]['id']) if len(focused) == 1 else MANY_LEADS
+    target = planned or lead
+    if target == me:
+        return WRONG_SESSION
+    expected = plan_session(plan) if planned else ''
+    if not expected and target == lead:
+        expected = session
+    if expected and pane_session(target) != expected:
+        return WRONG_SESSION
+    return target if alive(target) else NO_LEAD
 
 
 def try_send(lead: str, text: str) -> str:
@@ -198,9 +217,9 @@ def send(lead: str, text: str, plan: str) -> int:
     entry = {'lead': lead, 'text': text, 'plan': plan, 'pane': me, 'from': os.environ.get('ATHENA_AGENT') or me, 'at': time.time()}
     folder = queue_dir()
     target = lead_target(lead, plan, me)
-    if target == MANY_LEADS:
-        return recorded(entry, MANY_REASON)
-    moved = f'아테나 pane {lead} 가 닫혀 지금 아테나 pane {target} 에 ' if target not in (lead, NO_LEAD) else f'아테나 pane {lead} 에 '
+    if target == WRONG_SESSION:
+        return recorded(entry, SESSION_REASON)
+    moved = f'계획서 담당 아테나 pane {target} 에 ' if target not in (lead, NO_LEAD) else f'아테나 pane {lead} 에 '
     if folder is None:
         # 옛 구조(팩 데이터 없음) — 모아 둘 자리가 없어 지금 보내 보고, 못 보내면 기록만
         result = 'gone' if target == NO_LEAD else try_send(target, text)
@@ -209,9 +228,10 @@ def send(lead: str, text: str, plan: str) -> int:
             return 0
         reasons = {'gone': '아테나 pane 이 없어요', 'wait': '아테나가 지금 받을 수 없어요(모아 둘 자리가 없는 옛 구조)'}
         return recorded(entry, reasons.get(result, unconfirmed(result)))
-    # 아테나 pane 이 없으면 원래 pane 이름으로 줄 세워 두고, 처리기가 아테나 pane 이 생길 때까지 다시 고른다
-    key = lead if target == NO_LEAD else target
+    # 담당이 없으면 같은 담당 앞으로 보관한다. 계획서의 명시적 재배정만 따라간다
+    key = (plan_lead(plan) or lead) if target == NO_LEAD else target
     entry['lead'] = key
+    entry['session'] = plan_session(plan) or pane_session(key)
     with pane_lock(folder, key):
         if target == NO_LEAD or queued(folder, key):
             result = 'wait'
@@ -227,7 +247,7 @@ def send(lead: str, text: str, plan: str) -> int:
     if result == 'wait':
         spawn_deliverer(key)
         if target == NO_LEAD:
-            print(f'⏳ 아테나 pane {lead} 가 없고 떠 있는 아테나 pane 도 없어 모아 뒀다 — 아테나 pane 이 생기면 저절로 넣는다. 요청을 따로 열지 않는다')
+            print(f'⏳ 담당 아테나 pane {key} 가 없어 모아 뒀다 — 같은 담당의 복귀 또는 계획서의 명시한 재배정을 기다린다. 요청을 따로 열지 않는다')
         else:
             print(f'⏳ {moved}지금 못 넣어(질문 · 고르기 창 · 앞에 미룬 글) 모아 뒀다 — 받을 수 있게 되면 저절로 넣는다. 요청을 따로 열지 않는다')
         return 0
@@ -270,10 +290,10 @@ def deliver(lead: str) -> None:
             if time.time() - float(entry.get('at') or 0) > GIVE_UP_SECONDS:
                 result = '6시간 동안 아테나가 받을 수 없었어요'
             else:
-                # 기다리는 동안 pane 이 닫혔거나 처음부터 없었으면 다시 고른다(머리 주석 ①~④)
-                target = lead_target(lead, str(entry.get('plan') or ''), str(entry.get('pane') or ''))
-                if target == MANY_LEADS:
-                    result = MANY_REASON
+                # 대기 중에도 명시한 담당과 대화 소유권을 다시 확인한다
+                target = lead_target(lead, str(entry.get('plan') or ''), str(entry.get('pane') or ''), str(entry.get('session') or ''))
+                if target == WRONG_SESSION:
+                    result = SESSION_REASON
                 elif target == NO_LEAD:
                     result = 'wait'
                 else:
@@ -289,6 +309,14 @@ def deliver(lead: str) -> None:
 
 
 def main(argv) -> int:
+    if argv == ['--caller']:
+        try:
+            pane, session = caller_lead()
+            print(f'{pane} {session}'.rstrip())
+            return 0
+        except Exception as error:
+            print(f'아테나 발신자를 확인하지 못해 위임하지 않는다: {error}', file=sys.stderr)
+            return 1
     if len(argv) == 2 and argv[0] == '--deliver':
         if PANE_ID.fullmatch(argv[1]):
             deliver(argv[1])

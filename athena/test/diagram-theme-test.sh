@@ -32,5 +32,69 @@ for file in "$SRC"/docs/diagrams/*.html; do
   T --check "$file" > /dev/null; check "코어 다이어그램에 지금 테마: $(basename "$file")" '[ $? -eq 0 ]'
 done
 
+# 원본/최종 분리와 영수증·캡처 수명은 실제 파일로 검증한다.
+node --input-type=module - "$SRC" "$WORK" <<'JS'
+import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
+import { spawnSync } from 'node:child_process'
+import { existsSync, readFileSync, symlinkSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+const [source, work] = process.argv.slice(2)
+const raw = join(work, 'source.archify.html')
+const final = join(work, 'final.html')
+const receiptPath = `${final}.theme.json`
+const original = '<html><head></head><body><svg data-quality-profile="showcase"><text>실제 내용</text></svg></body></html>'
+writeFileSync(raw, original)
+const run = (...args) => spawnSync(process.execPath, [join(source, 'scripts/diagram-theme.mjs'), ...args], { encoding: 'utf8' })
+const apply = () => { const result = run('--output', final, raw); assert.equal(result.status, 0, result.stderr) }
+const verify = () => run('--check', '--receipt', final).status
+const hash = text => createHash('sha256').update(text).digest('hex')
+apply()
+assert.equal(readFileSync(raw, 'utf8'), original)
+const first = readFileSync(final, 'utf8')
+const receipt = JSON.parse(readFileSync(receiptPath, 'utf8'))
+assert.equal(receipt.evidenceKind, 'athena-theme')
+assert.equal(receipt.source.digest.sha256, hash(original))
+assert.equal(receipt.artifact.sha256, hash(first))
+assert.notEqual(receipt.source.digest.sha256, receipt.artifact.sha256)
+assert.equal(receipt.artifact.bytes, Buffer.byteLength(first))
+assert.equal(verify(), 0)
+const suffixes = ['json', 'html', '1440x900.light.png', '1440x900.dark.png', '2048x1320.light.png', '2048x1320.dark.png']
+const sidecars = suffixes.map(suffix => join(work, `final.visual-check.${suffix}`))
+for (const path of sidecars) writeFileSync(path, '이전 증거')
+apply()
+assert.equal(readFileSync(final, 'utf8'), first)
+assert.ok(sidecars.every(path => existsSync(path)), '같은 최종 바이트의 증거는 유지')
+writeFileSync(raw, original.replace('실제 내용', '바뀐 내용'))
+assert.equal(verify(), 1, '원본 변경 감지')
+apply()
+assert.ok(sidecars.every(path => !existsSync(path)), '최종 변경 때 stale 증거 전부 제거')
+assert.equal(verify(), 0)
+writeFileSync(final, readFileSync(final, 'utf8').replace('바뀐 내용', '최종 변조'))
+assert.equal(verify(), 1, '최종 변경 감지')
+apply()
+const altered = JSON.parse(readFileSync(receiptPath, 'utf8'))
+altered.theme.sha256 = 'old'
+writeFileSync(receiptPath, JSON.stringify(altered))
+assert.equal(verify(), 1, '테마 변경 감지')
+apply()
+const current = readFileSync(final, 'utf8')
+const block = current.match(/<!-- studio-theme -->[\s\S]*?<!-- \/studio-theme -->\n?/)[0]
+writeFileSync(final, current.replace('</head>', `${block}</head>`))
+assert.equal(verify(), 1, '중복 테마 감지')
+apply()
+assert.equal(readFileSync(final, 'utf8'), current, '다시 생성하면 중복 없이 일관적')
+assert.equal(verify(), 0)
+assert.equal(run('--output', raw, raw).status, 1, '원본 덮어쓰기 거부')
+const alias = join(work, 'alias.html')
+symlinkSync(raw, alias)
+assert.equal(run('--output', alias, raw).status, 1, '심볼릭 링크로도 원본 덮어쓰기 거부')
+assert.equal(run('--output', join(work, 'bad.html'), final).status, 1, '테마 최종본을 원본으로 위장하지 않음')
+assert.equal(run('--output', join(work, 'bad.html'), join(work, 'index.html')).status, 1)
+assert.equal(run('--check', '--receipt', join(work, 'a.html')).status, 1, '영수증 없는 파일은 서비스 검증 실패')
+console.log('  ✔ 원본/최종 해시·변조·중복·재생성·캡처 무효화·원본 보존')
+JS
+check "원본/최종 전달 회귀" '[ $? -eq 0 ]'
+
 printf '\n통과 %s · 실패 %s\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

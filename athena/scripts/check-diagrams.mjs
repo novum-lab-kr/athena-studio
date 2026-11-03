@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // @ts-check
 // 고정 커밋의 근거와 팩 운영 ref를 비교한다. 내용을 출력하거나 자동으로 revision을 바꾸지 않는다.
-import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { dirname, join, relative } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -9,6 +10,7 @@ import { loadConfig, paths } from './lib/config.mjs'
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const strict = process.argv.includes('--strict')
+const design = process.argv.includes('--design')
 const config = loadConfig(root)
 const pack = paths(root).packDir
 const directory = join(pack ?? join(root, 'docs'), 'diagrams')
@@ -63,6 +65,21 @@ let count = 0
 for (const file of specs(directory)) {
   count++
   const issues = []
+  if (design) {
+    const html = file.replace(/\.(architecture|workflow)\.json$/, '.html').replace(/\.json$/, '.html')
+    try {
+      const themed = spawnSync(process.execPath, [join(root, 'scripts/diagram-theme.mjs'), '--check', '--receipt', html], { stdio: 'ignore' })
+      if (themed.status !== 0) throw new Error('테마 확인 실패')
+      /** @type {unknown} */
+      const browser = JSON.parse(readFileSync(html.replace(/\.html$/, '.visual-check.json'), 'utf8'))
+      const bytes = readFileSync(html)
+      if (!record(browser) || browser.evidenceKind !== 'automated-browser' || browser.status !== 'pass' || !record(browser.artifact) || browser.artifact.sha256 !== createHash('sha256').update(bytes).digest('hex') || browser.artifact.bytes !== bytes.length) throw new Error('최종 브라우저 증거 불일치')
+      console.log(`✅ ${relative(directory, html)} — 공통 테마·최종 브라우저 증거 일치(시각 검토는 별도)`)
+    } catch {
+      failures++
+      console.log(`❌ ${relative(directory, html)} — 테마·변환 영수증·최종 브라우저 증거 확인 필요(AUTHORING의 재생성 절차)`)
+    }
+  }
   try {
     /** @type {unknown} */
     const spec = JSON.parse(readFileSync(file, 'utf8'))

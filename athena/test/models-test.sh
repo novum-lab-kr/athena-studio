@@ -100,6 +100,7 @@ JS
 # ── delegate.sh — 가짜 본체(코어 scripts 복사 · 화면 밖) 에서 직접 실행 안내 줄로 붙는 --model 을 본다 ─────────
 echo; echo "delegate.sh"
 CORE="$TMP/core"; mkdir -p "$CORE/plans/task" "$CORE/plans/feature" "$CORE/.claude/agents" && cp -R scripts "$CORE/scripts"
+cp "$SRC/test/fixtures/lead-screen.py" "$CORE/scripts/lib/screen.py"   # 사용자 pane 환경 대신 격리한 발신자
 printf '#!/bin/sh\ncase "$1" in inside) exit 1 ;; name) echo 가짜화면 ;; esac\nexit 0\n' > "$CORE/scripts/screen"; chmod +x "$CORE/scripts/screen"
 printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$CORE/.claude/agents/web-fe.md"
 printf -- '---\nname: reviewer\ndescription: 리뷰\n---\n본문\n' > "$CORE/.claude/agents/reviewer.md"
