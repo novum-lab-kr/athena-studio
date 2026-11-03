@@ -31,7 +31,8 @@ const PROTOCOL = 7
 // 8 — SPACES 표시용 앞 작업 상태 · 뒤 셸 개수
 // 9 — 재접속 화면에 프로그램이 요청한 마우스 인코딩도 복원
 // 10 — 코드 교체 시 미완성 출력 청크를 건드리지 않고 마우스 인코딩 초기 상태 읽기
-const DAEMON_CODE = 10
+// 11 — Codex Browser 권한·시작 신뢰창도 입력 대기로 판정
+const DAEMON_CODE = 11
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

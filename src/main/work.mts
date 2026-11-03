@@ -6,6 +6,7 @@
 // answerRequest · redeliverRequest · openPlan · openBoardSection · openDiagrams · workDetail · prepareBoardPort)으로 붙인다
 import fs from 'node:fs'
 import path from 'node:path'
+import { createRequire } from 'node:module'
 import { dialog, shell } from 'electron'
 import type { BrowserWindow, MessageBoxOptions } from 'electron'
 import * as core from '../lib/core.mts'
@@ -18,6 +19,7 @@ import type { PackResult, Say } from '../lib/pack.mts'
 import type { RunCoreOptions } from './core-runner.mts'
 import type { DaemonCall } from './daemon-link.mts'
 import type { StudioRequest } from '../lib/requests.mts'
+const screenModel: typeof import('../lib/screen-model.js') = createRequire(import.meta.url)('../lib/screen-model.js')
 
 // error — 마지막 읽기가 실패한 까닭(코어 오류 코드) · 성공하면 null. "요청 없음" 과 "읽지 못함" 을 화면이 가르게
 export type RequestsState = { supported: boolean; requests: StudioRequest[]; error: string | null }
@@ -118,29 +120,81 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   let requestsKick: NodeJS.Timeout | undefined
   let requestsBusy: Promise<RequestsState> | null = null
   let requestsAgain = false
+  let coreRequests: StudioRequest[] = []
+  let permissionRequests: StudioRequest[] = []
+  const permissions = requestsModel.createPermissionTracker()
+  let permissionTimer: NodeJS.Timeout | undefined
+  let permissionGeneration = 0
+  let permissionBusy: number | null = null
+  const publishRequests = (supported: boolean, error: string | null) => {
+    const before = requestsState()
+    const notified = new Set(coreRequests.filter((request) => request.permission).map((request) => request.pane))
+    const kinds = new Map(permissionRequests.map((request) => [request.pane, request.permissionKind]))
+    const requests = [...coreRequests.map((request) => request.permission ? { ...request, permissionKind: kinds.get(request.pane) || request.permissionKind } : request), ...permissionRequests.filter((request) => !notified.has(request.pane))].map((request) => requestsModel.permissionView(request, say))
+    const next = { supported: supported || permissionRequests.length > 0, requests, error }
+    setRequestsState(next)
+    if (JSON.stringify(next) !== JSON.stringify(before)) {
+      send('work:requests', next)
+      trayRequestsChanged(ctx)
+    }
+    return next
+  }
+  // 기존 pane 읽기만 사용한다. 시작 신뢰창은 훅이 실행되기 전이므로 훅 외의 감지가 필요하다.
+  const refreshPermissions = async () => {
+    const dir = ctx.athenaDir, generation = permissionGeneration
+    if (!dir || permissionBusy === generation) return
+    permissionBusy = generation
+    try {
+      const listed = await ctx.peekCall('pane list') as { result?: { panes?: { id: string; agent?: string | null }[] } }
+      if (!Array.isArray(listed.result?.panes)) return // 읽기 실패로 지난 알림을 닫지 않는다
+      const knownPanes = new Set([...coreRequests, ...permissionRequests].filter((request) => request.permission).map((request) => request.pane))
+      const observations = await Promise.all(listed.result.panes.map(async (pane) => {
+        if (pane.agent !== 'claude' && pane.agent !== 'codex' && !knownPanes.has(pane.id)) return { pane: pane.id, kind: undefined }
+        try {
+          const read = await ctx.peekCall('pane read', { pane: pane.id, source: 'visible', lines: 40 }) as { result?: { text?: unknown } }
+          let kind: requestsModel.PermissionKind | null | undefined
+          if (typeof read.result?.text === 'string') {
+            kind = screenModel.permissionPrompt(read.result.text)
+            // 제목이 잘렸거나 새 메뉴 형식이어도 입력 대기는 닫힘의 근거가 아니다.
+            if (kind === null && screenModel.waitingForInput(read.result.text)) kind = undefined
+          }
+          return { pane: pane.id, kind }
+        } catch { return { pane: pane.id, kind: undefined } }
+      }))
+      if (dir !== ctx.athenaDir || generation !== permissionGeneration) return
+      const tracked = permissions.observe(observations, Date.now())
+      permissionRequests = tracked.requests
+      for (const request of coreRequests) {
+        if (!request.permission || typeof request.pane !== 'string') continue
+        if (!tracked.alive.has(request.pane) || tracked.closed.has(request.pane)) {
+          // 알림만 거둔다. 실제 권한창에 허용/취소 응답이나 키를 보내지 않는다.
+          const result = await runCore(['request', 'cancel', request.id, '--reason', say('work.permission.closed')], { dir })
+          if (dir !== ctx.athenaDir || generation !== permissionGeneration) return
+          if (result.ok) coreRequests = coreRequests.filter((item) => item.id !== request.id)
+        }
+      }
+      publishRequests(requestsState().supported, requestsState().error)
+    } finally {
+      if (permissionBusy === generation) permissionBusy = null
+    }
+  }
   ctx.refreshRequests = async () => {
     if (requestsBusy) {
       requestsAgain = true
       return requestsBusy
     }
-    const dir = ctx.athenaDir
+    const dir = ctx.athenaDir, generation = permissionGeneration
     if (!core.checkAthenaDir(dir).ok) return requestsState()
     requestsBusy = (async () => {
       const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir }))
       // 그새 팩을 바꿨으면 버린다
-      if (dir !== ctx.athenaDir) return requestsState()
+      if (dir !== ctx.athenaDir || generation !== permissionGeneration) return requestsState()
       const before = requestsState()
       const error = next.error ? String(next.error) : null
       if (error && error !== before.error) logRequestsError(`list failed ${error} supported=${next.supported}`)
       // 일시 실패(잠금 · 시간 초과)면 지난 목록을 그대로 두되 실패는 알린다 — 옛 코어(supported:false)는 목록을 비운다
-      const requests = error && next.supported ? before.requests : next.requests
-      const changed = next.supported !== before.supported || error !== before.error || JSON.stringify(requests) !== JSON.stringify(before.requests)
-      setRequestsState({ supported: next.supported, requests, error })
-      if (changed) {
-        send('work:requests', requestsState())
-        trayRequestsChanged(ctx)
-      }
-      return requestsState()
+      coreRequests = error && next.supported ? coreRequests : next.requests
+      return publishRequests(next.supported, error)
     })()
     try {
       return await requestsBusy
@@ -172,6 +226,11 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   }
   ctx.requestsNow = () => requestsState()
   ctx.stopRequests = () => {
+    permissionGeneration += 1
+    clearInterval(permissionTimer)
+    permissions.reset()
+    permissionRequests = []
+    coreRequests = []
     if (requestsWatch) requestsWatch.close()
     requestsWatch = null
     clearInterval(requestsTimer)
@@ -188,6 +247,8 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       watchRequestsDir()
       refreshRequests()
     }, requestsPollMs)
+    permissionTimer = setInterval(() => refreshPermissions().catch(() => {}), 2000)
+    refreshPermissions().catch(() => {})
     refreshRequests()
   }
 
@@ -218,6 +279,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null) => {
     const known = requestsState().requests.find((request) => request.id === id)
     if (!known) return { ok: false, error: 'not-found' }
+    if (known.permission) return { ok: false, error: 'permission-in-pane' }
     // 대화상자가 보여 준 요청이 그사이 바뀌었으면 다른 내용에 답이 붙지 않게 코어를 부르지 않는다. 같으면 known.rev 가 곧 받은 rev 다
     if (requestsModel.answerRevChanged(answer && answer.rev, known.rev)) {
       refreshRequests()
@@ -237,6 +299,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   ctx.redeliverRequest = async (id: string) => {
     const known = requestsState().requests.find((request) => request.id === id && request.state === 'answered')
     if (!known || !known.answer) return { ok: false, error: 'not-found' }
+    if (known.permission) return { ok: false, error: 'permission-in-pane' }
     return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer as { choice?: unknown; text?: unknown })) }
   }
   // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소를 이 창 옆 브라우저에, 없으면 md 를 기본 앱으로

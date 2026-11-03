@@ -148,6 +148,8 @@ test('agent_status: 표식 · 출력 정지 · agent 아님', () => {
 
 // 실측 화면(2026-10-25 · Claude Code 2.1.310 · codex-cli 0.160.0 — pane read --source visible) 그대로 줄인 것
 const WAIT_SCREENS = {
+  codexBrowser: ['Field 1/1', 'Allow Browser use to access https://example.com?', 'origin: https://example.com', '1. Allow Run the tool and continue', '2. Always allow Run the tool and remember this choice for future tool calls', '3. Cancel Cancel this tool call', 'enter to submit | esc to cancel'],
+  codexStartupTrust: ['permission settings. Folder settings can run code automatically, even without a model request.', 'Continue only if you trust these files. Your trust decision will be saved.', '1. Trust and continue', '2. Quit', 'enter continue · esc quit'],
   claudePermission: [
     '⏺ Creating empty file probe-two.txt',
     '  ⎿  $ touch probe-two.txt',
@@ -225,4 +227,15 @@ test('SPACES: 맺음 줄 뒤 셸은 쉬는 표시와 별도로 센다', () => {
   assert.equal(model.agentStatus({ ...state, lastOutputAt: 9999, includeBackground: false }), 'working')
   assert.equal(model.backgroundShells({ ...state, agent: 'codex' }), 1)
   assert.equal(model.backgroundShells({ ...state, screenLines: ['本文 · 2 shells', '❯', 'a', 'b', '⏵⏵ auto mode on'] }), 0)
+})
+
+test('권한 알림 분류는 관찰된 전체 확인창에만 · 일반 질문/작업/본문/불완전 메뉴 제외', () => {
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.codexBrowser.join('\n')), 'browser')
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.codexStartupTrust.join('\n')), 'trust')
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.claudePermission.join('\n')), 'permission')
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.codexApproval.join('\n')), 'permission')
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.codexQuestion.join('\n')), null)
+  assert.equal(model.permissionPrompt([...WAIT_SCREENS.codexBrowser, '› Ask Codex to do anything', 'model', '? for shortcuts'].join('\n')), null)
+  assert.equal(model.permissionPrompt([...WAIT_SCREENS.codexBrowser, 'Working (esc to interrupt)'].join('\n')), null)
+  assert.equal(model.permissionPrompt(WAIT_SCREENS.codexBrowser.filter((line) => !line.includes('Always allow')).join('\n')), null)
 })
