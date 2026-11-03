@@ -396,7 +396,7 @@ const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 // 아테나 폴더 · 스튜디오 코어 준비 · 코어 · 팩 명령 실행 — src/main/core-runner.mts(PACK_TIMEOUTS 도 거기 — 팩을 바꾸는 명령은 시간이 넘어도 끊지 않는다).
 // 쓰는 것(electron app · dialog · 화면 문구 · 지금 언어 · 스튜디오 집 자리 · 코어 번들 · 데몬 자리 · 팩 로그 자리)은 인자로 넘긴다
-const { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile, onUpdateState: (running) => { for (const ctx of packWindows) ctx.send('core-update:state', running) } })
+const { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile, onUpdateState: (running) => { for (const ctx of packWindows) ctx.send('core-update:state', running) }, onCaughtUp: (outcome) => afterCoreUpdate(outcome) })
 
 // [Finder 에서 보기] — 방금 만든 파일만
 let lastPackFile: string | null = null
@@ -1015,8 +1015,13 @@ app.whenReady().then(async () => {
 // 창을 연 뒤 코어 업데이트 — 문이 닫혀 있는 동안 팩 명령 · 현황판 · 새 에이전트 시작은 기다린다(core-runner.mts updateGate)
 async function runCoreUpdateInBackground(): Promise<void> {
   const { changed } = await updateStudioCore()
+  afterCoreUpdate({ changed, notice: true })
+}
+
+// 코어 업데이트가 끝난 뒤 — 켤 때 한 번 · 건너뛴 본체를 나중에 다시 올렸을 때(core-runner onCaughtUp). notice 면 알릴 것이 있으면 팝업
+function afterCoreUpdate({ changed, notice }: { changed: boolean; notice: boolean }): void {
   const front = frontCtx()
-  void showCoreUpdateNotice(front && front.win)
+  if (notice) void showCoreUpdateNotice(front && front.win)
   if (!changed) return
   refreshAllPacks()
   // 업데이트가 새 코어로 올리며 끈 현황판은 다시 띄운다

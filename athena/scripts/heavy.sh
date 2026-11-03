@@ -19,7 +19,7 @@
 #      메모리 여유가 ATHENA_HEAVY_MIN_FREE %(기본 15 — macOS memory_pressure · 리눅스 /proc/meminfo, 못 읽으면 한 번 알리고 끈다) 아래로 떨어지면 그 명령과 자식을 모두 끄고 137 로 끝난다
 #      (next dev 가 postcss 작업자를 1609개까지 띄워 메모리 70GB·부하 100 까지 간 일 뒤에 넣었다 — 2026-10-02)
 # 기다리는 동안 30초마다 "⏳ 대기 — 이유" 를 한 줄 찍는다. 최대 대기 ATHENA_HEAVY_WAIT 초(기본 1800) 넘으면 포기하고 75 로 끝난다.
-#   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
+#   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite · storybook dev · node <…>/dev-app.js start)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
 #      지나면 자리를 놓고 다음 차례를 돌린다. 감시(4)는 놓은 뒤에도 끝까지 간다. 근거: qa/run.mjs 가 서버를 "URL 이 답할 때" 를 시작 끝으로 보고,
 #      폭주(2026-10-02)는 시작할 때가 아니라 오래 도는 동안 자식이 늘어난 것이다. 놓고 싶지 않으면 ATHENA_HEAVY_DEV_RELEASE=0
 #   6. 기다린 시간·이유는 안쪽 명령에 환경으로 넘긴다(ATHENA_HEAVY_WAIT_SEC · ATHENA_HEAVY_WAIT_WHY) — 검증 스크립트가 결과·사건 기록에 남긴다
@@ -168,10 +168,14 @@ descendants() {
   ps -axo pid=,ppid= | awk -v root="$1" '{parent[$1]=$2} END{for (pid in parent) {node=pid; while ((node in parent) && node != 1 && node != 0) {if (parent[node] == root) {print pid; break} node = parent[node]}}}'
 }
 # 개발 서버 명령인가 — 첫 낱말이 next·npm·pnpm·yarn·bun·npx·vite 이고, next 는 dev, 패키지 관리자는 낱말 dev(npm run dev · npm run start:dev · pnpm dev · pnpm --filter x dev), vite 는 build·optimize·preview 가 없을 때.
+# 그 밖의 서버형(아테나 결정 2026-11-03 — 코어 update 가 끝나지 않는 이 잠금 때문에 본체를 건너뛰지 않게): 맨 storybook dev · Athena Studio 개발 앱 node <…>/dev-app.js start.
+# npm/pnpm start · expo start 처럼 이름만으로 끝나는 명령인지 알 수 없는 것은 넣지 않는다.
 # 모르면 개발 서버가 아니다(자리를 계속 쥔다 — 예전 그대로)
 is_dev_server() {
   local first word has_dev=0 has_next=0 has_vite=0 has_other=0
   first="$(basename "$1")"
+  if [ "$first" = node ] && [ "$#" -ge 3 ] && [ "$(basename "$2")" = dev-app.js ] && [ "$3" = start ]; then return 0; fi
+  if [ "$first" = storybook ] && [ "${2:-}" = dev ]; then return 0; fi
   case "$first" in next|npm|pnpm|yarn|bun|npx|pnpx|vite) ;; *) return 1 ;; esac
   for word in "$@"; do
     case "$word" in

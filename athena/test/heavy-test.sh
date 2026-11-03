@@ -149,6 +149,26 @@ for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/l.log" 2>/dev/
 check "start:dev 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/l.log"'
 kill $(jobs -p) 2>/dev/null; sleep 1
 
+# 서버형 셋(아테나 결정 2026-11-03) — 맨 storybook dev · node <…>/dev-app.js start 도 시작이 끝나면 자리를 놓는다(코어 update 가 바쁨으로 치지 않게)
+echo "storybook dev · dev-app.js start 도 개발 서버로 본다"
+cat > "$TMP/bin/storybook" <<'FAKE'
+#!/bin/sh
+exec node -e "require('net').createServer().listen(0); setTimeout(() => {}, 120000)"
+FAKE
+chmod +x "$TMP/bin/storybook"
+mkdir -p "$TMP/app/scripts"
+echo "require('net').createServer().listen(0); setTimeout(() => {}, 120000)" > "$TMP/app/scripts/dev-app.js"
+new_lock m
+( "$SRC/scripts/heavy.sh" storybook dev -p 6006 > "$TMP/m.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/m.log" 2>/dev/null && break; sleep 0.5; done
+check "storybook dev 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/m.log"'
+kill $(jobs -p) 2>/dev/null; sleep 1
+new_lock n
+( "$SRC/scripts/heavy.sh" node "$TMP/app/scripts/dev-app.js" start > "$TMP/n.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/n.log" 2>/dev/null && break; sleep 0.5; done
+check "node …/dev-app.js start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/n.log"'
+kill $(jobs -p) 2>/dev/null; sleep 1
+
 echo "기다린 시간·이유를 안쪽 명령에 넘긴다"
 new_lock k
 run_bg 6 "$TMP/k1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
