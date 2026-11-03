@@ -17,7 +17,7 @@
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><path d="M3 4.5h10M3 8h10M3 11.5h6"/></svg>
       <span data-i18n="work.title">작업</span><span id="work-ask" class="work-ask" hidden></span>
     </button>
-    <!-- 현황판 페이지 메뉴(QA · 학습 · 아카이브 · 전체 칸반) — 고르면 기본 브라우저로. ⌘2 는 전체 칸반 -->
+    <!-- 현황판 페이지 메뉴(학습 · 아카이브 · 전체 칸반) — 고르면 기본 브라우저로. ⌘2 는 전체 칸반 -->
     <button id="board-tab" class="tabbar-tool" aria-label="현황판" data-i18n-aria-label="board.title" aria-haspopup="menu" aria-expanded="false" aria-controls="board-menu">
       <svg viewBox="0 0 16 16" width="15" height="15" aria-hidden="true"><rect x="1.75" y="2.25" width="12.5" height="11.5" rx="1.75"/><path d="M5 5.25v5.5M8 5.25v3.25M11 5.25v4.25"/></svg>
     </button>
@@ -110,7 +110,7 @@
   <div id="work-pop" class="work-pop" hidden role="dialog" aria-labelledby="work-pop-title">
     <div class="work-pop-head"><span id="work-pop-title"></span></div>
     <div id="work-pop-body" class="work-pop-body"></div>
-    <div class="work-pop-foot"><span data-i18n="work.foot">누르면 자세히 · 지난 일은 아카이브에서</span><button id="work-pop-pages" class="link" type="button" data-i18n="work.footPages">QA · 학습 · 아카이브 →</button></div>
+    <div class="work-pop-foot"><span data-i18n="work.foot">누르면 자세히 · 지난 일은 아카이브에서</span><button id="work-pop-pages" class="link" type="button" data-i18n="work.footPages">학습 · 아카이브 →</button></div>
   </div>
   <!-- pane [상세] — 계획서에 묶인 pane 머리 줄 아이콘을 누르면 작업 창 위에 오른쪽에서 나온다(레이아웃에 끼지 않아 pane · 터미널 크기는 그대로). 내용은 renderer renderPaneDetail -->
   <aside id="pane-detail" class="pane-detail" hidden role="dialog" aria-labelledby="pane-detail-title">
@@ -131,7 +131,6 @@
   <div id="board-menu" class="work-pop board-menu" hidden role="menu" aria-label="현황판" data-i18n-aria-label="board.title">
     <button class="board-menu-item" type="button" role="menuitem" data-section="now"><b data-i18n="board.menu.kanban">이슈</b><small data-i18n="board.menu.kanbanNote">해결할 이슈 · 작업 시작</small></button>
     <div class="board-menu-sep" role="separator"></div>
-    <button class="board-menu-item" type="button" role="menuitem" data-section="qa"><b data-i18n="board.menu.qa">QA</b><small data-i18n="board.menu.qaNote">검수 실행 · 화면 비교</small></button>
     <button class="board-menu-item" type="button" role="menuitem" data-section="learn"><b data-i18n="board.menu.learn">학습</b><small data-i18n="board.menu.learnNote">에이전트가 배운 것 넣기 · 버리기</small></button>
     <div class="board-menu-sep" role="separator"></div>
     <button class="board-menu-item" type="button" role="menuitem" data-section="metrics"><b data-i18n="board.menu.metrics">지표</b><small data-i18n="board.menu.metricsNote">완료 · 소요 · 질문 · 검증</small></button>

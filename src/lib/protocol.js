@@ -29,7 +29,9 @@ const PROTOCOL = 7
 // 6 — 선택 창 대기 waiting
 // 7 — 공통 core의 도구별 빈 입력·재개 판정
 // 8 — SPACES 표시용 앞 작업 상태 · 뒤 셸 개수
-const DAEMON_CODE = 8
+// 9 — 재접속 화면에 프로그램이 요청한 마우스 인코딩도 복원
+// 10 — 코드 교체 시 미완성 출력 청크를 건드리지 않고 마우스 인코딩 초기 상태 읽기
+const DAEMON_CODE = 10
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

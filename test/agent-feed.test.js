@@ -101,7 +101,7 @@ test('Codex 기록 → 기존 한 줄 이벤트 · 앱과 Python 정규화 일�
   assert.deepEqual(events.map(({ kind, name, text }) => ({ kind, name, text })), [
     { kind: 'tool', name: 'Bash', text: 'git status --short' },
     { kind: 'tool', name: 'Bash', text: '상태 확인' },
-    { kind: 'tool', name: 'exec', text: '{"title":"수정 확인"}' },
+    { kind: 'tool', name: 'Exec', text: '수정 확인' },
     { kind: 'tool', name: 'apply_patch', text: 'Update demo.py' },
     { kind: 'user', name: '', text: '모니터를 고쳐 주세요' },
     { kind: 'say', name: '', text: '수정을 확인했습니다' },
@@ -315,4 +315,62 @@ test('모니터 만료 세션의 줄을 main·화면에서 함께 지우고 재�
   assert.equal(visibleEvents.some(event => event.session === oldSession), false)
   await tick()
   assert.equal(visibleEvents.length, 3, '다음 갱신에도 같은 줄을 덧붙이지 않는다')
+})
+
+
+test('Codex functions.exec는 코드를 실행하지 않고 작업만 요약하며 Python과 일치', () => {
+  const fixture = require('../athena/test/fixtures/codex-exec-monitor.json')
+  for (const { label, record, summary, text } of fixture) {
+    const event = feed.eventsFromRecord(record)[0]
+    assert.deepEqual(event.exec, summary, label)
+    assert.equal(event.text, summary.value, label)
+    const { execSummaryText } = require('../src/lib/monitor-text.mts')
+    const i18n = require('../src/lib/i18n.mts')
+    const say = i18n.translator(require('../src/i18n/ko.json'))
+    assert.equal(execSummaryText(say, event.exec), text, label)
+    assert.equal(event.icon, '⚙', label)
+    assert.equal(event.text.includes('PRIVATE_MARKER'), false, label)
+    assert.equal(event.text.includes('tools.'), false, label)
+  }
+  assert.equal(globalThis.MONITOR_MUST_NOT_RUN, undefined)
+  const result = spawnSync('python3', ['-c', `
+import importlib.util,json,sys
+spec=importlib.util.spec_from_file_location('monitor',sys.argv[1])
+m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
+fixture=json.load(sys.stdin)
+rows=[]
+for item in fixture:
+    record=m.codex_message(item['record'])
+    block=record['message']['content'][0]
+    rows.append({'record':record,'text':m.summarize_tool(block['name'],block['input'])})
+print(json.dumps(rows))
+`, path.join(__dirname, '../athena/scripts/agent-monitor.py')], { input: JSON.stringify(fixture), encoding: 'utf8' })
+  assert.equal(result.status, 0, result.stderr)
+  const python = JSON.parse(result.stdout)
+  assert.deepEqual(python.map(item => item.record), fixture.map(item => feed.codexRecord(item.record)))
+  assert.deepEqual(python.map(item => item.text), fixture.map(item => item.text))
+})
+
+
+test('code-mode 시스템 요약은 화면 언어로, 원문 title·명령은 그대로', () => {
+  const { execSummaryText } = require('../src/lib/monitor-text.mts')
+  const { translator } = require('../src/lib/i18n.mts')
+  const fixture = require('../athena/test/fixtures/codex-exec-monitor.json')
+  const first = feed.eventsFromRecord(fixture[0].record)[0]
+  const expected = { ko: '명령 실행', en: 'Run command', ja: 'コマンド実行', zh: '运行命令' }
+  for (const lang of ['ko', 'en', 'ja', 'zh']) {
+    const say = translator(require(`../src/i18n/${lang}.json`))
+    assert.equal(execSummaryText(say, first.exec), `${expected[lang]} · git status --short`)
+    const provided = feed.eventsFromRecord(fixture.find(item => item.label === '기존 title').record)[0]
+    assert.equal(execSummaryText(say, provided.exec), '수정 확인', '제공된 title은 번역하지 않는다')
+    for (const item of fixture) {
+      const event = feed.eventsFromRecord(item.record)[0]
+      const text = execSummaryText(say, event.exec)
+      assert.equal(text.includes('PRIVATE_MARKER'), false)
+      assert.equal(/\{(?:n|text)\}/.test(text), false)
+    }
+  }
+  const english = translator(require('../src/i18n/en.json'))
+  const batch = feed.eventsFromRecord(fixture.find(item => item.label === '여러 작업').record)[0]
+  assert.equal(execSummaryText(english, batch.exec), 'Run command · git status · 1 more')
 })

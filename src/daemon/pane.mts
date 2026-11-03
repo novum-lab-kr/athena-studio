@@ -40,6 +40,8 @@ export class Pane {
   declare waiters: Set<Waiter>
   declare ptySize: { cols: number; rows: number }
   declare screen: InstanceType<typeof Terminal>
+  declare mouseEncoding?: 1006 | 1016 | null
+  declare mouseEncodingReady?: Promise<void>
   declare serializer: InstanceType<typeof SerializeAddon>
   declare pty: IPty
   declare pid: number
@@ -63,6 +65,7 @@ export class Pane {
     this.screen = new Terminal({ cols, rows, scrollback: SCROLLBACK, allowProposedApi: true })
     this.serializer = new SerializeAddon()
     this.screen.loadAddon(this.serializer)
+    void this.prepareSnapshot()
     // 화면(renderer)의 xterm 과 같은 폭 규칙 — 이모지를 두 칸으로 센다
     this.screen.loadAddon(new Unicode11Addon())
     this.screen.unicode.activeVersion = '11'
@@ -113,9 +116,36 @@ export class Pane {
     } catch {}
   }
 
+  // serialize가 빠뜨리는 마우스 인코딩만 공개 parser API로 관찰한다.
+  // xterm 6의 공개 모드 API에는 인코딩이 없다. 실제 parser에 조회를 쓰면 미완성 CSI를 끊으므로
+  // 고정된 xterm의 읽기 전용 상태만 읽는다. 의존성 변경 시 복원 회귀가 이 계약을 확인한다.
+  prepareSnapshot(): Promise<void> {
+    if (this.mouseEncodingReady) return this.mouseEncodingReady
+    const terminal = this.screen as unknown as { _core?: { coreMouseService?: { activeEncoding?: unknown } } }
+    const encoding = terminal._core?.coreMouseService?.activeEncoding
+    this.mouseEncoding = null
+    if (encoding === 'SGR') this.mouseEncoding = 1006
+    else if (encoding === 'SGR_PIXELS') this.mouseEncoding = 1016
+    for (const final of ['h', 'l']) {
+      this.screen.parser.registerCsiHandler({ prefix: '?', final }, (params) => {
+        for (const mode of params) {
+          if (mode === 1006 || mode === 1016) this.mouseEncoding = final === 'h' ? mode : null
+        }
+        return false // xterm의 원래 모드 처리도 계속한다.
+      })
+    }
+    this.screen.parser.registerEscHandler({ final: 'c' }, () => {
+      this.mouseEncoding = null
+      return false
+    })
+    this.mouseEncodingReady = Promise.resolve()
+    return this.mouseEncodingReady
+  }
+
   // 앱이 다시 붙을 때 보낼 화면(색·커서·대체 화면 포함)
   snapshot(): string {
-    return this.serializer.serialize({ scrollback: SCROLLBACK })
+    const encoding = this.mouseEncoding ? `\x1b[?${this.mouseEncoding}h` : ''
+    return this.serializer.serialize({ scrollback: SCROLLBACK }) + encoding
   }
 
   // 버퍼 줄들 — recent 는 scrollback 포함 전부, visible 은 지금 화면

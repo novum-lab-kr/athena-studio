@@ -13,14 +13,14 @@
 #      빈 자리를 잡고 둘 다 차면 기다린다(레포·워크트리 무관). 둘째 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 40) 이상이고
 #      1분 부하가 ATHENA_HEAVY_MAX_LOAD(기본 = 코어 수) 미만일 때만 잡는다 — 아니면(못 읽을 때도) 첫 자리를 기다린다(xcodebuild 처럼 코어를 다 쓰는 명령이 겹치면 부하가 폭주한다 — 2026-10-30)
 #   2. 부하 대기 — 1분 부하 평균이 코어 수 × ATHENA_HEAVY_LOAD(기본 1.2) 를 넘으면 내려갈 때까지 기다린다
-#      (다른 세션의 QA dev 서버·Spotlight·보안 프로그램처럼 잠금 밖의 부하도 같이 본다)
+#      (다른 세션의 개발 서버·Spotlight·보안 프로그램처럼 잠금 밖의 부하도 같이 본다)
 #   3. 명령을 돌리고, 끝나거나 실패하거나 끊겨도 잠금을 푼다. 주인이 죽은 잠금(프로세스 없음)은 치우고 잡는다
 #   4. 감시 — 도는 동안 5초마다 본다. 자식 프로세스가 ATHENA_HEAVY_MAX_PROCS(기본 300)를 넘거나
 #      메모리 여유가 ATHENA_HEAVY_MIN_FREE %(기본 15 — macOS memory_pressure · 리눅스 /proc/meminfo, 못 읽으면 한 번 알리고 끈다) 아래로 떨어지면 그 명령과 자식을 모두 끄고 137 로 끝난다
 #      (next dev 가 postcss 작업자를 1609개까지 띄워 메모리 70GB·부하 100 까지 간 일 뒤에 넣었다 — 2026-10-02)
 # 기다리는 동안 30초마다 "⏳ 대기 — 이유" 를 한 줄 찍는다. 최대 대기 ATHENA_HEAVY_WAIT 초(기본 1800) 넘으면 포기하고 75 로 끝난다.
 #   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite · storybook dev · node <…>/dev-app.js start)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
-#      지나면 자리를 놓고 다음 차례를 돌린다. 감시(4)는 놓은 뒤에도 끝까지 간다. 근거: qa/run.mjs 가 서버를 "URL 이 답할 때" 를 시작 끝으로 보고,
+#      지나면 자리를 놓고 다음 차례를 돌린다. 감시(4)는 놓은 뒤에도 끝까지 간다.
 #      폭주(2026-10-02)는 시작할 때가 아니라 오래 도는 동안 자식이 늘어난 것이다. 놓고 싶지 않으면 ATHENA_HEAVY_DEV_RELEASE=0
 #   6. 기다린 시간·이유는 안쪽 명령에 환경으로 넘긴다(ATHENA_HEAVY_WAIT_SEC · ATHENA_HEAVY_WAIT_WHY) — 검증 스크립트가 결과·사건 기록에 남긴다
 set -uo pipefail

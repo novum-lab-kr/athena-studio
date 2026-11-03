@@ -111,7 +111,7 @@
   @media (min-width: 721px) and (min-height: 560px) {
     body { height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
     header { flex: none; }
-    #view-now:not([hidden]), #view-history:not([hidden]), #view-qa:not([hidden]), #view-learn:not([hidden]), #view-metrics:not([hidden]) { flex: 1; min-height: 0; overflow-y: auto; }
+    #view-now:not([hidden]), #view-history:not([hidden]), #view-learn:not([hidden]), #view-metrics:not([hidden]) { flex: 1; min-height: 0; overflow-y: auto; }
   }
   .actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
   button, select, textarea { font: inherit; color: inherit; }
@@ -402,26 +402,9 @@
   @media (max-width: 720px) { .history-wrap { grid-template-columns: minmax(0, 1fr); } .h-tree { position: static; max-height: 240px; } }
   @media (max-width: 720px) { .h-row { grid-template-columns: minmax(0, 1fr); gap: 4px; } }
   @media (max-width: 720px) { header { flex-wrap: wrap; } .usage { margin-left: 0; } main { padding: 12px 16px 32px; } }
-  /* QA 탭 — 서비스 → 층 → 흐름 */
-  .qa-state { font-size: 12.5px; color: var(--muted); margin: 0 0 10px; }
-  .qa-state:empty { display: none; }
-  .qa-service { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; margin: 0 0 12px; }
-  .qa-service-head { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; }
-  .qa-service-head h3 { margin: 0; font-size: 14px; flex: 1; }
-  .qa-layer-name { font-size: 11.5px; font-weight: 600; color: var(--muted); margin: 10px 0 4px; }
-  .qa-flow { border-top: 1px solid var(--line); padding: 6px 0; }
-  .qa-flow-row { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; font-size: 13px; }
-  .qa-flow-name { flex: 1 1 200px; min-width: 0; word-break: break-all; }
-  .qa-flow-name a { color: inherit; }
-  .qa-flow-meta { color: var(--muted); font-size: 12px; }
-  .qa-mark.pass { color: var(--ok); } .qa-mark.fail, .qa-mark.error { color: var(--bad); } .qa-mark.manual, .qa-mark.running { color: var(--warn); } .qa-mark.none { color: var(--muted); }
-  .qa-fail { margin: 6px 0 0; padding: 6px 8px; background: color-mix(in srgb, var(--bad) 8%, transparent); border-radius: 6px; font-size: 12px; }
-  .qa-fail b { display: block; margin-bottom: 2px; }
-  .qa-fail pre { margin: 0; white-space: pre-wrap; word-break: break-word; font: 11.5px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; }
-  .qa-empty { color: var(--muted); font-size: 12.5px; margin: 4px 0; }
-  .qa-switch { display: inline-flex; gap: 4px; margin: 0 0 10px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
-  .qa-switch button { font: inherit; font-size: 12.5px; border: 0; background: none; color: var(--muted); padding: 4px 14px; border-radius: 999px; cursor: pointer; }
-  .qa-switch button[aria-selected="true"] { background: var(--accent); color: #fff; }
+  .view-switch { display: inline-flex; gap: 4px; margin: 0 0 10px; padding: 3px; background: var(--panel); border: 1px solid var(--line); border-radius: 999px; }
+  .view-switch button { font: inherit; font-size: 12.5px; border: 0; background: none; color: var(--muted); padding: 4px 14px; border-radius: 999px; cursor: pointer; }
+  .view-switch button[aria-selected="true"] { background: var(--accent); color: #fff; }
   dialog.tc-guide { width: min(860px, calc(100vw - 32px)); font-size: 12.5px; }
   .tc-guide .body { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 10px 18px; max-height: 70vh; overflow: auto; }
   .tc-guide h4 { margin: 6px 0 4px; font-size: 12.5px; }
@@ -437,7 +420,6 @@
     <span class="tip" role="tooltip"><span id="live-state"></span><span id="updated"></span><span id="sync"></span></span></h1>
   <nav class="tabs" role="tablist" aria-label="보기">
     <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
-    <button type="button" role="tab" id="tab-qa" data-tab="qa" aria-selected="false" title="흐름별 TC 결과">QA</button>
     <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 개인 메모리(Claude · Codex)">학습</button>
     <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
     <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)">지표</button>
@@ -455,13 +437,7 @@
     <div id="issues" class="issue-list"></div>
   </section>
 </main>
-<main id="view-qa" hidden>
-  <section>
-    <h2>QA — 흐름별 TC 결과 (레포 docs/flows · .qa-runs/)</h2>
-    <div class="qa-state" id="qa-state" aria-live="polite"></div>
-    <div id="qa-services"><div class="empty-history">불러오는 중이에요…</div></div>
-  </section>
-</main>
+
 <main id="view-history" hidden>
   <section>
     <h2>아카이브 — 끝나서 보관한 일 (archive/, git 에 남아요)</h2>
@@ -494,7 +470,7 @@
 </main>
 <main id="view-learn" hidden>
   <section>
-    <div class="qa-switch" role="tablist" aria-label="학습 보기">
+    <div class="view-switch" role="tablist" aria-label="학습 보기">
       <button type="button" role="tab" data-learnview="hermes" aria-selected="true">아테나 학습</button>
       <button type="button" role="tab" data-learnview="claude" aria-selected="false">개인 메모리</button>
     </div>
@@ -512,7 +488,7 @@
       <div><h2>개인 메모리</h2><p class="where">대화에서 기억한 내용 · 이 컴퓨터에만 저장 · 읽기 전용</p></div>
       <button type="button" class="btn" id="memory-guide-open" title="메모리 보는 법 — 사용자 · 피드백 · 프로젝트 · 참고 뜻">메모리 보는 법</button>
     </div>
-    <div id="memory-filter" class="qa-switch memory-filter" role="group" aria-label="메모리 출처">
+    <div id="memory-filter" class="view-switch memory-filter" role="group" aria-label="메모리 출처">
       <button type="button" data-memory-source="all" aria-pressed="true">전체</button>
       <button type="button" data-memory-source="claude" aria-pressed="false">Claude</button>
       <button type="button" data-memory-source="codex" aria-pressed="false">Codex</button>
@@ -1364,70 +1340,6 @@
   };
   if (typeof ResizeObserver !== 'undefined') new ResizeObserver(resizeMetrics).observe(document.getElementById('metrics'));
   else window.addEventListener('resize', resizeMetrics);
-  // ── QA 탭 — 서비스 → 층 → 흐름별 마지막 결과(레포 docs/flows · .qa-runs/). 돌고 있는 동안만 1.5초마다 다시 읽는다
-  const QA_LAYER = { fe: 'FE', be: 'BE', app: '앱 — 체크리스트 · 실행 없음' };
-  const QA_MARK = { pass: '✅ 통과', fail: '❌ 실패', error: '⚠️ 오류', manual: '✋ 사람 확인', running: '⏳ 실행 중' };
-  let qaTimer = null;
-  const qaWhen = (iso) => (iso ? iso.slice(0, 16).replace('T', ' ') : '');
-  const qaFlowRow = (service, layer, item) => {
-    const result = item.result;
-    const cases = result?.cases || [];
-    const passed = cases.filter((entry) => entry.status === 'pass').length;
-    const failed = cases.filter((entry) => entry.status === 'fail');
-    const name = item.docUrl ? `<a href="${esc(item.docUrl)}" target="_blank" rel="noopener">${esc(item.flow)}</a>` : esc(item.flow);
-    let mark = '<span class="qa-mark none">— 실행 전</span>';
-    if (layer === 'app') mark = '<span class="qa-mark none">문서</span>';
-    else if (!item.hasTc) mark = '<span class="qa-mark none">TC 없음</span>';
-    else if (result) mark = `<span class="qa-mark ${esc(result.status)}">${esc(QA_MARK[result.status] || result.status)}</span>`;
-    const counts = cases.length ? `<span class="qa-flow-meta">${passed} 통과 · ${failed.length} 실패 · 전체 ${cases.length}</span>` : '';
-    const when = result ? `<span class="qa-flow-meta" title="${esc(result.ref)}">${esc(qaWhen(result.ranAt))}</span>` : '';
-    const run = layer !== 'app' && item.hasTc ? `<button type="button" class="btn" data-qa-service="${esc(service)}" data-qa-layer="${esc(layer)}" data-qa-flow="${esc(item.flow)}">실행</button>` : '';
-    const flowError = result?.error ? `<div class="qa-fail"><pre>${esc(result.error)}</pre></div>` : '';
-    const caseErrors = failed.map((entry) => `<div class="qa-fail"><b>${esc(entry.id)} · ${esc(entry.branch)}</b><pre>${esc(entry.error)}</pre></div>`).join('');
-    return `<div class="qa-flow"><div class="qa-flow-row">${mark}<span class="qa-flow-name">${name}</span>${counts}${when}${run}</div>${flowError}${caseErrors}</div>`;
-  };
-  const renderQa = (data) => {
-    const stateBox = document.getElementById('qa-state');
-    if (data.running) stateBox.textContent = `⏳ 실행 중 · ${data.running.id}`;
-    else if (data.waiting) stateBox.textContent = `⏳ 차례 대기 중${data.heavy ? ` · 지금 ${data.heavy}` : ''}`;
-    else stateBox.textContent = '';
-    const busy = Boolean(data.running || data.waiting);
-    const box = document.getElementById('qa-services');
-    if (!data.services.length) {
-      box.innerHTML = '<div class="empty-history">이 팩에 서비스가 없어요</div>';
-      return busy;
-    }
-    box.innerHTML = data.services.map((service) => {
-      const canRun = service.layers.some((entry) => entry.layer !== 'app' && entry.flows.some((item) => item.hasTc));
-      const layers = service.layers.map((entry) => `<div class="qa-layer-name">${esc(QA_LAYER[entry.layer] || entry.layer)}</div>${entry.flows.map((item) => qaFlowRow(service.name, entry.layer, item)).join('')}`).join('');
-      const empty = service.error ? `<p class="qa-empty">${esc(service.error)}</p>` : '<p class="qa-empty">흐름 문서 없음</p>';
-      return `<div class="qa-service"><div class="qa-service-head"><h3>${esc(service.name)}</h3>${canRun ? `<button type="button" class="btn" data-qa-service="${esc(service.name)}">전체 실행</button>` : ''}</div>${layers || empty}</div>`;
-    }).join('');
-    box.querySelectorAll('button[data-qa-service]').forEach((button) => { button.disabled = busy; });
-    return busy;
-  };
-  const loadQa = async () => {
-    clearTimeout(qaTimer);
-    try {
-      const data = await (await fetch('/api/qa/flows')).json();
-      if (renderQa(data)) qaTimer = setTimeout(loadQa, 1500);
-    } catch (error) {
-      document.getElementById('qa-services').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
-    }
-  };
-  const stopQa = () => clearTimeout(qaTimer);
-  document.getElementById('qa-services').addEventListener('click', async (event) => {
-    const button = event.target.closest('button[data-qa-service]');
-    if (!button) return;
-    const { qaService: service, qaLayer: layer, qaFlow: flow } = button.dataset;
-    try {
-      await api('/api/qa-run', { service, layer, flow });
-      toast(`QA 를 시작했어요 · ${service}`);
-      loadQa();
-    } catch (error) {
-      toast(`실패: ${error.message}`);
-    }
-  });
   document.getElementById('memory-guide-open').onclick = () => document.getElementById('memory-guide').showModal();
   document.getElementById('memory-guide-close').onclick = () => document.getElementById('memory-guide').close();
 
@@ -1814,7 +1726,7 @@
   };
   document.querySelectorAll('[data-learnview]').forEach((button) => { button.onclick = () => showLearnView(button.dataset.learnview); });
 
-  const TABS = ['now', 'qa', 'learn', 'history', 'metrics'];
+  const TABS = ['now', 'learn', 'history', 'metrics'];
   const showTab = (tab) => {
     for (const name of TABS) {
       document.getElementById(`view-${name}`).hidden = name !== tab;
@@ -1823,7 +1735,6 @@
     if (tab === 'history') loadHistory();
     if (tab === 'metrics') loadMetrics();
     if (tab === 'learn') showLearnView(learnView);
-    if (tab === 'qa') loadQa(); else stopQa();
     try { history.replaceState(null, '', tab === 'now' ? location.pathname : `#${tab}`); } catch (error) { /* 무시 */ }
   };
   document.querySelectorAll('.tabs [data-tab]').forEach((button) => { button.onclick = () => showTab(button.dataset.tab); });

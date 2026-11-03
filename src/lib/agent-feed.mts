@@ -1,15 +1,17 @@
 // 에이전트 모니터 — Claude Code(~/.claude/projects)·Codex(~/.codex/sessions) 기록 한 줄을 화면 이벤트로.
 // 아테나 scripts/agent-monitor.py 와 같은 규칙(도구 아이콘 · 요약 · pane 세션의 사용자 지시). Electron 없이 돌아 `npm test` 로 검사한다
 import path from 'node:path'
+import { isExecSummary } from './monitor-text.mts'
+import type { ExecSummary } from './monitor-text.mts'
 
 // 기록 JSON 의 객체 하나(모양은 칸마다 따로 본다)
 type Loose = Record<string, unknown>
 
 // github — 현황판 GitHub 이슈 감시가 아테나에 맡긴 이슈(githubIssueEvents). 화면이 이 칸으로 문구를 지어 보인다(text 는 제목)
 export type GithubIssueMark = { repo: string; number: number; title: string }
-export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; github?: GithubIssueMark }
+export type FeedEvent = { kind: 'tool' | 'say' | 'user'; icon: string; name: string; text: string; at: string | null; model?: string; exec?: ExecSummary; github?: GithubIssueMark }
 
-export const TOOL_ICON: Record<string, string> = { Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
+export const TOOL_ICON: Record<string, string> = { Exec: '⚙', Bash: '⚙', Read: '📖', Grep: '🔍', Glob: '📁', Edit: '✏️', Write: '📝', Agent: '🤖', WebFetch: '🌐', SubagentHandback: '📨' }
 
 function isLoose(value: unknown): value is Loose {
   return Boolean(value) && typeof value === 'object'
@@ -42,12 +44,97 @@ export function summarizeTool(name: string, input: unknown): string {
     const changes = Array.isArray(value.changes) ? value.changes : []
     return changes.filter(isLoose).map(change => `${oneLine(change.kind)} ${oneLine(change.path)}`).join(' · ') || 'apply_patch'
   }
+  if (name === 'Exec') return isExecSummary(value.summary) ? value.summary.value : ''
   if (name === 'Bash') return oneLine(value.description || value.command)
   if (name === 'Read' || name === 'Edit' || name === 'Write') return oneLine(value.file_path)
   if (name === 'Grep' || name === 'Glob') return oneLine(`${value.pattern || ''}  in ${value.path || ''}`)
   if (name === 'SubagentHandback') return '최종 보고 전송'
   if (name === 'Agent') return oneLine(value.description || value.subagent_type)
   return oneLine(JSON.stringify(value))
+}
+
+// code-mode 리터럴의 제어 문자는 모니터·터미널에 그대로 보내지 않는다.
+const execText = (value: unknown): string => oneLine(value).replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
+
+// 단순한 code-mode 도구 호출만 읽는다. 문자열·주석 속 호출은 해석하지 않고,
+// 변수 계산·제어 흐름 등은 실행하거나 추측하지 않고 기본 안내로 돌린다.
+function execSummary(code: unknown): ExecSummary {
+  const fallback: ExecSummary = { kind: 'command', value: '', count: 1 }
+  if (typeof code !== 'string' || code.length > 64_000) return fallback
+  type Token = { raw: string; text?: string }
+  const tokens: Token[] = []
+  const pattern = /\/\/[^\r\n]*|\/\*[\s\S]*?\*\/|"(?:\\[\s\S]|[^"\\])*"|'(?:\\[\s\S]|[^'\\])*'|`(?:\\[\s\S]|[^`\\])*`|[A-Za-z_$][\w$]*|[^\s]/g
+  for (const match of code.matchAll(pattern)) {
+    const raw = match[0]
+    if (raw.startsWith('//') || raw.startsWith('/*')) continue
+    let text: string | undefined
+    if (raw.length >= 2 && /^["'`]/.test(raw) && raw.at(-1) === raw[0]) {
+      if (raw[0] === '`' && raw.includes('${')) return fallback
+      let valid = true
+      text = raw.slice(1, -1).replace(/\\(u[\da-fA-F]{4}|x[\da-fA-F]{2}|[\s\S])/g, (_escape, part: string) => {
+        const escapes: Record<string, string> = { n: '\n', r: '\r', t: '\t', b: '\b', f: '\f', v: '\v', '0': '\0', '\\': '\\', '"': '"', "'": "'", '`': '`', '\n': '' }
+        if (/^(?:u[\da-fA-F]{4}|x[\da-fA-F]{2})$/.test(part)) return String.fromCharCode(parseInt(part.slice(1), 16))
+        if (part in escapes) return escapes[part]!
+        valid = false
+        return ''
+      })
+      if (!valid) return fallback
+    }
+    tokens.push({ raw, ...(text !== undefined && { text }) })
+  }
+  let index = 0
+  const take = (raw: string): boolean => {
+    if (tokens[index]?.raw !== raw) return false
+    index += 1
+    return true
+  }
+  const summaries: Omit<ExecSummary, 'count'>[] = []
+  while (index < tokens.length) {
+    const wrapped = take('text')
+    if (wrapped && !take('(')) return fallback
+    take('await')
+    if (!take('tools') || !take('.')) return fallback
+    const method = tokens[index++]?.raw
+    if (!method || !/^[\w$]+$/.test(method) || !take('(')) return fallback
+    const patch = tokens[index]?.text
+    if (patch !== undefined) index += 1
+    else if (!take('{')) return fallback
+    const fields: Record<string, string> = {}
+    while (patch === undefined && tokens[index]?.raw !== '}') {
+      const key = tokens[index++]
+      if (!key || !/^[\w$]+$/.test(key.text ?? key.raw) || !take(':')) return fallback
+      const start = index
+      const closing: string[] = []
+      while (index < tokens.length) {
+        const lexeme = tokens[index]!
+        if (lexeme.text === undefined) {
+          if (closing.length === 0 && [',', '}'].includes(lexeme.raw)) break
+          if (['(', '[', '{'].includes(lexeme.raw)) closing.push({ '(': ')', '[': ']', '{': '}' }[lexeme.raw]!)
+          else if ([')', ']', '}'].includes(lexeme.raw) && closing.pop() !== lexeme.raw) return fallback
+        }
+        index += 1
+      }
+      if (closing.length || index === start) return fallback
+      const literal = index === start + 1 ? tokens[start]?.text : undefined
+      delete fields[key.text ?? key.raw]
+      if (literal !== undefined) fields[key.text ?? key.raw] = literal
+      if (!take(',')) break
+    }
+    if ((patch === undefined && !take('}')) || !take(')') || (wrapped && !take(')'))) return fallback
+    take(';')
+    const title = execText(fields.title || fields.description).slice(0, 120)
+    if (['exec_command', 'shell_command', 'shell'].includes(method)) {
+      const command = execText((fields.cmd || fields.command || '').split(/\r?\n/)[0]).slice(0, 120)
+      summaries.push({ kind: 'command', value: title || command })
+    } else if (method === 'view_image') {
+      const file = execText(fields.path).slice(0, 120)
+      summaries.push({ kind: 'image', value: title || file })
+    } else if (method === 'apply_patch') {
+      const changes = patchChanges(patch).map(change => `${change.kind} ${execText(change.path)}`).join(' · ').slice(0, 120)
+      summaries.push({ kind: 'patch', value: changes })
+    } else summaries.push({ kind: 'tool', value: title })
+  }
+  return summaries.length ? { ...summaries[0]!, count: summaries.length } : fallback
 }
 
 // Codex가 기록한 모델만 사용한다. 모델 문맥이 없는 줄은 undefined, 명시적으로 비었으면 null.
@@ -95,6 +182,10 @@ export function codexRecord(record: unknown, model?: string | null): Loose {
   if (name.split('.').at(-1) === 'apply_patch') {
     name = 'apply_patch'
     input = { changes: patchChanges(input.patch ?? input.input) }
+  } else if (name.split('.').at(-1) === 'exec') {
+    name = 'Exec'
+    const title = [input.title, input.description, value.title, value.description].find(item => typeof item === 'string' && item.trim())
+    input = { summary: title ? { kind: 'provided', value: execText(title).slice(0, 160), count: 1 } : execSummary(input.input ?? input.code) }
   } else if (['exec_command', 'shell_command', 'shell'].includes(name.split('.').at(-1) || '')) {
     name = 'Bash'
     const cmd = input.cmd || input.command || ''
@@ -179,7 +270,8 @@ export function eventsFromRecord(record: unknown): FeedEvent[] {
     if (!isLoose(block)) continue
     if (block.type === 'tool_use') {
       const name = String(block.name || '')
-      events.push({ kind: 'tool', icon: toolIcon(name, block.input), name, text: summarizeTool(name, block.input), at, ...(model && { model }) })
+      const summary = isLoose(block.input) ? block.input.summary : undefined
+      events.push({ kind: 'tool', icon: toolIcon(name, block.input), name, text: summarizeTool(name, block.input), at, ...(model && { model }), ...(name === 'Exec' && isExecSummary(summary) && { exec: summary }) })
     } else if (block.type === 'text' && record.type === 'assistant') {
       const text = oneLine(block.text)
       if (text.length > 3) events.push({ kind: 'say', icon: '💬', name: '', text, at, ...(model && { model }) })

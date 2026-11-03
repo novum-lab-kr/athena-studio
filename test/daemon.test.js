@@ -190,7 +190,8 @@ test('데몬 + CLI: 탭 · 분할 · 쓰기 · 기다리기 · 읽기 · 목록 
     assert.equal(Object.keys(list[0]).length, 16)
     assert.deepEqual(list.map((pane) => pane.rows), [30, 30])
     assert.ok(list[1].cols > list[0].cols * 2 && list[0].cols + list[1].cols <= 100, JSON.stringify(list.map((pane) => pane.cols)))
-    assert.equal((await cli(daemon.socket, ['pane', 'is-shell', 'p2'])).code, 0)
+    // 프로세스 목록은 1초 캐시라 이전 echo가 끝난 상태가 반영될 때까지 기다린다.
+    await waitFor(async () => (await cli(daemon.socket, ['pane', 'is-shell', 'p2'])).code === 0, 'p2 셸 대기 상태')
     assert.equal(JSON.parse((await cli(daemon.socket, ['pane', 'current'])).stdout).pane.id, 'p1')
 
     // 앱이 떨어졌다 다시 붙으면 화면이 되살아난다(직렬화에 출력이 들어 있다)

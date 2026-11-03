@@ -94,6 +94,13 @@ with tempfile.TemporaryDirectory() as tmp:
             check(f"{kind} 작업·경로 요약", summary.startswith("Add new.txt") and "Update old.txt" in summary)
         malformed = row("response_item", {"type": "custom_tool_call", "name": "apply_patch", "input": "FAKE_PATCH_MARKER"})
         check("잘못된 패치도 본문 비노출", "FAKE_PATCH_MARKER" not in " ".join(m.render(t, malformed)))
+        fixture = json.loads(pathlib.Path(sys.argv[1], "test/fixtures/codex-exec-monitor.json").read_text())
+        for item in fixture:
+            record = m.codex_message(item["record"])
+            block = record["message"]["content"][0]
+            check(f"code-mode 요약 — {item['label']}", block["name"] == "Exec" and block["input"] == {"summary": item["summary"]})
+            rendered = " ".join(m.render(t, json.dumps(item["record"])))
+            check(f"code-mode 내부 코드 비노출 — {item['label']}", "PRIVATE_MARKER" not in rendered and "tools." not in rendered and "⚙" in rendered)
         check("Codex 잘못된 arguments는 건너뜀", m.render(t, row("response_item", {"type": "function_call", "name": "exec_command", "arguments": "{"})) == [])
         check("Codex 도구 출력·이벤트 중복은 표시 안 함", m.render(t, row("response_item", {"type": "function_call_output", "output": "가짜 출력"})) == [] and m.render(t, row("event_msg", {"type": "item_completed", "item": {"type": "AgentMessage", "text": "중복"}})) == [])
         with open(active, "a") as f: f.write(command[:-1])
