@@ -93,3 +93,19 @@ test('/exit 화면이 먼저 사라지고 프로세스 판정이 늦어도 추�
   })
   assert.deepEqual(writes, [paste('/exit'), '\r'])
 })
+
+// 코어 scripts/lead-send.py 는 이 두 거절(글을 쓰기 전)만 "모아 뒀다 다시 넣기" 로 본다 — 다른 오류는 글이 들어갔을 수 있어 다시 넣지 않는다.
+// 데몬 쪽 글을 바꾸면 lead-send.py NOT_WRITTEN 도 같이 바꾼다
+test('lead-send.py 가 다시 넣어도 되는 거절로 보는 글이 데몬 글과 같다', async () => {
+  const { readFileSync } = require('node:fs')
+  const { join } = require('node:path')
+  const root = join(__dirname, '..')
+  const leadSend = readFileSync(join(root, 'athena/scripts/lead-send.py'), 'utf8')
+  const daemon = readFileSync(join(root, 'src/daemon/daemon.mts'), 'utf8')
+  const waiting = await submitText('x', { read: async () => ({ ...claude(''), waiting: true }), write: () => {} }).catch((error) => error)
+  assert.equal(waiting.code, 'unavailable')
+  assert.ok(leadSend.includes(`'${waiting.message}'`))
+  const busy = daemon.match(/pane\.submitting\) throw failure\('unavailable', '([^']+)'\)/)?.[1]
+  assert.ok(busy)
+  assert.ok(leadSend.includes(`'${busy}'`))
+})

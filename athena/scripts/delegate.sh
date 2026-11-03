@@ -124,12 +124,13 @@ if [ -z "${ATHENA_AGENT:-}" ]; then
   LEAD_PANE="$( (eval "$("$SCREEN" self --format sh 2>/dev/null)"; printf '%s' "${SCREEN_PANE_ID:-}") 2>/dev/null )"
 fi
 if [ -n "$LEAD_PANE" ]; then
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $SCREEN pane send-text $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' --enter — 보냈다고 한 줄 알린다. "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 직접 보낸다: $ATHENA_DIR/scripts/lead-send.py $LEAD_PANE '[$AGENT → 아테나] <무엇을·왜 · 계획서 경로 · 사용자 지시면 그 말>' — 보냈다고 한 줄 알린다. "
 else
-  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 pane send-text <pane> '[$AGENT → 아테나] …' --enter). "
+  LEAD_RULE="아테나에게 넘길 일(여러 레포 작업의 push·PR, 보호 훅이 막은 merge·dev 반영, 담당 레포 밖 수정)은 사용자에게 전해 달라고 하지 말고 아테나 pane 에 직접 보낸다($SCREEN pane list 로 아테나 pane 을 찾아 $ATHENA_DIR/scripts/lead-send.py <pane> '[$AGENT → 아테나] …'). "
 fi
-# 아테나에게 보내기가 실패하면 우회하지 않고 요청으로 남긴다(GitHub 이슈 #134) — 반쯤 전달되거나 사라지지 않게
-LEAD_RULE="${LEAD_RULE}보내기가 실패하면 우회하지 말고 요청으로 남긴다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때' · --plan $PLAN). "
+# 아테나가 지금 못 받으면(질문 · 고르기 창) lead-send.py 가 모아 뒀다 넣고, 아테나 pane 이 없거나 못 넣으면 요청으로 남긴다(GitHub 이슈 #134) —
+# 에이전트가 따로 요청을 열지 않는다(고를 것 없는 질문이 [작업]에 쌓이지 않게 · 2026-11-03). 명령 자체가 실패했을 때만 계획서에 적는다
+LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 뒀다 저절로 넣고(⏳), 아테나 pane 이 없거나 못 넣으면 요청으로 남긴다(⚠️) — 따로 요청을 열지 않는다. 명령이 실패(❌)했을 때만 우회하지 말고 보낼 글을 계획서에 적고 알린다($ATHENA_DIR/docs/requests.md '아테나에게 보내지 못했을 때'). "
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
