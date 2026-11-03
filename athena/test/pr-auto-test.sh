@@ -872,6 +872,15 @@ printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
   const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
 if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 base 가 바뀜(dev → main)' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ]; then echo "  ✔ 확인 없는 대기 중 base 변경 → 머지 안 함 · 줄에 이유"; else echo "  ✖ 확인 없는 대기 중 base 변경"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
+# 위임 뒤 설정을 바꾸어도 실행 단계는 현재 설정으로 다시 판정한다(가짜 gh · 실제 머지는 없음).
+for CHANGED_SETTING in '"autoMerge": false' '"autoMerge": true, "autoMergeManual": true, "autoMergeConfirm": false' '"autoMerge": true, "autoMergeConfirm": true' '"autoMerge": true, "autoMergeConfirm": false, "autoReview": true'; do
+  rm -rf "$TMP/queue-confirm"; mkdir -p "$TMP/queue-confirm/confirm"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
+  printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "prBase": "main", %s }] }\n' "$CHANGED_SETTING" > "$CORE/athena.config.json"
+  printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1,"worktree":"%s","base":"main","root":"%s","packId":null,"request":null,"noConfirm":true,"reviewOff":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
+  env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
+    const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
+  expect "실행 시 최신 설정 재확인: $CHANGED_SETTING" '! grep -q "^pr merge" "$GH_LOG" && grep -q "검증 대기 — 머지 전에 설정이 바뀜" "$CORE/plans/task/x.md" && [ ! -f "$TMP/queue-confirm/confirm/web-7.json" ]' "$(cat "$TMP/merge.out")"
+done
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
 grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] \
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }

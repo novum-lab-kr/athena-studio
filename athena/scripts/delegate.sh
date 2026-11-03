@@ -135,30 +135,38 @@ LEAD_RULE="${LEAD_RULE}아테나가 지금 못 받으면 그 명령이 모아 �
 # 끝나면 저절로 PR(결정 D3 · 2026-10-25) — 담당 레포가 "autoMerge": true(PR 켬 · main 직접 레포 제외)일 때만 지시에 싣는다(리뷰 · 머지 설정과 상관없이).
 # 켜지 않은 레포는 지금처럼 사용자가 "PR 올려줘" 할 때만
 AUTO_SHIP_RULE=""
-# 올리는 방식 판정은 팩 설정(athena_config)을 매번 읽는다 — 값은 어디에도 복사해 두지 않는다. "<레포> <종류> <머지 설정>" (종류: pr-off · auto-pr · direct · manual)
+# 올리는 방식 판정은 팩 설정(athena_config)을 매번 읽는다 — 값은 어디에도 복사해 두지 않는다. "<레포> <종류> <머지 설정> <리뷰 설정>" (종류: pr-off · auto-pr · direct · manual)
 SHIP_INFO="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
 import sys
-sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load, direct_merge_mode, actions_handoff
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load, merge_mode, actions_handoff
 cfg = load(sys.argv[1]); agent = sys.argv[2]
 for repo in cfg['repos']:
     mine = agent in (repo.get('agents') or []) or agent == repo.get('packagesAgent') or any(app.get('agent') == agent for app in (repo.get('apps') or {}).values())
     if mine:
-        mode = direct_merge_mode(cfg, repo['name'])
+        mode = merge_mode(cfg, repo['name'])
         if repo.get('direct'): kind = 'direct'
         elif actions_handoff(cfg, repo['name']): kind = 'handoff'
         elif repo.get('autoMerge') is True: kind = 'pr-off' if repo.get('autoPr') is False else 'auto-pr'
         else: kind = 'manual'
-        print(f"{repo['name']} {kind} {mode or '-'}")
+        review = 'off' if repo.get('autoReview') is False else 'on'
+        print(f"{repo['name']} {kind} {mode} {review}")
         break
 PYEOF
 )"
 SHIP_KIND="$(awk '{print $2}' <<<"$SHIP_INFO")"; SHIP_MODE="$(awk '{print $3}' <<<"$SHIP_INFO")"
+case "$SHIP_MODE" in
+  auto) MERGE_LABEL="확인 없이 자동 머지" ;;
+  manual) MERGE_LABEL="사람이 직접 머지" ;;
+  *) MERGE_LABEL="확인 후 머지" ;;
+esac
+REVIEW_LABEL="자동 리뷰"
+[ "$(awk '{print $4}' <<<"$SHIP_INFO")" != off ] || REVIEW_LABEL="리뷰 끔"
 AUTO_SHIP_REPO=""
 case "$SHIP_KIND" in pr-off|auto-pr|handoff) AUTO_SHIP_REPO="$(awk '{print $1}' <<<"$SHIP_INFO")" ;; esac
 case "$SHIP_KIND" in
   pr-off) SHIP_LINE="올리는 방식: 바로 머지(PR 끔 · 머지 설정 $SHIP_MODE) — ship.sh --direct-merge. 일반 PR 은 막힌다" ;;
   handoff) SHIP_LINE="올리는 방식: Actions 로 넘기기 — ship.sh --direct-merge 후 다음 일(검증 · 머지 · 배포는 Actions)" ;;
-  auto-pr) SHIP_LINE="올리는 방식: 끝나면 저절로 draft PR(자동 리뷰 · 머지 확인)" ;;
+  auto-pr) SHIP_LINE="올리는 방식: 끝나면 저절로 draft PR($REVIEW_LABEL · $MERGE_LABEL)" ;;
   direct) SHIP_LINE="올리는 방식: main 직접 레포 — ship.sh 가 빨리 감기 push(PR 없음 · 사용자 확인)" ;;
   *) SHIP_LINE="올리는 방식: 사용자가 'PR 올려줘' 라고 할 때만 draft PR" ;;
 esac
@@ -170,6 +178,10 @@ elif [ "$SHIP_KIND" = pr-off ]; then
   AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다 — 레포 하나짜리 작업을 끝냈으면 묻지 않고 ① commit.sh(전체 검증은 여기서 한 번) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge(PR · 제목 · base · 본문 · --yes 없음). 'PR 올려줘' 일 때만 평소 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
 elif [ -n "$AUTO_SHIP_REPO" ]; then
   AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 을 올린다 — 레포 하나짜리 작업을 끝냈으면 말이 없어도 'PR 올려줘' 흐름을 묻지 않고 돈다(열린 PR 이 있으면 push 만). 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
+fi
+# 새 pane 과 재사용 pane 에 같은 현재 설정을 싣는다(예전 대화의 안내보다 먼저).
+if [ "$SHIP_KIND" = auto-pr ]; then
+  AUTO_SHIP_RULE="${AUTO_SHIP_RULE}${SHIP_LINE}. 실행할 때는 ship.sh · 자동 흐름이 다시 읽는 최신 설정을 따른다. "
 fi
 # 에이전트 지시 맨 앞에 계획서를 박는다 — 프롬프트 없이 열어도 계획서를 읽고 시작하게
 # AGENTS.md 5·6절(커밋·push 금지 · 보고 순서 · 비밀값 · heavy.sh)은 agent-context.py 가 이미 싣는다 — 여기서는 되풀이하지 않고 스크립트 경로·절차·5절 원칙(읽을 것 · 범위 커지면 멈춤 · 버그는 재현부터 · 추측 금지)만 둔다('시키지 않은 문구·기능은 더하지 않는다' 는 AGENTS.md · .claude/rules 에 같은 말이 없어 여기 남긴다 — reporting.md 는 자동으로 실리지 않는다)
