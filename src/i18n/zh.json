@@ -700,5 +700,14 @@
   "pane.detail.lead.archived": "已归档",
   "pane.detail.error.board-down": "待办未运行，读不到详情",
   "pane.detail.error.no-pane": "pane 已关闭",
-  "pane.detail.error.default": "读不到详情"
+  "pane.detail.error.default": "读不到详情",
+  "work.permission.notice": "确认窗口通知",
+  "work.permission.title.browser": "{pane} · Browser 权限确认",
+  "work.permission.title.trust": "{pane} · 启动信任确认",
+  "work.permission.title.permission": "{pane} · 权限确认",
+  "work.permission.body.browser": "Browser 权限窗口正在等待。请前往原 pane，核对目标地址以及单次或持续授权的范围，再直接选择。此通知不会授予权限。",
+  "work.permission.body.trust": "启动信任窗口正在等待。文件夹设置或钩子可以执行代码，信任选择可能会保存。请在原 pane 阅读文件、警告和范围后直接选择。",
+  "work.permission.body.permission": "权限窗口正在等待。请在原 pane 核对请求和授权范围后直接选择。此通知不会发送允许或拒绝。",
+  "work.permission.unavailable": "Studio 无法验证此终端窗口的原请求 ID 和响应连接，因此不能在这里发送选择。在 pane 中直接选择后，通知会自动清除。",
+  "work.permission.closed": "原确认窗口已关闭"
 }

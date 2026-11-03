@@ -49,8 +49,8 @@ function WorkBody({ actions }: { actions: WorkActions }) {
             <WorkRow
               key={request.id}
               className="ask"
-              kindLabel={say(`work.kind.${request.kind}`)}
-              title={request.title}
+              kindLabel={say(request.permission ? 'work.permission.notice' : `work.kind.${request.kind}`)}
+              title={request.permission ? say(`work.permission.title.${request.permissionKind || 'permission'}`, { pane: String(request.pane || '') }) : request.title}
               meta={requestMeta(say, request)}
               onClick={() => actions.openRequest(request)}
             />

@@ -6,6 +6,7 @@ const KINDS: readonly string[] = ['decision', 'question']
 const OLD_CORE_ERRORS: readonly string[] = ['usage', 'bad-output']
 
 export type RequestOption = { label: string; desc: string; recommended: boolean }
+export type PermissionKind = 'browser' | 'trust' | 'permission'
 
 // 화면 모양 — 코어 출력에서 그대로 옮기는 칸(plan · html · pane · answer)은 모양을 검사하지 않는다(unknown)
 export type StudioRequest = {
@@ -19,6 +20,7 @@ export type StudioRequest = {
   pane: unknown
   // 허락 창 알림인지 — 코어 허락 훅이 여는 요청(키 perm:<pane> · athena/scripts/lib/pane_request.py watch_permission)
   permission: boolean
+  permissionKind?: PermissionKind
   state: string
   rev: number
   createdAt: string
@@ -113,4 +115,51 @@ export function deliveryLine(request: { id: string; title: string }, answer: { c
 export function newlyOpened<T extends { id: unknown; state: unknown }>(knownIds: Iterable<unknown> | null | undefined, requests: readonly T[] | null | undefined): T[] {
   const known = knownIds instanceof Set ? knownIds : new Set(knownIds || [])
   return (Array.isArray(requests) ? requests : []).filter((request) => request.state === 'open' && !known.has(request.id))
+}
+
+// 화면 원문·명령은 저장하지 않는다. 알림만 다루며 응답 권한이나 키 바인딩은 갖지 않는다.
+// 같은 종류를 3초 이상 두 번 확인한 뒤 표시하고, 닫힌 읽기가 2회 이어질 때까지 다시 그리기를 기다린다.
+export function createPermissionTracker() {
+  const prompts = new Map<string, { kind: PermissionKind; since: number; misses: number; seen: number }>()
+  const closedReads = new Map<string, number>()
+  return {
+    reset() { prompts.clear(); closedReads.clear() },
+    observe(observations: { pane: string; kind: PermissionKind | null | undefined }[], now: number) {
+      const alive = new Set(observations.map((item) => item.pane))
+      for (const pane of prompts.keys()) if (!alive.has(pane)) prompts.delete(pane)
+      for (const pane of closedReads.keys()) if (!alive.has(pane)) closedReads.delete(pane)
+      for (const { pane, kind } of observations) {
+        if (kind === undefined) {
+          closedReads.delete(pane) // 읽기 실패는 닫힘의 근거가 아니며 연속 읽기도 끊는다
+          const before = prompts.get(pane)
+          if (before) before.misses = 0
+          continue
+        }
+        const before = prompts.get(pane)
+        if (kind) {
+          closedReads.delete(pane)
+          if (!before || before.kind !== kind) prompts.set(pane, { kind, since: now, misses: 0, seen: 1 })
+          else { before.misses = 0; before.seen += 1 }
+        } else {
+          closedReads.set(pane, (closedReads.get(pane) || 0) + 1)
+          if (before && ++before.misses >= 2) prompts.delete(pane)
+        }
+      }
+      const requests: StudioRequest[] = []
+      for (const [pane, prompt] of prompts) {
+        if (now - prompt.since < 3000 || prompt.seen < 2) continue
+        requests.push({ id: `permission-pane:${pane}:${prompt.since}`, kind: 'question', title: '', body: '', options: [], plan: null, html: null, pane,
+          permission: true, permissionKind: prompt.kind, state: 'open', rev: 1, createdAt: new Date(prompt.since).toISOString(), answer: null })
+      }
+      return { requests, closed: new Set([...closedReads].filter(([, count]) => count >= 2).map(([pane]) => pane)), alive }
+    },
+  }
+}
+
+// 옛 코어 알림도 같은 안전한 표시로 맞춘다. 도구 입력·화면 원문을 표시나 로그로 복사하지 않는다.
+export function permissionView(request: StudioRequest, say: (key: string, values?: Record<string, unknown>) => string): StudioRequest {
+  if (!request.permission) return request
+  const kind = request.permissionKind || 'permission'
+  return { ...request, title: say(`work.permission.title.${kind}`, { pane: String(request.pane || '') }),
+    body: `${say(`work.permission.body.${kind}`)}\n\n${say('work.permission.unavailable')}`, options: [], answer: null }
 }

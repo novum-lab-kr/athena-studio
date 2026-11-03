@@ -700,5 +700,14 @@
   "pane.detail.lead.archived": "アーカイブ済み",
   "pane.detail.error.board-down": "作業リストが停止しているため読めませんでした",
   "pane.detail.error.no-pane": "pane が閉じられました",
-  "pane.detail.error.default": "詳細を読めませんでした"
+  "pane.detail.error.default": "詳細を読めませんでした",
+  "work.permission.notice": "確認画面のお知らせ",
+  "work.permission.title.browser": "{pane} · Browser の権限確認",
+  "work.permission.title.trust": "{pane} · 起動時の信頼確認",
+  "work.permission.title.permission": "{pane} · 権限確認",
+  "work.permission.body.browser": "Browser の権限確認が待機中です。元の pane で接続先と今回のみ・継続的な許可の範囲を確認して、直接選んでください。この通知は権限を許可しません。",
+  "work.permission.body.trust": "起動時の信頼確認が待機中です。フォルダー設定やフックはコードを実行でき、信頼の選択が保存されることがあります。元の pane でファイル・警告・範囲を確認して直接選んでください。",
+  "work.permission.body.permission": "権限確認が待機中です。元の pane で依頼内容と許可の範囲を確認し、直接選んでください。この通知は許可・拒否の応答を送りません。",
+  "work.permission.unavailable": "このターミナル画面の元の依頼 ID と応答接続を確認できないため、ここから選択を送信できません。pane で直接選ぶと通知は自動的に消えます。",
+  "work.permission.closed": "元の確認画面が閉じました"
 }

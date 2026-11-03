@@ -211,12 +211,41 @@ const WAIT_CURSOR = /^\s*[❯›]\s*\S/
 const WAIT_FOOTER_LINES = 3
 const WAIT_CURSOR_LINES = 20
 
+// 알림만 위한 분류다. 화면에는 원래 요청 ID가 없으므로 이 결과로 응답 키를 만들지 않는다.
+// 보고된 Codex Browser/시작 신뢰창은 커서 없이 숫자 선택지와 별도 맺음말을 쓴다.
+/** @param {unknown} text @returns {'browser' | 'trust' | 'permission' | null} */
+function permissionPrompt(text) {
+  const lines = String(text || '').split('\n').filter((line) => line.trim()).slice(-24)
+  const footer = lines.slice(-3).join(' ')
+  const tail = lines.join(' ')
+  if (WORKING_MARK.test(footer) && !/enter to submit answer/i.test(footer)) return null
+  const choice = (/** @type {RegExp} */ pattern) => lines.some((line) => pattern.test(line))
+  if (/enter to submit\s*\|\s*esc to cancel/i.test(footer)
+      && /Allow Browser use to access /i.test(tail)
+      && choice(/^\s*[›❯]?\s*1\.\s*Allow\s+Run the tool and continue\s*$/i)
+      && choice(/^\s*[›❯]?\s*2\.\s*Always allow\b/i)
+      && choice(/^\s*[›❯]?\s*3\.\s*Cancel\b/i)) return 'browser'
+  if (/enter continue\s*·\s*esc quit/i.test(footer)
+      && /Folder settings can run code automatically/i.test(tail)
+      && /trust decision will be saved/i.test(tail)
+      && choice(/^\s*[›❯]?\s*1\.\s*Trust and continue\s*$/i)
+      && choice(/^\s*[›❯]?\s*2\.\s*Quit\s*$/i)) return 'trust'
+  if (!lines.slice(-3).some((line) => WAIT_FOOTER.test(line)) || !lines.some((line) => WAIT_CURSOR.test(line))) return null
+  if (/Quick safety check:|Yes, I trust this folder|Hooks need review/i.test(tail)) return 'trust'
+  if (/Do you want to proceed\?|Do you want to make this edit|Would you like to run the following command\?/i.test(tail)) return 'permission'
+  return null
+}
+
 // text: 화면 글(pane read 결과) — 입력을 기다리면 true
 /** @param {unknown} text */
 function waitingForInput(text) {
+  if (permissionPrompt(text)) return true
   const lines = String(text || '').split('\n').filter((line) => line.trim())
   const footer = lines.slice(-WAIT_FOOTER_LINES)
   if (footer.some((line) => WORKING_MARK.test(line) && !/enter to submit answer/i.test(line))) return false
+  // 긴 창은 제목이 화면 밖일 수 있다. 종류는 몰라도 관찰된 footer+숫자 선택지는 입력 대기다.
+  if (/enter to submit\s*\|\s*esc to cancel|enter continue\s*·\s*esc quit/i.test(footer.join(' '))
+      && lines.slice(-WAIT_CURSOR_LINES).filter((line) => /^\s*[›❯]?\s*\d+\.\s*[^\d\s]/.test(line)).length >= 2) return true
   if (!footer.some((line) => WAIT_FOOTER.test(line))) return false
   return lines.slice(-WAIT_CURSOR_LINES).some((line) => WAIT_CURSOR.test(line))
 }
@@ -266,6 +295,7 @@ module.exports = {
   agentStatus,
   backgroundShells,
   waitingForInput,
+  permissionPrompt,
   DEFAULT_READ_LINES,
   formatRead,
   findMatch,

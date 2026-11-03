@@ -84,3 +84,155 @@ test('새로 생긴 open 요청만(알림용)', () => {
   assert.deepEqual(requests.newlyOpened(['a'], list).map((request) => request.id), ['b'])
   assert.deepEqual(requests.newlyOpened(new Set(), list).map((request) => request.id), ['a', 'b'])
 })
+
+// 실제 installWork를 Electron 없이 실행한다. 제품 소스의 타입·import만 떼고 경계 의존성을 가짜로 넣는다.
+const makePermissionWork = () => {
+  const fs = require('node:fs'), path = require('node:path'), vm = require('node:vm')
+  const { stripTypeScriptTypes } = require('node:module')
+  const screenModel = require('../src/lib/screen-model.js')
+  const file = process.env.ATHENA_PERMISSION_BASE_WORK || path.join(__dirname, '../src/main/work.mts')
+  const source = stripTypeScriptTypes(fs.readFileSync(file, 'utf8')).replace(/^import .*$/gm, '').replace(/^const screenModel\s*=.*$/gm, '').replace('export function installWork', 'function installWork')
+  let now = 0, state = { supported: true, requests: [], error: null }, rows = [], failed = false
+  const panes = new Map(), intervals = new Map(), calls = [], sent = []
+  class Clock extends Date { static now() { return now } }
+  const { installWork } = vm.runInNewContext(source + '\n({installWork})', {
+    fs, path, Date: Clock, requestsModel: requests, screenModel,
+    core: { checkAthenaDir: () => ({ ok: true }) },
+    setInterval: (callback, ms) => { intervals.set(ms, callback); return ms }, clearInterval: (ms) => intervals.delete(ms),
+    setTimeout, clearTimeout,
+  })
+  const ctx = { athenaDir: '/fixture/body', send: (...args) => sent.push(args),
+    peekCall: async (op, args) => {
+      if (op === 'pane list') return { result: { panes: [...panes.keys()].map((id) => ({ id, agent: 'codex' })) } }
+      if (failed) return { error: 'unavailable' }
+      return { result: { text: panes.get(args.pane) || '' } }
+    }, daemonCall: async (...args) => { calls.push(['daemon', ...args]); return { result: {} } },
+  }
+  installWork(ctx, { say: (key, values) => key + (values?.pane || ''),
+    runCore: async (args) => {
+      calls.push(args)
+      if (args[1] === 'list') return { ok: true, requests: rows }
+      if (args[1] === 'cancel') { rows = rows.filter((row) => row.id !== args[2]); return { ok: true } }
+      return { ok: true, request: { answer: { choice: '선택' } } }
+    }, requestsPollMs: 30000, trayRequestsChanged: () => {}, requestsState: () => state, setRequestsState: (next) => { state = next }, logRequestsError: () => {},
+  })
+  return { ctx, calls, sent, panes, intervals,
+    setRows: (value) => { rows = value }, fail: (value) => { failed = value }, state: () => state,
+    async start() { ctx.watchRequests(); await new Promise(setImmediate); await ctx.refreshRequests(); await new Promise(setImmediate) },
+    async tick(ms) { now += ms; const poll = intervals.get(2000); if (poll) await poll(); await new Promise(setImmediate) },
+  }
+}
+const browserPrompt = ['Field 1/1', 'Allow Browser use to access https://example.com/private?token=SHOULD_NOT_LEAK?', '1. Allow Run the tool and continue', '2. Always allow Run the tool and remember this choice for future tool calls', '3. Cancel Cancel this tool call', 'enter to submit | esc to cancel'].join('\n')
+const trustPrompt = ['permission settings. Folder settings can run code automatically, even without a model request.', 'Your trust decision will be saved.', '1. Trust and continue', '2. Quit', 'enter continue · esc quit'].join('\n')
+
+test('실제 작업 경로: Browser·시작 신뢰 자동 알림, 민감 화면 미수집·중복 방지·일반 답변 차단', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('fixture-browser', browserPrompt); fixture.panes.set('fixture-trust', trustPrompt)
+  await fixture.start(); assert.equal(fixture.state().requests.length, 0)
+  await fixture.tick(4000)
+  const visible = fixture.state().requests
+  assert.equal(visible.length, 2)
+  assert.deepEqual(Array.from(visible, (item) => item.permissionKind).sort(), ['browser', 'trust'])
+  assert.ok(!JSON.stringify(visible).includes('SHOULD_NOT_LEAK'))
+  assert.ok(!JSON.stringify(visible).includes('/private'))
+  assert.ok(visible.every((item) => item.permission && item.options.length === 0))
+  const ids = Array.from(visible, (item) => item.id)
+  await fixture.tick(2000); assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), ids)
+  for (const request of visible) {
+    const result = await fixture.ctx.answerRequest(request.id, { choice: 'Allow', rev: request.rev })
+    assert.equal(result.ok, false)
+  }
+  assert.ok(!fixture.calls.some((args) => args[1] === 'answer' || args[0] === 'daemon'))
+  fixture.ctx.stopRequests()
+})
+
+test('실제 작업 경로: 옛 수동 권한 알림은 현재 창이 닫힌 두 읽기 뒤 거두며, 읽기 실패는 닫힘이 아님', async () => {
+  const fixture = makePermissionWork()
+  fixture.setRows([
+    sample({ id: 'old-browser', pane: 'fixture-pv4', dedupeKey: 'perm:fixture-pv4', options: [{ label: 'Allow' }] }),
+    sample({ id: 'old-trust', pane: 'fixture-pv7', dedupeKey: 'perm:fixture-pv7' }),
+    sample({ id: 'normal', pane: 'normal-pane' }),
+  ])
+  fixture.panes.set('fixture-pv4', browserPrompt); fixture.panes.set('fixture-pv7', trustPrompt)
+  await fixture.start(); await fixture.tick(4000)
+  assert.equal(fixture.state().requests.length, 3, '훅 알림과 화면 알림을 중복 표시하지 않음')
+  assert.equal((await fixture.ctx.answerRequest('old-browser', { choice: 'Allow', rev: 2 })).ok, false)
+  assert.ok(!fixture.calls.some((args) => args[1] === 'answer'))
+  fixture.panes.set('fixture-pv4', '› Ask Codex to do anything'); fixture.panes.set('fixture-pv7', '')
+  await fixture.tick(2000)
+  fixture.fail(true); await fixture.tick(2000); await fixture.tick(2000)
+  assert.equal(fixture.calls.filter((args) => args[1] === 'cancel').length, 0)
+  fixture.fail(false); await fixture.tick(2000)
+  assert.equal(fixture.calls.filter((args) => args[1] === 'cancel').length, 0, '읽기 실패는 연속 닫힘 횟수를 끊음')
+  await fixture.tick(2000)
+  assert.deepEqual(fixture.calls.filter((args) => args[1] === 'cancel').map((args) => args[2]).sort(), ['old-browser', 'old-trust'])
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), ['normal'])
+  assert.ok(!fixture.calls.some((args) => args[0] === 'daemon'), '알림 정리는 원래 pane에 어떤 키도 보내지 않음')
+  fixture.ctx.stopRequests()
+})
+
+test('권한 알림 tracker: 창 교체·종료·재시작·다른 pane 분리, 모르는 읽기는 새 확인이 아님', () => {
+  const tracker = requests.createPermissionTracker()
+  const seen = (kind) => [{ pane: 'test-pane', kind }]
+  assert.equal(tracker.observe(seen('browser'), 0).requests.length, 0)
+  assert.equal(tracker.observe(seen(undefined), 4000).requests.length, 0)
+  const before = tracker.observe(seen('browser'), 5000).requests[0]
+  assert.ok(before)
+  assert.equal(tracker.observe(seen('trust'), 6000).requests.length, 0)
+  const after = tracker.observe(seen('trust'), 10000).requests[0]
+  assert.notEqual(before.id, after.id)
+  assert.equal(tracker.observe([], 11000).requests.length, 0)
+  tracker.observe(seen('browser'), 12000); tracker.reset()
+  assert.equal(tracker.observe(seen('browser'), 16000).requests.length, 0)
+})
+
+test('실제 작업 경로: 종료한 pane 알림 제거·팩 재연결 뒤 지난 비동기 화면 결과 폐기', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('fixture-only', browserPrompt)
+  await fixture.start(); await fixture.tick(4000)
+  assert.equal(fixture.state().requests.length, 1)
+  fixture.panes.clear(); await fixture.tick(2000)
+  assert.equal(fixture.state().requests.length, 0)
+  fixture.panes.set('fixture-only', trustPrompt)
+  let release
+  const original = fixture.ctx.peekCall
+  fixture.ctx.peekCall = async (op, args) => {
+    if (op === 'pane read') await new Promise((resolve) => { release = resolve })
+    return original(op, args)
+  }
+  const stale = fixture.tick(4000)
+  await new Promise(setImmediate)
+  fixture.ctx.stopRequests(); fixture.ctx.athenaDir = '/fixture/other'
+  fixture.ctx.peekCall = original
+  await fixture.start()
+  release(); await stale
+  assert.equal(fixture.state().requests.length, 0)
+  fixture.ctx.stopRequests()
+})
+
+test('이전 answered 권한 알림 재전송도 금지 · 일반 질문 응답 경로 보존', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('normal-pane', '')
+  fixture.setRows([sample({ id: 'normal', pane: 'normal-pane' }), sample({ id: 'old-answered', dedupeKey: 'perm:normal-pane', pane: 'normal-pane', state: 'answered', answer: { choice: 'Allow' } })])
+  await fixture.start()
+  assert.equal((await fixture.ctx.redeliverRequest('old-answered')).ok, false)
+  assert.equal((await fixture.ctx.answerRequest('normal', { choice: '선택', rev: 2 })).ok, true)
+  assert.equal(fixture.calls.filter((args) => args[1] === 'answer').length, 1)
+  assert.equal(fixture.calls.filter((args) => args[0] === 'daemon').length, 1)
+  fixture.ctx.stopRequests()
+})
+
+test('긴 승인창: 제목이 화면 밖으로 밀려도 waiting이면 기존 알림과 감지 알림을 취소하지 않음', async () => {
+  const fixture = makePermissionWork()
+  fixture.setRows([sample({ id: 'long-permission', pane: 'long-pane', dedupeKey: 'perm:long-pane' })])
+  fixture.panes.set('long-pane', browserPrompt)
+  fixture.panes.set('detected-pane', browserPrompt)
+  await fixture.start(); await fixture.tick(4000)
+  const longApproval = [...Array.from({ length: 45 }, () => '  command output'), '› 1. Yes, proceed (y)', "  2. Yes, and don’t ask again", '  3. No (esc)', 'Press enter to confirm or esc to cancel'].join('\n')
+  const longBrowser = [...Array.from({ length: 45 }, () => '  scope detail'), '1. Allow Run the tool and continue', '2. Always allow Run the tool and remember this choice for future tool calls', '3. Cancel Cancel this tool call', 'enter to submit | esc to cancel'].join('\n')
+  fixture.panes.set('long-pane', longApproval); fixture.panes.set('detected-pane', longBrowser)
+  await fixture.tick(2000); await fixture.tick(2000)
+  assert.equal(fixture.state().requests.length, 2)
+  assert.equal(fixture.calls.filter((args) => args[1] === 'cancel').length, 0)
+  fixture.ctx.stopRequests()
+})

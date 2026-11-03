@@ -700,5 +700,14 @@
   "pane.detail.lead.archived": "archived",
   "pane.detail.error.board-down": "The worklist is off, so details are unavailable",
   "pane.detail.error.no-pane": "The pane is closed",
-  "pane.detail.error.default": "Could not read the details"
+  "pane.detail.error.default": "Could not read the details",
+  "work.permission.notice": "Confirmation prompt",
+  "work.permission.title.browser": "{pane} · Browser permission",
+  "work.permission.title.trust": "{pane} · Startup trust check",
+  "work.permission.title.permission": "{pane} · Permission check",
+  "work.permission.body.browser": "A Browser permission prompt is waiting. Open the original pane, review the destination and the scope of one-time or persistent permission, then choose there. This notice does not grant permission.",
+  "work.permission.body.trust": "A startup trust prompt is waiting. Folder settings or hooks can run code, and trust choices may be saved. Read the files, warning and scope in the original pane and choose there.",
+  "work.permission.body.permission": "A permission prompt is waiting. Review the request and permission scope in the original pane and choose there. This notice sends no approval or rejection.",
+  "work.permission.unavailable": "Studio cannot verify the original request ID and response connection for this terminal prompt, so choices cannot be sent here. The notice clears automatically after you choose in the pane.",
+  "work.permission.closed": "The original confirmation prompt has closed"
 }

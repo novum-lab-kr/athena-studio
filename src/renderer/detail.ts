@@ -131,6 +131,18 @@ export async function goToPane(paneId: unknown): Promise<void> {
 // 질문 · 결정 — 질문은 앱 안에서 바로 답하고, 결정(정식 계획서)은 결정 콘솔로
 export async function openRequest(request: WorkRequestView): Promise<void> {
   closePops()
+  if (request.permission) {
+    const kind = request.permissionKind || 'permission'
+    const choice = await packDialog({
+      title: say(`work.permission.title.${kind}`, { pane: String(request.pane || '') }),
+      subtitle: say('work.permission.notice'),
+      body: [el('p', 'work-request-body', say(`work.permission.body.${kind}`)), el('p', 'muted', say('work.permission.unavailable'))],
+      actions: paneLive(request.pane) ? [{ label: say('work.detail.goPane'), value: 'pane', kind: 'primary' }] : [],
+      close: true,
+    })
+    if (choice === 'pane') goToPane(request.pane)
+    return
+  }
   // 열 결정 콘솔(html)이 없는 decision 은 question 과 같은 화면으로 답한다
   if (request.kind === 'decision' && request.html) {
     const choice = await packDialog({

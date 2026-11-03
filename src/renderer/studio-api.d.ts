@@ -138,6 +138,8 @@ declare global {
     kind: string
     title: string
     body: string
+    permission?: boolean
+    permissionKind?: 'browser' | 'trust' | 'permission'
     options: { label: string; desc: string; recommended: boolean }[]
     plan: unknown
     html: unknown
