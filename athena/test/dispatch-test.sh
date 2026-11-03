@@ -52,7 +52,14 @@ import json, os, pathlib, sys
 engine = pathlib.Path(sys.argv[0]).name
 if sys.argv[1:3] in (['auth', 'status'], ['login', 'status']):
     sys.exit(0 if engine in os.environ['READY_TOOLS'].split(',') else 1)
-pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':sys.argv[1:], 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT'), 'bootstrap':os.environ.get('ATHENA_NOTIFY_BOOTSTRAP')}))
+if engine == 'codex' and sys.argv[1:2] == ['app-server']:
+    for line in sys.stdin: pass
+    sys.exit(0)
+args = sys.argv[1:]
+remote = '--remote' in args
+if remote:
+    index = args.index('--remote'); del args[index:index+2]
+pathlib.Path(os.environ['CAPTURE']).write_text(json.dumps({'engine':engine, 'args':args, 'remote':remote, 'role':os.environ.get('ATHENA_ROLE'), 'agent':os.environ.get('ATHENA_AGENT'), 'bootstrap':os.environ.get('ATHENA_NOTIFY_BOOTSTRAP')}))
 '''
     for tool in ('claude', 'codex'):
         p = bin_dir / tool; p.write_text(cli); p.chmod(0o755)
@@ -114,7 +121,8 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
             check('Codex → 공통 규칙·프로필·레포 원문', all(s in text for s in ['# 레포 규칙 문서','REPO_RULE_SENTINEL','PROFILE_SENTINEL','CLAUDE_RULE_SENTINEL','## 5.']))
             check('Codex → 보호 훅·기록·끝 알림 전달', all(s in (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text() for s in ['commit-guard.py','secret-guard.py','process-guard.py','pane-session.py','agent-done-notify.py']))
             check('Codex → 질문·허락 요청 훅 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['request_user_input', 'ask-to-request.py', 'PermissionRequest', 'permission-to-request.py']))
-            check('Codex → 공유 서버를 재사용하지 않음', '--no-daemon' in args and '--remote' not in args)
+            check('Codex → 압축 전 기록·압축 후 재확인 전달', all(value in (codex_home / (profile+'.config.toml')).read_text() for value in ['PreCompact', 'compact-checkpoint.py', 'codex-context.py', 'compact|resume']))
+            check('Codex → 전용 remote 연결로 공유 서버를 재사용하지 않음', got.get('remote') is True and '--no-daemon' not in args and '--add-dir' not in args)
             check('Codex → Claude 전용 인자 없음', '--agent' not in args and '--settings' not in args and '--append-system-prompt-file' not in args)
         if remembered is None:
             check(name+' → 실제 주 도구 기록을 새로 쓰지 않는다', not (core / '.athena-main-tool.json').exists())
@@ -159,7 +167,7 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     result, got, calls = run('claude',None,('--engine','codex'))
     check('명시 엔진이 로그인 안 됨 → pane 생성 없음', result.returncode==2 and not calls)
     result, got, calls = run('codex',None,('--resume','11111111-2222-3333-4444-555555555555'))
-    check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got['args'][:3]==['--no-daemon','resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
+    check('Codex resume → 세션 전달·첫 지시 재전송 없음', result.returncode==0 and got and got.get('remote') is True and got['args'][:2]==['resume','11111111-2222-3333-4444-555555555555'] and 'TASK_SENTINEL' not in got['args'][-1])
     for engine in ('claude', 'codex'):
         for prompt, issue, bootstrap in ((None, False, '1'), (None, True, '0'), ('실제 요청', False, '0')):
             result, got, calls = run(engine, prompt=prompt, issue=issue)

@@ -456,9 +456,9 @@ fi
 # 보호 훅·pane 기록을 CLI 설정으로 넘기고 프로젝트의 리드 AGENTS 자동 로드는 끈다.
 if [ "$ENGINE" = codex ]; then
   CODEX_PROFILE="$(python3 "$ATHENA_DIR/scripts/lib/codex_dispatch.py" "$ATHENA_DIR" "$AGENT" "$ROLE" "$CONTEXT_FILE" "$AGENTS_JSON" "$SETTINGS_FILE")" \
-    || { echo "Codex 컨텍스트 생성 실패" >&2; rm -f "$PROMPT_FILE" "$RUNNER" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$SETTINGS_FILE.instructions" "$SETTINGS_FILE.hooks"; exit 1; }
-  EXTRA_FILES="$EXTRA_FILES $(shq "$SETTINGS_FILE.instructions")"
-  CODEX_ARGS="--profile $(shq "$CODEX_PROFILE") -c \"\$(cat $(shq "$SETTINGS_FILE.instructions"))\" -c project_doc_max_bytes=0 --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS"
+    || { echo "Codex 컨텍스트 생성 실패" >&2; rm -f "$PROMPT_FILE" "$RUNNER" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$SETTINGS_FILE.instructions" "$SETTINGS_FILE.hooks" "$SETTINGS_FILE.context.json"; exit 1; }
+  EXTRA_FILES="$EXTRA_FILES $(shq "$SETTINGS_FILE.instructions") $(shq "$SETTINGS_FILE.hooks") $(shq "$SETTINGS_FILE.context.json")"
+  CODEX_ARGS="--athena-hooks-file $(shq "$SETTINGS_FILE.hooks") --profile $(shq "$CODEX_PROFILE") -c \"\$(cat $(shq "$SETTINGS_FILE.instructions"))\" -c project_doc_max_bytes=0 --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS"
   [ -n "$MODEL" ] && CODEX_ARGS="$CODEX_ARGS --model $(shq "$MODEL")"
   [ -n "${RESUME:-}" ] && CODEX_ARGS="resume $(shq "$RESUME") $CODEX_ARGS"
 fi
@@ -483,6 +483,7 @@ PYEOF
   echo "cd $(shq "$WORKDIR") || exit 1"
   [ -n "$REPO_DIR" ] && echo "export ATHENA_REPO_DIR=$(shq "$REPO_DIR")"
   echo "export ATHENA_AGENT=$(shq "$AGENT") ATHENA_ROLE=$(shq "$ROLE") ATHENA_ENGINE=$(shq "$ENGINE")"
+  [ "$ENGINE" != codex ] || echo "export ATHENA_CODEX_CONTEXT=$(shq "$SETTINGS_FILE.context.json")"
   # 지시 없이 띄운 첫 안내는 작업 완료가 아니다 — 실제 요청을 받은 턴부터 끝 알림을 보낸다.
   echo "export ATHENA_NOTIFY_BOOTSTRAP=$NOTIFY_BOOTSTRAP"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
@@ -495,8 +496,8 @@ PYEOF
   [ -n "$EXTRA_FILES" ] && [ -n "$WORK_TOP" ] && echo "export ATHENA_VERIFY_DIR=$(shq "$WORK_TOP")"
   [ -n "$PACK_ENV" ] && printf '%s\n' "$PACK_ENV"
   if [ "$ENGINE" = codex ]; then
-    if [ -n "$PROMPT" ]; then echo "codex --no-daemon $CODEX_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
-    else echo "codex --no-daemon $CODEX_ARGS"; fi
+    if [ -n "$PROMPT" ]; then echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") --no-daemon $CODEX_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
+    else echo "python3 $(shq "$ATHENA_DIR/scripts/codex-session.py") --no-daemon $CODEX_ARGS"; fi
   elif [ -n "$PROMPT" ]; then
     echo "claude $CLAUDE_ARGS \"\$(cat $(shq "$PROMPT_FILE"))\""
   else

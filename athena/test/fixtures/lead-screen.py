@@ -16,3 +16,7 @@ class Backend:
 
 def get_backend():
     return Backend()
+
+
+def self_info():
+    return get_backend().self_info()

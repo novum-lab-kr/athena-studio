@@ -50,7 +50,7 @@ function WorkBody({ actions }: { actions: WorkActions }) {
               key={request.id}
               className="ask"
               kindLabel={say(request.permission ? 'work.permission.notice' : `work.kind.${request.kind}`)}
-              title={request.permission ? say(`work.permission.title.${request.permissionKind || 'permission'}`, { pane: String(request.pane || '') }) : request.title}
+              title={request.permission && !request.codexApproval ? say(`work.permission.title.${request.permissionKind || 'permission'}`, { pane: String(request.pane || '') }) : request.title}
               meta={requestMeta(say, request)}
               onClick={() => actions.openRequest(request)}
             />
@@ -63,7 +63,7 @@ function WorkBody({ actions }: { actions: WorkActions }) {
 }
 
 function requestMeta(say: Say, request: WorkRequest): string {
-  return [request.state === 'answered' ? say('work.notDelivered') : '', request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · ')
+  return [request.codexApproval ? String(request.pane || '') : '', request.state === 'answered' ? say('work.notDelivered') : '', request.waited ? say('work.waited', { time: request.waited }) : ''].filter(Boolean).join(' · ')
 }
 
 // 현황판이 꺼져 있으면 알림 한 줄 · 진행 중(비었으면 현황판이 떠 있을 때만 "없어요") · 최근 끝난 것(있을 때만)

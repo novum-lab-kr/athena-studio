@@ -140,6 +140,7 @@ declare global {
     body: string
     permission?: boolean
     permissionKind?: 'browser' | 'trust' | 'permission'
+    codexApproval?: { token: string; generation: string; thread: string; choices: { key: string; label?: string; description?: string; detail?: unknown }[] }
     options: { label: string; desc: string; recommended: boolean }[]
     plan: unknown
     html: unknown
@@ -306,6 +307,7 @@ declare global {
     workGet(): Promise<WorkView>
     workRequests(): Promise<WorkRequestsState>
     onWorkRequests(callback: (next: WorkRequestsState) => void): () => void
+    workApprove(id: string, generation: string, choice: number): Promise<WorkAnswerReply>
     workAnswer(id: string, answer: { choice: string; text: string; rev: number }): Promise<WorkAnswerReply>
     workRedeliver(id: string): Promise<WorkAnswerReply>
     workDetail(id: string): Promise<WorkDetailReply>

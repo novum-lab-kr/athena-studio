@@ -131,6 +131,41 @@ export async function goToPane(paneId: unknown): Promise<void> {
 // 질문 · 결정 — 질문은 앱 안에서 바로 답하고, 결정(정식 계획서)은 결정 콘솔로
 export async function openRequest(request: WorkRequestView): Promise<void> {
   closePops()
+  if (request.codexApproval) {
+    const approval = request.codexApproval
+    const body: HTMLElement[] = [el('p', 'work-request-body', request.body), el('p', 'muted', say('work.approval.warning'))]
+    const record = (value: unknown): Record<string, unknown> => value && typeof value === 'object' ? value as Record<string, unknown> : {}
+    const labels = approval.choices.map((option) => {
+      if (option.description) body.push(el('p', 'work-request-body', `${option.label}: ${option.description}`))
+      const detail = record(option.detail)
+      const amendment = record(detail.acceptWithExecpolicyAmendment).execpolicy_amendment
+      if (Array.isArray(amendment)) body.push(el('p', 'work-request-body', `${say('work.approval.commandRule')}: ${amendment.map((part) => JSON.stringify(part)).join(' ')}`))
+      if (option.key === 'applyNetworkPolicyAmendment') {
+        const rule = record(record(detail.applyNetworkPolicyAmendment).network_policy_amendment)
+        return say(rule.action === 'deny' ? 'work.approval.networkDeny' : 'work.approval.networkAllow', { host: String(rule.host || '') })
+      }
+      if (option.key === 'original') {
+        const original = String(option.label || '')
+        const keys: Record<string, string> = { Allow: 'work.approval.originalAllow', 'Always allow': 'work.approval.originalAlways', Cancel: 'work.approval.originalCancel' }
+        const key = keys[original]
+        const translated = key ? say(key) : original
+        return translated === original ? original : `${translated} (${original})`
+      }
+      return say(`work.approval.${option.key}`)
+    })
+    const choice = await packDialog({
+      title: request.title, subtitle: say('work.approval.source', { pane: String(request.pane || ''), thread: approval.thread }), body,
+      actions: approval.choices.map((_option, index) => ({
+        label: labels[index] || '',
+        value: String(index),
+      })),
+      close: true,
+    })
+    if (typeof choice !== 'string' || !/^\d+$/.test(choice)) return
+    const result = await studio.workApprove(request.id, approval.generation, Number(choice))
+    if (!result.ok) showToast(say('work.approval.stale'))
+    return
+  }
   if (request.permission) {
     const kind = request.permissionKind || 'permission'
     const choice = await packDialog({
