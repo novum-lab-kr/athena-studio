@@ -102,3 +102,18 @@ test('.zip 안 .app 미staple — staple.json 의 false · 빠진 이름 · 파�
   assert.deepEqual(publish.unstapledZips({ 'Athena-Studio-mac-arm64.zip': false, 'Athena-Studio-mac-x64.dmg': true }), ['Athena-Studio-mac-arm64.zip', 'Athena-Studio-mac-x64.zip'])
   assert.equal(publish.unstapledZips(null), null)
 })
+
+test('withTempDir: 받은 폴더는 끝나면 지운다 — 일이 실패해도(배포 파일이 tmpdir 에 쌓이지 않게)', async () => {
+  const fs = require('node:fs')
+  let kept = ''
+  await publish.withTempDir('publish-release-test-', async (dir) => {
+    kept = dir
+    fs.writeFileSync(`${dir}/a.dmg`, 'x')
+  })
+  assert.equal(fs.existsSync(kept), false)
+  await assert.rejects(publish.withTempDir('publish-release-test-', async (dir) => {
+    kept = dir
+    throw new Error('올리다 실패')
+  }), /올리다 실패/)
+  assert.equal(fs.existsSync(kept), false)
+})
