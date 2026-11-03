@@ -105,6 +105,16 @@ test('팩 명령 입구 — 밖으로 내보내는 runCore 는 문을 기다리�
   assert.match(runner, /updateGate\.run\(/)
 })
 
+test('다시 올리기가 본체별 결과 없이 끝나면 대기를 남기고 이유가 붙은 실패 줄로 알린다', () => {
+  const runner = read('main/core-runner.mts')
+  // 대기는 pendingAfterRetry 로만 바꾸고(본체별 결과가 없으면 남긴다) · 알림은 그 failure 로 맞춘 결과로
+  assert.match(runner, /const next = studioHome\.pendingAfterRetry\(pending, /)
+  assert.match(runner, /coreUpdateNotice = \{ \.\.\.outcome, result: failure, summary: studioHome\.summarizeUpdate\(failure\) \}/)
+  // 팝업 줄은 같은 판단(updateFailure)으로 notMoved — null · bodies 누락도 빈 팝업이 아니다
+  assert.match(runner, /studioHome\.updateFailure\(notice\.result/)
+  assert.match(runner, /if \(failure\) rows\.push\(\{ kind: 'notMoved', params: \{ reason: failure\.error \}/)
+})
+
 test('현황판 · 새 에이전트 · 자동 따라잡기 입구가 문을 본다', () => {
   assert.match(read('main/work.mts'), /ctx\.ensureBoard = async \(\) => \{[\s\S]*?await waitCoreUpdate\(\)[\s\S]*?queueBoard\(/)
   assert.match(read('main/athena-agent.mts'), /await waitCoreUpdate\(\)[\s\S]*?findAthenaWorkspace[\s\S]*?core\.agentDecision\(/)

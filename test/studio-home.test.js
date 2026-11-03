@@ -375,8 +375,14 @@ test('건너뛴 본체: 다시 올리기가 통째로 실패하면 대기를 지
     assert.equal(home.retryDue(next.pending, { alive: () => false, now: 1000 + 59999 }), false)
     assert.equal(home.retryDue(next.pending, { alive: () => false, now: 1000 + 60000 }), true)
   }
+  // 화면 실패 줄에 쓸 이유 — null · bodies 누락(ok:true 여도)도 이유가 붙은 실패로
+  assert.deepEqual(home.pendingAfterRetry([globex], { ok: false, error: 'bad-output' }, 1000).failure, { ok: false, error: 'bad-output' })
+  assert.deepEqual(home.pendingAfterRetry([globex], null, 1000).failure, { ok: false, error: 'no-result' })
+  assert.deepEqual(home.pendingAfterRetry([globex], undefined, 1000).failure, { ok: false, error: 'no-result' })
+  assert.deepEqual(home.pendingAfterRetry([globex], { ok: true }, 1000).failure, { ok: false, error: 'no-bodies' })
+  assert.equal(home.updateFailure({ ok: false, bodies: [] }), null)
   // 본체별 결과가 오면 그것으로 — 올렸으면 대기가 비고 · 또 바쁘면 새 pid 로
-  assert.deepEqual(home.pendingAfterRetry([globex], { ok: true, bodies: [{ id: 'globex', status: 'updated' }] }, 2000), { pending: [], answered: true })
+  assert.deepEqual(home.pendingAfterRetry([globex], { ok: true, bodies: [{ id: 'globex', status: 'updated' }] }, 2000), { pending: [], answered: true, failure: null })
   const again = home.pendingAfterRetry([globex], { ok: false, bodies: [{ id: 'globex', status: 'skipped', reason: 'busy', busy: [{ kind: 'commit', pid: 33 }] }] }, 2000)
   assert.equal(again.answered, true)
   assert.deepEqual(again.pending.map((entry) => entry.pids), [[33]])

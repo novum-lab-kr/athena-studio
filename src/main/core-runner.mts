@@ -193,7 +193,9 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     if (!next.answered) {
       if (failureNoted) return
       failureNoted = true
-      coreUpdateNotice = outcome
+      // 결과가 null · bodies 만 빠짐(ok:true 여도)도 이유가 붙은 실패로 맞춰 알린다 — noticeRows 가 notMoved 줄을 만든다
+      const failure = next.failure ?? { ok: false, error: 'no-bodies' }
+      coreUpdateNotice = { ...outcome, result: failure, summary: studioHome.summarizeUpdate(failure) }
       return onCaughtUp({ changed: false, notice: true })
     }
     failureNoted = false
@@ -261,9 +263,9 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     for (const entry of summary.working || []) rows.push({ kind: 'working', params: { count: Number(entry.count) }, chips: [String(entry.id), ...(entry.sessions || []).map(String), ...(entry.kinds || []).map((kind) => kindText(String(kind)))] })
     for (const entry of summary.backedUp) rows.push({ kind: 'backedUp', params: {}, chips: [String(entry.id)], dir: entry.dir ? String(entry.dir) : undefined })
     if (summary.failed.length) rows.push({ kind: 'failed', params: {}, chips: summary.failed.map((entry) => `${entry.id} · ${entry.error}`) })
-    // 코어 update 가 본체별 결과 없이 통째로 실패했으면(ok:false · bodies 없음) 그 이유 — 빈 팝업으로 두지 않는다
-    const result = notice.result as { ok?: unknown; error?: unknown; bodies?: unknown } | null | undefined
-    if (!rows.length && result && result.ok === false && !Array.isArray(result.bodies)) rows.push({ kind: 'notMoved', params: { reason: String(result.error || notice.state) }, chips: [] })
+    // 코어 update 를 불렀는데 본체별 결과가 없으면(통째 실패 · null · bodies 누락) 그 이유 — 빈 팝업으로 두지 않는다(studio-home updateFailure)
+    const failure = !rows.length && notice.result !== undefined ? studioHome.updateFailure(notice.result as Parameters<typeof studioHome.updateFailure>[0]) : null
+    if (failure) rows.push({ kind: 'notMoved', params: { reason: failure.error }, chips: [] })
     return rows
   }
 

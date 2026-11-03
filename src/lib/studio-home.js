@@ -494,17 +494,31 @@ function retryDue(pending, { alive, now = Date.now() }) {
 }
 
 /**
+ * 코어 update 결과에 본체별 결과(bodies[])가 없으면 — 이유가 붙은 실패로 맞춘다(화면 실패 줄 · 대기 보존이 같은 판단을 쓴다).
+ * 코어가 준 error 가 있으면 그것, 결과가 없으면 no-result, 있는데 bodies 만 빠졌으면(ok:true 여도) no-bodies. 본체별 결과가 있으면 null
+ * @param {CoreResult | undefined} result
+ * @returns {{ ok: false, error: string } | null}
+ */
+function updateFailure(result) {
+  if (result && Array.isArray(result.bodies)) return null
+  if (!result) return { ok: false, error: 'no-result' }
+  const error = /** @type {{ error?: unknown }} */ (result).error
+  return { ok: false, error: typeof error === 'string' && error ? error : 'no-bodies' }
+}
+
+/**
  * 다시 올린 뒤 남은 대기 — 코어가 본체별 결과(bodies[])를 돌려줬을 때만 그것으로 바꾼다.
- * 명령 전체가 실패했거나(결과 없음 · ok:false 에 bodies 없음) 결과가 빠졌으면 기존 대기를 지우지 않고 남겨 둔다 —
+ * 명령 전체가 실패했거나 결과가 빠졌으면(updateFailure) 기존 대기를 지우지 않고 남겨 두고 failure 로 그 이유를 돌려준다 —
  * 이번 시각부터 다시 기다린다(pid 는 이미 끝났을 수 있으니 pid 를 모르는 막음처럼 UPDATE_RETRY_IDLE_MS 뒤에)
  * @param {PendingBody[]} previous
  * @param {CoreResult | undefined} result
  * @param {number} [now]
- * @returns {{ pending: PendingBody[], answered: boolean }}
+ * @returns {{ pending: PendingBody[], answered: boolean, failure: { ok: false, error: string } | null }}
  */
 function pendingAfterRetry(previous, result, now = Date.now()) {
-  if (result && Array.isArray(result.bodies)) return { pending: pendingFromUpdate(result, now), answered: true }
-  return { pending: previous.map((entry) => ({ ...entry, pids: [], timed: true, since: now })), answered: false }
+  const failure = updateFailure(result)
+  if (!failure) return { pending: pendingFromUpdate(result, now), answered: true, failure: null }
+  return { pending: previous.map((entry) => ({ ...entry, pids: [], timed: true, since: now })), answered: false, failure }
 }
 
 /**
@@ -676,6 +690,7 @@ module.exports = {
   pendingFromUpdate,
   retryDue,
   pendingAfterRetry,
+  updateFailure,
   behindBodies,
   retryUpdate,
   prepareCore,
