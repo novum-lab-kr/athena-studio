@@ -1582,13 +1582,15 @@ ICORE="$(cd "$TMP" && pwd -P)/core-instr"; mkdir -p "$ICORE/plans/task" "$ICORE/
 cp "$SRC/test/fixtures/lead-screen.py" "$ICORE/scripts/lib/screen.py"   # 사용자 pane 환경 대신 격리한 발신자
 printf '#!/bin/sh\ncase "$1" in inside) exit 1 ;; name) echo 가짜화면 ;; esac\nexit 0\n' > "$ICORE/scripts/screen"; chmod +x "$ICORE/scripts/screen"
 printf '{"main":"claude"}\n' > "$ICORE/.athena-main-tool.json"
+# 위임 도구 판정(dispatch-engine.mjs)이 claude auth status 를 부른다 — 로그인된 claude 가 없는 러너(Actions)에서도 같게 가짜로
+IBIN="$TMP/instr-bin"; mkdir -p "$IBIN"; printf '#!/bin/sh\n[ "$1 $2" = "auth status" ] && exit 0\nexit 1\n' > "$IBIN/claude"; chmod +x "$IBIN/claude"
 printf -- '---\nname: web-fe\ndescription: 웹\n---\n본문\n' > "$ICORE/.claude/agents/web-fe.md"
 printf '# 시험\n\n## Checkpoint\n- Status: in_progress\n' > "$ICORE/plans/task/20261030-a.md"
-instr() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/athena.config.json"; (cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md 2>&1); }
+instr() { printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/athena.config.json"; (cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md 2>&1); }
 INSTR_OUT="$(instr ', "autoMerge": true, "autoPr": false')"
 printf '%s' "$INSTR_OUT" | grep -q "ship.sh --plan $ICORE/plans/task/20261030-a.md --dir <워크트리> --direct-merge" \
   && printf '%s' "$INSTR_OUT" | grep -q "자동 PR 을 껐다" && ! printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" \
-  && echo "  ✔ PR 끔 → 끝나면 ship.sh --direct-merge (PR 흐름 지시 아님)" || { echo "  ✖ PR 끔 지시문"; printf '%s\n' "$INSTR_OUT" | grep -o "이 레포(web).\{0,300\}" | head -3; FAIL=1; }
+  && echo "  ✔ PR 끔 → 끝나면 ship.sh --direct-merge (PR 흐름 지시 아님)" || { echo "  ✖ PR 끔 지시문"; printf '%s\n' "$INSTR_OUT" | grep -o "이 레포(web).\{0,250\}" | head -3; FAIL=1; }
 INSTR_OUT="$(instr ', "autoMerge": true')"
 printf '%s' "$INSTR_OUT" | grep -q "끝나면 PR 을 올린다" && ! printf '%s' "$INSTR_OUT" | grep -q -- "--direct-merge" \
   && echo "  ✔ 자동 PR 켬 → 지금처럼 PR 흐름" || { echo "  ✖ 켬 지시문"; FAIL=1; }
@@ -1624,7 +1626,7 @@ reuse() {   # 설정 조각 → 이어 보내기 결과(전송문은 $TMP/reuse-
   mkdir -p "$ICORE/pack"   # 여러 팩 구조(.pack-data) — 레포 설정은 팩 pack.json 에서 읽는다
   printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev"%s }] }\n' "$1" > "$ICORE/pack/pack.json"
   : > "$TMP/reuse-sent.log"
-  (cd "$ICORE" && env -u ATHENA_AGENT REUSE_CWD="$(cd "$TMP/reuse-wd" && pwd -P)" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --reuse-pane p5 2>&1)
+  (cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" REUSE_CWD="$(cd "$TMP/reuse-wd" && pwd -P)" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --reuse-pane p5 2>&1)
 }
 REUSE_OUT="$(reuse ', "autoMerge": true, "autoPr": false')"; REUSE_SENT="$(cat "$TMP/reuse-sent.log")"
 printf '%s' "$REUSE_SENT" | grep -q -- "--direct-merge" && printf '%s' "$REUSE_SENT" | grep -q "지금 설정 기준" && ! printf '%s' "$REUSE_SENT" | grep -q "끝나면 PR 을 올린다" \
@@ -1643,7 +1645,7 @@ printf '%s' "$REUSE_OUT" | tail -3 | grep -q "올리는 방식: 사용자가 'PR
 # 새 pane(프롬프트 없이 열기) 쪽도 결과에 같은 줄
 printf '{ "repos": [{ "name": "web", "agents": ["web-fe"], "prBase": "dev", "autoMerge": true, "autoPr": false }] }\n' > "$ICORE/pack/pack.json"
 mkdir -p "$ICORE/.claude" && cp "$SRC/.claude/settings.json" "$ICORE/.claude/settings.json" 2>/dev/null || echo '{}' > "$ICORE/.claude/settings.json"
-INSTR_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --here 2>&1)"
+INSTR_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --here 2>&1)"
 printf '%s' "$INSTR_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
   && echo "  ✔ 새 pane 결과에도 올리는 방식 한 줄" || { echo "  ✖ 새 pane 결과 줄"; printf '%s\n' "$INSTR_OUT" | tail -3; FAIL=1; }
 

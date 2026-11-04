@@ -139,6 +139,109 @@ console.log('  ✔ 원본/최종 해시·변조·중복·재생성·캡처 무�
 JS
 check "원본/최종 전달 회귀" '[ $? -eq 0 ]'
 
+# 자세히 칸 — 옆 <이름>.details.json · --details · 없는 상자 id · 다시 입히기 · escape · 영수증 대조 · 없으면 테마만과 같은 바이트
+node --input-type=module - "$SRC" "$WORK" <<'JS'
+import assert from 'node:assert/strict'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+const [source, base] = process.argv.slice(2)
+const work = join(base, 'details')
+mkdirSync(work)
+const run = (...args) => spawnSync(process.execPath, [join(source, 'scripts/diagram-theme.mjs'), ...args], { encoding: 'utf8' })
+const raw = join(work, 'flow.archify.html')
+const final = join(work, 'flow.html')
+const beside = join(work, 'flow.details.json')
+writeFileSync(raw, '<html><head></head><body><svg data-quality-profile="standard"><g data-node-id="pick" data-node-label="출발 고르기" data-node-context="화면" tabindex="0"><rect/></g><g data-node-id="calc" data-node-label="길 계산"></g></svg></body></html>')
+// 자세히 없이 만든 결과 — 자세히를 붙였다 떼면 이 바이트로 돌아와야 한다
+assert.equal(run('--output', final, raw).status, 0)
+const plain = readFileSync(final, 'utf8')
+const plainReceipt = readFileSync(`${final}.theme.json`, 'utf8')
+assert.ok(!plain.includes('studio-details'), '자세히 파일이 없으면 칸을 넣지 않음')
+const details = { evidence: '시험', nodes: { pick: { what: '<b>누름</b> </script><script>alert(1)</script>', code: [{ note: '단추', ref: 'web/a.ts:1' }], impact: [{ what: '목록', ref: 'web/b.ts:2' }], tests: ['test/a.test.ts'] } } }
+writeFileSync(beside, JSON.stringify(details))
+const applied = run('--output', final, raw)
+assert.equal(applied.status, 0, applied.stderr)
+const withDetails = readFileSync(final, 'utf8')
+for (const mark of ['<!-- studio-details-style -->', '<!-- studio-details -->']) assert.equal(withDetails.split(mark).length, 2, `${mark} 하나`)
+assert.ok(!withDetails.includes('</script><script>alert(1)'), '자료 속 </script> 는 스크립트를 닫지 않음')
+assert.ok(withDetails.indexOf('<!-- /studio-details -->') < withDetails.lastIndexOf('</body>'), '칸은 본문 끝에')
+const receipt = JSON.parse(readFileSync(`${final}.theme.json`, 'utf8'))
+assert.equal(receipt.details.path, 'flow.details.json', '영수증에 자세히 경로')
+assert.equal(run('--check', '--receipt', final).status, 0, '자세히 든 그림 --check 통과')
+assert.equal(run('--output', final, raw).status, 0)
+assert.equal(readFileSync(final, 'utf8'), withDetails, '다시 입혀도 같다')
+// 원본으로 최종본(자세히 든 것)을 넘기면 거절 · 자세히가 바뀌면 --check 실패
+assert.equal(run('--output', join(work, 'other.html'), final).status, 1, '자세히 든 최종본은 원본이 아님')
+writeFileSync(beside, JSON.stringify({ ...details, evidence: '바뀜' }))
+assert.equal(run('--check', '--receipt', final).status, 1, '자세히 파일이 바뀌면 다시 만들라고')
+assert.equal(run('--check', final).status, 1, '영수증 없이도 자세히 내용 대조')
+// 그림에 없는 상자 id · 형식 오류는 실패하고 최종본을 건드리지 않음
+writeFileSync(beside, JSON.stringify({ nodes: { pick: { what: '누름' }, ghost: { what: '없는 상자' } } }))
+const missing = run('--output', final, raw)
+assert.equal(missing.status, 1)
+assert.match(missing.stderr, /ghost/)
+assert.equal(run('--check', final).status, 1, '--check 도 없는 id 면 실패')
+writeFileSync(beside, JSON.stringify({ nodes: { pick: { code: [] } } }))
+assert.equal(run('--output', final, raw).status, 1, 'what 없으면 실패')
+// --details 로 다른 자리의 파일
+const elsewhere = join(base, 'elsewhere.details.json')
+writeFileSync(elsewhere, JSON.stringify(details))
+rmSync(beside)
+assert.equal(run('--output', final, '--details', elsewhere, raw).status, 0)
+assert.equal(readFileSync(final, 'utf8'), withDetails, '--details 결과는 옆 파일과 같음')
+assert.equal(run('--check', '--receipt', final).status, 0, '영수증의 자세히 경로로 대조')
+rmSync(`${final}.theme.json`)
+assert.equal(run('--check', final).status, 1, '자세히 파일 · 영수증 없이 칸만 남으면 실패')
+assert.equal(run('--details', elsewhere, final, join(work, 'x.html')).status, 2, '--details 는 그림 하나만')
+// 자세히를 떼면 테마만 입힌 결과와 바이트가 같다
+assert.equal(run('--output', final, raw).status, 0)
+assert.equal(readFileSync(final, 'utf8'), plain, '자세히 없으면 지금과 같은 결과')
+assert.equal(readFileSync(`${final}.theme.json`, 'utf8'), plainReceipt, '영수증도 같음')
+// 실제 브라우저 — 상자를 누르면 칸이 뜨고 글자는 escape · Esc 로 닫힘
+writeFileSync(beside, JSON.stringify(details))
+assert.equal(run('--output', final, raw).status, 0)
+const candidates = [process.env.ARCHIFY_CHROME, '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome', '/usr/bin/chromium', '/usr/bin/chromium-browser', '/usr/bin/google-chrome']
+const chrome = candidates.find(file => file && existsSync(file))
+if (!chrome) {
+  console.log('  ✔ 자세히 칸 파일 회귀(⏭ 브라우저 확인은 Chrome/Chromium 없어 실행 못 함)')
+  process.exit(0)
+}
+const probe = join(work, 'probe.html')
+const html = readFileSync(final, 'utf8')
+const steps = `<pre id="result"></pre><script>window.addEventListener('load', () => {
+ const panel = document.getElementById('sd-panel'), hint = document.getElementById('sd-hint'), row = {}
+ row.closedAtStart = panel.hidden && !hint.hidden
+ document.querySelector('[data-node-id="calc"]').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+ row.noDetailsStaysClosed = panel.hidden
+ document.querySelector('[data-node-id="pick"] rect').dispatchEvent(new MouseEvent('click', { bubbles: true }))
+ row.open = !panel.hidden && document.body.classList.contains('sd-open') && hint.hidden
+ row.title = panel.querySelector('h3').textContent
+ row.escaped = !panel.querySelector('b') && panel.textContent.includes('<b>누름</b>')
+ row.code = panel.querySelector('code').textContent
+ row.impactTitle = panel.querySelector('h4.sd-impact')?.textContent
+ document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))
+ row.closedByEsc = panel.hidden
+ document.querySelector('[data-node-id="pick"]').focus()
+ document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter' }))
+ row.openByEnter = !panel.hidden
+ panel.querySelector('.sd-close').click()
+ row.closedByButton = panel.hidden
+ document.getElementById('result').textContent = JSON.stringify(row)
+})</script>`
+writeFileSync(probe, html.slice(0, html.lastIndexOf('</body>')) + steps + html.slice(html.lastIndexOf('</body>')))
+const flags = ['--headless=new', '--disable-gpu', '--no-first-run', '--no-default-browser-check', `--user-data-dir=${join(work, 'chrome-profile')}`, '--virtual-time-budget=2000', '--dump-dom', pathToFileURL(probe).href]
+if (process.getuid?.() === 0) flags.unshift('--no-sandbox')
+const result = spawnSync(chrome, flags, { encoding: 'utf8', timeout: 30000, maxBuffer: 4 * 1024 * 1024 })
+assert.equal(result.status, 0, 'Chrome 자세히 칸 확인 실행 실패')
+const json = result.stdout.match(/<pre id="result">([^<]+)<\/pre>/)?.[1]
+assert.ok(json, '브라우저 결과 없음')
+assert.deepEqual(JSON.parse(json), { closedAtStart: true, noDetailsStaysClosed: true, open: true, title: '출발 고르기', escaped: true, code: 'web/a.ts:1', impactTitle: '변경 영향 범위', closedByEsc: true, openByEnter: true, closedByButton: true })
+console.log('  ✔ 자세히 칸 — 파일 회귀 · 브라우저 열기/닫기 · escape')
+JS
+check "자세히 칸 회귀" '[ $? -eq 0 ]'
+
 # 흐름 그림 visual-check 판정 — 세로로만 넘친 것만 허용하고 가로 넘침 · 겹침 · 캡처 못 함 · 옛 결과는 실패
 J() { node "$SRC/scripts/diagram-visual-judge.mjs" "$@" > /dev/null 2>&1; }
 printf '<html><body>그림</body></html>' > "$WORK/v.html"
