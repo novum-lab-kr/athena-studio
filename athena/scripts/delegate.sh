@@ -95,6 +95,16 @@ if [ "$PACK_SWITCH" = switching ]; then
 fi
 
 ENGINE="$(node "$ATHENA_DIR/scripts/dispatch-engine.mjs" "$ATHENA_DIR" "$ENGINE")" || exit 2
+# --model 은 고른 엔진으로만 간다 — Claude 이름(sonnet · claude-… 등)을 Codex 에 넘기면 첫 턴이 모델 없음으로 실패하니 띄우지 않는다(계획서를 만들기 전 · docs/dispatch.md "모델")
+if [ "$MODEL_GIVEN" = 1 ] && [ "$ENGINE" = codex ]; then
+  MODEL_KIND="$(python3 - "$ATHENA_DIR" "$MODEL_OVERRIDE" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import claude_model_name
+print('claude' if claude_model_name(sys.argv[2]) else 'other')
+PYEOF
+)" || { echo "--model 엔진을 가리지 못해 띄우지 않는다: $MODEL_OVERRIDE" >&2; exit 2; }
+  [ "$MODEL_KIND" != claude ] || { echo "--model $MODEL_OVERRIDE — Claude 모델이라 Codex 엔진으로 띄우지 않는다 — Claude 로 띄우려면 --engine claude, Codex 면 Codex 모델 이름을 준다" >&2; exit 2; }
+fi
 
 if [ -n "$PLAN_NEW" ]; then
   PROMPT_TMP="$(mktemp -t hermes-plan-prompt)"; printf '%s' "$PROMPT" > "$PROMPT_TMP"
@@ -458,7 +468,18 @@ if [ "$ENGINE" = codex ]; then
   CODEX_PROFILE="$(python3 "$ATHENA_DIR/scripts/lib/codex_dispatch.py" "$ATHENA_DIR" "$AGENT" "$ROLE" "$CONTEXT_FILE" "$AGENTS_JSON" "$SETTINGS_FILE")" \
     || { echo "Codex 컨텍스트 생성 실패" >&2; rm -f "$PROMPT_FILE" "$RUNNER" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$SETTINGS_FILE.instructions" "$SETTINGS_FILE.hooks" "$SETTINGS_FILE.context.json"; exit 1; }
   EXTRA_FILES="$EXTRA_FILES $(shq "$SETTINGS_FILE.instructions") $(shq "$SETTINGS_FILE.hooks") $(shq "$SETTINGS_FILE.context.json")"
-  CODEX_ARGS="--athena-hooks-file $(shq "$SETTINGS_FILE.hooks") --profile $(shq "$CODEX_PROFILE") -c \"\$(cat $(shq "$SETTINGS_FILE.instructions"))\" -c project_doc_max_bytes=0 --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS"
+  WRITE_DIRS="--add-dir $(shq "$ATHENA_DIR")$LINK_DIRS"
+  if [ "$ROLE" = reviewer ]; then
+    # reviewer 는 대상 트리를 고치지 못하게 쓰기 영역을 리뷰 기록 자리로만 둔다(codex-session.py 가 sandbox 로 고정 · docs/dispatch.md "reviewer 격리").
+    # 계획서 폴더(Review result · Validation 줄 · 잠금) · 팩 데이터 state(사건 · pane 기록) · git 객체(review-result.sh 의 임시 인덱스 tree). 임시 폴더는 Codex 가 넣는다
+    WRITE_DIRS=""
+    for dir in "$ATHENA_DIR/plans" "$ATHENA_DIR/.pack-data/state" "$(git -C "$WORKDIR" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)/objects"; do
+      real="$(cd "$dir" 2>/dev/null && pwd -P)" && WRITE_DIRS="$WRITE_DIRS --athena-review-root $(shq "$real")"
+    done
+    [ -n "$WRITE_DIRS" ] || { echo "reviewer 쓰기 자리를 찾지 못해 띄우지 않는다" >&2; rm -f "$PROMPT_FILE" "$RUNNER" "$AGENTS_JSON" "$CONTEXT_FILE" "$SETTINGS_FILE" "$SETTINGS_FILE.instructions" "$SETTINGS_FILE.hooks" "$SETTINGS_FILE.context.json"; exit 1; }
+    WRITE_DIRS="${WRITE_DIRS# }"
+  fi
+  CODEX_ARGS="--athena-hooks-file $(shq "$SETTINGS_FILE.hooks") --profile $(shq "$CODEX_PROFILE") -c \"\$(cat $(shq "$SETTINGS_FILE.instructions"))\" -c project_doc_max_bytes=0 $WRITE_DIRS"
   [ -n "$MODEL" ] && CODEX_ARGS="$CODEX_ARGS --model $(shq "$MODEL")"
   [ -n "${RESUME:-}" ] && CODEX_ARGS="resume $(shq "$RESUME") $CODEX_ARGS"
 fi

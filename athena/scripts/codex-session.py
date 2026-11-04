@@ -79,10 +79,12 @@ class UnixServer(http.server.ThreadingHTTPServer):
 
 
 class Gateway:
-    def __init__(self, command: list[str], pane: str, body: str, overrides: dict | None = None, extra_roots: list[str] | None = None):
+    def __init__(self, command: list[str], pane: str, body: str, overrides: dict | None = None, extra_roots: list[str] | None = None, review_roots: list[str] | None = None):
         self.process = subprocess.Popen(command, stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL)
         self.overrides = overrides or {}
         self.extra_roots = [os.path.abspath(root) for root in extra_roots or []]
+        # reviewer 쓰기 영역 — 있으면 TUI 가 보내는 권한 값과 상관없이 이 폴더(+ Codex 기본 임시 폴더)만 쓰게 고정한다
+        self.review_roots = [os.path.abspath(root) for root in review_roots or []]
         self.workspace_roots: dict[str, list[str]] = {}
         self.pending_roots: dict[str, tuple[str, list[str]]] = {}
         self.roots_lock = threading.RLock()
@@ -148,6 +150,12 @@ class Gateway:
                     params[key] = {**(params.get(key) or {}), **value}
                 elif params.get(key) is None:
                     params[key] = value
+            if self.review_roots:
+                self.confine(params, thread=True)
+            message = {**message, 'params': params}
+        elif method in ('turn/start', 'thread/settings/update') and self.review_roots:
+            params = dict(message.get('params') or {})
+            self.confine(params, thread=False, turn=method == 'turn/start')
             message = {**message, 'params': params}
         elif method == 'turn/start' and self.extra_roots:
             params = dict(message.get('params') or {})
@@ -165,6 +173,28 @@ class Gateway:
             with self.roots_lock:
                 self.pending_roots[Approvals.identity(message.get('id'))] = (params['threadId'], params['runtimeWorkspaceRoots'])
         self.broker.client(message)
+
+    def confine(self, params: dict, thread: bool, turn: bool = False) -> None:
+        """reviewer 를 쓰기 영역 밖으로 못 나가게 공식 params 를 덮어쓴다(codex 0.166 실측 · docs/dispatch.md "reviewer 격리").
+
+        - thread 시작 · 재개 · 갈래: sandbox workspace-write + runtimeWorkspaceRoots = 리뷰 기록 자리(작업 트리 빠짐).
+          사용자 config 의 sandbox_workspace_write.writable_roots 는 응답에 안 보여도 실제 쓰기를 열어 주니 [] 로 덮는다.
+          network_access 는 Claude reviewer 처럼 연다(꺼 두면 화면 데몬 소켓 연결까지 막혀 review-result.sh 가 pane 을 못 찾는다)
+        - turn/start · thread/settings/update: sandboxPolicy · permissions 를 버린다(dangerFullAccess 를 보내면 풀린다).
+          turn/start 의 runtimeWorkspaceRoots 는 합치지 않고 같은 자리로 덮는다(작업 트리를 넣으면 쓰기 영역이 된다)
+        막힌 쓰기는 Codex 가 승인 요청으로 올리고, 그 요청은 Approvals 가 [작업] 으로 보낸다.
+        """
+        params.pop('permissions', None)
+        if thread:
+            params['sandbox'] = 'workspace-write'
+            params['runtimeWorkspaceRoots'] = list(self.review_roots)
+            config = dict(params.get('config') or {})
+            config['sandbox_workspace_write'] = {**(config.get('sandbox_workspace_write') or {}), 'writable_roots': [], 'network_access': True}
+            params['config'] = config
+        else:
+            params.pop('sandboxPolicy', None)
+            if turn:
+                params['runtimeWorkspaceRoots'] = list(self.review_roots)
 
     def handler(self):
         gateway = self
@@ -385,12 +415,19 @@ def main() -> int:
         hooks = json.loads(pathlib.Path(args[index + 1]).read_text(encoding='utf-8'))
         hook_args = ['-c', 'hooks=' + codex_dispatch.toml(hooks)]
         del args[index:index + 2]
+    # reviewer 쓰기 영역(delegate.sh 가 넘긴다) — codex 인자가 아니라 여기서 소비한다
+    review_roots = []
+    while '--athena-review-root' in args:
+        index = args.index('--athena-review-root')
+        review_roots.append(args[index + 1])
+        del args[index:index + 2]
     pane = str(screen.self_info().get('pane_id') or '')
     if not pane:
         # Studio 밖(pane 없음)은 기존 CLI로 유지한다 — 승인을 받을 화면이 없다.
         # 위임 훅은 --profile 의 프로필 파일이 그대로 싣는다(--athena-hooks-file 은 서버 중계용이라 여기서는 쓰지 않는다).
         # 옛 구조 본체(.pack-data 없음)도 pane 안이면 아래 중계를 탄다 — 등록 자리만 registry_dir() 가 가른다.
-        return subprocess.call(['codex', *args])
+        # reviewer 는 이 경로에 쓰기 자리만 여는 공식 플래그가 없어(--add-dir 은 작업 트리도 연다) 읽기 전용으로 띄운다 — 쓰기는 모두 승인 요청
+        return subprocess.call(['codex', *(['--sandbox', 'read-only'] if review_roots else []), *args])
     # 원격 TUI 자체가 공유 데몬을 쓰지 않는다. --remote와 배타적인 플래그는 여기서 소비한다.
     args = [argument for argument in args if argument != '--no-daemon']
     if any(argument in ('-p', '--profile') for argument in args) and not hook_args:
@@ -442,7 +479,7 @@ def main() -> int:
         endpoint = str(pathlib.Path(directory) / 'rpc.sock')
         gateway = server = record = None
         try:
-            gateway = Gateway(['codex', 'app-server', '--stdio', *forwarded], pane, str(ROOT.resolve()), overrides, extra_roots)
+            gateway = Gateway(['codex', 'app-server', '--stdio', *forwarded], pane, str(ROOT.resolve()), overrides, extra_roots, review_roots)
             gateway.on_thread = session_recorder()
             record = registry / (gateway.broker.generation + '.json')
             server = UnixServer(endpoint, gateway.handler())

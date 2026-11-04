@@ -73,7 +73,10 @@ if a == ['workspace','list']: print(json.dumps({'workspaces':[{'id':'web-ws','la
 elif a[:2] == ['workspace','get']: print(json.dumps({'workspace':{'active_tab_id':'web-tab'}}))
 elif a[:2] == ['pane','list']: print(json.dumps({'panes':[{'id':'web-pane','tab_id':'web-tab','cols':100,'rows':30}]}))
 elif a[:2] == ['pane','split']: print(json.dumps({'pane':{'id':'new-pane'}}))
-elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).returncode)
+elif a[:2] == ['pane','run']:
+    # 실행기 내용도 남긴다(reviewer 쓰기 자리 확인용) — 실행이 끝나면 delegate.sh 가 지운다
+    with open(os.environ['SCREEN_LOG'], 'a') as f: f.write(json.dumps({'runner': pathlib.Path(shlex.split(a[3])[-1]).read_text()})+'\\n')
+    sys.exit(subprocess.run(['bash','-c',a[3]]).returncode)
 '''
     (core / 'scripts/screen').write_text(screen); (core / 'scripts/screen').chmod(0o755)
     capture = root / 'capture.json'; log = root / 'screen.jsonl'
@@ -159,9 +162,26 @@ elif a[:2] == ['pane','run']: sys.exit(subprocess.run(['bash','-c',a[3]]).return
     check('명시 엔진·리뷰 역할·모델 우선', result.returncode==0 and got and got['engine']=='codex' and got['role']=='reviewer' and got['args'][got['args'].index('--model')+1]=='gpt-test-override')
     if got:
         args = got['args']
+        runner = next(call['runner'] for call in calls if isinstance(call, dict))
+        line = next((text for text in runner.splitlines() if 'codex-session.py' in text), '')
+        roots = [str((core/'plans').resolve()), str((root/'data/state').resolve())]
+        check('Codex 리뷰 → 쓰기 자리만 넘기고 본체 --add-dir 없음', '--add-dir' not in runner and all(f"--athena-review-root {path}" in ' '.join(shlex.split(line)) for path in roots) and '--athena-review-root' not in ' '.join(args) and '--add-dir' not in args)
         settings = (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text()
         check('Codex 리뷰 → commit 보호·끝 알림 없음, 시크릿·프로세스 보호 있음', 'commit-guard.py' not in settings and 'agent-done-notify.py' not in settings and 'secret-guard.py' in settings and 'process-guard.py' in settings)
         check('리뷰 → 작업자 Work ref 유지', '- Work ref: pending' in plan.read_text() and '- Review:' in plan.read_text())
+    # pane 밖(plain) 경로 — reviewer 는 공식 --sandbox read-only, 작업자는 그대로
+    for review, expected in ((True, ['--sandbox','read-only','-c','x=1']), (False, ['-c','x=1'])):
+        capture.unlink(missing_ok=True)
+        plain_env = {key: value for key, value in env.items() if key != 'FAKE_LEAD_PANE'}
+        extra_args = ['--athena-review-root', str(root/'data')] if review else []
+        subprocess.run(['python3', str(core/'scripts/codex-session.py'), *extra_args, '-c', 'x=1'], env=plain_env, cwd=work, capture_output=True, text=True)
+        got = json.loads(capture.read_text()) if capture.exists() else None
+        check('plain 경로 → ' + ('reviewer 읽기 전용' if review else '작업자 sandbox 그대로'), got and got['args'] == expected)
+    for name in ('sonnet', 'opus[1m]', 'claude-opus-5-5'):
+        result, got, calls = run('claude,codex', None, ('--engine','codex','--model',name))
+        check(f'Codex 엔진 + Claude 모델 {name} → pane 생성 전 거부', result.returncode==2 and got is None and not calls and 'Claude 모델이라 Codex 엔진으로 띄우지 않는다' in result.stderr)
+    result, got, calls = run('claude,codex', None, ('--engine','claude','--model','sonnet'))
+    check('Claude 엔진 + sonnet 은 그대로', result.returncode==0 and got and got['engine']=='claude' and got['args'][got['args'].index('--model')+1]=='sonnet')
     result, got, calls = run('claude,codex','codex',('--engine','claude'))
     check('명시 Claude 엔진은 기록한 Codex 보다 먼저', result.returncode==0 and got and got['engine']=='claude')
     result, got, calls = run('claude',None,('--engine','codex'))

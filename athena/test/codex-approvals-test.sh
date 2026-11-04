@@ -95,7 +95,7 @@ assert choices_for('item/tool/requestUserInput',{'questions':[{'id':'secret','is
 # 기존 쓰기 루트 보존과 명시 교체의 다음 턴 유지(실패 응답은 반영하지 않는다).
 sent=[]
 gateway=module.Gateway.__new__(module.Gateway)
-gateway.overrides={};gateway.extra_roots=['/extra'];gateway.workspace_roots={'thread1':['/base']}
+gateway.overrides={};gateway.extra_roots=['/extra'];gateway.review_roots=[];gateway.workspace_roots={'thread1':['/base']}
 gateway.pending_roots={};gateway.roots_lock=threading.RLock();gateway.ws_lock=threading.RLock();gateway.ws=None
 gateway.broker=Approvals('p1','/body',sent.append)
 gateway.forward({'id':101,'method':'turn/start','params':{'threadId':'thread1'}})
@@ -116,6 +116,26 @@ gateway.forward({'id':107,'method':'thread/resume','params':{'threadId':'thread1
 assert sent[-1]['params']['cwd']=='/selected' and sent[-1]['params']['model']=='selected' and sent[-1]['params']['developerInstructions']=='native-terminal-context\n\ncurrent'
 gateway.forward({'id':108,'method':'thread/resume','params':{'threadId':'thread1','cwd':None}})
 assert sent[-1]['params']['cwd']=='/initial'
+# reviewer 격리 — 작업자는 TUI 권한 값을 그대로 넘기고(전), reviewer 는 쓰기 영역을 리뷰 기록 자리로 고정한다(후)
+wide={'type':'dangerFullAccess'}
+gateway.overrides={'cwd':'/tree'};gateway.extra_roots=[];gateway.review_roots=[]
+gateway.forward({'id':109,'method':'thread/start','params':{'sandbox':'danger-full-access'}})
+assert sent[-1]['params']['sandbox']=='danger-full-access' and 'runtimeWorkspaceRoots' not in sent[-1]['params']
+gateway.forward({'id':110,'method':'turn/start','params':{'threadId':'thread1','sandboxPolicy':wide}})
+assert sent[-1]['params']['sandboxPolicy']==wide
+gateway.review_roots=['/plans','/state']
+for number,method in enumerate(('thread/start','thread/resume','thread/fork')):
+    gateway.forward({'id':111+number,'method':method,'params':{'threadId':'thread1','sandbox':'danger-full-access','permissions':':danger','runtimeWorkspaceRoots':['/tree'],'config':{'model_reasoning_effort':'high','sandbox_workspace_write':{'writable_roots':['/tree'],'exclude_slash_tmp':True}}}})
+    params=sent[-1]['params']
+    assert params['sandbox']=='workspace-write' and params['runtimeWorkspaceRoots']==['/plans','/state'] and 'permissions' not in params, (method, params)
+    assert params['config']=={'model_reasoning_effort':'high','sandbox_workspace_write':{'writable_roots':[],'network_access':True,'exclude_slash_tmp':True}}, params['config']
+gateway.forward({'id':114,'method':'turn/start','params':{'threadId':'thread1','cwd':'/tree','runtimeWorkspaceRoots':['/tree'],'sandboxPolicy':wide,'permissions':':danger'}})
+params=sent[-1]['params']
+assert params['runtimeWorkspaceRoots']==['/plans','/state'] and 'sandboxPolicy' not in params and 'permissions' not in params and params['cwd']=='/tree'
+gateway.forward({'id':115,'method':'thread/settings/update','params':{'threadId':'thread1','sandboxPolicy':wide,'permissions':':danger','model':'other'}})
+params=sent[-1]['params']
+assert 'sandboxPolicy' not in params and 'permissions' not in params and params['model']=='other'
+gateway.review_roots=[]
 gateway.forward({'id':109,'method':'thread/start','params':{'developerInstructions':'current\n\nnative-terminal-context'}})
 assert sent[-1]['params']['developerInstructions']=='current\n\nnative-terminal-context'
 

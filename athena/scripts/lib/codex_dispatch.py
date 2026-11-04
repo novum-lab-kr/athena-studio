@@ -48,7 +48,7 @@ def settings(root, agent, role, context, definitions):
     definition = json.loads(pathlib.Path(definitions).read_text(encoding='utf-8'))[agent]
     instructions = pathlib.Path(context).read_text(encoding='utf-8')
     instructions += '\n\n# 에이전트 프로필\n' + definition['prompt']
-    instructions += '\n\n현재 역할: ' + role + (' — 읽기 전용 리뷰. 코드·계획서 본문을 고치지 않는다.' if role == 'reviewer' else ' — 담당 레포 작업자.')
+    instructions += '\n\n현재 역할: ' + role + (' — 읽기 전용 리뷰. 코드·계획서 본문을 고치지 않는다. 쓰기 영역은 계획서 폴더 · 팩 state · git 객체 · 임시 폴더뿐이라 대상 트리에 쓰는 명령(전체 검증 등)은 sandbox 에 막힌다 — 그때는 승인을 요청해 다시 돌린다.' if role == 'reviewer' else ' — 담당 레포 작업자.')
     return instructions, hooks
 
 

@@ -227,6 +227,15 @@ def valid_model_name(name):
     return bool(_MODEL_NAME.fullmatch(name))
 
 
+# Claude CLI 모델 별칭 — claude 2.1.318 실행 파일의 별칭 목록(2026-11-04 확인). 전체 이름은 claude- 로 시작한다
+CLAUDE_MODEL_ALIASES = frozenset(('sonnet', 'opus', 'haiku', 'fable', 'best', 'sonnet[1m]', 'opus[1m]', 'fable[1m]', 'opusplan'))
+
+
+def claude_model_name(name):
+    """Claude 모델 이름(별칭 · claude-…)인가 — delegate.sh 가 Codex 엔진에 Claude 이름을 넘기지 않게 거른다."""
+    return name in CLAUDE_MODEL_ALIASES or name.startswith('claude-')
+
+
 def model_of(cfg, role, engine="claude"):
     """역할·엔진의 모델 이름. 문자열은 기존 Claude 값, 객체는 엔진별 값 — 없으면 ''. 형식이 이상하면(모르는 역할 · 문자열 아님 · 빈 값 · 공백 · 따옴표 등) ValueError(무시하지 않는다)."""
     if engine not in ('claude', 'codex'):
