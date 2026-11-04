@@ -121,8 +121,10 @@ try {
       if (!expected) { assert.throws(() => execFileSync('/bin/bash', ['-c', script], { env, stdio: 'pipe' })); return }
       execFileSync('/bin/bash', ['-c', script], { env, stdio: 'pipe' })
       const command = readFileSync(capture, 'utf8')
-      const actual = execFileSync('/bin/bash', ['-c', `function ${expected}() { printf '%s' "$1"; }\n${command}`], { encoding: 'utf8', env })
-      assert.equal(actual, `${expected === 'codex' ? '$' : '/'}guide 설명`)
+      // Codex 는 앱 · delegate.sh 와 같은 wrapper 줄(python3 <본체>/scripts/codex-session.py --no-daemon <지시>)로 뜬다
+      const runner = expected === 'codex' ? 'python3' : expected
+      const actual = execFileSync('/bin/bash', ['-c', `function ${runner}() { local IFS='|'; printf '%s' "$*"; }\n${command}`], { encoding: 'utf8', env })
+      assert.equal(actual, expected === 'codex' ? `${root}/scripts/codex-session.py|--no-daemon|$guide 설명` : '/guide 설명')
     })
   }
 } finally {

@@ -65,6 +65,17 @@ for tool in claude codex; do
   else printf '  ✖ %s 없음\n' "$tool"; fi
 done
 if [ "$ready" -eq 0 ]; then failed=$((failed+1)); fi
+# 본체 .codex/hooks.json 훅을 Codex 가 믿는지 — 믿음 표시 전이면 리드 Codex 의 첫 실행 안내 · 언어 · 보호 훅이 돌지 않는다.
+# 판단은 Codex 공식 hooks/list(키 존재 · 해시 일치)에 맡기고 개수만 본다(해시 · 키는 출력하지 않는다). 안내만 하고 실패로 세지 않는다
+if [ -f "$ATHENA_DIR/.codex/hooks.json" ] && command -v codex >/dev/null 2>&1 && codex login status >/dev/null 2>&1; then
+  trust="$(python3 "$ATHENA_DIR/scripts/codex-hook-trust.py" "$ATHENA_DIR" 2>/dev/null)"
+  case $? in
+    0) printf '  ✔ codex 본체 훅 믿음 표시됨\n' ;;
+    1) read -r total untrusted modified <<<"$trust"
+       printf '  ⚠️ codex 본체 훅 %s/%s개가 믿음 표시 전이에요 — 이 폴더에서 codex 를 켜고 /hooks 에서 믿음 표시하세요\n' "$((untrusted+modified))" "$total" ;;
+    *) printf '  ⚠️ codex 본체 훅 믿음을 확인하지 못했어요 — codex 에서 /hooks 로 확인하세요\n' ;;
+  esac
+fi
 
 echo
 if [ "$missing" -gt 0 ]; then echo "⚠️  레포 $missing 개가 연결되지 않았습니다. 해당 에이전트는 동작하지 않습니다."; fi

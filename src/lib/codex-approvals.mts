@@ -21,8 +21,29 @@ type Connection = { socket: string; pane: string; body: string; generation: stri
 const object = (value: unknown): value is Record<string, unknown> => Boolean(value) && typeof value === 'object' && !Array.isArray(value)
 const uuid = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9-]{36}$/.test(value)
 
+// 등록 자리 — 여러 팩 구조면 팩 데이터 state/, 옛 구조면 본체 .codex-connections/(codex-session.py registry_dir 와 같다)
+function registryDir(body: string): string {
+  const packData = path.join(body, '.pack-data')
+  try {
+    if (fs.lstatSync(packData).isSymbolicLink()) return path.join(packData, 'state', 'codex-connections')
+  } catch { /* 링크가 없으면 옛 구조 */ }
+  return path.join(body, '.codex-connections')
+}
+
+// 등록한 실행(codex-session.py)이 살아 있는가 — pid 가 없는 옛 기록은 소켓 검사에 맡긴다. 죽은 실행의 기록이 남아 있으면 같은 pane 에 둘로 보여 승인을 띄우지 못한다
+function running(pid: unknown): boolean {
+  if (pid === undefined) return true
+  if (typeof pid !== 'number' || !Number.isInteger(pid) || pid <= 0) return false
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return (error as NodeJS.ErrnoException).code === 'EPERM'
+  }
+}
+
 function connections(body: string): Connection[] {
-  const folder = path.join(body, '.pack-data', 'state', 'codex-connections')
+  const folder = registryDir(body)
   try {
     return fs.readdirSync(folder).filter((name) => /^[a-f0-9-]{36}\.json$/.test(name)).flatMap((name) => {
       try {
@@ -30,7 +51,7 @@ function connections(body: string): Connection[] {
         if (!stat.isFile() || stat.uid !== process.getuid?.() || stat.size > 4096 || (stat.mode & 0o077)) return []
         const value: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
         if (!object(value) || value.body !== fs.realpathSync(body) || typeof value.pane !== 'string' || !uuid(value.generation)
-          || typeof value.socket !== 'string' || !/^\/tmp\/athena-codex-[^/]+\/rpc\.sock$/.test(value.socket)) return []
+          || typeof value.socket !== 'string' || !/^\/tmp\/athena-codex-[^/]+\/rpc\.sock$/.test(value.socket) || !running(value.pid)) return []
         const socket = fs.lstatSync(value.socket), parent = fs.lstatSync(path.dirname(value.socket))
         if (!socket.isSocket() || socket.uid !== process.getuid?.() || (socket.mode & 0o077)
           || !parent.isDirectory() || parent.uid !== process.getuid?.() || (parent.mode & 0o077)) return []

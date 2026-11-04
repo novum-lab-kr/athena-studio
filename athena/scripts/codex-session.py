@@ -120,6 +120,10 @@ class Gateway:
             result = message.get('result') or {}
             if isinstance(result, dict) and isinstance(result.get('thread'), dict):
                 thread = result['thread'].get('id')
+                # 훅 믿음 상태와 상관없이 pane ↔ 대화 기록을 남긴다(하위 에이전트 · 저장 안 되는 대화는 빼고)
+                recorder = getattr(self, 'on_thread', None)
+                if recorder and isinstance(thread, str) and not result['thread'].get('parentThreadId') and not result['thread'].get('ephemeral'):
+                    recorder(thread, result.get('cwd') if isinstance(result.get('cwd'), str) else os.getcwd())
                 roots = result.get('runtimeWorkspaceRoots')
                 if isinstance(thread, str) and isinstance(roots, list) and all(isinstance(root, str) and os.path.isabs(root) for root in roots):
                     self.workspace_roots[thread] = roots
@@ -256,6 +260,85 @@ class Gateway:
         return Handler
 
 
+SOCKET_PATH = re.compile(r'^/tmp/athena-codex-[^/]+/rpc\.sock$')
+
+
+def registry_dir() -> pathlib.Path:
+    """연결 등록 자리 — 여러 팩 구조면 팩 데이터 state/, 옛 구조면 본체 .codex-connections/(요청 자리 .requests 와 같은 갈래).
+    앱 src/lib/codex-approvals.mts connections() 가 같은 자리를 읽는다."""
+    pack_data = ROOT / '.pack-data'
+    if pack_data.is_symlink():
+        return pack_data.resolve() / 'state/codex-connections'
+    return ROOT / '.codex-connections'
+
+
+def alive(pid: object) -> bool:
+    if not isinstance(pid, int) or isinstance(pid, bool) or pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    return True
+
+
+def reachable(path: str) -> bool:
+    try:
+        with socket.socket(socket.AF_UNIX) as probe:
+            probe.settimeout(1)
+            probe.connect(path)
+        return True
+    except OSError:
+        return False
+
+
+def sweep(registry: pathlib.Path) -> None:
+    """kill -9 처럼 정리 없이 끝난 실행이 남긴 등록 파일 · 소켓을 치운다.
+    pid 가 있으면 그 pid 가 살아 있는지로, pid 가 없는 옛 기록은 소켓이 연결을 받는지로 본다."""
+    for record in registry.glob('*.json'):
+        try:
+            value = json.loads(record.read_text(encoding='utf-8'))
+        except (OSError, ValueError):
+            continue
+        if not isinstance(value, dict):
+            continue
+        endpoint = value.get('socket')
+        if 'pid' in value:
+            stale = not alive(value.get('pid'))
+        else:
+            stale = not (isinstance(endpoint, str) and reachable(endpoint))
+        if not stale:
+            continue
+        record.unlink(missing_ok=True)
+        if isinstance(endpoint, str) and SOCKET_PATH.match(endpoint):
+            folder = pathlib.Path(endpoint).parent
+            try:
+                if not folder.is_symlink() and folder.lstat().st_uid == os.getuid():
+                    pathlib.Path(endpoint).unlink(missing_ok=True)
+                    folder.rmdir()
+            except OSError:
+                pass
+
+
+def session_recorder():
+    """thread id 를 pane ↔ 대화 기록(scripts/hooks/pane-session.py)에 엔진 codex 로 넘긴다 — 훅이 믿음 없음으로 안 돌아도 기록이 남게.
+    같은 thread 는 한 번만 · 기록은 뒤에서(중계를 막지 않는다)."""
+    seen: set[str] = set()
+    hook = str(ROOT / 'scripts/hooks/pane-session.py')
+
+    def record(thread: str, cwd: str) -> None:
+        if thread in seen:
+            return
+        seen.add(thread)
+        event = json.dumps({'session_id': thread, 'cwd': cwd}).encode()
+        threading.Thread(target=subprocess.run, args=([sys.executable, hook, '--tool=codex'],), daemon=True,
+                         kwargs={'input': event, 'stdout': subprocess.DEVNULL, 'stderr': subprocess.DEVNULL, 'timeout': 10}).start()
+
+    return record
+
+
 def server_args(args: list[str]) -> list[str]:
     """TUI와 서버가 같은 설정을 읽는다. 프로필 훅은 공식 sessionFlags로 전달한다."""
     result = []
@@ -303,8 +386,10 @@ def main() -> int:
         hook_args = ['-c', 'hooks=' + codex_dispatch.toml(hooks)]
         del args[index:index + 2]
     pane = str(screen.self_info().get('pane_id') or '')
-    if not pane or not (ROOT / '.pack-data').is_symlink():
-        # Studio 밖 실행은 기존 CLI로 유지한다.
+    if not pane:
+        # Studio 밖(pane 없음)은 기존 CLI로 유지한다 — 승인을 받을 화면이 없다.
+        # 위임 훅은 --profile 의 프로필 파일이 그대로 싣는다(--athena-hooks-file 은 서버 중계용이라 여기서는 쓰지 않는다).
+        # 옛 구조 본체(.pack-data 없음)도 pane 안이면 아래 중계를 탄다 — 등록 자리만 registry_dir() 가 가른다.
         return subprocess.call(['codex', *args])
     # 원격 TUI 자체가 공유 데몬을 쓰지 않는다. --remote와 배타적인 플래그는 여기서 소비한다.
     args = [argument for argument in args if argument != '--no-daemon']
@@ -336,41 +421,64 @@ def main() -> int:
             tui_args.append(args[index])
             index += 1
 
-    registry = (ROOT / '.pack-data').resolve() / 'state/codex-connections'
+    registry = registry_dir()
     registry.mkdir(parents=True, exist_ok=True, mode=0o700)
+    # 앞선 실행이 정리 없이 죽었으면(kill -9 등) 그 등록 · 소켓부터 치운다 — 같은 pane 에 둘이 보이면 앱이 승인을 띄우지 않는다
+    sweep(registry)
+    tui = None
+    stopping = []
+
+    def stop(signum, _frame):
+        # pane 닫힘(SIGHUP) · SIGINT · SIGTERM 도 정상 종료와 같은 정리(finally)를 타게 한다
+        stopping.append(signum)
+        if tui and tui.poll() is None:
+            tui.terminate()
+        elif tui is None:
+            raise SystemExit(128 + signum)
+
+    handled = (signal.SIGHUP, signal.SIGINT, signal.SIGTERM)
+    previous = {signum: signal.signal(signum, stop) for signum in handled}
     with tempfile.TemporaryDirectory(prefix='athena-codex-', dir='/tmp') as directory:
         endpoint = str(pathlib.Path(directory) / 'rpc.sock')
-        gateway = Gateway(['codex', 'app-server', '--stdio', *forwarded], pane, str(ROOT.resolve()), overrides, extra_roots)
-        server = UnixServer(endpoint, gateway.handler())
-        os.chmod(endpoint, 0o600)
-        thread = threading.Thread(target=server.serve_forever, daemon=True)
-        thread.start()
-        record = registry / (gateway.broker.generation + '.json')
-        record.write_text(json.dumps({'socket': endpoint, 'pane': pane, 'body': str(ROOT.resolve()), 'generation': gateway.broker.generation}))
-        record.chmod(0o600)
-        tui = None
-        def stop(_signum, _frame):
-            if tui and tui.poll() is None:
-                tui.terminate()
-        previous = signal.signal(signal.SIGTERM, stop)
+        gateway = server = record = None
         try:
+            gateway = Gateway(['codex', 'app-server', '--stdio', *forwarded], pane, str(ROOT.resolve()), overrides, extra_roots)
+            gateway.on_thread = session_recorder()
+            record = registry / (gateway.broker.generation + '.json')
+            server = UnixServer(endpoint, gateway.handler())
+            os.chmod(endpoint, 0o600)
+            thread = threading.Thread(target=server.serve_forever, daemon=True)
+            thread.start()
+            descriptor = os.open(record, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+            with os.fdopen(descriptor, 'w', encoding='utf-8') as handle:
+                json.dump({'socket': endpoint, 'pane': pane, 'body': str(ROOT.resolve()), 'generation': gateway.broker.generation, 'pid': os.getpid()}, handle)
             tui = subprocess.Popen(['codex', '--remote', 'unix://' + endpoint, *tui_args])
-            return tui.wait()
+            code = tui.wait()
+            return 128 + stopping[0] if stopping and code < 0 else code
         finally:
-            signal.signal(signal.SIGTERM, previous)
-            gateway.broker.close()
+            for signum, handler in previous.items():
+                signal.signal(signum, handler)
+            # 등록부터 지운다 — 정리 도중 다시 죽어도 앱이 닫힌 연결에 승인을 보내지 않게
+            if record:
+                record.unlink(missing_ok=True)
             if tui and tui.poll() is None:
                 tui.terminate()
-                tui.wait(timeout=5)
-            gateway.process.terminate()
-            try:
-                gateway.process.wait(timeout=5)
-            except subprocess.TimeoutExpired:
-                gateway.process.kill()
-                gateway.process.wait()
-            server.shutdown()
-            server.server_close()
-            record.unlink(missing_ok=True)
+                try:
+                    tui.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    tui.kill()
+                    tui.wait()
+            if gateway:
+                gateway.broker.close()
+                gateway.process.terminate()
+                try:
+                    gateway.process.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    gateway.process.kill()
+                    gateway.process.wait()
+            if server:
+                server.shutdown()
+                server.server_close()
 
 
 if __name__ == '__main__':

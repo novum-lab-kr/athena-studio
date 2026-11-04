@@ -34,7 +34,12 @@ ask_agent() { # ask_agent <스킬 이름과 인자> — 주 도구로 새 아테
       printf '%s⚠️ pane 분할 실패:%s %s\n' "$YELLOW" "$RESET" "$out"; return 1; }
     new_pane="$(printf '%s' "$out" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')"
     sleep 1
-    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" "$(shell_line "$engine" "$prompt")" >/dev/null   # 셸 한 줄 — '/guide 설명' 이 낱말 둘로 쪼개지지 않게
+    # 셸 한 줄 — '/guide 설명' 이 낱말 둘로 쪼개지지 않게. Codex 는 앱(core.agentCommand + codexSessionCommand) · delegate.sh 와 같은
+    # wrapper 실행 줄로 띄워 훅 · 승인 중계 · pane 기록을 똑같이 탄다
+    local line
+    if [ "$engine" = codex ]; then line="$(shell_line python3 "$ATHENA_DIR/scripts/codex-session.py" --no-daemon "$prompt")"
+    else line="$(shell_line "$engine" "$prompt")"; fi
+    "$ATHENA_DIR/scripts/screen" pane run "$new_pane" "$line" >/dev/null
     "$ATHENA_DIR/scripts/screen" pane rename "$new_pane" "아테나 작업" >/dev/null 2>&1 || true
     printf '%s✔ 새 pane(%s)에 아테나 세션을 띄워 실행했습니다:%s %s\n' "$GREEN" "$new_pane" "$RESET" "$prompt"
   else

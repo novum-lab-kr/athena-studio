@@ -7,16 +7,17 @@ const http = require('node:http')
 const { randomUUID } = require('node:crypto')
 const { pendingApprovals, respondApproval, codexSessionCommand } = require('../src/lib/codex-approvals.mts')
 
-async function fixture(t) {
+async function fixture(t, { legacy = false, pid } = {}) {
   const root = fs.mkdtempSync('/tmp/athena-codex-')
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const body = path.join(root, 'body'), data = path.join(root, 'data')
   fs.mkdirSync(body); fs.mkdirSync(data)
-  fs.symlinkSync(data, path.join(body, '.pack-data'))
-  const registry = path.join(data, 'state', 'codex-connections')
+  // 옛 구조 본체(.pack-data 없음)는 본체 .codex-connections — codex-session.py registry_dir 와 같은 자리
+  if (!legacy) fs.symlinkSync(data, path.join(body, '.pack-data'))
+  const registry = legacy ? path.join(body, '.codex-connections') : path.join(data, 'state', 'codex-connections')
   fs.mkdirSync(registry, { recursive: true, mode: 0o700 })
   const generation = randomUUID(), token = randomUUID(), socket = path.join(root, 'rpc.sock')
-  const record = { socket, pane: 'p1', body: fs.realpathSync(body), generation }
+  const record = { socket, pane: 'p1', body: fs.realpathSync(body), generation, ...(pid === undefined ? {} : { pid }) }
   const approval = { token, generation, pane: 'p1', body: record.body, method: 'item/commandExecution/requestApproval', params: { threadId: 'thread1', turnId: 'turn1', itemId: 'item1', command: 'echo fixture' }, choices: [{ key: 'accept' }, { key: 'decline' }] }
   const answers = []
   let active = true
@@ -67,6 +68,35 @@ test('앱: 다른 pane·팩·세대·없는 선택지·동시 연결·느슨한 
   assert.deepEqual(item.answers, [])
 })
 
+// 끝난 프로세스 pid — 실제로 띄웠다가 끝난 것을 쓴다(짐작한 번호를 쓰지 않는다)
+function deadPid() {
+  const { spawnSync } = require('node:child_process')
+  return spawnSync(process.execPath, ['-e', '0']).pid
+}
+
+test('앱: 죽은 실행(pid 끝남)의 등록은 같은 pane 의 살아 있는 연결을 가리지 않는다', async (t) => {
+  const item = await fixture(t, { pid: process.pid })
+  const stale = randomUUID()
+  fs.writeFileSync(path.join(item.registry, stale + '.json'), JSON.stringify({ ...item.record, generation: stale, pid: deadPid() }), { mode: 0o600 })
+  const pending = await pendingApprovals(item.body, new Set(['p1']))
+  assert.equal(pending.length, 1)
+  assert.equal(await respondApproval(item.body, pending[0], 0), true)
+  assert.equal(item.answers.length, 1)
+  // 살아 있는 연결 자체의 pid 가 죽었으면 읽지 않는다
+  fs.writeFileSync(item.file, JSON.stringify({ ...item.record, pid: deadPid() }), { mode: 0o600 })
+  assert.deepEqual(await pendingApprovals(item.body, new Set(['p1'])), [])
+  for (const pid of ['1', -1, 0, 1.5, null]) {
+    fs.writeFileSync(item.file, JSON.stringify({ ...item.record, pid }), { mode: 0o600 })
+    assert.deepEqual(await pendingApprovals(item.body, new Set(['p1'])), [])
+  }
+})
+
+test('앱: 옛 구조 본체(.pack-data 없음)도 본체 .codex-connections 의 연결을 읽는다', async (t) => {
+  const item = await fixture(t, { legacy: true, pid: process.pid })
+  const pending = await pendingApprovals(item.body, new Set(['p1']))
+  assert.equal(pending.length, 1)
+  assert.equal(await respondApproval(item.body, pending[0], 0), true)
+})
 
 test('새 실행·resume·따라잡기 명령은 같은 wrapper · 옛 본체/Claude 경로 보존', (t) => {
   const root = fs.mkdtempSync('/tmp/codex-command-')

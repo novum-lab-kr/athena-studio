@@ -26,8 +26,12 @@ def toml(value):
 
 def settings(root, agent, role, context, definitions):
     root = pathlib.Path(root)
-    guards = [] if role == 'reviewer' else [agent_hooks.hook(root, 'scripts/hooks/commit-guard.py')]
-    guards += [agent_hooks.hook(root, 'scripts/hooks/secret-guard.py'), agent_hooks.hook(root, 'scripts/hooks/process-guard.py')]
+    # 서버 중계 훅은 sessionFlags 출처라 믿음 키가 `<session-flags>/config.toml:<이벤트>:<묶음>:<순번>` 뿐이다
+    # (본체 · 역할 구분 없음). 역할마다 같은 자리에 다른 명령이 오면 서로의 믿음을 modified 로 덮으니
+    # 공통 훅을 앞에, 역할 전용 훅(commit-guard · 끝 알림 · ask-to-request)을 뒤에 둔다 — test/codex-approvals-test.sh
+    guards = [agent_hooks.hook(root, 'scripts/hooks/secret-guard.py'), agent_hooks.hook(root, 'scripts/hooks/process-guard.py')]
+    if role != 'reviewer':
+        guards.append(agent_hooks.hook(root, 'scripts/hooks/commit-guard.py'))
     prompt, stop = agent_hooks.done_notify(root, 'reviewer' if role == 'reviewer' else agent)
     hooks = {
         'PreToolUse': [{'matcher': 'Bash', 'hooks': guards}],
