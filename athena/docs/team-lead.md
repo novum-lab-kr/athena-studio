@@ -57,7 +57,7 @@
 - 에이전트가 요청마다 Status 를 `in_progress` ↔ `ready_for_review` 로 옮기고, 작업 중에는 고친 부분만 확인한다. 전체 검증은 끝날 때 한 번(공통 문서 4절). 커밋 · push · PR 은 공통 문서 5절대로 에이전트가 pane 에서(`commit.sh` · `ship.sh`)
 - **레포 하나짜리 작업은 pane 에서 끝까지**(작업 → 리뷰 → 커밋 → PR) — 아테나로 돌아오지 않는다. 리뷰 기준은 공통 문서 6절, 결정 필요 · 수정 필요 처리와 "PR 올려줘" 흐름은 `docs/workflow.md` 4절. PR 은 항상 마지막 단계가 아니다 — 올리는 방식(PR · 바로 머지 · main 직접)은 레포 설정마다 달라 디스패치 결과의 한 줄이 알려 준다(`docs/dispatch.md`)
 - **PR 자동 리뷰**(`"autoMerge": true` 레포)는 현황판이 draft PR 을 감지해 Claude · Codex 가 리뷰하고 수정 · 머지 확인까지 돈다 — 리뷰 끔 · 머지 방식은 레포마다(`docs/pr-auto.md` "켜기")
-- **Actions 로 넘기는 레포**(`actionsHandoff`)는 에이전트가 고치고 · 바뀐 부분만 확인하고 · 커밋해 넘기면 끝이다 — 전체 검증 → `prBase` 머지 → 배포는 Actions, 결과 읽기 · 완료 표시 · 실패 원문 전달은 현황판. 넓은 수정의 리뷰와 화면 확인은 넘기기 전에(`docs/pr-auto.md` "Actions 로 넘기기")
+- **Actions 로 넘기는 레포**(`actionsHandoff`)는 에이전트가 고치고 · 바뀐 부분만 확인하고 · 커밋해 넘기면 끝이다 — 전체 검증 → `prBase` 머지 → 배포는 Actions, 결과 읽기 · 완료 표시 · 실패 원문 전달은 현황판. 넓은 수정이면 `ship.sh --direct-merge` 가 넘기기 앞에 리뷰 문을 세운다(reviewer 자동 · 같은 HEAD 승인이 있어야 넘긴다 — 두 번째도 수정 필요면 `[자동 리뷰 → 아테나]` 로 넘어온다 · `docs/pr-auto.md` "바로 머지 앞의 리뷰") · 화면 확인은 넘기기 전에(`docs/pr-auto.md` "Actions 로 넘기기")
 
 ### 5단계: 검증 · 보고 · push/PR
 - (여러 레포 · 아테나가 맡은 작업) `reviewer` 에 계획서 + 대상(워크트리면 `--cwd`)을 넘겨 리뷰. **수정 필요는 묻지 않고** 그 에이전트 pane 에 바로 지시하고 사용자에게는 한 줄씩 알린다. **결정 필요**는 같은 정식 계획서에 덧붙여 결정 콘솔로(`plan-html.mjs --add` → `board.sh open`)

@@ -183,10 +183,10 @@ case "$SHIP_KIND" in
 esac
 if [ "$SHIP_KIND" = handoff ]; then
   # Actions 로 넘기기 — 넘기면 끝. 결과는 현황판이 읽고 실패만 pane 으로 온다(docs/pr-auto.md "Actions 로 넘기기")
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 Actions 로 넘긴다 — 레포 하나짜리 작업을 끝냈으면 넓은 수정의 리뷰와 화면 확인을 먼저 끝내고, 묻지 않고 ① commit.sh(맥 전체 검증 없음) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge. 넘긴 뒤 결과를 기다리지 말고 보고하고 다음 지시를 받는다. 실패 원문이 이 pane 으로 오면 하던 일을 마친 뒤 그 워크트리에서 고쳐 같은 명령으로 다시 넘긴다. 'PR 올려줘' 일 때만 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없으면 넘기지 않는다. "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 Actions 로 넘긴다 — 레포 하나짜리 작업을 끝냈으면 넓은 수정의 리뷰와 화면 확인을 먼저 끝내고(넓은 수정 리뷰는 ② 가 띄운다 — 아래), 묻지 않고 ① commit.sh(맥 전체 검증 없음) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge. 넓은 수정이면 ② 가 넘기기 앞에 reviewer 를 옆에 띄우고 승인을 기다린다(스크립트 기준 — 코드 파일 5개 · 150줄 · 민감 경로. 새 기능 · 구조 변경 · 외부 계약처럼 줄 수로 안 보이는 넓은 수정은 ② 전에 계획서 Checkpoint 에 '- Wide change: yes (<이유>)' 한 줄을 적는다). 수정 필요로 멈추면(종료 1) reviewer pane 보고의 지적을 고쳐 commit.sh 하고 같은 ② 를 다시 — 고친 부분만 짧게 다시 본다. 넘긴 뒤 결과를 기다리지 말고 보고하고 다음 지시를 받는다. 실패 원문이 이 pane 으로 오면 하던 일을 마친 뒤 그 워크트리에서 고쳐 같은 명령으로 다시 넘긴다. 'PR 올려줘' 일 때만 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없으면 넘기지 않는다. "
 elif [ "$SHIP_KIND" = pr-off ]; then
   # PR 끔 — 끝나면 PR 없이 prBase 에 바로 머지(ship.sh --direct-merge). "PR 올려줘" 는 그대로 PR
-  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다 — 레포 하나짜리 작업을 끝냈으면 묻지 않고 ① commit.sh(전체 검증은 여기서 한 번) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge(PR · 제목 · base · 본문 · --yes 없음). 'PR 올려줘' 일 때만 평소 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
+  AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 자동 PR 을 껐다 — 레포 하나짜리 작업을 끝냈으면 묻지 않고 ① commit.sh(전체 검증은 여기서 한 번) ② $ATHENA_DIR/scripts/ship.sh --plan $ATHENA_DIR/$PLAN --dir <워크트리> --direct-merge(PR · 제목 · base · 본문 · --yes 없음). 넓은 수정이면 ② 가 머지 앞에 reviewer 를 옆에 띄우고 승인을 기다린다(스크립트 기준 — 코드 파일 5개 · 150줄 · 민감 경로. 새 기능 · 구조 변경 · 외부 계약처럼 줄 수로 안 보이는 넓은 수정은 ② 전에 계획서 Checkpoint 에 '- Wide change: yes (<이유>)' 한 줄을 적는다). 수정 필요로 멈추면(종료 1) reviewer pane 보고의 지적을 고쳐 commit.sh 하고 같은 ② 를 다시 — 고친 부분만 짧게 다시 본다. 'PR 올려줘' 일 때만 평소 PR 명령에 --user-pr. 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
 elif [ -n "$AUTO_SHIP_REPO" ]; then
   AUTO_SHIP_RULE="이 레포($AUTO_SHIP_REPO)는 끝나면 PR 을 올린다 — 레포 하나짜리 작업을 끝냈으면 말이 없어도 'PR 올려줘' 흐름을 묻지 않고 돈다(열린 PR 이 있으면 push 만). 조사만 했거나 바뀐 게 없거나 검증이 실패하면 올리지 않는다(docs/pr-auto.md). "
 fi

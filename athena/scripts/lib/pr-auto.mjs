@@ -315,7 +315,9 @@ export const reviewerBrief = (results) => results.map((result) => `${result.name
 // 같은 내용 판정은 ship.sh "리뷰" 와 같다 — 줄에 tree(리뷰한 워크트리 전체 · 커밋 전 변경 포함)가 있으면 PR HEAD 의 tree 가 그것으로 시작할 때,
 // tree 가 없는 옛 줄이면 PR HEAD 커밋이 그 sha 로 시작할 때. 줄 고르기도 ship.sh 와 같다 — 이 레포 · 브랜치 줄 → 레포 표시 없는 이 브랜치 줄 → 표시 없는 옛 줄, 그중 마지막
 export const REVIEW_ENGINES = ['claude', 'codex']
-export const priorApproval = (planText, { repo, branch, sha, tree }) => {
+// 이 레포 · 브랜치의 마지막 "- Review result:" 줄 — { verdict, sha, tree, engine, same, stamp } · 줄이 없으면 null.
+// same = 리뷰한 내용이 지금 HEAD 와 같은가(tree 가 있으면 tree 로 · 없는 옛 줄은 sha 로). 바로 머지의 리뷰 문(directReviewGate)과 priorApproval 이 같이 쓴다
+export const latestReviewResult = (planText, { repo, branch, sha, tree }) => {
   const lines = String(planText ?? '').split('\n').filter((line) => /^- Review result:/.test(line))
   const mine = [
     lines.filter((line) => `${line} `.includes(`📦 ${repo} · 🌿 ${branch} `)),
@@ -324,11 +326,17 @@ export const priorApproval = (planText, { repo, branch, sha, tree }) => {
   ].find((group) => group.length) ?? []
   const last = mine.at(-1)
   const hit = last?.match(/^- Review result:\s*(.+?)\s*@\s*([0-9a-f]{6,40})/)
-  if (!hit || !hit[1].startsWith('승인')) return null
+  if (!hit) return null
   const reviewedTree = last.match(/· tree ([0-9a-f]{6,40})/)?.[1] ?? ''
-  const same = reviewedTree ? Boolean(tree) && String(tree).startsWith(reviewedTree) : String(sha).startsWith(hit[2])
+  const same = reviewedTree ? Boolean(tree) && String(tree).startsWith(reviewedTree) : String(sha ?? '').startsWith(hit[2])
   const engine = last.match(/· 🧠 ([a-z]+)(?: |$)/)?.[1] ?? ''
-  return same && REVIEW_ENGINES.includes(engine) ? { sha: hit[2], tree: reviewedTree, engine } : null
+  const stamp = last.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)?.[0] ?? ''
+  return { verdict: hit[1].startsWith('승인') ? '승인' : '수정 필요', sha: hit[2], tree: reviewedTree, engine, same, stamp, line: last }
+}
+export const priorApproval = (planText, target) => {
+  const last = latestReviewResult(planText, target)
+  if (!last || last.verdict !== '승인') return null
+  return last.same && REVIEW_ENGINES.includes(last.engine) ? { sha: last.sha, tree: last.tree, engine: last.engine } : null
 }
 // 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진의 첫 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
 export const inheritedResult = (prior, headSha) => ({
@@ -862,6 +870,64 @@ export const directMergeNotice = ({ agent, repo, branch, sha, result }) => oneLi
 export const prBaseOf = (config, repoName) => {
   const entry = (config?.repos ?? []).find((repo) => repo.name === repoName) ?? {}
   return entry.prBase || Object.values(entry.apps ?? {}).map((app) => app?.prBase).find(Boolean) || ''
+}
+
+// ── 바로 머지 앞의 리뷰 문(2026-11-04 계획서 "바로 머지 앞에 리뷰 자동으로" · 사용자 결정) ──────────────
+// 넓은 수정일 때만 리뷰를 끼운다 — 문서만 · 작은 수정은 지금처럼 바로 머지(넘기기). 넓은 수정 = 스크립트 기준 또는 에이전트 표시 중 하나라도.
+// 스크립트 기준(값의 근거 — origin/main 바로 머지 squash 커밋 33개 · 2026-10-26~11-04 · 계획서 Decisions):
+//   코드 파일(문서 · 그림 제외)이 5개 이상 — 지난 기록이 4개 이하(버그 수정 · 작은 기능 12건)와 6개 이상(새 기능 · 구조 변경 17건)으로 갈라지고 5개는 없었다
+//   코드 줄(+ 와 - 합)이 150 이상 — 4개 이하 묶음 안에서 버그 수정은 95줄 이하, 새 기능은 151~361줄
+//   민감 경로 — 설정 파일(FAST_PATH_CONFIG_RE) · 훅 · 인증 · 비밀 · 권한 · 마이그레이션 · 스키마 · .env 는 크기와 상관없이 넓은 수정
+// 에이전트 표시 — 계획서 Checkpoint 의 "- Wide change: yes (<이유>)" 줄(에이전트가 새 기능 · 구조 변경 · 외부 계약처럼 줄 수로 안 보이는 것을 적는다)
+export const WIDE_MIN_CODE_FILES = 5
+export const WIDE_MIN_CODE_LINES = 150
+export const WIDE_SENSITIVE_RE = /(^|\/)(hooks|migrations?|schemas?)\/|(^|\/)[^/]*(auth|oauth|secret|security|permission|guard|migration|schema)[^/]*$|(^|\/)\.env(\.|$)/i
+// 코드 파일이 아닌 것 — 문서 · 그림 · 자료. 폴더 이름 docs/ 아래는 모두(흐름 그림 json · html 포함) · 바꾸기 기록 · 라이선스
+export const isCodeFile = (filePath) => {
+  const path = String(filePath ?? '')
+  if (/(^|\/)docs\//.test(path)) return false
+  if (/(^|\/)(CHANGELOG|LICENSE|NOTICE)[^/]*$/i.test(path)) return false
+  return !/\.(md|markdown|mdx|txt|html?|png|jpe?g|gif|svg|ico|webp|pdf|csv)$/i.test(path)
+}
+// 판정 — { wide, why }. files = [{ path, added, deleted }](git diff --numstat origin/<base>...HEAD) · flagged = 계획서 1절 표시(planFastPathFlags) · marked = 에이전트 표시 이유('' 이면 없음)
+// why 는 계획서 "- Auto merge:" 줄 괄호 안과 reviewer 지시에 그대로 들어간다(짧게)
+export const wideChangeVerdict = ({ files = [], flagged = [], marked = '' }) => {
+  const sensitive = files.map((file) => file.path).filter((path) => FAST_PATH_CONFIG_RE.test(path) || WIDE_SENSITIVE_RE.test(path))
+  if (sensitive.length) return { wide: true, why: `민감 경로 ${sensitive.slice(0, 3).join(' · ')}${sensitive.length > 3 ? ` 외 ${sensitive.length - 3}개` : ''}` }
+  const code = files.filter((file) => isCodeFile(file.path))
+  const lines = code.reduce((sum, file) => sum + (Number(file.added) || 0) + (Number(file.deleted) || 0), 0)
+  if (code.length >= WIDE_MIN_CODE_FILES) return { wide: true, why: `코드 파일 ${code.length}개 ≥ ${WIDE_MIN_CODE_FILES}` }
+  if (lines >= WIDE_MIN_CODE_LINES) return { wide: true, why: `코드 ${lines}줄 ≥ ${WIDE_MIN_CODE_LINES}` }
+  if (flagged.length) return { wide: true, why: `1절에 ${flagged.join(' · ')}` }
+  if (marked) return { wide: true, why: `에이전트 표시(${oneLine(marked, 80)})` }
+  if (!code.length) return { wide: false, why: files.length ? `문서만 ${files.length}개` : '바뀐 파일 없음' }
+  return { wide: false, why: `코드 파일 ${code.length}개 · ${lines}줄` }
+}
+// 에이전트 표시 줄 — "- Wide change: yes (<이유>)" · Checkpoint 절 안에서만 읽는다(빠른 길 줄과 같은 까닭). 이유 문자열(없으면 '')
+const WIDE_LINE = /^- Wide change:\s*(yes|no)\b(?:\s*\((.*)\))?\s*$/
+export const planWideMark = (planText) => {
+  const lines = String(planText ?? '').split('\n')
+  const index = checkpointIndex(lines, (row) => WIDE_LINE.test(row))
+  if (index < 0) return ''
+  const hit = lines[index].match(WIDE_LINE)
+  return hit?.[1] === 'yes' ? (hit[2]?.trim() || '표시만') : ''
+}
+// 리뷰 문의 "- Auto merge:" 줄 결과 머리 — 계획서 4절 "리뷰를 기다리는 중 · 리뷰 때문에 멈춤"
+export const REVIEW_WAITING = '리뷰 기다리는 중'
+export const REVIEW_STOPPED = '리뷰 때문에 멈춤'
+// 리뷰 횟수 — 전체 리뷰 1회 + 고친 부분 짧은 재리뷰 1회. 두 번째도 수정 필요면 멈추고 아테나가 이어받는다(사용자 결정)
+export const DIRECT_REVIEW_MAX = 2
+// 지금까지 돈 리뷰 횟수 — "- Auto merge:" 줄의 "리뷰 N회"(같은 브랜치 줄만 · 머지됨이면 0)
+export const directReviewRounds = (planText, repo, branch) => {
+  const known = directMergeLines(planText).get(`${repo} ${branch}`)
+  if (!known || known.result.startsWith(DIRECT_MERGED)) return 0
+  return Number(known.result.match(/리뷰 (\d+)회/)?.[1] ?? 0)
+}
+// reviewer 지시 — 전체 리뷰(첫 번째) · 고친 부분만 짧은 리뷰(두 번째 — 앞 리뷰 sha 뒤의 차이만)
+export const directReviewPrompt = ({ planFile, worktree, repo, branch, base, why, prior }) => {
+  const common = `계획서 ${planFile} · 📦 ${repo} · 🌿 ${branch} · 트리 ${worktree}. 바로 머지(PR 없음) 앞의 자동 리뷰다 — 넓은 수정(${why}). 끝내면 scripts/review-result.sh --plan ${planFile} --dir ${worktree} --verdict 승인|수정필요 --note "<한 줄>" 로 결론을 남긴다(지적은 pane 보고에 파일:줄로).`
+  if (prior?.sha) return `${common} 짧은 리뷰 — 앞 리뷰(@${prior.sha.slice(0, 7)} ${prior.verdict}) 뒤에 바뀐 부분만 본다: git -C ${worktree} diff ${prior.sha}...HEAD. 앞 지적이 고쳐졌는지(승인 뒤 더한 커밋이면 그 변경만)와 새 문제를 만들지 않았는지만 판단한다.`
+  return `${common} 기준 브랜치 대비 전체 diff: git -C ${worktree} diff origin/${base}...HEAD. 계획서 범위 · 코드 규칙 · 보안 · 회귀 위험을 본다.`
 }
 // 계획서 제목(첫 "# " 줄) — 바로 머지 커밋 제목
 export const planTitleOf = (planText) => String(planText ?? '').match(/^#\s+(.+)$/m)?.[1]?.trim() ?? ''

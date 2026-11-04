@@ -10,6 +10,16 @@ TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT
 ATH="$TMP/ath"; mkdir -p "$ATH/plans/task" "$ATH/repos"
 cp -R "$SRC/scripts" "$ATH/"
 printf '#!/bin/sh\nexit 0\n' > "$ATH/scripts/screen"; chmod +x "$ATH/scripts/screen"
+# 가짜 reviewer — workflow 파일(.github/workflows)은 민감 경로라 넘기기 앞 리뷰 문이 reviewer 를 띄운다(docs/pr-auto.md "바로 머지 앞의 리뷰"). 바로 같은 HEAD 승인을 남긴다
+DELEGATE_LOG="$TMP/delegate.log"
+cat > "$ATH/scripts/delegate.sh" <<'SH'
+#!/bin/sh
+ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"; printf 'delegate %s\n' "$*" >> "$DELEGATE_LOG"
+CWD=""; PLAN=""; while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
+BRANCH="$(git -C "$CWD" symbolic-ref --short -q HEAD)"; SHA="$(git -C "$CWD" rev-parse --short HEAD)"; TREE="$(git -C "$CWD" rev-parse 'HEAD^{tree}' | cut -c1-12)"
+printf -- '- Review result: 승인 @%s · tree %s · 📦 web · 🌿 %s · 🧠 claude · %s · 가짜\n' "$SHA" "$TREE" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+SH
+chmod +x "$ATH/scripts/delegate.sh"; export DELEGATE_LOG
 export XDG_CACHE_HOME="$TMP/cache" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue"
 mkdir -p "$TMP/queue/.watcher.lock"; echo $$ > "$TMP/queue/.watcher.lock/pid"   # 처리기가 돌고 있는 것처럼
 unset ATHENA_VERIFY_DIR ATHENA_VERIFY_STRICT ATHENA_VERIFY_ALLOW_SKIP ATHENA_VERIFY_FULL ATHENA_PLAN ATHENA_AGENT
@@ -64,6 +74,7 @@ SHA="$(git -C "$TMP/wt" rev-parse HEAD)"; START_MAIN="$(git -C "$TMP/origin.git"
 out="$(ship)"; rc=$?
 [ $rc = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)" = "$SHA" ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/main)" = "$START_MAIN" ] && ok "ship.sh --direct-merge → handoff/<브랜치> push 만 · main 그대로" || bad "넘기기(rc=$rc): $out"
 grep -q '^- Auto merge: web feat/x @.* · Actions 대기 — 넘김 · ' "$PLAN" && ok "계획서에 Actions 대기" || bad "대기 줄 없음: $(grep -n 'Auto merge' "$PLAN")"
+printf '%s' "$out" | grep -q '넓은 수정(민감 경로 .github/workflows/athena-handoff.yml)' && grep -q "delegate reviewer --cwd $TMP/wt --here --plan plans/task/p.md" "$DELEGATE_LOG" && ok "workflow 파일은 민감 경로 → 넘기기 앞에 reviewer 를 띄우고 승인 뒤 넘긴다" || bad "넘기기 앞 리뷰 문: $(cat "$DELEGATE_LOG")"
 ls "$ATH"/.board-handoffs/web-*.json >/dev/null 2>&1 && ok "작업 파일이 남는다(현황판이 읽는다)" || bad "작업 파일 없음"
 grep -q '"type":"handoff"' "$ATH/.events.jsonl" && ok "사건 handoff" || bad "사건 handoff 없음"
 out="$(ship)"; rc=$?

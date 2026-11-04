@@ -53,6 +53,7 @@ import {
   PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, orderByMainTool, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
+  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, planFastPathFlags, planWideMark, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -919,6 +920,64 @@ const directStop = async (job, result, reason, { raise = true } = {}) => {
   await notifyResult({ ...job, number: 0 }, result, true)
 }
 
+// ── 바로 머지 · Actions 넘기기 앞의 리뷰 문(2026-11-04 사용자 결정 · lib wideChangeVerdict 주석) ─────────────────────
+// 넓은 수정이면 같은 HEAD 의 "- Review result: 승인" 이 있을 때만 통과한다. 없으면 reviewer 를 이 pane 옆에 띄우고(delegate.sh reviewer --here)
+// 결론을 기다린다 — 승인이면 통과 · 수정 필요면 멈춘다(에이전트가 고친 뒤 같은 명령으로 다시 오면 고친 부분만 짧게 다시 본다).
+// 두 번째 리뷰도 수정 필요면 멈추고 아테나에 알린다(리뷰 상한 DIRECT_REVIEW_MAX). 문서만 · 작은 수정은 리뷰 없이 지금처럼.
+// 리뷰 멈춤은 [작업] 요청을 열지 않는다 — 사람이 고를 것이 없고 다음 할 일은 pane 에 적혀 있다(지적은 reviewer pane 보고)
+const DIRECT_REVIEW_POLL_MS = Number(process.env.ATHENA_DIRECT_REVIEW_POLL_MS) || 5000
+const DIRECT_REVIEW_TIMEOUT_MS = Number(process.env.ATHENA_DIRECT_REVIEW_TIMEOUT_MS) || 20 * 60_000
+// git diff --numstat 한 줄 → { path, added, deleted }(이진 파일은 "-" 라 0)
+const numstatFiles = (text) => String(text ?? '').split('\n').filter(Boolean).map((row) => {
+  const [added, deleted, ...rest] = row.split('\t')
+  return { path: rest.join('\t'), added: Number(added) || 0, deleted: Number(deleted) || 0 }
+})
+const reviewerPaneOf = (planText, branch) => String(planText ?? '').split('\n').filter((line) => line.startsWith('- Review:') && `${line} `.includes(`🌿 ${branch} `)).at(-1)?.match(/pane (\S+) \(reviewer\)/)?.[1] ?? ''
+const directReviewGate = async (job, planPath) => {
+  const { repo, branch, sha, base, worktree, plan: planFile } = job
+  const stop = async (result, reason, { raise = false } = {}) => {
+    writeDirectLine(planPath, job, result)
+    logEvent(ROOT, 'auto.stop', { plan: planFile, repo, branch, sha: sha.slice(0, 7), reason, direct: true })
+    console.log(`⛔ ${result}`)
+    const pane = reviewerPaneOf(readFileSync(planPath, 'utf8'), branch)
+    if (pane) console.log(`  지적은 reviewer pane ${pane} 보고에 — scripts/screen pane read ${pane}`)
+    if (raise) await notify(planFile, { key: `${directKey(job)}:review`, sha, title: `바로 머지 앞 리뷰에서 멈춤 — ${repo} ${branch}`, body: `${result}. 머지(넘기기)하지 않았다 — 이어받아 살핀다(계획서 "- Auto merge:" 줄 · reviewer pane 보고). 승인을 받으면(review-result.sh --verdict 승인) 같은 ship.sh --direct-merge 로 다시 가면 된다.` })
+    return false
+  }
+  if (git(worktree, ['fetch', '--quiet', 'origin', base]) === null) return stop(`검증 대기 — origin/${base} 를 가져오지 못함`, 'fetch')
+  const files = numstatFiles(git(worktree, ['diff', '--numstat', `origin/${base}...HEAD`]))
+  const planText = readFileSync(planPath, 'utf8')
+  const verdict = wideChangeVerdict({ files, flagged: planFastPathFlags(planText), marked: planWideMark(planText) })
+  if (!verdict.wide) { console.log(`  리뷰 없이 — 넓은 수정 아님(${verdict.why})`); return true }
+  const tree = git(worktree, ['rev-parse', 'HEAD^{tree}'])
+  const latest = () => latestReviewResult(readFileSync(planPath, 'utf8'), { repo, branch, sha, tree })
+  const before = latest()
+  if (before?.verdict === '승인' && before.same) { console.log(`  ✅ 같은 내용 리뷰 승인 @${before.sha.slice(0, 7)}${before.engine ? ` · 🧠 ${before.engine}` : ''} — 넓은 수정(${verdict.why})이지만 다시 보지 않는다`); return true }
+  // 리뷰 횟수 — 앞 결론이 승인(그 뒤 커밋이 더해짐)이면 새로 센다. 수정 필요 뒤 고친 HEAD 는 그 다음 회차(짧은 리뷰)
+  const rounds = before?.verdict === '승인' ? 0 : directReviewRounds(planText, repo, branch)
+  // 이 HEAD 에 이미 수정 필요가 났다 — 고치지 않고 다시 왔다. 다시 띄워도 같은 답이다. 횟수는 줄에 남겨 고친 뒤 회차(짧은 리뷰 · 상한)가 이어지게
+  if (before?.verdict === '수정 필요' && before.same) return stop(`${REVIEW_STOPPED} — 수정 필요 @${sha.slice(0, 7)} 그대로(고친 뒤 같은 명령으로 다시) · 리뷰 ${Math.max(rounds, 1)}회`, 'review')
+  if (rounds >= DIRECT_REVIEW_MAX) return stop(`${REVIEW_STOPPED} — 리뷰 ${rounds}회를 다 썼다(짧은 리뷰에서도 수정 필요) · 아테나가 이어받음`, 'review-rounds', { raise: true })
+  const prior = before && !before.same ? before : null
+  const prompt = directReviewPrompt({ planFile, worktree, repo, branch, base, why: verdict.why, prior })
+  writeDirectLine(planPath, job, `${REVIEW_WAITING} — 넓은 수정(${verdict.why}) · 리뷰 ${rounds + 1}회${prior ? ` · 고친 부분만(@${prior.sha.slice(0, 7)} 뒤)` : ''}`)
+  console.log(`  🔍 넓은 수정(${verdict.why}) — reviewer 를 띄운다(리뷰 ${rounds + 1}회${prior ? ' · 고친 부분만 짧게' : ''})`)
+  const launched = spawnSync(join(ROOT, 'scripts', 'delegate.sh'), ['reviewer', '--cwd', worktree, '--here', '--plan', planFile, prompt], { encoding: 'utf8', timeout: 180_000 })
+  if (launched.status !== 0) return stop(`${REVIEW_STOPPED} — reviewer 를 띄우지 못함(${firstLine(launched.stderr || launched.stdout)}) · 리뷰 ${rounds + 1}회`, 'review-launch', { raise: true })
+  const started = Date.now()
+  let result = null
+  while (Date.now() - started < DIRECT_REVIEW_TIMEOUT_MS) {
+    await new Promise((done) => setTimeout(done, DIRECT_REVIEW_POLL_MS))
+    const now = latest()
+    if (now && now.line !== before?.line) { result = now; break }
+  }
+  if (!result) return stop(`${REVIEW_STOPPED} — ${Math.round(DIRECT_REVIEW_TIMEOUT_MS / 60_000)}분 안에 reviewer 결론이 없음 · 리뷰 ${rounds + 1}회`, 'review-timeout', { raise: true })
+  if (result.verdict === '승인' && result.same) { console.log(`  ✅ 리뷰 승인 @${result.sha.slice(0, 7)}${result.engine ? ` · 🧠 ${result.engine}` : ''}`); return true }
+  if (result.verdict === '승인') return stop(`${REVIEW_STOPPED} — 승인 @${result.sha.slice(0, 7)} 이 지금 내용 @${sha.slice(0, 7)} 과 다름(같은 명령으로 다시) · 리뷰 ${rounds + 1}회`, 'review')
+  if (rounds + 1 >= DIRECT_REVIEW_MAX) return stop(`${REVIEW_STOPPED} — 짧은 리뷰에서도 수정 필요 @${sha.slice(0, 7)} · 리뷰 ${rounds + 1}회 · 아테나가 이어받음`, 'review-rounds', { raise: true })
+  return stop(`${REVIEW_STOPPED} — 수정 필요 @${sha.slice(0, 7)} · 리뷰 ${rounds + 1}회(고친 뒤 같은 명령으로 다시 — 고친 부분만 짧게 다시 본다)`, 'review')
+}
+
 // 머지 직전 확인 + 합치기 + push — 확인 요청에서 [머지] 를 골랐을 때와 설정이 auto 일 때 같은 길
 const performDirectMerge = async (job) => {
   const config = loadConfig(ROOT)
@@ -989,6 +1048,8 @@ const directMerge = async (planArg, repo, dir) => {
     console.log('  → 머지는 사람이 직접(레포 "autoMergeManual": true)')
     return true
   }
+  // 넓은 수정이면 리뷰 문부터 — 통과해야 머지(auto) · 머지 확인 요청(confirm)으로 간다. 사람이 직접 머지(manual)는 위에서 끝났다
+  if (!(await directReviewGate(job, planPath))) return false
   if (flow.merge === 'auto') return Boolean((await performDirectMerge(job))?.ok)
   // 확인 후 머지 — 검증 · 충돌을 먼저 보고 통과하면 [작업]에 [머지] 요청
   if (pendingDecisions(planFile, repo, 0)) { await directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false }); return false }
@@ -1009,8 +1070,8 @@ const directMerge = async (planArg, repo, dir) => {
   return true
 }
 
-// --handoff: ship.sh 가 부른다 — 커밋을 handoff/<브랜치> 로 push 하고 바로 끝난다. 검증 · 머지는 Actions, 결과 읽기는 현황판(lib/handoff.mjs)
-const handOff = (planArg, repo, dir) => {
+// --handoff: ship.sh 가 부른다 — 넓은 수정이면 리뷰 문(directReviewGate)을 먼저 지나고, 커밋을 handoff/<브랜치> 로 push 하고 바로 끝난다. 검증 · 머지는 Actions, 결과 읽기는 현황판(lib/handoff.mjs)
+const handOff = async (planArg, repo, dir) => {
   const { path: planPath, file: planFile } = planPathOf(planArg)
   const config = loadConfig(ROOT)
   if (!handoffOn(config, repo)) { console.log(`⏭  ${repo} 는 Actions 넘기기를 켜지 않았다(pack.json 레포 "actionsHandoff": true · 확인 없는 바로 머지)`); return false }
@@ -1024,6 +1085,8 @@ const handOff = (planArg, repo, dir) => {
   if (branch === base) { console.log(`⏭  ${branch} 는 기준 브랜치다 — 작업 브랜치가 아니다`); return false }
   if (directMergeDone(planText, repo, branch, sha)) { console.log('⏭  이미 머지됨'); return true }
   if (pendingDecisions(planFile, repo, 0)) { console.log('⏭  결정 콘솔에 안 정한 결정이 있어 넘기지 않았다'); return false }
+  // 넓은 수정이면 리뷰 문부터 — Actions 는 검증 · 머지만 하니 리뷰는 넘기기 전에 선다
+  if (!(await directReviewGate({ plan: planFile, repo, branch, sha, base, worktree }, planPath))) return false
   if (git(worktree, ['cat-file', '-e', `${sha}:.github/workflows/${HANDOFF_WORKFLOW}`]) === null) { console.log(`⏭  이 커밋에 .github/workflows/${HANDOFF_WORKFLOW} 가 없다 — 넘겨도 돌지 않는다`); return false }
   const ref = `refs/heads/${HANDOFF_PREFIX}${branch}`
   const file = handoffFile(ROOT, repo, branch)
@@ -1337,7 +1400,7 @@ else if (flag('kick')) kick()
 else if (flag('direct-merge')) {
   const done = await directMerge(option('plan'), option('repo'), option('dir'))
   process.exit(done ? 0 : 1)
-} else if (flag('handoff')) process.exit(handOff(option('plan'), option('repo'), option('dir')) ? 0 : 1)
+} else if (flag('handoff')) process.exit((await handOff(option('plan'), option('repo'), option('dir'))) ? 0 : 1)
 else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
 else if (option('plan') && option('pr')) await handle(option('plan'), option('pr'), { dryRun: flag('dry-run') })
 else {

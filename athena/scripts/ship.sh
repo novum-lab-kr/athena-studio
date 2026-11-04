@@ -31,6 +31,8 @@
 #                        자동 리뷰가 본문을 지적했을 때. 올릴 커밋이 없어도 되고(본문만), 그러면 같은 HEAD 를 자동 리뷰가 다시 본다(라운드 하나 · "본문 고침")
 #   --direct-merge       (PR 끔 레포 전용 — 팩 레포 "autoMerge": true + "autoPr": false · docs/pr-auto.md "켜기") PR 을 만들지 않고 작업 브랜치를 prBase 에
 #                        squash 로 바로 합쳐 push 한다(scripts/pr-auto.mjs --direct-merge). 머지 설정은 그대로 — 자동 = 바로 · 확인 후 = [작업]에 [머지] 요청 · 직접 = 브랜치까지만.
+#                        넓은 수정(코드 파일 5개 · 150줄 · 민감 경로 · 계획서 '- Wide change: yes' 표시)이면 머지(넘기기) 앞에 reviewer 를 옆에 띄워 같은 HEAD 승인을 기다린다 —
+#                        수정 필요면 종료 1(고친 뒤 같은 명령으로 다시 — 고친 부분만 짧게) · 두 번째도 수정 필요면 멈추고 아테나에(docs/pr-auto.md '바로 머지 앞의 리뷰').
 #                        같은 HEAD 엄격 검증이 어떤 설정에서도 먼저 통과해야 하고(없거나 못 돌리거나 건너뜀이면 머지 안 함) 충돌 · 안 정한 결정이 있어도 안 한다.
 #                        push 가 거부되면(브랜치 보호 등) 강제로 밀지 않고 실패로 알린다. 제목 · base · 본문 · 미리보기 없음 — "PR 올려줘" 는 이 옵션 없이 평소대로 PR 을 만든다
 #
@@ -337,11 +339,11 @@ if [ $DIRECT_MERGE = 1 ]; then
   HANDOFF_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, actions_handoff; print(1 if actions_handoff(load(sys.argv[1]), sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(Actions 넘기기 확인)"
   if [ -n "$HANDOFF_ON" ]; then
     echo "── Actions 로 넘기기: $REPO · 🌿 $BRANCH @ $HEAD_SHA"
-    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --handoff --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "넘기지 못했다 — 위 이유를 본다"
+    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --handoff --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "넘기지 못했다 — 위 이유를 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
     exit 0
   fi
   echo "── 바로 머지: $REPO · 🌿 $BRANCH @ $HEAD_SHA → PR 없이 prBase (머지 설정 $DIRECT_MODE)"
-  (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다"
+  (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
   exit 0
 fi
 

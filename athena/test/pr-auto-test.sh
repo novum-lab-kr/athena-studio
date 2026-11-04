@@ -1473,9 +1473,9 @@ direct_case() {   # <이름> <레포 JSON 조각> <머지 기대 yes|no> <종료
   mkdir -p "$TMP/queue-direct/.watcher.lock" && echo $$ > "$TMP/queue-direct/.watcher.lock/pid"   # 처리기가 돌고 있는 것처럼
   rm -f "$DORIGIN/hooks/pre-receive"; [ "${REJECT_PUSH:-0}" = 1 ] && printf '#!/bin/sh\necho "protected branch" >&2\nexit 1\n' > "$DORIGIN/hooks/pre-receive" && chmod +x "$DORIGIN/hooks/pre-receive"
   git -C "$DORIGIN" update-ref refs/heads/main "$DBASE"   # 매번 처음 base 로
-  DG checkout -q feat/x
+  DG checkout -q "${DBRANCH:-feat/x}"   # DBRANCH — 넓은 수정 사례는 feat/wide
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main"%s }, { "name": "api", "agents": ["api-be"], "branch": "main", "prBase": "main" } ] }\n' "$extra" > "$DCORE/athena.config.json"
-  printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n- Agent: %s\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n' "${PLAN_AGENT:-web-fe}" "$DWT" > "$DCORE/plans/task/x.md"
+  printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n- Agent: %s\n- Work ref: %s · 🌿 %s · pane p3 (web-fe)\n%s' "${PLAN_AGENT:-web-fe}" "$DWT" "${DBRANCH:-feat/x}" "${PLAN_EXTRA:-}" > "$DCORE/plans/task/x.md"
   [ "${PENDING:-0}" = 1 ] && (cd "$DCORE" && env ATHENA_DATA_DIR="$TMP/data" "$(command -v node)" --input-type=module -e "
     const { openRequest } = await import('./scripts/lib/requests.mjs')
     openRequest('.', { kind: 'decision', title: 'x', body: '- R1', links: { plan: 'plans/task/x.md' }, pane: null, dedupeKey: 'plan:plans/task/x.md' })" >/dev/null)
@@ -1575,6 +1575,128 @@ env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/
 REJECT_PUSH=1 direct_case "base 에 push 가 거부되면(브랜치 보호) 머지 안 함 · 강제 push 없이 실패로 알림" ', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false' no 1 'push 가 거부됨'
 [ "$(direct_requests)" -ge 1 ] && [ "$(git -C "$DORIGIN" rev-parse refs/heads/main)" = "$DBASE" ] && echo "  ✔ push 거부 → [작업] 요청이 열림 · 원격 base 그대로" || { echo "  ✖ push 거부 요청 · base"; FAIL=1; }
 rm -f "$DORIGIN/hooks/pre-receive"
+
+# ── 바로 머지 앞의 리뷰 문(2026-11-04 결정) — 넓은 수정이면 같은 HEAD 의 "- Review result: 승인" 이 있을 때만 머지 · 없으면 reviewer 를 띄우고 기다린다 ─────
+echo; echo "PR 끔: 넓은 수정이면 리뷰 문(directReviewGate)"
+# 가짜 reviewer — delegate.sh 자리에서 부른 인자를 남기고 계획서에 '- Review:' 줄 + FAKE_REVIEW(approve · changes · none)대로 결론 줄을 적는다(review-result.sh 와 같은 모양)
+DLOG="$TMP/direct-delegate.log"
+DWTN="$(printf '%s' "$DWT" | sed 's#//*#/#g')"   # pr-auto.mjs 는 경로를 정규화해 적는다 — TMPDIR 이 / 로 끝나면 $DWT 에 // 가 남는다
+cat > "$DCORE/scripts/delegate.sh" <<'SH'
+#!/bin/sh
+ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+printf 'delegate %s\n' "$*" >> "$FAKE_DELEGATE_LOG"
+CWD=""; PLAN=""
+while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
+BRANCH="$(git -C "$CWD" symbolic-ref --short -q HEAD)"
+printf -- '- Review: %s · 🌿 %s · pane p9 (reviewer) · 띄움 %s\n' "$CWD" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+case "${FAKE_REVIEW:-none}" in
+  approve) V=승인 ;; changes) V='수정 필요' ;; *) exit 0 ;;
+esac
+SHA="$(git -C "$CWD" rev-parse --short HEAD)"; TREE="$(git -C "$CWD" rev-parse 'HEAD^{tree}' | cut -c1-12)"
+printf -- '- Review result: %s @%s · tree %s · 📦 web · 🌿 %s · 🧠 claude · %s · 가짜\n' "$V" "$SHA" "$TREE" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+SH
+chmod +x "$DCORE/scripts/delegate.sh"
+# 넓은 수정 브랜치 — feat/x 위에 코드 파일 5개(기준 5개 이상) · feat.txt 가 있어 머지 판정(direct_case)은 그대로
+DG checkout -q -b feat/wide feat/x
+for n in 1 2 3 4 5; do printf 'export const f%s = () => %s\n' "$n" "$n" > "$DWT/f$n.mjs"; done
+DG add . && DG commit -q -m wide; DWIDE="$(DG rev-parse HEAD)"; DWIDE_TREE="$(DG rev-parse 'HEAD^{tree}' | cut -c1-12)"
+DG checkout -q feat/x
+DPANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$DCORE\",\"label\":\"🧭 아테나\"}"
+DSLOG="$TMP/direct-screen.log"
+AUTO=', "autoMerge": true, "autoPr": false, "autoMergeConfirm": false'
+GATE_ENV=(FAKE_DELEGATE_LOG="$DLOG" FAKE_SCREEN_LOG="$DSLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500)
+gate_reset() { : > "$DLOG"; : > "$DSLOG"; }
+# ③ 문서만 · 작은 수정 → 리뷰 없이 지금처럼(feat/x 는 feat.txt 한 줄)
+gate_reset; direct_case "③ 작은 수정(문서 파일 1개) → reviewer 안 띄우고 지금처럼 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
+[ ! -s "$DLOG" ] && grep -q '리뷰 없이 — 넓은 수정 아님(문서만 1개)' "$TMP/direct.out" && echo "  ✔ reviewer 를 띄우지 않았다 · 판정 '문서만 1개'" || { echo "  ✖ 작은 수정인데 reviewer 를 띄움 — $(cat "$DLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# ① 넓은 수정 + 같은 HEAD 승인 없음 → reviewer 띄움 · 결론 없으면(시간 초과) 머지 안 함
+gate_reset; DBRANCH=feat/wide direct_case "① 넓은 수정 + 승인 없음 + reviewer 결론 없음 → reviewer 띄움 · 머지 안 함 · 아테나에 알림" "$AUTO" no 1 '리뷰 때문에 멈춤 — [0-9]+분 안에 reviewer 결론이 없음 · 리뷰 1회' "${GATE_ENV[@]}" FAKE_REVIEW=none FAKE_PANES="$DPANE"
+grep -q "delegate reviewer --cwd $DWTN --here --plan plans/task/x.md .*넓은 수정(코드 파일 5개 ≥ 5).*diff origin/main...HEAD" "$DLOG" && ! grep -q '짧은 리뷰' "$DLOG" \
+  && echo "  ✔ reviewer 를 이 pane 옆에(--here) 전체 diff 지시로 띄움 · 판정 '코드 파일 5개 ≥ 5'" || { echo "  ✖ reviewer 지시 — $(cat "$DLOG")"; FAIL=1; }
+grep -q 'pane send-text p50 .*\[자동 리뷰 → 아테나\] 바로 머지 앞 리뷰에서 멈춤' "$DSLOG" && echo "  ✔ 결론 없음 → 아테나 pane 에 알림" || { echo "  ✖ 아테나 알림 없음 — $(cat "$DSLOG")"; FAIL=1; }
+[ "$(direct_requests)" = 0 ] && echo "  ✔ 리뷰 멈춤은 [작업] 요청을 열지 않는다" || { echo "  ✖ 리뷰 멈춤인데 요청이 열렸다"; FAIL=1; }
+# ① 넓은 수정 → 리뷰 수정 필요 → 머지 안 함 · 고친 뒤 다시 오라고(아테나 알림 없음 — 에이전트 몫)
+gate_reset; DBRANCH=feat/wide direct_case "① 넓은 수정 → reviewer 수정 필요 → 머지 안 함 · 고친 뒤 같은 명령으로" "$AUTO" no 1 "리뷰 때문에 멈춤 — 수정 필요 @${DWIDE:0:7} · 리뷰 1회\(고친 뒤 같은 명령으로 다시" "${GATE_ENV[@]}" FAKE_REVIEW=changes FAKE_PANES="$DPANE"
+! grep -q 'send-text' "$DSLOG" && grep -q 'reviewer pane p9 보고에' "$TMP/direct.out" && echo "  ✔ 첫 수정 필요는 아테나에 알리지 않고 reviewer pane 을 가리킨다" || { echo "  ✖ 첫 수정 필요 처리 — $(cat "$DSLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# 같은 HEAD 에 수정 필요 그대로 다시 오면 reviewer 를 또 띄우지 않는다
+gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Auto merge: web feat/wide @${DWIDE:0:7} · 리뷰 때문에 멈춤 — 수정 필요 @${DWIDE:0:7} · 리뷰 1회(고친 뒤 같은 명령으로 다시) · 2026-11-04 10:01
+- Review result: 수정 필요 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · 🧠 claude · 2026-11-04 10:00 · 앞 지적
+" direct_case "같은 HEAD 에 수정 필요가 이미 있으면 다시 띄우지 않고 멈춤 · 리뷰 횟수는 줄에 남는다" "$AUTO" no 1 '리뷰 때문에 멈춤 — 수정 필요 @[0-9a-f]{7} 그대로\(고친 뒤 같은 명령으로 다시\) · 리뷰 1회' "${GATE_ENV[@]}" FAKE_REVIEW=approve
+[ ! -s "$DLOG" ] && echo "  ✔ reviewer 를 또 띄우지 않았다" || { echo "  ✖ 같은 HEAD 인데 또 띄움"; FAIL=1; }
+# ① 넓은 수정 → 리뷰 승인 → 머지
+gate_reset; DBRANCH=feat/wide direct_case "① 넓은 수정 → reviewer 승인 → 머지" "$AUTO" yes 0 '머지됨 — squash' "${GATE_ENV[@]}" FAKE_REVIEW=approve
+grep -q 'delegate reviewer' "$DLOG" && grep -q "리뷰 승인 @${DWIDE:0:7} · 🧠 claude" "$TMP/direct.out" && echo "  ✔ reviewer 승인 뒤 머지" || { echo "  ✖ 승인 뒤 머지 — $(cat "$DLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# ② 같은 HEAD 승인이 이미 있음 → 띄우지 않고 머지
+gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Review result: 승인 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · 🧠 claude · 2026-11-04 10:00
+" direct_case "② 같은 HEAD 승인이 있으면 reviewer 안 띄우고 머지" "$AUTO" yes 0 '머지됨 — squash' "${GATE_ENV[@]}" FAKE_REVIEW=changes
+[ ! -s "$DLOG" ] && grep -q "같은 내용 리뷰 승인 @${DWIDE:0:7}" "$TMP/direct.out" && echo "  ✔ 앞 승인을 이어받아 reviewer 안 띄움" || { echo "  ✖ 같은 HEAD 승인 — $(cat "$DLOG")"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
+# ④ 승인 뒤 커밋이 더해짐 → 같은 HEAD 가 아니니 고친 부분만 짧게 다시 리뷰(승인 sha 뒤 diff) · 승인이면 머지
+DG checkout -q feat/wide && printf 'export const f6 = () => 6\n' > "$DWT/f6.mjs" && DG add f6.mjs && DG commit -q -m more; DMORE="$(DG rev-parse HEAD)"; DG checkout -q feat/x
+gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Review result: 승인 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · 🧠 claude · 2026-11-04 10:00
+" direct_case "④ 승인 뒤 커밋이 더해짐 → 고친 부분만 짧은 리뷰 → 승인이면 머지" "$AUTO" yes 0 '머지됨 — squash' "${GATE_ENV[@]}" FAKE_REVIEW=approve
+grep -q "짧은 리뷰 — 앞 리뷰(@${DWIDE:0:7} 승인) 뒤에 바뀐 부분만 본다: git -C $DWTN diff ${DWIDE:0:7}...HEAD" "$DLOG" \
+  && echo "  ✔ 승인 sha 뒤의 차이만 보는 짧은 리뷰 지시" || { echo "  ✖ 짧은 리뷰 지시 — $(cat "$DLOG")"; FAIL=1; }
+# 수정 필요 → 고침 → 짧은 리뷰도 수정 필요 → 멈추고 아테나가 이어받음(리뷰 2회)
+gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Auto merge: web feat/wide @${DWIDE:0:7} · 리뷰 때문에 멈춤 — 수정 필요 @${DWIDE:0:7} · 리뷰 1회(고친 뒤 같은 명령으로 다시) · 2026-11-04 10:01
+- Review result: 수정 필요 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · 🧠 claude · 2026-11-04 10:00 · 앞 지적
+" direct_case "수정 필요 뒤 고친 HEAD 의 짧은 리뷰도 수정 필요 → 멈춤 · 아테나가 이어받음" "$AUTO" no 1 "리뷰 때문에 멈춤 — 짧은 리뷰에서도 수정 필요 @${DMORE:0:7} · 리뷰 2회 · 아테나가 이어받음" "${GATE_ENV[@]}" FAKE_REVIEW=changes FAKE_PANES="$DPANE"
+grep -q '짧은 리뷰' "$DLOG" && grep -q 'pane send-text p50 .*바로 머지 앞 리뷰에서 멈춤' "$DSLOG" && echo "  ✔ 두 번째 수정 필요 → 아테나 pane 에 알림" || { echo "  ✖ 두 번째 수정 필요 — $(cat "$DLOG") / $(cat "$DSLOG")"; FAIL=1; }
+# 리뷰 2회를 다 쓴 뒤 또 오면 띄우지 않고 멈춤 — 아테나가 승인 줄을 남기면(같은 HEAD) 다시 통과한다
+gate_reset; DBRANCH=feat/wide PLAN_EXTRA="- Auto merge: web feat/wide @${DMORE:0:7} · 리뷰 때문에 멈춤 — 짧은 리뷰에서도 수정 필요 · 리뷰 2회 · 아테나가 이어받음 · 2026-11-04 10:02
+- Review result: 수정 필요 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · 🧠 claude · 2026-11-04 10:00
+" direct_case "리뷰 2회를 다 쓴 뒤는 reviewer 를 또 띄우지 않고 멈춤" "$AUTO" no 1 '리뷰 때문에 멈춤 — 리뷰 2회를 다 썼다' "${GATE_ENV[@]}" FAKE_REVIEW=approve FAKE_PANES="$DPANE"
+[ ! -s "$DLOG" ] && echo "  ✔ 상한 뒤에는 reviewer 를 띄우지 않는다" || { echo "  ✖ 상한 뒤에 또 띄움"; FAIL=1; }
+# 확인 후 머지(confirm) 도 리뷰 문을 먼저 — 수정 필요면 [머지] 요청을 열지 않는다
+gate_reset; DBRANCH=feat/wide direct_case "확인 후 머지 레포도 넓은 수정이면 리뷰 먼저 — 수정 필요면 [머지] 요청 없음" ', "autoMerge": true, "autoPr": false' no 1 '리뷰 때문에 멈춤 — 수정 필요' "${GATE_ENV[@]}" FAKE_REVIEW=changes
+[ "$(direct_requests)" = 0 ] && echo "  ✔ 리뷰 전에는 [머지] 요청을 열지 않는다" || { echo "  ✖ 리뷰 막혔는데 [머지] 요청이 열림"; FAIL=1; }
+# 민감 경로 · 에이전트 표시 · 줄 수 — 판정 함수(스크립트 기준값의 근거는 lib 주석 · 계획서 Decisions)
+node --input-type=module -e "
+  const { wideChangeVerdict, planWideMark, directReviewRounds, WIDE_MIN_CODE_FILES, WIDE_MIN_CODE_LINES } = await import('$DCORE/scripts/lib/pr-auto.mjs')
+  const file = (path, added = 1, deleted = 0) => ({ path, added, deleted })
+  const checks = [
+    [wideChangeVerdict({ files: [file('docs/a.md', 500), file('README.md', 50)] }), false, '문서만'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 10)] }), false, '코드 파일 1개 · 10줄'],
+    [wideChangeVerdict({ files: [1, 2, 3, 4].map((n) => file('src/f' + n + '.mjs', 5)) }), false, '코드 파일 4개'],
+    [wideChangeVerdict({ files: [1, 2, 3, 4, 5].map((n) => file('src/f' + n + '.mjs', 5)) }), true, '코드 파일 5개 ≥ ' + WIDE_MIN_CODE_FILES],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 100, 49)] }), false, '149줄'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 100, 50)] }), true, '코드 150줄 ≥ ' + WIDE_MIN_CODE_LINES],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1), file('package.json', 1)] }), true, '민감 경로 package.json'],
+    [wideChangeVerdict({ files: [file('scripts/hooks/x.py', 1)] }), true, '민감 경로 scripts/hooks/x.py'],
+    [wideChangeVerdict({ files: [file('src/lib/auth-token.mjs', 1)] }), true, '민감 경로 src/lib/auth-token.mjs'],
+    [wideChangeVerdict({ files: [file('.env.example', 1)] }), true, '민감 경로 .env.example'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1)], flagged: ['보안'] }), true, '1절에 보안'],
+    [wideChangeVerdict({ files: [file('src/a.mjs', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
+    [wideChangeVerdict({ files: [file('docs/a.md', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
+    [wideChangeVerdict({ files: [] }), false, '바뀐 파일 없음'],
+  ]
+  let bad = 0
+  for (const [got, wide, why] of checks) if (got.wide !== wide || !got.why.includes(why)) { bad += 1; console.log('  ✖ 판정 — 기대 ' + wide + ' (' + why + ') · 실제 ' + JSON.stringify(got)) }
+  if (planWideMark('## Checkpoint\n- Wide change: yes (구조 변경)\n## 1.') !== '구조 변경') { bad += 1; console.log('  ✖ Checkpoint 의 Wide change 줄을 못 읽음') }
+  if (planWideMark('## 1.\n- Wide change: yes (예시)\n## Checkpoint\n- Status: x') !== '') { bad += 1; console.log('  ✖ Checkpoint 밖의 Wide change 줄을 읽음') }
+  if (planWideMark('## Checkpoint\n- Wide change: no') !== '') { bad += 1; console.log('  ✖ Wide change: no 를 표시로 읽음') }
+  if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 리뷰 때문에 멈춤 — 수정 필요 · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 1) { bad += 1; console.log('  ✖ 리뷰 횟수') }
+  if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 머지됨 — squash · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 0) { bad += 1; console.log('  ✖ 머지됨 줄의 리뷰 횟수는 0') }
+  if (bad) process.exit(1)
+  console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 문서는 세지 않음')
+" || FAIL=1
+# Actions 로 넘기기 길도 같은 문 — 넓은 수정이면 넘기기 전에 리뷰 · 승인 없이는 handoff/<브랜치> 를 밀지 않는다
+handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]
+  local name="$1" wantcode="$2" line="$3"; shift 3
+  rm -rf "$DCORE/.requests" "$DCORE/.events.jsonl" "$DCORE/plans/task/"* "$TMP/data/state/handoff"; gate_reset
+  git -C "$DORIGIN" update-ref -d refs/heads/handoff/feat/wide 2>/dev/null; DG checkout -q feat/wide
+  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoPr": false, "autoMergeConfirm": false, "actionsHandoff": true } ] }\n' > "$DCORE/athena.config.json"
+  printf '# 시험 제목\n## Checkpoint\n- Status: in_progress\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/wide · pane p3 (web-fe)\n%s' "$DWT" "${PLAN_EXTRA:-}" > "$DCORE/plans/task/x.md"
+  env PATH="/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-direct" "$@" \
+    "$(command -v node)" "$DCORE/scripts/pr-auto.mjs" --handoff --plan plans/task/x.md --repo web --dir "$DWT" > "$TMP/direct.out" 2>&1
+  local code=$?; DG checkout -q feat/x
+  local got; got="$(grep -o '^- Auto merge: .*' "$DCORE/plans/task/x.md")"
+  if [ "$code" = "$wantcode" ] && [ -z "$(git -C "$DORIGIN" for-each-ref refs/heads/handoff 2>/dev/null)" ] && printf '%s' "$got" | grep -Eq "$line"; then echo "  ✔ $name — ${got#- Auto merge: }"
+  else echo "  ✖ $name — 종료 기대 $wantcode · 실제 $code · 줄: $got · 원격 $(git -C "$DORIGIN" for-each-ref refs/heads/handoff)"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; fi
+}
+handoff_case "넘기기 — 넓은 수정 + 수정 필요 → 넘기지 않음" 1 '리뷰 때문에 멈춤 — 수정 필요' "${GATE_ENV[@]}" FAKE_REVIEW=changes
+grep -q 'delegate reviewer' "$DLOG" && echo "  ✔ 넘기기 전에 reviewer 를 띄웠다" || { echo "  ✖ 넘기기 전 reviewer 없음"; FAIL=1; }
+handoff_case "넘기기 — 넓은 수정 + 승인 → 리뷰 문을 지나 넘기기 단계로(이 시험 커밋엔 workflow 파일이 없어 거기서 멈춤)" 1 '리뷰 기다리는 중 — 넓은 수정' "${GATE_ENV[@]}" FAKE_REVIEW=approve
+grep -q "리뷰 승인 @${DMORE:0:7}" "$TMP/direct.out" && grep -q 'athena-handoff.yml 가 없다' "$TMP/direct.out" && echo "  ✔ 승인 뒤 넘기기 단계(workflow 확인)까지 갔다" || { echo "  ✖ 승인 뒤 넘기기 단계"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }
 
 # 끝나면 저절로 흐름 지시문(delegate.sh) — PR 끔이면 ship.sh --direct-merge 로, 그냥 켬이면 PR 흐름으로, 키 없음이면 없음
 echo; echo "끝나면 저절로 지시문 (delegate.sh)"
