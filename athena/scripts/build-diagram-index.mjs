@@ -26,10 +26,21 @@ const link = (file) => {
   return relative(DIR, full).split(sep).map((part) => encodeURIComponent(part)).join('/');
 };
 const groups = existsSync(manifest) ? JSON.parse(readFileSync(manifest, 'utf8')).groups ?? [] : [];
-const types = [{ suffix: '.html', label: '구조' }, { suffix: '.domains.html', label: '화면 맵' }, { suffix: '.sequence.html', label: '요청 흐름' }];
+// 메뉴 이름은 개발 용어로 — 한 장 요약은 시스템 개요, 기능 흐름은 시퀀스 다이어그램(docs/diagrams/AUTHORING.md "점검·목록").
+// .domains.html(화면 맵)은 지금 기준에서 만들지 않는 옛 장이다 — 파일이 남은 팩에서만 맨 뒤에 보인다.
+const OVERVIEW = '시스템 개요';
+const SEQUENCE = '시퀀스 다이어그램';
+const LEGACY = [{ suffix: '.domains.html', label: '화면 맵' }];
+/** extra 의 기능 흐름(<서비스>.<기능>.sequence.html)은 label(기능 이름) 앞에 '시퀀스 다이어그램 · ' 을 붙인다 */
+const extraLabel = (/** @type {{file: string, label: string}} */ entry) => (entry.file.endsWith('.sequence.html') && !entry.label.startsWith(SEQUENCE) ? `${SEQUENCE} · ${entry.label}` : entry.label);
 const serviceSections = groups.map((/** @type {{title: string, items: {base: string, name: string, sub?: string, desc?: string, extra?: {file: string, label: string}[]}[]}} */ group) => {
   const cards = group.items.map((item) => {
-    const entries = [...types.map((type) => ({ file: item.base + type.suffix, label: type.label })), ...(item.extra ?? [])];
+    const entries = [
+      { file: `${item.base}.html`, label: OVERVIEW },
+      { file: `${item.base}.sequence.html`, label: SEQUENCE },
+      ...(item.extra ?? []).map((entry) => ({ file: entry.file, label: extraLabel(entry) })),
+      ...LEGACY.map((type) => ({ file: item.base + type.suffix, label: type.label })),
+    ];
     const pills = entries.map((entry) => {
       const href = link(entry.file);
       return href ? `<a class="pill" href="${esc(href)}">${esc(entry.label)}</a>` : '';
@@ -95,7 +106,7 @@ const html = `<!doctype html>
 <body>
   <div class="wrap">
     <h1>아테나 다이어그램</h1>
-    <p class="lead">서비스 구조·요청 흐름과 아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.</p>
+    <p class="lead">서비스 시스템 개요·시퀀스 다이어그램과 아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.</p>
     ${serviceSections}
     <h2>작업 흐름</h2>
     <div class="grid">

@@ -45,6 +45,18 @@ try {
     assert.equal(new Set(links).size, 2)
     assert.ok(links.every(file => existsSync(file)))
   })
+  check('메뉴 이름은 시스템 개요 · 시퀀스 다이어그램 · <기능> — 화면 맵은 남은 파일이 있을 때만 맨 뒤', () => {
+    put('pack/diagrams/index.json', JSON.stringify({ groups: [{ title: '서비스', items: [{ base: 'flow', name: '흐름', extra: [{ file: 'flow.route.sequence.html', label: '길찾기' }, { file: 'flow.pay.sequence.html', label: '시퀀스 다이어그램 · 결제' }, { file: 'flow.detail.html', label: '상세' }] }, { base: 'plain', name: '옛 장 없음' }] }] }))
+    for (const file of ['flow.html', 'flow.sequence.html', 'flow.route.sequence.html', 'flow.pay.sequence.html', 'flow.detail.html', 'flow.domains.html', 'plain.html']) put(`pack/diagrams/${file}`, '<html></html>')
+    const result = run('build-diagram-index.mjs')
+    assert.equal(result.status, 0, result.stderr)
+    const html = readFileSync(join(root, 'docs/diagrams/index.html'), 'utf8')
+    const cards = html.split('<div class="card">')
+    const pills = (name) => [...cards.find(card => card.includes(`<div class="t">${name}</div>`)).matchAll(/class="pill"[^>]*>([^<]+)</g)].map(match => match[1])
+    assert.deepEqual(pills('흐름'), ['시스템 개요', '시퀀스 다이어그램', '시퀀스 다이어그램 · 길찾기', '시퀀스 다이어그램 · 결제', '상세', '화면 맵'])
+    assert.deepEqual(pills('옛 장 없음'), ['시스템 개요'])
+    assert.doesNotMatch(html, /요청 흐름|>구조</)
+  })
   check('Claude·Codex가 같은 diagram 스킬 탐색', () => {
     assert.equal(realpathSync(join(root, '.agents/skills/diagram/SKILL.md')), realpathSync(join(root, '.claude/skills/diagram/SKILL.md')))
   })

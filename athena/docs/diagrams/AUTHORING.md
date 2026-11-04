@@ -110,9 +110,9 @@ node "$A/bin/archify.mjs" visual-check pack/diagrams/<서비스>.html --json
 {"groups":[{"title":"서비스","items":[{"base":"sample","name":"표본 서비스","sub":"sample","desc":"확인한 설명","extra":[{"file":"sample.detail.html","label":"상세"}]}]}]}
 ```
 
-기본 링크는 `<base>.html`, `<base>.domains.html`, `<base>.sequence.html`이며 실제 파일이 있는 링크만 나온다. 선택한 서비스가 없으면 해당 카드는 숨긴다.
+기본 링크는 `<base>.html`(메뉴 이름 '시스템 개요'), `<base>.sequence.html`('시퀀스 다이어그램'), 옛 `<base>.domains.html`('화면 맵' — 파일이 남은 팩에서만 맨 뒤)이며 실제 파일이 있는 링크만 나온다. 선택한 서비스가 없으면 해당 카드는 숨긴다.
 
-- 한눈에 보기는 기본 링크 `<base>.html`이다. 핵심 흐름 `<base>.<기능>.sequence.html`은 `extra`에 기능 이름 label로 등록한다(기존 `<base>.sequence.html`이 핵심 흐름이면 기본 링크 그대로).
+- 한눈에 보기는 기본 링크 `<base>.html`이다. 핵심 흐름 `<base>.<기능>.sequence.html`은 `extra`에 기능 이름 label로 등록한다 — 메뉴에는 '시퀀스 다이어그램 · <label>'로 나오니 label에 '흐름'·'시퀀스' 같은 말을 붙이지 않는다(기존 `<base>.sequence.html`이 핵심 흐름이면 기본 링크 그대로).
 - 기준에서 빠지는 기존 장은 index에서 내린다 — `extra` 항목을 지우고, 기본 링크로 뜨는 장(`<base>.domains.html` 등)은 파일이 있으면 목록에 나오므로 그 장의 최종·원본 HTML·JSON·영수증·자세히 파일을 함께 지운다. 빠진 장에만 있던 기능은 한눈에 보기 상자·자세히 칸으로 옮긴 뒤 지운다.
 
 새로 만든 장을 등록한 뒤:
