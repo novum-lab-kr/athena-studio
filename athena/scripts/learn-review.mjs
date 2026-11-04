@@ -106,9 +106,8 @@ const firstUserText = async (path) => {
   let seen = 0
   for await (const line of lines) {
     if (++seen > 40) break
+    // Codex 가 넣은 AGENTS.md · 환경 문맥 블록은 transcriptRecord 가 걸러 빈 글이 된다
     const text = userText(line)
-    // Codex는 작업 지시 앞에 AGENTS.md와 환경 문맥을 사용자 메시지로 저장한다.
-    if (text.startsWith('# AGENTS.md instructions') || text.startsWith('<environment_context>')) continue
     if (text) {
       lines.close()
       return text
@@ -145,13 +144,51 @@ export const findTranscripts = async (planFile) => {
 
 // ── 기록 줄이기 ──────────────────────────────────────────────────────────
 // 모니터와 같은 실측 response_item만 쓴다. event_msg 중복과 도구 결과 본문은 넣지 않는다.
+// Codex 는 작업 지시 앞에 AGENTS.md 본문 · 환경 문맥을 user 메시지 블록으로 저장한다(codex-cli 0.166 rollout 실측 —
+// "# AGENTS.md instructions for <경로>\n\n<INSTRUCTIONS>…</INSTRUCTIONS>" · "<environment_context>…</environment_context>").
+// Claude 의 <system-reminder> 처럼 사용자 말이 아니니 뺀다
+const isCodexContext = (text) => {
+  const head = text.trimStart()
+  return head.startsWith('# AGENTS.md instructions') || head.startsWith('<environment_context>')
+}
+// 도구 결과에서 오류만 Claude tool_result(is_error)와 같은 자리로 — 실측한 세 모양만 본다:
+// exec 스크립트 실패("Script failed … Script error:\n<원인>") · 훅이 막은 호출("Tool call blocked by …") ·
+// exec 결과 JSON 의 exit_code 가 0 이 아님(Promise.allSettled 의 {status, value} 로 감싼 것 포함)
+const exitFailures = (value, found = []) => {
+  if (Array.isArray(value)) for (const item of value) exitFailures(item, found)
+  else if (value && typeof value === 'object') {
+    if (typeof value.exit_code === 'number' && value.exit_code !== 0) found.push(`(exit ${value.exit_code}) ${typeof value.output === 'string' ? value.output : ''}`)
+    else if ('value' in value) exitFailures(value.value, found)
+  }
+  return found
+}
+const codexToolError = (output) => {
+  const text = typeof output === 'string' ? output
+    : Array.isArray(output) ? output.filter((block) => block?.type === 'input_text' && typeof block.text === 'string').map((block) => block.text).join('\n') : ''
+  if (text.startsWith('Tool call blocked by')) return text
+  if (text.startsWith('Script failed')) {
+    const index = text.indexOf('Script error:\n')
+    return index >= 0 ? text.slice(index + 'Script error:\n'.length) : text
+  }
+  const found = []
+  for (const row of text.split('\n')) {
+    if (!/^[[{]/.test(row.trim())) continue
+    try { exitFailures(JSON.parse(row), found) } catch { /* JSON 이 아닌 줄 · 잘린 줄 */ }
+  }
+  return found.length ? found.join('\n') : ''
+}
 const transcriptRecord = (record) => {
   if (record.type !== 'response_item') return record
   const payload = record.payload ?? {}
   if (payload.type === 'message' && ['user', 'assistant'].includes(payload.role)) {
     const content = (payload.content ?? []).filter((block) => ['input_text', 'output_text'].includes(block.type) && typeof block.text === 'string')
+      .filter((block) => payload.role !== 'user' || !isCodexContext(block.text))
       .map((block) => ({ type: 'text', text: block.text }))
     return { type: payload.role, message: { content } }
+  }
+  if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
+    const error = codexToolError(payload.output)
+    return error ? { type: 'user', message: { content: [{ type: 'tool_result', is_error: true, content: error }] } } : {}
   }
   if (payload.type === 'function_call' || payload.type === 'custom_tool_call') {
     let input = {}

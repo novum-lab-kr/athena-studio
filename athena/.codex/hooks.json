@@ -37,7 +37,7 @@
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/codex-context.py\"",
             "timeout": 20,
-            "additionalContextLimit": 12000
+            "additionalContextLimit": 100000
           }
         ]
       }

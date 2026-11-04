@@ -74,13 +74,23 @@ const file = join(process.env.CODEX_HOME, 'sessions/2026/11/03/rollout-test.json
 const header = `이 작업의 계획서: ${process.cwd()}/plans/task/test.md — 계속`
 const records = [
   {type:'session_meta',payload:{cwd:process.cwd()}},
-  {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'# AGENTS.md instructions\n<INSTRUCTIONS>규칙</INSTRUCTIONS>'}]}},
-  {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:'<environment_context>작업 자리</environment_context>'}]}},
+  // #20 — 실제 rollout(codex-cli 0.166 · 2026-11-04 확인) 모양: 첫 user 메시지 한 개에 AGENTS.md 본문 · 환경 문맥 두 블록
+  {type:'response_item',payload:{type:'message',role:'user',content:[
+    {type:'input_text',text:`# AGENTS.md instructions for ${process.cwd()}\n\n<INSTRUCTIONS>\nAGENTS_BODY_SENTINEL\n</INSTRUCTIONS>`},
+    {type:'input_text',text:`<environment_context>\n  <cwd>${process.cwd()}</cwd>\n  <shell>zsh</shell>\n</environment_context>`}]}},
   {type:'response_item',payload:{type:'message',role:'user',content:[{type:'input_text',text:header}]}},
   {type:'response_item',payload:{type:'message',role:'assistant',content:[{type:'output_text',text:'결과 확인'}]}},
   {type:'event_msg',payload:{type:'agent_message',message:'중복 금지'}},
   {type:'response_item',payload:{type:'function_call',name:'exec_command',arguments:JSON.stringify({cmd:'node --check scripts/x.mjs'})}},
   {type:'response_item',payload:{type:'function_call_output',output:'결과 본문 금지'}},
+  // 도구 결과 — 실제 rollout 의 세 가지 오류 모양 · 성공 결과(본문은 넣지 않는다)
+  {type:'response_item',payload:{type:'custom_tool_call',name:'exec',input:'await exec("x")'}},
+  {type:'response_item',payload:{type:'custom_tool_call_output',output:[{type:'input_text',text:'Script failed\nWall time 0.4 seconds\nOutput:\n\nScript error:\nCommand blocked by PreToolUse hook: SCRIPT_ERROR_SENTINEL\n두 번째 줄 금지'}]}},
+  {type:'response_item',payload:{type:'custom_tool_call_output',output:[{type:'input_text',text:'Script completed\nWall time 1.5 seconds\nOutput:\n\n'+JSON.stringify({chunk_id:'a1',wall_time_seconds:0,exit_code:1,original_token_count:3,output:'EXIT_ERROR_SENTINEL\n자세한 줄 금지\n'})}]}},
+  {type:'response_item',payload:{type:'custom_tool_call_output',output:[{type:'input_text',text:'Script completed\nWall time 1 seconds\nOutput:\n\n'+JSON.stringify({chunk_id:'a2',wall_time_seconds:0,exit_code:0,original_token_count:3,output:'SUCCESS_SENTINEL'})}]}},
+  {type:'response_item',payload:{type:'function_call_output',output:'Tool call blocked by PreToolUse hook: HOOK_BLOCK_SENTINEL. Tool: request_user_input'}},
+  {type:'response_item',payload:{type:'custom_tool_call_output',output:[{type:'input_text',text:'Script completed\nWall time 1 seconds\nOutput:\n\n'+JSON.stringify({status:'fulfilled',value:{chunk_id:'a3',exit_code:2,output:'NESTED_ERROR_SENTINEL'}})}]}},
+  {type:'response_item',payload:{type:'custom_tool_call_output',output:[{type:'input_text',text:'Script completed\nWall time 1 seconds\nOutput:\n\n'+'x'.repeat(800)+'LONG_TAIL_SENTINEL'}]}},
 ]
 writeFileSync(file, records.map(record=>JSON.stringify(record)).join('\n')+'\n')
 assert.ok((await findTranscripts('plans/task/test.md')).includes(file))
@@ -89,7 +99,16 @@ const text = await condense(file)
 assert.ok(text.includes('👤 '+header) && text.includes('🤖 결과 확인'))
 assert.ok(text.includes('🔧 exec_command: node --check'))
 assert.ok(!text.includes('중복 금지') && !text.includes('결과 본문 금지'))
-console.log('  ✔ Codex 기록 검색·요약 — 계획서 구분, 중복·도구 결과 제외')
+// Codex 가 넣은 지시 · 환경 문맥은 사용자 말이 아니다
+assert.ok(!text.includes('AGENTS_BODY_SENTINEL') && !text.includes('<environment_context>') && !text.includes('AGENTS.md instructions'), text)
+// 도구 오류는 Claude tool_result is_error 와 같은 자리 · 같은 규칙(❌ 첫 줄 · 300자)
+assert.ok(text.includes('❌ Command blocked by PreToolUse hook: SCRIPT_ERROR_SENTINEL') && !text.includes('두 번째 줄 금지'), text)
+assert.ok(text.includes('❌ (exit 1) EXIT_ERROR_SENTINEL') && !text.includes('자세한 줄 금지'), text)
+assert.ok(text.includes('❌ Tool call blocked by PreToolUse hook: HOOK_BLOCK_SENTINEL'), text)
+assert.ok(text.includes('❌ (exit 2) NESTED_ERROR_SENTINEL'), text)
+assert.ok(!text.includes('SUCCESS_SENTINEL') && !text.includes('LONG_TAIL_SENTINEL') && !text.includes('Script completed'), text)
+assert.equal(text.split('\n').filter((row) => row.startsWith('❌')).length, 4, text)
+console.log('  ✔ Codex 기록 검색·요약 — 계획서 구분 · 지시·환경 문맥 제외 · 도구 오류만 ❌ · 중복·결과 본문 제외')
 JS
 mkdir -p "$TASK_TMP/docs/knowledge/athena" "$TASK_TMP/issues" "$TASK_TMP/.claude/skills"
 echo '# 함정' > "$TASK_TMP/docs/knowledge/athena/gotchas.md"
