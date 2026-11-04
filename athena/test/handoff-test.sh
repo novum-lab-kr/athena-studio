@@ -72,13 +72,33 @@ out="$(commit '둘째 변경' f.txt)"; rc=$?
 grep -q '전체 검증은 넘긴 뒤 Actions 에서' "$PLAN" && ! grep -q '둘째.*검증 생략' "$PLAN" && ok "계획서 Commits 에 Actions 검증으로 적는다" || bad "Commits 기록: $(grep -n '둘째' "$PLAN")"
 SHA="$(git -C "$TMP/wt" rev-parse HEAD)"; START_MAIN="$(git -C "$TMP/origin.git" rev-parse refs/heads/main)"
 out="$(ship)"; rc=$?
-[ $rc = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)" = "$SHA" ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/main)" = "$START_MAIN" ] && ok "ship.sh --direct-merge → handoff/<브랜치> push 만 · main 그대로" || bad "넘기기(rc=$rc): $out"
+HEAD_SHA="$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x 2>/dev/null)"
+[ $rc = 0 ] && [ -n "$HEAD_SHA" ] && [ "$(git -C "$TMP/origin.git" rev-parse "$HEAD_SHA^")" = "$SHA" ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/main)" = "$START_MAIN" ] && ok "ship.sh --direct-merge → handoff/<브랜치> push 만 · main 그대로" || bad "넘기기(rc=$rc): $out"
+# 2026-11-04 5f0fa07 — 넘긴 머지 제목이 마지막 작업 커밋 제목("main(…) 합치기")으로 남았다. 넘김 머리는 작업 HEAD 위 빈 커밋 하나 · 제목 줄은 계획서 제목
+[ "$(git -C "$TMP/wt" rev-list --count "$START_MAIN..$SHA")" -ge 2 ] && [ "$(git -C "$TMP/origin.git" log -1 --format=%s "$HEAD_SHA")" = 시험 ] && [ "$(git -C "$TMP/origin.git" rev-parse "$HEAD_SHA^{tree}")" = "$(git -C "$TMP/wt" rev-parse "$SHA^{tree}")" ] \
+  && [ "$(git -C "$TMP/origin.git" log -1 --format=%an%ae "$HEAD_SHA")" = "$(git -C "$TMP/wt" log -1 --format=%an%ae "$SHA")" ] && [ "$(git -C "$TMP/wt" rev-parse HEAD)" = "$SHA" ] \
+  && ok "커밋 여럿인 브랜치 — 넘김 머리 제목은 계획서 제목 · 트리 · 저자는 작업 HEAD 그대로 · 작업 브랜치에는 안 얹는다" || bad "넘김 머리: $(git -C "$TMP/origin.git" log -2 --format='%h %an %s' "$HEAD_SHA" 2>&1)"
+grep -q "\"head\":\"$HEAD_SHA\"" "$ATH"/.board-handoffs/web-*.json && grep -q "\"sha\":\"$SHA\"" "$ATH"/.board-handoffs/web-*.json && ok "작업 파일에 작업 HEAD(sha)와 넘김 머리(head)" || bad "작업 파일: $(cat "$ATH"/.board-handoffs/web-*.json)"
 grep -q '^- Auto merge: web feat/x @.* · Actions 대기 — 넘김 · ' "$PLAN" && ok "계획서에 Actions 대기" || bad "대기 줄 없음: $(grep -n 'Auto merge' "$PLAN")"
 printf '%s' "$out" | grep -q '넓은 수정(민감 경로 .github/workflows/athena-handoff.yml)' && grep -q "delegate reviewer --cwd $TMP/wt --here --plan plans/task/p.md" "$DELEGATE_LOG" && ok "workflow 파일은 민감 경로 → 넘기기 앞에 reviewer 를 띄우고 승인 뒤 넘긴다" || bad "넘기기 앞 리뷰 문: $(cat "$DELEGATE_LOG")"
 ls "$ATH"/.board-handoffs/web-*.json >/dev/null 2>&1 && ok "작업 파일이 남는다(현황판이 읽는다)" || bad "작업 파일 없음"
 grep -q '"type":"handoff"' "$ATH/.events.jsonl" && ok "사건 handoff" || bad "사건 handoff 없음"
 out="$(ship)"; rc=$?
 [ $rc = 0 ] && [ "$(ls "$ATH"/.board-handoffs/web-*.json | wc -l | tr -d ' ')" = 1 ] && ok "같은 HEAD 를 다시 넘겨도 일은 하나" || bad "다시 넘기기(rc=$rc): $out"
+[ "$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)" = "$HEAD_SHA" ] && ok "같은 HEAD 를 다시 넘기면 넘김 머리도 같은 sha" || bad "다시 넘긴 머리: $(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)"
+git clone -q --bare "$TMP/origin.git" "$TMP/h-origin.git"   # 아래 머지 단계 시험이 이 넘김 머리를 합친다
+# 실패해 넘김 브랜치가 남은 채 고쳐 다시 넘김 — 옛 넘김 머리는 새 머리의 조상이 아니다. 지우고 다시 민다
+echo fixed > "$TMP/wt/f.txt"; commit '실패 고침' f.txt >/dev/null
+SHA2="$(git -C "$TMP/wt" rev-parse HEAD)"
+out="$(ship)"; rc=$?
+HEAD2="$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)"
+[ $rc = 0 ] && [ "$HEAD2" != "$HEAD_SHA" ] && [ "$(git -C "$TMP/origin.git" rev-parse "$HEAD2^")" = "$SHA2" ] && [ "$(git -C "$TMP/origin.git" log -1 --format=%s "$HEAD2")" = 시험 ] && ok "남은 옛 넘김 머리 위로 고쳐 다시 넘긴다" || bad "고쳐 다시 넘기기(rc=$rc): $out"
+# 남이 민 것 — 변경이 든 커밋(빈 커밋이 아니다)
+git -C "$TMP/main" push -qf origin "$(git -C "$TMP/main" -c user.name=o -c user.email=o@o commit-tree "$SHA2^{tree}" -p "$START_MAIN" -m 남의):refs/heads/handoff/feat/x" 2>/dev/null
+OTHER="$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)"
+echo again > "$TMP/wt/f.txt"; commit '또 고침' f.txt >/dev/null
+out="$(ship)"; rc=$?
+[ $rc != 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x)" = "$OTHER" ] && ok "넘김 브랜치에 남이 민 것은 지우지 않는다(거부 · 강제 없음)" || bad "남의 넘김 브랜치(rc=$rc · $(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x) vs $OTHER): $out"
 rm -f "$ATH"/.board-handoffs/*.json; git -C "$TMP/origin.git" update-ref -d refs/heads/handoff/feat/x
 config ''
 sed -i.bak '/^- Auto merge:/d' "$PLAN"
@@ -133,6 +153,12 @@ W="$(start_work race d.txt '경쟁 작업')"
 printf '#!/bin/sh\nif [ ! -e "%s" ]; then touch "%s"; echo rejected >&2; exit 1; fi\nexit 0\n' "$TMP/once" "$TMP/once" > "$TMP/reject-once"; chmod +x "$TMP/reject-once"
 PRE_HOOK="$TMP/reject-once" merge_case "$W"; rc=$?
 [ $rc = 0 ] && grep -q 'push 거부' "$TMP/merge.out" && [ "$(git -C "$TMP/m-origin.git" show refs/heads/main:d.txt)" = race ] && ok "push 가 거부되면 다시 합쳐 넣는다(줄 세우기 없이 차례)" || { bad "push 경쟁(rc=$rc)"; sed 's/^/      /' "$TMP/merge.out"; }
+# 위 ship.sh 가 민 넘김 머리(커밋 여럿인 브랜치) 그대로 — main 에 들어간 squash 제목이 마지막 작업 커밋이 아니라 계획서 제목
+rm -rf "$TMP/runner"; git clone -q "$TMP/h-origin.git" "$TMP/runner"
+(cd "$TMP/runner" && git checkout -q --detach "$HEAD_SHA" && GITHUB_SHA="$HEAD_SHA" GITHUB_REF_NAME=handoff/feat/x BASE_BRANCH=main bash "$TMP/merge-step.sh") > "$TMP/merge.out" 2>&1; rc=$?
+TIP="$(git -C "$TMP/h-origin.git" rev-parse refs/heads/main)"
+[ $rc = 0 ] && [ "$(git -C "$TMP/h-origin.git" rev-parse "$TIP^")" = "$START_MAIN" ] && [ "$(git -C "$TMP/h-origin.git" log -1 --format=%s "$TIP")" = 시험 ] && [ "$(git -C "$TMP/h-origin.git" rev-parse "$TIP^{tree}")" = "$(git -C "$TMP/wt" rev-parse "$SHA^{tree}")" ] \
+  && ok "넘긴 브랜치(커밋 여럿)의 머지 제목은 계획서 제목" || { bad "넘김 머지 제목(rc=$rc · $(git -C "$TMP/h-origin.git" log -1 --format=%s "$TIP"))"; sed 's/^/      /' "$TMP/merge.out"; }
 python3 - "$SRC/docs/templates/actions/athena-handoff.yml" <<'PY' && ok "틀 모양 — 넘김 브랜치 push 로만 · 브랜치별 차례 · 기본 읽기 권한" || bad "틀 모양"
 import sys
 text = open(sys.argv[1]).read()
@@ -142,7 +168,7 @@ PY
 
 echo; echo "결과 읽기 — 현황판 감시"
 cat > "$TMP/watch.mjs" <<JS
-import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 const lib = await import('$ATH/scripts/lib/handoff.mjs')
 const { directMergeStatus } = await import('$ATH/scripts/lib/pr-auto.mjs')
@@ -303,6 +329,21 @@ seed()
     { at: seen, type: 'auto.merge', plan: planFile, repo: 'web', ok: true, direct: true, handoff: true, mergedAt: '2026-11-02T00:10:00.000Z', handoffMs: 300000 },
   ], { now: Date.parse('2026-11-02T02:00:00Z') }).current
   check('지표 — 넘김→머지 · 머지 시각은 현황판이 본 때가 아니라 Actions 가 끝낸 때', summary.handoffToMerge.count === 1 && summary.handoffToMerge.p50Ms === 300000 && summary.lead.p50Ms === 600000, JSON.stringify([summary.handoffToMerge, summary.lead]))
+}
+{
+  // 넘김 머리(head)가 있으면 그 sha 로 실행을 찾는다 — 실행의 head_sha 는 민 머리(계획서 제목 커밋)다. 없으면 옛 파일이라 sha
+  const head = 'b'.repeat(40)
+  seed()
+  const file = lib.handoffFile(root, 'web', 'feat/w')
+  writeFileSync(file, JSON.stringify({ ...JSON.parse(readFileSync(file, 'utf8')), head }))
+  const { state, watch } = world()
+  await watch.tick()
+  check('넘김 머리 sha 로 실행을 찾는다', state.calls.some((call) => call.includes('head_sha=' + head)) && !state.calls.some((call) => call.includes('head_sha=' + sha)), state.calls.join(' | '))
+  seed()
+  const old = world()
+  await old.watch.tick()
+  check('head 없는 옛 작업 파일은 sha 로 찾는다', old.state.calls.some((call) => call.includes('head_sha=' + sha)), old.state.calls.join(' | '))
+  rmSync(file, { force: true })
 }
 process.exit(failures ? 1 : 0)
 JS

@@ -81,7 +81,8 @@ const withValidationLine = (planText, line) => {
   return [...lines.slice(0, head + 1), ...kept, line, ...lines.slice(end)].join('\n')
 }
 
-/** @typedef {{ plan: string, repo: string, branch: string, sha: string, base: string, worktree: string, at: string, recorded?: boolean, outcome?: { merged: boolean, stage: string, deployFailed: boolean, runId: number, url: string }, log?: string, noticing?: boolean, noRunNoted?: boolean }} HandoffJob */
+/** sha — 작업 HEAD(계획서 줄 · 알림) · head — 넘김 브랜치에 민 머리(계획서 제목 커밋 · pr-auto.mjs handOff — 실행 찾기 · 없으면 옛 파일이라 sha)
+ * @typedef {{ plan: string, repo: string, branch: string, sha: string, head?: string, base: string, worktree: string, at: string, recorded?: boolean, outcome?: { merged: boolean, stage: string, deployFailed: boolean, runId: number, url: string }, log?: string, noticing?: boolean, noRunNoted?: boolean }} HandoffJob */
 
 /**
  * @param {{
@@ -108,7 +109,7 @@ export const createHandoffWatch = ({ root, org, run, sendToPane, openPane, logEv
   /** 이 일의 실행 — 같은 HEAD · 넘김 브랜치 · 넘긴 뒤 만들어진 것 중 가장 새것
    * @param {HandoffJob} job */
   const latestRun = async (job) => {
-    const out = await run('gh', ['api', `repos/${org}/${job.repo}/actions/workflows/${HANDOFF_WORKFLOW}/runs?head_sha=${job.sha}&event=push&per_page=20`, '--jq', '[.workflow_runs[] | {id, status, conclusion, created_at, html_url, head_branch}]'], { timeout: 20_000 })
+    const out = await run('gh', ['api', `repos/${org}/${job.repo}/actions/workflows/${HANDOFF_WORKFLOW}/runs?head_sha=${job.head || job.sha}&event=push&per_page=20`, '--jq', '[.workflow_runs[] | {id, status, conclusion, created_at, html_url, head_branch}]'], { timeout: 20_000 })
     if (out === null) return null
     /** @type {Array<{ id: number, status: string, conclusion: string | null, created_at: string, html_url: string, head_branch: string }>} */
     let runs

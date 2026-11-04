@@ -1070,6 +1070,18 @@ const directMerge = async (planArg, repo, dir) => {
   return true
 }
 
+// 넘김 머리 — 작업 HEAD 와 같은 트리에 HEAD 를 부모로 둔 빈 커밋 하나 · 제목 줄은 계획서 제목(바로 머지 directMergeMessage 와 같은 첫 줄).
+// Actions 머지 단계는 넘김 머리의 제목을 squash 제목으로 쓴다 — 작업 HEAD 를 그대로 밀면 마지막 작업 커밋 제목(예 "main(…) 합치기")이 남는다(2026-11-04 5f0fa07).
+// 저자 · 커미터 · 시각은 HEAD 그대로 — 같은 HEAD 를 다시 넘기면 같은 sha 다. 작업 브랜치에는 얹지 않는다(넘김 브랜치에만)
+const handoffHead = (worktree, sha, title) => {
+  const who = git(worktree, ['log', '-1', '--date=raw', '--format=%an%x00%ae%x00%ad%x00%cn%x00%ce%x00%cd', sha])?.split('\0')
+  if (!who || who.length !== 6) return ''
+  const [authorName, authorEmail, authorDate, committerName, committerEmail, committerDate] = who
+  const env = { ...process.env, GIT_AUTHOR_NAME: authorName, GIT_AUTHOR_EMAIL: authorEmail, GIT_AUTHOR_DATE: authorDate, GIT_COMMITTER_NAME: committerName, GIT_COMMITTER_EMAIL: committerEmail, GIT_COMMITTER_DATE: committerDate }
+  const made = spawnSync('git', ['-C', worktree, 'commit-tree', `${sha}^{tree}`, '-p', sha, '-m', title], { encoding: 'utf8', env })
+  return made.status === 0 ? made.stdout.trim() : ''
+}
+
 // --handoff: ship.sh 가 부른다 — 넓은 수정이면 리뷰 문(directReviewGate)을 먼저 지나고, 커밋을 handoff/<브랜치> 로 push 하고 바로 끝난다. 검증 · 머지는 Actions, 결과 읽기는 현황판(lib/handoff.mjs)
 const handOff = async (planArg, repo, dir) => {
   const { path: planPath, file: planFile } = planPathOf(planArg)
@@ -1088,15 +1100,23 @@ const handOff = async (planArg, repo, dir) => {
   // 넓은 수정이면 리뷰 문부터 — Actions 는 검증 · 머지만 하니 리뷰는 넘기기 전에 선다
   if (!(await directReviewGate({ plan: planFile, repo, branch, sha, base, worktree }, planPath))) return false
   if (git(worktree, ['cat-file', '-e', `${sha}:.github/workflows/${HANDOFF_WORKFLOW}`]) === null) { console.log(`⏭  이 커밋에 .github/workflows/${HANDOFF_WORKFLOW} 가 없다 — 넘겨도 돌지 않는다`); return false }
+  const head = handoffHead(worktree, sha, masked(directMergeMessage({ title: planTitleOf(planText), branch, base }).split('\n')[0]))
+  if (!head) { console.log('⏭  넘김 머리 커밋(계획서 제목)을 만들지 못했다'); return false }
   const ref = `refs/heads/${HANDOFF_PREFIX}${branch}`
   const file = handoffFile(ROOT, repo, branch)
   const previous = existsSync(file) ? readFileSync(file, 'utf8') : null
   mkdirSync(dirname(file), { recursive: true })
-  writeFileSync(file, JSON.stringify({ plan: planFile, repo, branch, sha, base, worktree, at: new Date().toISOString() }))
+  writeFileSync(file, JSON.stringify({ plan: planFile, repo, branch, sha, head, base, worktree, at: new Date().toISOString() }))
   const undo = () => { if (previous === null) rmSync(file, { force: true }); else writeFileSync(file, previous) }
-  // 같은 HEAD 를 다시 넘기면 push 가 아무 일도 하지 않아 실행이 안 생긴다 — 넘김 브랜치만 지우고 다시 민다
-  if ((git(worktree, ['ls-remote', 'origin', ref]) ?? '').startsWith(sha)) git(worktree, ['push', '--quiet', 'origin', '--delete', `${HANDOFF_PREFIX}${branch}`])
-  const pushed = spawnSync('git', ['-C', worktree, 'push', '--quiet', 'origin', `${sha}:${ref}`], { encoding: 'utf8', timeout: 120_000 })
+  // 같은 HEAD 를 다시 넘기면 push 가 아무 일도 하지 않아 실행이 안 생긴다 — 넘김 브랜치만 지우고 다시 민다.
+  // 실패해 남은 넘김 브랜치가 옛 넘김 머리(이 HEAD 의 조상 위 빈 커밋)면 새 머리의 조상이 아니라 push 가 거부된다 — 그때도 지우고 다시 민다(변경이 든 남의 커밋은 그대로 · 거부)
+  const remoteTip = (git(worktree, ['ls-remote', 'origin', ref]) ?? '').split(/\s/)[0]
+  const fetchedTree = (rev) => git(worktree, ['rev-parse', '-q', '--verify', `${rev}^{tree}`])
+  const oldHead = Boolean(remoteTip) && remoteTip !== head && git(worktree, ['fetch', '--quiet', 'origin', ref]) !== null
+    && fetchedTree('FETCH_HEAD^') !== null && fetchedTree('FETCH_HEAD') === fetchedTree('FETCH_HEAD^')
+    && git(worktree, ['merge-base', '--is-ancestor', 'FETCH_HEAD^', sha]) !== null
+  if (remoteTip === head || oldHead) git(worktree, ['push', '--quiet', 'origin', '--delete', `${HANDOFF_PREFIX}${branch}`])
+  const pushed = spawnSync('git', ['-C', worktree, 'push', '--quiet', 'origin', `${head}:${ref}`], { encoding: 'utf8', timeout: 120_000 })
   if (pushed.status !== 0) { undo(); console.log(`❌ ${HANDOFF_PREFIX}${branch} push 가 거부됐다(${firstLine(pushed.stderr)}) — 강제 push 는 하지 않는다`); return false }
   writeDirectLine(planPath, { repo, branch, sha }, `${HANDOFF_WAITING} — 넘김`)
   logEvent(ROOT, 'handoff', { plan: planFile, repo, branch, sha: sha.slice(0, 7), base })

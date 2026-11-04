@@ -81,8 +81,8 @@ PR 끔 + 확인 없는 바로 머지 레포에서 전체 검증 · 머지를 맥
 
 **흐름**
 - `commit.sh` — 전체 검증을 건너뛰고 Commits 에 `전체 검증은 넘긴 뒤 Actions 에서` 로 적는다
-- `ship.sh --direct-merge` → `pr-auto.mjs --handoff` — 넓은 수정이면 리뷰 문을 먼저 지나고, 작업 파일(`handoffs/<레포>-<해시>.json`)을 남기고 HEAD 를 `handoff/<브랜치>` 로 push(강제 없음 · 같은 HEAD 를 다시 넘기면 넘김 브랜치만 지우고 다시 민다) · 줄 `Actions 대기`
-- Actions — 전체 검증 → 같은 HEAD 를 `prBase` 에 squash(충돌이면 실패 · 강제 없음) → 넘김 브랜치 삭제 → 배포 호출
+- `ship.sh --direct-merge` → `pr-auto.mjs --handoff` — 넓은 수정이면 리뷰 문을 먼저 지나고, 작업 파일(`handoffs/<레포>-<해시>.json`)을 남기고 넘김 머리 — HEAD 위에 같은 트리 · 계획서 제목의 빈 커밋 하나(작업 브랜치에는 안 얹는다 · 저자 · 시각은 HEAD 그대로) — 를 `handoff/<브랜치>` 로 push(강제 없음 · 같은 HEAD 를 다시 넘기거나 실패해 남은 옛 넘김 머리 위로 다시 넘기면 넘김 브랜치만 지우고 다시 민다) · 줄 `Actions 대기`
+- Actions — 전체 검증 → 같은 HEAD 를 `prBase` 에 squash(제목은 넘김 머리의 제목 = 계획서 제목 · 바로 머지와 같다)(충돌이면 실패 · 강제 없음) → 넘김 브랜치 삭제 → 배포 호출
 - 현황판(`scripts/lib/handoff.mjs` · 30초마다 · 넘긴 일이 있을 때만 gh) — 실행을 읽어 `- Auto merge:` · Validation 줄을 적는다. `머지됨` 이면 지금의 자동 완료가 그대로 읽는다. 카드에 Actions 대기 · 도는 중 · 실패
 
 **차례** — 같은 브랜치를 다시 넘기면 옛 실행은 취소된다. 레포 전체를 `concurrency` 로 줄 세우지 않는다 — GitHub 은 대기 실행을 하나만 남기고 취소해 넘긴 일이 사라진다. 다른 브랜치끼리는 강제 없는 push 가 거부되면 새 base 위에 다시 합친다(최대 5번 · 넘으면 실패).
