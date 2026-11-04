@@ -1,6 +1,6 @@
 {
   "Codex approval requests — commands, file changes, extra permissions and choice-style questions — can now be answered directly in Work, in all four languages, keeping the original choices and scope.": "现在可以在 [工作] 中以四种语言直接回应 Codex 的审批请求（命令、文件更改、额外权限和选择式提问），并保留原始选项和范围。",
-  "Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with an overall structure view, a user flow view and an affected-files view, plus a details panel that opens when a box is clicked.": "服务图回来了：/diagram 技能（Claude /diagram · Codex $diagram）以与 Athena 工作流程图相同的设计生成整体结构、用户操作流程、修改文件与影响范围三个视角的图，点击方框会打开详情面板。",
+  "Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with one overview of the whole structure plus two or three key feature flows per service, and a details panel that opens when a box is clicked.": "服务图回来了：/diagram 技能（Claude /diagram · Codex $diagram）以与 Athena 工作流程图相同的设计，为每个服务生成一张整体结构总览图和 2~3 张核心功能流程图，点击方框会打开详情面板。",
   "Repositories that merge without pull requests now get an automatic review before merging when the change is wide (5 or more code files, 150 or more lines, or sensitive paths), including when the merge is handed off to GitHub Actions.": "对于不经 PR 直接合并的仓库，当更改范围较大（5 个以上代码文件、150 行以上或敏感路径）时，合并前会自动进行评审，交给 GitHub Actions 的合并也同样适用。",
   "Codex Browser permission prompts and startup trust dialogs are now detected and announced in Work and the tray in the app's language, with a shortcut back to the pane.": "现在会识别 Codex Browser 权限提示和启动信任对话框，在 [工作] 和托盘中以应用语言通知，并可直接跳回原窗格。",
   "New pack windows open offset from the previous window instead of stacking exactly on top of it.": "新的包窗口不再与上一个窗口完全重叠，而是向右下方错开打开。",
@@ -10,6 +10,8 @@
   "Codex reviewers run in an isolated sandbox that can only write review results, not the code under review.": "Codex 评审者在只能写入评审结果的隔离沙箱中运行，无法修改被评审的代码。",
   "Setup now checks whether Codex trusts Athena's hooks and explains how to approve them, and Codex lead sessions receive the same full lead instructions as Claude.": "设置过程会检查 Codex 是否信任 Athena 的钩子并说明如何批准，Codex 主导会话也会收到与 Claude 相同的完整主导指令。",
   "Merges handed off to GitHub Actions now use the plan title as the merge commit title.": "交给 GitHub Actions 的合并现在使用计划书标题作为合并提交标题。",
+  "The Diagram button is enabled only when the pack has service diagrams, and the diagram list shows service diagrams only.": "只有当包中有服务图时，图表按钮才会启用，图表列表也只显示服务图。",
+  "Service diagrams no longer show the style picker; they use Athena's single theme.": "服务图不再显示样式选择框，统一使用 Athena 的一个主题。",
   "Finished-work notifications now ask GitHub for the pull request's actual state (open, draft, merged or closed) instead of showing an outdated plan value.": "修复了工作完成通知显示计划书旧值的问题，现在会向 GitHub 查询 PR 的实际状态（open、draft、merged 或 closed）。",
   "Sending from an outdated decision console no longer silently confirms missing decisions; the console asks you to refresh instead.": "修复了从过期决策控制台发送时缺失的决策会被直接确认的问题，控制台现在会提示刷新。",
   "Codex panes now run with their own server so a new pane keeps its own identifier, and agent reports are delivered only to the lead session they belong to.": "修复了 Codex 窗格共享服务器导致新窗格沿用旧标识符的问题，现在每个窗格使用自己的服务器，代理报告也只送达所属的主导会话。",

@@ -36,7 +36,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Codex approval requests — commands, file changes, extra permissions and choice-style questions — can now be answered directly in Work, in all four languages, keeping the original choices and scope.
-- Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with an overall structure view, a user flow view and an affected-files view, plus a details panel that opens when a box is clicked.
+- Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with one overview of the whole structure plus two or three key feature flows per service, and a details panel that opens when a box is clicked.
 - Repositories that merge without pull requests now get an automatic review before merging when the change is wide (5 or more code files, 150 or more lines, or sensitive paths), including when the merge is handed off to GitHub Actions.
 
 ### Improved
@@ -48,6 +48,8 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Codex reviewers run in an isolated sandbox that can only write review results, not the code under review.
 - Setup now checks whether Codex trusts Athena's hooks and explains how to approve them, and Codex lead sessions receive the same full lead instructions as Claude.
 - Merges handed off to GitHub Actions now use the plan title as the merge commit title.
+- The Diagram button is enabled only when the pack has service diagrams, and the diagram list shows service diagrams only.
+- Service diagrams no longer show the style picker; they use Athena's single theme.
 
 ### Fixed
 - Finished-work notifications now ask GitHub for the pull request's actual state (open, draft, merged or closed) instead of showing an outdated plan value.
