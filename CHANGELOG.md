@@ -30,6 +30,33 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.50: 공개 v0.49.3 이후 PR230 · 231 · 232의 사용자 변경만. 범위 끝은 열어 둔다 -->
 
+<!-- 0.51: 공개 v0.50.3 이후 v0.50.4 ~ v0.51.13(PR234 ~ 241 · 직접 머지 11건)에서 사용자에게 보이는 변경만. 러너 · 동시 실행 시험 정비, 보호 훅 --help 통과, node_modules 링크 무시, 검증 범위 · 번역 시험 선택 같은 내부 정비는 뺐고, 그림 스킬 복구 · 공통 디자인 · 자세히 칸(#234 #237 e43d71a)은 한 줄로, Codex 승인 알림 정리(bb2d9ea)와 훅 믿음 · 리드 문맥(d6cfe2f 268aabf)은 각각 한 줄로 묶었다. 범위 끝은 열어 둔다 -->
+
+## 0.51 (v0.50.4 – · Nov 4, 2026)
+
+### New
+- Codex approval requests — commands, file changes, extra permissions and choice-style questions — can now be answered directly in Work, in all four languages, keeping the original choices and scope.
+- Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with an overall structure view, a user flow view and an affected-files view, plus a details panel that opens when a box is clicked.
+- Repositories that merge without pull requests now get an automatic review before merging when the change is wide (5 or more code files, 150 or more lines, or sensitive paths), including when the merge is handed off to GitHub Actions.
+
+### Improved
+- Codex Browser permission prompts and startup trust dialogs are now detected and announced in Work and the tray in the app's language, with a shortcut back to the pane.
+- New pack windows open offset from the previous window instead of stacking exactly on top of it.
+- The Board's Metrics tab shows the time distribution as six time-of-day bars with counts, expands the full task list by default, and shows each task's total elapsed time and per-stage times.
+- Metrics and pane token counts now include Codex sessions, and Agent Monitor lists Codex sub-agents as sub-agent rows.
+- Pull request and learning reviews switch to Codex when Claude has hit its usage limit, follow the body's main tool for ordering, and record which engine made each review.
+- Codex reviewers run in an isolated sandbox that can only write review results, not the code under review.
+- Setup now checks whether Codex trusts Athena's hooks and explains how to approve them, and Codex lead sessions receive the same full lead instructions as Claude.
+- Merges handed off to GitHub Actions now use the plan title as the merge commit title.
+
+### Fixed
+- Finished-work notifications now ask GitHub for the pull request's actual state (open, draft, merged or closed) instead of showing an outdated plan value.
+- Sending from an outdated decision console no longer silently confirms missing decisions; the console asks you to refresh instead.
+- Codex panes now run with their own server so a new pane keeps its own identifier, and agent reports are delivered only to the lead session they belong to.
+- Codex approval notification titles no longer include the command text, one permission request now produces a single notification per pane, and Codex questions are no longer shown twice.
+- Sequence diagram request labels are easier to read in both light and dark themes.
+- Review diffs no longer mask code values that only look like secrets, which caused reviewers to report syntax errors that did not exist.
+
 ## 0.50 (v0.50.0 – · Nov 3, 2026)
 
 ### Improved
