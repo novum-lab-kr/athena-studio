@@ -21,6 +21,22 @@ export const reviewToolState = (tool) => {
   if (spawnSync('sh', ['-c', `command -v ${tool}`], { stdio: 'ignore' }).status !== 0) return 'missing'
   return spawnSync(tool, tool === 'claude' ? ['auth', 'status'] : ['login', 'status'], { stdio: 'ignore', timeout: 30_000 }).status === 0 ? 'ready' : 'logged-out'
 }
+// Claude 사용량 한도 — claude -p --output-format json 결과로만 가른다(종료 코드는 1 · 다른 실패와 같아 쓰지 않는다).
+// 근거: 2026-11-03 PR 235 · 236 · 237 · 238 · 240 자동 리뷰 실행의 Claude 대화 기록(~/.claude/projects · 작업 폴더 athena-pr-auto-claude-*)이
+// error "rate_limit" · apiError "usage_limit_reached" · 글 "You've hit your weekly limit · resets 4am (Asia/Seoul)" 였고,
+// claude CLI 2.1.318 결과 형식이 is_error · api_error(같은 종류 값 — usage_limit_reached = 계정 · 플랜 사용량 한도)를 싣는다.
+// api_error_status(429 등)는 기록에서 확인하지 못해 보지 않는다. JSON 이 아니면 한도로 보지 않는다(일반 실패 그대로)
+export const CLAUDE_LIMIT_ERROR = 'usage_limit_reached'
+const CLAUDE_LIMIT_TEXT = /^You've hit your .*limit/
+/** @param {string} stdout */
+export const claudeLimited = (stdout) => {
+  try {
+    const answer = JSON.parse(String(stdout ?? ''))
+    if (!answer || answer.is_error !== true) return false
+    return answer.api_error === CLAUDE_LIMIT_ERROR || CLAUDE_LIMIT_TEXT.test(String(answer.result ?? ''))
+  } catch { return false }
+}
+
 /** @param {string} workDir @param {string} schemaFile @param {string} outFile @param {string} [model] */
 export const codexReviewArgs = (workDir, schemaFile, outFile, model = '') => [
   'exec', '--ignore-user-config', ...codexModelArgs({ ...readCodexSettings(), ...(model ? { model } : {}) }),

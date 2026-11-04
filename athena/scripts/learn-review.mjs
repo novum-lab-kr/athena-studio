@@ -34,7 +34,8 @@ import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
-import { codexReviewArgs, reviewToolState } from './lib/review-cli.mjs'
+import { claudeLimited, codexReviewArgs, reviewToolState } from './lib/review-cli.mjs'
+import { readMainTool } from './lib/main-tool.mjs'
 import { decideGate, readSeen, seenIdOf, writeSeen } from './lib/learn-seen.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -342,27 +343,27 @@ ${transcript}
 `
 }
 
-export const askReviewer = (prompt) => {
-  const currentConfig = loadConfig(ROOT)
-  if (reviewToolState('claude') !== 'ready') {
-    if (reviewToolState('codex') !== 'ready') throw new Error('학습 검토에 쓸 로그인된 Claude 또는 Codex가 없다')
-    const workDir = mkdtempSync(join(tmpdir(), 'athena-learn-codex-'))
-    try {
-      const schemaFile = join(workDir, 'schema.json')
-      const outFile = join(workDir, 'answer.json')
-      writeFileSync(schemaFile, JSON.stringify(LEARN_SCHEMA))
-      const result = spawnSync('codex', codexReviewArgs(workDir, schemaFile, outFile, modelOf(currentConfig, 'learnReview', 'codex')), {
-        input: prompt, cwd: workDir, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 10 * 60 * 1000,
-      })
-      if (result.status !== 0) throw new Error(`codex 학습 검토 실패(코드 ${result.status})`)
-      const answer = JSON.parse(readFileSync(outFile, 'utf8'))
-      if (!Array.isArray(answer.items)) throw new Error('검토자 답 모양이 틀림(JSON 형식)')
-      return { items: answer.items, cost: 0 }
-    } finally { rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
-  }
-  // 도구 없이, 세션 저장 없이, 중립 폴더에서(hermes CLAUDE.md·훅을 끌어오지 않게) 한 번 돈다
-  // 모델은 팩 pack.json "models.learnReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 검토가 실패한다(기본 모델로 다시 하지 않는다).
-  // 설정은 검토마다 새로 읽는다 — 뒤에서 도는 검토 프로세스를 다시 띄우지 않아도 pack.json 을 고친 값이 다음 검토부터 먹는다
+// Codex 로 한 번 — 도구 끔 · 읽기 전용 · 빈 폴더(PR 자동 리뷰와 같은 인자 · lib review-cli). 모델은 models.learnReview.codex, 없으면 사용자 기본 모델
+const askCodex = (prompt, currentConfig) => {
+  const workDir = mkdtempSync(join(tmpdir(), 'athena-learn-codex-'))
+  try {
+    const schemaFile = join(workDir, 'schema.json')
+    const outFile = join(workDir, 'answer.json')
+    writeFileSync(schemaFile, JSON.stringify(LEARN_SCHEMA))
+    const result = spawnSync('codex', codexReviewArgs(workDir, schemaFile, outFile, modelOf(currentConfig, 'learnReview', 'codex')), {
+      input: prompt, cwd: workDir, encoding: 'utf8', maxBuffer: 20 * 1024 * 1024, timeout: 10 * 60 * 1000,
+    })
+    if (result.status !== 0) throw new Error(`codex 학습 검토 실패(코드 ${result.status})`)
+    const answer = JSON.parse(readFileSync(outFile, 'utf8'))
+    if (!Array.isArray(answer.items)) throw new Error('검토자 답 모양이 틀림(JSON 형식)')
+    return { items: answer.items, cost: 0 }
+  } finally { rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
+}
+
+// Claude 로 한 번 — 사용량 한도면 { limited: true }(lib review-cli claudeLimited — PR 자동 리뷰와 같은 판정)
+// 도구 없이, 세션 저장 없이, 중립 폴더에서(hermes CLAUDE.md·훅을 끌어오지 않게) 한 번 돈다
+// 모델은 팩 pack.json "models.learnReview"(scripts/lib/models.mjs) — 없으면 기본 모델. 이름이 이상하면 이 검토가 실패한다(기본 모델로 다시 하지 않는다).
+const askClaude = (prompt, currentConfig) => {
   const result = spawnSync('claude', ['-p', ...modelArgs(currentConfig, 'learnReview'), '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(LEARN_SCHEMA)], {
     input: prompt,
     cwd: tmpdir(),
@@ -370,10 +371,27 @@ export const askReviewer = (prompt) => {
     maxBuffer: 20 * 1024 * 1024,
     timeout: 10 * 60 * 1000,
   })
+  if (claudeLimited(result.stdout)) return { limited: true }
   if (result.status !== 0) throw new Error(`claude -p 실패(코드 ${result.status}): ${clip((result.stderr || result.stdout || '').trim(), 300)}`)
   const answer = JSON.parse(result.stdout)
   if (answer.is_error) throw new Error(`검토자 오류: ${clip(String(answer.result ?? ''), 300)}`)
   return { items: answer.structured_output?.items ?? [], cost: answer.total_cost_usd ?? 0 }
+}
+
+// 주 도구(.athena-main-tool.json · lib main-tool)를 먼저, 없으면 Claude 먼저(검수 묶음 2 #18). 설치 · 로그인된 것만 쓴다.
+// Claude 가 사용량 한도면 로그인된 Codex 로 넘어간다(#19). 그 밖의 실패는 다른 엔진으로 다시 하지 않는다(지금처럼 그 검토 실패)
+// 설정은 검토마다 새로 읽는다 — 뒤에서 도는 검토 프로세스를 다시 띄우지 않아도 pack.json 을 고친 값이 다음 검토부터 먹는다
+export const askReviewer = (prompt) => {
+  const currentConfig = loadConfig(ROOT)
+  const order = readMainTool(ROOT) === 'codex' ? ['codex', 'claude'] : ['claude', 'codex']
+  const usable = order.filter((tool) => reviewToolState(tool) === 'ready')
+  if (!usable.length) throw new Error('학습 검토에 쓸 로그인된 Claude 또는 Codex가 없다')
+  if (usable[0] === 'codex') return askCodex(prompt, currentConfig)
+  const answer = askClaude(prompt, currentConfig)
+  if (!answer.limited) return answer
+  if (!usable.includes('codex')) throw new Error('Claude 사용량 한도 — 로그인된 Codex 가 없어 학습 검토를 넘기지 못했다')
+  console.log('  Claude 사용량 한도 — Codex 로 학습 검토를 이어 간다')
+  return askCodex(prompt, currentConfig)
 }
 
 // ── Jev 나란히 판정(scripts/lib/jev.mjs) — 배우기 검토 거름망 후보. 지금은 건너뛰지 않고 점수만 남긴다 ─────

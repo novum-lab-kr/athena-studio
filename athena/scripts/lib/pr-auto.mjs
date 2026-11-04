@@ -127,11 +127,14 @@ export const withFastPathLine = (planText, entry) => {
 // Codex 가 돌다가 실패한 것은 여기서 바꾸지 않는다(그 자리는 실패 → 리뷰어 부족 · 조용히 Claude 로 바꾸지 않는다)
 export const SECOND_MODEL_ROLE = 'prReviewSecond'
 export const CLAUDE_PAIR_DEFAULTS = { first: 'opus', second: 'sonnet' }
-// codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · firstModel · secondModel: 팩 models 값('' = 안 적음)
+// Claude 를 못 쓰는 까닭 — limited 는 돌려 보니 사용량 한도(review-cli claudeLimited)라 Codex 두 자리로 다시 짠 것(검수 묶음 2 #3)
+export const CLAUDE_LIMIT_REASON = 'Claude 사용량 한도'
+const CLAUDE_DOWN = { missing: 'Claude 설치 안 됨', 'logged-out': 'Claude 로그인 안 됨', limited: CLAUDE_LIMIT_REASON }
+// codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · claude: 같은 값 + 'limited'(사용량 한도) · firstModel · secondModel: 팩 models 값('' = 안 적음)
 // 결과: { first: { name, kind, model? }, second: { name, kind, model?, unavailable?, replaces? } } — name 은 댓글 · 사건 기록 · 판정에 쓰는 이름
 export const reviewerSlots = ({ codex, claude = 'ready', firstModel = '', secondModel = '', codexFirstModel = '', codexSecondModel = '' }) => {
   if (claude !== 'ready') {
-    const why = claude === 'missing' ? 'Claude 설치 안 됨' : 'Claude 로그인 안 됨'
+    const why = CLAUDE_DOWN[claude] ?? CLAUDE_DOWN['logged-out']
     const first = { name: 'codex', kind: 'codex', model: codexFirstModel }
     const second = { name: `codex-${codexSecondModel || 'second'}`, kind: 'codex', model: codexSecondModel, replaces: why }
     if (codex !== 'ready') return { first: { ...first, unavailable: '로그인된 리뷰 도구 없음' }, second: { ...second, unavailable: '로그인된 리뷰 도구 없음' } }
@@ -148,11 +151,18 @@ export const reviewerSlots = ({ codex, claude = 'ready', firstModel = '', second
   if (firstUsed === secondUsed) return { first, second: { name: 'codex', kind: 'codex', unavailable: `${why} · 대신할 Claude 모델(models.${SECOND_MODEL_ROLE} · ${secondUsed})이 첫 자리와 같은 모델` } }
   return { first, second: { name: `claude-${secondUsed}`, kind: 'claude', model: secondUsed, replaces: why } }
 }
+// 주 도구가 Codex 면 Claude + Codex 구성의 순서만 바꾼다(검수 묶음 2 #18 · lib/main-tool.mjs 기록) — 빠른 길 · 짧은 리뷰는 첫 자리만 돌아 주 도구가 돈다.
+// 합의 규칙(모두 승인해야 머지)은 그대로. 한 엔진 두 자리(Codex 둘 · Claude 둘)는 그대로 둔다. 기록이 없으면(null) 지금처럼 Claude 먼저
+export const orderByMainTool = (slots, main) => {
+  if (main !== 'codex' || slots.length !== 2) return slots
+  const [first, second] = slots
+  return first.kind === 'claude' && second.kind === 'codex' ? [second, first] : slots
+}
 // 어떤 구성으로 돌았나 — PR 댓글 · 계획서 "- Auto review:" 줄에 남긴다
 export const lineupNote = ({ first, second }) => {
   const head = `리뷰어 ${first.kind}${first.model ? `(${first.model})` : ''}`
   if (second.replaces && !second.unavailable) return `${head} + ${second.kind}(${second.model}) — ${second.replaces}`
-  return `${head} + codex${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
+  return `${head} + ${second.kind}${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
 }
 
 // Codex 사용자 설정(config.toml)에서 맨 위(첫 [표] 앞) model · model_reasoning_effort 두 값만 읽는다 — MCP · 훅 같은 다른 키는 읽지 않는다
@@ -299,10 +309,12 @@ export const aggregate = (results, reviewers = REVIEWERS.length) => {
 export const reviewerBrief = (results) => results.map((result) => `${result.name}:${result.inherited ? 'inherited' : result.status === 'ok' ? result.review.verdict : result.status}`).join(',')
 
 // ── 앞 리뷰 승인 이어받기(2026-10-26 사용자 결정) ────────────────────────
-// PR 전에 reviewer pane 이 남긴 계획서 "- Review result:" 줄이 같은 내용으로 승인이면 Claude 리뷰어는 다시 돌리지 않고 그 승인을 Claude 몫으로 쓴다(Codex 는 그대로).
+// PR 전에 reviewer pane 이 남긴 계획서 "- Review result:" 줄이 같은 내용으로 승인이면 그 줄의 엔진(🧠 claude · codex — review-result.sh 가 pane 기록에서 적는다)
+// 자리 하나는 다시 돌리지 않고 그 승인을 그 엔진 몫으로 쓴다(나머지 자리는 그대로). 엔진이 없는 옛 줄 · 모르는 엔진은 이어받지 않는다 —
+// Codex reviewer pane 의 승인이 Claude 몫으로 들어가 Codex 두 번이 두 엔진 합의로 보이던 것(PR #239 · 검수 묶음 2 #4)
 // 같은 내용 판정은 ship.sh "리뷰" 와 같다 — 줄에 tree(리뷰한 워크트리 전체 · 커밋 전 변경 포함)가 있으면 PR HEAD 의 tree 가 그것으로 시작할 때,
 // tree 가 없는 옛 줄이면 PR HEAD 커밋이 그 sha 로 시작할 때. 줄 고르기도 ship.sh 와 같다 — 이 레포 · 브랜치 줄 → 레포 표시 없는 이 브랜치 줄 → 표시 없는 옛 줄, 그중 마지막
-export const INHERITED_BY = 'claude'
+export const REVIEW_ENGINES = ['claude', 'codex']
 export const priorApproval = (planText, { repo, branch, sha, tree }) => {
   const lines = String(planText ?? '').split('\n').filter((line) => /^- Review result:/.test(line))
   const mine = [
@@ -315,16 +327,21 @@ export const priorApproval = (planText, { repo, branch, sha, tree }) => {
   if (!hit || !hit[1].startsWith('승인')) return null
   const reviewedTree = last.match(/· tree ([0-9a-f]{6,40})/)?.[1] ?? ''
   const same = reviewedTree ? Boolean(tree) && String(tree).startsWith(reviewedTree) : String(sha).startsWith(hit[2])
-  return same ? { sha: hit[2], tree: reviewedTree } : null
+  const engine = last.match(/· 🧠 ([a-z]+)(?: |$)/)?.[1] ?? ''
+  return same && REVIEW_ENGINES.includes(engine) ? { sha: hit[2], tree: reviewedTree, engine } : null
 }
-// 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 리뷰어가 승인한 것으로 들어간다
+// 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진의 첫 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
 export const inheritedResult = (prior, headSha) => ({
-  name: INHERITED_BY,
+  name: prior.engine,
+  engine: prior.engine,
   status: 'ok',
   inherited: true,
   review: { verdict: 'approve', summary: inheritedNote(headSha, prior), findings: [], decisions: [] },
 })
-export const inheritedNote = (headSha, prior) => `Claude: 앞 리뷰 승인 이어받음 @${String(headSha).slice(0, 7)}${prior?.tree ? ` (reviewer 승인 · tree ${prior.tree.slice(0, 12)})` : ` (reviewer 승인 @${String(prior?.sha ?? '').slice(0, 7)})`}`
+// 이어받은 결과를 받을 자리 — 그 엔진(kind)의 첫 자리 하나. 없으면 -1(그 엔진 자리가 없는 구성 — 이어받지 않는다)
+export const inheritedSlotIndex = (slots, result) => slots.findIndex((slot) => slot.kind === result.engine)
+const ENGINE_LABEL = { claude: 'Claude', codex: 'Codex' }
+export const inheritedNote = (headSha, prior) => `${ENGINE_LABEL[prior?.engine] ?? prior?.engine}: 앞 리뷰 승인 이어받음 @${String(headSha).slice(0, 7)}${prior?.tree ? ` (reviewer 승인 · tree ${prior.tree.slice(0, 12)})` : ` (reviewer 승인 @${String(prior?.sha ?? '').slice(0, 7)})`}`
 
 // ── 계획서 표시 줄 ─────────────────────────────────────────────────────
 const AUTO_LINE = /^- Auto review:\s*([\w.-]+)#(\d+)\s+@([0-9a-f]{6,40})\s+·\s+(.+?)\s+·\s+라운드\s+(\d+)\/(\d+)(?:\s+·\s+(.*))?$/

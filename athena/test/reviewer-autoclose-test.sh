@@ -22,7 +22,7 @@ with tempfile.TemporaryDirectory(prefix='reviewer-autoclose-') as temporary:
     subprocess.run(['git', '-C', str(repo), '-c', 'user.name=Test', '-c', 'user.email=test@example.invalid',
                     'commit', '-q', '--allow-empty', '-m', 'fixture'], check=True)
 
-    def run(name, states, cleanup=False, seconds='60', label='🤖 reviewer · test', enabled='1', inside=True):
+    def run(name, states, cleanup=False, seconds='60', label='🤖 reviewer · test', enabled='1', inside=True, pane_engine=None, env_engine=None):
         case = root / name; body = case / 'body'
         (body / 'scripts/lib').mkdir(parents=True)
         (body / 'plans/task').mkdir(parents=True)
@@ -32,6 +32,10 @@ with tempfile.TemporaryDirectory(prefix='reviewer-autoclose-') as temporary:
         shutil.copyfile(source / 'scripts/review-result.sh', body / 'scripts/review-result.sh')
         (body / 'scripts/lib/events.mjs').write_text('')
         (body / 'plans/task/test.md').write_text('# 시험\n\n## Checkpoint\n- Work ref: fixture\n')
+        if pane_engine:   # 팩 데이터의 pane 기록(scripts/hooks/pane-session.py 가 쓰는 꼴) — 본체 .pack-data 링크로 찾는다
+            sessions = case / 'pack-data/state/pane-sessions'; sessions.mkdir(parents=True)
+            (sessions / 'p9.json').write_text(json.dumps({'pane': 'p9', 'engine': pane_engine}))
+            (body / '.pack-data').symlink_to(case / 'pack-data')
         (case / 'config').write_text(json.dumps({'states': states, 'label': label, 'inside': inside}))
         (case / 'clock').write_text('100')
         screen = body / 'scripts/screen'
@@ -72,6 +76,8 @@ clock=pathlib.Path(os.environ['TEST_CLOCK']);clock.write_text(str(int(clock.read
 '''); sleep.chmod(0o755)
         env = dict(os.environ, PATH=str(binary)+':'+os.environ['PATH'], TEST_CLOCK=str(case/'clock'),
                    ATHENA_REVIEW_AUTOCLOSE=enabled, ATHENA_REVIEW_AUTOCLOSE_SECS=seconds)
+        env.pop('ATHENA_ENGINE', None)
+        if env_engine: env['ATHENA_ENGINE'] = env_engine
         process = subprocess.Popen(['bash', str(body/'scripts/review-result.sh'), '--plan', 'plans/task/test.md',
                                     '--dir', str(repo), '--verdict', '승인'], env=env, start_new_session=True,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
@@ -88,6 +94,7 @@ clock=pathlib.Path(os.environ['TEST_CLOCK']);clock.write_text(str(int(clock.read
             time.sleep(0.02)
         check(name+' — 리뷰 결론 기록 성공', process.returncode==0 and 'Review result: 승인' in stdout)
         if process.returncode: print(stderr)
+        (case/'stdout').write_text(stdout)
         return case
 
     normal = run('Claude와 같은 일반 실행', ['idle'])
@@ -104,6 +111,15 @@ clock=pathlib.Path(os.environ['TEST_CLOCK']);clock.write_text(str(int(clock.read
     check('화면 계층 밖이면 닫지 않는다', not (outside/'closed').exists())
     gone = run('pane 사라짐', ['gone'])
     check('pane 조회가 실패하면 조용히 끝난다', not (gone/'closed').exists())
+
+    # 검수 묶음 2 #4 — 리뷰한 엔진을 줄에 남긴다(pr-auto 가 그 엔진 자리로만 이어받는다 · 고치기 전: 엔진 없음 → Codex 승인이 claude 몫)
+    line = lambda case: next((row for row in (case/'stdout').read_text().splitlines() if row.startswith('- Review result:')), '')
+    codex = run('엔진 — pane 기록 codex', ['idle'], label='🤖 fe · test', pane_engine='codex', env_engine='claude')
+    check('pane 기록이 먼저 — 🧠 codex · 브랜치 뒤', ' · 🌿 ' in line(codex) and ' · 🧠 codex · ' in line(codex))
+    by_env = run('엔진 — ATHENA_ENGINE 만', ['idle'], label='🤖 fe · test', env_engine='claude')
+    check('pane 기록이 없으면 ATHENA_ENGINE — 🧠 claude', ' · 🧠 claude · ' in line(by_env))
+    unknown = run('엔진 — 모름', ['idle'], label='🤖 fe · test', env_engine='gemini')
+    check('모르는 엔진 · 없음 → 엔진을 적지 않는다', '🧠' not in line(unknown) and '🧠' not in line(outside))
 
 sys.exit(int(failed))
 PY

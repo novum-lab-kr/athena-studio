@@ -45,11 +45,12 @@ import { screen, screenText, submitToPane } from './lib/screen.mjs'
 import { menuOpen } from './board/pane-delivery.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
-import { codexReviewArgs, readCodexSettings, reviewToolState, codexReviewModels } from './lib/review-cli.mjs'
+import { claudeLimited, codexReviewArgs, readCodexSettings, reviewToolState, codexReviewModels } from './lib/review-cli.mjs'
+import { readMainTool } from './lib/main-tool.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, planFastPath, repoFlow, REVIEW_SCHEMA, SECOND_MODEL_ROLE, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
+  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, orderByMainTool, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
 } from './lib/pr-auto.mjs'
@@ -144,6 +145,8 @@ const outcome = (name, run, parse) => {
 const reviewWithClaude = async (prompt, workDir, config, slot = { name: 'claude' }) => {
   const model = slot.model ? ['--model', slot.model] : modelArgs(config, 'prReview')
   const run = await runCli('claude', ['-p', ...model, '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
+  // 사용량 한도는 종료 코드(1)만으로는 다른 실패와 같다 — 결과 JSON 으로 가르고 limited 를 달아 Codex 두 자리로 다시 짜게 한다(lib review-cli claudeLimited)
+  if (run.aborted !== 'timeout' && claudeLimited(run.stdout)) return { name: slot.name, status: 'failed', limited: true, reason: CLAUDE_LIMIT_REASON }
   return outcome(slot.name, run, () => {
     const answer = JSON.parse(run.stdout)
     return answer.is_error ? null : answer.structured_output
@@ -169,9 +172,11 @@ const codexState = () => reviewToolState('codex')
 // Codex 가 있으면 첫 자리 모델은 지금처럼 modelArgs(이상한 값이면 그 리뷰어 실패로 드러난다)
 // 팩 models 가 이상하면 기본값으로 덮지 않는다 — 첫 자리를 명시적인 실패(failed)로 둔다. 앞 리뷰 승인 이어받기보다 먼저 보므로(runReviewers)
 // 이어받아도 첫 자리는 실패 → 리뷰어 부족으로 멈춘다. 두 번째 자리도 기본 모델 Claude 로 대신하지 않는다(Codex 가 있으면 Codex 만 돈다 · PR #21 자동 리뷰 지적)
-export const planReviewers = (config = {}) => {
+// claude — 돌려 보니 사용량 한도면 'limited' 로 다시 부른다(Codex 두 자리 — 로그인 안 됨과 같은 길 · 검수 묶음 2 #3). 없으면 지금 상태를 본다
+// 순서는 주 도구 기록(.athena-main-tool.json · lib main-tool)을 따른다 — 없으면 Claude 먼저(#18)
+export const planReviewers = (config = {}, { claude: claudeOverride = '' } = {}) => {
   const codex = codexState()
-  const claude = reviewToolState('claude')
+  const claude = claudeOverride || reviewToolState('claude')
   let models
   try {
     models = { firstModel: modelOf(config, 'prReview'), secondModel: modelOf(config, SECOND_MODEL_ROLE),
@@ -197,18 +202,23 @@ export const planReviewers = (config = {}) => {
   }
   const lineup = reviewerSlots({ codex, claude, ...models })
   if (claude !== 'ready') return { slots: [lineup.first, lineup.second], note: lineupNote(lineup) }
-  if (lineup.second.kind === 'codex' && !lineup.second.unavailable) lineup.second = { ...lineup.second, model: readCodexSettings().model }
+  // Codex 자리 모델 — 팩 models.prReview.codex 가 먼저, 없으면 config.toml 맨 위 model(검수 묶음 2 #29 · docs/pack.md 엔진별 값). Claude 상태와 상관없이 같은 규칙
+  if (lineup.second.kind === 'codex' && !lineup.second.unavailable) lineup.second = { ...lineup.second, model: models.codexFirstModel || readCodexSettings().model }
   const first = lineup.second.kind === 'codex' ? { name: 'claude', kind: 'claude' } : lineup.first
-  return { slots: [first, lineup.second], note: lineupNote({ first: { ...first, model: first.model || models.firstModel }, second: lineup.second }) }
+  const slots = orderByMainTool([first, lineup.second], readMainTool(ROOT))
+  const noted = slots.map((slot) => (slot === first ? { ...first, model: first.model || models.firstModel } : slot))
+  return { slots, note: lineupNote({ first: noted[0], second: noted[1] }) }
 }
 // 시험(test/pr-auto-test.sh)이 가짜 리뷰어 명령으로 부른다 · config 는 loadConfig 결과(models 만 본다 · 없으면 기본 모델)
-// inherited — 앞 리뷰 승인을 이어받은 리뷰어 결과(inheritedResult) 목록. 그 자리(첫 Claude)는 부르지 않고 그 결과를 그대로 쓴다
-// slots — planReviewers 결과(없으면 여기서 정한다)
-export const runReviewers = async (prompt, config = {}, inherited = [], slots = planReviewers(config).slots) => Promise.all(slots.map(async (slot) => {
+// inherited — 앞 리뷰 승인을 이어받은 리뷰어 결과(inheritedResult) 목록. 그 엔진의 첫 자리는 부르지 않고 그 결과를 자리 이름으로 쓴다
+// reused — 이미 돈 결과(Claude 한도로 다시 짤 때 같은 이름 · 같은 모델 Codex 자리를 다시 돌리지 않는다). slots — planReviewers 결과(없으면 여기서 정한다)
+export const runReviewers = async (prompt, config = {}, inherited = [], slots = planReviewers(config).slots, reused = []) => Promise.all(slots.map(async (slot, index) => {
   const { name, kind } = slot
   if (slot.failed) return { name, status: 'failed', reason: slot.failed }   // 설정 오류 — 이어받기보다 먼저(이어받은 승인으로 덮지 않는다)
-  const taken = inherited.find((result) => result.name === name)
-  if (taken) return taken
+  const taken = inherited.find((result) => inheritedSlotIndex(slots, result) === index)
+  if (taken) return { ...taken, name }
+  const again = reused.find((result) => result.name === name && result.kind === kind && (result.model ?? '') === (slot.model ?? ''))
+  if (again) return again.result
   if (slot.unavailable) return { name, status: 'unavailable', reason: slot.unavailable }
   if (!has(kind)) return { name, status: 'unavailable', reason: '설치 안 됨' }
   // 접두사는 고정된 kind 로 — name 에는 모델 이름이 들어가고(claude-<모델>) 모델 이름은 '/' 를 허용해 경로로 풀린다(PR #21 자동 리뷰 지적)
@@ -569,14 +579,19 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const prior = short ? null : priorApproval(planText, { repo, branch: pr.headRefName, sha, tree: headTree(ref.worktree, org, repo, sha) })
   const inherited = prior ? [inheritedResult(prior, sha)] : []
   // 리뷰어 구성(두 번째 자리 — Codex 또는 다른 모델 Claude)과 이어받음을 계획서 줄 · PR 댓글에 남긴다
-  const lineup = planReviewers(config)
-  // 빠른 길 · 짧은 리뷰는 첫 자리(claude)만 — 두 번째 자리(Codex · 다른 모델 Claude)는 부르지 않는다
-  const slots = fast || short ? lineup.slots.slice(0, SHORT_REVIEWERS) : lineup.slots
+  let lineup = planReviewers(config)
+  // 빠른 길 · 짧은 리뷰는 첫 자리(주 도구 — 기록이 없으면 claude)만 — 두 번째 자리는 부르지 않는다
+  let slots = fast || short ? lineup.slots.slice(0, SHORT_REVIEWERS) : lineup.slots
   // 짧은 리뷰는 리뷰어 하나의 승인으로 판정한다(라운드 상한 max 는 그대로 — 줄 · 댓글의 라운드 4/3 · 2/1)
-  const needed = slots.length
+  let needed = slots.length
   limits.reviewers = needed
-  const lineupText = fast ? `${FAST_PATH} — 리뷰어 ${slots[0].name} 하나 · 상한 ${FAST_MAX_ROUNDS}${lineup.slots.length === 1 ? ` · ${lineup.note}` : ''}` : lineup.note
-  const note = [...(baseMerge ? [BASE_MERGED] : []), short ? `${SHORT_REVIEW} — 리뷰어 ${slots[0].name} 하나` : lineupText, ...inherited.map((result) => result.review.summary)].join(' · ')
+  // 이어받은 승인은 그 엔진 자리가 구성에 있을 때만 메모에 남긴다(runReviewers 가 같은 규칙으로 넣는다)
+  const lineupNoteOf = () => {
+    const lineupText = fast ? `${FAST_PATH} — 리뷰어 ${slots[0].name} 하나 · 상한 ${FAST_MAX_ROUNDS}${lineup.slots.length === 1 ? ` · ${lineup.note}` : ''}` : lineup.note
+    const used = inherited.filter((result) => inheritedSlotIndex(slots, result) >= 0)
+    return [...(baseMerge ? [BASE_MERGED] : []), short ? `${SHORT_REVIEW} — 리뷰어 ${slots[0].name} 하나` : lineupText, ...used.map((result) => result.review.summary)].join(' · ')
+  }
+  let note = lineupNoteOf()
   console.log(`  ↪ ${note}`)
   // 2라운드부터는 지난 지적 + 지난 리뷰 HEAD 이후 바뀐 것만(결정 D) — 지난 기록이 이 PR 의 이전 HEAD 것일 때만
   const history = readHistory(repo, number)
@@ -595,7 +610,20 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (!packed.complete) console.log(`  ⚠️ diff 가 길어 코드 파일 ${partialCount(packed)}개를 다 넣지 못했다 — 승인이어도 머지 승인으로 세지 않는다`)
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null, fullAgain })
   const reviewStartedAt = Date.now()
-  const results = await runReviewers(prompt, config, inherited, slots)
+  let results = await runReviewers(prompt, config, inherited, slots)
+  // Claude 가 사용량 한도로 답하지 못했으면 로그인 안 됨과 같은 길(Codex 두 자리)로 다시 짜서 이어 간다(검수 묶음 2 #3) —
+  // 이미 돈 같은 이름 · 같은 모델 Codex 자리는 다시 돌리지 않는다. 빠른 길 · 짧은 리뷰는 새 구성의 첫 자리 하나
+  if (results.some((result) => result.limited)) {
+    const ran = slots.map((slot, index) => ({ name: slot.name, kind: slot.kind, model: slot.model ?? '', result: results[index] }))
+      .filter((entry) => entry.kind === 'codex' && !entry.result.inherited && entry.result.status !== 'unavailable')
+    lineup = planReviewers(config, { claude: 'limited' })
+    slots = fast || short ? lineup.slots.slice(0, SHORT_REVIEWERS) : lineup.slots
+    needed = slots.length
+    limits.reviewers = needed
+    note = lineupNoteOf()
+    console.log(`  ↪ ${CLAUDE_LIMIT_REASON} — Codex 로 다시 짠다: ${note}`)
+    results = await runReviewers(prompt, config, inherited, slots, ran)
+  }
   const reviewMs = Date.now() - reviewStartedAt   // 지표의 리뷰 구간(docs/events.md)
   const summary = aggregate(results, needed)
   for (const result of results) console.log(`  - ${result.name}: ${result.status === 'ok' ? `${result.review.verdict} — ${masked(result.review.summary).slice(0, 200)}` : `${result.status}(${result.reason})`}`)

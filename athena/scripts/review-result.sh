@@ -3,7 +3,9 @@
 # ship.sh 는 이 줄의 tree(리뷰한 파일 내용)와 커밋된 내용(HEAD^{tree})이 같은지 본다 — 리뷰 → 커밋 순서여도 된다.
 #
 # 사용: scripts/review-result.sh --plan <plans/…md> --dir <리뷰한 워크트리> --verdict 승인|수정필요 [--note "<한 줄>"]
-# 기록: "- Review result: 승인 @<HEAD 짧은 SHA> · tree <…> · 📦 <레포> · 🌿 <브랜치> · <날짜> · <메모>" 를 Checkpoint 의 "- Review:" 줄 아래에
+# 기록: "- Review result: 승인 @<HEAD 짧은 SHA> · tree <…> · 📦 <레포> · 🌿 <브랜치> · 🧠 <엔진> · <날짜> · <메모>" 를 Checkpoint 의 "- Review:" 줄 아래에
+#       엔진(claude · codex)은 이 pane 기록(<팩 데이터>/state/pane-sessions/<pane>.json engine)에서, 없으면 ATHENA_ENGINE(delegate.sh 가 넣는다).
+#       둘 다 없으면 적지 않는다 — pr-auto 는 엔진이 없는 승인을 이어받지 않는다(docs/pr-auto.md "앞 리뷰 승인 이어받기")
 #       (같은 레포·브랜치 줄이 있으면 바꾸고, 다른 줄은 남긴다 — 여러 레포 계획서는 브랜치 이름이 같을 수 있어 레포까지 본다)
 set -uo pipefail
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"   # 실제 경로 — 옛 폴더 이름(hermes 링크)으로 불려도 같은 값
@@ -31,6 +33,23 @@ MAIN="$(git -C "$DIR" worktree list --porcelain | awk '/^worktree /{sub(/^worktr
 MAIN="$(cd "$MAIN" 2>/dev/null && pwd -P)"
 REPO="$(basename "${MAIN:-$DIR}")"
 for link in "$ATHENA_DIR"/repos/*; do [ -n "$MAIN" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$MAIN" ] && REPO="$(basename "$link")"; done
+# 리뷰한 엔진 — pane 기록이 먼저(scripts/hooks/pane-session.py 가 claude · codex 를 적는다 · 화면 계층 밖이면 건너뛴다)
+SELF_PANE=""
+"$ATHENA_DIR/scripts/screen" inside 2>/dev/null && SELF_PANE="$("$ATHENA_DIR/scripts/screen" self --format sh 2>/dev/null | sed -n 's/^SCREEN_PANE_ID=//p' | tr -d "'\"")"
+ENGINE="$(python3 - "$ATHENA_DIR" "$SELF_PANE" "${ATHENA_ENGINE:-}" <<'PYEOF'
+import json, pathlib, sys
+root, pane, env_engine = sys.argv[1:4]
+engine = ''
+pack_data = pathlib.Path(root) / '.pack-data'
+if pane and pack_data.is_symlink():
+    try:
+        engine = json.loads((pack_data.resolve() / 'state' / 'pane-sessions' / f'{pane}.json').read_text(encoding='utf-8')).get('engine') or ''
+    except Exception:
+        engine = ''
+engine = engine or env_engine
+print(engine if engine in ('claude', 'codex') else '')
+PYEOF
+)"
 DIRTY="$(git -C "$DIR" status --porcelain --untracked-files=no | wc -l | tr -d ' ')"
 # 리뷰한 파일 내용 — 커밋 안 된 변경·새 파일까지 포함한 워크트리 전체의 git tree. 임시 인덱스라 실제 스테이징은 건드리지 않는다
 TMP_INDEX="$(mktemp -t hermes-review-index)"
@@ -38,12 +57,13 @@ cp "$(git -C "$DIR" rev-parse --path-format=absolute --git-path index)" "$TMP_IN
 TREE="$(GIT_INDEX_FILE="$TMP_INDEX" git -C "$DIR" add -A >/dev/null 2>&1 && GIT_INDEX_FILE="$TMP_INDEX" git -C "$DIR" write-tree)"
 rm -f "$TMP_INDEX"
 [ -n "$TREE" ] || { echo "리뷰한 내용(tree)을 계산하지 못했다: $DIR" >&2; exit 1; }
-ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$VERDICT" "$SHA" "$(date '+%Y-%m-%d %H:%M')" "$NOTE" "$DIRTY" "$BRANCH" "$TREE" "$REPO" <<'PYEOF'
+ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$VERDICT" "$SHA" "$(date '+%Y-%m-%d %H:%M')" "$NOTE" "$DIRTY" "$BRANCH" "$TREE" "$REPO" "$ENGINE" <<'PYEOF'
 import os, re, sys
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
-plan, verdict, sha, stamp, note, dirty, branch, tree, repo = sys.argv[1:10]
+plan, verdict, sha, stamp, note, dirty, branch, tree, repo, engine = sys.argv[1:11]
 extra = f' · 커밋 전 변경 {dirty}개 포함' if dirty != '0' else ''
-line = f"- Review result: {verdict} @{sha} · tree {tree[:12]} · 📦 {repo} · 🌿 {branch} · {stamp}{extra}{' · ' + note if note else ''}"
+who = f' · 🧠 {engine}' if engine else ''
+line = f"- Review result: {verdict} @{sha} · tree {tree[:12]} · 📦 {repo} · 🌿 {branch}{who} · {stamp}{extra}{' · ' + note if note else ''}"
 # 레포·브랜치마다 한 줄 — 여러 레포 계획서에서 서로 덮어쓰지 않게(레포가 달라도 브랜치 이름은 같을 수 있다). 레포 표시가 없는 옛 줄은 건드리지 않는다
 same = re.compile(rf'^- Review result:.*📦 {re.escape(repo)} · 🌿 {re.escape(branch)} .*$', re.M)
 def record(text):
@@ -62,7 +82,7 @@ node "$ATHENA_DIR/scripts/lib/events.mjs" review plan="$PLAN" verdict="$VERDICT"
 
 # 리뷰를 끝낸 reviewer pane 은 쉬기 시작한 뒤 1분 뒤 닫는다 — 결론은 위에서 계획서에 남았다. 화면 계층으로만 다룬다(밖이면 아무것도 안 한다)
 if [ "${ATHENA_REVIEW_AUTOCLOSE:-1}" != 0 ] && "$ATHENA_DIR/scripts/screen" inside 2>/dev/null; then
-  SELF="$("$ATHENA_DIR/scripts/screen" self --format sh 2>/dev/null | sed -n 's/^SCREEN_PANE_ID=//p' | tr -d "'\"")"
+  SELF="$SELF_PANE"
   LABEL="$("$ATHENA_DIR/scripts/screen" pane get "$SELF" 2>/dev/null | python3 -c "import sys,json;print(json.load(sys.stdin)['pane'].get('label') or '')" 2>/dev/null)"
   case "$LABEL" in
     "🤖 reviewer"*)

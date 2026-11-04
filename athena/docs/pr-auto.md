@@ -154,7 +154,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 - `severity` — **막는 지적만 막는다**(2026-10-26 사용자 결정 E). `blocking`(막음 — 버그 · 보안 · 데이터 위험 · 레포 규칙 위반 · 승인 기준과 같은 넷)만 수정 필요 · 머지 차단이고 작업 에이전트에 간다. 스스로 보안 경계가 아니라고 밝힌 실수 방지 장치(`scripts/hooks/*` 같은 코드)를 일부러 꼬아 쓴 입력(실제 에이전트가 쓸 법하지 않은 셸 문법)으로만 비켜 갈 수 있는 것은 `advisory` 다 — 실제로 쓸 법한 입력에서 틀리는 것 · 비밀값 노출 · 데이터 손실 · 보안 경계 코드의 우회는 그대로 `blocking`. `advisory`(권장 — 그 밖)는 PR 댓글에만(`💡 권장`) 남고 에이전트에 보내지 않는다 · 머지를 막지 않는다 — 권장만 남은 리뷰어는 승인으로 센다(승인 + 권장도 승인 그대로). `severity` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - `kind` — 리뷰어가 결정마다 고른다. `implementation`(구현 세부 — 코드 안의 자리 · 이름 · 구조 · 제한값처럼 제품 동작 · 범위 · 외부 계약 · 데이터가 그대로인 것) · `product`(그 넷 중 하나라도 달라지는 것 · 애매하면 이쪽). `kind` 가 없거나 모르는 값이면 그 리뷰어 답은 실패다
 - 모양이 틀린 답 · 10분 넘김 · 명령 없음 · 0 이 아닌 종료(로그인이 풀려 답을 못 낸 경우 포함)는 그 리뷰어의 **실패** 다. 승인인데 막는 지적 · 결정이 붙은 모순된 답은 승인으로 세지 않는다
-- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽은 `~/.codex/config.toml`(`CODEX_HOME` 이 있으면 그 아래) 맨 위의 `model` · `model_reasoning_effort` 두 값만 읽어 `-m` · `-c` 로 넘긴다(`--ignore-user-config` 가 그 두 값도 안 읽게 하니 따로 — 다른 키는 읽지 않는다 · 값이 없거나 파일이 없으면 넘기지 않아 Codex 기본값). 구성 메모에는 모델 이름만 `codex(<모델>)` 로
+- Claude 쪽 모델은 팩 pack.json `"models": { "prReview": "<모델>" }`(`docs/pack.md` "pack.json") — 없으면 기본 모델. 이름이 이상하면 Claude 리뷰어가 실패해 리뷰어 부족이 된다(기본 모델로 다시 하지 않는다). Codex 쪽 모델은 팩 `models.prReview.codex` 가 먼저(Claude 상태와 상관없이 — `docs/pack.md` 엔진별 값), 없으면 `~/.codex/config.toml`(`CODEX_HOME` 이 있으면 그 아래) 맨 위의 `model` 이다. 생각 강도는 config.toml 맨 위 `model_reasoning_effort` — 두 값만 읽어 `-m` · `-c` 로 넘긴다(`--ignore-user-config` 가 그 두 값도 안 읽게 하니 따로 — 다른 키는 읽지 않는다 · 값이 없거나 파일이 없으면 넘기지 않아 Codex 기본값). 구성 메모에는 모델 이름만 `codex(<모델>)` 로
 - **둘 다 승인해야 머지로 간다.** 하나라도 실패 · 반려면 머지하지 않는다 — 남은 하나로 판정하지 않는다
 
 ### 큰 diff — 생성물은 빼고 코드 파일부터(이슈 20261025 · 2026-10-27 사용자 승인 A)
@@ -186,14 +186,17 @@ Codex 유무는 팩이 아니라 사람(기기)마다 다르다. 리뷰 전에 `
 - Codex 가 **돌다가 실패**(오류 · 시간 넘김 · 답 모양 틀림)한 것은 바꾸지 않는다 — 지금처럼 리뷰어 부족(조용히 Claude 로 바꾸지 않는다)
 - 팩 `models` 가 이상하면 기본값으로 덮지 않는다 — 첫 자리 Claude 가 실패해 리뷰어 부족으로 드러난다(앞 리뷰 승인을 이어받을 때도 · 두 번째 자리를 기본 모델 Claude 로 대신하지도 않는다)
 - 어떤 구성으로 돌았는지 PR 댓글 · 계획서 줄에 남는다 — `리뷰어 claude(opus) + claude(sonnet) — Codex 로그인 안 됨` · `리뷰어 claude + codex`
+- **도는 순서는 본체 주 도구**(`.athena-main-tool.json` · `scripts/lib/main-tool.mjs`)를 따른다 — Codex 면 `리뷰어 codex + claude`, Claude 거나 기록이 없으면 지금처럼 Claude 먼저. 두 자리 다 승인해야 하는 규칙은 같다(빠른 길 · 짧은 리뷰의 한 자리는 그 첫 자리)
 
 ### 앞 리뷰 승인 이어받기(2026-10-26 사용자 결정)
 
-PR 전에 reviewer pane 이 돌아(정식 계획서 · 넓은 수정) 계획서 `- Review result:` 가 **같은 내용으로 승인**이면, 첫 자리 Claude 는 다시 돌리지 않고 그 승인을 Claude 몫으로 쓴다. 두 번째 자리(Codex 또는 다른 모델 Claude)는 늘 새로 돈다.
+PR 전에 reviewer pane 이 돌아(정식 계획서 · 넓은 수정) 계획서 `- Review result:` 가 **같은 내용으로 승인**이면, 그 승인을 **리뷰한 엔진의 자리**(`🧠 claude` → Claude 자리 · `🧠 codex` → 첫 Codex 자리)로 쓰고 그 자리는 다시 돌리지 않는다. 나머지 자리는 늘 새로 돈다.
+
+- 엔진은 `review-result.sh` 가 줄에 `· 🧠 <claude|codex>` 로 남긴다 — 그 pane 기록(`<팩 데이터>/state/pane-sessions/<pane>.json` `engine`), 없으면 `ATHENA_ENGINE`(delegate.sh). **엔진이 없는 옛 줄 · 모르는 엔진은 이어받지 않는다**(둘 다 새로 돈다 — PR 239 에서 Codex reviewer pane 승인이 Claude 몫으로 들어가 실제로는 Codex 두 번이었다 · 검수 묶음 2 #4). 그 엔진 자리가 구성에 없으면(예: Claude 승인인데 Codex 두 자리) 이어받지 않는다
 
 - 같은 내용 판정은 `ship.sh` 의 리뷰 판정과 같다 — 그 줄의 `tree`(reviewer 가 본 워크트리 전체 · 커밋 전 변경 포함 — `review-result.sh`)로 PR HEAD 커밋의 tree 가 시작할 때. `tree` 가 없는 옛 줄은 커밋 sha 로. 줄은 이 레포 · 이 PR 브랜치 줄(없으면 표시 없는 옛 줄)의 마지막을 본다. PR HEAD tree 는 작업 워크트리에서, 없으면 GitHub 에서 읽고 못 읽으면 이어받지 않는다
 - HEAD(tree)가 다르거나 결론이 수정 필요면 지금처럼 둘 다 돈다 — 수정 고리의 다음 라운드는 내용이 바뀌니 보통 둘 다 돈다
-- PR 댓글 · 계획서 줄에 `Claude: 앞 리뷰 승인 이어받음 @<sha>` · 사건 기록 `reviewers` 에 `claude:inherited`
+- PR 댓글 · 계획서 줄에 `Claude: 앞 리뷰 승인 이어받음 @<sha>`(Codex 승인이면 `Codex: …`) · 사건 기록 `reviewers` 에 `claude:inherited`(`codex:inherited`)
 
 | 판정 | 조건(위부터) | 하는 일 |
 |---|---|---|
@@ -284,8 +287,8 @@ PR 마다 한 줄, 바꿔 쓴다(Work ref 바로 뒤).
 
 ## Claude 없이 Codex로 리뷰하기
 
-Claude를 처음부터 쓸 수 없으면(설치되지 않았거나 로그인되지 않음) Codex 두 자리로 리뷰한다. 첫 모델은 `models.prReview.codex`, 없으면 사용자 `config.toml` 맨 위 `model`이다. 둘째는 `models.prReviewSecond.codex`, 없으면 `codex debug models`의 `visibility: list` 중 첫 모델과 다른 맨 위 모델이다. 모델 이름을 코드에 고정하지 않는다. 같은 모델 두 개를 설정하면 리뷰어 부족으로 처리한다.
+Claude를 처음부터 쓸 수 없으면(설치되지 않았거나 로그인되지 않음) Codex 두 자리로 리뷰한다. **돌려 보니 Claude 가 사용량 한도**면 같은 길로 다시 짠다 — 구성 메모 `… — Claude 사용량 한도` · 이미 답한 같은 모델 Codex 자리는 다시 돌리지 않는다(검수 묶음 2 #3). 한도는 `claude -p --output-format json` 결과의 `is_error: true` 와 `api_error: "usage_limit_reached"`(또는 결과 글 `You've hit your … limit`)로만 가른다(`scripts/lib/review-cli.mjs` `claudeLimited` — 2026-11-03 PR 235~240 실행 기록 · 종료 코드 1 은 다른 실패와 같아 보지 않는다). 다른 Claude 실패는 지금처럼 리뷰어 부족이다. 첫 모델은 `models.prReview.codex`, 없으면 사용자 `config.toml` 맨 위 `model`이다. 둘째는 `models.prReviewSecond.codex`, 없으면 `codex debug models`의 `visibility: list` 중 첫 모델과 다른 맨 위 모델이다. 모델 이름을 코드에 고정하지 않는다. 같은 모델 두 개를 설정하면 리뷰어 부족으로 처리한다.
 
 공개 목록을 읽지 못하거나 다른 모델을 고를 수 없으면 첫 자리만 실행하고 그 이유를 PR 댓글과 계획서 구성 메모에 남긴다. 이 경우 한 자리의 실제 결과로 판정한다. 실행 도중 실패한 리뷰어를 다른 모델로 바꾸지는 않는다. Claude를 쓸 수 있을 때는 기존 Claude+Codex 또는 서로 다른 Claude 두 모델 구성을 유지한다.
 
-학습 검토도 로그인된 Claude를 먼저 쓰고, 없으면 Codex를 쓴다. Codex 모델은 `models.learnReview.codex`, 없으면 사용자 기본 모델이다. 양쪽 모두 같은 학습 후보 형식을 사용하며, Codex 대화 기록도 학습 재료에 포함한다.
+학습 검토도 본체 주 도구를 먼저(기록이 없으면 Claude 먼저) 로그인된 쪽으로 쓰고, Claude 가 사용량 한도면 같은 판정(`claudeLimited`)으로 Codex 로 넘어간다(Codex 가 없으면 한도라고 밝혀 실패). Codex 모델은 `models.learnReview.codex`, 없으면 사용자 기본 모델이다. 양쪽 모두 같은 학습 후보 형식을 사용하며, Codex 대화 기록도 학습 재료에 포함한다.

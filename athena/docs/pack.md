@@ -206,7 +206,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   | `agentLight` | 담당 에이전트 pane — 경량 계획서(`plans/task/…`)로 띄울 때. 없으면 `agent` 값 · 그것도 없으면 코어 기본값 `claude-opus-5-5`(새 팩은 `athena init` 이 같은 값을 적는다). 진짜 단순한 수정은 아테나가 `delegate.sh --model sonnet` 으로 그 한 번만 낮춘다(`docs/dispatch.md`) | 띄우지 않는다 |
   | `reviewer` | reviewer pane(`scripts/delegate.sh`) | 띄우지 않는다 |
   | `reviewerEscalated` | reviewer pane — 그 계획서 Checkpoint 의 같은 레포 · 브랜치 `- Review result:` 마지막 줄이 `수정 필요` 일 때(고친 뒤 다시 리뷰). 레포 · 브랜치는 띄울 작업 트리(`--cwd`)로 `scripts/review-result.sh` 와 같은 방법으로 고른다. 없으면 `reviewer` 값 | 띄우지 않는다 |
-  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs` · Codex 는 `~/.codex/config.toml` 그대로). 없으면 기본 모델 — 단 Codex 를 처음부터 못 쓰는 사람의 Claude 두 번 모드에서는 `opus` | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
+  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs`) · `prReview.codex` 는 Codex 자리(Claude 상태와 상관없이 — 없으면 `~/.codex/config.toml` 맨 위 `model`). 없으면 기본 모델 — 단 Codex 를 처음부터 못 쓰는 사람의 Claude 두 번 모드에서는 `opus` | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
   | `prReviewSecond` | PR 자동 리뷰 두 번째 자리 — Codex 가 없거나 로그인 안 된 사람에게만 Codex 대신 도는 Claude. 없으면 `sonnet`. `prReview`(또는 그 기본 `opus`)와 같은 모델이 되면 대신하지 않는다(`docs/pr-auto.md` "Codex 가 없는 사람") | 첫 자리 Claude 리뷰어 실패 → 리뷰어 부족 |
   | `learnReview` | 배우기 검토(`scripts/learn-review.mjs`) | 그 검토 실패(다시 해 본 뒤 failed/) |
   | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |

@@ -53,6 +53,7 @@ import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, directMergeStatus, prBaseOf, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText, submitToPane } from '../lib/screen.mjs'
+import { dispatchEngine } from '../dispatch-engine.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
 import { createDelivery } from './pane-delivery.mjs'
 import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
@@ -1251,6 +1252,9 @@ const openHermesPane = async (issueId, text) => {
   if (!issuePath) return { error: '이슈 파일을 찾지 못했어요' }
   const prompt = text.trim()
   if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
+  // 아테나를 켤 도구 — 주 도구 기록(.athena-main-tool.json)과 설치 · 로그인 상태로(위임 · 가이드 메뉴와 같은 dispatch-engine · 기록이 없으면 Claude 먼저 · 검수 묶음 2 #18).
+  // 둘 다 준비 안 됐다고 보이면 예전처럼 claude 로 띄운다(pane 안에서 로그인 안내가 뜬다)
+  const engine = await dispatchEngine(ROOT).catch(() => 'claude')
   const base = (snapshot?.panes ?? []).find((pane) => pane.role === 'hermes')
   const out = await screen(['pane', 'split', '--target', base ? base.id : 'focused', '--direction', 'right', '--ratio', '0.5', '--cwd', ROOT, '--no-focus'])
   let pane = ''
@@ -1271,7 +1275,7 @@ const openHermesPane = async (issueId, text) => {
     '#!/usr/bin/env bash',
     `trap "rm -f '${promptFile}' '${runner}'" EXIT INT TERM`,
     `cd '${ROOT}' || exit 1`,
-    `claude "$(cat '${promptFile}')"`,
+    engine === 'codex' ? `python3 '${join(ROOT, 'scripts/codex-session.py')}' --no-daemon "$(cat '${promptFile}')"` : `claude "$(cat '${promptFile}')"`,
   ].join('\n') + '\n', { mode: 0o755 })
   // pane run 은 한 줄로 친다 — 경로를 셸 작은따옴표로 감싼다(TMPDIR 에 띄어쓰기가 있어도 · 경로에 ' 는 없다)
   if ((await screen(['pane', 'run', pane, `'${runner}'`])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
