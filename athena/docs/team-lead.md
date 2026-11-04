@@ -34,7 +34,7 @@
 
 ## 작업 흐름 (Plan-First)
 
-> 다이어그램 두 장 — **경량** `docs/diagrams/athena-flow-light.html` · **정식** `docs/diagrams/athena-flow-formal.html`(= `/guide 그림`) — 의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow-{light,formal}.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
+> 다이어그램 두 장 — **경량** `docs/diagrams/athena-flow-light.html` · **정식** `docs/diagrams/athena-flow-formal.html` — 의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow-{light,formal}.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
 
 ### 1단계: 요청 · 계획서
 - 요청은 대화 · `/call <에이전트>` · 현황판 이슈 [작업 시작] 으로 들어온다. 대상 서비스를 팩 `ROUTING.md` 로 정하고(복수 가능 · 해석이 둘 이상이면 묻는다) 관련 코드를 탐색한다(지식은 필요한 절만 — 공통 문서 2.2~2.3)
