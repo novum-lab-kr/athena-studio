@@ -10,7 +10,9 @@
   - git checkout·restore 로 전부(. · :/ · 디렉터리)를 되돌리기 · checkout -f · clean -f → 같은 이유(파일 하나 되돌리기·restore --staged 는 통과)
   - git rebase(--abort·--continue 등 진행 중 정리는 통과) · commit-tree · update-ref → commit.sh 를 거치지 않고 커밋·브랜치를 바꾼다
 통과: 실제로 실행되는 명령(조각의 첫 실행 토큰)이 **이 아테나(athena) 레포의** scripts/commit.sh · scripts/ship.sh 인 조각(경로를 풀어 비교 — 같은 이름의 다른 파일은 막는다),
-      gh pr 읽기(view·list·status·checks·diff), gh api 읽기(GET).
+      gh pr 읽기(view·list·status·checks·diff), gh api 읽기(GET),
+      도움말만 보는 명령(git <하위> --help|-h · git --help <하위> · gh … --help|-h · gh help …) — 도움말 플래그 말고 다른 옵션 · `--` 가 섞이면
+      (git commit -m --help · gh pr create --title --help 처럼 옵션 값으로 먹혀 실제로 실행될 수 있다) 도움말로 보지 않고 평소대로 본다.
       PR 자동 리뷰의 고친 커밋 push 도 ship.sh --auto-push 로 이 통과 길을 쓴다 — 조건(켠 레포 · 열린 PR · 기록된 커밋)은 ship.sh 가 본다(docs/pr-auto.md).
       PR 끔 레포의 바로 머지도 ship.sh --direct-merge 로 같은 길이다 — 실제 push 는 ship.sh 가 띄운 pr-auto.mjs 가 하므로 이 훅이 걸리지 않는다(다른 경로의 git push · commit-tree · update-ref 는 그대로 막는다).
       자동 머지는 FE 세션이 아니라 scripts/pr-auto.mjs(현황판이 띄우는 처리기)가 하므로 이 훅이 걸리지 않는다.
@@ -43,6 +45,7 @@ WRAPPERS = {'env', 'command', 'sudo', 'nohup', 'time', 'exec', 'nice', 'builtin'
 SHELLS = {'sh', 'bash', 'zsh', 'dash'}
 GIT_OPTS_WITH_VALUE = {'-C', '-c', '--git-dir', '--work-tree', '--namespace', '--exec-path', '--config-env'}
 GH_OPTS_WITH_VALUE = {'-R', '--repo', '--hostname'}
+HELP_FLAGS = {'--help', '-h'}
 # 통과시키는 스크립트 — 이 파일 기준 athena 루트의 scripts/ 아래 실제 파일만
 ATHENA_SCRIPTS = pathlib.Path(__file__).resolve().parents[1]
 ALLOWED_SCRIPTS = {name: os.path.realpath(ATHENA_SCRIPTS / name) for name in ('commit.sh', 'ship.sh')}
@@ -153,11 +156,15 @@ def check_git(args):
     """args = git 뒤의 토큰들. 막을 이유를 돌려준다"""
     index = 0
     while index < len(args) and args[index].startswith('-'):
+        if args[index] == '--help':
+            return ''   # git --help <하위> 는 git help <하위> 다 — 뒤 인자는 도움말 주제일 뿐
         option = args[index].split('=', 1)[0]
         index += 2 if option in GIT_OPTS_WITH_VALUE and '=' not in args[index] else 1
     if index >= len(args):
         return ''
     sub, rest = args[index], args[index + 1:]
+    if len(rest) == 1 and rest[0] in HELP_FLAGS:
+        return ''   # git <하위> --help 는 설명서 · -h 는 사용법만 보이고 끝난다(종료 129) — 다른 인자가 붙으면 평소대로 본다
     if sub == 'commit':
         return '커밋은 scripts/commit.sh 로만 한다 — 사용자가 "커밋해줘" · "PR 올려줘" 라고 했을 때: scripts/commit.sh --plan <계획서> --dir <워크트리> -m "<메시지>" -- <파일>…'
     if sub == 'merge':
@@ -195,11 +202,18 @@ def check_git(args):
     return ''
 
 
+def help_only(words):
+    """도움말 플래그가 있고 그 밖에 옵션 · `--` 가 하나도 없나 — 다른 옵션이 있으면 --help 가 그 값으로 먹힐 수 있다(--title --help)"""
+    return any(word in HELP_FLAGS for word in words) and not any(word.startswith('-') and word not in HELP_FLAGS for word in words)
+
+
 def check_gh(args):
     index = 0
     while index < len(args) and args[index].startswith('-'):
         option = args[index].split('=', 1)[0]
         index += 2 if option in GH_OPTS_WITH_VALUE and '=' not in args[index] else 1
+    if help_only(args[index:]):
+        return ''   # gh pr merge --help · gh pr merge 1 -h — 도움말 플래그가 있으면 실행하지 않고 도움말만 보인다
     if index < len(args) and args[index] == 'api':
         rest = args[index + 1:]
         # 붙여 쓴 꼴(-XPUT · -X=POST · --method=PATCH · -fquery=… · -Fhead=…)까지 본다

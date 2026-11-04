@@ -218,7 +218,7 @@ test('창 focus: 앞으로 오면 팩 목록을 다시 읽는다', async () => {
   }
   // electron 모듈만 가짜로 — Node 의 모듈 훅(ESM 도 거친다)
   const hook = require('node:module').registerHooks({
-    resolve: (specifier, context, next) => (specifier === 'electron' ? { url: 'data:text/javascript,export const BrowserWindow = globalThis.__fakeBrowserWindow', shortCircuit: true } : next(specifier, context)),
+    resolve: (specifier, context, next) => (specifier === 'electron' ? { url: 'data:text/javascript,export const BrowserWindow = globalThis.__fakeBrowserWindow; export const screen = {}', shortCircuit: true } : next(specifier, context)),
   })
   try {
     const { installPackWindow } = require('../src/main/pack-window.mts')
