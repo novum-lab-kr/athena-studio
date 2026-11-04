@@ -1,4 +1,5 @@
-node_modules/
+# 끝에 / 를 붙이지 않는다 — / 가 있으면 폴더에만 맞아 워크트리가 빌려 쓰는 심볼릭 링크 node_modules 를 못 거른다
+node_modules
 dist/
 .DS_Store
 .dev-app/

@@ -4,7 +4,8 @@
 // main.mts 의 값 — 끄는 중(quitting) · 마지막으로 앞에 있던 창(lastFocused)은 읽기 · 쓰기 함수로 받는다.
 // ctx 에 같은 이름(show · close · win)으로 붙인다
 import path from 'node:path'
-import { BrowserWindow } from 'electron'
+import { BrowserWindow, screen } from 'electron'
+import { cascadePosition } from '../lib/window-cascade.mts'
 import type { Monitor } from './monitor-logs.mts'
 
 const isMac = process.platform === 'darwin'
@@ -57,9 +58,18 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
     if (ctx.win && !ctx.win.isDestroyed()) ctx.win.destroy()
   }
 
+  // 열린 창이 있으면 앞에 있던 창(없으면 마지막으로 연 창)에서 계단식으로 비켜 띄운다 — 위치를 안 주면 모두 화면 가운데에 겹친다
+  const size = { width: 1400, height: 900 }
+  const opened = [...packWindows].flatMap((each) => (each.win && !each.win.isDestroyed() ? [each.win] : []))
+  const front = lastFocused()?.win
+  const reference = front && opened.includes(front) ? front : opened.at(-1)
+  const referenceBounds = reference ? reference.getBounds() : null
+  const area = referenceBounds ? screen.getDisplayMatching(referenceBounds).workArea : null
+  const position = referenceBounds && area ? cascadePosition(referenceBounds, opened.map((each) => each.getBounds()), area, size) : null
+
   const win = new BrowserWindow({
-    width: 1400,
-    height: 900,
+    ...size,
+    ...position,
     minWidth: 720,
     minHeight: 480,
     title: 'Athena',
