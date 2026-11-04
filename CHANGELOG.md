@@ -30,14 +30,16 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.50: 공개 v0.49.3 이후 PR230 · 231 · 232의 사용자 변경만. 범위 끝은 열어 둔다 -->
 
-<!-- 0.51: 공개 v0.50.3 이후 v0.50.4 ~ v0.51.13(PR234 ~ 241 · 직접 머지 11건)에서 사용자에게 보이는 변경만. 러너 · 동시 실행 시험 정비, 보호 훅 --help 통과, node_modules 링크 무시, 검증 범위 · 번역 시험 선택 같은 내부 정비는 뺐고, 그림 스킬 복구 · 공통 디자인 · 자세히 칸(#234 #237 e43d71a)은 한 줄로, Codex 승인 알림 정리(bb2d9ea)와 훅 믿음 · 리드 문맥(d6cfe2f 268aabf)은 각각 한 줄로 묶었다. 범위 끝은 열어 둔다 -->
+<!-- 0.51: 공개 v0.50.3 이후 v0.50.4 ~ v0.51.13(PR234 ~ 241 · 직접 머지 11건)에서 사용자에게 보이는 변경만. 러너 · 동시 실행 시험 정비, 보호 훅 --help 통과, node_modules 링크 무시, 검증 범위 · 번역 시험 선택 같은 내부 정비는 뺐고, 그림 스킬 복구 · 공통 디자인 · 자세히 칸(#234 #237 e43d71a)은 한 줄로, Codex 승인 알림 정리(bb2d9ea)와 훅 믿음 · 리드 문맥(d6cfe2f 268aabf)은 각각 한 줄로 묶었다. 공개 v0.51.14 이후 v0.51.15 ~ v0.51.20(그림 기준 · 다이어그램 버튼 · 스타일 상자 — 문서만 고친 b3b5a9b 는 뺌)과 v0.51.21(92a7d23 메뉴 막대 아이콘 · 패널 — 산 그래프 · 7일 토큰 · 줄 정리)을 더했다. 범위 끝은 열어 둔다 -->
 
-## 0.51 (v0.50.4 – · Nov 4, 2026)
+## 0.51 (v0.50.4 – · Nov 5, 2026)
 
 ### New
 - Codex approval requests — commands, file changes, extra permissions and choice-style questions — can now be answered directly in Work, in all four languages, keeping the original choices and scope.
 - Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with one overview of the whole structure plus two or three key feature flows per service, and a details panel that opens when a box is clicked.
 - Repositories that merge without pull requests now get an automatic review before merging when the change is wide (5 or more code files, 150 or more lines, or sensitive paths), including when the merge is handed off to GitHub Actions.
+- The menu bar panel shows a "Work time · 3 days" mountain graph: today, yesterday and the day before are drawn as layered ridges of agent working time in 10-minute slots, under a day sky with drifting clouds (06:00–18:00) or a night sky with twinkling stars.
+- The menu bar panel shows token usage for the last 7 days as daily stacked bars for Claude and Codex, read from this Mac's local logs (input + cache writes + output, cache reads excluded).
 
 ### Improved
 - Codex Browser permission prompts and startup trust dialogs are now detected and announced in Work and the tray in the app's language, with a shortcut back to the pane.
@@ -50,6 +52,8 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Merges handed off to GitHub Actions now use the plan title as the merge commit title.
 - The Diagram button is enabled only when the pack has service diagrams, and the diagram list shows service diagrams only.
 - Service diagrams no longer show the style picker; they use Athena's single theme.
+- The menu bar icon's owl eyes turn green with a soft glow while agents are working, and its tooltip shows how many agents are working.
+- The menu bar panel is simpler: the needs-attention list, Kanban counts, Done 24h line and connection label are gone (items to check stay in Work), and each agent is one row showing its pane ID and branch.
 
 ### Fixed
 - Finished-work notifications now ask GitHub for the pull request's actual state (open, draft, merged or closed) instead of showing an outdated plan value.
