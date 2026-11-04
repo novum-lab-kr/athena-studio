@@ -12,7 +12,10 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$SRC" || exit 1
 node --input-type=module - <<'EOF'
 import { summarize, groupByPlan, formatDuration, parseSinceDate, partition, spread, STAGES } from './scripts/lib/metrics.mjs'
-import { createSessionReader, toolKind, workTotals } from './scripts/lib/session-work.mjs'
+import { createSessionReader, scanSessions, toolKind, workTotals } from './scripts/lib/session-work.mjs'
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 const H = 3_600_000
 const NOW = Date.parse('2026-10-25T12:00:00Z')
 const at = (hoursAgo) => new Date(NOW - hoursAgo * H).toISOString()
@@ -277,6 +280,56 @@ check('압축 요약 속 옛 지시는 계획서 표시가 아니다', (() => {
   return compact.finish().kind === 'unlinked'
 })())
 check('명령 나누기', toolKind('Bash', { command: 'sleep 30 && gh pr view' }) === 'wait' && toolKind('Bash', { command: 'npm run typecheck' }) === 'check' && toolKind('Bash', { command: 'git status' }) === 'other' && toolKind('Edit', {}) === 'think' && toolKind('Grep', {}) === 'read' && toolKind('AskUserQuestion', {}) === null)
+
+console.log('\n작업 안쪽 — Codex rollout(~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl · 2026-11-04 실제 기록의 키 모양)')
+{
+  const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'metrics-codex-')))
+  try {
+    const worktrees = join(tmp, 'packs/demo/worktrees')
+    const projectsDir = join(tmp, '.claude/projects')
+    const codexSessionsDir = join(tmp, '.codex/sessions')
+    mkdirSync(join(worktrees, 'shop/fix'), { recursive: true })
+    mkdirSync(projectsDir, { recursive: true })
+    const at = (seconds) => new Date(T0 + seconds * 1000).toISOString()
+    const item = (seconds, payload) => ({ timestamp: at(seconds), type: 'response_item', payload })
+    const talk = (seconds, role, text) => item(seconds, { type: 'message', role, content: [{ type: role === 'user' ? 'input_text' : 'output_text', text }] })
+    const rollout = (name, meta, records) => {
+      const file = join(codexSessionsDir, '2026/10/25', `rollout-2026-10-25T00-00-00-${name}.jsonl`)
+      mkdirSync(join(file, '..'), { recursive: true })
+      const head = { timestamp: at(0), type: 'session_meta', payload: { id: name, session_id: name, source: 'cli', thread_source: 'user', ...meta } }
+      writeFileSync(file, [head, ...records].map((record) => JSON.stringify(record)).join('\n') + '\n')
+    }
+    const work = [
+      talk(0, 'user', '# AGENTS.md instructions for /w\n…'),                        // Codex 가 지시 앞에 넣는 문맥 — 표시가 아니다
+      talk(0, 'user', '이 작업의 계획서: /x/bodies/y/plans/task/cx.md — 먼저 읽고'),
+      item(5, { type: 'reasoning', summary: [] }),
+      item(10, { type: 'custom_tool_call', call_id: 'k1', name: 'exec', input: 'await tools.exec_command({ cmd: "npm test" })' }),
+      item(40, { type: 'custom_tool_call_output', call_id: 'k1', output: '' }),     // 검증 10~40
+      talk(50, 'assistant', '확인했다'),                                              // 생각 0~10 · 40~50
+      item(50, { type: 'function_call', call_id: 'k2', name: 'sleep', arguments: '{"duration_ms":30000}' }),
+      item(80, { type: 'function_call_output', call_id: 'k2', output: '' }),        // 기다리기 50~80
+      item(81, { type: 'function_call', call_id: 'k3', name: 'request_user_input', arguments: '{"questions":[]}' }),
+      item(500, { type: 'function_call_output', call_id: 'k3', output: '' }),       // 사람 답 대기는 안 센다
+    ]
+    rollout('c-main', { cwd: join(worktrees, 'shop/fix') }, work)
+    // 하위 에이전트(session_meta.parent_thread_id — 실제 기록 27개 모두 있음)는 Claude 서브에이전트(isSidechain)처럼 안 센다
+    rollout('c-sub', { cwd: join(worktrees, 'shop/fix'), parent_thread_id: 'c-main', source: { subagent: { thread_spawn: { parent_thread_id: 'c-main' } } }, thread_source: 'subagent' }, work)
+    // 이 팩 워크트리 밖에서 켠 세션은 안 센다
+    rollout('c-other', { cwd: join(tmp, 'elsewhere') }, work)
+    const claudeDir = join(projectsDir, `${join(worktrees, 'shop/fix').replace(/[^a-zA-Z0-9]/g, '-')}`)
+    mkdirSync(claudeDir, { recursive: true })
+    writeFileSync(join(claudeDir, 's1.jsonl'), [user(0, '이 작업의 계획서: /x/bodies/y/plans/task/cl.md — 먼저'), said(10, 'm1')].map((entry) => JSON.stringify(entry)).join('\n') + '\n')
+    const cachePath = join(tmp, 'cache.json')
+    const scan = () => scanSessions({ projectsDir, codexSessionsDir, worktrees, cachePath })
+    const sessions = await scan()
+    const totals = workTotals(sessions)
+    const codexPlan = totals.plans['plans/task/cx.md']
+    check('Codex 세션도 계획서에 이어 센다 — 검증 30 · 생각 21(0~10 · 40~50 · 80~81) · 기다리기 30 · 사람 답 대기 0', Boolean(codexPlan) && seconds(codexPlan, 'check') === 30 && seconds(codexPlan, 'think') === 21 && seconds(codexPlan, 'wait') === 30 && seconds(codexPlan, 'other') === 0, JSON.stringify(totals.plans))
+    check('Claude 세션은 그대로 · 엔진별 건수(하위 에이전트 · 팩 밖 세션은 빠짐)', seconds(totals.plans['plans/task/cl.md'] ?? {}, 'think') === 10 && totals.sessions.linked === 2 && totals.engines?.codex === 1 && totals.engines?.claude === 1, JSON.stringify({ sessions: totals.sessions, engines: totals.engines }))
+    const again = workTotals(await scan())
+    check('캐시로 다시 읽어도 같은 값(엔진 포함)', JSON.stringify(again) === JSON.stringify(totals), JSON.stringify(again.engines))
+  } finally { rmSync(tmp, { recursive: true, force: true }) }
+}
 
 console.log(`\n통과 ${pass} · 실패 ${fail}`)
 process.exit(fail ? 1 : 0)

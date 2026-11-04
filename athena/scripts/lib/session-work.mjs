@@ -1,9 +1,10 @@
-// 작업 시간 안쪽 — Claude 세션 기록(~/.claude/projects/<폴더>/*.jsonl)으로 "작업" 구간에 무엇을 했나 나눈다. 현황판 [지표] 탭(/api/metrics/work)
+// 작업 시간 안쪽 — Claude 세션 기록(~/.claude/projects/<폴더>/*.jsonl) · Codex rollout 으로 "작업" 구간에 무엇을 했나 나눈다. 현황판 [지표] 탭(/api/metrics/work)
 // 세션과 계획서는 delegate.sh 가 넣는 첫머리 지시로 잇는다("이 작업의 계획서:" · 이어 보내면 "새 계획서:" — 그 뒤 줄은 새 계획서로).
-// reviewer("리뷰할 계획서:")는 리뷰 구간이라 빼고, 표시 없는 세션은 건수만 센다. Codex 세션은 모양이 달라 세지 않는다
+// reviewer("리뷰할 계획서:")는 리뷰 구간이라 빼고, 표시 없는 세션은 건수만 센다.
+// Codex 세션(~/.codex/sessions/YYYY/MM/DD/rollout-*.jsonl · CODEX_HOME 이 있으면 그 아래)도 같은 읽기로 — codexEntry 가 Claude 줄 모양으로 바꾼다
 import { createReadStream } from 'node:fs'
-import { readdir, readFile, stat, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
+import { join, sep } from 'node:path'
 import { createInterface } from 'node:readline'
 import { partition } from './metrics.mjs'
 import { projectFolderName } from '../board/claude-paths.mjs'
@@ -25,6 +26,58 @@ export const toolKind = (name, input) => {
   const command = String(input?.command ?? '')
   if (WAITING.test(command)) return 'wait'
   return CHECKING.test(command) ? 'check' : 'other'
+}
+
+// ── Codex rollout → Claude 줄 모양 ─────────────────────────────────────
+// 근거: 2026-11-04 이 컴퓨터의 rollout 203개(codex 0.160~0.166) — 줄마다 timestamp · type · payload.
+// response_item 의 message(role user · assistant) · reasoning · custom_tool_call / function_call(call_id · name · input / arguments) ·
+// *_output(call_id). 한 응답은 줄이 여러 개라 사용자 쪽 줄(사용자 글 · 도구 결과)이 올 때마다 응답 번호를 올려 같은 응답으로 묶는다(Claude 의 message.id 몫)
+const CODEX_WAIT = new Set(['sleep', 'wait', 'wait_agent'])
+// 도구 이름 → Claude 도구 이름 · 입력(toolKind 로 같은 종류에 넣는다). exec 는 code-mode 스크립트라 그 글로 명령을 가른다
+const codexTool = (name, input) => {
+  const short = String(name ?? '').split('.').at(-1)
+  if (short === 'request_user_input') return ['AskUserQuestion', {}]
+  if (CODEX_WAIT.has(short)) return ['Monitor', {}]
+  if (short === 'apply_patch') return ['Edit', {}]
+  if (short === 'exec') return /\bapply_patch\b/.test(String(input ?? '')) ? ['Edit', {}] : ['Bash', { command: String(input ?? '') }]
+  if (['exec_command', 'shell_command', 'shell'].includes(short)) {
+    let args = {}
+    try { args = typeof input === 'string' ? JSON.parse(input) : input ?? {} } catch { /* 깨진 인자는 명령 없음으로 */ }
+    const command = args?.cmd ?? args?.command ?? ''
+    return ['Bash', { command: Array.isArray(command) ? command.join(' ') : String(command) }]
+  }
+  return [short || 'tool', {}]
+}
+
+export const createCodexAdapter = () => {
+  let answer = 0
+  let fresh = true
+  return (record) => {
+    const value = record?.payload
+    if (record?.type !== 'response_item' || !value) return null
+    const timestamp = record.timestamp
+    const fromUser = (message) => {
+      if (!fresh) answer += 1
+      fresh = true
+      return { type: 'user', timestamp, message }
+    }
+    const fromAgent = (content) => {
+      fresh = false
+      return { type: 'assistant', timestamp, message: { id: `codex-${answer}`, content } }
+    }
+    if (value.type === 'message' && value.role === 'user') {
+      const text = (Array.isArray(value.content) ? value.content : []).filter((block) => block?.type === 'input_text').map((block) => block.text ?? '').join('\n')
+      return fromUser({ content: text })
+    }
+    if (value.type === 'function_call_output' || value.type === 'custom_tool_call_output') return fromUser({ content: [{ type: 'tool_result', tool_use_id: value.call_id }] })
+    if (value.type === 'message' && value.role === 'assistant') return fromAgent([])
+    if (value.type === 'reasoning') return fromAgent([])
+    if (value.type === 'function_call' || value.type === 'custom_tool_call') {
+      const [name, input] = codexTool(value.name, value.type === 'function_call' ? value.arguments : value.input)
+      return fromAgent([{ type: 'tool_use', id: value.call_id, name, input }])
+    }
+    return null
+  }
 }
 
 const textOf = (content) => {
@@ -105,6 +158,7 @@ export const workTotals = (sessions, { from = -Infinity, to = Infinity, picked =
   const totals = Object.fromEntries(WORK_KINDS.map((kind) => [kind, 0]))
   const plans = {}
   const counts = { linked: 0, reviewer: 0, unlinked: 0 }
+  const engines = { claude: 0, codex: 0 }
   for (const session of sessions) {
     let touched = false
     for (const piece of session.pieces) {
@@ -116,9 +170,12 @@ export const workTotals = (sessions, { from = -Infinity, to = Infinity, picked =
       plans[piece.plan][piece.label] += span
       touched = true
     }
-    if (touched || (session.kind !== 'linked' && session.lastAt >= from && session.lastAt < to)) counts[session.kind] += 1
+    if (touched || (session.kind !== 'linked' && session.lastAt >= from && session.lastAt < to)) {
+      counts[session.kind] += 1
+      engines[session.engine === 'codex' ? 'codex' : 'claude'] += 1
+    }
   }
-  return { totals, plans, sessions: counts }
+  return { totals, plans, sessions: counts, engines }
 }
 
 const readSession = async (path) => {
@@ -130,34 +187,78 @@ const readSession = async (path) => {
   return reader.finish()
 }
 
+// Codex rollout 한 개 — 첫 줄 session_meta 의 cwd 가 이 팩 워크트리 안일 때만. 하위 에이전트(parent_thread_id)는 Claude 서브에이전트처럼 뺀다
+const readCodexSession = async (path, worktrees) => {
+  const reader = createSessionReader()
+  const adapt = createCodexAdapter()
+  const lines = createInterface({ input: createReadStream(path, { encoding: 'utf8' }), crlfDelay: Infinity })
+  let first = true
+  for await (const line of lines) {
+    let record
+    try { record = JSON.parse(line) } catch { continue }
+    if (first) {
+      first = false
+      const meta = record?.type === 'session_meta' ? record.payload : null
+      const cwd = typeof meta?.cwd === 'string' ? await realpath(meta.cwd).catch(() => meta.cwd) : null
+      if (!cwd || meta.parent_thread_id || !(cwd === worktrees || cwd.startsWith(`${worktrees}${sep}`))) {
+        lines.close()
+        return null
+      }
+      continue
+    }
+    const entry = adapt(record)
+    if (entry) reader.add(entry)
+  }
+  return first ? null : reader.finish()
+}
+
+// sessions 아래 rollout-*.jsonl — 연/월/일 폴더(실제 구조)지만 깊이에 기대지 않고 다 본다(지표는 누를 때만 읽는다)
+const codexFiles = async (dir) => {
+  const found = []
+  for (const entry of await readdir(dir, { withFileTypes: true }).catch(() => [])) {
+    const path = join(dir, entry.name)
+    if (entry.isDirectory()) found.push(...(await codexFiles(path)))
+    else if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) found.push(path)
+  }
+  return found
+}
+
 // 바뀌지 않은 세션은 다시 읽지 않는다 — (크기 · 수정 시각)이 같으면 캐시. 세션 기록이 수 GB 라 스트림으로 읽고 기간 전에 끝난 파일은 건너뛴다
-export const scanSessions = async ({ projectsDir, worktrees, cachePath, from = -Infinity }) => {
+// codexSessionsDir — Codex rollout 자리(없으면 Codex 는 안 센다). 이 팩 세션이 아닌 rollout 도 캐시에 skip 으로 남겨 다시 읽지 않는다
+export const scanSessions = async ({ projectsDir, codexSessionsDir = null, worktrees, cachePath, from = -Infinity }) => {
   const prefix = `${projectFolderName(worktrees)}-`
   let cache = {}
   try { cache = JSON.parse(await readFile(cachePath, 'utf8')) } catch { /* 처음 · 망가졌으면 다시 센다 */ }
   const folders = (await readdir(projectsDir).catch(() => [])).filter((name) => name.startsWith(prefix))
-  const sessions = []
-  let changed = false
+  const targets = []
   for (const folder of folders) {
     const files = (await readdir(join(projectsDir, folder)).catch(() => [])).filter((name) => name.endsWith('.jsonl'))
-    for (const file of files) {
-      const path = join(projectsDir, folder, file)
-      const info = await stat(path).catch(() => null)
-      if (!info || info.mtimeMs < from) continue
-      let saved = cache[path]
-      if (!saved || saved.size !== info.size || saved.mtimeMs !== info.mtimeMs) {
-        const result = await readSession(path).catch(() => null)
-        if (!result) continue
-        saved = { size: info.size, mtimeMs: info.mtimeMs, kind: result.kind, pieces: result.pieces.map((piece) => [piece.plan, piece.label, piece.from, piece.to]) }
-        cache[path] = saved
-        changed = true
-      }
-      sessions.push({
-        kind: saved.kind,
-        lastAt: saved.mtimeMs,
-        pieces: saved.pieces.map(([plan, label, start, end]) => ({ plan, label, from: start, to: end })),
-      })
+    for (const file of files) targets.push({ path: join(projectsDir, folder, file), engine: 'claude' })
+  }
+  const realWorktrees = await realpath(worktrees).catch(() => worktrees)
+  if (codexSessionsDir) for (const path of await codexFiles(codexSessionsDir)) targets.push({ path, engine: 'codex' })
+  const sessions = []
+  let changed = false
+  for (const { path, engine } of targets) {
+    const info = await stat(path).catch(() => null)
+    if (!info || info.mtimeMs < from) continue
+    let saved = cache[path]
+    if (!saved || saved.size !== info.size || saved.mtimeMs !== info.mtimeMs) {
+      const result = engine === 'codex' ? await readCodexSession(path, realWorktrees).catch(() => undefined) : await readSession(path).catch(() => undefined)
+      if (result === undefined) continue
+      saved = result
+        ? { size: info.size, mtimeMs: info.mtimeMs, engine, kind: result.kind, pieces: result.pieces.map((piece) => [piece.plan, piece.label, piece.from, piece.to]) }
+        : { size: info.size, mtimeMs: info.mtimeMs, engine, skip: true }
+      cache[path] = saved
+      changed = true
     }
+    if (saved.skip) continue
+    sessions.push({
+      kind: saved.kind,
+      engine: saved.engine ?? 'claude',
+      lastAt: saved.mtimeMs,
+      pieces: saved.pieces.map(([plan, label, start, end]) => ({ plan, label, from: start, to: end })),
+    })
   }
   if (changed) await writeFile(cachePath, JSON.stringify(cache)).catch(() => {})
   return sessions

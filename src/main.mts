@@ -138,8 +138,11 @@ if (!app.commandLine.hasSwitch('user-data-dir')) {
 }
 // 스튜디오 집 — ~/.athena-studio/{core,bodies,data,daemon.json}. 본체 · 데이터 · 포트를 모두 이 아래에 둔다
 const STUDIO = studioHome.studioLayout({ home: app.getPath('home'), override: STUDIO_HOME_OVERRIDE, identity: IDENTITY })
-// pane [상세] 토큰 — 대화 기록 읽은 자리 · 합계를 창 사이에 같이 쓴다(기록 파일은 팩 · 창과 상관없는 Claude Code 자리)
-const paneTokens = tokenUsage.createTokenUsage({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects') })
+// 대화 기록 자리 — Claude Code ~/.claude/projects · Codex $CODEX_HOME/sessions(없으면 ~/.codex/sessions — 코어 scripts/lib/codex-local.mjs codexHome 과 같다)
+const CLAUDE_PROJECTS = path.join(app.getPath('home'), '.claude', 'projects')
+const CODEX_SESSIONS = path.join(process.env.CODEX_HOME || path.join(app.getPath('home'), '.codex'), 'sessions')
+// pane [상세] 토큰 — 대화 기록 읽은 자리 · 합계를 창 사이에 같이 쓴다(기록 파일은 팩 · 창과 상관없는 Claude Code · Codex 자리)
+const paneTokens = tokenUsage.createTokenUsage({ projectsDir: CLAUDE_PROJECTS, codexSessionsDir: CODEX_SESSIONS })
 // 앱이 들고 온 아테나 코어(git 번들) — 앱 리소스 자리 하나(개발 앱은 npm start 가 레포 athena/ 에서 만든다)
 const CORE_BUNDLE = studioHome.coreBundlePath({ appRoot: path.join(import.meta.dirname, '..'), packaged: app.isPackaged, resourcesPath: process.resourcesPath })
 // 앱 아이콘 — 둥근 사각형 앱 아이콘(1024 · Dock · 윈도우·리눅스 창). 화면 안 로고는 화이트판(athena-logo-white.png)
@@ -378,7 +381,7 @@ async function resetStudio(): Promise<void> {
 
 // ── 공용 도우미 — src/main/*.mts(에이전트 모니터 기록 읽기 · Explorer · 파일 뷰어 · 현황판) ─────
 // 쓰는 것(기록 폴더 · 화면 문구 · 현황판 로그 · 데몬 자리 · 팩 명령)은 인자로 넘긴다. runPack 은 아래(코어 · 팩 명령)에서 정의돼 부를 때 찾는다
-const { findMonitorLogs } = createMonitorLogs({ projectsDir: path.join(app.getPath('home'), '.claude', 'projects'), codexSessionsDir: path.join(app.getPath('home'), '.codex', 'sessions') })
+const { findMonitorLogs } = createMonitorLogs({ projectsDir: CLAUDE_PROJECTS, codexSessionsDir: CODEX_SESSIONS })
 const { resolveInside } = createFiles({ say })
 const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPaths, runPack: (args, options) => runPack(args, options) })
 

@@ -100,3 +100,38 @@ test('peekPlan: 본체가 다르면 같은 계획서 경로라도 값을 따로 
   assert.deepEqual(usage.peekPlan(['/bodies/acme'], plan), { io: 100, cache: 5000 })
   assert.deepEqual(usage.peekPlan(['/bodies/globex'], plan), { io: 3, cache: 0 })
 })
+
+// Codex rollout(~/.codex/sessions/YYYY/MM/DD/rollout-<시각>-<세션>.jsonl) — 2026-11-04 실제 기록 203개의 키 모양:
+// event_msg token_count 의 info.total_token_usage 는 세션 누적(파일 안에서 줄지 않음)이고 cached_input_tokens 는 input_tokens 안에 든다(넘는 줄 0개)
+const codexMeta = (id, extra = {}) => JSON.stringify({ timestamp: '2026-11-04T00:00:00.000Z', type: 'session_meta', payload: { id, session_id: id, cwd: '/w', source: 'cli', ...extra } })
+const codexUser = (text) => JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text }] } })
+const codexCount = (input, cached, output) => JSON.stringify({ type: 'event_msg', payload: { type: 'token_count', info: { total_token_usage: { input_tokens: input, cached_input_tokens: cached, cache_write_input_tokens: 0, output_tokens: output, reasoning_output_tokens: 0, total_tokens: input + output } } } })
+function tempCodex() {
+  const root = tempDir('token-usage-codex-')
+  fs.mkdirSync(path.join(root, '2026/11/04'), { recursive: true })
+  return root
+}
+
+test('Codex: 세션 id → rollout 파일 · 마지막 누적 값(입력+출력은 캐시 뺀 입력 + 출력)', async () => {
+  const projectsDir = tempProjects()
+  const codexSessionsDir = tempCodex()
+  const session = '01a1a478-3430-7180-8b5f-6ea3162b0773'
+  const file = path.join(codexSessionsDir, '2026/11/04', `rollout-2026-11-04T11-51-43-${session}.jsonl`)
+  fs.writeFileSync(file, `${codexMeta(session)}\n${codexCount(1000, 600, 50)}\n${codexCount(3000, 2000, 200)}\n`)
+  const usage = tokens.createTokenUsage({ projectsDir, codexSessionsDir })
+  assert.deepEqual(await usage.sessionUsage(session), { io: 1000 + 200, cache: 2000 })
+  fs.appendFileSync(file, `${codexCount(5000, 4000, 300)}\n`)
+  assert.deepEqual(await usage.sessionUsage(session), { io: 1000 + 300, cache: 4000 }, '늘어난 부분의 마지막 누적 값')
+})
+
+test('Codex: 계획서 → rollout — AGENTS.md 문맥 뒤 첫 지시로 찾고, 하위 에이전트(parent_thread_id) rollout 은 넣지 않는다', async () => {
+  const projectsDir = tempProjects()
+  const codexSessionsDir = tempCodex()
+  const plan = 'plans/task/x.md'
+  const head = `${codexUser('# AGENTS.md instructions for /w\n…')}\n${codexUser(`이 작업의 계획서: /bodies/acme/${plan} — 먼저`)}\n`
+  fs.writeFileSync(path.join(codexSessionsDir, '2026/11/04', 'rollout-a-11111111-aaaa.jsonl'), `${codexMeta('11111111-aaaa')}\n${head}${codexCount(100, 40, 10)}\n`)
+  fs.writeFileSync(path.join(codexSessionsDir, '2026/11/04', 'rollout-b-22222222-bbbb.jsonl'), `${codexMeta('22222222-bbbb', { parent_thread_id: '11111111-aaaa' })}\n${head}${codexCount(9000, 0, 9000)}\n`)
+  fs.writeFileSync(path.join(projectsDir, '-a', 'claude.jsonl'), `${user(`이 작업의 계획서: /bodies/acme/${plan} — `)}\n${answer('a1', USAGE)}\n`)
+  const usage = tokens.createTokenUsage({ projectsDir, codexSessionsDir })
+  assert.deepEqual(await usage.planUsage(['/bodies/acme'], plan), { io: 100 + 60 + 10, cache: 5000 + 40 }, 'Claude + Codex 를 더한다')
+})

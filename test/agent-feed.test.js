@@ -199,6 +199,59 @@ test('앱 모니터: Codex 팩 분리·활성 pane·120분·메타데이터·이
   assert.deepEqual(await finder.findMonitorLogs(monitor, true, body), [])
 })
 
+// 실제 rollout 모양(2026-11-04 · ~/.codex/sessions 327개): sessions/YYYY/MM/DD/rollout-*.jsonl, 폴더는 만든 날(지역 시각)이고
+// 긴 세션은 옛 날짜 폴더에 계속 쓴다 · 하위 에이전트는 첫 줄 session_meta.payload 에 parent_thread_id · agent_nickname · thread_source 'subagent'
+test('앱 모니터: Codex 10초 스캔은 최근 날짜 폴더만 · 1분 전체 스캔이 옛 폴더의 긴 세션을 찾는다 · 하위 에이전트는 서브에이전트로', async (t) => {
+  const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'codex-monitor-scan-')))
+  t.after(() => fs.rmSync(tmp, { recursive: true, force: true }))
+  const projectsDir = path.join(tmp, '.claude/projects')
+  const codexSessionsDir = path.join(tmp, '.codex/sessions')
+  const cwd = path.join(tmp, 'work')
+  fs.mkdirSync(cwd)
+  const dayDir = (date) => path.join(codexSessionsDir, String(date.getFullYear()), String(date.getMonth() + 1).padStart(2, '0'), String(date.getDate()).padStart(2, '0'))
+  const write = (dir, name, payload, recent = true) => {
+    const file = path.join(dir, `rollout-${name}.jsonl`)
+    fs.mkdirSync(dir, { recursive: true })
+    fs.writeFileSync(file, JSON.stringify({ type: 'session_meta', payload: { id: name, cwd, ...payload } })+'\n'+JSON.stringify({ type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '부모가 보낸 지시' }] } })+'\n'+JSON.stringify(codexFixture.records[1])+'\n')
+    if (!recent) fs.utimesSync(file, new Date(0), new Date(0))
+    return file
+  }
+  const today = dayDir(new Date())
+  const parent = write(today, 'parent', {})
+  const child = write(today, 'child', { parent_thread_id: 'parent', agent_nickname: 'Galileo', thread_source: 'subagent', source: { subagent: { thread_spawn: { parent_thread_id: 'parent' } } } })
+  // 옛 날짜 폴더 20일치(조용한 기록) + 그중 하나에 아직 쓰는 긴 세션
+  for (let day = 1; day <= 20; day += 1) {
+    const dir = path.join(codexSessionsDir, '2025/01', String(day).padStart(2, '0'))
+    for (let index = 0; index < 5; index += 1) write(dir, `old-${day}-${index}`, {}, false)
+  }
+  const longRunning = write(path.join(codexSessionsDir, '2025/01/03'), 'long', {})
+  const monitor = logs.newMonitor()
+  monitor.agentCwds = [cwd]
+  const finder = logs.createMonitorLogs({ projectsDir, codexSessionsDir })
+
+  const full = await finder.findMonitorLogs(monitor, true, null)
+  const fullCost = { ...finder.codexScanCost }
+  const quick = await finder.findMonitorLogs(monitor, false, null)
+  const quickCost = { ...finder.codexScanCost }
+  t.diagnostic(`Codex 스캔 비용 — 전체(1분마다): 폴더 ${fullCost.dirs} · 파일 ${fullCost.files} / 10초마다: 폴더 ${quickCost.dirs} · 파일 ${quickCost.files}`)
+  assert.deepEqual(new Set(full.map(item => item.file)), new Set([parent, child, longRunning]), '전체 스캔은 옛 폴더에서 아직 쓰는 세션까지')
+  assert.deepEqual(new Set(quick.map(item => item.file)), new Set([parent, child]), '10초 스캔은 최근 날짜 폴더만')
+  assert.ok(fullCost.files >= 103 && quickCost.files === 2, `파일 수 — 전체 ${fullCost.files} · 10초 ${quickCost.files}`)
+  assert.ok(quickCost.dirs < fullCost.dirs, `폴더 수 — 전체 ${fullCost.dirs} · 10초 ${quickCost.dirs}`)
+
+  const childItem = full.find(item => item.file === child)
+  assert.equal(childItem.pane, false, '하위 에이전트 rollout 은 pane 세션이 아니다(Claude 서브에이전트와 같게)')
+  assert.equal(childItem.label, 'Galileo')
+  assert.equal(full.find(item => item.file === parent).pane, true)
+  const childEvents = await logs.openTail(monitor, childItem)
+  assert.ok(!childEvents.some(event => event.kind === 'user'), '서브에이전트는 부모가 보낸 지시를 빼고 도구 · 말만')
+  const parentEvents = await logs.openTail(monitor, full.find(item => item.file === parent))
+  assert.ok(parentEvents.some(event => event.kind === 'user'))
+  const listed = logs.monitorSessions(monitor)
+  assert.deepEqual(listed.map(session => session.pane).sort(), [false, true], '부모 한 줄 + 서브에이전트 한 줄(pane 세션 둘이 아니다)')
+  assert.equal(listed.find(session => !session.pane).label, 'Galileo')
+})
+
 test('Codex apply_patch 요약은 작업·경로만: 추가·수정·삭제·이동·잘못된 입력', () => {
   const patch = '*** Begin Patch\n*** Add File: new.txt\n+FAKE_PATCH_MARKER\n*** Update File: old.txt\n@@\n-FAKE_PATCH_MARKER\n+changed\n*** Move to: moved.txt\n*** Delete File: gone.txt\n*** End Patch'
   const call = (name, type, input) => ({ type: 'response_item', payload: { name, type, ...(type === 'custom_tool_call' ? { input } : { arguments: JSON.stringify({ patch: input }) }) } })

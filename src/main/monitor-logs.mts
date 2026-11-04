@@ -81,13 +81,33 @@ function ownProject(name: string, bodyName: string | null, worktreesName: string
   return Boolean(bodyName) && (name === bodyName || name.startsWith(`${bodyName}--`))
 }
 
+// Codex 스캔 비용(읽은 폴더 · 살펴본 rollout 파일 수) — 마지막 findMonitorLogs 한 번 것
+export type CodexScanCost = { dirs: number; files: number }
+
 // 연/월/일 아래 rollout만 찾는다. 없는 폴더·바뀌는 파일은 다른 기록 읽기를 막지 않는다.
-async function* codexFiles(dir: string): AsyncGenerator<string> {
+async function* codexFiles(dir: string, cost: CodexScanCost): AsyncGenerator<string> {
+  cost.dirs += 1
   for (const entry of await readDir(dir)) {
     const file = path.join(dir, entry.name)
-    if (entry.isDirectory()) yield* codexFiles(file)
-    else if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) yield file
+    if (entry.isDirectory()) yield* codexFiles(file, cost)
+    else if (entry.isFile() && /^rollout-.*\.jsonl$/.test(entry.name)) {
+      cost.files += 1
+      yield file
+    }
   }
+}
+
+// 날짜 폴더(sessions/YYYY/MM/DD — 만든 날 · 지역 시각) 중 since 하루 전부터 오늘까지만 — 10초마다 전체를 뒤지지 않게.
+// 긴 세션은 옛 날짜 폴더에 계속 쓰므로(실측 — 하루 · 이틀 뒤에도 씀) 그쪽은 1분마다의 전체 스캔이 찾는다
+function codexRecentDirs(root: string, since: number, now: number): string[] {
+  const dirs: string[] = []
+  const day = new Date(since)
+  day.setHours(0, 0, 0, 0)
+  day.setDate(day.getDate() - 1)
+  for (; day.getTime() <= now; day.setDate(day.getDate() + 1)) {
+    dirs.push(path.join(root, String(day.getFullYear()), String(day.getMonth() + 1).padStart(2, '0'), String(day.getDate()).padStart(2, '0')))
+  }
+  return dirs
 }
 
 // 끝부분만 tail해도 라벨은 첫 메타데이터에서 확보한다. 대화 파일 전체를 읽지 않는다.
@@ -110,7 +130,9 @@ async function codexHead(file: string): Promise<unknown> {
 }
 
 // projectsDir — Claude Code 대화 기록 자리(~/.claude/projects)
+// codexSessionsDir — Codex rollout 자리(main 이 CODEX_HOME/sessions · 없으면 ~/.codex/sessions 를 준다)
 export function createMonitorLogs({ projectsDir, codexSessionsDir = path.resolve(projectsDir, '../../.codex/sessions') }: { projectsDir: string; codexSessionsDir?: string }) {
+  const codexScanCost: CodexScanCost = { dirs: 0, files: 0 }
   // allSessions — 부모 세션이 조용해도 서브에이전트는 오래 돌 수 있어서, 가끔(1분)은 모든 세션의 서브에이전트를 자기 수정 시각으로 본다
   async function findMonitorLogs(monitor: Monitor, allSessions: boolean, athenaDir: string | null): Promise<FoundLog[]> {
     const root = projectsDir
@@ -146,20 +168,31 @@ export function createMonitorLogs({ projectsDir, codexSessionsDir = path.resolve
     const body = athenaDir ? core.realDir(athenaDir) : null
     const worktrees = athenaDir ? core.realDir(path.join(athenaDir, '.worktrees')) : null
     const active = monitor.agentCwds.map(core.realDir)
-    for await (const file of codexFiles(codexSessionsDir)) {
-      const stat = await recentFile(file, since)
-      if (!stat) continue
-      const record = await codexHead(file)
-      const meta = agentFeed.codexRecord(record)
-      if (typeof meta.cwd !== 'string' || !agentFeed.codexSessionMatches(core.realDir(meta.cwd), body, worktrees, active)) continue
-      const payload = record && typeof record === 'object' && 'payload' in record ? record.payload : null
-      const sessionId = payload && typeof payload === 'object' && 'id' in payload && typeof payload.id === 'string' ? payload.id : undefined
-      found.push({ file, pane: true, stat, label: agentFeed.sessionLabel(record), codex: true, sessionId })
+    codexScanCost.dirs = 0
+    codexScanCost.files = 0
+    const roots = allSessions ? [codexSessionsDir] : codexRecentDirs(codexSessionsDir, since, Date.now())
+    for (const root of roots) {
+      for await (const file of codexFiles(root, codexScanCost)) {
+        const stat = await recentFile(file, since)
+        if (!stat) continue
+        const record = await codexHead(file)
+        const meta = agentFeed.codexRecord(record)
+        if (typeof meta.cwd !== 'string' || !agentFeed.codexSessionMatches(core.realDir(meta.cwd), body, worktrees, active)) continue
+        const payload: Record<string, unknown> = record && typeof record === 'object' && 'payload' in record && record.payload && typeof record.payload === 'object' ? record.payload as Record<string, unknown> : {}
+        const sessionId = typeof payload.id === 'string' ? payload.id : undefined
+        // 하위 에이전트 rollout(첫 줄 session_meta 에 parent_thread_id — 실측 27개 모두) — Claude 서브에이전트처럼 pane 세션이 아닌 줄로(부모가 보낸 지시는 뺀다)
+        if (typeof payload.parent_thread_id === 'string') {
+          const nickname = typeof payload.agent_nickname === 'string' && payload.agent_nickname.trim() ? payload.agent_nickname.trim() : undefined
+          found.push({ file, pane: false, stat, label: nickname ?? agentFeed.sessionLabel(record), codex: true, sessionId })
+          continue
+        }
+        found.push({ file, pane: true, stat, label: agentFeed.sessionLabel(record), codex: true, sessionId })
+      }
     }
     return found
   }
 
-  return { findMonitorLogs }
+  return { findMonitorLogs, codexScanCost }
 }
 
 // 새로 붙은 줄들 — 줄바꿈 바이트에서 끊어 한글이 반쪽으로 잘리지 않게 한다.
@@ -256,9 +289,10 @@ export function tailEvents(monitor: Monitor, tail: Tail, lines: readonly string[
   return events
 }
 
-// 서브에이전트는 옆의 meta.json 으로 이름 · 끝남을 안다(없거나 깨졌으면 그냥 둔다)
+// Claude 서브에이전트는 옆의 meta.json 으로 이름 · 끝남을 안다(없거나 깨졌으면 그냥 둔다)
 export async function readSubagentMeta(tail: Tail): Promise<void> {
-  if (tail.pane) return
+  // Codex 하위 에이전트는 meta.json 이 없다 — 이름은 rollout 첫 줄 agent_nickname 으로 이미 받았다
+  if (tail.pane || tail.codex) return
   try {
     const info = agentFeed.subagentInfo(JSON.parse(await fs.promises.readFile(tail.file.replace(/\.jsonl$/, '.meta.json'), 'utf8')))
     if (info.label) tail.label = info.label

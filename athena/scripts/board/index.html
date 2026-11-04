@@ -1283,13 +1283,13 @@
     if (ticket !== metricsTicket) return;
     document.getElementById('metric-work-totals').outerHTML = `<div class="metric-tiles">${WORK_KINDS.map(([kind, label]) =>
       `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(metricDuration(work.totals[kind]))}</span></div>`).join('')}</div>`
-      + `<p class="metric-note">기간 합계 · 작업이 동시에 돌아 실제 경과보다 클 수 있음 · Claude 세션 ${work.sessions.linked}개 · 뺀 세션: 리뷰 ${work.sessions.reviewer}개, 계획서 표시 없음 ${work.sessions.unlinked}개 · Codex 세션은 세지 않음</p>`;
+      + `<p class="metric-note">기간 합계 · 작업이 동시에 돌아 실제 경과보다 클 수 있음 · 세션 ${work.sessions.linked}개 · 뺀 세션: 리뷰 ${work.sessions.reviewer}개, 계획서 표시 없음 ${work.sessions.unlinked}개 · Claude ${work.engines?.claude ?? 0}개 · Codex ${work.engines?.codex ?? 0}개</p>`;
     document.querySelectorAll('#metrics .metric-plan[data-plan]').forEach((row) => {
       const kinds = work.plans[row.dataset.plan];
       if (!kinds) return;
       const line = document.createElement('div');
       line.className = 'metric-work';
-      line.textContent = `Claude 세션 기록 · ${workLine(kinds) || '기록된 소요 없음'}`;
+      line.textContent = `세션 기록 · ${workLine(kinds) || '기록된 소요 없음'}`;
       row.append(line);
     });
   };

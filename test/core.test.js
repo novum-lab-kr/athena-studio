@@ -377,5 +377,12 @@ test('Codex 여러 줄 초안에 상태줄 같은 문장이 있어도 맨 아래
   }
   assert.equal(core.agentAtEmptyPrompt('› \n\n  GPT-6.1-Sol medium · /tmp/demo\n  ? for shortcuts', 'codex'), true)
   assert.equal(core.agentAtEmptyPrompt('› \n  모르는 상태줄', 'codex'), false)
+  // 검수 묶음 5 #23 — 2026-11-04 실제 Codex 0.166 빈 입력창(-c model_reasoning_effort=none → "default" · 이름에 공백인 GPT-6.1 Terra)
+  for (const status of ['GPT-6.1-Sol default · /private/tmp/demo…', 'GPT-6.1 Terra low · /private/tmp/demo…', 'gpt-6 none', 'GPT-6-Astra xhigh · 90% left']) {
+    assert.equal(core.agentAtEmptyPrompt(`› Ask Codex to do anything\n\n  ${status}\n  ? for shortcuts                                                        ⚠ 1 warning · f2 to view`, 'codex'), true, status)
+  }
+  assert.equal(core.agentAtEmptyPrompt('› Ask Codex to do anything\n\n  GPT-6.1-Sol default · /private/tmp/demo…\n  ← for agents · ? for shortcuts', 'codex'), true, 'remote TUI footer')
+  assert.equal(core.agentAtEmptyPrompt('› \n  모르는 상태줄 low', 'codex'), false)
+  assert.equal(core.agentAtEmptyPrompt('› \n  고쳐 줘 GPT-6 low\n\n  GPT-6.1 Terra low · /tmp', 'codex'), false)
   assert.equal(core.agentAtEmptyPrompt('› 초안\n  › \n\n  GPT-6.1-Sol medium · /tmp/demo', 'codex'), false)
 })

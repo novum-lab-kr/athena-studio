@@ -44,6 +44,7 @@ import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { groupByPlan, parseSinceDate, summarize } from '../lib/metrics.mjs'
 import { planTitles } from './plan-titles.mjs'
 import { scanSessions, workTotals } from '../lib/session-work.mjs'
+import { codexHome } from '../lib/codex-local.mjs'
 import { applyBatch, applyLearn, checkLearnWithJev, discardLearn, discardMany, editCandidates, editLearned, isLearnIssue, listLearn, removeLearned, tidyLine } from './learn.mjs'
 import { updatePlan, withPlanLock, writeAtomic } from '../lib/plan-update.mjs'
 import { createHandoffWatch, handoffStateOf, HANDOFF_EVERY_MS } from '../lib/handoff.mjs'
@@ -724,6 +725,7 @@ const metricsWork = async ({ days, since, review }) => {
   const from = since ?? (days ? Date.now() - days * 86_400_000 : -Infinity)
   const scan = workScan.catch(() => {}).then(() => scanSessions({
     projectsDir: join(homedir(), '.claude/projects'),
+    codexSessionsDir: join(codexHome(), 'sessions'),
     worktrees: paths(ROOT).worktrees,
     cachePath: join(tmpdir(), `athena-metrics-sessions-${bodyIdOf(ROOT)}.json`),
     from,

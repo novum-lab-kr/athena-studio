@@ -68,7 +68,7 @@ node scripts/metrics.mjs --days 30    # --all 전체 · --since 2026-11-01 · --
 
 화면은 전체 작업·PR·리뷰·검증 **평균**을 크게 표시하고 중앙값·p75·집계 건수와 계산 기준을 보조로 둔다. 리뷰·검증 평균은 해당 단계가 있었고 시간을 아는 완료 작업당 누적 구간 시간이다(실행 1회 평균이 아님). 검증 줄서기를 포함하며 동일·겹친 구간은 한 번만 센다. 검증과 리뷰가 겹치면 위 구간 우선순위로 나눈다. 단계 없는 작업·시간 모름은 해당 평균의 분모에서 제외한다. PR 전체 시간은 리뷰·검증과 겹치므로 카드 수치를 단계 합계로 더하지 않는다. 작업 타임라인은 표시하지 않는다.
 
-**작업 안쪽** — Claude 세션 기록(`~/.claude/projects/<워크트리 폴더>/*.jsonl`)을 나눈 합계: 생각·작성(응답 하나 — message id 가 같은 줄들과 그 앞 대기 · 파일 고치기 포함) · 검증·커밋 · 끝날 때까지 기다리기(`until` · `while` + `sleep`, 맨 앞 `sleep`, `review-wait.sh`, Monitor) · 그 밖의 명령 · 파일 읽기. 한 세션 안에서는 겹치지 않고 기간 밖은 잘라 낸다. 세션끼리는 더하기만 해 동시에 돌면 실제 경과보다 클 수 있다. 세션은 `delegate.sh` 의 첫머리 지시(`이 작업의 계획서:` · `새 계획서:`)로 계획서에 잇는다 — reviewer · 표시 없는 세션은 건수만, AskUserQuestion(사람 대기) · 서브에이전트 줄 · Codex 세션은 세지 않는다.
+**작업 안쪽** — Claude 세션 기록(`~/.claude/projects/<워크트리 폴더>/*.jsonl`)과 Codex 세션 기록(`$CODEX_HOME/sessions` · 기본 `~/.codex/sessions` 의 `rollout-*.jsonl` 중 첫 줄 `session_meta.cwd` 가 이 팩 워크트리 안인 것)을 나눈 합계: 생각·작성(응답 하나 — message id 가 같은 줄들과 그 앞 대기 · 파일 고치기 포함) · 검증·커밋 · 끝날 때까지 기다리기(`until` · `while` + `sleep`, 맨 앞 `sleep`, `review-wait.sh`, Monitor) · 그 밖의 명령 · 파일 읽기. 한 세션 안에서는 겹치지 않고 기간 밖은 잘라 낸다. 세션끼리는 더하기만 해 동시에 돌면 실제 경과보다 클 수 있다. 세션은 `delegate.sh` 의 첫머리 지시(`이 작업의 계획서:` · `새 계획서:`)로 계획서에 잇는다 — reviewer · 표시 없는 세션은 건수만, AskUserQuestion · Codex `request_user_input`(사람 대기) · 서브에이전트 줄 · Codex 하위 에이전트 rollout(`session_meta.parent_thread_id`)은 세지 않는다. Codex 도구는 `sleep` · `wait` · `wait_agent` 는 기다리기, `apply_patch` 가 든 것은 파일 고치기, `exec` 는 그 스크립트 글로 명령처럼 가른다.
 
 ## 셸에서 남기기
 

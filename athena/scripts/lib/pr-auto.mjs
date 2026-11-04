@@ -749,7 +749,7 @@ const shortenLongLines = (text) => {
 }
 
 // attributes — linguistGeneratedRules 결과(PR base 쪽 .gitattributes — PR 이 스스로 바꾼 것은 쓰지 않는다)
-// → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines, code }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed }], complete }
+// → { text, generated: [{ path, added, removed, reason }], shortened: [{ path, lines, code }], truncated: [{ path, shown, total }], dropped: [{ path, added, removed, data? }], complete }
 export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
   const generated = []
   const shortened = []
@@ -757,25 +757,35 @@ export const packDiff = (diff, { limit, patterns = [], attributes = [] }) => {
   const dropped = []
   const parts = []
   const waiting = []
+  const later = []
   let left = limit
-  // 1) 통째로 들어가는 코드 파일을 순서대로(큰 파일 하나가 막아도 뒤의 작은 파일은 들어간다)
+  // 1) 통째로 들어가는 코드 파일을 순서대로(큰 파일 하나가 막아도 뒤의 작은 파일은 들어간다).
+  //    생성물이 아닌 작은 데이터 확장자(사전 i18n json · 설정 json 등)는 코드 뒤로 미룬다 — PR 239 에서 경로 순서로 앞에 온 사전이 코드 자리를 먹었다(검수 묶음 5 #22)
   for (const [index, file] of splitDiff(diff).entries()) {
     const reason = generatedReason(file, { patterns, attributes })
     if (reason) { generated.push({ path: file.path, added: file.added, removed: file.removed, reason }); continue }
     const short = shortenLongLines(file.text)
     if (short.count) shortened.push({ path: file.path, lines: short.count, code: short.code })
-    if (short.text.length <= left) {
+    if (DATA_EXT.test(file.path)) later.push({ index, file, text: short.text })
+    else if (short.text.length <= left) {
       parts.push({ index, text: short.text })
       left -= short.text.length
     } else waiting.push({ index, file, text: short.text })
   }
-  // 2) 못 들어간 것 — 남은 자리가 있으면 맨 앞 하나를 잘라 넣고, 나머지는 목록에만
+  // 2) 못 들어간 코드 파일 — 남은 자리가 있으면 맨 앞 하나를 잘라 넣고, 나머지는 목록에만
   for (const item of waiting) {
     if (left >= MIN_PART_CHARS) {
       parts.push({ index: item.index, text: `${item.text.slice(0, left)}\n…(이 파일 diff 는 여기서 잘림 — 뒤 ${item.text.length - left}자 못 넣음)\n` })
       truncated.push({ path: item.file.path, shown: left, total: item.text.length })
       left = 0
     } else dropped.push({ path: item.file.path, added: item.file.added, removed: item.file.removed })
+  }
+  // 3) 미룬 데이터 파일 — 남은 자리에 통째로 들어가면 넣고, 아니면 자르지 않고 줄 수만(못 본 파일로 센다 — 잘린 승인 판정은 그대로)
+  for (const item of later) {
+    if (item.text.length <= left) {
+      parts.push({ index: item.index, text: item.text })
+      left -= item.text.length
+    } else dropped.push({ path: item.file.path, added: item.file.added, removed: item.file.removed, data: true })
   }
   const text = parts.sort((first, second) => first.index - second.index).map((part) => part.text).join('')
   const packed = { text, generated, shortened, truncated, dropped }
@@ -793,7 +803,7 @@ export const omittedSection = (packed) => {
     lines.push('⚠️ 길어서 다 넣지 못한 코드 파일 — 이 PR 은 일부만 보고 판단한다. 아래 파일의 못 본 부분은 판단하지 않고, "전체 diff 를 달라" 같은 지적도 내지 않는다(받을 수 없다 · 자동 흐름이 따로 사람 확인으로 넘긴다):')
     lines.push(
       ...packed.truncated.map((item) => `- ${name(item.path)} · 앞 ${item.shown}자만(전체 ${item.total}자)`),
-      ...packed.dropped.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · 못 넣음`),
+      ...packed.dropped.map((item) => `- ${name(item.path)} · +${item.added}/−${item.removed}줄 · ${item.data ? '사전 · 데이터라 뒤로 미뤘고 자리가 없어 줄 수만' : '못 넣음'}`),
       ...packed.shortened.filter((item) => item.code).map((item) => `- ${name(item.path)} · 코드로 보이는 아주 긴 줄 ${item.code}개를 앞 ${SHORT_LINE_KEEP}자만`),
     )
   }

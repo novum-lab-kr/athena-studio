@@ -274,6 +274,9 @@ export function resumeCommand(session: unknown, engine: unknown = 'claude'): str
 
 // Codex 0.166 입력칸: › 한 줄과 그 아래 이어 쓰는 줄. 실측 기본 자리 글도 빈 것으로 본다.
 // 모르는 화면·선택 창·작업 중에는 비었다고 추정하지 않는다.
+// 상태줄 "<모델> <생각 강도>[ · <폴더 · 남은 양>]" — 2026-11-04 실측(codex 0.166): `GPT-6.1-Sol default · …`(-c model_reasoning_effort=none) ·
+// `GPT-6.1 Terra low · …`(이름에 공백). 모델 이름은 글자로 시작하고 숫자가 든 낱말 + 대문자로 시작하는 낱말 0~2개, 강도는 소문자 낱말 하나(값 목록에 기대지 않는다)
+const CODEX_STATUS = /^\s*[A-Za-z][\w.-]*\d[\w.-]*(?: [A-Z][\w.-]*){0,2} [a-z][a-z-]*(?: · .*)?$/
 export function agentAtEmptyPrompt(text: unknown, engine: unknown): boolean {
   if (engine === 'claude') return claudeAtEmptyPrompt(text)
   if (engine !== 'codex') return false
@@ -288,8 +291,9 @@ export function agentAtEmptyPrompt(text: unknown, engine: unknown): boolean {
   // 맨 아래의 상태줄을 한 번만 떼고 남은 모든 줄을 검사한다. 모르는 footer는 막는 쪽이다.
   const after = tail.slice(prompt + 1)
   while (after.length && !after.at(-1)?.trim()) after.pop()
-  if (/^\s*\? for shortcuts(?:\s.*)?$/.test(after.at(-1) || '')) after.pop()
-  if (/^\s*(?:GPT-|gpt-)\S+\s+(?:minimal|low|medium|high|xhigh|max)\b.*$/.test(after.at(-1) || '')) after.pop()
+  // remote TUI(codex-session.py — Studio Codex pane)는 앞에 `← for agents · ` 가 붙는다(2026-11-04 실측 · 검수 묶음 5 #23)
+  if (/^\s*(?:[^·]*·\s+)?\? for shortcuts(?:\s.*)?$/.test(after.at(-1) || '')) after.pop()
+  if (CODEX_STATUS.test(after.at(-1) || '')) after.pop()
   return after.every((line) => !line.trim())
 }
 
