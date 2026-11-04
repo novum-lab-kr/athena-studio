@@ -29,7 +29,18 @@ if (!files.length || files.some(file => file.startsWith('--')) || (requireReceip
   process.exit(2)
 }
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), 'diagram-theme.css'), 'utf8')
-const block = `<!-- studio-theme -->\n<style id="studio-theme">\n${css}</style>\n<!-- /studio-theme -->`
+// 스타일 상자를 숨겼으니 archify 의 S 키(스타일 돌리기)도 막는다 — archify 단축키 처리는 defaultPrevented 면 건너뛴다.
+// 입력 칸 · 수정 키 조합은 그대로 둔다(archify 와 같은 조건). 창에 capture 로 걸어 archify 의 document 처리보다 먼저 돈다
+const presetKeyGuard = `<script id="studio-theme-keys">
+window.addEventListener('keydown', (event) => {
+  if (event.key !== 's' && event.key !== 'S') return;
+  if (event.metaKey || event.ctrlKey || event.altKey) return;
+  const target = event.target;
+  if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) return;
+  event.preventDefault();
+}, true);
+</script>`
+const block = `<!-- studio-theme -->\n<style id="studio-theme">\n${css}</style>\n${presetKeyGuard}\n<!-- /studio-theme -->`
 const oldBlock = /<!-- studio-theme -->[\s\S]*?<!-- \/studio-theme -->\n?/g
 // 자세히 칸 — 머리에 모양 블록 · 본문 끝에 칸 · 자료 · 스크립트 블록. 테마 블록처럼 표시 주석으로 감싸 다시 입혀도 하나만 남는다
 const oldDetails = /<!-- (studio-details(?:-style)?) -->[\s\S]*?<!-- \/\1 -->\n?/g

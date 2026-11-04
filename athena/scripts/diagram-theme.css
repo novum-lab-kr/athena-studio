@@ -78,3 +78,7 @@ html[data-theme="dark"] .diagram-container { background: var(--panel) !important
 html[data-theme="dark"] .card { background: var(--panel) !important; box-shadow: none !important; border-radius: 8px !important; }
 html[data-theme="dark"] .card:hover { border-color: rgb(201 173 120 / 38%) !important; background: rgb(201 173 120 / 7%) !important; }
 html[data-theme="dark"] h1 { color: #f3ead6; }
+
+/* 스타일 고르기 상자(archify 'Visual identity' · Classic · Signal Flow …) 숨김 — 아테나 그림은 테마 하나로 보여 준다.
+   S 키 전환은 diagram-theme.mjs 가 테마 블록에 넣는 스크립트가 막는다 */
+.toolbar .preset-wrap { display: none !important; }
