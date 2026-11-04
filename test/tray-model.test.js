@@ -5,40 +5,24 @@ const tray = require('../src/lib/tray-model.mts')
 const pane = (id, status, label = null, workspace = 'w1') => ({ id, agent: 'claude', agent_status: status, label, workspace_id: workspace })
 const card = (id, status, title = id, extra = {}) => ({ kind: 'plan', id, status, title, column: { ready_for_review: 'review', done: 'done' }[status] || 'doing', html: null, archived: false, ...extra })
 
-test('요약: 확인 필요(요청만) · 막힘은 계획서만 · 에이전트(작업 중 먼저 · 자르지 않음) · 사용량 · 칸반', () => {
+test('요약: 일하는 에이전트 수 · 에이전트(작업 중 먼저 · 자르지 않음) · 사용량', () => {
   const summary = tray.summarize({
     panes: [pane('p3', 'idle'), pane('p1', 'working', '🤖 web-fe · feature/x'), pane('p2', 'idle'), { id: 'p4', agent: null }],
     workspaces: [{ id: 'w1', label: 'athena' }],
-    cards: [card('a', 'blocked', '로그인'), card('b', 'ready_for_review', '버튼'), card('c', 'done'), card('d', 'in_progress', 'x', { archived: true })],
     usage: [{ id: 'codex', label: 'Codex', windows: [{ label: '주간', percent: 41.6, resetsAt: '2026-10-18T09:30:00' }] }, { id: 'claude', label: 'Claude', windows: [] }],
     boardUp: true,
     now: new Date('2026-10-18T08:00:00').getTime(),
   })
-  // 막힘 = 계획서 Status blocked 만(pane 의 입력 대기는 에이전트 줄 · 맥 알림에서만)
-  assert.deepEqual(summary.counts, { working: 1, blocked: 1, review: 1, asking: 0 })
-  // 확인 필요는 요청만 — 막힌 계획서 · 리뷰 대기는 넣지 않는다
-  assert.deepEqual(summary.attention, [])
-  const asked = tray.summarize({ requests: [{ id: 'r1', kind: 'question', state: 'open', title: '필드가 있나요?' }, { id: 'r2', kind: 'decision', state: 'answered', title: '전달 전' }] })
-  assert.deepEqual(asked.attention, [{ kind: 'request', mark: '?', id: 'r1', requestKind: 'question', text: '필드가 있나요?' }])
-  assert.equal(asked.counts.asking, 1)
+  // 막힘 · 리뷰 수는 툴팁에서도 뺐다 — 일하는 에이전트 수만(사용자 2026-11-04)
+  assert.deepEqual(summary.counts, { working: 1 })
+  // 확인할 일 · 칸반 숫자 · 완료 24h · 평균 대기는 패널에서 뺐다(사용자 2026-11-04)
+  for (const gone of ['attention', 'avgWait', 'columns', 'done24']) assert.equal(gone in summary, false)
   assert.deepEqual(summary.agents.map((agent) => [agent.name, agent.workspace, agent.status]), [['web-fe · feature/x', 'athena', 'working'], ['claude', 'athena', 'idle'], ['claude', 'athena', 'idle']])
   assert.deepEqual(summary.usageItems, [{ tool: 'Codex', toolId: 'codex', window: '주간', percent: 42, reset: '09:30' }])
   assert.equal(summary.idleAgents, 2)
-  // 평균 답 대기 — 현황판이 떠 있고 값이 있을 때만 확인 필요 머리줄에
-  assert.equal(summary.avgWait, '')
-  assert.equal(tray.summarize({ boardUp: true, waitMs: 3.2 * 3600000 }).avgWait, ' · 평균 대기 3.2시간')
-  assert.equal(tray.summarize({ boardUp: false, waitMs: 3600000 }).avgWait, '')
-  assert.deepEqual([tray.waitText(20 * 60000), tray.waitText(30 * 1000), tray.waitText(72 * 3600000)], ['20분', '1분', '3일'])
   assert.equal('blockedAgents' in summary, false)
-  assert.equal(summary.columns.done, 1)
   // 많아도 자르지 않는다(패널이 칸 안에서 스크롤)
   assert.equal(tray.summarize({ panes: Array.from({ length: 8 }, (_, index) => pane(`p${index}`, 'working')) }).agents.length, 8)
-  // 이슈에 합쳐진 계획서도 계획서로 본다(제목은 이슈 것 · 정식이면 결정 콘솔)
-  const linked = tray.liveCards([{ kind: 'issue', id: 'issues/a.md', title: '이슈 제목', column: 'review', linkedPlan: { id: 'plans/feature/a.md', grade: 'formal', status: 'ready_for_review' } }, { kind: 'issue', id: 'issues/b.md', title: '열린 이슈', column: 'issue' }])
-  assert.deepEqual(linked, [{ id: 'plans/feature/a.md', title: '이슈 제목', status: 'ready_for_review', html: 'plans/feature/a.html' }])
-  const counted = tray.summarize({ cards: [{ kind: 'issue', id: 'i1', title: 't', column: 'issue' }, { kind: 'issue', id: 'i2', title: 't', column: 'review', linkedPlan: { id: 'p', grade: 'light', status: 'ready_for_review' } }] })
-  assert.deepEqual(counted.columns, { issue: 1, review: 1 })
-  assert.equal(counted.counts.review, 1)
 })
 
 test('알림: 사람이 고를 것만 — 일하다 멈춤 · 카드 리뷰·완료는 알리지 않고 · 여러 건은 묶음', () => {
@@ -68,8 +52,6 @@ test('입력 대기: 에이전트 줄 맨 위 · 머리줄 수 · 대기 수에�
   const summary = tray.summarize({ panes: [pane('p1', 'working'), pane('p2', 'idle'), pane('p3', 'waiting', '🤖 web-fe · feature/x')], workspaces: [{ id: 'w1', label: 'athena' }] })
   assert.deepEqual(summary.agents.map((agent) => [agent.id, agent.status]), [['p3', 'waiting'], ['p1', 'working'], ['p2', 'idle']])
   assert.deepEqual([summary.counts.working, summary.idleAgents, summary.waitingAgents], [1, 1, 1])
-  // 확인 필요(요청) · 막힘(계획서) 숫자에는 넣지 않는다
-  assert.deepEqual([summary.counts.blocked, summary.counts.asking], [0, 0])
 
   const notifier = new tray.Notifier()
   const names = new Map([['w1', 'athena']])
@@ -103,19 +85,58 @@ test('사용량 리셋 시각: 오늘은 시각만 · 내일 · 그 뒤는 요�
   assert.equal(tray.resetClock('읽을 수 없음', now), '')
 })
 
-test('최근 24시간 완료: 완료로 바뀐 시각(doneAt · 없으면 mtime)으로 한 시간씩 · 마지막 칸이 지금 · 24시간 밖 · 보관 · 다른 칸은 빼고', () => {
-  const now = new Date('2026-10-18T12:00:00').getTime()
-  const hour = 3600000
-  const done = (mtime, extra = {}) => ({ kind: 'plan', id: String(mtime), column: 'done', mtime, ...extra })
-  const result = tray.doneByHour([done(now - 10 * 60000), done(now - 30 * 60000), done(now - 5 * hour), done(now - 25 * hour), done(now - hour, { archived: true }), { column: 'doing', mtime: now }], now)
-  assert.equal(result.total, 3)
-  assert.equal(result.hours.length, 24)
-  assert.equal(result.hours[23], 2)
-  assert.equal(result.hours[18], 1)
-  // 완료 뒤에 계획서를 고쳐 mtime 이 지금이어도 doneAt(30시간 전)이 먼저 — 다시 "방금 완료" 로 세지 않는다
-  const edited = tray.doneByHour([done(now - 60000, { doneAt: now - 30 * hour }), { kind: 'issue', id: 'i', column: 'done', mtime: now - 60000, linkedPlan: { doneAt: now - 2 * hour } }], now)
-  assert.equal(edited.total, 1)
-  assert.equal(edited.hours[21], 1)
+test('일한 시간: 10분 칸마다 일하는 에이전트 수 × 4초를 분으로 더한다 · 3일치만 남긴다', () => {
+  const at = (stamp) => new Date(stamp).getTime()
+  assert.equal(tray.daySlot(at('2026-11-04T00:00:00')), 0)
+  assert.equal(tray.daySlot(at('2026-11-04T13:29:59')), 80) // 13시 20분 칸
+  assert.equal(tray.daySlot(at('2026-11-04T23:59:59')), 143)
+  assert.deepEqual(tray.activityDays(at('2026-11-04T13:00:00')), ['2026-11-04', '2026-11-03', '2026-11-02'])
+  let log = tray.recordActivity(null, at('2026-11-02T10:00:00'), 1)
+  log = tray.recordActivity(log, at('2026-11-04T13:21:00'), 3) // 3개 × 4초 = 0.2분
+  log = tray.recordActivity(log, at('2026-11-04T13:25:00'), 0) // 아무도 안 일하면 그대로
+  log = tray.recordActivity(log, at('2026-11-04T13:29:00'), -1) // 음수는 0 으로
+  log = tray.recordActivity(log, at('2026-11-04T13:30:00'), 1, 60) // 간격을 주면 그만큼(1분)
+  assert.equal(log.format, tray.ACTIVITY_FORMAT)
+  assert.deepEqual(log.days.map((day) => day.day), ['2026-11-04', '2026-11-02'])
+  const today = log.days[0].bins
+  assert.equal(today.length, 144)
+  assert.ok(Math.abs(today[80] - 0.2) < 1e-9)
+  assert.equal(today[81], 1)
+  // 날짜가 넘어가면 오늘 칸을 새로 · 3일 밖(11-02)은 버린다
+  log = tray.recordActivity(log, at('2026-11-05T00:05:00'), 2)
+  assert.deepEqual(log.days.map((day) => day.day), ['2026-11-05', '2026-11-04'])
+  const view = tray.activityView(log, at('2026-11-05T00:06:00'))
+  assert.ok(Math.abs(view.today[0] - 8 / 60) < 1e-9)
+  assert.equal(view.yesterday, log.days[1].bins)
+  assert.equal(view.before, null) // 기록 없는 날은 null — 패널이 그 겹을 안 그린다
+  assert.deepEqual(tray.activityView(null, at('2026-11-05T00:06:00')), { today: new Array(144).fill(0), yesterday: null, before: null })
+})
+
+test('일한 시간 저장: 다시 읽으면 3일 안의 날만 그대로 · 옛 형식 · 깨진 글은 버리고 모양이 다른 날만 뺀다', () => {
+  const now = new Date('2026-11-04T13:21:00').getTime()
+  const log = tray.recordActivity(tray.recordActivity(null, new Date('2026-11-03T09:00:00').getTime(), 2), now, 3)
+  const text = tray.serializeActivity(log)
+  assert.ok(text.endsWith('\n'))
+  assert.match(text, /"bins":\[[^\]]*0\.133/) // 소수 셋째 자리까지
+  const back = tray.parseActivity(text, now)
+  assert.deepEqual(back.days.map((day) => day.day), ['2026-11-04', '2026-11-03'])
+  assert.equal(back.days[0].bins[80], 0.2)
+  // 사흘 지나면 다 빠진다
+  assert.deepEqual(tray.parseActivity(text, new Date('2026-11-07T08:00:00').getTime()).days, [])
+  // 옛 동시 최대 기록(형식 표시 없음) · 쓰다 끊긴 글 · null 은 버린다
+  assert.equal(tray.parseActivity(JSON.stringify({ day: '2026-11-04', bins: new Array(144).fill(1) }), now), null)
+  assert.equal(tray.parseActivity('{"format":2,"days":[', now), null)
+  assert.equal(tray.parseActivity('null', now), null)
+  // 모양이 다른 날은 그날만
+  const mixed = JSON.stringify({ format: 2, days: [{ day: '2026-11-04', bins: [1, 2] }, { day: '2026-11-03', bins: new Array(144).fill(0.5) }, { day: '2026-11-02', bins: new Array(144).fill('1') }] })
+  assert.deepEqual(tray.parseActivity(mixed, now).days.map((day) => day.day), ['2026-11-03'])
+})
+
+test('에이전트 브랜치: delegate 이름표 🤖 에이전트 · 브랜치 의 뒤쪽 · 이름표가 없거나 브랜치가 없으면 빈 값', () => {
+  assert.equal(tray.agentBranch({ id: 'p1r', label: '🤖 web-fe · feature/a · b' }), 'feature/a · b')
+  assert.equal(tray.agentBranch({ id: 'p1r', label: '🤖 reviewer' }), '')
+  assert.equal(tray.agentBranch({ id: 'p1r', label: 'my · pane' }), '')
+  assert.equal(tray.agentBranch({ id: 'p1r', agent: 'claude' }), '')
 })
 
 test('알림: 새로 열린 요청만 한 번 · 처음 본 목록은 알리지 않는다 · 못 읽으면 기억 그대로', () => {

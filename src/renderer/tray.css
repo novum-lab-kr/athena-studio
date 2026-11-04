@@ -1,4 +1,4 @@
-/* 메뉴 막대 패널(★ Codex 상태 목록형) — 340px · 어두운 반투명(창은 vibrancy) · 작은 글씨 · 색은 상태에만 */
+/* 메뉴 막대 패널(★ Codex 상태 목록형) — 309px(안쪽 285px) · 어두운 반투명(창은 vibrancy) · 작은 글씨 · 색은 상태에만 */
 :root {
   color-scheme: dark; /* 스크롤바 같은 기본 컨트롤도 어두운 모양으로(style.css 와 같다) */
   --text: #f2f3f5;
@@ -6,7 +6,6 @@
   --line: rgba(255, 255, 255, 0.1);
   --blue: #3b82f6;
   --warn: #f5a524;
-  --violet: #c9b8ff;
   --ok: #4ade80;
 }
 * { box-sizing: border-box; }
@@ -21,8 +20,6 @@ html { background: rgba(20, 21, 25, 0.62); }
 .hd { display: flex; flex: none; align-items: center; gap: 7px; height: 36px; padding: 0 8px 0 12px; }
 .hd .logo { width: 14px; height: 14px; opacity: 0.9; }
 .hd b { flex: 1; font-size: 13px; }
-.conn { color: var(--muted); font-size: 11px; white-space: nowrap; }
-.conn.off { color: var(--warn); }
 .menu { width: 24px; height: 22px; border: 0; border-radius: 5px; background: transparent; color: var(--muted); cursor: pointer; }
 .menu:hover { background: var(--line); color: var(--text); }
 /* 알림 일시 중지 표시(머리줄) */
@@ -33,23 +30,12 @@ html { background: rgba(20, 21, 25, 0.62); }
 /* 칸마다 위에 가는 선(★ Codex 상태 목록형) — 색은 상태에만 */
 .t { display: flex; align-items: center; height: 26px; padding-top: 4px; border-top: 1px solid var(--line); font-size: 12px; font-weight: 600; }
 .t .sum { margin-left: auto; color: var(--muted); font-size: 11px; font-weight: 400; }
-/* 확인 필요 — 제목에 수 · 한 줄씩(누르면 그 pane · 결정 콘솔) */
-.att { padding: 6px 0 8px; border-top: 1px solid var(--line); }
-.att > b { display: block; padding-bottom: 2px; font-size: 12px; }
-.att.clear { color: var(--muted); font-size: 11.5px; }
-.att .it { display: flex; align-items: center; gap: 5px; width: 100%; padding: 2px 4px; margin-left: -4px; border: 0; border-radius: 4px; background: transparent; font-size: 11px; text-align: left; cursor: pointer; }
-.att .it:hover { background: var(--line); }
-.att .it .tx { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.att .it.b .tx::before { content: "! "; color: var(--warn); font-weight: 700; }
-.att .it .go { flex: none; color: var(--muted); }
-.att em { flex: none; padding: 0 5px; border-radius: 4px; background: rgba(167, 139, 250, 0.2); color: var(--violet); font-size: 10.5px; font-style: normal; }
 /* 에이전트 — 두 줄 행(이름 / 작업 공간) · 많으면 칸 안 스크롤
    세로만 — .ag 가 hover 바탕을 넓히려고 오른쪽으로 4px 나가서 그냥 두면 가로 스크롤이 생긴다 */
 .agents { max-height: 220px; overflow-x: hidden; overflow-y: auto; margin: 0 -12px; padding: 0 12px; }
-.ag { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 0 7px; width: calc(100% + 8px); height: 44px; margin-left: -4px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
+.ag { display: grid; grid-template-columns: 10px 1fr auto; align-items: center; gap: 0 7px; width: calc(100% + 8px); height: 28px; margin-left: -4px; padding: 0 4px; border: 0; border-radius: 6px; background: transparent; text-align: left; cursor: pointer; }
 .ag:hover { background: var(--line); }
 .ag .nm { min-width: 0; overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
-.ag .nm small { display: block; overflow: hidden; color: var(--muted); font-size: 11px; text-overflow: ellipsis; }
 .ag i { color: var(--muted); font-size: 10px; font-style: normal; }
 .dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--muted); }
 .dot.working { background: var(--blue); }
@@ -72,11 +58,31 @@ html { background: rgba(20, 21, 25, 0.62); }
 /* 80% 넘으면 % 글자만 빨갛게(주황은 Claude 색이라 겹치지 않게) */
 .win.hi .wl { color: #f87171; font-weight: 600; }
 .win .rs { color: var(--muted); }
-/* 칸반 숫자 5칸 */
-.kb { display: grid; grid-template-columns: repeat(5, 1fr); padding: 6px 0; border-top: 1px solid var(--line); text-align: center; }
-.kb button { padding: 2px 0; border: 0; border-radius: 6px; background: transparent; cursor: pointer; }
-.kb button:hover { background: var(--line); }
-.kb b { display: block; font-size: 14px; }
-.kb small { color: var(--muted); font-size: 10px; }
-/* 최근 24시간 완료 — 한 시간씩 24칸 */
-.hist { padding: 6px 0 2px; border-top: 1px solid var(--line); font-size: 11px; }
+/* 일한 시간 · 3일 — 산 능선 SVG(tray-mountain.ts) · 폭에 맞춰 늘고 준다 · 시 눈금은 SVG 글자 */
+.mt { padding: 4px 0 8px; }
+.mt svg { display: block; width: 100%; height: auto; overflow: visible; }
+.mt .tick { fill: var(--muted); font-size: 10px; }
+/* 별 반짝임 — 별마다 박자(--dur) · 시작(--delay) · 가장 어두울 때(--lo) */
+.mt .tw { transform-box: fill-box; transform-origin: center; animation: mt-twinkle var(--dur, 3s) ease-in-out var(--delay, 0s) infinite; }
+@keyframes mt-twinkle { 0%, 100% { opacity: var(--lo, 0.3); transform: scale(0.65); } 50% { opacity: 1; transform: scale(1); } }
+/* 구름 — 왼쪽 밖에서 오른쪽 밖으로 흐른다 · 움직임을 줄이면 --rest 자리에 멈춘다 */
+.mt .drift { transform: translateX(var(--rest, 0px)); animation: mt-drift var(--dur, 60s) linear var(--delay, 0s) infinite; }
+@keyframes mt-drift { from { transform: translateX(-70px); } to { transform: translateX(355px); } }
+/* 패널이 닫히면 멈춤(tray.ts 가 body 에 paused) · 시스템 '동작 줄이기' 면 끔 */
+.paused .mt * { animation-play-state: paused !important; }
+@media (prefers-reduced-motion: reduce) { .mt .tw, .mt .drift { animation: none !important; } }
+/* 최근 7일 토큰 — 하루 한 칸 · Claude(아래) · Codex(위) 쌓은 막대 · 위에 그날 합 · 아래 요일 */
+.tok { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; padding-top: 2px; }
+.tok .col { display: flex; flex-direction: column; align-items: center; min-width: 0; }
+.tok .stack { display: flex; flex-direction: column-reverse; width: 100%; max-width: 22px; height: 48px; border-bottom: 1px solid rgba(255, 255, 255, 0.14); }
+.tok .stack span { flex: none; min-height: 1px; }
+.tok .stack span.claude { background: #d97757; }
+.tok .stack span.codex { background: #3b82f6; }
+.tok .stack span:last-child { border-top-left-radius: 2px; border-top-right-radius: 2px; }
+.tok small { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.tok small.n { min-height: 14px; font-size: 9.5px; }
+.tok small.today { color: var(--text); font-weight: 600; }
+.legend { display: flex; gap: 10px; padding: 4px 0 8px; color: var(--muted); font-size: 10.5px; }
+.legend span::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 5px; border-radius: 2px; vertical-align: 0; }
+.legend .claude::before { background: #d97757; }
+.legend .codex::before { background: #3b82f6; }

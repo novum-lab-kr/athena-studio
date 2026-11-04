@@ -1,7 +1,8 @@
 // 맥 상단 메뉴 막대(Tray) — 무엇을 보여 주고 언제 알릴지. Electron 없이 돌아 `npm test` 로 검사한다
-// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(cards · header.usage) · 사람에게 묻는 요청(request list)
+// 재료: 데몬 pane 목록(agent · agent_status) · 작업 공간 이름 · 아테나 현황판 /api/state(header.usage) · 사람에게 묻는 요청(request list)
 import { createRequire } from 'node:module'
 import * as i18n from './i18n.mts'
+import { dayKey, lastDays } from './daily-tokens.mts'
 
 // 문구 — say(키, 자리 값). 사전 · 자리 채우기는 i18n.mts
 export type Say = (key: string, values?: Record<string, unknown>) => string
@@ -14,17 +15,13 @@ const KOREAN: Dictionary = require('../i18n/ko.json')
 // 데몬 pane 에서 읽는 칸만
 export type TrayPane = { id: string; label?: string; agent?: string; agent_status?: string; workspace_id?: string }
 type Workspace = { id: string; label: string }
-// 현황판 카드에서 읽는 칸만(main 이 /api/state 를 그대로 넘긴다 — 모양은 검사하지 않는다)
-type LinkedPlan = { id?: unknown; grade?: string; status?: string; doneAt?: unknown }
-type TrayCard = { id?: string; kind?: string; title?: string; status?: string; html?: string | null; archived?: boolean; column?: string; doneAt?: unknown; mtime?: unknown; linkedPlan?: LinkedPlan }
 type TrayRequest = { id: string; kind?: string; title: string; state?: string; pane?: unknown; permission?: boolean }
 // 현황판 header.usage — 도구마다 창(5시간 · 주간 …)
 type UsageWindow = { label?: string; minutes?: unknown; percent?: unknown; resetsAt?: ResetsAt }
 type UsageTool = { id?: string; label?: string; windows?: UsageWindow[] }
 type ResetsAt = string | number | Date | null | undefined
 
-export type LiveCard = { id: unknown; title: string | undefined; status: string | undefined; html: string | null }
-export type TrayAgent = { id: string; name: string; workspace: string; status: string }
+export type TrayAgent = { id: string; name: string; branch: string; workspace: string; status: string }
 export type UsageItem = { tool: string | undefined; toolId: string; window: string | undefined; percent: number; reset: string }
 export type Notice = { kind: string; title: string; body: string; target: { pane?: string; request?: string } }
 
@@ -39,80 +36,40 @@ export function agentName(pane: TrayPane): string {
   return label || pane.agent || pane.id
 }
 
-// 계획서 단위로 펴기 — 계획서 카드 + 이슈 카드에 합쳐진 계획서(issue.linkedPlan · 제목은 이슈 것)
-export function liveCards(cards: unknown): LiveCard[] {
-  const plans: LiveCard[] = []
-  const list: (TrayCard | null | undefined)[] = Array.isArray(cards) ? cards : []
-  for (const card of list) {
-    if (!card || card.archived) continue
-    if (card.kind === 'plan') plans.push({ id: card.id, title: card.title, status: card.status, html: card.html || null })
-    else if (card.kind === 'issue' && card.linkedPlan) {
-      const plan = card.linkedPlan
-      // 정식 계획서만 결정 콘솔(html)이 있다
-      const html = plan.grade === 'formal' && typeof plan.id === 'string' ? plan.id.replace(/\.md$/, '.html') : null
-      plans.push({ id: plan.id, title: card.title, status: plan.status, html })
-    }
-  }
-  return plans
-}
-
-// 칸반 칸별 수 — 현황판이 보여 주는 카드(이슈 · 계획서) 그대로
-function columnCounts(cards: unknown): Record<string, number> {
-  const columns: Record<string, number> = {}
-  const list: (TrayCard | null | undefined)[] = Array.isArray(cards) ? cards : []
-  for (const card of list) {
-    if (!card || card.archived || !card.column) continue
-    columns[card.column] = (columns[card.column] || 0) + 1
-  }
-  return columns
+// 브랜치 — delegate 이름표 '🤖 에이전트 · 브랜치'(athena/scripts/delegate.sh)의 ' · ' 뒤. 이름표가 없거나 브랜치가 없으면 ''
+export function agentBranch(pane: TrayPane): string {
+  const label = String(pane.label || '')
+  if (!label.startsWith('🤖')) return ''
+  const at = label.indexOf(' · ')
+  return at < 0 ? '' : label.slice(at + 3).trim()
 }
 
 type SummaryInput = {
   panes?: (TrayPane | null | undefined)[]
   workspaces?: Workspace[]
-  cards?: unknown
-  requests?: unknown
   usage?: unknown
   boardUp?: boolean
-  waitMs?: number | null
   now?: number
   say?: Say
 }
 
 // 메뉴 · 아이콘 제목에 쓸 요약
-export function summarize({ panes = [], workspaces = [], cards = [], requests = [], usage = [], boardUp = false, waitMs = null, now = Date.now(), say = koreanSay }: SummaryInput = {}) {
+export function summarize({ panes = [], workspaces = [], usage = [], boardUp = false, now = Date.now(), say = koreanSay }: SummaryInput = {}) {
   const names = new Map<string | undefined, string>(workspaces.map((workspace) => [workspace.id, workspace.label]))
   const agents: TrayAgent[] = panes
     .filter((pane): pane is TrayPane => Boolean(pane && pane.agent))
-    .map((pane) => ({ id: pane.id, name: agentName(pane), workspace: names.get(pane.workspace_id) || '', status: pane.agent_status || 'idle' }))
+    .map((pane) => ({ id: pane.id, name: agentName(pane), branch: agentBranch(pane), workspace: names.get(pane.workspace_id) || '', status: pane.agent_status || 'idle' }))
   // 입력 대기 먼저, 그다음 일하는 것 — 데몬의 입력 대기(waiting)를 그대로 쓰고, 메뉴 막대는 옛 데몬의 화면 판정도 보완한다
   const rank: Record<string, number> = { waiting: 0, working: 1 }
   agents.sort((left, right) => (rank[left.status] ?? 2) - (rank[right.status] ?? 2))
-  const plans = liveCards(cards)
-  const blockedCards = plans.filter((card) => card.status === 'blocked')
-  const reviewCards = plans.filter((card) => card.status === 'ready_for_review')
-  // 확인 필요 = 사람에게 묻는 요청(아직 답하지 않은 것)만 — 막힌 계획서 · 리뷰 상태는 칸반 숫자에서만 보인다(상태 글자로 추측하지 않는다)
-  const requestList: (TrayRequest | null | undefined)[] = Array.isArray(requests) ? requests : []
-  const waiting = requestList.filter((request): request is TrayRequest => Boolean(request && request.state === 'open'))
-  const attention = waiting.map((request) => ({ kind: 'request', mark: '?', id: request.id, requestKind: request.kind, text: request.title }))
-  const counts = {
-    working: agents.filter((agent) => agent.status === 'working').length,
-    blocked: blockedCards.length,
-    review: reviewCards.length,
-    asking: waiting.length,
-  }
-  const columns = columnCounts(cards)
+  // 일하는 에이전트 수 — 아이콘 눈 색 · 툴팁(막힘 · 리뷰 수는 빼기로 — 사용자 2026-11-04)
+  const counts = { working: agents.filter((agent) => agent.status === 'working').length }
   const idle = agents.filter((agent) => agent.status !== 'working' && agent.status !== 'waiting').length
   return {
     counts,
-    // 지난 7일 평균 답 대기(현황판 지표) — 확인 필요 머리줄에 붙인다. 현황판이 꺼졌거나 기록이 없으면 ''
-    avgWait: boardUp && typeof waitMs === 'number' ? say('tray.attention.avgWait', { time: waitText(waitMs, say) }) : '',
-    // 패널이 몇 줄 보일지 정한다(확인 필요 3줄 + n개 더 · 에이전트는 작업 공간별로 전부, 칸 안 스크롤)
-    attention,
+    // 에이전트는 전부(패널이 칸 안에서 스크롤)
     agents,
     usageItems: usageItems(usage, now, say),
-    done24: doneByHour(cards, now),
-    columns,
     idleAgents: idle,
     waitingAgents: agents.filter((agent) => agent.status === 'waiting').length,
     boardUp,
@@ -134,32 +91,6 @@ export function resetClock(resetsAt: ResetsAt, now: number = Date.now(), say: Sa
   if (days <= 0) return time
   if (days === 1) return say('time.tomorrow', { time })
   return `${say(`time.weekday.${date.getDay()}`)} ${time}`
-}
-
-// 걸린 시간 짧게 — 1시간 안은 분, 2일 안은 시간(소수 한 자리), 그 뒤는 일
-export function waitText(ms: number, say: Say = koreanSay): string {
-  if (ms < HOUR_MS) return say('time.minutes', { n: Math.max(1, Math.round(ms / 60000)) })
-  if (ms < 48 * HOUR_MS) return say('time.hours', { n: Math.round(ms / HOUR_MS * 10) / 10 })
-  return say('time.days', { n: Math.round(ms / (24 * HOUR_MS) * 10) / 10 })
-}
-
-// 최근 24시간 완료 — 완료 칸 카드를 완료로 바뀐 시각(doneAt · 이슈는 붙은 계획서 것)으로 한 시간씩 24칸(마지막 칸이 지금).
-// doneAt 이 없으면(사건 기록 전에 끝난 것) 마지막으로 바뀐 시각(mtime)
-export function doneByHour(cards: unknown, now: number = Date.now()): { hours: number[]; total: number } {
-  const hours: number[] = new Array(24).fill(0)
-  let total = 0
-  const list: (TrayCard | null | undefined)[] = Array.isArray(cards) ? cards : []
-  for (const card of list) {
-    if (!card || card.archived || card.column !== 'done') continue
-    const at = Number(card.doneAt || card.linkedPlan?.doneAt) || card.mtime
-    if (typeof at !== 'number') continue
-    const age = now - at
-    if (age < 0 || age >= 24 * HOUR_MS) continue
-    const slot = 23 - Math.floor(age / HOUR_MS)
-    hours[slot] = (hours[slot] ?? 0) + 1
-    total += 1
-  }
-  return { hours, total }
 }
 
 // 창 이름 — 현황판이 준 창 길이(분)로 지금 언어에 맞춰 짓는다. 길이가 없으면(옛 코어) 현황판이 준 label(한국어) 그대로
@@ -187,6 +118,85 @@ export function usageItems(usage: unknown, now: number = Date.now(), say: Say = 
   return items
 }
 
+
+// 일한 시간 — 날마다 10분 한 칸 144개(0시 0분 칸부터 · 현지 시각). 칸 값은 그 10분 동안 에이전트들이 일한 시간의 합(에이전트·분):
+// 4초마다 잴 때 일하는 에이전트 수 × 4초를 그 칸에 더한다(동시 최대가 아니다 — 사용자 2026-11-05).
+// 오늘 · 어제 · 그저께 3일치만 들고 간다 — 더 오래된 날은 버린다(패널의 산 그림이 세 날을 겹쳐 그린다)
+export const DAY_SLOTS = 144
+export const ACTIVITY_DAYS = 3
+export const SAMPLE_SECONDS = 4
+// 저장 형식 — 옛 파일({ day, bins } · 칸 값 = 동시 최대)은 뜻이 달라 섞지 않고 버린다
+export const ACTIVITY_FORMAT = 2
+export type DayActivity = { day: string; bins: number[] }
+export type ActivityLog = { format: typeof ACTIVITY_FORMAT; days: DayActivity[] }
+
+// 그날 몇 번째 10분 칸인지(0~143)
+export function daySlot(now: number): number {
+  const date = new Date(now)
+  return Math.min(DAY_SLOTS - 1, Math.floor((date.getHours() * 60 + date.getMinutes()) / 10))
+}
+
+// 들고 갈 날짜 — [오늘, 어제, 그저께]
+export function activityDays(now: number): string[] {
+  return lastDays(now, ACTIVITY_DAYS).reverse()
+}
+
+// 3일 밖의 날 · 모양이 다른 날을 걸러 낸다(같은 날이 둘이면 앞의 것)
+function keepDays(days: DayActivity[], now: number): DayActivity[] {
+  const keys = activityDays(now)
+  return keys.map((key) => days.find((day) => day.day === key)).filter((day): day is DayActivity => Boolean(day))
+}
+
+// 잰 값 하나를 오늘 칸에 — 일하는 에이전트 수 × 잰 간격(초)을 분으로 더한다 · 오늘 칸이 없으면 만들고 3일 밖은 버린다(넘긴 log 를 고쳐 돌려준다)
+export function recordActivity(log: ActivityLog | null, now: number, working: number, seconds = SAMPLE_SECONDS): ActivityLog {
+  const day = dayKey(now)
+  const days = keepDays(log ? log.days : [], now)
+  let today = days.find((entry) => entry.day === day)
+  if (!today) {
+    today = { day, bins: new Array<number>(DAY_SLOTS).fill(0) }
+    days.unshift(today)
+  }
+  const slot = daySlot(now)
+  today.bins[slot] = (today.bins[slot] ?? 0) + (Math.max(0, working) * seconds) / 60
+  if (log) {
+    log.days = days
+    return log
+  }
+  return { format: ACTIVITY_FORMAT, days }
+}
+
+// 파일에 쓸 글 — 칸 값은 소수 셋째 자리까지(4초 = 0.0667분이 길게 늘어지지 않게)
+export function serializeActivity(log: ActivityLog): string {
+  const days = log.days.map((day) => ({ day: day.day, bins: day.bins.map((value) => Math.round(value * 1000) / 1000) }))
+  return `${JSON.stringify({ format: log.format, days })}\n`
+}
+
+// 저장한 기록(앱 데이터 폴더 tray-activity.json — main 이 켤 때 읽는다) → 3일 안의 날만. 못 읽음 · 형식이 다름(옛 동시 최대 기록 포함) → null(버린다)
+// 모양이 다른 날은 그날만 버린다
+export function parseActivity(text: string, now: number): ActivityLog | null {
+  let saved: unknown
+  try {
+    saved = JSON.parse(text)
+  } catch {
+    return null
+  }
+  if (!saved || typeof saved !== 'object') return null
+  const { format, days } = saved as { format?: unknown; days?: unknown }
+  if (format !== ACTIVITY_FORMAT || !Array.isArray(days)) return null
+  const valid = days.filter((entry: unknown): entry is DayActivity => {
+    if (!entry || typeof entry !== 'object') return false
+    const { day, bins } = entry as { day?: unknown; bins?: unknown }
+    return typeof day === 'string' && Array.isArray(bins) && bins.length === DAY_SLOTS && bins.every((value) => typeof value === 'number' && Number.isFinite(value) && value >= 0)
+  })
+  return { format: ACTIVITY_FORMAT, days: keepDays(valid, now) }
+}
+
+// 패널에 보낼 세 날 — 오늘은 늘 있다(기록이 없으면 빈 칸) · 어제 · 그저께는 기록이 없으면 null(패널이 그 겹을 그리지 않는다)
+export function activityView(log: ActivityLog | null, now: number): { today: number[]; yesterday: number[] | null; before: number[] | null } {
+  const [today = '', yesterday = '', before = ''] = activityDays(now)
+  const find = (key: string) => (log ? log.days.find((day) => day.day === key)?.bins ?? null : null)
+  return { today: find(today) ?? new Array<number>(DAY_SLOTS).fill(0), yesterday: find(yesterday), before: find(before) }
+}
 
 // 알림 — 사람이 고르거나 답할 것만: pane 의 입력 대기 · 새로 열린 요청(질문 · 결정).
 // 응답 끝남 · 리뷰 · 완료는 알리지 않는다(사용자 2026-10-26 — 알림이 너무 많다). 메뉴 막대 패널 · 칸반 숫자로는 그대로 보인다.

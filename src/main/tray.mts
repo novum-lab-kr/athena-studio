@@ -1,11 +1,13 @@
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 ───────────────────
 // main.js 에서 옮겼다(PR3d) — 화면 문구(say) · 앞 창 찾기(frontCtx) · 열린 팩 창(packWindows) · 지난 창 다시 열기(openSavedWindows)는 setupTray 인자로 받는다
-// 맥 상단 메뉴 막대 아이콘 — 누르면 확인 필요 · 에이전트 · 사용량 · 바로가기. 막힘 · 응답 끝 · 리뷰 대기 · 완료는 맥 알림.
-// 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
+// 맥 상단 메뉴 막대 아이콘 — 일하는 에이전트가 있으면 부엉이 눈이 초록. 누르면 에이전트 · 일한 시간 3일(산) · 사용량 · 최근 7일 토큰.
+// 입력 대기 · 새 요청은 맥 알림. 창이 숨어 있어도 4초마다 pane 목록, 15초마다 현황판 상태(/api/state — 현황판을 띄우지는 않는다)를 본다.
+// 7일 토큰은 워커 스레드(daily-tokens-worker.mts)가 1분마다 대화 기록을 읽어 보낸다.
 // 알림 문구에는 이름 · 작업 공간 · 계획서 제목만(명령 · 지시 내용은 넣지 않는다)
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
+import { Worker } from 'node:worker_threads'
 import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme } from 'electron'
 import type { IpcMainEvent, MenuItemConstructorOptions, NativeImage } from 'electron'
 import * as core from '../lib/core.mts'
@@ -24,8 +26,9 @@ type Workspace = { id: string; label: string }
 type PeekReply = { result?: { panes: TrayPane[]; workspaces: Workspace[]; focused: string | null; text?: unknown } }
 type RequestsState = { supported: boolean; requests: unknown[] }
 // 현황판 /api/state · /api/metrics 에서 읽는 칸만
-type BoardState = { cards?: unknown[]; header?: { usage?: unknown[] } }
-type BoardMetrics = { current?: { waitMs?: unknown } }
+type BoardState = { header?: { usage?: unknown[] } }
+// 워커가 보내는 최근 7일 토큰(src/lib/daily-tokens.mts)
+type DailyTokens = { at: number; days: { day: string; claude: number; codex: number }[] }
 // 알림 대상 — 묶인 알림(trayModel.bundle)의 target 에 계획서 결정 콘솔(html)이 올 수도 있다
 type TrayNotice = Notice & { target: Notice['target'] & { html?: string | null } }
 
@@ -45,23 +48,21 @@ export type TrayCtx = {
   openInBrowser(url: string): void
 }
 
-type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void }
+// claudeProjects · codexSessions — 대화 기록 자리(main.mts 가 pane [상세] 토큰과 같은 것을 준다)
+type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void; claudeProjects: string; codexSessions: string }
 
 const TRAY_ICON_DIR = path.join(import.meta.dirname, '..', 'renderer', 'assets', 'logo')
-const TRAY_WIDTH = 340
+const TRAY_WIDTH = 309 // 안쪽 285px — 산 그림(tray-mountain.ts WIDTH)이 이 폭에 맞춘다
 
-export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: TrayDeps) {
+export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects, codexSessions }: TrayDeps) {
   const trayState = {
     ctx: null as TrayCtx | null,
     dir: null as string | null,
     panes: [] as TrayPane[],
     workspaces: [] as Workspace[],
     focused: null as string | null,
-    boardOkAt: 0,
-    cards: null as unknown[] | null,
     usage: [] as unknown[],
-    waitMs: null as number | null,
-    metricsAt: 0,
+    tokens: null as DailyTokens | null,
     boardUp: false,
     boardAt: 0,
     pausedUntil: 0,
@@ -70,50 +71,70 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
   let trayNotifier = new trayModel.Notifier()
   let tray: Tray | null = null
   let trayWindow: BrowserWindow | null = null
-  const trayHistory: { at: number; working: number }[] = [] // 최근 30분 일하는 에이전트 수(4초마다) — 패널 그래프
+  let trayActivity: trayModel.ActivityLog | null = null // 오늘 · 어제 · 그저께 10분 칸마다 일한 시간(에이전트·분) — 패널 산 그림
+  let savedSlot = -1 // 마지막으로 파일에 쓴 때의 칸 — 칸이 바뀔 때만 쓴다
 
-  function trayIcon(): NativeImage {
-    // 흰 로고를 템플릿으로 — 맥이 밝은 · 어두운 메뉴 막대에 맞춰 칠한다
-    const image = nativeImage.createFromPath(path.join(TRAY_ICON_DIR, 'athena-white-16.png'))
-    const retina = path.join(TRAY_ICON_DIR, 'athena-white-32.png')
-    if (fs.existsSync(retina)) image.addRepresentation({ scaleFactor: 2, buffer: fs.readFileSync(retina) })
-    image.setTemplateImage(true)
-    return image
+  // 일한 시간은 앱을 꺼도 남게 앱 데이터 폴더에 { format, days: [{ day, bins[144] }] } — 켤 때 읽어 3일 밖의 날 · 옛 형식은 버리고,
+  // 10분 칸이 바뀔 때와 앱이 꺼질 때만 쓴다(4초마다 쓰지 않는다). 앱 하나에 하나 — 팩을 바꿔도 이어 센다(앞 창 팩의 일하는 에이전트 수)
+  const activityFile = () => path.join(app.getPath('userData'), 'tray-activity.json')
+  function loadDay() {
+    try {
+      trayActivity = trayModel.parseActivity(fs.readFileSync(activityFile(), 'utf8'), Date.now())
+    } catch {
+      trayActivity = null // 처음 켰거나 못 읽음 — 빈 기록으로
+    }
+  }
+  function saveDay(sync: boolean) {
+    if (!trayActivity) return
+    const text = trayModel.serializeActivity(trayActivity)
+    if (sync) {
+      try {
+        fs.writeFileSync(activityFile(), text)
+      } catch (error) {
+        console.error('[tray] activity save', error)
+      }
+    } else fs.promises.writeFile(activityFile(), text).catch((error) => console.error('[tray] activity save', error))
   }
 
-  // 막힘이 있으면 빨간 점 — 템플릿은 색을 못 써서, 메뉴 막대 색(어두우면 흰색 · 밝으면 검정)으로 칠한 로고에 점을 그린다
-  let badgeCache: { dark: boolean | null; image: NativeImage | null } = { dark: null, image: null }
-  function blockedIcon(): NativeImage {
+  // 부엉이 눈 — 일하는 에이전트가 있으면 초록 눈 + 빛 번짐 · 없으면 로고와 같은 색 눈(어두운 막대 흰색 · 밝은 막대 검정 — 사용자 2026-11-04 · 막힌 계획서 · 열린 요청으로는 켜지 않는다).
+  // 템플릿 아이콘은 색을 못 써서, 메뉴 막대 색(어두우면 흰색 · 밝으면 검정)으로 칠한 로고의 눈 자리만 다시 칠한다
+  const iconCache = new Map<string, NativeImage>()
+  function statusIcon(working: boolean): NativeImage {
     const dark = nativeTheme.shouldUseDarkColors
-    if (badgeCache.image && badgeCache.dark === dark) return badgeCache.image
+    const key = `${dark}:${working}`
+    const cached = iconCache.get(key)
+    if (cached) return cached
     const tint: trayBadge.Rgb = dark ? [255, 255, 255] : [0, 0, 0]
     const image = nativeImage.createEmpty()
     for (const [file, scaleFactor] of [['athena-white-16.png', 1], ['athena-white-32.png', 2]] as const) {
       const source = nativeImage.createFromPath(path.join(TRAY_ICON_DIR, file))
       if (source.isEmpty()) continue
       const { width, height } = source.getSize()
-      image.addRepresentation({ scaleFactor, width, height, buffer: trayBadge.badgeBitmap(source.toBitmap(), width, height, tint) })
+      image.addRepresentation({ scaleFactor, width, height, buffer: trayBadge.owlBitmap(source.toBitmap(), width, height, tint, working ? trayBadge.GREEN : tint, working) })
     }
-    badgeCache = { dark, image }
+    iconCache.set(key, image)
     return image
   }
 
-  let trayBlocked: boolean | null = null
-  function setTrayIcon(blocked: boolean) {
-    if (!tray || trayBlocked === blocked) return
-    trayBlocked = blocked
-    tray.setImage(blocked ? blockedIcon() : trayIcon())
+  let trayWorking: boolean | null = null
+  function setTrayIcon(working: boolean) {
+    if (!tray || trayWorking === working) return
+    trayWorking = working
+    tray.setImage(statusIcon(working))
   }
 
   function createTray() {
     if (tray) return
-    // 메뉴 막대가 밝음 · 어두움으로 바뀌면 빨간 점 아이콘을 다시 칠한다
+    // 메뉴 막대가 밝음 · 어두움으로 바뀌면 아이콘을 다시 칠한다
     nativeTheme.on('updated', () => {
-      if (!trayBlocked) return
-      trayBlocked = null
-      setTrayIcon(true)
+      const working = Boolean(trayWorking)
+      trayWorking = null
+      setTrayIcon(working)
     })
-    const created = new Tray(trayIcon())
+    loadDay()
+    app.on('will-quit', () => saveDay(true))
+    const created = new Tray(statusIcon(false))
+    trayWorking = false
     tray = created
     created.setToolTip('Athena')
     // 누르면 아이콘 아래로 패널(RunCat 처럼). 오른쪽 클릭은 짧은 메뉴
@@ -122,7 +143,19 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
     // 패널은 미리 만들어 둔다(처음 열 때 빈 화면이 잠깐 보이지 않게)
     createTrayWindow()
     pollTray()
-    setInterval(pollTray, 4000)
+    setInterval(pollTray, trayModel.SAMPLE_SECONDS * 1000) // 일한 시간도 이 간격으로 잰다(recordActivity)
+    startTokenWorker()
+  }
+
+  // 최근 7일 토큰 — 대화 기록 읽기는 워커가(메인을 막지 않게). 첫 값이 오기 전에는 패널이 '읽는 중' · 워커가 죽으면 마지막 값 그대로
+  function startTokenWorker() {
+    const worker = new Worker(new URL('./daily-tokens-worker.mts', import.meta.url), { workerData: { claudeDir: claudeProjects, codexDir: codexSessions } })
+    worker.unref()
+    worker.on('message', (data: DailyTokens) => {
+      trayState.tokens = data
+      if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
+    })
+    worker.on('error', (error) => console.error('[tray] daily tokens worker', error))
   }
 
   function createTrayWindow(): BrowserWindow {
@@ -182,10 +215,11 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
 
   function sendTrayUpdate() {
     if (!trayWindow || trayWindow.isDestroyed()) return
+    const now = Date.now()
     trayWindow.webContents.send('tray:update', {
       summary: traySummary(),
-      history: trayHistory.map((entry) => entry.working),
-      boardAt: trayState.boardOkAt,
+      activity: { ...trayModel.activityView(trayActivity, now), slot: trayModel.daySlot(now), at: now },
+      tokens: trayState.tokens,
       pausedUntil: trayState.pausedUntil,
     })
   }
@@ -215,16 +249,14 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
 
   async function pollTray() {
     const ctx = frontCtx()
-    // 앞 창이 바뀌면(다른 팩) 그 팩 기준으로 처음부터 — 알림 판단 · 그래프가 섞이지 않게
+    // 앞 창이 바뀌면(다른 팩) 그 팩 기준으로 처음부터 — 알림 판단이 섞이지 않게(일한 시간은 이어 센다 — loadDay 위 설명)
     if (ctx !== trayState.ctx || (ctx && ctx.athenaDir !== trayState.dir)) {
       trayState.ctx = ctx
       trayState.dir = ctx ? ctx.athenaDir : null
       trayState.panes = []
       trayState.workspaces = []
-      trayState.cards = null
       trayState.usage = []
       trayState.boardAt = 0
-      trayHistory.length = 0
       trayNotifier = new trayModel.Notifier()
       if (ctx) trayNotifier.updateRequests(ctx.requestsNow().supported ? ctx.requestsNow().requests : null, say)
     }
@@ -242,29 +274,23 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
         if (ctx !== trayState.ctx) return
         trayState.workspaces = core.displayWorkspaces(state.result.workspaces, ctx.athenaDir as string)
         trayState.focused = state.result.focused
-        trayHistory.push({ at: Date.now(), working: trayState.panes.filter((pane) => pane.agent && pane.agent_status === 'working').length })
-        while (trayHistory.length && Date.now() - (trayHistory[0]?.at ?? 0) > 30 * 60000) trayHistory.shift()
+        const now = Date.now()
+        trayActivity = trayModel.recordActivity(trayActivity, now, trayState.panes.filter((pane) => pane.agent && pane.agent_status === 'working').length)
+        const slot = trayModel.daySlot(now)
+        if (slot !== savedSlot) {
+          savedSlot = slot
+          saveDay(false)
+        }
       }
       if (Date.now() - trayState.boardAt > 15000) {
         trayState.boardAt = Date.now()
         const board = (await fetchBoardState(ctx.boardPortNow())) as BoardState | null
         trayState.boardUp = Boolean(board)
         if (board) {
-          trayState.boardOkAt = Date.now()
-          trayState.cards = board.cards || []
           trayState.usage = (board.header && board.header.usage) || []
-          // 평균 답 대기(지난 7일 · 현황판 지표) — 자주 바뀌지 않아 5분마다만. 옛 코어(지표 없음)면 404 → 없음
-          if (Date.now() - trayState.metricsAt > 5 * 60000) {
-            trayState.metricsAt = Date.now()
-            const metrics = (await fetchBoardJson(ctx.boardPortNow(), '/api/metrics?days=7')) as BoardMetrics | null
-            trayState.waitMs = metrics && metrics.current && typeof metrics.current.waitMs === 'number' ? metrics.current.waitMs : null
-          }
         } else {
-          // 꺼졌으면 예전 카드 · 사용량 · 평균 대기를 지금 값처럼 보이지 않게
-          trayState.cards = null
-          trayState.usage = []
-          trayState.waitMs = null
-          trayState.metricsAt = 0
+          // 꺼졌으면 예전 사용량을 지금 값처럼 보이지 않게
+              trayState.usage = []
         }
       }
       refreshTray()
@@ -302,18 +328,15 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows }: Tray
   }
 
   function traySummary() {
-    const ctx = trayState.ctx && packWindows.has(trayState.ctx) ? trayState.ctx : null
-    const requests = ctx ? ctx.requestsNow().requests : []
-    return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, cards: trayState.cards || [], requests, usage: trayState.usage, boardUp: trayState.boardUp, waitMs: trayState.waitMs, say })
+    return trayModel.summarize({ panes: trayState.panes, workspaces: trayState.workspaces, usage: trayState.usage, boardUp: trayState.boardUp, say })
   }
 
   function refreshTray() {
     if (!tray) return
     const summary = traySummary()
-    // 아이콘 옆 숫자는 두지 않는다(사용자) — 막힘이 있으면 빨간 점만
-    setTrayIcon(summary.counts.blocked > 0 || summary.counts.asking > 0)
-    const { working, blocked, review } = summary.counts
-    tray.setToolTip(say('tray.tooltip', { working, blocked, review }))
+    // 아이콘 옆 숫자는 두지 않는다(사용자) — 일하는 에이전트가 있으면 초록 눈 · 없으면 메뉴 막대 색 눈
+    setTrayIcon(summary.counts.working > 0)
+    tray.setToolTip(say('tray.tooltip', { working: summary.counts.working }))
   }
 
   // ☰ · 오른쪽 클릭 — 짧은 메뉴

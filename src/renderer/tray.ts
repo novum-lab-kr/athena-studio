@@ -1,29 +1,30 @@
-// 메뉴 막대 패널(★ Codex 추천 · 상태 목록형) — 확인 필요 → 에이전트(두 줄 행) → 사용량(창마다 얇은 막대) → 칸반 숫자 → 최근 24시간 완료 막대그래프.
-// 많으면: 확인 필요 3줄 + 'n개 더' · 에이전트 칸 안 스크롤 · 패널 최대 높이 넘으면 스크롤. 없으면: 한 줄 안내.
+// 메뉴 막대 패널(★ Codex 추천 · 상태 목록형) — 에이전트(두 줄 행) → 일한 시간 3일(산 능선) → 사용량(창마다 얇은 막대) → 최근 7일 토큰(하루 한 칸).
+// 확인할 일 · 칸반 숫자 · 완료 24h 줄은 뺐다(사용자 2026-11-04 — 확인할 일은 [작업] 팝업이 맡는다).
+// 많으면: 에이전트 칸 안 스크롤 · 패널 최대 높이 넘으면 스크롤. 없으면: 한 줄 안내.
 // 글자는 모두 textContent(HTML 로 넣지 않는다)
 import * as StudioI18n from '../lib/i18n.mts'
 import type { Dictionary, Values } from '../lib/i18n.mts'
+import { mountainGraph } from './tray-mountain.ts'
+import type { ActivityDays } from './tray-mountain.ts'
 
 // main 의 i18nPayload(src/main.mts) — 메인 창과 같은 모양
 type TrayI18n = { language: string; dictionary: Dictionary; fallback: Dictionary }
 // main 의 summarize(src/lib/tray-model.mts) 중 패널이 읽는 것 — 그 파일은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
-type TrayAttention = { id: string; requestKind: string | undefined; text: string }
-type TrayAgent = { id: string; name: string; workspace: string; status: string }
+type TrayAgent = { id: string; name: string; branch: string; status: string }
 type TrayUsageItem = { tool: string | undefined; toolId: string; window: string | undefined; percent: number; reset: string }
 type TraySummary = {
   counts: { working: number }
-  avgWait: string
-  attention: TrayAttention[]
   agents: TrayAgent[]
   usageItems: TrayUsageItem[]
-  done24: { hours: number[]; total: number }
-  columns: Record<string, number>
   idleAgents: number
   waitingAgents: number
   boardUp: boolean
 }
-// main 의 sendTrayUpdate(src/main/tray.mts) 중 패널이 읽는 것(history 는 안 읽는다)
-type TrayUpdate = { summary: TraySummary; boardAt: number; pausedUntil: number }
+// 최근 7일 토큰(src/lib/daily-tokens.mts — 워커가 보낸 것) · 첫 값이 오기 전에는 null
+type TrayTokens = { at: number; days: { day: string; claude: number; codex: number }[] }
+// main 의 sendTrayUpdate(src/main/tray.mts) 중 패널이 읽는 것 — activity: 오늘 · 어제 · 그저께 10분 칸 144개마다 일한 시간(에이전트·분 · 기록 없는 날은 null) · slot: 지금 칸(0~143)
+type TrayActivity = ActivityDays & { slot: number; at: number }
+type TrayUpdate = { summary: TraySummary; activity: TrayActivity | null; tokens: TrayTokens | null; pausedUntil: number }
 
 // preload-tray.js 가 여는 trayPanel 전역
 declare global {
@@ -38,18 +39,10 @@ declare global {
 
 // 없으면 그 자리에서 TypeError(옛 JS 와 같다) — 캐스트만
 const $ = <T extends HTMLElement = HTMLElement>(id: string): T => document.getElementById(id) as T
-const ATTENTION_ROWS = 3
 // 문구는 사전(src/i18n) — main 이 preload 로 넘긴다
 let i18nState = trayPanel.i18n()
 const say = (key: string, values?: Values) => StudioI18n.t(i18nState.dictionary, key, values, i18nState.fallback)
 const STATUS_KEYS: Record<string, string> = { working: 'tray.status.working', idle: 'tray.status.idle', waiting: 'tray.status.waiting' }
-const COLUMNS: [string, string][] = [
-  ['issue', 'tray.column.issue'],
-  ['plan', 'tray.column.plan'],
-  ['doing', 'tray.column.progress'],
-  ['review', 'tray.column.review'],
-  ['done', 'tray.column.done'],
-]
 const USAGE_HIGH = 80 // 이 % 넘으면 % 글자를 빨갛게(막대는 도구 색 그대로)
 
 function el<K extends keyof HTMLElementTagNameMap>(tag: K, className?: string, text?: string): HTMLElementTagNameMap[K] {
@@ -72,30 +65,7 @@ function title(text: string, summaryText?: string): HTMLElement {
   return row
 }
 
-// 확인 필요 — 사람에게 묻는 요청만. 제목에 수, 아래 한 줄씩(누르면 앱에서 그 요청 — 질문은 답하기 · 결정은 결정 콘솔)
-function attention(summary: TraySummary): HTMLElement {
-  const items = summary.attention
-  if (!items.length) return el('div', 'att clear', say('tray.attention.none'))
-  const box = el('div', 'att')
-  box.append(el('b', '', `${say('tray.attention.count', { count: items.length })}${summary.avgWait}`))
-  for (const item of items.slice(0, ATTENTION_ROWS)) {
-    const row = el('button', 'it r')
-    row.title = item.text
-    row.append(el('span', 'tx', item.text), el('span', 'go', '›'))
-    row.append(el('em', '', say(`work.kind.${item.requestKind === 'decision' ? 'decision' : 'question'}`)))
-    row.addEventListener('click', () => trayPanel.action('open-request', item.id))
-    box.append(row)
-  }
-  if (items.length > ATTENTION_ROWS) {
-    const more = el('button', 'it')
-    more.append(el('span', 'tx', say('tray.attention.more', { count: items.length - ATTENTION_ROWS })), el('span', 'go', '›'))
-    more.addEventListener('click', () => trayPanel.action('open-work'))
-    box.append(more)
-  }
-  return box
-}
-
-// 에이전트 — 두 줄 행(이름 / 작업 공간) · 오른쪽 상태 · 누르면 그 pane
+// 에이전트 — 한 줄 '[pane ID]브랜치'(브랜치가 없으면 이름) · 길면 끝을 … 으로(툴팁에 전체) · 오른쪽 상태 · 누르면 그 pane
 function agentsBlock(summary: TraySummary): HTMLElement {
   const wrap = el('div', 'agents')
   if (!summary.agents.length) {
@@ -108,9 +78,9 @@ function agentsBlock(summary: TraySummary): HTMLElement {
   }
   for (const agent of summary.agents) {
     const row = el('button', 'ag')
-    row.title = say('tray.agents.rowTitle', { name: `${agent.name}${agent.workspace ? ` · ${agent.workspace}` : ''}` })
-    const name = el('div', 'nm', agent.name)
-    name.append(el('small', '', agent.workspace || say('tray.agents.noWorkspace')))
+    const text = `[${agent.id}]${agent.branch || agent.name}`
+    row.title = say('tray.agents.rowTitle', { name: text })
+    const name = el('div', 'nm', text)
     row.append(el('span', `dot ${agent.status}`), name, el('i', '', STATUS_KEYS[agent.status] ? say(STATUS_KEYS[agent.status]!) : agent.status))
     row.addEventListener('click', () => trayPanel.action('focus-pane', agent.id))
     wrap.append(row)
@@ -149,39 +119,73 @@ function usageBlock(summary: TraySummary): HTMLElement {
   return box
 }
 
-function kanbanBlock(summary: TraySummary): HTMLElement {
-  const box = el('div', 'kb')
-  for (const [key, label] of COLUMNS) {
-    const cell = el('button')
-    cell.title = say('tray.board.view')
-    cell.append(el('b', '', String(summary.columns[key] || 0)), el('small', '', say(label)))
-    cell.addEventListener('click', () => trayPanel.action('show', 'board'))
-    box.append(cell)
-  }
-  return box
+// 토큰 수 짧게 — 980 · 42k · 3.1M(src/lib/token-usage.mts formatTokens 와 같은 규칙)
+function shortTokens(count: number): string {
+  const trim = (text: string) => text.replace(/\.0$/, '')
+  if (count < 1000) return String(Math.round(count))
+  if (count < 1e6) return `${trim((count / 1000).toFixed(count < 10000 ? 1 : 0))}k`
+  if (count < 1e9) return `${trim((count / 1e6).toFixed(count < 1e7 ? 1 : 0))}M`
+  return `${trim((count / 1e9).toFixed(1))}B`
 }
 
-// 최근 24시간 완료 — 한 줄 숫자(추세는 현황판 지표에서)
-function historyBlock(summary: TraySummary): HTMLElement {
-  const done = summary.done24 || { hours: [], total: 0 }
-  return el('div', 'hist', say('tray.done.title', { count: done.total }))
+// 일한 시간 · 3일 — 산 능선 그림(tray-mountain.ts) · 오른쪽 합계는 오늘 일한 시간(에이전트·분 합)
+function spentText(minutes: number): string {
+  const total = Math.round(minutes)
+  const hours = Math.floor(total / 60)
+  const rest = total % 60
+  if (!hours) return say('time.minutes', { n: rest })
+  if (!rest) return say('time.hours', { n: hours })
+  return say('time.hoursMinutes', { h: hours, m: rest })
+}
+function activityBlock(activity: TrayActivity | null): HTMLElement[] {
+  if (!activity) return [title(say('tray.activity.title'))]
+  const spent = activity.today.slice(0, activity.slot + 1).reduce((sum, value) => sum + value, 0)
+  return [title(say('tray.activity.title'), say('tray.activity.summary', { time: spentText(spent) })), mountainGraph(activity, activity.slot, activity.at)]
+}
+
+// 최근 7일 토큰 — 하루 한 칸 · Claude(아래) · Codex(위) 쌓은 막대 · 높이는 7일 중 가장 많은 날 기준 · 아래 요일(마지막은 오늘)
+function tokensBlock(tokens: TrayTokens | null): HTMLElement[] {
+  const head = (summaryText?: string) => {
+    const row = title(say('tray.tokens.title'), summaryText)
+    row.title = say('tray.tokens.basis')
+    return row
+  }
+  if (!tokens) return [head(), el('div', 'empty', say('tray.tokens.loading'))]
+  const totals = tokens.days.map((day) => day.claude + day.codex)
+  const max = Math.max(1, ...totals)
+  const today = totals[totals.length - 1] ?? 0
+  const week = totals.reduce((sum, value) => sum + value, 0)
+  const chart = el('div', 'tok')
+  tokens.days.forEach((day, index) => {
+    const col = el('div', 'col')
+    col.title = say('tray.tokens.dayTitle', { day: day.day, claude: shortTokens(day.claude), codex: shortTokens(day.codex) })
+    const stack = el('div', 'stack')
+    for (const [tool, value] of [['claude', day.claude], ['codex', day.codex]] as const) {
+      if (!value) continue
+      const part = el('span', tool)
+      part.style.height = `${(value / max) * 100}%`
+      stack.append(part)
+    }
+    const last = index === tokens.days.length - 1
+    const weekday = new Date(`${day.day}T12:00:00`).getDay()
+    col.append(el('small', 'n', totals[index] ? shortTokens(totals[index]!) : ''), stack, el('small', last ? 'today' : '', last ? say('tray.tokens.today') : say(`time.weekday.${weekday}`)))
+    chart.append(col)
+  })
+  const legend = el('div', 'legend')
+  legend.append(el('span', 'claude', 'Claude'), el('span', 'codex', 'Codex'))
+  return [head(say('tray.tokens.summary', { today: shortTokens(today), week: shortTokens(week) })), chart, legend]
 }
 
 function render(data: TrayUpdate): void {
   const { summary } = data
-  const conn = $('conn')
-  conn.textContent = summary.boardUp ? say('tray.connected') : say('tray.disconnected')
-  conn.classList.toggle('off', !summary.boardUp)
-  conn.title = say('tray.board.checkedAt', { time: clock(data.boardAt) })
-
-  const parts = [attention(summary)]
+  const parts: HTMLElement[] = []
   const waitingNote = summary.waitingAgents ? say('tray.agents.waiting', { count: summary.waitingAgents }) : ''
   parts.push(title(say('tray.agents.title'), `${say('tray.agents.summary', { working: summary.counts.working, idle: summary.idleAgents })}${waitingNote}`))
   parts.push(agentsBlock(summary))
+  parts.push(...activityBlock(data.activity))
   parts.push(title(say('tray.usage.title')))
   parts.push(usageBlock(summary))
-  // 현황판이 꺼져 있으면 칸반 · 완료 그래프는 숨긴다(0 으로 보이지 않게)
-  if (summary.boardUp) parts.push(kanbanBlock(summary), historyBlock(summary))
+  parts.push(...tokensBlock(data.tokens))
   $('body').replaceChildren(...parts)
 
   // 알림을 일시 중지했을 때만 머리줄에 🔕(언제까지는 마우스를 올리면)
@@ -206,3 +210,7 @@ trayPanel.onLanguage((next) => {
 applyStaticTexts()
 $('menu').addEventListener('click', () => trayPanel.action('menu'))
 trayPanel.onUpdate(render)
+// 패널이 닫히면(창이 숨으면) 구름 · 별 움직임을 멈춘다 — 열면 이어서
+const pauseMotion = () => document.body.classList.toggle('paused', document.hidden)
+document.addEventListener('visibilitychange', pauseMotion)
+pauseMotion()
