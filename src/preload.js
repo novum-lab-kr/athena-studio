@@ -106,6 +106,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   workOpenPlan: (id, html) => ipcRenderer.invoke('work:open-plan', id, html),
   openBoardSection: (section) => ipcRenderer.invoke('board:section', section),
   openDiagrams: () => ipcRenderer.invoke('board:diagrams'),
+  diagramsReady: () => ipcRenderer.invoke('board:diagrams-ready'),
   workDetail: (id) => ipcRenderer.invoke('work:detail', id),
   // pane [상세] — 계획서에 묶인 pane id → agent · lead / 그 pane 의 상세(열려 있는 동안 화면이 다시 부른다)
   paneBound: () => ipcRenderer.invoke('pane:bound'),

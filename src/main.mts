@@ -110,6 +110,7 @@ type MainCalls = {
   openPlan(id: string, html: string | null): Promise<unknown>
   openBoardSection(section: string): Promise<unknown>
   openDiagrams(): Promise<unknown>
+  diagramsReady(): Promise<boolean>
   workDetail(id: string): Promise<unknown>
   paneBound(): unknown
   paneDetail(paneId: string): Promise<unknown>
@@ -961,6 +962,7 @@ handle('work:redeliver', (ctx, id: unknown) => ctx.redeliverRequest(String(id ||
 handle('work:open-plan', (ctx, id: unknown, html: unknown) => ctx.openPlan(String(id || ''), html ? String(html) : null))
 handle('board:section', (ctx, section: unknown) => ctx.openBoardSection(String(section || '')))
 handle('board:diagrams', (ctx) => ctx.openDiagrams())
+handle('board:diagrams-ready', (ctx) => ctx.diagramsReady())
 handle('work:detail', (ctx, id: unknown) => ctx.workDetail(String(id || '')))
 // pane [상세] — 계획서에 묶인 pane(머리 줄 아이콘) · 그 pane 의 상세
 handle('pane:bound', (ctx) => ctx.paneBound())

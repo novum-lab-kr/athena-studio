@@ -142,6 +142,14 @@ export const hasNoPacks = (): boolean => packs.welcome === true
 let welcomeEntered = false
 export const welcomeShown = (): boolean => Boolean(state && state.valid) && (hasNoPacks() || (packs.launchWelcome === true && !welcomeEntered))
 let welcomeWasOn = false
+// 이 창 팩에 서비스 그림이 있나(main work.mts diagramsReady) — 팩을 바꿀 때 · 3초마다(main.ts) 다시 묻고, 바뀌었을 때만 버튼을 다시 정한다
+let diagramsReady = false
+export async function refreshDiagramsReady(): Promise<void> {
+  const next = (await studio.diagramsReady().catch(() => false)) === true
+  if (next === diagramsReady) return
+  diagramsReady = next
+  renderPackWelcome()
+}
 function renderPackWelcome(): void {
   const on = welcomeShown()
   $('pack-welcome').hidden = !on
@@ -149,7 +157,9 @@ function renderPackWelcome(): void {
   // 현황판 · 다이어그램 · 작업 · 설정 · 브라우저 아이콘은 팩에 들어간 뒤에만 — 시작 화면이 뜨면 끄고, 열려 있었으면 닫는다.
   // 이 버튼들은 여기 한 곳에서만 정한다(renderState 도 renderPackRail → 여기를 부른다 — 같은 팩으로 들어갈 때 일부만 켜지던 것)
   const packOff = !state || !state.valid || on
-  for (const id of ['board-tab', 'diagrams-open', 'work-tab', 'settings-tab']) $<HTMLButtonElement>(id).disabled = packOff
+  for (const id of ['board-tab', 'work-tab', 'settings-tab']) $<HTMLButtonElement>(id).disabled = packOff
+  // 다이어그램은 팩에 서비스 그림이 있을 때만 켠다(refreshDiagramsReady)
+  $<HTMLButtonElement>('diagrams-open').disabled = packOff || !diagramsReady
   $<HTMLButtonElement>('browser-toggle').disabled = on
   if (on && browserOpen) closeBrowserPanel()
   // 처음 뜰 때만 접는다(시작 화면에서 직접 펴면 그대로 · 저장된 접기 설정은 건드리지 않는다)
@@ -239,6 +249,7 @@ async function openOrSwitchPack(id: string, { newWindow, name }: { newWindow: bo
 // 다녀온 팩이면 보던 자리 그대로(keepView)
 export async function applySwitchedPack(next: AthenaState): Promise<void> {
   setState(next)
+  refreshDiagramsReady()
   enterWelcome() // 시작 화면에서 바꿨으면 닫고 모니터를 펼친다
   if (browserOpen) closeBrowserPanel()
   renderState()

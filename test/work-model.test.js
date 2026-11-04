@@ -125,3 +125,16 @@ test('상세: 고치지 않은 템플릿 자리 줄은 진행 칸으로 세지 �
   assert.deepEqual(work.planDetail(text).progress, { checked: 1, total: 2, now: '(작업) → 확인: (방법) → 성공 조건: (기대 결과)' })
   assert.deepEqual(work.planDetail(text, [placeholder]).progress, { checked: 1, total: 1, now: '' })
 })
+
+test('다이어그램 버튼: 그린 장이 있는 서비스 카드가 있을 때만 켠다', () => {
+  const files = new Set(['web.sequence.html', 'api.pay.sequence.html'])
+  const exists = (file) => files.has(file)
+  // init 뼈대처럼 카드만 있고 그린 장이 없으면 끈다
+  assert.equal(work.hasServiceDiagram({ groups: [{ title: '서비스', items: [{ base: 'none', name: 'none' }] }] }, exists), false)
+  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ base: 'web' }] }] }, exists), true)
+  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ base: 'api', extra: [{ file: 'api.pay.sequence.html', label: '결제' }] }] }] }, exists), true)
+  // 망가진 목록 · 팩 밖 경로는 그림으로 치지 않는다
+  assert.equal(work.hasServiceDiagram(null, exists), false)
+  assert.equal(work.hasServiceDiagram({ groups: 'x' }, exists), false)
+  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ extra: [{ file: '../web.sequence.html' }, { file: '/web.sequence.html' }] }] }] }, () => true), false)
+})

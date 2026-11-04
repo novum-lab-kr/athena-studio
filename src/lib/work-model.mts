@@ -151,3 +151,25 @@ export function planDetail(text: unknown, templateLines: string[] = []): PlanDet
     blocked: blocked[0] || '',
   }
 }
+
+// 다이어그램 버튼 — 팩 pack/diagrams/index.json 에 그린 장이 있는 서비스 카드가 하나라도 있나.
+// 카드 기준은 코어 athena/scripts/build-diagram-index.mjs 와 같다(시스템 개요 · 시퀀스 · extra · 옛 화면 맵 중 파일이 있는 장).
+// 파일 이름은 팩 안 상대 .html 만(그 스크립트의 link 와 같은 검사) — exists 는 pack/diagrams 기준 상대 경로를 받는다
+const safeDiagramFile = (file: unknown): file is string =>
+  typeof file === 'string' && file.endsWith('.html') && !file.includes('\\') && !/^\/|:/.test(file) && file.split('/').every((part) => part && part !== '.' && part !== '..')
+
+export function hasServiceDiagram(manifest: unknown, exists: (file: string) => boolean): boolean {
+  const groups = manifest && typeof manifest === 'object' ? (manifest as { groups?: unknown }).groups : null
+  if (!Array.isArray(groups)) return false
+  return groups.some((group: unknown) => {
+    const items = group && typeof group === 'object' ? (group as { items?: unknown }).items : null
+    if (!Array.isArray(items)) return false
+    return items.some((item: unknown) => {
+      if (!item || typeof item !== 'object') return false
+      const { base, extra } = item as { base?: unknown; extra?: unknown }
+      const extras = Array.isArray(extra) ? extra.map((entry: unknown) => (entry && typeof entry === 'object' ? (entry as { file?: unknown }).file : null)) : []
+      const files = typeof base === 'string' ? [`${base}.html`, `${base}.sequence.html`, `${base}.domains.html`, ...extras] : extras
+      return files.some((file) => safeDiagramFile(file) && exists(file))
+    })
+  })
+}

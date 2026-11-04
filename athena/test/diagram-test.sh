@@ -28,13 +28,13 @@ try {
   put('pack/diagrams/mono/web.html', '<html>첫 앱</html>')
   put('pack/diagrams/other/web.html', '<html>둘째 앱</html>')
   put('docs/diagrams/athena-flow-light.html', '<html>기존 흐름</html>')
-  check('생성된 서비스만 목록에 포함하고 기존 메뉴 목적지를 유지', () => {
+  check('생성된 서비스만 목록에 포함하고 아테나 작업 흐름 카드는 싣지 않는다', () => {
     const result = run('build-diagram-index.mjs')
     assert.equal(result.status, 0, result.stderr)
     const html = readFileSync(join(root, 'docs/diagrams/index.html'), 'utf8')
     assert.match(html, /작은 &lt;표본&gt;/)
     assert.doesNotMatch(html, /없는 장/)
-    assert.match(html, /athena-flow-light.html/)
+    assert.doesNotMatch(html, /athena-flow-light.html|athena-flow-formal.html|athena-compact.html|작업 흐름/)
     const href = [...html.matchAll(/href="([^"]+)"/g)].map(match => match[1]).find(href => href.endsWith('sample.html'))
     assert.ok(href)
     assert.ok(existsSync(resolve(root, 'docs/diagrams', href)))

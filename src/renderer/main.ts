@@ -7,7 +7,7 @@ import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
-import { hasNoPacks, openNoPacks, packRailActions, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
+import { hasNoPacks, openNoPacks, packRailActions, refreshDiagramsReady, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
 import { initTips } from './tips.ts'
 import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
 import { applySideFolds, closePreview, explorerActions, setPanelHidden } from './side-panels.ts'
@@ -29,6 +29,7 @@ async function initPacks(): Promise<void> {
   StudioUi.packProgress.mount($('pack-progress').querySelector('.pack-box') as HTMLElement)
   studio.onPackState((next) => {
     refreshPackRepos()
+    refreshDiagramsReady()
     setPacks(next)
     renderPackRail()
   })
@@ -43,6 +44,7 @@ async function initPacks(): Promise<void> {
 // 본체가 정해진 뒤 — 팩이 하나도 없으면 두 가지만 보여 준다
 async function afterAthenaReady(): Promise<void> {
   if (!state || !state.valid) return
+  refreshDiagramsReady()
   await refreshPackList()
   if (!packs.supported) return
   if (hasNoPacks()) openNoPacks()
@@ -203,6 +205,8 @@ async function init(): Promise<void> {
     if (currentTab === 'work' && !$('side-panel').hidden && attached) StudioUi.explorer.refresh()
     // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
     if (attached) refreshPackRepos()
+    // 다이어그램 버튼 — /diagram 으로 처음 그리면 켜지게(작은 파일 하나 읽기)
+    if (attached) refreshDiagramsReady()
   }, 3000)
   studio.onScreenResync(() => state!.valid && reattachScreen())
   studio.onScreenDisconnected(() => {

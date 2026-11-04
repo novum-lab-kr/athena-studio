@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 // @ts-check
 // docs/diagrams/index.html 을 실제 파일 목록에서 만든다.
-// 팩 서비스 카드와 기존 아테나 작업 흐름을 함께 보여 준다.
+// 팩 서비스 카드만 보여 준다(아테나 작업 흐름 그림 athena-flow-*.html 은 이 목록에 싣지 않는다).
 //   node scripts/build-diagram-index.mjs
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -11,7 +11,7 @@ import { paths } from './lib/config.mjs';
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '..');
 const DIR = join(ROOT, 'docs/diagrams');
 
-// 팩 경로는 공통 설정 해석기를 따른다. 팩이 없는 코어에서도 기존 흐름 목록은 만든다.
+// 팩 경로는 공통 설정 해석기를 따른다. 팩이 없는 코어에서도 (빈) 목록은 만든다.
 const packDir = paths(ROOT).packDir;
 const serviceDir = packDir ? join(packDir, 'diagrams') : DIR;
 const manifest = join(serviceDir, 'index.json');
@@ -106,29 +106,8 @@ const html = `<!doctype html>
 <body>
   <div class="wrap">
     <h1>아테나 다이어그램</h1>
-    <p class="lead">서비스 시스템 개요·시퀀스 다이어그램과 아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.</p>
+    <p class="lead">서비스 시스템 개요·시퀀스 다이어그램을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.</p>
     ${serviceSections}
-    <h2>작업 흐름</h2>
-    <div class="grid">
-      <div class="card">
-        <div class="t">작업 흐름 · 경량</div>
-        <div class="s">대부분의 작업 — 레포 하나</div>
-        <div class="d">요청 → 판단(📋 경량) → 계획서 자동 기록 → 에이전트 pane → 작업·커밋 → 리뷰 → PR. 승인 단계 없이 pane 에서 끝까지 간다.</div>
-        <div class="pills"><a class="pill" href="athena-flow-light.html">열기</a></div>
-      </div>
-      <div class="card">
-        <div class="t">작업 흐름 · 정식</div>
-        <div class="s">여러 레포 · API · 구조 변경</div>
-        <div class="d">요청 → 판단(📋 정식) → 정식 계획서 → 결정 콘솔 [이대로 진행] 승인 → 순차 디스패치 → 아테나 교차 리뷰·PR → 보고. 공통 규칙·재개·정리 카드 포함.</div>
-        <div class="pills"><a class="pill" href="athena-flow-formal.html">열기</a></div>
-      </div>
-      <div class="card">
-        <div class="t">대화 압축 전후 자동 저장</div>
-        <div class="s">긴 작업이 압축돼도 하던 일을 잃지 않게</div>
-        <div class="d">압축 직전 훅이 계획서 Checkpoint 에 상태 한 줄 → Claude Code 압축(요약은 그대로) → 압축 직후 "계획서부터 다시 읽어라" 안내. 훅이 없으면 생기는 일 포함.</div>
-        <div class="pills"><a class="pill" href="athena-compact.html">열기</a></div>
-      </div>
-    </div>
     <footer>
       원본 스펙은 <code>docs/diagrams/*.json</code> 이고 <a href="https://github.com/tt-a1i/archify">Archify</a> 로 생성한다.
       이 목록은 <code>node scripts/build-diagram-index.mjs</code> 로 다시 만든다 — 카드를 손으로 늘리지 않는다.
@@ -139,4 +118,4 @@ const html = `<!doctype html>
 </html>
 `;
 writeFileSync(join(DIR, 'index.html'), html);
-console.log('✅ index.html — 팩 서비스 + 아테나 흐름 3(경량·정식·압축 전후)');
+console.log('✅ index.html — 팩 서비스');

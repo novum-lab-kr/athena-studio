@@ -3,7 +3,7 @@
 // 메뉴 막대 알리기(trayRequestsChanged) · 앱 설정(appConfig · saveAppConfig)은 인자로 받는다.
 // 이 창 현황판 포트(packBoardPort)와 요청 목록(requestsState)은 main.mts 의 창 변수 그대로 — 데몬 연결 · pane [상세] · 팩 바꾸기도 읽고 쓴다(읽기 · 쓰기 함수로 받는다).
 // ctx 에 같은 이름(boardPortNow · openBoardExternal · ensureBoard · refreshRequests · requestsNow · stopRequests · watchRequests · workState ·
-// answerRequest · redeliverRequest · openPlan · openBoardSection · openDiagrams · workDetail · prepareBoardPort)으로 붙인다
+// answerRequest · redeliverRequest · openPlan · openBoardSection · openDiagrams · diagramsReady · workDetail · prepareBoardPort)으로 붙인다
 import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
@@ -56,6 +56,7 @@ export type WorkCtx = {
   openInBrowser?: (url: string) => void
   openBoardSection?: unknown
   openDiagrams?: unknown
+  diagramsReady?: unknown
   workDetail?: unknown
   prepareBoardPort?: () => void
 }
@@ -353,6 +354,15 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!fs.existsSync(file)) return { ok: false, error: 'missing' }
     const failure = await shell.openPath(file)
     return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
+  }
+  // 다이어그램 버튼을 켤지 — 목록(docs/diagrams/index.html)이 있고 팩 pack/diagrams/index.json 에 그린 장이 있는 서비스 카드가 있을 때만.
+  // 화면이 팩을 바꿀 때 · 3초마다 묻는다(/diagram 으로 처음 그린 뒤에도 따라오게 — 작은 파일 하나 읽기)
+  ctx.diagramsReady = async () => {
+    if (!ctx.athenaDir) return false
+    if (!fs.existsSync(path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html'))) return false
+    const dir = path.join(ctx.athenaDir, 'pack', 'diagrams')
+    const manifest: unknown = await fs.promises.readFile(path.join(dir, 'index.json'), 'utf8').then(JSON.parse).catch(() => null)
+    return workModel.hasServiceDiagram(manifest, (file) => fs.existsSync(path.join(dir, file)))
   }
 
   // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만

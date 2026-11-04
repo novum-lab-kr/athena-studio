@@ -313,9 +313,10 @@ declare global {
     workDetail(id: string): Promise<WorkDetailReply>
     // 트레이에서 요청을 누르면(src/main/tray.mts openRequestFromTray) — id 가 없으면 [작업] 팝업
     onWorkOpen(callback: (id: string | null) => void): () => void
-    // 현황판 페이지 메뉴(work.mts openBoardSection · openDiagrams)
+    // 현황판 페이지 메뉴(work.mts openBoardSection · openDiagrams · diagramsReady — 다이어그램 버튼을 켤지)
     openBoardSection(section: string): Promise<unknown>
     openDiagrams(): Promise<{ ok: boolean; error?: string; message?: string }>
+    diagramsReady(): Promise<boolean>
     // pane [상세] 아이콘을 달 pane(src/main/pane-watch.mts paneBound — lib/pane-detail.mts bindings)
     paneBound(): Promise<Record<string, 'agent' | 'lead'>>
     onPaneBound(callback: (next: Record<string, 'agent' | 'lead'>) => void): () => void
