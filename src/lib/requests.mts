@@ -164,3 +164,70 @@ export function permissionView(request: StudioRequest, say: (key: string, values
   return { ...request, title: say(`work.permission.title.${kind}`, { pane: String(request.pane || '') }),
     body: `${say(`work.permission.body.${kind}`)}\n\n${say('work.permission.unavailable')}`, options: [], answer: null }
 }
+
+// Codex app-server 승인 · 질문(src/lib/codex-approvals.mts)을 화면 요청으로. 제목은 맥 알림 · 트레이 · [작업] 목록이 그대로 쓰므로
+// 명령 · 경로 원문을 넣지 않는다 — 승인은 Claude 허락과 같은 가린 제목, 질문은 코어 질문(Claude AskUserQuestion)과 같은 질문 글.
+// 무엇을 허락하는지는 승인 대화상자(src/renderer/detail.ts)가 body 로 보여 준다
+type ApprovalLike = { token: string; generation: string; pane: string; method: string; params: Record<string, unknown>; receivedAtMs?: number; item?: unknown; choices: NonNullable<StudioRequest['codexApproval']>['choices'] }
+const APPROVAL_BODY_SKIP: readonly string[] = ['threadId', 'turnId', 'itemId', 'approvalId', 'startedAtMs', 'reason', 'message', 'command', 'cwd', 'availableDecisions', 'proposedExecpolicyAmendment', 'proposedNetworkPolicyAmendments', 'questions', 'isBlocking', 'autoResolutionMs']
+
+function questionTexts(params: Record<string, unknown>): string[] {
+  const questions: unknown[] = Array.isArray(params.questions) ? params.questions : []
+  return questions.map((question) => isLoose(question) && 'question' in question ? String(question.question) : '')
+}
+
+export function codexApprovalRequest(approval: ApprovalLike, say: (key: string, values?: Record<string, unknown>) => string, now: number): StudioRequest {
+  const { params } = approval
+  const firstQuestion = (questionTexts(params)[0] || '').trim()
+  const asking = approval.method === 'item/tool/requestUserInput' && firstQuestion
+  const extra = JSON.stringify(Object.fromEntries(Object.entries(params).filter(([key]) => !APPROVAL_BODY_SKIP.includes(key))), null, 2)
+  return {
+    id: `codex-approval:${approval.token}`, kind: 'question', permission: true, pane: approval.pane,
+    title: asking ? firstQuestion : say('work.permission.title.permission', { pane: approval.pane }),
+    body: [params.reason, params.message, params.command, params.cwd, ...questionTexts(params), extra, approval.item && JSON.stringify(approval.item, null, 2)]
+      .filter((value) => typeof value === 'string' && value !== '{}').join('\n\n'),
+    options: [], plan: null, html: null, state: 'open', rev: 1,
+    createdAt: new Date(typeof params.startedAtMs === 'number' ? params.startedAtMs : approval.receivedAtMs ?? now).toISOString(), answer: null,
+    codexApproval: { token: approval.token, generation: approval.generation, thread: String(params.threadId), choices: approval.choices },
+  }
+}
+
+// Codex 도 PermissionRequest 훅(permission-to-request.py)을 불러 같은 건의 코어 perm:<pane> 요청이 몇 초 뒤 열리고(GRACE 4초),
+// 메뉴가 사라진 뒤 두 번 읽어야 닫힌다(POLL 2초 · pane_request.py). 그 사이의 화면 감지 요청도 같은 건이다
+export const CODEX_PAIR_SLACK_MS = 10_000
+
+// 화면에 보일 요청 — Codex 승인(app-server)이 정본이고 같은 건의 코어 허락 요청 · 화면 감지 요청은 숨긴다.
+// seen 은 pane 마다 Codex 승인이 마지막으로 떠 있던 때 — 답해서 승인이 사라진 뒤에도 그때까지 생긴 허락 요청은 같은 건으로 본다(검수 #13)
+export function mergeRequests(input: { core: StudioRequest[]; tracker: StudioRequest[]; approvals: ApprovalLike[]; seen: Map<string, number>; now: number; say: (key: string, values?: Record<string, unknown>) => string }): StudioRequest[] {
+  const { core, tracker, approvals, seen, now, say } = input
+  for (const approval of approvals) seen.set(approval.pane, now)
+  const livePanes = new Set(approvals.map((approval) => approval.pane))
+  const sameCase = (request: StudioRequest) => {
+    const pane = String(request.pane || '')
+    if (livePanes.has(pane)) return true
+    const last = seen.get(pane)
+    return last !== undefined && Date.parse(request.createdAt) <= last + CODEX_PAIR_SLACK_MS
+  }
+  const hidden = new Set<string>()
+  const visibleCore: StudioRequest[] = []
+  const visibleTracker: StudioRequest[] = []
+  for (const request of core) {
+    if (request.permission && sameCase(request)) hidden.add(String(request.pane))
+    else visibleCore.push(request)
+  }
+  for (const request of tracker) {
+    if (sameCase(request)) hidden.add(String(request.pane))
+    else visibleTracker.push(request)
+  }
+  // 승인이 없고 숨길 것도 남지 않은 pane 은 잊는다 — 그 뒤의 새 허락은 그대로 보인다
+  for (const pane of [...seen.keys()]) if (!livePanes.has(pane) && !hidden.has(pane)) seen.delete(pane)
+  // Codex request_user_input 은 훅(ask-to-request.py → 코어 질문)과 app-server 로 두 번 온다 — 같은 pane 같은 질문이 코어에 있으면 코어 쪽만(검수 #15)
+  const coreQuestions = new Set(core.filter((request) => !request.permission).map((request) => `${request.pane}\n${request.title}`))
+  const codex = approvals.map((approval) => codexApprovalRequest(approval, say, now))
+    .filter((request, index) => approvals[index]?.method !== 'item/tool/requestUserInput' || !coreQuestions.has(`${request.pane}\n${request.title}`))
+  const notified = new Set(visibleCore.filter((request) => request.permission).map((request) => request.pane))
+  const kinds = new Map(tracker.map((request) => [request.pane, request.permissionKind]))
+  return [...codex,
+    ...visibleCore.map((request) => request.permission ? { ...request, permissionKind: kinds.get(request.pane) || request.permissionKind } : request),
+    ...visibleTracker.filter((request) => !notified.has(request.pane))]
+}

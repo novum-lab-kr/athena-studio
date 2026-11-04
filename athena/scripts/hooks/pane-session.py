@@ -21,7 +21,16 @@ SESSION_ID = re.compile(r'^[0-9a-fA-F-]{8,64}$')
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 
 
+def headless_claude() -> bool:
+    """pane 안에서 다른 프로그램(플러그인 · 스크립트)이 띄운 headless claude(-p · SDK) 인가 — claude 가 진입점을 CLAUDE_CODE_ENTRYPOINT 로
+    자식(훅)에 넘긴다(대화형 cli · headless sdk-cli — 2026-11-04 실측). pane 환경을 물려받아 같은 pane 으로 보이지만 그 pane 의 대화가 아니다.
+    기록하면 담당 대화가 바뀐 것으로 보여 lead-send 가 막힌다(2026-11-04 px5)"""
+    return os.environ.get('CLAUDE_CODE_ENTRYPOINT', '').startswith('sdk')
+
+
 def main() -> None:
+    if '--tool=codex' not in sys.argv and headless_claude():
+        return
     pane = str(screen.self_info().get('pane_id') or '')
     if not PANE_ID.match(pane):
         return

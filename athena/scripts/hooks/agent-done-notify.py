@@ -14,6 +14,7 @@
   대기 목록 = 대화 기록(transcript_path)의 시작 기록(backgroundTaskId · 출력 파일) − 끝 기록(task-notification · TaskStop). 끝 기록이 영영 안 남는 경우가 있어
   기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있을 때만 "도는 중" 으로 본다. 확인하지 못하면 평소대로 알린다(알림이 영영 끊기지 않게).
 아테나 pane 이 선택 창(waiting)을 띄웠으면 뒤에서 닫힐 때까지 기다린다. 새 사용자 입력이 오면 옛 턴의 대기 알림은 버린다.
+넣기는 scripts/lead-send.py 와 같은 길(pane run · 대기열 · 담당 대화 확인) — Claude · Codex 아테나 창 모두.
 아테나 pane 이 없거나 닫혔으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 
 사용: agent-done-notify.py prompt|stop   (훅 입력은 표준 입력 JSON)
@@ -187,6 +188,16 @@ def save_state(path: pathlib.Path, state: dict) -> None:
     os.replace(temp, path)
 
 
+def forward(lead: str, line: str, plan: str) -> None:
+    """에이전트 → 아테나 보내기와 같은 길(scripts/lead-send.py) — pane run 전송 확인 · 아테나가 못 받으면 모아 뒀다 넣기 ·
+    계획서 Lead session 으로 담당 대화 확인 · 못 넣으면 계획서 기록. 예전처럼 send-text + Enter 를 직접 보내면 Codex 아테나 창에서
+    글이 입력칸에 남거나 쓰던 초안과 섞였다(검수 #16). 종료 코드는 보지 않는다 — lead-send 가 결과를 계획서 · 사건 기록에 남긴다"""
+    args = [sys.executable, str(ATHENA_DIR / 'scripts' / 'lead-send.py'), lead, line]
+    if plan:
+        args += ['--plan', plan]
+    subprocess.run(args, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=120)
+
+
 def deliver_notice(state_path: pathlib.Path, pane: str, lead: str, notice_id: str, wait: bool = False) -> None:
     """턴·알림 ID와 같은 잠금으로 전송을 선점한다. 옛 작업은 새 알림 문구가 같아도 버린다."""
     deadline = time.monotonic() + 6 * 3600
@@ -208,8 +219,7 @@ def deliver_notice(state_path: pathlib.Path, pane: str, lead: str, notice_id: st
                 else:
                     pending['claimed'] = True
                     save_state(state_path, state)
-                    backend.send_text(lead, pending['line'])
-                    backend.send_keys(lead, ['Enter'])
+                    forward(lead, pending['line'], str(pending.get('plan') or ''))
                     state['last'] = pending['line']
                     state.pop('pending', None)
                     save_state(state_path, state)
@@ -280,7 +290,7 @@ def main() -> None:
         if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
             return
         notice_id = uuid.uuid4().hex
-        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line}
+        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'plan': plan}
         save_state(state_path, state)
     deliver_notice(state_path, pane, lead, notice_id)
 

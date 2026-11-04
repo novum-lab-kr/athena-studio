@@ -284,7 +284,8 @@ test('모니터 만료 세션의 줄을 main·화면에서 함께 지우고 재�
     return stat.mtimeMs >= now - logs.MONITOR_MINUTES * 60000 ? [{ file, pane: true, stat, label: 'Codex' }] : []
   } })
   const settle = async () => {
-    for (let attempt = 0; monitor.ticking && attempt < 100; attempt += 1) await new Promise(setImmediate)
+    // 갱신은 진짜 파일 읽기(스레드 풀)를 기다린다 — 느린 러너에서는 setImmediate 100번으로 모자라니 실제 시간(최대 5초)으로 기다린다
+    for (let attempt = 0; monitor.ticking && attempt < 500; attempt += 1) await new Promise((resolve) => setTimeout(resolve, 10))
     assert.equal(monitor.ticking, false, '모니터 갱신이 끝난다')
   }
   monitor.lastGithub = now

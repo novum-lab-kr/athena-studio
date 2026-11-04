@@ -235,6 +235,29 @@ check "⚠️ 기록" "${out:0:2}" "⚠️"
 check "새 대화에 넣지 않음" "$(count "$WORK/sent")" 0
 rm -f "$DATA/state/pane-sessions/p1.json"
 
+# 2026-11-04 px5 실측 — 아테나 pane 안에서 플러그인이 띄운 headless claude(-p · 진입점 sdk-cli)의 훅이 pane 기록을 자기 대화로 덮어
+# 계획서 Lead session 과 달라졌고, lead-send 가 "담당 대화가 바뀌었거나…" 로 막혔다. headless 실행은 pane 의 대화가 아니라 기록하지 않는다
+echo "▶ 담당 pane 안에서 돈 headless claude 는 담당 대화 기록을 바꾸지 않는다"
+reset
+mkdir -p "$DATA/state/pane-sessions" "$BODY/scripts/hooks"
+cp "$SRC/scripts/hooks/pane-session.py" "$BODY/scripts/hooks/"
+fire_session() {   # <session> <진입점> — 아테나 pane p1 안에서 그 진입점으로 SessionStart 훅
+  printf '{"session_id":"%s","cwd":"%s"}' "$1" "$BODY" | env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_SOCKET=/x \
+    ATHENA_STUDIO_CLI="$WORK/cli/athena-studio-cli" CLAUDE_CODE_ENTRYPOINT="$2" python3 "$BODY/scripts/hooks/pane-session.py"
+}
+fire_session 0a0a0a0a-1111-2222-3333-444444444444 cli
+fire_session 0b0b0b0b-1111-2222-3333-444444444444 sdk-cli
+check "pane 기록은 대화형 대화 그대로" "$(count "$DATA/state/pane-sessions/p1.json" '0a0a0a0a-1111')" 1
+sed -i '' '/Lead pane: p1/a\
+- Lead session: 0a0a0a0a-1111-2222-3333-444444444444\
+' "$PLAN"
+out="$(lead_send 'headless 뒤 보고')"
+check "✅ 담당에게 넣음" "${out:0:1}" "✅"
+check "한 번 넣음" "$(count "$WORK/sent" '^SENT p1 headless 뒤 보고')" 1
+fire_session 0c0c0c0c-1111-2222-3333-444444444444 cli
+check "대화형 새 대화(/clear 등)는 그대로 기록" "$(count "$DATA/state/pane-sessions/p1.json" '0c0c0c0c-1111')" 1
+rm -f "$DATA/state/pane-sessions/p1.json"
+
 echo "▶ 너무 오래 못 넣음 → 계획서 기록만"
 reset
 touch "$WORK/waiting"

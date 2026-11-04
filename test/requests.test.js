@@ -260,3 +260,62 @@ test('실제 작업 경로: 공식 승인은 전용 응답만 사용 · 일반 �
   fixture.ctx.stopRequests()
   assert.equal((await fixture.ctx.approveRequest(visible[0].id, approval.generation, 0)).ok, false)
 })
+
+// 검수 #5 — Codex 승인 알림 제목에 명령 원문이 그대로 나갔다(맥 알림 · 트레이 · [작업] 목록이 제목을 쓴다).
+// Claude 허락 알림과 같은 제목(work.permission.title.permission)으로 가리고, 원문은 승인 대화상자 본문(자세히)에만
+test('Codex 승인: 제목은 Claude 허락과 같은 가린 제목 · 명령 원문은 본문(승인 대화상자)에만', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('p1', '')
+  const command = 'curl -H "Authorization: Bearer FIXTURE_SECRET_VALUE" https://example.com'
+  fixture.setApprovals([{ token: 'token5', generation: 'g5', pane: 'p1', body: '/fixture/body',
+    method: 'item/commandExecution/requestApproval', params: { command, cwd: '/w' }, choices: [{ key: 'accept' }] }])
+  await fixture.start(); await fixture.tick(2000)
+  const [visible] = fixture.state().requests
+  assert.equal(visible.title, 'work.permission.title.permissionp1')
+  assert.ok(!JSON.stringify({ title: visible.title }).includes('FIXTURE_SECRET_VALUE'), '제목(알림 · 트레이)에 원문이 없다')
+  assert.ok(visible.body.includes(command), '승인 대화상자 본문에는 무엇을 허락하는지 보인다')
+  fixture.ctx.stopRequests()
+})
+
+// 검수 #13 — Codex 도 PermissionRequest 훅을 불러 코어 perm:<pane> 요청이 같이 열린다. 승인이 떠 있는 동안은 숨겼다가
+// 앱에서 답해 승인이 사라지면 같은 건의 코어 요청 · 화면 감지 요청이 다시 보여 가짜 허락 알림이 한 번 더 났다
+test('Codex 승인에 답한 뒤 같은 건의 코어 perm 요청 · 화면 감지 요청을 다시 보이지 않는다 · 나중의 새 허락은 보인다', async () => {
+  const fixture = makePermissionWork()
+  const approvalPrompt = ['Would you like to run the following command?', '› 1. Yes, proceed (y)', "  2. Yes, and don’t ask again", '  3. No (esc)', 'Press enter to confirm or esc to cancel'].join('\n')
+  fixture.panes.set('p1', approvalPrompt)
+  const approval = { token: 'token13', generation: 'g13', pane: 'p1', body: '/fixture/body',
+    method: 'item/commandExecution/requestApproval', params: { command: 'rm -rf build' }, choices: [{ key: 'accept' }] }
+  fixture.setApprovals([approval])
+  fixture.setRows([sample({ id: 'perm-p1', pane: 'p1', dedupeKey: 'perm:p1', createdAt: new Date(4000).toISOString() })])
+  await fixture.start(); await fixture.tick(2000); await fixture.tick(2000); await fixture.tick(2000)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), ['codex-approval:token13'])
+  assert.equal((await fixture.ctx.approveRequest('codex-approval:token13', 'g13', 0)).ok, true)
+  fixture.setApprovals([])
+  await fixture.tick(2000)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), [], '답한 건의 코어 · 화면 요청은 다시 보이지 않는다')
+  fixture.panes.set('p1', ''); await fixture.tick(2000); await fixture.tick(2000)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), [])
+  // 한참 뒤 같은 pane 의 새 허락(코어 요청)은 그대로 보인다
+  await fixture.tick(30000)
+  fixture.setRows([sample({ id: 'perm-p1-new', pane: 'p1', dedupeKey: 'perm:p1', createdAt: new Date(60000).toISOString() })])
+  await fixture.ctx.refreshRequests(); await new Promise(setImmediate)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), ['perm-p1-new'])
+  fixture.ctx.stopRequests()
+})
+
+// 검수 #15 — Codex request_user_input 은 훅(ask-to-request.py · 코어 질문)과 app-server(item/tool/requestUserInput)로 두 번 잡혔다.
+// Claude AskUserQuestion 과 같은 자리(코어 질문)를 남기고, 같은 pane 의 같은 질문이 코어에 있으면 app-server 쪽은 숨긴다
+test('Codex 질문: 같은 pane 같은 질문이 코어에 있으면 하나만 · 코어에 없으면 app-server 질문을 보인다', async () => {
+  const fixture = makePermissionWork()
+  fixture.panes.set('p1', '')
+  const question = { token: 'token15', generation: 'g15', pane: 'p1', body: '/fixture/body', method: 'item/tool/requestUserInput',
+    params: { threadId: 't', turnId: 'u', itemId: 'i', questions: [{ id: 'q', header: '고르기', question: '어느 쪽으로 할까요?', options: [{ label: 'A' }, { label: 'B' }] }] },
+    choices: [{ key: 'answer', label: 'A' }, { key: 'answer', label: 'B' }] }
+  fixture.setApprovals([question])
+  await fixture.start(); await fixture.tick(2000)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => [item.id, item.title]), [['codex-approval:token15', '어느 쪽으로 할까요?']])
+  fixture.setRows([sample({ id: 'core-q', pane: 'p1', title: '어느 쪽으로 할까요?' })])
+  await fixture.ctx.refreshRequests(); await new Promise(setImmediate); await fixture.tick(2000)
+  assert.deepEqual(Array.from(fixture.state().requests, (item) => item.id), ['core-q'])
+  fixture.ctx.stopRequests()
+})

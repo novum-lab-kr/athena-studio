@@ -156,3 +156,33 @@ test('메뉴 막대 요약: 아테나 작업 공간은 옛 폴더 이름이어�
   const summary = tray.summarize({ panes: [{ id: 'p1', agent: 'claude', agent_status: 'working', workspace_id: 'w1', label: 'athena' }], workspaces })
   assert.equal(summary.agents[0].workspace, 'athena')
 })
+
+// 검수 #14 — Claude 허락 하나에 알림이 세 번 났다: 화면 감지 요청(permission-pane:…) → 몇 초 뒤 코어 perm 요청이 같은 건을 새 id 로 바꿔 받음 → pane 입력 대기.
+// pane 마다 한 건(허락 창이 열려 있거나 입력을 기다리는 동안)은 한 번만 알린다 — [작업] 목록 · 트레이 표시는 그대로
+test('알림: 같은 pane 의 허락 한 건은 화면 감지 · 코어 perm · 입력 대기 중 한 번만 · 풀린 뒤 새 허락은 다시 알린다', () => {
+  const notifier = new tray.Notifier()
+  const names = new Map([['w1', 'athena']])
+  const permission = (id) => ({ id, kind: 'question', state: 'open', title: 'p1 · 권한 확인', pane: 'p1', permission: true })
+  notifier.updateRequests([])
+  notifier.update({ panes: [pane('p1', 'working')], names }, 0)
+  const found = [...notifier.updateRequests([permission('permission-pane:p1:1000')])]
+  found.push(...notifier.updateRequests([permission('perm-p1')]))
+  notifier.update({ panes: [pane('p1', 'waiting')], names }, 1000)
+  found.push(...notifier.update({ panes: [pane('p1', 'waiting')], names }, 1000 + tray.WAIT_HOLD_MS))
+  assert.deepEqual(found.map((item) => item.kind), ['request'])
+  // 다른 pane 의 요청은 따로 알린다
+  assert.equal(notifier.updateRequests([permission('perm-p1'), { ...permission('perm-p2'), pane: 'p2' }]).length, 1)
+  // 답해서 허락 창이 닫히고 일하기 시작하면 한 건이 끝난다 — 다음 허락은 다시 알린다
+  notifier.updateRequests([])
+  notifier.update({ panes: [pane('p1', 'working')], names }, 10000)
+  assert.equal(notifier.updateRequests([permission('perm-p1-next')]).length, 1)
+  // 입력 대기가 먼저 알렸으면 이어 열린 같은 pane 의 허락 요청은 알리지 않는다
+  const waitingFirst = new tray.Notifier()
+  waitingFirst.updateRequests([])
+  waitingFirst.update({ panes: [pane('p1', 'working')], names }, 0)
+  waitingFirst.update({ panes: [pane('p1', 'waiting')], names }, 1000)
+  assert.equal(waitingFirst.update({ panes: [pane('p1', 'waiting')], names }, 1000 + tray.WAIT_HOLD_MS).length, 1)
+  assert.deepEqual(waitingFirst.updateRequests([permission('perm-p1')]), [])
+  // 허락이 아닌 질문은 그대로 알린다
+  assert.equal(waitingFirst.updateRequests([permission('perm-p1'), { id: 'q', kind: 'question', state: 'open', title: '질문', pane: 'p1', permission: false }]).length, 1)
+})

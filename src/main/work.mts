@@ -126,20 +126,16 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   let coreRequests: StudioRequest[] = []
   let permissionRequests: StudioRequest[] = []
   let codexApprovals: CodexApproval[] = []
-  let codexRequests: StudioRequest[] = []
+  // pane 마다 Codex 승인이 마지막으로 떠 있던 때 — 답한 뒤 같은 건의 허락 요청을 숨기는 데(requestsModel.mergeRequests)
+  const codexSeen = new Map<string, number>()
   const permissions = requestsModel.createPermissionTracker()
   let permissionTimer: NodeJS.Timeout | undefined
   let permissionGeneration = 0
   let permissionBusy: number | null = null
   const publishRequests = (supported: boolean, error: string | null) => {
     const before = requestsState()
-    const directPanes = new Set(codexRequests.map((request) => request.pane))
-    const visibleCore = coreRequests.filter((request) => !request.permission || !directPanes.has(request.pane))
-    const visiblePermissions = permissionRequests.filter((request) => !directPanes.has(request.pane))
-    const notified = new Set(visibleCore.filter((request) => request.permission).map((request) => request.pane))
-    const kinds = new Map(permissionRequests.map((request) => [request.pane, request.permissionKind]))
-    const requests = [...codexRequests, ...visibleCore.map((request) => request.permission ? { ...request, permissionKind: kinds.get(request.pane) || request.permissionKind } : request), ...visiblePermissions.filter((request) => !notified.has(request.pane))].map((request) => requestsModel.permissionView(request, say))
-    const next = { supported: supported || permissionRequests.length > 0 || codexRequests.length > 0, requests, error }
+    const requests = requestsModel.mergeRequests({ core: coreRequests, tracker: permissionRequests, approvals: codexApprovals, seen: codexSeen, now: Date.now(), say }).map((request) => requestsModel.permissionView(request, say))
+    const next = { supported: supported || permissionRequests.length > 0 || codexApprovals.length > 0, requests, error }
     setRequestsState(next)
     if (JSON.stringify(next) !== JSON.stringify(before)) {
       send('work:requests', next)
@@ -176,16 +172,6 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       const approvals = await pendingApprovals(dir, livePanes)
       if (dir !== ctx.athenaDir || generation !== permissionGeneration) return
       codexApprovals = approvals
-      codexRequests = approvals.map((approval) => ({
-        id: `codex-approval:${approval.token}`, kind: 'question', permission: true, pane: approval.pane,
-        title: typeof approval.params.command === 'string' ? approval.params.command : say('work.permission.notice'),
-        body: [approval.params.reason, approval.params.message, approval.params.command, approval.params.cwd,
-          ...(Array.isArray(approval.params.questions) ? approval.params.questions.map((question: unknown) => question && typeof question === 'object' && 'question' in question ? String(question.question) : '') : []),
-          JSON.stringify(Object.fromEntries(Object.entries(approval.params).filter(([key]) => !['threadId', 'turnId', 'itemId', 'approvalId', 'startedAtMs', 'reason', 'message', 'command', 'cwd', 'availableDecisions', 'proposedExecpolicyAmendment', 'proposedNetworkPolicyAmendments', 'questions', 'isBlocking', 'autoResolutionMs'].includes(key))), null, 2),
-          approval.item && JSON.stringify(approval.item, null, 2)].filter((value) => typeof value === 'string' && value !== '{}').join('\n\n'),
-        options: [], plan: null, html: null, state: 'open', rev: 1, createdAt: new Date(typeof approval.params.startedAtMs === 'number' ? approval.params.startedAtMs : approval.receivedAtMs ?? Date.now()).toISOString(), answer: null,
-        codexApproval: { token: approval.token, generation: approval.generation, thread: String(approval.params.threadId), choices: approval.choices },
-      }))
       for (const request of coreRequests) {
         if (!request.permission || typeof request.pane !== 'string') continue
         if (!tracked.alive.has(request.pane) || tracked.closed.has(request.pane)) {
@@ -253,7 +239,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     permissions.reset()
     permissionRequests = []
     codexApprovals = []
-    codexRequests = []
+    codexSeen.clear()
     coreRequests = []
     if (requestsWatch) requestsWatch.close()
     requestsWatch = null

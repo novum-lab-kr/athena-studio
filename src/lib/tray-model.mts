@@ -200,6 +200,14 @@ export class Notifier {
   ready = false
   panes = new Map<string, { status: string; since: number; notified: boolean }>() // id → { status, since, notified }
   requests: Set<string> | null = null // 본 요청 id — 처음 본 목록은 알리지 않는다(켤 때 기준)
+  // 허락 한 건은 pane 마다 한 번 — 화면 감지 요청 → 같은 건을 새 id 로 받는 코어 perm 요청 → pane 입력 대기가 같은 건이다(검수 #14).
+  // 알린 pane 은 허락 창 요청이 열려 있거나 입력을 기다리는 동안 다시 알리지 않는다. 둘 다 풀리면 한 건이 끝난다
+  alerted = new Set<string>()
+  permissionPanes = new Set<string>() // 지금 허락 창 요청이 열린 pane
+
+  private settle() {
+    for (const pane of [...this.alerted]) if (!this.permissionPanes.has(pane) && this.panes.get(pane)?.status !== 'waiting') this.alerted.delete(pane)
+  }
 
   // 새로 열린 요청만 한 번 — [{ kind: 'request', title, body, target: { request, pane? } }]. requests 가 null 이면(못 읽음) 기억 그대로.
   // 허락 창 알림만 target 에 pane 을 싣는다 — 부르는 쪽이 지금 그 pane 을 보고 있으면 거른다(다른 요청은 보고 있어도 알린다)
@@ -209,8 +217,19 @@ export class Notifier {
     const open = list.filter((request): request is TrayRequest => Boolean(request && request.state === 'open'))
     const known = this.requests
     this.requests = new Set(open.map((request) => request.id))
+    const permissionPane = (request: TrayRequest) => request.permission && typeof request.pane === 'string' ? request.pane : ''
+    this.permissionPanes = new Set(open.map(permissionPane).filter(Boolean))
+    this.settle()
     if (known === null) return []
-    return open.filter((request) => !known.has(request.id)).map((request) => ({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: requestTarget(request) }))
+    const found: Notice[] = []
+    for (const request of open) {
+      if (known.has(request.id)) continue
+      const pane = permissionPane(request)
+      if (pane && this.alerted.has(pane)) continue
+      if (pane) this.alerted.add(pane)
+      found.push({ kind: 'request', title: say(`notify.request.${request.kind === 'decision' ? 'decision' : 'question'}`), body: request.title, target: requestTarget(request) })
+    }
+    return found
   }
 
   // 반환: [{ kind: 'waiting', title, body, target: { pane } }] — 묶기(bundle)는 부르는 쪽이 거른 뒤에
@@ -227,14 +246,20 @@ export class Notifier {
         continue
       }
       if (before.notified || status !== 'waiting' || now - before.since < WAIT_HOLD_MS) continue
+      if (this.alerted.has(pane.id)) {
+        before.notified = true // 같은 건의 허락 알림이 이미 났다
+        continue
+      }
       // 풀릴 때까지(상태가 바뀔 때까지) 한 번 — 켤 때 이미 기다리던 것은 알리지 않는다(위 notified)
       const name = agentName(pane)
       const where = names.get(pane.workspace_id)
       const who = where ? `${name} · ${where}` : name
       found.push({ kind: 'waiting', title: say('notify.waiting.title'), body: say('notify.waiting.body', { who }), target: { pane: pane.id } })
       before.notified = true
+      this.alerted.add(pane.id)
     }
     for (const id of [...this.panes.keys()]) if (!seen.has(id)) this.panes.delete(id)
+    this.settle()
     this.ready = true
     return found
   }

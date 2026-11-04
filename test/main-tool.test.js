@@ -25,7 +25,9 @@ exit 0
     const d = core.agentDecision(installed)
     assert.deepEqual(d, installed.length === 2 ? { choose: true } : installed.length ? { agent: installed[0] } : { none: true })
     if (installed.length) {
-      assert.equal(fs.readFileSync(log, 'utf8'), installed.map((tool) => tool === 'claude' ? 'auth status\n' : 'login status\n').join(''))
+      // authenticatedAgents 는 두 도구를 동시에 확인한다 — 기록 줄 순서는 정해지지 않으니 정렬해 비교한다
+      const calls = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean).sort()
+      assert.deepEqual(calls, installed.map((tool) => tool === 'claude' ? 'auth status' : 'login status').sort())
       for (const tool of installed) fs.writeFileSync(path.join(bin, tool), '#!/bin/sh\nexit 1\n', { mode: 0o755 })
       assert.deepEqual(await core.authenticatedAgents(env), [])
     }

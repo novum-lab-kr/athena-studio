@@ -14,13 +14,18 @@ export VERIFY_RECORD=0 VERIFY_LOG_DIR="$TMP/logs"; mkdir -p "$VERIFY_LOG_DIR"
 source "$SRC/scripts/verify/_lib.sh"
 runner() { sleep "$1"; [ "$1" != 0.9 ]; }   # 0.9 는 실패
 namer() { echo "시험 $1"; }
-start=$SECONDS
+now_ms() { python3 -c 'import time; print(int(time.time() * 1000))'; }
+# 결과는 끝난 순서로 쌓인다 — 느린 러너에서는 띄우기가 늦어 순서가 바뀌니 이름으로 찾는다
+result_of() { local idx; for idx in "${!STEP_NAMES[@]}"; do [ "${STEP_NAMES[$idx]}" = "$1" ] && { echo "${STEP_RESULTS[$idx]}"; return; }; done; }
+start_ms="$(now_ms)"
 run_steps_parallel 3 runner namer 1 0.5 0.9 0.1
+elapsed_ms=$(( $(now_ms) - start_ms ))
 SORTED_NAMES="$(printf "%s," "${STEP_NAMES[@]}" | tr "," "\n" | sort | grep . | tr "\n" "|")"
 check "4개를 3개씩 — 가장 먼저 끝난 것(0.5)부터 한 줄씩 · 4줄 모두 있음" '[ "${#STEP_NAMES[@]}" = 4 ] && [ "${STEP_NAMES[0]}" = "시험 0.5" ] && [ "$SORTED_NAMES" = "시험 0.1|시험 0.5|시험 0.9|시험 1|" ]'
-check "실패는 ❌ (exit 1) · 나머지는 ✅ 통과 · VERIFY_FAILED=1" '[ "${STEP_RESULTS[2]}" = "❌ 실패 (exit 1)" ] && [ "${STEP_RESULTS[0]}" = "✅ 통과" ] && [ "$VERIFY_FAILED" = 1 ]'
+check "실패는 ❌ (exit 1) · 나머지는 ✅ 통과 · VERIFY_FAILED=1" '[ "$(result_of "시험 0.9")" = "❌ 실패 (exit 1)" ] && [ "$(result_of "시험 0.5")" = "✅ 통과" ] && [ "$(result_of "시험 1")" = "✅ 통과" ] && [ "$(result_of "시험 0.1")" = "✅ 통과" ] && [ "$VERIFY_FAILED" = 1 ]'
 check "시험마다 로그 파일이 따로 있다" '[ -f "${STEP_LOGS[0]}" ] && [ "${STEP_LOGS[0]}" != "${STEP_LOGS[1]}" ]'
-check "차례로 돌렸을 때(2.5초)보다 빨리 끝남" '[ $((SECONDS - start)) -le 2 ]'
+# 동시에 돌면 약 1초 · 차례로면 2.5초 넘게 — 초 단위 $SECONDS 는 경계에서 1초 튀니 밀리초로 재고 러너 여유를 둔다
+check "차례로 돌렸을 때(2.5초)보다 빨리 끝남" '[ "$elapsed_ms" -lt 2400 ]'
 
 echo "동시 수"
 check "ATHENA_VERIFY_JOBS 가 양의 정수면 그 값" '[ "$(ATHENA_VERIFY_JOBS=3 verify_parallel_jobs)" = 3 ]'
