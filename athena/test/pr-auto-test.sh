@@ -220,6 +220,12 @@ console.log('\n댓글')
 const comment = reviewComment({ sha: 'abcdef123', round: 1, results: [ok('claude', { ...changes, summary: '토큰 ghp_' + 'a'.repeat(30) + ' 이 보인다' }), { name: 'codex', status: 'failed', reason: '시간 넘김' }], summary: aggregate([ok('claude', changes), { name: 'codex', status: 'failed' }]) })
 check('결론 · 리뷰어마다 줄 · 실패 이유', comment.includes('결론: 수정 필요') && comment.includes('**codex** — 실패(시간 넘김)') && comment.includes('`a.js:3`'), comment)
 check('비밀값 모양은 가린 뒤 보낸다(pr-auto.mjs 가 maskSecrets 로 감쌈)', !maskSecrets(comment).masked.includes('a'.repeat(30)))
+// 대문자 _KEY 상수 오탐(PR #205 재현) — 코드 모양 값은 그대로, 진짜 값 모양은 지금처럼 가린다. 가짜 값은 시험용 글자
+const codeLines = ["DEDUP_KEY = re.compile(r'^(?:a|b)$')", "const CACHE_KEY = createKey('a')", 'SORT_KEY = {', 'ROW_TOKEN = rows[0]', 'const token = getToken()']
+check('이름이 _KEY · token 이어도 함수 호출 · 색인 · 여는 괄호 값은 그대로', codeLines.every((line) => maskSecrets(line).masked === line && maskSecrets(line).count === 0), JSON.stringify(codeLines.map((line) => maskSecrets(line).masked)))
+const fakeValue = 'q'.repeat(8) + '7Z' + 'w'.repeat(10)
+const secretLines = [`API_KEY=${fakeValue}`, `export GH_TOKEN="${fakeValue}"`, `DB_PASSWORD = '${fakeValue}'`, `password: ${fakeValue}`, `DEDUP_KEY = "${fakeValue}("`]
+check('따옴표 안 값 · 그냥 글자 값은 이름만 보고 지금처럼 가린다', secretLines.every((line) => !maskSecrets(line).masked.includes(fakeValue)), JSON.stringify(secretLines.map((line) => maskSecrets(line).masked)))
 
 console.log('\n앞 리뷰 승인 이어받기(같은 내용 — ship.sh 와 같은 판정)')
 const tree = 'aaaabbbbccccdddd0000111122223333444455556'

@@ -25,7 +25,8 @@ for k in flow-light flow-formal compact; do
   node $A/bin/archify.mjs validate workflow docs/diagrams/athena-$k.workflow.json --quality standard --json
   node $A/bin/archify.mjs deliver  workflow docs/diagrams/athena-$k.workflow.json docs/diagrams/athena-$k.html --quality standard --json
   node scripts/diagram-theme.mjs docs/diagrams/athena-$k.html   # 앞선 deliver 성공 뒤에만
-  node "$A/bin/archify.mjs" visual-check docs/diagrams/athena-$k.html --json
+  node "$A/bin/archify.mjs" visual-check docs/diagrams/athena-$k.html --json   # 그림 아래 카드 때문에 세로로 넘쳐 늘 1 로 끝난다
+  node scripts/diagram-visual-judge.mjs docs/diagrams/athena-$k.html          # 세로 스크롤만 허용 — 가로 넘침 · 겹침은 실패
 done
 
 ```

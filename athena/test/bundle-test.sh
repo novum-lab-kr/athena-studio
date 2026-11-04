@@ -32,7 +32,7 @@ DEV="$WORK/dev"; APP="$WORK/app"; CORE="$APP/core"; DATA="$APP/data-test"
 git init -q -b main "$DEV"
 (cd "$SRC" && git ls-files -co --exclude-standard -z | while IFS= read -r -d '' file; do [ -e "$file" ] || [ -L "$file" ] && printf '%s\0' "$file"; done) > "$WORK/files.list"
 rsync -a --from0 --files-from="$WORK/files.list" "$SRC/" "$DEV/"
-git -C "$DEV" add -A >/dev/null 2>&1; git -C "$DEV" commit -qm "test: 작업 트리" >/dev/null 2>&1
+git -C "$DEV" add -A >/dev/null && git -C "$DEV" commit -qm "test: 작업 트리" >/dev/null || { echo "개발 저장소 첫 커밋 실패 — 번들이 빈다" >&2; exit 1; }
 C0="$(git -C "$DEV" rev-parse HEAD)"
 # newcommit <설명> — 개발 저장소에 커밋을 하나 올린다
 newcommit() { printf '%s\n' "$1" >> "$DEV/docs/bundle-test-note.md"; git -C "$DEV" add -A >/dev/null; git -C "$DEV" commit -qm "$1"; git -C "$DEV" rev-parse HEAD; }
@@ -65,7 +65,9 @@ localhash() { (cd "$1" && for file in $LOCALFILES; do printf '%s ' "$file"; cat 
 
 section "번들 → 주 본체(clone) · 데이터 폴더는 본체 설정 dataDir"
 mkdir -p "$APP"
-git clone -q "$WORK/core-1.bundle" "$CORE" 2>/dev/null
+# 번들에 HEAD 가 없어 --branch 가 없으면 git 의 init.defaultBranch 에 기댄다 — 그 설정이 없는 곳(Actions 러너 · 2026-11-02)은 master 를 찾다
+#   "remote HEAD refers to nonexistent ref" 로 빈 clone 이 된다. 앱도 --branch main 으로 받는다(src/lib/studio-home.js) · 오류는 숨기지 않는다
+git clone -q --branch main "$WORK/core-1.bundle" "$CORE" || { echo "번들 clone 실패 — 아래 시험이 모두 빈 본체로 돈다" >&2; exit 1; }
 check "주 본체는 main · 번들 커밋" '[ "$(git -C "$CORE" rev-parse --abbrev-ref HEAD)" = main ] && [ "$(git -C "$CORE" rev-parse HEAD)" = "$C0" ]'
 printf '{ "dataDir": "%s" }\n' "$DATA" > "$CORE/athena.config.json"
 R="$(J "$CORE" pack test-setup)"

@@ -62,3 +62,10 @@ athena_test_reap() {
     case "$cwd" in "$prefix"*) kill "$pid" 2>/dev/null ;; esac
   done < <(ps -axo pid=,ppid=,comm= 2>/dev/null)
 }
+
+# 지금 비어 있는 TCP 포트 하나 — 고정 포트를 쓰면 같은 시험을 두 트리에서 동시에 돌릴 때 서로의 현황판에 붙는다
+#   (2026-11-04 재현: packs-test 를 동시에 두 번 돌리면 한쪽이 47710 을 못 써 8건 실패). 운영체제가 고른 포트를 받아 바로 닫는다
+#   사용: PORT="$(athena_test_free_port)"
+athena_test_free_port() {
+  node -e 'const s = require("net").createServer(); s.listen(0, "127.0.0.1", () => { console.log(s.address().port); s.close() })'
+}

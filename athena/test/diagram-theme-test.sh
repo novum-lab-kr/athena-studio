@@ -139,5 +139,30 @@ console.log('  ✔ 원본/최종 해시·변조·중복·재생성·캡처 무�
 JS
 check "원본/최종 전달 회귀" '[ $? -eq 0 ]'
 
+# 흐름 그림 visual-check 판정 — 세로로만 넘친 것만 허용하고 가로 넘침 · 겹침 · 캡처 못 함 · 옛 결과는 실패
+J() { node "$SRC/scripts/diagram-visual-judge.mjs" "$@" > /dev/null 2>&1; }
+printf '<html><body>그림</body></html>' > "$WORK/v.html"
+receipt() {   # $1 진단 JSON 배열 · $2 captures.status · $3 chrome.status
+  node -e '
+    const [html, diagnostics, captures, chrome] = process.argv.slice(1)
+    const fs = require("fs"), bytes = fs.readFileSync(html)
+    const sha256 = require("crypto").createHash("sha256").update(bytes).digest("hex")
+    fs.writeFileSync(html.replace(/\.html$/, ".visual-check.json"), JSON.stringify({ command: "visual-check", evidenceKind: "automated-browser", status: "fail",
+      artifact: { sha256, bytes: bytes.length }, chrome: { status: chrome }, captures: { status: captures }, diagnostics: JSON.parse(diagnostics) }))
+  ' "$WORK/v.html" "$1" "${2:-pass}" "${3:-available}"
+}
+TALL='{"code":"viewer/viewport-overflow","severity":"error","message":"tall","evidence":{"overflowX":false,"overflowY":true}}'
+WIDE='{"code":"viewer/viewport-overflow","severity":"error","message":"wide","evidence":{"overflowX":true,"overflowY":true}}'
+DOCK='{"code":"viewer/chrome-stage-clearance","severity":"error","message":"dock","evidence":{}}'
+J; check "판정: 파일 없이 부르면 사용법(2)" '[ $? -eq 2 ]'
+J "$WORK/v.html"; check "판정: 결과 파일 없음 → 1" '[ $? -eq 1 ]'
+receipt "[$TALL,$TALL]"; J "$WORK/v.html"; check "판정: 세로로만 넘침 → 0" '[ $? -eq 0 ]'
+receipt "[$TALL,{\"code\":\"x/info\",\"severity\":\"warning\"}]"; J "$WORK/v.html"; check "판정: 오류 아닌 진단은 보지 않음 → 0" '[ $? -eq 0 ]'
+receipt "[$TALL,$WIDE]"; J "$WORK/v.html"; check "판정: 가로 넘침 → 1" '[ $? -eq 1 ]'
+receipt "[$TALL,$DOCK]"; J "$WORK/v.html"; check "판정: 도크 겹침 → 1" '[ $? -eq 1 ]'
+receipt "[$TALL]" skipped; J "$WORK/v.html"; check "판정: 캡처 못 함 → 1" '[ $? -eq 1 ]'
+receipt "[]" pass unavailable; J "$WORK/v.html"; check "판정: Chrome 없음 → 1" '[ $? -eq 1 ]'
+receipt "[$TALL]"; printf ' ' >> "$WORK/v.html"; J "$WORK/v.html"; check "판정: HTML 이 바뀐 옛 결과 → 1" '[ $? -eq 1 ]'
+
 printf '\n통과 %s · 실패 %s\n' "$PASS" "$FAIL"
 [ "$FAIL" -eq 0 ]

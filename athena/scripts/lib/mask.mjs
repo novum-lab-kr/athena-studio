@@ -10,18 +10,26 @@ const SECRET_PATTERNS = [
   /\b(eyJ)[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{6,}/g,
   /(\b[a-z][a-z0-9+.-]*:\/\/[^\s:/@"']+:)[^\s@"']+(?=@)/gi,
   /(--(?:password|passwd|token|secret|api-key|auth)[\s=]+)[^\s"']+/gi,
-  /(\b[A-Z][A-Z0-9_]*(?:_AUTH|_KEY|_TOKEN|_SECRET|_PASSWORD|_PASS|_PAT)\s*=\s*["']?)[^\s"';]+/g,
+  { name: true, pattern: /(\b[A-Z][A-Z0-9_]*(?:_AUTH|_KEY|_TOKEN|_SECRET|_PASSWORD|_PASS|_PAT)\s*=\s*["']?)[^\s"';]+/g },
   /\b(sk-(?:ant-)?)[A-Za-z0-9_-]{16,}/g,
   /\b(xox[abpr]-)[A-Za-z0-9-]{10,}/g,
   /\b(AKIA)[A-Z0-9]{16}/g,
-  /((?:token|secret|password|passwd|api[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;\\]{6,}/gi,
+  { name: true, pattern: /((?:token|secret|password|passwd|api[_-]?key)["']?\s*[:=]\s*["']?)[^\s"',;\\]{6,}/gi },
   /(Bearer\s+)[A-Za-z0-9._-]{16,}/g,
 ]
+// 이름만 보고 가리는 패턴({ name: true })은 따옴표 없는 값이 코드 모양이면 그대로 둔다 — 함수 호출 · 색인(`re.compile(` · `keys[`) · 여는 괄호.
+//   `DEDUP_KEY = re.compile(r'…')` 가 `DEDUP_KEY = ***'…')` 로 깨져 리뷰어가 없는 문법 오류를 지적했다(PR #205 · 2026-10-31).
+//   따옴표 안 값 · 그냥 글자 값(`API_KEY=abc…`)은 지금처럼 가린다
+const CODE_VALUE = /^(?:[A-Za-z_$][\w$]*(?:\.[A-Za-z_$][\w$]*)*[([]|[{[(])/
+const looksLikeCode = (prefix, value) => !/["']$/.test(prefix) && CODE_VALUE.test(value)
+
 export const maskSecrets = (text) => {
   let masked = text
   let count = 0
-  for (const pattern of SECRET_PATTERNS) {
-    masked = masked.replace(pattern, (_whole, prefix) => {
+  for (const entry of SECRET_PATTERNS) {
+    const { pattern, name = false } = entry instanceof RegExp ? { pattern: entry } : entry
+    masked = masked.replace(pattern, (whole, prefix) => {
+      if (name && looksLikeCode(prefix, whole.slice(prefix.length))) return whole
       count += 1
       return `${prefix}***`
     })

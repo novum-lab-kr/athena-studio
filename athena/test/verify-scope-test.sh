@@ -152,6 +152,20 @@ RESULT="$(picks README.md)"
 check "어떤 시험에도 안 닿는 파일 → 빈 목록" "$([ -z "$RESULT" ] && echo 0 || echo 1)" "$RESULT"
 RESULT="$(picks src/a.js src/b.js)"
 check "여러 파일 → 닿는 시험의 합" "$([ "$RESULT" = "JS test/a.test.js JS test/b.test.js " ] && echo 0 || echo 1)" "$RESULT"
+# 조각으로 적은 경로(path.join) — CHANGELOG.md · 번역 파일만 바꿔도 그것을 읽는 시험을 고른다(2026-11-01 번역 빠진 줄이 main 에 들어간 재현)
+mkdir -p "$WORK/src/changelog"; echo '# Changelog' > "$WORK/CHANGELOG.md"; echo '{}' > "$WORK/src/changelog/ko.json"
+cat > "$WORK/test/notes.test.js" <<'JS'
+const ROOT = path.join(__dirname, '..')
+const english = fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8')
+for (const lang of ['ko']) JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', `${lang}.json`), 'utf8'))
+JS
+RESULT="$(picks CHANGELOG.md)"
+check "path.join(ROOT, 'CHANGELOG.md') → 그 시험" "$([ "$RESULT" = "JS test/notes.test.js " ] && echo 0 || echo 1)" "$RESULT"
+RESULT="$(picks src/changelog/ko.json)"
+check "path.join(ROOT, 'src', 'changelog', \`\${lang}.json\`) → 그 폴더의 파일도 그 시험" "$([ "$RESULT" = "JS test/notes.test.js " ] && echo 0 || echo 1)" "$RESULT"
+RESULT="$(picks README.md)"
+check "조각 경로가 있어도 안 닿는 파일은 그대로 빈 목록" "$([ -z "$RESULT" ] && echo 0 || echo 1)" "$RESULT"
+rm -rf "$WORK/CHANGELOG.md" "$WORK/src/changelog" "$WORK/test/notes.test.js"
 
 # 삭제 · 이름 바꿈 · 닿는 시험이 없는 앱 소스 → 종료 코드 2(부르는 쪽이 전체를 돈다)
 git -C "$WORK" rm -q src/a.js

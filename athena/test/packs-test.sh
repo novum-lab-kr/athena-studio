@@ -21,7 +21,8 @@ section() { printf '\n%s\n' "$1"; }
 # 화면·에이전트 환경을 비운다 — 이 시험이 부른 쪽의 pane 이름 등을 바꾸지 않게
 unset ATHENA_AGENT ATHENA_ENGINE ATHENA_ROLE ATHENA_STUDIO ATHENA_BOARD_PORT ATHENA_PACK_FAIL_AT
 export ATHENA_SCREEN=none ATHENA_BOARD_NO_BROWSER=1 ATHENA_DATA_DIR="$WORK/test-data" ATHENA_HEAVY_LOCK="$WORK/heavy.lock"
-PORT=47710
+PORT="$(athena_test_free_port)"   # 고정 포트면 두 트리 동시 실행에서 서로의 현황판에 붙는다
+[ -n "$PORT" ] || { echo "빈 포트를 고르지 못했어요" >&2; exit 1; }
 
 # ── 본체 사본 ───────────────────────────────────────────────────────────
 mkbody() { # mkbody <폴더> — git clone(코어 이력) + 작업 트리 덮기

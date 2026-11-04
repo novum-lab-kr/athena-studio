@@ -67,6 +67,10 @@ const resolveFile = (candidate) => {
 }
 
 const RELATIVE = /['"`](\.{1,2}\/[^'"`\s)]+)['"`]/g
+// path.join(ROOT, 'src', 'changelog', `${lang}.json`) 처럼 조각으로 적은 경로 — 괄호 안에서 이어진 글자 조각을 '/' 로 이어 경로로 본다(시험 파일만)
+//   (2026-11-01 재현: CHANGELOG.md · src/changelog/*.json 만 바꾸면 release-notes · release-files 시험이 안 골라져 번역 빠진 줄이 main 에 들어갔다)
+const JOIN_CALL = /\bjoin\(([^()]*)\)/g
+const LITERAL_ARG = /^\s*(['"`])([^'"`\\$]*)\1\s*$/
 const PATHLIKE = /[A-Za-z0-9_@.$-]+(?:\/[A-Za-z0-9_@.$-]+)+\/?/g
 const BARE_FILE = /(?<![A-Za-z0-9_./$-])([A-Za-z0-9_-]+\.(?:js|mjs|cjs|mts|ts|sh|py))(?![A-Za-z0-9_-])/g
 
@@ -94,18 +98,37 @@ const edgesOf = (file) => {
     const target = resolveFile(join(dir, match[1] ?? ''))
     if (target) found.add(target)
   }
-  for (const match of text.matchAll(PATHLIKE)) {
-    const token = (match[0] ?? '').replace(/\/$/, '')
-    if (token.includes('..') || token.startsWith('http')) continue
+  /** @param {string[]} segments 경로 조각 · @param {number} last 뒤쪽 경로를 몇 조각까지 줄여 볼지(끝에서 이만큼 남긴다) */
+  const addPath = (segments, last) => {
     // 레포 맨 위 · 코어(athena/) 맨 위 · 이 파일이 있는 폴더 기준으로 본다. 코어를 복사해 도는 시험은 `$SRC/scripts/…` 처럼 앞에 변수가 붙는다 → 뒤쪽 경로로도 본다
-    const segments = token.split('/')
-    if (!wide) break
-    for (let start = 0; start < segments.length - 1; start++) {
+    for (let start = 0; start < segments.length - last; start++) {
       const tail = segments.slice(start).join('/')
       for (const base of ['', 'athena/', `${dir}/`]) {
         const target = resolveFile(`${base}${tail}`)
         if (target) found.add(target)
         else if (isTest) for (const inner of directChildren(normalize(`${base}${tail}`))) found.add(inner)
+      }
+    }
+  }
+  for (const match of text.matchAll(PATHLIKE)) {
+    const token = (match[0] ?? '').replace(/\/$/, '')
+    if (token.includes('..') || token.startsWith('http')) continue
+    if (!wide) break
+    addPath(token.split('/'), 1)
+  }
+  if (wide) {
+    for (const match of text.matchAll(JOIN_CALL)) {
+      // 글자 조각이 이어진 묶음마다 — 변수 · 템플릿 자리(${…})에서 끊는다. 앞의 '..' · '.' 은 떼고(기준 폴더는 위 세 곳으로 본다) 한 조각짜리도 본다
+      /** @type {string[][]} */
+      const runs = [[]]
+      for (const arg of (match[1] ?? '').split(',')) {
+        const literal = LITERAL_ARG.exec(arg)?.[2]
+        if (literal === undefined) runs.push([])
+        else runs[runs.length - 1]?.push(...literal.split('/').filter(Boolean))
+      }
+      for (const run of runs) {
+        while (run[0] === '..' || run[0] === '.') run.shift()
+        if (run.length > 0 && !run.includes('..')) addPath(run, 0)
       }
     }
   }
