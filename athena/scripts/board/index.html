@@ -85,25 +85,30 @@
   .pill.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 40%, transparent); }
   .empty { color: var(--muted); font-size: 13px; padding: 10px 2px; }
   @keyframes flash { from { box-shadow: 0 0 0 2px var(--accent); } to { box-shadow: 0 0 0 0 transparent; } }
-  /* 해결할 이슈 목록 — 한 줄에 제목 · 레포 · 중요도 · 등록일 · 상태(작업 시작 / 진행 중) */
-  .issue-list { display: grid; gap: 8px; }
+  /* 해결할 이슈 목록 — 레포별 묶음. 머리글(레포 이름 · 개수) 아래 한 줄에 제목 · 등록일 · 상태(작업 시작 / 진행 중) */
+  .issue-list { display: grid; gap: 14px; }
+  .repo-group { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .repo-group .repo-head { display: flex; align-items: center; gap: 8px; padding: 8px 14px; font-size: 13px; font-weight: 650; color: var(--accent); border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+  .repo-group .repo-head .n { font-size: 11px; font-weight: 600; color: var(--muted); }
   /* 왼쪽 띠 = 중요도(high 빨강 · medium 노랑 · low 회색) — 훑기만 해도 급한 것이 먼저 보이게 */
-  .issue-row { --sev: var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-left: 4px solid var(--sev); border-radius: 10px; padding: 12px 14px; }
+  .issue-row { --sev: var(--line); display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px 14px; align-items: center; border-left: 3px solid var(--sev); border-bottom: 1px solid var(--line); padding: 10px 14px; }
+  .issue-row:last-child { border-bottom: 0; }
   .issue-row[data-severity="high"] { --sev: var(--bad); }
   .issue-row[data-severity="medium"] { --sev: var(--warn); }
   .issue-row[data-severity="low"] { --sev: var(--idle); }
   /* 시작한(진행 중) 이슈 — 열린 이슈와 배경으로 구분 */
   .issue-row.started { background: color-mix(in srgb, var(--ok) 7%, var(--panel)); }
   .issue-row.flash { animation: flash 1.2s ease-out; }
-  .issue-row .title { font-size: 15px; font-weight: 650; line-height: 1.4; cursor: pointer; }
+  .issue-row .title { font-size: 14px; font-weight: 650; line-height: 1.4; cursor: pointer; }
   .issue-row .title:hover { color: var(--accent); }
   .issue-row .sub { font-size: 12px; color: var(--muted); display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; }
-  .issue-row .sub .pill.repo { color: var(--accent); font-weight: 600; border-color: color-mix(in srgb, var(--accent) 40%, transparent); background: color-mix(in srgb, var(--accent) 8%, transparent); }
-  .issue-row .sub .pill.sev { font-weight: 700; text-transform: uppercase; letter-spacing: .02em; }
-  .issue-row .sub .pill.sev.bad { color: #fff; background: var(--bad); border-color: var(--bad); }
-  .issue-row .sub .pill.sev.warn { color: var(--warn); background: color-mix(in srgb, var(--warn) 14%, transparent); border-color: color-mix(in srgb, var(--warn) 50%, transparent); }
   .issue-row .state { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 6px; grid-row: span 2; }
-  .issue-row .state .btn.primary { font-size: 13px; font-weight: 600; padding: 5px 14px; }
+  .issue-row .state .btn.primary { font-size: 12px; font-weight: 600; padding: 4px 12px; }
+  /* 삭제는 줄에 올리거나 키보드로 들어왔을 때만 — 마우스가 없는 화면은 늘 보인다 */
+  @media (hover: hover) {
+    .issue-row .state .btn.danger { opacity: 0; }
+    .issue-row:hover .state .btn.danger, .issue-row:focus-within .state .btn.danger { opacity: 1; }
+  }
   .issue-row .summary { font-size: 12.5px; color: color-mix(in srgb, var(--text) 72%, var(--bg)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .issue-head { display: flex; align-items: center; gap: 8px; font-size: 15px; color: var(--text); }
   .issue-head .count { font-size: 12px; font-weight: 700; color: var(--bad); background: color-mix(in srgb, var(--bad) 12%, transparent); border-radius: 999px; padding: 0 8px; }
@@ -1906,11 +1911,6 @@
     for (let index = 0; index < leftRank.length; index += 1) if (leftRank[index] !== rightRank[index]) return leftRank[index] - rightRank[index];
     return 0;
   };
-  const severityPill = (severity) => {
-    if (!severity) return '';
-    const level = { high: 'bad', medium: 'warn' }[severity] || '';
-    return `<span class="pill sev ${level}">${esc(severity)}</span>`;
-  };
   // 상태 칸 — 열린 이슈는 [작업 시작](기존 처리 흐름), 시작한 이슈는 진행 중 + 맡은 pane
   const issueState = (card, panes) => {
     if (card.status === 'open') {
@@ -1935,14 +1935,28 @@
       <div class="title" title="누르면 요청·진행·결과를 볼 수 있어요">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
       <div class="state">${issueState(card, panes)}</div>
       <div class="sub">
-        ${card.repo ? `<span class="pill repo">${esc(card.repo)}</span>` : ''}
-        ${severityPill(card.severity)}
         <span title="${esc(new Date(created).toLocaleString('ko-KR', { hour12: false }))}">등록 ${clock(created)}</span>
         ${origin ? `<span title="${esc(card.source)}">${origin.icon} ${esc(origin.label)}</span>` : ''}
         ${card.summary ? `<span class="summary" title="${esc(card.summary)}">${esc(card.summary)}</span>` : ''}
       </div>
     </div>`;
   };
+  // 레포별 묶음 — 묶음 순서는 정렬된 목록에서 그 레포가 처음 나온 자리(진행 중 · 급한 것이 든 레포가 위로), 묶음 안은 원래 순서
+  // 레포가 없는 이슈는 머리글 없는 묶음으로 맨 아래
+  const issueGroups = (issues) => {
+    const groups = new Map();
+    for (const card of issues) {
+      const repo = card.repo || '';
+      if (!groups.has(repo)) groups.set(repo, []);
+      groups.get(repo).push(card);
+    }
+    const entries = [...groups.entries()];
+    return [...entries.filter(([repo]) => repo), ...entries.filter(([repo]) => !repo)];
+  };
+  const repoGroup = (repo, cards, panes) => `<div class="repo-group">
+      ${repo ? `<div class="repo-head">${esc(repo)}<span class="n">${cards.length}</span></div>` : ''}
+      ${cards.map((card) => issueRow(card, panes)).join('')}
+    </div>`;
 
   const render = (state) => {
     lastState = state;
@@ -1950,7 +1964,7 @@
     const issues = (state.cards || []).filter(isOpenIssue).sort(byRank);
     document.getElementById('issue-count').textContent = issues.length ? String(issues.length) : '';
     document.getElementById('issues').innerHTML = issues.length
-      ? issues.map((card) => issueRow(card, panes)).join('')
+      ? issueGroups(issues).map(([repo, cards]) => repoGroup(repo, cards, panes)).join('')
       : '<div class="empty">해결할 이슈가 없어요</div>';
 
     // 바뀐 줄만 잠깐 반짝인다
