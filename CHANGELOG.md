@@ -32,6 +32,30 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.51: 공개 v0.50.3 이후 v0.50.4 ~ v0.51.13(PR234 ~ 241 · 직접 머지 11건)에서 사용자에게 보이는 변경만. 러너 · 동시 실행 시험 정비, 보호 훅 --help 통과, node_modules 링크 무시, 검증 범위 · 번역 시험 선택 같은 내부 정비는 뺐고, 그림 스킬 복구 · 공통 디자인 · 자세히 칸(#234 #237 e43d71a)은 한 줄로, Codex 승인 알림 정리(bb2d9ea)와 훅 믿음 · 리드 문맥(d6cfe2f 268aabf)은 각각 한 줄로 묶었다. 공개 v0.51.14 이후 v0.51.15 ~ v0.51.20(그림 기준 · 다이어그램 버튼 · 스타일 상자 — 문서만 고친 b3b5a9b 는 뺌)과 v0.51.21(92a7d23 메뉴 막대 아이콘 · 패널 — 산 그래프 · 7일 토큰 · 줄 정리)을 더했다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.52: 공개 v0.51.21 이후 v0.51.22 ~ v0.52.0(직접 머지 17건 · PR244)에서 사용자에게 보이는 변경만. 공개 배포 커밋 81b73cd 와 heavy-test 정비 1d0ebd3 은 뺐고, 지표 탭 세부 숫자 · 페이지(5d4019e)와 지시 칸 검사 그리드(c937120)는 한 줄로, 팩 가져오기 오류 문구(e88f245)와 자세히 칸 빼기(8ff8821)는 한 줄로 묶었다. 범위 끝은 열어 둔다 -->
+
+## 0.52 (v0.52.0 – · Nov 6, 2026)
+
+### New
+- Merges that change the app now build, sign and publish the Mac release to the public download repository automatically, and the website's release page is updated to match.
+- Before an agent starts, Athena checks the plan's instructions and warns about missing or unclear parts, and the Board's Metrics tab summarizes these checks by kind.
+
+### Improved
+- The Board now follows the app's language (English, Korean, Japanese or Chinese).
+- The Board's issue list is grouped by repository, and an issue's delete button appears only when you hover over or focus its row.
+- The Board's Metrics tab shows the detail numbers above the full task list, pages the full list 100 tasks at a time, and lines up its groups in a consistent grid.
+- The Diagram menu includes Athena's work-flow diagrams again, updated to the current flow.
+- The menu bar panel's Usage rows show the Claude and Codex logos instead of colored dots, matching the Board.
+- The menu bar panel's work-time mountain graph uses a fixed scale where one agent working for a full 10-minute slot is full height.
+- Pack import errors explain what you chose, what is missing and what to do next, and the pack error dialog no longer hides the details in a collapsed section.
+
+### Fixed
+- The green eyes of the menu bar owl icon were barely visible while agents were working.
+- Hovering the auto-merge button in app settings no longer breaks its styling.
+- After creating a new pack, the sign-in tool now starts automatically in the Athena pane.
+- The first-run repository search no longer opens macOS protected folders (Music, Movies, Pictures, Library) that trigger access prompts.
+- Wide-change detection for automatic reviews no longer counts HTML files with UI code as documentation.
+
 ## 0.51 (v0.50.4 – · Nov 5, 2026)
 
 ### New
