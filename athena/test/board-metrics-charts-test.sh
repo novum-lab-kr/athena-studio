@@ -163,14 +163,17 @@ const fetch = (url, options = {}) => {
   })
 }
 const loadSource = html.slice(html.indexOf('  let metricsController'), html.indexOf("  document.getElementById('metrics-days').addEventListener"))
-const loader = runInNewContext(`${esc}\n${functions}\n${loadSource}\n({loadMetrics})`, { Date, AbortController, URLSearchParams, fetch, document: { getElementById: node, querySelectorAll: () => [] } })
+// 쪽 넘기기는 클릭 대신 쪽 번호를 바로 넣어 다시 그린다
+const loader = runInNewContext(`${esc}\n${functions}\n${loadSource}\n({loadMetrics, goPage: (page) => { metricsPage = page; renderMetricPage() }})`, { Date, AbortController, URLSearchParams, fetch, document: { getElementById: node, querySelector: () => null, querySelectorAll: () => [] } })
+// 전체 작업 줄은 #metric-plan-page 안에 따로 그린다 — 지표 칸과 합쳐 본다
+const shown = () => node('metrics').innerHTML + node('metric-plan-page').innerHTML
 await (async () => {
   const first = loader.loadMetrics(), second = loader.loadMetrics()
   check('기간을 바꾸면 이전 fetch를 취소', () => assert.equal(requests[0].signal.aborted, true))
   requests[1].resolve({ ok: true, json: async () => summary }); await Promise.all([first, second])
   check('취소된 오류는 새 화면을 덮지 않음', () => { assert.match(node('metrics').innerHTML, /작업별 걸린 시간 분포/); assert.equal(node('metrics').attrs['aria-busy'], 'false') })
   check('전체 작업은 기본 펼침 · 전체 경과와 다섯 단계는 숫자/미기록으로 표시', () => {
-    const output = node('metrics').innerHTML
+    const output = shown()
     assert.match(output, /<details open class="metric-details metric-all-plans"/)
     assert.match(output, /전체 경과 60분/); assert.match(output, /전체 경과 미기록/)
     assert.match(output, /<dt>검증<\/dt><dd>3초/)
@@ -185,31 +188,43 @@ await (async () => {
   const escapedSummary = structuredClone(summary)
   escapedSummary.plans[0].title = '<img onerror="boom">'
   const escapedLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => escapedSummary }); await escapedLoad
-  check('작업 목록 제목을 이스케이프', () => { assert.match(node('metrics').innerHTML, /&lt;img/); assert.ok(!node('metrics').innerHTML.includes('<img')) })
+  check('작업 목록 제목을 이스케이프', () => { assert.match(shown(), /&lt;img/); assert.ok(!shown().includes('<img')) })
   const zeroSummary = structuredClone(summary)
   zeroSummary.plans = [{ ...summary.plans[0], leadMs: 0, stages: { work: 0, verify: null, wait: null, review: null, mergeWait: null }, stageHad: { work: true, verify: true } }]
   const zeroLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => zeroSummary }); await zeroLoad
   check('전체 경과·단계의 0초는 미기록과 구분', () => {
-    assert.match(node('metrics').innerHTML, /전체 경과 0초/)
-    assert.match(node('metrics').innerHTML, /<dt>작업<\/dt><dd>0초/)
-    assert.match(node('metrics').innerHTML, /<dt>검증<\/dt><dd>시간 모름/)
-    assert.ok(!/NaN|Infinity/.test(node('metrics').innerHTML))
+    assert.match(shown(), /전체 경과 0초/)
+    assert.match(shown(), /<dt>작업<\/dt><dd>0초/)
+    assert.match(shown(), /<dt>검증<\/dt><dd>시간 모름/)
+    assert.ok(!/NaN|Infinity/.test(shown()))
   })
   const partialSummary = structuredClone(zeroSummary)
   partialSummary.plans[0].leadMs = null; partialSummary.plans[0].stages.work = 1000
   const partialLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => partialSummary }); await partialLoad
   check('단계 일부만 알려져도 단계 합을 전체 경과로 표시하지 않음', () => {
-    assert.match(node('metrics').innerHTML, /전체 경과 미기록/)
-    assert.ok(!node('metrics').innerHTML.includes('전체 경과 1초'))
-    assert.match(node('metrics').innerHTML, /<dt>작업<\/dt><dd>1초/)
+    assert.match(shown(), /전체 경과 미기록/)
+    assert.ok(!shown().includes('전체 경과 1초'))
+    assert.match(shown(), /<dt>작업<\/dt><dd>1초/)
   })
   const manySummary = structuredClone(summary)
   manySummary.plans = Array.from({ length: 294 }, (_, index) => ({ ...summary.plans[0], plan: `plans/task/${index}.md` }))
   const manyLoad = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => manySummary }); await manyLoad
-  check('294개 작업을 기본 목록에서 모두 표시', () => {
+  check('294개 작업은 100개씩 쪽으로 — 1쪽은 1–100', () => {
     assert.match(node('metrics').innerHTML, /전체 작업 294개/)
-    assert.equal((node('metrics').innerHTML.match(/data-plan=/g) || []).length, 294)
+    assert.equal((shown().match(/data-plan=/g) || []).length, 100)
+    assert.match(shown(), /data-plan="plans\/task\/0\.md"/)
+    assert.match(shown(), /1–100 \/ 294/)
+    assert.match(shown(), /data-step="-1" disabled/)
   })
+  loader.goPage(2)
+  check('마지막 쪽은 남은 94개 · 다음 버튼 꺼짐', () => {
+    assert.equal((shown().match(/data-plan=/g) || []).length, 94)
+    assert.match(shown(), /data-plan="plans\/task\/293\.md"/)
+    assert.match(shown(), /201–294 \/ 294/)
+    assert.match(shown(), /data-step="1" disabled/)
+  })
+  const reload = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => manySummary }); await reload
+  check('다시 불러오면(기간 · 리뷰 바꾸기) 1쪽부터', () => assert.match(shown(), /1–100 \/ 294/))
   const fourth = loader.loadMetrics(); requests.at(-1).resolve({ ok: true, json: async () => ({ events: 0 }) }); await fourth
   check('빈 기록은 오류 없이 빈 상태로 표시', () => assert.match(node('metrics').innerHTML, /아직 작업 기록이 없어요/))
 })()
