@@ -52,7 +52,9 @@ load_raw() {
 # awk 변수 이름 load 는 gawk 예약어라 쓰지 않는다(리눅스에서 부하 대기가 통째로 꺼졌다)
 over_limit() { awk -v current="$(load_now)" -v limit="$LIMIT" 'BEGIN{exit !(current > limit)}'; }
 
-started=$(date +%s); last_note=0; LAST_WHY=""
+# waited_any — 잠금 · 부하 대기 루프를 한 번이라도 돌았나. 안 돌았으면 기다린 시간은 0 이다
+# (초 단위로 빼면 바로 잡아도 시작 수십 ms 사이 초가 바뀌어 거짓 "1초 기다림" 이 났다 — 2026-11-05)
+started=$(date +%s); last_note=0; LAST_WHY=""; waited_any=0
 note() {
   local now; now=$(date +%s)
   LAST_WHY="$1"   # 30초 줄에 안 찍힌 이유도 마지막 것은 남는다
@@ -132,6 +134,7 @@ while :; do
     status="${status:+$status · }자리$slot: $(cat "$(slot_path "$slot")/what" 2>/dev/null || echo '?')"
   done
   if [ "$SLOTS" -gt 1 ] && [ "$roomy" = no ]; then status="$status · $EXTRA_WHY"; fi
+  waited_any=1
   note "다른 무거운 명령이 도는 중 — $status"
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "잠금"
   sleep 5
@@ -151,12 +154,14 @@ trap cleanup EXIT INT TERM HUP
 
 # 2) 부하 대기
 while over_limit; do
+  waited_any=1
   note "부하 $(load_now) > 한도 $LIMIT (코어 $CORES)"
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "부하"
   sleep 10
 done
 
-waited=$(( $(date +%s) - started ))
+waited=0
+[ "$waited_any" = 1 ] && waited=$(( $(date +%s) - started ))
 [ "$waited" -gt 0 ] && echo "▶ 차례 — ${waited}초 기다림 · 부하 $(load_now)/$LIMIT"
 # 3) 실행 + 4) 감시 — 끝나면 trap 이 잠금을 푼다. 안쪽 호출이 다시 기다리지 않게 표시를 넘긴다
 MAX_PROCS="${ATHENA_HEAVY_MAX_PROCS:-300}"
