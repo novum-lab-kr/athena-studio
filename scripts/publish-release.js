@@ -1,8 +1,11 @@
 // @ts-check
-// 맥 배포판을 공개 레포(novum-lab-kr/athena-studio-releases)에 올린다 — 로컬에서 사용자 gh 로그인으로(토큰 Secret 을 두지 않는다 · 계획서 Decisions)
+// 맥 배포판을 공개 레포(novum-lab-kr/athena-studio-releases)에 올린다 — 두 자리에서 돈다
+//   · Actions: release-mac.yml 끝 단계가 같은 맥 러너에서 --from dist/release --allow-unstapled 로(GH_TOKEN = Secret RELEASES_TOKEN · 계획서 20261106 D1)
+//   · 로컬: Actions 가 실패했을 때 손으로 마무리 — 사용자 gh 로그인으로 --run <실행 id>
 //   node scripts/publish-release.js --run <release-mac 실행 id> [--dry-run]
-//   node scripts/publish-release.js --from <이미 받은 artifact 폴더> [--dry-run]
-//     1. 실행 확인 — release-mac 워크플로 · main · 끝남 · 성공(--run 일 때)
+//   node scripts/publish-release.js --from <이미 받은 artifact 폴더> [--dry-run] [--allow-unstapled]
+//     --allow-unstapled: .dmg 에 staple 을 끝내 못 붙여도 경고만 남기고 올린다(D3) — Actions(GITHUB_ACTIONS=true)에서만 받는다
+//     1. 실행 확인 — release-mac 워크플로 · main 이나 버전 태그(release.yml 이 태그로 부른다) · 끝남 · 성공(--run 일 때)
 //     2. artifact Athena-Studio-mac 받기(gh run download) → .dmg 2 · .zip 2 · latest.json · latest-mac.yml · release-notes.md
 //        받은 폴더(tmpdir/athena-studio-release-*)는 끝나면 지운다 — 올렸든 · --dry-run 이든 · 실패했든(--from 폴더는 그대로)
 //     3. 다시 확인 — 이름 · 크기 · sha256 을 latest.json 과 맞추고 version · date · minMacOS 모양.
@@ -11,12 +14,14 @@
 //          stapler validate 가 이미 통과면 그대로 · 아니면 staple(티켓만 받는다 — 자격 증명 필요 없음) → validate →
 //          spctl 이 'accepted · Notarized Developer ID' 여야 올린다. staple 로 파일이 바뀌면 latest.json 의 size · sha256 을 다시 쓴다
 //          .zip 안 .app 은 CI 에서 못 붙였으면 그대로 올리고 알린다(손님 맥이 처음 켤 때 온라인으로 공증을 확인한다)
-//     4. 공개 레포에 같은 태그(Release · 초안 · git 태그)가 이미 있으면 멈춘다 — 덮지 않는다
+//     4. 공개 레포 latest 가 이번 버전과 같거나 높으면 올리지 않고 끝낸다(한 줄 · 머지가 몰려 순서가 뒤집힐 때)
+//        같은 태그(Release · 초안 · git 태그)가 이미 있으면 멈춘다 — 덮지 않는다
 //     5. --dry-run 이면 여기까지 하고 올릴 명령만 찍는다
 //     6. gh release create v<버전> --draft(파일 6개 · 본문 release-notes.md) → 다 올라가면 공개 · --latest
 //        (중간에 끊겨도 releases/latest 가 반쪽 Release 를 가리키지 않게. 남은 초안은 찍어 주는 명령으로 지운 뒤 다시)
+//        공개하면 GITHUB_OUTPUT 이 있을 때 published=true · tag=v<버전> 을 적는다(release-mac.yml 이 소개 사이트 맞추기를 부른다)
 //     7. 고정 주소 확인 — releases/latest/download/<.dmg> 가 받아지고 latest.json · latest-mac.yml 이 이번 버전(계획서 7절)
-// gh 는 셸을 거치지 않고 부른다. 순수 부분(checkRun · checkFiles · createArgs)은 test/publish-release.test.js
+// gh 는 셸을 거치지 않고 부른다. 순수 부분(checkRun · checkFiles · createArgs · notNewerReason · allowUnstapledError)은 test/publish-release.test.js
 const { execFileSync } = require('child_process')
 const fs = require('fs')
 const os = require('os')
@@ -24,6 +29,7 @@ const path = require('path')
 const files = require('./release-files')
 const packageMac = require('./package-mac')
 const notarizeMac = require('./notarize-mac')
+const version = require('../src/lib/version')
 
 const SOURCE_REPO = 'novum-lab-kr/athena-studio'
 const RELEASES_REPO = packageMac.RELEASES_REPO // 앱 안 업데이트 피드(app-update.yml)와 같은 자리
@@ -41,7 +47,8 @@ const LOCAL_RETRY = { tries: 3, delayMs: 10_000 }
 /** @param {RunInfo} run */
 function checkRun(run) {
   if (run.workflowName !== WORKFLOW) return `${WORKFLOW} 실행이 아니다(${run.workflowName || '알 수 없음'})`
-  if (run.headBranch !== 'main') return `main 에서 돈 실행이 아니다(${run.headBranch || '알 수 없음'})`
+  // release.yml 은 그 버전 태그(vX.Y.Z)로 부른다 — 그 밖의 브랜치에서 돈 실행은 받지 않는다
+  if (run.headBranch !== 'main' && !/^v\d+\.\d+\.\d+$/.test(run.headBranch || '')) return `main 이나 버전 태그에서 돈 실행이 아니다(${run.headBranch || '알 수 없음'})`
   if (run.status !== 'completed') return `아직 끝나지 않았다(${run.status || '알 수 없음'})`
   if (run.conclusion !== 'success') return `성공한 실행이 아니다(${run.conclusion || '알 수 없음'})`
   return null
@@ -156,6 +163,21 @@ function unstapledZips(status) {
   return files.ARCHES.map((arch) => packageMac.artifactName(arch, 'zip')).filter((name) => status[name] !== true)
 }
 
+// 공개판이 이번 버전과 같거나 높으면 그 이유 · 올려도 되면 null(공개판 없음 포함)
+/** @param {string} appVersion @param {string | null} publishedTag */
+function notNewerReason(appVersion, publishedTag) {
+  if (!publishedTag || !version.parseVersion(publishedTag)) return null
+  if (version.compareVersions(appVersion, publishedTag) > 0) return null
+  return `공개판 ${publishedTag} 가 이번 v${appVersion} 와 같거나 높다`
+}
+
+// --allow-unstapled 는 Actions 에서만 — 로컬은 이 맥에서 staple 을 붙여 올린다(지금 규칙 그대로)
+/** @param {string[]} args @param {Record<string, string | undefined>} env */
+function allowUnstapledError(args, env) {
+  if (!args.includes('--allow-unstapled') || env.GITHUB_ACTIONS === 'true') return null
+  return '--allow-unstapled 는 Actions 에서만 쓴다 — 로컬은 빼고 돌려 이 맥에서 staple 을 붙인다'
+}
+
 // gh release create 인자 — 초안으로 만들고(파일 다 올린 뒤 공개) 본문은 파일로
 /** @param {{ appVersion: string, dir: string, repo?: string }} options */
 function createArgs({ appVersion, dir, repo = RELEASES_REPO }) {
@@ -187,6 +209,17 @@ function ghExists(endpoint) {
   }
 }
 
+// 공개 레포 latest 태그 · Release 가 하나도 없으면(404) null · 그 밖의 오류는 던진다(로그인 · 권한 문제를 '없음' 으로 읽지 않게)
+function publishedTag() {
+  try {
+    return gh(['api', `repos/${RELEASES_REPO}/releases/latest`, '--jq', '.tag_name'], { quiet: true }).trim() || null
+  } catch (error) {
+    const stderr = String(/** @type {{ stderr?: unknown }} */ (error).stderr || '')
+    if (/HTTP 404|Not Found/.test(stderr)) return null
+    throw new Error(`gh api repos/${RELEASES_REPO}/releases/latest 실패 — ${stderr.trim() || String(error)}`)
+  }
+}
+
 /** @param {string[]} args @param {string} name */
 function argValue(args, name) {
   const index = args.indexOf(name)
@@ -211,8 +244,9 @@ async function measure(dir) {
 }
 
 // .dmg 마다 — 이미 붙어 있으면 그대로 · 아니면 staple(+ validate) · 그다음 Gatekeeper 가 공증된 Developer ID 로 받는지
-/** @param {string} dir */
-async function stapleDmgs(dir) {
+// allowUnstapled(Actions · D3)면 끝내 못 붙인 .dmg 는 경고만 남기고, 그 파일의 spctl 도 경고만(staple 이 없으면 CloudKit 에 묻다 끊긴다)
+/** @param {string} dir @param {boolean} allowUnstapled */
+async function stapleDmgs(dir, allowUnstapled) {
   for (const arch of files.ARCHES) {
     const file = path.join(dir, packageMac.artifactName(arch, 'dmg'))
     const name = path.basename(file)
@@ -221,7 +255,11 @@ async function stapleDmgs(dir) {
     else {
       console.log(`[publish] ${name} — staple 안 됨 · 이 맥에서 붙인다`)
       const ok = await notarizeMac.staple(file, { ...LOCAL_RETRY, log: (line) => console.log(`[publish] ${line}`) })
-      if (!ok) throw new Error(`${name} 에 staple 하지 못했다 — 네트워크를 보고 다시(공증 티켓을 애플 CloudKit 에서 받는다)`)
+      if (!ok && !allowUnstapled) throw new Error(`${name} 에 staple 하지 못했다 — 네트워크를 보고 다시(공증 티켓을 애플 CloudKit 에서 받는다)`)
+      if (!ok) {
+        console.log(`::warning::${name} 는 미staple 로 올린다(공증은 됨 — 손님 맥이 처음 열 때 온라인으로 확인 · --allow-unstapled)`)
+        continue
+      }
     }
     const gatekeeper = await notarizeMac.run('spctl', ['-a', '-vv', '-t', 'open', '--context', 'context:primary-signature', file], { echo: false })
     process.stdout.write(gatekeeper.output)
@@ -269,11 +307,14 @@ async function main(args) {
   const runId = argValue(args, '--run')
   const from = argValue(args, '--from')
   const dryRun = args.includes('--dry-run')
+  const allowUnstapled = args.includes('--allow-unstapled')
   if (Boolean(runId) === Boolean(from)) throw new Error('--run <실행 id> 또는 --from <폴더> 중 하나')
+  const unstapledError = allowUnstapledError(args, process.env)
+  if (unstapledError) throw new Error(unstapledError)
   if (process.platform !== 'darwin') throw new Error('맥에서 돌린다 — 올리기 전에 .dmg 를 xcrun stapler · spctl 로 확인한다')
   if (runId && !/^\d+$/.test(runId)) throw new Error(`--run 은 숫자 실행 id: ${runId}`)
 
-  if (from) return publishDir(path.resolve(from), dryRun)
+  if (from) return publishDir(path.resolve(from), dryRun, allowUnstapled)
   const run = /** @type {RunInfo} */ (JSON.parse(gh(['run', 'view', runId, '--repo', SOURCE_REPO, '--json', 'status,conclusion,workflowName,headBranch,headSha,url'])))
   const reason = checkRun(run)
   if (reason) throw new Error(`실행 ${runId}: ${reason}`)
@@ -281,7 +322,7 @@ async function main(args) {
   await withTempDir('athena-studio-release-', async (dir) => {
     console.log(`[publish] 실행 ${runId} artifact ${ARTIFACT} 받기 → ${dir}`)
     gh(['run', 'download', runId, '--repo', SOURCE_REPO, '--name', ARTIFACT, '--dir', dir])
-    await publishDir(dir, dryRun)
+    await publishDir(dir, dryRun, allowUnstapled)
   })
 }
 
@@ -304,8 +345,9 @@ async function withTempDir(prefix, work) {
  * 받은 artifact 폴더를 확인 · staple 하고 올린다(--from 은 사용자 폴더라 지우지 않는다)
  * @param {string} dir
  * @param {boolean} dryRun
+ * @param {boolean} allowUnstapled
  */
-async function publishDir(dir, dryRun) {
+async function publishDir(dir, dryRun, allowUnstapled) {
   const manifestFile = path.join(dir, MANIFEST)
   if (!fs.existsSync(manifestFile)) throw new Error(`${MANIFEST} 가 없다 — release 를 켜고 돈 실행인지 본다: ${dir}`)
   const manifest = JSON.parse(fs.readFileSync(manifestFile, 'utf8'))
@@ -317,8 +359,15 @@ async function publishDir(dir, dryRun) {
   const errors = [...checkFiles({ manifest, notes, measured: firstMeasure }), ...checkFeed({ feed: parseJson(feedFile), appVersion: manifest.version, measured: firstMeasure })]
   if (errors.length) throw new Error(`받은 파일이 맞지 않는다:\n  - ${errors.join('\n  - ')}`)
 
+  // staple 전에 — 올리지 않을 판이면 기다리지 않는다
+  const notNewer = notNewerReason(String(manifest.version), publishedTag())
+  if (notNewer) {
+    console.log(`[publish] 건너뜀 — ${notNewer} · 올리지 않았다`)
+    return
+  }
+
   // 받은 파일이 CI 가 만든 그대로임을 본 뒤에 staple — 파일이 바뀌면 latest.json 을 다시 쓰고 한 번 더 맞춘다
-  await stapleDmgs(dir)
+  await stapleDmgs(dir, allowUnstapled)
   const updated = updateManifest(manifest, await measure(dir))
   if (updated.changed.length) {
     fs.writeFileSync(manifestFile, `${JSON.stringify(updated.manifest, null, 2)}\n`)
@@ -351,6 +400,8 @@ async function publishDir(dir, dryRun) {
   gh(create)
   gh(['release', 'edit', tag, '--repo', RELEASES_REPO, '--draft=false', '--latest'])
   console.log(`[publish] 공개함 — https://github.com/${RELEASES_REPO}/releases/tag/${tag}`)
+  // 고정 주소 확인 전에 적는다 — 확인이 늦게 져도 공개는 끝났으니 소개 사이트 맞추기는 부른다
+  if (process.env.GITHUB_OUTPUT) fs.appendFileSync(process.env.GITHUB_OUTPUT, `published=true\ntag=${tag}\n`)
   await checkFixedUrls(appVersion)
   console.log('[publish] 고정 주소 확인 통과 — 홈페이지 창에 알린다(첫 배포판이면 버튼 켜기)')
 }
@@ -362,4 +413,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { SOURCE_REPO, RELEASES_REPO, withTempDir, checkRun, assetNames, checkFiles, checkFeed, updateManifest, unstapledZips, createArgs }
+module.exports = { SOURCE_REPO, RELEASES_REPO, withTempDir, checkRun, assetNames, checkFiles, checkFeed, updateManifest, unstapledZips, createArgs, notNewerReason, allowUnstapledError }

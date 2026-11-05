@@ -33,6 +33,8 @@ test('올릴 실행 — release-mac · main · 끝남 · 성공만', () => {
   assert.equal(publish.checkRun(run), null)
   assert.match(publish.checkRun({ ...run, workflowName: 'release' }), /release-mac 실행이 아니다/)
   assert.match(publish.checkRun({ ...run, headBranch: 'feat/x' }), /main/)
+  assert.equal(publish.checkRun({ ...run, headBranch: 'v0.51.39' }), null) // release.yml 이 태그로 부른 실행
+  assert.match(publish.checkRun({ ...run, headBranch: 'v0.51' }), /버전 태그/)
   assert.match(publish.checkRun({ ...run, status: 'in_progress' }), /끝나지 않았다/)
   assert.match(publish.checkRun({ ...run, conclusion: 'failure' }), /성공한 실행이 아니다/)
 })
@@ -116,4 +118,17 @@ test('withTempDir: 받은 폴더는 끝나면 지운다 — 일이 실패해도(
     throw new Error('올리다 실패')
   }), /올리다 실패/)
   assert.equal(fs.existsSync(kept), false)
+})
+
+test('공개판이 같거나 높으면 건너뛸 이유 · 낮거나 없으면 null', () => {
+  assert.equal(publish.notNewerReason('0.51.39', 'v0.51.38'), null)
+  assert.equal(publish.notNewerReason('0.51.39', null), null)
+  assert.match(publish.notNewerReason('0.51.39', 'v0.51.39'), /같거나 높다/)
+  assert.match(publish.notNewerReason('0.51.39', 'v0.52.0'), /v0\.52\.0/)
+})
+
+test('--allow-unstapled 는 Actions 에서만', () => {
+  assert.equal(publish.allowUnstapledError(['--from', 'd', '--allow-unstapled'], { GITHUB_ACTIONS: 'true' }), null)
+  assert.match(publish.allowUnstapledError(['--from', 'd', '--allow-unstapled'], {}), /Actions 에서만/)
+  assert.equal(publish.allowUnstapledError(['--from', 'd'], {}), null)
 })

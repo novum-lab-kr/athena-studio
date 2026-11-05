@@ -1,11 +1,16 @@
-# 맥 배포판 — Developer ID 서명 · 공증 · staple 까지 만들어 Actions artifact 로 남긴다(손으로 돌린다 · 계획서 plans/feature/20261028-배포판-패키징-서명-다운로드 D6 · D7 · 2단계)
+# 맥 배포판 — Developer ID 서명 · 공증 · staple 까지 만들어 Actions artifact 로 남기고 공개 레포에 올린다(계획서 plans/feature/20261028-배포판-패키징-서명-다운로드 D6 · D7 · 2단계)
+# 부르는 곳: release.yml 이 태그 뒤 앱이 바뀐 판이면 그 태그로 부른다(scripts/release-changed.js · 계획서 plans/feature/20261106-릴리스-머지-때-자동-공개와-소개-사이트-자동-반영 D2) · 손으로도 돌린다
 # release(기본 켬)면 확인 뒤 latest.json · Release 본문(release-notes.md = CHANGELOG.md 그 minor 절 '## X.Y' — 패치 번호는 맞추지 않는다)도 만들어 같은 artifact 에 넣는다(3단계)
 #   · 앱 안 업데이트 피드 latest-mac.yml(.zip 두 개의 크기 · sha512 — 배포판 ⚙ 업데이트가 읽는다 · 5단계)도 같이
-#   공개 레포 novum-lab-kr/athena-studio-releases 에 올리기는 여기서 하지 않는다 — 로컬에서 scripts/publish-release.js --run <실행 id> 가
-#   사용자 gh 로그인으로 이 artifact 를 받아 다시 확인하고 올린다(토큰 Secret 을 두지 않는다 · 계획서 Decisions)
+#   publish(기본 켬)면 artifact 를 남긴 뒤 같은 러너에서 scripts/publish-release.js --from dist/release --allow-unstapled 로
+#   공개 레포 novum-lab-kr/athena-studio-releases 에 올린다(GH_TOKEN = Secret RELEASES_TOKEN — 그 레포 Contents 쓰기 · 20261106 D1).
+#   .dmg staple 을 끝내 못 붙여도 경고만 남기고 올린다(D3). 공개 레포 latest 가 이번 버전과 같거나 높으면 건너뛴다(머지가 몰려 순서가 뒤집힐 때)
+#   공개하면 소개 사이트 맞추기(novum-lab-kr/novum-web athena-release-sync.yml · 입력 version — 같은 토큰에 그 레포 Actions 쓰기 · D6)를 부른다.
+#   그 부르기가 져도 공개는 성공으로 두고 경고 한 줄(사이트는 그 workflow 를 손으로 다시 부르면 된다)
+#   RELEASES_TOKEN 이 없으면 공개 · 알림을 경고 한 줄로 건너뛴다 — 넣은 뒤 손으로 마무리: 로컬 node scripts/publish-release.js --run <실행 id>(사용자 gh 로그인)
 #   버전 = 실행 시점 git 태그 그대로. CHANGELOG 에 그 minor 절이 없으면 · 버전이 태그 번호(X.Y.Z)가 아니면 만들기 전에 멈춘다(분을 쓰기 전에). 시험 실행은 release 를 끈다
 #
-# 시간(= 돈): 비공개 레포라 macOS 러너는 1분이 10분으로 센다(Free 2,000분 → macOS 약 200분/월). 그래서
+# 시간: 소스 레포가 공개라 표준 러너(macos-15)는 분을 세지 않는다(비공개였을 땐 macOS 1분 = 10분). 그래도 한 번에 약 13~15분이라 줄인다
 #   - 두 칩을 러너 하나에서 — electron-builder 가 arm64 러너에서 x64 판도 만든다(npmRebuild 끔 · node-pty 는 두 칩 prebuild 를 들고 온다).
 #     러너를 칩마다 나누면 체크아웃 · npm ci · 화면 빌드 · 코어 번들을 두 번 하고 분 단위 올림도 두 번 붙는다
 #   - npm 캐시(setup-node) · Electron zip · electron-builder 도구 캐시(actions/cache — package-lock.json 이 같으면 다시 받지 않는다)
@@ -14,7 +19,7 @@
 #
 # 공증은 꼭 성공해야 하고(Accepted 가 아니면 멈춘다) staple 은 넉넉히 다시 시도하되 끝내 못 붙여도 멈추지 않는다 —
 #   러너 → Apple CloudKit 연결이 자주 끊겨(Error 68 · NSURLError -1005 · 실행 40636468435 .dmg · 40645585766 .app) 공증은 됐는데 staple 만 지는 일이 잦다.
-#   못 붙인 것은 artifact 의 staple.json 에 false(미staple)로 남기고, publish-release.js 가 올리기 전에 로컬 맥에서 .dmg 에 다시 붙인다(scripts/notarize-mac.js)
+#   못 붙인 것은 artifact 의 staple.json 에 false(미staple)로 남기고, publish-release.js 가 올리기 전에 .dmg 에 한 번 더 붙여 본다(scripts/notarize-mac.js — 아래 공개 단계 · 로컬 손 마무리 둘 다)
 #
 # Secrets(값은 로그에 찍지 않는다 — 있는지만 본다): CSC_LINK(.p12 base64) · CSC_KEY_PASSWORD · APPLE_API_KEY_P8(.p8 내용) · APPLE_API_KEY_ID · APPLE_API_ISSUER
 name: release-mac
@@ -27,6 +32,11 @@ on:
         default: ''
       release:
         description: 'latest.json · Release 본문도 만들기(버전 X.Y.Z · CHANGELOG 절 확인) — 끄면 시험(.dmg · .zip 만)'
+        type: boolean
+        required: false
+        default: true
+      publish:
+        description: '공개 레포에 올리고 소개 사이트 맞추기 부르기(release 를 켰을 때만) — 끄면 artifact 까지'
         type: boolean
         required: false
         default: true
@@ -194,7 +204,35 @@ jobs:
             dist/release/staple.json
           if-no-files-found: error
           compression-level: 0 # 이미 압축된 파일 — 다시 누르지 않는다
-          retention-days: 14 # 비공개 레포 저장 용량을 아낀다 — 손님용은 publish-release.js 가 공개 레포에
+          retention-days: 14 # 저장 용량을 아낀다 — 손님용은 publish-release.js 가 공개 레포에
+
+      - name: 공개 레포에 올리기
+        # artifact 를 남긴 뒤 — 여기서 지면 그 artifact 로 로컬에서 publish-release.js --run <이 실행 id> 로 마무리한다
+        # 토큰은 있는지만 본다(값은 찍지 않는다). 공개하면 published=true · tag 를 남긴다
+        id: publish
+        if: inputs.release && inputs.publish
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          if [ -z "$GH_TOKEN" ]; then
+            echo "::warning::RELEASES_TOKEN Secret 이 없어 공개를 건너뛴다 — 넣은 뒤 로컬에서 node scripts/publish-release.js --run $RUN_ID"
+            exit 0
+          fi
+          node scripts/publish-release.js --from dist/release --allow-unstapled
+
+      - name: 소개 사이트 맞추기 부르기
+        # 공개한 판만 — 고정 주소 확인이 늦게 져도 공개는 끝났으니 부른다. 져도 이 실행은 성공(경고 한 줄)
+        if: always() && steps.publish.outputs.published == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.RELEASES_TOKEN }}
+          TAG: ${{ steps.publish.outputs.tag }}
+        run: |
+          if gh workflow run athena-release-sync.yml --repo novum-lab-kr/novum-web -f version="$TAG"; then
+            echo "소개 사이트 맞추기를 불렀다 — $TAG"
+          else
+            echo "::warning::소개 사이트 맞추기(novum-lab-kr/novum-web athena-release-sync.yml)를 부르지 못했다 — 공개는 끝났다 · 그 workflow 를 version=$TAG 로 손으로 다시 부른다"
+          fi
 
       - name: 실패해도 만든 파일 남기기
         # 앞 단계가 지면(예: staple) 만든 .dmg · .zip · 공증 로그를 다른 이름으로 남긴다 — 손으로 staple 하거나 원인을 보게.
