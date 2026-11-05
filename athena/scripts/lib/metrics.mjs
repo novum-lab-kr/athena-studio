@@ -387,7 +387,27 @@ const windowTotals = (events, plans, pulls, from, to, picked = null) => {
     verifyFailRate: ratio(verify.filter((event) => event.ok === false).length, verify.length),
     reviewRuns: reviews.length,
     reviewRejectRate: ratio(reviews.filter((event) => event.verdict === '수정 필요').length, reviews.length),
+    planChecks: planCheckTotals(happened),
   }
+}
+
+// 지시 칸 검사(plan.check — delegate.sh 가 띄울 때 · 경고만) · 멈춤 알림(plan.stop — 끝 알림 훅).
+// 같은 계획서를 여러 번 띄우면 그 기간의 마지막 검사로 센다(고친 뒤 다시 띄운 것이 지금 상태)
+const planCheckTotals = (happened) => {
+  const latest = new Map()
+  for (const event of happened) {
+    if (event.type !== 'plan.check' || !event.plan) continue
+    const before = latest.get(event.plan)
+    if (!before || time(event) >= time(before)) latest.set(event.plan, event)
+  }
+  /** @type {Record<string, number>} */
+  const kinds = {}
+  let warned = 0
+  for (const event of latest.values()) {
+    if (Number(event.warnings) > 0) warned += 1
+    for (const [kind, count] of Object.entries(event.kinds ?? {})) if (Number(count) > 0) kinds[kind] = (kinds[kind] ?? 0) + Number(count)
+  }
+  return { checked: latest.size, warned, kinds, stops: happened.filter((event) => event.type === 'plan.stop').length }
 }
 
 export const summarize = (events, { now = Date.now(), days = null, since = null, review = null } = {}) => {

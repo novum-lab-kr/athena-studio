@@ -126,6 +126,19 @@ check('검증 실패율 2/6 · 리뷰 반려율 2/4', Math.abs(week.current.veri
 check('지난 기간 — c 는 다시 열려 끝낸 작업 0 · 구간 값 없음', week.previous.done === 0 && week.previous.verifyFailRate === null && week.previous.stages.work.p50Ms === null && week.previous.reviewRounds === null)
 check('표에는 이번 기간에 움직인 계획서만(최근 것부터)', week.plans.map((plan) => plan.plan).join() === [C, B, D, A].join(), week.plans.map((plan) => plan.plan).join())
 
+console.log('\n지시 칸 검사(plan.check · plan.stop)')
+const checkEvents = [
+  { at: at(30), type: 'plan.check', plan: A, warnings: 2, kinds: { 'stop-ground': 1, 'progress-word': 1 } },
+  { at: at(20), type: 'plan.check', plan: A, warnings: 1, kinds: { 'progress-word': 1 } },
+  { at: at(10), type: 'plan.check', plan: B, warnings: 0, kinds: {} },
+  { at: at(5), type: 'plan.stop', plan: A, agent: 'web-fe', pane: 'p1' },
+  { at: at(24 * 10), type: 'plan.check', plan: C, warnings: 3, kinds: { 'ship-option': 3 } },
+]
+const checks = summarize(checkEvents, { now: NOW, days: 7 })
+check('계획서마다 마지막 검사만 — 검사 2 · 경고 난 계획서 1 · 종류 progress-word 1 · 멈춤 알림 1', checks.current.planChecks.checked === 2 && checks.current.planChecks.warned === 1
+  && JSON.stringify(checks.current.planChecks.kinds) === '{"progress-word":1}' && checks.current.planChecks.stops === 1, JSON.stringify(checks.current.planChecks))
+check('지난 기간은 그 구간 것만 — C 검사 1 · ship-option 3', checks.previous.planChecks.checked === 1 && checks.previous.planChecks.kinds['ship-option'] === 3 && checks.previous.planChecks.stops === 0, JSON.stringify(checks.previous.planChecks))
+
 console.log('\n전체 · 빈 기록 · 글자')
 const all = summarize(events, { now: NOW })
 check('전체 — 지난 기간 비교 없음 · 계획서 5개', all.previous === null && all.plans.length === 5)

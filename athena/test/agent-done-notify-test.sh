@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 위임 에이전트 끝 알림 훅 시험 — scripts/hooks/agent-done-notify.py(Stop · UserPromptSubmit).
 # 가짜 화면 CLI · 임시 본체 사본으로 — 화면 · claude 를 부르지 않는다 · 몇 초
-#   같은 내용 중복 안 함 · 새 입력이 오면 다시 알림 · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 는 보내지 않음
+#   같은 내용 중복 안 함 · 새 입력이 오면 다시 알림 · 멈춤 표시(⏸ 멈춤:)면 멈춤 알림 + plan.stop · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 는 보내지 않음
 #
 # 사용: test/agent-done-notify-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -233,6 +233,28 @@ FAKE_GH=slow hook prompt '{"prompt":"느림"}'; FAKE_GH=slow hook stop
 elapsed=$(( $(date +%s) - started ))
 check "gh 가 느리면 기다리지 않고 (기록 기준)" "$(last_sent | grep -c 'PR #7 draft (기록 기준)$')" 1
 check "느린 gh 에도 훅이 6초 안에 끝난다(실제 ${elapsed}초)" "$([ "$elapsed" -lt 6 ] && echo 1 || echo 0)" 1
+
+# 멈춤 알림 — 마지막 답에 "⏸ 멈춤: <기다리는 것>" 줄이 있으면 "끝" 대신 멈춤으로 알리고 사건 plan.stop 을 남긴다
+stop_events() { cat "$DATA/state/events.jsonl" "$BODY/.events.jsonl" 2>/dev/null | grep -c '"type":"plan.stop"'; }
+hook prompt '{"prompt":"멈춤 1"}'; hook stop '{"last_assistant_message":"⏸ 멈춤: 지표 탭 캡처 확인 — \"넘겨\" 를 기다림\n\n바뀐 것 …"}'
+check "훅 입력 last_assistant_message 의 멈춤 줄로 멈춤 알림" "$(last_sent | grep -c '\[athena-studio-fe → 아테나\] ⏸ 멈춤 · p9 · 계획서 plans/task/x.md · Status in_progress · 지표 탭 캡처 확인 — "넘겨" 를 기다림')" 1
+check "멈춤 알림은 사건 plan.stop 을 남긴다" "$(stop_events)" 1
+REPLY_LOG="$WORK/reply.jsonl"
+python3 - "$REPLY_LOG" <<'PY'
+import json, sys
+rows = [
+    {"type": "user", "message": {"content": "해 줘"}},
+    {"type": "assistant", "message": {"content": [{"type": "text", "text": "**⏸ 멈춤: 사용자 확인**\n요약"}]}},
+    {"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {}}]}},
+]
+open(sys.argv[1], "w").write("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows))
+PY
+hook prompt '{"prompt":"멈춤 2"}'; hook stop "{\"transcript_path\":\"$REPLY_LOG\"}"
+check "입력에 없으면 대화 기록 끝의 마지막 assistant 글에서 찾는다(굵게 표시도)" "$(last_sent | grep -c '⏸ 멈춤 · p9 · .* · 사용자 확인')" 1
+check "plan.stop 2번째" "$(stop_events)" 2
+hook prompt '{"prompt":"평범"}'; hook stop '{"last_assistant_message":"다 했어요. 멈춤: 없음 이라 넘겼어요"}'
+check "줄 머리에 ⏸ 멈춤 이 없으면 평소처럼 끝" "$(last_sent | grep -c '\] 끝 · p9')" 1
+check "끝 알림은 plan.stop 을 남기지 않는다" "$(stop_events)" 2
 
 # 담당 대화 확인 — lead-send 와 같은 소유권 검사. 계획서 Lead session 과 아테나 pane 의 대화가 다르면 넣지 않고 계획서에 기록
 mkdir -p "$DATA/state/pane-sessions"

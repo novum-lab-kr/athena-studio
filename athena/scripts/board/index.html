@@ -1255,6 +1255,8 @@
         + (previous ? `<span class="delta">${delta}<span>${esc(before)} ${esc(metricKnown(prev?.avgMs))}</span></span>` : '')
         + `<span class="sub">${esc(sub)}</span></div>`;
     };
+    // 경고 종류 이름 — 기록의 키(stop-ground …)는 그대로 두고 화면에만 쉬운 말 · 사전에 없는 새 종류는 "새 경고 종류 (키)"
+    const planKindLabel = (kind) => (I18N.dict[`m.k.${kind}`] ?? I18N.fallback[`m.k.${kind}`] ? t(`m.k.${kind}`) : t('m.k.unknown', { kind }));
     const groups = [
       group(t('m.g.lead'), [
         tile(t('m.t.done'), current.done, previous?.done, metricCount, { lowerIsBetter: false }),
@@ -1283,6 +1285,14 @@
         tile(t('m.t.fixRate'), current.fixRate, previous?.fixRate, metricCount, {}, t('m.t.fixRateSub', { fixes: current.autoFixes, merges: current.autoMerges })),
         tile(t('m.t.revert'), null, null, () => t('m.noRecord'), {}, t('m.t.revertSub')),
       ]),
+      // 지시 칸 검사 — delegate.sh 가 띄우기 전에 남긴 plan.check(계획서마다 마지막 것) · 멈춤 알림(plan.stop) · 종류 칸은 이 구간에 나온 것만
+      ...(current.planChecks ? [group(t('m.g.planCheck'), [
+        tile(t('m.t.planChecked'), current.planChecks.checked, previous?.planChecks?.checked, metricCount, { lowerIsBetter: false }, t('m.t.planCheckedSub')),
+        tile(t('m.t.planWarned'), current.planChecks.warned, previous?.planChecks?.warned, metricCount),
+        tile(t('m.t.planStops'), current.planChecks.stops, previous?.planChecks?.stops, metricCount),
+        ...Object.entries(current.planChecks.kinds).sort((left, right) => right[1] - left[1])
+          .map(([kind, count]) => tile(planKindLabel(kind), count, previous?.planChecks?.kinds?.[kind] ?? 0, metricCount)),
+      ], true)] : []),
     ].join('');
     // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것(전체 소요 · 구간 합 중 큰 쪽) 대비 막대로
     const stageSum = (plan) => STAGES.reduce((sum, [stage]) => sum + (plan.stages?.[stage] ?? 0), 0);

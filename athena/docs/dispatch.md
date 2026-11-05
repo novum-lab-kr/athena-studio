@@ -58,6 +58,7 @@ node scripts/reuse-pane.mjs --agent <에이전트>   # 쓸 수 있으면 {"pane"
 - reviewer 는 이어 보내지 않는다(리뷰마다 새 pane). 시험 `test/reuse-pane-test.sh`
 
 ## 프롬프트 필수 포함 사항
+- 지시문은 정해진 칸(요청 · 할 것 · 보존 · 조건 · 안 할 것 · handoff 전 · 후 — 멈춤 · 받은 뒤)으로 — `docs/plan-template-light.md` "지시 칸". `delegate.sh` 가 띄우기 전에 `scripts/plan-check.mjs` 로 검사해 경고를 보여 준다(막지 않는다)
 - 승인된 계획서 경로 (`plans/유형/YYYYMMDD-제목.md`)
 - 해당 에이전트가 담당할 작업 범위 (계획서의 작업 배분표 중 자기 행)
 - 관련 파일 경로 (파악된 경우)

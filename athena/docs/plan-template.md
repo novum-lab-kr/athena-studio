@@ -52,6 +52,19 @@
 ### Commits
 - scripts/commit.sh 가 레포별로 한 줄씩 적는다 — 날짜 · 레포 · 브랜치 · SHA · 메시지 · 검증 · push 여부. 손으로 지우지 않는다
 
+## 지시
+요청(YYYY-MM-DD): 한두 줄 요약 (←1)
+- 할 것:
+- 보존:
+- 조건:
+- 안 할 것:
+- handoff 전 · 후:
+  - 멈춤: 없음
+  - 받은 뒤: commit.sh → 레포 설정대로 ship.sh
+- 버림:
+  - N — 이유
+<!-- 칸 쓰는 법 · 멈춤 근거 · (←N) 은 docs/plan-template-light.md "지시 칸" — delegate.sh 가 경고만 한다 -->
+
 ## 1. 개요
 - 작업 유형: feature / bugfix / refactor
 - 요청 사항: (사용자 요청 요약)

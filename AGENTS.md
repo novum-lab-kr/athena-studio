@@ -62,7 +62,8 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 레포 규칙 문서 찾기 · 싣기(`athena/scripts/lib/rule_docs.py` · `agent-context.py` 의 규칙 문서 절 · `compact-checkpoint.py` 의 다시 읽기 · `sync-fingerprint.mjs` · `init.mjs` 의 `ruleDocs`)를 고쳤으면 `test/rule-docs-test.sh`(몇 초 · 임시 레포)
   - 시크릿 차단 훅(`athena/scripts/hooks/secret-guard.py`)을 고쳤으면 `test/secret-guard-test.sh`(몇 초 · 훅에 글자만 넣어 막힘 · 통과를 본다)
   - 에이전트 → 아테나 보내기(`athena/scripts/lead-send.py` — 못 받으면 모아 뒀다 넣기 · 닫혔으면 지금 아테나 pane 으로 · 못 넣으면 계획서 기록)를 고쳤으면 `test/lead-send-test.sh`(약 15초 · 가짜 화면 CLI · 가짜 bin/athena · 임시 본체 사본) — 다시 넣어도 되는 데몬 거절 글은 앱 `test/pane-submit.test.js` 가 같은지 본다
-  - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본)
+  - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본 · `⏸ 멈춤:` 알림과 `plan.stop` 기록)
+  - 계획서 지시 칸 검사(`athena/scripts/lib/plan-check.mjs` · `scripts/plan-check.mjs` · `delegate.sh` 의 띄우기 전 검사 — 경고만)를 고쳤으면 `test/plan-check-test.sh`(몇 초 · `test/fixtures/plan-check/` 의 G1~G4 통과 · B · A · C 걸림 · CLI 종료 0 · `plan.check` 기록). 지표 탭 집계(`scripts/lib/metrics.mjs` `planChecks`)는 `test/metrics-test.sh`
   - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
   - 위임 에이전트 훅 설정(`athena/scripts/lib/agent_hooks.py` — `agent-context.py` · `delegate.sh` 가 같이 쓴다)을 고쳤으면 `test/agent-hooks-test.sh`(몇 초)
