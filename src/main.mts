@@ -491,6 +491,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     stopStaleBoard,
     waitCoreUpdate: () => updateGate.wait(),
     reloadKey,
+    language: () => language,
     requestsPollMs: REQUESTS_POLL_MS,
     trayRequestsChanged: (target) => trayRequestsChanged(target as PackWindow),
     appConfig: () => config,

@@ -1,0 +1,676 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Athena 工作流程",
+    "locale": "zh-CN",
+    "subtitle": "请求 → triage(轻量直接进行 / 正式需决策控制台批准) → 派发 ↓ pane 工作 → 完成报告 → 立即 push · PR(三条路) → auto done → Athena 确认 · cleanup → 报告 · 用户确认(批准 / 返工)仅在 UI 变更 · 非 autoMerge 仓库时 (原文: docs/team-lead.md · docs/workflow.md · docs/pr-auto.md)",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "route",
+        "label": "轻量 · 正式 · 多仓库",
+        "focus": [
+          "req",
+          "judge",
+          "approve",
+          "branch"
+        ],
+        "note": "轻量直接进行;正式(多仓库 · API · 结构)等决策控制台批准后派发。后端 · 共享包优先,空闲的同仓库 pane 用 --reuse-pane 续发。"
+      },
+      {
+        "id": "work",
+        "label": "工作 · 完成报告 · 偶尔确认",
+        "focus": [
+          "work",
+          "relay",
+          "confirm",
+          "ship"
+        ],
+        "note": "只确认 diff,不清楚的用 request open 提问。完成后完成报告并立即 push · PR(full verify 一次)。用户确认(批准 / 返工)仅在 UI 变更 · 非 autoMerge 仓库。"
+      },
+      {
+        "id": "review",
+        "label": "评审 · 修复 loop",
+        "focus": [
+          "work",
+          "relay",
+          "ship",
+          "pr"
+        ],
+        "note": "大范围修改由 reviewer pane 评审(正式自动 · 轻量说\"评审一下\"),需修复的直接发给该 pane。PR 自动评审的修复也回到该 pane 修好后再 push。"
+      },
+      {
+        "id": "ship",
+        "label": "push · PR 三条路",
+        "focus": [
+          "ship",
+          "pr",
+          "direct",
+          "push",
+          "complete"
+        ],
+        "note": "PR → 自动评审 / direct merge · Actions handoff(UI 确认在 handoff 前 · Actions: verify → merge → deploy · 失败回 pane) / 直接 push 到 main。多仓库由 Athena 按顺序。"
+      },
+      {
+        "id": "cleanup",
+        "label": "cleanup · 下一个请求",
+        "focus": [
+          "complete",
+          "cleanup",
+          "report",
+          "req"
+        ],
+        "note": "合并后待办移到 done,learn-review 把学习候选放进 [学习]标签页(由用户添加)。关闭完成的 pane 即自动 archive。后续工作 → 问题 → 再请求。"
+      }
+    ],
+    "output": "docs/diagrams/athena-flow.zh.html"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "用户"
+    },
+    {
+      "id": "lead",
+      "label": "Athena · reviewer"
+    },
+    {
+      "id": "agent",
+      "label": "代理 pane · 工作树"
+    },
+    {
+      "id": "board",
+      "label": "待办 · Actions"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-plan",
+      "label": "请求 · triage",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-work",
+      "label": "派发 · 工作 · blocked 就提问",
+      "fromCol": 1,
+      "toCol": 1,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-report",
+      "label": "完成报告 · 偶尔确认",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-ship",
+      "label": "提交 · push · PR 三条路",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    },
+    {
+      "id": "p-done",
+      "label": "完成 · cleanup · 报告",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [],
+  "mainPath": [
+    "req",
+    "judge",
+    "branch",
+    "work",
+    "relay",
+    "ship",
+    "pr",
+    "complete",
+    "cleanup",
+    "report"
+  ],
+  "nodes": [
+    {
+      "id": "req",
+      "lane": "user",
+      "col": 0,
+      "type": "frontend",
+      "label": "请求",
+      "sublabel": "用户 · 对话 · /call · 问题",
+      "tag": "问题 [작업 시작] · 剩余工作也转为问题",
+      "width": 150
+    },
+    {
+      "id": "approve",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "决策控制台批准",
+      "sublabel": "用户 · [이대로 진행]",
+      "tag": "仅正式 · plan-html.mjs · board.sh open",
+      "width": 150
+    },
+    {
+      "id": "confirm",
+      "lane": "user",
+      "col": 2,
+      "type": "frontend",
+      "label": "确认 · 批准 / 返工",
+      "sublabel": "UI 变更 · 非 autoMerge",
+      "tag": "用户 · 查看截图",
+      "width": 150
+    },
+    {
+      "id": "report",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "确认报告",
+      "sublabel": "用户 · 后续工作转问题",
+      "tag": "问题 [작업 시작] → 再请求",
+      "width": 150
+    },
+    {
+      "id": "judge",
+      "lane": "lead",
+      "col": 0,
+      "type": "backend",
+      "label": "triage · 计划书",
+      "sublabel": "Athena · 📋 轻量 / 正式",
+      "tag": "正式 md + html · 后端优先",
+      "width": 150
+    },
+    {
+      "id": "branch",
+      "lane": "lead",
+      "col": 1,
+      "type": "backend",
+      "label": "分支 · 派发",
+      "sublabel": "Athena · delegate.sh --plan",
+      "tag": "同仓库空闲 pane 用 --reuse-pane",
+      "width": 150
+    },
+    {
+      "id": "relay",
+      "lane": "lead",
+      "col": 2,
+      "type": "backend",
+      "label": "完成报告 · 评审",
+      "sublabel": "Athena · 大改交 reviewer",
+      "tag": "批准 → 让该 pane push",
+      "width": 150
+    },
+    {
+      "id": "cleanup",
+      "lane": "lead",
+      "col": 5,
+      "type": "backend",
+      "label": "确认 · cleanup",
+      "sublabel": "Athena · 关闭完成的 pane",
+      "tag": "自动 archive · 工作树 cleanup",
+      "width": 150
+    },
+    {
+      "id": "work",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "pane 工作",
+      "sublabel": "代理 · 只确认 diff",
+      "tag": "不清楚 → request open → 得到答复继续",
+      "width": 150
+    },
+    {
+      "id": "ship",
+      "lane": "agent",
+      "col": 3,
+      "type": "backend",
+      "label": "提交 · push",
+      "sublabel": "代理 · commit.sh · ship.sh",
+      "tag": "full verify 一次 · reuse.sh ♻️",
+      "width": 150
+    },
+    {
+      "id": "push",
+      "lane": "agent",
+      "col": 4,
+      "type": "backend",
+      "label": "直接 push 到 main",
+      "sublabel": "代理 · fast-forward push",
+      "tag": "direct: true · push 前确认",
+      "width": 150
+    },
+    {
+      "id": "pr",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "PR → 自动评审",
+      "sublabel": "待办 · Claude / Codex 评审",
+      "tag": "autoMerge · [合并] → squash",
+      "width": 150,
+      "yOffset": 40
+    },
+    {
+      "id": "direct",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "direct merge · handoff",
+      "sublabel": "代理 · --direct-merge",
+      "tag": "Actions: verify → merge → deploy",
+      "width": 150,
+      "yOffset": -48
+    },
+    {
+      "id": "complete",
+      "lane": "board",
+      "col": 5,
+      "type": "database",
+      "label": "auto done",
+      "sublabel": "待办 · done → learn review",
+      "tag": "learn-review → [学习] 标签页添加",
+      "width": 150,
+      "yOffset": -48
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "req",
+      "to": "judge",
+      "label": "",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          32,
+          168
+        ],
+        [
+          32,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e2",
+      "from": "judge",
+      "to": "branch",
+      "label": "轻量 · 直接",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "f1",
+      "from": "judge",
+      "to": "approve",
+      "label": "正式",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          123,
+          340
+        ],
+        [
+          233.4,
+          340
+        ],
+        [
+          233.4,
+          168
+        ]
+      ]
+    },
+    {
+      "id": "f2",
+      "from": "approve",
+      "to": "branch",
+      "label": "",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "from": "branch",
+      "to": "work",
+      "label": "",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "p1",
+      "from": "work",
+      "to": "relay",
+      "label": "① 完成报告",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          536.6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "r1",
+      "from": "relay",
+      "to": "ship",
+      "label": "② 立即 push · PR",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          679,
+          390
+        ]
+      ],
+      "labelDy": -28
+    },
+    {
+      "id": "p2",
+      "from": "relay",
+      "to": "confirm",
+      "label": "请求确认",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "straight"
+    },
+    {
+      "id": "p3",
+      "from": "confirm",
+      "to": "relay",
+      "label": "批准",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "left",
+      "labelSegment": 1,
+      "via": [
+        [
+          440.20000000000005,
+          168
+        ],
+        [
+          440.20000000000005,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "d1",
+      "from": "confirm",
+      "to": "work",
+      "label": "返工",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          536.6,
+          118
+        ],
+        [
+          6,
+          118
+        ],
+        [
+          6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "s1",
+      "from": "ship",
+      "to": "pr",
+      "label": "PR",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          588,
+          612
+        ],
+        [
+          588,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "s2",
+      "from": "ship",
+      "to": "direct",
+      "label": "direct merge",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          679,
+          786
+        ]
+      ]
+    },
+    {
+      "id": "s3",
+      "from": "ship",
+      "to": "push",
+      "label": "main",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "l1",
+      "from": "pr",
+      "to": "work",
+      "label": "自动评审修复",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "m1",
+      "from": "pr",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1045,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "m2",
+      "from": "direct",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "m3",
+      "from": "push",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          1045,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "e7",
+      "from": "complete",
+      "to": "cleanup",
+      "label": "Athena 确认",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelSegment": 1,
+      "via": [
+        [
+          1136,
+          786
+        ],
+        [
+          1136,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e8",
+      "from": "cleanup",
+      "to": "report",
+      "label": "报告",
+      "variant": "default",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "顺序 — 图中各步详解",
+      "items": [
+        "① 请求 — 对话 · /call · 待办问题 [작업 시작](开始工作)。同名界面在多个仓库(运营后台 · 用户网页等)时先问是哪一个",
+        "② triage — Athena 用一行告知: 📋 按轻量进行 — 理由 · 路径 / 📋 按正式进行 — 理由 · N 个决策 · 路径",
+        "③ 计划书(这里分路) — 轻量: plans/task/…md 自动创建,不展示 · 不需批准 / 正式: md + 同名 html 决策控制台(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs) → [이대로 진행](按此进行)确定。确定前不派发",
+        "④ 分支 · pane(这里汇合) — 从 prBase 切出分支 · 工作树(new-branch.sh · /call 打开前先问分支),在该工作树用 delegate.sh --plan 打开 pane。正式按共享包 → 使用方仓库顺序,独立服务并行",
+        "⑤ 工作 — 请求 → 修改 → 确认 diff · 报告,反复多次(full verify 在结束时一次 — ⑦ 提交)。不清楚的事实(外部契约 · 产品策略 · 默认行为)不猜,只停下那部分写进 Blocked,汇总成一个请求提问(bin/athena request open — [工作]\"等你处理\" · 选择题用 AskUserQuestion)。用户纠正或同一错误出现 3 次时当场提 📚 learn 问题",
+        "⑥ 评审(仅大范围修改) — 正式计划书报告大范围修改时不问就开评审(自动评审)。轻量没有自动评审,只在报告大范围修改(新功能 · 结构变更 · 跨文件逻辑 · 安全 · 数据 · 外部契约)时在末尾加一行\"要评审吗?\"— 小修改或反映评审意见后不加。用户说\"评审一下\"随时在旁边开 reviewer pane。reviewer 不重跑同一棵树已通过的验证(♻️ 复用)。需要决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add · [이대로 진행] 发到该代理 pane)。需修复的不问就修,每项一行报告",
+        "⑦ 提交 — \"提交一下\"或 push 时用 commit.sh 提交(仅指定文件 · strict verify · 计划书 ## Commits)。可以多次",
+        "⑧ push · PR — 多仓库时 Athena 确认顺序 · 公开范围,每个仓库运行 ship.sh --repo-agent(正式路)。单仓库方式看仓库设置(delegate.sh 结果行会说明)。默认:\"PR 올려줘\"一句 → 提交 → ship.sh 草稿 → 整理标题 · 正文 → 不问就向 prBase 开 draft PR。开了自动 PR 的仓库(autoMerge): 完成后不问就开 draft PR → PR 自动评审。关闭 PR 的仓库(autoPr:false): 用 ship.sh --direct-merge 做 direct merge(大范围修改则 merge 前有评审 gate) — 仅\"PR 올려줘\"时 --user-pr。Actions handoff 仓库: 同一命令以 feature branch push 做 handoff 后立即结束。报告末尾 📚 学到的东西",
+        "⑨ 结束 — PR 合并后(direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done → 学习评审(learn-review)根据计划书 · 对话 · diff · 评审评论补充学习候选 → 绑定的 pane 全部关闭后自动 archive(archive/) · 工作树也判定后删除。完成的 pane 由 Athena 关闭",
+        "pane 之间的消息用 scripts/screen pane send-text 直接传 — 发给 Athena 用 lead-send.py(收不到时先存起来稍后送达)。不要请用户转达",
+        "提问 · 权限等待在 Studio [工作] 弹窗查看。提问在弹窗里回答;权限在 [前往 pane] 后到原窗口选择。选择框也算等待状态",
+        "Codex 保护钩子只检查第一条 Bash 命令,write_stdin 的后续输入不检查。在 /hooks 确认钩子信任",
+        "确认 loop(偶尔) — 默认完成报告后立即 push · PR(autoMerge 仓库不问)。仅在 UI 变更 · 非 autoMerge 仓库(\"PR 올려줘\")时,Athena 把截图给用户看:批准则让该 pane push · 返工则回到该 pane 的工作。UI 确认在 handoff 前完成"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "图中省略的 — 记录 · 要读的",
+      "items": [
+        "计划书(plans/) — 轻量 · 正式共用的工作记录。中断后从 Checkpoint 继续,提交记在 ## Commits",
+        "问题(issues/) · 待办 — 以后要做的是问题,正在进行和等你回答的在 [工作]。合并后待办会 done · archive",
+        "包 ROUTING.md · pack.json — 哪个仓库 · 哪个代理 · 基准分支",
+        "rules 的必读节 · gotchas 无论任务大小都读;knowledge 只读任务类型需要的节",
+        "停下来提问的地方(仓库不明确 · 不清楚的事 · 分支已存在 · 提交 · push 被拒)不在图中 — 见下方\"在哪里停下来提问\""
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "轻量 · 正式 — 只在分路处不同",
+      "items": [
+        "轻量 — 文案 · 样式 · 单个 bug · 检查 · 调查 · /call · 紧急修复 — 单仓库。计划书自动记录 · 不需批准 · 仅在\"评审一下\"时评审",
+        "正式 — 新功能 · 多仓库 · API · 结构变更 · 有需要用户决定的事时。决策控制台批准 · 从共享包按顺序派发 · 大范围修改自动评审 · 多仓库由 Athena 交叉评审 · 按顺序 push · PR",
+        "即使是正式,单仓库从分支 · pane 起也和轻量一样,在 pane 里一直走到 push · PR",
+        "说\"按正式\"就走正式;正式规模的工作说\"直接改\"也按轻量(在报告中注明)。从轻量开始扩大到多仓库 · API 时停下转为正式",
+        "轻量也必读包 ROUTING.md · rules 的必读节 · gotchas。knowledge 只读需要的节",
+        "同一仓库再来工作且该仓库 pane 空闲、用户没在看时,发到那个 pane 而不是开新的(delegate.sh --reuse-pane) — 正在工作或开着提问框则在旁边开新 pane,用新分支(不复用进行中的分支)",
+        "默认用轻量模型打开,只有真正简单的修改(局部文案 · 样式程度 · 不碰逻辑 · 数据 · 权限 · 外部契约且无需查原因 · 不确定就不用 · 不能与 --reuse-pane 同用)才加 --model sonnet(仅 Claude 引擎)",
+        "问题 [작업 시작](开始工作)由 Athena 接手按此流程处理。选\"直接交给负责代理(仅调查)\"则只在生产基准工作树中调查 · 报告,不改代码",
+        "委派跟随本体的主工具(可用 --engine 指定)。Claude · Codex 都在负责仓库的工作区另开 pane,拿到同样的计划书 · 规则"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "正式路 — 批准 · 派发",
+      "items": [
+        "决策控制台在待办地址打开(scripts/board.sh open <md>)。对话里给出路径和每个决策的标题 · 推荐各一行",
+        "在控制台选择后 [이대로 진행](按此进行) → 决策输入到该 Athena pane(在对话里回答也一样) → 记录到 md · html → ✅ 确定",
+        "有修改要求时改 md · html,重新打开控制台再批准",
+        "确定前不派发",
+        "不用 delegate.sh --plan 不开 pane。工作树 · 分支 · pane 记在 Work ref",
+        "FE 会话有保护钩子 — 直接 git commit · push · gh pr create 和 add -A 会被拦(用 commit.sh · ship.sh)",
+        "workspace = 仓库,一个标签页里 pane 并排。共享包 → 使用方仓库依次;独立服务并行",
+        "默认不带提示打开 pane,再在里面下指令",
+        "reviewer · 一次性调查用 --here 在当前标签页",
+        "同一功能进多个服务时,在计划书写公共规格(文案 · 行为 · 环境变量键)",
+        "正式计划书是 md + 同名 html 决策控制台(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs)。PLAN.leadPane 记创建计划书的 Athena pane",
+        "前后端一起改时后端优先 — 后端报告的\"契约变更\"原样放进前端指令。多仓库的 push · PR:Athena 定顺序(共享包优先),每个仓库运行 ship.sh --repo-agent"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "评审 · 提交 · push",
+      "items": [
+        "没有评审直接提交 · PR 也不会被拦 — 只有关闭 PR 仓库的 direct merge · Actions handoff 在大范围修改时前面有评审 gate",
+        "评审记录包括未提交变更在内的文件内容 — 评审 → 提交或提交 → 评审,内容相同即视为批准",
+        "评审后内容变了或没有评审,也不问就 push — PR 正文写\"需要确认\",报告写\"评审批准前\"",
+        "提交是本地 git 提交。push 用 ship.sh 一次完成(禁止其他直接 push)。有未提交变更时 push 会被拒",
+        "PR 标题 type(范围): 工单摘要 · 正文用公共模板(git.md \"PR 제목·본문\")",
+        "PR 自动评审(仅开启 \"autoMerge\": true 的仓库的单仓库 PR · 默认关闭) — draft PR 上来后待办检测到,由 Claude · Codex 评审(没有 Claude 时用两个 Codex 模型 · 读不到模型列表则单席判定)。需修复的以 [자동 리뷰 → 에이전트] 发到该 pane,代理仅对这条指令不问就 commit.sh → ship.sh --auto-push(新提交再评审 · 正文意见用 --body-file · 代理只收阻断意见,建议只留在 PR 评论 · 第 2 轮起只看上次意见 + 变化的 diff)。需决策的进决策控制台(同一轮的修复不等待先发 · 实现细节决策按推荐自动确定)。超过上限 3 也不停:由一个评审者只简短评审修复提交的变化部分,批准则验证同一 HEAD 后进入合并步骤(仍有阻断意见则停下由 Athena 接手)。开启的仓库完成且验证通过后不说\"PR 올려줘\"也会开到 draft PR。合并结果在工作 pane 一行",
+        "自动合并 — 所有配置的评审者批准 + 同一 HEAD 验证通过 + 无冲突 → 合并确认请求(Mac 通知 · [工作] 弹窗) → 人选 [合并]后 squash(仓库设 autoMergeConfirm: false 则不问直接合并 · 关闭评审 · 手动合并按仓库选择 — 见 pr-auto.md 开启)。任一失败 · 被拒则不合并",
+        "direct merge 前的评审 gate(关闭 PR 的仓库 · 仅大范围修改 — 代码文件 5 个 · 150 行 · 敏感路径 · 或计划书 Checkpoint 的 - Wide change: yes) — ship.sh --direct-merge 在旁边开 reviewer,等待同一 HEAD 的批准。需修复则修好提交,用同一命令再来(只简短看 diff) · 第二次仍需修复由 Athena 接手",
+        "Actions handoff 仓库(actionsHandoff): 提交不在 Mac 上跑 full verify,ship.sh --direct-merge 以 feature branch push 做 handoff 后立即结束 → pane 做下一件事。full verify → prBase merge → deploy 启动由 Actions 负责,读取结果 · done 标记 · 转发失败日志(发给原负责 pane)由待办负责。大范围修改则 handoff 前有评审 gate(reviewer 自动 · 同一 HEAD 批准后 handoff) · UI 确认在 handoff 前",
+        "没有 git 的项目: 用 local-finish.mjs 代替 commit.sh · ship.sh 做 handoff,pane 做下一件事。只有 full verify → done 标记在 Mac 后台运行(决策 D4),只有失败日志回到 pane",
+        "(多仓库 · Athena 的工作)给 reviewer 计划书 + 目标仓库(工作树用 --cwd)。需修复的不问直接发给该代理 pane(Athena 自己发)。需决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add)",
+        "验证结果原样确认 — 失败绝不隐瞒",
+        "handoff 后的结果 Athena 不等待监视 — 失败日志发到原负责 pane,代理做完手头的事后在该工作树修好再 handoff",
+        "验证两阶段 — 工作中只快速确认 diff,full verify 在结束时一次(commit.sh strict verify · 同一棵树已通过则 reuse.sh ♻️ 复用 · 评审者 · merge 也走同一条路)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "cleanup / 中断后 resume",
+      "items": [
+        "自动 archive — 计划书的 PR 全部合并 done + learn review 结束 + 绑定的代理 pane 全部关闭后,待办把问题 · 计划书打包到 archive/<名称>/ 并提交。该计划书的工作树也判定后删除(有未提交 · unpushed 提交 · 正在用的 pane 则保留,原因写进 Checkpoint)。完成的 pane 由 Athena 关闭 · 过去的工作在 [归档]标签页",
+        "待办 [学习]标签页 — 学习候选 [넣기](添加) · [고쳐서 넣기](修改后添加) · [버리기](丢弃)(添加后在 gotchas 加一行),修改 · 删除已学内容,技能候选交给 Athena。/sync 结束时 learn-curator 把 30 天未用的技能、gotchas-check 把指向已删文件的 gotchas 行 · 该拆分的 gotchas(公共 2 万字 · 同一界面 5 行 → gotchas/<文件夹>.md)列为 cleanup 候选(不删除)",
+        "问题可完成徽章 = 检查结果 · 后续 · 修复 · 计划书 done + PR MERGED。出现徽章时由 Athena 移动(问题 · 计划书在本地 — 只有 archive/ 在 git)",
+        "auto done — 计划书 PR 行的 PR 全部合并后(GitHub MERGED,不限 base · direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done。未合并就关闭的 PR 不计入,Progress 里还有步骤格(以 N단계 开头 · 带 (단계) 标记)则不移。普通空格不阻止,通知 Lead pane · 结束后的后续工作不留空格而是转为问题",
+        "中断后读那一份计划书,先看当前分支 · diff 是否与 Work ref 一致",
+        "确认 Next 在当前代码中仍有效再继续",
+        "不在已变的 ref 上复用过去的验证结果",
+        "Claude · Codex 对话在同一台电脑上从记录继续。把 Codex 对话搬到另一台电脑继续暂不支持",
+        "待办 [学习] → 个人记忆: Claude · Codex 一起显示,新的在前,用来源标志 · 筛选区分(只读)",
+        "loop — 结束后的后续工作作为问题(issues/)提出,待办问题卡的 [작업 시작](开始工作)又作为 ① 请求进来"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "在哪里停下来提问",
+      "items": [
+        "仓库不明确时提问 — 即使是同一服务,运营后台和用户网页也可能是不同仓库",
+        "不清楚的事实(外部契约 · 产品策略 · 默认行为 · 数据含义)不猜 — 先用代码 · 运行 · 文档确认,仍不清楚就只停下那部分写进 Blocked,汇总成一个请求提问。跑一下就知道的不问",
+        "需要后端 · 范围外修改时停下报告",
+        "正式在决策控制台确定前不派发",
+        "分支已存在或建不了工作树时提问 — 跳过的仓库不派发",
+        "提交被拒 — 主检出 · 受保护分支 · 别人的暂存 · 验证失败",
+        "push 被拒 — 未提交 · 没经过 commit.sh 的提交 · 标题格式 · 多仓库(交给 Athena)。不因有没有评审而拒绝(direct merge · handoff 的评审 gate 除外)",
+        "扩大到多仓库 · API · 结构变更时停下报告 → 正式路",
+        "Athena 既不直接写服务代码也不直接写核心(核心修改 · 加保护 · 钩子由核心负责代理通过分支 · PR 进行)",
+        "PR 自动评审停下的地方 — 评审者不足(任一失败) · 决策控制台有未定决策 · 无法验证同一 HEAD · 冲突 · 没有可发修复指令的 pane → 不合并。只有决策交给人(决策控制台) · 其余在 Athena pane 用一行 [자동 리뷰 → 아테나] 通知,由 Athena 接手"
+      ]
+    }
+  ]
+}

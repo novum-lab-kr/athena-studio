@@ -205,7 +205,7 @@ async function init(): Promise<void> {
     if (currentTab === 'work' && !$('side-panel').hidden && attached) StudioUi.explorer.refresh()
     // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
     if (attached) refreshPackRepos()
-    // 다이어그램 버튼 — /diagram 으로 처음 그리면 켜지게(작은 파일 하나 읽기)
+    // 다이어그램 버튼 — 목록이 나중에 만들어져도 켜지게(파일 하나 보기)
     if (attached) refreshDiagramsReady()
   }, 3000)
   studio.onScreenResync(() => state!.valid && reattachScreen())

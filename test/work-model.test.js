@@ -126,15 +126,13 @@ test('상세: 고치지 않은 템플릿 자리 줄은 진행 칸으로 세지 �
   assert.deepEqual(work.planDetail(text, [placeholder]).progress, { checked: 1, total: 1, now: '' })
 })
 
-test('다이어그램 버튼: 그린 장이 있는 서비스 카드가 있을 때만 켠다', () => {
-  const files = new Set(['web.sequence.html', 'api.pay.sequence.html'])
+test('다이어그램 목록: 앱 언어 목록이 있으면 그것 · 없거나 한국어면 index.html', () => {
+  const files = new Set(['index.html', 'index.en.html', 'index.ja.html'])
   const exists = (file) => files.has(file)
-  // init 뼈대처럼 카드만 있고 그린 장이 없으면 끈다
-  assert.equal(work.hasServiceDiagram({ groups: [{ title: '서비스', items: [{ base: 'none', name: 'none' }] }] }, exists), false)
-  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ base: 'web' }] }] }, exists), true)
-  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ base: 'api', extra: [{ file: 'api.pay.sequence.html', label: '결제' }] }] }] }, exists), true)
-  // 망가진 목록 · 팩 밖 경로는 그림으로 치지 않는다
-  assert.equal(work.hasServiceDiagram(null, exists), false)
-  assert.equal(work.hasServiceDiagram({ groups: 'x' }, exists), false)
-  assert.equal(work.hasServiceDiagram({ groups: [{ items: [{ extra: [{ file: '../web.sequence.html' }, { file: '/web.sequence.html' }] }] }] }, () => true), false)
+  assert.equal(work.diagramIndexFile('ko', exists), 'index.html')
+  assert.equal(work.diagramIndexFile('en', exists), 'index.en.html')
+  assert.equal(work.diagramIndexFile('ja', exists), 'index.ja.html')
+  // 언어별 목록을 만들지 않는 옛 코어 · 이상한 값은 한국어 목록
+  assert.equal(work.diagramIndexFile('zh', exists), 'index.html')
+  assert.equal(work.diagramIndexFile('../x', () => true), 'index.html')
 })

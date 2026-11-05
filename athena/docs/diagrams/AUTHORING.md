@@ -66,7 +66,7 @@
 
 설치된 `archify/SKILL.md`·`references/delivery-contract.md`에서 생성·검증 계약을 읽는다. `A`는 그 스킬 디렉터리, `CO`는 격리 체크아웃이다. 없으면 사용자에게 설치가 필요함을 알린다. 개인 전역 스킬이나 설치본 코어는 수정하지 않는다.
 
-디자인 정본은 코어 `scripts/diagram-theme.css`·`.mjs`이며 기존 `docs/diagrams/athena-flow-light.html`·`athena-flow-formal.html`과 같다. 서비스 그림에도 항상 적용한다. 시스템 글꼴·읽기 쉬운 크기·아테나 색 토큰·모서리·도구막대를 유지한다. topology·코드 근거는 테마 때문에 바꾸지 않는다. 테마 적용 후 글자 겹침이 생기면 근거와 내용을 보존하며 원본 배치를 고쳐 다시 생성한다. 사용자에게 디자인을 다시 고르게 하지 않는다.
+디자인 정본은 코어 `scripts/diagram-theme.css`·`.mjs`이며 기존 `docs/diagrams/athena-flow.html`·`athena-compact.html`과 같다. 서비스 그림에도 항상 적용한다. 시스템 글꼴·읽기 쉬운 크기·아테나 색 토큰·모서리·도구막대를 유지한다. topology·코드 근거는 테마 때문에 바꾸지 않는다. 테마 적용 후 글자 겹침이 생기면 근거와 내용을 보존하며 원본 배치를 고쳐 다시 생성한다. 사용자에게 디자인을 다시 고르게 하지 않는다.
 
 선택한 타입의 schema·예제를 먼저 읽는다. architecture만 repository 근거와 `--repo-root`를 지원한다. 한눈에 보기는 architecture, 핵심 기능 흐름은 sequence 등 시간 순서에 맞는 타입을 쓴다. 새 그림 기본 품질은 showcase(9개 검사·오류/경고 0)다. 기존 standard 장은 그 이유를 확인하고 보존한다.
 
@@ -122,6 +122,6 @@ node scripts/build-diagram-index.mjs
 bin/athena pack link
 ```
 
-목록은 팩 원본 파일을 읽어 본체 `docs/diagrams/index.html`에 생성하고 팩 그림으로 상대 링크를 건다. 기존 우측 상단 메뉴와 `/guide 그림`은 이 파일을 그대로 연다. 스킬은 `.claude/skills/diagram/SKILL.md`, Codex는 `.agents/skills` 링크를 통해 같은 파일을 읽는다. 스킬을 추가한 뒤 이미 열린 에이전트 세션은 다시 시작해야 탐색 목록이 갱신될 수 있다.
+목록은 팩 원본 파일을 읽어 본체 `docs/diagrams/index.html`(한국어)과 `index.<en|ja|zh>.html`에 생성하고 팩 그림으로 상대 링크를 건다. 기존 우측 상단 메뉴와 `/guide 그림`은 이 파일을 그대로 연다. 스킬은 `.claude/skills/diagram/SKILL.md`, Codex는 `.agents/skills` 링크를 통해 같은 파일을 읽는다. 스킬을 추가한 뒤 이미 열린 에이전트 세션은 다시 시작해야 탐색 목록이 갱신될 수 있다.
 
 새 단일 레포의 서비스 ID는 `<레포>`, 새 모노레포 앱은 `<레포>/<앱>`이다. 예를 들어 `one/web`과 `two/web`은 서로 다른 폴더의 JSON·HTML·가이드와 카드 base를 사용한다. 기존 팩의 서비스 ID·파일은 그대로 재사용하며 동명 앱이 추가되면 레포까지 지정해 구분한다.

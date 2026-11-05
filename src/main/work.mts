@@ -69,6 +69,7 @@ type WorkDeps = {
   stopStaleBoard: (port: number, athenaDir: string) => Promise<boolean>
   waitCoreUpdate: () => Promise<void> // 코어 업데이트가 도는 동안 기다린다(옛 코어로 현황판을 띄운 뒤 업데이트가 끄지 않게)
   reloadKey: () => string
+  language: () => string // 앱 언어(보기 → 언어) — 다이어그램 목록을 그 언어 것으로 연다
   requestsPollMs: number
   trayRequestsChanged: (ctx: WorkCtx) => void
   appConfig: () => { boardPort: number }
@@ -82,7 +83,7 @@ type WorkDeps = {
 }
 
 export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
-  const { say, runCore, runPack, startBoard, stopStaleBoard, waitCoreUpdate, reloadKey, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState, logRequestsError } = deps
+  const { say, runCore, runPack, startBoard, stopStaleBoard, waitCoreUpdate, reloadKey, language, requestsPollMs, trayRequestsChanged, appConfig, saveAppConfig, packBoardPort, setPackBoardPort, requestsState, setRequestsState, logRequestsError } = deps
   const send = ctx.send
   // ctx 에 붙인 것을 이 안에서 부를 때(옛 main.js 처럼 ctx 로 찾는다)
   const ensureBoard = () => (ctx.ensureBoard as NonNullable<WorkCtx['ensureBoard']>)()
@@ -350,20 +351,16 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   // 다이어그램 목록 — 이 창 본체의 docs/diagrams/index.html 을 기본 앱으로(/guide 그림 과 같은 파일 · 같은 방식). 없으면 missing
   ctx.openDiagrams = async () => {
     if (!ctx.athenaDir) return { ok: false, error: 'missing' }
-    const file = path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html')
+    // 앱 언어 목록(index.<언어>.html)이 있으면 그것 · 없으면 index.html(한국어)
+    const dir = path.join(ctx.athenaDir, 'docs', 'diagrams')
+    const file = path.join(dir, workModel.diagramIndexFile(language(), (name) => fs.existsSync(path.join(dir, name))))
     if (!fs.existsSync(file)) return { ok: false, error: 'missing' }
     const failure = await shell.openPath(file)
     return failure ? { ok: false, error: 'failed', message: failure } : { ok: true }
   }
-  // 다이어그램 버튼을 켤지 — 목록(docs/diagrams/index.html)이 있고 팩 pack/diagrams/index.json 에 그린 장이 있는 서비스 카드가 있을 때만.
-  // 화면이 팩을 바꿀 때 · 3초마다 묻는다(/diagram 으로 처음 그린 뒤에도 따라오게 — 작은 파일 하나 읽기)
-  ctx.diagramsReady = async () => {
-    if (!ctx.athenaDir) return false
-    if (!fs.existsSync(path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html'))) return false
-    const dir = path.join(ctx.athenaDir, 'pack', 'diagrams')
-    const manifest: unknown = await fs.promises.readFile(path.join(dir, 'index.json'), 'utf8').then(JSON.parse).catch(() => null)
-    return workModel.hasServiceDiagram(manifest, (file) => fs.existsSync(path.join(dir, file)))
-  }
+  // 다이어그램 버튼을 켤지 — 목록(docs/diagrams/index.html)이 있으면 켠다. 목록에는 코어의 아테나 작업 흐름이 늘 실려
+  // 서비스 그림이 없어도 비지 않는다(athena/scripts/build-diagram-index.mjs). 화면이 팩을 바꿀 때 · 3초마다 묻는다(파일 하나 보기)
+  ctx.diagramsReady = async () => !!ctx.athenaDir && fs.existsSync(path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html'))
 
   // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
   ctx.workDetail = async (id: string) => {

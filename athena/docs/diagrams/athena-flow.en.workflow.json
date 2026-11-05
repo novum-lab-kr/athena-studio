@@ -1,0 +1,675 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Athena workflow",
+    "locale": "en",
+    "subtitle": "Request → triage (lightweight goes straight / formal needs decision console approval) → dispatch ↓ pane work → completion report → push · PR right away (three paths) → auto done → Athena check · cleanup → report · User check (approve / redo) only for UI changes · non-autoMerge repos (source: docs/team-lead.md · docs/workflow.md · docs/pr-auto.md)",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "route",
+        "label": "Lightweight · formal · multi-repo",
+        "focus": [
+          "req",
+          "judge",
+          "approve",
+          "branch"
+        ],
+        "note": "Lightweight: now. Formal (multi-repo · API · structure): after approval. Backend · shared packages first; idle same-repo pane: --reuse-pane"
+      },
+      {
+        "id": "work",
+        "label": "Work · completion report · check sometimes",
+        "focus": [
+          "work",
+          "relay",
+          "confirm",
+          "ship"
+        ],
+        "note": "Check diffs; ask unknowns via request open. Done → report → push · PR (full verify once). User check: UI change · non-autoMerge (\"PR 올려줘\")"
+      },
+      {
+        "id": "review",
+        "label": "Review · fix loop",
+        "focus": [
+          "work",
+          "relay",
+          "ship",
+          "pr"
+        ],
+        "note": "Wide change: reviewer pane (formal: auto · lightweight: \"review it\"); fixes go to that pane. PR auto review fixes: same pane, pushed again"
+      },
+      {
+        "id": "ship",
+        "label": "push · PR — three paths",
+        "focus": [
+          "ship",
+          "pr",
+          "direct",
+          "push",
+          "complete"
+        ],
+        "note": "PR → auto review / direct merge · Actions handoff (UI check first · verify → merge → deploy · fail → pane) / main push. Multi-repo: in order"
+      },
+      {
+        "id": "cleanup",
+        "label": "Cleanup · next request",
+        "focus": [
+          "complete",
+          "cleanup",
+          "report",
+          "req"
+        ],
+        "note": "Merged → worklist → done; learn-review adds candidates to [Learning] (user adds). Closing panes auto-archives. Follow-up: issue → [작업 시작]"
+      }
+    ],
+    "output": "docs/diagrams/athena-flow.en.html"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "User"
+    },
+    {
+      "id": "lead",
+      "label": "Athena · reviewer"
+    },
+    {
+      "id": "agent",
+      "label": "Agent pane · worktree"
+    },
+    {
+      "id": "board",
+      "label": "Worklist · Actions"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-plan",
+      "label": "Request · triage",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-work",
+      "label": "Dispatch · work · blocked → ask",
+      "fromCol": 1,
+      "toCol": 1,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-report",
+      "label": "Completion report · check sometimes",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-ship",
+      "label": "Commit · push · PR three paths",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    },
+    {
+      "id": "p-done",
+      "label": "Done · cleanup · report",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [],
+  "mainPath": [
+    "req",
+    "judge",
+    "branch",
+    "work",
+    "relay",
+    "ship",
+    "pr",
+    "complete",
+    "cleanup",
+    "report"
+  ],
+  "nodes": [
+    {
+      "id": "req",
+      "lane": "user",
+      "col": 0,
+      "type": "frontend",
+      "label": "Request",
+      "sublabel": "User · chat · /call · issue",
+      "tag": "Issue [작업 시작] · leftovers → issue",
+      "width": 150
+    },
+    {
+      "id": "approve",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "Console approval",
+      "sublabel": "User · [이대로 진행]",
+      "tag": "Formal · plan-html.mjs · board.sh open",
+      "width": 150
+    },
+    {
+      "id": "confirm",
+      "lane": "user",
+      "col": 2,
+      "type": "frontend",
+      "label": "Check · approve / redo",
+      "sublabel": "UI change · non-autoMerge",
+      "tag": "User · checks screenshot",
+      "width": 150
+    },
+    {
+      "id": "report",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "Check report",
+      "sublabel": "User · follow-ups → issues",
+      "tag": "Issue [작업 시작] → request again",
+      "width": 150
+    },
+    {
+      "id": "judge",
+      "lane": "lead",
+      "col": 0,
+      "type": "backend",
+      "label": "Triage · plan",
+      "sublabel": "📋 lightweight / formal",
+      "tag": "Formal md + html · backend first",
+      "width": 150
+    },
+    {
+      "id": "branch",
+      "lane": "lead",
+      "col": 1,
+      "type": "backend",
+      "label": "Branch · dispatch",
+      "sublabel": "Athena · delegate.sh --plan",
+      "tag": "Idle pane → --reuse-pane",
+      "width": 150
+    },
+    {
+      "id": "relay",
+      "lane": "lead",
+      "col": 2,
+      "type": "backend",
+      "label": "Report · review",
+      "sublabel": "Athena · wide → reviewer",
+      "tag": "Approved → tell that pane to push",
+      "width": 150
+    },
+    {
+      "id": "cleanup",
+      "lane": "lead",
+      "col": 5,
+      "type": "backend",
+      "label": "Check · cleanup",
+      "sublabel": "Athena · closes panes",
+      "tag": "Auto archive · worktree cleanup",
+      "width": 150
+    },
+    {
+      "id": "work",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "Pane work",
+      "sublabel": "Agent · checks the diff",
+      "tag": "Blocked → request open → go on",
+      "width": 150
+    },
+    {
+      "id": "ship",
+      "lane": "agent",
+      "col": 3,
+      "type": "backend",
+      "label": "Commit · push",
+      "sublabel": "Agent · commit.sh · ship.sh",
+      "tag": "Full verify once · reuse.sh ♻️",
+      "width": 150
+    },
+    {
+      "id": "push",
+      "lane": "agent",
+      "col": 4,
+      "type": "backend",
+      "label": "Push straight to main",
+      "sublabel": "Agent · fast-forward push",
+      "tag": "direct: true · confirm before push",
+      "width": 150
+    },
+    {
+      "id": "pr",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "PR → auto review",
+      "sublabel": "Worklist · Claude/Codex",
+      "tag": "autoMerge · [Merge] → squash",
+      "width": 150,
+      "yOffset": 40
+    },
+    {
+      "id": "direct",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "direct merge · handoff",
+      "sublabel": "Agent · --direct-merge",
+      "tag": "Actions: verify → merge → deploy",
+      "width": 150,
+      "yOffset": -48
+    },
+    {
+      "id": "complete",
+      "lane": "board",
+      "col": 5,
+      "type": "database",
+      "label": "auto done",
+      "sublabel": "Worklist · learn review",
+      "tag": "learn-review → [Learning] tab: add",
+      "width": 150,
+      "yOffset": -48
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "req",
+      "to": "judge",
+      "label": "",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          32,
+          168
+        ],
+        [
+          32,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e2",
+      "from": "judge",
+      "to": "branch",
+      "label": "Lightweight · straight on",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "f1",
+      "from": "judge",
+      "to": "approve",
+      "label": "Formal",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          123,
+          340
+        ],
+        [
+          267,
+          340
+        ],
+        [
+          267,
+          168
+        ]
+      ]
+    },
+    {
+      "id": "f2",
+      "from": "approve",
+      "to": "branch",
+      "label": "",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "from": "branch",
+      "to": "work",
+      "label": "",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "p1",
+      "from": "work",
+      "to": "relay",
+      "label": "① Completion report",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          620.6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "r1",
+      "from": "relay",
+      "to": "ship",
+      "label": "② push · PR right away",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          852.6,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "p2",
+      "from": "relay",
+      "to": "confirm",
+      "label": "Ask to check",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "straight"
+    },
+    {
+      "id": "p3",
+      "from": "confirm",
+      "to": "relay",
+      "label": "Approve",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "left",
+      "labelSegment": 1,
+      "via": [
+        [
+          515.8,
+          168
+        ],
+        [
+          515.8,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "d1",
+      "from": "confirm",
+      "to": "work",
+      "label": "Redo",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          620.6,
+          118
+        ],
+        [
+          6,
+          118
+        ],
+        [
+          6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "s1",
+      "from": "ship",
+      "to": "pr",
+      "label": "PR",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          761.6,
+          612
+        ],
+        [
+          761.6,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "s2",
+      "from": "ship",
+      "to": "direct",
+      "label": "direct merge",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          852.6,
+          786
+        ]
+      ]
+    },
+    {
+      "id": "s3",
+      "from": "ship",
+      "to": "push",
+      "label": "main",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "l1",
+      "from": "pr",
+      "to": "work",
+      "label": "Auto review fixes",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "m1",
+      "from": "pr",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1218.6,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "m2",
+      "from": "direct",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "m3",
+      "from": "push",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          1218.6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "e7",
+      "from": "complete",
+      "to": "cleanup",
+      "label": "Athena checks",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelSegment": 1,
+      "via": [
+        [
+          1309.6,
+          786
+        ],
+        [
+          1309.6,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e8",
+      "from": "cleanup",
+      "to": "report",
+      "label": "Report",
+      "variant": "default",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Steps — the diagram in detail",
+      "items": [
+        "① Request — chat · /call · worklist issue [작업 시작] (Start work). If a screen with the same name exists in several repos (ops console · user web, etc.), ask which one",
+        "② Triage — Athena announces it in one line: 📋 Going lightweight — reason · path / 📋 Going formal — reason · N decisions · path",
+        "③ Plan (the paths split here) — lightweight: plans/task/…md is created automatically, not shown, no approval / formal: md + an html decision console with the same name (plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs) → confirmed with [이대로 진행] (Proceed). No dispatch before it is confirmed",
+        "④ Branch · pane (the paths meet again here) — cut a branch · worktree from prBase (new-branch.sh · /call asks for the branch before opening) and open the pane in that worktree with delegate.sh --plan. Formal goes shared package → consuming repo in order; independent services in parallel",
+        "⑤ Work — request → change → check the diff · report, many times over (full verify runs once at the end — ⑦ commit). Unknown facts (external contracts · product policy · default behavior) are not guessed: stop only that part, write it under Blocked, and ask in one batched request (bin/athena request open — [Work] \"Waiting for you\" · choices via AskUserQuestion). When the user corrects something or the same error happens 3 times, file a 📚 learn issue on the spot",
+        "⑥ Review (wide changes only) — for a formal plan, reporting a wide change opens a review without asking (auto review). Lightweight has no auto review. Only when reporting a wide change (new feature · structure change · logic across files · security · data · external contract) does the agent add one line \"Shall I get a review?\" at the end — not after small changes or after applying review comments. When the user says \"review it\", a reviewer pane opens beside it at any time. The reviewer does not rerun verification that already passed for the same tree (♻️ reuse). Decisions needed (the options split) are added to the same plan's decision console (plan-html.mjs --add · [이대로 진행] goes to that agent pane). Fixes needed are fixed without asking and reported one line each",
+        "⑦ Commit — \"commit it\" or a push commits via commit.sh (named files only · strict verify · plan ## Commits). Can be done many times",
+        "⑧ push · PR — for multi-repo work, Athena confirms order · visibility and runs ship.sh --repo-agent per repo (formal path). For a single repo the method depends on repo settings (the delegate.sh result line says which). Default: one word \"PR 올려줘\" → commit → ship.sh draft → title · body → draft PR to prBase without asking. autoMerge repos: when done, a draft PR without asking → PR auto review. PR-off repos (autoPr:false): direct merge with ship.sh --direct-merge (a review gate before merging for wide changes) — --user-pr only on \"PR 올려줘\". Actions handoff repos: the same command hands off by pushing the feature branch and ends right away. 📚 What I learned at the end of the report",
+        "⑨ End — once the PR is merged (direct merge · Actions: the plan's - Auto merge: 머지됨 line) the worklist moves the plan to done → the learn reviewer (learn-review) adds learning candidates from the plan · chat · diff · review comments → when all bound panes are closed it is auto-archived (archive/) · the worktree is checked and removed too. Athena closes finished panes",
+        "Pass messages between panes directly with scripts/screen pane send-text — to Athena with lead-send.py (if it can't receive, it is queued and delivered later). Never ask the user to relay it",
+        "Questions · permission waits are checked in the Studio [Work] popup. Answer questions in the popup; for permissions, choose in the original window after [Go to pane]. A selection prompt is in the waiting state",
+        "The Codex guard hook checks only the first Bash command; follow-up input via write_stdin is not checked. Check hook trust in /hooks",
+        "Check loop (sometimes) — by default push · PR right after the completion report (autoMerge repos don't ask). Only for UI changes or non-autoMerge repos (\"PR 올려줘\") does Athena show the user the screenshot: approve tells that pane to push · redo goes back to that pane's work. Finish the UI check before the handoff"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Left out of the diagram — records · what is read",
+      "items": [
+        "Plan (plans/) — the work record for both lightweight and formal. Resume from the Checkpoint after a break; commits pile up under ## Commits",
+        "Issues (issues/) · worklist — future work is an issue; work running now and work waiting for your answer is in [Work]. Once merged, the worklist marks it done · archives it",
+        "Pack ROUTING.md · pack.json — which repo · which agent · base branch",
+        "The required section of rules · gotchas are always read regardless of task size; knowledge only in the sections the task type needs",
+        "Places that stop and ask (unclear repo · unknowns · branch exists · commit · push refused) are not in the diagram — see \"Where it stops and asks\" below"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Lightweight · formal — they differ only in the split",
+      "items": [
+        "Lightweight — copy · style · a single bug · checks · investigation · /call · urgent fix — one repo. Plan recorded automatically · no approval · review only on \"review it\"",
+        "Formal — new feature · multiple repos · API · structure change · when the user has something to decide. Decision console approval · dispatch in order from shared packages · auto review for wide changes · Athena cross-reviews multi-repo work · push · PR in order",
+        "Even formal work on a single repo goes from branch · pane onward like lightweight, all the way to push · PR from the pane",
+        "Saying \"go formal\" uses the formal flow; even formal-sized work goes lightweight on \"just fix it\" (noted in the report). Work that started lightweight and grows into multiple repos · API stops and moves to formal",
+        "Even lightweight always reads the pack ROUTING.md · the required section of rules · gotchas. Knowledge only in the sections needed",
+        "If more work comes in for the same repo while that repo's pane is idle and the user is not looking at it, it is sent to that pane instead of a new one (delegate.sh --reuse-pane) — if it is working or a question prompt is open, a new pane beside it, on a new branch (an in-progress branch is not reused)",
+        "Open with the default lightweight model, and add --model sonnet (Claude engine only) only for truly simple changes (the size of a local copy · style change · not touching logic · data · permissions · external contracts and needing no root-cause investigation · if unsure, don't · cannot be combined with --reuse-pane)",
+        "Issue [작업 시작] (Start work) is taken by Athena and handled through this flow. Choosing \"straight to the owning agent (investigate only)\" only investigates · reports in a production-base worktree and changes no code",
+        "Delegation follows the body's main tool (can be set with --engine). Claude · Codex both get the same plan · rules in a separate pane in the owning repo's workspace"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Formal path — approval · dispatch",
+      "items": [
+        "Open the decision console at the worklist address (scripts/board.sh open <md>). In chat, the path and one line of title · recommendation per decision",
+        "Choose in the console and [이대로 진행] (Proceed) → the decisions are typed into that Athena pane (answering in chat works the same) → recorded in md · html → ✅ confirmed",
+        "On a change request, fix the md · html and reopen the console for approval again",
+        "No dispatch before it is confirmed",
+        "Never open a pane without delegate.sh --plan. The worktree · branch · pane are written to Work ref",
+        "FE sessions have a guard hook — direct git commit · push · gh pr create and add -A are blocked (use commit.sh · ship.sh)",
+        "workspace = repo, panes side by side in one tab. Shared package → consuming repo in sequence; independent services in parallel",
+        "By default open the pane without a prompt and give instructions inside it",
+        "reviewer · one-off investigations use --here in the current tab",
+        "When the same feature goes into several services, write a common spec (copy · behavior · env keys) in the plan",
+        "A formal plan is md + an html decision console with the same name (plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs). PLAN.leadPane holds the Athena pane that created the plan",
+        "When frontend and backend change together, backend first — the backend report's \"contract change\" goes into the frontend instructions as is. Push · PR for multiple repos: Athena sets the order (shared packages first) and runs ship.sh --repo-agent per repo"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "Review · commit · push",
+      "items": [
+        "Committing · opening a PR without review is not blocked — only direct merge · Actions handoff in PR-off repos put a review gate in front for wide changes",
+        "Review records file contents including uncommitted changes — review → commit or commit → review, same contents means approved",
+        "If contents changed after review or there was no review, it still pushes without asking — \"needs check\" in the PR body and \"before review approval\" in the report",
+        "A commit is a local git commit. Push is done in one go via ship.sh (no other direct push). Push is refused if there are uncommitted changes",
+        "PR title type(scope): ticket summary · common body template (git.md \"PR 제목·본문\")",
+        "PR auto review (only single-repo PRs in repos with \"autoMerge\": true · off by default) — when a draft PR goes up, the worklist detects it and Claude · Codex review it (two Codex models if Claude is missing · a single-seat verdict if the model list can't be read). Fixes needed go to that pane as [자동 리뷰 → 에이전트], and for that instruction only the agent runs commit.sh → ship.sh --auto-push without asking (the new commit is reviewed again · --body-file for body comments · the agent gets only blocking comments, suggestions stay in PR comments · from round 2 only past comments + the changed diff). Decisions needed go to the decision console (fixes from the same round are sent without waiting · implementation-detail decisions are auto-confirmed with the recommendation). Past the limit of 3 it doesn't stop: one reviewer briefly reviews just the changed part of the fixed commit, and if approved it moves to the merge step after verifying the same HEAD (if blocking comments remain it stops and Athena takes over). Enabled repos go all the way to a draft PR without \"PR 올려줘\" once done and verification passes. The merge result is one line in the work pane",
+        "Auto merge — all configured reviewers approve + verification passes on the same HEAD + no conflicts → a merge confirmation request (Mac notification · [Work] popup) → when a person picks [Merge], squash (if the repo has autoMergeConfirm: false, merge right away without asking · review off · merging by hand is chosen per repo — pr-auto.md enabling). If anything fails · is rejected, it does not merge",
+        "Review gate before direct merge (PR-off repos · wide changes only — 5 code files · 150 lines · sensitive paths · or plan Checkpoint - Wide change: yes) — ship.sh --direct-merge opens a reviewer beside it and waits for approval of the same HEAD. If fixes are needed, fix · commit and run the same command again (only the fixed part, briefly) · if the second one also needs fixes, Athena takes over",
+        "Actions handoff repos (actionsHandoff): commits skip full verify on the Mac; ship.sh --direct-merge hands off by pushing the feature branch and ends right away → the pane moves on. Full verify → prBase merge → deploy start is Actions; reading the result · marking done · passing the failure log (to the pane that owned it) is the worklist. For wide changes a review gate before the handoff (reviewer automatic · handed off after approval of the same HEAD) · UI checks before the handoff",
+        "Projects without git: hand off with local-finish.mjs instead of commit.sh · ship.sh and the pane moves on. Only full verify → marking done runs in the background on the Mac (decision D4) and only failure log comes to the pane",
+        "(Multi-repo · Athena work) give the reviewer the plan + target repo (--cwd for a worktree). Fixes needed are sent straight on to that agent pane without asking (Athena sends them itself). Decisions needed (the options split) are added to the same plan's decision console (plan-html.mjs --add)",
+        "Check verification results as they are — never hide a failure",
+        "Athena does not wait on and watch the result of handed-off work — failure log goes to the pane that owned it, and the agent finishes what it was doing, then fixes it in that worktree and hands off again",
+        "Two verification stages — during work, quickly check only what changed; full verify runs once at the end (commit.sh strict verify · reuse.sh ♻️ if it already passed for the same tree · reviewer · merge take the same road)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Cleanup / resuming after a break",
+      "items": [
+        "Auto archive — when every PR of the plan is merged and done + the learn review is finished + every bound agent pane is closed, the worklist bundles the issues · plan into archive/<name>/ and commits them. The plan's worktree is checked and removed too (kept if there are uncommitted changes · unpushed commits · a pane using it, with the reason in the Checkpoint). Athena closes finished panes · past work is in the [Archive] tab",
+        "Worklist [Learning] tab — learning candidates [넣기] (Add) · [고쳐서 넣기] (Edit and add) · [버리기] (Discard) (adding puts one line in the gotchas notebook), edit · delete learned content, leave skill candidates to Athena. At the end of /sync, learn-curator flags skills unused for 30 days, and gotchas-check flags notebook lines pointing to removed files · notebooks due for a split (20k chars shared · 5 lines on the same screen → gotchas/<folder>.md) as cleanup candidates (nothing is deleted)",
+        "Issue completable badge = check result · follow-up · fix · plan done + PR MERGED. When the badge shows, Athena moves it (issues · plans are local — only archive/ is in git)",
+        "Auto done — when every PR in the plan's PR line is merged (GitHub MERGED, any base · direct merge · Actions: the plan's - Auto merge: 머지됨 line) the worklist moves the plan to done. PRs closed without merging are left out, and if step boxes remain in Progress (starting with N단계 · marked (단계)) it is not moved. Ordinary empty boxes don't block it and the Lead pane is notified · leftover work after it ends becomes an issue, not an empty box",
+        "After a break, read the one plan and first see whether the current branch · diff match Work ref",
+        "Check that Next is still valid in the current code, then continue",
+        "Don't reuse past verification results on a changed ref",
+        "Claude · Codex chats resume from the records on the same computer. Moving a Codex chat to another computer and continuing is not supported yet",
+        "Worklist [Learning] → personal memory: Claude · Codex shown together, newest first, told apart by source logo · filter (read only)",
+        "Loop — leftover work after it ends goes up as an issue (issues/), and [작업 시작] (Start work) on the worklist issue card brings it back in as ① request"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "Where it stops and asks",
+      "items": [
+        "Ask when the repo is unclear — even for the same service, the ops console and the user web can be different repos",
+        "Unknown facts (external contracts · product policy · default behavior · what data means) are not guessed — first check with code · running it · docs, and if still unknown, stop only that part, write it under Blocked and ask in one batched request. Don't ask what you can learn by running it",
+        "If a backend · out-of-scope change is needed, stop and report",
+        "Formal does not dispatch before the decision console is confirmed",
+        "Ask if the branch already exists or the worktree can't be created — skipped repos get no dispatch",
+        "Commit refused — main checkout · protected branch · someone else's staging · verification failed",
+        "Push refused — uncommitted · commits that didn't go through commit.sh · title format · multiple repos (to Athena). Never refused over whether it was reviewed (except the review gate of direct merge · handoff)",
+        "If it grows into multiple repos · API · structure changes, stop and report → formal path",
+        "Athena writes neither service code nor the core directly (core fixes · guards · hooks are added by the core agent via branch · PR)",
+        "Where PR auto review stops — not enough reviewers (any one failed) · undecided decisions in the decision console · same HEAD can't be verified · conflicts · no pane to send fixes to → it does not merge. Only decisions go to a person (decision console) · the rest is one line [자동 리뷰 → 아테나] in the Athena pane, and Athena takes over"
+      ]
+    }
+  ]
+}

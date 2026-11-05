@@ -1,0 +1,497 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "会話 compact 前後の自動保存",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "compact 前後の流れ",
+        "focus": [
+          "work",
+          "trigger",
+          "find",
+          "memo",
+          "compress",
+          "post",
+          "resume"
+        ],
+        "note": "compact は Claude Code の標準動作のままです。フックは直前に計画書へメモ一行、直後に会話へ案内一行を足すだけで summary は変えません。ユーザーの action はありません。"
+      },
+      {
+        "id": "without-hook",
+        "label": "フックがないと",
+        "focus": [
+          "compress",
+          "loss",
+          "drift"
+        ],
+        "note": "summary から「次にやること」「修正済みファイル」などの context が失われることがあります。計画書を読み直す trigger がなく、段階の途中なら計画書にも最新状態がありません。長い作業ほど drift が起きます。"
+      },
+      {
+        "id": "records",
+        "label": "何を残して読むか",
+        "focus": [
+          "find",
+          "memo",
+          "planfile",
+          "post",
+          "resume",
+          "notfound"
+        ],
+        "note": "この pane id が書かれた計画書(Work ref · Review · leadPane)の '- Auto snapshot:' 一行を上書きし、compact 後その Checkpoint から読み直します。見つからなければメモなしで候補だけ知らせます。"
+      }
+    ],
+    "output": "docs/diagrams/athena-compact.ja.html",
+    "subtitle": "会話が長くなって compact されても作業を見失わないように — compact 直前に計画書へ状態一行、直後に「計画書から読み直せ」案内 (原本: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "ユーザー"
+    },
+    {
+      "id": "session",
+      "label": "Claude Code セッション"
+    },
+    {
+      "id": "hook",
+      "label": "フック · compact-checkpoint.py"
+    },
+    {
+      "id": "src",
+      "label": "計画書 · 記録"
+    },
+    {
+      "id": "stop",
+      "label": "フックがないと",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-before",
+      "label": "compact 直前",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "p-compact",
+      "label": "compact (Claude Code 標準)",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-after",
+      "label": "compact 直後",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-pre",
+      "label": "PreCompact",
+      "lane": "hook",
+      "fromCol": 1,
+      "toCol": 2
+    },
+    {
+      "id": "g-post",
+      "label": "SessionStart(compact) フック",
+      "lane": "hook",
+      "fromCol": 4,
+      "toCol": 4
+    },
+    {
+      "id": "g-stop",
+      "label": "フックがないと起こりうること",
+      "lane": "stop",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "work",
+    "trigger",
+    "find",
+    "memo",
+    "compress",
+    "post",
+    "resume"
+  ],
+  "nodes": [
+    {
+      "id": "manual",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "/compact",
+      "sublabel": "手動 /compact (任意)",
+      "width": 138,
+      "tag": "普段は action なし"
+    },
+    {
+      "id": "work",
+      "lane": "session",
+      "col": 0,
+      "type": "backend",
+      "label": "長い作業",
+      "sublabel": "context が溜まる",
+      "width": 138,
+      "tag": "アテナ · エージェント pane"
+    },
+    {
+      "id": "trigger",
+      "lane": "session",
+      "col": 1,
+      "type": "backend",
+      "label": "compact 開始",
+      "sublabel": "自動 200k · /compact",
+      "width": 138,
+      "tag": "PreCompact イベント"
+    },
+    {
+      "id": "find",
+      "lane": "hook",
+      "col": 1,
+      "type": "backend",
+      "label": "計画書を探す",
+      "sublabel": "この pane id で",
+      "width": 138,
+      "tag": "Work ref · Review · leadPane"
+    },
+    {
+      "id": "memo",
+      "lane": "hook",
+      "col": 2,
+      "type": "backend",
+      "label": "直前メモ",
+      "sublabel": "状態一行を上書き",
+      "width": 138,
+      "tag": "Claude が書かなくても残る"
+    },
+    {
+      "id": "compress",
+      "lane": "session",
+      "col": 3,
+      "type": "backend",
+      "label": "summary 生成",
+      "sublabel": "フックは関与しない",
+      "width": 138,
+      "tag": "context 喪失の恐れ"
+    },
+    {
+      "id": "post",
+      "lane": "hook",
+      "col": 4,
+      "type": "backend",
+      "label": "直後の案内",
+      "sublabel": "会話に一行追加",
+      "width": 138,
+      "tag": "計画書から読み直せ"
+    },
+    {
+      "id": "resume",
+      "lane": "session",
+      "col": 5,
+      "type": "backend",
+      "label": "resume",
+      "sublabel": "Checkpoint → git status → Next",
+      "width": 184,
+      "tag": "AGENTS.md 2.6"
+    },
+    {
+      "id": "notfound",
+      "lane": "stop",
+      "col": 1,
+      "type": "security",
+      "label": "計画書が見つからない",
+      "sublabel": "メモ skip",
+      "width": 138,
+      "tag": "直後に候補だけ通知"
+    },
+    {
+      "id": "loss",
+      "lane": "stop",
+      "col": 4,
+      "type": "security",
+      "label": "context 喪失",
+      "sublabel": "次の作業 · 修正済みファイル",
+      "width": 138,
+      "tag": "summary だけに依存"
+    },
+    {
+      "id": "drift",
+      "lane": "stop",
+      "col": 5,
+      "type": "security",
+      "label": "drift",
+      "sublabel": "再質問 · 重複修正 · skip",
+      "width": 138,
+      "tag": "計画書を見直さない"
+    },
+    {
+      "id": "planfile",
+      "lane": "src",
+      "col": 2,
+      "type": "database",
+      "label": "Checkpoint",
+      "sublabel": "- Auto snapshot: 一行",
+      "width": 138,
+      "tag": "時刻 · ブランチ · HEAD · 未コミット"
+    },
+    {
+      "id": "progress",
+      "lane": "src",
+      "col": 5,
+      "type": "database",
+      "label": "Progress · Next",
+      "sublabel": "エージェントが書く進捗",
+      "width": 138,
+      "tag": "スナップショットは代わらない"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "work",
+      "to": "trigger",
+      "label": "上限付近",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e2",
+      "from": "trigger",
+      "to": "find",
+      "label": "フック実行",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 35,
+      "labelDy": 46
+    },
+    {
+      "id": "e3",
+      "from": "find",
+      "to": "memo",
+      "label": "発見",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e4",
+      "from": "memo",
+      "to": "compress",
+      "label": "compact",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelAt": [
+        459.59999999999997,
+        298.5
+      ],
+      "via": [
+        [
+          487.4,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "e5",
+      "from": "compress",
+      "to": "post",
+      "label": "SessionStart",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          607.4,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "e6",
+      "from": "post",
+      "to": "resume",
+      "label": "案内",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1002.6,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "u1",
+      "from": "manual",
+      "to": "trigger",
+      "label": "手動",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 42
+    },
+    {
+      "id": "s1",
+      "from": "memo",
+      "to": "planfile",
+      "label": "記録",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 43
+    },
+    {
+      "id": "s2",
+      "from": "planfile",
+      "to": "progress",
+      "label": "同じ計画書",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "s3",
+      "from": "progress",
+      "to": "resume",
+      "variant": "dashed",
+      "label": "読み直し",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        1140.8,
+        379
+      ],
+      "via": [
+        [
+          1110.6,
+          506
+        ],
+        [
+          1110.6,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "x1",
+      "from": "find",
+      "to": "notfound",
+      "label": "なし",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 109
+    },
+    {
+      "id": "x2",
+      "from": "compress",
+      "to": "loss",
+      "label": "フックなし",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelSegment": 1,
+      "via": [
+        [
+          607.4,
+          196
+        ],
+        [
+          1179,
+          196
+        ],
+        [
+          1179,
+          689
+        ],
+        [
+          789,
+          689
+        ]
+      ]
+    },
+    {
+      "id": "x3",
+      "from": "loss",
+      "to": "drift",
+      "label": "summary 依存",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "順序",
+      "items": [
+        "① 長い作業 — context が 200k トークンに達すると(autoCompactWindow) Claude Code が自動で compact する(ユーザーが /compact で手動実行も可)",
+        "② compact 直前 — フックがこの pane id が書かれた計画書(Work ref · Review の pane · 正式 html の leadPane — 複数なら最近更新したもの · done は除く)を探し、Checkpoint に '- Auto snapshot: 時刻 · ブランチ · HEAD · 未コミットファイル' 一行を上書きする",
+        "③ compact — Claude Code が会話を summary に縮める。フックは summary を変えない",
+        "④ compact 直後 — フックが「summary だけを信じず計画書の Checkpoint から読み直せ」を計画書パス · スナップショットと一緒に会話に追加する。一覧にしたレポ規則文書があれば「読み直し」として一緒に知らせる",
+        "⑤ resume — エージェントが計画書を読み git status で現状を確かめてから Next から続ける(AGENTS.md 2.6 の 1〜4)。スナップショットは機械の状態にすぎず Progress · Next の代わりにならない"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "フックがないと",
+      "items": [
+        "summary から「次は A 方式で」のような決定が抜けると、別の方式でやるか聞き直す",
+        "修正済みファイルがあいまいになると、同じ修正をまたするか、直したと思い込んで進む",
+        "compact は会話が続いている感覚なので計画書を読み直す trigger がない(/new · セッション切断とは違う)",
+        "Checkpoint は段階の終わりに書くので、段階の途中で compact されると計画書に最新状態がない"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "どこに掛かっているか",
+      "items": [
+        "アテナ セッション · athena ルートで開いた Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
+        "ワークツリーで開いた担当エージェント · reviewer pane — scripts/agent-context.py が作る一時 settings(delegate.sh --settings · compact 時点の値も一緒に)",
+        "Codex — .codex/hooks.json の PreCompact が直前メモを、セッション開始フック(codex-context.py)が compact · resume 時に同じ案内を載せる",
+        "すでに開いている pane は開いたときの設定を使う — 新しく開いた pane から適用",
+        "compact · セッション開始を block しない — 計画書が見つからなくても入力が壊れても静かに通る(常に exit 0)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "確認したこと (2026-10-12)",
+      "items": [
+        "実際の Claude Code で /compact — 計画書にスナップショット一行ができ、compact 後のセッションが計画書パス · スナップショットをそのまま受け取った",
+        "同じ接頭辞の別 pane(tt:p9 · tt:p99)は混ざらない · 二回 compact しても一行のまま",
+        "ワークツリー FE pane の実際の compact はフック登録までしか確認していない — 実際の compact 時の動作は未確認"
+      ]
+    }
+  ]
+}

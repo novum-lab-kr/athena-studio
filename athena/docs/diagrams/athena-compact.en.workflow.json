@@ -1,0 +1,498 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "Auto save around compact",
+    "locale": "en",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "Before / after compact",
+        "focus": [
+          "work",
+          "trigger",
+          "find",
+          "memo",
+          "compress",
+          "post",
+          "resume"
+        ],
+        "note": "Claude Code compacts as usual. Hooks add a note to the plan before and a hint to the chat after; summary untouched. No user action needed."
+      },
+      {
+        "id": "without-hook",
+        "label": "Without the hooks",
+        "focus": [
+          "compress",
+          "loss",
+          "drift"
+        ],
+        "note": "Summary can drop 'next step' · 'files fixed'; nothing prompts a plan reread, and mid-step the plan lacks the latest state. Long tasks drift."
+      },
+      {
+        "id": "records",
+        "label": "What is saved and read",
+        "focus": [
+          "find",
+          "memo",
+          "planfile",
+          "post",
+          "resume",
+          "notfound"
+        ],
+        "note": "Overwrites '- Auto snapshot:' in the plan with this pane id (Work ref · Review · leadPane), rereads it. Not found: no note, candidates only"
+      }
+    ],
+    "output": "docs/diagrams/athena-compact.en.html",
+    "subtitle": "Keep long chats on track when they get compacted — one status line in the plan right before, a 'reread the plan first' hint right after (source: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "User"
+    },
+    {
+      "id": "session",
+      "label": "Claude Code session"
+    },
+    {
+      "id": "hook",
+      "label": "Hook · compact-checkpoint.py"
+    },
+    {
+      "id": "src",
+      "label": "Plan · records"
+    },
+    {
+      "id": "stop",
+      "label": "Without the hooks",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-before",
+      "label": "Before compact",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "p-compact",
+      "label": "compact (Claude Code)",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-after",
+      "label": "After compact",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-pre",
+      "label": "PreCompact",
+      "lane": "hook",
+      "fromCol": 1,
+      "toCol": 2
+    },
+    {
+      "id": "g-post",
+      "label": "SessionStart(compact) hook",
+      "lane": "hook",
+      "fromCol": 4,
+      "toCol": 4
+    },
+    {
+      "id": "g-stop",
+      "label": "If the hooks are missing",
+      "lane": "stop",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "work",
+    "trigger",
+    "find",
+    "memo",
+    "compress",
+    "post",
+    "resume"
+  ],
+  "nodes": [
+    {
+      "id": "manual",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "/compact",
+      "sublabel": "Manual /compact (optional)",
+      "width": 138,
+      "tag": "Usually nothing to do"
+    },
+    {
+      "id": "work",
+      "lane": "session",
+      "col": 0,
+      "type": "backend",
+      "label": "Long task",
+      "sublabel": "Context piles up",
+      "width": 138,
+      "tag": "Athena · agent pane"
+    },
+    {
+      "id": "trigger",
+      "lane": "session",
+      "col": 1,
+      "type": "backend",
+      "label": "compact starts",
+      "sublabel": "auto 200k · /compact",
+      "width": 138,
+      "tag": "PreCompact event"
+    },
+    {
+      "id": "find",
+      "lane": "hook",
+      "col": 1,
+      "type": "backend",
+      "label": "Find the plan",
+      "sublabel": "By this pane id",
+      "width": 138,
+      "tag": "Work ref · Review · leadPane"
+    },
+    {
+      "id": "memo",
+      "lane": "hook",
+      "col": 2,
+      "type": "backend",
+      "label": "Pre-compact note",
+      "sublabel": "Overwrite status line",
+      "width": 138,
+      "tag": "Saved even if Claude doesn't write"
+    },
+    {
+      "id": "compress",
+      "lane": "session",
+      "col": 3,
+      "type": "backend",
+      "label": "Summarize",
+      "sublabel": "Hooks stay out",
+      "width": 138,
+      "tag": "Context can be lost"
+    },
+    {
+      "id": "post",
+      "lane": "hook",
+      "col": 4,
+      "type": "backend",
+      "label": "Post-compact hint",
+      "sublabel": "Adds a line to chat",
+      "width": 138,
+      "tag": "Reread the plan first"
+    },
+    {
+      "id": "resume",
+      "lane": "session",
+      "col": 5,
+      "type": "backend",
+      "label": "resume",
+      "sublabel": "Checkpoint → git status → Next",
+      "width": 184,
+      "tag": "AGENTS.md 2.6"
+    },
+    {
+      "id": "notfound",
+      "lane": "stop",
+      "col": 1,
+      "type": "security",
+      "label": "Plan not found",
+      "sublabel": "Note skipped",
+      "width": 138,
+      "tag": "Only lists candidates after"
+    },
+    {
+      "id": "loss",
+      "lane": "stop",
+      "col": 4,
+      "type": "security",
+      "label": "Context loss",
+      "sublabel": "Next step · fixed files",
+      "width": 138,
+      "tag": "Relies only on the summary"
+    },
+    {
+      "id": "drift",
+      "lane": "stop",
+      "col": 5,
+      "type": "security",
+      "label": "drift",
+      "sublabel": "Re-asks · repeats · skips",
+      "width": 138,
+      "tag": "Plan not reread"
+    },
+    {
+      "id": "planfile",
+      "lane": "src",
+      "col": 2,
+      "type": "database",
+      "label": "Checkpoint",
+      "sublabel": "- Auto snapshot line",
+      "width": 138,
+      "tag": "Time · branch · HEAD · uncommitted"
+    },
+    {
+      "id": "progress",
+      "lane": "src",
+      "col": 5,
+      "type": "database",
+      "label": "Progress · Next",
+      "sublabel": "Agent-written progress",
+      "width": 138,
+      "tag": "Not replaced by the snapshot"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "work",
+      "to": "trigger",
+      "label": "Near limit",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e2",
+      "from": "trigger",
+      "to": "find",
+      "label": "runs hook",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 33,
+      "labelDy": 46
+    },
+    {
+      "id": "e3",
+      "from": "find",
+      "to": "memo",
+      "label": "Found",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e4",
+      "from": "memo",
+      "to": "compress",
+      "label": "compact",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelAt": [
+        473.2,
+        298.5
+      ],
+      "via": [
+        [
+          501,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "e5",
+      "from": "compress",
+      "to": "post",
+      "label": "SessionStart",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          621,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "e6",
+      "from": "post",
+      "to": "resume",
+      "label": "Hint",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          988.2,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "u1",
+      "from": "manual",
+      "to": "trigger",
+      "label": "By hand",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 28,
+      "labelDy": 42
+    },
+    {
+      "id": "s1",
+      "from": "memo",
+      "to": "planfile",
+      "label": "Record",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 25,
+      "labelDy": 43
+    },
+    {
+      "id": "s2",
+      "from": "planfile",
+      "to": "progress",
+      "label": "Same plan",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "s3",
+      "from": "progress",
+      "to": "resume",
+      "variant": "dashed",
+      "label": "Reread",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        1121.6000000000001,
+        379
+      ],
+      "via": [
+        [
+          1096.2,
+          506
+        ],
+        [
+          1096.2,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "x1",
+      "from": "find",
+      "to": "notfound",
+      "label": "None",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 109
+    },
+    {
+      "id": "x2",
+      "from": "compress",
+      "to": "loss",
+      "label": "No hooks",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelSegment": 1,
+      "via": [
+        [
+          621,
+          196
+        ],
+        [
+          1155,
+          196
+        ],
+        [
+          1155,
+          689
+        ],
+        [
+          774.6,
+          689
+        ]
+      ]
+    },
+    {
+      "id": "x3",
+      "from": "loss",
+      "to": "drift",
+      "label": "Summary only",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Steps",
+      "items": [
+        "① Long task — when context reaches 200k tokens (autoCompactWindow), Claude Code compacts on its own (the user can also run /compact)",
+        "② Right before compaction — the hook finds the plan with this pane id (Work ref · Review pane · formal html leadPane — the most recently edited if several · done ones excluded) and overwrites one line '- Auto snapshot: time · branch · HEAD · uncommitted files' in the Checkpoint",
+        "③ compact — Claude Code shrinks the chat into a summary. The hook doesn't change the summary",
+        "④ Right after compaction — the hook adds 'don't trust only the summary, reread the plan Checkpoint first' to the chat with the plan path · snapshot. Repo rule documents left as a list are also noted as 'reread'",
+        "⑤ resume — the agent reads the plan, checks the current state with git status, then continues from Next (steps 1–4 of AGENTS.md 2.6). The snapshot is just machine state and doesn't replace Progress · Next"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "Without the hooks",
+      "items": [
+        "If a decision like 'next, do it with approach A' drops out of the summary, it goes a different way or asks again",
+        "If files already fixed get blurry, it repeats the same fix or wrongly thinks it's fixed and moves on",
+        "Compaction feels like the chat just continues, so nothing prompts rereading the plan (unlike /new · a dropped session)",
+        "The Checkpoint is written when a step ends, so compaction mid-step leaves no latest state in the plan"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "Where it's hooked",
+      "items": [
+        "Athena session · Claude panes opened at the athena root — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
+        "Owning agent · reviewer panes opened in a worktree — temporary settings made by scripts/agent-context.py (delegate.sh --settings · compaction threshold included)",
+        "Codex — .codex/hooks.json PreCompact writes the note before, and the session start hook (codex-context.py) adds the same hint on compact · resume",
+        "Panes already open use the settings from when they opened — applies from newly opened panes",
+        "Never blocks compaction · session start — if the plan isn't found or the input is broken it passes quietly (always exit 0)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Checked (2026-10-12)",
+      "items": [
+        "/compact in real Claude Code — one snapshot line appeared in the plan, and after compaction the session received the plan path · snapshot as is",
+        "Other panes with the same prefix (tt:p9 · tt:p99) don't mix · compacting twice keeps only one line",
+        "Real compaction in a worktree FE pane was checked only up to hook registration — behavior during real compaction not confirmed"
+      ]
+    }
+  ]
+}

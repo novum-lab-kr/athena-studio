@@ -115,7 +115,7 @@ athena/                        ← 코어
 │   │   └── <레포>/ · company/ · learned/   레포 지식 · 회사 관례 · 학습 기록(팩)
 │   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
 │   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
-│   ├── diagrams/              서비스 그림 목록 (/guide 그림 · /diagram)
+│   ├── diagrams/              서비스 그림 · 아테나 작업 흐름 목록 (/guide 그림 · /diagram)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
 │   ├── pack.md                팩 형식 · 여러 팩 · 여러 팩 테스트
 │   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준

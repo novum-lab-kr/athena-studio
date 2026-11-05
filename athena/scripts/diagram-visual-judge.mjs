@@ -2,8 +2,8 @@
 // @ts-check
 /**
  * 작업 흐름 그림(docs/diagrams/athena-*.html)의 Archify visual-check 결과를 이 그림 구성에 맞춰 다시 판정한다.
- *   node "$A/bin/archify.mjs" visual-check docs/diagrams/athena-flow-light.html --json   # <그림>.visual-check.json 을 남긴다
- *   node scripts/diagram-visual-judge.mjs docs/diagrams/athena-flow-light.html          # 0 통과 · 1 실패 · 2 사용법
+ *   node "$A/bin/archify.mjs" visual-check docs/diagrams/athena-flow.html --json   # <그림>.visual-check.json 을 남긴다
+ *   node scripts/diagram-visual-judge.mjs docs/diagrams/athena-flow.html          # 0 통과 · 1 실패 · 2 사용법
  * Archify 는 "그림 전체가 한 화면에 들어온다" 를 조건으로 보는데, 이 그림들은 그림 아래 설명 카드가 원래 세로로 스크롤된다
  *   (2026-11-03 경량 2161 · 정식 2913px — issues/20261103-athena-studio-작업-흐름-그림-화면-점검이-세로-스크롤에서-실패.md).
  *   그래서 세로로만 넘친 것(viewer/viewport-overflow 중 overflowX 가 false)만 허용하고, 가로 넘침 · 겹침 · 그 밖의 오류는 그대로 실패다.

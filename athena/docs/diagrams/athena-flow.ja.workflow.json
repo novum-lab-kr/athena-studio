@@ -1,0 +1,674 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "アテナの作業フロー",
+    "subtitle": "依頼 → triage(軽量はそのまま / 正式は決定コンソールで承認) → ディスパッチ ↓ pane 作業 → 完了報告 → すぐ push · PR(三つの道) → auto done → アテナ確認 · cleanup → 報告 · ユーザー確認(承認 / 再作業)は UI 変更 · autoMerge でないレポだけ (原本: docs/team-lead.md · docs/workflow.md · docs/pr-auto.md)",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "route",
+        "label": "軽量 · 正式 · 複数レポ",
+        "focus": [
+          "req",
+          "judge",
+          "approve",
+          "branch"
+        ],
+        "note": "軽量はそのまま、正式(複数レポ · API · 構造)は決定コンソールの承認後にディスパッチ。バックエンド · 共有パッケージが先、空いている同じレポの pane には --reuse-pane で続けて送ります。"
+      },
+      {
+        "id": "work",
+        "label": "作業 · 完了報告 · ときどき確認",
+        "focus": [
+          "work",
+          "relay",
+          "confirm",
+          "ship"
+        ],
+        "note": "差分だけ確認しながら作業し、分からないことは request open で聞きます。終わったら完了報告の後すぐ push · PR(full verify 一回)。ユーザー確認(承認 / 再作業)は UI 変更 · autoMerge でないレポだけ。"
+      },
+      {
+        "id": "review",
+        "label": "レビュー · 修正 loop",
+        "focus": [
+          "work",
+          "relay",
+          "ship",
+          "pr"
+        ],
+        "note": "広い修正は reviewer pane がレビュー(正式は自動 · 軽量は「レビューして」)、修正が必要ならその pane にすぐ指示します。PR 自動レビューの修正もその pane で直して再 push します。"
+      },
+      {
+        "id": "ship",
+        "label": "push · PR 三つの道",
+        "focus": [
+          "ship",
+          "pr",
+          "direct",
+          "push",
+          "complete"
+        ],
+        "note": "PR → 自動レビュー / direct merge · Actions handoff(UI 確認は handoff 前 · Actions: verify → merge → deploy · 失敗は pane) / main に直接 push。複数レポはアテナが順番に。"
+      },
+      {
+        "id": "cleanup",
+        "label": "cleanup · 次の依頼",
+        "focus": [
+          "complete",
+          "cleanup",
+          "report",
+          "req"
+        ],
+        "note": "マージされると作業リストが done に移し、learn-review が学習候補を [学習] タブに上げます(ユーザーが入れる)。終わった pane を閉じると自動 archive。後続作業はイシュー → [작업 시작] で再依頼。"
+      }
+    ],
+    "output": "docs/diagrams/athena-flow.ja.html"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "ユーザー"
+    },
+    {
+      "id": "lead",
+      "label": "アテナ · reviewer"
+    },
+    {
+      "id": "agent",
+      "label": "エージェント pane · ワークツリー"
+    },
+    {
+      "id": "board",
+      "label": "作業リスト · Actions"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-plan",
+      "label": "依頼 · triage",
+      "fromCol": 0,
+      "toCol": 0
+    },
+    {
+      "id": "p-work",
+      "label": "ディスパッチ · 作業 · blocked なら質問",
+      "fromCol": 1,
+      "toCol": 1,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-report",
+      "label": "完了報告 · ときどき確認",
+      "fromCol": 2,
+      "toCol": 2,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-ship",
+      "label": "コミット · push · PR 三つの道",
+      "fromCol": 3,
+      "toCol": 4,
+      "variant": "dashed"
+    },
+    {
+      "id": "p-done",
+      "label": "完了 · cleanup · 報告",
+      "fromCol": 5,
+      "toCol": 5
+    }
+  ],
+  "groups": [],
+  "mainPath": [
+    "req",
+    "judge",
+    "branch",
+    "work",
+    "relay",
+    "ship",
+    "pr",
+    "complete",
+    "cleanup",
+    "report"
+  ],
+  "nodes": [
+    {
+      "id": "req",
+      "lane": "user",
+      "col": 0,
+      "type": "frontend",
+      "label": "依頼",
+      "sublabel": "ユーザー · 会話 · /call · イシュー",
+      "tag": "イシュー [작업 시작] · 残りもイシューに",
+      "width": 150
+    },
+    {
+      "id": "approve",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "決定コンソール承認",
+      "sublabel": "ユーザー · [이대로 진행]",
+      "tag": "正式 · plan-html.mjs · board.sh open",
+      "width": 150
+    },
+    {
+      "id": "confirm",
+      "lane": "user",
+      "col": 2,
+      "type": "frontend",
+      "label": "確認 · 承認 / 再作業",
+      "sublabel": "UI 変更 · autoMerge 以外",
+      "tag": "ユーザー · スクショ確認",
+      "width": 150
+    },
+    {
+      "id": "report",
+      "lane": "user",
+      "col": 5,
+      "type": "frontend",
+      "label": "報告確認",
+      "sublabel": "ユーザー · 後続はイシューへ",
+      "tag": "イシュー [작업 시작] → 再依頼",
+      "width": 150
+    },
+    {
+      "id": "judge",
+      "lane": "lead",
+      "col": 0,
+      "type": "backend",
+      "label": "triage · 計画書",
+      "sublabel": "アテナ · 📋 軽量 / 正式",
+      "tag": "正式 md + html · バックエンド先",
+      "width": 150
+    },
+    {
+      "id": "branch",
+      "lane": "lead",
+      "col": 1,
+      "type": "backend",
+      "label": "ブランチ·ディスパッチ",
+      "sublabel": "アテナ · delegate.sh --plan",
+      "tag": "空き pane は --reuse-pane",
+      "width": 150
+    },
+    {
+      "id": "relay",
+      "lane": "lead",
+      "col": 2,
+      "type": "backend",
+      "label": "完了報告 · レビュー",
+      "sublabel": "アテナ · 広い修正は reviewer",
+      "tag": "承認 → pane に push 指示",
+      "width": 150
+    },
+    {
+      "id": "cleanup",
+      "lane": "lead",
+      "col": 5,
+      "type": "backend",
+      "label": "確認 · cleanup",
+      "sublabel": "アテナ · 終わった pane を閉じる",
+      "tag": "自動 archive · ワークツリー cleanup",
+      "width": 150
+    },
+    {
+      "id": "work",
+      "lane": "agent",
+      "col": 1,
+      "type": "backend",
+      "label": "pane 作業",
+      "sublabel": "エージェント · 差分だけ確認",
+      "tag": "不明 → request open → 回答後に続行",
+      "width": 150
+    },
+    {
+      "id": "ship",
+      "lane": "agent",
+      "col": 3,
+      "type": "backend",
+      "label": "コミット · push",
+      "sublabel": "担当 · commit.sh · ship.sh",
+      "tag": "full verify 一回 · reuse.sh ♻️",
+      "width": 150
+    },
+    {
+      "id": "push",
+      "lane": "agent",
+      "col": 4,
+      "type": "backend",
+      "label": "main に直接 push",
+      "sublabel": "担当 · fast-forward push",
+      "tag": "direct: true · push 前に確認",
+      "width": 150
+    },
+    {
+      "id": "pr",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "PR → 自動レビュー",
+      "sublabel": "作業リスト · Claude/Codex",
+      "tag": "autoMerge · [マージ] → squash",
+      "width": 150,
+      "yOffset": 40
+    },
+    {
+      "id": "direct",
+      "lane": "board",
+      "col": 4,
+      "type": "backend",
+      "label": "direct merge · handoff",
+      "sublabel": "エージェント · --direct-merge",
+      "tag": "Actions: verify → merge → deploy",
+      "width": 150,
+      "yOffset": -48
+    },
+    {
+      "id": "complete",
+      "lane": "board",
+      "col": 5,
+      "type": "database",
+      "label": "auto done",
+      "sublabel": "作業リスト · learn review",
+      "tag": "learn-review → [学習] タブで入れる",
+      "width": 150,
+      "yOffset": -48
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "req",
+      "to": "judge",
+      "label": "",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          32,
+          168
+        ],
+        [
+          32,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e2",
+      "from": "judge",
+      "to": "branch",
+      "label": "軽量 · そのまま",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "f1",
+      "from": "judge",
+      "to": "approve",
+      "label": "正式",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          123,
+          340
+        ],
+        [
+          243,
+          340
+        ],
+        [
+          243,
+          168
+        ]
+      ]
+    },
+    {
+      "id": "f2",
+      "from": "approve",
+      "to": "branch",
+      "label": "",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "e3",
+      "from": "branch",
+      "to": "work",
+      "label": "",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "p1",
+      "from": "work",
+      "to": "relay",
+      "label": "① 完了報告",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          611.8,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "r1",
+      "from": "relay",
+      "to": "ship",
+      "label": "② すぐ push · PR",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          776.5999999999999,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "p2",
+      "from": "relay",
+      "to": "confirm",
+      "label": "確認依頼",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "route": "straight"
+    },
+    {
+      "id": "p3",
+      "from": "confirm",
+      "to": "relay",
+      "label": "承認",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "left",
+      "labelSegment": 1,
+      "via": [
+        [
+          487.4,
+          168
+        ],
+        [
+          487.4,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "d1",
+      "from": "confirm",
+      "to": "work",
+      "label": "再作業",
+      "variant": "dashed",
+      "fromSide": "top",
+      "toSide": "left",
+      "via": [
+        [
+          611.8,
+          118
+        ],
+        [
+          6,
+          118
+        ],
+        [
+          6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "s1",
+      "from": "ship",
+      "to": "pr",
+      "label": "PR",
+      "variant": "default",
+      "fromSide": "left",
+      "toSide": "left",
+      "via": [
+        [
+          685.5999999999999,
+          612
+        ],
+        [
+          685.5999999999999,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "s2",
+      "from": "ship",
+      "to": "direct",
+      "label": "direct merge",
+      "variant": "default",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          776.5999999999999,
+          786
+        ]
+      ]
+    },
+    {
+      "id": "s3",
+      "from": "ship",
+      "to": "push",
+      "label": "main",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left"
+    },
+    {
+      "id": "l1",
+      "from": "pr",
+      "to": "work",
+      "label": "自動レビュー修正",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "bottom",
+      "route": "bottom-channel"
+    },
+    {
+      "id": "m1",
+      "from": "pr",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1142.6,
+          874
+        ]
+      ]
+    },
+    {
+      "id": "m2",
+      "from": "direct",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "m3",
+      "from": "push",
+      "to": "complete",
+      "label": "",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "top",
+      "via": [
+        [
+          1142.6,
+          612
+        ]
+      ]
+    },
+    {
+      "id": "e7",
+      "from": "complete",
+      "to": "cleanup",
+      "label": "アテナ確認",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelSegment": 1,
+      "via": [
+        [
+          1233.6,
+          786
+        ],
+        [
+          1233.6,
+          390
+        ]
+      ]
+    },
+    {
+      "id": "e8",
+      "from": "cleanup",
+      "to": "report",
+      "label": "報告",
+      "variant": "default",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "順序 — 図の段階を詳しく",
+      "items": [
+        "① 依頼 — 会話 · /call · 作業リストのイシュー [작업 시작](作業開始)。同じ名前の画面が複数のレポ(運用コンソール · ユーザー Web など)にあれば、どちらか聞く",
+        "② 判断 — アテナが一行で知らせる: 📋 軽量で進めます — 理由 · パス / 📋 正式で進めます — 理由 · 決定 N 個 · パス",
+        "③ 計画書(ここで分かれる) — 軽量: plans/task/…md を自動作成、見せず承認もない / 正式: md + 同じ名前の html 決定コンソール(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs) → [이대로 진행](このまま進める)で確定。確定前はディスパッチしない",
+        "④ ブランチ · pane(ここでまた合流) — prBase からブランチ · ワークツリーを作り(new-branch.sh · /call は開く前にブランチを聞く)、delegate.sh --plan でそのワークツリーに開く。正式は共有パッケージ → 利用レポの順、互いに独立したサービスは同時に",
+        "⑤ 作業 — 依頼 → 修正 → 差分の確認 · 報告を何度も(full verifyは終わるときに一回 — ⑦ コミット)。分からない事実(外部契約 · 製品ポリシー · 既定動作)は推測せず、その部分だけ止めて Blocked に書き、依頼にまとめて聞く(bin/athena request open — [作業]「あなた待ち」 · 選ぶものは AskUserQuestion)。ユーザーが直したり同じエラーが 3 回出たら、その場で 📚 learn イシュー",
+        "⑥ レビュー(広い修正だけ) — 正式の計画書は広い修正を報告すると聞かずにレビューを開く(自動レビュー)。軽量には自動レビューがない。広い修正(新機能 · 構造変更 · 複数ファイルのロジック · セキュリティ · データ · 外部契約)を報告するときだけ、エージェントが最後に「レビューしますか?」を一行付ける — 小さな修正 · レビュー指摘の反映の後は聞かない。ユーザーが「レビューして」と言えばいつでも横に reviewer pane を開く。レビュアーは同じツリーで通った検証を再実行しない(♻️ 再利用)。決定が必要(選択肢が分かれる)なら同じ計画書の決定コンソールに追加して見せる(plan-html.mjs --add · [이대로 진행] はそのエージェント pane へ)。修正が必要なら聞かずに直し、一行ずつ知らせる",
+        "⑦ コミット — 「コミットして」か push が commit.sh でコミットする(指定ファイルだけ · strict verify · 計画書 ## Commits)。何度でもよい",
+        "⑧ push · PR — 複数レポならアテナが順番 · 公開範囲を確認し、レポごとに ship.sh --repo-agent(正式の道)。レポ一つなら方法はレポ設定ごと(delegate.sh の結果行が知らせる)。既定:「PR 올려줘」の一言 → コミット → ship.sh 下書き → タイトル · 本文を整える → 聞かずに prBase へ draft PR。自動 PR のレポ(autoMerge): 終わったら聞かずに draft PR → PR 自動レビュー。PR オフのレポ(autoPr:false): ship.sh --direct-merge で direct merge(広い修正なら merge 前にレビュー gate) — 「PR 올려줘」のときだけ --user-pr。Actions handoff レポ: 同じコマンドが feature branch の push で handoff してすぐ終わる。報告の最後に 📚 学んだこと",
+        "⑨ 終わり — PR がマージされると(direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す → 学習レビュアー(learn-review)が計画書 · 会話 · diff · レビューコメントから学習候補を足す → 結び付いた pane がすべて閉じると自動 archive(archive/) · ワークツリーも判定して消す。終わった pane はアテナが閉じる",
+        "pane 間の受け渡しは scripts/screen pane send-text で直接 — アテナには lead-send.py(受け取れなければためておいて後で入れる)。ユーザーに伝言を頼まない",
+        "質問 · 許可待ちは Studio の [作業] ポップアップで確認する。質問はポップアップで答え、許可は [pane へ移動] の後に元のウィンドウで選ぶ。選択画面は waiting 状態",
+        "Codex の保護フックは最初の Bash コマンドだけを検査し、write_stdin の後続入力は検査しない。フックの信頼は /hooks で確認する",
+        "確認 loop(ときどき) — 既定は完了報告の後すぐ push · PR(autoMerge レポは聞かずに)。UI 変更 · autoMerge でないレポ(「PR 올려줘」)のときだけ、アテナがスクショをユーザーに見せ、承認ならその pane に push 指示 · 再作業ならその pane の作業に戻る。UI 確認は handoff 前に終える"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "図から外したもの — 記録 · 読むもの",
+      "items": [
+        "計画書(plans/) — 軽量 · 正式どちらも作業の記録。Checkpoint で途切れても続けられ、コミットは ## Commits にたまる",
+        "イシュー(issues/) · 作業リスト — これからやることはイシュー、いま動いている仕事とあなたの答えを待つ仕事は [作業]。マージされると作業リストが done · archive する",
+        "パック ROUTING.md · pack.json — どのレポ · どのエージェント · 基準ブランチ",
+        "rules の必須節 · gotchas は作業の大きさに関係なく常に、knowledge は作業の種類に必要な節だけ読む",
+        "止まって聞く所(レポがあいまい · 分からないこと · ブランチがある · コミット · push 拒否)は図にない — 下の「どこで止まって聞くか」"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "軽量 · 正式 — 違うのは分かれ道だけ",
+      "items": [
+        "軽量 — 文言 · スタイル · バグ一つ · 確認 · 調査 · /call · 緊急修正 — レポ一つ。計画書は自動記録 · 承認なし · レビューは「レビューして」のとき",
+        "正式 — 新機能 · 複数レポ · API · 構造変更 · ユーザーが決めることがあるとき。決定コンソール承認 · 共有パッケージから順にディスパッチ · 広い修正なら自動レビュー · 複数レポはアテナがクロスレビュー · 順番に push · PR",
+        "正式でもレポ一つなら、ブランチ · pane からは軽量と同じく pane で push · PR まで進む",
+        "「正式で」と言えば正式フローで、正式の対象でも「すぐ直して」なら軽量で(報告にその旨を書く)。軽量で始めて複数レポ · API に広がったら止めて正式に移る",
+        "軽量でもパック ROUTING.md · rules の必須節 · gotchas は常に読む。knowledge は必要な節だけ",
+        "同じレポに作業がまた来て、そのレポの pane が空いていてユーザーが見ていなければ、新しい pane ではなくその pane に続けて送る(delegate.sh --reuse-pane) — 作業中か質問画面が出ていれば横に新しい pane、新しいブランチ(進行中のブランチは使い回さない)",
+        "軽量の既定モデルで開き、本当に単純な修正のときだけ Claude エンジンに限り --model sonnet を付ける(文言 · スタイルの局所修正と同じ大きさ · ロジック · データ · 権限 · 外部契約に触れず原因調査も要らないもの · 迷ったら付けない · --reuse-pane とは併用できない)",
+        "イシューの [작업 시작](作業開始)はアテナが受けてこのフローで処理する。「担当エージェントへ直接(調査のみ)」を選ぶと、運用基準のワークツリーで調査 · 報告だけしてコードは直さない",
+        "委任は本体の主ツールに従う(--engine で指定可)。Claude · Codex どちらも担当レポ workspace の別 pane で同じ計画書 · ルールを受け取る"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "正式の道 — 承認 · ディスパッチ",
+      "items": [
+        "決定コンソールを作業リストのアドレスで開く(scripts/board.sh open <md>)。会話にはパスと、決定ごとにタイトル · おすすめを一行",
+        "コンソールで選んで [이대로 진행] → 決定がそのアテナ pane に入力される(会話で答えても同じ) → md · html に記録 → ✅ 確定",
+        "修正依頼なら md · html を直し、コンソールを開き直して再承認",
+        "確定前はディスパッチしない",
+        "delegate.sh --plan なしでは開かない。Work ref にワークツリー · ブランチ · pane が書かれる",
+        "FE セッションには保護フック — git commit · push · gh pr create の直接実行と add -A を止める(commit.sh · ship.sh で)",
+        "workspace = レポ、一つのタブに pane を並べる。共有パッケージ → 利用レポは順番に、互いに独立したサービスは同時に",
+        "既定はプロンプトなしで pane を開き、その中で指示する",
+        "reviewer · 単発の調査は --here で今のタブに",
+        "同じ機能を複数のサービスに入れるなら、計画書に共通仕様(文言 · 動作 · env キー)を書く",
+        "正式の計画書は md + 同じ名前の html 決定コンソール(plans/{feature,bugfix,refactor}/… · scripts/plan-html.mjs)。PLAN.leadPane に計画書を作ったアテナ pane",
+        "フロントとバックエンドが一緒に変わるならバックエンドが先 — バックエンド報告の「契約変更」をそのままフロントの指示に載せる。複数レポの push · PR はアテナが順番(共有パッケージが先)を決め、レポごとに ship.sh --repo-agent"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "レビュー · コミット · push",
+      "items": [
+        "レビューなしですぐコミット · PR しても止められない — PR オフのレポの direct merge · Actions handoff だけ、広い修正なら前にレビュー gate が立つ",
+        "レビューはコミット前の変更も含めたファイル内容を記録する — レビュー → コミットでもコミット → レビューでも、内容が同じなら承認",
+        "レビュー後に内容が変わったりレビューがなくても、聞かずに push する — PR 本文に「確認が必要」、報告に「レビュー承認前」と書く",
+        "コミットはローカルの git コミット。push は ship.sh で一度に(ほかの直接 push は禁止)。コミットされていない変更があると push は拒否される",
+        "PR タイトル type(範囲): チケット 要約 · 本文は共通テンプレート(git.md「PR 제목·본문」)",
+        "PR 自動レビュー(\"autoMerge\": true のレポのレポ一つの PR だけ · 既定はオフ) — draft PR が上がると作業リストが検知し、Claude · Codex がレビューする(Claude がなければ Codex の二モデル · モデル一覧が読めなければ一席で判定)。修正が必要なら [자동 리뷰 → 에이전트] でその pane へ行き、エージェントはその指示に限り聞かずに commit.sh → ship.sh --auto-push(新しいコミットを再レビュー · 本文の指摘なら --body-file · エージェントには止める指摘だけ、推奨は PR コメントだけ · 2 ラウンド目からは前の指摘 + 変わった diff だけ)。決定が必要なら決定コンソールへ(同じラウンドの修正は待たずに送り · 実装の細部の決定はおすすめで自動確定)。上限 3 を超えても止まらず、直したコミットをレビュアー一人が変わった部分だけ短くレビューし、承認なら同じ HEAD の検証の後にマージ段階へ(止める指摘が残れば止めてアテナが引き継ぐ)。オンのレポは終わって検証が通れば「PR 올려줘」なしで draft PR まで進む。マージ結果は作業 pane に一行",
+        "自動マージ — 構成したレビュアー全員の承認 + 同じ HEAD の検証通過 + 衝突なしならマージ確認の依頼(Mac 通知 · [作業] ポップアップ) → 人が [マージ]を選ぶと squash(レポが autoMergeConfirm: false なら聞かずにすぐ · レビューオフ · 人が手で、はレポごとに選ぶ — pr-auto.md の有効化)。一つでも失敗 · 却下ならマージしない",
+        "direct merge 前のレビュー gate(PR オフのレポ · 広い修正だけ — コードファイル 5 個 · 150 行 · 敏感なパス · または計画書 Checkpoint の - Wide change: yes) — ship.sh --direct-merge が reviewer を横に開き、同じ HEAD の承認を待つ。修正が必要なら直してコミットし、同じコマンドでもう一度(差分だけ短く) · 二回目も修正が必要ならアテナが引き継ぐ",
+        "Actions handoff レポ(actionsHandoff): コミットは Mac の full verify なしで、ship.sh --direct-merge は feature branch の push で handoff してすぐ終わる → pane は次の仕事。full verify → prBase merge → deploy 開始は Actions、結果の読み取り · done 表示 · 失敗ログの転送(担当した pane へ)は作業リスト。広い修正なら handoff 前にレビュー gate(reviewer 自動 · 同じ HEAD の承認後に handoff) · UI 確認は handoff 前に",
+        "git のないプロジェクト: commit.sh · ship.sh の代わりに local-finish.mjs で handoff すると pane は次の仕事。full verify → done 表示だけ Mac のバックグラウンドで回り(決定 D4)、失敗ログだけ pane に来る",
+        "(複数レポ · アテナ作業) reviewer に計画書 + 対象レポ(ワークツリーなら --cwd)を渡す。修正が必要な項目は聞かずにそのエージェント pane へすぐ続けて指示(アテナが直接送る)。決定が必要(選択肢が分かれる)なら同じ計画書の決定コンソールに追加して見せる(plan-html.mjs --add)",
+        "検証結果をそのまま確認する — 失敗を隠さない",
+        "handoff した仕事の結果をアテナが待って見張らない — 失敗ログは担当した pane に行き、エージェントはやっていた仕事を終えてからそのワークツリーで直し、もう一度 handoff する",
+        "検証は二段階 — 作業中は差分だけ素早く確認し、full verify は終わるときに一回(commit.sh strict verify · 同じツリーで通っていれば reuse.sh ♻️ 再利用 · レビュアー · merge も同じ道)"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "cleanup / 途切れたときの resume",
+      "items": [
+        "自動 archive — 計画書の PR がすべてマージされて done + learn review 終了 + 結び付いたエージェント pane がすべて閉じると、作業リストが archive/<名前>/ にイシュー · 計画書をまとめてコミットする。その計画書のワークツリーも判定して消す(未コミット · unpushed コミット · 使っている pane があれば残し、理由を Checkpoint に)。終わった pane はアテナが閉じる · 過ぎた仕事は [アーカイブ]タブ",
+        "作業リストの [学習]タブ — 学習候補を [넣기](入れる) · [고쳐서 넣기](直して入れる) · [버리기](捨てる)(入れるとノート gotchas に一行)、学習した内容の修正 · 削除、スキル候補はアテナに任せる。/sync の最後に learn-curator が 30 日使っていないスキルを、gotchas-check が消えたファイルを指すノートの行 · 分ける時期のノート(共通 2 万字 · 同じ画面 5 行 → gotchas/<フォルダ>.md)を cleanup 候補に(消さない)",
+        "イシュー完了可能バッジ = 確認結果 · 後続 · fix · 計画 done + PR MERGED。バッジが出たらアテナが移す(イシュー · 計画書はローカル — git には archive/ だけ)",
+        "auto done — 計画書の PR 行の PR がすべてマージされると(GitHub MERGED、base は問わない · direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す。マージせずに閉じた PR は判定から外し、Progress に段階の欄(N단계 で始まる · (단계) 表示)が残っていれば移さない。普通の空欄は止めずに Lead pane に知らせる · 終わった後の残りは空欄にせずイシューへ",
+        "途切れたら計画書を一つ読み、いまのブランチ · diff が Work ref と同じかをまず見る",
+        "Next がいまのコードでも有効か確認してから進める",
+        "変わった ref で過去の検証結果を再利用しない",
+        "Claude · Codex の会話は同じコンピューターの記録で再開する。Codex の会話を別のコンピューターに移して続けることはまだできない",
+        "作業リストの [学習] → 個人メモリ: Claude · Codex を一緒に新しい日付順で表示し、出どころのロゴ · フィルターで分ける(読み取り専用)",
+        "loop — 終わった後の後続作業はイシュー(issues/)に上げ、作業リストのイシューカードの [작업 시작](作業開始)がまた ① 依頼として入ってくる"
+      ]
+    },
+    {
+      "dot": "orange",
+      "title": "どこで止まって聞くか",
+      "items": [
+        "レポがあいまいなら聞く — 同じサービスでも運用コンソールとユーザー Web が別のレポのことがある",
+        "分からない事実(外部契約 · 製品ポリシー · 既定動作 · データの意味)は推測しない — コード · 実行 · ドキュメントでまず確かめ、それでも分からなければその部分だけ止めて Blocked に書き、依頼にまとめて聞く。動かせば分かることは聞かない",
+        "バックエンド · 範囲外の変更が必要なら止めて知らせる",
+        "正式は決定コンソールの確定前にディスパッチしない",
+        "ブランチがすでにあるかワークツリーを作れなければ聞く — 飛ばしたレポにはディスパッチしない",
+        "コミット拒否 — メインのチェックアウト · 保護ブランチ · 他人のステージング · 検証失敗",
+        "push 拒否 — 未コミット · commit.sh を通っていないコミット · タイトル形式 · 複数レポ(アテナへ)。レビューの有無では拒否しない(direct merge · handoff のレビュー gate だけ例外)",
+        "複数レポ · API · 構造変更に広がったら止めて知らせる → 正式の道",
+        "アテナはサービスのコードもコアも直接書かない(コア修正 · ガード · フック追加はコア担当エージェントがブランチ · PR で)",
+        "PR 自動レビューが止まる所 — レビュアー不足(一つでも失敗) · 決定コンソールで決めていない決定 · 同じ HEAD を検証できない · 衝突 · 修正指示を送る pane がない → マージしない。決定だけ人へ(決定コンソール) · 残りはアテナ pane に [자동 리뷰 → 아테나] の一行で知らせ、アテナが引き継ぐ"
+      ]
+    }
+  ]
+}

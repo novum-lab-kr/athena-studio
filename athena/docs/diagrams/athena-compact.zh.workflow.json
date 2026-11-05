@@ -1,0 +1,498 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "对话 compact 前后自动保存",
+    "locale": "zh-CN",
+    "animation": "trace",
+    "visual_preset": "signal-flow",
+    "quality_profile": "standard",
+    "views": [
+      {
+        "id": "happy-path",
+        "label": "compact 前后流程",
+        "focus": [
+          "work",
+          "trigger",
+          "find",
+          "memo",
+          "compress",
+          "post",
+          "resume"
+        ],
+        "note": "compact 保持 Claude Code 默认行为。钩子只在之前往计划书加一行备注、之后往对话加一行提示,不改 summary。用户无需任何 action。"
+      },
+      {
+        "id": "without-hook",
+        "label": "没有钩子时",
+        "focus": [
+          "compress",
+          "loss",
+          "drift"
+        ],
+        "note": "summary 可能丢失『下一步』『已改文件』这类 context。没有重读计划书的 trigger,若在步骤中途,计划书里也没有最新状态。任务越长越容易 drift。"
+      },
+      {
+        "id": "records",
+        "label": "保存什么 · 读什么",
+        "focus": [
+          "find",
+          "memo",
+          "planfile",
+          "post",
+          "resume",
+          "notfound"
+        ],
+        "note": "覆盖写入记有此 pane id 的计划书(Work ref · Review · leadPane)中的 '- Auto snapshot:' 一行,compact 后从该 Checkpoint 重读。找不到则不写备注,只提示候选。"
+      }
+    ],
+    "output": "docs/diagrams/athena-compact.zh.html",
+    "subtitle": "对话变长被 compact 时不丢失手头工作 — compact 前在计划书写一行状态,之后提示\"先重读计划书\" (原文: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+  },
+  "lanes": [
+    {
+      "id": "user",
+      "label": "用户"
+    },
+    {
+      "id": "session",
+      "label": "Claude Code 会话"
+    },
+    {
+      "id": "hook",
+      "label": "钩子 · compact-checkpoint.py"
+    },
+    {
+      "id": "src",
+      "label": "计划书 · 记录"
+    },
+    {
+      "id": "stop",
+      "label": "没有钩子时",
+      "variant": "exception"
+    }
+  ],
+  "phases": [
+    {
+      "id": "p-before",
+      "label": "compact 之前",
+      "fromCol": 0,
+      "toCol": 2
+    },
+    {
+      "id": "p-compact",
+      "label": "compact (Claude Code 默认)",
+      "fromCol": 3,
+      "toCol": 3,
+      "variant": "emphasis"
+    },
+    {
+      "id": "p-after",
+      "label": "compact 之后",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "dashed"
+    }
+  ],
+  "groups": [
+    {
+      "id": "g-pre",
+      "label": "PreCompact",
+      "lane": "hook",
+      "fromCol": 1,
+      "toCol": 2
+    },
+    {
+      "id": "g-post",
+      "label": "SessionStart(compact) 钩子",
+      "lane": "hook",
+      "fromCol": 4,
+      "toCol": 4
+    },
+    {
+      "id": "g-stop",
+      "label": "没有钩子时可能发生的事",
+      "lane": "stop",
+      "fromCol": 4,
+      "toCol": 5,
+      "variant": "security"
+    }
+  ],
+  "mainPath": [
+    "work",
+    "trigger",
+    "find",
+    "memo",
+    "compress",
+    "post",
+    "resume"
+  ],
+  "nodes": [
+    {
+      "id": "manual",
+      "lane": "user",
+      "col": 1,
+      "type": "frontend",
+      "label": "/compact",
+      "sublabel": "手动 /compact (可选)",
+      "width": 138,
+      "tag": "通常无需 action"
+    },
+    {
+      "id": "work",
+      "lane": "session",
+      "col": 0,
+      "type": "backend",
+      "label": "长任务",
+      "sublabel": "context 累积",
+      "width": 138,
+      "tag": "Athena · 代理 pane"
+    },
+    {
+      "id": "trigger",
+      "lane": "session",
+      "col": 1,
+      "type": "backend",
+      "label": "compact 开始",
+      "sublabel": "自动 200k · /compact",
+      "width": 138,
+      "tag": "PreCompact 事件"
+    },
+    {
+      "id": "find",
+      "lane": "hook",
+      "col": 1,
+      "type": "backend",
+      "label": "查找计划书",
+      "sublabel": "按此 pane id",
+      "width": 138,
+      "tag": "Work ref · Review · leadPane"
+    },
+    {
+      "id": "memo",
+      "lane": "hook",
+      "col": 2,
+      "type": "backend",
+      "label": "compact 前备注",
+      "sublabel": "覆盖一行状态",
+      "width": 138,
+      "tag": "Claude 不写也会保留"
+    },
+    {
+      "id": "compress",
+      "lane": "session",
+      "col": 3,
+      "type": "backend",
+      "label": "生成 summary",
+      "sublabel": "钩子不参与",
+      "width": 138,
+      "tag": "可能丢失 context"
+    },
+    {
+      "id": "post",
+      "lane": "hook",
+      "col": 4,
+      "type": "backend",
+      "label": "compact 后提示",
+      "sublabel": "对话追加一行",
+      "width": 138,
+      "tag": "先重读计划书"
+    },
+    {
+      "id": "resume",
+      "lane": "session",
+      "col": 5,
+      "type": "backend",
+      "label": "resume",
+      "sublabel": "Checkpoint → git status → Next",
+      "width": 184,
+      "tag": "AGENTS.md 2.6"
+    },
+    {
+      "id": "notfound",
+      "lane": "stop",
+      "col": 1,
+      "type": "security",
+      "label": "找不到计划书",
+      "sublabel": "备注 skip",
+      "width": 138,
+      "tag": "之后只提示候选"
+    },
+    {
+      "id": "loss",
+      "lane": "stop",
+      "col": 4,
+      "type": "security",
+      "label": "context 丢失",
+      "sublabel": "下一步 · 已改文件",
+      "width": 138,
+      "tag": "只依赖 summary"
+    },
+    {
+      "id": "drift",
+      "lane": "stop",
+      "col": 5,
+      "type": "security",
+      "label": "drift",
+      "sublabel": "重复提问 · 重复修改 · skip",
+      "width": 138,
+      "tag": "不重读计划书"
+    },
+    {
+      "id": "planfile",
+      "lane": "src",
+      "col": 2,
+      "type": "database",
+      "label": "Checkpoint",
+      "sublabel": "- Auto snapshot: 一行",
+      "width": 138,
+      "tag": "时间 · 分支 · HEAD · 未提交"
+    },
+    {
+      "id": "progress",
+      "lane": "src",
+      "col": 5,
+      "type": "database",
+      "label": "Progress · Next",
+      "sublabel": "代理写的进度",
+      "width": 138,
+      "tag": "快照不能代替"
+    }
+  ],
+  "edges": [
+    {
+      "id": "e1",
+      "from": "work",
+      "to": "trigger",
+      "label": "接近上限",
+      "variant": "default",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e2",
+      "from": "trigger",
+      "to": "find",
+      "label": "执行钩子",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 30,
+      "labelDy": 46
+    },
+    {
+      "id": "e3",
+      "from": "find",
+      "to": "memo",
+      "label": "找到",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "e4",
+      "from": "memo",
+      "to": "compress",
+      "label": "compact",
+      "variant": "default",
+      "fromSide": "top",
+      "toSide": "left",
+      "labelAt": [
+        459.59999999999997,
+        298.5
+      ],
+      "via": [
+        [
+          487.4,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "e5",
+      "from": "compress",
+      "to": "post",
+      "label": "SessionStart",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "left",
+      "via": [
+        [
+          607.4,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "e6",
+      "from": "post",
+      "to": "resume",
+      "label": "提示",
+      "variant": "emphasis",
+      "fromSide": "right",
+      "toSide": "bottom",
+      "via": [
+        [
+          1002.6,
+          379
+        ]
+      ]
+    },
+    {
+      "id": "u1",
+      "from": "manual",
+      "to": "trigger",
+      "label": "手动",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 42
+    },
+    {
+      "id": "s1",
+      "from": "memo",
+      "to": "planfile",
+      "label": "记录",
+      "variant": "dashed",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 43
+    },
+    {
+      "id": "s2",
+      "from": "planfile",
+      "to": "progress",
+      "label": "同一计划书",
+      "variant": "dashed",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    },
+    {
+      "id": "s3",
+      "from": "progress",
+      "to": "resume",
+      "variant": "dashed",
+      "label": "重读",
+      "fromSide": "right",
+      "toSide": "right",
+      "labelAt": [
+        1131.6,
+        379
+      ],
+      "via": [
+        [
+          1110.6,
+          506
+        ],
+        [
+          1110.6,
+          246
+        ]
+      ]
+    },
+    {
+      "id": "x1",
+      "from": "find",
+      "to": "notfound",
+      "label": "无",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "route": "straight",
+      "labelDx": 21,
+      "labelDy": 109
+    },
+    {
+      "id": "x2",
+      "from": "compress",
+      "to": "loss",
+      "label": "无钩子",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "top",
+      "toSide": "bottom",
+      "labelSegment": 1,
+      "via": [
+        [
+          607.4,
+          196
+        ],
+        [
+          1160.6,
+          196
+        ],
+        [
+          1160.6,
+          689
+        ],
+        [
+          789,
+          689
+        ]
+      ]
+    },
+    {
+      "id": "x3",
+      "from": "loss",
+      "to": "drift",
+      "label": "依赖 summary",
+      "variant": "security",
+      "role": "error",
+      "fromSide": "right",
+      "toSide": "left",
+      "route": "straight"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "顺序",
+      "items": [
+        "① 长任务 — context 达到 200k token 时(autoCompactWindow) Claude Code 自动 compact(用户也可用 /compact 手动执行)",
+        "② compact 之前 — 钩子查找记有此 pane id 的计划书(Work ref · Review 的 pane · 正式 html 的 leadPane — 多个时取最近修改的 · 排除 done),在 Checkpoint 覆盖写入 '- Auto snapshot: 时间 · 分支 · HEAD · 未提交文件' 一行",
+        "③ compact — Claude Code 把对话压缩成 summary。钩子不改 summary",
+        "④ compact 之后 — 钩子把『别只信 summary,先重读计划书 Checkpoint』连同计划书路径 · 快照一起追加到对话。有转为列表的仓库规则文档时一起以『重读』提示",
+        "⑤ resume — 代理读计划书,用 git status 核对当前状态后从 Next 继续(AGENTS.md 2.6 的 1~4)。快照只是机器状态,不能代替 Progress · Next"
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "没有钩子时",
+      "items": [
+        "summary 里漏掉『下一步用 A 方式』这类决定时,会换成别的方式或再问一次",
+        "已改文件变模糊时,会重复同样的修改,或误以为已改好而跳过",
+        "compact 让人感觉对话在继续,所以没有重读计划书的 trigger(和 /new · 会话断开不同)",
+        "Checkpoint 在步骤结束时写,所以步骤中途 compact 时计划书里没有最新状态"
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "挂在哪里",
+      "items": [
+        "Athena 会话 · 在 athena 根目录打开的 Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
+        "在工作树打开的负责代理 · reviewer pane — scripts/agent-context.py 生成的临时 settings(delegate.sh --settings · 压缩阈值也一起)",
+        "Codex — .codex/hooks.json 的 PreCompact 写 compact 前备注,会话开始钩子(codex-context.py)在 compact · resume 时加上同样的提示",
+        "已经打开的 pane 用打开时的设置 — 从新打开的 pane 开始生效",
+        "不 block compact · 会话开始 — 找不到计划书或输入损坏也静默通过(总是 exit 0)"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "已确认 (2026-10-12)",
+      "items": [
+        "在真实 Claude Code 里 /compact — 计划书出现一行快照,compact 后会话原样收到计划书路径 · 快照",
+        "相同前缀的其他 pane(tt:p9 · tt:p99)不会混淆 · compact 两次也只保留一行",
+        "工作树 FE pane 的真实 compact 只确认到钩子注册 — 真实 compact 时的行为未确认"
+      ]
+    }
+  ]
+}
