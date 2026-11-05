@@ -25,13 +25,26 @@ test('부엉이 눈 아이콘: 로고는 메뉴 막대 색 · 눈 자리만 눈 
 
 test('부엉이 눈 아이콘: 빛 번짐은 눈 둘레 빈 픽셀에만 · 끄면 빈 픽셀은 그대로 투명', () => {
   const empty = Buffer.alloc(width * height * 4)
-  const near = [EYE[0] + 3, EYE[1]]
+  const near = [EYE[0] + 4, EYE[1]] // 켠 눈 원(32px 로 반지름 약 3.4) 바로 바깥
   const glowing = owlBitmap(empty, width, height, [255, 255, 255], GREEN, true)
   const [blue, green, red, alpha] = pixelOf(glowing, near)
   assert.ok(alpha > 0 && alpha < 255) // 옅은 초록
   assert.ok(green > red && green > blue)
   assert.deepEqual(pixelOf(glowing, FAR), [0, 0, 0, 0]) // 먼 곳은 번지지 않는다
   assert.deepEqual(pixelOf(owlBitmap(empty, width, height, [255, 255, 255], [255, 255, 255], false), near), [0, 0, 0, 0])
+})
+
+test('부엉이 눈 아이콘: 켠 눈은 로고 빈 틈까지 꽉 찬 초록 원 — 16px 에서도 보이게 · 끈 눈은 빈 틈 그대로', () => {
+  // 회오리 빈 틈(투명) 위의 눈 가운데도 초록으로 덮는다 — 로고 픽셀만 칠하면 16px 에서 눈마다 1px 남짓이었다
+  const empty = Buffer.alloc(width * height * 4)
+  assert.deepEqual(pixelOf(owlBitmap(empty, width, height, [255, 255, 255], GREEN, true), EYE), [GREEN[2], GREEN[1], GREEN[0], 255])
+  assert.deepEqual(pixelOf(owlBitmap(empty, width, height, [255, 255, 255], [255, 255, 255], false), EYE), [0, 0, 0, 0])
+  // 16px 로고에서 눈마다 진한 초록이 몇 픽셀 이상
+  const small = 16
+  const lit = owlBitmap(Buffer.alloc(small * small * 4), small, small, [0, 0, 0], GREEN, true)
+  let solid = 0
+  for (let offset = 0; offset < lit.length; offset += 4) if ((lit[offset + 3] ?? 0) >= 200) solid++
+  assert.ok(solid >= 12, `진한 초록 ${solid}px`)
 })
 
 test('부엉이 눈 아이콘: 반투명 픽셀은 색에 알파를 곱한다(premultiplied)', () => {
