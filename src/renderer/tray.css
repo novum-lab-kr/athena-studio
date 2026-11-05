@@ -54,7 +54,10 @@ html { background: rgba(20, 21, 25, 0.62); }
 /* 도구 색 — 각 LLM 의 대표색(Claude 는 Anthropic 주황 · Codex 는 파랑) · 모르는 도구는 회색 */
 .prov[data-tool="claude"] { --tool: #d97757; }
 .prov[data-tool="codex"] { --tool: #3b82f6; }
-.prov b::before { content: ""; display: inline-block; width: 7px; height: 7px; margin-right: 6px; border-radius: 50%; background: var(--tool, #9aa1ad); vertical-align: 1px; }
+/* 이름 앞 로고 — 현황판 머리 사용량 칸과 같은 로고(tray.ts toolLogo) · 크기는 이름 글자 줄 높이에 맞춘다 */
+.prov b { display: flex; align-items: center; gap: 6px; }
+.prov .logo { flex: none; width: 14px; height: 14px; }
+.prov .logo.letter { display: inline-grid; place-items: center; border-radius: 4px; color: #fff; background: var(--muted); font-size: 9px; font-weight: 700; }
 /* 80% 넘으면 % 글자만 빨갛게(주황은 Claude 색이라 겹치지 않게) */
 .win.hi .wl { color: #f87171; font-weight: 600; }
 .win .rs { color: var(--muted); }
