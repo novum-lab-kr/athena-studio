@@ -27,6 +27,10 @@ const SLOTS = 144
 const BASE = HEIGHT - 2
 const PEAK = HEIGHT - 26 // 가장 큰 값이 닿는 높이(px) — 위 하늘을 남긴다
 const STEP = WIDTH / SLOTS
+// 꼭대기 바닥값 — 칸 값은 '에이전트×분'(10분 칸) 이라 10 = 에이전트 1개가 10분 내내 일한 것. 기록이 이보다 적으면 그 비율만큼만 솟고, 더 많이 일한 날만 그 최댓값에 맞춘다
+export const TOP_FLOOR = 10
+const SLOPE_MIN = 30 // 비탈 기울기 범위(°) — 비탈마다 이 사이 무작위
+const SLOPE_MAX = 60
 const HOUR_TICKS = [0, 6, 12, 18]
 // 뒤 겹 — 같은 산을 공기 원근으로(멀수록 하늘색에 묻힌다) · haze = 하늘색 쪽으로 섞는 정도 · seed 는 바위 굴곡 · 눈 자리가 날마다 다르게
 const BACK = { yesterday: { haze: 0.45, seed: 1000 }, before: { haze: 0.7, seed: 2000 } } as const
@@ -128,13 +132,62 @@ function buildMountain(averages: number[], last: number, top: number, seed: numb
     }
     ridge.push([x, y])
   }
+  // 비탈 기울기 — 비탈마다 30°~60° 사이 고정 무작위(hash · 다시 그려도 같은 산은 같은 모양). 비탈의 기준 점(key)은 그 비탈이 시작되는 능선 점 번호
+  const slopeTan = (key: number, salt: number) => Math.tan(((SLOPE_MIN + (SLOPE_MAX - SLOPE_MIN) * hash(key + salt + seed)) * Math.PI) / 180)
+  const spread = new Set<number>() // 산자락으로 펼쳐진 능선 점(자로 그은 직선이 되지 않게 아래에서 굴곡을 준다)
+  // 내리막 산자락 — 일을 멈춘 곳의 내리막이 그 비탈의 기울기보다 서지 않게 뒤쪽 능선을 끌어올려 펼친다(오르막 처리보다 먼저 — 올린 점도 오르막 기준을 지킨다)
+  for (let index = 1, anchor = 0; index < ridge.length; index++) {
+    const [x0, y0] = ridge[index - 1] as Point
+    const [x1, y1] = ridge[index] as Point
+    const minHeight = BASE - y0 - (x1 - x0) * slopeTan(anchor, 1100)
+    if (BASE - y1 < minHeight) {
+      ridge[index] = [x1, BASE - minHeight]
+      spread.add(index)
+    } else anchor = index
+  }
+  // 오늘 산이 시작된 칸(지금까지 이어서 일한 첫 칸) — 지금 뒤 비탈 · 그 앞 오르막이 10분마다 바뀌지 않게 기준으로 쓴다
+  let runStart = last
+  while (nowX !== null && runStart > 0 && (averages[runStart - 1] ?? 0) > 0) runStart--
+  // 오르막 산자락 — 오른쪽이 더 높은 곳은 왼쪽으로 그 비탈의 기울기보다 서지 않게 앞쪽 능선을 끌어올려 펼친다(내리막은 그대로)
+  for (let index = ridge.length - 2, anchor = nowX === null ? ridge.length - 1 : runStart * 2; index >= 0; index--) {
+    const [x0, y0] = ridge[index] as Point
+    const [x1, y1] = ridge[index + 1] as Point
+    const minHeight = BASE - y1 - (x1 - x0) * slopeTan(anchor, 900)
+    if (BASE - y0 < minHeight) {
+      ridge[index] = [x0, BASE - minHeight]
+      spread.add(index)
+    } else anchor = index
+  }
+  // 비탈 굴곡 — 펼친 비탈에 몇 px 짜리 작은 턱 · 오목 볼록(6점마다 고정 무작위 값을 부드럽게 이은 것 · 바닥선 아래로는 안 내린다)
+  const wobble = (index: number, salt: number, amplitude: number) => {
+    const at = index / 6
+    const base = Math.floor(at)
+    const mix = at - base
+    const ease = mix * mix * (3 - 2 * mix)
+    const noise = hash(base + salt + seed) * (1 - ease) + hash(base + 1 + salt + seed) * ease
+    return (noise - 0.5) * 2 * amplitude
+  }
+  for (const index of spread) {
+    const [x0, y0] = ridge[index] as Point
+    ridge[index] = [x0, Math.min(BASE, y0 + wobble(index, 2000, 1.8))]
+  }
   const endY = ridge[ridge.length - 1]?.[1] ?? BASE
   let end = WIDTH
   if (nowX === null) ridge.push([WIDTH, endY])
   else {
+    // 지금 뒤 비탈 — 길이 = 높이 / tan(기울기) · 가운데 점은 같은 비율(앞으로 47% 에 45% 하강)
     const endHeight = BASE - endY
-    end = nowX + endHeight * 0.75
-    ridge.push([nowX, endY], [nowX + endHeight * 0.35, BASE - endHeight * 0.45], [end, BASE])
+    end = nowX + endHeight / slopeTan(runStart * 2, 1300)
+    ridge.push([nowX, endY])
+    // 곧은 두 구간 대신 2px 간격 점 · 양 끝은 그대로(굴곡 0) 가운데로 갈수록 굴곡
+    const run = end - nowX
+    const count = Math.max(2, Math.round(run / 2))
+    for (let step = 1; step < count; step++) {
+      const along = step / count
+      const dropped = along < 0.47 ? (along / 0.47) * 0.45 : 0.45 + ((along - 0.47) / 0.53) * 0.55
+      ridge.push([nowX + run * along, Math.min(BASE, BASE - endHeight * (1 - dropped) + Math.sin(along * Math.PI) * wobble(step, 3000 + runStart * 2, 1.8))])
+    }
+    ridge.push([end, BASE])
   }
   const ridgeY = (x: number) => {
     for (let index = 1; index < ridge.length; index++) {
@@ -147,7 +200,7 @@ function buildMountain(averages: number[], last: number, top: number, seed: numb
     return BASE
   }
   const spots: Spot[] = []
-  for (let index = 0; index <= last; index++) spots.push({ index, x: (index + 0.5) * STEP, y: ridgeY((index + 0.5) * STEP), height: heightAt(index) })
+  for (let index = 0; index <= last; index++) spots.push({ index, x: (index + 0.5) * STEP, y: ridgeY((index + 0.5) * STEP), height: Math.max(heightAt(index), BASE - ridgeY((index + 0.5) * STEP)) })
   return { ridge, end, endY, spots, ridgeY }
 }
 
@@ -218,8 +271,8 @@ export function mountainGraph(days: ActivityDays, slot: number, now: number): HT
     .map((key) => ({ key, values: days[key] }))
     .filter((day): day is { key: 'yesterday' | 'before'; values: number[] } => Array.isArray(day.values))
     .map((day) => ({ key: day.key, averages: moving(day.values, SLOTS - 1) }))
-  // 세 날이 같은 기준 — 3일 중 가장 큰 30분 평균이 꼭대기(일한 시간이 0 이어도 나누지 않게 1)
-  const top = Math.max(1, ...averages.slice(0, slot + 1), ...backDays.flatMap((day) => day.averages))
+  // 세 날이 같은 기준 — 3일 중 가장 큰 30분 평균이 꼭대기(바닥은 TOP_FLOOR — 적게 일한 날이 꼭대기까지 솟지 않게)
+  const top = Math.max(TOP_FLOOR, ...averages.slice(0, slot + 1), ...backDays.flatMap((day) => day.averages))
   const today = buildMountain(averages, slot, top, 0, nowX)
   const backs = backDays.map((day) => ({ key: day.key, mountain: buildMountain(day.averages, SLOTS - 1, top, BACK[day.key].seed, null) }))
 
