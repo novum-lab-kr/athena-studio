@@ -59,6 +59,8 @@ function setup(t) {
 }
 
 const started = (daemon) => daemon.calls.filter((call) => call.op === 'pane run')
+// pane 셸 PATH 에 도구가 없어도 켜지게 — 앱이 찾은 절대 경로 + 그 폴더를 명령 앞 PATH 에(core.withToolPath)
+const launched = (tool, rest = '') => `PATH='${process.env.PATH}':"$PATH" '${path.join(process.env.PATH, tool)}'${rest}`
 
 test('줄 세우기: 같은 열쇠는 앞 일이 끝난 뒤(실패해도) · 다른 열쇠는 따로', async () => {
   const queue = core.keyedQueue()
@@ -88,7 +90,7 @@ test('겹친 아테나 켜기: 줄 없이도(창 문맥 직렬화) 하나만 만
   const results = await Promise.all([queue(key, () => ctx.openAthenaAgent({})), queue(key, () => ctx.openAthenaAgent({ cols: 80 }))])
   assert.deepEqual(daemon.workspaces.map((entry) => entry.label), ['athena'])
   assert.equal(started(daemon).length, 1)
-  assert.equal(started(daemon)[0].args.text, 'claude')
+  assert.equal(started(daemon)[0].args.text, launched('claude'))
   assert.equal(results[0].started, 'claude')
   assert.equal(results[1].focused, true)
 })
@@ -174,7 +176,7 @@ test('둘이면 한 번 선택 · 기억한 도구로 재실행 · 취소하면 
   const choose = async () => { asked++; return 'codex' }
   const ctx = makeCtx(body, async () => {}, choose)
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
-  assert.equal(started(daemon)[0].args.text, 'codex --no-daemon')
+  assert.equal(started(daemon)[0].args.text, launched('codex', ' --no-daemon'))
   assert.equal(core.readMainTool(body), 'codex')
   daemon.workspaces.length = 0
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
@@ -208,7 +210,7 @@ test('백업의 Codex 아테나 대화는 선택창 없이 Codex로 재개한다
   ctx.restoreForPack = 'demo'
   ctx.packRestore = async () => ({ ok: true, athena: [{ session, engine: 'codex' }] })
   assert.equal((await ctx.openAthenaAgent({})).started, 'codex')
-  assert.equal(started(daemon)[0].args.text, `codex --no-daemon resume ${session}`)
+  assert.equal(started(daemon)[0].args.text, launched('codex', ` --no-daemon resume ${session}`))
 })
 
 test('본체 따라잡기: Claude·Codex 모두 빈 입력·같은 엔진 기록일 때만 종료 후 같은 대화 재개', async (t) => {
@@ -251,7 +253,7 @@ test('본체 따라잡기: Claude·Codex 모두 빈 입력·같은 엔진 기록
       const result = await ctx.catchUpBody([{id:'p1',cwd:body,agent:engine,agent_status:'idle'}], {force:false})
       if (scenario === 'ready') {
         assert.equal(result.ok,true)
-        assert.deepEqual(commands,['/exit',core.resumeCommand(session,engine)])
+        assert.deepEqual(commands,['/exit',core.withToolPath(core.resumeCommand(session,engine),engine)])
       } else {
         assert.equal(result.ok,false)
         assert.deepEqual(commands,[])

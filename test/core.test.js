@@ -386,3 +386,32 @@ test('Codex 여러 줄 초안에 상태줄 같은 문장이 있어도 맨 아래
   assert.equal(core.agentAtEmptyPrompt('› \n  고쳐 줘 GPT-6 low\n\n  GPT-6.1 Terra low · /tmp', 'codex'), false)
   assert.equal(core.agentAtEmptyPrompt('› 초안\n  › \n\n  GPT-6.1-Sol medium · /tmp/demo', 'codex'), false)
 })
+
+test('withToolPath: 앱이 찾은 도구 절대 경로로 켜고 도구 · node 폴더를 명령 앞 PATH 에 — pane 셸 PATH 에 없어도 켜지게', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-path-'))
+  try {
+    // 폴더 이름에 작은따옴표 · 띄어쓰기 — 셸 인용이 깨지지 않게
+    const tools = path.join(root, "it's local", 'bin')
+    const nodeDir = path.join(root, 'node bin')
+    fs.mkdirSync(tools, { recursive: true })
+    fs.mkdirSync(nodeDir)
+    for (const file of [path.join(tools, 'claude'), path.join(tools, 'codex'), path.join(nodeDir, 'node')]) fs.writeFileSync(file, '#!/bin/sh\n', { mode: 0o755 })
+    const pathValue = `${tools}:${nodeDir}:/usr/bin`
+    const quote = (value) => `'${value.replace(/'/g, `'\\''`)}'`
+    const prefix = `PATH=${quote(`${tools}:${nodeDir}`)}:"$PATH" `
+    assert.equal(core.withToolPath('claude', 'claude', pathValue), `${prefix}${quote(path.join(tools, 'claude'))}`)
+    assert.equal(core.withToolPath('codex --no-daemon resume abc', 'codex', pathValue), `${prefix}${quote(path.join(tools, 'codex'))} --no-daemon resume abc`)
+    // codex-session.py 로 켜면 앞 낱말은 그대로 — 그 안에서 codex 를 PATH 로 찾는다
+    assert.equal(core.withToolPath("python3 '/b/scripts/codex-session.py' --no-daemon", 'codex', pathValue), `${prefix}python3 '/b/scripts/codex-session.py' --no-daemon`)
+    // claude-x 같은 다른 이름은 바꾸지 않는다 · 도구를 못 찾으면 명령 그대로 · node 가 없으면 도구 폴더만
+    assert.equal(core.withToolPath('claudex', 'claude', pathValue), `${prefix}claudex`)
+    assert.equal(core.withToolPath('claude', 'claude', '/usr/bin'), 'claude')
+    assert.equal(core.withToolPath('claude', 'claude', tools), `PATH=${quote(tools)}:"$PATH" ${quote(path.join(tools, 'claude'))}`)
+    // 실제 셸이 그대로 실행한다(따옴표 든 경로)
+    fs.writeFileSync(path.join(tools, 'claude'), '#!/bin/sh\necho ran "$@"\n', { mode: 0o755 })
+    const out = require('node:child_process').execFileSync('/bin/sh', ['-c', `${core.withToolPath('claude --resume x', 'claude', pathValue)}`], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } })
+    assert.equal(out.trim(), 'ran --resume x')
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true })
+  }
+})

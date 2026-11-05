@@ -265,6 +265,20 @@ export function agentCommand(engine: unknown): string {
   throw new Error('bad engine')
 }
 
+// pane 셸의 PATH 는 앱 PATH 와 다를 수 있다(pane 에서 사용자 rc 의 PATH 추가가 빠진 맥 실측 · 2026-11-05 — 원인 미확정).
+// 그래서 앱이 찾아 로그인까지 확인한 실행 파일을 절대 경로로 켜고, 그 도구 폴더 · node 폴더(npm 판은 `env node` 로 켜진다)를
+// 이 명령에만 PATH 앞에 붙인다 — rc 가 PATH 를 덮어도 상관없게. 앱 PATH 에서 못 찾으면 명령을 그대로 둔다
+const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+export function withToolPath(command: string, engine: Tool, pathValue: string | null | undefined = process.env.PATH): string {
+  const executable = findExecutable(engine, pathValue)
+  if (!executable) return command
+  const node = findExecutable('node', pathValue)
+  const dirs = [...new Set([path.dirname(executable), ...(node ? [path.dirname(node)] : [])])]
+  // `codex --no-daemon` 처럼 도구 이름으로 시작하면 그 자리를 절대 경로로. codex-session.py 처럼 다른 것으로 켜면 PATH 만(그 안에서 codex 를 PATH 로 찾는다)
+  const rest = command === engine || command.startsWith(`${engine} `) ? shellQuote(executable) + command.slice(engine.length) : command
+  return `PATH=${shellQuote(dirs.join(':'))}:"$PATH" ${rest}`
+}
+
 export function resumeCommand(session: unknown, engine: unknown = 'claude'): string {
   if (!SESSION_ID.test(String(session || ''))) throw new Error('bad session id')
   if (engine === 'codex') return `${agentCommand(engine)} resume ${session}`
