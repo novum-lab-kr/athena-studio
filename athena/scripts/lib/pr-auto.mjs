@@ -892,12 +892,13 @@ export const prBaseOf = (config, repoName) => {
 export const WIDE_MIN_CODE_FILES = 5
 export const WIDE_MIN_CODE_LINES = 150
 export const WIDE_SENSITIVE_RE = /(^|\/)(hooks|migrations?|schemas?)\/|(^|\/)[^/]*(auth|oauth|secret|security|permission|guard|migration|schema)[^/]*$|(^|\/)\.env(\.|$)/i
-// 코드 파일이 아닌 것 — 문서 · 그림 · 자료. 폴더 이름 docs/ 아래는 모두(흐름 그림 json · html 포함) · 바꾸기 기록 · 라이선스
+// 코드 파일이 아닌 것 — 문서 · 그림 · 자료. 폴더 이름 docs/ 아래는 모두(흐름 그림 json · 결정 콘솔 html 포함) · 바꾸기 기록 · 라이선스.
+// html · htm 은 docs/ 밖이면 코드로 센다 — 현황판 · 화면 index.html · tray.html 처럼 스크립트가 든 화면 코드다
 export const isCodeFile = (filePath) => {
   const path = String(filePath ?? '')
   if (/(^|\/)docs\//.test(path)) return false
   if (/(^|\/)(CHANGELOG|LICENSE|NOTICE)[^/]*$/i.test(path)) return false
-  return !/\.(md|markdown|mdx|txt|html?|png|jpe?g|gif|svg|ico|webp|pdf|csv)$/i.test(path)
+  return !/\.(md|markdown|mdx|txt|png|jpe?g|gif|svg|ico|webp|pdf|csv)$/i.test(path)
 }
 // 판정 — { wide, why }. files = [{ path, added, deleted }](git diff --numstat origin/<base>...HEAD) · flagged = 계획서 1절 표시(planFastPathFlags) · marked = 에이전트 표시 이유('' 이면 없음)
 // why 는 계획서 "- Auto merge:" 줄 괄호 안과 reviewer 지시에 그대로 들어간다(짧게)

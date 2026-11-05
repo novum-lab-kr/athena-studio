@@ -1677,6 +1677,10 @@ node --input-type=module -e "
     [wideChangeVerdict({ files: [file('src/a.mjs', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
     [wideChangeVerdict({ files: [file('docs/a.md', 1)], marked: '새 기능' }), true, '에이전트 표시(새 기능)'],
     [wideChangeVerdict({ files: [] }), false, '바뀐 파일 없음'],
+    [wideChangeVerdict({ files: [file('athena/scripts/board/index.html', 150, 50)] }), true, '코드 200줄 ≥ ' + WIDE_MIN_CODE_LINES],
+    [wideChangeVerdict({ files: [1, 2, 3, 4, 5].map((n) => file('src/renderer/v' + n + '.htm', 1)) }), true, '코드 파일 5개 ≥ ' + WIDE_MIN_CODE_FILES],
+    [wideChangeVerdict({ files: [file('src/renderer/tray.html', 10)] }), false, '코드 파일 1개 · 10줄'],
+    [wideChangeVerdict({ files: [file('athena/docs/diagrams/flow.html', 150, 50), file('docs/plan.htm', 300)] }), false, '문서만 2개'],
   ]
   let bad = 0
   for (const [got, wide, why] of checks) if (got.wide !== wide || !got.why.includes(why)) { bad += 1; console.log('  ✖ 판정 — 기대 ' + wide + ' (' + why + ') · 실제 ' + JSON.stringify(got)) }
@@ -1686,7 +1690,7 @@ node --input-type=module -e "
   if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 리뷰 때문에 멈춤 — 수정 필요 · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 1) { bad += 1; console.log('  ✖ 리뷰 횟수') }
   if (directReviewRounds('- Auto merge: web feat/x @abc1234 · 머지됨 — squash · 리뷰 1회 · 2026-11-04 10:00', 'web', 'feat/x') !== 0) { bad += 1; console.log('  ✖ 머지됨 줄의 리뷰 횟수는 0') }
   if (bad) process.exit(1)
-  console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 문서는 세지 않음')
+  console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 문서는 세지 않음 · html 은 docs/ 밖이면 코드')
 " || FAIL=1
 # Actions 로 넘기기 길도 같은 문 — 넓은 수정이면 넘기기 전에 리뷰 · 승인 없이는 handoff/<브랜치> 를 밀지 않는다
 handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]
