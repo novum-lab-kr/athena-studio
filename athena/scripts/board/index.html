@@ -387,6 +387,12 @@
   .metric-tile .delta b.good { color: var(--ok); }
   .metric-tile .delta b.bad { color: var(--bad); }
   .metric-tile .sub { font-size: 11.5px; color: var(--muted); }
+  /* 지시 칸 검사 — 넓은 화면은 요약 3칸 + 종류별 칸을 모두 한 줄에(칸 수만큼 열) · 좁은 화면은 넓은 묶음처럼 3열 · 2열로 줄바꿈
+     숫자 색은 기존 토큰(0 은 흐리게) */
+  @media (min-width: 900px) { .metric-group.plan-check .metric-tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); } }
+  .metric-tile .value.accent { color: var(--accent); }
+  .metric-tile .value.warn { color: var(--warn); }
+  .metric-tile .value.zero { color: var(--muted); }
   .metric-block { margin-bottom: 16px; }
   .metric-plans { border: 1px solid var(--line); border-radius: 12px; background: var(--panel); }
   .metric-plan { display: grid; grid-template-columns: minmax(0, 1.6fr) 84px minmax(120px, 1fr) minmax(0, 1.5fr); gap: 12px; align-items: center; padding: 11px 14px; border-top: 1px solid var(--line); }
@@ -411,6 +417,15 @@
   .metric-legend .review::before { background: var(--col-review); } .metric-legend .mergeWait::before { background: var(--col-done); } .metric-legend .wait::before { background: var(--bad); }
   .metric-legend .note::before { display: none; }
   .metric-lead .text { min-width: 54px; text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  /* 로그 눈금 — 막대 칸 너비가 줄마다 같아야 눈금이 위아래로 맞는다(글자 칸 고정 너비) · 눈금 줄은 막대 위에 옅게 */
+  .metric-lead .scale { flex: 1; min-width: 0; position: relative; display: flex; align-items: center; }
+  .metric-lead .scale .track { flex: 1; }
+  .metric-lead:has(.scale) .text { flex: none; width: 9em; }
+  .metric-lead .ticks { position: absolute; inset: -4px 0; pointer-events: none; }
+  .metric-lead .ticks i { position: absolute; top: 0; bottom: 0; width: 1px; background: color-mix(in srgb, var(--muted) 35%, transparent); }
+  .metric-lead .ticks.labels { inset: 0; }
+  .metric-lead .ticks.labels b { position: absolute; top: 50%; transform: translate(-50%, -50%); font-size: 10.5px; font-weight: 500; color: var(--muted); white-space: nowrap; }
+  .metric-plan.head .metric-lead { font-size: inherit; } .metric-plan.head .metric-lead .scale { align-self: stretch; }
   .metric-lead.none { color: var(--muted); }
   .metric-chips { display: flex; flex-wrap: wrap; gap: 5px; }
   .metric-chips .chip.warn { color: var(--warn); border-color: color-mix(in srgb, var(--warn) 45%, transparent); background: color-mix(in srgb, var(--warn) 8%, transparent); }
@@ -1015,6 +1030,20 @@
     if (ms < 172_800_000) return t('dur.hour', { n: Number((ms / 3_600_000).toFixed(1)) });
     return t('dur.day', { n: Number((ms / 86_400_000).toFixed(1)) });
   };
+  // 소요 막대 로그 눈금 — 10초 ~ 가장 긴 것(최소 100초). 1분 · 10분 · 1시간 · 1일 · 7일 중 범위 안의 것만 눈금 줄 · 머리 글자로
+  const METRIC_SCALE_FLOOR = 10_000;
+  const metricLogScale = (longest) => {
+    const top = Math.log10(Math.max(longest, METRIC_SCALE_FLOOR * 10) / METRIC_SCALE_FLOOR);
+    const position = (ms) => Math.min(1, Math.max(0, Math.log10(Math.max(ms, METRIC_SCALE_FLOOR) / METRIC_SCALE_FLOOR) / top)) * 100;
+    const marks = [[60_000, t('dur.min', { n: 1 })], [600_000, t('dur.min', { n: 10 })], [3_600_000, t('dur.hour', { n: 1 })],
+      [86_400_000, t('dur.day', { n: 1 })], [604_800_000, t('dur.day', { n: 7 })]].filter(([ms]) => position(ms) < 100);
+    return {
+      // 0 보다 크면 적어도 1% — 아주 짧은 것도 보이게(이전과 같음)
+      widthOf: (ms) => (ms > 0 ? Math.max(1, position(ms)) : 0),
+      ticks: `<span class="ticks" aria-hidden="true">${marks.map(([ms]) => `<i style="left:${position(ms).toFixed(1)}%"></i>`).join('')}</span>`,
+      labels: `<span class="ticks labels" aria-hidden="true">${marks.map(([ms, label]) => `<b style="left:${position(ms).toFixed(1)}%">${esc(label)}</b>`).join('')}</span>`,
+    };
+  };
   const metricRate = (value) => (value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`);
   const metricCount = (value) => (value === null || value === undefined ? '—' : String(Math.round(value * 10) / 10));
   const METRIC_STATUS = Object.fromEntries(['planned', 'in_progress', 'blocked', 'ready_for_review', 'done'].map((status) => [status, t(`metric.status.${status}`)]));
@@ -1208,6 +1237,7 @@
   let metricsRows = [];
   let metricsPage = 0;
   let metricsWork = null;
+  let metricsScaleHead = '';
   const loadMetrics = async () => {
     const box = document.getElementById('metrics');
     const ticket = ++metricsTicket;
@@ -1242,11 +1272,12 @@
     const before = summary.days ? t('m.beforeDays', { n: summary.days }) : t('m.beforeSame');
     const tile = (label, value, prev, format, options = {}, sub = '') => {
       const delta = previous ? metricDelta(value, prev, options) : '';
-      return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(format(value))}</span>`
+      const tone = options.tone ? ` ${value ? options.tone : 'zero'}` : '';
+      return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value${tone}">${esc(format(value))}</span>`
         + (previous ? `<span class="delta">${delta}<span>${esc(before)} ${esc(format(prev))}</span></span>` : '')
         + (sub ? `<span class="sub">${esc(sub)}</span>` : '') + '</div>';
     };
-    const group = (title, tiles, wide = false) => `<section class="metric-group${wide ? ' wide' : ''}"><h3>${esc(title)}</h3><div class="metric-tiles">${tiles.join('')}</div></section>`;
+    const group = (title, tiles, wide = false, extra = '') => `<section class="metric-group${wide ? ' wide' : ''}${extra ? ` ${extra}` : ''}"><h3>${esc(title)}</h3><div class="metric-tiles">${tiles.join('')}</div></section>`;
     // 큰 숫자는 평균 · 중앙값과 p75 를 밑에 — 값을 모르면 "모름"
     const spreadTile = (label, item, prev, sub) => {
       const delta = previous ? metricDelta(item.avgMs, prev?.avgMs) : '';
@@ -1287,30 +1318,35 @@
       ]),
       // 지시 칸 검사 — delegate.sh 가 띄우기 전에 남긴 plan.check(계획서마다 마지막 것) · 멈춤 알림(plan.stop) · 종류 칸은 이 구간에 나온 것만
       ...(current.planChecks ? [group(t('m.g.planCheck'), [
-        tile(t('m.t.planChecked'), current.planChecks.checked, previous?.planChecks?.checked, metricCount, { lowerIsBetter: false }, t('m.t.planCheckedSub')),
-        tile(t('m.t.planWarned'), current.planChecks.warned, previous?.planChecks?.warned, metricCount),
-        tile(t('m.t.planStops'), current.planChecks.stops, previous?.planChecks?.stops, metricCount),
+        tile(t('m.t.planChecked'), current.planChecks.checked, previous?.planChecks?.checked, metricCount, { lowerIsBetter: false, tone: 'accent' }, t('m.t.planCheckedSub')),
+        tile(t('m.t.planWarned'), current.planChecks.warned, previous?.planChecks?.warned, metricCount, { tone: 'warn' }),
+        tile(t('m.t.planStops'), current.planChecks.stops, previous?.planChecks?.stops, metricCount, { tone: 'warn' }),
         ...Object.entries(current.planChecks.kinds).sort((left, right) => right[1] - left[1])
-          .map(([kind, count]) => tile(planKindLabel(kind), count, previous?.planChecks?.kinds?.[kind] ?? 0, metricCount)),
-      ], true)] : []),
+          .map(([kind, count]) => tile(planKindLabel(kind), count, previous?.planChecks?.kinds?.[kind] ?? 0, metricCount, { tone: 'warn' })),
+      ], true, 'plan-check')] : []),
     ].join('');
-    // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것(전체 소요 · 구간 합 중 큰 쪽) 대비 막대로
+    // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 로그 눈금 막대로(10초 ~ 이 목록에서 가장 긴 것 · 전체 소요 · 구간 합 중 큰 쪽)
     const stageSum = (plan) => STAGES.reduce((sum, [stage]) => sum + (plan.stages?.[stage] ?? 0), 0);
     const longest = Math.max(0, ...summary.plans.map((plan) => Math.max(plan.leadMs ?? 0, stageSum(plan))));
     const chip = (text, warn = false) => `<span class="chip${warn ? ' warn' : ''}">${esc(text)}</span>`;
-    const widthOf = (ms) => `${Math.max(1, ms / longest * 100).toFixed(1)}%`;
-    // 구간 막대 — 아는 구간만 토막으로(토막에 "검증 3초" 설명) · 다 모르면 전체 소요 한 토막 · 그것도 모르면 글자만
+    const scale = metricLogScale(longest);
+    const percent = (value) => `${value.toFixed(1)}%`;
+    // 구간 막대 — 아는 구간만 토막으로(토막에 "검증 3초" 설명) · 토막 전체 길이는 구간 합의 로그 위치, 그 안에서 원래 비율대로 나눈다
+    //   다 모르면 전체 소요 한 토막 · 그것도 모르면 글자만
     const leadBar = (plan) => {
       if (!longest) return `<div class="metric-lead none">${esc(t('m.lead', { value: plan.leadMs == null ? t('m.unrecorded') : metricDuration(plan.leadMs) }))}</div>`;
       const known = STAGES.filter(([stage]) => (plan.stages?.[stage] ?? 0) > 0);
       if (known.length) {
-        const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(t('m.labelValue', { label, value: metricDuration(plan.stages[stage]) }))}" style="width:${widthOf(plan.stages[stage])}"></span>`).join('');
+        const total = stageSum(plan);
+        const span = scale.widthOf(total);
+        const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(t('m.labelValue', { label, value: metricDuration(plan.stages[stage]) }))}" style="width:${percent(span * plan.stages[stage] / total)}"></span>`).join('');
         const text = plan.leadMs != null ? metricDuration(plan.leadMs) : t('m.unrecorded');
-        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">${esc(t('m.lead', { value: text }))}</span></div>`;
+        return `<div class="metric-lead"><span class="scale"><span class="track stages">${pieces}</span>${scale.ticks}</span><span class="text">${esc(t('m.lead', { value: text }))}</span></div>`;
       }
       if (plan.leadMs === null) return null;
-      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">${esc(t('m.lead', { value: metricDuration(plan.leadMs) }))}</span></div>`;
+      return `<div class="metric-lead"><span class="scale"><span class="track"><span class="bar" style="width:${percent(scale.widthOf(plan.leadMs))}"></span></span>${scale.ticks}</span><span class="text">${esc(t('m.lead', { value: metricDuration(plan.leadMs) }))}</span></div>`;
     };
+    metricsScaleHead = longest ? scale.labels : '';
     metricsRows = summary.plans.map((plan) => {
       const lead = leadBar(plan) ?? `<div class="metric-lead none">${esc(t('m.lead', { value: t('m.unrecorded') }))}</div>`;
       const chips = [
@@ -1367,7 +1403,7 @@
       ? `<nav class="metric-pager" aria-label="${esc(t('m.pager'))}"><button type="button" data-step="-1"${metricsPage === 0 ? ' disabled' : ''}>${t('m.prev')}</button>${metricPageNumbers(count)}`
         + `<button type="button" data-step="1"${metricsPage === count - 1 ? ' disabled' : ''}>${t('m.next')}</button><span class="range">${start + 1}–${end} / ${metricsRows.length}</span></nav>`
       : '';
-    holder.innerHTML = `<div class="metric-plans"><div class="metric-plan head"><span>${t('m.h.plan')}</span><span>${t('m.h.status')}</span><span>${t('m.h.lead')}</span><span>${t('m.h.record')}</span></div>${metricsRows.slice(start, end).join('')}</div>${pager}`;
+    holder.innerHTML = `<div class="metric-plans"><div class="metric-plan head"><span>${t('m.h.plan')}</span><span>${t('m.h.status')}</span>${metricsScaleHead ? `<span class="metric-lead"><span class="scale">${metricsScaleHead}</span><span class="text">${t('m.h.lead')}</span></span>` : `<span>${t('m.h.lead')}</span>`}<span>${t('m.h.record')}</span></div>${metricsRows.slice(start, end).join('')}</div>${pager}`;
     if (metricsWork) addMetricWorkLines();
   };
   // 세션 기록 줄 — 지금 쪽에 보이는 계획서 줄에만 붙인다(쪽을 넘기면 renderMetricPage 가 다시 부른다)
