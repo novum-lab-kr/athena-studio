@@ -126,7 +126,7 @@ export function installAthenaAgent(ctx: AthenaAgentCtx, { say, runPack, waitCore
     // ATHENA_STUDIO=1 — delegate.sh 가 화면 계층 안인지(screen inside) 본다
     const extraEnv = ctx.studioEnv()
     const result = await ctx.packTask(say('pack.task.restore'), () => runPack(['restore-work'], { dir: ctx.athenaDir, onProgress: ctx.packProgress, extraEnv }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     return result
   }
   // 지금 창의 팩에 바로(가져오기로 지금 팩을 바꾼 뒤) — 아테나 대화는 아테나 작업 공간 옆에서 잇는다

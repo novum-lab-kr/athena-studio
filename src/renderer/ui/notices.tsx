@@ -14,7 +14,9 @@ const CLOSE_ICON = ['M6 6l12 12', 'M18 6L6 18']
 // seq — 띄울 때마다 1 씩. 같은 글을 다시 띄워도 내용을 새로 만든다(바닐라가 replaceChildren 하던 때처럼 화면 읽기 프로그램이 다시 읽는다)
 type ToastView = { message: string; kind: ToastKind; seq: number }
 const toastView = createStore<ToastView | null>(null)
-const statusView = createStore('')
+// 상태 줄 — 문장 + 접은 원문(detail · 있으면 [자세히])
+type StatusView = { message: string; detail: string }
+const statusView = createStore<StatusView>({ message: '', detail: '' })
 
 let toastBox: HTMLElement | null = null
 let statusBox: HTMLElement | null = null
@@ -56,8 +58,8 @@ export function showToast(message: string, kind: ToastKind = 'error'): void {
   waitToast()
 }
 
-export function showScreenStatus(message: string): void {
-  flushSync(() => statusView.set(message))
+export function showScreenStatus(message: string, detail = ''): void {
+  flushSync(() => statusView.set({ message, detail }))
   if (statusBox) statusBox.hidden = false
 }
 
@@ -110,5 +112,17 @@ function Toast() {
 }
 
 function ScreenStatus() {
-  return <>{useStore(statusView)}</>
+  const say = useSay()
+  const { message, detail } = useStore(statusView)
+  return (
+    <>
+      {message}
+      {detail ? (
+        <details className="screen-status-detail">
+          <summary>{say('pack.error.details')}</summary>
+          <p>{detail}</p>
+        </details>
+      ) : null}
+    </>
+  )
 }

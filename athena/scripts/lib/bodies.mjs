@@ -89,7 +89,7 @@ export const openPack = async (root, id, { report = () => {}, allowEmpty = false
   if (!existsSync(slot)) throw new PackError('not-found', `그런 팩이 없다: ${id}`)
   const pack = readJson(join(slot, 'pack', 'pack.json'))
   if (!pack && !allowEmpty) throw new PackError('invalid-pack', `팩 자리에 pack.json 이 없다: ${id}`)
-  if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`)
+  if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`, { reason: 'format-newer' })
   report('lock', `팩 잠금 — ${id}`)
   const release = takePackLock(data, id, `pack open ${id}`)
   try {

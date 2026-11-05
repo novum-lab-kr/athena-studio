@@ -73,6 +73,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   workspaceNew: (size) => ipcRenderer.invoke('workspace:new', size),
   workspaceOpenDir: (dir, size) => ipcRenderer.invoke('workspace:open-dir', dir, size),
   packAddRepo: (dir, name) => ipcRenderer.invoke('pack:add-repo', dir, name),
+  packStartSetup: (dir) => ipcRenderer.invoke('pack:start-setup', dir),
   packRemoveRepo: (name) => ipcRenderer.invoke('pack:remove-repo', name),
   packBodyBehind: () => ipcRenderer.invoke('pack:body-behind'),
   packDelete: (id, options) => ipcRenderer.invoke('pack:delete', id, options),

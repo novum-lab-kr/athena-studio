@@ -191,19 +191,19 @@ export const packEntry = (repo) => {
 }
 
 // 이미 있는 팩에 레포 하나 더하기(여러 팩 구조 · docs/setup.md "레포 하나 더하기") — 훑어 pack.json 에 항목 · <팩 데이터>/local.json 에 자리.
-// 링크 · 뼈대 · 팩 링크는 부르는 쪽(bin/athena repo add)이 이어서. 같은 이름이 있으면 같은 자리면 already, 다른 자리면 exists(--name 으로 다른 이름)
+// 링크 · 뼈대 · 팩 링크는 부르는 쪽(bin/athena repo add)이 이어서. 오류의 reason(· reasonArgs)은 앱이 화면 문구를 고르는 세부 이유(code 는 그대로). 같은 이름이 있으면 같은 자리면 already, 다른 자리면 exists(--name 으로 다른 이름)
 export const addRepo = ({ athenaRoot, dir, name = '' }) => {
   const where = paths(athenaRoot)
-  if (where.mode !== 'packs' || !where.packDataReal) throw new Error('여러 팩 본체가 아니다 — 팩 데이터가 없다')
+  if (where.mode !== 'packs' || !where.packDataReal) throw Object.assign(new Error('여러 팩 본체가 아니다 — 팩 데이터가 없다'), { reason: 'repo-not-packs-body' })
   const real = (() => { try { return realpathSync(dir) } catch { return '' } })()
-  if (!real || !existsSync(join(real, '.git'))) throw Object.assign(new Error(`git 레포가 아니다: ${dir}`), { code: 'not-repo' })
+  if (!real || !existsSync(join(real, '.git'))) throw Object.assign(new Error(`git 레포가 아니다: ${dir}`), { code: 'not-repo', reason: 'repo-not-git' })
   const self = realpathSync(athenaRoot)
-  if (real === self || real.startsWith(self + '/')) throw Object.assign(new Error('아테나 본체 안의 폴더는 레포로 더하지 않는다'), { code: 'unsafe' })
+  if (real === self || real.startsWith(self + '/')) throw Object.assign(new Error('아테나 본체 안의 폴더는 레포로 더하지 않는다'), { code: 'unsafe', reason: 'repo-inside-athena' })
   const repo = { ...inspectRepo(real), ...(name ? { name } : {}) }
-  if (!/^[\w.-]+$/.test(repo.name)) throw Object.assign(new Error(`레포 이름이 올바르지 않다: ${repo.name}`), { code: 'usage' })
+  if (!/^[\w.-]+$/.test(repo.name)) throw Object.assign(new Error(`레포 이름이 올바르지 않다: ${repo.name}`), { code: 'usage', reason: 'repo-bad-name', reasonArgs: { name: repo.name } })
   const packJson = join(where.packDataReal, 'pack', 'pack.json')
   const pack = readJson(packJson)
-  if (!pack) throw new Error('지금 팩에 pack.json 이 없다 — /setup 을 먼저 끝낸다')
+  if (!pack) throw Object.assign(new Error('지금 팩에 pack.json 이 없다 — /setup 을 먼저 끝낸다'), { reason: 'repo-pack-not-set-up' })
   const localFile = join(where.packDataReal, 'local.json')
   const local = readJson(localFile) ?? {}
   const reposRoot = resolve(athenaRoot, local.reposRoot ?? '..')
@@ -211,7 +211,7 @@ export const addRepo = ({ athenaRoot, dir, name = '' }) => {
   const existing = (pack.repos ?? []).find((item) => item.name === repo.name)
   if (existing) {
     if (placed(existing.name) === real) return { ok: true, already: true, repo: existing, path: real }
-    throw Object.assign(new Error(`같은 이름의 레포가 이미 팩에 있다: ${repo.name} — 다른 이름으로(--name)`), { code: 'exists' })
+    throw Object.assign(new Error(`같은 이름의 레포가 이미 팩에 있다: ${repo.name} — 다른 이름으로(--name)`), { code: 'exists', reason: 'repo-exists', reasonArgs: { name: repo.name } })
   }
   const entry = packEntry(repo)
   pack.repos = [...(pack.repos ?? []), entry]

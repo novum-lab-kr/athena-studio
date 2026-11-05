@@ -169,7 +169,8 @@ export function installDaemonLink(ctx: PackCtx, { say, daemonPaths, daemonErrorT
         dropOutput = false
       }
     } catch (error) {
-      return { error: say('error.daemonConnect', { message: daemonErrorText(error as Error) }) }
+      // 화면 문장은 할 일만 — 소켓 · 로그 경로가 든 원문은 [자세히] 에 접는다
+      return { error: say('error.daemonConnect'), detail: daemonErrorText(error as Error) }
     }
   }
 

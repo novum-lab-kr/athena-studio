@@ -387,6 +387,13 @@ test('Codex 여러 줄 초안에 상태줄 같은 문장이 있어도 맨 아래
   assert.equal(core.agentAtEmptyPrompt('› 초안\n  › \n\n  GPT-6.1-Sol medium · /tmp/demo', 'codex'), false)
 })
 
+test('fileErrorKind: 쓰기 실패 code → 권한 · 디스크 가득 · 그 밖', () => {
+  for (const code of ['EACCES', 'EPERM', 'EROFS']) assert.equal(core.fileErrorKind(code), 'permission')
+  assert.equal(core.fileErrorKind('ENOSPC'), 'diskFull')
+  assert.equal(core.fileErrorKind('ENOENT'), 'other')
+  assert.equal(core.fileErrorKind(undefined), 'other')
+})
+
 test('withToolPath: 앱이 찾은 도구 절대 경로로 켜고 도구 · node 폴더를 명령 앞 PATH 에 — pane 셸 PATH 에 없어도 켜지게', () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'tool-path-'))
   try {

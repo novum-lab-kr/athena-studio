@@ -28,7 +28,7 @@ type Layout = ReturnType<typeof studioHome.studioLayout>
 type CoreUpdate = { state: string; head?: string | null; target?: string | null; fromVersion?: string | null; error?: unknown; result?: unknown; summary?: ReturnType<typeof studioHome.summarizeUpdate>; caughtUp?: boolean }
 type PendingBody = ReturnType<typeof studioHome.pendingFromUpdate>[number]
 // prepareCore 결과 — 읽는 칸만(풀기 · 설정 실패 결과와 성공 결과가 섞인다)
-type Prepared = { ok: boolean; created?: boolean; error?: string; message?: string; file?: string; update?: CoreUpdate | null }
+type Prepared = { ok: boolean; created?: boolean; error?: string; message?: string; file?: string; code?: string; path?: string; gitMissing?: boolean; update?: CoreUpdate | null }
 export type Progress = { step: string; text: string }
 export type RunCoreOptions = { dir?: string | null; onProgress?: ((step: Progress) => void) | null; signal?: AbortSignal | null; extraEnv?: Record<string, string> | null; contract?: boolean }
 
@@ -79,7 +79,9 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
         panesStateFile: writePanesState,
       })) as Prepared
     } catch (error) {
-      result = { ok: fs.existsSync(studio.core), error: 'prepare-failed', message: (error as Error).message, update: null }
+      const failure = error as NodeJS.ErrnoException
+      // code · path — 쓰기 실패(EACCES · ENOSPC 등)를 화면이 원인별 안내로 가른다
+      result = { ok: fs.existsSync(studio.core), error: 'prepare-failed', message: failure.message, ...(failure.code ? { code: failure.code } : {}), ...(failure.path ? { path: failure.path } : {}), update: null }
     }
     logCore(`prepare ${JSON.stringify({ ok: result.ok, created: result.created, error: result.error, update: result.update && { state: result.update.state, head: result.update.head, target: result.update.target, error: result.update.error } })}`)
     noteUpdate(result.update)
@@ -319,10 +321,20 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     else contents.send('core-update:show', view)
   }
 
-  // 코어를 풀지 못한 까닭 — 화면 문구로
-  function coreInstallError(prepared: Prepared): string {
+  // 코어를 풀지 못한 까닭 — 화면 문장은 원인별 안내, 원문(git · Node 오류)은 [자세히] 에 접는다
+  function coreInstallError(prepared: Prepared): { error: string; detail: string } {
+    const detail = prepared.message || prepared.file || prepared.error || ''
+    return { error: coreInstallText(prepared), detail }
+  }
+
+  function coreInstallText(prepared: Prepared): string {
+    if (prepared.gitMissing || (prepared.error === 'clone-failed' && prepared.code === 'ENOENT')) return say('error.coreInstall.git')
     if (prepared.error === 'bundle-missing') return say('error.coreBundleMissing', { path: coreBundle })
-    return say('error.coreInstall', { message: prepared.message || prepared.file || prepared.error })
+    if (prepared.error === 'config-unreadable' || prepared.error === 'registry-unreadable') return say('error.coreInstall.configBroken', { file: prepared.file || '' })
+    const kind = core.fileErrorKind(prepared.code)
+    if (kind === 'permission') return say('error.coreInstall.permission', { path: prepared.path || studio.root })
+    if (kind === 'diskFull') return say('error.coreInstall.diskFull')
+    return say('error.coreInstall.other')
   }
 
   function logCore(line: string): void {

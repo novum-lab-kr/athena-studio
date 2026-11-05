@@ -96,6 +96,7 @@ type MainCalls = {
   closeWorkspace(workspaceId: string): Promise<unknown>
   spaceContextMenu(target: { repo: string | null; workspace: string | null }, point: Point): Promise<unknown>
   addRepo(dir: string, name: string | null): Promise<unknown>
+  startSetup(dir: string): Promise<unknown>
   explorerList(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
   explorerStatus(workspaceId: unknown, paneId?: unknown): Promise<unknown>
   explorerOpen(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
@@ -920,6 +921,7 @@ handle('pack:remove-repo', (ctx, name: unknown) => (typeof name === 'string' && 
 handle('workspace:close', (ctx, workspaceId: unknown) => ctx.closeWorkspace(String(workspaceId || '')))
 handle('space:context-menu', (ctx, target: Loose, point: unknown) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? (point as Point) : null))
 handle('pack:add-repo', (ctx, dir: unknown, name: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.addRepo(dir, typeof name === 'string' && name ? name : null) : { ok: false, error: 'usage' }))
+handle('pack:start-setup', (ctx, dir: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.startSetup(dir) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on: unknown) => ctx.setMonitorWatch(on === true))
 handle('explorer:list', (ctx, workspaceId: unknown, relative: unknown, paneId: unknown) => guarded(() => ctx.explorerList(workspaceId, relative, paneId)))
 handle('explorer:status', (ctx, workspaceId: unknown, paneId: unknown) => guarded(() => ctx.explorerStatus(workspaceId, paneId)))

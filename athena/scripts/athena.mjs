@@ -197,7 +197,7 @@ const runRepoAdd = () => {
   const dir = positional()[0]
   if (!dir) throw new PackError('usage', '사용: athena repo add <레포 폴더> [--name <이름>] [--json]')
   let added
-  try { added = addRepo({ athenaRoot: ROOT, dir: resolve(dir), name: flag('name') }) } catch (error) { throw new PackError(error.code ?? 'invalid-pack', error.message) }
+  try { added = addRepo({ athenaRoot: ROOT, dir: resolve(dir), name: flag('name') }) } catch (error) { throw new PackError(error.code ?? 'invalid-pack', error.message, error.reason ? { reason: error.reason, ...(error.reasonArgs ? { reasonArgs: error.reasonArgs } : {}) } : {}) }
   const repos = syncRepos(ROOT)
   const made = added.already ? [] : scaffold({ athenaRoot: ROOT, packDir: packDir(), config: loadConfig(ROOT), only: [added.repo.name] })
   if (!asJson) for (const path of made) console.log(`   + ${relative(ROOT, path)}`)
@@ -290,7 +290,7 @@ const positional = () => args.slice(1).filter((arg, index, rest) => !arg.startsW
 // 옛 스튜디오(1단계)의 "갈아 끼우기"를 성공으로 흉내 내지 않는다
 const contractArg = flag('contract') || process.env.ATHENA_CONTRACT || ''
 const checkContract = (name) => {
-  const mismatch = (why) => new PackError('contract-mismatch', `스튜디오 약속이 다르다(${why}) — 이 코어는 약속 ${CONTRACT}. 스튜디오를 먼저 업데이트한다`, { contract: CONTRACT })
+  const mismatch = (why) => new PackError('contract-mismatch', `스튜디오 약속이 다르다(${why}) — 이 코어는 약속 ${CONTRACT}. 스튜디오를 먼저 업데이트한다`, { contract: CONTRACT, reason: 'contract-mismatch' })
   if (contractArg && Number(contractArg) !== CONTRACT) throw mismatch(`받은 약속 ${contractArg}`)
   if (asJson && !contractArg && ['use', 'new'].includes(name)) throw mismatch('약속 번호 없음 — 팩마다 본체 전 스튜디오')
 }

@@ -63,6 +63,14 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
     return useAthenaDir(result.filePaths[0])
   }
 
+  // 설정 파일을 만들지 못한 까닭 — 흔한 원인별 안내
+  function configCreateText(code: unknown, dir: string): string {
+    const kind = core.fileErrorKind(code)
+    if (kind === 'permission') return say('error.configCreate.permission', { path: dir })
+    if (kind === 'diskFull') return say('error.configCreate.diskFull')
+    return say('error.configCreate.other')
+  }
+
   function useAthenaDir(dir: string): AthenaState {
     // 팩 작업 중에는 본체를 바꾸지 않는다
     if (ctx.packBusy) return { ...ctx.athenaState(), error: say('error.packBusyAthena', { task: ctx.packBusy }) }
@@ -77,7 +85,9 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
     try {
       core.ensureAthenaConfig(dir, athenaReposRoot(dir))
     } catch (error) {
-      return { ...ctx.athenaState(), error: say('error.configCreate', { message: (error as Error).message }), picked: dir }
+      // 화면 문장은 흔한 원인(권한 · 디스크)별 안내, Node 오류 원문은 [자세히] 에
+      const failure = error as NodeJS.ErrnoException
+      return { ...ctx.athenaState(), error: configCreateText(failure.code, dir), detail: failure.message, picked: dir }
     }
     const changed = dir !== ctx.athenaDir
     if (changed) return rebindBody(dir)
@@ -120,7 +130,7 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
   // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다
   ctx.installAthena = async () => {
     const prepared = await prepareStudioCore({ update: false })
-    if (!prepared.ok) return { ...ctx.athenaState(), error: coreInstallError(prepared) }
+    if (!prepared.ok) return { ...ctx.athenaState(), ...coreInstallError(prepared) }
     return useAthenaDir(studio.core)
   }
 }

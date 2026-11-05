@@ -115,16 +115,18 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
     if (stale) return stale
     const args = ['repo', 'add', String(dir), ...(name ? ['--name', String(name)] : [])]
     const result = await ctx.packTask(say('pack.task.addRepo'), () => runCore(args, { dir: ctx.athenaDir }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     if (!result.already) await sendToAthena(say('spaces.addRepoAsk', { repo: result.repo.name, path: result.path }))
     return result
   }
+  // 팩 설정 전(빈 팩 자리)에 레포를 고르면 — 아테나 pane 에 첫 실행 설정(docs/setup.md)을 시킨다. 레포 폴더는 고른 레포가 있는 폴더(setup.md "레포 폴더: 사용자가 준 폴더")
+  ctx.startSetup = async (dir: string) => ({ ok: await sendToAthena(say('spaces.setupAsk', { root: path.dirname(dir), repo: path.basename(dir) })) })
   // 팩에서 레포 빼기 — 코어 repo remove(팩 백업 · pack.json · 자리 · 링크 · 에이전트 · 지식 · 검증) 뒤 아테나에게 ROUTING · services 줄 정리를 맡긴다
   ctx.removeRepo = async (name: unknown) => {
     const stale = await freshBody()
     if (stale) return stale
     const result = await ctx.packTask(say('pack.task.removeRepo'), () => runCore(['repo', 'remove', String(name)], { dir: ctx.athenaDir }))
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     await sendToAthena(say('spaces.removeRepoAsk', { repo: result.removed }))
     return result
   }

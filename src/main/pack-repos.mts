@@ -25,7 +25,7 @@ export type PackReposCtx = {
   mergeSettings?: unknown
   setAutoMerge?: unknown
   studioEnv?: () => Record<string, string>
-  callInfo?: (name: string) => Promise<{ error: string } | ({ agent: string; repo: string } & ReturnType<typeof packModel.parseCallInfo>)>
+  callInfo?: (name: string) => Promise<{ error: string; detail?: string } | ({ agent: string; repo: string } & ReturnType<typeof packModel.parseCallInfo>)>
   callStart?: unknown
 }
 
@@ -79,7 +79,7 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
     if (typeof review === 'boolean') args.push('--review', review ? 'on' : 'off')
     if (typeof merge === 'string') args.push('--merge', merge)
     const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     return result
   }
   // 데몬 접속 값 — 본체 스크립트(delegate.sh)가 화면 계층으로 pane 을 띄울 때(현황판과 같은 값 + studio · pane 안 표시)
@@ -94,12 +94,14 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
       resolve({ ok: !error, stdout: stdout || '', stderr: stderr || '', code: error ? error.code : 0 }),
     )
   })
+  // 본체 스크립트 실패 — 화면 문장은 앱 문구, 스크립트 원문(마지막 300자)은 [자세히] 에 접는다
+  const scriptFailed = (output: string) => ({ error: say('spaces.callFailedNote'), detail: output.trim().slice(-300) })
   // 레포 에이전트 부르기 1 — 브랜치 정보(scripts/call-branch-info.sh — /call 스킬과 같은 것): 메인 체크아웃 상태 · 최근 작업 브랜치 · main 직접이면 그 자리
   ctx.callInfo = async (name: string) => {
     const repo = (await (ctx.packRepos as NonNullable<PackReposCtx['packRepos']>)()).find((item) => item.name === name)
     if (!repo || !repo.agent) return { error: say('spaces.callNoAgent', { repo: name }) }
     const run = await runBodyScript('call-branch-info.sh', [repo.agent])
-    if (!run.ok) return { error: (run.stderr || run.stdout).trim().slice(-300) || say('spaces.callFailed') }
+    if (!run.ok) return scriptFailed(run.stderr || run.stdout)
     return { agent: repo.agent, repo: name, ...packModel.parseCallInfo(run.stdout) }
   }
   // 레포 에이전트 부르기 2 — 고른 브랜치로 워크트리(new-branch.sh · 이어 쓰기면 --reuse) → 그 자리에 에이전트 pane(delegate.sh · 빈 지시 경량 계획서)
@@ -112,11 +114,11 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
       const made = await runBodyScript('new-branch.sh', [branch, info.target, ...(reuse ? ['--reuse'] : [])])
       const parsed = packModel.parseNewBranch(made.stdout)
       if (parsed.exists) return { exists: true, branch, message: parsed.message }
-      if (!parsed.worktree) return { error: (parsed.message || made.stderr || made.stdout).trim().slice(-300) || say('spaces.callFailed') }
+      if (!parsed.worktree) return scriptFailed(parsed.message || made.stderr || made.stdout)
       worktree = parsed.worktree
     }
     const run = await runBodyScript('delegate.sh', [info.agent, '--cwd', worktree, '--plan', 'new', say('spaces.callPlanTitle', { agent: info.agent })], { studioEnv: true })
-    if (!run.ok) return { error: (run.stdout + run.stderr).trim().slice(-300) || say('spaces.callFailed') }
+    if (!run.ok) return scriptFailed(run.stdout + run.stderr)
     const pane = (run.stdout.match(/^(\S+)\s+\(/m) || [])[1] || null
     return { ok: true, agent: info.agent, pane, worktree, branch: info.direct ? null : branch }
   }

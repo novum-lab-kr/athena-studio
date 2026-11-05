@@ -1,7 +1,7 @@
 // 회사 팩 바꾸기 — 팩 줄(보이기 · 누른 뒤) · 팩 목록 읽기 · 팩 메뉴 · 팩 흐름 잠금(runPackFlow) · 시작 화면 · 팩 열기 · 바꾸기 · 바꾼 뒤 다시 붙기
 // renderer.js 에서 옮김(R3e · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만
 import { $, currentTab, el, say, setState, showToast, state } from './core.ts'
-import { deletePack, editPackLook, editPackLookDialog, hidePackProgress, packAlert, packDialog, packLabel, packs, setPacks, showPackProgress } from './pack-dialogs.ts'
+import { deletePack, editPackLook, editPackLookDialog, hidePackProgress, packAlert, packDialog, packFailAlert, packLabel, packs, setPacks, showPackProgress } from './pack-dialogs.ts'
 import { attach, openAgent, setStarting } from './screen.ts'
 import { applySideFolds, lineIcon } from './side-panels.ts'
 import { renderState } from './main.ts'
@@ -234,7 +234,7 @@ async function openOrSwitchPack(id: string, { newWindow, name }: { newWindow: bo
   }
   if (result.same || result.canceled || result.error === 'canceled') return result
   if (!result.ok) {
-    await packAlert(say(newWindow ? 'pack.open.failed' : 'pack.switch.failed'), result.text || result.message)
+    await packFailAlert(say(newWindow ? 'pack.open.failed' : 'pack.switch.failed'), result)
     return result
   }
   if (result.switched) await applySwitchedPack(result.state as AthenaState)

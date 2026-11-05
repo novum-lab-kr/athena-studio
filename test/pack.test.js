@@ -1,6 +1,9 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const pack = require('../src/lib/pack.mts')
+const i18n = require('../src/lib/i18n.mts')
+const KOREAN = require('../src/i18n/ko.json')
+const ENGLISH = require('../src/i18n/en.json')
 
 test('팩 출력: progress 줄을 모으고 마지막 줄 JSON 을 결과로', () => {
   const out = 'progress: lock 잠금\nprogress: link 링크 바꾸는 중\n{"ok":true,"current":{"id":"acme","generation":3}}\n'
@@ -50,6 +53,68 @@ test('오류 문장: 코드별 안내 + 본체 설명 + busy 목록', () => {
   const busyKinds = pack.packErrorText({ ok: false, error: 'busy', busy: [{ kind: 'codex', pid: 3 }, { kind: 'unknown', what: 'node' }] })
   assert.match(busyKinds, /Codex 세션 \(pid 3\)/)
   assert.match(busyKinds, /확인하지 못한 프로세스 — node/)
+})
+
+test('오류 문장: 세부 이유(reason)가 있으면 사전 문구가 주 문장 · 본체 원문은 detail 로만', () => {
+  const notPack = { ok: false, error: 'invalid-pack', message: '팩이 아니다 — pack.json 을 찾지 못했다', reason: 'not-a-pack' }
+  const text = pack.packErrorText(notPack)
+  assert.match(text, /서비스 코드 레포가 아니라 팩/)
+  assert.doesNotMatch(text, /pack\.json|팩이 아니다 —/)
+  assert.equal(pack.packErrorDetail(notPack), notPack.message)
+  const failure = pack.packFailure(notPack)
+  assert.equal(failure.text, text)
+  assert.equal(failure.detail, notPack.message)
+  assert.equal(failure.error, 'invalid-pack')
+  // 자리 값 — 파일 이름 · 숫자 · 긴 값은 자르고 글자 · 숫자 아닌 값은 버린다
+  assert.match(pack.packErrorText({ ok: false, error: 'invalid-pack', reason: 'archive-unreadable', reasonArgs: { file: 'acme.tar.gz' } }), /acme\.tar\.gz 을 읽지 못했습니다/)
+  assert.match(pack.packErrorText({ ok: false, error: 'invalid-pack', reason: 'too-many-files', reasonArgs: { count: 30001, max: 20000 } }), /30001개 · 최대 20000개/)
+  const long = pack.packErrorText({ ok: false, error: 'unsafe', reason: 'secret-file', reasonArgs: { file: 'x'.repeat(300) } })
+  assert.ok(long.includes(`${'x'.repeat(117)}…`) && !long.includes('x'.repeat(118)))
+  assert.match(pack.packErrorText({ ok: false, error: 'unsafe', reason: 'secret-file', reasonArgs: { file: { bad: 1 } } }), /\{file\}/)
+  // 앱 언어로 — 한국어 원문이 섞이지 않는다
+  const english = i18n.translator(ENGLISH, KOREAN)
+  const en = pack.packErrorText(notPack, english)
+  assert.match(en, /not a pack/)
+  assert.doesNotMatch(en, /[가-힣]/)
+  // busy 줄은 그대로 붙는다
+  assert.match(pack.packErrorText({ ...notPack, busy: [{ kind: 'qa', what: 'acme-web', pid: 12 }] }), /팩이 아닙니다\.[\s\S]*\n· QA 실행 — acme-web \(pid 12\)/)
+})
+
+test('오류 문장: 모르는 이유 · 이유 없음은 예전처럼 코드 문구 + 원문 · detail 없음', () => {
+  const unknown = { ok: false, error: 'invalid-pack', message: '새 코어 이유', reason: 'from-the-future' }
+  assert.match(pack.packErrorText(unknown), /팩이 아닙니다 — .* — 새 코어 이유/)
+  assert.equal(pack.packErrorDetail(unknown), '')
+  assert.equal(pack.packErrorDetail({ ok: false, error: 'failed', message: 'x' }), '')
+  assert.equal(pack.packFailure({ ok: false, error: 'failed', message: 'x' }).detail, '')
+  assert.equal(pack.packErrorDetail({ ok: true }), '')
+})
+
+test('오류 문장: 약속 번호(contract-mismatch)는 코어 번호로 업데이트할 쪽을 가린다', () => {
+  assert.match(pack.packErrorText({ ok: false, error: 'contract-mismatch', reason: 'contract-mismatch', contract: pack.CONTRACT - 1, message: 'x' }), /예전 버전/)
+  assert.match(pack.packErrorText({ ok: false, error: 'contract-mismatch', reason: 'contract-mismatch', contract: pack.CONTRACT + 1, message: 'x' }), new RegExp(`약속 번호\\(${pack.CONTRACT + 1}\\)`))
+  // 번호가 없으면 예전 문구로
+  assert.match(pack.packErrorText({ ok: false, error: 'contract-mismatch', reason: 'contract-mismatch', message: 'x' }), /약속 번호가 다릅니다 — .* — x$/)
+})
+
+test('세부 이유 사전: 모든 이유가 4언어 사전에 같은 자리로 있다 · 코어 목록과 같다', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  for (const lang of ['ko', 'en', 'ja', 'zh']) {
+    const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', `${lang}.json`), 'utf8'))
+    assert.ok(dict['pack.error.details'], `${lang}: pack.error.details`)
+    for (const reason of pack.PACK_REASONS) {
+      if (reason === 'contract-mismatch') continue
+      assert.ok(dict[`pack.reason.${reason}`], `${lang}: pack.reason.${reason}`)
+    }
+  }
+  // 코어가 던지는 이유가 모두 앱 목록에 있다(빠지면 화면이 옛 문구로 떨어진다)
+  const core = ['athena/scripts/lib/packs.mjs', 'athena/scripts/lib/bodies.mjs', 'athena/scripts/lib/init.mjs', 'athena/scripts/athena.mjs']
+    .map((file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8'))
+    .join('\n')
+  const thrown = new Set([...core.matchAll(/new (?:Pack)?Error\([^\n]*?reason: '([\w-]+)'/g)].map((match) => match[1]))
+  assert.ok(thrown.size > 20)
+  assert.deepEqual([...thrown].filter((reason) => !pack.PACK_REASONS.includes(reason)), [])
+  assert.deepEqual(pack.PACK_REASONS.filter((reason) => !thrown.has(reason)), [])
 })
 
 test('git 주소: https · ssh · git@ 만, 셸 문자 · 비밀번호 · 옵션 모양은 거절', () => {

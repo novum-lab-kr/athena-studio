@@ -605,14 +605,14 @@ export const syncRepos = (root) => {
 // 레포 폴더는 그대로. 그 레포 워크트리가 남아 있으면(미커밋 작업일 수 있다) 빼지 않는다. 팩 링크 정리는 부르는 쪽(link)이
 export const removeRepo = (root, name, { report = () => {} } = {}) => {
   const where = paths(root)
-  if (where.mode !== 'packs' || !where.packDataReal) throw new PackError('not-found', '여러 팩 본체가 아니다 — 팩 데이터가 없다')
+  if (where.mode !== 'packs' || !where.packDataReal) throw new PackError('not-found', '여러 팩 본체가 아니다 — 팩 데이터가 없다', { reason: 'repo-not-packs-body' })
   const packDir = join(where.packDataReal, 'pack')
   const pack = readPackJson(packDir)
   const entry = (pack?.repos ?? []).find((repo) => repo.name === name)
-  if (!entry) throw new PackError('not-found', `팩에 그런 레포가 없다: ${name}`)
+  if (!entry) throw new PackError('not-found', `팩에 그런 레포가 없다: ${name}`, { reason: 'repo-missing', reasonArgs: { name } })
   const trees = join(where.packDataReal, 'worktrees', name)
   const left = existsSync(trees) ? readdirSync(trees).filter((item) => !item.startsWith('.')) : []
-  if (left.length) throw new PackError('busy', `그 레포 워크트리가 남아 있다 — ${left.join(', ')} · 정리한 뒤 다시(git -C repos/${name} worktree remove <경로>)`, { worktrees: left })
+  if (left.length) throw new PackError('busy', `그 레포 워크트리가 남아 있다 — ${left.join(', ')} · 정리한 뒤 다시(git -C repos/${name} worktree remove <경로>)`, { worktrees: left, reason: 'repo-worktrees-left', reasonArgs: { name } })
   report('backup', `팩 백업 — ${where.packId}`)
   const backup = tarPack(packDir, join(where.dataDir, 'backups'), `${where.packId}-pack-before-repo-remove`)
   // 이 레포 에이전트 — 다른 레포도 쓰는 이름이면 두기
@@ -730,7 +730,7 @@ export const attachPack = async (root, id, { report = () => {}, allowEmpty = fal
     if (!existsSync(slot)) throw new PackError('not-found', `그런 팩이 없다: ${id}`)
     const pack = readPackJson(join(slot, 'pack'))
     if (!pack && !allowEmpty) throw new PackError('invalid-pack', `팩 자리에 pack.json 이 없다: ${id}`)
-    if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`)
+    if (pack && (pack.formatVersion ?? 1) > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`, { reason: 'format-newer' })
     if (where.mode === 'legacy' && bodyConfig(root).pack) throw new PackError('unsafe', `옛 구조 본체(athena.config.json 의 pack = ${bodyConfig(root).pack}) — 먼저 bin/athena pack migrate`)
     if (where.mode === 'packs' && where.packId === id) {
       report('done', `이미 이 본체의 팩이다 — ${id}`)
@@ -855,11 +855,11 @@ const withTemp = (data, work) => {
 // 압축 파일 항목 검사 — 절대 경로 · .. 가 하나라도 있으면 풀지 않는다
 const archiveEntries = (file) => {
   let listing
-  try { listing = execFileSync('tar', ['-tf', file], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) } catch { throw new PackError('invalid-pack', `압축 파일을 읽지 못했다: ${file}`) }
+  try { listing = execFileSync('tar', ['-tf', file], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, stdio: ['ignore', 'pipe', 'ignore'] }) } catch { throw new PackError('invalid-pack', `압축 파일을 읽지 못했다: ${file}`, { reason: 'archive-unreadable', reasonArgs: { file: basename(file) } }) }
   const entries = listing.split('\n').filter(Boolean)
   const bad = entries.find((entry) => entry.startsWith('/') || entry.split('/').includes('..'))
-  if (bad) throw new PackError('unsafe', `압축 안에 밖을 가리키는 경로가 있다 — 풀지 않는다: ${bad}`)
-  if (entries.length > MAX_FILES) throw new PackError('invalid-pack', `파일이 너무 많다(${entries.length}개 > ${MAX_FILES})`)
+  if (bad) throw new PackError('unsafe', `압축 안에 밖을 가리키는 경로가 있다 — 풀지 않는다: ${bad}`, { reason: 'archive-outside-path', reasonArgs: { path: bad } })
+  if (entries.length > MAX_FILES) throw new PackError('invalid-pack', `파일이 너무 많다(${entries.length}개 > ${MAX_FILES})`, { reason: 'too-many-files', reasonArgs: { count: entries.length, max: MAX_FILES } })
   return entries
 }
 
@@ -877,26 +877,26 @@ const inspectTree = (top, { trustGit = false, dropGit = false } = {}) => {
       // 폴더·압축에서 온 .git 은 믿지 않는다(리뷰 2026-10-18 — .git → /etc 링크 재현): 링크면 아래 링크 검사가 거부,
       // 파일(gitdir: 다른 곳을 가리키는 워크트리 표시)이면 지우고, 폴더면 다른 파일처럼 검사한다
       // 최상위 .git 이 링크면 어디를 가리키든 거부 — 팩 안 폴더를 가리켜도 그 안의 config(core.fsmonitor)가 git 명령 때 실행된다(리뷰 5차 재현)
-      if (name === '.git' && dir === top && stat.isSymbolicLink()) throw new PackError('unsafe', `최상위 .git 이 링크다 — 가져오지 않는다: .git → ${readlinkSync(path)}`)
+      if (name === '.git' && dir === top && stat.isSymbolicLink()) throw new PackError('unsafe', `최상위 .git 이 링크다 — 가져오지 않는다: .git → ${readlinkSync(path)}`, { reason: 'git-link' })
       if (name === '.git' && dir === top && trustGit && stat.isDirectory()) continue
       // 압축·폴더에서 온 .git 은 통째로 지운다 — .git/config(core.fsmonitor 등)·hooks 가 나중 git 명령(아카이브 커밋)에서 실행된다(리뷰 4차 재현).
       // 압축은 잃는 것 없음(export·백업은 원래 .git 을 뺀다). 폴더의 git 팩은 원격·이력을 잃는다 → 결과 gitRemoved 로 알리고 "git 주소로 가져오기" 를 안내한다
       if (name === '.git' && dir === top && dropGit && !stat.isSymbolicLink()) { rmSync(path, { recursive: true, force: true }); gitRemoved = true; continue }
       if (name === '.git' && dir === top && stat.isFile()) { rmSync(path, { force: true }); gitRemoved = true; continue }
-      if (SECRET_NAME.test(name) && !SECRET_OK.test(name)) throw new PackError('unsafe', `비밀값이 들 수 있는 파일이 있다 — 가져오지 않는다: ${relative(top, path)}`)
+      if (SECRET_NAME.test(name) && !SECRET_OK.test(name)) throw new PackError('unsafe', `비밀값이 들 수 있는 파일이 있다 — 가져오지 않는다: ${relative(top, path)}`, { reason: 'secret-file', reasonArgs: { file: relative(top, path) } })
       if (stat.isSymbolicLink()) {
         // 글자만 보지 않고 실제 경로로 푼다 — 링크 폴더를 거치는 우회(d → . · x → d/d/../..)도 잡는다(리뷰 2026-10-18). 풀리지 않는 링크도 거부
         const text = readlinkSync(path)
         let real = ''
         // realpathSync.native — OS 가 실제로 여는 곳. JS 판 realpathSync 는 링크 글자의 .. 를 글자로 먼저 접어(d/d/../.. → .) 우회를 놓친다
-        try { real = realpathSync.native(path) } catch { throw new PackError('unsafe', `가리키는 곳이 없는 링크가 있다: ${relative(top, path)} → ${text}`) }
-        if (text.startsWith('/') || !(real === realTop || real.startsWith(realTop + sep))) throw new PackError('unsafe', `팩 밖을 가리키는 링크가 있다: ${relative(top, path)} → ${text}`)
+        try { real = realpathSync.native(path) } catch { throw new PackError('unsafe', `가리키는 곳이 없는 링크가 있다: ${relative(top, path)} → ${text}`, { reason: 'link-missing', reasonArgs: { file: relative(top, path) } }) }
+        if (text.startsWith('/') || !(real === realTop || real.startsWith(realTop + sep))) throw new PackError('unsafe', `팩 밖을 가리키는 링크가 있다: ${relative(top, path)} → ${text}`, { reason: 'link-outside', reasonArgs: { file: relative(top, path) } })
         continue
       }
       if (stat.isDirectory()) { walk(path); continue }
-      if (!stat.isFile()) throw new PackError('unsafe', `일반 파일이 아니다: ${relative(top, path)}`)
+      if (!stat.isFile()) throw new PackError('unsafe', `일반 파일이 아니다: ${relative(top, path)}`, { reason: 'not-regular-file', reasonArgs: { file: relative(top, path) } })
       bytes += stat.size; files += 1
-      if (bytes > MAX_BYTES) throw new PackError('invalid-pack', `팩이 너무 크다(${Math.round(MAX_BYTES / 1024 / 1024)}MB 초과)`)
+      if (bytes > MAX_BYTES) throw new PackError('invalid-pack', `팩이 너무 크다(${Math.round(MAX_BYTES / 1024 / 1024)}MB 초과)`, { reason: 'too-large', reasonArgs: { mb: Math.round(MAX_BYTES / 1024 / 1024) } })
     }
   }
   walk(top)
@@ -915,18 +915,18 @@ const findPackRoot = (dir) => {
     // 작업 기록 백업(pack backup --with-work) — <id>/athena-backup.json · pack/ · plans/ · issues/
     if (existsSync(join(inner, 'athena-backup.json')) && existsSync(join(inner, 'pack', 'pack.json'))) return { pack: join(inner, 'pack'), work: inner }
   }
-  if (existsSync(join(dir, 'athena.config.json'))) throw new PackError('invalid-pack', '아테나 본체 폴더다 — 팩이 아니라 기존 아테나면 pack import-athena 로 가져온다')
-  throw new PackError('invalid-pack', '팩이 아니다 — pack.json 을 찾지 못했다')
+  if (existsSync(join(dir, 'athena.config.json'))) throw new PackError('invalid-pack', '아테나 본체 폴더다 — 팩이 아니라 기존 아테나면 pack import-athena 로 가져온다', { reason: 'athena-folder' })
+  throw new PackError('invalid-pack', '팩이 아니다 — pack.json 을 찾지 못했다', { reason: 'not-a-pack' })
 }
 
 const validatePack = (packRoot) => {
   let pack
-  try { pack = JSON.parse(readFileSync(join(packRoot, 'pack.json'), 'utf8')) } catch (error) { throw new PackError('invalid-pack', `pack.json 을 읽지 못했다 — ${error.message}`) }
-  if (!pack || typeof pack !== 'object' || Array.isArray(pack)) throw new PackError('invalid-pack', 'pack.json 이 객체가 아니다')
+  try { pack = JSON.parse(readFileSync(join(packRoot, 'pack.json'), 'utf8')) } catch (error) { throw new PackError('invalid-pack', `pack.json 을 읽지 못했다 — ${error.message}`, { reason: 'pack-json-unreadable' }) }
+  if (!pack || typeof pack !== 'object' || Array.isArray(pack)) throw new PackError('invalid-pack', 'pack.json 이 객체가 아니다', { reason: 'pack-json-not-object' })
   const version = pack.formatVersion ?? 1
-  if (typeof version !== 'number' || version > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`)
-  if (pack.repos !== undefined && !Array.isArray(pack.repos)) throw new PackError('invalid-pack', 'pack.json 의 repos 가 목록이 아니다')
-  for (const repo of pack.repos ?? []) if (!repo?.name || !/^[\w.-]+$/.test(repo.name)) throw new PackError('invalid-pack', `레포 이름이 올바르지 않다: ${JSON.stringify(repo?.name)}`)
+  if (typeof version !== 'number' || version > PACK_FORMAT_VERSION) throw new PackError('format-unknown', `모르는 팩 형식 버전 ${pack.formatVersion} — 아테나 본체를 업데이트한다`, { reason: 'format-newer' })
+  if (pack.repos !== undefined && !Array.isArray(pack.repos)) throw new PackError('invalid-pack', 'pack.json 의 repos 가 목록이 아니다', { reason: 'repos-not-list' })
+  for (const repo of pack.repos ?? []) if (!repo?.name || !/^[\w.-]+$/.test(repo.name)) throw new PackError('invalid-pack', `레포 이름이 올바르지 않다: ${JSON.stringify(repo?.name)}`, { reason: 'bad-repo-name', reasonArgs: { name: String(repo?.name ?? '') } })
   return pack
 }
 
@@ -998,19 +998,19 @@ export const inspectSource = (root, source, { report = () => {} } = {}) => {
   return withTemp(data, (dir, token) => {
     const incoming = join(dir, 'in')
     // git 의 특수 전송(ext:: · file:// · fd::)은 받지 않는다 — 경로로 오해하지 않게 먼저 거른다
-    if (/::|^file:|^git:|^http:/i.test(source)) throw new PackError('unsafe', `git 주소는 https:// · ssh:// · git@host:path 만 — ${maskRemote(source)}`)
+    if (/::|^file:|^git:|^http:/i.test(source)) throw new PackError('unsafe', `git 주소는 https:// · ssh:// · git@host:path 만 — ${maskRemote(source)}`, { reason: 'git-url-format' })
     if (/^(https:|ssh:|[\w.-]+@[\w.-]+:)/.test(source)) {
-      if (!validGitUrl(source)) throw new PackError('unsafe', `git 주소는 https:// · ssh:// · git@host:path 만 — ${maskRemote(source)}`)
+      if (!validGitUrl(source)) throw new PackError('unsafe', `git 주소는 https:// · ssh:// · git@host:path 만 — ${maskRemote(source)}`, { reason: 'git-url-format' })
       report('fetch', `git 에서 받기 — ${maskRemote(source)}`)
       const cloned = spawnSync('git', ['clone', '--quiet', '--', source, incoming], {
         stdio: ['ignore', 'ignore', 'pipe'], encoding: 'utf8', timeout: 180_000,
         env: { ...process.env, GIT_TERMINAL_PROMPT: '0', GIT_ALLOW_PROTOCOL: 'https:ssh', GIT_SSH_COMMAND: 'ssh -o BatchMode=yes -o ConnectTimeout=15' },
       })
-      if (cloned.status !== 0) throw new PackError('clone-failed', `git 에서 받지 못했다(주소·권한 확인) — ${maskRemote(source)}`)
+      if (cloned.status !== 0) throw new PackError('clone-failed', `git 에서 받지 못했다(주소·권한 확인) — ${maskRemote(source)}`, { reason: 'clone-failed' })
       return finishInspect(data, dir, token, { kind: 'git', source: maskRemote(source) }, report)
     }
     const path = resolve(source)
-    if (!existsSync(path)) throw new PackError('not-found', `없다: ${path}`)
+    if (!existsSync(path)) throw new PackError('not-found', `없다: ${path}`, { reason: 'path-missing', reasonArgs: { name: basename(path) } })
     if (statSync(path).isDirectory()) {
       report('copy', `폴더 복사 — ${path}`)
       cpSync(path, incoming, { recursive: true, verbatimSymlinks: true, filter: (from) => !STRIP_NAMES.has(basename(from)) })
@@ -1020,7 +1020,7 @@ export const inspectSource = (root, source, { report = () => {} } = {}) => {
     archiveEntries(path)
     mkdirSync(incoming, { recursive: true })
     const extracted = spawnSync('tar', ['-xf', path, '-C', incoming], { stdio: ['ignore', 'ignore', 'pipe'] })
-    if (extracted.status !== 0) throw new PackError('invalid-pack', `압축을 풀지 못했다: ${basename(path)}`)
+    if (extracted.status !== 0) throw new PackError('invalid-pack', `압축을 풀지 못했다: ${basename(path)}`, { reason: 'archive-extract-failed', reasonArgs: { file: basename(path) } })
     return finishInspect(data, dir, token, { kind: 'file', source: path }, report)
   })
 }
@@ -1040,11 +1040,11 @@ const cleanExpired = (data) => {
 export const inspectAthena = (root, oldDir, { report = () => {} } = {}) => {
   const data = dataDir(root)
   const source = resolve(oldDir ?? '')
-  if (!oldDir || !existsSync(join(source, 'athena.config.json'))) throw new PackError('not-found', `아테나 폴더가 아니다(athena.config.json 없음): ${source}`)
+  if (!oldDir || !existsSync(join(source, 'athena.config.json'))) throw new PackError('not-found', `아테나 폴더가 아니다(athena.config.json 없음): ${source}`, { reason: 'not-athena-folder' })
   const config = readJson(join(source, 'athena.config.json')) ?? {}
-  if (!config.pack) throw new PackError('invalid-pack', '그 아테나에는 팩이 없다(athena.config.json 의 pack)')
+  if (!config.pack) throw new PackError('invalid-pack', '그 아테나에는 팩이 없다(athena.config.json 의 pack)', { reason: 'athena-no-pack' })
   const packSource = resolve(source, config.pack)
-  if (!existsSync(join(packSource, 'pack.json'))) throw new PackError('invalid-pack', `팩이 없다: ${packSource}/pack.json`)
+  if (!existsSync(join(packSource, 'pack.json'))) throw new PackError('invalid-pack', `팩이 없다: ${packSource}/pack.json`, { reason: 'athena-no-pack' })
   cleanExpired(data)
   return withTemp(data, (dir, token) => {
     report('copy', `팩 복사 — ${packSource}`)
@@ -1084,18 +1084,18 @@ export const listWorktrees = (dir) => {
 // pack import <token> --keep|--replace|--new
 export const importToken = async (root, token, mode, { report = () => {} } = {}) => {
   const data = dataDir(root)
-  if (!/^[0-9a-f]{24}$/.test(token ?? '')) throw new PackError('not-found', '가져오기 token 이 올바르지 않다')
+  if (!/^[0-9a-f]{24}$/.test(token ?? '')) throw new PackError('not-found', '가져오기 token 이 올바르지 않다', { reason: 'token-invalid' })
   const dir = join(tmpRoot(data), token)
   const meta = readJson(join(dir, 'meta.json'))
-  if (!meta) throw new PackError('token-expired', '검사한 임시본이 없다 — 다시 pack inspect')
-  if (Date.now() - Date.parse(meta.createdAt) > TOKEN_TTL_MS) { rmSync(dir, { recursive: true, force: true }); throw new PackError('token-expired', '검사한 지 24시간이 지났다 — 다시 pack inspect') }
+  if (!meta) throw new PackError('token-expired', '검사한 임시본이 없다 — 다시 pack inspect', { reason: 'token-expired' })
+  if (Date.now() - Date.parse(meta.createdAt) > TOKEN_TTL_MS) { rmSync(dir, { recursive: true, force: true }); throw new PackError('token-expired', '검사한 지 24시간이 지났다 — 다시 pack inspect', { reason: 'token-expired' }) }
   if (!['keep', 'replace', 'new'].includes(mode)) throw new PackError('usage', '--keep | --replace | --new 중 하나')
   if (mode === 'keep') { rmSync(dir, { recursive: true, force: true }); report('done', '임시본을 버렸다'); return { ok: true } }
   // 지금 상태로 다시 대조한다(검사 뒤에 다른 팩이 등록됐을 수 있다)
   const pack = validatePack(join(dir, 'pack'))
   const conflict = findConflict(data, pack)
   if (mode === 'new' && conflict?.reason === 'packId') throw new PackError('conflict', `같은 팩(packId ${pack.id})이 이미 있다 — ${conflict.id}. --replace 또는 --keep`, { conflict })
-  if (mode === 'replace' && !conflict) throw new PackError('not-found', '바꿀 같은 팩이 없다 — --new 로 등록')
+  if (mode === 'replace' && !conflict) throw new PackError('not-found', '바꿀 같은 팩이 없다 — --new 로 등록', { reason: 'replace-missing' })
 
   // 공유 ID 가 없는 옛 팩은 지금 붙인다(형식 버전도)
   // 써 넣었으면 결과에 알린다(packJsonUpdated) — git 팩이면 그 팩 레포에 미커밋 변경으로 보인다
@@ -1361,7 +1361,7 @@ export const restoreWithWork = async (root, file, mode, options = {}) => {
   const inspected = inspectSource(root, file, options)
   if (!inspected.work) {
     await importToken(root, inspected.token, 'keep')
-    throw new PackError('invalid-pack', '작업 기록 백업이 아니다(athena-backup.json 없음) — 팩만 있는 파일은 pack inspect/import')
+    throw new PackError('invalid-pack', '작업 기록 백업이 아니다(athena-backup.json 없음) — 팩만 있는 파일은 pack inspect/import', { reason: 'not-backup' })
   }
   if (inspected.conflict && !mode) return { ...inspected, ok: false, error: 'conflict', message: `같은 팩이 이미 있다 — ${inspected.conflict.id}. --replace 또는 --new 로 다시` }
   try {

@@ -16,7 +16,7 @@ const { execFileSync } = require('child_process')
 /** @typedef {ReturnType<typeof appIdentity>} Identity */
 /** @typedef {ReturnType<typeof studioLayout>} Layout */
 // git 실패(execFileSync) — stderr 가 있으면 그것을 알린다
-/** @typedef {{ stderr?: unknown, message?: unknown }} ExecError */
+/** @typedef {{ stderr?: unknown, message?: unknown, code?: unknown }} ExecError */
 // 코어 JSON 결과(version · update) — 읽는 칸만, 모양은 칸마다 따로 본다
 /** @typedef {{ ok?: unknown, version?: unknown, capabilities?: unknown, bodies?: unknown, backedUp?: unknown } | null | undefined} CoreResult */
 /** @typedef {(argv: string[], options: { contract: boolean }) => Promise<CoreResult>} RunCore */
@@ -180,7 +180,8 @@ function writeJson(file, value) {
 /** @param {{ bundle: string, coreDir: string, env?: NodeJS.ProcessEnv }} options */
 function installCore({ bundle, coreDir, env = gitEnv() }) {
   if (fs.existsSync(coreDir)) return { ok: true, created: false }
-  if (!bundleHead(bundle, { env })) return { ok: false, error: 'bundle-missing', bundle }
+  // 번들 파일은 있는데 git 을 못 부르면 번들 탓이 아니다 — 화면이 원인별 안내를 고르게 gitMissing 을 붙인다(판정은 그대로)
+  if (!bundleHead(bundle, { env })) return { ok: false, error: 'bundle-missing', bundle, ...(isFile(bundle) && !gitOk(['--version'], { env }) ? { gitMissing: true } : {}) }
   fs.mkdirSync(path.dirname(coreDir), { recursive: true })
   const building = path.join(path.dirname(coreDir), `.core-installing-${process.pid}`)
   fs.rmSync(building, { recursive: true, force: true })
@@ -193,7 +194,8 @@ function installCore({ bundle, coreDir, env = gitEnv() }) {
   } catch (error) {
     fs.rmSync(building, { recursive: true, force: true })
     const failure = /** @type {ExecError} */ (error)
-    return { ok: false, error: 'clone-failed', message: String(failure.stderr || failure.message).trim().slice(0, 300) }
+    // code — git 을 못 찾음(ENOENT) · 쓰기 실패(EACCES 등)를 화면이 가른다
+    return { ok: false, error: 'clone-failed', message: String(failure.stderr || failure.message).trim().slice(0, 300), ...(typeof failure.code === 'string' ? { code: failure.code } : {}) }
   }
 }
 

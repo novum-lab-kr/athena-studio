@@ -6,7 +6,7 @@ import { attached, attaching, reattachScreen, runCommand, screen, setAttached, s
 import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
-import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
+import { packAlert, packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshDiagramsReady, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
 import { initTips } from './tips.ts'
 import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
@@ -97,17 +97,23 @@ async function installAthena(): Promise<void> {
 async function applyAthenaResult(pending: Promise<AthenaResult>): Promise<void> {
   const result = await pending
   const error = $('setup-error')
+  const detail = $('setup-detail')
   if (result.canceled) return
   if (result.error) {
+    // 원문(git · Node 오류)은 [자세히] 에 접는다 — 있을 때만
     if (state!.valid) {
-      alert(result.error)
+      if (result.detail) packAlert(result.error, '', result.detail)
+      else alert(result.error)
     } else {
       error.textContent = result.error
       error.hidden = false
+      detail.querySelector('p')!.textContent = result.detail || ''
+      detail.hidden = !result.detail
     }
     return
   }
   error.hidden = true
+  detail.hidden = true
   const wasValid = state!.valid
   setState(result)
   renderState()

@@ -9,8 +9,9 @@ import { isAthenaWorkspace, switchTab, workspaceName } from './tabs.ts'
 import { PANEL_FILLS, PANEL_ICONS, setSpacesCollapsed } from './side-panels.ts'
 import { StudioUi } from './ui/index.ts'
 import type { SpacePane, SpaceRepo, SpacesActions } from './ui/spaces.tsx'
-import { hidePackProgress, lookDialog, packAlert, packDialog, showPackProgress } from './pack-dialogs.ts'
-import { popupOption, runPackFlow } from './pack-switch.ts'
+import { hidePackProgress, lookDialog, packAlert, packDialog, packFailAlert, showPackProgress } from './pack-dialogs.ts'
+import type { PackDialogAction } from './pack-dialogs.ts'
+import { popupOption, refreshPackList, runPackFlow } from './pack-switch.ts'
 import { branches, paneStatus } from './main.ts'
 
 // 작업 공간 아이콘 — 이름 앞 두 글자 + 이름으로 고른 색(같은 이름은 늘 같은 색)
@@ -140,30 +141,38 @@ async function removeRepoFromPack(name: string): Promise<unknown> {
   showPackProgress(say('spaces.removeRepoProgress', { repo: name }), false)
   const result = await studio.packRemoveRepo(name)
   hidePackProgress()
-  if (!result.ok) return packAlert(say('spaces.removeRepoFailed'), result.text || result.message)
+  if (!result.ok) return packFailAlert(say('spaces.removeRepoFailed'), result)
   await refreshPackRepos()
   showToast(say('spaces.removeRepoDone', { repo: name }), 'success')
 }
 
-// spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지
+// spaces + 로 팩에 없는 git 레포를 골랐다 — 팩에 더할지(에이전트 · 지식 뼈대 · 아테나가 채움) 터미널만 열지.
+// 팩 설정 전(pack new 로 만든 빈 자리 — current.empty · 코어 repo add 가 받지 않는 때)이면 [팩에 더하기] 대신 [팩 설정 시작](아테나에 첫 실행 지시)
 export async function offerAddRepo({ dir, name }: { dir: string; name: string }): Promise<unknown> {
-  const behind = await studio.packBodyBehind()
+  const notSetUp = Boolean((await refreshPackList()).current?.empty)
+  const behind = notSetUp ? false : await studio.packBodyBehind()
+  const primary: PackDialogAction = notSetUp ? { label: say('spaces.addRepoSetup'), value: 'setup', kind: 'primary' } : { label: say('spaces.addRepoYes'), value: 'add', kind: 'primary' }
   const choice = await packDialog({
     title: say('spaces.addRepoTitle', { repo: name }),
-    subtitle: say('spaces.addRepoNote'),
+    subtitle: say(notSetUp ? 'spaces.addRepoNeedsSetup' : 'spaces.addRepoNote'),
     body: [el('p', 'muted', dir), ...(behind ? [el('p', 'muted', say('pack.catchUp.notice'))] : [])],
-    actions: [{ label: say('spaces.addRepoYes'), value: 'add', kind: 'primary' }, { label: say('spaces.addRepoTerminal'), value: 'open' }, { label: say('common.cancel'), value: null }],
+    actions: [primary, { label: say('spaces.addRepoTerminal'), value: 'open' }, { label: say('common.cancel'), value: null }],
   })
   if (choice === 'open') {
     const opened = await studio.workspaceOpenDir(dir, estimateCells($('panes')))
     if (opened.error) showToast(say('spaces.createFailed', { message: opened.error }))
     return
   }
+  if (choice === 'setup') {
+    const started = await studio.packStartSetup(dir)
+    if (!started.ok) showToast(say('spaces.setupNoAthena'))
+    return
+  }
   if (choice !== 'add') return
   showPackProgress(say('spaces.addRepoProgress', { repo: name }), false)
   const result = await studio.packAddRepo(dir, null)
   hidePackProgress()
-  if (!result.ok) return packAlert(say('spaces.addRepoFailed'), result.text || result.message)
+  if (!result.ok) return packFailAlert(say('spaces.addRepoFailed'), result)
   await refreshPackRepos()
   showToast(say(result.already ? 'spaces.addRepoAlready' : 'spaces.addRepoDone', { repo: result.repo.name }), 'success')
 }
@@ -171,7 +180,8 @@ export async function offerAddRepo({ dir, name }: { dir: string; name: string })
 // 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
 async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
   const info = await studio.packCallInfo(repo.name)
-  if (info.error) return showToast(info.error)
+  // 본체 스크립트가 실패했으면 원문은 [자세히] 에 접는다(담당 에이전트 없음 같은 앱 문구는 알림만)
+  if (info.error) return info.detail ? packAlert(say('spaces.callFailed'), info.error, info.detail) : showToast(info.error)
   let choice = { branch: '', reuse: false }
   if (!info.direct) {
     const rows = el('div', 'pack-links')
@@ -204,7 +214,7 @@ async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
     result = await studio.packCallStart(repo.name, { branch: choice.branch, reuse: true })
     hidePackProgress()
   }
-  if (result.error) return packAlert(say('spaces.callFailed'), result.error)
+  if (result.error) return packAlert(say('spaces.callFailed'), result.error, result.detail || '')
   showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
 }
 

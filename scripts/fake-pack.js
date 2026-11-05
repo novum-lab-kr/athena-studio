@@ -289,7 +289,10 @@ async function main() {
       if (!arg) fail('usage', '가져올 것을 주세요')
       progress('check', '임시 위치에서 검사')
       await sleep(800)
-      if (/bad|unsafe/i.test(arg)) fail('unsafe', '밖을 가리키는 링크가 있어요')
+      // 본체 세부 이유(reason · reasonArgs)도 같은 모양으로 — 이름에 service 가 들어가면 팩 아닌 폴더 · corrupt 면 깨진 압축
+      if (/bad|unsafe/i.test(arg)) fail('unsafe', '팩 밖을 가리키는 링크가 있다: docs/link → /etc', { reason: 'link-outside', reasonArgs: { file: 'docs/link' } })
+      if (/service/i.test(arg)) fail('invalid-pack', '팩이 아니다 — pack.json 을 찾지 못했다', { reason: 'not-a-pack' })
+      if (/corrupt/i.test(arg)) fail('invalid-pack', `압축 파일을 읽지 못했다: ${arg}`, { reason: 'archive-unreadable', reasonArgs: { file: path.basename(arg) } })
       const base = path.basename(arg).replace(/\.git$|\.tar\.gz$/g, '').replace(/-pack.*$/, '') || 'newco'
       const name = sub === 'import-athena' ? 'acme' : base.replace(/-?other.*$/, '')
       const token = `t${Date.now()}`

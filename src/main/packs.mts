@@ -180,7 +180,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     if (blocked) return blocked
     return packTask(say('pack.task.new'), async (signal) => {
       const result = await runPack(['new'], { dir, onProgress: ctx.packProgress, signal })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+      if (!result.ok) return packModel.packFailure(result, say)
       if (typeof result.body !== 'string' || !path.isAbsolute(result.body) || !core.checkAthenaDir(result.body).ok) return { ok: false, error: 'invalid-pack', text: say('pack.open.badBody') }
       const state = ctx.rebindBody(result.body)
       refreshAllPacks()
@@ -210,7 +210,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     const chosen = target
     return packTask(say('pack.task.inspect'), async (signal) => {
       const result = (await runPack([kind === 'athena' ? 'import-athena' : 'inspect', chosen], { dir: ctx.athenaDir, onProgress: ctx.packProgress, signal })) as Inspected
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+      if (!result.ok) return packModel.packFailure(result, say)
       return {
         ...result,
         source: kind === 'git' ? chosen : path.basename(chosen),
@@ -231,7 +231,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     return packTask(say('pack.task.import'), async () => {
       const result = (await runPack(['import', token, `--${choice}`], { dir: ctx.athenaDir, onProgress: ctx.packProgress })) as Imported
       refreshAllPacks()
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+      if (!result.ok) return packModel.packFailure(result, say)
       // 열린 창의 팩을 바꿨으면 그 창 현황판을 새로
       const replaced = result.imported && result.imported.id
       for (const each of packWindows) if (replaced && each.packState.current && each.packState.current.id === replaced) each.send('pack:changed', { ok: true, replaced })
@@ -257,7 +257,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     }
     return packTask(kind === 'backup' ? say('pack.task.backup') : say('pack.task.export'), async () => {
       const result = await runPack(args, { dir: ctx.athenaDir, onProgress: ctx.packProgress })
-      if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+      if (!result.ok) return packModel.packFailure(result, say)
       setLastPackFile(typeof result.file === 'string' ? result.file : null)
       return result
     })
@@ -285,7 +285,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       if (!result.ok) {
         // 옛 id — pane 안 /setup 이 이름을 바꿨다. 팩 줄이 지금 목록으로 맞춰지게 모든 창의 목록을 새로 읽는다
         if (result.error === 'not-found') refreshAllPacks()
-        return { ...result, text: packModel.packErrorText(result, say) }
+        return packModel.packFailure(result, say)
       }
       if (result.created) refreshAllPacks()
       const notes = { unlinkedRepos: result.unlinkedRepos || [], repair: result.state === 'repair-required', created: result.created === true }
@@ -319,7 +319,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
   // 이름 바꾸기 — name 이 없으면 원래 이름으로(--clear). 끝나면 모든 창의 목록을 새로
   ctx.packSetName = async (id: string, name: string | null) => {
     const result = await runPack(name === null ? ['set-name', '--clear', '--id', id] : ['set-name', name, '--id', id], { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     refreshAllPacks()
     return result
   }
@@ -366,7 +366,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       args = ['set-icon', picked.filePaths[0], '--id', id]
     }
     const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     refreshAllPacks()
     return result
   }
@@ -376,7 +376,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
   ctx.repoSetName = async (repo: string, name: string | null) => {
     if (!/^[\w.-]+$/.test(repo)) return { ok: false, error: 'not-found', text: packModel.packErrorText({ ok: false, error: 'not-found' }, say) }
     const result = await runPack(name === null ? ['set-repo-name', repo, '--clear'] : ['set-repo-name', repo, name], { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     return result
   }
   ctx.repoSetIcon = async (repo: string, clear: boolean, usePicked = false) => {
@@ -388,7 +388,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
       ctx.pickedIcon = null
     }
     const result = await runPack(args, { dir: ctx.athenaDir })
-    if (!result.ok) return { ...result, text: packModel.packErrorText(result, say) }
+    if (!result.ok) return packModel.packFailure(result, say)
     return result
   }
 
@@ -407,7 +407,7 @@ export function installPacks(ctx: PacksCtx, deps: PacksDeps): void {
     }
     if (result.error === 'has-worktrees') return { ok: false, error: 'has-worktrees', worktrees: Array.isArray(result.worktrees) ? result.worktrees : [] }
     if (result.error === 'unsafe') return { ...result, text: say('pack.delete.unsafe') }
-    return { ...result, text: packModel.packErrorText(result, say) }
+    return packModel.packFailure(result, say)
   }
 
   // 팩 아이콘 우클릭 메뉴 — 고른 동작 이름을 돌려준다(이름 입력은 화면이 받는다). 아무것도 안 고르면 null

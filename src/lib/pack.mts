@@ -14,7 +14,7 @@ const require = createRequire(import.meta.url)
 const KOREAN: Dictionary = require('../i18n/ko.json')
 
 // 코어 `pack … --json` 결과 — 읽는 칸만, 모양은 칸마다 따로 본다
-export type PackResult = { [key: string]: unknown; ok?: unknown; error?: unknown; message?: unknown; busy?: unknown }
+export type PackResult = { [key: string]: unknown; ok?: unknown; error?: unknown; message?: unknown; busy?: unknown; reason?: unknown; reasonArgs?: unknown }
 type BusyItem = { kind?: unknown; what?: unknown; pid?: unknown }
 // 팩 목록의 팩 하나 — 코어가 주는 칸 그대로(읽는 칸만)
 export type PackEntry = { [key: string]: unknown; id: string; name?: unknown; displayName?: unknown; empty?: boolean; updatedAt?: unknown; repos?: unknown; iconPath?: unknown }
@@ -65,14 +65,62 @@ export function parsePackOutput(text: unknown, say: Say = koreanSay): { progress
   }
 }
 
-// 오류 결과 → 화면에 보일 한 문장(본체 message 가 있으면 뒤에 붙인다)
-// 본체 message 는 본체가 쓴 한국어 그대로(번역 범위 밖)
+// 사용자가 흔히 만나는 실패의 세부 이유(코어 결과 reason · 사전 pack.reason.<이유>) — 코어 athena/scripts/lib/packs.mjs 와 같은 목록
+// 이유가 있으면 앱 언어 문구("무엇이 문제 + 어떻게 하면 되나")가 주 문장 · 코어 message(한국어 원문)는 화면 [자세히] 로만(packErrorDetail)
+export const PACK_REASONS: readonly string[] = [
+  'not-a-pack', 'athena-folder', 'pack-json-unreadable', 'pack-json-not-object', 'repos-not-list', 'bad-repo-name', 'format-newer',
+  'archive-unreadable', 'archive-extract-failed', 'archive-outside-path', 'too-many-files', 'too-large',
+  'clone-failed', 'git-url-format', 'secret-file', 'link-outside', 'link-missing', 'not-regular-file', 'git-link', 'path-missing',
+  'not-athena-folder', 'athena-no-pack', 'token-invalid', 'token-expired', 'replace-missing', 'not-backup', 'contract-mismatch',
+  // 레포 더하기 · 빼기(repo add · remove — 코어 init.mjs addRepo · packs.mjs removeRepo)
+  'repo-not-packs-body', 'repo-not-git', 'repo-inside-athena', 'repo-bad-name', 'repo-pack-not-set-up', 'repo-exists', 'repo-missing', 'repo-worktrees-left',
+]
+
+// 문구 자리 값(reasonArgs) — 글자 · 숫자만, 너무 긴 값은 자른다(파일 이름 · 레포 이름 · MB)
+function reasonValues(args: unknown): Record<string, string | number> {
+  const values: Record<string, string | number> = {}
+  if (!args || typeof args !== 'object' || Array.isArray(args)) return values
+  for (const [key, value] of Object.entries(args)) {
+    if (typeof value === 'number' && Number.isFinite(value)) values[key] = value
+    else if (typeof value === 'string') values[key] = value.length > 120 ? `${value.slice(0, 117)}…` : value
+  }
+  return values
+}
+
+// 세부 이유가 있는 실패의 주 문장 — 모르는 이유(새 코어)면 null(옛 방식으로)
+function reasonText(result: PackResult, say: Say): string | null {
+  const reason = result.reason
+  if (typeof reason !== 'string' || !PACK_REASONS.includes(reason)) return null
+  // 약속 번호 — 코어가 자기 번호(contract)를 준다. 낮으면 본체 업데이트 · 높으면 스튜디오 업데이트(contractBlock 과 같은 문구)
+  if (reason === 'contract-mismatch') {
+    const contract = Number.isInteger(result.contract) ? (result.contract as number) : null
+    if (contract === null) return null
+    return say(contract < CONTRACT ? 'pack.contract.old' : 'pack.contract.other', { contract })
+  }
+  return say(`pack.reason.${reason}`, reasonValues(result.reasonArgs))
+}
+
+// 오류 결과 → 화면에 보일 문장. 세부 이유가 있으면 그 문구만(본체 원문은 packErrorDetail),
+// 없으면(개발용 · 옛 코어) 오류 코드 문구 뒤에 본체 message 를 붙인다 — 본체 message 는 본체가 쓴 한국어 그대로(번역 범위 밖)
 export function packErrorText(result: PackResult | null | undefined, say: Say = koreanSay): string {
   if (!result || result.ok) return ''
+  const busy = Array.isArray(result.busy) && result.busy.length ? `\n${busyLines(result.busy, say).join('\n')}` : ''
+  const explained = reasonText(result, say)
+  if (explained) return `${explained}${busy}`
   const base = typeof result.error === 'string' && ERROR_CODES.includes(result.error) ? say(`pack.errorCode.${result.error}`) : say('pack.error.unknown')
   const detail = result.message && result.message !== base ? ` — ${result.message}` : ''
-  const busy = Array.isArray(result.busy) && result.busy.length ? `\n${busyLines(result.busy, say).join('\n')}` : ''
   return `${base}${detail}${busy}`
+}
+
+// 화면 [자세히] 에 접어 둘 본체 원문 — 세부 이유 문구로 바꿔 보인 실패만(아니면 원문이 이미 주 문장에 붙어 있다)
+export function packErrorDetail(result: PackResult | null | undefined, say: Say = koreanSay): string {
+  if (!result || result.ok || !reasonText(result, say)) return ''
+  return typeof result.message === 'string' ? result.message : ''
+}
+
+// 실패 답 — 코어 결과 + 화면 문장(text) + 접어 둘 원문(detail · 없으면 빈 글자)
+export function packFailure<T extends PackResult>(result: T, say: Say = koreanSay): T & { text: string; detail: string } {
+  return { ...result, text: packErrorText(result, say), detail: packErrorDetail(result, say) }
 }
 
 export function busyLines(busy: BusyItem[] | null | undefined, say: Say = koreanSay): string[] {

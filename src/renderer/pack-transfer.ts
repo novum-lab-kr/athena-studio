@@ -1,7 +1,7 @@
 // 회사 팩 만들기 · 가져오기 · 내보내기 — 새 팩 · 가져오기(종류 고르기 · 검사 · 같은 이름 비교 · 등록 · 되살리기) · 내보내기(팩 + 작업 기록 · 팩만)
 // renderer.js 에서 옮김(R3f · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만
 import { el, say, showToast } from './core.ts'
-import { hidePackProgress, packAlert, packDialog, packs, showPackProgress } from './pack-dialogs.ts'
+import { hidePackProgress, packDialog, packFailAlert, packs, showPackProgress } from './pack-dialogs.ts'
 import type { PackDialogAction, PackTextAnswer } from './pack-dialogs.ts'
 import { applySwitchedPack, popupOption, switchPack } from './pack-switch.ts'
 import { setRestoreArmed, showRestoreResult } from './screen.ts'
@@ -16,7 +16,7 @@ export async function newPack(): Promise<unknown> {
   const result = await studio.packNew()
   hidePackProgress()
   if (result.canceled || result.error === 'canceled') return
-  if (!result.ok) return packAlert(say('pack.new.failed'), result.text || result.message)
+  if (!result.ok) return packFailAlert(say('pack.new.failed'), result)
   if (result.switched) await applySwitchedPack(result.state as AthenaState)
   showToast(say('pack.new.opened'), 'success')
 }
@@ -64,14 +64,14 @@ export async function importPack(): Promise<unknown> {
     gitError = (inspected.text || inspected.message) as string
   }
   if (inspected.canceled || inspected.error === 'canceled') return
-  if (!inspected.ok) return packAlert(say('pack.import.failed'), inspected.text || inspected.message)
+  if (!inspected.ok) return packFailAlert(say('pack.import.failed'), inspected)
   const choice = await chooseImport(inspected, chosen)
   if (!choice) return studio.packImport(inspected.token as string, 'keep')
   // 교체는 본체가 그 팩 본체 기준으로 판단한다(일하는 중이면 busy 로 막는다) — pane 을 닫지 않는다
   showPackProgress(say('pack.import.registering'), false)
   const result = await studio.packImport(inspected.token as string, choice)
   hidePackProgress()
-  if (!result.ok) return packAlert(say('pack.import.failed'), result.text || result.message)
+  if (!result.ok) return packFailAlert(say('pack.import.failed'), result)
   if (choice === 'keep') return
   // 끝 — 팩 한 줄(아이콘 · 이름 · 레포) · 백업 · git 안내 · [나중에] [열기]
   const imported = result.imported
@@ -191,7 +191,7 @@ async function exportPack(kind: string): Promise<unknown> {
   const result = await studio.packExport(kind)
   hidePackProgress()
   if (result.canceled) return
-  if (!result.ok) return packAlert(say('pack.result.failed', { title }), result.text || result.message)
+  if (!result.ok) return packFailAlert(say('pack.result.failed', { title }), result)
   const size = result.bytes ? ` · ${Math.max(1, Math.round(result.bytes / 1024))}KB` : ''
   const reveal = await packDialog({
     title: say('pack.result.done', { title }),

@@ -166,6 +166,19 @@ test('번들: 버전 ref 를 싣고(버전이 바뀌면 다시 만든다) · 주
   assert.equal(home.syncVersionRefs({ coreDir, bundle: path.join(repo, 'none.bundle') }), 0)
 })
 
+test('풀기: 번들 파일은 있는데 git 을 못 부르면 bundle-missing 에 gitMissing 을 붙인다(판정은 그대로)', () => {
+  const repo = studioRepo()
+  const bundle = path.join(repo, 'core.bundle')
+  home.makeCoreBundle({ repoRoot: repo, out: bundle })
+  const coreDir = path.join(tmp(), '.athena-studio', 'core')
+  const noGit = { PATH: '/nonexistent' }
+  assert.deepEqual(home.installCore({ bundle, coreDir, env: noGit }), { ok: false, error: 'bundle-missing', bundle, gitMissing: true })
+  // 번들 파일이 없으면 git 을 못 불러도 지금처럼 bundle-missing 만
+  const none = path.join(repo, 'none.bundle')
+  assert.deepEqual(home.installCore({ bundle: none, coreDir, env: noGit }), { ok: false, error: 'bundle-missing', bundle: none })
+  assert.equal(fs.existsSync(coreDir), false)
+})
+
 test('풀기: 번들 → 주 본체(main · origin/main) · 있으면 그대로 · 번들이 없으면 bundle-missing', () => {
   const repo = studioRepo()
   const bundle = path.join(repo, 'core.bundle')

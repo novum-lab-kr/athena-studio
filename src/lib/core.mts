@@ -96,6 +96,13 @@ export function ensureAthenaConfig(dir: string, reposRoot = '..'): boolean {
   return true
 }
 
+// 파일 쓰기 실패(Node 오류 code)를 화면 안내 갈래로 — 권한 · 디스크 가득 · 그 밖
+export function fileErrorKind(code: unknown): 'permission' | 'diskFull' | 'other' {
+  if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return 'permission'
+  if (code === 'ENOSPC') return 'diskFull'
+  return 'other'
+}
+
 // 스튜디오 집(~/.athena-studio) 안의 본체는 상위가 스튜디오 집이라 담당 레포가 없다 — 회사 레포 클론이 있는 홈을 절대 경로로
 // (두 앱이 같은 클론을 같이 쓴다). 직접 고른 아테나 폴더는 지금처럼 옆 폴더(..)
 export function reposRootFor(dir: string, { studioRoot, home }: { studioRoot: string; home: string }): string {
