@@ -274,7 +274,7 @@ check "아테나 pane — pane 을 모르면 고르기 창 그대로(요청 0 ·
 for mode in true error; do lead_ask $mode > "$WORK/ask-lead-$mode.out"; done
 check "아테나 pane — 보고 있어도 · 포커스를 몰라도 질문마다 요청(4개)을 열고 pane 창은 안 막는다(출력 없음)" '[ "$(( $(ls "$DIR" | wc -l) - BEFORE_LEAD ))" = 4 ] && [ ! -s "$WORK/ask-lead-true.out" ] && [ ! -s "$WORK/ask-lead-error.out" ]'
 WQ="$(A request list | python3 -c "import json,sys; rs=[r for r in json.load(sys.stdin)['requests'] if r['title']=='어느 방식으로 할까요?']; print(rs[0]['id'])")"
-check "보고 있을 때 요청 — pane(pt1)에 묶이고 글에 pane 에도 떠 있다는 안내" 'A request show "$WQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; sys.exit(0 if r[\"pane\"]==\"pt1\" and \"pane 에도 같은 고르기 창\" in r[\"body\"] and [o[\"label\"] for o in r[\"options\"]]==[\"A 안\",\"B 안\"] else 1)"'
+check "보고 있을 때 요청 — pane(pt1)에 묶이고 글에 pane 에도 떠 있다는 안내" 'A request show "$WQ" | python3 -c "import json,sys; r=json.load(sys.stdin)[\"request\"]; sys.exit(0 if r[\"pane\"]==\"pt1\" and \"pane 에도 같은 선택 프롬프트\" in r[\"body\"] and [o[\"label\"] for o in r[\"options\"]]==[\"A 안\",\"B 안\"] else 1)"'
 check "pane 창이 닫히면 요청을 거두는 지킴이를 띄운다(close pt1 + 요청 번호 2개)" '[ "$(($(wc -l < "$WORK/spawn.log")))" = 2 ] && grep -q "^close pt1 r-.* r-" "$WORK/spawn.log"' "$(cat "$WORK/spawn.log" 2>/dev/null)"
 for WID in $(A request list | python3 -c "import json,sys; print(' '.join(r['id'] for r in json.load(sys.stdin)['requests'] if r['pane']=='pt1' and r['links'].get('plan') is None and r['state']=='open'))"); do A request cancel "$WID" > /dev/null; done
 rm -f "$WORK/spawn.log"
@@ -372,7 +372,7 @@ PBEFORE="$(perm_count)"
 perm_watch "0" "ls" no > "$WORK/pw1.out"
 check "몇 초 안에 닫힌 창(분류기 자동 허용 등)은 요청을 열지 않는다 + 임시 글 지움" '[ "$(perm_count)" = "$PBEFORE" ] && grep -q payload-deleted "$WORK/pw1.out"'
 perm_watch "1 1 1 0 0 0" "export API_TOKEN=abcd1234efgh5678ijkl && npm publish" no > "$WORK/pw2.out"
-check "창이 그대로면 요청이 열리고(pane pg1 · 쉬운 말 제목) 창이 닫히면 저절로 거둔다" 'perm_list | python3 -c "import json,sys; rs=json.load(sys.stdin)[$PBEFORE:]; r=rs[0]; sys.exit(0 if len(rs)==1 and r[\"state\"]==\"cancelled\" and r[\"pane\"]==\"pg1\" and \"허용 확인 대기\" in r[\"title\"] and \"명령 실행\" in r[\"title\"] and r[\"dedupeKey\"]==\"perm:pg1\" and not r[\"options\"] else 1)"' "$(perm_list)"
+check "창이 그대로면 요청이 열리고(pane pg1 · 쉬운 말 제목) 창이 닫히면 저절로 거둔다" 'perm_list | python3 -c "import json,sys; rs=json.load(sys.stdin)[$PBEFORE:]; r=rs[0]; sys.exit(0 if len(rs)==1 and r[\"state\"]==\"cancelled\" and r[\"pane\"]==\"pg1\" and \"권한 승인 대기\" in r[\"title\"] and \"명령 실행\" in r[\"title\"] and r[\"dedupeKey\"]==\"perm:pg1\" and not r[\"options\"] else 1)"' "$(perm_list)"
 check "요청 글 — 비밀값은 가려지고 허용 · 거부는 여기서 못 한다는 안내" 'perm_list | python3 -c "import json,sys; b=json.load(sys.stdin)[$PBEFORE][\"body\"]; sys.exit(0 if \"abcd1234efgh5678ijkl\" not in b and \"***\" in b and \"허용 · 거부를 할 수 없어요\" in b and \"athena-studio-fe\" in b else 1)"' "$(perm_list)"
 PBEFORE2="$(perm_count)"
 perm_watch "1 1 1" "ls" yes > "$WORK/pw3.out"

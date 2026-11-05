@@ -28,7 +28,10 @@ const check = (name, test) => { test(); count++; console.log(`  ✔ ${name}`) }
 const summary = summarize(events, { now: NOW, days: 7 })
 summary.plans.forEach((plan) => { plan.title = `제목 ${plan.plan.at(-4)}`; plan.exists = true })
 const html = readFileSync('./scripts/board/index.html', 'utf8')
-const esc = html.match(/  const esc = .+;/)[0]
+// 화면 문구 — 서버가 넣는 한국어 사전(i18n/ko.json)과 페이지의 t · LOCALE 을 같이 싣는다
+const ko = readFileSync('./scripts/board/i18n/ko.json', 'utf8')
+const i18n = [`const I18N = { lang: 'ko', dict: ${ko}, fallback: ${ko} };`, html.match(/  const t = .+;/)[0], html.match(/  const LOCALE = .+;/)[0]].join('\n')
+const esc = `${i18n}\n${html.match(/  const esc = .+;/)[0]}`
 const functions = html.slice(html.indexOf('  const metricDuration ='), html.indexOf('  let metricsController'))
 const api = runInNewContext(`${esc}\n${functions}\n({metricCharts,metricBuckets,metricHistogram,metricStates,metricVerify,metricStages})`, { Date })
 check('기준 시각은 입력 now, 이전 완료 목록은 이전 집계 개수와 일치', () => {
@@ -108,14 +111,14 @@ check('평균 카드 네 개와 계산 기준 · 타임라인 제거', () => {
   assert.match(output, /전체 작업 평균<\/span><strong>3시간/)
   assert.match(output, /PR 평균/); assert.match(output, /리뷰 평균 · 작업당/); assert.match(output, /검증 평균 · 작업당/)
   assert.match(output, /중앙값 1시간 · p75 4시간/); assert.match(output, /이전 평균 6시간/); assert.match(output, /▼ 50%/)
-  assert.match(output, /줄서기 포함/); assert.match(output, /겹친 구간은 한 번/); assert.match(output, /repo\+pr/)
+  assert.match(output, /대기열 포함/); assert.match(output, /겹친 구간은 한 번/); assert.match(output, /repo\+pr/)
   assert.ok(!output.includes('작업 타임라인')); assert.ok(!html.includes('const metricTimeline'))
 })
 check('단계 막대도 평균을 표시 · 평균이 p75보다 커도 범위 안', () => {
   const copy = structuredClone(summary)
   copy.current.stages.review = { had: 1, count: 1, avgMs: 10 * hourMs, p50Ms: hourMs, p75Ms: 2 * hourMs }
   const output = api.metricStages(copy)
-  assert.match(output, /검토받기<\/b><span>10시간/)
+  assert.match(output, /리뷰<\/b><span>10시간/)
   assert.match(output, /중앙값 1시간/); assert.ok([...output.matchAll(/<rect[^>]*width="([\d.]+)"/g)].every((match) => Number(match[1]) <= 1000))
 })
 check('완료 없는 열린 작업은 분포에 넣지 않음', () => {

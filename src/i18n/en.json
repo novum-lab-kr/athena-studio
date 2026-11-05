@@ -249,6 +249,7 @@
   "pane.resizeHint": "Drag to resize · double-click to split evenly",
   "pane.sizeOldDaemon": "The daemon is an older version, so this size resets when you restart the app — it is saved after [View → Restart Terminal Daemon]",
   "pane.sizeSaveFailed": "Could not save the size: {message}",
+  "pane.badRatio": "Invalid divider value",
   "pane.splitFailed": "Could not split: {message}",
   "screen.disconnected": "Lost connection to the terminal daemon — click a pane and press any key to reconnect (menu [View → Reattach Terminal])",
   "side.label": "Right panel",
@@ -720,5 +721,6 @@
   "work.approval.originalAllow": "Allow",
   "work.approval.originalAlways": "Always allow",
   "work.approval.originalCancel": "Cancel",
-  "work.approval.source": "Codex · {pane} · Session {thread}"
+  "work.approval.source": "Codex · {pane} · Session {thread}",
+  "ipc.noWindow": "Only available from the app window"
 }

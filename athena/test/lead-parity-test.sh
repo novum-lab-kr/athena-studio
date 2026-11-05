@@ -5,8 +5,7 @@ set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 node --input-type=module - "$SRC" <<'JS'
 import assert from 'node:assert/strict'
-import { execFileSync } from 'node:child_process'
-import { chmodSync, cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { cpSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
@@ -40,7 +39,7 @@ try {
   })
   check('복사된 본체에서도 일곱 Codex 스킬은 Claude 정본을 가리킨다', () => {
     assert.ok(lstatSync(join(root, '.agents/skills')).isSymbolicLink())
-    for (const name of ['call', 'monitor', 'board', 'sync', 'guide', 'setup', 'diagram']) {
+    for (const name of ['call', 'monitor', 'board', 'sync', 'setup', 'diagram']) {
       assert.equal(realpathSync(join(root, '.agents/skills', name, 'SKILL.md')), realpathSync(join(root, '.claude/skills', name, 'SKILL.md')))
     }
   })
@@ -88,45 +87,6 @@ try {
       assert.equal(settleIdleSessions([{ kind, pid: 201 }], [{ pid: 201, ppid: 200 }], [{ pid: 200, agent: engine, status: 'idle' }]).length, 0)
     }
   })
-  const guide = readFileSync(join(source, 'scripts/guide-menu.sh'), 'utf8')
-  const launch = guide.slice(guide.indexOf('ask_agent() {'), guide.indexOf('\n# 마크다운 뷰어:'))
-  const binary = join(temporary, 'bin')
-  mkdirSync(binary)
-  mkdirSync(join(root, 'scripts/lib'), { recursive: true })
-  for (const name of ['dispatch-engine.mjs', 'lib/main-tool.mjs', 'lib/is-main.mjs', 'lib/shell-line.sh']) {
-    cpSync(join(source, 'scripts', name), join(root, 'scripts', name))
-  }
-  symlinkSync(process.execPath, join(binary, 'node'))
-  const executable = (file, text) => { writeFileSync(file, `#!/bin/bash\n${text}\n`); chmodSync(file, 0o700) }
-  executable(join(root, 'scripts/screen'), `case "$1 $2" in
-    'inside ') exit 0;;
-    'pane split') printf '{"pane":{"id":"p-test"}}';;
-    'pane run') printf '%s' "$4" > "$GUIDE_CAPTURE";;
-    'pane rename') exit 0;;
-    *) exit 2;;
-  esac`)
-  for (const [available, remembered, expected] of [
-    [['claude'], null, 'claude'], [['codex'], null, 'codex'],
-    [['claude', 'codex'], null, 'claude'], [['claude', 'codex'], 'codex', 'codex'],
-    [[], null, null],
-  ]) {
-    check(`가이드 스킬 실행 — ${available.join('+') || '없음'} · 주 도구 ${remembered || '기록 없음'}`, () => {
-      for (const engine of ['claude', 'codex']) executable(join(binary, engine), `exit ${available.includes(engine) ? 0 : 1}`)
-      if (remembered) writeFileSync(join(root, '.athena-main-tool.json'), JSON.stringify({ main: remembered }))
-      else rmSync(join(root, '.athena-main-tool.json'), { force: true })
-      const capture = join(temporary, 'guide-capture')
-      rmSync(capture, { force: true })
-      const env = { ...process.env, ATHENA_DIR: root, GUIDE_CAPTURE: capture, PATH: `${binary}:/usr/bin:/bin` }
-      const script = `. "$ATHENA_DIR/scripts/lib/shell-line.sh"\n${launch}\nask_agent 'guide 설명'`
-      if (!expected) { assert.throws(() => execFileSync('/bin/bash', ['-c', script], { env, stdio: 'pipe' })); return }
-      execFileSync('/bin/bash', ['-c', script], { env, stdio: 'pipe' })
-      const command = readFileSync(capture, 'utf8')
-      // Codex 는 앱 · delegate.sh 와 같은 wrapper 줄(python3 <본체>/scripts/codex-session.py --no-daemon <지시>)로 뜬다
-      const runner = expected === 'codex' ? 'python3' : expected
-      const actual = execFileSync('/bin/bash', ['-c', `function ${runner}() { local IFS='|'; printf '%s' "$*"; }\n${command}`], { encoding: 'utf8', env })
-      assert.equal(actual, expected === 'codex' ? `${root}/scripts/codex-session.py|--no-daemon|$guide 설명` : '/guide 설명')
-    })
-  }
 } finally {
   rmSync(temporary, { recursive: true, force: true })
 }

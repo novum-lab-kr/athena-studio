@@ -118,7 +118,6 @@ JS
 sc_studio_board()    { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_studio_board_outside() { STEP_WAIT="#nohup" step studio "${LIVE[@]}" "${PORT_ENV[@]}" -- scripts/board.sh; }
 sc_studio_monitor()  { step studio "${IN_STUDIO[@]}" -- scripts/monitor-pane.sh 30; step studio "${LIVE[@]}" -- scripts/monitor-pane.sh; }
-sc_studio_guide()    { step studio "${IN_STUDIO[@]}" -- scripts/guide-pane.sh; }
 sc_studio_up()       { STEP_WAIT="#nohup" step studio "${IN_STUDIO[@]}" ATHENA_BOARD_PORT=47999 -- scripts/athena-up.sh; }
 # 첫 실행은 현황판을 뒤에서 띄우는 동안 /setup 을 보낸다 — 둘의 순서는 돌릴 때마다 다르니 #nohup 줄을 기록 끝으로 모아 비교한다
 sc_studio_up_firstrun() {
@@ -165,7 +164,7 @@ sc_studio_caller_pane() {
 }
 sc_studio_server() { board_server studio p2 p8; }   # Studio pane 환경(IN)으로 띄운다
 
-SCENARIOS+=(studio_self studio_ops studio_errors studio_node studio_board studio_board_outside studio_monitor studio_guide
+SCENARIOS+=(studio_self studio_ops studio_errors studio_node studio_board studio_board_outside studio_monitor
   studio_up studio_up_firstrun studio_delegate_newws studio_delegate_existing studio_delegate_sized studio_delegate_here studio_delegate_outside studio_delegate_gitless
   studio_workspace_up studio_setup_check studio_compact studio_plan_html studio_caller_pane studio_server)
 
@@ -213,7 +212,7 @@ sc_studio_open_url() {
   local url="http://localhost:47999/plans/refactor/20261003-lead.html"
   step studio "${IN_STUDIO[@]}" -- $S open-url "$url"
   step studio "${LIVE[@]}" -- $S open-url "$url"
-  step studio "${IN_STUDIO[@]}" -- $S open-url docs/onboarding.html
+  step studio "${IN_STUDIO[@]}" -- $S open-url docs/diagrams/index.html
   step studio-oldurl,studio "${IN_STUDIO[@]}" -- $S open-url "$url"
   step studio-noapp,studio "${LIVE[@]}" -- $S open-url "$url"
   step studio-down "${IN_STUDIO[@]}" -- $S open-url "$url"

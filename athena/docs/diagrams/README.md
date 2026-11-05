@@ -1,6 +1,6 @@
 # 다이어그램
 
-현재 팩 서비스 그림은 `/diagram`(Claude)·`$diagram`(Codex)으로 생성·점검한다. 절차는 [AUTHORING.md](AUTHORING.md), 서비스·가이드·카드는 `pack/diagrams/`에 둔다. 기존 우측 상단 다이어그램 메뉴와 `/guide 그림`은 `docs/diagrams/index.html`(한국어)을 연다 — 앱은 보기 → 언어가 영어 · 일본어 · 중국어면 `index.<en|ja|zh>.html` 을 연다.
+현재 팩 서비스 그림은 `/diagram`(Claude)·`$diagram`(Codex)으로 생성·점검한다. 절차는 [AUTHORING.md](AUTHORING.md), 서비스·가이드·카드는 `pack/diagrams/`에 둔다. 앱 탭 줄의 🗺 다이어그램 버튼이 `docs/diagrams/index.html`(한국어)을 연다 — 보기 → 언어가 영어 · 일본어 · 중국어면 `index.<en|ja|zh>.html` 을 연다.
 
 서비스 그림은 서비스마다 '한눈에 보기' 1장과 핵심 기능 흐름 2~3장이다. 코드 위치·수정 영향은 상자를 누르면 뜨는 자세히 칸에 넣는다. 기능 목록과 장·상자 대응표·핵심 흐름 고르는 기준은 [AUTHORING.md](AUTHORING.md)를 따른다. 서비스와 아테나 자체 그림 모두 같은 공통 디자인을 사용한다.
 

@@ -249,6 +249,7 @@
   "pane.resizeHint": "ドラッグでサイズ変更・ダブルクリックで半分ずつ",
   "pane.sizeOldDaemon": "デーモンが古いバージョンのため、このサイズはアプリを再起動すると戻ります — [表示 → 作業ウィンドウのデーモンを再起動] 後は保存されます",
   "pane.sizeSaveFailed": "サイズを保存できませんでした: {message}",
+  "pane.badRatio": "境界の値が正しくありません",
   "pane.splitFailed": "分割できませんでした: {message}",
   "screen.disconnected": "作業ウィンドウのデーモンとの接続が切れました — ペインをクリックして任意のキーを押すと再接続します(メニュー [表示 → 作業ウィンドウに再接続])",
   "side.label": "右パネル",
@@ -720,5 +721,6 @@
   "work.approval.originalAllow": "許可",
   "work.approval.originalAlways": "常に許可",
   "work.approval.originalCancel": "キャンセル",
-  "work.approval.source": "Codex · {pane} · セッション {thread}"
+  "work.approval.source": "Codex · {pane} · セッション {thread}",
+  "ipc.noWindow": "アプリの画面からのみ呼び出せます"
 }

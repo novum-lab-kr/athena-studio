@@ -837,12 +837,11 @@ function buildMenu(): void {
 ipcMain.on('i18n:get', (event) => (event.returnValue = i18nPayload()))
 
 // handle(채널, (ctx, ...args) => …) — 팩 창 화면에서 온 것만. 문맥이 없으면(하위 프레임 · 닫힌 창) 거절
-const NO_WINDOW = '앱 화면에서만 부를 수 있어요'
 // 화면이 넘긴 값은 믿지 않는다 — 받는 쪽 매개변수 타입은 그 코드가 다루는 모양(문자열로 바꾸기 · 칸 검사는 그 자리에서 한다)
 function handle<Args extends unknown[]>(channel: string, work: (ctx: PackWindow, ...args: Args) => unknown): void {
   ipcMain.handle(channel, (event, ...args) => {
     const ctx = ctxOf(event)
-    if (!ctx) return { error: NO_WINDOW }
+    if (!ctx) return { error: say('ipc.noWindow') }
     return work(ctx, ...(args as Args))
   })
 }
@@ -942,7 +941,7 @@ listen('tab:size', (ctx, tabId: unknown, size: Loose) => {
 // pane 경계를 끈 결과를 데몬 탭 트리에 — 옛 데몬은 이 동작을 몰라 usage 로 답한다(그땐 화면이 임시로 기억한다)
 handle('tab:ratio', async (ctx, tabId: unknown, path: unknown, ratio: unknown) => {
   if (typeof tabId !== 'string' || !Array.isArray(path) || !path.every((step) => step === 'first' || step === 'second') || typeof ratio !== 'number') {
-    return { error: '잘못된 경계 값' }
+    return { error: say('pane.badRatio') }
   }
   const reply = await ctx.daemonCall('tab ratio', { tab: tabId, path, ratio })
   if (reply.error && reply.code === 'usage' && /모르는 동작/.test(reply.error)) return { unsupported: true }

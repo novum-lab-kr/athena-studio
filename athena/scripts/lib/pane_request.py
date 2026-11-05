@@ -19,6 +19,7 @@ import time
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
+from studio_lang import language, pick  # noqa: E402 — [작업] 요청 제목 · 본문은 사람이 본다 — 앱 언어로
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 # 질문 · 고르기 · 권한 창 표시 — scripts/board/pane-delivery.mjs 의 PROMPT_MENU 와 같은 글
@@ -114,16 +115,46 @@ def mask(text: str) -> str:
         return ''
 
 
-# 권한 창이 묻는 일 — 도구 이름 → 쉬운 말
-WHAT = {'Bash': '명령 실행', 'Write': '파일 쓰기', 'Edit': '파일 고치기', 'MultiEdit': '파일 고치기', 'NotebookEdit': '노트북 고치기',
-        'Read': '파일 읽기', 'WebFetch': '웹 페이지 가져오기', 'WebSearch': '웹 검색'}
+# 권한 창이 묻는 일 — 도구 이름 → 쉬운 말(언어별)
+WHAT = {
+    'ko': {'Bash': '명령 실행', 'Write': '파일 쓰기', 'Edit': '파일 수정', 'MultiEdit': '파일 수정', 'NotebookEdit': '노트북 수정',
+           'Read': '파일 읽기', 'WebFetch': '웹 페이지 fetch', 'WebSearch': '웹 검색'},
+    'en': {'Bash': 'Run a command', 'Write': 'Write a file', 'Edit': 'Edit a file', 'MultiEdit': 'Edit a file', 'NotebookEdit': 'Edit a notebook',
+           'Read': 'Read a file', 'WebFetch': 'Fetch a web page', 'WebSearch': 'Web search'},
+    'ja': {'Bash': 'コマンド実行', 'Write': 'ファイル書き込み', 'Edit': 'ファイル編集', 'MultiEdit': 'ファイル編集', 'NotebookEdit': 'ノートブック編集',
+           'Read': 'ファイル読み込み', 'WebFetch': 'Web ページ取得', 'WebSearch': 'Web 検索'},
+    'zh': {'Bash': '运行命令', 'Write': '写入文件', 'Edit': '修改文件', 'MultiEdit': '修改文件', 'NotebookEdit': '修改笔记本',
+           'Read': '读取文件', 'WebFetch': '获取网页', 'WebSearch': '网页搜索'},
+}
 DETAIL_KEYS = ('command', 'file_path', 'notebook_path', 'url', 'query', 'path', 'pattern')
+PERMISSION = {
+    'ko': {'tool': '도구', 'use': '{tool} 사용', 'lead': '아테나', 'where': '어디서: {pane} ({who})', 'plan': '작업: {plan}', 'asks': '묻는 일: {what}',
+           'waits': '그 pane 이 권한 프롬프트를 띄우고 기다려요. 허용하면 그대로 진행하고, 거부하면 멈춰요.',
+           'notice': '이 요청은 알림이에요 — 여기서는 허용 · 거부를 할 수 없어요. [pane 으로 가기] 로 가서 그 창에서 고르세요. 고르면 이 요청은 저절로 닫혀요.',
+           'title': '{pane} 에서 권한 승인 대기 — {what}'},
+    'en': {'tool': 'tool', 'use': 'Use {tool}', 'lead': 'Athena', 'where': 'Where: {pane} ({who})', 'plan': 'Task: {plan}', 'asks': 'Asking: {what}',
+           'waits': 'That pane is showing a permission prompt and waiting. Allow and it continues; deny and it stops.',
+           'notice': 'This request is just a notice — you can\'t allow or deny here. Use [Go to pane] and choose in that prompt. Once you choose, this request closes by itself.',
+           'title': 'Waiting for permission in {pane} — {what}'},
+    'ja': {'tool': 'ツール', 'use': '{tool} の使用', 'lead': 'アテナ', 'where': '場所: {pane} ({who})', 'plan': '作業: {plan}', 'asks': '確認内容: {what}',
+           'waits': 'その pane が権限プロンプトを表示して待っています。許可するとそのまま進み、拒否すると止まります。',
+           'notice': 'このリクエストは通知です — ここでは許可 · 拒否できません。[pane へ移動] で移動し、そのプロンプトで選んでください。選ぶとこのリクエストは自動で閉じます。',
+           'title': '{pane} で権限の承認待ち — {what}'},
+    'zh': {'tool': '工具', 'use': '使用 {tool}', 'lead': '雅典娜', 'where': '位置：{pane}（{who}）', 'plan': '任务：{plan}', 'asks': '请求：{what}',
+           'waits': '该 pane 正显示权限提示并在等待。允许则继续，拒绝则停止。',
+           'notice': '此请求只是通知 — 这里无法允许或拒绝。请点 [前往 pane]，在那个提示中选择。选择后此请求会自动关闭。',
+           'title': '{pane} 正在等待权限批准 — {what}'},
+}
+# pane 에서 이미 골라 요청을 거둘 때의 사유([작업] 기록에 보인다)
+ANSWERED_IN_PANE = {'ko': 'pane 에서 이미 답했어요', 'en': 'Already answered in the pane', 'ja': 'pane ですでに回答しました', 'zh': '已在 pane 中回答'}
 
 
 def permission_text(event: dict, pane: str):
     """권한 요청 → (제목, 본문). 내용은 한 줄 요약만 싣고(파일 쓰기의 content 같은 긴 글은 싣지 않는다) 비밀값은 가린다"""
-    tool = str(event.get('tool_name') or '도구')
-    what = WHAT.get(tool, f'{tool} 쓰기')
+    lang = language()
+    say = PERMISSION.get(lang, PERMISSION['ko'])
+    tool = str(event.get('tool_name') or say['tool'])
+    what = WHAT.get(lang, WHAT['ko']).get(tool) or say['use'].format(tool=tool)
     tool_input = event.get('tool_input') if isinstance(event.get('tool_input'), dict) else {}
     detail = ''
     for key in DETAIL_KEYS:
@@ -131,16 +162,14 @@ def permission_text(event: dict, pane: str):
             detail = str(tool_input[key]).strip().replace('\n', ' ')[:DETAIL_MAX]
             break
     detail = mask(detail) if detail else ''
-    who = os.environ.get('ATHENA_AGENT') or '아테나'
-    lines = [f'어디서: {pane} ({who})']
+    who = os.environ.get('ATHENA_AGENT') or say['lead']
+    lines = [say['where'].format(pane=pane, who=who)]
     plan = plan_of(pane)
     if plan:
-        lines.append(f'작업: {plan}')
-    lines.append(f'묻는 일: {what}' + (f' — {detail}' if detail else ''))
-    lines += ['',
-              '그 pane 이 허용 확인 창을 띄우고 기다려요. 허용하면 그대로 진행하고, 거부하면 멈춰요.',
-              '이 요청은 알림이에요 — 여기서는 허용 · 거부를 할 수 없어요. [pane 으로 가기] 로 가서 그 창에서 고르세요. 고르면 이 요청은 저절로 닫혀요.']
-    return f'{pane} 에서 허용 확인 대기 — {what}', '\n'.join(lines)
+        lines.append(say['plan'].format(plan=plan))
+    lines.append(say['asks'].format(what=what) + (f' — {detail}' if detail else ''))
+    lines += ['', say['waits'], say['notice']]
+    return say['title'].format(pane=pane, what=what), '\n'.join(lines)
 
 
 def request_state(request_id: str):
@@ -169,7 +198,7 @@ def close_when_gone(pane: str, ids, seen: bool = False) -> None:
             break
     for request_id in ids:
         if request_state(request_id) == 'open':
-            athena(['request', 'cancel', request_id, '--reason', 'pane 에서 이미 답했어요'])
+            athena(['request', 'cancel', request_id, '--reason', pick(ANSWERED_IN_PANE)])
 
 
 def watch_permission(payload_path: str) -> None:

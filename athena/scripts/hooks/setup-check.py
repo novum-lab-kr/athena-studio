@@ -25,10 +25,50 @@ except Exception:
 ATHENA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 TOOL = sys.argv[sys.argv.index('--tool') + 1] if '--tool' in sys.argv[:-1] else 'claude'
 
+# 터미널에 뜨는 안내(systemMessage) — 앱 언어별(scripts/lib/studio_lang.py)
+NO_PACK_AUTO = {
+    'ko': '🌱 아직 팩이 없습니다 — 화면 세팅이 끝나면 아테나가 첫 실행(레포 찾기 → 팩 → 스캐폴드 → 검증 → fingerprint)을 바로 시작합니다.',
+    'en': '🌱 No pack yet — once the screen is set up, Athena starts the first run (find repos → pack → scaffold → checks → fingerprint) right away.',
+    'ja': '🌱 まだパックがありません — 画面の準備が終わると、アテナが初回実行(レポ探し → パック → スキャフォールド → 検証 → フィンガープリント)をすぐ始めます。',
+    'zh': '🌱 还没有包 — 界面准备好后，雅典娜会立即开始首次运行（查找仓库 → 包 → 脚手架 → 验证 → 指纹）。',
+}
+NO_PACK = {
+    'ko': '🌱 아직 팩이 없습니다 — 아무 말이나 입력하면 아테나가 첫 실행(레포 찾기 → 팩 → 스캐폴드 → 검증 → fingerprint)을 시작합니다.',
+    'en': '🌱 No pack yet — type anything and Athena starts the first run (find repos → pack → scaffold → checks → fingerprint).',
+    'ja': '🌱 まだパックがありません — 何か入力すると、アテナが初回実行(レポ探し → パック → スキャフォールド → 検証 → フィンガープリント)を始めます。',
+    'zh': '🌱 还没有包 — 输入任意内容，雅典娜就会开始首次运行（查找仓库 → 包 → 脚手架 → 验证 → 指纹）。',
+}
+LINKED = {
+    'ko': '🔗 레포 {count}개를 자동으로 연결했습니다 ({names} → {root})',
+    'en': '🔗 Linked {count} {repos} automatically ({names} → {root})',
+    'ja': '🔗 レポ {count} 個を自動で接続しました ({names} → {root})',
+    'zh': '🔗 已自动连接 {count} 个仓库（{names} → {root}）',
+}
+NOT_FOUND = {
+    'ko': '⚙️  {count}개 레포를 {root} 에서 찾지 못했습니다 ({names}). 아무 말이나 입력하면 아테나가 위치를 물어 연결합니다.',
+    'en': '⚙️  Couldn\'t find {count} {repos} in {root} ({names}). Type anything and Athena will ask for the location and link {them}.',
+    'ja': '⚙️  {root} で {count} 個のレポが見つかりませんでした ({names})。何か入力すると、アテナが場所を聞いて接続します。',
+    'zh': '⚙️  在 {root} 中找不到 {count} 个仓库（{names}）。输入任意内容，雅典娜会询问位置并连接。',
+}
+
+
+def repo_words(count: int) -> dict:
+    """영어 글의 단수 · 복수 자리({repos} · {them}) — 다른 언어 글은 이 자리를 쓰지 않는다"""
+    if count == 1:
+        return {'repos': 'repo', 'them': 'it'}
+    return {'repos': 'repos', 'them': 'them'}
+
 
 def main() -> None:
     sys.path.insert(0, os.path.join(ATHENA_DIR, 'scripts', 'lib'))
     from athena_config import load, needs_first_run
+    # 사람이 보는 systemMessage 만 앱 언어로 — additionalContext 는 아테나에게 가는 글이라 그대로.
+    # 언어 모듈을 못 읽어도 리드 기록 · 안내는 그대로 돌게 한국어로 물러선다
+    try:
+        from studio_lang import pick
+    except Exception:
+        def pick(texts: dict, **values) -> str:
+            return texts['ko'].format(**values) if values else texts['ko']
     # 아테나 세션만 — 에이전트 세션·다른 cwd 는 건너뛴다
     if payload.get('agent_type'):  # claude --agent 로 뜬 세션(실측 2026-09-30)
         return
@@ -56,8 +96,7 @@ def main() -> None:
         auto = me['inside'] and me['pane_id'] and payload.get('source') in (None, 'startup')
         how = '/setup 스킬을 부른다' if TOOL == 'claude' else 'docs/setup.md 절차를 0단계부터 그대로 한다'
         print(json.dumps({
-            'systemMessage': ('🌱 아직 팩이 없습니다 — 화면 세팅이 끝나면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 바로 시작합니다.' if auto
-                              else '🌱 아직 팩이 없습니다 — 아무 말이나 입력하면 아테나가 첫 실행(레포 찾기 → 팩 → 뼈대 → 검증 → 지문)을 시작합니다.'),
+            'systemMessage': pick(NO_PACK_AUTO if auto else NO_PACK),
             'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': (
                 '[setup-check] 팩이 없다(athena.config.json 의 pack 이 없거나 pack.json 에 레포가 0개). '
                 f'사용자의 첫 메시지가 무엇이든 먼저 한 줄로 알리고 {how}(환경 설정이라 계획서 없이 진행). '
@@ -90,14 +129,15 @@ def main() -> None:
                        stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=40, check=False)
         linked = [name for name in found if is_repo(os.path.join(ATHENA_DIR, 'repos', name))]
         if linked:
-            messages.append(f'🔗 레포 {len(linked)}개를 자동으로 연결했습니다 ({", ".join(linked)} → {repos_root})')
+            messages.append(pick(LINKED, count=len(linked), names=', '.join(linked), root=repos_root, **repo_words(len(linked))))
     still_missing = [name for name in names if not is_repo(os.path.join(ATHENA_DIR, 'repos', name))]
     if not still_missing:
         print(json.dumps({'systemMessage': messages[0]}, ensure_ascii=False))
         return
 
     # 기본 위치에 없는 레포만 남았다 — 어디 있는지는 사용자만 안다
-    messages.append(f'⚙️  {len(still_missing)}개 레포를 {repos_root} 에서 찾지 못했습니다 ({", ".join(still_missing)}). 아무 말이나 입력하면 아테나가 위치를 물어 연결합니다.')
+    messages.append(pick(NOT_FOUND, count=len(still_missing), names=', '.join(still_missing), root=repos_root,
+                         **repo_words(len(still_missing))))
     system_message = '\n'.join(messages)
     ask = 'AskUserQuestion' if TOOL == 'claude' else '사용 가능한 질문 도구(없으면 대화)'
     context = (

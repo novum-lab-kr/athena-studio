@@ -19,7 +19,7 @@ except Exception:
 
 ATHENA_DIR = os.path.realpath(os.path.join(os.path.dirname(__file__), '..', '..'))
 TOOL = sys.argv[sys.argv.index('--tool') + 1] if '--tool' in sys.argv[:-1] else 'claude'
-TOOL_LABELS = {'📋 현황판', '🛰 에이전트 모니터', '📚 배우기 검토', '가이드 메뉴', 'Explorer'}
+TOOL_LABELS = {'📋 현황판', '🛰 에이전트 모니터', '📚 배우기 검토', 'Explorer'}
 
 
 def main() -> None:

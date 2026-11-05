@@ -249,6 +249,7 @@
   "pane.resizeHint": "拖动调整大小 · 双击平分",
   "pane.sizeOldDaemon": "当前守护进程是旧版本,重启应用后此尺寸会还原 — 执行 [视图 → 重启工作窗口守护进程] 后即可保存",
   "pane.sizeSaveFailed": "无法保存尺寸:{message}",
+  "pane.badRatio": "分隔线数值无效",
   "pane.splitFailed": "无法拆分:{message}",
   "screen.disconnected": "与工作窗口守护进程的连接已断开 — 点击窗格并按任意键即可重新连接(菜单 [视图 → 重新连接工作窗口])",
   "side.label": "右侧面板",
@@ -720,5 +721,6 @@
   "work.approval.originalAllow": "允许",
   "work.approval.originalAlways": "始终允许",
   "work.approval.originalCancel": "取消",
-  "work.approval.source": "Codex · {pane} · 会话 {thread}"
+  "work.approval.source": "Codex · {pane} · 会话 {thread}",
+  "ipc.noWindow": "只能从应用窗口调用"
 }

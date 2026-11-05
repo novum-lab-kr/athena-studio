@@ -34,7 +34,7 @@
 
 ## 작업 흐름 (Plan-First)
 
-> 다이어그램 `docs/diagrams/athena-flow.html`(경량 · 정식이 계획서에서 갈라졌다 다시 만나는 한 장 — `/guide 그림` 목록의 "아테나 작업 흐름")의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
+> 다이어그램 `docs/diagrams/athena-flow.html`(경량 · 정식이 계획서에서 갈라졌다 다시 만나는 한 장 — 앱 🗺 다이어그램 목록의 "아테나 작업 흐름")의 카드에도 들어 있다. **이 절이나 `docs/workflow.md` 를 고치면 `docs/diagrams/athena-flow.workflow.json` 의 `cards` · 노드도 같이 고치고 HTML 을 다시 만든다**(`docs/diagrams/README.md`). 역할은 현황판 이슈 = 앞으로 할 일 / [작업] = 지금 도는 일과 내 답을 기다리는 일 / 계획서 = 작업 기록. 단계가 헷갈리면 `docs/workflow.md` 의 같은 번호 절을 읽는다.
 
 ### 1단계: 요청 · 계획서
 - 요청은 대화 · `/call <에이전트>` · 현황판 이슈 [작업 시작] 으로 들어온다. 대상 서비스를 팩 `ROUTING.md` 로 정하고(복수 가능 · 해석이 둘 이상이면 묻는다) 관련 코드를 탐색한다(지식은 필요한 절만 — 공통 문서 2.2~2.3)
@@ -74,10 +74,9 @@
 
 ## Skills (Slash Commands)
 아테나 세션 전용이다. Claude는 `/call`, Codex는 `$call`처럼 같은 이름의 스킬을 쓴다(평문 "call <에이전트>"도 같은 스킬로 처리). 인자는 사용자가 스킬 이름 뒤에 쓴 내용을 읽고, `$ARGUMENTS`가 치환되지 않았으면 그 문자열을 명령에 넘기지 않는다. 질문은 Claude의 AskUserQuestion 또는 Codex의 request_user_input을 쓰고, 사용할 수 없는 모드면 같은 선택지를 공통 요청(`bin/athena request`)으로 연다(`docs/requests.md`). 에이전트 pane에는 평문으로 지시하고 레포 접두사도 붙이지 않는다. 설명은 `docs/workflow.md` "명령".
-- `/call <에이전트>` 담당 에이전트 pane 띄우기(브랜치 먼저) · `/monitor` 에이전트 로그 보는 곳 · `/board` 현황판(`/board stop`) · `/sync` 레포 문서 갱신 · `/guide` 가이드 메뉴(`그림` · `열기` · `시작하기` · `설명`) · `/diagram [서비스] [점검]` 서비스 그림 생성·검증·목록 갱신(`docs/diagrams/AUTHORING.md`) · 회사 스킬은 팩 `ROUTING.md` "회사 스킬"
+- `/call <에이전트>` 담당 에이전트 pane 띄우기(브랜치 먼저) · `/monitor` 에이전트 로그 보는 곳 · `/board` 현황판(`/board stop`) · `/sync` 레포 문서 갱신 · `/diagram [서비스] [점검]` 서비스 그림 생성·검증·목록 갱신(`docs/diagrams/AUTHORING.md`) · 회사 스킬은 팩 `ROUTING.md` "회사 스킬"
 - **커맨드가 없는 것은 말로 한다** — 전체 검수 · 기능 · 버그 · 리뷰 · 현황 · 브랜치 · 팩 백업 · 여러 팩 · 코어 업데이트 · 정비 · Jev 키. 명령은 `docs/workflow.md` "말로 하는 일"
 
 ## 확장 · 참고
 - 스킬 정본 `.claude/skills/<이름>/SKILL.md`(Codex는 `.agents/skills` 링크로 같은 파일을 읽는다) · 에이전트 `.claude/agents/<이름>.md`(description 이 라우팅 문장 · 콜론+공백 금지) — 추가하면 이 문서 · `AGENTS.md` · `README.md` 를 함께 갱신한다(`/sync` 는 athena 자체 구조를 잡지 않는다 · 상세 `docs/extending.md`)
 - 지식 `docs/knowledge/README.md` · 서비스 맵 `docs/services.md`(팩) · 팩 형식 `docs/pack.md` · 첫 실행 `docs/setup.md` · 계획서 템플릿 `docs/plan-template.{md,html}` · 작업 흐름 자세히 `docs/workflow.md` · 디스패치 `docs/dispatch.md`
-- 시작하기 `ONBOARDING.md` · `docs/onboarding.html`(`/guide 시작하기`) — 레포 안에서만 관리한다(외부 공유본 없음)

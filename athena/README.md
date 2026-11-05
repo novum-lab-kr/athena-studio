@@ -2,8 +2,6 @@
 
 Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**. 이 폴더에서 `claude` 또는 `codex` 를 켜면 **아테나**가 되어, 요청을 받아 어느 레포 일인지 고르고 → 계획서를 쓰고 → 담당 FE 에이전트에게 맡기고 → 리뷰까지 받아 보고한다.
 
-> 처음이면 **`ONBOARDING.md`**(화면: `/guide 시작하기`)
-
 ## 한눈에
 
 ```
@@ -57,7 +55,7 @@ Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**.
 - Codex 보호 훅은 `/hooks` 에서 신뢰를 확인한다. 첫 Bash 명령만 검사하며 `write_stdin` 후속 입력은 검사하지 않는다
 - 코어 업데이트는 앱과 함께 온다 — 새 앱을 켜면 `bin/athena update --from <번들>` 로 본체마다 맞춘다(일하는 본체는 건너뛴다)
 
-명령 표는 Claude Code 의 `/명령` 기준이며, Codex 에서는 `$setup` · `$call` · `$guide` 등 같은 스킬이나 자연어로 요청한다. 질문·허락 대기는 Studio [작업] 팝업에 뜬다 — 질문은 팝업에서 답하고, 허락은 [pane 으로 가기] 뒤 원래 창에서 고른다. 같은 컴퓨터에서 두 도구의 대화를 재개하며, Codex 대화를 다른 컴퓨터로 옮겨 이어 하기는 아직 안 됨.
+명령 표는 Claude Code 의 `/명령` 기준이며, Codex 에서는 `$setup` · `$call` · `$board` 등 같은 스킬이나 자연어로 요청한다. 질문·허락 대기는 Studio [작업] 팝업에 뜬다 — 질문은 팝업에서 답하고, 허락은 [pane 으로 가기] 뒤 원래 창에서 고른다. 같은 컴퓨터에서 두 도구의 대화를 재개하며, Codex 대화를 다른 컴퓨터로 옮겨 이어 하기는 아직 안 됨.
 
 | 이렇게 하면 | 일어나는 일 |
 |---|---|
@@ -65,7 +63,6 @@ Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**.
 | `/setup` | 새 회사 첫 실행 — 레포 찾기 → 팩 만들기 → 에이전트·지식 뼈대 → 서비스 문서 → 흐름 문서 초안 → 검증 → 지문 (팩이 없으면 Studio pane 에서 켤 때 저절로 시작된다) |
 | `/call <에이전트>` | 담당 에이전트를 pane 에 바로. 요청·"커밋해줘"·"PR 올려줘" 까지 그 pane 에서 |
 | `/board` | 현황판(`localhost:4700`) — 이슈 · 학습 · 아카이브 · 지표 |
-| `/guide` | 가이드 메뉴 — 구조 설명 · 시작하기 · 작업 흐름 그림 · 확장 가이드 · 스킬 · 에이전트·라우팅 |
 | `/monitor` | 백그라운드·pane 에이전트 로그 실시간 — Studio 는 앱 아래 AGENT MONITOR 칸 |
 | `/sync` | 운영 브랜치를 읽어 지식 문서 갱신 (가끔, 한 사람이) |
 | (회사 스킬) | 팩 `pack/ROUTING.md` "회사 스킬" |
@@ -98,14 +95,13 @@ athena/                        ← 코어
 ├── AGENTS.md                  공통 규칙·지식 진입점 (Codex 등 다른 도구도 읽는다)
 ├── CLAUDE.md                  Claude Code 진입점 — AGENTS.md · docs/team-lead.md 를 불러온다
 ├── .agents/skills/            Codex 스킬 링크 — .claude/skills 의 같은 정본
-├── ONBOARDING.md              시작하기 가이드
 ├── athena.config.example.json 이 컴퓨터 설정 예시 → athena.config.json 으로 복사(git 무시) — 팩 위치 · reposRoot
 ├── bin/athena                 init(레포 찾기·팩 만들기) · scaffold(뼈대) · pack link · pack check
 │
 ├── .claude/
 │   ├── agents/                reviewer · learn-reviewer + 레포 담당 에이전트(팩)
 │   ├── rules/                 언어 · 코드 · Git · 디스패치 규칙
-│   └── skills/                /setup /call /board /sync /guide /monitor /diagram + 회사 스킬(팩)
+│   └── skills/                /setup /call /board /sync /monitor /diagram + 회사 스킬(팩)
 │
 ├── docs/
 │   ├── team-lead.md           Claude · Codex 공통 아테나 역할 · 흐름 · 스킬
@@ -113,9 +109,7 @@ athena/                        ← 코어
 │   │   ├── common/            팀 공통 (coding · git · verify · reporting · learning)
 │   │   ├── athena/            아테나 자체 함정 공책
 │   │   └── <레포>/ · company/ · learned/   레포 지식 · 회사 관례 · 학습 기록(팩)
-│   ├── athena-explained.html  아테나 구조 설명 (/guide 설명 — 팩 판이 있으면 그것)
-│   ├── onboarding.html        시작하기 화면 (/guide 시작하기)
-│   ├── diagrams/              서비스 그림 · 아테나 작업 흐름 목록 (/guide 그림 · /diagram)
+│   ├── diagrams/              서비스 그림 · 아테나 작업 흐름 목록 (앱 🗺 다이어그램 · /diagram)
 │   ├── templates/pack/        새 회사 뼈대 템플릿 — 에이전트 · rules · structure · gotchas · verify
 │   ├── pack.md                팩 형식 · 여러 팩 · 여러 팩 테스트
 │   ├── issues.md              이슈 등록 기준 · 형식 · 완료 기준
@@ -142,12 +136,11 @@ athena/                        ← 코어
     │   └── verify/<레포>.sh               레포별 표준 검증(팩)
     ├── 현황판 · 화면
     │   ├── board.sh · board/              현황판 서버·화면 (/board)
-    │   ├── guide-menu.sh · guide-pane.sh  가이드 메뉴 (/guide)
     │   ├── athena-up.sh                   세션 시작 때 화면 세팅 — 현황판(뒤에서) · 첫 실행 지시 입력
     │   ├── monitor-pane.sh · agent-monitor.py  로그 모니터 (/monitor — Studio 는 앱 AGENT MONITOR 칸)
     │   ├── screen · lib/screen.py · lib/screen.mjs  화면 계층 — pane·탭·workspace 는 여기로만 (백엔드 studio · 밖이면 none · ATHENA_SCREEN)
     │   ├── screen-lint.sh · screen-check/  화면 계층 지킴이 · 가짜 데몬 CLI 회귀 검사
-    │   └── statusline.sh · mdview.py      상태바 · 터미널 마크다운 뷰어
+    │   └── statusline.sh                  상태바
     ├── 학습
     │   ├── learn-review.mjs               배우기 검토자 — 머지된 내 PR 로 학습 후보(뒤에서 돈다)
     │   ├── learn-curator.mjs              30일 안 쓴 스킬 정리 후보 (/sync 끝)
@@ -170,7 +163,6 @@ packs/<회사>/
 ├── pack.json        레포 목록 · 브랜치 · 에이전트 · 회사 값(GitHub 조직·PR 범위 …)
 ├── ROUTING.md       담당 레포·에이전트 표 · 라우팅 규칙 · 검증 명령 · 회사 스킬
 ├── agents/ skills/ knowledge/ verify/ docs/ diagrams/ sync/ archive/
-├── guide/           회사 판 안내 HTML (있으면 /guide 가 이걸 연다)
 └── hooks/           (선택) delegate.sh 에 넣을 환경값
 ```
 

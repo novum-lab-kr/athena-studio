@@ -62,9 +62,14 @@ import { codexMemorySources } from './codex-memory.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
+import { languageOf, readDictionaries, translate } from './i18n.mjs'
 import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
+// 화면 문구 사전(i18n/<언어>.json) — 앱이 본체 .claude/settings.local.json 에 적은 언어를 부를 때마다 읽는다(앱에서 바꾸면 바로 따른다)
+const DICTIONARIES = readDictionaries(join(ROOT, 'scripts/board/i18n'))
+/** 화면에 돌려주는 글 — 콘솔 로그 · 계획서에 적는 글 · 에이전트 지시문은 번역하지 않는다 @param {string} key @param {Record<string, unknown>} [values] */
+const say = (key, values) => translate(DICTIONARIES, languageOf(ROOT))(key, values)
 const PORT = boardPort(ROOT)   // ATHENA_BOARD_PORT → 본체 athena.config.json boardPort → 4700
 // 여러 팩 — 뜰 때의 팩·세대를 기억한다. 쓰기 요청 때 지금 팩·세대와 다르면 409 stale-generation(팩을 갈아 끼운 뒤 남은 현황판이 다른 팩에 쓰지 않게)
 const BOOT_PATHS = paths(ROOT)
@@ -145,12 +150,12 @@ const section = (text, heading) => {
 const planOrigin = (path, text, rawAgent, issueField) => {
   const title = text.match(/^#\s+(.+)$/m)?.[1] ?? ''
   const agent = rawAgent.startsWith('(') ? '' : rawAgent   // "(정해지지 않음)" 같은 자리표시는 없는 것으로
-  if (/issues\/\S+\.md/.test(issueField)) return '📌 이슈 [작업 시작]'
+  if (/issues\/\S+\.md/.test(issueField)) return say('srv.origin.issue')
   // /call 이 만든 계획서 — 제목은 에이전트가 작업을 시작하며 바꾸므로 파일 이름(…-작업-pane-에서-지시)으로 본다
   if (/작업 \(pane 에서 지시\)\s*$/.test(title) || /-작업-pane-에서-지시\.md$/.test(path)) return `📞 /call ${agent}`.trim()
-  if (path.split('/').at(-2) !== 'task') return '🧭 아테나 · 정식 계획'
-  if (agent === 'athena' || agent === 'hermes') return '🧭 아테나 대화 (정비)'
-  return `🧭 아테나 대화${agent ? ` → ${agent}` : ''}`
+  if (path.split('/').at(-2) !== 'task') return say('srv.origin.formal')
+  if (agent === 'athena' || agent === 'hermes') return say('srv.origin.hermes')
+  return agent ? say('srv.origin.chatTo', { agent }) : say('srv.origin.chat')
 }
 const readPlan = (path) => {
   const text = readText(path)
@@ -178,7 +183,7 @@ const readPlan = (path) => {
     status,
     statusNote: plain(statusRaw.replace(/^(planned|in_progress|blocked|ready_for_review|done)\s*[—-]?\s*/, '')),
     column: STATUS_COLUMN[status] ?? 'plan',
-    blocked: status === 'blocked' || (blocked && !/^없음/.test(blocked)) ? blocked || '막힘' : '',
+    blocked: status === 'blocked' || (blocked && !/^없음/.test(blocked)) ? blocked || say('srv.blocked') : '',
     next,
     // Work ref · Review · 맡긴 아테나 pane — pane 을 묶는 줄(plan-bind.mjs — 스튜디오 앱도 같은 함수로 읽는다)
     ...planRefs(path, checkpoint),
@@ -616,7 +621,7 @@ const autoArchive = async (plans, issues) => {
     if (plans.some((plan) => plan.issue === issue.id && !archived.has(plan.id))) continue
     if (issue.agent) {
       const removed = await removeIssueWorktree(issue.id, issue.agent)
-      if (removed.error && !removed.error.startsWith('지울 워크트리가 없어요')) notes.push(`${issue.id}: ${removed.error}`)
+      if (removed.error && !removed.missing) notes.push(`${issue.id}: ${removed.error}`)
     }
     const bundle = archiveBundle(issue.id)
     if (bundle.error) { autoArchiveFailed.add(issue.id); console.log(`⚠️ 자동 보관 실패 ${issue.id}: ${bundle.error}`); continue }
@@ -1031,9 +1036,9 @@ const collect = async () => {
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'
     if (plan.working && issue.column !== 'done') issue.column = 'doing'
     issue.linkedPlan.working = plan.working
-    if (plan.status === 'blocked') issue.blocked = plan.blocked || '막힘'
+    if (plan.status === 'blocked') issue.blocked = plan.blocked || say('srv.blocked')
   }
-  return { header: readHeader(), screen: available, maintenance: MAINTENANCE, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
+  return { lang: languageOf(ROOT), header: readHeader(), screen: available, maintenance: MAINTENANCE, agents: [...AGENT_NAMES].sort(), cards: [...issues, ...plans.filter((plan) => !merged.has(plan.id))], panes, subagents, worktrees }
 }
 
 // ── 서버 ────────────────────────────────────────────────────────────────
@@ -1085,20 +1090,10 @@ const refresh = (again = true) => {
 }
 
 const TOKEN = randomBytes(16).toString('hex')
-// 스튜디오 언어 — 앱이 본체 .claude/settings.local.json 의 language 에 적는 값(hooks/language.py 와 같은 곳).
-// 결정 콘솔이 UI 글자를 이 언어로 고른다. 내줄 때마다 다시 읽어 앱에서 언어를 바꾸면 새로고침에 따라온다. 없거나 모르는 값이면 한국어
-const STUDIO_LANGS = { korean: 'ko', english: 'en', japanese: 'ja', chinese: 'zh' }
-const studioLang = () => {
-  try {
-    const settings = JSON.parse(readFileSync(join(ROOT, '.claude/settings.local.json'), 'utf8'))
-    return STUDIO_LANGS[String(settings?.language ?? '').trim().toLowerCase()] ?? 'ko'
-  } catch {
-    return 'ko'
-  }
-}
 // 결정 콘솔 html 의 </head> 앞에 언어(· 토큰)를 넣는다 — 보관된 콘솔은 토큰 없이(읽기 전용)
 const withConsoleGlobals = (html, token) => {
-  const lines = [`window.ATHENA_LANG = ${JSON.stringify(studioLang())}`]
+  // 결정 콘솔이 UI 글자를 이 언어로 고른다 — 내줄 때마다 다시 읽어 앱에서 언어를 바꾸면 새로고침에 따라온다(i18n.mjs languageOf)
+  const lines = [`window.ATHENA_LANG = ${JSON.stringify(languageOf(ROOT))}`]
   if (token) lines.push(`window.ATHENA_BOARD_TOKEN = ${JSON.stringify(token)}`)
   return html.replace('</head>', `<script>${lines.join('; ')}</script>\n</head>`)
 }
@@ -1112,6 +1107,8 @@ const PAGE_CONFIG = JSON.stringify({
 const FAVICON = readFileSync(join(ROOT, 'scripts/board/favicon.png'))
 const page = readFileSync(join(ROOT, 'scripts/board/index.html'), 'utf8').replace('__BOARD_TOKEN__', TOKEN).replace('__BOARD_BOOT__', BOOT)
   .replace('__BOARD_CONFIG__', () => PAGE_CONFIG)
+// 페이지를 줄 때마다 지금 언어 사전을 넣는다 — 빠진 말은 한국어 사전(fallback)으로
+const pageFor = (lang) => page.replace('__BOARD_I18N__', () => JSON.stringify({ lang, dict: DICTIONARIES[lang] ?? {}, fallback: DICTIONARIES.ko }).replace(/</g, '\\u003c'))
 
 // ── 쓰기: 카드 이동 ──────────────────────────────────────────────────────
 const PLAN_STATUS_OF = { plan: 'planned', doing: 'in_progress', review: 'ready_for_review', done: 'done' }
@@ -1136,9 +1133,9 @@ const moveCard = (id, column) => {
   if (id.startsWith('issues/')) {
     const path = safePath(id, 'issues')
     const status = ISSUE_STATUS_OF[column]
-    if (!path || !status) return '이슈를 찾지 못했거나 옮길 칸이 올바르지 않아요'
+    if (!path || !status) return say('srv.err.issueMove')
     const text = readFileSync(path, 'utf8')
-    if (!/^status:.*$/m.test(text)) return '이슈 파일에 status 줄이 없어요'
+    if (!/^status:.*$/m.test(text)) return say('srv.err.issueNoStatus')
     writeFileSync(path, text.replace(/^status:.*$/m, `status: ${status}`))
     return null
   }
@@ -1148,15 +1145,15 @@ const moveCard = (id, column) => {
 // 계획서 Status 를 바꾼다 — note 가 있으면 뒤 설명을 그걸로 바꾸고, 없으면 상태 값만 바꾸고 설명은 둔다
 const setPlanStatus = (id, status, note = '', doneMark = '', reopen = false) => {
   const path = safePath(id, 'plans')
-  if (!path || !status) return '계획서를 찾지 못했거나 옮길 칸이 올바르지 않아요'
-  if (path.includes('/archive/')) return '보관(archive)된 계획서는 옮길 수 없어요'
+  if (!path || !status) return say('srv.err.planMove')
+  if (path.includes('/archive/')) return say('srv.err.planArchived')
   // 다른 스크립트(commit.sh·ship.sh 등)가 같은 계획서를 고치는 중일 수 있다 — 잠금 안에서 지금 내용을 읽어 Status·Updated 줄만 바꾼다(scripts/lib/plan-update.mjs)
   try {
     return withPlanLock(path, () => {
       const text = readFileSync(path, 'utf8')
       const oldStatus = text.match(/^- Status:.*$/m)?.[0]
       const oldUpdated = text.match(/^- Updated:.*$/m)?.[0]
-      if (!oldStatus) return '계획서 Checkpoint 에 Status 줄이 없어요'
+      if (!oldStatus) return say('srv.err.planNoStatus')
       // 상태 값만 바꾸고 뒤의 설명은 둔다
       const STATUS_TOKEN = /(planned|in_progress|blocked|ready_for_review|done)/
       const replaced = STATUS_TOKEN.test(oldStatus) ? oldStatus.replace(STATUS_TOKEN, status) : oldStatus.replace(/^- Status:\s*/, `- Status: ${status} — `)
@@ -1185,7 +1182,7 @@ const setPlanStatus = (id, status, note = '', doneMark = '', reopen = false) => 
       return null
     })
   } catch (error) {
-    return `계획서를 고치지 못했어요 — ${error.message}`
+    return say('srv.err.planWrite', { error: error.message })
   }
 }
 
@@ -1194,9 +1191,9 @@ const sendToPane = async (paneId, text) => {
   const panes = snapshot?.panes ?? []
   // 'hermes' 또는 보낼 수 없는 pane(현황판 pane 등)을 주면 떠 있는 아테나 pane 으로
   const target = panes.find((pane) => pane.id === paneId && pane.role !== 'other') ?? (paneId === 'hermes' || paneId.startsWith('hermes:') ? panes.find((pane) => pane.role === 'hermes') : null)
-  if (!target) return '보낼 pane 을 찾지 못했어요 (아테나·에이전트 pane 에만 보낼 수 있어요)'
+  if (!target) return say('srv.err.noPane')
   const oneLine = text.replace(/\s*\n\s*/g, ' ').trim()
-  if (!oneLine || oneLine.length > 2000) return '지시문이 비어 있거나 너무 길어요'
+  if (!oneLine || oneLine.length > 2000) return say('srv.err.badPrompt')
   // 질문 · 고르기 창이 떠 있으면 바로 넣지 않고 닫힌 뒤에(GitHub #100 — pane-delivery.mjs)
   const result = await delivery.submit(target.id, oneLine)
   if (result === 'sent') return null
@@ -1251,10 +1248,10 @@ const staleConsole = (plan, sentIds) => {
 // 하던 대화 한가운데에 다른 이슈가 섞이지 않게 — 이슈 하나에 세션 하나. 자리는 아테나 pane 옆(없으면 현황판 pane 옆)
 const openHermesPane = async (issueId, text) => {
   const issuePath = safePath(issueId, 'issues')
-  if (!issuePath) return { error: '이슈 파일을 찾지 못했어요' }
+  if (!issuePath) return { error: say('srv.err.noIssue') }
   const prompt = text.trim()
-  if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
-  // 아테나를 켤 도구 — 주 도구 기록(.athena-main-tool.json)과 설치 · 로그인 상태로(위임 · 가이드 메뉴와 같은 dispatch-engine · 기록이 없으면 Claude 먼저 · 검수 묶음 2 #18).
+  if (!prompt || prompt.length > 4000) return { error: say('srv.err.badPrompt') }
+  // 아테나를 켤 도구 — 주 도구 기록(.athena-main-tool.json)과 설치 · 로그인 상태로(위임과 같은 dispatch-engine · 기록이 없으면 Claude 먼저 · 검수 묶음 2 #18).
   // 둘 다 준비 안 됐다고 보이면 예전처럼 claude 로 띄운다(pane 안에서 로그인 안내가 뜬다)
   const engine = await dispatchEngine(ROOT).catch(() => 'claude')
   const base = (snapshot?.panes ?? []).find((pane) => pane.role === 'hermes')
@@ -1263,7 +1260,7 @@ const openHermesPane = async (issueId, text) => {
   try {
     pane = out.pane.id
   } catch {
-    return { error: `새 pane 을 열지 못했어요 (${screenName()} pane split)` }
+    return { error: say('srv.err.split', { screen: screenName() }) }
   }
   const issue = readIssue(issuePath)
   const paneName = paneNameOf(issue?.title ?? basename(issueId, '.md'), repoLabelOfValue(config, issue?.repo))
@@ -1280,7 +1277,7 @@ const openHermesPane = async (issueId, text) => {
     engine === 'codex' ? `python3 '${join(ROOT, 'scripts/codex-session.py')}' --no-daemon "$(cat '${promptFile}')"` : `claude "$(cat '${promptFile}')"`,
   ].join('\n') + '\n', { mode: 0o755 })
   // pane run 은 한 줄로 친다 — 경로를 셸 작은따옴표로 감싼다(TMPDIR 에 띄어쓰기가 있어도 · 경로에 ' 는 없다)
-  if ((await screen(['pane', 'run', pane, `'${runner}'`])) === null) return { error: `pane ${pane} 에서 아테나를 실행하지 못했어요` }
+  if ((await screen(['pane', 'run', pane, `'${runner}'`])) === null) return { error: say('srv.err.run', { pane }) }
   return { pane }
 }
 
@@ -1316,12 +1313,8 @@ const handoffs = createHandoffWatch({
 // 담당 에이전트를 레포 workspace 에 띄운다 — delegate.sh 가 workspace 찾기·pane 이름·임시 파일을 다 한다
 // 디스패치는 몇 초~수십 초 걸린다 — 작업 번호를 바로 돌려주고, 단계마다 SSE(event: job)로 진행을 밀어 준다
 const jobs = new Map()
-const STEPS = [
-  ['fetch', '운영 ref fetch'],
-  ['worktree', '이슈 워크트리'],
-  ['plan', '경량 계획서'],
-  ['pane', '에이전트 pane'],
-]
+// 맡기기 단계 — 이름은 맡길 때 화면 언어로(srv.step.<key>)
+const STEPS = ['fetch', 'worktree', 'plan', 'pane']
 const pushJob = (job) => {
   const payload = `event: job\ndata: ${JSON.stringify(job)}\n\n`
   for (const client of clients) client.write(payload)
@@ -1338,12 +1331,12 @@ const dispatchAgent = async (issueId, agent, text, job) => {
     step(key, 'error', message)
     return { error: message }
   }
-  if (!AGENT_NAMES.has(agent)) return fail('fetch', `${agent} 라는 에이전트가 없어요`)
+  if (!AGENT_NAMES.has(agent)) return fail('fetch', say('srv.err.noAgent', { agent }))
   const prompt = text.trim()
-  if (!prompt || prompt.length > 4000) return fail('fetch', '지시문이 비어 있거나 너무 길어요')
-  if (!safePath(issueId, 'issues')) return fail('fetch', '이슈 파일을 찾지 못했어요')
+  if (!prompt || prompt.length > 4000) return fail('fetch', say('srv.err.badPrompt'))
+  if (!safePath(issueId, 'issues')) return fail('fetch', say('srv.err.noIssue'))
   const worktree = issueWorktree(issueId, agent)
-  if (!worktree) return fail('fetch', `${agent} 의 담당 레포를 athena.config.json 에서 찾지 못했어요`)
+  if (!worktree) return fail('fetch', say('srv.err.noRepo', { agent }))
   const repoDir = join(ROOT, 'repos', worktree.repo)
   let note = ''
   if (!existsSync(worktree.path)) {
@@ -1357,12 +1350,12 @@ const dispatchAgent = async (issueId, agent, text, job) => {
       fetched = await run('git', ['-C', repoDir, '-c', 'url.https://github.com/.insteadOf=git@github.com:', 'fetch', '--quiet', 'origin', worktree.branch], quiet)
     }
     if (fetched === null) note = ' (fetch 실패 — 로컬 ref 로 만들었다)'
-    step('fetch', fetched === null ? 'warn' : 'done', fetched === null ? 'ssh·https 모두 실패해서 로컬 ref 로 진행해요' : `origin/${worktree.branch} (${via})`)
+    step('fetch', fetched === null ? 'warn' : 'done', fetched === null ? say('srv.step.fetchFailed') : `origin/${worktree.branch} (${via})`)
     step('worktree', 'running', worktree.rel)
     const added = await run('git', ['-C', repoDir, 'worktree', 'add', '--detach', worktree.path, `origin/${worktree.branch}`], { timeout: 120_000 })
-    if (added === null) return fail('worktree', `워크트리를 만들지 못했어요: ${worktree.rel} ← origin/${worktree.branch}`)
+    if (added === null) return fail('worktree', say('srv.err.worktree', { rel: worktree.rel, ref: `origin/${worktree.branch}` }))
   } else {
-    step('fetch', 'skip', '워크트리가 이미 있어서 건너뛰었어요')
+    step('fetch', 'skip', say('srv.step.worktreeExists'))
   }
   const sha = (await run('git', ['-C', worktree.path, 'rev-parse', '--short', 'HEAD']))?.trim() ?? '?'
   step('worktree', 'done', `${worktree.rel} @ ${sha}`)
@@ -1379,14 +1372,14 @@ const dispatchAgent = async (issueId, agent, text, job) => {
     // --no-pane-name — 현황판을 띄운 pane(아테나일 수 있다) 이름을 이 이슈로 바꾸지 않게
     plan = ((await run('node', [join(ROOT, 'scripts/new-plan.mjs'), '--agent', agent, '--summary', title, '--issue', issueId, '--prompt-file', promptPath, '--no-pane-name'], { cwd: ROOT })) ?? '').trim()
     rmSync(promptPath, { force: true })
-    if (!plan) return fail('plan', '경량 계획서를 만들지 못했어요')
+    if (!plan) return fail('plan', say('srv.err.noPlanMade'))
     const withPlan = /^plan:.*$/m.test(issueText) ? issueText.replace(/^plan:.*$/m, `plan: ${plan}`) : issueText.replace(/^(status:.*)$/m, `$1\nplan: ${plan}`)
     writeFileSync(join(ROOT, issueId), withPlan)
   }
   step('plan', 'done', plan)
   step('pane', 'running', `${worktree.repo} workspace`)
   const out = await run(join(ROOT, 'scripts/delegate.sh'), [agent, header + prompt, '--cwd', worktree.path, '--plan', plan], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return fail('pane', `에이전트를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요`)
+  if (out === null) return fail('pane', say('srv.err.agentPane', { screen: screenName() }))
   const pane = out.trim().split('\n').pop()
   step('pane', 'done', pane.split(' ')[0])
   // 맡겼으면 카드도 진행 중으로 — open·planned 일 때만 (이미 더 간 상태는 건드리지 않는다)
@@ -1398,23 +1391,23 @@ const dispatchAgent = async (issueId, agent, text, job) => {
 // 리뷰 요청 — 아테나 pane 을 거치지 않고 reviewer 를 바로 띄운다.
 // 어느 레포 workspace·어느 워크트리에 띄울지는 delegate.sh 가 계획서의 Agent·Work ref 를 보고 정한다
 const dispatchReview = async (planId, text) => {
-  if (!safePath(planId, 'plans') || !planId.endsWith('.md')) return { error: '계획서를 찾지 못했어요' }
+  if (!safePath(planId, 'plans') || !planId.endsWith('.md')) return { error: say('srv.err.noPlan') }
   const prompt = text.trim()
-  if (!prompt || prompt.length > 4000) return { error: '지시문이 비어 있거나 너무 길어요' }
+  if (!prompt || prompt.length > 4000) return { error: say('srv.err.badPrompt') }
   const out = await run(join(ROOT, 'scripts/delegate.sh'), ['reviewer', prompt, '--plan', planId], { cwd: ROOT, timeout: 30_000 })
-  if (out === null) return { error: `reviewer 를 띄우지 못했어요 — ${screenName()} 안에서 현황판을 띄웠는지 확인해 주세요` }
+  if (out === null) return { error: say('srv.err.reviewerPane', { screen: screenName() }) }
   return { pane: out.trim().split('\n').pop() }
 }
 
 // 이슈 워크트리 — 미커밋 · push 안 된 커밋만 본다(옛 판정 그대로 · 지우기는 계획서 워크트리와 같은 함수 — worktree-cleanup.mjs)
 const removeIssueWorktree = async (issueId, agent) => {
   const worktree = issueWorktree(issueId, agent)
-  if (!worktree || !existsSync(worktree.path)) return { error: '지울 워크트리가 없어요' }
+  if (!worktree || !existsSync(worktree.path)) return { error: say('srv.err.noWorktree'), missing: true }
   const result = await cleanupWorktree({ path: worktree.path })
-  if (result.state === 'missing') return { error: '지울 워크트리가 없어요' }
+  if (result.state === 'missing') return { error: say('srv.err.noWorktree'), missing: true }
   if (result.state === 'removed') return { removed: worktree.rel }
-  if (result.reason.startsWith('커밋하지 않은')) return { error: `${result.reason} — 직접 확인해 주세요` }
-  if (result.reason.startsWith('push 하지 않은')) return { error: `${result.reason} — 그 pane 에서 "PR 올려줘"(ship.sh)로 올리거나 직접 확인해 주세요` }
+  if (result.reason.startsWith('커밋하지 않은')) return { error: say('srv.err.uncommitted', { reason: result.reason }) }
+  if (result.reason.startsWith('push 하지 않은')) return { error: say('srv.err.unpushed', { reason: result.reason }) }
   return { error: result.reason }
 }
 
@@ -1434,13 +1427,13 @@ const archiveCard = async (id) => {
   let lastBundle = null
   if (id.startsWith('issues/')) {
     const path = safePath(id, 'issues')
-    if (!path || basename(path) === 'README.md') return { error: '이슈 파일을 찾지 못했어요' }
+    if (!path || basename(path) === 'README.md') return { error: say('srv.err.noIssue') }
     const text = readFileSync(path, 'utf8')
     const agent = text.match(/^agent:\s*(\S+)/m)?.[1] || agentForRepo(text.match(/^repo:\s*(\S+)/m)?.[1] || '')
     if (agent) {
       const removed = await removeIssueWorktree(id, agent)
-      if (removed.removed) moved.push(`워크트리 ${removed.removed} 정리`)
-      else if (removed.error && !removed.error.startsWith('지울 워크트리가 없어요')) notes.push(removed.error)
+      if (removed.removed) moved.push(say('srv.moved.worktree', { rel: removed.removed }))
+      else if (removed.error && !removed.missing) notes.push(removed.error)
     }
     // 연결된 계획서와 한 폴더로 묶어 보관한다(archive.mjs) — 이슈 plan: 은 새 위치로 고쳐진다
     const bundle = archiveBundle(id)
@@ -1449,7 +1442,7 @@ const archiveCard = async (id) => {
     moved.push(...bundle.moved)
   } else {
     const path = safePath(id, 'plans')
-    if (!path) return { error: '계획서를 찾지 못했어요' }
+    if (!path) return { error: say('srv.err.noPlan') }
     const bundle = archiveBundle(id)
     if (bundle.error) return { error: bundle.error }
     lastBundle = bundle
@@ -1457,8 +1450,8 @@ const archiveCard = async (id) => {
   }
   // 보관한 것만 로컬 커밋(push 는 아테나)
   const committed = commitArchive([lastBundle])
-  if (committed.sha) moved.push(`커밋 ${committed.sha}`)
-  if (committed.error) notes.push(`커밋하지 못했어요 — ${committed.error}`)
+  if (committed.sha) moved.push(say('srv.moved.commit', { sha: committed.sha }))
+  if (committed.error) notes.push(say('srv.err.commit', { error: committed.error }))
   if (committed.note) notes.push(committed.note)
   return { moved: moved.filter(Boolean), notes }
 }
@@ -1468,14 +1461,14 @@ const deleteCard = async (id) => {
   const notes = []
   if (id.startsWith('issues/')) {
     const path = safePath(id, 'issues')
-    if (!path || basename(path) === 'README.md') return { error: '이슈 파일을 찾지 못했어요' }
+    if (!path || basename(path) === 'README.md') return { error: say('srv.err.noIssue') }
     const text = readFileSync(path, 'utf8')
     const agent = text.match(/^agent:\s*(\S+)/m)?.[1] || agentForRepo(text.match(/^repo:\s*(\S+)/m)?.[1] || '')
     // 워크트리 — 커밋 안 된 변경이 있으면 남긴다
     if (agent) {
       const removed = await removeIssueWorktree(id, agent)
-      if (removed.removed) moved.push(`워크트리 ${removed.removed} 정리`)
-      else if (removed.error && !removed.error.startsWith('지울 워크트리가 없어요')) notes.push(removed.error)
+      if (removed.removed) moved.push(say('srv.moved.worktree', { rel: removed.removed }))
+      else if (removed.error && !removed.missing) notes.push(removed.error)
     }
     // 연결된 경량 계획서만 같이 — 정식 계획서는 다른 작업과 묶여 있을 수 있어 두지 않는다
     const plan = text.match(/^plan:\s*(plans\/task\/\S+\.md)/m)?.[1]
@@ -1483,7 +1476,7 @@ const deleteCard = async (id) => {
     moved.push(toTrash(id))
   } else {
     const path = safePath(id, 'plans')
-    if (!path) return { error: '계획서를 찾지 못했어요' }
+    if (!path) return { error: say('srv.err.noPlan') }
     moved.push(toTrash(id))
     const html = id.replace(/\.md$/, '.html')
     if (existsSync(join(ROOT, html))) moved.push(toTrash(html))
@@ -1547,7 +1540,7 @@ const handleRequest = async (request, response) => {
     const dir = id.startsWith('issues/') ? 'issues' : 'plans'
     const path = safePath(id, dir)
     response.writeHead(path ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' })
-    if (!path) return response.end(JSON.stringify({ error: '파일을 찾지 못했어요' }))
+    if (!path) return response.end(JSON.stringify({ error: say('srv.err.noFile') }))
     const text = readFileSync(path, 'utf8')
     let plan = null
     if (dir === 'issues') {
@@ -1568,7 +1561,7 @@ const handleRequest = async (request, response) => {
   if (url.pathname === '/api/history/item') {
     const item = readHistoryItem(String(url.searchParams.get('dir') ?? ''))
     response.writeHead(item ? 200 : 404, { 'Content-Type': 'application/json; charset=utf-8' })
-    return response.end(JSON.stringify(item ?? { error: '보관된 일을 찾지 못했어요' }))
+    return response.end(JSON.stringify(item ?? { error: say('srv.err.noHistory') }))
   }
   // 지표 — 사건 기록(state/events.jsonl)을 계획서마다 묶은 숫자(scripts/lib/metrics.mjs). 누를 때만 읽는다
   if (url.pathname === '/api/metrics') {
@@ -1617,22 +1610,22 @@ const handleRequest = async (request, response) => {
       response.writeHead(code, { 'Content-Type': 'application/json; charset=utf-8' })
       response.end(JSON.stringify(body))
     }
-    if (!allowed(request)) return reply(403, { error: '허용되지 않은 요청이에요 (토큰·Origin 확인)' })
+    if (!allowed(request)) return reply(403, { error: say('srv.err.forbidden') })
     const body = await readBody(request)
-    if (!body) return reply(400, { error: '요청 형식이 올바르지 않아요' })
+    if (!body) return reply(400, { error: say('srv.err.badRequest') })
     // 끄기 — 스튜디오가 팩을 갈아 끼우기 전에(같은 출처 + 토큰 + JSON). 세대가 달라도 끌 수는 있다
     if (url.pathname === '/api/shutdown') {
       reply(200, { ok: true })
       setTimeout(() => shutdown(0), 50)
       return
     }
-    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: '팩을 갈아 끼웠어요 — 현황판을 다시 띄워 주세요' })
+    if (staleGeneration()) return reply(409, { error: 'stale-generation', message: say('srv.err.stale') })
     if (url.pathname === '/api/dispatch') {
       // 바로 작업 번호를 돌려주고 뒤에서 돈다 — 진행은 SSE event: job
-      const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map(([key, label]) => ({ key, label, state: 'wait' })) }
+      const job = { id: randomBytes(4).toString('hex'), issue: String(body.id ?? ''), agent: String(body.agent ?? ''), state: 'running', steps: STEPS.map((key) => ({ key, label: say(`srv.step.${key}`), state: 'wait' })) }
       jobs.set(job.id, job)
       dispatchAgent(job.issue, job.agent, String(body.text ?? ''), job)
-        .catch((error) => ({ error: `처리 중 오류 — ${error.message}` }))
+        .catch((error) => ({ error: say('srv.err.during', { error: error.message }) }))
         .then(async (result) => {
           Object.assign(job, result.error ? { state: 'error', error: result.error } : { state: 'done', result })
           pushJob(job)
@@ -1650,7 +1643,7 @@ const handleRequest = async (request, response) => {
       try {
         result = action()
       } catch (error) {
-        return reply(500, { error: `학습 처리 중 오류: ${error.message}` })
+        return reply(500, { error: say('srv.err.learn', { error: error.message }) })
       }
       return reply(result.error ? 400 : 200, result)
     }
@@ -1679,7 +1672,7 @@ const handleRequest = async (request, response) => {
       return reply(200, { ok: true, ...result })
     }
     // 낡은 결정 콘솔 — 답을 적지도(요청을 닫지도) pane 에 넣지도 않는다. 콘솔이 stale 을 보고 새로 고치라고 알린다
-    if (url.pathname === '/api/action' && staleConsole(String(body.plan ?? ''), body.decisions)) return reply(409, { error: '계획서가 바뀌었어요 — 새로 고쳐 주세요', stale: true })
+    if (url.pathname === '/api/action' && staleConsole(String(body.plan ?? ''), body.decisions)) return reply(409, { error: say('srv.err.planChanged'), stale: true })
     const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? '')) : ''
     const outcome = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
     if (typeof outcome === 'string') return reply(400, { error: outcome })
@@ -1714,7 +1707,7 @@ const handleRequest = async (request, response) => {
     }
   }
   response.writeHead(url.pathname === '/' ? 200 : 404, { 'Content-Type': 'text/html; charset=utf-8' })
-  response.end(url.pathname === '/' ? page : 'not found')
+  response.end(url.pathname === '/' ? pageFor(languageOf(ROOT)) : 'not found')
 }
 
 // 쓰기 토큰 파일 — 여러 팩이면 <팩 데이터>/state/board-token(권한 600). 스튜디오는 bin/athena pack board-token --json 으로 받는다
@@ -1740,7 +1733,7 @@ createServer((request, response) => {
   handleRequest(request, response).catch((error) => {
     console.error(`⚠️ ${request.method} ${request.url} 처리 실패: ${error.message}`)
     if (!response.headersSent) response.writeHead(500, { 'Content-Type': 'application/json; charset=utf-8' })
-    if (!response.writableEnded) response.end(JSON.stringify({ error: `처리하지 못했어요 — ${error.message}` }))
+    if (!response.writableEnded) response.end(JSON.stringify({ error: say('srv.err.failed', { error: error.message }) }))
   })
 }).listen(PORT, '127.0.0.1', async () => {
   writeTokenFile()

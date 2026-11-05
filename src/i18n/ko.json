@@ -249,6 +249,7 @@
   "pane.resizeHint": "끌어서 크기 바꾸기 · 더블클릭하면 반반",
   "pane.sizeOldDaemon": "지금 데몬이 예전 버전이라 이 크기는 앱을 다시 켜면 돌아갑니다 — [보기 → 작업 창 데몬 다시 띄우기] 뒤로는 저장됩니다",
   "pane.sizeSaveFailed": "크기를 저장하지 못했습니다: {message}",
+  "pane.badRatio": "잘못된 경계 값",
   "pane.splitFailed": "나누지 못했습니다: {message}",
   "screen.disconnected": "작업 창 데몬과 연결이 끊겼습니다 — pane 을 누르고 아무 키나 누르면 다시 붙습니다(메뉴 [보기 → 작업 창 다시 붙기])",
   "side.label": "오른쪽 패널",
@@ -720,5 +721,6 @@
   "work.approval.originalAllow": "허용",
   "work.approval.originalAlways": "항상 허용",
   "work.approval.originalCancel": "취소",
-  "work.approval.source": "Codex · {pane} · 세션 {thread}"
+  "work.approval.source": "Codex · {pane} · 세션 {thread}",
+  "ipc.noWindow": "앱 화면에서만 부를 수 있어요"
 }

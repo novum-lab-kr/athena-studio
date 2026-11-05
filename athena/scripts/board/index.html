@@ -360,7 +360,19 @@
   .metric-tiles { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
   /* 좁은 칸은 숫자를 모두 한 줄에(검증 3개 · 개입 · 정확도 2개) */
   .metric-group:not(.wide) .metric-tiles { grid-template-columns: none; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
-  #metrics-since { flex: none; width: auto; }
+  /* 시작 날짜 — 기본 날짜 칸은 브라우저 · OS 언어로 그려져 직접 그린 달력(앱 언어) */
+  .date-pick { position: relative; flex: none; }
+  #metrics-since-button { font: inherit; font-size: 13px; padding: 5px 9px; border: 1px solid var(--line); border-radius: 7px; background: var(--panel); color: var(--text); cursor: pointer; }
+  #metrics-since-button.empty { color: var(--muted); }
+  .calendar { position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; width: 252px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); box-shadow: 0 8px 24px rgba(0, 0, 0, .25); }
+  .calendar-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 13px; }
+  .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; text-align: center; font-size: 12px; }
+  .calendar .weekday { color: var(--muted); padding: 4px 0; }
+  .calendar button { font: inherit; border: 0; border-radius: 6px; background: none; color: var(--text); padding: 5px 0; cursor: pointer; }
+  .calendar-head button { padding: 2px 10px; font-size: 15px; }
+  .calendar button:hover { background: var(--line); }
+  .calendar button.today { outline: 1px solid var(--accent); }
+  .calendar button.picked { background: var(--accent); color: #fff; }
   .metric-group.wide { grid-column: 1 / -1; }
   /* 넓은 칸(소요 · 구간 · 작업 안쪽)은 같은 5열 — 칸마다 숫자 위치가 위아래로 맞는다(구간 · 작업 안쪽이 5개) */
   .metric-group.wide .metric-tiles { grid-template-columns: repeat(5, minmax(0, 1fr)); }
@@ -448,120 +460,120 @@
 </head>
 <body>
 <header>
-  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span>현황판
+  <h1 class="live" tabindex="0"><span id="live-dot" class="dot"></span><span data-i18n="page.title">현황판</span>
     <span class="tip" role="tooltip"><span id="live-state"></span><span id="updated"></span><span id="sync"></span></span></h1>
-  <nav class="tabs" role="tablist" aria-label="보기">
-    <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작">이슈</button>
-    <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 개인 메모리(Claude · Codex)">학습</button>
-    <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일">아카이브</button>
-    <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)">지표</button>
+  <nav class="tabs" role="tablist" aria-label="보기" data-i18n-aria="tabs.label">
+    <button type="button" role="tab" id="tab-now" data-tab="now" aria-selected="true" title="해결할 이슈 — 골라서 작업 시작" data-i18n-title="tab.now.title" data-i18n="tab.now">이슈</button>
+    <button type="button" role="tab" id="tab-learn" data-tab="learn" aria-selected="false" title="아테나 학습(레포 함정 공책) · 개인 메모리(Claude · Codex)" data-i18n-title="tab.learn.title" data-i18n="tab.learn">학습</button>
+    <button type="button" role="tab" id="tab-history" data-tab="history" aria-selected="false" title="끝나서 보관한 일" data-i18n-title="tab.history.title" data-i18n="tab.history">아카이브</button>
+    <button type="button" role="tab" id="tab-metrics" data-tab="metrics" aria-selected="false" title="완료 · 소요 · 질문 · 검증 · 리뷰 (state/events.jsonl)" data-i18n-title="tab.metrics.title" data-i18n="tab.metrics">지표</button>
   </nav>
-  <span class="live-note" id="live-text">연결 중…</span>
+  <span class="live-note" id="live-text" data-i18n="live.connecting">연결 중…</span>
   <div class="usage" id="usage" hidden></div>
-  <button type="button" class="theme-toggle" id="theme-toggle" title="다크 · 라이트 모드" aria-label="다크 · 라이트 모드">
+  <button type="button" class="theme-toggle" id="theme-toggle" title="다크 · 라이트 모드" aria-label="다크 · 라이트 모드" data-i18n-title="theme.toggle" data-i18n-aria="theme.toggle">
     <svg class="moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></svg>
     <svg class="sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></svg>
   </button>
 </header>
 <main id="view-now">
   <section>
-    <h2 class="issue-head">해결할 이슈 <span class="count" id="issue-count"></span></h2>
+    <h2 class="issue-head"><span data-i18n="issues.heading">해결할 이슈</span> <span class="count" id="issue-count"></span></h2>
     <div id="issues" class="issue-list"></div>
   </section>
 </main>
 
 <main id="view-history" hidden>
   <section>
-    <h2>아카이브 — 끝나서 보관한 일 (archive/, git 에 남아요)</h2>
+    <h2 data-i18n="history.heading">아카이브 — 끝나서 보관한 일 (archive/, git 에 남아요)</h2>
     <div class="history-bar">
-      <select id="history-kind" aria-label="종류"><option value="">전체</option><option value="issue">이슈</option><option value="plan">계획서만</option></select>
-      <select id="history-repo" aria-label="레포"><option value="">모든 레포</option></select>
-      <select id="history-owner" aria-label="작업자"><option value="">모든 작업자</option></select>
-      <input id="history-q" type="search" placeholder="제목·요약·레포·작업자·커밋으로 찾기" aria-label="히스토리 검색">
+      <select id="history-kind" aria-label="종류" data-i18n-aria="history.kind"><option value="" data-i18n="common.all">전체</option><option value="issue" data-i18n="history.kind.issue">이슈</option><option value="plan" data-i18n="history.kind.plan">계획서만</option></select>
+      <select id="history-repo" aria-label="레포" data-i18n-aria="history.repo"><option value="" data-i18n="history.allRepos">모든 레포</option></select>
+      <select id="history-owner" aria-label="작업자" data-i18n-aria="history.owner"><option value="" data-i18n="history.allOwners">모든 작업자</option></select>
+      <input id="history-q" type="search" placeholder="제목·요약·레포·작업자·커밋으로 찾기" aria-label="히스토리 검색" data-i18n-placeholder="history.search" data-i18n-aria="history.searchLabel">
     </div>
     <div class="history-wrap">
-      <nav class="h-tree" id="history-tree" aria-label="기간"></nav>
+      <nav class="h-tree" id="history-tree" aria-label="기간" data-i18n-aria="common.period"></nav>
       <div class="h-listbox">
         <div class="h-crumb" id="history-crumb"></div>
-        <div id="history" class="history"><div class="empty-history">불러오는 중이에요…</div></div>
+        <div id="history" class="history"><div class="empty-history" data-i18n="common.loading">불러오는 중이에요…</div></div>
       </div>
     </div>
   </section>
 </main>
 <main id="view-metrics" hidden>
   <section>
-    <div class="metric-heading"><h2>작업 지표</h2>
+    <div class="metric-heading"><h2 data-i18n="metrics.heading">작업 지표</h2>
     <div class="history-bar">
-      <select id="metrics-days" aria-label="기간"><option value="1">최근 1일</option><option value="7" selected>최근 7일</option><option value="30">최근 30일</option><option value="all">전체</option><option value="since" hidden>시작 날짜부터</option></select>
-      <input id="metrics-since" type="date" aria-label="시작 날짜">
-      <select id="metrics-review" aria-label="리뷰"><option value="">리뷰 전체</option><option value="with">리뷰 있음</option><option value="without">리뷰 없음</option></select>
+      <select id="metrics-days" aria-label="기간" data-i18n-aria="common.period"><option value="1" data-i18n="metrics.days1">최근 1일</option><option value="7" selected data-i18n="metrics.days7">최근 7일</option><option value="30" data-i18n="metrics.days30">최근 30일</option><option value="all" data-i18n="common.all">전체</option><option value="since" hidden data-i18n="metrics.since">시작 날짜부터</option></select>
+      <span class="date-pick"><input id="metrics-since" type="hidden"><button type="button" id="metrics-since-button" class="empty" aria-haspopup="dialog" aria-expanded="false" aria-label="시작 날짜" data-i18n-aria="metrics.sinceDate"></button><div id="metrics-calendar" class="calendar" role="dialog" aria-label="시작 날짜" data-i18n-aria="metrics.sinceDate" hidden></div></span>
+      <select id="metrics-review" aria-label="리뷰" data-i18n-aria="metrics.review"><option value="" data-i18n="metrics.reviewAll">리뷰 전체</option><option value="with" data-i18n="metrics.reviewWith">리뷰 있음</option><option value="without" data-i18n="metrics.reviewWithout">리뷰 없음</option></select>
     </div>
     </div>
-    <div id="metrics"><div class="empty-history">불러오는 중이에요…</div></div>
+    <div id="metrics"><div class="empty-history" data-i18n="common.loading">불러오는 중이에요…</div></div>
   </section>
 </main>
 <main id="view-learn" hidden>
   <section>
-    <div class="view-switch" role="tablist" aria-label="학습 보기">
-      <button type="button" role="tab" data-learnview="hermes" aria-selected="true">아테나 학습</button>
-      <button type="button" role="tab" data-learnview="claude" aria-selected="false">개인 메모리</button>
+    <div class="view-switch" role="tablist" aria-label="학습 보기" data-i18n-aria="learn.views">
+      <button type="button" role="tab" data-learnview="hermes" aria-selected="true" data-i18n="learn.hermes">아테나 학습</button>
+      <button type="button" role="tab" data-learnview="claude" aria-selected="false" data-i18n="memory.title">개인 메모리</button>
     </div>
     <div id="learn-view-hermes">
-    <h2>아테나 학습 — 작업하며 알게 된 <b>레포 함정</b>을 서비스별 공책(gotchas)에 넣는다. 에이전트가 작업 전에 읽고, git 으로 팀과 공유된다 (기준: docs/knowledge/common/learning.md)</h2>
-    <h3 class="learn-h">학습 후보 <span class="n" id="learn-candidate-count"></span> <span class="hint">넣을지 골라 주세요 — 넣은 것만 공책에 들어갑니다</span></h3>
+    <h2 data-i18n-html="learn.heading">아테나 학습 — 작업하며 알게 된 <b>레포 함정</b>을 서비스별 공책(gotchas)에 넣는다. 에이전트가 작업 전에 읽고, git 으로 팀과 공유된다 (기준: docs/knowledge/common/learning.md)</h2>
+    <h3 class="learn-h"><span data-i18n="learn.candidates">학습 후보</span> <span class="n" id="learn-candidate-count"></span> <span class="hint" data-i18n="learn.candidatesHint">넣을지 골라 주세요 — 넣은 것만 공책에 들어갑니다</span></h3>
     <div id="learn-jev" class="where" hidden></div>
     <div id="learn-batches" class="learn-list"></div>
-    <div id="learn-candidates" class="learn-list"><div class="empty-history">불러오는 중이에요…</div></div>
-    <h3 class="learn-h">학습한 내용 <span class="n" id="learn-learned-count"></span> <span class="hint">누르면 펼쳐지고 고치거나 지울 수 있어요</span></h3>
+    <div id="learn-candidates" class="learn-list"><div class="empty-history" data-i18n="common.loading">불러오는 중이에요…</div></div>
+    <h3 class="learn-h"><span data-i18n="learn.learned">학습한 내용</span> <span class="n" id="learn-learned-count"></span> <span class="hint" data-i18n="learn.learnedHint">누르면 펼쳐지고 고치거나 지울 수 있어요</span></h3>
     <div id="learn-learned" class="learn-list"></div>
     </div>
     <div id="learn-view-claude" hidden>
     <div class="memory-heading">
-      <div><h2>개인 메모리</h2><p class="where">대화에서 기억한 내용 · 이 컴퓨터에만 저장 · 읽기 전용</p></div>
-      <button type="button" class="btn" id="memory-guide-open" title="메모리 보는 법 — 사용자 · 피드백 · 프로젝트 · 참고 뜻">메모리 보는 법</button>
+      <div><h2 data-i18n="memory.title">개인 메모리</h2><p class="where" data-i18n="memory.where">대화에서 기억한 내용 · 이 컴퓨터에만 저장 · 읽기 전용</p></div>
+      <button type="button" class="btn" id="memory-guide-open" title="메모리 보는 법 — 사용자 · 피드백 · 프로젝트 · 참고 뜻" data-i18n-title="memory.guideTitle" data-i18n="memory.guide">메모리 보는 법</button>
     </div>
-    <div id="memory-filter" class="view-switch memory-filter" role="group" aria-label="메모리 출처">
-      <button type="button" data-memory-source="all" aria-pressed="true">전체</button>
+    <div id="memory-filter" class="view-switch memory-filter" role="group" aria-label="메모리 출처" data-i18n-aria="memory.source">
+      <button type="button" data-memory-source="all" aria-pressed="true" data-i18n="common.all">전체</button>
       <button type="button" data-memory-source="claude" aria-pressed="false">Claude</button>
       <button type="button" data-memory-source="codex" aria-pressed="false">Codex</button>
     </div>
-    <div id="memory" class="history"><div class="empty-history">불러오는 중이에요…</div></div>
+    <div id="memory" class="history"><div class="empty-history" data-i18n="common.loading">불러오는 중이에요…</div></div>
   </div>
   </section>
 </main>
 <dialog id="ask">
-  <h3 id="ask-title">아테나에게 보내기</h3>
+  <h3 id="ask-title" data-i18n="ask.title">아테나에게 보내기</h3>
   <div class="line" id="ask-to" style="font-size:12px;color:var(--muted);margin-bottom:8px"></div>
   <textarea id="ask-text"></textarea>
   <div class="line" id="ask-status" style="font-size:12px;margin-top:8px;min-height:18px"></div>
-  <div class="row"><button class="btn" id="ask-cancel">취소</button><button class="btn primary" id="ask-send">보내기</button></div>
+  <div class="row"><button class="btn" id="ask-cancel" data-i18n="common.cancel">취소</button><button class="btn primary" id="ask-send" data-i18n="ask.send">보내기</button></div>
 </dialog>
 <dialog id="confirm">
   <h3 id="confirm-title"></h3>
   <div class="line" id="confirm-message" style="font-size:13px;margin-bottom:6px"></div>
   <div class="steps" id="confirm-items"></div>
-  <div class="row"><button class="btn" id="confirm-no">취소</button><button class="btn primary" id="confirm-yes"></button></div>
+  <div class="row"><button class="btn" id="confirm-no" data-i18n="common.cancel">취소</button><button class="btn primary" id="confirm-yes"></button></div>
 </dialog>
 <dialog id="memory-guide" class="tc-guide" aria-labelledby="memory-guide-title">
-  <button type="button" class="dialog-x" id="memory-guide-close" aria-label="닫기" title="닫기 (Esc)">×</button>
-  <h3 id="memory-guide-title" tabindex="-1" autofocus>📖 메모리 보는 법</h3>
+  <button type="button" class="dialog-x" id="memory-guide-close" aria-label="닫기" title="닫기 (Esc)" data-i18n-aria="common.close" data-i18n-title="common.closeEsc">×</button>
+  <h3 id="memory-guide-title" tabindex="-1" autofocus data-i18n="memory.guideHeading">📖 메모리 보는 법</h3>
   <div class="body">
-    <div><h4>Claude 메모리 종류 — 무엇을 기억해 두었나</h4><dl>
-      <dt><span class="pill mem-user">👤 사용자</span></dt><dd>사용자에 대한 것 — 역할, 잘 아는 분야, 쓰는 도구, 선호하는 방식</dd>
-      <dt><span class="pill mem-feedback">💬 피드백</span></dt><dd>사용자가 일하는 방식을 바로잡거나 "이렇게 해" 하고 확인해 준 것. 이유와 적용 방법을 같이 적는다</dd>
-      <dt><span class="pill mem-project">📁 프로젝트</span></dt><dd>코드·git 기록에 남지 않는 목표·제약·기한</dd>
-      <dt><span class="pill mem-reference">🔗 참고</span></dt><dd>외부 자료 위치 — URL, 대시보드, 티켓</dd>
+    <div><h4 data-i18n="memory.guide.kinds">Claude 메모리 종류 — 무엇을 기억해 두었나</h4><dl>
+      <dt><span class="pill mem-user" data-i18n="memory.type.user">👤 사용자</span></dt><dd data-i18n="memory.guide.user">사용자에 대한 것 — 역할, 잘 아는 분야, 쓰는 도구, 선호하는 방식</dd>
+      <dt><span class="pill mem-feedback" data-i18n="memory.type.feedback">💬 피드백</span></dt><dd data-i18n="memory.guide.feedback">사용자가 일하는 방식을 바로잡거나 "이렇게 해" 하고 확인해 준 것. 이유와 적용 방법을 같이 적는다</dd>
+      <dt><span class="pill mem-project" data-i18n="memory.type.project">📁 프로젝트</span></dt><dd data-i18n="memory.guide.project">코드·git 기록에 남지 않는 목표·제약·기한</dd>
+      <dt><span class="pill mem-reference" data-i18n="memory.type.reference">🔗 참고</span></dt><dd data-i18n="memory.guide.reference">외부 자료 위치 — URL, 대시보드, 티켓</dd>
     </dl></div>
-    <div><h4>어디에 있나</h4><dl>
-      <dt>위치</dt><dd>레포 밖 내 홈 폴더(제목 옆 경로). git 에 올라가지 않아 나만 본다</dd>
-      <dt>다른 사람</dt><dd>레포를 클론해 쓰면 그 사람의 메모리가 따로 쌓인다</dd>
-      <dt>목차</dt><dd>MEMORY.md — 새 대화마다 아테나가 읽는다. 목록 순서·제목은 목차를 따른다</dd>
+    <div><h4 data-i18n="memory.guide.where">어디에 있나</h4><dl>
+      <dt data-i18n="memory.guide.place">위치</dt><dd data-i18n="memory.guide.placeText">레포 밖 내 홈 폴더(제목 옆 경로). git 에 올라가지 않아 나만 본다</dd>
+      <dt data-i18n="memory.guide.others">다른 사람</dt><dd data-i18n="memory.guide.othersText">레포를 클론해 쓰면 그 사람의 메모리가 따로 쌓인다</dd>
+      <dt data-i18n="memory.guide.index">목차</dt><dd data-i18n="memory.guide.indexText">MEMORY.md — 새 대화마다 아테나가 읽는다. 목록 순서·제목은 목차를 따른다</dd>
     </dl></div>
-    <p class="note">진행 중인 작업·브랜치·구현 결정은 메모리에 남기지 않는다 — 계획서·knowledge 가 맡는다(AGENTS.md 2.5). 행을 누르면 본문이 열린다</p>
+    <p class="note" data-i18n="memory.guide.note">진행 중인 작업·브랜치·구현 결정은 메모리에 남기지 않는다 — 계획서·knowledge 가 맡는다(AGENTS.md 2.5). 행을 누르면 본문이 열린다</p>
   </div>
 </dialog>
 <dialog id="detail">
-  <button type="button" class="dialog-x" id="detail-close" aria-label="닫기" title="닫기 (Esc)">×</button>
+  <button type="button" class="dialog-x" id="detail-close" aria-label="닫기" title="닫기 (Esc)" data-i18n-aria="common.close" data-i18n-title="common.closeEsc">×</button>
   <h3 id="detail-title" tabindex="-1" autofocus></h3>
   <div class="line" id="detail-meta" style="font-size:12px;color:var(--muted)"></div>
   <div class="body" id="detail-body"></div>
@@ -572,31 +584,43 @@
   const BOOT = '__BOARD_BOOT__';
   // 회사 값(GitHub 조직 · 에이전트 목록) — 서버가 설정에서 채운다
   const ATHENA = __BOARD_CONFIG__;
+  // 화면 문구 — 서버가 앱 언어(본체 .claude/settings.local.json language)의 사전을 채운다(i18n.mjs · i18n/<언어>.json)
+  const I18N = __BOARD_I18N__;
+  const t = (key, values = {}) => String(I18N.dict[key] ?? I18N.fallback[key] ?? key).replace(/\{(\w+)\}/g, (match, name) => (name in values ? String(values[name]) : match));
+  const LOCALE = { ko: 'ko-KR', en: 'en-US', ja: 'ja-JP', zh: 'zh-CN' }[I18N.lang] || 'ko-KR';
+  // 정적 HTML 문구 — data-i18n(글) · -html · -title · -aria · -placeholder
+  document.documentElement.lang = I18N.lang;
+  document.title = t('page.title');
+  document.querySelectorAll('[data-i18n]').forEach((element) => { element.textContent = t(element.dataset.i18n); });
+  document.querySelectorAll('[data-i18n-html]').forEach((element) => { element.innerHTML = t(element.dataset.i18nHtml); });
+  document.querySelectorAll('[data-i18n-title]').forEach((element) => { element.title = t(element.dataset.i18nTitle); });
+  document.querySelectorAll('[data-i18n-aria]').forEach((element) => { element.setAttribute('aria-label', t(element.dataset.i18nAria)); });
+  document.querySelectorAll('[data-i18n-placeholder]').forEach((element) => { element.placeholder = t(element.dataset.i18nPlaceholder); });
   const PR_LINK = new RegExp(`github\\.com/${ATHENA.githubOrg ? ATHENA.githubOrg.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '[\\w.-]+'}/([\\w.-]+)/pull/(\\d+)`, 'g');
   const esc = (value) => String(value ?? '').replace(/[&<>"]/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[ch]);
-  const ago = (sec) => (sec < 60 ? `${sec}초 전` : sec < 3600 ? `${Math.round(sec / 60)}분 전` : `${Math.round(sec / 3600)}시간 전`);
+  const ago = (sec) => (sec < 60 ? t('time.secAgo', { n: sec }) : sec < 3600 ? t('time.minAgo', { n: Math.round(sec / 60) }) : t('time.hourAgo', { n: Math.round(sec / 3600) }));
   // 카드 시각 — 오늘이면 시:분, 올해면 월/일 시:분, 그 전이면 연/월/일
   const clock = (ms) => {
     const date = new Date(ms);
-    const time = date.toLocaleTimeString('ko-KR', { hour: '2-digit', minute: '2-digit', hour12: false });
+    const time = date.toLocaleTimeString(LOCALE, { hour: '2-digit', minute: '2-digit', hour12: false });
     const today = new Date();
-    if (date.toDateString() === today.toDateString()) return `오늘 ${time}`;
+    if (date.toDateString() === today.toDateString()) return t('time.today', { time });
     if (date.getFullYear() === today.getFullYear()) return `${date.getMonth() + 1}/${date.getDate()} ${time}`;
     return `${date.getFullYear()}/${date.getMonth() + 1}/${date.getDate()}`;
   };
   const since = (ms) => {
     const sec = Math.max(0, Math.round((Date.now() - ms) / 1000));
     if (sec < 86_400) return ago(sec);
-    return `${Math.round(sec / 86_400)}일 전`;
+    return t('time.dayAgo', { n: Math.round(sec / 86_400) });
   };
   // 시작(파일이 생긴 때) · 최근 진행(마지막 수정). 이슈에 계획서가 붙어 있으면 둘 중 늦은 수정 시각
   const when = (card) => {
     const created = card.created || card.mtime;
     const touched = Math.max(card.mtime || 0, card.linkedPlan?.mtime || 0);
-    const full = (ms) => new Date(ms).toLocaleString('ko-KR', { hour12: false });
+    const full = (ms) => new Date(ms).toLocaleString(LOCALE, { hour12: false });
     // 작업자 — 이슈는 연결된 계획서의 작업자가 우선, 없으면 이슈를 올린 사람
     const owner = card.linkedPlan?.owner || card.owner;
-    return `<div class="line when" title="시작 ${full(created)} · 최근 진행 ${full(touched)}">🕒 시작 ${clock(created)} · 최근 <b>${clock(touched)}</b> (${since(touched)})${owner ? ` · 👤 ${esc(owner)}` : ''}</div>`;
+    return `<div class="line when" title="${esc(t('card.whenTitle', { created: full(created), touched: full(touched) }))}">${t('card.when', { created: clock(created), touched: clock(touched), since: since(touched) })}${owner ? ` · 👤 ${esc(owner)}` : ''}</div>`;
   };
   let previous = new Map();
   let lastState = null;
@@ -611,22 +635,22 @@
     issue: {
       // 아테나가 직접 하지 않는다 — 라우팅 → 브랜치 확인 → 담당 에이전트 pane 디스패치 순서를 지시문에 박는다
       // 기본은 아테나가 처리한다(판단 → 계획서 → prBase 브랜치 → 담당 에이전트). 팝업에서 "담당 에이전트로 바로(조사만)" 로 바꿀 수 있다
-      open: [['작업 시작', (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
-      planned: [['계획 보기', (card) => `${card.id} 이슈에 연결된 계획서${card.plan ? ` ${card.plan}` : ''} 상태를 알려줘.`]],
-      in_progress: [['진행 상황', (card) => `${card.id} 이슈 진행 상황을 알려줘.`]],
+      open: [[t('action.start'), (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. 이슈를 읽고 담당 레포·에이전트를 확인한 뒤 경량/정식을 판단해 📋 한 줄로 알리고 계획서를 만들어 이슈 plan: 에 연결한다. 대상 레포의 브랜치·미커밋 상태를 보고하고 내 확인을 받은 뒤 scripts/new-branch.sh 로 prBase 에서 작업 브랜치·워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄운다(scripts/delegate.sh --cwd --plan). 이슈는 운영 기준 ref 에서 찾은 것이니 prBase 에서도 그대로인지 먼저 확인하게 한다. 아테나가 직접 코드를 고치지 않는다.`, 'issue']],
+      planned: [[t('action.viewPlan'), (card) => `${card.id} 이슈에 연결된 계획서${card.plan ? ` ${card.plan}` : ''} 상태를 알려줘.`]],
+      in_progress: [[t('action.progress'), (card) => `${card.id} 이슈 진행 상황을 알려줘.`]],
     },
     plan: {
-      planned: [['진행 지시', (card) => `${card.id} 계획서대로 진행하자. 결정 사항이 확정됐는지, 대상 레포 브랜치·미커밋 상태를 먼저 확인해 보고하고, 내 확인 뒤 scripts/new-branch.sh 로 워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄워줘(scripts/delegate.sh --cwd). 아테나가 직접 코드를 고치지 않는다.`]],
-      in_progress: [['이어서 진행', (card) => `${card.id} Checkpoint 를 읽고, Work ref 와 현재 워크트리 브랜치·diff 가 맞는지 먼저 확인해 보고해줘. 맞으면 Next 를 담당 에이전트 pane 에 이어서 지시한다.`]],
-      blocked: [['막힌 것 풀기', (card) => `${card.id} 가 막혀 있다(${card.blocked}). 무엇이 필요한지 정리해줘.`]],
+      planned: [[t('action.proceed'), (card) => `${card.id} 계획서대로 진행하자. 결정 사항이 확정됐는지, 대상 레포 브랜치·미커밋 상태를 먼저 확인해 보고하고, 내 확인 뒤 scripts/new-branch.sh 로 워크트리를 만들어 담당 에이전트를 그 레포 workspace pane 에 띄워줘(scripts/delegate.sh --cwd). 아테나가 직접 코드를 고치지 않는다.`]],
+      in_progress: [[t('action.resume'), (card) => `${card.id} Checkpoint 를 읽고, Work ref 와 현재 워크트리 브랜치·diff 가 맞는지 먼저 확인해 보고해줘. 맞으면 Next 를 담당 에이전트 pane 에 이어서 지시한다.`]],
+      blocked: [[t('action.unblock'), (card) => `${card.id} 가 막혀 있다(${card.blocked}). 무엇이 필요한지 정리해줘.`]],
       // 아테나를 거치지 않는다 — reviewer 를 계획서의 담당 레포 workspace(워크트리)에 바로 띄운다
-      ready_for_review: [['리뷰 요청', (card) => `이 계획서를 검증해 줘. 계획서의 지시·결정 대비 구현이 맞는지, 담당 레포 rules.md 필수 절·gotchas 를 지켰는지, 범위 밖 변경은 없는지 본다. 검증 스크립트를 돌려(워크트리면 ATHENA_VERIFY_DIR) 출력 표를 붙이고, 계획서 ## Commits 가 있으면 그 커밋과 origin/<prBase>...HEAD 도 본다. 읽기 전용. 보고는 AGENTS.md 6절 형식 + 발견 사항 [심각|중간|낮음] 파일:줄 — 문제 / 근거 / 고칠 것.`, 'review']],
+      ready_for_review: [[t('action.review'), (card) => `이 계획서를 검증해 줘. 계획서의 지시·결정 대비 구현이 맞는지, 담당 레포 rules.md 필수 절·gotchas 를 지켰는지, 범위 밖 변경은 없는지 본다. 검증 스크립트를 돌려(워크트리면 ATHENA_VERIFY_DIR) 출력 표를 붙이고, 계획서 ## Commits 가 있으면 그 커밋과 origin/<prBase>...HEAD 도 본다. 읽기 전용. 보고는 AGENTS.md 6절 형식 + 발견 사항 [심각|중간|낮음] 파일:줄 — 문제 / 근거 / 고칠 것.`, 'review']],
     },
   };
 
   // hermes 이슈 [작업 시작] — 디스패치하지 않는다. 아테나가 경량 계획서로 바로 고치고, 커밋·push 하면 fix: 로 완료
   const ATHENA_ACTIONS = {
-    open: [['작업 시작', (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
+    open: [[t('action.start'), (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
   };
   const actionsFor = (card) => ((card.scope === 'hermes' && card.kind === 'issue' && ATHENA_ACTIONS[card.status]) || (ACTIONS[card.kind] || {})[card.status] || []);
   const api = async (path, body) => {
@@ -648,7 +672,7 @@
   };
   const inline = (value) => esc(value).replace(/`([^`]+)`/g, '<code>$1</code>').replace(/\*\*([^*]+)\*\*/g, '<b>$1</b>');
   const markdown = (text) => {
-    if (!text) return '<p style="color:var(--muted)">비어 있어요</p>';
+    if (!text) return `<p style="color:var(--muted)">${t('common.empty')}</p>`;
     const out = [];
     let list = null;
     let table = [];
@@ -677,12 +701,12 @@
   const requests = (text) => {
     const body = section(text, '지시');
     const blocks = body.split(/\n\s*>?\s*\n/).map((block) => block.split('\n').map((line) => line.replace(/^>\s?/, '')).join(' ').trim()).filter(Boolean);
-    if (!blocks.length) return '<p style="color:var(--muted)">아직 요청이 없어요</p>';
+    if (!blocks.length) return `<p style="color:var(--muted)">${t('detail.noRequests')}</p>`;
     return `<ol>${blocks.map((block) => `<li>${inline(block)}</li>`).join('')}</ol>`;
   };
   const openDetail = async (id) => {
     const dialog = document.getElementById('detail');
-    document.getElementById('detail-title').textContent = '불러오는 중이에요…';
+    document.getElementById('detail-title').textContent = t('common.loading');
     document.getElementById('detail-meta').textContent = id;
     document.getElementById('detail-body').innerHTML = '';
     dialog.showModal();
@@ -700,7 +724,7 @@
       document.getElementById('detail-meta').innerHTML = `<div class="chips">${isIssue ? issueChips(data.text) : startChip}${plan ? planChips(plan) : ''}</div>`;
       document.getElementById('detail-body').innerHTML = workBlocks({ issue: isIssue ? data.text : '', plan, active });
     } catch (error) {
-      document.getElementById('detail-title').textContent = '불러오지 못했어요';
+      document.getElementById('detail-title').textContent = t('common.loadFailed');
       document.getElementById('detail-body').innerHTML = `<p>${esc(error.message)}</p>`;
     }
   };
@@ -713,7 +737,7 @@
       const box = dialog.getBoundingClientRect();
       const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
       if (inside) return;
-      if (dialog.querySelector('.learned-pop textarea') && !confirm('고치던 내용이 저장되지 않아요. 닫을까요?')) return;
+      if (dialog.querySelector('.learned-pop textarea') && !confirm(t('learn.discardEdit'))) return;
       dialog.close();
     });
   });
@@ -756,32 +780,32 @@
       });
       const source = (issue.match(/^source:\s*(.+)$/m) || [])[1]?.trim() || '';
       const origin = issueOrigin(source);
-      const where = origin ? archiveCard('📍', '등록 경로', `<b>${origin.icon} ${esc(origin.label)}</b><div style="font-size:12.5px;color:var(--muted);margin-top:3px">${esc(source)}</div>`) : '';
-      return archiveCard('📄', '이슈', lead ? markdown(lead) : '', 'warn') + cards.join('') + where;
+      const where = origin ? archiveCard('📍', t('block.origin'), `<b>${origin.icon} ${esc(origin.label)}</b><div style="font-size:12.5px;color:var(--muted);margin-top:3px">${esc(source)}</div>`) : '';
+      return archiveCard('📄', t('block.issue'), lead ? markdown(lead) : '', 'warn') + cards.join('') + where;
     };
     const issueCard = !issueText ? '' : plan
-      ? archiveCard('📄', '이슈', `${inline(issueLead.trim())}${issueText.trim() !== issueLead.trim() ? `<details class="more"><summary>이슈 전체 보기</summary>${markdown(issueText)}</details>` : ''}`)
+      ? archiveCard('📄', t('block.issue'), `${inline(issueLead.trim())}${issueText.trim() !== issueLead.trim() ? `<details class="more"><summary>${t('block.issueAll')}</summary>${markdown(issueText)}</details>` : ''}`)
       : issueSections();
     const reviewLines = plan.split('\n').filter((line) => /^\s*-\s*Review result:/.test(line)).map((line) => line.replace(/^\s*-\s*Review result:\s*/, '- '));
     const decided = [section(plan, 'Decisions'), section(plan, '리뷰 뒤 결정')].filter(filled).join('\n');
     const blocked = section(plan, 'Blocked');
     return `<div class="md-sections">
       ${issueCard}
-      ${plan ? archiveCard('🎯', '요청한 것', filled(section(plan, '지시').replace(/^>\s?/gm, '')) ? requests(plan) : '', 'note') : ''}
-      ${active ? archiveCard('➡️', '다음 할 일', pick('Next'), 'note') : ''}
-      ${active && filled(blocked) ? archiveCard('⛔', '막힌 것', markdown(blocked), 'bad') : ''}
-      ${archiveCard('✅', '진행', pick('Progress'))}
-      ${archiveCard('📦', '결과', pick('결과'))}
-      ${archiveCard('⚖️', '결정', decided ? markdown(decided) : '', 'warn')}
-      ${archiveCard('🧪', '검증', pick('Validation'))}
-      ${archiveCard('🔍', '리뷰', reviewLines.length ? markdown(reviewLines.join('\n')) : '')}
-      ${archiveCard('🔗', '커밋', pick('Commits'))}
-    </div>`.replace(/<div class="md-sections">\s*<\/div>/, '<p style="color:var(--muted);margin:4px 0">아직 채워진 내용이 없어요 — 작업을 시작하면 요청·진행이 여기에 쌓여요</p>');
+      ${plan ? archiveCard('🎯', t('block.requests'), filled(section(plan, '지시').replace(/^>\s?/gm, '')) ? requests(plan) : '', 'note') : ''}
+      ${active ? archiveCard('➡️', t('block.next'), pick('Next'), 'note') : ''}
+      ${active && filled(blocked) ? archiveCard('⛔', t('block.blocked'), markdown(blocked), 'bad') : ''}
+      ${archiveCard('✅', t('block.progress'), pick('Progress'))}
+      ${archiveCard('📦', t('block.result'), pick('결과'))}
+      ${archiveCard('⚖️', t('block.decisions'), decided ? markdown(decided) : '', 'warn')}
+      ${archiveCard('🧪', t('block.validation'), pick('Validation'))}
+      ${archiveCard('🔍', t('block.review'), reviewLines.length ? markdown(reviewLines.join('\n')) : '')}
+      ${archiveCard('🔗', t('block.commits'), pick('Commits'))}
+    </div>`.replace(/<div class="md-sections">\s*<\/div>/, `<p style="color:var(--muted);margin:4px 0">${t('block.none')}</p>`);
   };
   const archiveBlocks = (dir, data) => workBlocks({ issue: data.issue || '', plan: data.plan || '' });
   // 계획서 Checkpoint · 이슈 front matter 에서 칩
   const checkpoint = (text, key) => (text.match(new RegExp(`^- ${key}:\\s*(.+)$`, 'm')) || [])[1]?.trim() || '';
-  const CHIP_STATUS = { planned: '📝 계획', in_progress: '🔨 진행 중', blocked: '⛔ 막힘', ready_for_review: '👀 리뷰', done: '✅ 완료', open: '📌 할 일', wontfix: '🚫 안 함' };
+  const CHIP_STATUS = Object.fromEntries(['planned', 'in_progress', 'blocked', 'ready_for_review', 'done', 'open', 'wontfix'].map((status) => [status, t(`status.${status}`)]));
   const planChips = (text) => {
     const status = checkpoint(text, 'Status').split(/\s/)[0];
     const ref = checkpoint(text, 'Work ref');
@@ -796,7 +820,7 @@
       branch ? `<span class="chip">🌿 ${esc(branch)}</span>` : '',
       ...prs.map((pr) => `<span class="chip">🔀 ${esc(pr)}</span>`),
       // ⚡ 빠른 길 — ship.sh 가 PR 올리기 직전에 판정해 "- Fast path: yes (<이유>)" 로 남긴다(docs/pr-auto.md)
-      checkpoint(text, 'Fast path').startsWith('yes') ? '<span class="chip">⚡ 빠른 길</span>' : '',
+      checkpoint(text, 'Fast path').startsWith('yes') ? `<span class="chip">${t('chip.fastPath')}</span>` : '',
       checkpoint(text, 'Updated') ? `<span class="chip">🕒 ${esc(checkpoint(text, 'Updated').split(' / ')[0])}</span>` : '',
     ].join('');
   };
@@ -812,7 +836,7 @@
   };
   const openHistory = async (dir) => {
     const dialog = document.getElementById('detail');
-    document.getElementById('detail-title').textContent = '불러오는 중이에요…';
+    document.getElementById('detail-title').textContent = t('common.loading');
     document.getElementById('detail-meta').textContent = dir;
     document.getElementById('detail-body').innerHTML = '';
     dialog.showModal();
@@ -826,32 +850,32 @@
         item ? bundlePill(item) : '',
         item?.repo ? `<span class="chip">📦 ${esc(item.repo)}</span>` : '',
         item?.owner ? `<span class="chip">👤 ${esc(item.owner)}</span>` : '',
-        `<span class="chip">🗄 보관 ${esc(data.meta?.archivedAt || '?')}</span>`,
+        `<span class="chip">${esc(t('chip.archived', { at: data.meta?.archivedAt || '?' }))}</span>`,
         item?.pr ? `<span class="chip">🔀 ${esc(item.pr)}</span>` : '',
-        data.html ? `<a class="chip" href="/${dir.split('/').map(encodeURIComponent).join('/')}/plan.html" target="_blank">결정 콘솔 열기 ↗</a>` : '',
+        data.html ? `<a class="chip" href="/${dir.split('/').map(encodeURIComponent).join('/')}/plan.html" target="_blank">${t('history.openConsole')}</a>` : '',
       ].join('');
       document.getElementById('detail-meta').innerHTML = `<div class="chips">${chips}</div>`;
       // 결정 콘솔(plan.html)은 칩으로 — 읽기 전용(토큰을 넣지 않아 보낼 수 없다)
       document.getElementById('detail-body').innerHTML = archiveBlocks(dir, data);
     } catch (error) {
-      document.getElementById('detail-title').textContent = '불러오지 못했어요';
+      document.getElementById('detail-title').textContent = t('common.loadFailed');
       document.getElementById('detail-body').innerHTML = `<p>${esc(error.message)}</p>`;
     }
   };
   // 무엇이 묶여 있나 — 이슈+계획서 / 이슈만 / 계획서만
   const bundlePill = (item) => {
     const has = item.files || {};
-    if (has.issue && has.plan) return '<span class="pill kind-bundle">📎 이슈+계획서</span>';
-    if (has.issue) return '<span class="pill kind-issue">📄 이슈만</span>';
-    return '<span class="pill kind-plan">📋 계획서만</span>';
+    if (has.issue && has.plan) return `<span class="pill kind-bundle">${t('history.bundle')}</span>`;
+    if (has.issue) return `<span class="pill kind-issue">${t('history.issueOnly')}</span>`;
+    return `<span class="pill kind-plan">${t('history.planOnly')}</span>`;
   };
-  const monthName = (key) => `${Number(key.slice(5, 7))}월`;
-  const dayName = (key) => `${Number(key.slice(8, 10))}일`;
+  const monthName = (key) => t('date.month', { n: Number(key.slice(5, 7)) });
+  const dayName = (key) => t('date.day', { n: Number(key.slice(8, 10)) });
   const pickLabel = (key) => {
-    if (!key) return '전체';
-    if (key.length === 4) return `${key}년`;
-    if (key.length === 7) return `${key.slice(0, 4)}년 ${monthName(key)}`;
-    return `${key.slice(0, 4)}년 ${monthName(key)} ${dayName(key)}`;
+    if (!key) return t('common.all');
+    if (key.length === 4) return t('date.year', { year: key });
+    if (key.length === 7) return t('date.yearMonth', { year: key.slice(0, 4), month: monthName(key) });
+    return t('date.full', { year: key.slice(0, 4), month: monthName(key), day: dayName(key) });
   };
   // 연 → 월 → 일 건수. 검색·필터가 걸린 목록 기준이라 트리 숫자도 같이 바뀐다
   const buildTree = (items) => {
@@ -876,9 +900,9 @@
   };
   const renderTree = (items) => {
     const tree = buildTree(items);
-    const rows = [node('', '전체', items.length, 'all', false)];
+    const rows = [node('', t('common.all'), items.length, 'all', false)];
     for (const [year, yearData] of tree) {
-      rows.push(node(year, `${year}년`, yearData.count, 'year', true));
+      rows.push(node(year, t('date.year', { year }), yearData.count, 'year', true));
       if (!historyOpen.has(year)) continue;
       for (const [month, monthData] of [...yearData.months.entries()].sort((left, right) => right[0].localeCompare(left[0]))) {
         rows.push(node(month, monthName(month), monthData.count, 'month', true));
@@ -916,9 +940,9 @@
     });
     renderTree(filtered);
     const shown = filtered.filter((item) => (item.archivedAt || '').startsWith(historyPick));
-    document.getElementById('history-crumb').innerHTML = `<b>${esc(pickLabel(historyPick))}</b> · ${shown.length}건`;
-    if (!historyItems.length) { box.innerHTML = '<div class="empty-history">아직 보관한 일이 없어요. 완료 칸 카드의 [아카이브]를 누르면 여기로 와요.</div>'; return; }
-    if (!shown.length) { box.innerHTML = '<div class="empty-history">이 기간에 맞는 일이 없어요</div>'; return; }
+    document.getElementById('history-crumb').innerHTML = `<b>${esc(pickLabel(historyPick))}</b> · ${t('history.count', { n: shown.length })}`;
+    if (!historyItems.length) { box.innerHTML = `<div class="empty-history">${t('history.empty')}</div>`; return; }
+    if (!shown.length) { box.innerHTML = `<div class="empty-history">${t('history.noMatch')}</div>`; return; }
     // 목록은 날짜(일)별로 머리글을 단다 — 머리글을 누르면 그날 목록을 접는다
     const perDay = new Map();
     for (const item of shown) {
@@ -930,7 +954,7 @@
       const day = (item.archivedAt || '').slice(0, 10);
       const folded = historyFolded.has(day);
       const head = day !== lastDay
-        ? `<button type="button" class="month" data-day="${esc(day)}" aria-expanded="${!folded}"><span class="caret">${folded ? '▶' : '▼'}</span>${esc(pickLabel((lastDay = day)) || '날짜 없음')}<span class="n">· ${perDay.get(day)}건</span></button>`
+        ? `<button type="button" class="month" data-day="${esc(day)}" aria-expanded="${!folded}"><span class="caret">${folded ? '▶' : '▼'}</span>${esc(pickLabel((lastDay = day)) || t('history.noDate'))}<span class="n">· ${t('history.count', { n: perDay.get(day) })}</span></button>`
         : '';
       if (folded) return head;
       const tags = [
@@ -939,14 +963,14 @@
         item.planType && item.planType !== 'task' ? `<span class="pill">${esc(item.planType)}</span>` : '',
         item.severity ? `<span class="pill ${item.severity === 'high' ? 'bad' : ''}">${esc(item.severity)}</span>` : '',
         item.status ? `<span class="pill">${esc(item.status)}</span>` : '',
-        item.commits?.length ? `<span class="pill">커밋 ${item.commits.length}</span>` : '',
+        item.commits?.length ? `<span class="pill">${t('history.commits', { n: item.commits.length })}</span>` : '',
         item.fix ? `<span class="pill">fix ${esc(item.fix)}</span>` : '',
         item.pr ? `<span class="pill">PR #${esc(item.pr)}</span>` : '',
       ].join('');
       return `${head}<button type="button" class="h-row" data-dir="${esc(item.dir)}">
         <span class="h-date">${esc((item.archivedAt || '').slice(11, 16))}</span>
         <span class="h-main"><span class="h-title">${esc(item.title)}</span>${item.summary ? `<span class="h-sum">${esc(item.summary)}</span>` : ''}<span class="h-tags">${tags}</span></span>
-        <span class="h-owner" title="작업자">${esc(item.owner || '')}</span>
+        <span class="h-owner" title="${esc(t('history.owner'))}">${esc(item.owner || '')}</span>
       </button>`;
     }).join('');
     box.querySelectorAll('button.month').forEach((head) => {
@@ -963,17 +987,17 @@
       const response = await fetch('/api/history');
       historyItems = (await response.json()).items || [];
     } catch (error) {
-      document.getElementById('history').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      document.getElementById('history').innerHTML = `<div class="empty-history">${esc(t('common.loadFailedWith', { error: error.message }))}</div>`;
       return;
     }
     const select = document.getElementById('history-repo');
     const current = select.value;
     const repos = [...new Set(historyItems.map((item) => item.repo).filter(Boolean))].sort();
-    select.innerHTML = '<option value="">모든 레포</option>' + repos.map((name) => `<option ${name === current ? 'selected' : ''}>${esc(name)}</option>`).join('');
+    select.innerHTML = `<option value="">${t('history.allRepos')}</option>` + repos.map((name) => `<option ${name === current ? 'selected' : ''}>${esc(name)}</option>`).join('');
     const ownerSelect = document.getElementById('history-owner');
     const currentOwner = ownerSelect.value;
     const owners = [...new Set(historyItems.map((item) => item.owner).filter(Boolean))].sort();
-    ownerSelect.innerHTML = '<option value="">모든 작업자</option>' + owners.map((name) => `<option ${name === currentOwner ? 'selected' : ''}>${esc(name)}</option>`).join('');
+    ownerSelect.innerHTML = `<option value="">${t('history.allOwners')}</option>` + owners.map((name) => `<option ${name === currentOwner ? 'selected' : ''}>${esc(name)}</option>`).join('');
     const latest = historyItems.map((item) => item.archivedAt || '').sort().pop() || '';
     if (latest && !historyOpen.size) { historyOpen.add(latest.slice(0, 4)); historyOpen.add(latest.slice(0, 7)); }
     renderHistory();
@@ -986,26 +1010,26 @@
   // ── 지표 탭 — /api/metrics(scripts/lib/metrics.mjs). 누를 때 · 기간을 바꿀 때만 읽는다
   const metricDuration = (ms) => {
     if (ms === null || ms === undefined) return '—';
-    if (ms < 60_000) return `${Math.round(ms / 1000)}초`;
-    if (ms < 3_600_000) return `${Math.round(ms / 60_000)}분`;
-    if (ms < 172_800_000) return `${Number((ms / 3_600_000).toFixed(1))}시간`;
-    return `${Number((ms / 86_400_000).toFixed(1))}일`;
+    if (ms < 60_000) return t('dur.sec', { n: Math.round(ms / 1000) });
+    if (ms < 3_600_000) return t('dur.min', { n: Math.round(ms / 60_000) });
+    if (ms < 172_800_000) return t('dur.hour', { n: Number((ms / 3_600_000).toFixed(1)) });
+    return t('dur.day', { n: Number((ms / 86_400_000).toFixed(1)) });
   };
   const metricRate = (value) => (value === null || value === undefined ? '—' : `${Math.round(value * 100)}%`);
   const metricCount = (value) => (value === null || value === undefined ? '—' : String(Math.round(value * 10) / 10));
-  const METRIC_STATUS = { planned: '계획', in_progress: '진행 중', blocked: '막힘', ready_for_review: '리뷰', done: '완료' };
+  const METRIC_STATUS = Object.fromEntries(['planned', 'in_progress', 'blocked', 'ready_for_review', 'done'].map((status) => [status, t(`metric.status.${status}`)]));
   // 구간 순서 · 이름(scripts/lib/metrics.mjs STAGES 와 같은 순서) — 막대 토막 · 범례 · 구간 평균 타일
-  const STAGES = [['work', '작업'], ['verify', '검증'], ['wait', '답 대기'], ['review', '리뷰'], ['mergeWait', '머지 대기']];
+  const STAGES = ['work', 'verify', 'wait', 'review', 'mergeWait'].map((stage) => [stage, t(`stage.${stage}`)]);
   // 작업 안쪽 — scripts/lib/session-work.mjs WORK_KINDS
-  const WORK_KINDS = [['think', '생각·작성'], ['check', '검증·커밋'], ['wait', '끝날 때까지 기다리기'], ['other', '그 밖의 명령'], ['read', '파일 읽기']];
-  const metricKnown = (ms) => (ms === null || ms === undefined ? '모름' : metricDuration(ms));
+  const WORK_KINDS = ['think', 'check', 'wait', 'other', 'read'].map((kind) => [kind, t(`workKind.${kind}`)]);
+  const metricKnown = (ms) => (ms === null || ms === undefined ? t('common.unknown') : metricDuration(ms));
   // 지난 기간 대비 — 화살표(▲▼)와 글자로 방향을, 색으로 좋고 나쁨을(낮을수록 좋은 숫자는 ▼ 가 초록)
   const metricDelta = (current, before, { rate = false, lowerIsBetter = true } = {}) => {
     if (current === null || current === undefined || before === null || before === undefined) return '';
     // 비율은 %p 차이, 나머지는 % 변화 — 전이 0 이면 % 변화가 없다
-    if (!rate && !before) return current === before ? '<b>변화 없음</b>' : '';
+    if (!rate && !before) return current === before ? `<b>${t('metric.noChange')}</b>` : '';
     const diff = rate ? (current - before) * 100 : (current - before) / before * 100;
-    if (Math.abs(diff) < 0.5) return '<b>변화 없음</b>';
+    if (Math.abs(diff) < 0.5) return `<b>${t('metric.noChange')}</b>`;
     const better = lowerIsBetter ? diff < 0 : diff > 0;
     return `<b class="${better ? 'good' : 'bad'}">${diff < 0 ? '▼' : '▲'} ${Math.round(Math.abs(diff))}${rate ? '%p' : '%'}</b>`;
   };
@@ -1029,7 +1053,7 @@
     }
     return buckets;
   };
-  const metricDate = (at) => Number.isFinite(at) ? new Date(at).toLocaleDateString('ko-KR', { month: 'numeric', day: 'numeric' }).replace(/\.$/, '') : '—';
+  const metricDate = (at) => Number.isFinite(at) ? new Date(at).toLocaleDateString(LOCALE, { month: 'numeric', day: 'numeric' }).replace(/\.$/, '') : '—';
   const metricSvg = (width, height, label, body, stretch = false) => `<svg${stretch ? ' preserveAspectRatio="none"' : ''} xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}" role="img" aria-label="${esc(label)}"><title>${esc(label)}</title>${body}</svg>`;
   const metricText = (positionX, positionY, text, anchor = 'start', color = 'var(--muted)', size = 11) => `<text x="${positionX}" y="${positionY}" text-anchor="${anchor}" fill="${color}" font-size="${size}">${esc(text)}</text>`;
   const metricLine = (startX, startY, endX, endY, color = 'var(--line)', dash = '') => `<line x1="${startX}" y1="${startY}" x2="${endX}" y2="${endY}" stroke="${color}"${dash ? ` stroke-dasharray="${dash}"` : ''}/>`;
@@ -1038,45 +1062,45 @@
   const metricHistogram = (summary) => {
     const from = Date.parse(summary.from || summary.since);
     const plans = summary.plans.filter((plan) => plan.endAt !== null && plan.endAt >= from && plan.leadMs !== null && plan.leadMs >= 0);
-    if (!plans.length) return metricEmpty(summary.current.done ? `완료 ${summary.current.done}개 중 걸린 시간을 아는 작업이 없어요.` : '선택한 기간에 끝낸 작업이 없어요.');
-    const hourMs = 3_600_000, bins = [[0, hourMs, '1시간 미만'], [hourMs, 2 * hourMs, '1–2시간'], [2 * hourMs, 4 * hourMs, '2–4시간'], [4 * hourMs, 8 * hourMs, '4–8시간'], [8 * hourMs, 24 * hourMs, '8시간–1일'], [24 * hourMs, Infinity, '1일 이상']];
+    if (!plans.length) return metricEmpty(summary.current.done ? t('m.hist.noTime', { n: summary.current.done }) : t('m.hist.none'));
+    const hourMs = 3_600_000, bins = [[0, hourMs, t('m.bin.lt1h')], [hourMs, 2 * hourMs, t('m.bin.h1_2')], [2 * hourMs, 4 * hourMs, t('m.bin.h2_4')], [4 * hourMs, 8 * hourMs, t('m.bin.h4_8')], [8 * hourMs, 24 * hourMs, t('m.bin.h8_1d')], [24 * hourMs, Infinity, t('m.bin.ge1d')]];
     const counts = bins.map(([lowerBound, upperBound]) => plans.filter((plan) => plan.leadMs >= lowerBound && plan.leadMs < upperBound).length);
     const highest = Math.max(1, ...counts);
-    const rows = counts.map((count, itemIndex) => `<li class="metric-distribution-row"><span>${esc(bins[itemIndex][2])}</span><span class="metric-distribution-track"><span style="width:${count / highest * 100}%"></span></span><span class="metric-distribution-count"><b>${count}개</b> · ${Math.round(count / plans.length * 100)}%</span></li>`).join('');
-    return `<ol class="metric-distribution" aria-label="소요 시간대별 완료 작업 수와 비중">${rows}</ol><p class="metric-chart-note">중앙값 ${esc(metricDuration(summary.current.lead.p50Ms))} · p75 ${esc(metricDuration(summary.current.lead.p75Ms))} · 시간 기록 ${plans.length}개 / 완료 ${summary.current.done}개</p><p class="metric-chart-note">처음 기록 → 코드 첫 반영(없으면 완료 표시). 비중은 시간을 아는 완료 작업 ${plans.length}개 기준 · 시간 미기록 ${summary.current.done - plans.length}개는 분포에서 제외해요. 0초는 1시간 미만에 포함해요.</p>`;
+    const rows = counts.map((count, itemIndex) => `<li class="metric-distribution-row"><span>${esc(bins[itemIndex][2])}</span><span class="metric-distribution-track"><span style="width:${count / highest * 100}%"></span></span><span class="metric-distribution-count"><b>${t('m.items', { n: count })}</b> · ${Math.round(count / plans.length * 100)}%</span></li>`).join('');
+    return `<ol class="metric-distribution" aria-label="${esc(t('m.hist.aria'))}">${rows}</ol><p class="metric-chart-note">${esc(t('m.hist.spread', { p50: metricDuration(summary.current.lead.p50Ms), p75: metricDuration(summary.current.lead.p75Ms), known: plans.length, done: summary.current.done }))}</p><p class="metric-chart-note">${esc(t('m.hist.note', { known: plans.length, missing: summary.current.done - plans.length }))}</p>`;
   };
   const metricStates = (summary) => {
-    const definitions = [['planned', '계획', 'var(--col-plan)'], ['in_progress', '진행 중', 'var(--col-doing)'], ['blocked', '막힘', 'var(--bad)'], ['ready_for_review', '리뷰', 'var(--col-review)'], ['done', '완료', 'var(--col-done)'], ['unknown', '상태 모름', 'var(--muted)']];
+    const definitions = [['planned', METRIC_STATUS.planned, 'var(--col-plan)'], ['in_progress', METRIC_STATUS.in_progress, 'var(--col-doing)'], ['blocked', METRIC_STATUS.blocked, 'var(--bad)'], ['ready_for_review', METRIC_STATUS.ready_for_review, 'var(--col-review)'], ['done', METRIC_STATUS.done, 'var(--col-done)'], ['unknown', t('m.status.unknown'), 'var(--muted)']];
     const counts = definitions.map(([key]) => summary.plans.filter((plan) => key === 'unknown' ? !METRIC_STATUS[plan.status] : plan.status === key).length);
     const total = summary.plans.length;
-    if (!total) return metricEmpty('선택한 기간에 기록된 작업이 없어요.');
+    if (!total) return metricEmpty(t('m.states.none'));
     let segmentStart = 0, body = '';
     counts.forEach((count, statusIndex) => {
       const segmentWidth = count / total * 1000;
-      if (count) body += `<rect x="${segmentStart}" y="0" width="${segmentWidth}" height="36" fill="${definitions[statusIndex][2]}"><title>${definitions[statusIndex][1]} ${count}개</title></rect>`;
+      if (count) body += `<rect x="${segmentStart}" y="0" width="${segmentWidth}" height="36" fill="${definitions[statusIndex][2]}"><title>${esc(t('m.labelItems', { label: definitions[statusIndex][1], n: count }))}</title></rect>`;
       segmentStart += segmentWidth;
     });
     const waiting = summary.plans.reduce((sum, plan) => sum + plan.waiting, 0);
-    return `<div class="metric-stack">${metricSvg(1000, 36, `선택 기간에 기록된 ${total}개 작업의 현재 상태`, body, true)}</div><div class="metric-state-key">${definitions.map(([, label, color], statusIndex) => counts[statusIndex] ? `<span><i style="background:${color}"></i>${label} <b>${counts[statusIndex]}개</b></span>` : '').join('')}</div><p class="metric-chart-note">총 ${total}개 · 답 기다리는 요청 ${waiting}건</p>`;
+    return `<div class="metric-stack">${metricSvg(1000, 36, t('m.states.aria', { n: total }), body, true)}</div><div class="metric-state-key">${definitions.map(([, label, color], statusIndex) => counts[statusIndex] ? `<span><i style="background:${color}"></i>${label} <b>${t('m.items', { n: counts[statusIndex] })}</b></span>` : '').join('')}</div><p class="metric-chart-note">${esc(t('m.states.total', { n: total, waiting }))}</p>`;
   };
   const metricVerify = (summary) => {
     const data = summary.current, previous = summary.previous, runs = data.verifyRuns;
-    if (!runs) return metricEmpty('선택한 기간에 검증 실행 기록이 없어요.');
+    if (!runs) return metricEmpty(t('m.verify.none'));
     const passes = data.verifyPasses, fails = data.verifyFails, unknown = runs - passes - fails;
-    const parts = [[passes, '통과', 'var(--ok)'], [fails, '실패', 'var(--bad)'], [unknown, '결과 모름', 'var(--muted)']];
+    const parts = [[passes, t('m.verify.pass'), 'var(--ok)'], [fails, t('m.verify.fail'), 'var(--bad)'], [unknown, t('m.verify.unknown'), 'var(--muted)']];
     const length = 2 * Math.PI * 48;
     let offset = 0, body = '';
     for (const [count, label, color] of parts) {
-      if (count) body += `<circle cx="64" cy="64" r="48" fill="none" stroke="${color}" stroke-width="15" stroke-dasharray="${count / runs * length} ${length}" stroke-dashoffset="${-offset}" transform="rotate(-90 64 64)"><title>${label} ${count}회</title></circle>`;
+      if (count) body += `<circle cx="64" cy="64" r="48" fill="none" stroke="${color}" stroke-width="15" stroke-dasharray="${count / runs * length} ${length}" stroke-dashoffset="${-offset}" transform="rotate(-90 64 64)"><title>${esc(t('m.labelTimes', { label, n: count }))}</title></circle>`;
       offset += count / runs * length;
     }
-    body += metricText(64, 65, `${Math.round(passes / runs * 100)}%`, 'middle', 'var(--text)', 23) + metricText(64, 83, '통과', 'middle');
-    let comparison = '전체 기간 · 이전 비교 없음';
+    body += metricText(64, 65, `${Math.round(passes / runs * 100)}%`, 'middle', 'var(--text)', 23) + metricText(64, 83, t('m.verify.pass'), 'middle');
+    let comparison = t('m.verify.allPeriod');
     if (previous) {
-      comparison = '지난 같은 기간 검증 기록 없음';
-      if (previous.verifyRuns) comparison = `이전 같은 기간 통과 ${previous.verifyPasses}/${previous.verifyRuns}회 (${Math.round(previous.verifyPasses / previous.verifyRuns * 100)}%)`;
+      comparison = t('m.verify.noPrev');
+      if (previous.verifyRuns) comparison = t('m.verify.prev', { passes: previous.verifyPasses, runs: previous.verifyRuns, rate: Math.round(previous.verifyPasses / previous.verifyRuns * 100) });
     }
-    return `<div class="metric-donut">${metricSvg(128, 128, `검증 ${runs}회 중 통과 ${passes}회·실패 ${fails}회·모름 ${unknown}회`, body)}<div>${parts.filter(([count]) => count > 0).map(([count, label, color]) => `<p><i style="background:${color}"></i>${label}<b>${count}회</b></p>`).join('')}<small>전체 ${runs}회</small></div></div><p class="metric-chart-note">${esc(comparison)}</p>`;
+    return `<div class="metric-donut">${metricSvg(128, 128, t('m.verify.aria', { runs, passes, fails, unknown }), body)}<div>${parts.filter(([count]) => count > 0).map(([count, label, color]) => `<p><i style="background:${color}"></i>${label}<b>${t('m.times', { n: count })}</b></p>`).join('')}<small>${t('m.verify.total', { n: runs })}</small></div></div><p class="metric-chart-note">${esc(comparison)}</p>`;
   };
   // 날짜별 그래프 그림 — 높이는 기본 208, 옆 박스가 더 높으면 fitMetricTrend 가 그 높이로 다시 그린다
   const metricTrendPlot = (summary, buckets, width, height = 208) => {
@@ -1091,81 +1115,78 @@
     const labelEvery = Math.max(1, Math.ceil(buckets.length / (width < 440 ? 5 : 8)));
     buckets.forEach((item, bucketIndex) => {
       const range = metricDate(item.from) === metricDate(item.to - 1) ? metricDate(item.from) : `${metricDate(item.from)}–${metricDate(item.to - 1)}`;
-      const tip = `${new Date(item.from).toLocaleString('ko-KR')} ~ ${new Date(item.to).toLocaleString('ko-KR')} · 완료 ${item.count}개${summary.previous ? ` · 지난 같은 길이 구간 ${item.previous}개` : ''}`;
+      const tip = `${t('m.trend.tip', { from: new Date(item.from).toLocaleString(LOCALE), to: new Date(item.to).toLocaleString(LOCALE), n: item.count })}${summary.previous ? t('m.trend.tipPrev', { n: item.previous }) : ''}`;
       body += `<circle cx="${pointX(bucketIndex)}" cy="${countY(item.count)}" r="4" fill="${item.count ? 'var(--accent)' : 'var(--panel)'}" stroke="var(--accent)" stroke-width="2"><title>${esc(tip)}</title></circle>`;
       if (buckets.length <= 8 || width >= 440) body += metricText(pointX(bucketIndex), countY(item.count) - 9, item.count, 'middle', 'var(--text)');
       if (bucketIndex % labelEvery === 0 || bucketIndex === buckets.length - 1) body += metricText(pointX(bucketIndex), height - 14, range, 'middle', 'var(--muted)', 9);
     });
-    return `<div class="metric-svg">${metricSvg(width, height, '날짜 구간별 완료 개수 · 선택한 기간과 이전 같은 기간 비교', body)}</div>`;
+    return `<div class="metric-svg">${metricSvg(width, height, t('m.trend.aria'), body)}</div>`;
   };
   const metricTrend = (summary, width) => {
     const buckets = metricBuckets(summary);
-    if (!buckets.length) return metricEmpty('선택한 기간에 완료 흐름을 계산할 기록이 없어요.');
-    return `${metricTrendPlot(summary, buckets, width)}<div class="metric-key"><span>━ 선택한 기간</span>${summary.previous ? '<span class="previous">┄ 이전 같은 길이 구간</span>' : ''}</div><p class="metric-chart-note">첫날·마지막 날은 선택한 시간만. 긴 기간은 최대 14개 날짜 구간으로 묶어요. 세로 눈금은 완료 개수예요.</p>`;
+    if (!buckets.length) return metricEmpty(t('m.trend.none'));
+    return `${metricTrendPlot(summary, buckets, width)}<div class="metric-key"><span>${t('m.trend.current')}</span>${summary.previous ? `<span class="previous">${t('m.trend.previous')}</span>` : ''}</div><p class="metric-chart-note">${t('m.trend.note')}</p>`;
   };
   const metricStageValue = (completedCount, stage) => {
-    if (!completedCount) return '완료 기록 없음';
-    if (!stage.had) return '없었던 단계';
-    if (!stage.count) return '시간 모름';
+    if (!completedCount) return t('m.stage.noDone');
+    if (!stage.had) return t('m.stage.never');
+    if (!stage.count) return t('m.timeUnknown');
     return metricDuration(stage.avgMs);
   };
   const metricStages = (summary) => {
-    const names = { work: '작업하기', verify: '검사하기', wait: '내 답 기다리기', review: '검토받기', mergeWait: '반영 기다리기' };
+    const names = Object.fromEntries(STAGES.map(([key]) => [key, t(`m.stageName.${key}`)]));
     // 상세 목록의 단계 스택·범례와 같은 색을 사용한다.
     const colors = { work: 'var(--col-doing)', verify: 'var(--col-plan)', wait: 'var(--bad)', review: 'var(--col-review)', mergeWait: 'var(--col-done)' };
     const max = Math.max(1, ...STAGES.map(([key]) => Math.max(summary.current.stages[key].p75Ms || 0, summary.current.stages[key].avgMs || 0)));
     return `<div class="metric-independent">${STAGES.map(([key]) => {
       const item = summary.current.stages[key];
       const value = metricStageValue(summary.current.done, item);
-      return `<div class="metric-stage-item"><div class="metric-stage-label"><b>${names[key]}</b><span>${esc(value)}${item.count ? ` <small>· 중앙값 ${esc(metricDuration(item.p50Ms))} · p75 ${esc(metricDuration(item.p75Ms))}</small>` : ''}</span></div><p>${item.had}개 작업에 있었음 · 시간 기록 ${item.count}개${item.had > item.count ? ` · 모름 ${item.had - item.count}개` : ''}</p>${item.count ? `<div class="metric-stage-plot">${metricSvg(1000, 18, `${names[key]} 평균 ${metricDuration(item.avgMs)}, 75% ${metricDuration(item.p75Ms)} 이내`, metricLine(0, 9, item.p75Ms / max * 1000, 9, 'var(--muted)') + `<rect x="0" y="4" width="${item.avgMs / max * 1000}" height="10" rx="3" fill="${colors[key]}"/>` + `<circle cx="${item.avgMs / max * 1000}" cy="9" r="4" fill="${colors[key]}"/>`, true)}</div>` : ''}</div>`;
-    }).join('')}</div><p class="metric-chart-note">완료 작업의 단계별 값이에요. 단계마다 대상 수가 달라 더해도 전체 시간이 되지 않아요.</p>`;
+      return `<div class="metric-stage-item"><div class="metric-stage-label"><b>${names[key]}</b><span>${esc(value)}${item.count ? ` <small>${esc(t('m.spread', { p50: metricDuration(item.p50Ms), p75: metricDuration(item.p75Ms) }))}</small>` : ''}</span></div><p>${esc(t('m.stage.had', { had: item.had, count: item.count }))}${item.had > item.count ? esc(t('m.stage.unknown', { n: item.had - item.count })) : ''}</p>${item.count ? `<div class="metric-stage-plot">${metricSvg(1000, 18, t('m.stage.aria', { name: names[key], avg: metricDuration(item.avgMs), p75: metricDuration(item.p75Ms) }), metricLine(0, 9, item.p75Ms / max * 1000, 9, 'var(--muted)') + `<rect x="0" y="4" width="${item.avgMs / max * 1000}" height="10" rx="3" fill="${colors[key]}"/>` + `<circle cx="${item.avgMs / max * 1000}" cy="9" r="4" fill="${colors[key]}"/>`, true)}</div>` : ''}</div>`;
+    }).join('')}</div><p class="metric-chart-note">${t('m.stage.note')}</p>`;
   };
   const metricCharts = (summary, width = 1000) => {
-    if (!summary.events) return metricEmpty('아직 작업 기록이 없어요.');
+    if (!summary.events) return metricEmpty(t('m.noEvents'));
     const current = summary.current, previous = summary.previous;
     const from = Date.parse(summary.from || summary.since), until = Date.parse(summary.until);
     const columns = width >= 900, lineWidth = Math.max(290, Math.floor(columns ? width * .42 - 45 : width - 36));
     const knownOpen = summary.plans.filter((plan) => ['planned', 'in_progress', 'blocked', 'ready_for_review'].includes(plan.status)).length;
     const unknownStatus = summary.plans.filter((plan) => !METRIC_STATUS[plan.status]).length;
-    let countChange = '전체 기간';
+    let countChange = t('m.allPeriod');
     if (previous) {
-      countChange = '지난 기간 완료 기록 없음';
+      countChange = t('m.count.noPrev');
       if (previous.done) {
         const difference = current.done - previous.done;
-        countChange = `이전 ${previous.done}개 · 같아요`;
-        if (difference) {
-          const direction = difference > 0 ? '증가' : '감소';
-          countChange = `이전 ${previous.done}개 · ${Math.abs(difference)}개 ${direction}`;
-        }
+        countChange = t('m.count.same', { n: previous.done });
+        if (difference) countChange = t(difference > 0 ? 'm.count.up' : 'm.count.down', { n: previous.done, diff: Math.abs(difference) });
       }
     }
     const averageCard = (label, item, prev, basis, counts) => {
-      const comparison = previous ? `<small>${metricDelta(item.avgMs, prev.avgMs)} 이전 평균 ${esc(metricKnown(prev.avgMs))}</small>` : '';
-      return `<div class="metric-kpi"><span>${esc(label)}</span><strong>${esc(item.count ? metricDuration(item.avgMs) : '기록 없음')}</strong><small>중앙값 ${esc(metricKnown(item.p50Ms))} · p75 ${esc(metricKnown(item.p75Ms))}</small><small>${esc(counts)}</small><small>${esc(basis)}</small>${comparison}</div>`;
+      const comparison = previous ? `<small>${metricDelta(item.avgMs, prev.avgMs)} ${esc(t('m.prevAvg', { avg: metricKnown(prev.avgMs) }))}</small>` : '';
+      return `<div class="metric-kpi"><span>${esc(label)}</span><strong>${esc(item.count ? metricDuration(item.avgMs) : t('m.noRecord'))}</strong><small>${esc(t('m.spreadKnown', { p50: metricKnown(item.p50Ms), p75: metricKnown(item.p75Ms) }))}</small><small>${esc(counts)}</small><small>${esc(basis)}</small>${comparison}</div>`;
     };
     let context = `${metricDate(from)} – ${metricDate(until)}`;
-    if (previous) context += ` · 이전 같은 기간 ${metricDate(from - (until - from))} – ${metricDate(from)}과 비교`;
-    else context += ' · 전체 기간';
-    if (summary.review === 'with') context += ' · 리뷰 있었던 작업만';
-    else if (summary.review === 'without') context += ' · 리뷰 없었던 작업만';
+    if (previous) context += t('m.ctx.prev', { from: metricDate(from - (until - from)), to: metricDate(from) });
+    else context += t('m.ctx.all');
+    if (summary.review === 'with') context += t('m.ctx.with');
+    else if (summary.review === 'without') context += t('m.ctx.without');
     const cards = [
-      averageCard('전체 작업 평균', current.lead, previous?.lead,
-        '처음 기록 → 첫 코드 반영. 반영 기록이 없으면 완료 표시까지.',
-        `집계 ${current.lead.count}건 / 완료 ${current.done}건 · 시작 모름 ${current.noStart}건`),
-      averageCard('PR 평균', current.pr, previous?.pr,
-        'PR 생성 → 성공 머지. 선택 기간에 머지된 PR별 · repo+pr로 연결.',
-        `집계 ${current.pr.count}건 / 머지 ${current.pr.had}건 · 생성 모름 ${current.pr.missingOpen}건 · 시각 역전 ${current.pr.invalidOrder}건 · 기간 내 생성 중 머지 기록 없음 ${current.pr.unmerged}건`),
-      ...[['review', '리뷰 평균 · 작업당'], ['verify', '검증 평균 · 작업당']].map(([key, label]) => {
+      averageCard(t('m.kpi.lead'), current.lead, previous?.lead,
+        t('m.kpi.leadBasis'),
+        t('m.kpi.leadCounts', { count: current.lead.count, done: current.done, noStart: current.noStart })),
+      averageCard(t('m.kpi.pr'), current.pr, previous?.pr,
+        t('m.kpi.prBasis'),
+        t('m.kpi.prCounts', { count: current.pr.count, had: current.pr.had, missingOpen: current.pr.missingOpen, invalidOrder: current.pr.invalidOrder, unmerged: current.pr.unmerged })),
+      ...[['review', t('m.kpi.review')], ['verify', t('m.kpi.verify')]].map(([key, label]) => {
         const item = current.stages[key];
         return averageCard(label, item, previous?.stages[key],
-          key === 'verify' ? '완료 작업당 검증 구간 누적 · 실행 시간과 줄서기 포함.' : '완료 작업당 리뷰 시작 → 결론 구간 누적 · 실행 1회 평균이 아니에요.',
-          `집계 ${item.count}건 / 해당 단계 ${item.had}건 · 시간 모름 ${item.had - item.count}건`);
+          key === 'verify' ? t('m.kpi.verifyBasis') : t('m.kpi.reviewBasis'),
+          t('m.kpi.stageCounts', { count: item.count, had: item.had, unknown: item.had - item.count }));
       }),
     ].join('');
-    return `<div id="metric-visuals"><p class="metric-context" title="${esc(new Date(from).toLocaleString('ko-KR') + ' ~ ' + new Date(until).toLocaleString('ko-KR'))}">${esc(context)}</p><div class="metric-kpis">${cards}</div>`
-      + `<p class="metric-context">끝낸 작업 ${current.done}개 · ${esc(countChange)} · 열린 작업 ${knownOpen}개${unknownStatus ? ` · 상태 모름 ${unknownStatus}개` : ''} · 검증 ${current.verifyPasses}/${current.verifyRuns}회 통과</p>`
-      + '<p class="metric-context">리뷰·검증은 완료 작업의 시작부터 첫 반영(없으면 완료 표시)까지 누적해요. 겹친 구간은 한 번만 세며 검증 → 리뷰 → 머지 대기 → 답 대기 → 작업 순으로 나눠요. 단계가 없던 작업과 시간을 모르는 기록은 해당 평균에서 제외해요. PR 시간은 이 구간들과 겹치므로 더하지 않아요.</p>'
-      + `<div class="metric-analytics">${metricPanel('작업별 걸린 시간 분포', '시간대별 완료 작업 수 · 비중은 시간 기록이 있는 작업 기준', metricHistogram(summary), 'metric-span8')}<div class="metric-side metric-span4">${metricPanel('지금 상태', '선택한 기간에 기록된 작업의 현재 상태', metricStates(summary))}${metricPanel('검증 결과', '선택한 기간에 실행된 검증 · 통과/실패/모름', metricVerify(summary))}</div>${metricPanel('날짜별 끝낸 작업', '코드 첫 반영 · 반영 기록이 없으면 완료 표시 기준', metricTrend(summary, lineWidth), 'metric-span5 metric-trend')}${metricPanel('단계별 걸린 시간', '독립 막대 = 평균 · 가는 선 끝 = p75', metricStages(summary), 'metric-span7')}</div></div>`;
+    return `<div id="metric-visuals"><p class="metric-context" title="${esc(new Date(from).toLocaleString(LOCALE) + ' ~ ' + new Date(until).toLocaleString(LOCALE))}">${esc(context)}</p><div class="metric-kpis">${cards}</div>`
+      + `<p class="metric-context">${esc(t('m.summary', { done: current.done, change: countChange, open: knownOpen }))}${unknownStatus ? esc(t('m.summaryUnknown', { n: unknownStatus })) : ''}${esc(t('m.summaryVerify', { passes: current.verifyPasses, runs: current.verifyRuns }))}</p>`
+      + `<p class="metric-context">${t('m.stagesNote')}</p>`
+      + `<div class="metric-analytics">${metricPanel(t('m.panel.hist'), t('m.panel.histNote'), metricHistogram(summary), 'metric-span8')}<div class="metric-side metric-span4">${metricPanel(t('m.panel.states'), t('m.panel.statesNote'), metricStates(summary))}${metricPanel(t('m.panel.verify'), t('m.panel.verifyNote'), metricVerify(summary))}</div>${metricPanel(t('m.panel.trend'), t('m.panel.trendNote'), metricTrend(summary, lineWidth), 'metric-span5 metric-trend')}${metricPanel(t('m.panel.stages'), t('m.panel.stagesNote'), metricStages(summary), 'metric-span7')}</div></div>`;
   };
   // 날짜별 그래프 박스가 옆(단계별) 박스 높이로 늘어나 남는 칸이 생기면 그 높이만큼 그래프를 키워 다시 그린다
   const fitMetricTrend = () => {
@@ -1195,7 +1216,7 @@
     const signal = metricsController.signal;
     metricsSummary = null;
     box.setAttribute('aria-busy', 'true');
-    box.innerHTML = '<div class="empty-history">지표를 불러오는 중이에요…</div>';
+    box.innerHTML = `<div class="empty-history">${t('m.loading')}</div>`;
     const query = new URLSearchParams({ review: document.getElementById('metrics-review').value });
     const sinceValue = document.getElementById('metrics-since').value;
     if (sinceValue) query.set('since', sinceValue);
@@ -1208,17 +1229,17 @@
     } catch (error) {
       if (ticket !== metricsTicket || error.name === 'AbortError') return;
       box.setAttribute('aria-busy', 'false');
-      box.innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      box.innerHTML = `<div class="empty-history">${esc(t('common.loadFailedWith', { error: error.message }))}</div>`;
       return;
     }
     if (ticket !== metricsTicket) return;
     box.setAttribute('aria-busy', 'false');
     if (!summary.events) {
-      box.innerHTML = '<div class="empty-history">아직 작업 기록이 없어요. 기록이 쌓이면 완료 추이와 소요 시간을 보여드려요.</div>';
+      box.innerHTML = `<div class="empty-history">${t('m.empty')}</div>`;
       return;
     }
     const { current, previous } = summary;
-    const before = summary.days ? `이전 ${summary.days}일` : '이전 같은 기간';
+    const before = summary.days ? t('m.beforeDays', { n: summary.days }) : t('m.beforeSame');
     const tile = (label, value, prev, format, options = {}, sub = '') => {
       const delta = previous ? metricDelta(value, prev, options) : '';
       return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(format(value))}</span>`
@@ -1229,38 +1250,38 @@
     // 큰 숫자는 평균 · 중앙값과 p75 를 밑에 — 값을 모르면 "모름"
     const spreadTile = (label, item, prev, sub) => {
       const delta = previous ? metricDelta(item.avgMs, prev?.avgMs) : '';
-      return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(item.had === 0 ? '없음' : metricKnown(item.avgMs))}</span>`
-        + `<span class="sub">평균 · 중앙값 ${esc(metricKnown(item.p50Ms))} · p75 ${esc(metricKnown(item.p75Ms))}</span>`
+      return `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(item.had === 0 ? t('m.none') : metricKnown(item.avgMs))}</span>`
+        + `<span class="sub">${esc(t('m.avgSpread', { p50: metricKnown(item.p50Ms), p75: metricKnown(item.p75Ms) }))}</span>`
         + (previous ? `<span class="delta">${delta}<span>${esc(before)} ${esc(metricKnown(prev?.avgMs))}</span></span>` : '')
         + `<span class="sub">${esc(sub)}</span></div>`;
     };
     const groups = [
-      group('소요', [
-        tile('완료', current.done, previous?.done, metricCount, { lowerIsBetter: false }),
-        spreadTile('시작 → 첫 머지', current.lead, previous?.lead, `머지 ${current.merged} · done 기준 ${current.doneOnly} · 시작 기록 없어 빠짐 ${current.noStart}`),
-        ...(current.handoffToMerge?.count ? [spreadTile('넘김 → 머지', current.handoffToMerge, previous?.handoffToMerge, `${current.handoffToMerge.count}건`)] : []),
-        spreadTile('머지 → 완료 표시', current.mergeToDone, previous?.mergeToDone, `${current.mergeToDone.count}건 · 첫 머지 뒤 커밋 ${current.followUps}건`),
+      group(t('m.g.lead'), [
+        tile(t('m.t.done'), current.done, previous?.done, metricCount, { lowerIsBetter: false }),
+        spreadTile(t('m.t.lead'), current.lead, previous?.lead, t('m.t.leadSub', { merged: current.merged, doneOnly: current.doneOnly, noStart: current.noStart })),
+        ...(current.handoffToMerge?.count ? [spreadTile(t('m.t.handoff'), current.handoffToMerge, previous?.handoffToMerge, t('m.cases', { n: current.handoffToMerge.count }))] : []),
+        spreadTile(t('m.t.mergeToDone'), current.mergeToDone, previous?.mergeToDone, t('m.t.mergeToDoneSub', { n: current.mergeToDone.count, followUps: current.followUps })),
       ], true),
       // 구간 — 끝낸 계획서 중 그 구간이 있었던 것(N건 중 M건) · 소요를 모르는 옛 기록은 시간에서 빠진다
-      group('구간', STAGES.map(([stage, label]) => {
+      group(t('m.g.stages'), STAGES.map(([stage, label]) => {
         const item = current.stages[stage];
         return spreadTile(label, item, previous?.stages[stage],
-          `${current.done}건 중 ${item.had}건${item.count < item.had ? ` · 시간 아는 것 ${item.count}건` : ''}`);
+          `${t('m.t.stageSub', { done: current.done, had: item.had })}${item.count < item.had ? t('m.t.stageKnown', { n: item.count }) : ''}`);
       }), true),
-      '<section class="metric-group wide"><h3>작업 안쪽</h3><div id="metric-work-totals" class="metric-note">세션 기록을 읽는 중…</div></section>',
-      group('개입', [
-        tile('작업당 질문', current.asksPerDone, previous?.asksPerDone, metricCount),
-        tile('평균 답 대기', current.waitMs, previous?.waitMs, metricDuration),
+      `<section class="metric-group wide"><h3>${t('m.g.work')}</h3><div id="metric-work-totals" class="metric-note">${t('m.workLoading')}</div></section>`,
+      group(t('m.g.intervene'), [
+        tile(t('m.t.asks'), current.asksPerDone, previous?.asksPerDone, metricCount),
+        tile(t('m.t.wait'), current.waitMs, previous?.waitMs, metricDuration),
       ]),
-      group('검증', [
-        tile('검증 실패율', current.verifyFailRate, previous?.verifyFailRate, metricRate, { rate: true }, `${current.verifyRuns}회`),
-        tile('리뷰 반려율', current.reviewRejectRate, previous?.reviewRejectRate, metricRate, { rate: true }, `${current.reviewRuns}회`),
-        tile('리뷰 라운드 평균', current.reviewRounds, previous?.reviewRounds, metricCount, {},
-          current.done > current.reviewRoundsKnown ? `자동 리뷰 기록 ${current.reviewRoundsKnown}개 기준` : ''),
+      group(t('m.g.verify'), [
+        tile(t('m.t.verifyFail'), current.verifyFailRate, previous?.verifyFailRate, metricRate, { rate: true }, t('m.times', { n: current.verifyRuns })),
+        tile(t('m.t.reviewReject'), current.reviewRejectRate, previous?.reviewRejectRate, metricRate, { rate: true }, t('m.times', { n: current.reviewRuns })),
+        tile(t('m.t.reviewRounds'), current.reviewRounds, previous?.reviewRounds, metricCount, {},
+          current.done > current.reviewRoundsKnown ? t('m.t.reviewRoundsSub', { n: current.reviewRoundsKnown }) : ''),
       ]),
-      group('정확도', [
-        tile('머지당 수정', current.fixRate, previous?.fixRate, metricCount, {}, `수정 ${current.autoFixes} / 머지 ${current.autoMerges}`),
-        tile('되돌림', null, null, () => '기록 없음', {}, '되돌림 사건이 아직 없음'),
+      group(t('m.g.accuracy'), [
+        tile(t('m.t.fixRate'), current.fixRate, previous?.fixRate, metricCount, {}, t('m.t.fixRateSub', { fixes: current.autoFixes, merges: current.autoMerges })),
+        tile(t('m.t.revert'), null, null, () => t('m.noRecord'), {}, t('m.t.revertSub')),
       ]),
     ].join('');
     // 계획서 줄 — 0 인 숫자는 숨기고, 걸린 시간은 이 목록에서 가장 긴 것(전체 소요 · 구간 합 중 큰 쪽) 대비 막대로
@@ -1270,34 +1291,34 @@
     const widthOf = (ms) => `${Math.max(1, ms / longest * 100).toFixed(1)}%`;
     // 구간 막대 — 아는 구간만 토막으로(토막에 "검증 3초" 설명) · 다 모르면 전체 소요 한 토막 · 그것도 모르면 글자만
     const leadBar = (plan) => {
-      if (!longest) return `<div class="metric-lead none">전체 경과 ${plan.leadMs == null ? '미기록' : esc(metricDuration(plan.leadMs))}</div>`;
+      if (!longest) return `<div class="metric-lead none">${esc(t('m.lead', { value: plan.leadMs == null ? t('m.unrecorded') : metricDuration(plan.leadMs) }))}</div>`;
       const known = STAGES.filter(([stage]) => (plan.stages?.[stage] ?? 0) > 0);
       if (known.length) {
-        const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(`${label} ${metricDuration(plan.stages[stage])}`)}" style="width:${widthOf(plan.stages[stage])}"></span>`).join('');
-        const text = plan.leadMs != null ? metricDuration(plan.leadMs) : '미기록';
-        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">전체 경과 ${esc(text)}</span></div>`;
+        const pieces = known.map(([stage, label]) => `<span class="bar ${stage}" title="${esc(t('m.labelValue', { label, value: metricDuration(plan.stages[stage]) }))}" style="width:${widthOf(plan.stages[stage])}"></span>`).join('');
+        const text = plan.leadMs != null ? metricDuration(plan.leadMs) : t('m.unrecorded');
+        return `<div class="metric-lead"><span class="track stages">${pieces}</span><span class="text">${esc(t('m.lead', { value: text }))}</span></div>`;
       }
       if (plan.leadMs === null) return null;
-      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">전체 경과 ${esc(metricDuration(plan.leadMs))}</span></div>`;
+      return `<div class="metric-lead"><span class="track"><span class="bar" style="width:${widthOf(plan.leadMs)}"></span></span><span class="text">${esc(t('m.lead', { value: metricDuration(plan.leadMs) }))}</span></div>`;
     };
     metricsRows = summary.plans.map((plan) => {
-      const lead = leadBar(plan) ?? `<div class="metric-lead none">전체 경과 미기록</div>`;
+      const lead = leadBar(plan) ?? `<div class="metric-lead none">${esc(t('m.lead', { value: t('m.unrecorded') }))}</div>`;
       const chips = [
-        plan.asks ? chip(`질문 ${plan.asks}`) : '',
-        plan.answered ? chip(`답 대기 ${metricDuration(plan.waitMs)}`) : '',
-        plan.blocked ? chip(`막힘 ${plan.blocked}`, true) : '',
-        plan.verify.runs ? chip(plan.verify.fails ? `검증 실패 ${plan.verify.fails}/${plan.verify.runs}` : `검증 통과 ${plan.verify.runs}`, plan.verify.fails > 0) : '',
-        plan.reviews.runs ? chip(plan.reviews.rejects ? `리뷰 반려 ${plan.reviews.rejects}/${plan.reviews.runs}` : '리뷰 승인', plan.reviews.rejects > 0) : '',
-        plan.reviewRounds ? chip(`리뷰 라운드 ${plan.reviewRounds}`) : '',
-        plan.commits ? chip(`커밋 ${plan.commits}`) : '',
-        plan.mergeToDoneMs !== null ? chip(`머지 → 완료 표시 ${metricDuration(plan.mergeToDoneMs)}`) : '',
+        plan.asks ? chip(t('m.c.asks', { n: plan.asks })) : '',
+        plan.answered ? chip(t('m.c.wait', { value: metricDuration(plan.waitMs) })) : '',
+        plan.blocked ? chip(t('m.c.blocked', { n: plan.blocked }), true) : '',
+        plan.verify.runs ? chip(plan.verify.fails ? t('m.c.verifyFail', { fails: plan.verify.fails, runs: plan.verify.runs }) : t('m.c.verifyPass', { n: plan.verify.runs }), plan.verify.fails > 0) : '',
+        plan.reviews.runs ? chip(plan.reviews.rejects ? t('m.c.reviewReject', { rejects: plan.reviews.rejects, runs: plan.reviews.runs }) : t('m.c.reviewOk'), plan.reviews.rejects > 0) : '',
+        plan.reviewRounds ? chip(t('m.c.rounds', { n: plan.reviewRounds })) : '',
+        plan.commits ? chip(t('m.c.commits', { n: plan.commits })) : '',
+        plan.mergeToDoneMs !== null ? chip(t('m.c.mergeToDone', { value: metricDuration(plan.mergeToDoneMs) })) : '',
       ].join('');
-      return `<div class="metric-plan" data-plan="${esc(plan.plan)}"><div><div class="name${plan.title ? '' : ' unavailable'}" title="${esc(plan.title || '제목을 확인할 수 없는 계획서')}">${esc(plan.title || '제목을 확인할 수 없는 계획서')}</div>${plan.archived ? '<div class="metric-note">보관됨</div>' : !plan.exists ? '<div class="metric-note">원본 없음</div>' : ''}</div>`
+      return `<div class="metric-plan" data-plan="${esc(plan.plan)}"><div><div class="name${plan.title ? '' : ' unavailable'}" title="${esc(plan.title || t('m.noTitle'))}">${esc(plan.title || t('m.noTitle'))}</div>${plan.archived ? `<div class="metric-note">${t('m.archived')}</div>` : !plan.exists ? `<div class="metric-note">${t('m.noSource')}</div>` : ''}</div>`
         + `<span class="metric-status ${esc(plan.status ?? '')}">${esc(METRIC_STATUS[plan.status] ?? plan.status ?? '—')}</span>${lead}`
-        + `<div class="metric-chips">${chips || '<span class="quiet">기록 없음</span>'}</div>`
+        + `<div class="metric-chips">${chips || `<span class="quiet">${t('m.noRecord')}</span>`}</div>`
         + `<dl class="metric-plan-stages">${STAGES.map(([stage, label]) => {
-          let value = '시간 모름';
-          if (plan.stageHad?.[stage] === false) value = '없음';
+          let value = t('m.timeUnknown');
+          if (plan.stageHad?.[stage] === false) value = t('m.none');
           else if (plan.stages?.[stage] != null) value = metricDuration(plan.stages[stage]);
           return `<div><dt>${esc(label)}</dt><dd>${esc(value)}</dd></div>`;
         }).join('')}</dl></div>`;
@@ -1308,12 +1329,12 @@
     metricsSummary = summary;
     metricsWidth = box.clientWidth;
     box.innerHTML = metricCharts(summary, Math.max(320, metricsWidth))
-      + `<details class="metric-details metric-extra"><summary>검사·질문 등 세부 숫자 보기</summary><div class="metric-groups">${groups}</div></details>`
-      + `<details open class="metric-details metric-all-plans"><summary>전체 작업 ${summary.plans.length}개</summary>`
-      + `<div class="metric-block"><h3>계획서 ${summary.plans.length}개</h3><p class="metric-note">전체 경과: 처음 기록 → 코드 첫 반영(없으면 완료 표시). 단계별 시간은 이 구간을 나눈 값이며 실제 세션 시간과 달라요. 없음은 해당 단계 기록이 없는 경우, 시간 모름은 소요를 확인할 수 없는 경우예요.</p>`
-      + `<p class="metric-legend">${STAGES.map(([stage, label]) => `<span class="${stage}">${esc(label)}</span>`).join('')}<span class="note">막대는 아는 구간만 · 다 모르면 전체 소요 한 토막</span></p>`
-      + (metricsRows.length ? '<div id="metric-plan-page"></div>' : '<div class="empty-history">이 기간 계획서 없음</div>')
-      + `<p class="metric-note">기록 시작 ${esc(summary.since.slice(0, 10))} · 상태 변화는 현황판이 켜져 있을 때만 기록</p></div></details>`;
+      + `<details class="metric-details metric-extra"><summary>${t('m.moreNumbers')}</summary><div class="metric-groups">${groups}</div></details>`
+      + `<details open class="metric-details metric-all-plans"><summary>${t('m.allWork', { n: summary.plans.length })}</summary>`
+      + `<div class="metric-block"><h3>${t('m.plans', { n: summary.plans.length })}</h3><p class="metric-note">${t('m.plansNote')}</p>`
+      + `<p class="metric-legend">${STAGES.map(([stage, label]) => `<span class="${stage}">${esc(label)}</span>`).join('')}<span class="note">${t('m.legendNote')}</span></p>`
+      + (metricsRows.length ? '<div id="metric-plan-page"></div>' : `<div class="empty-history">${t('m.noPlans')}</div>`)
+      + `<p class="metric-note">${esc(t('m.since', { date: summary.since.slice(0, 10) }))}</p></div></details>`;
     fitMetricTrend();
     renderMetricPage();
     loadMetricsWork(workQuery, ticket, signal);
@@ -1333,10 +1354,10 @@
     const start = metricsPage * METRIC_PAGE_SIZE;
     const end = Math.min(start + METRIC_PAGE_SIZE, metricsRows.length);
     const pager = count > 1
-      ? `<nav class="metric-pager" aria-label="전체 작업 쪽"><button type="button" data-step="-1"${metricsPage === 0 ? ' disabled' : ''}>이전</button>${metricPageNumbers(count)}`
-        + `<button type="button" data-step="1"${metricsPage === count - 1 ? ' disabled' : ''}>다음</button><span class="range">${start + 1}–${end} / ${metricsRows.length}</span></nav>`
+      ? `<nav class="metric-pager" aria-label="${esc(t('m.pager'))}"><button type="button" data-step="-1"${metricsPage === 0 ? ' disabled' : ''}>${t('m.prev')}</button>${metricPageNumbers(count)}`
+        + `<button type="button" data-step="1"${metricsPage === count - 1 ? ' disabled' : ''}>${t('m.next')}</button><span class="range">${start + 1}–${end} / ${metricsRows.length}</span></nav>`
       : '';
-    holder.innerHTML = `<div class="metric-plans"><div class="metric-plan head"><span>계획서</span><span>상태</span><span>소요</span><span>기록</span></div>${metricsRows.slice(start, end).join('')}</div>${pager}`;
+    holder.innerHTML = `<div class="metric-plans"><div class="metric-plan head"><span>${t('m.h.plan')}</span><span>${t('m.h.status')}</span><span>${t('m.h.lead')}</span><span>${t('m.h.record')}</span></div>${metricsRows.slice(start, end).join('')}</div>${pager}`;
     if (metricsWork) addMetricWorkLines();
   };
   // 세션 기록 줄 — 지금 쪽에 보이는 계획서 줄에만 붙인다(쪽을 넘기면 renderMetricPage 가 다시 부른다)
@@ -1346,12 +1367,12 @@
       if (!kinds) return;
       const line = document.createElement('div');
       line.className = 'metric-work';
-      line.textContent = `세션 기록 · ${workLine(kinds) || '기록된 소요 없음'}`;
+      line.textContent = t('m.workLine', { line: workLine(kinds) || t('m.workNone') });
       row.append(line);
     });
   };
   // 작업 안쪽은 세션 기록을 읽어 늦게 올 수 있다 — 숫자를 먼저 보이고 뒤늦게 채운다(그사이 기간을 바꿨으면 버린다)
-  const workLine = (kinds) => WORK_KINDS.filter(([kind]) => kinds[kind] > 0).map(([kind, label]) => `${label} ${metricDuration(kinds[kind])}`).join(' · ');
+  const workLine = (kinds) => WORK_KINDS.filter(([kind]) => kinds[kind] > 0).map(([kind, label]) => t('m.labelValue', { label, value: metricDuration(kinds[kind]) })).join(' · ');
   const loadMetricsWork = async (query, ticket, signal) => {
     let work;
     try {
@@ -1359,25 +1380,94 @@
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       work = await response.json();
     } catch (error) {
-      if (ticket === metricsTicket && error.name !== 'AbortError' && document.getElementById('metric-work-totals')) document.getElementById('metric-work-totals').textContent = `불러오지 못했어요 — ${error.message}`;
+      if (ticket === metricsTicket && error.name !== 'AbortError' && document.getElementById('metric-work-totals')) document.getElementById('metric-work-totals').textContent = t('common.loadFailedWith', { error: error.message });
       return;
     }
     if (ticket !== metricsTicket) return;
     document.getElementById('metric-work-totals').outerHTML = `<div class="metric-tiles">${WORK_KINDS.map(([kind, label]) =>
       `<div class="metric-tile"><span class="label">${esc(label)}</span><span class="value">${esc(metricDuration(work.totals[kind]))}</span></div>`).join('')}</div>`
-      + `<p class="metric-note">기간 합계 · 작업이 동시에 돌아 실제 경과보다 클 수 있음 · 세션 ${work.sessions.linked}개 · 뺀 세션: 리뷰 ${work.sessions.reviewer}개, 계획서 표시 없음 ${work.sessions.unlinked}개 · Claude ${work.engines?.claude ?? 0}개 · Codex ${work.engines?.codex ?? 0}개</p>`;
+      + `<p class="metric-note">${esc(t('m.workNote', { linked: work.sessions.linked, reviewer: work.sessions.reviewer, unlinked: work.sessions.unlinked, claude: work.engines?.claude ?? 0, codex: work.engines?.codex ?? 0 }))}</p>`;
     metricsWork = work;
     addMetricWorkLines();
   };
   let metricsTicket = 0;
   document.getElementById('metrics-days').addEventListener('change', () => {
     document.getElementById('metrics-since').value = '';
+    showSince(); // 아래 시작 날짜 칸
     loadMetrics();
   });
   document.getElementById('metrics-since').addEventListener('change', (event) => {
     document.getElementById('metrics-days').value = event.target.value ? 'since' : '7';
     loadMetrics();
   });
+  // 시작 날짜 칸 — 기본 input type=date 는 페이지 언어가 아니라 브라우저 · OS 언어로 칸과 달력을 그린다.
+  // 값(YYYY-MM-DD)은 숨은 칸에 그대로 두고(읽기 · change 는 전과 같다) 보이는 칸과 달력은 앱 언어(LOCALE)로 직접 그린다
+  const sinceInput = document.getElementById('metrics-since');
+  const sinceButton = document.getElementById('metrics-since-button');
+  const calendar = document.getElementById('metrics-calendar');
+  let calendarMonth = new Date();
+  const isoDay = (date) => `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  const parseDay = (text) => {
+    const [year, month, day] = text.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const showSince = () => {
+    sinceButton.textContent = sinceInput.value ? parseDay(sinceInput.value).toLocaleDateString(LOCALE, { year: 'numeric', month: 'short', day: 'numeric' }) : t('metrics.sinceDate');
+    sinceButton.classList.toggle('empty', !sinceInput.value);
+  };
+  const drawCalendar = () => {
+    const year = calendarMonth.getFullYear();
+    const month = calendarMonth.getMonth();
+    // 2023-01-01 은 일요일 — 요일 이름을 일요일부터 앱 언어로
+    const weekdays = Array.from({ length: 7 }, (empty, index) => new Date(2023, 0, 1 + index).toLocaleDateString(LOCALE, { weekday: 'narrow' }));
+    const today = isoDay(new Date());
+    const cells = Array.from({ length: new Date(year, month, 1).getDay() }, () => '<span></span>');
+    for (let day = 1; day <= new Date(year, month + 1, 0).getDate(); day += 1) {
+      const iso = isoDay(new Date(year, month, day));
+      const marks = [iso === today ? 'today' : '', iso === sinceInput.value ? 'picked' : ''].filter(Boolean).join(' ');
+      cells.push(`<button type="button" data-day="${iso}" class="${marks}">${day}</button>`);
+    }
+    calendar.innerHTML = `<div class="calendar-head"><button type="button" data-step="-1" aria-label="${esc(t('metrics.prevMonth'))}">‹</button>`
+      + `<strong>${esc(calendarMonth.toLocaleDateString(LOCALE, { year: 'numeric', month: 'long' }))}</strong>`
+      + `<button type="button" data-step="1" aria-label="${esc(t('metrics.nextMonth'))}">›</button></div>`
+      + `<div class="calendar-grid">${weekdays.map((name) => `<span class="weekday">${esc(name)}</span>`).join('')}${cells.join('')}</div>`;
+  };
+  const closeCalendar = () => {
+    calendar.hidden = true;
+    sinceButton.setAttribute('aria-expanded', 'false');
+  };
+  sinceButton.addEventListener('click', () => {
+    if (!calendar.hidden) return closeCalendar();
+    const shown = sinceInput.value ? parseDay(sinceInput.value) : new Date();
+    calendarMonth = new Date(shown.getFullYear(), shown.getMonth(), 1);
+    drawCalendar();
+    calendar.hidden = false;
+    sinceButton.setAttribute('aria-expanded', 'true');
+  });
+  calendar.addEventListener('click', (event) => {
+    const button = event.target.closest('button');
+    if (!button) return;
+    if (button.dataset.step) {
+      calendarMonth = new Date(calendarMonth.getFullYear(), calendarMonth.getMonth() + Number(button.dataset.step), 1);
+      drawCalendar();
+      return;
+    }
+    sinceInput.value = button.dataset.day;
+    closeCalendar();
+    showSince();
+    sinceInput.dispatchEvent(new Event('change'));
+  });
+  // 바깥을 누르면 닫는다 — 달 넘기기는 누른 단추를 다시 그려 문서에서 빠지니 눌린 때의 경로(composedPath)로 본다
+  const datePick = sinceButton.parentElement;
+  document.addEventListener('click', (event) => {
+    if (!calendar.hidden && !event.composedPath().includes(datePick)) closeCalendar();
+  });
+  datePick.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    closeCalendar();
+    sinceButton.focus();
+  });
+  showSince();
   document.getElementById('metrics-review').addEventListener('change', loadMetrics);
   // 전체 작업 쪽 넘기기 — 목록은 다시 그려지니 바깥 #metrics 에 한 번만 건다
   document.getElementById('metrics').addEventListener('click', (event) => {
@@ -1405,7 +1495,7 @@
 
   // ── 메모리 탭 — 아테나 auto memory 목록. 누를 때만 읽고, 줄을 누르면 본문
   const MEMORY_SOURCE = { claude: 'Claude', codex: 'Codex' };
-  const MEMORY_TYPE = { user: '👤 사용자', feedback: '💬 피드백', project: '📁 프로젝트', reference: '🔗 참고' };
+  const MEMORY_TYPE = Object.fromEntries(['user', 'feedback', 'project', 'reference'].map((type) => [type, t(`memory.type.${type}`)]));
   const memoryPill = (type) => `<span class="pill mem-${esc(type || 'none')}">${esc(MEMORY_TYPE[type] || type || '?')}</span>`;
   let memoryItems = [];
   let memorySources = [];
@@ -1419,20 +1509,20 @@
     const cut = (start, ends) => { const end = Math.min(...ends.filter((value) => value > start), body.length); return body.slice(start, end).trim(); };
     const links = (html) => html.replace(/\[\[([^\]]+)\]\]/g, '<span class="chip">🔗 $1</span>');
     const block = (icon, label, text, kind = '') => (text ? `<div class="lc-block ${kind}"><h5>${icon} ${label}</h5><div class="text">${links(markdown(text))}</div></div>` : '');
-    const summary = `<div class="lc-block note"><h5>✨ 한 줄 요약</h5><div class="text">${inline(item.description)}</div></div>`;
-    if (why < 0 && how < 0) return `<div class="md-sections">${summary}${block('📌', '내용', body)}</div>`;
+    const summary = `<div class="lc-block note"><h5>${t('memory.summary')}</h5><div class="text">${inline(item.description)}</div></div>`;
+    if (why < 0 && how < 0) return `<div class="md-sections">${summary}${block('📌', t('memory.body'), body)}</div>`;
     const marks = [why, how, rel].filter((value) => value >= 0);
     const main = body.slice(0, Math.min(...marks)).trim();
     const whyText = why >= 0 ? cut(why, [how, rel]).replace(/^\*\*Why:\*\*\s*/, '') : '';
     const howText = how >= 0 ? cut(how, [why, rel]).replace(/^\*\*How to apply:\*\*\s*/, '') : '';
     const related = rel >= 0 ? [...body.slice(rel).matchAll(/\[\[([^\]]+)\]\]/g)].map((match) => `<span class="chip">🔗 ${esc(match[1])}</span>`).join('') : '';
-    return `<div class="md-sections">${summary}${block('📌', '내용', main)}${block('💡', '왜', whyText, 'warn')}${block('🛠', '이렇게 적용', howText)}${related ? `<div><h5 style="margin:0 0 4px;font-size:11.5px;color:var(--muted)">관련 기억</h5><div class="chips">${related}</div></div>` : ''}</div>`;
+    return `<div class="md-sections">${summary}${block('📌', t('memory.body'), main)}${block('💡', t('memory.why'), whyText, 'warn')}${block('🛠', t('memory.how'), howText)}${related ? `<div><h5 style="margin:0 0 4px;font-size:11.5px;color:var(--muted)">${t('memory.related')}</h5><div class="chips">${related}</div></div>` : ''}</div>`;
   };
   const openMemory = (file) => {
     const item = memoryItems.find((entry) => entry.id === file);
     if (!item) return;
     document.getElementById('detail-title').textContent = item.title;
-    document.getElementById('detail-meta').innerHTML = `<div class="chips">${item.type ? memoryPill(item.type) : ''}<span class="chip">수정 ${esc(item.updated)}</span><span class="chip">${esc(item.file)}</span></div>`;
+    document.getElementById('detail-meta').innerHTML = `<div class="chips">${item.type ? memoryPill(item.type) : ''}<span class="chip">${esc(t('memory.updated', { date: item.updated }))}</span><span class="chip">${esc(item.file)}</span></div>`;
     document.getElementById('detail-body').innerHTML = memoryDetail(item);
     document.getElementById('detail').showModal();
   };
@@ -1440,7 +1530,7 @@
     const box = document.getElementById('memory');
     document.querySelectorAll('[data-memory-source]').forEach((button) => button.setAttribute('aria-pressed', String(button.dataset.memorySource === memorySource)));
     const shown = memoryItems.filter((item) => memorySource === 'all' || item.source === memorySource);
-    if (!shown.length) { box.innerHTML = '<div class="empty-history">저장된 메모리가 없어요</div>'; return; }
+    if (!shown.length) { box.innerHTML = `<div class="empty-history">${t('memory.empty')}</div>`; return; }
     box.innerHTML = shown.map((item) => {
       const summary = item.description || item.body.split('\n').map((line) => line.trim()).find((line) => line && !/^#/.test(line)) || '';
       return `<button type="button" class="h-row" data-file="${esc(item.id)}">
@@ -1462,18 +1552,18 @@
       memoryItems = memorySources.flatMap((source, index) => source.items.map((item) => ({ ...item, id: `${index}:${item.file}`, source: source.source, sourceDir: source.dir })))
         .sort((left, right) => right.updated.localeCompare(left.updated));
     } catch (error) {
-      document.getElementById('memory').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      document.getElementById('memory').innerHTML = `<div class="empty-history">${esc(t('common.loadFailedWith', { error: error.message }))}</div>`;
       return;
     }
     renderMemory();
   };
 
   // ── 학습 탭 — 학습 후보(넣기·고쳐서 넣기·버리기)와 학습한 내용(수정·삭제). 누를 때만 읽는다
-  const BASIS = { code: '근거: 코드', run: '근거: 실행 결과', 'user-said': '근거: 사용자 말' };
-  const SIGNAL = { done: '작업 끝', correction: '사용자 교정', 'repeat-error': '반복 오류', review: '배우기 검토자', tidy: '공책 점검' };
+  const BASIS = Object.fromEntries(['code', 'run', 'user-said'].map((basis) => [basis, t(`learn.basis.${basis}`)]));
+  const SIGNAL = Object.fromEntries(['done', 'correction', 'repeat-error', 'review', 'tidy'].map((signal) => [signal, t(`learn.signal.${signal}`)]));
   const areaOf = (item) => {
-    if (item.skill) return `스킬 ${item.target.slice(6)}`;
-    if (item.guard) return `정비 ${item.target.slice(6)}`;
+    if (item.skill) return t('learn.area.skill', { name: item.target.slice(6) });
+    if (item.guard) return t('learn.area.guard', { name: item.target.slice(6) });
     return (item.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, '').replace(/\.md$/, '') || '?');
   };
   const signalOf = (item) => SIGNAL[item.signal] || SIGNAL[(item.source.match(/·\s*([\w-]+)\)\s*$/) || [])[1]] || '';
@@ -1493,17 +1583,17 @@
     const split = item.tidy?.split || [];
     const rows = stale.map((entry, index) => `<div class="tidy-row">
         <div class="rule">${esc(bareLine(entry.line))}</div>
-        <div class="where">사라진 경로: ${entry.missing.map((file) => `<code>${esc(file)}</code>`).join(' · ')}${entry.file !== item.target ? ` · ${esc(entry.file.replace(/^docs\/knowledge\//, ''))}` : ''}</div>
-        <div class="actions"><button class="btn danger" data-act="tidy-remove" data-index="${index}">지우기</button><button class="btn" data-act="tidy-keep" data-index="${index}">그대로 두기</button></div>
+        <div class="where">${t('learn.tidy.missing')}${entry.missing.map((file) => `<code>${esc(file)}</code>`).join(' · ')}${entry.file !== item.target ? ` · ${esc(entry.file.replace(/^docs\/knowledge\//, ''))}` : ''}</div>
+        <div class="actions"><button class="btn danger" data-act="tidy-remove" data-index="${index}">${t('learn.tidy.remove')}</button><button class="btn" data-act="tidy-keep" data-index="${index}">${t('learn.tidy.keep')}</button></div>
       </div>`).join('');
-    const splits = split.map((entry) => `<li>${entry.reason === 'chars' ? `공통 공책 ${Number(entry.chars).toLocaleString()}자 — 기준 2만 자를 넘었어요` : `화면 <code>${esc(entry.folder)}</code> ${entry.lines}줄 → <code>${esc(entry.to)}</code>`}</li>`).join('');
+    const splits = split.map((entry) => `<li>${entry.reason === 'chars' ? esc(t('learn.tidy.chars', { chars: Number(entry.chars).toLocaleString(LOCALE) })) : t('learn.tidy.lines', { folder: `<code>${esc(entry.folder)}</code>`, lines: entry.lines, to: `<code>${esc(entry.to)}</code>` })}</li>`).join('');
     return `<div class="learn-card" data-id="${esc(item.id)}" data-mode="candidate">
       <div class="top"><div class="title tidy-title">${tidyTitle(item.title)}</div><span class="h-tags"><span class="pill learn-area">🧹 ${esc(areaOf(item))}</span><span class="pill">${esc(item.created || '')}</span></span></div>
-      ${item.explain ? `<div><div class="label">무엇을 찾았나</div><div class="text">${esc(item.explain)}</div></div>` : ''}
-      ${rows ? `<div><div class="label">낡았을 수 있는 줄 — 파일이 옮겨졌을 수도 있으니 읽고 고르세요</div>${rows}</div>` : ''}
-      ${splits ? `<div><div class="label">나눌까요</div><ul class="text" style="margin:0;padding-left:18px">${splits}</ul></div>` : ''}
-      ${item.where ? `<div class="where">어디서 · ${esc(item.where.replace(/^- /gm, ''))}</div>` : ''}
-      <div class="actions">${split.length ? '<button class="btn primary" data-act="tidy-split">🧹 아테나에게 나누기 맡기기</button>' : ''}<button class="btn" data-act="discard">후보 닫기</button></div>
+      ${item.explain ? `<div><div class="label">${t('learn.tidy.found')}</div><div class="text">${esc(item.explain)}</div></div>` : ''}
+      ${rows ? `<div><div class="label">${t('learn.tidy.stale')}</div>${rows}</div>` : ''}
+      ${splits ? `<div><div class="label">${t('learn.tidy.split')}</div><ul class="text" style="margin:0;padding-left:18px">${splits}</ul></div>` : ''}
+      ${item.where ? `<div class="where">${esc(t('learn.where', { where: item.where.replace(/^- /gm, '') }))}</div>` : ''}
+      <div class="actions">${split.length ? `<button class="btn primary" data-act="tidy-split">${t('learn.tidy.splitButton')}</button>` : ''}<button class="btn" data-act="discard">${t('learn.tidy.close')}</button></div>
     </div>`;
   };
   const learnIcon = (item) => {
@@ -1513,28 +1603,28 @@
   };
   // 정비 후보(target: guard:<영역>#<이름>)는 공책 문장 대신 정비할 곳을 보인다 — learning.md 1-2
   const ruleView = (item) => item.guard
-    ? `<div><div class="label">정비할 곳 — 공책 대신 여기에 박아 막는다</div><div class="rule">${esc(item.rule)}</div></div>`
-    : `<div><div class="label">공책에 들어갈 문장 ${item.strengthen ? '— 기존 줄을 고친다' : ''}</div><div class="rule">${esc(item.rule)}</div>${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.original ? `<div class="where">고치기 전 줄: ${esc(item.original)}</div>` : ''}</div>`;
+    ? `<div><div class="label">${t('learn.guardWhere')}</div><div class="rule">${esc(item.rule)}</div></div>`
+    : `<div><div class="label">${t('learn.ruleLabel')}${item.strengthen ? t('learn.strengthen') : ''}</div><div class="rule">${esc(item.rule)}</div>${item.strengthen ? `<div class="where">${esc(t('learn.originalLine', { line: item.strengthen }))}</div>` : ''}${item.original ? `<div class="where">${esc(t('learn.beforeLine', { line: item.original }))}</div>` : ''}</div>`;
   const learnCard = (item, mode, editing) => {
     if (mode === 'candidate' && item.tidy) return tidyCard(item);
     const icon = learnIcon(item);
-    const pills = `<span class="pill ${item.skill || item.guard ? 'learn-skill' : 'learn-area'}">${icon} ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="근거 종류">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}${item.scope ? `<span class="pill" title="이 화면(코드 폴더)을 만질 때만 걸리는 함정">🖥 ${esc(item.scope)}</span>` : ''}<span class="pill">${esc(item.applied || item.created || '')}</span>`;
+    const pills = `<span class="pill ${item.skill || item.guard ? 'learn-skill' : 'learn-area'}">${icon} ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="${esc(t('learn.basisTitle'))}">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}${item.scope ? `<span class="pill" title="${esc(t('learn.scopeTitle'))}">🖥 ${esc(item.scope)}</span>` : ''}<span class="pill">${esc(item.applied || item.created || '')}</span>`;
     const ruleBox = editing
-      ? learnField('rule', '공책에 넣을 문장 (에이전트가 읽는 한 줄)', item.rule, true, 2)
+      ? learnField('rule', t('learn.ruleEdit'), item.rule, true, 2)
       : ruleView(item);
     let buttons;
-    if (editing) buttons = `<button class="btn primary" data-act="${mode === 'candidate' ? 'apply' : 'save'}">${mode === 'candidate' ? '고친 대로 넣기' : '저장'}</button><button class="btn" data-act="cancel">취소</button>`;
-    else if (mode === 'candidate' && item.guard) buttons = `<button class="btn primary" data-act="guard">🔧 아테나에게 정비 맡기기</button><button class="btn danger" data-act="discard">버리기</button>`;
-    else if (mode === 'candidate' && item.skill) buttons = `<button class="btn primary" data-act="skill">🛠 아테나에게 스킬 만들기 맡기기</button><button class="btn danger" data-act="discard">버리기</button>`;
-    else if (mode === 'candidate') buttons = `<button class="btn primary" data-act="apply">넣기</button><button class="btn" data-act="edit">고쳐서 넣기</button><button class="btn danger" data-act="discard">버리기</button>`;
-    else buttons = `<button class="btn" data-act="edit">수정</button><button class="btn danger" data-act="remove">삭제</button>`;
+    if (editing) buttons = `<button class="btn primary" data-act="${mode === 'candidate' ? 'apply' : 'save'}">${mode === 'candidate' ? t('learn.applyEdited') : t('common.save')}</button><button class="btn" data-act="cancel">${t('common.cancel')}</button>`;
+    else if (mode === 'candidate' && item.guard) buttons = `<button class="btn primary" data-act="guard">${t('learn.guardButton')}</button><button class="btn danger" data-act="discard">${t('learn.discard')}</button>`;
+    else if (mode === 'candidate' && item.skill) buttons = `<button class="btn primary" data-act="skill">${t('learn.skillButton')}</button><button class="btn danger" data-act="discard">${t('learn.discard')}</button>`;
+    else if (mode === 'candidate') buttons = `<button class="btn primary" data-act="apply">${t('learn.apply')}</button><button class="btn" data-act="edit">${t('learn.editApply')}</button><button class="btn danger" data-act="discard">${t('learn.discard')}</button>`;
+    else buttons = `<button class="btn" data-act="edit">${t('common.edit')}</button><button class="btn danger" data-act="remove">${t('common.delete')}</button>`;
     return `<div class="learn-card" data-id="${esc(item.id)}" data-mode="${mode}">
-      <div class="top">${editing ? learnField('title', '제목', item.title, true) : `<div class="title">${esc(item.title)}</div>`}<span class="h-tags">${pills}</span></div>
-      ${learnField('explain', '무엇을 배웠나', item.explain, editing, 4)}
-      ${learnField('why', '왜 중요한가 — 모르면', item.why, editing, 2)}
+      <div class="top">${editing ? learnField('title', t('learn.f.title'), item.title, true) : `<div class="title">${esc(item.title)}</div>`}<span class="h-tags">${pills}</span></div>
+      ${learnField('explain', t('learn.f.explain'), item.explain, editing, 4)}
+      ${learnField('why', t('learn.f.why'), item.why, editing, 2)}
       ${ruleBox}
-      ${item.jev ? `<div class="lc-block warn"><h5>🤖 기존 줄과 겹쳐 보여요 — Jev ${Math.round(item.jev.score * 100)}% (추정)</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}
-      ${item.where ? `<div class="where">어디서 배웠나 · ${esc(item.where.replace(/^- /gm, ''))}</div>` : ''}
+      ${item.jev ? `<div class="lc-block warn"><h5>${esc(t('learn.jev', { score: Math.round(item.jev.score * 100) }))}</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}
+      ${item.where ? `<div class="where">${esc(t('learn.learnedWhere', { where: item.where.replace(/^- /gm, '') }))}</div>` : ''}
       <div class="actions">${buttons}</div>
     </div>`;
   };
@@ -1544,24 +1634,24 @@
   const learnedDetail = (item, editing) => {
     const card = (icon, label, text, kind = '') => `<div class="lc-block ${kind}"><h5>${icon} ${label}</h5><div class="text">${text}</div></div>`;
     if (editing) return `<div class="md-sections learned-pop" data-id="${esc(item.id)}">
-      ${learnField('title', '제목', item.title, true)}${learnField('explain', '📖 무엇을 배웠나', item.explain, true, 4)}${learnField('why', '⚠️ 모르면', item.why, true, 2)}${learnField('rule', '📝 공책에 들어가는 한 줄 (에이전트가 읽는다)', item.rule, true, 3)}
-      <div class="actions"><button class="btn primary" data-act="save">저장</button><button class="btn" data-act="cancel">취소</button></div></div>`;
+      ${learnField('title', t('learn.f.title'), item.title, true)}${learnField('explain', t('learn.p.explain'), item.explain, true, 4)}${learnField('why', t('learn.p.why'), item.why, true, 2)}${learnField('rule', t('learn.p.rule'), item.rule, true, 3)}
+      <div class="actions"><button class="btn primary" data-act="save">${t('common.save')}</button><button class="btn" data-act="cancel">${t('common.cancel')}</button></div></div>`;
     const changed = item.original || item.strengthen;
     const rule = changed
-      ? `<div style="display:grid;gap:6px"><div><span class="chip">고치기 전</span> <span style="color:var(--muted);text-decoration:line-through">${inline(bareLine(changed))}</span></div><div><span class="chip">고친 뒤</span> ${inline(item.rule)}</div></div>`
+      ? `<div style="display:grid;gap:6px"><div><span class="chip">${t('learn.before')}</span> <span style="color:var(--muted);text-decoration:line-through">${inline(bareLine(changed))}</span></div><div><span class="chip">${t('learn.after')}</span> ${inline(item.rule)}</div></div>`
       : inline(item.rule);
     return `<div class="md-sections learned-pop" data-id="${esc(item.id)}">
-      ${card('📖', '무엇을 배웠나', esc(item.explain || '—'))}
-      ${card('⚠️', '모르면', esc(item.why || '—'), 'warn')}
-      ${card('📝', `공책(${esc(item.notebook.replace(/^docs\/knowledge\//, '') || '?')})에 들어가는 한 줄`, rule, 'note')}
-      ${item.where ? card('📍', '어디서 배웠나', `<span style="font-size:12.5px;color:var(--muted)">${esc(item.where.replace(/^- /gm, ''))}</span>`) : ''}
-      <div class="actions"><button class="btn" data-act="edit">수정</button><button class="btn danger" data-act="remove">삭제</button></div></div>`;
+      ${card('📖', t('learn.f.explain'), esc(item.explain || '—'))}
+      ${card('⚠️', t('learn.whyShort'), esc(item.why || '—'), 'warn')}
+      ${card('📝', esc(t('learn.notebookLine', { notebook: item.notebook.replace(/^docs\/knowledge\//, '') || '?' })), rule, 'note')}
+      ${item.where ? card('📍', t('learn.learnedWhereTitle'), `<span style="font-size:12.5px;color:var(--muted)">${esc(item.where.replace(/^- /gm, ''))}</span>`) : ''}
+      <div class="actions"><button class="btn" data-act="edit">${t('common.edit')}</button><button class="btn danger" data-act="remove">${t('common.delete')}</button></div></div>`;
   };
   const openLearned = (id, editing = false) => {
     const item = (learnData.learned || []).find((entry) => entry.id === id);
     if (!item) return;
     document.getElementById('detail-title').textContent = item.title;
-    document.getElementById('detail-meta').innerHTML = `<div class="chips"><span class="pill learn-area">📚 ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="chip">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="chip">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}<span class="chip">넣은 날 ${esc(item.applied)}</span><span class="chip">👤 ${esc(item.by || '?')}</span></div>`;
+    document.getElementById('detail-meta').innerHTML = `<div class="chips"><span class="pill learn-area">📚 ${esc(areaOf(item))}</span>${signalOf(item) ? `<span class="chip">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="chip">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}<span class="chip">${esc(t('learn.appliedOn', { date: item.applied }))}</span><span class="chip">👤 ${esc(item.by || '?')}</span></div>`;
     document.getElementById('detail-body').innerHTML = learnedDetail(item, editing);
     const dialog = document.getElementById('detail');
     if (!dialog.open) dialog.showModal();
@@ -1574,13 +1664,13 @@
     const act = button.dataset.act;
     if (act === 'edit') return openLearned(id, true);
     if (act === 'cancel') return openLearned(id, false);
-    if (act === 'remove' && !confirm('이 학습을 공책에서 뺄까요? (기록은 휴지통으로 — 되살릴 수 있어요)')) return;
+    if (act === 'remove' && !confirm(t('learn.removeConfirm'))) return;
     const edits = Object.fromEntries([...card.querySelectorAll('[data-k]')].map((field) => [field.dataset.k, field.value]));
     button.disabled = true;
     try {
       const result = await api(act === 'save' ? '/api/learn-edit' : '/api/learn-remove', { id, edits });
-      if (result.notebookUpdated === false) alert('기록은 처리했지만 공책에서 해당 줄을 찾지 못했어요 — 공책 파일을 직접 확인해 주세요');
-      toast(act === 'save' ? '고쳤어요' : '공책에서 뺐어요');
+      if (result.notebookUpdated === false) alert(t('learn.lineMissing'));
+      toast(act === 'save' ? t('learn.edited') : t('learn.removed'));
     } catch (error) {
       alert(error.message || String(error));
     }
@@ -1600,16 +1690,16 @@
     const draft = batchDraft.get(item.id) || {};
     const value = (key) => draft[key] ?? item[key];
     const open = editing || batchOpen.has(item.id);
-    const pills = `${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="정확히 같은 문장이라 하나로 합쳤어요">같은 문장 ${item.dups.length + 1}개 합침</span>` : ''}${item.strengthen ? ' <span class="pill">기존 줄 고침</span>' : ''}${item.jev ? ` <span class="pill" title="${esc(item.jev.line)}">🤖 겹쳐 보여요 ${Math.round(item.jev.score * 100)}%</span>` : ''}`;
+    const pills = `${item.scope ? ` <span class="pill">🖥 ${esc(item.scope)}</span>` : ''}${item.dups.length ? ` <span class="pill" title="${esc(t('batch.mergedTitle'))}">${esc(t('batch.merged', { n: item.dups.length + 1 }))}</span>` : ''}${item.strengthen ? ` <span class="pill">${t('batch.strengthen')}</span>` : ''}${item.jev ? ` <span class="pill" title="${esc(item.jev.line)}">${esc(t('batch.jev', { score: Math.round(item.jev.score * 100) }))}</span>` : ''}`;
     let detail = '';
     if (editing) {
-      detail = `<div class="detail">${learnField('title', '제목', value('title'), true)}${learnField('explain', '무엇을 배웠나', value('explain'), true, 4)}${learnField('why', '왜 중요한가 — 모르면', value('why'), true, 2)}${learnField('rule', '공책에 넣을 문장 (에이전트가 읽는 한 줄)', value('rule'), true, 2)}</div>
-      <div class="acts"><button type="button" class="btn primary" data-batch-act="save">저장</button><button type="button" class="btn" data-batch-act="cancel">취소</button></div>`;
+      detail = `<div class="detail">${learnField('title', t('learn.f.title'), value('title'), true)}${learnField('explain', t('learn.f.explain'), value('explain'), true, 4)}${learnField('why', t('learn.f.why'), value('why'), true, 2)}${learnField('rule', t('learn.ruleEdit'), value('rule'), true, 2)}</div>
+      <div class="acts"><button type="button" class="btn primary" data-batch-act="save">${t('common.save')}</button><button type="button" class="btn" data-batch-act="cancel">${t('common.cancel')}</button></div>`;
     } else if (open) {
-      const extra = `${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="근거 종류">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}`;
-      detail = `<div class="detail">${extra ? `<div>${extra}</div>` : ''}${learnField('explain', '무엇을 배웠나', item.explain, false)}${learnField('why', '왜 중요한가 — 모르면', item.why, false)}${item.strengthen ? `<div class="where">원래 줄: ${esc(item.strengthen)}</div>` : ''}${item.jev ? `<div class="lc-block warn"><h5>🤖 기존 줄과 겹쳐 보여요 — Jev ${Math.round(item.jev.score * 100)}% (추정)</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}${item.where ? `<div class="where">어디서 배웠나 · ${esc(item.where.replace(/^- /gm, ''))}</div>` : ''}</div>`;
+      const extra = `${signalOf(item) ? `<span class="pill">${esc(signalOf(item))}</span>` : ''}${item.basis ? `<span class="pill" title="${esc(t('learn.basisTitle'))}">${esc(BASIS[item.basis] || item.basis)}</span>` : ''}`;
+      detail = `<div class="detail">${extra ? `<div>${extra}</div>` : ''}${learnField('explain', t('learn.f.explain'), item.explain, false)}${learnField('why', t('learn.f.why'), item.why, false)}${item.strengthen ? `<div class="where">${esc(t('learn.originalLine', { line: item.strengthen }))}</div>` : ''}${item.jev ? `<div class="lc-block warn"><h5>${esc(t('learn.jev', { score: Math.round(item.jev.score * 100) }))}</h5><div class="text">${esc(item.jev.line)}</div></div>` : ''}${item.where ? `<div class="where">${esc(t('learn.learnedWhere', { where: item.where.replace(/^- /gm, '') }))}</div>` : ''}</div>`;
     }
-    const buttons = editing ? '' : `<div class="acts"><button type="button" class="btn" data-batch-act="toggle">${open ? '접기' : '내용 보기'}</button><button type="button" class="btn" data-batch-act="edit">수정</button><button type="button" class="btn danger" data-batch-act="remove">삭제</button></div>`;
+    const buttons = editing ? '' : `<div class="acts"><button type="button" class="btn" data-batch-act="toggle">${open ? t('batch.fold') : t('batch.show')}</button><button type="button" class="btn" data-batch-act="edit">${t('common.edit')}</button><button type="button" class="btn danger" data-batch-act="remove">${t('common.delete')}</button></div>`;
     return `<div class="row" data-id="${esc(item.id)}"><div class="head"><input type="checkbox" value="${esc(item.id)}"${batchUnchecked.has(item.id) ? '' : ' checked'}><div class="main"><b>${esc(item.title)}</b>${pills}<div class="rule-line">${esc(item.rule)}</div></div></div>${detail}${buttons}</div>`;
   };
   const renderBatches = () => {
@@ -1624,7 +1714,7 @@
     for (const set of [batchUnchecked, batchOpen, batchEditing]) for (const id of set) if (!valid.has(id)) set.delete(id);
     for (const id of batchDraft.keys()) if (!valid.has(id)) batchDraft.delete(id);
     box.innerHTML = batches.map((batch, index) => `<div class="learn-batch" data-batch="${index}">
-      <div class="top"><span class="grow">📦 ${esc(batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, ''))} 공책에 넣을 묶음 <span class="n">${batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0)}개</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
+      <div class="top"><span class="grow">${esc(t('batch.title', { notebook: batch.notebook.replace(/^docs\/knowledge\//, '').replace(/\/gotchas\.md$/, '') }))}<span class="n">${t('m.items', { n: batch.items.reduce((sum, item) => sum + 1 + item.dups.length, 0) })}</span></span><button type="button" class="btn primary" data-batch-apply="${index}"></button></div>
       ${batch.items.map(batchRow).join('')}
     </div>`).join('');
     box.querySelectorAll('.learn-batch').forEach((el) => updateBatchButton(el));
@@ -1632,7 +1722,7 @@
   const updateBatchButton = (el) => {
     const count = el.querySelectorAll('input[type=checkbox]:checked').length;
     const button = el.querySelector('[data-batch-apply]');
-    button.textContent = `묶음 넣기 (${count}개)`;
+    button.textContent = t('batch.apply', { n: count });
     button.disabled = !count;
   };
   document.getElementById('learn-batches').addEventListener('change', (event) => {
@@ -1654,7 +1744,7 @@
       if (act === 'toggle') { if (batchOpen.has(id)) batchOpen.delete(id); else batchOpen.add(id); renderBatches(); return; }
       if (act === 'edit') { batchEditing.add(id); renderBatches(); return; }
       if (act === 'cancel') { batchEditing.delete(id); batchDraft.delete(id); renderBatches(); return; }
-      if (act === 'remove' && !confirm('이 학습 후보를 버릴까요? (휴지통으로 — 되살릴 수 있어요)')) return;
+      if (act === 'remove' && !confirm(t('learn.discardConfirm'))) return;
       actButton.disabled = true;
       try {
         if (act === 'save') {
@@ -1662,7 +1752,7 @@
           await api('/api/learn-candidate-edit', { ids: batchIdsOf(item), edits });
           batchEditing.delete(id);
           batchDraft.delete(id);
-          toast('고쳤어요 — 묶음에 남아 있어요');
+          toast(t('batch.edited'));
         } else {
           await api('/api/learn-discard', { ids: batchIdsOf(item) });
         }
@@ -1676,12 +1766,12 @@
     if (!button) return;
     const el = button.closest('.learn-batch');
     const ids = [...el.querySelectorAll('input[type=checkbox]:checked')].map((input) => input.value);
-    if (!ids.length || !confirm(`선택한 ${ids.length}개를 이 레포 공책에 넣을까요? (같은 문장은 하나로 합쳐져요)`)) return;
+    if (!ids.length || !confirm(t('batch.confirm', { n: ids.length }))) return;
     button.disabled = true;
     try {
       const result = await api('/api/learn-batch', { ids });
-      toast(`공책에 ${result.applied}개 넣었어요${result.merged ? ` · 같은 문장 ${result.merged}개는 합쳤어요` : ''}`);
-      if (result.errors?.length) alert(`넣지 못한 것 ${result.errors.length}개\n${result.errors.map((entry) => `${entry.id}: ${entry.error}`).join('\n')}`);
+      toast(`${t('batch.applied', { n: result.applied })}${result.merged ? t('batch.appliedMerged', { n: result.merged }) : ''}`);
+      if (result.errors?.length) alert(`${t('batch.failed', { n: result.errors.length })}\n${result.errors.map((entry) => `${entry.id}: ${entry.error}`).join('\n')}`);
     } catch (error) {
       alert(error.message || String(error));
     }
@@ -1694,25 +1784,25 @@
     // Jev 가 공책 기존 줄과 같다고 보고 휴지통으로 옮긴 후보(scripts/board/learn.mjs checkLearnWithJev)
     const jevBox = document.getElementById('learn-jev');
     jevBox.hidden = !stats.jevDiscarded;
-    jevBox.innerHTML = stats.jevDiscarded ? `🤖 Jev 가 공책에 이미 있는 내용이라고 본 후보 ${stats.jevDiscarded}개를 버렸어요 — 잘못 버렸으면 .board-trash/&lt;날짜&gt;/issues/ 에서 issues/ 로 옮기면 돌아와요${(stats.jevRecent || []).slice(0, 5).map((entry) => `<br>· ${esc(entry.at)} ${esc(entry.title)} (${Math.round(entry.score * 100)}%) ← ${esc(entry.line)}`).join('')}` : '';
+    jevBox.innerHTML = stats.jevDiscarded ? `${t('learn.jevDiscarded', { n: stats.jevDiscarded })}${(stats.jevRecent || []).slice(0, 5).map((entry) => `<br>· ${esc(entry.at)} ${esc(entry.title)} (${Math.round(entry.score * 100)}%) ← ${esc(entry.line)}`).join('')}` : '';
     document.getElementById('learn-learned-count').textContent = learned.length;
     // 묶음에 올라간 후보는 묶음에서만 보인다 — 아래 낱개에는 스킬 · 정리 후보처럼 묶음에 못 들어가는 것만
     const batched = new Set(batchItems().flatMap(batchIdsOf));
     const singles = candidates.filter((item) => !batched.has(item.id));
-    const emptyText = candidates.length ? '' : '<div class="empty-history">학습 후보가 없어요 — 에이전트가 작업을 끝낼 때, 배우기 검토자가 내 PR 이 머지됐을 때 올립니다</div>';
+    const emptyText = candidates.length ? '' : `<div class="empty-history">${t('learn.noCandidates')}</div>`;
     document.getElementById('learn-candidates').innerHTML = singles.length
       ? singles.map((item) => learnCard(item, 'candidate', learnEditing === item.id)).join('')
       : emptyText;
     const groups = new Map();
     for (const item of learned) groups.set(areaOf(item), [...(groups.get(areaOf(item)) || []), item]);
     document.getElementById('learn-learned').innerHTML = learned.length
-      ? `<div class="history">${[...groups].map(([area, items]) => `<div class="month">📚 ${esc(area)} <span class="n">· ${items.length}개</span></div>` + items.map((item) => `
+      ? `<div class="history">${[...groups].map(([area, items]) => `<div class="month">📚 ${esc(area)} <span class="n">· ${t('m.items', { n: items.length })}</span></div>` + items.map((item) => `
         <button type="button" class="h-row" data-learned="${esc(item.id)}">
           <span class="h-date">${esc(item.applied)}</span>
           <span class="h-main"><span class="h-title">${esc(item.title)}</span><span class="h-sum">${esc(item.why || item.rule)}</span></span>
-          <span class="h-tags"><span class="pill" title="이 학습을 [넣기]한 사람">👤 ${esc(item.by || '?')}</span></span>
+          <span class="h-tags"><span class="pill" title="${esc(t('learn.byTitle'))}">👤 ${esc(item.by || '?')}</span></span>
         </button>`).join('')).join('')}</div>`
-      : '<div class="empty-history">아직 학습한 내용이 없어요</div>';
+      : `<div class="empty-history">${t('learn.noLearned')}</div>`;
     document.querySelectorAll('[data-learned]').forEach((row) => { row.onclick = () => openLearned(row.dataset.learned); });
   };
   const loadLearn = async () => {
@@ -1720,7 +1810,7 @@
       const response = await fetch('/api/learn');
       learnData = await response.json();
     } catch (error) {
-      document.getElementById('learn-candidates').innerHTML = `<div class="empty-history">불러오지 못했어요 — ${esc(error.message)}</div>`;
+      document.getElementById('learn-candidates').innerHTML = `<div class="empty-history">${esc(t('common.loadFailedWith', { error: error.message }))}</div>`;
       return;
     }
     renderLearn();
@@ -1735,23 +1825,23 @@
     if (act === 'edit') { learnEditing = id; renderLearn(); return; }
     if (act === 'cancel') { learnEditing = ''; renderLearn(); return; }
     if (act === 'tidy-remove' || act === 'tidy-keep') {
-      if (act === 'tidy-remove' && !confirm('이 줄을 공책에서 지울까요? (학습으로 들어온 줄이면 기록은 휴지통으로)')) return;
+      if (act === 'tidy-remove' && !confirm(t('learn.tidy.removeConfirm'))) return;
       button.disabled = true;
       try {
         const index = Number(button.dataset.index);
         const line = learnData.candidates.find((item) => item.id === id)?.tidy?.stale?.[index]?.line ?? '';
         const result = await api('/api/learn-tidy', { id, index, line, act: act === 'tidy-remove' ? 'remove' : 'keep' });
-        if (act === 'tidy-remove' && result.notebookUpdated === false) alert('공책에서 그 줄을 찾지 못했어요 — 이미 바뀌었을 수 있어요. 공책 파일을 직접 확인해 주세요');
-        const doneText = { 'tidy-remove': '공책에서 지웠어요', 'tidy-keep': '그대로 뒀어요 — 다음 점검부터 다시 묻지 않아요' }[act];
-        toast(result.done ? '정리 후보를 다 처리했어요' : doneText);
+        if (act === 'tidy-remove' && result.notebookUpdated === false) alert(t('learn.tidy.lineMissing'));
+        const doneText = { 'tidy-remove': t('learn.tidy.removed'), 'tidy-keep': t('learn.tidy.kept') }[act];
+        toast(result.done ? t('learn.tidy.allDone') : doneText);
       } catch (error) {
         alert(error.message || String(error));
       }
       await loadLearn();
       return;
     }
-    if (act === 'discard' && !confirm(card.querySelector('[data-act="tidy-split"], [data-act="tidy-remove"]') ? '이 정리 후보를 닫을까요? (남은 줄은 그대로 두고 후보만 휴지통으로 — 다음 점검 때 다시 올라올 수 있어요)' : '이 학습 후보를 버릴까요? (휴지통으로 — 되살릴 수 있어요)')) return;
-    if (act === 'remove' && !confirm('이 학습을 공책에서 뺄까요? (기록은 휴지통으로 — 되살릴 수 있어요)')) return;
+    if (act === 'discard' && !confirm(card.querySelector('[data-act="tidy-split"], [data-act="tidy-remove"]') ? t('learn.tidy.closeConfirm') : t('learn.discardConfirm'))) return;
+    if (act === 'remove' && !confirm(t('learn.removeConfirm'))) return;
     const path = { apply: '/api/learn-apply', save: '/api/learn-edit', discard: '/api/learn-discard', remove: '/api/learn-remove', skill: '/api/hermes-new', guard: '/api/hermes-new', 'tidy-split': '/api/hermes-new' }[act];
     // 아테나 pane 에 보낼 지시 — 스킬 만들기·정비·공책 나누기
     const hermesText = {
@@ -1764,10 +1854,10 @@
     try {
       const result = await api(path, body);
       learnEditing = '';
-      if (result.inherited) toast(`이미 학습된 줄을 고쳤어요 — 기존 학습(${result.inherited})에 이어 붙였어요`);
-      else if (result.strengthened) toast('공책의 기존 줄을 고쳤어요');
-      else if (act === 'apply') toast(`공책(${result.notebook || ''})에 넣었어요`);
-      if ((act === 'save' || act === 'remove') && result.notebookUpdated === false) alert('기록은 처리했지만 공책에서 해당 줄을 찾지 못했어요 — 공책 파일을 직접 확인해 주세요');
+      if (result.inherited) toast(t('learn.inherited', { id: result.inherited }));
+      else if (result.strengthened) toast(t('learn.strengthened'));
+      else if (act === 'apply') toast(t('learn.appliedTo', { notebook: result.notebook || '' }));
+      if ((act === 'save' || act === 'remove') && result.notebookUpdated === false) alert(t('learn.lineMissing'));
     } catch (error) {
       alert(error.message || String(error));
     }
@@ -1843,11 +1933,11 @@
       currentJob = '';
       setTimeout(() => {
         document.getElementById('ask').close();
-        toast(`${job.agent} 에게 맡겼어요 · ${(job.result?.pane || '').split(' ')[0]}`);
+        toast(t('ask.delegated', { agent: job.agent, pane: (job.result?.pane || '').split(' ')[0] }));
       }, 900);
     } else if (job.state === 'error') {
       currentJob = '';
-      box.innerHTML += `<div style="color:var(--bad);margin-top:6px">맡기지 못했어요: ${esc(job.error)}</div>`;
+      box.innerHTML += `<div style="color:var(--bad);margin-top:6px">${esc(t('ask.delegateFailed', { error: job.error }))}</div>`;
       document.getElementById('ask-send').disabled = false;
     }
   };
@@ -1863,7 +1953,7 @@
         if (choice === 'hermes') {
           // 떠 있는 아테나 대화에 섞지 않고 새 아테나 pane 을 열어 처리한다(/api/hermes-new)
           ask(title, text, 'hermes-new', agent, id);
-          document.getElementById('ask-to').innerHTML = `→ 받는 곳 <b>새 아테나 pane</b> (이름은 '레포 · 이슈 제목') — 판단 → 계획서 → prBase 브랜치 → 담당 에이전트까지 이어서 처리해요. 지금 하던 아테나 대화에는 끼어들지 않아요 ${picker('hermes')}`;
+          document.getElementById('ask-to').innerHTML = `${t('ask.toHermes')}${picker('hermes')}`;
         } else {
           ask(title, INVESTIGATE(card), 'dispatch', agent, id);
           document.getElementById('ask-to').innerHTML += ` ${picker('investigate')}`;
@@ -1871,30 +1961,30 @@
         document.getElementById('ask-route').onchange = (event) => route(event.target.value);
         return true;
       };
-      const picker = (current) => `<br>보내는 곳 바꾸기 <select id="ask-route"><option value="hermes" ${current === 'hermes' ? 'selected' : ''}>아테나로 (처리)</option><option value="investigate" ${current === 'investigate' ? 'selected' : ''}>담당 에이전트로 바로 (조사만 · 코드 수정 없음)</option></select>`;
+      const picker = (current) => `<br>${t('ask.route')}<select id="ask-route"><option value="hermes" ${current === 'hermes' ? 'selected' : ''}>${t('ask.routeHermes')}</option><option value="investigate" ${current === 'investigate' ? 'selected' : ''}>${t('ask.routeInvestigate')}</option></select>`;
       route('hermes');
       return;
     }
     if (mode === 'dispatch') {
       const names = lastState?.agents || [];
-      to.innerHTML = `→ 담당 에이전트 <select id="ask-agent">${names.map((name) => `<option ${name === agent ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select> 를 그 레포 workspace 에 새 pane 으로 띄워요`;
-      if (!agent) to.innerHTML += ' — <b>이슈에 담당이 정해져 있지 않아요. 골라 주세요</b>';
+      to.innerHTML = t('ask.toAgent', { select: `<select id="ask-agent">${names.map((name) => `<option ${name === agent ? 'selected' : ''}>${esc(name)}</option>`).join('')}</select>` });
+      if (!agent) to.innerHTML += t('ask.noAgent');
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      if (card?.worktree) to.innerHTML += `<br>워크트리 <code>${esc(card.worktree.rel)}</code> ← ${esc(card.worktree.ref)} (detached${card.worktree.exists ? ', 이미 있어서 그대로 써요' : ', 새로 만들어요'}) · 담당을 바꾸면 그 에이전트의 레포에 만들어요`;
+      if (card?.worktree) to.innerHTML += t('ask.worktree', { rel: `<code>${esc(card.worktree.rel)}</code>`, ref: esc(card.worktree.ref), state: t(card.worktree.exists ? 'ask.worktreeExists' : 'ask.worktreeNew') });
     } else if (mode === 'hermes-new') {
       // 받는 곳 안내는 이슈 팝업(route)이 채운다
     } else if (mode === 'review') {
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
-      to.innerHTML = `→ <b>reviewer</b> 를 계획서의 담당 레포 workspace 에 새 pane 으로 띄워요${card?.workRef ? `<br>대상 <code>${esc(card.workRef)}</code>` : ''} · 아테나는 거치지 않아요`;
+      to.innerHTML = `${t('ask.toReviewer')}${card?.workRef ? t('ask.reviewTarget', { ref: `<code>${esc(card.workRef)}</code>` }) : ''}${t('ask.noAthena')}`;
     } else {
       // 받는 곳: 카드에 붙은 에이전트 pane → 없으면 아테나 pane. 팝업 안에서만 바꿀 수 있다
       const candidates = (lastState?.panes || []).filter((entry) => entry.role !== 'other');
       const card = (lastState?.cards || []).find((entry) => entry.id === id);
       const attached = [...(card?.agents || []), ...(card?.linkedPlan?.agents || [])];
       const preferred = candidates.find((entry) => attached.includes(entry.id)) || candidates.find((entry) => entry.role === 'hermes') || candidates[0];
-      if (!preferred) return toast('지시를 받을 아테나·에이전트 pane 이 없어요');
+      if (!preferred) return toast(t('ask.noPane'));
       targetPane = preferred.id;
-      to.innerHTML = `→ 받는 곳 <select id="ask-pane">${candidates.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === targetPane ? 'selected' : ''}>${esc(entry.agent)} · ${esc(entry.id)}${({ working: ' (작업 중)', waiting: ' (입력 대기)' })[entry.status] || ''}</option>`).join('')}</select>`;
+      to.innerHTML = `${t('ask.to')}<select id="ask-pane">${candidates.map((entry) => `<option value="${esc(entry.id)}" ${entry.id === targetPane ? 'selected' : ''}>${esc(entry.agent)} · ${esc(entry.id)}${({ working: t('pane.working'), waiting: t('pane.waiting') })[entry.status] || ''}</option>`).join('')}</select>`;
       document.getElementById('ask-pane').onchange = (event) => { targetPane = event.target.value; };
     }
     pending = { mode, id: pendingId };
@@ -1917,7 +2007,7 @@
     const sendButton = document.getElementById('ask-send');
     if (sendButton.disabled) return;
     sendButton.disabled = true;
-    setStatus('보내는 중이에요…', 'busy');
+    setStatus(t('ask.sending'), 'busy');
     try {
       if (pending?.mode === 'dispatch') {
         const agent = document.getElementById('ask-agent').value;
@@ -1930,26 +2020,26 @@
       if (pending?.mode === 'hermes-new') {
         const result = await api('/api/hermes-new', { id: pending.id, text });
         document.getElementById('ask').close();
-        toast(`새 아테나 pane 에서 시작했어요 · ${result.pane}`);
+        toast(t('ask.hermesStarted', { pane: result.pane }));
         return;
       }
       if (pending?.mode === 'review') {
         const result = await api('/api/review', { id: pending.id, text });
         document.getElementById('ask').close();
-        toast(`reviewer 를 띄웠어요 · ${(result.pane || '').split(' ')[0]}`);
+        toast(t('ask.reviewerStarted', { pane: (result.pane || '').split(' ')[0] }));
         return;
       }
       await api('/api/action', { pane: targetPane, text });
       document.getElementById('ask').close();
-      toast('보냈어요');
+      toast(t('ask.sent'));
     } catch (error) {
-      setStatus(`보내지 못했어요: ${error.message}`, 'error');
+      setStatus(t('ask.sendFailed', { error: error.message }), 'error');
       sendButton.disabled = false;
     }
   };
 
   // 정식 계획서만 제목 옆에 문서 아이콘 — 경량은 표시하지 않는다
-  const formalMark = (plan) => plan?.grade === 'formal' ? '<span class="formal-mark" title="정식 계획서 — md + 결정 콘솔">📄</span>' : '';
+  const formalMark = (plan) => plan?.grade === 'formal' ? `<span class="formal-mark" title="${esc(t('issue.formal'))}">📄</span>` : '';
 
   // 카드에는 브랜치만 — 워크트리 경로·pane 까지 든 Work ref 전체는 마우스를 올리면. 파일 경로는 카드 상세에 있다
   // athena 자체 작업은 워크트리 없이 main 에서 한다 — 🌿 가 없어도 🏠 로 표시해 "아직 시작 안 한 일" 과 구분한다
@@ -1966,18 +2056,18 @@
   const issueOrigin = (source = '') => {
     const text = String(source);
     const agent = (text.match(AGENT_NAME) || [])[1] || '';
-    if (/^사용자 요청|사용자가|사용자 지시/.test(text)) return { icon: '👤', label: '사용자 요청' };
-    if (/seo-health|SEO Health|seo-feedback/i.test(text)) return { icon: '📈', label: 'SEO 리포트 자동(매주)' };
-    if (/learn-curator/.test(text)) return { icon: '🧹', label: '학습 정리 자동(/sync 끝)' };
-    if (/배우기 검토자|learn-review/.test(text)) return { icon: '📚', label: '배우기 검토자' };
-    if (/^\/?sync\b|\/sync/.test(text)) return { icon: '🔄', label: '/sync 점검' };
-    if (/다이어그램/.test(text)) return { icon: '🗺', label: agent ? `다이어그램 작성 · ${agent}` : '다이어그램 작성' };
-    if (/QA|씬|검수/.test(text)) return { icon: '🧪', label: agent ? `QA · ${agent}` : 'QA 실행 중 발견' };
-    if (/리뷰/.test(text)) return { icon: '🔍', label: agent && agent !== 'reviewer' ? `리뷰 · ${agent}` : '리뷰 중 발견' };
-    if (/지식 문서|온보딩/.test(text)) return { icon: '📚', label: agent ? `지식 문서 작성 · ${agent}` : '지식 문서 점검' };
-    if (agent) return { icon: '🤖', label: `${agent} 작업 중 발견` };
-    if (/plans\//.test(text)) return { icon: '🧭', label: '작업 중 발견' };
-    return text ? { icon: '📍', label: '기타' } : null;
+    if (/^사용자 요청|사용자가|사용자 지시/.test(text)) return { icon: '👤', label: t('origin.user') };
+    if (/seo-health|SEO Health|seo-feedback/i.test(text)) return { icon: '📈', label: t('origin.seo') };
+    if (/learn-curator/.test(text)) return { icon: '🧹', label: t('origin.curator') };
+    if (/배우기 검토자|learn-review/.test(text)) return { icon: '📚', label: t('origin.learnReview') };
+    if (/^\/?sync\b|\/sync/.test(text)) return { icon: '🔄', label: t('origin.sync') };
+    if (/다이어그램/.test(text)) return { icon: '🗺', label: agent ? t('origin.diagramBy', { agent }) : t('origin.diagram') };
+    if (/QA|씬|검수/.test(text)) return { icon: '🧪', label: agent ? t('origin.qaBy', { agent }) : t('origin.qa') };
+    if (/리뷰/.test(text)) return { icon: '🔍', label: agent && agent !== 'reviewer' ? t('origin.reviewBy', { agent }) : t('origin.review') };
+    if (/지식 문서|온보딩/.test(text)) return { icon: '📚', label: agent ? t('origin.knowledgeBy', { agent }) : t('origin.knowledge') };
+    if (agent) return { icon: '🤖', label: t('origin.agent', { agent }) };
+    if (/plans\//.test(text)) return { icon: '🧭', label: t('origin.work') };
+    return text ? { icon: '📍', label: t('origin.other') } : null;
   };
   const originChip = (source) => { const origin = issueOrigin(source); return origin ? `<span class="chip" title="${esc(source)}">${origin.icon} ${esc(origin.label)}</span>` : ''; };
   // ── 해결할 이슈 목록 ───────────────────────────────────────────────
@@ -1996,27 +2086,27 @@
   const issueState = (card, panes) => {
     if (card.status === 'open') {
       const actions = actionsFor(card).map(([label], index) => `<button class="btn primary" data-act="${index}" data-id="${esc(card.id)}">${esc(label)}</button>`).join('');
-      return `${actions}<button class="btn danger" data-delete="${esc(card.id)}" title="휴지통으로 옮겨요">삭제</button>`;
+      return `${actions}<button class="btn danger" data-delete="${esc(card.id)}" title="${esc(t('issue.trashTitle'))}">${t('common.delete')}</button>`;
     }
     const plan = card.linkedPlan;
     const running = (plan?.agents || []).map((id) => panes.find((pane) => pane.id === id)).filter(Boolean);
-    const pills = [`<span class="pill working">진행 중</span>`];
-    if (plan?.status === 'blocked' || card.blocked) pills.push('<span class="pill bad">막힘</span>');
+    const pills = [`<span class="pill working">${t('issue.working')}</span>`];
+    if (plan?.status === 'blocked' || card.blocked) pills.push(`<span class="pill bad">${t('issue.blocked')}</span>`);
     const handoff = plan?.handoff || card.handoff;
-    if (handoff) pills.push(handoff === 'failed' ? '<span class="pill bad">Actions 실패</span>' : `<span class="pill working">${handoff === 'running' ? 'Actions 도는 중' : 'Actions 대기'}</span>`);
-    if (card.doneCheck?.ready) pills.push('<span class="pill ready">완료 가능</span>');
-    for (const pane of running) pills.push(`<span class="pill ${({ working: 'working', waiting: 'waiting' })[pane.status] || ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}${pane.status === 'waiting' ? ' · 입력 대기' : ''}</span>`);
-    if (!running.length) pills.push(`<span class="pill">${card.agent ? `🤖 ${esc(card.agent)}` : '담당 미정'} · pane 없음</span>`);
+    if (handoff) pills.push(handoff === 'failed' ? `<span class="pill bad">${t('issue.actionsFailed')}</span>` : `<span class="pill working">${handoff === 'running' ? t('issue.actionsRunning') : t('issue.actionsWaiting')}</span>`);
+    if (card.doneCheck?.ready) pills.push(`<span class="pill ready">${t('issue.doneReady')}</span>`);
+    for (const pane of running) pills.push(`<span class="pill ${({ working: 'working', waiting: 'waiting' })[pane.status] || ''}" title="${esc(pane.cwd || '')}">🤖 ${esc(pane.agent)} · ${esc(pane.id)}${pane.status === 'waiting' ? t('issue.inputWait') : ''}</span>`);
+    if (!running.length) pills.push(`<span class="pill">${t('issue.noPane', { agent: card.agent ? `🤖 ${esc(card.agent)}` : t('issue.noOwner') })}</span>`);
     return pills.join('');
   };
   const issueRow = (card, panes) => {
     const created = card.created || card.mtime;
     const origin = issueOrigin(card.source);
     return `<div class="issue-row${card.status === 'open' ? '' : ' started'}" data-key="${esc(card.id)}" data-severity="${esc(card.severity || '')}">
-      <div class="title" title="누르면 요청·진행·결과를 볼 수 있어요">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
+      <div class="title" title="${esc(t('issue.titleHint'))}">${formalMark(card.linkedPlan)}${esc(card.title)}</div>
       <div class="state">${issueState(card, panes)}</div>
       <div class="sub">
-        <span title="${esc(new Date(created).toLocaleString('ko-KR', { hour12: false }))}">등록 ${clock(created)}</span>
+        <span title="${esc(new Date(created).toLocaleString(LOCALE, { hour12: false }))}">${esc(t('issue.registered', { when: clock(created) }))}</span>
         ${origin ? `<span title="${esc(card.source)}">${origin.icon} ${esc(origin.label)}</span>` : ''}
         ${card.summary ? `<span class="summary" title="${esc(card.summary)}">${esc(card.summary)}</span>` : ''}
       </div>
@@ -2046,7 +2136,7 @@
     document.getElementById('issue-count').textContent = issues.length ? String(issues.length) : '';
     document.getElementById('issues').innerHTML = issues.length
       ? issueGroups(issues).map(([repo, cards]) => repoGroup(repo, cards, panes)).join('')
-      : '<div class="empty">해결할 이슈가 없어요</div>';
+      : `<div class="empty">${t('issues.empty')}</div>`;
 
     // 바뀐 줄만 잠깐 반짝인다
     const next = new Map(issues.map((card) => [card.id, JSON.stringify(card)]));
@@ -2074,27 +2164,27 @@
         const card = findCard(button.dataset.delete);
         if (!card) return;
         const items = [{ label: card.id, ok: false }];
-        if (card.linkedPlan?.id?.startsWith('plans/task/')) items.push({ label: `연결된 경량 계획서 ${card.linkedPlan.id}`, ok: false });
-        if (card.worktree?.exists) items.push({ label: `이슈 워크트리 ${card.worktree.rel} (커밋 안 된 변경이 있으면 남겨요)`, ok: false });
+        if (card.linkedPlan?.id?.startsWith('plans/task/')) items.push({ label: t('delete.planItem', { id: card.linkedPlan.id }), ok: false });
+        if (card.worktree?.exists) items.push({ label: t('delete.worktreeItem', { rel: card.worktree.rel }), ok: false });
         const go = await askConfirm({
-          title: `'${card.title}' 을(를) 삭제할까요?`,
-          message: '아래 항목을 휴지통(.board-trash/날짜/)으로 옮겨요. 필요하면 거기서 되살릴 수 있어요. 떠 있는 에이전트 pane 은 닫지 않아요.',
+          title: t('delete.title', { title: card.title }),
+          message: t('delete.message'),
           items,
-          yes: '휴지통으로 옮기기',
+          yes: t('delete.yes'),
         });
         if (!go) return;
         try {
           const result = await api('/api/delete', { id: card.id });
-          toast(`휴지통으로 옮겼어요 (${result.moved.length}개)${result.notes?.length ? ` · ${result.notes.join(' · ')}` : ''}`);
+          toast(`${t('delete.moved', { n: result.moved.length })}${result.notes?.length ? ` · ${result.notes.join(' · ')}` : ''}`);
         } catch (error) {
-          toast(`삭제하지 못했어요: ${error.message}`);
+          toast(t('delete.failed', { error: error.message }));
         }
       };
     });
 
     renderUsage();
-    document.getElementById('updated').textContent = `마지막 변화 ${new Date(state.updatedAt).toLocaleTimeString('ko-KR')}`;
-    document.getElementById('sync').textContent = state.header?.sync ? `마지막 sync ${new Date(state.header.sync).toLocaleString('ko-KR')}` : '';
+    document.getElementById('updated').textContent = t('live.updated', { time: new Date(state.updatedAt).toLocaleTimeString(LOCALE) });
+    document.getElementById('sync').textContent = state.header?.sync ? t('live.sync', { time: new Date(state.header.sync).toLocaleString(LOCALE) }) : '';
   };
 
   // ── AI 사용량 게이지 — 설치된 CLI 마다 한 묶음 ──────────────────────
@@ -2122,17 +2212,27 @@
     if (percent >= 70) return 'warn';
     return '';
   };
+  // 창 길이(분) → 이름 — 서버 windowLabel 과 같은 규칙을 화면 언어로. minutes 가 없으면 서버 label
+  const windowName = (win) => {
+    const { minutes } = win;
+    if (!Number.isFinite(minutes)) return win.label;
+    if (minutes === 300) return t('usage.window.5h');
+    if (minutes === 10080) return t('usage.window.week');
+    if (minutes % 1440 === 0) return t('dur.day', { n: minutes / 1440 });
+    if (minutes % 60 === 0) return t('dur.hour', { n: minutes / 60 });
+    return t('dur.min', { n: minutes });
+  };
   const usageRows = (cli) => {
-    if (!cli.windows.length) return `<span class="none">아직 사용 기록 없음</span>`;
+    if (!cli.windows.length) return `<span class="none">${t('usage.none')}</span>`;
     // 창 이름(5시간·주간)은 화면에서 빼고 마우스를 올리면 보이게
-    return cli.windows.map((win) => `<div class="win" title="${esc(win.label)} 한도">
+    return cli.windows.map((win) => `<div class="win" title="${esc(t('usage.limit', { label: windowName(win) }))}">
       <span class="gauge"><i class="${gaugeLevel(win.percent)}" style="width:${Math.min(100, win.percent)}%"></i></span>
       <span class="pct">${win.percent}%</span>
       <span class="reset">${untilReset(win.resetsAt)}</span></div>`).join('');
   };
   const usageTitle = (cli) => {
-    if (!cli.at) return `${cli.label} — 사용하면 한도 사용량이 보여요`;
-    return `${cli.label} 요금제 사용량 · ${ago(Math.max(0, Math.round((Date.now() - cli.at) / 1000)))} 기준 (그 CLI 를 쓸 때 갱신)`;
+    if (!cli.at) return t('usage.noData', { cli: cli.label });
+    return t('usage.title', { cli: cli.label, ago: ago(Math.max(0, Math.round((Date.now() - cli.at) / 1000))) });
   };
   const renderUsage = () => {
     const box = document.getElementById('usage');
@@ -2153,7 +2253,7 @@
     if (source) { source.close(); source = null; }
     document.getElementById('live-dot').className = 'dot';
     document.getElementById('live-state').textContent = '';
-    document.getElementById('live-text').innerHTML = '다른 탭에서 보고 있어요 · <a href="#" id="take-over">여기서 보기</a>';
+    document.getElementById('live-text').innerHTML = t('live.otherTab');
     document.getElementById('take-over').onclick = (event) => { event.preventDefault(); claim(); };
   };
   const claim = () => {
@@ -2168,18 +2268,20 @@
     source.onopen = () => {
       document.getElementById('live-dot').className = 'dot on';
       document.getElementById('live-text').textContent = '';
-      document.getElementById('live-state').textContent = '실시간 연결됨';
+      document.getElementById('live-state').textContent = t('live.on');
     };
     source.onmessage = (event) => {
       const state = JSON.parse(event.data);
       // 서버가 다시 떴다 — 이 페이지의 토큰은 더 이상 안 통하니 새로 불러온다
       if (state.boot && state.boot !== BOOT) return location.reload();
+      // 앱 언어가 바뀌었다 — 그 언어 사전으로 새로 불러온다
+      if (state.lang && state.lang !== I18N.lang) return location.reload();
       render(state);
     };
     source.addEventListener('job', (event) => renderJob(JSON.parse(event.data)));
     source.onerror = () => {
       document.getElementById('live-dot').className = 'dot off';
-      document.getElementById('live-text').textContent = '서버 끊김 — 다시 연결 중';
+      document.getElementById('live-text').textContent = t('live.lost');
       document.getElementById('live-state').textContent = '';
     };
   };

@@ -240,7 +240,7 @@ reset_tree
 mkdir -p "$WORK/athena/docs"; echo '틀' >> "$WORK/athena/docs/plan-template-light.md"
 check "athena/docs/plan-template-light.md → docs 아님(new-plan.mjs · board-auto-test 가 읽는다)" "$([ "$(docscope)" != docs ] && echo 0 || echo 1)" "$(docscope)"
 reset_tree
-mkdir -p "$WORK/athena/docs"; echo '설명' >> "$WORK/athena/docs/guide.md"
+mkdir -p "$WORK/athena/docs"; echo '설명' >> "$WORK/athena/docs/notes.md"
 check "athena/docs/ 의 일반 md 는 그대로 docs" "$([ "$(docscope)" = docs ] && echo 0 || echo 1)" "$(docscope)"
 reset_tree
 git -C "$WORK" mv src/a.js src/a.md

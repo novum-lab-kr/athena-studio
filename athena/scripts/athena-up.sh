@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 아테나 세션이 켜질 때 화면을 세팅한다 — 현황판을 (없으면) 띄우고, 첫 실행이면 그 pane 에 첫 실행 지시를 입력한다.
-#   에이전트 모니터는 Athena Studio 앱 가운데 맨 아래 칸(AGENT MONITOR)이 보여 주고, 배우기 검토는 대기열이 생기면 뒤에서 돌고,
-#   가이드 메뉴는 /guide 로 부를 때만 띄운다 — 여기서 도구 pane 을 더 띄우지 않는다(사용자 결정 2026-10-17 · 모니터는 2026-10-18).
+#   에이전트 모니터는 Athena Studio 앱 가운데 맨 아래 칸(AGENT MONITOR)이 보여 주고, 배우기 검토는 대기열이 생기면 뒤에서 돈다
+#   — 여기서 도구 pane 을 더 띄우지 않는다(사용자 결정 2026-10-17 · 모니터는 2026-10-18).
 #   pane 은 화면 계층(scripts/screen)으로만 다룬다.
 # 아테나 세션이 켜질 때 SessionStart 훅(scripts/hooks/workspace-up.py)이 뒤에서 부른다. 손으로: scripts/athena-up.sh
 # 조건은 "athena 폴더에서 켠 아테나 claude" 하나 — workspace 이름은 보지 않는다(훅이 cwd·에이전트 여부를 거른다)

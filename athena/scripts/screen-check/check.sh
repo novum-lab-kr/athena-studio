@@ -104,12 +104,6 @@ extract() { awk -v s="$2" -v e="$3" '$0 ~ s {p=1} p {print} p && $0 ~ e {exit}' 
 PORT_ENV=(ATHENA_BOARD_PORT=47999 ATHENA_BOARD_NO_BROWSER=1)
 sc_board_outside()  { STEP_WAIT="#nohup" step - "${PORT_ENV[@]}" -- scripts/board.sh; }   # nohup 은 &로 뒤에서 돈다 — 기록이 다음 시나리오로 새지 않게 기다린다
 sc_monitor_outside(){ step - -- scripts/monitor-pane.sh; }
-sc_guide_menu() {
-  # ask_agent 는 shell_line(scripts/lib/shell-line.sh)을 쓴다 — 함수만 잘라 내니 도우미도 같이 싣는다 · Studio pane 안 · 밖
-  { cat "$COPY/scripts/lib/shell-line.sh"; extract scripts/guide-menu.sh '^ask_agent\(\)' '^}'; } > "$WORK/ask.sh"
-  step studio "${IN[@]}" ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_agent "board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
-  step - ATHENA_DIR="$COPY" -- bash -c '. "$1"; ask_agent "board 열어 줘"; echo "rc=$?"' _ "$WORK/ask.sh"
-}
 sc_new_branch() {
   extract scripts/new-branch.sh '^# 에이전트 pane 안에서 브랜치를 새로 정했으면' '^fi$' > "$WORK/rename.sh"
   step studio "${IN[@]}" ROOT="$COPY" ATHENA_AGENT=fe -- bash -c 'created=1 DRY_RUN=0 BRANCH=feat/x; . "$1"; echo "rc=$?"' _ "$WORK/rename.sh"
@@ -158,7 +152,7 @@ board_server() { # board_server <fixture,…> <직접 지시할 에이전트 pan
   } >> "$RESULT"
 }
 
-SCENARIOS=(board_outside monitor_outside guide_menu new_branch delegate_outside up_outside setup_check compact plan_html)
+SCENARIOS=(board_outside monitor_outside new_branch delegate_outside up_outside setup_check compact plan_html)
 # 화면 계층 자체(scripts/screen) 검사 — 있으면 같이 돈다
 [ -f "$HERE/cli-scenarios.sh" ] && . "$HERE/cli-scenarios.sh"
 # studio 백엔드(가짜 데몬 CLI) — 아테나 스크립트를 Studio pane 안·밖에서

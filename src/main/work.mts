@@ -348,7 +348,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     if (!result.ok) return openBoardExternal()
     return shell.openExternal(`${result.url.replace(/\/$/, '')}/${BOARD_SECTIONS.includes(section) && section !== 'now' ? `#${section}` : ''}`)
   }
-  // 다이어그램 목록 — 이 창 본체의 docs/diagrams/index.html 을 기본 앱으로(/guide 그림 과 같은 파일 · 같은 방식). 없으면 missing
+  // 다이어그램 목록 — 이 창 본체의 docs/diagrams/index.html 을 기본 앱으로. 없으면 missing
   ctx.openDiagrams = async () => {
     if (!ctx.athenaDir) return { ok: false, error: 'missing' }
     // 앱 언어 목록(index.<언어>.html)이 있으면 그것 · 없으면 index.html(한국어)

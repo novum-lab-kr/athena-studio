@@ -122,6 +122,6 @@ node scripts/build-diagram-index.mjs
 bin/athena pack link
 ```
 
-목록은 팩 원본 파일을 읽어 본체 `docs/diagrams/index.html`(한국어)과 `index.<en|ja|zh>.html`에 생성하고 팩 그림으로 상대 링크를 건다. 기존 우측 상단 메뉴와 `/guide 그림`은 이 파일을 그대로 연다. 스킬은 `.claude/skills/diagram/SKILL.md`, Codex는 `.agents/skills` 링크를 통해 같은 파일을 읽는다. 스킬을 추가한 뒤 이미 열린 에이전트 세션은 다시 시작해야 탐색 목록이 갱신될 수 있다.
+목록은 팩 원본 파일을 읽어 본체 `docs/diagrams/index.html`(한국어)과 `index.<en|ja|zh>.html`에 생성하고 팩 그림으로 상대 링크를 건다. 앱 탭 줄의 🗺 다이어그램 버튼이 이 파일을 그대로 연다. 스킬은 `.claude/skills/diagram/SKILL.md`, Codex는 `.agents/skills` 링크를 통해 같은 파일을 읽는다. 스킬을 추가한 뒤 이미 열린 에이전트 세션은 다시 시작해야 탐색 목록이 갱신될 수 있다.
 
 새 단일 레포의 서비스 ID는 `<레포>`, 새 모노레포 앱은 `<레포>/<앱>`이다. 예를 들어 `one/web`과 `two/web`은 서로 다른 폴더의 JSON·HTML·가이드와 카드 base를 사용한다. 기존 팩의 서비스 ID·파일은 그대로 재사용하며 동명 앱이 추가되면 레포까지 지정해 구분한다.

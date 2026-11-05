@@ -23,6 +23,7 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import pane_request  # noqa: E402 — pane 알아내기 · 계획서 · 지킬 때의 규칙은 두 훅(고르기 · 권한)이 같이 쓴다
 from pane_request import caller_pane, log_failure, plan_of, screen  # noqa: E402,F401 — screen: 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
+from studio_lang import pick  # noqa: E402 — 요청 본문은 사람이 [작업] 에서 본다 — 앱 언어로(에이전트에게 돌려주는 안내는 그대로)
 
 RECOMMENDED = '(Recommended)'
 
@@ -45,21 +46,37 @@ def clean_label(label: str):
     return text, False
 
 
-WATCHED_NOTE = ('지금 그 pane 에도 같은 고르기 창이 떠 있어요. pane 에서 고르면 이 요청은 저절로 닫혀요. '
-                '여기서 먼저 고르면 pane 의 창을 닫은 뒤에 전달돼요(창이 떠 있는 동안은 글이 들어가지 않아요).')
+WATCHED_NOTE = {
+    'ko': ('지금 그 pane 에도 같은 선택 프롬프트가 떠 있어요. pane 에서 고르면 이 요청은 저절로 닫혀요. '
+           '여기서 먼저 고르면 pane 의 프롬프트가 닫힌 뒤에 전달돼요(떠 있는 동안은 입력이 들어가지 않아요).'),
+    'en': ('The same choice prompt is open in that pane too. Choose there and this request closes by itself. '
+           'If you choose here first, the answer is sent after the prompt in the pane closes (nothing is typed while it is open).'),
+    'ja': ('その pane にも同じ選択プロンプトが出ています。pane で選ぶとこのリクエストは自動で閉じます。'
+           'ここで先に選ぶと、pane のプロンプトが閉じた後に届きます(出ている間は入力されません)。'),
+    'zh': ('该 pane 中也打开了相同的选择提示。在 pane 中选择后，此请求会自动关闭。'
+           '如果先在这里选择，会在 pane 的提示关闭后再发送（提示打开期间不会输入文字）。'),
+}
+MULTI_SELECT = {
+    'ko': '여러 개를 고를 수 있는 질문이에요 — 하나를 고르고, 나머지는 메모에 적어 보내 주세요.',
+    'en': 'This question allows several choices — pick one and add the rest in the note.',
+    'ja': '複数選べる質問です — 一つを選び、残りはメモに書いて送ってください。',
+    'zh': '此问题可多选 — 选一个，其余写在备注里发送。',
+}
+PREVIEWS = {'ko': '선택지 미리보기', 'en': 'Option previews', 'ja': '選択肢のプレビュー', 'zh': '选项预览'}
+ASKED_IN_PANE = {'ko': '선택 프롬프트로 대신 물음', 'en': 'Asked in the choice prompt instead', 'ja': '選択プロンプトで代わりに質問', 'zh': '改为在选择提示中询问'}
 
 
 def body_of(question: dict, watched: bool = False) -> str:
-    lines = [WATCHED_NOTE, ''] if watched else []
+    lines = [pick(WATCHED_NOTE), ''] if watched else []
     header = str(question.get('header') or '').strip()
     if header:
         lines.append(f'[{header}]')
     if question.get('multiSelect'):
-        lines.append('여러 개를 고를 수 있는 질문이다 — 하나를 고르고, 나머지는 메모에 적어 보낸다.')
+        lines.append(pick(MULTI_SELECT))
     previews = [f"- {clean_label(option.get('label'))[0]}:\n{option['preview']}" for option in question.get('options') or []
                 if isinstance(option, dict) and option.get('preview')]
     if previews:
-        lines += ['', '선택지 미리보기'] + previews
+        lines += ['', pick(PREVIEWS)] + previews
     return '\n'.join(lines)
 
 
@@ -122,7 +139,7 @@ def main() -> None:
         # 일부만 열렸으면 거둔다 — 원래 고르기 창이 그대로 뜨니 같은 질문이 두 곳에 남지 않게
         for request_id in ids:
             try:
-                subprocess.run([str(ATHENA_DIR / 'bin' / 'athena'), 'request', 'cancel', request_id, '--reason', '고르기 창으로 대신 물음'],
+                subprocess.run([str(ATHENA_DIR / 'bin' / 'athena'), 'request', 'cancel', request_id, '--reason', pick(ASKED_IN_PANE)],
                                capture_output=True, text=True, timeout=30)
             except Exception as cancel_error:
                 log_failure(f'요청 {request_id} 거두기 실패: {cancel_error}')
