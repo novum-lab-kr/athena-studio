@@ -17,7 +17,7 @@ declare global {
     changed?: boolean
   }
   // 폴더 고르기 · 코어 받기(src/main/athena-dir.mts pickAthenaDir · installAthena) — 상태 + 그만두면 canceled · 못 쓰면 error(고른 폴더 picked)
-  type AthenaResult = AthenaState & { canceled?: boolean; error?: string; detail?: string; picked?: string }
+  type AthenaResult = AthenaState & { canceled?: boolean; error?: string; picked?: string }
 
   // 데몬이 앱 화면에 주는 상태(src/daemon/main.mts Daemon.state) — 작업 공간 · 탭(분할 트리) · pane 메타
   type CellSize = { cols: number; rows: number }
@@ -32,7 +32,7 @@ declare global {
   // 새 작업 공간(workspaces.mts newWorkspace) — 팩에 없는 git 레포면 { askAdd, dir, name }(화면이 "팩에 더할까요?")
   type WorkspaceNewReply = DaemonReply & { canceled?: boolean; askAdd?: boolean; dir?: string; name?: string }
   // 데몬에 붙기(src/main/daemon-link.mts attachScreen) — 상태 + pane 마다 되살릴 화면. 못 붙으면 { error } 만 온다(부르는 쪽이 error 를 먼저 본다)
-  type AttachReply = { state: ScreenState; snapshots: Record<string, string>; error?: string; detail?: string }
+  type AttachReply = { state: ScreenState; snapshots: Record<string, string>; error?: string }
   // 아테나 에이전트 켜기(src/main/athena-agent.mts openAthenaAgent)
   type OpenAgentResult = { error?: string; skipped?: boolean; existing?: boolean; focused?: boolean; started?: string; restore?: import('./ui/notices.tsx').RestoreResult | null }
 
@@ -84,15 +84,14 @@ declare global {
   // 레포 이름 · 이미지(src/main/packs.mts repoSetName · repoSetIcon — 코어 pack 결과 · 실패면 text) · 이미지를 안 골랐으면 { canceled }
   type RepoLookReply = { ok?: boolean; canceled?: boolean; error?: string; text?: string; message?: string }
   // 팩에 레포 더하기 · 빼기(src/main/workspaces.mts addRepo · removeRepo — 코어 repo add · remove 결과 · 실패면 text)
-  type RepoAddReply = { ok: true; already?: boolean; repo: { name: string }; path: string } | { ok: false; error?: string; text?: string; detail?: string; message?: string }
-  type RepoRemoveReply = { ok: boolean; removed?: string; error?: string; text?: string; detail?: string; message?: string }
+  type RepoAddReply = { ok: true; already?: boolean; repo: { name: string }; path: string } | { ok: false; error?: string; text?: string; message?: string }
+  type RepoRemoveReply = { ok: boolean; removed?: string; error?: string; text?: string; message?: string }
   // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
   type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
   type CallMain = { status: string; dirty: number; branch: string; upstream: string | null; ahead: number; behind: number; gone?: boolean }
   // 실패면 { error } 만 온다(부르는 쪽이 error 를 먼저 본다)
-  // 본체 스크립트 실패면 error 는 앱 문구 · detail 은 [자세히] 에 접을 스크립트 원문
-  type CallInfo = { error?: string; detail?: string; agent: string; repo: string; target: string; main: CallMain | null; candidates: CallCandidate[]; direct: string | null }
-  type CallStartReply = { error?: string; detail?: string; exists?: boolean; message?: string; ok?: boolean; agent?: string; pane?: string | null; worktree?: string; branch?: string | null }
+  type CallInfo = { error?: string; agent: string; repo: string; target: string; main: CallMain | null; candidates: CallCandidate[]; direct: string | null }
+  type CallStartReply = { error?: string; exists?: boolean; message?: string; ok?: boolean; agent?: string; pane?: string | null; worktree?: string; branch?: string | null }
 
   // 이 창 팩 상태(src/main/packs.mts ctx.refreshPacks — pack list 를 다듬은 것 + 시작 화면 칸 + 열린 팩 openIds). 지원하지 않으면 { supported: false } 만
   type PackState = {
@@ -105,8 +104,8 @@ declare global {
     openIds?: string[]
     error?: string
   }
-  // 팩 명령 답(packs.mts — 실패는 { ok: false, error, text, detail }(packFailure — detail 은 [자세히] 에 접을 본체 원문 · 없으면 빈 글자) · 고르기를 그만두면 { canceled } · 그 밖의 칸은 코어 결과 그대로)
-  type PackReply = { [key: string]: unknown; ok?: boolean; error?: string; text?: string; detail?: string; message?: string; canceled?: boolean }
+  // 팩 명령 답(packs.mts — 실패는 { ok: false, error, text }(packFailure) · 고르기를 그만두면 { canceled } · 그 밖의 칸은 코어 결과 그대로)
+  type PackReply = { [key: string]: unknown; ok?: boolean; error?: string; text?: string; message?: string; canceled?: boolean }
   // 팩 열기 · 바꾸기(packs.mts ctx.packOpen) — 이 창에서 바꿨으면 switched + 새 상태(athena-dir.mts rebindBody) · 다른 창이 보던 팩이면 existing
   type PackOpenReply = PackReply & { id?: string; same?: boolean; existing?: boolean; switched?: boolean; state?: AthenaState; unlinkedRepos?: string[]; repair?: boolean; created?: boolean }
   // 팩 지우기(packs.mts ctx.deletePack) — 워크트리가 있으면 { error: 'has-worktrees', worktrees }(코어 bodies.mjs — dirty 는 바뀐 파일 수) · 끝나면 백업 파일 backup

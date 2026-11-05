@@ -321,13 +321,8 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     else contents.send('core-update:show', view)
   }
 
-  // 코어를 풀지 못한 까닭 — 화면 문장은 원인별 안내, 원문(git · Node 오류)은 [자세히] 에 접는다
-  function coreInstallError(prepared: Prepared): { error: string; detail: string } {
-    const detail = prepared.message || prepared.file || prepared.error || ''
-    return { error: coreInstallText(prepared), detail }
-  }
-
-  function coreInstallText(prepared: Prepared): string {
+  // 코어를 풀지 못한 까닭 — 원인별 안내 문장
+  function coreInstallError(prepared: Prepared): string {
     if (prepared.gitMissing || (prepared.error === 'clone-failed' && prepared.code === 'ENOENT')) return say('error.coreInstall.git')
     if (prepared.error === 'bundle-missing') return say('error.coreBundleMissing', { path: coreBundle })
     if (prepared.error === 'config-unreadable' || prepared.error === 'registry-unreadable') return say('error.coreInstall.configBroken', { file: prepared.file || '' })

@@ -85,9 +85,8 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
     try {
       core.ensureAthenaConfig(dir, athenaReposRoot(dir))
     } catch (error) {
-      // 화면 문장은 흔한 원인(권한 · 디스크)별 안내, Node 오류 원문은 [자세히] 에
-      const failure = error as NodeJS.ErrnoException
-      return { ...ctx.athenaState(), error: configCreateText(failure.code, dir), detail: failure.message, picked: dir }
+      // 흔한 원인(권한 · 디스크)별 안내
+      return { ...ctx.athenaState(), error: configCreateText((error as NodeJS.ErrnoException).code, dir), picked: dir }
     }
     const changed = dir !== ctx.athenaDir
     if (changed) return rebindBody(dir)
@@ -130,7 +129,7 @@ export function installAthenaDir(ctx: AthenaDirCtx, deps: AthenaDirDeps): void {
   // 처음 켤 때 · [다시 시도] — 앱이 들고 온 코어를 ~/.athena-studio/core 로 풀어 쓴다
   ctx.installAthena = async () => {
     const prepared = await prepareStudioCore({ update: false })
-    if (!prepared.ok) return { ...ctx.athenaState(), ...coreInstallError(prepared) }
+    if (!prepared.ok) return { ...ctx.athenaState(), error: coreInstallError(prepared) }
     return useAthenaDir(studio.core)
   }
 }

@@ -143,19 +143,9 @@ export function packDialog({ title, subtitle = '', body = [], actions = [], inpu
   })
 }
 
-export const packAlert = (title: string, text: unknown, detail = ''): Promise<PackDialogAnswer> => {
-  const body: (string | Node)[] = String(text || '').split('\n')
-  // 본체 원문(한국어 · 경로)은 주 문장에 섞지 않고 접어 둔다 — 열면 보인다
-  if (detail) {
-    const fold = el('details', 'pack-detail')
-    fold.append(el('summary', null, say('pack.error.details')), el('p', null, detail))
-    body.push(fold)
-  }
-  return packDialog({ title, body, actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
-}
-// 실패 답(packFailure) 알리기 — 문장(text · 없으면 message) + 접은 원문(detail)
-export const packFailAlert = (title: string, reply: { text?: unknown; message?: unknown; detail?: unknown }): Promise<PackDialogAnswer> =>
-  packAlert(title, reply.text || reply.message, typeof reply.detail === 'string' ? reply.detail : '')
+export const packAlert = (title: string, text: unknown): Promise<PackDialogAnswer> => packDialog({ title, body: String(text || '').split('\n'), actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
+// 실패 답(packFailure) 알리기 — 문장(text · 없으면 message)
+export const packFailAlert = (title: string, reply: { text?: unknown; message?: unknown }): Promise<PackDialogAnswer> => packAlert(title, reply.text || reply.message)
 
 // 진행 표시 — cancellable 이면 [취소](기다리는 중 · 검사 중에만 — 본체가 바꾸기 시작한 뒤에는 없다).
 // 몸통(제목 · 단계 줄 · [취소])은 React(ui/pack-progress.tsx) — 여기는 보이기 · 숨기기 · 뒤 화면 막기 · 포커스만

@@ -55,15 +55,14 @@ test('오류 문장: 코드별 안내 + 본체 설명 + busy 목록', () => {
   assert.match(busyKinds, /확인하지 못한 프로세스 — node/)
 })
 
-test('오류 문장: 세부 이유(reason)가 있으면 사전 문구가 주 문장 · 본체 원문은 detail 로만', () => {
+test('오류 문장: 세부 이유(reason)가 있으면 사전 문구가 주 문장 · 본체 원문은 화면에 안 올림', () => {
   const notPack = { ok: false, error: 'invalid-pack', message: '팩이 아니다 — pack.json 을 찾지 못했다', reason: 'not-a-pack' }
   const text = pack.packErrorText(notPack)
   assert.match(text, /서비스 코드 레포가 아니라 팩/)
   assert.doesNotMatch(text, /pack\.json|팩이 아니다 —/)
-  assert.equal(pack.packErrorDetail(notPack), notPack.message)
   const failure = pack.packFailure(notPack)
   assert.equal(failure.text, text)
-  assert.equal(failure.detail, notPack.message)
+  assert.equal(failure.detail, undefined)
   assert.equal(failure.error, 'invalid-pack')
   // 자리 값 — 파일 이름 · 숫자 · 긴 값은 자르고 글자 · 숫자 아닌 값은 버린다
   assert.match(pack.packErrorText({ ok: false, error: 'invalid-pack', reason: 'archive-unreadable', reasonArgs: { file: 'acme.tar.gz' } }), /acme\.tar\.gz 을 읽지 못했습니다/)
@@ -80,13 +79,9 @@ test('오류 문장: 세부 이유(reason)가 있으면 사전 문구가 주 문
   assert.match(pack.packErrorText({ ...notPack, busy: [{ kind: 'qa', what: 'acme-web', pid: 12 }] }), /팩이 아닙니다\.[\s\S]*\n· QA 실행 — acme-web \(pid 12\)/)
 })
 
-test('오류 문장: 모르는 이유 · 이유 없음은 예전처럼 코드 문구 + 원문 · detail 없음', () => {
+test('오류 문장: 모르는 이유 · 이유 없음은 예전처럼 코드 문구 + 원문', () => {
   const unknown = { ok: false, error: 'invalid-pack', message: '새 코어 이유', reason: 'from-the-future' }
   assert.match(pack.packErrorText(unknown), /팩이 아닙니다 — .* — 새 코어 이유/)
-  assert.equal(pack.packErrorDetail(unknown), '')
-  assert.equal(pack.packErrorDetail({ ok: false, error: 'failed', message: 'x' }), '')
-  assert.equal(pack.packFailure({ ok: false, error: 'failed', message: 'x' }).detail, '')
-  assert.equal(pack.packErrorDetail({ ok: true }), '')
 })
 
 test('오류 문장: 약속 번호(contract-mismatch)는 코어 번호로 업데이트할 쪽을 가린다', () => {
@@ -101,7 +96,6 @@ test('세부 이유 사전: 모든 이유가 4언어 사전에 같은 자리로 
   const path = require('node:path')
   for (const lang of ['ko', 'en', 'ja', 'zh']) {
     const dict = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'src', 'i18n', `${lang}.json`), 'utf8'))
-    assert.ok(dict['pack.error.details'], `${lang}: pack.error.details`)
     for (const reason of pack.PACK_REASONS) {
       if (reason === 'contract-mismatch') continue
       assert.ok(dict[`pack.reason.${reason}`], `${lang}: pack.reason.${reason}`)

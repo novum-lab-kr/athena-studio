@@ -446,7 +446,6 @@
   "pack.contract.old": "当前 Athena 核心版本较旧，无法打开、新建或导入包 — 请更新 Athena(工作窗口和待办仍可使用)",
   "pack.contract.other": "Athena 核心的协议版本({contract})与本工作室不同 — 请更新工作室",
   "pack.contract.unknown": "无法确认 Athena 核心版本 — 请稍后再试",
-  "pack.error.details": "详情",
   "pack.reason.not-a-pack": "所选的不是包。请选择包(包文件夹 · 导出生成的压缩文件 · 团队共用的包仓库地址),而不是服务代码仓库。如果还没有包,请通过 [包 → 新建] 创建。",
   "pack.reason.athena-folder": "所选文件夹不是包,而是 Athena 文件夹。如果是在这台电脑上用过的 Athena,请在 [包 → 导入] 中通过 [现有 Athena] 导入。",
   "pack.reason.pack-json-unreadable": "包设置文件已损坏,无法读取。请让提供包的人重新导出,或选择其他包。",

@@ -66,7 +66,7 @@ export function parsePackOutput(text: unknown, say: Say = koreanSay): { progress
 }
 
 // 사용자가 흔히 만나는 실패의 세부 이유(코어 결과 reason · 사전 pack.reason.<이유>) — 코어 athena/scripts/lib/packs.mjs 와 같은 목록
-// 이유가 있으면 앱 언어 문구("무엇이 문제 + 어떻게 하면 되나")가 주 문장 · 코어 message(한국어 원문)는 화면 [자세히] 로만(packErrorDetail)
+// 이유가 있으면 앱 언어 문구("무엇이 문제 + 어떻게 하면 되나")가 주 문장 · 코어 message(한국어 원문)는 화면에 올리지 않는다
 export const PACK_REASONS: readonly string[] = [
   'not-a-pack', 'athena-folder', 'pack-json-unreadable', 'pack-json-not-object', 'repos-not-list', 'bad-repo-name', 'format-newer',
   'archive-unreadable', 'archive-extract-failed', 'archive-outside-path', 'too-many-files', 'too-large',
@@ -100,7 +100,7 @@ function reasonText(result: PackResult, say: Say): string | null {
   return say(`pack.reason.${reason}`, reasonValues(result.reasonArgs))
 }
 
-// 오류 결과 → 화면에 보일 문장. 세부 이유가 있으면 그 문구만(본체 원문은 packErrorDetail),
+// 오류 결과 → 화면에 보일 문장. 세부 이유가 있으면 그 문구만(본체 원문은 화면에 올리지 않는다),
 // 없으면(개발용 · 옛 코어) 오류 코드 문구 뒤에 본체 message 를 붙인다 — 본체 message 는 본체가 쓴 한국어 그대로(번역 범위 밖)
 export function packErrorText(result: PackResult | null | undefined, say: Say = koreanSay): string {
   if (!result || result.ok) return ''
@@ -112,15 +112,9 @@ export function packErrorText(result: PackResult | null | undefined, say: Say = 
   return `${base}${detail}${busy}`
 }
 
-// 화면 [자세히] 에 접어 둘 본체 원문 — 세부 이유 문구로 바꿔 보인 실패만(아니면 원문이 이미 주 문장에 붙어 있다)
-export function packErrorDetail(result: PackResult | null | undefined, say: Say = koreanSay): string {
-  if (!result || result.ok || !reasonText(result, say)) return ''
-  return typeof result.message === 'string' ? result.message : ''
-}
-
-// 실패 답 — 코어 결과 + 화면 문장(text) + 접어 둘 원문(detail · 없으면 빈 글자)
-export function packFailure<T extends PackResult>(result: T, say: Say = koreanSay): T & { text: string; detail: string } {
-  return { ...result, text: packErrorText(result, say), detail: packErrorDetail(result, say) }
+// 실패 답 — 코어 결과 + 화면 문장(text)
+export function packFailure<T extends PackResult>(result: T, say: Say = koreanSay): T & { text: string } {
+  return { ...result, text: packErrorText(result, say) }
 }
 
 export function busyLines(busy: BusyItem[] | null | undefined, say: Say = koreanSay): string[] {

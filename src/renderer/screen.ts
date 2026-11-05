@@ -54,7 +54,7 @@ export async function attach(): Promise<boolean> {
   attaching = (async () => {
     const result = await studio.screenAttach()
     if (result.error) {
-      StudioUi.notices.showScreenStatus(result.error, result.detail || '')
+      StudioUi.notices.showScreenStatus(result.error)
       return false
     }
     for (const paneId of [...views.keys()]) disposeView(paneId)

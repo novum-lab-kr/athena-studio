@@ -446,7 +446,6 @@
   "pack.contract.old": "Your Athena core is an older version, so opening, creating or importing packs is unavailable — please update Athena (the work window and worklist still work)",
   "pack.contract.other": "The Athena core uses contract {contract}, which this studio does not support — please update the studio",
   "pack.contract.unknown": "Could not check the Athena core version — please try again in a moment",
-  "pack.error.details": "Details",
   "pack.reason.not-a-pack": "What you picked is not a pack. Pick a pack (a pack folder, an archive made by Export, or your team's pack repo address), not a service code repo. If you have no pack, create one with [Packs → Create New].",
   "pack.reason.athena-folder": "The folder you picked is an Athena folder, not a pack. If it is the Athena you used on this computer, import it with [Existing Athena] in [Packs → Import].",
   "pack.reason.pack-json-unreadable": "The pack settings file is broken and could not be read. Ask the person who gave you the pack to export it again, or pick another pack.",

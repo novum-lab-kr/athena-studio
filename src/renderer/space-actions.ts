@@ -180,8 +180,7 @@ export async function offerAddRepo({ dir, name }: { dir: string; name: string })
 // 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
 async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
   const info = await studio.packCallInfo(repo.name)
-  // 본체 스크립트가 실패했으면 원문은 [자세히] 에 접는다(담당 에이전트 없음 같은 앱 문구는 알림만)
-  if (info.error) return info.detail ? packAlert(say('spaces.callFailed'), info.error, info.detail) : showToast(info.error)
+  if (info.error) return showToast(info.error)
   let choice = { branch: '', reuse: false }
   if (!info.direct) {
     const rows = el('div', 'pack-links')
@@ -214,7 +213,7 @@ async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
     result = await studio.packCallStart(repo.name, { branch: choice.branch, reuse: true })
     hidePackProgress()
   }
-  if (result.error) return packAlert(say('spaces.callFailed'), result.error, result.detail || '')
+  if (result.error) return packAlert(say('spaces.callFailed'), result.error)
   showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
 }
 
