@@ -238,6 +238,17 @@ check "init --scan — --root 없이 팩 local.json reposRoot 아래를 훑음" 
 OUT_ROOT="$(node scripts/athena.mjs init --scan --json --root "$WORK/none" 2>/dev/null)"
 check "init --scan — --root 가 팩 local.json 보다 먼저" '! echo "$OUT_ROOT" | grep -q scan-probe' "$OUT_ROOT"
 rm -rf "$SRCS/scan-probe"
+# 홈 바로 아래 맥 보호 폴더(Music · Movies · Pictures · Library)는 열지 않는다(접근 허락 창) — 기준 폴더가 홈일 때 · 홈 위일 때 · 다른 폴더는 그대로 찾는다
+FAKE_HOME="$WORK/fake-home"
+for sub in Music/m-repo Movies/v-repo Pictures/p-repo Library/l-repo Documents/doc-repo Desktop/desk-repo Downloads/down-repo code/app-repo; do
+  mkdir -p "$FAKE_HOME/$sub" && git -C "$FAKE_HOME/$sub" init -q -b main
+done
+scan_names() { HOME="$FAKE_HOME" node scripts/athena.mjs init --scan --json --root "$1" --depth "$2" 2>/dev/null | python3 -c "import json,sys; print(','.join(sorted(r['name'] for r in json.load(sys.stdin))))"; }
+SCAN_HOME="$(scan_names "$FAKE_HOME" 3)"
+check "init --scan(기준 폴더 = 홈) — 보호 폴더 안 레포는 안 찾고 나머지는 찾음" '[ "$SCAN_HOME" = "app-repo,desk-repo,doc-repo,down-repo" ]' "$SCAN_HOME"
+SCAN_UP="$(scan_names "$WORK" 3)"
+check "init --scan(기준 폴더 = 홈 위) — 보호 폴더 안 레포는 안 찾음" '! echo "$SCAN_UP" | grep -Eq "(^|,)(m|v|p|l)-repo(,|$)" && echo "$SCAN_UP" | grep -q app-repo' "$SCAN_UP"
+rm -rf "$FAKE_HOME"
 mkdir -p "$SRCS/team/new-svc" && git -C "$SRCS/team/new-svc" init -q -b main && (cd "$SRCS/team/new-svc" && echo x > README.md && git add . && git -c user.email=t@e.invalid -c user.name=t commit -qm init && git remote add origin https://u:tok@example.com/acme/new-svc.git)
 R="$(A repo add "$SRCS/team/new-svc")"
 check "repo add → pack.json 항목(git 주소 · 토큰 뗌) · 자리 · repos/ 링크" '[ "$(echo "$R" | field repo.name)" = new-svc ] && grep -q "\"new-svc\"" pack/pack.json && grep -q "https://example.com/acme/new-svc.git" pack/pack.json && ! grep -q "tok@" pack/pack.json && grep -q "team/new-svc" "$LOCAL" && [ "$(readlink repos/new-svc)" = "$SRCS/team/new-svc" ] && [ "$(echo "$R" | field linked)" = True ]' "$R"

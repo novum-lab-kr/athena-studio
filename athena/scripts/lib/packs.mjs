@@ -18,6 +18,7 @@ import { homedir } from 'node:os'
 import { basename, dirname, join, relative, resolve, sep } from 'node:path'
 import { ACTIVE_LINK, DATA_FORMATS, PACK_FORMAT_VERSION, bodyConfig, bodyIdOf, boardPort, dataDir, defaultBackupDir, paths, portBaseOf, readRegistry } from './config.mjs'
 import { PackError, alive, lockOwnerAt, packLockDir, packLockOwner, registryLockDir, takeLock } from './lock.mjs'
+import { PROTECTED_HOME_DIRS } from './fs.mjs'
 import { isLink, linkOverlay, removeLink, unlinkOverlay } from './overlay.mjs'
 import { captureRestore, checkRestore, discardRestore, restoreWork } from './restore.mjs'
 import { inspectLook, packLook } from './pack-look.mjs'
@@ -519,8 +520,8 @@ const originOf = (dir) => { try { return execFileSync('git', ['-C', dir, 'config
 const isRepoDir = (path) => existsSync(join(path, '.git'))
 
 // git 주소로 레포 찾기 — base 아래 depth 단계까지 git 레포를 훑어 keys(remoteKey) 와 같은 것 → Map(key → 경로).
-// 레포를 찾으면 그 안으로 내려가지 않는다 · 숨김 · node_modules · 맥 시스템 폴더는 건너뛴다(홈을 훑어도 빠르게)
-const SKIP_SCAN = new Set(['node_modules', 'Library', 'Applications', 'Movies', 'Music', 'Pictures'])
+// 레포를 찾으면 그 안으로 내려가지 않는다 · 숨김 · node_modules · 맥 시스템 폴더는 건너뛴다(홈을 훑어도 빠르게 · 보호 폴더 목록은 fs.mjs 한 곳)
+const SKIP_SCAN = new Set(['node_modules', 'Applications', ...PROTECTED_HOME_DIRS])
 const findReposByRemote = (base, keys, depth = 3) => {
   const found = new Map()
   const walk = (dir, level) => {

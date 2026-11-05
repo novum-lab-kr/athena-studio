@@ -7,6 +7,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { paths } from './config.mjs'
+import { isProtectedHomeDir } from './fs.mjs'
 import { DEFAULT_AGENT_LIGHT_MODEL } from './models.mjs'
 import { listRuleDocs, ruleDocList } from './rule-docs.mjs'
 
@@ -70,7 +71,7 @@ export const inspectRepo = (dir) => {
 }
 
 // reposRoot 아래를 depth 단계까지 내려가며 git 레포를 찾는다(회사·팀 폴더로 묶어 둔 경우). 레포를 찾으면 그 안으로는 더 내려가지 않는다.
-// 숨김 폴더·node_modules·아테나 자신은 건너뛴다. 같은 레포의 워크트리(.git 이 파일)는 원래 레포와 하나로 친다.
+// 숨김 폴더·node_modules·아테나 자신·홈 바로 아래 맥 보호 폴더(fs.mjs PROTECTED_HOME_DIRS — 열면 접근 허락 창이 뜬다)는 건너뛴다. 같은 레포의 워크트리(.git 이 파일)는 원래 레포와 하나로 친다.
 // 이름(=팩 레포 이름)은 폴더 이름 — 겹치면 위 폴더 이름을 붙여 가른다. path 는 reposRoot 기준 상대 경로(이름과 다르면 설정 repoPaths 로 남긴다)
 export const scanRepos = (root, athenaRoot, depth = 3) => {
   const base = resolve(athenaRoot, root)
@@ -82,7 +83,7 @@ export const scanRepos = (root, athenaRoot, depth = 3) => {
     for (const name of names.sort()) {
       if (name.startsWith('.') || name === 'node_modules') continue
       const path = join(dir, name)
-      if (!isDir(path)) continue
+      if (isProtectedHomeDir(path) || !isDir(path)) continue
       let real = ''
       try { real = realpathSync(path) } catch { continue }
       if (real === self || real.startsWith(self + '/')) continue
