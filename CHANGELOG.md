@@ -34,6 +34,16 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.52: 공개 v0.51.21 이후 v0.51.22 ~ v0.52.0(직접 머지 17건 · PR244)에서 사용자에게 보이는 변경만. 공개 배포 커밋 81b73cd 와 heavy-test 정비 1d0ebd3 은 뺐고, 지표 탭 세부 숫자 · 페이지(5d4019e)와 지시 칸 검사 그리드(c937120)는 한 줄로, 팩 가져오기 오류 문구(e88f245)와 자세히 칸 빼기(8ff8821)는 한 줄로 묶었다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.53: 공개 v0.52.1 이후 v0.53.0 ~ v0.53.3(직접 머지 4건)에서 사용자에게 보이는 변경만. 사이트 릴리스 줄 파일 8c7ed5d · 그 ko 말투 59b7732 · 배포 판정 6c0a111 은 배포 · 문서 내부라 뺐고, 압축 대비 4b67490 은 곧 압축 알림 · 리드 기록(New)과 압축 뒤 다시 읽기 · 원문 안내(Improved) 두 줄로 나눴다. 범위 끝은 열어 둔다 -->
+
+## 0.53 (v0.53.0 – · Nov 6, 2026)
+
+### New
+- Claude sessions for the Athena lead and agents get a reminder at 80% of the auto-compaction window to write down what they learned, decided and plan to do next in the plan before the conversation is compacted, and the Athena lead keeps a short log of corrections, failures and decisions that is shown first after compaction.
+
+### Improved
+- After a conversation is compacted, the Athena lead pane also re-reads all of its in-progress plans and their linked issues, and the post-compaction note points to the full conversation record so missing details can be searched instead of guessed.
+
 ## 0.52 (v0.52.0 – · Nov 6, 2026)
 
 ### New

@@ -1,4 +1,20 @@
 {
+  "0.53": [
+    {
+      "tag": "new",
+      "en": "Claude sessions for the Athena lead and agents get a reminder at 80% of the auto-compaction window to write down what they learned, decided and plan to do next in the plan before the conversation is compacted, and the Athena lead keeps a short log of corrections, failures and decisions that is shown first after compaction.",
+      "ko": "아테나 리드와 에이전트의 Claude 세션이 자동 압축 창의 80% 에 이르면, 대화가 압축되기 전에 알게 된 것 · 정한 것 · 다음 할 일을 계획서에 적어 두라는 알림을 받고, 아테나 리드는 정정 · 실패 · 결정을 짧게 기록해 압축 뒤 맨 먼저 보여 줍니다.",
+      "ja": "Athena のリードとエージェントの Claude セッションは、自動圧縮ウィンドウの 80% に達すると、会話が圧縮される前に分かったこと・決めたこと・次にやることを計画書に書き残すよう通知を受けます。Athena のリードは訂正・失敗・決定を短く記録し、圧縮後に最初に表示します。",
+      "zh": "Athena 主管和代理的 Claude 会话在达到自动压缩窗口的 80% 时会收到提醒，在对话被压缩前把已了解的情况、已做的决定和下一步写进计划书；Athena 主管还会简短记录更正、失败和决定，并在压缩后最先显示。"
+    },
+    {
+      "tag": "improved",
+      "en": "After a conversation is compacted, the Athena lead pane also re-reads all of its in-progress plans and their linked issues, and the post-compaction note points to the full conversation record so missing details can be searched instead of guessed.",
+      "ko": "대화가 압축된 뒤 아테나 리드 칸도 진행 중인 계획서와 거기 묶인 이슈를 모두 다시 읽고, 압축 뒤 안내가 대화 원문 기록을 가리켜 요약에 없는 내용은 짐작하지 않고 찾아볼 수 있습니다.",
+      "ja": "会話が圧縮されたあと、Athena のリードペインも進行中の計画書とそれに紐づく課題をすべて読み直します。圧縮後の案内は会話の元の記録を指すので、要約にない内容は推測せずに検索できます。",
+      "zh": "对话压缩后，Athena 主管窗格也会重新读取所有进行中的计划书及其关联的问题；压缩后的提示会指向完整的对话原始记录，摘要中没有的内容可以查找而无需猜测。"
+    }
+  ],
   "0.52": [
     {
       "tag": "new",
