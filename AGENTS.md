@@ -80,7 +80,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) — renderer 새 파일(`.ts`)은 진입점에서 import 하면 `check` 끝의 화면 빌드가 본다 |
 | 새 `.mts` 파일 · JS → `.mts` 옮기기 | `package.json` `check` 의 `scripts/check-ts.js` 줄 · 부르는 곳의 `require` 경로(확장자까지) · 테스트의 `require` |
-| `CHANGELOG.md` 줄 | `src/changelog/{ko,ja,zh}.json` 번역(`test/release-notes.test.js`) · 사이트 줄 `docs/site-release-notes.json` 같은 minor 키(손님이 알아챌 것만 · 4개 언어 · `test/site-release-notes.test.js` · `docs/development.md` "배포판 (맥)") |
+| `CHANGELOG.md` 줄 | `src/changelog/{ko,ja,zh}.json` 번역(`test/release-notes.test.js`) · 사이트 줄 `docs/site-release-notes.json` 같은 minor 키(손님이 알아챌 것만 · 4개 언어 · ko 는 합니다체 · `test/site-release-notes.test.js` · `docs/development.md` "배포판 (맥)") |
 | 순수 로직 | `src/lib/` 에 두고 `test/<이름>.test.js` — Electron 없이 돈다 |
 | 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · `docs/development.md` "스튜디오 집과 데이터" |
 | 메뉴 · 단축키 · 화면 동작 | `docs/development.md` "화면" · "팩" · "문제가 생기면" |

@@ -43,6 +43,16 @@ test('site-release-notes.json: minor 마다 줄 배열 · 태그 · 4개 언어 
   }
 })
 
+test('site-release-notes.json: ko 글은 소개 사이트 말투(합니다체) — 해요체로 끝나지 않는다', () => {
+  // 앱 번역(src/changelog/ko.json)은 해요체라 그대로 옮기면 사이트에 해요체로 붙는다(docs/development.md "배포판 (맥)")
+  const data = readSiteNotes()
+  for (const [minor, items] of Object.entries(data)) {
+    for (const item of items) {
+      assert.doesNotMatch(item.ko, /요[.!]?$/, `${minor} 줄의 ko 글이 해요체다 — 합니다체로: ${item.ko}`)
+    }
+  }
+})
+
 test('site-release-notes.json: 키마다 CHANGELOG 에 그 minor 절이 있고 최신 절의 줄도 있다', () => {
   const data = readSiteNotes()
   const sections = notes.parseChangelog(fs.readFileSync(CHANGELOG, 'utf8'))
