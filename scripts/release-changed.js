@@ -12,12 +12,32 @@ const { execFileSync } = require('child_process')
 const version = require('../src/lib/version')
 const packageMac = require('./package-mac')
 
+// 배포판에 안 들어가는 파일 — scripts/package-mac.js 의 FILES(package.json · bin · dist/renderer · src · 로고 · main-tool.mjs) ·
+// extraResources(코어 번들 = athena/ 트리 · CHANGELOG · 만든 설정 · 고지) 어디에도 없고 배포판 결과도 바꾸지 않는 것만.
+// 배포판을 만드는 스크립트(package-mac · third-party-notices · notarize-mac · fix-spawn-helper)는 결과를 바꾸니 앱 안이다.
+// 모르는 새 파일은 앱 안으로 친다(만들어야 할 판을 건너뛰지 않게) — 새 개발 · 배포 스크립트를 더하면 여기에도 더한다
+const OUTSIDE_FILES = new Set([
+  'AGENTS.md',
+  'CLAUDE.md',
+  'SECURITY.md',
+  'LICENSE',
+  'scripts/release-changed.js', // 배포 판정 · 버전 태그 · 공개 파일 · 공개 — Release 에 붙는 파일만 만들고 앱 안에는 없다
+  'scripts/release-version.js',
+  'scripts/release-files.js',
+  'scripts/publish-release.js',
+  'scripts/dev-app.js', // 개발 앱 · 가짜 팩 · 문법 검사 · 워크트리 준비 — 개발용
+  'scripts/fake-pack.js',
+  'scripts/check-ts.js',
+  'scripts/worktree-setup.sh',
+])
+
 /**
  * 앱 밖 파일인가 — 레포 뿌리 기준 경로. athena/ 안 문서(규칙 · 지시문)는 코어 동작이라 앱 안이다
  * @param {string} file
  */
 function isOutsideApp(file) {
   if (file === 'CHANGELOG.md') return true
+  if (OUTSIDE_FILES.has(file)) return true
   if (/^README[^/]*\.md$/.test(file)) return true
   return ['test/', 'athena/test/', 'docs/', '.github/'].some((prefix) => file.startsWith(prefix))
 }
@@ -33,7 +53,7 @@ function decide({ next, published, baseKnown, files }) {
   if (version.compareVersions(next, published) <= 0) return { build: false, reason: `v${next} 가 공개판 v${published} 보다 높지 않다` }
   if (!baseKnown) return { build: true, reason: `공개판 태그 v${published} 가 이 레포에 없어 비교하지 못했다` }
   const inside = files.filter((file) => !isOutsideApp(file))
-  if (!inside.length) return { build: false, reason: `v${published} → v${next} 사이 앱이 바뀌지 않았다(${files.length}개 파일 모두 문서 · 시험 · .github · CHANGELOG)` }
+  if (!inside.length) return { build: false, reason: `v${published} → v${next} 사이 앱이 바뀌지 않았다(${files.length}개 파일 모두 문서 · 시험 · .github · CHANGELOG · 배포 · 개발 스크립트)` }
   return { build: true, reason: `v${published} → v${next} 사이 앱 파일 ${inside.length}개가 바뀌었다(예: ${inside.slice(0, 3).join(' · ')})` }
 }
 

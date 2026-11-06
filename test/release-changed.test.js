@@ -14,6 +14,18 @@ test('앱 밖 — 시험 · 뿌리 docs · README · .github · CHANGELOG 만', 
   }
 })
 
+test('앱 밖 — 번들(scripts/package-mac.js FILES · extraResources · 코어 번들 athena/)에 안 들어가는 뿌리 문서 · 배포 · 개발 스크립트', () => {
+  for (const file of ['AGENTS.md', 'CLAUDE.md', 'SECURITY.md', 'LICENSE', 'scripts/release-changed.js', 'scripts/release-version.js', 'scripts/release-files.js', 'scripts/publish-release.js', 'scripts/dev-app.js', 'scripts/fake-pack.js', 'scripts/check-ts.js', 'scripts/worktree-setup.sh']) {
+    assert.equal(isOutsideApp(file), true, file)
+  }
+  // 배포판 만드는 결과를 바꾸는 스크립트 · 화면 빌드 설정 · 의존성은 앱 안
+  for (const file of ['scripts/third-party-notices.js', 'scripts/notarize-mac.js', 'scripts/fix-spawn-helper.js', 'vite.config.mts', 'package-lock.json', 'athena/CLAUDE.md', 'src/AGENTS.md', 'scripts/new.js']) {
+    assert.equal(isOutsideApp(file), false, file)
+  }
+  // 319ee97 처럼 뿌리 AGENTS.md 만 바뀐 판은 건너뛴다
+  assert.equal(decide({ ...base, files: ['AGENTS.md', 'docs/development.md'] }).build, false)
+})
+
 test('문서만 · 시험만 바뀐 판은 건너뛴다', () => {
   assert.equal(decide({ ...base, files: ['docs/development.md', 'README.md', 'CHANGELOG.md'] }).build, false)
   assert.equal(decide({ ...base, files: ['test/a.test.js', 'athena/test/b.sh', '.github/workflows/x.yml'] }).build, false)
