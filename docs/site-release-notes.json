@@ -1,0 +1,60 @@
+{
+  "0.52": [
+    {
+      "tag": "new",
+      "en": "Before an agent starts, Athena checks the plan's instructions and warns about missing or unclear parts, and the Board's Metrics tab summarizes these checks by kind.",
+      "ko": "에이전트를 띄우기 전에 계획서 지시 칸을 검사해 빠지거나 모호한 곳을 경고하고, 현황판 지표 탭에 그 검사 결과를 종류별로 모아 보여 줘요.",
+      "ja": "エージェントを起動する前に計画書の指示欄をチェックし、抜けや曖昧な点を警告します。ボードの指標タブではそのチェック結果を種類別にまとめて表示します。",
+      "zh": "启动代理前会检查计划书的指示内容，对缺失或含糊之处发出警告；看板的指标标签页按类型汇总这些检查结果。"
+    },
+    {
+      "tag": "improved",
+      "en": "The Board now follows the app's language (English, Korean, Japanese or Chinese).",
+      "ko": "현황판 문구가 앱 언어(영어 · 한국어 · 일본어 · 중국어)를 따라요.",
+      "ja": "ボードの表示がアプリの言語(英語・韓国語・日本語・中国語)に合わせて切り替わります。",
+      "zh": "看板文字现在跟随应用语言（英语、韩语、日语或中文）。"
+    },
+    {
+      "tag": "improved",
+      "en": "The Board's issue list is grouped by repository, and an issue's delete button appears only when you hover over or focus its row.",
+      "ko": "현황판 이슈 목록이 레포별로 묶이고, 이슈 삭제 버튼은 그 줄에 마우스를 올리거나 포커스가 갈 때만 나와요.",
+      "ja": "ボードの課題一覧がリポジトリごとにまとまり、削除ボタンはその行にマウスを乗せるかフォーカスしたときだけ表示されます。",
+      "zh": "看板的问题列表按仓库分组，删除按钮仅在鼠标悬停或聚焦该行时显示。"
+    },
+    {
+      "tag": "improved",
+      "en": "The Diagram menu includes Athena's work-flow diagrams again, updated to the current flow.",
+      "ko": "다이어그램 메뉴에 아테나 작업 흐름 그림이 지금 흐름에 맞게 다시 들어갔어요.",
+      "ja": "ダイアグラムメニューに、現在の流れに合わせて更新した Athena の作業フロー図が戻りました。",
+      "zh": "图表菜单重新加入了 Athena 的工作流程图，并已按当前流程更新。"
+    },
+    {
+      "tag": "improved",
+      "en": "Pack import errors explain what you chose, what is missing and what to do next, and the pack error dialog no longer hides the details in a collapsed section.",
+      "ko": "팩 가져오기 오류가 무엇을 골랐고 무엇이 없고 어떻게 하면 되는지 알려 주고, 팩 오류 창에서 자세히 접기 칸을 뺐어요.",
+      "ja": "パックの読み込みエラーで、何を選んだか・何が足りないか・どうすればよいかを説明します。パックのエラー画面の折りたたみ詳細欄はなくなりました。",
+      "zh": "包导入错误会说明你选择了什么、缺少什么以及下一步怎么做；包错误对话框不再把详情折叠起来。"
+    },
+    {
+      "tag": "fixed",
+      "en": "The green eyes of the menu bar owl icon were barely visible while agents were working.",
+      "ko": "에이전트가 일하는 동안 메뉴 막대 부엉이 아이콘의 초록 눈이 거의 안 보이던 문제를 고쳤어요.",
+      "ja": "エージェントの作業中、メニューバーのフクロウアイコンの緑の目がほとんど見えなかった問題を修正しました。",
+      "zh": "修复了代理工作时菜单栏猫头鹰图标的绿色眼睛几乎看不见的问题。"
+    },
+    {
+      "tag": "fixed",
+      "en": "After creating a new pack, the sign-in tool now starts automatically in the Athena pane.",
+      "ko": "새 팩을 만든 뒤 아테나 칸에 로그인 도구가 자동으로 켜지지 않던 문제를 고쳤어요.",
+      "ja": "新しいパックを作成したあと、Athena のペインでログインツールが自動で起動しなかった問題を修正しました。",
+      "zh": "修复了新建包后 Athena 窗格中登录工具没有自动启动的问题。"
+    },
+    {
+      "tag": "fixed",
+      "en": "The first-run repository search no longer opens macOS protected folders (Music, Movies, Pictures, Library) that trigger access prompts.",
+      "ko": "첫 실행 레포 찾기가 맥 보호 폴더(음악 · 동영상 · 사진 · Library)를 열어 접근 허락 창이 뜨던 문제를 막았어요.",
+      "ja": "初回起動時のリポジトリ検索が macOS の保護フォルダ(ミュージック・ムービー・ピクチャ・ライブラリ)を開いてアクセス許可の確認が出ることはなくなりました。",
+      "zh": "首次运行时的仓库搜索不再打开 macOS 受保护文件夹（音乐、影片、图片、资源库）而弹出访问授权提示。"
+    }
+  ]
+}
