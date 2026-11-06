@@ -1,8 +1,10 @@
 #!/usr/bin/env node
 // @ts-check
-// 대화 원문 찾기 — Claude Code 대화 기록(jsonl)에서 낱말이 든 대목만 짧게 보여 준다
+// 대화 원문 찾기 — Claude Code · Codex 대화 기록(jsonl)에서 낱말이 든 대목만 짧게 보여 준다
 //   압축하면 대화는 요약만 남지만 기록 파일에는 원문이 그대로 남는다. 요약에 없는 사실은 짐작하지 말고 여기서 찾는다
 //   기록 파일 경로는 압축 뒤 안내(scripts/hooks/compact-checkpoint.py post)가 알려 준다 — 훅 입력 transcript_path
+//   Codex 기록(rollout — `~/.codex/sessions/…/rollout-*.jsonl`)은 줄마다 { type: 'response_item', payload: { type: 'message' | 'function_call' … } }
+//   모양이라 같은 파일 안에서 줄마다 가려 읽는다(2026-11-06 codex-cli 0.166 기록 확인). 지시문(developer) · 생각(reasoning)은 뺀다
 //   보여 주기 전에 비밀값을 가린다(scripts/lib/mask.mjs maskText — 배우기 검토 · PR 자동 리뷰 · 로그와 같은 기준)
 //
 // 사용: node scripts/transcript-search.mjs <기록.jsonl> <낱말> [낱말…] [--max 20] [--width 160]
@@ -54,6 +56,46 @@ const pieces = (content) => {
   })
 }
 
+/** @typedef {{ type?: unknown, role?: unknown, name?: unknown, arguments?: unknown, input?: unknown, content?: unknown, output?: unknown, message?: unknown }} CodexPayload */
+/** @typedef {{ type?: unknown, payload?: CodexPayload, isCompactSummary?: unknown, message?: { content?: unknown } }} Entry */
+/** @typedef {{ role: string, texts: string[] }} Read */
+
+// Codex 기록 한 줄 → { role, texts } — 사람이 읽을 것이 없으면 null
+/** @param {Entry} entry @returns {Read | null} */
+const codexEntry = (entry) => {
+  const payload = entry.payload
+  if (!payload || typeof payload !== 'object') return null
+  // 압축 요약 — message 가 빈 판도 있다(그때는 뒤에 이어지는 기록이 원문을 대신하지 않으니 건너뛴다)
+  if (entry.type === 'compacted') return typeof payload.message === 'string' && payload.message ? { role: '압축 요약', texts: [payload.message] } : null
+  if (entry.type !== 'response_item') return null
+  if (payload.type === 'message' && (payload.role === 'user' || payload.role === 'assistant')) {
+    return { role: payload.role, texts: codexTexts(payload.content) }
+  }
+  if (payload.type === 'function_call') return { role: 'assistant', texts: [`[${String(payload.name ?? '도구')}] ${String(payload.arguments ?? '')}`] }
+  if (payload.type === 'custom_tool_call') return { role: 'assistant', texts: [`[${String(payload.name ?? '도구')}] ${String(payload.input ?? '')}`] }
+  if (payload.type === 'function_call_output' || payload.type === 'custom_tool_call_output') {
+    return { role: 'user', texts: codexTexts(payload.output).map((text) => `[결과] ${text}`) }
+  }
+  return null
+}
+
+// Codex 글 조각 — 문자열이거나 [{ type: 'input_text' | 'output_text', text }]
+/** @param {unknown} content @returns {string[]} */
+const codexTexts = (content) => {
+  if (typeof content === 'string') return [content]
+  if (!Array.isArray(content)) return []
+  return content.flatMap((block) => (block && typeof block === 'object' && typeof block.text === 'string' ? [block.text] : []))
+}
+
+// 한 줄(기록 한 건) → { role, texts } — Claude Code 와 Codex 모양을 줄마다 가린다. 읽을 것이 없으면 null
+/** @param {Entry} entry @returns {Read | null} */
+const readEntry = (entry) => {
+  if (entry.type === 'user' || entry.type === 'assistant') {
+    return { role: entry.isCompactSummary ? '압축 요약' : entry.type, texts: pieces(entry.message?.content) }
+  }
+  return codexEntry(entry)
+}
+
 /** @param {string} text @param {string[]} terms @param {number} width */
 const snippet = (text, terms, width) => {
   const flat = text.replace(/\s+/g, ' ').trim()
@@ -91,9 +133,10 @@ const main = async () => {
     } catch {
       continue
     }
-    if (entry?.type !== 'user' && entry?.type !== 'assistant') continue
-    const role = entry.isCompactSummary ? '압축 요약' : entry.type
-    for (const text of pieces(entry.message?.content)) {
+    const read = entry && typeof entry === 'object' ? readEntry(entry) : null
+    if (!read) continue
+    const { role, texts } = read
+    for (const text of texts) {
       const lower = text.toLowerCase()
       if (!terms.every((term) => lower.includes(term))) continue
       hits.push({ lineNo, at: localTime(entry.timestamp), role, text: snippet(text, terms, width) })

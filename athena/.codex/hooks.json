@@ -54,6 +54,11 @@
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/language.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/compact-checkpoint.py\" warn --tool=codex",
+            "timeout": 10
           }
         ]
       }
@@ -91,6 +96,17 @@
           {
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/compact-checkpoint.py\" pre",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/compact-checkpoint.py\" warn --tool=codex",
             "timeout": 10
           }
         ]

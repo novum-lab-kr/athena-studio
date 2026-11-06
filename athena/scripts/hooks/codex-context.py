@@ -70,10 +70,10 @@ def context(payload):
                 parts.append('현재 위임 규칙 스냅샷을 읽지 못했다. 본체·레포 규칙과 계획서 Checkpoint를 직접 다시 읽는다.')
         cwd = payload.get('cwd') or os.getcwd()
         listed = rule_docs.prepare(str(ROOT), agent, cwd, 'codex')['listed'] if agent else []
-        # 대화 원문 찾기(scripts/transcript-search.mjs)는 Claude Code 기록 모양만 읽는다 — Codex 기록 자리는 넘기지 않는다
+        # --tool=codex — 대화 원문 자리를 Codex 기록(rollout jsonl · 훅 입력 transcript_path 가 없으면 세션 id 로)으로 알린다(scripts/transcript-search.mjs 가 읽는다)
         result = subprocess.run(
-            [sys.executable, str(ROOT / 'scripts/hooks/compact-checkpoint.py'), 'post', *listed],
-            input=json.dumps({**payload, 'source': 'compact', 'transcript_path': ''}), text=True, capture_output=True, timeout=15)
+            [sys.executable, str(ROOT / 'scripts/hooks/compact-checkpoint.py'), 'post', '--tool=codex', *listed],
+            input=json.dumps({**payload, 'source': 'compact'}), text=True, capture_output=True, timeout=15)
         if result.stdout.strip():
             parts.append(json.loads(result.stdout)['hookSpecificOutput']['additionalContext'])
         parts.append(f'재개·압축 후 필수 규칙 재확인: {ROOT / "AGENTS.md"} 2.6·4·5·6절과 작업 레포 규칙을 다시 읽고 계획서 Next를 현재 diff와 대조한다. 위임 세션은 AGENTS의 팀 리드 전용 절을 적용하지 않는다.')

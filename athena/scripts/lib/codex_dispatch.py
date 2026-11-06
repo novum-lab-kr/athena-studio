@@ -45,6 +45,11 @@ def settings(root, agent, role, context, definitions):
         hooks['PreToolUse'].append({'matcher': '^request_user_input$', 'hooks': [agent_hooks.hook(root, 'scripts/hooks/ask-to-request.py')]})
     if stop:
         hooks['Stop'] = stop
+    # 압축이 가까우면(압축 기준의 80%) 모델에게만 한 번 알림 — Claude 위임과 같이 reviewer 는 빼고, 끝 알림 뒤(새 자리)에 둬 이미 믿은 자리를 옮기지 않는다
+    if role != 'reviewer':
+        warn = agent_hooks.hook(root, 'scripts/hooks/compact-checkpoint.py', 'warn --tool=codex')
+        hooks['UserPromptSubmit'][0]['hooks'].append(warn)
+        hooks['PostToolUse'] = [{'hooks': [warn]}]
     definition = json.loads(pathlib.Path(definitions).read_text(encoding='utf-8'))[agent]
     instructions = pathlib.Path(context).read_text(encoding='utf-8')
     instructions += '\n\n# 에이전트 프로필\n' + definition['prompt']

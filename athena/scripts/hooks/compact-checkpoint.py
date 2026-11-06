@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""대화 압축 전후 Checkpoint 훅 (Claude Code PreCompact · SessionStart[compact]).
+"""대화 압축 전후 Checkpoint 훅 (Claude Code PreCompact · SessionStart[compact] · Codex 는 같은 이벤트 이름 — `--tool=codex`).
 
 대화가 압축되면 진행 상황이 요약에만 남는다. 진행 상황의 정본은 계획서 Checkpoint 다(AGENTS.md 2.6).
   pre  — 압축 직전(PreCompact): 이 pane 에 묶인 계획서 Checkpoint 에 기계적으로 알 수 있는 상태
@@ -15,6 +15,13 @@
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
 아테나 세션이면 리드 기록 최근 줄을 맨 앞에 싣는다.
 
+Codex(`--tool=codex` — .codex/hooks.json · scripts/lib/codex_dispatch.py 가 건다)는 대화 기록이 rollout jsonl
+(`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<시각>-<세션 id>.jsonl`)이라 셈이 다르다(2026-11-06 실제 기록 · codex-cli 0.166 확인):
+  문맥 크기 — 마지막 `event_msg` token_count 의 info.last_token_usage.total_tokens
+  압축 기준 — min(config.toml `model_auto_compact_token_limit` → 모델 값, context_window × 9/10) — codex-rs 소스 줄은 codex_compact_limit
+             (Codex 도 last_token_usage.total_tokens 에 그 뒤 도구 결과 추정치를 더해 센다 — context_manager/history.rs:953-974 · 훅은 앞부분만 본다)
+  기록 자리 — 훅 입력 transcript_path, 없으면 세션 id 로 sessions/ 에서 찾는다
+
 계획서 찾기 — 이 pane(화면 계층 self — scripts/lib/screen.py)이 적힌 계획서:
   ① 일하는 pane — Checkpoint `- Work ref: … pane <id>` · `- Review: … pane <id>`(delegate.sh 가 적는다). 여럿이면 가장 최근에 고친 것 하나
   ② ① 이 없으면 아테나 pane — 정식 계획서 html 의 `"leadPane": "<id>"`(옛 계획서는 `hermesPane`) · Checkpoint `- Lead pane: <id>`
@@ -24,7 +31,7 @@
 못 찾으면 pre 는 아무것도 쓰지 않고, post 는 진행 중 계획서 후보만 알린다(아테나 세션·FE pane 에서만).
 압축·세션 시작을 막거나 늦추지 않는다(항상 exit 0).
 
-사용: compact-checkpoint.py pre | post [다시 읽을 레포 규칙 문서 경로…] | warn   (hook 입력 JSON 은 stdin)
+사용: compact-checkpoint.py pre | post [다시 읽을 레포 규칙 문서 경로…] | warn  [--tool=codex]   (hook 입력 JSON 은 stdin)
 """
 import datetime
 import json
@@ -55,6 +62,7 @@ SNAPSHOT_PREFIX = '- Auto snapshot:'
 # 압축 뒤 아테나 세션에 보여 줄 리드 기록 최근 줄 수(scripts/lead-log.mjs)
 LEAD_LOG_TAIL = 15
 MAX_LISTED_FILES = 8
+CODEX_SESSION_ID = re.compile(r'^[0-9A-Za-z-]{8,64}$')
 
 
 def read_payload() -> dict:
@@ -221,9 +229,31 @@ def lead_log_note() -> str:
             f'(새로 생기면 {add}):\n{recent}')
 
 
-def transcript_note(payload: dict) -> str:
-    """대화 원문 자리 — 압축해도 기록 파일(훅 입력 transcript_path)에는 원문이 남는다(scripts/transcript-search.mjs)"""
-    path = str(payload.get('transcript_path') or '')
+def codex_home() -> pathlib.Path:
+    return pathlib.Path(os.environ.get('CODEX_HOME') or pathlib.Path.home() / '.codex')
+
+
+def codex_rollout(payload: dict) -> str:
+    """Codex 대화 기록(rollout jsonl) 자리 — 훅 입력 transcript_path 가 먼저, 없으면 세션 id 가 이름 끝에 든 파일(가장 최근)"""
+    given = str(payload.get('transcript_path') or '')
+    if given and os.path.isfile(given):
+        return given
+    session = str(payload.get('session_id') or '')
+    if not CODEX_SESSION_ID.match(session):
+        return ''
+    found = sorted((codex_home() / 'sessions').glob(f'*/*/*/rollout-*-{session}.jsonl'), key=lambda path: path.stat().st_mtime, reverse=True)
+    return str(found[0]) if found else ''
+
+
+def transcript_of(payload: dict, codex: bool) -> str:
+    if codex:
+        return codex_rollout(payload)
+    return str(payload.get('transcript_path') or '')
+
+
+def transcript_note(payload: dict, codex: bool = False) -> str:
+    """대화 원문 자리 — 압축해도 기록 파일(훅 입력 transcript_path · Codex 는 rollout)에는 원문이 남는다(scripts/transcript-search.mjs)"""
+    path = transcript_of(payload, codex)
     if not path:
         return ''
     search = f'node {shlex.quote(str(ATHENA_DIR / "scripts/transcript-search.mjs"))} {shlex.quote(path)} <낱말…>'
@@ -262,7 +292,7 @@ def resume_message(plans: list, led: bool) -> str:
     return message
 
 
-def on_post(payload: dict, reread: list) -> None:
+def on_post(payload: dict, reread: list, codex: bool = False) -> None:
     if payload.get('source') not in (None, 'compact'):
         return
     clear_warn_mark(payload)
@@ -283,7 +313,7 @@ def on_post(payload: dict, reread: list) -> None:
         message = f'{message} 레포 규칙 문서 다시 읽기: {", ".join(reread)}'.strip()
     if not message:
         return
-    original = transcript_note(payload)
+    original = transcript_note(payload, codex)
     if original:
         message = f'{message} {original}'
     if is_lead():
@@ -339,6 +369,116 @@ def usage_tokens(entry: dict) -> int:
 
 def context_tokens(transcript_path: str) -> int:
     """대화 기록(jsonl) 끝에서 거꾸로 읽어 마지막 응답의 문맥 크기. 못 읽으면 -1"""
+    return last_from_tail(transcript_path, b'"usage"', usage_tokens)
+
+
+def codex_usage_tokens(entry: dict) -> int:
+    """Codex 기록 한 줄이 token_count 면 그때 문맥 크기(last_token_usage.total_tokens — 압축 직전 줄이 압축 기준을 넘는 값). 아니면 -1"""
+    payload = entry.get('payload')
+    if entry.get('type') != 'event_msg' or not isinstance(payload, dict) or payload.get('type') != 'token_count':
+        return -1
+    info = payload.get('info')
+    last = info.get('last_token_usage') if isinstance(info, dict) else None
+    total = last.get('total_tokens') if isinstance(last, dict) else None
+    return total if isinstance(total, int) and not isinstance(total, bool) and total > 0 else -1
+
+
+def codex_model(entry: dict) -> str:
+    """Codex 기록 한 줄이 turn_context 면 그 차례의 모델 이름. 아니면 ''(last_from_tail 이 건너뛴다)"""
+    payload = entry.get('payload')
+    if entry.get('type') != 'turn_context' or not isinstance(payload, dict):
+        return ''
+    return str(payload.get('model') or '')
+
+
+def codex_config() -> dict:
+    """$CODEX_HOME/config.toml 에서 압축 기준에 닿는 값만 — 맨 위(표 머리 전) `키 = 값` 은 정수면 int · 그 밖은 따옴표를 뗀 글자,
+    `[features]` 의 token_budget 이 꺼짐(false)이 아니면 'features.token_budget' = True(python 3.9 라 tomllib 이 없다 · 값은 출력하지 않는다)"""
+    try:
+        text = (codex_home() / 'config.toml').read_text(encoding='utf-8')
+    except OSError:
+        return {}
+    found = {}
+    table = ''
+    for line in text.splitlines():
+        header = re.match(r'^\s*\[\s*([^\]]+?)\s*\]', line)
+        if header:
+            table = header.group(1)
+            if table == 'features.token_budget':
+                found['features.token_budget'] = True
+            continue
+        match = re.match(r'^\s*([A-Za-z0-9_]+)\s*=\s*(.*?)\s*(?:#.*)?$', line)
+        if not match:
+            continue
+        key, value = match.group(1), match.group(2)
+        if table == 'features':
+            if key == 'token_budget' and value != 'false':
+                found['features.token_budget'] = True
+            continue
+        if table:
+            continue
+        number = value.replace('_', '')
+        found[key] = int(number) if number.isdigit() else value.strip('"\'')
+    return found
+
+
+def codex_model_entry(model: str) -> dict:
+    """models_cache.json 의 그 모델 항목(못 찾으면 {})"""
+    if not model:
+        return {}
+    try:
+        cache = json.loads((codex_home() / 'models_cache.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+    models = cache.get('models') if isinstance(cache, dict) else None
+    for entry in models if isinstance(models, list) else []:
+        if isinstance(entry, dict) and entry.get('slug') == model:
+            return entry
+    return {}
+
+
+def positive_int(value) -> int:
+    return value if isinstance(value, int) and not isinstance(value, bool) and value > 0 else 0
+
+
+def codex_compact_limit(model: str) -> int:
+    """Codex 압축 기준(토큰) — codex-cli 0.166.0 소스(rust-v0.166.0) 그대로. 셈이 소스로 정해지지 않는 설정이면 0(알리지 않는다)
+      창 = 설정 model_context_window(모델 max_context_window 로 자름) → 모델 context_window → max_context_window
+           (models-manager/src/model_info.rs:20-28 · protocol/src/openai_models.rs:523-525)
+      기준 = min(설정 model_auto_compact_token_limit → 모델 auto_compact_token_limit, 창 × 9 / 10)
+           (model_info.rs:29-31 · openai_models.rs:534-546)
+      턴 끝 압축 — 설정 model_post_turn_compact_threshold_percent(기본 0)가 있으면 창 × effective_context_window_percent(기본 95) / 100 × 그 % 에서도
+           (core/src/session/context_window.rs:84-86 · 111-117)
+      알리지 않는 것 — model_auto_compact_token_limit_scope 가 total(기본) 이 아니면(앞부분을 뺀 토큰으로 세는데 그 앞부분 크기는 기록에 없다 · context_window.rs:61-81),
+           features.token_budget 이 켜져 있으면(기준에 여유 토큰이 더해질 수 있다 · context_window.rs:97-103 · session/token_budget.rs:81-120)"""
+    config = codex_config()
+    if config.get('features.token_budget'):
+        return 0
+    if str(config.get('model_auto_compact_token_limit_scope', 'total')) != 'total':
+        return 0
+    entry = codex_model_entry(model)
+    if not entry:
+        return 0
+    max_window = positive_int(entry.get('max_context_window'))
+    window = positive_int(config.get('model_context_window'))
+    if window and max_window:
+        window = min(window, max_window)
+    window = window or positive_int(entry.get('context_window')) or max_window
+    configured = positive_int(config.get('model_auto_compact_token_limit')) or positive_int(entry.get('auto_compact_token_limit'))
+    if not window:
+        return configured
+    limit = window * 9 // 10
+    if configured:
+        limit = min(configured, limit)
+    percent = positive_int(config.get('model_post_turn_compact_threshold_percent'))
+    if percent:
+        effective = positive_int(entry.get('effective_context_window_percent')) or 95
+        limit = min(limit, window * effective // 100 * percent // 100)
+    return limit
+
+
+def last_from_tail(transcript_path: str, needle: bytes, parse, empty=-1):
+    """기록(jsonl) 끝에서 거꾸로 읽어 needle 이 든 줄 중 parse 가 empty 아닌 값을 낸 마지막 것. 못 찾으면 empty"""
     try:
         with open(transcript_path, 'rb') as stream:
             stream.seek(0, os.SEEK_END)
@@ -355,18 +495,19 @@ def context_tokens(transcript_path: str) -> int:
                 # 맨 앞 조각은 줄 중간일 수 있다 — 처음까지 읽은 때만 쓴다
                 complete = lines if position == 0 else lines[1:]
                 for raw in reversed(complete):
-                    if b'"usage"' not in raw:
+                    if needle not in raw:
                         continue
                     try:
-                        tokens = usage_tokens(json.loads(raw))
+                        entry = json.loads(raw)
+                        value = parse(entry) if isinstance(entry, dict) else empty
                     except ValueError:
                         continue
-                    if tokens >= 0:
-                        return tokens
+                    if value != empty:
+                        return value
                 buffer = lines[0] if position > 0 else b''
     except OSError:
-        return -1
-    return -1
+        return empty
+    return empty
 
 
 def warn_mark(payload: dict):
@@ -383,16 +524,28 @@ def clear_warn_mark(payload: dict) -> None:
             pass
 
 
-def on_warn(payload: dict) -> None:
+def codex_context_now(payload: dict):
+    """Codex 의 (지금 문맥 토큰, 압축 기준) — 못 읽으면 (-1, 0)"""
+    rollout = codex_rollout(payload)
+    if not rollout:
+        return -1, 0
+    model = str(payload.get('model') or '') or last_from_tail(rollout, b'"turn_context"', codex_model, '')
+    return last_from_tail(rollout, b'"token_count"', codex_usage_tokens), codex_compact_limit(model)
+
+
+def on_warn(payload: dict, codex: bool = False) -> None:
     # 하위 에이전트(Task)의 훅은 본 대화 문맥이 아니다
     if payload.get('agent_id'):
         return
     mark = warn_mark(payload)
-    window = compact_window()
-    if not mark or window <= 0:
+    if not mark:
         return
-    tokens = context_tokens(str(payload.get('transcript_path') or ''))
-    if tokens < 0:
+    if codex:
+        tokens, window = codex_context_now(payload)
+    else:
+        window = compact_window()
+        tokens = context_tokens(str(payload.get('transcript_path') or '')) if window > 0 else -1
+    if window <= 0 or tokens < 0:
         return
     if tokens < window * WARN_RATIO:
         # 압축(직후 훅이 못 돌았어도)으로 문맥이 줄었으면 다음에 다시 알린다
@@ -423,13 +576,15 @@ def on_warn(payload: dict) -> None:
 
 def main() -> None:
     mode = sys.argv[1] if len(sys.argv) > 1 else ''
+    codex = '--tool=codex' in sys.argv[2:]
+    rest = [arg for arg in sys.argv[2:] if arg != '--tool=codex']
     payload = read_payload()
     if mode == 'pre':
         on_pre(payload)
     elif mode == 'post':
-        on_post(payload, sys.argv[2:])
+        on_post(payload, rest, codex)
     elif mode == 'warn':
-        on_warn(payload)
+        on_warn(payload, codex)
 
 
 if __name__ == '__main__':

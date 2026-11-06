@@ -5,6 +5,8 @@
 #   ② warn: 대화 기록 마지막 응답의 문맥이 압축 창의 80% 를 넘으면 모델에게만 한 번 넣는다(사용자 화면 줄 없음) · 압축 직후(post) 다시 알릴 수 있게 된다
 #   ③ scripts/transcript-search.mjs: 대화 원문에서 낱말이 든 대목만 짧게 · 비밀값 가림 · 압축 뒤 안내에 원문 자리
 #   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 가리킨다
+#   ⑤ Codex(--tool=codex): rollout 의 token_count · 압축 기준(codex-cli 0.166.0 소스 셈 — 설정 · 모델 limit 과 창 × 9/10 의 작은 쪽)으로 80% 알림 한 번 · 세션 id 로 기록 찾기 ·
+#      압축 뒤 안내에 rollout 자리 · transcript-search 가 rollout 을 읽고 비밀값을 가린다(가짜 CODEX_HOME)
 #
 # 사용: test/compact-checkpoint-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -58,11 +60,12 @@ artifact.write_text("# 검증 표\n- Status: in_progress\n")
 
 hook = body / "scripts/hooks/compact-checkpoint.py"
 marks = tmp / "marks"
-def run(mode, payload, pane="", env_extra=None):
-    env = {key: value for key, value in os.environ.items() if not key.startswith(("ATHENA_", "CLAUDE_CODE_AUTO_COMPACT"))}
-    env.update({"ATHENA_SCREEN": "studio", "ATHENA_STUDIO": "1", "ATHENA_STUDIO_PANE_ID": pane, "TMPDIR": str(marks) + "/"})
+codex_home = tmp / "codex"
+def run(mode, payload, pane="", env_extra=None, args=()):
+    env = {key: value for key, value in os.environ.items() if not key.startswith(("ATHENA_", "CLAUDE_CODE_AUTO_COMPACT", "CODEX_"))}
+    env.update({"ATHENA_SCREEN": "studio", "ATHENA_STUDIO": "1", "ATHENA_STUDIO_PANE_ID": pane, "TMPDIR": str(marks) + "/", "CODEX_HOME": str(codex_home)})
     env.update(env_extra or {})
-    done = subprocess.run(["python3", str(hook), mode], input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=20)
+    done = subprocess.run(["python3", str(hook), mode, *args], input=json.dumps(payload), capture_output=True, text=True, env=env, timeout=20)
     return done.returncode, done.stdout.strip()
 marks.mkdir()
 
@@ -199,6 +202,94 @@ code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4")
 text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
 check("압축 뒤 아테나 안내 맨 앞에 리드 기록 최근 줄 · 그다음 계획서", text.startswith("📝 리드 기록") and "[정정] 태그는" in text and "[결정] 두 번째 줄" in text
       and text.index("두 번째 줄") < text.index("20261105-new.md"), text)
+
+print("⑤ Codex")
+codex = ["--tool=codex"]
+sid = "01a1b0e5-8485-7511-93d3-07a159f7aa3a"
+day = codex_home / "sessions/2026/11/06"
+day.mkdir(parents=True)
+rollout = day / f"rollout-2026-11-06T21-46-34-{sid}.jsonl"
+(codex_home / "models_cache.json").write_text(json.dumps({"models": [{"slug": "m-500", "context_window": 500000, "max_context_window": 800000, "effective_context_window_percent": 95},
+                                                                     {"slug": "m-own", "context_window": 500000, "auto_compact_token_limit": 300000}]}))
+def write_rollout(tokens, model="m-500"):
+    rows = [
+        {"type": "session_meta", "payload": {"id": sid, "session_id": sid}},
+        {"type": "turn_context", "payload": {"model": model}},
+        {"type": "event_msg", "payload": {"type": "token_count", "info": {"last_token_usage": {"input_tokens": tokens - 100, "output_tokens": 100, "total_tokens": tokens}, "model_context_window": 475000}}},
+        # info 가 null 인 token_count(요금 한도만) · 다른 줄은 문맥 크기로 치지 않는다
+        {"type": "event_msg", "payload": {"type": "token_count", "info": None}},
+        {"type": "response_item", "payload": {"type": "reasoning", "summary": [], "encrypted_content": "y" * 300000}},
+    ]
+    rollout.write_text("".join(json.dumps(row) + "\n" for row in rows))
+cpay = {"session_id": sid, "hook_event_name": "PostToolUse", "cwd": str(body)}
+write_rollout(300000)
+code, out = run("warn", cpay, args=codex)
+check("80% 아래(300k / 기준 450k = 500k 의 90%)면 조용하다", code == 0 and out == "", out)
+write_rollout(380000)
+code, out = run("warn", cpay, args=codex)
+data = json.loads(out) if out else {}
+context_text = data.get("hookSpecificOutput", {}).get("additionalContext", "")
+check("넘으면(380k) transcript_path 없이 세션 id 로 기록을 찾아 모델에게만 · 84%", "곧 대화가 압축된다" in context_text and "84%" in context_text
+      and "450,000" in context_text and data["hookSpecificOutput"]["hookEventName"] == "PostToolUse" and "systemMessage" not in data, out)
+code, out = run("warn", {**cpay, "hook_event_name": "UserPromptSubmit"}, args=codex)
+check("같은 세션 두 번째는 조용하다", code == 0 and out == "", out)
+code, out = run("post", {"source": "compact", "session_id": sid, "cwd": str(body)}, pane="p21", env_extra={"ATHENA_AGENT": "fe"}, args=codex)
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("압축 뒤 안내에 Codex 기록(rollout) 자리와 찾는 명령", str(rollout) in text and "transcript-search.mjs" in text, text)
+code, out = run("warn", cpay, args=codex)
+check("압축 직후(post) 뒤에는 다시 알린다", out != "", out)
+other = tmp / "other-rollout.jsonl"
+shutil.copyfile(rollout, other)
+write_rollout(10000)
+code, out = run("warn", {**cpay, "session_id": "s-c1", "transcript_path": str(other)}, args=codex)
+check("훅 입력 transcript_path 가 있으면 그 기록을 먼저", out != "", out)
+# 압축 기준 셈 — codex-cli 0.166.0 소스(compact-checkpoint.py codex_compact_limit 주석의 파일 · 줄)와 같은 값인지
+def limit_case(label, config_text, tokens, expect, model="m-500"):
+    if config_text is None:
+        (codex_home / "config.toml").unlink(missing_ok=True)
+    else:
+        (codex_home / "config.toml").write_text(config_text)
+    write_rollout(tokens, model)
+    code, out = run("warn", {**cpay, "session_id": f"s-{len(label)}-{abs(hash(label)) % 10**8}", "transcript_path": str(rollout)}, args=codex)
+    if expect is None:
+        check(f"{label} — 조용하다", code == 0 and out == "", out)
+    else:
+        check(f"{label} — 기준 {expect:,}", f"{expect:,}" in out, out)
+limit_case("설정 limit 이 창의 90% 보다 크면 90%(min)", "model = \"m-500\"\nmodel_auto_compact_token_limit = 600_000\n\n[tui]\nx = 1\n", 380000, 450000)
+limit_case("설정 limit 이 더 작으면 그 값", "model_auto_compact_token_limit = 360_000\n", 300000, 360000)
+limit_case("설정 model_context_window 는 모델 max_context_window 로 자른다", "model_context_window = 1_000_000\n", 600000, 720000)
+limit_case("설정 model_context_window 272k → 244,800", "model_context_window = 272000\n", 230000, 244800)
+limit_case("턴 끝 압축 % — 창 × 95% × 70%", "model_post_turn_compact_threshold_percent = 70\n", 300000, 332500)
+limit_case("scope = total 은 기본과 같다", "model_auto_compact_token_limit_scope = \"total\"\n", 380000, 450000)
+limit_case("scope = body_after_prefix 는 앞부분 크기를 몰라", "model_auto_compact_token_limit_scope = \"body_after_prefix\"\n", 380000, None)
+limit_case("features.token_budget 이 켜져 있으면 여유 토큰을 몰라", "[features]\ntoken_budget = true\n", 380000, None)
+limit_case("[features.token_budget] 표도 같다", "[features.token_budget]\nenabled = true\n", 380000, None)
+limit_case("features.token_budget = false 는 기본과 같다", "[features]\ntoken_budget = false\n", 380000, 450000)
+limit_case("표 안의 같은 키는 맨 위 설정으로 치지 않는다", "[profiles.x]\nmodel_auto_compact_token_limit = 100\n", 380000, 450000)
+limit_case("모델마다 정한 auto_compact_token_limit 도 min", None, 380000, 300000, model="m-own")
+limit_case("모델이 models_cache 에 없으면", None, 380000, None, model="m-none")
+code, out = run("warn", {**cpay, "session_id": "없는-세션-0000"}, args=codex)
+check("기록을 못 찾아도 종료 0 · 조용하다", code == 0 and out == "", out)
+
+crows = [
+    {"type": "session_meta", "payload": {"id": sid}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:00:00Z", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "배포 태그 지시문"}]}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:00:00Z", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "배포 태그를 정한다"}]}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:01:00Z", "payload": {"type": "reasoning", "summary": [{"type": "summary_text", "text": "배포 태그 생각"}]}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:01:00Z", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "다른 이야기"}]}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:02:00Z", "payload": {"type": "custom_tool_call", "name": "exec", "input": "git tag -d v1 // 배포 태그 지우기"}},
+    {"type": "response_item", "timestamp": "2026-11-06T01:03:00Z", "payload": {"type": "function_call_output", "output": [{"type": "input_text", "text": f"배포 태그 토큰 {secret} 끝"}]}},
+    {"type": "compacted", "timestamp": "2026-11-06T01:04:00Z", "payload": {"message": "배포 태그 요약", "replacement_history": []}},
+    {"type": "event_msg", "timestamp": "2026-11-06T01:05:00Z", "payload": {"type": "agent_message", "message": "배포 태그 이벤트(같은 말이 response_item 에도 있다)"}},
+]
+crollout = tmp / "codex-original.jsonl"
+crollout.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in crows))
+code, out = node(body / "scripts/transcript-search.mjs", crollout, "배포", "태그")
+lines = out.splitlines()
+check("Codex 기록 — 말 · 도구 입력 · 도구 결과 · 압축 요약만(지시문 · 생각 · 이벤트 · 다른 말 제외)", code == 0 and len(lines) == 4
+      and "지시문" not in out and "생각" not in out and "이벤트" not in out and "다른 이야기" not in out
+      and "user: 배포 태그를" in out and "[exec]" in out and "[결과]" in out and "압축 요약: 배포 태그 요약" in out, out)
+check("Codex 기록도 비밀값은 가린다", secret not in out and "ghp_***" in out, out)
 sys.exit(fail)
 PY
 code=$?
