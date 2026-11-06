@@ -1,6 +1,6 @@
 $ python3 scripts/hooks/compact-checkpoint.py post
 --- exit 0
 --- stdout
-{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "🔄 방금 대화가 압축됐다. 이 pane 에 묶인 계획서를 찾지 못했다. 진행 중이던 작업이 있으면 그 계획서 Checkpoint 부터 다시 읽고 이어 간다(AGENTS.md 2.6). 어느 계획서인지 모르면 사용자에게 묻는다. 최근 진행 중 계획서: plans/refactor/20261003-lead.md, plans/task/20261001-fe-test.md, plans/task/20261002-fe-compact.md"}}
+{"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "📝 리드 기록(<ATHENA>/.lead-log.md)은 아직 비었다 — 사용자 정정 · 실패 원인 · 확인한 사실 · 결정이 생기면 그때 node <ATHENA>/scripts/lead-log.mjs <정정|실패|사실|결정> \"<한 줄>\" 로 한 줄씩 적는다.\n\n🔄 방금 대화가 압축됐다. 이 pane 에 묶인 계획서를 찾지 못했다. 진행 중이던 작업이 있으면 그 계획서 Checkpoint 부터 다시 읽고 이어 간다(AGENTS.md 2.6). 어느 계획서인지 모르면 사용자에게 묻는다. 최근 진행 중 계획서: plans/refactor/20261003-lead.md, plans/task/20261001-fe-test.md, plans/task/20261002-fe-compact.md"}}
 --- stderr
 --- screen

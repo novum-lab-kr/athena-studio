@@ -45,6 +45,16 @@ check("reviewer — secret-guard · process-guard 만(commit-guard · ask-to-req
 reviewer = settings("inline", "reviewer")
 check("reviewer — 끝 알림 · 자동 압축 없음", "Stop" not in reviewer["hooks"] and "autoCompactWindow" not in reviewer)
 fe = settings("inline", "fe")
+# 압축 가까움 알림 — 본체 밖(워크트리)은 agent-context.py 가 직접 넣는다(본체 안은 프로젝트 설정 .claude/settings.json 이 싣는다)
+outside_fe, outside_reviewer = settings("context", "fe"), settings("context", "reviewer")
+check("fe — 본체 밖에 압축 가까움 알림(PostToolUse · UserPromptSubmit)", commands(outside_fe["hooks"].get("PostToolUse", [])) == ["compact-checkpoint.py warn"]
+      and "compact-checkpoint.py warn" in commands(outside_fe["hooks"]["UserPromptSubmit"]), outside_fe["hooks"].get("PostToolUse"))
+check("reviewer — 본체 밖에 압축 가까움 알림 없음(창 값이 없다)", "PostToolUse" not in outside_reviewer["hooks"]
+      and "compact-checkpoint.py warn" not in commands(outside_reviewer["hooks"]["UserPromptSubmit"]))
+project = json.loads(pathlib.Path(src, ".claude/settings.json").read_text())
+project_warn = 'compact-checkpoint.py" warn'
+check("아테나 세션 — 프로젝트 설정에 압축 가까움 알림(PostToolUse · UserPromptSubmit)", commands(project["hooks"].get("PostToolUse", [])) == [project_warn]
+      and project_warn in commands(project["hooks"]["UserPromptSubmit"]), commands(project["hooks"].get("PostToolUse", [])))
 for agent in ("fe", "reviewer"):
     for mode in ("inline", "context"):
         check(f"{agent} — {mode} 에 권한 확인 알림(PermissionRequest) 훅", commands(settings(mode, agent)["hooks"].get("PermissionRequest", [])) == ["permission-to-request.py"])

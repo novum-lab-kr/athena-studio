@@ -103,6 +103,11 @@ settings["hooks"]["UserPromptSubmit"] = [{"hooks": [{"type": "command", "command
 # 끝 알림 — 에이전트가 한 차례를 끝내면 띄운 아테나 pane 에 한 줄(scripts/hooks/agent-done-notify.py — 위임 에이전트만, reviewer 는 계획서 줄로 알린다)
 notify_prompt, notify_stop = agent_hooks.done_notify(hermes, hook_agent)
 settings["hooks"]["UserPromptSubmit"][0]["hooks"] += notify_prompt
+# 압축이 가까우면(압축 창의 80%) 한 번 알림 — 도구를 쓴 뒤 · 메시지를 받을 때 본다. 압축 창을 넣는 에이전트만(reviewer 는 창 값이 없다)
+if role != "reviewer":
+    warn_hook = {"type": "command", "command": f"{compact_hook} warn"}
+    settings["hooks"]["PostToolUse"] = [{"hooks": [warn_hook]}]
+    settings["hooks"]["UserPromptSubmit"][0]["hooks"].append(warn_hook)
 if notify_stop:
     settings["hooks"]["Stop"] = notify_stop
 # 팩이 이 에이전트의 레포에 허용한 권한(permissionsAllow) — Claude Code 가 다른 설정의 규칙과 합친다

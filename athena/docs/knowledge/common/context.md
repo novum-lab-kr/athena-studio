@@ -52,7 +52,15 @@
 
 ## 대화 압축 (Claude Code)
 
-훅이 맡는다 — `scripts/hooks/compact-checkpoint.py`. 압축 직전에 이 pane 에 묶인 계획서(Work ref · Review 의 `pane <id>`, 정식 html `leadPane`)의 Checkpoint 에 `- Auto snapshot:` 한 줄(시각 · 브랜치 · HEAD · 미커밋 파일)을 갱신하고, 압축 직후 "요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라" 를 대화에 넣는다. 압축 뒤에는 `AGENTS.md` 2.6 의 1~4 를 그대로 한다. 스냅샷은 기계적 상태일 뿐이라 Progress · Next 를 대신하지 않는다.
+훅이 맡는다 — `scripts/hooks/compact-checkpoint.py`. 압축 직전에 이 pane 에 묶인 계획서의 Checkpoint 에 `- Auto snapshot:` 한 줄(시각 · 브랜치 · HEAD · 미커밋 파일)을 갱신하고, 압축 직후 "요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라" 를 대화에 넣는다. 압축 뒤에는 `AGENTS.md` 2.6 의 1~4 를 그대로 한다. 스냅샷은 기계적 상태일 뿐이라 Progress · Next 를 대신하지 않는다.
+- **묶인 계획서** — 일하는 pane 은 Work ref · Review 의 `pane <id>` 로 찾은 하나(가장 최근에 고친 것). 그것이 없으면 아테나 pane 으로 보고 정식 html `leadPane` · Checkpoint `- Lead pane: <id>`(`delegate.sh` 가 적는다)로 묶인 진행 중 계획서를 **모두** 최근에 고친 순으로 알리고, 스냅샷도 그 계획서마다 남긴다. 끝난(`done`) 계획서와 계획서가 아닌 md(`plans/artifacts/` · `## Checkpoint` 가 없는 것)는 찾기 · 후보에서 뺀다
+- **묶인 이슈** — 그 계획서의 Checkpoint `- Issue: issues/…` 와 머리 `plan:` 이 그 계획서인 이슈(`done` · `wontfix` 제외)를 함께 "다시 읽기" 로 알린다. pane 이 이슈에 직접 적히는 칸은 없어 계획서를 거쳐서만 묶는다
+- **곧 압축 알림** — 도구를 쓴 뒤 · 메시지를 받을 때(`PostToolUse` · `UserPromptSubmit` 의 `compact-checkpoint.py warn`) 대화 기록(`transcript_path`)의 마지막 본 대화 응답 usage 로 지금 문맥을 센다(input + cache_creation + cache_read — Claude Code 상태줄 `context_window.total_input_tokens` 와 같은 셈). 압축 창의 **80%** 를 넘으면 모델에게만 "알게 된 사실 · 정한 것 · 다음 할 일을 계획서 Checkpoint 나 이슈에 적어 둬라" 를 **세션마다 한 번** 넣는다. 사용자 화면에는 띄우지 않고 `/new` 도 권하지 않는다(2026-11-06 사용자 — 헷갈리니 알리지 말고 적기만). 압축 직후(또는 문맥이 80% 아래로 줄면) 다시 알릴 수 있게 된다
+  - 창 값: `CLAUDE_CODE_AUTO_COMPACT_WINDOW` → 본체 `.claude/settings.json` `autoCompactWindow` 순. 값이 없거나 `auto` 면 짐작하지 않고 알리지 않는다. `/autocompact` 로 그 세션만 바꾼 값은 훅이 못 본다
+  - 걸리는 곳: 아테나 세션 · 본체 안 위임 pane 은 프로젝트 설정, 워크트리 위임 pane 은 `agent-context.py` 가 만드는 설정. 하위 에이전트(Task) 훅 · reviewer 는 알리지 않는다. Codex 는 대화 기록 모양이 달라 걸지 않았다
+- **대화 원문** — 압축해도 대화 기록 파일(훅 입력 `transcript_path` · `~/.claude/projects/…/<세션>.jsonl`)에는 원문이 그대로 남는다. 압축 뒤 안내에 그 경로와 찾는 명령을 붙인다 — 요약에 없는 사실은 짐작하지 말고 `node scripts/transcript-search.mjs <기록.jsonl> <낱말…>`(낱말이 모두 든 대목만 짧게 · 최근 20곳 · 비밀값은 `scripts/lib/mask.mjs` 로 가린다). Codex 기록은 모양이 달라 붙이지 않는다
+- **리드 기록** — 아테나는 사용자 정정 · 실패 원인 · 확인한 동작 사실 · 결정을 **생길 때** 한 줄씩 `node scripts/lead-log.mjs <정정|실패|사실|결정> "<한 줄>"` 로 적는다(팩 데이터 `state/lead-log.md` · 옛 구조는 본체 `.lead-log.md` · 덧붙이기만 · 비밀값 가림). 압축 뒤 아테나 세션 안내는 이 파일 최근 15줄을 맨 앞에 싣고, 곧 압축 알림도 여기에 적으라고 가리킨다(위임 에이전트는 계획서 Checkpoint 그대로)
+- 훅은 압축을 막거나 늦추지 않는다(항상 종료 0). 시험 `test/compact-checkpoint-test.sh`
 
 **언제 압축하나** — 문맥이 200k 토큰이면 자동 압축 창이 찬 것으로 본다(`autoCompactWindow: 200000`).
 - 값: 코어 `.claude/settings.json` 한 곳. 본체에서 켜는 아테나 세션은 프로젝트 설정으로, 담당 에이전트 pane 은 `delegate.sh` 가 만드는 `--settings` 파일로 같은 값을 받는다(reviewer 는 짧게 끝나 따로 넣지 않는다 — 본체 안에서 띄우면 프로젝트 설정으로 실린다)
