@@ -211,9 +211,11 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     sendAppUpdate()
   }
 
-  // 설치가 끝난 업데이트를 지금 적용 — ⚙ 줄의 [다시 시작] (설치가 필요 없던 업데이트는 runAppUpdate 가 바로 부른다)
+  // 설치가 끝난 업데이트를 지금 적용 — ⚙ 줄의 [다시 시작] · 좌하단 팝업 [재시작하여 업데이트] (설치가 필요 없던 업데이트는 runAppUpdate 가 바로 부른다)
+  // 배포판은 뒤에서 받아 둔 판(phase ready)을 바로 바꾼다(release-update.mts run — ready 면 받기 없이 quitAndInstall)
   async function restartAppUpdate(): Promise<{ ok: boolean; reason?: string }> {
-    if (app.isPackaged || appUpdatePhase !== 'ready' || appUpdateRunning) return { ok: false, reason: 'unavailable' }
+    if (app.isPackaged) return releaseUpdate().view().phase === 'ready' ? releaseUpdate().run() : { ok: false, reason: 'unavailable' }
+    if (appUpdatePhase !== 'ready' || appUpdateRunning) return { ok: false, reason: 'unavailable' }
     return relaunch()
   }
 

@@ -1,13 +1,13 @@
-// 앱 업데이트 알림 — 창 좌측 하단 팝업(⚙ 설정의 앱 업데이트 줄과 같은 상태 · 같은 [업데이트]).
+// 앱 업데이트 알림 — 창 좌측 하단 팝업(⚙ 설정의 앱 업데이트 줄과 같은 상태 · 같은 [다시 시작]).
 // 상태는 settings-pop.tsx appUpdateStore(main 이 보내는 값 — 바닐라 work.ts applyAppUpdate 가 넣는다).
-// 가벼운 안내 글(두세 문장) · 지금 → 새 버전 + [업데이트] · 닫기만 — 변경 내역은 싣지 않는다. 새 버전이 있을 때(behind)만 보이고, ✕ 로 닫으면 같은 새 버전에는 다시 뜨지 않는다(localStorage). 설치가 끝난 뒤(다시 시작)는 설정에만 둔다
+// 새 판이 준비됐을 때(phase ready)만 뜬다 — 배포판은 뒤에서 받아 Squirrel 서명 검사까지 끝났을 때, 개발판은 npm install 이 끝나 다시 시작만 남았을 때(2026-11-07 사용자 결정).
+// [나중에] 면 같은 새 판에는 다시 뜨지 않는다(localStorage) · [재시작하여 업데이트] 는 ⚙ [다시 시작] 과 같은 restartAppUpdate
 import { useState } from 'react'
 import { mountIsland, useSay, useStore } from './bridge.ts'
-import { appUpdateStore, runAppUpdate, updateNote } from './settings-pop.tsx'
+import { appUpdateStore, restartAppUpdate, updateNote } from './settings-pop.tsx'
 
 const DISMISSED_KEY = 'studio.appUpdateDismissed'
 const UP_ICON = ['M12 19V5', 'M6 11l6-6 6 6']
-const CLOSE_ICON = ['M6 6l12 12', 'M18 6L6 18']
 
 // 켤 때 한 번 — 칸(#app-update-corner)에 띄운다(내리지 않는다)
 export function mount(box: HTMLElement): void {
@@ -41,10 +41,10 @@ function AppUpdateCorner() {
   const say = useSay()
   const { status, failure } = useStore(appUpdateStore)
   const [dismissed, setDismissed] = useState(readDismissed)
-  if (!status || status.state !== 'behind' || status.phase === 'ready') return null
+  if (!status || status.phase !== 'ready') return null
   const key = dismissKey(status)
   if (dismissed === key) return null
-  const close = () => {
+  const later = () => {
     try {
       localStorage.setItem(DISMISSED_KEY, key)
     } catch {
@@ -59,14 +59,18 @@ function AppUpdateCorner() {
           <Icon paths={UP_ICON} />
         </span>
         <span className="app-update-corner-main">
-          <span className="app-update-corner-message">{say('settings.appUpdateAvailable')}</span>
-          <span className="app-update-corner-note">{updateNote(say, status, failure)}</span>
+          <span className="app-update-corner-title">{say('appUpdateCorner.title')}</span>
+          <span className="app-update-corner-message">{say('appUpdateCorner.body')}</span>
+          {/* 바꾸기를 못 했을 때만 — ⚙ 줄과 같은 까닭 */}
+          {failure && <span className="app-update-corner-note">{updateNote(say, status, failure)}</span>}
         </span>
-        <button className="settings-app-button" type="button" disabled={status.running} onClick={() => void runAppUpdate()}>
-          {say('settings.appUpdateButton')}
+      </div>
+      <div className="app-update-corner-actions">
+        <button className="settings-app-button app-update-corner-later" type="button" onClick={later}>
+          {say('appUpdateCorner.later')}
         </button>
-        <button className="toast-close" type="button" aria-label={say('common.close')} onClick={close}>
-          <Icon paths={CLOSE_ICON} />
+        <button className="settings-app-button" type="button" disabled={status.running} onClick={() => void restartAppUpdate()}>
+          {say('appUpdateCorner.restart')}
         </button>
       </div>
     </div>

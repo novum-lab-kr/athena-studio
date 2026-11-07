@@ -185,8 +185,8 @@ export async function runAppUpdate() {
   appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'ff-failed' })
 }
 
-// 설치가 끝났고 [나중에] 를 골랐을 때 — 다시 시작만 남는다
-async function restartAppUpdate() {
+// 설치가 끝났고(개발판) · 받아 둔 판이 준비됐을 때(배포판) — 다시 시작만 남는다(좌하단 팝업도 부른다)
+export async function restartAppUpdate() {
   const result = await studio.restartAppUpdate()
   if (result && result.ok) return // 앱이 곧 꺼졌다 다시 켜진다
   appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'restart-failed' })
