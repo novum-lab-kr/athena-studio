@@ -1,6 +1,6 @@
 // 앱 업데이트 알림 — 창 좌측 하단 팝업(⚙ 설정의 앱 업데이트 줄과 같은 상태 · 같은 [업데이트]).
 // 상태는 settings-pop.tsx appUpdateStore(main 이 보내는 값 — 바닐라 work.ts applyAppUpdate 가 넣는다).
-// 가벼운 두 줄(새 버전 안내 · 지금 → 새 버전) + [업데이트] · 닫기만 — 변경 내역은 싣지 않는다. 새 버전이 있을 때(behind)만 보이고, ✕ 로 닫으면 같은 새 버전에는 다시 뜨지 않는다(localStorage). 설치가 끝난 뒤(다시 시작)는 설정에만 둔다
+// 가벼운 안내 글(두세 문장) · 지금 → 새 버전 + [업데이트] · 닫기만 — 변경 내역은 싣지 않는다. 새 버전이 있을 때(behind)만 보이고, ✕ 로 닫으면 같은 새 버전에는 다시 뜨지 않는다(localStorage). 설치가 끝난 뒤(다시 시작)는 설정에만 둔다
 import { useState } from 'react'
 import { mountIsland, useSay, useStore } from './bridge.ts'
 import { appUpdateStore, runAppUpdate, updateNote } from './settings-pop.tsx'
@@ -59,7 +59,7 @@ function AppUpdateCorner() {
           <Icon paths={UP_ICON} />
         </span>
         <span className="app-update-corner-main">
-          <span className="app-update-corner-title">{say('settings.appUpdateAvailable')}</span>
+          <span className="app-update-corner-message">{say('settings.appUpdateAvailable')}</span>
           <span className="app-update-corner-note">{updateNote(say, status, failure)}</span>
         </span>
         <button className="settings-app-button" type="button" disabled={status.running} onClick={() => void runAppUpdate()}>
