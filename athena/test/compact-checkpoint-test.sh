@@ -8,6 +8,8 @@
 #   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 가리킨다
 #   ⑤ Codex(--tool=codex): rollout 의 token_count · 압축 기준(codex-cli 0.166.0 소스 셈 — 설정 · 모델 limit 과 창 × 9/10 의 작은 쪽)의 70% 에서 알림 한 번 · 세션 id 로 기록 찾기 ·
 #      압축 뒤 안내에 rollout 자리 · transcript-search 가 rollout 을 읽고 비밀값을 가린다(가짜 CODEX_HOME)
+#   ⑥ 압축 뒤 안내 끝에 사람이 친 말 원문 최근 20개(시각 · 오래된 것부터 · 도구 결과 · 태그 글 · 이미지 · pane 알림 · 압축 요약 빼고 · 요청 답 남김 · 가림 · 글자 상한 · 4MB 1초 안) · Codex rollout 도
+#   ⑦ 아테나 세션 압축 뒤 안내에 열린 요청(닫힌 것 빼고) · 에이전트 pane(셸 · 자기 pane 빼고 · 가짜 화면 CLI) · 화면 실패해도 나머지 안내
 #   경계값(159,999 · 160,000 · 줄여 쓴 창 "200") · 여러 팩 구조의 리드 기록(.pack-data/state) · 안내 속 스크립트 경로가 진짜 있는지 ·
 #      Codex 훅 설정(codex_dispatch)의 warn 이 --tool=codex 한 낱말 · matcher 없이 실제로 돈다 · Codex 도구 기록(function_call · custom_tool_call_output) · sk- 가림
 #      (2026-11-06 망가뜨림 시험에서 못 잡은 19개 — 계획서 plans/task/20261107-…압축-대비-시험-보강…)
@@ -436,6 +438,132 @@ check("Codex 기록 — 말 · 도구 입력 · 도구 결과 · 압축 요약�
       and "user: 배포 태그를" in out and "[exec]" in out and "[결과]" in out and "압축 요약: 배포 태그 요약" in out, out)
 check("Codex 함수 호출 인자(function_call arguments) · 사용자 도구 결과(custom_tool_call_output)도 읽는다", "[shell]" in out and "함수인자" in out and "[결과] 배포 태그 커스텀결과" in out, out)
 check("Codex 기록도 비밀값은 가린다(ghp_ · sk-)", secret not in out and "ghp_***" in out and openai_key not in out and "sk-***" in out, out)
+
+print("⑥ 압축 뒤 안내 — 최근 사용자 말 원문")
+def human(text, minute, **extra):
+    return {"type": "user", "timestamp": f"2026-11-07T03:{minute:02d}:00Z", "origin": {"kind": "human"}, "promptSource": "typed",
+            "message": {"role": "user", "content": text}, **extra}
+wrows = [human(f"옛 말 {index}", index) for index in range(10)]
+wrows += [
+    human("사람 말 하나 — 정정: 문구는 짧게", 20),
+    {"type": "user", "timestamp": "2026-11-07T03:21:00Z", "isMeta": True, "message": {"role": "user", "content": "[Image: original 2800x1800]"}},
+    {"type": "user", "timestamp": "2026-11-07T03:22:00Z", "message": {"role": "user", "content": [{"type": "tool_result", "content": "도구결과글"}]}},
+    {"type": "user", "timestamp": "2026-11-07T03:23:00Z", "origin": {"kind": "task-notification"}, "message": {"role": "user", "content": "작업알림글"}},
+    human("<system-reminder>태그글</system-reminder>", 24),
+    human("<command-name>/clear</command-name>", 25),
+    human("[athena-studio-fe → 아테나] 알림만 든 글", 26),
+    human("근데 이것도 봐줘[athena-studio-fe → 아테나] ⏸ 멈춤 뒤에 붙은 알림", 27),
+    {"type": "user", "timestamp": "2026-11-07T03:28:00Z", "isCompactSummary": True, "message": {"role": "user", "content": "압축요약글"}},
+    human("[요청 r-20261107-033000-ab12] 어느 쪽? — 답: 추천대로", 30),
+    human(f"키는 {secret} 이거야", 31),
+    human("긴 말 " + "가" * 600, 32),
+    {"type": "user", "timestamp": "2026-11-07T03:33:00Z", "origin": {"kind": "human"},
+     "message": {"role": "user", "content": [{"type": "text", "text": "그림 붙인 말 [Image #1]"}, {"type": "image", "source": {}}]}},
+    {"type": "assistant", "timestamp": "2026-11-07T03:34:00Z", "message": {"content": [{"type": "text", "text": "응답글"}]}},
+]
+wrows += [human(f"새 말 {index}", 40 + index) for index in range(8)]
+words_transcript = tmp / "words.jsonl"
+words_transcript.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in wrows))
+code, out = run("post", {"source": "compact", "cwd": str(body), "transcript_path": str(words_transcript)}, pane="p21", env_extra={"ATHENA_AGENT": "fe"})
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+block = text[text.index("💬"):] if "💬" in text else ""
+listed = [line for line in block.splitlines() if line.startswith("- ")]
+check("기존 안내(계획서 다시 읽기 · 원문 찾기)는 그대로 · 그 뒤에 사용자 말 묶음", code == 0 and text.startswith("🔄") and "transcript-search.mjs" in text
+      and text.index("transcript-search.mjs") < text.index("💬"), text)
+check("최근 20개만 · 오래된 것부터", len(listed) == 20 and bool(listed) and "새 말 7" in listed[-1] and "옛 말 3" not in block
+      and listed[0].endswith("옛 말 4"), block)
+check("사람 말 · 요청 답은 남는다 · 시각이 붙는다", "정정: 문구는 짧게" in block and "[요청 r-20261107-033000-ab12] 어느 쪽? — 답: 추천대로" in block
+      and re.search(r"^- 2026-11-07 \d\d:\d\d ", block, re.M) is not None, block)
+check("이미지 · 도구 결과 · 작업 알림 · 태그 글 · 압축 요약 · 응답은 뺀다", all(word not in block for word in
+      ("Image", "도구결과글", "작업알림글", "태그글", "/clear", "압축요약글", "응답글")) and "그림 붙인 말" in block, block)
+check("pane 알림은 빼고, 사람 글 뒤에 붙은 알림은 그 앞까지", "알림만 든 글" not in block and "근데 이것도 봐줘" in block and "멈춤 뒤에 붙은" not in block, block)
+check("비밀값은 가린다", secret not in text and "ghp_***" in block, block)
+long_line = next((line for line in listed if "긴 말" in line), "")
+check("한 개 글자 상한(300)", long_line.endswith("…") and len(long_line) < 340, long_line)
+check("일하는 pane 에는 열린 요청 · pane 목록이 없다", "📮" not in text and "🧩" not in text, text)
+
+# 같은 글이 거듭된 기록(이어 붙인 세션 사본) · 전체 글자 상한 · 4MB 기록 빠르기
+many = [human("되풀이된 말", 1), human("되풀이된 말", 2)] + [human(f"{index}번 " + "나" * 290, 3 + index % 50) for index in range(30)]
+big = tmp / "big.jsonl"
+filler = json.dumps({"type": "attachment", "attachment": {"x": "y" * 4000}})
+with big.open("w") as stream:
+    stream.write("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in many[:2]))
+    for _ in range(1000):
+        stream.write(filler + "\n")
+    stream.write("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in many[2:5]))
+started = time.monotonic()
+code, out = run("post", {"source": "compact", "cwd": str(body), "transcript_path": str(big)}, pane="p21", env_extra={"ATHENA_AGENT": "fe"})
+elapsed = time.monotonic() - started
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check(f"4MB 기록도 1초 안에 끝까지 거꾸로 읽는다({elapsed:.2f}초)", big.stat().st_size > 4_000_000 and elapsed < 1.0 and "되풀이된 말" in text, f"{elapsed:.2f}초")
+check("같은 글은 하나만", text.count("되풀이된 말") == 1, text)
+full = tmp / "full.jsonl"
+full.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in many))
+code, out = run("post", {"source": "compact", "cwd": str(body), "transcript_path": str(full)}, pane="p21", env_extra={"ATHENA_AGENT": "fe"})
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+block = text[text.index("💬"):] if "💬" in text else ""
+check("묶음 전체 글자 상한(4,000 — 오래된 것부터 빠진다) · 안내 전체 상한(9,000)", 0 < len(block) < 4300 and "29번" in block and "되풀이된 말" not in block
+      and len(text) <= 9000, f"{len(block)} · {len(text)}")
+
+print("Codex 기록의 사용자 말")
+crows = [
+    {"type": "response_item", "timestamp": "2026-11-07T04:00:00Z", "payload": {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": "# AGENTS.md instructions\n<INSTRUCTIONS>지시문</INSTRUCTIONS>"}, {"type": "input_text", "text": "<environment_context>환경</environment_context>"}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:01:00Z", "payload": {"type": "message", "role": "developer", "content": [{"type": "input_text", "text": "개발자글"}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:02:00Z", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "코덱스 사람 말"}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:03:00Z", "payload": {"type": "message", "role": "user", "content": [{"type": "input_text", "text": " <in-app-browser-context>앱글</in-app-browser-context>"}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:04:00Z", "payload": {"type": "function_call_output", "output": "코덱스도구결과"}},
+    {"type": "compacted", "timestamp": "2026-11-07T04:05:00Z", "payload": {"message": "", "replacement_history": [
+        {"type": "message", "role": "user", "content": [{"type": "input_text", "text": "압축사본말"}]}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:06:00Z", "payload": {"type": "message", "role": "user", "content": [
+        {"type": "input_text", "text": "[아테나 pw3 → 다이어그램 담당 아테나 pw0] 코덱스 pane 알림"}]}},
+    {"type": "response_item", "timestamp": "2026-11-07T04:07:00Z", "payload": {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "코덱스응답"}]}},
+]
+words_rollout = tmp / "words-rollout.jsonl"
+words_rollout.write_text("".join(json.dumps(row, ensure_ascii=False) + "\n" for row in crows))
+code, out = run("post", {"source": "compact", "cwd": str(body), "transcript_path": str(words_rollout)}, pane="p21", env_extra={"ATHENA_AGENT": "fe"}, args=codex)
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+block = text[text.index("💬"):] if "💬" in text else ""
+check("Codex — response_item user 의 사람 말만(지시문 · 환경 · 개발자 · 도구 결과 · 압축 사본 · pane 알림 · 응답 제외)",
+      "코덱스 사람 말" in block and all(word not in block for word in ("지시문", "환경", "개발자글", "앱글", "코덱스도구결과", "압축사본말", "코덱스 pane 알림", "코덱스응답")), block)
+
+print("⑦ 아테나 세션 — 열린 요청 · 에이전트 pane")
+shutil.copyfile(src / "scripts/athena.mjs", body / "scripts/athena.mjs")
+def athena_cli(*args):
+    env = {key: value for key, value in os.environ.items() if not key.startswith("ATHENA_")}
+    return subprocess.run(["node", str(body / "scripts/athena.mjs"), *args], capture_output=True, text=True, env=env, cwd=str(body), timeout=20)
+opened = athena_cli("request", "open", "--kind", "question", "--title", f"배포 순서를 정해 주세요 토큰 {secret}", "--pane", "p30", "--json")
+first_id = json.loads(opened.stdout)["request"]["id"] if opened.returncode == 0 else ""
+closed = athena_cli("request", "open", "--kind", "decision", "--title", "취소될 요청", "--json")
+closed_id = json.loads(closed.stdout)["request"]["id"] if closed.returncode == 0 else ""
+athena_cli("request", "cancel", closed_id)
+fixture = tmp / "screen-fixture"
+fixture.mkdir()
+(fixture / "pane_list.json").write_text(json.dumps({"panes": [
+    {"id": "px4", "label": "아테나", "agent": "claude", "agent_status": "idle"},
+    {"id": "p30", "label": "🤖 athena-studio-fe · fix/x", "agent": "claude", "agent_status": "working"},
+    {"id": "p31", "label": "빈 셸", "agent": None, "agent_status": None},
+    {"id": "p32", "label": "🤖 reviewer", "agent": "codex", "agent_status": "blocked"},
+]}, ensure_ascii=False))
+fake_cli = {"ATHENA_STUDIO_CLI": str(src / "scripts/screen-check/fake-bin/athena-studio-cli"), "ATHENA_STUDIO_SOCKET": str(tmp / "no.sock"),
+            "FAKE_SCREEN_FIXTURE": str(fixture)}
+code, out = run("post", {"source": "compact", "cwd": str(body), "transcript_path": str(words_transcript)}, pane="px4", env_extra=fake_cli)
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("요청 시험 준비(request open)", bool(first_id) and bool(closed_id), opened.stderr + closed.stderr)
+check("아테나 안내 — 리드 기록 · 계획서 목록은 그대로 · 사용자 말 · 열린 요청 · pane 이 이어 붙는다", code == 0 and text.startswith("📝") and "20261105-new.md" in text
+      and text.index("💬") < text.index("📮") < text.index("🧩"), text)
+requests_block = text[text.index("📮"):text.index("🧩")] if "📮" in text and "🧩" in text else ""
+check("열린 요청 — id · 종류 · 상태 · pane · 제목 한 줄(닫힌 것은 빠진다 · 비밀값 가림)", f"{first_id} · question · open · pane p30 — 배포 순서를 정해 주세요" in requests_block
+      and closed_id not in requests_block and secret not in requests_block and "ghp_***" in requests_block, requests_block)
+panes_block = text[text.index("🧩"):] if "🧩" in text else ""
+check("에이전트 pane — id · 상태 · 이름표(셸 pane · 이 아테나 pane 은 뺀다)", "- p30 · working · 🤖 athena-studio-fe · fix/x" in panes_block
+      and "- p32 · blocked · 🤖 reviewer" in panes_block and "p31" not in panes_block and "px4" not in panes_block, panes_block)
+fail_fixture = tmp / "screen-fail"
+fail_fixture.mkdir()
+(fail_fixture / "any.exit").write_text("3")
+code, out = run("post", {"source": "compact", "cwd": str(body)}, pane="px4", env_extra={**fake_cli, "FAKE_SCREEN_FIXTURE": str(fail_fixture)})
+text = json.loads(out)["hookSpecificOutput"]["additionalContext"] if out else ""
+check("화면을 못 읽어도 나머지 안내는 낸다 · 종료 0", code == 0 and text.startswith("📝") and "📮" in text and "🧩" not in text, text)
 sys.exit(fail)
 PY
 code=$?

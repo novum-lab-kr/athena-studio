@@ -17,6 +17,10 @@
 
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
 아테나 세션이면 리드 기록 최근 줄을 맨 앞에 싣는다.
+요약이 빠뜨린 것을 원문으로 끝에 더 싣는다(2026-11-07 사용자: 압축 뒤 앞서 받은 말 · 다른 일을 잊는다):
+  최근 사용자 말 — 기록 끝에서 거꾸로 사람이 친 글만 USER_WORDS_COUNT 개(시각 · 한 개 · 전체 글자 상한 · pane 알림 · 도구 결과 · 태그 글 빼고)
+  아테나 세션이면 열린 [작업] 요청(bin/athena request list)과 살아 있는 에이전트 pane(scripts/lib/screen.py) — 조회마다 LOOKUP_TIMEOUT
+  이 묶음은 scripts/lib/mask.mjs 로 비밀값을 가린 뒤 싣고, 가리지 못하면 싣지 않는다 · 안내 전체는 POST_MESSAGE_LIMIT 글자까지
 
 Codex(`--tool=codex` — .codex/hooks.json · scripts/lib/codex_dispatch.py 가 건다)는 대화 기록이 rollout jsonl
 (`$CODEX_HOME/sessions/YYYY/MM/DD/rollout-<시각>-<세션 id>.jsonl`)이라 셈이 다르다(2026-11-06 실제 기록 · codex-cli 0.166 확인):
@@ -73,6 +77,23 @@ TRANSCRIPT_TAIL_LIMIT = 16 * 1024 * 1024
 SNAPSHOT_PREFIX = '- Auto snapshot:'
 # 압축 뒤 아테나 세션에 보여 줄 리드 기록 최근 줄 수(scripts/lead-log.mjs)
 LEAD_LOG_TAIL = 15
+# 압축 뒤 안내에 원문으로 다시 싣는 최근 사용자 말 — 개수 · 한 개 글자 상한 · 묶음 전체 글자 상한(넘으면 오래된 것부터 뺀다)
+USER_WORDS_COUNT = 20
+USER_WORD_LIMIT = 300
+USER_WORDS_TOTAL = 4000
+# 아테나 세션의 열린 요청 · 에이전트 pane 목록 — 줄 수 · 한 줄 글자 상한
+LIVE_LIST_COUNT = 15
+LIVE_LINE_LIMIT = 160
+# 압축 뒤 안내 전체 글자 상한 — 넘으면 끝을 자른다
+POST_MESSAGE_LIMIT = 9000
+# 조회 하나마다 시간 상한(초) — 압축 뒤 세션 시작을 늦추지 않는다
+LOOKUP_TIMEOUT = 2
+# 사람이 친 글이 아닌 pane 알림의 머리 — `[athena-studio-fe → 아테나]` · `[자동 리뷰 → fe]` · `[아테나 pw3 → … pw0]`(pane 으로 넣어 typed 로 기록된다)
+PANE_NOTICE = re.compile(r'\[[^\[\]\n]{1,80} → [^\[\]\n]{1,80}\]')
+# 글 안의 이미지 자리 표시(`[Image #1]` 등) — 원문 묶음에서는 뺀다
+IMAGE_MARK = re.compile(r'\[Image[^\]\n]*\]')
+# Codex 가 사용자 차례에 끼워 넣는 지시문(태그로 시작하지 않는 것)
+CODEX_INJECTED = ('# AGENTS.md instructions',)
 MAX_LISTED_FILES = 8
 CODEX_SESSION_ID = re.compile(r'^[0-9A-Za-z-]{8,64}$')
 
@@ -272,6 +293,181 @@ def transcript_note(payload: dict, codex: bool = False) -> str:
     return f'대화 원문: {path} — 요약에 없는 사실은 짐작하지 말고 {search} 로 원문에서 찾는다.'
 
 
+def human_text(text: str) -> str:
+    """사람이 친 글만 남긴다 — 태그로 시작하는 글(`<system-reminder>` · `<command-name>` …) · Codex 지시문은 '',
+    pane 알림(`[… → …]`)은 그 앞까지(사용자 글 뒤에 알림이 붙어 들어온 기록이 있다 — 2026-11-07 c5d6cf73), 이미지 자리 표시는 지운다"""
+    text = text.strip()
+    if not text or text.startswith('<') or text.startswith(CODEX_INJECTED):
+        return ''
+    notice = PANE_NOTICE.search(text)
+    if notice:
+        text = text[:notice.start()]
+    return IMAGE_MARK.sub('', text).strip()
+
+
+def claude_user_words(entry: dict):
+    """Claude 기록 한 줄이 사람이 친 말이면 (시각, 글) — 아니면 None.
+    사람 말: type user · isMeta · isCompactSummary · isSidechain 아님 · origin 이 있으면 kind human(2026-11-07 Claude Code 기록 — task-notification 은 다른 kind) ·
+    도구 결과(tool_result)가 아닌 글 조각"""
+    if entry.get('type') != 'user' or entry.get('isMeta') or entry.get('isCompactSummary') or entry.get('isSidechain'):
+        return None
+    origin = entry.get('origin')
+    if isinstance(origin, dict) and origin.get('kind') != 'human':
+        return None
+    message = entry.get('message')
+    content = message.get('content') if isinstance(message, dict) else None
+    if isinstance(content, str):
+        text = content
+    elif isinstance(content, list):
+        if any(isinstance(block, dict) and block.get('type') == 'tool_result' for block in content):
+            return None
+        text = ' '.join(block['text'] for block in content
+                        if isinstance(block, dict) and block.get('type') == 'text' and isinstance(block.get('text'), str))
+    else:
+        return None
+    text = human_text(text)
+    return (str(entry.get('timestamp') or ''), text) if text else None
+
+
+def codex_user_words(entry: dict):
+    """Codex 기록 한 줄이 사람이 친 말이면 (시각, 글) — response_item · message · role user 의 input_text(2026-11-03 codex-tui 0.166 기록).
+    압축 줄(compacted)의 replacement_history 는 앞 원문의 사본이라 보지 않는다(원문 줄이 기록에 그대로 있다)"""
+    payload = entry.get('payload')
+    if entry.get('type') != 'response_item' or not isinstance(payload, dict) or payload.get('type') != 'message' or payload.get('role') != 'user':
+        return None
+    content = payload.get('content')
+    blocks = content if isinstance(content, list) else []
+    texts = [human_text(block['text']) for block in blocks if isinstance(block, dict) and isinstance(block.get('text'), str)]
+    text = ' '.join(piece for piece in texts if piece)
+    return (str(entry.get('timestamp') or ''), text) if text else None
+
+
+def recent_user_words(transcript_path: str, parse, count: int) -> list:
+    """기록(jsonl) 끝에서 거꾸로 읽어 사람이 친 말 (시각, 글) 최근 count 개 — 오래된 것부터. 같은 글이 거듭되면(이어 붙인 세션 사본) 최근 것 하나"""
+    found = []
+    seen = set()
+    try:
+        with open(transcript_path, 'rb') as stream:
+            stream.seek(0, os.SEEK_END)
+            end = stream.tell()
+            buffer = b''
+            position = end
+            while position > 0 and end - position < TRANSCRIPT_TAIL_LIMIT and len(found) < count:
+                step = min(256 * 1024, position)
+                position -= step
+                stream.seek(position)
+                buffer = stream.read(step) + buffer
+                lines = buffer.split(b'\n')
+                # 맨 앞 조각은 줄 중간일 수 있다 — 처음까지 읽은 때만 쓴다
+                complete = lines if position == 0 else lines[1:]
+                for raw in reversed(complete):
+                    if b'"user"' not in raw:
+                        continue
+                    try:
+                        entry = json.loads(raw)
+                    except ValueError:
+                        continue
+                    words = parse(entry) if isinstance(entry, dict) else None
+                    if not words or words[1] in seen:
+                        continue
+                    seen.add(words[1])
+                    found.append(words)
+                    if len(found) >= count:
+                        break
+                buffer = lines[0] if position > 0 else b''
+    except OSError:
+        return []
+    return list(reversed(found))
+
+
+def local_stamp(value: str) -> str:
+    """기록 시각(UTC ISO)을 이 맥 시각 `YYYY-MM-DD HH:MM` 으로 — scripts/transcript-search.mjs localTime 과 같다"""
+    try:
+        moment = datetime.datetime.fromisoformat(value.replace('Z', '+00:00'))
+    except ValueError:
+        return '?'
+    if moment.tzinfo is None:
+        return '?'
+    return moment.astimezone().strftime('%Y-%m-%d %H:%M')
+
+
+def clip(text: str, limit: int) -> str:
+    flat = re.sub(r'\s+', ' ', text).strip()
+    return flat if len(flat) <= limit else flat[:limit - 1] + '…'
+
+
+def user_words_note(payload: dict, codex: bool) -> str:
+    """최근 사용자 말 원문 묶음 — 압축 요약이 빠뜨린 정정 · 지시를 다시 본다. 못 읽거나 없으면 ''"""
+    path = transcript_of(payload, codex)
+    if not path:
+        return ''
+    words = recent_user_words(path, codex_user_words if codex else claude_user_words, USER_WORDS_COUNT)
+    lines = []
+    used = 0
+    # 최근 것부터 담고 전체 상한을 넘으면 거기서 멈춘다(오래된 것이 빠진다)
+    for stamp, text in reversed(words):
+        line = f'- {local_stamp(stamp)} {clip(text, USER_WORD_LIMIT)}'
+        if used + len(line) > USER_WORDS_TOTAL:
+            break
+        lines.append(line)
+        used += len(line) + 1
+    if not lines:
+        return ''
+    return (f'💬 최근 사용자 말 원문 {len(lines)}개(오래된 것부터 · pane 알림 · 도구 결과 빼고) — 요약이 빠뜨린 정정 · 지시가 있으면 이것이 먼저다:\n'
+            + '\n'.join(reversed(lines)))
+
+
+def open_requests_note() -> str:
+    """아테나 세션의 열린 [작업] 요청(bin/athena request list — open · answered). 못 읽으면 ''"""
+    try:
+        done = subprocess.run(['node', str(ATHENA_DIR / 'scripts' / 'athena.mjs'), 'request', 'list', '--json'], cwd=str(ATHENA_DIR),
+                              capture_output=True, text=True, timeout=LOOKUP_TIMEOUT)
+        requests = json.loads(done.stdout).get('requests') if done.returncode == 0 else None
+    except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+        return ''
+    if not isinstance(requests, list):
+        return ''
+    if not requests:
+        return '📮 열린 [작업] 요청: 없음'
+    lines = []
+    for request in requests[-LIVE_LIST_COUNT:]:
+        if not isinstance(request, dict):
+            continue
+        where = f' · pane {request["pane"]}' if request.get('pane') else ''
+        lines.append(clip(f'- {request.get("id")} · {request.get("kind")} · {request.get("state")}{where} — {request.get("title") or ""}', LIVE_LINE_LIMIT))
+    more = f'(최근 {len(lines)}개 · 전체 {len(requests)}개)' if len(requests) > len(lines) else f'{len(lines)}개'
+    return f'📮 열린 [작업] 요청 {more} — 답을 기다리거나 받은 것:\n' + '\n'.join(lines)
+
+
+def agent_panes_note(self_pane: str) -> str:
+    """살아 있는 에이전트 pane(화면 계층 — scripts/lib/screen.py list_panes · 에이전트가 도는 것만 · 이 pane 은 뺀다). 못 읽으면 ''"""
+    try:
+        panes = screen.list_panes(timeout=LOOKUP_TIMEOUT)
+    except Exception:
+        return ''
+    if not isinstance(panes, list):
+        return ''
+    alive = [pane for pane in panes if isinstance(pane, dict) and pane.get('agent') and pane.get('id') != self_pane]
+    if not alive:
+        return '🧩 살아 있는 에이전트 pane: 없음'
+    lines = [clip(f'- {pane.get("id")} · {pane.get("agent_status") or "?"} · {pane.get("label") or pane.get("title") or ""}', LIVE_LINE_LIMIT)
+             for pane in alive[:LIVE_LIST_COUNT]]
+    more = f'(앞 {len(lines)}개 · 전체 {len(alive)}개)' if len(alive) > len(lines) else f'{len(lines)}개'
+    return f'🧩 살아 있는 에이전트 pane {more} — pane id · 상태 · 이름표:\n' + '\n'.join(lines)
+
+
+def mask(text: str) -> str:
+    """비밀값 가리기 — 규칙 정본 scripts/lib/mask.mjs maskText(scripts/lib/pane_request.py mask 와 같은 방식). 가리지 못하면 ''(싣지 않는다)"""
+    script = ('const { maskText } = await import(process.argv[1]); let text = ""; for await (const chunk of process.stdin) text += chunk; '
+              'process.stdout.write(maskText(text))')
+    try:
+        done = subprocess.run(['node', '--input-type=module', '-e', script, str(ATHENA_DIR / 'scripts' / 'lib' / 'mask.mjs')],
+                              input=text, capture_output=True, text=True, timeout=LOOKUP_TIMEOUT)
+    except (OSError, subprocess.TimeoutExpired):
+        return ''
+    return done.stdout if done.returncode == 0 else ''
+
+
 def on_pre(payload: dict) -> None:
     plans, _ = find_plans(screen.self_info()['pane_id'])
     for path, text in plans:
@@ -304,11 +500,21 @@ def resume_message(plans: list, led: bool) -> str:
     return message
 
 
+def recall_notes(payload: dict, codex: bool, self_pane: str) -> str:
+    """압축 요약이 빠뜨린 것을 원문으로 — 최근 사용자 말, 아테나 세션이면 열린 요청 · 에이전트 pane. 비밀값은 가린 뒤(못 가리면 싣지 않는다)"""
+    notes = [user_words_note(payload, codex)]
+    if is_lead():
+        notes += [open_requests_note(), agent_panes_note(self_pane)]
+    text = '\n\n'.join(note for note in notes if note)
+    return mask(text).strip() if text else ''
+
+
 def on_post(payload: dict, reread: list, codex: bool = False) -> None:
     if payload.get('source') not in (None, 'compact'):
         return
     clear_warn_mark(payload)
-    plans, led = find_plans(screen.self_info()['pane_id'])
+    self_pane = screen.self_info()['pane_id']
+    plans, led = find_plans(self_pane)
     if plans:
         message = resume_message(plans, led)
     elif is_hermes_session(payload):
@@ -330,6 +536,11 @@ def on_post(payload: dict, reread: list, codex: bool = False) -> None:
         message = f'{message} {original}'
     if is_lead():
         message = f'{lead_log_note()}\n\n{message}'
+    recall = recall_notes(payload, codex, self_pane)
+    if recall:
+        message = f'{message}\n\n{recall}'
+    if len(message) > POST_MESSAGE_LIMIT:
+        message = message[:POST_MESSAGE_LIMIT - 1] + '…'
     print(json.dumps({'hookSpecificOutput': {'hookEventName': 'SessionStart', 'additionalContext': message}}, ensure_ascii=False))
 
 
