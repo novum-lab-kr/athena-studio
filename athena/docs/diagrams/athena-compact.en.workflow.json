@@ -20,7 +20,7 @@
           "post",
           "resume"
         ],
-        "note": "Claude Code compacts as usual. Hooks add a note to the plan before and a hint to the chat after; summary untouched. No user action needed."
+        "note": "Claude Code compacts as usual. Hooks only add a one-time 'write it down' at 70%, a plan note before and a hint after; summary untouched."
       },
       {
         "id": "without-hook",
@@ -43,11 +43,11 @@
           "resume",
           "notfound"
         ],
-        "note": "Overwrites '- Auto snapshot:' in the plan with this pane id (Work ref · Review · leadPane), rereads it. Not found: no note, candidates only"
+        "note": "Overwrites '- Auto snapshot:' in the plan bound to this pane (Work ref · Review · Lead pane), then points to it and the transcript."
       }
     ],
     "output": "docs/diagrams/athena-compact.en.html",
-    "subtitle": "Keep long chats on track when they get compacted — one status line in the plan right before, a 'reread the plan first' hint right after (source: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+    "subtitle": "Keep long chats on track when they get compacted — one 'write it down first' at 70% of the compaction point, one status line in the plan right before, a 'reread the plan first' hint right after (source: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
   },
   "lanes": [
     {
@@ -144,7 +144,7 @@
       "col": 0,
       "type": "backend",
       "label": "Long task",
-      "sublabel": "Context piles up",
+      "sublabel": "context grows · 70% alert",
       "width": 138,
       "tag": "Athena · agent pane"
     },
@@ -154,7 +154,7 @@
       "col": 1,
       "type": "backend",
       "label": "compact starts",
-      "sublabel": "auto 200k · /compact",
+      "sublabel": "window − 33k · /compact",
       "width": 138,
       "tag": "PreCompact event"
     },
@@ -166,7 +166,7 @@
       "label": "Find the plan",
       "sublabel": "By this pane id",
       "width": 138,
-      "tag": "Work ref · Review · leadPane"
+      "tag": "Work ref · Review · Lead pane"
     },
     {
       "id": "memo",
@@ -457,11 +457,12 @@
       "dot": "cyan",
       "title": "Steps",
       "items": [
-        "① Long task — when context reaches 200k tokens (autoCompactWindow), Claude Code compacts on its own (the user can also run /compact)",
-        "② Right before compaction — the hook finds the plan with this pane id (Work ref · Review pane · formal html leadPane — the most recently edited if several · done ones excluded) and overwrites one line '- Auto snapshot: time · branch · HEAD · uncommitted files' in the Checkpoint",
-        "③ compact — Claude Code shrinks the chat into a summary. The hook doesn't change the summary",
-        "④ Right after compaction — the hook adds 'don't trust only the summary, reread the plan Checkpoint first' to the chat with the plan path · snapshot. Repo rule documents left as a list are also noted as 'reread'",
-        "⑤ resume — the agent reads the plan, checks the current state with git status, then continues from Next (steps 1–4 of AGENTS.md 2.6). The snapshot is just machine state and doesn't replace Progress · Next"
+        "① Long task — after each tool use · on each message the hook counts the current context. Past 70% of the real compaction point (Claude: compact window − 33,000 — 167,000 for a 200k window · Codex: codex_compact_limit) it tells only the model, once per session, 'before answering, first write the facts learned · decisions · next steps to the plan Checkpoint or an issue' (Athena sessions also to the lead log · nothing shown on the user's screen)",
+        "② Compaction starts — when context reaches the compaction point Claude Code compacts on its own (the user can also run /compact)",
+        "③ Right before compaction — the hook finds the plans bound to this pane: a working pane uses the Work ref · Review pane (the most recently edited if several); otherwise it is treated as the Athena pane and every in-progress plan bound by formal html leadPane · Checkpoint '- Lead pane:' (done excluded). Each Checkpoint gets one line '- Auto snapshot: time · branch · HEAD · uncommitted files' overwritten",
+        "④ compact — Claude Code shrinks the chat into a summary. The hook doesn't change the summary",
+        "⑤ Right after compaction — the hook adds 'don't trust only the summary, reread the plan Checkpoint first' to the chat with the plan path · snapshot · bound issues. It adds the raw transcript location and the search command (scripts/transcript-search.mjs), and for Athena sessions puts the last 15 lead log lines first. Repo rule documents left as a list are also noted as 'reread'",
+        "⑥ resume — the agent reads the plan, checks the current state with git status, then continues from Next (steps 1–4 of AGENTS.md 2.6). The snapshot is just machine state and doesn't replace Progress · Next"
       ]
     },
     {
@@ -478,20 +479,23 @@
       "dot": "violet",
       "title": "Where it's hooked",
       "items": [
-        "Athena session · Claude panes opened at the athena root — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
-        "Owning agent · reviewer panes opened in a worktree — temporary settings made by scripts/agent-context.py (delegate.sh --settings · compaction threshold included)",
-        "Codex — .codex/hooks.json PreCompact writes the note before, and the session start hook (codex-context.py) adds the same hint on compact · resume",
+        "Athena session · Claude panes opened at the athena root — .claude/settings.json (PreCompact · SessionStart matcher compact · warn on PostToolUse · UserPromptSubmit · autoCompactWindow 200000)",
+        "Owning agent · reviewer panes opened in a worktree — temporary settings made by scripts/agent-context.py (delegate.sh --settings · compact window included). No compaction alert for reviewers · sub-agents (Task)",
+        "Codex — .codex/hooks.json PreCompact writes the note before, warn --tool=codex on PostToolUse · UserPromptSubmit gives the 70% alert (rollout token_count · codex_compact_limit), and the session start hook (codex-context.py) adds the same hint (with the rollout location) on compact · resume",
         "Panes already open use the settings from when they opened — applies from newly opened panes",
         "Never blocks compaction · session start — if the plan isn't found or the input is broken it passes quietly (always exit 0)"
       ]
     },
     {
       "dot": "emerald",
-      "title": "Checked (2026-10-12)",
+      "title": "Checked (2026-10-12 · 11-07)",
       "items": [
         "/compact in real Claude Code — one snapshot line appeared in the plan, and after compaction the session received the plan path · snapshot as is",
         "Other panes with the same prefix (tt:p9 · tt:p99) don't mix · compacting twice keeps only one line",
-        "Real compaction in a worktree FE pane was checked only up to hook registration — behavior during real compaction not confirmed"
+        "Real compaction in a worktree FE pane was checked only up to hook registration — behavior during real compaction not confirmed",
+        "2026-11-07 real Claude (100k window → compaction point 67,000 · alert 46,900) — after the alert it wrote the lead log before anything else; after compaction the hint led with that line, and transcript search found the pre-compaction marker",
+        "2026-11-07 real Codex (compaction point 40,000 → alert 28,000) — wrote the lead log in the same turn, before compaction",
+        "2026-11-07 after the first tool of a session the first reply was written to the transcript later than the hook (about 60ms), so the alert slipped to the next message — after a short re-read fix it showed right after the first tool (context 56,327 · 84%)"
       ]
     }
   ]

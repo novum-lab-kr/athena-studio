@@ -38,28 +38,28 @@ const TEXT = {
     lead: '서비스 시스템 개요·시퀀스 다이어그램과 아테나 작업 흐름을 인터랙티브 HTML 로 본다. 서비스 그림은 <code>/diagram</code> 으로 갱신한다.',
     footer: '<code>/diagram</code> 스킬로 만들었습니다 · <a href="https://github.com/tt-a1i/archify">Archify</a> 사용',
     flow: { name: '작업 흐름 · 경량 / 정식', sub: '한 흐름 — 계획서에서 갈라졌다 다시 만난다', desc: '요청 → triage(정식만 결정 콘솔 승인) → 디스패치 → pane 작업 → 완료 보고 → 바로 push · PR 세 갈래(PR 자동 리뷰 / direct merge · Actions handoff / main 직접 push) → auto done · 학습 리뷰(learn review) · cleanup → 남은 일은 이슈로 다시 요청. 사용자 확인(승인 / 재작업)은 UI 변경 · autoMerge 아닌 레포만 옆 갈래로. 카드마다 누가 · 무슨 명령.' },
-    compact: { name: '대화 압축(compact) 전후 자동 저장', sub: '긴 작업이 compact 돼도 하던 일을 잃지 않게', desc: 'compact 직전 훅이 계획서 Checkpoint 에 상태 한 줄(Work ref · 미커밋) → compact(summary 는 그대로) → compact 직후 "계획서부터 다시 읽어라" 안내. Claude · Codex 훅 자리와 훅이 없으면 생기는 일 포함.' },
+    compact: { name: '대화 압축(compact) 전후 자동 저장', sub: '긴 작업이 compact 돼도 하던 일을 잃지 않게', desc: '압축점(창 − 33,000 · Codex 는 limit)의 70% 에서 "먼저 적어 두기" 알림 한 번 → compact 직전 훅이 계획서 Checkpoint 에 상태 한 줄(Work ref · 미커밋) → compact(summary 는 그대로) → compact 직후 "계획서부터 다시 읽어라" 안내. Claude · Codex 훅 자리와 훅이 없으면 생기는 일 포함.' },
   },
   en: {
     title: 'Athena diagrams', overview: 'System overview', sequence: 'Sequence diagram', legacy: 'Screen map', open: 'Open', flows: 'Athena workflow',
     lead: 'Service system overviews · sequence diagrams and the Athena workflow as interactive HTML. Update service diagrams with <code>/diagram</code>.',
     footer: 'Made with the <code>/diagram</code> skill · uses <a href="https://github.com/tt-a1i/archify">Archify</a>',
     flow: { name: 'Workflow · lightweight / formal', sub: 'One flow — splits at the plan and joins again', desc: 'Request → triage (formal needs decision console approval) → dispatch → pane work → completion report → push · PR right away, three paths (PR auto review / direct merge · Actions handoff / direct push to main) → auto done · learn review · cleanup → leftovers come back as issues. User check (approve / redo) is a side branch only on UI change · non-autoMerge repos. Each card shows who · which command.' },
-    compact: { name: 'Auto save around compact', sub: "Don't lose the task when a long chat is compacted", desc: 'Right before compact the hook writes one status line (Work ref · uncommitted) to the plan Checkpoint → compact (summary untouched) → right after, a "reread the plan first" hint. Includes the Claude · Codex hook locations and what happens without the hooks.' },
+    compact: { name: 'Auto save around compact', sub: "Don't lose the task when a long chat is compacted", desc: 'One "write it down first" alert at 70% of the compaction point (window − 33,000 · Codex limit) → right before compact the hook writes one status line (Work ref · uncommitted) to the plan Checkpoint → compact (summary untouched) → right after, a "reread the plan first" hint. Includes the Claude · Codex hook locations and what happens without the hooks.' },
   },
   ja: {
     title: 'アテナ ダイアグラム', overview: 'システム概要', sequence: 'シーケンス図', legacy: '画面マップ', open: '開く', flows: 'アテナ 作業フロー',
     lead: 'サービスのシステム概要 · シーケンス図と アテナ 作業フローをインタラクティブ HTML で見る。サービス図は <code>/diagram</code> で更新する。',
     footer: '<code>/diagram</code> スキルで作成 · <a href="https://github.com/tt-a1i/archify">Archify</a> 使用',
     flow: { name: '作業フロー · 軽量 / 正式', sub: '一つの流れ — 計画書で分かれてまた合流する', desc: '依頼 → triage(正式のみ決定コンソールで承認) → ディスパッチ → pane 作業 → 完了報告 → すぐ push · PR 三つの道(PR 自動レビュー / direct merge · Actions handoff / main 直接 push) → auto done · 学習レビュー(learn review) · cleanup → 残りはイシューとして再依頼。ユーザー確認(承認 / 再作業)は UI 変更 · autoMerge でないレポのみ脇道で。カードごとに誰が · どのコマンドか。' },
-    compact: { name: '会話 compact 前後の自動保存', sub: '長い作業が compact されても作業を見失わない', desc: 'compact 直前にフックが計画書 Checkpoint に状態一行(Work ref · 未コミット) → compact(summary はそのまま) → compact 直後に「計画書から読み直せ」案内。Claude · Codex のフック位置とフックがない場合に起きることも含む。' },
+    compact: { name: '会話 compact 前後の自動保存', sub: '長い作業が compact されても作業を見失わない', desc: '圧縮点(窓 − 33,000 · Codex は limit)の 70% で「先に書き留める」通知を一度 → compact 直前にフックが計画書 Checkpoint に状態一行(Work ref · 未コミット) → compact(summary はそのまま) → compact 直後に「計画書から読み直せ」案内。Claude · Codex のフック位置とフックがない場合に起きることも含む。' },
   },
   zh: {
     title: 'Athena 图表', overview: '系统概览', sequence: '时序图', legacy: '界面地图', open: '打开', flows: 'Athena 工作流程',
     lead: '以交互式 HTML 查看服务系统概览 · 时序图和 Athena 工作流程。服务图用 <code>/diagram</code> 更新。',
     footer: '用 <code>/diagram</code> 技能制作 · 使用 <a href="https://github.com/tt-a1i/archify">Archify</a>',
     flow: { name: '工作流程 · 轻量 / 正式', sub: '一条流程 — 在计划书分开又汇合', desc: '请求 → triage(仅正式需决策控制台批准) → 派发 → pane 工作 → 完成报告 → 立即 push · PR 三条路(PR 自动评审 / direct merge · Actions handoff / 直接 push 到 main) → auto done · 学习评审(learn review) · cleanup → 剩余工作作为问题再请求。用户确认(批准 / 返工)仅在 UI 变更 · 非 autoMerge 仓库时走旁路。每张卡写明谁 · 什么命令。' },
-    compact: { name: '对话 compact 前后自动保存', sub: '长任务被 compact 也不丢失手头工作', desc: 'compact 前钩子在计划书 Checkpoint 写一行状态(Work ref · 未提交) → compact(summary 不变) → compact 后提示"先重读计划书"。包括 Claude · Codex 钩子位置和没有钩子时会发生的事。' },
+    compact: { name: '对话 compact 前后自动保存', sub: '长任务被 compact 也不丢失手头工作', desc: '在压缩点(窗口 − 33,000 · Codex 为 limit)的 70% 提醒一次"先记下来" → compact 前钩子在计划书 Checkpoint 写一行状态(Work ref · 未提交) → compact(summary 不变) → compact 后提示"先重读计划书"。包括 Claude · Codex 钩子位置和没有钩子时会发生的事。' },
   },
 };
 /** @typedef {keyof typeof TEXT} Lang */

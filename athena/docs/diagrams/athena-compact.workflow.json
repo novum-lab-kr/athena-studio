@@ -19,7 +19,7 @@
           "post",
           "resume"
         ],
-        "note": "compact 는 Claude Code 기본 동작 그대로입니다. 훅은 그 앞에서 계획서에 메모 한 줄, 뒤에서 대화에 안내 한 줄을 더할 뿐 summary 는 고치지 않습니다. 사용자 action 은 없습니다."
+        "note": "compact 는 Claude Code 기본 동작 그대로입니다. 훅은 압축점의 70% 에서 모델에게만 '먼저 적어라' 를 한 번, 직전에 계획서 메모 한 줄, 직후에 안내 한 줄을 더할 뿐 summary 는 고치지 않습니다."
       },
       {
         "id": "without-hook",
@@ -42,11 +42,11 @@
           "resume",
           "notfound"
         ],
-        "note": "이 pane id 가 적힌 계획서(Work ref · Review · leadPane)에 '- Auto snapshot:' 한 줄을 덮어쓰고, compact 뒤 그 Checkpoint 부터 다시 읽습니다. 못 찾으면 메모 없이 후보만 알립니다."
+        "note": "이 pane 에 묶인 계획서(Work ref · Review · 아테나는 Lead pane)에 '- Auto snapshot:' 한 줄을 덮어쓰고, compact 뒤 그 Checkpoint 와 대화 원문 자리를 알립니다. 못 찾으면 후보만 알립니다."
       }
     ],
     "output": "docs/diagrams/athena-compact.html",
-    "subtitle": "대화가 길어져 compact 될 때 하던 일을 잃지 않게 — compact 직전 계획서에 상태 한 줄, 직후 '계획서부터 다시 읽어라' 안내 (원본: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+    "subtitle": "대화가 길어져 compact 될 때 하던 일을 잃지 않게 — 압축점의 70% 에서 '먼저 적어라' 한 번, compact 직전 계획서에 상태 한 줄, 직후 '계획서부터 다시 읽어라' 안내 (원본: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
   },
   "lanes": [
     {
@@ -143,7 +143,7 @@
       "col": 0,
       "type": "backend",
       "label": "긴 작업",
-      "sublabel": "context 누적",
+      "sublabel": "context 누적 · 70% 알림",
       "width": 138,
       "tag": "아테나 · 에이전트 pane"
     },
@@ -153,7 +153,7 @@
       "col": 1,
       "type": "backend",
       "label": "compact 시작",
-      "sublabel": "200k 토큰 자동 · /compact",
+      "sublabel": "창 − 33k 자동 · /compact",
       "width": 138,
       "tag": "PreCompact 이벤트"
     },
@@ -165,7 +165,7 @@
       "label": "계획서 찾기",
       "sublabel": "이 pane id 로",
       "width": 138,
-      "tag": "Work ref · Review · leadPane"
+      "tag": "Work ref · Review · Lead pane"
     },
     {
       "id": "memo",
@@ -456,11 +456,12 @@
       "dot": "cyan",
       "title": "순서",
       "items": [
-        "① 긴 작업 — context 가 200k 토큰에 닿으면(autoCompactWindow) Claude Code 가 자동 compact 한다(사용자가 /compact 로 수동 실행도 가능)",
-        "② compact 직전 — 훅이 이 pane id 가 적힌 계획서(Work ref · Review 의 pane · 정식 html leadPane — 여럿이면 최근에 고친 것 · done 은 뺀다)를 찾아 Checkpoint 에 '- Auto snapshot: 시각 · 브랜치 · HEAD · 미커밋 파일' 한 줄을 덮어쓴다",
-        "③ compact — Claude Code 가 대화를 summary 로 줄인다. 훅은 summary 를 고치지 않는다",
-        "④ compact 직후 — 훅이 '요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라' 를 계획서 경로 · 스냅샷과 함께 대화에 덧붙인다. 목록으로 돌린 레포 규칙 문서가 있으면 '다시 읽기' 로 함께 알린다",
-        "⑤ resume — 에이전트가 계획서를 읽고 git status 로 현재 상태를 맞춰 본 뒤 Next 부터 이어 간다(AGENTS.md 2.6 의 1~4). 스냅샷은 기계 상태일 뿐 Progress · Next 를 대신하지 않는다"
+        "① 긴 작업 — 도구를 쓴 뒤 · 메시지를 받을 때 훅이 지금 문맥을 센다. 실제 압축 기준(Claude 는 압축 창 − 33,000 — 창 200k 면 167,000 · Codex 는 codex_compact_limit)의 70% 를 넘으면 모델에게만 '답하기 전에 먼저 알게 된 사실 · 정한 것 · 다음 할 일을 계획서 Checkpoint 나 이슈에 적어라' 를 세션마다 한 번 넣는다(아테나 세션은 리드 기록에도 · 사용자 화면에는 띄우지 않는다)",
+        "② compact 시작 — 문맥이 압축 기준에 닿으면 Claude Code 가 자동 compact 한다(사용자가 /compact 로 수동 실행도 가능)",
+        "③ compact 직전 — 훅이 이 pane 에 묶인 계획서를 찾는다. 일하는 pane 은 Work ref · Review 의 pane(여럿이면 최근에 고친 하나), 없으면 아테나 pane 으로 보고 정식 html leadPane · Checkpoint '- Lead pane:' 으로 묶인 진행 중 계획서 모두(done 은 뺀다). 그 Checkpoint 마다 '- Auto snapshot: 시각 · 브랜치 · HEAD · 미커밋 파일' 한 줄을 덮어쓴다",
+        "④ compact — Claude Code 가 대화를 summary 로 줄인다. 훅은 summary 를 고치지 않는다",
+        "⑤ compact 직후 — 훅이 '요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라' 를 계획서 경로 · 스냅샷 · 묶인 이슈와 함께 대화에 덧붙인다. 대화 원문 자리와 찾는 명령(scripts/transcript-search.mjs)을 붙이고, 아테나 세션이면 리드 기록 최근 15줄을 맨 앞에 싣는다. 목록으로 돌린 레포 규칙 문서가 있으면 '다시 읽기' 로 함께 알린다",
+        "⑥ resume — 에이전트가 계획서를 읽고 git status 로 현재 상태를 맞춰 본 뒤 Next 부터 이어 간다(AGENTS.md 2.6 의 1~4). 스냅샷은 기계 상태일 뿐 Progress · Next 를 대신하지 않는다"
       ]
     },
     {
@@ -477,20 +478,23 @@
       "dot": "violet",
       "title": "어디에 걸려 있나",
       "items": [
-        "아테나 세션 · athena 루트에서 뜬 Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
-        "워크트리에서 뜬 담당 에이전트 · reviewer pane — scripts/agent-context.py 가 만드는 임시 settings(delegate.sh --settings · 압축 시점 값도 같이)",
-        "Codex — .codex/hooks.json PreCompact 가 직전 메모를, 세션 시작 훅(codex-context.py)이 compact · resume 때 같은 안내를 싣는다",
+        "아테나 세션 · athena 루트에서 뜬 Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · PostToolUse · UserPromptSubmit 의 warn · autoCompactWindow 200000)",
+        "워크트리에서 뜬 담당 에이전트 · reviewer pane — scripts/agent-context.py 가 만드는 임시 settings(delegate.sh --settings · 압축 창 값도 같이). 곧 압축 알림은 reviewer · 하위 에이전트(Task) 에는 넣지 않는다",
+        "Codex — .codex/hooks.json PreCompact 가 직전 메모를, PostToolUse · UserPromptSubmit 의 warn --tool=codex 가 70% 알림(rollout token_count · codex_compact_limit)을, 세션 시작 훅(codex-context.py)이 compact · resume 때 같은 안내(rollout 자리 포함)를 싣는다",
         "이미 떠 있는 pane 은 띄울 때의 설정을 쓴다 — 새로 띄운 pane 부터 적용",
         "compact · 세션 시작을 block 하지 않는다 — 계획서를 못 찾거나 입력이 깨져도 조용히 넘어간다(항상 exit 0)"
       ]
     },
     {
       "dot": "emerald",
-      "title": "확인한 것 (2026-10-12)",
+      "title": "확인한 것 (2026-10-12 · 11-07)",
       "items": [
         "실제 Claude Code 에서 /compact — 계획서에 스냅샷 한 줄이 생겼고, compact 뒤 세션이 계획서 경로·스냅샷을 그대로 전달받았다",
         "같은 접두의 다른 pane(tt:p9 · tt:p99)은 섞이지 않는다 · 두 번 compact 해도 한 줄만 유지",
-        "워크트리 FE pane 의 실제 compact 는 훅 등록까지만 확인 — 실제 compact 때 동작은 확인 못 함"
+        "워크트리 FE pane 의 실제 compact 는 훅 등록까지만 확인 — 실제 compact 때 동작은 확인 못 함",
+        "2026-11-07 실제 Claude(창 100k → 압축 기준 67,000 · 알림 46,900) — 알림을 받자 다른 일보다 먼저 리드 기록을 적었고, 압축 뒤 안내 맨 앞에 그 줄이 실렸으며 원문 찾기로 압축 전 표식을 찾았다",
+        "2026-11-07 실제 Codex(압축 기준 40,000 → 알림 28,000) — 같은 턴 · 압축 전에 리드 기록을 적었다",
+        "2026-11-07 세션 첫 도구 뒤에는 첫 응답이 훅보다 늦게(약 60ms) 기록돼 알림이 다음 메시지로 밀렸다 — 잠깐 다시 읽게 고친 뒤 첫 도구 뒤 바로 떴다(문맥 56,327 · 84%)"
       ]
     }
   ]

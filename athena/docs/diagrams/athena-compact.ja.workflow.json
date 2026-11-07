@@ -19,7 +19,7 @@
           "post",
           "resume"
         ],
-        "note": "compact は Claude Code の標準動作のままです。フックは直前に計画書へメモ一行、直後に会話へ案内一行を足すだけで summary は変えません。ユーザーの action はありません。"
+        "note": "compact は Claude Code の標準動作のままです。フックは圧縮点の 70% でモデルにだけ「先に書け」を一回、直前に計画書へメモ一行、直後に案内一行を足すだけで summary は変えません。"
       },
       {
         "id": "without-hook",
@@ -42,11 +42,11 @@
           "resume",
           "notfound"
         ],
-        "note": "この pane id が書かれた計画書(Work ref · Review · leadPane)の '- Auto snapshot:' 一行を上書きし、compact 後その Checkpoint から読み直します。見つからなければメモなしで候補だけ知らせます。"
+        "note": "この pane に結ばれた計画書(Work ref · Review · アテナは Lead pane)の '- Auto snapshot:' 一行を上書きし、compact 後その Checkpoint と会話原文の場所を知らせます。見つからなければ候補だけ。"
       }
     ],
     "output": "docs/diagrams/athena-compact.ja.html",
-    "subtitle": "会話が長くなって compact されても作業を見失わないように — compact 直前に計画書へ状態一行、直後に「計画書から読み直せ」案内 (原本: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
+    "subtitle": "会話が長くなって compact されても作業を見失わないように — 圧縮点の 70% で「先に書け」を一回、compact 直前に計画書へ状態一行、直後に「計画書から読み直せ」案内 (原本: scripts/hooks/compact-checkpoint.py · docs/knowledge/common/context.md \"대화 압축\" · AGENTS.md 2.6)"
   },
   "lanes": [
     {
@@ -143,7 +143,7 @@
       "col": 0,
       "type": "backend",
       "label": "長い作業",
-      "sublabel": "context が溜まる",
+      "sublabel": "context 蓄積 · 70% 通知",
       "width": 138,
       "tag": "アテナ · エージェント pane"
     },
@@ -153,7 +153,7 @@
       "col": 1,
       "type": "backend",
       "label": "compact 開始",
-      "sublabel": "自動 200k · /compact",
+      "sublabel": "窓 − 33k で自動 · /compact",
       "width": 138,
       "tag": "PreCompact イベント"
     },
@@ -165,7 +165,7 @@
       "label": "計画書を探す",
       "sublabel": "この pane id で",
       "width": 138,
-      "tag": "Work ref · Review · leadPane"
+      "tag": "Work ref · Review · Lead pane"
     },
     {
       "id": "memo",
@@ -456,11 +456,12 @@
       "dot": "cyan",
       "title": "順序",
       "items": [
-        "① 長い作業 — context が 200k トークンに達すると(autoCompactWindow) Claude Code が自動で compact する(ユーザーが /compact で手動実行も可)",
-        "② compact 直前 — フックがこの pane id が書かれた計画書(Work ref · Review の pane · 正式 html の leadPane — 複数なら最近更新したもの · done は除く)を探し、Checkpoint に '- Auto snapshot: 時刻 · ブランチ · HEAD · 未コミットファイル' 一行を上書きする",
-        "③ compact — Claude Code が会話を summary に縮める。フックは summary を変えない",
-        "④ compact 直後 — フックが「summary だけを信じず計画書の Checkpoint から読み直せ」を計画書パス · スナップショットと一緒に会話に追加する。一覧にしたレポ規則文書があれば「読み直し」として一緒に知らせる",
-        "⑤ resume — エージェントが計画書を読み git status で現状を確かめてから Next から続ける(AGENTS.md 2.6 の 1〜4)。スナップショットは機械の状態にすぎず Progress · Next の代わりにならない"
+        "① 長い作業 — ツールを使った後 · メッセージを受けたときにフックが今の文脈を数える。実際の圧縮基準(Claude は圧縮ウィンドウ − 33,000 — 200k なら 167,000 · Codex は codex_compact_limit)の 70% を超えるとモデルにだけ「答える前にまず、分かった事実 · 決めたこと · 次にやることを計画書 Checkpoint か issue に書け」をセッションごとに一回入れる(アテナ セッションはリード記録にも · ユーザー画面には出さない)",
+        "② compact 開始 — 文脈が圧縮基準に達すると Claude Code が自動で compact する(ユーザーが /compact で手動実行も可)",
+        "③ compact 直前 — フックがこの pane に結ばれた計画書を探す。作業 pane は Work ref · Review の pane(複数なら最近更新した一つ)、なければアテナ pane とみなし正式 html の leadPane · Checkpoint '- Lead pane:' で結ばれた進行中の計画書すべて(done は除く)。その Checkpoint ごとに '- Auto snapshot: 時刻 · ブランチ · HEAD · 未コミットファイル' 一行を上書きする",
+        "④ compact — Claude Code が会話を summary に縮める。フックは summary を変えない",
+        "⑤ compact 直後 — フックが「summary だけを信じず計画書の Checkpoint から読み直せ」を計画書パス · スナップショット · 結ばれた issue と一緒に会話に追加する。会話原文の場所と探すコマンド(scripts/transcript-search.mjs)を付け、アテナ セッションならリード記録の最近 15 行を先頭に載せる。一覧にしたレポ規則文書があれば「読み直し」として一緒に知らせる",
+        "⑥ resume — エージェントが計画書を読み git status で現状を確かめてから Next から続ける(AGENTS.md 2.6 の 1〜4)。スナップショットは機械の状態にすぎず Progress · Next の代わりにならない"
       ]
     },
     {
@@ -477,20 +478,23 @@
       "dot": "violet",
       "title": "どこに掛かっているか",
       "items": [
-        "アテナ セッション · athena ルートで開いた Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · autoCompactWindow 200000)",
-        "ワークツリーで開いた担当エージェント · reviewer pane — scripts/agent-context.py が作る一時 settings(delegate.sh --settings · compact 時点の値も一緒に)",
-        "Codex — .codex/hooks.json の PreCompact が直前メモを、セッション開始フック(codex-context.py)が compact · resume 時に同じ案内を載せる",
+        "アテナ セッション · athena ルートで開いた Claude pane — .claude/settings.json (PreCompact · SessionStart matcher compact · PostToolUse · UserPromptSubmit の warn · autoCompactWindow 200000)",
+        "ワークツリーで開いた担当エージェント · reviewer pane — scripts/agent-context.py が作る一時 settings(delegate.sh --settings · 圧縮ウィンドウの値も一緒に)。もうすぐ圧縮の通知は reviewer · サブエージェント(Task) には入れない",
+        "Codex — .codex/hooks.json の PreCompact が直前メモを、PostToolUse · UserPromptSubmit の warn --tool=codex が 70% 通知(rollout token_count · codex_compact_limit)を、セッション開始フック(codex-context.py)が compact · resume 時に同じ案内(rollout の場所を含む)を載せる",
         "すでに開いている pane は開いたときの設定を使う — 新しく開いた pane から適用",
         "compact · セッション開始を block しない — 計画書が見つからなくても入力が壊れても静かに通る(常に exit 0)"
       ]
     },
     {
       "dot": "emerald",
-      "title": "確認したこと (2026-10-12)",
+      "title": "確認したこと (2026-10-12 · 11-07)",
       "items": [
         "実際の Claude Code で /compact — 計画書にスナップショット一行ができ、compact 後のセッションが計画書パス · スナップショットをそのまま受け取った",
         "同じ接頭辞の別 pane(tt:p9 · tt:p99)は混ざらない · 二回 compact しても一行のまま",
-        "ワークツリー FE pane の実際の compact はフック登録までしか確認していない — 実際の compact 時の動作は未確認"
+        "ワークツリー FE pane の実際の compact はフック登録までしか確認していない — 実際の compact 時の動作は未確認",
+        "2026-11-07 実際の Claude(ウィンドウ 100k → 圧縮基準 67,000 · 通知 46,900) — 通知を受けると他の作業より先にリード記録を書き、圧縮後の案内の先頭にその行が載り、原文検索で圧縮前の目印を見つけた",
+        "2026-11-07 実際の Codex(圧縮基準 40,000 → 通知 28,000) — 同じターン · 圧縮前にリード記録を書いた",
+        "2026-11-07 セッション最初のツールの後は最初の応答がフックより遅れて(約 60ms)記録され、通知が次のメッセージにずれた — 少し待って読み直すよう直した後、最初のツールの直後に出た(文脈 56,327 · 84%)"
       ]
     }
   ]
