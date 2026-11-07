@@ -46,7 +46,7 @@
  *   athena request open --kind decision|question --title <글> [--body <글>|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …]
  *                       [--recommend <라벨>] [--plan <plans/…md>] [--html <…html>] [--issue <issues/…md>] [--pane <id>] [--key <중복 방지 키>] [--json]
  *                                                  요청을 연다(같은 --key 로 열린 것이 있으면 고친다). pane 을 안 주면 지금 pane
- *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지면 expired 로 닫는다
+ *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지거나 묻던 pane 이 닫히면 expired 로 닫는다
  *   athena request show <id> [--json]
  *   athena request answer <id> --by board|app|chat [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
  *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered —
@@ -349,6 +349,18 @@ const requestId = () => {
   if (!id || id.startsWith('--')) throw new PackError('usage', `사용: athena request ${sub} <id> [--json]`)
   return id
 }
+// 지금 데몬(ATHENA_STUDIO_SOCKET)의 살아 있는 pane — 묻던 pane 이 닫힌 요청을 닫는 데(lib/requests.mjs listRequests).
+// 소켓을 모르거나 화면 계층이 실패 · 시간 초과면 null(아무것도 닫지 않는다)
+const livePanes = () => {
+  const socket = process.env.ATHENA_STUDIO_SOCKET
+  if (!socket) return null
+  try {
+    const listed = screenSync(['pane', 'list'], { timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] }).panes
+    return Array.isArray(listed) ? { screen: socket, ids: new Set(listed.map((pane) => pane?.id).filter(Boolean)) } : null
+  } catch {
+    return null
+  }
+}
 const requestCommands = {
   open: () => {
     const recommend = flag('recommend')
@@ -367,7 +379,7 @@ const requestCommands = {
       dedupeKey: flag('key'),
     })
   },
-  list: () => listRequests(ROOT, { all: args.includes('--all') }),
+  list: () => listRequests(ROOT, { all: args.includes('--all'), panes: livePanes }),
   show: () => showRequest(ROOT, requestId()),
   answer: () => {
     const id = requestId()

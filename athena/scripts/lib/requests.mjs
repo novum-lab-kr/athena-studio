@@ -7,6 +7,8 @@
 //   쓰기는 이 모듈로만 — 폴더 잠금 + 원자 저장 + rev(고칠 때마다 +1). 답할 때 rev 를 주면 그사이 바뀐 요청에는 답하지 않는다(conflict)
 //   같은 dedupeKey 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다
 //   팩 세대가 바뀐 뒤(가져오기 --replace 등) 만든 요청에 온 답은 거절한다(stale) — 현황판 쓰기의 409 와 같은 규칙
+//   pane 이 있는 요청은 그 pane 의 데몬(screen — ATHENA_STUDIO_SOCKET)도 적는다. 개발 앱 · 배포판은 요청 폴더를 같이 쓰지만 데몬이 따로라
+//   pane 번호가 겹친다 — 닫힌 pane 판정은 같은 데몬의 pane 목록으로만 한다(listRequests)
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, readFileSync, readdirSync } from 'node:fs'
 import { isAbsolute, join, relative, resolve } from 'node:path'
@@ -88,7 +90,10 @@ const logicalPlan = (root, plan) => {
   return inside && !inside.startsWith('..') && !isAbsolute(inside) ? inside : text
 }
 
-// 열기 — { kind, title, body?, options?, links?: { plan, html, issue }, pane?, dedupeKey? }
+// pane 이 사는 데몬 — 준 값(screen) · 없으면 부른 곳의 소켓(pane 셸 · 현황판 · 앱이 넣는다) · 모르면 null(닫힌 pane 판정을 하지 않는다)
+const screenOf = (input) => String(input.screen || process.env.ATHENA_STUDIO_SOCKET || '').trim() || null
+
+// 열기 — { kind, title, body?, options?, links?: { plan, html, issue }, pane?, screen?, dedupeKey? }
 export const openRequest = (root, input) => {
   const kind = String(input.kind || '')
   if (!KINDS.includes(kind)) throw new PackError('usage', `종류는 ${KINDS.join(' · ')} 중 하나다: ${kind || '(없음)'}`)
@@ -102,6 +107,7 @@ export const openRequest = (root, input) => {
     options: cleanOptions(input.options),
     links: { plan: logicalPlan(root, input.links?.plan), html: input.links?.html || null, issue: input.links?.issue || null },
     pane: input.pane || null,
+    screen: input.pane ? screenOf(input) : null,
   }
   const dedupeKey = String(input.dedupeKey || '').trim() || null
   return withLock(root, (dir) => {
@@ -136,22 +142,41 @@ export const openRequest = (root, input) => {
   })
 }
 
-// 목록 — 기본은 열린 것(open · answered). 계획서가 없어졌거나 done 이 된 요청은 이때 expired 로 닫는다.
-// 단 질문(question)은 계획서 상태만으로 닫지 않는다 — 답 없이(open) 또는 받기 전에(answered) 사라지면 에이전트가 영원히 기다린다(docs/requests.md).
-// 계획서가 done 이거나 없어도 에이전트가 ack 하거나 사람이 취소할 때까지 남는다. 결정 콘솔(decision)은 계획서와 함께 닫는다
-export const listRequests = (root, { all = false } = {}) => withLock(root, (dir) => {
+// 목록 — 기본은 열린 것(open · answered). 이때 아래 둘을 expired 로 닫는다.
+// 1) 묻던 pane 이 닫힌 요청(open · answered · 종류 무관) — 기다리는 에이전트가 없고 다시 보내기도 안 된다.
+//    panes = () => ({ screen, ids }) | null — 지금 데몬의 소켓과 살아 있는 pane id. 판정할 요청이 있을 때만 한 번 부른다.
+//    null(화면을 못 읽음 · 데몬 꺼짐 · 시간 초과) · 다른 데몬의 pane · 데몬을 모르는 옛 요청은 닫지 않는다(모르면 남긴다)
+// 2) 계획서가 없어졌거나 done 이 된 결정 콘솔. 단 질문(question)은 계획서 상태만으로 닫지 않는다 — 답 없이(open) 또는 받기 전에(answered)
+//    사라지면 에이전트가 영원히 기다린다(docs/requests.md). 계획서가 done 이거나 없어도 에이전트가 ack 하거나 사람이 취소할 때까지 남는다
+const close = (root, dir, request, closedReason) => {
+  Object.assign(request, { state: 'expired', closedReason, rev: request.rev + 1, updatedAt: now() })
+  save(dir, request)
+  logState(root, request)
+}
+export const listRequests = (root, { all = false, panes = null } = {}) => withLock(root, (dir) => {
   const requests = readAll(dir)
+  let live
+  const liveOf = () => {
+    if (live === undefined) live = (panes && panes()) || null
+    return live
+  }
   for (const request of requests) {
-    if (!LIVE.includes(request.state) || !request.links?.plan) continue
+    if (!LIVE.includes(request.state)) continue
+    if (request.pane && request.screen && panes) {
+      const seen = liveOf()
+      if (seen && seen.screen === request.screen && !seen.ids.has(request.pane)) {
+        close(root, dir, request, '묻던 pane 이 닫혔다')
+        continue
+      }
+    }
+    if (!request.links?.plan) continue
     // 결정 콘솔에 묶인 decision(--html · plan-html 과 pr-auto 의 plan:<계획서> 키)만 계획서와 닫는다 — 콘솔 없는 decision 은 질문처럼 답을 기다린다
     const consoleBound = request.kind === 'decision' && (request.links?.html || request.dedupeKey?.startsWith('plan:'))
     if (!consoleBound) continue
     const planFile = resolve(root, request.links.plan)
     const text = existsSync(planFile) ? readFileSync(planFile, 'utf8') : null
     if (text !== null && !/^- Status:\s*done\b/m.test(text)) continue
-    Object.assign(request, { state: 'expired', closedReason: text === null ? '계획서가 없어졌다' : '계획서가 done', rev: request.rev + 1, updatedAt: now() })
-    save(dir, request)
-    logState(root, request)
+    close(root, dir, request, text === null ? '계획서가 없어졌다' : '계획서가 done')
   }
   return { ok: true, requests: all ? requests : requests.filter((request) => LIVE.includes(request.state)) }
 })
