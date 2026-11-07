@@ -1,4 +1,27 @@
 {
+  "0.54": [
+    {
+      "tag": "new",
+      "en": "The Mac app now downloads new versions in the background and installs them when you quit. When an update is ready, a popup in the lower-left corner of the window offers Later or Restart to Update, and after Later it does not appear again for the same version.",
+      "ko": "맥 앱이 새 버전을 뒤에서 받아 두고 앱을 끌 때 설치합니다. 업데이트가 준비되면 창 좌측 하단 팝업에서 [나중에] 나 [재시작하여 업데이트] 를 고를 수 있고, [나중에] 를 고른 버전에는 다시 뜨지 않습니다.",
+      "ja": "Mac アプリは新しいバージョンをバックグラウンドでダウンロードし、アプリの終了時にインストールします。アップデートの準備ができると、ウィンドウ左下のポップアップで「あとで」か「再起動してアップデート」を選べます。「あとで」を選んだバージョンでは再び表示されません。",
+      "zh": "Mac 应用会在后台下载新版本，并在退出应用时安装。更新准备好后，窗口左下角会弹出提示，可以选择“稍后”或“重启并更新”；选择“稍后”的版本不会再次弹出。"
+    },
+    {
+      "tag": "new",
+      "en": "Codex sessions also prepare for conversation compaction: they are reminded to write down what they learned, decided and plan to do next before the conversation is compacted, and after compaction they are pointed to the full conversation record so missing details can be searched instead of guessed.",
+      "ko": "Codex 세션도 대화 압축에 대비합니다. 압축되기 전에 알게 된 것 · 정한 것 · 다음 할 일을 적어 두라는 알림을 받고, 압축 뒤에는 대화 원문 기록을 안내받아 요약에 없는 내용은 짐작하지 않고 찾아볼 수 있습니다.",
+      "ja": "Codex セッションも会話の圧縮に備えます。圧縮される前に分かったこと・決めたこと・次にやることを書き残すよう通知を受け、圧縮後は会話の元の記録が案内されるので、要約にない内容は推測せずに検索できます。",
+      "zh": "Codex 会话也会为对话压缩做准备：在对话被压缩前会收到提醒，写下已了解的情况、已做的决定和下一步；压缩后会指向完整的对话原始记录，摘要中没有的内容可以查找而无需猜测。"
+    },
+    {
+      "tag": "improved",
+      "en": "The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late.",
+      "ko": "압축 알림이 실제로 압축되는 지점의 70% 에서 옵니다(Claude · Codex 모두). 답하기 전에 먼저 적어 두라고 알려 주고, 세션의 첫 응답이 늦게 기록돼도 알림이 빠지지 않습니다.",
+      "ja": "圧縮の通知は、実際に圧縮される地点の 70% で届くようになりました（Claude・Codex とも）。返答する前にまず書き残すよう促し、セッションの最初の応答の記録が遅れても通知が抜けません。",
+      "zh": "压缩提醒现在会在实际压缩点的 70% 时发出（Claude 和 Codex 都是），提示先写下再回复；即使会话的第一条回复记录得较晚，也不会漏掉提醒。"
+    }
+  ],
   "0.53": [
     {
       "tag": "new",
