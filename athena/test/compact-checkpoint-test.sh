@@ -3,6 +3,7 @@
 #   ① 아테나 pane: 계획서 Checkpoint "- Lead pane:" 으로 묶인 진행 중 계획서를 모두 찾고(최근 순) · 묶인 이슈를 함께 알린다 · 스냅샷을 남긴다
 #      일하는 pane(Work ref)은 그대로 하나 · plans/artifacts/ 와 Checkpoint 없는 md 는 후보에서 빠진다
 #   ② warn: 대화 기록 마지막 응답의 문맥이 실제 압축 기준(압축 창 − 33,000)의 70% 를 넘으면 모델에게만 한 번 넣는다(사용자 화면 줄 없음) · 압축 직후(post) 다시 알릴 수 있게 된다
+#      세션 첫 도구 뒤 첫 응답이 기록에 늦게 쓰여도 잠깐 기다려 알린다(2026-11-07 실측)
 #   ③ scripts/transcript-search.mjs: 대화 원문에서 낱말이 든 대목만 짧게 · 비밀값 가림 · 압축 뒤 안내에 원문 자리
 #   ④ scripts/lead-log.mjs: 리드 기록 덧붙이기(가림) · 압축 뒤 아테나 안내 맨 앞에 최근 줄 · 곧 압축 알림이 가리킨다
 #   ⑤ Codex(--tool=codex): rollout 의 token_count · 압축 기준(codex-cli 0.166.0 소스 셈 — 설정 · 모델 limit 과 창 × 9/10 의 작은 쪽)의 70% 에서 알림 한 번 · 세션 id 로 기록 찾기 ·
@@ -179,6 +180,32 @@ code, out = run("warn", {**payload, "session_id": "s-8"})
 check("아테나 세션 알림은 리드 기록을 가리킨다", "lead-log.mjs" in out and "리드 기록" in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9"}, env_extra={"ATHENA_AGENT": "fe"})
 check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "lead-log.mjs" not in out, out)
+
+print("세션 첫 도구 뒤 — 첫 응답이 기록에 늦게 쓰인다")
+# 2026-11-07 대화형 claude 실측: 첫 PostToolUse 훅이 돌 때 그 도구를 부른 응답이 아직 기록에 없다(60ms 뒤 쓰임) · 예전엔 56,439 를 놓쳤다
+def assistant_row(tokens):
+    return json.dumps({"type": "assistant", "isSidechain": False, "message": {"usage": {"input_tokens": 2, "cache_creation_input_tokens": 1000, "cache_read_input_tokens": tokens - 1002}}}) + "\n"
+late = tmp / "late.jsonl"
+late.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "x"}}) + "\n")
+env = {key: value for key, value in os.environ.items() if not key.startswith(("ATHENA_", "CLAUDE_CODE_AUTO_COMPACT", "CODEX_"))}
+env.update({"ATHENA_SCREEN": "studio", "ATHENA_STUDIO": "1", "ATHENA_STUDIO_PANE_ID": "", "TMPDIR": str(marks) + "/", "ATHENA_AGENT": "fe"})
+first = {**payload, "session_id": "s-first", "transcript_path": str(late), "tool_use_id": "toolu_first"}
+proc = subprocess.Popen(["python3", str(hook), "warn"], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True, env=env)
+proc.stdin.write(json.dumps(first)); proc.stdin.close()
+time.sleep(0.3)
+with late.open("a") as stream:
+    stream.write(assistant_row(150000))
+out = proc.stdout.read().strip(); proc.wait(timeout=20)
+check("첫 응답이 훅 시작 뒤 쓰여도 첫 도구 뒤에 알린다", proc.returncode == 0 and "150,000" in out, out)
+late.write_text(json.dumps({"type": "user", "message": {"role": "user", "content": "x"}}) + "\n")
+started = time.monotonic()
+code, out = run("warn", {**first, "session_id": "s-first-none"}, env_extra={"ATHENA_AGENT": "fe"})
+waited = time.monotonic() - started
+check("끝내 안 쓰이면 잠깐(1초 남짓)만 기다리고 조용하다", code == 0 and out == "" and waited < 3, f"{out} · {waited:.2f}s")
+started = time.monotonic()
+code, out = run("warn", {**first, "session_id": "s-first-prompt", "hook_event_name": "UserPromptSubmit", "tool_use_id": ""}, env_extra={"ATHENA_AGENT": "fe"})
+waited = time.monotonic() - started
+check("메시지를 받을 때(도구 없음)는 기다리지 않는다", code == 0 and out == "" and waited < 0.8, f"{out} · {waited:.2f}s")
 
 def node(*args):
     env = {key: value for key, value in os.environ.items() if not key.startswith("ATHENA_")}

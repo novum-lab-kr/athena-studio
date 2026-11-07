@@ -13,6 +13,7 @@
          사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만) · 글은 "답하기 전에 먼저 적어라" 로
          할 일을 앞에 둔다(Codex 는 사용자 글 뒤에 붙어 "적기만" 을 미뤘다)
          아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다
+         세션 첫 도구 뒤에는 기록에 첫 응답이 아직 없을 수 있어 잠깐(FIRST_WRITE_WAIT) 다시 읽는다
 
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
 아테나 세션이면 리드 기록 최근 줄을 맨 앞에 싣는다.
@@ -44,6 +45,7 @@ import shlex
 import subprocess
 import sys
 import tempfile
+import time
 
 ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
@@ -62,6 +64,10 @@ CLAUDE_OUTPUT_RESERVE = 20000
 CLAUDE_SUMMARY_RESERVE = 13000
 # 같은 세션에서 이미 알렸다는 표시 — 세션 id 이름의 빈 파일(압축 직후 지운다)
 WARN_MARK_DIR = pathlib.Path(tempfile.gettempdir()) / 'athena-compact-warn'
+# 세션 첫 응답은 PostToolUse 훅이 시작된 뒤에야 기록에 쓰인다(2026-11-07 대화형 claude 실측 — 훅 시작 60ms 뒤 · 둘째 응답부터는 이미 있다).
+#   그때 사용량을 못 읽으면 이만큼(초) 다시 읽어 본다 — 없으면 조용히 끝(첫 도구 뒤 알림이 다음 메시지까지 밀렸다)
+FIRST_WRITE_WAIT = 1.0
+FIRST_WRITE_STEP = 0.05
 # 대화 기록 끝에서 마지막 응답을 찾을 때 거꾸로 읽는 최대 크기
 TRANSCRIPT_TAIL_LIMIT = 16 * 1024 * 1024
 SNAPSHOT_PREFIX = '- Auto snapshot:'
@@ -536,6 +542,19 @@ def clear_warn_mark(payload: dict) -> None:
             pass
 
 
+def claude_context_now(payload: dict) -> int:
+    """Claude 의 지금 문맥 토큰 — 못 읽으면 -1. 도구 뒤(tool_use_id 가 있다)인데 기록에 응답이 아직 없으면(세션 첫 응답) 잠깐 기다려 다시 읽는다"""
+    transcript_path = str(payload.get('transcript_path') or '')
+    tokens = context_tokens(transcript_path)
+    if tokens >= 0 or not payload.get('tool_use_id') or not os.path.isfile(transcript_path):
+        return tokens
+    deadline = time.monotonic() + FIRST_WRITE_WAIT
+    while tokens < 0 and time.monotonic() < deadline:
+        time.sleep(FIRST_WRITE_STEP)
+        tokens = context_tokens(transcript_path)
+    return tokens
+
+
 def codex_context_now(payload: dict):
     """Codex 의 (지금 문맥 토큰, 압축 기준) — 못 읽으면 (-1, 0)"""
     rollout = codex_rollout(payload)
@@ -556,7 +575,7 @@ def on_warn(payload: dict, codex: bool = False) -> None:
         tokens, window = codex_context_now(payload)
     else:
         window = claude_compact_point(compact_window())
-        tokens = context_tokens(str(payload.get('transcript_path') or '')) if window > 0 else -1
+        tokens = claude_context_now(payload) if window > 0 else -1
     # window 는 여기서부터 실제 압축 기준(토큰)
     if window <= 0 or tokens < 0:
         return
