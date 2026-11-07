@@ -912,6 +912,17 @@ no_comment "켬/끔/확인"
 [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 켬/끔/확인 → [머지] 요청이 열림" || { echo "  ✖ 켬/끔/확인인데 요청이 없다"; FAIL=1; }
 merge_case "켬/끔/자동 → 검증 · 충돌 뒤 바로 squash" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main\(리뷰 끔'
 no_comment "켬/끔/자동"; no_request "켬/끔/자동"
+# 머지 전 검사(docs/pr-auto.md "머지 전 검사") — 워크트리에 scripts/merge-gate.js 가 있으면 PR 제목으로 돌고, 실패면 머지하지 않는다
+mkdir -p "$WT/scripts"
+cat > "$WT/scripts/merge-gate.js" <<'JS'
+require('fs').appendFileSync(process.env.GH_LOG + '.gate', process.argv.slice(2).join(' ') + '\n')
+if (process.env.FAKE_GATE_FAIL) { console.error('feat 제목인데 CHANGELOG 절이 없다'); process.exit(1) }
+JS
+rm -f "$GH_LOG.gate"
+FAKE_GATE_FAIL=1 merge_case "머지 전 검사 실패 → 머지 안 함 · 줄에 이유" ', "autoReview": false, "autoMergeConfirm": false' no '검증 대기 — 머지 전 검사 실패 — feat 제목인데 CHANGELOG 절이 없다'
+merge_case "머지 전 검사 통과 → 머지" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main'
+grep -qx -- '--title t' "$GH_LOG.gate" && echo "  ✔ 머지 전 검사에 PR 제목을 넘긴다" || { echo "  ✖ 머지 전 검사 인자: $(cat "$GH_LOG.gate" 2>/dev/null)"; FAIL=1; }
+rm -rf "$WT/scripts" "$GH_LOG.gate"
 merge_case "켬/켬/직접 → 리뷰 승인까지 · 머지 요청 없음" ', "autoMergeManual": true' no '승인 2/2 → 사람이 직접 머지'
 no_request "켬/켬/직접"
 merge_case "직접 + autoMergeConfirm false → 직접이 먼저" ', "autoMergeManual": true, "autoMergeConfirm": false' no '사람이 직접 머지'
