@@ -811,6 +811,21 @@ const verifiedAt = (repo, worktree, sha) => {
   return run.status === 0 ? { ok: true, why: '' } : { ok: false, why: `검증 실패(종료 ${run.status})` }
 }
 
+// 레포의 머지 전 검사 — 워크트리(같은 HEAD)에 scripts/merge-gate.js 가 있을 때만 `node scripts/merge-gate.js --title <PR 제목>` 을 돈다(docs/pr-auto.md "머지 전 검사").
+// 머지 뒤에야 도는 레포 쪽 확인(예: athena-studio 의 feat 제목 → 다음 minor 의 CHANGELOG 절)을 머지 앞으로 당긴다. 없으면 통과 · 0 이 아니면 머지 안 함(첫 줄이 이유)
+const MERGE_GATE = 'scripts/merge-gate.js'
+const mergeGate = (worktree, title) => {
+  if (!worktree || !existsSync(join(worktree, MERGE_GATE))) return { ok: true, why: '' }
+  const run = spawnSync(process.execPath, [MERGE_GATE, '--title', String(title ?? '')], { cwd: worktree, encoding: 'utf8', timeout: 120_000 })
+  if (run.status === 0) return { ok: true, why: '' }
+  return { ok: false, why: `머지 전 검사 실패 — ${firstLine(run.stderr) || firstLine(run.stdout) || (run.error ? firstLine(run.error.message) : `종료 ${run.status}`)}` }
+}
+// 머지해도 되는 HEAD — 같은 HEAD 검증 통과 뒤 머지 전 검사(PR 제목)
+const readyToMerge = (repo, worktree, sha, title) => {
+  const verify = verifiedAt(repo, worktree, sha)
+  return verify.ok ? mergeGate(worktree, title) : verify
+}
+
 // GitHub 는 push 직후 한동안 mergeable 이 UNKNOWN(계산 중)이라 몇 번 다시 묻는다
 const settledMergeable = async (org, repo, number, current) => {
   let state = current
@@ -856,7 +871,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     console.log('  → 머지는 사람이 직접(레포 "autoMergeManual": true)')
     return
   }
-  const verify = verifiedAt(repo, ref.worktree, sha)
+  const verify = readyToMerge(repo, ref.worktree, sha, pr.title)
   if (!verify.ok) {
     // 검증을 못 했으면 머지 확인을 묻지 않는다 — 같은 HEAD 는 다시 감지되지 않으니(계획서 줄) 새 커밋이 오거나 사람이 그 줄을 지워야 다시 본다
     writeAutoLine(planPath, { ...line, result: `검증 대기 — ${verify.why}` })
@@ -1190,7 +1205,7 @@ export const checkConfirms = async (only = '') => {
     const release = () => { if (current !== file) try { renameSync(current, file) } catch { /* 그새 치워졌다 */ } }
     const planPath = join(ROOT, job.plan)
     const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '', ...(job.max ? { max: job.max } : {}) }
-    const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName'])
+    const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName,title'])
     if (!pr) { release(); continue }
     // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰거나 · 빠른 길로 온 건인데 빠른 길을 껐다
     const flowNow = repoFlow(config, job.repo)
@@ -1260,7 +1275,7 @@ export const checkConfirms = async (only = '') => {
     pr.mergeable = await settledMergeable(org, job.repo, job.number, pr.mergeable)
     if (pr.mergeable === 'UNKNOWN') { release(); console.log(`  … ${job.repo}#${job.number} — GitHub 가 머지 가능 여부를 계산 중 · 다음 확인에 다시`); continue }
     settle()
-    const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : verifiedAt(job.repo, job.worktree, job.sha)
+    const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : readyToMerge(job.repo, job.worktree, job.sha, pr.title)
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
       const result = `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})`
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })

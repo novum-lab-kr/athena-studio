@@ -5,8 +5,10 @@
 //   node scripts/release-files.js notes --version X.Y.Z --out <파일>   그 버전 절 본문(Release 본문)
 //   node scripts/release-files.js manifest --version X.Y.Z --dir dist/release --out <파일>   latest.json(.dmg 기준 · 크기 · sha256)
 //   node scripts/release-files.js updater --version X.Y.Z --dir dist/release --out <파일>    latest-mac.yml(앱 안 업데이트 피드 · .zip 기준 · 크기 · sha512)
-// 순수 부분(releaseVersion · changelogSection · buildManifest · buildUpdaterFeed · releaseDate)은 test/release-files.test.js 가 본다
+//   node scripts/release-files.js gate --title "<PR 제목>"   머지 전 검사 — feat · ! 제목이면 머지 뒤 달릴 X.(Y+1).0 의 minor 절이 있어야 한다(없으면 1) · scripts/merge-gate.js 가 부른다
+// 순수 부분(releaseVersion · changelogSection · mergeGate · gateBase · buildManifest · buildUpdaterFeed · releaseDate)은 test/release-files.test.js 가 본다
 const crypto = require('crypto')
+const { execFileSync } = require('child_process')
 const fs = require('fs')
 const path = require('path')
 const studioHome = require('../src/lib/studio-home')
@@ -47,6 +49,25 @@ function changelogSection(changelog, target) {
   const end = rest.findIndex((line) => /^## /.test(line))
   const body = (end < 0 ? rest : rest.slice(0, end)).join('\n').trim()
   return body || null
+}
+
+// 머지 전 검사의 기준 버전 — release-version.js 와 같이 가장 높은 v* 태그 · 태그가 하나도 없으면 package.json version
+/** @param {string[]} tags */
+function gateBase(tags) {
+  return version.latestTag(tags) || require(path.join(ROOT, 'package.json')).version
+}
+
+// 머지 전 검사 — 이 제목으로 머지되면 release-version.js 가 latest 다음에 달 버전(src/lib/version.js nextVersion 그대로).
+// 가운데 올림(feat · !)이면 그 minor 절이 CHANGELOG 에 있어야 release-mac 의 "배포 버전 · CHANGELOG 확인"(readSection)을 지난다 — 없으면 막는다.
+// 끝자리 올림은 이미 있는 minor 절에 들어가니 보지 않는다(그 절은 앞 minor 머지 때 이 검사가 확인했다)
+/** @param {{ title: unknown, latest: string, changelog: string }} options */
+function mergeGate({ title, latest, changelog }) {
+  if (version.bumpKind(title) !== 'minor') return { ok: true, kind: 'patch', next: null, reason: null }
+  const next = version.nextVersion(latest, title)
+  if (changelogSection(changelog, next)) return { ok: true, kind: 'minor', next, reason: null }
+  const minor = next.split('.').slice(0, 2).join('.')
+  const reason = `feat · ! 제목이라 머지되면 v${next} 가 된다(지금 태그 v${latest}) — CHANGELOG.md 에 '## ${minor} (v${next} – · <날짜>)' 절이 없어 맥 배포가 멈춘다. 그 절과 src/changelog · docs/site-release-notes.json 줄을 먼저 쓴다(공개 안 된 minor 절은 이 절에 합친다)`
+  return { ok: false, kind: 'minor', next, reason }
 }
 
 /** @param {Date} now */
@@ -168,7 +189,22 @@ async function main(args) {
     writeOut(argValue(args, '--out'), `${JSON.stringify(buildUpdaterFeed({ appVersion, releaseDate: new Date().toISOString(), files }), null, 2)}\n`)
     return
   }
-  throw new Error('명령: check · notes · manifest · updater')
+  if (command === 'gate') {
+    // 태그를 받아 온 뒤 정한다(받지 못하면 있는 태그로 — 오프라인 · 얕은 체크아웃) · CHANGELOG 는 이 체크아웃(머지될 트리)의 것
+    version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
+    /** @type {string[]} */
+    let tags = []
+    try {
+      tags = String(execFileSync('git', ['tag', '--list', version.TAG_PATTERN], { cwd: ROOT, env: studioHome.gitEnv(), encoding: 'utf8' })).split('\n').filter(Boolean)
+    } catch {
+      tags = []
+    }
+    const result = mergeGate({ title: argValue(args, '--title'), latest: gateBase(tags), changelog: fs.readFileSync(CHANGELOG, 'utf8') })
+    if (!result.ok) throw new Error(String(result.reason))
+    console.log(result.kind === 'minor' ? `통과 — v${result.next} 의 CHANGELOG 절이 있다` : '통과 — 끝자리 올림(CHANGELOG 절 확인 안 함)')
+    return
+  }
+  throw new Error('명령: check · notes · manifest · updater · gate')
 }
 
 if (require.main === module) {
@@ -178,4 +214,4 @@ if (require.main === module) {
   })
 }
 
-module.exports = { ARCHES, UPDATER_FEED, releaseVersion, headingCovers, changelogSection, releaseDate, buildManifest, buildUpdaterFeed, sha256Of, sha512Of }
+module.exports = { ARCHES, UPDATER_FEED, releaseVersion, headingCovers, changelogSection, mergeGate, gateBase, releaseDate, buildManifest, buildUpdaterFeed, sha256Of, sha512Of }
