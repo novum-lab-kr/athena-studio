@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "已是最新",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "settings.appUpdateAvailable": "新版本已发布 — 请更新",
   "settings.appUpdateRunning": "正在拉取…",
   "settings.appUpdateNotMain": "不在 main 分支({branch})",
   "settings.appUpdateDirty": "有未提交的更改",

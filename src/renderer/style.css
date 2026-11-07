@@ -276,6 +276,16 @@ body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; user-sel
 .toast-close { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--popup-muted); cursor: pointer; }
 .toast-close svg { width: 13px; height: 13px; }
 .toast-close:hover { background: var(--popup-hover); color: var(--text); }
+/* 앱 업데이트 알림 — 좌측 하단(ui/app-update-corner.tsx). 알림(#toast · 우측 하단 · 60)보다 아래 · 대화상자(.pack-overlay · 50)와 작업 · 설정 팝업(40) 사이. 대화상자가 떠 있으면 숨긴다(겹치지 않게) */
+.app-update-corner { position: fixed; z-index: 45; left: 60px; bottom: 16px; display: flex; flex-direction: column; width: max-content; max-width: min(440px, calc(100vw - 76px)); border: 1px solid var(--popup-gold-line); border-radius: 10px; background: var(--popup-bg); color: var(--popup-text); box-shadow: 0 8px 28px rgb(0 0 0 / 35%); font: 13px/1.5 var(--font-ui); }
+body:has(.pack-overlay:not([hidden])) .app-update-corner { display: none; }
+.app-update-corner-head { display: flex; align-items: center; gap: 10px; padding: 10px 8px 10px 12px; }
+.app-update-corner .toast-icon { background: var(--popup-gold-bg); color: var(--accent); }
+.app-update-corner .toast-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.app-update-corner-main { display: flex; flex-direction: column; flex: 1; min-width: 0; }
+.app-update-corner-title { font-weight: 600; }
+.app-update-corner-note { color: var(--popup-muted); font-size: 12px; }
+.app-update-corner .toast-close svg { fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error { color: var(--error); }
 /* 오른쪽 Explorer */

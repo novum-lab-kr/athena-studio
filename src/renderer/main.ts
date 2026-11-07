@@ -140,6 +140,8 @@ async function init(): Promise<void> {
   // 코어 업데이트 결과 — main 이 화면을 다 읽자마자(did-finish-load) 한 번 보내므로 첫 await 전에 받을 준비를 한다
   StudioUi.coreUpdate.mount($('core-update').querySelector('.pack-box') as HTMLElement)
   studio.onCoreUpdate(showCoreUpdate)
+  // 앱 업데이트 알림(좌측 하단) — 상태는 work.ts applyAppUpdate 가 넣는다
+  StudioUi.appUpdateCorner.mount($('app-update-corner'))
   studio.onOldPanes(showOldPanes)
   // 코어 업데이트 중 표시 — 바뀔 때 알림을 받고, 처음 값은 한 번 묻는다
   studio.onCoreUpdateState((running) => ($('core-updating').hidden = !running))

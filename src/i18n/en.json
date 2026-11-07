@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "Up to date",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "settings.appUpdateAvailable": "A new version is out — please update",
   "settings.appUpdateRunning": "Pulling…",
   "settings.appUpdateNotMain": "Not on main ({branch})",
   "settings.appUpdateDirty": "Uncommitted changes",

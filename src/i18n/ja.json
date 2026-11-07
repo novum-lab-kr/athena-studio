@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "最新です",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "settings.appUpdateAvailable": "新しいバージョンが出ました — 更新してください",
   "settings.appUpdateRunning": "取得中…",
   "settings.appUpdateNotMain": "main ブランチではありません({branch})",
   "settings.appUpdateDirty": "コミットしていない変更があります",
