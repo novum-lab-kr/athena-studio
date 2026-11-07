@@ -36,16 +36,16 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.53: 공개 v0.52.1 이후 v0.53.0 ~ v0.53.3(직접 머지 4건)에서 사용자에게 보이는 변경만. 사이트 릴리스 줄 파일 8c7ed5d · 그 ko 말투 59b7732 · 배포 판정 6c0a111 은 배포 · 문서 내부라 뺐고, 압축 대비 4b67490 은 곧 압축 알림 · 리드 기록(New)과 압축 뒤 다시 읽기 · 원문 안내(Improved) 두 줄로 나눴다. 범위 끝은 열어 둔다 -->
 
-<!-- 0.54: 공개 v0.53.7 이후 v0.54.0(#248 자동 업데이트)과, 공개판 v0.53.5 ~ v0.53.7 에 실렸지만 0.53 절(v0.53.3 까지)에 없던 압축 대비 변경(8e4e41d Codex 압축 대비 · #246 70% 알림 · #247 늦은 첫 응답)에서 사용자에게 보이는 변경만. 압축 대비 시험 보강 · 시험 실패 세기 · 압축 흐름 그림 설명은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
+<!-- 0.55: 공개 v0.53.7 이후 v0.54.0 ~ v0.55.x. v0.54.0 은 release-mac 이 0.54 절이 없어 멈춰 공개되지 않았고 그사이 #249(feat)로 0.55 가 돼, 0.40 · 0.46 처럼 공개 안 된 minor 를 다음 공개 절에 합쳤다. v0.54.0(#248 자동 업데이트) · v0.55.0(#249 압축 뒤 안내에 최근 사용자 말 원문 · 열린 요청 · 에이전트 pane — 압축 Improved 줄에 합침)과, 공개판 v0.53.5 ~ v0.53.7 에 실렸지만 0.53 절(v0.53.3 까지)에 없던 압축 대비 변경(8e4e41d Codex 압축 대비 · #246 70% 알림 · #247 늦은 첫 응답)에서 사용자에게 보이는 변경만. 압축 대비 시험 보강 · 시험 실패 세기 · 압축 흐름 그림 설명은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
 
-## 0.54 (v0.54.0 – · Nov 7, 2026)
+## 0.55 (v0.55.0 – · Nov 7, 2026)
 
 ### New
 - The Mac app now downloads new versions in the background and installs them when you quit. When an update is ready, a popup in the lower-left corner of the window offers Later or Restart to Update, and after Later it does not appear again for the same version.
 - Codex sessions also prepare for conversation compaction: they are reminded to write down what they learned, decided and plan to do next before the conversation is compacted, and after compaction they are pointed to the full conversation record so missing details can be searched instead of guessed.
 
 ### Improved
-- The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late.
+- The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late. After compaction, the note also repeats your last 20 messages word for word, and for the Athena lead its open requests and running agent panes.
 
 ## 0.53 (v0.53.0 – · Nov 6, 2026)
 
