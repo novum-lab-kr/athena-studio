@@ -59,6 +59,7 @@ export type WorkCtx = {
   diagramsReady?: unknown
   workDetail?: unknown
   prepareBoardPort?: () => void
+  studioEnv?: () => Record<string, string>
 }
 
 type WorkDeps = {
@@ -188,6 +189,13 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       if (permissionBusy === generation) permissionBusy = null
     }
   }
+  // request list 가 이 창 데몬의 pane 목록을 읽게(묻던 pane 이 닫힌 요청을 닫는다 — 코어 listRequests). 안 넘기면 코어는 ~/.athena-studio/daemon.json
+  // (배포판 데몬)을 볼 수 있다 — 개발 앱과 배포판은 요청 폴더를 같이 쓰고 pane 번호가 겹친다. pane 안 표시(ATHENA_STUDIO)는 넣지 않는다
+  const requestsEnv = () => {
+    const env = { ...(ctx.studioEnv?.() ?? {}) }
+    delete env.ATHENA_STUDIO
+    return env
+  }
   ctx.refreshRequests = async () => {
     if (requestsBusy) {
       requestsAgain = true
@@ -196,7 +204,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     const dir = ctx.athenaDir, generation = permissionGeneration
     if (!core.checkAthenaDir(dir).ok) return requestsState()
     requestsBusy = (async () => {
-      const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir }))
+      const next = requestsModel.normalizeRequests(await runCore(['request', 'list'], { dir, extraEnv: requestsEnv() }))
       // 그새 팩을 바꿨으면 버린다
       if (dir !== ctx.athenaDir || generation !== permissionGeneration) return requestsState()
       const before = requestsState()

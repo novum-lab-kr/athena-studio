@@ -6,7 +6,7 @@
 #       KEEP=1 test/requests-test.sh     → 임시 폴더를 남긴다
 #
 # 보는 것(docs/requests.md): 열기 · 자리(팩 데이터 state/requests) · 같은 키는 고치기 · rev 충돌 · 두 번 답하기 거절 · ack(두 번 불러도 됨) ·
-# 대화로 답하면 바로 delivered(다른 pane 이 대신 답하면 묻던 pane 에 넣고 answered — 가짜 화면 CLI) · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
+# 대화로 답하면 바로 delivered(다른 pane 이 대신 답하면 묻던 pane 에 넣고 answered — 가짜 화면 CLI) · 묻던 pane 이 닫히면 expired · 사람 글이면 훅이 by chat 으로 닫기 · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
 # 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기 · 사용법 오류
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
@@ -91,6 +91,10 @@ if [ "$1 $2" = "pane get" ]; then
   printf '{"pane":{"id":"%s"}}\n' "$3"
 fi
 [ "$1 $2 $3" = "pane run pgone" ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
+if [ "$1 $2" = "pane list" ]; then
+  [ "${FAKE_PANES:-}" = fail ] && exit 3   # 데몬에 못 붙음
+  printf '{"panes":[{"id":"p5"},{"id":"pg1"}]}\n'
+fi
 exit 0
 CLIEOF
 chmod +x "$WORK/bin/athena-studio-cli"
@@ -108,6 +112,56 @@ QG="$(A request open --kind question --title 닫힌pane --pane pgone | field req
 R="$(AS pg1 request answer "$QG" --by chat --text 있다)"
 check "묻던 pane 에 못 보내면 answered 로 남고 sent false(앱에서 다시 보내기)" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = False ]' "$R"
 A request cancel "$QG" > /dev/null
+
+section "묻던 pane 이 닫힌 요청"
+# 가짜 화면: 살아 있는 pane 은 p5 · pg1. 요청에는 연 곳의 데몬(소켓 /x)이 적힌다 — 다른 데몬(/y)의 pane 번호로는 판정하지 않는다
+ASK() { env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pg1 ATHENA_STUDIO_SOCKET="$1" ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/athena.mjs "${@:2}" --json 2>/dev/null | tail -1; }
+DQ="$(ASK /x request open --kind question --title 닫힌질문 --pane pdead | field request.id)"
+DD="$(ASK /x request open --kind decision --title 닫힌결정 --option A --pane pdead | field request.id)"
+A request answer "$DD" --by app --choice A > /dev/null
+LQ5="$(ASK /x request open --kind question --title 산질문 --pane p5 | field request.id)"
+OTHER="$(ASK /y request open --kind question --title 다른데몬 --pane pdead | field request.id)"
+OLDQ="$(ASK /x request open --kind question --title 옛요청 --pane pdead | field request.id)"
+python3 -c 'import json,sys; p=sys.argv[1]; d=json.load(open(p)); d.pop("screen",None); json.dump(d,open(p,"w"))' "$DIR/$OLDQ.json"
+NOPANE="$(env ATHENA_SCREEN=none ATHENA_STUDIO_SOCKET=/x node scripts/athena.mjs request open --kind question --title pane없음 --json 2>/dev/null | tail -1 | field request.id)"
+check "열 때 데몬(소켓)을 적는다 · pane 이 없으면 적지 않는다" '[ "$(A request show "$DQ" | field request.screen)" = /x ] && [ -z "$(A request show "$NOPANE" | field request.screen)" ]'
+: > "$FAKE_LOG"
+FAKE_PANES=fail ASK /x request list > /dev/null
+check "화면을 못 읽으면(데몬 꺼짐) 아무것도 닫지 않는다" '[ "$(A request show "$DQ" | field request.state)" = open ] && [ "$(A request show "$DD" | field request.state)" = answered ]'
+A request list > /dev/null
+check "소켓 · 화면이 없는 목록(ATHENA_SCREEN=none)은 닫지 않는다" '[ "$(A request show "$DQ" | field request.state)" = open ]'
+: > "$FAKE_LOG"
+R="$(ASK /x request list)"
+check "닫힌 pane 의 질문(open) → expired · 묻던 pane 이 닫혔다" '[ "$(A request show "$DQ" | field request.state)" = expired ] && [ "$(A request show "$DQ" | field request.closedReason)" = "묻던 pane 이 닫혔다" ]'
+check "닫힌 pane 의 결정(answered)도 expired · 목록에서 빠진다" '[ "$(A request show "$DD" | field request.state)" = expired ] && ! echo "$R" | grep -q "$DD"'
+check "살아 있는 pane 의 질문은 열린 채" '[ "$(A request show "$LQ5" | field request.state)" = open ] && echo "$R" | grep -q "$LQ5"'
+check "다른 데몬 · 데몬을 모르는 옛 요청 · pane 없는 요청은 그대로" '[ "$(A request show "$OTHER" | field request.state)" = open ] && [ "$(A request show "$OLDQ" | field request.state)" = open ] && [ "$(A request show "$NOPANE" | field request.state)" = open ]'
+check "pane 목록은 목록 한 번에 한 번만 읽는다" '[ "$(grep -c "^pane list" "$FAKE_LOG")" = 1 ]' "$(cat "$FAKE_LOG")"
+for LEFT in "$LQ5" "$OTHER" "$OLDQ" "$NOPANE"; do A request cancel "$LEFT" > /dev/null; done
+
+section "대화로 답한 질문 — pane-session 훅(UserPromptSubmit)"
+# 묻던 pane(pc1)에 사람이 직접 글을 쓰면 그 pane 의 열린 질문만 by chat 으로 닫는다. session_id 를 주지 않아 pane 기록은 쓰지 않는다
+SAY() { printf '%s' "$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"UserPromptSubmit","prompt":sys.argv[1]}))' "$2")" \
+  | env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID="$1" ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" python3 scripts/hooks/pane-session.py; }
+CQ="$(ASK /x request open --kind question --title 대화질문 --pane pc1 | field request.id)"
+CO="$(ASK /x request open --kind question --title 남의질문 --pane pc2 | field request.id)"
+CA="$(ASK /x request open --kind question --title 앱에서답함 --pane pc1 | field request.id)"
+A request answer "$CA" --by app --choice 가 > /dev/null
+CD="$(ASK /x request open --kind decision --title 대화결정 --option A --pane pc1 | field request.id)"
+OUT="$(SAY pc1 "[요청 $CQ] 대화질문 — 답: 가")"
+check "앱 답 줄([요청 <id>] … 답:)은 대화 답으로 치지 않는다" '[ "$(A request show "$CQ" | field request.state)" = open ] && [ -z "$OUT" ]' "$OUT"
+OUT="$(SAY pc1 '[athena-studio-fe → 아테나] 끝났습니다')"
+check "pane 사이 글([누구 → 누구])도 치지 않는다" '[ "$(A request show "$CQ" | field request.state)" = open ] && [ -z "$OUT" ]' "$OUT"
+OUT="$(SAY pc1 '<system-reminder>자동</system-reminder>')"
+check "시스템 글(<…>)도 치지 않는다" '[ "$(A request show "$CQ" | field request.state)" = open ] && [ -z "$OUT" ]' "$OUT"
+OUT="$(SAY pc1 '  워크트리로 해 주세요  ')"
+check "사람 글 → 그 pane 의 열린 질문은 by chat 으로 delivered · 답 글 적기" '[ "$(A request show "$CQ" | field request.state)" = delivered ] && [ "$(A request show "$CQ" | field request.answer.by)" = chat ] && [ "$(A request show "$CQ" | field request.answer.text)" = "워크트리로 해 주세요" ]' "$(A request show "$CQ")"
+check "훅 추가 문맥으로 닫은 질문을 알린다(답이 아니었으면 다시 물어라)" 'echo "$OUT" | python3 -c "import json,sys; o=json.load(sys.stdin)[\"hookSpecificOutput\"]; sys.exit(0 if o[\"hookEventName\"]==\"UserPromptSubmit\" and \"$CQ\" in o[\"additionalContext\"] and \"다시 물어라\" in o[\"additionalContext\"] else 1)"' "$OUT"
+check "다른 pane 의 질문은 그대로" '[ "$(A request show "$CO" | field request.state)" = open ]'
+check "answered(앱에서 이미 답함) · decision 은 건드리지 않는다" '[ "$(A request show "$CA" | field request.state)" = answered ] && [ "$(A request show "$CD" | field request.state)" = open ]'
+OUT="$(SAY pc1 '또 한마디')"
+check "닫을 질문이 없으면 아무것도 내지 않는다" '[ -z "$OUT" ]' "$OUT"
+for LEFT in "$CO" "$CA" "$CD"; do A request cancel "$LEFT" > /dev/null; done
 C="$(A request open --kind question --title 취소할것 | field request.id)"
 check "취소 → cancelled · 이유" '[ "$(A request cancel "$C" --reason 필요없음 | field request.closedReason)" = 필요없음 ]'
 check "취소한 것 다시 취소 → conflict" '[ "$(A request cancel "$C" | field error)" = conflict ]'
