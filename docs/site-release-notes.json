@@ -1,5 +1,5 @@
 {
-  "0.54": [
+  "0.55": [
     {
       "tag": "new",
       "en": "The Mac app now downloads new versions in the background and installs them when you quit. When an update is ready, a popup in the lower-left corner of the window offers Later or Restart to Update, and after Later it does not appear again for the same version.",
@@ -16,10 +16,10 @@
     },
     {
       "tag": "improved",
-      "en": "The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late.",
-      "ko": "압축 알림이 실제로 압축되는 지점의 70% 에서 옵니다(Claude · Codex 모두). 답하기 전에 먼저 적어 두라고 알려 주고, 세션의 첫 응답이 늦게 기록돼도 알림이 빠지지 않습니다.",
-      "ja": "圧縮の通知は、実際に圧縮される地点の 70% で届くようになりました（Claude・Codex とも）。返答する前にまず書き残すよう促し、セッションの最初の応答の記録が遅れても通知が抜けません。",
-      "zh": "压缩提醒现在会在实际压缩点的 70% 时发出（Claude 和 Codex 都是），提示先写下再回复；即使会话的第一条回复记录得较晚，也不会漏掉提醒。"
+      "en": "The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late. After compaction, the note also repeats your last 20 messages word for word, and for the Athena lead its open requests and running agent panes.",
+      "ko": "압축 알림이 실제로 압축되는 지점의 70% 에서 옵니다(Claude · Codex 모두). 답하기 전에 먼저 적어 두라고 알려 주고, 세션의 첫 응답이 늦게 기록돼도 알림이 빠지지 않습니다. 압축 뒤 안내에는 최근 사용자 말 20개가 원문 그대로 실리고, 아테나 세션에는 열린 요청과 돌고 있는 에이전트 pane 도 실립니다.",
+      "ja": "圧縮の通知は、実際に圧縮される地点の 70% で届くようになりました（Claude・Codex とも）。返答する前にまず書き残すよう促し、セッションの最初の応答の記録が遅れても通知が抜けません。圧縮後の案内には直近のユーザーの発言 20 件が原文のまま載り、Athena リードのセッションには未完了のリクエストと動いているエージェントの pane も載ります。",
+      "zh": "压缩提醒现在会在实际压缩点的 70% 时发出（Claude 和 Codex 都是），提示先写下再回复；即使会话的第一条回复记录得较晚，也不会漏掉提醒。压缩后的提示还会原样附上最近 20 条用户消息，Athena 负责人会话还会附上未完成的请求和正在运行的代理 pane。"
     }
   ],
   "0.53": [
