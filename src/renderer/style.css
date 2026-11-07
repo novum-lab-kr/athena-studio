@@ -276,6 +276,20 @@ body.pane-dragging, body.pane-dragging * { cursor: grabbing !important; user-sel
 .toast-close { flex: none; display: grid; place-items: center; width: 22px; height: 22px; padding: 0; border: 0; border-radius: 5px; background: transparent; color: var(--popup-muted); cursor: pointer; }
 .toast-close svg { width: 13px; height: 13px; }
 .toast-close:hover { background: var(--popup-hover); color: var(--text); }
+/* 앱 업데이트 알림 — 좌측 하단(ui/app-update-corner.tsx). 알림(#toast · 우측 하단 · 60)보다 아래 · 대화상자(.pack-overlay · 50)와 작업 · 설정 팝업(40) 사이. 대화상자가 떠 있으면 숨긴다(겹치지 않게) */
+.app-update-corner { position: fixed; z-index: 45; left: 60px; bottom: 16px; display: flex; flex-direction: column; width: min(340px, calc(100vw - 76px)); border: 1px solid var(--popup-gold-line); border-radius: 10px; background: var(--popup-bg); color: var(--popup-text); box-shadow: 0 8px 28px rgb(0 0 0 / 35%); font: 13px/1.5 var(--font-ui); }
+body:has(.pack-overlay:not([hidden])) .app-update-corner { display: none; }
+.app-update-corner-head { display: flex; align-items: flex-start; gap: 10px; padding: 12px 14px 0 12px; }
+.app-update-corner .toast-icon { background: var(--popup-gold-bg); color: var(--accent); }
+.app-update-corner .toast-icon svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+.app-update-corner-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; padding-top: 1px; }
+.app-update-corner-title { font-weight: 600; }
+.app-update-corner-message { color: var(--popup-muted); }
+.app-update-corner-main:lang(ko) { word-break: keep-all; }
+.app-update-corner-note { color: var(--popup-muted); font-size: 12px; }
+.app-update-corner-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px 12px; }
+.settings-app-button.app-update-corner-later { border-color: rgb(255 255 255 / 18%); color: var(--popup-text); }
+.settings-app-button.app-update-corner-later:hover, .settings-app-button.app-update-corner-later:focus-visible { border-color: var(--popup-text); background: transparent; color: var(--popup-text); }
 @keyframes spin { to { transform: rotate(360deg); } }
 .error { color: var(--error); }
 /* 오른쪽 Explorer */

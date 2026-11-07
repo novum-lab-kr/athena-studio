@@ -9,7 +9,7 @@ const packageMac = require('../scripts/package-mac')
 // 가짜 electron-updater — check · download · quitAndInstall 의 결과를 테스트가 정한다
 function fakeUpdater({ check = async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' } }), download = async () => ['/cache/update.zip'], install = () => {} } = {}) {
   const updater = new EventEmitter()
-  Object.assign(updater, { autoDownload: true, autoInstallOnAppQuit: true, disableDifferentialDownload: false, allowDowngrade: true, allowPrerelease: true, logger: null })
+  Object.assign(updater, { autoDownload: false, autoInstallOnAppQuit: false, disableDifferentialDownload: false, allowDowngrade: true, allowPrerelease: true, logger: null })
   updater.calls = []
   updater.checkForUpdates = () => (updater.calls.push('check'), check())
   updater.downloadUpdate = () => (updater.calls.push('download'), download())
@@ -27,10 +27,10 @@ function setup(options = {}, extra = {}) {
   return { updater, native, log, controller, changes: () => changes }
 }
 
-test('자동으로는 아무것도 하지 않게 설정한다 — 받기 · 끌 때 설치 · 차등 받기 · 낮추기 · 시험판 끔 · 기록은 넘긴 log', () => {
+test('뒤에서 받아 두고 끌 때 설치하게 설정한다(2026-11-07) — 차등 받기 · 낮추기 · 시험판은 끔 · 기록은 넘긴 log', () => {
   const { updater, log } = setup()
-  assert.equal(updater.autoDownload, false)
-  assert.equal(updater.autoInstallOnAppQuit, false)
+  assert.equal(updater.autoDownload, true)
+  assert.equal(updater.autoInstallOnAppQuit, true)
   assert.equal(updater.disableDifferentialDownload, true)
   assert.equal(updater.allowDowngrade, false)
   assert.equal(updater.allowPrerelease, false)
@@ -39,8 +39,8 @@ test('자동으로는 아무것도 하지 않게 설정한다 — 받기 · 끌 
 
 test('확인 전에는 줄을 숨기고(unavailable) · 새 버전이 있으면 behind + latest · 없으면 current', async () => {
   const { controller } = setup()
-  assert.deepEqual(controller.view(), { state: 'unavailable', behind: 0, branch: null, reason: null, version: '0.15.8', latest: null, running: false })
-  assert.deepEqual(await controller.check(), { state: 'behind', behind: 0, branch: null, reason: null, version: '0.15.8', latest: '0.15.9', running: false })
+  assert.deepEqual(controller.view(), { state: 'unavailable', behind: 0, branch: null, reason: null, version: '0.15.8', latest: null, running: false, phase: null })
+  assert.deepEqual(await controller.check(), { state: 'behind', behind: 0, branch: null, reason: null, version: '0.15.8', latest: '0.15.9', running: false, phase: null })
   const none = setup({ check: async () => ({ isUpdateAvailable: false, updateInfo: { version: '0.15.8' } }) })
   assert.equal((await none.controller.check()).state, 'current')
   // updater 가 꺼져 있으면(배포판이 아님) null
@@ -51,7 +51,7 @@ test('확인 전에는 줄을 숨기고(unavailable) · 새 버전이 있으면 
 test('확인 실패 — 처음이면 줄을 보이고 까닭(check-failed) · 앞서 본 새 버전은 그대로', async () => {
   let fail = true
   const { controller } = setup({ check: async () => (fail ? Promise.reject(new Error('offline')) : { isUpdateAvailable: true, updateInfo: { version: '0.15.9' } }) })
-  assert.deepEqual(await controller.check(), { state: 'current', behind: 0, branch: null, reason: 'check-failed', version: '0.15.8', latest: null, running: false })
+  assert.deepEqual(await controller.check(), { state: 'current', behind: 0, branch: null, reason: 'check-failed', version: '0.15.8', latest: null, running: false, phase: null })
   fail = false
   await controller.check()
   fail = true
@@ -119,6 +119,66 @@ test('설치 중이 아닐 때 온 error 는 기록만 — 던지지 않는다(�
   updater.emit('error', new Error('later'))
   assert.ok(log.lines.some((line) => /later/.test(line)))
   assert.equal(controller.view().reason, null)
+})
+
+// ── 뒤에서 받기(autoDownload) — 확인이 준 downloadPromise 를 따라간다 ──
+function deferred() {
+  let resolve, reject
+  const promise = new Promise((ok, no) => ((resolve = ok), (reject = no)))
+  return { promise, resolve, reject }
+}
+const tick = () => new Promise((resolve) => setImmediate(resolve))
+
+test('뒤에서 받기 — 받는 동안 running · Squirrel 이 서명 검사까지 끝내면(native update-downloaded) phase ready · 그 뒤 확인은 다시 묻지 않는다', async () => {
+  const download = deferred()
+  const { controller, updater, native } = setup({ check: async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: download.promise }) })
+  const checked = await controller.check()
+  assert.equal(checked.state, 'behind')
+  assert.equal(checked.running, true)
+  assert.equal(checked.phase, null)
+  download.resolve(['/cache/update.zip'])
+  await tick()
+  // 다 받았어도 서명 검사 전에는 아직 준비 전
+  assert.equal(controller.view().phase, null)
+  assert.equal(controller.view().running, true)
+  native.emit('update-downloaded')
+  assert.deepEqual(controller.view(), { state: 'behind', behind: 0, branch: null, reason: null, version: '0.15.8', latest: '0.15.9', running: false, phase: 'ready' })
+  await controller.check()
+  assert.deepEqual(updater.calls, ['check'])
+})
+
+test('준비된 뒤 [다시 시작] — 받기 없이 바로 quitAndInstall · 교체가 시작되면 ok', async () => {
+  const { controller, updater, native } = setup({ check: async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: Promise.resolve([]) }), install: () => setImmediate(() => native.emit('before-quit-for-update')) })
+  await controller.check()
+  await tick()
+  native.emit('update-downloaded')
+  assert.deepEqual(await controller.run(), { ok: true })
+  assert.deepEqual(updater.calls, ['check', 'install'])
+})
+
+test('뒤에서 받기 실패 — 까닭(checksum-failed · download-failed)을 남기고 running 을 푼다 · 다음 확인이 다시 받는다', async () => {
+  const download = deferred()
+  let calls = 0
+  const { controller } = setup({ check: async () => (calls++ === 0 ? { isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: download.promise } : { isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: new Promise(() => {}) }) })
+  await controller.check()
+  download.reject(Object.assign(new Error('sha512 checksum mismatch'), { code: 'ERR_CHECKSUM_MISMATCH' }))
+  await tick()
+  assert.equal(controller.view().running, false)
+  assert.equal(controller.view().reason, 'checksum-failed')
+  assert.equal(controller.view().phase, null)
+  const again = await controller.check()
+  assert.equal(again.running, true)
+  assert.equal(again.reason, null)
+})
+
+test('뒤에서 받은 판의 서명 검사 실패(updater error) — install-failed · 준비되지 않는다', async () => {
+  const { controller, updater } = setup({ check: async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: Promise.resolve([]) }) })
+  await controller.check()
+  await tick()
+  updater.emit('error', new Error('Code signature at URL … did not pass validation'))
+  assert.equal(controller.view().running, false)
+  assert.equal(controller.view().reason, 'install-failed')
+  assert.equal(controller.view().phase, null)
 })
 
 test('받기 까닭 고르기', () => {

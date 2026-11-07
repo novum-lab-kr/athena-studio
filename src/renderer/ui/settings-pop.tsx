@@ -6,7 +6,8 @@ import { createStore, mountIsland, showToast, useSay, useStore } from './bridge.
 import type { Say } from './bridge.ts'
 
 // 앱 업데이트 상태 — main 이 보내는 값(onAppUpdate)을 바닐라가 넣는다. failure 는 방금 누른 [업데이트] 가 못 한 까닭(다음 상태가 오면 지운다)
-const appUpdateStore = createStore<{ status: AppUpdateView | null; failure: string | null }>({ status: null, failure: null })
+// 좌측 하단 팝업(app-update-corner.tsx)도 이 값 · runAppUpdate · updateNote 를 같이 쓴다
+export const appUpdateStore = createStore<{ status: AppUpdateView | null; failure: string | null }>({ status: null, failure: null })
 
 export function setAppUpdate(next: AppUpdateView | null): void {
   appUpdateStore.set({ status: next, failure: null })
@@ -159,7 +160,7 @@ function reasonText(say: Say, reason: string | null, branch: string | null): str
   return ''
 }
 
-function updateNote(say: Say, status: AppUpdateView, failure: string | null): string {
+export function updateNote(say: Say, status: AppUpdateView, failure: string | null): string {
   if (status.running && status.phase === 'waiting') return say('settings.appUpdateWaiting')
   if (status.running && status.phase === 'installing') return say('settings.appUpdateInstalling')
   if (status.running) return say('settings.appUpdateRunning')
@@ -176,7 +177,7 @@ function updateNote(say: Say, status: AppUpdateView, failure: string | null): st
   return say('settings.appUpdateCurrent')
 }
 
-async function runAppUpdate() {
+export async function runAppUpdate() {
   const { status } = appUpdateStore.get()
   if (!status || status.running) return
   const result = await studio.runAppUpdate()
@@ -184,8 +185,8 @@ async function runAppUpdate() {
   appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'ff-failed' })
 }
 
-// 설치가 끝났고 [나중에] 를 골랐을 때 — 다시 시작만 남는다
-async function restartAppUpdate() {
+// 설치가 끝났고(개발판) · 받아 둔 판이 준비됐을 때(배포판) — 다시 시작만 남는다(좌하단 팝업도 부른다)
+export async function restartAppUpdate() {
   const result = await studio.restartAppUpdate()
   if (result && result.ok) return // 앱이 곧 꺼졌다 다시 켜진다
   appUpdateStore.set({ ...appUpdateStore.get(), failure: (result && result.reason) || 'restart-failed' })

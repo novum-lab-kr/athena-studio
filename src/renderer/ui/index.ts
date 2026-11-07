@@ -12,8 +12,9 @@ import * as welcome from './pack-welcome.tsx'
 import * as browser from './browser-bar.tsx'
 import * as notices from './notices.tsx'
 import * as coreUpdate from './core-update.tsx'
+import * as appUpdateCorner from './app-update-corner.tsx'
 import * as spaces from './spaces.tsx'
 
-const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, browser, notices, spaces, packRail, packMenu, packProgress, coreUpdate }
+const StudioUi = { connect, textsChanged, explorer, monitor, settings, work, paneDetail, welcome, browser, notices, spaces, packRail, packMenu, packProgress, coreUpdate, appUpdateCorner }
 
 export { StudioUi }
