@@ -7,9 +7,11 @@
   post — 압축 직후(SessionStart, source=compact): "요약만 믿지 말고 계획서 Checkpoint 부터 다시 읽어라" 를
          계획서 경로·스냅샷과 함께 대화 맨 앞에 넣는다
 
-  warn — 도구를 쓴 뒤 · 메시지를 받을 때(PostToolUse · UserPromptSubmit): 지금 문맥이 압축 창의 80% 를 넘으면
+  warn — 도구를 쓴 뒤 · 메시지를 받을 때(PostToolUse · UserPromptSubmit): 지금 문맥이 실제 압축 기준의 70% 를 넘으면
+         (Claude 는 압축 창 − 33,000 · Codex 는 codex_compact_limit — 2026-11-07 사용자: 압축점의 70%)
          "곧 압축 — 알게 된 것을 계획서 · 이슈에 적어 두라" 를 모델에게만 한 번 넣는다(압축 뒤 다시 한 번).
-         사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만)
+         사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만) · 글은 "답하기 전에 먼저 적어라" 로
+         할 일을 앞에 둔다(Codex 는 사용자 글 뒤에 붙어 "적기만" 을 미뤘다)
          아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다
 
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
@@ -52,8 +54,12 @@ PLANS_DIR = ATHENA_DIR / 'plans'
 ISSUES_DIR = ATHENA_DIR / 'issues'
 # 계획서가 아닌 산출물(검증 표 · 리뷰 메모 등)을 두는 곳 — 진행 중 계획서로 치지 않는다
 NOT_PLAN_DIRS = ('artifacts',)
-# 압축 창의 이만큼을 넘으면 알린다
-WARN_RATIO = 0.8
+# 실제 압축 기준의 이만큼(%)을 넘으면 알린다 — 정수 셈(경계에서 소수 오차 없게)
+WARN_PERCENT = 70
+# Claude Code 2.1.319 의 자동 압축 기준 = 압축 창 − 출력 여유 min(maxOutputTokens, 20,000) − 요약 여유 13,000
+#   (설치본 Ure · L4 — 시험 실측 200k 에서 167,392 · 100k 에서 68,219). 출력 한도가 20,000 보다 작은 모델은 기준이 더 늦으니 알림은 더 이르다
+CLAUDE_OUTPUT_RESERVE = 20000
+CLAUDE_SUMMARY_RESERVE = 13000
 # 같은 세션에서 이미 알렸다는 표시 — 세션 id 이름의 빈 파일(압축 직후 지운다)
 WARN_MARK_DIR = pathlib.Path(tempfile.gettempdir()) / 'athena-compact-warn'
 # 대화 기록 끝에서 마지막 응답을 찾을 때 거꾸로 읽는 최대 크기
@@ -340,6 +346,12 @@ def parse_window(value) -> int:
     return int(number * 1000) if number < 1000 else int(number)
 
 
+def claude_compact_point(window: int) -> int:
+    """압축 창에서 Claude Code 가 실제로 압축하는 토큰 수. 창을 모르거나 너무 작으면 0(알리지 않는다)"""
+    point = window - CLAUDE_OUTPUT_RESERVE - CLAUDE_SUMMARY_RESERVE
+    return point if window > 0 and point > 0 else 0
+
+
 def compact_window() -> int:
     """이 세션의 압축 창 — 환경 변수 CLAUDE_CODE_AUTO_COMPACT_WINDOW 가 먼저, 없으면 본체 .claude/settings.json autoCompactWindow
     (아테나 세션은 프로젝트 설정 · 위임 pane 은 delegate.sh 가 같은 값을 --settings 로 넣는다 — agent_hooks.auto_compact_window)"""
@@ -543,11 +555,12 @@ def on_warn(payload: dict, codex: bool = False) -> None:
     if codex:
         tokens, window = codex_context_now(payload)
     else:
-        window = compact_window()
+        window = claude_compact_point(compact_window())
         tokens = context_tokens(str(payload.get('transcript_path') or '')) if window > 0 else -1
+    # window 는 여기서부터 실제 압축 기준(토큰)
     if window <= 0 or tokens < 0:
         return
-    if tokens < window * WARN_RATIO:
+    if tokens * 100 < window * WARN_PERCENT:
         # 압축(직후 훅이 못 돌았어도)으로 문맥이 줄었으면 다음에 다시 알린다
         clear_warn_mark(payload)
         return
@@ -565,10 +578,11 @@ def on_warn(payload: dict, codex: bool = False) -> None:
     if is_lead():
         where = (f'리드 기록(node {shlex.quote(str(ATHENA_DIR / "scripts/lead-log.mjs"))} <정정|실패|사실|결정> "<한 줄>" — {lead_log_file()})'
                  f'과 {where}')
+    # 할 일을 맨 앞에 시키는 말로 — 사용자 글 뒤에 붙는 Codex 는 "적기만" 을 뒤로 미뤄 끝내 적지 않았다(2026-11-06 시험)
     context = (
-        f'⚠️ 곧 대화가 압축된다 — 문맥 {tokens:,} 토큰 · 압축 창 {window:,} 의 {percent}%. '
-        f'압축되면 요약만 남는다. 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 지금 {where}에 적어 둔다. '
-        '사용자에게 따로 알리지 않고 적기만 한다.'
+        f'⚠️ 곧 대화가 압축된다 — 문맥 {tokens:,} 토큰 · 압축 기준 {window:,} 의 {percent}%. '
+        f'이번 턴에서 답하기 전에 먼저, 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 {where}에 적는다. '
+        '압축되면 요약만 남아 적지 않은 것은 사라진다. 적은 뒤 하던 일을 이어 가고, 이 알림 자체는 사용자에게 말하지 않는다.'
     )
     # 모델에게만 — 사용자 화면 줄(systemMessage)은 내지 않는다
     print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}, ensure_ascii=False))
