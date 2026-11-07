@@ -14,13 +14,18 @@ if [ "${ATHENA_TEST_VERBOSE:-0}" != 1 ] && [ -z "${ATHENA_TEST_FILTERED:-}" ]; t
   if [ "${ATHENA_TEST_NO_RECORD:-0}" != 1 ] && [ -x "$athena_test_helper" ] && [ -n "$athena_test_tree" ]; then
     athena_test_key="$("$athena_test_helper" key "$athena_test_tree" "$athena_test_name" 2>/dev/null)"
   fi
-  bash "$0" "$@" | awk '
+  athena_test_counts="$(mktemp)"
+  bash "$0" "$@" | awk -v counts="$athena_test_counts" '
     /^[ \t]+✔/ { pass++; next }
     /^[ \t]+✖/ { fail++ }
     { print; fflush() }
-    END { printf "통과 %d · 실패 %d", pass, fail }'
+    END { printf "%d %d\n", pass, fail > counts }'
   athena_test_code=${PIPESTATUS[0]}
-  echo " · $((SECONDS - athena_test_start))s"
+  read -r athena_test_pass athena_test_fail < "$athena_test_counts"
+  rm -f "$athena_test_counts"
+  # ✖ 줄 없이 실패한 시험(맨 assert · 예외 · set -e 로 끊김)도 실패로 센다 — "통과 0 · 실패 0" 으로 실패를 감추지 않게
+  [ "$athena_test_code" != 0 ] && [ "${athena_test_fail:-0}" = 0 ] && athena_test_fail=1
+  echo "통과 ${athena_test_pass:-0} · 실패 ${athena_test_fail:-0} · $((SECONDS - athena_test_start))s"
   [ "$athena_test_code" = 0 ] && [ -n "$athena_test_key" ] && "$athena_test_helper" record "$athena_test_tree" "$athena_test_name" "$athena_test_key" "$((SECONDS - athena_test_start))" 2>/dev/null
   exit "$athena_test_code"
 fi
