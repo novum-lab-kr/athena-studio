@@ -153,9 +153,13 @@ function toggleSettingsPop(): void {
   StudioUi.settings.open($('settings-pop-body'))
 }
 
+// 답은 저장했지만 pane 에 못 넣은 이유마다 문구
+const SAVED_TEXT: Record<NonNullable<WorkAnswerReply['reason']>, string> = { 'no-pane': 'work.savedNoPane', 'prompt-open': 'work.savedPromptOpen', 'unconfirmed': 'work.savedUnconfirmed' }
+
 export function reportDelivery(result: WorkAnswerReply | null | undefined): void {
   if (!result || !result.ok) return showToast(say('work.answerFailed', { message: (result && result.message) || '' }))
-  showToast(say(result.delivered ? 'work.sent' : 'work.savedNoPane'), result.delivered ? 'success' : 'info')
+  if (result.delivered) return showToast(say('work.sent'), 'success')
+  showToast(say(SAVED_TEXT[result.reason || 'no-pane']), 'info')
 }
 
 export function initWork(): void {

@@ -10,6 +10,7 @@ import { createRequire } from 'node:module'
 import { dialog, shell } from 'electron'
 import type { BrowserWindow, MessageBoxOptions } from 'electron'
 import * as core from '../lib/core.mts'
+import { deliverAnswer } from '../lib/answer-delivery.mts'
 import { pendingApprovals, respondApproval } from '../lib/codex-approvals.mts'
 import type { CodexApproval } from '../lib/codex-approvals.mts'
 import * as packModel from '../lib/pack.mts'
@@ -286,14 +287,26 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       ...workModel.workList(state && Array.isArray(state.cards) ? state.cards : [], requests.requests),
     }
   }
-  // 답을 그 pane 에 한 줄로 넣는다 — 에이전트는 [요청 <id>] 를 보고 ack 한다. pane 이 지금 없으면 false(답은 저장돼 있다 · 다시 보내기)
-  const deliverToPane = async (paneId: unknown, line: string) => {
-    if (!paneId) return false
-    const listed = (await ctx.peekCall('pane list')) as PaneListReply
-    const panes: { id?: unknown }[] = listed.result && Array.isArray(listed.result.panes) ? listed.result.panes : []
-    if (!panes.some((pane) => pane.id === paneId)) return false
-    const sent = await ctx.daemonCall('pane run', { pane: paneId as string, text: line })
-    return !sent.error
+  // 답을 그 pane 에 넣는다 — 입력칸에 한 줄(에이전트는 [요청 <id>] 를 보고 ack), 같은 질문의 선택 창이 떠 있으면 그 창에서 고르고 ack 는 앱이.
+  // 못 넣으면 이유(pane 없음 · 선택 창이 떠 있음 · 확인 못 함) — 답은 저장돼 있다(다시 보내기)
+  const deliverToPane = (request: StudioRequest, answer: { choice?: unknown; text?: unknown }) => {
+    const dir = ctx.athenaDir
+    return deliverAnswer(request.pane, request, answer, requestsModel.deliveryLine(request, answer), {
+      panes: async () => {
+        const listed = (await ctx.peekCall('pane list')) as PaneListReply
+        return listed.result && Array.isArray(listed.result.panes) ? (listed.result.panes as { id?: unknown; agent?: unknown }[]) : null
+      },
+      read: async (pane) => {
+        const read = (await ctx.peekCall('pane read', { pane, source: 'visible', lines: 40 })) as { result?: { text?: unknown } }
+        return typeof read.result?.text === 'string' ? read.result.text : null
+      },
+      run: async (pane, line) => {
+        const sent = await ctx.daemonCall('pane run', { pane, text: line })
+        return sent.error ? { code: sent.code } : null
+      },
+      type: async (pane, text) => !(await ctx.daemonCall('pane send-text', { pane, text })).error,
+      ack: () => runCore(['request', 'ack', request.id], { dir }),
+    })
   }
   // 공식 승인 전용 IPC. 일반 질문/다시 보내기와 완전히 다른 경로로 원래 연결에만 답한다.
   ctx.approveRequest = async (id, generation, choice) => {
@@ -323,16 +336,18 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       refreshRequests()
       return { ok: false, error: result.error || 'failed', message: result.message || '' }
     }
-    const delivered = await deliverToPane(known.pane, requestsModel.deliveryLine(known, result.request.answer || {}))
+    const delivery = await deliverToPane(known, result.request.answer || {})
     refreshRequests()
-    return { ok: true, delivered }
+    return { ok: true, ...delivery }
   }
   // 답은 했는데 전달 못 한 것(answered) — 다시 보내기
   ctx.redeliverRequest = async (id: string) => {
     const known = requestsState().requests.find((request) => request.id === id && request.state === 'answered')
     if (!known || !known.answer) return { ok: false, error: 'not-found' }
     if (known.permission) return { ok: false, error: 'permission-in-pane' }
-    return { ok: true, delivered: await deliverToPane(known.pane, requestsModel.deliveryLine(known, known.answer as { choice?: unknown; text?: unknown })) }
+    const delivery = await deliverToPane(known, known.answer as { choice?: unknown; text?: unknown })
+    refreshRequests()
+    return { ok: true, ...delivery }
   }
   // 계획서 열기 — 결정 콘솔(html)이 있으면 현황판 주소를 이 창 옆 브라우저에, 없으면 md 를 기본 앱으로
   ctx.openPlan = async (id: string, html: string | null) => {

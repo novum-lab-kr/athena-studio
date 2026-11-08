@@ -717,11 +717,17 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     agent: ref.agent || '작업 에이전트', org, repo, number, sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions,
     humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT, max: limits.max,
   }))
-  if (pane && (await sendToPane(pane, instruction))) {
+  // pane 이 있어도 전송이 확인되지 않으면 아테나에 — 'pane 없음' 과 '보내지 못함' 을 나눠 알린다(submitToPane 결과 그대로)
+  const sent = pane ? await submitToPane(pane, instruction) : ''
+  if (sent === 'sent') {
     console.log(`  → 수정 지시를 pane ${pane} 에 보냈다`)
     logEvent(ROOT, 'auto.fix', { ...base, pane })
-  } else {
+  } else if (!pane) {
     await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 수정 지시를 보낼 pane 이 없다 — ${repo}#${number}`, body: `작업 에이전트 pane 을 찾지 못했다(Work ref pane ${ref.pane || '없음'}). 에이전트를 다시 열고 아래를 전한다:\n${instruction}` })
+  } else {
+    const why = sent === 'wait' ? '질문 창이 열려 있거나 다른 입력을 보내는 중이라 넣지 못했다(글은 안 들어갔다)' : `전송을 확인하지 못했다: ${sent}(글이 입력칸에 들어갔는지 모른다 — pane 을 먼저 본다)`
+    console.log(`  ⚠️ 수정 지시를 pane ${pane} 에 넣지 못했다 — ${why}`)
+    await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 수정 지시를 pane ${pane} 에 넣지 못했다 — ${repo}#${number}`, body: `작업 에이전트 pane ${pane} 은 있지만 ${why}. pane 을 확인하고 아래를 전한다:\n${instruction}` })
   }
 }
 
