@@ -1,4 +1,5 @@
 {
+  "action.selfIssueStart": "Handle issue {id}. For this Athena issue, dispatch to the core agent pane listed in the pack ROUTING.md. Choose a lightweight or formal plan and link it in the issue plan: field. Create a work branch and worktree from prBase in the core source repository, then dispatch. The agent fixes and verifies the issue and opens a draft PR; link it in the issue pr: field. Do not edit or commit directly in an installed body or on main.",
   "page.title": "Worklist",
   "tabs.label": "View",
   "tab.now.title": "Issues to resolve — pick one to start work",

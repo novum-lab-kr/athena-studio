@@ -32,7 +32,8 @@ const PROTOCOL = 7
 // 9 — 재접속 화면에 프로그램이 요청한 마우스 인코딩도 복원
 // 10 — 코드 교체 시 미완성 출력 청크를 건드리지 않고 마우스 인코딩 초기 상태 읽기
 // 11 — Codex Browser 권한·시작 신뢰창도 입력 대기로 판정
-const DAEMON_CODE = 11
+// 12 — Claude working 중 전송된 큐 메시지의 입력칸 안내를 남은 글로 오판하지 않음
+const DAEMON_CODE = 12
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

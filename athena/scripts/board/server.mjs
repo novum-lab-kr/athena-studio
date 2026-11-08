@@ -453,7 +453,7 @@ const autoReviewPlans = async (plans) => {
   if (!repos.size) return
   if (Date.now() - autoKickAt > 5 * 60_000) {
     autoKickAt = Date.now()
-    spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--kick'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
+    spawn(process.execPath, [join(ROOT, 'scripts/lib/pr-auto-output.mjs'), ROOT, '--kick'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
   }
   // 진행 중 · 리뷰 계획서 + 완료 · 계획 계획서(이어 올린 PR — 열린 PR 의 새 HEAD 가 있으면 ready_for_review 로 되돌린 뒤 · ship.sh 와 같은 규칙 · lib/pr-auto.mjs autoReviewAction)
   const targets = plans.filter((plan) => !plan.archived && autoReviewAction(plan.status) !== 'skip' && /\/pull\/\d+/.test(plan.pr))
@@ -489,7 +489,7 @@ const autoReviewPlans = async (plans) => {
         plan.column = STATUS_COLUMN[REOPEN_STATUS]
       }
       autoReviewQueued.add(key)
-      const child = spawn(process.execPath, [join(ROOT, 'scripts/pr-auto.mjs'), '--enqueue', '--plan', plan.id, '--pr', link, '--head', info.head], { cwd: ROOT, detached: true, stdio: 'ignore' })
+      const child = spawn(process.execPath, [join(ROOT, 'scripts/lib/pr-auto-output.mjs'), ROOT, '--enqueue', '--plan', plan.id, '--pr', link, '--head', info.head], { cwd: ROOT, detached: true, stdio: 'ignore' })
       child.on('exit', (code) => { if (code !== 0) autoReviewQueued.delete(key) })
       child.on('error', () => autoReviewQueued.delete(key))
       child.unref()

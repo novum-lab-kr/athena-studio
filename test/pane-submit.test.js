@@ -109,3 +109,17 @@ test('lead-send.py 가 다시 넣어도 되는 거절로 보는 글이 데몬 �
   assert.ok(busy)
   assert.ok(leadSend.includes(`'${busy}'`))
 })
+
+// 2026-11-08 실제 Claude working pane: Enter 뒤 본문은 큐로 옮겨지고 입력칸은 이 안내로 바뀐다.
+const queuedClaude = (text) => ({ agent: 'claude', text: `❯ ${text}\n  ctrl+x ctrl+s to send now\n\n· Cogitating…\n────────\n❯ Press up to edit queued messages\n────────\n Opus 5.5\n` })
+
+test('Claude working 중 큐에 들어간 글은 안내 문구가 남아도 전송 성공이다', async () => {
+  const pane = fake({ render: claude, after: queuedClaude('working 전송') })
+  await submitText('working 전송', pane)
+  assert.equal(inputOf(queuedClaude('working 전송')), '')
+  assert.deepEqual(pane.writes, [paste('working 전송'), '\r'])
+})
+
+test('큐 안내와 같은 글만 입력한 화면은 빈 입력으로 보지 않는다', () => {
+  assert.equal(inputOf(claude('Press up to edit queued messages')), 'Press up to edit queued messages')
+})
