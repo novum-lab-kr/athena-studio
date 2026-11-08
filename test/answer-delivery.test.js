@@ -35,6 +35,28 @@ const CODEX_ONE = [
   '  tab to add notes | enter to submit answer | esc to interrupt',
 ].join('\n')
 const CLAUDE_IDLE = '⏺ Blue\n─────\n❯ \n─────\n  Haiku 5.5\n'
+// 고른 뒤 화면(실측 — 답 기록이 남는다)
+const answered = (choice) => [
+  "⏺ User answered Claude's questions:",
+  `  ⎿  · Which color do you like? → ${choice}`,
+  '',
+  `⏺ ${choice}`,
+  '',
+  '✻ Cooked for 4s · done 10:07 AM',
+  '─────',
+  '❯ ',
+  '─────',
+  '  Haiku 5.5',
+].join('\n')
+const codexAnswered = (choice) => [
+  '• Questions 1/1 answered',
+  `  • Which color do you like?`,
+  `    answer: ${choice}`,
+  '',
+  `• ${choice}`,
+  '',
+  '› Ask Codex to do anything',
+].join('\n')
 const request = {
   id: 'r-1',
   title: 'Which color do you like?',
@@ -44,7 +66,7 @@ const request = {
 const line = '[요청 r-1] Which color do you like? — 답: Blue'
 
 // 데몬 흉내 — 선택 창이 떠 있으면 pane run 은 쓰기 전에 unavailable(실제 데몬 응답 · pane-submit.mts)
-function fakePane({ agent = 'claude', screen = CLAUDE_ONE, closesOnKey = true, after = [CLAUDE_IDLE], acked = true } = {}) {
+function fakePane({ agent = 'claude', screen = CLAUDE_ONE, closesOnKey = true, after = [answered('Blue')], acked = true } = {}) {
   let now = screen
   let reads = []
   const calls = []
@@ -77,7 +99,7 @@ test('같은 질문의 선택 창이면 고른 선택지 숫자 하나로 고르
 
 test('Codex 질문 하나 창도 같은 판단', async () => {
   assert.equal(choiceKey(CODEX_ONE, 'codex', request, { choice: 'Green' }), '3')
-  const pane = fakePane({ agent: 'codex', screen: CODEX_ONE })
+  const pane = fakePane({ agent: 'codex', screen: CODEX_ONE, after: [codexAnswered('Red')] })
   assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Red' }, line, pane.io), { delivered: true, chose: true })
   assert.deepEqual(pane.calls, [['type', '1'], ['ack']])
 })
@@ -142,18 +164,37 @@ test('고른 뒤 조각 화면(다시 그리는 중)만 읽히면 닫힘으로 �
   const lines = CLAUDE_ONE.split('\n')
   const pieces = [
     lines.slice(0, 6).join('\n'), // 머리 · 제목만
+    'Which color do you like?', // 제목 한 줄만(표식 없음)
     lines.slice(6, 12).join('\n'), // 선택지만
     lines.slice(-1).join('\n'), // 맺음만
     '',
   ]
-  for (const piece of pieces) assert.equal(promptClosed(piece, request), false, JSON.stringify(piece))
-  assert.equal(promptClosed(null, request), false)
-  assert.equal(promptClosed(CLAUDE_IDLE, request), true)
-  const stuck = fakePane({ after: [lines.slice(6, 12).join('\n')] })
-  assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, stuck.io), { delivered: false, reason: 'unconfirmed' })
-  assert.deepEqual(stuck.calls, [['type', '2']])
+  const closed = (text, agent = 'claude', choice = 'Blue') => promptClosed(text, agent, request, choice)
+  for (const piece of pieces) assert.equal(closed(piece), false, JSON.stringify(piece))
+  assert.equal(closed(null), false)
+  // 답 기록이 없으면 닫힘을 입증하지 못한다 — 쉬는 입력칸만 보여도 · 다른 답 · 다른 에이전트 기록
+  assert.equal(closed(CLAUDE_IDLE), false)
+  assert.equal(closed(answered('Blue')), true)
+  assert.equal(closed(answered('Red')), false)
+  assert.equal(closed(answered('Blue'), 'codex'), false)
+  assert.equal(closed(codexAnswered('Blue'), 'codex'), true)
+  // 전에 같은 답으로 받은 기록이 남아 있으면(고르기 전 1개) 새 기록이 생겨야 닫힘 — 옛 기록 + 제목만 조각은 아직
+  const titleOnly = 'Which color do you like?'
+  assert.equal(promptClosed(`${answered('Blue')}\n${titleOnly}`, 'claude', request, 'Blue', 1), false)
+  assert.equal(promptClosed(`${answered('Blue')}\n${answered('Blue')}`, 'claude', request, 'Blue', 1), true)
+  const again = fakePane({ screen: `${answered('Blue')}\n${CLAUDE_ONE}`, after: [`${answered('Blue')}\n${titleOnly}`] })
+  assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, again.io), { delivered: false, reason: 'unconfirmed' })
+  assert.deepEqual(again.calls, [['type', '2']])
+  // 답 기록이 있어도 선택 창 조각이 같이 보이면 아직
+  assert.equal(closed(`${answered('Blue')}\n${lines.slice(6, 12).join('\n')}`), false)
+  // 같은 조각이 계속 읽히면(제목만 · 선택지만) ack 없이 unconfirmed
+  for (const piece of pieces.slice(0, 3)) {
+    const stuck = fakePane({ after: [piece] })
+    assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, stuck.io), { delivered: false, reason: 'unconfirmed' })
+    assert.deepEqual(stuck.calls, [['type', '2']])
+  }
   // 닫힌 화면 한 번 뒤 다시 조각이면 아직 — 두 번 잇달아 닫혀야 ack
-  const flicker = fakePane({ after: [CLAUDE_IDLE, pieces[0], CLAUDE_IDLE, CLAUDE_IDLE] })
+  const flicker = fakePane({ after: [answered('Blue'), pieces[0], answered('Blue'), answered('Blue')] })
   assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, flicker.io), { delivered: true, chose: true })
 })
 

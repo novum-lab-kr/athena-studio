@@ -4,6 +4,7 @@
 //   Claude 질문 여럿: '←  ☐ Color  ☐ Size  ✔ Submit  →' — 마지막 Submit 단계가 있어 고르지 않는다
 //   Codex 질문 하나: 'Question 1/1 (1 unanswered)' · 질문 줄 · '› 1. Red   The color red' … 'tab to add notes | enter to submit answer | esc to interrupt'
 //   두 쪽 모두 질문 하나면 선택지 숫자 한 글자로 바로 고르고 제출된다(Enter 없이)
+//   고른 뒤 남는 답 기록(실측): Claude '⏺ User answered Claude's questions:' · '⎿  · <질문> → <답>' / Codex '• Questions 1/1 answered' · '• <질문> answer: <답>'
 import { createRequire } from 'node:module'
 const screenModel: typeof import('./screen-model.js') = createRequire(import.meta.url)('./screen-model.js')
 
@@ -70,10 +71,22 @@ export function choiceKey(text: string, agent: unknown, request: PromptRequest, 
   return same ? String(index + 1) : null
 }
 
-// 선택 창이 닫힌 화면 — 읽혔고 · 입력 대기가 아니고 · 선택 창 표식도 이 요청의 선택지 줄('2. Blue')도 없다
-// (다시 그리는 중 제목 · 선택지 · 맺음 일부만 읽혀도 남은 조각이 있거나 비어 있으면 닫힘으로 치지 않는다)
-export function promptClosed(text: string | null, request: PromptRequest): boolean {
+// 화면에 남은 이 질문 · 이 답의 기록 수(위 실측 모양)
+export function answerRecords(text: string | null, agent: unknown, request: PromptRequest, choice: string): number {
+  if (text === null) return 0
+  const flat = collapse(text)
+  const title = collapse(request.title)
+  if (agent === 'claude') return flat.includes("User answered Claude's questions:") ? flat.split(`· ${title} → ${choice}`).length - 1 : 0
+  if (agent === 'codex') return flat.includes('Questions 1/1 answered') ? flat.split(`${title} answer: ${choice}`).length - 1 : 0
+  return 0
+}
+
+// 선택 창이 닫혔다고 입증하는 화면 — 읽혔고 · 입력 대기가 아니고 · 선택 창 표식도 이 요청의 선택지 줄('2. Blue')도 없고 ·
+// 이 질문의 답 기록이 고르기 전(seen 개)보다 늘었다(같은 질문을 전에 같은 답으로 받은 기록이 화면에 남아 있어도 속지 않게).
+// 다시 그리는 중의 조각(제목만 · 선택지만 · 맺음만 · 빈 화면)은 새 답 기록이 없어 닫힘이 아니다
+export function promptClosed(text: string | null, agent: unknown, request: PromptRequest, choice: string, seen = 0): boolean {
   if (text === null || screenModel.waitingForInput(text)) return false
+  if (answerRecords(text, agent, request, choice) <= seen) return false
   const lines = text.split('\n').filter((line) => line.trim())
   const labels = new Set(request.options.map((option) => option.label))
   const optionLine = (line: string) => {
@@ -94,12 +107,14 @@ export async function deliverAnswer(paneId: unknown, request: PromptRequest, ans
   if (screen !== null && screenModel.waitingForInput(screen)) {
     const key = choiceKey(screen, pane.agent, request, answer)
     if (!key) return { delivered: false, reason: 'prompt-open' }
+    const choice = String(answer.choice).trim()
+    const seen = answerRecords(screen, pane.agent, request, choice)
     if (!(await io.type(paneId, key))) return { delivered: false, reason: 'unconfirmed' }
     // 고르면 창이 닫힌다(실측 1초 안). 닫힌 화면이 두 번 잇달아 읽혀야 닫힘으로 본다 — 그대로거나 확인 못 하면 키를 더 누르지 않는다
     let closedReads = 0
     for (let poll = 0; poll < 15; poll++) {
       await sleep(200)
-      closedReads = promptClosed(await io.read(paneId), request) ? closedReads + 1 : 0
+      closedReads = promptClosed(await io.read(paneId), pane.agent, request, choice, seen) ? closedReads + 1 : 0
       if (closedReads < 2) continue
       // ack 가 기록되지 않으면 요청은 answered 로 남는다 — 성공으로 알리지 않는다
       return (await io.ack()) ? { delivered: true, chose: true } : { delivered: false, reason: 'unconfirmed' }

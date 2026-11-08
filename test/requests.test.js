@@ -237,7 +237,8 @@ test('선택 창이 떠 있는 pane 에 답하면 그 창에서 같은 선택지
   fixture.ctx.daemonCall = async (op, args) => {
     fixture.calls.push(['daemon', op, args.text])
     if (op === 'pane run' && screenModelOf(fixture.panes.get(args.pane))) return { error: '입력을 기다리는 질문이 열려 있다', code: 'unavailable' }
-    if (op === 'pane send-text') fixture.panes.set(args.pane, '› \n\n  GPT')
+    // 고르면 Codex 가 남기는 답 기록(실측)
+    if (op === 'pane send-text') fixture.panes.set(args.pane, '• Questions 1/1 answered\n  • Which color do you like?\n    answer: Blue\n\n› \n\n  GPT')
     return { result: {} }
   }
   await fixture.start()

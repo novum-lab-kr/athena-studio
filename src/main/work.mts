@@ -296,8 +296,9 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
         const listed = (await ctx.peekCall('pane list')) as PaneListReply
         return listed.result && Array.isArray(listed.result.panes) ? (listed.result.panes as { id?: unknown; agent?: unknown }[]) : null
       },
+      // 보이는 화면 전부 — 고른 뒤 답 기록은 화면 위쪽에 남고 아래는 빈 줄이라 끝 40줄만 읽으면 잘린다(실측 · 79줄 pane)
       read: async (pane) => {
-        const read = (await ctx.peekCall('pane read', { pane, source: 'visible', lines: 40 })) as { result?: { text?: unknown } }
+        const read = (await ctx.peekCall('pane read', { pane, source: 'visible', lines: 200 })) as { result?: { text?: unknown } }
         return typeof read.result?.text === 'string' ? read.result.text : null
       },
       run: async (pane, line) => {
