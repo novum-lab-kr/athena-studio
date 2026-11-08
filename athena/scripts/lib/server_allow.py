@@ -28,6 +28,7 @@ import hashlib
 import json
 import os
 import pathlib
+import posixpath
 import re
 import shlex
 import subprocess
@@ -175,9 +176,13 @@ PS = spec('aAdefFlwHjLTMyNx', 'oOpuUgGtCsq', '--sort= --no-headers --forest --he
 
 def secret_arg(arg):
     """경로 · 옵션 값 · git 의 <ref>:<경로> 까지 마지막 조각을 본다"""
-    trimmed = arg.rstrip('/')
-    name = re.split(r'[/:=]', trimmed)[-1]
-    if SECRET_PATH.search(re.split(r'[:=]', trimmed)[-1]):
+    # ./ · // · x/.. 를 접어서 본다(.docker/./config.json · .kube//config — 2026-11-08 PR 재리뷰)
+    piece = re.split(r'[:=]', arg)[-1]
+    normal = posixpath.normpath(piece) if piece else piece
+    if SECRET_PATH.search(normal):
+        return True
+    name = re.split(r'[/:=]', arg.rstrip('/'))[-1]
+    if SECRET_NAME.match(posixpath.basename(normal)) and not EXAMPLE_NAME.match(posixpath.basename(normal)):
         return True
     return bool(SECRET_NAME.match(name)) and not EXAMPLE_NAME.match(name)
 

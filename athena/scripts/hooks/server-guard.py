@@ -34,8 +34,11 @@ ANSWER = re.compile(r'\brequest\s+(answer|cancel)\b')
 # 한 명령의 첫 낱말 — 앞의 VAR=값 은 건너뛴다(따옴표 든 값 포함)
 FIRST_WORD = re.compile(r'''^\s*(?:\w+=(?:'[^']*'|"[^"]*"|\S)*\s+)*(\S+)''')
 
+# request answer 는 따옴표 · 백슬래시 · 백슬래시-줄바꿈을 지운 사본으로 본다(request "answer" · an""swer · c\ancel — 2026-11-08 PR 재리뷰)
+plain = re.sub(r'[\'"\\]', '', command.replace('\\\n', ''))
+
 # 빠른 길 — ssh 계열도 시험용 값도 request answer 도 없으면 팩도 읽지 않는다
-if not RAW.search(command) and not OVERRIDE.search(command) and not ANSWER.search(command):
+if not RAW.search(command) and not OVERRIDE.search(command) and not ANSWER.search(plain):
     sys.exit(0)
 
 
@@ -66,7 +69,7 @@ if found:
     )
     sys.exit(2)
 
-found = ANSWER.search(command)
+found = ANSWER.search(plain)
 if found:
     print(
         f'⛔ 서버가 등록된 팩에서는 에이전트가 request {found.group(1)} 를 부르지 않는다 — 서버 명령 확인 요청에 스스로 답하는 길이다.\n'
@@ -87,7 +90,8 @@ host_alt = '|'.join(re.escape(host) for _, host in sorted(servers, key=lambda pa
 pattern = re.compile(r'(?<![\w.-])(?:[\w.-]+@)?(' + host_alt + r')(?=$|[\s:\'"])')
 for match in pattern.finditer(command):
     before = command[:match.start()]
-    tail = re.split(r'[\n;|&]', before)[-1]
+    # 조각은 ; | & 줄바꿈 · ( · 백틱에서 나눈다 — $( ) · `…` · <( ) 안의 ssh 는 이 맥에서 돈다(2026-11-08 PR 재리뷰)
+    tail = re.split(r'[\n;|&(`]', before)[-1]
     if RAW.search(tail) and not via_ssh_run(tail):
         name = next(name for name, host in servers if host == match.group(1))
         print(

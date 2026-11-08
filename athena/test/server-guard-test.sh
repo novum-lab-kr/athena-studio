@@ -164,6 +164,12 @@ cat .docker/config.json
 cat /root/.kube/config
 cat /srv/app/.ENV
 cat /srv/app/config/secrets.yml
+cat /root/.docker/./config.json
+cat .docker//config.json
+cat /root/.docker/x/../config.json
+cat /root/.kube/./config
+git show HEAD:.docker/./config.json
+cat /srv/app/./.env
 LIST
 echo "① 허용 — 고친 뒤에도 그대로 되는 읽기"
 allow allow "sort -rn a | uniq -c | head -5"
@@ -224,6 +230,14 @@ hook block "bin/athena request answer r-1 --by app --choice 실행"
 hook block "./bin/athena request cancel r-1 --reason x"
 hook block "node scripts/athena.mjs request answer r-1 --by chat --text 실행"
 hook block "ls; bin/athena  request  answer r-1 --choice 실행"
+hook block 'bin/athena request "answer" r-1 --by app --choice 실행'
+hook block "bin/athena request 'answer' r-1 --by app --choice 실행"
+hook block 'bin/athena request an""swer r-1 --by app --choice 실행'
+hook block "$(printf 'bin/athena request \\\nanswer r-1 --by app --choice 실행')"
+hook block 'bin/athena request c\ancel r-1'
+hook block 'scripts/ssh-run.sh dukbae -- ls $(ssh dukbae-server id)'
+hook block 'scripts/ssh-run.sh dukbae -- ls `ssh dukbae-server id`'
+hook block 'scripts/ssh-run.sh dukbae -- diff <(ssh dukbae-server cat /etc/x) f'
 hook pass "bin/athena request show r-1 --json"
 hook pass "bin/athena request ack r-1"
 hook pass "/abs/athena/scripts/ssh-run.sh dukbae -- uptime"
@@ -334,7 +348,7 @@ lacks "거절한 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
 for pattern in '/srv/app/*.conf' '/srv/app/a?' '/srv/app/[ab]' '/srv/app/{a,b}'; do bash "$RUN" dukbae --get "$pattern" "$WORK/got" >/dev/null 2>&1; expect "glob 든 --get 거절: $pattern" 1 $?; done
 lacks "glob 든 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
 : >"$LOG"
-for remote in /srv/app/config/secrets.yml /proc/1/environ /srv/app/.ENV /etc/ssh/ssh_host_ed25519_key /root/.docker/config.json /root/.kube/config '/srv/$HOME/x' '/srv/`id`/x' '/srv/a;b'; do bash "$RUN" dukbae --get "$remote" "$WORK/got" >/dev/null 2>&1; expect "--get 거절: $remote" 1 $?; done
+for remote in /root/.docker/./config.json /root/.docker//config.json /root/.kube/./config /srv/app/config/secrets.yml /proc/1/environ /srv/app/.ENV /etc/ssh/ssh_host_ed25519_key /root/.docker/config.json /root/.kube/config '/srv/$HOME/x' '/srv/`id`/x' '/srv/a;b'; do bash "$RUN" dukbae --get "$remote" "$WORK/got" >/dev/null 2>&1; expect "--get 거절: $remote" 1 $?; done
 lacks "거절한 --get(비밀 이름 · \$ · 백틱) 은 scp 를 부르지 않는다" "$LOG" "scp "
 printf 'x\n' >"$WORK/plain.txt"
 for remote in /etc/ssh/ssh_host_ed25519_key /srv/app/secrets.yml /srv/app/.ENV; do bash "$RUN" dukbae --put "$WORK/plain.txt" "$remote" >/dev/null 2>&1; expect "--put 거절: $remote" 1 $?; done
