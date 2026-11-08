@@ -52,14 +52,17 @@ export function writeRecord(home: string, record: TestAppRecord) {
   fs.renameSync(staging, file)
 }
 
-// 그 집의 데몬이 적은 pid — 데몬은 앱보다 오래 살고(떼어 띄움) 앱이 꺼진 뒤에는 앱의 자식이 아니다
-export function daemonPid(home: string): number {
+// 그 집의 데몬이 적은 pid 와 시작 시각(src/daemon/daemon.mts — 데몬이 뜰 때 ISO 시각으로 적는다).
+// 데몬은 앱보다 오래 살고(떼어 띄움) 앱이 꺼진 뒤에는 앱의 자식이 아니다
+export function daemonRecord(home: string): { pid: number; startedAt: string } | null {
   try {
     const saved: unknown = JSON.parse(fs.readFileSync(path.join(home, DAEMON_ENDPOINT), 'utf8'))
-    const pid = saved && typeof saved === 'object' ? (saved as Record<string, unknown>).pid : 0
-    return Number.isInteger(pid) && (pid as number) > 1 ? (pid as number) : 0
+    if (!saved || typeof saved !== 'object') return null
+    const { pid, startedAt } = saved as Record<string, unknown>
+    if (!Number.isInteger(pid) || (pid as number) <= 1) return null
+    return { pid: pid as number, startedAt: typeof startedAt === 'string' ? startedAt : '' }
   } catch {
-    return 0
+    return null
   }
 }
 
@@ -87,7 +90,7 @@ export function descendantsOf(rows: ProcessRow[], roots: number[]): number[] {
   return [...seen]
 }
 
-// 기록한 pid 와 자식 · 그 집 데몬(앱 기록이 유효하고 앱보다 늦게 시작한 것)과 자식만 끈다. 기록이 없거나 · 그 pid 가 이미 끝났거나 · 같은 번호를 다른 프로세스가 쓰면(시작 시각이 다름) 앱 쪽은 끄지 않는다
+// 기록한 pid 와 자식 · 그 집 데몬(앱 기록이 유효하고 시작 시각이 접속 파일과 맞는 것)과 자식만 끈다. 기록이 없거나 · 그 pid 가 이미 끝났거나 · 같은 번호를 다른 프로세스가 쓰면(시작 시각이 다름) 앱 쪽은 끄지 않는다
 export async function stopTestApp(home: string, deps: StopDeps, { graceMs = 10_000 } = {}): Promise<StopResult> {
   const record = readRecord(home)
   const roots: number[] = []
@@ -100,14 +103,18 @@ export async function stopTestApp(home: string, deps: StopDeps, { graceMs = 10_0
     reason = `pid ${record.pid} 를 다른 프로세스가 쓰고 있어 끄지 않아요(시작 시각이 기록과 다름)`
   }
   else roots.push(record.pid)
-  // 데몬은 앱 기록이 유효할 때(앱을 뿌리에 넣었을 때)만, 그리고 앱보다 늦게 시작한 프로세스일 때만 끈다 —
-  // 접속 파일만 남은 옛 데몬 pid 를 다른 프로세스가 다시 쓰면 그 프로세스는 앱보다 먼저 시작했으니 남긴다
-  const daemon = daemonPid(home)
-  if (daemon && deps.alive(daemon)) {
-    const daemonStart = Date.parse(deps.startedAt(daemon))
-    if (!roots.length) reason += ` · 데몬(pid ${daemon})은 앱 기록으로 확인할 수 없어 끄지 않아요`
-    else if (Number.isNaN(daemonStart) || daemonStart < Date.parse((record as TestAppRecord).startedAt)) reason += ` · pid ${daemon} 는 앱보다 먼저 시작해 이 앱의 데몬이 아니라 끄지 않아요`
-    else roots.push(daemon)
+  // 데몬은 앱 기록이 유효할 때(앱을 뿌리에 넣었을 때)만, 그리고 그 pid 의 실제 시작 시각(ps · 초 단위)이
+  // 앱 시작 이후이고 데몬이 접속 파일에 적은 시작 시각 이전일 때만 끈다 — 데몬이 끝난 뒤 그 pid 를 다시 쓴 프로세스는
+  // 옛 데몬이 적은 시각보다 늦게 시작했으니 남긴다
+  const daemon = daemonRecord(home)
+  if (daemon && deps.alive(daemon.pid)) {
+    const actualStart = Date.parse(deps.startedAt(daemon.pid))
+    const writtenStart = Date.parse(daemon.startedAt)
+    const appStart = Date.parse(record?.startedAt ?? '')
+    if (!roots.length) reason += ` · 데몬(pid ${daemon.pid})은 앱 기록으로 확인할 수 없어 끄지 않아요`
+    else if ([actualStart, writtenStart, appStart].some(Number.isNaN) || actualStart < appStart || actualStart > writtenStart) {
+      reason += ` · pid ${daemon.pid} 는 시작 시각이 데몬 접속 파일과 맞지 않아 이 앱의 데몬이 아니라 끄지 않아요`
+    } else roots.push(daemon.pid)
   }
   const targets = descendantsOf(deps.rows(), roots).filter((pid) => pid !== process.pid)
   for (const pid of targets) {

@@ -86,7 +86,7 @@ test('stopTestApp: 기록한 앱과 그 자식 · 그 집 데몬만 끄고 관�
   const bystander = spawnLoner() // 사용자 앱 흉내 — 기록에 없다
   try {
     testApp.writeRecord(home, { pid: app.parent, startedAt: startedAt(app.parent), home, at: '' })
-    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: daemon }))
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: daemon, startedAt: new Date().toISOString() }))
     const result = await testApp.stopTestApp(home, realDeps, { graceMs: 3000 })
     assert.equal(result.ok, true)
     assert.deepEqual([...result.stopped].sort(), [app.parent, app.kid, daemon].sort())
@@ -168,15 +168,36 @@ test('stopTestApp: 앱보다 먼저 시작한 프로세스가 데몬 pid 를 쓰
   const app = await spawnTree()
   try {
     testApp.writeRecord(home, { pid: app.parent, startedAt: startedAt(app.parent), home, at: '' })
-    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: older.parent }))
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: older.parent, startedAt: new Date(Date.now() - 3600_000).toISOString() }))
     const result = await testApp.stopTestApp(home, realDeps, { graceMs: 3000 })
     assert.equal(result.ok, true)
     assert.deepEqual([...result.stopped].sort(), [app.parent, app.kid].sort())
-    assert.match(result.reason, /먼저 시작/)
+    assert.match(result.reason, /맞지 않아/)
     assert.ok(await waitDead(app.parent))
     assert.equal(alive(older.parent), true)
     assert.equal(alive(older.kid), true)
   } finally {
     cleanup([app.parent, app.kid, older.parent, older.kid])
+  }
+})
+
+test('stopTestApp: 앱이 살아 있는 동안 데몬이 끝나고 그 pid 를 다시 쓴 프로세스는(접속 파일 시각보다 늦게 시작) 남긴다', async () => {
+  const home = tempDir('athena-test-app-')
+  const app = await spawnTree()
+  const written = new Date().toISOString() // 옛 데몬이 접속 파일에 적은 시작 시각 — 앱 시작 뒤
+  await new Promise((resolve) => setTimeout(resolve, 1100)) // ps lstart 는 초 단위
+  const reused = await spawnTree() // 옛 데몬이 끝난 뒤 그 pid 를 다시 쓴 관계없는 프로세스 흉내
+  try {
+    testApp.writeRecord(home, { pid: app.parent, startedAt: startedAt(app.parent), home, at: '' })
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: reused.parent, startedAt: written }))
+    const result = await testApp.stopTestApp(home, realDeps, { graceMs: 3000 })
+    assert.equal(result.ok, true)
+    assert.deepEqual([...result.stopped].sort(), [app.parent, app.kid].sort())
+    assert.match(result.reason, /맞지 않아/)
+    assert.ok(await waitDead(app.parent))
+    assert.equal(alive(reused.parent), true)
+    assert.equal(alive(reused.kid), true)
+  } finally {
+    cleanup([app.parent, app.kid, reused.parent, reused.kid])
   }
 })
