@@ -98,6 +98,17 @@ node "$A/bin/archify.mjs" visual-check pack/diagrams/<서비스>.html --json
 
 가이드·계획서에는 기능 대응표(장·상자 위치)·핵심 흐름을 고른 이유, 고정 ref, 원본 deliver 결과·SHA, 테마 최종 SHA, 브라우저 증거, 시각 검토 상태·확인 범위, 남은 미확인을 기록한다. 구조 검증·시각 검토 통과가 기능 전수의 코드 대조를 대신하지 않는다.
 
+## 서버 그림 — 팩 `servers`
+
+팩 `pack.json` `servers[]` 의 서버(`docs/setup.md` "서버 하나 더하기")는 레포가 아니라 **서버마다 한눈에 보기 1장**만 만든다(흐름 장 없음 — 사용자가 요청할 때만). 서비스 ID 는 `server-<이름>`, 파일은 `pack/diagrams/server-<이름>.html`(architecture) · 가이드 `pack/diagrams/guides/server-<이름>.md` · 카드는 `index.json` 의 `"서버"` 묶음.
+
+- **근거는 서버에서 읽은 결과** — 코드 ref · SHA 가 없다. `scripts/ssh-run.sh <이름> -- <명령>` 의 **허용 목록 읽기 명령만** 쓰고(목록 밖 명령은 그림을 위해 확인 요청을 열지 않는다), 가이드에 읽은 때(날짜 · 시각) · 명령 · 확인한 사실 · 미확인을 적는다. 이미 채운 `docs/knowledge/servers/<이름>/structure.md` 가 있으면 그것을 먼저 쓰고 달라진 것만 다시 읽는다
+- **내용** — 바깥(도메인 · 열린 포트) → 프록시(nginx · caddy …) → 서비스(systemd 유닛 · 컨테이너 · pm2) → 데이터(DB · 볼륨 · 저장 폴더) 순서, 그리고 **어느 팩 레포가 어디에 배포되는지**(`servers[].repos` · 배포 경로). 크론 · 백업 · 로그 위치는 해당 상자의 자세히 칸에
+- **넣지 않는 것** — 서버 주소 · IP · 사용자 이름 · 키 경로 · 환경 값(`.env*` · 컨테이너 env) · 인증서 내용. 상자 이름은 ssh 별칭 · 서비스 이름 · 도메인 · 포트 번호까지만
+- 자세히 칸의 `code` 는 서버 안 경로(설정 파일 · 유닛 파일)와 읽은 명령, `impact` 는 그 설정을 바꾸면 영향받는 서비스 · 도메인, `tests` 는 바꾼 뒤 확인할 읽기 명령(`systemctl status …` · `curl -s -o /dev/null -w '%{http_code}' …`)
+- `meta.repository` · `--repo-root` 는 쓰지 않는다(레포가 아니다) — `check-diagrams.mjs --strict` 의 코드 근거 점검 대상이 아니고 가이드의 읽은 결과가 근거다. 디자인 · 전달 · 브라우저 확인 절차는 서비스 그림과 같다
+- 카드 예 `{"title":"서버","items":[{"base":"server-dukbae","name":"dukbae","sub":"서버","desc":"확인한 설명"}]}`
+
 ## 점검·목록
 
 일반 서비스 점검은 `node scripts/check-diagrams.mjs --strict --design`을 사용한다. `--design`은 장별 최종 HTML의 현재 테마·원본/최종 변환 영수증과 현재 SHA에 묶인 visual-check pass를 확인한다. 실패·skipped·영수증 없음·stale 증거는 확인 필요다. 원본 deliver 합격·시각 검토·내용 전수 확인은 별도이며 이 점검으로 승인하지 않는다. 기존 근거 전용 점검은 `--design` 없이 유지한다.

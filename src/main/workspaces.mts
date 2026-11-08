@@ -8,6 +8,7 @@ import * as packModel from '../lib/pack.mts'
 import * as layout from '../lib/layout.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
 import { runGit } from './files.mts'
+import { SSH_ALIAS } from '../lib/server-status.mts'
 import type { DaemonPane, DaemonState, PackCtx, Size } from './daemon-link.mts'
 
 type App = { getPath(name: 'home'): string }
@@ -130,6 +131,69 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
     await sendToAthena(say('spaces.removeRepoAsk', { repo: result.removed }))
     return result
   }
+  // 서버 — 코어 server hosts · add · remove(athena/scripts/lib/servers.mjs · docs/setup.md "서버 하나 더하기").
+  // hosts 는 이 컴퓨터 ~/.ssh/config 의 Host 별칭만(주소는 오지 않는다) · add 는 BatchMode 접속 시험을 통과해야 팩에 들어간다
+  ctx.serverHosts = async () => {
+    const result = (await runCore(['server', 'hosts'], { dir: ctx.athenaDir })) as PackResult & { hosts?: unknown }
+    if (!result.ok) return packModel.packFailure(result, say)
+    const hosts = Array.isArray(result.hosts) ? result.hosts.filter((item): item is { host: string; registered: boolean } => Boolean(item) && typeof item.host === 'string') : []
+    return { ok: true, hosts: hosts.map((item) => ({ host: item.host, registered: item.registered === true })) }
+  }
+  ctx.addServer = async (host: string) => {
+    const stale = await freshBody()
+    if (stale) return stale
+    const result = (await ctx.packTask(say('pack.task.addServer'), () => runCore(['server', 'add', host], { dir: ctx.athenaDir }))) as RepoResult & { server?: { name: string; host: string } }
+    if (!result.ok || !result.server) return packModel.packFailure(result, say)
+    // 등록 뒤 — 아테나가 "지금 분석하고 다이어그램까지 만들까요?" 를 한 번 묻는다(setup.md 2단계).
+    // 아테나 창이 없으면 넣지 못한다 — asked false 면 화면이 [나중에][분석하기] 로 직접 묻는다(serverAnalyze)
+    const asked = result.already ? false : await sendToAthena(say('spaces.addServerAsk', { server: result.server.name, host: result.server.host }))
+    return { ok: true, already: Boolean(result.already), asked, server: { name: result.server.name, host: result.server.host } }
+  }
+  // 등록 뒤 [분석하기] — 아테나 창을 열고(없으면 에이전트를 켠다) 입력을 기다렸다가 분석 지시를 넣는다(setup.md "서버 하나 더하기" 2단계 · 분석은 바로 시작)
+  ctx.serverAnalyze = async (name: string, size: Size) => {
+    const server = (await (ctx.serverList as () => Promise<{ name: string; host: string }[]>)()).find((item) => item.name === name)
+    if (!server) return { ok: false, text: say('spaces.serverMissing', { server: name }) }
+    const opened = (await (ctx.openAthenaAgent as (size: Size) => Promise<{ error?: string; cancelled?: boolean }>)(size)) || {}
+    if (opened.error || opened.cancelled) return { ok: false, text: opened.error || '' }
+    // 막 켠 에이전트는 입력칸이 뜰 때까지 기다린다(최대 90초)
+    for (let waited = 0; waited < 90_000; waited += 1000) {
+      const state = await daemonCall<DaemonState>('state')
+      const listed = await daemonCall<{ panes: DaemonPane[] }>('pane list')
+      const athena = state.result && core.findAthenaWorkspace(state.result.workspaces, ctx.athenaDir as string)
+      const tab = athena && (state.result as DaemonState).tabs.find((entry) => entry.workspace === athena.id)
+      const paneId = tab && layout.paneIds(tab.tree)[0]
+      const pane = paneId && listed.result ? listed.result.panes.find((entry) => entry.id === paneId) : null
+      if (pane && pane.agent && pane.agent_status === 'idle') {
+        const sent = await sendToAthena(say('spaces.serverAnalyzeAsk', { server: server.name, host: server.host }))
+        return sent ? { ok: true } : { ok: false, text: say('spaces.serverAnalyzeFailed') }
+      }
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+    }
+    return { ok: false, text: say('spaces.serverAnalyzeFailed') }
+  }
+  ctx.removeServer = async (name: string) => {
+    const stale = await freshBody()
+    if (stale) return stale
+    const result = await ctx.packTask(say('pack.task.removeServer'), () => runCore(['server', 'remove', name], { dir: ctx.athenaDir }))
+    if (!result.ok) return packModel.packFailure(result, say)
+    await sendToAthena(say('spaces.removeServerAsk', { server: name }))
+    return { ok: true, removed: name }
+  }
+  // 서버 줄 누르기 — 사람이 직접 쓰는 접속 터미널(ssh <별칭>). 작업 공간 이름은 ssh-<서버> · 이미 있으면 그리로.
+  // 에이전트가 아니라 사람 셸이라 서버 보호 훅(server-guard.py)이 닿지 않는다 — 에이전트는 늘 scripts/ssh-run.sh 로 들어간다
+  ctx.openServer = async (name: string, size: Size) => {
+    const server = (await (ctx.serverList as () => Promise<{ name: string; host: string }[]>)()).find((item) => item.name === name)
+    // 별칭은 pane 셸에 그대로 들어간다 — 맨 앞 - · 공백 · 셸 글자가 든 것은 열지 않는다(보안 검토 높음2)
+    if (!server || !SSH_ALIAS.test(server.host)) return { error: say('spaces.serverMissing', { server: name }) }
+    const label = `ssh-${server.name}`
+    const state = await daemonCall<DaemonState>('state')
+    const open = state.result && state.result.workspaces.find((workspace) => workspace.label === label)
+    if (open) return daemonCall('workspace select', { workspace: open.id })
+    const created = await daemonCall<{ root_pane?: { id: string } }>('workspace create', { label, cwd: app.getPath('home'), focus: true, ...size })
+    const pane = created.result && created.result.root_pane
+    if (!pane) return created
+    return daemonCall('pane run', { pane: pane.id, text: `ssh -- ${server.host}` })
+  }
   // 작업 공간 닫기 — 그 작업 공간의 탭을 모두 닫는다(pane 이 다 닫히면 데몬이 작업 공간도 지운다 · 팩은 그대로)
   ctx.closeWorkspace = async (workspaceId: string) => {
     const state = await daemonCall<DaemonState>('state')
@@ -165,6 +229,25 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
     if (repo) items.push(...(items.length ? [{ type: 'separator' } as const] : []), { label: say('spaces.menu.removeRepo'), click: pick('remove-repo') })
     if (!items.length || !ctx.win) return resolve(null)
     const menu = Menu.buildFromTemplate(items)
+    menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
+    const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x as number, y: point.y as number } : {}
+    menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })
+  })
+
+  // 서버 줄 우클릭 — 고른 동작 이름(open-server · analyze-server · remove-server · null)
+  ctx.serverContextMenu = (point: Point = null) => new Promise<string | null>((resolve) => {
+    if (!ctx.win) return resolve(null)
+    let chosen: string | null = null
+    const pick = (action: string) => () => {
+      chosen = action
+      resolve(action)
+    }
+    const menu = Menu.buildFromTemplate([
+      { label: say('spaces.menu.openServer'), click: pick('open-server') },
+      { label: say('spaces.menu.analyzeServer'), click: pick('analyze-server') },
+      { type: 'separator' },
+      { label: say('spaces.menu.removeServer'), click: pick('remove-server') },
+    ])
     menu.once('menu-will-close', () => setTimeout(() => resolve(chosen), 100))
     const at = point && Number.isInteger(point.x) && Number.isInteger(point.y) ? { x: point.x as number, y: point.y as number } : {}
     menu.popup({ window: ctx.win, ...at, callback: () => setTimeout(() => resolve(chosen), 100) })

@@ -72,6 +72,7 @@ export const POPUP_ICONS: Record<string, string[]> = {
   close: ['M6 6l12 12', 'M18 6L6 18'],
   camera: ['M3 8a2 2 0 0 1 2-2h2.5l1.5-2h6l1.5 2H19a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M15.5 13a3.5 3.5 0 1 1-7 0a3.5 3.5 0 0 1 7 0'],
   trash: ['M4 7h16', 'M9 7V4.5h6V7', 'M6.5 7l1 13h9l1-13'],
+  server: ['M4 4h16v6H4z', 'M4 14h16v6H4z', 'M8 7h.01', 'M8 17h.01'],
 }
 
 // 아이콘 · 이름 · 한 줄 설명 버튼(고르면 data-value 로 대화상자를 끝낸다) — 팩 명령 줄 · 가져오기 종류

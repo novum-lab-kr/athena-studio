@@ -102,10 +102,13 @@ test('세부 이유 사전: 모든 이유가 4언어 사전에 같은 자리로 
     }
   }
   // 코어가 던지는 이유가 모두 앱 목록에 있다(빠지면 화면이 옛 문구로 떨어진다)
-  const core = ['athena/scripts/lib/packs.mjs', 'athena/scripts/lib/bodies.mjs', 'athena/scripts/lib/init.mjs', 'athena/scripts/athena.mjs']
+  const core = ['athena/scripts/lib/packs.mjs', 'athena/scripts/lib/bodies.mjs', 'athena/scripts/lib/init.mjs', 'athena/scripts/athena.mjs', 'athena/scripts/lib/servers.mjs']
     .map((file) => fs.readFileSync(path.join(__dirname, '..', file), 'utf8'))
     .join('\n')
   const thrown = new Set([...core.matchAll(/new (?:Pack)?Error\([^\n]*?reason: '([\w-]+)'/g)].map((match) => match[1]))
+  // 서버 접속 시험 실패는 FAIL_TEXT 의 키를 이유로 그대로 던진다(servers.mjs addServer — reason: login)
+  const failText = /const FAIL_TEXT = \{([\s\S]*?)\n\}/.exec(core)
+  for (const match of (failText ? failText[1] : '').matchAll(/'([\w-]+)':/g)) thrown.add(match[1])
   assert.ok(thrown.size > 20)
   assert.deepEqual([...thrown].filter((reason) => !pack.PACK_REASONS.includes(reason)), [])
   assert.deepEqual(pack.PACK_REASONS.filter((reason) => !thrown.has(reason)), [])

@@ -1264,7 +1264,8 @@ const stageCopy = (base, files, stageTop) => {
     cpSync(join(base, rel), join(stageTop, rel), { verbatimSymlinks: true })
   }
 }
-const tarPack = (packDir, out, prefix, top = 'pack') => {
+// 팩 폴더를 백업 압축으로 — 저장소 빼기 · 서버 빼기(servers.mjs) · 바꾸기 · 옮기기
+export const tarPack = (packDir, out, prefix, top = 'pack') => {
   const files = collect(packDir, readdirSync(packDir))
   const stage = join(dirname(out), 'tmp', `stage-${randomBytes(6).toString('hex')}`)
   try {

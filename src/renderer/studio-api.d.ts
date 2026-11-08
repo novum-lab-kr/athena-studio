@@ -86,6 +86,20 @@ declare global {
   // 팩에 레포 더하기 · 빼기(src/main/workspaces.mts addRepo · removeRepo — 코어 repo add · remove 결과 · 실패면 text)
   type RepoAddReply = { ok: true; already?: boolean; repo: { name: string }; path: string } | { ok: false; error?: string; text?: string; message?: string }
   type RepoRemoveReply = { ok: boolean; removed?: string; error?: string; text?: string; message?: string }
+  // 팩 서버(src/main/workspaces.mts serverHosts · addServer · removeServer — 코어 server 결과 · 실패면 text) · 상태 칸(src/main/server-status.mts)
+  type ServerEntry = import('../lib/server-status.mts').ServerEntry
+  type ServerHostsReply = { ok: true; hosts: { host: string; registered: boolean }[] } | { ok: false; error?: string; text?: string; message?: string }
+  type ServerAddReply = { ok: true; already: boolean; asked?: boolean; server: ServerEntry } | { ok: false; error?: string; text?: string; message?: string }
+  // 서버 추가 팝업(src/main/ssh-setup.mts) — 칸 문제(problems)는 칸 아래 한 줄 · 접속 실패는 이유 이름만 · block 은 config 에 더할 글
+  // 칸 · 문제 이름은 src/lib/ssh-config.mts 와 같다(그 파일은 node 모듈을 불러 화면 타입 검사에 넣지 않는다)
+  type HostInput = { alias: string; user: string; host: string; port: string; key: string }
+  type HostProblems = Partial<Record<keyof HostInput, 'empty' | 'bad' | 'taken' | 'range' | 'path' | 'missing'>>
+  // hostKey — 처음 보는 호스트 키(종류 · SHA256 지문만 · 키 글자는 main 이 가진다)
+  type HostKeyView = { keys: { type: string; sha256: string }[] }
+  type ServerTestReply = { ok: true; ms: number; block: string } | { ok: false; reason?: import('../lib/server-status.mts').ServerFailReason; block?: string; problems?: HostProblems; error?: string; hostKey?: HostKeyView }
+  type TrustHostKeyReply = { ok: true; created: boolean } | { ok: false; error?: 'changed' | 'failed' | 'untested' | 'mismatch' | 'usage'; problems?: HostProblems }
+  type ServerCreateReply = ServerAddReply | { ok: false; problems?: HostProblems; error?: string; text?: string; message?: string }
+  type ServerStatusReply = { servers: import('../lib/server-status.mts').ServerReading[]; history: Record<string, import('../lib/server-status.mts').HistoryPoint[]> }
   // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
   type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
   type CallMain = { status: string; dirty: number; branch: string; upstream: string | null; ahead: number; behind: number; gone?: boolean }
@@ -259,6 +273,21 @@ declare global {
     workspaceClose(workspaceId: string): Promise<{ ok?: boolean; closed?: number; error?: string }>
     packBodyBehind(): Promise<boolean>
     packRemoveRepo(name: string): Promise<RepoRemoveReply>
+    serverList(): Promise<ServerEntry[]>
+    serverHosts(): Promise<ServerHostsReply>
+    serverAdd(host: string): Promise<ServerAddReply>
+    serverKeys(): Promise<{ path: string; kind: string }[]>
+    serverKeyBrowse(): Promise<string | null>
+    serverTest(input: HostInput): Promise<ServerTestReply>
+    serverCreate(input: HostInput): Promise<ServerCreateReply>
+    serverTrustHostKey(input: HostInput, fingerprints: string[]): Promise<TrustHostKeyReply>
+    serverAnalyze(name: string, size: CellSize | null): Promise<{ ok: boolean; text?: string }>
+    serverRemove(name: string): Promise<RepoRemoveReply>
+    // 접속 터미널 — 데몬 답(실패면 error)
+    serverOpen(name: string, size: CellSize | null): Promise<{ error?: string }>
+    // 서버 줄 우클릭 — open-server · remove-server · null
+    serverContextMenu(point: { x: number; y: number }): Promise<string | null>
+    serverStatus(): Promise<ServerStatusReply>
     packAddRepo(dir: string, name: string | null): Promise<RepoAddReply>
     // 팩 설정 전 레포 추가 창의 [팩 설정 시작] — 아테나 pane 에 첫 실행 지시(고른 레포가 있는 폴더를 레포 폴더로) · 아테나 pane 이 없으면 ok: false
     packStartSetup(dir: string): Promise<{ ok: boolean }>
