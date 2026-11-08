@@ -13,6 +13,7 @@
 ssh-run.sh 로 가는 것은 명령 첫 낱말(VAR=값 앞붙임 뒤)이 ssh-run.sh 로 끝나는 경로일 때만 — 글자가 섞여 있기만 한 것(ssh -o x=ssh-run.sh …)은 아니다.
 모든 검사는 맨 위에서 한 번 만든 **정규화한 사본**(views)만 본다 — 셸이 지우는 따옴표 · 백슬래시로 낱말을 가르는 우회
 (s""sh · ATHENA_SSH\\_BIN= · request $'answer' · {ssh,별칭})를 판정마다 따로 막지 않는다(2026-11-08 PR 세 번째 리뷰).
+치환(${IFS} · $IFS · $(…) · `…`)은 빈 글자 · 공백 두 사본으로 · $'…' 는 \\xHH · \\NNN · \\uHHHH 를 푼 글자로 · 시험용 값은 += 도(네 번째 리뷰).
 서버가 하나도 없으면 바로 통과. 실수 방지용이지 보안 경계가 아니다 — 변수로 돌려 부르기 · 스크립트 파일 안의 명령까지 보지는 않는다.
 시험용: ATHENA_GUARD_SERVERS="<이름>=<별칭>,…"(팩 대신) · ATHENA_GUARD_REQUEST_BIN(요청 읽기 bin — 기본 bin/athena) — 훅을 부르는 쪽 환경에서만
 """
@@ -26,11 +27,33 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parents[2]
 BRACE_LIMIT = 64   # 중괄호 펼치기 — 이보다 많아지면 펼친 사본은 그만 만든다({ , } 를 공백으로 바꾼 사본은 늘 본다)
 
 
-def normalize(text, joint):
-    """셸이 지우는 것을 지운 사본 — 백슬래시-줄바꿈(joint 로 바꿈 · '' 이면 이어 붙이기) · $' · $" 의 $ · 빈 치환(${x} · $() · ``) · ' · " · 백슬래시"""
+# 치환 — ${…} · $이름 · $특수 · $(…) · `…`(안에 같은 꼴이 또 없는 것). 'keep' 사본은 빈 것만 지우고 나머지는 그대로 둔다($(ssh …) 안을 보려고)
+SUBST = re.compile(r'\$\{[^{}]*\}|\$[A-Za-z_]\w*|\$[0-9@*#?!$-]|\$\([^()]*\)|`[^`]*`')
+EMPTY_SUBST = re.compile(r'\$\{\w*\}|\$\(\s*\)|``')
+ANSI_C = re.compile(r"\$'((?:[^'\\]|\\.)*)'", re.S)
+ANSI_ESCAPE = re.compile(r'\\(x[0-9A-Fa-f]{1,2}|u[0-9A-Fa-f]{1,4}|U[0-9A-Fa-f]{1,8}|[0-7]{1,3}|c.|.)', re.S)
+ANSI_NAMED = {'n': '\n', 't': '\t', 'r': '\r', 'a': '\a', 'b': '\b', 'f': '\f', 'v': '\v', 'e': '\x1b', 'E': '\x1b'}
+
+
+def ansi_char(escape):
+    """$'…' 안 이스케이프 하나를 bash 처럼 푼다 — \\xHH · \\NNN · \\uHHHH · \\UHHHHHHHH · \\n 등 · 모르는 것은 글자 그대로"""
+    head, body = escape[0], escape[1:]
+    if head in 'xuU' and body:
+        return chr(min(int(body, 16), 0x10FFFF))
+    if head.isdigit():
+        return chr(int(escape, 8) & 0xFF)
+    if head == 'c' and body:
+        return chr(ord(body) & 0x1F)
+    return ANSI_NAMED.get(escape, escape)
+
+
+def normalize(text, joint, subst):
+    """셸이 지우는 것을 지운 사본 — 백슬래시-줄바꿈(joint 로 바꿈 · '' 이면 이어 붙이기) · $'…' 는 이스케이프를 푼 글자로 · $" 의 $ ·
+    치환(subst — 'keep' 이면 빈 것만 지우고 · '' · ' ' 이면 모든 치환을 그 글자로: ${IFS} 는 공백이 되어 낱말을 가른다) · ' · " · 백슬래시"""
     text = text.replace('\\\n', joint)
-    text = re.sub(r'\$(?=[\'"])', '', text)
-    text = re.sub(r'\$\{\w*\}|\$\(\s*\)|``', '', text)
+    text = ANSI_C.sub(lambda found: ANSI_ESCAPE.sub(lambda part: ansi_char(part.group(1)), found.group(1)), text)
+    text = re.sub(r'\$(?=[\'"])', '', text)   # 닫히지 않은 $' · $" 의 $
+    text = EMPTY_SUBST.sub('', text) if subst == 'keep' else SUBST.sub(subst, text)
     return re.sub(r'[\'"\\]', '', text)
 
 
@@ -55,13 +78,14 @@ def expand_braces(text):
 
 
 def views_of(text):
-    """검사가 보는 사본들 — 이어 붙인 것 · 공백으로 바꾼 것 × 중괄호를 펼친 것 · { , } 를 공백으로 바꾼 것"""
+    """검사가 보는 사본들 — (백슬래시-줄바꿈 이어 붙이기 · 공백) × (치환 그대로 · 빈 글자 · 공백) × (중괄호 펼치기 · { , } 를 공백으로)"""
     seen = []
     for joint in ('', ' '):
-        plain = normalize(text, joint)
-        for view in (expand_braces(plain), re.sub(r'[{},]', ' ', plain)):
-            if view is not None and view not in seen:
-                seen.append(view)
+        for subst in ('keep', '', ' '):
+            plain = normalize(text, joint, subst)
+            for view in (expand_braces(plain), re.sub(r'[{},]', ' ', plain)):
+                if view is not None and view not in seen:
+                    seen.append(view)
     return seen
 
 
@@ -73,7 +97,7 @@ command = (payload.get('tool_input') or {}).get('command') or ''
 if not command.strip():
     sys.exit(0)
 
-OVERRIDE = re.compile(r'\b(ATHENA_SSH_BIN|ATHENA_SCP_BIN|ATHENA_REQUEST_BIN|ATHENA_GUARD_\w+)\s*=')
+OVERRIDE = re.compile(r'\b(ATHENA_SSH_BIN|ATHENA_SCP_BIN|ATHENA_REQUEST_BIN|ATHENA_GUARD_\w+)\s*\+?=')
 RAW = re.compile(r'\b(ssh|scp|rsync|sftp)\b')
 ANSWER = re.compile(r'\brequest\s+(answer|cancel)\b')
 # 답 · 취소할 요청 id — request answer|cancel 바로 뒤 낱말

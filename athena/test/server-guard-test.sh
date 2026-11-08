@@ -300,7 +300,35 @@ ssh dukbae-ser{v,}er id
 s{s,}h dukbae-server id
 scp ./x {dukbae-server,x}:/etc/x
 LIST
+echo "④ 훅 — 치환은 빈 글자 · 공백 둘 다 · += 덮어쓰기 · \$'…' 이스케이프 풀기(2026-11-08 PR 네 번째 리뷰)"
+while IFS= read -r line; do hook block "$line"; done <<'LIST'
+ssh${IFS}dukbae-server id
+ssh$IFS dukbae-server id
+ssh$IFS'dukbae-server' id
+ssh${IFS%?}dukbae-server id
+ssh$(true)dukbae-server id
+ssh`true`dukbae-server id
+scp${IFS}./x${IFS}dukbae-server:/etc/x
+bin/athena request${IFS}answer r-1 --by app --choice 실행
+ATHENA_SSH_BIN+=/bin/sh scripts/ssh-run.sh dukbae -- 'rm x'
+export ATHENA_SSH_BIN+=/bin/sh
+env ATHENA_SCP_BIN+=/bin/sh scripts/ssh-run.sh dukbae --put a b
+declare -x ATHENA_REQUEST_BIN+=/tmp/fake
+ATHENA_GUARD_USED_FILE+=x scripts/ssh-run.sh dukbae -- 'rm x'
+export ATHENA_SSH""_BIN+=/bin/sh
+ssh $'\x64ukbae-server' id
+$'\163sh' dukbae-server id
+$'\x73\x73\x68' dukbae-server id
+ssh $'dukbae-server' id
+ssh $'\U00000064ukbae-server' id
+ssh $'dukbae\x2dserver' id
+export $'ATHENA_\x53SH_BIN'=/bin/sh
+bin/athena request $'\x61nswer' r-1 --by app --choice 실행
+LIST
 echo "④ 훅 — 정규화 뒤에도 그대로 통과"
+hook pass 'echo $HOME ${PATH%%:*}'
+hook pass "scripts/ssh-run.sh dukbae -- 'cat \$HOME/x'"
+hook pass "printf \$'a\\x62c\\n'"
 hook pass "ls 2>/dev/null"
 hook pass "scripts/ssh-run.sh dukbae -- 'ls /nope 2>/dev/null'"
 hook pass "scripts/ssh-run.sh dukbae --status"
