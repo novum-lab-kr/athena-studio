@@ -208,5 +208,6 @@
   "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "Athena 창에 포커스가 있으면 다른 앱이 ⌘⇧J · ⌘⇧K 를 가져간 경우에도 pane 포커스가 옮겨 가요.",
   "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "pane 을 바꿀 때 오른쪽 사이드바에 읽는 중 표시나 잘못된 제목이 깜빡이지 않아요. 새 내용이 준비될 때까지 이전 내용이 그대로 보여요.",
   "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "브랜치가 없는 폴더의 오른쪽 사이드바 제목에 커밋 번호 대신 팩 이름(팩 자체 폴더)이나 폴더 이름(그 밖의 폴더)이 나와요.",
-  "A pane running a command in the background now counts as working instead of idle.": "뒤에서 명령을 돌리는 pane 은 쉬는 중이 아니라 작업 중으로 보여요."
+  "A pane running a command in the background now counts as working instead of idle.": "뒤에서 명령을 돌리는 pane 은 쉬는 중이 아니라 작업 중으로 보여요.",
+  "The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.": "Explorer 에서 연 파일 미리보기가 터미널 pane 처럼 배치 안의 한 칸이 됐어요. 머리줄을 끌어 pane 의 위 · 아래 · 왼쪽 · 오른쪽에 놓고, 칸 사이 경계를 끌어 너비와 높이를 바꿀 수 있어요."
 }

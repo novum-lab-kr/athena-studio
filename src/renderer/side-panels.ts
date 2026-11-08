@@ -10,6 +10,9 @@ import type { ExplorerActions } from './ui/explorer.tsx'
 import { welcomeShown } from './pack-switch.ts'
 import { workspaceName } from './tabs.ts'
 import { fitEdgeSizes } from './edge-resize.ts'
+import { activeTab } from './tabs.ts'
+import * as PreviewLayout from '../lib/preview-layout.mts'
+import { previewSpot, setPreviewSpot } from './preview-pane.ts'
 
 // ── 왼쪽 spaces · 오른쪽 패널 ──
 // 접기·펴기 버튼 아이콘 — 칸 머리에 붙는다(그리기는 React — 왼쪽 ui/spaces.tsx · 오른쪽 ui/explorer.tsx). 패널 아이콘(네모 + 세로선 · 사용자가 시안 5 를 고름) · 접힌 칸은 그쪽을 칠한다
@@ -57,7 +60,8 @@ export function lineIcon(paths: string[]): SVGSVGElement {
 }
 
 // 미리보기(뷰어) — VSCode 처럼 확장자에 맞는 색(Dark+)과 줄 번호. 바뀐 파일은 diff(옛·새 번호 · 추가 초록 · 삭제 빨강), 이미지는 그림.
-// 터미널 pane 옆에 나눠 띄우고(터미널은 줄어든 폭으로 다시 맞춘다) Esc · ✕ 로 닫는다
+// pane 배치의 한 칸으로 띄우고(처음엔 터미널 칸 전체 오른쪽 45% · 끌어 옮기기 · 경계는 pane 과 같다 — preview-pane.ts) Esc · ✕ 로 닫는다.
+// 다른 파일을 열면 같은 자리에서 내용만 바꾼다
 const FONT_STYLE = { italic: 1, bold: 2, underline: 4 }
 
 function viewerLine(row: ViewerRow, diff: boolean): HTMLDivElement {
@@ -128,7 +132,9 @@ async function openPreview(relative: string): Promise<void> {
     if (result.untracked) body.prepend(note(say('preview.untracked')))
     if (result.truncated) body.append(note(say('preview.truncated')))
   }
+  if (!previewSpot) setPreviewSpot(PreviewLayout.defaultSpot(activeTab()?.tree || null))
   preview.hidden = false
+  layoutPanes()
   body.scrollTop = 0
   preview.focus()
 }
@@ -136,6 +142,8 @@ async function openPreview(relative: string): Promise<void> {
 export function closePreview(): void {
   previewRequest++
   $('preview').hidden = true
+  setPreviewSpot(null)
+  layoutPanes()
   const focused = views.get(screen.focused as string)
   if (focused) focused.term.focus()
 }

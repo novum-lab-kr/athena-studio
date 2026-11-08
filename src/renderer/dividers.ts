@@ -7,12 +7,16 @@ import { PANE_GAP } from './terminal.ts'
 import { estimateCells, screen } from './screen.ts'
 import { activeTab } from './tabs.ts'
 import { layoutPanes } from './pane-layout.ts'
+import * as PreviewLayout from '../lib/preview-layout.mts'
+import { layoutTree, previewSpot, setPreviewSpot } from './preview-pane.ts'
 
 // 경계 요소 — element.divider 가 지금 경계
 type DividerElement = HTMLDivElement & { divider?: Divider }
 type DividerDrag = { tabId: string; shape: string; element: DividerElement; pointerId: number; ratio: number | null; cancel: () => void }
 
 // ── pane 경계 끌기 ───────────────────────────────────────
+// 경계는 배치에 쓴 트리(파일 미리보기가 열려 있으면 그 칸까지 합친 트리 — preview-pane.ts)에서 찾는다.
+// 미리보기 칸과 옆 칸 사이 경계는 화면이 기억하는 미리보기 비율만 바꾸고, 나머지는 데몬 트리의 같은 경계(daemonPath)로 바꿔 저장한다.
 // 비율은 데몬 탭 트리에 저장한다(tab ratio). 끄는 동안과, 옛 데몬이 그 동작을 모를 때는 화면이 임시로 기억한다(ratioOverrides).
 // 임시 비율은 트리 모양(비율 뺀)이 같을 때만 쓴다 — 나누거나 닫아 모양이 바뀌면 버린다
 const ratioOverrides = new Map<string, { ratio: number; shape: string }>() // `${tabId}|${path}` → { ratio, shape }
@@ -46,7 +50,7 @@ export function renderDividers(tab: ScreenTab | null, tree: Tree | null, area: A
   const tabIds = new Set(screen.tabs.map((entry) => entry.id))
   for (const key of ratioOverrides.keys()) if (!tabIds.has(key.split('|')[0] as string)) ratioOverrides.delete(key)
   // 끄는 중에 탭이 바뀌었거나 pane 이 생기고 닫혀 트리 모양이 바뀌면 끌기를 취소한다(다른 경계에 저장되지 않게)
-  if (dividerDrag && (!tab || tab.id !== dividerDrag.tabId || treeShape(tab.tree) !== dividerDrag.shape)) cancelDividerDrag()
+  if (dividerDrag && (!tab || tab.id !== dividerDrag.tabId || treeShape(tree) !== dividerDrag.shape)) cancelDividerDrag()
   const found = tab && tree ? StudioLayout.dividers(tree, area, PANE_GAP) : []
   const alive = new Set<string>()
   for (const divider of found) {
@@ -59,7 +63,12 @@ export function renderDividers(tab: ScreenTab | null, tree: Tree | null, area: A
       element.addEventListener('pointerdown', (event) => startDividerDrag(event, element!))
       element.addEventListener('dblclick', () => {
         const current = activeTab()
-        if (current && element!.divider) commitRatio(current, element!.divider.path, StudioLayout.DEFAULT_RATIO)
+        if (!current || !element!.divider) return
+        const target = dividerTarget(current, element!.divider.path)
+        if (target === 'preview') {
+          setPreviewSpot({ ...previewSpot!, ratio: StudioLayout.DEFAULT_RATIO })
+          layoutPanes()
+        } else if (target) commitRatio(current, target, StudioLayout.DEFAULT_RATIO)
       })
       dividerElements.set(key, element)
       container.append(element)
@@ -85,15 +94,32 @@ function placeDivider(element: DividerElement, divider: Divider): void {
   Object.assign(element.style, { left: `${box.left}px`, top: `${box.top}px`, width: `${box.width}px`, height: `${box.height}px` })
 }
 
+// 합친 트리의 경계 길 → 'preview'(미리보기 칸의 경계) · 데몬 트리의 경계 길 · null(없음)
+function dividerTarget(tab: ScreenTab, path: Divider['path']): 'preview' | Divider['path'] | null {
+  const tree = layoutTree(tab)
+  if (!previewSpot || !tree) return path
+  const own = PreviewLayout.previewBranchPath(tree)
+  if (own && own.join('.') === path.join('.')) return 'preview'
+  return PreviewLayout.daemonPath(tree, path)
+}
+
 function startDividerDrag(event: PointerEvent, element: DividerElement): void {
   const tab = activeTab()
   if (event.button !== 0 || !tab || !element.divider || dividerDrag) return
+  const target = dividerTarget(tab, element.divider.path)
+  if (!target) return
   event.preventDefault()
   element.setPointerCapture(event.pointerId)
   element.classList.add('dragging')
-  const path = element.divider.path
+  // 미리보기 경계면 데몬 길이 없다 — 화면 비율만 바꾸고 취소하면 처음 비율로
+  const path = target === 'preview' ? [] : target
+  const startSpot = previewSpot
   const key = `${tab.id}|${path.join('.')}`
-  const shape = treeShape(tab.tree)
+  const shape = treeShape(layoutTree(tab))
+  const setRatio = (ratio: number) => {
+    if (target === 'preview') setPreviewSpot({ ...previewSpot!, ratio })
+    else ratioOverrides.set(key, { ratio, shape: treeShape(tab.tree) })
+  }
   let frame = 0
   const move = (moveEvent: PointerEvent) => {
     if (!dividerDrag || moveEvent.pointerId !== dividerDrag.pointerId) return
@@ -101,7 +127,7 @@ function startDividerDrag(event: PointerEvent, element: DividerElement): void {
     const divider = element.divider as Divider
     const pos = divider.split === 'right' ? moveEvent.clientX - origin.left : moveEvent.clientY - origin.top
     dividerDrag.ratio = StudioLayout.ratioAt(divider, pos, PANE_GAP)
-    ratioOverrides.set(key, { ratio: dividerDrag.ratio, shape })
+    setRatio(dividerDrag.ratio)
     if (!frame) frame = requestAnimationFrame(() => {
       frame = 0
       layoutPanes()
@@ -125,7 +151,7 @@ function startDividerDrag(event: PointerEvent, element: DividerElement): void {
     const { ratio } = dividerDrag
     dividerDrag = null
     detach()
-    if (ratio === null) return layoutPanes()
+    if (ratio === null || target === 'preview') return layoutPanes()
     commitRatio(tab, path, ratio)
   }
   dividerDrag = {
@@ -138,7 +164,8 @@ function startDividerDrag(event: PointerEvent, element: DividerElement): void {
     cancel: () => {
       dividerDrag = null
       detach()
-      ratioOverrides.delete(key)
+      if (target !== 'preview') ratioOverrides.delete(key)
+      else if (previewSpot && startSpot) setPreviewSpot({ ...previewSpot, ratio: startSpot.ratio })
       if (element.hasPointerCapture(event.pointerId)) element.releasePointerCapture(event.pointerId)
     },
   }
