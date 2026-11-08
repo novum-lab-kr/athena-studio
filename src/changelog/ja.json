@@ -208,5 +208,6 @@
   "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "Athena のウィンドウにフォーカスがあれば、他のアプリが ⌘⇧J・⌘⇧K を使っている場合でも pane のフォーカスを移動できるようになりました。",
   "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "pane を切り替えても右サイドバーに読み込み表示や誤ったタイトルがちらつかなくなりました。新しい内容の準備ができるまで前の内容を表示します。",
   "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "ブランチのないフォルダの右サイドバーのタイトルに、コミット番号ではなくパック名(パック自身のフォルダ)またはフォルダ名(その他のフォルダ)を表示するようになりました。",
-  "A pane running a command in the background now counts as working instead of idle.": "バックグラウンドでコマンドを実行している pane を、待機中ではなく作業中として扱うようになりました。"
+  "A pane running a command in the background now counts as working instead of idle.": "バックグラウンドでコマンドを実行している pane を、待機中ではなく作業中として扱うようになりました。",
+  "The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.": "エクスプローラーで開いたファイルのプレビューが、ターミナルのペインと同じくレイアウトの一区画になりました。見出し行をドラッグしてペインの上下左右に置き、区画の境界をドラッグして幅と高さを変えられます。"
 }

@@ -7,7 +7,8 @@ import type { PaneView } from './terminal.ts'
 import { screen } from './screen.ts'
 import { paneBackgroundShells } from './main.ts'
 import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
-import { renderDividers, reportTabSize, treeForLayout } from './dividers.ts'
+import { renderDividers, reportTabSize } from './dividers.ts'
+import { PREVIEW_ID, layoutTree } from './preview-pane.ts'
 import { syncPaneDrag } from './pane-drag.ts'
 import { StudioUi } from './ui/index.ts'
 import { spaceColor } from './space-actions.ts'
@@ -41,11 +42,14 @@ export function layoutPanes(): void {
   setMonitorVisible(showDock)
   const container = $('panes')
   const tab = activeTab()
-  const tree = tab ? treeForLayout(tab) : null
+  // 파일 미리보기가 열려 있으면 그 칸까지 합친 트리로 잰다(preview-pane.ts)
+  const tree = layoutTree(tab)
   const area = { x: 0, y: 0, width: container.clientWidth, height: container.clientHeight }
   const rects = tree ? StudioLayout.computeRects(tree, area, PANE_GAP) : {}
   renderDividers(tab, tree, area)
   syncPaneDrag(tab)
+  const previewRect = rects[PREVIEW_ID]
+  if (previewRect) Object.assign($('preview').style, { left: `${previewRect.x}px`, top: `${previewRect.y}px`, width: `${previewRect.width}px`, height: `${previewRect.height}px` })
   const meta = new Map(screen.panes.map((pane) => [pane.id, pane]))
   for (const [paneId, view] of views) {
     const rect = rects[paneId]

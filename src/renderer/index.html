@@ -55,7 +55,17 @@
       <div class="center">
         <nav id="studio-tabs" class="studio-tabs"></nav>
         <div class="work-area">
-          <div id="panes" class="panes"></div>
+          <div id="panes" class="panes">
+            <!-- 미리보기 — pane 배치의 한 칸(자리 · 크기는 layoutPanes 가 · preview-pane.ts) · 머리줄을 끌어 pane 처럼 옮긴다 -->
+            <div id="preview" class="preview" tabindex="-1" hidden>
+              <header class="preview-head">
+                <span id="preview-title" class="preview-title"></span>
+                <span class="pane-drag-handle" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg></span>
+                <button id="preview-close" class="preview-close" title="닫기 (Esc)" data-i18n-title="common.closeEsc">✕</button>
+              </header>
+              <pre id="preview-body" class="preview-body"></pre>
+            </div>
+          </div>
           <!-- 회사 팩이 하나도 없을 때 — VS Code 시작 화면처럼 작업 창 가운데에(모달 아님) -->
           <!-- 시작 화면 — 팩이 없을 때 · 켤 때마다(팩이 있어도 · 도는 에이전트가 없으면) · 작업 창 가운데(VS Code 처럼) · 밤하늘(2026-10-18 확정) -->
           <section id="pack-welcome" class="pack-welcome" hidden>
@@ -64,14 +74,6 @@
               <!-- 몸통(로고 · 제목 · 만들기 · 가져오기 · 내 팩)은 React — src/renderer/ui/pack-welcome.tsx(renderer renderPackWelcome 이 띄운다) -->
             </div>
           </section>
-          <!-- 미리보기 — 터미널 옆에 나눠 띄운다(덮지 않는다) -->
-          <div id="preview" class="preview" tabindex="-1" hidden>
-            <header class="preview-head">
-              <span id="preview-title" class="preview-title"></span>
-              <button id="preview-close" class="preview-close" title="닫기 (Esc)" data-i18n-title="common.closeEsc">✕</button>
-            </header>
-            <pre id="preview-body" class="preview-body"></pre>
-          </div>
         </div>
         <div id="screen-status" class="screen-status" hidden></div>
         <!-- 가운데 맨 아래 — 에이전트 모니터(앱 화면 · Claude 기록을 main 이 따라 읽는다 · athena 작업 공간에서만 보임) -->
