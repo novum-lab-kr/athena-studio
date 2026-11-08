@@ -191,12 +191,29 @@ export function showCoreUpdate(view: CoreUpdateView): void {
   else overlay.focus({ preventScroll: true })
 }
 
-// 서버 추가 팝업 — 몸통은 React(ui/server-add.tsx), 여기는 보이기 · 숨기기 · 뒤 화면 막기 · Esc · 포커스. 끝나면 고른 것을 돌려준다
+// 서버 등록 팝업 — 몸통은 React(ui/server-add.tsx), 여기는 보이기 · 숨기기 · 뒤 화면 막기 · Esc · 포커스. 끝나면 등록한 서버를 돌려준다
+// 키 올리는 pane 을 쓰는 동안은 잠깐 숨긴다(suspend) — 그 사이 입구를 다시 누르면 숨긴 팝업을 다시 보인다(resumeServerAdd)
+let resumeHidden: (() => void) | null = null
+export function resumeServerAdd(): boolean {
+  if (!resumeHidden) return false
+  resumeHidden()
+  return true
+}
+
 export function showServerAdd(hosts: { host: string; registered: boolean }[], keys: { path: string; kind: string }[]): Promise<ServerAddDone> {
   const overlay = $('server-add')
   const before = document.activeElement
+  const reveal = (): void => {
+    resumeHidden = null
+    overlay.hidden = false
+    syncModal()
+    const first = overlay.querySelector<HTMLElement>('[data-autofocus]') || overlay.querySelector<HTMLElement>('input')
+    if (first) first.focus({ preventScroll: true })
+    else overlay.focus({ preventScroll: true })
+  }
   return new Promise((resolve) => {
     const hide = (done: ServerAddDone): void => {
+      resumeHidden = null
       overlay.hidden = true
       overlay.onkeydown = null
       StudioUi.serverAdd.clear()
@@ -204,17 +221,19 @@ export function showServerAdd(hosts: { host: string; registered: boolean }[], ke
       if (before instanceof HTMLElement && before.isConnected) before.focus({ preventScroll: true })
       resolve(done)
     }
-    StudioUi.serverAdd.show(hosts, keys, hide)
+    const suspend = (hidden: boolean): void => {
+      if (!hidden) return reveal()
+      overlay.hidden = true
+      syncModal()
+      resumeHidden = reveal
+    }
+    StudioUi.serverAdd.show(hosts, keys, { close: hide, suspend })
     overlay.onkeydown = (event) => {
       if (event.key !== 'Escape' || event.isComposing) return
       event.preventDefault()
       hide(null)
     }
-    overlay.hidden = false
-    syncModal()
-    const first = overlay.querySelector<HTMLElement>('[data-autofocus]') || overlay.querySelector<HTMLElement>('input')
-    if (first) first.focus({ preventScroll: true })
-    else overlay.focus({ preventScroll: true })
+    reveal()
   })
 }
 

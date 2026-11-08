@@ -139,15 +139,32 @@ export function installWorkspaces(ctx: PackCtx, { app, dialog, Menu, say, studio
     const hosts = Array.isArray(result.hosts) ? result.hosts.filter((item): item is { host: string; registered: boolean } => Boolean(item) && typeof item.host === 'string') : []
     return { ok: true, hosts: hosts.map((item) => ({ host: item.host, registered: item.registered === true })) }
   }
-  ctx.addServer = async (host: string) => {
+  // 등록 팝업의 첫 단계 — 팩 쪽 검사만(코어 server add --check · ssh 를 부르지 않고 아무것도 쓰지 않는다). 본체를 먼저 따라잡는다(옛 코어는 --check 를 모른다)
+  ctx.serverCheck = async (alias: string) => {
     const stale = await freshBody()
     if (stale) return stale
-    const result = (await ctx.packTask(say('pack.task.addServer'), () => runCore(['server', 'add', host], { dir: ctx.athenaDir }))) as RepoResult & { server?: { name: string; host: string } }
+    const result = (await runCore(['server', 'add', alias, '--check'], { dir: ctx.athenaDir })) as RepoResult & { checked?: boolean; server?: { name: string; host: string } }
     if (!result.ok || !result.server) return packModel.packFailure(result, say)
-    // 등록 뒤 — 아테나가 "지금 분석하고 다이어그램까지 만들까요?" 를 한 번 묻는다(setup.md 2단계).
-    // 아테나 창이 없으면 넣지 못한다 — asked false 면 화면이 [나중에][분석하기] 로 직접 묻는다(serverAnalyze)
-    const asked = result.already ? false : await sendToAthena(say('spaces.addServerAsk', { server: result.server.name, host: result.server.host }))
-    return { ok: true, already: Boolean(result.already), asked, server: { name: result.server.name, host: result.server.host } }
+    if (result.already) return { ok: true, already: true, server: { name: result.server.name, host: result.server.host } }
+    // 검사만 했다는 표시가 없으면 옛 코어가 등록까지 했을 수 있다 — 등록된 것으로 본다
+    return result.checked ? { ok: true, server: { name: result.server.name, host: result.server.host } } : { ok: true, already: true, server: { name: result.server.name, host: result.server.host } }
+  }
+  // 등록 — tested 면 앱이 방금 접속을 확인했다(D1 · 코어는 접속 시험을 건너뛴다). 등록 뒤 분석은 팝업 [등록] 옆 체크를 켰으면 닫힐 때 serverAnalyze 로
+  ctx.addServer = async (host: string, { tested = false }: { tested?: boolean } = {}) => {
+    const stale = await freshBody()
+    if (stale) return stale
+    const args = ['server', 'add', host, ...(tested ? ['--tested'] : [])]
+    const result = (await ctx.packTask(say('pack.task.addServer'), () => runCore(args, { dir: ctx.athenaDir }))) as RepoResult & { server?: { name: string; host: string } }
+    if (!result.ok || !result.server) return packModel.packFailure(result, say)
+    return { ok: true, already: Boolean(result.already), server: { name: result.server.name, host: result.server.host } }
+  }
+  // 키 올리기 터미널 — 사람이 비밀번호를 직접 넣는 셸(ssh-copy-id). 작업 공간 하나를 새로 열고 그 pane id 를 돌려준다(화면이 끝남을 기다린다)
+  ctx.openSshPane = async (label: string, text: string) => {
+    const created = await daemonCall<{ root_pane?: { id: string } }>('workspace create', { label, cwd: app.getPath('home'), focus: true })
+    const pane = created.result && created.result.root_pane
+    if (!pane) return { error: created.error || 'pane' }
+    const ran = await daemonCall('pane run', { pane: pane.id, text })
+    return ran.error ? { error: ran.error } : { pane: pane.id }
   }
   // 등록 뒤 [분석하기] — 아테나 창을 열고(없으면 에이전트를 켠다) 입력을 기다렸다가 분석 지시를 넣는다(setup.md "서버 하나 더하기" 2단계 · 분석은 바로 시작)
   ctx.serverAnalyze = async (name: string, size: Size) => {

@@ -189,8 +189,10 @@ const agentsInUse = (pack, except) => {
 const nameFromAlias = (alias) => alias.toLowerCase().replace(/[^a-z0-9-]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40)
 
 // 서버 등록 — 접속 시험을 통과해야 pack.json 에 쓴다(실패면 팩 그대로)
-/** @param {string} root @param {{ host: string, name?: string, report?: (step: string, text: string) => void }} input */
-export const addServer = (root, { host, name = '', report = () => {} }) => {
+//   check   팩 쪽 검사(별칭 · 이름 규칙 · 이름 · 에이전트 충돌 · 같은 별칭 이미 등록)만 하고 멈춘다 — ssh 를 부르지 않는다(앱이 ~/.ssh/config 에 쓰기 전에)
+//   tested  앱이 방금 같은 별칭으로 접속을 확인했다 — BatchMode 시험을 건너뛴다(접속 1번). 말로 하는 `server add` 는 늘 시험
+/** @param {string} root @param {{ host: string, name?: string, check?: boolean, tested?: boolean, report?: (step: string, text: string) => void }} input */
+export const addServer = (root, { host, name = '', check = false, tested = false, report = () => {} }) => {
   if (!host || !ALIAS.test(host)) throw new PackError('invalid-name', `ssh 별칭이 올바르지 않다: ${host || '(없음)'} — ~/.ssh/config 의 Host 이름(글자 · 숫자 · . _ -)`, { reason: 'server-bad-host' })
   const serverName = name || nameFromAlias(host)
   if (!NAME.test(serverName)) throw new PackError('invalid-name', `서버 이름이 올바르지 않다: ${serverName} — 영문 소문자 · 숫자 · -(--name)`, { reason: 'server-bad-name', reasonArgs: { name: serverName } })
@@ -203,11 +205,14 @@ export const addServer = (root, { host, name = '', report = () => {} }) => {
   if (sameHost) throw new PackError('exists', `그 별칭은 이미 서버 ${sameHost.name} 으로 등록돼 있다`, { reason: 'server-host-registered', reasonArgs: { name: sameHost.name } })
   const agent = `${serverName}-ops`
   if (agentsInUse(pack, serverName).has(agent)) throw new PackError('exists', `에이전트 이름 ${agent} 를 팩이 이미 쓴다 — 다른 서버 이름으로(--name)`, { reason: 'server-exists', reasonArgs: { name: serverName } })
+  if (check) return { ok: true, checked: true, server: { name: serverName, host } }
   report('check', `ssh 설정 확인 — ${host}`)
   if (!sshKnows(host)) throw new PackError('not-found', `~/.ssh/config 에 ${host} 가 없다 — 먼저 그 Host 를 적는다`, { reason: 'server-not-configured', reasonArgs: { host } })
-  report('login', `비밀번호 없이 들어가지는지 시험 — ${host}`)
-  const login = tryLogin(host)
-  if (login !== 'ok') throw new PackError('failed', FAIL_TEXT[login].replace('<별칭>', host), { reason: login, reasonArgs: { host } })
+  if (!tested) {
+    report('login', `비밀번호 없이 들어가지는지 시험 — ${host}`)
+    const login = tryLogin(host)
+    if (login !== 'ok') throw new PackError('failed', FAIL_TEXT[login].replace('<별칭>', host), { reason: login, reasonArgs: { host } })
+  }
   // paths · repos 는 등록 뒤 분석(서버 에이전트)이 채운다 — 배포 경로 · 그 서버에 올라간 팩 레포
   const entry = { name: serverName, host, agents: [agent], paths: [], repos: [] }
   writeJsonAtomic(join(packDir, 'pack.json'), { ...pack, servers: [...servers, entry] })

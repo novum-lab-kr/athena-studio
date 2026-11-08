@@ -89,16 +89,27 @@ declare global {
   // 팩 서버(src/main/workspaces.mts serverHosts · addServer · removeServer — 코어 server 결과 · 실패면 text) · 상태 칸(src/main/server-status.mts)
   type ServerEntry = import('../lib/server-status.mts').ServerEntry
   type ServerHostsReply = { ok: true; hosts: { host: string; registered: boolean }[] } | { ok: false; error?: string; text?: string; message?: string }
-  type ServerAddReply = { ok: true; already: boolean; asked?: boolean; server: ServerEntry } | { ok: false; error?: string; text?: string; message?: string }
-  // 서버 추가 팝업(src/main/ssh-setup.mts) — 칸 문제(problems)는 칸 아래 한 줄 · 접속 실패는 이유 이름만 · block 은 config 에 더할 글
+  type ServerAddReply = { ok: true; already: boolean; server: ServerEntry } | { ok: false; error?: string; text?: string; message?: string }
+  // 서버 등록 팝업(src/main/ssh-setup.mts) — 칸 문제(problems)는 칸 아래 한 줄 · 접속 실패는 이유 이름만
   // 칸 · 문제 이름은 src/lib/ssh-config.mts 와 같다(그 파일은 node 모듈을 불러 화면 타입 검사에 넣지 않는다)
   type HostInput = { alias: string; user: string; host: string; port: string; key: string }
   type HostProblems = Partial<Record<keyof HostInput, 'empty' | 'bad' | 'taken' | 'range' | 'path' | 'missing'>>
   // hostKey — 처음 보는 호스트 키(종류 · SHA256 지문만 · 키 글자는 main 이 가진다)
   type HostKeyView = { keys: { type: string; sha256: string }[] }
-  type ServerTestReply = { ok: true; ms: number; block: string } | { ok: false; reason?: import('../lib/server-status.mts').ServerFailReason; block?: string; problems?: HostProblems; error?: string; hostKey?: HostKeyView }
+  // 무엇을 등록하나 — 기존 Host 별칭 · 새로 입력한 칸
+  // 기존 Host 를 고쳤으면 input(별칭은 그 Host 이름으로 고정) — main 이 지금 값과 다른 키만 그 Host 블록에 다시 쓴다
+  type RegisterSource = { kind: 'host'; alias: string; input?: HostInput } | { kind: 'new'; input: HostInput }
+  // 기존 Host 를 고칠 수 없는 이유 — include(다른 파일) · match(앞에 Match) · multi(별칭 여럿) · override(다른 설정이 먼저 적용)
+  type HostLock = 'include' | 'match' | 'multi' | 'override'
+  type HostDetailReply = { ok: true; values: HostInput; lock: HostLock | null } | { ok: false; error: string }
+  // [등록] 이 지금 하는 단계 — 검사 → 접속 확인 → 등록(server:register-step)
+  type RegisterStep = 'check' | 'connect' | 'save'
+  // 실패는 멈춘 단계와 이유 — check 는 칸 문제(problems) 나 코어 글(text) · connect 는 접속 이유(reason · 처음 보는 호스트 키면 hostKey) · save 는 코어 글
+  type ServerRegisterReply =
+    | { ok: true; already: boolean; server: ServerEntry }
+    | { ok: false; step: RegisterStep; problems?: HostProblems; lock?: HostLock; text?: string; reason?: import('../lib/server-status.mts').ServerFailReason; hostKey?: HostKeyView; written?: boolean; error?: string }
+  type KeyUploadReply = { ok: true; pane: string } | { ok: false; step?: RegisterStep; problems?: HostProblems; error?: string }
   type TrustHostKeyReply = { ok: true; created: boolean } | { ok: false; error?: 'changed' | 'failed' | 'untested' | 'mismatch' | 'usage'; problems?: HostProblems }
-  type ServerCreateReply = ServerAddReply | { ok: false; problems?: HostProblems; error?: string; text?: string; message?: string }
   type ServerStatusReply = { servers: import('../lib/server-status.mts').ServerReading[]; history: Record<string, import('../lib/server-status.mts').HistoryPoint[]> }
   // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
   type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
@@ -275,12 +286,15 @@ declare global {
     packRemoveRepo(name: string): Promise<RepoRemoveReply>
     serverList(): Promise<ServerEntry[]>
     serverHosts(): Promise<ServerHostsReply>
-    serverAdd(host: string): Promise<ServerAddReply>
     serverKeys(): Promise<{ path: string; kind: string }[]>
     serverKeyBrowse(): Promise<string | null>
-    serverTest(input: HostInput): Promise<ServerTestReply>
-    serverCreate(input: HostInput): Promise<ServerCreateReply>
-    serverTrustHostKey(input: HostInput, fingerprints: string[]): Promise<TrustHostKeyReply>
+    serverHostDetail(alias: string): Promise<HostDetailReply>
+    serverRegister(source: RegisterSource): Promise<ServerRegisterReply>
+    onServerRegisterStep(callback: (step: RegisterStep) => void): () => void
+    serverTrustHostKey(source: RegisterSource, fingerprints: string[]): Promise<TrustHostKeyReply>
+    serverKeyUpload(source: RegisterSource): Promise<KeyUploadReply>
+    // 서버 에이전트 부르기(src/main/pack-repos.mts serverCall — delegate.sh <이름>-ops)
+    serverCall(name: string): Promise<{ ok: true; agent: string; pane: string | null } | { ok?: false; error: string }>
     serverAnalyze(name: string, size: CellSize | null): Promise<{ ok: boolean; text?: string }>
     serverRemove(name: string): Promise<RepoRemoveReply>
     // 접속 터미널 — 데몬 답(실패면 error)
@@ -318,6 +332,7 @@ declare global {
     onPickRequest(callback: () => void): () => void
     onPaneData(callback: (paneId: string, data: string) => void): () => void
     onPaneResized(callback: (paneId: string, cols: number, rows: number) => void): () => void
+    onPaneExit(callback: (paneId: string) => void): () => void
     onScreenState(callback: (next: ScreenState) => void): () => void
     onScreenBranches(callback: (next: Record<string, string | null>) => void): () => void
     onScreenPaneStatus(callback: (next: Record<string, { status: string | null; backgroundShells: number }>) => void): () => void

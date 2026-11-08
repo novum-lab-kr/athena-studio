@@ -37,6 +37,7 @@ import { installServerStatus } from './main/server-status.mts'
 import { installSshSetup } from './main/ssh-setup.mts'
 import type { SshKey } from './main/ssh-setup.mts'
 import type { HostInput } from './lib/ssh-config.mts'
+import type { RegisterSource } from './main/ssh-setup.mts'
 import type { ServerStatusReply } from './main/server-status.mts'
 import type { ServerEntry } from './lib/server-status.mts'
 import { SSH_ALIAS } from './lib/server-status.mts'
@@ -106,7 +107,6 @@ type MainCalls = {
   startSetup(dir: string): Promise<unknown>
   serverList(): Promise<ServerEntry[]>
   serverHosts(): Promise<unknown>
-  addServer(host: string): Promise<unknown>
   removeServer(name: string): Promise<unknown>
   openServer(name: string, size: Size): Promise<unknown>
   serverContextMenu(point: Point): Promise<unknown>
@@ -114,9 +114,11 @@ type MainCalls = {
   serverAnalyze(name: string, size: Size): Promise<unknown>
   sshKeys(): Promise<SshKey[]>
   sshKeyBrowse(): Promise<string | null>
-  sshTest(input: HostInput): Promise<unknown>
-  sshCreate(input: HostInput): Promise<unknown>
-  sshTrustHostKey(input: HostInput, fingerprints: string[]): Promise<unknown>
+  serverHostDetail(alias: string): Promise<unknown>
+  serverRegister(source: RegisterSource): Promise<unknown>
+  sshTrustHostKey(source: RegisterSource, fingerprints: string[]): Promise<unknown>
+  sshKeyUpload(source: RegisterSource): Promise<unknown>
+  serverCall(name: string): Promise<unknown>
   explorerList(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
   explorerStatus(workspaceId: unknown, paneId?: unknown): Promise<unknown>
   explorerOpen(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
@@ -807,6 +809,8 @@ function buildMenu(): void {
         { role: 'copy', label: say('menu.edit.copy') },
         { role: 'paste', label: say('menu.edit.paste') },
         { role: 'selectAll', label: say('menu.edit.selectAll') },
+        { type: 'separator' },
+        { label: say('menu.edit.addServer'), click: toFront('pack:command', 'add-server') },
       ],
     },
     {
@@ -948,34 +952,48 @@ handle('pack:add-repo', (ctx, dir: unknown, name: unknown) => (typeof dir === 's
 const SERVER_NAME = /^[a-z0-9][a-z0-9-]*$/
 handle('server:list', (ctx) => ctx.serverList())
 handle('server:hosts', (ctx) => ctx.serverHosts())
-handle('server:add', (ctx, host: unknown) => (typeof host === 'string' && SSH_ALIAS.test(host) ? ctx.addServer(host) : { ok: false, error: 'usage' }))
 handle('server:remove', (ctx, name: unknown) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.removeServer(name) : { ok: false, error: 'usage' }))
 handle('server:open', (ctx, name: unknown, size: Loose) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.openServer(name, cellSize(size)) : { error: 'usage' }))
 handle('server:context-menu', (ctx, point: unknown) => ctx.serverContextMenu(point && typeof point === 'object' ? (point as Point) : null))
 handle('server:status', (ctx) => ctx.serverStatus())
-// 서버 추가 팝업(main/ssh-setup.mts) — 칸 값은 글자만 받고 검사는 그쪽(lib/ssh-config.mts checkHost)
+// 서버 등록 팝업(main/ssh-setup.mts) — 칸 값은 글자만 받고 검사는 그쪽(lib/ssh-config.mts checkHost)
 const hostInput = (value: Loose): HostInput | null => {
   if (!value || typeof value !== 'object') return null
   const fields = ['alias', 'user', 'host', 'port', 'key'] as const
   if (!fields.every((field) => typeof value[field] === 'string')) return null
   return { alias: String(value.alias), user: String(value.user), host: String(value.host), port: String(value.port), key: String(value.key) }
 }
+// 기존 Host(별칭 + 고쳤으면 칸 값) 또는 새로 입력(칸 값) — 그 밖의 모양은 받지 않는다
+const registerSource = (value: Loose): RegisterSource | null => {
+  if (!value || typeof value !== 'object') return null
+  if (value.kind === 'host') {
+    if (typeof value.alias !== 'string' || !SSH_ALIAS.test(value.alias)) return null
+    if (value.input === undefined) return { kind: 'host', alias: value.alias }
+    const edited = hostInput(value.input as Loose)
+    return edited ? { kind: 'host', alias: value.alias, input: edited } : null
+  }
+  if (value.kind !== 'new') return null
+  const input = hostInput(value.input as Loose)
+  return input ? { kind: 'new', input } : null
+}
 handle('server:keys', (ctx) => ctx.sshKeys())
 handle('server:key-browse', (ctx) => ctx.sshKeyBrowse())
-handle('server:test', (ctx, value: Loose) => {
-  const input = hostInput(value)
-  return input ? ctx.sshTest(input) : { ok: false, error: 'usage' }
+handle('server:host-detail', (ctx, alias: unknown) => (typeof alias === 'string' && SSH_ALIAS.test(alias) ? ctx.serverHostDetail(alias) : { ok: false, error: 'usage' }))
+handle('server:register', (ctx, value: Loose) => {
+  const source = registerSource(value)
+  return source ? ctx.serverRegister(source) : { ok: false, error: 'usage' }
 })
-handle('server:create', (ctx, value: Loose) => {
-  const input = hostInput(value)
-  return input ? ctx.sshCreate(input) : { ok: false, error: 'usage' }
-})
-// [이 서버 믿기] — 화면은 보고 있던 지문만 보낸다(쓰는 키 줄은 main 이 받아 둔 것 · 다르면 쓰지 않는다)
+// [믿고 계속] — 화면은 보고 있던 지문만 보낸다(쓰는 키 줄은 main 이 받아 둔 것 · 다르면 쓰지 않는다)
 handle('server:trust-host-key', (ctx, value: Loose, fingerprints: unknown) => {
-  const input = hostInput(value)
+  const source = registerSource(value)
   const shown = Array.isArray(fingerprints) && fingerprints.length <= 8 && fingerprints.every((item) => typeof item === 'string' && /^SHA256:[A-Za-z0-9+/]{43}$/.test(item)) ? (fingerprints as string[]) : null
-  return input && shown ? ctx.sshTrustHostKey(input, shown) : { ok: false, error: 'usage' }
+  return source && shown ? ctx.sshTrustHostKey(source, shown) : { ok: false, error: 'usage' }
 })
+handle('server:key-upload', (ctx, value: Loose) => {
+  const source = registerSource(value)
+  return source ? ctx.sshKeyUpload(source) : { ok: false, error: 'usage' }
+})
+handle('server:call', (ctx, name: unknown) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.serverCall(name) : { error: 'usage' }))
 handle('server:analyze', (ctx, name: unknown, size: Loose) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.serverAnalyze(name, cellSize(size)) : { ok: false, error: 'usage' }))
 handle('pack:start-setup', (ctx, dir: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.startSetup(dir) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on: unknown) => ctx.setMonitorWatch(on === true))

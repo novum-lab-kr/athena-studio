@@ -1,4 +1,6 @@
 {
+  "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "SSH サーバー登録を簡素化 — [登録] ひとつ、編集メニューから、既存 Host を選択",
+  "Registered servers in the sidebar repo list — analysis right after registering is optional": "登録したサーバーをサイドバーのリポジトリ一覧に表示 — 登録直後の分析は任意",
   "Add SSH server registration from the sidebar — key auth only, host key check on first connect": "サイドバーから SSH サーバー登録 — 鍵認証のみ、初回接続時にホスト鍵を確認",
   "Sidebar server connection status — agent commands outside the read-only allow list wait for approval": "サイドバーにサーバー接続状態を表示 — 読み取り専用の許可リスト外のコマンドは承認待ち",
   "Add security review for sensitive changes — High findings block merge": "機密性の高い変更にセキュリティレビューを追加 — High 指摘でマージを停止",

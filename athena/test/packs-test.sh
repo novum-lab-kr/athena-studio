@@ -302,6 +302,10 @@ for host in nokey-host:server-key-needed hostkey-host:server-host-key down-host:
   check "server add ${host%%:*} → ${host#*:} · pack.json 그대로 · 주소 안 나감" '[ "$(echo "$R" | field reason)" = "${host#*:}" ] && cmp -s pack/pack.json "$WORK/pack.srv.bak" && ! echo "$R" | grep -q example.invalid' "$R"
 done
 check "server add 잘못된 별칭 → server-bad-host" '[ "$(A server add "a;b" | field reason)" = server-bad-host ]'
+# --check — 팩 쪽 검사만(ssh 를 부르지 않으니 설정에 없는 별칭도 통과) · 아무것도 안 씀
+R="$(A server add nowhere --check)"
+check "server add --check → checked · 이름 제안 · pack.json 그대로" '[ "$(echo "$R" | field checked)" = True ] && [ "$(echo "$R" | field server.name)" = nowhere ] && cmp -s pack/pack.json "$WORK/pack.srv.bak" && [ ! -e pack/agents/nowhere-ops.md ]' "$R"
+check "server add --check 잘못된 이름 → server-bad-name" '[ "$(A server add good-host --name Bad_Name --check | field reason)" = server-bad-name ]'
 # 서버 이름이 레포 이름과 같아도 레포 표의 줄은 그대로(서버 절 안에서만 넣고 뺀다)
 python3 -c "import sys; p='pack/ROUTING.md'; lines=open(p).read().split(chr(10)); lines.insert(1, '| \`dukbae\` | 레포 줄(시험) |'); open(p,'w').write(chr(10).join(lines))"
 R="$(A server add good-host --name dukbae)"
@@ -311,11 +315,17 @@ check "server add → 팩에 주소 없음" '! grep -rq example.invalid pack/'
 check "같은 서버 다시 → already" '[ "$(A server add good-host --name dukbae | field already)" = True ]'
 check "같은 이름 · 다른 별칭 → server-exists" '[ "$(A server add other-good --name dukbae | field reason)" = server-exists ]'
 check "같은 별칭 · 다른 이름 → server-host-registered" '[ "$(A server add good-host --name dup | field reason)" = server-host-registered ]'
+check "--check 도 같은 별칭 · 다른 이름 → server-host-registered · 같은 이름 → server-exists" '[ "$(A server add good-host --name dup --check | field reason)" = server-host-registered ] && [ "$(A server add other-good --name dukbae --check | field reason)" = server-exists ]'
 check "server hosts — 등록한 별칭은 registered" '[ "$(A server hosts | python3 -c "import json,sys; print(\",\".join(h[\"host\"] for h in json.load(sys.stdin)[\"hosts\"] if h[\"registered\"]))")" = good-host ]'
 R="$(A server remove dukbae)"
 check "server remove → 팩 백업 · servers 칸 · 에이전트 · 지식 · ROUTING 줄 · 링크 지움" '[ -f "$(echo "$R" | field backup)" ] && ! grep -q "\"servers\"" pack/pack.json && [ ! -e pack/agents/dukbae-ops.md ] && [ ! -e pack/knowledge/servers/dukbae ] && ! grep -q "^| \`dukbae\` | \`good-host\`" pack/ROUTING.md && [ ! -L .claude/agents/dukbae-ops.md ]' "$R"
 check "server remove → 같은 이름 레포 줄은 남김" '[ "$(grep -c "^| \`dukbae\` |" pack/ROUTING.md)" = 1 ] && grep -q "^| \`dukbae\` | 레포 줄(시험) |" pack/ROUTING.md'
 check "없는 서버 빼기 → server-missing" '[ "$(A server remove nope | field reason)" = server-missing ]'
+# --tested — 앱이 방금 접속을 확인했다(D1) · 접속 시험을 건너뛴다(가짜 ssh 는 nokey-host 로그인을 거절하지만 등록된다) · ssh -G 확인은 그대로
+R="$(A server add nokey-host --tested)"
+check "server add --tested → 접속 시험 없이 등록" '[ "$(echo "$R" | field server.name)" = nokey-host ] && grep -q "\"nokey-host\"" pack/pack.json' "$R"
+A server remove nokey-host >/dev/null
+check "server add --tested 설정에 없는 별칭 → server-not-configured" '[ "$(A server add nowhere --tested | field reason)" = server-not-configured ]'
 unset ATHENA_SSH_BIN ATHENA_SSH_CONFIG
 cp "$WORK/pack.srv.bak" pack/pack.json; cp "$WORK/routing.srv.bak" pack/ROUTING.md; A pack open acme >/dev/null
 

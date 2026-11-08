@@ -36,6 +36,14 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.53: 공개 v0.52.1 이후 v0.53.0 ~ v0.53.3(직접 머지 4건)에서 사용자에게 보이는 변경만. 사이트 릴리스 줄 파일 8c7ed5d · 그 ko 말투 59b7732 · 배포 판정 6c0a111 은 배포 · 문서 내부라 뺐고, 압축 대비 4b67490 은 곧 압축 알림 · 리드 기록(New)과 압축 뒤 다시 읽기 · 원문 안내(Improved) 두 줄로 나눴다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.60: v0.59.3..main 에서 사용자에게 보이는 변경 — SSH 서버 등록 흐름 다시(우측 상단 · 편집 메뉴 입구 · [등록] 하나 · 기존 Host 고르기 · 사이드바 서버 줄 · 등록 뒤 분석 체크). 범위 끝은 열어 둔다 -->
+
+## 0.60 (v0.60.0 – · Nov 8, 2026)
+
+### Improved
+- Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts
+- Registered servers in the sidebar repo list — analysis right after registering is optional
+
 <!-- 0.58: v0.57.0..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
 
 ## 0.58 (v0.58.0 – · Nov 8, 2026)

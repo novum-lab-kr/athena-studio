@@ -1624,15 +1624,21 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .server-add-box .pack-links { padding-top: 0; border-top: 0; }
 .server-add-box .pack-command[disabled] { opacity: 0.45; cursor: default; }
 .sv-sec { margin: 0 0 8px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em; }
-.sv-or { display: flex; align-items: center; gap: 10px; margin: 14px 0 10px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
-.sv-or::before, .sv-or::after { content: ''; flex: 1; border-top: 1px solid var(--popup-line); }
+.server-add-box .sv-or { margin: 14px 0; border: 0; border-top: 1px solid var(--popup-line); } /* Host 목록과 입력 칸 사이 — 글자 없는 선 */
 .sv-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 12px; }
 .sv-row { display: grid; grid-column: 1 / -1; grid-template-columns: 1fr 88px; gap: 12px; }
 .sv-field { min-width: 0; }
 .sv-field label { display: block; color: var(--popup-muted); font-size: 12px; font-weight: 500; }
 .sv-field .pack-input { margin-top: 5px; }
+.sv-field .pack-input:disabled { color: var(--popup-muted); cursor: default; } /* 고른 Host 의 고칠 수 없는 칸 */
 .sv-hint { margin: 5px 0 0; color: var(--popup-muted); font-size: 11.5px; line-height: 1.5; }
 .sv-select { grid-column: 1 / -1; }
+.sv-alias { grid-column: 1 / -1; }
+.sv-summary { display: grid; grid-template-columns: auto 1fr; gap: 6px 14px; margin: 0; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); }
+.sv-summary > div { display: contents; }
+.sv-summary dt { color: var(--popup-muted); font-size: 12px; }
+.sv-summary dd { min-width: 0; margin: 0; overflow-wrap: anywhere; color: var(--popup-text); font-size: 12.5px; }
+.sv-summary dd.code { font: 12px/1.5 var(--font-mono); }
 .sv-key-anchor { position: relative; }
 .sv-key-button { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; font: 12px/1.5 var(--font-mono); text-align: left; cursor: pointer; }
 .sv-key-button > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -1657,13 +1663,22 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .sv-fingerprints code { color: var(--popup-text); font: 11.5px/1.5 var(--font-mono); overflow-wrap: anywhere; }
 .sv-trust { display: flex; justify-content: flex-end; width: 100%; }
 .sv-trust .pack-button { margin-top: 0; }
-.sv-cmd { display: flex; align-items: center; gap: 8px; box-sizing: border-box; width: 100%; padding: 7px 10px; border-radius: 7px; background: var(--popup-inset); color: var(--popup-text); font: 11.5px/1.5 var(--font-mono); }
-.sv-cmd code { flex: 1; overflow-wrap: anywhere; }
-.sv-cmd button { flex: none; padding: 3px 9px; border: 1px solid var(--popup-line); border-radius: 6px; background: transparent; color: var(--popup-muted); font: 11px var(--font-ui); cursor: pointer; }
-.sv-cmd button:hover { background: var(--popup-hover); color: var(--popup-text); }
-.sv-preview { margin: 12px 0 0; }
-.sv-preview .sv-sec { margin: 0; }
-.sv-preview pre { margin: 5px 0 0; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--popup-gold-line); border-radius: 9px; background: var(--popup-inset); color: var(--popup-text); font: 12px/1.6 var(--font-mono); white-space: pre; }
-.sv-preview pre i { color: var(--popup-muted); font-style: normal; }
+.server-add-box .sv-hosts:focus { outline: none; }
+.server-add-box .pack-command:focus { outline: none; } /* 마우스 포커스는 표시 없음 — 금색은 고른 줄(.on)만 */
+.server-add-box .pack-command:focus-visible { outline: 0; box-shadow: inset 0 0 0 1px rgb(236 232 224 / 22%); }
+.server-add-box .pack-command.on { background: var(--popup-gold-bg); box-shadow: inset 0 0 0 1px var(--popup-gold-line); }
+/* [등록] 진행 단계 — 검사 → 접속 확인 → 등록 */
+.sv-steps { display: flex; gap: 16px; margin: 14px 0 0; padding: 0; list-style: none; font-size: 12px; }
+.sv-step { display: inline-flex; align-items: center; gap: 6px; color: var(--popup-muted); }
+.sv-step span { display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--popup-inset); font-size: 10px; }
+.sv-step.ok { color: var(--success); }
+.sv-step.run { color: var(--accent); }
+.sv-step.bad { color: var(--error); }
+/* 완료 화면 */
+.sv-trust { gap: 8px; }
+.sx-add { height: 26px; padding: 0 10px; border: 1px solid var(--line); border-radius: 6px; background: transparent; color: var(--text); font: 12px var(--font-ui); cursor: pointer; }
+.sx-add:hover { border-color: var(--accent); color: var(--accent); }
 .server-add-box .pack-actions :is(.pack-button, .primary) { margin-top: 0; }
 .sv-spacer { flex: 1; }
+.sv-analyze { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; color: var(--popup-muted); font-size: 12.5px; cursor: pointer; } /* [등록] 옆 — 등록 뒤 분석 체크 */
+.sv-analyze input { margin: 0; accent-color: var(--accent); cursor: pointer; }

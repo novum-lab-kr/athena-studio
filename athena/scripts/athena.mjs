@@ -65,6 +65,7 @@
  *   athena repo remove <레포 이름> [--json]                  팩에서 레포 빼기 — 팩 자동 백업 · pack.json · 자리 · 링크 · 그 레포 에이전트 · 지식 · 검증(레포 폴더는 그대로 · 워크트리가 있으면 거부)
  *   athena server hosts [--json]                       이 컴퓨터 ~/.ssh/config 의 Host 별칭 목록(* ? ! 패턴 제외 · 주소는 내보내지 않는다) — 앱 "서버 추가"
  *   athena server add <ssh 별칭> [--name <이름>] [--json]  서버 하나 등록 — ssh -G 로 설정 확인 · BatchMode 접속 시험 · pack.json servers[](별칭만) · <이름>-ops 에이전트 · 지식 뼈대 · ROUTING 줄 · 링크
+ *     --check 팩 쪽 검사만(ssh 안 부름 · 아무것도 안 씀) · --tested 접속 시험 건너뜀(앱이 방금 확인했을 때)
  *   athena server remove <서버 이름> [--json]          팩에서 서버 빼기 — 팩 자동 백업 · pack.json 항목 · 에이전트 · 지식 · ROUTING 줄(서버는 건드리지 않는다)
  *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서(있는 파일은 그대로) + 링크
  *
@@ -230,9 +231,10 @@ const quietLink = () => {
 }
 const runServerAdd = () => {
   const host = positional()[0]
-  if (!host) throw new PackError('usage', '사용: athena server add <ssh 별칭> [--name <이름>] [--json]')
-  const result = addServer(ROOT, { host, name: flag('name'), report })
-  if (!result.already) quietLink()
+  if (!host) throw new PackError('usage', '사용: athena server add <ssh 별칭> [--name <이름>] [--check | --tested] [--json]')
+  // --check · --tested 는 앱 등록 팝업용(검사만 · 앱이 접속을 이미 확인함) — 말로 하는 등록은 쓰지 않는다
+  const result = addServer(ROOT, { host, name: flag('name'), check: args.includes('--check'), tested: args.includes('--tested'), report })
+  if (!result.already && !result.checked) quietLink()
   return result
 }
 const runServerRemove = () => {

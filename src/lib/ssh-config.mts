@@ -109,3 +109,106 @@ export function writeHostBlock(sshDir: string, entry: HostEntry, date: string): 
   fs.appendFileSync(file, next.slice(existing.length))
   return { ok: true, created: false }
 }
+
+// ── 기존 Host 고치기 — 고른 별칭의 Host 블록을 그 자리에서 다시 쓴다(블록 안 다른 줄은 그대로 · 바꾼 키만) ──
+// 읽기 전용(고칠 수 없음)인 경우:
+//   include — 이 config 에 그 Host 줄이 없다(Include 한 다른 파일에 있다)
+//   match   — 그 Host 줄보다 앞에 Match 블록이 있다(Match 가 값을 먼저 정할 수 있다)
+//   multi   — Host 줄에 별칭 · 패턴이 여럿이거나, 이 별칭의 Host 줄이 둘 이상이다
+export type HostLock = 'include' | 'match' | 'multi'
+export type HostSpan = { ok: true; start: number; end: number } | { ok: false; lock: HostLock }
+// 다시 쓰는 키 — ssh_config 이름 그대로(대소문자 없이 맞춘다)
+export type HostKeyName = 'HostName' | 'User' | 'Port' | 'IdentityFile'
+export type HostChanges = Partial<Record<HostKeyName, string>>
+
+// 한 줄의 지시어 이름(소문자)과 값 — 주석 · 빈 줄은 null. `Key value` · `Key=value` 둘 다
+function directive(raw: string): { key: string; value: string } | null {
+  const match = raw.replace(/#.*/, '').trim().match(/^([A-Za-z]+)(?:\s*=\s*|\s+)(.*)$/)
+  return match ? { key: (match[1] ?? '').toLowerCase(), value: (match[2] ?? '').trim() } : null
+}
+
+// 별칭의 Host 블록 자리(줄 번호 — start 는 Host 줄 · end 는 다음 Host/Match 줄 또는 끝, 끝 줄은 빠진다)
+export function hostSpan(text: string, alias: string): HostSpan {
+  const lines = text.split('\n')
+  const wanted = alias.toLowerCase()
+  let found: number[] = []
+  let seenMatch = false
+  let matchBefore = false
+  let multi = false
+  lines.forEach((raw, index) => {
+    const line = directive(raw)
+    if (!line) return
+    if (line.key === 'match') seenMatch = true
+    if (line.key !== 'host') return
+    const words = line.value.split(/\s+/).map((word) => word.replace(/^"|"$/g, '').toLowerCase())
+    if (!words.includes(wanted)) return
+    found = [...found, index]
+    if (words.length > 1) multi = true
+    if (seenMatch) matchBefore = true
+  })
+  if (!found.length) return { ok: false, lock: 'include' }
+  if (multi || found.length > 1) return { ok: false, lock: 'multi' }
+  if (matchBefore) return { ok: false, lock: 'match' }
+  const start = found[0] ?? 0
+  let end = lines.length
+  for (let index = start + 1; index < lines.length; index += 1) {
+    const line = directive(lines[index] ?? '')
+    if (line && (line.key === 'host' || line.key === 'match')) {
+      end = index
+      break
+    }
+  }
+  return { ok: true, start, end }
+}
+
+// 바꾼 키만 교체 — 블록에 그 키 줄이 있으면 첫 줄을 같은 들여쓰기로 바꾸고, 없으면 블록의 마지막 지시어 줄 뒤에 더한다.
+// 값은 checkHost 를 통과한 것만 넘긴다(줄 주입 막기는 거기서)
+export function rewriteHostBlock(text: string, span: { start: number; end: number }, changes: HostChanges): string {
+  const lines = text.split('\n')
+  const block = lines.slice(span.start + 1, span.end)
+  const firstIndent = block.find((raw) => directive(raw))?.match(/^\s*/)?.[0] || '  '
+  let lastDirective = -1
+  block.forEach((raw, index) => {
+    if (directive(raw)) lastDirective = index
+  })
+  const added: string[] = []
+  for (const [name, value] of Object.entries(changes) as [HostKeyName, string][]) {
+    const written = name === 'IdentityFile' ? keyValue(value) : value
+    const at = block.findIndex((raw) => directive(raw)?.key === name.toLowerCase())
+    if (at >= 0) block[at] = `${block[at]?.match(/^\s*/)?.[0] ?? firstIndent}${name} ${written}`
+    else added.push(`${firstIndent}${name} ${written}`)
+  }
+  block.splice(lastDirective + 1, 0, ...added)
+  return [...lines.slice(0, span.start + 1), ...block, ...lines.slice(span.end)].join('\n')
+}
+
+// config 줄의 인자 나누기 — OpenSSH misc.c argv_split(Include 가 쓰는 규칙)과 같게: 공백 · 탭으로 나누고, 큰 · 작은따옴표 안 공백은 그대로,
+// \ 뒤 " ' \ (따옴표 밖이면 공백도)는 그 글자 하나 · 다른 \ 는 그대로, 따옴표 밖에서 # 로 시작하는 낱말부터는 주석. 닫히지 않은 따옴표면 null
+export function configArgs(text: string): string[] | null {
+  const args: string[] = []
+  let at = 0
+  while (at < text.length) {
+    const char = text[at] as string
+    if (char === ' ' || char === '\t') {
+      at += 1
+      continue
+    }
+    if (char === '#') break
+    let quote = ''
+    let arg = ''
+    for (; at < text.length; at += 1) {
+      const now = text[at] as string
+      const next = text[at + 1] ?? ''
+      if (now === '\\' && (next === "'" || next === '"' || next === '\\' || (!quote && next === ' '))) {
+        arg += next
+        at += 1
+      } else if (!quote && (now === ' ' || now === '\t')) break
+      else if (!quote && (now === '"' || now === "'")) quote = now
+      else if (quote && now === quote) quote = ''
+      else arg += now
+    }
+    if (quote) return null
+    args.push(arg)
+  }
+  return args
+}
