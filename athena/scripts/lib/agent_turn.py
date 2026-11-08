@@ -8,8 +8,10 @@
   ask-to-request.py(asking) · permission-to-request.py(waiting-permission). 읽는 곳: 현황판 server.mjs reconcileTurns
 
 아테나 알림 받음 기록 — <팩 데이터>/state/lead-notices/<id>.json
-  { id, kind(turn · unconfirmed · menu), lead, text, plan, pane, from, turn, sent_at, received_at?, resent_at?, request? }
-  쓰는 곳: lead-send.py(끝 알림을 넣었을 때 --track · 전송을 확인하지 못했을 때) · 현황판(선택 창 알림 · 다시 넣기 · 요청)
+  { id, kind(turn · unconfirmed · menu), lead, text, plan, pane, from, turn, sent_at, pending?, received_at?, resent_at?, closed_at?, request?(연 요청 id · 받아서 거뒀으면 cancelled) }
+  쓰는 곳: lead-send.py(넣기 **전에** pending 으로 만들고 결과로 고친다 — 넣은 끝 알림(--track)은 남기고, 전송을 확인하지 못한 글은 unconfirmed 로,
+    넣지 못한 글 · 추적하지 않는 넣은 글은 지운다. 넣자마자 아테나 입력 훅이 돌아도 받음 표시를 놓치지 않게) · 현황판(선택 창 알림 · 다시 넣기 · 요청)
+  고치기는 모두 파일별 잠금(<lead-notices>/.<id>.lock · reuse_link.pane_lock) 안에서 읽기 · 합치기 · 쓰기 — 현황판(node)은 `python3 agent_turn.py --patch` 로 같은 잠금을 쓴다
   받음 표시: 아테나 pane 의 UserPromptSubmit 훅(pane-session.py)이 받은 입력에 그 글이 들어 있으면 received_at 을 적는다
   다시 넣기(2분) · [작업] 요청(10분)은 현황판이 한다(계획서 결정 D1)
 어떤 실패도 부르는 쪽을 막지 않게 — 쓰기 실패는 예외로 올리고 부르는 쪽이 삼킨다.
@@ -84,15 +86,48 @@ def ends_with_question(reply: str) -> bool:
     return bool(lines) and bool(QUESTION_END.search(lines[-1]))
 
 
-def record_notice(kind: str, lead: str, text: str, plan: str = '', pane: str = '', sender: str = '', turn: str = '') -> str:
+def record_notice(kind: str, lead: str, text: str, plan: str = '', pane: str = '', sender: str = '', turn: str = '', pending: bool = False) -> str:
     """아테나에 넣은(또는 넣었는지 모르는) 글을 받음 확인 대상으로 남긴다 — id. 옛 구조면 ''"""
     base = pack_state()
     if base is None:
         return ''
     notice_id = uuid.uuid4().hex
     _save(base / 'lead-notices' / f'{notice_id}.json',
-          {'id': notice_id, 'kind': kind, 'lead': lead, 'text': text, 'plan': plan, 'pane': pane, 'from': sender, 'turn': turn, 'sent_at': time.time()})
+          {'id': notice_id, 'kind': kind, 'lead': lead, 'text': text, 'plan': plan, 'pane': pane, 'from': sender, 'turn': turn, 'sent_at': time.time(),
+           **({'pending': True} if pending else {})})
     return notice_id
+
+
+def patch_notice_file(folder: pathlib.Path, notice_id: str, fields: dict) -> bool:
+    """알림 기록 한 칸씩 고치기 — 파일별 잠금 안에서 다시 읽고 합쳐 쓴다. 받음 표시(received_at)는 지우지 않는다. 기록이 없으면 False"""
+    if not NOTICE_ID.match(notice_id):
+        raise ValueError(f'알림 id 가 아니다: {notice_id}')
+    path = folder / f'{notice_id}.json'
+    with pane_lock(folder, notice_id):
+        notice = _load(path)
+        if not notice:
+            return False
+        received = notice.get('received_at')
+        notice.update(fields)
+        if received:
+            notice['received_at'] = received
+        _save(path, notice)
+    return True
+
+
+def update_notice(notice_id: str, **fields) -> bool:
+    base = pack_state()
+    return bool(base and notice_id) and patch_notice_file(base / 'lead-notices', notice_id, fields)
+
+
+def drop_notice(notice_id: str) -> None:
+    """넣지 못한 글 · 추적하지 않는 넣은 글의 pending 기록을 지운다"""
+    base = pack_state()
+    if not (base and notice_id and NOTICE_ID.match(notice_id)):
+        return
+    folder = base / 'lead-notices'
+    with pane_lock(folder, notice_id):
+        (folder / f'{notice_id}.json').unlink(missing_ok=True)
 
 
 def _squash(text: str) -> str:
@@ -127,3 +162,12 @@ def mark_received(lead: str, prompt: str) -> list:
                 _save(path, notice)
                 marked.append(path.stem)
     return marked
+
+
+if __name__ == '__main__':
+    # 현황판(node)이 같은 잠금으로 고칠 때: python3 agent_turn.py --patch <lead-notices 폴더> <id> '<json 칸>' — 없으면 종료 3
+    import sys
+    if len(sys.argv) == 5 and sys.argv[1] == '--patch':
+        sys.exit(0 if patch_notice_file(pathlib.Path(sys.argv[2]), sys.argv[3], json.loads(sys.argv[4])) else 3)
+    print("사용: agent_turn.py --patch <lead-notices 폴더> <id> '<json>'", file=sys.stderr)
+    sys.exit(2)

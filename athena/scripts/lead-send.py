@@ -166,24 +166,49 @@ def unconfirmed(result: str) -> str:
     return f'보냈지만 전송을 확인하지 못했어요({result}) — 입력칸에 남았을 수 있어 다시 넣지 않았어요'
 
 
-def track(entry: dict, kind: str, lead: str = '') -> None:
-    """받음 확인 대상으로 남긴다 — 실패해도 보내기는 그대로(기록만 빠진다)"""
+def track(entry: dict, kind: str, lead: str = '', pending: bool = False) -> str:
+    """받음 확인 대상으로 남긴다 — 기록 id. 실패해도 보내기는 그대로(기록만 빠진다)"""
     try:
-        agent_turn.record_notice(kind, lead or str(entry.get('lead') or ''), str(entry.get('text') or ''), plan=str(entry.get('plan') or ''),
-                                 pane=str(entry.get('pane') or ''), sender=str(entry.get('from') or ''))
+        return agent_turn.record_notice(kind, lead or str(entry.get('lead') or ''), str(entry.get('text') or ''), plan=str(entry.get('plan') or ''),
+                                        pane=str(entry.get('pane') or ''), sender=str(entry.get('from') or ''), pending=pending)
+    except Exception:
+        return ''
+
+
+def before_send(entry: dict, lead: str) -> None:
+    """넣기 **전에** 기록을 만든다 — 넣자마자 아테나 입력 훅(pane-session.py)이 돌아도 받음 표시할 기록이 있게.
+    추적하는 끝 알림은 turn, 아니면 넣었는지 모를 때를 대비한 unconfirmed(넣으면 지운다). 결과는 after_send 가 같은 기록에 고친다"""
+    entry['_notice'] = track(entry, 'turn' if entry.get('track') else 'unconfirmed', lead, pending=True)
+
+
+def after_send(entry: dict, result: str) -> None:
+    """넣은 결과로 before_send 기록을 고친다 — sent: 추적이면 남기고 아니면 지움 · 못 넣음(wait · gone): 지움(다시 넣을 때 새로 만든다) · 그 밖(확인 못 함): unconfirmed"""
+    notice = str(entry.pop('_notice', '') or '')
+    if not notice:
+        return
+    try:
+        if result == 'sent' and entry.get('track'):
+            agent_turn.update_notice(notice, pending=False)
+            entry['_tracked'] = True   # sent 가 또 남기지 않게
+        elif result in ('sent', 'wait', 'gone'):
+            agent_turn.drop_notice(notice)
+        else:
+            agent_turn.update_notice(notice, kind='unconfirmed', pending=False)
+            entry['_tracked'] = True   # record_unsent 가 또 남기지 않게
     except Exception:
         pass
 
 
 def sent(entry: dict, lead: str) -> None:
-    if entry.get('track'):
+    # 보통은 before_send 기록이 이미 있다 — 그 기록을 못 만들었을 때만 지금 남긴다
+    if entry.get('track') and not entry.pop('_tracked', False):
         track(entry, 'turn', lead)
 
 
 def record_unsent(entry: dict, reason: str) -> bool:
     """넣지 못한(또는 넣었는지 모르는) 글을 기록만 한다 — 요청은 열지 않는다(고를 것이 없다).
     계획서 결과 절 끝에 글 그대로 한 줄 + 사건 기록(scripts/lib/events.mjs) 한 줄. 계획서에 적었으면 True"""
-    if reason.startswith(UNCONFIRMED_HEAD):
+    if reason.startswith(UNCONFIRMED_HEAD) and not entry.pop('_tracked', False):
         track(entry, 'unconfirmed')   # 넣었는지 모른다 — 아테나가 받았는지로 가린다(안 받았으면 현황판이 다시 넣는다)
     written = False
     path = plan_file(str(entry.get('plan') or ''))
@@ -246,7 +271,10 @@ def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
     moved = f'계획서 담당 아테나 pane {target} 에 ' if target not in (lead, NO_LEAD) else f'아테나 pane {lead} 에 '
     if folder is None:
         # 옛 구조(팩 데이터 없음) — 모아 둘 자리가 없어 지금 보내 보고, 못 보내면 기록만
+        if target != NO_LEAD:
+            before_send(entry, target)
         result = 'gone' if target == NO_LEAD else try_send(target, text)
+        after_send(entry, result)
         if result == 'sent':
             sent(entry, target)
             print(f'✅ {moved}보냈다')
@@ -261,7 +289,9 @@ def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
         if target == NO_LEAD or queued(folder, key):
             result = 'wait'
         else:
+            before_send(entry, target)
             result = try_send(target, text)
+            after_send(entry, result)
             if result == 'gone':
                 result = 'wait'   # 고른 사이 닫혔다 — 처리기가 다시 고른다
         if result == 'wait':
@@ -323,7 +353,9 @@ def deliver(lead: str) -> None:
                 elif target == NO_LEAD:
                     result = 'wait'
                 else:
+                    before_send(entry, target)
                     result = try_send(target, str(entry.get('text') or ''))
+                    after_send(entry, result)
                     result = 'wait' if result == 'gone' else result
                     result = result if result in ('sent', 'wait') else unconfirmed(result)
             if result != 'wait':

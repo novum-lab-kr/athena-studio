@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 아테나가 에이전트 알림을 놓치지 않게 지키기 시험 — scripts/board/turn-watch.mjs(현황판 server.mjs 가 15초마다 부른다 · 계획서 결정 D1~D4).
 # 임시 상태 폴더 · 가짜 넣기 · 가짜 요청으로 — 화면 · claude · 현황판 서버를 부르지 않는다 · 몇 초
-#   안 받은 알림: 2분 전엔 그대로 · 2분이면 한 번 다시 넣기(그 아테나 pane 이 살아 있을 때만) · 10분이면 [작업] 요청 한 번 · 이미 열린 요청이 있으면 열지 않기
+#   안 받은 알림: 2분 전엔 그대로 · 2분이면 한 번 다시 넣기(그 아테나 pane 이 살아 있을 때만) · 10분이면 [작업] 요청 한 번 · 이미 열린 요청이 있으면 그동안 열지 않고 닫히면 열기
+#   고치기는 아테나 입력 훅과 같은 파일별 잠금 안에서(잠금을 쥔 동안 기다린다 · 받음 표시를 지우지 않는다)
 #   받았으면 연 요청을 거두기 · 계획서가 done 이면 아무것도 안 함 · 일하는 중 선택 창은 "선택 창" 알림 한 번(끝난 차례는 안 함) · 창이 닫히면 그 알림을 더 밀지 않음
 #   lead-notice.mjs — 창이 떠 있으면 미뤘다가 flush 로 넣기 · 같은 key 는 한 번
 #
@@ -12,8 +13,9 @@ SRC="$(cd "$(dirname "$0")/.." && pwd)"
 WORK="$(mktemp -d)"; trap 'rm -rf "$WORK"' EXIT
 
 node --input-type=module - "$SRC" "$WORK" <<'NODE'
-import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync } from 'node:fs'
+import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
+import { spawn } from 'node:child_process'
 const [src, work] = process.argv.slice(2)
 const { reconcileTurns, RESEND_MS, REQUEST_MS } = await import(join(src, 'scripts/board/turn-watch.mjs'))
 const { createLeadNotifier } = await import(join(src, 'scripts/lib/lead-notice.mjs'))
@@ -64,7 +66,7 @@ check('요청은 한 번만 연다', watch.log.opened.length === 1)
 // 받음 → 요청 거두기
 writeFileSync(join(noticeDir, `${ID}.json`), JSON.stringify({ ...readNotice(ID), received_at: (T0 + REQUEST_MS + 70_000) / 1000 }))
 await watch.run(T0 + REQUEST_MS + 80_000)
-check('받았으면 연 요청을 거둔다', watch.log.cancelled.length === 1 && watch.log.cancelled[0] === 'req-1' && readNotice(ID).request === 'existing')
+check('받았으면 연 요청을 거둔다', watch.log.cancelled.length === 1 && watch.log.cancelled[0] === 'req-1' && readNotice(ID).request === 'cancelled')
 await watch.run(T0 + REQUEST_MS + 90_000)
 check('거둔 요청을 두 번 거두지 않는다', watch.log.cancelled.length === 1)
 await watch.run(T0 + REQUEST_MS + 70_000 + 3600_000 + 1000)
@@ -73,9 +75,13 @@ check('받은 지 한 시간이 지난 기록은 지운다', !existsSync(join(no
 // 2. 이미 열린 요청 · 아테나 pane 닫힘 · 계획서 done
 const ID2 = 'b'.repeat(32)
 writeNotice(ID2, {})
-watch = make({ openPanes: new Set(['p9']) })
+const openPanes = new Set(['p9'])
+watch = make({ openPanes })
 await watch.run(T0 + REQUEST_MS)
-check('그 에이전트 pane 에 이미 열린 요청이 있으면 새로 열지 않는다', watch.log.opened.length === 0 && readNotice(ID2).request === 'existing')
+check('그 에이전트 pane 에 이미 열린 요청이 있으면 새로 열지 않는다', watch.log.opened.length === 0 && !readNotice(ID2).request, JSON.stringify(readNotice(ID2)))
+openPanes.delete('p9')
+await watch.run(T0 + REQUEST_MS + 15_000)
+check('그 요청이 닫힌 뒤에도 안 받았으면 다음 주기에 요청을 연다', watch.log.opened.length === 1 && readNotice(ID2).request === 'req-1', JSON.stringify(readNotice(ID2)))
 const ID3 = 'c'.repeat(32)
 writeNotice(ID3, {})
 watch = make({ panes: [{ id: 'p9' }] })
@@ -113,6 +119,30 @@ writeFileSync(join(turnDir, 'p1.json'), JSON.stringify({ state: 'working', ts: T
 menu.add('p1')
 await watch.run(T0)
 check('아테나 pane 자신의 창은 알리지 않는다', watch.log.notify.length === 0)
+
+// 3-1. 잠금 — 아테나 입력 훅(mark_received)이 파일 잠금을 쥔 동안 현황판은 기다렸다가 받음 표시 위에 합쳐 쓴다
+const ID5 = 'e'.repeat(32)
+writeNotice(ID5, {})
+const holder = spawn('python3', ['-c', `
+import sys, time, json, pathlib
+sys.path.insert(0, sys.argv[1])
+from reuse_link import pane_lock
+folder = pathlib.Path(sys.argv[2]); path = folder / (sys.argv[3] + '.json')
+with pane_lock(folder, sys.argv[3]):
+    (folder / 'locked').write_text('1')
+    time.sleep(1.0)
+    data = json.loads(path.read_text()); data['received_at'] = 1.0; path.write_text(json.dumps(data))
+`, join(src, 'scripts/lib'), noticeDir, ID5], { stdio: 'inherit' })
+const holderDone = new Promise((resolve) => holder.on('exit', resolve))
+while (!existsSync(join(noticeDir, 'locked'))) await new Promise((resolve) => setTimeout(resolve, 20))
+watch = make()
+const started = Date.now()
+await watch.run(T0 + RESEND_MS)
+const waited = Date.now() - started
+await holderDone
+check('잠금을 쥔 동안 기다렸다가 고친다', waited >= 500, `${waited}ms`)
+check('받음 표시를 지우지 않는다', readNotice(ID5).received_at === 1, JSON.stringify(readNotice(ID5)))
+rmSync(join(noticeDir, 'locked'), { force: true })
 
 // 4. 닫힌 pane 의 오래된 차례 상태는 지운다 · 살아 있는 pane 은 둔다
 writeFileSync(join(turnDir, 'p7.json'), JSON.stringify({ state: 'done', ts: T0 / 1000 }))

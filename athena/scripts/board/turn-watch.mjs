@@ -6,11 +6,13 @@
 // 하는 것(계획서 결정 D1 — 즉시 알림 → 2분 뒤 한 번 더 → 10분이면 [작업] 요청):
 //   1. 묶인 에이전트 pane 에 선택 창이 떠 있고 그 차례가 아직 끝나지 않았으면(끝 알림이 따로 가지 않는다) 아테나에 "선택 창" 한 줄 — 창 하나에 한 번
 //   2. 아테나가 받지 않은 알림(received_at 없음)은 RESEND_MS 뒤 한 번 다시 넣는다 — 계획서 Lead pane 이 살아 있을 때만(다른 pane 으로 바꾸지 않는다 · lead-send.py 와 같은 규칙)
-//   3. REQUEST_MS 가 지나도 안 받았으면 [작업] 요청을 연다 — 그 에이전트 pane 에 이미 열린 요청(고르기 질문 · 권한 창)이 있으면 열지 않는다
+//   3. REQUEST_MS 가 지나도 안 받았으면 [작업] 요청을 연다 — 그 에이전트 pane 에 이미 열린 요청(고르기 질문 · 권한 창)이 있으면 이번엔 열지 않고 다음 주기에 다시 본다
 //   4. 받았으면 연 요청을 거두고, 오래된 기록은 지운다
 // 계획서가 done · cancelled 면 다시 넣지도 요청을 열지도 않는다(아테나가 이미 정리했다). 선택 창이 닫혔으면 그 "선택 창" 알림은 더 밀지 않는다.
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
+import { execFileSync } from 'node:child_process'
+import { fileURLToPath } from 'node:url'
 import { randomUUID } from 'node:crypto'
 
 export const RESEND_MS = 2 * 60_000
@@ -36,11 +38,19 @@ const writeJson = (file, data) => {
   writeFileSync(staging, `${JSON.stringify(data)}\n`)
   renameSync(staging, file)
 }
-// 고칠 칸만 — 쓰기 바로 전에 다시 읽는다(그사이 아테나 입력 훅이 받음 표시를 했으면 지우지 않게)
-/** @param {string} file @param {Record<string, unknown>} fields */
-const patchJson = (file, fields) => {
-  const fresh = readJson(file)
-  if (fresh) writeJson(file, { ...fresh, ...fields })
+const AGENT_TURN = join(dirname(fileURLToPath(import.meta.url)), '..', 'lib', 'agent_turn.py')
+// 고칠 칸만 — 아테나 입력 훅(agent_turn.mark_received)과 같은 파일별 잠금(<lead-notices>/.<id>.lock · flock) 안에서 읽기 · 합치기 · 쓰기.
+// node 에는 flock 이 없어 agent_turn.py --patch 로 고친다. 받음 표시(received_at)는 지우지 않는다. 실패하면 이번 주기만 건너뛴다
+// (다시 넣기 · 요청은 같은 key 로 한 번만 가서 다음 주기에 또 해도 겹치지 않는다)
+/** @param {string} file @param {Record<string, unknown>} fields @returns {boolean} */
+const patchNotice = (file, fields) => {
+  const id = file.replace(/^.*\/|\.json$/g, '')
+  try {
+    execFileSync('python3', [AGENT_TURN, '--patch', dirname(file), id, JSON.stringify(fields)], { stdio: 'ignore', timeout: 10_000 })
+    return true
+  } catch {
+    return false
+  }
 }
 
 /**
@@ -87,7 +97,7 @@ export const reconcileTurns = async ({ stateDir, plans, panes, now, menuOf, noti
       // 끝난 차례(done · asking)는 끝 알림이 갔다 — 선택 창 알림은 일하는 중에 뜬 창만
       const menu = !RESTING.has(turn.state) && (await menuOf(paneId))
       if (!menu) {
-        for (const entry of open) patchJson(entry.file, { closed_at: now / 1000 })
+        for (const entry of open) patchNotice(entry.file, { closed_at: now / 1000 })
         continue
       }
       if (open.length) continue
@@ -110,9 +120,9 @@ export const reconcileTurns = async ({ stateDir, plans, panes, now, menuOf, noti
     const sentAt = Number(notice.sent_at || 0) * 1000
     const age = now - sentAt
     if (notice.received_at) {
-      if (notice.request && notice.request !== 'existing') {
+      if (notice.request && notice.request !== 'cancelled') {
         try { cancelRequest(notice.request) } catch { /* 이미 닫혔다 */ }
-        patchJson(file, { request: 'existing' })
+        patchNotice(file, { request: 'cancelled' })
       }
       if (now - Number(notice.received_at) * 1000 > RECEIVED_KEEP_MS) rmSync(file, { force: true })
       continue
@@ -121,16 +131,18 @@ export const reconcileTurns = async ({ stateDir, plans, panes, now, menuOf, noti
     const plan = planOf.get(notice.plan)
     if (notice.closed_at || (plan && CLOSED_PLAN.has(plan.status ?? ''))) continue
     if (age >= REQUEST_MS && !notice.request) {
-      const request = notice.pane && hasOpenRequest(notice.pane) ? 'existing' : openRequestFor(notice)
+      // 그 에이전트 pane 에 이미 열린 요청이 있으면 표시를 남기지 않는다 — 그 요청이 닫힌 뒤 다음 주기에 다시 본다
+      if (notice.pane && hasOpenRequest(notice.pane)) continue
+      const request = openRequestFor(notice)
       if (request) {
-        patchJson(file, { request })
-        log(`📮 아테나 pane ${notice.lead} 가 10분 동안 받지 않은 알림 — ${request === 'existing' ? '이미 열린 요청이 있다' : `요청 ${request}`}: ${notice.text}`)
+        patchNotice(file, { request })
+        log(`📮 아테나 pane ${notice.lead} 가 10분 동안 받지 않은 알림 — 요청 ${request}: ${notice.text}`)
       }
       continue
     }
     if (age >= RESEND_MS && !notice.resent_at) {
       const result = alive.has(notice.lead) ? await notify({ key: `lead-notice:${notice.id}:again`, mark: notice.id, text: notice.text, plan: notice.plan, lead: notice.lead }) : 'failed'
-      patchJson(file, { resent_at: now / 1000 })
+      patchNotice(file, { resent_at: now / 1000 })
       log(`🔁 아테나 pane ${notice.lead} 가 받지 않은 알림을 다시 넣었다(${result}): ${notice.text}`)
     }
   }
