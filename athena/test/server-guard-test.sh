@@ -284,6 +284,9 @@ printf 'x\n' >"$WORK/.env"
 : >"$LOG"; bash "$RUN" dukbae --put "$WORK/.env" /srv/app/.env >/dev/null 2>&1; expect "비밀 파일 --put 은 거절(1)" 1 $?
 : >"$LOG"; bash "$RUN" dukbae --get /srv/app/.env "$WORK/got" >/dev/null 2>&1; expect "비밀 파일 --get 은 거절(1)" 1 $?
 lacks "거절한 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
+: >"$LOG"; bash "$RUN" dukbae --get '/srv/app/.env*' "$WORK/got" >/dev/null 2>&1; expect "glob 든 --get(.env*) 은 거절(1)" 1 $?
+for pattern in '/srv/app/*.conf' '/srv/app/a?' '/srv/app/[ab]' '/srv/app/{a,b}'; do bash "$RUN" dukbae --get "$pattern" "$WORK/got" >/dev/null 2>&1; expect "glob 든 --get 거절: $pattern" 1 $?; done
+lacks "glob 든 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
 : >"$LOG"; bash "$RUN" dukbae --get /etc/caddy/Caddyfile "$WORK/got" >/dev/null 2>&1; expect "보통 파일 --get 은 받는다" 0 $?
 bash "$RUN" nothere -- uptime >/dev/null 2>&1; expect "등록하지 않은 서버는 거절(1)" 1 $?
 : >"$LOG"; ATHENA_GUARD_SERVERS="evil=-oProxyCommand=touch_x" bash "$RUN" evil -- uptime >/dev/null 2>&1; expect "맨 앞 - 별칭(ssh 옵션)은 거절(1)" 1 $?

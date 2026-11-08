@@ -111,30 +111,35 @@ const FAIL_TEXT = {
   'server-unreachable': '서버에 닿지 않는다 — 네트워크 · ~/.ssh/config 의 그 Host 설정을 확인한 뒤 다시',
 }
 
-// ROUTING.md "서버" 절 — 없으면 끝에 만든다. 줄은 `| <이름> | ssh 별칭 ...` 로 찾아 넣고 뺀다
+// ROUTING.md "서버" 절 — 없으면 끝에 만든다. 줄은 그 절 안에서만 `| <이름> | ssh 별칭 ...` 로 찾아 넣고 뺀다
+// (서버 이름이 레포 이름과 같아도 레포 표의 줄은 건드리지 않는다)
 const ROUTING_HEAD = '## 서버'
 /** @param {string} name @param {string} host @param {string} agent */
 const routingRow = (name, host, agent) => `| \`${name}\` | \`${host}\` | \`${agent}\` | 확인 필요 — 등록 뒤 분석이 채운다 |`
+// 서버 절의 [머리, 끝) — 끝은 다음 "## " 줄(없으면 문서 끝). 절이 없으면 null
+/** @param {string[]} lines @returns {[number, number] | null} */
+const serverSection = (lines) => {
+  const head = lines.findIndex((line) => line.trim() === ROUTING_HEAD)
+  if (head < 0) return null
+  const next = lines.findIndex((line, index) => index > head && line.startsWith('## '))
+  return [head, next < 0 ? lines.length : next]
+}
 /** @param {string} packDir @param {string} name @param {string | null} row */
 const editRouting = (packDir, name, row) => {
   const file = join(packDir, 'ROUTING.md')
   if (!existsSync(file)) return false
   const lines = readFileSync(file, 'utf8').split('\n')
-  const kept = lines.filter((line) => !line.startsWith(`| \`${name}\` |`))
+  const found = serverSection(lines)
+  const kept = found ? [...lines.slice(0, found[0]), ...lines.slice(found[0], found[1]).filter((line) => !line.startsWith(`| \`${name}\` |`)), ...lines.slice(found[1])] : [...lines]
   if (row) {
-    let head = kept.findIndex((line) => line.trim() === ROUTING_HEAD)
-    if (head < 0) {
+    if (!serverSection(kept)) {
       while (kept.length && kept[kept.length - 1] === '') kept.pop()
       kept.push('', ROUTING_HEAD, '', '서버 담당 에이전트는 `scripts/ssh-run.sh <서버>` 로만 접속한다(docs/setup.md "서버 하나 더하기"). 접속 정보는 각자 `~/.ssh/config` — 팩에는 별칭만.', '', '| 서버 | ssh 별칭 | 에이전트 | 무엇이 도나 |', '|---|---|---|---|', '')
-      head = kept.findIndex((line) => line.trim() === ROUTING_HEAD)
     }
+    const [head, end] = serverSection(kept) ?? [kept.length, kept.length]
     // 그 절 표의 마지막 줄 뒤에 — 표가 없으면 머리 바로 뒤
     let at = head + 1
-    for (let index = head + 1; index < kept.length; index += 1) {
-      const line = kept[index] ?? ''
-      if (line.startsWith('## ')) break
-      if (line.startsWith('|')) at = index + 1
-    }
+    for (let index = head + 1; index < end; index += 1) if ((kept[index] ?? '').startsWith('|')) at = index + 1
     kept.splice(at, 0, row)
   }
   const next = kept.join('\n')

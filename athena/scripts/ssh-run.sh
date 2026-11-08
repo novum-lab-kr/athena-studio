@@ -132,6 +132,8 @@ case "$1" in
     ;;
   --get)
     [ $# -eq 3 ] || usage
+    # 파일 하나만 — scp 는 원격에서 * ? [ ] { } 를 펼친다(.env* 가 이름 검사를 지나 .env · .env.production 을 받아 온다)
+    case "$2" in *[*?[\]{}]*) echo "❌ --get 은 파일 하나만 받는다 — 경로에 * ? [ ] { } 를 쓰지 않는다: $2" >&2; exit 1 ;; esac
     if is_secret_path "$2"; then echo "❌ 비밀값이 들 수 있는 파일은 받지 않는다: $(basename "$2") — 있는지 · 크기만 본다(ls -l)" >&2; exit 1; fi
     rm -rf "$TMP"; exec "$SCP_BIN" -q "${SSH_OPTS[@]}" -- "$HOST:$2" "$3"
     ;;
