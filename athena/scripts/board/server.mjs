@@ -1826,5 +1826,10 @@ createServer((request, response) => {
   setInterval(() => githubIssues.tick(), GITHUB_ISSUES_EVERY_MS)
   handoffs.tick()
   setInterval(() => handoffs.tick(), HANDOFF_EVERY_MS)
+  // 하루 한 번 재사용 없는 전체 검증(scripts/full-verify.mjs --daily) — 한 시간마다 띄우고 오늘 이미 돈 레포 · 끈 팩(dailyVerify: false)은 그쪽이 건너뛴다.
+  // 켜자마자는 안 띄운다(시험 · 잠깐 켠 현황판이 무거운 검증을 시작하지 않게)
+  setInterval(() => {
+    try { spawn(process.execPath, [join(ROOT, 'scripts/full-verify.mjs'), '--daily'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref() } catch (error) { console.error(`⚠️ 하루 전체 검증을 못 띄움: ${error.message}`) }
+  }, 60 * 60 * 1000)
   console.log(`아테나 현황판: http://localhost:${PORT}  (3초마다 갱신 · Ctrl+C 로 종료)`)
 })

@@ -48,6 +48,15 @@ check "시작 열쇠와 지금 열쇠가 다르면(시험 도중 트리가 바�
 OTHER="$TMP/other"; git init -q "$OTHER" && echo a > "$OTHER/a.txt" && git -C "$OTHER" add a.txt
 check "내용이 같아도 다른 트리 경로면 재사용 안 함" '! "$HELPER" check "$OTHER" test/x-test.sh >/dev/null'
 
+# 앱 레포 안의 코어(athena/) — 코어 시험은 athena/ 만 읽으니 그 밖이 바뀌어도 재사용 · 안이 바뀌면 다시
+APP="$TMP/app"; mkdir -p "$APP/athena" "$APP/src"; echo a > "$APP/athena/a.sh"; echo s > "$APP/src/s.ts"
+git init -q "$APP" && git -C "$APP" add -A
+APP_KEY="$("$HELPER" key "$APP" test/x-test.sh)"; "$HELPER" record "$APP" test/x-test.sh "$APP_KEY" 1
+echo t >> "$APP/src/s.ts"; echo u > "$APP/src/new.ts"
+check "athena/ 밖(src/ 수정 · 새 파일)만 바뀌면 재사용" '[ -n "$("$HELPER" check "$APP" test/x-test.sh)" ]'
+echo b >> "$APP/athena/a.sh"
+check "athena/ 안이 바뀌면 재사용 안 함" '! "$HELPER" check "$APP" test/x-test.sh >/dev/null'
+
 echo; echo "통과 기록은 시험 끝에 남는다(test/_lib.sh)"
 FAKESRC="$TMP/fake/athena"; mkdir -p "$FAKESRC/test" "$FAKESRC/scripts/verify"
 cp "$SRC/test/_lib.sh" "$FAKESRC/test/_lib.sh"; cp "$HELPER" "$FAKESRC/scripts/verify/"

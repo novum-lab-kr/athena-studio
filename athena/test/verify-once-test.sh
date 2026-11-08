@@ -132,5 +132,33 @@ find "$XDG_CACHE_HOME/athena/verify-pass" -type f ! -exec grep -q "^args	one$" {
 merge_check >/dev/null
 expect_runs 2 "인자 없는 머지 조건은 앱 인자 기록을 재사용하지 않고 전체를 돈다(모노레포는 머지 때 한 번 더)"
 
+echo; echo "PR 길(autoMerge + 자동 PR) — commit.sh 는 문법만 보고 전체 검증은 PR 자동 리뷰로 넘긴다"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$ATH/athena.config.json"
+: > "$COUNT"
+printf '#!/bin/sh\necho ok\n' > "$TMP/wt/ok.sh"; echo 'export const a = 1' > "$TMP/wt/ok.mjs"
+out="$(commit 'PR 길' ok.sh ok.mjs)"; rc=$?
+[ $rc = 0 ] && printf '%s' "$out" | grep -q '빠른 확인' && ok "PR 길 커밋 — 빠른 확인으로 커밋" || bad "PR 길 커밋 실패(rc=$rc): $out"
+expect_runs 0 "PR 길 커밋 — 전체 검증은 돌지 않는다"
+grep -q '빠른 확인 통과(문법 2개)' "$ATH/plans/task/p.md" && ok "계획서 Commits 에 빠른 확인 기록" || bad "빠른 확인 기록 없음"
+last_commit="$(grep '"type":"commit"' "$ATH/.events.jsonl" 2>/dev/null | tail -1)"
+printf '%s' "$last_commit" | grep -q '"verified":false' && ok "commit 사건 verified=false(전체 검증 안 함)" || bad "commit 사건 verified 가 false 아님: $last_commit"
+printf 'if then\n' > "$TMP/wt/bad.sh"
+out="$(commit '문법 틀림' bad.sh)"; rc=$?
+[ $rc != 0 ] && printf '%s' "$out" | grep -q 'bad.sh' && ok "문법이 틀린 .sh → 커밋 거부" || bad "문법 틀린 파일이 커밋됨(rc=$rc): $out"
+rm -f "$TMP/wt/bad.sh"
+echo 'full' > "$TMP/wt/full.txt"
+out="$(ATHENA_VERIFY_FULL=1 commit '전체로' full.txt)"; rc=$?
+[ $rc = 0 ] || bad "ATHENA_VERIFY_FULL=1 커밋 실패: $out"
+expect_runs 1 "ATHENA_VERIFY_FULL=1 이면 PR 길에서도 commit.sh 가 엄격 검증"
+
+
+echo; echo "사람이 직접 머지하는 레포(autoMergeManual) — 처리기가 검증을 안 도니 commit.sh 가 엄격 검증"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeManual": true } ] }\n' > "$ATH/athena.config.json"
+: > "$COUNT"
+echo 'manual' > "$TMP/wt/manual.txt"
+out="$(commit '직접 머지 레포' manual.txt)"; rc=$?
+[ $rc = 0 ] && ! printf '%s' "$out" | grep -q '빠른 확인' && ok "manual 레포 커밋 — 빠른 확인을 쓰지 않는다" || bad "manual 레포가 빠른 확인으로 감(rc=$rc): $out"
+expect_runs 1 "manual 레포 커밋 — 엄격 검증 한 번"
+
 [ $FAIL_COUNT -eq 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL_COUNT

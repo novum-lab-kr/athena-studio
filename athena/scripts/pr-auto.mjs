@@ -3,8 +3,9 @@
  * PR 자동 리뷰 · 수정 · 머지 — 켠 레포(pack.json 레포 "autoMerge": true)의 레포 하나짜리 PR 을 LLM 리뷰어들이 보고,
  * 고칠 것은 작업 에이전트 pane 에 보내고, 합의가 되면 사람에게 한 번 물은 뒤(레포가 "autoMergeConfirm": false 면 묻지 않고) squash 머지한다(docs/pr-auto.md · 계획서 결정 D1~D5)
  *
- *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run]
+ *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run | --no-merge]
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
+ *        --no-merge 는 리뷰 ‖ 검증 · 댓글 · 수정 지시까지 실제로 하고 머지 바로 앞에서 멈춰 측정값(scripts/pr-measure.mjs)을 찍는다
  *   node scripts/pr-auto.mjs --enqueue --plan <plans/…md> --pr <레포>#<번호> --head <sha>
  *        대기열에 넣고 뒤에서 도는 처리기가 있게 한다(ship.sh 가 push 하자마자 · 현황판이 새 PR · 새 커밋을 보면(안전망) 부른다). 바로 끝난다
  *   node scripts/pr-auto.mjs --handoff --plan <plans/…md> --repo <레포> --dir <워크트리>
@@ -40,7 +41,8 @@ import { fileURLToPath } from 'node:url'
 import { isMainModule } from './lib/is-main.mjs'
 import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
-import { logEvent } from './lib/events.mjs'
+import { logEvent, readEvents } from './lib/events.mjs'
+import { measureLine, measurePr } from './lib/pr-measure.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
 import { screen, submitToPane } from './lib/screen.mjs'
 import { createLeadNotifier } from './lib/lead-notice.mjs'
@@ -48,10 +50,11 @@ import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import { claudeLimited, codexReviewArgs, readCodexSettings, reviewToolState } from './lib/review-cli.mjs'
 import { readMainTool } from './lib/main-tool.mjs'
+import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
-  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, planFastPath, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
+  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
+  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
@@ -86,6 +89,9 @@ const option = (name) => {
   return index >= 0 ? argv[index + 1] ?? '' : ''
 }
 const flag = (name) => argv.includes(`--${name}`)
+// --no-merge(2026-11-08 아테나 요청) — 리뷰 · 검증 · 수정 지시까지 실제로 다 돌고 머지 바로 앞(검증 · 충돌 확인 통과 뒤)에서 멈춘다 · 측정값을 찍는다.
+// 시험용 draft PR 로 새 흐름을 끝까지 볼 때 — autoMergeConfirm false 레포도 머지하지 않는다
+const NO_MERGE = flag('no-merge')
 const stamp = () => new Date().toLocaleString('sv-SE', { timeZone: 'Asia/Seoul' }).slice(0, 16)
 const clip = (text, size) => (text.length > size ? `${text.slice(0, size)}\n…(이하 ${text.length - size}자 생략)` : text)
 const masked = (text) => maskSecrets(String(text ?? '')).masked
@@ -149,10 +155,25 @@ const reviewWithClaude = async (prompt, workDir, config, slot = { name: 'claude'
   const run = await runCli('claude', ['-p', ...model, '--tools', '', '--strict-mcp-config', '--no-session-persistence', '--output-format', 'json', '--json-schema', JSON.stringify(REVIEW_SCHEMA)], { input: prompt, cwd: workDir })
   // 사용량 한도는 종료 코드(1)만으로는 다른 실패와 같다 — 결과 JSON 으로 가르고 limited 를 달아 Codex 로 다시 짜게 한다(lib review-cli claudeLimited)
   if (run.aborted !== 'timeout' && claudeLimited(run.stdout)) return { name: slot.name, status: 'failed', limited: true, reason: CLAUDE_LIMIT_REASON }
-  return outcome(slot.name, run, () => {
+  const result = outcome(slot.name, run, () => {
     const answer = JSON.parse(run.stdout)
     return answer.is_error ? null : answer.structured_output
   })
+  // 측정(2026-11-08 #267) — 결과 JSON 의 usage 를 앱 일별 토큰(src/lib/daily-tokens.mts)과 같은 셈으로(input + cache_creation + output · cache_read 는 뺀다). 없으면 모름(null)
+  return { ...result, tokens: claudeTokens(run.stdout) }
+}
+const claudeTokens = (stdout) => {
+  try {
+    const usage = JSON.parse(stdout)?.usage
+    if (!usage || typeof usage !== 'object') return null
+    const count = (key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
+    return count('input_tokens') + count('cache_creation_input_tokens') + count('output_tokens')
+  } catch { return null }
+}
+// 리뷰 한 번의 토큰 — 아는 리뷰어 값의 합 · 하나도 모르면 null(Codex 는 답 파일만 받아 토큰을 모른다)
+const reviewTokens = (results) => {
+  const known = results.map((result) => result.tokens).filter((value) => Number.isFinite(value))
+  return known.length ? known.reduce((sum, value) => sum + value, 0) : null
 }
 
 const reviewWithCodex = async (prompt, workDir, config, slot = { name: 'codex' }) => {   // 자리에 모델이 있으면 우선하고 생각 강도는 사용자 설정을 따른다
@@ -232,7 +253,8 @@ const diffSince = (worktree, fromSha, toSha) => {
 const findingText = (item) => `${item.file}${item.line ? `:${item.line}` : ''} — ${item.problem} → ${item.fix}`
 // previous — 지난 라운드 기록(readHistory) · incremental — diff 가 지난 리뷰 HEAD 이후만인가 · packed — packDiff 결과(생성물 뺀 diff · 못 넣은 목록)
 // · fullAgain — 지난 라운드가 diff 일부만 봐서 이번은 PR 전체 diff 를 다시 넣었다
-export const buildPrompt = ({ repo, number, pr, planFile, planText, packed, previous = null, incremental = false, fullAgain = false }) => {
+// · part — 조각으로 나눴을 때 { index, total }(다른 조각은 다른 리뷰가 본다)
+export const buildPrompt = ({ repo, number, pr, planFile, planText, packed, previous = null, incremental = false, fullAgain = false, part = null }) => {
   const omitted = omittedSection(packed)
   const emptyText = packed.generated.length ? '(생성물 밖의 코드 변경 없음)' : '(코드 변경 없음)'
   const readIf = (path, size) => (existsSync(path) ? clip(readFileSync(path, 'utf8'), size) : '(없음)')
@@ -243,7 +265,7 @@ export const buildPrompt = ({ repo, number, pr, planFile, planText, packed, prev
 판단
 - approve: 계획서 요구대로이고, 버그 · 보안 · 데이터 위험 · 레포 규칙 위반이 없다. decisions 는 빈 배열 · findings 는 비거나 advisory 만
 - changes: 고칠 방법이 하나인 blocking 문제가 있다 — findings 에 파일 · 줄 · 문제 · 고칠 방법 · severity
-- severity: blocking = 버그 · 보안 · 데이터 위험 · 레포 규칙 위반(머지를 막고 작업 에이전트가 고친다) · advisory = 그 밖의 권장(머지를 막지 않고 PR 댓글에만 남는다)
+- severity: blocking = 이 PR 의 바뀐 줄이 일으키는 크리티컬만 — 보안 높음(비밀값 노출 · 권한 · 보안 경계 우회) · 데이터 손실 · 실제 설정 · 입력으로 재현 경로를 적을 수 있는 버그 · 레포 규칙 위반(머지를 막고 작업 에이전트가 고친다). blocking 이면 problem 에 재현 경로(어떤 설정 · 입력에서 무엇이 틀리나)를 적는다 · advisory = 그 밖의 권장 — 바뀌지 않은 코드의 문제 · 특정 사용자 설정에서만 나는 드문 경우 · 더 나은 방법(머지를 막지 않고 PR 댓글과 PR 당 이슈 하나에 모인다)
 - 스스로 보안 경계가 아니라고 밝힌 실수 방지 장치(scripts/hooks/* 같은 코드)를 일부러 꼬아 쓴 셸 문법(실제 에이전트가 쓸 법하지 않은 입력)으로만 비켜 갈 수 있으면 advisory 다. 실제로 쓸 법한 입력에서 틀리는 것 · 비밀값 노출 · 데이터 손실 · 보안 경계 코드의 우회는 지금처럼 blocking
 - decision: 골라야 하는 선택지가 있다 — decisions 에 선택지 2~4개와 추천 · kind. kind 는 제품 동작 · 범위 · 외부 계약 · 데이터가 달라지면 product, 그대로이고 코드 안의 구현 세부(자리 · 이름 · 구조 · 제한값)만 갈리면 implementation(애매하면 product). implementation 이고 추천이 있으면 추천안으로 자동 확정된다
 - 같은 종류의 지적이 아래 "레포 함정"${previous ? ' 이나 "지난 리뷰 지적"' : ''} 에 이미 있으면(두 번째) 그 지적의 fix 끝에 " · 정비 후보: <무엇을 어디에>" 를 붙인다 — 글로 다시 조심시키지 않고 구조 · 훅 · 검증 스크립트 · lint · 테스트 중 가장 높은 층에서 막을 방법. severity · verdict 는 이것 때문에 바꾸지 않는다
@@ -268,11 +290,29 @@ ${previous ? `## 지난 리뷰 지적 (@${String(previous.sha).slice(0, 7)} · $
 ${[...(previous.findings ?? []).map((item, index) => `${index + 1}) ${findingText(item)}`), ...(previous.autoDecisions ?? []).map((item) => `- 추천안으로 자동 확정한 결정: ${item.title} → ${item.recommended}`)].join('\n') || '(없음 — 결정 · 본문만)'}
 
 ` : ''}## 바뀐 코드 (${incremental ? `지난 리뷰 HEAD @${String(previous.sha).slice(0, 7)} 이후 바뀐 것만` : fullAgain ? 'PR 전체 diff — 지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다' : previous ? 'PR 전체 diff — 지난 리뷰 이후 것만 따로 구하지 못했다' : 'diff'}${packed.complete ? '' : ' · 길어서 일부만 — 아래 "리뷰에 넣지 못한 것"'})
-${packed.text || emptyText}
+${part ? `(diff 가 길어 ${part.total}조각으로 나눴다 — 이것은 ${part.index + 1}/${part.total}조각. 다른 조각의 파일은 따로 리뷰하니 여기 없는 파일 · 변경으로 지적하지 않는다)
+` : ''}${packed.text || emptyText}
 ${omitted ? `
 ## 리뷰에 넣지 못한 것
 ${omitted}
 ` : ''}`)
+}
+
+// 권장 지적 → PR 당 이슈 하나(lib advisoryIssue) · 이슈 폴더는 지금 팩 것(paths) · 실패해도 리뷰 흐름은 그대로
+const writeAdvisoryIssue = ({ repo, number, sha, advisories, planFile }) => {
+  try {
+    const dir = paths(ROOT).issues
+    mkdirSync(dir, { recursive: true })
+    const found = readdirSync(dir).find((name) => name.endsWith(ADVISORY_ISSUE_SUFFIX(repo, number)))
+    const date = stamp().slice(0, 10)
+    const file = join(dir, found ?? `${date.replaceAll('-', '')}${ADVISORY_ISSUE_SUFFIX(repo, number)}`)
+    const text = advisoryIssue({ repo, number, sha, advisories: advisories.map((item) => ({ ...item, problem: masked(item.problem), fix: masked(item.fix) })), planFile, date, existing: found ? readFileSync(file, 'utf8') : '' })
+    if (!text) return
+    writeFileSync(file, text)
+    console.log(`  ↪ 권장 지적 ${advisories.length}개 → issues/${relative(dir, file)}`)
+  } catch (error) {
+    console.log(`  ⚠️ 권장 지적 이슈를 못 썼다: ${firstLine(error.message)}`)
+  }
 }
 
 // ── 계획서 · pane ──────────────────────────────────────────────────────
@@ -370,6 +410,14 @@ const agentPane = async ({ planFile, ref }) => {
   // 다시 연 claude 가 입력을 받을 때까지 — 띄우자마자 보내면 글이 사라진다
   if (pane) await new Promise((done) => setTimeout(done, 20_000))
   return pane
+}
+
+// 머지 뒤 그림자 전체 검증 — 머지 전 검증(닿는 시험만)을 통과한 같은 커밋을 재사용 없이 전체로 뒤에서(scripts/full-verify.mjs · 머지를 막지 않는다).
+// 기간 · 끄기는 lib/full-verify.mjs shadowOn · 레포 폴더나 검증 스크립트가 없으면 띄우지 않는다
+const startShadowVerify = (job, config) => {
+  if (!shadowOn(config) || !existsSync(join(ROOT, 'repos', job.repo)) || !existsSync(join(ROOT, 'scripts/verify', `${job.repo}.sh`))) return
+  const args = [join(ROOT, 'scripts/full-verify.mjs'), '--shadow', '--repo', job.repo, '--sha', job.sha, '--pr', String(job.number), ...(job.plan ? ['--plan', job.plan] : [])]
+  try { spawn(process.execPath, args, { cwd: ROOT, detached: true, stdio: 'ignore' }).unref() } catch (error) { console.log(`  ⚠️ 그림자 전체 검증을 못 띄움: ${error.message}`) }
 }
 
 // 머지 확인 결과를 작업 pane 에 — Work ref 의 pane 이 살아 있을 때만(머지 결과로 닫힌 세션을 다시 열지 않는다 · 없으면 로그 · 계획서 줄 · 사건 기록만)
@@ -472,8 +520,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
   const flow = repoFlow(config, repo)
-  // ⚡ 빠른 길 — 레포가 켜 두고(fastPath 기본 true) ship.sh 가 계획서에 "- Fast path: yes" 를 적은 PR 만. 리뷰 끔 레포는 어차피 리뷰어를 부르지 않는다
-  const fast = flow.review && flow.fast && planFastPath(planText)
+  // ⚡ 빠른 길 — 레포가 켜 두었으면(fastPath 기본 true) 모든 PR(2026-11-08 #267 46분 — 리뷰는 PR 마다 최대 2번: 1차 전체 → 고친 커밋 2차 짧은 리뷰 → 남으면 멈춤).
+  // 예전에는 ship.sh 가 계획서에 "- Fast path: yes" 를 적은 작은 PR 만이었다 — 그 줄은 이제 표시일 뿐. 레포 "fastPath": false 면 옛 흐름(상한 3). 리뷰 끔 레포는 어차피 리뷰어를 부르지 않는다
+  const fast = flow.review && flow.fast
   const limits = { max: fast ? FAST_MAX_ROUNDS : MAX_ROUNDS, reviewers: PR_REVIEWERS }
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${limits.max}${fast ? ` · ${FAST_PATH}` : ''}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto', ...(fast ? { fast: true } : {}) }
@@ -527,22 +576,29 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const attributesText = ref.worktree && existsSync(ref.worktree) && pr.baseRefName
     ? (git(ref.worktree, ['fetch', '--quiet', 'origin', pr.baseRefName]), git(ref.worktree, ['show', `refs/remotes/origin/${pr.baseRefName}:.gitattributes`]))
     : null
-  const packed = packDiff(diff, { limit: MAX_DIFF_CHARS, patterns: repoGeneratedPatterns(config, repo), attributes: linguistGeneratedRules(attributesText) })
+  // 길면 조각으로 나눠 조각마다 리뷰(lib packDiffParts) — 조각을 나눠도 못 본 파일(60k 넘는 파일 하나 · 코드 긴 줄)만 잘린 diff 승인으로 남는다
+  const { parts, packed } = packDiffParts(diff, { limit: MAX_DIFF_CHARS, patterns: repoGeneratedPatterns(config, repo), attributes: linguistGeneratedRules(attributesText) })
+  if (parts.length > 1) console.log(`  ↪ diff 가 길어 ${parts.length}조각으로 나눠 리뷰한다(조각마다 ${MAX_DIFF_CHARS}자까지)`)
   if (packed.generated.length) console.log(`  ↪ 생성물 ${packed.generated.length}개는 diff 본문에서 뺐다: ${packed.generated.map((item) => item.path).slice(0, 5).join(', ')}${packed.generated.length > 5 ? ' …' : ''}`)
   if (!packed.complete) console.log(`  ⚠️ diff 가 길어 코드 파일 ${partialCount(packed)}개를 다 넣지 못했다 — 승인이어도 머지 승인으로 세지 않는다`)
-  const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null, fullAgain })
+  const prompts = parts.map((_, index) => buildPrompt({ repo, number, pr, planFile, planText, packed: partForPrompt(parts, index), previous, incremental: sinceDiff !== null, fullAgain, part: parts.length > 1 ? { index, total: parts.length } : null }))
+  // 조각마다 같은 리뷰어 자리로 동시에 → 자리마다 하나로 합친다
+  const reviewParts = async () => mergePartResults(await Promise.all(prompts.map((prompt) => runReviewers(prompt, config, inherited, slots))))
   // 위험한 수정이면 리뷰어와 함께 security-reviewer 도 띄운다(결과는 머지 앞 securityStop 이 기다린다) — 워크트리 diff 로만 본다(gh pr diff 는 부르지 않는다 ·
   // 못 읽거나 띄우지 못했으면 머지 앞 securityStop 이 gh pr diff 로 다시 보고 멈춘다)
+  // 리뷰 ‖ 검증 ‖ 보안 검토 — 같은 HEAD 검증을 리뷰어와 동시에 띄운다(2026-11-08 #267). 머지 앞 prepareMerge 가 같은 약속을 기다리니 머지 전 검증은 그대로 한 번.
+  // 사람이 직접 머지하는 레포는 검증하지 않으니 띄우지 않는다 · 워크트리가 PR HEAD 와 다르거나 더러우면 띄우지 않는다(머지 앞에서 같은 이유로 멈춘다)
+  if (!dryRun && flow.merge !== 'manual' && startVerify(repo, ref.worktree, sha)) console.log(`  ↪ 같은 HEAD 검증을 리뷰와 동시에 시작(reuse.sh 엄격)`)
   if (!dryRun) await startSecurityReview({ planPath, planFile, repo, branch: pr.headRefName, sha, worktree: ref.worktree, base: pr.baseRefName })
   const reviewStartedAt = Date.now()
-  let results = await runReviewers(prompt, config, inherited, slots)
+  let results = await reviewParts()
   // Claude 가 사용량 한도로 답하지 못했으면 로그인 안 됨과 같은 길(Codex 하나 — Codex 도 못 쓰면 리뷰어 부족)로 다시 짜서 이어 간다(검수 묶음 2 #3)
   if (results.some((result) => result.limited)) {
     lineup = planReviewers(config, { claude: 'limited' })
     slots = lineup.slots
     note = lineupNoteOf()
     console.log(`  ↪ ${CLAUDE_LIMIT_REASON} — Codex 로 다시 짠다: ${note}`)
-    results = await runReviewers(prompt, config, inherited, slots)
+    results = await reviewParts()
   }
   const reviewMs = Date.now() - reviewStartedAt   // 지표의 리뷰 구간(docs/events.md)
   const summary = aggregate(results, needed)
@@ -550,6 +606,10 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   console.log(`  → ${summary.verdict} · 승인 ${summary.approvals}/${needed}(리뷰어가 승인해야 머지)`)
   const comment = masked(reviewComment({ sha, round, results, summary, lineup: short ? note : lineup.note, partial: partialCount(packed), max: limits.max, reviewers: needed, fast, short }))
   const partial = partialApproval(summary, packed)
+  // 승인이 아니면 리뷰와 같이 띄운 검증을 멈춘다(이미 끝나 실패했으면 수정 지시에 덧붙인다)
+  const verifyKey = `${repo}\0${ref.worktree}\0${sha}`
+  const verifyFailed = settledVerify.get(verifyKey)?.ok === false ? settledVerify.get(verifyKey) : null
+  if (summary.verdict !== 'approve' || partial) stopVerifies()
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
     const action = short ? shortAction(summary, flow) : plannedAction(summary, round, flow, limits)
@@ -562,7 +622,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (!posted.ok) console.log(`  ⚠️ PR 댓글 실패: ${firstLine(posted.err)}`)
   // 리뷰어가 답한 라운드만 기록한다 — 실패한 라운드를 기준으로 삼으면 다음 라운드에 그 리뷰어가 못 본 변경이 증분 diff 에서 빠진다(PR #20 자동 리뷰 지적)
   if (summary.answered === needed && summary.total === needed) writeHistory(repo, number, { sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions, missed: missedFiles(packed) })
+  if (summary.advisories.length) writeAdvisoryIssue({ repo, number, sha, advisories: summary.advisories, planFile })
   base.reviewers = reviewerBrief(results)
+  base.tokens = reviewTokens(results)   // review 사건 tokens(docs/events.md · scripts/pr-measure.mjs)
   const line = { repo, number, sha, round, note, max: limits.max }
 
   if (partial) {
@@ -633,7 +695,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const instruction = masked(fixInstruction({
     agent: ref.agent || '작업 에이전트', org, repo, number, sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions,
     humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT, max: limits.max,
-  }))
+  })) + (verifyFailed ? `\n\n같은 HEAD 전체 검증도 실패했다(${verifyFailed.why}) — 고치면서 ATHENA_VERIFY_DIR=${ref.worktree} ${join(ROOT, 'scripts/verify/reuse.sh')} ${repo} 로 원문을 보고 같이 고친다.` : '')
   // pane 이 있어도 전송이 확인되지 않으면 아테나에 — 'pane 없음' 과 '보내지 못함' 을 나눠 알린다(submitToPane 결과 그대로)
   const sent = pane ? await submitToPane(pane, instruction) : ''
   if (sent === 'sent') {
@@ -726,12 +788,49 @@ const confirmFile = (repo, number) => join(CONFIRM_DIR, `${repo}-${number}.json`
 // 같은 HEAD 로 검증 통과 — 그 브랜치 워크트리가 PR HEAD 와 같고 깨끗할 때만, 엄격 모드 재사용(없으면 검증 스크립트를 돈다)
 // 어떤 설정에서도 건너뛸 수 없다(PR · 바로 머지 공통) — 검증 스크립트가 없거나(종료 2) 못 돌렸거나(status null) 건너뜀(⏭)이 있으면 엄격 모드가 실패로 치고,
 // 바깥 환경의 ATHENA_VERIFY_ALLOW_SKIP 도 비워서 건너뜀을 허용하지 않는다(규칙 건너뜀 ⏭(규칙)만 스크립트 판단으로 통과)
-const verifiedAt = (repo, worktree, sha) => {
-  if (!worktree || !existsSync(worktree)) return { ok: false, why: '워크트리를 못 찾음' }
-  if (git(worktree, ['rev-parse', 'HEAD']) !== sha) return { ok: false, why: `워크트리 HEAD 가 PR HEAD(${sha.slice(0, 7)})와 다름` }
-  if (git(worktree, ['status', '--porcelain', '--untracked-files=no'])) return { ok: false, why: '워크트리에 커밋 안 된 변경' }
-  const run = spawnSync(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, encoding: 'utf8', env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1', ATHENA_VERIFY_ALLOW_SKIP: '' }, timeout: 60 * 60 * 1000 })
-  return run.status === 0 ? { ok: true, why: '' } : { ok: false, why: `검증 실패(종료 ${run.status})` }
+// 리뷰와 동시에(2026-11-08 #267) — handle 이 리뷰어를 부르기 전에 startVerify 로 띄워 두고, 머지 앞(prepareMerge)에서 같은 약속을 기다린다.
+// 같은 레포 · 워크트리 · HEAD 의 검증은 한 번만 돈다(도는 중 · 통과 결과를 나눠 쓴다 · 실패는 남기지 않아 다음 확인에 다시 돈다).
+// 기다릴 때마다 워크트리 HEAD · 깨끗함을 다시 본다 — 검증 중에 워크트리가 바뀌었으면 통과로 치지 않는다
+const verifyRuns = new Map()
+const verifyStats = { runs: 0, ms: 0 }   // 측정(auto.measure) — 이 처리에서 실제로 검증 스크립트를 부른 횟수 · 걸린 시간
+const worktreeState = (worktree, sha) => {
+  if (!worktree || !existsSync(worktree)) return '워크트리를 못 찾음'
+  if (git(worktree, ['rev-parse', 'HEAD']) !== sha) return `워크트리 HEAD 가 PR HEAD(${sha.slice(0, 7)})와 다름`
+  if (git(worktree, ['status', '--porcelain', '--untracked-files=no'])) return '워크트리에 커밋 안 된 변경'
+  return ''
+}
+const verifyChildren = new Set()
+const stopChild = (child) => { try { process.kill(-child.pid, 'SIGTERM') } catch { child.kill('SIGTERM') } }
+// 리뷰가 승인이 아니면 도는 검증을 멈춘다 — 에이전트가 같은 워크트리를 고치는 동안 돌면 바뀌는 중의 파일로 통과 기록이 남을 수 있다(머지 앞 검증은 새 HEAD 로 다시 돈다)
+const stopVerifies = () => { for (const child of verifyChildren) stopChild(child); verifyChildren.clear() }
+// 끝난 검증의 결과만(기다리지 않는다) — 수정 지시에 '검증도 실패' 를 덧붙일 때
+const settledVerify = new Map()
+const runVerify = (repo, worktree) => new Promise((done) => {
+  const startedAt = Date.now()
+  verifyStats.runs += 1
+  // 따로 프로세스 묶음으로 띄운다 — 멈출 때(stopVerifies) 검증 스크립트가 띄운 자식까지 그 묶음째 끈다(이 처리가 띄운 pid 만)
+  const child = spawn(join(ROOT, 'scripts/verify/reuse.sh'), [repo], { cwd: ROOT, detached: true, stdio: ['ignore', 'ignore', 'ignore'], env: { ...process.env, ATHENA_VERIFY_DIR: worktree, ATHENA_VERIFY_STRICT: '1', ATHENA_VERIFY_ALLOW_SKIP: '' } })
+  verifyChildren.add(child)
+  const timer = setTimeout(() => stopChild(child), 60 * 60 * 1000)
+  const finish = (status) => { clearTimeout(timer); verifyChildren.delete(child); verifyStats.ms += Date.now() - startedAt; done(status === 0 ? { ok: true, why: '' } : { ok: false, why: `검증 실패(종료 ${status})` }) }
+  child.on('error', () => finish(null))
+  child.on('close', (code) => finish(code))
+})
+const startVerify = (repo, worktree, sha) => {
+  if (worktreeState(worktree, sha)) return null
+  const key = `${repo}\0${worktree}\0${sha}`
+  if (!verifyRuns.has(key)) {
+    const run = runVerify(repo, worktree).then((result) => { settledVerify.set(key, result); if (!result.ok) verifyRuns.delete(key); return result })
+    verifyRuns.set(key, run)
+  }
+  return verifyRuns.get(key)
+}
+const verifiedAt = async (repo, worktree, sha) => {
+  const before = worktreeState(worktree, sha)
+  if (before) return { ok: false, why: before }
+  const result = await startVerify(repo, worktree, sha)
+  const after = worktreeState(worktree, sha)
+  return after ? { ok: false, why: `${after}(검증 중에 바뀜)` } : result
 }
 
 // 레포의 머지 전 검사 — 워크트리(같은 HEAD)에 scripts/merge-gate.js 가 있을 때만 `node scripts/merge-gate.js --title <PR 제목>` 을 돈다(docs/pr-auto.md "머지 전 검사").
@@ -744,8 +843,8 @@ const mergeGate = (worktree, title) => {
   return { ok: false, why: `머지 전 검사 실패 — ${firstLine(run.stderr) || firstLine(run.stdout) || (run.error ? firstLine(run.error.message) : `종료 ${run.status}`)}` }
 }
 // 머지해도 되는 HEAD — 같은 HEAD 검증 통과 뒤 머지 전 검사(PR 제목)
-const readyToMerge = (repo, worktree, sha, title) => {
-  const verify = verifiedAt(repo, worktree, sha)
+const readyToMerge = async (repo, worktree, sha, title) => {
+  const verify = await verifiedAt(repo, worktree, sha)
   return verify.ok ? mergeGate(worktree, title) : verify
 }
 
@@ -799,7 +898,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     console.log('  → 머지는 사람이 직접(레포 "autoMergeManual": true)')
     return
   }
-  const verify = readyToMerge(repo, ref.worktree, sha, pr.title)
+  const verify = await readyToMerge(repo, ref.worktree, sha, pr.title)
   if (!verify.ok) {
     // 검증을 못 했으면 머지 확인을 묻지 않는다 — 같은 HEAD 는 다시 감지되지 않으니(계획서 줄) 새 커밋이 오거나 사람이 그 줄을 지워야 다시 본다
     writeAutoLine(planPath, { ...line, result: `검증 대기 — ${verify.why}` })
@@ -817,6 +916,13 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
       console.log(sent ? `  → 충돌 — base 를 합쳐 풀라고 pane ${pane} 에 보냈다` : '  ⚠️ 충돌 — 작업 pane 이 없어 아테나에만 알린다')
     }
     await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 ${stage} · 머지 못 함(${pr.mergeable === 'CONFLICTING' ? '충돌' : `GitHub ${pr.mergeable}`}) — ${repo}#${number}`, body: `base(${pr.baseRefName})와 ${pr.mergeable === 'CONFLICTING' ? '충돌한다' : `머지 가능 여부를 GitHub 가 아직 답하지 않는다(${pr.mergeable})`}. 머지하지 않았다. ${RETRY_HINT}` })
+    return
+  }
+  if (NO_MERGE) {
+    writeAutoLine(planPath, { ...line, result: `${passed} → 머지 안 함(--no-merge)` })
+    logEvent(ROOT, 'auto.stop', { ...stopBase, reason: 'no-merge' })
+    console.log('  → 머지 안 함(--no-merge) — 같은 HEAD 검증 · 충돌 확인까지 통과')
+    console.log(`  측정: ${measureLine(measurePr(readEvents(ROOT), { repo, pr: number }))} · 이 처리의 검증 실행 ${verifyStats.runs}번(${Math.round(verifyStats.ms / 1000)}초 · 재사용은 0초)`)
     return
   }
   const job = { plan: planFile, repo, number, sha, round, note, max, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true, shortReviewed: sha } : {}), ...(reviewOff ? { reviewOff: true } : {}), ...(fast ? { fast: true } : {}) }
@@ -1002,7 +1108,7 @@ const performDirectMerge = async (job) => {
   // 확인을 기다리는 동안 prBase 가 바뀌었으면 옛 기준 브랜치에 밀지 않는다
   if (prBaseOf(config, job.repo) !== job.base) return directStop(job, `검증 대기 — 머지 전에 기준 브랜치(prBase)가 ${job.base} 에서 바뀜`, 'recheck', { raise: false })
   if (pendingDecisions(job.plan, job.repo, 0)) return directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false })
-  const verify = verifiedAt(job.repo, job.worktree, job.sha)
+  const verify = await verifiedAt(job.repo, job.worktree, job.sha)
   if (!verify.ok) return directStop(job, `검증 대기 — ${verify.why}`, 'verify')
   const base = job.base
   if (git(job.worktree, ['fetch', '--quiet', 'origin', base]) === null) return directStop(job, `머지 실패 — origin/${base} 를 가져오지 못함`, 'fetch')
@@ -1070,7 +1176,7 @@ const directMerge = async (planArg, repo, dir) => {
   if (flow.merge === 'auto') return Boolean((await performDirectMerge(job))?.ok)
   // 확인 후 머지 — 검증 · 충돌을 먼저 보고 통과하면 [작업]에 [머지] 요청
   if (pendingDecisions(planFile, repo, 0)) { await directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false }); return false }
-  const verify = verifiedAt(repo, worktree, sha)
+  const verify = await verifiedAt(repo, worktree, sha)
   if (!verify.ok) { await directStop(job, `검증 대기 — ${verify.why}`, 'verify'); return false }
   const request = ask(planFile, {
     key: `${directKey(job)}:${sha}`,
@@ -1225,6 +1331,7 @@ export const checkConfirms = async (only = '') => {
     if (isSameHeadMerged(pr, job.sha) && (job.noConfirm || request.state === 'delivered')) {
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: mergedResult })
       mergeEvent({ ok: true, ...(job.noConfirm ? { confirm: false } : {}) })
+      startShadowVerify(job, config)
       rmSync(current, { force: true })
       await notifyResult(job, mergedResult)
       continue
@@ -1279,7 +1386,7 @@ export const checkConfirms = async (only = '') => {
     pr.mergeable = await settledMergeable(org, job.repo, job.number, pr.mergeable)
     if (pr.mergeable === 'UNKNOWN') { release(); console.log(`  … ${job.repo}#${job.number} — GitHub 가 머지 가능 여부를 계산 중 · 다음 확인에 다시`); continue }
     settle()
-    const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : readyToMerge(job.repo, job.worktree, job.sha, pr.title)
+    const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : await readyToMerge(job.repo, job.worktree, job.sha, pr.title)
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
       const result = `검증 대기 — 머지 직전 확인 실패(${pr.mergeable !== 'MERGEABLE' ? `충돌 ${pr.mergeable}` : verify.why})`
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
@@ -1308,6 +1415,7 @@ export const checkConfirms = async (only = '') => {
     if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
     mergeEvent({ ok: landed, ...(landed ? {} : { reason: 'gh' }), ...(job.noConfirm ? { confirm: false } : {}) })
     console.log(landed ? `✅ 머지 ${job.repo}#${job.number} → ${job.base}` : `⚠️ 머지 실패 ${job.repo}#${job.number}: ${firstLine(merged.err)}`)
+    if (landed) startShadowVerify(job, config)
     finish()
     await notifyResult(job, result)
   }
