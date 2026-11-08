@@ -143,6 +143,33 @@ test('send-text --enter: 실제 pty 의 첫 Enter 무시 재시도 · 실패 종
     assert.equal(failed.code, 1)
     assert.equal(JSON.parse(failed.stderr).error, 'timeout')
     assert.match(failed.stderr, /입력 전송을 확인하지 못했다/)
+    // 실제 Claude working 수신 화면을 pty 에 재현한다. 큐 본문과 입력칸 안내가 함께 남는다.
+    const fakeClaude = path.join(dir, 'claude')
+    fs.writeFileSync(fakeClaude, `
+      process.stdin.setRawMode(true)
+      let text = ''
+      const draw = (screen) => process.stdout.write('\\x1b[2J\\x1b[H' + screen)
+      draw('────────\\r\\n❯ \\r\\n────────\\r\\n')
+      process.stdin.on('data', data => {
+        for (const char of data.toString()) {
+          if (char === '\\r') {
+            draw('❯ ' + text + '\\r\\n  ctrl+x ctrl+s to send now\\r\\n· Cogitating…\\r\\n────────\\r\\n❯ Press up to edit queued messages\\r\\n────────\\r\\n')
+            return
+          }
+          text += char
+        }
+        text = text.replace(/\\x1b\\[20[01]~/g, '')
+        draw('────────\\r\\n❯ ' + text + '\\r\\n────────\\r\\n')
+      })
+    `)
+    const claudePane = (await app.call('tab new', { cwd: dir, cols: 100, rows: 30 })).result.pane
+    await cli(daemon.socket, ['pane', 'run', claudePane, `'${process.execPath}' '${fakeClaude}'`])
+    await waitFor(async () => JSON.parse((await cli(daemon.socket, ['pane', 'get', claudePane])).stdout).pane.agent === 'claude', '가짜 Claude 시작')
+    const queued = await new Promise((resolve) => execFile(path.join(ROOT, 'athena', 'scripts', 'screen'), ['pane', 'send-text', claudePane, 'working 전송', '--enter'], {
+      env: { ...process.env, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
+    }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stderr })))
+    assert.equal(queued.code, 0, queued.stderr)
+    assert.match((await cli(daemon.socket, ['pane', 'read', claudePane, '--source', 'visible'])).stdout, /Press up to edit queued messages/)
     await app.call('shutdown')
     app.close()
     await waitFor(() => !alive(daemon.pid), '데몬 종료')

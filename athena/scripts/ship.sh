@@ -286,6 +286,16 @@ case "$REVIEWED" in
   pending) REVIEW_NOTE="⚠️ reviewer 를 띄웠지만 결론 기록(- Review result:)이 없다 — $REVIEW_ACT" ;;
   *) REVIEW_NOTE="⚠️ reviewer 기록 없음 — $REVIEW_ACT" ;;
 esac
+# 보안 검토 문 — security-reviewer 가 남긴 이 레포 · 브랜치 "- Security result:" 줄에 높음이 남았으면 PR · push · 바로 머지 · 넘기기 모두 멈춘다(중간 이하는 통과).
+# 열린 PR 에 고친 커밋 이어 올리기(--auto-push)는 고치는 길이라 막지 않는다 — 그 PR 의 머지는 pr-auto.mjs 가 같은 판정으로 막는다
+if [ $AUTO_PUSH = 0 ]; then
+  SECURITY_WHY="$(node "$ATHENA_DIR/scripts/security-gate.mjs" check --plan "$ATHENA_DIR/$PLAN" --repo "$REPO" --branch "$BRANCH")"
+  case $? in
+    0) ;;
+    3) fail "$SECURITY_WHY — security-reviewer 보고의 높음 항목을 고쳐 커밋한 뒤 보안 검토를 다시 받는다(scripts/delegate.sh security-reviewer --cwd $TOP --here --plan $PLAN …)" ;;
+    *) fail "보안 검토 기록을 읽지 못했다(scripts/security-gate.mjs check)" ;;
+  esac
+fi
 
 # ── main 직접 — PR 없이 origin/<작업 브랜치> 에 빨리 감기로 push 한다(팩 direct: true) ─────────────
 if [ -n "$DIRECT" ]; then

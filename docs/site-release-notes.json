@@ -1,5 +1,5 @@
 {
-  "0.57": [
+  "0.58": [
     {
       "tag": "new",
       "en": "Add servers from the sidebar: the Add Server popup writes a Host entry to ~/.ssh/config (key file login only, no passwords), checks the connection first, and for a server seen for the first time shows its host key fingerprint so you can trust it before it is saved to known_hosts. A changed host key is only reported, never overwritten.",
@@ -13,6 +13,15 @@
       "ko": "팩에 더한 서버가 사이드바에 접속 상태와 함께 보이고 확인이 실패하면 이유가 나옵니다. 에이전트는 허용 목록의 읽기 명령으로만 서버를 보고, 그 밖의 명령은 승인을 기다립니다.",
       "ja": "パックに追加したサーバーが接続状態とともにサイドバーに表示され、確認に失敗すると理由が出ます。エージェントは許可リストの読み取りコマンドだけでサーバーを扱い、それ以外のコマンドは承認を待ちます。",
       "zh": "添加到包中的服务器会在侧边栏显示连接状态，检查失败时会给出原因。代理只能通过允许列表中的只读命令操作服务器，其他命令需等待你的批准。"
+    }
+  ],
+  "0.57": [
+    {
+      "tag": "new",
+      "en": "Changes that touch command execution, file writes, login or permissions, secrets, external input or server access now get a read-only security review alongside the code review. A High finding stops shipping, auto-merge, direct merge and the Actions handoff until it is fixed and reviewed again, and merges wait until the latest commit has a security review result. The reviewer uses the Trail of Bits security plugins when they are installed and a built-in procedure otherwise.",
+      "ko": "명령 실행 · 파일 쓰기 · 로그인과 권한 · 비밀값 · 외부 입력 · 서버 접속에 닿는 수정은 코드 리뷰와 함께 읽기 전용 보안 검토를 받습니다. 높음이 나오면 고친 뒤 다시 검토받을 때까지 올리기 · 자동 머지 · 바로 머지 · Actions 넘기기가 멈추고, 머지는 마지막 커밋의 보안 검토 결과가 나올 때까지 기다립니다. 검토자는 Trail of Bits 보안 플러그인이 설치돼 있으면 그것을, 없으면 내장 절차를 씁니다.",
+      "ja": "コマンド実行・ファイル書き込み・ログインと権限・秘密情報・外部入力・サーバー接続に関わる変更は、コードレビューと一緒に読み取り専用のセキュリティレビューを受けます。「高」が見つかると、修正して再レビューを受けるまで送信・自動マージ・直接マージ・Actions への引き渡しが止まり、マージは最新コミットのセキュリティレビュー結果が出るまで待ちます。レビュー担当は Trail of Bits のセキュリティプラグインがインストールされていればそれを使い、なければ内蔵の手順を使います。",
+      "zh": "涉及命令执行、文件写入、登录与权限、密钥、外部输入或服务器访问的修改，现在会在代码评审之外再进行只读的安全审查。发现“高”级问题时，在修复并重新审查之前，推送、自动合并、直接合并和移交 Actions 都会停止；合并会等到最新提交有安全审查结果为止。审查者在安装了 Trail of Bits 安全插件时使用这些插件，否则使用内置流程。"
     }
   ],
   "0.56": [

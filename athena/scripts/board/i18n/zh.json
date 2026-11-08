@@ -1,4 +1,5 @@
 {
+  "action.selfIssueStart": "请处理问题 {id}。这是 Athena 自身的问题，应交给包 ROUTING.md 中的核心负责代理 pane。判断并创建轻量或正式计划，关联到问题的 plan: 字段。在核心源码仓库中从 prBase 创建工作分支和工作树后委派。负责代理修复并验证后创建 draft PR，关联到问题的 pr: 字段。不要在已安装的本体或 main 上直接修改或提交。",
   "page.title": "待办",
   "tabs.label": "视图",
   "tab.now.title": "待解决的问题 — 选一个开始工作",

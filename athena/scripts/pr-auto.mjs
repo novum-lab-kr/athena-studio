@@ -53,7 +53,7 @@ import {
   PARTIAL_APPROVAL, fixInstruction, grantsTakeover, omittedSection, packDiff, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlots, orderByMainTool, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
-  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, planFastPathFlags, planWideMark, wideChangeVerdict,
+  DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -610,6 +610,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (packed.generated.length) console.log(`  ↪ 생성물 ${packed.generated.length}개는 diff 본문에서 뺐다: ${packed.generated.map((item) => item.path).slice(0, 5).join(', ')}${packed.generated.length > 5 ? ' …' : ''}`)
   if (!packed.complete) console.log(`  ⚠️ diff 가 길어 코드 파일 ${partialCount(packed)}개를 다 넣지 못했다 — 승인이어도 머지 승인으로 세지 않는다`)
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null, fullAgain })
+  // 위험한 수정이면 리뷰어와 함께 security-reviewer 도 띄운다(결과는 머지 앞 securityStop 이 기다린다) — 워크트리 diff 로만 본다(gh pr diff 는 부르지 않는다 ·
+  // 못 읽거나 띄우지 못했으면 머지 앞 securityStop 이 gh pr diff 로 다시 보고 멈춘다)
+  if (!dryRun) await startSecurityReview({ planPath, planFile, repo, branch: pr.headRefName, sha, worktree: ref.worktree, base: pr.baseRefName })
   const reviewStartedAt = Date.now()
   let results = await runReviewers(prompt, config, inherited, slots)
   // Claude 가 사용량 한도로 답하지 못했으면 로그인 안 됨과 같은 길(Codex 두 자리)로 다시 짜서 이어 간다(검수 묶음 2 #3) —
@@ -870,6 +873,11 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     console.log('  → 결정 콘솔에 안 정한 결정이 있다 — 머지하지 않고 기다린다')
     return
   }
+  const securityWhy = await securityStop({ planPath, planFile, repo, branch: pr.headRefName, sha, worktree: ref.worktree, base: pr.baseRefName, number, org })
+  if (securityWhy) {
+    writeAutoLine(planPath, { ...line, result: `보안 검토 때문에 멈춤 — ${passed}이지만 ${securityWhy}` })
+    return
+  }
   if (repoFlow(config, repo).merge === 'manual') {
     // 머지는 사람이 직접 — 요청도 검증도 하지 않고 줄만 남긴다. 새 커밋이 오면 다시 리뷰한다
     writeAutoLine(planPath, { ...line, result: `${passed} → 사람이 직접 머지` })
@@ -941,6 +949,76 @@ const directStop = async (job, result, reason, { raise = true } = {}) => {
   await notifyResult({ ...job, number: 0 }, result, true)
 }
 
+// ── 보안 검토 문(2026-11-08 사용자 결정 · lib securityGate) ─────────────────────
+// 위험한 수정(lib securityRiskVerdict — origin/<base>...HEAD)이면 이 HEAD 를 본 "- Security result:" 가 있어야 지나간다. 없으면 security-reviewer 를
+// 띄우고(이미 띄워 결과를 기다리는 중이면 다시 띄우지 않는다) 결과를 기다린다(리뷰 문과 같은 시간). 결과가 오지 않으면 멈춘다.
+// 그다음 이 레포 · 브랜치 마지막 결과 줄에 높음이 남았으면 PR 머지 · 바로 머지 · Actions 넘기기 앞에서 멈추고 담당 pane 에 고칠 것을 보낸다(중간 이하는 통과).
+// 위험하지 않은 수정은 띄우지도 기다리지도 않는다(기록된 높음만 본다). 같은 HEAD · 같은 결과 줄이면 pane 에 다시 보내지 않는다. 막혔으면 이유(문자열), 아니면 ''
+// 위험 판정용 diff — 워크트리의 origin/<base>...<sha>(바로 머지 · 넘기기는 리뷰 문이 이미 fetch), 못 읽으면 PR 이면 gh pr diff. 둘 다 못 읽으면 null
+const securityDiffOf = ({ worktree, base, sha, number = 0, org = '', repo }) => {
+  if (worktree && existsSync(worktree) && base) {
+    const read = spawnSync('git', ['-C', worktree, 'diff', '--unified=0', `origin/${base}...${sha}`], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 })
+    if (read.status === 0) return read.stdout
+  }
+  if (number && org) {
+    const read = gh(['pr', 'diff', String(number), '--repo', `${org}/${repo}`])
+    if (read.ok) return read.out
+  }
+  return null
+}
+const securityPrompt = ({ planFile, worktree, repo, branch, base, why }) => `[자동 보안 검토] ${repo} ${branch} 는 위험한 수정이다(${why}). ${worktree} 에서 git diff origin/${base}...HEAD 를 보안만 검토하고, 끝나면 scripts/review-result.sh --security --plan ${planFile} --dir ${worktree} --high <높음 수> --medium <중간 수> --note "<한 줄>" 로 결과를 남긴다(높음이 있으면 머지가 멈춘다)`
+// 띄우기만 — 위험하지 않거나 · 이 HEAD 결과가 이미 있거나 · 띄워 둔 것이 아직 도는 중이면 아무것도 안 한다. { risky, why, launched, error }
+const startSecurityReview = async ({ planPath, planFile, repo, branch, sha, worktree, base, number = 0, org = '' }) => {
+  const diffText = securityDiffOf({ worktree, base, sha, number, org, repo })
+  if (diffText === null) return { risky: true, why: '위험한 수정인지 판정 못 함(diff 를 읽지 못함)', error: 'diff 를 읽지 못함' }
+  const verdict = securityRiskVerdict(securityDiffParts(diffText))
+  if (!verdict.risky) return { risky: false, why: verdict.why }
+  const planText = readFileSync(planPath, 'utf8')
+  const tree = (worktree && existsSync(worktree) && git(worktree, ['rev-parse', `${sha}^{tree}`])) || ''
+  // 결과 없이 남은 띄움 줄은 기다림 시간이 지났거나 그 pane 이 닫혔으면 만료 — 다시 띄운다(화면 목록을 못 읽으면 pane 으로는 만료하지 않는다)
+  const listed = await screen(['pane', 'list'])
+  const live = listed ? new Set((listed.panes ?? []).map((pane) => pane.id)) : null
+  if (securityResultFor(planText, { repo, branch, sha, tree }) || securityPending(planText, { repo, branch, maxAgeMs: SECURITY_PENDING_MAX_MS, livePanes: live })) return { risky: true, why: verdict.why, tree }
+  if (!worktree || !existsSync(worktree)) return { risky: true, why: verdict.why, tree, error: 'security-reviewer 를 띄울 워크트리가 없음' }
+  console.log(`  🛡 위험한 수정(${verdict.why}) — security-reviewer 를 띄운다`)
+  const launched = spawnSync(join(ROOT, 'scripts', 'delegate.sh'), ['security-reviewer', '--cwd', worktree, '--here', '--plan', planFile, securityPrompt({ planFile, worktree, repo, branch, base, why: verdict.why })], { encoding: 'utf8', timeout: 180_000 })
+  if (launched.status !== 0) return { risky: true, why: verdict.why, tree, error: `security-reviewer 를 띄우지 못함(${firstLine(launched.stderr || launched.stdout)})` }
+  return { risky: true, why: verdict.why, tree, launched: true }
+}
+const securityStop = async ({ planPath, planFile, repo, branch, sha, worktree, base, number = 0, org = '' }) => {
+  const start = await startSecurityReview({ planPath, planFile, repo, branch, sha, worktree, base, number, org })
+  const stopFor = (why) => {
+    logEvent(ROOT, 'auto.stop', { plan: planFile, repo, branch, sha: sha.slice(0, 7), reason: 'security' })
+    console.log(`⛔ ${why}`)
+    return why
+  }
+  if (start.error) return stopFor(`보안 검토 못 함 — ${start.error}`)
+  if (start.risky) {
+    const reviewed = () => securityResultFor(readFileSync(planPath, 'utf8'), { repo, branch, sha, tree: start.tree })
+    if (!reviewed()) {
+      console.log(`  🛡 위험한 수정(${start.why}) — 이 HEAD 의 security-reviewer 결과를 기다린다`)
+      const started = Date.now()
+      while (!reviewed()) {
+        if (Date.now() - started >= DIRECT_REVIEW_TIMEOUT_MS) return stopFor(`보안 검토 기다리는 중 — 위험한 수정(${start.why})인데 ${Math.round(DIRECT_REVIEW_TIMEOUT_MS / 60_000)}분 안에 이 HEAD 의 security-reviewer 결과가 없음(결과가 남은 뒤 같은 명령으로 다시)`)
+        await new Promise((done) => setTimeout(done, DIRECT_REVIEW_POLL_MS))
+      }
+    }
+  }
+  const gate = securityGate(readFileSync(planPath, 'utf8'), { repo, branch })
+  if (!gate.block) return ''
+  stopFor(gate.why)
+  const key = `pr-auto-security:${repo}:${branch}`
+  const mark = `${sha}|${gate.result?.line ?? ''}`
+  if (readNotified()[key] === mark) return gate.why
+  const ref = workRefOf(readFileSync(planPath, 'utf8'))
+  const pane = await agentPane({ planFile, ref })
+  const text = `[자동 리뷰 → ${ref.agent || '작업 에이전트'}] ${repo} ${branch} @${sha.slice(0, 7)} 머지하지 않았다 — ${gate.why}. security-reviewer 보고의 높음 항목을 고쳐 scripts/commit.sh 로 커밋한 뒤 scripts/delegate.sh security-reviewer --cwd <워크트리> --here --plan ${planFile} 로 다시 검토받고, 같은 명령으로 다시 올린다`
+  const sent = pane ? await sendToPane(pane, masked(text)) : false
+  if (sent) markNotified(key, mark)
+  console.log(sent ? `  → 고칠 것을 pane ${pane} 에 보냈다` : '  ⚠️ 담당 pane 을 찾지 못해 보내지 못했다 — 계획서 줄 · 사건 기록만')
+  return gate.why
+}
+
 // ── 바로 머지 · Actions 넘기기 앞의 리뷰 문(2026-11-04 사용자 결정 · lib wideChangeVerdict 주석) ─────────────────────
 // 넓은 수정이면 같은 HEAD 의 "- Review result: 승인" 이 있을 때만 통과한다. 없으면 reviewer 를 이 pane 옆에 띄우고(delegate.sh reviewer --here)
 // 결론을 기다린다 — 승인이면 통과 · 수정 필요면 멈춘다(에이전트가 고친 뒤 같은 명령으로 다시 오면 고친 부분만 짧게 다시 본다).
@@ -948,6 +1026,8 @@ const directStop = async (job, result, reason, { raise = true } = {}) => {
 // 리뷰 멈춤은 [작업] 요청을 열지 않는다 — 사람이 고를 것이 없고 다음 할 일은 pane 에 적혀 있다(지적은 reviewer pane 보고)
 const DIRECT_REVIEW_POLL_MS = Number(process.env.ATHENA_DIRECT_REVIEW_POLL_MS) || 5000
 const DIRECT_REVIEW_TIMEOUT_MS = Number(process.env.ATHENA_DIRECT_REVIEW_TIMEOUT_MS) || 20 * 60_000
+// 결과 없이 남은 Security review 줄의 만료 — 기다림 시간과 같게 · 띄움 시각이 분 단위라 2분 아래로는 내리지 않는다(갓 띄운 줄을 바로 만료하지 않게)
+const SECURITY_PENDING_MAX_MS = Math.max(DIRECT_REVIEW_TIMEOUT_MS, 2 * 60_000)
 // git diff --numstat 한 줄 → { path, added, deleted }(이진 파일은 "-" 라 0)
 const numstatFiles = (text) => String(text ?? '').split('\n').filter(Boolean).map((row) => {
   const [added, deleted, ...rest] = row.split('\t')
@@ -1071,6 +1151,8 @@ const directMerge = async (planArg, repo, dir) => {
   }
   // 넓은 수정이면 리뷰 문부터 — 통과해야 머지(auto) · 머지 확인 요청(confirm)으로 간다. 사람이 직접 머지(manual)는 위에서 끝났다
   if (!(await directReviewGate(job, planPath))) return false
+  const securityWhy = await securityStop({ planPath, planFile, repo, branch, sha, worktree, base })
+  if (securityWhy) { writeDirectLine(planPath, job, `보안 검토 때문에 멈춤 — ${securityWhy}`); return false }
   if (flow.merge === 'auto') return Boolean((await performDirectMerge(job))?.ok)
   // 확인 후 머지 — 검증 · 충돌을 먼저 보고 통과하면 [작업]에 [머지] 요청
   if (pendingDecisions(planFile, repo, 0)) { await directStop(job, '결정 필요 — 결정 콘솔에 안 정한 결정이 있어 머지 대기', 'decisions', { raise: false }); return false }
@@ -1120,6 +1202,8 @@ const handOff = async (planArg, repo, dir) => {
   if (pendingDecisions(planFile, repo, 0)) { console.log('⏭  결정 콘솔에 안 정한 결정이 있어 넘기지 않았다'); return false }
   // 넓은 수정이면 리뷰 문부터 — Actions 는 검증 · 머지만 하니 리뷰는 넘기기 전에 선다
   if (!(await directReviewGate({ plan: planFile, repo, branch, sha, base, worktree }, planPath))) return false
+  const securityWhy = await securityStop({ planPath, planFile, repo, branch, sha, worktree, base })
+  if (securityWhy) { writeDirectLine(planPath, { repo, branch, sha }, `보안 검토 때문에 멈춤 — ${securityWhy}`); return false }
   if (git(worktree, ['cat-file', '-e', `${sha}:.github/workflows/${HANDOFF_WORKFLOW}`]) === null) { console.log(`⏭  이 커밋에 .github/workflows/${HANDOFF_WORKFLOW} 가 없다 — 넘겨도 돌지 않는다`); return false }
   const head = handoffHead(worktree, sha, masked(directMergeMessage({ title: planTitleOf(planText), branch, base }).split('\n')[0]))
   if (!head) { console.log('⏭  넘김 머리 커밋(계획서 제목)을 만들지 못했다'); return false }
@@ -1351,9 +1435,16 @@ const launchWatcher = () => {
     rmSync(launching, { force: true })
     try { closeSync(openSync(launching, 'wx')) } catch { return }
   }
-  const logFd = openSync(LOG_FILE, 'a')
-  spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { cwd: ROOT, detached: true, stdio: ['ignore', logFd, logFd] }).unref()
-  console.log(`🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 ${LOG_FILE}`)
+  if (process.env.ATHENA_PR_AUTO_CAPTURE === '1') {
+    // 처리기마다 수집기를 붙여 enqueue 종료 뒤의 출력과 처리기 종료 코드도 남긴다.
+    spawn(process.execPath, [join(ROOT, 'scripts/lib/pr-auto-output.mjs'), ROOT, '--watch'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
+    console.log('🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 state/pr-auto-output.jsonl')
+  } else {
+    const logFd = openSync(LOG_FILE, 'a')
+    spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { cwd: ROOT, detached: true, stdio: ['ignore', logFd, logFd] }).unref()
+    closeSync(logFd)
+    console.log(`🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 ${LOG_FILE}`)
+  }
 }
 
 const enqueue = (planArg, prArg, head) => {

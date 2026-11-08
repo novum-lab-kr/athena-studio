@@ -5,7 +5,7 @@
 - 코드: `scripts/pr-auto.mjs`(대기열 · 처리기 · 리뷰 · 지시 · 머지) · `scripts/lib/pr-auto.mjs`(판정 · 계획서 표시 줄 · 대상 고르기 · 리뷰어 구성 · 앞 리뷰 이어받기 — 순수 로직) · 대기열 넣기는 `scripts/ship.sh`(push 하자마자) · 놓친 것은 현황판(`scripts/board/server.mjs` `autoReviewPlans` — 5분 안전망) · 고친 커밋 올리기는 `scripts/ship.sh --auto-push`
 - 시험: `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
 - 코어 갱신 때 처리기 재시작: `update` · 되돌리기 · 따라잡기가 본체를 옮길 때 `pr-auto.mjs --watch` 를 끄고, 끝나면 그때 본체 코드로 `--kick` 해 일이 남았으면 다시 띄운다(옛 코드로 계속 돌지 않게 · 리뷰하다 끊긴 일은 대기열로 돌아간다). 처리기는 `pack busy` 에 세지 않아 옮기기를 막지 않는다
-- 기록: 처리기 로그 `/tmp/athena-pr-auto-<키>.log` · 대기열 팩 데이터 `state/pr-auto-queue/`(머지 확인 대기 `confirm/` · 실패 `failed/` · PR 마다 지난 리뷰 `history/<레포>-<번호>.json`) · 사건 기록 `state/events.jsonl`(`docs/events.md`)
+- 기록: 현황판이 띄운 명령과 처리기의 stdout/stderr·종료 코드는 팩 데이터 `state/pr-auto-output.jsonl`(1MiB 상한 · 비밀값 마스킹 · 16KiB를 넘는 줄과 비밀키 본문 생략, 옛 단일 본체는 본체 루트)에 남긴다. 현황판 밖에서 시작한 처리기 로그는 `/tmp/athena-pr-auto-<키>.log` · 대기열 팩 데이터 `state/pr-auto-queue/`(머지 확인 대기 `confirm/` · 실패 `failed/` · PR 마다 지난 리뷰 `history/<레포>-<번호>.json`) · 사건 기록 `state/events.jsonl`(`docs/events.md`)
 
 ## 켜기 — 레포마다 (기본 꺼짐)
 
@@ -52,6 +52,19 @@ PR 끔 레포에서 넓은 수정이 리뷰 없이 머지되던 것을 막는다
   - 같은 HEAD 에 수정 필요가 그대로면(고치지 않고 다시 옴) 다시 띄우지 않고 멈춘다(줄에 리뷰 횟수를 그대로 남겨 고친 뒤 회차가 이어진다) · reviewer 를 못 띄우거나(화면 밖 등) 20분 안에 결론이 없으면 멈추고 아테나에 알린다
   - 리뷰 멈춤은 [작업] 요청을 열지 않는다(고를 것이 없다 — 다음 할 일은 줄과 pane 에 있다)
 - 시험: `test/pr-auto-test.sh` "넓은 수정이면 리뷰 문"(가짜 reviewer · 가짜 원격 · Actions 넘기기 길 포함) · `test/handoff-test.sh`(workflow 파일은 민감 경로라 승인 뒤 넘기는 것)
+
+### 보안 검토 문 (2026-11-08 사용자 결정)
+
+읽기 전용 `security-reviewer`(`.claude/agents/security-reviewer.md` · Claude 전용)의 결론으로 PR · 머지를 막는다. 높음만 막고 중간 이하는 보고만 한다.
+- **언제 띄우나** — 위험한 수정(명령 실행 · 파일 쓰기 · 로그인/권한 · 비밀값 · 외부 입력 · 서버 접속 — 판정 `scripts/lib/pr-auto.mjs` `securityRiskVerdict` · 더해진 코드 줄과 경로를 본다 · 지운 파일 경로도)일 때 reviewer 와 같이 띄운다. ① `delegate.sh reviewer` 가 띄울 때 `security-gate.mjs risk --base origin/<prBase>` 로(`ATHENA_SECURITY_AUTO=0` 이면 안 띄움) ② PR 자동 리뷰를 시작할 때 `pr-auto.mjs` 가 워크트리 diff(`origin/<base>...<HEAD>`)로 ③ 자동 머지 · 바로 머지 · 넘기기 앞에서 이 HEAD 결과가 없으면 그 자리에서(PR 이면 워크트리 diff 를 못 읽을 때 `gh pr diff`). 이미 띄워 결과를 기다리는 중(`securityPending` — 같은 레포 · 브랜치의 띄움 줄)이거나 이 HEAD 결과가 있으면 다시 띄우지 않는다. 결과 없이 남은 띄움 줄은 띄운 지 기다림 시간(아래 · 최소 2분)이 지났거나 그 pane 이 닫혔으면 만료해 다음 실행이 다시 띄운다. 그 밖에는 "보안 검토해줘" 할 때 `delegate.sh security-reviewer --cwd <워크트리> --here --plan <계획서>`. 띄우면 계획서에 `- Security review: <cwd> · 📦 <레포> · 🌿 <브랜치> · pane <id> (security-reviewer) · 띄움 <시각>` 줄(같은 레포 · 브랜치 줄과 바꾼다)
+- **절차** — Trail of Bits 플러그인 4개(`differential-review` · `variant-analysis` · `insecure-defaults` · `sharp-edges` @`trailofbits` — `claude plugin list --json` 로 확인)가 있으면 그 스킬을, 없으면 내장 절차(찾기 → 오탐 거르기 → 확신 8 이상)로 돌고 설치 안내 한 줄을 붙인다
+- **결론** — `review-result.sh --security --high N --medium M` 이 `- Security result: 높음 N · 중간 M @sha · tree … · 📦 <레포> · 🌿 <브랜치> · …` 줄을 같은 레포 · 브랜치 줄과 바꿔 남긴다(`- Review result:` 와 따로)
+- **막는 곳** — 이 레포 · 브랜치의 마지막 `- Security result:` 에 높음이 1 이상이면(판정 `securityGate` 하나)
+  - `ship.sh`(`--auto-push` 가 아닐 때) — `security-gate.mjs check` 가 3 으로 끝나 멈추고 다시 검토하는 명령을 알려 준다
+  - `pr-auto.mjs` 자동 머지 · `--direct-merge` · `--handoff` — 줄 `보안 검토 때문에 멈춤 — …` · 담당 pane 에 `[자동 리뷰 → <에이전트>] … 머지하지 않았다` 를 한 번 보낸다
+- **결과가 없으면 기다린다** — 위험한 수정인데 이 HEAD 의 `- Security result:`(결과에 tree 가 있으면 같은 tree 일 때만 · tree 없는 옛 줄만 같은 sha — `securityResultFor`)가 없으면 세 길 모두 리뷰 문과 같은 시간(`ATHENA_DIRECT_REVIEW_TIMEOUT_MS` · 기본 20분)만큼 기다리고, 그래도 없으면 `보안 검토 기다리는 중 — …` 으로 멈춘다(결과가 남은 뒤 같은 명령으로 다시). diff 를 못 읽거나 띄우지 못하면 `보안 검토 못 함 — …` 으로 멈춘다. 위험하지 않은 수정은 지금처럼 그냥 간다
+- 고친 뒤에는 security-reviewer 로 다시 검토해 줄을 바꿔야 문이 열린다(옛 높음은 다시 검토할 때까지 남는다)
+- 시험: `test/pr-auto-test.sh` "보안 검토 문(securityGate)" · PR 머지(위험+결과 없음 → 안 머지 · 높음 0 → 머지 · 위험 아님 → 안 띄우고 머지) · 바로 머지(feat/sec) · Actions 넘기기 경우
 
 **첫 실행(`docs/setup.md` 2 · 3단계)과 레포 하나 더하기 때 레포마다 켤지 묻는다** — 나중에 바꾸려면 Athena Studio 앱 탭 줄 ⚙ 설정에서 고르거나 `bin/athena pack set-auto-merge <레포> --auto on|off|direct [--review on|off] [--merge auto|confirm|manual]` (`on` = 자동 PR · `off` = 자동 흐름 없음 — 예전 뜻 그대로, 옛 앱이 보내도 바로 머지로 바뀌지 않는다 · `direct` = PR 없이 바로 머지) · 그 레포 항목을 직접 고친다(현황판 · 처리기는 다음 확인 때 새 값을 읽는다). main 직접 레포(`"direct": true`)는 PR 이 없어 대상이 아니다.
 
