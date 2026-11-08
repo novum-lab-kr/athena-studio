@@ -324,15 +324,13 @@ body:has(.pack-overlay:not([hidden])) .app-update-corner { display: none; }
 .tree-row .label { overflow: hidden; flex: 1; text-overflow: ellipsis; }
 .tree-row.dotfile .label { color: var(--muted); }
 .tree-row .mark { color: var(--muted); }
-/* 미리보기 — 터미널 pane 오른쪽에 나눠 띄운다 */
+/* 미리보기 — pane 배치의 한 칸(자리 · 크기는 layoutPanes 가 .pane 처럼 정한다) */
 .preview {
+  position: absolute;
   display: flex;
-  flex: 0 0 45%;
   flex-direction: column;
   min-width: 0;
-  margin-top: 4px;
   background: #121315;
-  border-left: 1px solid var(--line);
   outline: none;
 }
 .preview[hidden] { display: none; }
@@ -717,10 +715,9 @@ body[data-platform="darwin"] .tabbar {
   border-radius: var(--radius-lg);
 }
 
-/* 파일 미리보기 — 터미널 pane 과 같은 상자(6px 띄움 · 1px 테두리 · 각진 모서리 · 터미널 바탕 · 22px 머리줄) ·
+/* 파일 미리보기 — 터미널 pane 과 같은 상자(1px 테두리 · 각진 모서리 · 터미널 바탕 · 22px 머리줄) ·
    미리보기에 입력이 있으면(포커스) 테두리를 포커스 색으로 */
 .preview {
-  margin: 6px 6px 6px 0;
   border: 1px solid var(--line);
   background: var(--bg);
 }
@@ -732,6 +729,7 @@ body[data-platform="darwin"] .tabbar {
 /* 머리줄은 터미널 pane 머리줄과 같다 — 보통은 바탕 없이 흐린 글자, 포커스면 막대 바탕 + 밝은 글자 + 왼쪽 강조 커서 */
 .preview-head {
   position: relative;
+  gap: 6px;
   flex: 0 0 22px;
   height: 22px;
   padding: 0 0 0 8px;

@@ -1,14 +1,19 @@
 // pane 머리줄 끌어 옮기기 — 같은 탭 안 다른 pane 의 위 · 아래 · 왼쪽 · 오른쪽에 끼워 넣는다. 트리 계산은 StudioLayout, 저장은 데몬(pane move)
-// 놓으면 트리만 바뀌고 pane 요소 · xterm · pty 는 그대로다 — layoutPanes 가 자리만 옮긴다
+// 놓으면 트리만 바뀌고 pane 요소 · xterm · pty 는 그대로다 — layoutPanes 가 자리만 옮긴다.
+// 파일 미리보기 칸도 같은 끌기로 옮긴다(paneId = PREVIEW_ID) — 배치는 미리보기까지 합친 트리로 재고, 미리보기 자리는 화면이 · 터미널 자리는 데몬이 바꾼다(moveWithPreview)
 import * as StudioLayout from '../lib/layout.mts'
 import type { DropSide, Rect, Tree } from '../lib/layout.mts'
 import { $, showToast } from './core.ts'
 import { PANE_GAP } from './terminal.ts'
-import { treeForLayout } from './dividers.ts'
 import { activeTab } from './tabs.ts'
+import * as PreviewLayout from '../lib/preview-layout.mts'
+import type { PreviewMove } from '../lib/preview-layout.mts'
+import { layoutTree, previewSpot, setPreviewSpot } from './preview-pane.ts'
+import { layoutPanes } from './pane-layout.ts'
 
 // tree · area 는 놓을 자리를 잰 그때의 트리 · pane 칸(표시를 결과와 같은 계산으로 그린다)
-type DropTarget = { paneId: string; side: DropSide; tree: Tree; area: Rect }
+// move 는 미리보기가 열려 있을 때 놓으면 바뀌는 미리보기 자리 · 데몬 옮기기
+type DropTarget = { paneId: string; side: DropSide; tree: Tree; area: Rect; move: PreviewMove | null }
 type PaneDrag = { paneId: string; tabId: string; head: HTMLElement; pointerId: number; startX: number; startY: number; x: number; y: number; moving: boolean; finish: () => void }
 
 // 이만큼 움직여야 옮기기로 본다 — 그 전에 놓으면 그냥 누르기
@@ -21,7 +26,7 @@ export function startPaneDrag(event: PointerEvent, paneId: string, head: HTMLEle
   // ctrl+누르기는 맥에서 우클릭 · 머리줄의 [상세] 단추는 단추대로
   if (event.button !== 0 || event.ctrlKey || drag || (event.target as Element).closest('button')) return
   const tab = activeTab()
-  const ids = tab ? StudioLayout.paneIds(tab.tree) : []
+  const ids = tab ? StudioLayout.paneIds(layoutTree(tab)) : []
   if (!tab || ids.length < 2 || !ids.includes(paneId)) return
   // preventDefault 는 하지 않는다 — mousedown 이 그대로 와야 눌렀을 때 포커스가 지금처럼 옮겨 간다.
   // 캡처하면 터미널 · 경계 위로 지나가도 이벤트는 머리줄로만 온다(xterm 의 마우스 보고로 새지 않는다)
@@ -93,7 +98,7 @@ function onKey(event: KeyboardEvent): void {
 // 끄는 중에 배치가 바뀌면 — 탭이 바뀌었거나 끄는 pane 이 없어졌거나 혼자 남으면 취소, 아니면 놓을 자리를 다시 잰다(layoutPanes 가 부른다)
 export function syncPaneDrag(tab: ScreenTab | null): void {
   if (!drag) return
-  const ids = tab && tab.id === drag.tabId ? StudioLayout.paneIds(tab.tree) : []
+  const ids = tab && tab.id === drag.tabId ? StudioLayout.paneIds(layoutTree(tab)) : []
   if (ids.length < 2 || !ids.includes(drag.paneId)) return cancelPaneDrag()
   if (drag.moving) renderPreview()
 }
@@ -101,10 +106,10 @@ export function syncPaneDrag(tab: ScreenTab | null): void {
 // 포인터 아래 놓을 자리 — 자기 자신 · 탭 밖 · pane 사이 틈이면 null
 function dropTarget(clientX: number, clientY: number): DropTarget | null {
   const tab = activeTab()
-  const tree = tab && drag && tab.id === drag.tabId ? treeForLayout(tab) : null
-  if (!tree || !drag) return null
+  const tree = tab && drag && tab.id === drag.tabId ? layoutTree(tab) : null
+  if (!tab || !tree || !drag) return null
   const container = $('panes')
-  // 옆 브라우저 · 파일 보기처럼 pane 칸을 덮은 곳은 탭 밖으로 본다 — 가려진 pane 에 보이지 않는 표시로 놓이지 않게
+  // 옆 브라우저처럼 pane 칸을 덮은 곳은 탭 밖으로 본다 — 가려진 pane 에 보이지 않는 표시로 놓이지 않게
   const under = document.elementFromPoint(clientX, clientY)
   if (!under || !container.contains(under)) return null
   const origin = container.getBoundingClientRect()
@@ -114,7 +119,11 @@ function dropTarget(clientX: number, clientY: number): DropTarget | null {
   const rects = StudioLayout.computeRects(tree, area, PANE_GAP)
   const paneId = StudioLayout.paneAt(rects, x, y)
   if (!paneId || paneId === drag.paneId) return null
-  return { paneId, side: StudioLayout.dropSide(rects[paneId] as Rect, x, y), tree, area }
+  const side = StudioLayout.dropSide(rects[paneId] as Rect, x, y)
+  // 미리보기가 열려 있으면 — 데몬이 pane 옆 옮기기 한 번으로 못 만드는 자리는 놓을 수 없다(표시도 안 한다)
+  const move = previewSpot ? PreviewLayout.moveWithPreview(tab.tree, previewSpot, drag.paneId, paneId, side) : null
+  if (previewSpot && !move) return null
+  return { paneId, side, tree, area, move }
 }
 
 function renderPreview(): void {
@@ -134,7 +143,18 @@ function renderPreview(): void {
 }
 
 // 화면은 데몬이 알리는 새 상태로 다시 그린다
+// 미리보기가 열려 있으면 미리보기 자리는 화면이 바로 바꾸고, 터미널 자리가 바뀔 때만 데몬에 옮기기를 보낸다(데몬이 된 뒤 미리보기 자리를 맞춘다)
 async function commitMove(paneId: string, target: DropTarget): Promise<void> {
-  const result = await studio.paneMove(paneId, target.paneId, target.side)
-  if (result.error) showToast(result.error)
+  const { move } = target
+  if (move && !move.daemonMove) {
+    setPreviewSpot(move.spot)
+    return layoutPanes()
+  }
+  const daemonMove = move ? move.daemonMove! : { target: target.paneId, side: target.side }
+  const result = await studio.paneMove(paneId, daemonMove.target, daemonMove.side)
+  if (result.error) return showToast(result.error)
+  if (move && previewSpot) {
+    setPreviewSpot(move.spot)
+    layoutPanes()
+  }
 }

@@ -23,6 +23,7 @@ import { existsSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { dirname, join, relative, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { selfIssueRepo } from './lib/athena-bug-issue.mjs'
 import { loadConfig } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 
@@ -221,7 +222,7 @@ const issueText = (result) => {
   return `---
 title: 🧹 공책 정리 후보 — ${result.area} (${counts})
 status: open
-repo: athena
+repo: ${selfIssueRepo(config)}
 agent:
 kind: tidy
 severity: low

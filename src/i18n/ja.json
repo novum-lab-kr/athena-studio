@@ -819,6 +819,8 @@
   "work.needAnswer": "選択肢を選ぶか回答を書いてください",
   "work.sent": "送りました — エージェントの pane に入力しました",
   "work.savedNoPane": "回答は保存しましたが送る pane がありません — 一覧から再送できます",
+  "work.savedPromptOpen": "回答は保存しましたが、pane に選択画面が出ているため入力できませんでした — pane で選ぶか、画面が閉じた後に一覧から再送できます",
+  "work.savedUnconfirmed": "回答は保存しましたが、pane に届いたか確認できませんでした — pane を確認して一覧から再送できます",
   "work.answerConflict": "その間に依頼が変わりました — 一覧を開き直してください",
   "work.answerFailed": "回答を送れませんでした {message}",
   "work.detail.why": "なぜ",

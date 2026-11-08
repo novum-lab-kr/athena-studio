@@ -819,6 +819,8 @@
   "work.needAnswer": "선택지를 고르거나 답을 적어 주십시오",
   "work.sent": "보냈습니다 — 에이전트 pane 에 입력했습니다",
   "work.savedNoPane": "답은 저장했지만 보낼 pane 이 없습니다 — 목록에서 다시 보낼 수 있습니다",
+  "work.savedPromptOpen": "답은 저장했지만 pane 에 선택 창이 떠 있어 넣지 못했습니다 — pane 에서 고르거나, 창이 닫힌 뒤 목록에서 다시 보낼 수 있습니다",
+  "work.savedUnconfirmed": "답은 저장했지만 pane 에 들어갔는지 확인하지 못했습니다 — pane 을 확인하고 목록에서 다시 보낼 수 있습니다",
   "work.answerConflict": "그사이 요청이 바뀌었습니다 — 목록을 다시 열어 주십시오",
   "work.answerFailed": "답을 보내지 못했습니다 {message}",
   "work.detail.why": "왜",

@@ -4,6 +4,8 @@ import { $, applyStaticTexts, currentTab, panels, say, setI18nState, setState, s
 import { views } from './terminal.ts'
 import { attached, attaching, reattachScreen, runCommand, screen, setAttached, setReattachOnKey, showRestoreResult, startScreen } from './screen.ts'
 import { applyState, renderTabs, switchTab } from './tabs.ts'
+import { startPaneDrag } from './pane-drag.ts'
+import { PREVIEW_ID } from './preview-pane.ts'
 import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
@@ -206,6 +208,9 @@ async function init(): Promise<void> {
   $('side-open').addEventListener('click', () => setPanelHidden(false))
   $('preview-close').addEventListener('click', closePreview)
   $('preview').addEventListener('keydown', (event) => event.key === 'Escape' && closePreview())
+  // 미리보기 머리줄도 pane 머리줄처럼 끌어 옮긴다(✕ 단추는 startPaneDrag 가 건너뛴다)
+  const previewHead = $('preview').querySelector('.preview-head') as HTMLElement
+  previewHead.addEventListener('pointerdown', (event) => startPaneDrag(event, PREVIEW_ID, previewHead))
   // git 변경 · 펼친 폴더는 Explorer 가 보일 때만 3초마다
   setInterval(() => {
     if (currentTab === 'work' && !$('side-panel').hidden && attached) StudioUi.explorer.refresh()

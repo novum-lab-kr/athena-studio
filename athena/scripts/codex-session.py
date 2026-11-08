@@ -369,6 +369,26 @@ def session_recorder():
     return record
 
 
+TRUST_LINE = re.compile(r'trust_level\s*=\s*"(?:trusted|untrusted)"\s*(?:#.*)?')
+
+
+def allowed_profile_section(section: str) -> bool:
+    """위임 생성 프로필에 있어도 되는 절 — 우리 훅 정의 · Codex 가 덧붙이는 훅 믿음 · 화면 · 폴더 믿음.
+
+    폴더 믿음(`[projects."<경로>"]` `trust_level`)은 그 프로필로 뜬 Codex 창에서 폴더를 믿으면
+    Codex 가 활성 사용자 설정 파일(= 이 프로필)에 쓴다. 이 프로필은 서버 중계로 넘기지 않으니
+    서버는 그 절을 읽지 않는다(믿음은 서버의 config.toml 을 따른다) — 받아들여도 권한이 넓어지지 않는다.
+    다른 키가 섞인 projects 절은 받지 않는다."""
+    header, _, body = section.partition('\n')
+    name = header.strip()[1:-1] if header.strip().endswith(']') else header
+    if name == 'hooks' or name.startswith(('hooks.state', 'tui')):
+        return True
+    if name == 'projects' or name.startswith('projects.'):
+        lines = [line.strip() for line in body.splitlines()]
+        return all(not line or line.startswith('#') or TRUST_LINE.fullmatch(line) for line in lines)
+    return False
+
+
 def server_args(args: list[str]) -> list[str]:
     """TUI와 서버가 같은 설정을 읽는다. 프로필 훅은 공식 sessionFlags로 전달한다."""
     result = []
@@ -390,8 +410,7 @@ def server_args(args: list[str]) -> list[str]:
             content = (home / (profile + '.config.toml')).read_text(encoding='utf-8')
             if not content.startswith('# Athena generated delegation hooks\n[hooks]\n'):
                 raise ValueError('위임 생성 프로필이 아닌 설정')
-            sections = re.findall(r'^\[([^\n]+)\]', content, re.M)
-            if any(section != 'hooks' and not section.startswith(('hooks.state', 'tui')) for section in sections):
+            if any(not allowed_profile_section(section) for section in re.split(r'(?=^\[)', content, flags=re.M)[1:]):
                 raise ValueError('지원하지 않는 위임 프로필 설정')
             index += 2
         elif argument in ('-m', '--model'):

@@ -36,6 +36,21 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.53: 공개 v0.52.1 이후 v0.53.0 ~ v0.53.3(직접 머지 4건)에서 사용자에게 보이는 변경만. 사이트 릴리스 줄 파일 8c7ed5d · 그 ko 말투 59b7732 · 배포 판정 6c0a111 은 배포 · 문서 내부라 뺐고, 압축 대비 4b67490 은 곧 압축 알림 · 리드 기록(New)과 압축 뒤 다시 읽기 · 원문 안내(Improved) 두 줄로 나눴다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.57: v0.56.3..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
+
+## 0.57 (v0.57.0 – · Nov 8, 2026)
+
+### New
+- Add servers from the sidebar: the Add Server popup writes a Host entry to ~/.ssh/config (key file login only, no passwords), checks the connection first, and for a server seen for the first time shows its host key fingerprint so you can trust it before it is saved to known_hosts. A changed host key is only reported, never overwritten.
+- Servers added to a pack appear in the sidebar with their connection status and the reason when a check fails, and agents can work on a server through read-only commands from an allow list; anything else waits for your approval.
+
+<!-- 0.56: v0.55.4..main 에서 사용자에게 보이는 변경 — 파일 미리보기를 pane 배치의 한 칸으로(끌어 옮기기 · 경계로 너비 · 높이). 범위 끝은 열어 둔다 -->
+
+## 0.56 (v0.56.0 – · Nov 8, 2026)
+
+### Improved
+- The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.
+
 <!-- 0.55: 공개 v0.53.7 이후 v0.54.0 ~ v0.55.x. v0.54.0 은 release-mac 이 0.54 절이 없어 멈춰 공개되지 않았고 그사이 #249(feat)로 0.55 가 돼, 0.40 · 0.46 처럼 공개 안 된 minor 를 다음 공개 절에 합쳤다. v0.54.0(#248 자동 업데이트) · v0.55.0(#249 압축 뒤 안내에 최근 사용자 말 원문 · 열린 요청 · 에이전트 pane — 압축 Improved 줄에 합침)과, 공개판 v0.53.5 ~ v0.53.7 에 실렸지만 0.53 절(v0.53.3 까지)에 없던 압축 대비 변경(8e4e41d Codex 압축 대비 · #246 70% 알림 · #247 늦은 첫 응답)에서 사용자에게 보이는 변경만. 압축 대비 시험 보강 · 시험 실패 세기 · 압축 흐름 그림 설명은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
 
 ## 0.55 (v0.55.0 – · Nov 7, 2026)

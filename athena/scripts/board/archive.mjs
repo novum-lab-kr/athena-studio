@@ -18,6 +18,7 @@ import { join, dirname, basename, normalize, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { execFileSync } from 'node:child_process'
 import { isMainModule } from '../lib/is-main.mjs'
+import { hasStudioRepo, isSelfIssueRepo, STUDIO_REPO } from '../lib/athena-bug-issue.mjs'
 import { loadConfig, paths } from '../lib/config.mjs'
 import { gitEach, realRepoPath } from '../lib/git.mjs'
 import { checkpointOf } from './plan-bind.mjs'
@@ -149,9 +150,12 @@ const front = (text) =>
 const plainLine = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').trim()
 
 // 레포 이름 하나로 맞춘다 — 이슈 repo: 는 그대로, 계획서는 Agent:(에이전트 이름)나 파일 이름에서 설정(scripts/lib/config.mjs)으로 찾는다
-// 표기는 이슈 repo: 와 같다(<레포> · 모노레포 <레포>/<앱> · <레포>/packages · hermes — 아테나 자체는 이름 변경 뒤에도 보관 키 hermes 로 묶는다)
+// 표기는 이슈 repo: 와 같다(<레포> · 모노레포 <레포>/<앱> · <레포>/packages · 아테나 자체)
+// 아테나 자체 보관 키 — 팩에 코어 레포가 있으면 athena-studio 하나로(옛 athena · hermes 이슈도), 없으면 이름 변경 뒤에도 hermes
+const SELF_KEY = (() => { try { return hasStudioRepo(loadConfig(ROOT)) ? STUDIO_REPO : 'hermes' } catch { return 'hermes' } })()
+const issueRepoKey = (repo) => (SELF_KEY === STUDIO_REPO && isSelfIssueRepo(repo) ? STUDIO_REPO : repo)
 const REPO_OF_AGENT = (() => {
-  const map = new Map([['아테나', 'hermes'], ['헤르메스', 'hermes'], ['athena', 'hermes'], ['hermes', 'hermes']])
+  const map = new Map([['아테나', SELF_KEY], ['헤르메스', SELF_KEY], ['athena', SELF_KEY], ['hermes', SELF_KEY]])
   try {
     const config = loadConfig(ROOT)
     for (const repo of config.repos ?? []) {
@@ -172,7 +176,7 @@ const repoOfPlan = (agentField, dirName, workRef) => {
   const fromName = dirName.replace(/^\d{8}-/, '')
   for (const [agent, repo] of REPO_OF_AGENT) if (fromName.startsWith(`${agent}-`)) return repo
   // Work ref 가 athena 체크아웃이면 아테나 자체 작업
-  if (/^(?:athena|hermes)\b/.test(workRef)) return 'hermes'
+  if (/^(?:athena|hermes)\b/.test(workRef)) return SELF_KEY
   return ''
 }
 
@@ -224,7 +228,7 @@ export const listHistory = () => {
         archivedAt: meta.archivedAt || '',
         title: meta.title || issueMeta.title || planText.match(/^#\s+(.+)$/m)?.[1] || name,
         kind: issueText ? 'issue' : 'plan',
-        repo: issueMeta.repo || repoOfPlan(agent, name, plainLine(checkpoint.match(/^-\s*Work ref:\s*(.+)$/m)?.[1] ?? '')),
+        repo: issueRepoKey(issueMeta.repo) || repoOfPlan(agent, name, plainLine(checkpoint.match(/^-\s*Work ref:\s*(.+)$/m)?.[1] ?? '')),
         issueKind: issueMeta.kind || '',
         severity: issueMeta.severity || '',
         status: issueMeta.status || plainLine(checkpoint.match(/^-\s*Status:\s*(.+)$/m)?.[1] ?? ''),

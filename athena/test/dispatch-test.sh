@@ -146,6 +146,25 @@ elif a[:2] == ['pane','run']:
     before = profile_path.stat().st_mtime_ns
     run('codex', None)
     check('Codex 가 덧붙인 [tui] 절 유지·다시 쓰지 않음', '[tui]\nscreen_reader_detection_done = true' in profile_path.read_text() and profile_path.stat().st_mtime_ns == before)
+    # 그 프로필로 뜬 Codex 창에서 폴더를 믿으면 Codex 가 이 파일에 [projects."<경로>"] 를 쓴다 — 서버 연결이 그 절로 거절되면 안 된다
+    def server_args(extra):
+        """codex-session.py server_args 를 이 시험 본체 · CODEX_HOME 으로 불러 결과(통과 / 오류 글)를 돌려준다."""
+        content = profile_path.read_text()
+        profile_path.write_text(content + extra)
+        code = "import importlib.util,sys;spec=importlib.util.spec_from_file_location('cs',sys.argv[1]);module=importlib.util.module_from_spec(spec);spec.loader.exec_module(module)\ntry:\n module.server_args(['--profile',sys.argv[2]]);print('ok')\nexcept ValueError as error:print(error)"
+        result = subprocess.run([sys.executable, '-c', code, str(core/'scripts/codex-session.py'), profiles['agent']], env=dict(env, ATHENA_ROLE='agent'), capture_output=True, text=True)
+        profile_path.write_text(content)
+        return result.stdout.strip() or result.stderr.strip()
+    trust = '\n[projects."/tmp/novum-web"]\ntrust_level = "trusted"\n'
+    check('Codex 가 덧붙인 폴더 믿음 절 → 서버 연결 통과', server_args(trust) == 'ok')
+    check('폴더 믿음 절에 다른 키가 섞이면 거절', server_args('\n[projects."/tmp/novum-web"]\ntrust_level = "trusted"\nsandbox_mode = "danger-full-access"\n') == '지원하지 않는 위임 프로필 설정')
+    check('그 밖의 절은 여전히 거절', server_args('\n[sandbox_workspace_write]\nnetwork_access = true\n') == '지원하지 않는 위임 프로필 설정')
+    with profile_path.open('a') as handle:
+        handle.write(trust)
+    run('codex', None)
+    before = profile_path.stat().st_mtime_ns
+    run('codex', None)
+    check('폴더 믿음 절 유지·다시 쓰지 않음', trust.strip() in profile_path.read_text() and profile_path.stat().st_mtime_ns == before)
     # 옛 판(hooks= 인라인)을 Codex 0.166 이 신뢰 저장하며 깨뜨린 머리 — 우리 파일로 알아보고 회복한다
     hooks_lines = regenerated.split('[hooks]\n', 1)[1].split('\n[', 1)[0]
     profile_path.write_text('[# Athena generated delegation hooks\nhooks]\n' + hooks_lines + '\n[hooks.state]\n\n[hooks.state."fixture"]\ntrusted_hash = "test-hash"\n')

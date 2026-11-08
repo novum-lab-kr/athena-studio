@@ -186,8 +186,8 @@ declare global {
   type WorkDetailReply =
     | { ok: false; error: string }
     | { ok: true; id: string; why: string; decided: string[]; progress: { checked: number; total: number; now: string }; validation: string; results: string[]; next: string; blocked: string }
-  // 앱에서 답하기 · 다시 보내기(work.mts answerRequest · redeliverRequest) — delivered: 그 pane 에 넣었는지(없으면 답만 저장)
-  type WorkAnswerReply = { ok: boolean; error?: string; message?: string; delivered?: boolean }
+  // 앱에서 답하기 · 다시 보내기(work.mts answerRequest · redeliverRequest) — delivered: 그 pane 에 넣었는지(못 넣으면 답만 저장 · reason 이 이유 — src/lib/answer-delivery.mts)
+  type WorkAnswerReply = { ok: boolean; error?: string; message?: string; delivered?: boolean; reason?: 'no-pane' | 'prompt-open' | 'unconfirmed' }
 
   interface StudioApi {
     // 화면 · 언어 — preload 가 sendSync · send 로 부르는 것은 값이 없다

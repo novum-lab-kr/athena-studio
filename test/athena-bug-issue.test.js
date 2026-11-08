@@ -20,6 +20,15 @@ test('팩에 athena-studio 레포가 있을 때만 hasStudioRepo', async () => {
   assert.equal(hasStudioRepo({}), false)
 })
 
+test('아테나 자체 이슈 repo — 새 값은 팩에 athena-studio 가 있으면 그것 · 읽기는 athena · hermes · athena-studio 모두', async () => {
+  const { isSelfIssueRepo, selfIssueRepo } = await load()
+  assert.equal(selfIssueRepo({ repos: [{ name: 'athena-studio' }, { name: 'syung' }] }), 'athena-studio')
+  assert.equal(selfIssueRepo({ repos: [{ name: 'syung' }] }), 'athena')
+  assert.equal(selfIssueRepo({}), 'athena')
+  for (const repo of ['athena', 'hermes', 'athena-studio', ' athena-studio ']) assert.equal(isSelfIssueRepo(repo), true, repo)
+  for (const repo of ['', undefined, 'syung', 'athena-studio/packages', 'athena-x']) assert.equal(isSelfIssueRepo(repo), false, String(repo))
+})
+
 test('redact: 경로 · 코드 · 비밀 · 메일 · 주소 · 회사 이름을 가린다', async () => {
   const { redact } = await load()
   const text = [

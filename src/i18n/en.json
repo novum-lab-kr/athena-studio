@@ -819,6 +819,8 @@
   "work.needAnswer": "Pick an option or write an answer",
   "work.sent": "Sent — typed into the agent pane",
   "work.savedNoPane": "Answer saved, but there is no pane to send it to — you can resend it from the list",
+  "work.savedPromptOpen": "Answer saved, but a choice prompt is open in the pane so it was not typed — choose in the pane, or resend from the list after the prompt closes",
+  "work.savedUnconfirmed": "Answer saved, but could not confirm it reached the pane — check the pane and resend from the list",
   "work.answerConflict": "The request changed in the meantime — reopen the list",
   "work.answerFailed": "Couldn't send the answer {message}",
   "work.detail.why": "Why",
