@@ -10,7 +10,8 @@
 set -euo pipefail
 
 # 늘 BatchMode(비밀번호를 묻지 않는다) · ConnectTimeout 10초. 허용 목록 · 승인 판정은 scripts/lib/server_allow.py
-# 시험용: ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN(bin/athena 대신 — 요청 열기 · 승인 읽기 둘 다) · ATHENA_GUARD_SERVERS
+# 시험용: ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN(bin/athena 대신 — 요청 열기 · 승인 읽기 둘 다) · ATHENA_GUARD_SERVERS ·
+#   ATHENA_GUARD_USED_FILE(쓴 승인 기록 — 기본 팩 데이터 state/server-approvals-used)
 # (승인은 늘 요청 bin 의 request show 로 읽는다 — 답을 환경 값으로 넣는 길은 없다)
 # (에이전트 명령에 이 값들을 넣는 것은 훅 server-guard.py 가 막는다)
 ATHENA_DIR="$(cd "$(dirname "$0")/.." && pwd -P)"
@@ -59,20 +60,14 @@ if ! [[ "$HOST" =~ ^[A-Za-z0-9_][A-Za-z0-9_.-]{0,99}$ ]]; then
 fi
 [ $# -ge 1 ] || usage
 
-# 비밀값이 든 파일 이름 — 받지도 고치지도 않는다(server_allow.py SECRET_NAME 과 같은 생각 · 이름만 본다)
+# 비밀값이 든 파일 — 받지도 고치지도 않는다. 판정은 원격 명령(cat …)과 같은 server_allow.py 하나(흔한 이름만 막는다)
 is_secret_path() {
-  local base
-  base="$(basename "$1")"
-  case "$base" in
-    .env.example|.env.sample|.env.template) return 1 ;;
-    .env|.env.*|*.pem|*.key|*.p12|*.pfx|*.keystore|*.jks|id_rsa*|id_ed25519*|id_ecdsa*|id_dsa*|.npmrc|.pgpass|.netrc|.git-credentials|credentials|credentials.json|authorized_keys|shadow|gshadow) return 0 ;;
-  esac
-  return 1
+  python3 "$ALLOW" secret "$1"
 }
 
-# 승인 확인 — ATHENA_SERVER_APPROVED 가 이 키의 "실행" 답(60분 안)이면 0
+# 승인 확인 — ATHENA_SERVER_APPROVED 가 이 키의 "실행" 답(60분 안 · 아직 안 쓴 것)이면 0. 맞으면 쓴 것으로 적는다(한 번만)
 approved() {
-  [ -n "${ATHENA_SERVER_APPROVED:-}" ] && python3 "$ALLOW" approved "$REQUEST_BIN" "$ATHENA_SERVER_APPROVED" "$1"
+  [ -n "${ATHENA_SERVER_APPROVED:-}" ] && python3 "$ALLOW" approved "$REQUEST_BIN" "$ATHENA_SERVER_APPROVED" "$1" "${ATHENA_GUARD_USED_FILE:-}"
 }
 
 # 확인 요청 열기 — ask <키> <제목> <본문 파일>. 같은 키로 열린 요청이 있으면 그것을 다시 쓴다. 늘 3 으로 끝난다
@@ -86,9 +81,9 @@ ask() {
   fi
   id="$(printf '%s\n' "$out" | tail -1 | python3 -c 'import json,sys; print((json.load(sys.stdin).get("request") or {}).get("id") or "")' 2>/dev/null || true)"
   echo "⏸ 사람 확인이 필요하다 — 요청 ${id:-?} 을 열었다([작업] 탭). 실행하지 않았다." >&2
-  echo "   답이 \"실행\" 이면 같은 명령 앞에 ATHENA_SERVER_APPROVED=${id:-<요청 id>} 를 붙여 다시 낸다(60분 안 · 명령이 바뀌면 다시 확인)." >&2
+  echo "   답이 \"실행\" 이면 같은 명령 앞에 ATHENA_SERVER_APPROVED=${id:-<요청 id>} 를 붙여 다시 낸다(60분 안 · 한 번만 · 명령이 바뀌면 다시 확인)." >&2
   if [ -n "${ATHENA_SERVER_APPROVED:-}" ]; then
-    echo "   (받은 ATHENA_SERVER_APPROVED 는 이 명령의 \"실행\" 답이 아니거나 60분이 지났다)" >&2
+    echo "   (받은 ATHENA_SERVER_APPROVED 는 이 명령의 \"실행\" 답이 아니거나 60분이 지났거나 이미 한 번 썼다)" >&2
   fi
   exit 3
 }
@@ -120,7 +115,7 @@ case "$1" in
       printf '%s\n' "$COMMAND"
       echo '```'
       echo
-      echo "[실행] 을 고르면 에이전트가 이 명령을 그대로 한 번 실행한다(60분 안 · 글자가 바뀌면 다시 묻는다)."
+      echo "[실행] 을 고르면 에이전트가 이 명령을 그대로 한 번 실행한다(60분 안 · 한 번 쓰면 끝 · 글자가 바뀌면 다시 묻는다)."
     } >"$TMP/body.md"
     ask "$KEY" "서버 $NAME: 명령 실행 확인" "$TMP/body.md"
     ;;
@@ -134,6 +129,8 @@ case "$1" in
     [ $# -eq 3 ] || usage
     # 파일 하나만 — scp 는 원격에서 * ? [ ] { } 를 펼친다(.env* 가 이름 검사를 지나 .env · .env.production 을 받아 온다)
     case "$2" in *[*?[\]{}]*) echo "❌ --get 은 파일 하나만 받는다 — 경로에 * ? [ ] { } 를 쓰지 않는다: $2" >&2; exit 1 ;; esac
+    # 원격 셸이 풀 수 있는 글자 — $ 변수 · 백틱 · ; | & < > ( ) \ · 줄바꿈(옛 scp -O 는 원격 셸로 경로를 넘긴다)
+    case "$2" in *[\$\`\;\|\&\<\>\(\)\\]*|*$'\n'*) echo "❌ --get 경로에 셸 글자(\$ · 백틱 · ; | & < > ( ) \\)를 쓰지 않는다: $2" >&2; exit 1 ;; esac
     if is_secret_path "$2"; then echo "❌ 비밀값이 들 수 있는 파일은 받지 않는다: $(basename "$2") — 있는지 · 크기만 본다(ls -l)" >&2; exit 1; fi
     rm -rf "$TMP"; exec "$SCP_BIN" -q "${SSH_OPTS[@]}" -- "$HOST:$2" "$3"
     ;;
@@ -141,6 +138,7 @@ case "$1" in
     [ $# -eq 3 ] || usage
     LOCAL="$2"; REMOTE="${3#\~/}"   # ~/x 는 홈 기준 상대 경로 x 로(따옴표 안의 ~ 는 펼쳐지지 않는다)
     [ -f "$LOCAL" ] || { echo "❌ 올릴 파일이 없다: $LOCAL" >&2; exit 1; }
+    case "$REMOTE" in *[*?[\]{}\$\`\;\|\&\<\>\(\)\\]*|*$'\n'*) echo "❌ --put 원격 경로에 셸 글자(* ? [ ] { } \$ · 백틱 · ; | & < > ( ) \\)를 쓰지 않는다: $REMOTE" >&2; exit 1 ;; esac
     if is_secret_path "$LOCAL" || is_secret_path "$REMOTE"; then echo "❌ 비밀값이 들 수 있는 파일은 고치지 않는다: $(basename "$REMOTE") — 사람이 직접 고친다" >&2; exit 1; fi
     REL="${REMOTE#/}"   # 백업은 ~/.athena-backups/<시각>/<경로>(앞 / 를 뗀 그대로)
     QUOTED_REMOTE="$(printf '%q' "$REMOTE")"

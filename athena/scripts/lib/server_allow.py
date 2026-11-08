@@ -10,17 +10,24 @@
   - 목록에 없는 명령(sh -c · bash · eval · xargs · tee · sed · awk 같은 "다른 명령을 돌릴 수 있는 것" 포함)
   - 쓰기 리다이렉트(> · >> — /dev/null 만 된다) · heredoc · 서브셸 ( ) · $( ) · 백틱 · <( ) · 백그라운드 & · 줄바꿈 · $ 변수
   - VAR=값 앞붙임 · 경로로 부른 명령(/tmp/x) · sudo 의 -n 밖 옵션 · sudo 뒤는 더 좁은 목록(SUDO_OK)
-  - 환경 변수를 보이는 것(systemctl show · ps e · /proc/*/environ) · curl 의 GET/HEAD 밖 · http(s) 밖 주소
+  - 환경 변수를 보이는 것(systemctl show · ps e · /proc/*/environ · jq 의 env — jq 는 목록에서 뺐다) · curl 의 GET/HEAD 밖 · http(s) 밖 주소
+  - 리다이렉트 앞 fd 숫자는 원문에서 연산자에 바로 붙은 것(2> · 2>&1)만 — 띄어 쓴 숫자(date 11081200 >/dev/null)는 인자로 본다
+비밀 파일 이름 검사는 흔한 이름만 막는다(.env · 키 · 인증서 · ssh_host_*_key · .docker/config.json · .kube/config …) — 모든 비밀 파일을 알지는 못한다.
 쓰는 곳: scripts/ssh-run.sh(실행 전 판정 · 승인 확인) · 앱 서버 상태 칸 · 등록 접속 시험(`true`)도 이 목록 안의 명령만 쓴다.
 
 CLI(ssh-run.sh 가 부른다)
   server_allow.py check <원격 명령>                 허용이면 0 · 아니면 1 + 이유 한 줄(stdout)
   server_allow.py key <서버> <종류> <글…>           확인 요청 중복 방지 키 server-<종류>:<해시 12자>
-  server_allow.py approved <요청 bin> <요청 id> <키>  그 요청이 이 키 · 답 "실행" · 60분 안이면 0(요청 bin 의 `request show <id> --json` 으로 읽는다)
+  server_allow.py approved <요청 bin> <요청 id> <키> [<사용 기록 파일>]
+                                                    그 요청이 이 키 · 답 "실행" · 60분 안 · 아직 안 쓴 승인이면 0 — 쓴 것으로 적고(한 번만) answered 면 요청을 닫는다
+  server_allow.py secret <경로>                     비밀값이 들 수 있는 파일 이름이면 0(ssh-run.sh --get · --put 이 부른다)
 """
 import datetime
+import fcntl
 import hashlib
 import json
+import os
+import pathlib
 import re
 import shlex
 import subprocess
@@ -28,10 +35,12 @@ import sys
 
 # 비밀값이 들 수 있는 파일 이름(마지막 조각) — secret-guard.py 와 같은 생각 · environ 은 /proc/<pid>/environ(환경 변수)
 SECRET_NAME = re.compile(
-    r"^(\.env(\.[\w-]+)?|.*\.(pem|key|p12|pfx|keystore|jks)|id_(rsa|ed25519|ecdsa|dsa)\w*|\.npmrc|\.pgpass|\.netrc|\.git-credentials|credentials(\.json)?|.*secrets?(\.\w+)?|authorized_keys|shadow|gshadow|environ)$",
+    r"^(\.env(\.[\w-]+)?|.*\.(pem|key|p12|pfx|keystore|jks)|ssh_host_\w+_key|id_(rsa|ed25519|ecdsa|dsa)\w*|\.npmrc|\.pgpass|\.netrc|\.git-credentials|credentials(\.json)?|.*secrets?(\.\w+)?|authorized_keys|shadow|gshadow|environ)$",
     re.IGNORECASE,
 )
 EXAMPLE_NAME = re.compile(r"^\.env\.(example|sample|template)$")
+# 이름만으로는 흔한 파일(config.json · config)이라 폴더까지 보는 것 — 도커 · kubectl 로그인 정보
+SECRET_PATH = re.compile(r"(^|/)(\.docker/config\.json|\.kube/config)$", re.IGNORECASE)
 # 따옴표 밖이면 원격 셸이 펼치는 글자 — 글롭 * ? [ · 중괄호 펼침 { } · 홈 ~
 SHELL_EXPANDS = set('*?[{}~')
 
@@ -92,7 +101,6 @@ SPECS = {
     'cut': spec('snz', 'bcdf', '--complement --only-delimited --bytes= --characters= --delimiter= --fields= --output-delimiter='),
     'tr': spec('cCdst', most=2),
     'column': spec('tnexJ', 'sco', '--table --separator= --output-separator= --json'),
-    'jq': spec('rcSjenaCMs', long='--raw-output --compact-output --sort-keys --join-output --exit-status --null-input --ascii-output --slurp --tab --color-output --monochrome-output'),
     'getent': spec(),
     'dig': spec('46', 'xtcpq'),
     'nslookup': spec(most=2),
@@ -167,7 +175,10 @@ PS = spec('aAdefFlwHjLTMyNx', 'oOpuUgGtCsq', '--sort= --no-headers --forest --he
 
 def secret_arg(arg):
     """경로 · 옵션 값 · git 의 <ref>:<경로> 까지 마지막 조각을 본다"""
-    name = re.split(r'[/:=]', arg.rstrip('/'))[-1]
+    trimmed = arg.rstrip('/')
+    name = re.split(r'[/:=]', trimmed)[-1]
+    if SECRET_PATH.search(re.split(r'[:=]', trimmed)[-1]):
+        return True
     return bool(SECRET_NAME.match(name)) and not EXAMPLE_NAME.match(name)
 
 
@@ -410,6 +421,40 @@ def unquoted_expansion(command):
     return None
 
 
+def redirect_marks(command):
+    """따옴표 · 백슬래시 밖의 < · > 든 연산자 묶음마다 — 바로 앞에 붙은 숫자(앞은 처음 · 공백 · 연산자)가 있나.
+    shlex 는 띄어쓰기를 잊어 `date 11081200 >/dev/null` 과 `date 11081200>/dev/null` 을 가르지 못한다(2026-11-08 PR 리뷰 2)"""
+    marks, quote, index = [], None, 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+        elif quote == '"':
+            if char == '\\':
+                index += 1
+            elif char == '"':
+                quote = None
+        elif char == '\\':
+            index += 1
+        elif char in '\'"':
+            quote = char
+        elif char in '();<>|&':
+            end = index
+            while end < len(command) and command[end] in '();<>|&':
+                end += 1
+            if any(op in command[index:end] for op in '<>'):
+                start = index
+                while start > 0 and command[start - 1].isdigit():
+                    start -= 1
+                before = command[start - 1] if start > 0 else ' '
+                marks.append(start < index and (before.isspace() or before in '();<>|&'))
+            index = end
+            continue
+        index += 1
+    return marks
+
+
 def check(command):
     """원격 명령 글자 전체 — 허용이면 None, 아니면 이유"""
     if not command.strip():
@@ -428,9 +473,15 @@ def check(command):
         tokens = list(lexer)
     except ValueError as error:
         return f'따옴표가 맞지 않다({error})'
+    marks = redirect_marks(command)
+    if len(marks) != sum(1 for token in tokens if token and all(char in '();<>|&' for char in token) and any(op in token for op in '<>')):
+        return '리다이렉트를 읽지 못했다'
+    marks.reverse()
     words, index = [], 0
     while index < len(tokens):
         token = tokens[index]
+        # 이 연산자 바로 앞에 붙은 fd 숫자 — 붙은 것만 fd(나머지 숫자는 그 명령의 인자)
+        attached = marks.pop() if token and all(char in '();<>|&' for char in token) and any(op in token for op in '<>') else False
         if token in SEPARATORS:
             reason = check_one(words)
             if reason:
@@ -441,7 +492,7 @@ def check(command):
             target = tokens[index + 1] if index + 1 < len(tokens) else ''
             if target != '/dev/null':
                 return f'쓰기 리다이렉트({token} {target})'.strip()
-            if words and words[-1].isdigit():
+            if attached and words and words[-1].isdigit():
                 words.pop()
             index += 2
             continue
@@ -449,7 +500,7 @@ def check(command):
             target = tokens[index + 1] if index + 1 < len(tokens) else ''
             if not target.isdigit():
                 return f'리다이렉트 {token}{target}'
-            if words and words[-1].isdigit():
+            if attached and words and words[-1].isdigit():
                 words.pop()
             index += 2
             continue
@@ -470,8 +521,30 @@ def key(server, kind, text):
     return f'server-{kind}:' + hashlib.sha256(f'{server}\0{text}'.encode('utf-8')).hexdigest()[:12]
 
 
-def approved(request_bin, request_id, want_key):
-    """요청 bin(bin/athena · 시험은 가짜)의 request show 로 읽는다 — 환경 값으로 답을 넣는 길은 없다(2026-11-08 보안 검토 참고)"""
+def used_file_default():
+    """쓴 승인 기록 — 팩 데이터 state/server-approvals-used(옛 구조 본체면 본체 폴더)"""
+    athena_dir = str(pathlib.Path(__file__).resolve().parents[2])
+    sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+    from athena_config import paths
+    return os.path.join(paths(athena_dir)['state'], 'server-approvals-used')
+
+
+def claim(used_file, request_id):
+    """승인 id 를 쓴 것으로 적는다 — 이미 있으면 False(잠금 안에서 보고 적는다 · 한 번만)"""
+    os.makedirs(os.path.dirname(os.path.abspath(used_file)), exist_ok=True)
+    with open(used_file, 'a+', encoding='utf-8') as handle:
+        fcntl.flock(handle, fcntl.LOCK_EX)
+        handle.seek(0)
+        if request_id in handle.read().split():
+            return False
+        handle.write(request_id + '\n')
+        handle.flush()
+    return True
+
+
+def approved(request_bin, request_id, want_key, used_file=''):
+    """요청 bin(bin/athena · 시험은 가짜)의 request show 로 읽는다 — 환경 값으로 답을 넣는 길은 없다(2026-11-08 보안 검토 참고).
+    맞으면 쓴 것으로 적고(같은 승인은 한 번만 — 요청 본문 "그대로 한 번 실행") · answered 면 요청을 닫는다(2026-11-08 PR 리뷰 2)"""
     if not re.match(r'^[\w-]+$', request_id or ''):
         return False
     try:
@@ -486,7 +559,20 @@ def approved(request_bin, request_id, want_key):
         at = datetime.datetime.fromisoformat(str(answer.get('at')).replace('Z', '+00:00'))
     except Exception:
         return False
-    return datetime.datetime.now(datetime.timezone.utc) - at <= datetime.timedelta(minutes=60)
+    if datetime.datetime.now(datetime.timezone.utc) - at > datetime.timedelta(minutes=60):
+        return False
+    try:
+        if not claim(used_file or used_file_default(), request_id):
+            return False
+    except Exception:
+        return False
+    if request.get('state') == 'answered':
+        # 닫기는 덤 — 못 닫아도 쓴 기록이 다시 쓰기를 막는다(delivered 는 cancel 이 받지 않는다)
+        try:
+            subprocess.run([request_bin, 'request', 'cancel', request_id, '--reason', '서버 명령 승인을 한 번 썼다'], capture_output=True, timeout=20)
+        except Exception:
+            pass
+    return True
 
 
 if __name__ == '__main__':
@@ -499,7 +585,9 @@ if __name__ == '__main__':
     if len(argv) >= 4 and argv[0] == 'key':
         print(key(argv[1], argv[2], ' '.join(argv[3:])))
         sys.exit(0)
-    if len(argv) == 4 and argv[0] == 'approved':
-        sys.exit(0 if approved(argv[1], argv[2], argv[3]) else 1)
+    if len(argv) in (4, 5) and argv[0] == 'approved':
+        sys.exit(0 if approved(argv[1], argv[2], argv[3], argv[4] if len(argv) == 5 else '') else 1)
+    if len(argv) == 2 and argv[0] == 'secret':
+        sys.exit(0 if secret_arg(argv[1]) else 1)
     print(__doc__.split('CLI')[1], file=sys.stderr)
     sys.exit(2)

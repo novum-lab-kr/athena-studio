@@ -24,7 +24,7 @@
 | 커밋은 `commit.sh` 로만 | `commit-guard.py`(위임 에이전트만) — git commit · `add -A` · merge · revert · stash · `reset --hard` · rebase … | 아테나 세션 · "사용자가 요청할 때만" |
 | push · PR 은 `ship.sh` 로만 | `commit-guard.py`(위임 에이전트만) — git push · gh pr 쓰기 · gh api 쓰기 · `--repo-agent`. `ship.sh` — 미커밋 없음 · `commit.sh` 로 기록된 커밋만 | "PR 올려줘 할 때만"(`--user-pr` 도 말한 출처를 증명하지 못한다) |
 | 비밀값 노출 금지 | `secret-guard.py`(모든 세션) — 설정 출력 · 비밀 파일 읽기 · 환경 통째 출력 · 토큰 변수 echo · 자격 증명 꺼내기 · 프로세스 전체 인자. `commit.sh` — 비밀 파일 이름 · 내용(개인키 · `.npmrc` 글자 그대로 토큰) 커밋 거부 | 로그 · 보고 · 계획서 · 커밋 메시지에 쓰는 것 |
-| 서버는 허용 목록만 자유(팩에 `servers` 가 있을 때 · `docs/setup.md` "서버 하나 더하기") | `server-guard.py`(모든 세션) — 등록한 별칭으로 바로 가는 ssh · scp · rsync · sftp · 명령 안에서 `ssh-run.sh` 시험용 값 정하기. `scripts/ssh-run.sh` — 허용 목록(`scripts/lib/server_allow.py`) 밖 명령 · 모든 `--put` 은 확인 요청을 열고 멈춘다(승인 = 같은 키 · 답 `실행` · 60분) · 비밀 파일 `--get`/`--put` 거부 | 스크립트 파일 안에서 ssh 를 부르는 것 · 허용 목록 명령의 출력에 비밀값이 섞이는 것 |
+| 서버는 허용 목록만 자유(팩에 `servers` 가 있을 때 · `docs/setup.md` "서버 하나 더하기") | `server-guard.py`(모든 세션) — 등록한 별칭으로 바로 가는 ssh · scp · rsync · sftp · 명령 안에서 `ssh-run.sh` 시험용 값 정하기 · `request answer` · `request cancel`(자기 확인 요청에 답하기). `scripts/ssh-run.sh` — 허용 목록(`scripts/lib/server_allow.py`) 밖 명령 · 모든 `--put` 은 확인 요청을 열고 멈춘다(승인 = 같은 키 · 답 `실행` · 60분 · 한 번만) · 비밀 파일 `--get`/`--put` 거부 | 스크립트 파일 안에서 ssh 를 부르는 것 · 허용 목록 명령의 출력에 비밀값이 섞이는 것 · 흔한 이름 밖의 비밀 파일 · 쓴 승인 기록 파일을 손으로 고치는 것 |
 | 화면은 `scripts/screen` 으로만 | `scripts/screen-lint.sh` — 손으로 돌린다(검증 스크립트에 걸려 있지 않다) | 돌리지 않은 때 |
 
 ## 글로만 지키는 규칙이 또 어겨지면

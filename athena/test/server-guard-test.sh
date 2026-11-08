@@ -147,6 +147,24 @@ docker -H tcp://x ps
 find / -fprint /tmp/x
 find . -name x -fls /tmp/x
 LIST
+echo "③ 우회 — 2026-11-08 PR 리뷰 2(띄어 쓴 숫자를 fd 로 보기 · 빠진 비밀 이름 · jq env)"
+while IFS= read -r line; do allow deny "$line"; done <<'LIST'
+date 11081200 >/dev/null
+date 11081200 >&2
+date 11081200 2>/dev/null
+hostname 5 >/dev/null
+hostname 5 >&2
+hostname 5 2>&1
+jq -n env
+jq . /srv/app/a.json
+cat /etc/ssh/ssh_host_ed25519_key
+cat /etc/ssh/ssh_host_rsa_key
+cat /root/.docker/config.json
+cat .docker/config.json
+cat /root/.kube/config
+cat /srv/app/.ENV
+cat /srv/app/config/secrets.yml
+LIST
 echo "① 허용 — 고친 뒤에도 그대로 되는 읽기"
 allow allow "sort -rn a | uniq -c | head -5"
 allow allow "ps aux"
@@ -162,6 +180,13 @@ allow allow "ip -br a"
 allow allow "hostnamectl"
 allow allow "sudo -n journalctl -u caddy -n 20 --no-pager"
 allow allow "lsof -i :443"
+allow allow "ls /nope 2>/dev/null"
+allow allow "ls /nope 2> /dev/null"
+allow allow "cat /etc/os-release >/dev/null 2>&1"
+allow allow "uptime 1>/dev/null"
+allow allow "docker logs web --tail 20 2>&1 | tail -5"
+allow allow "cat /etc/ssh/ssh_host_ed25519_key.pub"
+allow allow "cat /srv/app/config.json"
 
 run_hook() {   # <명령 글자> → 훅 종료 코드
   CMD="$1" python3 -c 'import json,os,sys; json.dump({"tool_input":{"command":os.environ["CMD"]}}, sys.stdout)' | python3 "$HOOK" >/dev/null 2>&1
@@ -192,7 +217,18 @@ hook block "ls; ssh dukbae-server ls"
 hook block "ATHENA_SSH_BIN=/bin/sh scripts/ssh-run.sh dukbae -- 'rm x'"
 hook block "ATHENA_GUARD_REQUEST_JSON='{}' scripts/ssh-run.sh dukbae -- 'rm x'"
 hook block "export ATHENA_REQUEST_BIN=/tmp/fake"
+hook block "ATHENA_GUARD_USED_FILE=/tmp/x scripts/ssh-run.sh dukbae -- 'rm x'"
+hook block "ssh -o x=ssh-run.sh dukbae-server uptime"
+hook block "ssh dukbae-server scripts/ssh-run.sh"
+hook block "bin/athena request answer r-1 --by app --choice 실행"
+hook block "./bin/athena request cancel r-1 --reason x"
+hook block "node scripts/athena.mjs request answer r-1 --by chat --text 실행"
+hook block "ls; bin/athena  request  answer r-1 --choice 실행"
+hook pass "bin/athena request show r-1 --json"
+hook pass "bin/athena request ack r-1"
+hook pass "/abs/athena/scripts/ssh-run.sh dukbae -- uptime"
 if [ "$(ATHENA_GUARD_SERVERS='' run_hook "ssh dukbae-server rm -rf /")" = 0 ]; then ok "서버가 없으면 훅은 그대로 통과"; else no "서버가 없으면 훅은 그대로 통과"; fi
+if [ "$(ATHENA_GUARD_SERVERS='' run_hook "bin/athena request answer r-1 --by chat --text x")" = 0 ]; then ok "서버가 없으면 request answer 도 통과"; else no "서버가 없으면 request answer 도 통과"; fi
 
 echo "⑤ ssh-run.sh — 가짜 ssh · scp · 요청으로 실행 · 확인 · 승인 · 백업"
 WORK="$(mktemp -d)"
@@ -216,6 +252,7 @@ cat >"$WORK/athena" <<'SH'
 #!/usr/bin/env bash
 # 가짜 bin/athena request open — 받은 키 · 본문을 남기고 같은 모양으로 답한다
 if [ "${1:-}" = request ] && [ "${2:-}" = show ]; then echo "${FAKE_ANSWER:-null}"; exit 0; fi
+if [ "${1:-}" = request ] && [ "${2:-}" = cancel ]; then echo "cancel ${3:-}" >>"$FAKE_LOG"; exit 0; fi
 key=""; body=""
 while [ $# -gt 0 ]; do case "$1" in --key) key="$2"; shift ;; --body-file) body="$2"; shift ;; esac; shift; done
 echo "request $key" >>"$FAKE_LOG"
@@ -223,9 +260,9 @@ cp "$body" "$FAKE_BODY"
 echo '{"ok":true,"request":{"id":"r-fake"}}'
 SH
 chmod +x "$WORK/ssh" "$WORK/scp" "$WORK/athena"
-export ATHENA_SSH_BIN="$WORK/ssh" ATHENA_SCP_BIN="$WORK/scp" ATHENA_REQUEST_BIN="$WORK/athena" FAKE_LOG="$LOG" FAKE_BODY="$WORK/body.md"
-answer_json() {   # <키> <답> <몇 분 전> → request show --json 모양
-  python3 -c 'import datetime,json,sys; at=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=int(sys.argv[3]))).isoformat().replace("+00:00","Z"); print(json.dumps({"ok":True,"request":{"id":"r-fake","state":"delivered","dedupeKey":sys.argv[1],"answer":{"choice":sys.argv[2],"text":None,"by":"app","at":at}}}))' "$1" "$2" "$3"
+export ATHENA_SSH_BIN="$WORK/ssh" ATHENA_SCP_BIN="$WORK/scp" ATHENA_REQUEST_BIN="$WORK/athena" FAKE_LOG="$LOG" FAKE_BODY="$WORK/body.md" ATHENA_GUARD_USED_FILE="$WORK/used"
+answer_json() {   # <키> <답> <몇 분 전> [상태 — 기본 delivered] → request show --json 모양
+  python3 -c 'import datetime,json,sys; at=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(minutes=int(sys.argv[3]))).isoformat().replace("+00:00","Z"); print(json.dumps({"ok":True,"request":{"id":"r-fake","state":sys.argv[4],"dedupeKey":sys.argv[1],"answer":{"choice":sys.argv[2],"text":None,"by":"app","at":at}}}))' "$1" "$2" "$3" "${4:-delivered}"
 }
 expect() {   # <이름> <기대 종료 코드> <받은 종료 코드>
   if [ "$2" = "$3" ]; then ok "$1"; else no "$1 (종료 코드 $3 · 기대 $2)"; fi
@@ -247,17 +284,23 @@ has "요청 키 server-cmd" "$LOG" "request server-cmd:"
 has "요청 본문에 명령 그대로" "$WORK/body.md" "sh -c rm -rf /tmp/x"
 CMD_KEY="$(sed -n 's/^request //p' "$LOG" | head -1)"
 
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd1 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "승인(실행 · 5분 전)이면 실행" 0 $?
 has "승인된 명령이 ssh 로 갔다" "$LOG" "ssh sh -c rm -rf /tmp/x"
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$CMD_KEY" 취소 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd1 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+expect "같은 승인은 두 번 쓰지 못한다(3)" 3 $?
+lacks "두 번째는 ssh 를 부르지 않는다" "$LOG" "ssh sh -c"
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd9 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5 answered)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+expect "answered 승인도 실행" 0 $?
+has "쓴 승인(answered)은 요청을 닫는다(cancel)" "$LOG" "cancel r-cmd9"
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd2 FAKE_ANSWER="$(answer_json "$CMD_KEY" 취소 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "답이 취소면 다시 확인(3)" 3 $?
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 61)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd3 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 61)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "61분 지난 승인은 다시 확인(3)" 3 $?
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/y' >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd4 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/y' >/dev/null 2>&1
 expect "글자가 바뀐 명령은 다시 확인(3)" 3 $?
 lacks "다시 확인 때 ssh 를 부르지 않는다" "$LOG" "ssh sh -c"
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" web -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd5 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" web -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "다른 서버에서는 같은 승인을 쓰지 못한다(3)" 3 $?
 
 printf 'new line\nsame line\n' >"$WORK/Caddyfile"
@@ -269,13 +312,16 @@ has "확인 창에 diff — 지울 줄" "$WORK/body.md" "-old line"
 has "확인 창에 diff — 더할 줄" "$WORK/body.md" "+new line"
 has "확인 창에 원격 백업 위치" "$WORK/body.md" "~/.athena-backups/<올리는 시각>/etc/caddy/Caddyfile"
 PUT_KEY="$(sed -n 's/^request //p' "$LOG" | head -1)"
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/caddy/Caddyfile >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-put1 FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/caddy/Caddyfile >/dev/null 2>&1
 expect "승인된 --put 은 올린다" 0 $?
 has "백업 먼저(cp -p → ~/.athena-backups)" "$LOG" ".athena-backups/"
 has "그다음 덮어쓰기(scp)" "$LOG" "dukbae-server:/etc/caddy/Caddyfile"
 if [ "$(grep -n 'cp -p' "$LOG" | cut -d: -f1)" -lt "$(grep -n '^scp' "$LOG" | cut -d: -f1)" ] 2>/dev/null; then ok "백업이 덮어쓰기보다 먼저"; else no "백업이 덮어쓰기보다 먼저"; fi
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-put1 FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/caddy/Caddyfile >/dev/null 2>&1
+expect "같은 --put 승인은 두 번 쓰지 못한다(3)" 3 $?
+lacks "두 번째 --put 은 올리지 않는다" "$LOG" "scp "
 printf 'newer line\n' >"$WORK/Caddyfile"
-: >"$LOG"; ATHENA_SERVER_APPROVED=r-fake FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/caddy/Caddyfile >/dev/null 2>&1
+: >"$LOG"; ATHENA_SERVER_APPROVED=r-put2 FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/caddy/Caddyfile >/dev/null 2>&1
 expect "올릴 내용이 바뀌면 다시 확인(3)" 3 $?
 lacks "내용이 바뀐 --put 은 올리지 않는다" "$LOG" "scp "
 : >"$LOG"; FAKE_REMOTE_MISSING=1 bash "$RUN" dukbae --put "$WORK/Caddyfile" /srv/new.conf >/dev/null 2>&1; expect "새 파일 --put 도 확인(3)" 3 $?
@@ -287,6 +333,12 @@ lacks "거절한 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
 : >"$LOG"; bash "$RUN" dukbae --get '/srv/app/.env*' "$WORK/got" >/dev/null 2>&1; expect "glob 든 --get(.env*) 은 거절(1)" 1 $?
 for pattern in '/srv/app/*.conf' '/srv/app/a?' '/srv/app/[ab]' '/srv/app/{a,b}'; do bash "$RUN" dukbae --get "$pattern" "$WORK/got" >/dev/null 2>&1; expect "glob 든 --get 거절: $pattern" 1 $?; done
 lacks "glob 든 --get 은 scp 를 부르지 않는다" "$LOG" "scp "
+: >"$LOG"
+for remote in /srv/app/config/secrets.yml /proc/1/environ /srv/app/.ENV /etc/ssh/ssh_host_ed25519_key /root/.docker/config.json /root/.kube/config '/srv/$HOME/x' '/srv/`id`/x' '/srv/a;b'; do bash "$RUN" dukbae --get "$remote" "$WORK/got" >/dev/null 2>&1; expect "--get 거절: $remote" 1 $?; done
+lacks "거절한 --get(비밀 이름 · \$ · 백틱) 은 scp 를 부르지 않는다" "$LOG" "scp "
+printf 'x\n' >"$WORK/plain.txt"
+for remote in /etc/ssh/ssh_host_ed25519_key /srv/app/secrets.yml /srv/app/.ENV; do bash "$RUN" dukbae --put "$WORK/plain.txt" "$remote" >/dev/null 2>&1; expect "--put 거절: $remote" 1 $?; done
+grep -qF '*.pem|' "$RUN"; expect "ssh-run.sh 에 bash 비밀 이름 목록이 남지 않는다" 1 $?
 : >"$LOG"; bash "$RUN" dukbae --get /etc/caddy/Caddyfile "$WORK/got" >/dev/null 2>&1; expect "보통 파일 --get 은 받는다" 0 $?
 bash "$RUN" nothere -- uptime >/dev/null 2>&1; expect "등록하지 않은 서버는 거절(1)" 1 $?
 : >"$LOG"; ATHENA_GUARD_SERVERS="evil=-oProxyCommand=touch_x" bash "$RUN" evil -- uptime >/dev/null 2>&1; expect "맨 앞 - 별칭(ssh 옵션)은 거절(1)" 1 $?
