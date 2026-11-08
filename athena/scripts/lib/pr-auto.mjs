@@ -338,6 +338,71 @@ export const priorApproval = (planText, target) => {
   if (!last || last.verdict !== '승인') return null
   return last.same && REVIEW_ENGINES.includes(last.engine) ? { sha: last.sha, tree: last.tree, engine: last.engine } : null
 }
+// ── 보안 검토 문(2026-11-08 사용자 결정 · security-reviewer) ─────────────────────────────
+// security-reviewer 가 review-result.sh --security 로 남긴 "- Security result: 높음 N · 중간 M @<SHA> · tree <…> · 📦 <레포> · 🌿 <브랜치> · …" 줄을 읽는다.
+// 이 레포 · 브랜치의 마지막 줄에 높음이 1 이상이면 막는다 — 내용이 그 뒤 바뀌었어도(고쳤어도) security-reviewer 가 다시 보고 줄을 바꿀 때까지 막는다.
+// 중간 이하는 보고만. 줄이 없으면(보안 검토를 안 띄운 수정) 통과 — 띄우는 기준은 securityRiskVerdict · delegate.sh
+export const latestSecurityResult = (planText, { repo, branch, tree = '' }) => {
+  const last = String(planText ?? '').split('\n').filter((line) => /^- Security result:/.test(line) && `${line} `.includes(`📦 ${repo} · 🌿 ${branch} `)).at(-1)
+  const hit = last?.match(/^- Security result:\s*높음 (\d+) · 중간 (\d+) @([0-9a-f]{6,40})/)
+  if (!hit) return null
+  const reviewedTree = last.match(/· tree ([0-9a-f]{6,40})/)?.[1] ?? ''
+  return { high: Number(hit[1]), medium: Number(hit[2]), sha: hit[3], tree: reviewedTree, same: Boolean(reviewedTree && tree && String(tree).startsWith(reviewedTree)), line: last }
+}
+// 띄웠는데 결과가 아직 — delegate.sh 가 적는 "- Security review: … 🌿 <브랜치> · pane … (security-reviewer) · 띄움 <시각>" 이 그 브랜치 마지막 결과 줄보다 늦다
+export const securityPending = (planText, { repo, branch }) => {
+  const launched = String(planText ?? '').split('\n').filter((line) => /^- Security review:/.test(line) && `${line} `.includes(`🌿 ${branch} `)).at(-1)?.match(/띄움 (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/)?.[1]
+  if (!launched) return false
+  const done = latestSecurityResult(planText, { repo, branch })?.line.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)?.[0] ?? ''
+  return done < launched
+}
+// 판정 — { block, why }. why 는 막을 때 ship.sh · 계획서 "- Auto merge:" 줄 · 담당 pane 알림에 그대로 들어간다
+export const securityGate = (planText, target) => {
+  const last = latestSecurityResult(planText, target)
+  if (!last) return { block: false, why: '보안 검토 기록 없음' }
+  if (last.high > 0) return { block: true, why: `보안 검토 높음 ${last.high}개 @${last.sha.slice(0, 7)} — 고친 뒤 security-reviewer 로 다시 검토해 줄을 바꿔야 한다`, result: last }
+  return { block: false, why: `보안 검토 높음 0 · 중간 ${last.medium} @${last.sha.slice(0, 7)}${last.same ? '' : '(그 뒤 내용이 바뀜)'}`, result: last }
+}
+// 위험한 수정 판정 — reviewer 를 띄울 때 security-reviewer 도 같이 띄울지(delegate.sh 가 scripts/security-gate.mjs risk 로 부른다).
+// 사용자 결정의 다섯 갈래: 명령 실행 · 파일 쓰기 · 로그인/권한 · 비밀값 · 외부 입력 · 서버 접속(ssh). 경로(SECURITY_PATH_RE)나 더해진 줄(SECURITY_LINE_RES) 중 하나라도
+// files = [{ path }] · added = 더해진 코드 줄들(문서 · 그림 파일 줄은 부르는 쪽이 뺀다 — isCodeFile). { risky, why }
+export const SECURITY_PATH_RE = /(^|\/)\.env(\.|$)|(^|\/)[^/]*(auth|oauth|login|secret|token|credential|permission|guard|ssh|sudo)[^/]*$/i
+export const SECURITY_LINE_RES = [
+  ['명령 실행', /\b(child_process|spawn(Sync)?|exec(File)?(Sync)?|execa|subprocess|os\.system|popen|eval)\s*\(|\bshell\s*:\s*true|\bbash -c\b|\bsh -c\b/],
+  ['파일 쓰기', /\b(writeFile(Sync)?|appendFile(Sync)?|createWriteStream|rm(Sync)?|unlink(Sync)?|rename(Sync)?|chmod(Sync)?|symlink(Sync)?)\s*\(|\brm -[rf]|\bchmod\b|\bln -s/],
+  ['로그인 · 권한', /\b(auth|login|logout|permission|allowlist|denylist|sudo|trust_level|setuid)/i],
+  ['비밀값', /\b(token|secret|password|passwd|api[_-]?key|private[_-]?key|credential)s?\b/i],
+  ['외부 입력', /\b(req\.(body|query|params)|process\.argv|ipcMain\.(handle|on)|searchParams|JSON\.parse|fetch\s*\()/],
+  ['서버 접속', /\b(ssh|scp|sftp|rsync)\b|known_hosts|\bcurl\b|\bwget\b/],
+]
+/** @param {{ files?: { path: string }[], added?: string[] }} parts */
+export const securityRiskVerdict = ({ files = [], added = [] }) => {
+  const paths = files.map((file) => file.path).filter((path) => SECURITY_PATH_RE.test(path))
+  if (paths.length) return { risky: true, why: `민감 경로 ${paths.slice(0, 3).join(' · ')}${paths.length > 3 ? ` 외 ${paths.length - 3}개` : ''}` }
+  const kinds = SECURITY_LINE_RES.filter(([, pattern]) => added.some((line) => pattern.test(line))).map(([kind]) => kind)
+  if (kinds.length) return { risky: true, why: kinds.join(' · ') }
+  return { risky: false, why: '보안에 닿는 줄 없음' }
+}
+// diff 글(git diff · gh pr diff) → securityRiskVerdict 입력 { files, added } — 바뀐 파일 모두 · 더해진 줄은 코드 파일 것만(문서 · 그림 줄은 뺀다 · isCodeFile)
+/** @param {unknown} text @returns {{ files: { path: string }[], added: string[] }} */
+export const securityDiffParts = (text) => {
+  /** @type {{ path: string }[]} */
+  const files = []
+  /** @type {string[]} */
+  const added = []
+  let code = false
+  for (const line of String(text ?? '').split('\n')) {
+    const path = line.match(/^\+\+\+ b\/(.+)$/)?.[1]
+    if (path) { files.push({ path }); code = isCodeFile(path); continue }
+    if (code && line.startsWith('+') && !line.startsWith('+++')) added.push(line.slice(1))
+  }
+  return { files, added }
+}
+// 이 HEAD 를 본 결과인가 — 같은 트리(커밋을 다시 만들어도 내용이 같으면) 또는 같은 커밋
+export const securityResultFor = (planText, { repo, branch, sha, tree = '' }) => {
+  const last = latestSecurityResult(planText, { repo, branch, tree })
+  return last && (last.same || String(sha ?? '').startsWith(last.sha)) ? last : null
+}
 // 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진의 첫 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
 export const inheritedResult = (prior, headSha) => ({
   name: prior.engine,

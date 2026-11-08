@@ -15,7 +15,7 @@
 #   scripts/delegate.sh <에이전트명> --plan <경로> --model <이름>  # 이번 한 번만 이 모델로 띄운다(팩 models · 프로필 model: 보다 먼저 · --reuse-pane 과 같이 못 쓴다)
 #
 #   --engine claude|codex       # 엔진만 선택(생략하면 본체 주 도구 · 쓸 수 있는 도구)
-#   --role agent|reviewer        # 작업자·읽기 전용 리뷰 역할(기본: reviewer 프로필은 reviewer, 그 밖은 agent)
+#   --role agent|reviewer        # 작업자·읽기 전용 리뷰 역할(기본: reviewer · security-reviewer 프로필은 reviewer, 그 밖은 agent)
 # 배치 규칙 — workspace = 레포 / 그 안의 한 탭에 pane 을 나란히
 #   워크트리마다 탭을 가르지 않는다. 한 화면에서 동시 작업 상황이 다 보이는 쪽이 낫다.
 #   각 pane 은 "🤖 <에이전트> · <워크트리>" 로 이름이 붙고, 하단 상태바가
@@ -52,9 +52,10 @@ while [ $# -gt 0 ]; do
 done
 
 case "$ENGINE" in ''|claude|codex) ;; *) echo "--engine 은 claude · codex 만 쓴다" >&2; exit 2 ;; esac
-[ -n "$ROLE" ] || { if [ "$AGENT" = reviewer ]; then ROLE=reviewer; else ROLE=agent; fi; }
+[ -n "$ROLE" ] || { case "$AGENT" in reviewer|security-reviewer) ROLE=reviewer ;; *) ROLE=agent ;; esac; }
 case "$ROLE" in agent|reviewer) ;; *) echo "--role 은 agent · reviewer 만 쓴다(리드 실행은 아테나 시작 경로)" >&2; exit 2 ;; esac
 [ "$AGENT" != reviewer ] || [ "$ROLE" = reviewer ] || { echo "reviewer 프로필은 reviewer 역할로만 띄운다" >&2; exit 2; }
+[ "$AGENT" != security-reviewer ] || [ "$ROLE" = reviewer ] || { echo "security-reviewer 프로필은 reviewer 역할로만 띄운다" >&2; exit 2; }
 [ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
 [ "$MODEL_GIVEN" = 0 ] || [ -z "$REUSE_PANE" ] || { echo "--model 은 --reuse-pane 과 같이 쓰지 않는다 — 떠 있는 pane 의 모델은 바뀌지 않는다. 그 모델로 띄우려면 새 pane 으로 띄운다" >&2; exit 2; }
 [ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down] [--model <이름>]"; exit 2; }
@@ -94,6 +95,11 @@ if [ "$PACK_SWITCH" = switching ]; then
   exit 1
 fi
 
+# security-reviewer 는 Claude 전용 — Trail of Bits 보안 스킬이 Claude 플러그인이라 Codex 는 못 읽는다(엔진을 고르지 않았으면 claude 로)
+if [ "$AGENT" = security-reviewer ]; then
+  [ "$ENGINE" != codex ] || { echo "security-reviewer 는 Claude 로만 띄운다(Codex 는 Claude 플러그인을 못 읽는다)" >&2; exit 2; }
+  ENGINE=claude
+fi
 ENGINE="$(node "$ATHENA_DIR/scripts/dispatch-engine.mjs" "$ATHENA_DIR" "$ENGINE")" || exit 2
 # --model 은 고른 엔진으로만 간다 — Claude 이름(sonnet · claude-… 등)을 Codex 에 넘기면 첫 턴이 모델 없음으로 실패하니 띄우지 않는다(계획서를 만들기 전 · docs/dispatch.md "모델")
 if [ "$MODEL_GIVEN" = 1 ] && [ "$ENGINE" = codex ]; then
@@ -200,6 +206,7 @@ PLAN_HEADER="이 작업의 계획서: $ATHENA_DIR/$PLAN — 먼저 읽고 Checkp
 if [ "$ROLE" = reviewer ]; then
   # reviewer 는 커밋·PR·Status 를 다루지 않는다 — 에이전트용 머리말 대신 리뷰 머리말만 싣는다
   PLAN_HEADER="리뷰할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 리뷰한다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 리뷰를 마치면 결론을 $ATHENA_DIR/scripts/review-result.sh --plan $ATHENA_DIR/$PLAN --dir <리뷰한 트리> --verdict 승인|수정필요 --note '<한 줄 요약>' 로 한 줄 남긴다(ship.sh 가 이 줄과 HEAD 를 대조한다). 그다음 수정 필요(고칠 방법이 하나) / 결정 필요(조사한 뒤에도 사용자가 정해야 하는 것만 — 범위·사용자 동작·외부 계약·제품 정책·데이터가 달라지는 선택. 구현 방법이 여러 개일 뿐이면 하나를 골라 수정 필요로 · R1 <제목> — <영향> 다음 줄부터 A <선택지> ★ — <설명> · B … 형식, 없으면 '결정 필요: 없음') / 제안으로 나눠 보고한다(형식 정본 .claude/agents/reviewer.md 의 보고 형식 절). "
+  [ "$AGENT" != security-reviewer ] || PLAN_HEADER="보안 검토할 계획서: $ATHENA_DIR/$PLAN — 읽기 전용으로 보안만 본다(코드·계획서 본문을 고치지 않는다). 대상 트리는 지금 작업 디렉토리다. 절차는 .claude/agents/security-reviewer.md(보안 스킬 확인 → 있으면 스킬 · 없으면 내장 절차 · 확신 8 미만 버림). 마치면 $ATHENA_DIR/scripts/review-result.sh --security --plan $ATHENA_DIR/$PLAN --dir <검토한 트리> --high <높음 수> --medium <중간 수> --note '<한 줄 요약>' 로 한 줄 남긴다(높음이 남으면 ship.sh · 자동 머지 · Actions 넘기기가 멈춘다). 보고에 서버 주소 · 비밀값 원문을 넣지 않는다(예시 주소는 203.0.113.10). "
   SKIP_AGENT_HEADER=1
 fi
 # 지시 없이 띄우면(/call) 사용자가 pane 에서 직접 요청한다 — 첫 요청으로 계획서를 채우게 한다
@@ -614,6 +621,7 @@ BRANCH_FROM="${GIVEN_CWD:-${REPO_DIR:-$WORKDIR}}"
 BRANCH_NAME="$(git -C "$BRANCH_FROM" rev-parse --abbrev-ref HEAD 2>/dev/null)"
 PANE_TITLE="🤖 $AGENT"
 [ "$ROLE" = reviewer ] && PANE_TITLE="🤖 reviewer"
+[ "$AGENT" = security-reviewer ] && PANE_TITLE="🤖 security-reviewer"
 [ -n "$BRANCH_NAME" ] && [ "$BRANCH_NAME" != "HEAD" ] && PANE_TITLE="$PANE_TITLE · $BRANCH_NAME"
 "$SCREEN" pane rename "$PANE" "$PANE_TITLE" >/dev/null 2>&1 || true
 
@@ -636,7 +644,17 @@ def record(text):
             text = re.sub(r'^(- Lead pane:.*)$', lambda match: match.group(1) + f'\n- Lead session: {lead_session}', text, count=1, flags=re.M)
     return text
 def record_ref(text):
-    if role == 'reviewer':
+    if role == 'reviewer' and agent == 'security-reviewer':
+        # 보안 검토는 reviewer 의 Review 줄과 따로 — review-wait.sh · ship.sh 가 읽는 Review 줄을 덮지 않는다(pr-auto.mjs 가 이 줄로 결과를 기다린다)
+        stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
+        line = f"- Security review: {cwd} · 🌿 {branch} · pane {pane} (security-reviewer) · 띄움 {stamp}"
+        same = re.compile(rf'^- Security review:.*🌿 {re.escape(branch)} .*$', re.M)
+        if same.search(text):
+            text = same.sub(lambda match: line, text, count=1)
+        else:
+            anchor = re.search(r'^- (Review|Work ref):.*$', text, re.M)
+            text = text[:anchor.end()] + '\n' + line + text[anchor.end():] if anchor else text
+    elif role == 'reviewer':
         # 리뷰는 구현한 쪽의 Work ref 를 덮어쓰지 않는다 — 따로 Review 줄에 적는다(현황판이 이 pane 도 카드에 붙인다)
         # 띄운 시각 — review-wait.sh 가 "이 시각 뒤에 적힌 결론" 을 찾는다(기다리기를 늦게 시작해도 이미 끝난 결론을 놓치지 않게)
         stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
@@ -670,4 +688,26 @@ if [ -n "${RULE_DOC_NOTES:-}" ]; then printf '%s\n' "$RULE_DOC_NOTES"; fi
 echo "$SHIP_LINE"
 echo "$PANE  ($AGENT — 계획서 $PLAN · $PLACEMENT · cwd: $WORKDIR)"
 # reviewer 결론은 pane 이 아니라 계획서 줄로 기다린다 — 끝난 reviewer pane 은 1분 뒤 저절로 닫힌다(review-result.sh)
-if [ "$ROLE" = reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
+if [ "$ROLE" = reviewer ] && [ "$AGENT" != security-reviewer ]; then echo "   결론 기다리기: $ATHENA_DIR/scripts/review-wait.sh --plan $PLAN --dir $WORKDIR"; fi
+
+# 위험한 수정이면 security-reviewer 도 옆에(사용자 결정 2026-11-08) — reviewer 를 띄울 때 그 트리의 prBase...HEAD 와 커밋 전 변경을 본다(scripts/security-gate.mjs risk).
+# 기준은 명령 실행 · 파일 쓰기 · 로그인/권한 · 비밀값 · 외부 입력 · 서버 접속(lib/pr-auto.mjs securityRiskVerdict). 아니면 "보안 검토해줘" 할 때만(delegate.sh security-reviewer …)
+# ATHENA_SECURITY_AUTO=0 이면 끈다(시험 · 사람이 따로 띄울 때). 띄우지 못해도 reviewer 는 그대로
+if [ "$AGENT" = reviewer ] && [ "${ATHENA_SECURITY_AUTO:-1}" != 0 ] && [ -f "$ATHENA_DIR/.claude/agents/security-reviewer.md" ] && git -C "$WORKDIR" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+  SECURITY_BASE="$(python3 - "$ATHENA_DIR" "$WORKDIR" <<'PYEOF'
+import os, subprocess, sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
+listing = subprocess.run(['git', '-C', sys.argv[2], 'worktree', 'list', '--porcelain'], capture_output=True, text=True).stdout
+main = next((row[len('worktree '):] for row in listing.splitlines() if row.startswith('worktree ')), '')
+main = os.path.realpath(main) if main else ''
+for repo in load(sys.argv[1])['repos']:
+    if main and os.path.realpath(os.path.join(sys.argv[1], 'repos', repo['name'])) == main:
+        print(repo.get('prBase') or repo.get('branch') or ''); break
+PYEOF
+)"
+  if [ -n "$SECURITY_BASE" ] && SECURITY_WHY="$(node "$ATHENA_DIR/scripts/security-gate.mjs" risk --dir "$WORKDIR" --base "origin/$SECURITY_BASE")"; then
+    echo "   🛡 위험한 수정($SECURITY_WHY) — security-reviewer 도 띄운다"
+    ATHENA_SECURITY_AUTO=0 "$0" security-reviewer --cwd "$WORKDIR" --here --plan "$PLAN" "보안 검토 — reviewer 와 함께 자동으로 띄웠다(위험한 수정: $SECURITY_WHY). 기준 origin/$SECURITY_BASE...HEAD 와 커밋 전 변경을 본다." \
+      | sed 's/^/   /' || echo "⚠️ security-reviewer 를 띄우지 못했다 — 필요하면 $ATHENA_DIR/scripts/delegate.sh security-reviewer --cwd $WORKDIR --here --plan $PLAN" >&2
+  fi
+fi

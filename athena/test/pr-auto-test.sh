@@ -874,7 +874,7 @@ fi
 case "$1 $2" in
   # FAKE_PR_STATE — PR 상태(기본 OPEN) · FAKE_MERGE_LANDED — pr merge 는 실패로 끝나지만 PR 은 머지됐다(앞서 남겨 둔 gh 가 먼저 머지함)
   "pr view") state="${FAKE_PR_STATE:-OPEN}"; [ -f "$GH_LOG.landed" ] && state=MERGED; printf '{"state":"%s","isDraft":true,"headRefOid":"%s","headRefName":"feat/x","baseRefName":"main","mergeable":"MERGEABLE","title":"t","body":""}\n' "$state" "$head" ;;
-  "pr diff") echo "diff --git a/a.js b/a.js" ;;
+  "pr diff") if [ -n "${FAKE_PR_DIFF:-}" ]; then cat "$FAKE_PR_DIFF"; else echo "diff --git a/a.js b/a.js"; fi ;;
   "pr merge") [ -n "$FAKE_MERGE_LANDED" ] && : > "$GH_LOG.landed" && exit 1 ;;
 esac
 exit 0
@@ -957,6 +957,25 @@ for CHANGED_SETTING in '"autoMerge": false' '"autoMerge": true, "autoMergeManual
   expect "실행 시 최신 설정 재확인: $CHANGED_SETTING" '! grep -q "^pr merge" "$GH_LOG" && grep -q "검증 대기 — 머지 전에 설정이 바뀜" "$CORE/plans/task/x.md" && [ ! -f "$TMP/queue-confirm/confirm/web-7.json" ]' "$(cat "$TMP/merge.out")"
 done
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
+# 보안 검토 문(PR 머지) — 위험한 수정 PR 이면 리뷰어와 함께 security-reviewer 를 띄우고, 이 HEAD 결과가 없으면 머지하지 않는다
+printf 'diff --git a/run.mjs b/run.mjs\n--- a/run.mjs\n+++ b/run.mjs\n@@ -0,0 +1 @@\n+export const run = (args) => spawnSync("git", args)\n' > "$TMP/risky.diff"
+cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.real"
+cat > "$CORE/scripts/delegate.sh" <<'SH'
+#!/bin/sh
+ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
+printf 'delegate %s\n' "$*" >> "$FAKE_DELEGATE_LOG"
+PLAN=""; while [ $# -gt 0 ]; do case "$1" in --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
+printf -- '- Security review: /w · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+[ "${FAKE_SECURITY:-none}" = clean ] && printf -- '- Security result: 높음 0 · 중간 0 @%s · tree 000000000000 · 📦 web · 🌿 feat/x · %s · 가짜\n' "$FAKE_SHA" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+exit 0
+SH
+chmod +x "$CORE/scripts/delegate.sh"; PDLOG="$TMP/pr-delegate.log"
+: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 결과 없음 → 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+[ "$(grep -c '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$PDLOG")" = 1 ] && echo "  ✔ 위험한 수정 PR — security-reviewer 를 한 번 띄웠다" || { echo "  ✖ PR 보안 띄우기 — $(cat "$PDLOG")"; FAIL=1; }
+: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 이 HEAD 결과 높음 0 → 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" FAKE_SECURITY=clean ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+: > "$PDLOG"; merge_case "보안 — 위험하지 않은 PR → 띄우지 않고 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_DELEGATE_LOG="$PDLOG"
+[ ! -s "$PDLOG" ] && echo "  ✔ 위험하지 않은 PR — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$PDLOG")"; FAIL=1; }
+cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
 grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 2>/dev/null)" ] && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] \
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }
 grep -q '"auto.merge".*"confirm":false' "$CORE/.events.jsonl" 2>/dev/null \
@@ -1605,9 +1624,16 @@ cat > "$DCORE/scripts/delegate.sh" <<'SH'
 #!/bin/sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 printf 'delegate %s\n' "$*" >> "$FAKE_DELEGATE_LOG"
-CWD=""; PLAN=""
+WHO="$1"; CWD=""; PLAN=""
 while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
 BRANCH="$(git -C "$CWD" symbolic-ref --short -q HEAD)"
+# security-reviewer — '- Security review:' 줄 + FAKE_SECURITY(high · clean · none)대로 결과 줄(review-result.sh --security 와 같은 모양)
+case "$WHO" in security-reviewer)
+  printf -- '- Security review: %s · 🌿 %s · pane p8 (security-reviewer) · 띄움 %s\n' "$CWD" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+  case "${FAKE_SECURITY:-none}" in high) HIGH=1 ;; clean) HIGH=0 ;; *) exit 0 ;; esac
+  printf -- '- Security result: 높음 %s · 중간 0 @%s · tree %s · 📦 web · 🌿 %s · %s · 가짜\n' "$HIGH" "$(git -C "$CWD" rev-parse --short HEAD)" "$(git -C "$CWD" rev-parse 'HEAD^{tree}' | cut -c1-12)" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+  exit 0 ;;
+esac
 printf -- '- Review: %s · 🌿 %s · pane p9 (reviewer) · 띄움 %s\n' "$CWD" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
 case "${FAKE_REVIEW:-none}" in
   approve) V=승인 ;; changes) V='수정 필요' ;; *) exit 0 ;;
@@ -1620,6 +1646,10 @@ chmod +x "$DCORE/scripts/delegate.sh"
 DG checkout -q -b feat/wide feat/x
 for n in 1 2 3 4 5; do printf 'export const f%s = () => %s\n' "$n" "$n" > "$DWT/f$n.mjs"; done
 DG add . && DG commit -q -m wide; DWIDE="$(DG rev-parse HEAD)"; DWIDE_TREE="$(DG rev-parse 'HEAD^{tree}' | cut -c1-12)"
+# 위험한 수정 브랜치 — feat/x 위에 명령 실행 줄 하나(넓은 수정은 아니라 reviewer 는 안 뜬다 · 보안 검토 문만)
+DG checkout -q -b feat/sec feat/x
+printf "import { spawnSync } from 'node:child_process'\nexport const run = (args) => spawnSync('git', args)\n" > "$DWT/run.mjs"
+DG add run.mjs && DG commit -q -m sec
 DG checkout -q feat/x
 DPANE="{\"id\":\"p50\",\"agent\":\"claude\",\"cwd\":\"$DCORE\",\"label\":\"🧭 아테나\"}"
 DSLOG="$TMP/direct-screen.log"
@@ -1703,6 +1733,59 @@ node --input-type=module -e "
   if (bad) process.exit(1)
   console.log('  ✔ 넓은 수정 판정 — 코드 파일 ≥ ' + WIDE_MIN_CODE_FILES + ' · 코드 줄 ≥ ' + WIDE_MIN_CODE_LINES + ' · 민감 경로 · 1절 표시 · 에이전트 표시(Checkpoint 안에서만) · 문서는 세지 않음 · html 은 docs/ 밖이면 코드')
 " || FAIL=1
+# 보안 검토 문(security-reviewer · 2026-11-08) — "- Security result:" 에 높음이 남으면 바로 머지 · 넘기기 · PR 머지를 막고 담당 pane 에 고칠 것을 보낸다. 중간 이하는 통과
+echo; echo "보안 검토 문(securityGate)"
+NOW_STAMP="$(date '+%Y-%m-%d %H:%M')"
+P3PANE="{\"id\":\"p3\",\"agent\":\"claude\",\"cwd\":\"$DWT\",\"label\":\"🤖 web-fe\"}"
+FX_SHA="$(DG rev-parse --short feat/x)"
+gate_reset; PLAN_EXTRA="- Security result: 높음 1 · 중간 0 @$FX_SHA · tree 000000000000 · 📦 web · 🌿 feat/x · $NOW_STAMP · 가짜
+" direct_case "보안 높음 1 → 바로 머지 안 함" "$AUTO" no 1 '보안 검토 때문에 멈춤 — 보안 검토 높음 1개' "${GATE_ENV[@]}" FAKE_PANES="$P3PANE"
+grep -q 'pane send-text p3 .*보안 검토 높음 1개' "$DSLOG" && echo "  ✔ 담당 pane(p3)에 고칠 것을 보냈다" || { echo "  ✖ 담당 pane 알림 — $(cat "$DSLOG")"; FAIL=1; }
+gate_reset; PLAN_EXTRA="- Security result: 높음 0 · 중간 2 @$FX_SHA · tree 000000000000 · 📦 web · 🌿 feat/x · $NOW_STAMP · 가짜
+" direct_case "보안 높음 0 · 중간 2 → 보고만 · 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
+gate_reset; PLAN_EXTRA="- Security result: 높음 1 · 중간 0 @$FX_SHA · tree 000000000000 · 📦 api · 🌿 feat/x · $NOW_STAMP · 다른 레포
+" direct_case "다른 레포의 보안 높음은 이 레포를 막지 않음" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
+# 위험한 수정(feat/sec — 명령 실행 줄)이면 이 HEAD 의 결과가 있어야 지나간다 — 없으면 security-reviewer 를 띄우고 기다린다
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 결과 없음 → security-reviewer 띄우고 기다리다 멈춤(머지 안 함)" "$AUTO" no 1 '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' "${GATE_ENV[@]}"
+grep -q '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$DLOG" && echo "  ✔ 위험한 수정 — security-reviewer 를 띄웠다(--here)" || { echo "  ✖ security-reviewer 안 띄움 — $(cat "$DLOG")"; FAIL=1; }
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SECURITY=clean
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 1 → 머지 안 함" "$AUTO" no 1 '보안 검토 때문에 멈춤 — 보안 검토 높음 1개' "${GATE_ENV[@]}" FAKE_SECURITY=high
+gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
+" direct_case "위험한 수정 · 이미 띄워 결과 기다리는 중 → 다시 안 띄우고 기다리다 멈춤" "$AUTO" no 1 '보안 검토 기다리는 중' "${GATE_ENV[@]}"
+! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 이미 띄웠으면 다시 띄우지 않는다" || { echo "  ✖ 두 번 띄움 — $(cat "$DLOG")"; FAIL=1; }
+gate_reset; direct_case "위험하지 않은 수정 · 결과 없음 → 지금처럼 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
+! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 위험하지 않은 수정 — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$DLOG")"; FAIL=1; }
+SEC_PLAN="$TMP/security-plan.md"
+printf -- '- Security result: 높음 2 · 중간 0 @abc1234 · tree abcdef123456 · 📦 web · 🌿 feat/x · 2026-11-08 10:00\n' > "$SEC_PLAN"
+node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --branch feat/x >/dev/null; SEC_CODE=$?
+node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --branch feat/y >/dev/null; SEC_OTHER=$?
+[ "$SEC_CODE" = 3 ] && [ "$SEC_OTHER" = 0 ] && echo "  ✔ security-gate.mjs check — 높음이면 3(ship.sh 가 멈춘다) · 다른 브랜치는 0" || { echo "  ✖ security-gate.mjs check — $SEC_CODE · $SEC_OTHER"; FAIL=1; }
+node --input-type=module -e "
+  const { securityGate, securityPending, securityRiskVerdict } = await import('$DCORE/scripts/lib/pr-auto.mjs')
+  const at = { repo: 'web', branch: 'feat/x' }
+  const result = (high, stamp = '2026-11-08 10:05', repo = 'web') => '- Security result: 높음 ' + high + ' · 중간 1 @abc1234 · tree abcdef123456 · 📦 ' + repo + ' · 🌿 feat/x · ' + stamp
+  const launch = (stamp) => '- Security review: /w · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 ' + stamp
+  const risk = (path, line) => securityRiskVerdict({ files: [{ path }], added: line ? [line] : [] })
+  const checks = [
+    [securityGate('', at).block, false, '기록 없음 → 통과'],
+    [securityGate(result(1), at).block, true, '높음 1 → 막음'],
+    [securityGate(result(0), at).block, false, '높음 0 → 통과'],
+    [securityGate([result(1), result(0, '2026-11-08 11:00')].join('\n'), at).block, false, '다시 검토해 높음 0 → 통과(마지막 줄)'],
+    [securityGate(result(1, '2026-11-08 10:05', 'api'), at).block, false, '다른 레포 → 통과'],
+    [securityPending(launch('2026-11-08 10:00'), at), true, '띄움 · 결과 없음 → 기다림'],
+    [securityPending([launch('2026-11-08 10:00'), result(0)].join('\n'), at), false, '띄운 뒤 결과 → 기다리지 않음'],
+    [securityPending([result(0), launch('2026-11-08 10:10')].join('\n'), at), true, '옛 결과 뒤 다시 띄움 → 기다림'],
+    [risk('src/a.mjs', 'const out = spawnSync(\"git\", args)').risky, true, '명령 실행'],
+    [risk('src/a.mjs', 'await writeFile(target, text)').risky, true, '파일 쓰기'],
+    [risk('src/a.mjs', 'const token = read()').risky, true, '비밀값'],
+    [risk('scripts/ssh-run.sh', '').risky, true, '민감 경로 ssh'],
+    [risk('src/a.mjs', 'const label = name + 1').risky, false, '보안에 닿지 않는 줄'],
+  ]
+  let bad = 0
+  for (const [got, want, why] of checks) if (got !== want) { bad += 1; console.log('  ✖ ' + why + ' — 기대 ' + want + ' · 실제 ' + got) }
+  if (bad) process.exit(1)
+  console.log('  ✔ 보안 판정 — 높음만 막음 · 레포 · 브랜치마다 · 마지막 줄 · 띄움 뒤 결과 기다림 · 위험한 수정 갈래')
+" || FAIL=1
 # Actions 로 넘기기 길도 같은 문 — 넓은 수정이면 넘기기 전에 리뷰 · 승인 없이는 handoff/<브랜치> 를 밀지 않는다
 handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]
   local name="$1" wantcode="$2" line="$3"; shift 3
@@ -1718,6 +1801,8 @@ handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]
   else echo "  ✖ $name — 종료 기대 $wantcode · 실제 $code · 줄: $got · 원격 $(git -C "$DORIGIN" for-each-ref refs/heads/handoff)"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; fi
 }
 handoff_case "넘기기 — 넓은 수정 + 수정 필요 → 넘기지 않음" 1 '리뷰 때문에 멈춤 — 수정 필요' "${GATE_ENV[@]}" FAKE_REVIEW=changes
+PLAN_EXTRA="- Security result: 높음 1 · 중간 0 @${DWIDE:0:7} · tree $DWIDE_TREE · 📦 web · 🌿 feat/wide · $NOW_STAMP · 가짜
+" handoff_case "넘기기 — 리뷰 승인이어도 보안 높음 1 → 넘기지 않음" 1 '보안 검토 때문에 멈춤' "${GATE_ENV[@]}" FAKE_REVIEW=approve
 grep -q 'delegate reviewer' "$DLOG" && echo "  ✔ 넘기기 전에 reviewer 를 띄웠다" || { echo "  ✖ 넘기기 전 reviewer 없음"; FAIL=1; }
 handoff_case "넘기기 — 넓은 수정 + 승인 → 리뷰 문을 지나 넘기기 단계로(이 시험 커밋엔 workflow 파일이 없어 거기서 멈춤)" 1 '리뷰 기다리는 중 — 넓은 수정' "${GATE_ENV[@]}" FAKE_REVIEW=approve
 grep -q "리뷰 승인 @${DMORE:0:7}" "$TMP/direct.out" && grep -q 'athena-handoff.yml 가 없다' "$TMP/direct.out" && echo "  ✔ 승인 뒤 넘기기 단계(workflow 확인)까지 갔다" || { echo "  ✖ 승인 뒤 넘기기 단계"; sed 's/^/      /' "$TMP/direct.out"; FAIL=1; }

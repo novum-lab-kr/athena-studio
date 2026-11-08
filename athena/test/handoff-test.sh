@@ -10,13 +10,15 @@ TMP="$(cd "$(mktemp -d)" && pwd -P)"; trap 'rm -rf "$TMP"' EXIT
 ATH="$TMP/ath"; mkdir -p "$ATH/plans/task" "$ATH/repos"
 cp -R "$SRC/scripts" "$ATH/"
 printf '#!/bin/sh\nexit 0\n' > "$ATH/scripts/screen"; chmod +x "$ATH/scripts/screen"
-# 가짜 reviewer — workflow 파일(.github/workflows)은 민감 경로라 넘기기 앞 리뷰 문이 reviewer 를 띄운다(docs/pr-auto.md "바로 머지 앞의 리뷰"). 바로 같은 HEAD 승인을 남긴다
+# 가짜 reviewer · security-reviewer — workflow 파일(.github/workflows)은 민감 경로라 넘기기 앞 리뷰 문이 reviewer 를 띄운다(docs/pr-auto.md "바로 머지 앞의 리뷰"). 바로 같은 HEAD 승인을 남긴다
 DELEGATE_LOG="$TMP/delegate.log"
 cat > "$ATH/scripts/delegate.sh" <<'SH'
 #!/bin/sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"; printf 'delegate %s\n' "$*" >> "$DELEGATE_LOG"
-CWD=""; PLAN=""; while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
+WHO="$1"; CWD=""; PLAN=""; while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
 BRANCH="$(git -C "$CWD" symbolic-ref --short -q HEAD)"; SHA="$(git -C "$CWD" rev-parse --short HEAD)"; TREE="$(git -C "$CWD" rev-parse 'HEAD^{tree}' | cut -c1-12)"
+# security-reviewer — workflow 틀은 비밀값 줄이 있어 위험한 수정이다(docs/pr-auto.md "보안 검토 문"). 바로 같은 HEAD 높음 0 을 남긴다
+if [ "$WHO" = security-reviewer ]; then printf -- '- Security result: 높음 0 · 중간 0 @%s · tree %s · 📦 web · 🌿 %s · %s · 가짜\n' "$SHA" "$TREE" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"; exit 0; fi
 printf -- '- Review result: 승인 @%s · tree %s · 📦 web · 🌿 %s · 🧠 claude · %s · 가짜\n' "$SHA" "$TREE" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
 SH
 chmod +x "$ATH/scripts/delegate.sh"; export DELEGATE_LOG
@@ -81,6 +83,7 @@ HEAD_SHA="$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/x 2>/dev/
 grep -q "\"head\":\"$HEAD_SHA\"" "$ATH"/.board-handoffs/web-*.json && grep -q "\"sha\":\"$SHA\"" "$ATH"/.board-handoffs/web-*.json && ok "작업 파일에 작업 HEAD(sha)와 넘김 머리(head)" || bad "작업 파일: $(cat "$ATH"/.board-handoffs/web-*.json)"
 grep -q '^- Auto merge: web feat/x @.* · Actions 대기 — 넘김 · ' "$PLAN" && ok "계획서에 Actions 대기" || bad "대기 줄 없음: $(grep -n 'Auto merge' "$PLAN")"
 printf '%s' "$out" | grep -q '넓은 수정(민감 경로 .github/workflows/athena-handoff.yml)' && grep -q "delegate reviewer --cwd $TMP/wt --here --plan plans/task/p.md" "$DELEGATE_LOG" && ok "workflow 파일은 민감 경로 → 넘기기 앞에 reviewer 를 띄우고 승인 뒤 넘긴다" || bad "넘기기 앞 리뷰 문: $(cat "$DELEGATE_LOG")"
+grep -q "delegate security-reviewer --cwd $TMP/wt --here --plan plans/task/p.md" "$DELEGATE_LOG" && ok "workflow 틀은 위험한 수정(비밀값) → 넘기기 앞에 security-reviewer 를 띄우고 이 HEAD 결과(높음 0) 뒤 넘긴다" || bad "넘기기 앞 보안 문: $(cat "$DELEGATE_LOG")"
 ls "$ATH"/.board-handoffs/web-*.json >/dev/null 2>&1 && ok "작업 파일이 남는다(현황판이 읽는다)" || bad "작업 파일 없음"
 grep -q '"type":"handoff"' "$ATH/.events.jsonl" && ok "사건 handoff" || bad "사건 handoff 없음"
 out="$(ship)"; rc=$?

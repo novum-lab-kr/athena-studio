@@ -35,6 +35,7 @@ Claude Code · Codex 위에 만든 **프론트엔드 멀티 레포 팀 리드**.
 |---|---|---|
 | 레포 담당 에이전트 | 팩 `pack.json` 의 레포마다(모노레포는 앱마다) | 팩 `pack/ROUTING.md` "에이전트" 표 |
 | `reviewer` | 전체 (읽기 전용) | 계획서 대비 검증 · 교차 정합성 |
+| `security-reviewer` | 위험한 수정 (읽기 전용 · Claude 전용) | 보안 검토 — 위험한 수정이면 reviewer 와 함께 자동 · 높음이 남으면 PR · 머지를 막는다 |
 | `learn-reviewer` | 끝난 작업 (읽기 전용) | 배우기 검토자 — 직접 부르지 않음, 내 PR 이 머지되면 돈다 |
 
 **코어와 팩.** 이 폴더(코어 — Athena Studio 앱이 들고 와 `~/.athena-studio/core` 에 푼다)는 흐름·훅·현황판·학습 루프·공통 규칙만 갖고 회사 이름을 모른다. 레포 목록·에이전트·레포 지식·검증 스크립트·라우팅은 **팩**(`packs/<회사>/`, 별도 레포)에 있고 `athena pack link` 가 코어의 정해진 자리에 링크로 건다. 레포 목록·기준 브랜치의 정본은 팩의 `pack.json`. 레포는 `repos/<레포>` 링크로 접근하고, `claude` 를 켤 때 옆 폴더에서 알아서 연결한다.
@@ -99,7 +100,7 @@ athena/                        ← 코어
 ├── bin/athena                 init(레포 찾기·팩 만들기) · scaffold(뼈대) · pack link · pack check
 │
 ├── .claude/
-│   ├── agents/                reviewer · learn-reviewer + 레포 담당 에이전트(팩)
+│   ├── agents/                reviewer · security-reviewer · learn-reviewer + 레포 담당 에이전트(팩)
 │   ├── rules/                 언어 · 코드 · Git · 디스패치 규칙
 │   └── skills/                /setup /call /board /sync /monitor /diagram + 회사 스킬(팩)
 │
@@ -129,7 +130,7 @@ athena/                        ← 코어
     │   ├── new-branch.sh                  작업 브랜치·워크트리 (+ wt-copy-local.sh)
     │   ├── delegate.sh                    에이전트를 pane 에 띄우기
     │   ├── commit.sh · ship.sh            "커밋해줘" · "PR 올려줘"
-    │   ├── review-result.sh               reviewer 결론 기록
+    │   ├── review-result.sh               reviewer · security-reviewer 결론 기록
     │   └── heavy.sh                       무거운 명령 동시에 2개까지
     ├── 검증
     │   ├── verify/_lib.sh · _nest.sh · _generic.sh   검증 공용(표 형식 · NestJS · 새 레포 기본)
