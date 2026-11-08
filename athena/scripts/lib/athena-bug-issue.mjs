@@ -18,6 +18,14 @@ export const TRUNCATED_MARK = '… (본문 일부 생략)'
 /** @param {{ repos?: Array<{ name?: string }> } | null | undefined} config */
 export const hasStudioRepo = (config) => (config?.repos ?? []).some((repo) => repo?.name === STUDIO_REPO)
 
+// 아테나 자체 이슈의 repo 값 — 옛 이슈(athena · 이름 변경 전 hermes)도 같은 갈래로 읽는다
+export const SELF_ISSUE_REPOS = ['athena', 'hermes', STUDIO_REPO]
+/** @param {unknown} repo */
+export const isSelfIssueRepo = (repo) => SELF_ISSUE_REPOS.includes(String(repo ?? '').trim())
+// 새로 적는 값 — 팩에 코어 레포가 있으면 그 레포 이름, 없으면 지금처럼 athena
+/** @param {{ repos?: Array<{ name?: string }> } | null | undefined} config */
+export const selfIssueRepo = (config) => (hasStudioRepo(config) ? STUDIO_REPO : 'athena')
+
 /** @param {string} text */
 const escapeRegExp = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 

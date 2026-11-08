@@ -2,7 +2,7 @@
 /**
  * 학습 루프 정리(Curator) — 스킬이 얼마나 쓰이는지 세어 오래 안 쓴 스킬을 "정리 후보"로 올린다.
  * knowledge 는 참고로 열람 횟수만 보여 준다 — 안 읽힌 파일은 "그 레포 작업이 없었다"는 뜻이라 정리 후보로 삼지 않는다.
- * 지우지 않는다. 후보를 이슈 하나(repo: athena)로 모아 두면 사용자가 고르고, 아테나가 archive 로 옮긴다.
+ * 지우지 않는다. 후보를 이슈 하나(아테나 자체 이슈 — 팩에 athena-studio 가 있으면 repo: athena-studio · 없으면 repo: athena)로 모아 두면 사용자가 고르고, 아테나가 archive 로 옮긴다.
  *
  *   node scripts/learn-curator.mjs              # 미리보기 — 표만 출력, 아무것도 쓰지 않는다
  *   node scripts/learn-curator.mjs --write      # 후보가 있으면 issues/<날짜>-hermes-learn-curator.md 를 만들거나 갱신
@@ -22,10 +22,14 @@ import { homedir } from 'node:os'
 import { createInterface } from 'node:readline'
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
+import { selfIssueRepo } from './lib/athena-bug-issue.mjs'
+import { loadConfig } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { realRepoPath } from './lib/git.mjs'
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+// 설정을 못 읽는 자리(팩 등록 전)는 레포 없는 설정으로 — 이슈 repo 는 athena
+const loadConfigOrEmpty = () => { try { return loadConfig(ROOT) } catch { return { repos: [] } } }
 const argv = process.argv.slice(2)
 const shouldWrite = argv.includes('--write')
 const daysIndex = argv.indexOf('--days')
@@ -169,7 +173,7 @@ if (existing) {
   writeFileSync(issueFile, `---
 title: ${title}
 status: open
-repo: athena
+repo: ${selfIssueRepo(loadConfigOrEmpty())}
 agent:
 kind: knowledge
 severity: low
