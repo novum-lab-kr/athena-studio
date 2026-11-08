@@ -241,6 +241,53 @@ hook block 'scripts/ssh-run.sh dukbae -- diff <(ssh dukbae-server cat /etc/x) f'
 hook pass "bin/athena request show r-1 --json"
 hook pass "bin/athena request ack r-1"
 hook pass "/abs/athena/scripts/ssh-run.sh dukbae -- uptime"
+echo "④ 훅 — 같은 우회를 모든 검사에(따옴표 · 백슬래시 · 백슬래시-줄바꿈 · \$' · 빈 치환 · 중괄호 — 2026-11-08 PR 세 번째 리뷰)"
+# ⏎ 는 백슬래시-줄바꿈으로 바꿔 넣는다
+while IFS= read -r line; do line="${line//⏎/$'\\\n'}"; hook block "$line"; done <<'LIST'
+s""sh dukbae-server id
+s'sh' dukbae-server id
+ssh d""ukbae-server id
+ssh dukbae-ser\ver id
+ssh deploy@web.pro""d ls
+scp ./x dukbae-ser""ver:/etc/x
+rsync -a ./dist/ web.pr'o'd:/srv/app/
+ssh \⏎dukbae-server id
+ssh dukbae-ser\⏎ver id
+scripts/ssh-run.sh dukbae -- ls $(ssh \⏎dukbae-server id)
+scripts/ssh-run.sh dukbae -- ls `s""sh dukbae-server id`
+ssh ${x}dukbae-server id
+ssh $'dukbae-server' id
+export ATHENA_SSH""_BIN=/bin/sh
+ATHENA_SSH\_BIN=/bin/sh scripts/ssh-run.sh dukbae -- 'rm x'
+export ATHENA_REQUEST""_BIN=/tmp/fake
+export ATHENA_REQUEST\_BIN=/tmp/fake
+export ATHENA_REQ'UEST_BIN'=/tmp/fake
+export $'ATHENA_SCP_BIN'=/bin/sh
+ATHENA_GUARD_USED""_FILE=/tmp/x scripts/ssh-run.sh dukbae -- 'rm x'
+ATHENA_GUARD_SERV\⏎ERS= scripts/ssh-run.sh dukbae -- 'rm x'
+bin/athena request $'answer' r-1 --by app --choice 실행
+bin/athena request $"answer" r-1 --by app --choice 실행
+bin/athena request ans${x}wer r-1 --by app --choice 실행
+bin/athena request ans$()wer r-1 --by app --choice 실행
+bin/athena request ans``wer r-1 --by app --choice 실행
+bin/athena request {answer,} r-1 --by app --choice 실행
+bin/athena request {ans,}wer r-1 --by app --choice 실행
+bin/athena request can{c,}el r-1
+{ssh,dukbae-server} id
+ssh dukbae-server{,} id
+ssh dukbae-ser{v,}er id
+s{s,}h dukbae-server id
+scp ./x {dukbae-server,x}:/etc/x
+LIST
+echo "④ 훅 — 정규화 뒤에도 그대로 통과"
+hook pass "ls 2>/dev/null"
+hook pass "scripts/ssh-run.sh dukbae -- 'ls /nope 2>/dev/null'"
+hook pass "scripts/ssh-run.sh dukbae --status"
+hook pass "scripts/ssh-run.sh dukbae -- cat /etc/ssh/ssh_host_ed25519_key.pub"
+hook pass "echo 'ssh-run.sh 로 들어간다'"
+hook pass 'echo "dukbae-server{,}"'
+hook pass "ls {a,b}.txt"
+hook pass 'git commit -m "request 답은 사람이"'
 if [ "$(ATHENA_GUARD_SERVERS='' run_hook "ssh dukbae-server rm -rf /")" = 0 ]; then ok "서버가 없으면 훅은 그대로 통과"; else no "서버가 없으면 훅은 그대로 통과"; fi
 if [ "$(ATHENA_GUARD_SERVERS='' run_hook "bin/athena request answer r-1 --by chat --text x")" = 0 ]; then ok "서버가 없으면 request answer 도 통과"; else no "서버가 없으면 request answer 도 통과"; fi
 
