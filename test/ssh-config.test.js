@@ -109,3 +109,58 @@ test('쓰기: 그 사이 같은 별칭이 생겼으면 쓰지 않고 taken', () 
     fs.rmSync(home, { recursive: true, force: true })
   }
 })
+
+// 기존 Host 고치기 — 블록 찾기(읽기 전용 이유) · 바꾼 키만 교체 · 다른 줄 보존
+const CONFIG = [
+  'Host *',
+  '  ServerAliveInterval 30',
+  '',
+  '# 손으로 적은 블록',
+  'Host demo',
+  '    HostName 203.0.113.7',
+  '    User=example',
+  '    # 메모 줄',
+  '    ForwardAgent no',
+  '',
+  'Host other',
+  '  HostName 203.0.113.8',
+  '',
+].join('\n')
+
+test('hostSpan — 블록 자리 · Include(없음) · 여러 별칭 · 앞선 Match 는 읽기 전용', () => {
+  assert.deepEqual(ssh.hostSpan(CONFIG, 'DEMO'), { ok: true, start: 4, end: 10 })
+  assert.deepEqual(ssh.hostSpan(CONFIG, 'nowhere'), { ok: false, lock: 'include' })
+  assert.deepEqual(ssh.hostSpan('Host demo demo2\n  User x\n', 'demo'), { ok: false, lock: 'multi' })
+  assert.deepEqual(ssh.hostSpan('Host demo\n  User x\nHost demo\n  User y\n', 'demo'), { ok: false, lock: 'multi' })
+  assert.deepEqual(ssh.hostSpan('Match host 203.0.113.*\n  User x\nHost demo\n  User y\n', 'demo'), { ok: false, lock: 'match' })
+  // 뒤에 오는 Match 는 이 블록 값보다 늦어 괜찮다 — 블록은 Match 줄 앞에서 끝난다
+  assert.deepEqual(ssh.hostSpan('Host demo\n  User y\nMatch all\n  User z\n', 'demo'), { ok: true, start: 0, end: 2 })
+})
+
+test('rewriteHostBlock — 있는 키는 그 줄 그 들여쓰기로 · 없는 키는 마지막 지시어 뒤에 · 다른 줄 · 다른 블록은 그대로', () => {
+  const span = ssh.hostSpan(CONFIG, 'demo')
+  assert.ok(span.ok)
+  const next = ssh.rewriteHostBlock(CONFIG, span, { User: 'admin', Port: '2222', IdentityFile: '~/.ssh/my key' })
+  assert.equal(
+    next,
+    [
+      'Host *',
+      '  ServerAliveInterval 30',
+      '',
+      '# 손으로 적은 블록',
+      'Host demo',
+      '    HostName 203.0.113.7',
+      '    User admin',
+      '    # 메모 줄',
+      '    ForwardAgent no',
+      '    Port 2222',
+      '    IdentityFile "~/.ssh/my key"',
+      '',
+      'Host other',
+      '  HostName 203.0.113.8',
+      '',
+    ].join('\n'),
+  )
+  // 아무것도 안 바꾸면 글 그대로
+  assert.equal(ssh.rewriteHostBlock(CONFIG, span, {}), CONFIG)
+})

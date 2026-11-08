@@ -27,6 +27,8 @@ export type PackReposCtx = {
   studioEnv?: () => Record<string, string>
   callInfo?: (name: string) => Promise<{ error: string } | ({ agent: string; repo: string } & ReturnType<typeof packModel.parseCallInfo>)>
   callStart?: unknown
+  serverList?: () => Promise<{ name: string; host: string }[]>
+  serverCall?: unknown
 }
 
 export type MergeChanges = { auto: string | null; review: boolean | null; merge: string | null }
@@ -121,5 +123,15 @@ export function installPackRepos(ctx: PackReposCtx, { say, runPack, daemonPaths 
     if (!run.ok) return scriptFailed()
     const pane = (run.stdout.match(/^(\S+)\s+\(/m) || [])[1] || null
     return { ok: true, agent: info.agent, pane, worktree, branch: info.direct ? null : branch }
+  }
+  // 서버 줄 [부르기] — <서버>-ops 에이전트만(D4 · 워크트리 없음 · 본체 루트에서 돈다). delegate.sh 가 작업 공간 <서버>-ops 를 만든다
+  ctx.serverCall = async (name: string) => {
+    const servers = ctx.serverList ? await ctx.serverList() : []
+    if (!servers.some((item) => item.name === name)) return { error: say('spaces.serverMissing', { server: name }) }
+    const agent = `${name}-ops`
+    const run = await runBodyScript('delegate.sh', [agent, '--plan', 'new', say('spaces.callPlanTitle', { agent })], { studioEnv: true })
+    if (!run.ok) return scriptFailed()
+    const pane = (run.stdout.match(/^(\S+)\s+\(/m) || [])[1] || null
+    return { ok: true, agent, pane }
   }
 }

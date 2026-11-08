@@ -1,4 +1,4 @@
-// 서버 탐색기 — 탭 줄 [서버] 버튼(팩에 서버가 있을 때만 · 상태 점)과 누르면 뜨는 앱 안 전체 화면 칸.
+// 서버 탐색기 — 탭 줄 [서버] 버튼(늘 보임 · 상태 점 · 서버가 0개면 누를 때 등록 팝업)과 누르면 뜨는 앱 안 전체 화면 칸.
 // 왼쪽 서버 목록(상태 점 · 이름 · 응답 · CPU/MEM/SWAP/DISK · 1시간 추이선) / 오른쪽 고른 서버의 경고 줄 · 2×2 그래프 · 상세.
 // 읽기는 main(src/main/server-status.mts)이 코어 `ssh-run.sh <서버> --status`(허용 목록 안 고정 읽기 명령)와 이 맥의 응답 확인으로 — 여기서는 몇 분마다 부르고 그리기만.
 // 칸을 닫아도 읽기는 계속 돈다(버튼 점이 맞게 바뀌도록). 서버 목록이 바뀌면 바닐라 space-actions.ts refreshServers 가 setServers 를 부른다
@@ -22,14 +22,21 @@ let viewBox: HTMLElement | null = null
 let names = ''
 let timer: ReturnType<typeof setInterval> | null = null
 let reading = false
+let addServer: () => void = () => {}
 
 // 켤 때 한 번 — 칸에 띄워 두고 계속 쓴다(내리지 않는다). 점은 읽을 때마다 바뀐다(칸이 닫혀 있어도)
-export function mount(openButton: HTMLButtonElement, box: HTMLElement): void {
+// add — 서버 등록 팝업(바닐라 space-actions.ts offerAddServer) · 0개일 때 버튼 · 칸 머리줄 [서버 추가]
+export function mount(openButton: HTMLButtonElement, box: HTMLElement, add: () => void): void {
   button = openButton
+  addServer = add
   viewBox = box
   dot = openButton.querySelector<HTMLElement>('.server-tool-dot')
   mountIsland(box, <ServerExplorer />)
-  openButton.addEventListener('click', () => (box.hidden ? open() : close()))
+  openButton.addEventListener('click', () => {
+    if (!box.hidden) return close()
+    if (view.get().rows.length) return open()
+    addServer()
+  })
   document.addEventListener('keydown', (event) => {
     if (event.key !== 'Escape' || event.isComposing || box.hidden) return
     event.preventDefault()
@@ -77,7 +84,6 @@ export function setServers(list: ServerEntry[]): void {
   })
   view.set({ ...view.get(), rows })
   const has = list.length > 0
-  if (button) button.hidden = !has
   if (!has) close()
   if (timer) clearInterval(timer)
   timer = has ? setInterval(() => void readNow(), POLL_MS) : null
@@ -212,6 +218,9 @@ function ServerExplorer() {
         <span className="sx-sum"><i className="server-dot warn" />{say('server.level.warn')} {counts.warn}</span>
         <span className="sx-sum"><i className="server-dot fail" />{say('server.level.fail')} {counts.fail}</span>
         <span className="sx-gap" />
+        <button className="sx-add" onClick={() => addServer()}>
+          {say('server.add')}
+        </button>
         <button className={`sx-icon ${state.reading ? 'spinning' : ''}`} title={refreshTitle} aria-label={refreshTitle} disabled={state.reading} onClick={() => void readNow()}>
           <svg viewBox="0 0 16 16" aria-hidden="true"><path d="M13.5 8a5.5 5.5 0 1 1-1.6-3.9" /><path d="M13.5 2.5v3h-3" /></svg>
         </button>

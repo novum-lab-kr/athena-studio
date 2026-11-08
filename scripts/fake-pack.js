@@ -131,9 +131,11 @@ function fakeServer(sub, arg) {
     if (!arg || !/^[\w.-]+$/.test(arg)) fail('invalid-name', `ssh 별칭이 올바르지 않다: ${arg || '(없음)'}`, { reason: 'server-bad-host' })
     const existing = servers.find((item) => item.host === arg)
     if (existing) return done({ ok: true, already: true, server: existing, scaffolded: [], routing: false })
-    if (/bad/.test(arg)) fail('failed', `${arg} 에 비밀번호 없이 들어가지지 않는다`, { reason: 'server-key-needed', reasonArgs: { host: arg } })
     const name = (flag('--name') || arg.replace(/-server$/, '')).toLowerCase()
     if (servers.some((item) => item.name === name)) fail('exists', `같은 이름의 서버가 이미 팩에 있다: ${name}`, { reason: 'server-exists', reasonArgs: { name } })
+    // --check 는 팩 쪽 검사만(아무것도 쓰지 않는다) · --tested 는 가짜에선 할 일이 없다(접속 시험이 원래 없다)
+    if (process.argv.includes('--check')) return done({ ok: true, checked: true, server: { name, host: arg } })
+    if (/bad/.test(arg)) fail('failed', `${arg} 에 비밀번호 없이 들어가지지 않는다`, { reason: 'server-key-needed', reasonArgs: { host: arg } })
     const entry = { name, host: arg, agents: [`${name}-ops`], paths: [], repos: [] }
     servers.push(entry)
     write()

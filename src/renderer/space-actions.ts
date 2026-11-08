@@ -8,8 +8,8 @@ import { attached, estimateCells, focusPane, runCommand, screen } from './screen
 import { isAthenaWorkspace, switchTab, workspaceName } from './tabs.ts'
 import { PANEL_FILLS, PANEL_ICONS, setSpacesCollapsed } from './side-panels.ts'
 import { StudioUi } from './ui/index.ts'
-import type { SpacePane, SpaceRepo, SpacesActions } from './ui/spaces.tsx'
-import { hidePackProgress, lookDialog, packAlert, packDialog, packFailAlert, showPackProgress, showServerAdd } from './pack-dialogs.ts'
+import type { SpacePane, SpaceRepo, SpacesActions, SpaceWorkspace } from './ui/spaces.tsx'
+import { hidePackProgress, lookDialog, packAlert, packDialog, packFailAlert, resumeServerAdd, showPackProgress, showServerAdd } from './pack-dialogs.ts'
 import type { PackDialogAction } from './pack-dialogs.ts'
 import { popupOption, refreshPackList, runPackFlow } from './pack-switch.ts'
 import { branches, paneStatus } from './main.ts'
@@ -187,36 +187,19 @@ export async function refreshServers(): Promise<void> {
   if (attached) renderSides()
 }
 
-// spaces 서버 + — 서버 추가 팝업(ui/server-add.tsx): 이 컴퓨터 ~/.ssh/config 의 Host 를 고르거나 새로 입력해 config 에 덧붙인다. 팩에는 별칭만
-async function offerAddServer(): Promise<unknown> {
+// 서버 등록 팝업(ui/server-add.tsx) — 우측 상단 서버 버튼(0개일 때) · 서버 페이지 [서버 추가] · 편집 메뉴 "SSH 서버 추가…" 가 부른다.
+// 이 컴퓨터 ~/.ssh/config 의 Host 를 고르거나 새로 입력 · 등록은 팝업 안에서 끝난다. 팩에는 별칭만
+export async function offerAddServer(): Promise<unknown> {
+  // 키 올리느라 숨겨 둔 팝업이 있으면 그것을 다시 보인다
+  if (resumeServerAdd()) return
   showPackProgress(say('spaces.addServerReading'), false)
   // Host 목록을 못 읽어도(코어가 옛 판 등) 새로 입력은 된다 — 목록만 비운다
   const [listed, keys] = await Promise.all([studio.serverHosts().catch(() => null), studio.serverKeys().catch(() => [])])
   hidePackProgress()
   const done = await showServerAdd(listed && listed.ok ? listed.hosts : [], keys)
   if (!done) return
-  let result: ServerAddReply
-  if (done.kind === 'host') {
-    showPackProgress(say('spaces.addServerProgress', { host: done.host }), false)
-    result = await studio.serverAdd(done.host)
-    hidePackProgress()
-  } else result = done.reply
-  if (!result.ok) return packFailAlert(say('spaces.addServerFailed'), result)
   await refreshServers()
-  const server = result.server.name
-  if (result.already) return showToast(say('spaces.addServerAlready', { server }), 'success')
-  if (result.asked !== false) return showToast(say('spaces.addServerDone', { server }), 'success')
-  // 아테나 창이 없어 묻지 못했다 — 앱이 직접 묻고, 고르면 아테나 창을 열어 분석을 맡긴다
-  return askAnalyze(server)
-}
-
-async function askAnalyze(server: string): Promise<unknown> {
-  const choice = await packDialog({
-    title: say('spaces.serverAnalyzeTitle', { server }),
-    body: [say('spaces.serverAnalyzeQuestion'), el('p', 'muted', say('spaces.serverAnalyzeNote'))],
-    actions: [{ label: say('spaces.serverAnalyze'), value: 'analyze', kind: 'primary' }, { label: say('common.later'), value: null }],
-  })
-  if (choice === 'analyze') return analyzeServer(server)
+  if (done.analyze) return analyzeServer(done.server)
 }
 
 // 분석하기 — 아테나 창을 열고(없으면) 받을 준비가 되면 분석 지시를 넣는다(main serverAnalyze · 최대 90초)
@@ -226,7 +209,7 @@ async function analyzeServer(name: string): Promise<void> {
   if (!result.ok) showToast(result.text || say('spaces.serverAnalyzeFailed'))
 }
 
-// 서버 줄 누르기 — 사람이 직접 쓰는 접속 터미널(ssh <별칭> · 작업 공간 ssh-<서버>)
+// 서버 줄 우클릭 [터미널 열기] — 사람이 직접 쓰는 접속 터미널(ssh <별칭> · 작업 공간 ssh-<서버>)
 async function openServer(name: string): Promise<void> {
   const opened = await studio.serverOpen(name, estimateCells($('panes')))
   if (opened && opened.error) showToast(opened.error)
@@ -248,9 +231,21 @@ async function removeServerFromPack(name: string): Promise<unknown> {
   showToast(say('spaces.removeServerDone', { server: name }), 'success')
 }
 
+// 서버 [부르기] — 그 서버 에이전트(<서버>-ops)를 띄운다(main serverCall · delegate.sh). 읽기 명령만 쓰는 에이전트
+async function callServerAgent(name: string): Promise<unknown> {
+  showPackProgress(say('spaces.callProgress', { agent: `${name}-ops` }), false)
+  const result = await studio.serverCall(name).catch(() => ({ ok: false as const, error: say('spaces.callFailedNote') }))
+  hidePackProgress()
+  if (!result.ok) return packAlert(say('spaces.callFailed'), result.error)
+  showToast(say('spaces.serverCalled', { agent: result.agent }), 'success')
+}
+
 async function serverMenu(name: string, event: { clientX: number; clientY: number }): Promise<unknown> {
   const action = await studio.serverContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) })
-  if (action === 'open-server') return openServer(name)
+  if (action === 'open-server') {
+    if (currentTab !== 'work') switchTab('work')
+    return openServer(name)
+  }
   if (action === 'analyze-server') return analyzeServer(name)
   if (action === 'remove-server') return runPackFlow(() => removeServerFromPack(name))
 }
@@ -295,22 +290,29 @@ async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
   showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
 }
 
+// 서버 하나의 작업 공간 이름 — 에이전트(delegate.sh <서버>-ops) · 접속 터미널(main openServer ssh-<서버>)
+const serverLabels = (name: string): string[] => [`${name}-ops`, `ssh-${name}`]
+
 export function renderSides(): void {
   // 왼쪽: 작업 공간(레포)만 — 그리기는 React(ui/spaces.tsx). 접기 · 펴기(collapsed 클래스)는 여기서
   const labels = new Set(screen.workspaces.map((workspace) => workspace.label))
+  const all = orderedWorkspaces().map((workspace): SpaceWorkspace => {
+    const athena = isAthenaWorkspace(workspace)
+    // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
+    const repo = athena ? null : packRepoOf(workspace.label)
+    return { id: workspace.id, label: workspace.label, name: workspaceName(workspace), cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
+  })
+  // 서버 작업 공간(<서버>-ops 에이전트 · ssh-<서버> 접속 터미널)은 레포 목록에서 빼 서버 줄 밑에 둔다
+  const servers = packServers.map((entry) => ({ entry, workspaces: all.filter((workspace) => !workspace.athena && serverLabels(entry.name).includes(workspace.label)) }))
+  const taken = new Set(servers.flatMap((server) => server.workspaces.map((workspace) => workspace.id)))
   StudioUi.spaces.render({
     collapsed: $('spaces').classList.contains('collapsed'),
     tabKey: state!.tabKey,
     active: screen.activeWorkspace,
     focused: screen.focused,
-    workspaces: orderedWorkspaces().map((workspace) => {
-      const athena = isAthenaWorkspace(workspace)
-      // 아테나 작업 공간은 같은 이름 팩 레포가 있어도 그 이름 · 이미지 · 메뉴를 쓰지 않는다
-      const repo = athena ? null : packRepoOf(workspace.label)
-      return { id: workspace.id, label: workspace.label, name: workspaceName(workspace), cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
-    }),
+    workspaces: all.filter((workspace) => !taken.has(workspace.id)),
     idleRepos: packRepos.filter((repo) => !labels.has(repo.name)),
-    servers: packServers,
+    servers,
     paneStatus,
   })
 
@@ -337,11 +339,7 @@ export function spacesActions(): SpacesActions {
     setCollapsed: setSpacesCollapsed,
     menu: (target, event) => spaceMenu({ workspace: screen.workspaces.find((workspace) => workspace.id === target.workspace) || null, repo: target.repo }, event),
     callRepo: (repo) => runPackFlow(() => callRepoAgent(repo)),
-    addServer: () => runPackFlow(() => offerAddServer()),
-    openServer: (name) => {
-      if (currentTab !== 'work') switchTab('work')
-      void openServer(name)
-    },
+    callServer: (name) => runPackFlow(() => callServerAgent(name)),
     serverMenu: (name, event) => serverMenu(name, event),
     iconLoaded: () => {
       if (attached) renderSides()

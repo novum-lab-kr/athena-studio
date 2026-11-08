@@ -1,4 +1,4 @@
-// 서버 추가 팝업의 호스트 키 믿기(src/lib/known-hosts.mts · src/main/ssh-setup.mts sshTest · sshTrustHostKey)
+// 서버 등록 팝업의 호스트 키 믿기(src/lib/known-hosts.mts · src/main/ssh-setup.mts serverRegister · sshTrustHostKey)
 // 순수 부분(ssh -G 읽기 · 이름 · 지문 · keyscan 줄 거르기) + 이 맥에서 사용자 모드 sshd(127.0.0.1 · 22 가 아닌 포트)를 띄워 진짜 ssh 로:
 //   처음 서버 → 지문 표시 · 믿기 뒤 접속 확인 통과 / 키 바뀜 → 경고 · 믿기 없음 / 지문 바꿔치기 거절 / 칸 바뀜 · 그 사이 다른 키 / HashKnownHosts
 // 진짜 ~/.ssh 는 건드리지 않는다 — 격리 폴더의 config 가 UserKnownHostsFile 을 그 폴더로 돌린다
@@ -132,66 +132,131 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
   try {
     await waitPort(port)
     writeConfig()
-    const ctx = { win: null }
+    // 팩 쪽(코어 server add --check · --tested)은 가짜 — 여기서는 접속 · 호스트 키만 본다
+    const added = []
+    const ctx = {
+      win: null,
+      serverCheck: async (alias) => ({ ok: true, checked: true, server: { name: alias, host: alias } }),
+      addServer: async (alias, options) => {
+        added.push({ alias, ...options })
+        return { ok: true, already: false, server: { name: alias, host: alias } }
+      },
+    }
     installSshSetup(ctx, { dialog: {}, home })
     const input = { alias: 'kh-test', user: os.userInfo().username, host: '127.0.0.1', port: String(port), key: path.join(root, 'userkey') }
+    const source = (value) => ({ kind: 'new', input: value })
+    const register = async (value = input) => ctx.serverRegister(source(value))
+    const trust = async (value, prints) => ctx.sshTrustHostKey(source(value), prints)
+    // 등록이 통과하면 config 에 Host 블록이 붙는다 — 같은 별칭으로 다시 해 보려면 config 를 처음으로
+    const passes = async (extra = []) => {
+      const reply = await register()
+      assert.equal(reply.ok, true, JSON.stringify(reply))
+      assert.equal(fs.readFileSync(path.join(sshDir, 'config'), 'utf8').includes('Host kh-test'), true)
+      assert.deepEqual(added.pop(), { alias: 'kh-test', tested: true })
+      writeConfig(extra)
+    }
     const expected = sshFingerprint(path.join(root, 'hostkey.pub'))
 
     // 1) 처음 서버 → host-key + 지문(ssh-keygen -l 과 같다) · known_hosts 는 아직 없다
-    const first = await ctx.sshTest(input)
+    const first = await register()
     assert.equal(first.ok, false)
+    assert.equal(first.step, 'connect')
     assert.equal(first.reason, 'host-key')
     assert.deepEqual(first.hostKey, { keys: [{ type: 'ED25519', sha256: expected }] })
     assert.equal(fs.existsSync(known), false)
 
-    // 2) 지문 바꿔치기 → mismatch · 쓰지 않음 · 한 번 쓰면 기억은 지워진다(다시 [접속 확인] 부터)
+    // 2) 지문 바꿔치기 → mismatch · 쓰지 않음 · 한 번 쓰면 기억은 지워진다(다시 [등록] 부터)
     const otherPrint = sshFingerprint(path.join(root, 'otherkey.pub'))
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [otherPrint]), { ok: false, error: 'mismatch' })
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [expected]), { ok: false, error: 'untested' })
+    assert.deepEqual(await trust(input, [otherPrint]), { ok: false, error: 'mismatch' })
+    assert.deepEqual(await trust(input, [expected]), { ok: false, error: 'untested' })
     assert.equal(fs.existsSync(known), false)
 
     // 3) 칸이 바뀌면 → untested
-    await ctx.sshTest(input)
-    assert.deepEqual(await ctx.sshTrustHostKey({ ...input, alias: 'kh-other' }, [expected]), { ok: false, error: 'untested' })
+    await register()
+    assert.deepEqual(await trust({ ...input, alias: 'kh-other' }, [expected]), { ok: false, error: 'untested' })
     assert.equal(fs.existsSync(known), false)
 
     // 4) 믿기 → 새 파일 600 · [127.0.0.1]:port 한 줄 · 그 뒤 접속 확인 통과
-    await ctx.sshTest(input)
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [expected]), { ok: true, created: true })
+    await register()
+    assert.deepEqual(await trust(input, [expected]), { ok: true, created: true })
     assert.equal(fs.statSync(known).mode & 0o777, 0o600)
     const saved = fs.readFileSync(known, 'utf8')
     assert.equal(saved, `${fs.readFileSync(path.join(root, 'hostkey.pub'), 'utf8').trim().split(' ').slice(0, 2).join(' ').replace(/^/, `[127.0.0.1]:${port} `)}\n`)
-    const passed = await ctx.sshTest(input)
-    assert.equal(passed.ok, true, JSON.stringify(passed))
+    await passes()
 
     // 5) 키 바뀜(known_hosts 의 그 이름에 다른 키) → host-key-changed · 지문 · 믿기 없음 · 파일 그대로
     const otherLine = `[127.0.0.1]:${port} ${fs.readFileSync(path.join(root, 'otherkey.pub'), 'utf8').trim().split(' ').slice(0, 2).join(' ')}\n`
     fs.writeFileSync(known, otherLine)
-    const changed = await ctx.sshTest(input)
+    const changed = await register()
     assert.equal(changed.reason, 'host-key-changed')
     assert.equal(changed.hostKey, undefined)
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [expected]), { ok: false, error: 'untested' })
+    assert.deepEqual(await trust(input, [expected]), { ok: false, error: 'untested' })
     assert.equal(fs.readFileSync(known, 'utf8'), otherLine)
 
     // 6) 지문을 보인 뒤 그 사이 다른 키가 생기면 → changed · 덧붙이지 않음
     fs.rmSync(known)
-    await ctx.sshTest(input)
+    await register()
     fs.writeFileSync(known, otherLine)
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [expected]), { ok: false, error: 'changed' })
+    assert.deepEqual(await trust(input, [expected]), { ok: false, error: 'changed' })
     assert.equal(fs.readFileSync(known, 'utf8'), otherLine)
 
     // 7) HashKnownHosts yes → |1| 해시 줄 · 기존 파일(끝 줄바꿈 없음)은 앞 글 · 권한 그대로 덧붙이기 · 접속 통과
     fs.writeFileSync(known, '# keep', { mode: 0o644 })
     fs.chmodSync(known, 0o644)
     writeConfig(['  HashKnownHosts yes'])
-    const hashedTest = await ctx.sshTest(input)
+    const hashedTest = await register()
     assert.equal(hashedTest.reason, 'host-key')
-    assert.deepEqual(await ctx.sshTrustHostKey(input, [expected]), { ok: true, created: false })
+    assert.deepEqual(await trust(input, [expected]), { ok: true, created: false })
     const hashed = fs.readFileSync(known, 'utf8')
     assert.match(hashed, /^# keep\n\|1\|[A-Za-z0-9+/=]+\|[A-Za-z0-9+/=]+ ssh-ed25519 \S+\n$/)
     assert.equal(hashed.includes('127.0.0.1'), false)
     assert.equal(fs.statSync(known).mode & 0o777, 0o644)
-    assert.equal((await ctx.sshTest(input)).ok, true)
+    await passes(['  HashKnownHosts yes'])
+    assert.equal(added.length, 0)
+
+    // 8) 기존 Host 고치기 — 고르면 ssh -G 값 · 고쳐서 [등록] 하면 접속 확인 뒤 그 블록만 다시 쓴다(백업 600 · 다른 줄 그대로)
+    const configFile = path.join(sshDir, 'config')
+    const userKey = path.join(root, 'userkey')
+    const editBlock = (head, portValue) => [head, '  HostName 127.0.0.1', `  Port ${portValue}`, `  User ${os.userInfo().username}`, `  IdentityFile ${userKey}`, '  # 손으로 적은 메모']
+    writeConfig(['  HashKnownHosts yes', ...editBlock('Host kh-edit', 1)])
+    const detail = await ctx.serverHostDetail('kh-edit')
+    assert.deepEqual(detail, { ok: true, values: { alias: 'kh-edit', host: '127.0.0.1', user: os.userInfo().username, port: '1', key: userKey }, lock: null })
+    const hostSource = (value) => ({ kind: 'host', alias: 'kh-edit', input: value })
+    const backups = () => fs.readdirSync(sshDir).filter((name) => name.startsWith('config.athena-studio-'))
+    // 안 고쳤으면 쓰지 않는다(접속은 Port 1 이라 실패 — config · 백업 그대로)
+    const before = fs.readFileSync(configFile, 'utf8')
+    const untouched = await ctx.serverRegister(hostSource(detail.values))
+    assert.equal(untouched.step, 'connect')
+    assert.equal(fs.readFileSync(configFile, 'utf8'), before)
+    assert.deepEqual(backups(), [])
+    // 포트를 고치면 통과 → Port 줄만 바뀌고 메모 줄 · 다른 블록은 그대로 · 백업은 원래 글
+    const edited = await ctx.serverRegister(hostSource({ ...detail.values, port: String(port) }))
+    assert.equal(edited.ok, true, JSON.stringify(edited))
+    assert.deepEqual(added.pop(), { alias: 'kh-edit', tested: true })
+    assert.equal(fs.readFileSync(configFile, 'utf8'), before.replace('  Port 1\n', `  Port ${port}\n`))
+    assert.equal(backups().length, 1)
+    assert.equal(fs.readFileSync(path.join(sshDir, backups()[0]), 'utf8'), before)
+    assert.equal(fs.statSync(path.join(sshDir, backups()[0])).mode & 0o777, 0o600)
+    for (const name of backups()) fs.rmSync(path.join(sshDir, name))
+    // 접속이 실패하면 쓰지 않는다
+    writeConfig(['  HashKnownHosts yes', ...editBlock('Host kh-edit', port)])
+    const kept = fs.readFileSync(configFile, 'utf8')
+    const failed = await ctx.serverRegister(hostSource({ ...detail.values, port: '1' }))
+    assert.equal(failed.step, 'connect')
+    assert.equal(fs.readFileSync(configFile, 'utf8'), kept)
+    assert.deepEqual(backups(), [])
+    // Host 줄에 별칭이 여럿 → 읽기 전용(multi) · 고친 값을 보내도 쓰지 않는다
+    writeConfig(['  HashKnownHosts yes', ...editBlock('Host kh-edit kh-alt', port)])
+    assert.equal((await ctx.serverHostDetail('kh-edit')).lock, 'multi')
+    const multi = await ctx.serverRegister(hostSource({ ...detail.values, port: '2' }))
+    assert.deepEqual([multi.step, multi.lock], ['check', 'multi'])
+    // 앞선 블록이 Port 를 먼저 정하면 이 블록을 고쳐도 안 먹는다 → override · 쓰지 않음
+    writeConfig(['  HashKnownHosts yes', 'Host kh-e*', `  Port ${port}`, ...editBlock('Host kh-edit', 1)])
+    const shadow = fs.readFileSync(configFile, 'utf8')
+    const override = await ctx.serverRegister(hostSource({ ...detail.values, port: '3' }))
+    assert.deepEqual([override.step, override.lock], ['check', 'override'])
+    assert.equal(fs.readFileSync(configFile, 'utf8'), shadow)
+    assert.equal(added.length, 0)
   } finally {
     sshd.kill()
     fs.rmSync(root, { recursive: true, force: true })

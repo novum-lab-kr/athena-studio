@@ -202,8 +202,8 @@ async function init(): Promise<void> {
     if (attached) renderSides()
   })
   StudioUi.spaces.setup($('spaces'), spacesActions())
-  // 탭 줄 [서버] 버튼 · 서버 탐색기 칸 — 서버 목록은 refreshServers 가 넣는다
-  StudioUi.serverStatus.mount($<HTMLButtonElement>('servers-open'), $('server-view'))
+  // 탭 줄 [서버] 버튼 · 서버 탐색기 칸 — 서버 목록은 refreshServers 가 넣는다 · 0개면 버튼 · 칸 [서버 추가] 가 등록 팝업
+  StudioUi.serverStatus.mount($<HTMLButtonElement>('servers-open'), $('server-view'), () => void runPackCommand('add-server'))
   applySideFolds()
   $('side-open').addEventListener('click', () => setPanelHidden(false))
   $('preview-close').addEventListener('click', closePreview)

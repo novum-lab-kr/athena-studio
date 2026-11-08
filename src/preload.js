@@ -82,17 +82,19 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 서버(코어 server hosts · add · remove) · 서버 줄 누르기(접속 터미널) · 하단 서버 상태 칸
   serverList: () => ipcRenderer.invoke('server:list'),
   serverHosts: () => ipcRenderer.invoke('server:hosts'),
-  serverAdd: (host) => ipcRenderer.invoke('server:add', host),
   serverRemove: (name) => ipcRenderer.invoke('server:remove', name),
   serverOpen: (name, size) => ipcRenderer.invoke('server:open', name, size),
   serverContextMenu: (point) => ipcRenderer.invoke('server:context-menu', point),
   serverStatus: () => ipcRenderer.invoke('server:status'),
-  // 서버 추가 팝업(src/main/ssh-setup.mts) — ~/.ssh 키 파일 이름 · 찾아보기 · 접속 확인 · config 에 더하고 팩에 등록 · 등록 뒤 [분석하기]
+  // 서버 등록 팝업(src/main/ssh-setup.mts) — ~/.ssh 키 파일 이름 · 찾아보기 · [등록](검사 → 접속 → 등록) · 진행 단계 · 지문 믿기 · 키 올리기 터미널 · 등록 뒤 분석(체크)
   serverKeys: () => ipcRenderer.invoke('server:keys'),
   serverKeyBrowse: () => ipcRenderer.invoke('server:key-browse'),
-  serverTest: (input) => ipcRenderer.invoke('server:test', input),
-  serverCreate: (input) => ipcRenderer.invoke('server:create', input),
-  serverTrustHostKey: (input, fingerprints) => ipcRenderer.invoke('server:trust-host-key', input, fingerprints),
+  serverHostDetail: (alias) => ipcRenderer.invoke('server:host-detail', alias),
+  serverRegister: (source) => ipcRenderer.invoke('server:register', source),
+  onServerRegisterStep: listen('server:register-step'),
+  serverTrustHostKey: (source, fingerprints) => ipcRenderer.invoke('server:trust-host-key', source, fingerprints),
+  serverKeyUpload: (source) => ipcRenderer.invoke('server:key-upload', source),
+  serverCall: (name) => ipcRenderer.invoke('server:call', name),
   serverAnalyze: (name, size) => ipcRenderer.invoke('server:analyze', name, size),
   // 가운데 맨 아래 에이전트 모니터 — 보일 때만 main 이 Claude 기록을 따라 읽는다
   monitorWatch: (on) => ipcRenderer.send('monitor:watch', on),

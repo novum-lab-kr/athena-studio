@@ -251,6 +251,21 @@ PYEOF
 [ -n "$REPO_DIR" ] && REPO_DIR="$ATHENA_DIR/repos/$REPO_DIR"
 [ -n "$REPO_DIR" ] && [ ! -d "$REPO_DIR" ] && REPO_DIR=""
 
+# 서버 에이전트(pack.json servers[].agents)는 담당 레포가 없다 — 작업 공간을 에이전트 이름(<서버>-ops)으로 · 폴더는 본체 루트
+# (서버 에이전트는 본체의 scripts/ssh-run.sh 로 일한다 · 앱 사이드바가 이 이름의 작업 공간을 그 서버 줄 밑에 보인다)
+SERVER_AGENT=""
+if [ -z "$REPO_DIR" ]; then
+  SERVER_AGENT="$(python3 - "$ATHENA_DIR" "$AGENT" <<'PYEOF'
+import sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib'); from athena_config import load
+cfg = load(sys.argv[1]); agent = sys.argv[2]
+for server in cfg.get('servers') or []:
+    if isinstance(server, dict) and agent in (server.get('agents') or []):
+        print(agent); break
+PYEOF
+)"
+fi
+
 # reviewer 는 담당 레포가 없다 — 계획서를 보고 **어느 에이전트·레포 작업인지** 정해 그 레포 workspace 에 띄운다.
 # Agent: 의 에이전트 → config 의 레포, Work ref: 맨 앞이 실제 폴더면(워크트리) 그곳을 cwd 로 (검증 스크립트도 그걸 본다).
 # 아테나 자체 작업(Agent: hermes 등)이면 레포가 없으니 지금 탭에 둔다.
@@ -330,8 +345,8 @@ if [ -z "$REUSE_PANE" ]; then   # ── 새 pane 을 띄우는 길 (끝은 아�
 # --here 이거나 담당 레포가 없으면(reviewer 등) 지금 탭에서 쪼갠다.
 PLACEMENT=""
 PANE=""
-if [ "$HERE" = 0 ] && [ -n "$REPO_DIR" ]; then
-  REPO_NAME="$(basename "$REPO_DIR")"
+if [ "$HERE" = 0 ] && { [ -n "$REPO_DIR" ] || [ -n "$SERVER_AGENT" ]; }; then
+  if [ -n "$REPO_DIR" ]; then REPO_NAME="$(basename "$REPO_DIR")"; WS_HOME="$REPO_DIR"; else REPO_NAME="$SERVER_AGENT"; WS_HOME="$ATHENA_DIR"; fi
 
   WS="$("$SCREEN" workspace list 2>/dev/null | python3 -c "
 import sys, json
@@ -345,7 +360,7 @@ for w in rows:
     # 새로 만들면 기본 탭이 하나 딸려 온다. 그 탭을 그대로 쓴다 (빈 탭을 남기지 않는다)
     # workspace 폴더는 레포 메인 체크아웃(실제 경로) — 이 작업의 워크트리로 만들면 작업이 끝나 워크트리를 지운 뒤
     # 그 workspace 의 Explorer 가 없는 폴더를 본다(2026-10-28 w47). pane 은 실행기가 워크트리로 cd 하니 그대로 워크트리에서 돈다
-    WS_DIR="$(cd "$REPO_DIR" && pwd -P)" || WS_DIR="$WORKDIR"
+    WS_DIR="$(cd "$WS_HOME" && pwd -P)" || WS_DIR="$WORKDIR"
     CREATED="$("$SCREEN" workspace create --label "$REPO_NAME" --cwd "$WS_DIR" --no-focus 2>/dev/null)"
     WS="$(printf '%s' "$CREATED" | python3 -c "
 import sys, json

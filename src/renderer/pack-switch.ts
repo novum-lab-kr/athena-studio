@@ -1,11 +1,12 @@
 // 회사 팩 바꾸기 — 팩 줄(보이기 · 누른 뒤) · 팩 목록 읽기 · 팩 메뉴 · 팩 흐름 잠금(runPackFlow) · 시작 화면 · 팩 열기 · 바꾸기 · 바꾼 뒤 다시 붙기
 // renderer.js 에서 옮김(R3e · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만
 import { $, currentTab, el, say, setState, showToast, state } from './core.ts'
-import { deletePack, editPackLook, editPackLookDialog, hidePackProgress, packAlert, packDialog, packFailAlert, packLabel, packs, setPacks, showPackProgress } from './pack-dialogs.ts'
+import { deletePack, editPackLook, editPackLookDialog, hidePackProgress, packAlert, packDialog, packFailAlert, packLabel, packs, resumeServerAdd, setPacks, showPackProgress } from './pack-dialogs.ts'
 import { attach, openAgent, setStarting } from './screen.ts'
 import { applySideFolds, lineIcon } from './side-panels.ts'
 import { renderState } from './main.ts'
 import { chooseExport, importPack, newPack } from './pack-transfer.ts'
+import { offerAddServer } from './space-actions.ts'
 import { browserOpen, closeBrowserPanel } from './browser.ts'
 import { ensureSomeTab, switchTab } from './tabs.ts'
 import { StudioUi } from './ui/index.ts'
@@ -127,13 +128,19 @@ export async function runPackFlow<T>(work: () => T | Promise<T>): Promise<T | vo
     packFlow = false
   }
 }
-export const runPackCommand = (name: string): Promise<unknown> => runPackFlow(() => packCommand(name))
+export const runPackCommand = (name: string): Promise<unknown> => {
+  // 키 올리느라 숨겨 둔 서버 등록 팝업 — 흐름은 아직 그 팝업 것이라 잠금을 거치지 않고 다시 보인다
+  if (name === 'add-server' && resumeServerAdd()) return Promise.resolve()
+  return runPackFlow(() => packCommand(name))
+}
 
 function packCommand(name: string): Promise<unknown> | undefined {
   if (name === 'picker') return openPackPicker()
   if (name === 'new') return newPack()
   if (name === 'import') return importPack()
   if (name === 'export') return chooseExport()
+  // 메뉴 막대 편집 ▸ SSH 서버 추가…(우측 상단 서버 버튼과 같은 팝업)
+  if (name === 'add-server') return offerAddServer()
 }
 
 // 시작 화면 — 작업 창 가운데(VS Code 처럼). 두 경우(규칙은 main 이 pack.js 로 계산해 넘긴다):
