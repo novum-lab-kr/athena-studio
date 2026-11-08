@@ -1,4 +1,6 @@
 {
+  "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "简化 SSH 服务器注册 — 一个 [注册]，编辑菜单入口，可选现有 Host",
+  "Registered servers in the sidebar repo list — analysis right after registering is optional": "已注册服务器显示在侧边栏仓库列表 — 注册后立即分析为可选",
   "Add SSH server registration from the sidebar — key auth only, host key check on first connect": "侧边栏注册 SSH 服务器 — 仅限密钥认证，首次连接时确认主机密钥",
   "Sidebar server connection status — agent commands outside the read-only allow list wait for approval": "侧边栏显示服务器连接状态 — 只读允许列表外的命令需等待批准",
   "Add security review for sensitive changes — High findings block merge": "敏感变更新增安全审查 — 出现 High 问题时阻止合并",

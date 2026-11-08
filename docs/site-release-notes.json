@@ -1,4 +1,20 @@
 {
+  "0.60": [
+    {
+      "tag": "improved",
+      "en": "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts",
+      "ko": "SSH 서버 등록 간소화 — [등록] 하나, 편집 메뉴 입구, 기존 Host 고르기",
+      "ja": "SSH サーバー登録を簡素化 — [登録] ひとつ、編集メニューから、既存 Host を選択",
+      "zh": "简化 SSH 服务器注册 — 一个 [注册]，编辑菜单入口，可选现有 Host"
+    },
+    {
+      "tag": "improved",
+      "en": "Registered servers in the sidebar repo list — analysis right after registering is optional",
+      "ko": "등록한 서버를 사이드바 레포 목록에 표시 — 등록 직후 분석은 선택",
+      "ja": "登録したサーバーをサイドバーのリポジトリ一覧に表示 — 登録直後の分析は任意",
+      "zh": "已注册服务器显示在侧边栏仓库列表 — 注册后立即分析为可选"
+    }
+  ],
   "0.58": [
     {
       "tag": "new",
