@@ -22,7 +22,7 @@ CASES='[
   ["별칭", {"models": {"learnReview": "sonnet"}}, "learnReview", "sonnet"],
   ["전체 이름 · 긴 문맥 표시", {"models": {"prReview": "claude-sonnet-5-5[1m]"}}, "prReview", "claude-sonnet-5-5[1m]"],
   ["클라우드 이름(점 · 콜론 · @)", {"models": {"reviewer": "us.anthropic.claude-x-v1:0", "agent": "claude-x@2026"}}, "reviewer", "us.anthropic.claude-x-v1:0"],
-  ["PR 자동 리뷰 두 번째 자리(Codex 없는 사람)", {"models": {"prReviewSecond": "sonnet"}}, "prReviewSecond", "sonnet"],
+  ["prReviewSecond(쓰지 않음 — 옛 팩 호환)", {"models": {"prReviewSecond": "sonnet"}}, "prReviewSecond", "sonnet"],
   ["athena 는 기록만(읽어도 됨)", {"models": {"athena": "opus"}}, "athena", "opus"],
   ["경량 작업 자리(agentLight)", {"models": {"agentLight": "sonnet"}}, "agentLight", "sonnet"],
   ["다시 리뷰 자리(reviewerEscalated)", {"models": {"reviewerEscalated": "opus"}}, "reviewerEscalated", "opus"],
