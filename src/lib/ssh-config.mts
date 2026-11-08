@@ -181,3 +181,34 @@ export function rewriteHostBlock(text: string, span: { start: number; end: numbe
   block.splice(lastDirective + 1, 0, ...added)
   return [...lines.slice(0, span.start + 1), ...block, ...lines.slice(span.end)].join('\n')
 }
+
+// config 줄의 인자 나누기 — OpenSSH misc.c argv_split(Include 가 쓰는 규칙)과 같게: 공백 · 탭으로 나누고, 큰 · 작은따옴표 안 공백은 그대로,
+// \ 뒤 " ' \ (따옴표 밖이면 공백도)는 그 글자 하나 · 다른 \ 는 그대로, 따옴표 밖에서 # 로 시작하는 낱말부터는 주석. 닫히지 않은 따옴표면 null
+export function configArgs(text: string): string[] | null {
+  const args: string[] = []
+  let at = 0
+  while (at < text.length) {
+    const char = text[at] as string
+    if (char === ' ' || char === '\t') {
+      at += 1
+      continue
+    }
+    if (char === '#') break
+    let quote = ''
+    let arg = ''
+    for (; at < text.length; at += 1) {
+      const now = text[at] as string
+      const next = text[at + 1] ?? ''
+      if (now === '\\' && (next === "'" || next === '"' || next === '\\' || (!quote && next === ' '))) {
+        arg += next
+        at += 1
+      } else if (!quote && (now === ' ' || now === '\t')) break
+      else if (!quote && (now === '"' || now === "'")) quote = now
+      else if (quote && now === quote) quote = ''
+      else arg += now
+    }
+    if (quote) return null
+    args.push(arg)
+  }
+  return args
+}

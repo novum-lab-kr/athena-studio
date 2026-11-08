@@ -164,3 +164,16 @@ test('rewriteHostBlock — 있는 키는 그 줄 그 들여쓰기로 · 없는 �
   // 아무것도 안 바꾸면 글 그대로
   assert.equal(ssh.rewriteHostBlock(CONFIG, span, {}), CONFIG)
 })
+
+test('config 인자 나누기: OpenSSH argv_split 과 같은 따옴표 · \\ · 주석 규칙', () => {
+  assert.deepEqual(ssh.configArgs('a.conf  b/*.conf'), ['a.conf', 'b/*.conf'])
+  assert.deepEqual(ssh.configArgs('"ssh_config.d/company policy.conf" x'), ['ssh_config.d/company policy.conf', 'x'])
+  assert.deepEqual(ssh.configArgs("'single quoted.conf'"), ['single quoted.conf'])
+  assert.deepEqual(ssh.configArgs('a\\ b.conf\tc'), ['a b.conf', 'c'])
+  assert.deepEqual(ssh.configArgs('"say \\"hi\\".conf" back\\\\slash'), ['say "hi".conf', 'back\\slash'])
+  assert.deepEqual(ssh.configArgs('keep\\x half"way there"'), ['keep\\x', 'halfway there'])
+  assert.deepEqual(ssh.configArgs('one # two'), ['one'])
+  assert.deepEqual(ssh.configArgs('"a # b"'), ['a # b'])
+  assert.deepEqual(ssh.configArgs(''), [])
+  assert.equal(ssh.configArgs('"open'), null)
+})

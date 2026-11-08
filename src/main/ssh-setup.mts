@@ -90,13 +90,16 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
       const lines = text.split('\n').map((line) => {
         const found = line.match(INCLUDE_LINE)
         if (!found) return line
-        const targets = (found[2] ?? '').trim().split(/\s+/).filter(Boolean).flatMap((word) => {
-          const pattern = word.replace(/^"(.*)"$/, '$1')
+        // 인자는 ssh 와 같은 따옴표 · \ 규칙으로 나눈다(공백 든 경로) — 닫히지 않은 따옴표면 그 줄 그대로(ssh 도 오류로 본다)
+        const words = sshConfig.configArgs(found[2] ?? '')
+        if (!words) return line
+        const targets = words.flatMap((pattern) => {
           const resolved = pattern.startsWith('~/') || path.isAbsolute(pattern) ? expand(pattern) : path.join(base, pattern)
           const matches = /[*?[]/.test(resolved) ? fs.globSync(resolved).sort() : [resolved]
           return matches.map((match) => copy(match, depth + 1)).filter((copied): copied is string => Boolean(copied))
         })
-        return targets.length ? `${found[1] ?? ''}Include ${targets.join(' ')}` : `${found[1] ?? ''}# ${line.trim()}`
+        // 사본 경로는 임시 폴더 안이라 " 가 없다 — 큰따옴표로 감싼다(임시 폴더 경로에 공백이 있어도)
+        return targets.length ? `${found[1] ?? ''}Include ${targets.map((target) => `"${target}"`).join(' ')}` : `${found[1] ?? ''}# ${line.trim()}`
       })
       const target = path.join(dir, `system-${count++}`)
       fs.writeFileSync(target, lines.join('\n'), { mode: 0o600 })
@@ -109,7 +112,7 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
     const copied = copySystemConfig(dir)
     if (!copied) return text
     const body = text && !text.endsWith('\n') ? `${text}\n` : text
-    return `${body}\n# athena-studio temp: system config after user config, like plain ssh\nMatch all\nInclude ${copied}\n`
+    return `${body}\n# athena-studio temp: system config after user config, like plain ssh\nMatch all\nInclude "${copied}"\n`
   }
   // 이미 쓰는 별칭 — 이 config 의 Host + 코어가 Include 까지 따라간 목록
   const takenAliases = async (): Promise<string[]> => {
