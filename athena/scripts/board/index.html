@@ -665,7 +665,7 @@
 
   // hermes 이슈 [작업 시작] — 디스패치하지 않는다. 아테나가 경량 계획서로 바로 고치고, 커밋·push 하면 fix: 로 완료
   const ATHENA_ACTIONS = {
-    open: [[t('action.start'), (card) => card.linkedPlan ? resumeLinkedPlan(card) : `${card.id} 이슈를 처리해줘. athena 자체 이슈라 담당 에이전트로 보내지 않고 아테나가 직접 고친다. 경량 계획서를 만들어 이슈 plan: 에 연결하고, 고친 뒤 확인한 결과와 함께 보고한다. 커밋은 내가 말하면 hermes main 에 하고, 이슈에 fix: <커밋> · status: done 을 적어 push 까지 한다.`]],
+    open: [[t('action.start'), (card) => card.linkedPlan ? resumeLinkedPlan(card) : t('action.selfIssueStart', { id: card.id })]],
   };
   const actionsFor = (card) => ((card.scope === 'hermes' && card.kind === 'issue' && ATHENA_ACTIONS[card.status]) || (ACTIONS[card.kind] || {})[card.status] || []);
   const api = async (path, body) => {
