@@ -258,13 +258,14 @@ if [ $NO_VERIFY = 0 ] && git -C "$TOP" cat-file -e HEAD:.github/workflows/athena
   HANDOFF_VERIFY=1
   VERIFY_NOTE="전체 검증은 넘긴 뒤 Actions 에서"
 fi
-# PR 길(autoMerge + 자동 PR — athena_config auto_flow 가 off 가 아님) — 커밋마다 엄격 전체 검증을 돌리지 않는다.
+# PR 길(autoMerge + 자동 PR + 자동 머지 — athena_config auto_flow 가 merge) — 커밋마다 엄격 전체 검증을 돌리지 않는다.
+#   사람이 직접 머지하는 레포(manual)는 처리기가 검증을 돌리지 않으니 여기서 예전처럼 엄격 검증을 돈다.
 #   같은 HEAD 의 엄격 검증은 PR 자동 리뷰가 리뷰와 같이 돌리고 머지 앞에 한 번 더 확인한다(pr-auto.mjs readyToMerge · docs/pr-auto.md "검증").
 #   여기서는 지정 파일의 문법만 본다(js · mjs · cjs → node --check · sh → bash -n · py → ast · json). .mts · .ts 는 PR 검증의 check · tsc 가 본다.
 #   ATHENA_VERIFY_FULL=1 이면 예전처럼 여기서 엄격 검증을 돈다
 PR_QUICK=0
 if [ $NO_VERIFY = 0 ] && [ $HANDOFF_VERIFY = 0 ] && [ "${ATHENA_VERIFY_FULL:-}" != 1 ] \
-  && [ -n "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, auto_flow; print(1 if auto_flow(load(sys.argv[1]), sys.argv[2]) != "off" else "")' "$ATHENA_DIR" "$REPO" 2>/dev/null)" ]; then
+  && [ -n "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, auto_flow; print(1 if auto_flow(load(sys.argv[1]), sys.argv[2]) == "merge" else "")' "$ATHENA_DIR" "$REPO" 2>/dev/null)" ]; then
   PR_QUICK=1
   echo "── 빠른 확인: 지정 파일 문법(전체 검증은 PR 자동 리뷰에서 · 머지 앞 같은 HEAD 한 번)"
   QUICK_FAILED=""; QUICK_COUNT=0

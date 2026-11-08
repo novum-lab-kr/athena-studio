@@ -151,5 +151,14 @@ out="$(ATHENA_VERIFY_FULL=1 commit '전체로' full.txt)"; rc=$?
 [ $rc = 0 ] || bad "ATHENA_VERIFY_FULL=1 커밋 실패: $out"
 expect_runs 1 "ATHENA_VERIFY_FULL=1 이면 PR 길에서도 commit.sh 가 엄격 검증"
 
+
+echo; echo "사람이 직접 머지하는 레포(autoMergeManual) — 처리기가 검증을 안 도니 commit.sh 가 엄격 검증"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeManual": true } ] }\n' > "$ATH/athena.config.json"
+: > "$COUNT"
+echo 'manual' > "$TMP/wt/manual.txt"
+out="$(commit '직접 머지 레포' manual.txt)"; rc=$?
+[ $rc = 0 ] && ! printf '%s' "$out" | grep -q '빠른 확인' && ok "manual 레포 커밋 — 빠른 확인을 쓰지 않는다" || bad "manual 레포가 빠른 확인으로 감(rc=$rc): $out"
+expect_runs 1 "manual 레포 커밋 — 엄격 검증 한 번"
+
 [ $FAIL_COUNT -eq 0 ] && echo "✅ 통과" || echo "❌ 실패"
 exit $FAIL_COUNT

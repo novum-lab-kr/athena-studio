@@ -170,7 +170,7 @@ draft PR · push (ship.sh) ─▶ 그 자리에서 대기열(현황판은 놓친
 
 PR #267(autoPr + autoMerge)은 PR 하나에 45.9분 · 리뷰 3번 · 검증 5번(모두 full)이었다 — 대부분이 수정 3바퀴. 그래서 리뷰를 켠 PR 은 이제 **모두** 위 빠른 길 모양으로 돈다(계획서 `- Fast path:` 줄이 없어도 · `fastPath: false` 레포만 옛 흐름 상한 3):
 
-- **커밋은 빠른 확인만** — 자동 흐름 레포(`autoMerge: true` · Actions 넘기기 제외)의 `commit.sh` 는 지정 파일 문법만 본다(`.js` · `.mjs` · `.cjs` `node --check` · `.sh` `bash -n` · `.py` · `.json` — `.mts` 는 `node --check` 가 타입을 못 지워 뺀다). `commit` 사건은 `verified: false`. `ATHENA_VERIFY_FULL=1` 이면 예전대로 엄격 검증. 엄격 검증은 아래 PR 쪽 한 번으로 옮겼다
+- **커밋은 빠른 확인만** — 자동 PR · 자동 머지 레포(`autoMerge: true` · Actions 넘기기 · PR 끔 · 사람이 직접 머지(`autoMergeManual` — 처리기가 검증을 안 돈다) 제외)의 `commit.sh` 는 지정 파일 문법만 본다(`.js` · `.mjs` · `.cjs` `node --check` · `.sh` `bash -n` · `.py` · `.json` — `.mts` 는 `node --check` 가 타입을 못 지워 뺀다). `commit` 사건은 `verified: false`. `ATHENA_VERIFY_FULL=1` 이면 예전대로 엄격 검증. 엄격 검증은 아래 PR 쪽 한 번으로 옮겼다
 - **1차: 리뷰 ‖ 검증** — 처리기가 리뷰어를 부르기 전에 같은 HEAD 검증(`reuse.sh` · 엄격 · 닿는 시험만 — `scripts/verify/scope-tests.mjs`)을 뒤에서 띄워 둘을 같이 돌린다. 같은 레포 · 워크트리 · HEAD 의 검증은 한 번만(통과는 머지 직전 확인이 재사용 · 실패는 다시). 리뷰가 승인이 아니면 그 검증을 멈춘다(고치는 중인 워크트리의 결과를 남기지 않게) · 이미 실패로 끝났으면 실패 원문을 수정 지시에 덧붙인다. security-reviewer 는 지금처럼 따로 · 기다리는 순서만 없앴다
 - **막는 기준** — `blocking` 은 **바뀐 줄이 일으키는 크리티컬만**(보안 높음 · 데이터 손실 · 실제 설정 · 입력으로 재현 경로가 있는 버그 · 레포 규칙 위반 — `problem` 에 재현 경로). 바뀌지 않은 코드 · 드문 사용자 설정 · 더 나은 방법은 `advisory` — PR 댓글과 함께 **PR 당 이슈 하나** `issues/<날짜>-<레포>-pr<번호>-리뷰-권장.md`(severity low · 머지를 막지 않음 · 다음 라운드는 새 지적만 덧붙인다 · `lib/pr-auto.mjs` `advisoryIssue`)
 - **최대 2번** — 1차가 깨끗하면 2차 없이 머지 단계. 수정 필요면 크리티컬 · 검증 실패만 고치게 지시 → 고친 HEAD 는 바뀐 부분 짧은 리뷰 ‖ 같은 커밋 검증 한 번 → 승인이면 머지 단계, 그 뒤에도 남으면 멈추고 `[자동 리뷰 → 아테나]`
