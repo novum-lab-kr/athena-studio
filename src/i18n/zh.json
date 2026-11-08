@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "已是最新",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "appUpdateCorner.available": "新版本已发布。其中包含这段时间的修复和新增功能。点击 [更新] 即可切换到新版本。",
   "appUpdateCorner.title": "新版本已准备好",
   "appUpdateCorner.body": "重启应用即可应用更新。",
   "appUpdateCorner.later": "稍后",

@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "최신입니다",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "appUpdateCorner.available": "새 버전이 나왔습니다. 그동안 고친 것과 새로 더한 기능이 들어 있습니다. [업데이트]\u00a0를 눌러 새 버전으로 바꿀 수 있습니다.",
   "appUpdateCorner.title": "새 버전이 준비됐어요",
   "appUpdateCorner.body": "앱을 재시작하면 업데이트가 적용돼요.",
   "appUpdateCorner.later": "나중에",

@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "Up to date",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "appUpdateCorner.available": "A new version is out. It includes fixes and new features added since your version. Press Update to switch to the new version.",
   "appUpdateCorner.title": "A new version is ready",
   "appUpdateCorner.body": "Restart the app to apply the update.",
   "appUpdateCorner.later": "Later",

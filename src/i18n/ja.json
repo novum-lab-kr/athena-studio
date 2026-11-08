@@ -605,6 +605,7 @@
   "settings.appUpdateCurrent": "最新です",
   "settings.appUpdateVersion": "{version}",
   "settings.appUpdateNewVersion": "{current} → {next}",
+  "appUpdateCorner.available": "新しいバージョンが出ました。これまでの修正と新しく追加した機能が含まれています。[アップデート]\u00a0を押すと新しいバージョンに切り替えられます。",
   "appUpdateCorner.title": "新しいバージョンの準備ができました",
   "appUpdateCorner.body": "アプリを再起動するとアップデートが適用されます。",
   "appUpdateCorner.later": "あとで",
