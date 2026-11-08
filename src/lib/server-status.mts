@@ -3,7 +3,8 @@
 // 원문(ssh 오류 글)은 화면에 올리지 않는다 — 주소 · 사용자 이름이 섞일 수 있다. 이유 이름만 고른다
 
 export type ServerEntry = { name: string; host: string }
-export type DockerSummary = { up: number; total: number; down: string[] }
+// down — 주의할 것(restarting · dead · 오류 종료 코드 · 코드를 모르는 exited) · stopped — 일부러 끈 것(exit 0 · docker stop 의 143 · created · paused)
+export type DockerSummary = { up: number; total: number; down: string[]; stopped: string[] }
 export type DiskUse = { mount: string; percent: number }
 export type ServerHealth = {
   ok: true
@@ -148,12 +149,30 @@ function diskPercent(lines: string[]): number | null {
   return capacity ? Number(capacity[1]) : null
 }
 
+// 정상으로 꺼진 종료 코드 — 0(스스로 끝남) · 143(docker stop 의 SIGTERM).
+// 137 은 넣지 않는다 — docker stop 이 기다리다 SIGKILL 한 것과 OOM 이 같은 코드이고 docker ps 출력으로는 가를 수 없다
+const STOPPED_CODES = new Set([0, 143])
+
+// 줄 = "이름|State|Status"(Status 예: "Exited (143) 2 months ago") · 옛 형식 "이름|State" 도 읽는다(종료 코드를 모르면 주의)
+function containerStopped(state: string, status: string | undefined): boolean {
+  if (state === 'created' || state === 'paused') return true
+  if (state !== 'exited') return false
+  const code = status && /^Exited \((\d+)\)/.exec(status)
+  return Boolean(code) && STOPPED_CODES.has(Number(code![1]))
+}
+
 function dockerSummary(lines: string[] | undefined): DockerSummary | null {
   if (!lines) return null
-  const containers = lines.map((line) => line.split('|')).filter((parts) => parts.length === 2 && parts[0])
+  const containers = lines.map((line) => line.split('|')).filter((parts) => (parts.length === 2 || parts.length === 3) && parts[0])
   if (!containers.length) return null
-  const down = containers.filter(([, state]) => state !== 'running').map(([name]) => name!)
-  return { up: containers.length - down.length, total: containers.length, down }
+  const down: string[] = []
+  const stopped: string[] = []
+  for (const [name, state, statusText] of containers) {
+    if (state === 'running') continue
+    if (containerStopped(state!, statusText)) stopped.push(name!)
+    else down.push(name!)
+  }
+  return { up: containers.length - down.length - stopped.length, total: containers.length, down, stopped }
 }
 
 // ssh-run.sh --status 의 출력(끝 칸 "==end" 까지 와야 다 읽은 것) — 모자라면 null

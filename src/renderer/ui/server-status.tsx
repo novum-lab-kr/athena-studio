@@ -292,6 +292,8 @@ function ServerDetail({ row, points, say }: { row: Row; points: HistoryPoint[]; 
   const worst = warnings.some((warning) => warning.level === 'fail') ? 'fail' : 'warn'
   const lastOk = points[points.length - 1]?.t ?? 0
   const web = row.web
+  // 꺼진 컨테이너 줄 — 주의할 것(down)과 일부러 끈 것(stopped)을 같이 보이고, 주의할 것이 있을 때만 주의 색
+  const offContainers = status?.ok && status.docker ? [...status.docker.down, ...status.docker.stopped] : []
   return (
     <section className="sx-main">
       {warnings.length > 0 && (
@@ -317,7 +319,7 @@ function ServerDetail({ row, points, say }: { row: Row; points: HistoryPoint[]; 
             <Item label={say('server.failedServices')} value={status.failed.length ? status.failed.join(', ') : say('server.none')} level={status.failed.length ? 'fail' : 'dim'} />
             <Item label={say('server.runningServices')} value={status.running === null ? '—' : say('server.countValue', { count: status.running })} />
             <Item label="docker" value={status.docker ? say('server.dockerValue', { up: status.docker.up, total: status.docker.total }) : '—'} />
-            <Item label={say('server.downContainers')} value={status.docker?.down.length ? status.docker.down.join(', ') : say('server.none')} level={status.docker?.down.length ? 'warn' : 'dim'} />
+            <Item label={say('server.downContainers')} value={offContainers.length ? offContainers.join(', ') : say('server.none')} level={status.docker?.down.length ? 'warn' : 'dim'} />
           </Card>
           <Card title={say('server.box.security')}>
             <Item label={say('server.response')} value={webText(web, say)} level={webLevel(web) === 'high' ? 'fail' : webLevel(web)} />

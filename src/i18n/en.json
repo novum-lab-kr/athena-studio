@@ -617,7 +617,7 @@
   "server.warn.failed": "Failed services {names}",
   "server.warn.web": "Health check failed — {reason}",
   "server.warn.http": "Response {code}",
-  "server.warn.dockerDown": "Stopped containers {names}",
+  "server.warn.dockerDown": "Failing containers {names}",
   "server.warn.disk": "Disk {mount} {percent}%",
   "server.warn.mem": "Memory {percent}%",
   "server.warn.swap": "SWAP {percent}%",

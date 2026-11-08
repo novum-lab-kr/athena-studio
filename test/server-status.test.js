@@ -25,7 +25,26 @@ test('서버 상태: 칸마다 읽기', () => {
   assert.equal(read.diskPercent, 45)
   assert.deepEqual(read.failed, ['backup'])
   assert.equal(read.running, 23)
-  assert.deepEqual(read.docker, { up: 2, total: 3, down: ['worker'] })
+  // 옛 형식(이름|State) — 종료 코드를 모르니 주의로 센다
+  assert.deepEqual(read.docker, { up: 2, total: 3, down: ['worker'], stopped: [] })
+})
+
+test('서버 상태: 일부러 끈 컨테이너는 주의로 세지 않는다(종료 코드)', () => {
+  const read = status.parseStatus([
+    '==docker',
+    'web|running|Up 3 weeks (healthy)',
+    'deskrpg|exited|Exited (143) 2 months ago',
+    'job|exited|Exited (0) 1 day ago',
+    'draft|created|Created',
+    'crash|exited|Exited (1) 2 hours ago',
+    'killed|exited|Exited (137) 5 minutes ago',
+    'loop|restarting|Restarting (1) 3 seconds ago',
+    'gone|dead|Dead',
+    '==end', '',
+  ].join('\n'))
+  assert.deepEqual(read.docker, { up: 1, total: 8, down: ['crash', 'killed', 'loop', 'gone'], stopped: ['deskrpg', 'job', 'draft'] })
+  // 시간 기록의 fail 도 주의할 것만
+  assert.equal(status.historyPoint({ at: 1, status: read, web: null }).fail, 4)
 })
 
 test('서버 상태: 리눅스가 아니거나 도구가 없으면 빈 칸 · 끝 칸이 없으면 못 읽은 것', () => {

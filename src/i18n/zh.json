@@ -617,7 +617,7 @@
   "server.warn.failed": "已停止的服务 {names}",
   "server.warn.web": "响应检查失败 — {reason}",
   "server.warn.http": "响应 {code}",
-  "server.warn.dockerDown": "已停止的容器 {names}",
+  "server.warn.dockerDown": "异常的容器 {names}",
   "server.warn.disk": "磁盘 {mount} {percent}%",
   "server.warn.mem": "内存 {percent}%",
   "server.warn.swap": "SWAP {percent}%",

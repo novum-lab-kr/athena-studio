@@ -617,7 +617,7 @@
   "server.warn.failed": "멈춘 서비스 {names}",
   "server.warn.web": "응답 확인 실패 — {reason}",
   "server.warn.http": "응답 {code}",
-  "server.warn.dockerDown": "꺼진 컨테이너 {names}",
+  "server.warn.dockerDown": "오류 컨테이너 {names}",
   "server.warn.disk": "디스크 {mount} {percent}%",
   "server.warn.mem": "메모리 {percent}%",
   "server.warn.swap": "SWAP {percent}%",

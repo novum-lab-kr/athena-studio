@@ -617,7 +617,7 @@
   "server.warn.failed": "停止したサービス {names}",
   "server.warn.web": "応答確認に失敗 — {reason}",
   "server.warn.http": "応答 {code}",
-  "server.warn.dockerDown": "停止中のコンテナ {names}",
+  "server.warn.dockerDown": "異常なコンテナ {names}",
   "server.warn.disk": "ディスク {mount} {percent}%",
   "server.warn.mem": "メモリ {percent}%",
   "server.warn.swap": "SWAP {percent}%",
