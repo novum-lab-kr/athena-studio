@@ -186,7 +186,7 @@ elif a[:2] == ['pane','run']:
         roots = [str((core/'plans').resolve()), str((root/'data/state').resolve())]
         check('Codex 리뷰 → 쓰기 자리만 넘기고 본체 --add-dir 없음', '--add-dir' not in runner and all(f"--athena-review-root {path}" in ' '.join(shlex.split(line)) for path in roots) and '--athena-review-root' not in ' '.join(args) and '--add-dir' not in args)
         settings = (codex_home / (args[args.index('--profile')+1]+'.config.toml')).read_text()
-        check('Codex 리뷰 → commit 보호·끝 알림 없음, 시크릿·프로세스 보호 있음', 'commit-guard.py' not in settings and 'agent-done-notify.py' not in settings and 'secret-guard.py' in settings and 'process-guard.py' in settings)
+        check('Codex 리뷰 → commit 보호 없음, 끝 알림(결정 D2)·시크릿·프로세스 보호 있음', 'commit-guard.py' not in settings and 'agent-done-notify.py' in settings and 'secret-guard.py' in settings and 'process-guard.py' in settings)
         check('리뷰 → 작업자 Work ref 유지', '- Work ref: pending' in plan.read_text() and '- Review:' in plan.read_text())
     # pane 밖(plain) 경로 — reviewer 는 공식 --sandbox read-only, 작업자는 그대로
     for review, expected in ((True, ['--sandbox','read-only','-c','x=1']), (False, ['-c','x=1'])):

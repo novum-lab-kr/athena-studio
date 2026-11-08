@@ -15,7 +15,7 @@ FAIL=0
 BODY="$WORK/body"; DATA="$WORK/data"
 mkdir -p "$BODY/scripts/lib" "$BODY/bin" "$BODY/plans/task" "$DATA/state"
 cp "$SRC/scripts/lead-send.py" "$BODY/scripts/"
-cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$BODY/scripts/lib/"   # .mjs — 사건 기록(events.mjs)
+cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$SRC"/scripts/lib/*.json "$BODY/scripts/lib/"   # .mjs — 사건 기록(events.mjs)
 ln -s "$DATA" "$BODY/.pack-data"
 QUEUE="$DATA/state/lead-send"
 EVENTS="$DATA/state/events.jsonl"
@@ -57,6 +57,9 @@ lead_send() {   # <글> [추가 인자…] — 에이전트 pane p9 에서 아�
 }
 count() { if [ -f "$1" ]; then grep -c "${2:-.}" "$1"; else echo 0; fi; }
 queued() { find "$QUEUE" -name '*.json' 2>/dev/null | wc -l | tr -d ' '; }
+# 받음 확인 기록(state/lead-notices · scripts/lib/agent_turn.py) — 개수 · <kind> 와 글이 든 기록 수
+notices() { ls "$DATA/state/lead-notices" 2>/dev/null | grep -cE '^[0-9a-f]{32}\.json$'; }
+notice_with() { python3 -c 'import json,pathlib,sys; print(sum(1 for p in pathlib.Path(sys.argv[1]).glob("*.json") if (d:=json.loads(p.read_text())).get("kind")==sys.argv[2] and sys.argv[3] in d.get("text","") and d.get("lead")=="p1"))' "$DATA/state/lead-notices" "$1" "$2" 2>/dev/null || echo 0; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (기대 $3 · 실제 $2)"; FAIL=1; fi; }
 wait_until() {   # <조건 명령> — 최대 15초
   for _ in $(seq 1 75); do eval "$1" && return 0; sleep 0.2; done; return 1
@@ -73,7 +76,7 @@ panes() {
 }
 plan_lines() { grep -c "아테나(pane $1)에 못 보낸 글" "$PLAN"; }
 reset() {
-  rm -f "$WORK/sent" "$WORK/requests" "$WORK/waiting" "$WORK/waiting-run" "$WORK/timeout" "$WORK/closed" "$WORK/panes" "$EVENTS"; rm -rf "$QUEUE"
+  rm -f "$WORK/sent" "$WORK/requests" "$WORK/waiting" "$WORK/waiting-run" "$WORK/timeout" "$WORK/closed" "$WORK/panes" "$EVENTS"; rm -rf "$QUEUE" "$DATA/state/lead-notices"
   printf '# x\n\n## Checkpoint\n- Status: in_progress\n- Lead pane: %s\n\n## 결과\n- (요약)\n\n## Commits\n- (없음)\n' "${1:-p1}" > "$PLAN"
 }
 
@@ -128,6 +131,9 @@ check "✅ 출력" "${out:0:1}" "✅"
 check "한 번 넣음" "$(count "$WORK/sent" 'SENT p1 \[fe → 아테나\] 끝 A')" 1
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "대기열 없음" "$(queued)" 0
+check "--track 없으면 받음 확인 기록 없음" "$(notices)" 0
+out="$(lead_send '[fe → 아테나] 끝 B' --track)"
+check "--track 이면 넣은 글을 받음 확인 기록(kind turn)으로" "$(notice_with turn '끝 B')" 1
 
 echo "▶ 고르기 창 → 요청 없이 모아 뒀다 닫히면 차례대로"
 reset
@@ -277,6 +283,7 @@ check "pane run 한 번만" "$(count "$FAKE_LOG" '^pane run p1 확인 실패')" 
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "계획서에 입력칸 안내" "$(grep -c '입력칸에 남았을 수 있어 다시 넣지 않았어요: 확인 실패$' "$PLAN")" 1
 check "대기열 없음" "$(queued)" 0
+check "전송 확인 실패는 받음 확인 기록(kind unconfirmed) — 현황판이 다시 넣기 대상으로 본다" "$(notice_with unconfirmed '확인 실패')" 1
 
 echo "▶ 계획서가 없고 전송 확인 실패 → ❌ · 글은 사건 기록에"
 reset

@@ -527,5 +527,8 @@
   "srv.err.planChanged": "계획서가 바뀌었어요 — 새로 고침해 주세요",
   "srv.err.during": "처리 중 오류 — {error}",
   "srv.err.learn": "학습 처리 중 오류: {error}",
-  "srv.err.failed": "처리하지 못했어요 — {error}"
+  "srv.err.failed": "처리하지 못했어요 — {error}",
+  "srv.turn.requestTitle": "아테나 미확인 알림 · {agent}",
+  "srv.turn.requestBody": "아테나 pane {lead} 이 10분 동안 이 알림을 받지 않았어요. 아테나 pane 을 확인해 주세요.\n\n{text}",
+  "srv.turn.received": "아테나가 알림을 받았어요"
 }

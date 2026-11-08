@@ -70,7 +70,7 @@ NODE
 # 훅: 이어 받은 pane 의 기록이 매 메시지마다 처음 환경 값(옛 계획서)으로 덮이지 않는다
 TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/athena/scripts/hooks" "$TMP/athena/scripts/lib" "$TMP/data"
-cp scripts/hooks/pane-session.py "$TMP/athena/scripts/hooks/"; cp scripts/lib/*.py "$TMP/athena/scripts/lib/"
+cp scripts/hooks/pane-session.py "$TMP/athena/scripts/hooks/"; cp scripts/lib/*.py scripts/lib/*.json "$TMP/athena/scripts/lib/"
 ln -s "$TMP/data" "$TMP/athena/.pack-data"
 SESSION=11111111-2222-3333-4444-555555555555
 fire() { echo "{\"session_id\":\"$SESSION\",\"cwd\":\"/tmp\"}" | ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pf1 ATHENA_AGENT=fe ATHENA_PLAN=plans/task/old.md python3 "$TMP/athena/scripts/hooks/pane-session.py"; }
@@ -86,5 +86,15 @@ python3 scripts/lib/reuse_link.py link "$TMP/athena" pnone plans/task/new.md >/d
 mkdir -p "$TMP/bare"; python3 scripts/lib/reuse_link.py link "$TMP/bare" pf1 plans/task/new.md >/dev/null 2>&1; check '기록 폴더가 없는 본체도 비정상 종료' "$?" 1
 python3 scripts/lib/reuse_link.py rollback "$TMP/athena" pf1 "$UNDO"
 check '보내기 실패 때 되돌리면 옛 계획서' "$(planOf)" 'plans/task/old.md'
+# 아테나 pane(ATHENA_AGENT 없음)이 받은 입력에 든 에이전트 알림은 받음으로 — 위임 pane 의 입력은 표시하지 않는다(lib/agent_turn.py mark_received)
+NOTICE_DIR="$TMP/data/state/lead-notices"; mkdir -p "$NOTICE_DIR"
+NOTICE_ID=0123456789abcdef0123456789abcdef
+printf '{"id":"%s","kind":"turn","lead":"pf1","text":"[fe → 아테나] 끝 · p9 · 계획서 plans/task/new.md","sent_at":1}\n' "$NOTICE_ID" > "$NOTICE_DIR/$NOTICE_ID.json"
+received() { python3 -c "import json; print(bool(json.load(open('$NOTICE_DIR/$NOTICE_ID.json')).get('received_at')))"; }
+prompt_json='{"session_id":"'$SESSION'","cwd":"/tmp","prompt":"[fe → 아테나] 끝 · p9 · 계획서 plans/task/new.md"}'
+echo "$prompt_json" | ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pf1 ATHENA_AGENT=fe python3 "$TMP/athena/scripts/hooks/pane-session.py"
+check '위임 pane 의 입력은 받음 표시를 하지 않는다' "$(received)" False
+echo "$prompt_json" | env -u ATHENA_AGENT ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=pf1 python3 "$TMP/athena/scripts/hooks/pane-session.py"
+check '아테나 pane 이 받은 입력에 든 알림은 받음 표시' "$(received)" True
 scripts/delegate.sh reviewer --new-branch x/y --plan plans/task/없음.md >/dev/null 2>&1; check '--new-branch 만 주면 pane 을 만들기 전에 종료(2)' "$?" 2
 exit "$FAIL"

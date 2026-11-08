@@ -5845,6 +5845,7 @@ window.addEventListener('keydown', (event) => {
           <li>&bull; (多仓库 · Athena 的工作)给 reviewer 计划书 + 目标仓库(工作树用 --cwd)。需修复的不问直接发给该代理 pane(Athena 自己发)。需决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add)</li>
           <li>&bull; 验证结果原样确认 — 失败绝不隐瞒</li>
           <li>&bull; handoff 后的结果 Athena 不等待监视 — 失败日志发到原负责 pane,代理做完手头的事后在该工作树修好再 handoff</li>
+          <li>&bull; 代理 pane 的结束 · 停止 · 提问也由看板负责 — 结束通知(结束 · ⏸ 停止 · 因提问停止 · 含 reviewer)Athena 2 分钟未收到就再发一次,10 分钟则开 [工作] 请求。Athena 不手动监视 pane,只有看板不看的外部事务(Actions 发布 · 部署 · 外部服务恢复)可以等待</li>
           <li>&bull; 验证两阶段 — 工作中只快速确认 diff,full verify 在结束时一次(commit.sh strict verify · 同一棵树已通过则 reuse.sh ♻️ 复用 · 评审者 · merge 也走同一条路)</li>
         </ul>
       </div>
