@@ -627,7 +627,15 @@ PANE_TITLE="🤖 $AGENT"
 
 # 계획서 Work ref 에 어디서 누가 도는지 적는다 — 현황판이 이 pane 을 카드에 붙인다
 # 아테나 pane 에서 띄웠으면 그 pane 도 한 번만 적는다(- Lead pane:) — 앱의 아테나 pane [상세] 가 이 pane 이 맡긴 일을 모은다
-ATHENA_DIR="$ATHENA_DIR" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" "$ROLE" "$LEAD_SESSION" <<'PYEOF'
+# 보안 검토 줄의 레포 — review-result.sh 와 같은 방법(메인 체크아웃 폴더 · repos/ 링크 이름이 있으면 그것) · 줄 교체 · pr-auto 의 기다림이 레포 + 브랜치로 가른다
+SEC_REPO=""
+if [ "$AGENT" = security-reviewer ]; then
+  SEC_MAIN="$(git -C "$BRANCH_FROM" worktree list --porcelain 2>/dev/null | awk '/^worktree /{sub(/^worktree /, ""); print; exit}')"
+  SEC_MAIN="$(cd "$SEC_MAIN" 2>/dev/null && pwd -P)"
+  SEC_REPO="$(basename "${SEC_MAIN:-$BRANCH_FROM}")"
+  for link in "$ATHENA_DIR"/repos/*; do [ -n "$SEC_MAIN" ] && [ "$(cd "$link" 2>/dev/null && pwd -P)" = "$SEC_MAIN" ] && SEC_REPO="$(basename "$link")"; done
+fi
+ATHENA_DIR="$ATHENA_DIR" SEC_REPO="$SEC_REPO" python3 - "$ATHENA_DIR/$PLAN" "$WORKDIR" "${BRANCH_NAME:-?}" "$PANE" "$AGENT" "$LEAD_PANE" "$ROLE" "$LEAD_SESSION" <<'PYEOF'
 import os, sys, re
 sys.path.insert(0, os.environ['ATHENA_DIR'] + '/scripts/lib'); from plan_update import update_plan
 plan, cwd, branch, pane, agent, lead, role, lead_session = sys.argv[1:9]
@@ -647,8 +655,10 @@ def record_ref(text):
     if role == 'reviewer' and agent == 'security-reviewer':
         # 보안 검토는 reviewer 의 Review 줄과 따로 — review-wait.sh · ship.sh 가 읽는 Review 줄을 덮지 않는다(pr-auto.mjs 가 이 줄로 결과를 기다린다)
         stamp = __import__('datetime').datetime.now().strftime('%Y-%m-%d %H:%M')
-        line = f"- Security review: {cwd} · 🌿 {branch} · pane {pane} (security-reviewer) · 띄움 {stamp}"
-        same = re.compile(rf'^- Security review:.*🌿 {re.escape(branch)} .*$', re.M)
+        repo = os.environ.get('SEC_REPO') or '?'
+        line = f"- Security review: {cwd} · 📦 {repo} · 🌿 {branch} · pane {pane} (security-reviewer) · 띄움 {stamp}"
+        # 같은 레포 · 브랜치 줄만 바꾼다(다른 레포의 같은 이름 브랜치 줄은 그대로)
+        same = re.compile(rf'^- Security review:.*📦 {re.escape(repo)} · 🌿 {re.escape(branch)} .*$', re.M)
         if same.search(text):
             text = same.sub(lambda match: line, text, count=1)
         else:

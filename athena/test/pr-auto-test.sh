@@ -965,8 +965,9 @@ cat > "$CORE/scripts/delegate.sh" <<'SH'
 ROOT="$(cd "$(dirname "$0")/.." && pwd -P)"
 printf 'delegate %s\n' "$*" >> "$FAKE_DELEGATE_LOG"
 PLAN=""; while [ $# -gt 0 ]; do case "$1" in --plan) PLAN="$2"; shift 2 ;; *) shift ;; esac; done
-printf -- '- Security review: /w · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
-[ "${FAKE_SECURITY:-none}" = clean ] && printf -- '- Security result: 높음 0 · 중간 0 @%s · tree 000000000000 · 📦 web · 🌿 feat/x · %s · 가짜\n' "$FAKE_SHA" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+printf -- '- Security review: /w · 📦 web · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 %s\n' "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+# 가짜 PR 은 워크트리 tree 를 모른다 — tree 없는 결과 줄(같은 커밋으로만 본다)
+[ "${FAKE_SECURITY:-none}" = clean ] && printf -- '- Security result: 높음 0 · 중간 0 @%s · 📦 web · 🌿 feat/x · %s · 가짜\n' "$FAKE_SHA" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
 exit 0
 SH
 chmod +x "$CORE/scripts/delegate.sh"; PDLOG="$TMP/pr-delegate.log"
@@ -1629,7 +1630,7 @@ while [ $# -gt 0 ]; do case "$1" in --cwd) CWD="$2"; shift 2 ;; --plan) PLAN="$2
 BRANCH="$(git -C "$CWD" symbolic-ref --short -q HEAD)"
 # security-reviewer — '- Security review:' 줄 + FAKE_SECURITY(high · clean · none)대로 결과 줄(review-result.sh --security 와 같은 모양)
 case "$WHO" in security-reviewer)
-  printf -- '- Security review: %s · 🌿 %s · pane p8 (security-reviewer) · 띄움 %s\n' "$CWD" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
+  printf -- '- Security review: %s · 📦 web · 🌿 %s · pane p8 (security-reviewer) · 띄움 %s\n' "$CWD" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
   case "${FAKE_SECURITY:-none}" in high) HIGH=1 ;; clean) HIGH=0 ;; *) exit 0 ;; esac
   printf -- '- Security result: 높음 %s · 중간 0 @%s · tree %s · 📦 web · 🌿 %s · %s · 가짜\n' "$HIGH" "$(git -C "$CWD" rev-parse --short HEAD)" "$(git -C "$CWD" rev-parse 'HEAD^{tree}' | cut -c1-12)" "$BRANCH" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
   exit 0 ;;
@@ -1750,9 +1751,13 @@ gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 결과 없음 → 
 grep -q '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$DLOG" && echo "  ✔ 위험한 수정 — security-reviewer 를 띄웠다(--here)" || { echo "  ✖ security-reviewer 안 띄움 — $(cat "$DLOG")"; FAIL=1; }
 gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SECURITY=clean
 gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 1 → 머지 안 함" "$AUTO" no 1 '보안 검토 때문에 멈춤 — 보안 검토 높음 1개' "${GATE_ENV[@]}" FAKE_SECURITY=high
-gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
-" direct_case "위험한 수정 · 이미 띄워 결과 기다리는 중 → 다시 안 띄우고 기다리다 멈춤" "$AUTO" no 1 '보안 검토 기다리는 중' "${GATE_ENV[@]}"
-! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 이미 띄웠으면 다시 띄우지 않는다" || { echo "  ✖ 두 번 띄움 — $(cat "$DLOG")"; FAIL=1; }
+gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 📦 web · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
+" direct_case "위험한 수정 · 이미 띄워 결과 기다리는 중 → 다시 안 띄우고 기다리다 멈춤" "$AUTO" no 1 '보안 검토 기다리는 중' "${GATE_ENV[@]}" FAKE_PANES='{"id":"p8","agent":"claude","label":"🤖 security-reviewer"}'
+! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 이미 띄웠으면(그 pane 이 살아 있으면) 다시 띄우지 않는다" || { echo "  ✖ 두 번 띄움 — $(cat "$DLOG")"; FAIL=1; }
+# 결과 없이 남은 띄움 줄 — 그 pane 이 닫혔으면 만료하고 다시 띄운다(PR #260 자동 리뷰 지적)
+gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 📦 web · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
+" direct_case "위험한 수정 · 띄운 pane 이 닫힘 → 다시 띄움 · 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SECURITY=clean
+grep -q '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$DLOG" && echo "  ✔ 닫힌 pane 의 띄움 줄은 만료 — 다시 띄웠다" || { echo "  ✖ 다시 안 띄움 — $(cat "$DLOG")"; FAIL=1; }
 gate_reset; direct_case "위험하지 않은 수정 · 결과 없음 → 지금처럼 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
 ! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 위험하지 않은 수정 — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$DLOG")"; FAIL=1; }
 SEC_PLAN="$TMP/security-plan.md"
@@ -1761,10 +1766,12 @@ node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --br
 node "$DCORE/scripts/security-gate.mjs" check --plan "$SEC_PLAN" --repo web --branch feat/y >/dev/null; SEC_OTHER=$?
 [ "$SEC_CODE" = 3 ] && [ "$SEC_OTHER" = 0 ] && echo "  ✔ security-gate.mjs check — 높음이면 3(ship.sh 가 멈춘다) · 다른 브랜치는 0" || { echo "  ✖ security-gate.mjs check — $SEC_CODE · $SEC_OTHER"; FAIL=1; }
 node --input-type=module -e "
-  const { securityGate, securityPending, securityRiskVerdict } = await import('$DCORE/scripts/lib/pr-auto.mjs')
+  const { securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict } = await import('$DCORE/scripts/lib/pr-auto.mjs')
   const at = { repo: 'web', branch: 'feat/x' }
   const result = (high, stamp = '2026-11-08 10:05', repo = 'web') => '- Security result: 높음 ' + high + ' · 중간 1 @abc1234 · tree abcdef123456 · 📦 ' + repo + ' · 🌿 feat/x · ' + stamp
-  const launch = (stamp) => '- Security review: /w · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 ' + stamp
+  const launch = (stamp, repo = 'web') => '- Security review: /w · 📦 ' + repo + ' · 🌿 feat/x · pane p8 (security-reviewer) · 띄움 ' + stamp
+  const local = (stamp) => new Date(stamp.replace(' ', 'T') + ':00').getTime()
+  const sha = { repo: 'web', branch: 'feat/x', sha: 'abc1234def' }
   const risk = (path, line) => securityRiskVerdict({ files: [{ path }], added: line ? [line] : [] })
   const checks = [
     [securityGate('', at).block, false, '기록 없음 → 통과'],
@@ -1775,6 +1782,18 @@ node --input-type=module -e "
     [securityPending(launch('2026-11-08 10:00'), at), true, '띄움 · 결과 없음 → 기다림'],
     [securityPending([launch('2026-11-08 10:00'), result(0)].join('\n'), at), false, '띄운 뒤 결과 → 기다리지 않음'],
     [securityPending([result(0), launch('2026-11-08 10:10')].join('\n'), at), true, '옛 결과 뒤 다시 띄움 → 기다림'],
+    [securityPending(launch('2026-11-08 10:00', 'api'), at), false, '다른 레포의 띄움 줄 → 기다리지 않음'],
+    [securityPending(launch('2026-11-08 10:00'), { ...at, now: local('2026-11-08 10:19'), maxAgeMs: 20 * 60_000 }), true, '띄운 지 19분 → 기다림'],
+    [securityPending(launch('2026-11-08 10:00'), { ...at, now: local('2026-11-08 10:20'), maxAgeMs: 20 * 60_000 }), false, '띄운 지 20분 → 만료(다시 띄움)'],
+    [securityPending(launch('2026-11-08 10:00'), { ...at, livePanes: new Set(['p8']) }), true, '띄운 pane 이 살아 있음 → 기다림'],
+    [securityPending(launch('2026-11-08 10:00'), { ...at, livePanes: new Set(['p3']) }), false, '띄운 pane 이 닫힘 → 만료(다시 띄움)'],
+    [securityPending(launch('2026-11-08 10:00'), { ...at, livePanes: null }), true, '화면 목록을 못 읽음 → pane 으로는 만료 안 함'],
+    [Boolean(securityResultFor(result(0), { ...sha, tree: 'abcdef123456789' })), true, '같은 tree → 이 HEAD 결과'],
+    [Boolean(securityResultFor(result(0), { ...sha, tree: '999999999999999' })), false, 'SHA 같아도 tree 다름 → 이 HEAD 결과 아님'],
+    [Boolean(securityResultFor(result(0), { ...sha, tree: '' })), false, 'tree 를 모름 · 결과엔 tree → 아님'],
+    [Boolean(securityResultFor('- Security result: 높음 0 · 중간 0 @abc1234 · 📦 web · 🌿 feat/x · 2026-11-08 10:05', { ...sha, tree: '999999999999' })), true, 'tree 없는 결과 → 같은 커밋이면 인정'],
+    [securityRiskVerdict(securityDiffParts('diff --git a/scripts/ssh-run.sh b/scripts/ssh-run.sh\ndeleted file mode 100755\n--- a/scripts/ssh-run.sh\n+++ /dev/null\n@@ -1 +0,0 @@\n-echo hi\n')).risky, true, '민감 경로 파일을 지움 → 위험'],
+    [securityRiskVerdict(securityDiffParts('diff --git a/docs/a.md b/docs/a.md\ndeleted file mode 100644\n--- a/docs/a.md\n+++ /dev/null\n@@ -1 +0,0 @@\n-hello\n')).risky, false, '보안에 닿지 않는 파일을 지움 → 위험 아님'],
     [risk('src/a.mjs', 'const out = spawnSync(\"git\", args)').risky, true, '명령 실행'],
     [risk('src/a.mjs', 'await writeFile(target, text)').risky, true, '파일 쓰기'],
     [risk('src/a.mjs', 'const token = read()').risky, true, '비밀값'],
@@ -1784,7 +1803,7 @@ node --input-type=module -e "
   let bad = 0
   for (const [got, want, why] of checks) if (got !== want) { bad += 1; console.log('  ✖ ' + why + ' — 기대 ' + want + ' · 실제 ' + got) }
   if (bad) process.exit(1)
-  console.log('  ✔ 보안 판정 — 높음만 막음 · 레포 · 브랜치마다 · 마지막 줄 · 띄움 뒤 결과 기다림 · 위험한 수정 갈래')
+  console.log('  ✔ 보안 판정 — 높음만 막음 · 레포 · 브랜치마다 · 마지막 줄 · 띄움 뒤 결과 기다림(시간 · 닫힌 pane 이면 만료) · tree 일치 · 지운 파일 · 위험한 수정 갈래')
 " || FAIL=1
 # Actions 로 넘기기 길도 같은 문 — 넓은 수정이면 넘기기 전에 리뷰 · 승인 없이는 handoff/<브랜치> 를 밀지 않는다
 handoff_case() {   # <이름> <기대 종료> <줄 정규식> [환경…]

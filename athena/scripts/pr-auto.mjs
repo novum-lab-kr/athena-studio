@@ -612,7 +612,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const prompt = buildPrompt({ repo, number, pr, planFile, planText, packed, previous, incremental: sinceDiff !== null, fullAgain })
   // 위험한 수정이면 리뷰어와 함께 security-reviewer 도 띄운다(결과는 머지 앞 securityStop 이 기다린다) — 워크트리 diff 로만 본다(gh pr diff 는 부르지 않는다 ·
   // 못 읽거나 띄우지 못했으면 머지 앞 securityStop 이 gh pr diff 로 다시 보고 멈춘다)
-  if (!dryRun) startSecurityReview({ planPath, planFile, repo, branch: pr.headRefName, sha, worktree: ref.worktree, base: pr.baseRefName })
+  if (!dryRun) await startSecurityReview({ planPath, planFile, repo, branch: pr.headRefName, sha, worktree: ref.worktree, base: pr.baseRefName })
   const reviewStartedAt = Date.now()
   let results = await runReviewers(prompt, config, inherited, slots)
   // Claude 가 사용량 한도로 답하지 못했으면 로그인 안 됨과 같은 길(Codex 두 자리)로 다시 짜서 이어 간다(검수 묶음 2 #3) —
@@ -968,14 +968,17 @@ const securityDiffOf = ({ worktree, base, sha, number = 0, org = '', repo }) => 
 }
 const securityPrompt = ({ planFile, worktree, repo, branch, base, why }) => `[자동 보안 검토] ${repo} ${branch} 는 위험한 수정이다(${why}). ${worktree} 에서 git diff origin/${base}...HEAD 를 보안만 검토하고, 끝나면 scripts/review-result.sh --security --plan ${planFile} --dir ${worktree} --high <높음 수> --medium <중간 수> --note "<한 줄>" 로 결과를 남긴다(높음이 있으면 머지가 멈춘다)`
 // 띄우기만 — 위험하지 않거나 · 이 HEAD 결과가 이미 있거나 · 띄워 둔 것이 아직 도는 중이면 아무것도 안 한다. { risky, why, launched, error }
-const startSecurityReview = ({ planPath, planFile, repo, branch, sha, worktree, base, number = 0, org = '' }) => {
+const startSecurityReview = async ({ planPath, planFile, repo, branch, sha, worktree, base, number = 0, org = '' }) => {
   const diffText = securityDiffOf({ worktree, base, sha, number, org, repo })
   if (diffText === null) return { risky: true, why: '위험한 수정인지 판정 못 함(diff 를 읽지 못함)', error: 'diff 를 읽지 못함' }
   const verdict = securityRiskVerdict(securityDiffParts(diffText))
   if (!verdict.risky) return { risky: false, why: verdict.why }
   const planText = readFileSync(planPath, 'utf8')
   const tree = (worktree && existsSync(worktree) && git(worktree, ['rev-parse', `${sha}^{tree}`])) || ''
-  if (securityResultFor(planText, { repo, branch, sha, tree }) || securityPending(planText, { repo, branch })) return { risky: true, why: verdict.why, tree }
+  // 결과 없이 남은 띄움 줄은 기다림 시간이 지났거나 그 pane 이 닫혔으면 만료 — 다시 띄운다(화면 목록을 못 읽으면 pane 으로는 만료하지 않는다)
+  const listed = await screen(['pane', 'list'])
+  const live = listed ? new Set((listed.panes ?? []).map((pane) => pane.id)) : null
+  if (securityResultFor(planText, { repo, branch, sha, tree }) || securityPending(planText, { repo, branch, maxAgeMs: SECURITY_PENDING_MAX_MS, livePanes: live })) return { risky: true, why: verdict.why, tree }
   if (!worktree || !existsSync(worktree)) return { risky: true, why: verdict.why, tree, error: 'security-reviewer 를 띄울 워크트리가 없음' }
   console.log(`  🛡 위험한 수정(${verdict.why}) — security-reviewer 를 띄운다`)
   const launched = spawnSync(join(ROOT, 'scripts', 'delegate.sh'), ['security-reviewer', '--cwd', worktree, '--here', '--plan', planFile, securityPrompt({ planFile, worktree, repo, branch, base, why: verdict.why })], { encoding: 'utf8', timeout: 180_000 })
@@ -983,7 +986,7 @@ const startSecurityReview = ({ planPath, planFile, repo, branch, sha, worktree, 
   return { risky: true, why: verdict.why, tree, launched: true }
 }
 const securityStop = async ({ planPath, planFile, repo, branch, sha, worktree, base, number = 0, org = '' }) => {
-  const start = startSecurityReview({ planPath, planFile, repo, branch, sha, worktree, base, number, org })
+  const start = await startSecurityReview({ planPath, planFile, repo, branch, sha, worktree, base, number, org })
   const stopFor = (why) => {
     logEvent(ROOT, 'auto.stop', { plan: planFile, repo, branch, sha: sha.slice(0, 7), reason: 'security' })
     console.log(`⛔ ${why}`)
@@ -1023,6 +1026,8 @@ const securityStop = async ({ planPath, planFile, repo, branch, sha, worktree, b
 // 리뷰 멈춤은 [작업] 요청을 열지 않는다 — 사람이 고를 것이 없고 다음 할 일은 pane 에 적혀 있다(지적은 reviewer pane 보고)
 const DIRECT_REVIEW_POLL_MS = Number(process.env.ATHENA_DIRECT_REVIEW_POLL_MS) || 5000
 const DIRECT_REVIEW_TIMEOUT_MS = Number(process.env.ATHENA_DIRECT_REVIEW_TIMEOUT_MS) || 20 * 60_000
+// 결과 없이 남은 Security review 줄의 만료 — 기다림 시간과 같게 · 띄움 시각이 분 단위라 2분 아래로는 내리지 않는다(갓 띄운 줄을 바로 만료하지 않게)
+const SECURITY_PENDING_MAX_MS = Math.max(DIRECT_REVIEW_TIMEOUT_MS, 2 * 60_000)
 // git diff --numstat 한 줄 → { path, added, deleted }(이진 파일은 "-" 라 0)
 const numstatFiles = (text) => String(text ?? '').split('\n').filter(Boolean).map((row) => {
   const [added, deleted, ...rest] = row.split('\t')

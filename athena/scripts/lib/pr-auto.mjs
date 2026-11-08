@@ -349,12 +349,21 @@ export const latestSecurityResult = (planText, { repo, branch, tree = '' }) => {
   const reviewedTree = last.match(/· tree ([0-9a-f]{6,40})/)?.[1] ?? ''
   return { high: Number(hit[1]), medium: Number(hit[2]), sha: hit[3], tree: reviewedTree, same: Boolean(reviewedTree && tree && String(tree).startsWith(reviewedTree)), line: last }
 }
-// 띄웠는데 결과가 아직 — delegate.sh 가 적는 "- Security review: … 🌿 <브랜치> · pane … (security-reviewer) · 띄움 <시각>" 이 그 브랜치 마지막 결과 줄보다 늦다
-export const securityPending = (planText, { repo, branch }) => {
-  const launched = String(planText ?? '').split('\n').filter((line) => /^- Security review:/.test(line) && `${line} `.includes(`🌿 ${branch} `)).at(-1)?.match(/띄움 (\d{4}-\d{2}-\d{2} \d{2}:\d{2})/)?.[1]
-  if (!launched) return false
+// 띄웠는데 결과가 아직 — delegate.sh 가 적는 "- Security review: … 📦 <레포> · 🌿 <브랜치> · pane <id> (security-reviewer) · 띄움 <시각>" 이 그 레포 · 브랜치 마지막 결과 줄보다 늦다.
+// 결과 없이 남은 줄은 만료한다(다음 실행이 다시 띄우게 · PR #260 자동 리뷰 지적) — 띄운 지 maxAgeMs 가 지났거나 · livePanes(살아 있는 pane id 모음)에 그 pane 이 없으면 기다리지 않는다.
+// livePanes 가 null 이면(화면 목록을 못 읽음) pane 으로는 만료하지 않는다. 시각은 delegate.sh 가 맥 지역 시각으로 적는다
+/** @param {unknown} planText @param {{ repo: string, branch: string, now?: number, maxAgeMs?: number, livePanes?: Set<string> | null }} target */
+export const securityPending = (planText, { repo, branch, now = Date.now(), maxAgeMs = Infinity, livePanes = null }) => {
+  const line = String(planText ?? '').split('\n').filter((row) => /^- Security review:/.test(row) && `${row} `.includes(`📦 ${repo} · 🌿 ${branch} `)).at(-1)
+  const launched = line?.match(/띄움 (\d{4}-\d{2}-\d{2}) (\d{2}:\d{2})/)
+  if (!line || !launched) return false
   const done = latestSecurityResult(planText, { repo, branch })?.line.match(/\d{4}-\d{2}-\d{2} \d{2}:\d{2}/)?.[0] ?? ''
-  return done < launched
+  if (done >= `${launched[1]} ${launched[2]}`) return false
+  const launchedAt = new Date(`${launched[1]}T${launched[2]}:00`).getTime()
+  if (Number.isFinite(launchedAt) && now - launchedAt >= maxAgeMs) return false
+  const pane = line.match(/· pane (\S+) /)?.[1]
+  if (livePanes && pane && !livePanes.has(pane)) return false
+  return true
 }
 // 판정 — { block, why }. why 는 막을 때 ship.sh · 계획서 "- Auto merge:" 줄 · 담당 pane 알림에 그대로 들어간다
 export const securityGate = (planText, target) => {
@@ -391,17 +400,25 @@ export const securityDiffParts = (text) => {
   /** @type {string[]} */
   const added = []
   let code = false
+  let removed = ''
   for (const line of String(text ?? '').split('\n')) {
+    // 지운 파일은 "--- a/<경로>" 다음 "+++ /dev/null" — 지운 경로도 민감 경로 판정에 넣는다(PR #260 자동 리뷰 지적 · 더해진 줄은 없다)
+    const before = line.match(/^--- a\/(.+)$/)?.[1]
+    if (before) { removed = before; continue }
+    if (line === '+++ /dev/null') { if (removed) files.push({ path: removed }); removed = ''; code = false; continue }
     const path = line.match(/^\+\+\+ b\/(.+)$/)?.[1]
-    if (path) { files.push({ path }); code = isCodeFile(path); continue }
+    if (path) { files.push({ path }); code = isCodeFile(path); removed = ''; continue }
     if (code && line.startsWith('+') && !line.startsWith('+++')) added.push(line.slice(1))
   }
   return { files, added }
 }
-// 이 HEAD 를 본 결과인가 — 같은 트리(커밋을 다시 만들어도 내용이 같으면) 또는 같은 커밋
+// 이 HEAD 를 본 결과인가 — 결과에 tree 가 있으면 같은 트리일 때만(커밋을 다시 만들어도 내용이 같으면 · SHA 가 같아도 tree 가 다르면 아님 — PR #260 자동 리뷰 지적).
+// tree 가 없는 옛 결과 줄만 같은 커밋으로 본다
 export const securityResultFor = (planText, { repo, branch, sha, tree = '' }) => {
   const last = latestSecurityResult(planText, { repo, branch, tree })
-  return last && (last.same || String(sha ?? '').startsWith(last.sha)) ? last : null
+  if (!last) return null
+  const seen = last.tree ? last.same : String(sha ?? '').startsWith(last.sha)
+  return seen ? last : null
 }
 // 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진의 첫 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
 export const inheritedResult = (prior, headSha) => ({
