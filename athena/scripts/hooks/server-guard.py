@@ -7,7 +7,7 @@
 이 훅이 막는 것:
   - 등록한 ssh 별칭으로 바로 가는 ssh · scp · rsync · sftp(확인을 건너뛴다 · ssh -G 는 주소를 찍는다)
   - 명령 안에서 ssh-run.sh 의 시험용 값(ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN · ATHENA_GUARD_*)을 정하기(승인을 흉내 낸다)
-  - `request answer` · `request cancel`(bin/athena · scripts/athena.mjs) 중 **ssh-run.sh 의 명령 확인 요청(key server-cmd:*)** 에 닿는 것 — 에이전트가 자기 확인 요청에
+  - `request answer` · `request cancel`(bin/athena · scripts/athena.mjs) 중 **ssh-run.sh 의 확인 요청(key server-cmd:* · server-put:*)** 에 닿는 것 — 에이전트가 자기 확인 요청에
     스스로 "실행" 을 답하는 길(2026-11-08 PR 리뷰 2). 어느 세션이든 막고, 다른 요청(질문 · 결정)의 대화 답 흐름은 그대로 둔다(계획서 R1).
     요청 id 를 글자로 못 읽거나(변수 등) 요청을 읽다 실패하면 막는다 · 없는 요청이면 통과
 ssh-run.sh 로 가는 것은 명령 첫 낱말(VAR=값 앞붙임 뒤)이 ssh-run.sh 로 끝나는 경로일 때만 — 글자가 섞여 있기만 한 것(ssh -o x=ssh-run.sh …)은 아니다.
@@ -102,7 +102,8 @@ RAW = re.compile(r'\b(ssh|scp|rsync|sftp)\b')
 ANSWER = re.compile(r'\brequest\s+(answer|cancel)\b')
 # 답 · 취소할 요청 id — request answer|cancel 바로 뒤 낱말
 ANSWER_ID = re.compile(r'\brequest\s+(answer|cancel)(?:\s+(\S+))?')
-SERVER_CMD_KEY = 'server-cmd:'
+# 막는 요청 key — ssh-run.sh 의 명령 확인(server-cmd:*) · 파일 올리기 확인(server-put:* — 계획서 R1 확정 2026-11-08)
+SERVER_KEYS = ('server-cmd:', 'server-put:')
 # 한 명령의 첫 낱말 — 앞의 VAR=값 은 건너뛴다(사본에는 따옴표가 없다)
 FIRST_WORD = re.compile(r'^\s*(?:\w+=\S*\s+)*(\S+)')
 
@@ -181,8 +182,8 @@ def answer_blocked(view):
             key = request_key(request_id)
             if key is None:
                 return action, f'요청 {request_id} 를 읽지 못했다'
-            if key.startswith(SERVER_CMD_KEY):
-                return action, f'요청 {request_id} 는 서버 명령 확인 요청이다'
+            if key.startswith(SERVER_KEYS):
+                return action, f'요청 {request_id} 는 서버 확인 요청이다'
     return None
 
 
