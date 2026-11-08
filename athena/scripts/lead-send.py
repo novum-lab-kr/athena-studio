@@ -114,6 +114,10 @@ def caller_lead() -> tuple[str, str]:
     pane = str(info.get('pane_id') or '')
     if not info.get('inside'):
         return '', ''
+    # 화면 안이지만 pane ID 가 아예 없다 = pane 이 아닌 앱 · 현황판이 불렀다(사이드바 [부르기] — 2026-11-08) → 화면 밖과 같다.
+    # 있는데 모양이 틀리거나 아래 대조에 걸리면 그대로 막는다
+    if not pane:
+        return '', ''
     if not PANE_ID.fullmatch(pane):
         raise ValueError('부른 pane ID 를 확인하지 못했다')
     found = backend.get_pane(pane)

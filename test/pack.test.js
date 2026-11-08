@@ -336,3 +336,24 @@ test('도구별 대화 복원은 약속4부터: 구버전 코어는 복원 전�
   assert.equal(pack.coreTooOld(['pack','restore-work'], {ok:true,contract:3,capabilities:[]}), true)
   assert.equal(pack.coreTooOld(['pack','restore-work'], {ok:true,contract:4,capabilities:[]}), false)
 })
+
+test('scriptDetail — 본체 스크립트 실패 원문 · 비밀값 가리기 · 끝 쪽만', () => {
+  const shown = pack.scriptDetail({ stderr: '아테나 발신자를 확인하지 못해 위임하지 않는다: 부른 pane ID 를 확인하지 못했다\n', stdout: '', code: 1 })
+  assert.equal(shown, '아테나 발신자를 확인하지 못해 위임하지 않는다: 부른 pane ID 를 확인하지 못했다')
+  assert.equal(pack.scriptDetail({ stdout: '', stderr: '', code: 'ETIMEDOUT' }), 'exit ETIMEDOUT')
+  const secret = pack.scriptDetail({
+    stderr: [
+      'fatal: https://me:hunter2@github.com/x/y.git 못 가져옴',
+      'Authorization: Bearer abc.def.ghi',
+      'GITHUB_TOKEN=ghp_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+      'password: "p a s s"',
+      '토큰 gho_bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb 끝',
+    ].join('\n'),
+    stdout: 'pane split 실패',
+  })
+  for (const value of ['hunter2', 'abc.def.ghi', 'ghp_', 'p a s s', 'gho_']) assert.ok(!secret.includes(value), value)
+  assert.match(secret, /https:\/\/me:\*\*\*@github\.com/)
+  assert.match(secret, /pane split 실패$/)
+  const long = pack.scriptDetail({ stderr: `${'가'.repeat(5000)}\n마지막 줄` })
+  assert.ok(long.length <= 4002 && long.startsWith('…\n') && long.endsWith('마지막 줄'))
+})

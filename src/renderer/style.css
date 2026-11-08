@@ -1098,6 +1098,9 @@ body.pack-welcome-on .pack-rail { display: none; } /* 시작 화면은 자기 '�
 .pack-result-card b { display: block; color: var(--popup-title); font-weight: 600; overflow-wrap: anywhere; }
 .pack-result-card small { color: var(--popup-muted); font-size: 12px; }
 .pack-body .pack-result-note { margin: 10px 0 0; color: var(--popup-muted); font-size: 12px; overflow-wrap: anywhere; }
+/* [부르기] 실패 원문 — [자세히] 를 누르면 펼친다(space-actions.ts callFailAlert) */
+.pack-body .pack-detail summary { cursor: pointer; color: var(--popup-muted); font-size: 12px; }
+.pack-body .pack-detail-text { max-height: 220px; margin: 8px 0 0; padding: 10px 12px; overflow: auto; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); font: 12px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; user-select: text; }
 
 @media (max-width: 520px) {
   .pack-compare { grid-template-columns: 1fr; }

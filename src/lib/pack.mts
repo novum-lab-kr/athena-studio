@@ -114,6 +114,26 @@ export function packErrorText(result: PackResult | null | undefined, say: Say = 
   return `${base}${detail}${busy}`
 }
 
+// 본체 스크립트(delegate.sh · new-branch.sh · call-branch-info.sh) 실패 원문 — [부르기] 실패 창의 [자세히] 에 보인다.
+// 비밀값처럼 보이는 것은 가리고(주소 안 비밀번호 · Bearer · 이름이 토큰 · 키 · 비밀번호인 값 · 흔한 토큰 모양) 너무 길면 끝 쪽만 남긴다
+const DETAIL_LIMIT = 4000
+const SECRET_PATTERNS: [RegExp, string][] = [
+  [/(\b[a-z][\w+.-]*:\/\/[^\s:/@]+:)[^\s@]+@/gi, '$1***@'],
+  [/\b(bearer|basic)\s+[\w.~+/=-]+/gi, '$1 ***'],
+  [/\b([\w.-]*(?:token|secret|passw(?:or)?d|api[_-]?key|access[_-]?key|private[_-]?key|auth)[\w.-]*)(\s*[=:]\s*)("[^"]*"|'[^']*'|\S+)/gi, '$1$2***'],
+  [/\b(?:gh[pousr]_[A-Za-z0-9]{20,}|github_pat_\w{20,}|sk-[\w-]{20,}|xox[abprs]-[\w-]{10,}|AKIA[0-9A-Z]{16})\b/g, '***'],
+]
+export function redactSecrets(text: string): string {
+  return SECRET_PATTERNS.reduce((value, [pattern, replacement]) => value.replace(pattern, replacement), text)
+}
+export function scriptDetail(run: { stdout?: string; stderr?: string; code?: unknown }): string {
+  const parts = [run.stderr, run.stdout].map((part) => String(part || '').trim()).filter(Boolean)
+  const text = parts.length ? parts.join('\n') : `exit ${String(run.code ?? '?')}`
+  // 가린 뒤에 자른다 — 자르다 반쪽 난 비밀값이 패턴을 빠져나가지 않게
+  const hidden = redactSecrets(text)
+  return hidden.length > DETAIL_LIMIT ? `…\n${hidden.slice(-DETAIL_LIMIT)}` : hidden
+}
+
 // 실패 답 — 코어 결과 + 화면 문장(text)
 export function packFailure<T extends PackResult>(result: T, say: Say = koreanSay): T & { text: string } {
   return { ...result, text: packErrorText(result, say) }

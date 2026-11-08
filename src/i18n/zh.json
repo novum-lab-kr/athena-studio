@@ -223,6 +223,7 @@
   "spaces.callReuseYes": "继续",
   "spaces.callFailed": "未能打开代理",
   "spaces.callFailedNote": "在确认分支 · 创建 worktree · 启动代理的过程中停止了。原因在 [详情] 的原文中 — 如果难以解决,请把这段原文给 Athena 看。",
+  "spaces.callDetails": "详情",
   "spaces.callBadBranch": "请输入分支名(工单号 · fix/说明)",
   "spaces.callDirect": "主检出(main 直接)",
   "spaces.addRepoTitle": "{repo} — 要作为仓库添加到包中吗?",

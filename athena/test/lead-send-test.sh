@@ -119,9 +119,18 @@ for identity, record, thread in [
     except ValueError:
         continue
     raise AssertionError((identity, record, thread))
+backend.self_info = lambda: {'inside': True, 'pane_id': 'p1;x'}
+try:
+    module.caller_lead()
+    raise AssertionError('틀린 모양의 pane ID 가 통과했다')
+except ValueError:
+    pass
 backend.self_info = lambda: {'inside': False}
 assert module.caller_lead() == ('', '')
-print('  ✔ 정상 담당·닫힌 ID·다른 본체·위임 pane·다른 대화·화면 밖')
+# 앱 · 현황판이 부름 — 화면 안(ATHENA_STUDIO=1)이지만 pane ID 가 없다
+backend.self_info = lambda: {'inside': True, 'pane_id': ''}
+assert module.caller_lead() == ('', '')
+print('  ✔ 정상 담당·닫힌 ID·다른 본체·위임 pane·다른 대화·틀린 ID·화면 밖·pane 없는 앱')
 PYTEST
 check "위임 발신자 검증" "$?" 0
 

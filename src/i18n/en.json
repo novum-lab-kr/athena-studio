@@ -223,6 +223,7 @@
   "spaces.callReuseYes": "Continue",
   "spaces.callFailed": "Could not open the agent",
   "spaces.callFailedNote": "It stopped while checking the branch, creating the worktree, or opening the agent. The cause is in the original output under [Details] — if you cannot fix it, show that output to Athena.",
+  "spaces.callDetails": "Details",
   "spaces.callBadBranch": "Enter a branch name (ticket number · fix/description)",
   "spaces.callDirect": "main checkout (direct)",
   "spaces.addRepoTitle": "{repo} — add it to the pack?",

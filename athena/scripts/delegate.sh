@@ -116,6 +116,9 @@ if [ -n "$PLAN_NEW" ]; then
   PROMPT_TMP="$(mktemp -t hermes-plan-prompt)"; printf '%s' "$PROMPT" > "$PROMPT_TMP"
   PLAN="$(node "$ATHENA_DIR/scripts/new-plan.mjs" --agent "$AGENT" --summary "$PLAN_NEW" --prompt-file "$PROMPT_TMP")" || { rm -f "$PROMPT_TMP"; echo "경량 계획서를 만들지 못했다" >&2; exit 1; }
   rm -f "$PROMPT_TMP"
+  # 띄우지 못하고 끝나면(종료 코드 0 이 아니면) 방금 만든 빈 경량 계획서를 지운다 — 앱 [부르기] 가 실패할 때마다 빈 계획서가 쌓였다(2026-11-08)
+  case "$PLAN" in /*) NEW_PLAN_FILE="$PLAN" ;; *) NEW_PLAN_FILE="$ATHENA_DIR/$PLAN" ;; esac
+  trap 'code=$?; [ "$code" -eq 0 ] || rm -f "$NEW_PLAN_FILE"; exit "$code"' EXIT
 fi
 # 본체 기준 논리 경로로 — 여러 팩 구조에서 plans/ 는 팩 데이터를 가리키는 링크라 실제 경로로 풀면 본체 밖이 된다(scripts/lib/plan-path.sh)
 . "$ATHENA_DIR/scripts/lib/plan-path.sh"

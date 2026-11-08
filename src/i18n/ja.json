@@ -223,6 +223,7 @@
   "spaces.callReuseYes": "続ける",
   "spaces.callFailed": "エージェントを開けませんでした",
   "spaces.callFailedNote": "ブランチの確認・ワークツリーの作成・エージェントの起動の途中で止まりました。原因は [詳細] の原文にあります — 解決が難しければ、この原文をアテナに見せてください。",
+  "spaces.callDetails": "詳細",
   "spaces.callBadBranch": "ブランチ名を入力してください(チケット番号 · fix/説明)",
   "spaces.callDirect": "メインチェックアウト(main 直接)",
   "spaces.addRepoTitle": "{repo} — パックにリポジトリとして追加しますか?",

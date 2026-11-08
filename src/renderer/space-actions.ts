@@ -231,12 +231,20 @@ async function removeServerFromPack(name: string): Promise<unknown> {
   showToast(say('spaces.removeServerDone', { server: name }), 'success')
 }
 
+// [부르기] 실패 창 — 앱 문구 + 본체 스크립트 원문을 [자세히] 에 접어서(main pack-repos.mts scriptFailed — 비밀값은 main 이 가렸다)
+function callFailAlert(reply: { error?: string; detail?: string }): Promise<unknown> {
+  if (!reply.detail) return packAlert(say('spaces.callFailed'), reply.error)
+  const details = el('details', 'pack-detail')
+  details.append(el('summary', null, say('spaces.callDetails')), el('pre', 'pack-detail-text', reply.detail))
+  return packDialog({ title: say('spaces.callFailed'), body: [reply.error || '', details], actions: [{ label: say('common.ok'), value: 'ok', kind: 'primary' }] })
+}
+
 // 서버 [부르기] — 그 서버 에이전트(<서버>-ops)를 띄운다(main serverCall · delegate.sh). 읽기 명령만 쓰는 에이전트
 async function callServerAgent(name: string): Promise<unknown> {
   showPackProgress(say('spaces.callProgress', { agent: `${name}-ops` }), false)
   const result = await studio.serverCall(name).catch(() => ({ ok: false as const, error: say('spaces.callFailedNote') }))
   hidePackProgress()
-  if (!result.ok) return packAlert(say('spaces.callFailed'), result.error)
+  if (!result.ok) return callFailAlert(result)
   showToast(say('spaces.serverCalled', { agent: result.agent }), 'success')
 }
 
@@ -253,7 +261,7 @@ async function serverMenu(name: string, event: { clientX: number; clientY: numbe
 // 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
 async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
   const info = await studio.packCallInfo(repo.name)
-  if (info.error) return showToast(info.error)
+  if (info.error) return info.detail ? callFailAlert(info) : showToast(info.error)
   let choice = { branch: '', reuse: false }
   if (!info.direct) {
     const rows = el('div', 'pack-links')
@@ -286,7 +294,7 @@ async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
     result = await studio.packCallStart(repo.name, { branch: choice.branch, reuse: true })
     hidePackProgress()
   }
-  if (result.error) return packAlert(say('spaces.callFailed'), result.error)
+  if (result.error) return callFailAlert(result)
   showToast(say('spaces.called', { agent: result.agent, branch: result.branch || say('spaces.callDirect') }), 'success')
 }
 

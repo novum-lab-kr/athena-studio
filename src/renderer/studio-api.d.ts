@@ -114,9 +114,9 @@ declare global {
   // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
   type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
   type CallMain = { status: string; dirty: number; branch: string; upstream: string | null; ahead: number; behind: number; gone?: boolean }
-  // 실패면 { error } 만 온다(부르는 쪽이 error 를 먼저 본다)
-  type CallInfo = { error?: string; agent: string; repo: string; target: string; main: CallMain | null; candidates: CallCandidate[]; direct: string | null }
-  type CallStartReply = { error?: string; exists?: boolean; message?: string; ok?: boolean; agent?: string; pane?: string | null; worktree?: string; branch?: string | null }
+  // 실패면 { error } 만 온다(부르는 쪽이 error 를 먼저 본다) · 본체 스크립트 실패면 원문 detail(비밀값 가림 — src/lib/pack.mts scriptDetail)도
+  type CallInfo = { error?: string; detail?: string; agent: string; repo: string; target: string; main: CallMain | null; candidates: CallCandidate[]; direct: string | null }
+  type CallStartReply = { error?: string; detail?: string; exists?: boolean; message?: string; ok?: boolean; agent?: string; pane?: string | null; worktree?: string; branch?: string | null }
 
   // 이 창 팩 상태(src/main/packs.mts ctx.refreshPacks — pack list 를 다듬은 것 + 시작 화면 칸 + 열린 팩 openIds). 지원하지 않으면 { supported: false } 만
   type PackState = {
@@ -294,7 +294,7 @@ declare global {
     serverTrustHostKey(source: RegisterSource, fingerprints: string[]): Promise<TrustHostKeyReply>
     serverKeyUpload(source: RegisterSource): Promise<KeyUploadReply>
     // 서버 에이전트 부르기(src/main/pack-repos.mts serverCall — delegate.sh <이름>-ops)
-    serverCall(name: string): Promise<{ ok: true; agent: string; pane: string | null } | { ok?: false; error: string }>
+    serverCall(name: string): Promise<{ ok: true; agent: string; pane: string | null } | { ok?: false; error: string; detail?: string }>
     serverAnalyze(name: string, size: CellSize | null): Promise<{ ok: boolean; text?: string }>
     serverRemove(name: string): Promise<RepoRemoveReply>
     // 접속 터미널 — 데몬 답(실패면 error)
