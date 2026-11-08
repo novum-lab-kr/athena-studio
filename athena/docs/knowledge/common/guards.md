@@ -5,7 +5,7 @@
 
 훅이 걸리는 곳
 - 아테나 세션 — Claude `.claude/settings.json` · Codex `.codex/hooks.json`(`/hooks` 에서 믿음 표시해야 돈다)
-- 위임 에이전트 — `scripts/lib/agent_hooks.py` 한 곳(`delegate.sh` · `agent-context.py` 가 같이 쓴다). reviewer 는 `secret-guard` · `process-guard` · 권한 확인 알림만
+- 위임 에이전트 — `scripts/lib/agent_hooks.py` 한 곳(`delegate.sh` · `agent-context.py` 가 같이 쓴다). reviewer(`security-reviewer` 도 같은 묶음)는 `secret-guard` · `process-guard` · 권한 확인 알림만
 
 ## 표
 
@@ -22,7 +22,7 @@
 | 무거운 명령은 `heavy.sh` 로 | 검증 스크립트 · `commit.sh` 는 스스로 줄을 선다(`heavy.sh` 잠금) | 에이전트가 직접 치는 install · build · test |
 | 멈춘 명령은 pid 로만 끄기 | `process-guard.py` — pkill · killall · 0 · 음수 대상 kill · 이름으로 찾은 pid kill | 스크립트 안 · timeout/find -exec 로 감싼 kill |
 | 커밋은 `commit.sh` 로만 | `commit-guard.py`(위임 에이전트만) — git commit · `add -A` · merge · revert · stash · `reset --hard` · rebase … | 아테나 세션 · "사용자가 요청할 때만" |
-| push · PR 은 `ship.sh` 로만 | `commit-guard.py`(위임 에이전트만) — git push · gh pr 쓰기 · gh api 쓰기 · `--repo-agent`. `ship.sh` — 미커밋 없음 · `commit.sh` 로 기록된 커밋만 | "PR 올려줘 할 때만"(`--user-pr` 도 말한 출처를 증명하지 못한다) |
+| push · PR 은 `ship.sh` 로만 | `commit-guard.py`(위임 에이전트만) — git push · gh pr 쓰기 · gh api 쓰기 · `--repo-agent`. `ship.sh` — 미커밋 없음 · `commit.sh` 로 기록된 커밋만. 보안 검토 높음 — 계획서 `- Security result:` 에 높음이 남으면 `ship.sh`(`security-gate.mjs check`) · `pr-auto.mjs`(자동 머지 · Actions 넘기기)가 멈춘다 | "PR 올려줘 할 때만"(`--user-pr` 도 말한 출처를 증명하지 못한다) |
 | 비밀값 노출 금지 | `secret-guard.py`(모든 세션) — 설정 출력 · 비밀 파일 읽기 · 환경 통째 출력 · 토큰 변수 echo · 자격 증명 꺼내기 · 프로세스 전체 인자. `commit.sh` — 비밀 파일 이름 · 내용(개인키 · `.npmrc` 글자 그대로 토큰) 커밋 거부 | 로그 · 보고 · 계획서 · 커밋 메시지에 쓰는 것 |
 | 화면은 `scripts/screen` 으로만 | `scripts/screen-lint.sh` — 손으로 돌린다(검증 스크립트에 걸려 있지 않다) | 돌리지 않은 때 |
 

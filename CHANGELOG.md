@@ -36,6 +36,13 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.53: 공개 v0.52.1 이후 v0.53.0 ~ v0.53.3(직접 머지 4건)에서 사용자에게 보이는 변경만. 사이트 릴리스 줄 파일 8c7ed5d · 그 ko 말투 59b7732 · 배포 판정 6c0a111 은 배포 · 문서 내부라 뺐고, 압축 대비 4b67490 은 곧 압축 알림 · 리드 기록(New)과 압축 뒤 다시 읽기 · 원문 안내(Improved) 두 줄로 나눴다. 범위 끝은 열어 둔다 -->
 
+<!-- 0.57: v0.56.3..main 에서 사용자에게 보이는 변경 — 위험한 수정의 보안 검토(security-reviewer · 높음이면 올리기 · 머지 멈춤). 범위 끝은 열어 둔다 -->
+
+## 0.57 (v0.57.0 – · Nov 8, 2026)
+
+### New
+- Changes that touch command execution, file writes, login or permissions, secrets, external input or server access now get a read-only security review alongside the code review. A High finding stops shipping, auto-merge, direct merge and the Actions handoff until it is fixed and reviewed again, and merges wait until the latest commit has a security review result. The reviewer uses the Trail of Bits security plugins when they are installed and a built-in procedure otherwise.
+
 <!-- 0.56: v0.55.4..main 에서 사용자에게 보이는 변경 — 파일 미리보기를 pane 배치의 한 칸으로(끌어 옮기기 · 경계로 너비 · 높이). 범위 끝은 열어 둔다 -->
 
 ## 0.56 (v0.56.0 – · Nov 8, 2026)
