@@ -51,6 +51,7 @@ import { createHandoffWatch, handoffStateOf, HANDOFF_EVERY_MS } from '../lib/han
 import { jevEnabled } from '../lib/jev.mjs'
 import { createHash, randomBytes } from 'node:crypto'
 import { bodyIdOf, boardPort, githubOrg, loadConfig, paths, prLinkPattern } from '../lib/config.mjs'
+import { isSelfIssueRepo, selfIssueRepo } from '../lib/athena-bug-issue.mjs'
 import { isPackBody } from '../lib/bodies.mjs'
 import { autoMergeRepos, autoReviewAction, directMergeStatus, prBaseOf, prDoneHeldByDirect, claimAutoReview, needsReview, REOPEN_STATUS } from '../lib/pr-auto.mjs'
 import { screen, screenName, screenText, submitToPane } from '../lib/screen.mjs'
@@ -260,8 +261,8 @@ const readIssue = (path) => {
     status,
     column: ISSUE_COLUMN[status] ?? 'issue',
     repo: meta.repo || '',
-    // repo: athena(옛 이슈는 hermes) 는 아테나 자체 이슈 — 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고 그 PR(pr:)이 머지되면 끝(옛 이슈는 fix: 커밋)
-    scope: meta.repo === 'athena' || meta.repo === 'hermes' ? 'hermes' : 'service',
+    // repo: athena-studio(팩에 코어 레포가 있을 때) · athena(없을 때 · 옛 이슈는 hermes) 는 아테나 자체 이슈 — 코어 담당 에이전트가 코어 정본 레포에서 브랜치 · PR 로 고치고 그 PR(pr:)이 머지되면 끝(옛 이슈는 fix: 커밋)
+    scope: isSelfIssueRepo(meta.repo) ? 'hermes' : 'service',
     severity: meta.severity || '',
     type: meta.kind || '',
     source: meta.source || '',
@@ -501,12 +502,12 @@ const autoReviewPlans = async (plans) => {
 // 닫힌 시각은 현황판을 다시 켜도 남게 파일에 — 바뀔 때만 쓴다
 const PANE_WATCH_FILE = BOOT_PACK ? join(BOOT_PATHS.state, 'plan-panes.json') : join(ROOT, '.board-plan-panes.json')
 let paneWatch = (() => { try { return JSON.parse(readFileSync(PANE_WATCH_FILE, 'utf8')) } catch { return {} } })()
-// 계획서 기준 레포 — Agent 의 담당 레포, 없으면(정식) Work ref 경로의 레포, 코어 자체 작업은 athena
+// 계획서 기준 레포 — Agent 의 담당 레포, 없으면(정식) Work ref 경로의 레포, 코어 자체 작업은 아테나 자체 이슈 값(팩에 athena-studio 가 있으면 그것 · 없으면 athena)
 const planRepo = (plan) => {
   const agent = plain(field(checkpointOf(readText(join(ROOT, plan.id)) || ''), 'Agent'))
   const target = workspaceOf(agent)
   if (target) return target.repo
-  if (plan.scope === 'hermes') return 'athena'
+  if (plan.scope === 'hermes') return selfIssueRepo(config)
   return config.repos.find((repo) => plan.workRefs.includes(`/${repo.name}/`))?.name ?? ''
 }
 const openFollowUpIssue = (plan) => {

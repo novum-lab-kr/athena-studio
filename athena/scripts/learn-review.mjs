@@ -32,6 +32,7 @@ import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
+import { selfIssueRepo } from './lib/athena-bug-issue.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import { claudeLimited, codexReviewArgs, reviewToolState } from './lib/review-cli.mjs'
@@ -521,7 +522,7 @@ export const writeIssue = (item, planFile, dryRun) => {
   const body = `---
 title: ${item.kind === 'skill' ? `스킬 후보 ${slug(item.skill)} — ` : ''}${clip(maskSecrets(item.title || cardTitle(rule)).masked.replace(/\n/g, ' '), 90)}
 status: open
-repo: athena
+repo: ${selfIssueRepo(config)}
 agent:
 kind: knowledge
 severity: low
