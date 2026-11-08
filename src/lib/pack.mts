@@ -74,6 +74,8 @@ export const PACK_REASONS: readonly string[] = [
   'not-athena-folder', 'athena-no-pack', 'token-invalid', 'token-expired', 'replace-missing', 'not-backup', 'contract-mismatch',
   // 레포 더하기 · 빼기(repo add · remove — 코어 init.mjs addRepo · packs.mjs removeRepo)
   'repo-not-packs-body', 'repo-not-git', 'repo-inside-athena', 'repo-bad-name', 'repo-pack-not-set-up', 'repo-exists', 'repo-missing', 'repo-worktrees-left',
+  // 서버 더하기 · 빼기(server add · remove — 코어 servers.mjs)
+  'server-bad-host', 'server-bad-name', 'server-exists', 'server-host-registered', 'server-not-configured', 'server-missing', 'server-key-needed', 'server-host-key', 'server-unreachable',
 ]
 
 // 문구 자리 값(reasonArgs) — 글자 · 숫자만, 너무 긴 값은 자른다(파일 이름 · 레포 이름 · MB)

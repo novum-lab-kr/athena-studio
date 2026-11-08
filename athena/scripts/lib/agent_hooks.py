@@ -20,9 +20,9 @@ def hook(hermes, rel, args=""):
 
 
 def pre_tool_use(hermes, agent):
-    """Bash 보호 훅(commit-guard · secret-guard · process-guard) + 고르기 질문 → 요청(ask-to-request) — reviewer 는 secret · process 만"""
+    """Bash 보호 훅(commit-guard · secret-guard · process-guard · server-guard) + 고르기 질문 → 요청(ask-to-request) — reviewer 는 secret · process · server 만"""
     bash_hooks = [] if agent == "reviewer" else [hook(hermes, "scripts/hooks/commit-guard.py")]
-    bash_hooks += [hook(hermes, "scripts/hooks/secret-guard.py"), hook(hermes, "scripts/hooks/process-guard.py")]
+    bash_hooks += [hook(hermes, "scripts/hooks/secret-guard.py"), hook(hermes, "scripts/hooks/process-guard.py"), hook(hermes, "scripts/hooks/server-guard.py")]
     entries = [{"matcher": "Bash", "hooks": bash_hooks}]
     if agent != "reviewer":
         entries.append({"matcher": "AskUserQuestion", "hooks": [hook(hermes, "scripts/hooks/ask-to-request.py")]})

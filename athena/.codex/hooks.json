@@ -86,6 +86,11 @@
             "type": "command",
             "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/process-guard.py\"",
             "timeout": 5
+          },
+          {
+            "type": "command",
+            "command": "python3 \"$(git rev-parse --show-toplevel)/scripts/hooks/server-guard.py\"",
+            "timeout": 30
           }
         ]
       }

@@ -110,6 +110,45 @@ const flag = (name) => {
   return index > 0 ? process.argv[index + 1] : null
 }
 
+// 서버 — 코어 scripts/lib/servers.mjs 와 같은 --json 모양. 가짜는 ~/.ssh/config 를 읽지 않고 정해 둔 별칭 둘을 보이며,
+// 부른 본체의 pack/pack.json servers[] 만 고친다(접속 시험 · 에이전트 · 지식 뼈대는 없다). 별칭에 bad 가 들면 접속 시험 실패 흉내
+const FAKE_HOSTS = ['dukbae-server', 'web-demo', 'bad-host']
+function fakeServer(sub, arg) {
+  const file = path.join(process.cwd(), 'pack', 'pack.json')
+  let pack = {}
+  try {
+    pack = JSON.parse(fs.readFileSync(file, 'utf8'))
+  } catch {
+    if (sub !== 'hosts') fail('not-found', '지금 팩에 pack.json 이 없다 — /setup 을 먼저 끝낸다', { reason: 'repo-pack-not-set-up' })
+  }
+  const servers = Array.isArray(pack.servers) ? pack.servers : []
+  const write = () => {
+    pack.servers = servers
+    fs.writeFileSync(file, `${JSON.stringify(pack, null, 2)}\n`)
+  }
+  if (sub === 'hosts') return done({ ok: true, hosts: FAKE_HOSTS.map((host) => ({ host, registered: servers.some((item) => item.host === host) })) })
+  if (sub === 'add') {
+    if (!arg || !/^[\w.-]+$/.test(arg)) fail('invalid-name', `ssh 별칭이 올바르지 않다: ${arg || '(없음)'}`, { reason: 'server-bad-host' })
+    const existing = servers.find((item) => item.host === arg)
+    if (existing) return done({ ok: true, already: true, server: existing, scaffolded: [], routing: false })
+    if (/bad/.test(arg)) fail('failed', `${arg} 에 비밀번호 없이 들어가지지 않는다`, { reason: 'server-key-needed', reasonArgs: { host: arg } })
+    const name = (flag('--name') || arg.replace(/-server$/, '')).toLowerCase()
+    if (servers.some((item) => item.name === name)) fail('exists', `같은 이름의 서버가 이미 팩에 있다: ${name}`, { reason: 'server-exists', reasonArgs: { name } })
+    const entry = { name, host: arg, agents: [`${name}-ops`], paths: [], repos: [] }
+    servers.push(entry)
+    write()
+    return done({ ok: true, server: entry, scaffolded: [], routing: false })
+  }
+  if (sub === 'remove') {
+    const at = servers.findIndex((item) => item.name === arg)
+    if (at < 0) fail('not-found', `팩에 그런 서버가 없다: ${arg}`, { reason: 'server-missing', reasonArgs: { name: arg } })
+    servers.splice(at, 1)
+    write()
+    return done({ ok: true, removed: arg, backup: null, files: [], routing: false })
+  }
+  fail('usage', '사용: fake-pack.js server hosts | add <별칭> | remove <이름>')
+}
+
 async function main() {
   const [command, sub, arg] = process.argv.slice(2)
   // 약속 번호 — ATHENA_FAKE_CONTRACT=1 이면 옛 코어 흉내(version 명령이 없다)
@@ -119,6 +158,7 @@ async function main() {
     return done({ ok: true, core: 'fake', contract: fakeContract, dirty: false, dataFormats: [1, 1], capabilities: ['open', 'contract'], body: process.cwd(), bodyId: 'fake', deploy: null })
   }
   if (command === 'request') return fakeRequest(sub, arg)
+  if (command === 'server') return fakeServer(sub, arg)
   if (command !== 'pack') fail('usage', '사용: fake-pack.js pack <명령> · request <명령> · version')
   // 새 코어처럼 — --json 인데 약속 번호가 다르거나(있으면) pack use · new 에 없으면 거부
   const contract = process.env.ATHENA_CONTRACT || ''

@@ -88,3 +88,24 @@ Athena Studio 의 spaces `+` 로 git 레포 폴더를 고르면 앱이 1단계�
 3. 그 레포만 5단계(작업자 하나 — 뼈대 채우기) · `ROUTING.md` 표 한 줄과 "어느 레포인지 고르기" · `docs/services.md` 그 서비스 한 줄
 4. 그 레포만 6단계(`scripts/verify/<레포>.sh`) · 7단계(`node scripts/sync-fingerprint.mjs --repo <레포>` → `--accept` → `node scripts/build-derived.mjs`) · 흐름 문서는 묻는다(5-1)
 5. 보고 — 8단계 형식에서 그 레포 것만
+
+## 서버 하나 더하기 — SSH 로 들어가는 서버
+Athena Studio 사이드바의 [서버 추가] 팝업에서 이 컴퓨터 `~/.ssh/config` 의 Host 별칭을 고르거나(`Host *` 같은 패턴은 목록에 없다) 별칭 · 사용자 · 주소 · 포트 · 키 파일 경로를 새로 넣으면 — 새로 넣은 것은 [접속 확인](BatchMode)이 통과해야 `~/.ssh/config` 끝에 Host 블록을 덧붙인다(비밀번호 칸 없음 · 키 내용은 읽지 않음) — 앱이 1단계를 하고 아테나에게 "서버 <이름> 을 팩에 더했어 — …" 를 보낸다. 아테나 창이 없으면 앱이 [나중에][분석하기] 를 직접 묻고, [분석하기] 면 아테나 창을 열어 3단계부터 맡긴다(사이드바 서버 줄 우클릭 [분석하기] 도 같다). 말로 "<별칭> 서버 추가해줘" 라고 해도 같다.
+**접속 정보(주소 · 사용자 · 키 · 비밀번호)는 이 컴퓨터 `~/.ssh/config` 에만 둔다** — 팩 · 계획서 · 로그 · 보고에는 별칭과 서버 이름만 적는다. 비밀번호 로그인 · 키 만들기 · 서버에 아테나 설치는 하지 않는다.
+1. (앱이 안 했으면) `bin/athena server add <ssh 별칭> [--name <이름>]` — `ssh -G` 로 설정이 있는지 → `BatchMode` 로 비밀번호 없이 들어가지는지 시험 → 통과하면 `pack.json` `servers[]` 항목(별칭만) · 에이전트 `<이름>-ops` · 지식 뼈대 `knowledge/servers/<이름>/`(rules · structure · gotchas) · `ROUTING.md` "서버" 절 한 줄 · 팩 링크. 실패하면 팩은 그대로고 이유만 온다 — `server-key-needed`(공개 키를 서버에 — 사용자가 `ssh-copy-id <별칭>`) · `server-host-key`(터미널에서 한 번 들어가 지문 확인) · `server-unreachable` · `server-not-configured`(`~/.ssh/config` 에 그 Host 가 없다). 같은 이름이 있으면 `server-exists` — 다른 이름을 묻고 `--name`
+2. **한 번 묻는다**: "서버 <이름> 을 지금 분석하고 다이어그램까지 만들까요?"(AskUserQuestion — [지금 분석] · [나중에]). 나중이면 여기서 보고하고 끝(뼈대만 있는 상태 — 에이전트가 처음 일할 때 분석부터 한다)
+3. 분석 — 경량 계획서 하나에 묶어 서버 에이전트(`<이름>-ops`)에게 넘긴다(`scripts/delegate.sh <이름>-ops --plan … --here`). 작업자 지시:
+   ```
+   서버 <이름> 을 읽기 명령만으로 분석해 docs/knowledge/servers/<이름>/structure.md · gotchas.md 를 채운다.
+   접속은 scripts/ssh-run.sh <이름> -- <명령> 으로만. 서버에 아무것도 쓰지 않는다.
+   볼 것: OS · 커널 · CPU · 메모리 · 디스크 / 서비스(systemctl list-units --type=service --state=running · pm2 ls · docker ps)
+   / 열린 포트(ss -ltnp) / 프록시(Caddy · nginx 설정 — 도메인 → 넘기는 곳) / 배포 경로(서비스 정의의 WorkingDirectory · 컨테이너 마운트)
+   / 로그 자리 · 크론 · 타이머 / 팩 레포 연결(배포 경로의 git remote · package.json name 을 pack.json repos 와 맞춰 본다).
+   .env* · 키 · 인증서 파일은 내용을 읽지 않는다(있는지 · 크기만). 주소 · 계정 · 비밀값은 문서에 적지 않는다.
+   모르는 칸은 "확인 필요". 팩 레포와 이어진 것은 pack.json servers[] 그 항목의 repos · paths 에 적는다.
+   ```
+4. 다이어그램 — `/diagram` 으로 서버 그림 하나(`docs/diagrams/AUTHORING.md` "서버 그림") · `ROUTING.md` 그 서버 줄의 "무엇이 도나" 칸 채우기
+5. 보고 — 등록한 서버 · 분석 요약(서비스 · 포트 · 연결된 팩 레포) · "확인 필요" 칸 · 다이어그램 주소
+
+서버 작업도 계획서 하나에 묶는다(경량 `plans/task/`) — 서버를 바꾼 작업은 Progress 에 **바꾼 파일 · 백업 위치 · 실행한 명령** 을 한 줄씩 남긴다. 팩 레포에서 배포된 코드는 서버에서 고치지 않고 그 레포에서 고쳐 배포 흐름으로 올린다 — 서버에서 직접 고치는 것은 서버 설정뿐(계획서 결정 D3). 서버 보호는 **허용 목록만 자유**다 — 서버에는 `scripts/ssh-run.sh` 로만 들어가고(바로 가는 ssh · scp · rsync 는 훅 `scripts/hooks/server-guard.py` 가 막는다), 허용 목록(`scripts/lib/server_allow.py` — 정본)의 읽기 명령만 묻지 않는다. 목록 밖 명령과 모든 파일 고치기(`--put` — diff · 원격 백업 위치를 보여 준다)는 [작업] 확인 요청을 열고, 답이 `실행` 이면 `ATHENA_SERVER_APPROVED=<요청 id>` 를 붙여 다시 낸다(60분 안). 등록 시험(`true`) · 앱 서버 상태 칸 갱신도 이 목록 안의 명령만 쓴다 — 상태 칸은 `scripts/ssh-run.sh <이름> --status`(고정 읽기 명령 · 부하 · 메모리 · 디스크 · systemd · docker · 요청을 열지 않고, 목록 밖이 되면 실패로 끝난다)를 몇 분마다 부른다.
+빼기: `bin/athena server remove <이름>` — 팩 자동 백업 뒤 `pack.json` 항목 · 에이전트 · 지식 · ROUTING 줄을 지운다(서버 자체는 건드리지 않는다).

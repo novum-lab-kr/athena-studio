@@ -9,7 +9,7 @@ import { isAthenaWorkspace, switchTab, workspaceName } from './tabs.ts'
 import { PANEL_FILLS, PANEL_ICONS, setSpacesCollapsed } from './side-panels.ts'
 import { StudioUi } from './ui/index.ts'
 import type { SpacePane, SpaceRepo, SpacesActions } from './ui/spaces.tsx'
-import { hidePackProgress, lookDialog, packAlert, packDialog, packFailAlert, showPackProgress } from './pack-dialogs.ts'
+import { hidePackProgress, lookDialog, packAlert, packDialog, packFailAlert, showPackProgress, showServerAdd } from './pack-dialogs.ts'
 import type { PackDialogAction } from './pack-dialogs.ts'
 import { popupOption, refreshPackList, runPackFlow } from './pack-switch.ts'
 import { branches, paneStatus } from './main.ts'
@@ -177,6 +177,84 @@ export async function offerAddRepo({ dir, name }: { dir: string; name: string })
   showToast(say(result.already ? 'spaces.addRepoAlready' : 'spaces.addRepoDone', { repo: result.repo.name }), 'success')
 }
 
+// ── 서버(팩 pack.json servers) — 사이드바 servers 묶음 · 하단 서버 상태 칸이 같은 목록을 본다 ──
+let packServers: ServerEntry[] = []
+export async function refreshServers(): Promise<void> {
+  const next = (await studio.serverList().catch(() => [])) || []
+  if (JSON.stringify(next) === JSON.stringify(packServers)) return
+  packServers = next
+  StudioUi.serverStatus.setServers(next)
+  if (attached) renderSides()
+}
+
+// spaces 서버 + — 서버 추가 팝업(ui/server-add.tsx): 이 컴퓨터 ~/.ssh/config 의 Host 를 고르거나 새로 입력해 config 에 덧붙인다. 팩에는 별칭만
+async function offerAddServer(): Promise<unknown> {
+  showPackProgress(say('spaces.addServerReading'), false)
+  // Host 목록을 못 읽어도(코어가 옛 판 등) 새로 입력은 된다 — 목록만 비운다
+  const [listed, keys] = await Promise.all([studio.serverHosts().catch(() => null), studio.serverKeys().catch(() => [])])
+  hidePackProgress()
+  const done = await showServerAdd(listed && listed.ok ? listed.hosts : [], keys)
+  if (!done) return
+  let result: ServerAddReply
+  if (done.kind === 'host') {
+    showPackProgress(say('spaces.addServerProgress', { host: done.host }), false)
+    result = await studio.serverAdd(done.host)
+    hidePackProgress()
+  } else result = done.reply
+  if (!result.ok) return packFailAlert(say('spaces.addServerFailed'), result)
+  await refreshServers()
+  const server = result.server.name
+  if (result.already) return showToast(say('spaces.addServerAlready', { server }), 'success')
+  if (result.asked !== false) return showToast(say('spaces.addServerDone', { server }), 'success')
+  // 아테나 창이 없어 묻지 못했다 — 앱이 직접 묻고, 고르면 아테나 창을 열어 분석을 맡긴다
+  return askAnalyze(server)
+}
+
+async function askAnalyze(server: string): Promise<unknown> {
+  const choice = await packDialog({
+    title: say('spaces.serverAnalyzeTitle', { server }),
+    body: [say('spaces.serverAnalyzeQuestion'), el('p', 'muted', say('spaces.serverAnalyzeNote'))],
+    actions: [{ label: say('spaces.serverAnalyze'), value: 'analyze', kind: 'primary' }, { label: say('common.later'), value: null }],
+  })
+  if (choice === 'analyze') return analyzeServer(server)
+}
+
+// 분석하기 — 아테나 창을 열고(없으면) 받을 준비가 되면 분석 지시를 넣는다(main serverAnalyze · 최대 90초)
+async function analyzeServer(name: string): Promise<void> {
+  showToast(say('spaces.serverAnalyzeStarting', { server: name }), 'info')
+  const result = await studio.serverAnalyze(name, estimateCells($('panes'))).catch(() => ({ ok: false, text: say('spaces.serverAnalyzeFailed') }))
+  if (!result.ok) showToast(result.text || say('spaces.serverAnalyzeFailed'))
+}
+
+// 서버 줄 누르기 — 사람이 직접 쓰는 접속 터미널(ssh <별칭> · 작업 공간 ssh-<서버>)
+async function openServer(name: string): Promise<void> {
+  const opened = await studio.serverOpen(name, estimateCells($('panes')))
+  if (opened && opened.error) showToast(opened.error)
+}
+
+// 팩에서 서버 빼기 — 서버는 그대로 · 팩 자동 백업을 알리고 확인
+async function removeServerFromPack(name: string): Promise<unknown> {
+  const ok = await packDialog({
+    title: say('spaces.removeServerTitle', { server: name }),
+    body: [el('p', null, say('spaces.removeServerBody')), el('p', 'muted', say('spaces.removeServerNote'))],
+    actions: [{ label: say('spaces.removeServerYes'), value: 'yes', kind: 'danger' }, { label: say('common.cancel'), value: null }],
+  })
+  if (!ok) return
+  showPackProgress(say('spaces.removeServerProgress', { server: name }), false)
+  const result = await studio.serverRemove(name)
+  hidePackProgress()
+  if (!result.ok) return packFailAlert(say('spaces.removeServerFailed'), result)
+  await refreshServers()
+  showToast(say('spaces.removeServerDone', { server: name }), 'success')
+}
+
+async function serverMenu(name: string, event: { clientX: number; clientY: number }): Promise<unknown> {
+  const action = await studio.serverContextMenu({ x: Math.round(event.clientX), y: Math.round(event.clientY) })
+  if (action === 'open-server') return openServer(name)
+  if (action === 'analyze-server') return analyzeServer(name)
+  if (action === 'remove-server') return runPackFlow(() => removeServerFromPack(name))
+}
+
 // 레포 에이전트 부르기 — 브랜치를 앱 팝업에서 고르고(최근 작업 브랜치 이어 쓰기 · 새 브랜치) 워크트리에 바로 띄운다. main 직접 레포는 묻지 않는다
 async function callRepoAgent(repo: SpaceRepo): Promise<unknown> {
   const info = await studio.packCallInfo(repo.name)
@@ -232,6 +310,7 @@ export function renderSides(): void {
       return { id: workspace.id, label: workspace.label, name: workspaceName(workspace), cwd: workspace.cwd, athena, repo, branch: branches[workspace.id] || null, panes: workspacePanes(workspace.id) }
     }),
     idleRepos: packRepos.filter((repo) => !labels.has(repo.name)),
+    servers: packServers,
     paneStatus,
   })
 
@@ -258,6 +337,12 @@ export function spacesActions(): SpacesActions {
     setCollapsed: setSpacesCollapsed,
     menu: (target, event) => spaceMenu({ workspace: screen.workspaces.find((workspace) => workspace.id === target.workspace) || null, repo: target.repo }, event),
     callRepo: (repo) => runPackFlow(() => callRepoAgent(repo)),
+    addServer: () => runPackFlow(() => offerAddServer()),
+    openServer: (name) => {
+      if (currentTab !== 'work') switchTab('work')
+      void openServer(name)
+    },
+    serverMenu: (name, event) => serverMenu(name, event),
     iconLoaded: () => {
       if (attached) renderSides()
     },

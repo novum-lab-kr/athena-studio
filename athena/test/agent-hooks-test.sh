@@ -39,9 +39,9 @@ for agent in ("fe", "reviewer"):
         name in commands(config["hooks"]["UserPromptSubmit"]) + commands(config["hooks"]["SessionStart"])
         for config in (inline, outside) for name in ["pane-session.py"]))
 pre = commands(settings("inline", "fe")["hooks"]["PreToolUse"])
-check("fe — commit-guard · secret-guard · process-guard · ask-to-request", pre == ["commit-guard.py", "secret-guard.py", "process-guard.py", "ask-to-request.py"], pre)
+check("fe — commit-guard · secret-guard · process-guard · server-guard · ask-to-request", pre == ["commit-guard.py", "secret-guard.py", "process-guard.py", "server-guard.py", "ask-to-request.py"], pre)
 pre = commands(settings("inline", "reviewer")["hooks"]["PreToolUse"])
-check("reviewer — secret-guard · process-guard 만(commit-guard · ask-to-request 없음)", pre == ["secret-guard.py", "process-guard.py"], pre)
+check("reviewer — secret-guard · process-guard · server-guard 만(commit-guard · ask-to-request 없음)", pre == ["secret-guard.py", "process-guard.py", "server-guard.py"], pre)
 reviewer = settings("inline", "reviewer")
 check("reviewer — 끝 알림 · 자동 압축 없음", "Stop" not in reviewer["hooks"] and "autoCompactWindow" not in reviewer)
 fe = settings("inline", "fe")
@@ -83,8 +83,8 @@ codex = json.loads(pathlib.Path(src, ".codex/hooks.json").read_text())
 entries = [entry for entry in codex["hooks"].get("PreToolUse", []) if entry.get("matcher") == "Bash"]
 check("Codex — Bash 실행 전 훅으로 연결", len(entries) == 1 and entries[0].get("matcher") == "Bash", entries)
 handlers = [hook for entry in entries for hook in entry["hooks"]]
-check("Codex — secret · process만 연결(commit은 기존 위임 설정에만)",
-      [hook["command"].split("/")[-1].rstrip('"') for hook in handlers] == ["secret-guard.py", "process-guard.py"])
+check("Codex — secret · process · server만 연결(commit은 기존 위임 설정에만)",
+      [hook["command"].split("/")[-1].rstrip('"') for hook in handlers] == ["secret-guard.py", "process-guard.py", "server-guard.py"])
 for name, denied, allowed in (
     ("secret-guard.py", "cat .env", "ps -axo pid=,comm="),
     ("process-guard.py", "pkill example", "echo pkill"),

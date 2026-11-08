@@ -63,6 +63,9 @@
  *                                                     고른 레포로 빈 팩(packs/<회사>)·athena.config.json 을 만들고 링크까지
  *   athena repo add <레포 폴더> [--name <이름>] [--json]       이미 있는 팩에 레포 하나 더하기 — pack.json · 자리 · repos/ 링크 · 그 레포 뼈대 · 팩 링크(채우기는 docs/setup.md "레포 하나 더하기")
  *   athena repo remove <레포 이름> [--json]                  팩에서 레포 빼기 — 팩 자동 백업 · pack.json · 자리 · 링크 · 그 레포 에이전트 · 지식 · 검증(레포 폴더는 그대로 · 워크트리가 있으면 거부)
+ *   athena server hosts [--json]                       이 컴퓨터 ~/.ssh/config 의 Host 별칭 목록(* ? ! 패턴 제외 · 주소는 내보내지 않는다) — 앱 "서버 추가"
+ *   athena server add <ssh 별칭> [--name <이름>] [--json]  서버 하나 등록 — ssh -G 로 설정 확인 · BatchMode 접속 시험 · pack.json servers[](별칭만) · <이름>-ops 에이전트 · 지식 뼈대 · ROUTING 줄 · 링크
+ *   athena server remove <서버 이름> [--json]          팩에서 서버 빼기 — 팩 자동 백업 · pack.json 항목 · 에이전트 · 지식 · ROUTING 줄(서버는 건드리지 않는다)
  *   athena scaffold [<레포> …]                        pack.json 레포마다 에이전트·지식 뼈대·검증 스크립트 + 팩 서비스 문서(있는 파일은 그대로) + 링크
  *
  * 팩 위치는 athena.config.json 의 pack. 링크 목록은 이 컴퓨터의 .git/info/exclude 에 적어 git 이 무시하게 한다
@@ -78,6 +81,7 @@ import { setRepoDisplayName, setRepoIcon } from './lib/pack-repo-look.mjs'
 import { setAutoMerge } from './lib/pack-merge.mjs'
 import { CONTRACT, deletePack, discardPack, newPackBody, openPack, rollbackUpdate, updateBodies, useAsOpen, versionInfo } from './lib/bodies.mjs'
 import { addRepo, initPack, scaffold, scanRepos } from './lib/init.mjs'
+import { addServer, removeServer, sshHosts } from './lib/servers.mjs'
 import { isLink, linkOverlay, unlinkOverlay } from './lib/overlay.mjs'
 import {
   PackError, attachPack, backupWithWork, boardToken, busyNow, exportPack, headOf, importToken, inspectAthena, inspectSource, listPacks, migrate, removeRepo, syncRepos,
@@ -215,6 +219,27 @@ const runRepoRemove = () => {
   const quiet = console.log
   if (asJson) console.log = () => {}
   try { link() } finally { console.log = quiet }
+  return result
+}
+
+// 서버 — lib/servers.mjs 뒤 팩 링크(에이전트 · knowledge/servers 링크가 생기고 빠진다 · docs/setup.md "서버 하나 더하기")
+const quietLink = () => {
+  const quiet = console.log
+  if (asJson) console.log = () => {}
+  try { link() } finally { console.log = quiet }
+}
+const runServerAdd = () => {
+  const host = positional()[0]
+  if (!host) throw new PackError('usage', '사용: athena server add <ssh 별칭> [--name <이름>] [--json]')
+  const result = addServer(ROOT, { host, name: flag('name'), report })
+  if (!result.already) quietLink()
+  return result
+}
+const runServerRemove = () => {
+  const name = positional()[0]
+  if (!name) throw new PackError('usage', '사용: athena server remove <서버 이름> [--json]')
+  const result = removeServer(ROOT, name, { report })
+  quietLink()
   return result
 }
 
@@ -506,6 +531,9 @@ else if (command === 'update') {
 else if (command === 'scaffold') runScaffold()
 else if (command === 'repo' && sub === 'add') runPack('repo add', () => runRepoAdd())
 else if (command === 'repo' && sub === 'remove') runPack('repo remove', () => runRepoRemove())
+else if (command === 'server' && sub === 'hosts') runPack('server hosts', () => sshHosts(ROOT))
+else if (command === 'server' && sub === 'add') runPack('server add', () => runServerAdd())
+else if (command === 'server' && sub === 'remove') runPack('server remove', () => runServerRemove())
 else if (command === 'request' && requestCommands[sub]) runPack(`request ${sub}`, requestCommands[sub])
 else if (command === 'pack' && sub === 'link') link()
 else if (command === 'pack' && sub === 'unlink') unlink()

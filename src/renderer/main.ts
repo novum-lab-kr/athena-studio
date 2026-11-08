@@ -9,7 +9,7 @@ import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshDiagramsReady, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
 import { initTips } from './tips.ts'
-import { refreshPackRepos, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
+import { refreshPackRepos, refreshServers, renderSides, spaceColor, spaceInitials, spacesActions } from './space-actions.ts'
 import { applySideFolds, closePreview, explorerActions, setPanelHidden } from './side-panels.ts'
 import { initBrowser } from './browser.ts'
 import { initWork } from './work.ts'
@@ -29,6 +29,7 @@ async function initPacks(): Promise<void> {
   StudioUi.packProgress.mount($('pack-progress').querySelector('.pack-box') as HTMLElement)
   studio.onPackState((next) => {
     refreshPackRepos()
+    refreshServers()
     refreshDiagramsReady()
     setPacks(next)
     renderPackRail()
@@ -139,6 +140,7 @@ function applyLanguage(next: I18nPayload): void {
 async function init(): Promise<void> {
   // 코어 업데이트 결과 — main 이 화면을 다 읽자마자(did-finish-load) 한 번 보내므로 첫 await 전에 받을 준비를 한다
   StudioUi.coreUpdate.mount($('core-update').querySelector('.pack-box') as HTMLElement)
+  StudioUi.serverAdd.mount($('server-add').querySelector('.pack-box') as HTMLElement)
   studio.onCoreUpdate(showCoreUpdate)
   // 앱 업데이트 알림(좌측 하단) — 상태는 work.ts applyAppUpdate 가 넣는다
   StudioUi.appUpdateCorner.mount($('app-update-corner'))
@@ -198,6 +200,8 @@ async function init(): Promise<void> {
     if (attached) renderSides()
   })
   StudioUi.spaces.setup($('spaces'), spacesActions())
+  // 탭 줄 [서버] 버튼 · 서버 탐색기 칸 — 서버 목록은 refreshServers 가 넣는다
+  StudioUi.serverStatus.mount($<HTMLButtonElement>('servers-open'), $('server-view'))
   applySideFolds()
   $('side-open').addEventListener('click', () => setPanelHidden(false))
   $('preview-close').addEventListener('click', closePreview)
@@ -207,6 +211,8 @@ async function init(): Promise<void> {
     if (currentTab === 'work' && !$('side-panel').hidden && attached) StudioUi.explorer.refresh()
     // 팩 레포 목록 — /setup 이 레포를 더하거나 연결이 바뀌면 spaces 의 흐린 레포 줄도 따라간다(작은 파일 하나 읽기)
     if (attached) refreshPackRepos()
+    // 팩 서버 목록 — 아테나가 말로 서버를 더하거나 빼도 servers 묶음 · 서버 상태 칸이 따라간다(같은 pack.json)
+    if (attached) refreshServers()
     // 다이어그램 버튼 — 목록이 나중에 만들어져도 켜지게(파일 하나 보기)
     if (attached) refreshDiagramsReady()
   }, 3000)
