@@ -15,7 +15,7 @@ FAIL=0
 BODY="$WORK/body"; DATA="$WORK/data"
 mkdir -p "$BODY/scripts/lib" "$BODY/bin" "$BODY/plans/task" "$DATA/state"
 cp "$SRC/scripts/lead-send.py" "$BODY/scripts/"
-cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$BODY/scripts/lib/"   # .mjs — 사건 기록(events.mjs)
+cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$SRC"/scripts/lib/*.json "$BODY/scripts/lib/"   # .mjs — 사건 기록(events.mjs)
 ln -s "$DATA" "$BODY/.pack-data"
 QUEUE="$DATA/state/lead-send"
 EVENTS="$DATA/state/events.jsonl"
@@ -23,6 +23,7 @@ PLAN="$BODY/plans/task/x.md"
 
 # 가짜 화면 CLI — 받은 인자를 로그에. waiting 파일이 있으면 화면에 고르기 창 · waiting-run 이면 pane run 을 데몬처럼 거절,
 # timeout 이면 전송 확인 실패 · closed 에 적힌 pane 은 없음 · panes 파일(JSON 배열)이 pane list
+# receive-on-send 면 넣자마자(lead-send 가 돌아오기 전에) 아테나 입력 훅처럼 받음 표시를 한다(agent_turn.mark_received)
 mkdir -p "$WORK/cli"
 cat > "$WORK/cli/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
@@ -35,7 +36,8 @@ case "$1 $2" in
   'pane run')
     if [ -f "$FAKE_DIR/waiting-run" ]; then echo '{"error":"unavailable","message":"입력을 기다리는 질문이 열려 있다"}' >&2; exit 1; fi
     if [ -f "$FAKE_DIR/timeout" ]; then echo '{"error":"timeout","message":"입력 전송을 확인하지 못했다 — pane 입력칸을 확인해 주세요"}' >&2; exit 1; fi
-    echo "SENT $3 $4" >> "$FAKE_DIR/sent" ;;
+    echo "SENT $3 $4" >> "$FAKE_DIR/sent"
+    if [ -f "$FAKE_DIR/receive-on-send" ]; then python3 -c 'import sys; sys.path.insert(0, sys.argv[1]); import agent_turn; agent_turn.mark_received(sys.argv[2], sys.argv[3])' "$FAKE_BODY/scripts/lib" "$3" "$4"; fi ;;
 esac
 exit 0
 CLIEOF
@@ -48,7 +50,7 @@ echo '{"ok":true,"request":{"id":"r-test"}}'
 ATHEOF
 chmod +x "$BODY/bin/athena"
 
-export FAKE_DIR="$WORK"; export FAKE_LOG="$WORK/log"
+export FAKE_DIR="$WORK"; export FAKE_LOG="$WORK/log"; export FAKE_BODY="$BODY"
 trap 'rm -rf "$WORK"' EXIT   # 남은 처리기는 대기열 폴더가 없어지면 스스로 끝난다
 
 lead_send() {   # <글> [추가 인자…] — 에이전트 pane p9 에서 아테나 pane p1 으로
@@ -57,6 +59,9 @@ lead_send() {   # <글> [추가 인자…] — 에이전트 pane p9 에서 아�
 }
 count() { if [ -f "$1" ]; then grep -c "${2:-.}" "$1"; else echo 0; fi; }
 queued() { find "$QUEUE" -name '*.json' 2>/dev/null | wc -l | tr -d ' '; }
+# 받음 확인 기록(state/lead-notices · scripts/lib/agent_turn.py) — 개수 · <kind> 와 글이 든 기록 수
+notices() { ls "$DATA/state/lead-notices" 2>/dev/null | grep -cE '^[0-9a-f]{32}\.json$'; }
+notice_with() { python3 -c 'import json,pathlib,sys; print(sum(1 for p in pathlib.Path(sys.argv[1]).glob("*.json") if (d:=json.loads(p.read_text())).get("kind")==sys.argv[2] and sys.argv[3] in d.get("text","") and d.get("lead")=="p1"))' "$DATA/state/lead-notices" "$1" "$2" 2>/dev/null || echo 0; }
 check() { if [ "$2" = "$3" ]; then echo "  ✔ $1"; else echo "  ✖ $1 (기대 $3 · 실제 $2)"; FAIL=1; fi; }
 wait_until() {   # <조건 명령> — 최대 15초
   for _ in $(seq 1 75); do eval "$1" && return 0; sleep 0.2; done; return 1
@@ -73,7 +78,7 @@ panes() {
 }
 plan_lines() { grep -c "아테나(pane $1)에 못 보낸 글" "$PLAN"; }
 reset() {
-  rm -f "$WORK/sent" "$WORK/requests" "$WORK/waiting" "$WORK/waiting-run" "$WORK/timeout" "$WORK/closed" "$WORK/panes" "$EVENTS"; rm -rf "$QUEUE"
+  rm -f "$WORK/sent" "$WORK/requests" "$WORK/waiting" "$WORK/waiting-run" "$WORK/timeout" "$WORK/closed" "$WORK/panes" "$WORK/receive-on-send" "$EVENTS"; rm -rf "$QUEUE" "$DATA/state/lead-notices"
   printf '# x\n\n## Checkpoint\n- Status: in_progress\n- Lead pane: %s\n\n## 결과\n- (요약)\n\n## Commits\n- (없음)\n' "${1:-p1}" > "$PLAN"
 }
 
@@ -128,6 +133,16 @@ check "✅ 출력" "${out:0:1}" "✅"
 check "한 번 넣음" "$(count "$WORK/sent" 'SENT p1 \[fe → 아테나\] 끝 A')" 1
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "대기열 없음" "$(queued)" 0
+check "--track 없으면 받음 확인 기록 없음" "$(notices)" 0
+out="$(lead_send '[fe → 아테나] 끝 B' --track)"
+check "--track 이면 넣은 글을 받음 확인 기록(kind turn)으로" "$(notice_with turn '끝 B')" 1
+received_with() { python3 -c 'import json,pathlib,sys; print(sum(1 for p in pathlib.Path(sys.argv[1]).glob("*.json") if sys.argv[2] in (d:=json.loads(p.read_text())).get("text","") and d.get("received_at") and not d.get("pending")))' "$DATA/state/lead-notices" "$1" 2>/dev/null || echo 0; }
+touch "$WORK/receive-on-send"
+out="$(lead_send '[fe → 아테나] 끝 C' --track)"
+check "넣자마자 아테나 입력 훅이 돌아도 받음 표시가 남는다(기록을 넣기 전에 만든다)" "$(received_with '끝 C')" 1
+check "그 기록은 하나뿐(넣은 뒤 새로 만들지 않는다)" "$(notice_with turn '끝 C')" 1
+rm -f "$WORK/receive-on-send"
+check "--track 없이 넣은 글은 기록을 남기지 않는다(넣기 전 기록은 지운다)" "$(notice_with unconfirmed '끝 A')" 0
 
 echo "▶ 고르기 창 → 요청 없이 모아 뒀다 닫히면 차례대로"
 reset
@@ -277,6 +292,7 @@ check "pane run 한 번만" "$(count "$FAKE_LOG" '^pane run p1 확인 실패')" 
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "계획서에 입력칸 안내" "$(grep -c '입력칸에 남았을 수 있어 다시 넣지 않았어요: 확인 실패$' "$PLAN")" 1
 check "대기열 없음" "$(queued)" 0
+check "전송 확인 실패는 받음 확인 기록(kind unconfirmed) — 현황판이 다시 넣기 대상으로 본다" "$(notice_with unconfirmed '확인 실패')" 1
 
 echo "▶ 계획서가 없고 전송 확인 실패 → ❌ · 글은 사건 기록에"
 reset

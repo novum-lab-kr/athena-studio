@@ -41,8 +41,8 @@ import { githubOrg, loadConfig, paths } from './lib/config.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
 import { logEvent } from './lib/events.mjs'
 import { ackRequest, cancelRequest, listRequests, openRequest, showRequest } from './lib/requests.mjs'
-import { screen, screenText, submitToPane } from './lib/screen.mjs'
-import { menuOpen } from './board/pane-delivery.mjs'
+import { screen, submitToPane } from './lib/screen.mjs'
+import { createLeadNotifier } from './lib/lead-notice.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
 import { claudeLimited, codexReviewArgs, readCodexSettings, reviewToolState, codexReviewModels } from './lib/review-cli.mjs'
@@ -420,30 +420,10 @@ const ask = (planFile, { key, title, body, options = [] }) => {
 // 요청은 사람이 고를 것이 있는 것만 — 머지 확인(머지/보류) · 결정 필요(결정 콘솔).
 // 받는 곳: 계획서 "- Lead pane:"(정식은 html leadPane)이 살아 있으면 그것 → 아니면 살아 있는 아테나 pane(본체 폴더의 claude · 🤖 위임 이름이 아닌 것 — 현황판 readPanes 와 같은 기준).
 // 둘 다 없거나 못 보내면 지금처럼 요청으로 남긴다. 같은 key 로 같은 글(같은 HEAD · 제목)을 이미 보냈으면 다시 보내지 않는다
-// 이름이 .json 으로 끝나면 안 된다 — 처리기(watch)와 --kick 이 QUEUE_DIR 의 *.json 을 리뷰 작업으로 본다(PR #103 자동 리뷰 라운드 2)
-const NOTIFIED_FILE = join(QUEUE_DIR, '.notified')
-// 질문 · 고르기 창이 떠 있어 미룬 알림 — 파일 하나씩(처리기가 꺼져도 남는다 · 처리기가 30초마다 다시 넣어 본다)
-const NOTICE_DIR = join(QUEUE_DIR, 'notices')
-const readNotified = () => {
-  try { return JSON.parse(readFileSync(NOTIFIED_FILE, 'utf8')) } catch { return {} }
-}
-// 중복 방지 기록 — 넣었거나 미룬 대기열에 받았을 때만 · 임시 파일에 쓰고 바꿔 끼운다(쓰다 끊겨도 깨진 파일이 남지 않게)
-const markNotified = (key, mark) => {
-  mkdirSync(QUEUE_DIR, { recursive: true })
-  const staging = `${NOTIFIED_FILE}.${process.pid}`
-  writeFileSync(staging, JSON.stringify({ ...readNotified(), [key]: mark }, null, 2))
-  renameSync(staging, NOTIFIED_FILE)
-}
+// 같은 알림 거르기 · 창이 떠 있으면 미루기 · 대기열은 lib/lead-notice.mjs 한 곳(현황판의 안 받은 알림 다시 넣기와 같이 쓴다).
+// 기록은 QUEUE_DIR/.notified · 미룬 알림은 QUEUE_DIR/notices/(파일 하나씩 · 처리기가 꺼져도 남는다 · 처리기가 30초마다 다시 넣어 본다).
 // 다시 돌린 결과는 다시 알린다(PR #103 결정 R1 · 2026-10-28) — 이 PR 을 새로 처리할 때(새 HEAD · "- Auto review:" 줄을 지움 · 본문 고침) 그 key 의 기록을 지운다.
 // 그래서 막는 것은 같은 처리 안의 중복뿐이다
-const clearNotified = (key) => {
-  const recorded = readNotified()
-  if (!(key in recorded)) return
-  delete recorded[key]
-  const staging = `${NOTIFIED_FILE}.${process.pid}`
-  writeFileSync(staging, JSON.stringify(recorded, null, 2))
-  renameSync(staging, NOTIFIED_FILE)
-}
 const leadPaneOf = (planFile) => {
   const planPath = join(ROOT, planFile)
   const line = existsSync(planPath) ? readFileSync(planPath, 'utf8').match(/^-\s*Lead pane:\s*([\w:-]+)/m)?.[1] : ''
@@ -461,41 +441,14 @@ const athenaPane = async (planFile) => {
   if (lead && panes.some((pane) => pane.id === lead)) return lead
   return panes.find((pane) => pane.agent === 'claude' && isRootDir(pane.cwd) && !/^🤖/.test(pane.label || pane.name || ''))?.id ?? ''
 }
-const pendingNotices = () => (existsSync(NOTICE_DIR) ? readdirSync(NOTICE_DIR).filter((name) => name.endsWith('.json')).sort().map((name) => join(NOTICE_DIR, name)) : [])
-const readNotice = (file) => {
-  try { return JSON.parse(readFileSync(file, 'utf8')) } catch { return null }
-}
-// 알림 하나 넣기 — 'sent' · 'wait'(창이 떠 있다 · 앞에 미룬 알림이 있다 · 데몬이 쓰기 전에 거절) · 'failed'(보내지 못했다 — 요청으로 남긴다).
-// 질문 · 고르기 창이 떠 있으면 넣지 않는다 — 글이 창에 먹히고 Enter 가 1번 선택지를 고른다(GitHub #100 · 현황판 pane-delivery 와 같은 판정 menuOpen).
-// 화면을 못 읽으면(null) 창 여부를 모르니 현황판처럼 바로 넣는다. 넣기는 공통 전송 경로 한 번(글 + Enter 전송 확인 — lib/screen.mjs submitToPane).
-// 옛 판이 글만 넣고 미룬 알림(typed)은 빈 글로 — 입력칸에 남은 글의 전송만 확인한다(데몬 pane-submit.mts · 글을 두 번 넣지 않게)
-const deliverNotice = async (pane, notice) => {
-  if (menuOpen(await screenText(['pane', 'read', pane, '--lines', '40']))) return 'wait'
-  const result = await submitToPane(pane, notice.typed ? '' : notice.text)
-  return result === 'sent' || result === 'wait' ? result : 'failed'
-}
-const queueNotice = (notice) => {
-  mkdirSync(NOTICE_DIR, { recursive: true })
-  const file = join(NOTICE_DIR, `${Date.now()}-${createHash('sha1').update(`${notice.key}\n${notice.mark}`).digest('hex').slice(0, 8)}.json`)
-  writeFileSync(file, JSON.stringify(notice))
-  return file
-}
+const notifier = createLeadNotifier({ dir: QUEUE_DIR, pickPane: (notice) => athenaPane(String(notice.plan ?? '')) })
+const { readNotified, markNotified, clearNotified, pendingNotices } = notifier
 const notify = async (planFile, { key, sha, title, body }) => {
-  const mark = `${sha}|${title}`
-  if (readNotified()[key] === mark) return console.log(`  ⏭ 아테나에 이미 알렸다: ${title}`)
   const text = masked(`[자동 리뷰 → 아테나] ${title} — ${body}`).replace(/\s*\n\s*/g, ' ').trim()
-  const pane = await athenaPane(planFile)
-  const notice = { plan: planFile, key, mark, title, body, text, pane }
-  // 먼저 미룬 알림이 있으면 차례를 지켜 뒤에 줄 선다
-  const result = !pane ? 'failed' : pendingNotices().length ? 'wait' : await deliverNotice(pane, notice)
-  if (result === 'sent') {
-    markNotified(key, mark)
-    console.log(`  → 아테나 pane ${pane} 에 알렸다: ${title}`)
-    return
-  }
+  const { result, pane } = await notifier.notify({ plan: planFile, key, mark: `${sha}|${title}`, title, body, text })
+  if (result === 'already') return console.log(`  ⏭ 아테나에 이미 알렸다: ${title}`)
+  if (result === 'sent') return console.log(`  → 아테나 pane ${pane} 에 알렸다: ${title}`)
   if (result === 'wait') {
-    queueNotice(notice)
-    markNotified(key, mark)
     console.log(`  ⏳ 아테나 pane ${pane} 에 질문 · 고르기 창이 떠 있어(또는 앞 알림이 기다려) 미뤘다 — 처리기가 창이 닫히면 넣는다: ${title}`)
     if (!watcherAlive()) launchWatcher()
     return
@@ -504,19 +457,11 @@ const notify = async (planFile, { key, sha, title, body }) => {
   ask(planFile, { key, title, body })
 }
 // 미룬 알림을 차례대로 넣어 본다 — 처리기가 30초마다. 받을 pane 은 그때 다시 고른다(닫혔으면 다른 아테나 pane · 아무도 없으면 요청으로)
-export const flushNotices = async () => {
-  for (const file of pendingNotices()) {
-    const notice = readNotice(file)
-    if (!notice) { rmSync(file, { force: true }); continue }
-    const pane = await athenaPane(notice.plan)
-    if (pane !== notice.pane) Object.assign(notice, { pane, typed: false })
-    const result = pane ? await deliverNotice(pane, notice) : 'failed'
-    if (result === 'wait') return   // 차례를 지킨다 — 뒤 알림을 앞질러 넣지 않는다
-    rmSync(file, { force: true })
+export const flushNotices = () =>
+  notifier.flush((notice, result, pane) => {
     if (result === 'sent') console.log(`  ✅ 미룬 알림을 아테나 pane ${pane} 에 넣었다: ${notice.title}`)
-    else ask(notice.plan, { key: notice.key, title: notice.title, body: notice.body })
-  }
-}
+    else ask(String(notice.plan ?? ''), { key: notice.key, title: String(notice.title ?? ''), body: String(notice.body ?? '') })
+  })
 
 // ── 한 PR 처리 ─────────────────────────────────────────────────────────
 const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {

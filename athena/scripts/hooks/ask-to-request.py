@@ -6,7 +6,7 @@
   돌려주는 안내(permissionDecisionReason)가 에이전트에게 간다 — 답은 `[요청 <id>] … 답:` 으로 이 pane 에 오고, 받으면 request ack.
 요청 형식이 못 담는 것: 여러 개 고르기(multiSelect)는 단일 선택 + 메모로(본문에 안내), 선택지 미리보기(preview)는 본문 끝에 붙인다, 직접 입력(Other)은 팝업의 메모칸이 맡는다.
 대상 둘(인자로 가른다 — 같은 세션에 두 설정이 겹쳐 실려도 요청이 두 번 열리지 않게):
-  - 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) — 항상 요청으로 바꾼다
+  - 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) — 항상 요청으로 바꾼다 · 차례 상태를 asking 으로 적는다(scripts/lib/agent_turn.py)
   - 아테나 pane(인자 `lead` · ATHENA_AGENT 없음 · 본체 .claude/settings.json) — 사용자가 그 pane 을 안 보고 있으면(화면 계층 pane get 의 focused 가 거짓) 위임 에이전트처럼 요청으로 바꾸고 도구는 막는다.
     보고 있거나 · 포커스를 모르면 pane 의 고르기 창은 그대로 두고 [작업] 에도 같이 올린다(막으면 보던 사람이 바로 못 고른다). 그때는 pane 에서 고르면 요청을 저절로 거두고(뒤에서 도는 지킴이 pane_request.py close),
     [작업] 에서 먼저 고르면 앱이 pane 의 창에서 같은 선택지를 고른다(질문 하나 · 메모 없음일 때만 — 앱 src/lib/answer-delivery.mts · 아니면 '선택 창이 떠 있음' 알림). pane 을 모르면 가리킬 곳이 없어 올리지 않는다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
@@ -23,6 +23,7 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import pane_request  # noqa: E402 — pane 알아내기 · 계획서 · 지킬 때의 규칙은 두 훅(고르기 · 권한)이 같이 쓴다
 from pane_request import caller_pane, log_failure, plan_of, screen  # noqa: E402,F401 — screen: 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
+import agent_turn  # noqa: E402 — 차례 상태 파일(state/agent-turn)
 from studio_lang import pick  # noqa: E402 — 요청 본문은 사람이 [작업] 에서 본다 — 앱 언어로(에이전트에게 돌려주는 안내는 그대로)
 
 RECOMMENDED = '(Recommended)'
@@ -152,6 +153,11 @@ def main() -> None:
     if watched:
         pane_request.spawn(['close', pane, *ids])  # 창은 그대로 — pane 에서 고르면 요청을 거둔다
         return
+    try:
+        # 차례 상태 — 고르기 질문을 요청으로 올리고 답을 기다린다(scripts/lib/agent_turn.py · 이 차례가 끝나도 asking 그대로)
+        agent_turn.write_turn(pane, state='asking', requests=ids)
+    except Exception as error:
+        log_failure(f'차례 상태 기록 실패: {error}')
     listed = ' · '.join(ids)
     reason = (f'질문을 스튜디오 [작업] 에 올렸다(요청 {listed}). 사람이 거기서 고르면 답이 `[요청 <id>] … 답:` 으로 이 pane 에 온다 — 받으면 바로 '
               '`bin/athena request ack <id>`. 그 답에 기대지 않는 일은 계속하고, 기대는 일만 멈춘다(계획서 Blocked 에 요청 id 를 적는다). 답이 오기 전에는 같은 질문을 다시 묻지 않는다 — '

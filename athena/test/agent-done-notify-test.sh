@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # 위임 에이전트 끝 알림 훅 시험 — scripts/hooks/agent-done-notify.py(Stop · UserPromptSubmit).
 # 가짜 화면 CLI · 임시 본체 사본으로 — 화면 · claude 를 부르지 않는다 · 몇 초
-#   같은 내용 중복 안 함 · 새 입력이 오면 다시 알림 · 멈춤 표시(⏸ 멈춤:)면 멈춤 알림 + plan.stop · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 는 보내지 않음
+#   같은 내용 중복 안 함 · 백그라운드 명령이 돌아도 알림(개수 표시) · 새 입력이 오면 다시 알림 · 멈춤 표시(⏸ 멈춤:)면 멈춤 알림 + plan.stop · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 도 보냄(D2)
+#   차례 상태 파일(state/agent-turn) · 글로 묻고 끝낸 차례는 '질문으로 멈춤' · 고르기 질문(asking) 유지 · 넣은 알림은 받음 확인 기록(state/lead-notices)
 #
 # 사용: test/agent-done-notify-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -16,7 +17,7 @@ mkdir -p "$BODY/scripts/hooks" "$BODY/scripts/lib" "$BODY/plans/task" "$DATA/sta
 # HOOK_SRC=<다른 훅 파일> — 고치기 전 훅과 비교할 때
 cp "${HOOK_SRC:-$SRC/scripts/hooks/agent-done-notify.py}" "$BODY/scripts/hooks/agent-done-notify.py"
 cp "$SRC/scripts/lead-send.py" "$BODY/scripts/"   # 끝 알림도 lead-send 와 같은 길로 넣는다(검수 #16)
-cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$BODY/scripts/lib/" 2>/dev/null
+cp "$SRC"/scripts/lib/*.py "$SRC"/scripts/lib/*.mjs "$SRC"/scripts/lib/*.json "$BODY/scripts/lib/" 2>/dev/null
 ln -s "$DATA" "$BODY/.pack-data"
 PLAN="plans/task/x.md"
 cat > "$BODY/$PLAN" <<'PLANEOF'
@@ -178,9 +179,10 @@ check "계획서에 Lead pane 이 없으면 보내지 않는다" "$(sent)" 7
 
 echo '- Lead pane: p1' >> "$BODY/$PLAN"
 AGENT=reviewer hook prompt '{"prompt":"x"}'; AGENT=reviewer hook stop
-check "reviewer 는 보내지 않는다" "$(sent)" 7
+check "reviewer 도 끝 알림을 보낸다(계획서 결정 D2)" "$(sent)" 8
+check "reviewer 알림 줄은 reviewer 이름으로" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c '\[reviewer → 아테나\] 끝 · p9')" 1
 env -u ATHENA_AGENT ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 python3 "$BODY/scripts/hooks/agent-done-notify.py" stop </dev/null
-check "ATHENA_AGENT 없는 세션(사람이 쓰는 아테나)은 보내지 않는다" "$(sent)" 7
+check "ATHENA_AGENT 없는 세션(사람이 쓰는 아테나)은 보내지 않는다" "$(sent)" 8
 
 # 백그라운드 명령 — 대화 기록의 시작 · 끝 기록과 출력 파일을 쥔 진짜 프로세스로 판정한다
 TRANSCRIPT="$WORK/transcript.jsonl"; OUTPUT="$WORK/task1.output"
@@ -194,28 +196,32 @@ STOP_JSON="{\"transcript_path\":\"$TRANSCRIPT\"}"
 sleep 60 > "$OUTPUT" 2>&1 &
 SLEEP_PID=$!
 hook prompt '{"prompt":"백그라운드"}'; hook stop "$STOP_JSON"
-check "백그라운드 명령이 도는 중이면 알리지 않는다" "$(sent)" 7
+check "백그라운드 명령이 도는 중이어도 알린다" "$(sent)" 9
+check "알림 줄에 도는 백그라운드 명령 개수가 붙는다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c ' · (백그라운드 명령 1개 도는 중)$')" 1
+hook stop "$STOP_JSON"
+check "같은 줄은 새 입력 전에는 다시 보내지 않는다" "$(sent)" 9
 kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
 hook stop "$STOP_JSON"
-check "끝 기록 없이 프로세스가 죽었으면 알린다(알림이 영영 끊기지 않게)" "$(sent)" 8
+check "끝 기록 없이 프로세스가 죽었으면 개수 없는 줄로 한 번 더 알린다" "$(sent)" 10
+check "명령이 끝난 뒤 줄에는 개수가 없다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c '백그라운드 명령')" 0
 
 sleep 60 > "$OUTPUT" 2>&1 &
 SLEEP_PID=$!
 hook prompt '{"prompt":"끝 기록"}'; hook stop "$STOP_JSON"
-check "다시 도는 중이면 알리지 않는다(last 를 남기지 않았다)" "$(sent)" 8
+check "다시 도는 중이면 개수를 붙여 알린다" "$(sent)" 11
 printf '%s\n' '{"type":"queue-operation","content":"<task-notification>\n<task-id>task1</task-id>\n<status>completed</status>"}' >> "$TRANSCRIPT"
 hook stop "$STOP_JSON"
-check "끝 기록(task-notification)이 있으면 알린다" "$(sent)" 9
+check "끝 기록(task-notification)이 있으면 도는 중으로 세지 않는다" "$(sent)" 12
 sed -i.bak '$d' "$TRANSCRIPT"
 hook prompt '{"prompt":"멈춤"}'; hook stop "$STOP_JSON"
-check "끝 기록을 지우면 다시 도는 중으로 본다" "$(sent)" 9
+check "끝 기록을 지우면 다시 도는 중으로 센다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c '(백그라운드 명령 1개 도는 중)')" 1
 printf '%s\n' '{"type":"user","toolUseResult":{"message":"Successfully stopped task: task1","task_id":"task1"}}' >> "$TRANSCRIPT"
 hook stop "$STOP_JSON"
-check "TaskStop 기록이 있으면 알린다" "$(sent)" 10
+check "TaskStop 기록이 있으면 도는 중으로 세지 않는다" "$(sent)" 14
 kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
 
 hook prompt '{"prompt":"기록 없음"}'; hook stop '{"transcript_path":"/없는/경로.jsonl"}'
-check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 11
+check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 15
 
 # PR 실제 상태 — 알림을 만들 때 gh 로 묻고, 못 물으면 계획서 값에 "(기록 기준)"
 last_sent() { grep '^pane run p1 ' "$FAKE_LOG" | tail -1; }
@@ -267,5 +273,42 @@ check "넣지 못한 끝 알림은 계획서 결과 절에 기록" "$(grep -c '�
 printf '{"session":"session-a"}' > "$DATA/state/pane-sessions/p1.json"
 hook prompt '{"prompt":"같은 대화"}'; hook stop
 check "담당 대화가 같으면 넣는다" "$(sent)" "$((before + 1))"
+
+# 차례 상태 파일 · 질문으로 멈춤 · 받음 확인 기록(계획서 B · D3 · C)
+turn() { python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get(sys.argv[2]))' "$DATA/state/agent-turn/p9.json" "$1"; }
+notices() { ls "$DATA/state/lead-notices" 2>/dev/null | grep -cE '^[0-9a-f]{32}\.json$'; }
+hook prompt '{"prompt":"차례 1"}'
+check "입력을 받으면 차례 상태 working" "$(turn state)" working
+before_notices="$(notices)"
+hook stop '{"last_assistant_message":"다 했어요."}'
+check "끝나면 차례 상태 done" "$(turn state)" done
+check "끝 차례는 question False" "$(turn question)" False
+check "넣은 끝 알림은 받음 확인 기록을 하나 남긴다(--track)" "$(notices)" "$((before_notices + 1))"
+check "받음 확인 기록에 아테나 pane · 줄이 든다" "$(grep -l '"lead": "p1"' "$DATA"/state/lead-notices/*.json | xargs grep -l '끝 · p9' | wc -l | tr -d ' ' | grep -c '^[1-9]')" 1
+hook prompt '{"prompt":"차례 2"}'
+hook stop '{"last_assistant_message":"고쳤어요.\n\n커밋할까요?"}'
+check "글로 묻고 끝낸 차례는 '질문으로 멈춤'" "$(last_sent | grep -c '\[athena-studio-fe → 아테나\] 질문으로 멈춤 · p9')" 1
+check "글로 물은 차례는 차례 상태 done · question True(asking 은 요청을 올린 차례만)" "$(turn state) $(turn question)" "done True"
+hook prompt '{"prompt":"차례 3"}'
+python3 - "$BODY" <<'PY'
+import sys; sys.path.insert(0, sys.argv[1] + '/scripts/lib')
+import agent_turn; agent_turn.write_turn('p9', state='asking', requests=['r1'])
+PY
+hook stop '{"last_assistant_message":"골라 주세요 — 요청을 열었어요"}'
+check "고르기 질문(asking)을 올린 차례는 끝나도 질문으로 멈춤" "$(turn state) $(last_sent | grep -c '질문으로 멈춤 · p9')" "asking 1"
+cat > "$WORK/received.py" <<'PY'
+import json, sys
+sys.path.insert(0, sys.argv[1] + '/scripts/lib')
+import agent_turn
+folder = agent_turn.pack_state() / 'lead-notices'
+latest = max(folder.glob('*.json'), key=lambda path: json.loads(path.read_text())['sent_at'])
+notice = json.loads(latest.read_text())
+# 대기 입력이 이어 붙어 오고 줄바꿈이 섞여도 받음으로 — 한 번만 · 다른 아테나 pane 은 아니다
+print(len(agent_turn.mark_received('p1', '앞 입력\n' + notice['text'].replace(' · ', '  ·\n'))) > 0,   # 같은 줄을 두 번 넣었으면 둘 다
+      bool(json.loads(latest.read_text()).get('received_at')),
+      len(agent_turn.mark_received('p1', notice['text'])),
+      len(agent_turn.mark_received('p2', notice['text'])))
+PY
+check "아테나가 받은 입력에 든 알림은 받음으로 표시(공백 차이 무시 · 한 번 · 그 아테나 pane 만)" "$(python3 "$WORK/received.py" "$BODY")" "True True 0 0"
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

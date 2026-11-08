@@ -1,0 +1,5 @@
+{
+  "_why": "질문 · 고르기 · 권한 창이 떠 있나 — 화면 끝 tailLines 줄(빈 줄 빼고)에 pattern 이 있으면 창이 떠 있다. 읽는 곳: scripts/lib/pane_request.py menu_open · scripts/board/pane-delivery.mjs menuOpen(pr-auto · lead-notice 도 이것). 데몬 agent_status 'waiting'(src/lib/screen-model.js waitingForInput)도 창이 떠 있음으로 친다(합집합) — 데몬 판정은 바꾸지 않는다. 앱 src/lib/core.mts PROMPT_MENU 는 같은 글을 따로 둔다(앱은 코어 파일을 읽지 않는다)",
+  "pattern": "enter (?:to )?(?:select|confirm|submit answer)\\b|esc (?:to )?(?:cancel|skip)\\b|↑/↓ to navigate|Do you want to|Type something\\.",
+  "tailLines": 12
+}

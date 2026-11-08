@@ -527,5 +527,8 @@
   "srv.err.planChanged": "The plan changed — refresh and try again",
   "srv.err.during": "Error while processing — {error}",
   "srv.err.learn": "Error while processing learning: {error}",
-  "srv.err.failed": "Couldn't process — {error}"
+  "srv.err.failed": "Couldn't process — {error}",
+  "srv.turn.requestTitle": "Unread Athena notice · {agent}",
+  "srv.turn.requestBody": "Athena pane {lead} has not picked up this notice for 10 minutes. Check the Athena pane.\n\n{text}",
+  "srv.turn.received": "Athena received the notice"
 }
