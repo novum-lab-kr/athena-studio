@@ -1,10 +1,15 @@
+// @ts-check
 // 좌측 하단 앱 업데이트 팝업이 뜰지 · 무엇으로 뜰지(src/lib/update-corner.mts)
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { cornerView } = require('../src/lib/update-corner.mts')
 
+/** @typedef {import('../src/lib/update-corner.mts').CornerStatus} CornerStatus */
+
+/** @param {Partial<CornerStatus>} [over] @returns {CornerStatus} */
 const dev = (over) => ({ state: 'behind', behind: 3, latest: null, phase: null, ...over })
 // 배포판 상태(release-update.mts ReleaseStatus) — behind 는 늘 0
+/** @param {Partial<CornerStatus>} [over] @returns {CornerStatus} */
 const release = (over) => ({ state: 'behind', behind: 0, latest: '0.56.0', phase: null, ...over })
 
 test('개발판 새 커밋 · 새 태그면 [업데이트] 팝업 — 열쇠는 따로 표시', () => {
