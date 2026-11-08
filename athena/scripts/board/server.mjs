@@ -428,6 +428,26 @@ const autoDonePlans = async (plans, panesAvailable) => {
   }))
 }
 
+// PR 자동 리뷰가 아테나에 못 보내 남긴 요청(scripts/pr-auto.mjs notify → ask · 키 pr-auto:<레포>#<번호> · pane 없음)을 그 PR 이 머지되거나 닫히면 거둔다.
+// pane 이 없어 ack 할 쪽도 닫힘 판정(pane 닫힘)도 없고, 질문이라 계획서 done 으로도 안 닫혀 [작업] 에 남던 것(2026-11-08 #264).
+// 머지 확인 요청(pr-auto-merge:…)은 처리기 checkConfirms 가 PR 상태로 거두니 여기서 보지 않는다. PR 상태는 prInfo 캐시(5분)
+const closeDonePrRequests = async () => {
+  let requests
+  try { requests = listRequests(ROOT).requests } catch (error) { console.log(`⚠️ 자동 리뷰 요청 — 요청을 읽지 못했다: ${error.message}`); return }
+  for (const request of requests) {
+    const hit = String(request.dedupeKey ?? '').match(/^pr-auto:([\w.-]+)#(\d+)$/)
+    if (!hit) continue
+    const [, repoName, number] = hit
+    const { state } = await prInfo(repoName, number)
+    if (state !== 'MERGED' && state !== 'CLOSED') continue
+    const reason = `PR ${repoName}#${number} 이 ${state === 'MERGED' ? '머지됐다' : '머지 없이 닫혔다'}`
+    try {
+      cancelRequest(ROOT, request.id, { reason })
+      console.log(`🧹 자동 리뷰 요청 ${request.id} 거둠 — ${reason}`)
+    } catch (error) { console.log(`⚠️ 자동 리뷰 요청 ${request.id} 거두기 실패: ${error.message}`) }
+  }
+}
+
 // 자동 완료한 계획서에 Progress 단계 칸이 새로 생기면 진행 중으로 되돌린다(plan-bind.mjs needsAutoReopen — 사람이 옮긴 done · 보관은 건드리지 않는다)
 const autoReopenPlans = (plans) => {
   for (const plan of plans) {
@@ -988,6 +1008,7 @@ const collect = async () => {
   await autoDonePlans(plans, available)
   autoReopenPlans(plans)
   await autoReviewPlans(plans)
+  if (!staleGeneration()) await closeDonePrRequests()
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)
   // 완료로 바뀐 시각 — 사건 기록에 없으면(기록 전에 끝난 것) null, 앱은 그때 mtime 을 쓴다
