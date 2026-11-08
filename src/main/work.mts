@@ -305,7 +305,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
         return sent.error ? { code: sent.code } : null
       },
       type: async (pane, text) => !(await ctx.daemonCall('pane send-text', { pane, text })).error,
-      ack: () => runCore(['request', 'ack', request.id], { dir }),
+      ack: async () => (await runCore(['request', 'ack', request.id], { dir })).ok === true,
     })
   }
   // 공식 승인 전용 IPC. 일반 질문/다시 보내기와 완전히 다른 경로로 원래 연결에만 답한다.

@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { choiceKey, deliverAnswer } = require('../src/lib/answer-delivery.mts')
+const { choiceKey, deliverAnswer, promptClosed } = require('../src/lib/answer-delivery.mts')
 
 // 실측 화면(2026-11-08 · Claude Code 2.1.319 · codex-cli 0.166.0 — pane read --source visible)을 줄인 것
 const CLAUDE_ONE = [
@@ -44,24 +44,26 @@ const request = {
 const line = '[요청 r-1] Which color do you like? — 답: Blue'
 
 // 데몬 흉내 — 선택 창이 떠 있으면 pane run 은 쓰기 전에 unavailable(실제 데몬 응답 · pane-submit.mts)
-function fakePane({ agent = 'claude', screen = CLAUDE_ONE, closesOnKey = true } = {}) {
+function fakePane({ agent = 'claude', screen = CLAUDE_ONE, closesOnKey = true, after = [CLAUDE_IDLE], acked = true } = {}) {
   let now = screen
+  let reads = []
   const calls = []
   return {
     calls,
     io: {
       panes: async () => [{ id: 'p1', agent }],
-      read: async () => now,
+      // 고른 뒤에는 after 를 차례로 읽힌다(마지막 것이 계속)
+      read: async () => (reads.length > 1 ? reads.shift() : reads[0] ?? now),
       run: async (pane, text) => {
         calls.push(['run', text])
         return now.includes('Enter to select') || now.includes('enter to submit answer') ? { code: 'unavailable' } : null
       },
       type: async (pane, text) => {
         calls.push(['type', text])
-        if (closesOnKey) now = CLAUDE_IDLE
+        if (closesOnKey) reads = [...after]
         return true
       },
-      ack: async () => calls.push(['ack']),
+      ack: async () => { calls.push(['ack']); return acked },
       sleep: async () => {},
     },
   }
@@ -123,4 +125,40 @@ test('선택 창이 아니면 입력칸에 한 줄 · pane 없음 · 전송 실�
   let reads = 0
   const raced = { ...idle.io, read: async () => (reads++ ? CLAUDE_MANY : CLAUDE_IDLE), run: async () => ({ code: 'unavailable' }) }
   assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, raced), { delivered: false, reason: 'prompt-open' })
+})
+
+test('화면 선택지가 요청보다 많으면(앞부분만 같아도) 키를 누르지 않는다 — 덧붙는 항목만 빼고 개수까지 같아야', async () => {
+  const twoOptions = { ...request, options: [{ label: 'Red' }, { label: 'Blue' }] }
+  assert.equal(choiceKey(CLAUDE_ONE, 'claude', twoOptions, { choice: 'Blue' }), null)
+  assert.equal(choiceKey(CODEX_ONE, 'codex', twoOptions, { choice: 'Blue' }), null)
+  // 덧붙는 항목(Type something. · Chat about this · None of the above)은 요청 선택지가 아니다
+  assert.equal(choiceKey(CLAUDE_ONE, 'claude', request, { choice: 'Green' }), '3')
+  const pane = fakePane()
+  assert.deepEqual(await deliverAnswer('p1', twoOptions, { choice: 'Blue' }, line, pane.io), { delivered: false, reason: 'prompt-open' })
+  assert.deepEqual(pane.calls, [])
+})
+
+test('고른 뒤 조각 화면(다시 그리는 중)만 읽히면 닫힘으로 치지 않고 ack 하지 않는다', async () => {
+  const lines = CLAUDE_ONE.split('\n')
+  const pieces = [
+    lines.slice(0, 6).join('\n'), // 머리 · 제목만
+    lines.slice(6, 12).join('\n'), // 선택지만
+    lines.slice(-1).join('\n'), // 맺음만
+    '',
+  ]
+  for (const piece of pieces) assert.equal(promptClosed(piece, request), false, JSON.stringify(piece))
+  assert.equal(promptClosed(null, request), false)
+  assert.equal(promptClosed(CLAUDE_IDLE, request), true)
+  const stuck = fakePane({ after: [lines.slice(6, 12).join('\n')] })
+  assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, stuck.io), { delivered: false, reason: 'unconfirmed' })
+  assert.deepEqual(stuck.calls, [['type', '2']])
+  // 닫힌 화면 한 번 뒤 다시 조각이면 아직 — 두 번 잇달아 닫혀야 ack
+  const flicker = fakePane({ after: [CLAUDE_IDLE, pieces[0], CLAUDE_IDLE, CLAUDE_IDLE] })
+  assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, flicker.io), { delivered: true, chose: true })
+})
+
+test('ack 가 기록되지 않으면 delivered 가 아니라 unconfirmed', async () => {
+  const pane = fakePane({ acked: false })
+  assert.deepEqual(await deliverAnswer('p1', request, { choice: 'Blue' }, line, pane.io), { delivered: false, reason: 'unconfirmed' })
+  assert.deepEqual(pane.calls, [['type', '2'], ['ack']])
 })

@@ -21,12 +21,17 @@ type Io = {
   run: (pane: string, line: string) => Promise<{ code?: unknown } | null>
   // 글자 그대로 쓰기(데몬 pane send-text)
   type: (pane: string, text: string) => Promise<boolean>
-  // 에이전트가 받았다 — 코어 request ack
-  ack: () => Promise<unknown>
+  // 에이전트가 받았다 — 코어 request ack · 기록됐으면 true
+  ack: () => Promise<boolean>
   sleep?: (ms: number) => Promise<void>
 }
 
 const OPTION_LINE = /^\s*[❯›]?\s*(\d+)\.\s+(.*?)\s*$/
+// 선택지 뒤에 에이전트가 붙이는 항목(실측) — 요청 선택지가 아니다
+const isExtra = (agent: string, label: string) =>
+  agent === 'claude' ? label === 'Type something.' || label === 'Chat about this' : label === 'None of the above' || label.startsWith('None of the above  ')
+// 선택 창 표식 — 이 중 하나라도 화면에 남아 있으면 창이 닫혔다고 보지 않는다
+const PROMPT_MARKS = [/Enter to select · ↑\/↓ to navigate/, /Tab\/Arrow keys to navigate/, /enter to submit answer/i, /^\s*(←\s*)?☐\s+\S/, /^\s*Question \d+\/\d+\b/]
 const collapse = (value: string) => value.replace(/\s+/g, ' ').trim()
 
 // 화면이 이 요청의 선택 창(질문 하나 · 같은 질문 · 같은 선택지 순서)이면 고를 숫자 한 글자, 아니면 null(키를 누르지 않는다)
@@ -48,18 +53,34 @@ export function choiceKey(text: string, agent: unknown, request: PromptRequest, 
   const rest = lines.slice(start + 1)
   const first = rest.findIndex((line) => OPTION_LINE.exec(line)?.[1] === '1')
   if (first < 1 || collapse(rest.slice(0, first).join(' ')) !== collapse(request.title)) return null
-  // 1..k 번 선택지 라벨이 요청 선택지와 순서대로 같아야 한다(Claude 는 설명이 다음 줄 · Codex 는 같은 줄에 두 칸 이상 띄우고)
-  const labels = new Map<number, string>()
+  // 화면 선택지 전체(덧붙는 항목 빼고)가 요청 선택지와 개수 · 라벨 · 순서까지 같아야 한다(Claude 는 설명이 다음 줄 · Codex 는 같은 줄에 두 칸 이상 띄우고)
+  const labels: string[] = []
   for (const line of rest.slice(first)) {
     const match = OPTION_LINE.exec(line)
-    if (match && !labels.has(Number(match[1]))) labels.set(Number(match[1]), match[2]!)
+    if (match && Number(match[1]) === labels.length + 1) labels.push(match[2]!)
   }
+  const shown = labels.filter((label) => !isExtra(agent, label))
+  // 덧붙는 항목은 맨 뒤에만 — 중간에 끼면 모르는 화면이다
+  if (labels.slice(0, shown.length).some((label) => isExtra(agent, label))) return null
+  if (shown.length !== request.options.length) return null
   const same = request.options.every((option, at) => {
-    const shown = labels.get(at + 1)
-    if (shown === undefined) return false
-    return agent === 'claude' ? shown === option.label : shown === option.label || shown.startsWith(`${option.label}  `)
+    const label = shown[at]!
+    return agent === 'claude' ? label === option.label : label === option.label || label.startsWith(`${option.label}  `)
   })
   return same ? String(index + 1) : null
+}
+
+// 선택 창이 닫힌 화면 — 읽혔고 · 입력 대기가 아니고 · 선택 창 표식도 이 요청의 선택지 줄('2. Blue')도 없다
+// (다시 그리는 중 제목 · 선택지 · 맺음 일부만 읽혀도 남은 조각이 있거나 비어 있으면 닫힘으로 치지 않는다)
+export function promptClosed(text: string | null, request: PromptRequest): boolean {
+  if (text === null || screenModel.waitingForInput(text)) return false
+  const lines = text.split('\n').filter((line) => line.trim())
+  const labels = new Set(request.options.map((option) => option.label))
+  const optionLine = (line: string) => {
+    const label = OPTION_LINE.exec(line)?.[2] ?? ''
+    return [...labels].some((known) => label === known || label.startsWith(`${known}  `))
+  }
+  return lines.length > 0 && !lines.some((line) => optionLine(line) || PROMPT_MARKS.some((mark) => mark.test(line)))
 }
 
 // 답 넣기 — 선택 창이 아니면 입력칸에 한 줄, 같은 질문의 선택 창이면 그 창에서 고르고 닫혔는지 다시 읽어 확인한다
@@ -74,14 +95,14 @@ export async function deliverAnswer(paneId: unknown, request: PromptRequest, ans
     const key = choiceKey(screen, pane.agent, request, answer)
     if (!key) return { delivered: false, reason: 'prompt-open' }
     if (!(await io.type(paneId, key))) return { delivered: false, reason: 'unconfirmed' }
-    // 고르면 창이 닫힌다(실측 1초 안). 같은 창이 그대로면 들어갔는지 모른다 — 키를 더 누르지 않는다
-    for (let poll = 0; poll < 10; poll++) {
+    // 고르면 창이 닫힌다(실측 1초 안). 닫힌 화면이 두 번 잇달아 읽혀야 닫힘으로 본다 — 그대로거나 확인 못 하면 키를 더 누르지 않는다
+    let closedReads = 0
+    for (let poll = 0; poll < 15; poll++) {
       await sleep(200)
-      const after = await io.read(paneId)
-      if (after !== null && choiceKey(after, pane.agent, request, answer) === null) {
-        await io.ack()
-        return { delivered: true, chose: true }
-      }
+      closedReads = promptClosed(await io.read(paneId), request) ? closedReads + 1 : 0
+      if (closedReads < 2) continue
+      // ack 가 기록되지 않으면 요청은 answered 로 남는다 — 성공으로 알리지 않는다
+      return (await io.ack()) ? { delivered: true, chose: true } : { delivered: false, reason: 'unconfirmed' }
     }
     return { delivered: false, reason: 'unconfirmed' }
   }
