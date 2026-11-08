@@ -58,8 +58,11 @@ type Resolved = ({ ok: true } & Target) | { ok: false; step: 'check'; problems?:
 type GValues = { hostname: string; user: string; port: string; identityfile: string[] }
 const G_KEYS = ['hostname', 'user', 'port', 'identityfile'] as const
 
-// 시스템 ssh 설정 — 기본 ssh 는 사용자 config 다음에 이 파일을 읽는데 -F 로 임시 config 를 주면 건너뛴다(그래서 임시 config 끝에 Include 로 붙인다)
+// 시스템 ssh 설정 — 기본 ssh 는 사용자 config 다음에 이 파일을 읽는데 -F 로 임시 config 를 주면 건너뛴다(그래서 사본을 임시 config 끝에 Include 로 붙인다)
 const SYSTEM_CONFIG = '/etc/ssh/ssh_config'
+// ssh_config(5) Include 줄(키워드는 대소문자 무관 · `Include=…` 도) · ssh 의 Include 깊이 한도
+const INCLUDE_LINE = /^(\s*)include(?:\s*=\s*|\s+)(.*)$/i
+const INCLUDE_DEPTH = 16
 
 // home · bins · systemConfig 는 시험이 격리 폴더 · 가짜 명령 · 가짜 시스템 설정을 넣을 때만(앱은 기본값)
 export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home, bins = {}, systemConfig = SYSTEM_CONFIG }: { dialog: Dialog; sshBin?: string; home?: string; bins?: knownHosts.Bins; systemConfig?: string }): void {
@@ -70,11 +73,43 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
   const expand = (file: string) => (file.startsWith('~/') ? path.join(home ?? os.homedir(), file.slice(2)) : file)
   // ssh 가 실제로 쓸 키 — 푼 IdentityFile 중 파일이 있는 첫 것(없는 파일은 ssh 도 건너뛴다 · 칸 채우기와 바뀜 확인이 같은 규칙)
   const usedKey = (files: string[]) => files.find((file) => fs.existsSync(expand(file))) ?? ''
-  // 임시 config 에 쓸 글 — 사용자 config 다음에 시스템 설정을 기본 ssh 와 같은 순서로(먼저 정한 값이 이긴다 · 앞 블록 조건에 묶이지 않게 Match all 뒤에)
-  const sshView = (text: string) => {
-    if (!fs.existsSync(systemConfig)) return text
+  // 시스템 설정 사본을 임시 폴더에 쓴다 — 사용자 config(-F 파일)에서 Include 하면 ssh 가 상대 경로를 ~/.ssh 기준으로 풀어 버린다.
+  // 그래서 Include 의 상대 경로는 시스템 폴더 기준(ssh 가 시스템 설정을 읽을 때처럼)으로 풀고, 가리킨 파일도 같은 규칙으로 사본을 만들어 그 사본을 가리킨다.
+  // 글 · 순서는 그대로(Include 줄만 바뀐다) · 와일드카드는 ssh 처럼 이름 순 · 맞는 파일이 없으면 그 줄은 주석으로
+  const copySystemConfig = (dir: string): string | null => {
+    const base = path.dirname(systemConfig)
+    let count = 0
+    const copy = (file: string, depth: number): string | null => {
+      if (depth > INCLUDE_DEPTH) return null
+      let text: string
+      try {
+        text = fs.readFileSync(file, 'utf8')
+      } catch {
+        return null
+      }
+      const lines = text.split('\n').map((line) => {
+        const found = line.match(INCLUDE_LINE)
+        if (!found) return line
+        const targets = (found[2] ?? '').trim().split(/\s+/).filter(Boolean).flatMap((word) => {
+          const pattern = word.replace(/^"(.*)"$/, '$1')
+          const resolved = pattern.startsWith('~/') || path.isAbsolute(pattern) ? expand(pattern) : path.join(base, pattern)
+          const matches = /[*?[]/.test(resolved) ? fs.globSync(resolved).sort() : [resolved]
+          return matches.map((match) => copy(match, depth + 1)).filter((copied): copied is string => Boolean(copied))
+        })
+        return targets.length ? `${found[1] ?? ''}Include ${targets.join(' ')}` : `${found[1] ?? ''}# ${line.trim()}`
+      })
+      const target = path.join(dir, `system-${count++}`)
+      fs.writeFileSync(target, lines.join('\n'), { mode: 0o600 })
+      return target
+    }
+    return copy(systemConfig, 0)
+  }
+  // 임시 config 에 쓸 글 — 사용자 config 다음에 시스템 설정(사본)을 기본 ssh 와 같은 순서로(먼저 정한 값이 이긴다 · 앞 블록 조건에 묶이지 않게 Match all 뒤에)
+  const sshView = (text: string, dir: string) => {
+    const copied = copySystemConfig(dir)
+    if (!copied) return text
     const body = text && !text.endsWith('\n') ? `${text}\n` : text
-    return `${body}\n# athena-studio temp: system config after user config, like plain ssh\nMatch all\nInclude ${systemConfig}\n`
+    return `${body}\n# athena-studio temp: system config after user config, like plain ssh\nMatch all\nInclude ${copied}\n`
   }
   // 이미 쓰는 별칭 — 이 config 의 Host + 코어가 Include 까지 따라간 목록
   const takenAliases = async (): Promise<string[]> => {
@@ -127,11 +162,11 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
   // 보인 호스트 키(이 창에서만) — [믿고 계속] 은 같은 대상 · 같은 지문일 때만 이 줄을 쓴다(화면이 보낸 키 글자는 받지 않는다)
   let shownKey: { value: string; at: number; pending: knownHosts.HostKeyPending } | null = null
 
-  // 임시 폴더(700)에 config(600 · 시스템 설정 Include 포함)를 쓴다 — 쓰기 전에 ssh 가 볼 모습을 미리 시험한다
+  // 임시 폴더(700)에 config(600 · 시스템 설정 사본 Include 포함)를 쓴다 — 쓰기 전에 ssh 가 볼 모습을 미리 시험한다
   async function tempConfig(text: string): Promise<{ dir: string; file: string }> {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'athena-ssh-'))
     const file = path.join(dir, 'config')
-    await fs.promises.writeFile(file, sshView(text), { mode: 0o600 })
+    await fs.promises.writeFile(file, sshView(text, dir), { mode: 0o600 })
     return { dir, file }
   }
   // 임시 config 로 무언가 하고 지운다

@@ -142,8 +142,9 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
         return { ok: true, already: false, server: { name: alias, host: alias } }
       },
     }
-    // 가짜 시스템 설정 — 처음엔 없다(9 · 10 에서 만든다)
-    const systemConfig = path.join(root, 'system_ssh_config')
+    // 가짜 시스템 설정 — 처음엔 없다(10 에서 만든다)
+    const systemDir = path.join(root, 'etc-ssh')
+    const systemConfig = path.join(systemDir, 'ssh_config')
     installSshSetup(ctx, { dialog: {}, home, systemConfig })
     const input = { alias: 'kh-test', user: os.userInfo().username, host: '127.0.0.1', port: String(port), key: path.join(root, 'userkey') }
     const source = (value) => ({ kind: 'new', input: value })
@@ -270,8 +271,11 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
     assert.deepEqual(added.pop(), { alias: 'kh-edit', tested: true })
     for (const name of backups()) fs.rmSync(path.join(sshDir, name))
 
-    // 10) 시스템 설정 — 기본 ssh 처럼 사용자 config 뒤에 읽는다(Port 를 시스템 설정에만 두면 값 조회 · 접속 시험이 그 값)
-    fs.writeFileSync(systemConfig, ['Host kh-sys', `  Port ${port}`, ''].join('\n'))
+    // 10) 시스템 설정 — 기본 ssh 처럼 사용자 config 뒤에 읽는다. Port 는 시스템 설정의 상대 Include(ssh_config.d/*.conf)에만 둔다
+    //     — 상대 경로가 ~/.ssh 가 아니라 시스템 폴더 기준으로 풀려야 값 조회 · 접속 시험이 그 값
+    fs.mkdirSync(path.join(systemDir, 'ssh_config.d'), { recursive: true })
+    fs.writeFileSync(systemConfig, ['Include ssh_config.d/*.conf', 'Host *', '  SendEnv LANG', ''].join('\n'))
+    fs.writeFileSync(path.join(systemDir, 'ssh_config.d', '10-kh.conf'), ['Host kh-sys kh-edit', `  Port ${port}`, ''].join('\n'))
     writeConfig(['  HashKnownHosts yes', 'Host kh-sys', '  HostName 127.0.0.1', `  User ${user}`, `  IdentityFile ${userKey}`])
     assert.equal((await ctx.serverHostDetail('kh-sys')).values.port, String(port))
     const viaSystem = await ctx.serverRegister({ kind: 'host', alias: 'kh-sys' })
@@ -296,7 +300,11 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
     assert.equal(scriptText.includes(`trap "rm -rf '${path.dirname(script)}'" EXIT HUP INT TERM`), true, scriptText)
     const tempText = fs.readFileSync(tempFile, 'utf8')
     assert.equal(tempText.includes(`  Port ${port}\n`), true)
-    assert.equal(tempText.endsWith(`Match all\nInclude ${systemConfig}\n`), true)
+    // 시스템 설정 사본 — 상대 Include 가 시스템 폴더 기준으로 푼 파일의 사본을 가리킨다(키 올리기 임시 폴더 안)
+    const systemCopy = path.join(path.dirname(script), 'system-1')
+    assert.equal(tempText.endsWith(`Match all\nInclude ${systemCopy}\n`), true, tempText)
+    assert.equal(fs.readFileSync(systemCopy, 'utf8').startsWith(`Include ${path.join(path.dirname(script), 'system-0')}\n`), true)
+    assert.equal(fs.readFileSync(path.join(path.dirname(script), 'system-0'), 'utf8').includes(`  Port ${port}`), true)
     assert.equal(fs.statSync(tempFile).mode & 0o777, 0o600)
     assert.equal(fs.readFileSync(configFile, 'utf8'), configBefore)
     fs.rmSync(path.dirname(script), { recursive: true, force: true })
