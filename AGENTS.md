@@ -100,7 +100,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 앱 단축키는 ⌘ 만 — Ctrl 조합은 pane 으로 보낸다
 
 ## 격리 실행 (사용자 앱이 켜져 있을 때)
-- **켜고 끄기는 이 길로만** — `node scripts/dev-app.js test-start --home <임시>`(`ATHENA_STUDIO_HOME=<임시> npm start` 를 떼어 띄우고 pid 를 `<임시>/test-app.json` 에 적는다 · 로그 `<임시>/test-app.log`) / `node scripts/dev-app.js test-stop --home <임시>`(그 기록의 pid 와 자식 · `<임시>/daemon-dev.json` 데몬만 끈다). 프로세스 목록에서 Electron · node 를 짐작해 `kill` 하지 않는다 — 사용자 개발 앱까지 끈다(2026-11-08 사고)
+- **켜고 끄기는 이 길로만** — `node scripts/dev-app.js test-start --home <임시>`(`ATHENA_STUDIO_HOME=<임시> npm start` 를 떼어 띄우고 pid 를 `<임시>/test-app.json` 에 적는다 · 로그 `<임시>/test-app.log`) / `node scripts/dev-app.js test-stop --home <임시>`(그 기록의 pid 와 자식 · 앱이 살아 있을 때 앱보다 늦게 시작한 `<임시>/daemon-dev.json` 데몬만 끈다 — 앱이 이미 꺼졌으면 데몬은 끄지 않고 pid 만 알린다). 프로세스 목록에서 Electron · node 를 짐작해 `kill` 하지 않는다 — 사용자 개발 앱까지 끈다(2026-11-08 사고)
 - 스튜디오 집(코어 · 본체 · 데이터 · 접속 파일)과 앱 데이터(`<임시>/app/Athena Studio Dev/`)가 모두 `<임시>` 아래로. 사용자 앱 · `~/.athena-studio` 를 건드리지 않는다
 - **`HOME` 은 바꾸지 않는다** — 앱은 켤 때의 `HOME` 을 데몬 · pane 에 물려줘서, 바꾸면 pane 안 claude 가 로그인 · 맥 키체인을 못 찾는다(재인증 · '키체인을 찾을 수 없음' — 2026-10-19 실측). Electron 도 `HOME` 을 바꿔도 홈 경로를 그대로 쓴다
 - 소켓 경로가 길면 임시 폴더 `athena-studio-<uid>-dev/` 로 떨어진다 — 같은 때 도는 다른 격리 실행과 겹친다

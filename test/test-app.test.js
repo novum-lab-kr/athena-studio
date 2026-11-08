@@ -129,3 +129,54 @@ test('stopTestApp: 같은 pid 를 다른 프로세스가 쓰면(시작 시각이
     cleanup([other.parent, other.kid])
   }
 })
+
+// 데몬 접속 파일만 남고 그 pid 를 다른 프로세스가 다시 쓴 경우 — 앱 기록으로 확인되지 않으면 데몬 자리 pid 를 끄지 않는다
+test('stopTestApp: 기록이 없으면 데몬 접속 파일의 pid 도 끄지 않는다', async () => {
+  const home = tempDir('athena-test-app-')
+  const reused = spawnLoner()
+  try {
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: reused }))
+    const result = await testApp.stopTestApp(home, realDeps, { graceMs: 500 })
+    assert.deepEqual(result.stopped, [])
+    assert.match(result.reason, /데몬/)
+    assert.equal(alive(reused), true)
+  } finally {
+    cleanup([reused])
+  }
+})
+
+test('stopTestApp: 남의 pid 라 거절하면 데몬 접속 파일의 pid 도 끄지 않는다', async () => {
+  const home = tempDir('athena-test-app-')
+  const other = await spawnTree()
+  const reused = spawnLoner()
+  try {
+    testApp.writeRecord(home, { pid: other.parent, startedAt: 'Thu Jan  1 09:00:00 1970', home, at: '' })
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: reused }))
+    const result = await testApp.stopTestApp(home, realDeps, { graceMs: 500 })
+    assert.equal(result.ok, false)
+    assert.deepEqual(result.stopped, [])
+    assert.equal(alive(reused), true)
+  } finally {
+    cleanup([other.parent, other.kid, reused])
+  }
+})
+
+test('stopTestApp: 앱보다 먼저 시작한 프로세스가 데몬 pid 를 쓰면(옛 접속 파일) 그 프로세스와 자식은 남긴다', async () => {
+  const home = tempDir('athena-test-app-')
+  const older = await spawnTree() // 옛 데몬 pid 를 다시 쓴 관계없는 프로세스 흉내 — 앱보다 먼저 시작
+  await new Promise((resolve) => setTimeout(resolve, 1100)) // ps lstart 는 초 단위
+  const app = await spawnTree()
+  try {
+    testApp.writeRecord(home, { pid: app.parent, startedAt: startedAt(app.parent), home, at: '' })
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: older.parent }))
+    const result = await testApp.stopTestApp(home, realDeps, { graceMs: 3000 })
+    assert.equal(result.ok, true)
+    assert.deepEqual([...result.stopped].sort(), [app.parent, app.kid].sort())
+    assert.match(result.reason, /먼저 시작/)
+    assert.ok(await waitDead(app.parent))
+    assert.equal(alive(older.parent), true)
+    assert.equal(alive(older.kid), true)
+  } finally {
+    cleanup([app.parent, app.kid, older.parent, older.kid])
+  }
+})

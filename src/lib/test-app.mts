@@ -87,7 +87,7 @@ export function descendantsOf(rows: ProcessRow[], roots: number[]): number[] {
   return [...seen]
 }
 
-// 기록한 pid 와 자식 · 그 집 데몬과 자식만 끈다. 기록이 없거나 · 그 pid 가 이미 끝났거나 · 같은 번호를 다른 프로세스가 쓰면(시작 시각이 다름) 앱 쪽은 끄지 않는다
+// 기록한 pid 와 자식 · 그 집 데몬(앱 기록이 유효하고 앱보다 늦게 시작한 것)과 자식만 끈다. 기록이 없거나 · 그 pid 가 이미 끝났거나 · 같은 번호를 다른 프로세스가 쓰면(시작 시각이 다름) 앱 쪽은 끄지 않는다
 export async function stopTestApp(home: string, deps: StopDeps, { graceMs = 10_000 } = {}): Promise<StopResult> {
   const record = readRecord(home)
   const roots: number[] = []
@@ -100,8 +100,15 @@ export async function stopTestApp(home: string, deps: StopDeps, { graceMs = 10_0
     reason = `pid ${record.pid} 를 다른 프로세스가 쓰고 있어 끄지 않아요(시작 시각이 기록과 다름)`
   }
   else roots.push(record.pid)
+  // 데몬은 앱 기록이 유효할 때(앱을 뿌리에 넣었을 때)만, 그리고 앱보다 늦게 시작한 프로세스일 때만 끈다 —
+  // 접속 파일만 남은 옛 데몬 pid 를 다른 프로세스가 다시 쓰면 그 프로세스는 앱보다 먼저 시작했으니 남긴다
   const daemon = daemonPid(home)
-  if (daemon && deps.alive(daemon)) roots.push(daemon)
+  if (daemon && deps.alive(daemon)) {
+    const daemonStart = Date.parse(deps.startedAt(daemon))
+    if (!roots.length) reason += ` · 데몬(pid ${daemon})은 앱 기록으로 확인할 수 없어 끄지 않아요`
+    else if (Number.isNaN(daemonStart) || daemonStart < Date.parse((record as TestAppRecord).startedAt)) reason += ` · pid ${daemon} 는 앱보다 먼저 시작해 이 앱의 데몬이 아니라 끄지 않아요`
+    else roots.push(daemon)
+  }
   const targets = descendantsOf(deps.rows(), roots).filter((pid) => pid !== process.pid)
   for (const pid of targets) {
     try {
@@ -120,5 +127,5 @@ export async function stopTestApp(home: string, deps: StopDeps, { graceMs = 10_0
   }
   // 남의 pid 라 거절한 기록은 남겨 둔다(사람이 본다) — 끝냈거나 이미 끝난 기록은 지운다
   if (record && !refused) fs.rmSync(recordPath(home), { force: true })
-  return { ok: !refused, reason, stopped: targets }
+  return { ok: !refused, reason: reason.replace(/^ · /, ''), stopped: targets }
 }
