@@ -258,7 +258,34 @@ if [ $NO_VERIFY = 0 ] && git -C "$TOP" cat-file -e HEAD:.github/workflows/athena
   HANDOFF_VERIFY=1
   VERIFY_NOTE="전체 검증은 넘긴 뒤 Actions 에서"
 fi
-if [ $NO_VERIFY = 0 ] && [ $HANDOFF_VERIFY = 0 ]; then
+# PR 길(autoMerge + 자동 PR — athena_config auto_flow 가 off 가 아님) — 커밋마다 엄격 전체 검증을 돌리지 않는다.
+#   같은 HEAD 의 엄격 검증은 PR 자동 리뷰가 리뷰와 같이 돌리고 머지 앞에 한 번 더 확인한다(pr-auto.mjs readyToMerge · docs/pr-auto.md "검증").
+#   여기서는 지정 파일의 문법만 본다(js · mjs · cjs → node --check · sh → bash -n · py → ast · json). .mts · .ts 는 PR 검증의 check · tsc 가 본다.
+#   ATHENA_VERIFY_FULL=1 이면 예전처럼 여기서 엄격 검증을 돈다
+PR_QUICK=0
+if [ $NO_VERIFY = 0 ] && [ $HANDOFF_VERIFY = 0 ] && [ "${ATHENA_VERIFY_FULL:-}" != 1 ] \
+  && [ -n "$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, auto_flow; print(1 if auto_flow(load(sys.argv[1]), sys.argv[2]) != "off" else "")' "$ATHENA_DIR" "$REPO" 2>/dev/null)" ]; then
+  PR_QUICK=1
+  echo "── 빠른 확인: 지정 파일 문법(전체 검증은 PR 자동 리뷰에서 · 머지 앞 같은 HEAD 한 번)"
+  QUICK_FAILED=""; QUICK_COUNT=0
+  for path in ${FILES[@]+"${FILES[@]}"}; do
+    [ -f "$TOP/$path" ] || continue
+    quick_out=""
+    case "$path" in
+      *.js|*.mjs|*.cjs) quick_out="$(node --check "$TOP/$path" 2>&1)" ;;
+      *.sh) quick_out="$(bash -n "$TOP/$path" 2>&1)" ;;
+      *.py) quick_out="$(python3 -c 'import ast, sys; ast.parse(open(sys.argv[1], encoding="utf-8").read(), sys.argv[1])' "$TOP/$path" 2>&1)" ;;
+      *.json) quick_out="$(node -e 'JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"))' "$TOP/$path" 2>&1)" ;;
+      *) continue ;;
+    esac
+    # shellcheck disable=SC2181
+    if [ $? != 0 ]; then QUICK_FAILED="$QUICK_FAILED $path"; printf '❌ %s\n%s\n' "$path" "$quick_out" >&2; fi
+    QUICK_COUNT=$((QUICK_COUNT + 1))
+  done
+  [ -z "$QUICK_FAILED" ] || { unstage; fail "빠른 확인(문법)을 통과하지 못했다:$QUICK_FAILED"; }
+  VERIFY_NOTE="빠른 확인 통과(문법 ${QUICK_COUNT}개) — 전체 검증은 PR 자동 리뷰에서"
+fi
+if [ $NO_VERIFY = 0 ] && [ $HANDOFF_VERIFY = 0 ] && [ $PR_QUICK = 0 ]; then
   SCRIPT="$ATHENA_DIR/scripts/verify/$REPO.sh"
   [ -x "$SCRIPT" ] || { unstage; fail "검증 스크립트가 없다: scripts/verify/$REPO.sh"; }
   if [ -z "$VERIFY_ARGS" ] && [ "$REPO_KIND" = monorepo ]; then
@@ -337,7 +364,7 @@ if not update_plan(plan, add_commit):
 PYEOF
 [ $? = 0 ] || echo "⚠️ 커밋은 됐지만 계획서 기록에 실패했다 — 다시 커밋하지 말고 계획서 ## Commits 에 손으로 적는다: $SHA" >&2
 # 측정용 사건 기록(docs/events.md) — 실패해도 커밋은 그대로
-node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] || [ "$HANDOFF_VERIFY" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
+node "$ATHENA_DIR/scripts/lib/events.mjs" commit plan="$PLAN" repo="$REPO" branch="$BRANCH" sha="$SHA" verified="$([ "$NO_VERIFY" = 1 ] || [ "$HANDOFF_VERIFY" = 1 ] || [ "$PR_QUICK" = 1 ] && echo false || echo true)" verify="$VERIFY_NOTE" >/dev/null 2>&1 || true
 
 # 끝난 일의 Status — in_progress · planned 면 ready_for_review 로(이미 ready_for_review · done · blocked 는 그대로 · docs/workflow.md 4절). 실패해도 커밋은 그대로
 OLD_STATUS="$(python3 "$ATHENA_DIR/scripts/lib/plan_autofill.py" status "$ATHENA_DIR" "$PLAN" 2>/dev/null || true)"

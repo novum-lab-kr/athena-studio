@@ -879,6 +879,79 @@ export const omittedSection = (packed) => {
   return lines.join('\n')
 }
 
+// 조각으로 나눠 다 보기(2026-11-08 #267 — 잘린 diff 멈춤 37번 중 34번은 이미 승인이었다) — 첫 조각(packDiff)에 못 들어간 파일(잘림 · 빠짐)만 모아
+// 같은 크기로 다시 싼다. 조각마다 리뷰어가 따로 보고 결과를 합친다(mergePartResults). 조각을 더 만들어도 못 본 파일이 줄지 않으면(파일 하나가 limit 보다 크다) 멈춘다 —
+// 그 파일은 마지막 조각에서 못 본 파일로 남아 잘린 diff 승인(사람 확인)은 그대로. 코드로 보이는 긴 줄을 줄인 파일도 그대로 못 본 파일이다(조각을 나눠도 줄은 그대로라)
+export const MAX_DIFF_PARTS = 4
+export const packDiffParts = (diff, options, maxParts = MAX_DIFF_PARTS) => {
+  const files = splitDiff(diff)
+  const parts = [packDiff(diff, options)]
+  for (;;) {
+    const last = parts.at(-1)
+    const left = new Set([...last.truncated, ...last.dropped].map((item) => item.path))
+    if (!left.size || parts.length >= maxParts) break
+    const rest = files.filter((file) => left.has(file.path)).map((file) => file.text).join('')
+    const next = packDiff(rest, options)
+    if (next.truncated.length + next.dropped.length >= left.size) break
+    parts.push(next)
+  }
+  const last = parts.at(-1)
+  // 합친 결과 — 생성물은 첫 조각 것(뒤 조각은 이미 뺀 diff) · 줄인 줄은 모든 조각 · 잘림 · 빠짐은 마지막 조각 것만(앞 조각의 것은 뒤 조각이 통째로 봤다)
+  const whole = { text: '', generated: parts[0].generated, shortened: parts.flatMap((part) => part.shortened), truncated: last.truncated, dropped: last.dropped }
+  return { parts, packed: { ...whole, complete: missedFiles(whole).length === 0 } }
+}
+// 조각 k 를 프롬프트에 넣을 모양 — 마지막이 아닌 조각의 잘림 · 빠짐은 뒤 조각이 보니 "못 넣은 것" 으로 적지 않는다
+export const partForPrompt = (parts, index) => (index < parts.length - 1 ? { ...parts[index], truncated: [], dropped: [], complete: true } : parts[index])
+
+// 조각마다 리뷰어 결과([조각][자리]) → 자리마다 하나. 한 조각이라도 답하지 못했으면 그 실패 · 다 답했으면 판정은 결정 > 수정 > 승인 · 지적 · 결정은 모두 · 토큰은 합(모르면 null)
+const VERDICT_RANK = { approve: 0, changes: 1, decision: 2 }
+export const mergePartResults = (partResults) => {
+  if (partResults.length === 1) return partResults[0]
+  return partResults[0].map((first, slot) => {
+    const column = partResults.map((results) => results[slot])
+    const failed = column.find((result) => result.status !== 'ok')
+    if (failed) return failed
+    if (first.inherited) return first
+    const reviews = column.map((result) => result.review)
+    const verdict = reviews.map((review) => review.verdict).sort((left, right) => VERDICT_RANK[right] - VERDICT_RANK[left])[0]
+    const known = column.map((result) => result.tokens).filter((value) => Number.isFinite(value))
+    return {
+      ...first,
+      review: { ...reviews[0], verdict, summary: reviews.map((review, index) => `(${index + 1}/${reviews.length}) ${review.summary}`).join(' '), findings: reviews.flatMap((review) => review.findings), decisions: reviews.flatMap((review) => review.decisions) },
+      tokens: known.length ? known.reduce((sum, value) => sum + value, 0) : null,
+    }
+  })
+}
+
+// 권장 지적 묶음 이슈(2026-11-08 #267 — 드문 경우 지적으로 바퀴를 세 번 돌았다) — 머지를 막지 않은 지적(advisory)을 PR 하나에 이슈 하나로.
+// 이름 <날짜>-<레포>-pr<번호>-리뷰-권장.md · 다음 라운드의 새 지적은 같은 파일 끝에 더한다(같은 파일 · 문제 · 고칠 방법이면 다시 적지 않는다). 더할 것이 없으면 null
+export const ADVISORY_ISSUE_SUFFIX = (repo, number) => `-${repo}-pr${number}-리뷰-권장.md`
+const advisoryKey = (line) => line.replace(/^- \[.\] /, '').replace(/ \(@[0-9a-f]+\)$/, '')
+export const advisoryIssue = ({ repo, number, sha, advisories, planFile, date, existing = '' }) => {
+  const short = String(sha).slice(0, 7)
+  const known = new Set(String(existing).split('\n').filter((line) => /^- \[.\] /.test(line)).map(advisoryKey))
+  const fresh = [...new Set(advisories.map((item) => `- [ ] ${item.file}${item.line ? `:${item.line}` : ''} — ${item.problem} → ${item.fix} (@${short})`))]
+    .filter((line) => !known.has(advisoryKey(line)))
+  if (!fresh.length) return null
+  if (existing) return `${String(existing).trimEnd()}\n${fresh.join('\n')}\n`
+  return `---
+title: ${repo}#${number} 자동 리뷰 권장 지적(머지를 막지 않음)
+status: open
+repo: ${repo}
+kind: code
+severity: low
+source: PR 자동 리뷰 ${date} · ${planFile}
+plan:
+pr: ${number}
+---
+
+자동 리뷰가 머지를 막지 않은 권장(advisory) 지적을 PR ${repo}#${number} 하나에 모았다 — 바뀐 줄이 일으키는 크리티컬이 아니라 바퀴를 돌리지 않았다. 할 만한 것만 골라 고치고 나머지는 지운다.
+
+## 할 일
+${fresh.join('\n')}
+`
+}
+
 // 잘린 diff 로 받은 승인 — 머지 조건의 승인으로 세지 않고 사람 확인으로(계획서 줄 결과 머리)
 export const PARTIAL_APPROVAL = '잘린 diff 승인'
 export const partialApproval = (summary, packed) => summary.verdict === 'approve' && !packed.complete

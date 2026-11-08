@@ -22,7 +22,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine, advisoryIssue, ADVISORY_ISSUE_SUFFIX } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 import { claudeLimited, CLAUDE_LIMIT_ERROR } from './scripts/lib/review-cli.mjs'
 import { readFileSync } from 'node:fs'
@@ -67,6 +67,9 @@ const advComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('claud
 check('E — 댓글에 ⛔ 막음 · 💡 권장 표시 · 권장은 머지를 막지 않는다는 줄', advComment.includes('⛔ 막음 `a.js:3`') && advComment.includes('💡 권장 `c.js:5`') && advComment.includes('권장 1개는 머지를 막지 않는다'), advComment)
 const advInstr = fixInstruction({ agent: 'web-fe', org: 'acme', repo: 'web', number: '7', sha: 'abcdef1', round: 1, findings: both.findings, plan: 'p', worktree: '/wt', athenaDir: '/a' })
 check('E — 수정 지시에 권장은 없다', advInstr.includes('a.js:3') && !advInstr.includes('c.js'), advInstr)
+const advIssue = advisoryIssue({ repo: 'web', number: '7', sha: 'abcdef1234', advisories: advSum.advisories, planFile: 'plans/task/x.md', date: '2026-11-08' })
+const advAgain = advisoryIssue({ repo: 'web', number: '7', sha: 'bbbbbbb', advisories: [...advSum.advisories, { file: 'd.js', line: 0, problem: 'q', fix: 'g', severity: 'advisory' }], planFile: 'p', date: '2026-11-09', existing: advIssue })
+check('권장 묶음 이슈(#267) — PR 당 하나 · 이슈 머리(repo · pr · severity low) · 다음 라운드는 새 지적만 끝에 · 같은 지적은 다시 안 적음 · 더할 것 없으면 null', advIssue.includes('repo: web') && advIssue.includes('pr: 7') && advIssue.includes('severity: low') && advIssue.includes('- [ ] c.js:5 — 이름이 길다 → 줄인다 (@abcdef1)') && advAgain.startsWith(advIssue.trimEnd()) && advAgain.trimEnd().endsWith('- [ ] d.js — q → g (@bbbbbbb)') && advAgain.split('c.js:5').length === 2 && advisoryIssue({ repo: 'web', number: '7', sha: 'c', advisories: advSum.advisories, planFile: 'p', date: 'd', existing: advAgain }) === null && ADVISORY_ISSUE_SUFFIX('web', '7') === '-web-pr7-리뷰-권장.md', advAgain)
 
 console.log('\n사람에게 넘기지 않기(2026-10-26 결정 A · B · C)')
 const autoSum = aggregate([ok('claude', approve), ok('codex', implDecision())], 2)
@@ -330,7 +333,7 @@ EOF
 
 # ── 큰 diff — 생성물은 빼고 코드 파일부터 · 잘린 승인은 머지 승인 아님(이슈 20261025 · syung#12 · syung#23) ──
 node --input-type=module - <<'EOF' || FAIL=1
-import { packDiff, splitDiff, generatedReason, globToRegExp, linguistGeneratedRules, linguistGenerated, missedFiles, dataLikeLine, repoGeneratedPatterns, omittedSection, partialApproval, partialCount, PARTIAL_APPROVAL, reviewComment, aggregate, validReview } from './scripts/lib/pr-auto.mjs'
+import { packDiff, packDiffParts, partForPrompt, mergePartResults, splitDiff, generatedReason, globToRegExp, linguistGeneratedRules, linguistGenerated, missedFiles, dataLikeLine, repoGeneratedPatterns, omittedSection, partialApproval, partialCount, PARTIAL_APPROVAL, reviewComment, aggregate, validReview } from './scripts/lib/pr-auto.mjs'
 import { buildPrompt } from './scripts/pr-auto.mjs'
 let pass = 0, fail = 0
 const check = (name, ok, detail = '') => { if (ok) { pass++; console.log(`  ✔ ${name}`) } else { fail++; console.log(`  ✖ ${name}${detail ? `\n      ${detail}` : ''}`) } }
@@ -402,6 +405,15 @@ const changes = { verdict: 'changes', summary: '고칠 것', findings: [{ file: 
 const both = aggregate([ok('claude', approve), ok('codex', approve)], 2)
 check('못 본 파일 목록(missedFiles) — 잘린 · 빠진 파일 경로(history 에 남겨 다음 라운드가 전체 diff 를 다시 본다)', JSON.stringify(missedFiles(over)) === JSON.stringify([...over.truncated, ...over.dropped].map((item) => item.path)) && missedFiles(packed).length === 0)
 check('잘린 diff + 둘 다 승인 → 잘린 승인(머지 승인 아님) · 다 넣었으면 그대로 승인 · 수정 필요는 그대로 보낸다', partialApproval(both, over) && !partialApproval(both, packed) && !partialApproval(aggregate([ok('claude', approve), ok('codex', changes)], 2), over) && partialCount(over) === over.truncated.length + over.dropped.length && PARTIAL_APPROVAL === '잘린 diff 승인')
+const split = packDiffParts(big('src/a.mjs') + big('src/b.mjs') + big('src/c.mjs') + fileDiff('src/d.mjs', ['export const d = 1']), { limit: LIMIT })
+check('조각 리뷰(#267) — 첫 조각에 못 넣은 b · c 만 뒤 조각으로 · 합친 결과는 다 봄 · 앞 조각 프롬프트엔 "못 넣은 것" 없음', split.parts.length >= 2 && split.packed.complete && !split.parts[0].complete && partForPrompt(split.parts, 0).complete && !split.parts.slice(1).some((part) => part.text.includes('src/a.mjs')) && split.parts.slice(1).some((part) => part.text.includes('src/c.mjs')), JSON.stringify(split.parts.map((part) => ({ ...part, text: part.text.length }))))
+const huge = packDiffParts(fileDiff('src/h.mjs', Array.from({ length: 1400 }, (_, index) => `const value${index} = ${index} // ${'x'.repeat(30)}`)), { limit: LIMIT })
+check('조각 리뷰 — 파일 하나가 조각보다 크면 더 나누지 않고 못 본 파일로 남김(잘린 승인 그대로)', huge.parts.length === 1 && !huge.packed.complete && JSON.stringify(missedFiles(huge.packed)) === '["src/h.mjs"]')
+const capped = packDiffParts(['a', 'b', 'c', 'e', 'f', 'g'].map((name) => big(`src/${name}.mjs`)).join(''), { limit: LIMIT }, 2)
+check('조각 리뷰 — 조각 상한을 넘으면 마지막 조각의 못 본 파일이 남음', capped.parts.length === 2 && !capped.packed.complete)
+const mergedParts = mergePartResults([[{ ...ok('codex', approve), tokens: 10 }], [{ ...ok('codex', changes), tokens: 5 }]])
+const failedPart = mergePartResults([[ok('codex', approve)], [{ name: 'codex', status: 'failed', reason: 'x' }]])
+check('조각 결과 합치기 — 한 조각이라도 수정 필요면 수정 필요 · 지적 모두 · 토큰 합 · 한 조각 실패면 실패', mergedParts[0].review.verdict === 'changes' && mergedParts[0].review.findings.length === changes.findings.length && mergedParts[0].tokens === 15 && failedPart[0].status === 'failed' && aggregate(mergedParts, 1).verdict === 'changes' && aggregate(mergePartResults([[ok('codex', approve)], [ok('codex', approve)]]), 1).verdict === 'approve', JSON.stringify(mergedParts))
 const partialComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both, partial: partialCount(over) })
 check('PR 댓글 — 다 넣지 못한 파일 수 · 이 승인은 머지 승인으로 세지 않는다 · 다 넣었으면 그 줄 없음', partialComment.includes(`코드 파일 ${partialCount(over)}개를 다 넣지 못했다`) && partialComment.includes('머지 승인으로 세지 않고') && !reviewComment({ sha: 'a', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both }).includes('다 넣지 못했다'), partialComment)
 const pr = { baseRefName: 'dev', title: '시험', body: '본문' }
@@ -584,7 +596,7 @@ MULTI_PURE="$(node --input-type=module -e "
 # 코어 scripts/ 를 임시 폴더에 복사하고 화면(scripts/screen) · gh · 검증(reuse.sh)을 가짜로 바꾼다. origin 은 로컬 bare 레포
 echo; echo "가짜 본체(ship.sh 본문 고침 · 머지 결과 알림)"
 CORE="$TMP/core"; mkdir -p "$CORE/plans/task"; cp -R scripts "$CORE/scripts"
-printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "fastPath": false, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
 FLOG="$TMP/fake.log"; : > "$FLOG"
 cat > "$CORE/scripts/screen" <<'SH'
 #!/bin/sh
@@ -761,10 +773,13 @@ const line = (path, body) => `diff --git a/${path} b/${path}\n--- a/${path}\n+++
 const code = (path) => line(path, Array.from({ length: 900 }, (_, index) => `+const v${index} = ${index} // ${"x".repeat(40)}`).join("\n"))
 require("fs").writeFileSync(process.argv[1], line("data/fare/bus_km.json", `+{${"\"1\":2,".repeat(300000)}}`) + code("src/a.mjs") + code("src/b.mjs"))
 require("fs").writeFileSync(process.argv[2], line("data/fare/bus_km.json", `+{${"\"1\":2,".repeat(300000)}}`) + line("src/fare.mjs", "+export const fare = 1"))
-' "$TMP/big.diff" "$TMP/gen.diff"
+require("fs").writeFileSync(process.argv[3], line("src/huge.mjs", Array.from({ length: 1300 }, (_, index) => `+const v${index} = ${index} // ${"x".repeat(40)}`).join("\n")))
+' "$TMP/big.diff" "$TMP/gen.diff" "$TMP/huge.diff"
 cp "$CORE/$PLANF" "$TMP/plan.keep"; write_plan '수정 필요' p3
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
-expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다"' "$OUT"
+expect "큰 diff — 생성물(bus_km.json)은 뺐다고 알림 · 코드 파일이 넘치면 2조각으로 나눠 다 보고 평소 승인 길(잘린 diff 멈춤 없음 · #267)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다: data/fare/bus_km.json" && echo "$OUT" | grep -q "2조각으로 나눠 리뷰" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/huge.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+expect "파일 하나가 한 조각보다 크면 나눠도 못 봄 — 승인이어도 머지하지 않음(잘린 diff 승인 · 사람에게)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인(못 본 코드 파일 1개)" && echo "$OUT" | grep -q "다 넣지 못했다" && ! echo "$OUT" | grep -q "조각으로 나눠"' "$OUT"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "큰 생성물 + 작은 코드 — 생성물만 빼고 다 넣었으면 평소 승인 길(머지 확인 요청)" 'echo "$OUT" | grep -q "생성물 1개는 diff 본문에서 뺐다" && echo "$OUT" | grep -q "할 일: 안 정한 결정" && ! echo "$OUT" | grep -q "잘린 diff 승인"' "$OUT"
 # PR 이 스스로 .gitattributes 에 "src/** linguist-generated" 를 더해도 판별은 base(origin/dev) 쪽 — src 코드는 그대로 리뷰(PR #62 자동 리뷰 지적 1)
@@ -777,7 +792,7 @@ expect "PR HEAD 의 .gitattributes 는 쓰지 않음 — src/fare.mjs 는 생성
 mkdir -p "$QUEUE/history"; printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":["src/b.mjs"]}' "$SHA" > "$QUEUE/history/web-7.json"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/gen.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "지난 라운드 못 본 파일 있음 → 2라운드는 PR 전체 diff(증분 아님) · 프롬프트에 그렇게" 'grep -q "지난 리뷰가 diff 일부만 봐서 전체를 다시 넣었다" "$TMP/prompt.txt" && grep -q "export const fare" "$TMP/prompt.txt" && echo "$OUT" | grep -q "라운드 2/3"' "$OUT"
-OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
+OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/huge.diff" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
 expect "전체를 다시 넣어도 넘치면 2라운드 승인도 잘린 diff 승인(머지 안 함)" 'echo "$OUT" | grep -q "할 일: 머지하지 않음 — 잘린 diff 승인"' "$OUT"
 printf '{"sha":"%s","round":1,"findings":[],"autoDecisions":[],"missed":[]}' "$SHA" > "$QUEUE/history/web-7.json"
 OUT="$(cd "$CORE" && "${ENVS[@]}" FAKE_HEAD="$MIXED" FAKE_CODEX=ok FAKE_DIFF="$TMP/big.diff" FAKE_PROMPT="$TMP/prompt.txt" node scripts/pr-auto.mjs --plan "$PLANF" --pr web#7 --dry-run 2>&1)"
@@ -849,7 +864,8 @@ else echo '{}'; fi
 SH
 chmod +x "$CORE/scripts/screen"
 # FAKE_VERIFY_KILL — 검증 도중 부른 쪽(node)을 죽인다(머지 직전 확인 중에 처리기가 꺼진 경우)
-printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -z "$FAKE_VERIFY_FAIL" ]\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
+# FAKE_VERIFY_LOG — 검증 시작 · 끝을 적는다(리뷰 ‖ 검증 순서 · 멈춤 확인) · FAKE_VERIFY_SLEEP — 검증이 그만큼 걸리는 것처럼
+printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-start >> "$FAKE_VERIFY_LOG"\n[ -n "$FAKE_VERIFY_SLEEP" ] && sleep "$FAKE_VERIFY_SLEEP"\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-end >> "$FAKE_VERIFY_LOG"\n[ -z "$FAKE_VERIFY_FAIL" ]\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
 WT="$TMP/wt-confirm"; mkdir -p "$WT"
 git -C "$WT" init -q && git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
 SHA="$(git -C "$WT" rev-parse HEAD)"
@@ -877,6 +893,8 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
   rm -rf "$CORE/.requests" "$CORE/.events.jsonl" "$TMP/queue-confirm" "$GH_LOG.views" "$CORE/plans/task/"*; : > "$GH_LOG"
   # WATCHER_HELD=1 — 처리기가 이미 도는 것처럼(미룬 알림이 진짜 처리기를 띄우지 않게)
   [ "${WATCHER_HELD:-0}" = 1 ] && mkdir -p "$TMP/queue-confirm/.watcher.lock" && echo $$ > "$TMP/queue-confirm/.watcher.lock/pid"
+  # 2026-11-08 — 빠른 길이 모든 PR 기본(#267). 빠른 길 시험(계획서 Fast path 줄 · fastPath 를 직접 준 것)이 아니면 옛 흐름(상한 3) 시험으로 남긴다
+  case "$extra${EXTRA_PLAN:-}${AUTO_LINE:-}" in *fastPath*|*'Fast path: yes'*|*'빠른 길'*) ;; *) extra="$extra, \"fastPath\": false" ;; esac
   printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true%s } ] }\n' "$extra" > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n%s- PR: https://github.com/acme/web/pull/7\n%s' "$WT" "${AUTO_LINE:+$AUTO_LINE
 }" "${EXTRA_PLAN:-}" > "$CORE/plans/task/x.md"
@@ -887,7 +905,7 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
     const { openRequest } = await import('./scripts/lib/requests.mjs')
     openRequest('.', { kind: 'decision', title: 'x', body: '- R1', links: { plan: 'plans/task/x.md' }, pane: null, dedupeKey: 'plan:plans/task/x.md' })" >/dev/null)
   env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" \
-    "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1
+    "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 ${PR_AUTO_FLAG:-} > "$TMP/merge.out" 2>&1
   local merged=no; grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && merged=yes
   local got; got="$(grep -o '^- Auto review: .*' "$CORE/plans/task/x.md")"
   if [ "$merged" = "$want" ] && printf '%s' "$got" | grep -Eq "$line"; then echo "  ✔ $name — ${got#- Auto review: }"
@@ -896,6 +914,22 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
 merge_case "키 없음 → 머지 확인 요청만(머지 안 함)" "" no '머지 확인 대기'
 [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ] && echo "  ✔ 키 없음 → 확인 요청이 열림" || { echo "  ✖ 키 없음인데 확인 요청이 없다"; FAIL=1; }
 merge_case "autoMergeConfirm: true → 지금처럼 확인 요청" ', "autoMergeConfirm": true' no '머지 확인 대기'
+# --no-merge(2026-11-08 아테나 요청) — 확인 없는 레포라도 승인 · 같은 HEAD 검증 · 충돌 확인 뒤 머지하지 않고 측정값을 찍는다 · 리뷰는 실제로(댓글 · 사건)
+PR_AUTO_FLAG=--no-merge merge_case "--no-merge — 승인이어도 머지 바로 앞에서 멈춤" ', "autoMergeConfirm": false' no '승인 1/1 → 머지 안 함\(--no-merge\)'
+grep -q '머지 안 함(--no-merge)' "$TMP/merge.out" && grep -q '측정: web#7 · .* · 리뷰 1번 · 검증 0번 · 토큰 모름 · 이 처리의 검증 실행 1번' "$TMP/merge.out" \
+  && grep -q '^pr review 7' "$GH_LOG" && grep -q '"reason":"no-merge"' "$CORE/.events.jsonl" && [ ! -e "$TMP/queue-confirm/confirm/web-7.json" ] \
+  && echo "  ✔ --no-merge — 댓글은 달고 · 측정값 출력 · 머지 job 없음 · auto.stop(no-merge)" || { echo "  ✖ --no-merge — 출력 · 사건"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+PR_AUTO_FLAG=--no-merge merge_case "--no-merge — 수정 필요면 수정 지시까지는 평소대로" ', "autoMergeConfirm": false' no '수정 필요' FAKE_CODEX=changes
+# 리뷰 ‖ 검증(2026-11-08 #267) — 같은 HEAD 검증이 리뷰 댓글보다 먼저 시작하고(동시) 머지 앞에서 한 번만 돈다 · 승인이 아니면 도는 검증을 멈춘다
+VLOG="$TMP/verify-order.log"; : > "$VLOG"
+merge_case "리뷰 ‖ 검증 — 승인 → 바로 머지 · 검증은 한 번" ', "autoMergeConfirm": false' yes '머지됨' FAKE_VERIFY_LOG="$VLOG"
+[ "$(grep -c verify-start "$VLOG")" = 1 ] && grep -q '같은 HEAD 검증을 리뷰와 동시에 시작' "$TMP/merge.out" \
+  && echo "  ✔ 리뷰 ‖ 검증 — 리뷰어 앞에서 띄움 · 머지 앞 검증은 같은 약속(한 번)" || { echo "  ✖ 리뷰 ‖ 검증 — 횟수 $(grep -c verify-start "$VLOG")"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+: > "$VLOG"; started="$(date +%s)"
+merge_case "리뷰 ‖ 검증 — 수정 필요 → 도는 검증을 멈춤(끝까지 기다리지 않음)" ', "autoMergeConfirm": false' no '수정 필요' FAKE_VERIFY_LOG="$VLOG" FAKE_VERIFY_SLEEP=20 FAKE_CODEX=changes
+took=$(( $(date +%s) - started ))
+grep -q verify-start "$VLOG" && ! grep -q verify-end "$VLOG" && [ "$took" -lt 15 ] \
+  && echo "  ✔ 수정 필요 — 검증 멈춤(${took}초 · 끝 줄 없음)" || { echo "  ✖ 수정 필요 — 검증이 멈추지 않음(${took}초 · $(tr '\n' ' ' < "$VLOG"))"; FAIL=1; }
 # 리뷰 · 머지 나누기(docs/pr-auto.md "켜기") — FAKE_CODEX=ok 라도 리뷰 끔이면 리뷰어를 부르지 않는다(PR 댓글 없음)
 no_comment() { if grep -q '^pr comment' "$GH_LOG"; then echo "  ✖ $1 — 리뷰 댓글이 달렸다"; FAIL=1; else echo "  ✔ $1 — 리뷰 댓글 없음"; fi; }
 no_request() { if [ -n "$(ls "$CORE/.requests" 2>/dev/null)" ]; then echo "  ✖ $1 — 요청이 열렸다"; FAIL=1; else echo "  ✔ $1 — 요청 없음"; fi; }
@@ -934,7 +968,7 @@ env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="
 if ! grep -q '^pr merge' "$GH_LOG" && grep -q '검증 대기 — 머지 전에 base 가 바뀜(dev → main)' "$CORE/plans/task/x.md" && [ -z "$(ls "$TMP/queue-confirm/confirm" 2>/dev/null)" ] && grep -lq '"state": *"cancelled"' "$CORE/.requests"/*/request.json "$CORE/.requests"/*.json 2>/dev/null; then echo "  ✔ 확인 대기 중 base 변경 → 머지 안 함 · 요청 닫음 · 줄에 이유"; else echo "  ✖ 확인 대기 중 base 변경"; grep -o '^- Auto review: .*' "$CORE/plans/task/x.md"; ls -R "$CORE/.requests" | head; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
 # 확인 없는 머지도 같다
 rm -rf "$TMP/queue-confirm"; mkdir -p "$TMP/queue-confirm/confirm"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
-printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
 printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":1,"worktree":"%s","base":"dev","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
 env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" GH_LOG="$GH_LOG" "$(command -v node)" --input-type=module -e "
   const { checkConfirms } = await import('$CORE/scripts/pr-auto.mjs'); await checkConfirms()" > "$TMP/merge.out" 2>&1
@@ -1197,7 +1231,7 @@ EXTRA_PLAN="- Review result: 승인 @${SHA:0:7} · tree ${TREE:0:12} · 📦 web
 # 업데이트 전에 생긴 이어받음 머지 대기(짧은 리뷰 표식 없음)는 머지하지 않는다 — 지난 리뷰 기록이 맞으면 상한 줄을 되살려 짧은 리뷰로 돌리고, 아니면 멈춤(2026-11-03 리뷰 지적)
 legacy_job() {   # <지난 리뷰 기록 yes|no>
   rm -rf "$TMP/queue-confirm" "$CORE/.events.jsonl" "$CORE/.requests"; mkdir -p "$TMP/queue-confirm/confirm" "$TMP/queue-confirm/history" "$TMP/queue-confirm/.watcher.lock"; echo $$ > "$TMP/queue-confirm/.watcher.lock/pid"; : > "$GH_LOG"; rm -f "$GH_LOG.views"
-  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
+  printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @%s · 상한 뒤 이어받음(리뷰 없이 검증만) → 바로 머지(확인 없음) · 라운드 4/3 · 2026-10-26 10:00\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "${SHA:0:7}" > "$CORE/plans/task/x.md"
   [ "$1" = yes ] && printf '{"sha":"%s","round":3,"findings":[{"file":"b.js","line":2,"problem":"p","fix":"f"}],"autoDecisions":[],"missed":[]}' "${OLD7}aaaa" > "$TMP/queue-confirm/history/web-7.json"
   printf '{"plan":"plans/task/x.md","repo":"web","number":"7","sha":"%s","round":4,"max":3,"note":"","takeover":true,"worktree":"%s","base":"main","root":"%s","packId":null,"request":null,"noConfirm":true}\n' "$SHA" "$WT" "$CORE" > "$TMP/queue-confirm/confirm/web-7.json"
@@ -1315,6 +1349,10 @@ PENDING=1 AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤
 merge_case "E — 권장만 남은 수정 필요 → 승인으로 보고 머지 단계(바로 머지)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_CODEX=advisory
 grep -q "권장 1개는 머지를 막지 않는다" "$GH_LOG" && ! grep -q "수정 지시를 보낼 pane" "$CORE/.requests"/*.json 2>/dev/null \
   && echo "  ✔ E — 권장은 PR 댓글에만(에이전트 지시 없음)" || { echo "  ✖ E — 권장 처리"; FAIL=1; }
+ADV_ISSUE="$(ls "$CORE"/issues/*-web-pr7-리뷰-권장.md 2>/dev/null | head -1)"
+[ -n "$ADV_ISSUE" ] && grep -q '^- \[ \] c.js:5 — 이름이 길다 → 줄인다' "$ADV_ISSUE" && grep -q '^pr: 7$' "$ADV_ISSUE" \
+  && echo "  ✔ E — 권장 지적은 PR 당 이슈 하나(issues/<날짜>-web-pr7-리뷰-권장.md)" || { echo "  ✖ E — 권장 묶음 이슈 없음"; ls "$CORE/issues" 2>&1 | sed 's/^/      /'; FAIL=1; }
+rm -f "$CORE"/issues/*-web-pr7-리뷰-권장.md
 
 echo; echo "⚡ 빠른 길(2026-10-31 D1 · D2 — 계획서 '- Fast path: yes' PR 은 상한 1 · 리뷰어는 평소와 같은 하나)"
 FAST_PLAN="- Fast path: yes (파일 3개)
@@ -1351,8 +1389,16 @@ rm -f "$CALLED"
 EXTRA_PLAN="$FAST_PLAN" merge_case "fastPath: false 레포 — 계획서에 yes 가 있어도 옛 흐름(상한 3 · 라운드 1/3)" ', "autoMergeConfirm": false, "fastPath": false' yes '머지됨 — squash → main · 리뷰어 claude 하나 · 라운드 1/3' FAKE_CODEX_CALLED="$CALLED"
 [ ! -e "$CALLED" ] && ! grep -q '"fast":true' "$CORE/.events.jsonl" && echo "  ✔ fastPath: false — 리뷰어는 그대로 하나 · 사건에 fast 없음" || { echo "  ✖ fastPath: false — 리뷰어 · 사건"; FAIL=1; }
 rm -f "$CALLED"
-merge_case "계획서에 Fast path 줄 없음 → 옛 흐름(상한 3)" ', "autoMergeConfirm": false' yes '머지됨 — squash → main · 리뷰어 claude 하나 · 라운드 1/3' FAKE_CODEX_CALLED="$CALLED"
-[ ! -e "$CALLED" ] && echo "  ✔ Fast path 줄 없음 — 리뷰어는 그대로 하나(주 도구 반대쪽)" || { echo "  ✖ Fast path 줄 없음 — 반대쪽이 아닌 리뷰어가 불림"; FAIL=1; }
+# 2026-11-08 #267 — 계획서에 Fast path 줄이 없어도 레포가 켜 두었으면(기본) 빠른 길(상한 1 — 리뷰는 PR 마다 최대 2번)
+merge_case "계획서에 Fast path 줄 없음 → 그래도 빠른 길(상한 1 · 라운드 1/1)" ', "autoMergeConfirm": false, "fastPath": true' yes '머지됨 — squash → main · ⚡ 빠른 길 — 상한 1 · 리뷰어 claude 하나 · 라운드 1/1' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"type":"auto.merge".*"fast":true' "$CORE/.events.jsonl" && echo "  ✔ Fast path 줄 없음 — 리뷰어는 그대로 하나(주 도구 반대쪽) · 사건 fast:true" || { echo "  ✖ Fast path 줄 없음 — 빠른 길 아님 · 반대쪽이 아닌 리뷰어"; FAIL=1; }
+rm -f "$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · 수정 필요 — 상한 뒤 이어받음(다음 커밋은 바뀐 부분 짧은 리뷰 후 머지) · ⚡ 빠른 길 — 상한 1 · 리뷰어 claude 하나 · 라운드 1/1 · 2026-11-08 10:00" \
+  merge_case "계획서에 Fast path 줄 없음 — 고친 새 HEAD → 2차 짧은 리뷰 승인 → 머지(라운드 2/1)" ', "autoMergeConfirm": false' yes '짧은 리뷰 — 리뷰어 claude 하나 · 라운드 2/1' FAKE_CODEX_CALLED="$CALLED"
+AUTO_LINE="- Auto review: web#7 @$OLD7 · ⚡ 빠른 길 · 상한 뒤 이어받음(바뀐 부분 짧은 리뷰 후 머지) → 머지 확인 대기 · 라운드 2/1 · 2026-11-08 10:00" \
+  merge_case "계획서에 Fast path 줄 없음 — 2차 뒤 또 커밋 → 멈춤(리뷰 3번째 없음)" ', "autoMergeConfirm": false' no '멈춤 — 라운드 상한' FAKE_CODEX_CALLED="$CALLED"
+[ ! -e "$CALLED" ] && grep -q '"reason":"rounds"' "$CORE/.events.jsonl" && echo "  ✔ 2차 뒤 멈춤 — auto.stop(rounds)" || { echo "  ✖ 2차 뒤 멈춤 사건"; FAIL=1; }
+rm -f "$CALLED"
 EXTRA_PLAN="$FAST_PLAN" merge_case "빠른 길 + 리뷰 끔 레포 → 지금처럼 리뷰 없이 머지(빠른 길 표시 없음)" ', "autoReview": false, "autoMergeConfirm": false' yes '머지됨 — squash → main\(리뷰 끔'
 ! grep -q '"fast":true' "$CORE/.events.jsonl" && echo "  ✔ 리뷰 끔 — 사건에 fast 없음" || { echo "  ✖ 리뷰 끔 — 사건에 fast 가 붙음"; FAIL=1; }
 
@@ -1366,7 +1412,7 @@ pending_plan() {   # <결정 대기 줄> — 지난 라운드 줄 · 결정 대�
   printf '# 시험\n## Checkpoint\n- Status: ready_for_review\n- Agent: web-fe\n- Work ref: %s · 🌿 feat/x · pane p3 (web-fe)\n- Auto review: web#7 @0000000 · 결정 필요 · 라운드 1/3 · s\n%s\n- PR: https://github.com/acme/web/pull/7\n' "$WT" "$1" > "$CORE/plans/task/x.md"
 }
 run_handle() { : > "$GH_LOG"; rm -f "$GH_LOG.views"; env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 > "$TMP/merge.out" 2>&1; }
-printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false } ] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoMergeConfirm": false, "fastPath": false } ] }\n' > "$CORE/athena.config.json"
 rm -rf "$CORE/.requests"; pending_plan "$MARK"; run_handle
 ! grep -q '^pr merge' "$GH_LOG" && grep -q '결정 필요 — 승인 1/1이지만' "$CORE/plans/task/x.md" && grep -q '^- Auto decisions: .*등록 실패' "$CORE/plans/task/x.md" \
   && echo "  ✔ A — 요청이 하나도 없어도 등록 실패 줄이 있으면 승인돼도 머지 안 함 · 줄 그대로" || { echo "  ✖ A — 등록 실패 줄로 머지가 막히지 않음"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
@@ -1406,7 +1452,7 @@ case "$1 $2" in
 esac
 SH
 chmod +x "$FBIN/gh"
-printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
+printf '{ "github": { "org": "acme" }, "repos": [{ "name": "web", "agents": ["web-fe"], "autoMerge": true, "fastPath": false, "prBase": "dev" }] }\n' > "$CORE/athena.config.json"
 G -C "$TMP/web" fetch -q origin 2>/dev/null
 G -C "$TMP/web" worktree add -q -b feat/y "$TMP/wt-y" origin/dev 2>/dev/null
 WTY="$(cd "$TMP/wt-y" && pwd -P)"

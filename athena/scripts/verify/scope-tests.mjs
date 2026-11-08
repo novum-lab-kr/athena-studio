@@ -10,6 +10,7 @@
 //      시험 파일은 폴더 경로(바로 아래 파일)와 앞에 변수가 붙은 경로의 뒤쪽도, 파일 이름만 적은 것(같은 이름이 3개 이하일 때)
 //   ② 시험에서 ①을 따라 닿는 파일에 바뀐 파일이 있으면(또는 바뀐 파일이 그 시험 자체면) 그 시험을 돌린다
 // 한계 — 스크립트가 다른 스크립트를 부르는 것(셸 → 셸)은 따라가지 않고, 문자열을 이어 붙여 만든 경로 · 실행 중에 정해지는 의존도 못 따라간다(그래서 설정 파일이 바뀌면 부르는 쪽이 전체를 돈다)
+//   공통 파일(scripts/lib/** · test/_lib.sh — 코어 athena/ 쪽 포함)이 바뀌면 종료 2(전체) · 앱 소스(src · scripts · bin 의 코드 · .sh — .d.ts 제외)에 닿는 시험이 없어도 종료 2
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, normalize } from 'node:path'
@@ -28,6 +29,11 @@ const MAX_BYTES = 1_000_000
 /** @param {string} text */
 const lines = (text) => text.split('\n').filter(Boolean)
 
+// 여러 시험이 함께 기대는 공통 파일 — 셸 → 셸 · 실행 중에 정해지는 경로로 쓰여 닿는 시험을 다 못 찾는다. 하나라도 바뀌면 전체
+const SHARED = /^(?:athena\/)?(?:scripts\/lib\/|test\/_lib\.sh$)/
+const APP_SOURCE = /^(?:src|scripts|bin)\/.+\.(?:js|mjs|cjs|mts|ts|tsx|jsx|sh)$/
+const TYPE_DECLARATION = /\.d\.(?:ts|mts|cts)$/
+
 const tracked = lines(
   execFileSync('git', ['-c', 'core.quotePath=false', '-C', tree, 'ls-files', '-co', '--exclude-standard'], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 }),
 ).filter((path) => existsSync(join(tree, path)))
@@ -38,6 +44,12 @@ const changed = lines(readFileSync(changedListPath, 'utf8'))
 const missing = changed.filter((path) => !fileSet.has(path))
 if (missing.length > 0) {
   console.error(`트리에 없는 바뀐 파일(삭제 · 이름 바꿈): ${missing.slice(0, 5).join(', ')} → 전체`)
+  process.exit(2)
+}
+
+const shared = changed.filter((path) => SHARED.test(path))
+if (shared.length > 0) {
+  console.error(`여러 시험이 함께 쓰는 공통 파일이 바뀜: ${shared.slice(0, 5).join(', ')} → 전체`)
   process.exit(2)
 }
 
@@ -174,8 +186,9 @@ for (const [kind, test] of tests) {
   for (const path of hits) covered.add(path)
   console.log(`${kind} ${test}`)
 }
-// 앱 소스(src · scripts · bin 의 코드)가 바뀌었는데 어떤 시험도 닿지 않으면 고르지 못한 것 — 전체를 돌리게 한다
-const uncovered = changed.filter((path) => /^(?:src|scripts|bin)\/.+\.(?:js|mjs|cjs|mts|ts|tsx|jsx)$/.test(path) && !covered.has(path))
+// 앱 소스(src · scripts · bin 의 코드 · 셸)가 바뀌었는데 어떤 시험도 닿지 않으면 고르지 못한 것 — 전체를 돌리게 한다
+//   타입 선언(.d.ts)은 시험이 가져다 쓰지 않고 tsc 가 본다 — 세지 않는다(2026-11-08 재현: src/renderer/studio-api.d.ts 하나로 #267 검증 5번이 모두 전체였다)
+const uncovered = changed.filter((path) => APP_SOURCE.test(path) && !TYPE_DECLARATION.test(path) && !covered.has(path))
 if (uncovered.length > 0) {
   console.error(`닿는 시험을 못 찾은 앱 소스: ${uncovered.slice(0, 5).join(', ')} → 전체`)
   process.exit(2)

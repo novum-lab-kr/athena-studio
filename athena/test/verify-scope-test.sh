@@ -175,6 +175,25 @@ git -C "$WORK" reset -q --hard
 echo 'module.exports = 3' > "$WORK/src/orphan.js"
 RESULT="$(picks src/orphan.js 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
 check "닿는 시험이 없는 앱 소스 → 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
+rm -f "$WORK/src/orphan.js"
+# 타입 선언(.d.ts)은 시험이 가져다 쓰지 않는다 — 닿는 시험이 없어도 전체로 넓히지 않는다(2026-11-08 #267 검증 5번이 모두 전체였던 재현)
+echo 'declare const x: number' > "$WORK/src/api.d.ts"
+RESULT="$(picks src/api.d.ts 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
+check "닿는 시험이 없는 .d.ts → 종료 코드 0 · 빈 목록" "$([ "$RESULT" = "rc=0" ] && echo 0 || echo 1)" "$RESULT"
+rm -f "$WORK/src/api.d.ts"
+# 셸 스크립트도 앱 소스다 — 닿는 시험이 없으면 전체
+mkdir -p "$WORK/scripts"; echo 'echo hi' > "$WORK/scripts/orphan.sh"
+RESULT="$(picks scripts/orphan.sh 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
+check "닿는 시험이 없는 scripts/*.sh → 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
+rm -f "$WORK/scripts/orphan.sh"
+# 여러 시험이 함께 쓰는 공통 파일(scripts/lib/** · test/_lib.sh — 코어 쪽 포함)은 닿는 시험이 있어도 전체
+mkdir -p "$WORK/athena/scripts/lib" "$WORK/athena/test"
+echo 'export const x = 1' > "$WORK/athena/scripts/lib/shared.mjs"; echo ': lib' > "$WORK/athena/test/_lib.sh"
+for shared in athena/scripts/lib/shared.mjs athena/test/_lib.sh; do
+  RESULT="$(picks "$shared" 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
+  check "공통 파일 $shared → 종료 코드 2(전체)" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
+done
+rm -rf "$WORK/athena/scripts/lib/shared.mjs" "$WORK/athena/test/_lib.sh"
 
 echo "줄서기 시간 칸 — wait_ms · wait_why (ms 와 따로)"
 git -C "$WORK" reset -q --hard; reset_tree   # 앞 시험이 남긴 변경을 치운다
