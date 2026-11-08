@@ -11,6 +11,16 @@ const answer = (id, usage, block = 'text') => JSON.stringify({ type: 'assistant'
 const user = (text) => JSON.stringify({ type: 'user', message: { role: 'user', content: text } })
 const USAGE = { input_tokens: 10, output_tokens: 90, cache_creation_input_tokens: 1000, cache_read_input_tokens: 4000 }
 
+// 값이 준비될 때까지 짧은 간격으로 다시 본다(고정 시간만 기다리면 맥이 바쁠 때 흔들린다)
+async function waitUntil(check, what, limitMs = 2000) {
+  const until = Date.now() + limitMs
+  while (Date.now() < until) {
+    if (check()) return
+    await new Promise((done) => setTimeout(done, 5))
+  }
+  throw new Error(`${what} 를 기다리다 시간 초과`)
+}
+
 function tempProjects() {
   const root = tempDir('token-usage-')
   fs.mkdirSync(path.join(root, '-a'))
@@ -74,7 +84,7 @@ test('peek: 기다리지 않고 아는 값을 준다 — 처음엔 null, 다 읽
   fs.writeFileSync(path.join(root, '-a', `${session}.jsonl`), `${answer('a1', USAGE)}\n`)
   const usage = tokens.createTokenUsage({ projectsDir: root })
   assert.equal(usage.peekSession(session), null)
-  await new Promise((done) => setTimeout(done, 50))
+  await waitUntil(() => usage.peekSession(session) !== null, 'peekSession 값')
   assert.deepEqual(usage.peekSession(session), { io: 100, cache: 5000 })
   assert.equal(usage.peekSession('../../etc'), null)
 })
@@ -96,7 +106,7 @@ test('peekPlan: 본체가 다르면 같은 계획서 경로라도 값을 따로 
   const usage = tokens.createTokenUsage({ projectsDir: root })
   usage.peekPlan(['/bodies/acme'], plan)
   usage.peekPlan(['/bodies/globex'], plan)
-  await new Promise((done) => setTimeout(done, 80))
+  await waitUntil(() => usage.peekPlan(['/bodies/acme'], plan) !== null && usage.peekPlan(['/bodies/globex'], plan) !== null, 'peekPlan 값')
   assert.deepEqual(usage.peekPlan(['/bodies/acme'], plan), { io: 100, cache: 5000 })
   assert.deepEqual(usage.peekPlan(['/bodies/globex'], plan), { io: 3, cache: 0 })
 })
