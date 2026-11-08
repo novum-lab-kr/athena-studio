@@ -1,4 +1,20 @@
 {
+  "0.58": [
+    {
+      "tag": "new",
+      "en": "Add servers from the sidebar: the Add Server popup writes a Host entry to ~/.ssh/config (key file login only, no passwords), checks the connection first, and for a server seen for the first time shows its host key fingerprint so you can trust it before it is saved to known_hosts. A changed host key is only reported, never overwritten.",
+      "ko": "사이드바에서 서버를 더할 수 있습니다. 서버 추가 팝업이 ~/.ssh/config 에 Host 를 더하고(키 파일 로그인만 · 비밀번호 없음) 먼저 접속을 확인하며, 처음 보는 서버는 호스트 키 지문을 보여 줘 믿은 뒤에만 known_hosts 에 저장합니다. 호스트 키가 바뀌었으면 알리기만 하고 덮어쓰지 않습니다.",
+      "ja": "サイドバーからサーバーを追加できます。サーバー追加ポップアップが ~/.ssh/config に Host を追記し(鍵ファイルでのログインのみ・パスワードなし)、先に接続を確認します。初めてのサーバーはホスト鍵のフィンガープリントを表示し、信頼してから known_hosts に保存します。ホスト鍵が変わっていた場合は知らせるだけで上書きしません。",
+      "zh": "现在可以从侧边栏添加服务器：添加服务器弹窗会在 ~/.ssh/config 中写入 Host（仅密钥文件登录，不用密码），先检查连接；首次见到的服务器会显示主机密钥指纹，确认信任后才保存到 known_hosts。主机密钥变化时只提示，不会覆盖。"
+    },
+    {
+      "tag": "new",
+      "en": "Servers added to a pack appear in the sidebar with their connection status and the reason when a check fails, and agents can work on a server through read-only commands from an allow list; anything else waits for your approval.",
+      "ko": "팩에 더한 서버가 사이드바에 접속 상태와 함께 보이고 확인이 실패하면 이유가 나옵니다. 에이전트는 허용 목록의 읽기 명령으로만 서버를 보고, 그 밖의 명령은 승인을 기다립니다.",
+      "ja": "パックに追加したサーバーが接続状態とともにサイドバーに表示され、確認に失敗すると理由が出ます。エージェントは許可リストの読み取りコマンドだけでサーバーを扱い、それ以外のコマンドは承認を待ちます。",
+      "zh": "添加到包中的服务器会在侧边栏显示连接状态，检查失败时会给出原因。代理只能通过允许列表中的只读命令操作服务器，其他命令需等待你的批准。"
+    }
+  ],
   "0.57": [
     {
       "tag": "new",

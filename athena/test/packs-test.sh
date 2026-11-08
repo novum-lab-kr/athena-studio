@@ -274,6 +274,51 @@ check "없는 레포 → not-found" '[ "$(A repo remove nope | field error)" = n
 check "다른 레포는 그대로(acme-web · acme-api 링크)" '[ -L repos/acme-web ] && [ -L repos/acme-api ] && [ -L .claude/agents/acme-web-fe.md ]'
 cp "$WORK/pack.add.bak" pack/pack.json; cp "$WORK/local.add.bak" "$LOCAL"; A pack open acme >/dev/null
 
+section "서버 하나 더하기 · 빼기(server hosts · add · remove — 가짜 ssh)"
+cp pack/pack.json "$WORK/pack.srv.bak"; cp pack/ROUTING.md "$WORK/routing.srv.bak"
+SSHD="$WORK/fake-ssh"; mkdir -p "$SSHD/conf.d"
+printf 'Host *\n  ServerAliveInterval 30\nHost good-host other-good\n  HostName srv.example.invalid\nHost nokey-host\n  HostName nokey.example.invalid\nHost down-host\n  HostName down.example.invalid\nHost web-*\n  User x\nInclude %s/conf.d/*\n' "$SSHD" > "$SSHD/config"
+printf 'Host hostkey-host\n  HostName hk.example.invalid\n' > "$SSHD/conf.d/extra"
+# 가짜 ssh — -G 는 설정에 있으면 hostname 을 바꿔 · 없으면 별칭 그대로 · 접속 시험은 별칭마다 정한 결과
+cat > "$SSHD/ssh" <<'SH'
+#!/usr/bin/env bash
+# 별칭 앞에는 늘 -- (servers.mjs — 맨 앞 - 별칭이 옵션으로 읽히지 않게)
+if [ "$1" = -G ]; then [ "$2" = -- ] || exit 9; case "$3" in good-host|other-good|nokey-host|down-host|hostkey-host) echo "hostname $3.example.invalid" ;; *) echo "hostname $3" ;; esac; echo "port 22"; exit 0; fi
+for arg in "$@"; do case "$arg" in
+  good-host|other-good) exit 0 ;;
+  nokey-host) echo "u@nokey.example.invalid: Permission denied (publickey)." >&2; exit 255 ;;
+  hostkey-host) echo "Host key verification failed." >&2; exit 255 ;;
+  down-host) echo "ssh: connect to host down.example.invalid port 22: Operation timed out" >&2; exit 255 ;;
+esac; done
+exit 255
+SH
+chmod +x "$SSHD/ssh"
+export ATHENA_SSH_BIN="$SSHD/ssh" ATHENA_SSH_CONFIG="$SSHD/config"
+R="$(A server hosts)"
+check "server hosts — Host 별칭(Include 포함) · * 패턴 제외" '[ "$(echo "$R" | python3 -c "import json,sys; print(\",\".join(h[\"host\"] for h in json.load(sys.stdin)[\"hosts\"]))")" = "good-host,other-good,nokey-host,down-host,hostkey-host" ]' "$R"
+check "server hosts — 주소(HostName)는 내보내지 않음" '! echo "$R" | grep -q example.invalid' "$R"
+for host in nokey-host:server-key-needed hostkey-host:server-host-key down-host:server-unreachable nowhere:server-not-configured; do
+  R="$(A server add "${host%%:*}")"
+  check "server add ${host%%:*} → ${host#*:} · pack.json 그대로 · 주소 안 나감" '[ "$(echo "$R" | field reason)" = "${host#*:}" ] && cmp -s pack/pack.json "$WORK/pack.srv.bak" && ! echo "$R" | grep -q example.invalid' "$R"
+done
+check "server add 잘못된 별칭 → server-bad-host" '[ "$(A server add "a;b" | field reason)" = server-bad-host ]'
+# 서버 이름이 레포 이름과 같아도 레포 표의 줄은 그대로(서버 절 안에서만 넣고 뺀다)
+python3 -c "import sys; p='pack/ROUTING.md'; lines=open(p).read().split(chr(10)); lines.insert(1, '| \`dukbae\` | 레포 줄(시험) |'); open(p,'w').write(chr(10).join(lines))"
+R="$(A server add good-host --name dukbae)"
+check "server add → pack.json servers[](별칭만) · 에이전트 · 지식 · ROUTING 줄 · 링크" '[ "$(echo "$R" | field server.name)" = dukbae ] && python3 -c "import json,sys; s=json.load(open(\"pack/pack.json\"))[\"servers\"]; sys.exit(0 if s==[{\"name\":\"dukbae\",\"host\":\"good-host\",\"agents\":[\"dukbae-ops\"],\"paths\":[],\"repos\":[]}] else 1)" && [ -f pack/agents/dukbae-ops.md ] && [ -f pack/knowledge/servers/dukbae/structure.md ] && grep -q "^| \`dukbae\` |" pack/ROUTING.md && [ -L .claude/agents/dukbae-ops.md ] && [ -e docs/knowledge/servers/dukbae/rules.md ]' "$R"
+check "server add → 같은 이름 레포 줄은 그대로 · 서버 줄은 서버 절에" '[ "$(grep -c "^| \`dukbae\` |" pack/ROUTING.md)" = 2 ] && grep -q "^| \`dukbae\` | 레포 줄(시험) |" pack/ROUTING.md && sed -n "/^## 서버/,\$p" pack/ROUTING.md | grep -q "^| \`dukbae\` | \`good-host\`"'
+check "server add → 팩에 주소 없음" '! grep -rq example.invalid pack/' 
+check "같은 서버 다시 → already" '[ "$(A server add good-host --name dukbae | field already)" = True ]'
+check "같은 이름 · 다른 별칭 → server-exists" '[ "$(A server add other-good --name dukbae | field reason)" = server-exists ]'
+check "같은 별칭 · 다른 이름 → server-host-registered" '[ "$(A server add good-host --name dup | field reason)" = server-host-registered ]'
+check "server hosts — 등록한 별칭은 registered" '[ "$(A server hosts | python3 -c "import json,sys; print(\",\".join(h[\"host\"] for h in json.load(sys.stdin)[\"hosts\"] if h[\"registered\"]))")" = good-host ]'
+R="$(A server remove dukbae)"
+check "server remove → 팩 백업 · servers 칸 · 에이전트 · 지식 · ROUTING 줄 · 링크 지움" '[ -f "$(echo "$R" | field backup)" ] && ! grep -q "\"servers\"" pack/pack.json && [ ! -e pack/agents/dukbae-ops.md ] && [ ! -e pack/knowledge/servers/dukbae ] && ! grep -q "^| \`dukbae\` | \`good-host\`" pack/ROUTING.md && [ ! -L .claude/agents/dukbae-ops.md ]' "$R"
+check "server remove → 같은 이름 레포 줄은 남김" '[ "$(grep -c "^| \`dukbae\` |" pack/ROUTING.md)" = 1 ] && grep -q "^| \`dukbae\` | 레포 줄(시험) |" pack/ROUTING.md'
+check "없는 서버 빼기 → server-missing" '[ "$(A server remove nope | field reason)" = server-missing ]'
+unset ATHENA_SSH_BIN ATHENA_SSH_CONFIG
+cp "$WORK/pack.srv.bak" pack/pack.json; cp "$WORK/routing.srv.bak" pack/ROUTING.md; A pack open acme >/dev/null
+
 section "팩 표시 이름 · 아이콘(5.7 — 팩 안 · 팀과 공유)"
 IMG="$WORK/img"; mkdir -p "$IMG"
 printf '\x89PNG\r\n\x1a\n\x00\x00\x00\x0dIHDR' > "$IMG/a.png"

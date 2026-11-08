@@ -89,6 +89,11 @@ for (const file of specs(directory)) {
     const repository = record(meta.repository) ? meta.repository : null
     const sources = sourcesOf(spec)
     // sequence 등은 Archify가 repository 필드를 지원하지 않는다. 코드 대조는 가이드에 남긴다.
+    // 서버 그림(팩 servers · server-<이름>.html)은 레포 코드가 아니라 서버에서 읽은 결과가 근거다 — 가이드에 남긴다(AUTHORING "서버 그림")
+    if (!repository && file.split('/').at(-1)?.startsWith('server-')) {
+      console.log(`➖ ${relative(directory, file)} — 서버 그림(근거는 가이드의 서버 읽기 결과)`)
+      continue
+    }
     if (!repository && spec.diagram_type !== 'architecture') {
       console.log(`➖ ${relative(directory, file)} — 자동 근거 점검 미지원(가이드의 코드 대조 필요)`)
       continue

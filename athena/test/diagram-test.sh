@@ -119,6 +119,9 @@ try {
   const spec = { diagram_type: 'architecture', meta: { repository: { url: 'https://example.test/sample.git', revision } }, components: [{ sources: [{ path: 'source.js', line: 1 }] }] }
   put('pack/diagrams/sample.architecture.json', JSON.stringify(spec))
   check('고정 근거와 현재 운영 ref 일치', () => { const result = run('check-diagrams.mjs', '--strict'); assert.equal(result.status, 0, result.stdout + result.stderr); assert.match(result.stdout, /sample.architecture.json/) })
+  put('pack/diagrams/server-sample.architecture.json', JSON.stringify({ diagram_type: 'architecture', meta: {}, components: [] }))
+  check('서버 그림(server-*)은 코드 근거 점검을 건너뛴다', () => { const result = run('check-diagrams.mjs', '--strict'); assert.equal(result.status, 0, result.stdout + result.stderr); assert.match(result.stdout, /server-sample.architecture.json — 서버 그림/) })
+  rmSync(join(root, 'pack/diagrams/server-sample.architecture.json'))
   check('근거가 최신이어도 공통 디자인 증거가 없으면 --design은 실패', () => assert.equal(run('check-diagrams.mjs', '--strict', '--design').status, 1))
   put('pack/diagrams/sample.archify.html', '<html><head></head><body><svg data-quality-profile="showcase"></svg></body></html>')
   assert.equal(run('diagram-theme.mjs', '--output', join(root, 'pack/diagrams/sample.html'), join(root, 'pack/diagrams/sample.archify.html')).status, 0)

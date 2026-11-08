@@ -33,6 +33,13 @@ import { APP_UPDATE_CHECK_MS, createAppUpdater } from './main/app-updater.mts'
 import { createCoreRunner, changelogFile } from './main/core-runner.mts'
 import { installDaemonLink } from './main/daemon-link.mts'
 import { installWorkspaces } from './main/workspaces.mts'
+import { installServerStatus } from './main/server-status.mts'
+import { installSshSetup } from './main/ssh-setup.mts'
+import type { SshKey } from './main/ssh-setup.mts'
+import type { HostInput } from './lib/ssh-config.mts'
+import type { ServerStatusReply } from './main/server-status.mts'
+import type { ServerEntry } from './lib/server-status.mts'
+import { SSH_ALIAS } from './lib/server-status.mts'
 import { installAgentMonitor } from './main/agent-monitor.mts'
 import { installPaneWatch } from './main/pane-watch.mts'
 import { installCatchUp } from './main/catch-up.mts'
@@ -97,6 +104,19 @@ type MainCalls = {
   spaceContextMenu(target: { repo: string | null; workspace: string | null }, point: Point): Promise<unknown>
   addRepo(dir: string, name: string | null): Promise<unknown>
   startSetup(dir: string): Promise<unknown>
+  serverList(): Promise<ServerEntry[]>
+  serverHosts(): Promise<unknown>
+  addServer(host: string): Promise<unknown>
+  removeServer(name: string): Promise<unknown>
+  openServer(name: string, size: Size): Promise<unknown>
+  serverContextMenu(point: Point): Promise<unknown>
+  serverStatus(): Promise<ServerStatusReply>
+  serverAnalyze(name: string, size: Size): Promise<unknown>
+  sshKeys(): Promise<SshKey[]>
+  sshKeyBrowse(): Promise<string | null>
+  sshTest(input: HostInput): Promise<unknown>
+  sshCreate(input: HostInput): Promise<unknown>
+  sshTrustHostKey(input: HostInput, fingerprints: string[]): Promise<unknown>
   explorerList(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
   explorerStatus(workspaceId: unknown, paneId?: unknown): Promise<unknown>
   explorerOpen(workspaceId: unknown, relative: unknown, paneId?: unknown): Promise<unknown>
@@ -482,6 +502,9 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     return choice.response === 0 ? 'claude' : choice.response === 1 ? 'codex' : null
   } })
   installPackRepos(ctx, { say, runPack, daemonPaths })
+  // 서버 탐색기 · 서버 목록(pack.json servers)
+  installServerStatus(ctx)
+  installSshSetup(ctx, { dialog })
   // 요청 목록은 이 창 변수 그대로 — pane [상세] 도 읽는다
   let requestsState: RequestsState = { supported: false, requests: [], error: null }
   installWork(ctx, {
@@ -921,6 +944,39 @@ handle('pack:remove-repo', (ctx, name: unknown) => (typeof name === 'string' && 
 handle('workspace:close', (ctx, workspaceId: unknown) => ctx.closeWorkspace(String(workspaceId || '')))
 handle('space:context-menu', (ctx, target: Loose, point: unknown) => ctx.spaceContextMenu({ repo: target && typeof target.repo === 'string' ? target.repo : null, workspace: target && typeof target.workspace === 'string' ? target.workspace : null }, point && typeof point === 'object' ? (point as Point) : null))
 handle('pack:add-repo', (ctx, dir: unknown, name: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.addRepo(dir, typeof name === 'string' && name ? name : null) : { ok: false, error: 'usage' }))
+// 서버(코어 server hosts · add · remove) · 서버 줄 누르기(접속 터미널) · 하단 서버 상태 칸 — 이름 · 별칭은 글자 · 숫자 · . _ - 만
+const SERVER_NAME = /^[a-z0-9][a-z0-9-]*$/
+handle('server:list', (ctx) => ctx.serverList())
+handle('server:hosts', (ctx) => ctx.serverHosts())
+handle('server:add', (ctx, host: unknown) => (typeof host === 'string' && SSH_ALIAS.test(host) ? ctx.addServer(host) : { ok: false, error: 'usage' }))
+handle('server:remove', (ctx, name: unknown) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.removeServer(name) : { ok: false, error: 'usage' }))
+handle('server:open', (ctx, name: unknown, size: Loose) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.openServer(name, cellSize(size)) : { error: 'usage' }))
+handle('server:context-menu', (ctx, point: unknown) => ctx.serverContextMenu(point && typeof point === 'object' ? (point as Point) : null))
+handle('server:status', (ctx) => ctx.serverStatus())
+// 서버 추가 팝업(main/ssh-setup.mts) — 칸 값은 글자만 받고 검사는 그쪽(lib/ssh-config.mts checkHost)
+const hostInput = (value: Loose): HostInput | null => {
+  if (!value || typeof value !== 'object') return null
+  const fields = ['alias', 'user', 'host', 'port', 'key'] as const
+  if (!fields.every((field) => typeof value[field] === 'string')) return null
+  return { alias: String(value.alias), user: String(value.user), host: String(value.host), port: String(value.port), key: String(value.key) }
+}
+handle('server:keys', (ctx) => ctx.sshKeys())
+handle('server:key-browse', (ctx) => ctx.sshKeyBrowse())
+handle('server:test', (ctx, value: Loose) => {
+  const input = hostInput(value)
+  return input ? ctx.sshTest(input) : { ok: false, error: 'usage' }
+})
+handle('server:create', (ctx, value: Loose) => {
+  const input = hostInput(value)
+  return input ? ctx.sshCreate(input) : { ok: false, error: 'usage' }
+})
+// [이 서버 믿기] — 화면은 보고 있던 지문만 보낸다(쓰는 키 줄은 main 이 받아 둔 것 · 다르면 쓰지 않는다)
+handle('server:trust-host-key', (ctx, value: Loose, fingerprints: unknown) => {
+  const input = hostInput(value)
+  const shown = Array.isArray(fingerprints) && fingerprints.length <= 8 && fingerprints.every((item) => typeof item === 'string' && /^SHA256:[A-Za-z0-9+/]{43}$/.test(item)) ? (fingerprints as string[]) : null
+  return input && shown ? ctx.sshTrustHostKey(input, shown) : { ok: false, error: 'usage' }
+})
+handle('server:analyze', (ctx, name: unknown, size: Loose) => (typeof name === 'string' && SERVER_NAME.test(name) ? ctx.serverAnalyze(name, cellSize(size)) : { ok: false, error: 'usage' }))
 handle('pack:start-setup', (ctx, dir: unknown) => (typeof dir === 'string' && path.isAbsolute(dir) ? ctx.startSetup(dir) : { ok: false, error: 'usage' }))
 listen('monitor:watch', (ctx, on: unknown) => ctx.setMonitorWatch(on === true))
 handle('explorer:list', (ctx, workspaceId: unknown, relative: unknown, paneId: unknown) => guarded(() => ctx.explorerList(workspaceId, relative, paneId)))

@@ -6,6 +6,7 @@ import { flushSync } from 'react-dom'
 import type { CSSProperties, MouseEvent, ReactNode } from 'react'
 import { createStore, mountIsland, showToast, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
+import { useServerBrief } from './server-status.tsx'
 
 // main 의 packRepos(src/main/pack-repos.mts PackRepo — 팩 레포 목록). 그 파일은 Node 모듈이라 화면 타입 검사로 가져오지 않는다
 export type SpaceRepo = { name: string; agent: string | null; linked: boolean; displayName: string | null; iconPath: string | null; iconUpdatedAt: string | null }
@@ -29,6 +30,7 @@ export type SpacesView = {
   focused: string | null
   workspaces: SpaceWorkspace[]
   idleRepos: SpaceRepo[] // 팩 레포 중 아직 작업 공간이 없는 것
+  servers: ServerEntry[] // 팩 서버(pack.json servers) — 펼친 칸 아래 servers 묶음
   paneStatus: Record<string, string | null>
 }
 
@@ -45,6 +47,9 @@ export type SpacesActions = {
   setCollapsed: (collapsed: boolean) => void
   menu: (target: { workspace: string | null; repo: string | null }, point: { clientX: number; clientY: number }) => void
   callRepo: (repo: SpaceRepo) => void
+  addServer: () => void // servers + — ~/.ssh/config 별칭 고르기
+  openServer: (name: string) => void // 접속 터미널(ssh <별칭>)
+  serverMenu: (name: string, point: { clientX: number; clientY: number }) => void
   iconLoaded: () => void // 레포 이미지를 받았다 — 바닐라가 (붙어 있으면) 다시 그린다
 }
 
@@ -235,7 +240,64 @@ function Expanded({ view, folded, shell, say }: Part & { folded: Set<string> }) 
       {view.idleRepos.map((repo) => (
         <IdleRepoRow key={repo.name} repo={repo} shell={shell} say={say} />
       ))}
+      <Servers view={view} shell={shell} say={say} />
     </>
+  )
+}
+
+// 펼친 칸 아래 servers 묶음 — 머리줄 + (서버 추가) · 서버마다 한 줄(누르면 접속 터미널 · 우클릭 열기 · 팩에서 빼기)
+function Servers({ view, shell, say }: Part) {
+  const addTitle = say('spaces.addServer')
+  return (
+    <>
+      <div className="side-title with-fold space-servers-title">
+        <span>servers</span>
+        <span className="side-title-actions">
+          <button className="fold-button" data-tip={addTitle} aria-label={addTitle} onClick={shell.addServer}>
+            <LineIcon paths={['M12 5v14', 'M5 12h14']} />
+          </button>
+        </span>
+      </div>
+      {view.servers.map((server) => (
+        <ServerRow key={server.name} server={server} shell={shell} say={say} />
+      ))}
+    </>
+  )
+}
+
+// servers 한 줄 — 주의 · 실패면 아이콘 선 전체가 상태 색이고 오른쪽 별칭 자리에 짧은 이유 배지, 정상이면 회색 아이콘 + 별칭
+function ServerRow({ server, shell, say }: { server: ServerEntry; shell: SpacesActions; say: Say }) {
+  const brief = useServerBrief(server.name, say)
+  return (
+    <button
+      className="space space-repo space-server"
+      title={say('spaces.serverTip', { host: server.host })}
+      onClick={() => shell.openServer(server.name)}
+      onContextMenu={(event: MouseEvent) => {
+        event.preventDefault()
+        shell.serverMenu(server.name, event)
+      }}
+    >
+      <span className={`space-repo-icon space-server-icon ${brief.level}`} aria-hidden="true">
+        <svg viewBox="0 0 16 16">
+          <rect x="2.25" y="2.25" width="11.5" height="4.5" rx="1" />
+          <rect x="2.25" y="9.25" width="11.5" height="4.5" rx="1" />
+          <circle cx="5" cy="4.5" r="1.3" />
+          <circle cx="5" cy="11.5" r="1.3" />
+        </svg>
+      </span>
+      <span className="space-text">
+        <span className="space-label">{server.name}</span>
+      </span>
+      {brief.text ? (
+        <span className={`space-server-badge ${brief.level}`} title={brief.more ? `${brief.text} ${brief.more}` : brief.text}>
+          <span className="space-server-badge-text">{brief.text}</span>
+          {brief.more ? <span className="space-server-badge-more">{brief.more}</span> : null}
+        </span>
+      ) : (
+        <span className="space-role">{server.host}</span>
+      )}
+    </button>
   )
 }
 
