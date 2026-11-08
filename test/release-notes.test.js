@@ -105,11 +105,21 @@ test('CHANGELOG.md 의 모든 줄에 한국어 · 일본어 · 중국어 번역�
   }
 })
 
-test('src/changelog/ko.json: 한국어 번역은 합니다체 — 해요체로 끝나지 않는다', () => {
-  // 사이트 줄(docs/site-release-notes.json ko)이 이 번역을 그대로 쓴다(docs/development.md "배포판 (맥)")
-  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', 'ko.json'), 'utf8'))
-  for (const [english, korean] of Object.entries(map)) {
-    assert.doesNotMatch(korean, /요[.!]?$/, `ko 번역이 해요체다 — 합니다체로: ${korean} (${english})`)
+test('CHANGELOG.md · src/changelog: 줄은 개조식 한 줄 — 문장 끝맺음 · 끝 마침표 없이 짧게', () => {
+  // 앱 업데이트 팝업 · Release 본문 · 사이트 줄(docs/site-release-notes.json)이 같은 줄을 쓴다(docs/development.md "배포판 (맥)")
+  // 길이 상한은 2026-11-08 개조식으로 줄일 때의 최대(en 96 · 번역 54)에 여유를 둔 값 — 넘으면 세부를 덜어 낸다
+  const english = notes.parseChangelog(fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8')).flatMap((section) => section.notes.map((note) => note.text))
+  for (const text of english) {
+    assert.doesNotMatch(text, /\.$/, `en 줄 끝에 마침표 — 개조식으로: ${text}`)
+    assert.ok(text.length <= 100, `en 줄이 100자를 넘는다 — 핵심만: ${text}`)
+  }
+  const ending = { ko: /(다|요)\.?$|\.$/, ja: /[。.]$/, zh: /[。.]$/ }
+  for (const lang of ['ko', 'ja', 'zh']) {
+    const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', `${lang}.json`), 'utf8'))
+    for (const [text, translated] of Object.entries(map)) {
+      assert.doesNotMatch(translated, ending[lang], `${lang} 번역이 문장으로 끝난다 — 명사형으로: ${translated} (${text})`)
+      assert.ok(translated.length <= 60, `${lang} 번역이 60자를 넘는다 — 핵심만: ${translated}`)
+    }
   }
 })
 

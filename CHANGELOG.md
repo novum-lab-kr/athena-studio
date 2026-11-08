@@ -41,229 +41,229 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ## 0.58 (v0.58.0 – · Nov 8, 2026)
 
 ### New
-- Add servers from the sidebar: the Add Server popup writes a Host entry to ~/.ssh/config (key file login only, no passwords), checks the connection first, and for a server seen for the first time shows its host key fingerprint so you can trust it before it is saved to known_hosts. A changed host key is only reported, never overwritten.
-- Servers added to a pack appear in the sidebar with their connection status and the reason when a check fails, and agents can work on a server through read-only commands from an allow list; anything else waits for your approval.
+- Add SSH server registration from the sidebar — key auth only, host key check on first connect
+- Server connection status in the sidebar — agents limited to allow-listed read-only commands
 
 <!-- 0.57: v0.56.3..main 에서 사용자에게 보이는 변경 — 위험한 수정의 보안 검토(security-reviewer · 높음이면 올리기 · 머지 멈춤). 범위 끝은 열어 둔다 -->
 
 ## 0.57 (v0.57.0 – · Nov 8, 2026)
 
 ### New
-- Changes that touch command execution, file writes, login or permissions, secrets, external input or server access now get a read-only security review alongside the code review. A High finding stops shipping, auto-merge, direct merge and the Actions handoff until it is fixed and reviewed again, and merges wait until the latest commit has a security review result. The reviewer uses the Trail of Bits security plugins when they are installed and a built-in procedure otherwise.
+- Add security review for sensitive changes — High findings block merge
 
 <!-- 0.56: v0.55.4..main 에서 사용자에게 보이는 변경 — 파일 미리보기를 pane 배치의 한 칸으로(끌어 옮기기 · 경계로 너비 · 높이). 범위 끝은 열어 둔다 -->
 
 ## 0.56 (v0.56.0 – · Nov 8, 2026)
 
 ### Improved
-- The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.
+- File preview as a pane in the layout — drag to place, drag borders to resize
 
 <!-- 0.55: 공개 v0.53.7 이후 v0.54.0 ~ v0.55.x. v0.54.0 은 release-mac 이 0.54 절이 없어 멈춰 공개되지 않았고 그사이 #249(feat)로 0.55 가 돼, 0.40 · 0.46 처럼 공개 안 된 minor 를 다음 공개 절에 합쳤다. v0.54.0(#248 자동 업데이트) · v0.55.0(#249 압축 뒤 안내에 최근 사용자 말 원문 · 열린 요청 · 에이전트 pane — 압축 Improved 줄에 합침)과, 공개판 v0.53.5 ~ v0.53.7 에 실렸지만 0.53 절(v0.53.3 까지)에 없던 압축 대비 변경(8e4e41d Codex 압축 대비 · #246 70% 알림 · #247 늦은 첫 응답)에서 사용자에게 보이는 변경만. 압축 대비 시험 보강 · 시험 실패 세기 · 압축 흐름 그림 설명은 개발용이라 뺐다. 범위 끝은 열어 둔다 -->
 
 ## 0.55 (v0.55.0 – · Nov 7, 2026)
 
 ### New
-- The Mac app now downloads new versions in the background and installs them when you quit. When an update is ready, a popup in the lower-left corner of the window offers Later or Restart to Update, and after Later it does not appear again for the same version.
-- Codex sessions also prepare for conversation compaction: they are reminded to write down what they learned, decided and plan to do next before the conversation is compacted, and after compaction they are pointed to the full conversation record so missing details can be searched instead of guessed.
+- Background auto-update for the Mac app (installs on quit)
+- Compaction prep for Codex sessions — note-taking reminder before, transcript pointer after
 
 ### Improved
-- The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late. After compaction, the note also repeats your last 20 messages word for word, and for the Athena lead its open requests and running agent panes.
+- Compaction reminder moved to 70% of the actual compaction point (Claude · Codex)
 
 ## 0.53 (v0.53.0 – · Nov 6, 2026)
 
 ### New
-- Claude sessions for the Athena lead and agents get a reminder at 80% of the auto-compaction window to write down what they learned, decided and plan to do next in the plan before the conversation is compacted, and the Athena lead keeps a short log of corrections, failures and decisions that is shown first after compaction.
+- Compaction reminder at 80% of the auto-compaction window for Claude sessions
 
 ### Improved
-- After a conversation is compacted, the Athena lead pane also re-reads all of its in-progress plans and their linked issues, and the post-compaction note points to the full conversation record so missing details can be searched instead of guessed.
+- Athena lead re-reads in-progress plans and linked issues after compaction
 
 ## 0.52 (v0.52.0 – · Nov 6, 2026)
 
 ### New
-- Merges that change the app now build, sign and publish the Mac release to the public download repository automatically, and the website's release page is updated to match.
-- Before an agent starts, Athena checks the plan's instructions and warns about missing or unclear parts, and the Board's Metrics tab summarizes these checks by kind.
+- Automatic Mac release on app-changing merges — build, sign, publish
+- Add plan instruction check before agent start — warns on missing or unclear parts
 
 ### Improved
-- The Board now follows the app's language (English, Korean, Japanese or Chinese).
-- The Board's issue list is grouped by repository, and an issue's delete button appears only when you hover over or focus its row.
-- The Board's Metrics tab shows the detail numbers above the full task list, pages the full list 100 tasks at a time, and lines up its groups in a consistent grid.
-- The Diagram menu includes Athena's work-flow diagrams again, updated to the current flow.
-- The menu bar panel's Usage rows show the Claude and Codex logos instead of colored dots, matching the Board.
-- The menu bar panel's work-time mountain graph uses a fixed scale where one agent working for a full 10-minute slot is full height.
-- Pack import errors explain what you chose, what is missing and what to do next, and the pack error dialog no longer hides the details in a collapsed section.
+- Board follows the app language (English, Korean, Japanese, Chinese)
+- Board issue list grouped by repository
+- Improve Board Metrics tab — full task list paged 100 at a time
+- Athena work-flow diagrams back in the Diagram menu
+- Show Claude · Codex logos in menu bar Usage rows
+- Fixed scale for the menu bar work-time graph
+- Improve pack import errors — what you chose, what is missing, what to do
 
 ### Fixed
-- The green eyes of the menu bar owl icon were barely visible while agents were working.
-- Hovering the auto-merge button in app settings no longer breaks its styling.
-- After creating a new pack, the sign-in tool now starts automatically in the Athena pane.
-- The first-run repository search no longer opens macOS protected folders (Music, Movies, Pictures, Library) that trigger access prompts.
-- Wide-change detection for automatic reviews no longer counts HTML files with UI code as documentation.
+- Fix faint working indicator in the menu bar icon
+- Fix auto-merge button styling on hover in Settings
+- Fix sign-in tool not starting in the Athena pane after creating a pack
+- Fix first-run repo search opening macOS protected folders
+- Fix wide-change detection counting HTML with UI code as docs
 
 ## 0.51 (v0.50.4 – · Nov 5, 2026)
 
 ### New
-- Codex approval requests — commands, file changes, extra permissions and choice-style questions — can now be answered directly in Work, in all four languages, keeping the original choices and scope.
-- Service diagrams are back: the /diagram skill (Claude /diagram · Codex $diagram) generates diagrams in the same design as Athena's own flow diagrams, with one overview of the whole structure plus two or three key feature flows per service, and a details panel that opens when a box is clicked.
-- Repositories that merge without pull requests now get an automatic review before merging when the change is wide (5 or more code files, 150 or more lines, or sensitive paths), including when the merge is handed off to GitHub Actions.
-- The menu bar panel shows a "Work time · 3 days" mountain graph: today, yesterday and the day before are drawn as layered ridges of agent working time in 10-minute slots, under a day sky with drifting clouds (06:00–18:00) or a night sky with twinkling stars.
-- The menu bar panel shows token usage for the last 7 days as daily stacked bars for Claude and Codex, read from this Mac's local logs (input + cache writes + output, cache reads excluded).
+- Answer Codex approval requests in Work — commands, file changes, permissions, choices
+- Service diagrams are back — /diagram skill (Codex $diagram)
+- Add pre-merge auto review for no-PR repos on wide changes
+- Add 3-day work-time mountain graph to the menu bar panel
+- Add 7-day token usage bars to the menu bar panel (Claude · Codex)
 
 ### Improved
-- Codex Browser permission prompts and startup trust dialogs are now detected and announced in Work and the tray in the app's language, with a shortcut back to the pane.
-- New pack windows open offset from the previous window instead of stacking exactly on top of it.
-- The Board's Metrics tab shows the time distribution as six time-of-day bars with counts, expands the full task list by default, and shows each task's total elapsed time and per-stage times.
-- Metrics and pane token counts now include Codex sessions, and Agent Monitor lists Codex sub-agents as sub-agent rows.
-- Pull request and learning reviews switch to Codex when Claude has hit its usage limit, follow the body's main tool for ordering, and record which engine made each review.
-- Codex reviewers run in an isolated sandbox that can only write review results, not the code under review.
-- Setup now checks whether Codex trusts Athena's hooks and explains how to approve them, and Codex lead sessions receive the same full lead instructions as Claude.
-- Merges handed off to GitHub Actions now use the plan title as the merge commit title.
-- The Diagram button is enabled only when the pack has service diagrams, and the diagram list shows service diagrams only.
-- Service diagrams no longer show the style picker; they use Athena's single theme.
-- The menu bar icon's owl eyes turn green with a soft glow while agents are working, and its tooltip shows how many agents are working.
-- The menu bar panel is simpler: the needs-attention list, Kanban counts, Done 24h line and connection label are gone (items to check stay in Work), and each agent is one row showing its pane ID and branch.
+- Detect Codex Browser permission prompts and startup trust dialogs
+- Offset new pack windows from the previous window
+- Board Metrics: time-of-day bars and per-stage task times
+- Codex sessions included in Metrics and pane token counts
+- PR and learning reviews fall back to Codex when Claude hits its usage limit
+- Codex reviewers in an isolated sandbox — write access to review results only
+- Setup checks whether Codex trusts Athena's hooks
+- Use plan title as merge commit title for Actions handoffs
+- Diagram button enabled only when the pack has service diagrams
+- Remove style picker from service diagrams — single Athena theme
+- Green menu bar owl eyes while agents work — tooltip shows working count
+- Simpler menu bar panel — one row per agent (pane ID, branch)
 
 ### Fixed
-- Finished-work notifications now ask GitHub for the pull request's actual state (open, draft, merged or closed) instead of showing an outdated plan value.
-- Sending from an outdated decision console no longer silently confirms missing decisions; the console asks you to refresh instead.
-- Codex panes now run with their own server so a new pane keeps its own identifier, and agent reports are delivered only to the lead session they belong to.
-- Codex approval notification titles no longer include the command text, one permission request now produces a single notification per pane, and Codex questions are no longer shown twice.
-- Sequence diagram request labels are easier to read in both light and dark themes.
-- Review diffs no longer mask code values that only look like secrets, which caused reviewers to report syntax errors that did not exist.
+- Fix outdated PR state in finished-work notifications
+- Fix outdated decision consoles silently confirming missing decisions
+- Fix Codex pane IDs and report delivery to the wrong lead session
+- Fix duplicate Codex approval notifications and questions
+- Fix hard-to-read sequence diagram labels (light · dark)
+- Fix review diffs masking code values that only look like secrets
 
 ## 0.50 (v0.50.0 – · Nov 3, 2026)
 
 ### Improved
-- The Board's Metrics tab now highlights average task, pull request, review and verification times, with medians, 75th percentiles, sample counts and calculation details. The task timeline has been removed.
+- Board Metrics highlights average task, PR, review and verification times — task timeline removed
 
 ### Fixed
-- Decision consoles now check their target pane so decisions are not sent using an outdated pane identifier.
-- Instructions to agents now follow the repository's current review and merge settings, including whether merging needs confirmation.
+- Fix decision consoles sending to an outdated pane ID
+- Fix agent instructions ignoring current review and merge settings
 
 ## 0.49 (v0.49.0 – · Nov 3, 2026)
 
 ### Improved
-- The Board's Metrics tab now shows charts for completion time, work status, verification results and completed work over time, plus a task timeline. Plans are shown by title, including archived plans.
-- Agent Monitor now shows concise summaries of Codex code-mode tool calls in the app's language.
-- The Board's QA tab and the core's QA runner have been removed. Repository verification remains available.
-- When a core update skips a busy body, the app now waits for the blocking work to finish and retries the update automatically.
+- Board Metrics charts — completion time, status, verification, completed work
+- Concise Codex code-mode tool call summaries in Agent Monitor
+- Remove Board QA tab and core QA runner
+- Auto-retry core updates for bodies skipped while busy
 
 ### Fixed
-- Scroll input in panes is restored correctly after reconnecting, including terminal mouse tracking modes.
-- Messages that cannot be delivered to Athena now stay queued without creating a question in Work.
+- Fix pane scroll input after reconnect, including mouse tracking modes
+- Fix undeliverable Athena messages creating questions in Work
 
 ## 0.48 (v0.47.53 – · Nov 3, 2026)
 
 ### New
-- Learning review can now suggest a guard instead of a memory note when a mistake can be blocked by a hook, a verification script or a test. The Board's Learning tab shows these as 🔧 cards with a button to hand the fix to Athena.
+- Learning review suggests guards (hook, verify script, test) — 🔧 cards on the Board
 
 ### Improved
-- When a review finds the same kind of problem it has found before, it also suggests where to add a check that would catch it next time.
-- Athena Studio no longer shows a macOS notification for a permission prompt in the pane you are looking at. The prompt still appears in Work.
-- Instructions queued on the Board, automatic review notices and Athena's first instruction at startup now go through the same checked delivery as other messages to panes.
+- Repeated review findings suggest where to add a check
+- No macOS notification for permission prompts in the pane you are viewing
+- Checked delivery for Board instructions, review notices and Athena's first instruction
 
 ### Fixed
-- The Board no longer completes a plan automatically while a pane tied to it is still open, and waits when it cannot read the pane list.
-- Agents no longer send a finished notification before they have received their first instruction.
-- Issues for repositories that merge to main without a pull request now show as ready to complete once the work is merged.
-- Text in the getting-started guide and the compact workflow diagram no longer overflows its boxes.
+- Fix Board auto-completing plans while a linked pane is open
+- Fix agents sending a finished notification before their first instruction
+- Fix no-PR repo issues not showing ready to complete after merge
+- Fix text overflow in the getting-started guide and compact diagram
 
 ## 0.47 (v0.47.20 – v0.47.52 · Nov 3, 2026)
 
 ### New
-- When Claude and Codex are both signed in, Athena asks which tool to start and remembers your choice. Starting the other tool in the Athena workspace updates that choice.
-- Codex now works in Athena the same way as Claude: Codex started in the Athena folder works as the team lead with the same rules, and agents and reviewers can run as Codex panes in the repository's workspace.
-- Drag a pane's title bar onto another pane in the same tab to move it: it splits that pane on the side nearest the pointer and shows where it will land. The pane keeps running, and the new layout stays after a restart.
-- When Claude is not available, automatic pull request review and learning review run with Codex.
-- Questions and permission prompts in Codex panes now appear in Work like Claude's, and answers to questions go back to that pane.
-- Restoring a pack exported with your work history now reopens Codex conversations as well, when this computer has their Codex history.
-- A repository can hand full verification and merging to GitHub Actions. The Board card shows whether it is waiting, running or failed, and failures are sent to the pane that did the work.
-- When the Board completes or archives a plan automatically, it also removes that plan's worktree if the work is merged, nothing is uncommitted and no pane is using it. The plan notes whether it was removed.
-- The Board has a dark / light mode button. Until you choose, it follows the system setting.
+- Choose Claude or Codex at start when both are signed in — choice remembered
+- Codex support on par with Claude — Codex lead, agents and reviewers
+- Drag a pane's title bar to move it within the tab — layout kept after restart
+- Auto PR review and learning review run with Codex when Claude is unavailable
+- Codex pane questions and permission prompts in Work
+- Restore Codex conversations from packs exported with work history
+- Hand full verification and merging to GitHub Actions — status on the Board card
+- Auto-remove merged, clean worktrees when the Board completes or archives a plan
+- Board dark / light mode button (follows system by default)
 
 ### Improved
-- After automatic review reaches its round limit, the final fixes now get a short review of the changed code before merging. Blocking findings or a failed review stop the merge.
-- Codex sessions now use the same commit, secret and process protection hooks as Claude sessions.
-- Agent Monitor now shows Codex sessions alongside Claude sessions, including their model, tool activity and summaries.
-- Panes waiting at a question, permission, trust or model prompt now show as waiting for input in Spaces, Agent Monitor, the Board and the menu bar, and Athena does not reuse or close them while they wait.
-- Spaces shows a pane as idle once Claude has finished, even if background shells are still running. Pane title bars show the pane number and a >_ count of background shells.
-- Full verification now runs once when the work is finished, at commit, instead of after every request.
-- The Board's Metrics tab shows time from start to first merge (average, median and 75th percentile), splits it into work, verification, waiting for answers, review and merge wait, and can compare work with and without review.
-- The Board's Learning tab now shows personal memory from both Claude and Codex.
-- When the Athena pane cannot take a message right away, for example while a question is open, agents' messages wait and are delivered in order once it is free, instead of turning into question requests.
-- Guides and workflow diagrams now cover starting Athena with Claude or Codex, and the diagrams follow the app's design. The Playbook entry was removed from the guide menu.
+- Short review of final fixes after the auto review round limit
+- Commit, secret and process protection hooks for Codex sessions
+- Codex sessions in Agent Monitor — model, tool activity, summaries
+- Waiting-for-input state for panes at a question, permission, trust or model prompt
+- Panes show idle once Claude finishes — >_ count of background shells in the title bar
+- Full verification runs once at commit instead of after every request
+- Board Metrics: time from start to first merge, split by stage
+- Board Learning tab shows personal memory from Claude and Codex
+- Agent messages queue in order while the Athena pane is busy
+- Guides and workflow diagrams cover starting with Claude or Codex
 
 ### Fixed
-- Several decision consoles no longer replace each other in the side browser: each opens in its own tab, and sending one closes only that tab.
-- Text sent to a pane no longer stays in its input box unsent: Athena checks that it went through and presses Enter again if needed.
-- Continuing work in an existing agent pane no longer creates a new branch in the repository's main checkout.
-- When Athena answers an agent's question from its own pane, the answer is now delivered to the agent's pane.
-- Codex agent panes no longer break after you trust their hooks.
-- Reviewer panes now close automatically after review when they run in Codex.
-- Agent Monitor no longer leaves [?] labels on older rows.
-- The update popup no longer shows notes from an earlier release.
-- The Board's memory view no longer appears empty because it looked in the wrong folder.
-- The agent list in the menu bar panel no longer shows a horizontal scrollbar.
+- Fix decision consoles replacing each other in the side browser — one tab each
+- Fix text sent to a pane staying unsent in its input box
+- Fix continuing work in an agent pane creating a branch in the main checkout
+- Fix Athena's answers from its own pane not reaching the agent's pane
+- Fix Codex agent panes breaking after trusting hooks
+- Fix Codex reviewer panes not closing after review
+- Fix leftover [?] labels on older Agent Monitor rows
+- Fix update popup showing notes from an earlier release
+- Fix empty Board memory view (wrong folder)
+- Fix horizontal scrollbar in the menu bar panel agent list
 
 ## 0.47 (v0.47.0 – v0.47.19 · Nov 1, 2026)
 
 ### New
-- Updating the app or core no longer closes your panes: running panes switch to the new code and keep going.
-- If panes are running an older version that cannot switch, Athena lists the panes that would close and closes them only when you choose to. Otherwise you can keep using them as they are.
-- A pack can allow specific commands for its repository's agent panes with `permissionsAllow`, so they run without a permission prompt.
-- Permission prompts in a pane now appear in Work with a way to jump to that pane. You still allow or deny in the pane, and the Work item closes once you do.
-- If all panes for an unfinished plan have been closed for an hour, the Board creates an open issue for it. Starting that issue continues the same plan.
+- App and core updates keep panes running — they switch to the new code
+- Older panes that cannot switch close only when you choose
+- Allow specific commands per pack with `permissionsAllow` — no permission prompt
+- Pane permission prompts in Work — jump to the pane
+- Open issue for unfinished plans whose panes have been closed for an hour
 
 ### Improved
-- Pane focus shortcuts changed from ⌘⌥ + arrow keys to ⌘⇧I J K L (up, left, down, right).
-- Agent Monitor rows now show the model that answered, and times include seconds.
-- Work's In Progress list now shows only plans with a working or open pane, or an open request.
-- Questions in the Athena pane now also appear in Work while you are looking at the pane, so you can answer in either place.
-- Lightweight tasks now default to Opus 5.5 unless the pack sets another model. Athena uses Sonnet only for truly simple edits.
-- A plan now completes automatically when its pull requests are merged even if ordinary unchecked items remain, and Athena is told how many are left. Only unchecked step items hold it open.
+- Pane focus shortcuts changed to ⌘⇧I J K L
+- Agent Monitor shows the answering model, times include seconds
+- Work In Progress lists only plans with a working or open pane, or an open request
+- Athena pane questions also shown in Work while you view the pane
+- Lightweight tasks default to Opus 5.5
+- Plans complete on PR merge even with ordinary unchecked items left
 
 ### Fixed
-- An agent's "done" notification now waits until its background commands have finished.
-- An agent pane can now push review fixes to its open pull request even when no request is waiting on that pull request.
-- A decision request without a decision console now stays a decision and opens as a question popup, so you can answer it in the app.
-- When auto PR is off, Athena now blocks opening a pull request by mistake and points to the direct merge instead.
-- When an agent asks you to pick an option in the Athena pane and you are not looking at it, the question now goes to Work so you can answer it there.
-- ⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.
-- Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.
-- The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.
-- A pane running a command in the background now counts as working instead of idle.
+- Fix "done" notifications firing before background commands finish
+- Fix pushing review fixes to an open PR with no waiting request
+- Fix decision requests without a console losing their decision type
+- Block accidental PRs when auto PR is off
+- Fix option prompts in an unviewed Athena pane not reaching Work
+- Fix ⌘⇧J and ⌘⇧K when another app has claimed them
+- Fix right sidebar flashing on pane switch
+- Fix commit hash as right sidebar title for folders without a branch
+- Fix panes running background commands showing as idle
 
 ## 0.46 (v0.42.3 – v0.46.4 · Nov 1, 2026)
 
 ### New
-- Athena finds each repository's rule documents and loads their full text into agent sessions. You can add or exclude documents in the pack; above 40,000 characters per repository, the largest files are listed instead.
-- Small pull requests take a ⚡ fast path, shown as a chip on the Board card: one reviewer and one review, and after one round of fixes the work merges once verification and the conflict check pass. A repository can turn this off.
+- Load each repo's rule documents into agent sessions — add or exclude per pack
+- ⚡ fast path for small PRs — one reviewer, one review round
 
 ### Improved
-- The Board's Metrics tab shows time by stage (work, verification, review, merge wait), review rounds and fixes per merge.
-- Scripts now fill in a plan's validation line and status, and agent instructions and core test output are shorter.
-- Standard verification runs core test suites in parallel — about 5 minutes down to under 2.
+- Board Metrics: time by stage, review rounds and fixes per merge
+- Scripts fill in plan validation and status — shorter agent instructions
+- Parallel core test suites in standard verification (about 5 min → under 2)
 
 ### Fixed
-- Athena's commit script no longer refuses a valid worktree when the worktree list is long.
-- A core update, rollback or catch-up now stops the automatic review process and starts it again on the new code if work remains, so the old process no longer removes the choices from questions in the Work popup.
-- Automatic merge no longer goes ahead if the pull request's base changed while it was waiting.
-- Reopening a request without options now keeps its existing choices.
-- If a request changes while its answer dialog is open, your answer is not sent and a conflict message appears.
+- Fix commit script refusing valid worktrees when the worktree list is long
+- Fix old auto review process removing question choices after core updates
+- Fix auto-merge proceeding after the PR base changed
+- Fix reopened requests without options losing their choices
+- Fix answers sent after the request changed while the dialog was open — shows a conflict
 
 ## 0.42 (v0.40.5 – v0.42.2 · Oct 31, 2026)
 
 ### Improved
-- The window opens first on restart, and the core update runs in the background: the tab bar shows "core update in progress", and a result popup appears when it finishes. Pack commands, new agent panes and catch-up wait until the update is done.
-- The core update popup shows short kind chips, and an update that only changes the last version number now lists its recent changes too.
-- A dev-app update skips `npm install` when the dependencies are unchanged.
-- When a dev-app update needs `npm install`, it now installs while the app keeps running and asks before restarting. The Settings row shows waiting for a turn and installing, and "Later" leaves a Restart button there.
+- Core update runs in the background after the window opens
+- Core update popup kind chips — patch-only updates list recent changes
+- Dev-app update skips `npm install` when dependencies are unchanged
+- Dev-app `npm install` runs while the app keeps running — asks before restart
 
 ### Fixed
-- The QA runner no longer crashes with an assertion error from the HTTP client, and a case whose process died is now recorded as failed instead of passing.
-- `init --scan` now reads the pack's `local.json` repositories root first.
-- Splitting a pane or closing one no longer resizes the neighbouring panes' terminals by a rough guess while the app is attached.
-- A forced kill of the install is no longer reported as an install failure: it is shown separately, the app stays open, and the install is retried on the next launch.
-- A core update no longer fails on Node 24.5.0 because an old pack link pointing at a folder could not be deleted.
+- Fix QA runner crash and dead-process cases counted as passing
+- Fix `init --scan` not reading the pack's `local.json` repositories root first
+- Fix neighbouring terminals resized by guess on pane split or close
+- Fix forced install kills reported as install failures
+- Fix core update failing on Node 24.5.0 (old pack folder link)
 
 ### Security
 - Updated Electron to 44.10.0, so the Node built into the app is now the security release 24.22.1.
@@ -271,215 +271,215 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ## 0.40 (v0.32.5 – v0.40.4 · Oct 30, 2026)
 
 ### New
-- Choose per repository whether Athena opens a pull request, runs the automatic review, and merges, in Settings. Turning auto PR off skips the pull request and review and merges the work branch straight into the base branch once verification passes. Merging can be automatic, ask first in Work, or left to you.
-- When a delegated agent finishes a turn, Athena is notified automatically. The agent's "next prompt" suggestion is turned off, so a leftover suggestion is no longer mistaken for text you were typing.
-- In the Board's Learn tab, candidates are grouped by notebook so you can approve a group at once, view details, edit, or delete them. Fewer new candidates open: a one-off code finding waits until it shows up a second time.
-- QA now runs layered test cases written from each repository's flow documents (front end and back end run; apps are documented only). The old service-diagram skill is removed.
+- Per-repo PR, auto review and merge settings — direct merge when auto PR is off
+- Athena notified when a delegated agent finishes a turn
+- Board Learn tab groups candidates by notebook — bulk approve, edit, delete
+- Layered QA cases from each repo's flow documents
 
 ### Improved
-- Heavy commands such as builds and tests can run two at a time. The second slot opens only when memory is free and CPU load is below the core count.
-- New worktrees install dependencies and set up the dev app automatically.
-- Automatic review in Codex now uses the model and reasoning effort from your `~/.codex/config.toml`.
-- Athena's commit script no longer refuses to commit when the only changes already staged are the files you named, including renames.
+- Heavy commands run two at a time when memory and CPU allow
+- New worktrees install dependencies and set up the dev app
+- Codex auto review uses model and effort from `~/.codex/config.toml`
+- Commit script accepts already-staged named files, including renames
 
 ### Fixed
-- An agent's question no longer disappears from the Work popup. Unanswered questions stay until the agent acknowledges or cancels them, and a failure to read requests is shown instead of an empty list.
-- Switching packs back and forth no longer prints terminal output twice.
-- After a pack is renamed during first setup, the pack in the left list opens instead of showing "pack not found".
-- The commit guard no longer blocks Athena's own commit script when it is called through a variable set to a literal path.
-- The auto PR switch in Settings now saves.
-- The fingerprint step of `/sync` no longer crashes on a repository without its base branch; it skips that repository with a warning and does not confirm stale fingerprints.
+- Fix agent questions disappearing from the Work popup
+- Fix duplicate terminal output when switching packs
+- Fix "pack not found" after renaming a pack during first setup
+- Fix commit guard blocking the commit script via a path variable
+- Fix auto PR switch not saving in Settings
+- Fix `/sync` fingerprint crash on repos without a base branch
 
 ## 0.32 (v0.28.8 – v0.32.4 · Oct 30, 2026)
 
 ### New
-- After Athena's core updates, an in-app popup shows the previous and new versions, what's new, and how the update went, with working sessions listed by agent name.
-- In packs without the Athena Studio repository, a bug report about Athena itself becomes a GitHub issue draft with private details hidden. Athena shows you the draft and opens it on GitHub for you to review and submit.
+- In-app core update popup — versions, what's new, result
+- Athena bug reports as GitHub issue drafts with private details hidden
 
 ### Improved
-- Athena hands a new task to an idle agent pane for the same repository instead of opening another pane.
-- Agent panes start without MCP servers, so each reply uses fewer tokens. Reviewer panes keep them.
-- The PR automation switches in Settings are named for what they turn on: "Auto PR · review" and "Merge right after approval". The warning line under them is gone.
+- Reuse idle agent panes for the same repo
+- Agent panes start without MCP servers — fewer tokens per reply
+- Rename PR automation switches in Settings
 
 ### Fixed
-- The commit guard no longer wrongly blocks Athena's own commit script when the message spans several lines or the path uses `~` or a variable.
-- In repositories with auto-merge on, agents no longer ask you to merge a pull request they opened. Automatic review takes it through to merge, and the agent reports its state.
+- Fix commit guard blocking multi-line messages and `~` or variable paths
+- Fix agents asking you to merge PRs in auto-merge repos
 
 ## 0.28 (v0.26.0 – v0.28.7 · Oct 29, 2026)
 
 ### New
-- When an agent asks you a question in its pane, the question now also shows up as a request in Work, so you can pick an answer there.
+- Agent pane questions shown as requests in Work
 
 ### Improved
-- Reports to the Athena pane now arrive in one step. If the Athena pane can't be found, the report is kept as a request instead of being lost.
-- Delegating a task again updates which pane is the lead.
-- Korean screen text now uses a plainer, more consistent tone.
+- One-step reports to the Athena pane — kept as a request if the pane is missing
+- Re-delegating a task updates the lead pane
+- Plainer, consistent Korean UI text
 
 ### Fixed
-- The side browser no longer flashes white when the board or a decision console opens, including while the panel slides out.
-- Commands that kill processes by name (`pkill`, `killall`) or with a zero or negative target are blocked for agents, so one cannot stop unrelated processes.
-- The secret-leak guard no longer blocks harmless `ps` commands.
-- Opening a decision console from the Work popup now uses the side browser instead of your outside browser.
-- In the agent monitor, Athena's own session shows as `athena` instead of a folder name.
-- Work, Settings, and Board menu popups are no longer hidden while the side browser is open.
+- Fix side browser white flash on open
+- Block `pkill`, `killall` and zero/negative kill targets for agents
+- Fix secret-leak guard blocking harmless `ps` commands
+- Fix decision consoles from Work opening in the outside browser
+- Fix Athena session shown as a folder name in the agent monitor
+- Fix menu popups hidden behind the side browser
 
 ## 0.25 (v0.20.0 – v0.25.1 · Oct 29, 2026)
 
 ### New
-- Drag files or folders from Finder onto a pane to paste their paths into its input line. Nothing is sent until you press Enter.
-- When a pull request is opened, Athena warns if the tests added in it would also pass without the change (shown in the plan's validation and the PR description). It never blocks the PR.
+- Drag files from Finder onto a pane to paste their paths
+- Warn when new tests also pass without the change (red-check)
 
 ### Improved
-- Light tasks run on a lighter model, and a review after "needs changes" can use a stronger one (set per pack under `models`).
-- Long agent sessions compact automatically earlier, at 200k tokens, for Athena and agent panes.
-- In the Athena pane's details, task rows without a pane (in progress, finished, archived) open their plan in the same panel, with a back arrow to the task list.
-- The Athena pane is named `<repo> · <plan title>` instead of an Athena prefix.
+- Per-pack `models` — lighter model for light tasks, stronger for re-review
+- Earlier auto-compaction at 200k tokens for Athena and agent panes
+- Open plans for pane-less task rows in the Athena pane details
+- Athena pane named `<repo> · <plan title>`
 
 ### Fixed
-- The background process no longer shows a nameless icon in the Dock.
-- After the background process restarts or the app updates, the app no longer creates an extra workspace named after a folder instead of the `athena` workspace; older workspaces with that name show as `athena`.
-- Placeholder lines in an unedited plan template are no longer counted as remaining steps, and work that ends without a pull request is reported as done.
+- Fix nameless background process icon in the Dock
+- Fix extra folder-named workspace instead of `athena` after restart
+- Fix plan template placeholders counted as remaining steps
 
 ## 0.19 (v0.19.0 – v0.19.2 · Oct 29, 2026)
 
 ### New
-- Right-clicking a pane shows its number and name at the top of the menu, so you can find the pane a report mentions.
+- Pane number and name at the top of the right-click menu
 
 ## 0.18 (v0.18.0 – v0.18.3 · Oct 29, 2026)
 
 ### New
-- Drag the edges to resize the workspace list on the left, the Explorer on the right, and the monitor at the bottom.
+- Resize the workspace list, Explorer and monitor by dragging edges
 
 ### Improved
-- Resize handles no longer light up with a colored box; only the cursor changes.
+- Resize handles change only the cursor — no colored box
 
 ### Fixed
-- Dragging the border between panes is no longer blocked by the left pane's scrollbar.
-- The details icon in a pane's header shows even when the board is not running.
-- The Work and Settings buttons at the top right are no longer left disabled after leaving the start screen.
+- Fix pane border drag blocked by the left pane's scrollbar
+- Fix missing details icon in pane headers when the board is not running
+- Fix Work and Settings buttons left disabled after the start screen
 
 ## 0.17 (v0.17.0 – v0.17.7 · Oct 28–29, 2026)
 
 ### New
-- Athena can watch a repository's open GitHub issues: when turned on, new issues are imported as work items and handed to Athena, and the agent monitor shows a line for each.
-- The Mac app's menu has a Third-Party Notices item with the license texts of the open-source software it includes.
+- Watch a repo's open GitHub issues — import new issues as work items
+- Third-Party Notices menu item in the Mac app
 
 ### Improved
-- The license terms were updated.
-- Work alerts show only things you need to decide. Status updates from automatic pull request reviews go to the Athena pane instead.
+- Updated license terms
+- Work alerts only for decisions — auto review status goes to the Athena pane
 
 ### Fixed
-- Plans with sub-steps left are no longer completed automatically.
+- Fix plans with sub-steps left completing automatically
 
 ## 0.16 (v0.16.0 – v0.16.2 · Oct 28, 2026)
 
 ### New
-- The Mac app updates itself from Settings (⚙): when a new version is out, press Update to download it, verify it, and restart. If anything fails, the current version keeps running and a short reason is shown.
+- In-app update from Settings (⚙) — current version kept on failure
 
 ### Improved
-- New agent panes split the largest pane along its longer side.
+- New agent panes split the largest pane along its longer side
 
 ### Fixed
-- The Explorer opens for workspaces whose folder was deleted, using the pane's folder instead or saying the folder is gone.
-- Choices from the decision console and repository picker are no longer lost when an agent is showing a question. They are sent once the question closes.
+- Fix Explorer for workspaces whose folder was deleted
+- Fix decision console and repo picker choices lost while a question is open
 
 ## 0.15 (v0.15.0 – v0.15.9 · Oct 28, 2026)
 
 ### New
-- Athena Studio is available as a Mac app for Apple Silicon and Intel (macOS 13 Ventura or later). It is signed and notarized by Apple, so it opens without a security warning.
+- Signed, notarized Mac app for Apple Silicon and Intel (macOS 13+)
 
 ### Fixed
-- Switching to a pack for the first time no longer shows the previous pack's state when an older list finishes loading late.
-- Pane details keep the plan's title even when the plan has an empty title line.
+- Fix previous pack's state shown on first switch
+- Fix pane details losing the plan title on an empty title line
 
 ## 0.13 (v0.13.0 – v0.13.34 · Oct 27–28, 2026)
 
 ### New
-- Athena follows up-to-date coding rules: per-layer language and type rules, modern syntax, scaffolds, and a type-check step in verification.
+- Up-to-date coding rules — per-layer language and type rules, type check in verification
 
 ### Improved
-- The app interface was rebuilt on TypeScript and React for a steadier screen.
+- App UI rebuilt on TypeScript and React
 
 ### Fixed
-- Large pull requests are reviewed code-first. If a diff had to be cut short, an approval asks you to confirm.
-- Plans with steps left are no longer completed or archived automatically.
-- ⌘← and ⌘→ move to the start and end of the line, fixing repeated characters with Korean input.
-- The agent monitor shows in every workspace.
+- Code-first review for large PRs — truncated diffs need your confirmation
+- Fix plans with steps left completing or archiving automatically
+- Fix repeated characters with Korean input — ⌘← ⌘→ move to line start and end
+- Fix agent monitor missing in some workspaces
 
 ## 0.12 (v0.12.0 – v0.12.3 · Oct 27, 2026)
 
 ### New
-- Pane details show token usage.
+- Token usage in pane details
 
 ### Improved
-- The agent monitor shows only agents that are working, labeled by repository.
+- Agent monitor shows working agents only, labeled by repo
 
 ### Fixed
-- Blocked items in pane details are shown in red.
+- Blocked items in pane details shown in red
 
 ## 0.11 (v0.11.0 – v0.11.5 · Oct 26–27, 2026)
 
 ### New
-- The status board became the work board: an issue list as the first screen, finished work archived automatically, and a pane details pop-up.
+- Status board becomes the work board — issue list first, auto archive, pane details
 
 ### Improved
-- Pane details are easier to read and have a back button.
-- Pane title bars are always visible, focused or not.
+- Easier-to-read pane details with a back button
+- Pane title bars always visible
 
 ## 0.10 (v0.10.0 – v0.10.7 · Oct 26, 2026)
 
 ### New
-- Repositories in the sidebar get two-letter badges.
+- Two-letter repo badges in the sidebar
 
 ### Improved
-- Terminals redraw smoothly in real time while you resize the window, without jumping lines or overflow.
+- Smooth real-time terminal redraw while resizing
 
 ### Fixed
-- Pull requests opened after a plan is complete are also reviewed and merged automatically.
+- Fix PRs opened after plan completion not reviewed and merged automatically
 
 ## 0.9 (v0.9.0 · Oct 26, 2026)
 
 ### New
-- Repository logos in the sidebar. The Athena workspace always shows the Athena logo.
+- Repo logos in the sidebar — Athena logo for the Athena workspace
 
 ## 0.8 (v0.8.0 – v0.8.2 · Oct 26, 2026)
 
 ### New
-- Repository images in expanded sidebar rows.
+- Repo images in expanded sidebar rows
 
 ### Fixed
-- ⌘⌫ deletes to the start of the line, and ⇧↩ inserts a new line instead of sending.
+- ⌘⌫ deletes to line start, ⇧↩ inserts a new line
 
 ## 0.7 (v0.7.0 · Oct 26, 2026)
 
 ### Improved
-- Core updates apply right away, even while agents are working. Commits and heavy commands finish first.
+- Core updates apply immediately, even while agents work
 
 ## 0.6 (v0.6.0 – v0.6.1 · Oct 26, 2026)
 
 ### New
-- Automatic pull request review starts as soon as work is pushed and carries over earlier approvals. Without Codex, Claude reviews twice.
+- Auto PR review starts on push and carries over earlier approvals
 
 ### Fixed
-- Automatic flows resolve merge conflicts more reliably.
+- More reliable merge conflict resolution in automatic flows
 
 ## 0.5 (v0.5.0 · Oct 26, 2026)
 
 ### Improved
-- Automatic review settles implementation details itself, raises all comments at once and blocks only on real problems.
+- Auto review settles details itself, raises all comments at once, blocks only on real problems
 
 ## 0.4 (v0.4.0 · Oct 26, 2026)
 
 ### New
-- Rename repositories and give them images. Shared through pack export and backup.
+- Rename repos and give them images — shared via pack export
 
 ## 0.3 (v0.3.0 – v0.3.1 · Oct 26, 2026)
 
 ### New
-- Choose a model for each role in a pack: agents, pull request review and learning review.
+- Per-role model selection in a pack — agents, PR review, learning review
 
 ## 0.2 (v0.2.0 · Oct 26, 2026)
 
 ### New
-- Version numbers. Every release is tagged and the app shows its version.
+- Version numbers — every release tagged, version shown in the app
 
