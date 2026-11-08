@@ -54,7 +54,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 - **사용자가 대화로 답하면** — 묻던 pane 에 사람이 직접 글을 보내면 `scripts/hooks/pane-session.py`(UserPromptSubmit · Claude · Codex 같은 자리)가 그 pane 의 열린(open) 질문을 by chat 으로 닫고(답 글은 앞 200자 · 비밀값 가림 · 바로 delivered) 추가 문맥으로 "열린 질문 <id> 를 대화 답으로 닫았다 — 답이 아니었으면 다시 물어라" 를 알린다(`scripts/lib/chat_answer.py`). `[…]` 로 시작하는 글(앱 답 `[요청 <id>] … 답:` · pane 사이 `[<누구> → <누구>]` · 현황판 · 끝 알림 같은 도구 입력) · `<…>` 시스템 글 · `/` 명령은 답으로 치지 않고, answered · decision · 허락 창 알림 · 다른 pane · 다른 데몬의 질문은 건드리지 않는다. 그 밖에 손으로 닫을 때는 `bin/athena request answer <id> --by chat --text '<답 요약>'`(바로 delivered)
 - **아테나가 에이전트 pane 의 질문에 대화로 대신 답하면** — 같은 명령을 아테나 pane 에서 부른다. 부른 pane(`scripts/screen self`)이 요청의 pane 이 아니면 묻던 pane 은 답을 못 본 것이라, 앱과 같은 `[요청 <id>] <제목> — 답: …` 한 줄을 그 pane 에 넣고 answered 로 둔다(에이전트가 ack → delivered). 넣지 못하면 `sent: false` · "넣지 못했다" 를 알리고 answered 로 남는다 — 앱 [작업] 의 다시 보내기로 보낸다. 출력의 `delivered · pane <id>` 는 상태와 묻던 pane 일 뿐 보냈다는 뜻이 아니다 — 보냈는지는 📨 줄(`--json` 이면 `sent`)로 본다(2026-11-02 pm5 — 예전에는 delivered 로만 바뀌고 쉬던 pane 에 아무것도 안 들어갔다)
 - **답이 `[요청 <id>]` 를 달고 pane 으로 오면**(현황판 · 앱에서 답한 것) — 받자마자 `bin/athena request ack <id>`
-- **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`(서버가 등록된 팩에서는 훅 `server-guard.py` 가 에이전트의 `request answer` · `request cancel` 을 막는다 — 그 요청은 두고 보고에 적는다 · `docs/setup.md` "서버 하나 더하기")
+- **더 묻지 않아도 되면** — `bin/athena request cancel <id> --reason '<이유>'`(서버 명령 확인 요청(key `server-cmd:*`)에는 훅 `server-guard.py` 가 `request answer` · `request cancel` 을 막는다 — 그 요청은 두고 보고에 적는다 · 다른 요청은 그대로 · `docs/setup.md` "서버 하나 더하기")
 - 결정 콘솔 요청은 `plan-html.mjs` · 현황판이 맡는다 — 손으로 열거나 닫지 않는다(`[요청 <id>] [작업계획서 결정사항 확정] …` 이 오면 평소처럼 `--decide` 로 확정하면 닫힌다)
 
 ## 아테나에게 보내지 못했을 때

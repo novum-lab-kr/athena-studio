@@ -7,12 +7,14 @@
 이 훅이 막는 것:
   - 등록한 ssh 별칭으로 바로 가는 ssh · scp · rsync · sftp(확인을 건너뛴다 · ssh -G 는 주소를 찍는다)
   - 명령 안에서 ssh-run.sh 의 시험용 값(ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN · ATHENA_GUARD_*)을 정하기(승인을 흉내 낸다)
-  - `request answer` · `request cancel`(bin/athena · scripts/athena.mjs) — 에이전트가 자기 확인 요청에 스스로 "실행" 을 답하는 길(2026-11-08 PR 리뷰 2)
+  - `request answer` · `request cancel`(bin/athena · scripts/athena.mjs) 중 **ssh-run.sh 의 명령 확인 요청(key server-cmd:*)** 에 닿는 것 — 에이전트가 자기 확인 요청에
+    스스로 "실행" 을 답하는 길(2026-11-08 PR 리뷰 2). 어느 세션이든 막고, 다른 요청(질문 · 결정)의 대화 답 흐름은 그대로 둔다(계획서 R1).
+    요청 id 를 글자로 못 읽거나(변수 등) 요청을 읽다 실패하면 막는다 · 없는 요청이면 통과
 ssh-run.sh 로 가는 것은 명령 첫 낱말(VAR=값 앞붙임 뒤)이 ssh-run.sh 로 끝나는 경로일 때만 — 글자가 섞여 있기만 한 것(ssh -o x=ssh-run.sh …)은 아니다.
 모든 검사는 맨 위에서 한 번 만든 **정규화한 사본**(views)만 본다 — 셸이 지우는 따옴표 · 백슬래시로 낱말을 가르는 우회
 (s""sh · ATHENA_SSH\\_BIN= · request $'answer' · {ssh,별칭})를 판정마다 따로 막지 않는다(2026-11-08 PR 세 번째 리뷰).
 서버가 하나도 없으면 바로 통과. 실수 방지용이지 보안 경계가 아니다 — 변수로 돌려 부르기 · 스크립트 파일 안의 명령까지 보지는 않는다.
-시험용: ATHENA_GUARD_SERVERS="<이름>=<별칭>,…"(팩 대신 — 훅을 부르는 쪽 환경에서만)
+시험용: ATHENA_GUARD_SERVERS="<이름>=<별칭>,…"(팩 대신) · ATHENA_GUARD_REQUEST_BIN(요청 읽기 bin — 기본 bin/athena) — 훅을 부르는 쪽 환경에서만
 """
 import json
 import os
@@ -74,6 +76,9 @@ if not command.strip():
 OVERRIDE = re.compile(r'\b(ATHENA_SSH_BIN|ATHENA_SCP_BIN|ATHENA_REQUEST_BIN|ATHENA_GUARD_\w+)\s*=')
 RAW = re.compile(r'\b(ssh|scp|rsync|sftp)\b')
 ANSWER = re.compile(r'\brequest\s+(answer|cancel)\b')
+# 답 · 취소할 요청 id — request answer|cancel 바로 뒤 낱말
+ANSWER_ID = re.compile(r'\brequest\s+(answer|cancel)(?:\s+(\S+))?')
+SERVER_CMD_KEY = 'server-cmd:'
 # 한 명령의 첫 낱말 — 앞의 VAR=값 은 건너뛴다(사본에는 따옴표가 없다)
 FIRST_WORD = re.compile(r'^\s*(?:\w+=\S*\s+)*(\S+)')
 
@@ -114,16 +119,59 @@ host_alt = '|'.join(re.escape(host) for _, host in sorted(servers, key=lambda pa
 HOST = re.compile(r'(?<![\w.-])(?:[\w.-]+@)?(' + host_alt + r')(?![\w.-])')
 
 
+REQUEST_KEYS = {}
+
+
+def request_key(request_id):
+    """요청의 key(dedupeKey) — 없는 요청이면 '' · 읽다 실패하면 None. 요청 bin 의 request show 로 읽는다(ssh-run.sh 승인 확인과 같은 길)"""
+    if request_id in REQUEST_KEYS:
+        return REQUEST_KEYS[request_id]
+    request_bin = os.environ.get('ATHENA_GUARD_REQUEST_BIN') or str(ATHENA_DIR / 'bin/athena')
+    found = None
+    try:
+        import subprocess
+        done = subprocess.run([request_bin, 'request', 'show', request_id, '--json'], capture_output=True, text=True, timeout=20)
+        lines = done.stdout.strip().split('\n')
+        reply = json.loads(lines[-1]) if lines and lines[-1] else {}
+        request = reply.get('request') if isinstance(reply, dict) else None
+        if isinstance(request, dict):
+            found = str(request.get('dedupeKey') or '')
+        elif isinstance(reply, dict) and reply.get('ok') is False and reply.get('error') == 'not-found':
+            found = ''   # 없는 요청 — 서버 확인 요청일 수 없다(그 명령은 어차피 실패한다)
+    except Exception:
+        found = None
+    REQUEST_KEYS[request_id] = found
+    return found
+
+
+def answer_blocked(view):
+    """이 사본의 request answer · cancel 이 서버 명령 확인 요청에 닿으면 (동작, 이유) — 아니면 None"""
+    for match in ANSWER_ID.finditer(view):
+        action, first = match.group(1), match.group(2) or ''
+        if not re.match(r'^[\w-]+$', first):
+            return action, f'요청 id 를 글자로 읽지 못했다({first or "없음"})'
+        # 첫 낱말 + 같은 명령 조각 안의 요청 id 꼴 낱말 모두 — 중괄호를 펼친 사본은 낱말이 늘어난다(can{c,}el r-1 → cancel cael r-1)
+        rest = re.split(r'[\n;|&]', view[match.end():])[0]
+        ids = [first] + [word for word in rest.split() if re.match(r'^r-[\w-]+$', word) and word != first]
+        for request_id in ids:
+            key = request_key(request_id)
+            if key is None:
+                return action, f'요청 {request_id} 를 읽지 못했다'
+            if key.startswith(SERVER_CMD_KEY):
+                return action, f'요청 {request_id} 는 서버 명령 확인 요청이다'
+    return None
+
+
 def blocked(view):
     """이 사본에서 막을 이유(안내 글) — 없으면 None"""
     found = OVERRIDE.search(view)
     if found:
         return (f'⛔ 명령 안에서 {found.group(1)} 를 정하지 않는다 — ssh-run.sh 의 시험용 값이라 서버 확인을 건너뛴다.\n'
                 '   등록한 서버에는 scripts/ssh-run.sh <서버> -- <명령> 으로만 들어간다.')
-    found = ANSWER.search(view)
+    found = answer_blocked(view)
     if found:
-        return (f'⛔ 서버가 등록된 팩에서는 에이전트가 request {found.group(1)} 를 부르지 않는다 — 서버 명령 확인 요청에 스스로 답하는 길이다.\n'
-                '   답은 사람이 [작업] 탭에서 한다. 더 묻지 않아도 되는 요청은 그대로 두고 보고에 적는다.')
+        return (f'⛔ 서버 명령 확인 요청에는 request {found[0]} 를 부르지 않는다 — {found[1]}. 스스로 "실행" 을 답하는 길이다.\n'
+                '   답은 사람이 [작업] 탭에서 한다. 요청 id 는 글자로 바로 쓴다(다른 질문 · 결정 요청의 대화 답은 그대로 된다).')
     for match in HOST.finditer(view):
         # 조각은 ; | & 줄바꿈 · ( · 백틱에서 나눈다 — $( ) · `…` · <( ) 안의 ssh 는 이 맥에서 돈다(2026-11-08 PR 재리뷰)
         tail = re.split(r'[\n;|&(`]', view[:match.start()])[-1]

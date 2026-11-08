@@ -194,6 +194,19 @@ allow allow "docker logs web --tail 20 2>&1 | tail -5"
 allow allow "cat /etc/ssh/ssh_host_ed25519_key.pub"
 allow allow "cat /srv/app/config.json"
 
+# 가짜 요청 읽기 — r-q* 는 질문 요청 · r-gone 은 없는 요청 · r-err 는 읽기 실패 · 나머지는 서버 명령 확인 요청(key server-cmd:*)
+GUARD_REQ="$(mktemp -d)/fake-request"
+cat >"$GUARD_REQ" <<'FAKE'
+#!/bin/sh
+case "$3" in
+  r-q*) echo '{"ok":true,"request":{"id":"'"$3"'","kind":"question","dedupeKey":"plan:plans/x.md"}}' ;;
+  r-gone) echo '{"ok":false,"error":"not-found","message":"그런 요청이 없다"}'; exit 1 ;;
+  r-err) echo boom >&2; exit 1 ;;
+  *) echo '{"ok":true,"request":{"id":"'"$3"'","kind":"decision","dedupeKey":"server-cmd:abc123"}}' ;;
+esac
+FAKE
+chmod +x "$GUARD_REQ"
+export ATHENA_GUARD_REQUEST_BIN="$GUARD_REQ"
 run_hook() {   # <명령 글자> → 훅 종료 코드
   CMD="$1" python3 -c 'import json,os,sys; json.dump({"tool_input":{"command":os.environ["CMD"]}}, sys.stdout)' | python3 "$HOOK" >/dev/null 2>&1
   echo $?
@@ -235,6 +248,14 @@ hook block "bin/athena request 'answer' r-1 --by app --choice 실행"
 hook block 'bin/athena request an""swer r-1 --by app --choice 실행'
 hook block "$(printf 'bin/athena request \\\nanswer r-1 --by app --choice 실행')"
 hook block 'bin/athena request c\ancel r-1'
+# R1(계획서) — 서버 명령 확인 요청(server-cmd:*)만 막고 다른 요청의 대화 답 · 취소는 그대로
+hook pass "bin/athena request answer r-q1 --by chat --text 네"
+hook pass "bin/athena request cancel r-q1 --reason 끝남"
+hook pass "bin/athena request answer r-gone --by chat --text x"
+hook block 'bin/athena request answer $ID --by chat --text 실행'
+hook block "bin/athena request answer r-err --by chat --text 실행"
+hook block "bin/athena request answer r-q1 --by chat --text 네; bin/athena request cancel r-2"
+hook block "bin/athena request answer"
 hook block 'scripts/ssh-run.sh dukbae -- ls $(ssh dukbae-server id)'
 hook block 'scripts/ssh-run.sh dukbae -- ls `ssh dukbae-server id`'
 hook block 'scripts/ssh-run.sh dukbae -- diff <(ssh dukbae-server cat /etc/x) f'
