@@ -133,7 +133,7 @@ try { config = loadConfig(ROOT) } catch (error) {
 if (args.includes('--shadow')) {
   const repo = valueOf('--repo')
   const sha = valueOf('--sha')
-  if (!repo || !/[0-9a-f]{7,40}/.test(sha)) {
+  if (!repo || !/^[0-9a-f]{7,40}$/.test(sha)) {
     console.error('사용: full-verify.mjs --shadow --repo <레포> --sha <커밋> [--pr <번호>] [--plan <계획서>]')
     process.exit(1)
   }
