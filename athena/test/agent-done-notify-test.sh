@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 위임 에이전트 끝 알림 훅 시험 — scripts/hooks/agent-done-notify.py(Stop · UserPromptSubmit).
 # 가짜 화면 CLI · 임시 본체 사본으로 — 화면 · claude 를 부르지 않는다 · 몇 초
-#   같은 내용 중복 안 함 · 새 입력이 오면 다시 알림 · 멈춤 표시(⏸ 멈춤:)면 멈춤 알림 + plan.stop · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 는 보내지 않음
+#   같은 내용 중복 안 함 · 백그라운드 명령이 돌아도 알림(개수 표시) · 새 입력이 오면 다시 알림 · 멈춤 표시(⏸ 멈춤:)면 멈춤 알림 + plan.stop · 아테나가 알림에 답한 차례는 알리지 않음 · 아테나 pane 이 없거나 닫혔으면 조용히 · reviewer 는 보내지 않음
 #
 # 사용: test/agent-done-notify-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -194,28 +194,32 @@ STOP_JSON="{\"transcript_path\":\"$TRANSCRIPT\"}"
 sleep 60 > "$OUTPUT" 2>&1 &
 SLEEP_PID=$!
 hook prompt '{"prompt":"백그라운드"}'; hook stop "$STOP_JSON"
-check "백그라운드 명령이 도는 중이면 알리지 않는다" "$(sent)" 7
+check "백그라운드 명령이 도는 중이어도 알린다" "$(sent)" 8
+check "알림 줄에 도는 백그라운드 명령 개수가 붙는다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c ' · (백그라운드 명령 1개 도는 중)$')" 1
+hook stop "$STOP_JSON"
+check "같은 줄은 새 입력 전에는 다시 보내지 않는다" "$(sent)" 8
 kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
 hook stop "$STOP_JSON"
-check "끝 기록 없이 프로세스가 죽었으면 알린다(알림이 영영 끊기지 않게)" "$(sent)" 8
+check "끝 기록 없이 프로세스가 죽었으면 개수 없는 줄로 한 번 더 알린다" "$(sent)" 9
+check "명령이 끝난 뒤 줄에는 개수가 없다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c '백그라운드 명령')" 0
 
 sleep 60 > "$OUTPUT" 2>&1 &
 SLEEP_PID=$!
 hook prompt '{"prompt":"끝 기록"}'; hook stop "$STOP_JSON"
-check "다시 도는 중이면 알리지 않는다(last 를 남기지 않았다)" "$(sent)" 8
+check "다시 도는 중이면 개수를 붙여 알린다" "$(sent)" 10
 printf '%s\n' '{"type":"queue-operation","content":"<task-notification>\n<task-id>task1</task-id>\n<status>completed</status>"}' >> "$TRANSCRIPT"
 hook stop "$STOP_JSON"
-check "끝 기록(task-notification)이 있으면 알린다" "$(sent)" 9
+check "끝 기록(task-notification)이 있으면 도는 중으로 세지 않는다" "$(sent)" 11
 sed -i.bak '$d' "$TRANSCRIPT"
 hook prompt '{"prompt":"멈춤"}'; hook stop "$STOP_JSON"
-check "끝 기록을 지우면 다시 도는 중으로 본다" "$(sent)" 9
+check "끝 기록을 지우면 다시 도는 중으로 센다" "$(grep '^pane run p1 ' "$FAKE_LOG" | tail -1 | grep -c '(백그라운드 명령 1개 도는 중)')" 1
 printf '%s\n' '{"type":"user","toolUseResult":{"message":"Successfully stopped task: task1","task_id":"task1"}}' >> "$TRANSCRIPT"
 hook stop "$STOP_JSON"
-check "TaskStop 기록이 있으면 알린다" "$(sent)" 10
+check "TaskStop 기록이 있으면 도는 중으로 세지 않는다" "$(sent)" 13
 kill "$SLEEP_PID" 2>/dev/null; wait "$SLEEP_PID" 2>/dev/null
 
 hook prompt '{"prompt":"기록 없음"}'; hook stop '{"transcript_path":"/없는/경로.jsonl"}'
-check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 11
+check "대화 기록을 못 읽으면 평소대로 알린다" "$(sent)" 14
 
 # PR 실제 상태 — 알림을 만들 때 gh 로 묻고, 못 물으면 계획서 값에 "(기록 기준)"
 last_sent() { grep '^pane run p1 ' "$FAKE_LOG" | tail -1; }

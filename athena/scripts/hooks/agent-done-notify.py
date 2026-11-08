@@ -13,9 +13,10 @@
   - 첫 입력 전 Stop · 지시 없이 띄운 시작 안내(ATHENA_NOTIFY_BOOTSTRAP)는 알리지 않는다
   - 같은 줄은 사용자 입력이 새로 오기 전에는 다시 보내지 않는다(새 입력이 오면 같은 내용도 다시 알린다 — 같은 계획서에 요청을 이어 받는 경우)
   - 아테나가 이 알림에 답한 입력("[아테나 …] … 끝 알림 …")으로 시작한 차례는 알리지 않는다
-백그라운드 명령이 아직 돌면 그 차례는 알리지 않고 last 도 남기지 않는다 — 명령이 끝나 다시 Stop 이 오면 그때 알린다.
+백그라운드 명령이 아직 돌아도 그 차례는 알리고 줄 끝에 "(백그라운드 명령 N개 도는 중)" 을 붙인다 — 미루면 다음 Stop 이 안 와 알림이 영영 안 갔다.
+  명령이 끝나 다음 Stop 이 오면 줄이 달라져 한 번 더 간다(같은 줄 중복 막기는 그대로).
   대기 목록 = 대화 기록(transcript_path)의 시작 기록(backgroundTaskId · 출력 파일) − 끝 기록(task-notification · TaskStop). 끝 기록이 영영 안 남는 경우가 있어
-  기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있을 때만 "도는 중" 으로 본다. 확인하지 못하면 평소대로 알린다(알림이 영영 끊기지 않게).
+  기록만 믿지 않고 출력 파일을 쥔 프로세스(lsof)가 있는 것만 "도는 중" 으로 센다. 확인하지 못하면 0개로 본다(개수 없이 알린다).
 아테나 pane 이 선택 창(waiting)을 띄웠으면 뒤에서 닫힐 때까지 기다린다. 새 사용자 입력이 오면 옛 턴의 대기 알림은 버린다.
 넣기는 scripts/lead-send.py 와 같은 길(pane run · 대기열 · 담당 대화 확인) — Claude · Codex 아테나 창 모두.
 아테나 pane 이 없거나 닫혔으면 조용히 넘어간다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
@@ -99,7 +100,7 @@ def plan_fields(text: str) -> dict:
     return {'lead': line('Lead pane').split()[0] if line('Lead pane') else '', 'status': line('Status').split()[0] if line('Status') else '', 'pr': pr, 'merge': ' / '.join(merges)}
 
 
-def notice_line(agent: str, pane: str, plan: str, fields: dict, stop: str = '') -> str:
+def notice_line(agent: str, pane: str, plan: str, fields: dict, stop: str = '', background: int = 0) -> str:
     head = '⏸ 멈춤' if stop else '끝'
     parts = [f'[{agent} → 아테나] {head}', pane, f'계획서 {plan}', f'Status {fields["status"] or "?"}']
     if stop:
@@ -108,6 +109,8 @@ def notice_line(agent: str, pane: str, plan: str, fields: dict, stop: str = '') 
         parts.append(f'PR {fields["pr"]}')
     if fields.get('merge'):
         parts.append(f'머지 {fields["merge"]}')
+    if background:
+        parts.append(f'(백그라운드 명령 {background}개 도는 중)')
     return ' · '.join(parts)
 
 
@@ -238,15 +241,15 @@ def output_in_use(output: str) -> bool:
         return False
 
 
-def background_running(event: dict) -> bool:
-    """이 세션의 백그라운드 명령이 아직 도는가 — 확인하지 못하면 False(평소대로 알린다)"""
+def background_running(event: dict) -> int:
+    """이 세션에서 아직 도는 백그라운드 명령 개수 — 확인하지 못하면 0(개수 없이 알린다)"""
     transcript = str(event.get('transcript_path') or '')
     if not transcript:
-        return False
+        return 0
     try:
-        return any(output_in_use(output) for output in pending_outputs(pathlib.Path(transcript)))
+        return sum(1 for output in pending_outputs(pathlib.Path(transcript)) if output_in_use(output))
     except OSError:
-        return False
+        return 0
 
 
 def save_state(path: pathlib.Path, state: dict) -> None:
@@ -336,8 +339,6 @@ def main() -> None:
     initial = load_json(state_path)
     if not initial.get('turn') or initial.get('skip'):
         return  # 첫 사용자 입력(prompt) 전의 idle 은 끝난 작업이 아니다
-    if background_running(event):
-        return   # 아직 도는 명령이 있다 — 끝나서 다음 Stop 이 오면 그때 알린다(last 를 남기지 않는다)
     plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
     if not plan:
         return
@@ -349,7 +350,7 @@ def main() -> None:
     if not PANE_ID.match(lead) or lead == pane:
         return
     stop = stop_reason(last_reply(event))
-    line = notice_line(agent, pane, plan, fields, stop)
+    line = notice_line(agent, pane, plan, fields, stop, background_running(event))
     with pane_lock(state_path.parent, pane):
         state = load_json(state_path)
         if not state.get('turn') or state.get('skip'):
