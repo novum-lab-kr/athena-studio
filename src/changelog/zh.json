@@ -208,5 +208,6 @@
   "⌘⇧J and ⌘⇧K now move pane focus even when another app has claimed those keys, while an Athena window is focused.": "只要 Athena 窗口处于焦点，即使其他应用占用了 ⌘⇧J 和 ⌘⇧K，也能移动窗格焦点。",
   "Switching panes no longer flashes a loading state or the wrong title in the right sidebar: the previous content stays until the new one is ready.": "切换窗格时，右侧边栏不再闪现加载状态或错误的标题：新内容准备好之前会保留之前的内容。",
   "The right sidebar title no longer shows a commit hash for a folder without a branch: it shows the pack name for the pack's own folder and the folder name for others.": "没有分支的文件夹，其右侧边栏标题不再显示提交编号，而是显示包名称（包自身的文件夹）或文件夹名称（其他文件夹）。",
-  "A pane running a command in the background now counts as working instead of idle.": "在后台运行命令的窗格现在显示为工作中，而不是空闲。"
+  "A pane running a command in the background now counts as working instead of idle.": "在后台运行命令的窗格现在显示为工作中，而不是空闲。",
+  "The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.": "从资源管理器打开的文件预览现在像终端窗格一样成为布局中的一格：拖动标题栏可放到窗格的上、下、左、右，拖动格子之间的分隔线可调整宽度和高度。"
 }
