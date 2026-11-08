@@ -97,7 +97,7 @@ const makePermissionWork = () => {
   const panes = new Map(), intervals = new Map(), calls = [], sent = []
   class Clock extends Date { static now() { return now } }
   const { installWork } = vm.runInNewContext(source + '\n({installWork})', {
-    fs, path, Date: Clock, requestsModel: requests, screenModel,
+    fs, path, Date: Clock, requestsModel: requests, screenModel, deliverAnswer: require('../src/lib/answer-delivery.mts').deliverAnswer,
     pendingApprovals: async () => approvals, respondApproval: async (...args) => { calls.push(['approval', ...args]); return true },
     core: { checkAthenaDir: () => ({ ok: true }) },
     setInterval: (callback, ms) => { intervals.set(ms, callback); return ms }, clearInterval: (ms) => intervals.delete(ms),
@@ -115,7 +115,8 @@ const makePermissionWork = () => {
       calls.push(args)
       if (args[1] === 'list') return { ok: true, requests: rows }
       if (args[1] === 'cancel') { rows = rows.filter((row) => row.id !== args[2]); return { ok: true } }
-      return { ok: true, request: { answer: { choice: '선택' } } }
+      // answer 는 받은 --choice 그대로(없으면 '선택')
+      return { ok: true, request: { answer: { choice: args.includes('--choice') ? args[args.indexOf('--choice') + 1] : '선택' } } }
     }, requestsPollMs: 30000, trayRequestsChanged: () => {}, requestsState: () => state, setRequestsState: (next) => { state = next }, logRequestsError: () => {},
   })
   return { ctx, calls, sent, panes, intervals,
@@ -224,6 +225,33 @@ test('이전 answered 권한 알림 재전송도 금지 · 일반 질문 응답 
   assert.equal(fixture.calls.filter((args) => args[0] === 'daemon').length, 1)
   fixture.ctx.stopRequests()
 })
+
+// 재현(2026-11-08 r-20261108-095705-6cc9): 아테나 pane 이 선택 창을 띄운 채 [작업] 에도 같은 질문을 올렸다 — 예전엔 pane run 이 거절돼 '보낼 pane 이 없습니다'
+test('선택 창이 떠 있는 pane 에 답하면 그 창에서 같은 선택지를 고르고 ack · 못 고르는 창이면 이유는 prompt-open', async () => {
+  const fixture = makePermissionWork()
+  const codexPrompt = ['  Question 1/1 (1 unanswered)', '  Which color do you like?', '', '  › 1. Red                The color red', '    2. Blue               The color blue', '    3. None of the above  Optionally, add details in notes (tab)', '', '  tab to add notes | enter to submit answer | esc to interrupt'].join('\n')
+  fixture.panes.set('lead-pane', codexPrompt)
+  const options = [{ label: 'Red', desc: '', recommended: false }, { label: 'Blue', desc: '', recommended: false }]
+  fixture.setRows([sample({ id: 'color', pane: 'lead-pane', title: 'Which color do you like?', options }), sample({ id: 'other', pane: 'lead-pane', title: 'Which size?', options })])
+  // 데몬처럼 — 질문이 떠 있으면 pane run 은 쓰기 전에 거절, 숫자를 쓰면 창이 닫힌다
+  fixture.ctx.daemonCall = async (op, args) => {
+    fixture.calls.push(['daemon', op, args.text])
+    if (op === 'pane run' && screenModelOf(fixture.panes.get(args.pane))) return { error: '입력을 기다리는 질문이 열려 있다', code: 'unavailable' }
+    // 고르면 Codex 가 남기는 답 기록(실측)
+    if (op === 'pane send-text') fixture.panes.set(args.pane, '• Questions 1/1 answered\n  • Which color do you like?\n    answer: Blue\n\n› \n\n  GPT')
+    return { result: {} }
+  }
+  await fixture.start()
+  assert.deepEqual({ ...(await fixture.ctx.answerRequest('other', { choice: 'Blue', rev: 2 })) }, { ok: true, delivered: false, reason: 'prompt-open' })
+  assert.deepEqual(fixture.calls.filter((args) => args[0] === 'daemon'), [])
+  fixture.setRows([sample({ id: 'color', pane: 'lead-pane', title: 'Which color do you like?', options })])
+  await fixture.ctx.refreshRequests()
+  assert.deepEqual({ ...(await fixture.ctx.answerRequest('color', { choice: 'Blue', rev: 2 })) }, { ok: true, delivered: true, chose: true })
+  assert.deepEqual(fixture.calls.filter((args) => args[0] === 'daemon'), [['daemon', 'pane send-text', '2']])
+  assert.ok(fixture.calls.some((args) => args[1] === 'ack' && args[2] === 'color'))
+  fixture.ctx.stopRequests()
+})
+const screenModelOf = (text) => require('../src/lib/screen-model.js').waitingForInput(text || '')
 
 test('긴 승인창: 제목이 화면 밖으로 밀려도 waiting이면 기존 알림과 감지 알림을 취소하지 않음', async () => {
   const fixture = makePermissionWork()

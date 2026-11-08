@@ -660,6 +660,8 @@
   "work.needAnswer": "请选择一个选项或填写回复",
   "work.sent": "已发送 — 已输入到代理 pane",
   "work.savedNoPane": "回复已保存，但没有可发送的 pane — 可以在列表中重新发送",
+  "work.savedPromptOpen": "回复已保存，但 pane 中打开了选择提示，未能输入 — 可在 pane 中选择，或在提示关闭后从列表重新发送",
+  "work.savedUnconfirmed": "回复已保存，但无法确认是否已送达 pane — 请检查 pane，可在列表中重新发送",
   "work.answerConflict": "请求在此期间已更改 — 请重新打开列表",
   "work.answerFailed": "没能发送回复 {message}",
   "work.detail.why": "原因",

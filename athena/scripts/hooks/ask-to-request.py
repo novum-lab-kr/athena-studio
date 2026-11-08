@@ -9,7 +9,7 @@
   - 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) — 항상 요청으로 바꾼다
   - 아테나 pane(인자 `lead` · ATHENA_AGENT 없음 · 본체 .claude/settings.json) — 사용자가 그 pane 을 안 보고 있으면(화면 계층 pane get 의 focused 가 거짓) 위임 에이전트처럼 요청으로 바꾸고 도구는 막는다.
     보고 있거나 · 포커스를 모르면 pane 의 고르기 창은 그대로 두고 [작업] 에도 같이 올린다(막으면 보던 사람이 바로 못 고른다). 그때는 pane 에서 고르면 요청을 저절로 거두고(뒤에서 도는 지킴이 pane_request.py close),
-    [작업] 에서 먼저 고르면 답은 pane 의 창이 닫힌 뒤에 들어간다(창이 떠 있는 동안은 현황판이 글을 넣지 않는다 — pane-delivery.mjs). pane 을 모르면 가리킬 곳이 없어 올리지 않는다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
+    [작업] 에서 먼저 고르면 앱이 pane 의 창에서 같은 선택지를 고른다(질문 하나 · 메모 없음일 때만 — 앱 src/lib/answer-delivery.mts · 아니면 '선택 창이 떠 있음' 알림). pane 을 모르면 가리킬 곳이 없어 올리지 않는다. 계획서가 없으면(pane 기록 plan 없음) 계획서 없는 요청으로 열린다.
 요청을 열지 못하면 막지 않고 원래 고르기 창을 그대로 둔다(항상 exit 0).
 """
 import json
@@ -48,13 +48,13 @@ def clean_label(label: str):
 
 WATCHED_NOTE = {
     'ko': ('지금 그 pane 에도 같은 선택 프롬프트가 떠 있어요. pane 에서 고르면 이 요청은 저절로 닫혀요. '
-           '여기서 먼저 고르면 pane 의 프롬프트가 닫힌 뒤에 전달돼요(떠 있는 동안은 입력이 들어가지 않아요).'),
+           '여기서 고르면 pane 의 프롬프트에서 같은 선택지를 골라요. 메모를 붙였거나 질문이 여러 개인 프롬프트면 넣지 못하니 pane 에서 골라 주세요.'),
     'en': ('The same choice prompt is open in that pane too. Choose there and this request closes by itself. '
-           'If you choose here first, the answer is sent after the prompt in the pane closes (nothing is typed while it is open).'),
+           'If you choose here, the same option is picked in the pane\'s prompt. With a note, or if the prompt has several questions, it cannot be typed in — choose in the pane.'),
     'ja': ('その pane にも同じ選択プロンプトが出ています。pane で選ぶとこのリクエストは自動で閉じます。'
-           'ここで先に選ぶと、pane のプロンプトが閉じた後に届きます(出ている間は入力されません)。'),
+           'ここで選ぶと、pane のプロンプトで同じ選択肢を選びます。メモを付けた場合や質問が複数あるプロンプトでは入力できないので、pane で選んでください。'),
     'zh': ('该 pane 中也打开了相同的选择提示。在 pane 中选择后，此请求会自动关闭。'
-           '如果先在这里选择，会在 pane 的提示关闭后再发送（提示打开期间不会输入文字）。'),
+           '如果在这里选择，会在 pane 的提示中选中相同的选项。如果附加了备注或提示中有多个问题，则无法输入，请在 pane 中选择。'),
 }
 MULTI_SELECT = {
     'ko': '여러 개를 고를 수 있는 질문이에요 — 하나를 고르고, 나머지는 메모에 적어 보내 주세요.',
