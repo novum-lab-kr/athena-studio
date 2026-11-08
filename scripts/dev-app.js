@@ -11,6 +11,8 @@
 //                                   앱이 꺼진 사이 heavy.sh 잠금 대기 · install 포기 · 실패 · 강제 종료는 맥 알림으로(--lang 언어 · src/lib/update-notice.mts)
 //                                   새 앱은 설치를 앱을 켠 채 끝내고(src/main/app-updater.mts) --install 없이 부른다 — --install 은 옛 앱(이 흐름을 모르는 첫 업데이트)용으로 남겼다.
 //                                   설치가 끊겼으면(.dev-app/install-pending.json) start 가 켜기 전에 다시 시도한다(src/lib/app-install.mts)
+//   node scripts/dev-app.js test-start --home <임시>   시험(격리) 앱 켜기 — ATHENA_STUDIO_HOME=<임시> 로 start 를 떼어 띄우고 pid 를 <임시>/test-app.json 에 적는다(로그 <임시>/test-app.log)
+//   node scripts/dev-app.js test-stop --home <임시>    시험 앱 끄기 — 그 기록의 pid 와 자식 · 그 집 데몬만 끈다(기록 없는 pid 는 끄지 않는다 · src/lib/test-app.mts)
 const fs = require('fs')
 const path = require('path')
 const crypto = require('crypto')
@@ -19,6 +21,8 @@ const studioHome = require('../src/lib/studio-home')
 const version = require('../src/lib/version')
 const updateNotice = require('../src/lib/update-notice.mts')
 const appInstall = require('../src/lib/app-install.mts')
+const testApp = require('../src/lib/test-app.mts')
+const os = require('os')
 
 const ROOT = path.join(__dirname, '..')
 const APP_NAME = 'Athena'
@@ -378,13 +382,82 @@ async function restart(args) {
   await start([], { fromUpdate: true, installTried: install })
 }
 
+// 시험(격리) 앱 — 이 길로만 켜고 끈다. 프로세스 목록에서 짐작해 끄면 사용자 앱까지 끈다(2026-11-08 사고)
+const homeArg = (args) => {
+  const index = args.indexOf('--home')
+  return index >= 0 ? args[index + 1] || '' : ''
+}
+const processAlive = (pid) => {
+  try {
+    process.kill(pid, 0)
+    return true
+  } catch (error) {
+    return error.code === 'EPERM'
+  }
+}
+// ps lstart — pid 번호를 다른 프로세스가 다시 쓰는지 가르는 데 쓴다(칸을 정해 읽는다 · 인자 · 환경은 읽지 않는다)
+const processStartedAt = (pid) => {
+  try {
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+  } catch {
+    return ''
+  }
+}
+
+function testHome(args) {
+  const home = homeArg(args)
+  const problem = testApp.homeProblem(home, path.join(os.homedir(), '.athena-studio'))
+  if (problem) {
+    console.error(`[dev-app] ${problem}`)
+    process.exit(2)
+  }
+  return path.resolve(home)
+}
+
+function testStart(args) {
+  const home = testHome(args)
+  const saved = testApp.readRecord(home)
+  if (saved && processAlive(saved.pid) && processStartedAt(saved.pid) === saved.startedAt) {
+    console.error(`[dev-app] 시험 앱이 이미 켜져 있어요(pid ${saved.pid}) — 먼저 test-stop --home ${home}`)
+    process.exit(1)
+  }
+  fs.mkdirSync(home, { recursive: true })
+  const log = fs.openSync(path.join(home, testApp.LOG_NAME), 'a')
+  const child = spawn(process.execPath, [__filename, 'start', ...args.filter((arg, index) => arg !== '--home' && args[index - 1] !== '--home')], {
+    cwd: ROOT,
+    env: { ...process.env, ATHENA_STUDIO_HOME: home },
+    detached: true,
+    stdio: ['ignore', log, log],
+  })
+  child.unref()
+  fs.closeSync(log)
+  testApp.writeRecord(home, { pid: child.pid, startedAt: processStartedAt(child.pid), home, at: new Date().toISOString() })
+  console.log(`[dev-app] 시험 앱 켬 — pid ${child.pid} · 집 ${home} · 로그 ${path.join(home, testApp.LOG_NAME)} · 끄기: node scripts/dev-app.js test-stop --home ${home}`)
+}
+
+async function testStop(args) {
+  const home = testHome(args)
+  const result = await testApp.stopTestApp(home, {
+    rows: () => testApp.parseRows(execFileSync('ps', ['-axo', 'pid=,ppid='], { encoding: 'utf8' })),
+    startedAt: processStartedAt,
+    alive: processAlive,
+    kill: (pid, signal) => process.kill(pid, signal),
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+  })
+  if (result.reason) console.log(`[dev-app] ${result.reason}`)
+  console.log(`[dev-app] 시험 앱 끄기 — ${result.stopped.length ? `끈 pid ${result.stopped.join(' ')}` : '끈 프로세스 없음'}`)
+  if (!result.ok) process.exitCode = 1
+}
+
 const [command, ...rest] = process.argv.slice(2)
 // 켜 둔 앱 아래에서 도는 npm install(⚙ 업데이트)은 postinstall 의 make 를 건너뛰게 한다 — 실행 중인 Athena.app 을 바꿔 끼우지 않게. 다시 켤 때 start 가 맞춘다
 if (command === 'make' && process.env.ATHENA_STUDIO_SKIP_DEV_APP_MAKE) console.log('[dev-app] 개발 앱 만들기를 건너뛰어요(앱이 켜진 채 설치) — 다시 켤 때 맞춰요')
 else if (command === 'make') make()
 else if (command === 'start') start(rest)
 else if (command === 'restart') restart(rest)
+else if (command === 'test-start') testStart(rest)
+else if (command === 'test-stop') testStop(rest)
 else {
-  console.error('사용: node scripts/dev-app.js make | start | restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>]')
+  console.error('사용: node scripts/dev-app.js make | start | restart --after <pid> [--install] [--heavy <heavy.sh>] [--lang <언어>] | test-start --home <임시> | test-stop --home <임시>')
   process.exit(2)
 }

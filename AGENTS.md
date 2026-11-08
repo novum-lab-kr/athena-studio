@@ -46,7 +46,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
   - 끝난 작업 워크트리 정리(`scripts/board/worktree-cleanup.mjs` — 계획서 자동 완료 · 자동 보관 · 이슈 [아카이브] 가 같이 쓴다)를 고쳤으면 `test/worktree-cleanup-test.sh`(몇 초 · 임시 git 레포 · 머지됨 · 미커밋 · 안 올린 커밋 · pane 사용 중 · direct)
   - 현황판 클로드 학습 폴더 계산(`scripts/board/claude-paths.mjs`)을 고쳤으면 `test/claude-paths-test.sh`(몇 초 · 임시 레포)
-  - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈(`server.mjs` `noteLeftover` · `followUpClosedPlans`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
+  - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈 · 머지 · 닫힌 PR 의 자동 리뷰 요청 거두기(`server.mjs` `noteLeftover` · `followUpClosedPlans` · `closeDonePrRequests`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)
@@ -100,7 +100,8 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 앱 단축키는 ⌘ 만 — Ctrl 조합은 pane 으로 보낸다
 
 ## 격리 실행 (사용자 앱이 켜져 있을 때)
-- `ATHENA_STUDIO_HOME=<임시> npm start` — 스튜디오 집(코어 · 본체 · 데이터 · 접속 파일)과 앱 데이터(`<임시>/app/Athena Studio Dev/`)가 모두 그 아래로. 사용자 앱 · `~/.athena-studio` 를 건드리지 않는다. 끝나면 앱과 함께 데몬도 끈다(`<임시>/daemon-dev.json` 의 `pid`)
+- **켜고 끄기는 이 길로만** — `node scripts/dev-app.js test-start --home <임시>`(`ATHENA_STUDIO_HOME=<임시> npm start` 를 떼어 띄우고 pid 를 `<임시>/test-app.json` 에 적는다 · 로그 `<임시>/test-app.log`) / `node scripts/dev-app.js test-stop --home <임시>`(그 기록의 pid 와 자식 · 앱이 살아 있고 실제 시작 시각이 `<임시>/daemon-dev.json` 에 데몬이 적은 시각과 맞을 때만 그 데몬을 끈다 — 앱이 이미 꺼졌으면 데몬은 끄지 않고 pid 만 알린다). 프로세스 목록에서 Electron · node 를 짐작해 `kill` 하지 않는다 — 사용자 개발 앱까지 끈다(2026-11-08 사고)
+- 스튜디오 집(코어 · 본체 · 데이터 · 접속 파일)과 앱 데이터(`<임시>/app/Athena Studio Dev/`)가 모두 `<임시>` 아래로. 사용자 앱 · `~/.athena-studio` 를 건드리지 않는다
 - **`HOME` 은 바꾸지 않는다** — 앱은 켤 때의 `HOME` 을 데몬 · pane 에 물려줘서, 바꾸면 pane 안 claude 가 로그인 · 맥 키체인을 못 찾는다(재인증 · '키체인을 찾을 수 없음' — 2026-10-19 실측). Electron 도 `HOME` 을 바꿔도 홈 경로를 그대로 쓴다
 - 소켓 경로가 길면 임시 폴더 `athena-studio-<uid>-dev/` 로 떨어진다 — 같은 때 도는 다른 격리 실행과 겹친다
 - `--user-data-dir=<…>` · `ATHENA_STUDIO_ENDPOINT=<…>` 를 따로 주면 그 자리가 먼저다. 이 둘만으로는 앱 데이터 · 접속 파일만 갈리고 코어 · 데이터는 진짜 `~/.athena-studio` 를 쓴다 — 격리하려면 `ATHENA_STUDIO_HOME`

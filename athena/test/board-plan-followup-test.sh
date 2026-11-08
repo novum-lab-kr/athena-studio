@@ -22,10 +22,12 @@ trap cleanup EXIT
 athena_test_reap "$TMP"   # 전에 SIGKILL 로 끊긴 이 시험의 고아 서버
 mkdir -p "$TMP/bin" "$TMP/home"
 
-# 가짜 gh — PR 조회는 모두 머지됨, 그 밖에는 빈 목록
+# 가짜 gh — PR 조회는 모두 머지됨(8 은 머지 없이 닫힘 · 9 는 열림 — 자동 리뷰 요청 거두기), 그 밖에는 빈 목록
 cat > "$TMP/bin/gh" <<'SH'
 #!/bin/sh
 case "$*" in
+  'pr view 8 '*) echo '{"state":"CLOSED","baseRefName":"main","mergedAt":"","headRefOid":"abc1234"}' ;;
+  'pr view 9 '*) echo '{"state":"OPEN","baseRefName":"main","mergedAt":"","headRefOid":"abc1234"}' ;;
   'pr view '*) echo '{"state":"MERGED","baseRefName":"main","mergedAt":"2026-11-01T00:00:00Z","headRefOid":"abc1234"}' ;;
   *) echo '[]' ;;
 esac
@@ -87,8 +89,14 @@ OLD=$((NOW_MS - 7200000)); RECENT=$((NOW_MS - 600000))
 printf '{"plans/task/20261101-old.md":{"closedAt":%s},"plans/task/20261101-recent.md":{"closedAt":%s},"plans/task/20261101-linked.md":{"closedAt":%s},"plans/task/20261101-asked.md":{"closedAt":%s}}' \
   "$OLD" "$RECENT" "$OLD" "$OLD" > "$CORE/.board-plan-panes.json"
 (cd "$CORE" && node --input-type=module -e "
-import { openRequest } from './scripts/lib/requests.mjs'
+import { answerRequest, openRequest } from './scripts/lib/requests.mjs'
 openRequest(process.cwd(), { kind: 'question', title: '물음', links: { plan: 'plans/task/20261101-asked.md' } })
+// PR 자동 리뷰가 아테나에 못 보내 남긴 요청(pr-auto.mjs notify → ask · pane 없음) — 머지 · 닫힘이면 거두고 열린 PR · 머지 확인 요청은 그대로
+const prAsk = (key) => openRequest(process.cwd(), { kind: 'question', title: key, links: { plan: 'plans/task/20261101-asked.md' }, pane: null, dedupeKey: key }).request
+prAsk('pr-auto:demo#7')
+answerRequest(process.cwd(), prAsk('pr-auto:demo#8').id, { text: '알아서해줘', by: 'app' })
+prAsk('pr-auto:demo#9')
+prAsk('pr-auto-merge:demo#7')
 ") || { echo "  ✖ 요청을 만들지 못했다"; exit 1; }
 
 mkdir -p "$TMP/fixture"
@@ -196,7 +204,27 @@ const verifyClosure = async () => {
     check(`pane 모두 닫힘 ${kind} ${state} → done`, /^- Status: done/m.test(text), text)
   }
 }
-directReady().then(verifyClosure).then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
+// 자동 리뷰 요청 — 서버가 이미 몇 주기 돈 뒤라 머지 · 닫힘 PR 의 요청은 거둬져 있어야 한다
+const prRequests = () => {
+  const dir = ['.pack-data/state/requests', '.requests'].map((rel) => join(core, rel)).find((path) => { try { return readdirSync(path).length >= 0 } catch { return false } })
+  const all = dir ? readdirSync(dir).filter((name) => name.endsWith('.json')).map((name) => JSON.parse(read(join(dir, name)))) : []
+  return Object.fromEntries(all.filter((request) => request.dedupeKey).map((request) => [request.dedupeKey, request]))
+}
+const verifyPrRequests = async () => {
+  console.log('── 머지 · 닫힌 PR 의 자동 리뷰 요청')
+  let found = prRequests()
+  for (let attempt = 0; attempt < 50 && found['pr-auto:demo#7']?.state !== 'cancelled'; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 200))
+    found = prRequests()
+  }
+  const brief = JSON.stringify(Object.values(found).map(({ dedupeKey, state, closedReason }) => ({ dedupeKey, state, closedReason })))
+  check('머지된 PR(open) → cancelled · 이유에 머지', found['pr-auto:demo#7']?.state === 'cancelled' && /demo#7 이 머지됐다/.test(found['pr-auto:demo#7']?.closedReason ?? ''), brief)
+  check('머지 없이 닫힌 PR(answered) → cancelled · 이유에 닫힘', found['pr-auto:demo#8']?.state === 'cancelled' && /demo#8 이 머지 없이 닫혔다/.test(found['pr-auto:demo#8']?.closedReason ?? ''), brief)
+  check('열린 PR → open 그대로', found['pr-auto:demo#9']?.state === 'open', brief)
+  check('머지 확인 요청(pr-auto-merge:)은 건드리지 않음', found['pr-auto-merge:demo#7']?.state === 'open', brief)
+}
+
+directReady().then(verifyPrRequests).then(verifyClosure).then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
 EOF
 code=$?
 [ "$code" = 0 ] && echo "✅ 통과"

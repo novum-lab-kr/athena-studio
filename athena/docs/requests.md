@@ -28,7 +28,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
   └──(결정 콘솔은 계획서가 done · 없어짐 — list 가 닫는다)──▶ expired
 ```
 
-- **질문(question)은 계획서가 done 이거나 없어도 닫지 않는다** — 답 전(open)이든 답이 온 뒤(answered)든 에이전트가 ack 하거나 취소할 때까지 [작업] 에 남는다(사라지면 에이전트가 영원히 기다리거나 답을 못 받는다). 콘솔 없는 decision 도 같다. 결정 콘솔에 묶인 decision(`--html` · `plan:<계획서>` 키)만 계획서와 함께 닫힌다. 받을 pane 이 닫히면 `request list` 가 expired("묻던 pane 이 닫혔다")로 닫는다 — 요청에 적힌 데몬(`screen` · 연 곳의 `ATHENA_STUDIO_SOCKET`)과 지금 데몬이 같을 때만 판정한다(개발 앱 · 배포판은 요청 폴더를 같이 쓰지만 pane 번호가 겹친다). 화면을 못 읽거나 · 다른 데몬이거나 · `screen` 이 없는 옛 요청은 남으니 `request cancel <id>` 로 거둔다(answered 도 된다 — 앱 · 현황판에는 취소 버튼이 없다). 닫힌 요청을 기다리던 에이전트는 `request show <id>` 로 상태를 보고 필요하면 새로 연다
+- **질문(question)은 계획서가 done 이거나 없어도 닫지 않는다** — 답 전(open)이든 답이 온 뒤(answered)든 에이전트가 ack 하거나 취소할 때까지 [작업] 에 남는다(사라지면 에이전트가 영원히 기다리거나 답을 못 받는다). 콘솔 없는 decision 도 같다. 예외 — PR 자동 리뷰가 아테나에 못 보내 남긴 요청(키 `pr-auto:<레포>#<번호>` · pane 없음)은 그 PR 이 머지되거나 닫히면 현황판이 cancelled 로 거둔다(이유에 머지 · 닫힘 · `scripts/board/server.mjs` `closeDonePrRequests`). 결정 콘솔에 묶인 decision(`--html` · `plan:<계획서>` 키)만 계획서와 함께 닫힌다. 받을 pane 이 닫히면 `request list` 가 expired("묻던 pane 이 닫혔다")로 닫는다 — 요청에 적힌 데몬(`screen` · 연 곳의 `ATHENA_STUDIO_SOCKET`)과 지금 데몬이 같을 때만 판정한다(개발 앱 · 배포판은 요청 폴더를 같이 쓰지만 pane 번호가 겹친다). 화면을 못 읽거나 · 다른 데몬이거나 · `screen` 이 없는 옛 요청은 남으니 `request cancel <id>` 로 거둔다(answered 도 된다 — 앱 · 현황판에는 취소 버튼이 없다). 닫힌 요청을 기다리던 에이전트는 `request show <id>` 로 상태를 보고 필요하면 새로 연다
 - `--plan` 은 본체 안의 절대 경로를 줘도 본체 기준 논리 경로(`plans/…md`)로 저장한다
 - 같은 `--key` 로 열린(open · answered) 요청이 있으면 새로 만들지 않고 고친다(`rev` +1). `--option` 을 안 주면 있던 선택지는 그대로다(주면 바뀐다 · 지우는 방법은 없다). 답을 받은 뒤 다시 열면 답을 지우고 open
 - 답할 때 `--rev` 를 주면 그사이 바뀐 요청에는 답하지 않는다(`conflict`) · 이미 답한 요청에 또 답하면 `conflict`
