@@ -8,6 +8,7 @@ import { StringDecoder } from 'node:string_decoder'
 import { paths } from './config.mjs'
 import { maskText } from './mask.mjs'
 import { isMainModule } from './is-main.mjs'
+import { withPlanLock } from './plan-update.mjs'
 
 export const MAX_LOG_BYTES = 1024 * 1024
 const MAX_LINE = 16 * 1024
@@ -31,12 +32,16 @@ export const outputSink = (file, source, run) => {
     try {
       mkdirSync(dirname(file), { recursive: true })
       const record = `${JSON.stringify({ at: new Date().toISOString(), run, source, text: maskText(line) })}\n`
-      appendFileSync(file, record, { mode: 0o600 })
-      if (statSync(file).size > MAX_LOG_BYTES) {
-        const tail = readFileSync(file).subarray(-MAX_LOG_BYTES)
-        // 잘린 JSON · UTF-8 문자는 첫 줄과 함께 버린다.
-        writeFileSync(file, tail.subarray(tail.indexOf(10) + 1), { mode: 0o600 })
-      }
+      // kick · enqueue · watch 의 수집기가 같은 파일에 쓴다. 기존 원자적 디렉터리
+      // 잠금을 재사용해 추가부터 축소까지 묶고, 축소 중 다른 기록이 덮이지 않게 한다.
+      withPlanLock(file, () => {
+        appendFileSync(file, record, { mode: 0o600 })
+        if (statSync(file).size > MAX_LOG_BYTES) {
+          const tail = readFileSync(file).subarray(-MAX_LOG_BYTES)
+          // 잘린 JSON · UTF-8 문자는 첫 줄과 함께 버린다.
+          writeFileSync(file, tail.subarray(tail.indexOf(10) + 1), { mode: 0o600 })
+        }
+      })
     } catch { /* 로그 저장 실패로 처리기를 중단하지 않는다 */ }
   }
   return {
