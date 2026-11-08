@@ -7,10 +7,11 @@
 //         · 멈춤 — 상한 뒤 짧은 리뷰 …(막는 지적 · 리뷰어 실패 — 아테나가 이어받는다)
 //   같은 PR · 같은 HEAD(sha7) 가 이미 적혀 있으면 다시 돌지 않는다 — 본문 고침(ship.sh --auto-push --body-file 이 커밋 없이 본문만 바꿈)만 같은 HEAD 를 다시 본다
 
-// 자동 머지 합의 — 결정 D2 "Claude·Codex 둘 다 승인"(+ 같은 HEAD 검증 통과). 하나라도 실패 · 로그인 안 됨 · 반려면 머지하지 않는다(남은 하나로 판정하지 않는다)
-export const REVIEWERS = ['claude', 'codex']
+// 자동 머지 합의 — 리뷰어 하나의 승인(+ 같은 HEAD 검증 통과 · 충돌 없음 · 결정 없음). 2026-11-08 사용자 결정으로 결정 D2 "Claude·Codex 둘 다 승인"을 바꿨다 —
+// 리뷰어는 주 도구 반대쪽 하나 · CLI 를 하나만 쓸 수 있으면 그 하나(아래 reviewerSlot). 리뷰어가 실패 · 로그인 안 됨 · 반려면 머지하지 않는다
+export const PR_REVIEWERS = 1
 // 리뷰 상한 — 같은 PR 에서 자동 리뷰는 이만큼만 돈다. 상한 라운드에도 승인이 아니면 멈추지 않고 이어받는다(2026-10-26 사용자 결정 C):
-// 남은 수정 지적을 에이전트에 보내고, 고친 새 HEAD(라운드 > 상한)는 리뷰어 하나(첫 자리)가 바뀐 부분만 짧게 리뷰한다(2026-11-03 계획서 "자동 리뷰 상한 뒤 마지막 수정도 짧게 리뷰").
+// 남은 수정 지적을 에이전트에 보내고, 고친 새 HEAD(라운드 > 상한)는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰한다(2026-11-03 계획서 "자동 리뷰 상한 뒤 마지막 수정도 짧게 리뷰").
 // 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 승인과 같은 머지 단계 · 막는 지적이나 리뷰어 실패면 머지하지 않고 멈춰 아테나에(결정 1)
 export const MAX_ROUNDS = 3
 export const TAKEOVER = '상한 뒤 이어받음'
@@ -19,9 +20,9 @@ export const isTakeoverRound = (round, max = MAX_ROUNDS) => round > max
 // 상한 라운드가 이어받기를 허락했나 — 그 라운드가 쓴 줄('수정 필요 — 상한 뒤 이어받음…' · '결정 필요 — 상한 뒤 이어받음…')로 시작할 때만.
 // 이어받은 HEAD 가 머지 단계로 간 뒤의 줄('상한 뒤 이어받음(…) → 머지 확인 대기' 등)은 아니다 — 그 뒤 온 커밋은 멈춘다(PR #20 자동 리뷰 지적)
 export const grantsTakeover = (result) => [`수정 필요 — ${TAKEOVER}`, `결정 필요 — ${TAKEOVER}`].some((head) => String(result ?? '').startsWith(head))
-// 이 리뷰 라운드가 다음 커밋에 이어받기를 줄 수 있나 — 상한 라운드 · 승인 아님 · 리뷰어가 모두 답했을 때만(하나라도 실패한 라운드는 그 리뷰어가 본 적이 없으니 주지 않는다)
-// 빠른 길(아래)은 상한 1 · 리뷰어 1 — max · reviewers 로 그 값을 받는다
-export const takeoverEligible = (summary, round, { max = MAX_ROUNDS, reviewers = REVIEWERS.length } = {}) => round >= max && ['changes', 'decision'].includes(summary.verdict)
+// 이 리뷰 라운드가 다음 커밋에 이어받기를 줄 수 있나 — 상한 라운드 · 승인 아님 · 리뷰어가 답했을 때만(실패한 라운드는 그 리뷰어가 본 적이 없으니 주지 않는다)
+// 빠른 길(아래)은 상한 1 — max · reviewers 로 그 값을 받는다
+export const takeoverEligible = (summary, round, { max = MAX_ROUNDS, reviewers = PR_REVIEWERS } = {}) => round >= max && ['changes', 'decision'].includes(summary.verdict)
   && summary.total === reviewers && summary.answered === reviewers
 // 이어받은 HEAD 의 짧은 리뷰 — 리뷰어 하나 · 증분(지난 리뷰 HEAD 이후 diff + 지난 지적이 고쳐졌나). 결과는 셋:
 // approve(막는 지적 · 결정 없음 — 권장만은 승인) → 머지 단계 · blocked(막는 지적 · 결정) · failed(리뷰어가 답하지 못함) → 멈춤
@@ -50,7 +51,7 @@ export const FINAL_RESULTS = ['멈춤', '머지됨']
 export const BODY_EDITED = '본문 고침'
 
 // ── 빠른 길(2026-10-31 계획서 "아테나 작업 속도 높이기" D1 · D2) ─────────────────────────
-// 작은 PR 은 리뷰어 한 명(REVIEWERS[0] = claude) · 1라운드. 승인이면 같은 HEAD 검증 → 머지, 수정 필요면 지적을 보내고
+// 작은 PR 은 상한 1라운드(리뷰어는 평소와 같은 하나 — reviewerSlot). 승인이면 같은 HEAD 검증 → 머지, 수정 필요면 지적을 보내고
 // 고친 새 HEAD(라운드 2/1)는 상한 뒤 이어받음과 같은 길 — 같은 리뷰어의 짧은 리뷰 → 승인이면 검증 · 충돌 확인 → 머지 단계(auto.takeover).
 // 판정은 ship.sh 가 PR 올리기 직전에 한 번(fastPathVerdict) 하고 계획서 Checkpoint "- Fast path: yes|no (<이유>)" 줄로 남긴다 — pr-auto 는 그 줄만 읽는다(planFastPath).
 // 레포가 리뷰 끔(autoReview: false)이면 빠른 길과 상관없이 리뷰 없이(지금처럼)
@@ -59,13 +60,13 @@ export const FAST_MAX_ROUNDS = 1
 export const FAST_PATH_MAX_FILES = 10   // 작은 일 = 기준 브랜치 대비 바뀐 파일 수 상한 — 상수 하나 · 옵션화하지 않는다
 // 설정 파일 — 하나라도 바뀌면 빠른 길 아님. scripts/verify/_lib.sh VERIFY_SCOPE_CONFIG_RE("전체로 가는" 목록)와 같아야 한다(test/pr-auto-test.sh 가 원문 비교)
 export const FAST_PATH_CONFIG_RE = /(^|\/)(package(-lock)?\.json|npm-shrinkwrap\.json|pnpm-lock\.yaml|yarn\.lock|uv\.lock|poetry\.lock|tsconfig[^/]*\.json|jsconfig[^/]*\.json|\.nvmrc|vite\.config\.[a-z]+|pyproject\.toml|pyrightconfig\.json|requirements[^/]*\.txt|\.github\/.+)$|(^|\/)scripts\/verify\//
-// 계획서 1절에 이 말이 있으면 빠른 길 아님(보안 · 외부 계약 · 데이터에 닿는 일은 리뷰어 둘) — 1절(## 1. …)부터 다음 ## 까지만 본다
+// 계획서 1절에 이 말이 있으면 빠른 길 아님(보안 · 외부 계약 · 데이터에 닿는 일은 상한 3) — 1절(## 1. …)부터 다음 ## 까지만 본다
 export const FAST_PATH_FLAGS = ['보안', '외부 계약', '데이터']
 export const planFastPathFlags = (planText) => {
   const section = String(planText ?? '').match(/^## 1\.[^\n]*\n([\s\S]*?)(?=^## |(?![\s\S]))/m)?.[1] ?? ''
   return FAST_PATH_FLAGS.filter((word) => section.includes(word))
 }
-// 팩 레포 "fastPath": false — 이 레포는 늘 리뷰어 둘(없으면 true)
+// 팩 레포 "fastPath": false — 이 레포는 늘 상한 3(없으면 true)
 export const repoFastPath = (config, repoName) => (config?.repos ?? []).find((repo) => repo.name === repoName)?.fastPath !== false
 // 판정 — { fast, why }. why 는 계획서 줄 괄호 안에 그대로 들어간다(짧게)
 export const fastPathVerdict = ({ repoFast = true, files = [], flagged = [] }) => {
@@ -119,50 +120,36 @@ export const withFastPathLine = (planText, entry) => {
   return `${String(planText).replace(/\n*$/, '')}\n${line}\n`
 }
 
-// ── 리뷰어 구성 — 두 번째 자리(2026-10-26 사용자 결정 · Codex 없는 사람) ──────────────
-// 첫 자리는 늘 Claude. 두 번째 자리는 Codex 를 쓸 수 있으면 Codex(지금과 똑같이 — 첫 자리는 models.prReview, 없으면 기본 모델),
-// **처음부터** 못 쓰면(명령 없음 · 로그인 안 됨 — 돌리기 전 확인) Claude 두 번 모드 — 두 번째 자리를 다른 모델 Claude 가 따로 한 번 더 리뷰한다.
-// Claude 두 번 모드의 모델: 팩 models 에 적힌 값이 먼저, 없으면 첫 자리 opus · 두 번째 자리 sonnet(사용자 결정 b).
-// 두 자리가 같은 모델이 되면 대신하지 않는다(→ 리뷰어 부족 · 같은 모델 두 번은 합의가 아니다).
-// Codex 가 돌다가 실패한 것은 여기서 바꾸지 않는다(그 자리는 실패 → 리뷰어 부족 · 조용히 Claude 로 바꾸지 않는다)
-export const SECOND_MODEL_ROLE = 'prReviewSecond'
-export const CLAUDE_PAIR_DEFAULTS = { first: 'opus', second: 'sonnet' }
-// Claude 를 못 쓰는 까닭 — limited 는 돌려 보니 사용량 한도(review-cli claudeLimited)라 Codex 두 자리로 다시 짠 것(검수 묶음 2 #3)
+// ── 리뷰어 구성 — 하나(2026-11-08 사용자 결정 · 계획서 "PR 자동 리뷰를 리뷰어 하나로") ──────────────
+// 두 도구(Claude · Codex)를 다 쓸 수 있으면 주 도구(lib/main-tool.mjs 기록)의 반대쪽 하나가 본다 — 주 도구 claude → codex · codex → claude.
+// 기록이 없으면(null) claude 를 주 도구로 보고 codex. 하나만 쓸 수 있으면(설치 · 로그인 · 돌려 보니 사용량 한도) 그 하나 —
+// 같은 엔진 두 모델로 두 자리를 채우지 않는다. 둘 다 못 쓰면 그 자리를 unavailable 로 둔다(→ 리뷰어 부족 · 머지 안 함).
+// 돌다가 실패한 것은 여기서 바꾸지 않는다(그 자리는 실패 → 리뷰어 부족 · 조용히 다른 도구로 바꾸지 않는다 — 사용량 한도만 pr-auto.mjs 가 다시 짠다)
+// Claude 를 못 쓰는 까닭 — limited 는 돌려 보니 사용량 한도(review-cli claudeLimited)라 Codex 로 다시 짠 것(검수 묶음 2 #3)
 export const CLAUDE_LIMIT_REASON = 'Claude 사용량 한도'
-const CLAUDE_DOWN = { missing: 'Claude 설치 안 됨', 'logged-out': 'Claude 로그인 안 됨', limited: CLAUDE_LIMIT_REASON }
-// codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · claude: 같은 값 + 'limited'(사용량 한도) · firstModel · secondModel: 팩 models 값('' = 안 적음)
-// 결과: { first: { name, kind, model? }, second: { name, kind, model?, unavailable?, replaces? } } — name 은 댓글 · 사건 기록 · 판정에 쓰는 이름
-export const reviewerSlots = ({ codex, claude = 'ready', firstModel = '', secondModel = '', codexFirstModel = '', codexSecondModel = '' }) => {
-  if (claude !== 'ready') {
-    const why = CLAUDE_DOWN[claude] ?? CLAUDE_DOWN['logged-out']
-    const first = { name: 'codex', kind: 'codex', model: codexFirstModel }
-    const second = { name: `codex-${codexSecondModel || 'second'}`, kind: 'codex', model: codexSecondModel, replaces: why }
-    if (codex !== 'ready') return { first: { ...first, unavailable: '로그인된 리뷰 도구 없음' }, second: { ...second, unavailable: '로그인된 리뷰 도구 없음' } }
-    if (!codexFirstModel || !codexSecondModel || codexFirstModel === codexSecondModel) {
-      return { first, second: { ...second, unavailable: '서로 다른 Codex 모델 두 개가 필요함(models.prReview.codex · models.prReviewSecond.codex)' } }
-    }
-    return { first, second }
-  }
-  if (codex === 'ready') return { first: { name: 'claude', kind: 'claude', model: firstModel }, second: { name: 'codex', kind: 'codex' } }
-  const why = codex === 'missing' ? 'Codex 설치 안 됨' : 'Codex 로그인 안 됨'
-  const firstUsed = firstModel || CLAUDE_PAIR_DEFAULTS.first
-  const secondUsed = secondModel || CLAUDE_PAIR_DEFAULTS.second
-  const first = { name: 'claude', kind: 'claude', model: firstUsed }
-  if (firstUsed === secondUsed) return { first, second: { name: 'codex', kind: 'codex', unavailable: `${why} · 대신할 Claude 모델(models.${SECOND_MODEL_ROLE} · ${secondUsed})이 첫 자리와 같은 모델` } }
-  return { first, second: { name: `claude-${secondUsed}`, kind: 'claude', model: secondUsed, replaces: why } }
+const TOOL_DOWN = {
+  claude: { missing: 'Claude 설치 안 됨', 'logged-out': 'Claude 로그인 안 됨', limited: CLAUDE_LIMIT_REASON },
+  codex: { missing: 'Codex 설치 안 됨', 'logged-out': 'Codex 로그인 안 됨' },
 }
-// 주 도구가 Codex 면 Claude + Codex 구성의 순서만 바꾼다(검수 묶음 2 #18 · lib/main-tool.mjs 기록) — 빠른 길 · 짧은 리뷰는 첫 자리만 돌아 주 도구가 돈다.
-// 합의 규칙(모두 승인해야 머지)은 그대로. 한 엔진 두 자리(Codex 둘 · Claude 둘)는 그대로 둔다. 기록이 없으면(null) 지금처럼 Claude 먼저
-export const orderByMainTool = (slots, main) => {
-  if (main !== 'codex' || slots.length !== 2) return slots
-  const [first, second] = slots
-  return first.kind === 'claude' && second.kind === 'codex' ? [second, first] : slots
+const downReason = (kind, state) => TOOL_DOWN[kind][state] ?? TOOL_DOWN[kind]['logged-out']
+// claude · codex: 'ready' | 'missing'(명령 없음) | 'logged-out'(로그인 안 됨) · claude 는 'limited'(사용량 한도)도 · main: 주 도구 기록('claude' | 'codex' | null)
+// claudeModel · codexModel: 그 엔진 자리 모델('' = 엔진 기본)
+// 결과: { name, kind, model, why?, unavailable? } — why 는 주 도구 반대쪽이 아닌 까닭(그쪽을 못 써서) · name 은 댓글 · 사건 기록 · 판정에 쓰는 이름
+export const reviewerSlot = ({ claude = 'ready', codex = 'ready', main = null, claudeModel = '', codexModel = '' }) => {
+  const want = main === 'codex' ? 'claude' : 'codex'
+  const other = want === 'claude' ? 'codex' : 'claude'
+  const state = { claude, codex }
+  const model = { claude: claudeModel, codex: codexModel }
+  const slotOf = (kind, extra = {}) => ({ name: kind, kind, model: model[kind], ...extra })
+  if (state[want] === 'ready') return slotOf(want)
+  if (state[other] === 'ready') return slotOf(other, { why: downReason(want, state[want]) })
+  return slotOf(want, { unavailable: `로그인된 리뷰 도구 없음(${downReason('claude', claude)} · ${downReason('codex', codex)})` })
 }
 // 어떤 구성으로 돌았나 — PR 댓글 · 계획서 "- Auto review:" 줄에 남긴다
-export const lineupNote = ({ first, second }) => {
-  const head = `리뷰어 ${first.kind}${first.model ? `(${first.model})` : ''}`
-  if (second.replaces && !second.unavailable) return `${head} + ${second.kind}(${second.model}) — ${second.replaces}`
-  return `${head} + ${second.kind}${second.unavailable ? `(못 씀: ${second.unavailable})` : second.model ? `(${second.model})` : ''}`
+export const lineupNote = (slot) => {
+  const head = `리뷰어 ${slot.kind}${slot.model ? `(${slot.model})` : ''} 하나`
+  if (slot.unavailable) return `${head}(못 씀: ${slot.unavailable})`
+  return slot.why ? `${head} — ${slot.why}` : head
 }
 
 // Codex 사용자 설정(config.toml)에서 맨 위(첫 [표] 앞) model · model_reasoning_effort 두 값만 읽는다 — MCP · 훅 같은 다른 키는 읽지 않는다
@@ -285,11 +272,11 @@ export const autoResolvable = (decision) => decision.kind === 'implementation' &
 // 리뷰어 결과 묶기 — results: [{ name, status: 'ok'|'unavailable'|'failed', review?, reason? }]
 // findings 는 막는 지적(blocking)만 — 에이전트에 보낸다 · advisories 는 권장(PR 댓글에만 · 결정 E)
 // decisions 는 사람이 정할 것만 · autoDecisions 는 추천안으로 자동 확정할 것(구현 세부 — 수정 지시와 함께 에이전트에 간다)
-// 판정 순서: 결정 필요(사람 몫이 하나라도) → 수정 필요(막는 지적 · 자동 확정 결정이 하나라도) → REVIEWERS 가 모두 답했으면 승인(권장만 남은 수정 필요도 승인으로 센다)
+// 판정 순서: 결정 필요(사람 몫이 하나라도) → 수정 필요(막는 지적 · 자동 확정 결정이 하나라도) → 필요한 리뷰어(reviewers)가 모두 답했으면 승인(권장만 남은 수정 필요도 승인으로 센다)
 // → 아니면 리뷰어 부족(머지하지 않는다). 결정 필요여도 findings · autoDecisions 는 그 라운드에 에이전트에 보낸다(2026-10-26 사용자 결정 A)
 const settles = (review) => !review.decisions.length && !review.findings.some(isBlocking)   // 이 리뷰어는 막는 것이 없다(권장만)
-// reviewers — 승인에 필요한 리뷰어 수(기본 REVIEWERS 모두 · 빠른 길은 1)
-export const aggregate = (results, reviewers = REVIEWERS.length) => {
+// reviewers — 승인에 필요한 리뷰어 수(기본 PR_REVIEWERS — 하나)
+export const aggregate = (results, reviewers = PR_REVIEWERS) => {
   const answered = results.filter((result) => result.status === 'ok' && result.review)
   const approvals = answered.filter((result) => settles(result.review))
   const tagged = answered.flatMap((result) => result.review.findings.map((item) => ({ ...item, by: result.name })))
@@ -310,7 +297,7 @@ export const reviewerBrief = (results) => results.map((result) => `${result.name
 
 // ── 앞 리뷰 승인 이어받기(2026-10-26 사용자 결정) ────────────────────────
 // PR 전에 reviewer pane 이 남긴 계획서 "- Review result:" 줄이 같은 내용으로 승인이면 그 줄의 엔진(🧠 claude · codex — review-result.sh 가 pane 기록에서 적는다)
-// 자리 하나는 다시 돌리지 않고 그 승인을 그 엔진 몫으로 쓴다(나머지 자리는 그대로). 엔진이 없는 옛 줄 · 모르는 엔진은 이어받지 않는다 —
+// 리뷰어가 그 엔진이면 다시 돌리지 않고 그 승인을 리뷰어 몫으로 쓴다(리뷰어가 다른 엔진이면 그대로 돈다). 엔진이 없는 옛 줄 · 모르는 엔진은 이어받지 않는다 —
 // Codex reviewer pane 의 승인이 Claude 몫으로 들어가 Codex 두 번이 두 엔진 합의로 보이던 것(PR #239 · 검수 묶음 2 #4)
 // 같은 내용 판정은 ship.sh "리뷰" 와 같다 — 줄에 tree(리뷰한 워크트리 전체 · 커밋 전 변경 포함)가 있으면 PR HEAD 의 tree 가 그것으로 시작할 때,
 // tree 가 없는 옛 줄이면 PR HEAD 커밋이 그 sha 로 시작할 때. 줄 고르기도 ship.sh 와 같다 — 이 레포 · 브랜치 줄 → 레포 표시 없는 이 브랜치 줄 → 표시 없는 옛 줄, 그중 마지막
@@ -420,7 +407,7 @@ export const securityResultFor = (planText, { repo, branch, sha, tree = '' }) =>
   const seen = last.tree ? last.same : String(sha ?? '').startsWith(last.sha)
   return seen ? last : null
 }
-// 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진의 첫 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
+// 이어받은 리뷰어 결과 — 승인 · 지적 없음. 판정(aggregate)에는 그 엔진 자리가 승인한 것으로 들어간다(runReviewers 가 자리 이름을 붙인다)
 export const inheritedResult = (prior, headSha) => ({
   name: prior.engine,
   engine: prior.engine,
@@ -428,7 +415,7 @@ export const inheritedResult = (prior, headSha) => ({
   inherited: true,
   review: { verdict: 'approve', summary: inheritedNote(headSha, prior), findings: [], decisions: [] },
 })
-// 이어받은 결과를 받을 자리 — 그 엔진(kind)의 첫 자리 하나. 없으면 -1(그 엔진 자리가 없는 구성 — 이어받지 않는다)
+// 이어받은 결과를 받을 자리 — 그 엔진(kind)의 자리. 없으면 -1(리뷰어가 다른 엔진 — 이어받지 않는다)
 export const inheritedSlotIndex = (slots, result) => slots.findIndex((slot) => slot.kind === result.engine)
 const ENGINE_LABEL = { claude: 'Claude', codex: 'Codex' }
 export const inheritedNote = (headSha, prior) => `${ENGINE_LABEL[prior?.engine] ?? prior?.engine}: 앞 리뷰 승인 이어받음 @${String(headSha).slice(0, 7)}${prior?.tree ? ` (reviewer 승인 · tree ${prior.tree.slice(0, 12)})` : ` (reviewer 승인 @${String(prior?.sha ?? '').slice(0, 7)})`}`
@@ -575,7 +562,7 @@ export const mergeModeOf = (repo) => {
 }
 // PR 끔 = "autoMerge": true 에 "autoPr": false 를 더한 것 — PR 도 리뷰도 없이 작업 브랜치를 prBase 에 바로 squash 머지한다(direct: true).
 // "autoMerge" 키가 없으면 autoPr 와 상관없이 자동 흐름 없음(키 없는 pack.json 이 업데이트로 갑자기 머지하지 않게)
-//   "fastPath": false          빠른 길 끔 — 작은 PR 도 늘 리뷰어 둘 · 상한 3(없으면 켬 · PR 켬 + 리뷰 켬일 때만 뜻이 있다)
+//   "fastPath": false          빠른 길 끔 — 작은 PR 도 늘 상한 3(없으면 켬 · PR 켬 + 리뷰 켬일 때만 뜻이 있다)
 export const prFlow = (repo) => {
   if (repo?.autoMerge !== true || repo?.direct) return { pr: false, review: false, merge: 'manual', direct: false, fast: false }
   if (repo.autoPr === false) return { pr: false, review: false, merge: mergeModeOf(repo), direct: true, fast: false }
@@ -636,9 +623,9 @@ const oneLine = (text, size) => {
 }
 // PR 댓글 본문 — 리뷰어마다 결론 · 요약 · 지적 · 리뷰어 구성(lineup — lineupNote)
 // partial — diff 를 다 넣지 못해 못 본 코드 파일 수(0 이면 다 봤다 · packDiff)
-// max · reviewers — 라운드 상한 · 승인에 필요한 리뷰어 수(빠른 길은 1 · 1 — fast 면 머리에 표시)
+// max · reviewers — 라운드 상한 · 승인에 필요한 리뷰어 수(PR_REVIEWERS — 하나 · 빠른 길은 상한 1 — fast 면 머리에 표시)
 // short — 상한 뒤 이어받은 HEAD 의 짧은 리뷰(리뷰어 하나 · 다음 이어받기는 없다)
-export const reviewComment = ({ sha, round, results, summary, lineup = '', partial = 0, max = MAX_ROUNDS, reviewers = REVIEWERS.length, fast = false, short = false }) => {
+export const reviewComment = ({ sha, round, results, summary, lineup = '', partial = 0, max = MAX_ROUNDS, reviewers = PR_REVIEWERS, fast = false, short = false }) => {
   const notes = []
   if (partial) notes.push(`**⚠️ diff 가 길어 코드 파일 ${partial}개를 다 넣지 못했다** — 리뷰어가 일부만 봤다.${summary.verdict === 'approve' ? ' 이 승인은 머지 승인으로 세지 않고 사람 확인으로 넘긴다' : ''}`)
   if (summary.advisories?.length) notes.push(`**💡 권장 ${summary.advisories.length}개는 머지를 막지 않는다** — 에이전트에 보내지 않고 이 댓글에만 남긴다`)
@@ -648,12 +635,12 @@ export const reviewComment = ({ sha, round, results, summary, lineup = '', parti
   const limits = { max, reviewers }
   if (short) notes.push(shortReviewNote(shortReviewOutcome(summary), max))
   else if (round >= max && ['changes', 'decision'].includes(summary.verdict) && !takeoverEligible(summary, round, limits)) {
-    notes.push(`**이어받지 않음** — 리뷰 상한(${max})인데 답하지 못한 리뷰어가 있다(리뷰어 부족). 고친 커밋은 자동으로 머지하지 않고 멈춘다 — 사람이 이어받는다`)
+    notes.push(`**이어받지 않음** — 리뷰 상한(${max})인데 리뷰어가 답하지 못했다(리뷰어 부족). 고친 커밋은 자동으로 머지하지 않고 멈춘다 — 사람이 이어받는다`)
   } else if (takeoverEligible(summary, round, limits)) {
     notes.push(`**${TAKEOVER}** — 리뷰 상한(${max})이라 전체 리뷰는 더 돌지 않는다. 남은 지적을 고친 커밋은 리뷰어 하나가 바뀐 부분만 짧게 보고, 승인이면 같은 HEAD 검증 · 충돌 확인 뒤 머지 단계로 간다(막는 지적이 남으면 멈추고 아테나가 이어받는다)${summary.verdict === 'decision' ? '(사람이 정할 결정은 결정 콘솔 — 다 정할 때까지 머지하지 않는다)' : ''}`)
   }
   const head = `### 🤖 자동 리뷰 — ${fast ? `${FAST_PATH} · ` : ''}${short ? `${TAKEOVER} · ${SHORT_REVIEW} · ` : ''}라운드 ${round}/${max} · @${String(sha).slice(0, 7)}`
-  const verdictText = { approve: '승인', changes: '수정 필요', decision: '결정 필요', insufficient: `리뷰어 부족(승인 ${summary.approvals}/${reviewers} · ${reviewers === 1 ? '리뷰어가 답해야' : '둘 다 승인해야'} 머지)` }[summary.verdict]
+  const verdictText = { approve: '승인', changes: '수정 필요', decision: '결정 필요', insufficient: `리뷰어 부족(승인 ${summary.approvals}/${reviewers} · 리뷰어가 답해야 머지)` }[summary.verdict]
   const rows = results.map((result) => {
     if (result.status !== 'ok') return `- **${result.name}** — ${result.status === 'unavailable' ? '못 씀' : '실패'}(${oneLine(result.reason, 120)})`
     if (result.inherited) return `- **${result.name}** — 승인 · ${oneLine(result.review.summary, 300)} — 다시 돌리지 않음`

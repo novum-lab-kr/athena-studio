@@ -4,8 +4,8 @@
 //   agentLight  담당 에이전트 pane — 경량 계획서(plans/task/…) 작업. 없으면 agent 값 · 그것도 없으면 코어 기본값(delegate.sh — 같은 규칙 · 계획서 2026-10-29 D1)
 //   reviewer    reviewer pane(delegate.sh — 같은 규칙)
 //   reviewerEscalated reviewer pane — 그 계획서의 같은 레포 · 브랜치 "- Review result:" 가 수정 필요일 때(다시 리뷰). 없으면 reviewer 값(같은 규칙 · 2026-10-29 D2)
-//   prReview    PR 자동 리뷰 Claude 쪽(pr-auto.mjs)
-//   prReviewSecond PR 자동 리뷰 두 번째 자리 — Codex 를 처음부터 못 쓰는 사람(명령 없음 · 로그인 안 됨)에게 Codex 대신 도는 Claude(prReview 와 다른 모델이어야 한다)
+//   prReview    PR 자동 리뷰 리뷰어(pr-auto.mjs — 리뷰어 하나 · Claude 면 문자열 값 · Codex 면 .codex)
+//   prReviewSecond 쓰지 않음 — 리뷰어가 하나가 된 뒤(2026-11-08) 옛 팩 설정이 오류가 나지 않게 이름만 남겼다
 //   learnReview 배우기 검토(learn-review.mjs)
 //   athena      아테나 — 코어가 띄우지 않으니 기록만(읽는 곳 없음)
 // 어느 역할로 띄울지(경량 · 수정 필요 판정 · 없으면 대신 쓰는 값)는 delegate.sh 만 정한다 — 파이썬 athena_config.agent_model
