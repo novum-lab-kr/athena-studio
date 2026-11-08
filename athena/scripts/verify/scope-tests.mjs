@@ -10,7 +10,7 @@
 //      시험 파일은 폴더 경로(바로 아래 파일)와 앞에 변수가 붙은 경로의 뒤쪽도, 파일 이름만 적은 것(같은 이름이 3개 이하일 때)
 //   ② 시험에서 ①을 따라 닿는 파일에 바뀐 파일이 있으면(또는 바뀐 파일이 그 시험 자체면) 그 시험을 돌린다
 // 한계 — 스크립트가 다른 스크립트를 부르는 것(셸 → 셸)은 따라가지 않고, 문자열을 이어 붙여 만든 경로 · 실행 중에 정해지는 의존도 못 따라간다(그래서 설정 파일이 바뀌면 부르는 쪽이 전체를 돈다)
-//   셸 공통 파일(scripts/lib/**/*.sh · test/_lib.sh — 코어 athena/ 쪽 포함)이 바뀌면 종료 2(전체) — scripts/lib 의 .mjs · .js 는 import 를 따라 고른다 · 앱 소스(src · scripts · bin 의 코드 · .sh — .d.ts 제외)에 닿는 시험이 없어도 종료 2
+//   따라갈 수 없는 공통 파일(scripts/lib/**/*.sh · *.py · test/_lib.sh — 코어 athena/ 쪽 포함)이 바뀌면 종료 2(전체) — scripts/lib 의 .mjs · .js 는 import 를 따라 고른다 · 앱 소스(src · scripts · bin 의 코드 · .sh — .d.ts 제외)에 닿는 시험이 없어도 종료 2
 import { execFileSync } from 'node:child_process'
 import { existsSync, readFileSync, statSync } from 'node:fs'
 import { basename, dirname, join, normalize } from 'node:path'
@@ -29,9 +29,9 @@ const MAX_BYTES = 1_000_000
 /** @param {string} text */
 const lines = (text) => text.split('\n').filter(Boolean)
 
-// 여러 시험이 함께 기대는 셸 공통 파일 — 셸 → 셸 · 실행 중에 정해지는 경로로 쓰여 닿는 시험을 다 못 찾는다. 하나라도 바뀌면 전체.
-//   scripts/lib/** 의 .mjs · .js 는 import 를 따라 닿는 시험만 고른다(2026-11-09 사용자 결정 — lib/pr-auto.mjs 하나로 전체를 돌던 것)
-const SHARED = /^(?:athena\/)?(?:scripts\/lib\/.+\.sh|test\/_lib\.sh)$/
+// 여러 시험이 함께 기대는 공통 파일 중 의존을 따라갈 수 없는 것(셸 · 파이썬 — 셸 → 셸 · 파이썬 import 는 안 따라간다). 하나라도 바뀌면 전체.
+//   scripts/lib/** 의 .mjs · .js 는 import 를 따라 닿는 시험만 고른다(2026-11-09 사용자 결정 "따라갈 수 없는 것만 전체" — lib/pr-auto.mjs 하나로 전체를 돌던 것)
+const SHARED = /^(?:athena\/)?(?:scripts\/lib\/.+\.(?:sh|py)|test\/_lib\.sh)$/
 const APP_SOURCE = /^(?:src|scripts|bin)\/.+\.(?:js|mjs|cjs|mts|ts|tsx|jsx|sh)$/
 const TYPE_DECLARATION = /\.d\.(?:ts|mts|cts)$/
 

@@ -186,12 +186,12 @@ mkdir -p "$WORK/scripts"; echo 'echo hi' > "$WORK/scripts/orphan.sh"
 RESULT="$(picks scripts/orphan.sh 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
 check "닿는 시험이 없는 scripts/*.sh → 종료 코드 2" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
 rm -f "$WORK/scripts/orphan.sh"
-# 셸 공통 파일(scripts/lib/**/*.sh · test/_lib.sh — 코어 쪽 포함)은 닿는 시험이 있어도 전체
+# 따라갈 수 없는 공통 파일(scripts/lib/**/*.sh · *.py · test/_lib.sh — 코어 쪽 포함)은 닿는 시험이 있어도 전체
 mkdir -p "$WORK/athena/scripts/lib" "$WORK/athena/test"
-echo ': lib' > "$WORK/athena/scripts/lib/shared.sh"; echo ': lib' > "$WORK/athena/test/_lib.sh"
-for shared in athena/scripts/lib/shared.sh athena/test/_lib.sh; do
+echo ': lib' > "$WORK/athena/scripts/lib/shared.sh"; echo 'X = 1' > "$WORK/athena/scripts/lib/shared.py"; echo ': lib' > "$WORK/athena/test/_lib.sh"
+for shared in athena/scripts/lib/shared.sh athena/scripts/lib/shared.py athena/test/_lib.sh; do
   RESULT="$(picks "$shared" 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
-  check "셸 공통 파일 $shared → 종료 코드 2(전체)" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
+  check "따라갈 수 없는 공통 파일 $shared → 종료 코드 2(전체)" "$([[ "$RESULT" == *rc=2 ]] && echo 0 || echo 1)" "$RESULT"
 done
 # scripts/lib 의 .mjs 는 import 를 따라 닿는 시험만 — 전체로 넓히지 않는다(2026-11-09 lib/pr-auto.mjs 하나로 전체를 돌던 재현)
 echo 'export const x = 1' > "$WORK/athena/scripts/lib/shared.mjs"
@@ -200,7 +200,7 @@ echo "import { x } from '../lib/shared.mjs'" >> "$WORK/athena/scripts/board/serv
 RESULT="$(picks athena/scripts/lib/shared.mjs 2>/dev/null; echo "rc=${PIPESTATUS[0]}")"
 check "lib .mjs → import 로 닿는 시험만(전체 아님)" "$([ "$RESULT" = "SH athena/test/board-test.sh rc=0" ] && echo 0 || echo 1)" "$RESULT"
 cp "$TMP/server.mjs.bak" "$WORK/athena/scripts/board/server.mjs"
-rm -rf "$WORK/athena/scripts/lib/shared.mjs" "$WORK/athena/scripts/lib/shared.sh" "$WORK/athena/test/_lib.sh"
+rm -rf "$WORK/athena/scripts/lib/shared.mjs" "$WORK/athena/scripts/lib/shared.sh" "$WORK/athena/scripts/lib/shared.py" "$WORK/athena/test/_lib.sh"
 
 echo "줄서기 시간 칸 — wait_ms · wait_why (ms 와 따로)"
 git -C "$WORK" reset -q --hard; reset_tree   # 앞 시험이 남긴 변경을 치운다
