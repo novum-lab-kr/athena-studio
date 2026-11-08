@@ -1430,9 +1430,16 @@ const launchWatcher = () => {
     rmSync(launching, { force: true })
     try { closeSync(openSync(launching, 'wx')) } catch { return }
   }
-  const logFd = openSync(LOG_FILE, 'a')
-  spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { cwd: ROOT, detached: true, stdio: ['ignore', logFd, logFd] }).unref()
-  console.log(`🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 ${LOG_FILE}`)
+  if (process.env.ATHENA_PR_AUTO_CAPTURE === '1') {
+    // 처리기마다 수집기를 붙여 enqueue 종료 뒤의 출력과 처리기 종료 코드도 남긴다.
+    spawn(process.execPath, [join(ROOT, 'scripts/lib/pr-auto-output.mjs'), ROOT, '--watch'], { cwd: ROOT, detached: true, stdio: 'ignore' }).unref()
+    console.log('🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 state/pr-auto-output.jsonl')
+  } else {
+    const logFd = openSync(LOG_FILE, 'a')
+    spawn(process.execPath, [fileURLToPath(import.meta.url), '--watch'], { cwd: ROOT, detached: true, stdio: ['ignore', logFd, logFd] }).unref()
+    closeSync(logFd)
+    console.log(`🤖 자동 리뷰 처리기를 뒤에서 시작했다 — 기록 ${LOG_FILE}`)
+  }
 }
 
 const enqueue = (planArg, prArg, head) => {

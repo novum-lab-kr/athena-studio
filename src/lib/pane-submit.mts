@@ -13,7 +13,12 @@ export function inputOf({ agent, text }: Snapshot): string | null {
   // Claude 입력칸은 가로선, Codex 입력칸은 빈 줄로 끝난다(실제 pane 전·후 화면).
   const end = rest.findIndex((line) => agent === 'claude' ? /^─{3}/.test(line) : !line.trim())
   if (end < 0) return null
-  return [lines[index]!.trimStart().slice(1), ...rest.slice(0, end)].join('\n').trim()
+  const input = [lines[index]!.trimStart().slice(1), ...rest.slice(0, end)].join('\n').trim()
+  // Claude working 중 Enter 를 받으면 본문은 큐로 옮기고 빈 입력칸에 이 안내를 그린다.
+  // 실제 입력과 혼동하지 않도록 큐 본문의 전송 안내도 함께 확인한다(2026-11-08 실측).
+  if (agent === 'claude' && input === 'Press up to edit queued messages' &&
+      lines.some((line) => line.trim() === 'ctrl+x ctrl+s to send now')) return ''
+  return input
 }
 
 export async function submitText(text: string, transport: Transport): Promise<void> {
