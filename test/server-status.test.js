@@ -19,8 +19,12 @@ const SAMPLE = [
 
 test('서버 상태: 칸마다 읽기', () => {
   const read = status.parseStatus(SAMPLE)
-  assert.equal(read.cpuPercent, 38) // 1.5 / 4
+  // CPU % 는 앞 읽기와의 차이(/proc/stat)로만 — 부하 ÷ 코어로 짐작하지 않는다(결정 D8)
+  assert.equal(read.cpuPercent, null)
+  assert.equal(read.counters, null) // 옛 코어는 ==stat 없음
   assert.equal(read.load1, 1.5)
+  assert.equal(read.load5, 0.8)
+  assert.equal(read.load15, 0.4)
   assert.equal(read.memPercent, 25) // (8 − 6) / 8
   assert.equal(read.diskPercent, 45)
   assert.deepEqual(read.failed, ['backup'])
@@ -55,8 +59,6 @@ test('서버 상태: 리눅스가 아니거나 도구가 없으면 빈 칸 · �
   assert.deepEqual(read.failed, [])
   assert.equal(read.docker, null)
   assert.equal(status.parseStatus('==load\n1 1 1\n'), null)
-  // 부하가 코어 수보다 크면 100 에서 자른다
-  assert.equal(status.parseStatus('==load\n9 1 1\n==cpu\n2\n==end\n').cpuPercent, 100)
 })
 
 test('서버 상태: ssh 실패 글 → 이유 이름만', () => {
@@ -137,7 +139,7 @@ test('응답 확인 주소: http(s) 만 · 계정이 든 주소는 거절', () =
 test('기록: 읽은 것만 숫자로 · 주소 · 이름 없음', () => {
   const read = status.parseStatus(WIDE)
   const point = status.historyPoint({ name: 'web', host: 'web-1', status: read, web: { ok: true, code: 200, ms: 180, certDate: null, certDays: null }, at: 1000 })
-  assert.deepEqual(point, { t: 1000, cpu: 20, mem: 25, swap: 60, disk: 85, ms: 180, fail: 0 })
+  assert.deepEqual(point, { t: 1000, cpu: null, mem: 25, swap: 60, disk: 85, ms: 180, fail: 0, load: 0.4, rx: null, tx: null, counters: null })
   assert.equal(status.historyPoint({ name: 'web', host: 'web-1', status: { ok: false, reason: 'timeout' }, web: null, at: 1000 }), null)
   assert.ok(!status.historyText([point]).includes('web'))
 })
@@ -153,6 +155,9 @@ test('기록: 7일 지난 줄 · 깨진 줄은 빼고 시간 순', () => {
   ].join('\n')
   const points = status.parseHistory(text, now)
   assert.deepEqual(points.map((point) => point.t), [now - day, now - 1000])
+  // 옛 줄의 cpu(부하 ÷ 코어)는 버린다 · 새 줄(counters 칸 있음)은 그대로
+  assert.equal(points[0].cpu, null)
+  assert.equal(status.parseHistory(JSON.stringify({ t: now - 1000, cpu: 30, mem: 1, swap: null, disk: 1, ms: null, fail: 0, counters: null }), now)[0].cpu, 30)
   assert.equal(status.parseHistory(status.historyText(points), now).length, 2)
 })
 
@@ -175,6 +180,124 @@ test('기록 그래프: 칸마다 평균 · 점이 없는 칸은 null', () => {
   assert.equal(status.bucketHistory([], '7d', now).disk.length, 168)
 })
 
+// 지금 코어 STATUS_COMMAND 의 칸(실제 서버 출력 모양 · 이름은 가짜)
+const FULL = [
+  '==load', '2.50 1.20 0.90 3/400 999',
+  '==cpu', '4',
+  '==stat', 'cpu  1000 50 450 8000 500 0 100 0 0 0',
+  '==mem',
+  '               total        used        free      shared  buff/cache   available',
+  'Mem:     16000000000  4000000000  2000000000           0 10000000000 12000000000',
+  'Swap:     4000000000  1000000000  3000000000',
+  '==disk', 'Filesystem       1-blocks         Used    Available Capacity Mounted on', '/dev/sda1  200000000000 120000000000  80000000000      60% /',
+  '==disks', 'Filesystem     1024-blocks      Used Available Capacity Mounted on', '/dev/sda1      195312500 117187500  78125000      60% /',
+  '==net',
+  'Inter-|   Receive                                                |  Transmit',
+  ' face |bytes    packets errs drop fifo frame compressed multicast|bytes    packets errs drop fifo colls carrier compressed',
+  '    lo: 9999999    100    0    0    0     0          0         0  9999999     100    0    0    0     0       0          0',
+  '  eth0: 5000000   4000    0    0    0     0          0         0  2000000    3000    0    0    0     0       0          0',
+  'docker0: 777777     10    0    0    0     0          0         0   777777      10    0    0    0     0       0          0',
+  'vethab12: 55555     10    0    0    0     0          0         0    55555      10    0    0    0     0       0          0',
+  'br-1a2b3c: 4444     10    0    0    0     0          0         0     4444      10    0    0    0     0       0          0',
+  '  ens5: 1000000   900    0    0    0     0          0         0   500000     800    0    0    0     0       0          0',
+  '==os', 'PRETTY_NAME="Ubuntu 24.04.4 LTS"',
+  '==kernel', '6.8.0-100-generic',
+  '==failed',
+  '==services', 'cron.service', 'docker.service', 'ssh.service',
+  '==docker',
+  'web|running|Up 3 weeks (healthy)|shop-web:1a2b|shop',
+  'db|running|Up 3 weeks|postgres:16|shop',
+  'old|exited|Exited (143) 2 months ago|shop-old:9|shop',
+  'lone|exited|Exited (1) 2 hours ago|busybox|',
+  '==stats',
+  'web|12.50%|418MiB / 15.62GiB|2.61%|28.2MB / 103MB|2.46GB / 2.03GB',
+  'db|0.30%|1.5GiB / 15.62GiB|9.60%|1.1kB / 0B|512kB / 20MB',
+  '==top', 'node 13.9 0.2', 'Web Content 4.0 1.5', 'postgres 1.1 3.0',
+  '==detect', 'pm2', 'lxc', 'strange',
+  '==uptime', '3600.00 1000.00',
+  '==errors', '0',
+  '==updates', '0',
+  '==end', '',
+].join('\n')
+
+test('서버 상태: 부하 1·5·15 · 누적 값 · 크기 · OS · 서비스 이름 · 컨테이너 · 프로세스 · 감지', () => {
+  const read = status.parseStatus(FULL)
+  assert.deepEqual([read.load1, read.load5, read.load15], [2.5, 1.2, 0.9])
+  // 바쁜 tick = 전체 − idle − iowait
+  assert.equal(read.counters.total, 10100)
+  assert.equal(read.counters.busy, 1600)
+  // 루프백 · docker0 · veth · br- 는 빼고 eth0 + ens5
+  assert.equal(read.counters.rx, 6000000)
+  assert.equal(read.counters.tx, 2500000)
+  assert.equal(read.memTotal, 16000000000)
+  assert.equal(read.swapTotal, 4000000000)
+  assert.deepEqual(read.rootDisk, { used: 120000000000, total: 200000000000 })
+  assert.equal(read.diskPercent, 60)
+  assert.equal(read.os, 'Ubuntu 24.04.4 LTS')
+  assert.equal(read.kernel, '6.8.0-100-generic')
+  assert.deepEqual(read.services, ['cron', 'docker', 'ssh'])
+  assert.equal(read.running, 3)
+  assert.deepEqual(read.docker, { up: 2, total: 4, down: ['lone'], stopped: ['old'] })
+  const web = read.containers.find((row) => row.name === 'web')
+  assert.equal(web.project, 'shop')
+  assert.equal(web.image, 'shop-web:1a2b')
+  assert.equal(web.state, 'up')
+  assert.deepEqual(web.stats, { cpu: 12.5, memUsed: 418 * 1024 ** 2, memLimit: Math.round(15.62 * 1024 ** 3), memPercent: 2.61, rx: 28200000, tx: 103000000, read: 2460000000, write: 2030000000 })
+  const lone = read.containers.find((row) => row.name === 'lone')
+  assert.equal(lone.project, null)
+  assert.equal(lone.state, 'down')
+  assert.equal(lone.stats, null) // 꺼진 컨테이너는 stats 없음
+  assert.equal(read.containers.find((row) => row.name === 'old').state, 'stopped')
+  assert.deepEqual(read.top, [{ name: 'node', cpu: 13.9, mem: 0.2 }, { name: 'Web Content', cpu: 4, mem: 1.5 }, { name: 'postgres', cpu: 1.1, mem: 3 }])
+  assert.deepEqual(read.detected, ['pm2']) // 아는 이름만 · lxc 는 늘 깔려 있어 뺀다(D10)
+})
+
+test('서버 상태: docker 크기 글 → 바이트(1000 · 1024 단위)', () => {
+  assert.equal(status.sizeBytes('0B'), 0)
+  assert.equal(status.sizeBytes('1.1kB'), 1100)
+  assert.equal(status.sizeBytes('2MB'), 2000000)
+  assert.equal(status.sizeBytes(' 1KiB '), 1024)
+  assert.equal(status.sizeBytes('1.5GiB'), 1.5 * 1024 ** 3)
+  assert.equal(status.sizeBytes('--'), null)
+  assert.equal(status.sizeBytes(undefined), null)
+})
+
+test('서버 상태: 앞 읽기와의 차이 — CPU % · 받은 · 보낸 바이트', () => {
+  const read = status.parseStatus(FULL)
+  const before = { t: 1000, counters: { busy: 1000, total: 8100, rx: 5000000, tx: 2000000 } }
+  const rated = status.withRates(read, 1000 + 180000, before)
+  assert.equal(rated.cpuPercent, 30) // 600 / 2000
+  assert.equal(rated.rxBytes, 1000000)
+  assert.equal(rated.txBytes, 500000)
+  // 앞 읽기가 없거나 · 15분보다 오래됐거나 · 값이 줄었으면(다시 켜짐) 내지 않는다
+  assert.equal(status.withRates(read, 5000, null).cpuPercent, null)
+  assert.equal(status.withRates(read, 1000 + status.RATE_GAP_MS + 1, before).cpuPercent, null)
+  const rebooted = status.withRates(read, 181000, { t: 1000, counters: { busy: 9000, total: 90000, rx: 9e9, tx: 9e9 } })
+  assert.equal(rebooted.cpuPercent, null)
+  assert.equal(rebooted.rxBytes, null)
+  // 기록에 누적 값을 남겨 다음에 이어 쓴다
+  const point = status.historyPoint({ name: 'web', host: 'web-1', status: rated, web: null, at: 181000 })
+  assert.equal(point.cpu, 30)
+  assert.equal(point.load, 2.5)
+  assert.equal(point.rx, 1000000)
+  const points = status.parseHistory(status.historyText([point, { ...point, t: 182000, counters: null }]), 200000)
+  assert.deepEqual(status.lastCounters(points), { t: 181000, counters: read.counters })
+  assert.equal(status.lastCounters([]), null)
+})
+
+test('기록 그래프: 부하 · 수신 · 송신도 칸마다', () => {
+  const now = 10 * 60 * 60 * 1000
+  const point = { t: now - 1000, cpu: null, mem: null, swap: null, disk: null, ms: null, fail: 0, load: 1.5, rx: 300, tx: 100 }
+  const series = status.bucketHistory([point, { ...point, t: now - 2000, load: 0.5, rx: null }], '1h', now)
+  assert.equal(series.load[14], 1)
+  assert.equal(series.rx[14], 300)
+  assert.equal(series.tx[14], 200) // 수신 · 송신은 칸 안의 합
+  assert.equal(status.bucketStart('1h', now, 0), now - 60 * 60 * 1000)
+  assert.equal(status.bucketStart('1h', now, 14), now - 4 * 60 * 1000)
+  // 옛 기록(load · rx · tx 칸 없음)은 빈 칸
+  assert.equal(status.bucketHistory(status.parseHistory(JSON.stringify({ t: now - 1000, cpu: 5, mem: 5, swap: null, disk: 5, ms: null, fail: 0 }), now), '1h', now).load[14], null)
+})
+
 test('응답 확인 오류 코드 → 이유 이름', () => {
   assert.equal(status.webFailReason('CERT_HAS_EXPIRED'), 'cert')
   assert.equal(status.webFailReason('DEPTH_ZERO_SELF_SIGNED_CERT'), 'cert')
@@ -183,4 +306,12 @@ test('응답 확인 오류 코드 → 이유 이름', () => {
   assert.equal(status.webFailReason('ECONNREFUSED'), 'unreachable')
   assert.equal(status.webFailReason('EPIPE'), 'failed')
   assert.equal(status.webFailReason(undefined), 'failed')
+})
+
+test('위쪽 카드 줄 — 1열 서버 자원 · 2열 네트워크, 빠지면 그 줄 안에서만 나눈다(D11)', () => {
+  const spans = (keys) => status.metricRows(keys).map((row) => row.map((card) => `${card.key}:${card.span}`))
+  assert.deepEqual(spans(['cpu', 'load', 'mem', 'disk', 'rx', 'tx', 'ms']), [['cpu:3', 'load:3', 'mem:3', 'disk:3'], ['rx:4', 'tx:4', 'ms:4']])
+  // 응답 주소가 없으면 수신 · 송신 반반 — 디스크가 2열로 내려가지 않는다
+  assert.deepEqual(spans(['cpu', 'load', 'mem', 'disk', 'rx', 'tx']), [['cpu:3', 'load:3', 'mem:3', 'disk:3'], ['rx:6', 'tx:6']])
+  assert.deepEqual(spans(['cpu', 'mem']), [['cpu:6', 'mem:6']])
 })

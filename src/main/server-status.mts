@@ -3,6 +3,7 @@
 // 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(허용 목록 안의 고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
 // servers[].health 주소가 있으면 이 맥에서 응답 코드 · 걸린 시간 · (https 면) 인증서 만료일을 본다.
 // 읽을 때마다 숫자만 서버별 기록 파일에 한 줄(<본체>/.pack-data/state/server-history/<이름>.jsonl · 7일) — 주소 · 원문 · 비밀값은 쓰지 않는다.
+// CPU % · 수신 · 송신은 누적 값(/proc/stat · /proc/net/dev)의 앞 읽기와의 차이 — 앞 값은 이 창 메모리 · 없으면 기록 끝 점(withRates)
 // ssh 오류 원문은 화면에 넘기지 않는다(주소 · 사용자 이름이 섞일 수 있다) — 이유 이름만(src/lib/server-status.mts failReason)
 import fs from 'node:fs'
 import http from 'node:http'
@@ -12,7 +13,7 @@ import type { TLSSocket } from 'node:tls'
 import { execFile } from 'node:child_process'
 import * as core from '../lib/core.mts'
 import * as serverModel from '../lib/server-status.mts'
-import type { HistoryPoint, ServerEntry, ServerReading, ServerStatus, WebCheck } from '../lib/server-status.mts'
+import type { Counters, HistoryPoint, ServerEntry, ServerReading, ServerStatus, WebCheck } from '../lib/server-status.mts'
 
 export type ServerStatusReply = { servers: ServerReading[]; history: Record<string, HistoryPoint[]> }
 export type ServerStatusCtx = {
@@ -86,11 +87,25 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
     return ctx.athenaDir && fs.existsSync(packData) ? path.join(packData, 'state', 'server-history') : null
   }
 
-  // 한 서버 기록 읽기 + (읽었으면) 한 줄 더하기 · 7일 지난 줄 지우기
-  const record = async (dir: string, reading: ServerReading): Promise<HistoryPoint[]> => {
+  // 서버마다 앞 읽기의 누적 값(이 창 메모리)
+  const lastSeen = new Map<string, { t: number; counters: Counters }>()
+  const readHistory = async (dir: string | null, name: string): Promise<HistoryPoint[]> =>
+    dir ? serverModel.parseHistory(await fs.promises.readFile(path.join(dir, `${name}.jsonl`), 'utf8').catch(() => ''), Date.now()) : []
+
+  // 앞 읽기와의 차이를 채운다 — 메모리 · 기록 끝 점 중 더 최근 것(같은 팩 창이 둘이면 기록이 더 새로울 수 있다)
+  const withRates = (reading: ServerReading, points: HistoryPoint[]): ServerReading => {
+    if (!reading.status.ok) return reading
+    const remembered = lastSeen.get(reading.name) ?? null
+    const recorded = serverModel.lastCounters(points)
+    const previous = remembered && (!recorded || remembered.t >= recorded.t) ? remembered : recorded
+    const status = serverModel.withRates(reading.status, reading.at, previous)
+    if (status.counters) lastSeen.set(reading.name, { t: reading.at, counters: status.counters })
+    return { ...reading, status }
+  }
+
+  // 한 서버 기록에 (읽었으면) 한 줄 더하기 · 7일 지난 줄 지우기
+  const record = async (dir: string, reading: ServerReading, points: HistoryPoint[]): Promise<HistoryPoint[]> => {
     const file = path.join(dir, `${reading.name}.jsonl`)
-    const now = Date.now()
-    const points = serverModel.parseHistory(await fs.promises.readFile(file, 'utf8').catch(() => ''), now)
     const point = serverModel.historyPoint(reading)
     const last = points[points.length - 1]
     if (!point || (last && point.t - last.t < RECORD_GAP)) return points
@@ -115,16 +130,20 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   // 서버마다 한 번씩(함께) — 서버가 없으면 빈 목록
   ctx.serverStatus = async () => {
     const targets = serverModel.packTargets(await readPack())
-    const servers = await Promise.all(targets.map(async ({ health, ...server }): Promise<ServerReading> => {
+    const readings = await Promise.all(targets.map(async ({ health, ...server }): Promise<ServerReading> => {
       const [status, web] = await Promise.all([readOne(server), health ? checkWeb(health) : Promise.resolve(null)])
       return { ...server, status, web, at: Date.now() }
     }))
     const dir = historyDir()
     const history: Record<string, HistoryPoint[]> = {}
-    if (dir) {
-      for (const reading of servers) history[reading.name] = await record(dir, reading).catch(() => [])
-      await dropStale(dir, new Set(servers.map((server) => server.name)))
+    const servers: ServerReading[] = []
+    for (const raw of readings) {
+      const points = await readHistory(dir, raw.name)
+      const reading = withRates(raw, points)
+      servers.push(reading)
+      if (dir) history[reading.name] = await record(dir, reading, points).catch(() => points)
     }
+    if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
     return { servers, history }
   }
 }

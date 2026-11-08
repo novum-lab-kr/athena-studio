@@ -88,10 +88,13 @@ ask() {
   exit 3
 }
 
-# 상태 칸 읽기 — 부하 · 코어 수 · 메모리 · SWAP(free) · 디스크(/ · 마운트마다 — tmpfs 같은 가짜 파일 시스템 빼고) · 멈춘 systemd 서비스 · 도는 서비스 수 · 컨테이너 ·
+# 상태 칸 읽기 — 부하 1·5·15분 · 코어 수 · CPU 누적 tick(/proc/stat 첫 줄 — 앱이 앞 읽기와의 차이로 CPU % 를 낸다) · 메모리 · SWAP(free) ·
+# 디스크(/ 는 바이트 · 마운트마다 — tmpfs 같은 가짜 파일 시스템 빼고) · 네트워크 누적 바이트(/proc/net/dev) · OS 이름 · 커널 · 멈춘 systemd 서비스 ·
+# 도는 서비스 이름(첫 칸만 — 설명 칸은 주소가 섞일 수 있어 자른다) · 컨테이너(상태 · 이미지 · compose 프로젝트) · 켜진 컨테이너 사용량(docker stats) ·
+# CPU 를 많이 쓰는 프로세스(프로그램 이름만 — 명령줄 인자는 비밀값이 섞일 수 있어 읽지 않는다) · 있지만 아직 못 읽는 실행 도구(command -v) ·
 # 켜진 시간 · 최근 1시간 에러 로그 줄 수 · 밀린 보안 업데이트 수. 칸마다 "==이름" 줄로 나눈다(앱 src/lib/server-status.mts 가 읽는다).
-# 명령이 없는 서버(apt · journalctl 없음)는 그 칸을 비워 둔다 — 0 과 "못 읽음" 을 가른다
-STATUS_COMMAND='echo ==load; cat /proc/loadavg 2>/dev/null; echo ==cpu; nproc 2>/dev/null; echo ==mem; free -b 2>/dev/null; echo ==disk; df -P / 2>/dev/null; echo ==disks; df -P -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null; echo ==failed; systemctl list-units --type=service --state=failed --no-legend --plain --no-pager 2>/dev/null; echo ==running; systemctl list-units --type=service --state=running --no-legend --plain --no-pager 2>/dev/null | wc -l; echo ==docker; docker ps -a --format "{{.Names}}|{{.State}}|{{.Status}}" 2>/dev/null; echo ==uptime; cat /proc/uptime 2>/dev/null; echo ==errors; command -v journalctl >/dev/null 2>&1 && journalctl -p err --since "1 hour ago" --no-pager -q -o cat 2>/dev/null | wc -l; echo ==updates; command -v apt >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | grep -c -i security; echo ==end'
+# 명령이 없는 서버(apt · journalctl · docker 없음)는 그 칸을 비워 둔다 — 0 과 "못 읽음" 을 가른다. 명령 전체가 server_allow check 0 이어야 한다
+STATUS_COMMAND='echo ==load; cat /proc/loadavg 2>/dev/null; echo ==cpu; nproc 2>/dev/null; echo ==stat; head -1 /proc/stat 2>/dev/null; echo ==mem; free -b 2>/dev/null; echo ==disk; df -P -B1 / 2>/dev/null; echo ==disks; df -P -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null; echo ==net; cat /proc/net/dev 2>/dev/null; echo ==os; grep -m1 "^PRETTY_NAME=" /etc/os-release 2>/dev/null; echo ==kernel; uname -r 2>/dev/null; echo ==failed; systemctl list-units --type=service --state=failed --no-legend --plain --no-pager 2>/dev/null; echo ==services; systemctl list-units --type=service --state=running --no-legend --plain --no-pager 2>/dev/null | cut -d" " -f1; echo ==docker; docker ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}" 2>/dev/null; echo ==stats; command -v docker >/dev/null 2>&1 && docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}" 2>/dev/null; echo ==top; ps -eo comm=,pcpu=,pmem= --sort=-pcpu 2>/dev/null | head -6; echo ==detect; command -v pm2 >/dev/null 2>&1 && echo pm2; command -v podman >/dev/null 2>&1 && echo podman; command -v kubectl >/dev/null 2>&1 && echo kubectl; command -v supervisorctl >/dev/null 2>&1 && echo supervisorctl; echo ==uptime; cat /proc/uptime 2>/dev/null; echo ==errors; command -v journalctl >/dev/null 2>&1 && journalctl -p err --since "1 hour ago" --no-pager -q -o cat 2>/dev/null | wc -l; echo ==updates; command -v apt >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | grep -c -i security; echo ==end'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT

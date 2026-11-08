@@ -18,6 +18,15 @@
   --warning: #dbb579;
   --error: #e58c99;
 
+  /* 서버 화면 카드 색(서로 · 주의 · 오류 · 강조와 겹치지 않게) */
+  --metric-cpu: #5cc4d4;
+  --metric-load: #a5cc6b;
+  --metric-mem: #6ea8e0;
+  --metric-disk: #b48ce0;
+  --metric-rx: #8a90f0;
+  --metric-tx: #5fc99a;
+  --metric-ms: #dd80cf;
+
   /* 글꼴 — 화면 글자는 시스템 글꼴(D2Coding 은 보통·굵게 두 굵기뿐이라 작은 화면 글자가 두꺼워 보인다) ·
      터미널·코드는 네이버 D2Coding(무료 · OFL · 없는 컴퓨터는 시스템 글꼴로) */
   --font-ui: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", sans-serif;
@@ -1599,14 +1608,82 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .sx-item-value.dim { color: var(--muted); }
 .sx-foot { margin: 0; color: var(--muted); font-size: 11px; }
 .sv-spark path, .sx-chart path { fill: none; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
-.sv-line-cpu { stroke: var(--accent); }
-.sv-line-mem { stroke: #6ea8e0; }
-.sv-line-disk { stroke: var(--success); }
-.sv-line-ms { stroke: #b48ce0; }
+/* 서버 화면 카드 색 — 위쪽 카드 7장(+ 목록 추이선 CPU · MEM)이 겹치지 않게 한곳에서. 주의(노랑) · 오류(빨강) · 금색 강조와도 다른 색만 */
+.sv-c-cpu { --metric: var(--metric-cpu); }
+.sv-c-load { --metric: var(--metric-load); }
+.sv-c-mem { --metric: var(--metric-mem); }
+.sv-c-disk { --metric: var(--metric-disk); }
+.sv-c-rx { --metric: var(--metric-rx); }
+.sv-c-tx { --metric: var(--metric-tx); }
+.sv-c-ms { --metric: var(--metric-ms); }
+.sv-line { stroke: var(--metric); }
+.sv-area { fill: color-mix(in srgb, var(--metric) 16%, transparent); }
+.sv-dot { background: var(--metric); }
 .sv-gap-box { fill: rgba(255, 255, 255, 0.05); }
 .sv-warn-line { stroke: var(--warning); stroke-width: 0.6; stroke-dasharray: 3 3; opacity: 0.5; vector-effect: non-scaling-stroke; }
 .sv-range { height: 22px; padding: 0 9px; border: 1px solid var(--line); border-radius: 5px; background: transparent; color: var(--muted); font: 11px var(--font-ui); cursor: pointer; }
 .sv-range.active { border-color: var(--accent); color: var(--text); }
+/* 서버 화면 — 넓은 화면 배치(위쪽 카드 · 상세 · 표 — 있는 것만 12칸 격자에) */
+.sx-mcard-line path { fill-rule: nonzero; }
+.sx-mcard-line path.sv-line { fill: none; stroke-width: 1.4; stroke-linejoin: round; stroke-linecap: round; }
+.sx-facts { display: inline-flex; gap: 12px; color: var(--muted); font-size: 11px; }
+.sx-facts .warn { color: var(--warning); }
+.sx-facts .fail { color: var(--error); }
+.sx-cards { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 10px; }
+.sx-mcard-note { color: var(--muted); font: 11px var(--font-mono); white-space: nowrap; }
+.sx-info { display: flex; flex-wrap: wrap; gap: 6px; }
+.sx-info-chip { padding: 2px 8px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); font: 11px/1.6 var(--font-mono); }
+.sx-info-label { margin-right: 6px; color: var(--muted); font-family: var(--font-ui); }
+.sx-mcard { display: flex; align-items: center; gap: 14px; min-height: 92px; padding: 12px 16px; }
+.sx-mcard-text { display: flex; flex: none; flex-direction: column; gap: 6px; min-width: 120px; }
+.sx-mcard-title { color: var(--muted); font-size: 12px; }
+.sx-mcard-value { font: 600 22px/1.2 var(--font-mono); white-space: nowrap; }
+.sx-mcard-value.warn { color: var(--warning); }
+.sx-mcard-value.high { color: var(--error); }
+.sx-mcard-total { color: var(--muted); font-size: 13px; font-weight: 400; }
+.sx-mcard.stale .sx-mcard-value { color: var(--muted); font-size: 16px; }
+.sx-mcard-line { flex: 1; min-width: 0; height: 56px; }
+/* 추이선에 마우스 — 세로 안내선 · 점 · 말풍선(fixed — 목록 칸 overflow 에 잘리지 않게) */
+.sx-hover { position: relative; display: block; cursor: crosshair; }
+.sx-hover > svg { display: block; overflow: visible; }
+.sx-mcard-line > svg { width: 100%; height: 100%; }
+.sx-hover-guide { position: absolute; top: 0; bottom: 0; width: 1px; margin-left: -0.5px; background: color-mix(in srgb, var(--text) 35%, transparent); pointer-events: none; }
+.sx-hover-dot { position: absolute; width: 7px; height: 7px; border: 1.5px solid var(--bg); border-radius: 50%; transform: translate(-50%, -50%); pointer-events: none; }
+.sx-hover-tip { position: absolute; top: 50%; z-index: 2; display: flex; flex-direction: column; gap: 1px; padding: 3px 7px; border: 1px solid var(--popup-line); border-radius: 5px; background: var(--popup-bg); color: var(--popup-text); box-shadow: 0 4px 14px rgb(0 0 0 / 40%); font: 11px/1.35 var(--font-mono); white-space: nowrap; transform: translate(8px, -50%); pointer-events: none; }
+.sx-hover-tip.flip { transform: translate(calc(-100% - 8px), -50%); }
+.sx-hover-time { color: var(--popup-muted); }
+.sx-ring { flex: none; width: 64px; height: 64px; margin-left: auto; }
+.sx-ring circle { fill: none; stroke-width: 5; }
+.sx-ring-track { stroke: var(--line); }
+.sx-ring-fill { stroke: var(--metric-disk); stroke-linecap: round; }
+.sx-ring-fill.warn { stroke: var(--warning); }
+.sx-ring-fill.high { stroke: var(--error); }
+/* 상세 칸 — 있는 카드만 12칸 격자에 나눠 빈자리 없이(칸 수는 화면 코드 spanOf) */
+.sx-details.wide { grid-template-columns: repeat(12, minmax(0, 1fr)); }
+.sx-tables { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); gap: 10px; }
+.sx-span { grid-column: 1 / -1; }
+.sx-table-scroll { overflow-x: auto; }
+.sx-containers { min-width: 760px; }
+.sx-containers .c-name { width: 22%; }
+.sx-containers .c-image { width: 26%; }
+.sx-containers .c-state { width: 6%; }
+.sx-containers .c-cpu { width: 8%; }
+.sx-containers .c-mem { width: 12%; }
+.sx-containers .c-io { width: 13%; }
+.sx-table { width: 100%; border-collapse: collapse; table-layout: fixed; font: 11.5px var(--font-mono); }
+.sx-table th { padding: 0 8px 4px 0; border-bottom: 1px solid var(--line); color: var(--muted); font: 10.5px var(--font-ui); font-weight: 400; text-align: left; }
+.sx-table td { padding: 3px 8px 3px 0; overflow: hidden; border-bottom: 1px solid color-mix(in srgb, var(--line) 50%, transparent); text-overflow: ellipsis; white-space: nowrap; }
+.sx-table tr:last-child td { border-bottom: 0; }
+.sx-table .num { width: 64px; text-align: right; }
+.sx-containers .num { width: auto; }
+.sx-table .server-dot { vertical-align: 1px; }
+.sx-cell-warn { color: var(--warning); }
+.sx-cell-high { color: var(--error); }
+.sx-cell-dim, .sx-cell-unknown { color: var(--muted); }
+.sx-chips { display: flex; flex-wrap: wrap; gap: 4px 6px; }
+.sx-chip { padding: 1px 7px; border: 1px solid var(--line); border-radius: 4px; color: var(--text); font: 11px/1.6 var(--font-mono); }
+.sx-chip.dim { color: var(--muted); }
+.sx-chip.fail { border-color: var(--error); color: var(--error); }
 /* 사이드바 servers 줄 — 2칸 서버 선 아이콘(우측 위 서버 버튼과 같은 모양) · 주의 · 실패면 선 전체가 상태 색 + 오른쪽 이유 배지 */
 .space-server-icon { display: grid; place-items: center; color: var(--muted); }
 .space-server-icon svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linecap: round; }
@@ -1685,3 +1762,24 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .sv-spacer { flex: 1; }
 .sv-analyze { display: inline-flex; align-items: center; gap: 6px; margin-right: 12px; color: var(--popup-muted); font-size: 12.5px; cursor: pointer; } /* [등록] 옆 — 등록 뒤 분석 체크 */
 .sv-analyze input { margin: 0; accent-color: var(--accent); cursor: pointer; }
+/* 컨테이너 표 — Compose 프로젝트 묶음(시안 4차) */
+.sx-project + .sx-project .sx-project-row td { border-top: 1px solid var(--line); }
+.sx-project-row { cursor: pointer; }
+.sx-project-row td { background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--text); }
+.sx-project-row:hover td { background: color-mix(in srgb, var(--text) 7%, transparent); }
+.sx-project-name { margin-right: 10px; font-weight: 600; }
+.sx-caret { display: inline-block; width: 14px; color: var(--muted); transition: transform 0.12s; }
+.sx-caret.open { transform: rotate(90deg); }
+.sx-indent { padding-left: 26px !important; }
+/* 상태 아이콘 — 실행 중 · 중지됨 · 오류 · 일부 중지 */
+.sx-st { display: block; width: 15px; height: 15px; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.sx-st circle { stroke: currentColor; }
+.sx-st-running { color: var(--success); }
+.sx-st-running path { stroke: currentColor; }
+.sx-st-stopped { color: var(--muted); }
+.sx-st-stopped rect { fill: currentColor; }
+.sx-st-error { color: var(--error); }
+.sx-st-error circle { fill: color-mix(in srgb, var(--error) 18%, transparent); }
+.sx-st-error path { stroke: currentColor; stroke-width: 2; }
+.sx-st-partial { color: var(--warning); }
+.sx-st-partial path { fill: currentColor; }
