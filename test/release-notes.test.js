@@ -105,6 +105,14 @@ test('CHANGELOG.md 의 모든 줄에 한국어 · 일본어 · 중국어 번역�
   }
 })
 
+test('src/changelog/ko.json: 한국어 번역은 합니다체 — 해요체로 끝나지 않는다', () => {
+  // 사이트 줄(docs/site-release-notes.json ko)이 이 번역을 그대로 쓴다(docs/development.md "배포판 (맥)")
+  const map = JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', 'ko.json'), 'utf8'))
+  for (const [english, korean] of Object.entries(map)) {
+    assert.doesNotMatch(korean, /요[.!]?$/, `ko 번역이 해요체다 — 합니다체로: ${korean} (${english})`)
+  }
+})
+
 test('CHANGELOG.md: 공개 배포판 0.28.7 → 0.32 는 0.32 절 줄만 고른다(0.28 절은 안 나온다)', () => {
   const sections = notes.parseChangelog(fs.readFileSync(path.join(ROOT, 'CHANGELOG.md'), 'utf8'))
   const section032 = sections.find((section) => section.minor[0] === 0 && section.minor[1] === 32)

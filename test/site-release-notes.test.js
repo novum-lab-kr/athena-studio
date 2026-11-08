@@ -44,7 +44,7 @@ test('site-release-notes.json: minor 마다 줄 배열 · 태그 · 4개 언어 
 })
 
 test('site-release-notes.json: ko 글은 소개 사이트 말투(합니다체) — 해요체로 끝나지 않는다', () => {
-  // 앱 번역(src/changelog/ko.json)은 해요체라 그대로 옮기면 사이트에 해요체로 붙는다(docs/development.md "배포판 (맥)")
+  // 앱 번역(src/changelog/ko.json)도 합니다체라 그 줄을 그대로 옮긴다(docs/development.md "배포판 (맥)")
   const data = readSiteNotes()
   for (const [minor, items] of Object.entries(data)) {
     for (const item of items) {
