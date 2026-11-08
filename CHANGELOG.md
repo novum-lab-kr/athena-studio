@@ -266,7 +266,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix core update failing on Node 24.5.0 (old pack folder link)
 
 ### Security
-- Updated Electron to 44.10.0, so the Node built into the app is now the security release 24.22.1.
+- Update Electron to 44.10.0 — built-in Node security release 24.22.1
 
 ## 0.40 (v0.32.5 – v0.40.4 · Oct 30, 2026)
 
