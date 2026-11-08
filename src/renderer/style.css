@@ -285,6 +285,7 @@ body:has(.pack-overlay:not([hidden])) .app-update-corner { display: none; }
 .app-update-corner-main { display: flex; flex-direction: column; gap: 2px; flex: 1; min-width: 0; padding-top: 1px; }
 .app-update-corner-title { font-weight: 600; }
 .app-update-corner-message { color: var(--popup-muted); }
+.app-update-corner-message.app-update-corner-lead { color: var(--popup-text); }
 .app-update-corner-main:lang(ko) { word-break: keep-all; }
 .app-update-corner-note { color: var(--popup-muted); font-size: 12px; }
 .app-update-corner-actions { display: flex; justify-content: flex-end; gap: 8px; padding: 10px 12px 12px; }
