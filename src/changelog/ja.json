@@ -1,6 +1,6 @@
 {
   "Add SSH server registration from the sidebar — key auth only, host key check on first connect": "サイドバーから SSH サーバー登録 — 鍵認証のみ、初回接続時にホスト鍵を確認",
-  "Server connection status in the sidebar — agents limited to allow-listed read-only commands": "サイドバーにサーバー接続状態を表示 — エージェントは許可リストの読み取り専用コマンドのみ",
+  "Sidebar server connection status — agent commands outside the read-only allow list wait for approval": "サイドバーにサーバー接続状態を表示 — 読み取り専用の許可リスト外のコマンドは承認待ち",
   "Add security review for sensitive changes — High findings block merge": "機密性の高い変更にセキュリティレビューを追加 — High 指摘でマージを停止",
   "Background auto-update for the Mac app (installs on quit)": "Mac アプリのバックグラウンド自動アップデート(終了時にインストール)",
   "Compaction prep for Codex sessions — note-taking reminder before, transcript pointer after": "Codex セッションの圧縮対策に対応 — 圧縮前に記録リマインド、圧縮後に会話記録を案内",

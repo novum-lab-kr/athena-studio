@@ -1,6 +1,6 @@
 {
   "Add SSH server registration from the sidebar — key auth only, host key check on first connect": "사이드바에서 SSH 서버 등록 — 키 인증 전용, 첫 접속 시 호스트 키 확인",
-  "Server connection status in the sidebar — agents limited to allow-listed read-only commands": "사이드바 서버 접속 상태 표시 — 에이전트는 허용 목록의 읽기 전용 명령만 실행",
+  "Sidebar server connection status — agent commands outside the read-only allow list wait for approval": "사이드바 서버 접속 상태 표시 — 읽기 전용 허용 목록 밖 명령은 승인 대기",
   "Add security review for sensitive changes — High findings block merge": "민감한 변경에 보안 리뷰 추가 — High 지적 시 머지 차단",
   "Background auto-update for the Mac app (installs on quit)": "맥 앱 백그라운드 자동 업데이트 (앱 종료 시 설치)",
   "Compaction prep for Codex sessions — note-taking reminder before, transcript pointer after": "Codex 세션 압축 대비 지원 — 압축 전 기록 알림, 압축 후 대화 원문 안내",

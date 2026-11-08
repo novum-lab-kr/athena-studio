@@ -42,7 +42,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add SSH server registration from the sidebar — key auth only, host key check on first connect
-- Server connection status in the sidebar — agents limited to allow-listed read-only commands
+- Sidebar server connection status — agent commands outside the read-only allow list wait for approval
 
 <!-- 0.57: v0.56.3..main 에서 사용자에게 보이는 변경 — 위험한 수정의 보안 검토(security-reviewer · 높음이면 올리기 · 머지 멈춤). 범위 끝은 열어 둔다 -->
 
