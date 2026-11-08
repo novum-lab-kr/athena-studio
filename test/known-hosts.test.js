@@ -142,7 +142,9 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
         return { ok: true, already: false, server: { name: alias, host: alias } }
       },
     }
-    installSshSetup(ctx, { dialog: {}, home })
+    // 가짜 시스템 설정 — 처음엔 없다(9 · 10 에서 만든다)
+    const systemConfig = path.join(root, 'system_ssh_config')
+    installSshSetup(ctx, { dialog: {}, home, systemConfig })
     const input = { alias: 'kh-test', user: os.userInfo().username, host: '127.0.0.1', port: String(port), key: path.join(root, 'userkey') }
     const source = (value) => ({ kind: 'new', input: value })
     const register = async (value = input) => ctx.serverRegister(source(value))
@@ -256,6 +258,48 @@ test('진짜 ssh: 처음 서버 · 바꿔치기 · 믿기 · 키 바뀜 · 해�
     const override = await ctx.serverRegister(hostSource({ ...detail.values, port: '3' }))
     assert.deepEqual([override.step, override.lock], ['check', 'override'])
     assert.equal(fs.readFileSync(configFile, 'utf8'), shadow)
+    assert.equal(added.length, 0)
+
+    // 9) 앞 IdentityFile 파일이 없고 뒤 키를 쓰는 Host — 칸은 뒤 키 · 포트만 고쳐도 override 가 아니다(바뀜 확인도 같은 키 규칙)
+    const user = os.userInfo().username
+    writeConfig(['  HashKnownHosts yes', 'Host kh-edit', '  HostName 127.0.0.1', '  Port 1', `  User ${user}`, `  IdentityFile ${path.join(root, 'nokey')}`, `  IdentityFile ${userKey}`])
+    const twoKeys = await ctx.serverHostDetail('kh-edit')
+    assert.equal(twoKeys.values.key, userKey)
+    const twoKeyEdit = await ctx.serverRegister(hostSource({ ...twoKeys.values, port: String(port) }))
+    assert.equal(twoKeyEdit.ok, true, JSON.stringify(twoKeyEdit))
+    assert.deepEqual(added.pop(), { alias: 'kh-edit', tested: true })
+    for (const name of backups()) fs.rmSync(path.join(sshDir, name))
+
+    // 10) 시스템 설정 — 기본 ssh 처럼 사용자 config 뒤에 읽는다(Port 를 시스템 설정에만 두면 값 조회 · 접속 시험이 그 값)
+    fs.writeFileSync(systemConfig, ['Host kh-sys', `  Port ${port}`, ''].join('\n'))
+    writeConfig(['  HashKnownHosts yes', 'Host kh-sys', '  HostName 127.0.0.1', `  User ${user}`, `  IdentityFile ${userKey}`])
+    assert.equal((await ctx.serverHostDetail('kh-sys')).values.port, String(port))
+    const viaSystem = await ctx.serverRegister({ kind: 'host', alias: 'kh-sys' })
+    assert.equal(viaSystem.ok, true, JSON.stringify(viaSystem))
+    assert.deepEqual(added.pop(), { alias: 'kh-sys', tested: true })
+
+    // 11) 고친 Host 키 올리기 — 다시 쓴 모습의 임시 config 를 -F 로 · 별칭으로(user@host 가 아니라) · 임시 폴더는 pane 이 끝날 때 sh 가 지운다
+    const opened = []
+    ctx.openSshPane = async (label, text) => {
+      opened.push({ label, text })
+      return { pane: 'p-test' }
+    }
+    writeConfig(['  HashKnownHosts yes', ...editBlock('Host kh-edit', 1)])
+    const configBefore = fs.readFileSync(configFile, 'utf8')
+    assert.deepEqual(await ctx.sshKeyUpload(hostSource({ ...detail.values, port: String(port) })), { ok: true, pane: 'p-test' })
+    const [{ label, text }] = opened
+    assert.equal(label, 'ssh-key-kh-edit')
+    const script = text.match(/^sh '([^']+)' && exit$/)[1]
+    const scriptText = fs.readFileSync(script, 'utf8')
+    const tempFile = path.join(path.dirname(script), 'config')
+    assert.equal(scriptText.includes(`ssh-copy-id -F '${tempFile}' -i '${userKey}.pub' kh-edit\n`), true, scriptText)
+    assert.equal(scriptText.includes(`trap "rm -rf '${path.dirname(script)}'" EXIT HUP INT TERM`), true, scriptText)
+    const tempText = fs.readFileSync(tempFile, 'utf8')
+    assert.equal(tempText.includes(`  Port ${port}\n`), true)
+    assert.equal(tempText.endsWith(`Match all\nInclude ${systemConfig}\n`), true)
+    assert.equal(fs.statSync(tempFile).mode & 0o777, 0o600)
+    assert.equal(fs.readFileSync(configFile, 'utf8'), configBefore)
+    fs.rmSync(path.dirname(script), { recursive: true, force: true })
     assert.equal(added.length, 0)
   } finally {
     sshd.kill()

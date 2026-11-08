@@ -58,13 +58,24 @@ type Resolved = ({ ok: true } & Target) | { ok: false; step: 'check'; problems?:
 type GValues = { hostname: string; user: string; port: string; identityfile: string[] }
 const G_KEYS = ['hostname', 'user', 'port', 'identityfile'] as const
 
-// home · bins 는 시험이 격리 폴더 · 가짜 명령을 넣을 때만(앱은 기본값)
-export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home, bins = {} }: { dialog: Dialog; sshBin?: string; home?: string; bins?: knownHosts.Bins }): void {
+// 시스템 ssh 설정 — 기본 ssh 는 사용자 config 다음에 이 파일을 읽는데 -F 로 임시 config 를 주면 건너뛴다(그래서 임시 config 끝에 Include 로 붙인다)
+const SYSTEM_CONFIG = '/etc/ssh/ssh_config'
+
+// home · bins · systemConfig 는 시험이 격리 폴더 · 가짜 명령 · 가짜 시스템 설정을 넣을 때만(앱은 기본값)
+export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home, bins = {}, systemConfig = SYSTEM_CONFIG }: { dialog: Dialog; sshBin?: string; home?: string; bins?: knownHosts.Bins; systemConfig?: string }): void {
   const sshDir = () => path.join(home ?? os.homedir(), '.ssh')
   const configFile = () => path.join(sshDir(), 'config')
   const readConfig = () => fs.promises.readFile(configFile(), 'utf8').catch(() => '')
   const tilde = (file: string) => (file.startsWith(`${os.homedir()}/`) ? `~/${file.slice(os.homedir().length + 1)}` : file)
   const expand = (file: string) => (file.startsWith('~/') ? path.join(home ?? os.homedir(), file.slice(2)) : file)
+  // ssh 가 실제로 쓸 키 — 푼 IdentityFile 중 파일이 있는 첫 것(없는 파일은 ssh 도 건너뛴다 · 칸 채우기와 바뀜 확인이 같은 규칙)
+  const usedKey = (files: string[]) => files.find((file) => fs.existsSync(expand(file))) ?? ''
+  // 임시 config 에 쓸 글 — 사용자 config 다음에 시스템 설정을 기본 ssh 와 같은 순서로(먼저 정한 값이 이긴다 · 앞 블록 조건에 묶이지 않게 Match all 뒤에)
+  const sshView = (text: string) => {
+    if (!fs.existsSync(systemConfig)) return text
+    const body = text && !text.endsWith('\n') ? `${text}\n` : text
+    return `${body}\n# athena-studio temp: system config after user config, like plain ssh\nMatch all\nInclude ${systemConfig}\n`
+  }
   // 이미 쓰는 별칭 — 이 config 의 Host + 코어가 Include 까지 따라간 목록
   const takenAliases = async (): Promise<string[]> => {
     const listed = (ctx.serverHosts ? await ctx.serverHosts() : null) as { ok?: boolean; hosts?: { host: string }[] } | null
@@ -88,7 +99,7 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
   // 기존 Host 를 고친 칸 — 지금 값(ssh -G)과 같으면 그대로 등록(쓰지 않음) · 다르면 블록을 다시 쓴 글을 만든다(아직 파일에는 쓰지 않는다)
   const resolveEdit = async (alias: string, input: HostInput, taken: string[]): Promise<Resolved> => {
     const current = await readConfig()
-    const before = await hostValues(configFile(), alias)
+    const before = await withTempConfig(current, (file) => hostValues(file, alias))
     if (!before) return { ok: false, step: 'check', problems: { alias: 'bad' } }
     const filled = filledInput(alias, before)
     const asked = { ...input, alias }
@@ -105,7 +116,7 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
     const text = sshConfig.rewriteHostBlock(current, span, changes)
     // 다시 쓴 글로 ssh 가 정말 그 값을 쓰는지 본다 — 앞선 Host * · Include 가 먼저 정하면 이 블록을 고쳐도 소용없다
     const after = await withTempConfig(text, (file) => hostValues(file, alias))
-    const applied = after && after.hostname === result.entry.host && after.user === result.entry.user && after.port === String(result.entry.port) && after.identityfile[0] === result.entry.key
+    const applied = after && after.hostname === result.entry.host && after.user === result.entry.user && after.port === String(result.entry.port) && usedKey(after.identityfile) === result.entry.key
     if (!applied) return { ok: false, step: 'check', lock: 'override' }
     return { ok: true, alias, entry: result.entry, edit: { base: current, text } }
   }
@@ -116,12 +127,17 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
   // 보인 호스트 키(이 창에서만) — [믿고 계속] 은 같은 대상 · 같은 지문일 때만 이 줄을 쓴다(화면이 보낸 키 글자는 받지 않는다)
   let shownKey: { value: string; at: number; pending: knownHosts.HostKeyPending } | null = null
 
-  // 임시 config(600) 로 무언가 하고 지운다 — 쓰기 전에 ssh 가 볼 모습을 미리 시험한다
-  async function withTempConfig<T>(text: string, work: (file: string) => Promise<T>): Promise<T> {
+  // 임시 폴더(700)에 config(600 · 시스템 설정 Include 포함)를 쓴다 — 쓰기 전에 ssh 가 볼 모습을 미리 시험한다
+  async function tempConfig(text: string): Promise<{ dir: string; file: string }> {
     const dir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'athena-ssh-'))
     const file = path.join(dir, 'config')
+    await fs.promises.writeFile(file, sshView(text), { mode: 0o600 })
+    return { dir, file }
+  }
+  // 임시 config 로 무언가 하고 지운다
+  async function withTempConfig<T>(text: string, work: (file: string) => Promise<T>): Promise<T> {
+    const { dir, file } = await tempConfig(text)
     try {
-      await fs.promises.writeFile(file, text, { mode: 0o600 })
       return await work(file)
     } finally {
       await fs.promises.rm(dir, { recursive: true, force: true })
@@ -150,7 +166,7 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
     host: values.hostname,
     user: values.user,
     port: values.port,
-    key: values.identityfile.find((file) => fs.existsSync(expand(file))) ?? '',
+    key: usedKey(values.identityfile),
   })
 
   // 접속 1번 — 새 입력은 지금 config 끝에 블록을 붙인 모습, 고친 기존 Host 는 다시 쓴 모습, 그대로면 지금 config 를 임시 파일(600)로
@@ -205,9 +221,10 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
   ctx.serverHostDetail = async (alias: string): Promise<HostDetail> => {
     if (!serverModel.SSH_ALIAS.test(alias)) return { ok: false, error: 'usage' }
     if (!(await takenAliases()).some((name) => name.toLowerCase() === alias.toLowerCase())) return { ok: false, error: 'unknown' }
-    const values = await hostValues(configFile(), alias)
+    const current = await readConfig()
+    const values = await withTempConfig(current, (file) => hostValues(file, alias))
     if (!values) return { ok: false, error: 'unknown' }
-    const span = sshConfig.hostSpan(await readConfig(), alias)
+    const span = sshConfig.hostSpan(current, alias)
     return { ok: true, values: filledInput(alias, values), lock: span.ok ? null : span.lock }
   }
   ctx.serverRegister = async (source: RegisterSource) => {
@@ -245,28 +262,39 @@ export function installSshSetup(ctx: SshSetupCtx, { dialog, sshBin = 'ssh', home
     return knownHosts.trustHostKey(shown.pending, bins)
   }
   // 기존 Host 가 쓸 키 — ssh -G 가 푼 IdentityFile 중 짝 .pub 가 있는 첫 것(없으면 ssh-copy-id 기본값에 맡긴다 · 내용은 읽지 않는다)
-  const hostPublicKey = (alias: string) => new Promise<string | null>((done) => {
-    execFile(sshBin, ['-F', configFile(), '-G', '--', alias], { timeout: 10000 }, (error, stdout) => {
-      if (error) return done(null)
-      const files = String(stdout).split('\n').filter((line) => line.startsWith('identityfile ')).map((line) => expand(line.slice('identityfile '.length).trim()))
-      done(files.map((file) => `${file}.pub`).find((file) => fs.existsSync(file)) ?? null)
-    })
-  })
+  const hostPublicKey = async (alias: string): Promise<string | null> => {
+    const values = await withTempConfig(await readConfig(), (file) => hostValues(file, alias))
+    if (!values) return null
+    return values.identityfile.map((file) => `${expand(file)}.pub`).find((file) => fs.existsSync(file)) ?? null
+  }
   ctx.sshKeyUpload = async (source: RegisterSource) => {
     const resolved = await resolve(source)
     if (!resolved.ok) return resolved
     if (!ctx.openSshPane) return { ok: false, error: 'usage' }
-    let command = ''
-    if (resolved.entry) {
-      const publicKey = `${expand(resolved.entry.key)}.pub`
-      if (!fs.existsSync(publicKey)) return { ok: false, error: 'no-public-key' }
-      command = `ssh-copy-id -i ${shellQuote(publicKey)} -p ${resolved.entry.port} ${resolved.entry.user}@${resolved.entry.host}`
-    } else {
-      const publicKey = await hostPublicKey(resolved.alias)
-      command = `ssh-copy-id ${publicKey ? `-i ${shellQuote(publicKey)} ` : ''}${resolved.alias}`
-    }
     // 성공하면 셸을 닫는다 — pane 이 끝난 알림으로 화면이 다시 [등록]. 실패하면 오류가 보이게 pane 을 남긴다
-    const opened = await ctx.openSshPane(`ssh-key-${resolved.alias}`, `${command} && exit`)
-    return opened.pane ? { ok: true, pane: opened.pane } : { ok: false, error: opened.error || 'pane' }
+    if (!resolved.entry) {
+      const publicKey = await hostPublicKey(resolved.alias)
+      const command = `ssh-copy-id ${publicKey ? `-i ${shellQuote(publicKey)} ` : ''}${resolved.alias}`
+      const opened = await ctx.openSshPane(`ssh-key-${resolved.alias}`, `${command} && exit`)
+      return opened.pane ? { ok: true, pane: opened.pane } : { ok: false, error: opened.error || 'pane' }
+    }
+    // 새 입력 · 고친 Host — 아직 config 에 쓰지 않은 모습(붙인 블록 · 다시 쓴 블록)을 임시 config 로 주고 별칭으로 올린다.
+    // 그래야 접속 확인과 같은 ProxyJump · ProxyCommand 등을 탄다. 임시 폴더는 pane 의 sh 가 끝날 때(닫혀도) 지운다
+    const publicKey = `${expand(resolved.entry.key)}.pub`
+    if (!fs.existsSync(publicKey)) return { ok: false, error: 'no-public-key' }
+    const current = await readConfig()
+    const text = resolved.edit ? resolved.edit.text : sshConfig.appendedText(current, sshConfig.hostBlock(resolved.entry, today()))
+    const { dir, file } = await tempConfig(text)
+    const script = path.join(dir, 'upload.sh')
+    const lines = [
+      `trap "rm -rf ${shellQuote(dir)}" EXIT HUP INT TERM`, // dir 은 mkdtemp 가 만든 경로라 " · $ · ` 가 없다
+      `ssh-copy-id -F ${shellQuote(file)} -i ${shellQuote(publicKey)} ${resolved.alias}`,
+      '',
+    ]
+    await fs.promises.writeFile(script, lines.join('\n'), { mode: 0o600 })
+    const opened = await ctx.openSshPane(`ssh-key-${resolved.alias}`, `sh ${shellQuote(script)} && exit`)
+    if (opened.pane) return { ok: true, pane: opened.pane }
+    await fs.promises.rm(dir, { recursive: true, force: true })
+    return { ok: false, error: opened.error || 'pane' }
   }
 }
