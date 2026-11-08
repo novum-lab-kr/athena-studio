@@ -39,7 +39,7 @@ import { fileURLToPath } from 'node:url'
 import { execFile, execFileSync, spawn } from 'node:child_process'
 import { homedir, tmpdir } from 'node:os'
 import { archiveBundle, commitArchive, listHistory, readHistoryItem } from './archive.mjs'
-import { answerRequest, listRequests } from '../lib/requests.mjs'
+import { answerRequest, cancelRequest, listRequests, openRequest } from '../lib/requests.mjs'
 import { doneTimes, observePlanStatus, readEvents } from '../lib/events.mjs'
 import { groupByPlan, parseSinceDate, summarize } from '../lib/metrics.mjs'
 import { planTitles } from './plan-titles.mjs'
@@ -57,7 +57,9 @@ import { autoMergeRepos, autoReviewAction, directMergeStatus, prBaseOf, prDoneHe
 import { screen, screenName, screenText, submitToPane } from '../lib/screen.mjs'
 import { dispatchEngine } from '../dispatch-engine.mjs'
 import { paneNameOf, repoLabelOfValue } from '../lib/pane-name.mjs'
-import { createDelivery } from './pane-delivery.mjs'
+import { createDelivery, menuOpen } from './pane-delivery.mjs'
+import { reconcileTurns } from './turn-watch.mjs'
+import { createLeadNotifier } from '../lib/lead-notice.mjs'
 import { memoryDirOf, projectDirOf } from './claude-paths.mjs'
 import { codexMemorySources } from './codex-memory.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
@@ -424,6 +426,26 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const learnLine = (readText(join(ROOT, plan.id)) || '').match(/^- Learn review:.*$/m)?.[0] ?? ''
     if (!learnLine.includes(mergedMark(infos))) enqueueLearn(plan.id, mergedMark(infos), infos)
   }))
+}
+
+// PR 자동 리뷰가 아테나에 못 보내 남긴 요청(scripts/pr-auto.mjs notify → ask · 키 pr-auto:<레포>#<번호> · pane 없음)을 그 PR 이 머지되거나 닫히면 거둔다.
+// pane 이 없어 ack 할 쪽도 닫힘 판정(pane 닫힘)도 없고, 질문이라 계획서 done 으로도 안 닫혀 [작업] 에 남던 것(2026-11-08 #264).
+// 머지 확인 요청(pr-auto-merge:…)은 처리기 checkConfirms 가 PR 상태로 거두니 여기서 보지 않는다. PR 상태는 prInfo 캐시(5분)
+const closeDonePrRequests = async () => {
+  let requests
+  try { requests = listRequests(ROOT).requests } catch (error) { console.log(`⚠️ 자동 리뷰 요청 — 요청을 읽지 못했다: ${error.message}`); return }
+  for (const request of requests) {
+    const hit = String(request.dedupeKey ?? '').match(/^pr-auto:([\w.-]+)#(\d+)$/)
+    if (!hit) continue
+    const [, repoName, number] = hit
+    const { state } = await prInfo(repoName, number)
+    if (state !== 'MERGED' && state !== 'CLOSED') continue
+    const reason = `PR ${repoName}#${number} 이 ${state === 'MERGED' ? '머지됐다' : '머지 없이 닫혔다'}`
+    try {
+      cancelRequest(ROOT, request.id, { reason })
+      console.log(`🧹 자동 리뷰 요청 ${request.id} 거둠 — ${reason}`)
+    } catch (error) { console.log(`⚠️ 자동 리뷰 요청 ${request.id} 거두기 실패: ${error.message}`) }
+  }
 }
 
 // 자동 완료한 계획서에 Progress 단계 칸이 새로 생기면 진행 중으로 되돌린다(plan-bind.mjs needsAutoReopen — 사람이 옮긴 done · 보관은 건드리지 않는다)
@@ -986,6 +1008,7 @@ const collect = async () => {
   await autoDonePlans(plans, available)
   autoReopenPlans(plans)
   await autoReviewPlans(plans)
+  if (!staleGeneration()) await closeDonePrRequests()
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)
   // 완료로 바뀐 시각 — 사건 기록에 없으면(기록 전에 끝난 것) null, 앱은 그때 mtime 을 쓴다
@@ -1014,6 +1037,8 @@ const collect = async () => {
     plan.waiting = plan.agents.some((id) => paneStatuses.get(id) === 'waiting')
     if ((plan.working || plan.waiting) && (plan.column === 'review' || plan.column === 'done')) plan.column = 'doing'
   }
+  // 에이전트 끝 · 멈춤 · 질문 알림 지키기(turn-watch.mjs)가 볼 것 — 이슈 카드에 합치기 전의 계획서 전부
+  if (available) turnInputs = { plans: plans.map(({ id, status, leadPane, agents }) => ({ id, status, leadPane, agents })), panes, statuses: paneStatuses }
   // 끝난 일 자동 보관 — 화면(pane 목록)을 읽었을 때만(pane 이 닫혔는지 알아야 한다)
   if (available) {
     const archived = await autoArchive(plans, issues)
@@ -1044,6 +1069,8 @@ const collect = async () => {
 
 // ── 서버 ────────────────────────────────────────────────────────────────
 let snapshot = null
+// refresh 가 채우고 watchTurns 가 읽는다(에이전트 알림 지키기)
+let turnInputs = null
 // [정비] 탭(아테나 자체 작업)은 코어를 고치는 주 본체 · 개발 체크아웃에서만 — 팩 본체(사용자가 일하는 곳)에서는 그 카드를 서비스 칸반에 합친다
 const MAINTENANCE = !isPackBody(ROOT)
 let snapshotHash = ''
@@ -1201,12 +1228,64 @@ const sendToPane = async (paneId, text) => {
   if (result === 'queued') return { queued: true }
   return result
 }
+// ── 에이전트 끝 · 멈춤 · 질문을 아테나가 받았는지 지키기(turn-watch.mjs · 계획서 결정 D1~D4) ──
+// 현황판이 떠 있을 때만 돈다 — 꺼져 있으면 훅이 바로 보내는 첫 알림만 간다
+const TURN_WATCH_MS = 15_000
+let turnWatching = false
+const turnNotifier = BOOT_PATHS.mode === 'packs'
+  ? createLeadNotifier({
+      dir: join(BOOT_PATHS.state, 'lead-notices', '.queue'),
+      // 계획서 Lead pane 이 살아 있을 때만 — 다른 아테나 pane 으로 바꾸지 않는다(lead-send.py 와 같은 규칙)
+      pickPane: async (notice) => ((snapshot?.panes ?? []).some((pane) => pane.id === notice.lead) ? String(notice.lead) : ''),
+    })
+  : null
+const watchTurns = async () => {
+  if (!turnNotifier || !turnInputs || turnWatching || staleGeneration()) return
+  turnWatching = true
+  const { plans, panes, statuses } = turnInputs
+  try {
+    await turnNotifier.flush((notice, result) => { if (result === 'failed') console.log(`⚠️ 미룬 에이전트 알림을 넣지 못했다: ${notice.text}`) })
+    await reconcileTurns({
+      stateDir: BOOT_PATHS.state,
+      plans,
+      panes,
+      now: Date.now(),
+      menuOf: async (paneId) => menuOpen(await screenText(['pane', 'read', paneId, '--lines', '40']), statuses.get(paneId)),
+      notify: async (notice) => (await turnNotifier.notify(notice)).result,
+      openRequestFor: (notice) => {
+        try {
+          return openRequest(ROOT, {
+            kind: 'question',
+            title: say('srv.turn.requestTitle', { agent: notice.from || notice.pane || '?' }),
+            body: say('srv.turn.requestBody', { lead: notice.lead, text: notice.text }),
+            links: { plan: notice.plan || null },
+            pane: notice.lead || null,
+            dedupeKey: `lead-notice:${notice.id}`,
+          }).request.id
+        } catch (error) {
+          console.log(`⚠️ 받지 않은 알림 요청을 열지 못했다: ${error.message}`)
+          return null
+        }
+      },
+      cancelRequest: (requestId) => cancelRequest(ROOT, requestId, { reason: say('srv.turn.received') }),
+      hasOpenRequest: (paneId) => listRequests(ROOT).requests.some((request) => request.pane === paneId && request.state === 'open'),
+      log: (message) => console.log(message),
+    })
+  } catch (error) {
+    console.log(`⚠️ 에이전트 알림 지키기 실패: ${error.message}`)
+  } finally {
+    turnWatching = false
+  }
+}
+
 const delivery = createDelivery({
   readPane: (paneId) => screenText(['pane', 'read', paneId, '--lines', '40']),
   // 공통 전송 경로(글 + Enter 전송 확인 — lib/screen.mjs submitToPane) · 쓰기 전 거절은 미뤘다 다시(pane-delivery.mjs)
   send: (paneId, text) => submitToPane(paneId, text),
   // 아직 pane 목록을 모르면 버리지 않는다
   paneExists: (paneId) => !snapshot || (snapshot.panes ?? []).some((pane) => pane.id === paneId),
+  // 데몬이 입력 대기로 본 pane 도 창이 떠 있음(합집합 — prompt-menu.json) · 마지막 주기(3초)의 값
+  paneStatus: async (paneId) => (snapshot?.panes ?? []).find((pane) => pane.id === paneId)?.status ?? '',
   log: (message) => console.log(message),
 })
 
@@ -1741,6 +1820,7 @@ createServer((request, response) => {
   await refresh()
   setInterval(() => refresh(false), POLL_MS)
   setInterval(() => delivery.tick().catch((error) => console.error(`⚠️ 미룬 지시 넣기 실패: ${error.message}`)), 2000)
+  setInterval(() => watchTurns(), Number(process.env.ATHENA_TURN_WATCH_MS) || TURN_WATCH_MS)
   // 첫 갱신(pane 목록) 뒤 한 번 · 그 뒤 5분마다 — 켠 레포가 없으면 아무것도 안 한다
   githubIssues.tick()
   setInterval(() => githubIssues.tick(), GITHUB_ISSUES_EVERY_MS)

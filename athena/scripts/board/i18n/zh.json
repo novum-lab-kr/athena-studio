@@ -527,5 +527,8 @@
   "srv.err.planChanged": "计划书已更改 — 请刷新后重试",
   "srv.err.during": "处理中出错 — {error}",
   "srv.err.learn": "学习处理中出错: {error}",
-  "srv.err.failed": "无法处理 — {error}"
+  "srv.err.failed": "无法处理 — {error}",
+  "srv.turn.requestTitle": "雅典娜未确认的通知 · {agent}",
+  "srv.turn.requestBody": "雅典娜 pane {lead} 已 10 分钟未接收此通知。请查看雅典娜 pane。\n\n{text}",
+  "srv.turn.received": "雅典娜已收到通知"
 }

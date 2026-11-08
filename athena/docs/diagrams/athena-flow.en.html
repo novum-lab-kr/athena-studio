@@ -5845,6 +5845,7 @@ window.addEventListener('keydown', (event) => {
           <li>&bull; (Multi-repo · Athena work) give the reviewer the plan + target repo (--cwd for a worktree). Fixes needed are sent straight on to that agent pane without asking (Athena sends them itself). Decisions needed (the options split) are added to the same plan&#39;s decision console (plan-html.mjs --add)</li>
           <li>&bull; Check verification results as they are — never hide a failure</li>
           <li>&bull; Athena does not wait on and watch the result of handed-off work — failure log goes to the pane that owned it, and the agent finishes what it was doing, then fixes it in that worktree and hands off again</li>
+          <li>&bull; The board also handles an agent pane&#39;s end · stop · question — if Athena hasn&#39;t received the done notice (done · ⏸ stopped · stopped on a question · reviewer included) in 2 min it is sent once more, and at 10 min a [Work] request opens. Athena does not watch panes by hand; only outside work the board doesn&#39;t see (Actions release · deploy · external service recovery) may be waited on</li>
           <li>&bull; Two verification stages — during work, quickly check only what changed; full verify runs once at the end (commit.sh strict verify · reuse.sh ♻️ if it already passed for the same tree · reviewer · merge take the same road)</li>
         </ul>
       </div>

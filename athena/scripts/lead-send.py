@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """에이전트 → 아테나 pane 한 줄 보내기 — 받을 수 없으면 모아 뒀다 넣는다(위임 지시문 delegate.sh LEAD_RULE 이 이 명령을 알려 준다).
 
-  scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>]
+  scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track]
 
 보내기는 `scripts/screen pane send-text <pane> <글> --enter` 와 같은 길(데몬 pane run — 전송 확인 · 재시도).
 [작업] 에는 사람이 고를 것이 있을 때만 뜬다 — 이 명령은 요청을 열지 않는다(고를 것이 없다). 글은 버리지 않고 넣거나 기록한다(GitHub #134).
@@ -14,6 +14,8 @@
 - 기록만 — 전송을 확인하지 못했다(글이 입력칸에 남았을 수 있어 다시 넣지 않는다) · 담당 대화가 달라졌다 · 6시간을 넘겼다 ·
   옛 구조(팩 데이터 없음)에서 못 보냈다 → 계획서 결과 절에 글 그대로 한 줄 + 사건 기록(state/events.jsonl `lead-send-unsent`)
 기다리는 값은 기존 장치 그대로 — 2초마다 · 최대 6시간(pane_request.py POLL_SECONDS · GIVE_UP_SECONDS · agent-done-notify.py 와 같다).
+받음 확인(scripts/lib/agent_turn.py · state/lead-notices) — 전송을 확인하지 못한 글은 늘, --track(끝 알림 훅이 붙인다)이면 넣은 글도 남긴다.
+  아테나 pane 의 입력 훅(pane-session.py)이 그 글을 받으면 표시하고, 안 받았으면 현황판이 2분 뒤 한 번 다시 넣고 10분이면 [작업] 요청을 연다.
 결정 기록: plans/task/20261103-athena-studio-fe-에이전트가-아테나에-못-보낸-보고를-작업-질문으로-띄우지-않기.md(docs/requests.md "아테나에게 보내지 못했을 때")
 
 대기열 <팩 데이터>/state/lead-send/<아테나 pane>-<시각ns>-<임의>.json — 처리기가 꺼져도 남고, 다음 보내기가 처리기를 다시 띄운다.
@@ -33,6 +35,7 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
 import pane_request  # noqa: E402 — 창 읽기(pane_menu) · 계획서 찾기(plan_of) · 기다리는 값
+import agent_turn  # noqa: E402 — 받음 확인 기록(state/lead-notices)
 from reuse_link import pane_lock  # noqa: E402
 from plan_update import update_plan  # noqa: E402 — 계획서 고치기(잠금 · 바꿔치기)
 
@@ -156,13 +159,57 @@ def try_send(lead: str, text: str) -> str:
         return error.message or error.code
 
 
+UNCONFIRMED_HEAD = '보냈지만 전송을 확인하지 못했어요'
+
+
 def unconfirmed(result: str) -> str:
     return f'보냈지만 전송을 확인하지 못했어요({result}) — 입력칸에 남았을 수 있어 다시 넣지 않았어요'
+
+
+def track(entry: dict, kind: str, lead: str = '', pending: bool = False) -> str:
+    """받음 확인 대상으로 남긴다 — 기록 id. 실패해도 보내기는 그대로(기록만 빠진다)"""
+    try:
+        return agent_turn.record_notice(kind, lead or str(entry.get('lead') or ''), str(entry.get('text') or ''), plan=str(entry.get('plan') or ''),
+                                        pane=str(entry.get('pane') or ''), sender=str(entry.get('from') or ''), pending=pending)
+    except Exception:
+        return ''
+
+
+def before_send(entry: dict, lead: str) -> None:
+    """넣기 **전에** 기록을 만든다 — 넣자마자 아테나 입력 훅(pane-session.py)이 돌아도 받음 표시할 기록이 있게.
+    추적하는 끝 알림은 turn, 아니면 넣었는지 모를 때를 대비한 unconfirmed(넣으면 지운다). 결과는 after_send 가 같은 기록에 고친다"""
+    entry['_notice'] = track(entry, 'turn' if entry.get('track') else 'unconfirmed', lead, pending=True)
+
+
+def after_send(entry: dict, result: str) -> None:
+    """넣은 결과로 before_send 기록을 고친다 — sent: 추적이면 남기고 아니면 지움 · 못 넣음(wait · gone): 지움(다시 넣을 때 새로 만든다) · 그 밖(확인 못 함): unconfirmed"""
+    notice = str(entry.pop('_notice', '') or '')
+    if not notice:
+        return
+    try:
+        if result == 'sent' and entry.get('track'):
+            agent_turn.update_notice(notice, pending=False)
+            entry['_tracked'] = True   # sent 가 또 남기지 않게
+        elif result in ('sent', 'wait', 'gone'):
+            agent_turn.drop_notice(notice)
+        else:
+            agent_turn.update_notice(notice, kind='unconfirmed', pending=False)
+            entry['_tracked'] = True   # record_unsent 가 또 남기지 않게
+    except Exception:
+        pass
+
+
+def sent(entry: dict, lead: str) -> None:
+    # 보통은 before_send 기록이 이미 있다 — 그 기록을 못 만들었을 때만 지금 남긴다
+    if entry.get('track') and not entry.pop('_tracked', False):
+        track(entry, 'turn', lead)
 
 
 def record_unsent(entry: dict, reason: str) -> bool:
     """넣지 못한(또는 넣었는지 모르는) 글을 기록만 한다 — 요청은 열지 않는다(고를 것이 없다).
     계획서 결과 절 끝에 글 그대로 한 줄 + 사건 기록(scripts/lib/events.mjs) 한 줄. 계획서에 적었으면 True"""
+    if reason.startswith(UNCONFIRMED_HEAD) and not entry.pop('_tracked', False):
+        track(entry, 'unconfirmed')   # 넣었는지 모른다 — 아테나가 받았는지로 가린다(안 받았으면 현황판이 다시 넣는다)
     written = False
     path = plan_file(str(entry.get('plan') or ''))
     if path is not None:
@@ -212,9 +259,11 @@ def spawn_deliverer(lead: str) -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
 
 
-def send(lead: str, text: str, plan: str) -> int:
+def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
     me = pane_request.caller_pane()
     entry = {'lead': lead, 'text': text, 'plan': plan, 'pane': me, 'from': os.environ.get('ATHENA_AGENT') or me, 'at': time.time()}
+    if tracked:
+        entry['track'] = True
     folder = queue_dir()
     target = lead_target(lead, plan, me)
     if target == WRONG_SESSION:
@@ -222,8 +271,12 @@ def send(lead: str, text: str, plan: str) -> int:
     moved = f'계획서 담당 아테나 pane {target} 에 ' if target not in (lead, NO_LEAD) else f'아테나 pane {lead} 에 '
     if folder is None:
         # 옛 구조(팩 데이터 없음) — 모아 둘 자리가 없어 지금 보내 보고, 못 보내면 기록만
+        if target != NO_LEAD:
+            before_send(entry, target)
         result = 'gone' if target == NO_LEAD else try_send(target, text)
+        after_send(entry, result)
         if result == 'sent':
+            sent(entry, target)
             print(f'✅ {moved}보냈다')
             return 0
         reasons = {'gone': '아테나 pane 이 없어요', 'wait': '아테나가 지금 받을 수 없어요(모아 둘 자리가 없는 옛 구조)'}
@@ -236,12 +289,15 @@ def send(lead: str, text: str, plan: str) -> int:
         if target == NO_LEAD or queued(folder, key):
             result = 'wait'
         else:
+            before_send(entry, target)
             result = try_send(target, text)
+            after_send(entry, result)
             if result == 'gone':
                 result = 'wait'   # 고른 사이 닫혔다 — 처리기가 다시 고른다
         if result == 'wait':
             write_entry(folder, entry)
     if result == 'sent':
+        sent(entry, target)
         print(f'✅ {moved}보냈다')
         return 0
     if result == 'wait':
@@ -297,11 +353,15 @@ def deliver(lead: str) -> None:
                 elif target == NO_LEAD:
                     result = 'wait'
                 else:
+                    before_send(entry, target)
                     result = try_send(target, str(entry.get('text') or ''))
+                    after_send(entry, result)
                     result = 'wait' if result == 'gone' else result
                     result = result if result in ('sent', 'wait') else unconfirmed(result)
             if result != 'wait':
-                if result != 'sent':
+                if result == 'sent':
+                    sent(entry, target)
+                else:
                     record_unsent(entry, result)
                 path.unlink(missing_ok=True)
                 continue
@@ -321,15 +381,17 @@ def main(argv) -> int:
         if PANE_ID.fullmatch(argv[1]):
             deliver(argv[1])
         return 0
+    tracked = '--track' in argv[2:]
+    argv = argv[:2] + [arg for arg in argv[2:] if arg != '--track']
     plan = ''
     if len(argv) == 4 and argv[2] == '--plan':
         plan = argv[3]
         argv = argv[:2]
     if len(argv) != 2 or not PANE_ID.fullmatch(argv[0]) or not argv[1].strip():
-        print("사용: scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>]", file=sys.stderr)
+        print("사용: scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track]", file=sys.stderr)
         return 2
     text = re.sub(r'\s*\n\s*', ' ', argv[1]).strip()
-    return send(argv[0], text, plan or pane_request.plan_of(pane_request.caller_pane()))
+    return send(argv[0], text, plan or pane_request.plan_of(pane_request.caller_pane()), tracked)
 
 
 if __name__ == '__main__':

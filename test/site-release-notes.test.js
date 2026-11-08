@@ -43,12 +43,16 @@ test('site-release-notes.json: minor 마다 줄 배열 · 태그 · 4개 언어 
   }
 })
 
-test('site-release-notes.json: ko 글은 소개 사이트 말투(합니다체) — 해요체로 끝나지 않는다', () => {
-  // 앱 번역(src/changelog/ko.json)은 해요체라 그대로 옮기면 사이트에 해요체로 붙는다(docs/development.md "배포판 (맥)")
+test('site-release-notes.json: 줄은 CHANGELOG 의 같은 minor 줄과 앱 번역 그대로', () => {
+  // 앱 · 사이트가 같은 개조식 한 줄을 쓴다 — 말투 · 길이 검사는 test/release-notes.test.js(docs/development.md "배포판 (맥)")
   const data = readSiteNotes()
+  const sections = notes.parseChangelog(fs.readFileSync(CHANGELOG, 'utf8'))
+  const tables = Object.fromEntries(['ko', 'ja', 'zh'].map((lang) => [lang, JSON.parse(fs.readFileSync(path.join(ROOT, 'src', 'changelog', `${lang}.json`), 'utf8'))]))
   for (const [minor, items] of Object.entries(data)) {
+    const english = sections.filter((section) => minorText(section.minor) === minor).flatMap((section) => section.notes.map((note) => note.text))
     for (const item of items) {
-      assert.doesNotMatch(item.ko, /요[.!]?$/, `${minor} 줄의 ko 글이 해요체다 — 합니다체로: ${item.ko}`)
+      assert.ok(english.includes(item.en), `${minor} 줄의 en 이 CHANGELOG ## ${minor} 절에 없다: ${item.en}`)
+      for (const lang of ['ko', 'ja', 'zh']) assert.equal(item[lang], tables[lang][item.en], `${minor} 줄의 ${lang} 글이 src/changelog/${lang}.json 번역과 다르다: ${item.en}`)
     }
   }
 })

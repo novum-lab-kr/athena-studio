@@ -7,7 +7,7 @@
 이 훅이 불리는 때는 Claude Code 가 사람에게 물으려 할 때뿐이다(허용 규칙 · 자동 허용 도구는 이 훅까지 오지 않는다).
 창이 몇 초 안에 닫히면(분류기가 곧 허용하는 등) 요청을 열지 않는다 — 뒤에서 도는 지킴이(scripts/lib/pane_request.py)가 기다렸다 본다. 훅 자체는 바로 끝난다.
 같은 pane 의 권한 창은 요청 하나(--key perm:<pane>)를 고쳐 쓴다 — 연달아 떠도 팝업이 쌓이지 않는다.
-대상 둘(인자로 가른다 — 같은 세션에 두 설정이 겹쳐 실려도 한 번만): 위임 에이전트(인자 없음 · ATHENA_AGENT 있음) · 아테나 pane(인자 `lead` · ATHENA_AGENT 없음).
+대상 둘(인자로 가른다 — 같은 세션에 두 설정이 겹쳐 실려도 한 번만): 위임 에이전트(인자 없음 · ATHENA_AGENT 있음 · 차례 상태를 waiting-permission 으로) · 아테나 pane(인자 `lead` · ATHENA_AGENT 없음).
 어떤 실패도 창을 막지 않는다(항상 exit 0 · 출력 없음).
 """
 import json
@@ -18,6 +18,7 @@ import tempfile
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent.parent / 'lib'))
 import pane_request  # noqa: E402
+import agent_turn  # noqa: E402 — 차례 상태 파일(state/agent-turn)
 
 
 def main() -> None:
@@ -36,6 +37,12 @@ def main() -> None:
         payload = handle.name
     os.chmod(payload, 0o600)
     pane_request.spawn(['permission', payload])
+    if not lead:
+        try:
+            # 차례 상태 — 권한 창을 띄우고 사람을 기다린다(창이 닫혔는지는 현황판이 화면으로 본다 · 다음 입력 · 끝에서 바뀐다)
+            agent_turn.write_turn(pane, state='waiting-permission')
+        except Exception as error:
+            pane_request.log_failure(f'차례 상태 기록 실패: {error}')
 
 
 if __name__ == '__main__':

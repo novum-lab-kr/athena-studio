@@ -1,7 +1,7 @@
 """pane 의 사람 확인 창(고르기 · 권한 확인)을 [작업] 요청으로 올리는 훅들이 같이 쓰는 곳 — ask-to-request.py · permission-to-request.py
 
 - pane 알아내기 · 계획서 찾기 · 실패 흔적 (두 훅이 같은 규칙)
-- 창이 떠 있나 읽기(menu_open) — 현황판 pane-delivery.mjs 의 PROMPT_MENU 와 같은 글
+- 창이 떠 있나 읽기(menu_open · pane_menu) — 글은 scripts/lib/prompt-menu.json 한 곳(현황판 pane-delivery.mjs 와 같이 읽는다) · 데몬 agent_status 'waiting' 도 창으로 친다(합집합)
 - 뒤에서 도는 지킴이(CLI `permission` · `close`) — 훅은 pane 의 창을 막지 않고 바로 끝나야 해서 요청 열기 · 닫기는 떨어져 나온 프로세스가 맡는다
     permission <json 파일>   — 몇 초 기다려도 권한 창이 그대로면 요청을 열고, 창이 닫히면 요청을 거둔다
     close <pane> <요청 id>…  — 이미 열린 요청을 pane 의 창이 닫힐 때 거둔다
@@ -22,8 +22,10 @@ import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scri
 from studio_lang import language, pick  # noqa: E402 — [작업] 요청 제목 · 본문은 사람이 본다 — 앱 언어로
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
-# 질문 · 고르기 · 권한 창 표시 — scripts/board/pane-delivery.mjs 의 PROMPT_MENU 와 같은 글
-PROMPT_MENU = re.compile(r'enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑/↓ to navigate|Do you want to|Type something\.', re.I)
+# 질문 · 고르기 · 권한 창 표시 — scripts/lib/prompt-menu.json 한 곳(현황판 pane-delivery.mjs 와 같이 읽는다)
+_MENU = json.loads((pathlib.Path(__file__).resolve().parent / 'prompt-menu.json').read_text(encoding='utf-8'))
+PROMPT_MENU = re.compile(_MENU['pattern'], re.I)
+MENU_TAIL_LINES = int(_MENU['tailLines'])
 GRACE_SECONDS = 4      # 권한 창이 이 시간 안에 닫히면(분류기 자동 허용 · 빠른 응답) 요청을 열지 않는다
 POLL_SECONDS = 2
 GIVE_UP_SECONDS = 6 * 3600
@@ -68,19 +70,23 @@ def log_failure(reason: str) -> None:
         pass
 
 
-def menu_open(text: str) -> bool:
-    """화면 끝 12줄(빈 줄 빼고)에 질문 · 고르기 · 권한 창이 떠 있나"""
+def menu_open(text: str, status: str = '') -> bool:
+    """화면 끝 12줄(빈 줄 빼고)에 질문 · 고르기 · 권한 창이 떠 있나 — 데몬이 입력 대기(agent_status 'waiting')로 본 것도 창으로 친다(합집합)"""
+    if status == 'waiting':
+        return True
     lines = [line.rstrip() for line in str(text or '').split('\n') if line.strip()]
-    return any(PROMPT_MENU.search(line) for line in lines[-12:])
+    return any(PROMPT_MENU.search(line) for line in lines[-MENU_TAIL_LINES:])
 
 
 def pane_menu(pane: str):
     """True = 창이 떠 있음 · False = 없음 · None = 모름(읽기 실패). pane 이 사라졌으면 'gone'"""
     try:
         backend = screen.get_backend()
-        backend.get_pane(pane)
+        info = backend.get_pane(pane)
     except Exception:
         return 'gone'
+    if isinstance(info, dict) and info.get('agent_status') == 'waiting':
+        return True
     try:
         return menu_open(backend.read(pane, ['--lines', '20', '--source', 'visible']))
     except Exception:

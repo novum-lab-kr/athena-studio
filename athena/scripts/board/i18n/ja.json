@@ -527,5 +527,8 @@
   "srv.err.planChanged": "計画書が変わりました — 再読み込みしてください",
   "srv.err.during": "処理中のエラー — {error}",
   "srv.err.learn": "学習処理中のエラー: {error}",
-  "srv.err.failed": "処理できませんでした — {error}"
+  "srv.err.failed": "処理できませんでした — {error}",
+  "srv.turn.requestTitle": "アテナ未確認の通知 · {agent}",
+  "srv.turn.requestBody": "アテナ pane {lead} が10分間この通知を受け取っていません。アテナ pane を確認してください。\n\n{text}",
+  "srv.turn.received": "アテナが通知を受け取りました"
 }

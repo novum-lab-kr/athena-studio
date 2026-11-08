@@ -44,17 +44,3 @@ export const codexReviewArgs = (workDir, schemaFile, outFile, model = '') => [
   '-c', 'web_search="disabled"', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check',
   '--color', 'never', '-C', workDir, '--output-schema', schemaFile, '-o', outFile,
 ]
-
-/** 공개 모델 목록만 읽는다. 사용자 설정과 모델의 설명·지시문은 출력하지 않는다.
- * @returns {{ models: string[], reason: string }} */
-export const codexReviewModels = () => {
-  const result = spawnSync('codex', ['debug', 'models'], { encoding: 'utf8', timeout: 30_000, maxBuffer: 10 * 1024 * 1024 })
-  if (result.status !== 0) return { models: [], reason: 'Codex 모델 목록을 읽지 못함' }
-  try {
-    const catalog = JSON.parse(result.stdout)
-    if (!Array.isArray(catalog.models)) throw new Error('목록 형식')
-    const models = catalog.models.filter((/** @type {{visibility?: unknown, slug?: unknown}} */ model) => model?.visibility === 'list' && typeof model.slug === 'string' && /^[A-Za-z0-9][A-Za-z0-9._:@/-]*$/.test(model.slug))
-      .map((/** @type {{slug: string}} */ model) => model.slug)
-    return { models, reason: models.length ? '' : 'Codex 공개 모델 목록이 비어 있음' }
-  } catch { return { models: [], reason: 'Codex 모델 목록 형식이 올바르지 않음' } }
-}

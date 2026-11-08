@@ -11,19 +11,25 @@
 // 넣기는 공통 전송 경로 한 번(글 + Enter · 데몬이 전송을 확인하고 같은 입력이 남았을 때만 Enter 를 다시 누른다 — lib/screen.mjs submitToPane).
 // 데몬이 쓰기 전에 거절하면(질문 창 · 다른 전송 중) 대기열에 두고 다음 차례에 다시, 그 밖의 실패는 글이 들어갔는지 모르니 다시 보내지 않는다.
 
-// 질문 · 고르기 창 표시 — 앱 src/lib/core.mts claudeAtEmptyPrompt 의 PROMPT_MENU 와 같은 글
-const PROMPT_MENU = /enter (?:to )?(?:select|confirm|submit answer)\b|esc (?:to )?(?:cancel|skip)\b|↑\/↓ to navigate|Do you want to|Type something\./i
+import { readFileSync } from 'node:fs'
+
+// 질문 · 고르기 창 표시 — scripts/lib/prompt-menu.json 한 곳(scripts/lib/pane_request.py 와 같이 읽는다)
+const MENU = JSON.parse(readFileSync(new URL('../lib/prompt-menu.json', import.meta.url), 'utf8'))
+const PROMPT_MENU = new RegExp(MENU.pattern, 'i')
+const MENU_TAIL_LINES = Number(MENU.tailLines)
 
 /**
- * 화면 끝 12줄(빈 줄 빼고)에 질문 · 고르기 창이 떠 있나
+ * 화면 끝 12줄(빈 줄 빼고)에 질문 · 고르기 창이 떠 있나 — 데몬이 입력 대기(agent_status 'waiting')로 본 것도 창으로 친다(합집합)
  * @param {unknown} text pane 화면 글
+ * @param {unknown} [status] 데몬 agent_status
  */
-export const menuOpen = (text) =>
+export const menuOpen = (text, status = '') =>
+  status === 'waiting' ||
   String(text ?? '')
     .split('\n')
     .map((line) => line.replace(/\s+$/, ''))
     .filter((line) => line.trim())
-    .slice(-12)
+    .slice(-MENU_TAIL_LINES)
     .some((line) => PROMPT_MENU.test(line))
 
 /**
@@ -31,16 +37,18 @@ export const menuOpen = (text) =>
  *   readPane: (paneId: string) => Promise<string | null>,
  *   send: (paneId: string, text: string) => Promise<string>,
  *   paneExists: (paneId: string) => boolean,
+ *   paneStatus?: (paneId: string) => Promise<string>,
  *   log?: (message: string) => void,
  * }} DeliveryDeps
  * readPane — 화면 글(못 읽으면 null — 그때는 창 여부를 모르니 지금처럼 바로 넣는다)
+ * paneStatus — 데몬 agent_status('waiting' 이면 창이 떠 있다 — 화면 글과 합집합 · 못 읽으면 '')
  * send — 글 + Enter · 'sent' · 'wait'(안 들어감 — 다시 보내도 된다) · 그 밖은 실패 글(들어갔는지 모른다)
  */
 
 /** @typedef {{ text: string, done: boolean, error: string | null }} Entry */
 
 /** @param {DeliveryDeps} deps */
-export const createDelivery = ({ readPane, send, paneExists, log = () => {} }) => {
+export const createDelivery = ({ readPane, send, paneExists, paneStatus = async () => '', log = () => {} }) => {
   /** @type {Map<string, Entry[]>} pane → 아직 다 못 넣은 지시(들어온 차례) */
   const waiting = new Map()
   /** @type {Map<string, Promise<void>>} pane → 마지막에 건 일(잠금) */
@@ -69,7 +77,7 @@ export const createDelivery = ({ readPane, send, paneExists, log = () => {} }) =
   const flush = async (paneId, owner) => {
     const queue = waiting.get(paneId)
     while (queue?.length) {
-      if (menuOpen(await readPane(paneId))) break
+      if (menuOpen(await readPane(paneId), await paneStatus(paneId))) break
       const entry = /** @type {Entry} */ (queue[0])
       const result = await send(paneId, entry.text)
       // 데몬이 쓰기 전에 거절했다(창이 막 떴다 · 다른 전송 중) — 글은 안 들어갔으니 다음 차례에 다시

@@ -46,7 +46,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
   - 끝난 작업 워크트리 정리(`scripts/board/worktree-cleanup.mjs` — 계획서 자동 완료 · 자동 보관 · 이슈 [아카이브] 가 같이 쓴다)를 고쳤으면 `test/worktree-cleanup-test.sh`(몇 초 · 임시 git 레포 · 머지됨 · 미커밋 · 안 올린 커밋 · pane 사용 중 · direct)
   - 현황판 클로드 학습 폴더 계산(`scripts/board/claude-paths.mjs`)을 고쳤으면 `test/claude-paths-test.sh`(몇 초 · 임시 레포)
-  - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈(`server.mjs` `noteLeftover` · `followUpClosedPlans`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
+  - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈 · 머지 · 닫힌 PR 의 자동 리뷰 요청 거두기(`server.mjs` `noteLeftover` · `followUpClosedPlans` · `closeDonePrRequests`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - GitHub 이슈 감시(`scripts/board/github-issues.mjs` · `server.mjs` `githubIssues` · `/api/github-issues`)를 고쳤으면 `test/github-issues-test.sh`(몇 초 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)
   - 현황판이 pane 에 지시를 넣는 순서(`scripts/board/pane-delivery.mjs` · `server.mjs` `sendToPane` — 질문 창이 떠 있으면 미뤘다가 닫히면 넣기)를 고쳤으면 `test/pane-delivery-test.sh`(몇 초 · 가짜 화면)
   - 현황판 사용량(`server.mjs` `readUsage` · `readClaudeUsage` — `/api/state` `header.usage`, 메뉴 막대가 읽는다)을 고쳤으면 `test/board-usage-test.sh`(몇 초 · 임시 코어 사본에서 진짜 현황판 서버 · 가짜 claude · gh)
@@ -64,7 +64,8 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 시크릿 차단 훅(`athena/scripts/hooks/secret-guard.py`)을 고쳤으면 `test/secret-guard-test.sh`(몇 초 · 훅에 글자만 넣어 막힘 · 통과를 본다)
   - 서버 보호(`athena/scripts/lib/server_allow.py` 허용 목록 · `scripts/ssh-run.sh` · `scripts/hooks/server-guard.py`)를 고쳤으면 `test/server-guard-test.sh`(몇 초 · 허용 · 막힘 · 우회 표 · 가짜 ssh · scp · 요청으로 확인 · 승인 · 백업 순서). 서버 등록 · 빼기(`scripts/lib/servers.mjs` · `bin/athena server`)는 `test/packs-test.sh` 의 "서버 하나 더하기" 절(가짜 ssh)
   - 에이전트 → 아테나 보내기(`athena/scripts/lead-send.py` — 못 받으면 모아 뒀다 넣기 · 닫혔으면 지금 아테나 pane 으로 · 못 넣으면 계획서 기록)를 고쳤으면 `test/lead-send-test.sh`(약 15초 · 가짜 화면 CLI · 가짜 bin/athena · 임시 본체 사본) — 다시 넣어도 되는 데몬 거절 글은 앱 `test/pane-submit.test.js` 가 같은지 본다
-  - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본 · `⏸ 멈춤:` 알림과 `plan.stop` 기록)
+  - 위임 에이전트 끝 알림 훅(`athena/scripts/hooks/agent-done-notify.py` · `delegate.sh` · `agent-context.py` 의 훅 설정) · 차례 상태 파일(`athena/scripts/lib/agent_turn.py` — `state/agent-turn` · `state/lead-notices`)을 고쳤으면 `test/agent-done-notify-test.sh`(몇 초 · 가짜 화면 CLI · 임시 본체 사본 · `⏸ 멈춤:` · `질문으로 멈춤` 알림과 `plan.stop` 기록 · 차례 상태 · 받음 확인 기록 · `HOOK_SRC=<옛 훅>` 으로 고치기 전과 비교)
+  - 현황판이 안 받은 에이전트 알림을 지키는 것(`athena/scripts/board/turn-watch.mjs` — 2분 다시 넣기 · 10분 [작업] 요청 · 선택 창 알림) · 아테나에 알림 넣기 모듈(`athena/scripts/lib/lead-notice.mjs` — pr-auto 와 같이 쓴다)을 고쳤으면 `test/turn-watch-test.sh`(몇 초 · 가짜 넣기 · 가짜 요청) · 선택 창 판정 글(`athena/scripts/lib/prompt-menu.json`)은 앱 `src/lib/core.mts` `PROMPT_MENU` 와 같이 고친다(`test/prompt-menu.test.js`)
   - 계획서 지시 칸 검사(`athena/scripts/lib/plan-check.mjs` · `scripts/plan-check.mjs` · `delegate.sh` 의 띄우기 전 검사 — 경고만)를 고쳤으면 `test/plan-check-test.sh`(몇 초 · `test/fixtures/plan-check/` 의 G1~G4 통과 · B · A · C 걸림 · CLI 종료 0 · `plan.check` 기록). 지표 탭 집계(`scripts/lib/metrics.mjs` `planChecks`)는 `test/metrics-test.sh`
   - 다이어그램 테마(`scripts/diagram-theme.mjs` · `.css`)를 고쳤으면 `test/diagram-theme-test.sh`(몇 초) — 그리고 `docs/diagrams/*.html` 에 다시 입힌다
   - 화면 계층(`scripts/lib/screen.py` · `screen.mjs`)을 고쳤으면 `scripts/screen-lint.sh` · `scripts/screen-check/check.sh`(golden 비교) · 경로를 바꿨으면 `scripts/path-lint.sh`
@@ -82,7 +83,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 | 화면 문구 | `src/i18n/{ko,en,ja,zh}.json` 네 곳에 같은 키 · 같은 `{자리}`(`test/i18n.test.js`). 문구를 부르는 새 화면 파일은 `test/i18n-usage.test.js` `SCRIPT_FILES` · `HTML_FILES` 에 더한다 |
 | 새 `.js` 파일 | `package.json` `check` 목록(자동으로 찾지 않는다) — renderer 새 파일(`.ts`)은 진입점에서 import 하면 `check` 끝의 화면 빌드가 본다 |
 | 새 `.mts` 파일 · JS → `.mts` 옮기기 | `package.json` `check` 의 `scripts/check-ts.js` 줄 · 부르는 곳의 `require` 경로(확장자까지) · 테스트의 `require` |
-| `CHANGELOG.md` 줄 | `src/changelog/{ko,ja,zh}.json` 번역(`test/release-notes.test.js`) · 사이트 줄 `docs/site-release-notes.json` 같은 minor 키(손님이 알아챌 것만 · 4개 언어 · ko 는 합니다체 · `test/site-release-notes.test.js` · `docs/development.md` "배포판 (맥)") |
+| `CHANGELOG.md` 줄 | 줄은 개조식 한 줄(en · 번역 모두 — 핵심 하나 · 명사형 끝(추가 · 수정 · 지원 · 개선 / Add · Fix …) · 세부는 ` — ` 뒤나 괄호에 하나 · 동작 설명 · 이유 문장 · 끝 마침표 없음) · `src/changelog/{ko,ja,zh}.json` 번역(키 = en 줄 · `test/release-notes.test.js`) · 사이트 줄 `docs/site-release-notes.json` 같은 minor 키(손님이 알아챌 것만 · 4개 언어 모두 앱 `CHANGELOG.md` · `src/changelog/` 의 그 줄 그대로 · `test/site-release-notes.test.js` · `docs/development.md` "배포판 (맥)") |
 | 순수 로직 | `src/lib/` 에 두고 `test/<이름>.test.js` — Electron 없이 돈다 |
 | 스튜디오 집 자리 · 번들 · 업데이트 · 초기화 | `src/lib/studio-home.js` 한 곳(`coreBundlePath` · `resetPlan`) · `test/studio-home.test.js` · `docs/development.md` "스튜디오 집과 데이터" |
 | 메뉴 · 단축키 · 화면 동작 | `docs/development.md` "화면" · "팩" · "문제가 생기면" |
@@ -99,7 +100,8 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
 - 앱 단축키는 ⌘ 만 — Ctrl 조합은 pane 으로 보낸다
 
 ## 격리 실행 (사용자 앱이 켜져 있을 때)
-- `ATHENA_STUDIO_HOME=<임시> npm start` — 스튜디오 집(코어 · 본체 · 데이터 · 접속 파일)과 앱 데이터(`<임시>/app/Athena Studio Dev/`)가 모두 그 아래로. 사용자 앱 · `~/.athena-studio` 를 건드리지 않는다. 끝나면 앱과 함께 데몬도 끈다(`<임시>/daemon-dev.json` 의 `pid`)
+- **켜고 끄기는 이 길로만** — `node scripts/dev-app.js test-start --home <임시>`(`ATHENA_STUDIO_HOME=<임시> npm start` 를 떼어 띄우고 pid 를 `<임시>/test-app.json` 에 적는다 · 로그 `<임시>/test-app.log`) / `node scripts/dev-app.js test-stop --home <임시>`(그 기록의 pid 와 자식 · 앱이 살아 있고 실제 시작 시각이 `<임시>/daemon-dev.json` 에 데몬이 적은 시각과 맞을 때만 그 데몬을 끈다 — 앱이 이미 꺼졌으면 데몬은 끄지 않고 pid 만 알린다). 프로세스 목록에서 Electron · node 를 짐작해 `kill` 하지 않는다 — 사용자 개발 앱까지 끈다(2026-11-08 사고)
+- 스튜디오 집(코어 · 본체 · 데이터 · 접속 파일)과 앱 데이터(`<임시>/app/Athena Studio Dev/`)가 모두 `<임시>` 아래로. 사용자 앱 · `~/.athena-studio` 를 건드리지 않는다
 - **`HOME` 은 바꾸지 않는다** — 앱은 켤 때의 `HOME` 을 데몬 · pane 에 물려줘서, 바꾸면 pane 안 claude 가 로그인 · 맥 키체인을 못 찾는다(재인증 · '키체인을 찾을 수 없음' — 2026-10-19 실측). Electron 도 `HOME` 을 바꿔도 홈 경로를 그대로 쓴다
 - 소켓 경로가 길면 임시 폴더 `athena-studio-<uid>-dev/` 로 떨어진다 — 같은 때 도는 다른 격리 실행과 겹친다
 - `--user-data-dir=<…>` · `ATHENA_STUDIO_ENDPOINT=<…>` 를 따로 주면 그 자리가 먼저다. 이 둘만으로는 앱 데이터 · 접속 파일만 갈리고 코어 · 데이터는 진짜 `~/.athena-studio` 를 쓴다 — 격리하려면 `ATHENA_STUDIO_HOME`

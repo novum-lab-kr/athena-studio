@@ -176,7 +176,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
       // "autoMergeConfirm": false,       // autoMerge 가 true 일 때만 — 머지 직전 사람 확인 없이 바로 머지 · 없거나 true 면 확인
       // "actionsHandoff": true,            // autoPr false + autoMergeConfirm false 일 때만 — 전체 검증 · 머지를 GitHub Actions 로 넘긴다(docs/pr-auto.md "Actions 로 넘기기")
       // "autoMergeManual": true,          // autoMerge 가 true 일 때만 — 사람이 직접 머지(autoMergeConfirm 보다 먼저)
-      // "fastPath": false,                // autoMerge 가 true 일 때만 — ⚡ 빠른 길 끔(작은 PR 도 리뷰어 둘 · 상한 3) · 없으면 켬(docs/pr-auto.md "빠른 길")
+      // "fastPath": false,                // autoMerge 가 true 일 때만 — ⚡ 빠른 길 끔(작은 PR 도 상한 3) · 없으면 켬(docs/pr-auto.md "빠른 길")
       // "githubIssues": true,             // GitHub 이슈 감시 — 현황판이 5분마다 열린 이슈를 issues/ 로 가져와 새 아테나 pane 에 맡긴다(docs/github-issues.md) · 기본 꺼짐
       // "generated": ["data/fare/**"],  // (선택) PR 자동 리뷰가 diff 본문에서 뺄 생성물 경로(gitattributes 식 패턴 · 크기 무관) — 없으면 일반 기준만(docs/pr-auto.md "큰 diff")
       // "redCheck": { "tests": ["test/**/*.test.js"], "run": "node --test {files}" },   // (선택) red-check — 아래 "redCheck"
@@ -208,8 +208,8 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
   | `agentLight` | 담당 에이전트 pane — 경량 계획서(`plans/task/…`)로 띄울 때. 없으면 `agent` 값 · 그것도 없으면 코어 기본값 `claude-opus-5-5`(새 팩은 `athena init` 이 같은 값을 적는다). 진짜 단순한 수정은 아테나가 `delegate.sh --model sonnet` 으로 그 한 번만 낮춘다(`docs/dispatch.md`) | 띄우지 않는다 |
   | `reviewer` | reviewer pane(`scripts/delegate.sh`) | 띄우지 않는다 |
   | `reviewerEscalated` | reviewer pane — 그 계획서 Checkpoint 의 같은 레포 · 브랜치 `- Review result:` 마지막 줄이 `수정 필요` 일 때(고친 뒤 다시 리뷰). 레포 · 브랜치는 띄울 작업 트리(`--cwd`)로 `scripts/review-result.sh` 와 같은 방법으로 고른다. 없으면 `reviewer` 값 | 띄우지 않는다 |
-  | `prReview` | PR 자동 리뷰의 Claude 쪽(`scripts/pr-auto.mjs`) · `prReview.codex` 는 Codex 자리(Claude 상태와 상관없이 — 없으면 `~/.codex/config.toml` 맨 위 `model`). 없으면 기본 모델 — 단 Codex 를 처음부터 못 쓰는 사람의 Claude 두 번 모드에서는 `opus` | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
-  | `prReviewSecond` | PR 자동 리뷰 두 번째 자리 — Codex 가 없거나 로그인 안 된 사람에게만 Codex 대신 도는 Claude. 없으면 `sonnet`. `prReview`(또는 그 기본 `opus`)와 같은 모델이 되면 대신하지 않는다(`docs/pr-auto.md` "Codex 가 없는 사람") | 첫 자리 Claude 리뷰어 실패 → 리뷰어 부족 |
+  | `prReview` | PR 자동 리뷰 리뷰어가 Claude 일 때(`scripts/pr-auto.mjs`) · `prReview.codex` 는 리뷰어가 Codex 일 때(없으면 `~/.codex/config.toml` 맨 위 `model`). 없으면 기본 모델 | Claude 리뷰어 실패 → 리뷰어 부족(`docs/pr-auto.md`) |
+  | `prReviewSecond` | 쓰지 않음 — PR 자동 리뷰가 리뷰어 하나가 된 뒤(2026-11-08 · `docs/pr-auto.md` "리뷰어 하나") 옛 팩 설정이 오류가 나지 않게 이름만 남겼다 | 다른 역할과 같이 형식 오류 |
   | `learnReview` | 배우기 검토(`scripts/learn-review.mjs`) | 그 검토 실패(다시 해 본 뒤 failed/) |
   | `athena` | 기록만 — 아테나는 사용자가 켜는 `claude` 라 코어가 붙이지 않는다 | — |
   - 값 예(경량 · 다시 리뷰만 나누기): `"models": { "learnReview": "sonnet", "agentLight": "claude-opus-5-5", "reviewer": "sonnet", "reviewerEscalated": "opus" }` — `agent` 를 비워 두면 정식 작업은 기본 모델. 키를 지우면 그 자리는 대신 쓰는 값으로 간다(`agentLight` → `agent` → 코어 기본값 `claude-opus-5-5` · `reviewerEscalated` → `reviewer` → 기본 모델). 모델은 띄울 때 정해진다 — 이미 떠 있는 pane 은 그대로

@@ -6,6 +6,7 @@
 팩 백업(pack backup --with-work)이 이 기록으로 "어느 pane 에서 어느 대화를 하고 있었나" 를 담고, 되살릴 때 claude --resume 으로 잇는다(docs/pack.md).
 pane 마다 파일 하나라 동시에 여러 세션이 시작돼도 서로 덮지 않는다. 본체는 이 파일 위치로 찾는다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 메시지를 보낼 때(입력에 prompt 가 있을 때)는 사람이 직접 쓴 글이면 이 pane 의 열린 질문을 대화 답으로 닫고 추가 문맥으로 알린다(lib/chat_answer.py).
+아테나 pane(ATHENA_AGENT 없음)이면 그 입력에 든 에이전트 알림을 받음으로 표시한다(lib/agent_turn.py mark_received — Claude · Codex 아테나 모두 이 훅이 돈다).
 """
 import datetime
 import json
@@ -19,6 +20,7 @@ sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 묻는 곳은 scripts/lib/screen.py 하나
 from reuse_link import pane_lock  # noqa: E402 — 이어 보내기와 같은 기록 잠금
 import chat_answer  # noqa: E402 — 대화로 답한 질문 닫기
+import agent_turn  # noqa: E402 — 아테나가 받은 알림 표시(state/lead-notices)
 SESSION_ID = re.compile(r'^[0-9a-fA-F-]{8,64}$')
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 
@@ -46,6 +48,12 @@ def main() -> None:
         notice = chat_answer.close_by_chat(pane, event['prompt']) if isinstance(event.get('prompt'), str) else ''
     except Exception:
         notice = ''
+    if isinstance(event.get('prompt'), str) and not os.environ.get('ATHENA_AGENT'):
+        try:
+            # 아테나 pane 이 받은 입력 — 그 안에 든 에이전트 알림을 받음으로 표시한다(현황판이 안 받은 알림만 다시 넣는다 · lib/agent_turn.py)
+            agent_turn.mark_received(pane, event['prompt'])
+        except Exception:
+            pass
     try:
         record(pane, event)
     finally:

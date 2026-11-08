@@ -2,132 +2,132 @@
   "0.58": [
     {
       "tag": "new",
-      "en": "Add servers from the sidebar: the Add Server popup writes a Host entry to ~/.ssh/config (key file login only, no passwords), checks the connection first, and for a server seen for the first time shows its host key fingerprint so you can trust it before it is saved to known_hosts. A changed host key is only reported, never overwritten.",
-      "ko": "사이드바에서 서버를 더할 수 있습니다. 서버 추가 팝업이 ~/.ssh/config 에 Host 를 더하고(키 파일 로그인만 · 비밀번호 없음) 먼저 접속을 확인하며, 처음 보는 서버는 호스트 키 지문을 보여 줘 믿은 뒤에만 known_hosts 에 저장합니다. 호스트 키가 바뀌었으면 알리기만 하고 덮어쓰지 않습니다.",
-      "ja": "サイドバーからサーバーを追加できます。サーバー追加ポップアップが ~/.ssh/config に Host を追記し(鍵ファイルでのログインのみ・パスワードなし)、先に接続を確認します。初めてのサーバーはホスト鍵のフィンガープリントを表示し、信頼してから known_hosts に保存します。ホスト鍵が変わっていた場合は知らせるだけで上書きしません。",
-      "zh": "现在可以从侧边栏添加服务器：添加服务器弹窗会在 ~/.ssh/config 中写入 Host（仅密钥文件登录，不用密码），先检查连接；首次见到的服务器会显示主机密钥指纹，确认信任后才保存到 known_hosts。主机密钥变化时只提示，不会覆盖。"
+      "en": "Add SSH server registration from the sidebar — key auth only, host key check on first connect",
+      "ko": "사이드바에서 SSH 서버 등록 — 키 인증 전용, 첫 접속 시 호스트 키 확인",
+      "ja": "サイドバーから SSH サーバー登録 — 鍵認証のみ、初回接続時にホスト鍵を確認",
+      "zh": "侧边栏注册 SSH 服务器 — 仅限密钥认证，首次连接时确认主机密钥"
     },
     {
       "tag": "new",
-      "en": "Servers added to a pack appear in the sidebar with their connection status and the reason when a check fails, and agents can work on a server through read-only commands from an allow list; anything else waits for your approval.",
-      "ko": "팩에 더한 서버가 사이드바에 접속 상태와 함께 보이고 확인이 실패하면 이유가 나옵니다. 에이전트는 허용 목록의 읽기 명령으로만 서버를 보고, 그 밖의 명령은 승인을 기다립니다.",
-      "ja": "パックに追加したサーバーが接続状態とともにサイドバーに表示され、確認に失敗すると理由が出ます。エージェントは許可リストの読み取りコマンドだけでサーバーを扱い、それ以外のコマンドは承認を待ちます。",
-      "zh": "添加到包中的服务器会在侧边栏显示连接状态，检查失败时会给出原因。代理只能通过允许列表中的只读命令操作服务器，其他命令需等待你的批准。"
+      "en": "Sidebar server connection status — agent commands outside the read-only allow list wait for approval",
+      "ko": "사이드바 서버 접속 상태 표시 — 읽기 전용 허용 목록 밖 명령은 승인 대기",
+      "ja": "サイドバーにサーバー接続状態を表示 — 読み取り専用の許可リスト外のコマンドは承認待ち",
+      "zh": "侧边栏显示服务器连接状态 — 只读允许列表外的命令需等待批准"
     }
   ],
   "0.57": [
     {
       "tag": "new",
-      "en": "Changes that touch command execution, file writes, login or permissions, secrets, external input or server access now get a read-only security review alongside the code review. A High finding stops shipping, auto-merge, direct merge and the Actions handoff until it is fixed and reviewed again, and merges wait until the latest commit has a security review result. The reviewer uses the Trail of Bits security plugins when they are installed and a built-in procedure otherwise.",
-      "ko": "명령 실행 · 파일 쓰기 · 로그인과 권한 · 비밀값 · 외부 입력 · 서버 접속에 닿는 수정은 코드 리뷰와 함께 읽기 전용 보안 검토를 받습니다. 높음이 나오면 고친 뒤 다시 검토받을 때까지 올리기 · 자동 머지 · 바로 머지 · Actions 넘기기가 멈추고, 머지는 마지막 커밋의 보안 검토 결과가 나올 때까지 기다립니다. 검토자는 Trail of Bits 보안 플러그인이 설치돼 있으면 그것을, 없으면 내장 절차를 씁니다.",
-      "ja": "コマンド実行・ファイル書き込み・ログインと権限・秘密情報・外部入力・サーバー接続に関わる変更は、コードレビューと一緒に読み取り専用のセキュリティレビューを受けます。「高」が見つかると、修正して再レビューを受けるまで送信・自動マージ・直接マージ・Actions への引き渡しが止まり、マージは最新コミットのセキュリティレビュー結果が出るまで待ちます。レビュー担当は Trail of Bits のセキュリティプラグインがインストールされていればそれを使い、なければ内蔵の手順を使います。",
-      "zh": "涉及命令执行、文件写入、登录与权限、密钥、外部输入或服务器访问的修改，现在会在代码评审之外再进行只读的安全审查。发现“高”级问题时，在修复并重新审查之前，推送、自动合并、直接合并和移交 Actions 都会停止；合并会等到最新提交有安全审查结果为止。审查者在安装了 Trail of Bits 安全插件时使用这些插件，否则使用内置流程。"
+      "en": "Add security review for sensitive changes — High findings block merge",
+      "ko": "민감한 변경에 보안 리뷰 추가 — High 지적 시 머지 차단",
+      "ja": "機密性の高い変更にセキュリティレビューを追加 — High 指摘でマージを停止",
+      "zh": "敏感变更新增安全审查 — 出现 High 问题时阻止合并"
     }
   ],
   "0.56": [
     {
       "tag": "improved",
-      "en": "The file preview opened from the Explorer now sits in the pane layout like a terminal pane: drag its title bar to place it above, below, left or right of a pane, and drag the borders between them to change its width and height.",
-      "ko": "Explorer 에서 연 파일 미리보기가 터미널 pane 처럼 배치 안의 한 칸이 됐습니다. 머리줄을 끌어 pane 의 위 · 아래 · 왼쪽 · 오른쪽에 놓고, 칸 사이 경계를 끌어 너비와 높이를 바꿀 수 있습니다.",
-      "ja": "エクスプローラーで開いたファイルのプレビューが、ターミナルのペインと同じくレイアウトの一区画になりました。見出し行をドラッグしてペインの上下左右に置き、区画の境界をドラッグして幅と高さを変えられます。",
-      "zh": "从资源管理器打开的文件预览现在像终端窗格一样成为布局中的一格：拖动标题栏可放到窗格的上、下、左、右，拖动格子之间的分隔线可调整宽度和高度。"
+      "en": "File preview as a pane in the layout — drag to place, drag borders to resize",
+      "ko": "파일 미리보기를 pane 배치에 통합 — 끌어서 배치, 경계로 크기 조절",
+      "ja": "ファイルプレビューをペイン配置に統合 — ドラッグで配置、境界でサイズ調整",
+      "zh": "文件预览纳入窗格布局 — 拖动放置，拖动边界调整大小"
     }
   ],
   "0.55": [
     {
       "tag": "new",
-      "en": "The Mac app now downloads new versions in the background and installs them when you quit. When an update is ready, a popup in the lower-left corner of the window offers Later or Restart to Update, and after Later it does not appear again for the same version.",
-      "ko": "맥 앱이 새 버전을 뒤에서 받아 두고 앱을 끌 때 설치합니다. 업데이트가 준비되면 창 좌측 하단 팝업에서 [나중에] 나 [재시작하여 업데이트] 를 고를 수 있고, [나중에] 를 고른 버전에는 다시 뜨지 않습니다.",
-      "ja": "Mac アプリは新しいバージョンをバックグラウンドでダウンロードし、アプリの終了時にインストールします。アップデートの準備ができると、ウィンドウ左下のポップアップで「あとで」か「再起動してアップデート」を選べます。「あとで」を選んだバージョンでは再び表示されません。",
-      "zh": "Mac 应用会在后台下载新版本，并在退出应用时安装。更新准备好后，窗口左下角会弹出提示，可以选择“稍后”或“重启并更新”；选择“稍后”的版本不会再次弹出。"
+      "en": "Background auto-update for the Mac app (installs on quit)",
+      "ko": "맥 앱 백그라운드 자동 업데이트 (앱 종료 시 설치)",
+      "ja": "Mac アプリのバックグラウンド自動アップデート(終了時にインストール)",
+      "zh": "Mac 应用后台自动更新（退出时安装）"
     },
     {
       "tag": "new",
-      "en": "Codex sessions also prepare for conversation compaction: they are reminded to write down what they learned, decided and plan to do next before the conversation is compacted, and after compaction they are pointed to the full conversation record so missing details can be searched instead of guessed.",
-      "ko": "Codex 세션도 대화 압축에 대비합니다. 압축되기 전에 알게 된 것 · 정한 것 · 다음 할 일을 적어 두라는 알림을 받고, 압축 뒤에는 대화 원문 기록을 안내받아 요약에 없는 내용은 짐작하지 않고 찾아볼 수 있습니다.",
-      "ja": "Codex セッションも会話の圧縮に備えます。圧縮される前に分かったこと・決めたこと・次にやることを書き残すよう通知を受け、圧縮後は会話の元の記録が案内されるので、要約にない内容は推測せずに検索できます。",
-      "zh": "Codex 会话也会为对话压缩做准备：在对话被压缩前会收到提醒，写下已了解的情况、已做的决定和下一步；压缩后会指向完整的对话原始记录，摘要中没有的内容可以查找而无需猜测。"
+      "en": "Compaction prep for Codex sessions — note-taking reminder before, transcript pointer after",
+      "ko": "Codex 세션 압축 대비 지원 — 압축 전 기록 알림, 압축 후 대화 원문 안내",
+      "ja": "Codex セッションの圧縮対策に対応 — 圧縮前に記録リマインド、圧縮後に会話記録を案内",
+      "zh": "Codex 会话支持压缩准备 — 压缩前提醒记录，压缩后指引完整对话记录"
     },
     {
       "tag": "improved",
-      "en": "The compaction reminder now comes at 70% of the point where compaction actually happens, for both Claude and Codex, asks to write things down before replying, and still arrives when a session's first response is recorded late. After compaction, the note also repeats your last 20 messages word for word, and for the Athena lead its open requests and running agent panes.",
-      "ko": "압축 알림이 실제로 압축되는 지점의 70% 에서 옵니다(Claude · Codex 모두). 답하기 전에 먼저 적어 두라고 알려 주고, 세션의 첫 응답이 늦게 기록돼도 알림이 빠지지 않습니다. 압축 뒤 안내에는 최근 사용자 말 20개가 원문 그대로 실리고, 아테나 세션에는 열린 요청과 돌고 있는 에이전트 pane 도 실립니다.",
-      "ja": "圧縮の通知は、実際に圧縮される地点の 70% で届くようになりました（Claude・Codex とも）。返答する前にまず書き残すよう促し、セッションの最初の応答の記録が遅れても通知が抜けません。圧縮後の案内には直近のユーザーの発言 20 件が原文のまま載り、Athena リードのセッションには未完了のリクエストと動いているエージェントの pane も載ります。",
-      "zh": "压缩提醒现在会在实际压缩点的 70% 时发出（Claude 和 Codex 都是），提示先写下再回复；即使会话的第一条回复记录得较晚，也不会漏掉提醒。压缩后的提示还会原样附上最近 20 条用户消息，Athena 负责人会话还会附上未完成的请求和正在运行的代理 pane。"
+      "en": "Compaction reminder moved to 70% of the actual compaction point (Claude · Codex)",
+      "ko": "압축 알림을 실제 압축 지점의 70% 로 변경 (Claude · Codex)",
+      "ja": "圧縮リマインドを実際の圧縮地点の 70% に変更(Claude・Codex)",
+      "zh": "压缩提醒改为实际压缩点的 70%（Claude · Codex）"
     }
   ],
   "0.53": [
     {
       "tag": "new",
-      "en": "Claude sessions for the Athena lead and agents get a reminder at 80% of the auto-compaction window to write down what they learned, decided and plan to do next in the plan before the conversation is compacted, and the Athena lead keeps a short log of corrections, failures and decisions that is shown first after compaction.",
-      "ko": "아테나 리드와 에이전트의 Claude 세션이 자동 압축 창의 80% 에 이르면, 대화가 압축되기 전에 알게 된 것 · 정한 것 · 다음 할 일을 계획서에 적어 두라는 알림을 받고, 아테나 리드는 정정 · 실패 · 결정을 짧게 기록해 압축 뒤 맨 먼저 보여 줍니다.",
-      "ja": "Athena のリードとエージェントの Claude セッションは、自動圧縮ウィンドウの 80% に達すると、会話が圧縮される前に分かったこと・決めたこと・次にやることを計画書に書き残すよう通知を受けます。Athena のリードは訂正・失敗・決定を短く記録し、圧縮後に最初に表示します。",
-      "zh": "Athena 主管和代理的 Claude 会话在达到自动压缩窗口的 80% 时会收到提醒，在对话被压缩前把已了解的情况、已做的决定和下一步写进计划书；Athena 主管还会简短记录更正、失败和决定，并在压缩后最先显示。"
+      "en": "Compaction reminder at 80% of the auto-compaction window for Claude sessions",
+      "ko": "Claude 세션에 자동 압축 창 80% 시점 압축 알림 추가",
+      "ja": "Claude セッションに自動圧縮ウィンドウ 80% 時点の圧縮リマインドを追加",
+      "zh": "Claude 会话新增自动压缩窗口 80% 时的压缩提醒"
     },
     {
       "tag": "improved",
-      "en": "After a conversation is compacted, the Athena lead pane also re-reads all of its in-progress plans and their linked issues, and the post-compaction note points to the full conversation record so missing details can be searched instead of guessed.",
-      "ko": "대화가 압축된 뒤 아테나 리드 칸도 진행 중인 계획서와 거기 묶인 이슈를 모두 다시 읽고, 압축 뒤 안내가 대화 원문 기록을 가리켜 요약에 없는 내용은 짐작하지 않고 찾아볼 수 있습니다.",
-      "ja": "会話が圧縮されたあと、Athena のリードペインも進行中の計画書とそれに紐づく課題をすべて読み直します。圧縮後の案内は会話の元の記録を指すので、要約にない内容は推測せずに検索できます。",
-      "zh": "对话压缩后，Athena 主管窗格也会重新读取所有进行中的计划书及其关联的问题；压缩后的提示会指向完整的对话原始记录，摘要中没有的内容可以查找而无需猜测。"
+      "en": "Athena lead re-reads in-progress plans and linked issues after compaction",
+      "ko": "압축 후 아테나 리드가 진행 중 계획서 · 연결 이슈 다시 읽기",
+      "ja": "圧縮後にアテナリードが進行中の計画書と関連イシューを再読込",
+      "zh": "压缩后 Athena 负责人重新读取进行中的计划和关联 Issue"
     }
   ],
   "0.52": [
     {
       "tag": "new",
-      "en": "Before an agent starts, Athena checks the plan's instructions and warns about missing or unclear parts, and the Board's Metrics tab summarizes these checks by kind.",
-      "ko": "에이전트를 띄우기 전에 계획서 지시 칸을 검사해 빠지거나 모호한 곳을 경고하고, 현황판 지표 탭에 그 검사 결과를 종류별로 모아 보여 줍니다.",
-      "ja": "エージェントを起動する前に計画書の指示欄をチェックし、抜けや曖昧な点を警告します。ボードの指標タブではそのチェック結果を種類別にまとめて表示します。",
-      "zh": "启动代理前会检查计划书的指示内容，对缺失或含糊之处发出警告；看板的指标标签页按类型汇总这些检查结果。"
+      "en": "Add plan instruction check before agent start — warns on missing or unclear parts",
+      "ko": "에이전트 시작 전 계획서 지시 검사 추가 — 누락 · 모호한 부분 경고",
+      "ja": "エージェント開始前の計画書指示チェックを追加 — 不足・不明瞭な箇所を警告",
+      "zh": "新增代理启动前的计划指令检查 — 警告缺失或不明确之处"
     },
     {
       "tag": "improved",
-      "en": "The Board now follows the app's language (English, Korean, Japanese or Chinese).",
-      "ko": "현황판 문구가 앱 언어(영어 · 한국어 · 일본어 · 중국어)를 따릅니다.",
-      "ja": "ボードの表示がアプリの言語(英語・韓国語・日本語・中国語)に合わせて切り替わります。",
-      "zh": "看板文字现在跟随应用语言（英语、韩语、日语或中文）。"
+      "en": "Board follows the app language (English, Korean, Japanese, Chinese)",
+      "ko": "현황판 앱 언어 연동 (영어 · 한국어 · 일본어 · 중국어)",
+      "ja": "ボードをアプリの言語に連動(英語・韓国語・日本語・中国語)",
+      "zh": "看板跟随应用语言（英语、韩语、日语、中文）"
     },
     {
       "tag": "improved",
-      "en": "The Board's issue list is grouped by repository, and an issue's delete button appears only when you hover over or focus its row.",
-      "ko": "현황판 이슈 목록이 레포별로 묶이고, 이슈 삭제 버튼은 그 줄에 마우스를 올리거나 포커스가 갈 때만 나옵니다.",
-      "ja": "ボードの課題一覧がリポジトリごとにまとまり、削除ボタンはその行にマウスを乗せるかフォーカスしたときだけ表示されます。",
-      "zh": "看板的问题列表按仓库分组，删除按钮仅在鼠标悬停或聚焦该行时显示。"
+      "en": "Board issue list grouped by repository",
+      "ko": "현황판 이슈 목록 레포별 그룹",
+      "ja": "ボードのイシュー一覧をリポジトリ別にグループ化",
+      "zh": "看板 Issue 列表按仓库分组"
     },
     {
       "tag": "improved",
-      "en": "The Diagram menu includes Athena's work-flow diagrams again, updated to the current flow.",
-      "ko": "다이어그램 메뉴에 아테나 작업 흐름 그림이 지금 흐름에 맞게 다시 들어갔습니다.",
-      "ja": "ダイアグラムメニューに、現在の流れに合わせて更新した Athena の作業フロー図が戻りました。",
-      "zh": "图表菜单重新加入了 Athena 的工作流程图，并已按当前流程更新。"
+      "en": "Athena work-flow diagrams back in the Diagram menu",
+      "ko": "다이어그램 메뉴에 아테나 작업 흐름 그림 재추가",
+      "ja": "ダイアグラムメニューにアテナの作業フロー図を再追加",
+      "zh": "图表菜单重新加入 Athena 工作流程图"
     },
     {
       "tag": "improved",
-      "en": "Pack import errors explain what you chose, what is missing and what to do next, and the pack error dialog no longer hides the details in a collapsed section.",
-      "ko": "팩 가져오기 오류가 무엇을 골랐고 무엇이 없고 어떻게 하면 되는지 알려 주고, 팩 오류 창에서 자세히 접기 칸을 뺐습니다.",
-      "ja": "パックの読み込みエラーで、何を選んだか・何が足りないか・どうすればよいかを説明します。パックのエラー画面の折りたたみ詳細欄はなくなりました。",
-      "zh": "包导入错误会说明你选择了什么、缺少什么以及下一步怎么做；包错误对话框不再把详情折叠起来。"
+      "en": "Improve pack import errors — what you chose, what is missing, what to do",
+      "ko": "팩 가져오기 오류 메시지 개선 — 선택 대상 · 누락 항목 · 해결 방법",
+      "ja": "パックのインポートエラーを改善 — 選択対象・不足項目・対処法",
+      "zh": "改进包导入错误提示 — 所选对象、缺失项、处理方法"
     },
     {
       "tag": "fixed",
-      "en": "The green eyes of the menu bar owl icon were barely visible while agents were working.",
-      "ko": "에이전트가 일하는 동안 메뉴 막대 부엉이 아이콘의 초록 눈이 거의 안 보이던 문제를 고쳤습니다.",
-      "ja": "エージェントの作業中、メニューバーのフクロウアイコンの緑の目がほとんど見えなかった問題を修正しました。",
-      "zh": "修复了代理工作时菜单栏猫头鹰图标的绿色眼睛几乎看不见的问题。"
+      "en": "Fix faint working indicator in the menu bar icon",
+      "ko": "메뉴 막대 작업 중 표시가 흐리던 문제 수정",
+      "ja": "メニューバーの作業中表示が見えにくい問題を修正",
+      "zh": "修复菜单栏工作中标识不清晰的问题"
     },
     {
       "tag": "fixed",
-      "en": "After creating a new pack, the sign-in tool now starts automatically in the Athena pane.",
-      "ko": "새 팩을 만든 뒤 아테나 칸에 로그인 도구가 자동으로 켜지지 않던 문제를 고쳤습니다.",
-      "ja": "新しいパックを作成したあと、Athena のペインでログインツールが自動で起動しなかった問題を修正しました。",
-      "zh": "修复了新建包后 Athena 窗格中登录工具没有自动启动的问题。"
+      "en": "Fix sign-in tool not starting in the Athena pane after creating a pack",
+      "ko": "새 팩 생성 후 아테나 pane 에서 로그인 도구가 실행되지 않던 문제 수정",
+      "ja": "新規パック作成後にアテナペインでサインインツールが起動しない問題を修正",
+      "zh": "修复新建包后 Athena 窗格未启动登录工具的问题"
     },
     {
       "tag": "fixed",
-      "en": "The first-run repository search no longer opens macOS protected folders (Music, Movies, Pictures, Library) that trigger access prompts.",
-      "ko": "첫 실행 레포 찾기가 맥 보호 폴더(음악 · 동영상 · 사진 · Library)를 열어 접근 허락 창이 뜨던 문제를 막았습니다.",
-      "ja": "初回起動時のリポジトリ検索が macOS の保護フォルダ(ミュージック・ムービー・ピクチャ・ライブラリ)を開いてアクセス許可の確認が出ることはなくなりました。",
-      "zh": "首次运行时的仓库搜索不再打开 macOS 受保护文件夹（音乐、影片、图片、资源库）而弹出访问授权提示。"
+      "en": "Fix first-run repo search opening macOS protected folders",
+      "ko": "첫 실행 레포 탐색이 macOS 보호 폴더를 열던 문제 수정",
+      "ja": "初回起動時のリポジトリ検索が macOS 保護フォルダを開く問題を修正",
+      "zh": "修复首次运行仓库搜索打开 macOS 受保护文件夹的问题"
     }
   ]
 }
