@@ -150,14 +150,23 @@ cleanup() {
   [ "$(cat "$MYLOCK/pid" 2>/dev/null)" = "$$" ] || return 0
   mv "$MYLOCK" "$MYLOCK.done.$$" 2>/dev/null && rm -rf "$MYLOCK.done.$$"
 }
-trap cleanup EXIT INT TERM HUP
+trap cleanup EXIT
+# 부하 대기 중 신호 — 정리하고 신호에 맞는 코드로 끝낸다(INT 130 · TERM 143 · HUP 129).
+# 예전엔 trap 이 cleanup 만 하고 돌아와 대기를 이어 가다 잠금 없이 명령을 돌릴 수 있었다(2026-11-09)
+nap=""
+stop_waiting() { [ -z "$nap" ] || kill "$nap" 2>/dev/null; cleanup; exit "$1"; }
+trap 'stop_waiting 130' INT
+trap 'stop_waiting 143' TERM
+trap 'stop_waiting 129' HUP
 
 # 2) 부하 대기
 while over_limit; do
   waited_any=1
   note "부하 $(load_now) > 한도 $LIMIT (코어 $CORES)"
   [ $(( $(date +%s) - started )) -lt "$MAX_WAIT" ] || give_up "부하"
-  sleep 10
+  # 앞쪽 sleep 은 끝날 때까지 trap 을 미룬다 — 뒤에서 돌리고 wait 로 기다려 신호를 바로 받는다
+  sleep 10 & nap=$!
+  wait "$nap"; nap=""
 done
 
 waited=0
