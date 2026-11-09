@@ -149,10 +149,11 @@ allow deny "supervisorctl restart web"
 allow deny "supervisorctl status web"
 allow deny "supervisorctl tail web"
 allow deny "supervisorctl -c /etc/x.conf status"
-# sar — 저장된 기록 읽기만(-u · -q · -r · -n DEV · -f /var/log/sysstat/saNN) · 쓰기(-o) · 다른 파일 · 끝없는 반복 · 다른 환경 값은 막힘
+# sar — 저장된 기록 읽기만(-u · -q · -r · -S · -n DEV · -f /var/log/sysstat/saNN) · 쓰기(-o) · 다른 파일 · 끝없는 반복 · 다른 환경 값은 막힘
 allow allow "S_TIME_FORMAT=ISO sar -u -q -r -n DEV -f /var/log/sysstat/sa08 2>/dev/null"
 allow allow "sar -u -f /var/log/sysstat/sa31 -s 00:00:00 -e 12:00"
 allow allow "sar -q 1 3"
+allow allow "sar -S -f /var/log/sysstat/sa09"
 allow deny "sar -o /tmp/sa -u 1 3"
 allow deny "sar -u -f /etc/shadow"
 allow deny "sar -u -f /var/log/sysstat/../../etc/shadow"

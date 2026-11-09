@@ -16,7 +16,8 @@ type View = { rows: Row[]; history: Record<string, HistoryPoint[]>; sar: Record<
 const view = createStore<View>({ rows: [], history: {}, sar: {}, reading: false, selected: '' })
 const rangeStore = createStore<{ range: HistoryRange }>({ range: '1h' })
 
-// 몇 분마다 — ssh 를 서버마다 한 번씩 여니 자주 돌리지 않는다
+// 칸이 열려 있을 때만 몇 분마다(사용자 결정 2026-11-09) — ssh 를 서버마다 한 번씩 여니 자주 돌리지 않는다.
+// 닫혀 있으면 켤 때 · 서버 목록이 바뀔 때 한 번만 읽는다(버튼 점은 그 읽기 기준)
 const POLL_MS = 3 * 60 * 1000
 
 let button: HTMLButtonElement | null = null
@@ -25,9 +26,10 @@ let viewBox: HTMLElement | null = null
 let names = ''
 let timer: ReturnType<typeof setInterval> | null = null
 let reading = false
+let readAt = 0
 let addServer: () => void = () => {}
 
-// 켤 때 한 번 — 칸에 띄워 두고 계속 쓴다(내리지 않는다). 점은 읽을 때마다 바뀐다(칸이 닫혀 있어도)
+// 켤 때 한 번 — 칸에 띄워 두고 계속 쓴다(내리지 않는다). 점은 읽을 때마다 바뀐다
 // add — 서버 등록 팝업(바닐라 space-actions.ts offerAddServer) · 0개일 때 버튼 · 칸 머리줄 [서버 추가]
 export function mount(openButton: HTMLButtonElement, box: HTMLElement, add: () => void): void {
   button = openButton
@@ -54,6 +56,8 @@ function open(): void {
   // 처음 열면 가장 나쁜 서버부터
   if (!rows.some((row) => row.name === view.get().selected)) view.set({ ...view.get(), selected: worstFirst(rows)[0]?.name ?? '' })
   viewBox.hidden = false
+  startPolling()
+  if (Date.now() - readAt >= POLL_MS) void readNow()
   button.classList.add('active')
   button.setAttribute('aria-expanded', 'true')
   viewBox.focus()
@@ -62,6 +66,7 @@ function open(): void {
 function close(): void {
   if (!viewBox || !button || viewBox.hidden) return
   viewBox.hidden = true
+  stopPolling()
   button.classList.remove('active')
   button.setAttribute('aria-expanded', 'false')
   button.focus()
@@ -88,14 +93,23 @@ export function setServers(list: ServerEntry[]): void {
   view.set({ ...view.get(), rows })
   const has = list.length > 0
   if (!has) close()
-  if (timer) clearInterval(timer)
-  timer = has ? setInterval(() => void readNow(), POLL_MS) : null
   if (has) void readNow()
+}
+
+function startPolling(): void {
+  stopPolling()
+  timer = setInterval(() => void readNow(), POLL_MS)
+}
+
+function stopPolling(): void {
+  if (timer) clearInterval(timer)
+  timer = null
 }
 
 async function readNow(): Promise<void> {
   if (reading) return
   reading = true
+  readAt = Date.now()
   view.set({ ...view.get(), reading: true })
   try {
     const reply = await studio.serverStatus()

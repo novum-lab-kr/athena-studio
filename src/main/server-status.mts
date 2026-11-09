@@ -3,7 +3,8 @@
 // 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(허용 목록 안의 고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
 // servers[].health 주소가 있으면 이 맥에서 응답 코드 · 걸린 시간 · (https 면) 인증서 만료일을 본다.
 // 읽을 때마다 숫자만 서버별 기록 파일에 한 줄(<본체>/.pack-data/state/server-history/<이름>.jsonl · 7일) — 주소 · 원문 · 비밀값은 쓰지 않는다.
-// 서버에 sysstat 이 있으면 지난 기록(ssh-run.sh --history — sar · 한 시간에 한 번)을 같이 넘긴다 — 화면이 이 맥 기록이 빈 칸만 채운다(파일에 쓰지 않는다)
+// 서버에 sysstat 이 있으면 지난 기록(ssh-run.sh --history — sar · 10분에 한 번)을 같이 넘긴다(파일에 쓰지 않는다) — 그 서버는 CPU · 부하 · 메모리 · 송수신 그래프를 sar 로 그리고
+// 이 맥 기록 파일에는 디스크 · 응답 시간 · 실패 수만 쌓는다(사용자 결정 2026-11-09)
 // CPU % · 수신 · 송신은 누적 값(/proc/stat · /proc/net/dev)의 앞 읽기와의 차이 — 앞 값은 이 창 메모리 · 없으면 기록 끝 점(withRates)
 // ssh 오류 원문은 화면에 넘기지 않는다(주소 · 사용자 이름이 섞일 수 있다) — 이유 이름만(src/lib/server-status.mts failReason)
 import fs from 'node:fs'
@@ -30,9 +31,9 @@ const WEB_TIMEOUT = 10000
 // 같은 팩 창이 둘이면 둘 다 읽는다 — 1분 안에 쓴 줄이 있으면 또 쓰지 않는다
 const RECORD_GAP = 60_000
 const DAY = 24 * 60 * 60 * 1000
-// sar 기록 — 서버마다 한 시간에 한 번만 다시 읽는다(10분 간격 기록 · 앱이 켜져 있는 동안은 이 맥 기록이 있다) · 하루 파일 10개라 출력이 크다
+// sar 기록 — 서버마다 10분에 한 번만 다시 읽는다(sysstat 기본 기록 간격 10분 · sar 서버는 CPU · 메모리 · 송수신 그래프를 sar 만 그린다) · 하루 파일 10개라 출력이 크다
 // 못 읽었으면(접속 실패 · sar 없음) 10분 뒤 다시
-const SAR_EVERY = 60 * 60 * 1000
+const SAR_EVERY = 10 * 60 * 1000
 const SAR_RETRY = 10 * 60 * 1000
 const SAR_TIMEOUT = 30000
 const SAR_BUFFER = 16 * 1024 * 1024
@@ -113,6 +114,8 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   }
 
   // 서버마다 앞 읽기의 누적 값(이 창 메모리)
+  // sar 서버의 온전한 지금 읽기(이 창 메모리 · LIVE_MS) — 파일에는 줄인 점만 쓰니 화면 그래프의 최근 칸은 이걸로(serverModel.withLive)
+  const live = new Map<string, HistoryPoint[]>()
   const lastSeen = new Map<string, { t: number; counters: Counters }>()
   const readHistory = async (dir: string | null, name: string): Promise<HistoryPoint[]> =>
     dir ? serverModel.parseHistory(await fs.promises.readFile(path.join(dir, `${name}.jsonl`), 'utf8').catch(() => ''), Date.now()) : []
@@ -129,9 +132,10 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   }
 
   // 한 서버 기록에 (읽었으면) 한 줄 더하기 · 7일 지난 줄 지우기
-  const record = async (dir: string, reading: ServerReading, points: HistoryPoint[]): Promise<HistoryPoint[]> => {
+  // sarBacked — sar 기록을 읽은 서버는 디스크 · 응답 시간 · 실패 수만(serverModel.historyPoint)
+  const record = async (dir: string, reading: ServerReading, points: HistoryPoint[], sarBacked: boolean): Promise<HistoryPoint[]> => {
     const file = path.join(dir, `${reading.name}.jsonl`)
-    const point = serverModel.historyPoint(reading)
+    const point = serverModel.historyPoint(reading, sarBacked)
     const last = points[points.length - 1]
     if (!point || (last && point.t - last.t < RECORD_GAP)) return points
     points.push(point)
@@ -168,7 +172,14 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
       const points = await readHistory(dir, raw.name)
       const reading = withRates(raw, points)
       servers.push(reading)
-      if (dir) history[reading.name] = await record(dir, reading, points).catch(() => points)
+      const sarBacked = Boolean(sar[reading.name]?.length)
+      if (!dir) continue
+      const saved = await record(dir, reading, points, sarBacked).catch(() => points)
+      const recent = (live.get(reading.name) ?? []).filter((point) => reading.at - point.t <= serverModel.LIVE_MS)
+      const full = sarBacked && saved[saved.length - 1]?.t === reading.at ? serverModel.historyPoint(reading) : null
+      if (full) recent.push(full)
+      live.set(reading.name, sarBacked ? recent : [])
+      history[reading.name] = serverModel.withLive(saved, sarBacked ? recent : [])
     }
     if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
     return { servers, history, sar }

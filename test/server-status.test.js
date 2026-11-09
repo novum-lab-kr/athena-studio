@@ -141,6 +141,10 @@ test('기록: 읽은 것만 숫자로 · 주소 · 이름 없음', () => {
   const point = status.historyPoint({ name: 'web', host: 'web-1', status: read, web: { ok: true, code: 200, ms: 180, certDate: null, certDays: null }, at: 1000 })
   assert.deepEqual(point, { t: 1000, cpu: null, mem: 25, swap: 60, disk: 85, ms: 180, fail: 0, load: 0.4, rx: null, tx: null, counters: null })
   assert.equal(status.historyPoint({ name: 'web', host: 'web-1', status: { ok: false, reason: 'timeout' }, web: null, at: 1000 }), null)
+  // sar 를 읽는 서버 — 디스크 · 응답 시간 · 실패 수만(CPU · 메모리 · 스왑 · 부하 · 송수신 · 누적 값은 sar 몫)
+  const lean = status.historyPoint({ name: 'web', host: 'web-1', status: read, web: { ok: true, code: 200, ms: 180, certDate: null, certDays: null }, at: 1000 }, true)
+  assert.deepEqual(lean, { t: 1000, cpu: null, mem: null, swap: null, disk: 85, ms: 180, fail: 0, load: null, rx: null, tx: null })
+  assert.ok(!('counters' in lean))
   assert.ok(!status.historyText([point]).includes('web'))
 })
 
@@ -472,7 +476,7 @@ test('sar 기록: 날짜 · 시간대 · 활동별 칸 · 가상 장치 빼기 �
   assert.deepEqual(status.parseSar(SAR.replace('==tz\n+0900\n', ''), now), [])
 })
 
-test('sar 기록: 네트워크 바이트 · 이 맥 기록이 빈 칸만 채운다', () => {
+test('sar 기록: 네트워크 바이트 · sar 가 있는 칸은 sar 값 · 없는 칸만 이 맥 기록', () => {
   const lines = SAR.split('\n')
   // 23:50 행 앞에 23:40 행을 하나 더 — 구간 10분
   const extra = (head, row) => lines.splice(lines.indexOf(head) + 1, 0, row)
@@ -483,12 +487,12 @@ test('sar 기록: 네트워크 바이트 · 이 맥 기록이 빈 칸만 채운�
   const last = points.find((point) => point.t === Date.UTC(2026, 10, 8, 14, 50, 1))
   // eth0 만(lo · veth 빼고) — 2 KiB/s × 600초 = 1,228,800 바이트 · 메모리 = %memused · 부하 = ldavg-1
   assert.deepEqual([last.rx, last.tx, last.mem, last.load, last.cpu], [1228800, 614400, 40, 0.8, 15])
-  // 1시간 그래프 — 이 맥 기록이 없는 칸은 sar 로, 있는 칸은 이 맥 값 그대로
-  const own = [{ t: now - 60_000, cpu: 99, mem: 10, swap: 0, disk: 50, ms: null, fail: 0, load: 3, rx: 500, tx: 500 }]
+  // 1시간 그래프 — sar 가 덮는 칸은 sar 값(옛 이 맥 기록 77 은 안 씀) · sar 가 아직 없는 마지막 칸만 이 맥 값 · 디스크는 늘 이 맥 기록
+  const own = [{ t: now - 60_000, cpu: 99, mem: 10, swap: 0, disk: 50, ms: null, fail: 0, load: 3, rx: 500, tx: 500 }, { t: now - 10 * 60_000, cpu: 77, mem: 10, swap: 0, disk: 40, ms: null, fail: 0, load: 3, rx: null, tx: null }]
   const series = status.bucketHistory(own, '1h', now, points)
   assert.equal(series.cpu[14], 99)
   assert.equal(series.cpu[12], 15)
-  assert.equal(series.disk[12], null)
+  assert.equal(series.disk[12], 40)
   // 바이트는 구간이 겹친 비율로 나눠 담는다 — 다 더하면 두 행 합
   const total = series.rx.slice(0, 14).reduce((sum, value) => sum + (value ?? 0), 0)
   assert.equal(total, 1228800 * 2)
@@ -533,4 +537,20 @@ test('sar 기록: 실제 서버 출력 발췌(novum-lab sa08 · 2026-11-09 사�
   // 22:10:01 은 다음 행까지(599초) · 22:20:00 은 앞 행부터 — 이 맥 /proc/net/dev 읽기와 같은 규칙(lo · br- · docker · veth 빼고 eth0 만)
   assert.deepEqual(second, { t: Date.UTC(2026, 10, 8, 13, 20, 0), span: 599_000, cpu: 18.03, load: 1.03, mem: null, rx: Math.round(81.19 * 1024 * 599), tx: Math.round(2.78 * 1024 * 599) })
   assert.deepEqual([first.t, first.span, first.cpu, first.load, first.rx], [Date.UTC(2026, 10, 8, 13, 10, 1), 599_000, 18.59, 0.8, Math.round(78.67 * 1024 * 599)])
+})
+
+test('sar 서버: 파일엔 줄인 점 · 화면엔 같은 시각을 메모리의 온전한 점으로 바꿔 최근 칸을 채운다', () => {
+  const read = status.parseStatus(WIDE)
+  const now = 3_600_000 * 10
+  const reading = { name: 'web', host: 'web-1', status: read, web: null, at: now - 60_000 }
+  const lean = status.historyPoint(reading, true)
+  const full = status.historyPoint(reading)
+  const older = { t: now - 30 * 60_000, cpu: null, mem: null, swap: null, disk: 80, ms: null, fail: 0, load: null, rx: null, tx: null }
+  const merged = status.withLive([older, lean], [full])
+  assert.deepEqual(merged, [older, full])
+  // 메모리 점이 없으면 그대로
+  assert.equal(status.withLive([older, lean], []).length, 2)
+  // sar 가 아직 없는 마지막 칸 — 줄인 점만이면 빈 칸 · 온전한 점이면 지금 읽기 값
+  assert.equal(status.bucketHistory([older, lean], '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], null)
+  assert.equal(status.bucketHistory(merged, '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], full.mem)
 })

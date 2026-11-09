@@ -484,9 +484,12 @@ export function failReason(stderr: string, timedOut: boolean): ServerFailReason 
 export type HistoryPoint = { t: number; cpu: number | null; mem: number | null; swap: number | null; disk: number | null; ms: number | null; fail: number; load: number | null; rx: number | null; tx: number | null; counters?: Counters | null }
 export const HISTORY_MS = 7 * 24 * 60 * 60 * 1000
 
-export function historyPoint(reading: ServerReading): HistoryPoint | null {
+// sarBacked — 서버 sar 기록을 읽을 수 있는 서버(사용자 결정 2026-11-09): CPU · 메모리 · 스왑 · 부하 · 송수신은 sar 가 그래프를 맡으니
+// 이 맥 기록에는 디스크 · 응답 시간 · 실패 수만 쌓는다(차이 계산용 누적 값도 쌓지 않는다 — 앞 읽기는 창 메모리로)
+export function historyPoint(reading: ServerReading, sarBacked = false): HistoryPoint | null {
   const status = reading.status
   if (!status.ok) return null
+  if (sarBacked) return { t: reading.at, cpu: null, mem: null, swap: null, disk: status.diskPercent, ms: reading.web?.ok ? reading.web.ms : null, fail: status.failed.length + (status.docker?.down.length ?? 0), load: null, rx: null, tx: null }
   return {
     t: reading.at,
     cpu: status.cpuPercent,
@@ -500,6 +503,15 @@ export function historyPoint(reading: ServerReading): HistoryPoint | null {
     tx: status.txBytes,
     counters: status.counters,
   }
+}
+
+// sar 서버의 지금 읽기 — 파일에는 줄인 점(historyPoint sarBacked)을 쓰되 이 창 메모리에 온전한 점을 LIVE_MS 동안 둔다.
+// 화면에 넘길 때 같은 시각의 줄인 점을 온전한 점으로 바꿔 끼운다 — sar 가 아직 기록하지 않은 최근 칸(10분 간격)을 지금 읽기로 채운다
+export const LIVE_MS = 2 * 60 * 60 * 1000
+export function withLive(points: HistoryPoint[], live: HistoryPoint[]): HistoryPoint[] {
+  if (!live.length) return points
+  const times = new Set(live.map((point) => point.t))
+  return [...points.filter((point) => !times.has(point.t)), ...live].sort((left, right) => left.t - right.t)
 }
 
 function countersOf(value: unknown): Counters | null {
@@ -563,7 +575,7 @@ export type HistoryMetric = 'cpu' | 'mem' | 'disk' | 'ms' | 'load' | 'rx' | 'tx'
 const SUMMED: ReadonlySet<HistoryMetric> = new Set<HistoryMetric>(['rx', 'tx'])
 // 칸 i 의 시작 시각 — 그래프에 마우스를 올렸을 때 보여 준다
 export const bucketStart = (range: HistoryRange, now: number, index: number) => now - HISTORY_RANGES[range].span + index * (HISTORY_RANGES[range].span / HISTORY_RANGES[range].buckets)
-// fill — 서버 sar 기록(parseSar) · 이 맥 기록이 빈 칸만 채운다
+// fill — 서버 sar 기록(parseSar) · 있으면 CPU · 부하 · 메모리 · 송수신은 sar 값 먼저, sar 가 아직 없는 칸(최근 10분 등)만 이 맥 기록
 export function bucketHistory(points: HistoryPoint[], range: HistoryRange, now: number, fill: SarPoint[] = []): Record<HistoryMetric, (number | null)[]> {
   const { span, buckets } = HISTORY_RANGES[range]
   const step = span / buckets
@@ -587,7 +599,7 @@ export function bucketHistory(points: HistoryPoint[], range: HistoryRange, now: 
   const own = Object.fromEntries(metrics.map((metric) => [metric, sums[metric].map((cell) => valueOf(metric, cell))])) as Record<HistoryMetric, (number | null)[]>
   if (!fill.length) return own
   const fromSar = bucketSar(fill, range, now)
-  for (const metric of SAR_METRICS) own[metric] = own[metric].map((value, index) => value ?? fromSar[metric][index]!)
+  for (const metric of SAR_METRICS) own[metric] = own[metric].map((value, index) => fromSar[metric][index] ?? value)
   return own
 }
 
