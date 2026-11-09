@@ -176,8 +176,8 @@ KUBECTL_RESOURCES = {'pods', 'pod', 'po', 'deployments', 'deployment', 'deploy',
 # -o 는 wide 만(json · yaml · jsonpath · go-template · custom-columns 는 파드 spec 의 env 값이 나온다) · 앞 옵션(--kubeconfig · --server · --token …)은 없다
 KUBECTL_GET = spec('A', 'no', '--all-namespaces --no-headers --namespace= --output= --request-timeout=')
 SLEEP_MAX = 5
-# sar — 저장된 하루 기록 읽기만(-u CPU · -q 부하 · -r 메모리 · -n DEV 네트워크). -o(파일 쓰기)는 없다 · -f 는 /var/log/sysstat/saNN 만
-SAR = spec('uqr', 'nfse')
+# sar — 저장된 하루 기록 읽기만(-u CPU · -q 부하 · -r 메모리 · -S 스왑 · -n DEV 네트워크). -o(파일 쓰기)는 없다 · -f 는 /var/log/sysstat/saNN 만
+SAR = spec('uqrS', 'nfse')
 SAR_FILE = re.compile(r'/var/log/sysstat/sa\d\d')
 SAR_TIME = re.compile(r'\d\d:\d\d(:\d\d)?')
 # sar 앞에만 붙일 수 있는 환경 값 — 행 시각을 로케일(%X · 오전/오후) 대신 HH:MM:SS 로(sysstat sa_common.c set_record_timestamp_string)
