@@ -27,7 +27,7 @@ PORT="$(athena_test_free_port)"   # 고정 포트면 두 트리 동시 실행에
 # ── 본체 사본 ───────────────────────────────────────────────────────────
 mkbody() { # mkbody <폴더> — git clone(코어 이력) + 작업 트리 덮기
   git clone -q "$SRC" "$1" 2>/dev/null || { mkdir -p "$1"; git -C "$1" init -q; }
-  rsync -a --delete --exclude .git --exclude .omc --exclude /plans --exclude /issues --exclude /repos --exclude /.worktrees --exclude /pack --exclude /packs \
+  rsync -a --delete --exclude .git --exclude /plans --exclude /issues --exclude /repos --exclude /.worktrees --exclude /pack --exclude /packs \
     --exclude /archive --exclude /.sync --exclude /.pack-data --exclude /athena.config.json --exclude __pycache__ --exclude '/.board-*' --exclude '/.qa-*' \
     --exclude /.jev-log.jsonl --exclude /.events.jsonl --exclude /.migrate-* --exclude node_modules "$SRC/" "$1/"
 }

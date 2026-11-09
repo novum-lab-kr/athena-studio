@@ -35,9 +35,8 @@ squash() { # squash <이름>
 
 # ① 바로 머지됨(squash) · 작업 브랜치는 원격에 없음 → 지움
 wt squashed a.txt a2; squash squashed
-# ② 브랜치를 push 하고 그대로 main 에 머지(fast-forward) → 지움 · .omc/ 도구 폴더만 추적 안 됨 → 지움
+# ② 브랜치를 push 하고 그대로 main 에 머지(fast-forward) → 지움
 wt ffmerged b.txt b2; g "$TMP/worktrees/ffmerged" push -q origin feat/ffmerged; g "$TMP/main" merge -q --ff-only feat/ffmerged; g "$TMP/main" push -q origin main
-mkdir -p "$TMP/worktrees/ffmerged/.omc/state"; printf '{}' > "$TMP/worktrees/ffmerged/.omc/state/x.json"
 # ③ 반영 안 됨(push 만 함) → 남김
 wt notmerged c.txt c1; g "$TMP/worktrees/notmerged" push -q origin feat/notmerged
 # ④ 머지됐지만 미커밋 변경 → 남김 · ⑤ 추적 안 된 파일 → 남김
@@ -77,7 +76,7 @@ const show = (result) => JSON.stringify(result)
 let result = await plan('squashed')
 check('바로 머지(squash) · 작업 브랜치 원격에 없음 → 지움 · 폴더 없음 · 브랜치는 남김', result.state === 'removed' && !existsSync(W('squashed')) && branchLeft('squashed') && !listed().includes(W('squashed')), show(result))
 result = await plan('ffmerged')
-check('push 한 브랜치가 그대로 main 에 머지 · .omc/ 만 추적 안 됨 → 지움', result.state === 'removed' && !existsSync(W('ffmerged')), show(result))
+check('push 한 브랜치가 그대로 main 에 머지 → 지움', result.state === 'removed' && !existsSync(W('ffmerged')), show(result))
 result = await plan('notmerged')
 check('prBase 에 반영 안 됨 → 남김(반영 이유)', result.state === 'kept' && result.reason.includes('반영되지 않아') && existsSync(W('notmerged')), show(result))
 result = await plan('dirty')

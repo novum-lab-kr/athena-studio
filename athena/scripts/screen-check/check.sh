@@ -44,7 +44,7 @@ IN=(ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUD
     ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI="$BIN/athena-studio-cli")
 
 # ── 작업 트리 사본(fixture 포함) ─────────────────────────────────────────
-rsync -a --exclude .git --exclude .omc --exclude /repos --exclude /plans --exclude /issues --exclude /archive --exclude /.worktrees \
+rsync -a --exclude .git --exclude /repos --exclude /plans --exclude /issues --exclude /archive --exclude /.worktrees \
   --exclude node_modules --exclude '/.qa-*' --exclude '/.board-*' --exclude /.jev-log.jsonl --exclude /packs --exclude /pack \
   --exclude __pycache__ --exclude /athena.config.json --exclude /.claude/settings.local.json \
   --exclude /.pack-data --exclude '/.pack-data.*' --exclude /.sync --exclude '/.migrate-*' --exclude /test \
