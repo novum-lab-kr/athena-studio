@@ -36,6 +36,18 @@ echo 80 > "$TMP/free"
 new_lock() { export ATHENA_HEAVY_LOCK="$TMP/lock.$1"; }
 run_bg() { ( "$SRC/scripts/heavy.sh" sleep "$1" > "$2" 2>&1 ) & }   # <초> <로그>
 waitfor() { local i; for i in $(seq 1 40); do eval "$1" && return 0; sleep 0.25; done; return 1; }
+# 띄운 일을 끄고 끝날 때까지 기다린다(2026-11-09 — 고정 sleep 1 대신 wait <pid>). 서브셸은 heavy.sh 를 exec 해 그 pid 가 곧 heavy.sh 다.
+# 부하 대기 중(sleep 10)인 heavy.sh 는 TERM 을 받아도 trap 이 정리만 하고 대기를 이어 가 끝나지 않는다 — 최대 1초 기다려 남으면 KILL 하고 거둔다
+stop_bg() {
+  local pids pid alive _; pids="$(jobs -p)"; [ -n "$pids" ] || return 0
+  kill $pids 2>/dev/null
+  for _ in $(seq 1 20); do
+    alive=""; for pid in $pids; do kill -0 "$pid" 2>/dev/null && alive=1; done
+    [ -n "$alive" ] || break; sleep 0.05
+  done
+  [ -z "$alive" ] || kill -9 $pids 2>/dev/null
+  wait $pids 2>/dev/null; return 0
+}
 
 echo "자리 2개 (여유 80%)"
 new_lock a; export ATHENA_HEAVY_SLOTS=2
@@ -48,7 +60,7 @@ check "셋째는 기다리다 포기(75)" '[ "$code" = 75 ]'
 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true 2>/dev/null | tail -1 > "$TMP/a3.tail"
 check "포기하면 stdout 마지막 줄에도 실패(75)가 남음 — stderr 를 버리고 | tail 로 받아도 성공처럼 안 보임" 'grep -q "종료 코드 75" "$TMP/a3.tail"'
 check "대기 메시지에 두 자리 모두 보임" 'grep -q "자리1: .*sleep" "$TMP/a3.log" && grep -q "자리2: .*sleep" "$TMP/a3.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "여유 부족이면 둘째를 안 잡음 (여유 20% < 40%)"
 new_lock b; echo 20 > "$TMP/free"
@@ -59,7 +71,7 @@ check "보류 이유가 메시지에 나옴" 'grep -q "둘째 자리는 메모�
 echo 80 > "$TMP/free"
 ATHENA_HEAVY_WAIT=20 "$SRC/scripts/heavy.sh" true > "$TMP/b3.log" 2>&1; code=$?
 check "여유가 돌아오면 둘째 자리로 바로 돎" '[ "$code" = 0 ]'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "부하가 높으면 둘째를 안 잡음 (부하 6.5 ≥ 코어 4)"
 new_lock f; echo 6.5 > "$LOAD_FILE"
@@ -70,14 +82,14 @@ check "이유가 메시지에 나옴" 'grep -q "부하 6.5 / 코어 4 — 둘째
 echo 1.0 > "$LOAD_FILE"
 ATHENA_HEAVY_WAIT=20 "$SRC/scripts/heavy.sh" true > "$TMP/f3.log" 2>&1; code=$?
 check "부하가 내려가면 둘째 자리로 바로 돎" '[ "$code" = 0 ]'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "기준 변수 ATHENA_HEAVY_MAX_LOAD"
 new_lock g; echo 2.0 > "$LOAD_FILE"
 run_bg 30 "$TMP/g1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
 ATHENA_HEAVY_MAX_LOAD=1.5 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/g2.log" 2>&1; code=$?
 check "부하 2.0 ≥ 기준 1.5 면 안 잡음(75)" '[ "$code" = 75 ]'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "부하를 못 읽으면 둘째를 안 잡음"
 new_lock h; rm -f "$LOAD_FILE"
@@ -85,14 +97,14 @@ run_bg 30 "$TMP/h1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/h2.log" 2>&1; code=$?
 check "둘째를 안 잡고 포기(75) · 이유가 나옴" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.2" ] && grep -q "부하를 읽지 못해" "$TMP/h2.log"'
 echo 0.5 > "$LOAD_FILE"
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "SLOTS=1 은 예전과 같음"
 new_lock c; export ATHENA_HEAVY_SLOTS=1
 run_bg 30 "$TMP/c1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/c2.log" 2>&1; code=$?
 check "둘째가 비었어도 기다리다 포기(75) · 둘째 자리 안 만듦" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.2" ]'
-kill $(jobs -p) 2>/dev/null; sleep 1; export ATHENA_HEAVY_SLOTS=2
+stop_bg; export ATHENA_HEAVY_SLOTS=2
 
 echo "낡은 잠금 정리"
 new_lock d
@@ -104,7 +116,7 @@ mkdir -p "$ATHENA_HEAVY_LOCK.2"; echo 999999 > "$ATHENA_HEAVY_LOCK.2/pid"
 run_bg 30 "$TMP/d1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
 ATHENA_HEAVY_WAIT=10 "$SRC/scripts/heavy.sh" true > "$TMP/d2.log" 2>&1; code=$?
 check "둘째 자리의 낡은 잠금도 치우고 그 자리로 돎" '[ "$code" = 0 ] && grep -q "🧹" "$TMP/d2.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "137 안전장치는 자리마다"
 new_lock e; echo 80 > "$TMP/free"
@@ -140,14 +152,14 @@ new_lock j
 ( "$SRC/scripts/heavy.sh" npm run build > "$TMP/j.log" 2>&1 ) &
 waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'; sleep 8
 check "빌드는 끝날 때까지 자리를 쥠" '[ -s "$ATHENA_HEAVY_LOCK/what" ] && ! grep -q "개발 서버 시작 끝" "$TMP/j.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "npm run start:dev 도 개발 서버로 본다"
 new_lock l
 ( "$SRC/scripts/heavy.sh" npm run start:dev > "$TMP/l.log" 2>&1 ) &
 for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/l.log" 2>/dev/null && break; sleep 0.5; done
 check "start:dev 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/l.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 # 서버형 셋(아테나 결정 2026-11-03) — 맨 storybook dev · node <…>/dev-app.js start 도 시작이 끝나면 자리를 놓는다(코어 update 가 바쁨으로 치지 않게)
 echo "storybook dev · dev-app.js start 도 개발 서버로 본다"
@@ -162,12 +174,12 @@ new_lock m
 ( "$SRC/scripts/heavy.sh" storybook dev -p 6006 > "$TMP/m.log" 2>&1 ) &
 for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/m.log" 2>/dev/null && break; sleep 0.5; done
 check "storybook dev 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/m.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 new_lock n
 ( "$SRC/scripts/heavy.sh" node "$TMP/app/scripts/dev-app.js" start > "$TMP/n.log" 2>&1 ) &
 for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/n.log" 2>/dev/null && break; sleep 0.5; done
 check "node …/dev-app.js start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/n.log"'
-kill $(jobs -p) 2>/dev/null; sleep 1
+stop_bg
 
 echo "기다린 시간·이유를 안쪽 명령에 넘긴다"
 new_lock k

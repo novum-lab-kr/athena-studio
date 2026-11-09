@@ -53,7 +53,7 @@ import { readMainTool } from './lib/main-tool.mjs'
 import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
-  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
+  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
@@ -536,9 +536,9 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // base 합침은 상한을 넘은 라운드여도 멈추거나 이어받지 않고 한 번 리뷰한다
   if (isTakeoverRound(round, limits.max) && !baseMerge && !grantsTakeover(known?.result)) {
     // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 아테나에(notify)
-    // 빠른 길은 이어받은 커밋(라운드 2/1) 뒤 또 커밋이 여기로 온다 — 두 번째 수정이 필요한 PR 은 아테나가 이어받는다
+    // 빠른 길은 2차 커밋(라운드 2/2 — 옛 줄 2/1) 뒤 또 커밋이 여기로 온다 — 두 번째 수정이 필요한 PR 은 아테나가 이어받는다
     if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${limits.max}(직전이 ${TAKEOVER}가 아님) · 아테나에 알림`)
-    writeAutoLine(planPath, { repo, number, sha, round, max: limits.max, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
+    writeAutoLine(planPath, { repo, number, sha, round, max: limits.max, fast, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
     logEvent(ROOT, 'auto.stop', { ...base, reason: 'rounds' })
     await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 상한(${limits.max}) 넘음 — ${repo}#${number}`, body: `직전 결과(${known?.result ?? '없음'})가 ${TAKEOVER}가 아니라 리뷰 없이 머지하지 않는다. 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).` })
     return
@@ -558,7 +558,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const needed = PR_REVIEWERS
   // 이어받은 승인은 그 엔진 자리가 구성에 있을 때만 메모에 남긴다(runReviewers 가 같은 규칙으로 넣는다)
   const lineupNoteOf = () => {
-    const lineupText = fast ? `${FAST_PATH} — 상한 ${FAST_MAX_ROUNDS} · ${lineup.note}` : lineup.note
+    const lineupText = fast ? `${FAST_PATH} — 최대 ${FAST_REVIEWS}번 · ${lineup.note}` : lineup.note
     const used = inherited.filter((result) => inheritedSlotIndex(slots, result) >= 0)
     return [...(baseMerge ? [BASE_MERGED] : []), short ? `${SHORT_REVIEW} — ${lineup.note}` : lineupText, ...used.map((result) => result.review.summary)].join(' · ')
   }
@@ -612,7 +612,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (summary.verdict !== 'approve' || partial) stopVerifies()
   if (dryRun) {
     console.log(`\n── 만들 PR 댓글 ──\n${comment}`)
-    const action = short ? shortAction(summary, flow) : plannedAction(summary, round, flow, limits)
+    const action = short ? shortAction(summary, flow, fast) : plannedAction(summary, round, flow, limits)
     console.log(`── 할 일: ${partial ? `머지하지 않음 — ${PARTIAL_APPROVAL}(못 본 코드 파일 ${partialCount(packed)}개) · 아테나에 알림` : action}`)
     console.log('(--dry-run — 댓글 · 계획서 · pane · 요청 · 머지 모두 하지 않았다)')
     return
@@ -625,7 +625,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   if (summary.advisories.length) writeAdvisoryIssue({ repo, number, sha, advisories: summary.advisories, planFile })
   base.reviewers = reviewerBrief(results)
   base.tokens = reviewTokens(results)   // review 사건 tokens(docs/events.md · scripts/pr-measure.mjs)
-  const line = { repo, number, sha, round, note, max: limits.max }
+  const line = { repo, number, sha, round, note, max: limits.max, fast }
 
   if (partial) {
     // 리뷰어가 diff 일부만 보고 승인했다 — PR 전체 승인이 아니라 머지 조건 ①로 세지 않고 아테나에(notify · 이슈 20261025 · syung#12 에서 잘린 승인으로 결함을 놓침)
@@ -685,7 +685,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
     updatePlan(planPath, (current) => withPendingDecisionLine(current, { repo, number, sha, count: summary.decisions.length, registered, stamp: stamp() }))
   }
   const hasFixes = summary.findings.length > 0 || summary.autoDecisions.length > 0
-  writeAutoLine(planPath, { ...line, result: autoResult(summary.verdict, takeover, round >= limits.max) })
+  writeAutoLine(planPath, { ...line, result: autoResult(summary.verdict, takeover, round >= limits.max, fast) })
   if (!hasFixes) {
     // 결정만 — 작업 에이전트에 알리고 사람의 확정을 기다린다
     if (pane) await sendToPane(pane, decisionNotice({ agent: ref.agent, repo, number, sha, count: summary.decisions.length, plan: planFile, worktree: ref.worktree, athenaDir: ROOT }))
@@ -711,10 +711,10 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
 }
 
 // 리뷰 뒤 계획서 줄 결과 — ship.sh --auto-push 는 "수정 필요" · "결정 필요" 로 시작하는 줄에만 올린다.
-// 이어받기를 주는 줄은 grantsTakeover 가 알아보는 모양('<머리> — 상한 뒤 이어받음…')으로만 쓴다
-const autoResult = (verdict, takeover, atLimit) => {
+// 이어받기를 주는 줄은 grantsTakeover 가 알아보는 모양('<머리> — 상한 뒤 이어받음…' · 빠른 길은 '<머리> — 2차…')으로만 쓴다
+const autoResult = (verdict, takeover, atLimit, fast = false) => {
   const head = verdict === 'decision' ? '결정 필요' : '수정 필요'
-  if (takeover) return `${head} — ${TAKEOVER}(다음 커밋은 바뀐 부분 ${SHORT_REVIEW} 후 머지)`
+  if (takeover) return `${head} — ${takeoverLabel(fast)}(다음 커밋은 바뀐 부분 ${SHORT_REVIEW} 후 머지)`
   return atLimit ? `${head} — 리뷰어 부족이라 이어받지 않음` : head
 }
 
@@ -733,11 +733,11 @@ const plannedAction = (summary, round, flow, limits = { max: MAX_ROUNDS, reviewe
 }
 
 // 짧은 리뷰(상한 뒤 이어받은 HEAD)의 할 일 — --dry-run 출력
-const shortAction = (summary, flow) => {
+const shortAction = (summary, flow, fast = false) => {
   const outcome = shortReviewOutcome(summary)
-  if (outcome === 'approve' && flow.merge === 'manual') return `${TAKEOVER} ${SHORT_REVIEW} 승인까지만 — 머지는 사람이 직접(요청 없음)`
-  if (outcome === 'approve') return `${TAKEOVER} ${SHORT_REVIEW} 승인 → 안 정한 결정 · 같은 HEAD 검증(reuse.sh 엄격) · 충돌 확인 → 머지 단계`
-  return `머지하지 않음 — ${shortStopResult(outcome, summary)} · 아테나에 알림`
+  if (outcome === 'approve' && flow.merge === 'manual') return `${takeoverLabel(fast)} ${SHORT_REVIEW} 승인까지만 — 머지는 사람이 직접(요청 없음)`
+  if (outcome === 'approve') return `${takeoverLabel(fast)} ${SHORT_REVIEW} 승인 → 안 정한 결정 · 같은 HEAD 검증(reuse.sh 엄격) · 충돌 확인 → 머지 단계`
+  return `머지하지 않음 — ${shortStopResult(outcome, summary, fast)} · 아테나에 알림`
 }
 
 // 짧은 리뷰 결과 — 승인이면 승인과 같은 머지 단계(줄 · job 은 이어받음 표시) · 막음 · 실패면 멈추고 아테나에(결정 1 — 다시 고치게 하지 않는다)
@@ -746,7 +746,7 @@ const finishShortReview = async ({ planPath, planFile, repo, number, sha, round,
   logEvent(ROOT, 'auto.takeover', { ...base, review: SHORT_REVIEW_LABEL[outcome] })
   if (outcome !== 'failed') logEvent(ROOT, 'review', { ...base, verdict: { approve: '승인', blocked: summary.verdict === 'decision' ? '결정 필요' : '수정 필요' }[outcome], ms: reviewMs, short: true })
   if (outcome === 'approve') return prepareMerge({ planPath, planFile, repo, number, sha, round, note, ref, pr, org, summary, takeover: true, config, max: limits.max, reviewers: SHORT_REVIEWERS, fast })
-  const result = shortStopResult(outcome, summary)
+  const result = shortStopResult(outcome, summary, fast)
   writeAutoLine(planPath, { ...line, result })
   logEvent(ROOT, 'auto.stop', { ...base, reason: outcome === 'failed' ? 'reviewers' : 'short-review' })
   const detail = outcome === 'failed'
@@ -765,7 +765,7 @@ const reviewLegacyTakeover = async (job, line) => {
   if (history && history.round === job.round - 1 && !String(job.sha).startsWith(history.sha)) {
     // 결정 필요는 기록에 남지 않는다(사람 결정은 기록하지 않는다) — 지적이 없으면 상한 라운드가 결정 필요였던 것
     const verdict = history.findings?.length || history.autoDecisions?.length ? 'changes' : 'decision'
-    writeAutoLine(planPath, { repo: job.repo, number: job.number, sha: history.sha, round: history.round, max, note: '', result: autoResult(verdict, true, true) })
+    writeAutoLine(planPath, { repo: job.repo, number: job.number, sha: history.sha, round: history.round, max, fast: Boolean(job.fast), note: '', result: autoResult(verdict, true, true, Boolean(job.fast)) })
     console.log(`  ↪ ${job.repo}#${job.number} @${job.sha.slice(0, 7)} — 업데이트 전 ${TAKEOVER} 대기라 머지하지 않고 ${SHORT_REVIEW}로 돌린다`)
     enqueue(job.plan, `${job.repo}#${job.number}`, job.sha)
     return true
@@ -778,7 +778,7 @@ const reviewLegacyTakeover = async (job, line) => {
 }
 
 const unreviewedNote = (job) => {
-  if (job.takeover) return `(${job.fast ? `${FAST_PATH} · ` : ''}${TAKEOVER} — 바뀐 부분 ${SHORT_REVIEW} 후 머지)`
+  if (job.takeover) return `(${job.fast ? `${FAST_PATH} · ` : ''}${takeoverLabel(Boolean(job.fast))} — 바뀐 부분 ${SHORT_REVIEW} 후 머지)`
   return job.reviewOff ? `(${REVIEW_OFF} — 리뷰 없이 검증만으로 머지)` : ''
 }
 
@@ -862,11 +862,11 @@ const RETRY_HINT = '원인을 해결한 뒤 계획서의 "- Auto review:" 줄을
 // summary 가 null 이면 리뷰 없이 온 HEAD — 레포가 리뷰 끔(reviewOff). takeover 는 상한 뒤 이어받은 HEAD 의 짧은 리뷰 승인(summary 있음 · 결정 C → 결정 1).
 // 같은 길 · 줄 · 요청 글만 다르다. max · reviewers · fast — 빠른 길이면 1 · 1 · true(줄 · 사건 · 머지 job 에 남긴다)
 const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note = '', ref, pr, org, summary, reviewOff = false, takeover = false, config, max = MAX_ROUNDS, reviewers = PR_REVIEWERS, fast = false }) => {
-  const line = { repo, number, sha, round, note, max }
+  const line = { repo, number, sha, round, note, max, fast }
   const unreviewed = summary === null
   const stagedApproval = () => {
     if (unreviewed) return { stage: REVIEW_OFF, passed: `${REVIEW_OFF}(리뷰 없이 검증만으로 머지)`, reason: '레포가 리뷰 끔이라 리뷰 없이', brief: '레포가 리뷰 끔(리뷰 없음)' }
-    if (takeover) return { stage: TAKEOVER, passed: `${TAKEOVER}(바뀐 부분 ${SHORT_REVIEW} 후 머지)`, reason: `${TAKEOVER} — 리뷰 상한(${max}) 뒤 고친 커밋을 바뀐 부분만 ${SHORT_REVIEW} 승인(${note}) ·`, brief: `리뷰 상한 뒤 이어받은 커밋의 ${SHORT_REVIEW}는 승인` }
+    if (takeover) return { stage: takeoverLabel(fast), passed: `${takeoverLabel(fast)}(바뀐 부분 ${SHORT_REVIEW} 후 머지)`, reason: `${TAKEOVER} — 리뷰 상한(${max}) 뒤 고친 커밋을 바뀐 부분만 ${SHORT_REVIEW} 승인(${note}) ·`, brief: `리뷰 상한 뒤 이어받은 커밋의 ${SHORT_REVIEW}는 승인` }
     return { stage: '승인', passed: `승인 ${summary.approvals}/${reviewers}`, reason: `자동 리뷰 승인 ${summary.approvals}/${reviewers}(${note || '리뷰어 하나'}) ·`, brief: `리뷰는 승인(${summary.approvals}/${reviewers})` }
   }
   const { stage, passed, reason: approvalReason, brief } = stagedApproval()
@@ -1314,7 +1314,7 @@ export const checkConfirms = async (only = '') => {
     }
     const release = () => { if (current !== file) try { renameSync(current, file) } catch { /* 그새 치워졌다 */ } }
     const planPath = join(ROOT, job.plan)
-    const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '', ...(job.max ? { max: job.max } : {}) }
+    const line = { repo: job.repo, number: job.number, sha: job.sha, round: job.round, note: job.note ?? '', ...(job.max ? { max: job.max } : {}), fast: Boolean(job.fast) }
     const pr = ghJson(['pr', 'view', String(job.number), '--repo', `${org}/${job.repo}`, '--json', 'state,isDraft,headRefOid,mergeable,baseRefName,title'])
     if (!pr) { release(); continue }
     // 설정이 바뀜 — 자동 흐름을 껐거나 · 사람이 직접으로 돌렸거나 · 리뷰 없이 온 건인데 리뷰를 다시 켰거나 · 빠른 길로 온 건인데 빠른 길을 껐다
