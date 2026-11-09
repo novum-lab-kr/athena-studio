@@ -37,7 +37,7 @@ new_lock() { export ATHENA_HEAVY_LOCK="$TMP/lock.$1"; }
 run_bg() { ( "$SRC/scripts/heavy.sh" sleep "$1" > "$2" 2>&1 ) & }   # <초> <로그>
 waitfor() { local i; for i in $(seq 1 40); do eval "$1" && return 0; sleep 0.25; done; return 1; }
 # 띄운 일을 끄고 끝날 때까지 기다린다(2026-11-09 — 고정 sleep 1 대신 wait <pid>). 서브셸은 heavy.sh 를 exec 해 그 pid 가 곧 heavy.sh 다.
-# 부하 대기 중(sleep 10)인 heavy.sh 는 TERM 을 받아도 trap 이 정리만 하고 대기를 이어 가 끝나지 않는다 — 최대 1초 기다려 남으면 KILL 하고 거둔다
+# 명령을 돌리는 중인 heavy.sh 는 TERM 을 받아도 앞쪽 감시 sleep 5 가 끝나야 trap 이 돌고 자식 정리에 3초를 더 써 7초쯤 걸린다 — 최대 1초 기다려 남으면 KILL 하고 거둔다
 stop_bg() {
   local pids pid alive _; pids="$(jobs -p)"; [ -n "$pids" ] || return 0
   kill $pids 2>/dev/null
@@ -180,6 +180,26 @@ new_lock n
 for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/n.log" 2>/dev/null && break; sleep 0.5; done
 check "node …/dev-app.js start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/n.log"'
 stop_bg
+
+echo "대기 중 TERM 을 받으면 바로 끝난다 (자리 · 잠금을 남기지 않음)"
+# TERM 을 보내고 3초까지 기다린다 — 남으면 KILL(그러면 코드가 143 이 아니라 실패로 잡힌다). 종료 코드를 돌려준다
+term_wait() { local _; kill -TERM "$1"; for _ in $(seq 1 60); do kill -0 "$1" 2>/dev/null || break; sleep 0.05; done; kill -0 "$1" 2>/dev/null && kill -9 "$1"; wait "$1"; }
+new_lock o; export ATHENA_HEAVY_SLOTS=2
+run_bg 30 "$TMP/o1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+run_bg 30 "$TMP/o2.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK.2/what" ]'
+"$SRC/scripts/heavy.sh" bash -c 'echo RAN' > "$TMP/o3.log" 2>&1 & waiter=$!
+waitfor 'grep -q "다른 무거운 명령이 도는 중" "$TMP/o3.log"'
+term_wait "$waiter"; code=$?
+check "자리 대기 중 TERM → 바로 143 · 명령 안 돎 · 두 자리는 그대로" '[ "$code" = 143 ] && ! grep -q RAN "$TMP/o3.log" && [ -s "$ATHENA_HEAVY_LOCK/pid" ] && [ -s "$ATHENA_HEAVY_LOCK.2/pid" ] && [ ! -e "$ATHENA_HEAVY_LOCK.3" ]'
+stop_bg
+new_lock p
+# 부하 0.5 > 한도 4 × 0.1 = 0.4 — 자리는 잡고 부하를 기다린다(예전엔 TERM 에 잠금만 풀고 대기를 이어 갔다)
+ATHENA_HEAVY_LOAD=0.1 "$SRC/scripts/heavy.sh" bash -c 'echo RAN' > "$TMP/p.log" 2>&1 & waiter=$!
+waitfor 'grep -q "부하 0.5 > 한도 0.4" "$TMP/p.log"'
+check "부하 대기 중에는 자리를 쥐고 있음" '[ -s "$ATHENA_HEAVY_LOCK/pid" ]'
+term_wait "$waiter"; code=$?
+check "부하 대기 중 TERM → 바로 143 · 명령 안 돎 · 잠금 남지 않음" '[ "$code" = 143 ] && ! grep -q RAN "$TMP/p.log" && [ ! -e "$ATHENA_HEAVY_LOCK" ] && [ -z "$(ls -d "$ATHENA_HEAVY_LOCK".* 2>/dev/null)" ]'
+export ATHENA_HEAVY_SLOTS=1   # 아래 시험은 한 자리로 기다림을 만든다
 
 echo "기다린 시간·이유를 안쪽 명령에 넘긴다"
 new_lock k
