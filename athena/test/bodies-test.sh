@@ -58,6 +58,8 @@ FAKE="$WORK/fakebin"; mkdir -p "$FAKE"; ln -s "$(command -v node)" "$FAKE/claude
 # 가짜 claude — 출력은 버린다($(...) 가 끝나길 기다리지 않게)
 # fake_claude <폴더> [인자…] — 인자는 ps 에 보이게 그대로 붙인다(레포 메인 체크아웃은 --agent 가 있어야 일로 센다 · 결정 D1)
 fake_claude() { local dir="$1"; shift; (cd "$dir" && exec "$FAKE/claude" -e 'setTimeout(() => {}, 120000)' -- "$@") >/dev/null 2>&1 & echo $!; }
+# 띄운 프로세스의 인자에 <글자> 가 보일 때까지(exec 가 끝나 busy 판정이 볼 수 있을 때까지) 기다린다 — 2026-11-09 고정 sleep 대신 · 최대 5초
+wait_args() { local pid="$1" want="$2" _; for _ in $(seq 1 100); do ps -p "$pid" -o args= 2>/dev/null | grep -qF -- "$want" && return 0; sleep 0.05; done; return 1; }
 
 section "주 본체 — test-setup(acme)"
 printf '{ "boardPort": %s }\n' "$PORT_A" > "$MAIN/athena.config.json"
@@ -128,7 +130,7 @@ V1="$(J "$MAIN" version)"; V2="$(J "$BODY_B" version)"
 check "version — contract 4 · dataFormats · capabilities · core 각 본체" '[ "$(echo "$V1" | field contract)" = 4 ] && [ "$(echo "$V1" | field dataFormats)" = "[1, 1]" ] && echo "$V1" | field capabilities | grep -q update && [ "$(echo "$V2" | field core)" = "$C0" ] && [ "$(echo "$V2" | field body)" = "$BODY_B" ] && [ "$(echo "$V2" | field dirty)" = False ]' "$V1 / $V2"
 
 section "한 본체가 일해도 다른 본체는 열리고 비어 있음"
-CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; sleep 0.5
+CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; wait_args "$CB" setTimeout; wait_args "$CA" setTimeout
 check "본체 B busy: athena · agent" 'R="$(J "$BODY_B" pack busy)"; echo "$R" | grep -q "\"kind\":\"athena\"" && echo "$R" | grep -q "\"kind\":\"agent\""'
 check "주 본체 busy 는 비어 있음" '[ "$(J "$MAIN" pack busy | field busy)" = "[]" ]'
 check "list bodyBusy — globex true · acme false" 'R="$(J "$MAIN" pack list)"; [ "$(echo "$R" | field packs.globex.bodyBusy)" = True ] && [ "$(echo "$R" | field packs.acme.bodyBusy)" = False ]'
@@ -145,7 +147,7 @@ R="$(J "$MAIN" pack import "$TOKEN_G" --replace)"
 check "B 가 비면 --replace → B 링크 다시 · globex 세대 +1 · acme 세대 그대로" '[ "$(echo "$R" | field ok)" = True ] && [ "$(echo "$R" | field body)" = "$BODY_B" ] && [ "$(python3 -c "import json,sys; d=json.load(open(sys.argv[1]))[\"packs\"]; print(d[\"globex\"][\"generation\"], d[\"acme\"][\"generation\"])" "$ATHENA_DATA_DIR/config.json")" = "$((GEN_BEFORE+1)) 1" ] && [ -L "$BODY_B/.claude/agents/globex-shop-fe.md" ]' "$R"
 
 section "무거운 명령 잠금 — 잠금에 적힌 본체만(C10)"
-mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
+mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; wait_args "$H" "sleep 60"
 check "본체 B 가 쥔 잠금 → B 만 heavy" 'J "$BODY_B" pack busy | grep -q "\"kind\":\"heavy\"" && ! J "$MAIN" pack busy | grep -q "\"kind\":\"heavy\""'
 kill "$H" 2>/dev/null; wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
 
@@ -171,7 +173,7 @@ kill "$PL" 2>/dev/null; wait "$PL" 2>/dev/null; rm -rf "$PLOCK"
 R="$(J "$MAIN" pack open globex)"
 check "B 가 비면 열 때 따라잡음(updated · boardStopped 포함)" '[ "$(echo "$R" | field updated.to)" = "$C1" ] && [ "$(echo "$R" | field updated.boardStopped)" = "[]" ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C1" ]' "$R"
 C2="$(newcommit "test: 업데이트 2")"
-CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; sleep 0.5
+CB="$(fake_claude "$BODY_B")"; CA="$(fake_claude "$ATHENA_DATA_DIR/repos-src/globex-shop" --agent globex-shop-fe)"; wait_args "$CB" setTimeout; wait_args "$CA" setTimeout
 R="$(J "$MAIN" update --from "$(bundle)")"; OP2="$(echo "$R" | field operationId)"
 check "B 에서 아테나 · 에이전트가 일해도 바로 올림 · complete · 둘 다 C2" '[ "$(echo "$R" | field status)" = complete ] && [ "$(echo "$R" | field ok)" = True ] && [ "$(git -C "$MAIN" rev-parse HEAD)" = "$C2" ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C2" ]' "$R"
 check "B 의 working 에 일하던 세션 2개(athena · agent) · 기록 파일에도" 'W="$(echo "$R" | field bodies.globex.working)"; [ "$(echo "$W" | python3 -c "import json,sys; print(len(json.load(sys.stdin)))")" = 2 ] && echo "$W" | grep -q athena && echo "$W" | grep -q agent && grep -q "\"working\"" "$ATHENA_DATA_DIR/updates/$OP2.json"' "$R"
@@ -215,7 +217,8 @@ check "주 본체가 갈라짐(로컬 커밋) → skipped(diverged) · 그대로
 section "update --panes-state — 입력을 기다리는 pane 의 세션은 working 에서 뺀다(결정 D1)"
 C3B="$(newcommit "test: 업데이트 3b")"
 # pane 셸 흉내 — sh 가 claude 의 부모(exec 하지 않는다). 그 sh pid 가 데몬 pane pids 의 pane 셸
-(cd "$BODY_B" && sh -c '"$1" -e "setTimeout(() => {}, 120000)"; true' sh "$FAKE/claude") >/dev/null 2>&1 & PSH=$!; sleep 0.5
+(cd "$BODY_B" && sh -c '"$1" -e "setTimeout(() => {}, 120000)"; true' sh "$FAKE/claude") >/dev/null 2>&1 & PSH=$!
+for _ in $(seq 1 100); do PSC="$(pgrep -P "$PSH" | head -1)"; [ -n "$PSC" ] && wait_args "$PSC" setTimeout && break; sleep 0.05; done
 panes_state() { python3 -c 'import json,sys,datetime
 at=(datetime.datetime.now(datetime.timezone.utc)-datetime.timedelta(seconds=int(sys.argv[3]))).isoformat()
 json.dump({"at": at, "panes": [{"id": "p1", "label": "🧭 아테나", "pid": int(sys.argv[1]), "agent": sys.argv[5], "status": sys.argv[2]}]}, open(sys.argv[4], "w"))' "$PSH" "$1" "${2:-0}" "$WORK/panes.json" "${3:-claude}"; echo "$WORK/panes.json"; }
@@ -234,7 +237,7 @@ check "입력을 기다리는 pane(idle) 의 세션 → working 없음" '[ "$(ec
 check "version capabilities 에 idle-panes · update-busy · repo-look" 'V="$(J "$MAIN" version)"; echo "$V" | grep -q "\"idle-panes\"" && echo "$V" | grep -q "\"update-busy\"" && echo "$V" | grep -q "\"repo-look\""'
 pkill -P "$PSH" 2>/dev/null; kill "$PSH" 2>/dev/null; wait "$PSH" 2>/dev/null
 # pane 셸 흉내 아래 가짜 claude 가 남으면 뒤 절에서 B 가 계속 일하는 것으로 보인다 — 남김없이 끈다
-pkill -f "^$FAKE/claude" 2>/dev/null; sleep 0.3
+pkill -f "^$FAKE/claude" 2>/dev/null; for _ in $(seq 1 100); do pgrep -f "^$FAKE/claude" >/dev/null || break; sleep 0.05; done
 
 section "update — 학습 검토는 끄고 올린다(일하는 중이어도) · 일이 남았으면 새 코드로 다시 띄운다"
 # 앱 · 현황판이 띄우는 것과 같은 모양(절대 경로 · --watch). 대기열은 그 팩 데이터의 state/learn-queue
@@ -251,7 +254,7 @@ check "검토 중인 감시자 → 끄고 올림 · B 는 C3C · learnStopped ·
 NEWW="$(lock_pid)"; kill "$NEWW" 2>/dev/null; for _ in $(seq 1 30); do kill -0 "$NEWW" 2>/dev/null || break; sleep 0.1; done
 rm -rf "$LEARN_Q"/*.json "$LEARN_Q"/*.json.working "$LEARN_Q/failed"
 C3D="$(newcommit "test: 업데이트 3d")"
-LP="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/learn-review.mjs" --plan plans/x.md >/dev/null 2>&1 & echo $!)"; sleep 0.3
+LP="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/learn-review.mjs" --plan plans/x.md >/dev/null 2>&1 & echo $!)"; wait_args "$LP" learn-review.mjs
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "한 번 검토(--plan) 도는 중 → 끄고 올림 · 대기열이 비어 감시자는 안 띄움" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3D" ] && ! kill -0 "$LP" 2>/dev/null && ! { [ -n "$(lock_pid)" ] && kill -0 "$(lock_pid)" 2>/dev/null; }' "$R"
 check "pack busy 는 그대로 학습 검토를 센다(업데이트만 바뀜)" 'watcher; J "$BODY_B" pack busy | grep -q "\"kind\":\"learn-review\""'
@@ -290,7 +293,7 @@ R="$(J "$MAIN" update --from "$(bundle)")"
 check "빈 대기열만 기다리는 처리기 → 끄고 올림 · 다시 띄우지 않음" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3Q" ] && ! kill -0 "$PW" 2>/dev/null && ! { [ -n "$(pr_lock)" ] && kill -0 "$(pr_lock)" 2>/dev/null; }' "$R"
 # 손으로 돌린 한 번(--plan · --direct-merge)은 처리기가 아니다 — 머지 도중일 수 있으니 끄지 않는다
 C3R="$(newcommit "test: 업데이트 3r")"
-PO="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3
+PO="$(node -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; wait_args "$PO" --direct-merge
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "--watch 가 아닌 실행은 끄지 않는다" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
 kill "$PO" 2>/dev/null
@@ -335,13 +338,13 @@ check "처리기를 끌 때 gh · git 자식은 남고 리뷰어는 꺼진다" '
 kill "$PID_GH" "$PID_GIT" "$PID_REVIEWER" 2>/dev/null; pr_stop
 # 같은 이름이어도 --watch 가 아니면 끄지 않는다
 C3F="$(newcommit "test: 업데이트 3f")"
-PO="$("$WORK/runtime/Electron" -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; sleep 0.3
+PO="$("$WORK/runtime/Electron" -e 'setTimeout(() => {}, 120000)' "$BODY_B/scripts/pr-auto.mjs" --direct-merge >/dev/null 2>&1 & echo $!)"; wait_args "$PO" --direct-merge
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "Electron 으로 돌아도 --watch 가 아니면 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
 kill "$PO" 2>/dev/null
 # 인자에 그 경로를 적었을 뿐인 프로세스(셸 · claude -p 프롬프트)는 처리기가 아니다
 C3G="$(newcommit "test: 업데이트 3g")"
-PO="$(bash -c 'sleep 120; true' "$BODY_B/scripts/pr-auto.mjs --watch" >/dev/null 2>&1 & echo $!)"; sleep 0.3
+PO="$(bash -c 'sleep 120; true' "$BODY_B/scripts/pr-auto.mjs --watch" >/dev/null 2>&1 & echo $!)"; wait_args "$PO" "pr-auto.mjs --watch"
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "인자에 처리기 경로가 든 셸은 끄지 않는다" '[ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ] && kill -0 "$PO" 2>/dev/null && [ -z "$(echo "$R" | field bodies.globex.services.prAutoStopped)" ]' "$R"
 kill "$PO" 2>/dev/null
@@ -350,35 +353,35 @@ section "update — 도는 커밋 · 올리기(commit.sh · ship.sh) · 무거�
 # 셸 흉내 — 인자에 그 본체 스크립트 경로가 보이는 bash(명령이 하나면 bash 가 exec 해 버리니 ; true 를 붙인다)
 fake_script() { local dir="$1" secs="$2" script="$3"; (cd "$dir" && exec bash -c "sleep $secs; true" "$script") >/dev/null 2>&1 & echo $!; }
 C3F="$(newcommit "test: 업데이트 3f")"
-FS="$(fake_script "$WORK" 2 "$BODY_B/scripts/commit.sh")"; sleep 0.3
+FS="$(fake_script "$WORK" 2 "$BODY_B/scripts/commit.sh")"; wait_args "$FS" "$BODY_B/scripts/commit.sh"
 START=$(date +%s)
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "곧 끝나는 커밋(절대 경로) → 끝날 때까지 기다린 뒤 올림 · B 는 C3F" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ] && [ $(( $(date +%s) - START )) -ge 1 ]' "$R"
 wait "$FS" 2>/dev/null
 C3G="$(newcommit "test: 업데이트 3g")"
-FS="$(fake_script "$BODY_B" 60 scripts/ship.sh)"; sleep 0.3
+FS="$(fake_script "$BODY_B" 60 scripts/ship.sh)"; wait_args "$FS" scripts/ship.sh
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "상한까지 안 끝나는 올리기(상대 경로 · 본체 안) → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"commit\"" && echo "$R" | grep -q "ship.sh" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # scripts 폴더 안에서 bash commit.sh — 작업 폴더 기준으로 풀면 이 본체 스크립트(자동 리뷰 1차)
-FS="$(fake_script "$BODY_B/scripts" 60 commit.sh)"; sleep 0.3
+FS="$(fake_script "$BODY_B/scripts" 60 commit.sh)"; wait_args "$FS" commit.sh
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "scripts 폴더에서 bash commit.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # 본체 밖 폴더에서 ../<본체>/scripts/ship.sh(자동 리뷰 1차)
 mkdir -p "$WORK/elsewhere"; REL_B="$(python3 -c 'import os,sys; print(os.path.relpath(sys.argv[1], sys.argv[2]))' "$BODY_B" "$WORK/elsewhere")"
-FS="$(fake_script "$WORK/elsewhere" 60 "$REL_B/scripts/ship.sh")"; sleep 0.3
+FS="$(fake_script "$WORK/elsewhere" 60 "$REL_B/scripts/ship.sh")"; wait_args "$FS" "$REL_B/scripts/ship.sh"
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "본체 밖에서 ../<본체>/scripts/ship.sh → skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "ship.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3F" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
-FS="$(fake_script "$WORK" 60 scripts/ship.sh)"; sleep 0.3
+FS="$(fake_script "$WORK" 60 scripts/ship.sh)"; wait_args "$FS" scripts/ship.sh
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "본체 밖 폴더의 scripts/ship.sh 는 세지 않음 → 올림 · B 는 C3G" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
 kill "$FS" 2>/dev/null; wait "$FS" 2>/dev/null
 # 공백이 든 상대 경로 — bash "../my body/scripts/commit.sh"(본체로 가는 링크 이름에 공백 · 자동 리뷰 2차). 끝날 때까지 기다린 뒤 올린다
 C3G2="$(newcommit "test: 업데이트 3g2")"
 ln -s "$BODY_B" "$WORK/my body"
-FS="$(fake_script "$WORK/elsewhere" 8 "../my body/scripts/commit.sh")"; sleep 0.3
+FS="$(fake_script "$WORK/elsewhere" 8 "../my body/scripts/commit.sh")"; wait_args "$FS" "../my body/scripts/commit.sh"
 START=$(date +%s)
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "공백 든 상대 경로의 commit.sh 도 찾음 → 상한(1.5초) 안 끝나면 skipped(busy · commit) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "commit.sh 실행 중" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G" ]' "$R"
@@ -386,7 +389,7 @@ R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --
 check "그 실행이 끝날 때까지 기다린 뒤 올림 · B 는 C3G2" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ] && ! kill -0 "$FS" 2>/dev/null && [ $(( $(date +%s) - START )) -ge 2 ]' "$R"
 wait "$FS" 2>/dev/null; rm -f "$WORK/my body"
 C3H="$(newcommit "test: 업데이트 3h")"
-mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
+mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; wait_args "$H" "sleep 60"
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=1500 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "B 가 쥔 무거운 명령 잠금이 상한까지 안 풀림 → skipped(busy · heavy) · B 그대로" '[ "$(echo "$R" | field bodies.globex.reason)" = busy ] && echo "$R" | grep -q "\"kind\":\"heavy\"" && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3G2" ]' "$R"
 (sleep 2; kill "$H" 2>/dev/null) &
@@ -394,7 +397,7 @@ R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --
 check "잠금이 상한 안에 풀림 → 기다린 뒤 올림 · B 는 C3H" '[ "$(echo "$R" | field bodies.globex.status)" = updated ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
 wait "$H" 2>/dev/null; rm -rf "$ATHENA_HEAVY_LOCK"
 # 이미 대상 커밋인 본체는 바빠도 기다리지 않고 same — 앱이 건너뛴 본체만 다시 올리는 update 가 이 본체 때문에 막히지 않게
-mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; sleep 0.2
+mkdir -p "$ATHENA_HEAVY_LOCK"; sleep 60 & H=$!; echo "$H" > "$ATHENA_HEAVY_LOCK/pid"; echo "$BODY_B" > "$ATHENA_HEAVY_LOCK/root"; wait_args "$H" "sleep 60"
 START=$(date +%s)
 R="$(cd "$MAIN" && ATHENA_UPDATE_WAIT_MS=15000 node scripts/athena.mjs update --from "$(bundle)" --json --contract 4 2>/dev/null | tail -1)"
 check "이미 대상(C3H)인 B 는 잠금이 있어도 기다리지 않고 same" '[ "$(echo "$R" | field bodies.globex.status)" = same ] && [ $(( $(date +%s) - START )) -lt 10 ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3H" ]' "$R"
@@ -405,7 +408,7 @@ C3C="$C3H"   # 아래 데이터 형식 절은 B 의 마지막 커밋을 C3C 로 
 section "데이터 형식이 바뀌는 업데이트 — 모든 본체가 비었을 때만(D10)"
 sed -i.bak 's/export const DATA_FORMATS = \[1, 1\]/export const DATA_FORMATS = [2, 2]/' "$DEV/scripts/lib/config.mjs" && rm -f "$DEV/scripts/lib/config.mjs.bak"
 C4="$(newcommit "test: 데이터 형식 2")"
-CB="$(fake_claude "$BODY_B")"; sleep 0.5
+CB="$(fake_claude "$BODY_B")"; wait_args "$CB" setTimeout
 R="$(J "$MAIN" update --from "$(bundle)")"
 check "B 가 일하면 data-incompatible · 아무 본체도 안 옮김" '[ "$(echo "$R" | field error)" = data-incompatible ] && [ "$(git -C "$BODY_B" rev-parse HEAD)" = "$C3C" ]' "$R"
 kill "$CB" 2>/dev/null; wait "$CB" 2>/dev/null
