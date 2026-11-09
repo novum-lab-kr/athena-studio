@@ -7,12 +7,13 @@ import type { MouseEvent, ReactNode } from 'react'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
 import { bucketHistory, bucketStart, HISTORY_RANGES, metricRows } from '../../lib/server-status.mts'
-import type { ContainerRow, HistoryPoint, HistoryRange, MetricKey, ServerStatus, WebCheck } from '../../lib/server-status.mts'
+import type { ContainerRow, HistoryPoint, SarPoint, Pm2Row, PodRow, SupervisorRow, HistoryRange, MetricKey, ServerStatus, WebCheck } from '../../lib/server-status.mts'
 
 type Healthy = Extract<ServerStatus, { ok: true }>
 type Row = ServerEntry & { status: ServerStatus | null; web: WebCheck | null; at: number }
-type View = { rows: Row[]; history: Record<string, HistoryPoint[]>; reading: boolean; selected: string }
-const view = createStore<View>({ rows: [], history: {}, reading: false, selected: '' })
+// sar — 서버 sysstat 기록(이 맥 기록이 빈 칸만 채운다 · 없으면 빈 목록)
+type View = { rows: Row[]; history: Record<string, HistoryPoint[]>; sar: Record<string, SarPoint[]>; reading: boolean; selected: string }
+const view = createStore<View>({ rows: [], history: {}, sar: {}, reading: false, selected: '' })
 const rangeStore = createStore<{ range: HistoryRange }>({ range: '1h' })
 
 // 몇 분마다 — ssh 를 서버마다 한 번씩 여니 자주 돌리지 않는다
@@ -99,7 +100,7 @@ async function readNow(): Promise<void> {
   try {
     const reply = await studio.serverStatus()
     const found = new Map(reply.servers.map((server) => [server.name, server]))
-    view.set({ ...view.get(), reading: false, history: reply.history, rows: view.get().rows.map((row) => found.get(row.name) || row) })
+    view.set({ ...view.get(), reading: false, history: reply.history, sar: reply.sar ?? {}, rows: view.get().rows.map((row) => found.get(row.name) || row) })
   } catch {
     view.set({ ...view.get(), reading: false })
   } finally {
@@ -233,16 +234,16 @@ function ServerExplorer() {
       <div className="sx-body">
         <nav className="sx-list">
           {state.rows.map((row) => (
-            <ServerCard key={row.name} row={row} points={state.history[row.name] ?? []} picked={row.name === picked?.name} say={say} />
+            <ServerCard key={row.name} row={row} points={state.history[row.name] ?? []} fill={state.sar[row.name] ?? []} picked={row.name === picked?.name} say={say} />
           ))}
         </nav>
-        {picked && <ServerDetail row={picked} points={state.history[picked.name] ?? []} say={say} />}
+        {picked && <ServerDetail row={picked} points={state.history[picked.name] ?? []} fill={state.sar[picked.name] ?? []} say={say} />}
       </div>
     </div>
   )
 }
 
-function ServerCard({ row, points, picked, say }: { row: Row; points: HistoryPoint[]; picked: boolean; say: Say }) {
+function ServerCard({ row, points, fill, picked, say }: { row: Row; points: HistoryPoint[]; fill: SarPoint[]; picked: boolean; say: Say }) {
   const status = row.status
   const level = levelOf(row)
   return (
@@ -258,7 +259,7 @@ function ServerCard({ row, points, picked, say }: { row: Row; points: HistoryPoi
             {/* 웹 주소가 없는 서버는 응답 글을 빼고 추이선만 */}
             {row.web && <span className={`sx-health ${webLevel(row.web)}`}>{webText(row.web, say)}</span>}
             <span className="sx-gap" />
-            <Spark points={points} />
+            <Spark points={points} fill={fill} />
           </span>
           <span className="sx-card-line sx-meters">
             <Meter label="CPU" value={status.cpuPercent} />
@@ -325,7 +326,7 @@ function detailCards(row: Row, status: Healthy, say: Say): { key: string; title:
   return cards.filter((card) => card.rows.length > 0).map((card) => ({ key: card.key, title: card.title, body: card.rows }))
 }
 
-function ServerDetail({ row, points, say }: { row: Row; points: HistoryPoint[]; say: Say }) {
+function ServerDetail({ row, points, fill, say }: { row: Row; points: HistoryPoint[]; fill: SarPoint[]; say: Say }) {
   const status = row.status
   const warnings = warningsOf(row, say)
   const worst = warnings.some((warning) => warning.level === 'fail') ? 'fail' : 'warn'
@@ -339,7 +340,7 @@ function ServerDetail({ row, points, say }: { row: Row; points: HistoryPoint[]; 
           ))}
         </div>
       )}
-      <HistoryCharts row={row} points={points} say={say} />
+      <HistoryCharts row={row} points={points} fill={fill} say={say} />
       {status?.ok ? (
         <>
         <div className="sx-details wide">
@@ -358,7 +359,7 @@ function ServerDetail({ row, points, say }: { row: Row; points: HistoryPoint[]; 
           </Card>
         </div>
       )}
-      <p className="sx-foot">{say('server.readAt', { time: timeText(row.at) })} · {say('server.foot')}</p>
+      <p className="sx-foot">{say('server.readAt', { time: timeText(row.at) })} · {say(fill.length ? 'server.footSar' : 'server.foot')}</p>
     </section>
   )
 }
@@ -411,17 +412,22 @@ function groupProjects(containers: ContainerRow[]): Project[] {
     || (left.name ?? '').localeCompare(right.name ?? ''))
 }
 
-// 돌고 있는 앱 — 서버에 있는 것만 묶음으로(Docker 프로젝트 · 감지만 된 것 · 무거운 프로세스 · 그 밖 systemd 서비스)
-// pm2 는 감지만 — 허용 목록 안의 pm2 ls 출력 모양을 실제 서버로 확인하지 못했다(계획서 Blocked)
+// 돌고 있는 앱 — 서버에 있는 것만 묶음으로(Docker · Podman 프로젝트 · kubectl 파드 · supervisor · pm2 · 못 읽은 도구 · 무거운 프로세스 · 그 밖 systemd 서비스)
+// 비어 있는 표는 숨긴다(도구가 있어도 앱이 0개면)
 function MoreTables({ status, say }: { status: Healthy; say: Say }) {
   const services = status.services ?? []
   const failed = status.failed
   const hasServices = services.length > 0 || failed.length > 0
-  const more = { containers: status.containers, detected: status.detected, top: status.top }
-  if (!more.containers && !more.detected.length && !more.top.length && !hasServices) return null
+  const more = { containers: status.containers, podman: status.podman?.length ? status.podman : null, pods: status.pods ?? [], supervisor: status.supervisor ?? [], pm2: status.pm2 ?? [], detected: status.detected, top: status.top }
+  const apps = more.pods.length + more.supervisor.length + more.pm2.length
+  if (!more.containers && !more.podman && !apps && !more.detected.length && !more.top.length && !hasServices) return null
   return (
     <div className="sx-tables">
-      {more.containers && <DockerTable containers={more.containers} say={say} />}
+      {more.containers && <DockerTable containers={more.containers} title="server.box.projects" say={say} />}
+      {more.podman && <DockerTable containers={more.podman} title="server.box.podman" say={say} />}
+      {more.pods.length > 0 && <PodTable pods={more.pods} say={say} />}
+      {more.pm2.length > 0 && <Pm2Table apps={more.pm2} say={say} />}
+      {more.supervisor.length > 0 && <SupervisorTable programs={more.supervisor} say={say} />}
       {more.detected.length > 0 && (
         <div className="sx-span">
           <Card title={say('server.box.detected')}>
@@ -461,7 +467,87 @@ function MoreTables({ status, say }: { status: Healthy; say: Say }) {
   )
 }
 
-function DockerTable({ containers, say }: { containers: ContainerRow[]; say: Say }) {
+// 문제 있는 것 먼저(오류 · 일부 중지 · 중지됨 · 실행 중), 같으면 이름 순
+const appOrder = <T extends { name: string; state: ProjectState }>(rows: T[]) => [...rows].sort((left, right) => PROJECT_ORDER[left.state] - PROJECT_ORDER[right.state] || left.name.localeCompare(right.name))
+const stateCell = (row: { state: ProjectState; reason: string }, say: Say) => <StateIcon state={row.state} label={`${say(`server.project.${row.state}`)} · ${row.reason}`} />
+const restartText = (value: number | null) => (value === null ? '—' : String(value))
+
+// kubectl get pods -A — 이름 · 네임스페이스 · 상태 · 재시작
+function PodTable({ pods, say }: { pods: PodRow[]; say: Say }) {
+  return (
+    <div className="sx-span">
+      <Card title={say('server.box.pods', { count: pods.length })}>
+        <div className="sx-table-scroll">
+          <table className="sx-table">
+            <thead><tr><th>{say('server.col.name')}</th><th>{say('server.col.namespace')}</th><th>{say('server.col.state')}</th><th className="num">{say('server.col.restarts')}</th></tr></thead>
+            <tbody>
+              {appOrder(pods).map((pod) => (
+                <tr key={`${pod.namespace}/${pod.name}`}>
+                  <td title={pod.name}>{pod.name}</td>
+                  <td className="sx-cell-dim" title={pod.namespace}>{pod.namespace}</td>
+                  <td>{stateCell(pod, say)}</td>
+                  <td className="num">{restartText(pod.restarts)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// pm2 ls — 이름 · 상태 · CPU · 메모리 · 재시작
+function Pm2Table({ apps, say }: { apps: Pm2Row[]; say: Say }) {
+  return (
+    <div className="sx-span">
+      <Card title={say('server.box.pm2', { count: apps.length })}>
+        <div className="sx-table-scroll">
+          <table className="sx-table">
+            <thead><tr><th>{say('server.col.name')}</th><th>{say('server.col.state')}</th><th className="num">CPU</th><th className="num">{say('server.col.mem')}</th><th className="num">{say('server.col.restarts')}</th></tr></thead>
+            <tbody>
+              {appOrder(apps).map((app) => (
+                <tr key={app.name}>
+                  <td title={app.name}>{app.name}</td>
+                  <td>{stateCell(app, say)}</td>
+                  <td className={`num sx-cell-${meterLevel(app.cpu) || 'plain'}`}>{app.cpu === null ? '—' : `${app.cpu.toFixed(1)}%`}</td>
+                  <td className="num">{app.mem === null ? '—' : sizeText(app.mem)}</td>
+                  <td className="num">{restartText(app.restarts)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// supervisorctl status — 이름 · 상태
+function SupervisorTable({ programs, say }: { programs: SupervisorRow[]; say: Say }) {
+  return (
+    <div className="sx-span">
+      <Card title={say('server.box.supervisor', { count: programs.length })}>
+        <div className="sx-table-scroll">
+          <table className="sx-table">
+            <thead><tr><th>{say('server.col.name')}</th><th>{say('server.col.state')}</th></tr></thead>
+            <tbody>
+              {appOrder(programs).map((program) => (
+                <tr key={program.name}>
+                  <td title={program.name}>{program.name}</td>
+                  <td>{stateCell(program, say)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  )
+}
+
+// Docker · Podman 같은 꼴 — title 은 머리 문구 키
+function DockerTable({ containers, title, say }: { containers: ContainerRow[]; title: 'server.box.projects' | 'server.box.podman'; say: Say }) {
   const projects = groupProjects(containers)
   const [closed, setClosed] = useState<Set<string>>(() => new Set())
   const toggle = (key: string) => setClosed((before) => {
@@ -472,7 +558,7 @@ function DockerTable({ containers, say }: { containers: ContainerRow[]; say: Say
   })
   return (
       <div className="sx-span">
-        <Card title={say('server.box.projects', { count: projects.filter((project) => project.name !== null).length, containers: containers.length })}>
+        <Card title={say(title, { count: projects.filter((project) => project.name !== null).length, containers: containers.length })}>
           <div className="sx-table-scroll">
             <table className="sx-table sx-containers">
               <colgroup>
@@ -600,7 +686,10 @@ function gapBoxes(values: (number | null)[], width: number) {
     if (value === null && from < 0) from = index
     if ((value !== null || index === values.length - 1) && from >= 0) {
       const to = value === null ? index : index - 1
-      boxes.push({ x: Math.max(0, (from - 0.5) * step), w: (to - from + 1) * step })
+      // 칸 i 는 x = i·step 에서 앞뒤 반 칸씩 — 양 끝은 그래프 폭 안으로 자른다(자르지 않으면 overflow: visible 인 svg 가 카드 밖으로 넘친다)
+      const left = Math.max(0, (from - 0.5) * step)
+      const right = Math.min(width, (to + 0.5) * step)
+      boxes.push({ x: left, w: right - left })
       from = -1
     }
   })
@@ -608,10 +697,10 @@ function gapBoxes(values: (number | null)[], width: number) {
 }
 
 // 목록 카드의 1시간 추이 — CPU · MEM 두 선(색은 style.css --metric-*)
-function Spark({ points }: { points: HistoryPoint[] }) {
+function Spark({ points, fill }: { points: HistoryPoint[]; fill: SarPoint[] }) {
   const width = 64
   const height = 16
-  const series = bucketHistory(points, '1h', Date.now())
+  const series = bucketHistory(points, '1h', Date.now(), fill)
   return (
     <svg className="sv-spark" width={width} height={height} viewBox={`0 0 ${width} ${height}`} aria-hidden="true">
       <path className="sv-line sv-c-mem" d={linePath(series.mem, width, height, 100)} />
@@ -722,10 +811,10 @@ function InfoChips({ status, at, say }: { status: Healthy; at: number; say: Say 
   )
 }
 
-function HistoryCharts({ row, points, say }: { row: Row; points: HistoryPoint[]; say: Say }) {
+function HistoryCharts({ row, points, fill, say }: { row: Row; points: HistoryPoint[]; fill: SarPoint[]; say: Say }) {
   const { range } = useStore(rangeStore)
   const now = Date.now()
-  const series = bucketHistory(points, range, now)
+  const series = bucketHistory(points, range, now, fill)
   const { rx, tx, load: loads } = series
   const status = row.status
   const failing = status !== null && !status.ok
@@ -781,7 +870,7 @@ function HistoryCharts({ row, points, say }: { row: Row; points: HistoryPoint[];
           </span>
         )}
         <span className="sx-gap" />
-        <span className="sx-dim">{say('server.history')}</span>
+        <span className="sx-dim">{say(fill.length ? 'server.historySar' : 'server.history')}</span>
         <span className="sx-ranges">
           {RANGE_KEYS.map((key) => (
             <button key={key} className={`sv-range ${key === range ? 'active' : ''}`} onClick={() => rangeStore.set({ range: key })}>

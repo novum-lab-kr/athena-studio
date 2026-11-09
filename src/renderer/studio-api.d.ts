@@ -110,7 +110,7 @@ declare global {
     | { ok: false; step: RegisterStep; problems?: HostProblems; lock?: HostLock; text?: string; reason?: import('../lib/server-status.mts').ServerFailReason; hostKey?: HostKeyView; written?: boolean; error?: string }
   type KeyUploadReply = { ok: true; pane: string } | { ok: false; step?: RegisterStep; problems?: HostProblems; error?: string }
   type TrustHostKeyReply = { ok: true; created: boolean } | { ok: false; error?: 'changed' | 'failed' | 'untested' | 'mismatch' | 'usage'; problems?: HostProblems }
-  type ServerStatusReply = { servers: import('../lib/server-status.mts').ServerReading[]; history: Record<string, import('../lib/server-status.mts').HistoryPoint[]> }
+  type ServerStatusReply = { servers: import('../lib/server-status.mts').ServerReading[]; history: Record<string, import('../lib/server-status.mts').HistoryPoint[]>; sar: Record<string, import('../lib/server-status.mts').SarPoint[]> }
   // 레포 에이전트 부르기(src/main/pack-repos.mts callInfo · callStart — 브랜치 정보는 src/lib/pack.mts parseCallInfo)
   type CallCandidate = { branch: string; place: 'both' | 'local' | 'remote'; date: string; subject: string; noCommits: boolean; worktree: string | null }
   type CallMain = { status: string; dirty: number; branch: string; upstream: string | null; ahead: number; behind: number; gone?: boolean }

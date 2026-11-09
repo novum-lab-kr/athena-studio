@@ -178,8 +178,8 @@ descendants() {
 # 모르면 개발 서버가 아니다(자리를 계속 쥔다 — 예전 그대로)
 is_dev_server() {
   local first word has_dev=0 has_next=0 has_vite=0 has_other=0
-  first="$(basename "$1")"
-  if [ "$first" = node ] && [ "$#" -ge 3 ] && [ "$(basename "$2")" = dev-app.js ] && [ "$3" = start ]; then return 0; fi
+  first="$(basename -- "$1")"
+  if [ "$first" = node ] && [ "$#" -ge 3 ] && [ "$(basename -- "$2")" = dev-app.js ] && [ "$3" = start ]; then return 0; fi
   if [ "$first" = storybook ] && [ "${2:-}" = dev ]; then return 0; fi
   case "$first" in next|npm|pnpm|yarn|bun|npx|pnpx|vite) ;; *) return 1 ;; esac
   for word in "$@"; do

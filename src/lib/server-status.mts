@@ -1,6 +1,7 @@
 // 서버 탐색기 — 코어 `scripts/ssh-run.sh <서버> --status` 출력 읽기 · 실패 이유 고르기 · 팩 servers[] 읽기 · 응답 확인 결과 · 시간 기록(7일)
-// 출력은 "==이름" 줄로 칸을 나눈다(load · cpu · stat · mem · disk · disks · net · os · kernel · failed · services · docker · stats · top · detect · uptime · errors · updates · end
-// — ssh-run.sh STATUS_COMMAND · 옛 코어는 stat · net · os · kernel · services · stats · top · detect 대신 running(수) 만 있다).
+// 출력은 "==이름" 줄로 칸을 나눈다(load · cpu · stat · stat2 · mem · disk · disks · net · os · kernel · failed · services · docker · stats · podman · podstats · pods ·
+// supervisor · pm2 · top · detect · uptime · errors · updates · end — ssh-run.sh STATUS_COMMAND · 옛 코어는 stat · net · os · kernel · services · stats · top · detect
+// 대신 running(수) 만 있고, stat2 · podman · podstats · pods · supervisor · pm2 는 그 뒤에 더한 칸이다).
 // 원문(ssh 오류 글)은 화면에 올리지 않는다 — 주소 · 사용자 이름이 섞일 수 있다. 이유 이름만 고른다
 
 export type ServerEntry = { name: string; host: string }
@@ -11,13 +12,21 @@ export type DiskUse = { mount: string; percent: number }
 export type ContainerStats = { cpu: number; memUsed: number; memLimit: number; memPercent: number; rx: number; tx: number; read: number; write: number }
 // docker ps -a 한 줄 — project 는 compose 라벨(없으면 따로 띄운 컨테이너) · state 는 up / down(주의) / stopped(일부러 끈 것) · 꺼진 컨테이너는 stats 없음
 export type ContainerRow = { name: string; project: string | null; image: string; state: 'up' | 'down' | 'stopped'; stats: ContainerStats | null }
+// 앱 하나의 상태 — 컨테이너 묶음과 같은 네 갈래(실행 중 · 중지됨 · 오류 · 일부 중지 — 시작 · 멈추는 중 · 준비가 덜 됨)
+export type RunState = 'running' | 'stopped' | 'error' | 'partial'
+// kubectl get pods -A 한 줄 — reason 은 STATUS 칸(Running · CrashLoopBackOff · Init:0/1 …) · restarts 는 재시작 수
+export type PodRow = { name: string; namespace: string; state: RunState; reason: string; restarts: number | null }
+// supervisorctl status 한 줄 — 이름(group:name) · 상태(설명 칸은 읽지 않는다 — 종료 이유 글이 섞인다)
+export type SupervisorRow = { name: string; state: RunState; reason: string }
+// pm2 ls 표 한 줄 — cpu %(없으면 null) · mem 바이트(없으면 null) · restarts(↺)
+export type Pm2Row = { name: string; state: RunState; reason: string; cpu: number | null; mem: number | null; restarts: number | null }
 // ps 의 프로그램 이름(comm — 명령줄 인자는 비밀값이 섞일 수 있어 읽지 않는다) · CPU % · 메모리 %
 export type ProcessUse = { name: string; cpu: number; mem: number }
 // 누적 값 — /proc/stat 첫 줄(바쁜 · 전체 tick) · /proc/net/dev(가상 장치 뺀 수신 · 송신 바이트). 앞 읽기와의 차이로 CPU % · 트래픽을 낸다(withRates)
 export type Counters = { busy: number; total: number; rx: number | null; tx: number | null }
 export type ServerHealth = {
   ok: true
-  cpuPercent: number | null // 앞 읽기(몇 분 전)부터 지금까지의 실제 CPU 사용률(/proc/stat) — 앞 읽기가 없으면 null
+  cpuPercent: number | null // 1초 사이 두 번 읽은 실제 CPU 사용률(/proc/stat) · 옛 코어는 앞 읽기(몇 분 전)부터 — 앞 읽기가 없으면 null
   load1: number | null
   load5: number | null
   load15: number | null
@@ -42,8 +51,12 @@ export type ServerHealth = {
   services: string[] | null // 도는 systemd 서비스 이름(.service 뗌 · 설명 칸은 읽지 않는다) — 옛 코어 · systemd 없으면 null
   docker: DockerSummary | null // docker 가 없거나 못 읽으면 null
   containers: ContainerRow[] | null // docker 가 없으면 null
+  podman: ContainerRow[] | null // podman 이 없거나 못 읽으면 null(컨테이너 0개면 [])
+  pods: PodRow[] | null // kubectl 이 없거나 못 읽으면 null
+  supervisor: SupervisorRow[] | null // supervisorctl 이 없거나 못 읽으면 null
+  pm2: Pm2Row[] | null // pm2 가 없거나 데몬이 안 떠 있거나 못 읽으면 null
   top: ProcessUse[] // CPU 순 5개
-  detected: string[] // 있지만 허용 목록이 아직 못 읽는 실행 도구(pm2 · podman · kubectl · supervisorctl — command -v)
+  detected: string[] // 있지만 읽지 못한 실행 도구(실행 실패 · 권한 없음 · pm2 데몬 없음 — command -v 로는 있다)
 }
 // key-needed — 비밀번호 없이 못 들어감 · host-key — 지문 확인 필요 · unreachable — 닿지 않음 · timeout — 시간 초과 · core-old — 본체에 상태 읽기가 없음 · failed — 그 밖
 // host-key-changed — 서버 추가 팝업만(known_hosts 에 그 서버의 다른 키가 있음 · lib/known-hosts.mts)
@@ -265,7 +278,8 @@ const STOPPED_CODES = new Set([0, 143])
 // 줄 = "이름|State|Status"(Status 예: "Exited (143) 2 months ago") · 옛 형식 "이름|State" 도 읽는다(종료 코드를 모르면 주의)
 function containerStopped(state: string, status: string | undefined): boolean {
   if (state === 'created' || state === 'paused') return true
-  if (state !== 'exited') return false
+  // podman 의 stopped 도 Status 가 "Exited (코드) … ago" 다(cmd/podman/containers/ps.go Status())
+  if (state !== 'exited' && state !== 'stopped') return false
   const code = status && /^Exited \((\d+)\)/.exec(status)
   return Boolean(code) && STOPPED_CODES.has(Number(code![1]))
 }
@@ -277,12 +291,104 @@ function containerRows(lines: string[] | undefined, stats: Map<string, Container
   for (const line of lines) {
     const parts = line.split('|')
     const [name, state, statusText, image, project] = parts
-    if (parts.length < 2 || parts.length > 5 || !name || !state) continue
+    if (parts.length < 2 || parts.length > 5 || !name || !state) continue // ".ok" 줄(읽기 성공 표시)도 여기서 빠진다
     let kind: ContainerRow['state'] = 'up'
     if (state !== 'running') kind = containerStopped(state, statusText) ? 'stopped' : 'down'
     rows.push({ name, project: project || null, image: image || '', state: kind, stats: kind === 'up' ? stats.get(name) ?? null : null })
   }
   return rows.length ? rows : null
+}
+
+// 읽기 성공 표시 — STATUS_COMMAND 가 명령이 0 으로 끝나면 칸 끝에 ".ok" 한 줄
+const READ_OK = '.ok'
+const readOk = (lines: string[] | undefined) => Boolean(lines?.includes(READ_OK))
+
+// podman ps -a — docker 와 같은 꼴. 컨테이너가 없으면 []
+function podmanRows(lines: string[] | undefined, stats: Map<string, ContainerStats>): ContainerRow[] | null {
+  if (!readOk(lines)) return null
+  return containerRows(lines, stats) ?? []
+}
+
+// kubectl get pods -A --no-headers — "NAMESPACE NAME READY STATUS RESTARTS AGE"(RESTARTS 는 "3 (5m ago)" 처럼 빈칸이 들 수 있다 · 처음 칸들만 본다)
+// 준비 다 됨 + Running → 실행 중 · Completed → 중지됨(끝난 작업) · 준비 덜 됨 · 시작 · 끝내는 중 → 일부 중지 · 그 밖(CrashLoopBackOff · Error · ImagePullBackOff …) → 오류
+const POD_PENDING = /^(Pending|ContainerCreating|PodInitializing|Terminating|NotReady|Init:)/
+function podState(ready: string, reason: string): RunState {
+  const [readyCount, wanted] = ready.split('/').map(Number)
+  if (reason === 'Completed') return 'stopped'
+  if (reason === 'Running') return readyCount === wanted ? 'running' : 'partial'
+  if (POD_PENDING.test(reason) && !/(BackOff|Err|Error|Crash)/.test(reason)) return 'partial'
+  return 'error'
+}
+function podRows(lines: string[] | undefined): PodRow[] | null {
+  if (!readOk(lines)) return null
+  const rows: PodRow[] = []
+  for (const line of lines!) {
+    const [namespace, name, ready, reason, restarts] = line.split(/\s+/)
+    if (!namespace || !name || !ready || !reason || !/^\d+\/\d+$/.test(ready)) continue
+    rows.push({ name, namespace, state: podState(ready, reason), reason, restarts: toNumber(restarts) })
+  }
+  return rows
+}
+
+// supervisorctl status — "이름  상태  설명"(supervisor/supervisorctl.py _show_statuses). 인증 실패 · 연결 실패 글도 stdout 이라 상태 낱말이 맞는 줄만
+const SUPERVISOR_STATES: Record<string, RunState> = { RUNNING: 'running', STOPPED: 'stopped', STARTING: 'partial', STOPPING: 'partial', EXITED: 'error', BACKOFF: 'error', FATAL: 'error', UNKNOWN: 'error' }
+function supervisorRows(lines: string[] | undefined): SupervisorRow[] | null {
+  const rows: SupervisorRow[] = []
+  for (const line of lines ?? []) {
+    const match = /^(\S+)\s+([A-Z]+)(\s|$)/.exec(line)
+    const state = match && SUPERVISOR_STATES[match[2]!]
+    if (match && state) rows.push({ name: match[1]!, state, reason: match[2]! })
+  }
+  return rows.length ? rows : null
+}
+
+// pm2 ls 표(lib/API/UX/pm2-ls.js · cli-tableau) — "│" 로 나눈 첫 표만(뒤의 Module 표는 안 읽는다). 칸은 머리줄 이름으로 찾는다(판마다 칸 수가 다르다)
+// mem 은 1024 단위 "45.2mb"(bytesToSize) · cpu 는 "0%" · 재시작은 "↺" 칸 · 상태는 online · stopped · errored · launching · stopping · restart …
+const ANSI = /\u001b\[[0-9;]*m/g
+const PM2_STATES: Record<string, RunState> = { online: 'running', stopped: 'stopped', launching: 'partial', stopping: 'partial', restart: 'partial' }
+const PM2_UNITS: Record<string, number> = { b: 1, kb: 1024, mb: 1024 ** 2, gb: 1024 ** 3, tb: 1024 ** 4 }
+function pm2Bytes(text: string | undefined): number | null {
+  const match = text && /^([\d.]+)\s*([a-z]+)$/i.exec(text.trim())
+  const unit = match && PM2_UNITS[match[2]!.toLowerCase()]
+  return match && unit && Number.isFinite(Number(match[1])) ? Math.round(Number(match[1]) * unit) : null
+}
+function pm2Rows(lines: string[] | undefined): Pm2Row[] | null {
+  if (!readOk(lines)) return null
+  const cellsOf = (line: string) => line.replace(ANSI, '').split('│').slice(1, -1).map((cell) => cell.trim())
+  let head: string[] | null = null
+  const rows: Pm2Row[] = []
+  for (const line of lines!) {
+    const clean = line.replace(ANSI, '')
+    if (head && clean.startsWith('└')) break
+    if (!clean.startsWith('│')) continue
+    const cells = cellsOf(clean)
+    if (!head) {
+      if (cells.includes('name') && cells.includes('status')) head = cells
+      continue
+    }
+    const value = (names: string[]) => {
+      const index = head!.findIndex((cell) => names.includes(cell))
+      return index >= 0 ? cells[index] : undefined
+    }
+    const name = value(['name'])
+    const status = value(['status'])
+    if (!name || !status) continue
+    rows.push({ name, state: PM2_STATES[status] ?? 'error', reason: status, cpu: percentNumber(value(['cpu'])), mem: pm2Bytes(value(['mem', 'memory'])), restarts: toNumber(value(['↺'])) })
+  }
+  return head ? rows : null
+}
+
+// 있지만 못 읽은 도구 — 옛 코어(칸이 없음)는 감지된 것 모두
+function unreadable(found: Map<string, string[]>, read: Record<string, boolean>): string[] {
+  return (found.get('detect') || []).filter((name) => DETECTABLE.has(name) && !read[name])
+}
+
+// 1초 사이 두 /proc/stat — 차이로 CPU %(둘 중 하나라도 없으면 null)
+function instantCpu(first: { busy: number; total: number } | null, second: { busy: number; total: number } | null): number | null {
+  if (!first || !second) return null
+  const spent = second.total - first.total
+  const busy = second.busy - first.busy
+  return spent > 0 && busy >= 0 ? percent(busy, spent) : null
 }
 
 function dockerSummary(rows: ContainerRow[] | null): DockerSummary | null {
@@ -303,6 +409,10 @@ export function parseStatus(output: string): ServerHealth | null {
   const net = netBytes(found.get('net') || [])
   const totals = memTotals(found.get('mem') || [])
   const containers = containerRows(found.get('docker'), containerStats(found.get('stats') || []))
+  const podman = podmanRows(found.get('podman'), containerStats(found.get('podstats') || []))
+  const pods = podRows(found.get('pods'))
+  const supervisor = supervisorRows(found.get('supervisor'))
+  const pm2 = pm2Rows(found.get('pm2'))
   const serviceNames = found.has('services') ? (found.get('services') || []).map((line) => line.replace(/\.service$/, '')).filter(Boolean) : null
   const osLine = (found.get('os') || [])[0]
   const os = osLine ? osLine.replace(/^PRETTY_NAME=/, '').replace(/^"|"$/g, '').trim() || null : null
@@ -315,7 +425,7 @@ export function parseStatus(output: string): ServerHealth | null {
     load5: toNumber(loads[1]),
     load15: toNumber(loads[2]),
     cpus,
-    cpuPercent: null,
+    cpuPercent: instantCpu(ticks, cpuTicks((found.get('stat2') || [])[0])),
     counters: ticks ? { ...ticks, rx: net?.rx ?? null, tx: net?.tx ?? null } : null,
     rxBytes: null,
     txBytes: null,
@@ -335,7 +445,11 @@ export function parseStatus(output: string): ServerHealth | null {
     docker: dockerSummary(containers),
     containers,
     top: topProcesses(found.get('top') || []),
-    detected: (found.get('detect') || []).filter((name) => DETECTABLE.has(name)),
+    podman,
+    pods,
+    supervisor,
+    pm2,
+    detected: unreadable(found, { podman: podman !== null, kubectl: pods !== null, supervisorctl: supervisor !== null, pm2: pm2 !== null }),
     errors: toNumber((found.get('errors') || [])[0]),
     updates: toNumber((found.get('updates') || [])[0]),
   }
@@ -349,7 +463,8 @@ export function withRates(health: ServerHealth, at: number, previous: { t: numbe
   const before = previous.counters
   const spent = now.total - before.total
   const busy = now.busy - before.busy
-  const cpuPercent = spent > 0 && busy >= 0 ? percent(busy, spent) : null
+  // 1초 사이 두 번 읽은 값이 있으면 그것(지금 값) — 앞 읽기 차이는 옛 코어 대비
+  const cpuPercent = health.cpuPercent ?? (spent > 0 && busy >= 0 ? percent(busy, spent) : null)
   const diff = (current: number | null, past: number | null) => (current !== null && past !== null && current >= past ? current - past : null)
   return { ...health, cpuPercent, rxBytes: diff(now.rx, before.rx), txBytes: diff(now.tx, before.tx) }
 }
@@ -448,7 +563,8 @@ export type HistoryMetric = 'cpu' | 'mem' | 'disk' | 'ms' | 'load' | 'rx' | 'tx'
 const SUMMED: ReadonlySet<HistoryMetric> = new Set<HistoryMetric>(['rx', 'tx'])
 // 칸 i 의 시작 시각 — 그래프에 마우스를 올렸을 때 보여 준다
 export const bucketStart = (range: HistoryRange, now: number, index: number) => now - HISTORY_RANGES[range].span + index * (HISTORY_RANGES[range].span / HISTORY_RANGES[range].buckets)
-export function bucketHistory(points: HistoryPoint[], range: HistoryRange, now: number): Record<HistoryMetric, (number | null)[]> {
+// fill — 서버 sar 기록(parseSar) · 이 맥 기록이 빈 칸만 채운다
+export function bucketHistory(points: HistoryPoint[], range: HistoryRange, now: number, fill: SarPoint[] = []): Record<HistoryMetric, (number | null)[]> {
   const { span, buckets } = HISTORY_RANGES[range]
   const step = span / buckets
   const start = now - span
@@ -468,7 +584,156 @@ export function bucketHistory(points: HistoryPoint[], range: HistoryRange, now: 
     if (!cell.count) return null
     return SUMMED.has(metric) ? cell.total : Math.round((cell.total / cell.count) * 100) / 100
   }
-  return Object.fromEntries(metrics.map((metric) => [metric, sums[metric].map((cell) => valueOf(metric, cell))])) as Record<HistoryMetric, (number | null)[]>
+  const own = Object.fromEntries(metrics.map((metric) => [metric, sums[metric].map((cell) => valueOf(metric, cell))])) as Record<HistoryMetric, (number | null)[]>
+  if (!fill.length) return own
+  const fromSar = bucketSar(fill, range, now)
+  for (const metric of SAR_METRICS) own[metric] = own[metric].map((value, index) => value ?? fromSar[metric][index]!)
+  return own
+}
+
+// ── 서버 sar 기록(ssh-run.sh --history) — sysstat 하루 파일을 sar 로 읽은 표. 이 맥 기록이 빈 구간(앱이 꺼져 있던 때)을 채운다.
+// 모양(sysstat 소스 master — activity.c hdr_line · common.c print_gal_header · sa_common.c set_record_timestamp_string · man sar):
+//   "==tz" 다음 줄 서버 date +%z · "==sa" 마다 파일 하나: 머리 "Linux <판> (<이름>) \t<YYYY-MM-DD> \t_<arch>_\t(<n> CPU)"(S_TIME_FORMAT=ISO)
+//   그 뒤 활동마다 머리 줄 "HH:MM:SS  CPU %user … %idle" · "… runq-sz plist-sz ldavg-1 …" · "… kbmemfree kbavail kbmemused %memused …" · "… IFACE rxpck/s txpck/s rxkB/s txkB/s …"
+//   행 "HH:MM:SS <값…>" · "Average:" 줄 · "HH:MM:SS  LINUX RESTART (n CPU)" 줄. 시각은 sar 를 돌린 쪽 지역 시간(man -t) · rxkB/s 는 초당 KiB(pr_stats.c — 초당 바이트 ÷ 1024 · 1024 를 곱해 바이트로)
+//   %memused = (전체 − kbavail) ÷ 전체(pr_stats.c — 이 맥 기록 mem 과 같은 뜻) · 숫자는 LC_NUMERIC 를 따라 , 일 수 있다
+// 점 하나 = 그 행이 덮는 구간(앞 행부터 · span ms) — rx · tx 는 그 구간 동안 오간 바이트(가상 장치 VIRTUAL_NET 빼고 합)
+export type SarPoint = { t: number; span: number; cpu: number | null; load: number | null; mem: number | null; rx: number | null; tx: number | null }
+const SAR_METRICS = ['cpu', 'load', 'mem', 'rx', 'tx'] as const
+const SAR_SPAN_MAX = 2 * 60 * 60 * 1000
+const SAR_TIME = /^(\d\d):(\d\d):(\d\d)$/
+
+const sarNumber = (text: string | undefined) => {
+  const value = Number((text ?? '').replace(',', '.'))
+  return text !== undefined && Number.isFinite(value) ? value : null
+}
+
+export function parseSar(output: string, now: number): SarPoint[] {
+  const lines = output.split('\n')
+  const tzLine = lines[lines.indexOf('==tz') + 1] ?? ''
+  const tz = /^([+-])(\d\d)(\d\d)$/.exec(tzLine.trim())
+  if (!lines.includes('==tz') || !tz) return []
+  const offset = (tz[1] === '-' ? -1 : 1) * (Number(tz[2]) * 60 + Number(tz[3])) * 60_000
+  type Row = { t: number; cpu: number | null; load: number | null; mem: number | null; rx: number; tx: number; net: boolean }
+  const rows = new Map<number, Row>()
+  // 활동마다 행 시각 목록(구간 계산) — 파일 · 활동 · 다시 켜짐마다 끊는다
+  const runs: number[][] = []
+  let day: [number, number, number] | null = null
+  let columns: string[] = []
+  let run: number[] = []
+  const endRun = () => {
+    if (run.length) runs.push(run)
+    run = []
+  }
+  const rowAt = (at: number) => {
+    let row = rows.get(at)
+    if (!row) rows.set(at, (row = { t: at, cpu: null, load: null, mem: null, rx: 0, tx: 0, net: false }))
+    return row
+  }
+  for (const raw of lines) {
+    const line = raw.trim()
+    if (line === '==sa' || line === '==end') {
+      endRun()
+      day = null
+      columns = []
+      continue
+    }
+    const date = /\t(\d{4})-(\d\d)-(\d\d)\s/.exec(raw)
+    if (/^Linux\s/.test(line) && date) {
+      day = [Number(date[1]), Number(date[2]), Number(date[3])]
+      continue
+    }
+    const words = line.split(/\s+/)
+    const time = SAR_TIME.exec(words[0] ?? '')
+    if (!day || !time) {
+      if (!line) endRun()
+      continue
+    }
+    if (words[1] === 'LINUX' && words[2] === 'RESTART') {
+      endRun()
+      continue
+    }
+    // 머리 줄 — 값이 아니라 칸 이름(CPU · runq-sz · kbmemfree · IFACE)
+    if (['CPU', 'runq-sz', 'kbmemfree', 'IFACE'].includes(words[1] ?? '')) {
+      endRun()
+      columns = words
+      continue
+    }
+    if (!columns.length || words.length !== columns.length) continue
+    const at = Date.UTC(day[0], day[1] - 1, day[2], Number(time[1]), Number(time[2]), Number(time[3])) - offset
+    if (at < now - HISTORY_MS || at > now + 60_000) continue
+    const value = (name: string) => sarNumber(words[columns.indexOf(name)])
+    const row = rowAt(at)
+    if (columns[1] === 'CPU') {
+      const idle = value('%idle')
+      if (words[1] === 'all' && idle !== null) row.cpu = Math.round((100 - idle) * 100) / 100
+    } else if (columns[1] === 'runq-sz') {
+      row.load = value('ldavg-1')
+    } else if (columns[1] === 'kbmemfree') {
+      row.mem = value('%memused')
+    } else {
+      const rx = value('rxkB/s')
+      const tx = value('txkB/s')
+      // 같은 시각 행이 장치마다 — 구간 목록에는 첫 장치에서 한 번만
+      if (run[run.length - 1] !== at) run.push(at)
+      if (VIRTUAL_NET.test(words[1] ?? '') || rx === null || tx === null) continue
+      row.rx += rx
+      row.tx += tx
+      row.net = true
+      continue
+    }
+    run.push(at)
+  }
+  endRun()
+  // 행이 덮는 구간 — 같은 흐름의 앞 행부터(첫 행은 다음 행까지 간격) · 2시간이 넘으면 sar 가 멈췄던 것이라 버린다
+  const spans = new Map<number, number>()
+  for (const times of runs) {
+    times.forEach((at, index) => {
+      const before = index > 0 ? at - times[index - 1]! : null
+      const after = index + 1 < times.length ? times[index + 1]! - at : null
+      const span = before ?? after
+      if (span !== null && span > 0 && span <= SAR_SPAN_MAX) spans.set(at, Math.max(spans.get(at) ?? 0, span))
+    })
+  }
+  const points: SarPoint[] = []
+  for (const row of rows.values()) {
+    const span = spans.get(row.t)
+    if (!span) continue
+    const bytes = (perSecond: number) => (row.net ? Math.round(perSecond * 1024 * (span / 1000)) : null)
+    points.push({ t: row.t, span, cpu: row.cpu, load: row.load, mem: row.mem, rx: bytes(row.rx), tx: bytes(row.tx) })
+  }
+  return points.sort((left, right) => left.t - right.t)
+}
+
+// sar 점 → 그래프 칸 — 점의 구간 [t − span, t] 이 칸과 겹친 만큼(평균 값은 겹친 길이로 가중 평균 · rx · tx 는 바이트를 겹친 비율로 나눔)
+function bucketSar(points: SarPoint[], range: HistoryRange, now: number): Record<(typeof SAR_METRICS)[number], (number | null)[]> {
+  const { span, buckets } = HISTORY_RANGES[range]
+  const step = span / buckets
+  const start = now - span
+  const cells = Object.fromEntries(SAR_METRICS.map((metric) => [metric, Array.from({ length: buckets }, () => ({ total: 0, weight: 0 }))])) as Record<(typeof SAR_METRICS)[number], { total: number; weight: number }[]>
+  for (const point of points) {
+    const from = Math.max(start, point.t - point.span)
+    const to = Math.min(now, point.t)
+    if (to <= from) continue
+    const first = Math.max(0, Math.floor((from - start) / step))
+    const last = Math.min(buckets - 1, Math.floor((to - start - 1) / step))
+    for (let index = first; index <= last; index += 1) {
+      const overlap = Math.min(to, start + (index + 1) * step) - Math.max(from, start + index * step)
+      if (overlap <= 0) continue
+      for (const metric of SAR_METRICS) {
+        const value = point[metric]
+        if (value === null) continue
+        const cell = cells[metric][index]!
+        if (SUMMED.has(metric)) cell.total += value * (overlap / point.span)
+        else cell.total += value * overlap
+        cell.weight += overlap
+      }
+    }
+  }
+  return Object.fromEntries(SAR_METRICS.map((metric) => [metric, cells[metric].map((cell) => {
+    if (!cell.weight) return null
+    return SUMMED.has(metric) ? Math.round(cell.total) : Math.round((cell.total / cell.weight) * 100) / 100
+  })])) as Record<(typeof SAR_METRICS)[number], (number | null)[]>
 }
 
 // 응답 확인 오류 코드(node) → 이유 이름 — 원문(주소가 섞인다)은 넘기지 않는다

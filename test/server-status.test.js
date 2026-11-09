@@ -315,3 +315,222 @@ test('위쪽 카드 줄 — 1열 서버 자원 · 2열 네트워크, 빠지면 �
   assert.deepEqual(spans(['cpu', 'load', 'mem', 'disk', 'rx', 'tx']), [['cpu:3', 'load:3', 'mem:3', 'disk:3'], ['rx:6', 'tx:6']])
   assert.deepEqual(spans(['cpu', 'mem']), [['cpu:6', 'mem:6']])
 })
+
+// ── 더한 칸(2026-11-09) — 실제 서버로는 확인하지 못했다. 출력 모양은 아래 원문(소스 · 공식 문서)대로 손으로 만든 것
+// podman ps --format 의 .Names · .State · .Status · .Image · .Label — containers/podman docs/source/markdown/podman-ps.1.md.in
+//   .State 는 libpod/define/containerstate.go 의 이름(created · initialized · running · stopped · paused · exited · removing · stopping · unknown)
+//   .Status 는 cmd/podman/containers/ps.go Status() — 실행 중 "Up <시간>" · exited 와 stopped 는 "Exited (코드) <시간> ago"
+//   compose 라벨은 podman-compose 가 붙인다(podman_compose.py 의 com.docker.compose.project)
+// podman stats --format 의 .Name · .CPUPerc · .MemUsage · .MemPerc · .NetIO · .BlockIO — podman-stats.1.md.in · 퍼센트 "%.2f%%" · 크기는 go-units HumanSize(1000 단위)
+// kubectl get pods -A --no-headers — kubernetes pkg/printers/internalversion/printers.go(NAME · READY "x/y" · STATUS 이유 · RESTARTS "N" 또는 "N (5m ago)" · AGE) · -A 면 NAMESPACE 가 맨 앞
+// supervisorctl status — supervisor/supervisorctl.py _show_statuses('%(namespec)-Ns%(state)-10s%(desc)s') · 상태 이름 supervisor/states.py · 오류 글도 stdout
+// pm2 ls — pm2 lib/API/UX/pm2-ls.js(머리 id · name · namespace · version · mode · pid · uptime · ↺ · status · cpu · mem · user · watching · 앱 표 다음 "Module(s)" 표)
+//   mem 은 lib/API/UX/helpers.js bytesToSize(1024 단위 · "45.2mb ") · cpu 는 "N%" · 표 테두리는 cli-tableau(│ ─ ┌ ┐ └ ┘)
+const PM2_LS = [
+  '┌────┬──────────┬─────────────┬─────────┬─────────┬──────────┬────────┬──────┬───────────┬──────────┬──────────┬──────────┬──────────┐',
+  '│ id │ name     │ namespace   │ version │ mode    │ pid      │ uptime │ ↺    │ status    │ cpu      │ mem      │ user     │ watching │',
+  '├────┼──────────┼─────────────┼─────────┼─────────┼──────────┼────────┼──────┼───────────┼──────────┼──────────┼──────────┼──────────┤',
+  '│ 0  │ api      │ default     │ 1.0.0   │ fork    │ 1234     │ 2D     │ 3    │ \u001b[32monline\u001b[39m    │ 0.5%     │ 45.2mb   │ deploy   │ disabled │',
+  '│ 1  │ worker   │ default     │ 1.0.0   │ cluster │ 0        │ 0      │ 15   │ errored   │ 0%       │ 0b       │ deploy   │ disabled │',
+  '│ 2  │ cron     │ default     │ N/A     │ fork    │ 0        │ 0      │ 0    │ stopped   │ N/A      │ N/A      │ deploy   │ disabled │',
+  '└────┴──────────┴─────────────┴─────────┴─────────┴──────────┴────────┴──────┴───────────┴──────────┴──────────┴──────────┴──────────┘',
+  'Module',
+  '┌────┬──────────────┬─────────┬──────────┬──────────┬──────┬──────────┬──────────┬──────────┐',
+  '│ id │ module       │ version │ pid      │ status   │ ↺    │ cpu      │ mem      │ user     │',
+  '├────┼──────────────┼─────────┼──────────┼──────────┼──────┼──────────┼──────────┼──────────┤',
+  '│ 3  │ pm2-logrotate│ 2.7.0   │ 99       │ online   │ 0    │ 0.1%     │ 60.0mb   │ deploy   │',
+  '└────┴──────────────┴─────────┴──────────┴──────────┴──────┴──────────┴──────────┴──────────┘',
+]
+const MORE = [
+  '==load', '0.50 0.40 0.30 1/200 999',
+  '==stat', 'cpu  1000 0 500 8000 500 0 0 0 0 0',
+  '==stat2', 'cpu  1060 0 520 8100 520 0 0 0 0 0',
+  '==podman',
+  'web|running|Up 2 hours|docker.io/library/nginx:1.27|shop',
+  'job|stopped|Exited (0) 3 days ago|quay.io/acme/job:2|',
+  'crash|exited|Exited (1) 5 minutes ago|quay.io/acme/crash:1|',
+  '.ok',
+  '==podstats', 'web|1.25%|20.5MB / 2.08GB|0.99%|1.2kB / 3.4kB|0B / 4.1MB',
+  '==pods',
+  'default       api-7d9f8c-x2x1k          1/1   Running            0             3d',
+  'default       api-7d9f8c-q8w2z          1/2   Running            4 (5m ago)    3d',
+  'kube-system   coredns-5d78c9869d-abcde  0/1   CrashLoopBackOff   12 (1m ago)   9d',
+  'jobs          backup-28710000-zz9kp     0/1   Completed          0             2h',
+  'default       web-0                     0/1   Init:0/2           0             10s',
+  '.ok',
+  '==supervisor',
+  'nginx                            RUNNING   pid 1234, uptime 2 days, 3:04:05',
+  'queue:queue_00                   FATAL     Exited too quickly (process log may have details)',
+  'cron                             STOPPED   Not started',
+  'mailer                           STARTING  ',
+  '==pm2', ...PM2_LS, '.ok',
+  '==detect', 'pm2', 'podman', 'kubectl', 'supervisorctl',
+  '==end', '',
+].join('\n')
+
+test('서버 상태: podman · kubectl 파드 · supervisor · pm2 · 1초 CPU', () => {
+  const read = status.parseStatus(MORE)
+  // stat → stat2: 바쁜 tick 1500 → 1580(+80) · 전체 10000 → 10200(+200)
+  assert.equal(read.cpuPercent, 40)
+  assert.deepEqual(read.podman.map((row) => [row.name, row.project, row.state]), [['web', 'shop', 'up'], ['job', null, 'stopped'], ['crash', null, 'down']])
+  assert.deepEqual(read.podman[0].stats, { cpu: 1.25, memUsed: 20500000, memLimit: 2080000000, memPercent: 0.99, rx: 1200, tx: 3400, read: 0, write: 4100000 })
+  assert.deepEqual(read.pods.map((pod) => [pod.namespace, pod.name, pod.state, pod.restarts]), [
+    ['default', 'api-7d9f8c-x2x1k', 'running', 0],
+    ['default', 'api-7d9f8c-q8w2z', 'partial', 4],
+    ['kube-system', 'coredns-5d78c9869d-abcde', 'error', 12],
+    ['jobs', 'backup-28710000-zz9kp', 'stopped', 0],
+    ['default', 'web-0', 'partial', 0],
+  ])
+  assert.deepEqual(read.supervisor, [
+    { name: 'nginx', state: 'running', reason: 'RUNNING' },
+    { name: 'queue:queue_00', state: 'error', reason: 'FATAL' },
+    { name: 'cron', state: 'stopped', reason: 'STOPPED' },
+    { name: 'mailer', state: 'partial', reason: 'STARTING' },
+  ])
+  // 앱 표만(뒤 Module 표는 안 읽는다) · 1024 단위 · N/A 는 null · 색 글자는 걷어 낸다
+  assert.deepEqual(read.pm2, [
+    { name: 'api', state: 'running', reason: 'online', cpu: 0.5, mem: Math.round(45.2 * 1024 ** 2), restarts: 3 },
+    { name: 'worker', state: 'error', reason: 'errored', cpu: 0, mem: 0, restarts: 15 },
+    { name: 'cron', state: 'stopped', reason: 'stopped', cpu: null, mem: null, restarts: 0 },
+  ])
+  assert.deepEqual(read.detected, []) // 다 읽었으면 '못 읽은 도구' 없음
+  // 1초 값이 있으면 앞 읽기 차이보다 먼저
+  const before = { t: 1000, counters: { busy: 0, total: 1000, rx: null, tx: null } }
+  assert.equal(status.withRates(read, 2000, before).cpuPercent, 40)
+})
+
+test('서버 상태: 도구가 있어도 못 읽으면(실패 · 권한 · pm2 데몬 없음) 못 읽은 도구로', () => {
+  const read = status.parseStatus([
+    '==podman', // podman ps 가 0 이 아니게 끝나 .ok 없음
+    '==pods', // kubectl 이 권한 없음 · 연결 실패
+    '==supervisor', 'Server requires authentication', 'unix:///var/run/supervisor.sock no such file',
+    '==pm2', // ~/.pm2/pm2.pid 없음 — 부르지 않는다
+    '==detect', 'pm2', 'podman', 'kubectl', 'supervisorctl',
+    '==end', '',
+  ].join('\n'))
+  assert.equal(read.podman, null)
+  assert.equal(read.pods, null)
+  assert.equal(read.supervisor, null)
+  assert.equal(read.pm2, null)
+  assert.deepEqual(read.detected, ['pm2', 'podman', 'kubectl', 'supervisorctl'])
+  // 읽었지만 비었으면 [] — 못 읽은 도구가 아니다
+  const empty = status.parseStatus(['==podman', '.ok', '==pods', '.ok', '==detect', 'podman', 'kubectl', '==end', ''].join('\n'))
+  assert.deepEqual([empty.podman, empty.pods, empty.detected], [[], [], []])
+  // stat2 가 없는 옛 코어 — 1초 값 없음
+  assert.equal(status.parseStatus(['==stat', 'cpu  1 0 1 1 0 0 0 0', '==end', ''].join('\n')).cpuPercent, null)
+})
+
+// ssh-run.sh --history 출력 — sysstat 소스(master)로 만든 모양: 머리 줄 common.c print_gal_header("%s %s (%s) \t%s \t_%s_\t(%d CPU)") ·
+// 날짜는 S_TIME_FORMAT=ISO 라 "%Y-%m-%d"(set_report_date) · 행 시각 "%H:%M:%S"(sa_common.c set_record_timestamp_string) ·
+// 칸 이름 activity.c hdr_line(CPU … %idle · runq-sz … ldavg-1 · kbmemfree … %memused · IFACE … rxkB/s txkB/s) · 재시작 줄 sar.c "  LINUX RESTART\t(%u CPU)"
+// 실제 서버 출력은 아직 못 봄(사용자 확인 요청 r-20261109-085004-5640)
+const SAR = [
+  '==tz', '+0900',
+  '==sa',
+  'Linux 6.8.0-147-generic (novum) \t2026-11-08 \t_x86_64_\t(4 CPU)',
+  '',
+  '23:40:01        CPU     %user     %nice   %system   %iowait    %steal     %idle',
+  '23:50:01        all     10.00      0.00      5.00      0.00      0.00     85.00',
+  '',
+  '23:40:01      runq-sz  plist-sz   ldavg-1   ldavg-5  ldavg-15   blocked',
+  '23:50:01            1       300      0.80      0.70      0.60         0',
+  '',
+  '23:40:01    kbmemfree   kbavail kbmemused  %memused kbbuffers  kbcached  kbcommit   %commit  kbactive   kbinact   kbdirty',
+  '23:50:01      1000000   6000000   2000000     40.00     10000   3000000   4000000     20.00   2000000   2000000       100',
+  '',
+  '23:40:01        IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil',
+  '23:50:01           lo      5.00      5.00    100.00    100.00      0.00      0.00      0.00      0.00',
+  '23:50:01         eth0     10.00      8.00      2.00      1.00      0.00      0.00      0.00      0.00',
+  '23:50:01      veth1a2      1.00      1.00     50.00     50.00      0.00      0.00      0.00      0.00',
+  'Average:         eth0     10.00      8.00      2.00      1.00      0.00      0.00      0.00      0.00',
+  '==sa',
+  'Linux 6.8.0-147-generic (novum) \t2026-11-09 \t_x86_64_\t(4 CPU)',
+  '',
+  '00:00:01        CPU     %user     %nice   %system   %iowait    %steal     %idle',
+  '00:10:01        all     20,00      0,00     10,00      0,00      0,00     70,00',
+  '00:20:01        all     30.00      0.00     10.00      0.00      0.00     60.00',
+  '00:25:00       LINUX RESTART\t(4 CPU)',
+  '00:30:01        all     30.00      0.00     10.00      0.00      0.00     55.00',
+  'Average:        all     25.00      0.00     10.00      0.00      0.00     65.00',
+  '==sa',
+  '==end', '',
+].join('\n')
+
+test('sar 기록: 날짜 · 시간대 · 활동별 칸 · 가상 장치 빼기 · 재시작 · 쉼표 소수', () => {
+  const now = Date.UTC(2026, 10, 9, 0, 0, 0) // 11-09 09:00 +0900
+  const points = status.parseSar(SAR, now)
+  const at = (hour, minute) => Date.UTC(2026, 10, 8, hour, minute, 1) // 서버 시각 −9시간
+  // 23:50:01 +0900 = 14:50:01 UTC · 구간은 다음 행이 없어 활동 첫 행 — 앞 · 뒤 행이 없으면 버린다
+  assert.equal(points.find((point) => point.t === at(14, 50)), undefined)
+  // 11-09 00:10 · 00:20 은 한 흐름(10분) · 00:30 은 재시작 뒤 혼자라 버린다
+  const ten = points.find((point) => point.t === at(15, 10))
+  const twenty = points.find((point) => point.t === at(15, 20))
+  assert.deepEqual(ten, { t: at(15, 10), span: 600_000, cpu: 30, load: null, mem: null, rx: null, tx: null })
+  assert.equal(twenty.cpu, 40)
+  assert.equal(points.length, 2)
+  // 시간대 줄이 없으면 아무것도 쓰지 않는다
+  assert.deepEqual(status.parseSar(SAR.replace('==tz\n+0900\n', ''), now), [])
+})
+
+test('sar 기록: 네트워크 바이트 · 이 맥 기록이 빈 칸만 채운다', () => {
+  const lines = SAR.split('\n')
+  // 23:50 행 앞에 23:40 행을 하나 더 — 구간 10분
+  const extra = (head, row) => lines.splice(lines.indexOf(head) + 1, 0, row)
+  extra('23:40:01        CPU     %user     %nice   %system   %iowait    %steal     %idle', '23:40:01        all     10.00      0.00      5.00      0.00      0.00     85.00')
+  extra('23:40:01        IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil', '23:40:01         eth0     10.00      8.00      2.00      1.00      0.00      0.00      0.00      0.00')
+  const now = Date.UTC(2026, 10, 8, 15, 0, 1)
+  const points = status.parseSar(lines.join('\n'), now)
+  const last = points.find((point) => point.t === Date.UTC(2026, 10, 8, 14, 50, 1))
+  // eth0 만(lo · veth 빼고) — 2 KiB/s × 600초 = 1,228,800 바이트 · 메모리 = %memused · 부하 = ldavg-1
+  assert.deepEqual([last.rx, last.tx, last.mem, last.load, last.cpu], [1228800, 614400, 40, 0.8, 15])
+  // 1시간 그래프 — 이 맥 기록이 없는 칸은 sar 로, 있는 칸은 이 맥 값 그대로
+  const own = [{ t: now - 60_000, cpu: 99, mem: 10, swap: 0, disk: 50, ms: null, fail: 0, load: 3, rx: 500, tx: 500 }]
+  const series = status.bucketHistory(own, '1h', now, points)
+  assert.equal(series.cpu[14], 99)
+  assert.equal(series.cpu[12], 15)
+  assert.equal(series.disk[12], null)
+  // 바이트는 구간이 겹친 비율로 나눠 담는다 — 다 더하면 두 행 합
+  const total = series.rx.slice(0, 14).reduce((sum, value) => sum + (value ?? 0), 0)
+  assert.equal(total, 1228800 * 2)
+  // fill 이 없으면 예전과 같다
+  assert.deepEqual(status.bucketHistory(own, '1h', now), status.bucketHistory(own, '1h', now, []))
+})
+
+test('sar 기록: 실제 서버 출력 발췌(novum-lab sa08 · 2026-11-09 사용자 승인 r-20261109-085004-5640)', () => {
+  // `sar -u -q -n DEV -f /var/log/sysstat/sa08 -s 22:00:00 -e 23:00:00` 출력에서 줄만 골라 옮겼다 — 호스트 이름은 가짜로,
+  // 그때는 S_TIME_FORMAT=ISO 없이 돌려 머리 날짜가 "11/08/26" 이었다 → 앱 명령(ISO)의 날짜 모양 "2026-11-08" 로 바꿔 넣음(common.c set_report_date)
+  const real = [
+    '==tz', '+0900', '==sa',
+    'Linux 6.8.0-147-generic (server) \t2026-11-08 \t_x86_64_\t(4 CPU)',
+    '',
+    '22:00:01        CPU     %user     %nice   %system   %iowait    %steal     %idle',
+    '22:10:01        all     10.47      0.01      6.03      0.10      1.98     81.41',
+    '22:20:00        all     10.46      0.01      5.97      0.09      1.49     81.97',
+    'Average:        all     10.42      0.01      5.96      0.09      1.49     82.03',
+    '',
+    '22:00:01      runq-sz  plist-sz   ldavg-1   ldavg-5  ldavg-15   blocked',
+    '22:10:01            0      1357      0.80      0.77      0.78         0',
+    '22:20:00            6      1366      1.03      1.01      0.90         0',
+    'Average:            2      1361      0.71      0.79      0.79         0',
+    '',
+    '22:00:01        IFACE   rxpck/s   txpck/s    rxkB/s    txkB/s   rxcmp/s   txcmp/s  rxmcst/s   %ifutil',
+    '22:10:01           lo      2.77      2.77      5.16      5.16      0.00      0.00      0.00      0.00',
+    '22:10:01         eth0     60.05     26.98     78.67      2.67      0.00      0.00      0.00      0.00',
+    '22:10:01    br-512cbadce8c7      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    '22:10:01      docker0      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    '22:10:01    veth2bd63d1      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    '22:20:00           lo      2.99      2.99      5.64      5.64      0.00      0.00      0.00      0.00',
+    '22:20:00         eth0     62.57     29.12     81.19      2.78      0.00      0.00      0.00      0.00',
+    '22:20:00    br-512cbadce8c7      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    '22:20:00      docker0      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    '22:20:00    veth2bd63d1      0.00      0.00      0.00      0.00      0.00      0.00      0.00      0.00',
+    'Average:         eth0     62.15     28.18     79.80      2.66      0.00      0.00      0.00      0.00',
+    '==end', '',
+  ].join('\n')
+  const points = status.parseSar(real, Date.UTC(2026, 10, 9, 0, 0, 0))
+  assert.equal(points.length, 2)
+  const [first, second] = points
+  // 22:10:01 은 다음 행까지(599초) · 22:20:00 은 앞 행부터 — 이 맥 /proc/net/dev 읽기와 같은 규칙(lo · br- · docker · veth 빼고 eth0 만)
+  assert.deepEqual(second, { t: Date.UTC(2026, 10, 8, 13, 20, 0), span: 599_000, cpu: 18.03, load: 1.03, mem: null, rx: Math.round(81.19 * 1024 * 599), tx: Math.round(2.78 * 1024 * 599) })
+  assert.deepEqual([first.t, first.span, first.cpu, first.load, first.rx], [Date.UTC(2026, 10, 8, 13, 10, 1), 599_000, 18.59, 0.8, Math.round(78.67 * 1024 * 599)])
+})

@@ -4,6 +4,7 @@
 #   scripts/ssh-run.sh <서버> --get <원격> <로컬>  파일 받기(.env* · 키 · 인증서 파일은 받지 않는다)
 #   scripts/ssh-run.sh <서버> --put <로컬> <원격>  파일 고치기 — 늘 확인(diff · 원격 백업 위치) → 승인 뒤 백업 → 덮어쓰기
 #   scripts/ssh-run.sh <서버> --status             상태 칸 읽기(고정 읽기 명령 · 묻지 않는다 — 앱 서버 상태 칸)
+#   scripts/ssh-run.sh <서버> --history            지난 기록 읽기(sysstat sar 하루 파일 · 묻지 않는다 — 앱 그래프의 빈 구간)
 #   scripts/ssh-run.sh --list                      등록한 서버 이름 목록
 # 확인이 필요하면 요청을 열고 3 으로 끝난다. 답이 "실행" 이면 같은 명령을 ATHENA_SERVER_APPROVED=<요청 id> 를 앞에 붙여 다시 낸다.
 # <서버> 는 팩 pack.json servers[] 의 name(등록한 것만) — ssh 별칭으로 바꿔 부른다. 주소 · 키는 ~/.ssh/config 에만 있다.
@@ -22,7 +23,7 @@ ALLOW="$ATHENA_DIR/scripts/lib/server_allow.py"
 SSH_OPTS=(-o BatchMode=yes -o ConnectTimeout=10)
 
 usage() {
-  sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//' >&2
+  sed -n '2,9p' "$0" | sed 's/^# \{0,1\}//' >&2
   exit 2
 }
 
@@ -88,13 +89,15 @@ ask() {
   exit 3
 }
 
-# 상태 칸 읽기 — 부하 1·5·15분 · 코어 수 · CPU 누적 tick(/proc/stat 첫 줄 — 앱이 앞 읽기와의 차이로 CPU % 를 낸다) · 메모리 · SWAP(free) ·
+# 상태 칸 읽기 — 부하 1·5·15분 · 코어 수 · CPU 누적 tick(/proc/stat 첫 줄을 1초 사이로 두 번 — 앱이 그 차이로 CPU % 를 낸다 · 옛 코어는 앞 읽기와의 차이) · 메모리 · SWAP(free) ·
 # 디스크(/ 는 바이트 · 마운트마다 — tmpfs 같은 가짜 파일 시스템 빼고) · 네트워크 누적 바이트(/proc/net/dev) · OS 이름 · 커널 · 멈춘 systemd 서비스 ·
 # 도는 서비스 이름(첫 칸만 — 설명 칸은 주소가 섞일 수 있어 자른다) · 컨테이너(상태 · 이미지 · compose 프로젝트) · 켜진 컨테이너 사용량(docker stats) ·
-# CPU 를 많이 쓰는 프로세스(프로그램 이름만 — 명령줄 인자는 비밀값이 섞일 수 있어 읽지 않는다) · 있지만 아직 못 읽는 실행 도구(command -v) ·
+# podman 컨테이너 · 사용량(docker 와 같은 칸) · kubectl 파드(표 출력 — 원문 json · yaml 은 env 값이 나와 안 쓴다) · supervisorctl 프로그램 ·
+# pm2 앱(pm2 ls 표 — 데몬이 떠 있을 때만: pm2 는 데몬이 없으면 새로 띄우니 ~/.pm2/pm2.pid 가 있을 때만 부른다) — 읽기에 성공하면 ".ok" 줄(supervisorctl 은 줄 모양으로) ·
+# CPU 를 많이 쓰는 프로세스(프로그램 이름만 — 명령줄 인자는 비밀값이 섞일 수 있어 읽지 않는다) · 있는 실행 도구(command -v — 위에서 못 읽었으면 앱이 '감지만' 으로) ·
 # 켜진 시간 · 최근 1시간 에러 로그 줄 수 · 밀린 보안 업데이트 수. 칸마다 "==이름" 줄로 나눈다(앱 src/lib/server-status.mts 가 읽는다).
 # 명령이 없는 서버(apt · journalctl · docker 없음)는 그 칸을 비워 둔다 — 0 과 "못 읽음" 을 가른다. 명령 전체가 server_allow check 0 이어야 한다
-STATUS_COMMAND='echo ==load; cat /proc/loadavg 2>/dev/null; echo ==cpu; nproc 2>/dev/null; echo ==stat; head -1 /proc/stat 2>/dev/null; echo ==mem; free -b 2>/dev/null; echo ==disk; df -P -B1 / 2>/dev/null; echo ==disks; df -P -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null; echo ==net; cat /proc/net/dev 2>/dev/null; echo ==os; grep -m1 "^PRETTY_NAME=" /etc/os-release 2>/dev/null; echo ==kernel; uname -r 2>/dev/null; echo ==failed; systemctl list-units --type=service --state=failed --no-legend --plain --no-pager 2>/dev/null; echo ==services; systemctl list-units --type=service --state=running --no-legend --plain --no-pager 2>/dev/null | cut -d" " -f1; echo ==docker; docker ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}" 2>/dev/null; echo ==stats; command -v docker >/dev/null 2>&1 && docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}" 2>/dev/null; echo ==top; ps -eo comm=,pcpu=,pmem= --sort=-pcpu 2>/dev/null | head -6; echo ==detect; command -v pm2 >/dev/null 2>&1 && echo pm2; command -v podman >/dev/null 2>&1 && echo podman; command -v kubectl >/dev/null 2>&1 && echo kubectl; command -v supervisorctl >/dev/null 2>&1 && echo supervisorctl; echo ==uptime; cat /proc/uptime 2>/dev/null; echo ==errors; command -v journalctl >/dev/null 2>&1 && journalctl -p err --since "1 hour ago" --no-pager -q -o cat 2>/dev/null | wc -l; echo ==updates; command -v apt >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | grep -c -i security; echo ==end'
+STATUS_COMMAND='echo ==load; cat /proc/loadavg 2>/dev/null; echo ==cpu; nproc 2>/dev/null; echo ==stat; head -1 /proc/stat 2>/dev/null; sleep 1; echo ==stat2; head -1 /proc/stat 2>/dev/null; echo ==mem; free -b 2>/dev/null; echo ==disk; df -P -B1 / 2>/dev/null; echo ==disks; df -P -x tmpfs -x devtmpfs -x squashfs -x overlay -x efivarfs 2>/dev/null; echo ==net; cat /proc/net/dev 2>/dev/null; echo ==os; grep -m1 "^PRETTY_NAME=" /etc/os-release 2>/dev/null; echo ==kernel; uname -r 2>/dev/null; echo ==failed; systemctl list-units --type=service --state=failed --no-legend --plain --no-pager 2>/dev/null; echo ==services; systemctl list-units --type=service --state=running --no-legend --plain --no-pager 2>/dev/null | cut -d" " -f1; echo ==docker; docker ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}" 2>/dev/null; echo ==stats; command -v docker >/dev/null 2>&1 && docker stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}" 2>/dev/null; echo ==podman; command -v podman >/dev/null 2>&1 && podman ps -a --format "{{.Names}}|{{.State}}|{{.Status}}|{{.Image}}|{{.Label \"com.docker.compose.project\"}}" 2>/dev/null && echo .ok; echo ==podstats; command -v podman >/dev/null 2>&1 && podman stats --no-stream --format "{{.Name}}|{{.CPUPerc}}|{{.MemUsage}}|{{.MemPerc}}|{{.NetIO}}|{{.BlockIO}}" 2>/dev/null; echo ==pods; command -v kubectl >/dev/null 2>&1 && kubectl get pods -A --no-headers --request-timeout=5s 2>/dev/null && echo .ok; echo ==supervisor; command -v supervisorctl >/dev/null 2>&1 && supervisorctl status 2>/dev/null; echo ==pm2; command -v pm2 >/dev/null 2>&1 && ls .pm2/pm2.pid >/dev/null 2>&1 && pm2 ls 2>/dev/null && echo .ok; echo ==top; ps -eo comm=,pcpu=,pmem= --sort=-pcpu 2>/dev/null | head -6; echo ==detect; command -v pm2 >/dev/null 2>&1 && echo pm2; command -v podman >/dev/null 2>&1 && echo podman; command -v kubectl >/dev/null 2>&1 && echo kubectl; command -v supervisorctl >/dev/null 2>&1 && echo supervisorctl; echo ==uptime; cat /proc/uptime 2>/dev/null; echo ==errors; command -v journalctl >/dev/null 2>&1 && journalctl -p err --since "1 hour ago" --no-pager -q -o cat 2>/dev/null | wc -l; echo ==updates; command -v apt >/dev/null 2>&1 && apt list --upgradable 2>/dev/null | grep -c -i security; echo ==end'
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP"' EXIT
@@ -127,6 +130,21 @@ case "$1" in
     # 허용 목록 안의 읽기 명령만 — 목록이 바뀌어 밖으로 나가면 요청을 열지 않고 실패한다(몇 분마다 도는 칸이 묻지 않게)
     if ! WHY="$(python3 "$ALLOW" check "$STATUS_COMMAND")"; then echo "❌ 상태 명령이 허용 목록 밖이다: $WHY" >&2; exit 1; fi
     rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$STATUS_COMMAND"
+    ;;
+  --history)
+    [ $# -eq 1 ] || usage
+    # sysstat 하루 파일(/var/log/sysstat/saDD — 날짜의 '일' 두 자리) — 이 맥 날짜로 내일 ~ 8일 전(서버와 시간대가 달라도 7일을 덮게).
+    # 앱이 머리 줄 날짜(S_TIME_FORMAT=ISO → YYYY-MM-DD)로 7일 안만 쓴다 · 없는 파일은 sar 가 stderr 만 낸다.
+    # 시각은 sar 를 돌린 쪽 지역 시간(man sar -t) → 서버 date +%z 로 바꾼다. 상태 칸처럼 허용 목록 밖이면 요청 없이 실패
+    HISTORY_COMMAND="$(python3 -c 'import datetime as d
+t = d.date.today()
+parts = ["echo ==tz", "date +%z"]
+for back in range(-1, 9):
+    day = (t - d.timedelta(days=back)).strftime("%d")
+    parts += ["echo ==sa", "S_TIME_FORMAT=ISO sar -u -q -r -n DEV -f /var/log/sysstat/sa" + day + " 2>/dev/null"]
+print("; ".join(parts + ["echo ==end"]))')"
+    if ! WHY="$(python3 "$ALLOW" check "$HISTORY_COMMAND")"; then echo "❌ 기록 명령이 허용 목록 밖이다: $WHY" >&2; exit 1; fi
+    rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$HISTORY_COMMAND"
     ;;
   --get)
     [ $# -eq 3 ] || usage
