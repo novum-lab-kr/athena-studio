@@ -751,6 +751,8 @@
   "settings.appUpdateDownloadFailed": "新しいバージョンをダウンロードできませんでした",
   "settings.appUpdateChecksumFailed": "ダウンロードしたファイルのチェックサムが一致しません",
   "settings.appUpdateInstallFailed": "インストールできませんでした — 記録: app-update.log",
+  "settings.appUpdateInstallFailedOutside": "アプリケーションフォルダの外で開いているためインストールできませんでした — 移動して開き直してください",
+  "settings.appUpdateMoveFirst": "{current} → {next} — アプリケーションフォルダに移動して開き直すとアップデートできます",
   "settings.appUpdateWaiting": "インストール待機中…",
   "settings.appUpdateInstallPending": "インストールが完了していません — [アップデート] で再試行",
   "settings.appUpdateInstalling": "インストール中…",

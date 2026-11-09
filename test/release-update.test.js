@@ -222,3 +222,45 @@ test('electron-updater — 앱 안 app-update.yml 을 generic 설정으로 읽�
   const yaml = require(require.resolve('js-yaml', { paths: [require.resolve('electron-updater')] }))
   assert.deepEqual(yaml.load(packageMac.updateConfig()), { provider: 'generic', url: packageMac.UPDATE_FEED_URL, updaterCacheDirName: packageMac.UPDATER_CACHE_DIR })
 })
+
+// 응용 프로그램 폴더 밖에서 켠 배포판 — 묻지 않고 옮긴다(2026-11-10 사용자 결정) · 못 옮기면 그대로 켠다
+function fakeMoveApp({ packaged = true, inside = false, move = () => true } = {}) {
+  const app = { isPackaged: packaged, calls: 0, isInApplicationsFolder: () => inside, moveToApplicationsFolder: () => (app.calls++, move()) }
+  return app
+}
+
+test('응용 프로그램 폴더 밖 — 맥 배포판일 때만 밖으로 친다(개발판 · 다른 OS · 폴더 안은 아니다)', () => {
+  assert.equal(release.outsideApplications(fakeMoveApp(), 'darwin'), true)
+  assert.equal(release.outsideApplications(fakeMoveApp({ inside: true }), 'darwin'), false)
+  assert.equal(release.outsideApplications(fakeMoveApp({ packaged: false }), 'darwin'), false)
+  assert.equal(release.outsideApplications(fakeMoveApp(), 'linux'), false)
+})
+
+test('켤 때 옮기기 — 밖이면 묻지 않고 옮기고(moved) · 안 · 개발판은 건드리지 않는다(skip)', () => {
+  const outside = fakeMoveApp()
+  assert.equal(release.moveToApplications({ app: outside, platform: 'darwin', log: quietLog() }), 'moved')
+  assert.equal(outside.calls, 1)
+  for (const app of [fakeMoveApp({ inside: true }), fakeMoveApp({ packaged: false })]) {
+    assert.equal(release.moveToApplications({ app, platform: 'darwin', log: quietLog() }), 'skip')
+    assert.equal(app.calls, 0)
+  }
+})
+
+test('켤 때 옮기기 실패 — false 면 not-moved · 던지면(암호 창 취소 · 복사 실패) failed 로 기록하고 그대로 켠다', () => {
+  const log = quietLog()
+  assert.equal(release.moveToApplications({ app: fakeMoveApp({ move: () => false }), platform: 'darwin', log }), 'not-moved')
+  assert.equal(
+    release.moveToApplications({
+      app: fakeMoveApp({
+        move: () => {
+          throw new Error('User rejected the authorization request')
+        },
+      }),
+      platform: 'darwin',
+      log,
+    }),
+    'failed',
+  )
+  assert.equal(log.lines.length, 2)
+  assert.match(log.lines[1], /User rejected the authorization request/)
+})
