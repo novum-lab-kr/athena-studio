@@ -114,6 +114,8 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   }
 
   // 서버마다 앞 읽기의 누적 값(이 창 메모리)
+  // sar 서버의 온전한 지금 읽기(이 창 메모리 · LIVE_MS) — 파일에는 줄인 점만 쓰니 화면 그래프의 최근 칸은 이걸로(serverModel.withLive)
+  const live = new Map<string, HistoryPoint[]>()
   const lastSeen = new Map<string, { t: number; counters: Counters }>()
   const readHistory = async (dir: string | null, name: string): Promise<HistoryPoint[]> =>
     dir ? serverModel.parseHistory(await fs.promises.readFile(path.join(dir, `${name}.jsonl`), 'utf8').catch(() => ''), Date.now()) : []
@@ -170,7 +172,14 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
       const points = await readHistory(dir, raw.name)
       const reading = withRates(raw, points)
       servers.push(reading)
-      if (dir) history[reading.name] = await record(dir, reading, points, Boolean(sar[reading.name]?.length)).catch(() => points)
+      const sarBacked = Boolean(sar[reading.name]?.length)
+      if (!dir) continue
+      const saved = await record(dir, reading, points, sarBacked).catch(() => points)
+      const recent = (live.get(reading.name) ?? []).filter((point) => reading.at - point.t <= serverModel.LIVE_MS)
+      const full = sarBacked && saved[saved.length - 1]?.t === reading.at ? serverModel.historyPoint(reading) : null
+      if (full) recent.push(full)
+      live.set(reading.name, sarBacked ? recent : [])
+      history[reading.name] = serverModel.withLive(saved, sarBacked ? recent : [])
     }
     if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
     return { servers, history, sar }

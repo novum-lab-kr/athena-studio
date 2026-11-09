@@ -505,6 +505,15 @@ export function historyPoint(reading: ServerReading, sarBacked = false): History
   }
 }
 
+// sar 서버의 지금 읽기 — 파일에는 줄인 점(historyPoint sarBacked)을 쓰되 이 창 메모리에 온전한 점을 LIVE_MS 동안 둔다.
+// 화면에 넘길 때 같은 시각의 줄인 점을 온전한 점으로 바꿔 끼운다 — sar 가 아직 기록하지 않은 최근 칸(10분 간격)을 지금 읽기로 채운다
+export const LIVE_MS = 2 * 60 * 60 * 1000
+export function withLive(points: HistoryPoint[], live: HistoryPoint[]): HistoryPoint[] {
+  if (!live.length) return points
+  const times = new Set(live.map((point) => point.t))
+  return [...points.filter((point) => !times.has(point.t)), ...live].sort((left, right) => left.t - right.t)
+}
+
 function countersOf(value: unknown): Counters | null {
   if (!value || typeof value !== 'object') return null
   const item = value as Record<string, unknown>

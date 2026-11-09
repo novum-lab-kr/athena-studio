@@ -538,3 +538,19 @@ test('sar 기록: 실제 서버 출력 발췌(novum-lab sa08 · 2026-11-09 사�
   assert.deepEqual(second, { t: Date.UTC(2026, 10, 8, 13, 20, 0), span: 599_000, cpu: 18.03, load: 1.03, mem: null, rx: Math.round(81.19 * 1024 * 599), tx: Math.round(2.78 * 1024 * 599) })
   assert.deepEqual([first.t, first.span, first.cpu, first.load, first.rx], [Date.UTC(2026, 10, 8, 13, 10, 1), 599_000, 18.59, 0.8, Math.round(78.67 * 1024 * 599)])
 })
+
+test('sar 서버: 파일엔 줄인 점 · 화면엔 같은 시각을 메모리의 온전한 점으로 바꿔 최근 칸을 채운다', () => {
+  const read = status.parseStatus(WIDE)
+  const now = 3_600_000 * 10
+  const reading = { name: 'web', host: 'web-1', status: read, web: null, at: now - 60_000 }
+  const lean = status.historyPoint(reading, true)
+  const full = status.historyPoint(reading)
+  const older = { t: now - 30 * 60_000, cpu: null, mem: null, swap: null, disk: 80, ms: null, fail: 0, load: null, rx: null, tx: null }
+  const merged = status.withLive([older, lean], [full])
+  assert.deepEqual(merged, [older, full])
+  // 메모리 점이 없으면 그대로
+  assert.equal(status.withLive([older, lean], []).length, 2)
+  // sar 가 아직 없는 마지막 칸 — 줄인 점만이면 빈 칸 · 온전한 점이면 지금 읽기 값
+  assert.equal(status.bucketHistory([older, lean], '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], null)
+  assert.equal(status.bucketHistory(merged, '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], full.mem)
+})
