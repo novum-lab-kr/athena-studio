@@ -48,7 +48,7 @@ import { screen, submitToPane } from './lib/screen.mjs'
 import { createLeadNotifier } from './lib/lead-notice.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
-import { claudeLimited, codexReviewArgs, readCodexSettings, reviewToolState } from './lib/review-cli.mjs'
+import { claudeLimited, claudeTokens, codexReviewArgs, codexTokens, readCodexSettings, reviewToolState } from './lib/review-cli.mjs'
 import { readMainTool } from './lib/main-tool.mjs'
 import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
@@ -162,15 +162,7 @@ const reviewWithClaude = async (prompt, workDir, config, slot = { name: 'claude'
   // 측정(2026-11-08 #267) — 결과 JSON 의 usage 를 앱 일별 토큰(src/lib/daily-tokens.mts)과 같은 셈으로(input + cache_creation + output · cache_read 는 뺀다). 없으면 모름(null)
   return { ...result, tokens: claudeTokens(run.stdout) }
 }
-const claudeTokens = (stdout) => {
-  try {
-    const usage = JSON.parse(stdout)?.usage
-    if (!usage || typeof usage !== 'object') return null
-    const count = (key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
-    return count('input_tokens') + count('cache_creation_input_tokens') + count('output_tokens')
-  } catch { return null }
-}
-// 리뷰 한 번의 토큰 — 아는 리뷰어 값의 합 · 하나도 모르면 null(Codex 는 답 파일만 받아 토큰을 모른다)
+// 리뷰 한 번의 토큰 — 아는 리뷰어 값의 합 · 하나도 모르면 null(Codex 는 `--json` 출력의 turn.completed usage — lib review-cli codexTokens)
 const reviewTokens = (results) => {
   const known = results.map((result) => result.tokens).filter((value) => Number.isFinite(value))
   return known.length ? known.reduce((sum, value) => sum + value, 0) : null
@@ -185,7 +177,7 @@ const reviewWithCodex = async (prompt, workDir, config, slot = { name: 'codex' }
   // 프롬프트는 표준 입력으로(인자 "-" 는 --disable 뒤에서 거절된다) · 세션 저장 없음 · 빈 폴더 — 답(마지막 메시지)만 파일로 받는다
   // --ignore-user-config 가 config.toml 의 model · model_reasoning_effort 도 안 읽게 하니 그 두 값만 따로 넘긴다
   const run = await runCli('codex', codexReviewArgs(workDir, schemaFile, outFile, slot.model), { input: prompt, cwd: workDir })
-  return outcome(slot.name, run, () => JSON.parse(readFileSync(outFile, 'utf8')))
+  return { ...outcome(slot.name, run, () => JSON.parse(readFileSync(outFile, 'utf8'))), tokens: codexTokens(run.stdout) }
 }
 
 const REVIEWER_RUN = { claude: reviewWithClaude, codex: reviewWithCodex }

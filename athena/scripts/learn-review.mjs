@@ -31,11 +31,12 @@ import { isMainModule } from './lib/is-main.mjs'
 import { githubOrg, loadConfig, paths, prLinkPattern } from './lib/config.mjs'
 import { isDirEntry } from './lib/fs.mjs'
 import { releaseLock, updatePlan } from './lib/plan-update.mjs'
+import { logEvent } from './lib/events.mjs'
 import { askJev, jevEnabled, logJev } from './lib/jev.mjs'
 import { selfIssueRepo } from './lib/athena-bug-issue.mjs'
 import { maskSecrets } from './lib/mask.mjs'
 import { modelArgs, modelOf } from './lib/models.mjs'
-import { claudeLimited, codexReviewArgs, reviewToolState } from './lib/review-cli.mjs'
+import { claudeLimited, claudeTokens, codexReviewArgs, codexTokens, reviewToolState } from './lib/review-cli.mjs'
 import { readMainTool } from './lib/main-tool.mjs'
 import { decideGate, readSeen, seenIdOf, writeSeen } from './lib/learn-seen.mjs'
 
@@ -394,7 +395,7 @@ const askCodex = (prompt, currentConfig) => {
     if (result.status !== 0) throw new Error(`codex 학습 검토 실패(코드 ${result.status})`)
     const answer = JSON.parse(readFileSync(outFile, 'utf8'))
     if (!Array.isArray(answer.items)) throw new Error('검토자 답 모양이 틀림(JSON 형식)')
-    return { items: answer.items, cost: 0 }
+    return { items: answer.items, cost: 0, tool: 'codex', tokens: codexTokens(result.stdout) }
   } finally { rmSync(workDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 200 }) }
 }
 
@@ -413,7 +414,7 @@ const askClaude = (prompt, currentConfig) => {
   if (result.status !== 0) throw new Error(`claude -p 실패(코드 ${result.status}): ${clip((result.stderr || result.stdout || '').trim(), 300)}`)
   const answer = JSON.parse(result.stdout)
   if (answer.is_error) throw new Error(`검토자 오류: ${clip(String(answer.result ?? ''), 300)}`)
-  return { items: answer.structured_output?.items ?? [], cost: answer.total_cost_usd ?? 0 }
+  return { items: answer.structured_output?.items ?? [], cost: answer.total_cost_usd ?? 0, tool: 'claude', tokens: claudeTokens(result.stdout) }
 }
 
 // 주 도구(.athena-main-tool.json · lib main-tool)를 먼저, 없으면 Claude 먼저(검수 묶음 2 #18). 설치 · 로그인된 것만 쓴다.
@@ -588,7 +589,9 @@ const reviewPlan = async (planArg, { head = '', dryRun = false, force = false } 
   const prMaterial = pullRequestMaterial(planText)
   console.log(`  계획서 ${planText.length}자 · 머지된 PR 재료 ${prMaterial.length}자`)
   const jevScore = await shadowJev(planFile, planText, prMaterial, transcript)
-  const { items, cost } = askReviewer(buildPrompt(planFile, knowledgeDirs, transcript, planText, prMaterial))
+  const { items, cost, tool, tokens } = askReviewer(buildPrompt(planFile, knowledgeDirs, transcript, planText, prMaterial))
+  // 측정 — 배우기 검토 구간의 토큰(docs/events.md `learn.review`). dry-run 도 실제로 돌았으니 남긴다
+  logEvent(ROOT, 'learn.review', { plan: planFile, tool, tokens: tokens ?? null, items: items.length, dryRun })
   console.log(`  검토자 답 ${items.length}건 · 비용 $${Number(cost).toFixed(3)}`)
   const written = items.map((item) => writeIssue(item, planFile, dryRun))
   const results = items.map((item, index) => `  - [${item.signal}·${item.kind}${item.kind === 'gotchas' ? `·${scopeOf(item)}` : ''}] ${maskSecrets(item.title ?? '').masked}\n    무엇을 배웠나: ${maskSecrets(item.explain ?? '').masked}\n    왜 중요한가: ${maskSecrets(item.ifUnknown ?? '').masked}\n    공책 문장: ${maskSecrets(item.rule).masked}\n    근거(${item.basis}): ${maskSecrets(item.evidence ?? '').masked}\n    ${written[index]}`)

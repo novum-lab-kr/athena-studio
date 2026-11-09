@@ -15,7 +15,7 @@ cat >/dev/null
 printf '%s\n' "$*" >> "$REVIEW_LOG"
 # 사용량 한도 — 2026-11-03 PR 235~240 자동 리뷰 Claude 실행 기록의 모양(api_error usage_limit_reached · 글 · 종료 1)
 if [ "${FAKE_CLAUDE:-}" = limit ]; then printf '%s' '{"type":"result","is_error":true,"api_error":"usage_limit_reached","result":"You'"'"'ve hit your weekly limit · resets 4am (Asia/Seoul)"}'; exit 1; fi
-printf '{"structured_output":{"items":[]},"total_cost_usd":0.01}'
+printf '{"structured_output":{"items":[]},"total_cost_usd":0.01,"usage":{"input_tokens":10,"cache_creation_input_tokens":20,"cache_read_input_tokens":999,"output_tokens":5}}'
 CLI
 cat > "$TASK_TMP/bin/codex" <<'CLI'
 #!/bin/sh
@@ -29,6 +29,8 @@ while [ $# -gt 0 ]; do
 done
 "$TASK_NODE" --input-type=module -e 'import { readFileSync } from "node:fs"; const schema=JSON.parse(readFileSync(process.argv[1])); if(schema.additionalProperties!==false || schema.properties.items.items.additionalProperties!==false) process.exit(1)' "$schema" || exit 9
 printf '{"items":[]}' > "$out"
+# codex exec --json 의 실제 출력 모양(2026-11-09 codex-cli 실측)
+printf '%s\n' '{"type":"thread.started","thread_id":"t"}' '{"type":"turn.started"}' '{"type":"turn.completed","usage":{"input_tokens":1000,"cached_input_tokens":600,"cache_write_input_tokens":0,"output_tokens":50,"reasoning_output_tokens":20}}'
 CLI
 chmod +x "$TASK_TMP/bin/claude" "$TASK_TMP/bin/codex"
 cp "$TASK_TMP/bin/claude" "$TASK_TMP/claude-only/claude"
@@ -52,6 +54,16 @@ grep -q -- '-m gpt-test-learn' "$REVIEW_LOG"
 echo '  ✔ Claude 로그인 안 됨 → Codex 학습 검토'
 env PATH="$TASK_TMP/bin:/usr/bin:/bin" FAKE_CLAUDE_LOGIN=out FAKE_CODEX_LOGIN=out "$TASK_NODE" --input-type=module -e 'import assert from "node:assert/strict"; import { askReviewer } from "./scripts/learn-review.mjs"; assert.throws(()=>askReviewer("x"), /로그인된/)'
 echo '  ✔ 둘 다 로그인 안 됨 → 명시적 실패'
+# 토큰 — 앱 일별 토큰과 같은 셈(cache_read 뺌) · Codex 는 input - cached + output
+env PATH="$TASK_TMP/claude-only:/usr/bin:/bin" "$TASK_NODE" --input-type=module -e 'import assert from "node:assert/strict"; import { askReviewer } from "./scripts/learn-review.mjs"; const answer = askReviewer("x"); assert.equal(answer.tokens, 35); assert.equal(answer.tool, "claude")'
+env PATH="$TASK_TMP/codex-only:/usr/bin:/bin" "$TASK_NODE" --input-type=module -e 'import assert from "node:assert/strict"; import { askReviewer } from "./scripts/learn-review.mjs"; const answer = askReviewer("x"); assert.equal(answer.tokens, 450); assert.equal(answer.tool, "codex")'
+"$TASK_NODE" --input-type=module -e 'import assert from "node:assert/strict"; import { codexTokens, claudeTokens } from "./scripts/lib/review-cli.mjs"
+const done = (usage) => JSON.stringify({ type: "turn.completed", usage })
+assert.equal(codexTokens(`{"type":"turn.started"}\n${done({ input_tokens: 100, cached_input_tokens: 40, output_tokens: 10 })}\n${done({ input_tokens: 50, cached_input_tokens: 0, output_tokens: 5 })}\n`), 125)
+assert.equal(codexTokens("Reading prompt from stdin...\n{\"type\":\"turn.started\"}\n"), null)
+assert.equal(codexTokens(""), null)
+assert.equal(claudeTokens("깨진"), null)'
+echo '  ✔ 토큰 — Claude (input + cache_creation + output) · Codex (input - cached + output · turn 합)'
 # #19 — Claude 사용량 한도면 Codex 로 이어 간다(고치기 전: '학습 검토 실패' 로 멈췄다) · Codex 가 없으면 한도라고 밝혀 실패
 : > "$REVIEW_LOG"
 env PATH="$TASK_TMP/bin:/usr/bin:/bin" FAKE_CLAUDE=limit "$TASK_NODE" --input-type=module -e 'import assert from "node:assert/strict"; import { askReviewer } from "./scripts/learn-review.mjs"; assert.deepEqual(askReviewer("후보 없음").items, [])' >/dev/null
