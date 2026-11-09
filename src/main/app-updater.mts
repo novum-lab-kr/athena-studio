@@ -16,7 +16,7 @@ import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import * as appUpdate from '../lib/app-update.mts'
 import * as appInstall from '../lib/app-install.mts'
-import { createReleaseUpdate } from '../lib/release-update.mts'
+import { createReleaseUpdate, moveToApplications, outsideApplications } from '../lib/release-update.mts'
 import type { Logger, Native, Updater } from '../lib/release-update.mts'
 import type { PullResult, UpdateStatus } from '../lib/app-update.mts'
 import type { Say } from '../lib/pack.mts'
@@ -26,7 +26,7 @@ const require = createRequire(import.meta.url)
 const studioHome: typeof import('../lib/studio-home.js') = require('../lib/studio-home.js')
 const versionModel: typeof import('../lib/version.js') = require('../lib/version.js')
 
-type App = { isPackaged: boolean; getVersion(): string; getPath(name: 'userData'): string; quit(): void }
+type App = { isPackaged: boolean; getVersion(): string; getPath(name: 'userData'): string; quit(): void; isInApplicationsFolder(): boolean; moveToApplicationsFolder(): boolean }
 type Dialog = Pick<typeof import('electron').dialog, 'showMessageBox'>
 type ParentWindow = import('electron').BrowserWindow | null | undefined
 type PackWindow = { send(channel: string, payload: unknown): void }
@@ -86,7 +86,15 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     return { info: write('info'), warn: write('warn'), error: write('error') }
   }
 
-  const appUpdateView = () => (app.isPackaged ? releaseUpdate().view() : { ...appUpdateStatus, version: appVersion(), running: appUpdateRunning, phase: appUpdatePhase, installFailure: appUpdateInstallFailure, installPending: appInstall.readPending(APP_ROOT) !== null })
+  // 배포판이 응용 프로그램 폴더 밖에서 켜졌다(옮기기가 실패했다) — ⚙ 업데이트 줄 · 실패 문구가 옮긴 뒤 다시 켜라고 알린다. 켜 있는 동안 자리는 바뀌지 않으니 한 번만 본다
+  let outsideCache: boolean | null = null
+  const outside = () => (outsideCache ??= outsideApplications(app, process.platform))
+  // 켤 때 맨 먼저 — 배포판이 응용 프로그램 폴더 밖이면 묻지 않고 옮긴다. 옮겼으면 true(Electron 이 앱을 끄고 옮긴 자리에서 다시 켠다 — 창을 열지 않는다)
+  function moveToApplicationsAtLaunch(): boolean {
+    return moveToApplications({ app, platform: process.platform, log: fileLogger() }) === 'moved'
+  }
+
+  const appUpdateView = () => (app.isPackaged ? { ...releaseUpdate().view(), outsideApplications: outside() } : { ...appUpdateStatus, version: appVersion(), running: appUpdateRunning, phase: appUpdatePhase, installFailure: appUpdateInstallFailure, installPending: appInstall.readPending(APP_ROOT) !== null })
   function sendAppUpdate(): void {
     for (const each of packWindows) each.send('app-update:status', appUpdateView())
   }
@@ -96,7 +104,7 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
       // 피드(latest-mac.yml)는 작다 — 그래도 팝업을 자주 열면 이만큼에 한 번만 묻는다
       if (Date.now() - releaseCheckedAt < APP_UPDATE_FETCH_GAP_MS) return Promise.resolve(appUpdateView())
       releaseCheckedAt = Date.now()
-      return releaseUpdate().check()
+      return releaseUpdate().check().then(() => appUpdateView())
     }
     if (!appUpdateEnabled() || appUpdateRunning) return Promise.resolve(appUpdateView())
     if (appUpdateChecking) return appUpdateChecking
@@ -307,5 +315,5 @@ export function createAppUpdater({ app, dialog, say, language, studio, packWindo
     return (await relaunch()).ok
   }
 
-  return { relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit }
+  return { moveToApplicationsAtLaunch, relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit }
 }

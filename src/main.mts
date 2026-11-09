@@ -411,7 +411,7 @@ const { startBoard, stopStaleBoard } = createBoard({ say, boardLogFile, daemonPa
 
 // ── 앱 업데이트(⚙ 설정 팝업 맨 아래 · 개발 앱 체크아웃만 — 결정 D2) — src/main/app-updater.mts ─────────────
 // 쓰는 것(electron app · dialog · 화면 문구 · 스튜디오 집 자리 · 팩 창 목록)은 인자로 넘긴다
-const { relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows, focusedWindow: () => frontCtx()?.win })
+const { moveToApplicationsAtLaunch, relaunchIfUnfinished, appVersion, appUpdateView, checkAppUpdate, runAppUpdate, restartAppUpdate, showAppUpdateNotice, stopInstallBeforeQuit } = createAppUpdater({ app, dialog, say, language: () => language, studio: STUDIO, packWindows, focusedWindow: () => frontCtx()?.win })
 
 // ── 회사 팩 — 본체 명령(공용) ────────────────────────────────
 // 팩 일은 아테나 본체가 한다 — 스튜디오는 `node scripts/athena.mjs pack … --json` 을 부르고, 기다리고, 결과를 보여 준다.
@@ -1052,6 +1052,9 @@ listen('browser:hide', (ctx) => ctx.hideBrowser())
 handle('browser:command', (ctx, name: unknown, value: unknown) => ctx.browserCommand(String(name), typeof value === 'string' ? value : ''))
 
 app.whenReady().then(async () => {
+  // 배포판이 응용 프로그램 폴더 밖(디스크 이미지 창 · 다운로드 폴더)에서 켜졌으면 묻지 않고 옮긴다 — 그 자리에서는 업데이트를 설치하지 못한다.
+  // 옮겼으면 Electron 이 앱을 끄고 옮긴 자리에서 다시 켠다(창을 열지 않는다). 못 옮기면 그대로 켜고 ⚙ 업데이트 줄이 까닭을 알린다
+  if (moveToApplicationsAtLaunch()) return
   // 앱 데이터 폴더 이름(IDENTITY.name)은 맨 위에서 정했다 — 바꾸면 설정 · 데몬이 옮겨진다
   // 보이는 이름은 Athena(메뉴 막대 · Dock 은 개발용 Athena.app — scripts/dev-app.js)
   // 버전은 ⚙ 앱 업데이트 줄과 같은 번호(version 도 같게 — 괄호 안 Electron 번호가 붙지 않게)

@@ -43,6 +43,32 @@ export type Native = {
 // Squirrel 이 받은 .app 을 풀고 서명을 검사하는 데 걸리는 시간의 넉넉한 끝 — 넘으면 설치 실패로 알리고 [업데이트] 를 다시 누를 수 있게
 export const INSTALL_TIMEOUT_MS = 5 * 60 * 1000
 
+// 응용 프로그램 폴더 밖에서 켠 배포판(디스크 이미지 창 · 다운로드 폴더 · App Translocation) — Squirrel.Mac 이 앱을 바꾸지 못해(읽기 전용 자리) 설치가 실패한다.
+// 켤 때 묻지 않고 옮긴다(2026-11-10 사용자 결정). 옮기기는 Electron app.moveToApplicationsFolder — 성공하면 Electron 이 스스로 앱을 끄고 옮긴 자리에서 다시 켠다
+export type MoveApp = { isPackaged: boolean; isInApplicationsFolder(): boolean; moveToApplicationsFolder(): boolean }
+export type MoveResult = 'skip' | 'moved' | 'not-moved' | 'failed'
+
+export function outsideApplications(app: MoveApp, platform: string): boolean {
+  return platform === 'darwin' && app.isPackaged && !app.isInApplicationsFolder()
+}
+
+// 'moved' 면 앱이 곧 꺼진다(창을 열지 않는다). 'not-moved' · 'failed' 면 그대로 켠다 — ⚙ 업데이트 줄이 옮긴 뒤 다시 켜라고 알린다
+export function moveToApplications({ app, platform, log }: { app: MoveApp; platform: string; log: Logger }): MoveResult {
+  if (!outsideApplications(app, platform)) return 'skip'
+  try {
+    if (app.moveToApplicationsFolder()) {
+      log.info('응용 프로그램 폴더 밖에서 켜져 옮겼다 — 다시 켠다')
+      return 'moved'
+    }
+    log.warn('응용 프로그램 폴더로 옮기지 못했다(moveToApplicationsFolder false)')
+    return 'not-moved'
+  } catch (error) {
+    // 관리자 암호 창 취소 · 복사 실패 · 있던 앱을 휴지통에 못 넣음 — Electron 이 던진다
+    log.error(`응용 프로그램 폴더로 옮기지 못했다: ${error instanceof Error ? error.message : String(error)}`)
+    return 'failed'
+  }
+}
+
 // 받기 실패 까닭 — 체크섬이 틀린 것만 따로(받은 파일이 피드와 다르다 · electron-updater 가 지운다)
 export function downloadReason(error: unknown): ReleaseReason {
   const code = error && typeof error === 'object' && 'code' in error ? (error as { code?: unknown }).code : null

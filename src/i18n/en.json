@@ -751,6 +751,8 @@
   "settings.appUpdateDownloadFailed": "Couldn't download the new version",
   "settings.appUpdateChecksumFailed": "Downloaded file failed the checksum",
   "settings.appUpdateInstallFailed": "Couldn't install — see app-update.log",
+  "settings.appUpdateInstallFailedOutside": "Couldn't install because the app is running outside the Applications folder — move it there and reopen",
+  "settings.appUpdateMoveFirst": "{current} → {next} — move the app to the Applications folder and reopen it to update",
   "settings.appUpdateWaiting": "Waiting to install…",
   "settings.appUpdateInstallPending": "Install not finished — press Update to install again",
   "settings.appUpdateInstalling": "Installing…",
