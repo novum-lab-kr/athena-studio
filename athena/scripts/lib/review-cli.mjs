@@ -42,5 +42,35 @@ export const codexReviewArgs = (workDir, schemaFile, outFile, model = '') => [
   'exec', '--ignore-user-config', ...codexModelArgs({ ...readCodexSettings(), ...(model ? { model } : {}) }),
   ...CODEX_TOOL_FEATURES.flatMap((feature) => ['--disable', feature]),
   '-c', 'web_search="disabled"', '--sandbox', 'read-only', '--ephemeral', '--skip-git-repo-check',
-  '--color', 'never', '-C', workDir, '--output-schema', schemaFile, '-o', outFile,
+  '--color', 'never', '--json', '-C', workDir, '--output-schema', schemaFile, '-o', outFile,
 ]
+
+// 토큰 — 앱 일별 토큰(src/lib/daily-tokens.mts)과 같은 셈: input + cache_creation + output, cache_read 는 뺀다. 없으면 모름(null)
+/** @param {string} stdout */
+export const claudeTokens = (stdout) => {
+  try {
+    const usage = JSON.parse(stdout)?.usage
+    if (!usage || typeof usage !== 'object') return null
+    const count = (/** @type {string} */ key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
+    return count('input_tokens') + count('cache_creation_input_tokens') + count('output_tokens')
+  } catch { return null }
+}
+
+// Codex `exec --json` 의 줄마다 JSON — `turn.completed` 의 usage(2026-11-09 codex-cli 실측: input_tokens · cached_input_tokens · cache_write_input_tokens · output_tokens · reasoning_output_tokens).
+// Codex 의 input_tokens 는 cached_input_tokens 를 포함하고 output_tokens 는 reasoning 을 포함한다(codex TokenUsage — non_cached_input) → input - cached + output.
+// 위 Claude 셈의 cache_creation 에 해당하는 cache_write_input_tokens 는 input 안에 이미 들어 있어 더하지 않는다. turn 이 여럿이면 합친다 · 하나도 없으면 null
+/** @param {string} stdout */
+export const codexTokens = (stdout) => {
+  let total = null
+  for (const line of String(stdout ?? '').split('\n')) {
+    if (!line.includes('turn.completed')) continue
+    try {
+      const event = JSON.parse(line)
+      const usage = event?.type === 'turn.completed' ? event.usage : null
+      if (!usage || typeof usage !== 'object') continue
+      const count = (/** @type {string} */ key) => (Number.isFinite(usage[key]) ? usage[key] : 0)
+      total = (total ?? 0) + Math.max(0, count('input_tokens') - count('cached_input_tokens')) + count('output_tokens')
+    } catch { /* 줄이 JSON 이 아니다 */ }
+  }
+  return total
+}
