@@ -828,7 +828,7 @@ const MAX_BYTES = 300 * 1024 * 1024
 const MAX_FILES = 50_000
 const SECRET_NAME = /^(\.env(\..+)?|\.npmrc|\.netrc|\.pypirc|id_rsa.*|id_ed25519.*|.*\.(pem|key|p12|pfx))$/i
 const SECRET_OK = /^\.env\.(example|sample|template)$/i
-const STRIP_NAMES = new Set(['.DS_Store', '.omc', 'node_modules', '__pycache__'])
+const STRIP_NAMES = new Set(['.DS_Store', 'node_modules', '__pycache__'])
 const KNOWN_TOP = new Set(['pack.json', 'ROUTING.md', 'README.md', 'assets', 'agents', 'skills', 'knowledge', 'docs', 'diagrams', 'verify', 'scripts', 'qa', 'sync', 'archive', 'hooks', '.git', '.gitignore', '.gitattributes', '.gitkeep', 'LICENSE'])
 export const validGitUrl = (text) => /^(https:\/\/[\w.-]+(:\d+)?\/[\w./~-]+|ssh:\/\/([\w.-]+@)?[\w.-]+(:\d+)?\/[\w./~-]+|[\w.-]+@[\w.-]+:[\w./~-]+)$/.test(text) && !text.includes('..')
 
@@ -1436,7 +1436,7 @@ export const migrate = async (root, { yes = false, report = () => {} } = {}) => 
     const slot = join(data, 'packs', id)
     if (existsSync(slot)) throw new PackError('conflict', `데이터 폴더에 같은 자리가 있다: ${slot}`)
     mkdirSync(slot, { recursive: true })
-    cpSync(where.packDir, join(slot, 'pack'), { recursive: true, verbatimSymlinks: true, filter: (from) => basename(from) !== '.omc' })
+    cpSync(where.packDir, join(slot, 'pack'), { recursive: true, verbatimSymlinks: true })
     if (existsSync(join(root, 'plans'))) cpSync(realOr(join(root, 'plans')), join(slot, 'plans'), { recursive: true, filter: (from) => basename(from) !== '.gitkeep' })
     if (existsSync(join(root, 'issues'))) cpSync(realOr(join(root, 'issues')), join(slot, 'issues'), { recursive: true, filter: (from) => basename(from) !== 'README.md' })
     ensureSlot(slot)

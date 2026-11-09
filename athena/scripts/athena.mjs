@@ -256,7 +256,7 @@ const runScaffold = () => {
 // ── 팩 백업 · 되살리기 — 팩은 git 이 아닐 수 있다(로컬만 · 사용자 결정 2026-10-17). tar 로 한 파일 ─────────────
 // 비밀값이 들 수 있는 파일은 담지 않는다 — 팩에 원래 두지 않는 것들이지만 실수로 있어도 백업 파일로 새지 않게.
 // .git 도 뺀다(팩이 git 레포면 설정의 인증 정보·과거 커밋의 값이 남을 수 있다 — 그런 팩은 원격으로 백업한다). Codex 리뷰 2026-10-17
-const BACKUP_EXCLUDES = ['.env*', '*.key', '*.pem', '*.p12', '.npmrc', '.netrc', '.git', 'node_modules', '.DS_Store', '.omc']
+const BACKUP_EXCLUDES = ['.env*', '*.key', '*.pem', '*.p12', '.npmrc', '.netrc', '.git', 'node_modules', '.DS_Store']
 // 여러 팩 구조에서는 옛 backup·restore 를 쓰지 않는다 — pack 은 링크라 압축에 링크 하나만 담기고, restore 는 본체 설정에 pack 을 다시 쓴다(리뷰 2026-10-18)
 const packsModeOnly = (what) => {
   if (paths(ROOT).mode !== 'packs') return

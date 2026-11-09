@@ -279,8 +279,7 @@ verify_changed_files() {
     [ -n "$after_commit" ] && [ "$after_commit" != "$merge_base" ] && git -c core.quotePath=false -C "$top" diff --name-only --no-renames "$after_commit"
     git -c core.quotePath=false -C "$top" diff --name-only --no-renames --cached
     git -c core.quotePath=false -C "$top" diff --name-only --no-renames
-    # 미추적 .omc/(OMC 상태 폴더 — 워크트리마다 생긴다)는 바뀐 파일이 아니다. 세면 범위가 전체로 넓어진다(2026-11-01). 이미 추적하는 .omc/ 파일(.omc/skills)은 위 diff 로 그대로 센다
-    git -c core.quotePath=false -C "$top" ls-files --others --exclude-standard --full-name | grep -v '^\.omc/'
+    git -c core.quotePath=false -C "$top" ls-files --others --exclude-standard --full-name
   } | sort -u | sed "s#^#$top/#"
   return $status
 }

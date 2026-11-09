@@ -57,17 +57,6 @@ RESULT="$(scope)"
 check "미추적 새 파일도 바뀐 파일로 센다" "$([ "$RESULT" = "scoped|yes|" ] && echo 0 || echo 1)" "$RESULT"
 reset_tree
 
-# 미추적 .omc/(OMC 가 워크트리에 남기는 상태 폴더)는 바뀐 파일이 아니다 — 세면 앱 파일이 바뀐 것으로 잡혀 범위가 넓어진다(2026-11-01)
-mkdir -p "$WORK/.omc/state"; echo '{}' > "$WORK/.omc/state/x.json"
-echo '// 주석' >> "$WORK/athena/scripts/board/server.mjs"
-RESULT="$(scope)"
-check "미추적 .omc/ 는 뺌 → 범위 모드 · athena 만" "$([ "$RESULT" = "scoped|yes|" ] && echo 0 || echo 1)" "$RESULT"
-reset_tree
-mkdir -p "$WORK/.omc/state"; echo '{}' > "$WORK/.omc/state/x.json"
-RESULT="$(scope)"
-check "미추적 .omc/ 만 있으면 바뀐 파일 없음 → 전체" "$([[ "$RESULT" == full\|no\|*바뀐\ 파일이\ 없어* ]] && echo 0 || echo 1)" "$RESULT"
-reset_tree
-
 echo '{ "name": "y" }' > "$WORK/package.json"
 RESULT="$(scope)"
 check "package.json 변경 → 전체" "$([[ "$RESULT" == full\|no\|*설정* ]] && echo 0 || echo 1)" "$RESULT"

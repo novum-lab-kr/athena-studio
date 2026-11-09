@@ -48,7 +48,7 @@ export const plannedLinks = (root, mode, packDir) => {
     if (!existsSync(source)) continue
     if (!each) { links.push({ at: to, target: source }); continue }
     for (const name of readdirSync(source)) {
-      if (name === '.DS_Store' || name === '.omc' || name === '.gitkeep') continue
+      if (name === '.DS_Store' || name === '.gitkeep') continue
       links.push({ at: join(to, name), target: join(source, name) })
     }
   }

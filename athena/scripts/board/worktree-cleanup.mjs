@@ -7,7 +7,7 @@
  *
  * 판정(계획서 — requireMerged · panes 를 넘길 때):
  *   1. 메인 체크아웃 · main 직접 레포("direct": true) · 워크트리 자리(roots) 밖은 지우지 않는다
- *   2. 미커밋 변경 · 추적 안 된 파일이 없다 — 도구 상태 폴더(.omc/ — oh-my-claudecode 실행 상태 · 그 도구 문서가 "워크트리와 함께 지워진다"고 적은 것)는 빼고 본다
+ *   2. 미커밋 변경 · 추적 안 된 파일이 없다
  *   3. 그 폴더를 cwd · foreground_cwd 로 쓰는 pane 이 없다(화면 목록을 못 읽으면 모르니 지우지 않는다)
  *   4. 브랜치 변경이 prBase 에 반영됐다 — 머지된 PR 의 head 가 지금 HEAD 이거나 · git cherry origin/<prBase> HEAD 에 + 가 없거나 ·
  *      (squash) 브랜치가 바꾼 파일의 내용이 origin/<prBase> 와 같다
@@ -17,11 +17,8 @@
  * 지우기는 git worktree remove(강제 아님) → 빈 폴더만 남았으면 지움 → git worktree prune. 브랜치는 지우지 않는다.
  */
 import { execFile } from 'node:child_process'
-import { existsSync, readdirSync, realpathSync, rmSync, rmdirSync } from 'node:fs'
-import { basename, dirname, join, sep } from 'node:path'
-
-/** 미커밋 판정에서 빼는 도구 상태 폴더(추적 안 된 것일 때만) */
-export const TOOL_STATE_DIRS = ['.omc/']
+import { existsSync, readdirSync, realpathSync, rmdirSync } from 'node:fs'
+import { basename, dirname, sep } from 'node:path'
 
 /** @param {string} dir @param {string[]} args @param {number} [timeout] @returns {Promise<string | null>} 실패(0 이 아닌 종료)면 null */
 const git = (dir, args, timeout = 15_000) =>
@@ -41,11 +38,6 @@ const inside = (child, parent) => child === parent || child.startsWith(parent.en
 /** 계획서 Work ref 줄들 → 맨 앞이 절대 경로인 것(워크트리 후보 · delegate.sh 가 cwd 로 읽는 자리와 같다) — 겹치면 하나
  * @param {string} workRefs planRefs().workRefs(줄바꿈으로 이은 것) @returns {string[]} */
 export const worktreePathsOf = (workRefs) => [...new Set(workRefs.split('\n').map((line) => line.trim().match(/^(\S+)/)?.[1] ?? '').filter((path) => path.startsWith('/')))]
-
-/** `git status --porcelain` 줄 중 도구 상태 폴더가 아닌 것 @param {string} out */
-const realChanges = (out) => out.split('\n').filter(Boolean).filter((line) => !(line.startsWith('?? ') && TOOL_STATE_DIRS.some((dir) => line.slice(3).startsWith(dir))))
-/** 추적 안 된 도구 상태 폴더 — git worktree remove(강제 아님)가 추적 안 된 파일로 거절하지 않게 먼저 지운다 @param {string} out */
-const untrackedToolDirs = (out) => TOOL_STATE_DIRS.filter((dir) => out.split('\n').some((line) => line.startsWith(`?? ${dir}`)))
 
 /** 브랜치 변경이 origin/<prBase> 에 반영됐나 — 'pr' 머지된 PR 의 head · 'content' cherry · 파일 내용 · '' 아님
  * @param {string} path @param {string} head @param {string} prBase @param {string[]} mergedHeads @returns {Promise<'pr' | 'content' | ''>} */
@@ -102,7 +94,7 @@ export const cleanupWorktree = async ({ path, roots, repoOf, requireMerged = fal
   }
   const status = await git(path, ['status', '--porcelain'])
   if (status === null) return { state: 'kept', reason: 'git 상태를 읽지 못해 지우지 않았어요' }
-  if (realChanges(status).length) return { state: 'kept', reason: '커밋하지 않은 변경이 있어서 지우지 않았어요' }
+  if (status.split('\n').some(Boolean)) return { state: 'kept', reason: '커밋하지 않은 변경이 있어서 지우지 않았어요' }
   if (checkPanes) {
     if (!panes) return { state: 'kept', reason: '화면(pane 목록)을 읽지 못해 지우지 않았어요' }
     const user = panes.find((pane) => [pane.cwd, pane.foreground_cwd].some((cwd) => cwd && inside(realOf(cwd), real)))
@@ -117,7 +109,6 @@ export const cleanupWorktree = async ({ path, roots, repoOf, requireMerged = fal
   // 에이전트가 로컬 커밋을 할 수 있으니, 원격 어디에도 없는 커밋이 있으면 지우지 않는다(내용이 prBase 에 있는 것은 빼고 — 위 5)
   const unpushed = ((await git(path, ['rev-list', '--count', 'HEAD', '--not', '--remotes'])) ?? '1').trim()
   if (unpushed !== '0' && merged !== 'content') return { state: 'kept', reason: `push 하지 않은 커밋이 ${unpushed}개 있어서 지우지 않았어요` }
-  for (const dir of untrackedToolDirs(status)) rmSync(join(path, dir), { recursive: true, force: true })
   if ((await git(mainDir, ['worktree', 'remove', path], 60_000)) === null) return { state: 'kept', reason: '워크트리를 지우지 못했어요 (git worktree remove 실패)' }
   // 빈 폴더 잔여물만 — 안에 무엇이 남았으면 두고 본다
   try { if (existsSync(path) && !readdirSync(path).length) rmdirSync(path) } catch { /* 남겨 둔다 */ }

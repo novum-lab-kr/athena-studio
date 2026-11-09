@@ -22,7 +22,7 @@ const MAX_RESTORE_BYTES = 200 * 1024 * 1024
 const MAX_PATCH = 150 * 1024 * 1024 // 코드 변경(patch)은 한도와 상관없이 담는다 — 이보다 크면 "불완전한 백업" 으로 표시하고 되살림을 끝냄으로 치지 않는다
 const SECRET_NAME = /^(\.env(\..+)?|\.npmrc|\.netrc|\.pypirc|id_rsa.*|id_ed25519.*|.*\.(pem|key|p12|pfx))$/i
 const SECRET_OK = /^\.env\.(example|sample|template)$/i
-const SKIP_PARTS = new Set(['node_modules', '.DS_Store', '__pycache__', '.omc'])
+const SKIP_PARTS = new Set(['node_modules', '.DS_Store', '__pycache__'])
 
 const readJson = (path) => { try { return JSON.parse(readFileSync(path, 'utf8')) } catch { return null } }
 const writeJson = (path, value) => {

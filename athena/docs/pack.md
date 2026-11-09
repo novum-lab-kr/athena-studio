@@ -35,7 +35,7 @@ bin/athena pack check 코어 파일에 팩 names(회사 이름)가 있는지 —
 ## 백업 · 되살리기
 
 팩은 git 레포가 아닐 수 있다(로컬에만 두는 회사 — 그러면 `archive/` 보관도 커밋되지 않고 로컬에만 남는다). 그래서 압축 파일 하나로 백업한다.
-- `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store`·`.omc` 는 담지 않는다
+- `bin/athena pack backup [--out <폴더>]` — 지금 팩 폴더를 `<팩>-pack-<날짜-시각>.tar.gz` 로(기본 `<데이터>/backups/packs/` · `pack backup --with-work` 도 같다). `.env*`·`*.key`·`*.pem`·`.npmrc`·`node_modules`·`.DS_Store` 는 담지 않는다
 - `bin/athena pack restore <파일>` — `packs/<팩>` 으로 되살린다. 같은 이름 팩이 있으면 **덮지 않고 멈춘다**(옮기거나 지운 뒤 다시). 팩 없이 쓰는 중이면 `athena.config.json` 의 `pack` 을 잡고 링크까지 건다
 - `pack backup --with-work` 는 이 컴퓨터의 레포 자리(`local.json` — 지금 이어진 링크의 실제 경로)도 담는다. 되살릴 때 그 폴더가 있으면 그대로 잇는다(`--new` 는 그대로 · `--replace` 는 이 컴퓨터 설정에 없는 레포만 채운다). 팀에 주는 `pack export` 에는 담지 않는다. 두 파일 모두 **사본** pack.json 에 레포 git 주소(`repos[].remote` · https 주소의 사용자 · 토큰은 뗀다)를 채운다 — 원본 팩은 그대로
 - **되살리기 정보**(`pack backup --with-work --panes <pane,…>` — 스튜디오가 넘긴다 · `scripts/lib/restore.mjs`): 백업 안 `restore/` 에
