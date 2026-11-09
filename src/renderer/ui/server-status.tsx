@@ -5,6 +5,7 @@
 import { useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
+import { TwistyMark } from './explorer.tsx'
 import type { Say } from './bridge.ts'
 import { bucketHistory, bucketStart, HISTORY_RANGES, metricRows } from '../../lib/server-status.mts'
 import type { ContainerRow, HistoryPoint, SarPoint, Pm2Row, PodRow, SupervisorRow, HistoryRange, MetricKey, ServerStatus, WebCheck } from '../../lib/server-status.mts'
@@ -596,7 +597,7 @@ function DockerTable({ containers, title, say }: { containers: ContainerRow[]; t
                   <tbody key={project.key} className="sx-project">
                     <tr className="sx-project-row" onClick={() => toggle(project.key)} aria-expanded={open}>
                       <td colSpan={2} title={project.name ?? ''}>
-                        <span className={`sx-caret${open ? ' open' : ''}`}>▸</span>
+                        <TwistyMark state={open ? 'open' : 'closed'} />
                         <span className="sx-project-name">{project.name ?? say('server.project.standalone')}</span>
                         <span className="sx-cell-dim">{say('server.project.count', { count: project.containers.length })}</span>
                       </td>

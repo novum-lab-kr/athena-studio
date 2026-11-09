@@ -9,7 +9,7 @@ import type { Say } from './bridge.ts'
 
 type Folder = { error: string } | ExplorerEntry[]
 type Mode = 'files' | 'changes'
-type Twisty = 'open' | 'closed' | 'none'
+export type Twisty = 'open' | 'closed' | 'none'
 
 // 바닐라가 넘긴다 — 작업 공간 찾기(screen.workspaces) · 단축키 글자 · 접기 아이콘(PANEL_ICONS.right) · 미리보기 열기 · 접기
 export type ExplorerActions = {
@@ -166,7 +166,8 @@ function FileIcon({ entry, open }: { entry: { icon?: string | null; iconOpen?: s
 }
 
 // 폴더 열기·닫기 표시 — 둥근 단추 꺾쇠(›, 열리면 아래로 돈다 · 마우스를 올리면 동그란 바탕) · 'none' 은 파일 줄의 빈 자리(이름 줄 맞춤)
-function TwistyMark({ state }: { state: Twisty }) {
+// 서버 화면 컨테이너 묶음 줄(server-status.tsx)도 같이 쓴다
+export function TwistyMark({ state }: { state: Twisty }) {
   const className = `twisty${state === 'open' ? ' open' : ''}${state === 'none' ? ' none' : ''}`
   if (state === 'none') return <span className={className} />
   return (

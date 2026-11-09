@@ -18,14 +18,15 @@
   --warning: #dbb579;
   --error: #e58c99;
 
-  /* 서버 화면 카드 색(서로 · 주의 · 오류 · 강조와 겹치지 않게) */
-  --metric-cpu: #5cc4d4;
-  --metric-load: #a5cc6b;
-  --metric-mem: #6ea8e0;
+  /* 서버 화면 카드 색(서로 · 주의 · 오류 · 강조와 겹치지 않게) — 사용자 선택 B 묶음(2026-11-09).
+     가장 비슷한 두 색도 OKLab 거리 0.14 이상 · 수신(파랑)/송신(주황) 짝은 0.38 · 디스크 보라는 사용자 지정 */
+  --metric-cpu: #38bdf8;
+  --metric-load: #a8e03a;
+  --metric-mem: #2fd6b0;
   --metric-disk: #b48ce0;
-  --metric-rx: #8a90f0;
-  --metric-tx: #5fc99a;
-  --metric-ms: #dd80cf;
+  --metric-rx: #4f6ff7;
+  --metric-tx: #f5923a;
+  --metric-ms: #ff6fae;
 
   /* 글꼴 — 화면 글자는 시스템 글꼴(D2Coding 은 보통·굵게 두 굵기뿐이라 작은 화면 글자가 두꺼워 보인다) ·
      터미널·코드는 네이버 D2Coding(무료 · OFL · 없는 컴퓨터는 시스템 글꼴로) */
@@ -1653,7 +1654,7 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .sx-hover-tip.flip { transform: translate(calc(-100% - 8px), -50%); }
 .sx-hover-time { color: var(--popup-muted); }
 .sx-ring { flex: none; width: 64px; height: 64px; margin-left: auto; }
-.sx-ring circle { fill: none; stroke-width: 5; }
+.sx-ring circle { fill: none; stroke-width: 8; } /* 반지름 19 · 굵기 8 → 바깥 끝 23(viewBox 48 의 반 24 안) — 잘리지 않는 가장 굵은 값 */
 .sx-ring-track { stroke: var(--line); }
 .sx-ring-fill { stroke: var(--metric-disk); stroke-linecap: round; }
 .sx-ring-fill.warn { stroke: var(--warning); }
@@ -1768,8 +1769,9 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .sx-project-row td { background: color-mix(in srgb, var(--text) 4%, transparent); color: var(--text); }
 .sx-project-row:hover td { background: color-mix(in srgb, var(--text) 7%, transparent); }
 .sx-project-name { margin-right: 10px; font-weight: 600; }
-.sx-caret { display: inline-block; width: 14px; color: var(--muted); transition: transform 0.12s; }
-.sx-caret.open { transform: rotate(90deg); }
+/* 펼침 꺾쇠 — 탐색기와 같은 .twisty(SVG 를 돌려 닫힘 · 열림이 같은 크기 · 같은 자리). 글 줄 가운데에 맞춘다 */
+.sx-project-row .twisty { margin-right: 4px; vertical-align: middle; }
+.sx-project-row:hover .twisty { background: var(--surface-active); color: var(--text); }
 .sx-indent { padding-left: 26px !important; }
 /* 상태 아이콘 — 실행 중 · 중지됨 · 오류 · 일부 중지 */
 .sx-st { display: block; width: 15px; height: 15px; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
