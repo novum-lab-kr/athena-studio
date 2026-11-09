@@ -3,6 +3,7 @@
 // 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(허용 목록 안의 고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
 // servers[].health 주소가 있으면 이 맥에서 응답 코드 · 걸린 시간 · (https 면) 인증서 만료일을 본다.
 // 읽을 때마다 숫자만 서버별 기록 파일에 한 줄(<본체>/.pack-data/state/server-history/<이름>.jsonl · 7일) — 주소 · 원문 · 비밀값은 쓰지 않는다.
+// 서버에 sysstat 이 있으면 지난 기록(ssh-run.sh --history — sar · 한 시간에 한 번)을 같이 넘긴다 — 화면이 이 맥 기록이 빈 칸만 채운다(파일에 쓰지 않는다)
 // CPU % · 수신 · 송신은 누적 값(/proc/stat · /proc/net/dev)의 앞 읽기와의 차이 — 앞 값은 이 창 메모리 · 없으면 기록 끝 점(withRates)
 // ssh 오류 원문은 화면에 넘기지 않는다(주소 · 사용자 이름이 섞일 수 있다) — 이유 이름만(src/lib/server-status.mts failReason)
 import fs from 'node:fs'
@@ -13,9 +14,10 @@ import type { TLSSocket } from 'node:tls'
 import { execFile } from 'node:child_process'
 import * as core from '../lib/core.mts'
 import * as serverModel from '../lib/server-status.mts'
-import type { Counters, HistoryPoint, ServerEntry, ServerReading, ServerStatus, WebCheck } from '../lib/server-status.mts'
+import type { Counters, HistoryPoint, SarPoint, ServerEntry, ServerReading, ServerStatus, WebCheck } from '../lib/server-status.mts'
 
-export type ServerStatusReply = { servers: ServerReading[]; history: Record<string, HistoryPoint[]> }
+// sar — 서버 sysstat 기록(빈 구간 채우기 · 서버에 sar · 기록이 없으면 빈 목록)
+export type ServerStatusReply = { servers: ServerReading[]; history: Record<string, HistoryPoint[]>; sar: Record<string, SarPoint[]> }
 export type ServerStatusCtx = {
   athenaDir: string | null
   serverList?: () => Promise<ServerEntry[]>
@@ -28,6 +30,12 @@ const WEB_TIMEOUT = 10000
 // 같은 팩 창이 둘이면 둘 다 읽는다 — 1분 안에 쓴 줄이 있으면 또 쓰지 않는다
 const RECORD_GAP = 60_000
 const DAY = 24 * 60 * 60 * 1000
+// sar 기록 — 서버마다 한 시간에 한 번만 다시 읽는다(10분 간격 기록 · 앱이 켜져 있는 동안은 이 맥 기록이 있다) · 하루 파일 10개라 출력이 크다
+// 못 읽었으면(접속 실패 · sar 없음) 10분 뒤 다시
+const SAR_EVERY = 60 * 60 * 1000
+const SAR_RETRY = 10 * 60 * 1000
+const SAR_TIMEOUT = 30000
+const SAR_BUFFER = 16 * 1024 * 1024
 
 // 이 맥에서 응답 확인 — 본문은 받지 않는다(머리만 보고 끊는다)
 function checkWeb(url: string): Promise<WebCheck> {
@@ -81,6 +89,23 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
     })
   })
 
+  // 지난 기록(ssh-run.sh --history — sar) · 못 읽으면 빈 목록(옛 코어 · sar 없음 · 기록 없음 · 시간 넘김)
+  const readSar = (server: ServerEntry): Promise<SarPoint[]> => new Promise((resolve) => {
+    const script = path.join(ctx.athenaDir || '', 'scripts', 'ssh-run.sh')
+    if (!fs.existsSync(script)) return resolve([])
+    execFile('bash', [script, server.name, '--history'], { cwd: ctx.athenaDir as string, env: core.childEnv(process.env), encoding: 'utf8', timeout: SAR_TIMEOUT, maxBuffer: SAR_BUFFER }, (_error, stdout) => {
+      resolve(serverModel.parseSar(stdout || '', Date.now()))
+    })
+  })
+  const sarCache = new Map<string, { at: number; points: SarPoint[] }>()
+  const sarOf = async (server: ServerEntry): Promise<SarPoint[]> => {
+    const cached = sarCache.get(server.name)
+    if (cached && Date.now() - cached.at < (cached.points.length ? SAR_EVERY : SAR_RETRY)) return cached.points
+    const points = await readSar(server)
+    sarCache.set(server.name, { at: Date.now(), points })
+    return points
+  }
+
   // 기록 자리 — 팩 데이터(.pack-data → <데이터>/packs/<팩>)가 있는 본체만. 없으면 기록 없이 지금 값만
   const historyDir = () => {
     const packData = path.join(ctx.athenaDir || '', '.pack-data')
@@ -130,8 +155,10 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   // 서버마다 한 번씩(함께) — 서버가 없으면 빈 목록
   ctx.serverStatus = async () => {
     const targets = serverModel.packTargets(await readPack())
+    const sar: Record<string, SarPoint[]> = {}
     const readings = await Promise.all(targets.map(async ({ health, ...server }): Promise<ServerReading> => {
-      const [status, web] = await Promise.all([readOne(server), health ? checkWeb(health) : Promise.resolve(null)])
+      const [status, web, past] = await Promise.all([readOne(server), health ? checkWeb(health) : Promise.resolve(null), sarOf(server)])
+      sar[server.name] = past
       return { ...server, status, web, at: Date.now() }
     }))
     const dir = historyDir()
@@ -144,6 +171,6 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
       if (dir) history[reading.name] = await record(dir, reading, points).catch(() => points)
     }
     if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
-    return { servers, history }
+    return { servers, history, sar }
   }
 }

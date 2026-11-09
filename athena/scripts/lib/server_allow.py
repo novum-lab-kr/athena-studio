@@ -132,6 +132,8 @@ SPECS = {
     'apt': spec('a', long='--installed --upgradable --all-versions'),
     'npm': spec('agl', long='--all --json --long --global --parseable --prod --production --depth='),
     'caddy': spec(long='--pretty --config= --adapter='),
+    # podman — docker 읽기 중 상태 칸에 필요한 것만(logs · compose 는 뺐다 — podman logs -n 은 docker 와 뜻이 다르고 compose 는 바깥 도구를 부른다)
+    'podman': spec('aqsltv', 'n', '--all --quiet --no-trunc --no-stream --size --latest --format= --filter='),
 }
 # sudo 뒤에 올 수 있는 명령 — root 로 읽어야 하는 것만(더 좁게)
 SUDO_OK = {'systemctl', 'journalctl', 'docker', 'ss', 'lsof', 'netstat', 'iptables', 'ufw', 'nginx', 'ls', 'du', 'cat', 'head', 'tail', 'grep', 'crontab'}
@@ -144,6 +146,7 @@ SUBCOMMANDS = {
     'apt': {'list'},
     'npm': {'ls', 'list'},
     'caddy': {'version', 'validate', 'list-modules', 'adapt'},
+    'podman': {'ps', 'stats', 'images', 'version', 'info', 'top', 'port', 'container', 'image', 'system', 'network', 'volume'},
     'hostnamectl': {'status'},
     'timedatectl': {'status'},
 }
@@ -161,7 +164,24 @@ EXACT = {
     'service': [['--status-all'], [None, 'status']],
     'ufw': [['status'], ['status', 'verbose'], ['status', 'numbered']],
     'nginx': [['-t'], ['-T'], ['-v'], ['-V'], ['-t', '-q']],
+    # supervisorctl status 만 — 명령 인자를 주면 비대화라 인증을 묻지 않는다(supervisor supervisorctl.py onecmd 의 401 갈래)
+    'supervisorctl': [['status']],
 }
+# podman 의 둘째 단 — docker 와 같되 compose · logs 는 없다
+PODMAN_SECOND = {
+    'network': {'ls'}, 'volume': {'ls'}, 'container': {'ls', 'top', 'port'}, 'image': {'ls'}, 'system': {'df', 'info'},
+}
+# kubectl get 의 자원 — 표 출력(기본 · -o wide)만. secrets · configmaps · 그 밖 자원 · 쉼표 묶음 · 자원/이름 꼴은 막는다
+KUBECTL_RESOURCES = {'pods', 'pod', 'po', 'deployments', 'deployment', 'deploy', 'nodes', 'node', 'no', 'statefulsets', 'statefulset', 'sts', 'daemonsets', 'daemonset', 'ds'}
+# -o 는 wide 만(json · yaml · jsonpath · go-template · custom-columns 는 파드 spec 의 env 값이 나온다) · 앞 옵션(--kubeconfig · --server · --token …)은 없다
+KUBECTL_GET = spec('A', 'no', '--all-namespaces --no-headers --namespace= --output= --request-timeout=')
+SLEEP_MAX = 5
+# sar — 저장된 하루 기록 읽기만(-u CPU · -q 부하 · -r 메모리 · -n DEV 네트워크). -o(파일 쓰기)는 없다 · -f 는 /var/log/sysstat/saNN 만
+SAR = spec('uqr', 'nfse')
+SAR_FILE = re.compile(r'/var/log/sysstat/sa\d\d')
+SAR_TIME = re.compile(r'\d\d:\d\d(:\d\d)?')
+# sar 앞에만 붙일 수 있는 환경 값 — 행 시각을 로케일(%X · 오전/오후) 대신 HH:MM:SS 로(sysstat sa_common.c set_record_timestamp_string)
+SAR_ENV = 'S_TIME_FORMAT=ISO'
 # find 의 조건 — 값 없는 것 · 값 하나를 받는 것(-fprint · -exec · -delete … 는 없다)
 FIND_FLAGS = {'-print', '-print0', '-ls', '-empty', '-xdev', '-mount', '-readable', '-executable', '-writable', '-not', '!', '-a', '-o', '-and', '-or', '-prune', '-true', '-false', '-L', '-H', '-P', '-depth'}
 FIND_ARGS = {'-name', '-iname', '-path', '-ipath', '-wholename', '-type', '-mtime', '-mmin', '-atime', '-amin', '-ctime', '-cmin', '-size', '-maxdepth', '-mindepth', '-newer', '-user', '-group', '-perm', '-regex', '-iregex', '-links', '-samefile', '-printf', '-uid', '-gid'}
@@ -322,11 +342,12 @@ def check_sub(name, plain, values, args):
     if first not in SUBCOMMANDS[name]:
         return f'{name} {first or ""}'.strip() + ' (읽기 하위 명령이 아니다)'
     rest = plain[1:]
-    if name == 'docker':
+    if name in ('docker', 'podman'):
+        second = DOCKER_SECOND if name == 'docker' else PODMAN_SECOND
         if first == 'stats' and '--no-stream' not in args:
-            return 'docker stats 는 --no-stream 만'
-        if first in DOCKER_SECOND and (not rest or rest[0] not in DOCKER_SECOND[first]):
-            return f'docker {first} {rest[0] if rest else ""}'.strip() + ' (읽기 하위 명령이 아니다)'
+            return f'{name} stats 는 --no-stream 만'
+        if first in second and (not rest or rest[0] not in second[first]):
+            return f'{name} {first} {rest[0] if rest else ""}'.strip() + ' (읽기 하위 명령이 아니다)'
     if name == 'git' and first in ('branch', 'tag') and rest and '-l' not in args and '--list' not in args:
         return f'git {first} 만들기 · 지우기'
     if name == 'pm2' and first == 'logs' and '--nostream' not in args:
@@ -336,10 +357,49 @@ def check_sub(name, plain, values, args):
     return None
 
 
+def check_kubectl(args):
+    """kubectl get <자원> [이름] — 정한 자원 · 표 출력만(kubectl · k3s kubectl 이 같이 쓴다)"""
+    if not args or args[0] != 'get':
+        return f'kubectl {(args or [""])[0]}'.strip() + '(get 만)'
+    reason, plain, values = parse('kubectl get', args[1:], KUBECTL_GET)
+    if reason:
+        return reason
+    if not plain or plain[0] not in KUBECTL_RESOURCES:
+        return f'kubectl get {plain[0] if plain else ""}'.strip() + '(정한 자원이 아니다 — pods · deployments · nodes · statefulsets · daemonsets)'
+    if len(plain) > 2:
+        return 'kubectl get 이름 인자가 많다'
+    for option, value in values:
+        if option in ('-o', '--output') and value != 'wide':
+            return f'kubectl get {option} {value}(표 출력 — wide 만)'
+        if option == '--request-timeout' and not re.fullmatch(r'\d+[sm]?', value):
+            return 'kubectl --request-timeout 은 숫자(s · m)만'
+    return None
+
+
+def check_sar(args):
+    """sar -u · -q · -r · -n DEV · -f /var/log/sysstat/saNN · -s/-e 시각 · 끝의 간격 · 횟수 숫자만"""
+    reason, plain, values = parse('sar', args, SAR)
+    if reason:
+        return reason
+    # 간격만 주면 끝없이 돈다 — 간격 · 횟수 둘 다(짧게)
+    if plain and (len(plain) != 2 or any(not arg.isdigit() for arg in plain) or int(plain[0]) > SLEEP_MAX or not 1 <= int(plain[1]) <= 10):
+        return f'sar 끝 인자는 간격(≤{SLEEP_MAX}) · 횟수(≤10) 숫자 둘만'
+    for option, value in values:
+        if option == '-n' and value != 'DEV':
+            return f'sar -n {value}(DEV 만)'
+        if option == '-f' and not SAR_FILE.fullmatch(value):
+            return f'sar -f {value}(/var/log/sysstat/saNN 만)'
+        if option in ('-s', '-e') and not SAR_TIME.fullmatch(value):
+            return f'sar {option} {value}(HH:MM[:SS] 만)'
+    return None
+
+
 def check_one(words, under_sudo=False):
     """명령 하나(낱말 목록) — 허용이면 None, 아니면 이유"""
     if not words:
         return '빈 명령'
+    if words[0] == SAR_ENV and not under_sudo:
+        return check_sar(words[2:]) if len(words) > 1 and words[1] == 'sar' else f'{SAR_ENV} 는 sar 앞에서만'
     if re.match(r'^[A-Za-z_]\w*=', words[0]):
         return f'환경 값 앞붙임({words[0].split("=")[0]}=…)'
     if words[0] == 'sudo':
@@ -379,6 +439,18 @@ def check_one(words, under_sudo=False):
         return check_ip(args)
     if name == 'curl':
         return check_curl(args)
+    if name == 'kubectl':
+        return check_kubectl(args)
+    if name == 'k3s':
+        return check_kubectl(args[1:]) if args and args[0] == 'kubectl' else 'k3s 는 kubectl get 만'
+    if name == 'sar':
+        return check_sar(args)
+    if name == 'sleep':
+        if len(args) != 1 or not re.fullmatch(r'\d+(\.\d+)?', args[0]) or float(args[0]) > SLEEP_MAX:
+            return f'sleep 은 {SLEEP_MAX}초 이하 숫자 하나만'
+        return None
+    if name == 'podman' and args and args[0].startswith('-'):
+        return f'podman {args[0]}(앞 옵션 — 다른 연결 · 설정)'
     if name == 'command':
         return None if len(args) >= 2 and args[0] == '-v' and not any(arg.startswith('-') for arg in args[1:]) else 'command 는 -v 만'
     if name == 'iptables':

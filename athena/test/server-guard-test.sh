@@ -42,6 +42,17 @@ allow allow "curl -s -o /dev/null -I http://localhost"
 allow allow "true"
 allow allow "echo ==load; cat /proc/loadavg; echo ==cpu; nproc; free -b; df -P /"
 allow allow "cat .env.example"
+# 읽기만 좁게 연 것(2026-11-09) — sleep 짧게 · podman 읽기 · kubectl get 표 · supervisorctl status
+allow allow "sleep 1"
+allow allow "sleep 0.5"
+allow allow "podman ps -a --format '{{.Names}}|{{.State}}'"
+allow allow "podman stats --no-stream --format '{{.Name}}|{{.CPUPerc}}'"
+allow allow "podman images"
+allow allow "kubectl get pods -A --no-headers --request-timeout=5s"
+allow allow "kubectl get deployments -n web -o wide"
+allow allow "k3s kubectl get nodes"
+allow allow "supervisorctl status"
+allow allow "pm2 ls"
 
 echo "② 막힘 — 목록에 없거나 바꾸는 명령"
 allow deny "rm -rf /tmp/x"
@@ -97,6 +108,67 @@ allow deny "/tmp/x"
 allow deny "sudo -u root rm x"
 allow deny "sudo rm x"
 allow deny "ls 'unterminated"
+# 좁게 연 명령의 막혀야 할 꼴 — 오래 멈추기 · 쓰기 · 비밀값 · 원문(json · yaml 에 env 값)
+allow deny "sleep 6"
+allow deny "sleep 1m"
+allow deny "sleep infinity"
+allow deny "sleep 1 2"
+allow deny "sudo sleep 1"
+allow deny "podman exec web ls"
+allow deny "podman run alpine"
+allow deny "podman rm web"
+allow deny "podman stats"
+allow deny "podman logs web"
+allow deny "podman compose ps"
+allow deny "podman --remote ps"
+allow deny "podman container rm web"
+allow deny "sudo podman ps"
+allow deny "kubectl get secrets"
+allow deny "kubectl get secret db -n web"
+allow deny "kubectl get configmaps"
+allow deny "kubectl get cm"
+allow deny "kubectl get pods,secrets"
+allow deny "kubectl get pod/web"
+allow deny "kubectl get pods -o yaml"
+allow deny "kubectl get pods -ojson"
+allow deny "kubectl get pods --output=jsonpath='{.items}'"
+allow deny "kubectl get pods -o go-template='{{.}}'"
+allow deny "kubectl get pods -o custom-columns=A:.spec"
+allow deny "kubectl get pods -w"
+allow deny "kubectl get --raw /api"
+allow deny "kubectl --kubeconfig /root/x get pods"
+allow deny "kubectl describe pods"
+allow deny "kubectl exec web -- sh"
+allow deny "kubectl delete pod web"
+allow deny "k3s kubectl get secrets"
+allow deny "k3s server"
+allow deny "sudo kubectl get pods"
+allow deny "supervisorctl start all"
+allow deny "supervisorctl stop web"
+allow deny "supervisorctl restart web"
+allow deny "supervisorctl status web"
+allow deny "supervisorctl tail web"
+allow deny "supervisorctl -c /etc/x.conf status"
+# sar — 저장된 기록 읽기만(-u · -q · -r · -n DEV · -f /var/log/sysstat/saNN) · 쓰기(-o) · 다른 파일 · 끝없는 반복 · 다른 환경 값은 막힘
+allow allow "S_TIME_FORMAT=ISO sar -u -q -r -n DEV -f /var/log/sysstat/sa08 2>/dev/null"
+allow allow "sar -u -f /var/log/sysstat/sa31 -s 00:00:00 -e 12:00"
+allow allow "sar -q 1 3"
+allow deny "sar -o /tmp/sa -u 1 3"
+allow deny "sar -u -f /etc/shadow"
+allow deny "sar -u -f /var/log/sysstat/../../etc/shadow"
+allow deny "sar -u -f /var/log/sa/sa08"
+allow deny "sar -n ALL"
+allow deny "sar -A"
+allow deny "sar -u 1"
+allow deny "sar -u 60 100"
+allow deny "S_TIME_FORMAT=ISO ls"
+allow deny "S_TIME_FORMAT=ISO; sar -u"
+allow deny "S_TIME_FORMAT=other sar -u"
+allow deny "LC_ALL=C sar -u"
+allow deny "sudo S_TIME_FORMAT=ISO sar -u"
+allow deny "sudo sar -u"
+allow deny "pm2 jlist"
+allow deny "pm2 prettylist"
 
 echo "③ 우회 — 2026-11-08 보안 검토 높음1(옵션 줄임 · 묶음 · 쓰기 옵션 · 펼침 · 환경 변수)"
 while IFS= read -r line; do allow deny "$line"; done <<'LIST'
@@ -471,12 +543,22 @@ if [ "$(grep -n -x -- '--' "$LOG" | cut -d: -f1)" = "$(( $(grep -n -x dukbae-ser
 # 상태 칸 읽기(--status) — 고정 읽기 명령 · 요청 없이 바로
 : >"$LOG"; OUT="$(bash "$RUN" dukbae --status 2>/dev/null)"; expect "--status 는 바로 실행" 0 $?
 has "--status 가 상태 명령을 ssh 로 보냈다" "$LOG" "echo ==load"
-lacks "--status 는 요청을 열지 않는다" "$LOG" "request"
+# 상태 명령 안의 kubectl --request-timeout 글자와 헷갈리지 않게 가짜 athena 가 쓰는 줄 머리("request <키>")만 본다
+if grep -q '^request ' "$LOG" 2>/dev/null; then no "--status 는 요청을 열지 않는다 — 'request' 줄 있음"; else ok "--status 는 요청을 열지 않는다"; fi
 case "$OUT" in *"==end"*) ok "--status 출력이 끝 칸까지 왔다" ;; *) no "--status 출력 — ==end 없음" ;; esac
 STATUS_CMD="$(sed -n "s/^STATUS_COMMAND='\(.*\)'$/\1/p" "$RUN")"
 python3 scripts/lib/server_allow.py check "$STATUS_CMD" >/dev/null 2>&1; expect "상태 명령은 허용 목록 안" 0 $?
 : >"$LOG"; bash "$RUN" dukbae --status extra >/dev/null 2>&1; expect "--status 뒤 인자는 쓰임새 오류(2)" 2 $?
 lacks "거절한 --status 는 ssh 를 부르지 않는다" "$LOG" "ssh "
+
+# 지난 기록 읽기(--history) — sar 하루 파일 · 허용 목록 안 · 요청 없이 바로
+: >"$LOG"; bash "$RUN" dukbae --history >/dev/null 2>&1; expect "--history 는 바로 실행" 0 $?
+has "--history 가 sar 기록 명령을 ssh 로 보냈다" "$LOG" "S_TIME_FORMAT=ISO sar -u -q -r -n DEV -f /var/log/sysstat/sa"
+has "--history 가 시간대를 같이 읽는다" "$LOG" "date +%z"
+if grep -q '^request ' "$LOG" 2>/dev/null; then no "--history 는 요청을 열지 않는다"; else ok "--history 는 요청을 열지 않는다"; fi
+if grep -q -- ' -o ' "$LOG"; then no "--history 명령에 -o(쓰기) 없음"; else ok "--history 명령에 -o(쓰기) 없음"; fi
+: >"$LOG"; bash "$RUN" dukbae --history extra >/dev/null 2>&1; expect "--history 뒤 인자는 쓰임새 오류(2)" 2 $?
+lacks "거절한 --history 는 ssh 를 부르지 않는다" "$LOG" "ssh "
 
 echo
 if [ "$FAIL" = 0 ]; then echo "✅ server-guard 시험 통과"; else echo "❌ server-guard 시험 실패"; fi
