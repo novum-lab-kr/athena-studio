@@ -55,11 +55,15 @@ issue 20261110-demo-single open plans/task/20261110-single.md
 # ③ 작업 중 발견 — Issue 없는 진행 중 계획서를 열린 이슈가 plan: 으로 가리킴 → 계획서 카드는 그대로 남는다
 plan 20261110-other in_progress '없음' "$WORKING"
 issue 20261110-demo-other-found open plans/task/20261110-other.md
-# ④ 보관 — 끝난 계획서(PR 없음 · 묶인 pane 없음)에 이슈 셋. 끝난 것 둘 · 진행 중 하나
+# ④ 보관 — 끝난 계획서(PR 없음 · 묶인 pane 없음)에 이슈 셋. 끝난 것 둘 · 파일 status 를 안 옮긴(open) 것 하나
 plan 20261110-archive done 'issues/20261110-demo-e1.md, issues/20261110-demo-e2.md issues/20261110-demo-e3.md' ''
 issue 20261110-demo-e1 done plans/task/20261110-archive.md
-issue 20261110-demo-e2 in_progress plans/task/20261110-archive.md
+issue 20261110-demo-e2 open plans/task/20261110-archive.md
 issue 20261110-demo-e3 done plans/task/20261110-archive.md
+# ⑤ 묶음 · 일하는 pane 없음 · 리뷰 단계 — 이슈 파일 status 는 open · planned 그대로(손으로 안 옮김)
+plan 20261110-review ready_for_review 'issues/20261110-demo-r1.md · issues/20261110-demo-r2.md' ''
+issue 20261110-demo-r1 open plans/task/20261110-review.md
+issue 20261110-demo-r2 planned plans/task/20261110-review.md
 
 mkdir -p "$TMP/fixture"
 cp "$SRC/scripts/screen-check/fixtures/studio/"* "$TMP/fixture/"
@@ -102,9 +106,18 @@ const main = async () => {
   for (const name of ['20261110-demo-a', '20261110-demo-b']) {
     check(`Issue 줄에 묶인 열린 이슈 ${name} → 계획서가 붙고 일하는 pane 이면 진행 중 칸`, card(name)?.linkedPlan?.id === 'plans/task/20261110-multi.md' && card(name)?.column === 'doing', brief)
   }
+  for (const name of ['20261110-demo-a', '20261110-demo-b']) {
+    check(`묶인 이슈 ${name} — 파일 status: open 이어도 열림에서 빠짐(진행 중)`, card(name)?.status === 'in_progress', brief)
+  }
+  for (const name of ['20261110-demo-r1', '20261110-demo-r2']) {
+    check(`리뷰 단계 묶음의 이슈 ${name}(파일 ${name.endsWith('r1') ? 'open' : 'planned'}) → 진행 중 · 검토 칸`, card(name)?.status === 'in_progress' && card(name)?.column === 'review' && card(name)?.linkedPlan?.id === 'plans/task/20261110-review.md', brief)
+  }
+  check('이슈 파일 status: 는 고쳐 쓰지 않음', /^status: open$/m.test(read(join(core, 'issues/20261110-demo-a.md'))) && /^status: planned$/m.test(read(join(core, 'issues/20261110-demo-r2.md'))))
   check('묶음 계획서 카드는 따로 안 보임', !cards.some((item) => item.id === 'plans/task/20261110-multi.md'), brief)
   check('Issue 줄에 없는 열린 이슈(작업 중 발견) → 안 붙음', card('20261110-demo-found') && !card('20261110-demo-found').linkedPlan, brief)
   check('옛 형식(Issue 하나) → 붙음', card('20261110-demo-single')?.linkedPlan?.id === 'plans/task/20261110-single.md' && card('20261110-demo-single')?.column === 'doing', brief)
+  check('옛 형식(Issue 하나)의 열린 이슈 → status 그대로 open([작업 시작] 이 계획서 이어 가기 · 이어 갈 이슈)', card('20261110-demo-single')?.status === 'open', brief)
+  check('작업 중 발견 이슈 → status 그대로 open', card('20261110-demo-found')?.status === 'open' && card('20261110-demo-other-found')?.status === 'open', brief)
   check('Issue 없는 계획서를 가리키는 열린 이슈 → 안 붙고 계획서 카드는 그대로', card('20261110-demo-other-found') && !card('20261110-demo-other-found').linkedPlan && cards.some((item) => item.id === 'plans/task/20261110-other.md'), brief)
 
   console.log('── 보관')
@@ -113,11 +126,15 @@ const main = async () => {
   const archivedPlan = read(join(ARCHIVED, 'plan.md'))
   check('보관한 계획서 Issue 줄 — 묶은 이슈는 보관 자리 · 나머지는 그대로', /^- Issue: archive\/20261110-archive\/issue\.md, issues\/20261110-demo-e2\.md issues\/20261110-demo-e3\.md$/m.test(archivedPlan), archivedPlan)
   const e2 = read(join(core, 'issues/20261110-demo-e2.md'))
-  check('진행 중인 묶인 이슈는 남고 plan: 이 보관 자리로', /^plan: archive\/20261110-archive\/plan\.md$/m.test(e2), e2)
+  check('안 끝난 묶인 이슈는 남고 plan: 이 보관 자리로', /^plan: archive\/20261110-archive\/plan\.md$/m.test(e2), e2)
   // 완료 판정은 수집 앞쪽(보관 전)에 하니 보관 뒤 주기의 것을 본다
   const planCheckOf = (found) => found?.cards?.find((item) => item.id === 'issues/20261110-demo-e2.md')?.doneCheck?.checks?.find((item) => item.label.startsWith('plan:'))
   const later = await waitUntil((found) => planCheckOf(found)?.ok === true)
   check('남은 이슈의 완료 판정이 보관된 계획서를 읽음(Status done)', planCheckOf(later)?.ok === true, JSON.stringify(planCheckOf(later)))
+  // 보관한 주기에는 카드의 plan: 이 아직 옛 자리다 — 고친 plan: 을 읽은 다음 주기를 본다
+  const e2of = (found) => found?.cards?.find((item) => item.id === 'issues/20261110-demo-e2.md')
+  const e2card = e2of(await waitUntil((found) => e2of(found)?.plan?.startsWith('archive/')))
+  check('계획서가 보관된 뒤에도 남은 묶인 이슈(파일 open)는 열림으로 안 돌아감(진행 중)', e2card?.status === 'in_progress', JSON.stringify(e2card && { status: e2card.status, column: e2card.column }))
   const e3 = read(join(core, 'archive/20261110-demo-e3/issue.md'))
   check('끝난 다른 묶인 이슈는 따로 보관 · plan: 이 보관 자리로', /^plan: archive\/20261110-archive\/plan\.md$/m.test(e3), e3 || log)
 }
