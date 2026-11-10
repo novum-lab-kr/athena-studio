@@ -181,3 +181,30 @@ test('CHANGELOG.md: 0.47.38 → 0.47.39는 최신 0.47 절과 그 번역만 고�
     for (const lang of ['ko', 'ja', 'zh']) assert.equal(notes.noteText(note, lang), tables[lang][note.text])
   }
 })
+
+// 2026-11-10 제보 재현 — 0.60.14 → 15 → 16 → 18 끝자리 업데이트마다 0.60 절 전체가 똑같이 떴다.
+// 줄마다 판 번호(그 줄을 처음 넣은 main 커밋의 태그 · scripts/changelog-versions.js)가 있으면 (이전, 새] 판에 들어간 줄만 고른다
+test('notesBetween: 줄마다 판 번호가 있으면 이전 판 뒤에 들어간 줄만 — 끝자리 업데이트마다 같은 절을 되풀이하지 않는다', () => {
+  const sections = notes.parseChangelog(`## 0.60 (v0.60.0 – · Nov 8, 2026)
+### Improved
+- Old60
+### Fixed
+- Fix16
+- Fix18
+## 0.58 (v0.58.0 – · Nov 8, 2026)
+### New
+- Old58
+`)
+  const versions = { Old60: '0.59.4', Fix16: '0.60.16', Fix18: '0.60.18', Old58: '0.58.0' }
+  const texts = (from, to) => notes.notesBetween(sections, from, to, versions).map((note) => note.text)
+  assert.deepEqual(texts('0.60.14', '0.60.15'), []) // 줄 없는 판 — 같은 글을 다시 띄우지 않는다
+  assert.deepEqual(texts('0.60.15', '0.60.16'), ['Fix16'])
+  assert.deepEqual(texts('0.60.16', '0.60.18'), ['Fix18'])
+  assert.deepEqual(texts('0.60.14', '0.60.18+2'), ['Fix16', 'Fix18'])
+  assert.deepEqual(texts('0.58.3', '0.60.16'), ['Old60', 'Fix16'])
+  assert.deepEqual(texts('0.57.0', '0.60.0'), ['Old60', 'Old58'])
+  // 판 번호를 모르는 줄(판 번호 붙이기 전 · 태그 없는 커밋)은 고르지 않는다 · 버전을 모르거나 내려가면 빈 목록
+  assert.deepEqual(notes.notesBetween(sections, '0.60.15', '0.60.18', { Fix18: '0.60.18' }).map((note) => note.text), ['Fix18'])
+  assert.deepEqual(notes.notesBetween(sections, null, '0.60.18', versions), [])
+  assert.deepEqual(notes.notesBetween(sections, '0.60.18', '0.60.16', versions), [])
+})

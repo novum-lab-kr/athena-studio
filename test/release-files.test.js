@@ -157,3 +157,34 @@ test('머지 전 검사 — 기준은 가장 높은 v* 태그(release-version.js
   assert.equal(release.gateBase(['v0.9.1', 'v0.55.3', 'v0.55.10', 'x1', 'v0.56.0-rc']), '0.55.10')
   assert.equal(release.gateBase([]), require('../package.json').version)
 })
+
+// 2026-11-10 — 공개 Release v0.60.15 · v0.60.18 본문이 같은 0.60 절이던 것. 공개판 뒤에 들어간 줄만
+test('Release 본문 — 공개판 뒤 판에 들어간 줄만 종류별로 · 줄이 없으면 NO_CHANGES · 공개판 · 판 번호를 모르면 minor 절 그대로', () => {
+  const changelog = ['# Changelog', '', '## 0.60 (v0.60.0 – · Nov 8, 2026)', '', '### Improved', '- Old', '', '### Fixed', '- Fix16', '- Fix18', '', '## 0.58 (v0.58.0 – · Nov 8, 2026)', '', '### New', '- Old58', ''].join('\n')
+  const versions = { Old: '0.59.4', Fix16: '0.60.16', Fix18: '0.60.18', Old58: '0.58.0' }
+  assert.equal(release.releaseBody({ changelog, target: '0.60.18', since: '0.60.16', versions }), '### Fixed\n\n- Fix18')
+  assert.equal(release.releaseBody({ changelog, target: '0.60.18', since: '0.58.3', versions }), '### Improved\n\n- Old\n\n### Fixed\n\n- Fix16\n- Fix18')
+  assert.equal(release.releaseBody({ changelog, target: '0.60.15', since: '0.60.14', versions }), release.NO_CHANGES)
+  assert.equal(release.releaseBody({ changelog, target: '0.60.18', since: null, versions }), release.changelogSection(changelog, '0.60.18'))
+  assert.equal(release.releaseBody({ changelog, target: '0.60.18', since: '0.60.16', versions: null }), release.changelogSection(changelog, '0.60.18'))
+  assert.equal(release.releaseBody({ changelog, target: '0.61.0', since: '0.60.16', versions }), null)
+})
+
+test('머지 전 검사 — feat · fix 제목이면 최신 태그 때 없던 CHANGELOG 줄이 있어야 한다 · fix(test|ci|docs) 와 다른 접두사는 면제 · 태그 CHANGELOG 를 모르면 보지 않는다', () => {
+  const previous = ['## 0.60 (v0.60.0 – · Nov 8, 2026)', '', '### Fixed', '- Old', ''].join('\n')
+  const added = previous.replace('- Old', '- Old\n- New fix')
+  const blocked = release.mergeGate({ title: 'fix(release): 고침', latest: '0.60.18', changelog: previous, previous })
+  assert.equal(blocked.ok, false)
+  assert.ok(String(blocked.reason).includes('v0.60.18 뒤 새 줄이 없다'), String(blocked.reason))
+  assert.equal(release.mergeGate({ title: 'fix(release): 고침', latest: '0.60.18', changelog: added, previous }).ok, true)
+  assert.equal(release.mergeGate({ title: 'fix: 고침', latest: '0.60.18', changelog: previous, previous: null }).ok, true)
+  const ready = `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n### New\n- Feature\n\n${previous}`
+  assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: ready, previous }).ok, true)
+  assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n${previous}`, previous }).ok, false)
+  for (const title of ['fix(test): 시험', 'fix(ci): 러너', 'fix(docs): 문서', 'chore: 정리', 'docs: 문서', 'test: 시험', 'refactor: 정리', '형식 없는 제목', '']) {
+    assert.equal(release.mergeGate({ title, latest: '0.60.18', changelog: previous, previous }).ok, true, title)
+  }
+  assert.equal(release.needsLine('fix!: 깨짐'), true)
+  assert.equal(release.needsLine('Feat(core): 기능'), true)
+  assert.equal(release.needsLine('fix(test): 시험'), false)
+})

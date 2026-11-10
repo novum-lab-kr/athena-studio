@@ -214,5 +214,6 @@
   "Fix right sidebar flashing on pane switch": "ペイン切り替え時の右サイドバーのちらつきを修正",
   "Fix commit hash as right sidebar title for folders without a branch": "ブランチのないフォルダで右サイドバーのタイトルにコミットハッシュが出る問題を修正",
   "Fix panes running background commands showing as idle": "バックグラウンドでコマンド実行中のペインがアイドル表示になる問題を修正",
-  "File preview as a pane in the layout — drag to place, drag borders to resize": "ファイルプレビューをペイン配置に統合 — ドラッグで配置、境界でサイズ調整"
+  "File preview as a pane in the layout — drag to place, drag borders to resize": "ファイルプレビューをペイン配置に統合 — ドラッグで配置、境界でサイズ調整",
+  "Fix patch updates repeating the same update notes — only changes since your version": "パッチ更新のたびに同じ更新内容が出る問題を修正 — 前の版以降の変更のみ"
 }

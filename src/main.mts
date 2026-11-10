@@ -30,7 +30,7 @@ import { installPacks } from './main/packs.mts'
 import { installSideBrowser } from './main/side-browser.mts'
 import { installPackWindow } from './main/pack-window.mts'
 import { APP_UPDATE_CHECK_MS, createAppUpdater } from './main/app-updater.mts'
-import { createCoreRunner, changelogFile } from './main/core-runner.mts'
+import { createCoreRunner, changelogFile, changelogVersionsFile } from './main/core-runner.mts'
 import { installDaemonLink } from './main/daemon-link.mts'
 import { installWorkspaces } from './main/workspaces.mts'
 import { installServerStatus } from './main/server-status.mts'
@@ -424,7 +424,7 @@ const packLogFile = () => path.join(app.getPath('userData'), 'pack.log')
 
 // 아테나 폴더 · 스튜디오 코어 준비 · 코어 · 팩 명령 실행 — src/main/core-runner.mts(PACK_TIMEOUTS 도 거기 — 팩을 바꾸는 명령은 시간이 넘어도 끊지 않는다).
 // 쓰는 것(electron app · dialog · 화면 문구 · 지금 언어 · 스튜디오 집 자리 · 코어 번들 · 데몬 자리 · 팩 로그 자리)은 인자로 넘긴다
-const { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile, onUpdateState: (running) => { for (const ctx of packWindows) ctx.send('core-update:state', running) }, onCaughtUp: (outcome) => afterCoreUpdate(outcome) })
+const { athenaReposRoot, prepareStudioCore, updateStudioCore, updateGate, showCoreUpdateNotice, revealCoreUpdateBackup, coreInstallError, runCore, runPack, contractBlock } = createCoreRunner({ app, shell, changelog: changelogFile(app.isPackaged, process.resourcesPath), changelogVersions: changelogVersionsFile(app.isPackaged, process.resourcesPath), say, language: () => language, studio: STUDIO, coreBundle: CORE_BUNDLE, daemonPaths, packLogFile, onUpdateState: (running) => { for (const ctx of packWindows) ctx.send('core-update:state', running) }, onCaughtUp: (outcome) => afterCoreUpdate(outcome) })
 
 // [Finder 에서 보기] — 방금 만든 파일만
 let lastPackFile: string | null = null

@@ -1,5 +1,6 @@
 // 코어 업데이트 팝업의 "업데이트 내역" — CHANGELOG.md(영어 정본)에서 이전 → 새 버전 사이의 줄을 고른다.
 // CHANGELOG 는 minor 단위 절이다: "## 0.28 (v0.26.0 – … · Oct 29, 2026)" 아래 "### New · Improved · Fixed" 줄들.
+// 줄마다 판 번호(그 줄을 처음 넣은 main 커밋의 태그)는 git 기록에서 정한다 — scripts/changelog-versions.js 가 changelog-versions.json 으로 만든다(PR 은 번호를 모른다).
 // Electron 없이 돈다(test/release-notes.test.js). 번역은 src/changelog/<언어>.json — 영어 줄 글자 그대로를 키로 쓴다(없으면 영어 그대로)
 
 export const RELEASES_URL = 'https://athena.novum-lab.com/releases/'
@@ -68,9 +69,33 @@ export function isPatchOnly(from: unknown, to: unknown): boolean {
   return Boolean(before && after && before[0] === after[0] && before[1] === after[1] && after[2] > before[2])
 }
 
+// 줄 영어 원문 → 그 줄이 처음 들어간 판 'X.Y.Z'(scripts/changelog-versions.js)
+export type NoteVersions = Record<string, string>
+
+// 판 번호가 (이전, 새] 안인 줄만 — 끝자리 업데이트마다 같은 절을 되풀이하지 않는다(2026-11-10). 번호를 모르는 줄은 뺀다.
+// 절 범위로 먼저 고른 뒤 좁힌다 — 줄 글을 고친 커밋(예: 2026-11-08 개조식 정리)이 옛 줄에 새 번호를 붙여도 이미 받은 minor 절은 다시 나오지 않게
+function inVersionRange(notes: Note[], from: unknown, to: unknown, versions: NoteVersions): Note[] {
+  const before = partsOf(from)
+  const after = partsOf(to)
+  if (!before || !after) return []
+  const seen = new Set<string>()
+  return notes.filter((note) => {
+    const added = partsOf(versions[note.text])
+    if (!added || seen.has(note.text)) return false
+    seen.add(note.text)
+    return compareVersion(added, before) > 0 && compareVersion(added, after) <= 0
+  })
+}
+
 // 절 제목의 번호는 그 절이 덮는 마지막 minor 다(## 0.28 = v0.26.0 – … : 0.26 · 0.27 · 0.28 이 한 절). 그래서 한 절은 (바로 아래 절 번호, 자기 번호] 를 덮는다.
 // 이전 버전 minor 보다 크고 새 버전 minor 이하인 칸과 겹치는 절들의 줄을 합친다(최신 절 먼저). 제목에 범위가 있으면 아직 도달하지 않은 절은 뺀다.
-export function notesBetween(sections: ChangelogSection[], from: unknown, to: unknown): Note[] {
+// versions(줄마다 판 번호)가 있으면 고른 절에서 (이전, 새] 판 줄만(위 inVersionRange) — 없으면(번호 파일을 못 읽음) 절 그대로
+export function notesBetween(sections: ChangelogSection[], from: unknown, to: unknown, versions?: NoteVersions | null): Note[] {
+  const picked = sectionNotes(sections, from, to)
+  return versions ? inVersionRange(picked, from, to, versions) : picked
+}
+
+function sectionNotes(sections: ChangelogSection[], from: unknown, to: unknown): Note[] {
   const before = minorOf(from)
   const after = minorOf(to)
   if (!before || !after) return []

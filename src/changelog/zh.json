@@ -214,5 +214,6 @@
   "Fix right sidebar flashing on pane switch": "修复切换窗格时右侧边栏闪烁",
   "Fix commit hash as right sidebar title for folders without a branch": "修复无分支文件夹的右侧边栏标题显示提交哈希的问题",
   "Fix panes running background commands showing as idle": "修复后台运行命令的窗格显示为空闲的问题",
-  "File preview as a pane in the layout — drag to place, drag borders to resize": "文件预览纳入窗格布局 — 拖动放置，拖动边界调整大小"
+  "File preview as a pane in the layout — drag to place, drag borders to resize": "文件预览纳入窗格布局 — 拖动放置，拖动边界调整大小",
+  "Fix patch updates repeating the same update notes — only changes since your version": "修复补丁更新每次显示相同更新说明的问题 — 仅显示上个版本后的变更"
 }
