@@ -244,6 +244,15 @@ const agentForRepo = (repoValue) => {
   return repo.agents?.[0] || ''
 }
 const ISSUE_COLUMN = { open: 'issue', planned: 'plan', in_progress: 'doing', done: 'done', wontfix: 'done' }
+// 묶음(계획서 Issue: 줄에 이슈 둘 이상)의 이슈는 파일 status 가 open · planned 여도 계획서 Status 를 따라 보인다 — 열림에 남아
+// [작업 시작] 이 새 계획서를 만들지 않게. 파일은 고쳐 쓰지 않는다(이슈 status 는 아테나가 옮긴다 · 현황판은 사용자가 카드를 옮길 때만 쓴다).
+// 이슈 하나(옛 형식)는 그대로 — 현황판이 만드는 이어 갈 이슈(open + Issue 줄 하나)는 [작업 시작] 으로 계획서를 이어 간다
+const BUNDLED_ISSUE_STATUS = { planned: 'planned', in_progress: 'in_progress', blocked: 'in_progress', ready_for_review: 'in_progress', done: 'in_progress' }
+const followBundle = (issue, plan) => {
+  if (plan.issues.length < 2 || !plan.issues.includes(issue.id) || !['open', 'planned'].includes(issue.status)) return
+  issue.status = BUNDLED_ISSUE_STATUS[plan.status] ?? issue.status
+  issue.column = ISSUE_COLUMN[issue.status] ?? issue.column
+}
 
 const readIssue = (path) => {
   const text = readText(path)
@@ -1052,13 +1061,22 @@ const collect = async () => {
   if (available && !staleGeneration()) followUpClosedPlans(plans, issues, now)
   // 이슈에 연결된 계획서는 카드를 따로 만들지 않고 이슈 카드 안에 합친다 — 같은 일이 두 장으로 보이지 않게
   const merged = new Set()
+  const archivedPlans = new Map() // 보관된 계획서(plans/ 밖) — 묶인 이슈의 plan: 이 가리킬 때만 읽는다
   for (const issue of issues) {
     const plan = plans.find((entry) => entry.id === issue.plan || entry.issues.includes(issue.id))
-    if (!plan) continue
+    if (!plan) {
+      // 묶음 계획서가 보관된 뒤 남은 이슈(archive.mjs 가 plan: 을 보관 자리로 고쳤다) — 카드에 합치지는 않고 보이는 상태만 따른다
+      if (!/^archive\/[^/]+\/plan\.md$/.test(issue.plan)) continue
+      if (!archivedPlans.has(issue.plan)) archivedPlans.set(issue.plan, safePath(issue.plan, 'archive') ? readPlan(join(ROOT, issue.plan)) : null)
+      const archivedPlan = archivedPlans.get(issue.plan)
+      if (archivedPlan) followBundle(issue, archivedPlan)
+      continue
+    }
     // 아직 열린(open) 이슈가 다른 작업의 계획서를 가리키면 "그 작업 중 발견" 이다 — 합치면 진행 중 계획서 카드가
     // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 맡은 것(Issue: 줄에 적힘 — 여럿이면 그중 하나)일 때만 합친다
     if (issue.status === 'open' && !plan.issues.includes(issue.id)) continue
     merged.add(plan.id)
+    followBundle(issue, plan)
     issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents, leadPane: plan.leadPane, handoff: plan.handoff }
     // 계획서가 리뷰 단계면 이슈 카드도 리뷰 칸에
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'
