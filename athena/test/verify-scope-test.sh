@@ -5,6 +5,9 @@
 # 사용: test/verify-scope-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
+# 전체 검증(full-verify.mjs)은 ATHENA_VERIFY_FULL=1 을 걸고 이 시험을 돌린다 — 물려받으면 범위 · 문서 판정이 모두 "전체"가 돼
+# 20여 개가 깨진다(2026-11-09~10 그림자 · 하루 한 번 검증 9번 실패). 시험은 늘 꺼진 채로 시작하고, 켠 경우는 줄마다 직접 건다
+unset ATHENA_VERIFY_FULL
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
 TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-verify-scope-test.XXXXXX")"
 [ "${KEEP:-0}" = 1 ] || trap 'rm -rf "$TMP"' EXIT
