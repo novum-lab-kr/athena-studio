@@ -43,7 +43,14 @@ const inside = (rel, top) => {
 const linkedPlanOf = (issueText) => inside(issueText.match(/^plan:\s*(\S+\.md)/m)?.[1] ?? '', 'plans')
 const ISSUE_LINE = /^(-\s*Issue:\s*)(.*)$/m
 const linkedIssuesOf = (planText) => issueLinksOf(planText.match(ISSUE_LINE)?.[2] ?? '').map((rel) => inside(rel, 'issues')).filter(Boolean)
-const issueDone = (issueText) => /^status:\s*(done|wontfix)\b/m.test(issueText)
+// 같이 보관한 계획서의 Issue: 줄 — 목록에 그 이슈가 있으면 그 경로만 보관 자리로 바꾸고,
+// 목록에 없는 이슈(작업 중 발견)면 묶인 이슈를 지우지 않게 그대로 둔다. 목록이 비었으면(없음 · 옛 형식) 같이 보관한 이슈 자리를 적는다
+const issueLineAfter = (head, value, issue, archived) => {
+  const links = issueLinksOf(value)
+  if (links.includes(issue)) return `${head}${value.replace(issue, archived)}`
+  return links.length ? `${head}${value}` : `${head}${archived}`
+}
+const issueDone =(issueText) => /^status:\s*(done|wontfix)\b/m.test(issueText)
 const planDone = (planText) => /^-\s*Status:\s*\**done\b/m.test(planText)
 const titleOf = (issueText, planText) =>
   issueText.match(/^title:\s*"?(.+?)"?\s*$/m)?.[1] || planText.match(/^#\s+(.+)$/m)?.[1] || ''
@@ -87,8 +94,7 @@ export const archiveBundle = (rawId, { dryRun = false } = {}) => {
   // 서로 가리키는 경로를 새 위치로
   if (issue && plan) {
     issueText = issueText.replace(/^plan:.*$/m, `plan: ${target.plan}`)
-    // Issue: 줄에서 같이 묶은 이슈의 경로만 바꾼다 — 여럿이면 나머지는 그대로(issues/ 에 남아 있다)
-    planText = planText.replace(ISSUE_LINE, (line, head, value) => (value.includes(issue) ? `${head}${value.replace(issue, target.issue)}` : `${head}${target.issue}`))
+    planText = planText.replace(ISSUE_LINE, (line, head, value) => issueLineAfter(head, value, issue, target.issue))
   }
   mkdirSync(join(ROOT, dir), { recursive: true })
   // 경로를 고친 내용을 새 위치에 쓰고 원본은 지운다(내용이 같으니 옮긴 것과 같다)

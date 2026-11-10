@@ -2,6 +2,7 @@
 # 현황판 서버 한 주기 — 계획서 하나에 이슈 여럿 묶기(계획서 `- Issue:` 줄에 이슈 경로 여럿).
 #   합치기(scripts/board/server.mjs — 이슈 카드에 계획서 붙이기): 묶인 열린 이슈는 모두 붙고 · "작업 중 발견"(열린 이슈가 plan: 만 가리킴)은 지금처럼 안 붙는다 · 옛 형식(Issue 하나)은 그대로
 #   보관(scripts/board/archive.mjs — 자동 보관): 끝난 계획서를 보관하면 묶인 이슈들의 plan: 이 모두 보관 자리로 고쳐진다(완료 판정이 계획서를 계속 찾게)
+#   이슈 하나 보관([아카이브]): Issue: 목록에 없는 이슈와 같이 계획서를 옮겨도 Issue: 의 묶인 이슈는 그대로
 # 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI · 몇 초
 #
 # 사용: test/board-multi-issue-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -123,5 +124,30 @@ const main = async () => {
 main().then(() => process.exit(fail)).catch((error) => { console.error(error); process.exit(1) })
 EOF
 code=$?
+
+# ⑤ 이슈 하나 보관(현황판 [아카이브] 와 같은 archiveBundle) — 끝난 계획서를 가리키는 이슈가 계획서와 같이 보관될 때.
+#    서버를 먼저 끈다(자동 보관이 같은 파일을 건드리지 않게)
+kill "$SERVER_PID" 2>/dev/null; wait "$SERVER_PID" 2>/dev/null; SERVER_PID=''
+archive_issue() { (cd "$CORE" && node scripts/board/archive.mjs "issues/$1.md" --no-commit > /dev/null 2>&1); }
+line_of() { grep -m1 '^- Issue:' "$CORE/archive/$1/plan.md" 2>/dev/null; }
+step() { if [ "$2" = ok ]; then echo "  ✔ $1"; else echo "  ✖ $1"; echo "      $3"; code=1; fi; }
+echo '── 이슈 하나 보관'
+#   목록 밖 발견 이슈 c 를 보관 → 계획서는 같이 옮겨지되 Issue: 의 a · b 는 그대로 · a · b 의 plan: 은 보관 자리로
+plan 20261110-found-arch done 'issues/20261110-demo-fa.md · issues/20261110-demo-fb.md' ''
+issue 20261110-demo-fa in_progress plans/task/20261110-found-arch.md
+issue 20261110-demo-fb in_progress plans/task/20261110-found-arch.md
+issue 20261110-demo-fc done plans/task/20261110-found-arch.md
+archive_issue 20261110-demo-fc
+got="$(line_of 20261110-demo-fc)"
+[ "$got" = '- Issue: issues/20261110-demo-fa.md · issues/20261110-demo-fb.md' ] && step 'Issue: 목록에 없는 이슈를 보관 → 계획서 Issue: 의 묶인 이슈는 그대로' ok || step 'Issue: 목록에 없는 이슈를 보관 → 계획서 Issue: 의 묶인 이슈는 그대로' no "$got"
+grep -q '^plan: archive/20261110-demo-fc/plan\.md$' "$CORE/issues/20261110-demo-fa.md" && grep -q '^plan: archive/20261110-demo-fc/plan\.md$' "$CORE/issues/20261110-demo-fb.md" \
+  && step '묶인 이슈 a · b 의 plan: 은 보관 자리로' ok || step '묶인 이슈 a · b 의 plan: 은 보관 자리로' no "$(grep -h '^plan:' "$CORE/issues/20261110-demo-fa.md" "$CORE/issues/20261110-demo-fb.md")"
+#   옛 형식 — Issue 없는 계획서를 가리키는 이슈를 보관 → 지금처럼 Issue: 가 그 이슈의 보관 자리로
+plan 20261110-legacy-arch done '없음' ''
+issue 20261110-demo-legacy done plans/task/20261110-legacy-arch.md
+archive_issue 20261110-demo-legacy
+got="$(line_of 20261110-demo-legacy)"
+[ "$got" = '- Issue: archive/20261110-demo-legacy/issue.md' ] && step 'Issue 없는 계획서 → Issue: 가 같이 보관한 이슈 자리로(옛 동작)' ok || step 'Issue 없는 계획서 → Issue: 가 같이 보관한 이슈 자리로(옛 동작)' no "$got"
+
 [ "$code" = 0 ] && echo "✅ 통과"
 exit "$code"
