@@ -33,8 +33,9 @@ const PROTOCOL = 7
 // 10 — 코드 교체 시 미완성 출력 청크를 건드리지 않고 마우스 인코딩 초기 상태 읽기
 // 11 — Codex Browser 권한·시작 신뢰창도 입력 대기로 판정
 // 12 — Claude working 중 전송된 큐 메시지의 입력칸 안내를 남은 글로 오판하지 않음
-// 13 — 맥에서 pane 을 띄울 때 node-pty 가 남기는 여분 /dev/ptmx 닫기(닫은 pane 의 pty 누수) · 교체 직후 옛 코드가 남긴 고아 ptmx 닫기
-const DAEMON_CODE = 13
+// 13 — 맥에서 pane 을 띄울 때 node-pty 가 남기는 여분 /dev/ptmx 닫기(닫은 pane 의 pty 누수)
+// 14 — 교체 직후 옛 코드가 남긴 고아 /dev/ptmx 닫기(13 으로 이미 바뀐 데몬도 한 번 더 교체되게)
+const DAEMON_CODE = 14
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 
