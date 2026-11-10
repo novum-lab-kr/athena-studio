@@ -8,6 +8,8 @@
  *
  * archive/ 는 git 에 커밋한다(진행 중 계획서 plans/** 는 로컬 산출물이라 커밋하지 않는다).
  * 이슈의 plan: 과 계획서의 Issue: 는 새 위치로 고쳐 서로를 가리키게 한다.
+ * 계획서 Issue: 에 이슈가 여럿이면(plan-bind.mjs issueLinksOf) 끝난 첫 이슈만 같이 묶고, 나머지는 issues/ 에 남기되 plan: 을 새 위치로 고친다
+ * (끝난 것은 현황판 자동 보관이 따로 보관한다).
  * 현황판 [아카이브](server.mjs) · 30일 안전망(archive-plans.sh) · 예전 plans/archive·issues/archive 이전이 모두 이 함수를 쓴다.
  *
  * 사용: node scripts/board/archive.mjs <issues/…md | plans/…md> [--dry-run] [--no-commit]   보관한 것만 로컬 커밋(push 는 안 함)
@@ -21,7 +23,7 @@ import { isMainModule } from '../lib/is-main.mjs'
 import { hasStudioRepo, isSelfIssueRepo, STUDIO_REPO } from '../lib/athena-bug-issue.mjs'
 import { loadConfig, paths } from '../lib/config.mjs'
 import { gitEach, realRepoPath } from '../lib/git.mjs'
-import { checkpointOf } from './plan-bind.mjs'
+import { checkpointOf, issueLinksOf } from './plan-bind.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 
 export const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
@@ -39,7 +41,16 @@ const inside = (rel, top) => {
 }
 // 이슈 frontmatter 의 plan: · 계획서 Checkpoint 의 Issue: 에서 상대 경로를 뽑는다
 const linkedPlanOf = (issueText) => inside(issueText.match(/^plan:\s*(\S+\.md)/m)?.[1] ?? '', 'plans')
-const linkedIssueOf = (planText) => inside(planText.match(/^-\s*Issue:\s*.*?(issues\/[^\s)`]+\.md)/m)?.[1] ?? '', 'issues')
+const ISSUE_LINE = /^(-\s*Issue:\s*)(.*)$/m
+const linkedIssuesOf = (planText) => issueLinksOf(planText.match(ISSUE_LINE)?.[2] ?? '').map((rel) => inside(rel, 'issues')).filter(Boolean)
+// 같이 보관한 계획서의 Issue: 줄 — 목록에 그 이슈가 있으면 그 경로만 보관 자리로 바꾸고,
+// 목록에 없는 이슈(작업 중 발견)면 묶인 이슈를 지우지 않게 그대로 둔다. 목록이 비었으면(없음 · 옛 형식) 같이 보관한 이슈 자리를 적는다
+const issueLineAfter = (head, value, issue, archived) => {
+  const links = issueLinksOf(value)
+  if (links.includes(issue)) return `${head}${value.replace(issue, archived)}`
+  return links.length ? `${head}${value}` : `${head}${archived}`
+}
+const issueDone =(issueText) => /^status:\s*(done|wontfix)\b/m.test(issueText)
 const planDone = (planText) => /^-\s*Status:\s*\**done\b/m.test(planText)
 const titleOf = (issueText, planText) =>
   issueText.match(/^title:\s*"?(.+?)"?\s*$/m)?.[1] || planText.match(/^#\s+(.+)$/m)?.[1] || ''
@@ -63,43 +74,43 @@ export const archiveBundle = (rawId, { dryRun = false } = {}) => {
   const isIssue = id.startsWith(`issues${sep}`)
   let issue = isIssue ? id : ''
   let plan = isIssue ? '' : id
-  // 남겨 두는 짝 — 옮긴 쪽을 가리키는 경로만 새 위치로 고친다
-  let leftIssue = ''
   if (isIssue) {
     const candidate = linkedPlanOf(read(issue))
     // 이슈를 보관할 때, 연결 계획서가 아직 끝나지 않았으면 두고 간다(정식 계획서는 여러 이슈를 묶기도 한다)
     if (exists(candidate) && planDone(read(candidate))) plan = candidate
   } else {
-    const candidate = linkedIssueOf(read(plan))
-    // 계획서만 보관할 때, 연결된 이슈가 아직 열려 있으면 두고 간다(이슈 카드가 따로 끝나야 한다)
-    if (exists(candidate) && /^status:\s*(done|wontfix)\b/m.test(read(candidate))) issue = candidate
-    else if (exists(candidate)) leftIssue = candidate
+    // 계획서만 보관할 때, Issue: 의 이슈 중 끝난 첫 이슈만 같이 묶는다 — 열린 이슈는 두고 간다(이슈 카드가 따로 끝나야 한다)
+    issue = linkedIssuesOf(read(plan)).find((candidate) => exists(candidate) && issueDone(read(candidate))) ?? ''
   }
+  // 남겨 두는 짝 — 계획서를 옮기면 그 계획서 Issue: 의 다른 이슈(issues/ 에 남는 것)의 plan: 을 새 위치로 고친다
+  const leftIssues = plan ? linkedIssuesOf(read(plan)).filter((candidate) => candidate !== issue && exists(candidate)) : []
   const html = plan && exists(plan.replace(/\.md$/, '.html')) ? plan.replace(/\.md$/, '.html') : ''
   let issueText = issue ? read(issue) : ''
   let planText = plan ? read(plan) : ''
   const dir = freeDir(basename(isIssue ? issue : plan, '.md'))
   const target = { issue: issue && join(dir, 'issue.md'), plan: plan && join(dir, 'plan.md'), html: html && join(dir, 'plan.html') }
-  if (dryRun) return { dir, moved: Object.values(target).filter(Boolean), leftIssue: leftIssue || null, dryRun: true }
+  if (dryRun) return { dir, moved: Object.values(target).filter(Boolean), leftIssues, dryRun: true }
 
   // 서로 가리키는 경로를 새 위치로
   if (issue && plan) {
     issueText = issueText.replace(/^plan:.*$/m, `plan: ${target.plan}`)
-    planText = planText.replace(/^(-\s*Issue:\s*).*$/m, `$1${target.issue}`)
+    planText = planText.replace(ISSUE_LINE, (line, head, value) => issueLineAfter(head, value, issue, target.issue))
   }
   mkdirSync(join(ROOT, dir), { recursive: true })
   // 경로를 고친 내용을 새 위치에 쓰고 원본은 지운다(내용이 같으니 옮긴 것과 같다)
   if (issue) { writeFileSync(join(ROOT, target.issue), issueText); rmSync(join(ROOT, issue)) }
   if (plan) { writeFileSync(join(ROOT, target.plan), planText); rmSync(join(ROOT, plan)) }
   if (html) renameSync(join(ROOT, html), join(ROOT, target.html))
-  // 남겨 둔 열린 이슈가 옮긴 계획서를 가리키면 새 위치로 고친다
-  if (leftIssue) {
+  // 남겨 둔 이슈가 옮긴 계획서를 가리키면 새 위치로 고친다
+  const retargeted = leftIssues.filter((leftIssue) => {
     const text = read(leftIssue)
-    if (inside(text.match(/^plan:\s*(\S+\.md)/m)?.[1] ?? '', 'plans') === plan) writeFileSync(join(ROOT, leftIssue), text.replace(/^plan:.*$/m, `plan: ${target.plan}`))
-  }
+    if (inside(text.match(/^plan:\s*(\S+\.md)/m)?.[1] ?? '', 'plans') !== plan) return false
+    writeFileSync(join(ROOT, leftIssue), text.replace(/^plan:.*$/m, `plan: ${target.plan}`))
+    return true
+  })
   const meta = { archivedAt: stamp(), title: titleOf(issueText, planText), kind: issue ? 'issue' : 'plan', from: { issue: issue || null, plan: plan || null, html: html || null } }
   writeFileSync(join(ROOT, dir, 'meta.json'), `${JSON.stringify(meta, null, 2)}\n`)
-  return { dir, title: meta.title, paths: [dir, issue, plan, html, leftIssue].filter(Boolean), moved: [issue && `${issue} → ${target.issue}`, plan && `${plan} → ${target.plan}`, html && `${html} → ${target.html}`, leftIssue && `${leftIssue} 의 plan: → ${target.plan} (이슈는 열려 있어 남김)`].filter(Boolean) }
+  return { dir, title: meta.title, paths: [dir, issue, plan, html, ...retargeted].filter(Boolean), moved: [issue && `${issue} → ${target.issue}`, plan && `${plan} → ${target.plan}`, html && `${html} → ${target.html}`, ...retargeted.map((leftIssue) => `${leftIssue} 의 plan: → ${target.plan} (이슈는 남김)`)].filter(Boolean) }
 }
 
 /**
