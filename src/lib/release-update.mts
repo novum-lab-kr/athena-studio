@@ -6,7 +6,9 @@
 //   [업데이트](받기 실패 뒤 다시) · [다시 시작]: 그 칩의 .zip 받기(electron-updater 가 latest-mac.yml 의 sha512 와 맞춘다 — 틀리면 ERR_CHECKSUM_MISMATCH)
 //              → quitAndInstall — Squirrel.Mac 이 받은 .app 의 코드 서명을 지금 켜진 앱의 designated requirement(번들 ID · Team ID)로 검사하고
 //                 맞을 때만 앱을 끄고 바꿔 다시 켠다. 안 맞으면 'error' — 앱은 그대로
-//   ready 뒤에는 받기 없이 바로 quitAndInstall(MacUpdater 가 Squirrel 이 받아 둔 것을 쓴다)
+//   ready 뒤에도 확인(30분 · ⚙ 열 때 · [다시 시작])은 피드를 다시 본다 — 받아 둔 판보다 새 판이 나왔으면 새로 받아 그 판을 ready 로(2026-11-10 제보 —
+//     60.14 를 받아 둔 사이 60.15 가 나왔는데 60.14 를 설치해 두 번 다시 켬). Squirrel.Mac 은 받아 둔 판이 있어도(AwaitingRelaunch) 다시 받으면
+//     ShipItState 를 새 판으로 덮고 'update-downloaded' 를 다시 낸다(SQRLUpdater prepareUpdateForInstallation). 새 판이 없으면 받기 없이 바로 quitAndInstall
 // Electron 없이 돈다(test/release-update.test.js — 가짜 updater · native)
 
 export type ReleaseReason = 'check-failed' | 'download-failed' | 'checksum-failed' | 'install-failed'
@@ -38,6 +40,19 @@ export type Native = {
   on(event: 'update-downloaded', listener: () => void): unknown
   once(event: 'before-quit-for-update', listener: () => void): unknown
   removeListener(event: 'before-quit-for-update', listener: () => void): unknown
+}
+
+// 받아 둔 판보다 피드 판이 새로운가 — 배포판 번호는 x.y.z(시험판은 끔 · allowPrerelease false). 받아 둔 판을 모르면 새로 친다
+export function newerThan(version: string, than: string | null): boolean {
+  if (than === null) return true
+  const parts = (value: string) => value.split('-')[0]!.split('.').map(Number)
+  const left = parts(version)
+  const right = parts(than)
+  for (let index = 0; index < Math.max(left.length, right.length); index++) {
+    const diff = (left[index] ?? 0) - (right[index] ?? 0)
+    if (diff !== 0) return diff > 0
+  }
+  return false
 }
 
 // Squirrel 이 받은 .app 을 풀고 서명을 검사하는 데 걸리는 시간의 넉넉한 끝 — 넘으면 설치 실패로 알리고 [업데이트] 를 다시 누를 수 있게
@@ -89,6 +104,12 @@ export function createReleaseUpdate({ updater, native, version, onChange, log, i
   let status: ReleaseStatus = { state: 'unavailable', behind: 0, branch: null, reason: null, version, latest: null }
   let running = false
   let phase: ReleasePhase = null
+  // Squirrel 이 들고 있는 판(phase ready 일 때) — 다음 확인이 피드와 맞춰 본다
+  let readyVersion: string | null = null
+  // 도는 확인 하나(30분 · ⚙ 열 때가 겹쳐도 한 번만 묻는다)
+  let checking: Promise<void> | null = null
+  // [다시 시작] 이 더 새 판 받기를 기다리는 중이면 그 끝내기 — 준비되면 true · 실패하면 false
+  let waitReady: ((ready: boolean) => void) | null = null
   // 뒤에서 받은 .zip 을 Squirrel 이 가져가 서명을 검사하는 중 — 이때 온 'error' 는 그 검사 실패
   let verifying = false
   // 설치(quitAndInstall)를 기다리는 중이면 그 끝내기 — 'error' 가 오면 실패로 끝낸다
@@ -107,19 +128,45 @@ export function createReleaseUpdate({ updater, native, version, onChange, log, i
   native.on('update-downloaded', () => {
     verifying = false
     phase = 'ready'
-    if (!installing) running = false
+    readyVersion = status.latest
+    if (!installing && !waitReady) running = false
     status = { ...status, reason: null }
     onChange()
+    waitReady?.(true)
   })
 
   const view = () => ({ ...status, running, phase })
 
   async function check() {
-    // 받는 중 · 받아 둔 뒤에는 다시 묻지 않는다(받은 판을 그대로 쓴다)
-    if (running || phase === 'ready') return view()
+    // 받는 중에는 다시 묻지 않는다
+    if (running) return view()
+    await look()
+    onChange()
+    return view()
+  }
+
+  function look(): Promise<void> {
+    checking ??= ask().finally(() => {
+      checking = null
+    })
+    return checking
+  }
+
+  async function ask(): Promise<void> {
+    const ready = phase === 'ready'
+    // 받아 둔 판이 있으면 저절로 받지 않게 묻는다 — 같은 판을 다시 받지 않고, 더 새 판일 때만 받는다(AppUpdater 는 확인 때 autoDownload 를 본다)
+    if (ready) updater.autoDownload = false
     try {
       const result = await updater.checkForUpdates()
-      if (!result) status = { ...status, state: 'unavailable', reason: null, latest: null }
+      if (ready) {
+        const version = result?.isUpdateAvailable ? result.updateInfo.version : null
+        if (version !== null && phase === 'ready' && newerThan(version, readyVersion)) {
+          log.info(`받아 둔 ${readyVersion} 보다 새 ${version} 이 나왔다 — 새로 받는다`)
+          phase = null
+          status = { ...status, state: 'behind', reason: null, latest: version }
+          background(updater.downloadUpdate())
+        } else status = { ...status, reason: null }
+      } else if (!result) status = { ...status, state: 'unavailable', reason: null, latest: null }
       else if (result.isUpdateAvailable) {
         status = { ...status, state: 'behind', reason: null, latest: result.updateInfo.version }
         if (result.downloadPromise) background(result.downloadPromise)
@@ -127,9 +174,9 @@ export function createReleaseUpdate({ updater, native, version, onChange, log, i
     } catch {
       // 최신인지 모른다 — 앞서 본 새 버전은 그대로 두고 까닭만(기록은 'error' 가 남겼다) · 처음이면 줄을 보이게(current)
       status = { ...status, state: status.state === 'behind' ? 'behind' : 'current', reason: 'check-failed' }
+    } finally {
+      if (ready) updater.autoDownload = true
     }
-    onChange()
-    return view()
   }
 
   // 확인이 시작한 뒤 받기 — 받는 동안 running(⚙ '받는 중…'). 다 받으면 Squirrel 의 서명 검사를 기다린다(native 'update-downloaded' 또는 'error').
@@ -150,13 +197,30 @@ export function createReleaseUpdate({ updater, native, version, onChange, log, i
     running = false
     status = { ...status, reason }
     onChange()
+    waitReady?.(false)
     return { ok: false, reason }
   }
 
-  // [업데이트] — 받기 → 설치(교체가 시작되면 ok · 곧 앱이 꺼졌다 새 판으로 켜진다). 받아 둔 판이 있으면(ready) 바로 설치. 못 하면 앱은 그대로 · 까닭
+  // [업데이트] — 받기 → 설치(교체가 시작되면 ok · 곧 앱이 꺼졌다 새 판으로 켜진다). 받아 둔 판이 있으면(ready) 피드를 한 번 더 보고 설치 —
+  // 그 사이 더 새 판이 나왔으면 그 판을 받아 Squirrel 이 넘겨받은 뒤 설치(한 번 눌러 최신으로). 못 하면 앱은 그대로 · 까닭
   async function run(): Promise<ReleaseRunResult> {
     if (running) return { ok: false, reason: 'running' }
-    if (phase === 'ready') return install()
+    if (phase === 'ready') {
+      running = true
+      status = { ...status, reason: null }
+      onChange()
+      await look()
+      if (phase !== 'ready') {
+        // 기다리기 전에 이미 받기가 실패했으면(fail 이 running 을 풀었다) 그 까닭으로 끝낸다
+        if (!running) return { ok: false, reason: status.reason ?? 'download-failed' }
+        const ready = await new Promise<boolean>((resolve) => {
+          waitReady = resolve
+        })
+        waitReady = null
+        if (!ready) return { ok: false, reason: status.reason ?? 'download-failed' }
+      }
+      return install()
+    }
     if (status.state === 'unavailable') return { ok: false, reason: 'unavailable' }
     if (status.state !== 'behind') return { ok: false, reason: 'current' }
     running = true
