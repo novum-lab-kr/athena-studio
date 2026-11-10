@@ -22,6 +22,7 @@ const version = require('../src/lib/version')
 const updateNotice = require('../src/lib/update-notice.mts')
 const appInstall = require('../src/lib/app-install.mts')
 const testApp = require('../src/lib/test-app.mts')
+const changelogVersions = require('./changelog-versions')
 const os = require('os')
 
 const ROOT = path.join(__dirname, '..')
@@ -240,6 +241,15 @@ async function buildRenderer() {
 
 let appLaunched = false
 
+// 코어 업데이트 팝업의 줄마다 판 번호(src/main/core-runner.mts changelogVersionsFile) — 못 만들면 경고만(팝업은 절 단위로 보인다)
+function writeChangelogVersions() {
+  try {
+    changelogVersions.writeChangelogVersions({ repoRoot: ROOT, env: studioHome.gitEnv(), out: path.join(ROOT, 'dist', changelogVersions.FILE_NAME) })
+  } catch (error) {
+    console.warn(`[dev-app] CHANGELOG 판 번호를 만들지 못했어요 — ${error instanceof Error ? error.message.split('\n')[0] : String(error)}`)
+  }
+}
+
 async function start(args, { fromUpdate = false, installTried = false } = {}) {
   // 끝나지 않은 업데이트 설치(앱이 꺼짐 · 강제 종료 · 실패 · 포기)가 있으면 다시 시도한다 — 설치가 끝나고 필수 모듈까지 있을 때만 표시를 지운다.
   // restart --install 이 방금 시도한 실행이면 같은 실행에서 두 번 돌지 않게 건너뛴다(실패했으면 표시는 남아 다음에 켤 때 다시)
@@ -250,6 +260,7 @@ async function start(args, { fromUpdate = false, installTried = false } = {}) {
   }
   // 버전을 정하기 전에 origin 태그부터 — 번들 · 앱(맥 정보 · ⚙ 줄)이 켤 때 정한 같은 번호를 쓴다(못 받으면 있는 태그로)
   version.fetchTags({ repoRoot: ROOT, env: studioHome.gitEnv() })
+  writeChangelogVersions()
   const bundleOk = makeBundle()
   const renderer = await buildRenderer()
   if (renderer === 'missing') {

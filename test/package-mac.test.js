@@ -5,7 +5,7 @@ const path = require('node:path')
 const pkg = require('../scripts/package-mac')
 const studioHome = require('../src/lib/studio-home')
 
-const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', updateConfigFile: '/tmp/stage/app-update.yml', noticesFile: '/tmp/stage/THIRD_PARTY_NOTICES.txt', signed: false }
+const base = { appVersion: '0.13.36', coreBundle: '/tmp/stage/athena-core.bundle', updateConfigFile: '/tmp/stage/app-update.yml', noticesFile: '/tmp/stage/THIRD_PARTY_NOTICES.txt', changelogVersionsFile: '/tmp/stage/changelog-versions.json', signed: false }
 
 test('파일 이름은 홈페이지 고정 주소와 같은 꼴 — Athena-Studio-mac-<arch>.<ext>', () => {
   assert.equal(pkg.artifactName('arm64', 'dmg'), 'Athena-Studio-mac-arm64.dmg')
@@ -32,6 +32,7 @@ test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core
     { from: base.updateConfigFile, to: 'app-update.yml' },
     { from: base.noticesFile, to: 'THIRD_PARTY_NOTICES.txt' },
     { from: path.join(__dirname, '..', 'CHANGELOG.md'), to: 'CHANGELOG.md' },
+    { from: base.changelogVersionsFile, to: 'changelog-versions.json' },
   ])
   assert.equal(studioHome.coreBundlePath({ appRoot: '/x', packaged: true, resourcesPath: '/R' }), `/R/${config.extraResources[0].to}`)
 })

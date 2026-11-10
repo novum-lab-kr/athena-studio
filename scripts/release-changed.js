@@ -98,4 +98,4 @@ if (require.main === module) {
   }
 }
 
-module.exports = { isOutsideApp, decide }
+module.exports = { isOutsideApp, decide, publishedVersion }

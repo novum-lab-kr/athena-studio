@@ -38,11 +38,16 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.60: v0.59.3..main 에서 사용자에게 보이는 변경 — SSH 서버 등록 흐름 다시(우측 상단 · 편집 메뉴 입구 · [등록] 하나 · 기존 Host 고르기 · 사이드바 서버 줄 · 등록 뒤 분석 체크). 범위 끝은 열어 둔다 -->
 
+<!-- 2026-11-10 부터: 사용자에게 보이는 PR(feat · fix)은 맨 위 절에 줄 하나씩 더한다. 줄마다 판 번호는 그 줄을 처음 넣은 main 커밋의 태그(git 기록 · scripts/changelog-versions.js) — 업데이트 창 · Release 본문은 이전 판 뒤 줄만 보인다. 이미 쓴 줄 글을 고치면 새 줄로 친다 -->
+
 ## 0.60 (v0.60.0 – · Nov 8, 2026)
 
 ### Improved
 - Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts
 - Registered servers in the sidebar repo list — analysis right after registering is optional
+
+### Fixed
+- Fix patch updates repeating the same update notes — only changes since your version
 
 <!-- 0.58: v0.57.0..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
 

@@ -43,6 +43,8 @@ function packScript(dir: string): string {
 // 내역 번역 파일(src/changelog/<언어>.json) 자리 · 내역 원문(CHANGELOG.md — 개발 앱은 레포 뿌리, 배포판은 Resources 에 실린다)
 const CHANGELOG_DIR = path.join(import.meta.dirname, '..', 'changelog')
 export const changelogFile = (packaged: boolean, resourcesPath: string): string => (packaged ? path.join(resourcesPath, 'CHANGELOG.md') : path.join(import.meta.dirname, '..', '..', 'CHANGELOG.md'))
+// 줄마다 판 번호(scripts/changelog-versions.js FILE_NAME) — 배포판은 scripts/package-mac.js 가 Resources 에, 개발 앱은 scripts/dev-app.js start 가 dist/ 에 쓴다
+export const changelogVersionsFile = (packaged: boolean, resourcesPath: string): string => (packaged ? path.join(resourcesPath, 'changelog-versions.json') : path.join(import.meta.dirname, '..', '..', 'dist', 'changelog-versions.json'))
 
 function readJson(file: string): Record<string, string> | null {
   try {
@@ -52,9 +54,9 @@ function readJson(file: string): Record<string, string> | null {
   }
 }
 
-// app — 홈 · 앱 데이터 자리 · shell — 폴더 열기 · changelog — 내역 원문 파일 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
+// app — 홈 · 앱 데이터 자리 · shell — 폴더 열기 · changelog — 내역 원문 파일 · changelogVersions — 줄마다 판 번호 파일 · say — 화면 문구 · language — 지금 언어 · studio — 스튜디오 집 자리 · coreBundle — 앱이 들고 온 코어 번들 ·
 // daemonPaths — 데몬 소켓 자리 · packLogFile — 팩 로그 자리(main.mts)
-export function createCoreRunner({ app, shell, changelog, say, language, studio, coreBundle, daemonPaths, packLogFile, onUpdateState = () => {}, onCaughtUp = () => {} }: { onUpdateState?: (running: boolean) => void; onCaughtUp?: (outcome: { changed: boolean; notice: boolean }) => void; app: App; shell: Shell; changelog: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
+export function createCoreRunner({ app, shell, changelog, changelogVersions, say, language, studio, coreBundle, daemonPaths, packLogFile, onUpdateState = () => {}, onCaughtUp = () => {} }: { onUpdateState?: (running: boolean) => void; onCaughtUp?: (outcome: { changed: boolean; notice: boolean }) => void; app: App; shell: Shell; changelog: string; changelogVersions: string; say: Say; language: () => string; studio: Layout; coreBundle: string; daemonPaths: () => ReturnType<typeof core.daemonPaths>; packLogFile: () => string }) {
   // ── 아테나 폴더 — 공용 ──────────────────────────────────────
   // 새로 만드는 athena.config.json 의 reposRoot — 스튜디오 집 안 본체면 홈(회사 레포 클론 · 두 앱이 같이 쓴다), 직접 고른 폴더면 ..
   const athenaReposRoot = (dir: string) => core.reposRootFor(dir, { studioRoot: studio.root, home: app.getPath('home') })
@@ -287,10 +289,12 @@ export function createCoreRunner({ app, shell, changelog, say, language, studio,
     }
     // 언어는 보낼 때 고정하지 않는다 — 언어별 번역을 모두 실어 보내고 화면이 지금 언어로 고른다(팝업이 떠 있는 동안 언어를 바꿔도 따라간다)
     const tables = Object.fromEntries(['ko', 'ja', 'zh'].map((lang) => [lang, readJson(path.join(CHANGELOG_DIR, `${lang}.json`))]))
-    const picked = releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to), (line) => line)
+    // 판 번호가 있으면 이전 판 뒤에 들어간 줄만 — 없으면(파일을 못 읽음) 절 그대로
+    const versions = readJson(changelogVersions)
+    const picked = releaseNotes.pickNotes(releaseNotes.notesBetween(releaseNotes.parseChangelog(text), from, to, versions), (line) => line)
     const withTables = releaseNotes.withTranslations(picked, tables)
-    // 끝자리만 오른 업데이트면 같은 minor 절 전체라 "업데이트 내역" 이 아니라 "최근 변경" 으로 구분한다
-    return withTables && releaseNotes.isPatchOnly(from, to) ? { ...withTables, recent: true } : withTables
+    // 판 번호 없이 끝자리만 오른 업데이트면 같은 minor 절 전체라 "업데이트 내역" 이 아니라 "최근 변경" 으로 구분한다
+    return withTables && !versions && releaseNotes.isPatchOnly(from, to) ? { ...withTables, recent: true } : withTables
   }
 
   // 알릴 백업 폴더 — 화면이 [폴더 열기] 로 부를 수 있는 것은 이 팝업이 보인 폴더뿐
