@@ -5,7 +5,7 @@
 //     그 뒤 한글 조합은 커서가 끝에 있다고 보고 글을 잘라 보내 앞 글자만 되풀이된다(2026-10-27 재현: 안녕하세요 ⌘← 반가워 → 요요요)
 //   다른 수정키가 섞이면 바꾸지 않는다(null — xterm 기본대로)
 // 키 이벤트에서 읽는 칸만(화면의 KeyboardEvent · 테스트의 가짜 객체)
-export type KeyLike = { key: string; shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }
+export type KeyLike = { key: string; code?: string; shiftKey: boolean; ctrlKey: boolean; altKey: boolean; metaKey: boolean }
 type Defer = (run: () => void, ms: number) => unknown
 
 export function paneKeyOverride(event: KeyLike): string | null {
@@ -15,6 +15,16 @@ export function paneKeyOverride(event: KeyLike): string | null {
   if (event.key === 'ArrowLeft' && metaKey && !shiftKey && !ctrlKey && !altKey) return '\x01'
   if (event.key === 'ArrowRight' && metaKey && !shiftKey && !ctrlKey && !altKey) return '\x05'
   return null
+}
+
+// 한글 조합 중 누른 Ctrl+X · Ctrl+S(Claude Code 의 지금 바로 보내기 묶음) — 맥 한글 입력기는 이 키로 조합을 확정하면서 keydown 을
+// keyCode 229 · isComposing 으로 내고, xterm 6.0.0 은 229 keydown 을 보내지 않아 Ctrl+X 가 사라진다(2026-11-09 실측: 아 Ctrl+X → pty 에 "아" 만).
+// 조합 중 key 는 한글 자모("ㅌ")라 실제 자판 자리(code)로 본다. 조합이 없을 때는 null — xterm 기본이 이미 바르게 보낸다
+const COMPOSING_CTRL_SIGNALS: Record<string, string> = { KeyX: '\x18', KeyS: '\x13' }
+
+export function composingCtrlKey(event: KeyLike): string | null {
+  if (!event.ctrlKey || event.shiftKey || event.altKey || event.metaKey) return null
+  return COMPOSING_CTRL_SIGNALS[event.code ?? ''] ?? null
 }
 
 // 한글 조합 중에 눌러도 xterm 에 맡기지 않을 신호 — 줄 처음 · 끝(⌘← · ⌘→). 맡기면 숨은 입력칸 커서가 그대로 움직인다.

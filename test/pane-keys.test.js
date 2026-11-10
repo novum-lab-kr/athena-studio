@@ -1,6 +1,6 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { paneKeyOverride, holdWhileComposing, createComposingKeys } = require('../src/lib/pane-keys.mts')
+const { paneKeyOverride, composingCtrlKey, holdWhileComposing, createComposingKeys } = require('../src/lib/pane-keys.mts')
 
 const key = (name, mods = {}) => ({ key: name, shiftKey: false, ctrlKey: false, altKey: false, metaKey: false, ...mods })
 
@@ -82,6 +82,31 @@ test('조합 중 ⌘← — 확정 글자가 먼저, 줄 처음 신호는 그 �
   for (const syllable of ['반', '가', '워']) sent.push(syllable)
   timers.advance(1000)
   assert.equal(sent.join(''), '안녕하세요\x01반가워')
+})
+
+test('조합 중 Ctrl+X · Ctrl+S → 자판 자리(code)로 \\x18 · \\x13(key 는 한글 자모)', () => {
+  assert.equal(composingCtrlKey(key('ㅌ', { code: 'KeyX', ctrlKey: true })), '\x18')
+  assert.equal(composingCtrlKey(key('ㄴ', { code: 'KeyS', ctrlKey: true })), '\x13')
+  assert.equal(composingCtrlKey(key('ㅌ', { code: 'KeyX' })), null)
+  assert.equal(composingCtrlKey(key('ㅌ', { code: 'KeyX', ctrlKey: true, shiftKey: true })), null)
+  assert.equal(composingCtrlKey(key('ㅌ', { code: 'KeyX', ctrlKey: true, altKey: true })), null)
+  assert.equal(composingCtrlKey(key('ㅌ', { code: 'KeyX', ctrlKey: true, metaKey: true })), null)
+  assert.equal(composingCtrlKey(key('ㅊ', { code: 'KeyC', ctrlKey: true })), null)
+  assert.equal(composingCtrlKey(key('Enter', { code: 'Enter', ctrlKey: true })), null)
+})
+
+test('조합 중 Ctrl+X → 확정 글자 "아" 뒤에 \\x18, 이어진 Ctrl+S 는 그대로 — Claude Code 가 Ctrl+X Ctrl+S 로 읽는 순서', () => {
+  const timers = fakeTimers()
+  const sent = []
+  const keys = createComposingKeys({ send: (data) => sent.push(data), defer: timers.defer })
+  sent.push('아') // 앞 글자는 이미 확정돼 나갔다
+  keys.hold(composingCtrlKey(key('ㅌ', { code: 'KeyX', ctrlKey: true }))) // 두 번째 '아' 조합 중 Ctrl+X keydown(keyCode 229)
+  // 입력기가 Ctrl+X 로 조합을 확정 — compositionend · xterm 의 확정 글자 setTimeout(0) 이 앞에 선다
+  timers.defer(() => sent.push('아'), 0)
+  keys.compositionEnd()
+  timers.advance(0)
+  sent.push('\x13') // 조합이 끝난 뒤 Ctrl+S 는 xterm 기본(keyCode 83)
+  assert.equal(sent.join(''), '아아\x18\x13')
 })
 
 test('조합이 오래(300ms 넘게) 이어져도 시간만으로 먼저 보내지 않는다 — 조합 끝 · 확정 글자 뒤에 · 누른 순서대로 한 번', () => {
