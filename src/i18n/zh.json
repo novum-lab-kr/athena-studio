@@ -751,6 +751,8 @@
   "settings.appUpdateDownloadFailed": "无法下载新版本",
   "settings.appUpdateChecksumFailed": "下载文件的校验和不匹配",
   "settings.appUpdateInstallFailed": "无法安装 — 记录: app-update.log",
+  "settings.appUpdateInstallFailedOutside": "应用不在“应用程序”文件夹中运行，无法安装 — 请移过去后重新打开",
+  "settings.appUpdateMoveFirst": "{current} → {next} — 将应用移到“应用程序”文件夹并重新打开后即可更新",
   "settings.appUpdateWaiting": "等待安装…",
   "settings.appUpdateInstallPending": "安装未完成 — 点击更新重新安装",
   "settings.appUpdateInstalling": "正在安装…",

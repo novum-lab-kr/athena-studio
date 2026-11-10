@@ -129,7 +129,7 @@ function deferred() {
 }
 const tick = () => new Promise((resolve) => setImmediate(resolve))
 
-test('뒤에서 받기 — 받는 동안 running · Squirrel 이 서명 검사까지 끝내면(native update-downloaded) phase ready · 그 뒤 확인은 다시 묻지 않는다', async () => {
+test('뒤에서 받기 — 받는 동안 running · Squirrel 이 서명 검사까지 끝내면(native update-downloaded) phase ready · 그 뒤 확인은 피드만 다시 본다(같은 판은 다시 받지 않는다)', async () => {
   const download = deferred()
   const { controller, updater, native } = setup({ check: async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: download.promise }) })
   const checked = await controller.check()
@@ -144,16 +144,18 @@ test('뒤에서 받기 — 받는 동안 running · Squirrel 이 서명 검사�
   native.emit('update-downloaded')
   assert.deepEqual(controller.view(), { state: 'behind', behind: 0, branch: null, reason: null, version: '0.15.8', latest: '0.15.9', running: false, phase: 'ready' })
   await controller.check()
-  assert.deepEqual(updater.calls, ['check'])
+  assert.deepEqual(updater.calls, ['check', 'check'])
+  assert.equal(controller.view().phase, 'ready')
 })
 
-test('준비된 뒤 [다시 시작] — 받기 없이 바로 quitAndInstall · 교체가 시작되면 ok', async () => {
+test('준비된 뒤 [다시 시작] — 피드가 그대로면 받기 없이 바로 quitAndInstall · 교체가 시작되면 ok', async () => {
   const { controller, updater, native } = setup({ check: async () => ({ isUpdateAvailable: true, updateInfo: { version: '0.15.9' }, downloadPromise: Promise.resolve([]) }), install: () => setImmediate(() => native.emit('before-quit-for-update')) })
   await controller.check()
   await tick()
   native.emit('update-downloaded')
   assert.deepEqual(await controller.run(), { ok: true })
-  assert.deepEqual(updater.calls, ['check', 'install'])
+  // 설치 전에 피드를 한 번 더 본다 — 같은 판이면 받지 않고 바로 설치
+  assert.deepEqual(updater.calls, ['check', 'check', 'install'])
 })
 
 test('뒤에서 받기 실패 — 까닭(checksum-failed · download-failed)을 남기고 running 을 푼다 · 다음 확인이 다시 받는다', async () => {
@@ -179,6 +181,98 @@ test('뒤에서 받은 판의 서명 검사 실패(updater error) — install-fa
   assert.equal(controller.view().running, false)
   assert.equal(controller.view().reason, 'install-failed')
   assert.equal(controller.view().phase, null)
+})
+
+// ── 받아 둔 뒤 더 새 판(2026-11-10 제보 — 60.14 를 받아 둔 사이 60.15 가 나왔는데 [업데이트] 가 60.14 를 설치해 두 번 다시 켬) ──
+// Squirrel.Mac 은 받아 둔 판이 있어도(AwaitingRelaunch) 다시 받으면 새 판으로 ShipItState 를 덮고 'update-downloaded' 를 다시 낸다
+function feedUpdater(native, { install } = {}) {
+  const feed = { version: '0.15.9' }
+  const updater = fakeUpdater({
+    // 진짜 AppUpdater 처럼 확인하는 그때의 autoDownload 를 보고 받기를 시작한다
+    check: async () => ({ isUpdateAvailable: true, updateInfo: { version: feed.version }, downloadPromise: updater.autoDownload ? updater.downloadUpdate() : null }),
+    download: async () => {
+      updater.downloaded.push(feed.version)
+      setImmediate(() => native.emit('update-downloaded'))
+      return ['/cache/update.zip']
+    },
+    install,
+  })
+  updater.downloaded = []
+  return { updater, feed }
+}
+async function readyAt(controller) {
+  await controller.check()
+  await tick()
+  await tick()
+  assert.equal(controller.view().phase, 'ready')
+}
+
+test('받아 둔 뒤 확인 — 피드에 더 새 판이 있으면 새로 받아 그 판을 ready 로 · 같은 판이면 다시 받지 않는다', async () => {
+  const native = new EventEmitter()
+  const { updater, feed } = feedUpdater(native)
+  const controller = release.createReleaseUpdate({ updater, native, version: '0.15.8', onChange() {}, log: quietLog() })
+  await readyAt(controller)
+  // 같은 판 — 다시 받지 않는다
+  await controller.check()
+  assert.deepEqual(updater.downloaded, ['0.15.9'])
+  assert.equal(controller.view().phase, 'ready')
+  assert.equal(updater.autoDownload, true)
+  // 더 새 판이 나왔다 — 받는 중(ready 아님) → 다 받으면 새 판으로 ready
+  feed.version = '0.15.10'
+  const checked = await controller.check()
+  assert.equal(checked.latest, '0.15.10')
+  assert.equal(checked.phase, null)
+  assert.equal(checked.running, true)
+  await tick()
+  await tick()
+  assert.deepEqual(updater.downloaded, ['0.15.9', '0.15.10'])
+  assert.equal(controller.view().phase, 'ready')
+  assert.equal(controller.view().running, false)
+  assert.equal(updater.autoDownload, true)
+})
+
+test('받아 둔 뒤 [다시 시작] — 그 사이 더 새 판이 나왔으면 한 번에 그 최신 판을 받아 설치한다', async () => {
+  const native = new EventEmitter()
+  const { updater, feed } = feedUpdater(native, { install: () => setImmediate(() => native.emit('before-quit-for-update')) })
+  const controller = release.createReleaseUpdate({ updater, native, version: '0.15.8', onChange() {}, log: quietLog() })
+  await readyAt(controller)
+  feed.version = '0.15.10'
+  assert.deepEqual(await controller.run(), { ok: true })
+  // 설치(quitAndInstall)는 새 판을 Squirrel 이 넘겨받은 뒤 한 번
+  assert.deepEqual(updater.downloaded, ['0.15.9', '0.15.10'])
+  assert.deepEqual(updater.calls.filter((call) => call !== 'check'), ['download', 'download', 'install'])
+  assert.equal(controller.view().latest, '0.15.10')
+})
+
+test('받아 둔 뒤 [다시 시작] — 새 판 받기가 실패하면 설치하지 않고 까닭 · 피드가 그대로면 받아 둔 판을 바로 설치', async () => {
+  const native = new EventEmitter()
+  const { updater, feed } = feedUpdater(native, { install: () => setImmediate(() => native.emit('before-quit-for-update')) })
+  const controller = release.createReleaseUpdate({ updater, native, version: '0.15.8', onChange() {}, log: quietLog() })
+  await readyAt(controller)
+  feed.version = '0.15.10'
+  updater.downloadUpdate = () => (updater.calls.push('download'), Promise.reject(new Error('ECONNRESET')))
+  assert.deepEqual(await controller.run(), { ok: false, reason: 'download-failed' })
+  assert.equal(controller.view().running, false)
+  assert.ok(!updater.calls.includes('install'))
+
+
+  // 피드가 받아 둔 판 그대로 — 다시 받지 않고 바로 설치
+  const other = new EventEmitter()
+  const same = feedUpdater(other, { install: () => setImmediate(() => other.emit('before-quit-for-update')) })
+  const plain = release.createReleaseUpdate({ updater: same.updater, native: other, version: '0.15.8', onChange() {}, log: quietLog() })
+  await readyAt(plain)
+  assert.deepEqual(await plain.run(), { ok: true })
+  assert.deepEqual(same.updater.downloaded, ['0.15.9'])
+  assert.deepEqual(same.updater.calls, ['check', 'download', 'check', 'install'])
+})
+
+test('받아 둔 판보다 새 판인가 — x.y.z 숫자로 비교(문자열 비교가 아니다)', () => {
+  assert.equal(release.newerThan('0.60.15', '0.60.14'), true)
+  assert.equal(release.newerThan('0.60.10', '0.60.9'), true)
+  assert.equal(release.newerThan('0.61.0', '0.60.15'), true)
+  assert.equal(release.newerThan('0.60.14', '0.60.14'), false)
+  assert.equal(release.newerThan('0.60.13', '0.60.14'), false)
+  assert.equal(release.newerThan('0.60.14', null), true)
 })
 
 test('받기 까닭 고르기', () => {
@@ -221,4 +315,46 @@ test('electron-updater — 칩마다 맞는 .zip 을 고른다(애플 실리콘 
 test('electron-updater — 앱 안 app-update.yml 을 generic 설정으로 읽는다(받기 캐시 이름 포함)', () => {
   const yaml = require(require.resolve('js-yaml', { paths: [require.resolve('electron-updater')] }))
   assert.deepEqual(yaml.load(packageMac.updateConfig()), { provider: 'generic', url: packageMac.UPDATE_FEED_URL, updaterCacheDirName: packageMac.UPDATER_CACHE_DIR })
+})
+
+// 응용 프로그램 폴더 밖에서 켠 배포판 — 묻지 않고 옮긴다(2026-11-10 사용자 결정) · 못 옮기면 그대로 켠다
+function fakeMoveApp({ packaged = true, inside = false, move = () => true } = {}) {
+  const app = { isPackaged: packaged, calls: 0, isInApplicationsFolder: () => inside, moveToApplicationsFolder: () => (app.calls++, move()) }
+  return app
+}
+
+test('응용 프로그램 폴더 밖 — 맥 배포판일 때만 밖으로 친다(개발판 · 다른 OS · 폴더 안은 아니다)', () => {
+  assert.equal(release.outsideApplications(fakeMoveApp(), 'darwin'), true)
+  assert.equal(release.outsideApplications(fakeMoveApp({ inside: true }), 'darwin'), false)
+  assert.equal(release.outsideApplications(fakeMoveApp({ packaged: false }), 'darwin'), false)
+  assert.equal(release.outsideApplications(fakeMoveApp(), 'linux'), false)
+})
+
+test('켤 때 옮기기 — 밖이면 묻지 않고 옮기고(moved) · 안 · 개발판은 건드리지 않는다(skip)', () => {
+  const outside = fakeMoveApp()
+  assert.equal(release.moveToApplications({ app: outside, platform: 'darwin', log: quietLog() }), 'moved')
+  assert.equal(outside.calls, 1)
+  for (const app of [fakeMoveApp({ inside: true }), fakeMoveApp({ packaged: false })]) {
+    assert.equal(release.moveToApplications({ app, platform: 'darwin', log: quietLog() }), 'skip')
+    assert.equal(app.calls, 0)
+  }
+})
+
+test('켤 때 옮기기 실패 — false 면 not-moved · 던지면(암호 창 취소 · 복사 실패) failed 로 기록하고 그대로 켠다', () => {
+  const log = quietLog()
+  assert.equal(release.moveToApplications({ app: fakeMoveApp({ move: () => false }), platform: 'darwin', log }), 'not-moved')
+  assert.equal(
+    release.moveToApplications({
+      app: fakeMoveApp({
+        move: () => {
+          throw new Error('User rejected the authorization request')
+        },
+      }),
+      platform: 'darwin',
+      log,
+    }),
+    'failed',
+  )
+  assert.equal(log.lines.length, 2)
+  assert.match(log.lines[1], /User rejected the authorization request/)
 })

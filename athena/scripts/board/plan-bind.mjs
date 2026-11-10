@@ -29,6 +29,12 @@ export const DONE_KEEP_DAYS = 14 // 완료 칸에 남겨 두는 기간
 export const plain = (value) => value.replace(/\*\*/g, '').replace(/`/g, '').trim()
 /** "- <이름>: 값" 줄의 값 @param {string} text @param {string} name */
 export const field = (text, name) => text.match(new RegExp(`^-\\s*${name}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? ''
+/**
+ * 계획서 `- Issue:` 줄 값 → 이슈 경로 목록(적힌 순서 · 겹침 없음). 계획서 하나에 이슈 여럿을 묶으면 경로를 이어 적는다
+ * (공백 · 쉼표 · `·` 로 구분 — 2026-11-10). 하나만 적힌 옛 형식은 길이 1. server.mjs 합치기 · archive.mjs 보관이 같이 쓴다
+ * @param {string} value
+ */
+export const issueLinksOf = (value) => [...new Set(String(value).match(/issues\/[^\s,·)`]+\.md/g) ?? [])]
 /** 계획서 글 → ## Checkpoint 절 본문 @param {string} text */
 // 다음 `## ` 제목에서 끝난다 — 코드 울타리(```) 안의 `## ` 줄(Validation 에 붙인 출력 · 예시)은 제목이 아니라서 절을 끊지 않는다
 export const checkpointOf = (text) => {

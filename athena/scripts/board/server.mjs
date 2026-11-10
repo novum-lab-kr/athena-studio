@@ -66,7 +66,7 @@ import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './
 import { frontValue } from '../lib/front-value.mjs'
 import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
 import { languageOf, readDictionaries, translate } from './i18n.mjs'
-import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
+import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, issueLinksOf, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
 const ROOT = join(dirname(fileURLToPath(import.meta.url)), '../..')
 // 화면 문구 사전(i18n/<언어>.json) — 앱이 본체 .claude/settings.local.json 에 적은 언어를 부를 때마다 읽는다(앱에서 바꾸면 바로 따른다)
@@ -192,7 +192,9 @@ const readPlan = (path) => {
     ...planRefs(path, checkpoint),
     // PR 줄은 여러 개일 수 있다(레포·앱마다 하나) — 전부 모은다
     pr: [...checkpoint.matchAll(/^-\s*PR:\s*(.+)$/gm)].map((match) => plain(match[1])).join('\n'),
-    issue: plain(field(checkpoint, 'Issue')).match(/issues\/\S+\.md/)?.[0] ?? '',
+    // Issue 줄 — 이 계획서가 맡은 이슈들(여럿이면 이어 적는다 · issueLinksOf). issue 는 그 첫째(이어 갈 이슈 · 출처 표시)
+    issues: issueLinksOf(plain(field(checkpoint, 'Issue'))),
+    issue: issueLinksOf(plain(field(checkpoint, 'Issue')))[0] ?? '',
     origin: planOrigin(path, text, plain(field(checkpoint, 'Agent')), plain(field(checkpoint, 'Issue'))),
     updated: plain(field(checkpoint, 'Updated')),
     handoff: handoffStateOf(checkpoint),
@@ -242,6 +244,15 @@ const agentForRepo = (repoValue) => {
   return repo.agents?.[0] || ''
 }
 const ISSUE_COLUMN = { open: 'issue', planned: 'plan', in_progress: 'doing', done: 'done', wontfix: 'done' }
+// 묶음(계획서 Issue: 줄에 이슈 둘 이상)의 이슈는 파일 status 가 open · planned 여도 계획서 Status 를 따라 보인다 — 열림에 남아
+// [작업 시작] 이 새 계획서를 만들지 않게. 파일은 고쳐 쓰지 않는다(이슈 status 는 아테나가 옮긴다 · 현황판은 사용자가 카드를 옮길 때만 쓴다).
+// 이슈 하나(옛 형식)는 그대로 — 현황판이 만드는 이어 갈 이슈(open + Issue 줄 하나)는 [작업 시작] 으로 계획서를 이어 간다
+const BUNDLED_ISSUE_STATUS = { planned: 'planned', in_progress: 'in_progress', blocked: 'in_progress', ready_for_review: 'in_progress', done: 'in_progress' }
+const followBundle = (issue, plan) => {
+  if (plan.issues.length < 2 || !plan.issues.includes(issue.id) || !['open', 'planned'].includes(issue.status)) return
+  issue.status = BUNDLED_ISSUE_STATUS[plan.status] ?? issue.status
+  issue.column = ISSUE_COLUMN[issue.status] ?? issue.column
+}
 
 const readIssue = (path) => {
   const text = readText(path)
@@ -641,7 +652,7 @@ const autoArchive = async (plans, issues) => {
     if (archived.has(issue.id) || autoArchiveFailed.has(issue.id) || !['done', 'wontfix'].includes(issue.status)) continue
     // 연결 계획서가 아직 plans/ 에 있으면 그 계획서와 함께 보관한다
     if (issue.plan && planIds.has(issue.plan) && !archived.has(issue.plan)) continue
-    if (plans.some((plan) => plan.issue === issue.id && !archived.has(plan.id))) continue
+    if (plans.some((plan) => plan.issues.includes(issue.id) && !archived.has(plan.id))) continue
     if (issue.agent) {
       const removed = await removeIssueWorktree(issue.id, issue.agent)
       if (removed.error && !removed.missing) notes.push(`${issue.id}: ${removed.error}`)
@@ -1050,13 +1061,22 @@ const collect = async () => {
   if (available && !staleGeneration()) followUpClosedPlans(plans, issues, now)
   // 이슈에 연결된 계획서는 카드를 따로 만들지 않고 이슈 카드 안에 합친다 — 같은 일이 두 장으로 보이지 않게
   const merged = new Set()
+  const archivedPlans = new Map() // 보관된 계획서(plans/ 밖) — 묶인 이슈의 plan: 이 가리킬 때만 읽는다
   for (const issue of issues) {
-    const plan = plans.find((entry) => entry.id === issue.plan || entry.issue === issue.id)
-    if (!plan) continue
+    const plan = plans.find((entry) => entry.id === issue.plan || entry.issues.includes(issue.id))
+    if (!plan) {
+      // 묶음 계획서가 보관된 뒤 남은 이슈(archive.mjs 가 plan: 을 보관 자리로 고쳤다) — 카드에 합치지는 않고 보이는 상태만 따른다
+      if (!/^archive\/[^/]+\/plan\.md$/.test(issue.plan)) continue
+      if (!archivedPlans.has(issue.plan)) archivedPlans.set(issue.plan, safePath(issue.plan, 'archive') ? readPlan(join(ROOT, issue.plan)) : null)
+      const archivedPlan = archivedPlans.get(issue.plan)
+      if (archivedPlan) followBundle(issue, archivedPlan)
+      continue
+    }
     // 아직 열린(open) 이슈가 다른 작업의 계획서를 가리키면 "그 작업 중 발견" 이다 — 합치면 진행 중 계획서 카드가
-    // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 위해 만든 것(Issue:)일 때만 합친다
-    if (issue.status === 'open' && plan.issue !== issue.id) continue
+    // 이슈 칸으로 빨려 들어가 사라진다. 계획서가 이 이슈를 맡은 것(Issue: 줄에 적힘 — 여럿이면 그중 하나)일 때만 합친다
+    if (issue.status === 'open' && !plan.issues.includes(issue.id)) continue
     merged.add(plan.id)
+    followBundle(issue, plan)
     issue.linkedPlan = { id: plan.id, grade: plan.grade, owner: plan.owner, created: plan.created, mtime: plan.mtime, doneAt: plan.doneAt, status: plan.status, progress: plan.progress, blocked: plan.blocked, next: plan.next, workRef: plan.workRef, agents: plan.agents, leadPane: plan.leadPane, handoff: plan.handoff }
     // 계획서가 리뷰 단계면 이슈 카드도 리뷰 칸에
     if (issue.status === 'in_progress' && plan.status === 'ready_for_review') issue.column = 'review'

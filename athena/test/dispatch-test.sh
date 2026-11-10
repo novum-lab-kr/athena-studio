@@ -95,9 +95,12 @@ elif a[:2] == ['pane','run']:
     def run(ready, remembered=None, extra=(), prompt="TASK_SENTINEL", issue=False):
         plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n')
         if issue:
+            # issue 가 글이면 그대로 Issue 줄(묶음) — 줄에 적힌 이슈 중 '-없음' 으로 끝나지 않는 것만 파일을 만든다
+            line = issue if isinstance(issue, str) else 'issues/test.md'
             (core / 'issues').mkdir(exist_ok=True)
-            (core / 'issues/test.md').write_text('# 연결 이슈\n')
-            plan.write_text(plan.read_text() + '- Issue: issues/test.md\n')
+            for name in [part for part in line.replace('·', ' ').replace(',', ' ').split() if part.startswith('issues/') and not part.endswith('-없음.md')]:
+                (core / name).write_text('# 연결 이슈\n')
+            plan.write_text(plan.read_text() + '- Issue: ' + line + '\n')
         capture.unlink(missing_ok=True); log.write_text('')
         saved = core / '.athena-main-tool.json'
         if remembered: saved.write_text(json.dumps({'main':remembered}))
@@ -211,6 +214,12 @@ elif a[:2] == ['pane','run']:
         for prompt, issue, bootstrap in ((None, False, '1'), (None, True, '0'), ('실제 요청', False, '0')):
             result, got, calls = run(engine, prompt=prompt, issue=issue)
             check(f'{engine} — {prompt=}, {issue=} → 시작 안내 표시 {bootstrap}', result.returncode == 0 and got and got['bootstrap'] == bootstrap)
+    # 묶음 — Issue 줄의 이슈 경로를 모두 지시문에 싣는다(한글 이름 · · , 구분 · 없는 파일은 뺀다)
+    result, got, calls = run('claude', prompt=None, issue='issues/20261110-web-가나.md · issues/20261110-web-다라.md, issues/20261110-web-없음.md')
+    text = got['args'][-1] if got else ''
+    check('Issue 줄에 이슈 여럿 → 있는 이슈 모두 지시문에 · 없는 파일은 뺌', result.returncode == 0 and got and got['bootstrap'] == '0'
+          and str(core / 'issues/20261110-web-가나.md') in text and str(core / 'issues/20261110-web-다라.md') in text and '20261110-web-없음' not in text
+          and '이슈 issues/20261110-web-가나.md · issues/20261110-web-다라.md 처리' in text)
     result, got, calls = run('codex', prompt=None, extra=('--resume', '11111111-2222-3333-4444-555555555555'))
     check('지시 없는 resume 은 다음 실제 요청을 시작 안내로 보지 않는다', result.returncode == 0 and got and got['bootstrap'] == '0')
     # 같은 팩 설정을 바꿔 재디스패치한다 — 새 pane / 재사용 pane · 두 엔진에 같은 안내가 실려야 한다.

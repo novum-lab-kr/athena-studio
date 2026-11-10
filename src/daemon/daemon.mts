@@ -9,7 +9,7 @@ import { execFile, execFileSync } from 'node:child_process'
 import { createRequire } from 'node:module'
 import * as core from '../lib/core.mts'
 import { submitText } from '../lib/pane-submit.mts'
-import { Pane } from './pane.mts'
+import { Pane, closeOrphanPtmx } from './pane.mts'
 import type { Waiter } from './pane.mts'
 import * as layout from '../lib/layout.mts'
 import type { Tree } from '../lib/layout.mts'
@@ -120,6 +120,10 @@ export class Daemon {
   // 새 코드로 바뀐 직후(main.mts) — 던지면 옛 코드로 되돌린다. pane 크기 · 입출력은 건드리지 않는다
   afterReload(): void {
     for (const pane of this.panes.values()) void pane.prepareSnapshot()
+    // 살아 있는 pane 의 master 만 남기고 옛 코드가 남긴 고아 ptmx 를 돌려준다(pane.mts closeOrphanPtmx)
+    const masters = [...this.panes.values()].map((pane) => (pane.pty as unknown as { fd?: unknown }).fd).filter((fd): fd is number => typeof fd === 'number')
+    const orphans = closeOrphanPtmx(masters)
+    if (orphans) log(`코드 교체 — 고아 /dev/ptmx ${orphans}개 닫음`)
     this.state()
     this.writeEndpoint() // 접속 파일의 프로토콜 번호를 새 코드에 맞춘다
     log(`코드 교체 — 코드 판 ${protocol.DAEMON_CODE} · 프로토콜 ${protocol.PROTOCOL}`)

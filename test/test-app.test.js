@@ -15,9 +15,10 @@ const alive = (pid) => {
     return error.code === 'EPERM'
   }
 }
+// LC_ALL=C — 앱(scripts/dev-app.js)과 같게. 한국어 locale 의 lstart 는 Date.parse 가 못 읽는다
 const startedAt = (pid) => {
   try {
-    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } }).trim()
   } catch {
     return ''
   }
@@ -199,5 +200,42 @@ test('stopTestApp: 앱이 살아 있는 동안 데몬이 끝나고 그 pid 를 �
     assert.equal(alive(reused.kid), true)
   } finally {
     cleanup([app.parent, app.kid, reused.parent, reused.kid])
+  }
+})
+
+// 진짜 CLI(scripts/dev-app.js test-stop)를 한국어 locale 로 — ps lstart 를 LC_ALL=C 로 읽지 않으면 기록(C 형식)과 달라
+// 앱을 남의 pid 로 보고 거절하고 데몬도 안 끈다(2026-11-10 전체 검증에서 찾음). 그 locale 이 없는 기계(같은 글이 나온다)면 건너뛴다
+const koreanEnv = () => {
+  const env = { ...process.env, LANG: 'ko_KR.UTF-8', LC_TIME: 'ko_KR.UTF-8' }
+  delete env.LC_ALL
+  return env
+}
+const koreanLstartDiffers = (() => {
+  try {
+    const korean = execFileSync('ps', ['-o', 'lstart=', '-p', String(process.pid)], { encoding: 'utf8', env: koreanEnv() }).trim()
+    return korean !== startedAt(process.pid)
+  } catch {
+    return false
+  }
+})()
+test('dev-app.js test-stop: 한국어 locale 에서도 기록한 앱과 그 집 데몬을 끈다', { skip: !koreanLstartDiffers && '한국어 locale 의 ps 출력이 C 와 같다' }, async () => {
+  const home = tempDir('athena-test-app-')
+  const app = await spawnTree()
+  const daemon = spawnLoner()
+  try {
+    testApp.writeRecord(home, { pid: app.parent, startedAt: startedAt(app.parent), home, at: '' })
+    fs.writeFileSync(path.join(home, 'daemon-dev.json'), JSON.stringify({ pid: daemon, startedAt: new Date().toISOString() }))
+    const output = await new Promise((resolve) => {
+      const child = spawn(process.execPath, [path.join(__dirname, '..', 'scripts', 'dev-app.js'), 'test-stop', '--home', home], { env: koreanEnv(), stdio: ['ignore', 'pipe', 'pipe'] })
+      let text = ''
+      child.stdout.on('data', (chunk) => (text += chunk))
+      child.stderr.on('data', (chunk) => (text += chunk))
+      child.on('close', (code) => resolve({ code, text }))
+    })
+    assert.equal(output.code, 0, output.text)
+    assert.ok(await waitDead(app.parent), `앱(부모)이 꺼진다 — ${output.text}`)
+    assert.ok(await waitDead(daemon), `그 집 데몬이 꺼진다 — ${output.text}`)
+  } finally {
+    cleanup([app.parent, app.kid, daemon])
   }
 })

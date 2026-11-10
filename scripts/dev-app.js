@@ -396,9 +396,10 @@ const processAlive = (pid) => {
   }
 }
 // ps lstart — pid 번호를 다른 프로세스가 다시 쓰는지 가르는 데 쓴다(칸을 정해 읽는다 · 인자 · 환경은 읽지 않는다)
+// LC_ALL=C — 한국어 locale 이면 "2026년 11월 10일 화요일 …" 로 나와 Date.parse 가 못 읽는다(데몬 시작 시각 비교가 늘 어긋나 데몬을 안 끈다)
 const processStartedAt = (pid) => {
   try {
-    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } }).trim()
   } catch {
     return ''
   }

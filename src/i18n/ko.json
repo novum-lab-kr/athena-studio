@@ -751,6 +751,8 @@
   "settings.appUpdateDownloadFailed": "새 버전을 받지 못했습니다",
   "settings.appUpdateChecksumFailed": "받은 파일의 체크섬이 맞지 않습니다",
   "settings.appUpdateInstallFailed": "설치하지 못했습니다 — 기록: app-update.log",
+  "settings.appUpdateInstallFailedOutside": "응용 프로그램 폴더 밖에서 켜서 설치하지 못했습니다 — 옮긴 뒤 다시 켜 주십시오",
+  "settings.appUpdateMoveFirst": "{current} → {next} — 응용 프로그램 폴더로 옮긴 뒤 다시 켜야 업데이트됩니다",
   "settings.appUpdateWaiting": "설치 대기 중…",
   "settings.appUpdateInstallPending": "설치가 끝나지 않았습니다 — [업데이트] 로 다시 설치",
   "settings.appUpdateInstalling": "설치 중…",

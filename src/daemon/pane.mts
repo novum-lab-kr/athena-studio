@@ -1,5 +1,6 @@
 // pane 하나 = 셸 pty 1개 + 화면 버퍼(@xterm/headless) 1개.
 // 버퍼가 있어야 앱이 다시 붙을 때 화면을 되살리고(serialize, S1) · pane read 를 글자로 답하고 · agent_status 를 화면으로 본다(S7)
+import fs from 'node:fs'
 import { createRequire } from 'node:module'
 import type { IPty } from 'node-pty'
 
@@ -25,6 +26,60 @@ export type PaneOptions = {
   rows: number
   onData: (data: string) => void
   onExit: (code: number) => void
+}
+
+// 지금 열린 문자 장치 fd → 장치 번호(rdev). 번호만 보면 readdir 자기 fd 가 끼었다가 다시 쓰여 헷갈린다
+function charDevices(): Map<number, number> {
+  const devices = new Map<number, number>()
+  for (const name of fs.readdirSync('/dev/fd')) {
+    const fd = Number(name)
+    try {
+      const stat = fs.fstatSync(fd)
+      if (stat.isCharacterDevice()) devices.set(fd, stat.rdev)
+    } catch {}
+  }
+  return devices
+}
+
+// node-pty 1.1.0 맥 pty_posix_spawn 은 낮은 fd 를 채우려 연 /dev/ptmx 를 닫지 않는다(1.2.0-beta 에서 고침) — pane 마다 하나씩 쌓여
+// kern.tty.ptmx_max 가 바닥나면 posix_spawnp failed. 띄우기 전후를 비교해 새로 생긴 ptmx 중 pane 의 master 가 아닌 것만 닫는다
+// (spawn 은 동기라 그 사이 ptmx 를 여는 것은 node-pty 뿐 · 고친 판이면 남는 것이 없어 아무것도 안 한다)
+function spawnPty(shell: string, options: Parameters<typeof pty.spawn>[2]): IPty {
+  if (process.platform !== 'darwin') return pty.spawn(shell, ['-l'], options)
+  let before: Map<number, number> | null = null
+  try {
+    before = charDevices()
+  } catch {}
+  const term = pty.spawn(shell, ['-l'], options)
+  const master = (term as unknown as { fd?: unknown }).fd
+  if (!before || typeof master !== 'number') return term
+  try {
+    const ptmxMajor = fs.fstatSync(master).rdev >> 24
+    for (const [fd, rdev] of charDevices()) {
+      if (fd === master || before.get(fd) === rdev || rdev >> 24 !== ptmxMajor) continue
+      fs.closeSync(fd)
+    }
+  } catch {}
+  return term
+}
+
+// 코드 교체 직후 한 번 — 고치기 전 코드(DAEMON_CODE 12 까지)가 쌓아 둔 고아 /dev/ptmx 를 닫는다(사용자 결정 2026-11-10).
+// 데몬 안에서 ptmx 를 여는 것은 node-pty 뿐이라 살아 있는 pane 의 master(masters)가 아닌 ptmx 는 모두 고아다. 닫은 개수를 돌려준다
+export function closeOrphanPtmx(masters: Iterable<number>): number {
+  if (process.platform !== 'darwin') return 0
+  const keep = new Set(masters)
+  let closed = 0
+  try {
+    const ptmxMajor = fs.statSync('/dev/ptmx').rdev >> 24
+    for (const [fd, rdev] of charDevices()) {
+      if (keep.has(fd) || rdev >> 24 !== ptmxMajor) continue
+      try {
+        fs.closeSync(fd)
+        closed += 1
+      } catch {}
+    }
+  } catch {}
+  return closed
 }
 
 export class Pane {
@@ -71,7 +126,7 @@ export class Pane {
     this.screen.unicode.activeVersion = '11'
     this.screen.onTitleChange((title) => (this.title = title || null))
 
-    this.pty = pty.spawn(shell, ['-l'], { name: 'xterm-256color', cols, rows, cwd, env })
+    this.pty = spawnPty(shell, { name: 'xterm-256color', cols, rows, cwd, env })
     this.pid = this.pty.pid
     this.pty.onData((data) => {
       this.lastOutputAt = Date.now()
