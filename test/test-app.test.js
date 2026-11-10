@@ -15,9 +15,10 @@ const alive = (pid) => {
     return error.code === 'EPERM'
   }
 }
+// LC_ALL=C — 앱(scripts/dev-app.js)과 같게. 한국어 locale 의 lstart 는 Date.parse 가 못 읽는다
 const startedAt = (pid) => {
   try {
-    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim()
+    return execFileSync('ps', ['-o', 'lstart=', '-p', String(pid)], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'], env: { ...process.env, LC_ALL: 'C' } }).trim()
   } catch {
     return ''
   }
