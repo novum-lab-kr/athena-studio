@@ -67,7 +67,8 @@ function connect(socket) {
   })
 }
 
-function setup() {
+// prepare(edit) — 데몬을 띄우기 전에 사본을 고친다(옛 코드로 띄우기)
+function setup(prepare = () => {}) {
   const dir = fs.mkdtempSync('/tmp/asd-reload-')
   fs.cpSync(path.join(ROOT, 'src', 'daemon'), path.join(dir, 'src', 'daemon'), { recursive: true })
   fs.cpSync(path.join(ROOT, 'src', 'lib'), path.join(dir, 'src', 'lib'), { recursive: true })
@@ -76,17 +77,18 @@ function setup() {
   fs.cpSync(path.join(ROOT, 'bin'), path.join(dir, 'bin'), { recursive: true })
   fs.copyFileSync(path.join(ROOT, 'package.json'), path.join(dir, 'package.json'))
   fs.symlinkSync(path.join(ROOT, 'node_modules'), path.join(dir, 'node_modules'))
-  const socket = path.join(dir, 'd.sock')
-  const log = fs.openSync(path.join(dir, 'daemon.log'), 'a')
-  const child = spawn(process.execPath, [path.join(dir, 'src', 'daemon', 'main.mts'), '--socket', socket, '--endpoint', path.join(dir, 'e.json')], { detached: true, stdio: ['ignore', log, log] })
-  child.unref()
-  fs.closeSync(log)
   const edit = (file, from, to) => {
     const target = path.join(dir, 'src', file)
     const text = fs.readFileSync(target, 'utf8')
     assert.ok(text.includes(from), `${file} 에 ${from} 이 없다`)
     fs.writeFileSync(target, text.replace(from, to))
   }
+  prepare(edit)
+  const socket = path.join(dir, 'd.sock')
+  const log = fs.openSync(path.join(dir, 'daemon.log'), 'a')
+  const child = spawn(process.execPath, [path.join(dir, 'src', 'daemon', 'main.mts'), '--socket', socket, '--endpoint', path.join(dir, 'e.json')], { detached: true, stdio: ['ignore', log, log] })
+  child.unref()
+  fs.closeSync(log)
   return { dir, socket, pid: child.pid, edit, end: () => { process.kill(child.pid, 'SIGTERM'); fs.rmSync(dir, { recursive: true, force: true }) } }
 }
 
@@ -279,5 +281,51 @@ test('기존 pane의 초기화가 진행 중인 CSI·OSC·DCS 청크를 바꾸�
         assert.equal(pane.snapshot().includes('\x1b[?1006h'), sgr)
       } finally { screen.dispose() }
     })
+  }
+})
+
+// 고치기 전 코드(DAEMON_CODE 12 까지)는 pane 마다 고아 /dev/ptmx 를 남겼다 — 교체 직후 살아 있는 pane 의 master 만 남기고 닫는다(사용자 결정 2026-11-10)
+test('교체: 옛 코드가 남긴 고아 /dev/ptmx 를 닫고 살아 있는 pane 은 그대로', { skip: ptyMissing || (process.platform !== 'darwin' && 'lsof 로 ptmx 를 세는 맥 전용') || false, timeout: 60000 }, async () => {
+  const OLD_SPAWN = "  if (process.platform !== 'darwin') return pty.spawn(shell, ['-l'], options)"
+  const LEAKY_SPAWN = "  return pty.spawn(shell, ['-l'], options)"
+  const daemon = setup((edit) => edit('daemon/pane.mts', OLD_SPAWN, LEAKY_SPAWN)) // 여분 ptmx 를 닫지 않는 옛 동작으로 띄운다
+  const { execFile } = require('child_process')
+  const ptmxCount = () => new Promise((resolve, reject) => execFile('lsof', ['-n', '-p', String(daemon.pid)], (error, stdout) => (error ? reject(error) : resolve(stdout.split('\n').filter((line) => line.includes('/dev/ptmx')).length))))
+  try {
+    await waitForSocket(daemon.socket, '데몬 소켓')
+    const app = await connect(daemon.socket)
+    const tab = (await app.call('tab new', { cwd: daemon.dir, cols: 100, rows: 30 })).result
+    const second = (await app.call('pane split', { target: tab.pane, direction: 'right', cwd: daemon.dir })).result.pane.id
+    await runIn(app, tab.pane, 'echo first=$((1+1))', '^first=2$')
+    await runIn(app, second, 'echo second=$((2+2))', '^second=4$')
+    for (let round = 0; round < 3; round++) {
+      const closing = (await app.call('pane split', { target: tab.pane, direction: 'down', cwd: daemon.dir })).result.pane.id
+      await app.call('pane close', { pane: closing })
+      await waitFor(async () => (await app.call('state')).result.panes.length === 2, 'pane 닫기')
+    }
+    // 살아 있는 2 + 고아 5(띄운 pane 5개마다 하나)
+    await waitFor(async () => (await ptmxCount()) === 7, `옛 코드의 고아 쌓임(지금 ${await ptmxCount()})`)
+
+    daemon.edit('daemon/pane.mts', LEAKY_SPAWN, OLD_SPAWN)
+    daemon.edit('lib/protocol.js', `const DAEMON_CODE = ${protocol.DAEMON_CODE}`, `const DAEMON_CODE = ${protocol.DAEMON_CODE + 1}`)
+    assert.equal((await app.call('daemon reload')).result.ok, true)
+    assert.equal(await ptmxCount(), 2, '살아 있는 pane 의 master 만 남는다')
+
+    // 살아 있는 pane 은 입출력 · 크기 바꾸기가 그대로
+    await runIn(app, tab.pane, 'echo after=$((3+3))', '^after=6$')
+    await runIn(app, second, 'echo after2=$((4+4))', '^after2=8$')
+    await app.call('resize', { pane: second, cols: 60, rows: 20 })
+    await runIn(app, second, 'stty size', '^20 60$')
+    // 교체 뒤 새 pane 은 고아를 남기지 않는다
+    const fresh = (await app.call('pane split', { target: tab.pane, direction: 'down', cwd: daemon.dir })).result.pane.id
+    await runIn(app, fresh, 'echo fresh=$((5+5))', '^fresh=10$')
+    assert.equal(await ptmxCount(), 3)
+    await app.call('pane close', { pane: fresh })
+    await waitFor(async () => (await ptmxCount()) === 2, '새 pane 닫은 뒤 원래대로')
+    await app.call('shutdown')
+  } finally {
+    try {
+      daemon.end()
+    } catch {}
   }
 })
