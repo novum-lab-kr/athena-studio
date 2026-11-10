@@ -181,6 +181,16 @@ test('머지 전 검사 — feat · fix 제목이면 최신 태그 때 없던 CH
   const ready = `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n### New\n- Feature\n\n${previous}`
   assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: ready, previous }).ok, true)
   assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n${previous}`, previous }).ok, false)
+  // 리뷰 #283 — 머지될 판의 절(끝자리면 지금 minor · 가운데면 새 minor)에 넣은 줄만 친다. 옛 절에 넣은 줄은 그 판 업데이트 내역에 안 나온다
+  const twoSections = `${previous}\n## 0.58 (v0.58.0 – · Nov 8, 2026)\n\n### Fixed\n- Old58\n`
+  const oldOnly = twoSections.replace('- Old58', '- Old58\n- Late fix')
+  const oldBlocked = release.mergeGate({ title: 'fix: 고침', latest: '0.60.18', changelog: oldOnly, previous: twoSections })
+  assert.equal(oldBlocked.ok, false)
+  assert.ok(String(oldBlocked.reason).includes("'## 0.60'"), String(oldBlocked.reason))
+  assert.equal(release.mergeGate({ title: 'fix: 고침', latest: '0.60.18', changelog: twoSections.replace('- Old', '- Old\n- New fix'), previous: twoSections }).ok, true)
+  const emptyNext = `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n### New\n\n${oldOnly}`
+  assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: emptyNext, previous: twoSections }).ok, false)
+  assert.equal(release.mergeGate({ title: 'feat: 기능', latest: '0.60.18', changelog: `## 0.61 (v0.61.0 – · Nov 10, 2026)\n\n### Fixed\n- Late fix\n\n${twoSections}`, previous: twoSections }).ok, true)
   for (const title of ['fix(test): 시험', 'fix(ci): 러너', 'fix(docs): 문서', 'chore: 정리', 'docs: 문서', 'test: 시험', 'refactor: 정리', '형식 없는 제목', '']) {
     assert.equal(release.mergeGate({ title, latest: '0.60.18', changelog: previous, previous }).ok, true, title)
   }

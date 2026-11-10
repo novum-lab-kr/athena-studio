@@ -3,7 +3,7 @@
 // Actions 넘기기(.github/workflows/athena-handoff.yml verify)가 넘김 머리 제목으로 부른다. 통과 0 · 막으면 1(stderr 첫 줄이 이유)
 //   node scripts/merge-gate.js --title "<PR 제목>"
 // 지금 하는 것: feat · ! 제목이면 다음 minor 의 CHANGELOG 절 확인(scripts/release-files.js gate — 머지 뒤 release-mac 이 그 절 없이 멈추지 않게) ·
-//   feat · fix 제목이면 최신 태그 때 없던 CHANGELOG 줄 확인(업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 · fix(test|ci|docs) 와 다른 접두사는 면제)
+//   feat · fix 제목이면 머지될 판의 절에 최신 태그 때 없던 CHANGELOG 줄 확인(업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 · fix(test|ci|docs) 와 다른 접두사는 면제)
 const path = require('path')
 const { execFileSync } = require('child_process')
 

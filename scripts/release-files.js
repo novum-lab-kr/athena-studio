@@ -7,7 +7,7 @@
 //   node scripts/release-files.js manifest --version X.Y.Z --dir dist/release --out <파일>   latest.json(.dmg 기준 · 크기 · sha256)
 //   node scripts/release-files.js updater --version X.Y.Z --dir dist/release --out <파일>    latest-mac.yml(앱 안 업데이트 피드 · .zip 기준 · 크기 · sha512)
 //   node scripts/release-files.js gate --title "<PR 제목>"   머지 전 검사 — feat · ! 제목이면 머지 뒤 달릴 X.(Y+1).0 의 minor 절이 있어야 하고,
-//       feat · fix 제목이면 CHANGELOG 에 최신 태그 때 없던 줄이 하나는 있어야 한다(없으면 1 · fix(test|ci|docs) 는 면제) · scripts/merge-gate.js 가 부른다
+//       feat · fix 제목이면 머지될 판의 CHANGELOG 절에 최신 태그 때 없던 줄이 하나는 있어야 한다(없으면 1 · fix(test|ci|docs) 는 면제) · scripts/merge-gate.js 가 부른다
 // 순수 부분(releaseVersion · changelogSection · releaseBody · needsLine · mergeGate · gateBase · buildManifest · buildUpdaterFeed · releaseDate)은 test/release-files.test.js 가 본다
 const crypto = require('crypto')
 const { execFileSync } = require('child_process')
@@ -91,7 +91,7 @@ function gateBase(tags) {
 // 머지 전 검사 — 이 제목으로 머지되면 release-version.js 가 latest 다음에 달 버전(src/lib/version.js nextVersion 그대로).
 // 가운데 올림(feat · !)이면 그 minor 절이 CHANGELOG 에 있어야 release-mac 의 "배포 버전 · CHANGELOG 확인"(readSection)을 지난다 — 없으면 막는다.
 // 끝자리 올림은 이미 있는 minor 절에 들어가니 절은 보지 않는다(그 절은 앞 minor 머지 때 이 검사가 확인했다).
-// 그다음 feat · fix 제목(needsLine)이면 CHANGELOG 에 최신 태그 때(previous) 없던 줄이 있어야 한다 — 업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 보인다(2026-11-10).
+// 그다음 feat · fix 제목(needsLine)이면 머지될 판의 절에 최신 태그 때(previous) 없던 줄이 있어야 한다 — 업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 보인다(2026-11-10).
 // previous 를 모르면(태그 CHANGELOG 를 못 읽음) 줄은 보지 않는다
 /** @param {{ title: unknown, latest: string, changelog: string, previous?: string | null }} options */
 function mergeGate({ title, latest, changelog, previous = null }) {
@@ -103,10 +103,17 @@ function mergeGate({ title, latest, changelog, previous = null }) {
     return { ok: false, kind, next, reason }
   }
   if (needsLine(title) && previous !== null) {
+    // 머지될 판(끝자리 올림이면 지금 minor · 가운데 올림이면 새 minor)의 절에 넣은 줄만 친다 — 옛 절에 넣은 줄은 그 판 업데이트 내역에서 빠진다(리뷰 #283)
+    const merged = version.nextVersion(latest, title)
+    const minor = merged.split('.').slice(0, 2).join('.')
     const before = new Set(releaseNotes.parseChangelog(previous).flatMap((section) => section.notes.map((note) => note.text)))
-    const added = releaseNotes.parseChangelog(changelog).flatMap((section) => section.notes).filter((note) => !before.has(note.text))
+    const [major, minorNumber] = merged.split('.').map(Number)
+    const added = releaseNotes.parseChangelog(changelog)
+      .filter((section) => section.minor[0] === major && section.minor[1] === minorNumber)
+      .flatMap((section) => section.notes)
+      .filter((note) => !before.has(note.text))
     if (!added.length) {
-      const reason = `feat · fix 제목인데 CHANGELOG.md 에 v${latest} 뒤 새 줄이 없다 — 업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 보인다. 맨 위 절 New / Improved / Fixed 에 영어 한 줄 + src/changelog/{ko,ja,zh}.json 번역(손님이 알아챌 것이면 docs/site-release-notes.json 도)을 쓴다. 사용자에게 안 보이는 수정이면 제목을 chore · test · docs 또는 fix(test|ci|docs) 로`
+      const reason = `feat · fix 제목인데 CHANGELOG.md '## ${minor}' 절(머지되면 v${merged})에 v${latest} 뒤 새 줄이 없다 — 업데이트 창 · Release 본문은 그 판에 새로 들어간 줄만 보인다. 그 절 New / Improved / Fixed 에 영어 한 줄 + src/changelog/{ko,ja,zh}.json 번역(손님이 알아챌 것이면 docs/site-release-notes.json 도)을 쓴다. 사용자에게 안 보이는 수정이면 제목을 chore · test · docs 또는 fix(test|ci|docs) 로`
       return { ok: false, kind, next, reason }
     }
   }
