@@ -532,3 +532,60 @@ test('앱이 붙어 있으면 분할 · pane 종료가 옆 pane 의 pty 크기�
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// 맥 pty 는 시스템 전체 한도(kern.tty.ptmx_max)가 있다 — 닫은 pane 의 /dev/ptmx 를 데몬이 쥐고 있으면 쌓여 posix_spawnp failed(2026-11-10)
+// node-pty 1.1.0 맥 pty_posix_spawn 이 pane 마다 여분 ptmx 를 하나 남겼다. 닫기 · 셸 종료 · 탭 닫기 · 코드 교체 뒤 띄우기 모두 원래 개수로 돌아오는지
+test('pane 을 열고 닫으면 데몬의 /dev/ptmx 가 원래 개수로 돌아온다(pane 닫기 · exit · 탭 닫기 · 코드 교체 뒤)', { skip: ptyMissing || (process.platform !== 'darwin' && 'lsof 로 ptmx 를 세는 맥 전용') || false, timeout: 60000 }, async () => {
+  const dir = workDir()
+  const daemon = startDaemon(dir)
+  const ptmxCount = () => new Promise((resolve, reject) => execFile('lsof', ['-n', '-p', String(daemon.pid)], (error, stdout) => (error ? reject(error) : resolve(stdout.split('\n').filter((line) => line.includes('/dev/ptmx')).length))))
+  const paneCount = async () => JSON.parse((await cli(daemon.socket, ['pane', 'list'])).stdout).panes.length
+  const split = async () => {
+    const result = await cli(daemon.socket, ['pane', 'split', '--target', 'p1', '--direction', 'right', '--no-focus'])
+    assert.equal(result.code, 0, result.stderr)
+    const pane = JSON.parse(result.stdout).pane.id
+    await waitFor(async () => (await cli(daemon.socket, ['pane', 'is-shell', pane])).code === 0, `${pane} 셸 프롬프트`, 10000)
+    return pane
+  }
+  try {
+    await waitForSocket(daemon.socket, '데몬 소켓')
+    const app = await connect(daemon.socket)
+    await app.call('hello', { protocol: protocol.PROTOCOL })
+    await app.call('tab new', { cwd: dir, cols: 100, rows: 30 }) // p1 — 끝까지 둔다(다른 pane 의 master 는 닫지 않아야 한다)
+    await waitFor(async () => (await cli(daemon.socket, ['pane', 'is-shell', 'p1'])).code === 0, 'p1 셸 프롬프트', 10000)
+    const base = await ptmxCount()
+    assert.equal(base, 1, 'pane 하나면 ptmx 도 하나(master)')
+
+    for (let round = 0; round < 3; round++) {
+      // pane 닫기
+      const closing = await split()
+      assert.equal(await ptmxCount(), base + 1, '띄운 pane 은 master 하나만 더')
+      await cli(daemon.socket, ['pane', 'close', closing])
+      await waitFor(async () => (await paneCount()) === 1, 'pane 닫기')
+      // 셸 종료(exit)
+      const exiting = await split()
+      await app.call('pane send-text', { pane: exiting, text: 'exit\r' })
+      await waitFor(async () => (await paneCount()) === 1, '셸 exit')
+      // 탭 닫기
+      const tab = (await app.call('tab new', { cwd: dir, cols: 80, rows: 24 })).result
+      await waitFor(async () => (await cli(daemon.socket, ['pane', 'is-shell', tab.pane])).code === 0, '새 탭 셸 프롬프트', 10000)
+      await app.call('tab close', { tab: tab.tab })
+      await waitFor(async () => (await paneCount()) === 1, '탭 닫기')
+    }
+    await waitFor(async () => (await ptmxCount()) === base, `ptmx ${base}개로 돌아오기`, 10000)
+
+    // 코드 교체 뒤에 띄운 pane 도
+    assert.equal((await app.call('daemon reload')).result.ok, true)
+    const reloaded = await split()
+    await cli(daemon.socket, ['pane', 'close', reloaded])
+    await waitFor(async () => (await paneCount()) === 1, '교체 뒤 pane 닫기')
+    await waitFor(async () => (await ptmxCount()) === base, '교체 뒤 ptmx 원래대로', 10000)
+    assert.equal((await cli(daemon.socket, ['pane', 'is-shell', 'p1'])).code, 0, 'p1 은 그대로 산다')
+    await app.call('shutdown')
+  } finally {
+    try {
+      process.kill(daemon.pid, 'SIGTERM')
+    } catch {}
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
