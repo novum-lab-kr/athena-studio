@@ -63,6 +63,25 @@ function spawnPty(shell: string, options: Parameters<typeof pty.spawn>[2]): IPty
   return term
 }
 
+// 코드 교체 직후 한 번 — 고치기 전 코드(DAEMON_CODE 12 까지)가 쌓아 둔 고아 /dev/ptmx 를 닫는다(사용자 결정 2026-11-10).
+// 데몬 안에서 ptmx 를 여는 것은 node-pty 뿐이라 살아 있는 pane 의 master(masters)가 아닌 ptmx 는 모두 고아다. 닫은 개수를 돌려준다
+export function closeOrphanPtmx(masters: Iterable<number>): number {
+  if (process.platform !== 'darwin') return 0
+  const keep = new Set(masters)
+  let closed = 0
+  try {
+    const ptmxMajor = fs.statSync('/dev/ptmx').rdev >> 24
+    for (const [fd, rdev] of charDevices()) {
+      if (keep.has(fd) || rdev >> 24 !== ptmxMajor) continue
+      try {
+        fs.closeSync(fd)
+        closed += 1
+      } catch {}
+    }
+  } catch {}
+  return closed
+}
+
 export class Pane {
   // declare — 타입만 적는다(실행 코드에 칸을 만들지 않아 JS 때와 같은 객체 · 값은 constructor 가 넣는다)
   declare id: string
