@@ -1204,6 +1204,8 @@ handle('mobile:remove-device', async (_ctx, peer: unknown) => {
 })
 // 디바이스에서 입력 허용 — 앱 설정 mobileInput(브리지가 메시지마다 다시 읽는다 · 기본 꺼짐)
 handle('mobile:set-input', (_ctx, allowed: unknown) => {
+  // 개발용 길이 꺼져 있으면 바꾸지 않는다(배포판 · 보통 개발 앱에서 허용이 몰래 켜지지 않게)
+  if (!mobileDev) return { ok: false, allowed: config.mobileInput === true }
   config = { ...config, mobileInput: allowed === true }
   core.saveConfig(configFile(), config)
   return { ok: true, allowed: allowed === true }

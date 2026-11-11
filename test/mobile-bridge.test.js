@@ -9,7 +9,8 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed } = bridgeModule
+const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt } = bridgeModule
+const { packView } = require('../src/main/mobile-dev.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
 const workDir = () => fs.mkdtempSync('/tmp/asd-mob-')
@@ -63,6 +64,32 @@ function startFakeDaemon(socketPath) {
   )
 }
 
+// Codex 승인 요청(src/lib/requests.mts codexApproval 모양)
+const CODEX_REQUEST = {
+  id: 'codex-approval:tok1',
+  pane: 'p2',
+  permission: true,
+  codexApproval: { token: 'tok1', generation: 'g1', thread: 't1', choices: [{ key: 'accept', label: '허용' }, { key: 'decline', label: '거절' }] },
+}
+
+// 결정 콘솔 계획서 html(plan-html.mjs 가 쓰는 모양)
+function writePlanHtml(dir, rel, plan) {
+  const file = path.join(dir, rel)
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file.replace(/\.md$/, '.html'), `<!-- 머리 -->\n<script id="plan-data">\nconst PLAN = ${JSON.stringify(plan)}\n</script>\n`)
+  fs.writeFileSync(file, '# 계획서\n')
+}
+const SAMPLE_PLAN = {
+  title: '모바일 앱',
+  mdFile: 'plans/feature/a.md',
+  leadPane: 'p1',
+  decisions: [
+    { id: 'D1', title: '로그인', desc: '방식', type: 'single', required: true, options: [{ label: 'A 웹', desc: '브라우저', recommended: true }, { label: 'B 앱' }] },
+    { id: 'D2', title: '화면', type: 'multi', required: false, options: [{ label: '팩' }, { label: '결정' }, { label: '서버' }] },
+    { id: 'D3', title: '저장', type: 'single', required: true, options: [{ label: '키체인' }, { label: '파일' }], decided: '키체인' },
+  ],
+}
+
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 
 async function waitFor(check, what, limitMs = 3000) {
@@ -83,6 +110,9 @@ async function setup(overrides = {}) {
   const answered = []
   const posted = []
   const flags = { input: true }
+  const approved = []
+  const repoSets = []
+  const opened = []
   const bridge = createMobileBridge({
     daemonPaths: () => ({ socket, log: path.join(dir, 'daemon.log'), endpoint: path.join(dir, 'endpoint.json') }),
     transport,
@@ -94,10 +124,25 @@ async function setup(overrides = {}) {
       answered.push({ id, answer })
       return { ok: true, delivered: true }
     },
+    approveRequest: async (id, generation, choice) => {
+      approved.push({ id, generation, choice })
+      return { ok: true }
+    },
+    athenaDir: () => null,
     leadPaneOf: (plan) => (plan === 'plans/feature/a.md' ? 'p1' : null),
     postDecision: async (body) => {
       posted.push(body)
       return { status: 200, body: { ok: true } }
+    },
+    packs: () => ({ current: 'acme', packs: [{ id: 'acme', name: 'acme', displayName: null }, { id: 'globex', name: 'globex', displayName: '글로벡스' }] }),
+    repoSettings: async () => ({ ok: true, repos: [{ name: 'web', autoMerge: true, autoPr: true, review: true, mergeMode: 'auto', releaseOnMerge: false, prBase: 'main' }] }),
+    setRepo: async (repo, changes) => {
+      repoSets.push({ repo, changes })
+      return { ok: true }
+    },
+    openPack: async (id) => {
+      opened.push(id)
+      return { ok: true, id, switched: true }
     },
     logEvent: (type, fields) => logged.push({ type, fields }),
     flushMs: 40,
@@ -117,7 +162,7 @@ async function setup(overrides = {}) {
     await daemon.close()
     fs.rmSync(dir, { recursive: true, force: true })
   }
-  return { daemon, phone, bridge, ask, events, logged, answered, posted, flags, cleanup }
+  return { daemon, phone, bridge, ask, events, logged, answered, posted, approved, repoSets, opened, flags, cleanup }
 }
 
 test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · 필요한 칸 · PC 크기) · 서버 · 7일 머지를 한 번에, attach 하지 않는다', async () => {
@@ -285,14 +330,17 @@ test('pane.input — 키 그대로 데몬 input · 기록은 by mobile 과 바�
   }
 })
 
-test('폰 입력 허용이 꺼지면 pane.input · request.answer · decision.answer 를 input-off 로 거절하고 아무것도 하지 않는다', async () => {
-  const env = await setup()
+test('폰 입력 허용이 꺼지면 pane.input · request.answer(권한 요청 포함) · decision.answer · repo.set · pack.open 을 input-off 로 거절하고 아무것도 하지 않는다', async () => {
+  const env = await setup({ requests: () => [CODEX_REQUEST] })
   env.flags.input = false
   try {
     for (const [op, args] of [
       ['pane.input', { pane: 'p1', data: 'y' }],
       ['request.answer', { id: 'r-20261111-090000-abcd', choice: '예' }],
+      ['request.answer', { id: CODEX_REQUEST.id, choice: 'accept', generation: 'g1' }],
       ['decision.answer', { plan: 'plans/feature/a.md', decisions: ['D1'], text: '진행' }],
+      ['repo.set', { repo: 'web', review: false }],
+      ['pack.open', { id: 'globex' }],
     ]) {
       const reply = await env.ask(op, args)
       assert.equal(reply.ok, false, op)
@@ -301,7 +349,12 @@ test('폰 입력 허용이 꺼지면 pane.input · request.answer · decision.an
     assert.ok(!env.daemon.state.ops.some((entry) => entry.op === 'input'))
     assert.equal(env.answered.length, 0)
     assert.equal(env.posted.length, 0)
-    // 보기는 그대로 된다
+    assert.equal(env.approved.length, 0)
+    assert.equal(env.repoSets.length, 0)
+    assert.equal(env.opened.length, 0)
+    // 보기는 그대로 된다(결정 목록 · 팩 목록도)
+    assert.equal((await env.ask('decision.list')).ok, true)
+    assert.equal((await env.ask('pack.list')).ok, true)
     assert.equal((await env.ask('snapshot')).ok, true)
     assert.equal((await env.ask('pane.open', { pane: 'p1' })).ok, true)
   } finally {
@@ -465,4 +518,159 @@ test('boardActionPoster — 현황판 /api/action 에 콘솔과 같은 Origin ·
   }
   // 현황판이 꺼져 있으면 status 0
   assert.deepEqual(await boardActionPoster({ port, token: 't' })({ pane: 'p', plan: 'plans/a.md', decisions: [], text: 't', by: 'mobile' }), { status: 0, body: null })
+})
+
+test('request.answer — Codex 승인은 choice key · generation 으로 ctx.approveRequest(선택지 번호)에, by mobile 기록 · 모르는 key 는 usage · 실패는 conflict', async () => {
+  const env = await setup({ requests: () => [CODEX_REQUEST] })
+  try {
+    const reply = await env.ask('request.answer', { id: CODEX_REQUEST.id, choice: 'decline', generation: 'g1' })
+    assert.equal(reply.ok, true)
+    assert.deepEqual(env.approved, [{ id: CODEX_REQUEST.id, generation: 'g1', choice: 1 }])
+    assert.equal(env.answered.length, 0, 'Codex 승인은 일반 답 길로 가지 않는다')
+    assert.deepEqual(env.logged.at(-1), { type: 'mobile.approve', fields: { by: 'mobile', pane: 'p2', choice: 'decline' } })
+    assert.equal((await env.ask('request.answer', { id: CODEX_REQUEST.id, choice: '없는키', generation: 'g1' })).error.code, 'usage')
+    assert.equal((await env.ask('request.answer', { id: CODEX_REQUEST.id, choice: 'accept' })).error.code, 'usage', 'generation 없음')
+    assert.equal(env.approved.length, 1)
+  } finally {
+    await env.cleanup()
+  }
+  const failing = await setup({ requests: () => [CODEX_REQUEST], approveRequest: async () => ({ ok: false, error: 'conflict' }) })
+  try {
+    assert.equal((await failing.ask('request.answer', { id: CODEX_REQUEST.id, choice: 'accept', generation: 'old' })).error.code, 'conflict')
+  } finally {
+    await failing.cleanup()
+  }
+})
+
+test('readPlanData · openDecisionPlans — 결정 콘솔 PLAN 블록에서, 남은 결정이 있는 계획서만 · md 없는 html(그림 폴더) · 모양이 틀린 것은 뺀다', () => {
+  const dir = workDir()
+  try {
+    writePlanHtml(dir, 'plans/feature/a.md', SAMPLE_PLAN)
+    // 필수가 모두 확정 — 끝난 계획서
+    writePlanHtml(dir, 'plans/task/done.md', { title: '끝', decisions: [{ id: 'D1', title: 'x', required: true, options: [{ label: 'A' }], decided: ['A'] }, { id: 'D2', title: 'y', options: [{ label: 'B' }] }] })
+    // 결정이 없는 계획서
+    writePlanHtml(dir, 'plans/task/empty.md', { title: '빈', decisions: [] })
+    // 선택지 모양이 틀린 것
+    writePlanHtml(dir, 'plans/task/bad.md', { title: '틀림', decisions: [{ id: 'D1', options: [{ desc: 'label 없음' }] }] })
+    // md 가 없는 html
+    fs.mkdirSync(path.join(dir, 'plans', 'artifacts'), { recursive: true })
+    fs.writeFileSync(path.join(dir, 'plans', 'artifacts', 'x.html'), '<html></html>')
+    const data = readPlanData(dir, 'plans/feature/a.md')
+    assert.equal(data.title, '모바일 앱')
+    assert.deepEqual(data.decisions[0], { id: 'D1', title: '로그인', desc: '방식', type: 'single', required: true, options: [{ label: 'A 웹', desc: '브라우저', recommended: true, custom: false }, { label: 'B 앱', desc: '', recommended: false, custom: false }], decided: null })
+    assert.deepEqual(data.decisions[2].decided, ['키체인'])
+    assert.equal(readPlanData(dir, 'plans/../feature/a.md'), null)
+    assert.deepEqual(openDecisionPlans(dir).map((entry) => entry.plan), ['plans/feature/a.md'])
+    assert.deepEqual(openDecisionPlans(path.join(dir, '없음')), [])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('decisionPrompt — 결정 콘솔 [이대로 진행] 과 같은 글 · 확정값은 그대로 · 틀린 고르기는 usage', () => {
+  const data = { title: '모바일 앱', mdFile: 'plans/feature/a.md', decisions: SAMPLE_PLAN.decisions.map((entry) => ({ desc: '', ...entry, decided: entry.decided ? [entry.decided] : null })) }
+  assert.equal(
+    decisionPrompt(data, { D1: 'B 앱', D2: ['팩', '서버'] }),
+    ['[작업계획서 결정사항 확정] 모바일 앱', '', '아래 결정사항으로 plans/feature/a.md 계획서를 확정하고 진행해주세요.', '', '1. 로그인: B 앱', '2. 화면: 팩, 서버', '3. 저장: 키체인', '', '추가 메모: (없음)'].join('\n'),
+  )
+  // 필수 아닌 것은 비워도 된다 — 콘솔처럼 (미결정)
+  assert.match(decisionPrompt(data, { D1: 'A 웹' }), /2\. 화면: \(미결정\)/)
+  const code = (fn) => {
+    try {
+      fn()
+    } catch (error) {
+      return error.code
+    }
+    return 'ok'
+  }
+  assert.equal(code(() => decisionPrompt(data, {})), 'usage', '필수 D1 이 남음')
+  assert.equal(code(() => decisionPrompt(data, { D1: '없는 것' })), 'usage')
+  assert.equal(code(() => decisionPrompt(data, { D1: ['A 웹', 'B 앱'] })), 'usage', '택1 에 둘')
+  assert.equal(code(() => decisionPrompt(data, { D1: 'A 웹', D3: '파일' })), 'usage', '확정된 결정')
+  assert.equal(code(() => decisionPrompt(data, { D1: 'A 웹', D9: 'x' })), 'usage', '없는 결정')
+})
+
+test('decision.list · decision.answer picks — 남은 결정 목록(hasPane) · 고른 값만 보내면 맥이 콘솔 글을 만들어 by mobile 로 · 결정이 바뀌었으면 stale', async () => {
+  const dir = workDir()
+  writePlanHtml(dir, 'plans/feature/a.md', SAMPLE_PLAN)
+  const env = await setup({ athenaDir: () => dir })
+  try {
+    const list = await env.ask('decision.list')
+    assert.equal(list.ok, true)
+    assert.equal(list.result.plans.length, 1)
+    assert.equal(list.result.plans[0].plan, 'plans/feature/a.md')
+    assert.equal(list.result.plans[0].hasPane, true)
+    assert.deepEqual(list.result.plans[0].decisions.map((entry) => [entry.id, entry.type, entry.required, entry.decided]), [['D1', 'single', true, null], ['D2', 'multi', false, null], ['D3', 'single', true, ['키체인']]])
+    assert.equal(list.result.plans[0].decisions[0].options[0].recommended, true)
+    const reply = await env.ask('decision.answer', { plan: 'plans/feature/a.md', decisions: ['D1', 'D2', 'D3'], picks: { D1: 'A 웹' } })
+    assert.equal(reply.ok, true)
+    assert.equal(env.posted.length, 1)
+    assert.equal(env.posted[0].pane, 'p1')
+    assert.equal(env.posted[0].by, 'mobile')
+    assert.deepEqual(env.posted[0].decisions, ['D1', 'D2', 'D3'])
+    assert.match(env.posted[0].text, /^\[작업계획서 결정사항 확정\] 모바일 앱\n/)
+    assert.match(env.posted[0].text, /1\. 로그인: A 웹\n2\. 화면: \(미결정\)\n3\. 저장: 키체인/)
+    // 폰이 본 결정 id 와 다르면 stale · 틀린 고르기는 usage — 둘 다 보내지 않는다
+    assert.equal((await env.ask('decision.answer', { plan: 'plans/feature/a.md', decisions: ['D1', 'D2'], picks: { D1: 'A 웹' } })).error.code, 'stale')
+    assert.equal((await env.ask('decision.answer', { plan: 'plans/feature/a.md', decisions: ['D1', 'D2', 'D3'], picks: { D1: '없는 것' } })).error.code, 'usage')
+    assert.equal((await env.ask('decision.answer', { plan: 'plans/feature/a.md', decisions: ['D1', 'D2', 'D3'], picks: 'A' })).error.code, 'usage')
+    assert.equal((await env.ask('decision.answer', { plan: 'plans/feature/none.md', decisions: [], picks: {} })).error.code, 'not_found')
+    assert.equal(env.posted.length, 1)
+  } finally {
+    await env.cleanup()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('pack.list · repo.set · pack.open — 팩 · ⚙ 설정 줄을 보이고, 바꾸기는 같은 길(setRepo · openPack)로 by mobile 기록 · 모르는 값 · 레포 · 팩은 거절', async () => {
+  const env = await setup()
+  try {
+    const list = await env.ask('pack.list')
+    assert.equal(list.ok, true)
+    assert.equal(list.result.current, 'acme')
+    assert.deepEqual(list.result.packs.map((pack) => pack.id), ['acme', 'globex'])
+    assert.equal(list.result.repos[0].name, 'web')
+    assert.equal(list.result.repos[0].mergeMode, 'auto')
+
+    const set = await env.ask('repo.set', { repo: 'web', review: false, merge: 'confirm' })
+    assert.equal(set.ok, true)
+    assert.equal(set.result.repo.name, 'web')
+    assert.deepEqual(env.repoSets, [{ repo: 'web', changes: { auto: null, review: false, merge: 'confirm' } }])
+    assert.deepEqual(env.logged.at(-1), { type: 'mobile.repo-set', fields: { by: 'mobile', repo: 'web', auto: null, review: false, merge: 'confirm' } })
+    for (const args of [{ repo: 'web' }, { repo: 'web', auto: 'off' }, { repo: 'web', review: 'yes' }, { repo: 'web', merge: 'now' }, { repo: '../x', review: true }]) {
+      assert.equal((await env.ask('repo.set', args)).error.code, 'usage', JSON.stringify(args))
+    }
+    assert.equal((await env.ask('repo.set', { repo: 'api', review: true })).error.code, 'not_found', '설정 줄에 없는 레포(main 직접 등)')
+    assert.equal(env.repoSets.length, 1)
+
+    const changedBefore = env.events('changed').length
+    const open = await env.ask('pack.open', { id: 'globex' })
+    assert.equal(open.ok, true)
+    assert.deepEqual(open.result, { id: 'globex', switched: true })
+    assert.deepEqual(env.opened, ['globex'])
+    assert.deepEqual(env.logged.at(-1), { type: 'mobile.pack-open', fields: { by: 'mobile', pack: 'globex' } })
+    await waitFor(() => env.events('changed').length > changedBefore, 'changed')
+    assert.deepEqual(env.events('changed').at(-1).parts, ['requests', 'merges', 'servers', 'decisions', 'packs'])
+    assert.equal((await env.ask('pack.open', { id: 'nope' })).error.code, 'not_found')
+    assert.equal(env.opened.length, 1)
+  } finally {
+    await env.cleanup()
+  }
+  const failing = await setup({ setRepo: async () => ({ ok: false, error: 'busy', text: '맥 문구' }), openPack: async () => ({ ok: false, error: 'old-daemon', text: '맥 문구' }) })
+  try {
+    const set = await failing.ask('repo.set', { repo: 'web', auto: 'direct' })
+    assert.equal(set.error.code, 'busy')
+    assert.equal((await failing.ask('pack.open', { id: 'globex' })).error.code, 'old-daemon')
+    assert.equal(failing.logged.filter((row) => row.type.startsWith('mobile.')).length, 0, '실패는 기록하지 않는다')
+  } finally {
+    await failing.cleanup()
+  }
+})
+
+test('packView — 폰에 줄 칸만(id · 이름 · 표시 이름) · 모양이 틀린 줄은 뺀다', () => {
+  assert.deepEqual(packView(null), { current: null, packs: [] })
+  assert.deepEqual(
+    packView({ current: { id: 'acme', body: '/숨길/본체' }, packs: [{ id: 'acme', name: 'acme', displayName: '', body: '/숨길' }, { id: '' }, null, { id: 'g', name: 3, displayName: '지' }] }),
+    { current: 'acme', packs: [{ id: 'acme', name: 'acme', displayName: null }, { id: 'g', name: null, displayName: '지' }] },
+  )
 })

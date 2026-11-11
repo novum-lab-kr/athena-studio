@@ -37,16 +37,29 @@ export type LogEvent = (type: string, fields: Record<string, unknown>) => void
 // 머지 피드 원천 — 코어 사건 기록(events.jsonl)의 줄(읽는 칸만)
 export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown }
 
+// 팩 탭 — 앞 창의 팩 목록(pack list 를 다듬은 ctx.packState 에서) · ⚙ 설정 팝업과 같은 레포 설정 칸
+export type PackView = { current: string | null; packs: { id: string; name: string | null; displayName: string | null }[] }
+export type RepoSettings = { ok: boolean; repos: unknown[] }
+// ⚙ 설정 팝업이 바꾸는 값과 같다 — auto 는 팝업 스위치처럼 on(자동 PR) · direct(PR 끔)만
+export type RepoChanges = { auto: 'on' | 'direct' | null; review: boolean | null; merge: 'auto' | 'confirm' | 'manual' | null }
+export type PackResultLike = { ok?: unknown; error?: unknown; switched?: unknown; same?: unknown }
+
 export type BridgeDeps = {
   daemonPaths: () => DaemonPaths
   transport: Transport
-  inputAllowed: () => boolean // "폰 입력 허용" — 꺼지면 pane.input · request.answer · decision.answer 를 거절
+  inputAllowed: () => boolean // "폰 입력 허용" — 꺼지면 pane.input · request.answer · decision.answer · repo.set · pack.open 을 거절
   requests: () => unknown[] | Promise<unknown[]> // 확인 요청 목록(열린 것)
   servers: () => unknown | Promise<unknown> // 서버 상태
   events: () => EventRow[] | Promise<EventRow[]> // 7일 머지 원천
   answerRequest: (id: string, answer: RequestAnswer) => Promise<AnswerResult>
+  approveRequest: (id: string, generation: string, choice: number) => Promise<AnswerResult> // Codex 승인 — 앱 승인 대화상자와 같은 길(ctx.approveRequest)
+  athenaDir: () => string | null // 결정 목록을 읽을 본체(앞 창)
   leadPaneOf: (plan: string) => string | null // 결정 콘솔이 보낼 pane(계획서 html PLAN.leadPane)
   postDecision: (body: DecisionPost) => Promise<BoardReply>
+  packs: () => PackView
+  repoSettings: () => Promise<RepoSettings> // ctx.mergeSettings 그대로
+  setRepo: (repo: string, changes: RepoChanges) => Promise<PackResultLike> // ctx.setAutoMerge(코어 pack set-auto-merge)
+  openPack: (id: string) => Promise<PackResultLike> // ctx.packOpen — 앞 창을 그 팩으로
   logEvent: LogEvent
   now?: () => number
   flushMs?: number
@@ -72,6 +85,18 @@ class BridgeError extends Error {
 const fail = (code: string, message: string): never => {
   throw new BridgeError(code, message)
 }
+
+// 요청 목록에서 Codex 승인 하나 — 앱 요청 모양(src/lib/requests.mts StudioRequest.codexApproval)에서 읽는 칸만
+type CodexApprovalView = { pane: unknown; choices: { key: string }[] }
+function codexApprovalOf(requests: unknown[], id: string): CodexApprovalView | null {
+  const found = requests.find((request) => Boolean(request) && typeof request === 'object' && (request as { id?: unknown }).id === id) as { pane?: unknown; codexApproval?: unknown } | undefined
+  const approval = found && found.codexApproval && typeof found.codexApproval === 'object' ? (found.codexApproval as { choices?: unknown }) : null
+  if (!approval || !Array.isArray(approval.choices)) return null
+  return { pane: found!.pane ?? null, choices: approval.choices.map((choice) => ({ key: choice && typeof choice === 'object' ? String((choice as { key?: unknown }).key) : '' })) }
+}
+const repoName = (row: unknown) => (row && typeof row === 'object' ? (row as { name?: unknown }).name : undefined)
+// 맥 쪽 결과의 오류 코드만 폰에 — 짧은 코드 모양이 아니면 대신 쓸 코드
+const errorCode = (value: unknown, fallback: string) => (typeof value === 'string' && /^[\w-]{1,40}$/.test(value) ? value : fallback)
 
 // "폰 입력 허용" — 앱 설정(userData/config.json)의 mobileInput 칸. 켜는 화면이 생기기 전까지 기본 꺼짐
 export function mobileInputAllowed(config: { [key: string]: unknown } | null | undefined): boolean {
@@ -128,6 +153,110 @@ export function readLeadPane(athenaDir: string, plan: string): string | null {
   } catch {
     return null
   }
+}
+
+// ── 결정 시트 — 결정 콘솔(계획서 html)이 읽는 그 PLAN 블록에서 ──
+type PlanOption = { label: string; desc: string; recommended: boolean; custom: boolean }
+export type PlanDecision = { id: string; title: string; desc: string; type: 'single' | 'multi'; required: boolean; options: PlanOption[]; decided: string[] | null }
+export type PlanData = { title: string; mdFile: string; decisions: PlanDecision[] }
+
+const plainText = (value: unknown): string => (typeof value === 'string' ? value : '')
+// 결정 하나 — 모양이 하나라도 어긋나면 null(그 계획서는 통째로 뺀다 — 현황판이 보는 결정 id 목록과 어긋나지 않게)
+function planDecision(raw: unknown): PlanDecision | null {
+  if (!raw || typeof raw !== 'object') return null
+  const dec = raw as { id?: unknown; title?: unknown; desc?: unknown; type?: unknown; required?: unknown; options?: unknown; decided?: unknown }
+  if (typeof dec.id !== 'string' || !dec.id || !Array.isArray(dec.options)) return null
+  const options: PlanOption[] = []
+  for (const option of dec.options as unknown[]) {
+    const entry = (option && typeof option === 'object' ? option : {}) as { label?: unknown; desc?: unknown; recommended?: unknown; custom?: unknown }
+    if (typeof entry.label !== 'string' || !entry.label) return null
+    options.push({ label: entry.label, desc: plainText(entry.desc), recommended: entry.recommended === true, custom: entry.custom === true })
+  }
+  // 콘솔 decidedList — null · undefined 면 미확정, 배열이 아니면 한 개짜리
+  let decided: string[] | null = null
+  if (dec.decided != null) decided = (Array.isArray(dec.decided) ? dec.decided : [dec.decided]).map(String)
+  return { id: dec.id, title: plainText(dec.title), desc: plainText(dec.desc), type: dec.type === 'multi' ? 'multi' : 'single', required: dec.required === true, options, decided }
+}
+
+// 계획서 html → PLAN(제목 · md 경로 · 결정). plan-html.mjs 가 쓴 JSON 블록만(손으로 만든 JS 블록은 현황판처럼 읽지 못한 것으로)
+export function readPlanData(athenaDir: string, plan: string): PlanData | null {
+  if (!PLAN_ID.test(plan) || plan.split('/').includes('..')) return null
+  try {
+    const html = fs.readFileSync(path.join(athenaDir, plan.replace(/\.md$/, '.html')), 'utf8')
+    const block = html.slice(html.indexOf('-->') + 3).match(PLAN_DATA_BLOCK)?.[1]
+    const data: unknown = block ? JSON.parse(block) : null
+    if (!data || typeof data !== 'object' || !Array.isArray((data as { decisions?: unknown }).decisions)) return null
+    const raw = data as { title?: unknown; mdFile?: unknown; decisions: unknown[] }
+    const decisions: PlanDecision[] = []
+    for (const entry of raw.decisions) {
+      const decision = planDecision(entry)
+      if (!decision) return null
+      decisions.push(decision)
+    }
+    return { title: plainText(raw.title), mdFile: typeof raw.mdFile === 'string' && raw.mdFile ? raw.mdFile : plan, decisions }
+  } catch {
+    return null
+  }
+}
+
+// 남은 결정이 있나 — 콘솔 allConfirmed 의 반대(필수 표시가 있으면 필수만, 없으면 전부가 확정돼야 끝)
+export function hasOpenDecisions(data: PlanData): boolean {
+  const required = data.decisions.filter((decision) => decision.required)
+  const targets = required.length ? required : data.decisions
+  return targets.length > 0 && !targets.every((decision) => decision.decided !== null)
+}
+
+// 남은 결정이 있는 계획서 — plans/<폴더>/<이름>.html 중 같은 이름 .md 가 있는 것(artifacts 같은 그림 폴더는 md 가 없어 빠진다)
+export function openDecisionPlans(athenaDir: string): { plan: string; data: PlanData }[] {
+  const root = path.join(athenaDir, 'plans')
+  const found: { plan: string; data: PlanData }[] = []
+  let folders: string[] = []
+  try {
+    folders = fs.readdirSync(root).sort()
+  } catch {
+    return found
+  }
+  for (const folder of folders) {
+    let files: string[] = []
+    try {
+      files = fs.readdirSync(path.join(root, folder)).sort()
+    } catch {
+      continue
+    }
+    for (const file of files) {
+      if (!file.endsWith('.html')) continue
+      const plan = `plans/${folder}/${file.replace(/\.html$/, '.md')}`
+      if (!fs.existsSync(path.join(athenaDir, plan))) continue
+      const data = readPlanData(athenaDir, plan)
+      if (data && hasOpenDecisions(data)) found.push({ plan, data })
+    }
+  }
+  return found
+}
+
+// 고른 값({D1: "B"} · 복수면 배열) → 결정 콘솔 [이대로 진행] 과 같은 글(plan-template.html buildPrompt — 콘솔도 언어와 상관없이 이 한국어 글)
+// 확정된 결정은 확정값 그대로(콘솔도 바꿀 수 없다) · 골라야 할 필수 결정이 남으면 거절
+export function decisionPrompt(data: PlanData, picks: Record<string, unknown>): string {
+  const known = new Map(data.decisions.map((decision) => [decision.id, decision]))
+  const chosen = new Map<string, string[]>()
+  for (const [id, value] of Object.entries(picks)) {
+    const decision = known.get(id)
+    if (!decision) fail('usage', `없는 결정: ${id}`)
+    if (decision!.decided !== null) fail('usage', `이미 확정된 결정이에요: ${id}`)
+    const labels = [...new Set(Array.isArray(value) ? value : [value])]
+    if (!labels.length || !labels.every((label) => typeof label === 'string' && decision!.options.some((option) => option.label === label))) fail('usage', `없는 선택지: ${id}`)
+    if (decision!.type === 'single' && labels.length !== 1) fail('usage', `하나만 고를 수 있어요: ${id}`)
+    chosen.set(id, labels as string[])
+  }
+  const left = data.decisions.filter((decision) => decision.required && decision.decided === null && !chosen.has(decision.id))
+  if (left.length) fail('usage', `필수 결정이 남았어요: ${left.map((decision) => decision.id).join(', ')}`)
+  const lines = [`[작업계획서 결정사항 확정] ${data.title}`, '', `아래 결정사항으로 ${data.mdFile} 계획서를 확정하고 진행해주세요.`, '']
+  data.decisions.forEach((decision, index) => {
+    const value = (decision.decided || chosen.get(decision.id) || []).join(', ')
+    lines.push(`${index + 1}. ${decision.title}: ${value || '(미결정)'}`)
+  })
+  lines.push('', '추가 메모: (없음)')
+  return lines.join('\n')
 }
 
 // 현황판 /api/action — 결정 콘솔과 같은 출처(Origin) · 토큰(runPack board-token)으로 맥 안에서 부른다
@@ -392,6 +521,9 @@ export function createMobileBridge(deps: BridgeDeps) {
   async function requestAnswer(args: Record<string, unknown>) {
     requireInput()
     const id = text(args.id, 'id')
+    // 권한 요청(Claude 허락 · Codex 승인)도 위 requireInput 을 지난 뒤에만 — 입력 허용이 꺼져 있으면 input-off
+    const approval = codexApprovalOf(await deps.requests(), id)
+    if (approval) return approveCodex(id, approval, args)
     const choice = typeof args.choice === 'string' ? args.choice : ''
     const answerText = typeof args.text === 'string' ? args.text : ''
     if (!choice.trim() && !answerText.trim()) fail('usage', 'choice 또는 text 가 필요해요')
@@ -403,12 +535,39 @@ export function createMobileBridge(deps: BridgeDeps) {
     return result
   }
 
+  // Codex 승인 — choice 는 승인 선택지의 key(snapshot requests[].codexApproval.choices[].key) · generation 은 본 그대로
+  async function approveCodex(id: string, approval: CodexApprovalView, args: Record<string, unknown>) {
+    const generation = text(args.generation, 'generation')
+    const index = approval.choices.findIndex((choice) => choice.key === args.choice)
+    if (index < 0) fail('usage', 'choice 는 승인 선택지 key 여야 해요')
+    const result = await deps.approveRequest(id, generation, index)
+    if (!result.ok) fail(errorCode(result.error, 'conflict'), '승인을 넣지 못했어요')
+    // 명령 · 경로는 적지 않는다 — 누가 · 어느 pane · 고른 key 만
+    deps.logEvent('mobile.approve', { by: 'mobile', pane: approval.pane, choice: approval.choices[index]?.key ?? null })
+    return { ok: true }
+  }
+
+  // 결정 시트 — 남은 결정이 있는 계획서마다 결정(제목 · 설명 · 택1/복수 · 필수 · 선택지 · 확정값)
+  function decisionList() {
+    const dir = deps.athenaDir()
+    const plans = dir ? openDecisionPlans(dir) : []
+    return {
+      plans: plans.map(({ plan, data }) => ({
+        plan,
+        title: data.title,
+        hasPane: Boolean(deps.leadPaneOf(plan)),
+        decisions: data.decisions.map(({ id, title, desc, type, required, options, decided }) => ({ id, title, desc, type, required, options, decided })),
+      })),
+    }
+  }
+
   async function decisionAnswer(args: Record<string, unknown>) {
     requireInput()
     const plan = text(args.plan, 'plan')
     if (!PLAN_ID.test(plan) || plan.split('/').includes('..')) fail('usage', 'plan 은 plans/…md 여야 해요')
     if (!Array.isArray(args.decisions) || !args.decisions.every((entry) => typeof entry === 'string')) fail('usage', 'decisions 는 결정 id 목록이어야 해요')
-    const prompt = text(args.text, 'text')
+    // 글을 폰이 만들어 보내거나(text) · 고른 값만 보내면 맥이 콘솔과 같은 글을 만든다(picks)
+    const prompt = args.picks !== undefined ? promptFromPicks(plan, args.decisions as string[], args.picks) : text(args.text, 'text')
     const pane = deps.leadPaneOf(plan)
     if (!pane) return fail('no-pane', '결정을 보낼 pane 이 없어요')
     const reply = await deps.postDecision({ pane, plan, decisions: args.decisions as string[], text: prompt, by: 'mobile' })
@@ -416,6 +575,56 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (reply.status === 409 && body.stale) fail('stale', '계획서 결정이 그사이 바뀌었어요')
     if (reply.status !== 200) fail('failed', `현황판이 받지 않았어요(${reply.status})`)
     return { ok: true, queued: body.queued === true }
+  }
+
+  function promptFromPicks(plan: string, seen: string[], picks: unknown): string {
+    if (!picks || typeof picks !== 'object' || Array.isArray(picks)) return fail('usage', 'picks 는 {결정 id: 선택지} 여야 해요')
+    const dir = deps.athenaDir()
+    const data = dir ? readPlanData(dir, plan) : null
+    if (!data) return fail('not_found', '결정을 읽지 못했어요')
+    // 폰이 본 결정 id 와 지금 결정이 다르면 현황판처럼 stale(같은 글을 만들 수 없다)
+    const now = data.decisions.map((decision) => decision.id)
+    if (new Set(seen).size !== now.length || now.some((id) => !seen.includes(id))) return fail('stale', '계획서 결정이 그사이 바뀌었어요')
+    return decisionPrompt(data, picks as Record<string, unknown>)
+  }
+
+  // ── 팩 탭 ──
+  async function packList() {
+    const view = deps.packs()
+    const settings = await deps.repoSettings()
+    // repos 는 ⚙ 설정 팝업과 같은 줄(main 직접 레포 빠짐) · 읽지 못하면 null
+    return { current: view.current, packs: view.packs, repos: settings.ok ? settings.repos : null }
+  }
+
+  async function repoSet(args: Record<string, unknown>) {
+    requireInput()
+    const repo = text(args.repo, 'repo')
+    if (!/^[\w.-]+$/.test(repo)) fail('usage', 'repo 이름이 맞지 않아요')
+    const changes: RepoChanges = { auto: null, review: null, merge: null }
+    if (args.auto !== undefined) changes.auto = args.auto === 'on' || args.auto === 'direct' ? args.auto : fail('usage', 'auto 는 on · direct')
+    if (args.review !== undefined) changes.review = typeof args.review === 'boolean' ? args.review : fail('usage', 'review 는 true · false')
+    if (args.merge !== undefined) changes.merge = args.merge === 'auto' || args.merge === 'confirm' || args.merge === 'manual' ? args.merge : fail('usage', 'merge 는 auto · confirm · manual')
+    if (changes.auto === null && changes.review === null && changes.merge === null) fail('usage', '바꿀 값이 없어요')
+    const before = await deps.repoSettings()
+    if (!before.ok) fail('unreadable', '레포 설정을 읽지 못했어요')
+    if (!before.repos.some((row) => repoName(row) === repo)) fail('not_found', `설정할 수 없는 레포: ${repo}`)
+    const result = await deps.setRepo(repo, changes)
+    if (result.ok !== true) fail(errorCode(result.error, 'failed'), '설정을 바꾸지 못했어요')
+    deps.logEvent('mobile.repo-set', { by: 'mobile', repo, auto: changes.auto, review: changes.review, merge: changes.merge })
+    const after = await deps.repoSettings()
+    return { repo: (after.ok && after.repos.find((row) => repoName(row) === repo)) || null }
+  }
+
+  async function packOpen(args: Record<string, unknown>) {
+    requireInput()
+    const id = text(args.id, 'id')
+    if (!deps.packs().packs.some((pack) => pack.id === id)) fail('not_found', `없는 팩: ${id}`)
+    const result = await deps.openPack(id)
+    if (result.ok !== true) fail(errorCode(result.error, 'failed'), '팩을 바꾸지 못했어요')
+    deps.logEvent('mobile.pack-open', { by: 'mobile', pack: id })
+    // 팩이 바뀌면 요청 · 머지 · 서버 · 결정 · 팩 칸이 모두 그 팩 것으로(pane 은 데몬 전체라 그대로)
+    if (result.same !== true) emit({ event: 'changed', parts: ['requests', 'merges', 'servers', 'decisions', 'packs'] })
+    return { id, switched: result.switched === true }
   }
 
   async function dispatch(op: unknown, args: Record<string, unknown>): Promise<unknown> {
@@ -430,8 +639,16 @@ export function createMobileBridge(deps: BridgeDeps) {
         return paneInput(args)
       case 'request.answer':
         return requestAnswer(args)
+      case 'decision.list':
+        return decisionList()
       case 'decision.answer':
         return decisionAnswer(args)
+      case 'pack.list':
+        return packList()
+      case 'repo.set':
+        return repoSet(args)
+      case 'pack.open':
+        return packOpen(args)
       default:
         return fail('usage', `모르는 요청: ${String(op)}`)
     }

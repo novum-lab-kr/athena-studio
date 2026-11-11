@@ -6,7 +6,8 @@
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createMobileBridge, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
-import type { EventRow, LogEvent, RequestAnswer, AnswerResult } from './mobile-bridge.mts'
+import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
+import { setMergeFromScreen } from './pack-repos.mts'
 import { createMobileRelay } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
@@ -42,8 +43,23 @@ type FrontCtx = {
   athenaDir: string | null
   requestsNow(): { requests: unknown[] }
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
+  approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
   serverStatus?: () => Promise<{ servers: unknown[] }>
+  packState: { current?: { id?: unknown } | null; packs?: unknown }
+  mergeSettings(): Promise<unknown>
+  setAutoMerge(repo: string, values: RepoChanges): Promise<unknown>
+  packOpen(id: string): Promise<unknown>
+}
+
+// 팩 목록 — 폰에 넘길 칸만(본체 경로 · 아이콘 파일 경로는 넣지 않는다)
+export function packView(state: FrontCtx['packState'] | null): PackView {
+  const name = (value: unknown) => (typeof value === 'string' && value ? value : null)
+  const packs = state && Array.isArray(state.packs) ? (state.packs as { id?: unknown; name?: unknown; displayName?: unknown }[]) : []
+  return {
+    current: state && state.current ? name(state.current.id) : null,
+    packs: packs.filter((pack) => Boolean(pack) && typeof pack.id === 'string' && pack.id !== '').map((pack) => ({ id: pack.id as string, name: name(pack.name), displayName: name(pack.displayName) })),
+  }
 }
 type DevDeps = {
   options: MobileDevOptions
@@ -129,6 +145,15 @@ export function startMobileDev(deps: DevDeps) {
           if (!ctx) return { ok: false, error: 'no-window' }
           return (await ctx.answerRequest(id, answer, 'mobile')) as AnswerResult
         },
+        approveRequest: async (id, generation, choice) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await ctx.approveRequest(id, generation, choice)) as AnswerResult
+        },
+        athenaDir: () => {
+          const ctx = front()
+          return ctx ? ctx.athenaDir : null
+        },
         leadPaneOf: (plan) => {
           const ctx = front()
           return ctx && ctx.athenaDir ? readLeadPane(ctx.athenaDir, plan) : null
@@ -138,6 +163,25 @@ export function startMobileDev(deps: DevDeps) {
           const token = ctx && ctx.athenaDir ? await deps.boardToken(ctx.athenaDir) : null
           if (!ctx || !token) return { status: 503, body: { ok: false, error: 'board-unavailable' } }
           return boardActionPoster({ port: ctx.boardPortNow(), token })(body)
+        },
+        packs: () => {
+          const ctx = front()
+          return packView(ctx ? ctx.packState : null)
+        },
+        repoSettings: async () => {
+          const ctx = front()
+          return ctx ? ((await ctx.mergeSettings()) as RepoSettings) : { ok: false, repos: [] }
+        },
+        // ⚙ 설정 팝업(settings:set-merge)과 같은 길 — 값을 한 번 더 추린 뒤 코어 pack set-auto-merge
+        setRepo: async (repo, changes) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await setMergeFromScreen({ setAutoMerge: (name, values) => ctx.setAutoMerge(name, values as RepoChanges) }, repo, changes)) as PackResultLike
+        },
+        openPack: async (id) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await ctx.packOpen(id)) as PackResultLike
         },
         logEvent,
       }),
