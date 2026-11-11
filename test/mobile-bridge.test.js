@@ -230,21 +230,47 @@ test('폰 입력 허용이 꺼지면 pane.input · request.answer · decision.an
   }
 })
 
-test('request.answer — 고른 것 · 글 · rev 를 넘기고, 빈 답 · 실패는 오류', async () => {
+test('request.answer — 고른 것 · 글 · rev 를 넘기고, 빈 답 · rev 없음 · 실패는 오류', async () => {
   const env = await setup()
   try {
     const reply = await env.ask('request.answer', { id: 'r-20261111-090000-abcd', choice: '예', text: '', rev: 3 })
     assert.equal(reply.ok, true)
     assert.deepEqual(env.answered, [{ id: 'r-20261111-090000-abcd', answer: { choice: '예', text: '', rev: 3 } }])
-    assert.equal((await env.ask('request.answer', { id: 'r-20261111-090000-abcd' })).error.code, 'usage')
+    assert.equal((await env.ask('request.answer', { id: 'r-20261111-090000-abcd', rev: 3 })).error.code, 'usage')
+    // rev 가 없거나 정수가 아니면 거절 — 그사이 바뀐 요청에 답이 붙지 않게(앱 answerRevChanged 검사를 건너뛰지 않는다)
+    for (const rev of [undefined, '3', 3.5, null]) {
+      const reply = await env.ask('request.answer', { id: 'r-20261111-090000-abcd', choice: '예', rev })
+      assert.equal(reply.error.code, 'usage', `rev ${rev}`)
+    }
+    assert.equal(env.answered.length, 1, 'rev 없는 답은 넘기지 않는다')
   } finally {
     await env.cleanup()
   }
   const failing = await setup({ answerRequest: async () => ({ ok: false, error: 'conflict' }) })
   try {
-    assert.equal((await failing.ask('request.answer', { id: 'r-20261111-090000-abcd', choice: '예' })).error.code, 'conflict')
+    assert.equal((await failing.ask('request.answer', { id: 'r-20261111-090000-abcd', choice: '예', rev: 1 })).error.code, 'conflict')
   } finally {
     await failing.cleanup()
+  }
+})
+
+test('브리지가 정하지 않은 오류는 internal · 고정 문구로(원문은 폰에 안 간다)', async () => {
+  const env = await setup({
+    answerRequest: async () => {
+      throw new Error('/Users/someone/비밀/경로 를 읽지 못함')
+    },
+  })
+  const originalError = console.error
+  const logged = []
+  console.error = (...parts) => logged.push(parts.map(String).join(' '))
+  try {
+    const reply = await env.ask('request.answer', { id: 'r-20261111-090000-abcd', choice: '예', rev: 1 })
+    assert.deepEqual(reply.error, { code: 'internal', message: '맥에서 처리하지 못했어요' })
+    assert.ok(!JSON.stringify(env.phone.received).includes('비밀'))
+    assert.ok(logged.some((line) => line.includes('비밀')), '원문은 맥 로그에')
+  } finally {
+    console.error = originalError
+    await env.cleanup()
   }
 })
 

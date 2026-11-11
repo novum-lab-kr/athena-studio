@@ -337,8 +337,9 @@ export function createMobileBridge(deps: BridgeDeps) {
     const choice = typeof args.choice === 'string' ? args.choice : ''
     const answerText = typeof args.text === 'string' ? args.text : ''
     if (!choice.trim() && !answerText.trim()) fail('usage', 'choice 또는 text 가 필요해요')
-    const answer: RequestAnswer = { choice, text: answerText }
-    if (Number.isInteger(args.rev)) answer.rev = args.rev as number
+    // 본 rev 가 꼭 있어야 한다 — 없으면 앱 answerRevChanged 검사를 건너뛰어 그사이 바뀐 요청에 답이 붙는다
+    if (!Number.isInteger(args.rev)) fail('usage', 'rev 가 필요해요')
+    const answer: RequestAnswer = { choice, text: answerText, rev: args.rev as number }
     const result = await deps.answerRequest(id, answer)
     if (!result.ok) fail(result.error || 'failed', '답을 적지 못했어요')
     return result
@@ -386,8 +387,13 @@ export function createMobileBridge(deps: BridgeDeps) {
       const result = await dispatch(op, safeArgs)
       if (id !== undefined) emit({ id, ok: true, result: result ?? null })
     } catch (caught) {
-      const error = caught as { code?: unknown; message?: unknown }
-      if (id !== undefined) emit({ id, ok: false, error: { code: typeof error.code === 'string' ? error.code : 'internal', message: String(error.message ?? '') } })
+      // 브리지가 정한 오류만 그대로 — 그 밖(데몬 · 파일 · 코어)의 원문은 경로 등이 섞일 수 있어 맥 로그에만 남기고 폰에는 고정 문구
+      if (caught instanceof BridgeError) {
+        if (id !== undefined) emit({ id, ok: false, error: { code: caught.code, message: caught.message } })
+        return
+      }
+      console.error('[mobile-bridge] 요청 처리 실패', String(op), caught)
+      if (id !== undefined) emit({ id, ok: false, error: { code: 'internal', message: '맥에서 처리하지 못했어요' } })
     }
   }
 
