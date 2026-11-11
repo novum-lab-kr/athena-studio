@@ -223,5 +223,6 @@
   "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "对话变大时自动为雅典娜开始新对话 — 从计划书恢复",
   "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "修复雅典娜未询问就开始新对话的问题 — 先询问，30 分钟内不再询问",
   "Fix agent reports not reaching Athena after a fresh conversation": "修复切换到新对话后代理报告无法送达雅典娜的问题",
-  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "修复无提示启动的代理闲置的问题 — 按计划书指示进行 · 闲置 5 分钟通知雅典娜"
+  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "修复无提示启动的代理闲置的问题 — 按计划书指示进行 · 闲置 5 分钟通知雅典娜",
+  "Automatic fresh conversation for agents when the context gets large — no asking": "对话变大时代理 pane 自动开始新对话 — 不询问，从计划继续"
 }
