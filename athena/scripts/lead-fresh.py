@@ -12,7 +12,10 @@
    → Claude 는 /clear · Codex 는 /new 를 넣는다(pane 안 프로그램은 끄지 않는다) → 새 대화가 pane 기록(state/pane-sessions — pane-session.py)에
    적히면 옛 대화를 가리키던 계획서 "- Lead session:" · 모아 둔 lead-send 글의 대화를 새 대화로 옮긴다(안 옮기면 에이전트 보고가
    "담당 대화가 바뀌었다" 로 막힌다) → 다시 쉴 때까지 기다려 재개 지시 "<계획서> 이어서 하자 …" 를 넣는다
-   그사이 대화가 이미 바뀌었으면(사용자가 직접 /new) 넣지 않고 끝낸다. 결과는 사건 기록(lead.fresh)에 남긴다
+   예약 뒤 새 입력이 들어왔으면(pane 기록의 session · at 이 바뀜 — pane-session.py 가 입력마다 at 을 다시 적는다) 그 차례의 문맥이
+   Checkpoint 에 없을 수 있어 /clear 를 넣지 않고 끝낸다 · /clear 직전에 계획서 "- Updated:" 가 예약 때보다 앞서지 않았는지 다시 본다.
+   /clear 뒤 재개를 기다리는 동안 · 넣기 직전에 대화가 감지한 새 대화와 다르거나 새 입력이 들어왔으면(사용자가 직접 /new · 새 일) 넣지 않는다.
+   결과는 사건 기록(lead.fresh)에 남긴다
 화면은 scripts/lib/screen.py 로만. 입력칸 읽기는 앱 src/lib/pane-submit.mts inputOf 와 같은 규칙(Claude ❯ ~ 가로선 · Codex › ~ 빈 줄).
 종료 코드: 0 = 처리기를 띄웠다 · 1 = 확인 실패(이유를 찍는다) · 2 = 사용법
 """
@@ -42,14 +45,32 @@ CLEAR_COMMAND = {'claude': '/clear', 'codex': '/new'}
 CLOSED_STATUS = ('done', 'cancelled')
 
 
-def pane_session(pane: str) -> str:
+def pane_record(pane: str) -> dict:
+    """pane 기록(state/pane-sessions/<pane>.json) — pane-session.py 가 대화 시작 · 입력마다 session · at 을 다시 적는다"""
     base = pane_request.pack_state()
     if base is None:
-        return ''
+        return {}
     try:
-        return str(json.loads((base / 'pane-sessions' / f'{pane}.json').read_text(encoding='utf-8')).get('session') or '')
+        data = json.loads((base / 'pane-sessions' / f'{pane}.json').read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) else {}
     except (OSError, ValueError):
-        return ''
+        return {}
+
+
+def pane_session(pane: str) -> str:
+    return str(pane_record(pane).get('session') or '')
+
+
+def pane_mark(pane: str) -> str:
+    """대화 · 마지막 입력 표시 — 이것이 바뀌면 새 대화나 새 입력이 들어왔다"""
+    data = pane_record(pane)
+    return f"{data.get('session') or ''}@{data.get('at') or ''}"
+
+
+def updated_stamp(text: str) -> str:
+    """Checkpoint "- Updated:" 의 시각(YYYY-MM-DD HH:MM) — 없으면 ''. 같은 꼴이라 글자 비교가 시각 비교다"""
+    found = re.search(r'^- Updated:[ \t]*(\d{4}-\d{2}-\d{2} \d{2}:\d{2})', text, re.M)
+    return found.group(1) if found else ''
 
 
 def plan_path(plan: str):
@@ -109,18 +130,22 @@ def ready(pane: str, agent: str):
     return input_of(agent, screen_text) == ''
 
 
-def wait_ready(pane: str, agent: str, deadline: float) -> bool:
-    """연달아 두 번 쉬면 True — 도구 사이 잠깐 쉬는 때에 넣지 않게. pane 이 없어지거나 한도를 넘기면 False"""
+def wait_ready(pane: str, agent: str, deadline: float, guard) -> str:
+    """연달아 두 번 쉬면 '' — 도구 사이 잠깐 쉬는 때에 넣지 않게. 아니면 멈춘 이유:
+    guard() 가 돌려준 이유(새 입력 · 다른 대화) · 'gone'(pane 이 없어짐) · 'gave-up'(한도를 넘김)"""
     calm = 0
     while time.monotonic() < deadline:
+        reason = guard()
+        if reason:
+            return reason
         state = ready(pane, agent)
         if state == 'gone':
-            return False
+            return 'gone'
         calm = calm + 1 if state is True else 0
         if calm >= 2:
-            return True
+            return ''
         time.sleep(POLL_SECONDS)
-    return False
+    return 'gave-up'
 
 
 def rebind_session(pane: str, old: str, new: str) -> int:
@@ -177,13 +202,39 @@ def resume_text(plan: str) -> str:
             '이 계획서 Checkpoint(Status · Progress · Next · Blocked)와 리드 기록부터 읽고, 맡긴 pane 의 상태를 확인한 뒤 이어 간다')
 
 
-def worker(pane: str, agent: str, plan: str, old: str) -> str:
-    """처리기 본문 — 결과 한 낱말(사건 기록에 남긴다)"""
-    deadline = time.monotonic() + GIVE_UP_SECONDS
-    if not wait_ready(pane, agent, deadline):
-        return 'gave-up'
+def before_clear(pane: str, old: str, mark: str) -> str:
+    """/clear 를 넣어도 되나 — '' 또는 멈출 이유. 예약 뒤 새 입력이 들어왔으면 그 차례 문맥이 Checkpoint 에 없을 수 있다"""
     if pane_session(pane) != old:
         return 'already-new'   # 그사이 사용자가 새로 시작했다
+    if pane_mark(pane) != mark:
+        return 'new-input'
+    return ''
+
+
+def checkpoint_kept(plan: str, stamp: str) -> bool:
+    """/clear 직전 다시 보기 — 계획서가 있고 Checkpoint "- Updated:" 가 예약 때 시각보다 앞서지 않았나"""
+    path = plan_path(plan)
+    if path is None:
+        return False
+    try:
+        now_stamp = updated_stamp(path.read_text(encoding='utf-8'))
+    except OSError:
+        return False
+    return bool(now_stamp) and now_stamp >= stamp
+
+
+def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) -> str:
+    """처리기 본문 — 결과 한 낱말(사건 기록에 남긴다). mark = 예약 때 pane 기록(대화@마지막 입력) · stamp = 예약 때 Checkpoint 시각"""
+    deadline = time.monotonic() + GIVE_UP_SECONDS
+    reason = wait_ready(pane, agent, deadline, lambda: before_clear(pane, old, mark))
+    if reason:
+        return reason
+    # 넣기 직전에 한 번 더 — 기다리는 사이 마지막 읽기 뒤에 바뀌었을 수 있다
+    reason = before_clear(pane, old, mark)
+    if reason:
+        return reason
+    if not checkpoint_kept(plan, stamp):
+        return 'checkpoint-stale'
     backend = screen.get_backend()
     try:
         backend.run(pane, [CLEAR_COMMAND[agent]])
@@ -203,8 +254,19 @@ def worker(pane: str, agent: str, plan: str, old: str) -> str:
     if not new or new == old:
         return 'no-new-session'
     rebind_session(pane, old, new)
-    if not wait_ready(pane, agent, deadline):
-        return 'resume-gave-up'
+    fresh_mark = pane_mark(pane)
+
+    def before_resume() -> str:
+        # 사용자가 직접 새 대화를 열었거나(/new) 새 대화에서 다른 일을 시켰으면 재개 지시를 넣지 않는다
+        if pane_session(pane) != new:
+            return 'user-new'
+        return 'new-input' if pane_mark(pane) != fresh_mark else ''
+    reason = wait_ready(pane, agent, deadline, before_resume)
+    if reason:
+        return f'resume-{reason}'
+    reason = before_resume()
+    if reason:
+        return f'resume-{reason}'
     try:
         backend.run(pane, [resume_text(plan)])
     except Exception:
@@ -212,7 +274,7 @@ def worker(pane: str, agent: str, plan: str, old: str) -> str:
     return 'done'
 
 
-def run_worker(pane: str, agent: str, plan: str, old: str) -> None:
+def run_worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) -> None:
     base = pane_request.pack_state() or ATHENA_DIR
     folder = base / 'lead-fresh'
     folder.mkdir(parents=True, exist_ok=True)
@@ -222,7 +284,7 @@ def run_worker(pane: str, agent: str, plan: str, old: str) -> None:
     except OSError:
         return  # 이 pane 의 처리기가 이미 돈다
     try:
-        result = worker(pane, agent, plan, old)
+        result = worker(pane, agent, plan, old, mark, stamp)
     except Exception:
         result = 'error'
     log_event(result, pane, plan)
@@ -248,7 +310,8 @@ def start(plan: str) -> int:
     if path is None:
         print(f'계획서를 찾지 못했다: {plan}', file=sys.stderr)
         return 1
-    if not checkpoint_fresh(path.read_text(encoding='utf-8'), time.time()):
+    text = path.read_text(encoding='utf-8')
+    if not checkpoint_fresh(text, time.time()):
         print(f'계획서 Checkpoint 를 먼저 갱신한다(Progress · Next · Blocked · "- Updated:" 를 지금 시각으로 — {FRESH_MINUTES}분 안) — 새로 시작하면 이 대화가 사라진다: {plan}',
               file=sys.stderr)
         return 1
@@ -256,7 +319,7 @@ def start(plan: str) -> int:
     if not old:
         print('이 pane 의 대화 기록(state/pane-sessions)을 찾지 못했다', file=sys.stderr)
         return 1
-    subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), '--worker', pane, agent, plan, old],
+    subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), '--worker', pane, agent, plan, old, pane_mark(pane), updated_stamp(text)],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
     print(f'📦 대화가 커져 새로 시작합니다 — {plan}')
     print('  (이 턴이 끝나 입력칸이 비면 /clear 뒤 재개 지시를 넣는다 — 이 줄을 사용자에게 그대로 알리고 턴을 끝낸다)')
@@ -264,10 +327,10 @@ def start(plan: str) -> int:
 
 
 def main(argv) -> int:
-    if len(argv) == 5 and argv[0] == '--worker':
-        pane, agent, plan, old = argv[1:]
+    if len(argv) == 7 and argv[0] == '--worker':
+        pane, agent, plan, old, mark, stamp = argv[1:]
         if PANE_ID.fullmatch(pane) and agent in CLEAR_COMMAND:
-            run_worker(pane, agent, plan, old)
+            run_worker(pane, agent, plan, old, mark, stamp)
         return 0
     if len(argv) == 2 and argv[0] == '--plan' and argv[1].strip():
         return start(argv[1].strip())

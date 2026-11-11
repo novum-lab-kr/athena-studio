@@ -22,7 +22,8 @@ QUEUE="$DATA/state/lead-send"
 EVENTS="$DATA/state/events.jsonl"
 
 # 가짜 화면 CLI — agent · status 파일이 pane get 의 agent · agent_status, screen 파일이 pane read 화면(없으면 빈 입력칸),
-# closed 면 pane 이 없음. pane run 은 sent 에 적고, /clear · /new 면 pane-session.py 처럼 새 대화를 pane 기록에 적는다(no-session 이면 안 적음)
+# closed 면 pane 이 없음. pane run 은 sent 에 적고, /clear · /new 면 pane-session.py 처럼 새 대화를 pane 기록에 적는다(no-session 이면 안 적음
+# · draft-after-clear 면 그 뒤 입력칸에 초안)
 mkdir -p "$WORK/cli"
 cat > "$WORK/cli/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
@@ -32,7 +33,10 @@ case "$1 $2" in
   'pane read') if [ -f "$FAKE_DIR/screen" ]; then cat "$FAKE_DIR/screen"; else printf '● 끝났다\n\n────────\n❯ \n────────\n  ? for shortcuts\n'; fi ;;
   'pane run')
     printf 'SENT %s %s\n' "$3" "$4" >> "$FAKE_DIR/sent"
-    case "$4" in /clear|/new) [ -f "$FAKE_DIR/no-session" ] || printf '{"session":"s-new","agent":"claude"}\n' > "$FAKE_SESSIONS/$3.json" ;; esac ;;
+    case "$4" in /clear|/new)
+      [ -f "$FAKE_DIR/no-session" ] || printf '{"session":"s-new","agent":"claude","at":"t-clear"}\n' > "$FAKE_SESSIONS/$3.json"
+      [ -f "$FAKE_DIR/draft-after-clear" ] && printf '────────\n❯ 새 대화에 쓰는 중\n────────\n' > "$FAKE_DIR/screen" ;;
+    esac ;;
 esac
 exit 0
 CLIEOF
@@ -56,9 +60,9 @@ write_plan() {   # <이름> <Updated> <Status> <Lead pane> <Lead session>
 }
 session_of() { sed -n 's/^- Lead session: //p' "$BODY/plans/task/$1.md"; }
 reset() {
-  rm -f "$WORK/sent" "$WORK/agent" "$WORK/status" "$WORK/screen" "$WORK/closed" "$WORK/no-session" "$EVENTS" "$QUEUE"/*.json
+  rm -f "$WORK/sent" "$WORK/agent" "$WORK/status" "$WORK/screen" "$WORK/closed" "$WORK/no-session" "$WORK/draft-after-clear" "$EVENTS" "$QUEUE"/*.json
   rm -rf "$DATA/state/lead-fresh"
-  printf '{"session":"s-old","agent":"claude"}\n' > "$SESSIONS/p1.json"
+  printf '{"session":"s-old","agent":"claude","at":"t-1"}\n' > "$SESSIONS/p1.json"
   write_plan main "$(now)" in_progress p1 s-old
 }
 # 처리기가 끝나 사건 기록을 남길 때까지
@@ -121,6 +125,52 @@ echo idle > "$WORK/status"
 finished
 check "아무것도 넣지 않았다" "$(count "$WORK/sent")" 0
 check "사건 기록 result=already-new" "$(count "$EVENTS" '"result":"already-new"')" 1
+
+echo "▶ 예약 뒤 같은 대화에 새 입력이 들어왔으면 /clear 를 넣지 않는다(리뷰 #289 ①)"
+reset
+echo working > "$WORK/status"
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+sleep 0.3
+printf '{"session":"s-old","agent":"claude","at":"t-2"}\n' > "$SESSIONS/p1.json"   # pane-session.py 가 새 입력에 at 을 다시 적은 것
+echo idle > "$WORK/status"
+finished
+check "아무것도 넣지 않았다" "$(count "$WORK/sent")" 0
+check "사건 기록 result=new-input" "$(count "$EVENTS" '"result":"new-input"')" 1
+
+echo "▶ /clear 직전 Checkpoint 를 다시 본다 — 예약 때보다 앞서거나 없어졌으면 넣지 않는다"
+reset
+echo working > "$WORK/status"
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+write_plan main "2026-01-01 09:00" in_progress p1 s-old
+echo idle > "$WORK/status"
+finished
+check "아무것도 넣지 않았다" "$(count "$WORK/sent")" 0
+check "사건 기록 result=checkpoint-stale" "$(count "$EVENTS" '"result":"checkpoint-stale"')" 1
+
+echo "▶ 재개를 기다리는 동안 사용자가 직접 새 대화를 열면 재개 지시를 넣지 않는다(리뷰 #289 ②)"
+reset
+touch "$WORK/draft-after-clear"
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+wait_until "[ \"\$(count '$WORK/sent' '^SENT p1 /clear$')\" -ge 1 ]"
+sleep 0.5
+check "/clear 뒤 초안이 있어 재개를 기다린다" "$(count "$WORK/sent" '이어서 하자')" 0
+printf '{"session":"s-user","agent":"claude","at":"t-user"}\n' > "$SESSIONS/p1.json"
+rm -f "$WORK/screen"
+finished
+check "사용자가 연 대화에 재개 지시를 넣지 않았다" "$(count "$WORK/sent" '이어서 하자')" 0
+check "사건 기록 result=resume-user-new" "$(count "$EVENTS" '"result":"resume-user-new"')" 1
+
+echo "▶ 재개를 기다리는 동안 새 대화에 사용자가 다른 일을 시켰으면 재개 지시를 넣지 않는다"
+reset
+touch "$WORK/draft-after-clear"
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+wait_until "[ \"\$(count '$WORK/sent' '^SENT p1 /clear$')\" -ge 1 ]"
+sleep 0.5
+printf '{"session":"s-new","agent":"claude","at":"t-new-prompt"}\n' > "$SESSIONS/p1.json"
+rm -f "$WORK/screen"
+finished
+check "재개 지시를 넣지 않았다" "$(count "$WORK/sent" '이어서 하자')" 0
+check "사건 기록 result=resume-new-input" "$(count "$EVENTS" '"result":"resume-new-input"')" 1
 
 echo "▶ 새 대화가 기록되지 않으면 재개 지시를 넣지 않는다 · 처리기는 pane 마다 하나"
 reset
