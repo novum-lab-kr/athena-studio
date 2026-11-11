@@ -45,10 +45,12 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Improved
 - Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts
 - Registered servers in the sidebar repo list — analysis right after registering is optional
+- Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)
 
 ### Fixed
 - Fix patch updates repeating the same update notes — only changes since your version
 - Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input
+- Fix read-only server commands asking for confirmation — quotes in arguments kept
 
 <!-- 0.58: v0.57.0..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
 

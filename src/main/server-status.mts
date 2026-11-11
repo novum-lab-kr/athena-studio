@@ -1,6 +1,6 @@
 // ── 서버 탐색기 — 팩 창 ─────────────────────────────────
 // 탭 줄 [서버] 버튼 · 서버 탐색기(화면 ui/server-status.tsx)가 몇 분마다 부른다 — 칸이 닫혀 있어도(버튼 점). 팩 pack.json servers[] 를 읽고
-// 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(허용 목록 안의 고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
+// 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
 // servers[].health 주소가 있으면 이 맥에서 응답 코드 · 걸린 시간 · (https 면) 인증서 만료일을 본다.
 // 읽을 때마다 숫자만 서버별 기록 파일에 한 줄(<본체>/.pack-data/state/server-history/<이름>.jsonl · 7일) — 주소 · 원문 · 비밀값은 쓰지 않는다.
 // 서버에 sysstat 이 있으면 지난 기록(ssh-run.sh --history — sar · 10분에 한 번)을 같이 넘긴다(파일에 쓰지 않는다) — 그 서버는 CPU · 부하 · 메모리 · 송수신 그래프를 sar 로 그리고

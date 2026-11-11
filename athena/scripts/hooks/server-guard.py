@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """서버 명령 확인 훅 (Claude Code · Codex PreToolUse · Bash) — 등록한 서버(pack.json servers[])로 가는 길을 하나로 묶는다.
 
-규칙(계획서 Decisions "D2 바뀜" · docs/setup.md "서버 하나 더하기"): **허용 목록만 자유**.
-등록한 서버에는 `scripts/ssh-run.sh <서버> …` 로만 들어간다 — 그 스크립트가 허용 목록(scripts/lib/server_allow.py)의
-읽기 명령만 바로 돌리고, 나머지 명령과 모든 파일 고치기(--put)는 [작업] 확인 요청을 연다(diff · 원격 백업 위치).
+규칙(2026-11-11 사용자 결정 "위험한 것만 묻는다" · docs/setup.md "서버 하나 더하기"): 등록한 서버에는 `scripts/ssh-run.sh <서버> …` 로만
+들어간다 — 그 스크립트가 판정(scripts/lib/server_allow.py)대로 읽기 · 파일 쓰기 · 명령 잇기는 바로 돌리고, 위험 명령(재시작 · 삭제 · 설치 ·
+권한 · 재부팅 · 디스크 · 방화벽 · crontab) · 판정 못 한 명령 · 보호 경로 파일 고치기(--put)는 [작업] 확인 요청을 연다(diff · 원격 백업 위치).
 이 훅이 막는 것:
   - 등록한 ssh 별칭으로 바로 가는 ssh · scp · rsync · sftp(확인을 건너뛴다 · ssh -G 는 주소를 찍는다)
   - 명령 안에서 ssh-run.sh 의 시험용 값(ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN · ATHENA_GUARD_*)을 정하기(승인을 흉내 낸다)
@@ -202,9 +202,9 @@ def blocked(view):
         tail = re.split(r'[\n;|&(`]', view[:match.start()])[-1]
         if RAW.search(tail) and not via_ssh_run(tail):
             name = next(name for name, host in servers if host == match.group(1))
-            return (f'⛔ 등록한 서버({name})에 ssh · scp · rsync 로 바로 들어가지 않는다 — 허용 목록 · 확인 · 백업을 건너뛴다.\n'
-                    f'   scripts/ssh-run.sh {name} -- <명령>(읽기 명령은 바로 · 나머지는 확인 요청) · '
-                    f'--get <원격> <로컬> · --put <로컬> <원격>(diff 확인 → 백업 → 덮어쓰기) 로 한다.')
+            return (f'⛔ 등록한 서버({name})에 ssh · scp · rsync 로 바로 들어가지 않는다 — 위험 명령 확인 · 백업을 건너뛴다.\n'
+                    f'   scripts/ssh-run.sh {name} -- <명령>(위험 명령만 확인 요청) · '
+                    f'--get <원격> <로컬> · --put <로컬> <원격>(백업 → 덮어쓰기 · 보호 경로는 diff 확인 먼저) 로 한다.')
     return None
 
 

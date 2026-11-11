@@ -216,5 +216,7 @@
   "Fix panes running background commands showing as idle": "バックグラウンドでコマンド実行中のペインがアイドル表示になる問題を修正",
   "File preview as a pane in the layout — drag to place, drag borders to resize": "ファイルプレビューをペイン配置に統合 — ドラッグで配置、境界でサイズ調整",
   "Fix patch updates repeating the same update notes — only changes since your version": "パッチ更新のたびに同じ更新内容が出る問題を修正 — 前の版以降の変更のみ",
-  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "韓国語入力の変換中に Ctrl+X Ctrl+S が変換中の文字より先に送られる問題を修正 — 確定した文字の後に送信"
+  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "韓国語入力の変換中に Ctrl+X Ctrl+S が変換中の文字より先に送られる問題を修正 — 確定した文字の後に送信",
+  "Fix read-only server commands asking for confirmation — quotes in arguments kept": "読み取りだけのサーバーコマンドでも確認リクエストが出る問題を修正 — 引数の引用符を保持",
+  "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "サーバーの確認リクエストを削減 — 危険なコマンドのみ確認(再起動・削除・インストール・権限)"
 }
