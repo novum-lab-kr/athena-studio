@@ -1,6 +1,6 @@
 // ── 모바일 개발용 길 — 격리 시험 앱에서만 relay 에 붙고 짝 기기마다 브리지를 둔다 ──
 // 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 · 4-8(시험 3). 브리지는 여전히 기본 꺼짐 — 이 길이 켜질 때만 팩 레일 프로필 · [허용] 창이 보인다.
-// 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 루프백 ws 주소.
+// 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 허용 주소(루프백 ws 또는 운영 RELEASE_RELAY 정확히 — allowedRelay).
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
 import path from 'node:path'
@@ -14,9 +14,34 @@ import { createLoginFlow, relayWebBase } from './mobile-login.mts'
 import type { FetchLike, LoginFailure } from './mobile-login.mts'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+// 운영 relay — 경로는 athena-app relay/src/server.ts WS_PATH('/ws' · WebSocketServer path) · 호스트는 relay/deploy/relay.caddy
+export const RELEASE_RELAY = 'wss://relay.athena.novum-lab.com/ws'
 
 // 조건이 빠졌을 때 맥 로그(화면 문구 아님 — 개발판 격리 시험 전용)
-export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 루프백 ws 주소가 모두 있어야 해요'
+export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 허용한 relay 주소(루프백 ws 또는 운영 relay)가 모두 있어야 해요'
+
+// 붙어도 되는 relay 주소인지 — 루프백 ws(포트 아무거나) 또는 RELEASE_RELAY 와 칸마다 정확히 같은 것만(문자열 앞부분 비교 X).
+// 운영 주소는 계정 · 비밀번호 · 포트 · 쿼리 · 조각이 하나라도 붙으면 거절한다 — env 하나로 세션 토큰이 남의 서버로 가지 않게
+export function allowedRelay(raw: string): URL | null {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.protocol === 'ws:' && LOOPBACK_HOSTS.has(url.hostname)) return url
+  const release = new URL(RELEASE_RELAY)
+  const same =
+    url.protocol === release.protocol &&
+    url.hostname === release.hostname &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === release.pathname &&
+    url.search === '' &&
+    url.hash === ''
+  return same ? url : null
+}
 
 export type MobileDevOptions = { url: string; base: string; dir: string }
 
@@ -24,13 +49,8 @@ export type MobileDevOptions = { url: string; base: string; dir: string }
 export function mobileDevOptions({ env, packaged, homeOverride }: { env: NodeJS.ProcessEnv; packaged: boolean; homeOverride: string | null }): MobileDevOptions | null {
   const raw = env.ATHENA_STUDIO_MOBILE_RELAY
   if (packaged || !homeOverride || !raw) return null
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'ws:' || !LOOPBACK_HOSTS.has(url.hostname)) return null
+  const url = allowedRelay(raw)
+  if (!url) return null
   const base = relayWebBase(url.href)
   return base ? { url: url.href, base, dir: mobileStateDir(homeOverride) } : null
 }

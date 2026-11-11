@@ -538,7 +538,7 @@ test('맥 로그아웃 — remoteLogout 이 없거나 relay 에 안 붙어 있�
   }
 })
 
-test('개발용 길 문 — 개발판 · 격리 집 · 루프백 ws 가 모두 있을 때만 켠다', async () => {
+test('개발용 길 문 — 개발판 · 격리 집 · 허용 relay 주소가 모두 있을 때만 켠다', async () => {
   const { mobileDevOptions } = require('../src/main/mobile-dev.mts')
   const env = { ATHENA_STUDIO_MOBILE_RELAY: 'ws://127.0.0.1:3131/ws' }
   assert.deepEqual(mobileDevOptions({ env, packaged: false, homeOverride: '/tmp/iso' }), { url: 'ws://127.0.0.1:3131/ws', base: 'http://127.0.0.1:3131', dir: path.join('/tmp/iso', 'mobile') })
@@ -548,6 +548,41 @@ test('개발용 길 문 — 개발판 · 격리 집 · 루프백 ws 가 모두 �
   for (const relay of ['wss://relay.example.com/ws', 'ws://10.0.0.5:3131/ws', 'http://127.0.0.1:3131/ws', '깨진 주소']) {
     assert.equal(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_RELAY: relay }, packaged: false, homeOverride: '/tmp/iso' }), null, relay)
   }
+})
+
+test('relay 허용 — 루프백 ws 또는 운영 relay 와 칸마다 정확히 같은 것만 · 배포판은 운영 주소여도 끈다', () => {
+  const { allowedRelay, mobileDevOptions, RELEASE_RELAY } = require('../src/main/mobile-dev.mts')
+  assert.equal(RELEASE_RELAY, 'wss://relay.athena.novum-lab.com/ws')
+  for (const ok of [RELEASE_RELAY, 'ws://127.0.0.1:3131/ws', 'ws://localhost:3131/ws', 'ws://[::1]:3131/ws']) {
+    assert.ok(allowedRelay(ok), ok)
+  }
+  const rejected = [
+    'wss://evil.relay.athena.novum-lab.com/ws', // 하위 도메인
+    'wss://relay.athena.novum-lab.com.evil.com/ws', // 뒤에 붙인 닮은 이름
+    'wss://relay-athena.novum-lab.com/ws', // 닮은 이름
+    'wss://relay.athena.novum-lab.co/ws',
+    'wss://relay.athena.novum-lab.com@evil.com/ws', // @ 뒤가 진짜 호스트
+    'wss://user:pw@relay.athena.novum-lab.com/ws', // 계정 · 비밀번호
+    'wss://relay.athena.novum-lab.com:8443/ws', // 다른 포트
+    'wss://relay.athena.novum-lab.com/other', // 다른 경로
+    'wss://relay.athena.novum-lab.com/ws/', // 끝 빗금
+    'wss://relay.athena.novum-lab.com/', // 경로 없음
+    'ws://relay.athena.novum-lab.com/ws', // 평문
+    'https://relay.athena.novum-lab.com/ws',
+    'wss://relay.athena.novum-lab.com/ws?x=1', // 쿼리
+    'wss://relay.athena.novum-lab.com/ws#x', // 조각
+    'wss://127.0.0.1:3131/ws', // 루프백은 ws 만
+    'ws://10.0.0.5:3131/ws',
+    '깨진 주소',
+    '',
+  ]
+  for (const bad of rejected) assert.equal(allowedRelay(bad), null, bad)
+  // 기본 포트(443)를 적은 것은 URL 이 지워 운영 주소와 같아진다 — 같은 서버라 허용
+  assert.ok(allowedRelay('wss://relay.athena.novum-lab.com:443/ws'))
+  const env = { ATHENA_STUDIO_MOBILE_RELAY: RELEASE_RELAY }
+  assert.deepEqual(mobileDevOptions({ env, packaged: false, homeOverride: '/tmp/iso' }), { url: RELEASE_RELAY, base: 'https://relay.athena.novum-lab.com', dir: path.join('/tmp/iso', 'mobile') })
+  assert.equal(mobileDevOptions({ env, packaged: true, homeOverride: '/tmp/iso' }), null, '배포판은 운영 주소여도')
+  assert.equal(mobileDevOptions({ env, packaged: false, homeOverride: null }), null, '격리 집 없음')
 })
 
 test('화면 이름 — 공급자 이름 · 이메일 먼저, 없으면 개발 계정 이름만(apple · google sub 은 안 보인다)', () => {
