@@ -554,3 +554,95 @@ test('sar 서버: 파일엔 줄인 점 · 화면엔 같은 시각을 메모리�
   assert.equal(status.bucketHistory([older, lean], '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], null)
   assert.equal(status.bucketHistory(merged, '1h', now, [{ t: now - 20 * 60_000, span: 600_000, cpu: 15, load: 1, mem: 40, rx: 10, tx: 10 }]).mem[14], full.mem)
 })
+
+// 서버 상세 칸(폰 앱 server.detail) — 실측 꼴(novum-lab 2026-11-11 · 주소 · 이름은 바꿈)
+const DETAIL_SAMPLE = [
+  '==ports',
+  'udp UNCONN 0      0      127.0.0.53%lo:53    0.0.0.0:* users:(("systemd-resolve",pid=11,fd=14))',
+  'udp UNCONN 0      0                  *:443         *:* users:(("caddy",pid=731,fd=8))',
+  'tcp LISTEN 0      511        127.0.0.1:8097  0.0.0.0:* users:(("node",pid=3685957,fd=23))',
+  'tcp LISTEN 0      4096         0.0.0.0:22    0.0.0.0:* users:(("sshd",pid=900,fd=3),("systemd",pid=1,fd=229))',
+  'tcp LISTEN 0      4096               *:443         *:* users:(("caddy",pid=731,fd=11))',
+  'tcp LISTEN 0      4096            [::]:22       [::]:* users:(("sshd",pid=900,fd=4))',
+  'tcp LISTEN 0      4096               *:443         *:* users:(("caddy",pid=731,fd=11))',
+  'tcp LISTEN 0      128            [::1]:631     [::]:*',
+  '==units', '     11 systemd-resolved.service', '    731 caddy.service', '    900 ssh.service',
+  '==cpumodel', 'Model name:                              AMD EPYC 9354P 32-Core Processor',
+  '==servicedesc',
+  'caddy.service                         loaded active running Caddy',
+  'capd-bridge.service                   loaded active running 맥 캡처용 파일 다리 (127.0.0.1:8099, SSH 터널 전용)',
+  'ssh.service                           loaded active running OpenBSD Secure Shell server',
+  '==timers',
+  'Wed 2026-11-11 11:30:00 UTC      4min 18s Wed 2026-11-11 11:20:01 UTC     5min ago sysstat-collect.timer          sysstat-collect.service',
+  'Thu 2026-11-12 09:00:00 KST           12h Wed 2026-11-11 09:00:00 KST      2h ago backup.timer                   backup.service',
+  '-                                       - Wed 2026-11-11 10:21:21 UTC  1h 4min ago once.timer                     once.service',
+  '==cron', '*/5 * * * * /usr/local/bin/health.sh', '0 3 * * 1 TOKEN=x', '@reboot /opt/app/start',
+  '==ufw', 'Status: active',
+  '==monarx', 'monarx-agent.service enabled enabled', 'active',
+  '==caddy',
+  '1:# 임시 정적 랜딩 (2026-10-08). 되돌리려면',
+  '2:# 백업 블록으로',
+  '3:novum-lab.com {',
+  '5:\troot * /var/www/landing',
+  '11:www.example.cloud, example.cloud {',
+  '19:office.example.com {',
+  '23:\t\troot * /var/www/office',
+  '34:\treverse_proxy 127.0.0.1:3120   # 관제탑',
+  '36:# 떨어진 주석 — 머리 바로 위가 아니다',
+  '38:(common) {',
+  '41:api.example.com {',
+  '42:  reverse_proxy localhost:3100 127.0.0.1:3101',
+  '==nginx',
+  '# configuration file /etc/nginx/sites-enabled/a:',
+  'server_name a.example.com www.a.example.com;',
+  'server_name _;',
+  '==end', '',
+].join('\n')
+
+test('서버 상세: 포트 · 서비스 · CPU 모델 · 타이머 · cron · ufw · monarx · 사이트', () => {
+  const read = status.parseStatus(DETAIL_SAMPLE)
+  assert.equal(read.cpuModel, 'AMD EPYC 9354P 32-Core Processor')
+  assert.deepEqual(read.ports, [
+    { proto: 'udp', address: '127.0.0.53%lo', port: 53, process: 'systemd-resolve', unit: 'systemd-resolved', public: false },
+    { proto: 'udp', address: '*', port: 443, process: 'caddy', unit: 'caddy', public: true },
+    { proto: 'tcp', address: '127.0.0.1', port: 8097, process: 'node', unit: null, public: false },
+    { proto: 'tcp', address: '0.0.0.0', port: 22, process: 'sshd', unit: 'ssh', public: true },
+    { proto: 'tcp', address: '*', port: 443, process: 'caddy', unit: 'caddy', public: true },
+    { proto: 'tcp', address: '[::]', port: 22, process: 'sshd', unit: 'ssh', public: true },
+    { proto: 'tcp', address: '[::1]', port: 631, process: null, unit: null, public: false },
+  ])
+  assert.deepEqual(read.serviceInfo, [
+    { name: 'caddy', description: 'Caddy', ports: [443] },
+    { name: 'capd-bridge', description: '맥 캡처용 파일 다리 (127.0.0.1:8099, SSH 터널 전용)', ports: [] },
+    { name: 'ssh', description: 'OpenBSD Secure Shell server', ports: [22] },
+  ])
+  assert.deepEqual(read.timers, [
+    { unit: 'sysstat-collect', activates: 'sysstat-collect', next: '2026-11-11T11:30:00Z', last: '2026-11-11T11:20:01Z' },
+    { unit: 'backup', activates: 'backup', next: null, last: null },
+    { unit: 'once', activates: 'once', next: null, last: '2026-11-11T10:21:21Z' },
+  ])
+  assert.deepEqual(read.cron, [
+    { schedule: '*/5 * * * *', command: 'health.sh' },
+    { schedule: '0 3 * * 1', command: null },
+    { schedule: '@reboot', command: 'start' },
+  ])
+  assert.equal(read.ufw, 'active')
+  assert.equal(read.monarx, 'active')
+  assert.deepEqual(read.sites, [
+    { addresses: ['novum-lab.com'], description: '임시 정적 랜딩 (2026-10-08). 되돌리려면', ports: [], static: true, source: 'caddy' },
+    { addresses: ['www.example.cloud', 'example.cloud'], description: null, ports: [], static: false, source: 'caddy' },
+    { addresses: ['office.example.com'], description: null, ports: [3120], static: true, source: 'caddy' },
+    { addresses: ['api.example.com'], description: null, ports: [3100, 3101], static: false, source: 'caddy' },
+    { addresses: ['a.example.com', 'www.a.example.com'], description: null, ports: [], static: false, source: 'nginx' },
+  ])
+})
+
+test('서버 상세: 칸이 없는 옛 코어는 null · 칸만 있고 비었으면 빈 목록 · 설치 안 된 것은 null', () => {
+  const old = status.parseStatus('==load\n==cpu\n==end\n')
+  for (const key of ['ports', 'cpuModel', 'serviceInfo', 'timers', 'cron', 'ufw', 'monarx', 'sites']) assert.equal(old[key], null, key)
+  const empty = status.parseStatus('==ports\n==units\n==cpumodel\n==servicedesc\n==timers\n==cron\n==ufw\n==monarx\n==caddy\n==nginx\n==end\n')
+  assert.deepEqual([empty.ports, empty.serviceInfo, empty.timers, empty.cron, empty.sites], [[], [], [], [], []])
+  assert.deepEqual([empty.cpuModel, empty.ufw, empty.monarx], [null, null, null])
+  assert.equal(status.parseStatus('==ufw\nStatus: inactive\n==monarx\ninactive\n==end\n').ufw, 'inactive')
+  assert.equal(status.parseStatus('==monarx\ninactive\n==end\n').monarx, null, '유닛 줄이 없으면 설치 안 됨')
+})

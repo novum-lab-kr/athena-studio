@@ -35,7 +35,12 @@ export type BoardReply = { status: number; body: unknown }
 // 사건 기록 한 줄(코어 events.mjs logEvent 와 같은 모양 — 종류 · 칸)
 export type LogEvent = (type: string, fields: Record<string, unknown>) => void
 // 머지 피드 원천 — 코어 사건 기록(events.jsonl)의 줄(읽는 칸만)
-export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown }
+export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown; branch?: unknown }
+// 머지 하나의 상세 — PR 은 gh pr view · 바로 머지는 git show --shortstat(머지 커밋)에서. 읽지 못한 칸은 null
+export type MergeDetail = { title: string | null; branch: string | null; additions: number | null; deletions: number | null; files: number | null }
+export type MergeRow = ReturnType<typeof weekMerges>[number]
+// 이 맥 · 짝 기기(연결된 폰) — 폰 화면 머리에 보인다
+export type DeviceView = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
 
 // 팩 탭 — 앞 창의 팩 목록(pack list 를 다듬은 ctx.packState 에서) · ⚙ 설정 팝업과 같은 레포 설정 칸
 export type PackView = { current: string | null; packs: { id: string; name: string | null; displayName: string | null }[] }
@@ -61,6 +66,12 @@ export type BridgeDeps = {
   setRepo: (repo: string, changes: RepoChanges) => Promise<PackResultLike> // ctx.setAutoMerge(코어 pack set-auto-merge)
   openPack: (id: string) => Promise<PackResultLike> // ctx.packOpen — 앞 창을 그 팩으로
   logEvent: LogEvent
+  // 아래는 없으면 빈 값(옛 부르는 쪽 · 시험) — 모르는 값을 지어내지 않는다
+  bodyPacks?: () => Record<string, string> // 본체 실제 경로 → 팩 id(pack list packs[].body) — pane 이 어느 팩 것인지
+  mergeDetails?: MergeDetails // 머지 상세 캐시(createMergeDetails)
+  mac?: () => { name: string | null }
+  devices?: () => DeviceView[]
+  serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
   now?: () => number
   flushMs?: number
   sizePollMs?: number
@@ -111,20 +122,162 @@ export function weekMerges(events: EventRow[], now: number) {
       const at = Date.parse(event.at as string)
       return !Number.isNaN(at) && at <= now && now - at <= WEEK_MS
     })
-    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: event.pr ?? null, sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true }))
+    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: event.pr ?? null, sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null }))
     .sort((left, right) => right.at.localeCompare(left.at))
 }
 
 // 살아 있는 pane 전부 — 쉬는 pane 도(Pane 탭에서 쉬는 아테나 pane 에 지시 · Q8). 진행 중인지는 status · running 으로 가른다.
 // 폰에 필요한 칸만 넘긴다(cwd 등은 넘기지 않는다) · cols · rows 는 PC 크기(폰은 그대로 받는다 · D1)
-type ListedPane = { id?: unknown; label?: unknown; name?: unknown; title?: unknown; agent?: unknown; agent_status?: unknown; cols?: unknown; rows?: unknown }
-export function livePanes(panes: ListedPane[]) {
+type ListedPane = { id?: unknown; label?: unknown; name?: unknown; title?: unknown; agent?: unknown; agent_status?: unknown; cols?: unknown; rows?: unknown; workspace_id?: unknown; cwd?: unknown }
+// 데몬 state(범위 없음)의 작업 공간 — id → 이름 · 본체(레포마다 하나 · body 는 본체 실제 경로)
+type StateWorkspaces = { workspaces?: { id?: unknown; label?: unknown; body?: unknown }[] } | null | undefined
+export type PaneWhere = { workspaces: Map<string, { label: string | null; body: string | null }>; bodyPacks: Record<string, string> }
+export function paneWhere(state: StateWorkspaces, bodyPacks: Record<string, string> = {}): PaneWhere {
+  const workspaces = new Map<string, { label: string | null; body: string | null }>()
+  for (const workspace of (state && state.workspaces) || []) {
+    if (typeof workspace.id !== 'string') continue
+    workspaces.set(workspace.id, { label: typeof workspace.label === 'string' ? workspace.label : null, body: typeof workspace.body === 'string' ? workspace.body : null })
+  }
+  return { workspaces, bodyPacks }
+}
+// pane 이 일하는 레포 — 시작 자리(cwd)가 작업 워크트리(…/worktrees/<레포>/<브랜치>) · 본체 repos/<레포> 아래일 때만(본체 루트 · 그 밖은 null)
+export function repoOfCwd(cwd: unknown): string | null {
+  if (typeof cwd !== 'string') return null
+  const found = /\/worktrees\/([\w.-]+)\/[^/]+(?:\/|$)/.exec(cwd) || /\/repos\/([\w.-]+)(?:\/|$)/.exec(cwd)
+  return found ? found[1]! : null
+}
+// cwd 는 넘기지 않는다(레포 이름만) · workspace 는 작업 공간 이름 · pack 은 그 작업 공간 본체의 팩 id(모르면 null)
+export function livePanes(panes: ListedPane[], where: PaneWhere = paneWhere(null)) {
   return panes
     .filter((pane) => typeof pane.id === 'string')
     .map((pane) => {
       const status = typeof pane.agent_status === 'string' ? pane.agent_status : null
-      return { id: pane.id as string, label: pane.label ?? null, name: pane.name ?? null, title: pane.title ?? null, agent: pane.agent ?? null, status, running: status !== null && !IDLE_STATUSES.has(status), cols: sizeOf(pane.cols), rows: sizeOf(pane.rows) }
+      const workspace = typeof pane.workspace_id === 'string' ? where.workspaces.get(pane.workspace_id) : undefined
+      const body = workspace ? workspace.body : null
+      return {
+        id: pane.id as string,
+        label: pane.label ?? null,
+        name: pane.name ?? null,
+        title: pane.title ?? null,
+        agent: pane.agent ?? null,
+        status,
+        running: status !== null && !IDLE_STATUSES.has(status),
+        cols: sizeOf(pane.cols),
+        rows: sizeOf(pane.rows),
+        repo: repoOfCwd(pane.cwd),
+        workspace: workspace ? workspace.label : null,
+        pack: body ? (where.bodyPacks[body] ?? null) : null,
+      }
     })
+}
+
+// 지금 팩 밖 팩마다 일하는 · 질문 대기 pane 수(데몬 agent_status working · waiting) — 팩 목록 순서 · pane 이 없는 팩도 0 으로
+export function otherPackCounts(panes: ReturnType<typeof livePanes>, packs: PackView) {
+  return packs.packs
+    .filter((pack) => pack.id !== packs.current)
+    .map((pack) => {
+      const own = panes.filter((pane) => pane.pack === pack.id)
+      return { id: pack.id, name: pack.name, displayName: pack.displayName, working: own.filter((pane) => pane.status === 'working').length, question: own.filter((pane) => pane.status === 'waiting').length }
+    })
+}
+
+// ── 머지 상세 — PR 은 gh · 바로 머지는 git. 머지된 것은 바뀌지 않아 한 번 읽으면 둔다(실패는 10분 뒤 다시) ──
+// 읽는 동안 snapshot 을 붙잡지 않는다: 없는 것은 null 로 보내고 뒤에서 읽어 다 되면 onReady(브리지가 changed merges 를 보낸다)
+export type MergeRunner = (command: 'gh' | 'git', args: string[], cwd: string) => Promise<string | null>
+export type MergeDetails = ReturnType<typeof createMergeDetails>
+const RETRY_MS = 10 * 60 * 1000
+const MERGE_READS = 3 // 한꺼번에 도는 gh · git 수
+const SHA = /^[0-9a-f]{7,40}$/
+export function mergeKey(merge: MergeRow): string | null {
+  if (typeof merge.repo !== 'string' || !/^[\w.-]+$/.test(merge.repo)) return null
+  if (Number.isInteger(merge.pr) && (merge.pr as number) > 0) return `${merge.repo}#${merge.pr}`
+  // 바로 머지는 squash 커밋(merged — 부모 하나라 shortstat 가 바뀐 것 전부). Actions 로 넘긴 것은 merged 가 없어 읽지 않는다(sha 는 브랜치 끝 커밋 하나뿐)
+  return merge.direct && typeof merge.merged === 'string' && SHA.test(merge.merged) ? `${merge.repo}@${merge.merged}` : null
+}
+const countOf = (value: unknown): number | null => (Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null)
+// gh pr view --json title,headRefName,additions,deletions,changedFiles
+export function parsePrView(text: string): MergeDetail | null {
+  try {
+    const data = JSON.parse(text) as { title?: unknown; headRefName?: unknown; additions?: unknown; deletions?: unknown; changedFiles?: unknown }
+    return { title: typeof data.title === 'string' ? data.title : null, branch: typeof data.headRefName === 'string' ? data.headRefName : null, additions: countOf(data.additions), deletions: countOf(data.deletions), files: countOf(data.changedFiles) }
+  } catch {
+    return null
+  }
+}
+// git show --shortstat --format=%s: 첫 줄 제목 · " 3 files changed, 10 insertions(+), 2 deletions(-)"
+export function parseShortstat(text: string, branch: string | null): MergeDetail | null {
+  const lines = text.split('\n').filter((line) => line.trim())
+  if (!lines.length) return null
+  const stat = lines.find((line) => /\bfiles? changed\b/.test(line)) || ''
+  const number = (pattern: RegExp) => Number(pattern.exec(stat)?.[1] ?? 0)
+  return { title: lines[0]!.trim(), branch, additions: number(/(\d+) insertions?\(\+\)/), deletions: number(/(\d+) deletions?\(-\)/), files: number(/(\d+) files? changed/) }
+}
+export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaDir: () => string | null; run: MergeRunner; now?: () => number }) {
+  const done = new Map<string, MergeDetail>()
+  const failed = new Map<string, number>() // 키 → 실패한 때
+  const reading = new Set<string>()
+  const read = async (merge: MergeRow, key: string): Promise<MergeDetail | null> => {
+    const dir = athenaDir()
+    if (!dir) return null
+    const cwd = path.join(dir, 'repos', merge.repo as string)
+    if (key.includes('#')) {
+      const out = await run('gh', ['pr', 'view', String(merge.pr), '--json', 'title,headRefName,additions,deletions,changedFiles'], cwd)
+      return out === null ? null : parsePrView(out)
+    }
+    const sha = key.slice(key.indexOf('@') + 1)
+    const out = await run('git', ['show', '--shortstat', '--format=%s', sha, '--'], cwd)
+    return out === null ? null : parseShortstat(out, merge.branch)
+  }
+  return {
+    // 지금 아는 상세(없으면 null) — 모르는 것은 뒤에서 읽기 시작하고, 새로 읽힌 것이 있으면 onReady 한 번
+    peek(merges: MergeRow[], onReady: () => void): (MergeDetail | null)[] {
+      const queue: { merge: MergeRow; key: string }[] = []
+      const found = merges.map((merge) => {
+        const key = mergeKey(merge)
+        if (!key) return null
+        const known = done.get(key)
+        if (known) return known
+        const failedAt = failed.get(key)
+        if (!reading.has(key) && (failedAt === undefined || now() - failedAt >= RETRY_MS) && !queue.some((item) => item.key === key)) queue.push({ merge, key })
+        return null
+      })
+      if (queue.length) {
+        for (const item of queue) reading.add(item.key)
+        let added = false
+        const worker = async () => {
+          for (let item = queue.shift(); item; item = queue.shift()) {
+            const detail = await read(item.merge, item.key).catch(() => null)
+            reading.delete(item.key)
+            if (detail) {
+              done.set(item.key, detail)
+              failed.delete(item.key)
+              added = true
+            } else failed.set(item.key, now())
+          }
+        }
+        void Promise.all(Array.from({ length: Math.min(MERGE_READS, queue.length) }, worker)).then(() => {
+          if (added) onReady()
+        })
+      }
+      return found
+    },
+  }
+}
+
+// 머지 줄 + 상세 · 오늘(이 맥 날짜) 가장 큰 변경(+ − 합) — 상세를 모르는 머지는 견주지 않는다
+export function mergeFeed(merges: MergeRow[], details: (MergeDetail | null)[], now: number) {
+  const empty: MergeDetail = { title: null, branch: null, additions: null, deletions: null, files: null }
+  const rows = merges.map((merge, index) => {
+    const detail = details[index] || empty
+    return { ...merge, title: detail.title, branch: detail.branch ?? merge.branch, additions: detail.additions, deletions: detail.deletions, files: detail.files }
+  })
+  const today = new Date(now).toDateString()
+  let todayTop: (typeof rows)[number] | null = null
+  for (const row of rows) {
+    if (new Date(row.at).toDateString() !== today || row.additions === null || row.deletions === null) continue
+    if (!todayTop || row.additions + row.deletions > (todayTop.additions as number) + (todayTop.deletions as number)) todayTop = row
+  }
+  return { merges: rows, todayTop }
 }
 const sizeOf = (value: unknown): number | null => (Number.isInteger(value) && (value as number) > 0 ? (value as number) : null)
 
@@ -493,12 +646,35 @@ export function createMobileBridge(deps: BridgeDeps) {
   async function snapshot() {
     const connection = await connectControl()
     const listed = (await connection.call('pane list')) as { panes?: ListedPane[] } | null
+    // 범위 없는 state — 작업 공간마다 본체(body)가 실려 pane 이 어느 팩 것인지 안다(못 읽으면 workspace · pack 만 null)
+    const state = (await connection.call('state').catch(() => null)) as StateWorkspaces
     const [requests, servers, events] = await Promise.all([deps.requests(), deps.servers(), deps.events()])
     if (!sizeWatching) {
       sizeWatching = true
       void pollSizes()
     }
-    return { requests, panes: livePanes((listed && listed.panes) || []), merges: weekMerges(events, now()), servers }
+    const panes = livePanes((listed && listed.panes) || [], paneWhere(state, deps.bodyPacks ? deps.bodyPacks() : {}))
+    const merges = weekMerges(events, now())
+    const details = deps.mergeDetails ? deps.mergeDetails.peek(merges, () => emit({ event: 'changed', parts: ['merges'] })) : merges.map(() => null)
+    const feed = mergeFeed(merges, details, now())
+    return {
+      requests,
+      panes,
+      otherPacks: otherPackCounts(panes, deps.packs()),
+      merges: feed.merges,
+      todayTop: feed.todayTop,
+      servers,
+      mac: { name: deps.mac ? deps.mac().name : null },
+      devices: deps.devices ? deps.devices() : [],
+    }
+  }
+
+  // 서버 하나 — 지금 읽기(상세 칸 포함) · 7일 이력 · sar. 마지막 배포는 맥 · 서버 어디에도 원천이 없어 null
+  async function serverDetail(args: Record<string, unknown>) {
+    const name = text(args.name, 'name')
+    const found = deps.serverDetail ? await deps.serverDetail(name) : null
+    if (!found) return fail('not_found', `없는 서버: ${name}`)
+    return { ...(found as object), lastDeploy: null }
   }
 
   const requireInput = () => {
@@ -649,6 +825,8 @@ export function createMobileBridge(deps: BridgeDeps) {
         return repoSet(args)
       case 'pack.open':
         return packOpen(args)
+      case 'server.detail':
+        return serverDetail(args)
       default:
         return fail('usage', `모르는 요청: ${String(op)}`)
     }

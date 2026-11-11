@@ -9,8 +9,8 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt } = bridgeModule
-const { packView } = require('../src/main/mobile-dev.mts')
+const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed } = bridgeModule
+const { packView, bodyPacks, serverSummary } = require('../src/main/mobile-dev.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
 const workDir = () => fs.mkdtempSync('/tmp/asd-mob-')
@@ -22,14 +22,16 @@ function startFakeDaemon(socketPath) {
     ops: [],
     snapshots: { p1: 'P1-화면', p2: 'P2-화면' },
     panes: [
-      { id: 'p1', label: '아테나', agent: 'claude', agent_status: 'working', cwd: '/숨길/경로', cols: 120, rows: 40 },
+      { id: 'p1', label: '아테나', agent: 'claude', agent_status: 'working', cwd: '/숨길/경로', cols: 120, rows: 40, workspace_id: 'w1' },
       { id: 'p2', label: 'fe', agent: 'codex', agent_status: 'idle', cols: 80, rows: 24 },
     ],
+    // 데몬 state(범위 없음)의 작업 공간 — body 는 본체 실제 경로
+    workspaces: [{ id: 'w1', label: 'athena', cwd: '/b/acme', activeTab: 't1', body: '/b/acme' }],
     // 데몬 state.panes 의 크기(attach · state 가 같이 준다)
     sizes: { p1: { cols: 120, rows: 40 }, p2: { cols: 80, rows: 24 } },
     failState: false, // true 면 state 요청에 실패로 답한다(크기 보기 실패)
   }
-  const daemonState = () => ({ panes: Object.entries(state.sizes).map(([id, size]) => ({ id, tab: 't1', ...size })) })
+  const daemonState = () => ({ workspaces: state.workspaces, panes: Object.entries(state.sizes).map(([id, size]) => ({ id, tab: 't1', ...size })) })
   const server = net.createServer((socket) => {
     const client = { socket, attached: false }
     clients.push(client)
@@ -172,11 +174,16 @@ test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · �
     assert.equal(reply.ok, true)
     assert.deepEqual(reply.result.requests, [{ id: 'r-20261111-090000-abcd', title: '질문' }])
     assert.deepEqual(reply.result.panes, [
-      { id: 'p1', label: '아테나', name: null, title: null, agent: 'claude', status: 'working', running: true, cols: 120, rows: 40 },
-      { id: 'p2', label: 'fe', name: null, title: null, agent: 'codex', status: 'idle', running: false, cols: 80, rows: 24 },
+      { id: 'p1', label: '아테나', name: null, title: null, agent: 'claude', status: 'working', running: true, cols: 120, rows: 40, repo: null, workspace: 'athena', pack: null },
+      { id: 'p2', label: 'fe', name: null, title: null, agent: 'codex', status: 'idle', running: false, cols: 80, rows: 24, repo: null, workspace: null, pack: null },
     ])
     assert.deepEqual(reply.result.servers, [{ name: 'novum', ok: true }])
     assert.deepEqual(reply.result.merges, [])
+    // 새 칸을 안 넘긴 부르는 쪽 — 지어내지 않고 빈 값
+    assert.equal(reply.result.todayTop, null)
+    assert.deepEqual(reply.result.mac, { name: null })
+    assert.deepEqual(reply.result.devices, [])
+    assert.deepEqual(reply.result.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', working: 0, question: 0 }])
     assert.equal(env.daemon.attached().length, 0, '묻기만 해서는 붙은 앱이 되지 않는다(fitTab · open-url 에 섞이지 않게)')
   } finally {
     await env.cleanup()
@@ -310,7 +317,8 @@ test('크기 보기는 기기마다 한 번만 — 첫 state 가 진행 중이�
     await waitFor(() => stateCalls() >= 1, '첫 크기 보기')
     for (let round = 0; round < 3; round++) await env.ask('snapshot')
     await sleep(50)
-    assert.equal(stateCalls(), 1, '진행 중 · 실패 뒤에도 처음 한 번만')
+    // snapshot 은 작업 공간(본체)을 보려고 state 를 한 번씩 부른다(실패해도 답은 간다) — 그 6번 + 크기 보기 처음 한 번
+    assert.equal(stateCalls(), 6 + 1, '진행 중 · 실패 뒤에도 크기 보기는 처음 한 번만')
   } finally {
     await env.cleanup()
   }
@@ -673,4 +681,145 @@ test('packView — 폰에 줄 칸만(id · 이름 · 표시 이름) · 모양이
     packView({ current: { id: 'acme', body: '/숨길/본체' }, packs: [{ id: 'acme', name: 'acme', displayName: '', body: '/숨길' }, { id: '' }, null, { id: 'g', name: 3, displayName: '지' }] }),
     { current: 'acme', packs: [{ id: 'acme', name: 'acme', displayName: null }, { id: 'g', name: null, displayName: '지' }] },
   )
+})
+
+test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일하는 · 질문 수, 머지 상세(뒤에서 읽고 changed merges) · 오늘 가장 큰 변경, 맥 이름 · 기기', async () => {
+  const now = Date.parse('2026-11-11T15:00:00')
+  const runs = []
+  const details = createMergeDetails({
+    athenaDir: () => '/b/acme',
+    run: async (command, args, cwd) => {
+      runs.push({ command, args, cwd })
+      if (command === 'gh') return JSON.stringify({ title: 'feat: 로그인', headRefName: 'feat/login', additions: 120, deletions: 30, changedFiles: 7 })
+      return 'fix: 길찾기\n\n 2 files changed, 10 insertions(+), 4 deletions(-)\n'
+    },
+  })
+  const env = await setup({
+    now: () => now,
+    bodyPacks: () => ({ '/b/acme': 'acme', '/b/globex': 'globex' }),
+    mergeDetails: details,
+    mac: () => ({ name: '민창의 MacBook' }),
+    devices: () => [{ peer: 'dev-1', label: 'iPhone', online: true, lastSeen: '2026-11-11T14:59:00Z' }],
+    events: () => [
+      { type: 'auto.merge', ok: true, at: '2026-11-11T10:00:00', repo: 'web', pr: 12, sha: 'abc1234' },
+      { type: 'auto.merge', ok: true, at: '2026-11-11T11:00:00', repo: 'api', branch: 'fix/route', sha: 'aaa1111', direct: true, merged: 'bbb2222' },
+      { type: 'auto.merge', ok: true, at: '2026-11-11T12:00:00', repo: 'api', branch: 'fix/x', sha: 'ccc3333', direct: true, handoff: true },
+    ],
+  })
+  try {
+    env.daemon.state.workspaces.push({ id: 'w2', label: 'globex-api', cwd: '/b/globex', activeTab: 't2', body: '/b/globex' })
+    env.daemon.state.panes = [
+      { id: 'p1', label: '아테나', agent: 'claude', agent_status: 'working', cwd: '/b/acme', workspace_id: 'w1' },
+      { id: 'p2', label: 'fe', agent: 'claude', agent_status: 'waiting', cwd: '/h/.athena-studio/data/packs/acme/worktrees/web/feat-login', workspace_id: 'w1' },
+      { id: 'p3', label: 'be', agent: 'codex', agent_status: 'working', cwd: '/b/globex/repos/globex-api', workspace_id: 'w2' },
+      { id: 'p4', label: 'be2', agent: 'claude', agent_status: 'waiting', cwd: '/b/globex/repos/globex-api/src', workspace_id: 'w2' },
+      { id: 'p5', label: '셸', agent: null, agent_status: 'unknown', cwd: '/tmp', workspace_id: 'w-없음' },
+    ]
+    const first = (await env.ask('snapshot')).result
+    assert.deepEqual(first.panes.map((pane) => [pane.id, pane.repo, pane.workspace, pane.pack]), [
+      ['p1', null, 'athena', 'acme'],
+      ['p2', 'web', 'athena', 'acme'],
+      ['p3', 'globex-api', 'globex-api', 'globex'],
+      ['p4', 'globex-api', 'globex-api', 'globex'],
+      ['p5', null, null, null],
+    ])
+    assert.ok(first.panes.every((pane) => !('cwd' in pane)), '경로는 넘기지 않는다')
+    assert.deepEqual(first.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', working: 1, question: 1 }])
+    assert.deepEqual(first.mac, { name: '민창의 MacBook' })
+    assert.deepEqual(first.devices, [{ peer: 'dev-1', label: 'iPhone', online: true, lastSeen: '2026-11-11T14:59:00Z' }])
+    // 처음에는 모른다 — null 로 보내고 뒤에서 읽는다(Actions 로 넘긴 것은 squash 커밋이 없어 읽지 않는다)
+    assert.deepEqual(first.merges.map((merge) => [merge.repo, merge.title, merge.additions]), [['api', null, null], ['api', null, null], ['web', null, null]])
+    assert.equal(first.merges[1].branch, 'fix/route', '상세 전에도 사건의 브랜치는 보인다')
+    assert.equal(first.todayTop, null)
+    await waitFor(() => env.events('changed').some((event) => event.parts.includes('merges')), '머지 상세 changed')
+    assert.deepEqual(runs.map((run) => [run.command, run.args.join(' '), run.cwd]).sort(), [
+      ['gh', 'pr view 12 --json title,headRefName,additions,deletions,changedFiles', path.join('/b/acme', 'repos', 'web')],
+      ['git', 'show --shortstat --format=%s bbb2222 --', path.join('/b/acme', 'repos', 'api')],
+    ])
+    const second = (await env.ask('snapshot')).result
+    const web = second.merges.find((merge) => merge.repo === 'web')
+    assert.deepEqual([web.title, web.branch, web.additions, web.deletions, web.files], ['feat: 로그인', 'feat/login', 120, 30, 7])
+    const direct = second.merges.find((merge) => merge.merged === 'bbb2222')
+    assert.deepEqual([direct.title, direct.branch, direct.additions, direct.deletions, direct.files], ['fix: 길찾기', 'fix/route', 10, 4, 2])
+    assert.equal(second.todayTop.repo, 'web')
+    assert.equal(runs.length, 2, '읽은 상세는 다시 읽지 않는다')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('server.detail — 서버 하나의 읽기 · 이력 · sar 에 lastDeploy null(원천 없음) · 없는 서버 not_found', async () => {
+  const env = await setup({
+    serverDetail: async (name) => (name === 'novum' ? { server: { name: 'novum', status: { ok: true, cpuModel: 'EPYC' } }, history: [{ t: 1 }], sar: [] } : null),
+  })
+  try {
+    const found = await env.ask('server.detail', { name: 'novum' })
+    assert.deepEqual(found.result, { server: { name: 'novum', status: { ok: true, cpuModel: 'EPYC' } }, history: [{ t: 1 }], sar: [], lastDeploy: null })
+    assert.equal((await env.ask('server.detail', { name: '없음' })).error.code, 'not_found')
+    assert.equal((await env.ask('server.detail', {})).error.code, 'usage')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('repoOfCwd · otherPackCounts — 워크트리 · repos 아래만 레포, 지금 팩은 빼고 pane 없는 팩도 0', () => {
+  assert.equal(repoOfCwd('/h/data/packs/acme/worktrees/web/feat-a'), 'web')
+  assert.equal(repoOfCwd('/h/data/packs/acme/worktrees/web/feat-a/src'), 'web')
+  assert.equal(repoOfCwd('/h/data/packs/acme/worktrees/web'), null, '브랜치 자리까지 와야 워크트리')
+  assert.equal(repoOfCwd('/b/acme/repos/api'), 'api')
+  assert.equal(repoOfCwd('/b/acme'), null)
+  assert.equal(repoOfCwd(null), null)
+  const panes = livePanes([{ id: 'p1', agent_status: 'working', workspace_id: 'w1' }, { id: 'p2', agent_status: 'waiting', workspace_id: 'w1' }], paneWhere({ workspaces: [{ id: 'w1', label: 'x', body: '/b/g' }] }, { '/b/g': 'globex' }))
+  assert.deepEqual(otherPackCounts(panes, { current: 'acme', packs: [{ id: 'acme', name: 'acme', displayName: null }, { id: 'globex', name: 'globex', displayName: null }, { id: 'initech', name: null, displayName: null }] }), [
+    { id: 'globex', name: 'globex', displayName: null, working: 1, question: 1 },
+    { id: 'initech', name: null, displayName: null, working: 0, question: 0 },
+  ])
+})
+
+test('머지 상세 — 키(PR · squash 커밋만) · gh · shortstat 해석 · 실패는 10분 뒤 다시 · 오늘 가장 큰 변경은 상세를 아는 오늘 것만', async () => {
+  assert.equal(mergeKey({ repo: 'web', pr: 3 }), 'web#3')
+  assert.equal(mergeKey({ repo: 'web', direct: true, merged: 'abc1234' }), 'web@abc1234')
+  assert.equal(mergeKey({ repo: 'web', direct: true, sha: 'abc1234' }), null, 'Actions 로 넘긴 것(merged 없음)')
+  assert.equal(mergeKey({ repo: '../x', pr: 3 }), null)
+  assert.equal(mergeKey({ repo: 'web', direct: true, merged: '--output=x' }), null)
+  assert.deepEqual(parsePrView('{"title":"t","headRefName":"b","additions":1,"deletions":2,"changedFiles":3}'), { title: 't', branch: 'b', additions: 1, deletions: 2, files: 3 })
+  assert.equal(parsePrView('없음'), null)
+  assert.deepEqual(parseShortstat('제목\n\n 1 file changed, 5 insertions(+)\n', 'b'), { title: '제목', branch: 'b', additions: 5, deletions: 0, files: 1 })
+  assert.equal(parseShortstat('', null), null)
+
+  let clock = 0
+  let calls = 0
+  const details = createMergeDetails({ athenaDir: () => '/b', now: () => clock, run: async () => (calls++, null) })
+  const merges = [{ at: 'x', repo: 'web', pr: 1, branch: null }]
+  let ready = 0
+  assert.deepEqual(details.peek(merges, () => ready++), [null])
+  details.peek(merges, () => ready++)
+  await sleep(10)
+  assert.equal(calls, 1, '읽는 중 · 실패 직후에는 다시 부르지 않는다')
+  details.peek(merges, () => ready++)
+  await sleep(10)
+  assert.equal(calls, 1)
+  clock = 10 * 60 * 1000
+  details.peek(merges, () => ready++)
+  await sleep(10)
+  assert.equal(calls, 2, '10분 뒤 다시')
+  assert.equal(ready, 0, '새로 읽힌 것이 없으면 알리지 않는다')
+
+  const now = Date.parse('2026-11-11T15:00:00')
+  const rows = [
+    { at: '2026-11-11T09:00:00', repo: 'a', branch: null },
+    { at: '2026-11-11T10:00:00', repo: 'b', branch: null },
+    { at: '2026-11-10T10:00:00', repo: 'c', branch: null },
+  ]
+  const feed = mergeFeed(rows, [{ title: 'A', branch: 'x', additions: 5, deletions: 5, files: 1 }, null, { title: 'C', branch: null, additions: 900, deletions: 0, files: 9 }], now)
+  assert.equal(feed.todayTop.repo, 'a', '어제 것(c) · 상세 모르는 것(b)은 견주지 않는다')
+  assert.equal(feed.merges[1].additions, null)
+})
+
+test('bodyPacks · serverSummary — 본체 경로 → 팩 id, snapshot 서버는 상세 칸을 뺀다', () => {
+  assert.deepEqual(bodyPacks({ packs: [{ id: 'acme', body: '/없는/본체/acme' }, { id: 'x' }, { body: '/b' }] }), { '/없는/본체/acme': 'acme' })
+  assert.deepEqual(bodyPacks(null), {})
+  const reading = { name: 'novum', status: { ok: true, load1: 1, ports: [], cpuModel: 'EPYC', serviceInfo: [], timers: [], cron: [], ufw: 'active', monarx: 'active', sites: [] }, web: null, at: 1 }
+  assert.deepEqual(serverSummary(reading), { name: 'novum', status: { ok: true, load1: 1 }, web: null, at: 1 })
+  assert.deepEqual(serverSummary({ name: 'down', status: { ok: false, reason: 'timeout' } }), { name: 'down', status: { ok: false, reason: 'timeout' } })
 })
