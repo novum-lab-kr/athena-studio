@@ -218,5 +218,7 @@
   "Fix patch updates repeating the same update notes — only changes since your version": "修复补丁更新每次显示相同更新说明的问题 — 仅显示上个版本后的变更",
   "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "修复韩文输入组合中 Ctrl+X Ctrl+S 先于组合字符发送的问题 — 改为在确定字符之后发送",
   "Fix read-only server commands asking for confirmation — quotes in arguments kept": "修复只读服务器命令也弹出确认请求的问题 — 保留参数中的引号",
-  "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "减少服务器确认请求 — 仅危险命令需要确认(重启、删除、安装、权限)"
+  "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "减少服务器确认请求 — 仅危险命令需要确认(重启、删除、安装、权限)",
+  "Fix Athena getting a duplicate done notice after an agent already reported": "修复代理已报告后雅典娜仍重复收到完成通知的问题",
+  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "对话变大时自动为雅典娜开始新对话 — 从计划书恢复"
 }

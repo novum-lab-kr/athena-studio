@@ -311,4 +311,40 @@ print(len(agent_turn.mark_received('p1', '앞 입력\n' + notice['text'].replace
 PY
 check "아테나가 받은 입력에 든 알림은 받음으로 표시(공백 차이 무시 · 한 번 · 그 아테나 pane 만)" "$(python3 "$WORK/received.py" "$BODY")" "True True 0 0"
 
+# 같은 차례에 에이전트가 lead-send.py 로 직접 보고했으면 Stop 의 "끝" 줄은 따로 넣지 않는다 — 아테나가 한 차례에 두 번 깨지 않게
+# (2026-11-11 리드 기록: 직접 보고 뒤 끝 줄이 연달아 와 두 번 깼다). 멈춤 · 질문 · 보고 뒤 Status · PR 이 바뀐 차례는 그대로 알린다
+report() {   # <글> — 에이전트 pane p9 에서 직접 보고(--track 없이)
+  env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" \
+    ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" PATH="$WORK/bin:$PATH" WAITING_FILE="$WORK/waiting" \
+    python3 "$BODY/scripts/lead-send.py" p1 "$1" --plan "$PLAN" >/dev/null
+}
+reported_notices() { grep -l '직접 보고' "$DATA"/state/lead-notices/*.json 2>/dev/null | wc -l | tr -d ' '; }
+hook prompt '{"prompt":"보고 1"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 1 — 리뷰 반영 커밋'
+hook stop '{"last_assistant_message":"보고했어요."}'
+check "직접 보고한 차례는 끝 줄을 따로 넣지 않는다(보고 한 번만)" "$(sent)" "$((before + 1))"
+check "끝 줄을 안 넣어도 차례 상태는 done" "$(turn state)" done
+check "직접 보고는 받음 확인 대상으로 남는다(현황판 다시 넣기)" "$(reported_notices)" 1
+hook prompt '{"prompt":"보고 2"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 2'
+hook stop '{"last_assistant_message":"⏸ 멈춤: 사용자 확인"}'
+check "직접 보고한 차례도 멈춤이면 멈춤 알림은 간다" "$(sent) $(last_sent | grep -c '⏸ 멈춤 · p9')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 3"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 3'
+hook stop '{"last_assistant_message":"커밋할까요?"}'
+check "직접 보고한 차례도 질문으로 끝내면 질문 알림은 간다" "$(sent) $(last_sent | grep -c '질문으로 멈춤 · p9')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 4"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 4'
+sed -i.bak 's/^- Status:.*/- Status: ready_for_review/' "$BODY/$PLAN"
+hook stop '{"last_assistant_message":"다 했어요."}'
+check "보고 뒤 Status · PR 이 바뀌었으면 끝 줄을 넣는다" "$(sent) $(last_sent | grep -c '\] 끝 · p9 · .* · Status ready_for_review')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 없음"}'
+before="$(sent)"
+hook stop '{"last_assistant_message":"다 했어요 2."}'
+check "다음 차례에 보고가 없으면 끝 줄을 넣는다(옛 차례 보고로 막지 않는다)" "$(sent)" "$((before + 1))"
+
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

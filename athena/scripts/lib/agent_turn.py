@@ -12,8 +12,11 @@
   쓰는 곳: lead-send.py(넣기 **전에** pending 으로 만들고 결과로 고친다 — 넣은 끝 알림(--track)은 남기고, 전송을 확인하지 못한 글은 unconfirmed 로,
     넣지 못한 글 · 추적하지 않는 넣은 글은 지운다. 넣자마자 아테나 입력 훅이 돌아도 받음 표시를 놓치지 않게) · 현황판(선택 창 알림 · 다시 넣기 · 요청)
   고치기는 모두 파일별 잠금(<lead-notices>/.<id>.lock · reuse_link.pane_lock) 안에서 읽기 · 합치기 · 쓰기 — 현황판(node)은 `python3 agent_turn.py --patch` 로 같은 잠금을 쓴다
+  에이전트가 lead-send.py 로 직접 넣은 보고(--track 없이)도 turn 으로 남긴다 — 그 차례의 끝 줄을 대신하기 때문(아래 직접 보고)
   받음 표시: 아테나 pane 의 UserPromptSubmit 훅(pane-session.py)이 받은 입력에 그 글이 들어 있으면 received_at 을 적는다
   다시 넣기(2분) · [작업] 요청(10분)은 현황판이 한다(계획서 결정 D1)
+직접 보고 — <팩 데이터>/state/agent-notify/<pane>.json 의 reported = { turn, plan(plan_snapshot) }
+  쓰는 곳: lead-send.py(에이전트가 직접 넣거나 모아 둔 보고) · 읽는 곳: agent-done-notify.py stop(같은 차례 · 같은 계획서 줄 · 멈춤/질문 아님이면 끝 줄을 넣지 않는다)
 어떤 실패도 부르는 쪽을 막지 않게 — 쓰기 실패는 예외로 올리고 부르는 쪽이 삼킨다.
 """
 import datetime
@@ -84,6 +87,26 @@ def ends_with_question(reply: str) -> bool:
     lines = [re.sub(r'[*_`>\s]+$', '', line) for line in str(reply or '').split('\n')]
     lines = [line for line in lines if line.strip()]
     return bool(lines) and bool(QUESTION_END.search(lines[-1]))
+
+
+def plan_snapshot(text: str) -> str:
+    """끝 알림에 실리는 계획서 줄(Status · PR · Auto merge)만 모은 것 — 직접 보고 뒤 이것이 바뀌었으면 끝 줄을 따로 넣는다"""
+    return '\n'.join(re.findall(r'^- (?:Status|PR|Auto merge):[^\n]*$', str(text or ''), re.M))
+
+
+def mark_reported(pane: str, plan_text: str) -> bool:
+    """에이전트 pane 이 지금 차례에 아테나에 직접 보고했다고 적는다(끝 알림 훅의 상태 파일 · 같은 잠금). 차례가 없으면 False"""
+    base = pack_state()
+    if base is None or not pane:
+        return False
+    folder = base / 'agent-notify'
+    with pane_lock(folder, pane):
+        state = _load(folder / f'{pane}.json')
+        if not state.get('turn'):
+            return False
+        state['reported'] = {'turn': state['turn'], 'plan': plan_snapshot(plan_text)}
+        _save(folder / f'{pane}.json', state)
+    return True
 
 
 def record_notice(kind: str, lead: str, text: str, plan: str = '', pane: str = '', sender: str = '', turn: str = '', pending: bool = False) -> str:
