@@ -56,7 +56,6 @@ sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 from plan_update import update_plan  # noqa: E402 — 경로를 넣은 뒤에 읽는다
 import athena_config  # noqa: E402
 import screen  # noqa: E402
-import lead_fresh_mark  # noqa: E402 — 아테나 새로 시작 물은 때 · 지운 때(30분 안에는 다시 묻지 않는다)
 PLANS_DIR = ATHENA_DIR / 'plans'
 ISSUES_DIR = ATHENA_DIR / 'issues'
 # 계획서가 아닌 산출물(검증 표 · 리뷰 메모 등)을 두는 곳 — 진행 중 계획서로 치지 않는다
@@ -784,6 +783,20 @@ def codex_context_now(payload: dict):
     return last_from_tail(rollout, b'"token_count"', codex_usage_tokens), codex_compact_limit(model)
 
 
+def fresh_ask_due(pane: str) -> bool:
+    """새로 시작할지 물을 때인가(30분 안에 묻거나 지웠으면 아니다) — 물을 때면 물은 때를 적는다.
+    lib/lead_fresh_mark.py(→ pane_request → prompt-menu.json)는 여기서 늦게 불러, 못 불러도 압축 알림 · 다시 읽기 안내는 그대로 간다
+    (맨 위에서 부르면 훅이 통째로 죽었다 — PR #290 rule-docs-test). 못 부르면 묻지 않는다"""
+    try:
+        import lead_fresh_mark  # 아테나 새로 시작 물은 때 · 지운 때
+        if lead_fresh_mark.recent(pane):
+            return False
+        lead_fresh_mark.mark(pane, 'asked')
+        return True
+    except Exception:
+        return False
+
+
 def on_warn(payload: dict, codex: bool = False) -> None:
     # 하위 에이전트(Task)의 훅은 본 대화 문맥이 아니다
     if payload.get('agent_id'):
@@ -826,8 +839,7 @@ def on_warn(payload: dict, codex: bool = False) -> None:
     # 아테나는 사용자에게 물어 새로 시작할 수 있다(scripts/lead-fresh.py — 2026-11-11 사용자 결정: 묻지 않고 지우면 당황스럽다 → 묻고 지우기).
     # 고르기 창은 리드 pane 의 ask-to-request.py lead 훅이 [작업] 요청으로도 올린다. pane 마다 30분 안에 묻거나 지웠으면 다시 묻지 않는다
     pane = lead_pane() if is_lead() else ''
-    if pane and not lead_fresh_mark.recent(pane):
-        lead_fresh_mark.mark(pane, 'asked')
+    if pane and fresh_ask_due(pane):
         fresh = f'python3 {shlex.quote(str(ATHENA_DIR / "scripts/lead-fresh.py"))} --plan <계획서>'
         context += (' 그리고 지금 단계(보고)가 끝나는 턴에서 계획서 Checkpoint 를 지금 시각으로 갱신한 뒤, 대화를 새로 시작할지 사용자에게 '
                     'AskUserQuestion(Codex 는 request_user_input)으로 먼저 묻는다 — 질문 글은 배경부터 쉬운 말로 '

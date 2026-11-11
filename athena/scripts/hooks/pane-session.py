@@ -24,7 +24,6 @@ import screen  # noqa: E402 — 화면 계층 — pane 을 묻는 곳은 scripts
 from reuse_link import pane_lock  # noqa: E402 — 이어 보내기와 같은 기록 잠금
 import chat_answer  # noqa: E402 — 대화로 답한 질문 닫기
 import agent_turn  # noqa: E402 — 아테나가 받은 알림 표시(state/lead-notices)
-import lead_rebind  # noqa: E402 — 대화를 지운 뒤 계획서 Lead session · lead-send 대기열 옮기기
 SESSION_ID = re.compile(r'^[0-9a-fA-F-]{8,64}$')
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 
@@ -63,6 +62,8 @@ def main() -> None:
         session = str(event.get('session_id') or '')
         if event.get('source') == 'clear' and not os.environ.get('ATHENA_AGENT') and previous and previous != session:
             try:
+                # 여기서 늦게 부른다 — lead_rebind(→ pane_request → prompt-menu.json)를 못 불러도 pane 기록은 그대로 남게
+                import lead_rebind  # 대화를 지운 뒤 계획서 Lead session · lead-send 대기열 옮기기
                 lead_rebind.rebind(pane, previous, session)
             except Exception:
                 pass
