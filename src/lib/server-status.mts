@@ -24,6 +24,27 @@ export type Pm2Row = { name: string; state: RunState; reason: string; cpu: numbe
 export type ProcessUse = { name: string; cpu: number; mem: number }
 // 누적 값 — /proc/stat 첫 줄(바쁜 · 전체 tick) · /proc/net/dev(가상 장치 뺀 수신 · 송신 바이트). 앞 읽기와의 차이로 CPU % · 트래픽을 낸다(withRates)
 export type Counters = { busy: number; total: number; rx: number | null; tx: number | null }
+// ── 서버 상세(폰 앱 서버 화면 — STATUS_COMMAND 의 ports · units · cpumodel · servicedesc · timers · cron · ufw · monarx · caddy · nginx 칸) ──
+// 열린 포트 하나(ss -ltnupH) — public 은 루프백(127.* · ::1 · %lo)이 아닌 주소 · unit 은 그 pid 의 systemd 서비스(.service 뗌 · 모르면 null)
+export type OpenPort = { proto: 'tcp' | 'udp'; address: string; port: number; process: string | null; unit: string | null; public: boolean }
+// 도는 서비스 하나 — 설명(systemctl 설명 칸) · 그 서비스가 연 포트
+export type ServiceInfo = { name: string; description: string | null; ports: number[] }
+// systemd 타이머 — next · last 는 ISO(시간대가 UTC · GMT 일 때만 · 그 밖이나 없으면 null)
+export type TimerRow = { unit: string; activates: string | null; next: string | null; last: string | null }
+// 사용자 crontab 한 줄 — 명령은 첫 낱말의 끝 이름만(서버에서 인자를 자른다 · = 가 든 낱말은 환경값이라 null)
+export type CronRow = { schedule: string; command: string | null }
+// 웹 서버 사이트 하나 — 주소(머리 줄 · server_name) · 설명(Caddyfile 머리 바로 위 주석 첫 줄) · 넘기는 포트(reverse_proxy) · 정적 파일(root)
+export type SiteRow = { addresses: string[]; description: string | null; ports: number[]; static: boolean; source: 'caddy' | 'nginx' }
+export type ServerDetail = {
+  ports: OpenPort[] | null // ss 가 없거나 옛 코어면 null
+  cpuModel: string | null
+  serviceInfo: ServiceInfo[] | null
+  timers: TimerRow[] | null
+  cron: CronRow[] | null // crontab 이 비었으면 []
+  ufw: 'active' | 'inactive' | null // ufw 가 없거나 못 읽으면 null
+  monarx: string | null // monarx-agent 유닛이 없으면 null · 있으면 systemctl is-active 값(active · inactive · failed …)
+  sites: SiteRow[] | null // Caddyfile · nginx 둘 다 못 읽으면 null
+}
 export type ServerHealth = {
   ok: true
   cpuPercent: number | null // 1초 사이 두 번 읽은 실제 CPU 사용률(/proc/stat) · 옛 코어는 앞 읽기(몇 분 전)부터 — 앞 읽기가 없으면 null
@@ -57,7 +78,7 @@ export type ServerHealth = {
   pm2: Pm2Row[] | null // pm2 가 없거나 데몬이 안 떠 있거나 못 읽으면 null
   top: ProcessUse[] // CPU 순 5개
   detected: string[] // 있지만 읽지 못한 실행 도구(실행 실패 · 권한 없음 · pm2 데몬 없음 — command -v 로는 있다)
-}
+} & ServerDetail
 // key-needed — 비밀번호 없이 못 들어감 · host-key — 지문 확인 필요 · unreachable — 닿지 않음 · timeout — 시간 초과 · core-old — 본체에 상태 읽기가 없음 · failed — 그 밖
 // host-key-changed — 서버 추가 팝업만(known_hosts 에 그 서버의 다른 키가 있음 · lib/known-hosts.mts)
 export type ServerFailReason = 'key-needed' | 'host-key' | 'host-key-changed' | 'unreachable' | 'timeout' | 'core-old' | 'failed'
@@ -398,6 +419,161 @@ function dockerSummary(rows: ContainerRow[] | null): DockerSummary | null {
   return { up: rows.length - down.length - stopped.length, total: rows.length, down, stopped }
 }
 
+// ── 서버 상세 칸 읽기 ──
+const LOOPBACK = /^(127\.|::1$|\[::1\]$|localhost$)|%lo$/
+// pid → 서비스(ps -eo pid=,unit= 중 .service)
+function unitsByPid(lines: string[] | undefined): Map<number, string> {
+  const units = new Map<number, string>()
+  for (const line of lines || []) {
+    const [pid, unit] = line.split(/\s+/)
+    if (pid && unit && /^\d+$/.test(pid) && unit.endsWith('.service')) units.set(Number(pid), unit.replace(/\.service$/, ''))
+  }
+  return units
+}
+// ss -ltnupH 한 줄: proto state recv send 주소:포트 상대 users:(("이름",pid=N,fd=N),…) — 같은 포트 · 주소는 한 번만
+function openPorts(lines: string[] | undefined, units: Map<number, string>): OpenPort[] | null {
+  if (!lines) return null
+  const ports: OpenPort[] = []
+  const seen = new Set<string>()
+  for (const line of lines) {
+    const cells = line.split(/\s+/)
+    const proto = cells[0]
+    const local = cells[4] || ''
+    const split = local.lastIndexOf(':')
+    const port = Number(local.slice(split + 1))
+    if ((proto !== 'tcp' && proto !== 'udp') || split <= 0 || !Number.isInteger(port) || port <= 0) continue
+    const address = local.slice(0, split)
+    const key = `${proto} ${address} ${port}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    const user = /\("([^"]*)",pid=(\d+)/.exec(line)
+    ports.push({ proto, address, port, process: user ? user[1]! : null, unit: user ? units.get(Number(user[2])) ?? null : null, public: !LOOPBACK.test(address) })
+  }
+  return ports
+}
+// systemctl list-units … --plain: 이름 load active sub 설명…
+function serviceInfo(lines: string[] | undefined, ports: OpenPort[] | null): ServiceInfo[] | null {
+  if (!lines) return null
+  return lines
+    .map((line) => line.split(/\s+/))
+    .filter((cells) => (cells[0] || '').endsWith('.service'))
+    .map((cells) => {
+      const name = cells[0]!.replace(/\.service$/, '')
+      const owned = (ports || []).filter((port) => port.unit === name).map((port) => port.port)
+      return { name, description: cells.slice(4).join(' ') || null, ports: [...new Set(owned)].sort((left, right) => left - right) }
+    })
+}
+// "Wed 2026-11-11 11:30:00 UTC" → ISO(UTC · GMT 만)
+const TIMER_TIME = /\b\w{3} (\d{4}-\d\d-\d\d) (\d\d:\d\d:\d\d) (\S+)/g
+function timerRows(lines: string[] | undefined): TimerRow[] | null {
+  if (!lines) return null
+  const rows: TimerRow[] = []
+  for (const line of lines) {
+    const cells = line.split(/\s+/)
+    const timerAt = cells.findIndex((cell) => cell.endsWith('.timer'))
+    if (timerAt < 0) continue
+    const times = [...line.slice(0, line.indexOf(cells[timerAt]!)).matchAll(TIMER_TIME)].map((match) => (match[3] === 'UTC' || match[3] === 'GMT' ? `${match[1]}T${match[2]}Z` : null))
+    // 앞이 "-"(다음 차례 없음 · n/a)면 시각이 하나뿐이고 그것이 last
+    const startsWithTime = /^\w{3} \d{4}-/.test(line)
+    const next = startsWithTime ? (times[0] ?? null) : null
+    const last = startsWithTime ? (times[1] ?? null) : (times[0] ?? null)
+    const activates = cells[timerAt + 1]
+    rows.push({ unit: cells[timerAt]!.replace(/\.timer$/, ''), activates: activates ? activates.replace(/\.service$/, '') : null, next, last })
+  }
+  return rows
+}
+// crontab: "분 시 일 월 요일 명령" · "@reboot 명령" — 명령은 경로 끝 이름만
+function cronRows(lines: string[] | undefined): CronRow[] | null {
+  if (!lines) return null
+  return lines.map((line) => {
+    const cells = line.split(/\s+/)
+    const width = cells[0]!.startsWith('@') ? 1 : 5
+    const word = cells[width]
+    const command = word && !word.includes('=') ? word.split('/').pop() || null : null
+    return { schedule: cells.slice(0, width).join(' '), command }
+  })
+}
+// ufw status 첫 줄 "Status: active"
+function ufwState(lines: string[] | undefined): 'active' | 'inactive' | null {
+  const state = /^Status:\s*(\w+)/.exec((lines || [])[0] || '')?.[1]
+  return state === 'active' || state === 'inactive' ? state : null
+}
+// "monarx-agent.service enabled enabled" 다음 줄이 is-active 값 — 유닛 줄이 없으면 설치 안 됨
+function monarxState(lines: string[] | undefined): string | null {
+  if (!lines || !lines[0]?.startsWith('monarx-agent.service')) return null
+  return /^[a-z-]+$/.test(lines[1] || '') ? lines[1]! : null
+}
+const proxyPort = (target: string | undefined): number | null => {
+  const port = Number(/:(\d+)\/?$/.exec(target || '')?.[1])
+  return Number.isInteger(port) && port > 0 ? port : null
+}
+// Caddyfile 줄(grep -n): "줄:글". 들여쓰지 않고 { 로 끝나는 줄이 사이트 머리(스니펫 (이름) · 전역 { 빼고) ·
+// 머리 바로 위로 이어진 주석의 첫 줄이 설명 · 그 뒤 reverse_proxy · root 는 마지막 머리의 것
+function caddySites(lines: string[] | undefined): SiteRow[] | null {
+  if (!lines) return null
+  const sites: SiteRow[] = []
+  let comments: { at: number; text: string }[] = []
+  let current: SiteRow | null = null
+  for (const raw of lines) {
+    const match = /^(\d+):(.*)$/.exec(raw)
+    if (!match) continue
+    const at = Number(match[1])
+    const body = match[2]!
+    const text = body.trim()
+    if (/^#/.test(body)) {
+      // 끊긴 주석 덩어리는 새로 시작
+      if (comments.length && comments[comments.length - 1]!.at !== at - 1) comments = []
+      comments.push({ at, text: text.replace(/^#+\s*/, '') })
+      continue
+    }
+    if (/^\S/.test(body) && text.endsWith('{') && !text.startsWith('(') && !text.startsWith('import')) {
+      const addresses = text.slice(0, -1).split(/[\s,]+/).filter(Boolean)
+      const block = comments.length && comments[comments.length - 1]!.at === at - 1 ? comments : []
+      const first = block.find((line) => line.text)
+      current = { addresses, description: first ? first.text : null, ports: [], static: false, source: 'caddy' }
+      if (addresses.length) sites.push(current)
+      comments = []
+      continue
+    }
+    comments = []
+    if (!current) continue
+    const cells = text.replace(/\s+#.*$/, '').split(/\s+/)
+    if (cells[0] === 'reverse_proxy') {
+      for (const target of cells.slice(1)) {
+        const port = proxyPort(target)
+        if (port !== null && !current.ports.includes(port)) current.ports.push(port)
+      }
+    } else if (cells[0] === 'root') current.static = true
+  }
+  return sites
+}
+// nginx -T 중 server_name 줄마다 사이트 하나(설명 없음) — 앞뒤 listen · root 는 서버 블록을 가르지 못해 읽지 않는다
+function nginxSites(lines: string[] | undefined): SiteRow[] | null {
+  if (!lines) return null
+  return lines
+    .filter((line) => /^server_name\s/.test(line))
+    .map((line) => line.replace(/^server_name\s+/, '').replace(/;.*$/, '').split(/\s+/).filter((name) => name && name !== '_'))
+    .filter((addresses) => addresses.length)
+    .map((addresses) => ({ addresses, description: null, ports: [], static: false, source: 'nginx' as const }))
+}
+function serverDetail(found: Map<string, string[]>): ServerDetail {
+  const ports = openPorts(found.get('ports'), unitsByPid(found.get('units')))
+  const caddy = caddySites(found.get('caddy'))
+  const nginx = nginxSites(found.get('nginx'))
+  const model = /^Model name:\s*(.+)$/.exec((found.get('cpumodel') || [])[0] || '')?.[1]?.trim()
+  return {
+    ports,
+    cpuModel: model || null,
+    serviceInfo: serviceInfo(found.get('servicedesc'), ports),
+    timers: timerRows(found.get('timers')),
+    cron: cronRows(found.get('cron')),
+    ufw: ufwState(found.get('ufw')),
+    monarx: monarxState(found.get('monarx')),
+    // 칸이 있어도 비었으면(파일 없음 · 웹 서버 없음) 둘 다 [] — 옛 코어(칸 없음)만 null
+    sites: caddy || nginx ? [...(caddy || []), ...(nginx || [])] : null,
+  }
+}
+
 // ssh-run.sh --status 의 출력(끝 칸 "==end" 까지 와야 다 읽은 것) — 모자라면 null
 export function parseStatus(output: string): ServerHealth | null {
   const found = sections(output)
@@ -452,6 +628,7 @@ export function parseStatus(output: string): ServerHealth | null {
     detected: unreadable(found, { podman: podman !== null, kubectl: pods !== null, supervisorctl: supervisor !== null, pm2: pm2 !== null }),
     errors: toNumber((found.get('errors') || [])[0]),
     updates: toNumber((found.get('updates') || [])[0]),
+    ...serverDetail(found),
   }
 }
 

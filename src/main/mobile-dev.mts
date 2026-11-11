@@ -3,9 +3,13 @@
 // 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 루프백 ws 주소.
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
+import fs from 'node:fs'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
-import { createMobileBridge, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
+import * as core from '../lib/core.mts'
+import { createMobileBridge, createMergeDetails, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
+import type { MergeRunner } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
 import { createMobileRelay } from './mobile-relay.mts'
@@ -45,7 +49,7 @@ type FrontCtx = {
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
   approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
-  serverStatus?: () => Promise<{ servers: unknown[] }>
+  serverStatus?: () => Promise<{ servers: unknown[]; history?: Record<string, unknown[]>; sar?: Record<string, unknown[]> }>
   packState: { current?: { id?: unknown } | null; packs?: unknown }
   mergeSettings(): Promise<unknown>
   setAutoMerge(repo: string, values: RepoChanges): Promise<unknown>
@@ -75,6 +79,38 @@ type DevDeps = {
   onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
   log?: (line: string) => void
 }
+
+// 본체 실제 경로 → 팩 id — 데몬 작업 공간의 body(앱이 realDir 로 묶은 본체)와 견준다
+export function bodyPacks(state: FrontCtx['packState'] | null): Record<string, string> {
+  const packs = state && Array.isArray(state.packs) ? (state.packs as { id?: unknown; body?: unknown }[]) : []
+  const found: Record<string, string> = {}
+  for (const pack of packs) {
+    if (!pack || typeof pack.id !== 'string' || !pack.id || typeof pack.body !== 'string' || !pack.body) continue
+    let body = path.resolve(pack.body)
+    try {
+      body = fs.realpathSync(body)
+    } catch {}
+    found[body] = pack.id
+  }
+  return found
+}
+
+// 서버 상세 칸 — snapshot 의 servers 에는 넣지 않는다(크다 · 서버 화면을 열 때 server.detail 로)
+const DETAIL_KEYS = ['ports', 'cpuModel', 'serviceInfo', 'timers', 'cron', 'ufw', 'monarx', 'sites']
+export function serverSummary(reading: unknown): unknown {
+  if (!reading || typeof reading !== 'object') return reading
+  const status = (reading as { status?: unknown }).status
+  if (!status || typeof status !== 'object') return reading
+  const light = { ...(status as Record<string, unknown>) }
+  for (const key of DETAIL_KEYS) delete light[key]
+  return { ...(reading as object), status: light }
+}
+
+// 머지 상세 읽기 — 셸 없이 인자로만 · 20초 · 실패는 null(gh 로그인 안 됨 · 커밋 없음 등)
+const runMergeCommand: MergeRunner = (command, args, cwd) =>
+  new Promise((resolve) => {
+    execFile(command, args, { cwd, env: core.childEnv(process.env), encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout))
+  })
 
 // 화면(팩 레일 프로필 · 메뉴 · 디바이스 창 · [허용] 창)에 넘기는 것 — 토큰 · 열쇠 · 계정 id 는 넣지 않는다
 export type MobileView = {
@@ -121,7 +157,21 @@ export function startMobileDev(deps: DevDeps) {
     onChange: deps.onChange,
     onPairRequest: deps.onPairRequest,
     onSignedOut: (why) => deps.onLoginFailed(why === 'expired' ? 'expired_session' : 'account_deleted'),
-    createBridge: (transport) =>
+    createBridge: (transport) => newBridge(transport),
+  })
+  // 머지는 바뀌지 않으니 상세는 기기끼리 같이 쓴다(앞 창 본체가 바뀌면 키 — 레포#PR — 가 같아도 다른 레포일 수 있어 본체마다 따로)
+  const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
+  const mergeDetails = () => {
+    const dir = front()?.athenaDir || ''
+    let cache = mergeCaches.get(dir)
+    if (!cache) {
+      cache = createMergeDetails({ athenaDir: () => dir || null, run: runMergeCommand })
+      mergeCaches.set(dir, cache)
+    }
+    return cache
+  }
+  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport']) {
+    return (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
@@ -133,8 +183,25 @@ export function startMobileDev(deps: DevDeps) {
         servers: async () => {
           const ctx = front()
           if (!ctx || !ctx.serverStatus) return []
-          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers
+          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
         },
+        serverDetail: async (name) => {
+          const ctx = front()
+          if (!ctx || !ctx.serverStatus) return null
+          const all = await ctx.serverStatus().catch(() => null)
+          const server = all ? all.servers.find((reading) => Boolean(reading) && (reading as { name?: unknown }).name === name) : undefined
+          if (!all || !server) return null
+          return { server, history: (all.history && all.history[name]) || [], sar: (all.sar && all.sar[name]) || [] }
+        },
+        bodyPacks: () => {
+          const ctx = front()
+          return bodyPacks(ctx ? ctx.packState : null)
+        },
+        get mergeDetails() {
+          return mergeDetails()
+        },
+        mac: () => ({ name: deps.macName() }),
+        devices: () => relay.devices(),
         events: async () => {
           const ctx = front()
           const events = await eventsModule(ctx && ctx.athenaDir)
@@ -184,8 +251,9 @@ export function startMobileDev(deps: DevDeps) {
           return (await ctx.packOpen(id)) as PackResultLike
         },
         logEvent,
-      }),
-  })
+      })
+    )
+  }
   const login = createLoginFlow({
     base: deps.options.base,
     fetch: deps.fetch,
