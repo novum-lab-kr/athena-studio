@@ -404,7 +404,7 @@ def check_free(name, args, cwds):
 
 def cp_landing(args):
     """cp 가 실제로 쓰는 곳 — 목적지가 폴더면 폴더 + 원본 이름(cp /tmp/rc.local /etc → /etc/rc.local · -t 폴더도).
-    재귀(-r · -R · -a · --recursive · --archive)는 하위에 생길 경로를 다 판정 못 하니 확인(2026-11-11 자동 리뷰 #287)"""
+    재귀(-r · -R · -a · --recursive · --archive) · 원본 경로째(--parents)는 하위에 생길 경로를 다 판정 못 하니 확인(2026-11-11 자동 리뷰 #287)"""
     names, folder, index, ended = [], None, 0, False
     while index < len(args):
         arg = args[index]
@@ -419,6 +419,9 @@ def cp_landing(args):
             option, _, value = arg.partition('=')
             if len(option) > 2 and ('--recursive'.startswith(option) or '--archive'.startswith(option)):
                 return f'cp {option}(재귀 복사 — 하위에 생길 경로를 다 판정 못 한다)', []
+            if len(option) > 3 and '--parents'.startswith(option):
+                # 원본 경로를 목적지 아래에 그대로 만든다(cp --parents ssh/sshd_config /etc → /etc/ssh/sshd_config) — 2026-11-11 보안 재검토
+                return f'cp {option}(원본 경로째 복사 — 실제 쓰는 곳을 다 판정 못 한다)', []
             if len(option) > 3 and '--target-directory'.startswith(option):
                 if not value and index < len(args):
                     value = args[index]

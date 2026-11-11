@@ -405,6 +405,8 @@ cp -r /tmp/x /srv/app
 cp -a /srv/a /srv/b
 cp --recursive /tmp/x /srv
 cp -Rf /tmp/x /srv
+cp --parents ssh/sshd_config /etc
+cp --par ssh/sshd_config /etc
 git stash
 git stash --include-untracked
 git stash -u
