@@ -18,6 +18,12 @@
    Checkpoint 에 없을 수 있어 /clear 를 넣지 않고 끝낸다 · /clear 직전에 계획서 "- Updated:" 가 예약 때보다 앞서지 않았는지 다시 본다.
    /clear 뒤 재개를 기다리는 동안 · 넣기 직전에 대화가 감지한 새 대화와 다르거나 새 입력이 들어왔으면(사용자가 직접 /new · 새 일) 넣지 않는다.
    결과는 사건 기록(lead.fresh)에 남긴다
+에이전트 pane(ATHENA_AGENT · 역할 agent — 리뷰어는 안 된다)도 같은 뼈대로 새로 시작한다(2026-11-11 사용자 결정 — 에이전트는 묻지 않고 자동 · 묻는 것은 아테나만).
+   압축 경고 훅이 단계 끝에 Checkpoint 를 갱신하고 부르라고 알려 준다. 리드와 다른 점:
+   사용자가 그 pane 을 보고 있으면(pane focused) 넣지 않고 기다린다 · 지운 뒤 계획서 Lead session 은 옮기지 않는다(아테나 대화다) ·
+   대신 아테나(계획서 "- Lead pane:")에 "📦 <pane> 새로 시작 — <계획서>" 한 줄(lead-send.py --note — 끝 알림 받음 확인 · 그 차례의 직접 보고로 치지 않는다) ·
+   재개 지시는 "<계획서> 이어서 — Checkpoint 부터 읽고 진행". 끝 알림 차례 상태(state/agent-turn · agent-notify) · pane 기록 · 보호 훅은
+   pane · 환경 기준이라 대화가 바뀌어도 이어진다
 화면은 scripts/lib/screen.py 로만. 입력칸 읽기는 앱 src/lib/pane-submit.mts inputOf 와 같은 규칙(Claude ❯ ~ 가로선 · Codex › ~ 빈 줄).
 종료 코드: 0 = 처리기를 띄웠다 · 1 = 확인 실패(이유를 찍는다) · 2 = 사용법
 """
@@ -44,6 +50,18 @@ POLL_SECONDS = float(os.environ.get('ATHENA_LEAD_FRESH_POLL') or pane_request.PO
 GIVE_UP_SECONDS = pane_request.GIVE_UP_SECONDS
 SESSION_WAIT_SECONDS = 120   # /clear 뒤 새 대화가 pane 기록에 적히기를 기다리는 한도
 CLEAR_COMMAND = {'claude': '/clear', 'codex': '/new'}
+ROLES = ('lead', 'agent')
+NOTE_TIMEOUT = 30   # 아테나에 📦 한 줄 보내기(lead-send.py) 시간 상한 — 못 받으면 lead-send 가 모아 뒀다 넣는다
+
+
+def role_of() -> str:
+    """부른 쪽 — 'lead'(아테나) · 'agent'(위임 에이전트) · 'reviewer'(새로 시작하지 않는다). delegate.sh 가 ATHENA_ROLE 을 넘긴다"""
+    if not os.environ.get('ATHENA_AGENT'):
+        return 'lead'
+    role = os.environ.get('ATHENA_ROLE') or ''
+    if role == 'reviewer' or (not role and os.environ.get('ATHENA_AGENT') in ('reviewer', 'security-reviewer')):
+        return 'reviewer'
+    return 'agent'
 
 
 def pane_record(pane: str) -> dict:
@@ -111,8 +129,8 @@ def input_of(agent: str, text: str):
     return body
 
 
-def ready(pane: str, agent: str):
-    """넣어도 되나 — True · False(기다린다) · 'gone'(pane 이 없거나 다른 프로그램이 됐다)"""
+def ready(pane: str, agent: str, role: str = 'lead'):
+    """넣어도 되나 — True · False(기다린다) · 'gone'(pane 이 없거나 다른 프로그램이 됐다). 에이전트 pane 은 사용자가 보고 있으면(focused) 기다린다"""
     backend = screen.get_backend()
     try:
         info = backend.get_pane(pane)
@@ -121,6 +139,8 @@ def ready(pane: str, agent: str):
     if not isinstance(info, dict) or info.get('agent') != agent:
         return 'gone'
     if info.get('agent_status') != 'idle':
+        return False
+    if role == 'agent' and info.get('focused'):
         return False
     if pane_request.pane_menu(pane) is not False:
         return False
@@ -131,7 +151,7 @@ def ready(pane: str, agent: str):
     return input_of(agent, screen_text) == ''
 
 
-def wait_ready(pane: str, agent: str, deadline: float, guard) -> str:
+def wait_ready(pane: str, agent: str, deadline: float, guard, role: str = 'lead') -> str:
     """연달아 두 번 쉬면 '' — 도구 사이 잠깐 쉬는 때에 넣지 않게. 아니면 멈춘 이유:
     guard() 가 돌려준 이유(새 입력 · 다른 대화) · 'gone'(pane 이 없어짐) · 'gave-up'(한도를 넘김)"""
     calm = 0
@@ -139,7 +159,7 @@ def wait_ready(pane: str, agent: str, deadline: float, guard) -> str:
         reason = guard()
         if reason:
             return reason
-        state = ready(pane, agent)
+        state = ready(pane, agent, role)
         if state == 'gone':
             return 'gone'
         calm = calm + 1 if state is True else 0
@@ -165,9 +185,36 @@ def log_event(result: str, pane: str, plan: str) -> None:
         pass
 
 
-def resume_text(plan: str) -> str:
+def resume_text(plan: str, role: str = 'lead') -> str:
+    if role == 'agent':
+        return f'{plan} 이어서 — Checkpoint 부터 읽고 진행(대화가 커져 새로 시작했다 · scripts/lead-fresh.py)'
     return (f'{plan} 이어서 하자 — 대화가 커져 새로 시작했다(scripts/lead-fresh.py). '
             '이 계획서 Checkpoint(Status · Progress · Next · Blocked)와 리드 기록부터 읽고, 맡긴 pane 의 상태를 확인한 뒤 이어 간다')
+
+
+def plan_lead(plan: str) -> str:
+    """계획서 Checkpoint "- Lead pane:" — 없거나 모양이 틀리면 ''"""
+    path = plan_path(plan)
+    if path is None:
+        return ''
+    try:
+        found = re.search(r'^- Lead pane:[ \t]*(\S+)', path.read_text(encoding='utf-8'), re.M)
+    except OSError:
+        return ''
+    return found.group(1) if found and PANE_ID.fullmatch(found.group(1)) else ''
+
+
+def notify_lead(pane: str, plan: str) -> None:
+    """에이전트 pane 을 지운 뒤 아테나에 한 줄 — lead-send.py --note(못 받으면 모아 뒀다 넣는다 · 받음 확인 · 직접 보고로 치지 않는다).
+    실패해도 무시한다(새로 시작은 그대로 이어 간다)"""
+    lead = plan_lead(plan)
+    if not lead or lead == pane:
+        return
+    try:
+        subprocess.run([sys.executable, str(ATHENA_DIR / 'scripts' / 'lead-send.py'), lead, f'📦 {pane} 새로 시작 — {plan}', '--plan', plan, '--note'],
+                       stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=NOTE_TIMEOUT)
+    except (OSError, subprocess.SubprocessError):
+        pass
 
 
 def before_clear(pane: str, old: str, mark: str) -> str:
@@ -191,10 +238,10 @@ def checkpoint_kept(plan: str, stamp: str) -> bool:
     return bool(now_stamp) and now_stamp >= stamp
 
 
-def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) -> str:
-    """처리기 본문 — 결과 한 낱말(사건 기록에 남긴다). mark = 예약 때 pane 기록(대화@마지막 입력) · stamp = 예약 때 Checkpoint 시각"""
+def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str, role: str = 'lead') -> str:
+    """처리기 본문 — 결과 한 낱말(사건 기록에 남긴다). mark = 예약 때 pane 기록(대화@마지막 입력) · stamp = 예약 때 Checkpoint 시각 · role = lead · agent"""
     deadline = time.monotonic() + GIVE_UP_SECONDS
-    reason = wait_ready(pane, agent, deadline, lambda: before_clear(pane, old, mark))
+    reason = wait_ready(pane, agent, deadline, lambda: before_clear(pane, old, mark), role)
     if reason:
         return reason
     # 넣기 직전에 한 번 더 — 기다리는 사이 마지막 읽기 뒤에 바뀌었을 수 있다
@@ -226,27 +273,30 @@ def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) ->
         time.sleep(POLL_SECONDS)
     if not new or new == old:
         return 'no-new-session'
-    rebind_session(pane, old, new, plan)
+    if role == 'agent':
+        notify_lead(pane, plan)   # 에이전트 계획서의 Lead session 은 아테나 대화라 옮기지 않는다
+    else:
+        rebind_session(pane, old, new, plan)
 
     def before_resume() -> str:
         # 사용자가 직접 새 대화를 열었거나(/new) 새 대화에서 다른 일을 시켰으면 재개 지시를 넣지 않는다
         if pane_session(pane) != new:
             return 'user-new'
         return 'new-input' if pane_mark(pane) != fresh_mark else ''
-    reason = wait_ready(pane, agent, deadline, before_resume)
+    reason = wait_ready(pane, agent, deadline, before_resume, role)
     if reason:
         return f'resume-{reason}'
     reason = before_resume()
     if reason:
         return f'resume-{reason}'
     try:
-        backend.run(pane, [resume_text(plan)])
+        backend.run(pane, [resume_text(plan, role)])
     except Exception:
         return 'resume-failed'
     return 'done'
 
 
-def run_worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) -> None:
+def run_worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str, role: str = 'lead') -> None:
     base = pane_request.pack_state() or ATHENA_DIR
     folder = base / 'lead-fresh'
     folder.mkdir(parents=True, exist_ok=True)
@@ -256,15 +306,16 @@ def run_worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str
     except OSError:
         return  # 이 pane 의 처리기가 이미 돈다
     try:
-        result = worker(pane, agent, plan, old, mark, stamp)
+        result = worker(pane, agent, plan, old, mark, stamp, role)
     except Exception:
         result = 'error'
     log_event(result, pane, plan)
 
 
 def start(plan: str) -> int:
-    if os.environ.get('ATHENA_AGENT'):
-        print('아테나(리드) pane 에서만 부른다 — 위임 에이전트는 쓰지 않는다', file=sys.stderr)
+    role = role_of()
+    if role not in ROLES:
+        print('아테나 · 위임 에이전트 pane 에서만 부른다 — 리뷰어는 쓰지 않는다', file=sys.stderr)
         return 1
     info = screen.self_info()
     pane = str(info.get('pane_id') or '')
@@ -291,18 +342,22 @@ def start(plan: str) -> int:
     if not old:
         print('이 pane 의 대화 기록(state/pane-sessions)을 찾지 못했다', file=sys.stderr)
         return 1
-    subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), '--worker', pane, agent, plan, old, pane_mark(pane), updated_stamp(text)],
+    subprocess.Popen([sys.executable, str(pathlib.Path(__file__).resolve()), '--worker', pane, agent, plan, old, pane_mark(pane), updated_stamp(text), role],
                      stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
     print(f'📦 대화가 커져 새로 시작합니다 — {plan}')
-    print('  (이 턴이 끝나 입력칸이 비면 /clear 뒤 재개 지시를 넣는다 — 이 줄을 사용자에게 그대로 알리고 턴을 끝낸다)')
+    if role == 'agent':
+        print('  (이 턴이 끝나 입력칸이 비고 사용자가 이 pane 을 보고 있지 않으면 대화를 비우고 재개 지시를 넣는다 — 이 줄만 알리고 턴을 끝낸다)')
+    else:
+        print('  (이 턴이 끝나 입력칸이 비면 /clear 뒤 재개 지시를 넣는다 — 이 줄을 사용자에게 그대로 알리고 턴을 끝낸다)')
     return 0
 
 
 def main(argv) -> int:
-    if len(argv) == 7 and argv[0] == '--worker':
-        pane, agent, plan, old, mark, stamp = argv[1:]
-        if PANE_ID.fullmatch(pane) and agent in CLEAR_COMMAND:
-            run_worker(pane, agent, plan, old, mark, stamp)
+    if len(argv) in (7, 8) and argv[0] == '--worker':
+        pane, agent, plan, old, mark, stamp = argv[1:7]
+        role = argv[7] if len(argv) == 8 else 'lead'
+        if PANE_ID.fullmatch(pane) and agent in CLEAR_COMMAND and role in ROLES:
+            run_worker(pane, agent, plan, old, mark, stamp, role)
         return 0
     if len(argv) == 2 and argv[0] == '--plan' and argv[1].strip():
         return start(argv[1].strip())

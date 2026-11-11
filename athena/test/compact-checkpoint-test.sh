@@ -201,7 +201,17 @@ code, out = run("warn", {**payload, "session_id": "s-8f"})
 check("pane 을 모르면(lead-fresh.py 가 못 돈다) 묻지 않는다", out != "" and "lead-fresh.py" not in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9"}, env_extra={"ATHENA_AGENT": "fe"})
 check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "lead-log.mjs" not in out, out)
-check("위임 에이전트 알림은 스스로 새로 시작하라고 하지 않는다", "lead-fresh.py" not in out, out)
+check("pane 을 모르는 위임 에이전트 알림은 스스로 새로 시작하라고 하지 않는다", "lead-fresh.py" not in out, out)
+# 에이전트 pane 은 묻지 않고 스스로 새로 시작한다(2026-11-11 사용자 결정 — 묻는 것은 아테나만)
+code, out = run("warn", {**payload, "session_id": "s-9a"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
+check("에이전트 pane 알림은 Checkpoint(미커밋 상태 포함)를 갱신하고 lead-fresh.py --plan 을 부르라고 한다",
+      "lead-fresh.py" in out and "--plan" in out and "미커밋" in out and "Checkpoint" in out
+      and out.index("Checkpoint") < out.index("lead-fresh.py"), out)
+check("에이전트 pane 알림은 사용자에게 묻지 않는다", "AskUserQuestion" not in out and "묻지 않는다" in out and "lead-log.mjs" not in out, out)
+code, out = run("warn", {**payload, "session_id": "s-9b"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
+check("에이전트 pane 은 새 세션마다 다시 알린다(묻는 것이 아니라 30분 쉬기 없음)", "lead-fresh.py" in out, out)
+code, out = run("warn", {**payload, "session_id": "s-9c"}, pane="p42", env_extra={"ATHENA_AGENT": "reviewer", "ATHENA_ROLE": "reviewer"})
+check("리뷰어 pane 은 스스로 새로 시작하라고 하지 않는다", out != "" and "lead-fresh.py" not in out, out)
 
 print("세션 첫 도구 뒤 — 첫 응답이 기록에 늦게 쓰인다")
 # 2026-11-07 대화형 claude 실측: 첫 PostToolUse 훅이 돌 때 그 도구를 부른 응답이 아직 기록에 없다(60ms 뒤 쓰임) · 예전엔 56,439 를 놓쳤다
