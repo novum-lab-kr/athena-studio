@@ -226,6 +226,12 @@ elif a[:2] == ['pane','run']:
         text = got['args'][-1] if got else ''
         check(f'{engine} — 채워진 지시 절 · 지시문 없음 → 기다리지 않고 진행', result.returncode == 0 and got and got['bootstrap'] == '0'
               and '지금은 지시가 없다' not in text and "'## 지시' 절이 할 일이다" in text)
+        result, got, calls = run(engine, prompt=None, order='\n## 지시\n> 날짜를 YYYY-MM-DD 형식으로 표시한다 · (지시문 없음 표시는 지운다)\n\n## 결과\n- \n')
+        text = got['args'][-1] if got else ''
+        check(f'{engine} — 지시 글에 YYYY-MM-DD · 지시문 없음 낱말이 있어도 진행', result.returncode == 0 and got and got['bootstrap'] == '0' and '지금은 지시가 없다' not in text)
+        result, got, calls = run(engine, prompt=None, order='\n## 지시\n요청(YYYY-MM-DD): 한두 줄 요약 (←1)\n- 할 것:\n- 멈춤: 없음\n<!-- 주석 -->\n\n## 결과\n- \n')
+        text = got['args'][-1] if got else ''
+        check(f'{engine} — 정식 빈 틀 지시 절 → 요청을 기다린다', result.returncode == 0 and got and got['bootstrap'] == '1' and '지금은 지시가 없다' in text)
         result, got, calls = run(engine, prompt=None, order='\n## 지시\n> (지시문 없음 — pane 에서 대화로 지시)\n\n## 결과\n- \n')
         text = got['args'][-1] if got else ''
         check(f'{engine} — 빈 틀 지시 절 → 요청을 기다린다', result.returncode == 0 and got and got['bootstrap'] == '1' and '지금은 지시가 없다' in text)

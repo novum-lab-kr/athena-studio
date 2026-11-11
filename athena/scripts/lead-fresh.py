@@ -35,8 +35,7 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
 import pane_request  # noqa: E402 — 선택 창(pane_menu) · 기다리는 값 · 팩 데이터 자리
-from reuse_link import pane_lock  # noqa: E402 — lead-send 대기열 · 기록과 같은 잠금
-from plan_update import update_plan  # noqa: E402 — 계획서 고치기(잠금 · 바꿔치기)
+import lead_rebind  # noqa: E402 — 대화가 바뀐 뒤 계획서 Lead session · lead-send 대기열 옮기기
 import lead_fresh_mark  # noqa: E402 — 물은 때 · 지운 때(30분 안에는 다시 묻지 않는다)
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
@@ -45,7 +44,6 @@ POLL_SECONDS = float(os.environ.get('ATHENA_LEAD_FRESH_POLL') or pane_request.PO
 GIVE_UP_SECONDS = pane_request.GIVE_UP_SECONDS
 SESSION_WAIT_SECONDS = 120   # /clear 뒤 새 대화가 pane 기록에 적히기를 기다리는 한도
 CLEAR_COMMAND = {'claude': '/clear', 'codex': '/new'}
-CLOSED_STATUS = ('done', 'cancelled')
 
 
 def pane_record(pane: str) -> dict:
@@ -152,53 +150,10 @@ def wait_ready(pane: str, agent: str, deadline: float, guard) -> str:
 
 
 def rebind_session(pane: str, old: str, new: str, plan: str = '') -> int:
-    """옛 대화를 가리키던 계획서 Lead session · 모아 둔 lead-send 글을 새 대화로 — 옮긴 계획서 수.
-    넘긴 계획서(plan)는 이 아테나 pane 것이면 Lead session 이 옛 대화가 아니어도 옮긴다 — 사용자가 손으로 /clear · /new 하면
-    아무도 Lead session 을 고치지 않아(delegate.sh 만 적는다) 이미 그 전 대화를 가리키고 있을 수 있다(2026-11-11 p1m —
-    그 뒤 에이전트 보고가 "담당 대화가 바뀌었다" 로 막혔다). 방금 Checkpoint 를 갱신하고 넘긴 계획서라 이 아테나가 맡은 것이 확실하다.
-    다른 계획서는 어느 대화 것인지 알 수 없어 옛 대화와 같을 때만 옮긴다"""
-    named = plan_path(plan)
-    named = named.resolve() if named else None
-    moved = 0
-    for path in sorted((ATHENA_DIR / 'plans').rglob('*.md')):
-        try:
-            text = path.read_text(encoding='utf-8')
-        except OSError:
-            continue
-        lead = re.search(r'^- Lead pane:[ \t]*(\S+)', text, re.M)
-        status = re.search(r'^- Status:[ \t]*(\S+)', text, re.M)
-        if not lead or lead.group(1) != pane:
-            continue
-        if status and status.group(1) in CLOSED_STATUS:
-            continue
-        # 넘긴 계획서는 어느 대화를 가리키든 · 다른 계획서는 옛 대화를 가리킬 때만
-        target = r'\S+' if named is not None and path.resolve() == named else re.escape(old)
-        if not re.search(rf'^- Lead session:[ \t]*{target}[ \t]*$', text, re.M):
-            continue
-
-        def swap(current: str, target=target):
-            changed = re.sub(rf'^- Lead session:[ \t]*{target}[ \t]*$', f'- Lead session: {new}', current, count=1, flags=re.M)
-            return changed if changed != current else None
-        try:
-            update_plan(str(path), swap)
-            moved += 1
-        except Exception:
-            pass
-    base = pane_request.pack_state()
-    queue = base / 'lead-send' if base else None
-    if queue and queue.is_dir():
-        with pane_lock(queue, pane):
-            for entry_path in sorted(queue.glob(f'{pane}-*.json')):
-                try:
-                    entry = json.loads(entry_path.read_text(encoding='utf-8'))
-                except (OSError, ValueError):
-                    continue
-                if entry.get('session') == old:
-                    entry['session'] = new
-                    temp = entry_path.with_name(f'.{entry_path.name}.tmp')
-                    temp.write_text(json.dumps(entry, ensure_ascii=False) + '\n', encoding='utf-8')
-                    os.replace(temp, entry_path)
-    return moved
+    """옛 대화를 가리키던 계획서 Lead session · 모아 둔 lead-send 글을 새 대화로 — 옮긴 계획서 수(lib/lead_rebind.py).
+    넘긴 계획서(plan)는 이 아테나 pane 것이면 Lead session 이 옛 대화가 아니어도 옮긴다 — 방금 Checkpoint 를 갱신하고 넘긴
+    계획서라 이 아테나가 맡은 것이 확실하다. 사용자가 손으로 /clear · /new 한 때는 pane-session.py 가 같은 함수로 옮긴다"""
+    return lead_rebind.rebind(pane, old, new, plan_path(plan))
 
 
 def log_event(result: str, pane: str, plan: str) -> None:

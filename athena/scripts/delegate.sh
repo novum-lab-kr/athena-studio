@@ -225,13 +225,14 @@ for issue_path in $(sed -n 's/^- Issue:[[:space:]]*//p' "$ATHENA_DIR/$PLAN" | he
   PLAN_ISSUE="${PLAN_ISSUE:+$PLAN_ISSUE · }$issue_path"
   PLAN_ISSUE_PATHS="${PLAN_ISSUE_PATHS:+$PLAN_ISSUE_PATHS · }$ATHENA_DIR/$issue_path"
 done
-# 계획서 '## 지시' 절이 이미 채워졌나(new-plan.mjs --prompt-file 로 만든 계획서 등) — 빈 틀(경량 '(지시문 없음 …)' · 정식 'YYYY-MM-DD')이나 빈 줄 · 주석뿐이면 비었다
+# 계획서 '## 지시' 절이 이미 채워졌나(new-plan.mjs --prompt-file 로 만든 계획서 등) — 빈 틀 자리표시자 줄(경량 new-plan.mjs · 정식 docs/plan-template.md — 줄 전체가 같을 때만)이나 빈 줄 · 주석뿐이면 비었다
+# (지시 글에 'YYYY-MM-DD' 같은 낱말이 들어 있어도 채워진 것이다 — 줄 일부로 판정하면 실제 지시를 빈 것으로 봤다)
 # (2026-11-11 p4a — 지시가 적힌 계획서로 지시문 없이 띄워 "지금은 지시가 없다" 로 27분 기다렸다)
 PLAN_ORDER_FILLED=0
 if [ -z "$PROMPT" ] && awk '
   /^## / { inside = ($0 ~ /^## 지시[[:space:]]*$/); next }
   !inside || /^[[:space:]]*$/ || /^[[:space:]]*<!--/ { next }
-  /지시문 없음|YYYY-MM-DD/ { blank = 1; next }
+  $0 == "> (지시문 없음 — pane 에서 대화로 지시)" || $0 == "요청(YYYY-MM-DD): 한두 줄 요약 (←1)" { blank = 1; next }
   { filled = 1 }
   END { exit (filled && !blank) ? 0 : 1 }' "$ATHENA_DIR/$PLAN"; then
   PLAN_ORDER_FILLED=1

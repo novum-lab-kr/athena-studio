@@ -239,6 +239,50 @@ wait_until "[ \"\$(count '$WORK/sent' '^SENT p2 /new$')\" -ge 1 ]"
 check "Codex 에는 /new" "$(count "$WORK/sent" '^SENT p2 /new$')" 1
 check "Codex 에 /clear 는 넣지 않는다" "$(count "$WORK/sent" '/clear')" 0
 
+echo "▶ 사용자가 손으로 /clear(Codex /new) 하면 pane-session.py 가 Lead session · 대기열을 새 대화로 옮긴다(2026-11-11 p1m)"
+reset
+mkdir -p "$BODY/scripts/hooks"
+cp "$SRC/scripts/hooks/pane-session.py" "$BODY/scripts/hooks/"
+OLD_SID=aaaaaaaa-1111-2222-3333-444444444444; NEW_SID=bbbbbbbb-1111-2222-3333-444444444444
+hook() {   # <source> <session> [추가 환경…] — 아테나 pane p1 의 SessionStart 훅
+  local source="$1" session="$2"; shift 2
+  printf '{"session_id":"%s","source":"%s","cwd":"%s"}' "$session" "$source" "$BODY" \
+    | fresh "$@" python3 "$BODY/scripts/hooks/pane-session.py" >/dev/null 2>&1
+}
+hook_reset() {
+  printf '{"pane":"p1","session":"%s","agent":"athena"}\n' "$OLD_SID" > "$SESSIONS/p1.json"
+  write_plan main "$(now)" in_progress p1 "$OLD_SID"
+  write_plan done-plan "$(now)" done p1 "$OLD_SID"
+  write_plan other-pane "$(now)" in_progress p9 "$OLD_SID"
+  write_plan other-session "$(now)" in_progress p1 cccccccc-1111
+  printf '{"pane":"p1","session":"%s","text":"보고"}\n' "$OLD_SID" > "$QUEUE/p1-1.json"
+}
+hook_reset
+hook clear "$NEW_SID"
+check "pane 기록은 새 대화" "$(sed -n 's/.*"session": "\([^"]*\)".*/\1/p' "$SESSIONS/p1.json")" "$NEW_SID"
+check "진행 중 계획서 Lead session → 새 대화" "$(session_of main)" "$NEW_SID"
+check "끝난 계획서는 그대로" "$(session_of done-plan)" "$OLD_SID"
+check "다른 pane 계획서는 그대로" "$(session_of other-pane)" "$OLD_SID"
+check "다른 대화를 가리키던 계획서는 그대로" "$(session_of other-session)" cccccccc-1111
+check "모아 둔 lead-send 글도 새 대화" "$(count "$QUEUE/p1-1.json" "$NEW_SID")" 1
+hook_reset
+printf '{"session_id":"%s","source":"clear","cwd":"%s"}' "$NEW_SID" "$BODY" | fresh python3 "$BODY/scripts/hooks/pane-session.py" --tool=codex >/dev/null 2>&1
+check "Codex /new(source=clear)도 옮긴다" "$(session_of main)" "$NEW_SID"
+hook_reset
+hook startup "$NEW_SID"
+check "source=startup 이면 옮기지 않는다" "$(session_of main)" "$OLD_SID"
+hook_reset
+hook resume "$NEW_SID"
+check "source=resume 이면 옮기지 않는다" "$(session_of main)" "$OLD_SID"
+hook_reset
+hook clear "$NEW_SID" ATHENA_AGENT=athena-studio-fe
+check "위임 에이전트 pane 이면 옮기지 않는다" "$(session_of main)" "$OLD_SID"
+hook_reset
+rm -f "$SESSIONS/p1.json"
+hook clear "$NEW_SID"
+check "옛 pane 기록이 없으면 옮기지 않는다" "$(session_of main)" "$OLD_SID"
+rm -f "$BODY/plans/task/done-plan.md" "$BODY/plans/task/other-pane.md" "$BODY/plans/task/other-session.md"
+
 echo
 if [ "$FAIL" = 0 ]; then echo "✅ 통과"; else echo "❌ 실패"; fi
 exit "$FAIL"
