@@ -1096,7 +1096,27 @@ app.whenReady().then(async () => {
   // 메뉴 막대는 맥에서만(다른 OS 는 숨은 패널 창이 남아 창을 닫아도 앱이 안 꺼진다)
   if (isMac) createTray()
   app.on('activate', () => showWindow())
+  void startMobileDevIfAsked()
 })
+
+// 모바일 시험 2 — 격리 시험 앱에서 relay 주소를 줬을 때만(src/main/mobile-dev.mts). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐)
+let mobileDev: { stop(): Promise<void> } | null = null
+async function startMobileDevIfAsked(): Promise<void> {
+  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+  const { mobileDevOptions, startMobileDev, MOBILE_DEV_SKIPPED } = await import('./main/mobile-dev.mts')
+  const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, homeOverride: STUDIO_HOME_OVERRIDE })
+  if (!options) return console.log(MOBILE_DEV_SKIPPED)
+  mobileDev = startMobileDev({
+    options,
+    daemonPaths,
+    frontCtx: () => frontCtx() as unknown as ReturnType<Parameters<typeof startMobileDev>[0]['frontCtx']>,
+    config: () => config as unknown as Record<string, unknown> | null,
+    boardToken: async (athenaDir) => {
+      const reply = (await runPack(['board-token'], { dir: athenaDir })) as { ok?: boolean; token?: unknown }
+      return reply.ok && typeof reply.token === 'string' ? reply.token : null
+    },
+  })
+}
 
 // 창을 연 뒤 코어 업데이트 — 문이 닫혀 있는 동안 팩 명령 · 현황판 · 새 에이전트 시작은 기다린다(core-runner.mts updateGate)
 async function runCoreUpdateInBackground(): Promise<void> {
@@ -1136,12 +1156,14 @@ app.on('before-quit', (event) => {
     return
   }
   quitting = true
+  if (mobileDev) void mobileDev.stop()
   for (const ctx of packWindows) ctx.detachScreen()
 })
 // 배포판 업데이트(Squirrel.Mac quitAndInstall — src/lib/release-update.mts)는 창을 먼저 다 닫고 끈다 —
 // 맥 마지막 창 닫기를 숨기기로 바꾸는 가로채기(pack-window.mts 'close')에 막혀 교체가 멈추지 않게 그 전에 끄는 중으로
 autoUpdater.on('before-quit-for-update', () => {
   quitting = true
+  if (mobileDev) void mobileDev.stop()
   for (const ctx of packWindows) ctx.detachScreen()
 })
 
