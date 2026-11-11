@@ -717,7 +717,7 @@ function appMenu(): MenuItemConstructorOptions {
     role: 'appMenu',
     submenu: [
       { role: 'about', label: say('menu.app.about', { name }) },
-      // 제3자 고지 — 배포판에만 있다(scripts/package-mac.js 가 Resources 에 넣는다 · 약관 EULA 5절이 가리킨다)
+      // 제3자 고지 — 배포판에만 있다(scripts/package-mac.js 가 Resources 에 넣는다 · 약관 EULA 제10조가 가리킨다)
       ...(app.isPackaged ? [{ label: say('menu.app.notices'), click: () => openThirdPartyNotices() }] : []),
       { type: 'separator' },
       { role: 'services', label: say('menu.app.services') },
