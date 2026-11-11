@@ -477,6 +477,44 @@ test('맥 로그아웃 — remoteLogout 이 있으면 relay 에 먼저 보내고
   }
 })
 
+test('맥 로그아웃 — 누르지 않았는데 relay 가 4004 로 끊으면 로컬 토큰 · 허용 기기를 지우고 다시 붙지 않는다(오류 알림 없음)', async () => {
+  const work = fs.mkdtempSync('/tmp/asd-mlo-')
+  try {
+    const { seen, FakeSocket } = fakeRelaySocket({ logoutReply: null })
+    let socket = null
+    class Tracked extends FakeSocket {
+      constructor(url) {
+        super(url)
+        socket = this
+      }
+    }
+    let signedOutEvents = 0
+    const peerKey = mobileCrypto.toBase64Url(mobileCrypto.newKeyPair().publicKey)
+    const { relay, dir } = await signedInRelay(work, { WebSocketImpl: Tracked, onSignedOut: () => signedOutEvents++ })
+    // 허용 기기 하나를 저장해 둔 상태로 — 다시 읽게 relay.json 에 넣고 새로 붙인다
+    await relay.stop()
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'relay.json'), 'utf8'))
+    fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify({ ...saved, peers: { 'app-1': { publicKey: peerKey, addedAt: '', label: '폰', lastSeen: null } } }), { mode: 0o600 })
+    const again = createMobileRelay({ url: 'ws://127.0.0.1:1/ws', dir, log: () => {}, WebSocketImpl: Tracked, heartbeatMs: 60_000, backoffMs: [5], onSignedOut: () => signedOutEvents++, createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) })
+    await again.start()
+    await waitFor(() => again.status().connected, '다시 붙음')
+    assert.equal(again.devices().length, 1)
+    socket.relayClose(4004)
+    await sleep(50)
+    assert.equal(again.status().signedIn, false)
+    assert.equal(again.status().connected, false)
+    assert.equal(again.devices().length, 0)
+    const after = JSON.parse(fs.readFileSync(path.join(dir, 'relay.json'), 'utf8'))
+    assert.equal(after.token, null)
+    assert.deepEqual(after.peers, {})
+    assert.equal(signedOutEvents, 0, '오류 알림 없음')
+    assert.equal(seen.ops.filter((op) => op === 'auth.resume').length, 2, '다시 붙지 않음')
+    await again.stop()
+  } finally {
+    fs.rmSync(work, { recursive: true, force: true })
+  }
+})
+
 test('맥 로그아웃 — remoteLogout 이 없거나 relay 에 안 붙어 있으면 relay 에는 아무것도 보내지 않고 로컬만 지운다', async () => {
   const work = fs.mkdtempSync('/tmp/asd-mlo-')
   try {

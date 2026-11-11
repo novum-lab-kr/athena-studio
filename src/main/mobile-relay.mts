@@ -509,7 +509,14 @@ export function createMobileRelay(deps: RelayDeps) {
       if (event && event.code === CLOSE_ACCOUNT_DELETED && state.token) return signedOutByRelay('account_deleted')
       if (event && event.code === CLOSE_LOGGED_OUT) {
         loggedOutByRelay = true
-        return // 로그아웃 결과 — 다시 붙지 않는다(로컬은 signOut 이 지운다)
+        // 로그아웃 결과 — 다시 붙지 않는다. 맥에서 누른 로그아웃이면 로컬은 signOut 이 지운다.
+        // 누르지 않았는데 왔으면 relay 가 이미 이 기기 토큰을 지운 것 — 로컬도 지우고 로그아웃 상태로(오류 알림 없음)
+        if (!signingOut && state.token) {
+          forget()
+          log('[mobile-relay] relay 가 로그아웃시킴(4004) — 로컬 토큰 · 허용 기기 지움')
+          changed()
+        }
+        return
       }
       scheduleReconnect()
     }
