@@ -3,14 +3,16 @@
 
   scripts/lead-fresh.py --plan <계획서>
 
-아테나가 단계가 끝난 지점(보고를 마친 턴 끝)에서 부른다 — 압축 경고 훅(scripts/hooks/compact-checkpoint.py warn)이 언제 부를지 알려 준다.
+**사용자가 새로 시작하자고 답한 뒤에만** 부른다(2026-11-11 사용자 결정 — 묻지 않고 지우면 당황스럽다). 압축 경고 훅
+(scripts/hooks/compact-checkpoint.py warn)이 단계 끝에 AskUserQuestion(Codex request_user_input)으로 먼저 물으라고 알려 주고,
+거절 · 답 없음이면 부르지 않는다. 물은 때 · 지운 때는 scripts/lib/lead_fresh_mark.py 에 적혀 30분 안에는 다시 묻지 않는다.
 1. 지금 확인(앞에서 · 바로 끝난다): 부른 쪽이 화면 안의 아테나 pane(ATHENA_AGENT 없음 · Claude · Codex)인가 · 계획서가 있고
    Checkpoint "- Updated:" 가 FRESH_MINUTES 안인가(새로 시작하면 대화가 사라지니 Checkpoint 를 먼저 적게 한다). 안 되면 종료 1 · 이유
 2. 뒤에서 처리기를 띄우고 "📦 대화가 커져 새로 시작합니다 — <계획서>" 한 줄을 찍는다(아테나가 사용자에게 그대로 알린다)
 3. 처리기(떨어져 돈다 · pane 마다 하나): 아테나 pane 이 쉴 때까지 기다린다 — 일하는 중(agent_status working) · 선택 창(pane_request.pane_menu)
    · 입력칸에 초안이 있거나 입력칸을 못 읽으면 넣지 않고 기다린다(2초마다 · 최대 6시간 — lead-send 와 같은 값). 연달아 두 번 쉬어야 넣는다
    → Claude 는 /clear · Codex 는 /new 를 넣는다(pane 안 프로그램은 끄지 않는다) → 새 대화가 pane 기록(state/pane-sessions — pane-session.py)에
-   적히면 옛 대화를 가리키던 계획서 "- Lead session:" · 모아 둔 lead-send 글의 대화를 새 대화로 옮긴다(안 옮기면 에이전트 보고가
+   적히면 옛 대화를 가리키던 계획서 "- Lead session:"(넘긴 계획서는 어느 대화를 가리키든) · 모아 둔 lead-send 글의 대화를 새 대화로 옮긴다(안 옮기면 에이전트 보고가
    "담당 대화가 바뀌었다" 로 막힌다) → 다시 쉴 때까지 기다려 재개 지시 "<계획서> 이어서 하자 …" 를 넣는다
    예약 뒤 새 입력이 들어왔으면(pane 기록의 session · at 이 바뀜 — pane-session.py 가 입력마다 at 을 다시 적는다) 그 차례의 문맥이
    Checkpoint 에 없을 수 있어 /clear 를 넣지 않고 끝낸다 · /clear 직전에 계획서 "- Updated:" 가 예약 때보다 앞서지 않았는지 다시 본다.
@@ -33,8 +35,8 @@ ATHENA_DIR = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ATHENA_DIR / 'scripts' / 'lib'))
 import screen  # noqa: E402 — 화면 계층 — pane 을 다루는 곳은 scripts/lib/screen.py 하나
 import pane_request  # noqa: E402 — 선택 창(pane_menu) · 기다리는 값 · 팩 데이터 자리
-from reuse_link import pane_lock  # noqa: E402 — lead-send 대기열 · 기록과 같은 잠금
-from plan_update import update_plan  # noqa: E402 — 계획서 고치기(잠금 · 바꿔치기)
+import lead_rebind  # noqa: E402 — 대화가 바뀐 뒤 계획서 Lead session · lead-send 대기열 옮기기
+import lead_fresh_mark  # noqa: E402 — 물은 때 · 지운 때(30분 안에는 다시 묻지 않는다)
 
 PANE_ID = re.compile(r'^[\w-]{1,32}$')
 FRESH_MINUTES = 15   # Checkpoint "- Updated:" 가 이만큼 안이어야 새로 시작한다
@@ -42,7 +44,6 @@ POLL_SECONDS = float(os.environ.get('ATHENA_LEAD_FRESH_POLL') or pane_request.PO
 GIVE_UP_SECONDS = pane_request.GIVE_UP_SECONDS
 SESSION_WAIT_SECONDS = 120   # /clear 뒤 새 대화가 pane 기록에 적히기를 기다리는 한도
 CLEAR_COMMAND = {'claude': '/clear', 'codex': '/new'}
-CLOSED_STATUS = ('done', 'cancelled')
 
 
 def pane_record(pane: str) -> dict:
@@ -148,44 +149,11 @@ def wait_ready(pane: str, agent: str, deadline: float, guard) -> str:
     return 'gave-up'
 
 
-def rebind_session(pane: str, old: str, new: str) -> int:
-    """옛 대화를 가리키던 계획서 Lead session · 모아 둔 lead-send 글을 새 대화로 — 옮긴 계획서 수"""
-    moved = 0
-    for path in sorted((ATHENA_DIR / 'plans').rglob('*.md')):
-        try:
-            text = path.read_text(encoding='utf-8')
-        except OSError:
-            continue
-        lead = re.search(r'^- Lead pane:[ \t]*(\S+)', text, re.M)
-        status = re.search(r'^- Status:[ \t]*(\S+)', text, re.M)
-        if not lead or lead.group(1) != pane or not re.search(rf'^- Lead session:[ \t]*{re.escape(old)}[ \t]*$', text, re.M):
-            continue
-        if status and status.group(1) in CLOSED_STATUS:
-            continue
-
-        def swap(current: str):
-            changed = re.sub(rf'^- Lead session:[ \t]*{re.escape(old)}[ \t]*$', f'- Lead session: {new}', current, flags=re.M)
-            return changed if changed != current else None
-        try:
-            update_plan(str(path), swap)
-            moved += 1
-        except Exception:
-            pass
-    base = pane_request.pack_state()
-    queue = base / 'lead-send' if base else None
-    if queue and queue.is_dir():
-        with pane_lock(queue, pane):
-            for entry_path in sorted(queue.glob(f'{pane}-*.json')):
-                try:
-                    entry = json.loads(entry_path.read_text(encoding='utf-8'))
-                except (OSError, ValueError):
-                    continue
-                if entry.get('session') == old:
-                    entry['session'] = new
-                    temp = entry_path.with_name(f'.{entry_path.name}.tmp')
-                    temp.write_text(json.dumps(entry, ensure_ascii=False) + '\n', encoding='utf-8')
-                    os.replace(temp, entry_path)
-    return moved
+def rebind_session(pane: str, old: str, new: str, plan: str = '') -> int:
+    """옛 대화를 가리키던 계획서 Lead session · 모아 둔 lead-send 글을 새 대화로 — 옮긴 계획서 수(lib/lead_rebind.py).
+    넘긴 계획서(plan)는 이 아테나 pane 것이면 Lead session 이 옛 대화가 아니어도 옮긴다 — 방금 Checkpoint 를 갱신하고 넘긴
+    계획서라 이 아테나가 맡은 것이 확실하다. 사용자가 손으로 /clear · /new 한 때는 pane-session.py 가 같은 함수로 옮긴다"""
+    return lead_rebind.rebind(pane, old, new, plan_path(plan))
 
 
 def log_event(result: str, pane: str, plan: str) -> None:
@@ -240,6 +208,7 @@ def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) ->
         backend.run(pane, [CLEAR_COMMAND[agent]])
     except Exception:
         return 'clear-failed'
+    lead_fresh_mark.mark(pane, 'cleared')   # 30분 안에는 다시 묻지 않는다
     until = time.monotonic() + SESSION_WAIT_SECONDS
     new = ''
     fresh_mark = ''
@@ -257,7 +226,7 @@ def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) ->
         time.sleep(POLL_SECONDS)
     if not new or new == old:
         return 'no-new-session'
-    rebind_session(pane, old, new)
+    rebind_session(pane, old, new, plan)
 
     def before_resume() -> str:
         # 사용자가 직접 새 대화를 열었거나(/new) 새 대화에서 다른 일을 시켰으면 재개 지시를 넣지 않는다

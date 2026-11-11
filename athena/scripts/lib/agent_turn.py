@@ -3,12 +3,12 @@
 차례 상태 — <팩 데이터>/state/agent-turn/<pane>.json (위임 에이전트 pane 마다 하나 · Claude · Codex 모두)
   state: working(입력을 받아 일하는 중) · done(차례를 끝냄) · asking(고르기 질문을 [작업] 요청으로 올림) · waiting-permission(권한 창)
   그 밖의 칸: pane · agent · plan · turn(입력마다 새 값) · background(도는 백그라운드 명령 수) · question(마지막 답 끝이 질문)
-    · stop(⏸ 멈춤 이유) · requests(asking 때 연 요청 id) · at(ISO 시각) · ts(초)
+    · stop(⏸ 멈춤 이유) · requests(asking 때 연 요청 id) · first(pane 의 첫 차례) · quiet(끝 알림을 건너뛰는 차례 — 시작 안내 · 끝 알림 답) · at(ISO 시각) · ts(초)
   "끝났다" 는 이 파일의 state 하나로 정한다 — 쓰는 곳: agent-done-notify.py(prompt → working · stop → done/asking) ·
   ask-to-request.py(asking) · permission-to-request.py(waiting-permission). 읽는 곳: 현황판 server.mjs reconcileTurns
 
 아테나 알림 받음 기록 — <팩 데이터>/state/lead-notices/<id>.json
-  { id, kind(turn · unconfirmed · menu), lead, text, plan, pane, from, turn, sent_at, pending?, received_at?, resent_at?, closed_at?, request?(연 요청 id · 받아서 거뒀으면 cancelled) }
+  { id, kind(turn · unconfirmed · menu · idle), lead, text, plan, pane, from, turn, sent_at, pending?, received_at?, resent_at?, closed_at?, request?(연 요청 id · 받아서 거뒀으면 cancelled) }
   쓰는 곳: lead-send.py(넣기 **전에** pending 으로 만들고 결과로 고친다 — 넣은 끝 알림(--track)은 남기고, 전송을 확인하지 못한 글은 unconfirmed 로,
     넣지 못한 글 · 추적하지 않는 넣은 글은 지운다. 넣자마자 아테나 입력 훅이 돌아도 받음 표시를 놓치지 않게) · 현황판(선택 창 알림 · 다시 넣기 · 요청)
   고치기는 모두 파일별 잠금(<lead-notices>/.<id>.lock · reuse_link.pane_lock) 안에서 읽기 · 합치기 · 쓰기 — 현황판(node)은 `python3 agent_turn.py --patch` 로 같은 잠금을 쓴다

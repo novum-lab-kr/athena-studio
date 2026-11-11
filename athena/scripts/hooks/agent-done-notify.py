@@ -352,16 +352,20 @@ def main() -> None:
     if mode == 'prompt':
         with pane_lock(state_path.parent, pane):
             state = load_json(state_path)
-            bootstrap = not state.get('turn') and os.environ.get('ATHENA_NOTIFY_BOOTSTRAP') == '1'
+            first = not state.get('turn')
+            bootstrap = first and os.environ.get('ATHENA_NOTIFY_BOOTSTRAP') == '1'
             state['skip'] = bootstrap or is_ack(str(event.get('prompt') or ''))
             state['turn'] = uuid.uuid4().hex
             state.pop('pending', None)
             state['last'] = ''
             save_state(state_path, state)
             turn = state['turn']
+            quiet = state['skip']
         plan = str(load_json(base / 'pane-sessions' / f'{pane}.json').get('plan') or os.environ.get('ATHENA_PLAN') or '')
         try:
-            agent_turn.write_turn(pane, state='working', agent=agent, plan=plan, turn=turn, background=0, question=False, stop='', requests=[])
+            # first · quiet — 첫 차례이고 끝 알림을 건너뛰는 차례면 현황판(turn-watch.mjs 5)이 그 뒤 입력 없이 5분이면 아테나에 알린다
+            agent_turn.write_turn(pane, state='working', agent=agent, plan=plan, turn=turn, background=0, question=False, stop='', requests=[],
+                                  first=first, quiet=quiet)
         except Exception:
             pass
         return
