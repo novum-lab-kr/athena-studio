@@ -4,7 +4,7 @@
 // Electron main 진입점(package.json main) — ES 모듈(.mts · 빌드 없음 · Electron 44 가 타입만 지우고 읽는다).
 // Electron 은 이 파일을 끝까지 읽은 뒤에 ready 를 낸다(2026-10-27 실측 — 맨 위 await 1.5초를 넣어도 ready 전) — 아래 app.setName · setPath 는 그대로 ready 전이다.
 // 가져온 모듈은 이 파일 본문보다 먼저 돈다 — src/main/*.mts 는 맨 위에서 함수 · 상수만 만든다(app 자리를 읽지 않는다)
-import { app, autoUpdater, BrowserWindow, Menu, dialog, globalShortcut, ipcMain, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, Menu, Notification, dialog, globalShortcut, ipcMain, shell } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, MenuItemConstructorOptions, Session, WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
@@ -1099,15 +1099,21 @@ app.whenReady().then(async () => {
   void startMobileDevIfAsked()
 })
 
-// 모바일 시험 2 — 격리 시험 앱에서 relay 주소를 줬을 때만(src/main/mobile-dev.mts). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐)
-let mobileDev: { stop(): Promise<void> } | null = null
-async function startMobileDevIfAsked(): Promise<void> {
-  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+// 모바일 — 격리 시험 앱에서 relay 주소를 줬을 때만(src/main/mobile-dev.mts). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐 · 프로필도 숨김)
+type MobileDev = Awaited<ReturnType<typeof loadMobileDev>>
+let mobileDev: NonNullable<MobileDev> | null = null
+const mobileLinks: unknown[] = [] // 길이 켜지기 전에 온 athena:// — 켜지면 넘긴다(그때까지 값은 로그에 남기지 않는다)
+async function loadMobileDev() {
   const { mobileDevOptions, startMobileDev, MOBILE_DEV_SKIPPED } = await import('./main/mobile-dev.mts')
   const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, homeOverride: STUDIO_HOME_OVERRIDE })
-  if (!options) return console.log(MOBILE_DEV_SKIPPED)
-  mobileDev = startMobileDev({
+  if (!options) {
+    console.log(MOBILE_DEV_SKIPPED)
+    return null
+  }
+  const macName = await computerName()
+  return startMobileDev({
     options,
+    macName: () => macName,
     daemonPaths,
     frontCtx: () => frontCtx() as unknown as ReturnType<Parameters<typeof startMobileDev>[0]['frontCtx']>,
     config: () => config as unknown as Record<string, unknown> | null,
@@ -1115,8 +1121,94 @@ async function startMobileDevIfAsked(): Promise<void> {
       const reply = (await runPack(['board-token'], { dir: athenaDir })) as { ok?: boolean; token?: unknown }
       return reply.ok && typeof reply.token === 'string' ? reply.token : null
     },
+    openBrowser: (url) => shell.openExternal(url),
+    fetch: (url, init) => fetch(url, init),
+    onChange: () => sendMobileState(),
+    onPairRequest: (request) => notifyPairRequest(request.label),
+    onLoginFailed: (why) => {
+      for (const ctx of packWindows) ctx.send('mobile:failed', why)
+    },
   })
 }
+// 사용자에게 보이는 컴퓨터 이름(시스템 설정 → 일반 → 공유) — 맥에서만 · 못 읽으면 null(호스트 이름으로 대신하지 않는다)
+function computerName(): Promise<string | null> {
+  if (!isMac) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    execFile('/usr/sbin/scutil', ['--get', 'ComputerName'], { timeout: 3000 }, (error, stdout) => resolve(error ? null : String(stdout).trim() || null))
+  })
+}
+async function startMobileDevIfAsked(): Promise<void> {
+  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+  mobileDev = await loadMobileDev()
+  if (!mobileDev) return
+  // athena:// 를 이 앱으로 — 개발용 길이 켜질 때만(배포판 · 보통 개발 앱은 등록하지 않는다)
+  if (isMac) app.setAsDefaultProtocolClient('athena')
+  for (const link of mobileLinks.splice(0)) mobileDev.handleLink(link)
+  sendMobileState()
+}
+const mobileState = () => (mobileDev ? mobileDev.view() : { enabled: false })
+function sendMobileState(): void {
+  const view = mobileState()
+  for (const ctx of packWindows) ctx.send('mobile:state', view)
+}
+// 새 디바이스 연결 요청 — 앞에 있는 창이 없으면 맥 알림(번호는 넣지 않는다 · 누르면 창을 앞으로)
+function notifyPairRequest(label: string | null): void {
+  if (BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return
+  const note = new Notification({ title: say('mobile.pair.notifyTitle'), body: say('mobile.pair.notifyBody', { device: label || say('mobile.device.unknown') }) })
+  note.on('click', () => showWindow())
+  note.show()
+}
+// 맥은 athena:// 를 open-url 로 준다(ready 전에도 올 수 있어 맨 위에서 건다). 값은 로그에 남기지 않는다(mobile-login describeLink)
+app.on('open-url', (event, link) => {
+  event.preventDefault()
+  if (mobileDev) mobileDev.handleLink(link)
+  else if (process.env.ATHENA_STUDIO_MOBILE_RELAY && mobileLinks.length < 4) mobileLinks.push(link)
+})
+
+handle('mobile:state', () => mobileState())
+handle('mobile:login', () => {
+  if (mobileDev) mobileDev.signIn()
+  return mobileState()
+})
+handle('mobile:logout', () => {
+  if (mobileDev) mobileDev.signOut()
+  return mobileState()
+})
+handle('mobile:open-account', () => {
+  if (mobileDev) void mobileDev.openAccount()
+  return { ok: true }
+})
+// [허용] · [거절] — 기다리는 요청 id 만(번호는 맥이 들고 있다)
+handle('mobile:answer', async (_ctx, requestId: unknown, accept: unknown) => {
+  if (!mobileDev || typeof requestId !== 'string') return { ok: false }
+  try {
+    if (accept === true) await mobileDev.relay.accept(requestId)
+    else await mobileDev.relay.reject(requestId)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String((error as { code?: unknown }).code || 'failed') }
+  } finally {
+    sendMobileState()
+  }
+})
+handle('mobile:remove-device', async (_ctx, peer: unknown) => {
+  if (!mobileDev || typeof peer !== 'string' || !mobileDev.relay.peers().includes(peer)) return { ok: false }
+  try {
+    await mobileDev.relay.removePeer(peer)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String((error as { code?: unknown }).code || 'failed') }
+  } finally {
+    sendMobileState()
+  }
+})
+// 디바이스에서 입력 허용 — 앱 설정 mobileInput(브리지가 메시지마다 다시 읽는다 · 기본 꺼짐)
+handle('mobile:set-input', (_ctx, allowed: unknown) => {
+  config = { ...config, mobileInput: allowed === true }
+  core.saveConfig(configFile(), config)
+  return { ok: true, allowed: allowed === true }
+})
+handle('mobile:input', () => ({ allowed: config.mobileInput === true }))
 
 // 창을 연 뒤 코어 업데이트 — 문이 닫혀 있는 동안 팩 명령 · 현황판 · 새 에이전트 시작은 기다린다(core-runner.mts updateGate)
 async function runCoreUpdateInBackground(): Promise<void> {

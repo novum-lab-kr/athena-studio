@@ -936,7 +936,7 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 .browser-slot { flex: 1; min-height: 0; background: var(--bg); }
 
 /* 팩 — 맨 왼쪽 세로 줄 · 대화상자 · 진행 표시 */
-.pack-rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 48px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--bg); overflow-y: auto; }
+.pack-rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 56px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--bg); overflow-y: auto; }
 .pack-rail[hidden] { display: none; }
 body.pack-welcome-on .pack-rail { display: none; } /* 시작 화면은 자기 '내 팩' 목록이 있다 */
 .pack-rail .pack-icon { flex: none; white-space: nowrap; } /* 넘침을 자르면 왼쪽 막대(::before)도 잘린다 */
@@ -944,8 +944,43 @@ body.pack-welcome-on .pack-rail { display: none; } /* 시작 화면은 자기 '�
 /* 다른 창에 열려 있는 팩 — 오른쪽 아래 작은 점 */
 .pack-rail .pack-icon.open-elsewhere::after { content: ""; position: absolute; right: -2px; bottom: -2px; width: 7px; height: 7px; border: 2px solid var(--bg); border-radius: 50%; background: var(--accent); }
 /* 지금 팩 — 왼쪽 끝 막대(Slack · Discord 처럼) */
-.pack-rail .pack-icon[aria-current="true"]::before { content: ""; position: absolute; left: -8px; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
-.pack-rail .pack-add { flex: none; margin-top: auto; } /* 맨 아래 */
+.pack-rail .pack-icon[aria-current="true"]::before { content: ""; position: absolute; left: -12px; top: 6px; bottom: 6px; width: 3px; border-radius: 0 3px 3px 0; background: var(--accent); }
+.pack-rail .pack-add { flex: none; } /* 팩 목록 바로 아래 */
+/* 팩 레일 맨 아래 모바일 프로필(ui/mobile-account.tsx — 개발용 길이 켜질 때만) · 레일이 좁아 동그라미만 */
+.mobile-account { position: relative; flex: none; display: grid; place-items: center; margin-top: auto; padding: 0; border: 0; border-radius: 50%; background: transparent; cursor: pointer; }
+.mobile-avatar { display: grid; place-items: center; width: 32px; height: 32px; border-radius: 50%; background: color-mix(in srgb, var(--accent) 22%, var(--bar)); color: var(--accent); font: 600 12px var(--font-ui); }
+.mobile-account:hover .mobile-avatar, .mobile-account.open .mobile-avatar, .mobile-account:focus-visible .mobile-avatar { box-shadow: 0 0 0 2px var(--line); }
+.mobile-avatar.out { background: var(--line); color: var(--muted); }
+.mobile-avatar svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+/* 브라우저에서 로그인 중 — 둘레에 작게 도는 고리 */
+.mobile-account.loading::after { content: ""; position: absolute; inset: -3px; border: 2px solid transparent; border-top-color: var(--accent); border-right-color: var(--accent); border-radius: 50%; animation: mobile-spin 0.9s linear infinite; }
+@keyframes mobile-spin { to { transform: rotate(360deg); } }
+.work-pop.mobile-menu { width: 220px; padding: 4px; }
+.mobile-menu-head { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px 8px; }
+.mobile-menu-name { overflow: hidden; color: var(--popup-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
+.mobile-menu-sub { color: var(--popup-muted); font-size: 11.5px; }
+.mobile-menu-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 10px; border: 0; border-radius: 6px; background: transparent; color: var(--popup-text); font: 13px var(--font-ui); text-align: left; cursor: pointer; }
+.mobile-menu-item:hover, .mobile-menu-item:focus-visible { background: var(--popup-hover); }
+.mobile-menu-item svg { flex: none; width: 15px; height: 15px; fill: none; stroke: var(--popup-muted); stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.mobile-menu-item .mobile-menu-ext { margin-left: auto; width: 13px; height: 13px; }
+.mobile-menu-sep { height: 1px; margin: 4px 6px; background: var(--popup-line); }
+/* 디바이스 연결 · 새 디바이스 창 */
+.pack-box.mobile-small { width: min(420px, 100%); }
+.mobile-sub { margin: 0 0 2px; color: var(--popup-muted); font-size: 12px; }
+.mobile-empty { margin: 6px 0; color: var(--popup-muted); font-size: 13px; }
+.mobile-device { display: flex; align-items: center; gap: 10px; padding: 6px 0; font-size: 13px; }
+.mobile-device-name { flex: 1; min-width: 0; overflow: hidden; color: var(--popup-text); text-overflow: ellipsis; white-space: nowrap; }
+.mobile-device-when { flex: none; color: var(--popup-muted); font-size: 12px; }
+.mobile-device-when.on { color: var(--success); }
+.mobile-device .settings-app-button { padding: 1px 8px; border-color: rgb(255 255 255 / 18%); color: var(--popup-text); }
+.mobile-device .settings-app-button:hover { border-color: var(--error); background: transparent; color: var(--error); }
+.pack-box.mobile-small .settings-switch { margin-top: 8px; padding: 7px 0; background: transparent; }
+.pack-box.mobile-small .settings-note { margin: 2px 0 0; color: var(--popup-muted); font-size: 12px; word-break: keep-all; }
+.mobile-pair-lead { margin-top: 6px; }
+.mobile-pair-note { margin-top: 12px; }
+.mobile-code { margin: 6px 0 14px; padding: 16px 0; border: 1px solid var(--popup-gold-line); border-radius: 10px; background: var(--popup-gold-bg); color: var(--popup-title); font: 600 34px/1 var(--font-mono); letter-spacing: 0.12em; text-align: center; }
+.mobile-code span { display: inline-block; width: 0.6em; }
+.mobile-meta { display: flex; justify-content: space-between; color: var(--popup-muted); font-size: 12px; }
 .pack-rail .pack-icon:has(.pack-icon-image) { padding: 0; overflow: visible; }
 /* 접힌 spaces — 레포 이미지(pack set-repo-icon)도 팩 아이콘처럼 칸을 채운다 */
 .spaces.collapsed .space-icon:has(.pack-icon-image) { padding: 0; overflow: hidden; }

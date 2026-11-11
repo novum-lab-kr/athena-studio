@@ -1,28 +1,28 @@
-// ── 모바일 시험 2 의 개발용 길 — 격리 시험 앱에서만 relay 에 붙고 짝 기기마다 브리지를 둔다 ──
-// 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 · 시험 2. 브리지는 여전히 기본 꺼짐 — 설정 화면 · [허용] 창 · 로그인 화면은 없다.
+// ── 모바일 개발용 길 — 격리 시험 앱에서만 relay 에 붙고 짝 기기마다 브리지를 둔다 ──
+// 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 · 4-8(시험 3). 브리지는 여전히 기본 꺼짐 — 이 길이 켜질 때만 팩 레일 프로필 · [허용] 창이 보인다.
 // 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 루프백 ws 주소.
-// 계정은 ATHENA_STUDIO_MOBILE_DEV_ACCOUNT(relay 개발 로그인 · RELAY_DEV_LOGIN=1 인 relay 에서만 받는다).
-// [허용]: 확인 숫자는 맥 로그(test-app.log)에 · 답은 `node scripts/mobile-pair.js --home <집> accept|reject [requestId]`.
+// 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createMobileBridge, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult } from './mobile-bridge.mts'
-import { createMobileRelay, watchPairAnswers } from './mobile-relay.mts'
+import { createMobileRelay } from './mobile-relay.mts'
+import type { PendingPair, PeerView } from './mobile-relay.mts'
+import { createLoginFlow, relayWebBase } from './mobile-login.mts'
+import type { FetchLike, LoginFailure } from './mobile-login.mts'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
-const DEV_ACCOUNT_RE = /^[A-Za-z0-9._@-]{1,64}$/ // relay protocol.ts devAccount 와 같은 모양
 
 // 조건이 빠졌을 때 맥 로그(화면 문구 아님 — 개발판 격리 시험 전용)
-export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 루프백 ws 주소 · ATHENA_STUDIO_MOBILE_DEV_ACCOUNT 가 모두 있어야 해요'
+export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 루프백 ws 주소가 모두 있어야 해요'
 
-export type MobileDevOptions = { url: string; account: string; dir: string }
+export type MobileDevOptions = { url: string; base: string; dir: string }
 
 // 켜도 되는지 · 무엇으로 — 조건이 하나라도 빠지면 null(아무것도 만들지 않는다)
 export function mobileDevOptions({ env, packaged, homeOverride }: { env: NodeJS.ProcessEnv; packaged: boolean; homeOverride: string | null }): MobileDevOptions | null {
   const raw = env.ATHENA_STUDIO_MOBILE_RELAY
-  const account = env.ATHENA_STUDIO_MOBILE_DEV_ACCOUNT || ''
-  if (packaged || !homeOverride || !raw || !DEV_ACCOUNT_RE.test(account)) return null
+  if (packaged || !homeOverride || !raw) return null
   let url: URL
   try {
     url = new URL(raw)
@@ -30,10 +30,11 @@ export function mobileDevOptions({ env, packaged, homeOverride }: { env: NodeJS.
     return null
   }
   if (url.protocol !== 'ws:' || !LOOPBACK_HOSTS.has(url.hostname)) return null
-  return { url: url.href, account, dir: mobileStateDir(homeOverride) }
+  const base = relayWebBase(url.href)
+  return base ? { url: url.href, base, dir: mobileStateDir(homeOverride) } : null
 }
 
-// 상태 폴더 — 격리 집 아래(scripts/mobile-pair.js 도 같은 자리를 쓴다)
+// 상태 폴더 — 격리 집 아래
 export const mobileStateDir = (home: string) => path.join(path.resolve(home), 'mobile')
 
 // main 이 넘기는 것 — 지금 앞에 있는 팩 창의 문맥(본체 · 요청 · 현황판)과 앱 설정
@@ -50,7 +51,31 @@ type DevDeps = {
   frontCtx: () => FrontCtx | null
   config: () => Record<string, unknown> | null
   boardToken: (athenaDir: string) => Promise<string | null>
+  openBrowser: (url: string) => unknown
+  macName: () => string | null // 사용자에게 보이는 컴퓨터 이름(맥 [공유] 설정) — 웹 로그인 페이지에 보인다
+  fetch: FetchLike
+  onChange: () => void // 화면에 보일 것이 바뀜(view 다시 보내기)
+  onPairRequest: (request: PendingPair) => void // [허용] 창 · 창이 뒤면 맥 알림
+  onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
   log?: (line: string) => void
+}
+
+// 화면(팩 레일 프로필 · 메뉴 · 디바이스 창 · [허용] 창)에 넘기는 것 — 토큰 · 열쇠 · 계정 id 는 넣지 않는다
+export type MobileView = {
+  enabled: true
+  signedIn: boolean
+  signingIn: boolean
+  connected: boolean
+  name: string | null
+  devices: PeerView[]
+  pending: PendingPair[]
+  accountUrl: string
+}
+
+// 화면 이름 — 공급자가 준 이름 · 이메일, 없으면 개발 계정 이름(dev:<이름>). apple · google 의 sub 은 보이지 않는다
+export function displayName(name: string | null, account: string | null): string | null {
+  if (name) return name
+  return account && account.startsWith('dev:') ? account.slice(4) || null : null
 }
 
 type EventsModule = { readEvents?: (root: string) => EventRow[]; logEvent?: (root: string, type: string, fields: object) => void }
@@ -75,9 +100,11 @@ export function startMobileDev(deps: DevDeps) {
   }
   const relay = createMobileRelay({
     url: deps.options.url,
-    login: { provider: 'dev', account: deps.options.account },
     dir: deps.options.dir,
     log,
+    onChange: deps.onChange,
+    onPairRequest: deps.onPairRequest,
+    onSignedOut: (why) => deps.onLoginFailed(why === 'expired' ? 'expired_session' : 'account_deleted'),
     createBridge: (transport) =>
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
@@ -115,13 +142,43 @@ export function startMobileDev(deps: DevDeps) {
         logEvent,
       }),
   })
-  const stopWatch = watchPairAnswers(relay, deps.options.dir)
-  log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir} · 허용은 node scripts/mobile-pair.js --home <집> accept`)
-  void relay.start()
+  const login = createLoginFlow({
+    base: deps.options.base,
+    fetch: deps.fetch,
+    openBrowser: deps.openBrowser,
+    onSignedIn: (result) => relay.signIn(result),
+    onFailed: (why) => deps.onLoginFailed(why),
+    onChange: deps.onChange,
+    deviceName: deps.macName,
+    log,
+  })
+  log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir}`)
+  void relay.start() // 저장한 토큰이 있으면 붙는다 · 없으면 로그아웃 상태로 기다린다
+  const view = (): MobileView => {
+    const status = relay.status()
+    return {
+      enabled: true,
+      signedIn: status.signedIn,
+      signingIn: !status.signedIn && login.pending(),
+      connected: status.connected,
+      name: displayName(status.name, status.account),
+      devices: relay.devices(),
+      pending: relay.pending(),
+      accountUrl: `${deps.options.base}/account`,
+    }
+  }
   return {
     relay,
+    view,
+    signIn: () => login.start(),
+    signOut: () => {
+      login.cancel()
+      relay.signOut()
+    },
+    handleLink: (link: unknown) => login.handleLink(link),
+    openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
-      stopWatch()
+      login.cancel()
       await relay.stop()
     },
   }

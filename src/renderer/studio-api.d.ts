@@ -200,6 +200,15 @@ declare global {
   // 앱에서 답하기 · 다시 보내기(work.mts answerRequest · redeliverRequest) — delivered: 그 pane 에 넣었는지(못 넣으면 답만 저장 · reason 이 이유 — src/lib/answer-delivery.mts)
   type WorkAnswerReply = { ok: boolean; error?: string; message?: string; delivered?: boolean; reason?: 'no-pane' | 'prompt-open' | 'unconfirmed' }
 
+  // 모바일(src/main/mobile-dev.mts MobileView — 토큰 · 열쇠 · 계정 id 는 오지 않는다)
+  type MobileDevice = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
+  type MobilePending = { requestId: string; from: string; label: string | null; code: string; at: string; expiresAt: string }
+  type MobileState =
+    | { enabled: false }
+    | { enabled: true; signedIn: boolean; signingIn: boolean; connected: boolean; name: string | null; devices: MobileDevice[]; pending: MobilePending[]; accountUrl: string }
+  type MobileFailure = 'expired' | 'invalid_grant' | 'device_limit' | 'busy' | 'network' | 'bad_reply' | 'expired_session' | 'account_deleted'
+  type MobileReply = { ok: boolean; error?: string }
+
   interface StudioApi {
     // 화면 · 언어 — preload 가 sendSync · send 로 부르는 것은 값이 없다
     i18n(): I18nPayload
@@ -323,6 +332,17 @@ declare global {
     packRestoreDisarm(): Promise<unknown>
     // main 이 보내는 알림(preload listen — 돌려준 함수는 듣기 그만) · 값 모양은 보내는 곳(src/main.mts · src/main/*.mts 의 send('<이름>', …))
     onPackState(callback: (next: PackState) => void): () => void
+    // 모바일(src/main.mts handle('mobile:…'))
+    mobileState(): Promise<MobileState>
+    mobileLogin(): Promise<MobileState>
+    mobileLogout(): Promise<MobileState>
+    mobileOpenAccount(): Promise<unknown>
+    mobileAnswer(requestId: string, accept: boolean): Promise<MobileReply>
+    mobileRemoveDevice(peer: string): Promise<MobileReply>
+    mobileInput(): Promise<{ allowed: boolean }>
+    mobileSetInput(allowed: boolean): Promise<{ ok: boolean; allowed: boolean }>
+    onMobileState(callback: (next: MobileState) => void): () => void
+    onMobileFailed(callback: (why: MobileFailure) => void): () => void
     onPackProgress(callback: (step: import('./ui/pack-progress.tsx').PackProgressStep) => void): () => void
     onPackRestored(callback: (result: import('./ui/notices.tsx').RestoreResult) => void): () => void
     onPackCaughtUp(callback: (info: { pack: string }) => void): () => void

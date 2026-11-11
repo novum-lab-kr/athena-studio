@@ -13,6 +13,7 @@ const { pathToFileURL } = require('url')
 const protocol = require('../src/lib/protocol')
 const mobileCrypto = require('../src/lib/mobile-crypto.mts')
 const { createMobileRelay, loadMacKey } = require('../src/main/mobile-relay.mts')
+const { createLoginFlow, relayWebBase } = require('../src/main/mobile-login.mts')
 const { createMobileBridge } = require('../src/main/mobile-bridge.mts')
 
 const RELAY_DIR = process.env.ATHENA_RELAY_DIR || ''
@@ -135,7 +136,50 @@ async function startLocalRelay(dataDir) {
     heartbeatMs: 30_000,
     maxConnections: 100,
     maxMessagesPerSecond: 50,
+    web: { publicUrl: 'http://127.0.0.1', termsUrl: 'https://example.com/terms', privacyUrl: null, apple: null, google: null },
+    webLimits: { loginTtlMs: 60_000, codeTtlMs: 60_000, sessionTtlMs: 60_000, maxAttempts: 100, maxSessions: 100 },
   })
+}
+
+// 맥 웹 로그인 그대로 — 로그인 흐름(mobile-login)이 연 주소를 "브라우저"가 열고 개발 계정 칸으로 마친다 → 상태 조회가 done → 토큰 교환 → relay.signIn
+async function webSignIn(relay, wsUrl, account) {
+  const base = relayWebBase(wsUrl)
+  const flow = createLoginFlow({
+    base,
+    fetch: (url, init) => fetch(url, init),
+    openBrowser: async (url) => {
+      const page = await fetch(url)
+      assert.equal(page.status, 200, '로그인 페이지')
+      const state = new URL(url).searchParams.get('state')
+      const done = await fetch(`${base}/auth/dev/start`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ state, challenge: new URL(url).searchParams.get('challenge'), account }).toString(), redirect: 'manual' })
+      assert.ok(done.status < 400, `개발 로그인 ${done.status}`)
+    },
+    onSignedIn: (result) => relay.signIn(result),
+    onFailed: (why) => assert.fail(`로그인 실패 ${why}`),
+    deviceName: () => '민창의 MacBook Pro',
+    log: () => {},
+    pollMs: 30,
+  })
+  flow.start()
+  await waitFor(() => relay.status().connected, '웹 로그인 뒤 relay 붙기')
+}
+
+// 앱 쪽 미리 약속(4-7 "인증번호 미리 약속 v1") — pair.key · 약속을 받고 난수를 보낸 뒤 열기를 받아 약속을 확인하고 번호를 만든다
+async function phonePair(phone, macId, label) {
+  const asked = await phone.call('pair.request', { to: macId, publicKey: mobileCrypto.toBase64Url(phone.keys.publicKey), label })
+  assert.equal(asked.ok, true)
+  const requestId = asked.result.requestId
+  const keyEvent = await waitFor(() => phone.received.find((event) => event.event === 'pair.key' && event.requestId === requestId), 'pair.key')
+  const macPublic = mobileCrypto.keyFrom(keyEvent.publicKey)
+  const commitEvent = await waitFor(() => phone.received.find((event) => event.event === 'pair.data' && mobileCrypto.decodePairData(event.data)?.kind === 'commit'), '약속')
+  const commit = mobileCrypto.decodePairData(commitEvent.data).value
+  const appNonce = mobileCrypto.newPairNonce()
+  const sent = await phone.call('pair.data', { requestId, data: mobileCrypto.encodePairData({ pc: 'nonce', v: 1, n: mobileCrypto.toBase64(appNonce) }) })
+  assert.equal(sent.ok, true)
+  const revealEvent = await waitFor(() => phone.received.find((event) => event.event === 'pair.data' && mobileCrypto.decodePairData(event.data)?.kind === 'reveal'), '열기')
+  const macNonce = mobileCrypto.decodePairData(revealEvent.data).value
+  assert.deepEqual(Buffer.from(mobileCrypto.pairCommit(macPublic, phone.keys.publicKey, macNonce)), Buffer.from(commit), '약속과 열린 난수가 맞다')
+  return { requestId, code: mobileCrypto.pairCode(macPublic, phone.keys.publicKey, appNonce, macNonce) }
 }
 
 test('맥 열쇠 파일 — 0600 으로 만들고 다시 켜도 같은 열쇠 · 틀린 파일이면 새로', async () => {
@@ -154,7 +198,7 @@ test('맥 열쇠 파일 — 0600 으로 만들고 다시 켜도 같은 열쇠 ·
   }
 })
 
-test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snapshot · pane.open · pane.input → 해제 뒤 거절', { skip: skipRelay, timeout: 30_000 }, async () => {
+test('로컬 relay — 웹 로그인 → 연결 요청 · 미리 약속 → 허용 → hello → snapshot · pane.open · pane.input → 해제 뒤 거절', { skip: skipRelay, timeout: 30_000 }, async () => {
   const work = fs.mkdtempSync('/tmp/asd-mrel-')
   const stateDir = path.join(work, 'mobile')
   const daemon = await startFakeDaemon(path.join(work, 'd.sock'))
@@ -162,11 +206,12 @@ test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snap
   const url = `ws://127.0.0.1:${relayServer.port}/ws`
   const lines = []
   const bridges = []
+  const asked = []
   const relay = createMobileRelay({
     url,
-    login: { provider: 'dev', account: 'tester@example.com' },
     dir: stateDir,
     log: (line) => lines.push(line),
+    onPairRequest: (request) => asked.push(request),
     createBridge: (transport) => {
       const bridge = createMobileBridge({
         daemonPaths: () => ({ socket: path.join(work, 'd.sock'), log: path.join(work, 'daemon.log'), endpoint: path.join(work, 'endpoint.json') }),
@@ -190,26 +235,28 @@ test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snap
   const stranger = createFakePhone(url)
   try {
     await relay.start()
-    await waitFor(() => relay.status().connected, '맥 relay 로그인')
+    assert.equal(relay.status().signedIn, false, '토큰이 없으면 붙지 않는다')
+    await webSignIn(relay, url, 'tester')
+    assert.equal(relay.status().account, 'dev:tester')
     const macId = relay.status().deviceId
     const macStatic = loadMacKey(stateDir).publicKey
     for (const name of ['relay.json', 'mac-key.json']) assert.equal(fs.statSync(path.join(stateDir, name)).mode & 0o777, 0o600, name)
 
-    const login = await phone.call('auth.login', { provider: 'dev', account: 'tester@example.com', kind: 'app' })
+    const login = await phone.call('auth.login', { provider: 'dev', account: 'tester', kind: 'app' })
     assert.equal(login.ok, true)
     const phoneId = login.result.deviceId
-    const asked = await phone.call('pair.request', { to: macId, publicKey: mobileCrypto.toBase64Url(phone.keys.publicKey) })
-    assert.equal(asked.ok, true)
-    // 맥이 공개 열쇠를 보내면 폰도 같은 확인 숫자를 계산한다
-    const keyEvent = await waitFor(() => phone.received.find((event) => event.event === 'pair.key'), 'pair.key')
-    const phoneCode = mobileCrypto.confirmCode(mobileCrypto.keyFrom(keyEvent.publicKey), phone.keys.publicKey)
+    const paired = await phonePair(phone, macId, '시험 폰')
+    // 맥은 앱 난수를 받은 뒤에만 번호를 보인다 — 폰과 같은 번호 · 알림 한 번 · 로그에는 번호가 없다
     const pending = await waitFor(() => relay.pending()[0], '맥 쪽 기다리는 요청')
-    assert.equal(pending.code, phoneCode)
-    assert.ok(lines.some((line) => line.includes(`확인 숫자 ${phoneCode}`)), '맥 로그에 확인 숫자')
-    assert.equal(fs.statSync(path.join(stateDir, 'pair-pending.json')).mode & 0o777, 0o600)
+    assert.equal(pending.requestId, paired.requestId)
+    assert.equal(pending.code, paired.code)
+    assert.equal(pending.label, '시험 폰')
+    assert.equal(asked.length, 1)
+    assert.ok(!lines.some((line) => line.includes(paired.code)), '맥 로그에 번호가 없다')
     await relay.accept(pending.requestId)
     await waitFor(() => phone.received.find((event) => event.event === 'pair.accepted'), 'pair.accepted')
     assert.deepEqual(relay.peers(), [phoneId])
+    assert.deepEqual(relay.devices().map((device) => [device.peer, device.label]), [[phoneId, '시험 폰']])
 
     await phone.hello(macId, macStatic)
     await waitFor(() => relay.status().sessions.includes(phoneId), '맥 세션')
@@ -231,7 +278,7 @@ test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snap
     assert.equal((await phone.ask(macId, 4, 'snapshot')).ok, true)
 
     // 짝이 아닌 같은 계정 기기 — relay 가 넘기지 않는다(not_paired)
-    await stranger.call('auth.login', { provider: 'dev', account: 'tester@example.com', kind: 'app' })
+    await stranger.call('auth.login', { provider: 'dev', account: 'tester', kind: 'app' })
     stranger.send(macId, mobileCrypto.encodeHandshake(mobileCrypto.helloMessage(mobileCrypto.newKeyPair().publicKey)))
     const strangerDrop = await waitFor(() => stranger.received.find((event) => event.event === 'msg.dropped'), '짝 아님 msg.dropped')
     assert.equal(strangerDrop.code, 'not_paired')
@@ -247,9 +294,9 @@ test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snap
     const dropped = await waitFor(() => phone.received.find((event) => event.event === 'msg.dropped'), '해제 뒤 msg.dropped')
     assert.equal(dropped.code, 'not_paired')
 
-    // 로그에 열쇠 · 토큰이 없다(기기 id · 확인 숫자만)
+    // 로그에 열쇠 · 토큰이 없다(기기 id 만)
     const keyFile = JSON.parse(fs.readFileSync(path.join(stateDir, 'mac-key.json'), 'utf8'))
-    for (const secret of [saved.token, keyFile.privateKey]) assert.ok(!lines.some((line) => line.includes(secret)), '로그에 비밀이 섞이지 않는다')
+    for (const secret of [JSON.parse(fs.readFileSync(path.join(stateDir, 'relay.json'), 'utf8')).token, keyFile.privateKey]) assert.ok(!lines.some((line) => line.includes(secret)), '로그에 비밀이 섞이지 않는다')
   } finally {
     phone.close()
     stranger.close()
@@ -261,37 +308,91 @@ test('로컬 relay — 로그인 → 연결 요청 → 허용 → hello → snap
   }
 })
 
+test('로컬 relay — 연결 요청 거두기: 폰이 pair.cancel 하면 허용 창이 닫히고 · 약속 단계를 어기면 맥이 pair.cancel', { skip: skipRelay, timeout: 20_000 }, async () => {
+  const work = fs.mkdtempSync('/tmp/asd-mcan-')
+  const relayServer = await startLocalRelay(work)
+  const url = `ws://127.0.0.1:${relayServer.port}/ws`
+  const lines = []
+  const relay = createMobileRelay({ url, dir: path.join(work, 'mobile'), log: (line) => lines.push(line), createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) })
+  const phone = createFakePhone(url)
+  try {
+    await relay.start()
+    await webSignIn(relay, url, 'cancel')
+    const macId = relay.status().deviceId
+    assert.equal((await phone.call('auth.login', { provider: 'dev', account: 'cancel', kind: 'app' })).ok, true)
+
+    // ① 번호가 뜬 뒤 폰이 거둠 → 맥은 pair.cancelled 를 받고 기다리는 요청을 지운다 · 그 뒤 허용은 안 된다
+    const first = await phonePair(phone, macId, '폰')
+    await waitFor(() => relay.pending()[0], '맥 쪽 요청')
+    assert.equal((await phone.call('pair.cancel', { requestId: first.requestId })).ok, true)
+    await waitFor(() => relay.pending().length === 0, '폰이 거둔 뒤 맥 창 닫힘')
+    await assert.rejects(relay.accept(first.requestId), (error) => error.code === 'not_found')
+
+    // ② 약속을 받은 폰이 난수 대신 다른 것을 보냄 → 맥이 거두고 폰은 pair.cancelled(cancelled) 를 받는다 · 번호는 뜨지 않는다
+    const asked = await phone.call('pair.request', { to: macId, publicKey: mobileCrypto.toBase64Url(phone.keys.publicKey), label: '폰' })
+    const requestId = asked.result.requestId
+    await waitFor(() => phone.received.find((event) => event.event === 'pair.data' && event.requestId === requestId && mobileCrypto.decodePairData(event.data)?.kind === 'commit'), '두 번째 약속')
+    assert.equal((await phone.call('pair.data', { requestId, data: mobileCrypto.encodePairData({ pc: 'reveal', v: 1, n: mobileCrypto.toBase64(mobileCrypto.newPairNonce()) }) })).ok, true)
+    const cancelled = await waitFor(() => phone.received.find((event) => event.event === 'pair.cancelled' && event.requestId === requestId), '맥이 거둠')
+    assert.equal(cancelled.reason, 'cancelled')
+    assert.equal(relay.pending().length, 0)
+    assert.ok(lines.some((line) => line.includes('bad_pair_data')))
+    // 한 요청에 맥이 보낸 pair.data 는 약속 · 열기 2개뿐(relay 한도 4)
+    assert.equal(phone.received.filter((event) => event.event === 'pair.data' && event.requestId === first.requestId).length, 2)
+  } finally {
+    phone.close()
+    await relay.stop()
+    await relayServer.close()
+    fs.rmSync(work, { recursive: true, force: true })
+  }
+})
+
 test('로컬 relay — 다시 켜면 저장한 토큰으로 resume · 같은 기기 id', { skip: skipRelay, timeout: 20_000 }, async () => {
   const work = fs.mkdtempSync('/tmp/asd-mres-')
   const relayServer = await startLocalRelay(work)
-  const options = { url: `ws://127.0.0.1:${relayServer.port}/ws`, login: { provider: 'dev', account: 'resume@example.com' }, dir: path.join(work, 'mobile'), log: () => {}, createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) }
+  const url = `ws://127.0.0.1:${relayServer.port}/ws`
+  const options = { url, dir: path.join(work, 'mobile'), log: () => {}, createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) }
   try {
     const first = createMobileRelay(options)
     await first.start()
-    await waitFor(() => first.status().connected, '첫 로그인')
+    await webSignIn(first, url, 'resume')
     const deviceId = first.status().deviceId
     await first.stop()
     const second = createMobileRelay(options)
     await second.start()
     await waitFor(() => second.status().connected, 'resume')
     assert.equal(second.status().deviceId, deviceId)
+    // 맥에서 로그아웃 — 토큰을 버리고 다시 켜도 붙지 않는다
+    second.signOut()
+    assert.equal(second.status().signedIn, false)
     await second.stop()
+    const third = createMobileRelay(options)
+    await third.start()
+    await sleep(200)
+    assert.equal(third.status().connected, false)
+    await third.stop()
   } finally {
     await relayServer.close()
     fs.rmSync(work, { recursive: true, force: true })
   }
 })
 
-test('개발용 길 문 — 개발판 · 격리 집 · 루프백 ws · 개발 계정이 모두 있을 때만 켠다', async () => {
+test('개발용 길 문 — 개발판 · 격리 집 · 루프백 ws 가 모두 있을 때만 켠다', async () => {
   const { mobileDevOptions } = require('../src/main/mobile-dev.mts')
-  const env = { ATHENA_STUDIO_MOBILE_RELAY: 'ws://127.0.0.1:3130/ws', ATHENA_STUDIO_MOBILE_DEV_ACCOUNT: 'tester@example.com' }
-  assert.deepEqual(mobileDevOptions({ env, packaged: false, homeOverride: '/tmp/iso' }), { url: 'ws://127.0.0.1:3130/ws', account: 'tester@example.com', dir: path.join('/tmp/iso', 'mobile') })
+  const env = { ATHENA_STUDIO_MOBILE_RELAY: 'ws://127.0.0.1:3130/ws' }
+  assert.deepEqual(mobileDevOptions({ env, packaged: false, homeOverride: '/tmp/iso' }), { url: 'ws://127.0.0.1:3130/ws', base: 'http://127.0.0.1:3130', dir: path.join('/tmp/iso', 'mobile') })
   assert.equal(mobileDevOptions({ env, packaged: true, homeOverride: '/tmp/iso' }), null, '배포판')
   assert.equal(mobileDevOptions({ env, packaged: false, homeOverride: null }), null, '격리 집 없음')
+  assert.equal(mobileDevOptions({ env: {}, packaged: false, homeOverride: '/tmp/iso' }), null, '주소 없음')
   for (const relay of ['wss://relay.example.com/ws', 'ws://10.0.0.5:3130/ws', 'http://127.0.0.1:3130/ws', '깨진 주소']) {
     assert.equal(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_RELAY: relay }, packaged: false, homeOverride: '/tmp/iso' }), null, relay)
   }
-  for (const account of ['', 'a b', 'x'.repeat(65)]) {
-    assert.equal(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_DEV_ACCOUNT: account }, packaged: false, homeOverride: '/tmp/iso' }), null, `계정 ${account.length}`)
-  }
+})
+
+test('화면 이름 — 공급자 이름 · 이메일 먼저, 없으면 개발 계정 이름만(apple · google sub 은 안 보인다)', () => {
+  const { displayName } = require('../src/main/mobile-dev.mts')
+  assert.equal(displayName('민창', 'google:123'), '민창')
+  assert.equal(displayName(null, 'dev:tester'), 'tester')
+  assert.equal(displayName(null, 'google:123'), null)
+  assert.equal(displayName(null, null), null)
 })
