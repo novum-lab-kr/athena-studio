@@ -180,8 +180,10 @@ check("깨진 입력에도 종료 0", code == 0)
 (body / ".claude/settings.json").write_text(json.dumps({"autoCompactWindow": 200000}))
 code, out = run("warn", {**payload, "session_id": "s-8"})
 check("아테나 세션 알림은 리드 기록을 가리킨다", "lead-log.mjs" in out and "리드 기록" in out, out)
+check("아테나 세션 알림은 단계 끝에 lead-fresh.py --plan 으로 새로 시작하라고 한다", "lead-fresh.py" in out and "--plan" in out and "/new" not in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9"}, env_extra={"ATHENA_AGENT": "fe"})
 check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "lead-log.mjs" not in out, out)
+check("위임 에이전트 알림은 스스로 새로 시작하라고 하지 않는다", "lead-fresh.py" not in out, out)
 
 print("세션 첫 도구 뒤 — 첫 응답이 기록에 늦게 쓰인다")
 # 2026-11-07 대화형 claude 실측: 첫 PostToolUse 훅이 돌 때 그 도구를 부른 응답이 아직 기록에 없다(60ms 뒤 쓰임) · 예전엔 56,439 를 놓쳤다

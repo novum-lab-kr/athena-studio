@@ -18,6 +18,8 @@
   - 첫 입력 전 Stop · 지시 없이 띄운 시작 안내(ATHENA_NOTIFY_BOOTSTRAP)는 알리지 않는다
   - 같은 줄은 사용자 입력이 새로 오기 전에는 다시 보내지 않는다(새 입력이 오면 같은 내용도 다시 알린다 — 같은 계획서에 요청을 이어 받는 경우)
   - 아테나가 이 알림에 답한 입력("[아테나 …] … 끝 알림 …")으로 시작한 차례는 알리지 않는다
+  - 같은 차례에 에이전트가 lead-send.py 로 직접 보고했으면(reported — scripts/lib/agent_turn.py) "끝" 줄은 넣지 않는다 — 한 차례에 아테나를 두 번 깨웠다(2026-11-11).
+    보고 뒤 Status · PR · Auto merge 줄이 바뀌었거나 멈춤 · 질문으로 끝난 차례는 그대로 알린다. 받음 확인 · 다시 넣기는 그 보고 기록이 맡는다
 백그라운드 명령이 아직 돌아도 그 차례는 알리고 줄 끝에 "(백그라운드 명령 N개 도는 중)" 을 붙인다 — 미루면 다음 Stop 이 안 와 알림이 영영 안 갔다.
   명령이 끝나 다음 Stop 이 오면 줄이 달라져 한 번 더 간다(같은 줄 중복 막기는 그대로).
   대기 목록 = 대화 기록(transcript_path)의 시작 기록(backgroundTaskId · 출력 파일) − 끝 기록(task-notification · TaskStop). 끝 기록이 영영 안 남는 경우가 있어
@@ -105,6 +107,12 @@ def plan_fields(text: str) -> dict:
     # 바로 머지(PR 끔) — "- Auto merge: <레포> <브랜치> @<sha7> · <결과> · <시각>" 줄마다 "레포 브랜치 결과". 완료 판단은 현황판이 같은 줄로 한다(ship.sh 종료 코드가 아니다)
     merges = [f'{hit.group(1)} {hit.group(2)} {hit.group(3).strip()}' for hit in re.finditer(r'^- Auto merge:[ \t]*(\S+)[ \t]+(\S+)[ \t]+@[0-9a-f]+[ \t]+·[ \t]+(.+?)[ \t]+·[ \t]+\d{4}-\d{2}-\d{2} \d{2}:\d{2}[ \t]*$', text, re.M)]
     return {'lead': line('Lead pane').split()[0] if line('Lead pane') else '', 'status': line('Status').split()[0] if line('Status') else '', 'pr': pr, 'merge': ' / '.join(merges)}
+
+
+def already_reported(state: dict, turn: str, plan_text: str) -> bool:
+    """이 차례에 에이전트가 lead-send.py 로 직접 보고했고(agent_turn.mark_reported) 그 뒤 끝 알림에 실릴 계획서 줄이 그대로인가"""
+    reported = state.get('reported')
+    return isinstance(reported, dict) and reported.get('turn') == turn and reported.get('plan') == agent_turn.plan_snapshot(plan_text)
 
 
 def notice_head(stop: str, question: bool) -> str:
@@ -376,9 +384,10 @@ def main() -> None:
     if initial.get('skip') or not plan:
         return  # 시작 안내 · 아테나의 끝 알림 답으로 시작한 차례는 알리지 않는다
     try:
-        fields = plan_fields((ATHENA_DIR / plan).read_text(encoding='utf-8'))
+        plan_text = (ATHENA_DIR / plan).read_text(encoding='utf-8')
     except OSError:
         return
+    fields = plan_fields(plan_text)
     lead = fields['lead']
     if not PANE_ID.match(lead) or lead == pane:
         return
@@ -388,6 +397,8 @@ def main() -> None:
         if not state.get('turn') or state.get('skip'):
             return
         turn = state['turn']
+        if not stop and not question and already_reported(state, turn, plan_text):
+            return  # 이 차례에 직접 보고가 갔다 — 끝 줄로 아테나를 한 번 더 깨우지 않는다(받음 확인은 그 보고가 맡는다)
         pending = state.get('pending') or {}
         if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
             return

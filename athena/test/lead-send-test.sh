@@ -55,7 +55,7 @@ trap 'rm -rf "$WORK"' EXIT   # 남은 처리기는 대기열 폴더가 없어지
 
 lead_send() {   # <글> [추가 인자…] — 에이전트 pane p9 에서 아테나 pane p1 으로
   env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/cli/athena-studio-cli" \
-    ATHENA_AGENT=athena-studio-fe ATHENA_PLAN="${PLAN_REL-plans/task/x.md}" python3 "$BODY/scripts/lead-send.py" "${LEAD:-p1}" "$@"
+    ATHENA_AGENT="${AGENT-athena-studio-fe}" ATHENA_PLAN="${PLAN_REL-plans/task/x.md}" python3 "$BODY/scripts/lead-send.py" "${LEAD:-p1}" "$@"
 }
 count() { if [ -f "$1" ]; then grep -c "${2:-.}" "$1"; else echo 0; fi; }
 queued() { find "$QUEUE" -name '*.json' 2>/dev/null | wc -l | tr -d ' '; }
@@ -142,7 +142,9 @@ check "✅ 출력" "${out:0:1}" "✅"
 check "한 번 넣음" "$(count "$WORK/sent" 'SENT p1 \[fe → 아테나\] 끝 A')" 1
 check "요청 없음" "$(count "$WORK/requests")" 0
 check "대기열 없음" "$(queued)" 0
-check "--track 없으면 받음 확인 기록 없음" "$(notices)" 0
+check "에이전트 직접 보고는 --track 없어도 받음 확인 기록(kind turn) — 그 차례의 끝 줄을 대신한다" "$(notice_with turn '끝 A')" 1
+out="$(AGENT= lead_send '[fe → 아테나] 끝 A2')"
+check "에이전트가 아닌 쪽이 --track 없이 넣은 글은 받음 확인 기록 없음" "$(notice_with turn '끝 A2')" 0
 out="$(lead_send '[fe → 아테나] 끝 B' --track)"
 check "--track 이면 넣은 글을 받음 확인 기록(kind turn)으로" "$(notice_with turn '끝 B')" 1
 received_with() { python3 -c 'import json,pathlib,sys; print(sum(1 for p in pathlib.Path(sys.argv[1]).glob("*.json") if sys.argv[2] in (d:=json.loads(p.read_text())).get("text","") and d.get("received_at") and not d.get("pending")))' "$DATA/state/lead-notices" "$1" 2>/dev/null || echo 0; }

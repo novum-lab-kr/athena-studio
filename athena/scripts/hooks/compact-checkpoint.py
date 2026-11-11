@@ -12,7 +12,7 @@
          "곧 압축 — 알게 된 것을 계획서 · 이슈에 적어 두라" 를 모델에게만 한 번 넣는다(압축 뒤 다시 한 번).
          사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만) · 글은 "답하기 전에 먼저 적어라" 로
          할 일을 앞에 둔다(Codex 는 사용자 글 뒤에 붙어 "적기만" 을 미뤘다)
-         아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다
+         아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다 · 단계 끝에 scripts/lead-fresh.py 로 스스로 새로 시작하라고 한다
          세션 첫 도구 뒤에는 기록에 첫 응답이 아직 없을 수 있어 잠깐(FIRST_WRITE_WAIT) 다시 읽는다
 
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
@@ -814,6 +814,12 @@ def on_warn(payload: dict, codex: bool = False) -> None:
         f'이번 턴에서 답하기 전에 먼저, 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 {where}에 적는다. '
         '압축되면 요약만 남아 적지 않은 것은 사라진다. 적은 뒤 하던 일을 이어 가고, 이 알림 자체는 사용자에게 말하지 않는다.'
     )
+    # 아테나는 압축을 기다리지 않고 스스로 새로 시작한다(2026-11-11 사용자 결정 — 리드 토큰 줄이기 · scripts/lead-fresh.py)
+    if is_lead():
+        fresh = f'python3 {shlex.quote(str(ATHENA_DIR / "scripts/lead-fresh.py"))} --plan <계획서>'
+        context += (f' 그리고 지금 단계(보고)가 끝나는 턴에서 계획서 Checkpoint 를 지금 시각으로 갱신하고 {fresh} 를 부른다 — '
+                    '찍힌 "📦 대화가 커져 새로 시작합니다" 줄만 사용자에게 알리고 턴을 끝내면, 입력칸이 빌 때 대화를 비우고 재개 지시를 넣는다. '
+                    '묶인 계획서가 없거나 단계 중간이면 부르지 않는다.')
     # 모델에게만 — 사용자 화면 줄(systemMessage)은 내지 않는다
     print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}, ensure_ascii=False))
 
