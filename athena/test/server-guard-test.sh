@@ -378,6 +378,41 @@ curl -s http://169.254.169.254/latest/meta-data/
 curl -s http://metadata.google.internal/
 curl -s http://2852039166/
 curl -s http://0xa9fea9fe/
+tee /etc/update-motd.d/99-x
+cp a /etc/logrotate.d/x
+echo x > /etc/network/if-up.d/x
+cp a /etc/network/if-pre-up.d/x
+tee /etc/NetworkManager/dispatcher.d/x
+echo x > /etc/udev/rules.d/99.rules
+cp a /etc/modprobe.d/x.conf
+sed -i s/a/b/ /etc/default/grub
+cp a /etc/xdg/autostart/x.desktop
+tee /etc/cron.allow
+cp a /etc/sudoers.tmp
+sed -i s/a/b/ /etc/pam.d/sshd
+tee /etc/security/limits.conf
+echo x >> /root/.gitconfig
+cp a /home/bob/.vimrc
+echo x > /home/bob/.ssh/config
+sudo -n cp /tmp/rc.local /etc
+cp /tmp/rc.local /etc/
+cp -t /etc /tmp/rc.local
+cp --target-directory=/etc /tmp/rc.local
+cp --target-directory /etc /tmp/rc.local
+cp a b /etc/profile.d
+cd /etc && cp /tmp/rc.local .
+cp -r /tmp/x /srv/app
+cp -a /srv/a /srv/b
+cp --recursive /tmp/x /srv
+cp -Rf /tmp/x /srv
+git stash
+git stash --include-untracked
+git stash -u
+git stash push
+git stash save x
+git stash pop
+git stash drop
+git stash clear
 LIST
 echo "① 바로 — 다음에 실행되는 자리라도 mkdir(빈 폴더) · 그 밖의 쓰기 · 보통 curl"
 while IFS= read -r line; do allow allow "$line"; done <<'LIST'
@@ -387,6 +422,11 @@ cp a /srv/app/bin/x
 tee /srv/lib/x
 curl -s http://127.0.0.1:8080/health
 curl -s http://10.0.0.5/
+echo x > /etc/default/locale
+cp -pf /tmp/a /srv/app/
+cp -p /srv/a.conf /srv/a.conf.bak
+git -C /srv/app stash list
+git -C /srv/app stash show
 LIST
 echo "② 막힘 — 2026-11-11 결정 뒤에도 그대로(비밀값 · 보호 경로 쓰기 · show 의 Environment · 끝없는 읽기)"
 while IFS= read -r line; do allow deny "$line"; done <<'LIST'
@@ -699,7 +739,7 @@ printf 'newer line\n' >"$WORK/Caddyfile"
 : >"$LOG"; ATHENA_SERVER_APPROVED=r-put2 FAKE_ANSWER="$(answer_json "$PUT_KEY" 실행 1)" bash "$RUN" dukbae --put "$WORK/Caddyfile" /etc/cron.d/backup >/dev/null 2>&1
 expect "올릴 내용이 바뀌면 다시 확인(3)" 3 $?
 lacks "내용이 바뀐 --put 은 올리지 않는다" "$LOG" "scp "
-for remote in /etc/sudoers.d/web '~/.ssh/config' /root/.ssh/config /etc/ssh/sshd_config /etc/fstab ../../etc/crontab /srv/../etc/passwd /etc/profile.d/x.sh /usr/local/bin/x /etc/systemd/system/x.service '~/.bashrc'; do
+for remote in /etc/sudoers.d/web '~/.ssh/config' /root/.ssh/config /etc/ssh/sshd_config /etc/fstab ../../etc/crontab /srv/../etc/passwd /etc/profile.d/x.sh /usr/local/bin/x /etc/systemd/system/x.service '~/.bashrc' /etc/logrotate.d/x /etc/default/grub '~/.gitconfig' /etc/cron.allow; do
   : >"$LOG"; bash "$RUN" dukbae --put "$WORK/Caddyfile" "$remote" >/dev/null 2>&1; expect "보호 경로 --put 확인(3): $remote" 3 $?
   lacks "보호 경로 --put 은 확인 전에 올리지 않는다: $remote" "$LOG" "scp "
 done

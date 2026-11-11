@@ -176,16 +176,17 @@ WRITERS = {'cp', 'tee', 'touch', 'mkdir', 'sort', 'uniq', 'tree', 'xxd'}
 # 쓰면 확인할 보호 경로 — 장치 · 커널 · 부팅 · 권한 · 사용자 · 로그인 · 크론 · 디스크 표(/dev/null · stdout · stderr 는 된다)
 PROTECTED = re.compile(
     r'^/(dev/(?!(null|stdout|stderr)$)|(proc|sys|boot)(/|$)|var/spool/cron(/|$)'
-    r'|etc/((sudoers|passwd|shadow|group|gshadow|crontab|anacrontab|fstab|ld\.so\.preload)$|(sudoers\.d|cron\.\w+|pam\.d|ssh|security)(/|$)))'
+    r'|etc/((passwd|shadow|group|gshadow|anacrontab|fstab|ld\.so\.preload)$|(sudoers[^/]*|cron[^/]*|pam\.d|ssh|security)(/|$)))'
 )
 PROTECTED_NAMES = {'sudoers', 'passwd', 'shadow', 'group', 'gshadow', 'crontab', 'anacrontab', 'fstab', 'ld.so.preload'}
 # 다음에 실행되는 자리 — 로그인 · 부팅 · 서비스 시작 · 다른 명령 실행 때 그 파일이 돈다(2026-11-11 보안 검토 중간 1 · 아테나 지시)
 RUN_SPOTS = re.compile(
     r'^/(etc/((profile|bash\.bashrc|environment|rc\.local|hosts|resolv\.conf)$|(profile\.d|rc[^/]*\.d|init\.d|systemd|apt)(/|$)'
-    r'|ld\.so\.conf[^/]*(/|$)|sysctl[^/]*(/|$))'
+    r'|ld\.so\.conf[^/]*(/|$)|sysctl[^/]*(/|$)'
+    r'|(update-motd\.d|logrotate\.d|network/if-[^/]*\.d|NetworkManager/dispatcher\.d|udev/rules\.d|modprobe\.d|xdg/autostart)(/|$)|default/grub$)'
     r'|(usr/)?lib/systemd(/|$)|usr/local/s?bin(/|$)|usr/s?bin(/|$)|s?bin(/|$)|lib(/|$))'
 )
-RUN_NAMES = {'.bashrc', '.bash_profile', '.profile', '.zshrc'}
+RUN_NAMES = {'.bashrc', '.bash_profile', '.profile', '.zshrc', '.gitconfig', '.vimrc'}
 
 # 위험 표 — 여기 든 명령은 확인([작업] 요청). 읽기 꼴(READ_FORMS)만 바로 — apt list · dpkg -l · ufw status · crontab -l · iptables -L …
 DANGER_KINDS = {
@@ -388,12 +389,57 @@ def check_free(name, args, cwds):
             return f'{name} -{bad or letter}({rule["why"]})'
         if letter in rule['out'] and letter and value:
             targets.append(value)
+    if name == 'cp':
+        reason, landed = cp_landing(args)
+        if reason:
+            return reason
+        targets += landed
     if name in WRITERS:
         for target in targets:
             why = protected_path(target, cwds, run_spots=name != 'mkdir')
             if why:
                 return f'{name} 쓰기 — {why}'
     return None
+
+
+def cp_landing(args):
+    """cp 가 실제로 쓰는 곳 — 목적지가 폴더면 폴더 + 원본 이름(cp /tmp/rc.local /etc → /etc/rc.local · -t 폴더도).
+    재귀(-r · -R · -a · --recursive · --archive)는 하위에 생길 경로를 다 판정 못 하니 확인(2026-11-11 자동 리뷰 #287)"""
+    names, folder, index, ended = [], None, 0, False
+    while index < len(args):
+        arg = args[index]
+        index += 1
+        if ended or arg == '-' or not arg.startswith('-'):
+            names.append(arg)
+            continue
+        if arg == '--':
+            ended = True
+            continue
+        if arg.startswith('--'):
+            option, _, value = arg.partition('=')
+            if len(option) > 2 and ('--recursive'.startswith(option) or '--archive'.startswith(option)):
+                return f'cp {option}(재귀 복사 — 하위에 생길 경로를 다 판정 못 한다)', []
+            if len(option) > 3 and '--target-directory'.startswith(option):
+                if not value and index < len(args):
+                    value = args[index]
+                    index += 1
+                folder = value
+            continue
+        letters, letter, value = short_letters(arg, 'tS')
+        recursive = next((each for each in letters if each in 'rRa'), None)
+        if recursive:
+            return f'cp -{recursive}(재귀 복사 — 하위에 생길 경로를 다 판정 못 한다)', []
+        if letter and not value and index < len(args):
+            value = args[index]
+            index += 1
+        if letter == 't':
+            folder = value
+    if folder is None:
+        if len(names) < 2:
+            return None, []
+        folder, names = names[-1], names[:-1]
+    landed = [posixpath.join(folder, posixpath.basename(posixpath.normpath(source))) for source in names]
+    return None, landed + [folder]
 
 
 def check_find(args):
@@ -527,8 +573,9 @@ def check_git(args):
         if plain and not any(arg in ('-l', '--list') for arg in rest):
             return f'git {sub} 만들기(목록은 -l · --list)'
     plain = [arg for arg in rest if not arg.startswith('-')]
-    if sub == 'stash' and plain[:1] not in ([], ['list'], ['show']):
-        return f'git stash {plain[0]}(list · show 만)'
+    if sub == 'stash' and rest[:1] not in (['list'], ['show']):
+        # 하위 명령 없는 git stash(옵션만 줘도)는 push 와 같다 — 작업트리를 치운다(2026-11-11 자동 리뷰 #287)
+        return f'git stash {(rest or ["(하위 명령 없음 = push)"])[0]}(list · show 만)'
     if sub == 'worktree' and plain[:1] != ['list']:
         return f'git worktree {(plain or [""])[0]}'.strip() + '(list 만)'
     if sub == 'reflog' and plain[:1] and plain[0] in ('expire', 'delete', 'drop'):
