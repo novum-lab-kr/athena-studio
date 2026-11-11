@@ -111,7 +111,10 @@ rm -f "$DATA/state/agent-notify/p9.json"
 BOOTSTRAP=1 hook prompt '{"prompt":"지금은 지시가 없다. 브랜치 확인 후 기다린다"}'
 BOOTSTRAP=1 hook stop
 check "작업 지시 없는 시작 안내 턴은 끝 알림을 보내지 않는다" "$(sent)" 0
+# 현황판(turn-watch.mjs 5)이 '지시 없이 5분 대기' 를 알리려고 읽는 칸 — 첫 차례 · 끝 알림 건너뜀
+check "시작 안내 턴은 차례 상태에 first · quiet" "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("state"), d.get("first"), d.get("quiet"))' "$DATA/state/agent-turn/p9.json")" "done True True"
 BOOTSTRAP=1 hook prompt '{"prompt":"첫 실제 요청"}'
+check "다음 입력부터는 first 아님" "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("first"), d.get("quiet"))' "$DATA/state/agent-turn/p9.json")" "False False"
 BOOTSTRAP=1 hook stop
 check "시작 안내 뒤 실제 요청부터 끝 알림을 보낸다" "$(sent)" 1
 : > "$FAKE_LOG"

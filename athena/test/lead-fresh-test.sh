@@ -4,6 +4,7 @@
 #   위임 에이전트 · 사용법 · 계획서 없음 · Checkpoint 오래됨은 거절(아무것도 안 넣음)
 #   일하는 중 · 입력칸 초안 · 선택 창이면 기다리고, 쉬면 /clear → 새 대화 → Lead session 옮기기 → 재개 지시
 #   그사이 사용자가 직접 새로 시작했으면 넣지 않는다 · Codex 는 /new
+#   넘긴 계획서는 이미 다른 대화를 가리켜도(손 /clear 뒤) 옮긴다 · 지운 때를 적는다(30분 안에는 다시 묻지 않게)
 #
 # 사용: test/lead-fresh-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -115,6 +116,27 @@ check "다른 아테나 pane 계획서는 그대로" "$(session_of elsewhere)" s
 check "모아 둔 이 아테나 글의 대화도 옮긴다" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["session"])' "$QUEUE/p1-1.json")" s-new
 check "다른 아테나 글은 그대로" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["session"])' "$QUEUE/p2-1.json")" s-old
 check "사건 기록 lead.fresh result=done" "$(count "$EVENTS" '"result":"done"')" 1
+check "지운 때를 적는다(30분 안에는 다시 묻지 않게 — lead_fresh_mark)" "$([ -s "$DATA/state/lead-fresh/p1.cleared" ] && echo 1 || echo 0)" 1
+
+echo "▶ 넘긴 계획서가 이미 옛 대화를 가리켜도(사용자가 손으로 /clear 한 뒤) 새 대화로 옮긴다(2026-11-11 p1m)"
+reset
+write_plan main "$(now)" in_progress p1 s-manual           # 손 /clear 전 대화 — pane 기록(s-old)과 다르다
+write_plan stale "$(now)" in_progress p1 s-manual          # 넘기지 않은 계획서 — 어느 대화인지 몰라 그대로
+write_plan taken "$(now)" in_progress p2 s-manual          # 넘긴 적 없는 다른 아테나 pane — 그대로
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+finished
+check "사건 기록 result=done" "$(count "$EVENTS" '"result":"done"')" 1
+check "넘긴 계획서 Lead session 을 새 대화로" "$(session_of main)" s-new
+check "넘기지 않은 계획서는 그대로" "$(session_of stale)" s-manual
+check "다른 아테나 pane 계획서는 그대로" "$(session_of taken)" s-manual
+rm -f "$BODY/plans/task/stale.md" "$BODY/plans/task/taken.md"
+
+echo "▶ 넘긴 계획서가 다른 아테나 pane 것이면 옮기지 않는다"
+reset
+write_plan main "$(now)" in_progress p2 s-manual
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+finished
+check "다른 pane 의 계획서 Lead session 은 그대로" "$(session_of main)" s-manual
 
 echo "▶ 그사이 사용자가 직접 새로 시작했으면 넣지 않는다"
 reset
@@ -124,6 +146,7 @@ printf '{"session":"s-user","agent":"claude"}\n' > "$SESSIONS/p1.json"
 echo idle > "$WORK/status"
 finished
 check "아무것도 넣지 않았다" "$(count "$WORK/sent")" 0
+check "안 지웠으면 지운 때를 적지 않는다" "$([ -e "$DATA/state/lead-fresh/p1.cleared" ] && echo 1 || echo 0)" 0
 check "사건 기록 result=already-new" "$(count "$EVENTS" '"result":"already-new"')" 1
 
 echo "▶ 예약 뒤 같은 대화에 새 입력이 들어왔으면 /clear 를 넣지 않는다(리뷰 #289 ①)"
@@ -181,8 +204,8 @@ spec = importlib.util.spec_from_file_location('lead_fresh', sys.argv[1])
 module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(module)
 original = module.rebind_session
-def during_rebind(pane, old, new):
-    moved = original(pane, old, new)
+def during_rebind(*args):
+    moved = original(*args)
     with open(sys.argv[2], 'w', encoding='utf-8') as handle:
         handle.write('{"session":"s-new","agent":"claude","at":"t-user-typed"}\n')
     return moved

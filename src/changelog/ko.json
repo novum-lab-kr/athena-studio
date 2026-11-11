@@ -220,5 +220,8 @@
   "Fix read-only server commands asking for confirmation — quotes in arguments kept": "읽기만 하는 서버 명령에도 확인 요청이 뜨던 문제 수정 — 인자의 따옴표 유지",
   "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "서버 확인 요청 줄임 — 위험한 명령만 확인(재시작 · 삭제 · 설치 · 권한)",
   "Fix Athena getting a duplicate done notice after an agent already reported": "에이전트가 이미 보고한 뒤 아테나에 끝 알림이 한 번 더 가던 문제 수정",
-  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "대화가 커지면 아테나 새 대화 자동 시작 — 계획서에서 재개"
+  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "대화가 커지면 아테나 새 대화 자동 시작 — 계획서에서 재개",
+  "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "아테나가 묻지 않고 대화를 새로 시작하던 문제 수정 — 먼저 묻기, 30분 안에는 다시 묻지 않기",
+  "Fix agent reports not reaching Athena after a fresh conversation": "새 대화로 바꾼 뒤 에이전트 보고가 아테나에 가지 않던 문제 수정",
+  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "지시문 없이 띄운 에이전트가 놀던 문제 수정 — 계획서 지시대로 진행 · 5분 놀면 아테나에 알림"
 }

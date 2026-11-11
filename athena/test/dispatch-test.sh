@@ -92,8 +92,8 @@ elif a[:2] == ['pane','run']:
     (core / 'pack').mkdir()
     (core / 'pack/pack.json').write_text(json.dumps(cfg))
     (core / 'athena.config.json').write_text(json.dumps({'dataDir': str(root / 'data')}))
-    def run(ready, remembered=None, extra=(), prompt="TASK_SENTINEL", issue=False):
-        plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n')
+    def run(ready, remembered=None, extra=(), prompt="TASK_SENTINEL", issue=False, order=''):
+        plan.write_text('# 시험\n\n## Checkpoint\n- Status: in_progress\n- Work ref: pending\n' + order)
         if issue:
             # issue 가 글이면 그대로 Issue 줄(묶음) — 줄에 적힌 이슈 중 '-없음' 으로 끝나지 않는 것만 파일을 만든다
             line = issue if isinstance(issue, str) else 'issues/test.md'
@@ -220,6 +220,15 @@ elif a[:2] == ['pane','run']:
     check('Issue 줄에 이슈 여럿 → 있는 이슈 모두 지시문에 · 없는 파일은 뺌', result.returncode == 0 and got and got['bootstrap'] == '0'
           and str(core / 'issues/20261110-web-가나.md') in text and str(core / 'issues/20261110-web-다라.md') in text and '20261110-web-없음' not in text
           and '이슈 issues/20261110-web-가나.md · issues/20261110-web-다라.md 처리' in text)
+    # 계획서 '## 지시' 가 이미 채워졌으면(new-plan.mjs --prompt-file 등) 지시문이 없어도 기다리지 않고 진행한다(2026-11-11 p4a 가 27분 기다림)
+    for engine in ('claude', 'codex'):
+        result, got, calls = run(engine, prompt=None, order='\n## 지시\n> ORDER_SENTINEL 고치기\n\n## 결과\n- \n')
+        text = got['args'][-1] if got else ''
+        check(f'{engine} — 채워진 지시 절 · 지시문 없음 → 기다리지 않고 진행', result.returncode == 0 and got and got['bootstrap'] == '0'
+              and '지금은 지시가 없다' not in text and "'## 지시' 절이 할 일이다" in text)
+        result, got, calls = run(engine, prompt=None, order='\n## 지시\n> (지시문 없음 — pane 에서 대화로 지시)\n\n## 결과\n- \n')
+        text = got['args'][-1] if got else ''
+        check(f'{engine} — 빈 틀 지시 절 → 요청을 기다린다', result.returncode == 0 and got and got['bootstrap'] == '1' and '지금은 지시가 없다' in text)
     result, got, calls = run('codex', prompt=None, extra=('--resume', '11111111-2222-3333-4444-555555555555'))
     check('지시 없는 resume 은 다음 실제 요청을 시작 안내로 보지 않는다', result.returncode == 0 and got and got['bootstrap'] == '0')
     # 같은 팩 설정을 바꿔 재디스패치한다 — 새 pane / 재사용 pane · 두 엔진에 같은 안내가 실려야 한다.

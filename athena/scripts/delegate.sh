@@ -225,8 +225,21 @@ for issue_path in $(sed -n 's/^- Issue:[[:space:]]*//p' "$ATHENA_DIR/$PLAN" | he
   PLAN_ISSUE="${PLAN_ISSUE:+$PLAN_ISSUE · }$issue_path"
   PLAN_ISSUE_PATHS="${PLAN_ISSUE_PATHS:+$PLAN_ISSUE_PATHS · }$ATHENA_DIR/$issue_path"
 done
+# 계획서 '## 지시' 절이 이미 채워졌나(new-plan.mjs --prompt-file 로 만든 계획서 등) — 빈 틀(경량 '(지시문 없음 …)' · 정식 'YYYY-MM-DD')이나 빈 줄 · 주석뿐이면 비었다
+# (2026-11-11 p4a — 지시가 적힌 계획서로 지시문 없이 띄워 "지금은 지시가 없다" 로 27분 기다렸다)
+PLAN_ORDER_FILLED=0
+if [ -z "$PROMPT" ] && awk '
+  /^## / { inside = ($0 ~ /^## 지시[[:space:]]*$/); next }
+  !inside || /^[[:space:]]*$/ || /^[[:space:]]*<!--/ { next }
+  /지시문 없음|YYYY-MM-DD/ { blank = 1; next }
+  { filled = 1 }
+  END { exit (filled && !blank) ? 0 : 1 }' "$ATHENA_DIR/$PLAN"; then
+  PLAN_ORDER_FILLED=1
+fi
 if [ -z "$PROMPT" ] && [ -n "$PLAN_ISSUE" ]; then
   PLAN_HEADER="${PLAN_HEADER}이 계획서는 이슈 $PLAN_ISSUE_PATHS 에 연결돼 있다 — 지시문이 따로 없어도 이슈(근거·할 일)와 계획서 Progress·Next 가 할 일이다. 요청을 기다리지 말고 브랜치·미커밋 상태를 한 줄로 보고한 뒤 곧바로 Next 부터 진행한다. 시작할 때 계획서 '## 지시' 절을 '이슈 $PLAN_ISSUE 처리 — 계획서 Progress·Next 대로' 로 채우고 Status 를 in_progress 로 바꾼다. 계획서에 '확인을 받은 뒤' 라고 적힌 단계(수정안 확정 등)에서는 멈추고 사용자에게 묻는다. 이슈 파일의 status 는 바꾸지 않는다(아테나가 옮긴다). "
+elif [ -z "$PROMPT" ] && [ "$PLAN_ORDER_FILLED" = 1 ]; then
+  PLAN_HEADER="${PLAN_HEADER}지시문이 따로 없어도 계획서 '## 지시' 절이 할 일이다 — 요청을 기다리지 말고 브랜치·미커밋 상태를 한 줄로 보고한 뒤 곧바로 그 지시와 Checkpoint 의 Next 대로 진행한다. 지시의 '멈춤:' 이나 '확인을 받은 뒤' 라고 적힌 단계에서만 멈춘다. "
 elif [ -z "$PROMPT" ]; then
   NOTIFY_BOOTSTRAP=1
   PLAN_HEADER="${PLAN_HEADER}지금은 지시가 없다. 브랜치·미커밋 상태만 확인해 한 줄로 보고하고 사용자의 요청을 기다린다. 첫 요청을 받으면 계획서의 제목(# 줄)과 '## 지시' 절을 그 요청으로 바꿔 적고 진행한다. "

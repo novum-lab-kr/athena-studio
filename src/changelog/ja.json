@@ -220,5 +220,8 @@
   "Fix read-only server commands asking for confirmation — quotes in arguments kept": "読み取りだけのサーバーコマンドでも確認リクエストが出る問題を修正 — 引数の引用符を保持",
   "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "サーバーの確認リクエストを削減 — 危険なコマンドのみ確認(再起動・削除・インストール・権限)",
   "Fix Athena getting a duplicate done notice after an agent already reported": "エージェントが報告済みでもアテナに終了通知が重ねて届く問題を修正",
-  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "会話が大きくなるとアテナの新しい会話を自動開始 — 計画書から再開"
+  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "会話が大きくなるとアテナの新しい会話を自動開始 — 計画書から再開",
+  "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "アテナが確認せずに新しい会話を始める問題を修正 — 先に確認、30分以内は再確認しない",
+  "Fix agent reports not reaching Athena after a fresh conversation": "新しい会話に切り替えた後、エージェントの報告がアテナに届かない問題を修正",
+  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "プロンプトなしで起動したエージェントが待機する問題を修正 — 計画書の指示で進行・5分で通知"
 }
