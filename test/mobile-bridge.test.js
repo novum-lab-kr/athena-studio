@@ -9,22 +9,26 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, runningPanes, readLeadPane, boardActionPoster, mobileInputAllowed } = bridgeModule
+const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed } = bridgeModule
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
 const workDir = () => fs.mkdtempSync('/tmp/asd-mob-')
 
-// 가짜 데몬 — hello · attach(스냅숏) · pane list · input 에 답하고, 받은 요청을 모두 적는다
+// 가짜 데몬 — hello · attach(스냅숏 · state 크기) · state · pane list · input 에 답하고, 받은 요청을 모두 적는다
 function startFakeDaemon(socketPath) {
   const clients = []
   const state = {
     ops: [],
     snapshots: { p1: 'P1-화면', p2: 'P2-화면' },
     panes: [
-      { id: 'p1', label: '아테나', agent: 'claude', agent_status: 'working', cwd: '/숨길/경로' },
-      { id: 'p2', label: 'fe', agent: 'codex', agent_status: 'idle' },
+      { id: 'p1', label: '아테나', agent: 'claude', agent_status: 'working', cwd: '/숨길/경로', cols: 120, rows: 40 },
+      { id: 'p2', label: 'fe', agent: 'codex', agent_status: 'idle', cols: 80, rows: 24 },
     ],
+    // 데몬 state.panes 의 크기(attach · state 가 같이 준다)
+    sizes: { p1: { cols: 120, rows: 40 }, p2: { cols: 80, rows: 24 } },
+    failState: false, // true 면 state 요청에 실패로 답한다(크기 보기 실패)
   }
+  const daemonState = () => ({ panes: Object.entries(state.sizes).map(([id, size]) => ({ id, tab: 't1', ...size })) })
   const server = net.createServer((socket) => {
     const client = { socket, attached: false }
     clients.push(client)
@@ -35,8 +39,10 @@ function startFakeDaemon(socketPath) {
       if (message.op === 'hello') result = { protocol: protocol.PROTOCOL, codeVersion: protocol.DAEMON_CODE }
       else if (message.op === 'attach') {
         client.attached = true
-        result = { state: {}, snapshots: state.snapshots }
-      } else if (message.op === 'pane list') result = { panes: state.panes }
+        result = { state: daemonState(), snapshots: state.snapshots }
+      } else if (message.op === 'state') result = daemonState()
+      else if (message.op === 'pane list') result = { panes: state.panes }
+      if (message.op === 'state' && state.failState) return void socket.write(protocol.encode({ id: message.id, ok: false, error: { code: 'busy', message: '시험용 실패' } }))
       socket.write(protocol.encode({ id: message.id, ok: true, result }))
     }))
     socket.on('error', () => {})
@@ -114,13 +120,16 @@ async function setup(overrides = {}) {
   return { daemon, phone, bridge, ask, events, logged, answered, posted, flags, cleanup }
 }
 
-test('snapshot — 확인 요청 · 진행 중 pane(필요한 칸만) · 서버 · 7일 머지를 한 번에, attach 하지 않는다', async () => {
+test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · 필요한 칸 · PC 크기) · 서버 · 7일 머지를 한 번에, attach 하지 않는다', async () => {
   const env = await setup()
   try {
     const reply = await env.ask('snapshot')
     assert.equal(reply.ok, true)
     assert.deepEqual(reply.result.requests, [{ id: 'r-20261111-090000-abcd', title: '질문' }])
-    assert.deepEqual(reply.result.panes, [{ id: 'p1', label: '아테나', name: null, title: null, agent: 'claude', status: 'working' }])
+    assert.deepEqual(reply.result.panes, [
+      { id: 'p1', label: '아테나', name: null, title: null, agent: 'claude', status: 'working', running: true, cols: 120, rows: 40 },
+      { id: 'p2', label: 'fe', name: null, title: null, agent: 'codex', status: 'idle', running: false, cols: 80, rows: 24 },
+    ])
     assert.deepEqual(reply.result.servers, [{ name: 'novum', ok: true }])
     assert.deepEqual(reply.result.merges, [])
     assert.equal(env.daemon.attached().length, 0, '묻기만 해서는 붙은 앱이 되지 않는다(fitTab · open-url 에 섞이지 않게)')
@@ -133,7 +142,7 @@ test('pane.open — 스냅숏을 답으로, 그 뒤 출력은 연 pane 만 100ms
   const env = await setup()
   try {
     const opened = await env.ask('pane.open', { pane: 'p1' })
-    assert.deepEqual(opened.result, { pane: 'p1', snapshot: 'P1-화면' })
+    assert.deepEqual(opened.result, { pane: 'p1', snapshot: 'P1-화면', cols: 120, rows: 40 })
     assert.equal(env.daemon.attached().length, 1)
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
     env.daemon.emit({ event: 'data', pane: 'p2', data: '안 연 pane' })
@@ -141,7 +150,7 @@ test('pane.open — 스냅숏을 답으로, 그 뒤 출력은 연 pane 만 100ms
     await sleep(15)
     assert.equal(env.events('pane.data').length, 0, '묶음 시간 전에는 보내지 않는다')
     await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
-    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', pane: 'p1', data: 'ab' }])
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'ab' } }])
 
     const closed = await env.ask('pane.close', { pane: 'p1' })
     assert.equal(closed.ok, true)
@@ -164,6 +173,40 @@ test('pane.open — 없는 pane 은 not_found 이고 붙은 채로 남지 않는
   }
 })
 
+test('pane.data — 100ms 안에 나온 여러 pane 출력을 기기당 메시지 하나 {panes:{…}} 로', async () => {
+  const env = await setup()
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.open', { pane: 'p2' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    env.daemon.emit({ event: 'data', pane: 'p2', data: 'b' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'c' })
+    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
+    await sleep(60)
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'ac', p2: 'b' } }])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('resyncPane — 그 pane 하나만 다시 attach 스냅숏으로 · 안 연 pane 은 하지 않는다', async () => {
+  const env = await setup()
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.open', { pane: 'p2' })
+    env.daemon.state.snapshots = { p1: 'P1-다시', p2: 'P2-다시' }
+    await env.bridge.resyncPane('p1')
+    await env.bridge.resyncPane('p9')
+    assert.deepEqual(env.events('pane.resync'), [{ event: 'pane.resync', pane: 'p1', snapshot: 'P1-다시', cols: 120, rows: 40 }])
+    // 다시 맞춘 뒤 출력은 그대로 흐른다
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'x' })
+    await waitFor(() => env.events('pane.data').length > 0, '다시 맞춘 뒤 출력')
+    assert.deepEqual(env.events('pane.data')[0].panes, { p1: 'x' })
+  } finally {
+    await env.cleanup()
+  }
+})
+
 test('resync — 데몬이 따라오지 못한 연결을 끊으면 다시 attach 해서 열린 pane 마다 새 스냅숏', async () => {
   const env = await setup()
   try {
@@ -171,7 +214,7 @@ test('resync — 데몬이 따라오지 못한 연결을 끊으면 다시 attach
     env.daemon.state.snapshots = { p1: 'P1-새화면', p2: 'P2' }
     env.daemon.emit({ event: 'resync' })
     await waitFor(() => env.events('pane.resync').length > 0, 'pane.resync')
-    assert.deepEqual(env.events('pane.resync'), [{ event: 'pane.resync', pane: 'p1', snapshot: 'P1-새화면' }])
+    assert.deepEqual(env.events('pane.resync'), [{ event: 'pane.resync', pane: 'p1', snapshot: 'P1-새화면', cols: 120, rows: 40 }])
     assert.equal(env.daemon.state.ops.filter((entry) => entry.op === 'attach').length, 2)
   } finally {
     await env.cleanup()
@@ -187,6 +230,42 @@ test('exit · state — 폰에 changed {parts:[panes]}', async () => {
     assert.deepEqual(env.events('changed')[0], { event: 'changed', parts: ['panes'] })
     env.bridge.changed(['requests'])
     await waitFor(() => env.events('changed').some((message) => message.parts[0] === 'requests'), '맥 쪽 changed')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('PC pane 크기가 바뀌면 changed {parts:[panes]} — 데몬 state 를 1초(시험은 짧게)마다 본다 · 멈추면 그만 본다', async () => {
+  const env = await setup({ sizePollMs: 30 })
+  try {
+    await env.ask('snapshot')
+    await waitFor(() => env.daemon.state.ops.filter((entry) => entry.op === 'state').length >= 2, '크기 보기 두 번')
+    assert.equal(env.events('changed').length, 0, '처음 본 크기는 기준일 뿐')
+    env.daemon.state.sizes.p1 = { cols: 100, rows: 30 }
+    await waitFor(() => env.events('changed').length > 0, '크기 바뀜 changed')
+    assert.deepEqual(env.events('changed')[0], { event: 'changed', parts: ['panes'] })
+    await sleep(100)
+    assert.equal(env.events('changed').length, 1, '같은 크기면 다시 알리지 않는다')
+    await env.bridge.stop()
+    const polled = env.daemon.state.ops.filter((entry) => entry.op === 'state').length
+    await sleep(100)
+    assert.equal(env.daemon.state.ops.filter((entry) => entry.op === 'state').length, polled)
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('크기 보기는 기기마다 한 번만 — 첫 state 가 진행 중이거나 실패해도 snapshot 을 거듭 불러 늘지 않는다', async () => {
+  // 다음 차례가 시험 안에 오지 않게 길게 — 늘어난 state 는 모두 snapshot 이 새로 켠 것
+  const env = await setup({ sizePollMs: 60_000 })
+  const stateCalls = () => env.daemon.state.ops.filter((entry) => entry.op === 'state').length
+  try {
+    env.daemon.state.failState = true
+    await Promise.all([env.ask('snapshot'), env.ask('snapshot'), env.ask('snapshot')])
+    await waitFor(() => stateCalls() >= 1, '첫 크기 보기')
+    for (let round = 0; round < 3; round++) await env.ask('snapshot')
+    await sleep(50)
+    assert.equal(stateCalls(), 1, '진행 중 · 실패 뒤에도 처음 한 번만')
   } finally {
     await env.cleanup()
   }
@@ -329,8 +408,15 @@ test('weekMerges — 성공한 auto.merge 중 지난 7일만 새것부터', () =
   assert.equal(weekMerges(rows, now)[0].direct, true)
 })
 
-test('runningPanes · mobileInputAllowed — 쉬는 pane 은 빼고, 입력 허용은 true 일 때만', () => {
-  assert.deepEqual(runningPanes([{ id: 'p1', agent_status: 'idle' }, { id: 'p2' }, { id: 'p3', agent_status: 'question' }]).map((pane) => pane.id), ['p3'])
+test('livePanes · paneSizes · mobileInputAllowed — 쉬는 pane 도 넣고 running 으로 가르기, 입력 허용은 true 일 때만', () => {
+  const listed = livePanes([{ id: 'p1', agent_status: 'idle' }, { id: 'p2' }, { id: 'p3', agent_status: 'question', cols: 100, rows: 0 }, { label: 'id 없음' }])
+  assert.deepEqual(listed.map((pane) => [pane.id, pane.status, pane.running, pane.cols, pane.rows]), [
+    ['p1', 'idle', false, null, null],
+    ['p2', null, false, null, null],
+    ['p3', 'question', true, 100, null],
+  ])
+  assert.deepEqual(paneSizes({ panes: [{ id: 'p1', cols: 80, rows: 24 }, { cols: 1 }] }), { p1: { cols: 80, rows: 24 } })
+  assert.deepEqual(paneSizes(null), {})
   assert.equal(mobileInputAllowed(null), false)
   assert.equal(mobileInputAllowed({ mobileInput: 'yes' }), false)
   assert.equal(mobileInputAllowed({ mobileInput: true }), true)

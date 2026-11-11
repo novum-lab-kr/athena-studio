@@ -1,6 +1,6 @@
 // ── 모바일 브리지 — 폰 앱이 이 앱의 데몬 · 요청 · 결정 콘솔을 보고 답하게 하는 맥 쪽 처리기 ──
 // 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 "메시지". 기본 꺼짐 — 켜는 설정 · 화면이 생기기 전에는 아무 데서도 만들지 않는다.
-// 전송층(relay · 암호화)은 아직 없다 — Transport 하나로 끼워 넣는다(지금은 createMemoryTransport · 시험용).
+// 전송층은 Transport 하나로 끼워 넣는다 — 진짜는 relay 의 짝 기기 하나(src/main/mobile-relay.mts · 기기마다 브리지 하나) · 시험은 createMemoryTransport.
 // 메시지 모양은 데몬 줄 JSON 과 같다: 폰 → 맥 {id, op, args} · 맥 → 폰 답 {id, ok, result | error} · 알림 {event, …}
 //
 // 데몬은 자기를 띄운 앱의 것만(부르는 쪽이 main 의 daemonPaths() 를 넘긴다 — 배포판 daemon.json · 개발판 daemon-dev.json · 격리 집).
@@ -50,9 +50,12 @@ export type BridgeDeps = {
   logEvent: LogEvent
   now?: () => number
   flushMs?: number
+  sizePollMs?: number
 }
 
 export const FLUSH_MS = 100 // 출력은 100ms(초당 ~10번)로 묶는다 — 4-7 "트래픽"
+// PC 쪽 pane 크기가 바뀌었나 — 데몬은 resize 를 알리지 않아 묻기용 연결로 state(메모리에서 바로 답한다)를 1초마다 본다(Q8)
+export const SIZE_POLL_MS = 1000
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 // 진행 중 pane — 데몬 pane list 의 agent_status(working · 질문 · 멈춤)
 const IDLE_STATUSES = new Set(['', 'idle', 'unknown', 'none'])
@@ -87,13 +90,31 @@ export function weekMerges(events: EventRow[], now: number) {
     .sort((left, right) => right.at.localeCompare(left.at))
 }
 
-// 진행 중 pane 만 — 폰에 필요한 칸만 넘긴다(cwd 등은 넘기지 않는다)
-type ListedPane = { id?: unknown; label?: unknown; name?: unknown; title?: unknown; agent?: unknown; agent_status?: unknown }
-export function runningPanes(panes: ListedPane[]) {
+// 살아 있는 pane 전부 — 쉬는 pane 도(Pane 탭에서 쉬는 아테나 pane 에 지시 · Q8). 진행 중인지는 status · running 으로 가른다.
+// 폰에 필요한 칸만 넘긴다(cwd 등은 넘기지 않는다) · cols · rows 는 PC 크기(폰은 그대로 받는다 · D1)
+type ListedPane = { id?: unknown; label?: unknown; name?: unknown; title?: unknown; agent?: unknown; agent_status?: unknown; cols?: unknown; rows?: unknown }
+export function livePanes(panes: ListedPane[]) {
   return panes
-    .filter((pane) => typeof pane.id === 'string' && typeof pane.agent_status === 'string' && !IDLE_STATUSES.has(pane.agent_status))
-    .map((pane) => ({ id: pane.id as string, label: pane.label ?? null, name: pane.name ?? null, title: pane.title ?? null, agent: pane.agent ?? null, status: pane.agent_status as string }))
+    .filter((pane) => typeof pane.id === 'string')
+    .map((pane) => {
+      const status = typeof pane.agent_status === 'string' ? pane.agent_status : null
+      return { id: pane.id as string, label: pane.label ?? null, name: pane.name ?? null, title: pane.title ?? null, agent: pane.agent ?? null, status, running: status !== null && !IDLE_STATUSES.has(status), cols: sizeOf(pane.cols), rows: sizeOf(pane.rows) }
+    })
 }
+const sizeOf = (value: unknown): number | null => (Number.isInteger(value) && (value as number) > 0 ? (value as number) : null)
+
+// 데몬 state 의 pane 크기 — {pane: {cols, rows}}
+type StatePanes = { panes?: { id?: unknown; cols?: unknown; rows?: unknown }[] } | null | undefined
+export function paneSizes(state: StatePanes): Record<string, { cols: number | null; rows: number | null }> {
+  const sizes: Record<string, { cols: number | null; rows: number | null }> = {}
+  for (const pane of (state && state.panes) || []) if (typeof pane.id === 'string') sizes[pane.id] = { cols: sizeOf(pane.cols), rows: sizeOf(pane.rows) }
+  return sizes
+}
+const sizeKey = (sizes: ReturnType<typeof paneSizes>) =>
+  Object.keys(sizes)
+    .sort()
+    .map((pane) => `${pane}:${sizes[pane]?.cols}x${sizes[pane]?.rows}`)
+    .join(',')
 
 // 계획서 html 의 결정 콘솔 PLAN 블록에서 leadPane — 현황판 server.mjs planDecisionIds 와 같은 자리를 읽는다
 const PLAN_DATA_BLOCK = /<script id="plan-data">\nconst PLAN = ([\s\S]*?)\n<\/script>/
@@ -180,6 +201,9 @@ export function createMobileBridge(deps: BridgeDeps) {
   let flushTimer: NodeJS.Timeout | null = null
   let resyncing = false
   let stopped = false
+  let sizeTimer: NodeJS.Timeout | null = null
+  let lastSizes: string | null = null
+  let sizeWatching = false // 크기 보기는 브리지(기기)마다 한 번만 시작 — 첫 state 가 진행 중이거나 실패해도 다시 켜지 않는다
 
   const emit = (message: object) => {
     if (!stopped) transport.send(message)
@@ -188,7 +212,8 @@ export function createMobileBridge(deps: BridgeDeps) {
   function flush() {
     if (flushTimer) clearTimeout(flushTimer)
     flushTimer = null
-    for (const [pane, data] of pending) emit({ event: 'pane.data', pane, data })
+    // 기기 하나에 100ms 마다 메시지 하나 — 그사이 나온 pane 들을 한 번에(안쪽 약속 v1)
+    if (pending.size) emit({ event: 'pane.data', panes: Object.fromEntries(pending) })
     pending.clear()
   }
 
@@ -256,12 +281,14 @@ export function createMobileBridge(deps: BridgeDeps) {
   }
 
   // attach — 답을 읽은 그 자리에서(같은 소켓의 뒤 출력보다 먼저) 기다리던 pane 을 풀어 그 뒤 출력부터 받는다
-  async function attach(connection: Connection, onReplied: () => void): Promise<Record<string, string>> {
+  async function attach(connection: Connection, onReplied: () => void) {
     const result = (await connection.call('attach', {}, (reply) => {
       if (reply.ok) onReplied()
-    })) as { snapshots?: Record<string, string> } | null
-    return (result && result.snapshots) || {}
+    })) as { snapshots?: Record<string, string>; state?: StatePanes } | null
+    return { snapshots: (result && result.snapshots) || {}, sizes: paneSizes(result && result.state) }
   }
+  // 폰에 보낼 pane 한 장 — 스냅숏과 그때의 PC 크기(Q8)
+  const paneView = (pane: string, view: Awaited<ReturnType<typeof attach>>) => ({ pane, snapshot: view.snapshots[pane] ?? '', cols: view.sizes[pane]?.cols ?? null, rows: view.sizes[pane]?.rows ?? null })
 
   // 데몬이 못 따라온 폰 연결을 끊었다(8MB) — 다시 attach 해서 열린 pane 마다 새 스냅숏
   async function resync() {
@@ -271,10 +298,24 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (flushTimer) clearTimeout(flushTimer)
     flushTimer = null
     try {
-      const snapshots = await attach(stream, () => (resyncing = false))
-      for (const pane of open) emit({ event: 'pane.resync', pane, snapshot: snapshots[pane] ?? '' })
+      const view = await attach(stream, () => (resyncing = false))
+      for (const pane of open) emit({ event: 'pane.resync', ...paneView(pane, view) })
     } finally {
       resyncing = false
+    }
+  }
+
+  // pane 하나만 다시 맞추기 — 맥 → 폰 출력이 relay 에서 버려졌을 때(msg.dropped). 다시 attach 해 그 pane 스냅숏만 보내고,
+  // 답을 읽기 전 출력은 스냅숏에 들어 있으니 버린다(paneOpen 과 같은 opening 표시)
+  async function resyncPane(pane: string) {
+    if (stopped || !stream || !open.has(pane) || opening.has(pane)) return
+    pending.delete(pane)
+    opening.add(pane)
+    try {
+      const view = await attach(stream, () => opening.delete(pane))
+      if (open.has(pane)) emit({ event: 'pane.resync', ...paneView(pane, view) })
+    } finally {
+      opening.delete(pane)
     }
   }
 
@@ -284,13 +325,13 @@ export function createMobileBridge(deps: BridgeDeps) {
     opening.add(pane)
     open.add(pane)
     try {
-      const snapshots = await attach(connection, () => opening.delete(pane))
-      if (!(pane in snapshots)) {
+      const view = await attach(connection, () => opening.delete(pane))
+      if (!(pane in view.snapshots)) {
         open.delete(pane)
         if (!open.size) closeStream()
         return fail('not_found', `없는 pane: ${pane}`)
       }
-      return { pane, snapshot: snapshots[pane] }
+      return paneView(pane, view)
     } catch (error) {
       open.delete(pane)
       if (!open.size) closeStream()
@@ -307,11 +348,28 @@ export function createMobileBridge(deps: BridgeDeps) {
     return { pane }
   }
 
+  // 크기 바뀜 보기 — 첫 snapshot 뒤부터 브리지가 멈출 때까지. 처음 본 크기는 기준으로만 삼는다
+  async function pollSizes() {
+    sizeTimer = null
+    if (stopped) return
+    try {
+      const connection = await connectControl()
+      const key = sizeKey(paneSizes((await connection.call('state')) as StatePanes))
+      if (lastSizes !== null && key !== lastSizes) emit({ event: 'changed', parts: ['panes'] })
+      lastSizes = key
+    } catch {}
+    if (!stopped) sizeTimer = setTimeout(() => void pollSizes(), deps.sizePollMs ?? SIZE_POLL_MS)
+  }
+
   async function snapshot() {
     const connection = await connectControl()
     const listed = (await connection.call('pane list')) as { panes?: ListedPane[] } | null
     const [requests, servers, events] = await Promise.all([deps.requests(), deps.servers(), deps.events()])
-    return { requests, panes: runningPanes((listed && listed.panes) || []), merges: weekMerges(events, now()), servers }
+    if (!sizeWatching) {
+      sizeWatching = true
+      void pollSizes()
+    }
+    return { requests, panes: livePanes((listed && listed.panes) || []), merges: weekMerges(events, now()), servers }
   }
 
   const requireInput = () => {
@@ -405,10 +463,13 @@ export function createMobileBridge(deps: BridgeDeps) {
       emit({ event: 'changed', parts })
     },
     openPanes: () => [...open],
+    resyncPane,
     async stop() {
       if (stopped) return
       flush()
       stopped = true
+      if (sizeTimer) clearTimeout(sizeTimer)
+      sizeTimer = null
       open.clear()
       const closing = [control, stream].filter((connection): connection is Connection => Boolean(connection)).map((connection) => connection.close())
       control = null
