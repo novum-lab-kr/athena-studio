@@ -92,9 +92,9 @@ export function waitedLabel(createdAt: string, now: number = Date.now(), say: Sa
   return say('work.waited.days', { n: Math.floor(minutes / (24 * 60)) })
 }
 
-// 앱에서 답하기 → `request answer` 인자. 고른 것 · 덧붙인 말 · 본 rev(그사이 바뀌었으면 코어가 conflict)
-export function answerArgs(id: unknown, { choice = '', text = '', rev = null }: { choice?: unknown; text?: unknown; rev?: unknown } = {}): string[] {
-  const argv = ['request', 'answer', String(id), '--by', 'app']
+// 앱에서 답하기 → `request answer` 인자. 고른 것 · 덧붙인 말 · 본 rev(그사이 바뀌었으면 코어가 conflict) · 폰에서 온 답은 by 'mobile'
+export function answerArgs(id: unknown, { choice = '', text = '', rev = null }: { choice?: unknown; text?: unknown; rev?: unknown } = {}, by: 'app' | 'mobile' = 'app'): string[] {
+  const argv = ['request', 'answer', String(id), '--by', by]
   if (String(choice).trim()) argv.push('--choice', String(choice).trim())
   if (String(text).trim()) argv.push('--text', String(text).trim())
   if (Number.isInteger(rev)) argv.push('--rev', String(rev))

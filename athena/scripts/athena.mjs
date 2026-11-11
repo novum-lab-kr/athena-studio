@@ -48,7 +48,7 @@
  *                                                  요청을 연다(같은 --key 로 열린 것이 있으면 고친다). pane 을 안 주면 지금 pane
  *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지거나 묻던 pane 이 닫히면 expired 로 닫는다
  *   athena request show <id> [--json]
- *   athena request answer <id> --by board|app|chat [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
+ *   athena request answer <id> --by board|app|chat|mobile [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
  *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered —
  *                                                  묻던 pane 이 아닌 곳(아테나 pane 등)에서 부르면 그 pane 에 답 한 줄을 넣고 answered(ack 를 기다린다 · 못 넣으면 sent false)
  *   athena request ack <id> [--json]               에이전트가 답을 받았다(answered → delivered · 두 번 불러도 된다)

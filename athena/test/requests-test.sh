@@ -7,7 +7,7 @@
 #
 # 보는 것(docs/requests.md): 열기 · 자리(팩 데이터 state/requests) · 같은 키는 고치기 · rev 충돌 · 두 번 답하기 거절 · ack(두 번 불러도 됨) ·
 # 대화로 답하면 바로 delivered(다른 pane 이 대신 답하면 묻던 pane 에 넣고 answered — 가짜 화면 CLI) · 묻던 pane 이 닫히면 expired · 사람 글이면 훅이 by chat 으로 닫기 · 취소 · 다른 세대 답 거절 · 계획서 done/없어지면 expired · 결정 콘솔(plan-html.mjs)이 요청을 열고 닫기 ·
-# 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기 · 사용법 오류
+# 결정 콘솔 [이대로 진행](현황판 /api/action + plan)이 답을 적기(by mobile 은 앱 모바일 브리지) · 사용법 오류
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
 set -uo pipefail
 SRC="$(cd "$(dirname "$0")/.." && pwd)"
@@ -244,6 +244,16 @@ check "낡은 콘솔(결정 판이 다름) → 409 · stale · 계획서가 바�
 check "낡은 콘솔의 답으로는 요청을 닫지 않는다(open 그대로)" '[ "$(wstate)" = open ]' "$(wstate)"
 OUT="$(curl -s -w '\n%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-w.md","decisions":["D2","D1"],"text":"[작업계획서 결정사항 확정] 기능 W"}' http://127.0.0.1:47730/api/action)"
 check "판이 같으면(순서 무관) 받아 답을 적는다(pane 이 없어 400 · answered)" '[ "$(echo "$OUT" | tail -1)" = 400 ] && [ "$(wstate)" = answered ]' "$OUT $(wstate)"
+# 앱 모바일 브리지가 폰 답을 보낼 때 — by mobile 만 받고 그 밖의 값은 board
+printf '# 기능 M\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-m.md
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-m.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+mby() { A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-$1.md\"]; print(r[-1][\"answer\"][\"by\"] if r and r[-1].get(\"answer\") else \"\")"; }
+CODE="$(curl -s -o /dev/null -w '%{http_code}' -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-m.md","by":"mobile","text":"[작업계획서 결정사항 확정] 기능 M"}' http://127.0.0.1:47730/api/action)"
+check "by mobile 로 보내면 답이 by mobile 로 적힌다" '[ "$CODE" = 400 ] && [ "$(mby m)" = mobile ]' "$CODE $(mby m)"
+printf '# 기능 N\n\n## Checkpoint\n- Status: planned\n' > plans/feature/20261021-n.md
+env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-n.md --data "$WORK/plan.json" --pane p9 > /dev/null 2>&1
+curl -s -o /dev/null -X POST "${HDR[@]}" -d '{"pane":"p-없음","plan":"plans/feature/20261021-n.md","by":"chat","text":"[작업계획서 결정사항 확정] 기능 N"}' http://127.0.0.1:47730/api/action
+check "mobile 이 아닌 by 는 board 로 적는다" '[ "$(mby n)" = board ]' "$(mby n)"
 env ATHENA_SCREEN=studio ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" node scripts/plan-html.mjs plans/feature/20261021-z.md --decide D1='가' D2='다' > /dev/null 2>&1
 check "확정하면 delivered(콘솔 답은 그대로)" 'A request list --all | python3 -c "import json,sys; r=[x for x in json.load(sys.stdin)[\"requests\"] if x[\"dedupeKey\"]==\"plan:plans/feature/20261021-z.md\"]; sys.exit(0 if r and r[-1][\"state\"]==\"delivered\" and r[-1][\"answer\"][\"by\"]==\"board\" else 1)"'
 

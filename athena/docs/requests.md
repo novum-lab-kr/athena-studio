@@ -11,7 +11,7 @@
 
 | 종류 | 누가 · 언제 |
 |---|---|
-| `decision` | **결정** — `--html` 이 없으면 앱이 질문과 같은 선택지 화면으로 답을 받는다. `--html` 이 있으면 **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 콘솔은 자기 판(보여 준 결정 id 목록 `decisions`)을 같이 보내고, 그사이 결정이 더해지거나 빠져 지금 html 과 다르면 현황판이 답을 적지도 넣지도 않고(요청은 열린 채) 409 로 돌려준다 — 콘솔에 "계획서가 바뀌었어요. 새로 고쳐 주세요." 판 표시가 없는 옛 콘솔은 지금처럼 받는다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
+| `decision` | **결정** — `--html` 이 없으면 앱이 질문과 같은 선택지 화면으로 답을 받는다. `--html` 이 있으면 **결정 콘솔** — `scripts/plan-html.mjs` 가 안 정한 결정이 있으면 계획서마다 하나를 연다(`--key plan:<계획서>`). 사용자가 콘솔에서 [이대로 진행] 을 누르면 현황판(`/api/action` + `plan`)이 답을 적고(answered · by board — 앱 모바일 브리지가 폰 답을 보내면 `by: mobile` 을 같이 보내 by mobile) 지시 앞에 `[요청 <id>]` 를 붙여 보낸다. 콘솔은 자기 판(보여 준 결정 id 목록 `decisions`)을 같이 보내고, 그사이 결정이 더해지거나 빠져 지금 html 과 다르면 현황판이 답을 적지도 넣지도 않고(요청은 열린 채) 409 로 돌려준다 — 콘솔에 "계획서가 바뀌었어요. 새로 고쳐 주세요." 판 표시가 없는 옛 콘솔은 지금처럼 받는다. 다 정하면(`--decide` · `--data` 에 `decided`) 받은 것으로 닫는다(delivered). 따로 부를 필요 없다 |
 | `question` | **모아서 묻기**(`AGENTS.md` 5절 "추측으로 개발하지 않는다") — Blocked 에 적고 사용자에게 묻는 바로 그때 연다. 한 번에 묻는 묶음이 요청 하나다 |
 
 열지 않는 것: 진행 보고 · "리뷰할까요?" 같은 한 줄 확인 · 커밋 · PR 확인(사용자가 말할 때만 하는 일) · 끝났다는 알림 · 고를 것이 없는 PR 자동 리뷰 상태 알림(검증 못 함 · 충돌 · 리뷰어 부족 등 — 아테나 pane 으로 보낸다 · `docs/pr-auto.md` "아테나에 알림").
@@ -88,7 +88,7 @@ open ──(사람이 답함: 현황판 · 앱)──▶ answered ──(에이�
 | (`--kind decision` 인데 `--html` 이 없으면) | decision 그대로 열고 앱이 질문과 같은 선택지 화면으로 답을 받는다 |
 | `request list [--all]` | 열린 것(open · answered) · `--all` 은 닫힌 것까지 |
 | `request show <id>` | 하나 |
-| `request answer <id> --by board\|app\|chat [--choice <라벨>] [--text <글>] [--rev <n>]` | 사람의 답 |
+| `request answer <id> --by board\|app\|chat\|mobile [--choice <라벨>] [--text <글>] [--rev <n>]` | 사람의 답 |
 | `request ack <id>` | 에이전트가 받았다 |
 | `request cancel <id> [--reason <글>]` | 거둔다 |
 

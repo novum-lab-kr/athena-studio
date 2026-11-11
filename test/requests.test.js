@@ -59,6 +59,8 @@ test('기다린 시간', () => {
 test('답하기 인자 — 빈 값은 빼고 rev 는 정수일 때만', () => {
   assert.deepEqual(requests.answerArgs('r-1', { choice: ' 없다 ', text: '', rev: 2 }), ['request', 'answer', 'r-1', '--by', 'app', '--choice', '없다', '--rev', '2'])
   assert.deepEqual(requests.answerArgs('r-1', { text: '이름은 cancel_note' }), ['request', 'answer', 'r-1', '--by', 'app', '--text', '이름은 cancel_note'])
+  // 폰에서 온 답(모바일 브리지)은 by mobile
+  assert.deepEqual(requests.answerArgs('r-1', { choice: '있다' }, 'mobile'), ['request', 'answer', 'r-1', '--by', 'mobile', '--choice', '있다'])
 })
 
 test('답하기 충돌 — 보여 준 rev 와 지금 rev 가 다르면 conflict · rev 를 안 보낸 호출은 지금처럼', () => {
