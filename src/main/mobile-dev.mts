@@ -121,6 +121,8 @@ export function startMobileDev(deps: DevDeps) {
     onChange: deps.onChange,
     onPairRequest: deps.onPairRequest,
     onSignedOut: (why) => deps.onLoginFailed(why === 'expired' ? 'expired_session' : 'account_deleted'),
+    // 맥 로그아웃 — relay 에서 이 기기 · 토큰 · 쌍 · 연결 요청을 지운다(protocol.md auth.logout {} → {} · 답 뒤 close 4004). 실패해도 로컬은 지운다
+    remoteLogout: (call) => call('auth.logout', {}),
     createBridge: (transport) =>
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
@@ -215,9 +217,10 @@ export function startMobileDev(deps: DevDeps) {
     relay,
     view,
     signIn: () => login.start(),
-    signOut: () => {
+    // 로그아웃 — relay 에 auth.logout 먼저(위 remoteLogout) → 답 · 4004 · 실패와 상관없이 로컬 토큰 · 허용 기기를 지운다
+    signOut: async () => {
       login.cancel()
-      relay.signOut()
+      await relay.signOut()
     },
     handleLink: (link: unknown) => login.handleLink(link),
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),

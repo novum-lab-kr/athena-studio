@@ -1170,8 +1170,8 @@ handle('mobile:login', () => {
   if (mobileDev) mobileDev.signIn()
   return mobileState()
 })
-handle('mobile:logout', () => {
-  if (mobileDev) mobileDev.signOut()
+handle('mobile:logout', async () => {
+  if (mobileDev) await mobileDev.signOut()
   return mobileState()
 })
 handle('mobile:open-account', () => {

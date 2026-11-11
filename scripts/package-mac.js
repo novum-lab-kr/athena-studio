@@ -44,6 +44,9 @@ const PRODUCT_NAME = 'Athena Studio' // src/lib/studio-home.js appIdentity({ pac
 const MINIMUM_MACOS = '13.0'
 const ICON = path.join(ROOT, 'src', 'renderer', 'assets', 'logo', 'athena-app-icon.png') // 1024 · 개발 앱과 같은 아이콘
 const ENTITLEMENTS = path.join(ROOT, 'build', 'entitlements.mac.plist')
+// 맥 웹 로그인이 돌아오는 주소 athena://login(src/main/mobile-login.mts) — Info.plist CFBundleURLTypes 로 등록만 한다(개발 앱은 scripts/dev-app.js URL_SCHEMES).
+// 받은 주소를 쓰는 것은 모바일 개발용 길이 켜졌을 때뿐이다(src/main.mts open-url · 배포판은 mobileDevOptions 가 늘 꺼서 받으면 버린다)
+const URL_PROTOCOLS = [{ name: 'Athena Login', schemes: ['athena'] }]
 
 // 배포판에 들고 갈 파일 — 화면은 dist/renderer(빌드) · main 이 여는 로고 · src(main · 데몬 · lib · i18n) · 데몬 CLI(bin)
 // node_modules 는 electron-builder 가 dependencies 만 담는다. 그중 화면 번들에 이미 들어간 것 · node-pty 의 빌드 재료 · 윈도 prebuild 는 뺀다
@@ -142,6 +145,7 @@ function builderConfig({ appVersion, coreBundle, updateConfigFile, noticesFile, 
       entitlementsInherit: ENTITLEMENTS,
       // electron-builder(@electron/notarize)는 공증 뒤 staple 이 지면 빌드를 멈춘다 — 공증 · staple 은 main 이 거는 afterSign 훅(notarize-mac.js)이 한다
       notarize: false,
+      protocols: URL_PROTOCOLS,
     },
     // Developer ID 판이면 .dmg 도 같은 인증서로 서명한다(만드는 동안만 있는 임시 키체인이라 여기서) — 공증 · staple 은 워크플로
     dmg: { artifactName: 'Athena-Studio-mac-${arch}.${ext}', sign: signed },

@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
 const { createLoginFlow, newLoginSecrets, parseLoginLink, relayWebBase, describeLink, loginDeviceName, LOGIN_TTL_MS } = require('../src/main/mobile-login.mts')
 
-const BASE = 'http://127.0.0.1:3130'
+const BASE = 'http://127.0.0.1:3131'
 const CODE = 'A'.repeat(43)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const reply = (status, body) => ({ status, json: async () => body })
@@ -50,7 +50,7 @@ test('PKCE 짝 — verifier 43자 · challenge = base64url(SHA-256(verifier)) ·
 })
 
 test('relay 바탕 주소 — ws → http · wss → https · /ws 를 뗀다', () => {
-  assert.equal(relayWebBase('ws://127.0.0.1:3130/ws'), 'http://127.0.0.1:3130')
+  assert.equal(relayWebBase('ws://127.0.0.1:3131/ws'), 'http://127.0.0.1:3131')
   assert.equal(relayWebBase('wss://relay.example.com/ws'), 'https://relay.example.com')
   assert.equal(relayWebBase('wss://relay.example.com/sub/ws/'), 'https://relay.example.com/sub')
   assert.equal(relayWebBase('http://127.0.0.1/ws'), null)
