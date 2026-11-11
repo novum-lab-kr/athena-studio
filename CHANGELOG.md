@@ -45,6 +45,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Improved
 - Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts
 - Registered servers in the sidebar repo list — analysis right after registering is optional
+- Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)
 
 ### Fixed
 - Fix patch updates repeating the same update notes — only changes since your version

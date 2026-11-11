@@ -1,6 +1,6 @@
 // 서버 탐색기 — 탭 줄 [서버] 버튼(늘 보임 · 상태 점 · 서버가 0개면 누를 때 등록 팝업)과 누르면 뜨는 앱 안 전체 화면 칸.
 // 왼쪽 서버 목록(상태 점 · 이름 · 응답 · CPU/MEM/SWAP/DISK · 1시간 추이선) / 오른쪽 고른 서버의 경고 줄 · 2×2 그래프 · 상세.
-// 읽기는 main(src/main/server-status.mts)이 코어 `ssh-run.sh <서버> --status`(허용 목록 안 고정 읽기 명령)와 이 맥의 응답 확인으로 — 여기서는 몇 분마다 부르고 그리기만.
+// 읽기는 main(src/main/server-status.mts)이 코어 `ssh-run.sh <서버> --status`(고정 읽기 명령)와 이 맥의 응답 확인으로 — 여기서는 몇 분마다 부르고 그리기만.
 // 칸을 닫아도 읽기는 계속 돈다(버튼 점이 맞게 바뀌도록). 서버 목록이 바뀌면 바닐라 space-actions.ts refreshServers 가 setServers 를 부른다
 import { useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'

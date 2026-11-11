@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # 등록한 서버에 들어가는 유일한 길 — 서버 에이전트 · 앱 서버 상태 칸이 쓴다(docs/setup.md "서버 하나 더하기")
-#   scripts/ssh-run.sh <서버> -- <명령…>          원격 명령 — 허용 목록의 읽기 명령만 바로, 나머지는 [작업] 확인 요청
+#   scripts/ssh-run.sh <서버> -- <명령…>          원격 명령 — 위험 명령(재시작 · 삭제 · 설치 · 권한 …)과 판정 못 한 명령만 [작업] 확인 요청, 나머지는 바로
 #   scripts/ssh-run.sh <서버> --get <원격> <로컬>  파일 받기(.env* · 키 · 인증서 파일은 받지 않는다)
-#   scripts/ssh-run.sh <서버> --put <로컬> <원격>  파일 고치기 — 늘 확인(diff · 원격 백업 위치) → 승인 뒤 백업 → 덮어쓰기
+#   scripts/ssh-run.sh <서버> --put <로컬> <원격>  파일 고치기 — 원격 백업 → 덮어쓰기(보호 경로만 먼저 확인 — diff · 백업 위치)
 #   scripts/ssh-run.sh <서버> --status             상태 칸 읽기(고정 읽기 명령 · 묻지 않는다 — 앱 서버 상태 칸)
 #   scripts/ssh-run.sh <서버> --history            지난 기록 읽기(sysstat sar 하루 파일 · 묻지 않는다 — 앱 그래프의 빈 구간)
 #   scripts/ssh-run.sh --list                      등록한 서버 이름 목록
@@ -10,7 +10,7 @@
 # <서버> 는 팩 pack.json servers[] 의 name(등록한 것만) — ssh 별칭으로 바꿔 부른다. 주소 · 키는 ~/.ssh/config 에만 있다.
 set -euo pipefail
 
-# 늘 BatchMode(비밀번호를 묻지 않는다) · ConnectTimeout 10초. 허용 목록 · 승인 판정은 scripts/lib/server_allow.py
+# 늘 BatchMode(비밀번호를 묻지 않는다) · ConnectTimeout 10초. 명령 판정(2026-11-11 "위험한 것만 묻는다") · 승인은 scripts/lib/server_allow.py
 # 시험용: ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN(bin/athena 대신 — 요청 열기 · 승인 읽기 둘 다) · ATHENA_GUARD_SERVERS ·
 #   ATHENA_GUARD_USED_FILE(쓴 승인 기록 — 기본 팩 데이터 state/server-approvals-used)
 # (승인은 늘 요청 bin 의 request show 로 읽는다 — 답을 환경 값으로 넣는 길은 없다)
@@ -121,7 +121,7 @@ case "$1" in
       rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$COMMAND"
     fi
     {
-      echo "서버 **$NAME** 에서 허용 목록 밖의 명령을 실행하려 한다 — 이유: $WHY"
+      echo "서버 **$NAME** 에서 확인이 필요한 명령을 실행하려 한다 — 이유: $WHY"
       echo
       echo '```sh'
       printf '%s\n' "$COMMAND"
@@ -133,15 +133,15 @@ case "$1" in
     ;;
   --status)
     [ $# -eq 1 ] || usage
-    # 허용 목록 안의 읽기 명령만 — 목록이 바뀌어 밖으로 나가면 요청을 열지 않고 실패한다(몇 분마다 도는 칸이 묻지 않게)
-    if ! WHY="$(python3 "$ALLOW" check "$STATUS_COMMAND")"; then echo "❌ 상태 명령이 허용 목록 밖이다: $WHY" >&2; exit 1; fi
+    # 바로 되는 읽기 명령만 — 판정이 바뀌어 확인이 필요해지면 요청을 열지 않고 실패한다(몇 분마다 도는 칸이 묻지 않게)
+    if ! WHY="$(python3 "$ALLOW" check "$STATUS_COMMAND")"; then echo "❌ 상태 명령이 바로 되는 명령이 아니다: $WHY" >&2; exit 1; fi
     rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$STATUS_COMMAND"
     ;;
   --history)
     [ $# -eq 1 ] || usage
     # sysstat 하루 파일(/var/log/sysstat/saDD — 날짜의 '일' 두 자리) — 이 맥 날짜로 내일 ~ 8일 전(서버와 시간대가 달라도 7일을 덮게).
     # 앱이 머리 줄 날짜(S_TIME_FORMAT=ISO → YYYY-MM-DD)로 7일 안만 쓴다 · 없는 파일은 sar 가 stderr 만 낸다.
-    # 시각은 sar 를 돌린 쪽 지역 시간(man sar -t) → 서버 date +%z 로 바꾼다. 상태 칸처럼 허용 목록 밖이면 요청 없이 실패
+    # 시각은 sar 를 돌린 쪽 지역 시간(man sar -t) → 서버 date +%z 로 바꾼다. 상태 칸처럼 확인이 필요해지면 요청 없이 실패
     HISTORY_COMMAND="$(python3 -c 'import datetime as d
 t = d.date.today()
 parts = ["echo ==tz", "date +%z"]
@@ -149,7 +149,7 @@ for back in range(-1, 9):
     day = (t - d.timedelta(days=back)).strftime("%d")
     parts += ["echo ==sa", "S_TIME_FORMAT=ISO sar -u -q -r -n DEV -f /var/log/sysstat/sa" + day + " 2>/dev/null"]
 print("; ".join(parts + ["echo ==end"]))')"
-    if ! WHY="$(python3 "$ALLOW" check "$HISTORY_COMMAND")"; then echo "❌ 기록 명령이 허용 목록 밖이다: $WHY" >&2; exit 1; fi
+    if ! WHY="$(python3 "$ALLOW" check "$HISTORY_COMMAND")"; then echo "❌ 기록 명령이 바로 되는 명령이 아니다: $WHY" >&2; exit 1; fi
     rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$HISTORY_COMMAND"
     ;;
   --get)
@@ -180,12 +180,13 @@ print("; ".join(parts + ["echo ==end"]))')"
       echo "❌ 원격 파일을 읽지 못했다(ssh 종료 $status) — 올리지 않았다" >&2
       exit 1
     fi
-    # 키 — 서버 · 경로 · 로컬 내용 · 원격 내용이 같을 때만 같은 승인(어느 쪽이든 바뀌면 다시 묻는다)
+    # 보호 경로(/etc/sudoers · cron · /etc/ssh · .ssh …) · 다음에 실행되는 자리(profile.d · systemd · /usr/local/bin · 셸 rc …)만 확인 — 2026-11-11 결정 "위험한 것만 묻는다". 나머지는 백업 뒤 바로 덮어쓴다.
+    # 확인 키 — 서버 · 경로 · 로컬 내용 · 원격 내용이 같을 때만 같은 승인(어느 쪽이든 바뀌면 다시 묻는다)
     SUMS="$(shasum -a 256 "$LOCAL" "$TMP/remote" | cut -d' ' -f1 | tr '\n' ' ')"
     KEY="$(python3 "$ALLOW" key "$NAME" put "$REMOTE $SUMS")"
-    if ! approved "$KEY"; then
+    if PROTECTED_WHY="$(python3 "$ALLOW" protected "$REMOTE")" && ! approved "$KEY"; then
       {
-        echo "서버 **$NAME** 의 파일을 고치려 한다: \`$REMOTE\`"
+        echo "서버 **$NAME** 의 보호 경로 파일을 고치려 한다: \`$REMOTE\` — $PROTECTED_WHY"
         echo
         if [ "$EXISTS" = yes ]; then
           echo "승인하면 원본을 원격 \`~/.athena-backups/<올리는 시각>/$REL\` 에 먼저 복사(cp -p)한 뒤 덮어쓴다."

@@ -102,7 +102,7 @@ node "$A/bin/archify.mjs" visual-check pack/diagrams/<서비스>.html --json
 
 팩 `pack.json` `servers[]` 의 서버(`docs/setup.md` "서버 하나 더하기")는 레포가 아니라 **서버마다 한눈에 보기 1장**만 만든다(흐름 장 없음 — 사용자가 요청할 때만). 서비스 ID 는 `server-<이름>`, 파일은 `pack/diagrams/server-<이름>.html`(architecture) · 가이드 `pack/diagrams/guides/server-<이름>.md` · 카드는 `index.json` 의 `"서버"` 묶음.
 
-- **근거는 서버에서 읽은 결과** — 코드 ref · SHA 가 없다. `scripts/ssh-run.sh <이름> -- <명령>` 의 **허용 목록 읽기 명령만** 쓰고(목록 밖 명령은 그림을 위해 확인 요청을 열지 않는다), 가이드에 읽은 때(날짜 · 시각) · 명령 · 확인한 사실 · 미확인을 적는다. 이미 채운 `docs/knowledge/servers/<이름>/structure.md` 가 있으면 그것을 먼저 쓰고 달라진 것만 다시 읽는다
+- **근거는 서버에서 읽은 결과** — 코드 ref · SHA 가 없다. `scripts/ssh-run.sh <이름> -- <명령>` 의 **읽기 명령만** 쓰고(그림을 위해 서버에 쓰거나 확인 요청을 열지 않는다), 가이드에 읽은 때(날짜 · 시각) · 명령 · 확인한 사실 · 미확인을 적는다. 이미 채운 `docs/knowledge/servers/<이름>/structure.md` 가 있으면 그것을 먼저 쓰고 달라진 것만 다시 읽는다
 - **내용** — 바깥(도메인 · 열린 포트) → 프록시(nginx · caddy …) → 서비스(systemd 유닛 · 컨테이너 · pm2) → 데이터(DB · 볼륨 · 저장 폴더) 순서, 그리고 **어느 팩 레포가 어디에 배포되는지**(`servers[].repos` · 배포 경로). 크론 · 백업 · 로그 위치는 해당 상자의 자세히 칸에
 - **넣지 않는 것** — 서버 주소 · IP · 사용자 이름 · 키 경로 · 환경 값(`.env*` · 컨테이너 env) · 인증서 내용. 상자 이름은 ssh 별칭 · 서비스 이름 · 도메인 · 포트 번호까지만
 - 자세히 칸의 `code` 는 서버 안 경로(설정 파일 · 유닛 파일)와 읽은 명령, `impact` 는 그 설정을 바꾸면 영향받는 서비스 · 도메인, `tests` 는 바꾼 뒤 확인할 읽기 명령(`systemctl status …` · `curl -s -o /dev/null -w '%{http_code}' …`)
