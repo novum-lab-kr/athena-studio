@@ -172,6 +172,26 @@ finished
 check "재개 지시를 넣지 않았다" "$(count "$WORK/sent" '이어서 하자')" 0
 check "사건 기록 result=resume-new-input" "$(count "$EVENTS" '"result":"resume-new-input"')" 1
 
+echo "▶ 계획서 · 대기열을 옮기는 사이 사용자가 새 대화에 입력하면 재개 지시를 넣지 않는다(리뷰 #289 라운드 2)"
+reset
+# 처리기 본문을 이 프로세스에서 돌리고 rebind_session 이 도는 중에 사용자 입력을 pane 기록에 적는다
+fresh python3 - "$BODY/scripts/lead-fresh.py" "$SESSIONS/p1.json" "$BODY/plans/task/main.md" "$(now)" <<'PYEOF' > "$WORK/race" 2>&1
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('lead_fresh', sys.argv[1])
+module = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(module)
+original = module.rebind_session
+def during_rebind(pane, old, new):
+    moved = original(pane, old, new)
+    with open(sys.argv[2], 'w', encoding='utf-8') as handle:
+        handle.write('{"session":"s-new","agent":"claude","at":"t-user-typed"}\n')
+    return moved
+module.rebind_session = during_rebind
+print(module.worker('p1', 'claude', 'plans/task/main.md', 's-old', 's-old@t-1', sys.argv[4]))
+PYEOF
+check "결과 resume-new-input" "$(tail -1 "$WORK/race")" resume-new-input
+check "재개 지시를 넣지 않았다" "$(count "$WORK/sent" '이어서 하자')" 0
+
 echo "▶ 새 대화가 기록되지 않으면 재개 지시를 넣지 않는다 · 처리기는 pane 마다 하나"
 reset
 touch "$WORK/no-session"

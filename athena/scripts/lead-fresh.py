@@ -242,8 +242,12 @@ def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) ->
         return 'clear-failed'
     until = time.monotonic() + SESSION_WAIT_SECONDS
     new = ''
+    fresh_mark = ''
     while time.monotonic() < until:
-        new = pane_session(pane)
+        # 새 대화와 입력 표시를 같은 기록에서 함께 잡는다 — 옮기는 사이 들어온 입력을 놓치지 않게
+        record = pane_record(pane)
+        new = str(record.get('session') or '')
+        fresh_mark = f"{new}@{record.get('at') or ''}"
         if new and new != old:
             break
         try:
@@ -254,7 +258,6 @@ def worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str) ->
     if not new or new == old:
         return 'no-new-session'
     rebind_session(pane, old, new)
-    fresh_mark = pane_mark(pane)
 
     def before_resume() -> str:
         # 사용자가 직접 새 대화를 열었거나(/new) 새 대화에서 다른 일을 시켰으면 재개 지시를 넣지 않는다
