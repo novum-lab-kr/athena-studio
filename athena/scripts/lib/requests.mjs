@@ -21,7 +21,7 @@ export const REQUEST_FORMAT = 1
 export const KINDS = ['decision', 'question']
 export const STATES = ['open', 'answered', 'delivered', 'cancelled', 'expired']
 const LIVE = ['open', 'answered']
-const ANSWER_BY = ['board', 'app', 'chat']
+const ANSWER_BY = ['board', 'app', 'chat', 'mobile']
 const ID_PATTERN = /^r-\d{8}-\d{6}-[0-9a-f]{4}$/
 
 export const requestsDir = (root) => {

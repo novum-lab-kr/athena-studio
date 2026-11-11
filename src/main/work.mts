@@ -322,7 +322,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     return { ok, error: ok ? undefined : 'conflict' }
   }
   // 앱에서 답하기 — 코어에 답을 적고(본 rev 그대로 — 그사이 바뀌었으면 conflict) 그 pane 에 넣는다
-  ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null) => {
+  ctx.answerRequest = async (id: string, answer: { choice?: unknown; text?: unknown; rev?: unknown } | null, by: 'app' | 'mobile' = 'app') => {
     const known = requestsState().requests.find((request) => request.id === id)
     if (!known) return { ok: false, error: 'not-found' }
     if (known.permission) return { ok: false, error: 'permission-in-pane' }
@@ -332,7 +332,7 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
       return { ok: false, error: 'conflict' }
     }
     // 코어 request answer 결과 — 적힌 요청의 answer 만 더 읽는다
-    const result = (await runCore(requestsModel.answerArgs(id, { choice: answer && answer.choice, text: answer && answer.text, rev: known.rev }), { dir: ctx.athenaDir })) as PackResult & { request?: { answer?: { choice?: unknown; text?: unknown } | null } }
+    const result = (await runCore(requestsModel.answerArgs(id, { choice: answer && answer.choice, text: answer && answer.text, rev: known.rev }, by), { dir: ctx.athenaDir })) as PackResult & { request?: { answer?: { choice?: unknown; text?: unknown } | null } }
     if (!result.ok || !result.request) {
       refreshRequests()
       return { ok: false, error: result.error || 'failed', message: result.message || '' }

@@ -1311,12 +1311,13 @@ const delivery = createDelivery({
 
 // 결정 콘솔 [이대로 진행] — 그 계획서의 결정 요청(plan:<경로>)에 사람이 답했다고 적고, 지시 앞에 요청 번호를 붙인다.
 // 에이전트가 plan-html.mjs --decide 로 확정하면 요청이 delivered 로 닫힌다. 요청이 없거나(옛 계획서) 못 적어도 지시는 그대로 보낸다
-const consoleAnswer = (plan, text) => {
+// 앱 모바일 브리지가 폰 답을 대신 보낼 때만 by 'mobile' — 그 밖의 값은 board
+const consoleAnswer = (plan, text, by = 'board') => {
   if (!/^plans\/[^\0]+\.md$/.test(plan) || plan.split('/').includes('..')) return text
   try {
     const live = listRequests(ROOT).requests.find((request) => request.dedupeKey === `plan:${plan}`)
     if (!live) return text
-    if (live.state === 'open') answerRequest(ROOT, live.id, { choice: '결정 콘솔', text: text.slice(0, 1500), by: 'board' })
+    if (live.state === 'open') answerRequest(ROOT, live.id, { choice: '결정 콘솔', text: text.slice(0, 1500), by })
     return `[요청 ${live.id}] ${text}`
   } catch (error) {
     console.log(`⚠️ 결정 요청을 적지 못했다 ${plan}: ${error.message}`)
@@ -1773,7 +1774,7 @@ const handleRequest = async (request, response) => {
     }
     // 낡은 결정 콘솔 — 답을 적지도(요청을 닫지도) pane 에 넣지도 않는다. 콘솔이 stale 을 보고 새로 고치라고 알린다
     if (url.pathname === '/api/action' && staleConsole(String(body.plan ?? ''), body.decisions)) return reply(409, { error: say('srv.err.planChanged'), stale: true })
-    const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? '')) : ''
+    const text = url.pathname === '/api/action' ? consoleAnswer(String(body.plan ?? ''), String(body.text ?? ''), body.by === 'mobile' ? 'mobile' : 'board') : ''
     const outcome = url.pathname === '/api/move' ? moveCard(String(body.id ?? ''), String(body.column ?? '')) : await sendToPane(String(body.pane ?? ''), text)
     if (typeof outcome === 'string') return reply(400, { error: outcome })
     await refresh()

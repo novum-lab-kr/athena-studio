@@ -147,11 +147,11 @@ export async function ensureDaemon({ paths, env, onEvent, onClose }: { paths: Da
   return { connection, hello: reply.result || null, status: protocol.checkHello(reply as Hello), code: protocol.codeStatus(reply.result), launched }
 }
 
-// 떠 있는 데몬에만 붙는다(없으면 띄우지 않고 null) · 프로토콜이 다르면 끊고 null — 켤 때 코어 업데이트 전 pane 상태 읽기용
-export async function peekDaemon({ paths }: { paths: DaemonPaths }): Promise<DaemonConnection | null> {
+// 떠 있는 데몬에만 붙는다(없으면 띄우지 않고 null) · 프로토콜이 다르면 끊고 null — 켤 때 코어 업데이트 전 pane 상태 읽기용 · 모바일 브리지(알림 · 닫힘을 받는다)
+export async function peekDaemon({ paths, onEvent = () => {}, onClose = () => {} }: { paths: DaemonPaths } & Partial<Handlers>): Promise<DaemonConnection | null> {
   const socket = await connectSocket(paths.socket).catch(() => null)
   if (!socket) return null
-  const connection = new DaemonConnection(socket, { onEvent: () => {}, onClose: () => {} })
+  const connection = new DaemonConnection(socket, { onEvent, onClose })
   const reply = await connection.request('hello', { protocol: protocol.PROTOCOL })
   if (protocol.checkHello(reply as Hello) === 'ok') return connection
   connection.destroy()
