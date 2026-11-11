@@ -106,7 +106,13 @@ case "$1" in
   --)
     shift
     [ $# -ge 1 ] || usage
-    COMMAND="$*"
+    # 인자가 하나면 그 글자 그대로 · 둘 이상이면 인자마다 셸 따옴표를 붙여 합친다(shlex.join — 에이전트가 붙인 따옴표가
+    # "$*" 로 사라져 grep -F 'caddy[' 가 따옴표 밖 [ 로 막히던 것 · 2026-11-11). 판정 · 승인 키 · 요청 본문 · 보내는 글자가 모두 이것
+    if [ $# -eq 1 ]; then
+      COMMAND="$1"
+    else
+      COMMAND="$(python3 -c 'import shlex, sys; print(shlex.join(sys.argv[1:]))' "$@")"
+    fi
     if WHY="$(python3 "$ALLOW" check "$COMMAND")"; then
       rm -rf "$TMP"; exec "$SSH_BIN" "${SSH_OPTS[@]}" -- "$HOST" "$COMMAND"
     fi

@@ -9,6 +9,7 @@
 파이프 · ; · && · || 로 이어 붙인 것은 명령마다 다 본다. 그 밖에 막는 것(= 확인 받기):
   - 목록에 없는 명령(sh -c · bash · eval · xargs · tee · sed · awk 같은 "다른 명령을 돌릴 수 있는 것" 포함)
   - 쓰기 리다이렉트(> · >> — /dev/null 만 된다) · heredoc · 서브셸 ( ) · $( ) · 백틱 · <( ) · 백그라운드 & · 줄바꿈 · $ 변수
+    (홑따옴표 안의 $ 는 원격 셸이 펼치지 않으니 된다 — grep -e '^$' · 따옴표 밖 · 쌍따옴표 안의 $ 는 막고 백틱은 어디서든 막는다)
   - VAR=값 앞붙임 · 경로로 부른 명령(/tmp/x) · sudo 의 -n 밖 옵션 · sudo 뒤는 더 좁은 목록(SUDO_OK)
   - 환경 변수를 보이는 것(systemctl show · ps e · /proc/*/environ · jq 의 env — jq 는 목록에서 뺐다) · curl 의 GET/HEAD 밖 · http(s) 밖 주소
   - 리다이렉트 앞 fd 숫자는 원문에서 연산자에 바로 붙은 것(2> · 2>&1)만 — 띄어 쓴 숫자(date 11081200 >/dev/null)는 인자로 본다
@@ -498,6 +499,34 @@ def unquoted_expansion(command):
     return None
 
 
+def shell_dollar(command):
+    """홑따옴표 밖의 $ — 따옴표 밖 · 쌍따옴표 안 · 백슬래시 뒤(\\$ 도 막는다 — 좁게)는 원격 셸이 변수 · 명령 치환으로 펼칠 수 있다.
+    홑따옴표 안('^$')은 글자 그대로라 된다. 백슬래시 뒤 홑따옴표(\\')는 따옴표를 열지 않는다"""
+    quote, index = None, 0
+    while index < len(command):
+        char = command[index]
+        if quote == "'":
+            if char == "'":
+                quote = None
+        elif char == '$':
+            return True
+        elif quote == '"':
+            if char == '\\':
+                if command[index + 1:index + 2] == '$':
+                    return True
+                index += 1
+            elif char == '"':
+                quote = None
+        elif char == '\\':
+            if command[index + 1:index + 2] == '$':
+                return True
+            index += 1
+        elif char in '\'"':
+            quote = char
+        index += 1
+    return False
+
+
 def redirect_marks(command):
     """따옴표 · 백슬래시 밖의 < · > 든 연산자 묶음마다 — 바로 앞에 붙은 숫자(앞은 처음 · 공백 · 연산자)가 있나.
     shlex 는 띄어쓰기를 잊어 `date 11081200 >/dev/null` 과 `date 11081200>/dev/null` 을 가르지 못한다(2026-11-08 PR 리뷰 2)"""
@@ -538,8 +567,8 @@ def check(command):
         return '빈 명령'
     if re.search(r'[\n\r]', command):
         return '줄바꿈(여러 줄 명령)'
-    if '`' in command or '$' in command:
-        return '$ · 백틱(변수 · 명령 치환)'
+    if '`' in command or shell_dollar(command):
+        return '$ · 백틱(변수 · 명령 치환 — 홑따옴표 안의 $ 만 된다)'
     expands = unquoted_expansion(command)
     if expands:
         return f'따옴표 밖의 {expands}(원격 셸이 펼친다 — 이름을 하나씩 적는다)'

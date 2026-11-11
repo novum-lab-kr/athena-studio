@@ -216,5 +216,6 @@
   "Fix panes running background commands showing as idle": "修复后台运行命令的窗格显示为空闲的问题",
   "File preview as a pane in the layout — drag to place, drag borders to resize": "文件预览纳入窗格布局 — 拖动放置，拖动边界调整大小",
   "Fix patch updates repeating the same update notes — only changes since your version": "修复补丁更新每次显示相同更新说明的问题 — 仅显示上个版本后的变更",
-  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "修复韩文输入组合中 Ctrl+X Ctrl+S 先于组合字符发送的问题 — 改为在确定字符之后发送"
+  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "修复韩文输入组合中 Ctrl+X Ctrl+S 先于组合字符发送的问题 — 改为在确定字符之后发送",
+  "Fix read-only server commands asking for confirmation — quotes in arguments kept": "修复只读服务器命令也弹出确认请求的问题 — 保留参数中的引号"
 }

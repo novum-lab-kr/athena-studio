@@ -53,6 +53,11 @@ allow allow "kubectl get deployments -n web -o wide"
 allow allow "k3s kubectl get nodes"
 allow allow "supervisorctl status"
 allow allow "pm2 ls"
+# 홑따옴표 안의 $ 는 원격 셸이 펼치지 않는다(2026-11-11 — 빈 줄 거르기 · curl 상태 코드가 확인 요청으로 열리던 것)
+allow allow "grep -v -e '^#' -e '^\$' /etc/systemd/journald.conf"
+allow allow "grep -c '\$' /etc/hosts"
+allow allow "grep -F 'caddy[' /var/log/syslog"
+allow allow "curl -s -o /dev/null -w '%{http_code}' http://localhost"
 
 echo "② 막힘 — 목록에 없거나 바꾸는 명령"
 allow deny "rm -rf /tmp/x"
@@ -98,6 +103,15 @@ allow deny "ls &> f"
 allow deny "cat \$(which ls)"
 allow deny 'cat `id`'
 allow deny "echo \$HOME"
+# 홑따옴표 밖의 $ 는 그대로 막힌다 — 쌍따옴표 안 · 백슬래시 뒤 · 홑따옴표 사이 · 백슬래시로 연 척한 홑따옴표 · 백틱은 홑따옴표 안도
+allow deny "echo \"\$HOME\""
+allow deny "echo \"'\$HOME'\""
+allow deny "echo \\\$HOME"
+allow deny "echo \"\\\$HOME\""
+allow deny "echo '\$(id)'x\$(id)"
+allow deny "echo 'a'\$'b'"
+allow deny "echo \\'\$HOME'"
+allow deny "echo '\`id\`'"
 allow deny "$(printf 'ls\nrm x')"
 allow deny "ls &"
 allow deny "(rm x)"
@@ -467,15 +481,33 @@ lacks() {   # <이름> <파일> <글자>
 has "읽기 명령이 ssh 로 갔다" "$LOG" "ssh df -h; uptime"
 lacks "읽기 명령은 요청을 열지 않는다" "$LOG" "request"
 
+# 여러 인자 — 인자마다 셸 따옴표를 붙여 합친다("$*" 로 따옴표가 사라져 읽기 명령도 확인 요청이 열리던 것 · 2026-11-11)
+: >"$LOG"; bash "$RUN" dukbae -- grep -F 'caddy[' /var/log/syslog >/dev/null 2>&1; expect "여러 인자 grep -F 'caddy[' 는 바로 실행" 0 $?
+has "여러 인자 — 따옴표를 붙여 보냈다" "$LOG" "ssh grep -F 'caddy[' /var/log/syslog"
+lacks "여러 인자 읽기 명령은 요청을 열지 않는다" "$LOG" "request"
+: >"$LOG"; bash "$RUN" dukbae -- curl -s -o /dev/null -w '%{http_code}' http://localhost >/dev/null 2>&1; expect "여러 인자 curl -w '%{http_code}' 는 바로 실행" 0 $?
+has "여러 인자 curl — 따옴표를 붙여 보냈다" "$LOG" "ssh curl -s -o /dev/null -w '%{http_code}' http://localhost"
+: >"$LOG"; bash "$RUN" dukbae -- grep -v -e '^#' -e '^$' /etc/systemd/journald.conf >/dev/null 2>&1; expect "여러 인자 grep -e '^\$' 는 바로 실행" 0 $?
+: >"$LOG"; bash "$RUN" dukbae -- cat 'a b.txt' >/dev/null 2>&1; expect "공백 든 인자도 바로 실행" 0 $?
+has "공백 든 인자는 한 낱말로 보냈다" "$LOG" "ssh cat 'a b.txt'"
+: >"$LOG"; bash "$RUN" dukbae -- echo '$HOME' x >/dev/null 2>&1; expect "여러 인자 '\$HOME' 은 홑따옴표로 보내 바로 실행" 0 $?
+has "여러 인자 '\$HOME' — 홑따옴표째 보냈다" "$LOG" "ssh echo '\$HOME' x"
+: >"$LOG"; bash "$RUN" dukbae -- cat a ';' rm b >/dev/null 2>&1; expect "여러 인자의 ';' 는 판정이 구분자로 보고 확인 요청(3 — 안전한 쪽)" 3 $?
+has "여러 인자의 ';' — 요청 본문에 따옴표째" "$WORK/body.md" "cat a ';' rm b"
+lacks "여러 인자의 ';' — 확인 전에는 ssh 를 부르지 않는다" "$LOG" "ssh "
+: >"$LOG"; bash "$RUN" dukbae -- "grep -F 'caddy[' /var/log/syslog" >/dev/null 2>&1; expect "인자 하나는 그 글자 그대로(바로 실행)" 0 $?
+has "인자 하나 — 글자 그대로 보냈다" "$LOG" "ssh grep -F 'caddy[' /var/log/syslog"
+
 : >"$LOG"; bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1; expect "sh -c 는 확인 요청(3)" 3 $?
 lacks "확인 전에는 ssh 를 부르지 않는다" "$LOG" "ssh "
 has "요청 키 server-cmd" "$LOG" "request server-cmd:"
-has "요청 본문에 명령 그대로" "$WORK/body.md" "sh -c rm -rf /tmp/x"
+has "요청 본문에 보내는 글자 그대로(따옴표 포함)" "$WORK/body.md" "sh -c 'rm -rf /tmp/x'"
 CMD_KEY="$(sed -n 's/^request //p' "$LOG" | head -1)"
+if [ "$CMD_KEY" = "$(python3 "$ALLOW" key dukbae cmd "sh -c 'rm -rf /tmp/x'")" ]; then ok "승인 키도 보내는 글자(따옴표 포함)로"; else no "승인 키도 보내는 글자(따옴표 포함)로"; fi
 
 : >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd1 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "승인(실행 · 5분 전)이면 실행" 0 $?
-has "승인된 명령이 ssh 로 갔다" "$LOG" "ssh sh -c rm -rf /tmp/x"
+has "승인된 명령이 ssh 로 갔다(따옴표 포함)" "$LOG" "ssh sh -c 'rm -rf /tmp/x'"
 : >"$LOG"; ATHENA_SERVER_APPROVED=r-cmd1 FAKE_ANSWER="$(answer_json "$CMD_KEY" 실행 5)" bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1
 expect "같은 승인은 두 번 쓰지 못한다(3)" 3 $?
 lacks "두 번째는 ssh 를 부르지 않는다" "$LOG" "ssh sh -c"
