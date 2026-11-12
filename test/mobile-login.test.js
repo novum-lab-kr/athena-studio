@@ -4,7 +4,7 @@ const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
 const { createLoginFlow, newLoginSecrets, parseLoginLink, relayWebBase, describeLink, loginDeviceName, LOGIN_TTL_MS } = require('../src/main/mobile-login.mts')
 
-const BASE = 'http://127.0.0.1:3130'
+const BASE = 'http://127.0.0.1:3131'
 const CODE = 'A'.repeat(43)
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 const reply = (status, body) => ({ status, json: async () => body })
@@ -50,7 +50,7 @@ test('PKCE 짝 — verifier 43자 · challenge = base64url(SHA-256(verifier)) ·
 })
 
 test('relay 바탕 주소 — ws → http · wss → https · /ws 를 뗀다', () => {
-  assert.equal(relayWebBase('ws://127.0.0.1:3130/ws'), 'http://127.0.0.1:3130')
+  assert.equal(relayWebBase('ws://127.0.0.1:3131/ws'), 'http://127.0.0.1:3131')
   assert.equal(relayWebBase('wss://relay.example.com/ws'), 'https://relay.example.com')
   assert.equal(relayWebBase('wss://relay.example.com/sub/ws/'), 'https://relay.example.com/sub')
   assert.equal(relayWebBase('http://127.0.0.1/ws'), null)
@@ -127,18 +127,22 @@ test('athena:// 가 먼저 오면 그것으로 한 번만 교환 · state 가 �
   assert.equal(relay.calls.filter((call) => call.path === '/api/login/status').length, 0, '상태 조회 전에 끝남')
 })
 
-test('다시 누르면 10분 안에는 같은 로그인 페이지 · 지나면 새 시도', () => {
+test('다시 누르면 10분 안에는 같은 로그인 페이지 · 지나면 새 시도 · 끝나는 시각 · 취소', () => {
   let now = 1_000_000
   const relay = fakeRelay()
   const { flow, opened } = flowWith(relay, { now: () => now, pollMs: 10_000 })
+  assert.equal(flow.until(), null, '시도 전')
   flow.start()
   flow.start()
   assert.equal(opened[0], opened[1])
+  assert.equal(flow.until(), new Date(1_000_000 + LOGIN_TTL_MS).toISOString(), '다시 눌러도 처음 시도 기준')
   now += LOGIN_TTL_MS + 1
   flow.start()
   assert.notEqual(opened[2], opened[0])
+  assert.equal(flow.until(), new Date(now + LOGIN_TTL_MS).toISOString(), '새 시도 기준')
   flow.cancel()
   assert.equal(flow.pending(), false)
+  assert.equal(flow.until(), null, '취소 뒤')
 })
 
 test('실패 — 상태 404 는 expired · 교환 오류 코드 · 모양 틀린 답 · 네트워크', async () => {

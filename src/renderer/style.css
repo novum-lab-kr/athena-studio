@@ -956,6 +956,7 @@ body.pack-welcome-on .pack-rail { display: none; } /* 시작 화면은 자기 '�
 .mobile-account.loading::after { content: ""; position: absolute; inset: -3px; border: 2px solid transparent; border-top-color: var(--accent); border-right-color: var(--accent); border-radius: 50%; animation: mobile-spin 0.9s linear infinite; }
 @keyframes mobile-spin { to { transform: rotate(360deg); } }
 .work-pop.mobile-menu { width: 220px; padding: 4px; }
+.work-pop.mobile-menu.wide { width: 290px; } /* 로그인 중 — 기다림 · 남은 시간 한 줄 */
 .mobile-menu-head { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px 8px; }
 .mobile-menu-name { overflow: hidden; color: var(--popup-text); font-size: 13px; text-overflow: ellipsis; white-space: nowrap; }
 .mobile-menu-sub { color: var(--popup-muted); font-size: 11.5px; }
@@ -974,10 +975,20 @@ body.pack-welcome-on .pack-rail { display: none; } /* 시작 화면은 자기 '�
 .mobile-device-when.on { color: var(--success); }
 .mobile-device .settings-app-button { padding: 1px 8px; border-color: rgb(255 255 255 / 18%); color: var(--popup-text); }
 .mobile-device .settings-app-button:hover { border-color: var(--error); background: transparent; color: var(--error); }
+.mobile-device .settings-app-button.danger { border-color: rgb(229 140 153 / 45%); color: var(--error); }
+.mobile-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; background: var(--line); }
+.mobile-dot.on { background: var(--success); }
+/* 디바이스 창 구획 — .pd-glance · .sv-summary 와 같은 안쪽 박스 */
+.mobile-group { margin: 0 0 14px; padding: 10px 12px; border: 1px solid var(--popup-line); border-radius: 9px; background: var(--popup-inset); }
+.mobile-group:last-child { margin-bottom: 0; }
+.mobile-sub + .mobile-group { margin-top: 6px; }
+.pack-box.mobile-small .mobile-group .settings-note { margin: 0; }
+.pack-box.mobile-small .mobile-group .settings-switch { margin: 0 0 4px; padding: 0; }
+.mobile-group .mobile-empty { margin: 0 0 4px; }
+.mobile-steps { margin: 0; padding-left: 20px; color: var(--popup-text); font-size: 12.5px; line-height: 1.7; }
 .pack-box.mobile-small .settings-switch { margin-top: 8px; padding: 7px 0; background: transparent; }
 .pack-box.mobile-small .settings-note { margin: 2px 0 0; color: var(--popup-muted); font-size: 12px; word-break: keep-all; }
 .mobile-pair-lead { margin-top: 6px; }
-.mobile-pair-note { margin-top: 12px; }
 .mobile-code { margin: 6px 0 14px; padding: 16px 0; border: 1px solid var(--popup-gold-line); border-radius: 10px; background: var(--popup-gold-bg); color: var(--popup-title); font: 600 34px/1 var(--font-mono); letter-spacing: 0.12em; text-align: center; }
 .mobile-code span { display: inline-block; width: 0.6em; }
 .mobile-meta { display: flex; justify-content: space-between; color: var(--popup-muted); font-size: 12px; }

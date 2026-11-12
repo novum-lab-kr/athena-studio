@@ -1,21 +1,51 @@
 // ── 모바일 개발용 길 — 격리 시험 앱에서만 relay 에 붙고 짝 기기마다 브리지를 둔다 ──
 // 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 · 4-8(시험 3). 브리지는 여전히 기본 꺼짐 — 이 길이 켜질 때만 팩 레일 프로필 · [허용] 창이 보인다.
-// 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 루프백 ws 주소.
+// 켜지는 조건(셋 다): 개발판(배포판 아님) · ATHENA_STUDIO_HOME(격리 집) · ATHENA_STUDIO_MOBILE_RELAY 가 허용 주소(루프백 ws 또는 운영 RELEASE_RELAY 정확히 — allowedRelay).
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
+import fs from 'node:fs'
 import path from 'node:path'
+import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
-import { createMobileBridge, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
-import type { EventRow, LogEvent, RequestAnswer, AnswerResult } from './mobile-bridge.mts'
+import * as core from '../lib/core.mts'
+import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
+import type { MergeRunner } from './mobile-bridge.mts'
+import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
+import { setMergeFromScreen } from './pack-repos.mts'
 import { createMobileRelay } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
 import type { FetchLike, LoginFailure } from './mobile-login.mts'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
+// 운영 relay — 경로는 athena-app relay/src/server.ts WS_PATH('/ws' · WebSocketServer path) · 호스트는 relay/deploy/relay.caddy
+export const RELEASE_RELAY = 'wss://relay.athena.novum-lab.com/ws'
 
 // 조건이 빠졌을 때 맥 로그(화면 문구 아님 — 개발판 격리 시험 전용)
-export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 루프백 ws 주소가 모두 있어야 해요'
+export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · ATHENA_STUDIO_HOME · 허용한 relay 주소(루프백 ws 또는 운영 relay)가 모두 있어야 해요'
+
+// 붙어도 되는 relay 주소인지 — 루프백 ws(포트 아무거나) 또는 RELEASE_RELAY 와 칸마다 정확히 같은 것만(문자열 앞부분 비교 X).
+// 운영 주소는 계정 · 비밀번호 · 포트 · 쿼리 · 조각이 하나라도 붙으면 거절한다 — env 하나로 세션 토큰이 남의 서버로 가지 않게
+export function allowedRelay(raw: string): URL | null {
+  let url: URL
+  try {
+    url = new URL(raw)
+  } catch {
+    return null
+  }
+  if (url.protocol === 'ws:' && LOOPBACK_HOSTS.has(url.hostname)) return url
+  const release = new URL(RELEASE_RELAY)
+  const same =
+    url.protocol === release.protocol &&
+    url.hostname === release.hostname &&
+    url.port === '' &&
+    url.username === '' &&
+    url.password === '' &&
+    url.pathname === release.pathname &&
+    url.search === '' &&
+    url.hash === ''
+  return same ? url : null
+}
 
 export type MobileDevOptions = { url: string; base: string; dir: string }
 
@@ -23,13 +53,8 @@ export type MobileDevOptions = { url: string; base: string; dir: string }
 export function mobileDevOptions({ env, packaged, homeOverride }: { env: NodeJS.ProcessEnv; packaged: boolean; homeOverride: string | null }): MobileDevOptions | null {
   const raw = env.ATHENA_STUDIO_MOBILE_RELAY
   if (packaged || !homeOverride || !raw) return null
-  let url: URL
-  try {
-    url = new URL(raw)
-  } catch {
-    return null
-  }
-  if (url.protocol !== 'ws:' || !LOOPBACK_HOSTS.has(url.hostname)) return null
+  const url = allowedRelay(raw)
+  if (!url) return null
   const base = relayWebBase(url.href)
   return base ? { url: url.href, base, dir: mobileStateDir(homeOverride) } : null
 }
@@ -42,8 +67,23 @@ type FrontCtx = {
   athenaDir: string | null
   requestsNow(): { requests: unknown[] }
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
+  approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
-  serverStatus?: () => Promise<{ servers: unknown[] }>
+  serverStatus?: () => Promise<{ servers: unknown[]; history?: Record<string, unknown[]>; sar?: Record<string, unknown[]> }>
+  packState: { current?: { id?: unknown } | null; packs?: unknown }
+  mergeSettings(): Promise<unknown>
+  setAutoMerge(repo: string, values: RepoChanges): Promise<unknown>
+  packOpen(id: string): Promise<unknown>
+}
+
+// 팩 목록 — 폰에 넘길 칸만(본체 경로 · 아이콘 파일 경로는 넣지 않는다)
+export function packView(state: FrontCtx['packState'] | null): PackView {
+  const name = (value: unknown) => (typeof value === 'string' && value ? value : null)
+  const packs = state && Array.isArray(state.packs) ? (state.packs as { id?: unknown; name?: unknown; displayName?: unknown }[]) : []
+  return {
+    current: state && state.current ? name(state.current.id) : null,
+    packs: packs.filter((pack) => Boolean(pack) && typeof pack.id === 'string' && pack.id !== '').map((pack) => ({ id: pack.id as string, name: name(pack.name), displayName: name(pack.displayName) })),
+  }
 }
 type DevDeps = {
   options: MobileDevOptions
@@ -57,14 +97,48 @@ type DevDeps = {
   onChange: () => void // 화면에 보일 것이 바뀜(view 다시 보내기)
   onPairRequest: (request: PendingPair) => void // [허용] 창 · 창이 뒤면 맥 알림
   onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
+  onPhoneControl: (pane: string) => void // 맥 → 폰으로 제어가 넘어감(D9) — 그 pane 을 보는 맥 창에 잠깐 알림
   log?: (line: string) => void
 }
+
+// 본체 실제 경로 → 팩 id — 데몬 작업 공간의 body(앱이 realDir 로 묶은 본체)와 견준다
+export function bodyPacks(state: FrontCtx['packState'] | null): Record<string, string> {
+  const packs = state && Array.isArray(state.packs) ? (state.packs as { id?: unknown; body?: unknown }[]) : []
+  const found: Record<string, string> = {}
+  for (const pack of packs) {
+    if (!pack || typeof pack.id !== 'string' || !pack.id || typeof pack.body !== 'string' || !pack.body) continue
+    let body = path.resolve(pack.body)
+    try {
+      body = fs.realpathSync(body)
+    } catch {}
+    found[body] = pack.id
+  }
+  return found
+}
+
+// 서버 상세 칸 — snapshot 의 servers 에는 넣지 않는다(크다 · 서버 화면을 열 때 server.detail 로)
+const DETAIL_KEYS = ['ports', 'cpuModel', 'serviceInfo', 'timers', 'cron', 'ufw', 'monarx', 'sites']
+export function serverSummary(reading: unknown): unknown {
+  if (!reading || typeof reading !== 'object') return reading
+  const status = (reading as { status?: unknown }).status
+  if (!status || typeof status !== 'object') return reading
+  const light = { ...(status as Record<string, unknown>) }
+  for (const key of DETAIL_KEYS) delete light[key]
+  return { ...(reading as object), status: light }
+}
+
+// 머지 상세 읽기 — 셸 없이 인자로만 · 20초 · 실패는 null(gh 로그인 안 됨 · 커밋 없음 등)
+const runMergeCommand: MergeRunner = (command, args, cwd) =>
+  new Promise((resolve) => {
+    execFile(command, args, { cwd, env: core.childEnv(process.env), encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout))
+  })
 
 // 화면(팩 레일 프로필 · 메뉴 · 디바이스 창 · [허용] 창)에 넘기는 것 — 토큰 · 열쇠 · 계정 id 는 넣지 않는다
 export type MobileView = {
   enabled: true
   signedIn: boolean
   signingIn: boolean
+  signingUntil: string | null // 로그인 시도가 끝나는 시각(ISO) — 로그인 중일 때만
   connected: boolean
   name: string | null
   devices: PeerView[]
@@ -105,10 +179,29 @@ export function startMobileDev(deps: DevDeps) {
     onChange: deps.onChange,
     onPairRequest: deps.onPairRequest,
     onSignedOut: (why) => deps.onLoginFailed(why === 'expired' ? 'expired_session' : 'account_deleted'),
-    createBridge: (transport) =>
+    // 맥 로그아웃 — relay 에서 이 기기 · 토큰 · 쌍 · 연결 요청을 지운다(protocol.md auth.logout {} → {} · 답 뒤 close 4004). 실패해도 로컬은 지운다
+    remoteLogout: (call) => call('auth.logout', {}),
+    createBridge: (transport) => newBridge(transport),
+  })
+  // 제어 주인(D9) — 기기(브리지)끼리 · main 의 맥 입력 · 크기 요청과 같이 본다
+  const control = createPaneControl({ onPhoneTook: (pane) => deps.onPhoneControl(pane) })
+  // 머지는 바뀌지 않으니 상세는 기기끼리 같이 쓴다(앞 창 본체가 바뀌면 키 — 레포#PR — 가 같아도 다른 레포일 수 있어 본체마다 따로)
+  const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
+  const mergeDetails = () => {
+    const dir = front()?.athenaDir || ''
+    let cache = mergeCaches.get(dir)
+    if (!cache) {
+      cache = createMergeDetails({ athenaDir: () => dir || null, run: runMergeCommand })
+      mergeCaches.set(dir, cache)
+    }
+    return cache
+  }
+  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport']) {
+    return (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
+        control,
         inputAllowed: () => mobileInputAllowed(deps.config()),
         requests: () => {
           const ctx = front()
@@ -117,8 +210,25 @@ export function startMobileDev(deps: DevDeps) {
         servers: async () => {
           const ctx = front()
           if (!ctx || !ctx.serverStatus) return []
-          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers
+          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
         },
+        serverDetail: async (name) => {
+          const ctx = front()
+          if (!ctx || !ctx.serverStatus) return null
+          const all = await ctx.serverStatus().catch(() => null)
+          const server = all ? all.servers.find((reading) => Boolean(reading) && (reading as { name?: unknown }).name === name) : undefined
+          if (!all || !server) return null
+          return { server, history: (all.history && all.history[name]) || [], sar: (all.sar && all.sar[name]) || [] }
+        },
+        bodyPacks: () => {
+          const ctx = front()
+          return bodyPacks(ctx ? ctx.packState : null)
+        },
+        get mergeDetails() {
+          return mergeDetails()
+        },
+        mac: () => ({ name: deps.macName() }),
+        devices: () => relay.devices(),
         events: async () => {
           const ctx = front()
           const events = await eventsModule(ctx && ctx.athenaDir)
@@ -128,6 +238,15 @@ export function startMobileDev(deps: DevDeps) {
           const ctx = front()
           if (!ctx) return { ok: false, error: 'no-window' }
           return (await ctx.answerRequest(id, answer, 'mobile')) as AnswerResult
+        },
+        approveRequest: async (id, generation, choice) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await ctx.approveRequest(id, generation, choice)) as AnswerResult
+        },
+        athenaDir: () => {
+          const ctx = front()
+          return ctx ? ctx.athenaDir : null
         },
         leadPaneOf: (plan) => {
           const ctx = front()
@@ -139,9 +258,29 @@ export function startMobileDev(deps: DevDeps) {
           if (!ctx || !token) return { status: 503, body: { ok: false, error: 'board-unavailable' } }
           return boardActionPoster({ port: ctx.boardPortNow(), token })(body)
         },
+        packs: () => {
+          const ctx = front()
+          return packView(ctx ? ctx.packState : null)
+        },
+        repoSettings: async () => {
+          const ctx = front()
+          return ctx ? ((await ctx.mergeSettings()) as RepoSettings) : { ok: false, repos: [] }
+        },
+        // ⚙ 설정 팝업(settings:set-merge)과 같은 길 — 값을 한 번 더 추린 뒤 코어 pack set-auto-merge
+        setRepo: async (repo, changes) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await setMergeFromScreen({ setAutoMerge: (name, values) => ctx.setAutoMerge(name, values as RepoChanges) }, repo, changes)) as PackResultLike
+        },
+        openPack: async (id) => {
+          const ctx = front()
+          if (!ctx) return { ok: false, error: 'no-window' }
+          return (await ctx.packOpen(id)) as PackResultLike
+        },
         logEvent,
-      }),
-  })
+      })
+    )
+  }
   const login = createLoginFlow({
     base: deps.options.base,
     fetch: deps.fetch,
@@ -160,6 +299,7 @@ export function startMobileDev(deps: DevDeps) {
       enabled: true,
       signedIn: status.signedIn,
       signingIn: !status.signedIn && login.pending(),
+      signingUntil: status.signedIn ? null : login.until(),
       connected: status.connected,
       name: displayName(status.name, status.account),
       devices: relay.devices(),
@@ -171,11 +311,20 @@ export function startMobileDev(deps: DevDeps) {
     relay,
     view,
     signIn: () => login.start(),
-    signOut: () => {
+    // 로그인 중 [취소] — 맥이 기다리기만 멈춘다(relay 쪽 시도는 그대로 두면 10분 뒤 저절로 끝난다 · 늦게 온 athena:// 는 state 가 없어 버린다)
+    cancelSignIn: () => login.cancel(),
+    // 로그아웃 — relay 에 auth.logout 먼저(위 remoteLogout) → 답 · 4004 · 실패와 상관없이 로컬 토큰 · 허용 기기를 지운다
+    signOut: async () => {
       login.cancel()
-      relay.signOut()
+      await relay.signOut()
     },
     handleLink: (link: unknown) => login.handleLink(link),
+    // 맥 화면 입력(main pane:input) — 폰이 가진 pane 이면 맥 크기로 되돌린다
+    macInput: (pane: string, data: string) => control.macInput(pane, data),
+    // 맥 화면 포커스(main pane:focus — pane 누르기 · 창이 앞으로) — 폰이 가진 pane 이면 맥 크기로
+    macFocus: (pane: string) => control.macFocus(pane),
+    // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
+    macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
       login.cancel()

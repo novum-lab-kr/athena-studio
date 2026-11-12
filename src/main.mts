@@ -1003,12 +1003,22 @@ handle('explorer:open', (ctx, workspaceId: unknown, relative: unknown, paneId: u
 handle('pane:split', (ctx, paneId: unknown, direction: unknown) => ctx.daemonCall('pane split', { target: String(paneId), direction: direction === 'down' ? 'down' : 'right' }))
 handle('pane:close', (ctx, paneId: unknown) => ctx.closePane(String(paneId)))
 handle('pane:context-menu', (ctx, point: unknown, title: unknown) => ctx.paneContextMenu(point && typeof point === 'object' ? (point as Point) : null, typeof title === 'string' ? title.slice(0, 200) : ''))
-listen('pane:focus', (ctx, paneId: unknown) => ctx.notifyDaemon('focus', { pane: String(paneId) }))
+listen('pane:focus', (ctx, paneId: unknown) => {
+  // 맥에서 포커스(누르기 · 창이 앞으로)하면 폰이 가진 pane 을 맥 크기로 되찾는다(D9 보완 · 모바일 길이 켜졌을 때만)
+  if (mobileDev) mobileDev.macFocus(String(paneId))
+  ctx.notifyDaemon('focus', { pane: String(paneId) })
+})
 listen('pane:input', (ctx, paneId: unknown, data: unknown) => {
-  if (typeof data === 'string') ctx.notifyDaemon('input', { pane: String(paneId), data })
+  if (typeof data !== 'string') return
+  // 폰이 제어 중인 pane 이면 맥 크기로 되돌린다(D9 · 모바일 길이 켜졌을 때만)
+  if (mobileDev) mobileDev.macInput(String(paneId), data)
+  ctx.notifyDaemon('input', { pane: String(paneId), data })
 })
 listen('pane:resize', (ctx, paneId: unknown, cols: number, rows: number) => {
-  if (cols > 1 && rows > 1) ctx.resizePane(String(paneId), cols | 0, rows | 0)
+  if (!(cols > 1 && rows > 1)) return
+  // 폰이 제어 중이면 폰 크기를 지킨다 — 맥 크기는 기억만(맥에서 입력하면 그 크기로) · 화면에는 적용된 것처럼 답해 다시 요청하지 않게
+  if (mobileDev && mobileDev.macResize(String(paneId), cols | 0, rows | 0)) return ctx.send('pane:resized', String(paneId), cols | 0, rows | 0)
+  ctx.resizePane(String(paneId), cols | 0, rows | 0)
 })
 listen('tab:size', (ctx, tabId: unknown, size: Loose) => {
   const cells = cellSize(size)
@@ -1128,6 +1138,10 @@ async function loadMobileDev() {
     onLoginFailed: (why) => {
       for (const ctx of packWindows) ctx.send('mobile:failed', why)
     },
+    // 폰이 pane 제어를 가져감 — 화면은 그 pane 을 보고 있을 때만 잠깐 알림
+    onPhoneControl: (pane) => {
+      for (const ctx of packWindows) ctx.send('mobile:phone-control', pane)
+    },
   })
 }
 // 사용자에게 보이는 컴퓨터 이름(시스템 설정 → 일반 → 공유) — 맥에서만 · 못 읽으면 null(호스트 이름으로 대신하지 않는다)
@@ -1170,8 +1184,12 @@ handle('mobile:login', () => {
   if (mobileDev) mobileDev.signIn()
   return mobileState()
 })
-handle('mobile:logout', () => {
-  if (mobileDev) mobileDev.signOut()
+handle('mobile:cancel-login', () => {
+  if (mobileDev) mobileDev.cancelSignIn()
+  return mobileState()
+})
+handle('mobile:logout', async () => {
+  if (mobileDev) await mobileDev.signOut()
   return mobileState()
 })
 handle('mobile:open-account', () => {
@@ -1204,6 +1222,8 @@ handle('mobile:remove-device', async (_ctx, peer: unknown) => {
 })
 // 디바이스에서 입력 허용 — 앱 설정 mobileInput(브리지가 메시지마다 다시 읽는다 · 기본 꺼짐)
 handle('mobile:set-input', (_ctx, allowed: unknown) => {
+  // 개발용 길이 꺼져 있으면 바꾸지 않는다(배포판 · 보통 개발 앱에서 허용이 몰래 켜지지 않게)
+  if (!mobileDev) return { ok: false, allowed: config.mobileInput === true }
   config = { ...config, mobileInput: allowed === true }
   core.saveConfig(configFile(), config)
   return { ok: true, allowed: allowed === true }

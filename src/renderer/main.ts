@@ -169,6 +169,14 @@ async function init(): Promise<void> {
     view.term.write(data)
     if (view.hold && !view.hold.releasing) holdOutputArrived(paneId, view)
   })
+  // 창이 앞으로 오면 보던 pane 포커스를 맥에 다시 알린다 — 폰이 가져간 pane 을 맥 크기로 되찾는다(D9 보완)
+  window.addEventListener('focus', () => {
+    if (attached && screen.focused && views.has(screen.focused)) studio.paneFocus(screen.focused)
+  })
+  // 디바이스가 pane 제어를 가져갔다(D9) — 이 창이 그 pane 을 보고 있을 때만 잠깐 알림(입력은 막지 않는다 · 입력하면 맥 크기로 돌아온다)
+  studio.onMobilePhoneControl((paneId) => {
+    if (views.has(paneId)) showToast(say('mobile.control.phone'), 'info')
+  })
   // 데몬이 크기를 적용한 자리 — 그 앞 출력(이미 보낸 것)을 다 읽은 뒤에 바꾼다(빈 write 의 콜백 = 앞선 write 다음 차례).
   // 붙는 중이면 버린다 — 새 view 는 attach 가 준 크기(이 요청이 이미 반영된)로 만든다
   studio.onPaneResized((paneId, cols, rows) => {

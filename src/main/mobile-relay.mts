@@ -21,6 +21,8 @@ const STATE_FILE = 'relay.json'
 export const PAIR_TTL_MS = 5 * 60_000 // relay 연결 요청 만료(5분) — [허용] 창의 남은 시간
 const LABEL_MAX = 64 // relay label 상한
 export const CLOSE_ACCOUNT_DELETED = 4003 // 웹에서 계정 삭제 — 토큰 · 짝 열쇠를 버린다
+export const CLOSE_LOGGED_OUT = 4004 // auth.logout 답 뒤 relay 가 끊음 — 로그아웃 결과라 다시 붙지 않고 오류로 알리지 않는다
+export const LOGOUT_WAIT_MS = 3000 // 맥 로그아웃 때 relay 답을 기다리는 한도 — 넘으면 relay 쪽은 두고 로컬만 지운다
 
 export type BridgeHandle = { stop(): Promise<void>; openPanes(): string[]; resyncPane(pane: string): Promise<void> }
 // [허용] 창에 보일 것 — 번호는 열기(reveal)를 보낸 뒤에만 생긴다
@@ -49,6 +51,10 @@ export type RelayDeps = {
   onPairRequest?: (request: PendingPair) => void // 번호가 뜰 때(열기를 보낸 뒤) 한 번
   onChange?: () => void // 연결 · 로그인 · 기기 · 기다리는 요청이 바뀜(화면 다시 그리기)
   onSignedOut?: (why: 'expired' | 'account_deleted') => void // relay 가 세션을 끝냄 — 토큰 · 짝 열쇠를 버린 뒤
+  // 맥 로그아웃 때 relay 에서 이 세션을 지우는 요청 — 붙어 있을 때 로컬을 지우기 전에 한 번 부른다(실패 · 시간 초과여도 로컬은 지운다).
+  // op 이름 · 응답 모양은 relay 계약(protocol.md)이 정한다 — 부르는 쪽이 계약대로 넘기고, 없으면 relay 에는 보내지 않는다
+  remoteLogout?: (call: (op: string, args: object) => Promise<unknown>) => Promise<unknown>
+  logoutWaitMs?: number
   log?: (line: string) => void
   WebSocketImpl?: WebSocketCtor
   heartbeatMs?: number
@@ -134,6 +140,9 @@ export function createMobileRelay(deps: RelayDeps) {
   const WebSocketImpl = deps.WebSocketImpl || (globalThis.WebSocket as unknown as WebSocketCtor)
   const heartbeatMs = deps.heartbeatMs ?? HEARTBEAT_MS
   const replyTimeoutMs = deps.replyTimeoutMs ?? REPLY_TIMEOUT_MS
+  const logoutWaitMs = deps.logoutWaitMs ?? LOGOUT_WAIT_MS
+  let signingOut: Promise<void> | null = null // 로그아웃이 겹쳐 눌려도 한 번만
+  let loggedOutByRelay = false // 로그아웃 중 relay 가 4004 로 끊음(답보다 먼저 와도 성공으로 친다)
   const resyncDelayMs = deps.resyncDelayMs ?? RESYNC_DELAY_MS
   const backoffMs = deps.backoffMs ?? BACKOFF_MS
   let macKey: KeyPair | null = null
@@ -338,6 +347,35 @@ export function createMobileRelay(deps: RelayDeps) {
     saveState()
   }
 
+  // relay 에 먼저(붙어 있고 remoteLogout 이 있을 때만 · logoutWaitMs 까지) → 그 답과 상관없이 로컬을 지운다
+  async function signOutNow() {
+    if (deps.remoteLogout && socket && authed) {
+      loggedOutByRelay = false
+      let waitTimer: NodeJS.Timeout | null = null
+      const waited = new Promise<'timeout'>((resolve) => {
+        waitTimer = setTimeout(() => resolve('timeout'), logoutWaitMs)
+      })
+      try {
+        const outcome = await Promise.race([deps.remoteLogout(call).then(() => 'ok' as const), waited])
+        log(`[mobile-relay] relay 로그아웃 ${outcome}`)
+      } catch (error) {
+        if (loggedOutByRelay) log('[mobile-relay] relay 로그아웃 ok(4004)')
+        else log(`[mobile-relay] relay 로그아웃 실패 code=${(error as RelayCallError | null)?.code || 'error'} — 로컬만 지운다`)
+      } finally {
+        if (waitTimer) clearTimeout(waitTimer)
+      }
+    }
+    const own = socket
+    socket = null
+    clearConnection()
+    if (own) own.close()
+    if (reconnectTimer) clearTimeout(reconnectTimer)
+    reconnectTimer = null
+    forget()
+    log('[mobile-relay] 로그아웃')
+    changed()
+  }
+
   function signedOutByRelay(why: 'expired' | 'account_deleted') {
     forget()
     const own = socket
@@ -469,6 +507,17 @@ export function createMobileRelay(deps: RelayDeps) {
       log(`[mobile-relay] relay 끊김 code=${event && event.code}`)
       if (event && event.code === 4001) replaced = true
       if (event && event.code === CLOSE_ACCOUNT_DELETED && state.token) return signedOutByRelay('account_deleted')
+      if (event && event.code === CLOSE_LOGGED_OUT) {
+        loggedOutByRelay = true
+        // 로그아웃 결과 — 다시 붙지 않는다. 맥에서 누른 로그아웃이면 로컬은 signOut 이 지운다.
+        // 누르지 않았는데 왔으면 relay 가 이미 이 기기 토큰을 지운 것 — 로컬도 지우고 로그아웃 상태로(오류 알림 없음)
+        if (!signingOut && state.token) {
+          forget()
+          log('[mobile-relay] relay 가 로그아웃시킴(4004) — 로컬 토큰 · 허용 기기 지움')
+          changed()
+        }
+        return
+      }
       scheduleReconnect()
     }
     own.onopen = () => {
@@ -534,17 +583,10 @@ export function createMobileRelay(deps: RelayDeps) {
       changed()
       connect()
     },
-    // 맥에서 로그아웃 — relay 에 로그아웃 op 는 없다(계약) · 끊고 토큰 · 짝 열쇠를 버린다
-    signOut() {
-      const own = socket
-      socket = null
-      clearConnection()
-      if (own) own.close()
-      if (reconnectTimer) clearTimeout(reconnectTimer)
-      reconnectTimer = null
-      forget()
-      log('[mobile-relay] 로그아웃')
-      changed()
+    // 맥에서 로그아웃 — 붙어 있으면 relay 에 먼저 이 세션을 지워 달라고 하고(remoteLogout · 실패해도 계속) 끊고 토큰 · 짝 열쇠를 버린다
+    signOut(): Promise<void> {
+      if (!signingOut) signingOut = signOutNow().finally(() => (signingOut = null))
+      return signingOut
     },
     async stop() {
       stopped = true

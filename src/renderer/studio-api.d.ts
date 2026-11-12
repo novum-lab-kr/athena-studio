@@ -205,7 +205,7 @@ declare global {
   type MobilePending = { requestId: string; from: string; label: string | null; code: string; at: string; expiresAt: string }
   type MobileState =
     | { enabled: false }
-    | { enabled: true; signedIn: boolean; signingIn: boolean; connected: boolean; name: string | null; devices: MobileDevice[]; pending: MobilePending[]; accountUrl: string }
+    | { enabled: true; signedIn: boolean; signingIn: boolean; signingUntil: string | null; connected: boolean; name: string | null; devices: MobileDevice[]; pending: MobilePending[]; accountUrl: string }
   type MobileFailure = 'expired' | 'invalid_grant' | 'device_limit' | 'busy' | 'network' | 'bad_reply' | 'expired_session' | 'account_deleted'
   type MobileReply = { ok: boolean; error?: string }
 
@@ -335,6 +335,7 @@ declare global {
     // 모바일(src/main.mts handle('mobile:…'))
     mobileState(): Promise<MobileState>
     mobileLogin(): Promise<MobileState>
+    mobileCancelLogin(): Promise<MobileState>
     mobileLogout(): Promise<MobileState>
     mobileOpenAccount(): Promise<unknown>
     mobileAnswer(requestId: string, accept: boolean): Promise<MobileReply>
@@ -342,6 +343,7 @@ declare global {
     mobileInput(): Promise<{ allowed: boolean }>
     mobileSetInput(allowed: boolean): Promise<{ ok: boolean; allowed: boolean }>
     onMobileState(callback: (next: MobileState) => void): () => void
+    onMobilePhoneControl(callback: (paneId: string) => void): () => void
     onMobileFailed(callback: (why: MobileFailure) => void): () => void
     onPackProgress(callback: (step: import('./ui/pack-progress.tsx').PackProgressStep) => void): () => void
     onPackRestored(callback: (result: import('./ui/notices.tsx').RestoreResult) => void): () => void
