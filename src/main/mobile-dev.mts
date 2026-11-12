@@ -13,7 +13,7 @@ import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputA
 import type { MergeRunner } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
-import { noMobileWork } from '../lib/work-model.mts'
+import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 import { createMobileRelay } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
@@ -71,7 +71,7 @@ export const mobileStateDir = (home: string) => path.join(path.resolve(home), 'm
 type FrontCtx = {
   athenaDir: string | null
   requestsNow(): { requests: unknown[] }
-  workPeek(): Promise<MobileWork>
+  workPeek(options?: { launch?: boolean }): Promise<MobileWork>
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
   approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
@@ -202,8 +202,15 @@ export function startMobileDev(deps: DevDeps) {
     }
     return cache
   }
+  // 작업 목록 실시간 갱신 — 폰이 붙어 있는 동안만 앞 창 현황판을 띄우지 않고 주기로 읽어 달라졌을 때만 changed ['work'](work-model createWorkWatch)
+  const workWatch = createWorkWatch({
+    read: async () => {
+      const ctx = front()
+      return ctx ? ctx.workPeek({ launch: false }) : noMobileWork()
+    },
+  })
   function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport']) {
-    return (
+    const bridge = (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
@@ -291,6 +298,14 @@ export function startMobileDev(deps: DevDeps) {
         logEvent,
       })
     )
+    workWatch.add(bridge)
+    return {
+      ...bridge,
+      async stop() {
+        workWatch.remove(bridge)
+        await bridge.stop()
+      },
+    }
   }
   const login = createLoginFlow({
     base: deps.options.base,
@@ -336,6 +351,8 @@ export function startMobileDev(deps: DevDeps) {
     macFocus: (pane: string) => control.macFocus(pane),
     // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
     macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
+    // 앞 창의 요청이 바뀌었다(main — work.mts publishRequests) — 붙어 있는 폰에 changed ['requests', 'work']
+    requestsChanged: () => workWatch.requestsChanged(),
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
       login.cancel()

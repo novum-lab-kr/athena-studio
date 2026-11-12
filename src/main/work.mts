@@ -50,7 +50,7 @@ export type WorkCtx = {
   stopRequests?: () => void
   watchRequests?: () => void
   workState?: unknown
-  workPeek?: () => Promise<workModel.MobileWork>
+  workPeek?: (options?: { launch?: boolean }) => Promise<workModel.MobileWork>
   answerRequest?: unknown
   redeliverRequest?: unknown
   approveRequest?: (id: string, generation: string, choice: number) => Promise<{ ok: boolean; error?: string }>

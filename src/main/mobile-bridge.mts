@@ -1182,7 +1182,7 @@ export function createMobileBridge(deps: BridgeDeps) {
   transport.onMessage((message) => void handle(message))
 
   return {
-    // 맥 쪽에서 바뀐 칸을 알린다(요청 폴더 · 머지 · 서버) — 폰은 그 칸만 다시 snapshot 한다
+    // 맥 쪽에서 바뀐 칸을 알린다(요청 → ['requests', 'work'] · 작업 목록 → ['work'] — mobile-dev workWatch) — 폰은 다시 snapshot 한다
     changed(parts: string[]) {
       emit({ event: 'changed', parts })
     },
