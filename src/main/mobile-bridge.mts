@@ -469,6 +469,12 @@ const TERMINAL_REPLY = /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rn]|\x1b\[[?>=][\d;.]*c|\
 export function isTerminalReply(data: string): boolean {
   return TERMINAL_REPLY.test(data)
 }
+// 맥 포인터가 pane 위를 누르지 않고 지나가기만 한 것(SGR 마우스 보고 · 단추 없음 + 움직임 = 35 · Shift 4 · Meta 8 · Ctrl 16 을 더한 값).
+// Claude Code 는 움직임 추적(DECSET 1003 · 1006)을 켜서 맥 xterm 이 창에 포커스가 없어도 이것을 입력으로 보낸다 — 사람이 친 것이 아니니 주인을 바꾸지 않는다(누르기는 pane 포커스로 · 휠은 입력으로 되찾는다)
+const POINTER_HOVER = /^(?:\x1b\[<(?:35|39|43|47|51|55|59|63);\d+;\d+M)+$/
+export function isPointerHover(data: string): boolean {
+  return POINTER_HOVER.test(data)
+}
 
 // 주인 표 — pane → 가진 폰(없으면 맥) · 폰이 가져갈 때의 맥 크기(돌려줄 크기 · 폰 제어 중 맥 화면이 요청한 크기로 바뀐다)
 // onPhoneTook: 맥 → 폰으로 넘어갈 때만(폰 → 폰은 아님) — 맥 Studio 의 잠깐 알림
@@ -521,9 +527,9 @@ export function createPaneControl({ onPhoneTook }: { onPhoneTook?: (pane: string
     heldBy(holder: ControlHolder): string[] {
       return [...phones].filter(([, held]) => held.holder === holder).map(([pane]) => pane)
     },
-    // 맥 화면에서 입력 — 터미널 자동 답이 아니고 폰이 가졌으면 맥 크기로
+    // 맥 화면에서 입력 — 터미널 자동 답 · 포인터 지나가기가 아니고 폰이 가졌으면 맥 크기로
     macInput(pane: string, data: string) {
-      if (phones.has(pane) && !isTerminalReply(data)) void backToMac(pane)
+      if (phones.has(pane) && !isTerminalReply(data) && !isPointerHover(data)) void backToMac(pane)
     },
     // 맥 화면에서 pane 에 포커스(누르기 · 창이 앞으로 — D9 보완) — 폰이 가졌으면 맥 크기로
     macFocus(pane: string) {
