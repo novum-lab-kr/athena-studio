@@ -25,7 +25,7 @@
    대신 아테나(계획서 "- Lead pane:")에 "📦 <pane> 새로 시작 — <계획서>" 한 줄(lead-send.py --note — 끝 알림 받음 확인 · 그 차례의 직접 보고로 치지 않는다) ·
    재개 지시는 "<계획서> 이어서 — Checkpoint 부터 읽고 진행" · 못 지우고 끝나면(새 입력 · 대화 바뀜 · 6시간 등) 아테나에 "📦 <pane> 새로 시작 못 함(<까닭>)" 한 줄. 끝 알림 차례 상태(state/agent-turn · agent-notify) · pane 기록 · 보호 훅은
    pane · 환경 기준이라 대화가 바뀌어도 이어진다
-화면은 scripts/lib/screen.py 로만. 입력칸 읽기는 앱 src/lib/pane-submit.mts inputOf 와 같은 규칙(Claude ❯ ~ 가로선 · Codex › ~ 빈 줄).
+화면은 scripts/lib/screen.py 로만. 입력칸 읽기는 scripts/lib/input-box.json 규칙(Claude ❯ ~ 가로선 · Codex › ~ 맨 아래 상태줄 · 단축키 줄 — 입력칸 안 빈 줄은 경계가 아니다).
 종료 코드: 0 = 처리기를 띄웠다 · 1 = 확인 실패(이유를 찍는다) · 2 = 사용법
 """
 import datetime
@@ -109,8 +109,16 @@ def checkpoint_fresh(text: str, now: float) -> bool:
     return now - stamp <= FRESH_MINUTES * 60 and stamp - now <= 60
 
 
+# 입력칸 끝 판정 글 — scripts/lib/input-box.json 한 곳(scripts/board/pane-close.mjs 와 같이 읽는다 · JS \w 와 같게 re.ASCII)
+BOX = json.loads((ATHENA_DIR / 'scripts' / 'lib' / 'input-box.json').read_text(encoding='utf-8'))
+CLAUDE_END = re.compile(BOX['claudeEnd'], re.ASCII)
+CODEX_SHORTCUTS = re.compile(BOX['codexShortcuts'], re.ASCII)
+CODEX_STATUS = re.compile(BOX['codexStatus'], re.ASCII)
+
+
 def input_of(agent: str, text: str):
-    """입력칸 글 — 못 찾으면 None. 앱 src/lib/pane-submit.mts inputOf 와 같은 규칙"""
+    """입력칸 글 — 못 찾으면 None · 비었으면 ''. 규칙은 input-box.json(pane-close.mjs inputOf 와 같다):
+    Claude 는 가로선까지, Codex 는 맨 아래 상태줄 · 단축키 줄을 떼고 남은 것 전부 — 입력칸 안의 빈 줄은 경계가 아니다(그 경계를 못 찾으면 None)"""
     lines = [line.rstrip() for line in str(text or '').split('\n')]
     mark = {'codex': '›', 'claude': '❯'}.get(agent)
     if not mark:
@@ -119,13 +127,28 @@ def input_of(agent: str, text: str):
     if not starts:
         return None
     index = starts[-1]
+    first = lines[index].lstrip()[1:]
     rest = lines[index + 1:]
-    ends = [offset for offset, line in enumerate(rest) if (re.match(r'^─{3}', line) if agent == 'claude' else not line.strip())]
+    if agent == 'codex':
+        while rest and not rest[-1].strip():
+            rest.pop()
+        shortcuts = bool(rest) and bool(CODEX_SHORTCUTS.match(rest[-1]))
+        if shortcuts:
+            rest.pop()
+        status = bool(rest) and bool(CODEX_STATUS.match(rest[-1]))
+        if status:
+            rest.pop()
+        if not shortcuts and not status:
+            return None
+        body = '\n'.join([first, *rest]).strip()
+        # 빈 입력칸의 자리 글 — 초안이 아니다
+        return '' if body == BOX['codexPlaceholder'] else body
+    ends = [offset for offset, line in enumerate(rest) if CLAUDE_END.match(line)]
     if not ends:
         return None
-    body = '\n'.join([lines[index].lstrip()[1:], *rest[:ends[0]]]).strip()
+    body = '\n'.join([first, *rest[:ends[0]]]).strip()
     # Claude 가 일하는 중 받은 글을 큐로 옮기고 빈 입력칸에 그리는 안내 — 초안이 아니다(pane-submit.mts 와 같다)
-    if agent == 'claude' and body == 'Press up to edit queued messages' and any(line.strip() == 'ctrl+x ctrl+s to send now' for line in lines):
+    if body == BOX['claudeQueued'] and any(line.strip() == BOX['claudeQueuedHint'] for line in lines):
         return ''
     return body
 

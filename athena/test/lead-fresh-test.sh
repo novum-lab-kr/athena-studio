@@ -246,10 +246,14 @@ check "재개 지시는 없다" "$(count "$WORK/sent" '이어서 하자')" 0
 echo "▶ Codex 아테나는 /new"
 reset
 echo codex > "$WORK/agent"
-printf '• 끝났다\n\n› \n\n  ? for shortcuts\n' > "$WORK/screen"
+# 빈 줄로 시작하는 여러 줄 초안 — 첫 빈 줄에서 끊으면 빈 입력칸으로 읽어 초안 위에 /new 를 넣었다(PR #293 의 pane-close.mjs 와 같은 함정)
+printf '• 끝났다\n\n› \n\n  아직 보내지 않은 글\n\n  둘째 문단\n\n  GPT-6.1-Sol medium · /tmp/demo\n  ? for shortcuts\n' > "$WORK/screen"
 printf '{"session":"s-old","agent":"codex"}\n' > "$SESSIONS/p2.json"
 fresh ATHENA_STUDIO_PANE_ID=p2 python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
 check "Codex 도 종료 0" "$?" 0
+sleep 1
+check "Codex 빈 줄로 시작하는 초안이 있으면 넣지 않는다" "$(count "$WORK/sent")" 0
+printf '• 끝났다\n\n› \n\n  ? for shortcuts\n' > "$WORK/screen"
 wait_until "[ \"\$(count '$WORK/sent' '^SENT p2 /new$')\" -ge 1 ]"
 check "Codex 에는 /new" "$(count "$WORK/sent" '^SENT p2 /new$')" 1
 check "Codex 에 /clear 는 넣지 않는다" "$(count "$WORK/sent" '/clear')" 0

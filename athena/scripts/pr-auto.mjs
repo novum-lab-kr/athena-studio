@@ -54,7 +54,7 @@ import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
+  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
@@ -518,6 +518,14 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const limits = { max: fast ? FAST_MAX_ROUNDS : MAX_ROUNDS, reviewers: PR_REVIEWERS }
   console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${limits.max}${fast ? ` · ${FAST_PATH}` : ''}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto', ...(fast ? { fast: true } : {}) }
+
+  // 보안 검토로 멈춘 같은 HEAD 에 결과(높음 0)가 남았다 — 리뷰를 다시 하지 않고 같은 라운드에서 머지 단계를 이어 간다(lib securityResumable)
+  const resume = known && securityResumable(planText, known, sha) ? securityResumeOf(known.result, fast) : null
+  if (resume) {
+    console.log(`  ↪ 보안 검토 결과가 남았다 — 리뷰는 다시 하지 않고 라운드 ${known.round} 그대로 머지 단계를 이어 간다`)
+    if (dryRun) return console.log('── 할 일: 머지 단계 이어 가기(보안 검토 결과 뒤)\n(--dry-run — 계획서 · pane · 요청 · 머지 모두 하지 않았다)')
+    return prepareMerge({ planPath, planFile, repo, number, sha, round: known.round, ref, pr, org, summary: resume.summary, reviewOff: resume.reviewOff, takeover: resume.takeover, config, max: limits.max, reviewers: resume.takeover ? SHORT_REVIEWERS : limits.reviewers, fast })
+  }
 
   // 리뷰 끔 — 리뷰어를 부르지 않고 안 정한 결정 · 같은 HEAD 검증 · 충돌만 본 뒤 머지 단계로. 라운드를 쓰지 않는다(리뷰를 다시 켜도 상한에 걸리지 않게)
   if (!flow.review) {
@@ -992,8 +1000,15 @@ const startSecurityReview = async ({ planPath, planFile, repo, branch, sha, work
   const live = listed ? new Set((listed.panes ?? []).map((pane) => pane.id)) : null
   if (securityResultFor(planText, { repo, branch, sha, tree }) || securityPending(planText, { repo, branch, maxAgeMs: SECURITY_PENDING_MAX_MS, livePanes: live })) return { risky: true, why: verdict.why, tree }
   if (!worktree || !existsSync(worktree)) return { risky: true, why: verdict.why, tree, error: 'security-reviewer 를 띄울 워크트리가 없음' }
-  console.log(`  🛡 위험한 수정(${verdict.why}) — security-reviewer 를 띄운다`)
-  const launched = spawnSync(join(ROOT, 'scripts', 'delegate.sh'), ['security-reviewer', '--cwd', worktree, '--here', '--plan', planFile, securityPrompt({ planFile, worktree, repo, branch, base, why: verdict.why })], { encoding: 'utf8', timeout: 180_000 })
+  // 자리 — pane 안(ship.sh --direct-merge 등)이면 부른 pane 옆, 밖(현황판의 pr-auto)이면 계획서 "- Lead pane:" 옆(delegate.sh --beside · 2026-11-12 PR #293 — 밖이라 못 띄워 머지가 멈췄다)
+  const lead = planText.match(/^- Lead pane:[ \t]*([\w-]{1,32})[ \t]*$/m)?.[1] ?? ''
+  // pane 안인지는 화면 계층에 묻는다(self — 환경 변수를 직접 읽지 않는다 · scripts/screen-lint.sh)
+  const self = await screen(['self'])
+  const inPane = Boolean(self?.inside && self.pane_id)
+  if (!inPane && !lead) return { risky: true, why: verdict.why, tree, error: 'security-reviewer 를 띄울 자리가 없음(화면 pane 밖이고 계획서에 Lead pane 이 없음)' }
+  const place = inPane ? ['--here'] : ['--beside', lead]
+  console.log(`  🛡 위험한 수정(${verdict.why}) — security-reviewer 를 띄운다${inPane ? '' : `(아테나 pane ${lead} 옆)`}`)
+  const launched = spawnSync(join(ROOT, 'scripts', 'delegate.sh'), ['security-reviewer', '--cwd', worktree, ...place, '--plan', planFile, securityPrompt({ planFile, worktree, repo, branch, base, why: verdict.why })], { encoding: 'utf8', timeout: 180_000 })
   if (launched.status !== 0) return { risky: true, why: verdict.why, tree, error: `security-reviewer 를 띄우지 못함(${firstLine(launched.stderr || launched.stdout)})` }
   return { risky: true, why: verdict.why, tree, launched: true }
 }
@@ -1004,7 +1019,11 @@ const securityStop = async ({ planPath, planFile, repo, branch, sha, worktree, b
     console.log(`⛔ ${why}`)
     return why
   }
-  if (start.error) return stopFor(`보안 검토 못 함 — ${start.error}`)
+  if (start.error) {
+    // 띄우지 못했다 — 아테나가 손으로 띄우게 알린다. 결과가 남으면 다음 확인이 같은 라운드에서 이어 간다(lib securityResumable)
+    await notify(planFile, { key: `pr-auto-security-launch:${repo}:${branch}`, sha, title: `보안 검토 못 띄움 — ${repo} ${branch} @${sha.slice(0, 7)}`, body: `${start.error}. scripts/delegate.sh security-reviewer --cwd ${worktree || '<워크트리>'} --here --plan ${planFile} 로 띄워 주면 결과가 남은 뒤 다음 확인 때 리뷰를 다시 하지 않고 이어서 머지한다(PR 이면 "- Auto review:" 줄은 지우지 않는다).` })
+    return stopFor(`보안 검토 못 함 — ${start.error}`)
+  }
   if (start.risky) {
     const reviewed = () => securityResultFor(readFileSync(planPath, 'utf8'), { repo, branch, sha, tree: start.tree })
     if (!reviewed()) {

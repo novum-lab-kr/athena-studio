@@ -608,7 +608,9 @@ FLOG="$TMP/fake.log"; : > "$FLOG"
 cat > "$CORE/scripts/screen" <<'SH'
 #!/bin/sh
 echo "screen $*" >> "$FAKE_LOG"
-if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"; else echo '{}'; fi
+if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
+elif [ "$1" = self ] && [ -n "${FAKE_SELF_PANE:-}" ]; then echo "{\"inside\":true,\"pane_id\":\"$FAKE_SELF_PANE\"}"   # pane 안 흉내
+else echo '{}'; fi
 SH
 printf '#!/bin/sh\nexit 0\n' > "$CORE/scripts/verify/reuse.sh"
 cat > "$BIN/gh" <<'SH'
@@ -864,6 +866,7 @@ cat > "$CORE/scripts/screen" <<'SH'
 [ -n "$FAKE_SCREEN_LOG" ] && echo "screen $*" >> "$FAKE_SCREEN_LOG"
 if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
 elif [ "$1 $2" = "pane read" ]; then printf '%s\n' "${FAKE_PANE_TEXT:-}"   # 화면 글 — 질문 창 흉내
+elif [ "$1" = self ] && [ -n "${FAKE_SELF_PANE:-}" ]; then echo "{\"inside\":true,\"pane_id\":\"$FAKE_SELF_PANE\"}"   # pane 안 흉내(없으면 화면 밖)
 # 공통 전송 경로 실패 흉내 — refuse: 데몬이 쓰기 전에 거절 · lost: 전송을 확인 못 함(scripts/screen 이 stderr 에 적는 모양)
 elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = refuse ]; then echo '{"error": "unavailable", "message": "studio pane run: 입력을 기다리는 질문이 열려 있다"}' >&2; exit 1
 elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = lost ]; then echo '{"error": "timeout", "message": "studio pane run: 입력 전송을 확인하지 못했다 — pane 입력칸을 확인해 주세요"}' >&2; exit 1
@@ -1003,10 +1006,10 @@ printf -- '- Security review: /w · 📦 web · 🌿 feat/x · pane p8 (security
 [ "${FAKE_SECURITY:-none}" = clean ] && printf -- '- Security result: 높음 0 · 중간 0 @%s · 📦 web · 🌿 feat/x · %s · 가짜\n' "$FAKE_SHA" "$(date '+%Y-%m-%d %H:%M')" >> "$ROOT/$PLAN"
 exit 0
 SH
-chmod +x "$CORE/scripts/delegate.sh"; PDLOG="$TMP/pr-delegate.log"
-: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 결과 없음 → 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+chmod +x "$CORE/scripts/delegate.sh"; cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.fake"; PDLOG="$TMP/pr-delegate.log"
+: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 결과 없음 → 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
 [ "$(grep -c '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$PDLOG")" = 1 ] && echo "  ✔ 위험한 수정 PR — security-reviewer 를 한 번 띄웠다" || { echo "  ✖ PR 보안 띄우기 — $(cat "$PDLOG")"; FAIL=1; }
-: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 이 HEAD 결과 높음 0 → 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" FAKE_SECURITY=clean ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 이 HEAD 결과 높음 0 → 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" FAKE_SECURITY=clean ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
 : > "$PDLOG"; merge_case "보안 — 위험하지 않은 PR → 띄우지 않고 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_DELEGATE_LOG="$PDLOG"
 [ ! -s "$PDLOG" ] && echo "  ✔ 위험하지 않은 PR — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$PDLOG")"; FAIL=1; }
 cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
@@ -1014,6 +1017,23 @@ grep -q '^pr ready 7 --repo acme/web' "$GH_LOG" && [ -z "$(ls "$CORE/.requests" 
   && echo "  ✔ autoMergeConfirm: false → gh pr ready 뒤 머지 · 요청 · 대기 파일 남지 않음" || { echo "  ✖ draft 풀기 · 요청 · 대기 파일 확인 실패"; FAIL=1; }
 grep -q '"auto.merge".*"confirm":false' "$CORE/.events.jsonl" 2>/dev/null \
   && echo "  ✔ 사건 기록 auto.merge 에 confirm:false" || { echo "  ✖ 사건 기록에 확인 없는 머지가 없다"; FAIL=1; }
+cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.real"
+cp "$TMP/delegate.sh.fake" "$CORE/scripts/delegate.sh"
+# 화면 pane 밖(현황판의 pr-auto)에서도 띄운다 — 계획서 Lead pane 옆(delegate.sh --beside · 2026-11-12 PR #293 — "Athena Studio 밖입니다" 로 못 띄워 머지가 멈췄다)
+: > "$PDLOG"; EXTRA_PLAN="- Lead pane: p91
+" merge_case "보안 — pane 밖 · Lead pane 있음 → 그 옆에 띄우고 기다림" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+grep -q '^delegate security-reviewer --cwd .* --beside p91 --plan plans/task/x.md' "$PDLOG" && echo "  ✔ pane 밖 — Lead pane(p91) 옆에 security-reviewer 를 띄웠다(--beside)" || { echo "  ✖ pane 밖 띄우기 — $(cat "$PDLOG")"; FAIL=1; }
+: > "$PDLOG"; merge_case "보안 — pane 밖 · Lead pane 없음 → 못 띄움 · 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 못 함 — security-reviewer 를 띄울 자리가 없음' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+[ ! -s "$PDLOG" ] && { grep -q '보안 검토 못 띄움' "$TMP/merge.out" || grep -rq '보안 검토 못 띄움' "$CORE/.requests" 2>/dev/null; } && echo "  ✔ 못 띄우면 아테나에 알린다(손으로 띄우면 이어서 머지)" || { echo "  ✖ 못 띄움 알림 — $(cat "$PDLOG")"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+# 보안 검토로 멈춘 같은 HEAD 에 결과(높음 0)가 그 뒤 남으면 — 리뷰를 다시 하지 않고 같은 라운드에서 머지(줄을 지우면 라운드 1 부터 다시 리뷰했다)
+STOP_LINE="- Auto review: web#7 @${SHA:0:7} · 보안 검토 때문에 멈춤 — 승인 1/1이지만 보안 검토 못 함 — x · 라운드 1/3 · $(date '+%Y-%m-%d') 00:00"
+: > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 0 · 중간 1 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
+" merge_case "보안 — 멈춘 HEAD 에 결과 높음 0 → 리뷰 없이 같은 라운드에서 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main.*라운드 1/3' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+grep -q '머지 단계를 이어 간다' "$TMP/merge.out" && ! grep -q '리뷰어 구성\|↪ 리뷰어' "$TMP/merge.out" && [ ! -s "$PDLOG" ] && echo "  ✔ 리뷰를 다시 돌리지 않고 이어 갔다 · security-reviewer 도 다시 안 띄움" || { echo "  ✖ 이어 가기 — $(cat "$PDLOG")"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+: > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 1 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
+" merge_case "보안 — 멈춘 HEAD 결과가 높음 1 → 이어 가지 않음(고친 커밋을 기다린다)" ', "autoMergeConfirm": false' no '보안 검토 때문에 멈춤' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+grep -q '이미 봤거나' "$TMP/merge.out" && echo "  ✔ 높음이 남은 결과면 같은 HEAD 를 다시 돌지 않는다" || { echo "  ✖ 높음 결과에 다시 돎"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
 # 처리기가 잡은 채로 죽은 파일(<이름>.json.<죽은 pid>)은 원래 이름으로 돌려놓는다(산 pid 것은 그대로) — 처리기 시작 · --kick 이 부른다
 mkdir -p "$TMP/queue-confirm/confirm"; echo '{}' > "$TMP/queue-confirm/confirm/web-8.json.999999"; echo '{}' > "$TMP/queue-confirm/confirm/web-9.json.$$"
 env ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" "$(command -v node)" --input-type=module -e "
@@ -1810,16 +1830,16 @@ gate_reset; PLAN_EXTRA="- Security result: 높음 0 · 중간 2 @$FX_SHA · tree
 gate_reset; PLAN_EXTRA="- Security result: 높음 1 · 중간 0 @$FX_SHA · tree 000000000000 · 📦 api · 🌿 feat/x · $NOW_STAMP · 다른 레포
 " direct_case "다른 레포의 보안 높음은 이 레포를 막지 않음" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
 # 위험한 수정(feat/sec — 명령 실행 줄)이면 이 HEAD 의 결과가 있어야 지나간다 — 없으면 security-reviewer 를 띄우고 기다린다
-gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 결과 없음 → security-reviewer 띄우고 기다리다 멈춤(머지 안 함)" "$AUTO" no 1 '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' "${GATE_ENV[@]}"
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 결과 없음 → security-reviewer 띄우고 기다리다 멈춤(머지 안 함)" "$AUTO" no 1 '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' "${GATE_ENV[@]}" FAKE_SELF_PANE=p0
 grep -q '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$DLOG" && echo "  ✔ 위험한 수정 — security-reviewer 를 띄웠다(--here)" || { echo "  ✖ security-reviewer 안 띄움 — $(cat "$DLOG")"; FAIL=1; }
-gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SECURITY=clean
-gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 1 → 머지 안 함" "$AUTO" no 1 '보안 검토 때문에 멈춤 — 보안 검토 높음 1개' "${GATE_ENV[@]}" FAKE_SECURITY=high
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SELF_PANE=p0 FAKE_SECURITY=clean
+gate_reset; DBRANCH=feat/sec direct_case "위험한 수정 · 띄운 결과 높음 1 → 머지 안 함" "$AUTO" no 1 '보안 검토 때문에 멈춤 — 보안 검토 높음 1개' "${GATE_ENV[@]}" FAKE_SELF_PANE=p0 FAKE_SECURITY=high
 gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 📦 web · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
-" direct_case "위험한 수정 · 이미 띄워 결과 기다리는 중 → 다시 안 띄우고 기다리다 멈춤" "$AUTO" no 1 '보안 검토 기다리는 중' "${GATE_ENV[@]}" FAKE_PANES='{"id":"p8","agent":"claude","label":"🤖 security-reviewer"}'
+" direct_case "위험한 수정 · 이미 띄워 결과 기다리는 중 → 다시 안 띄우고 기다리다 멈춤" "$AUTO" no 1 '보안 검토 기다리는 중' "${GATE_ENV[@]}" FAKE_SELF_PANE=p0 FAKE_PANES='{"id":"p8","agent":"claude","label":"🤖 security-reviewer"}'
 ! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 이미 띄웠으면(그 pane 이 살아 있으면) 다시 띄우지 않는다" || { echo "  ✖ 두 번 띄움 — $(cat "$DLOG")"; FAIL=1; }
 # 결과 없이 남은 띄움 줄 — 그 pane 이 닫혔으면 만료하고 다시 띄운다(PR #260 자동 리뷰 지적)
 gate_reset; DBRANCH=feat/sec PLAN_EXTRA="- Security review: $DWT · 📦 web · 🌿 feat/sec · pane p8 (security-reviewer) · 띄움 $NOW_STAMP
-" direct_case "위험한 수정 · 띄운 pane 이 닫힘 → 다시 띄움 · 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SECURITY=clean
+" direct_case "위험한 수정 · 띄운 pane 이 닫힘 → 다시 띄움 · 결과 높음 0 → 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}" FAKE_SELF_PANE=p0 FAKE_SECURITY=clean
 grep -q '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$DLOG" && echo "  ✔ 닫힌 pane 의 띄움 줄은 만료 — 다시 띄웠다" || { echo "  ✖ 다시 안 띄움 — $(cat "$DLOG")"; FAIL=1; }
 gate_reset; direct_case "위험하지 않은 수정 · 결과 없음 → 지금처럼 머지" "$AUTO" yes 0 '머지됨' "${GATE_ENV[@]}"
 ! grep -q 'security-reviewer' "$DLOG" && echo "  ✔ 위험하지 않은 수정 — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$DLOG")"; FAIL=1; }
@@ -1961,6 +1981,31 @@ mkdir -p "$ICORE/.claude" && cp "$SRC/.claude/settings.json" "$ICORE/.claude/set
 INSTR_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --here 2>&1)"
 printf '%s' "$INSTR_OUT" | tail -3 | grep -q "올리는 방식: 바로 머지(PR 끔" \
   && echo "  ✔ 새 pane 결과에도 올리는 방식 한 줄" || { echo "  ✖ 새 pane 결과 줄"; printf '%s\n' "$INSTR_OUT" | tail -3; FAIL=1; }
+# --beside — 화면 pane 밖(현황판의 pr-auto)에서도 그 pane 이 있으면 그 옆에 쪼갠다 · 없으면 지금처럼 "밖입니다"(2026-11-12 PR #293)
+cat > "$ICORE/scripts/screen" <<SH
+#!/bin/sh
+echo "screen \$*" >> "$TMP/beside-screen.log"
+case "\$1" in
+  inside) exit 1 ;;
+  name) echo 가짜화면 ;;
+  pane)
+    case "\$2" in
+      get) [ "\$3" = p91 ] && echo '{"pane":{"id":"p91"}}' && exit 0; exit 1 ;;
+      split) echo '{"pane":{"id":"p9"}}' ;;
+    esac ;;
+esac
+exit 0
+SH
+: > "$TMP/beside-screen.log"
+BESIDE_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside p91 2>&1)"
+grep -q '^screen pane split --target p91 ' "$TMP/beside-screen.log" && ! printf '%s' "$BESIDE_OUT" | grep -q '밖입니다' \
+  && echo "  ✔ --beside p91 — pane 밖에서도 그 pane 옆에 쪼갰다" || { echo "  ✖ --beside 띄우기"; printf '%s\n' "$BESIDE_OUT" | tail -3; cat "$TMP/beside-screen.log"; FAIL=1; }
+: > "$TMP/beside-screen.log"
+BESIDE_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside p77 2>&1)"
+printf '%s' "$BESIDE_OUT" | grep -q '가짜화면 밖입니다' && ! grep -q 'pane split' "$TMP/beside-screen.log" \
+  && echo "  ✔ --beside 의 pane 이 없으면 띄우지 않고 '밖입니다'" || { echo "  ✖ 없는 pane --beside"; printf '%s\n' "$BESIDE_OUT" | tail -3; FAIL=1; }
+BESIDE_OUT="$(cd "$ICORE" && env -u ATHENA_AGENT PATH="$IBIN:$PATH" bash scripts/delegate.sh web-fe --plan plans/task/20261030-a.md --beside 'p1;x' 2>&1)"
+printf '%s' "$BESIDE_OUT" | grep -q 'pane id 가 이상하다' && echo "  ✔ --beside 의 pane id 를 거른다" || { echo "  ✖ --beside id 검사"; FAIL=1; }
 
 # 심볼릭 링크(맥 /var → /private/var) · `//` 가 든 경로로 직접 실행해도 import 로 오인하지 않는다(b051a7) — 인자 없이 부르면 사용법이 나와야 한다
 mkdir -p "$TMP/ismain" && ln -s "$SRC" "$TMP/ismain/link"

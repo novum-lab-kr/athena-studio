@@ -227,5 +227,8 @@
   "Automatic fresh conversation for agents when the context gets large — no asking": "会話が大きくなるとエージェント pane が自動で新しい会話を開始 — 確認なしでプランから再開",
   "Result summary in agent done notices — Athena reads less of the pane screen": "エージェントの完了通知に結果の要約を追加 — Athena が pane 画面を読む量を削減",
   "Fix fresh conversation never clearing while a background shell runs": "バックグラウンドのシェルが動いていると新しい会話に切り替わらない問題を修正",
-  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "完了したエージェント pane を自動で閉じる — マージ後10分待機で"
+  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "完了したエージェント pane を自動で閉じる — マージ後10分待機で",
+  "Fix Athena's fresh-conversation notice closing an open question": "アテナの新しい会話の通知が開いている質問を閉じていた問題を修正",
+  "Fix security review not starting outside a pane — opens beside Athena, same-round merge": "pane の外でセキュリティレビューを起動できなかった問題を修正 — アテナの横に開き、同じラウンドでマージ",
+  "Fix Codex drafts starting with a blank line read as an empty input box": "空行で始まる Codex の下書きを空の入力欄と判定していた問題を修正"
 }

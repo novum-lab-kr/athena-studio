@@ -35,7 +35,8 @@ const PROTOCOL = 7
 // 12 — Claude working 중 전송된 큐 메시지의 입력칸 안내를 남은 글로 오판하지 않음
 // 13 — 맥에서 pane 을 띄울 때 node-pty 가 남기는 여분 /dev/ptmx 닫기(닫은 pane 의 pty 누수)
 // 14 — 교체 직후 옛 코드가 남긴 고아 /dev/ptmx 닫기(13 으로 이미 바뀐 데몬도 한 번 더 교체되게)
-const DAEMON_CODE = 14
+// 15 — Codex 입력칸 읽기가 맨 아래 단축키 줄 · 상태줄까지(빈 줄로 시작하는 여러 줄 초안을 빈 입력칸으로 읽지 않게 · pane-submit.mts)
+const DAEMON_CODE = 15
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 
