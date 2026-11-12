@@ -126,6 +126,7 @@ type MainCalls = {
   paneContextMenu(point: Point, title?: string): Promise<unknown>
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
+  workPeek(): Promise<unknown>
   refreshRequests(): Promise<unknown>
   answerRequest(id: string, answer: { choice: string; text: string; rev?: unknown }, by?: 'app' | 'mobile'): Promise<unknown>
   redeliverRequest(id: string): Promise<unknown>

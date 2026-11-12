@@ -13,6 +13,8 @@ import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputA
 import type { MergeRunner } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
+import { noMobileWork } from '../lib/work-model.mts'
+import type { MobileWork } from '../lib/work-model.mts'
 import { createMobileRelay } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
@@ -69,6 +71,7 @@ export const mobileStateDir = (home: string) => path.join(path.resolve(home), 'm
 type FrontCtx = {
   athenaDir: string | null
   requestsNow(): { requests: unknown[] }
+  workPeek(): Promise<MobileWork>
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
   approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
@@ -209,6 +212,11 @@ export function startMobileDev(deps: DevDeps) {
         requests: () => {
           const ctx = front()
           return ctx ? ctx.requestsNow().requests : []
+        },
+        // 맥 [작업] 팝업과 같은 목록 — 앞 창의 현황판을 맥처럼 띄워 읽는다(겹침 · 재사용은 work.mts workPeek) · 앞 창이 없으면 빈 값
+        work: async () => {
+          const ctx = front()
+          return ctx ? ctx.workPeek() : noMobileWork()
         },
         servers: async () => {
           const ctx = front()
