@@ -17,6 +17,7 @@ import { createMobileRelay } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
 import type { FetchLike, LoginFailure } from './mobile-login.mts'
+import { mobileLog } from './mobile-log.mts'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 // 운영 relay — 경로는 athena-app relay/src/server.ts WS_PATH('/ws' · WebSocketServer path) · 호스트는 relay/deploy/relay.caddy
@@ -166,7 +167,7 @@ async function eventsModule(athenaDir: string | null): Promise<EventsModule | nu
 }
 
 export function startMobileDev(deps: DevDeps) {
-  const log = deps.log || ((line: string) => console.log(line))
+  const log = deps.log || mobileLog
   const front = () => deps.frontCtx()
   const logEvent: LogEvent = (type, fields) => {
     const ctx = front()

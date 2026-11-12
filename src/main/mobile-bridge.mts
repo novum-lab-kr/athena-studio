@@ -18,6 +18,7 @@ import os from 'node:os'
 import crypto from 'node:crypto'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
+import { mobileError } from './mobile-log.mts'
 
 type Connection = NonNullable<Awaited<ReturnType<typeof daemonClient.peekDaemon>>>
 type DaemonPaths = Parameters<typeof daemonClient.peekDaemon>[0]['paths']
@@ -1153,14 +1154,14 @@ export function createMobileBridge(deps: BridgeDeps) {
     try {
       const result = await dispatch(op, safeArgs, (work) => void afterReply.push(work))
       if (id !== undefined) emit({ id, ok: true, result: result ?? null })
-      for (const work of afterReply) await work().catch((error) => console.error('[mobile-bridge] 답 뒤 처리 실패', String(op), error))
+      for (const work of afterReply) await work().catch((error) => mobileError('[mobile-bridge] 답 뒤 처리 실패', String(op), error))
     } catch (caught) {
       // 브리지가 정한 오류만 그대로 — 그 밖(데몬 · 파일 · 코어)의 원문은 경로 등이 섞일 수 있어 맥 로그에만 남기고 폰에는 고정 문구
       if (caught instanceof BridgeError) {
         if (id !== undefined) emit({ id, ok: false, error: { code: caught.code, message: caught.message } })
         return
       }
-      console.error('[mobile-bridge] 요청 처리 실패', String(op), caught)
+      mobileError('[mobile-bridge] 요청 처리 실패', String(op), caught)
       if (id !== undefined) emit({ id, ok: false, error: { code: 'internal', message: '맥에서 처리하지 못했어요' } })
     }
   }

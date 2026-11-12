@@ -6,6 +6,7 @@
 // 로그에는 단계 · HTTP 상태 · 오류 코드만(verifier · state · code · 토큰은 남기지 않는다).
 import crypto from 'node:crypto'
 import type { SignInResult } from './mobile-relay.mts'
+import { mobileLog } from './mobile-log.mts'
 
 export const LOGIN_TTL_MS = 10 * 60_000 // relay 로그인 시도 10분
 export const STATUS_POLL_MS = 2000 // 상태 조회 간격(계약 추천)
@@ -95,7 +96,7 @@ export function describeLink(link: unknown): string {
 type Attempt = { verifier: string; challenge: string; state: string; startedAt: number; exchanging: boolean }
 
 export function createLoginFlow(deps: LoginDeps) {
-  const log = deps.log || ((line: string) => console.log(line))
+  const log = deps.log || mobileLog
   const now = deps.now || Date.now
   const pollMs = deps.pollMs ?? STATUS_POLL_MS
   let attempt: Attempt | null = null
