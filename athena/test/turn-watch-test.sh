@@ -4,6 +4,7 @@
 #   안 받은 알림: 2분 전엔 그대로 · 2분이면 한 번 다시 넣기(그 아테나 pane 이 살아 있을 때만) · 10분이면 [작업] 요청 한 번 · 이미 열린 요청이 있으면 그동안 열지 않고 닫히면 열기
 #   고치기는 아테나 입력 훅과 같은 파일별 잠금 안에서(잠금을 쥔 동안 기다린다 · 받음 표시를 지우지 않는다)
 #   받았으면 연 요청을 거두기 · 계획서가 done 이면 아무것도 안 함 · 일하는 중 선택 창은 "선택 창" 알림 한 번(끝난 차례는 안 함) · 창이 닫히면 그 알림을 더 밀지 않음
+#   첫 차례(시작 안내 · 끝 알림 건너뜀) 뒤 5분 입력이 없으면 아테나에 한 줄 · pane 하나에 한 번 · 다시 넣기 · 요청 없음
 #   lead-notice.mjs — 창이 떠 있으면 미뤘다가 flush 로 넣기 · 같은 key 는 한 번
 #
 # 사용: test/turn-watch-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
@@ -17,7 +18,7 @@ import { mkdirSync, readFileSync, readdirSync, writeFileSync, existsSync, rmSync
 import { join } from 'node:path'
 import { spawn } from 'node:child_process'
 const [src, work] = process.argv.slice(2)
-const { reconcileTurns, RESEND_MS, REQUEST_MS } = await import(join(src, 'scripts/board/turn-watch.mjs'))
+const { reconcileTurns, RESEND_MS, REQUEST_MS, IDLE_MS } = await import(join(src, 'scripts/board/turn-watch.mjs'))
 const { createLeadNotifier } = await import(join(src, 'scripts/lib/lead-notice.mjs'))
 let fail = 0
 const check = (name, ok, detail = '') => {
@@ -143,6 +144,35 @@ await holderDone
 check('잠금을 쥔 동안 기다렸다가 고친다', waited >= 500, `${waited}ms`)
 check('받음 표시를 지우지 않는다', readNotice(ID5).received_at === 1, JSON.stringify(readNotice(ID5)))
 rmSync(join(noticeDir, 'locked'), { force: true })
+
+// 3-2. 첫 차례 뒤 입력 없음 — 시작 안내만 하고(끝 알림을 건너뛴 첫 차례 · quiet) 5분 동안 입력이 없으면 아테나에 한 줄 · pane 하나에 한 번(2026-11-11 p4a 27분 놂)
+const idleNotices = () => readdirSync(noticeDir).filter((name) => /^[0-9a-f]{32}\.json$/.test(name)).map((name) => JSON.parse(readFileSync(join(noticeDir, name), 'utf8'))).filter((notice) => notice.kind === 'idle')
+const idlePlan = [{ id: 'plans/task/y.md', status: 'in_progress', leadPane: 'p1', agents: ['p8'] }]
+writeFileSync(join(turnDir, 'p8.json'), JSON.stringify({ state: 'done', agent: 'fe', turn: 'b1', first: true, quiet: true, ts: T0 / 1000 }))
+watch = make({ plans: idlePlan, panes: [{ id: 'p1' }, { id: 'p8' }] })
+await watch.run(T0 + IDLE_MS - 1000)
+check('5분 전에는 알리지 않는다', watch.log.notify.length === 0)
+await watch.run(T0 + IDLE_MS)
+check('첫 차례 뒤 5분 입력이 없으면 아테나에 한 줄', watch.log.notify.length === 1 && watch.log.notify[0].lead === 'p1'
+  && /^\[fe → 아테나\] 지시 없이 5분 대기 · p8 · 계획서 plans\/task\/y\.md · Status in_progress$/.test(watch.log.notify[0].text), JSON.stringify(watch.log.notify))
+await watch.run(T0 + IDLE_MS + 15_000)
+await watch.run(T0 + REQUEST_MS + 60_000)
+check('pane 하나에 한 번 — 다시 넣기 · 요청과 겹치지 않는다', watch.log.notify.length === 1 && watch.log.opened.length === 0 && idleNotices().length === 1, JSON.stringify(idleNotices()))
+writeFileSync(join(turnDir, 'p8.json'), JSON.stringify({ state: 'done', agent: 'fe', turn: 'b2', first: true, quiet: false, ts: T0 / 1000 }))
+for (const notice of idleNotices()) rmSync(join(noticeDir, `${notice.id}.json`))
+watch = make({ plans: idlePlan, panes: [{ id: 'p1' }, { id: 'p8' }] })
+await watch.run(T0 + IDLE_MS)
+check('첫 차례 끝 알림이 이미 갔으면(quiet 아님) 알리지 않는다', watch.log.notify.length === 0)
+for (const [name, turn] of [['일하는 중', { state: 'working', first: true, quiet: true }], ['두 번째 차례', { state: 'done', first: false, quiet: true }], ['질문으로 멈춤', { state: 'asking', first: true, quiet: true }]]) {
+  writeFileSync(join(turnDir, 'p8.json'), JSON.stringify({ agent: 'fe', turn: 'b3', ts: T0 / 1000, ...turn }))
+  await watch.run(T0 + IDLE_MS)
+  check(`${name}이면 알리지 않는다`, watch.log.notify.length === 0)
+}
+writeFileSync(join(turnDir, 'p8.json'), JSON.stringify({ state: 'done', agent: 'fe', turn: 'b4', first: true, quiet: true, ts: T0 / 1000 }))
+watch = make({ plans: [{ ...idlePlan[0], status: 'done' }], panes: [{ id: 'p1' }, { id: 'p8' }] })
+await watch.run(T0 + IDLE_MS)
+check('계획서가 done 이면 알리지 않는다', watch.log.notify.length === 0)
+rmSync(join(turnDir, 'p8.json'))
 
 // 4. 닫힌 pane 의 오래된 차례 상태는 지운다 · 살아 있는 pane 은 둔다
 writeFileSync(join(turnDir, 'p7.json'), JSON.stringify({ state: 'done', ts: T0 / 1000 }))

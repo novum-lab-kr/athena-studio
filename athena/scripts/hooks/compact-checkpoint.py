@@ -12,7 +12,9 @@
          "곧 압축 — 알게 된 것을 계획서 · 이슈에 적어 두라" 를 모델에게만 한 번 넣는다(압축 뒤 다시 한 번).
          사용자 화면에는 띄우지 않는다(2026-11-06 사용자: 헷갈리니 알리지 말고 적기만) · 글은 "답하기 전에 먼저 적어라" 로
          할 일을 앞에 둔다(Codex 는 사용자 글 뒤에 붙어 "적기만" 을 미뤘다)
-         아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다
+         아테나 세션에는 리드 기록(scripts/lead-log.mjs)에도 적으라고 가리킨다 · 단계 끝에 새로 시작할지 사용자에게 먼저 묻고 고르면 scripts/lead-fresh.py 를 부르라고 한다(pane 마다 30분 안에 묻거나 지웠으면 빼다 — scripts/lib/lead_fresh_mark.py)
+         위임 에이전트 pane(역할 agent — 리뷰어 빼고)에는 묻지 말고 단계 끝에 Checkpoint(Progress · Next · 미커밋 상태 · Blocked)를 갱신한 뒤
+         scripts/lead-fresh.py 를 부르라고 한다(2026-11-11 사용자 결정 — 에이전트는 자동 · 묻는 것은 아테나만 · 30분 쉬기 없음 — 새 대화는 문맥이 작아 곧 다시 뜨지 않는다)
          세션 첫 도구 뒤에는 기록에 첫 응답이 아직 없을 수 있어 잠깐(FIRST_WRITE_WAIT) 다시 읽는다
 
 압축 뒤 안내에는 대화 원문 자리(훅 입력 transcript_path)와 찾는 명령(scripts/transcript-search.mjs)을 붙이고,
@@ -237,6 +239,23 @@ def is_hermes_session(payload: dict) -> bool:
 def is_lead() -> bool:
     """아테나(리드) 세션 — 위임 에이전트는 delegate.sh 가 ATHENA_AGENT 를 넘긴다(pane-session.py 의 role 과 같은 규칙)"""
     return not os.environ.get('ATHENA_AGENT')
+
+
+def is_worker_agent() -> bool:
+    """스스로 새로 시작하는 위임 에이전트 — 리뷰어는 뺀다(lead-fresh.py role_of 와 같은 규칙)"""
+    agent = os.environ.get('ATHENA_AGENT') or ''
+    role = os.environ.get('ATHENA_ROLE') or ''
+    if not agent or role == 'reviewer':
+        return False
+    return bool(role) or agent not in ('reviewer', 'security-reviewer')
+
+
+def lead_pane() -> str:
+    """이 세션의 화면 pane — 모르면 ''(lead-fresh.py 는 pane 안에서만 돈다)"""
+    try:
+        return str(screen.self_info().get('pane_id') or '')
+    except Exception:
+        return ''
 
 
 def lead_log_file() -> pathlib.Path:
@@ -775,6 +794,20 @@ def codex_context_now(payload: dict):
     return last_from_tail(rollout, b'"token_count"', codex_usage_tokens), codex_compact_limit(model)
 
 
+def fresh_ask_due(pane: str) -> bool:
+    """새로 시작할지 물을 때인가(30분 안에 묻거나 지웠으면 아니다) — 물을 때면 물은 때를 적는다.
+    lib/lead_fresh_mark.py(→ pane_request → prompt-menu.json)는 여기서 늦게 불러, 못 불러도 압축 알림 · 다시 읽기 안내는 그대로 간다
+    (맨 위에서 부르면 훅이 통째로 죽었다 — PR #290 rule-docs-test). 못 부르면 묻지 않는다"""
+    try:
+        import lead_fresh_mark  # 아테나 새로 시작 물은 때 · 지운 때
+        if lead_fresh_mark.recent(pane):
+            return False
+        lead_fresh_mark.mark(pane, 'asked')
+        return True
+    except Exception:
+        return False
+
+
 def on_warn(payload: dict, codex: bool = False) -> None:
     # 하위 에이전트(Task)의 훅은 본 대화 문맥이 아니다
     if payload.get('agent_id'):
@@ -814,6 +847,23 @@ def on_warn(payload: dict, codex: bool = False) -> None:
         f'이번 턴에서 답하기 전에 먼저, 이번 대화에서 알게 된 사실 · 정한 것 · 다음 할 일을 {where}에 적는다. '
         '압축되면 요약만 남아 적지 않은 것은 사라진다. 적은 뒤 하던 일을 이어 가고, 이 알림 자체는 사용자에게 말하지 않는다.'
     )
+    # 아테나는 사용자에게 물어 새로 시작할 수 있다(scripts/lead-fresh.py — 2026-11-11 사용자 결정: 묻지 않고 지우면 당황스럽다 → 묻고 지우기).
+    # 고르기 창은 리드 pane 의 ask-to-request.py lead 훅이 [작업] 요청으로도 올린다. pane 마다 30분 안에 묻거나 지웠으면 다시 묻지 않는다
+    pane = lead_pane() if is_lead() else ''
+    if pane and fresh_ask_due(pane):
+        fresh = f'python3 {shlex.quote(str(ATHENA_DIR / "scripts/lead-fresh.py"))} --plan <계획서>'
+        context += (' 그리고 지금 단계(보고)가 끝나는 턴에서 계획서 Checkpoint 를 지금 시각으로 갱신한 뒤, 대화를 새로 시작할지 사용자에게 '
+                    'AskUserQuestion(Codex 는 request_user_input)으로 먼저 묻는다 — 질문 글은 배경부터 쉬운 말로 '
+                    f'"대화가 커졌습니다(문맥 {percent}%) — 계획서 <경로> 기준으로 새로 시작할까요?" · 선택지는 새로 시작 · 이대로 계속. '
+                    f'사용자가 새로 시작을 고른 때만(답이 나중에 [요청 …] 으로 와도 · 그때 Checkpoint 를 다시 지금 시각으로) {fresh} 를 부르고 '
+                    '찍힌 "📦 대화가 커져 새로 시작합니다" 줄만 알리고 턴을 끝낸다 — 입력칸이 빌 때 대화를 비우고 재개 지시를 넣는다. '
+                    '거절하거나 답이 없으면 부르지 않는다(압축은 평소대로 된다). 묶인 계획서가 없거나 단계 중간이면 묻지 않는다.')
+    # 위임 에이전트는 묻지 않고 스스로 새로 시작한다(2026-11-11 사용자 결정 — 묻는 것은 아테나만). pane 을 모르면 lead-fresh.py 가 못 돈다
+    elif is_worker_agent() and lead_pane():
+        fresh = f'python3 {shlex.quote(str(ATHENA_DIR / "scripts/lead-fresh.py"))} --plan <계획서>'
+        context += (' 그리고 지금 단계가 끝나는 턴에서(보고를 마친 뒤) 계획서 Checkpoint(Progress · Next · 미커밋 상태 · Blocked)를 지금 시각으로 갱신하고 '
+                    f'{fresh} 를 부른다 — 사용자에게 묻지 않는다. 찍힌 "📦 대화가 커져 새로 시작합니다" 줄만 알리고 턴을 끝낸다 — '
+                    '입력칸이 비고 사용자가 이 pane 을 보고 있지 않을 때 대화를 비우고 재개 지시가 들어온다. 묶인 계획서가 없거나 단계 중간이면 부르지 않는다.')
     # 모델에게만 — 사용자 화면 줄(systemMessage)은 내지 않는다
     print(json.dumps({'hookSpecificOutput': {'hookEventName': event, 'additionalContext': context}}, ensure_ascii=False))
 

@@ -506,7 +506,35 @@ export const needsReview = (planText, repo, number, headSha) => {
   if (!known) return true
   if (FINAL_RESULTS.some((result) => known.result.startsWith(result))) return false
   if (known.result.startsWith(BODY_EDITED)) return true
-  return !String(headSha).startsWith(known.sha)
+  if (String(headSha).startsWith(known.sha)) return securityResumable(planText, known, headSha)
+  return true
+}
+// ── 보안 검토로 멈춘 같은 HEAD 이어 가기(2026-11-12 PR #293 — 줄을 지우면 라운드 1 부터 다시 리뷰해 승인된 커밋에 새 지적이 붙었다) ─────────
+// "보안 검토 때문에 멈춤 — <통과 단계>이지만 …" 줄의 HEAD 에 그 뒤 security-reviewer 결과(높음 0)가 남으면 리뷰를 다시 하지 않고 같은 라운드에서 머지 단계로.
+// 결과가 이 HEAD 것이고(@SHA) 멈춘 줄 시각 이후에 적혔을 때만 — 높음이 남은 결과는 고친 커밋(새 HEAD)이 와야 다시 본다(같은 HEAD 를 되풀이하지 않게).
+// 같은 HEAD 결과가 여럿이면 마지막 줄 하나로 판정한다(옛 높음 0 뒤에 높음 1 이 오면 이어 가지 않는다 — 머지 관문 securityResultFor 도 마지막 줄).
+// 현황판(server.mjs)은 브랜치를 모르니 레포 · SHA 로만 찾는다 — SHA 가 같으면 같은 커밋이라 브랜치가 갈려도 같은 코드다
+export const SECURITY_STOPPED = '보안 검토 때문에 멈춤'
+const STAMP = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/
+const SECURITY_HEAD = /^- Security result:\s*높음 (\d+) · 중간 \d+ @([0-9a-f]{6,40})/
+export const securityResumable = (planText, known, headSha) => {
+  if (!known?.result.startsWith(SECURITY_STOPPED) || !String(headSha).startsWith(known.sha)) return false
+  const stopped = known.stamp.match(STAMP)?.[0] ?? ''
+  const last = String(planText ?? '').split('\n').filter((line) => {
+    const hit = line.match(SECURITY_HEAD)
+    return Boolean(hit) && `${line} `.includes(`📦 ${known.repo} · 🌿 `) && String(headSha).startsWith(hit[2])
+  }).at(-1)
+  if (!last) return false
+  return Number(last.match(SECURITY_HEAD)?.[1]) === 0 && (last.match(STAMP)?.[0] ?? '') >= stopped
+}
+// 멈춘 줄의 통과 단계로 머지 단계 인자를 되살린다 — { summary, reviewOff, takeover } · 모르는 모양이면 null(이어 가지 않는다)
+export const securityResumeOf = (result, fast) => {
+  const passed = String(result ?? '').startsWith(`${SECURITY_STOPPED} — `) ? String(result).slice(SECURITY_STOPPED.length + 3) : ''
+  const approved = passed.match(/^승인 (\d+)\/\d+이지만/)
+  if (approved) return { summary: { approvals: Number(approved[1]) }, reviewOff: false, takeover: false }
+  if (passed.startsWith(`${REVIEW_OFF}(`)) return { summary: null, reviewOff: true, takeover: false }
+  if (passed.startsWith(`${takeoverLabel(fast)}(`)) return { summary: { approvals: 1 }, reviewOff: false, takeover: true }
+  return null
 }
 // ── 대상 계획서 Status — ship.sh(push 직후) · 현황판(안전망)이 같이 쓴다 ─────────────
 // 진행 중 · 리뷰면 그대로 대상. 완료(done) · 계획(planned)이면 이어 올린 PR 이다 — Status 를 ready_for_review 로 되돌린 뒤 대상으로

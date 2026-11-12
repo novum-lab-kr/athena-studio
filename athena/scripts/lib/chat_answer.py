@@ -4,7 +4,8 @@
 에이전트가 `request answer --by chat` 을 잊어도 [작업] 에 남지 않게. 닫은 것은 훅 추가 문맥으로 모델에게 알린다 — 답이 아니었으면 다시 묻는다.
 
 사람 글로 치지 않는 것: `[…]` 로 시작하는 줄(앱 답 `[요청 <id>] … 답:` · pane 사이 `[<누구> → <누구>]` · 현황판 `[작업계획서 …]` 등 도구가 넣는 글) ·
-`<` 로 시작하는 시스템 글 · `/` 명령 · 빈 글. answered(앱에서 이미 답함) · decision(결정 콘솔) · 허락 창 알림(키 perm:) · 다른 pane · 다른 데몬의 질문은 건드리지 않는다.
+`<` 로 시작하는 시스템 글 · `/` 명령 · 괄호 없이 들어오는 도구 알림(`📦` — lead-fresh.py 가 아테나에 넣는 새로 시작 줄 · `🚪` — pane 닫음) ·
+lead-fresh.py 가 대화를 지운 뒤 넣는 재개 지시(`<계획서> 이어서 … scripts/lead-fresh.py …` — 2026-11-12 📦 줄이 아테나의 열린 질문 둘을 닫음) · 빈 글. answered(앱에서 이미 답함) · decision(결정 콘솔) · 허락 창 알림(키 perm:) · 다른 pane · 다른 데몬의 질문은 건드리지 않는다.
 요청 폴더는 읽기만 하고(대부분 질문이 없다 — 훅을 느리게 하지 않게) 닫기는 bin/athena request answer 로만(쓰기는 lib/requests.mjs 한 곳).
 """
 import json
@@ -15,13 +16,15 @@ import pane_request
 
 ANSWER_MAX = 200   # 답으로 적는 글 — 앞부분만
 ANSWER_TIMEOUT = 5  # 질문 하나 닫기 — Codex 훅 제한(10초) 안에서 끝나게
-MACHINE = re.compile(r'^(?:\[[^\]\n]+\]|<|/)')
+MACHINE = re.compile(r'^(?:\[[^\]\n]+\]|<|/|📦|🚪)')
+# lead-fresh.py resume_text — "<계획서>.md 이어서 하자 — …(scripts/lead-fresh.py)…" · "<계획서>.md 이어서 — …(… · scripts/lead-fresh.py)"
+RESUME = re.compile(r'^\S+\.md 이어서(?: 하자)? — .*scripts/lead-fresh\.py')
 
 
 def is_person(prompt: str) -> bool:
     """사람이 직접 쓴 글인가 — 도구가 넣는 머리표 · 시스템 글 · 명령이면 아니다"""
     text = prompt.strip()
-    return bool(text) and not MACHINE.match(text)
+    return bool(text) and not MACHINE.match(text) and not RESUME.match(text)
 
 
 def open_questions(pane: str) -> list:

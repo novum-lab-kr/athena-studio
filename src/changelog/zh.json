@@ -216,5 +216,19 @@
   "Fix panes running background commands showing as idle": "修复后台运行命令的窗格显示为空闲的问题",
   "File preview as a pane in the layout — drag to place, drag borders to resize": "文件预览纳入窗格布局 — 拖动放置，拖动边界调整大小",
   "Fix patch updates repeating the same update notes — only changes since your version": "修复补丁更新每次显示相同更新说明的问题 — 仅显示上个版本后的变更",
-  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "修复韩文输入组合中 Ctrl+X Ctrl+S 先于组合字符发送的问题 — 改为在确定字符之后发送"
+  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "修复韩文输入组合中 Ctrl+X Ctrl+S 先于组合字符发送的问题 — 改为在确定字符之后发送",
+  "Fix read-only server commands asking for confirmation — quotes in arguments kept": "修复只读服务器命令也弹出确认请求的问题 — 保留参数中的引号",
+  "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "减少服务器确认请求 — 仅危险命令需要确认(重启、删除、安装、权限)",
+  "Fix Athena getting a duplicate done notice after an agent already reported": "修复代理已报告后雅典娜仍重复收到完成通知的问题",
+  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "对话变大时自动为雅典娜开始新对话 — 从计划书恢复",
+  "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "修复雅典娜未询问就开始新对话的问题 — 先询问，30 分钟内不再询问",
+  "Fix agent reports not reaching Athena after a fresh conversation": "修复切换到新对话后代理报告无法送达雅典娜的问题",
+  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "修复无提示启动的代理闲置的问题 — 按计划书指示进行 · 闲置 5 分钟通知雅典娜",
+  "Automatic fresh conversation for agents when the context gets large — no asking": "对话变大时代理 pane 自动开始新对话 — 不询问，从计划继续",
+  "Result summary in agent done notices — Athena reads less of the pane screen": "代理完成通知附带结果摘要 — Athena 少读 pane 画面",
+  "Fix fresh conversation never clearing while a background shell runs": "修复后台 shell 运行时无法清空开始新对话的问题",
+  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "自动关闭已完成的代理 pane — 合并后空闲 10 分钟",
+  "Fix Athena's fresh-conversation notice closing an open question": "修复雅典娜开始新对话的通知会关闭未回答问题的问题",
+  "Fix security review not starting outside a pane — opens beside Athena, same-round merge": "修复在 pane 外无法启动安全审查的问题 — 在雅典娜旁打开，同一轮合并",
+  "Fix Codex drafts starting with a blank line read as an empty input box": "修复以空行开头的 Codex 草稿被识别为空输入框的问题"
 }

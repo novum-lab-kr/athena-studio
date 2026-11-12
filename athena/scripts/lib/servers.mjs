@@ -94,7 +94,7 @@ const sshKnows = (alias) => {
   return hosts.has(alias) || (hostname !== '' && hostname.toLowerCase() !== alias.toLowerCase())
 }
 
-// 비밀번호 없이 들어가지는지 — BatchMode(묻는 창이 없다) · 10초. 실패 종류만 돌려준다. 원격 명령 `true` 는 서버 허용 목록(server_allow.py) 안이다
+// 비밀번호 없이 들어가지는지 — BatchMode(묻는 창이 없다) · 10초. 실패 종류만 돌려준다. 원격 명령 `true` 는 server_allow.py 가 바로 돌리는 명령이다
 /** @param {string} alias @returns {'ok' | 'server-key-needed' | 'server-host-key' | 'server-unreachable'} */
 const tryLogin = (alias) => {
   const run = spawnSync(sshBin(), ['-o', 'BatchMode=yes', '-o', 'ConnectTimeout=10', '--', alias, 'true'], { encoding: 'utf8', timeout: 25000, stdio: ['ignore', 'ignore', 'pipe'] })

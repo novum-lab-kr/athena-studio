@@ -62,7 +62,7 @@
           "report",
           "req"
         ],
-        "note": "マージされると作業リストが done に移し、learn-review が学習候補を [学習] タブに上げます(ユーザーが入れる)。終わった pane を閉じると自動 archive。後続作業はイシュー → [작업 시작] で再依頼。"
+        "note": "マージされると作業リストが done に移し、learn-review が学習候補を [学習] タブに上げます(ユーザーが入れる)。終わった pane は作業リストが閉じ、続けて自動 archive。後続作業はイシュー → [작업 시작] で再依頼。"
       }
     ],
     "output": "docs/diagrams/athena-flow.ja.html"
@@ -210,7 +210,7 @@
       "col": 5,
       "type": "backend",
       "label": "確認 · cleanup",
-      "sublabel": "アテナ · 終わった pane を閉じる",
+      "sublabel": "作業リスト · pane を閉じる",
       "tag": "自動 archive · ワークツリー cleanup",
       "width": 150
     },
@@ -567,7 +567,7 @@
         "⑥ レビュー(広い修正だけ) — 正式の計画書は広い修正を報告すると聞かずにレビューを開く(自動レビュー)。軽量には自動レビューがない。広い修正(新機能 · 構造変更 · 複数ファイルのロジック · セキュリティ · データ · 外部契約)を報告するときだけ、エージェントが最後に「レビューしますか?」を一行付ける — 小さな修正 · レビュー指摘の反映の後は聞かない。ユーザーが「レビューして」と言えばいつでも横に reviewer pane を開く。レビュアーは同じツリーで通った検証を再実行しない(♻️ 再利用)。決定が必要(選択肢が分かれる)なら同じ計画書の決定コンソールに追加して見せる(plan-html.mjs --add · [이대로 진행] はそのエージェント pane へ)。修正が必要なら聞かずに直し、一行ずつ知らせる",
         "⑦ コミット — 「コミットして」か push が commit.sh でコミットする(指定ファイルだけ · strict verify · 計画書 ## Commits)。何度でもよい",
         "⑧ push · PR — 複数レポならアテナが順番 · 公開範囲を確認し、レポごとに ship.sh --repo-agent(正式の道)。レポ一つなら方法はレポ設定ごと(delegate.sh の結果行が知らせる)。既定:「PR 올려줘」の一言 → コミット → ship.sh 下書き → タイトル · 本文を整える → 聞かずに prBase へ draft PR。自動 PR のレポ(autoMerge): 終わったら聞かずに draft PR → PR 自動レビュー。PR オフのレポ(autoPr:false): ship.sh --direct-merge で direct merge(広い修正なら merge 前にレビュー gate) — 「PR 올려줘」のときだけ --user-pr。Actions handoff レポ: 同じコマンドが feature branch の push で handoff してすぐ終わる。報告の最後に 📚 学んだこと",
-        "⑨ 終わり — PR がマージされると(direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す → 学習レビュアー(learn-review)が計画書 · 会話 · diff · レビューコメントから学習候補を足す → 結び付いた pane がすべて閉じると自動 archive(archive/) · ワークツリーも判定して消す。終わった pane はアテナが閉じる",
+        "⑨ 終わり — PR がマージされると(direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す → 学習レビュアー(learn-review)が計画書 · 会話 · diff · レビューコメントから学習候補を足す → 結び付いた pane がすべて閉じると自動 archive(archive/) · ワークツリーも判定して消す。終わった pane(PR マージ · 10 分休み · 見ていない · 未コミットなし)は作業リストが閉じてアテナに一行",
         "pane 間の受け渡しは scripts/screen pane send-text で直接 — アテナには lead-send.py(受け取れなければためておいて後で入れる)。ユーザーに伝言を頼まない",
         "質問 · 許可待ちは Studio の [作業] ポップアップで確認する。質問はポップアップで答え、許可は [pane へ移動] の後に元のウィンドウで選ぶ。選択画面は waiting 状態",
         "Codex の保護フックは最初の Bash コマンドだけを検査し、write_stdin の後続入力は検査しない。フックの信頼は /hooks で確認する",
@@ -643,7 +643,7 @@
       "dot": "slate",
       "title": "cleanup / 途切れたときの resume",
       "items": [
-        "自動 archive — 計画書の PR がすべてマージされて done + learn review 終了 + 結び付いたエージェント pane がすべて閉じると、作業リストが archive/<名前>/ にイシュー · 計画書をまとめてコミットする。その計画書のワークツリーも判定して消す(未コミット · unpushed コミット · 使っている pane があれば残し、理由を Checkpoint に)。終わった pane はアテナが閉じる · 過ぎた仕事は [アーカイブ]タブ",
+        "自動 archive — 計画書の PR がすべてマージされて done + learn review 終了 + 結び付いたエージェント pane がすべて閉じると、作業リストが archive/<名前>/ にイシュー · 計画書をまとめてコミットする。その計画書のワークツリーも判定して消す(未コミット · unpushed コミット · 使っている pane があれば残し、理由を Checkpoint に)。終わったエージェント pane は作業リストが閉じる · 過ぎた仕事は [アーカイブ]タブ",
         "作業リストの [学習]タブ — 学習候補を [넣기](入れる) · [고쳐서 넣기](直して入れる) · [버리기](捨てる)(入れるとノート gotchas に一行)、学習した内容の修正 · 削除、スキル候補はアテナに任せる。/sync の最後に learn-curator が 30 日使っていないスキルを、gotchas-check が消えたファイルを指すノートの行 · 分ける時期のノート(共通 2 万字 · 同じ画面 5 行 → gotchas/<フォルダ>.md)を cleanup 候補に(消さない)",
         "イシュー完了可能バッジ = 確認結果 · 後続 · fix · 計画 done + PR MERGED。バッジが出たらアテナが移す(イシュー · 計画書はローカル — git には archive/ だけ)",
         "auto done — 計画書の PR 行の PR がすべてマージされると(GitHub MERGED、base は問わない · direct merge · Actions は計画書の - Auto merge: 머지됨 行)作業リストが計画書を done に移す。マージせずに閉じた PR は判定から外し、Progress に段階の欄(N단계 で始まる · (단계) 表示)が残っていれば移さない。普通の空欄は止めずに Lead pane に知らせる · 終わった後の残りは空欄にせずイシューへ",

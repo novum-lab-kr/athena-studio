@@ -178,10 +178,40 @@ check("기록이 없어도 종료 0 · 조용하다", code == 0 and out == "", o
 code, _ = run("warn", "깨진 입력")
 check("깨진 입력에도 종료 0", code == 0)
 (body / ".claude/settings.json").write_text(json.dumps({"autoCompactWindow": 200000}))
-code, out = run("warn", {**payload, "session_id": "s-8"})
+code, out = run("warn", {**payload, "session_id": "s-8"}, pane="pl1")
 check("아테나 세션 알림은 리드 기록을 가리킨다", "lead-log.mjs" in out and "리드 기록" in out, out)
+check("아테나 세션 알림은 새로 시작할지 AskUserQuestion 으로 먼저 묻고 고른 때만 lead-fresh.py --plan 을 부르라고 한다",
+      "AskUserQuestion" in out and "새로 시작할까요" in out and "lead-fresh.py" in out and "--plan" in out and "/new" not in out
+      and out.index("AskUserQuestion") < out.index("lead-fresh.py") and "답이 없으면 부르지 않는다" in out, out)
+# 30분 안에는 다시 묻지 않는다 — 새로 시작하면 세션이 바뀌어 세션마다 한 번인 표시로는 못 막는다(2026-11-11 p1m 21분 만에 두 번)
+code, out = run("warn", {**payload, "session_id": "s-8b"}, pane="pl1")
+check("같은 pane 에서 30분 안에 다시 물은 뒤 새 세션은 묻지 않는다(적으라는 알림은 그대로)", "곧 대화가 압축된다" in out and "lead-fresh.py" not in out, out)
+pack_data = body / ".pack-data"
+fresh_dir = (pack_data.resolve() / "state" if pack_data.is_symlink() else body) / "lead-fresh"
+(fresh_dir / "pl1.asked").write_text(f"{time.time() - 31 * 60:.0f}\n")
+(fresh_dir / "pl1.cleared").write_text(f"{time.time() - 10 * 60:.0f}\n")
+code, out = run("warn", {**payload, "session_id": "s-8c"}, pane="pl1")
+check("물은 지 31분이어도 지운 지 10분이면 묻지 않는다", out != "" and "lead-fresh.py" not in out, out)
+(fresh_dir / "pl1.cleared").write_text(f"{time.time() - 31 * 60:.0f}\n")
+code, out = run("warn", {**payload, "session_id": "s-8d"}, pane="pl1")
+check("묻고 지운 지 30분이 넘으면 다시 묻는다", "AskUserQuestion" in out and "lead-fresh.py" in out, out)
+code, out = run("warn", {**payload, "session_id": "s-8e"}, pane="pl2")
+check("다른 아테나 pane 은 따로 묻는다", "lead-fresh.py" in out, out)
+code, out = run("warn", {**payload, "session_id": "s-8f"})
+check("pane 을 모르면(lead-fresh.py 가 못 돈다) 묻지 않는다", out != "" and "lead-fresh.py" not in out, out)
 code, out = run("warn", {**payload, "session_id": "s-9"}, env_extra={"ATHENA_AGENT": "fe"})
 check("위임 에이전트 알림은 리드 기록을 가리키지 않는다", out != "" and "lead-log.mjs" not in out, out)
+check("pane 을 모르는 위임 에이전트 알림은 스스로 새로 시작하라고 하지 않는다", "lead-fresh.py" not in out, out)
+# 에이전트 pane 은 묻지 않고 스스로 새로 시작한다(2026-11-11 사용자 결정 — 묻는 것은 아테나만)
+code, out = run("warn", {**payload, "session_id": "s-9a"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
+check("에이전트 pane 알림은 Checkpoint(미커밋 상태 포함)를 갱신하고 lead-fresh.py --plan 을 부르라고 한다",
+      "lead-fresh.py" in out and "--plan" in out and "미커밋" in out and "Checkpoint" in out
+      and out.index("Checkpoint") < out.index("lead-fresh.py"), out)
+check("에이전트 pane 알림은 사용자에게 묻지 않는다", "AskUserQuestion" not in out and "묻지 않는다" in out and "lead-log.mjs" not in out, out)
+code, out = run("warn", {**payload, "session_id": "s-9b"}, pane="p41", env_extra={"ATHENA_AGENT": "fe", "ATHENA_ROLE": "agent"})
+check("에이전트 pane 은 새 세션마다 다시 알린다(묻는 것이 아니라 30분 쉬기 없음)", "lead-fresh.py" in out, out)
+code, out = run("warn", {**payload, "session_id": "s-9c"}, pane="p42", env_extra={"ATHENA_AGENT": "reviewer", "ATHENA_ROLE": "reviewer"})
+check("리뷰어 pane 은 스스로 새로 시작하라고 하지 않는다", out != "" and "lead-fresh.py" not in out, out)
 
 print("세션 첫 도구 뒤 — 첫 응답이 기록에 늦게 쓰인다")
 # 2026-11-07 대화형 claude 실측: 첫 PostToolUse 훅이 돌 때 그 도구를 부른 응답이 아직 기록에 없다(60ms 뒤 쓰임) · 예전엔 56,439 를 놓쳤다

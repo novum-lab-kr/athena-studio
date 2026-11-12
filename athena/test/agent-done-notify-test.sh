@@ -111,7 +111,10 @@ rm -f "$DATA/state/agent-notify/p9.json"
 BOOTSTRAP=1 hook prompt '{"prompt":"지금은 지시가 없다. 브랜치 확인 후 기다린다"}'
 BOOTSTRAP=1 hook stop
 check "작업 지시 없는 시작 안내 턴은 끝 알림을 보내지 않는다" "$(sent)" 0
+# 현황판(turn-watch.mjs 5)이 '지시 없이 5분 대기' 를 알리려고 읽는 칸 — 첫 차례 · 끝 알림 건너뜀
+check "시작 안내 턴은 차례 상태에 first · quiet" "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("state"), d.get("first"), d.get("quiet"))' "$DATA/state/agent-turn/p9.json")" "done True True"
 BOOTSTRAP=1 hook prompt '{"prompt":"첫 실제 요청"}'
+check "다음 입력부터는 first 아님" "$(python3 -c 'import json,sys; d=json.load(open(sys.argv[1])); print(d.get("first"), d.get("quiet"))' "$DATA/state/agent-turn/p9.json")" "False False"
 BOOTSTRAP=1 hook stop
 check "시작 안내 뒤 실제 요청부터 끝 알림을 보낸다" "$(sent)" 1
 : > "$FAKE_LOG"
@@ -310,5 +313,53 @@ print(len(agent_turn.mark_received('p1', '앞 입력\n' + notice['text'].replace
       len(agent_turn.mark_received('p2', notice['text'])))
 PY
 check "아테나가 받은 입력에 든 알림은 받음으로 표시(공백 차이 무시 · 한 번 · 그 아테나 pane 만)" "$(python3 "$WORK/received.py" "$BODY")" "True True 0 0"
+
+# 같은 차례에 에이전트가 lead-send.py 로 직접 보고했으면 Stop 의 "끝" 줄은 따로 넣지 않는다 — 아테나가 한 차례에 두 번 깨지 않게
+# (2026-11-11 리드 기록: 직접 보고 뒤 끝 줄이 연달아 와 두 번 깼다). 멈춤 · 질문 · 보고 뒤 Status · PR 이 바뀐 차례는 그대로 알린다
+report() {   # <글> — 에이전트 pane p9 에서 직접 보고(--track 없이)
+  env ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p9 ATHENA_STUDIO_SOCKET=/x ATHENA_STUDIO_CLI="$WORK/bin/athena-studio-cli" \
+    ATHENA_AGENT="${AGENT:-athena-studio-fe}" ATHENA_PLAN="$PLAN" FAKE_LOG="$FAKE_LOG" PATH="$WORK/bin:$PATH" WAITING_FILE="$WORK/waiting" \
+    python3 "$BODY/scripts/lead-send.py" p1 "$1" --plan "$PLAN" >/dev/null
+}
+reported_notices() { grep -l '직접 보고' "$DATA"/state/lead-notices/*.json 2>/dev/null | wc -l | tr -d ' '; }
+hook prompt '{"prompt":"보고 1"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 1 — 리뷰 반영 커밋'
+hook stop '{"last_assistant_message":"보고했어요."}'
+check "직접 보고한 차례는 끝 줄을 따로 넣지 않는다(보고 한 번만)" "$(sent)" "$((before + 1))"
+check "끝 줄을 안 넣어도 차례 상태는 done" "$(turn state)" done
+check "직접 보고는 받음 확인 대상으로 남는다(현황판 다시 넣기)" "$(reported_notices)" 1
+hook prompt '{"prompt":"보고 2"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 2'
+hook stop '{"last_assistant_message":"⏸ 멈춤: 사용자 확인"}'
+check "직접 보고한 차례도 멈춤이면 멈춤 알림은 간다" "$(sent) $(last_sent | grep -c '⏸ 멈춤 · p9')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 3"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 3'
+hook stop '{"last_assistant_message":"커밋할까요?"}'
+check "직접 보고한 차례도 질문으로 끝내면 질문 알림은 간다" "$(sent) $(last_sent | grep -c '질문으로 멈춤 · p9')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 4"}'
+before="$(sent)"
+report '[athena-studio-fe → 아테나] 직접 보고 4'
+sed -i.bak 's/^- Status:.*/- Status: ready_for_review/' "$BODY/$PLAN"
+hook stop '{"last_assistant_message":"다 했어요."}'
+check "보고 뒤 Status · PR 이 바뀌었으면 끝 줄을 넣는다" "$(sent) $(last_sent | grep -c '\] 끝 · p9 · .* · Status ready_for_review')" "$((before + 2)) 1"
+hook prompt '{"prompt":"보고 없음"}'
+before="$(sent)"
+hook stop '{"last_assistant_message":"다 했어요 2."}'
+check "다음 차례에 보고가 없으면 끝 줄을 넣는다(옛 차례 보고로 막지 않는다)" "$(sent)" "$((before + 1))"
+
+# 결과 요약 — 마지막 답(보고)의 절마다 첫 줄을 끝 줄 뒤에 ' — 요약: a / b' 로(아테나가 pane 을 읽으러 가지 않게 · 2026-11-12)
+hook prompt '{"prompt":"요약 1"}'
+hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- 버튼 문구 고침\n- 둘째 줄\n\n## 2. 어디서 확인하나\n- PR #7 (draft)\n\n## 3. 검증 결과\n| a | b |\n|---|---|\n```\n출력\n```\n전체 검증 미실행(커밋 때 돈다)\n\n## 4. 남은 일\n- 없음"}'
+check "절마다 첫 줄을 요약으로 싣는다(표 · 코드 블록 · 제목은 뺀다)" "$(last_sent | grep -c '\] 끝 · p9 · .* — 요약: 버튼 문구 고침 / PR #7 (draft) / 전체 검증 미실행(커밋 때 돈다) / 없음$')" 1
+hook prompt '{"prompt":"요약 2"}'
+long="$(python3 -c 'print("\\n".join(f"{i}번 " + "가" * 200 for i in range(9)))')"
+hook stop "{\"last_assistant_message\":\"$long\"}"
+check "요약은 5줄 · 줄당 120자 · 전체 480자 상한" "$(last_sent | python3 -c 'import sys; s=sys.stdin.read().split(" — 요약: ",1)[1].strip().split(" / "); print(len(s) <= 5 and all(len(x) <= 120 for x in s) and sum(map(len, s)) <= 480)')" True
+before="$(sent)"
+hook stop '{"last_assistant_message":"다른 보고"}'
+check "같은 차례에 요약만 달라진 Stop 은 다시 넣지 않는다(중복 막기는 요약을 뺀 줄)" "$(sent)" "$before"
 
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

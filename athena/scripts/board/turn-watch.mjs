@@ -8,6 +8,8 @@
 //   2. 아테나가 받지 않은 알림(received_at 없음)은 RESEND_MS 뒤 한 번 다시 넣는다 — 계획서 Lead pane 이 살아 있을 때만(다른 pane 으로 바꾸지 않는다 · lead-send.py 와 같은 규칙)
 //   3. REQUEST_MS 가 지나도 안 받았으면 [작업] 요청을 연다 — 그 에이전트 pane 에 이미 열린 요청(고르기 질문 · 권한 창)이 있으면 이번엔 열지 않고 다음 주기에 다시 본다
 //   4. 받았으면 연 요청을 거두고, 오래된 기록은 지운다
+//   5. 묶인 에이전트 pane 이 끝 알림을 건너뛴 첫 차례(지시 없이 띄운 시작 안내 — 차례 상태 first · quiet)를 끝내고 IDLE_MS 동안 입력이 없으면
+//      아테나에 "지시 없이 5분 대기" 한 줄 — pane 의 그 차례에 한 번 · 바로 닫힘 표시라 다시 넣기 · 요청은 없다(2026-11-11 p4a 가 27분 놀았다)
 // 계획서가 done · cancelled 면 다시 넣지도 요청을 열지도 않는다(아테나가 이미 정리했다). 선택 창이 닫혔으면 그 "선택 창" 알림은 더 밀지 않는다.
 import { existsSync, readdirSync, readFileSync, renameSync, rmSync, writeFileSync, mkdirSync } from 'node:fs'
 import { dirname, join } from 'node:path'
@@ -17,6 +19,7 @@ import { randomUUID } from 'node:crypto'
 
 export const RESEND_MS = 2 * 60_000
 export const REQUEST_MS = 10 * 60_000
+export const IDLE_MS = 5 * 60_000
 export const KEEP_MS = 24 * 3600_000
 const RECEIVED_KEEP_MS = 3600_000
 const CLOSED_PLAN = new Set(['done', 'cancelled'])
@@ -110,6 +113,26 @@ export const reconcileTurns = async ({ stateDir, plans, panes, now, menuOf, noti
       writeJson(file, notice)
       const result = alive.has(plan.leadPane) ? await notify({ key: `lead-notice:${id}`, mark: id, text, plan: plan.id, lead: plan.leadPane }) : 'failed'
       log(`🔔 ${paneId} 선택 창 — 아테나 pane ${plan.leadPane} 에 알림: ${result}`)
+    }
+  }
+
+  // 5. 지시 없이 띄워 첫 차례 뒤 입력이 없는 pane — 끝 알림이 간 첫 차례(quiet 아님)는 아테나가 이미 안다
+  for (const plan of plans) {
+    if (CLOSED_PLAN.has(plan.status ?? '') || !plan.leadPane || !alive.has(plan.leadPane)) continue
+    for (const paneId of plan.agents ?? []) {
+      if (paneId === plan.leadPane || !alive.has(paneId)) continue
+      const turn = readJson(join(turnDir, `${paneId}.json`)) ?? {}
+      const idle = now - Number(turn.ts || 0) * 1000
+      if (turn.state !== 'done' || !turn.first || !turn.quiet || idle < IDLE_MS || idle > KEEP_MS) continue
+      if (notices.some(({ notice }) => notice.kind === 'idle' && notice.pane === paneId && notice.turn === String(turn.turn || ''))) continue
+      const agent = String(turn.agent || paneId)
+      const text = `[${agent} → 아테나] 지시 없이 ${Math.round(IDLE_MS / 60_000)}분 대기 · ${paneId} · 계획서 ${plan.id} · Status ${plan.status || '?'}`
+      const id = randomUUID().replace(/-/g, '')
+      const notice = { id, kind: 'idle', lead: plan.leadPane, text, plan: plan.id, pane: paneId, from: agent, turn: String(turn.turn || ''), sent_at: now / 1000, closed_at: now / 1000 }
+      mkdirSync(noticeDir, { recursive: true })
+      writeJson(join(noticeDir, `${id}.json`), notice)
+      const result = await notify({ key: `lead-notice:${id}`, mark: id, text, plan: plan.id, lead: plan.leadPane })
+      log(`💤 ${paneId} 지시 없이 대기 — 아테나 pane ${plan.leadPane} 에 알림: ${result}`)
     }
   }
 

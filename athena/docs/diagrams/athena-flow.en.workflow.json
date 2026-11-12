@@ -63,7 +63,7 @@
           "report",
           "req"
         ],
-        "note": "Merged → worklist → done; learn-review adds candidates to [Learning] (user adds). Closing panes auto-archives. Follow-up: issue → [작업 시작]"
+        "note": "Merged → worklist → done; learn-review adds candidates to [Learning] (user adds). Done panes close, then archive. Follow-up: issue → [작업 시작]"
       }
     ],
     "output": "docs/diagrams/athena-flow.en.html"
@@ -211,7 +211,7 @@
       "col": 5,
       "type": "backend",
       "label": "Check · cleanup",
-      "sublabel": "Athena · closes panes",
+      "sublabel": "Worklist · closes panes",
       "tag": "Auto archive · worktree cleanup",
       "width": 150
     },
@@ -568,7 +568,7 @@
         "⑥ Review (wide changes only) — for a formal plan, reporting a wide change opens a review without asking (auto review). Lightweight has no auto review. Only when reporting a wide change (new feature · structure change · logic across files · security · data · external contract) does the agent add one line \"Shall I get a review?\" at the end — not after small changes or after applying review comments. When the user says \"review it\", a reviewer pane opens beside it at any time. The reviewer does not rerun verification that already passed for the same tree (♻️ reuse). Decisions needed (the options split) are added to the same plan's decision console (plan-html.mjs --add · [이대로 진행] goes to that agent pane). Fixes needed are fixed without asking and reported one line each",
         "⑦ Commit — \"commit it\" or a push commits via commit.sh (named files only · strict verify · plan ## Commits). Can be done many times",
         "⑧ push · PR — for multi-repo work, Athena confirms order · visibility and runs ship.sh --repo-agent per repo (formal path). For a single repo the method depends on repo settings (the delegate.sh result line says which). Default: one word \"PR 올려줘\" → commit → ship.sh draft → title · body → draft PR to prBase without asking. autoMerge repos: when done, a draft PR without asking → PR auto review. PR-off repos (autoPr:false): direct merge with ship.sh --direct-merge (a review gate before merging for wide changes) — --user-pr only on \"PR 올려줘\". Actions handoff repos: the same command hands off by pushing the feature branch and ends right away. 📚 What I learned at the end of the report",
-        "⑨ End — once the PR is merged (direct merge · Actions: the plan's - Auto merge: 머지됨 line) the worklist moves the plan to done → the learn reviewer (learn-review) adds learning candidates from the plan · chat · diff · review comments → when all bound panes are closed it is auto-archived (archive/) · the worktree is checked and removed too. Athena closes finished panes",
+        "⑨ End — once the PR is merged (direct merge · Actions: the plan's - Auto merge: 머지됨 line) the worklist moves the plan to done → the learn reviewer (learn-review) adds learning candidates from the plan · chat · diff · review comments → when all bound panes are closed it is auto-archived (archive/) · the worktree is checked and removed too. The worklist closes finished panes (PR merged · idle 10 min · not viewed · no uncommitted changes) and tells Athena",
         "Pass messages between panes directly with scripts/screen pane send-text — to Athena with lead-send.py (if it can't receive, it is queued and delivered later). Never ask the user to relay it",
         "Questions · permission waits are checked in the Studio [Work] popup. Answer questions in the popup; for permissions, choose in the original window after [Go to pane]. A selection prompt is in the waiting state",
         "The Codex guard hook checks only the first Bash command; follow-up input via write_stdin is not checked. Check hook trust in /hooks",
@@ -644,7 +644,7 @@
       "dot": "slate",
       "title": "Cleanup / resuming after a break",
       "items": [
-        "Auto archive — when every PR of the plan is merged and done + the learn review is finished + every bound agent pane is closed, the worklist bundles the issues · plan into archive/<name>/ and commits them. The plan's worktree is checked and removed too (kept if there are uncommitted changes · unpushed commits · a pane using it, with the reason in the Checkpoint). Athena closes finished panes · past work is in the [Archive] tab",
+        "Auto archive — when every PR of the plan is merged and done + the learn review is finished + every bound agent pane is closed, the worklist bundles the issues · plan into archive/<name>/ and commits them. The plan's worktree is checked and removed too (kept if there are uncommitted changes · unpushed commits · a pane using it, with the reason in the Checkpoint). The worklist closes finished agent panes · past work is in the [Archive] tab",
         "Worklist [Learning] tab — learning candidates [넣기] (Add) · [고쳐서 넣기] (Edit and add) · [버리기] (Discard) (adding puts one line in the gotchas notebook), edit · delete learned content, leave skill candidates to Athena. At the end of /sync, learn-curator flags skills unused for 30 days, and gotchas-check flags notebook lines pointing to removed files · notebooks due for a split (20k chars shared · 5 lines on the same screen → gotchas/<folder>.md) as cleanup candidates (nothing is deleted)",
         "Issue completable badge = check result · follow-up · fix · plan done + PR MERGED. When the badge shows, Athena moves it (issues · plans are local — only archive/ is in git)",
         "Auto done — when every PR in the plan's PR line is merged (GitHub MERGED, any base · direct merge · Actions: the plan's - Auto merge: 머지됨 line) the worklist moves the plan to done. PRs closed without merging are left out, and if step boxes remain in Progress (starting with N단계 · marked (단계)) it is not moved. Ordinary empty boxes don't block it and the Lead pane is notified · leftover work after it ends becomes an issue, not an empty box",

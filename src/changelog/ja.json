@@ -216,5 +216,19 @@
   "Fix panes running background commands showing as idle": "バックグラウンドでコマンド実行中のペインがアイドル表示になる問題を修正",
   "File preview as a pane in the layout — drag to place, drag borders to resize": "ファイルプレビューをペイン配置に統合 — ドラッグで配置、境界でサイズ調整",
   "Fix patch updates repeating the same update notes — only changes since your version": "パッチ更新のたびに同じ更新内容が出る問題を修正 — 前の版以降の変更のみ",
-  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "韓国語入力の変換中に Ctrl+X Ctrl+S が変換中の文字より先に送られる問題を修正 — 確定した文字の後に送信"
+  "Fix Ctrl+X Ctrl+S sent before the character being composed in Korean input": "韓国語入力の変換中に Ctrl+X Ctrl+S が変換中の文字より先に送られる問題を修正 — 確定した文字の後に送信",
+  "Fix read-only server commands asking for confirmation — quotes in arguments kept": "読み取りだけのサーバーコマンドでも確認リクエストが出る問題を修正 — 引数の引用符を保持",
+  "Fewer server confirmations — only risky commands ask (restart, delete, install, permissions)": "サーバーの確認リクエストを削減 — 危険なコマンドのみ確認(再起動・削除・インストール・権限)",
+  "Fix Athena getting a duplicate done notice after an agent already reported": "エージェントが報告済みでもアテナに終了通知が重ねて届く問題を修正",
+  "Automatic fresh conversation for Athena when the context gets large — resumes from the plan": "会話が大きくなるとアテナの新しい会話を自動開始 — 計画書から再開",
+  "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "アテナが確認せずに新しい会話を始める問題を修正 — 先に確認、30分以内は再確認しない",
+  "Fix agent reports not reaching Athena after a fresh conversation": "新しい会話に切り替えた後、エージェントの報告がアテナに届かない問題を修正",
+  "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "プロンプトなしで起動したエージェントが待機する問題を修正 — 計画書の指示で進行・5分で通知",
+  "Automatic fresh conversation for agents when the context gets large — no asking": "会話が大きくなるとエージェント pane が自動で新しい会話を開始 — 確認なしでプランから再開",
+  "Result summary in agent done notices — Athena reads less of the pane screen": "エージェントの完了通知に結果の要約を追加 — Athena が pane 画面を読む量を削減",
+  "Fix fresh conversation never clearing while a background shell runs": "バックグラウンドのシェルが動いていると新しい会話に切り替わらない問題を修正",
+  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "完了したエージェント pane を自動で閉じる — マージ後10分待機で",
+  "Fix Athena's fresh-conversation notice closing an open question": "アテナの新しい会話の通知が開いている質問を閉じていた問題を修正",
+  "Fix security review not starting outside a pane — opens beside Athena, same-round merge": "pane の外でセキュリティレビューを起動できなかった問題を修正 — アテナの横に開き、同じラウンドでマージ",
+  "Fix Codex drafts starting with a blank line read as an empty input box": "空行で始まる Codex の下書きを空の入力欄と判定していた問題を修正"
 }

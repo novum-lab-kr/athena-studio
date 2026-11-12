@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """에이전트 → 아테나 pane 한 줄 보내기 — 받을 수 없으면 모아 뒀다 넣는다(위임 지시문 delegate.sh LEAD_RULE 이 이 명령을 알려 준다).
 
-  scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track]
+  scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track | --note]
 
 보내기는 `scripts/screen pane send-text <pane> <글> --enter` 와 같은 길(데몬 pane run — 전송 확인 · 재시도).
 [작업] 에는 사람이 고를 것이 있을 때만 뜬다 — 이 명령은 요청을 열지 않는다(고를 것이 없다). 글은 버리지 않고 넣거나 기록한다(GitHub #134).
@@ -15,7 +15,11 @@
   옛 구조(팩 데이터 없음)에서 못 보냈다 → 계획서 결과 절에 글 그대로 한 줄 + 사건 기록(state/events.jsonl `lead-send-unsent`)
 기다리는 값은 기존 장치 그대로 — 2초마다 · 최대 6시간(pane_request.py POLL_SECONDS · GIVE_UP_SECONDS · agent-done-notify.py 와 같다).
 받음 확인(scripts/lib/agent_turn.py · state/lead-notices) — 전송을 확인하지 못한 글은 늘, --track(끝 알림 훅이 붙인다)이면 넣은 글도 남긴다.
+  에이전트 pane 이 직접 넣은 보고(ATHENA_AGENT 있음 · --track 없음)도 넣은 글을 남기고, 그 차례에 보고했다고 적는다
+  (state/agent-notify/<pane>.json reported) — 끝 알림 훅이 같은 차례의 "끝" 줄을 따로 넣지 않는다(한 차례에 아테나를 두 번 깨우지 않기)
   아테나 pane 의 입력 훅(pane-session.py)이 그 글을 받으면 표시하고, 안 받았으면 현황판이 2분 뒤 한 번 다시 넣고 10분이면 [작업] 요청을 연다.
+--note(scripts/lead-fresh.py 가 에이전트 pane 을 새로 시작한 뒤 붙인다) = 알림만 — 에이전트 pane 에서 보내도 받음 확인 대상으로 남기지 않고
+  그 차례의 직접 보고로 적지 않는다(끝 알림을 대신하지 않는다 · 안 받았다고 다시 넣거나 요청을 열지 않는다). 넣기 · 모아 두기 · 기록은 같다
 결정 기록: plans/task/20261103-athena-studio-fe-에이전트가-아테나에-못-보낸-보고를-작업-질문으로-띄우지-않기.md(docs/requests.md "아테나에게 보내지 못했을 때")
 
 대기열 <팩 데이터>/state/lead-send/<아테나 pane>-<시각ns>-<임의>.json — 처리기가 꺼져도 남고, 다음 보내기가 처리기를 다시 띄운다.
@@ -263,10 +267,22 @@ def spawn_deliverer(lead: str) -> None:
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True, close_fds=True)
 
 
-def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
+def note_report(me: str, plan: str) -> None:
+    """에이전트의 직접 보고를 그 차례에 적는다 — 끝 알림 훅이 같은 차례의 끝 줄을 따로 넣지 않게(한 차례에 두 번 깨우지 않기).
+    실패해도 보내기는 그대로(끝 줄이 한 번 더 갈 뿐)"""
+    path = plan_file(plan)
+    try:
+        agent_turn.mark_reported(me, path.read_text(encoding='utf-8') if path else '')
+    except Exception:
+        pass
+
+
+def send(lead: str, text: str, plan: str, tracked: bool = False, note: bool = False) -> int:
     me = pane_request.caller_pane()
     entry = {'lead': lead, 'text': text, 'plan': plan, 'pane': me, 'from': os.environ.get('ATHENA_AGENT') or me, 'at': time.time()}
-    if tracked:
+    # 에이전트가 직접 넣는 보고(끝 알림 훅은 --track 을 붙인다) — 그 차례의 끝 줄을 대신하니 끝 줄처럼 받음 확인 대상으로 남긴다
+    direct = not tracked and not note and bool(os.environ.get('ATHENA_AGENT')) and bool(me)
+    if tracked or direct:
         entry['track'] = True
     folder = queue_dir()
     target = lead_target(lead, plan, me)
@@ -281,6 +297,8 @@ def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
         after_send(entry, result)
         if result == 'sent':
             sent(entry, target)
+            if direct:
+                note_report(me, plan)
             print(f'✅ {moved}보냈다')
             return 0
         reasons = {'gone': '아테나 pane 이 없어요', 'wait': '아테나가 지금 받을 수 없어요(모아 둘 자리가 없는 옛 구조)'}
@@ -300,6 +318,8 @@ def send(lead: str, text: str, plan: str, tracked: bool = False) -> int:
                 result = 'wait'   # 고른 사이 닫혔다 — 처리기가 다시 고른다
         if result == 'wait':
             write_entry(folder, entry)
+    if direct and result in ('sent', 'wait'):
+        note_report(me, plan)   # 모아 둔 보고도 — 처리기가 넣는다
     if result == 'sent':
         sent(entry, target)
         print(f'✅ {moved}보냈다')
@@ -386,16 +406,20 @@ def main(argv) -> int:
             deliver(argv[1])
         return 0
     tracked = '--track' in argv[2:]
-    argv = argv[:2] + [arg for arg in argv[2:] if arg != '--track']
+    note = '--note' in argv[2:]
+    if tracked and note:
+        print('--track 과 --note 는 같이 쓰지 않는다', file=sys.stderr)
+        return 2
+    argv = argv[:2] + [arg for arg in argv[2:] if arg not in ('--track', '--note')]
     plan = ''
     if len(argv) == 4 and argv[2] == '--plan':
         plan = argv[3]
         argv = argv[:2]
     if len(argv) != 2 or not PANE_ID.fullmatch(argv[0]) or not argv[1].strip():
-        print("사용: scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track]", file=sys.stderr)
+        print("사용: scripts/lead-send.py <아테나 pane> '<글>' [--plan <계획서>] [--track | --note]", file=sys.stderr)
         return 2
     text = re.sub(r'\s*\n\s*', ' ', argv[1]).strip()
-    return send(argv[0], text, plan or pane_request.plan_of(pane_request.caller_pane()), tracked)
+    return send(argv[0], text, plan or pane_request.plan_of(pane_request.caller_pane()), tracked, note)
 
 
 if __name__ == '__main__':

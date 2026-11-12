@@ -7,6 +7,9 @@
 pane 마다 파일 하나라 동시에 여러 세션이 시작돼도 서로 덮지 않는다. 본체는 이 파일 위치로 찾는다. 어떤 오류도 세션을 막지 않는다(항상 exit 0).
 메시지를 보낼 때(입력에 prompt 가 있을 때)는 사람이 직접 쓴 글이면 이 pane 의 열린 질문을 대화 답으로 닫고 추가 문맥으로 알린다(lib/chat_answer.py).
 아테나 pane(ATHENA_AGENT 없음)이면 그 입력에 든 에이전트 알림을 받음으로 표시한다(lib/agent_turn.py mark_received — Claude · Codex 아테나 모두 이 훅이 돈다).
+아테나 pane 에서 대화를 지워 새로 시작하면(SessionStart source=clear — Claude /clear · Codex /new) 옛 대화를 가리키던 진행 중 계획서
+"- Lead session:" · 모아 둔 lead-send 글을 새 대화로 옮긴다(lib/lead_rebind.py — 사용자가 손으로 지우면 아무도 안 옮겨 에이전트 보고가
+"담당 대화가 바뀌었다" 로 막혔다 · 2026-11-11 p1m). lead-fresh.py 가 지운 때도 같은 일을 해서 두 번 돌아도 결과가 같다.
 """
 import datetime
 import json
@@ -55,19 +58,28 @@ def main() -> None:
         except Exception:
             pass
     try:
-        record(pane, event)
+        previous = record(pane, event)
+        session = str(event.get('session_id') or '')
+        if event.get('source') == 'clear' and not os.environ.get('ATHENA_AGENT') and previous and previous != session:
+            try:
+                # 여기서 늦게 부른다 — lead_rebind(→ pane_request → prompt-menu.json)를 못 불러도 pane 기록은 그대로 남게
+                import lead_rebind  # 대화를 지운 뒤 계획서 Lead session · lead-send 대기열 옮기기
+                lead_rebind.rebind(pane, previous, session)
+            except Exception:
+                pass
     finally:
         if notice:
             print(json.dumps({'hookSpecificOutput': {'hookEventName': 'UserPromptSubmit', 'additionalContext': notice}}, ensure_ascii=False))
 
 
-def record(pane: str, event: dict) -> None:
+def record(pane: str, event: dict) -> str:
+    """pane 기록을 새로 적고 그 전에 적혀 있던 대화(session)를 돌려준다(없으면 '')"""
     session = str(event.get('session_id') or '')
     if not SESSION_ID.match(session):
-        return
+        return ''
     pack_data = ATHENA_DIR / '.pack-data'
     if not pack_data.is_symlink():
-        return  # 옛 구조 본체 — 팩 데이터가 없다
+        return ''  # 옛 구조 본체 — 팩 데이터가 없다
     record = {
         'pane': pane,
         'session': session,
@@ -84,9 +96,11 @@ def record(pane: str, event: dict) -> None:
     # 이어 보내기(delegate.sh --reuse-pane)로 다른 계획서를 받은 pane — 기록의 plan 은 새 계획서고 envPlan 은 처음 띄울 때의 환경 값이다.
     # 환경 값이 envPlan 과 같으면(같은 실행 pane — /clear 로 session 이 바뀌어도) 옛 계획서로 되돌리지 않고 plan · envPlan 을 이어 받는다
     # (되돌리면 끝난 계획서가 다시 진행 중으로 묶인다). 읽기 · 쓰기는 delegate.sh 의 기록 갱신과 같은 잠금으로 직렬화한다
+    old_session = ''
     with pane_lock(folder, pane):
         try:
             previous = json.loads((folder / f'{pane}.json').read_text(encoding='utf-8'))
+            old_session = str(previous.get('session') or '')
             if previous.get('envPlan') and previous.get('envPlan') == record['plan'] and previous.get('plan'):
                 record['plan'] = previous['plan']
                 record['envPlan'] = previous['envPlan']
@@ -95,6 +109,7 @@ def record(pane: str, event: dict) -> None:
         temp = folder / f'.{pane}.{os.getpid()}.tmp'
         temp.write_text(json.dumps(record, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
         os.replace(temp, folder / f'{pane}.json')
+    return old_session
 
 
 if __name__ == '__main__':
