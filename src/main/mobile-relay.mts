@@ -1,6 +1,6 @@
 // ── 모바일 relay 클라이언트 — 맥 브리지를 relay(athena-app `relay/`)에 붙이고 짝 기기마다 암호 세션 · 브리지를 둔다 ──
 // 바깥 계약: athena-app relay/docs/protocol.md(v1 · 정본 코드 relay/src/protocol.ts). 안쪽 암호: src/lib/mobile-crypto.mts(계획서 4-7 암호 연결 v1).
-// electron 을 import 하지 않는다 — 부르는 쪽이 자리 · 브리지 만들기를 넘긴다. 기본 꺼짐: 지금은 격리 시험 앱의 개발용 길(src/main.mts)만 만든다.
+// electron 을 import 하지 않는다 — 부르는 쪽이 자리 · 브리지 만들기를 넘긴다. 기본 꺼짐: 지금은 개발판의 개발용 길(src/main.mts)만 만든다.
 // 로그인: 웹 로그인(mobile-login.mts)으로 받은 세션 토큰을 signIn 으로 넘기면 /ws 에 auth.resume 으로 붙는다. 토큰이 없으면 붙지 않는다(로그아웃 상태).
 // 연결 허용: 인증번호 미리 약속 v1(계획서 4-7) — pair.key 뒤 약속 → 앱 난수 → 열기가 끝나야 [허용] 창에 번호가 뜬다.
 //
