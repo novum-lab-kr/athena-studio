@@ -342,6 +342,7 @@ declare global {
     mobileInput(): Promise<{ allowed: boolean }>
     mobileSetInput(allowed: boolean): Promise<{ ok: boolean; allowed: boolean }>
     onMobileState(callback: (next: MobileState) => void): () => void
+    onMobilePhoneControl(callback: (paneId: string) => void): () => void
     onMobileFailed(callback: (why: MobileFailure) => void): () => void
     onPackProgress(callback: (step: import('./ui/pack-progress.tsx').PackProgressStep) => void): () => void
     onPackRestored(callback: (result: import('./ui/notices.tsx').RestoreResult) => void): () => void

@@ -993,6 +993,7 @@
   "mobile.devices.empty": "연결된 디바이스가 없습니다",
   "mobile.devices.input": "디바이스에서 입력 허용",
   "mobile.devices.inputNote": "끄면 디바이스에서는 보기만 할 수 있습니다",
+  "mobile.control.phone": "디바이스에서 제어 중 — 크기가 디바이스에 맞춰졌습니다",
   "mobile.device.unknown": "이름 없는 디바이스",
   "mobile.pair.title": "새 디바이스 연결",
   "mobile.pair.from": "{device}에서 연결을 요청했습니다",

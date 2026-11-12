@@ -993,6 +993,7 @@
   "mobile.devices.empty": "No devices connected",
   "mobile.devices.input": "Allow input from devices",
   "mobile.devices.inputNote": "When off, devices can only view",
+  "mobile.control.phone": "Controlled from device — size fitted to the device",
   "mobile.device.unknown": "Unnamed device",
   "mobile.pair.title": "New device",
   "mobile.pair.from": "{device} wants to connect",

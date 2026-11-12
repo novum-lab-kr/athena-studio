@@ -993,6 +993,7 @@
   "mobile.devices.empty": "接続済みのデバイスはありません",
   "mobile.devices.input": "デバイスからの入力を許可",
   "mobile.devices.inputNote": "オフにするとデバイスでは表示のみできます",
+  "mobile.control.phone": "デバイスで操作中 — サイズをデバイスに合わせました",
   "mobile.device.unknown": "名前のないデバイス",
   "mobile.pair.title": "新しいデバイスの接続",
   "mobile.pair.from": "{device} が接続を要求しました",

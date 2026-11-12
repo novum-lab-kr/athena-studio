@@ -5,7 +5,8 @@
 //
 // 데몬은 자기를 띄운 앱의 것만(부르는 쪽이 main 의 daemonPaths() 를 넘긴다 — 배포판 daemon.json · 개발판 daemon-dev.json · 격리 집).
 // 데몬을 띄우거나 다시 띄우지 않는다(peekDaemon — 이미 뜬 데몬 · 같은 프로토콜에만 붙는다).
-// 폰은 크기를 보내지 않는다 — 브리지도 데몬에 resize 를 보내지 않는다(PC 크기 그대로 · D1).
+// 크기는 제어하는 쪽에 맞춘다(D9 — 1편 D1 을 바꿈): pane 마다 제어 주인(mac | phone · 기본 mac). 폰이 열거나 입력하면 폰 크기로 resize ·
+// 맥에서 입력하면 맥 크기로 되돌린다. 주인은 기기(브리지)끼리 · main 의 맥 입력과 같이 봐야 해서 createPaneControl 하나를 나눠 쓴다.
 //
 // 데몬 연결은 둘: 묻기용(pane list · input — attach 하지 않음)과 흘리기용(pane 을 열었을 때만 attach).
 // attach 한 연결은 데몬이 "붙은 앱"으로 친다(fitTab 건너뜀 · open-url 받을 창 고르기 — src/daemon/daemon.mts) — 그래서 열린 pane 이 없으면 끊는다.
@@ -13,6 +14,8 @@
 import http from 'node:http'
 import fs from 'node:fs'
 import path from 'node:path'
+import os from 'node:os'
+import crypto from 'node:crypto'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 
@@ -52,7 +55,7 @@ export type PackResultLike = { ok?: unknown; error?: unknown; switched?: unknown
 export type BridgeDeps = {
   daemonPaths: () => DaemonPaths
   transport: Transport
-  inputAllowed: () => boolean // "폰 입력 허용" — 꺼지면 pane.input · request.answer · decision.answer · repo.set · pack.open 을 거절
+  inputAllowed: () => boolean // "폰 입력 허용" — 꺼지면 pane.input · pane.image · request.answer · decision.answer · repo.set · pack.open 을 거절
   requests: () => unknown[] | Promise<unknown[]> // 확인 요청 목록(열린 것)
   servers: () => unknown | Promise<unknown> // 서버 상태
   events: () => EventRow[] | Promise<EventRow[]> // 7일 머지 원천
@@ -72,14 +75,19 @@ export type BridgeDeps = {
   mac?: () => { name: string | null }
   devices?: () => DeviceView[]
   serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
+  control?: PaneControl // 제어 주인(D9) — 기기끼리 나눠 쓴다. 없으면 이 브리지 혼자 쓰는 것
+  imageDir?: () => string // 폰 이미지 저장 폴더 — 없으면 defaultImageDir()(맥 사용자 임시 폴더 아래)
   now?: () => number
   flushMs?: number
   sizePollMs?: number
+  liveMs?: number
 }
 
-export const FLUSH_MS = 100 // 출력은 100ms(초당 ~10번)로 묶는다 — 4-7 "트래픽"
+export const FLUSH_MS = 100 // 출력은 100ms(초당 ~10번)로 묶는다 — 4-7 "트래픽" · 조용하다 처음 나온 조각은 바로(앞쪽) 보내고 뒤따르는 것만 묶는다
 // PC 쪽 pane 크기가 바뀌었나 — 데몬은 resize 를 알리지 않아 묻기용 연결로 state(메모리에서 바로 답한다)를 1초마다 본다(Q8)
 export const SIZE_POLL_MS = 1000
+// resize · 주인 바뀜 뒤 이만큼은 묶지 않고 조각마다 바로 보낸다 — 다시 그림 첫 조각은 작은 머리(커서 · 지우기)라 본 그림이 묶음에 걸려 100ms 늦었다(2026-11-12 실측)
+export const LIVE_AFTER_RESIZE_MS = 300
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 // 진행 중 pane — 데몬 pane list 의 agent_status(working · 질문 · 멈춤)
 const IDLE_STATUSES = new Set(['', 'idle', 'unknown', 'none'])
@@ -438,6 +446,169 @@ export function boardActionPoster({ port, token }: { port: number; token: string
     })
 }
 
+// ── 제어 주인(D9) ──
+export type CellSize = { cols: number; rows: number }
+export type PaneOwner = 'mac' | 'phone'
+// 기기(브리지) 하나 — 데몬 resize 는 그 브리지 연결로(몸 없는 연결이라 어느 본체 pane 이든 된다) · 주인이 바뀌면 그 브리지가 폰에 알린다
+export type ControlHolder = {
+  resize(pane: string, size: CellSize): Promise<void> // 끝나면(답 · 실패 모두) 그 기기에는 이미 pane.owner 를 보냈다
+  changed(pane: string, size: CellSize | null): void // 다른 기기가 바꿨다(size 는 바뀐 크기 · 모르면 null) — 그 pane 을 열어 둔 기기면 pane.owner
+}
+export type PaneControl = ReturnType<typeof createPaneControl>
+const MAX_COLS = 1000
+const MAX_ROWS = 500
+// 폰이 보낸 크기 — 둘 다 2 이상 정수(데몬 Pane.resize 가 2 미만은 버린다) · 너무 큰 값은 거절
+export function cellSize(cols: unknown, rows: unknown): CellSize | null {
+  const ok = (value: unknown, max: number) => Number.isInteger(value) && (value as number) >= 2 && (value as number) <= max
+  return ok(cols, MAX_COLS) && ok(rows, MAX_ROWS) ? { cols: cols as number, rows: rows as number } : null
+}
+// 터미널이 스스로 보내는 답(사람이 친 것이 아님) — 커서 위치(CPR) · 상태(DSR) · 장치 속성(DA) · 모드(DECRPM) · kitty 키 · 창 보고 · 포커스 들어옴/나감 · OSC · DCS 답.
+// 맥 · 폰 xterm 이 프로그램 물음에 저절로 답한다 — 이것으로 주인을 바꾸면 크기를 바꾼 뒤 다시 그리며 묻는 물음에 두 화면이 서로 빼앗는다
+const TERMINAL_REPLY = /^(?:\x1b\[[IO]|\x1b\[\??[\d;]*[Rn]|\x1b\[[?>=][\d;.]*c|\x1b\[\??[\d;]*\$y|\x1b\[\?[\d;]*u|\x1b\[[\d;]*t|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\x1bP[^\x1b]*\x1b\\)+$/
+export function isTerminalReply(data: string): boolean {
+  return TERMINAL_REPLY.test(data)
+}
+
+// 주인 표 — pane → 가진 폰(없으면 맥) · 폰이 가져갈 때의 맥 크기(돌려줄 크기 · 폰 제어 중 맥 화면이 요청한 크기로 바뀐다)
+// onPhoneTook: 맥 → 폰으로 넘어갈 때만(폰 → 폰은 아님) — 맥 Studio 의 잠깐 알림
+export function createPaneControl({ onPhoneTook }: { onPhoneTook?: (pane: string) => void } = {}) {
+  const phones = new Map<string, { holder: ControlHolder; size: CellSize }>()
+  const macSizes = new Map<string, CellSize>()
+  // 아는 pty 크기 — 맥 화면 resize(폰이 안 가졌을 때 데몬에 가는 것) · 브리지 resize · attach · state 로. 폰이 가져갈 때 돌려줄 맥 크기(모르면 브리지가 state 로 묻는다)
+  const sizes = new Map<string, CellSize>()
+  const holders = new Set<ControlHolder>()
+  const tell = (pane: string, except: ControlHolder, size: CellSize | null) => {
+    for (const holder of holders) if (holder !== except) holder.changed(pane, size)
+  }
+  // 맥으로 되돌리기 — 가진 폰의 연결로 맥 크기 resize(모르면 크기는 그대로 · 맥 화면이 다음 상태에서 다시 맞춘다)
+  async function backToMac(pane: string) {
+    const held = phones.get(pane)
+    if (!held) return
+    phones.delete(pane)
+    const size = macSizes.get(pane)
+    macSizes.delete(pane)
+    if (size) await held.holder.resize(pane, size).catch(() => {})
+    else held.holder.changed(pane, null)
+    tell(pane, held.holder, size || null)
+  }
+  return {
+    register(holder: ControlHolder) {
+      holders.add(holder)
+    },
+    unregister(holder: ControlHolder) {
+      holders.delete(holder)
+    },
+    ownerOf(pane: string): { owner: PaneOwner; holder: ControlHolder | null; size: CellSize | null } {
+      const held = phones.get(pane)
+      return held ? { owner: 'phone', holder: held.holder, size: held.size } : { owner: 'mac', holder: null, size: null }
+    },
+    // 폰이 가져간다(열기 · 입력 · 가진 폰의 크기 바뀜) — current 는 지금 pty 크기(맥이 주인일 때 돌려줄 맥 크기로 기억)
+    async phoneTake(holder: ControlHolder, pane: string, size: CellSize, current: CellSize | null) {
+      const held = phones.get(pane)
+      if (held && held.holder === holder && held.size.cols === size.cols && held.size.rows === size.rows) return
+      if (!held && current) macSizes.set(pane, current)
+      phones.set(pane, { holder, size })
+      await holder.resize(pane, size).catch(() => {})
+      tell(pane, holder, size)
+      if (!held && onPhoneTook) onPhoneTook(pane)
+    },
+    // 폰이 나감(pane 닫기 · 앱 뒤로 · 연결 끊김) — 그 폰이 가진 것만 맥으로(맥 알림 없음)
+    async phoneRelease(holder: ControlHolder, pane: string) {
+      const held = phones.get(pane)
+      if (held && held.holder === holder) await backToMac(pane)
+    },
+    heldBy(holder: ControlHolder): string[] {
+      return [...phones].filter(([, held]) => held.holder === holder).map(([pane]) => pane)
+    },
+    // 맥 화면에서 입력 — 터미널 자동 답이 아니고 폰이 가졌으면 맥 크기로
+    macInput(pane: string, data: string) {
+      if (phones.has(pane) && !isTerminalReply(data)) void backToMac(pane)
+    },
+    // 맥 화면에서 pane 에 포커스(누르기 · 창이 앞으로 — D9 보완) — 폰이 가졌으면 맥 크기로
+    macFocus(pane: string) {
+      if (phones.has(pane)) void backToMac(pane)
+    },
+    // 맥 화면이 크기를 요청 — 폰이 가진 pane 이면 기억만 하고 true(부르는 쪽은 데몬에 보내지 않고 받은 것처럼 답한다)
+    macResize(pane: string, size: CellSize): boolean {
+      if (!phones.has(pane)) {
+        sizes.set(pane, size)
+        return false
+      }
+      macSizes.set(pane, size)
+      return true
+    },
+    paneGone(pane: string) {
+      phones.delete(pane)
+      macSizes.delete(pane)
+      sizes.delete(pane)
+    },
+    noteSize(pane: string, size: CellSize) {
+      sizes.set(pane, size)
+    },
+    sizeOf(pane: string): CellSize | null {
+      return sizes.get(pane) || null
+    },
+  }
+}
+
+// ── 폰 → 맥 이미지(pane.image) ──
+// 폰이 고른 사진을 base64 로 보내면 맥 임시 폴더에 저장하고 그 경로를 pane 입력에 넣는다(엔터 없음 — 사람이 보낼 때 누른다).
+// 안쪽 메시지 하나는 조각 모으기 상한 16 MiB(mobile-crypto ASSEMBLE_MAX_BYTES) — base64 가 4/3 로 늘어 원본은 10 MiB 까지만 받는다
+export const IMAGE_MAX_BYTES = 10 * 1024 * 1024
+export const IMAGE_KEEP_MS = 24 * 60 * 60 * 1000 // 저장한 그림은 하루 — 그 뒤 다음 저장 때 지운다(에이전트가 엔터 뒤 읽을 시간)
+const IMAGE_BASE64_MAX = Math.ceil(IMAGE_MAX_BYTES / 3) * 4
+const IMAGE_NAME = /^athena-img-\d{8}-\d{6}-[0-9a-f]{8}\.(?:png|jpg|gif|webp)$/
+export const defaultImageDir = () => path.join(os.tmpdir(), 'athena-mobile-images')
+
+// 형식은 파일 앞 바이트로만 판단한다(폰이 보낸 이름 · 형식 값은 쓰지 않는다) — png · jpeg · gif · webp. HEIC 등은 폰이 jpeg 로 바꿔 보낸다
+export function imageType(bytes: Buffer): 'png' | 'jpg' | 'gif' | 'webp' | null {
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) return 'png'
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'jpg'
+  if (bytes.length >= 6 && /^GIF8[79]a$/.test(bytes.subarray(0, 6).toString('latin1'))) return 'gif'
+  if (bytes.length >= 12 && bytes.subarray(0, 4).toString('latin1') === 'RIFF' && bytes.subarray(8, 12).toString('latin1') === 'WEBP') return 'webp'
+  return null
+}
+
+// base64 글자 → 바이트(줄바꿈 · 공백 · data: 머리 없이 순수 base64 만) — 크기는 풀기 전에 글자 수로 먼저 거른다
+export function decodeImage(data: unknown): Buffer {
+  if (typeof data !== 'string' || !data) return fail('usage', 'data 가 필요해요')
+  if (data.length > IMAGE_BASE64_MAX) return fail('too-large', `이미지는 ${IMAGE_MAX_BYTES / 1024 / 1024} MiB 까지예요`)
+  if (data.length % 4 !== 0 || !/^[A-Za-z0-9+/]*={0,2}$/.test(data)) return fail('usage', 'data 는 base64 여야 해요')
+  const bytes = Buffer.from(data, 'base64')
+  if (bytes.length > IMAGE_MAX_BYTES) return fail('too-large', `이미지는 ${IMAGE_MAX_BYTES / 1024 / 1024} MiB 까지예요`)
+  return bytes
+}
+
+const pad2 = (value: number) => String(value).padStart(2, '0')
+// 이름은 맥 시각 + 무작위만(사용자 입력 없음 · 공백 없음 — 경로를 따옴표 없이 넣는다)
+export function imageFileName(at: number, type: string): string {
+  const date = new Date(at)
+  const stamp = `${date.getFullYear()}${pad2(date.getMonth() + 1)}${pad2(date.getDate())}-${pad2(date.getHours())}${pad2(date.getMinutes())}${pad2(date.getSeconds())}`
+  return `athena-img-${stamp}-${crypto.randomBytes(4).toString('hex')}.${type}`
+}
+
+// 저장 — 폴더 0700 · 파일 0600 · 이미 있으면 덮지 않는다(wx). 저장 전에 하루 지난 우리 그림을 지운다(우리 이름 규칙에 맞는 일반 파일만)
+export async function saveImage(dir: string, bytes: Buffer, type: string, at: number): Promise<string> {
+  await fs.promises.mkdir(dir, { recursive: true, mode: 0o700 })
+  const info = await fs.promises.lstat(dir)
+  if (!info.isDirectory() || (typeof process.getuid === 'function' && info.uid !== process.getuid())) return fail('internal', '이미지 폴더를 쓸 수 없어요')
+  if ((info.mode & 0o077) !== 0) await fs.promises.chmod(dir, 0o700)
+  await sweepImages(dir, at)
+  const file = path.join(dir, imageFileName(at, type))
+  await fs.promises.writeFile(file, bytes, { flag: 'wx', mode: 0o600 })
+  return file
+}
+
+export async function sweepImages(dir: string, at: number) {
+  const names = await fs.promises.readdir(dir).catch(() => [] as string[])
+  for (const name of names) {
+    if (!IMAGE_NAME.test(name)) continue
+    const file = path.join(dir, name)
+    const info = await fs.promises.lstat(file).catch(() => null)
+    if (info && info.isFile() && at - info.mtimeMs > IMAGE_KEEP_MS) await fs.promises.unlink(file).catch(() => {})
+  }
+}
+
 // 시험용 메모리 전송 — bridge 쪽은 브리지에 넘기고, phone 쪽으로 폰 흉내(보내기 · 받은 것 보기)
 export function createMemoryTransport() {
   const toBridge: ((message: unknown) => void)[] = []
@@ -473,6 +644,8 @@ export function createMobileBridge(deps: BridgeDeps) {
   const { transport } = deps
   const now = deps.now || Date.now
   const flushMs = deps.flushMs ?? FLUSH_MS
+  const liveMs = deps.liveMs ?? LIVE_AFTER_RESIZE_MS
+  let liveUntil = 0 // 이 시각까지는 묶지 않는다(resize · 주인 바뀜 뒤)
   let control: Connection | null = null // 묻기용
   let controlConnecting: Promise<Connection> | null = null
   let stream: Connection | null = null // 흘리기용(attach)
@@ -486,6 +659,15 @@ export function createMobileBridge(deps: BridgeDeps) {
   let sizeTimer: NodeJS.Timeout | null = null
   let lastSizes: string | null = null
   let sizeWatching = false // 크기 보기는 브리지(기기)마다 한 번만 시작 — 첫 state 가 진행 중이거나 실패해도 다시 켜지 않는다
+  // 제어 주인(D9) — 이 기기가 알린 pane 크기(열기 · 입력 · pane.size) · 주인 표에서의 이 기기
+  const owners = deps.control || createPaneControl()
+  const phoneSizes = new Map<string, CellSize>()
+  // 아는 pty 크기를 주인 표에 — attach · 크기 보기(state) 답으로(가져갈 때 돌려줄 맥 크기를 데몬에 다시 묻지 않게)
+  const learnSizes = (sizes: ReturnType<typeof paneSizes>) => {
+    for (const [pane, size] of Object.entries(sizes)) if (size.cols && size.rows) owners.noteSize(pane, { cols: size.cols, rows: size.rows })
+  }
+  const holder: ControlHolder = { resize: (pane, size) => resizeFor(pane, size), changed: (pane, size) => emitOwner(pane, size) }
+  owners.register(holder)
 
   const emit = (message: object) => {
     if (!stopped) transport.send(message)
@@ -497,6 +679,13 @@ export function createMobileBridge(deps: BridgeDeps) {
     // 기기 하나에 100ms 마다 메시지 하나 — 그사이 나온 pane 들을 한 번에(안쪽 약속 v1)
     if (pending.size) emit({ event: 'pane.data', panes: Object.fromEntries(pending) })
     pending.clear()
+  }
+  // 묶음 창 끝 — 그사이 쌓인 것이 있으면 보내고 창을 한 번 더(계속 나오는 동안은 100ms 마다 하나) · 없으면 닫아 다음 조각은 바로 보낸다
+  function flushWindowEnd() {
+    flushTimer = null
+    if (!pending.size) return
+    flush()
+    flushTimer = setTimeout(flushWindowEnd, flushMs)
   }
 
   async function connectControl(): Promise<Connection> {
@@ -515,10 +704,21 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (message.event === 'data' && typeof message.pane === 'string') {
       if (resyncing || !open.has(message.pane) || opening.has(message.pane)) return
       pending.set(message.pane, (pending.get(message.pane) || '') + String(message.data ?? ''))
-      if (!flushTimer) flushTimer = setTimeout(flush, flushMs)
+      // resize · 주인 바뀜 바로 뒤면 조각마다 바로(다시 그림 전체가 늦지 않게)
+      if (Date.now() < liveUntil) {
+        flush()
+        return
+      }
+      // 조용하던 참(묶음 창 없음 — 열기 · 닫기의 flush 뒤 포함)이면 바로 보내고 창을 연다 — 첫 조각이 100ms 늦지 않게
+      if (!flushTimer) {
+        flush()
+        flushTimer = setTimeout(flushWindowEnd, flushMs)
+      }
     } else if (message.event === 'exit' && typeof message.pane === 'string') {
       flush()
       open.delete(message.pane)
+      phoneSizes.delete(message.pane)
+      owners.paneGone(message.pane)
       emit({ event: 'changed', parts: ['panes'] })
       if (!open.size) closeStream()
     } else if (message.event === 'state') {
@@ -547,6 +747,8 @@ export function createMobileBridge(deps: BridgeDeps) {
           open.clear()
           opening.clear()
           pending.clear()
+          // 폰이 가진 pane 은 맥 크기로(묻기용 연결이 살아 있으면 된다)
+          for (const pane of owners.heldBy(holder)) void owners.phoneRelease(holder, pane)
         },
       })
       if (!own) return fail('daemon-unavailable', '떠 있는 데몬이 없거나 프로토콜이 달라요')
@@ -567,10 +769,64 @@ export function createMobileBridge(deps: BridgeDeps) {
     const result = (await connection.call('attach', {}, (reply) => {
       if (reply.ok) onReplied()
     })) as { snapshots?: Record<string, string>; state?: StatePanes } | null
-    return { snapshots: (result && result.snapshots) || {}, sizes: paneSizes(result && result.state) }
+    const sizes = paneSizes(result && result.state)
+    learnSizes(sizes)
+    return { snapshots: (result && result.snapshots) || {}, sizes }
   }
   // 폰에 보낼 pane 한 장 — 스냅숏과 그때의 PC 크기(Q8)
   const paneView = (pane: string, view: Awaited<ReturnType<typeof attach>>) => ({ pane, snapshot: view.snapshots[pane] ?? '', cols: view.sizes[pane]?.cols ?? null, rows: view.sizes[pane]?.rows ?? null })
+  const ownerView = (pane: string) => {
+    const found = owners.ownerOf(pane)
+    return { owner: found.owner, mine: found.holder === holder }
+  }
+
+  // 주인 알림 — 이 폰이 연 pane 만(스냅숏을 기다리는 중이면 아직) · cols · rows 는 바뀐 pty 크기(모르면 null — 폰은 지금 크기 그대로)
+  function emitOwner(pane: string, size: CellSize | null) {
+    if (!open.has(pane) || opening.has(pane)) return
+    // 크기가 바뀌었으니 뒤따르는 다시 그림은 잠깐 묶지 않는다(맥 → 폰 · 폰 → 맥 · 다른 폰이 가져감 모두 여기를 지난다)
+    liveUntil = Date.now() + liveMs
+    emit({ event: 'pane.owner', pane, ...ownerView(pane), cols: size ? size.cols : null, rows: size ? size.rows : null })
+  }
+
+  // 데몬 resize — 연 pane 이면 흘리기 연결로 보내 답을 읽은 자리에서(같은 소켓의 뒤 출력보다 먼저) 앞 출력을 내보내고 pane.owner.
+  // 그래서 폰은 받은 출력을 다 쓴 뒤 크기를 바꾸면 데몬 화면과 같은 지점이다(맥 화면 ctx.resizePane · pane:resized 와 같은 방식)
+  async function resizeFor(pane: string, size: CellSize) {
+    let told = false
+    const tell = () => {
+      if (told) return
+      told = true
+      emitOwner(pane, size)
+    }
+    const args = { pane, cols: size.cols, rows: size.rows }
+    try {
+      if (stream && open.has(pane) && !opening.has(pane)) {
+        await stream.call('resize', args, () => {
+          flush()
+          tell()
+        })
+      } else await (await connectControl()).call('resize', args)
+      owners.noteSize(pane, size)
+    } finally {
+      tell()
+    }
+  }
+
+  // 지금 pty 크기 — 맥이 주인일 때 가져가면 돌려줄 맥 크기
+  async function currentSize(pane: string): Promise<CellSize | null> {
+    try {
+      const found = paneSizes((await (await connectControl()).call('state')) as StatePanes)[pane]
+      return found && found.cols && found.rows ? { cols: found.cols, rows: found.rows } : null
+    } catch {
+      return null
+    }
+  }
+
+  // 이 폰이 가져간다 — 맥이 주인이었으면 지금 크기를 돌려줄 크기로(이미 알면 그것)
+  async function take(pane: string, size: CellSize, known: CellSize | null = null) {
+    phoneSizes.set(pane, size)
+    const current = owners.ownerOf(pane).owner === 'mac' ? known || owners.sizeOf(pane) || (await currentSize(pane)) : null
+    await owners.phoneTake(holder, pane, size, current)
+  }
 
   // 데몬이 못 따라온 폰 연결을 끊었다(8MB) — 다시 attach 해서 열린 pane 마다 새 스냅숏
   async function resync() {
@@ -601,7 +857,8 @@ export function createMobileBridge(deps: BridgeDeps) {
     }
   }
 
-  async function paneOpen(pane: string) {
+  // size 를 보냈고 입력 허용이 켜져 있으면 답을 보낸 뒤 폰 크기로 가져간다(later) — 스냅숏(지금 크기)이 pane.owner 보다 먼저 가게
+  async function paneOpen(pane: string, size: CellSize | null, later: (work: () => Promise<void>) => void) {
     const connection = await connectStream()
     flush()
     opening.add(pane)
@@ -613,7 +870,12 @@ export function createMobileBridge(deps: BridgeDeps) {
         if (!open.size) closeStream()
         return fail('not_found', `없는 pane: ${pane}`)
       }
-      return paneView(pane, view)
+      const shown = paneView(pane, view)
+      if (size && deps.inputAllowed()) {
+        const known = shown.cols && shown.rows ? { cols: shown.cols, rows: shown.rows } : null
+        later(() => take(pane, size, known))
+      } else if (size) phoneSizes.set(pane, size)
+      return { ...shown, ...ownerView(pane) }
     } catch (error) {
       open.delete(pane)
       if (!open.size) closeStream()
@@ -623,11 +885,25 @@ export function createMobileBridge(deps: BridgeDeps) {
     }
   }
 
-  function paneClose(pane: string) {
+  // 닫기(나가기 · 앱이 뒤로) — 이 폰이 가진 pane 이면 맥 크기로 되돌린다(이 폰에는 알리지 않는다 · 닫았으니)
+  async function paneClose(pane: string) {
     flush()
     open.delete(pane)
+    phoneSizes.delete(pane)
+    await owners.phoneRelease(holder, pane)
     if (!open.size) closeStream()
     return { pane }
+  }
+
+  // 폰 화면 크기가 바뀜(돌리기 · 키보드) — 기억하고, 이 폰이 가진 pane 이면 바로 그 크기로. 맥이나 다른 폰이 가졌으면 가져가지 않는다.
+  // take: true — 폰에서 그 pane 에 포커스(D9 보완) · 입력 허용이면 바로 가져온다(맥 · 다른 폰이 가졌어도)
+  async function paneSize(args: Record<string, unknown>) {
+    const pane = text(args.pane, 'pane')
+    const size = cellSize(args.cols, args.rows) || fail('usage', 'cols · rows 는 2 이상 정수')
+    if (args.take !== undefined && typeof args.take !== 'boolean') fail('usage', 'take 는 true · false')
+    phoneSizes.set(pane, size)
+    if (deps.inputAllowed() && (args.take === true || owners.ownerOf(pane).holder === holder)) await take(pane, size)
+    return { pane, ...ownerView(pane) }
   }
 
   // 크기 바뀜 보기 — 첫 snapshot 뒤부터 브리지가 멈출 때까지. 처음 본 크기는 기준으로만 삼는다
@@ -636,7 +912,9 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (stopped) return
     try {
       const connection = await connectControl()
-      const key = sizeKey(paneSizes((await connection.call('state')) as StatePanes))
+      const sizes = paneSizes((await connection.call('state')) as StatePanes)
+      learnSizes(sizes)
+      const key = sizeKey(sizes)
       if (lastSizes !== null && key !== lastSizes) emit({ event: 'changed', parts: ['panes'] })
       lastSizes = key
     } catch {}
@@ -682,16 +960,47 @@ export function createMobileBridge(deps: BridgeDeps) {
   }
   const text = (value: unknown, name: string): string => (typeof value === 'string' && value ? value : fail('usage', `${name} 가 필요해요`))
 
+  const sentSize = (args: Record<string, unknown>) =>
+    args.cols !== undefined || args.rows !== undefined ? cellSize(args.cols, args.rows) || fail('usage', 'cols · rows 는 2 이상 정수') : null
+
   async function paneInput(args: Record<string, unknown>) {
     requireInput()
     const pane = text(args.pane, 'pane')
     const data = text(args.data, 'data')
-    const connection = await connectControl()
-    // 키 그대로(D2) — 붙여넣기 · 줄바꿈도 바꾸지 않는다
-    await connection.call('input', { pane, data })
+    await writeInput(pane, data, sentSize(args))
     // 내용은 적지 않는다(비밀값이 섞일 수 있다) — 누가 · 어느 pane · 크기만
     deps.logEvent('mobile.input', { by: 'mobile', pane, bytes: Buffer.byteLength(data) })
     return null
+  }
+
+  // 폰 이미지 — 저장한 경로를 pane 입력에 넣는다(엔터 없음). 입력과 같이 폰 크기로 가져간다.
+  // paste: true 면 붙여넣기 표시(\x1b[200~ … \x1b[201~)로 감싼다 — Claude Code 는 붙여넣은 그림 경로만 첨부([Image #N])로 바꾼다(그냥 친 글자는 경로 글자 그대로 · 2026-11-12 실측).
+  // pane 프로그램이 붙여넣기 모드(DECSET 2004)를 켰는지는 폰 xterm 이 안다(데몬 스냅숏이 모드를 싣는다) — 모드가 꺼진 pane 에 감싸면 표시 글자가 그대로 들어가니 폰이 정한다. 없으면 경로 + 공백
+  async function paneImage(args: Record<string, unknown>) {
+    requireInput()
+    const pane = text(args.pane, 'pane')
+    const sent = sentSize(args)
+    if (args.paste !== undefined && typeof args.paste !== 'boolean') fail('usage', 'paste 는 true · false')
+    const bytes = decodeImage(args.data)
+    const type = imageType(bytes) || fail('unsupported-type', '이미지는 png · jpeg · gif · webp 만 받아요')
+    // 없는 pane 에 파일만 남기지 않게 — 먼저 pane 이 있는지 본다
+    const listed = (await (await connectControl()).call('pane list')) as { panes?: ListedPane[] } | null
+    if (!((listed && listed.panes) || []).some((row) => row && row.id === pane)) fail('not_found', `없는 pane: ${pane}`)
+    const file = await saveImage(deps.imageDir ? deps.imageDir() : defaultImageDir(), bytes, type, now())
+    await writeInput(pane, args.paste === true ? `\x1b[200~${file}\x1b[201~` : `${file} `, sent)
+    // 내용 · 경로는 적지 않는다 — 누가 · 어느 pane · 크기 · 형식만
+    deps.logEvent('mobile.image', { by: 'mobile', pane, bytes: bytes.length, type })
+    return { path: file, type, bytes: bytes.length }
+  }
+
+  async function writeInput(pane: string, data: string, sent: CellSize | null) {
+    const connection = await connectControl()
+    // 사람이 친 입력이면 폰 크기로 가져간 뒤 넣는다(터미널 자동 답은 주인을 바꾸지 않는다) — 크기를 모르면(열 때 · 입력 때 안 보냄) 가져가지 않는다
+    const size = sent || phoneSizes.get(pane) || null
+    if (size && !isTerminalReply(data)) await take(pane, size)
+    else if (sent) phoneSizes.set(pane, sent)
+    // 키 그대로(D2) — 붙여넣기 · 줄바꿈도 바꾸지 않는다
+    await connection.call('input', { pane, data })
   }
 
   async function requestAnswer(args: Record<string, unknown>) {
@@ -803,16 +1112,20 @@ export function createMobileBridge(deps: BridgeDeps) {
     return { id, switched: result.switched === true }
   }
 
-  async function dispatch(op: unknown, args: Record<string, unknown>): Promise<unknown> {
+  async function dispatch(op: unknown, args: Record<string, unknown>, later: (work: () => Promise<void>) => void): Promise<unknown> {
     switch (op) {
       case 'snapshot':
         return snapshot()
       case 'pane.open':
-        return paneOpen(text(args.pane, 'pane'))
+        return paneOpen(text(args.pane, 'pane'), sentSize(args), later)
+      case 'pane.size':
+        return paneSize(args)
       case 'pane.close':
         return paneClose(text(args.pane, 'pane'))
       case 'pane.input':
         return paneInput(args)
+      case 'pane.image':
+        return paneImage(args)
       case 'request.answer':
         return requestAnswer(args)
       case 'decision.list':
@@ -836,9 +1149,11 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (stopped || !message || typeof message !== 'object') return
     const { id, op, args } = message as { id?: unknown; op?: unknown; args?: unknown }
     const safeArgs = args && typeof args === 'object' && !Array.isArray(args) ? (args as Record<string, unknown>) : {}
+    const afterReply: (() => Promise<void>)[] = []
     try {
-      const result = await dispatch(op, safeArgs)
+      const result = await dispatch(op, safeArgs, (work) => void afterReply.push(work))
       if (id !== undefined) emit({ id, ok: true, result: result ?? null })
+      for (const work of afterReply) await work().catch((error) => console.error('[mobile-bridge] 답 뒤 처리 실패', String(op), error))
     } catch (caught) {
       // 브리지가 정한 오류만 그대로 — 그 밖(데몬 · 파일 · 코어)의 원문은 경로 등이 섞일 수 있어 맥 로그에만 남기고 폰에는 고정 문구
       if (caught instanceof BridgeError) {
@@ -862,6 +1177,10 @@ export function createMobileBridge(deps: BridgeDeps) {
     async stop() {
       if (stopped) return
       flush()
+      // 연결이 끊겼다 — 이 폰이 가진 pane 은 맥 크기로(맥 알림 없음 · 이 폰에는 보내지 않는다)
+      open.clear()
+      for (const pane of owners.heldBy(holder)) await owners.phoneRelease(holder, pane)
+      owners.unregister(holder)
       stopped = true
       if (sizeTimer) clearTimeout(sizeTimer)
       sizeTimer = null

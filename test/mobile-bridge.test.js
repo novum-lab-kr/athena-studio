@@ -9,7 +9,7 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed } = bridgeModule
+const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
 const { packView, bodyPacks, serverSummary } = require('../src/main/mobile-dev.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
@@ -30,6 +30,7 @@ function startFakeDaemon(socketPath) {
     // 데몬 state.panes 의 크기(attach · state 가 같이 준다)
     sizes: { p1: { cols: 120, rows: 40 }, p2: { cols: 80, rows: 24 } },
     failState: false, // true 면 state 요청에 실패로 답한다(크기 보기 실패)
+    beforeResize: null, // 문자열이면 resize 답 앞에 그 pane 출력을 같은 소켓으로 먼저 보낸다(답보다 앞선 출력)
   }
   const daemonState = () => ({ workspaces: state.workspaces, panes: Object.entries(state.sizes).map(([id, size]) => ({ id, tab: 't1', ...size })) })
   const server = net.createServer((socket) => {
@@ -45,6 +46,11 @@ function startFakeDaemon(socketPath) {
         result = { state: daemonState(), snapshots: state.snapshots }
       } else if (message.op === 'state') result = daemonState()
       else if (message.op === 'pane list') result = { panes: state.panes }
+      else if (message.op === 'resize') {
+        // 데몬 Pane.resize 처럼 크기를 바꾼다 — 그 전에 나온 출력은 답보다 먼저(붙은 연결이면)
+        if (state.beforeResize !== null && client.attached) socket.write(protocol.encode({ event: 'data', pane: message.args.pane, data: state.beforeResize }))
+        state.sizes[message.args.pane] = { cols: message.args.cols, rows: message.args.rows }
+      }
       if (message.op === 'state' && state.failState) return void socket.write(protocol.encode({ id: message.id, ok: false, error: { code: 'busy', message: '시험용 실패' } }))
       socket.write(protocol.encode({ id: message.id, ok: true, result }))
     }))
@@ -115,8 +121,9 @@ async function setup(overrides = {}) {
   const approved = []
   const repoSets = []
   const opened = []
+  const daemonPaths = () => ({ socket, log: path.join(dir, 'daemon.log'), endpoint: path.join(dir, 'endpoint.json') })
   const bridge = createMobileBridge({
-    daemonPaths: () => ({ socket, log: path.join(dir, 'daemon.log'), endpoint: path.join(dir, 'endpoint.json') }),
+    daemonPaths,
     transport,
     inputAllowed: () => flags.input,
     requests: () => [{ id: 'r-20261111-090000-abcd', title: '질문' }],
@@ -164,7 +171,7 @@ async function setup(overrides = {}) {
     await daemon.close()
     fs.rmSync(dir, { recursive: true, force: true })
   }
-  return { daemon, phone, bridge, ask, events, logged, answered, posted, approved, repoSets, opened, flags, cleanup }
+  return { daemon, daemonPaths, phone, bridge, ask, events, logged, answered, posted, approved, repoSets, opened, flags, cleanup }
 }
 
 test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · 필요한 칸 · PC 크기) · 서버 · 7일 머지를 한 번에, attach 하지 않는다', async () => {
@@ -190,24 +197,24 @@ test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · �
   }
 })
 
-test('pane.open — 스냅숏을 답으로, 그 뒤 출력은 연 pane 만 100ms 묶음으로 · 다 닫으면 attach 연결을 끊는다', async () => {
+test('pane.open — 스냅숏을 답으로, 그 뒤 출력은 연 pane 만(조용하다 첫 조각은 바로 · 뒤따르는 것은 묶음) · 다 닫으면 attach 연결을 끊는다', async () => {
   const env = await setup()
   try {
     const opened = await env.ask('pane.open', { pane: 'p1' })
-    assert.deepEqual(opened.result, { pane: 'p1', snapshot: 'P1-화면', cols: 120, rows: 40 })
+    assert.deepEqual(opened.result, { pane: 'p1', snapshot: 'P1-화면', cols: 120, rows: 40, owner: 'mac', mine: false })
     assert.equal(env.daemon.attached().length, 1)
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
     env.daemon.emit({ event: 'data', pane: 'p2', data: '안 연 pane' })
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
-    await sleep(15)
-    assert.equal(env.events('pane.data').length, 0, '묶음 시간 전에는 보내지 않는다')
-    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
-    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'ab' } }])
+    await waitFor(() => env.events('pane.data').length > 0, '첫 조각')
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'a' } }], '첫 조각은 바로 · 뒤따르는 것은 아직')
+    await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
+    assert.deepEqual(env.events('pane.data')[1], { event: 'pane.data', panes: { p1: 'b' } })
 
     const closed = await env.ask('pane.close', { pane: 'p1' })
     assert.equal(closed.ok, true)
     await waitFor(() => env.daemon.attached().length === 0, 'attach 연결 끊김')
-    assert.ok(!env.daemon.state.ops.some((entry) => entry.op === 'resize'), '데몬에 resize 를 보내지 않는다')
+    assert.ok(!env.daemon.state.ops.some((entry) => entry.op === 'resize'), '크기를 안 보낸 폰(옛 앱)이면 데몬에 resize 를 보내지 않는다')
   } finally {
     await env.cleanup()
   }
@@ -225,7 +232,7 @@ test('pane.open — 없는 pane 은 not_found 이고 붙은 채로 남지 않는
   }
 })
 
-test('pane.data — 100ms 안에 나온 여러 pane 출력을 기기당 메시지 하나 {panes:{…}} 로', async () => {
+test('pane.data — 조용하다 첫 조각은 바로 · 뒤따르는 100ms 안 여러 pane 출력은 기기당 메시지 하나 {panes:{…}} · 다시 조용해지면 다음 첫 조각도 바로', async () => {
   const env = await setup()
   try {
     await env.ask('pane.open', { pane: 'p1' })
@@ -233,9 +240,17 @@ test('pane.data — 100ms 안에 나온 여러 pane 출력을 기기당 메시�
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
     env.daemon.emit({ event: 'data', pane: 'p2', data: 'b' })
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'c' })
-    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
+    await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
     await sleep(60)
-    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'ac', p2: 'b' } }])
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'a' } }, { event: 'pane.data', panes: { p2: 'b', p1: 'c' } }])
+    // 창이 끝나고(쌓인 것 없음 → 닫힘) 조용하면 다음 첫 조각도 바로
+    await sleep(60)
+    const before = env.events('pane.data').length
+    const sentAt = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p2', data: 'd' })
+    await waitFor(() => env.events('pane.data').length > before, '다음 첫 조각')
+    assert.ok(Date.now() - sentAt < 30, '묶음 시간(40ms)을 기다리지 않는다')
+    assert.deepEqual(env.events('pane.data').at(-1), { event: 'pane.data', panes: { p2: 'd' } })
   } finally {
     await env.cleanup()
   }
@@ -822,4 +837,369 @@ test('bodyPacks · serverSummary — 본체 경로 → 팩 id, snapshot 서버�
   const reading = { name: 'novum', status: { ok: true, load1: 1, ports: [], cpuModel: 'EPYC', serviceInfo: [], timers: [], cron: [], ufw: 'active', monarx: 'active', sites: [] }, web: null, at: 1 }
   assert.deepEqual(serverSummary(reading), { name: 'novum', status: { ok: true, load1: 1 }, web: null, at: 1 })
   assert.deepEqual(serverSummary({ name: 'down', status: { ok: false, reason: 'timeout' } }), { name: 'down', status: { ok: false, reason: 'timeout' } })
+})
+
+// ── 제어 주인(D9) — 제어하는 쪽 크기로 pane 크기를 맞춘다 ──
+const resizes = (env) => env.daemon.state.ops.filter((entry) => entry.op === 'resize').map((entry) => entry.args)
+// 시험마다 주인 표 하나 — 맥 → 폰으로 넘어간 pane 을 적는다(맥 Studio 알림 자리)
+function sharedControl() {
+  const took = []
+  return { control: createPaneControl({ onPhoneTook: (pane) => took.push(pane) }), took }
+}
+
+test('cellSize · isTerminalReply — 폰 크기 검사 · 터미널 자동 답은 사람 입력이 아니다', () => {
+  assert.deepEqual(cellSize(50, 30), { cols: 50, rows: 30 })
+  for (const [cols, rows] of [[1, 30], [50, 1], [50.5, 30], ['50', 30], [5000, 30], [50, 900], [null, null]]) assert.equal(cellSize(cols, rows), null, `${cols}x${rows}`)
+  for (const reply of ['\x1b[12;5R', '\x1b[?12;5R', '\x1b[0n', '\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[?2026;2$y', '\x1b[?0u', '\x1b[8;40;120t', '\x1b[I', '\x1b[O', '\x1b]11;rgb:0000/0000/0000\x07', '\x1b]10;rgb:ffff/ffff/ffff\x1b\\', '\x1bP>|xterm.js(6.0)\x1b\\', '\x1b[I\x1b[12;5R']) assert.equal(isTerminalReply(reply), true, JSON.stringify(reply))
+  for (const typed of ['a', 'ls\r', '\x1b[A', '\x1bOA', '\x1b[15~', '\x1b[<0;10;5M', '\x03', '\x1b[200~붙여\x1b[201~', '\x1b[Ia']) assert.equal(isTerminalReply(typed), false, JSON.stringify(typed))
+})
+
+test('pane.open + 크기 — 답(지금 크기 스냅숏) 뒤에 폰 크기로 resize · pane.owner(phone) · 맥 알림 한 번 · 앞선 출력이 pane.owner 보다 먼저', async () => {
+  const { control, took } = sharedControl()
+  const env = await setup({ control })
+  try {
+    env.daemon.state.beforeResize = '크기 전 출력'
+    const opened = await env.ask('pane.open', { pane: 'p1', cols: 50, rows: 30 })
+    assert.deepEqual(opened.result, { pane: 'p1', snapshot: 'P1-화면', cols: 120, rows: 40, owner: 'mac', mine: false })
+    await waitFor(() => env.events('pane.owner').length === 1, 'pane.owner')
+    assert.deepEqual(env.events('pane.owner'), [{ event: 'pane.owner', pane: 'p1', owner: 'phone', mine: true, cols: 50, rows: 30 }])
+    assert.deepEqual(resizes(env), [{ pane: 'p1', cols: 50, rows: 30 }])
+    assert.deepEqual(took, ['p1'])
+    // 받은 순서: 답 → 크기 전 출력 → pane.owner(폰은 앞 출력을 다 쓴 뒤 크기를 바꾼다)
+    const order = env.phone.received.map((message) => (message.id ? 'reply' : message.event))
+    assert.deepEqual(order.filter((name) => name !== 'changed'), ['reply', 'pane.data', 'pane.owner'])
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: '크기 전 출력' } }])
+    // 같은 크기로 또 열어도 다시 resize · 알림하지 않는다
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    assert.equal(resizes(env).length, 1)
+    assert.deepEqual(took, ['p1'])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('맥에서 입력 — 터미널 자동 답은 그대로 · 사람 입력이면 맥 크기(가져갈 때 크기 · 그 뒤 맥 화면 요청)로 되돌리고 pane.owner(mac)', async () => {
+  const { control } = sharedControl()
+  const env = await setup({ control })
+  try {
+    await env.ask('pane.open', { pane: 'p1', cols: 50, rows: 30 })
+    await waitFor(() => env.events('pane.owner').length === 1, '폰이 가져감')
+    assert.equal(control.macResize('p2', { cols: 90, rows: 20 }), false, '맥이 주인인 pane 은 그대로 데몬에')
+    assert.equal(control.macResize('p1', { cols: 130, rows: 44 }), true, '폰이 가진 pane 은 기억만')
+    assert.deepEqual(resizes(env), [{ pane: 'p1', cols: 50, rows: 30 }])
+    control.macInput('p1', '\x1b[I')
+    control.macInput('p1', '\x1b[3;1R')
+    await sleep(30)
+    assert.equal(control.ownerOf('p1').owner, 'phone', '자동 답은 주인을 바꾸지 않는다')
+    control.macInput('p1', 'l')
+    await waitFor(() => env.events('pane.owner').length === 2, '맥으로')
+    assert.deepEqual(env.events('pane.owner')[1], { event: 'pane.owner', pane: 'p1', owner: 'mac', mine: false, cols: 130, rows: 44 })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 130, rows: 44 })
+    assert.equal(control.macResize('p1', { cols: 131, rows: 44 }), false)
+    // 폰이 다시 입력하면 다시 폰 크기(열 때 보낸 크기를 기억)
+    await env.ask('pane.input', { pane: 'p1', data: 'y' })
+    await waitFor(() => env.events('pane.owner').length === 3, '다시 폰')
+    assert.deepEqual(env.events('pane.owner')[2], { event: 'pane.owner', pane: 'p1', owner: 'phone', mine: true, cols: 50, rows: 30 })
+    // 폰 쪽 자동 답은 가져가지 않는다
+    control.macInput('p1', 'z')
+    await waitFor(() => env.events('pane.owner').length === 4, '맥으로 한 번 더')
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[1;1R' })
+    assert.equal(control.ownerOf('p1').owner, 'mac')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.close · 연결 끊김(stop) — 가진 pane 을 맥 크기로 되돌린다(이 폰에 알리지 않음) · pane.input 크기로도 가져간다', async () => {
+  const { control, took } = sharedControl()
+  const env = await setup({ control })
+  try {
+    await env.ask('pane.open', { pane: 'p1', cols: 50, rows: 30 })
+    await waitFor(() => env.events('pane.owner').length === 1, '가져감')
+    await env.ask('pane.close', { pane: 'p1' })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 120, rows: 40 })
+    assert.equal(control.ownerOf('p1').owner, 'mac')
+    assert.equal(env.events('pane.owner').length, 1, '닫은 폰에는 알리지 않는다')
+    // 열지 않고 입력만 크기와 함께 — 지금 크기(state)를 돌려줄 크기로
+    await env.ask('pane.input', { pane: 'p2', data: 'a', cols: 40, rows: 20 })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p2', cols: 40, rows: 20 })
+    assert.deepEqual(took, ['p1', 'p2'])
+    await env.bridge.stop()
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p2', cols: 80, rows: 24 })
+    assert.equal(control.ownerOf('p2').owner, 'mac')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('입력 허용이 꺼져 있으면 열어도 크기를 바꾸지 않는다 · 잘못된 크기는 usage', async () => {
+  const env = await setup()
+  try {
+    env.flags.input = false
+    const opened = await env.ask('pane.open', { pane: 'p1', cols: 50, rows: 30 })
+    assert.equal(opened.ok, true)
+    await sleep(30)
+    assert.deepEqual(resizes(env), [])
+    assert.equal(env.events('pane.owner').length, 0)
+    assert.equal((await env.ask('pane.size', { pane: 'p1', cols: 60, rows: 30 })).result.owner, 'mac')
+    assert.deepEqual(resizes(env), [])
+    env.flags.input = true
+    assert.equal((await env.ask('pane.open', { pane: 'p2', cols: 1, rows: 30 })).error.code, 'usage')
+    assert.equal((await env.ask('pane.input', { pane: 'p1', data: 'a', cols: 50 })).error.code, 'usage')
+    assert.equal((await env.ask('pane.size', { pane: 'p1' })).error.code, 'usage')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.size — 가진 폰이면 바로 그 크기로 · 아니면 기억만(입력할 때 그 크기로 가져간다)', async () => {
+  const env = await setup()
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    const kept = await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22 })
+    assert.deepEqual(kept.result, { pane: 'p1', owner: 'mac', mine: false })
+    assert.deepEqual(resizes(env), [])
+    await env.ask('pane.input', { pane: 'p1', data: 'a' })
+    assert.deepEqual(resizes(env), [{ pane: 'p1', cols: 44, rows: 22 }])
+    const resized = await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 18 })
+    assert.deepEqual(resized.result, { pane: 'p1', owner: 'phone', mine: true })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 44, rows: 18 })
+    await waitFor(() => env.events('pane.owner').length === 2, '두 번 알림')
+    assert.deepEqual(env.events('pane.owner')[1], { event: 'pane.owner', pane: 'p1', owner: 'phone', mine: true, cols: 44, rows: 18 })
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('포커스로 제어 바꾸기(D9 보완) — pane.size take 는 맥이 가졌어도 바로 폰 크기 · 맥 포커스(macFocus)는 폰이 가진 pane 을 맥 크기로 · 입력 허용 꺼짐 · 틀린 take 는 가져가지 않는다', async () => {
+  const { control, took } = sharedControl()
+  const env = await setup({ control })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    control.macFocus('p1')
+    await sleep(30)
+    assert.deepEqual(resizes(env), [], '맥이 가진 pane 의 포커스는 아무것도 안 한다')
+    assert.equal((await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: 'yes' })).error.code, 'usage')
+    env.flags.input = false
+    assert.equal((await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: true })).result.owner, 'mac')
+    assert.deepEqual(resizes(env), [])
+    env.flags.input = true
+    const taken = await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: true })
+    assert.deepEqual(taken.result, { pane: 'p1', owner: 'phone', mine: true })
+    assert.deepEqual(resizes(env), [{ pane: 'p1', cols: 44, rows: 22 }])
+    await waitFor(() => env.events('pane.owner').length === 1, '폰으로')
+    assert.deepEqual(took, ['p1'])
+    // 맥에서 그 pane 을 누르거나 창이 앞으로 오면 맥 크기로 되찾는다
+    control.macFocus('p1')
+    await waitFor(() => env.events('pane.owner').length === 2, '맥으로')
+    assert.deepEqual(env.events('pane.owner')[1], { event: 'pane.owner', pane: 'p1', owner: 'mac', mine: false, cols: 120, rows: 40 })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 120, rows: 40 })
+    // take 없이 크기만이면 다시 가져가지 않는다 · take 면 다시 가져간다
+    assert.equal((await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 20 })).result.owner, 'mac')
+    assert.equal((await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 20, take: true })).result.owner, 'phone')
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 44, rows: 20 })
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('가져갈 때 돌려줄 맥 크기는 아는 크기로 — attach · 맥 화면 resize 를 쓰고 데몬 state 를 다시 묻지 않는다', async () => {
+  const { control } = sharedControl()
+  const env = await setup({ control })
+  const states = () => env.daemon.state.ops.filter((entry) => entry.op === 'state').length
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    const before = states()
+    await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: true })
+    assert.equal(states(), before, 'attach 로 안 크기(120×40) — state 안 물음')
+    control.macFocus('p1')
+    await waitFor(() => resizes(env).length === 2, '맥으로')
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 120, rows: 40 })
+    // 맥 화면이 크기를 바꾼 뒤(폰이 안 가졌을 때 데몬에 간 것) 가져가면 그 크기로 돌려준다
+    assert.equal(control.macResize('p1', { cols: 100, rows: 30 }), false)
+    await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: true })
+    control.macFocus('p1')
+    await waitFor(() => resizes(env).length === 4, '다시 맥으로')
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 100, rows: 30 })
+    assert.equal(states(), before)
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('resize · 주인 바뀜 뒤 잠깐(liveMs)은 묶지 않고 조각마다 바로 · 지나면 다시 묶음(첫 조각만 바로)', async () => {
+  const env = await setup({ liveMs: 80 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.size', { pane: 'p1', cols: 44, rows: 22, take: true })
+    await waitFor(() => env.events('pane.owner').length === 1, '가져감')
+    env.daemon.emit({ event: 'data', pane: 'p1', data: '머리' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: '본 그림' })
+    await waitFor(() => env.events('pane.data').length === 2, '둘 다 바로')
+    assert.deepEqual(env.events('pane.data').map((message) => message.panes.p1), ['머리', '본 그림'])
+    await sleep(100)
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'x' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'y' })
+    await waitFor(() => env.events('pane.data').length === 3, '첫 조각 바로')
+    await sleep(15)
+    assert.equal(env.events('pane.data').length, 3, '뒤따르는 것은 묶음')
+    await waitFor(() => env.events('pane.data').length === 4, '묶음')
+    assert.deepEqual(env.events('pane.data').map((message) => message.panes.p1).slice(2), ['x', 'y'])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('폰 둘 — 다른 폰이 가져가면 앞 폰에 pane.owner(mine false) · 맥 알림은 맥 → 폰 때만 · 앞 폰이 나가도 그대로', async () => {
+  const { control, took } = sharedControl()
+  const env = await setup({ control })
+  const other = createMemoryTransport()
+  const second = createMobileBridge({
+    daemonPaths: env.daemonPaths,
+    transport: other.bridge,
+    control,
+    inputAllowed: () => true,
+    requests: () => [],
+    servers: () => [],
+    events: () => [],
+    answerRequest: async () => ({ ok: true }),
+    approveRequest: async () => ({ ok: true }),
+    athenaDir: () => null,
+    leadPaneOf: () => null,
+    postDecision: async () => ({ status: 200, body: {} }),
+    packs: () => ({ current: null, packs: [] }),
+    repoSettings: async () => ({ ok: true, repos: [] }),
+    setRepo: async () => ({ ok: true }),
+    openPack: async () => ({ ok: true }),
+    logEvent: () => {},
+    flushMs: 40,
+  })
+  const otherOwner = () => other.phone.received.filter((message) => message.event === 'pane.owner')
+  try {
+    await env.ask('pane.open', { pane: 'p1', cols: 50, rows: 30 })
+    await waitFor(() => env.events('pane.owner').length === 1, '첫 폰')
+    other.phone.send({ id: 1, op: 'pane.open', args: { pane: 'p1', cols: 40, rows: 60 } })
+    await waitFor(() => otherOwner().length === 1, '둘째 폰')
+    assert.deepEqual(otherOwner()[0], { event: 'pane.owner', pane: 'p1', owner: 'phone', mine: true, cols: 40, rows: 60 })
+    await waitFor(() => env.events('pane.owner').length === 2, '첫 폰에 알림')
+    assert.deepEqual(env.events('pane.owner')[1], { event: 'pane.owner', pane: 'p1', owner: 'phone', mine: false, cols: 40, rows: 60 })
+    assert.deepEqual(took, ['p1'], '폰 → 폰은 맥 알림 없음')
+    // 가지지 않은 첫 폰이 닫아도 크기는 그대로
+    await env.ask('pane.close', { pane: 'p1' })
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 40, rows: 60 })
+    // 둘째 폰이 끊기면 맥이 가져갈 때 크기(첫 폰이 가져가기 전)로
+    await second.stop()
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 120, rows: 40 })
+    assert.equal(control.ownerOf('p1').owner, 'mac')
+  } finally {
+    await second.stop()
+    await env.cleanup()
+  }
+})
+
+// ── 폰 이미지(pane.image) ──
+const PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('rest-of-png')])
+const JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('jfif')])
+
+test('imageType · decodeImage · imageFileName — 형식은 앞 바이트로만 · base64 만 · 크기 상한 · 이름에 사용자 입력 없음', () => {
+  assert.equal(imageType(PNG), 'png')
+  assert.equal(imageType(JPG), 'jpg')
+  assert.equal(imageType(Buffer.from('GIF89a....')), 'gif')
+  assert.equal(imageType(Buffer.concat([Buffer.from('RIFF'), Buffer.alloc(4), Buffer.from('WEBPVP8 ')])), 'webp')
+  // HEIC(ftypheic) · 글자는 받지 않는다
+  assert.equal(imageType(Buffer.concat([Buffer.alloc(4), Buffer.from('ftypheic')])), null)
+  assert.equal(imageType(Buffer.from('<svg')), null)
+  assert.ok(decodeImage(PNG.toString('base64')).equals(PNG))
+  const code = (fn) => {
+    try {
+      fn()
+    } catch (error) {
+      return error.code
+    }
+    return null
+  }
+  assert.equal(code(() => decodeImage('')), 'usage')
+  assert.equal(code(() => decodeImage('data:image/png;base64,AAAA')), 'usage')
+  assert.equal(code(() => decodeImage('AAA')), 'usage')
+  assert.equal(code(() => decodeImage('A'.repeat(Math.ceil(IMAGE_MAX_BYTES / 3) * 4 + 4))), 'too-large')
+  assert.equal(decodeImage(Buffer.alloc(IMAGE_MAX_BYTES).toString('base64')).length, IMAGE_MAX_BYTES)
+  const at = new Date(2026, 10, 12, 9, 5, 7).getTime()
+  assert.match(imageFileName(at, 'png'), /^athena-img-20261112-090507-[0-9a-f]{8}\.png$/)
+  assert.notEqual(imageFileName(at, 'png'), imageFileName(at, 'png'))
+})
+
+test('pane.image — 임시 폴더(0700)에 0600 으로 저장 · 경로 + 공백을 엔터 없이 입력 · 기록은 크기 · 형식만 · 하루 지난 그림은 다음 저장 때 지운다', async () => {
+  const images = path.join(workDir(), 'imgs')
+  const env = await setup({ imageDir: () => images })
+  try {
+    fs.mkdirSync(images, { recursive: true, mode: 0o755 })
+    const old = path.join(images, 'athena-img-20261110-010101-0123abcd.png')
+    const other = path.join(images, 'note.png')
+    fs.writeFileSync(old, 'x')
+    fs.writeFileSync(other, 'x')
+    const past = (Date.now() - IMAGE_KEEP_MS - 60_000) / 1000
+    fs.utimesSync(old, past, past)
+    fs.utimesSync(other, past, past)
+    const reply = await env.ask('pane.image', { pane: 'p1', data: PNG.toString('base64'), name: '../../etc/passwd' })
+    assert.equal(reply.ok, true, JSON.stringify(reply))
+    const saved = reply.result.path
+    assert.equal(path.dirname(saved), images)
+    assert.match(path.basename(saved), /^athena-img-\d{8}-\d{6}-[0-9a-f]{8}\.png$/)
+    assert.deepEqual({ type: reply.result.type, bytes: reply.result.bytes }, { type: 'png', bytes: PNG.length })
+    assert.ok(fs.readFileSync(saved).equals(PNG))
+    assert.equal(fs.statSync(saved).mode & 0o777, 0o600)
+    assert.equal(fs.statSync(images).mode & 0o777, 0o700)
+    const input = env.daemon.state.ops.find((entry) => entry.op === 'input')
+    assert.deepEqual(input.args, { pane: 'p1', data: `${saved} ` })
+    assert.ok(!/[\r\n]/.test(input.args.data))
+    assert.deepEqual(env.logged, [{ type: 'mobile.image', fields: { by: 'mobile', pane: 'p1', bytes: PNG.length, type: 'png' } }])
+    assert.ok(!fs.existsSync(old), '하루 지난 우리 그림은 지운다')
+    assert.ok(fs.existsSync(other), '우리 이름이 아닌 파일은 둔다')
+  } finally {
+    await env.cleanup()
+    fs.rmSync(path.dirname(images), { recursive: true, force: true })
+  }
+})
+
+test('pane.image — 입력 허용 꺼짐 · 모르는 형식 · 없는 pane 은 거절하고 파일 · 입력을 남기지 않는다 · 크기를 보내면 폰 크기로 가져간다', async () => {
+  const images = path.join(workDir(), 'imgs')
+  const { control, took } = sharedControl()
+  const env = await setup({ imageDir: () => images, control })
+  try {
+    env.flags.input = false
+    assert.equal((await env.ask('pane.image', { pane: 'p1', data: PNG.toString('base64') })).error.code, 'input-off')
+    env.flags.input = true
+    assert.equal((await env.ask('pane.image', { pane: 'p1', data: Buffer.from('heic?').toString('base64') })).error.code, 'unsupported-type')
+    assert.equal((await env.ask('pane.image', { pane: 'nope', data: PNG.toString('base64') })).error.code, 'not_found')
+    assert.equal((await env.ask('pane.image', { pane: 'p1', data: PNG.toString('base64'), cols: 1, rows: 5 })).error.code, 'usage')
+    assert.ok(!fs.existsSync(images) || fs.readdirSync(images).length === 0)
+    assert.equal(env.daemon.state.ops.filter((entry) => entry.op === 'input').length, 0)
+    const reply = await env.ask('pane.image', { pane: 'p1', data: JPG.toString('base64'), cols: 50, rows: 30 })
+    assert.equal(reply.result.type, 'jpg')
+    assert.match(reply.result.path, /\.jpg$/)
+    assert.deepEqual(resizes(env).at(-1), { pane: 'p1', cols: 50, rows: 30 })
+    assert.deepEqual(took, ['p1'])
+    // paste: true — 붙여넣기 표시로 감싼다(Claude Code 가 첨부로 바꾸는 길) · 공백 없음 · 틀린 값은 usage
+    assert.equal((await env.ask('pane.image', { pane: 'p1', data: PNG.toString('base64'), paste: 'yes' })).error.code, 'usage')
+    const pasted = await env.ask('pane.image', { pane: 'p1', data: PNG.toString('base64'), paste: true })
+    const inputs = env.daemon.state.ops.filter((entry) => entry.op === 'input')
+    assert.deepEqual(inputs.at(-1).args, { pane: 'p1', data: `\x1b[200~${pasted.result.path}\x1b[201~` })
+  } finally {
+    await env.cleanup()
+    fs.rmSync(path.dirname(images), { recursive: true, force: true })
+  }
+})
+
+test('saveImage — 폴더가 링크면 쓰지 않는다', async () => {
+  const dir = workDir()
+  try {
+    const real = path.join(dir, 'real')
+    fs.mkdirSync(real)
+    const link = path.join(dir, 'link')
+    fs.symlinkSync(real, link)
+    await assert.rejects(saveImage(link, PNG, 'png', Date.now()), (error) => error.code === 'internal')
+    assert.equal(fs.readdirSync(real).length, 0)
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

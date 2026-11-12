@@ -8,7 +8,7 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
-import { createMobileBridge, createMergeDetails, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
+import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { MergeRunner } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
@@ -97,6 +97,7 @@ type DevDeps = {
   onChange: () => void // 화면에 보일 것이 바뀜(view 다시 보내기)
   onPairRequest: (request: PendingPair) => void // [허용] 창 · 창이 뒤면 맥 알림
   onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
+  onPhoneControl: (pane: string) => void // 맥 → 폰으로 제어가 넘어감(D9) — 그 pane 을 보는 맥 창에 잠깐 알림
   log?: (line: string) => void
 }
 
@@ -181,6 +182,8 @@ export function startMobileDev(deps: DevDeps) {
     remoteLogout: (call) => call('auth.logout', {}),
     createBridge: (transport) => newBridge(transport),
   })
+  // 제어 주인(D9) — 기기(브리지)끼리 · main 의 맥 입력 · 크기 요청과 같이 본다
+  const control = createPaneControl({ onPhoneTook: (pane) => deps.onPhoneControl(pane) })
   // 머지는 바뀌지 않으니 상세는 기기끼리 같이 쓴다(앞 창 본체가 바뀌면 키 — 레포#PR — 가 같아도 다른 레포일 수 있어 본체마다 따로)
   const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
   const mergeDetails = () => {
@@ -197,6 +200,7 @@ export function startMobileDev(deps: DevDeps) {
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
+        control,
         inputAllowed: () => mobileInputAllowed(deps.config()),
         requests: () => {
           const ctx = front()
@@ -311,6 +315,12 @@ export function startMobileDev(deps: DevDeps) {
       await relay.signOut()
     },
     handleLink: (link: unknown) => login.handleLink(link),
+    // 맥 화면 입력(main pane:input) — 폰이 가진 pane 이면 맥 크기로 되돌린다
+    macInput: (pane: string, data: string) => control.macInput(pane, data),
+    // 맥 화면 포커스(main pane:focus — pane 누르기 · 창이 앞으로) — 폰이 가진 pane 이면 맥 크기로
+    macFocus: (pane: string) => control.macFocus(pane),
+    // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
+    macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
       login.cancel()

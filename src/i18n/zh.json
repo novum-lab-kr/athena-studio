@@ -993,6 +993,7 @@
   "mobile.devices.empty": "没有已连接的设备",
   "mobile.devices.input": "允许设备输入",
   "mobile.devices.inputNote": "关闭后设备只能查看",
+  "mobile.control.phone": "设备正在控制 — 尺寸已适配设备",
   "mobile.device.unknown": "未命名设备",
   "mobile.pair.title": "连接新设备",
   "mobile.pair.from": "{device} 请求连接",
