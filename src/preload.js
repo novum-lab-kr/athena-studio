@@ -40,6 +40,17 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   onPackProgress: listen('pack:progress'),
   onPackChanged: listen('pack:changed'),
   onPackCommand: listen('pack:command'),
+  // 모바일(개발용 길에서만 켜짐 — src/main/mobile-dev.mts) · 꺼져 있으면 mobileState 가 { enabled: false }
+  mobileState: () => ipcRenderer.invoke('mobile:state'),
+  mobileLogin: () => ipcRenderer.invoke('mobile:login'),
+  mobileLogout: () => ipcRenderer.invoke('mobile:logout'),
+  mobileOpenAccount: () => ipcRenderer.invoke('mobile:open-account'),
+  mobileAnswer: (requestId, accept) => ipcRenderer.invoke('mobile:answer', requestId, accept),
+  mobileRemoveDevice: (peer) => ipcRenderer.invoke('mobile:remove-device', peer),
+  mobileInput: () => ipcRenderer.invoke('mobile:input'),
+  mobileSetInput: (allowed) => ipcRenderer.invoke('mobile:set-input', allowed),
+  onMobileState: listen('mobile:state'),
+  onMobileFailed: listen('mobile:failed'),
   // 작업 창 — 데몬의 탭·pane(모든 함수가 pane id 를 단다)
   screenAttach: () => ipcRenderer.invoke('screen:attach'),
   openAgent: (size, options) => ipcRenderer.invoke('agent:open', size, options),

@@ -7,6 +7,7 @@ import type { CSSProperties } from 'react'
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
 import type { Say } from './bridge.ts'
+import { MobileAccount } from './mobile-account.tsx'
 
 // 팩 목록 한 줄 — main 이 넘기는 pack:state 의 packs[] · current(코어 athena/scripts/lib/packs.mjs packInfo · currentOf + pack-look.mjs packLook)
 export type PackItem = {
@@ -154,6 +155,7 @@ function PackRail() {
       <button className="space-icon add pack-add" data-tip={add} aria-label={add} onClick={() => actions.add()}>
         ＋
       </button>
+      <MobileAccount />
     </>
   )
 }

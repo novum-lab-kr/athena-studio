@@ -65,9 +65,12 @@ function iconHash() {
   }
 }
 
+// 맥 웹 로그인이 돌아오는 주소(athena://login — src/main/mobile-login.mts). 앱은 모바일 개발용 길이 켜질 때만 받는다(main.mts open-url)
+const URL_SCHEMES = ['athena']
+
 // 지금 Electron · 아이콘으로 만든 것이면 다시 만들 필요 없다
 function wanted() {
-  return { electron: electronVersion(), icon: iconHash(), name: APP_NAME, bundleId: BUNDLE_ID, root: ROOT, arch: process.arch, version: DEV_APP_VERSION }
+  return { electron: electronVersion(), icon: iconHash(), name: APP_NAME, bundleId: BUNDLE_ID, root: ROOT, arch: process.arch, version: DEV_APP_VERSION, urlSchemes: URL_SCHEMES }
 }
 
 function isCurrent() {
@@ -155,6 +158,7 @@ function build() {
     for (const [key, value] of [['CFBundleName', APP_NAME], ['CFBundleDisplayName', APP_NAME], ['CFBundleIdentifier', BUNDLE_ID]]) {
       execFileSync('plutil', ['-replace', key, '-string', value, plist], { stdio: 'ignore' })
     }
+    execFileSync('plutil', ['-replace', 'CFBundleURLTypes', '-json', JSON.stringify([{ CFBundleURLName: 'Athena Login', CFBundleURLSchemes: URL_SCHEMES }]), plist], { stdio: 'ignore' })
     // 인자 없이 켜져도(알림 · Dock · Finder) Electron 기본 창이 아니라 이 레포 앱이 뜨게 — Resources/app 이 있으면 Electron 이 default_app 대신 그걸 연다.
     // 이름 · 버전은 레포 package.json 과 같게, main 은 레포 진입점을 가리킨다(레포가 옮겨지면 marker 의 root 가 달라 다시 만든다)
     const appDir = path.join(building, 'Contents', 'Resources', 'app')

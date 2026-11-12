@@ -1,9 +1,11 @@
 // ── 모바일 relay 클라이언트 — 맥 브리지를 relay(athena-app `relay/`)에 붙이고 짝 기기마다 암호 세션 · 브리지를 둔다 ──
 // 바깥 계약: athena-app relay/docs/protocol.md(v1 · 정본 코드 relay/src/protocol.ts). 안쪽 암호: src/lib/mobile-crypto.mts(계획서 4-7 암호 연결 v1).
 // electron 을 import 하지 않는다 — 부르는 쪽이 자리 · 브리지 만들기를 넘긴다. 기본 꺼짐: 지금은 격리 시험 앱의 개발용 길(src/main.mts)만 만든다.
+// 로그인: 웹 로그인(mobile-login.mts)으로 받은 세션 토큰을 signIn 으로 넘기면 /ws 에 auth.resume 으로 붙는다. 토큰이 없으면 붙지 않는다(로그아웃 상태).
+// 연결 허용: 인증번호 미리 약속 v1(계획서 4-7) — pair.key 뒤 약속 → 앱 난수 → 열기가 끝나야 [허용] 창에 번호가 뜬다.
 //
-// 남기는 것: 상태 폴더(0700) 안 mac-key.json(맥 고정 X25519 열쇠) · relay.json(세션 토큰 · 기기 id · 허용한 기기의 공개 열쇠) — 모두 0600.
-// 로그에는 기기 id · 크기 · 개수 · 오류 코드 · 확인 숫자만(세션 토큰 · 비밀 열쇠 · 메시지 본문은 남기지 않는다).
+// 남기는 것: 상태 폴더(0700) 안 mac-key.json(맥 고정 X25519 열쇠) · relay.json(세션 토큰 · 기기 id · 계정 · 이름 · 허용한 기기의 공개 열쇠 · 이름 · 마지막 접속) — 모두 0600.
+// 로그에는 기기 id · 크기 · 개수 · 오류 코드만(세션 토큰 · 비밀 열쇠 · 난수 · 인증번호 · 메시지 본문은 남기지 않는다).
 import fs from 'node:fs'
 import path from 'node:path'
 import * as mobileCrypto from '../lib/mobile-crypto.mts'
@@ -16,13 +18,19 @@ export const RESYNC_DELAY_MS = 1000 // msg.dropped 뒤 그 기기의 열린 pane
 export const BACKOFF_MS = [1000, 2000, 4000, 8000, 16000, 30000] // 다시 붙기(최대 30초 · 4-7)
 const KEY_FILE = 'mac-key.json'
 const STATE_FILE = 'relay.json'
-const PENDING_FILE = 'pair-pending.json' // 개발용 허용 길 — 지금 기다리는 연결 요청(확인 숫자 포함)
-const ANSWER_FILE = 'pair-answer.json' // 개발용 허용 길 — scripts/mobile-pair.js 가 적는 답
+export const PAIR_TTL_MS = 5 * 60_000 // relay 연결 요청 만료(5분) — [허용] 창의 남은 시간
+const LABEL_MAX = 64 // relay label 상한
+export const CLOSE_ACCOUNT_DELETED = 4003 // 웹에서 계정 삭제 — 토큰 · 짝 열쇠를 버린다
 
 export type BridgeHandle = { stop(): Promise<void>; openPanes(): string[]; resyncPane(pane: string): Promise<void> }
-export type PendingPair = { requestId: string; from: string; code: string; at: string }
-type PeerRecord = { publicKey: string; addedAt: string }
-type SavedState = { token: string | null; deviceId: string | null; peers: Record<string, PeerRecord> }
+// [허용] 창에 보일 것 — 번호는 열기(reveal)를 보낸 뒤에만 생긴다
+export type PendingPair = { requestId: string; from: string; label: string | null; code: string; at: string; expiresAt: string }
+export type PeerView = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
+type PeerRecord = { publicKey: string; addedAt: string; label: string | null; lastSeen: string | null }
+type SavedState = { token: string | null; deviceId: string | null; account: string | null; name: string | null; peers: Record<string, PeerRecord> }
+// 웹 로그인 교환 결과(relay POST /api/login/token) 중 맥이 쓰는 칸
+export type SignInResult = { token: string; deviceId: string; account: string; name: string | null }
+type PairStage = { requestId: string; from: string; label: string | null; publicKey: string; appPublic: Uint8Array; macNonce: Uint8Array; nonceSeen: boolean; code: string | null; at: string; expiresAt: string }
 type WebSocketLike = {
   readyState: number
   send(data: string): void
@@ -36,10 +44,11 @@ type WebSocketCtor = new (url: string) => WebSocketLike
 
 export type RelayDeps = {
   url: string
-  login: { provider: 'dev'; account: string } // 시험 2 는 개발 로그인만 — 진짜 Apple · Google 은 시험 5
   dir: string // 상태 폴더
   createBridge: (transport: Transport, peer: string) => BridgeHandle
-  onPairRequest?: (request: PendingPair) => void
+  onPairRequest?: (request: PendingPair) => void // 번호가 뜰 때(열기를 보낸 뒤) 한 번
+  onChange?: () => void // 연결 · 로그인 · 기기 · 기다리는 요청이 바뀜(화면 다시 그리기)
+  onSignedOut?: (why: 'expired' | 'account_deleted') => void // relay 가 세션을 끝냄 — 토큰 · 짝 열쇠를 버린 뒤
   log?: (line: string) => void
   WebSocketImpl?: WebSocketCtor
   heartbeatMs?: number
@@ -92,15 +101,24 @@ export function loadMacKey(dir: string): KeyPair {
   return pair
 }
 
+const textOrNull = (value: unknown): string | null => (typeof value === 'string' && value ? value : null)
+// 기기 이름 — 줄바꿈 · 제어 글자를 빼고 64자까지(relay 가 넘긴 그대로 믿지 않는다)
+export function cleanLabel(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.replace(/[\u0000-\u001f\u007f]/g, ' ').trim().slice(0, LABEL_MAX)
+  return text || null
+}
+const EMPTY_STATE = (): SavedState => ({ token: null, deviceId: null, account: null, name: null, peers: {} })
+
 function loadState(dir: string): SavedState {
   const saved = readJson(path.join(dir, STATE_FILE)) || {}
   const peers: Record<string, PeerRecord> = {}
   const rawPeers = saved.peers && typeof saved.peers === 'object' ? (saved.peers as Record<string, unknown>) : {}
   for (const [peer, record] of Object.entries(rawPeers)) {
-    const value = record as Partial<PeerRecord> | null
-    if (value && mobileCrypto.keyFrom(value.publicKey)) peers[peer] = { publicKey: String(value.publicKey), addedAt: String(value.addedAt || '') }
+    const value = record as Record<string, unknown> | null
+    if (value && mobileCrypto.keyFrom(value.publicKey)) peers[peer] = { publicKey: String(value.publicKey), addedAt: String(value.addedAt || ''), label: cleanLabel(value.label), lastSeen: textOrNull(value.lastSeen) }
   }
-  return { token: typeof saved.token === 'string' && saved.token ? saved.token : null, deviceId: typeof saved.deviceId === 'string' ? saved.deviceId : null, peers }
+  return { token: textOrNull(saved.token), deviceId: textOrNull(saved.deviceId), account: textOrNull(saved.account), name: cleanLabel(saved.name), peers }
 }
 
 type PeerSession = {
@@ -131,10 +149,12 @@ export function createMobileRelay(deps: RelayDeps) {
   let nextChunkId = 1
   const calls = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>()
   const sessions = new Map<string, PeerSession>()
-  const pendingPairs = new Map<string, PendingPair & { publicKey: string }>()
+  const pendingPairs = new Map<string, PairStage>()
+  const changed = () => deps.onChange && deps.onChange()
 
   const saveState = () => writeSecret(path.join(deps.dir, STATE_FILE), state)
-  const writePending = () => writeSecret(path.join(deps.dir, PENDING_FILE), { pending: [...pendingPairs.values()].map(({ requestId, from, code, at }) => ({ requestId, from, code, at })) })
+  const pendingView = (): PendingPair[] =>
+    [...pendingPairs.values()].flatMap(({ requestId, from, label, code, at, expiresAt }) => (code ? [{ requestId, from, label, code, at, expiresAt }] : []))
 
   function rawSend(message: object): boolean {
     if (!socket || socket.readyState !== 1) return false
@@ -174,7 +194,13 @@ export function createMobileRelay(deps: RelayDeps) {
     sessions.delete(peer)
     if (session.resyncTimer) clearTimeout(session.resyncTimer)
     if (session.bridge) session.bridge.stop().catch(() => {})
+    const record = state.peers[peer]
+    if (record) {
+      record.lastSeen = new Date().toISOString()
+      saveState()
+    }
     log(`[mobile-relay] 세션 닫음 peer=${peer} 까닭=${why}`)
+    changed()
   }
 
   // 앱 hello → 일회 열쇠로 답하고 새 세션(마지막 hello 가 이긴다 · 그 기기 브리지도 새로 — Q3)
@@ -199,6 +225,7 @@ export function createMobileRelay(deps: RelayDeps) {
     }
     session.bridge = deps.createBridge(transport, peer)
     log(`[mobile-relay] 세션 열림 peer=${peer}`)
+    changed()
   }
 
   function onPeerMessage(peer: string, data: unknown) {
@@ -243,21 +270,83 @@ export function createMobileRelay(deps: RelayDeps) {
     }, resyncDelayMs)
   }
 
+  // 기다리는 요청을 거둔다(약속 단계가 깨짐) — 상대는 pair.cancelled 를 받는다. 이미 끝났으면(not_found) 그대로 둔다
+  function cancelPair(requestId: string, why: string) {
+    if (pendingPairs.delete(requestId)) changed()
+    log(`[mobile-relay] 연결 요청 거둠 requestId=${requestId} why=${why}`)
+    call('pair.cancel', { requestId }).catch((error) => log(`[mobile-relay] pair.cancel 실패 requestId=${requestId} code=${(error as RelayCallError).code}`))
+  }
+
+  // 연결 요청 — 맥 공개 열쇠를 보내고 바로 새 난수 Nm 에 약속한다(번호는 앱 난수를 받은 뒤 · 4-7 인증번호 미리 약속 v1)
   async function onPairRequest(event: Record<string, unknown>) {
     const requestId = String(event.requestId || '')
     const from = String(event.from || '')
     const appPublic = mobileCrypto.keyFrom(event.publicKey)
-    if (!requestId || !from || !appPublic || !macKey) return
+    if (!requestId || !from || !appPublic || !macKey || pendingPairs.has(requestId)) return
+    const at = new Date()
+    const stage: PairStage = {
+      requestId,
+      from,
+      label: cleanLabel(event.label),
+      publicKey: String(event.publicKey),
+      appPublic,
+      macNonce: mobileCrypto.newPairNonce(),
+      nonceSeen: false,
+      code: null,
+      at: at.toISOString(),
+      expiresAt: new Date(at.getTime() + PAIR_TTL_MS).toISOString(),
+    }
+    pendingPairs.set(requestId, stage)
     try {
       await call('pair.key', { requestId, publicKey: mobileCrypto.toBase64Url(macKey.publicKey) })
+      const commit = mobileCrypto.pairCommit(macKey.publicKey, appPublic, stage.macNonce)
+      await call('pair.data', { requestId, data: mobileCrypto.encodePairData({ pc: 'commit', v: 1, c: mobileCrypto.toBase64(commit) }) })
     } catch (error) {
-      return log(`[mobile-relay] pair.key 실패 requestId=${requestId} code=${(error as RelayCallError).code}`)
+      log(`[mobile-relay] 연결 요청 처리 실패 requestId=${requestId} code=${(error as RelayCallError).code}`)
+      return cancelPair(requestId, 'commit_failed')
     }
-    const pending = { requestId, from, code: mobileCrypto.confirmCode(macKey.publicKey, appPublic), at: new Date().toISOString(), publicKey: String(event.publicKey) }
-    pendingPairs.set(requestId, pending)
-    writePending()
-    log(`[mobile-relay] 연결 요청 requestId=${requestId} from=${from} 확인 숫자 ${pending.code}`)
-    if (deps.onPairRequest) deps.onPairRequest({ requestId, from, code: pending.code, at: pending.at })
+    log(`[mobile-relay] 연결 요청 requestId=${requestId} from=${from} — 앱 난수를 기다려요`)
+  }
+
+  // 앱 난수(한 번만 · 약속을 보낸 뒤에만) → 맥 난수를 열고 번호를 만든다.
+  // 모르는 요청 · 다른 보낸이는 버리고, 그 요청의 상대가 약속 단계를 어기면(난수가 아님 · 두 번째 난수) 요청을 거둔다
+  async function onPairData(event: Record<string, unknown>) {
+    const requestId = String(event.requestId || '')
+    const stage = pendingPairs.get(requestId)
+    if (!stage || !macKey || String(event.from || '') !== stage.from) return log(`[mobile-relay] pair.data 버림 requestId=${requestId}`)
+    const data = mobileCrypto.decodePairData(event.data)
+    if (!data || data.kind !== 'nonce' || stage.nonceSeen) return cancelPair(requestId, 'bad_pair_data')
+    stage.nonceSeen = true // 열기를 기다리는 사이 온 두 번째 난수도 버린다
+    const code = mobileCrypto.pairCode(macKey.publicKey, stage.appPublic, data.value, stage.macNonce)
+    try {
+      await call('pair.data', { requestId, data: mobileCrypto.encodePairData({ pc: 'reveal', v: 1, n: mobileCrypto.toBase64(stage.macNonce) }) })
+    } catch (error) {
+      log(`[mobile-relay] 열기 실패 requestId=${requestId} code=${(error as RelayCallError).code}`)
+      return cancelPair(requestId, 'reveal_failed')
+    }
+    if (pendingPairs.get(requestId) !== stage) return // 그사이 취소됨
+    stage.code = code
+    log(`[mobile-relay] 연결 요청 번호 준비 requestId=${requestId} from=${stage.from}`)
+    changed()
+    const view = pendingView().find((each) => each.requestId === requestId)
+    if (view && deps.onPairRequest) deps.onPairRequest(view)
+  }
+
+  // 토큰 · 짝 열쇠를 버리고 로그아웃 상태로(맥 고정 열쇠는 둔다 — 새 기기로 다시 허용받으면 된다)
+  function forget() {
+    state = EMPTY_STATE()
+    saveState()
+  }
+
+  function signedOutByRelay(why: 'expired' | 'account_deleted') {
+    forget()
+    const own = socket
+    socket = null
+    clearConnection()
+    if (own) own.close()
+    log(`[mobile-relay] relay 가 세션을 끝냈어요 — 로그아웃(${why})`)
+    changed()
+    if (deps.onSignedOut) deps.onSignedOut(why)
   }
 
   function onEvent(event: Record<string, unknown>) {
@@ -277,12 +366,21 @@ export function createMobileRelay(deps: RelayDeps) {
           delete state.peers[peer]
           saveState()
         }
-        return log(`[mobile-relay] 기기 해제 peer=${peer}`)
+        log(`[mobile-relay] 기기 해제 peer=${peer}`)
+        return changed()
       case 'pair.request':
         return void onPairRequest(event)
-      case 'pair.cancelled':
-        pendingPairs.delete(String(event.requestId || ''))
-        return writePending()
+      case 'pair.data':
+        return void onPairData(event)
+      case 'pair.cancelled': {
+        // 5분 지남 · 상대 끊김 · 상대가 거둠 — 허용 창을 닫는다(모르는 reason 도 취소로)
+        const requestId = String(event.requestId || '')
+        if (!pendingPairs.delete(requestId)) return
+        log(`[mobile-relay] 연결 요청 취소됨 requestId=${requestId} reason=${String(event.reason || 'cancelled').slice(0, 20)}`)
+        return changed()
+      }
+      case 'account.deleted':
+        return signedOutByRelay('account_deleted')
       case 'session.replaced':
         replaced = true
         return log('[mobile-relay] 같은 기기가 다른 곳에서 붙었어요 — 다시 붙지 않아요')
@@ -311,23 +409,19 @@ export function createMobileRelay(deps: RelayDeps) {
     }
   }
 
-  async function authenticate() {
-    if (state.token) {
-      try {
-        const result = (await call('auth.resume', { token: state.token })) as { deviceId?: unknown }
-        state.deviceId = String(result.deviceId || state.deviceId || '')
-        return
-      } catch (error) {
-        if ((error as RelayCallError).code !== 'invalid_token') throw error
-        // 끝난 토큰 — relay 가 그 기기와 쌍을 지웠다. 새 기기로 다시 로그인하고 허용 목록도 비운다
-        log('[mobile-relay] 세션이 끝나 새로 로그인해요 — 허용한 기기를 비워요')
-        state = { token: null, deviceId: null, peers: {} }
-      }
+  // 저장한 토큰으로만 붙는다(로그인은 웹 — signIn). 끝난 토큰이면 relay 가 그 기기와 쌍을 지웠다 → 로그아웃
+  async function authenticate(): Promise<boolean> {
+    if (!state.token) return false
+    try {
+      const result = (await call('auth.resume', { token: state.token })) as { deviceId?: unknown; account?: unknown }
+      state.deviceId = String(result.deviceId || state.deviceId || '')
+      state.account = textOrNull(result.account) || state.account
+      return true
+    } catch (error) {
+      if ((error as RelayCallError).code !== 'invalid_token') throw error
+      signedOutByRelay('expired')
+      return false
     }
-    const result = (await call('auth.login', { ...deps.login, kind: 'mac' })) as { token?: unknown; deviceId?: unknown }
-    state.token = String(result.token || '')
-    state.deviceId = String(result.deviceId || '')
-    saveState()
   }
 
   function clearConnection() {
@@ -341,14 +435,12 @@ export function createMobileRelay(deps: RelayDeps) {
     }
     for (const peer of [...sessions.keys()]) stopSession(peer, 'relay_closed')
     // relay 는 끊긴 쪽의 연결 요청을 취소한다 — 다시 붙으면 앱이 새로 요청한다
-    if (pendingPairs.size) {
-      pendingPairs.clear()
-      writePending()
-    }
+    pendingPairs.clear()
+    changed()
   }
 
   function scheduleReconnect() {
-    if (stopped || replaced || reconnectTimer) return
+    if (stopped || replaced || reconnectTimer || !state.token) return
     const delay = backoffMs[Math.min(attempt, backoffMs.length - 1)] ?? 30000
     attempt += 1
     reconnectTimer = setTimeout(() => {
@@ -358,7 +450,7 @@ export function createMobileRelay(deps: RelayDeps) {
   }
 
   function connect() {
-    if (stopped) return
+    if (stopped || socket || !state.token) return
     let own: WebSocketLike
     try {
       own = new WebSocketImpl(deps.url)
@@ -376,16 +468,18 @@ export function createMobileRelay(deps: RelayDeps) {
       clearConnection()
       log(`[mobile-relay] relay 끊김 code=${event && event.code}`)
       if (event && event.code === 4001) replaced = true
+      if (event && event.code === CLOSE_ACCOUNT_DELETED && state.token) return signedOutByRelay('account_deleted')
       scheduleReconnect()
     }
     own.onopen = () => {
       if (socket !== own) return
       authenticate()
-        .then(() => {
-          if (socket !== own) return
+        .then((ok) => {
+          if (socket !== own || !ok) return
           authed = true
           attempt = 0
           log(`[mobile-relay] 붙음 device=${state.deviceId} 허용 기기 ${Object.keys(state.peers).length}개`)
+          changed()
           heartbeatTimer = setInterval(() => {
             call('devices.list', {}).catch(() => {
               // 답이 없으면 반쯤 끊긴 연결 — 끊고 다시 붙는다
@@ -402,18 +496,20 @@ export function createMobileRelay(deps: RelayDeps) {
 
   async function answerPair(requestId: string, accept: boolean) {
     const pending = pendingPairs.get(requestId)
-    if (!pending) throw new RelayCallError('not_found', '기다리는 연결 요청이 아니에요')
+    // 번호가 뜨기 전(열기 전)에는 허용할 수 없다
+    if (!pending || (accept && !pending.code)) throw new RelayCallError('not_found', '기다리는 연결 요청이 아니에요')
     pendingPairs.delete(requestId)
-    writePending()
+    changed()
     if (!accept) {
       await call('pair.reject', { requestId })
       return log(`[mobile-relay] 연결 거절 requestId=${requestId}`)
     }
     const result = (await call('pair.accept', { requestId })) as { peer?: unknown }
     const peer = String(result.peer || pending.from)
-    state.peers[peer] = { publicKey: pending.publicKey, addedAt: new Date().toISOString() }
+    state.peers[peer] = { publicKey: pending.publicKey, addedAt: new Date().toISOString(), label: pending.label, lastSeen: null }
     saveState()
     log(`[mobile-relay] 연결 허용 requestId=${requestId} peer=${peer}`)
+    changed()
   }
 
   return {
@@ -424,6 +520,31 @@ export function createMobileRelay(deps: RelayDeps) {
       stopped = false
       replaced = false
       connect()
+    },
+    // 웹 로그인으로 받은 토큰 — 저장하고 붙는다(로그인할 때마다 새 기기라 앞 짝은 버린다)
+    signIn(result: SignInResult) {
+      const own = socket
+      socket = null
+      clearConnection()
+      if (own) own.close()
+      state = { token: result.token, deviceId: result.deviceId, account: result.account, name: cleanLabel(result.name), peers: {} }
+      saveState()
+      replaced = false
+      attempt = 0
+      changed()
+      connect()
+    },
+    // 맥에서 로그아웃 — relay 에 로그아웃 op 는 없다(계약) · 끊고 토큰 · 짝 열쇠를 버린다
+    signOut() {
+      const own = socket
+      socket = null
+      clearConnection()
+      if (own) own.close()
+      if (reconnectTimer) clearTimeout(reconnectTimer)
+      reconnectTimer = null
+      forget()
+      log('[mobile-relay] 로그아웃')
+      changed()
     },
     async stop() {
       stopped = true
@@ -441,30 +562,14 @@ export function createMobileRelay(deps: RelayDeps) {
       stopSession(peer, 'removed_here')
       delete state.peers[peer]
       saveState()
+      changed()
       await call('pair.remove', { peer }).catch((error) => {
         if ((error as RelayCallError).code !== 'not_found') throw error
       })
     },
-    pending: () => [...pendingPairs.values()].map(({ requestId, from, code, at }) => ({ requestId, from, code, at })),
+    pending: pendingView,
     peers: () => Object.keys(state.peers),
-    status: () => ({ connected: authed, deviceId: state.deviceId, sessions: [...sessions.keys()] }),
+    devices: (): PeerView[] => Object.entries(state.peers).map(([peer, record]) => ({ peer, label: record.label, online: sessions.has(peer), lastSeen: record.lastSeen })),
+    status: () => ({ connected: authed, signedIn: Boolean(state.token), deviceId: state.deviceId, account: state.account, name: state.name, sessions: [...sessions.keys()] }),
   }
 }
-
-// 개발용 허용 길 — scripts/mobile-pair.js 가 상태 폴더에 적은 답(pair-answer.json)을 0.5초마다 읽어 허용/거절한다. 격리 시험 앱에서만 부른다
-export function watchPairAnswers(relay: ReturnType<typeof createMobileRelay>, dir: string, everyMs = 500): () => void {
-  const file = path.join(dir, ANSWER_FILE)
-  const timer = setInterval(() => {
-    const answer = readJson(file)
-    if (!answer) return
-    fs.rmSync(file, { force: true })
-    const requestId = String(answer.requestId || '')
-    const accept = answer.answer === 'accept'
-    if (!requestId || (!accept && answer.answer !== 'reject')) return
-    relay[accept ? 'accept' : 'reject'](requestId).catch((error) => console.log(`[mobile-relay] 답 실패 requestId=${requestId} code=${(error as RelayCallError).code}`))
-  }, everyMs)
-  timer.unref()
-  return () => clearInterval(timer)
-}
-
-export const PAIR_FILES = { pending: PENDING_FILE, answer: ANSWER_FILE }

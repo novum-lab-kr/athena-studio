@@ -18,7 +18,6 @@ const VECTOR = {
   macEphemeral: '5869aff450549732cbaaed5e5df9b30a6da31cb0e5742bad5ad4a1a768f1a67b',
   appStatic: '64b101b1d0be5a8704bd078f9895001fc03e8e9f9522f188dd128d9846d48466',
   appEphemeral: '244fe3b963e899dd295baffce248d3530f3a9a7479ba063002680ebfe7adad49',
-  confirmCode: '056221',
   appToMac: '7c3f64b85a5819d8239cf97b4a9452b7e567e328f5781e6a8dad50433f81f6d7',
   macToApp: 'c22b64ba7c2040121569c5522132ca9a4b909c4d6237a6a8c5d4f25534797069',
   // 맥 → 앱 봉인(seq 0 · 1) — 평문 PLAIN · base64(seq 8B ‖ XChaCha20-Poly1305(평문, AAD INFO, nonce 16B 0 ‖ seq))
@@ -39,13 +38,12 @@ function sessionPair() {
   return { macStatic, macEphemeral, appStatic, appEphemeral, mac, app }
 }
 
-test('고정 벡터 — 공개 열쇠 · 확인 숫자 · 세션 열쇠(양쪽이 같은 값) · 봉인', () => {
+test('고정 벡터 — 공개 열쇠 · 세션 열쇠(양쪽이 같은 값) · 봉인', () => {
   const keys = sessionPair()
   assert.equal(hex(keys.macStatic.publicKey), VECTOR.macStatic)
   assert.equal(hex(keys.macEphemeral.publicKey), VECTOR.macEphemeral)
   assert.equal(hex(keys.appStatic.publicKey), VECTOR.appStatic)
   assert.equal(hex(keys.appEphemeral.publicKey), VECTOR.appEphemeral)
-  assert.equal(mobileCrypto.confirmCode(keys.macStatic.publicKey, keys.appStatic.publicKey), VECTOR.confirmCode)
   assert.equal(hex(keys.mac.receive), VECTOR.appToMac)
   assert.equal(hex(keys.app.send), VECTOR.appToMac)
   assert.equal(hex(keys.mac.send), VECTOR.macToApp)
@@ -55,7 +53,7 @@ test('고정 벡터 — 공개 열쇠 · 확인 숫자 · 세션 열쇠(양쪽�
   assert.equal(sealer.seal(VECTOR.plain), VECTOR.sealed1)
 })
 
-test('확인 숫자 · 세션 열쇠를 node:crypto 로 따로 계산해도 같다(libsodium 과 표준 X25519 · HKDF 가 맞물리는지)', () => {
+test('세션 열쇠를 node:crypto 로 따로 계산해도 같다(libsodium 과 표준 X25519 · HKDF 가 맞물리는지)', () => {
   // 원시 X25519 비밀 열쇠 → PKCS#8 DER(고정 머리 16B)
   const nodeKey = (raw) => crypto.createPrivateKey({ key: Buffer.concat([Buffer.from('302e020100300506032b656e04220420', 'hex'), Buffer.from(raw)]), format: 'der', type: 'pkcs8' })
   const nodePublic = (raw) => crypto.createPublicKey({ key: Buffer.concat([Buffer.from('302a300506032b656e032100', 'hex'), Buffer.from(raw)]), format: 'der', type: 'spki' })
@@ -68,8 +66,37 @@ test('확인 숫자 · 세션 열쇠를 node:crypto 로 따로 계산해도 같�
   const okm = Buffer.from(crypto.hkdfSync('sha256', ikm, Buffer.concat([Buffer.from(VECTOR.macEphemeral, 'hex'), appEphemeral]), 'athena-mobile v1', 64))
   assert.equal(okm.subarray(0, 32).toString('hex'), VECTOR.appToMac)
   assert.equal(okm.subarray(32).toString('hex'), VECTOR.macToApp)
-  const digest = crypto.createHash('sha256').update(Buffer.from(VECTOR.macStatic, 'hex')).update(appStatic).digest()
-  assert.equal(String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0'), VECTOR.confirmCode)
+})
+
+// 인증번호 미리 약속 v1(계획서 4-7) — M = 0x01×32 · A = 0x02×32 · Nm = 0x03×32 · Na = 0x04×32. 앱 시험도 같은 값을 내야 한다
+const PAIR_VECTOR = {
+  commit: 'f079267743c151464684038c88296897a759b96edbe3529055628ad0e245f308',
+  code: '689437',
+}
+
+test('인증번호 미리 약속 — 고정 벡터(node:crypto 로 따로 계산한 값) · 난수가 하나만 달라도 번호가 바뀐다', () => {
+  const same = (value) => new Uint8Array(32).fill(value)
+  assert.equal(hex(mobileCrypto.pairCommit(same(1), same(2), same(3))), PAIR_VECTOR.commit)
+  assert.equal(mobileCrypto.pairCode(same(1), same(2), same(4), same(3)), PAIR_VECTOR.code)
+  // 앱 난수 · 맥 난수 자리를 바꾸면 다른 값(순서가 정해져 있다)
+  assert.notEqual(mobileCrypto.pairCode(same(1), same(2), same(3), same(4)), PAIR_VECTOR.code)
+  const fresh = mobileCrypto.newPairNonce()
+  assert.equal(fresh.length, 32)
+  assert.notEqual(hex(fresh), hex(mobileCrypto.newPairNonce()))
+})
+
+test('pair.data — 약속 · 난수 · 열기만 풀고, 32B 가 아닌 값 · 다른 판 · 모르는 종류 · 너무 긴 글은 null', () => {
+  const nonce = new Uint8Array(32).fill(7)
+  const encoded = mobileCrypto.encodePairData({ pc: 'nonce', v: 1, n: mobileCrypto.toBase64(nonce) })
+  assert.deepEqual(mobileCrypto.decodePairData(encoded), { kind: 'nonce', value: nonce })
+  const commit = mobileCrypto.decodePairData(mobileCrypto.encodePairData({ pc: 'commit', v: 1, c: mobileCrypto.toBase64Url(nonce) }))
+  assert.equal(commit && commit.kind, 'commit')
+  const raw = (value) => Buffer.from(JSON.stringify(value)).toString('base64')
+  assert.equal(mobileCrypto.decodePairData(raw({ pc: 'reveal', v: 1, n: mobileCrypto.toBase64(new Uint8Array(31)) })), null)
+  assert.equal(mobileCrypto.decodePairData(raw({ pc: 'reveal', v: 2, n: mobileCrypto.toBase64(nonce) })), null)
+  assert.equal(mobileCrypto.decodePairData(raw({ pc: 'hello', v: 1, n: mobileCrypto.toBase64(nonce) })), null)
+  assert.equal(mobileCrypto.decodePairData('A'.repeat(513)), null)
+  assert.equal(mobileCrypto.decodePairData(42), null)
 })
 
 test('봉인/열기 — 순서대로 열리고, 같은 것 다시 · 순번 역행 · 바꾼 암호문 · 다른 방향 열쇠는 null', () => {
