@@ -1109,13 +1109,13 @@ app.whenReady().then(async () => {
   void startMobileDevIfAsked()
 })
 
-// 모바일 — 격리 시험 앱에서 relay 주소를 줬을 때만(src/main/mobile-dev.mts). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐 · 프로필도 숨김)
+// 모바일 — 개발판에 relay 주소를 줬을 때만(src/main/mobile-dev.mts · 격리 집이든 진짜 스튜디오 집이든). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐 · 프로필도 숨김)
 type MobileDev = Awaited<ReturnType<typeof loadMobileDev>>
 let mobileDev: NonNullable<MobileDev> | null = null
 const mobileLinks: unknown[] = [] // 길이 켜지기 전에 온 athena:// — 켜지면 넘긴다(그때까지 값은 로그에 남기지 않는다)
 async function loadMobileDev() {
   const { mobileDevOptions, startMobileDev, MOBILE_DEV_SKIPPED } = await import('./main/mobile-dev.mts')
-  const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, homeOverride: STUDIO_HOME_OVERRIDE })
+  const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, home: STUDIO.root })
   if (!options) {
     console.log(MOBILE_DEV_SKIPPED)
     return null

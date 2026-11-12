@@ -17,7 +17,7 @@ npm start     # 개발용 Athena.app(.dev-app/ · git 무시)으로 켠다 — �
 - `npm install`(postinstall)은 node-pty `spawn-helper` 실행 권한을 고치고(`scripts/fix-spawn-helper.js`), Electron.app 을 `.dev-app/Athena.app` 으로 복제해 이름 · 아이콘을 바꾸고 다시 서명한다(`scripts/dev-app.js` — Electron 버전 · 아이콘이 바뀌면 `npm start` 때 다시 만든다, 못 만들면 Electron 이름 그대로 켠다).
 - `npm start` 는 켜기 전에 이 레포 `athena/` 의 **커밋된** 기록으로 코어 번들(`.dev-app/resources/athena-core.bundle`)을 만들고, 화면(`src/renderer`)을 Vite 로 `dist/renderer/`(git 무시)에 빌드한다(`vite.config.mts` · 1초 안쪽 · 손으로는 `npm run build:renderer`). 화면을 고쳤으면 앱을 다시 켠다(따로 지켜보며 다시 빌드하지 않는다). 빌드가 실패하면 이전 빌드로 켜고 경고하고, 이전 빌드도 없으면 켜지 않는다. 배포판은 아래 "배포판 (맥)".
 - 처음 켜면 묻지 않고 번들을 스튜디오 집에 풀어 쓴다. 안 됐을 때만 [다시 시도] · [이미 받은 아테나 폴더 고르기…] 가 뜬다.
-- 모바일 relay(개발용 길)는 개발판 + 격리 집에서만 켜진다 — `ATHENA_STUDIO_HOME=<임시> ATHENA_STUDIO_MOBILE_RELAY=<주소> npm start`. 주소는 루프백 `ws://127.0.0.1:<포트>/ws` 또는 운영 relay `wss://relay.athena.novum-lab.com/ws` 와 정확히 같은 것만(`src/main/mobile-dev.mts` `allowedRelay` — 포트 · 경로 · 쿼리 · 계정이 붙으면 켜지 않는다). 운영 relay 로 시험하면 진짜 계정 · 기기 기록이 생기니 끝나면 계정을 지운다.
+- 모바일 relay(개발용 길)는 개발판에서 주소를 줬을 때만 켜진다(배포판은 늘 꺼짐) — `ATHENA_STUDIO_MOBILE_RELAY=<주소> npm start`. 열쇠 · 세션 토큰은 스튜디오 집 `mobile/`(0600)에 둔다 — 격리하려면 `ATHENA_STUDIO_HOME=<임시>` 를 같이 준다(그 집 아래 `mobile/`). 주소는 루프백 `ws://127.0.0.1:<포트>/ws` 또는 운영 relay `wss://relay.athena.novum-lab.com/ws` 와 정확히 같은 것만(`src/main/mobile-dev.mts` `allowedRelay` — 포트 · 경로 · 쿼리 · 계정이 붙으면 켜지 않는다). 운영 relay 로 시험하면 진짜 계정 · 기기 기록이 생기니 끝나면 계정을 지운다.
 
 ## 배포판 (맥)
 ```sh
