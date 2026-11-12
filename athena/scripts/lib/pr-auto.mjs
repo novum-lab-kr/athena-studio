@@ -512,17 +512,20 @@ export const needsReview = (planText, repo, number, headSha) => {
 // ── 보안 검토로 멈춘 같은 HEAD 이어 가기(2026-11-12 PR #293 — 줄을 지우면 라운드 1 부터 다시 리뷰해 승인된 커밋에 새 지적이 붙었다) ─────────
 // "보안 검토 때문에 멈춤 — <통과 단계>이지만 …" 줄의 HEAD 에 그 뒤 security-reviewer 결과(높음 0)가 남으면 리뷰를 다시 하지 않고 같은 라운드에서 머지 단계로.
 // 결과가 이 HEAD 것이고(@SHA) 멈춘 줄 시각 이후에 적혔을 때만 — 높음이 남은 결과는 고친 커밋(새 HEAD)이 와야 다시 본다(같은 HEAD 를 되풀이하지 않게).
-// 현황판(server.mjs)은 브랜치를 모르니 레포 · SHA 로만 찾는다
+// 같은 HEAD 결과가 여럿이면 마지막 줄 하나로 판정한다(옛 높음 0 뒤에 높음 1 이 오면 이어 가지 않는다 — 머지 관문 securityResultFor 도 마지막 줄).
+// 현황판(server.mjs)은 브랜치를 모르니 레포 · SHA 로만 찾는다 — SHA 가 같으면 같은 커밋이라 브랜치가 갈려도 같은 코드다
 export const SECURITY_STOPPED = '보안 검토 때문에 멈춤'
 const STAMP = /\d{4}-\d{2}-\d{2} \d{2}:\d{2}/
+const SECURITY_HEAD = /^- Security result:\s*높음 (\d+) · 중간 \d+ @([0-9a-f]{6,40})/
 export const securityResumable = (planText, known, headSha) => {
   if (!known?.result.startsWith(SECURITY_STOPPED) || !String(headSha).startsWith(known.sha)) return false
   const stopped = known.stamp.match(STAMP)?.[0] ?? ''
-  return String(planText ?? '').split('\n').some((line) => {
-    if (!/^- Security result:/.test(line) || !`${line} `.includes(`📦 ${known.repo} · 🌿 `)) return false
-    const hit = line.match(/^- Security result:\s*높음 (\d+) · 중간 \d+ @([0-9a-f]{6,40})/)
-    return Boolean(hit) && Number(hit[1]) === 0 && String(headSha).startsWith(hit[2]) && (line.match(STAMP)?.[0] ?? '') >= stopped
-  })
+  const last = String(planText ?? '').split('\n').filter((line) => {
+    const hit = line.match(SECURITY_HEAD)
+    return Boolean(hit) && `${line} `.includes(`📦 ${known.repo} · 🌿 `) && String(headSha).startsWith(hit[2])
+  }).at(-1)
+  if (!last) return false
+  return Number(last.match(SECURITY_HEAD)?.[1]) === 0 && (last.match(STAMP)?.[0] ?? '') >= stopped
 }
 // 멈춘 줄의 통과 단계로 머지 단계 인자를 되살린다 — { summary, reviewOff, takeover } · 모르는 모양이면 null(이어 가지 않는다)
 export const securityResumeOf = (result, fast) => {

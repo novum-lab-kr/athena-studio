@@ -1033,6 +1033,11 @@ grep -q '머지 단계를 이어 간다' "$TMP/merge.out" && ! grep -q '리뷰�
 : > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 1 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
 " merge_case "보안 — 멈춘 HEAD 결과가 높음 1 → 이어 가지 않음(고친 커밋을 기다린다)" ', "autoMergeConfirm": false' no '보안 검토 때문에 멈춤' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
 grep -q '이미 봤거나' "$TMP/merge.out" && echo "  ✔ 높음이 남은 결과면 같은 HEAD 를 다시 돌지 않는다" || { echo "  ✖ 높음 결과에 다시 돎"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+# 같은 HEAD 에 옛 높음 0 뒤 새 높음 1 이 오면 마지막 줄로 판정 — 이어 가지 않는다(PR #294 리뷰 — some() 이 옛 결과를 골랐다)
+: > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 0 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 옛 결과
+- Security result: 높음 1 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 새 결과
+" merge_case "보안 — 같은 HEAD 옛 높음 0 · 새 높음 1 → 마지막 줄로 이어 가지 않음" ', "autoMergeConfirm": false' no '보안 검토 때문에 멈춤' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+grep -q '이미 봤거나' "$TMP/merge.out" && ! grep -q '머지 단계를 이어 간다' "$TMP/merge.out" && echo "  ✔ 마지막 결과(높음 1)로 판정 — 옛 높음 0 을 고르지 않는다" || { echo "  ✖ 옛 결과로 이어 감"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
 # 처리기가 잡은 채로 죽은 파일(<이름>.json.<죽은 pid>)은 원래 이름으로 돌려놓는다(산 pid 것은 그대로) — 처리기 시작 · --kick 이 부른다
 mkdir -p "$TMP/queue-confirm/confirm"; echo '{}' > "$TMP/queue-confirm/confirm/web-8.json.999999"; echo '{}' > "$TMP/queue-confirm/confirm/web-9.json.$$"
