@@ -190,8 +190,39 @@ test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · �
     assert.equal(reply.result.todayTop, null)
     assert.deepEqual(reply.result.mac, { name: null })
     assert.deepEqual(reply.result.devices, [])
+    assert.deepEqual(reply.result.work, { boardUp: false, boardError: null, doing: [], done: [] }, '작업 목록을 안 넘기면 빈 값')
     assert.deepEqual(reply.result.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', working: 0, question: 0 }])
     assert.equal(env.daemon.attached().length, 0, '묻기만 해서는 붙은 앱이 되지 않는다(fitTab · open-url 에 섞이지 않게)')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('snapshot.work — 맥 [작업] 과 같은 작업 목록(doing · done)을 넘긴 그대로 싣는다 · 부를 때마다 새로 읽는다', async () => {
+  const item = { id: 'plans/task/a.md', title: '폰 작업 목록', line: '시험 추가 · 1/4', state: 'work', grade: 'light', maintenance: false, agents: ['p1'], mtime: 1000, doneAt: 1000 }
+  let work = { boardUp: true, boardError: null, doing: [item], done: [] }
+  let reads = 0
+  const env = await setup({
+    work: async () => {
+      reads += 1
+      if (!work) throw new Error('boom')
+      return work
+    },
+  })
+  try {
+    const first = await env.ask('snapshot')
+    assert.deepEqual(first.result.work, { boardUp: true, boardError: null, doing: [item], done: [] })
+    // 현황판을 못 띄웠으면 — 빈 목록 + boardUp:false + 이유 한 줄
+    work = { boardUp: false, boardError: '현황판을 띄우지 못했어요', doing: [], done: [] }
+    const second = await env.ask('snapshot')
+    assert.deepEqual(second.result.work, { boardUp: false, boardError: '현황판을 띄우지 못했어요', doing: [], done: [] })
+    assert.equal(reads, 2)
+    // 읽다 던져도 snapshot 은 간다
+    work = null
+    const third = await env.ask('snapshot')
+    assert.equal(third.ok, true)
+    assert.deepEqual(third.result.work, { boardUp: false, boardError: null, doing: [], done: [] })
+    assert.deepEqual(third.result.requests, [{ id: 'r-20261111-090000-abcd', title: '질문' }])
   } finally {
     await env.cleanup()
   }

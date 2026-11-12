@@ -126,6 +126,7 @@ type MainCalls = {
   paneContextMenu(point: Point, title?: string): Promise<unknown>
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
+  workPeek(options?: { launch?: boolean }): Promise<unknown>
   refreshRequests(): Promise<unknown>
   answerRequest(id: string, answer: { choice: string; text: string; rev?: unknown }, by?: 'app' | 'mobile'): Promise<unknown>
   redeliverRequest(id: string): Promise<unknown>
@@ -519,7 +520,11 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     reloadKey,
     language: () => language,
     requestsPollMs: REQUESTS_POLL_MS,
-    trayRequestsChanged: (target) => trayRequestsChanged(target as PackWindow),
+    trayRequestsChanged: (target) => {
+      trayRequestsChanged(target as PackWindow)
+      // 폰은 앞 창의 요청을 본다 — 앞 창 것이 바뀌었을 때만 알린다(src/main/mobile-dev.mts requestsChanged)
+      if (mobileDev && target === frontCtx()) mobileDev.requestsChanged()
+    },
     appConfig: () => config,
     saveAppConfig: (next) => {
       config = next as AppConfig

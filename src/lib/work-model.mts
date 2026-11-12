@@ -94,6 +94,79 @@ export function workList(cards: unknown, requests: unknown = [], now: number = D
   return { doing, done, counts: { doing: doing.length } }
 }
 
+// 폰(모바일 브리지 snapshot.work)에 싣는 작업 목록 — 맥 [작업] 팝업과 같은 workList 결과에서 폰에 필요 없는 칸(html 경로)만 뺀다.
+// agents 는 묶인 pane id(문자열)만. boardUp · boardError 는 createWorkPeek 가 붙인다(현황판을 못 띄웠으면 false + 이유 한 줄)
+export type MobileWorkItem = Omit<WorkItem, 'html' | 'agents'> & { agents: string[] }
+export type MobileWork = { boardUp: boolean; boardError: string | null; doing: MobileWorkItem[]; done: MobileWorkItem[] }
+const mobileItem = (item: WorkItem): MobileWorkItem => ({
+  id: item.id,
+  title: item.title,
+  line: item.line,
+  state: item.state,
+  grade: item.grade,
+  maintenance: item.maintenance,
+  agents: item.agents.filter((agent): agent is string => typeof agent === 'string'),
+  mtime: item.mtime,
+  doneAt: item.doneAt,
+})
+export function mobileWork(cards: unknown, requests: unknown = [], now: number = Date.now()): Pick<MobileWork, 'doing' | 'done'> {
+  const list = workList(cards, requests, now)
+  return { doing: list.doing.map(mobileItem), done: list.done.map(mobileItem) }
+}
+// 현황판이 없을 때(못 띄움 · 못 읽음 · 앞 창 없음) — 목록은 비우고 이유가 있으면 한 줄
+export const noMobileWork = (boardError: string | null = null): MobileWork => ({ boardUp: false, boardError, doing: [], done: [] })
+
+// 띄운 것을 확인한 뒤 이만큼은 ensure(pack status · lsof)를 다시 돌리지 않고 읽기만 한다 — 그 사이 꺼졌으면(못 읽음) 바로 다시 띄운다
+export const WORK_PEEK_REUSE_MS = 30000
+type WorkPeekDeps = {
+  dir: () => string | null // 지금 본체(팩을 바꾸면 달라진다)
+  ensure: () => Promise<{ ok: boolean; error?: string }> // 현황판을 찾거나 띄운다(맥 [작업] 과 같은 것)
+  cards: () => Promise<unknown[] | null> // /api/state 의 cards — 못 읽으면 null
+  requests: () => unknown
+  now?: () => number
+  reuseMs?: number
+}
+// 폰용 작업 목록 읽기 — 겹쳐 부르면 도는 것 하나를 같이 기다린다. 실패는 던지지 않고 boardUp:false(snapshot 전체가 실패하지 않게)
+// launch:false 면 띄우지 않고 지금 떠 있는 현황판만 읽는다(주기 확인 createWorkWatch 용 — 맥 트레이처럼)
+export function createWorkPeek(deps: WorkPeekDeps): (options?: { launch?: boolean }) => Promise<MobileWork> {
+  const now = deps.now || (() => Date.now())
+  const reuseMs = deps.reuseMs ?? WORK_PEEK_REUSE_MS
+  let busy: Promise<MobileWork> | null = null
+  let ensured: { dir: string | null; at: number } | null = null
+  async function peek(): Promise<MobileWork> {
+    const dir = deps.dir()
+    const fresh = ensured !== null && ensured.dir === dir && now() - ensured.at < reuseMs
+    let cards = fresh ? await deps.cards() : null
+    if (!cards) {
+      ensured = null
+      const board = await deps.ensure()
+      if (!board.ok) return noMobileWork(board.error || null)
+      cards = await deps.cards()
+      if (cards) ensured = { dir, at: now() }
+    }
+    // 읽는 사이 팩을 바꿨으면 지난 팩 카드를 보내지 않는다
+    if (!cards || dir !== deps.dir()) return noMobileWork()
+    return { boardUp: true, boardError: null, ...mobileWork(cards, deps.requests(), now()) }
+  }
+  async function look(): Promise<MobileWork> {
+    const dir = deps.dir()
+    const cards = await deps.cards()
+    if (!cards || dir !== deps.dir()) return noMobileWork()
+    return { boardUp: true, boardError: null, ...mobileWork(cards, deps.requests(), now()) }
+  }
+  return (options) => {
+    if (options && options.launch === false) return look().catch(() => noMobileWork())
+    if (!busy) {
+      busy = peek()
+        .catch(() => noMobileWork())
+        .finally(() => {
+          busy = null
+        })
+    }
+    return busy
+  }
+}
+
 // ── 상세 — 계획서 md 에서 몇 줄만 ────────────────────────────────────────
 const plain = (value: unknown): string => String(value || '').replace(/\*\*/g, '').replace(/`/g, '').trim()
 function section(text: string, heading: string): string[] {
@@ -157,4 +230,74 @@ export function planDetail(text: unknown, templateLines: string[] = []): PlanDet
 export function diagramIndexFile(language: string, exists: (file: string) => boolean): string {
   const localized = `index.${language}.html`
   return language !== 'ko' && /^[a-z]{2}$/.test(language) && exists(localized) ? localized : 'index.html'
+}
+
+// 폰에 작업 목록이 바뀐 것을 알리는 주기 — 맥 트레이가 현황판 /api/state 를 읽는 간격(src/main/tray.mts 15초)과 같게
+export const WORK_WATCH_MS = 15000
+type WorkListener = { changed(parts: string[]): void }
+type WorkWatchDeps = {
+  read: () => Promise<MobileWork> // 띄우지 않고 읽은 지금 목록
+  everyMs?: number
+  setTimer?: (run: () => void, ms: number) => unknown
+  clearTimer?: (timer: unknown) => void
+}
+// 연결된 폰(브리지)이 있는 동안에만 목록을 주기로 읽어, 실제로 달라졌을 때만 changed ['work'] 를 보낸다.
+// 요청이 바뀐 것은 맥이 이미 아니(work.mts publishRequests) 타이머 없이 바로 ['requests', 'work']
+export function createWorkWatch(deps: WorkWatchDeps) {
+  const everyMs = deps.everyMs ?? WORK_WATCH_MS
+  const setTimer = deps.setTimer || ((run, ms) => setInterval(run, ms))
+  const clearTimer = deps.clearTimer || ((timer) => clearInterval(timer as NodeJS.Timeout))
+  const listeners = new Set<WorkListener>()
+  let timer: unknown = null
+  let last: string | null = null // 마지막으로 본 목록(null = 아직 기준 없음 — 처음 읽은 것은 알리지 않는다)
+  let round = 0 // 폰이 모두 끊겼다 다시 붙으면 앞 읽기의 결과를 버린다
+  let reading = false
+  const notify = (parts: string[]) => {
+    for (const listener of [...listeners]) {
+      try {
+        listener.changed(parts)
+      } catch {
+        // 한 기기에 못 보내도 다른 기기는 받는다
+      }
+    }
+  }
+  // quiet — 방금 알린 뒤 기준만 새로 잡는다(같은 변화를 두 번 알리지 않게)
+  async function check(quiet: boolean): Promise<void> {
+    if (reading) return
+    reading = true
+    const mine = round
+    try {
+      const key = JSON.stringify(await deps.read())
+      if (mine !== round || !listeners.size) return
+      if (!quiet && last !== null && key !== last) notify(['work'])
+      last = key
+    } catch {
+      // 못 읽은 주기는 건너뛴다
+    } finally {
+      reading = false
+    }
+  }
+  return {
+    add(listener: WorkListener) {
+      listeners.add(listener)
+      if (timer !== null) return
+      last = null
+      timer = setTimer(() => void check(false), everyMs)
+      void check(true)
+    },
+    remove(listener: WorkListener) {
+      listeners.delete(listener)
+      if (listeners.size || timer === null) return
+      clearTimer(timer)
+      timer = null
+      last = null
+      round += 1
+    },
+    requestsChanged() {
+      if (!listeners.size) return
+      notify(['requests', 'work'])
+      void check(true)
+    },
+    watching: () => timer !== null,
+  }
 }

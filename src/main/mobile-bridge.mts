@@ -19,6 +19,8 @@ import crypto from 'node:crypto'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 import { mobileError } from './mobile-log.mts'
+import { noMobileWork } from '../lib/work-model.mts'
+import type { MobileWork } from '../lib/work-model.mts'
 
 type Connection = NonNullable<Awaited<ReturnType<typeof daemonClient.peekDaemon>>>
 type DaemonPaths = Parameters<typeof daemonClient.peekDaemon>[0]['paths']
@@ -57,7 +59,7 @@ export type BridgeDeps = {
   daemonPaths: () => DaemonPaths
   transport: Transport
   inputAllowed: () => boolean // "폰 입력 허용" — 꺼지면 pane.input · pane.image · request.answer · decision.answer · repo.set · pack.open 을 거절
-  requests: () => unknown[] | Promise<unknown[]> // 확인 요청 목록(열린 것)
+  requests: () => unknown[] | Promise<unknown[]> // 확인 요청 목록(open · answered — 맥 [작업] 과 같은 목록)
   servers: () => unknown | Promise<unknown> // 서버 상태
   events: () => EventRow[] | Promise<EventRow[]> // 7일 머지 원천
   answerRequest: (id: string, answer: RequestAnswer) => Promise<AnswerResult>
@@ -74,6 +76,7 @@ export type BridgeDeps = {
   bodyPacks?: () => Record<string, string> // 본체 실제 경로 → 팩 id(pack list packs[].body) — pane 이 어느 팩 것인지
   mergeDetails?: MergeDetails // 머지 상세 캐시(createMergeDetails)
   mac?: () => { name: string | null }
+  work?: () => MobileWork | Promise<MobileWork> // 맥 [작업] 과 같은 작업 목록(doing · done · 현황판을 못 띄웠으면 boardUp:false + boardError)
   devices?: () => DeviceView[]
   serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
   control?: PaneControl // 제어 주인(D9) — 기기끼리 나눠 쓴다. 없으면 이 브리지 혼자 쓰는 것
@@ -928,12 +931,21 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (!stopped) sizeTimer = setTimeout(() => void pollSizes(), deps.sizePollMs ?? SIZE_POLL_MS)
   }
 
+  // 작업 목록 — 안 넘긴 부르는 쪽 · 읽다 실패한 것은 빈 값(snapshot 전체를 실패시키지 않는다)
+  const readWork = async (): Promise<MobileWork> => {
+    try {
+      return deps.work ? await deps.work() : noMobileWork()
+    } catch {
+      return noMobileWork()
+    }
+  }
+
   async function snapshot() {
     const connection = await connectControl()
     const listed = (await connection.call('pane list')) as { panes?: ListedPane[] } | null
     // 범위 없는 state — 작업 공간마다 본체(body)가 실려 pane 이 어느 팩 것인지 안다(못 읽으면 workspace · pack 만 null)
     const state = (await connection.call('state').catch(() => null)) as StateWorkspaces
-    const [requests, servers, events] = await Promise.all([deps.requests(), deps.servers(), deps.events()])
+    const [requests, servers, events, work] = await Promise.all([deps.requests(), deps.servers(), deps.events(), readWork()])
     if (!sizeWatching) {
       sizeWatching = true
       void pollSizes()
@@ -944,6 +956,7 @@ export function createMobileBridge(deps: BridgeDeps) {
     const feed = mergeFeed(merges, details, now())
     return {
       requests,
+      work,
       panes,
       otherPacks: otherPackCounts(panes, deps.packs()),
       merges: feed.merges,
@@ -1175,7 +1188,7 @@ export function createMobileBridge(deps: BridgeDeps) {
   transport.onMessage((message) => void handle(message))
 
   return {
-    // 맥 쪽에서 바뀐 칸을 알린다(요청 폴더 · 머지 · 서버) — 폰은 그 칸만 다시 snapshot 한다
+    // 맥 쪽에서 바뀐 칸을 알린다(요청 → ['requests', 'work'] · 작업 목록 → ['work'] — mobile-dev workWatch) — 폰은 다시 snapshot 한다
     changed(parts: string[]) {
       emit({ event: 'changed', parts })
     },

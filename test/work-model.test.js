@@ -136,3 +136,176 @@ test('다이어그램 목록: 앱 언어 목록이 있으면 그것 · 없거나
   assert.equal(work.diagramIndexFile('zh', exists), 'index.html')
   assert.equal(work.diagramIndexFile('../x', () => true), 'index.html')
 })
+
+test('폰 목록(mobileWork): 맥 [작업] 과 같은 묶음 · 순서 · 칸 — html 경로만 빼고 agents 는 pane id 문자열만', () => {
+  const cards = [
+    plan('plans/task/work.md', { working: true, html: '/abs/plans/task/work.html', agents: ['p1', { id: 'p9' }, 7], next: '시험 추가', progress: { checked: 1, total: 4 } }),
+    plan('plans/feature/wait.md', { grade: 'formal', scope: 'hermes' }),
+    plan('plans/task/none.md'),
+    plan('plans/task/done.md', { status: 'done', column: 'done', doneAt: NOW - 5000, html: '/abs/plans/task/done.html' }),
+  ]
+  const requests = [{ plan: 'plans/feature/wait.md', state: 'answered' }]
+  const mac = work.workList(cards, requests, NOW)
+  const phone = work.mobileWork(cards, requests, NOW)
+  assert.deepEqual(phone.doing.map((item) => item.id), mac.doing.map((item) => item.id))
+  assert.deepEqual(phone.done.map((item) => item.id), mac.done.map((item) => item.id))
+  assert.deepEqual(phone.doing, [
+    { id: 'plans/feature/wait.md', title: 'plans/feature/wait.md', line: '', state: 'wait', grade: 'formal', maintenance: true, agents: [], mtime: NOW - 60000, doneAt: NOW - 60000 },
+    { id: 'plans/task/work.md', title: 'plans/task/work.md', line: '시험 추가 · 1/4', state: 'work', grade: 'light', maintenance: false, agents: ['p1'], mtime: NOW - 60000, doneAt: NOW - 60000 },
+  ])
+  assert.deepEqual(phone.done, [{ id: 'plans/task/done.md', title: 'plans/task/done.md', line: '', state: 'done', grade: 'light', maintenance: false, agents: [], mtime: NOW - 60000, doneAt: NOW - 5000 }])
+  assert.equal(JSON.stringify(phone).includes('/abs/'), false, 'html 절대 경로는 싣지 않는다')
+  assert.deepEqual(work.mobileWork(null, null, NOW), { doing: [], done: [] })
+})
+
+test('폰 작업 읽기(createWorkPeek): 맥처럼 현황판을 띄워 읽는다 · 겹친 부름은 한 번 · 띄운 뒤 잠깐은 읽기만 · 꺼졌으면 다시 띄운다', async () => {
+  const cards = [plan('plans/task/work.md', { working: true })]
+  let clock = NOW, ensures = 0, reads = 0, up = false, release = null
+  const peek = work.createWorkPeek({
+    dir: () => '/body',
+    ensure: async () => {
+      ensures += 1
+      if (release) await release
+      up = true
+      return { ok: true }
+    },
+    cards: async () => {
+      reads += 1
+      return up ? cards : null
+    },
+    requests: () => [],
+    now: () => clock,
+    reuseMs: 1000,
+  })
+  // 겹친 부름 셋 — 띄우기 한 번을 같이 기다린다
+  let open
+  release = new Promise((resolve) => (open = resolve))
+  const together = [peek(), peek(), peek()]
+  open()
+  const results = await Promise.all(together)
+  assert.equal(ensures, 1)
+  for (const result of results) assert.deepEqual(result.doing.map((item) => item.id), ['plans/task/work.md'])
+  assert.equal(results[0].boardUp, true)
+  assert.equal(results[0].boardError, null)
+  release = null
+  // 재사용 시간 안 — 띄우기(pack status)를 다시 돌리지 않고 읽기만
+  clock += 500
+  await peek()
+  assert.equal(ensures, 1)
+  // 그 사이 현황판이 꺼졌으면 바로 다시 띄운다
+  up = false
+  assert.equal((await peek()).boardUp, true)
+  assert.equal(ensures, 2)
+  // 재사용 시간이 지나면 다시 확인한다
+  clock += 1001
+  await peek()
+  assert.equal(ensures, 3)
+  assert.ok(reads >= 4)
+})
+
+test('폰 작업 읽기(createWorkPeek): 못 띄우면 던지지 않고 boardUp:false + 이유 한 줄 · 읽는 사이 팩이 바뀌면 지난 팩 카드를 안 보낸다', async () => {
+  const failed = work.createWorkPeek({ dir: () => '/body', ensure: async () => ({ ok: false, error: '포트 4814 를 다른 프로그램이 쓰고 있어요' }), cards: async () => null, requests: () => [] })
+  assert.deepEqual(await failed(), { boardUp: false, boardError: '포트 4814 를 다른 프로그램이 쓰고 있어요', doing: [], done: [] })
+  const thrown = work.createWorkPeek({ dir: () => '/body', ensure: async () => { throw new Error('boom') }, cards: async () => null, requests: () => [] })
+  assert.deepEqual(await thrown(), { boardUp: false, boardError: null, doing: [], done: [] })
+  // 띄웠다는데 못 읽음
+  const unreadable = work.createWorkPeek({ dir: () => '/body', ensure: async () => ({ ok: true }), cards: async () => null, requests: () => [] })
+  assert.deepEqual(await unreadable(), { boardUp: false, boardError: null, doing: [], done: [] })
+  let dir = '/body-a'
+  const switched = work.createWorkPeek({
+    dir: () => dir,
+    ensure: async () => ({ ok: true }),
+    cards: async () => {
+      dir = '/body-b'
+      return [plan('plans/task/a.md', { working: true })]
+    },
+    requests: () => [],
+  })
+  assert.deepEqual(await switched(), { boardUp: false, boardError: null, doing: [], done: [] })
+})
+
+test('폰 작업 읽기(createWorkPeek launch:false): 띄우지 않고 떠 있는 것만 읽는다', async () => {
+  let ensures = 0, up = false
+  const peek = work.createWorkPeek({
+    dir: () => '/body',
+    ensure: async () => {
+      ensures += 1
+      up = true
+      return { ok: true }
+    },
+    cards: async () => (up ? [plan('plans/task/work.md', { working: true })] : null),
+    requests: () => [],
+    now: () => NOW,
+  })
+  assert.deepEqual(await peek({ launch: false }), { boardUp: false, boardError: null, doing: [], done: [] })
+  assert.equal(ensures, 0)
+  up = true
+  assert.deepEqual((await peek({ launch: false })).doing.map((item) => item.id), ['plans/task/work.md'])
+  assert.equal(ensures, 0)
+})
+
+test('작업 목록 알림(createWorkWatch): 폰이 붙어 있을 때만 주기로 읽고 달라졌을 때만 changed · 요청 변화는 바로', async () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve))
+  const none = { boardUp: false, boardError: null, doing: [], done: [] }
+  let current = none, reads = 0, tick = null, cleared = 0
+  const watch = work.createWorkWatch({
+    read: async () => {
+      reads += 1
+      return current
+    },
+    setTimer: (run) => {
+      tick = run
+      return 'timer'
+    },
+    clearTimer: (timer) => {
+      assert.equal(timer, 'timer')
+      tick = null
+      cleared += 1
+    },
+  })
+  const heard = []
+  const phone = { changed: (parts) => heard.push(parts) }
+  const other = { changed: () => { throw new Error('boom') } }
+  // 붙은 폰이 없으면 타이머도 읽기도 없다 · 요청 변화도 보낼 곳이 없다
+  assert.equal(watch.watching(), false)
+  watch.requestsChanged()
+  await settle()
+  assert.equal(reads, 0)
+  // 붙으면 기준을 한 번 읽는다(알리지 않는다)
+  watch.add(other)
+  watch.add(phone)
+  await settle()
+  assert.equal(watch.watching(), true)
+  assert.equal(reads, 1)
+  assert.deepEqual(heard, [])
+  // 그대로면 조용 · 달라지면 한 번
+  tick()
+  await settle()
+  assert.deepEqual(heard, [])
+  current = { ...none, boardUp: true, doing: [{ id: 'plans/task/a.md' }] }
+  tick()
+  await settle()
+  tick()
+  await settle()
+  assert.deepEqual(heard, [['work']])
+  // 요청이 바뀌면 타이머를 기다리지 않고 바로 — 그 변화로 달라진 목록을 다음 주기에 또 알리지 않는다
+  current = { ...current, doing: [{ id: 'plans/task/a.md', state: 'wait' }] }
+  watch.requestsChanged()
+  assert.deepEqual(heard, [['work'], ['requests', 'work']])
+  await settle()
+  tick()
+  await settle()
+  assert.equal(heard.length, 2)
+  // 모두 끊기면 타이머를 끈다 · 다시 붙으면 새 기준부터
+  watch.remove(phone)
+  assert.equal(watch.watching(), true)
+  watch.remove(other)
+  assert.equal(watch.watching(), false)
+  assert.equal(cleared, 1)
+  current = none
+  watch.add(phone)
+  await settle()
+  tick()
+  await settle()
+  assert.equal(heard.length, 2)
+})
