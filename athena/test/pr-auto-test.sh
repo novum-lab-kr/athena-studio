@@ -610,6 +610,7 @@ cat > "$CORE/scripts/screen" <<'SH'
 echo "screen $*" >> "$FAKE_LOG"
 if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
 elif [ "$1" = self ] && [ -n "${FAKE_SELF_PANE:-}" ]; then echo "{\"inside\":true,\"pane_id\":\"$FAKE_SELF_PANE\"}"   # pane 안 흉내
+elif [ "$1" = self ]; then echo '{"inside":false,"pane_id":""}'   # 화면 밖 — 진짜 screen.py self 와 같은 모양(빈 답은 "못 읽음"이라 옛 --here 로 간다)
 else echo '{}'; fi
 SH
 printf '#!/bin/sh\nexit 0\n' > "$CORE/scripts/verify/reuse.sh"
@@ -867,6 +868,7 @@ cat > "$CORE/scripts/screen" <<'SH'
 if [ "$1 $2" = "pane list" ]; then echo "{\"panes\":[${FAKE_PANES:-}]}"
 elif [ "$1 $2" = "pane read" ]; then printf '%s\n' "${FAKE_PANE_TEXT:-}"   # 화면 글 — 질문 창 흉내
 elif [ "$1" = self ] && [ -n "${FAKE_SELF_PANE:-}" ]; then echo "{\"inside\":true,\"pane_id\":\"$FAKE_SELF_PANE\"}"   # pane 안 흉내(없으면 화면 밖)
+elif [ "$1" = self ]; then echo '{"inside":false,"pane_id":""}'   # 화면 밖 — 진짜 screen.py self 와 같은 모양(빈 답은 "못 읽음"이라 옛 --here 로 간다)
 # 공통 전송 경로 실패 흉내 — refuse: 데몬이 쓰기 전에 거절 · lost: 전송을 확인 못 함(scripts/screen 이 stderr 에 적는 모양)
 elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = refuse ]; then echo '{"error": "unavailable", "message": "studio pane run: 입력을 기다리는 질문이 열려 있다"}' >&2; exit 1
 elif [ "$1 $2" = "pane send-text" ] && [ "${FAKE_SEND_FAIL:-}" = lost ]; then echo '{"error": "timeout", "message": "studio pane run: 입력 전송을 확인하지 못했다 — pane 입력칸을 확인해 주세요"}' >&2; exit 1

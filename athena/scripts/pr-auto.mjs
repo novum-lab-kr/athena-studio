@@ -1003,8 +1003,11 @@ const startSecurityReview = async ({ planPath, planFile, repo, branch, sha, work
   // 자리 — pane 안(ship.sh --direct-merge 등)이면 부른 pane 옆, 밖(현황판의 pr-auto)이면 계획서 "- Lead pane:" 옆(delegate.sh --beside · 2026-11-12 PR #293 — 밖이라 못 띄워 머지가 멈췄다)
   const lead = planText.match(/^- Lead pane:[ \t]*([\w-]{1,32})[ \t]*$/m)?.[1] ?? ''
   // pane 안인지는 화면 계층에 묻는다(self — 환경 변수를 직접 읽지 않는다 · scripts/screen-lint.sh)
+  // 화면 계층이 답하지 못하면(실패 · 빈 출력 — inside 칸 없음) 옛 동작대로 --here — pane 안인지는 delegate.sh 가 가린다
+  // (PR #294 — 답 없음을 밖으로 쳐 handoff-test 의 넘기기가 멈췄다)
   const self = await screen(['self'])
-  const inPane = Boolean(self?.inside && self.pane_id)
+  const answered = typeof self?.inside === 'boolean'
+  const inPane = answered ? Boolean(self.inside && self.pane_id) : true
   if (!inPane && !lead) return { risky: true, why: verdict.why, tree, error: 'security-reviewer 를 띄울 자리가 없음(화면 pane 밖이고 계획서에 Lead pane 이 없음)' }
   const place = inPane ? ['--here'] : ['--beside', lead]
   console.log(`  🛡 위험한 수정(${verdict.why}) — security-reviewer 를 띄운다${inPane ? '' : `(아테나 pane ${lead} 옆)`}`)
