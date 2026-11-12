@@ -45,6 +45,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - PR 자동 리뷰(`scripts/pr-auto.mjs` · `scripts/lib/pr-auto.mjs`)를 고쳤으면 `test/pr-auto-test.sh`(몇 초 · 가짜 리뷰어 · GitHub 를 건드리지 않는다)
   - 머지 뒤 전체 검증(`scripts/full-verify.mjs` · `scripts/lib/full-verify.mjs` — 그림자 · 하루 한 번 · 실패 이슈 · 현황판의 한 시간 타이머 · pr-auto 의 머지 뒤 띄우기)을 고쳤으면 `test/full-verify-test.sh`(몇 초 · 임시 코어 사본 · 임시 git 레포 · 가짜 검증 스크립트)
   - 현황판 자동 완료 · 자동 보관 판정(`scripts/board/plan-bind.mjs` · `server.mjs` `autoDonePlans` · `autoArchive` · 묶인 pane)을 고쳤으면 `test/board-auto-test.sh`(몇 초 · gh · 화면을 부르지 않는다)
+  - 끝난 에이전트 pane 자동 닫기(`scripts/board/pane-close.mjs` · `server.mjs` `closeFinishedPanes`)를 고쳤으면 `test/board-pane-close-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 · 판정 함수는 `board-auto-test.sh`)
   - 끝난 작업 워크트리 정리(`scripts/board/worktree-cleanup.mjs` — 계획서 자동 완료 · 자동 보관 · 이슈 [아카이브] 가 같이 쓴다)를 고쳤으면 `test/worktree-cleanup-test.sh`(몇 초 · 임시 git 레포 · 머지됨 · 미커밋 · 안 올린 커밋 · pane 사용 중 · direct)
   - 현황판 클로드 학습 폴더 계산(`scripts/board/claude-paths.mjs`)을 고쳤으면 `test/claude-paths-test.sh`(몇 초 · 임시 레포)
   - 일반 빈 칸 자동 완료 알림 · 묶인 pane 이 닫힌 계획서의 이어 갈 이슈 · 머지 · 닫힌 PR 의 자동 리뷰 요청 거두기(`server.mjs` `noteLeftover` · `followUpClosedPlans` · `closeDonePrRequests`)를 고쳤으면 `test/board-plan-followup-test.sh`(몇 초 · 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI 로 진짜 현황판 서버 한 주기)

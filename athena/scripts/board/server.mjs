@@ -65,6 +65,7 @@ import { codexMemorySources } from './codex-memory.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
+import { CLOSE_AFTER_MS, closeBlock, createCloseTimer } from './pane-close.mjs'
 import { languageOf, readDictionaries, translate } from './i18n.mjs'
 import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, issueLinksOf, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
@@ -364,11 +365,12 @@ const noteLeftover = (plan) => {
   if (plan.progress?.open) leftoverNotes.push({ pane: plan.leadPane, text: `[현황판 → 아테나] ${plan.id} 자동 완료 — 남은 빈 칸 ${plan.progress.open}개` })
 }
 const flushLeftover = async () => {
-  for (const note of leftoverNotes.splice(0)) {
+  // 끝난 pane 을 닫은 알림도 같은 길로(closeFinishedPanes)
+  for (const note of [...leftoverNotes.splice(0), ...closeNotes.splice(0)]) {
     // Lead pane 이 닫혔거나 없으면 떠 있는 아테나 pane 으로
     let result = note.pane ? await sendToPane(note.pane, note.text) : '맡긴 pane 없음'
     if (typeof result === 'string') result = await sendToPane('hermes', note.text)
-    if (typeof result === 'string') console.log(`⚠️ 남은 칸 알림 실패: ${note.text} — ${result}`)
+    if (typeof result === 'string') console.log(`⚠️ 아테나 알림 실패: ${note.text} — ${result}`)
   }
 }
 const openStepsNoted = new Set() // 보류 알림은 PR 묶음마다 한 번만(매 3초 같은 줄을 찍지 않게)
@@ -437,6 +439,75 @@ const autoDonePlans = async (plans, panesAvailable) => {
     const learnLine = (readText(join(ROOT, plan.id)) || '').match(/^- Learn review:.*$/m)?.[0] ?? ''
     if (!learnLine.includes(mergedMark(infos))) enqueueLearn(plan.id, mergedMark(infos), infos)
   }))
+}
+
+// ── 끝난 에이전트 pane 자동 닫기(pane-close.mjs · 2026-11-12 사용자 요청) ──
+// 묶인 계획서가 모두 끝나고(planFinished) 쉬는 상태가 CLOSE_AFTER_MS 이어지면 scripts/screen pane close 로 닫는다(pane 안 프로그램을 끄지 않는다).
+// 닫히면 다음 수집에 자동 완료 → 보관 · 워크트리 정리가 이어진다. 닫은 뒤 계획서 Lead pane 에 한 줄(flushLeftover 와 같이 수집 뒤에 보낸다)
+const closeAfterEnv = Number(process.env.ATHENA_BOARD_PANE_CLOSE_MS)
+const closeTimer = createCloseTimer(process.env.ATHENA_BOARD_PANE_CLOSE_MS && closeAfterEnv >= 0 ? closeAfterEnv : CLOSE_AFTER_MS)
+const closeNotes = []
+// 자동 완료 앞의 조건과 같다(autoDonePlans) — PR 이 모두 머지(머지 없이 닫힌 것은 빼고 하나 이상) · 바로 머지 끝 · 남은 단계 칸 없음 · 사람이 되돌린 것 아님. Status done 이면 끝
+const planFinished = async (plan) => {
+  if (plan.archived || hasOpenSteps(plan.progress)) return false
+  if (plan.status === 'done') return true
+  if (plan.status !== 'ready_for_review' && plan.status !== 'in_progress') return false
+  const planText = readText(join(ROOT, plan.id)) || ''
+  if (/\/pull\/\d+/.test(plan.pr)) {
+    const links = [...new Set([...plan.pr.matchAll(prLinkPattern(ORG))].map((match) => `${match[1]}#${match[2]}`))]
+    const infos = (await Promise.all(links.map(async (link) => {
+      const [repoName, number] = link.split('#')
+      return { number, ...(await prInfo(repoName, number)) }
+    }))).filter((info) => info.state !== 'CLOSED')
+    if (!infos.length || infos.some((info) => info.state !== 'MERGED') || prDoneHeldByDirect(planText)) return false
+    return !(autoDoneDone(planText, mergedMark(infos)) && !autoReopenedFor(planText, mergedMark(infos)))
+  }
+  const direct = directMergeStatus(planText)
+  return direct.state === 'done' && !(autoDoneDone(planText, direct.mark) && !autoReopenedFor(planText, direct.mark))
+}
+// 폴더에 미커밋 변경이 있나 — git 레포가 아니면 false · 그 밖의 실패는 모르니 true(닫지 않는다)
+const gitDirty = (dir) =>
+  new Promise((resolve) => {
+    if (!dir || !existsSync(dir)) return resolve(false)
+    execFile('git', ['-C', dir, 'status', '--porcelain'], { encoding: 'utf8', timeout: 5000 }, (error, stdout, stderr) => {
+      if (error) return resolve(!/not a git repository/i.test(String(stderr)))
+      resolve(Boolean(stdout.trim()))
+    })
+  })
+const closeFinishedPanes = async (plans, rawPanes) => {
+  const live = plans.filter((plan) => !plan.archived && plan.agents.length)
+  const finished = new Map(await Promise.all(live.map(async (plan) => [plan.id, await planFinished(plan)])))
+  const byPane = new Map()
+  for (const plan of live) for (const paneId of plan.agents) byPane.set(paneId, [...(byPane.get(paneId) ?? []), plan])
+  closeTimer.keep(new Set(byPane.keys()))
+  let requests = null
+  for (const [paneId, bound] of byPane) {
+    const raw = rawPanes.find((pane) => pane.id === paneId)
+    const plansDone = bound.every((plan) => finished.get(plan.id))
+    // 싼 판정부터 — 끝나지 않았거나 일하는 pane 은 화면 · git · 요청을 읽지 않는다
+    let block = closeBlock({ raw, plansDone, menu: false, request: false, dirty: false })
+    if (!block) {
+      if (requests === null) {
+        try { requests = listRequests(ROOT).requests } catch { requests = undefined }
+      }
+      const dirs = [raw.foreground_cwd, raw.cwd, ...bound.flatMap((plan) => worktreePathsOf(plan.workRefs || ''))].filter(Boolean)
+      block = closeBlock({
+        raw,
+        plansDone,
+        menu: menuOpen(await screenText(['pane', 'read', paneId, '--lines', '40']), raw.agent_status),
+        // 요청을 못 읽으면 모르니 닫지 않는다
+        request: requests === undefined || requests.some((request) => request.pane === paneId && request.state === 'open'),
+        dirty: (await Promise.all([...new Set(dirs)].map(gitDirty))).some(Boolean),
+      })
+    }
+    if (!closeTimer.due(paneId, !block, Date.now())) continue
+    if ((await screen(['pane', 'close', paneId])) === null) { console.log(`⚠️ 끝난 pane ${paneId} 을 닫지 못했다`); continue }
+    closeTimer.forget(paneId)
+    for (const plan of plans) plan.agents = plan.agents.filter((id) => id !== paneId)
+    const ids = bound.map((plan) => plan.id).join(' · ')
+    console.log(`🚪 끝난 pane 닫음 ${paneId} — ${ids}`)
+    closeNotes.push({ pane: bound.find((plan) => plan.leadPane)?.leadPane ?? '', text: `[현황판 → 아테나] 🚪 ${paneId} 닫음 — 맡은 일이 끝남(${ids})` })
+  }
 }
 
 // PR 자동 리뷰가 아테나에 못 보내 남긴 요청(scripts/pr-auto.mjs notify → ask · 키 pr-auto:<레포>#<번호> · pane 없음)을 그 PR 이 머지되거나 닫히면 거둔다.
@@ -736,13 +807,14 @@ const doneCheck = async (issue) => {
 const readPanes = async () => {
   // 화면 계층(scripts/screen)의 에이전트 pane 만 — 없거나 실패면 "찾지 못했어요"
   const listed = await screen(['pane', 'list', '--agent-only'])
-  if (!listed) return { available: false, panes: [] }
+  if (!listed) return { available: false, panes: [], raw: [] }
   try {
     // 현황판 pane 모양(plan-bind.mjs boardPaneOf — 스튜디오 앱도 같은 함수로)
     const panes = listed.panes.map((pane) => boardPaneOf(pane, ROOT, homedir()))
-    return { available: true, panes }
+    // raw — 데몬 pane 그대로(끝난 pane 닫기가 foreground_status · cwd 를 본다)
+    return { available: true, panes, raw: listed.panes }
   } catch {
-    return { available: false, panes: [] }
+    return { available: false, panes: [], raw: [] }
   }
 }
 
@@ -1013,12 +1085,13 @@ const collect = async () => {
     .filter(Boolean)
     .filter((issue) => issue.column !== 'done' || now - issue.mtime < DONE_KEEP_DAYS * 86_400_000)
   // 자동 완료보다 먼저 묶인 pane 을 확인한다 — working · idle · waiting 모두 살아 있으면 보류한다.
-  const [{ available, panes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
+  const [{ available, panes, raw: rawPanes }, worktrees] = await Promise.all([readPanes(), readWorktrees()])
   const sessions = BOOT_PATHS.mode === 'packs' ? readPaneSessions(join(BOOT_PATHS.state, 'pane-sessions')) : []
   for (const plan of plans) plan.agents = boundPaneIds(plan, panes, sessions, PROTECTED_BRANCH)
   await autoDonePlans(plans, available)
   autoReopenPlans(plans)
   await autoReviewPlans(plans)
+  if (available && !staleGeneration()) await closeFinishedPanes(plans, rawPanes)
   if (!staleGeneration()) await closeDonePrRequests()
   // 계획서 Status 가 지난번과 달라졌으면 사건 기록에(측정 — docs/events.md)
   observePlanStatus(ROOT, plans)

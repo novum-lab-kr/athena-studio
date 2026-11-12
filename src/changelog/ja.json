@@ -225,5 +225,7 @@
   "Fix agent reports not reaching Athena after a fresh conversation": "新しい会話に切り替えた後、エージェントの報告がアテナに届かない問題を修正",
   "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "プロンプトなしで起動したエージェントが待機する問題を修正 — 計画書の指示で進行・5分で通知",
   "Automatic fresh conversation for agents when the context gets large — no asking": "会話が大きくなるとエージェント pane が自動で新しい会話を開始 — 確認なしでプランから再開",
-  "Result summary in agent done notices — Athena reads less of the pane screen": "エージェントの完了通知に結果の要約を追加 — Athena が pane 画面を読む量を削減"
+  "Result summary in agent done notices — Athena reads less of the pane screen": "エージェントの完了通知に結果の要約を追加 — Athena が pane 画面を読む量を削減",
+  "Fix fresh conversation never clearing while a background shell runs": "バックグラウンドのシェルが動いていると新しい会話に切り替わらない問題を修正",
+  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "完了したエージェント pane を自動で閉じる — マージ後10分待機で"
 }

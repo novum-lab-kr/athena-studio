@@ -225,5 +225,7 @@
   "Fix agent reports not reaching Athena after a fresh conversation": "修复切换到新对话后代理报告无法送达雅典娜的问题",
   "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "修复无提示启动的代理闲置的问题 — 按计划书指示进行 · 闲置 5 分钟通知雅典娜",
   "Automatic fresh conversation for agents when the context gets large — no asking": "对话变大时代理 pane 自动开始新对话 — 不询问，从计划继续",
-  "Result summary in agent done notices — Athena reads less of the pane screen": "代理完成通知附带结果摘要 — Athena 少读 pane 画面"
+  "Result summary in agent done notices — Athena reads less of the pane screen": "代理完成通知附带结果摘要 — Athena 少读 pane 画面",
+  "Fix fresh conversation never clearing while a background shell runs": "修复后台 shell 运行时无法清空开始新对话的问题",
+  "Automatic closing of finished agent panes — after merge and 10 idle minutes": "自动关闭已完成的代理 pane — 合并后空闲 10 分钟"
 }

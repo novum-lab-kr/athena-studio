@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 현황판 자동 완료 · 자동 보관 판정 시험 — scripts/board/plan-bind.mjs(남은 단계 · 묶인 pane)를 server.mjs 와 같은 입력 모양으로.
+# 현황판 자동 완료 · 자동 보관 판정 시험 — scripts/board/plan-bind.mjs(남은 단계 · 묶인 pane) · pane-close.mjs(끝난 pane 닫기)를 server.mjs 와 같은 입력 모양으로.
 # 2026-10-27 사고 재현: 단계 PR 하나가 머지된 틈에 진행 중 계획서가 완료 · 보관됐다(남은 단계를 안 봄 · 같은 계획서로 다시 띄워
 # Work ref 가 마지막 pane 으로 바뀌어 일하던 다른 pane 을 못 봄). 임시 폴더 · gh · 화면을 부르지 않는다 · 몇 초
 #
@@ -172,6 +172,27 @@ check('Auto merge 줄 없는 PR 계획서 → 보류 아님(동작 그대로)', 
 check('Auto merge 줄이 없으면 none(PR 쪽 판정에 맡김)', directMergeStatus(directPlan(commitLine)).state === 'none')
 check('다른 브랜치의 머지 줄만 있으면 완료 아님', directMergeStatus(directPlan(commitLine, '- Auto merge: web feat/other @abc1234 · 머지됨 — squash → main @def5678(PR 없음) · 2026-11-01 10:05')).state === 'wait')
 check('merged-direct 표시도 자동 완료 표시로 인식(완료 → 재개 판정이 같은 길)', autoDoneMark(`- Auto done: 자동 — 시험 (${merged.mark})`) === merged.mark && autoDoneDone(`- Auto done: 자동 — 시험 (${merged.mark})`, merged.mark))
+
+// ── 끝난 에이전트 pane 자동 닫기 판정(scripts/board/pane-close.mjs · 2026-11-12) ──
+const { closeBlock, createCloseTimer, paneIdle } = await import(modPath.replace('plan-bind.mjs', 'pane-close.mjs'))
+const quiet = { plansDone: true, menu: false, request: false, dirty: false }
+check('끝났고 쉬고 · 안 보고 · 창 · 요청 · 미커밋 없음 → 닫아도 된다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet }) === '')
+check('뒤 셸만 돌면(agent_status working · foreground_status idle) 쉼으로 본다', paneIdle({ agent_status: 'working', foreground_status: 'idle' }) && closeBlock({ raw: { agent_status: 'working', foreground_status: 'idle' }, ...quiet }) === '')
+check('앞이 일하는 중 → 안 닫는다', closeBlock({ raw: { agent_status: 'working', foreground_status: 'working' }, ...quiet }) === 'working')
+check('선택 창(waiting) → 안 닫는다', closeBlock({ raw: { agent_status: 'waiting' }, ...quiet }) === 'working')
+check('묶인 계획서가 안 끝남 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, plansDone: false }) === 'plan-open')
+check('사용자가 보고 있음 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle', focused: true }, ...quiet }) === 'focused')
+check('화면에 선택 창 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, menu: true }) === 'menu')
+check('열린 요청 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, request: true }) === 'request')
+check('미커밋 변경 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, dirty: true }) === 'dirty')
+check('pane 이 없음 → gone', closeBlock({ raw: undefined, ...quiet }) === 'gone')
+const timer = createCloseTimer(1000)
+check('처음 닫을 수 있게 된 때는 아직', timer.due('p9', true, 0) === false)
+check('그대로 1초 → 닫을 때', timer.due('p9', true, 1000) === true)
+timer.due('p9', false, 1100)
+check('막히면 처음부터 다시 센다', timer.due('p9', true, 1200) === false && timer.due('p9', true, 2100) === false && timer.due('p9', true, 2200) === true)
+timer.keep(new Set())
+check('이번 수집에 안 본 pane 은 잊는다', timer.due('p9', true, 5000) === false)
 
 process.exit(fail)
 EOF

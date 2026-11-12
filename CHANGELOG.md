@@ -58,6 +58,8 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes
 - Automatic fresh conversation for agents when the context gets large — no asking
 - Result summary in agent done notices — Athena reads less of the pane screen
+- Fix fresh conversation never clearing while a background shell runs
+- Automatic closing of finished agent panes — after merge and 10 idle minutes
 
 <!-- 0.58: v0.57.0..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
 
