@@ -3,17 +3,34 @@
 type Snapshot = { agent: string | null; text: string; waiting?: boolean }
 type Transport = { read: () => Promise<Snapshot>; write: (text: string) => void; sleep?: (ms: number) => Promise<void> }
 
+// 입력칸 끝 판정 글 — 코어 athena/scripts/lib/input-box.json 과 같은 글(앱은 코어 파일을 읽지 않는다 · test/input-box.test.js 가 같은지 본다).
+// Codex 0.166 실측(core.mts agentAtEmptyPrompt) — remote TUI 는 단축키 줄 앞에 `← for agents · ` 가 붙는다
+const CODEX_SHORTCUTS = /^\s*(?:[^·]*·\s+)?\? for shortcuts(?:\s.*)?$/
+const CODEX_STATUS = /^\s*[A-Za-z][\w.-]*\d[\w.-]*(?: [A-Z][\w.-]*){0,2} [a-z][a-z-]*(?: · .*)?$/
+
 export function inputOf({ agent, text }: Snapshot): string | null {
   const lines = text.split('\n').map((line) => line.trimEnd())
   const mark = agent === 'codex' ? '›' : agent === 'claude' ? '❯' : null
   if (!mark) return null
   const index = lines.findLastIndex((line) => line.trimStart().startsWith(mark))
   if (index < 0) return null
+  const first = lines[index]!.trimStart().slice(1)
   const rest = lines.slice(index + 1)
+  if (agent === 'codex') {
+    // Codex 입력칸은 맨 아래 단축키 줄 · 상태줄 위까지 — 입력칸 안의 빈 줄은 경계가 아니다(빈 줄로 시작하는 여러 줄 초안).
+    // 그 줄을 못 찾는 화면(일하는 중 등)은 예전처럼 첫 빈 줄까지로 읽는다 — 보낸 뒤 확인이 그 화면을 읽는다
+    const box = [...rest]
+    while (box.length && !box.at(-1)?.trim()) box.pop()
+    const shortcuts = CODEX_SHORTCUTS.test(box.at(-1) ?? '')
+    if (shortcuts) box.pop()
+    const status = CODEX_STATUS.test(box.at(-1) ?? '')
+    if (status) box.pop()
+    if (shortcuts || status) return [first, ...box].join('\n').trim()
+  }
   // Claude 입력칸은 가로선, Codex 입력칸은 빈 줄로 끝난다(실제 pane 전·후 화면).
   const end = rest.findIndex((line) => agent === 'claude' ? /^─{3}/.test(line) : !line.trim())
   if (end < 0) return null
-  const input = [lines[index]!.trimStart().slice(1), ...rest.slice(0, end)].join('\n').trim()
+  const input = [first, ...rest.slice(0, end)].join('\n').trim()
   // Claude working 중 Enter 를 받으면 본문은 큐로 옮기고 빈 입력칸에 이 안내를 그린다.
   // 실제 입력과 혼동하지 않도록 큐 본문의 전송 안내도 함께 확인한다(2026-11-08 실측).
   if (agent === 'claude' && input === 'Press up to edit queued messages' &&

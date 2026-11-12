@@ -28,6 +28,16 @@ test('Codex · Claude 입력칸을 맺음 줄 전까지만 읽는다', () => {
   assert.equal(inputOf({ agent: 'codex', text: '확인 못 한 화면' }), null)
 })
 
+test('Codex 입력칸 안의 빈 줄은 경계가 아니다 — 맨 아래 단축키 줄 · 상태줄까지 읽는다', () => {
+  // 빈 줄로 시작하는 여러 줄 초안 — 첫 빈 줄에서 끊으면 빈 입력칸으로 읽었다(코어 pane-close.mjs · lead-fresh.py 와 같은 규칙)
+  const draft = '• 끝났다\n\n› \n\n  초안\n\n  둘째\n\n  GPT-6.1-Sol medium · /repo\n  ? for shortcuts\n'
+  assert.equal(inputOf({ agent: 'codex', text: draft }), '초안\n\n  둘째')
+  assert.equal(inputOf({ agent: 'codex', text: '• 끝났다\n\n› \n\n  ← for agents · ? for shortcuts\n' }), '')
+  assert.equal(inputOf(codex('')), '')
+  // 단축키 줄 · 상태줄이 없는 화면은 예전처럼 첫 빈 줄까지
+  assert.equal(inputOf({ agent: 'codex', text: '› 같은 글\n\n footer' }), '같은 글')
+})
+
 test('첫 Enter 무시 → 글은 한 번만 · Enter 재시도 뒤 입력칸 비움 확인', async () => {
   const pane = fake({ ignore: 1 })
   await submitText('긴 글\n두 번째 줄', pane)

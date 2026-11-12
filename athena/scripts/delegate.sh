@@ -10,6 +10,7 @@
 #   scripts/delegate.sh <에이전트명> --plan <경로>         # 담당 레포 workspace 의 새 탭에 연다 (기본)
 #   scripts/delegate.sh <에이전트명> --cwd <워크트리>       # 그 워크트리에서 연다
 #   scripts/delegate.sh <에이전트명> --here                # 레포 workspace 로 보내지 않고 지금 탭에 쪼갠다 (단발 조사용)
+#   scripts/delegate.sh <에이전트명> --beside <pane>        # 그 pane 옆에 쪼갠다 — 화면 pane 밖(현황판의 pr-auto 등)에서도 데몬이 떠 있고 그 pane 이 있으면 띄운다
 #   scripts/delegate.sh <에이전트명> --plan <경로> --reuse-pane <pane> [--new-branch <이름>]  # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다(docs/dispatch.md "이어 보내기" · 고르기 node scripts/reuse-pane.mjs --agent <이름>)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --resume <세션 id> [--cwd <워크트리>]  # 닫힌 pane 을 그 대화 그대로 다시 연다(지시문은 다시 보내지 않는다)
 #   scripts/delegate.sh <에이전트명> --plan <경로> --model <이름>  # 이번 한 번만 이 모델로 띄운다(팩 models · 프로필 model: 보다 먼저 · --reuse-pane 과 같이 못 쓴다)
@@ -32,7 +33,7 @@ SCREEN="$ATHENA_DIR/scripts/screen"   # 화면 계층 — workspace·탭·pane �
 . "$ATHENA_DIR/scripts/lib/shell-line.sh"   # shell_line — pane run 에 넘길 셸 한 줄(띄어쓰기·한글 안전)
 
 NOTIFY_BOOTSTRAP=0
-AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0; ENGINE=""; ROLE=""
+AGENT=""; PROMPT=""; DIR="right"; DIR_GIVEN=0; WORKDIR=""; HERE=0; BESIDE=""; PLAN=""; PLAN_NEW=""; REUSE_PANE=""; NEW_BRANCH=""; MODEL_OVERRIDE=""; MODEL_GIVEN=0; ENGINE=""; ROLE=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --plan)
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
     --role) [ $# -ge 2 ] || { echo "--role 값이 없다" >&2; exit 2; }; ROLE="$2"; shift 2 ;;
     --down) DIR="down"; DIR_GIVEN=1; shift ;;
     --here) HERE=1; shift ;;
+    --beside) [ $# -ge 2 ] || { echo "--beside 에 pane id 가 없다" >&2; exit 2; }; BESIDE="$2"; HERE=1; shift 2 ;;   # 그 pane 옆에 쪼갠다(pane 밖에서 부를 때)
     --reuse-pane) [ $# -ge 2 ] || { echo "--reuse-pane 에 pane id 가 없다" >&2; exit 2; }; REUSE_PANE="$2"; shift 2 ;;   # 쉬는 같은 레포 pane 에 새 pane 대신 이어 보낸다
     --new-branch) [ $# -ge 2 ] || { echo "--new-branch 에 브랜치 이름이 없다" >&2; exit 2; }; NEW_BRANCH="$2"; shift 2 ;;   # --reuse-pane 과 함께 — 그 pane 의 워크트리에서 prBase 로 새 브랜치를 딴다
     --cwd)  [ $# -ge 2 ] || { echo "--cwd 에 경로가 없다" >&2; exit 2; }; WORKDIR="$2"; shift 2 ;;
@@ -56,9 +58,10 @@ case "$ENGINE" in ''|claude|codex) ;; *) echo "--engine 은 claude · codex 만 
 case "$ROLE" in agent|reviewer) ;; *) echo "--role 은 agent · reviewer 만 쓴다(리드 실행은 아테나 시작 경로)" >&2; exit 2 ;; esac
 [ "$AGENT" != reviewer ] || [ "$ROLE" = reviewer ] || { echo "reviewer 프로필은 reviewer 역할로만 띄운다" >&2; exit 2; }
 [ "$AGENT" != security-reviewer ] || [ "$ROLE" = reviewer ] || { echo "security-reviewer 프로필은 reviewer 역할로만 띄운다" >&2; exit 2; }
+[ -z "$BESIDE" ] || [[ "$BESIDE" =~ ^[A-Za-z0-9_-]{1,32}$ ]] || { echo "--beside 의 pane id 가 이상하다: $BESIDE" >&2; exit 2; }
 [ -z "$NEW_BRANCH" ] || [ -n "$REUSE_PANE" ] || { echo "--new-branch 는 --reuse-pane 과 같이 쓴다(새 pane 은 이미 --cwd 워크트리에서 뜬다)" >&2; exit 2; }
 [ "$MODEL_GIVEN" = 0 ] || [ -z "$REUSE_PANE" ] || { echo "--model 은 --reuse-pane 과 같이 쓰지 않는다 — 떠 있는 pane 의 모델은 바뀌지 않는다. 그 모델로 띄우려면 새 pane 으로 띄운다" >&2; exit 2; }
-[ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here] [--down] [--model <이름>]"; exit 2; }
+[ -n "$AGENT" ] || { echo "사용: $0 <에이전트명> --plan <plans/…md | new \"<요약>\"> [\"<프롬프트>\"] [--cwd <경로>] [--here | --beside <pane>] [--down] [--model <이름>]"; exit 2; }
 # 이름 검사는 팩 models 와 같은 규칙 — 계획서를 만들기 전에 거른다
 if [ "$MODEL_GIVEN" = 1 ]; then
   python3 - "$ATHENA_DIR" "$MODEL_OVERRIDE" <<'PYEOF' || { echo "--model 이름이 이상해서 띄우지 않는다: $MODEL_OVERRIDE" >&2; exit 2; }
@@ -354,7 +357,8 @@ PYEOF
 )" || { echo "모델 설정이 이상해서 띄우지 않는다 — 팩 pack.json \"models\" 를 고친다(docs/pack.md \"pack.json\")" >&2; exit 2; }
 [ "$MODEL_GIVEN" = 0 ] || MODEL="$MODEL_OVERRIDE"
 
-if ! "$SCREEN" inside; then
+# pane 밖이어도 --beside 로 준 pane 이 화면에 있으면 띄운다 — 화면 계층은 pane 밖에서도 떠 있는 데몬(접속 파일)에 붙는다(scripts/lib/screen.py backend_name)
+if ! "$SCREEN" inside && ! { [ -n "$BESIDE" ] && "$SCREEN" pane get "$BESIDE" >/dev/null 2>&1; }; then
   echo "$("$SCREEN" name) 밖입니다. 직접 실행하세요:"
   MODEL_HINT="${MODEL:+ --model $MODEL}"
   if [ "$ENGINE" = codex ]; then
@@ -448,9 +452,9 @@ fi
 
 # 위에서 못 만들었으면(또는 --here) 지금 탭에서 쪼갠다 — 이 스크립트를 부른 pane 옆(--target self).
 # 포커스된 pane 을 쓰면 뒤에서 부른 에이전트의 reviewer 가 사용자가 보던 다른 탭(아테나 탭)에 뜬다(2026-10-26 실측).
-# 부른 pane 을 모르면(환경 없음) 화면 계층이 포커스된 pane 으로 대신한다
+# 부른 pane 을 모르면(환경 없음) 화면 계층이 포커스된 pane 으로 대신한다 · --beside 면 그 pane 옆
 if [ -z "$PANE" ]; then
-  OUT="$("$SCREEN" pane split --target self --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
+  OUT="$("$SCREEN" pane split --target "${BESIDE:-self}" --direction "$DIR" --ratio 0.5 --cwd "$WORKDIR" --no-focus)" \
     || { echo "pane split 실패: $OUT"; exit 1; }
   PANE="$(printf '%s' "$OUT" | python3 -c 'import sys,json; print(json.load(sys.stdin)["pane"]["id"])')" \
     || { echo "pane id 파싱 실패"; exit 1; }
@@ -757,7 +761,7 @@ PYEOF
 )"
   if [ -n "$SECURITY_BASE" ] && SECURITY_WHY="$(node "$ATHENA_DIR/scripts/security-gate.mjs" risk --dir "$WORKDIR" --base "origin/$SECURITY_BASE")"; then
     echo "   🛡 위험한 수정($SECURITY_WHY) — security-reviewer 도 띄운다"
-    ATHENA_SECURITY_AUTO=0 "$0" security-reviewer --cwd "$WORKDIR" --here --plan "$PLAN" "보안 검토 — reviewer 와 함께 자동으로 띄웠다(위험한 수정: $SECURITY_WHY). 기준 origin/$SECURITY_BASE...HEAD 와 커밋 전 변경을 본다." \
+    ATHENA_SECURITY_AUTO=0 "$0" security-reviewer --cwd "$WORKDIR" ${BESIDE:+--beside "$BESIDE"} --here --plan "$PLAN" "보안 검토 — reviewer 와 함께 자동으로 띄웠다(위험한 수정: $SECURITY_WHY). 기준 origin/$SECURITY_BASE...HEAD 와 커밋 전 변경을 본다." \
       | sed 's/^/   /' || echo "⚠️ security-reviewer 를 띄우지 못했다 — 필요하면 $ATHENA_DIR/scripts/delegate.sh security-reviewer --cwd $WORKDIR --here --plan $PLAN" >&2
   fi
 fi

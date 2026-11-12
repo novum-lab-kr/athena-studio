@@ -1,4 +1,5 @@
 // @ts-check
+import { readFileSync } from 'node:fs'
 // 끝난 에이전트 pane 자동 닫기(2026-11-12 사용자 요청 — 맡은 일이 끝나고 더 할 일이 없으면 clear 가 아니라 pane 을 닫는다).
 // 현황판(server.mjs closeFinishedPanes)이 수집마다 부른다. 여기는 판정만 — 화면 · git · 요청은 server.mjs 가 읽어 넘긴다.
 //   닫는 pane: 에이전트 pane(delegate.sh 가 띄운 🤖 — 리뷰어 포함 · 아테나 pane 은 아니다) 중 묶인 계획서가 모두 끝났고
@@ -16,13 +17,14 @@ export const CLOSE_AFTER_MS = 10 * 60 * 1000
  * @param {{ foreground_status?: string, agent_status?: string }} pane */
 export const paneIdle = (pane) => (pane.foreground_status || pane.agent_status) === 'idle'
 
-// Codex 입력칸 아래 화면 경계 — 맨 아래 `? for shortcuts` 줄(remote TUI 는 앞에 `← for agents · `)과 그 위 상태줄 `<모델> <생각 강도>[ · …]`.
-// 앱 src/lib/core.mts agentAtEmptyPrompt 의 실측 규칙(codex 0.166 · 2026-11-04)과 같다. 입력칸 안의 빈 줄은 경계가 아니다(PR #293 리뷰 — 빈 줄로 시작하는 여러 줄 초안)
-const CODEX_SHORTCUTS = /^\s*(?:[^·]*·\s+)?\? for shortcuts(?:\s.*)?$/
-const CODEX_STATUS = /^\s*[A-Za-z][\w.-]*\d[\w.-]*(?: [A-Z][\w.-]*){0,2} [a-z][a-z-]*(?: · .*)?$/
+// 입력칸 끝 판정 글 — scripts/lib/input-box.json 한 곳(scripts/lead-fresh.py 와 같이 읽는다 · 앱 src/lib/pane-submit.mts 는 같은 글을 따로 둔다)
+const BOX = JSON.parse(readFileSync(new URL('../lib/input-box.json', import.meta.url), 'utf8'))
+const CLAUDE_END = new RegExp(BOX.claudeEnd)
+const CODEX_SHORTCUTS = new RegExp(BOX.codexShortcuts)
+const CODEX_STATUS = new RegExp(BOX.codexStatus)
 
-/** 입력칸 글 — 못 찾으면 null · 비었으면 ''. Claude 는 앱 src/lib/pane-submit.mts inputOf · lead-fresh.py input_of 와 같은 규칙(가로선까지),
- * Codex 는 맨 아래 상태줄 · 단축키 줄을 떼고 남은 것 전부(그 경계를 못 찾으면 모르니 null)
+/** 입력칸 글 — 못 찾으면 null · 비었으면 ''. 규칙은 input-box.json(lead-fresh.py input_of · 앱 pane-submit.mts inputOf 와 같다):
+ * Claude 는 가로선까지, Codex 는 맨 아래 상태줄 · 단축키 줄을 떼고 남은 것 전부(그 경계를 못 찾으면 모르니 null)
  * @param {string | undefined} agent @param {string} text */
 export const inputOf = (agent, text) => {
   const lines = String(text ?? '').split('\n').map((line) => line.trimEnd())
@@ -41,14 +43,14 @@ export const inputOf = (agent, text) => {
     if (!shortcuts && !status) return null
     const input = [first, ...rest].join('\n').trim()
     // 빈 입력칸의 자리 글 — 초안이 아니다(core.mts 와 같다)
-    return input === 'Ask Codex to do anything' ? '' : input
+    return input === BOX.codexPlaceholder ? '' : input
   }
   // Claude 입력칸은 가로선으로 끝난다
-  const end = rest.findIndex((line) => /^─{3}/.test(line))
+  const end = rest.findIndex((line) => CLAUDE_END.test(line))
   if (end < 0) return null
   const input = [first, ...rest.slice(0, end)].join('\n').trim()
   // Claude 가 일하는 중 받은 글을 큐로 옮기고 빈 입력칸에 그리는 안내 — 초안이 아니다
-  if (input === 'Press up to edit queued messages' && lines.some((line) => line.trim() === 'ctrl+x ctrl+s to send now')) return ''
+  if (input === BOX.claudeQueued && lines.some((line) => line.trim() === BOX.claudeQueuedHint)) return ''
   return input
 }
 

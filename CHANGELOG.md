@@ -60,6 +60,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Result summary in agent done notices — Athena reads less of the pane screen
 - Fix fresh conversation never clearing while a background shell runs
 - Automatic closing of finished agent panes — after merge and 10 idle minutes
+- Fix Athena's fresh-conversation notice closing an open question
+- Fix security review not starting outside a pane — opens beside Athena, same-round merge
+- Fix Codex drafts starting with a blank line read as an empty input box
 
 <!-- 0.58: v0.57.0..main 에서 사용자에게 보이는 변경 — SSH 서버 등록(서버 추가 팝업 · 호스트 키 지문 믿기) · 사이드바 서버 목록과 상태 · 서버 에이전트의 허용 목록 읽기 명령. 범위 끝은 열어 둔다 -->
 
