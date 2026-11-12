@@ -63,7 +63,7 @@
           "report",
           "req"
         ],
-        "note": "合并后待办移到 done,learn-review 把学习候选放进 [学习]标签页(由用户添加)。关闭完成的 pane 即自动 archive。后续工作 → 问题 → 再请求。"
+        "note": "合并后待办移到 done,learn-review 把学习候选放进 [学习]标签页(由用户添加)。完成的 pane 由待办关闭,随后自动 archive。后续工作 → 问题 → 再请求。"
       }
     ],
     "output": "docs/diagrams/athena-flow.zh.html"
@@ -211,7 +211,7 @@
       "col": 5,
       "type": "backend",
       "label": "确认 · cleanup",
-      "sublabel": "Athena · 关闭完成的 pane",
+      "sublabel": "待办 · 关闭完成的 pane",
       "tag": "自动 archive · 工作树 cleanup",
       "width": 150
     },
@@ -569,7 +569,7 @@
         "⑥ 评审(仅大范围修改) — 正式计划书报告大范围修改时不问就开评审(自动评审)。轻量没有自动评审,只在报告大范围修改(新功能 · 结构变更 · 跨文件逻辑 · 安全 · 数据 · 外部契约)时在末尾加一行\"要评审吗?\"— 小修改或反映评审意见后不加。用户说\"评审一下\"随时在旁边开 reviewer pane。reviewer 不重跑同一棵树已通过的验证(♻️ 复用)。需要决策(选项分叉)的加到同一计划书的决策控制台(plan-html.mjs --add · [이대로 진행] 发到该代理 pane)。需修复的不问就修,每项一行报告",
         "⑦ 提交 — \"提交一下\"或 push 时用 commit.sh 提交(仅指定文件 · strict verify · 计划书 ## Commits)。可以多次",
         "⑧ push · PR — 多仓库时 Athena 确认顺序 · 公开范围,每个仓库运行 ship.sh --repo-agent(正式路)。单仓库方式看仓库设置(delegate.sh 结果行会说明)。默认:\"PR 올려줘\"一句 → 提交 → ship.sh 草稿 → 整理标题 · 正文 → 不问就向 prBase 开 draft PR。开了自动 PR 的仓库(autoMerge): 完成后不问就开 draft PR → PR 自动评审。关闭 PR 的仓库(autoPr:false): 用 ship.sh --direct-merge 做 direct merge(大范围修改则 merge 前有评审 gate) — 仅\"PR 올려줘\"时 --user-pr。Actions handoff 仓库: 同一命令以 feature branch push 做 handoff 后立即结束。报告末尾 📚 学到的东西",
-        "⑨ 结束 — PR 合并后(direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done → 学习评审(learn-review)根据计划书 · 对话 · diff · 评审评论补充学习候选 → 绑定的 pane 全部关闭后自动 archive(archive/) · 工作树也判定后删除。完成的 pane 由 Athena 关闭",
+        "⑨ 结束 — PR 合并后(direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done → 学习评审(learn-review)根据计划书 · 对话 · diff · 评审评论补充学习候选 → 绑定的 pane 全部关闭后自动 archive(archive/) · 工作树也判定后删除。完成的 pane(PR 合并 · 空闲 10 分钟 · 未在查看 · 无未提交)由待办关闭并通知 Athena 一行",
         "pane 之间的消息用 scripts/screen pane send-text 直接传 — 发给 Athena 用 lead-send.py(收不到时先存起来稍后送达)。不要请用户转达",
         "提问 · 权限等待在 Studio [工作] 弹窗查看。提问在弹窗里回答;权限在 [前往 pane] 后到原窗口选择。选择框也算等待状态",
         "Codex 保护钩子只检查第一条 Bash 命令,write_stdin 的后续输入不检查。在 /hooks 确认钩子信任",
@@ -645,7 +645,7 @@
       "dot": "slate",
       "title": "cleanup / 中断后 resume",
       "items": [
-        "自动 archive — 计划书的 PR 全部合并 done + learn review 结束 + 绑定的代理 pane 全部关闭后,待办把问题 · 计划书打包到 archive/<名称>/ 并提交。该计划书的工作树也判定后删除(有未提交 · unpushed 提交 · 正在用的 pane 则保留,原因写进 Checkpoint)。完成的 pane 由 Athena 关闭 · 过去的工作在 [归档]标签页",
+        "自动 archive — 计划书的 PR 全部合并 done + learn review 结束 + 绑定的代理 pane 全部关闭后,待办把问题 · 计划书打包到 archive/<名称>/ 并提交。该计划书的工作树也判定后删除(有未提交 · unpushed 提交 · 正在用的 pane 则保留,原因写进 Checkpoint)。完成的代理 pane 由待办关闭 · 过去的工作在 [归档]标签页",
         "待办 [学习]标签页 — 学习候选 [넣기](添加) · [고쳐서 넣기](修改后添加) · [버리기](丢弃)(添加后在 gotchas 加一行),修改 · 删除已学内容,技能候选交给 Athena。/sync 结束时 learn-curator 把 30 天未用的技能、gotchas-check 把指向已删文件的 gotchas 行 · 该拆分的 gotchas(公共 2 万字 · 同一界面 5 行 → gotchas/<文件夹>.md)列为 cleanup 候选(不删除)",
         "问题可完成徽章 = 检查结果 · 后续 · 修复 · 计划书 done + PR MERGED。出现徽章时由 Athena 移动(问题 · 计划书在本地 — 只有 archive/ 在 git)",
         "auto done — 计划书 PR 行的 PR 全部合并后(GitHub MERGED,不限 base · direct merge · Actions 看计划书 - Auto merge: 머지됨 行)待办把计划书移到 done。未合并就关闭的 PR 不计入,Progress 里还有步骤格(以 N단계 开头 · 带 (단계) 标记)则不移。普通空格不阻止,通知 Lead pane · 结束后的后续工作不留空格而是转为问题",

@@ -6,6 +6,7 @@
 #   그사이 사용자가 직접 새로 시작했으면 넣지 않는다 · Codex 는 /new
 #   넘긴 계획서는 이미 다른 대화를 가리켜도(손 /clear 뒤) 옮긴다 · 지운 때를 적는다(30분 안에는 다시 묻지 않게)
 #   에이전트 pane 은 묻지 않고 — 사용자가 보고 있으면(focused) 미루고 · 지운 뒤 아테나에 📦 한 줄(받음 확인 · 직접 보고로 치지 않는다) · 재개 지시
+#   · 못 지우고 끝나면 아테나에 까닭 한 줄 · 뒤 셸만 도는 것(foreground_status idle)은 쉼으로 본다
 #
 # 사용: test/lead-fresh-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -23,7 +24,7 @@ SESSIONS="$DATA/state/pane-sessions"
 QUEUE="$DATA/state/lead-send"
 EVENTS="$DATA/state/events.jsonl"
 
-# 가짜 화면 CLI — agent · status 파일이 pane get 의 agent · agent_status, screen 파일이 pane read 화면(없으면 빈 입력칸),
+# 가짜 화면 CLI — agent · status 파일이 pane get 의 agent · agent_status(fgstatus 가 있으면 foreground_status 도 — 뒤 셸을 뺀 상태), screen 파일이 pane read 화면(없으면 빈 입력칸),
 # focused-<pane> 이 있으면 그 pane 을 사용자가 보고 있음, closed 면 pane 이 없음. pane run 은 sent 에 적고, /clear · /new 면 pane-session.py 처럼 새 대화를 pane 기록에 적는다(no-session 이면 안 적음
 # · draft-after-clear 면 그 뒤 입력칸에 초안)
 mkdir -p "$WORK/cli"
@@ -31,7 +32,7 @@ cat > "$WORK/cli/athena-studio-cli" <<'CLIEOF'
 #!/usr/bin/env bash
 [ -f "$FAKE_DIR/closed" ] && [ "$1" = pane ] && { echo '{"error":"not_found","message":"없는 pane"}' >&2; exit 1; }
 case "$1 $2" in
-  'pane get') echo "{\"pane\":{\"id\":\"$3\",\"agent\":\"$(cat "$FAKE_DIR/agent" 2>/dev/null || echo claude)\",\"agent_status\":\"$(cat "$FAKE_DIR/status" 2>/dev/null || echo idle)\",\"focused\":$([ -f "$FAKE_DIR/focused-$3" ] && echo true || echo false)}}" ;;
+  'pane get') echo "{\"pane\":{\"id\":\"$3\",\"agent\":\"$(cat "$FAKE_DIR/agent" 2>/dev/null || echo claude)\",\"agent_status\":\"$(cat "$FAKE_DIR/status" 2>/dev/null || echo idle)\",\"focused\":$([ -f "$FAKE_DIR/focused-$3" ] && echo true || echo false)$([ -f "$FAKE_DIR/fgstatus" ] && printf ',"foreground_status":"%s"' "$(cat "$FAKE_DIR/fgstatus")")}}" ;;
   'pane read') if [ -f "$FAKE_DIR/screen" ]; then cat "$FAKE_DIR/screen"; else printf '● 끝났다\n\n────────\n❯ \n────────\n  ? for shortcuts\n'; fi ;;
   'pane run')
     printf 'SENT %s %s\n' "$3" "$4" >> "$FAKE_DIR/sent"
@@ -62,7 +63,7 @@ write_plan() {   # <이름> <Updated> <Status> <Lead pane> <Lead session>
 }
 session_of() { sed -n 's/^- Lead session: //p' "$BODY/plans/task/$1.md"; }
 reset() {
-  rm -f "$WORK/sent" "$WORK/agent" "$WORK/status" "$WORK/screen" "$WORK/closed" "$WORK/no-session" "$WORK/draft-after-clear" "$WORK"/focused-* "$EVENTS" "$QUEUE"/*.json
+  rm -f "$WORK/sent" "$WORK/agent" "$WORK/status" "$WORK/fgstatus" "$WORK/screen" "$WORK/closed" "$WORK/no-session" "$WORK/draft-after-clear" "$WORK"/focused-* "$EVENTS" "$QUEUE"/*.json
   rm -rf "$DATA/state/lead-notices" "$DATA/state/agent-notify"
   rm -rf "$DATA/state/lead-fresh"
   printf '{"session":"s-old","agent":"claude","at":"t-1"}\n' > "$SESSIONS/p1.json"
@@ -119,6 +120,18 @@ check "모아 둔 이 아테나 글의 대화도 옮긴다" "$(python3 -c 'impor
 check "다른 아테나 글은 그대로" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["session"])' "$QUEUE/p2-1.json")" s-old
 check "사건 기록 lead.fresh result=done" "$(count "$EVENTS" '"result":"done"')" 1
 check "지운 때를 적는다(30분 안에는 다시 묻지 않게 — lead_fresh_mark)" "$([ -s "$DATA/state/lead-fresh/p1.cleared" ] && echo 1 || echo 0)" 1
+
+echo "▶ 뒤에서 셸만 돌고 앞은 쉬면(agent_status working · foreground_status idle) /clear 를 넣는다(2026-11-12 p1m — 6시간 기다리다 끝나던 버그)"
+reset
+echo working > "$WORK/status"; echo working > "$WORK/fgstatus"
+fresh python3 "$BODY/scripts/lead-fresh.py" --plan plans/task/main.md >/dev/null 2>&1
+sleep 1
+check "앞이 일하는 중이면 넣지 않는다" "$(count "$WORK/sent")" 0
+echo idle > "$WORK/fgstatus"   # 턴이 끝났다 — 뒤 셸(개발 앱 등)은 그대로 돈다
+finished
+check "뒤 셸이 돌아도 /clear 를 넣는다" "$(count "$WORK/sent" '^SENT p1 /clear$')" 1
+check "재개 지시도 넣는다" "$(count "$WORK/sent" '^SENT p1 plans/task/main.md 이어서 하자')" 1
+check "사건 기록 result=done" "$(count "$EVENTS" '"result":"done"')" 1
 
 echo "▶ 넘긴 계획서가 이미 옛 대화를 가리켜도(사용자가 손으로 /clear 한 뒤) 새 대화로 옮긴다(2026-11-11 p1m)"
 reset
@@ -328,8 +341,10 @@ check "선택 창이 떠 있으면 넣지 않는다" "$(count "$WORK/sent")" 0
 printf '{"session":"s-agent","agent":"athena-studio-fe","at":"t-a2"}\n' > "$SESSIONS/p4.json"
 rm -f "$WORK/screen"
 finished
-check "예약 뒤 새 입력이 들어왔으면 아무것도 넣지 않는다" "$(count "$WORK/sent")" 0
+wait_until "[ \"\$(count '$WORK/sent' '^SENT p1 ')\" -ge 1 ]"
+check "예약 뒤 새 입력이 들어왔으면 그 pane 에는 아무것도 넣지 않는다" "$(count "$WORK/sent" '^SENT p4 ')" 0
 check "사건 기록 result=new-input" "$(count "$EVENTS" '"result":"new-input"')" 1
+check "아테나에 못 지운 까닭 한 줄(2026-11-12 — 안 지워진 줄 모르던 버그)" "$(count "$WORK/sent" '^SENT p1 📦 p4 새로 시작 못 함(그사이 새 입력이 들어옴) — 대화는 그대로 · plans/task/agent.md$')" 1
 
 echo
 if [ "$FAIL" = 0 ]; then echo "✅ 통과"; else echo "❌ 실패"; fi

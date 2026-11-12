@@ -9,7 +9,8 @@
 1. 지금 확인(앞에서 · 바로 끝난다): 부른 쪽이 화면 안의 아테나 pane(ATHENA_AGENT 없음 · Claude · Codex)인가 · 계획서가 있고
    Checkpoint "- Updated:" 가 FRESH_MINUTES 안인가(새로 시작하면 대화가 사라지니 Checkpoint 를 먼저 적게 한다). 안 되면 종료 1 · 이유
 2. 뒤에서 처리기를 띄우고 "📦 대화가 커져 새로 시작합니다 — <계획서>" 한 줄을 찍는다(아테나가 사용자에게 그대로 알린다)
-3. 처리기(떨어져 돈다 · pane 마다 하나): 아테나 pane 이 쉴 때까지 기다린다 — 일하는 중(agent_status working) · 선택 창(pane_request.pane_menu)
+3. 처리기(떨어져 돈다 · pane 마다 하나): 아테나 pane 이 쉴 때까지 기다린다 — 일하는 중(foreground_status working — 뒤 셸만 도는 것은 쉼으로 본다 ·
+   옛 데몬은 agent_status) · 선택 창(pane_request.pane_menu)
    · 입력칸에 초안이 있거나 입력칸을 못 읽으면 넣지 않고 기다린다(2초마다 · 최대 6시간 — lead-send 와 같은 값). 연달아 두 번 쉬어야 넣는다
    → Claude 는 /clear · Codex 는 /new 를 넣는다(pane 안 프로그램은 끄지 않는다) → 새 대화가 pane 기록(state/pane-sessions — pane-session.py)에
    적히면 옛 대화를 가리키던 계획서 "- Lead session:"(넘긴 계획서는 어느 대화를 가리키든) · 모아 둔 lead-send 글의 대화를 새 대화로 옮긴다(안 옮기면 에이전트 보고가
@@ -22,7 +23,7 @@
    압축 경고 훅이 단계 끝에 Checkpoint 를 갱신하고 부르라고 알려 준다. 리드와 다른 점:
    사용자가 그 pane 을 보고 있으면(pane focused) 넣지 않고 기다린다 · 지운 뒤 계획서 Lead session 은 옮기지 않는다(아테나 대화다) ·
    대신 아테나(계획서 "- Lead pane:")에 "📦 <pane> 새로 시작 — <계획서>" 한 줄(lead-send.py --note — 끝 알림 받음 확인 · 그 차례의 직접 보고로 치지 않는다) ·
-   재개 지시는 "<계획서> 이어서 — Checkpoint 부터 읽고 진행". 끝 알림 차례 상태(state/agent-turn · agent-notify) · pane 기록 · 보호 훅은
+   재개 지시는 "<계획서> 이어서 — Checkpoint 부터 읽고 진행" · 못 지우고 끝나면(새 입력 · 대화 바뀜 · 6시간 등) 아테나에 "📦 <pane> 새로 시작 못 함(<까닭>)" 한 줄. 끝 알림 차례 상태(state/agent-turn · agent-notify) · pane 기록 · 보호 훅은
    pane · 환경 기준이라 대화가 바뀌어도 이어진다
 화면은 scripts/lib/screen.py 로만. 입력칸 읽기는 앱 src/lib/pane-submit.mts inputOf 와 같은 규칙(Claude ❯ ~ 가로선 · Codex › ~ 빈 줄).
 종료 코드: 0 = 처리기를 띄웠다 · 1 = 확인 실패(이유를 찍는다) · 2 = 사용법
@@ -138,7 +139,9 @@ def ready(pane: str, agent: str, role: str = 'lead'):
         return 'gone'
     if not isinstance(info, dict) or info.get('agent') != agent:
         return 'gone'
-    if info.get('agent_status') != 'idle':
+    # 뒤 셸(개발 앱 · 감시 명령)이 돌면 agent_status 는 working 으로 남는다 — 앞(턴)이 쉬는지만 본다(2026-11-12 p1m — 6시간 기다리다 끝나던 버그).
+    # foreground_status 가 없는 옛 데몬은 agent_status 로
+    if (info.get('foreground_status') or info.get('agent_status')) != 'idle':
         return False
     if role == 'agent' and info.get('focused'):
         return False
@@ -204,14 +207,33 @@ def plan_lead(plan: str) -> str:
     return found.group(1) if found and PANE_ID.fullmatch(found.group(1)) else ''
 
 
-def notify_lead(pane: str, plan: str) -> None:
-    """에이전트 pane 을 지운 뒤 아테나에 한 줄 — lead-send.py --note(못 받으면 모아 뒀다 넣는다 · 받음 확인 · 직접 보고로 치지 않는다).
-    실패해도 무시한다(새로 시작은 그대로 이어 간다)"""
+# 새로 시작하지 못하고 끝난 까닭(사건 기록 결과 → 아테나에 알리는 말)
+STOP_REASONS = {
+    'new-input': '그사이 새 입력이 들어옴',
+    'already-new': '그사이 대화가 바뀜',
+    'checkpoint-stale': 'Checkpoint 가 예약 때보다 앞섬',
+    'gave-up': '6시간 동안 쉬지 않음',
+    'clear-failed': '/clear 를 넣지 못함',
+    'no-new-session': '새 대화가 기록되지 않음',
+}
+
+
+def stop_text(pane: str, plan: str, result: str) -> str:
+    """에이전트 pane 새로 시작이 끝까지 가지 못했을 때 아테나에 보낼 한 줄 — 알릴 것이 없으면 ''(done · pane 이 없어짐)"""
+    if result in ('done', 'gone') or result.startswith('resume-'):
+        return ''   # resume-* 는 이미 지웠다 — 📦 줄이 갔다
+    reason = STOP_REASONS.get(result, result)
+    return f'📦 {pane} 새로 시작 못 함({reason}) — 대화는 그대로 · {plan}'
+
+
+def notify_lead(pane: str, plan: str, text: str = '') -> None:
+    """에이전트 pane 을 지운 뒤(또는 못 지우고 끝난 뒤) 아테나에 한 줄 — lead-send.py --note(못 받으면 모아 뒀다 넣는다 · 받음 확인 ·
+    직접 보고로 치지 않는다). 실패해도 무시한다(새로 시작은 그대로 이어 간다)"""
     lead = plan_lead(plan)
     if not lead or lead == pane:
         return
     try:
-        subprocess.run([sys.executable, str(ATHENA_DIR / 'scripts' / 'lead-send.py'), lead, f'📦 {pane} 새로 시작 — {plan}', '--plan', plan, '--note'],
+        subprocess.run([sys.executable, str(ATHENA_DIR / 'scripts' / 'lead-send.py'), lead, text or f'📦 {pane} 새로 시작 — {plan}', '--plan', plan, '--note'],
                        stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, timeout=NOTE_TIMEOUT)
     except (OSError, subprocess.SubprocessError):
         pass
@@ -310,6 +332,11 @@ def run_worker(pane: str, agent: str, plan: str, old: str, mark: str, stamp: str
     except Exception:
         result = 'error'
     log_event(result, pane, plan)
+    # 에이전트 pane 이 못 지우고 끝나면 아테나에 까닭 한 줄 — 아테나 pane 은 자기 입력칸에 넣게 되니 사건 기록만
+    if role == 'agent':
+        text = stop_text(pane, plan, result)
+        if text:
+            notify_lead(pane, plan, text)
 
 
 def start(plan: str) -> int:

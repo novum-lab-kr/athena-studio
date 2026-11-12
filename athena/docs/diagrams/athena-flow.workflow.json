@@ -62,7 +62,7 @@
           "report",
           "req"
         ],
-        "note": "머지되면 현황판이 done 으로 옮기고 learn-review 가 학습 후보를 [학습] 탭에 올립니다(사용자가 넣기). 끝난 pane 을 닫으면 자동 archive. 후속 작업은 이슈 → [작업 시작] 으로 다시 요청."
+        "note": "머지되면 현황판이 done 으로 옮기고 learn-review 가 학습 후보를 [학습] 탭에 올립니다(사용자가 넣기). 끝난 pane 은 현황판이 닫고 이어 자동 archive. 후속 작업은 이슈 → [작업 시작] 으로 다시 요청."
       }
     ],
     "output": "docs/diagrams/athena-flow.html"
@@ -210,7 +210,7 @@
       "col": 5,
       "type": "backend",
       "label": "확인 · cleanup",
-      "sublabel": "아테나 · 끝난 pane 닫기",
+      "sublabel": "현황판 · 끝난 pane 닫기",
       "tag": "자동 archive · 워크트리 cleanup",
       "width": 150
     },
@@ -567,7 +567,7 @@
         "⑥ 리뷰(넓은 수정만) — 정식 계획서는 넓은 수정을 보고하면 묻지 않고 리뷰를 띄운다(자동 리뷰). 경량은 자동 리뷰가 없다. 넓은 수정(새 기능 · 구조 변경 · 여러 파일 로직 · 보안 · 데이터 · 외부 계약)을 보고할 때만 에이전트가 끝에 \"리뷰할까요?\" 한 줄을 붙인다 — 작은 수정 · 리뷰 지적 반영 뒤에는 묻지 않는다. 사용자가 \"리뷰해줘\" 하면 언제든 옆 reviewer pane 을 띄운다. 리뷰어는 같은 트리로 이미 통과한 검증을 다시 돌리지 않는다(♻️ 재사용). 결정 필요(선택지가 갈림)는 같은 계획서에 결정 콘솔로 덧붙여 보여 준다(plan-html.mjs --add · [이대로 진행] 은 그 에이전트 pane 으로). 수정 필요면 묻지 않고 고친 뒤 한 줄씩 알린다",
         "⑦ 커밋 — \"커밋해줘\" 나 push 가 commit.sh 로 커밋한다(지정 파일만 · strict verify · 계획서 ## Commits). 여러 번 해도 된다",
         "⑧ push · PR — 여러 레포면 아테나가 순서 · 공개 범위를 확인하고 레포마다 ship.sh --repo-agent(정식 갈래). 레포 하나면 방식은 레포 설정마다(delegate.sh 결과 줄이 알려 준다). 기본: \"PR 올려줘\" 한 마디 → 커밋 → ship.sh 초안 → 제목 · 본문 정리 → 묻지 않고 prBase 로 draft PR. 자동 PR 켠 레포(autoMerge): 끝나면 묻지 않고 draft PR → PR 자동 리뷰. PR 끈 레포(autoPr:false): ship.sh --direct-merge 로 direct merge(넓은 수정이면 merge 앞에 리뷰 gate) — \"PR 올려줘\" 일 때만 --user-pr. Actions handoff 레포: 같은 명령이 feature branch push 로 handoff 하고 바로 끝난다. 보고 끝에 📚 배운 것",
-        "⑨ 끝 — PR 이 머지되면(direct merge · Actions 는 계획서 - Auto merge: 머지됨 줄) 현황판이 계획서를 done 으로 옮긴다 → 학습 리뷰어(learn-review)가 계획서 · 대화 · diff · 리뷰 댓글로 학습 후보를 보탠다 → 묶인 pane 이 모두 닫히면 자동 archive(archive/) · 워크트리도 판정해 지운다. 끝난 pane 은 아테나가 닫는다",
+        "⑨ 끝 — PR 이 머지되면(direct merge · Actions 는 계획서 - Auto merge: 머지됨 줄) 현황판이 계획서를 done 으로 옮긴다 → 학습 리뷰어(learn-review)가 계획서 · 대화 · diff · 리뷰 댓글로 학습 후보를 보탠다 → 묶인 pane 이 모두 닫히면 자동 archive(archive/) · 워크트리도 판정해 지운다. 끝난 pane(PR 머지 · 10분 쉼 · 안 보는 중 · 미커밋 없음)은 현황판이 닫고 아테나에 한 줄",
         "pane 사이 전달은 scripts/screen pane send-text 로 직접 — 아테나에게는 lead-send.py(못 받으면 모아 뒀다 넣는다). 사용자에게 전해 달라고 하지 않는다",
         "질문 · 허락 대기는 Studio [작업] 팝업에서 확인한다. 질문은 팝업에서 답하고, 허락은 [pane 으로 가기] 뒤 원래 창에서 고른다. 선택 창은 waiting 상태다",
         "Codex 보호 훅은 첫 Bash 명령만 검사하며 write_stdin 후속 입력은 검사하지 않는다. 훅 신뢰는 /hooks 에서 확인한다",
@@ -643,7 +643,7 @@
       "dot": "slate",
       "title": "cleanup / 끊겼을 때 resume",
       "items": [
-        "자동 archive — 계획서 PR 이 모두 머지돼 done + learn review 끝 + 묶인 에이전트 pane 이 모두 닫히면 현황판이 archive/<이름>/ 에 이슈 · 계획서를 묶어 커밋한다. 그 계획서 워크트리도 판정해 지운다(미커밋 · unpushed 커밋 · 쓰는 pane 이 있으면 남기고 이유를 Checkpoint 에). 끝난 pane 은 아테나가 닫는다 · 지나간 일은 [아카이브] 탭",
+        "자동 archive — 계획서 PR 이 모두 머지돼 done + learn review 끝 + 묶인 에이전트 pane 이 모두 닫히면 현황판이 archive/<이름>/ 에 이슈 · 계획서를 묶어 커밋한다. 그 계획서 워크트리도 판정해 지운다(미커밋 · unpushed 커밋 · 쓰는 pane 이 있으면 남기고 이유를 Checkpoint 에). 끝난 에이전트 pane 은 현황판이 닫는다 · 지나간 일은 [아카이브] 탭",
         "현황판 [학습] 탭 — 학습 후보 [넣기]·[고쳐서 넣기]·[버리기](넣으면 gotchas 에 한 줄), 학습한 내용 수정·삭제, 스킬 후보는 아테나에게 맡기기. /sync 끝에 learn-curator 가 30일 안 쓴 스킬을, gotchas-check 가 사라진 파일을 가리키는 gotchas 줄·나눌 때가 된 gotchas(공통 2만 자·같은 화면 5줄 → gotchas/<폴더>.md)를 cleanup 후보로(지우지 않음)",
         "이슈 완료 가능 배지 = 확인 결과·후속·fix·계획 done+PR MERGED. 배지가 뜨면 아테나가 옮긴다 (이슈·계획서는 로컬 — git 엔 archive/ 만)",
         "auto done — 계획서 PR 줄의 PR 이 모두 머지되면(GitHub MERGED, base 무관 · direct merge · Actions 는 계획서 - Auto merge: 머지됨 줄) 현황판이 계획서를 done 으로 옮긴다. 머지 없이 닫힌 PR 은 판정에서 빼고, Progress 에 단계 칸(N단계 · (단계) 표시)이 남으면 옮기지 않는다. 일반 빈 칸은 막지 않고 Lead pane 에 알린다 · 끝난 뒤 후속 작업은 빈 칸으로 두지 않고 이슈로",
