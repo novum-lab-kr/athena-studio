@@ -9,7 +9,7 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
+const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
 const { packView, bodyPacks, serverSummary } = require('../src/main/mobile-dev.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
@@ -851,6 +851,9 @@ test('cellSize · isTerminalReply — 폰 크기 검사 · 터미널 자동 답�
   assert.deepEqual(cellSize(50, 30), { cols: 50, rows: 30 })
   for (const [cols, rows] of [[1, 30], [50, 1], [50.5, 30], ['50', 30], [5000, 30], [50, 900], [null, null]]) assert.equal(cellSize(cols, rows), null, `${cols}x${rows}`)
   for (const reply of ['\x1b[12;5R', '\x1b[?12;5R', '\x1b[0n', '\x1b[?1;2c', '\x1b[>0;276;0c', '\x1b[?2026;2$y', '\x1b[?0u', '\x1b[8;40;120t', '\x1b[I', '\x1b[O', '\x1b]11;rgb:0000/0000/0000\x07', '\x1b]10;rgb:ffff/ffff/ffff\x1b\\', '\x1bP>|xterm.js(6.0)\x1b\\', '\x1b[I\x1b[12;5R']) assert.equal(isTerminalReply(reply), true, JSON.stringify(reply))
+  for (const hover of ['\x1b[<35;26;11M', '\x1b[<39;1;1M', '\x1b[<63;200;50M', '\x1b[<35;26;11M\x1b[<35;27;11M']) assert.equal(isPointerHover(hover), true, JSON.stringify(hover))
+  // 누르기 · 떼기 · 끌기(32) · 휠(64 · 65) · 친 글자는 지나가기가 아니다
+  for (const used of ['\x1b[<0;26;11M', '\x1b[<0;26;11m', '\x1b[<32;26;11M', '\x1b[<64;26;11M', '\x1b[<65;26;11M', '\x1b[<35;26;11m', 'a', '\x1b[<35;26;11Ma']) assert.equal(isPointerHover(used), false, JSON.stringify(used))
   for (const typed of ['a', 'ls\r', '\x1b[A', '\x1bOA', '\x1b[15~', '\x1b[<0;10;5M', '\x03', '\x1b[200~붙여\x1b[201~', '\x1b[Ia']) assert.equal(isTerminalReply(typed), false, JSON.stringify(typed))
 })
 
@@ -889,8 +892,11 @@ test('맥에서 입력 — 터미널 자동 답은 그대로 · 사람 입력이
     assert.deepEqual(resizes(env), [{ pane: 'p1', cols: 50, rows: 30 }])
     control.macInput('p1', '\x1b[I')
     control.macInput('p1', '\x1b[3;1R')
+    // 맥 포인터가 pane 위를 지나가기만 함 — Claude Code 는 움직임 추적(1003 · 1006)을 켜서 xterm 이 누르지 않은 움직임도 입력으로 보낸다(2026-11-12 실측 \x1b[<35;26;11M)
+    control.macInput('p1', '\x1b[<35;26;11M')
+    control.macInput('p1', '\x1b[<35;27;11M\x1b[<39;28;12M')
     await sleep(30)
-    assert.equal(control.ownerOf('p1').owner, 'phone', '자동 답은 주인을 바꾸지 않는다')
+    assert.equal(control.ownerOf('p1').owner, 'phone', '자동 답 · 포인터 지나가기는 주인을 바꾸지 않는다')
     control.macInput('p1', 'l')
     await waitFor(() => env.events('pane.owner').length === 2, '맥으로')
     assert.deepEqual(env.events('pane.owner')[1], { event: 'pane.owner', pane: 'p1', owner: 'mac', mine: false, cols: 130, rows: 44 })
