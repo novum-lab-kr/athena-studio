@@ -350,4 +350,16 @@ before="$(sent)"
 hook stop '{"last_assistant_message":"다 했어요 2."}'
 check "다음 차례에 보고가 없으면 끝 줄을 넣는다(옛 차례 보고로 막지 않는다)" "$(sent)" "$((before + 1))"
 
+# 결과 요약 — 마지막 답(보고)의 절마다 첫 줄을 끝 줄 뒤에 ' — 요약: a / b' 로(아테나가 pane 을 읽으러 가지 않게 · 2026-11-12)
+hook prompt '{"prompt":"요약 1"}'
+hook stop '{"last_assistant_message":"## 1. 무엇이 달라졌나\n- 버튼 문구 고침\n- 둘째 줄\n\n## 2. 어디서 확인하나\n- PR #7 (draft)\n\n## 3. 검증 결과\n| a | b |\n|---|---|\n```\n출력\n```\n전체 검증 미실행(커밋 때 돈다)\n\n## 4. 남은 일\n- 없음"}'
+check "절마다 첫 줄을 요약으로 싣는다(표 · 코드 블록 · 제목은 뺀다)" "$(last_sent | grep -c '\] 끝 · p9 · .* — 요약: 버튼 문구 고침 / PR #7 (draft) / 전체 검증 미실행(커밋 때 돈다) / 없음$')" 1
+hook prompt '{"prompt":"요약 2"}'
+long="$(python3 -c 'print("\\n".join(f"{i}번 " + "가" * 200 for i in range(9)))')"
+hook stop "{\"last_assistant_message\":\"$long\"}"
+check "요약은 5줄 · 줄당 120자 · 전체 480자 상한" "$(last_sent | python3 -c 'import sys; s=sys.stdin.read().split(" — 요약: ",1)[1].strip().split(" / "); print(len(s) <= 5 and all(len(x) <= 120 for x in s) and sum(map(len, s)) <= 480)')" True
+before="$(sent)"
+hook stop '{"last_assistant_message":"다른 보고"}'
+check "같은 차례에 요약만 달라진 Stop 은 다시 넣지 않는다(중복 막기는 요약을 뺀 줄)" "$(sent)" "$before"
+
 [ "$FAIL" = 0 ] && echo "모두 통과" || { echo "실패 있음"; exit 1; }

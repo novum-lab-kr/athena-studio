@@ -224,5 +224,6 @@
   "Fix Athena starting a fresh conversation without asking — asks first, no repeat within 30 minutes": "아테나가 묻지 않고 대화를 새로 시작하던 문제 수정 — 먼저 묻기, 30분 안에는 다시 묻지 않기",
   "Fix agent reports not reaching Athena after a fresh conversation": "새 대화로 바꾼 뒤 에이전트 보고가 아테나에 가지 않던 문제 수정",
   "Fix agents launched without a prompt idling — follow plan instructions, tell Athena after 5 minutes": "지시문 없이 띄운 에이전트가 놀던 문제 수정 — 계획서 지시대로 진행 · 5분 놀면 아테나에 알림",
-  "Automatic fresh conversation for agents when the context gets large — no asking": "대화가 커지면 에이전트 pane 새 대화 자동 시작 — 묻지 않고 계획서에서 재개"
+  "Automatic fresh conversation for agents when the context gets large — no asking": "대화가 커지면 에이전트 pane 새 대화 자동 시작 — 묻지 않고 계획서에서 재개",
+  "Result summary in agent done notices — Athena reads less of the pane screen": "에이전트 끝 알림에 결과 요약 추가 — 아테나가 pane 화면을 덜 읽음"
 }

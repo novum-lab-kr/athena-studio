@@ -7,6 +7,7 @@
 
 에이전트가 한 차례(턴)를 끝내면(Stop) 그 pane 을 띄운 아테나 pane 에 한 줄을 입력한다:
   [<에이전트> → 아테나] 끝 · <pane> · 계획서 <경로> · Status <값> · PR <번호 · 상태>(있을 때만 · 상태는 gh 로 물은 실제 값, 못 물으면 계획서 값 + "(기록 기준)") · 머지 <레포 브랜치 결과>(PR 끔 레포의 바로 머지 — "- Auto merge:" 줄이 있을 때만)
+  + " — 요약: a / b / c"(마지막 답에서 최대 5줄 · 480자 — summary_lines. 중복 막기 · 직접 보고 판정은 요약을 뺀 줄로)
 계획서 지시의 "멈춤:" 에서 멈춘 차례(마지막 답에 "⏸ 멈춤: <기다리는 것>" 으로 시작하는 줄 — delegate.sh 머리말이 그렇게 쓰게 한다)는 "끝" 대신
   [<에이전트> → 아테나] ⏸ 멈춤 · <pane> · 계획서 <경로> · Status <값> · <기다리는 것> 으로 알리고 사건 plan.stop 을 남긴다(현황판 [지표] 탭이 센다).
 멈춤 표시 없이 질문으로 끝낸 차례(마지막 줄이 물음표 — "커밋할까요?" · 또는 고르기 질문을 요청으로 올린 차례)는 "끝" 대신 "질문으로 멈춤"(결정 D3).
@@ -133,6 +134,62 @@ def notice_line(agent: str, pane: str, plan: str, fields: dict, stop: str = '', 
     if background:
         parts.append(f'(백그라운드 명령 {background}개 도는 중)')
     return ' · '.join(parts)
+
+
+# 끝 알림에 싣는 결과 요약 — 아테나가 알림만 보고 pane 을 읽으러 가지 않게(2026-11-12 · 끝 알림 1건에 아테나 응답 평균 2.7번이 대부분 pane read).
+# 마지막 답(보고)에서 뽑는다. 길면 효과가 없어 줄 수 · 줄 길이 · 전체 글자에 상한을 둔다
+SUMMARY_LINES = 5
+SUMMARY_LINE_CHARS = 120
+SUMMARY_CHARS = 480
+SECTION_MARK = re.compile(r'^(?:#{1,6}\s+.*|\d+[.)]\s+\*\*[^*]+\*\*\s*[:：—–-]?\s*(.*)|\*\*[^*]+\*\*\s*[:：]?\s*)$')
+
+
+def summary_lines(reply: str) -> list:
+    """마지막 답에서 요약 줄 — 절(제목 · '1. **무엇이 달라졌나**' 같은 번호 굵은 머리)이 둘 이상이면 절마다 첫 내용 줄,
+    아니면 앞의 내용 줄. 코드 블록 · 표 · 멈춤 표시 줄은 뺀다. 못 뽑으면 []"""
+    sections, current, fenced = [], None, False
+    for raw in reply.splitlines():
+        text = raw.strip()
+        if text.startswith('```'):
+            fenced = not fenced
+            continue
+        if fenced or not text or text.startswith('|') or STOP_MARK.match(text) or re.fullmatch(r'[-*_=]{3,}', text):
+            continue
+        head = SECTION_MARK.match(text)
+        if head:
+            current = []
+            sections.append(current)
+            # 제목 글 자체('무엇이 달라졌나')는 내용이 아니다 — 번호 굵은 머리 뒤에 이어 쓴 글만 그 절의 내용으로
+            text = (head.group(1) or '').strip()
+            if not text:
+                continue
+        if current is None:
+            current = []
+            sections.append(current)
+        current.append(text)
+    if len(sections) >= 2:
+        picked = [items[0] for items in sections if items]
+    else:
+        picked = sections[0] if sections else []
+    out, total = [], 0
+    for text in picked[:SUMMARY_LINES]:
+        text = re.sub(r'^(?:[-*+>]\s+)+', '', text)
+        text = re.sub(r'[*_`]+', '', text).strip()
+        if not text:
+            continue
+        if len(text) > SUMMARY_LINE_CHARS:
+            text = text[:SUMMARY_LINE_CHARS - 1] + '…'
+        if total + len(text) > SUMMARY_CHARS:
+            break
+        out.append(text)
+        total += len(text)
+    return out
+
+
+def with_summary(line: str, reply: str) -> str:
+    """끝 줄 뒤에 ' — 요약: a / b / c'. lead-send 가 줄바꿈을 공백으로 펴니 한 줄로 잇는다. 요약이 없으면 줄 그대로"""
+    picked = summary_lines(reply)
+    return f'{line} — 요약: {" / ".join(picked)}' if picked else line
 
 
 STOP_MARK = re.compile(r'^[\s#>*_`-]*⏸\s*멈춤\s*[:：]?\s*(.*)$', re.M)
@@ -313,7 +370,7 @@ def deliver_notice(state_path: pathlib.Path, pane: str, lead: str, notice_id: st
                 else:
                     pending['claimed'] = True
                     save_state(state_path, state)
-                    forward(lead, pending['line'], str(pending.get('plan') or ''))
+                    forward(lead, str(pending.get('message') or pending['line']), str(pending.get('plan') or ''))
                     state['last'] = pending['line']
                     state.pop('pending', None)
                     save_state(state_path, state)
@@ -395,7 +452,9 @@ def main() -> None:
     lead = fields['lead']
     if not PANE_ID.match(lead) or lead == pane:
         return
+    # 중복 막기는 요약을 뺀 줄로 — 요약(마지막 답)만 달라진 같은 차례의 Stop 으로 아테나를 다시 깨우지 않는다(옛 동작 그대로)
     line = notice_line(agent, pane, plan, fields, stop, background, question)
+    message = with_summary(line, reply)
     with pane_lock(state_path.parent, pane):
         state = load_json(state_path)
         if not state.get('turn') or state.get('skip'):
@@ -407,7 +466,7 @@ def main() -> None:
         if state.get('last') == line or (pending.get('turn') == turn and pending.get('line') == line):
             return
         notice_id = uuid.uuid4().hex
-        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'plan': plan}
+        state['pending'] = {'id': notice_id, 'turn': turn, 'line': line, 'message': message, 'plan': plan}
         save_state(state_path, state)
     if stop:
         log_event('plan.stop', plan=plan, agent=agent, pane=pane)
