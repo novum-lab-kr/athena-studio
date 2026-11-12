@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 끝난 에이전트 pane 자동 닫기 — 진짜 현황판 서버(scripts/board/server.mjs closeFinishedPanes · scripts/board/pane-close.mjs) 한 주기.
 # 판정 함수는 board-auto-test.sh 가 보고 여기서는 서버가 화면에 넣는 것(pane close · 아테나 알림)을 본다. 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI · 몇 초
-#   닫음: PR 머지 + 쉼 · 뒤 셸만 돌고 앞은 쉼 / 안 닫음: 사용자가 봄 · 미커밋 · 앞이 일함 · PR 열림 · 남은 단계 칸 · 열린 요청 · 입력칸 초안 · 화면 못 읽음 · 아테나 pane
+#   닫음: PR 머지 + 쉼 · 뒤 셸만 돌고 앞은 쉼 / 안 닫음: 사용자가 봄 · 미커밋 · 앞이 일함 · PR 열림 · 남은 단계 칸 · 열린 요청 · 입력칸 초안 · 화면 못 읽음 · 닫기 직전에 초안이 생김 · 아테나 pane
 #
 # 사용: test/board-pane-close-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -16,7 +16,8 @@ cleanup() {
   if [ -n "$learn_pid" ] && kill "$learn_pid" 2>/dev/null; then
     for _ in $(seq 1 20); do kill -0 "$learn_pid" 2>/dev/null || break; sleep 0.1; done
   fi
-  [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP"
+  # 끈 서버가 막 띄운 화면 CLI(p16 읽기 횟수 파일을 쓴다)가 늦게 끝날 수 있어 한 번 더
+  [ "${KEEP:-0}" = 1 ] || rm -rf "$TMP" 2>/dev/null || { sleep 1; rm -rf "$TMP"; }
 }
 trap cleanup EXIT
 athena_test_reap "$TMP"
@@ -40,6 +41,11 @@ cat > "$TMP/bin/athena-studio-cli" <<SH
 case "\$*" in
   'pane read p14 '*) printf '일 끝\\n────────\\n❯ 아직 안 보낸 글\\n────────\\n' ; exit 0 ;;
   'pane read p15 '*) exit 1 ;;
+  # p16 — 처음 읽을 땐 빈 입력칸, 닫기 직전 다시 읽으면 초안(읽은 뒤 사용자가 쓰기 시작) — 읽을 때마다 번갈아
+  'pane read p16 '*)
+    n=\$(( \$(cat "$TMP/p16.count" 2>/dev/null || echo 0) + 1 )); echo "\$n" > "$TMP/p16.count"
+    if [ \$((n % 2)) = 1 ]; then printf '일 끝\\n────────\\n❯ \\n────────\\n'; else printf '일 끝\\n────────\\n❯ 막 쓰기 시작한 글\\n────────\\n'; fi
+    exit 0 ;;
 esac
 exec "$TMP/bin/fake-studio-cli" "\$@"
 SH
@@ -75,6 +81,7 @@ plan 20261112-step p12 7 '- [x] 1단계\n- [ ] 2단계 전환'
 plan 20261112-asked p13 7 '- [x] 구현'
 plan 20261112-draft p14 7 '- [x] 구현'
 plan 20261112-unread p15 7 '- [x] 구현'
+plan 20261112-race p16 7 '- [x] 구현'
 (cd "$CORE" && node --input-type=module -e "
 import { openRequest } from './scripts/lib/requests.mjs'
 openRequest(process.cwd(), { kind: 'question', title: '물음', links: { plan: 'plans/task/20261112-asked.md' }, pane: 'p13' })
@@ -99,6 +106,7 @@ add('p12', {})
 add('p13', {})
 add('p14', {})
 add('p15', {})
+add('p16', {})
 fs.writeFileSync(file, JSON.stringify(fixture))
 FIXTURE
 SCREEN_LOG="$TMP/screen.log"
@@ -129,11 +137,12 @@ const calls = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).m
 const closed = new Set(calls.filter((args) => args[1] === 'pane' && args[2] === 'close').map((args) => args[3]))
 check('PR 머지 + 쉼 → 닫음(scripts/screen pane close)', closed.has('p6'), log)
 check('뒤 셸만 돌고 앞은 쉼(foreground_status idle) → 닫음 · 일반 빈 칸은 막지 않는다', closed.has('p7'), log)
-for (const [pane, why] of [['p8', '사용자가 봄'], ['p9', '미커밋 변경'], ['p10', '앞이 일함'], ['p11', 'PR 열림'], ['p12', '남은 단계 칸'], ['p13', '열린 요청'], ['p14', '입력칸에 보내지 않은 글'], ['p15', '화면을 못 읽음'], ['p1', '아테나 pane'], ['p2', '일하는 pane']]) {
+for (const [pane, why] of [['p8', '사용자가 봄'], ['p9', '미커밋 변경'], ['p10', '앞이 일함'], ['p11', 'PR 열림'], ['p12', '남은 단계 칸'], ['p13', '열린 요청'], ['p14', '입력칸에 보내지 않은 글'], ['p15', '화면을 못 읽음'], ['p16', '닫기 직전 다시 보니 입력칸에 글'], ['p1', '아테나 pane'], ['p2', '일하는 pane']]) {
   check(`${why} → 안 닫음(${pane})`, !closed.has(pane), [...closed].join(' '))
 }
 const notes = calls.filter((args) => args[1] === 'pane' && args[2] === 'run' && String(args[4]).includes('🚪'))
 check('아테나(Lead pane p1)에 닫은 pane 한 줄', notes.some((args) => args[3] === 'p1' && args[4] === '[현황판 → 아테나] 🚪 p6 닫음 — 맡은 일이 끝남(plans/task/20261112-merged.md)'), JSON.stringify(notes))
+check('닫기 직전에 다시 본다(p16 — 취소 기록)', /닫기 취소/.test(log) && log.includes('p16'), log)
 check('pane 안 프로그램을 끄는 키는 넣지 않는다(C-c 없음)', !calls.some((args) => args[2] === 'send-keys'), JSON.stringify(calls.filter((args) => args[2] === 'send-keys')))
 console.log()
 process.exit(fail)

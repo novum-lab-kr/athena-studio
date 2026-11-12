@@ -474,6 +474,16 @@ const gitDirty = (dir) =>
       resolve(Boolean(stdout.trim()))
     })
   })
+// 닫기 직전 다시 보기 — pane 목록 · 화면을 새로 읽어 앞이 쉬는지 · 보고 있지 않은지 · 선택 창 · 입력칸 초안을 다시 판정한다.
+// '' 이면 닫아도 된다 · 그 밖에는 막는 까닭(목록을 못 읽으면 'unread')
+const recheckPane = async (paneId) => {
+  const listed = await screen(['pane', 'list', '--agent-only'])
+  if (!Array.isArray(listed?.panes)) return 'unread'
+  const raw = listed.panes.find((pane) => pane.id === paneId)
+  if (!raw) return 'gone'
+  const text = await screenText(['pane', 'read', paneId, '--lines', '40'])
+  return closeBlock({ raw, plansDone: true, menu: menuOpen(text, raw.agent_status), draft: hasDraft(raw.agent, text), request: false, dirty: false })
+}
 const closeFinishedPanes = async (plans, rawPanes) => {
   const live = plans.filter((plan) => !plan.archived && plan.agents.length)
   const finished = new Map(await Promise.all(live.map(async (plan) => [plan.id, await planFinished(plan)])))
@@ -504,6 +514,14 @@ const closeFinishedPanes = async (plans, rawPanes) => {
       })
     }
     if (!closeTimer.due(paneId, !block, Date.now())) continue
+    // 닫기 직전에 다시 본다 — 위에서 읽은 뒤(git · 요청 검사 동안) 사용자가 이 pane 으로 오거나 입력칸에 쓰기 시작했을 수 있다(PR #293 리뷰).
+    // 바뀌었거나 못 읽으면 닫지 않고 쉼 시계를 처음부터
+    const again = await recheckPane(paneId)
+    if (again) {
+      closeTimer.forget(paneId)
+      console.log(`↩️ 끝난 pane ${paneId} 닫기 취소 — 닫기 직전에 다시 보니 ${again}`)
+      continue
+    }
     if ((await screen(['pane', 'close', paneId])) === null) { console.log(`⚠️ 끝난 pane ${paneId} 을 닫지 못했다`); continue }
     closeTimer.forget(paneId)
     for (const plan of plans) plan.agents = plan.agents.filter((id) => id !== paneId)
