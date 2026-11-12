@@ -189,7 +189,13 @@ check('빈 Claude 입력칸 → 초안 없음', inputOf('claude', box('❯ ')) =
 check('Claude 입력칸에 쓰다 만 글 → 초안', inputOf('claude', box('❯ 아직 안 보낸 글')) === '아직 안 보낸 글' && hasDraft('claude', box('❯ 아직 안 보낸 글')))
 check('여러 줄 초안도 읽는다', inputOf('claude', box('❯ 첫 줄\n  둘째 줄')) === '첫 줄\n  둘째 줄')
 check('큐 안내(Press up…)는 초안이 아니다', !hasDraft('claude', `ctrl+x ctrl+s to send now\n${box('❯ Press up to edit queued messages')}`))
-check('Codex 입력칸(빈 줄로 끝남)', !hasDraft('codex', '일 끝\n› \n\n  ⏎ send') && hasDraft('codex', '› 쓰던 글\n\n'))
+const codexBox = (inner) => `일 끝\n${inner}\n\n  GPT-6.1-Sol medium · /tmp/demo\n  ? for shortcuts`
+check('빈 Codex 입력칸 · 자리 글 → 초안 없음', !hasDraft('codex', codexBox('› ')) && !hasDraft('codex', codexBox('› Ask Codex to do anything')) && !hasDraft('codex', '› \n\n  GPT-6.1 Terra low · /tmp\n  ← for agents · ? for shortcuts'))
+check('Codex 입력칸에 쓰던 글 → 초안', inputOf('codex', codexBox('› 쓰던 글')) === '쓰던 글')
+// PR #293 리뷰 — 빈 줄로 시작하는 여러 줄 초안을 첫 빈 줄에서 끊으면 빈 입력칸으로 읽었다
+check('Codex 빈 줄로 시작하는 여러 줄 초안 → 초안', inputOf('codex', codexBox('› \n\n  아직 보내지 않은 글\n\n  둘째 문단')) === '아직 보내지 않은 글\n\n  둘째 문단')
+check('Codex 초안 안의 상태줄 같은 문장은 경계가 아니다', hasDraft('codex', codexBox('› \n  gpt-6 작업을 이어줘')))
+check('Codex 화면 경계(상태줄 · 단축키 줄)를 못 찾음 → 모르니 초안으로 친다', hasDraft('codex', '› \n\n  ⏎ send') && hasDraft('codex', '› 쓰던 글\n\n'))
 check('화면을 못 읽음 → 모르니 초안으로 친다', hasDraft('claude', null))
 check('입력칸을 못 찾음 · 모르는 프로그램 → 초안으로 친다', hasDraft('claude', '첫 줄\n둘째 줄') && hasDraft('bash', box('❯ ')))
 check('열린 요청 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, request: true }) === 'request')
