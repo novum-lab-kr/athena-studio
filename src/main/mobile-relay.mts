@@ -11,6 +11,7 @@ import path from 'node:path'
 import * as mobileCrypto from '../lib/mobile-crypto.mts'
 import type { KeyPair } from '../lib/mobile-crypto.mts'
 import type { Transport } from './mobile-bridge.mts'
+import { mobileLog } from './mobile-log.mts'
 
 export const HEARTBEAT_MS = 30_000 // 살아 있나 — 30초마다 devices.list(브라우저식 WebSocket 은 ping 을 못 보내고 relay ping 에는 pong 을 저절로 한다)
 export const REPLY_TIMEOUT_MS = 10_000
@@ -136,7 +137,7 @@ type PeerSession = {
 }
 
 export function createMobileRelay(deps: RelayDeps) {
-  const log = deps.log || ((line: string) => console.log(line))
+  const log = deps.log || mobileLog
   const WebSocketImpl = deps.WebSocketImpl || (globalThis.WebSocket as unknown as WebSocketCtor)
   const heartbeatMs = deps.heartbeatMs ?? HEARTBEAT_MS
   const replyTimeoutMs = deps.replyTimeoutMs ?? REPLY_TIMEOUT_MS
