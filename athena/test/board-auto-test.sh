@@ -174,8 +174,8 @@ check('다른 브랜치의 머지 줄만 있으면 완료 아님', directMergeSt
 check('merged-direct 표시도 자동 완료 표시로 인식(완료 → 재개 판정이 같은 길)', autoDoneMark(`- Auto done: 자동 — 시험 (${merged.mark})`) === merged.mark && autoDoneDone(`- Auto done: 자동 — 시험 (${merged.mark})`, merged.mark))
 
 // ── 끝난 에이전트 pane 자동 닫기 판정(scripts/board/pane-close.mjs · 2026-11-12) ──
-const { closeBlock, createCloseTimer, paneIdle } = await import(modPath.replace('plan-bind.mjs', 'pane-close.mjs'))
-const quiet = { plansDone: true, menu: false, request: false, dirty: false }
+const { closeBlock, createCloseTimer, hasDraft, inputOf, paneIdle } = await import(modPath.replace('plan-bind.mjs', 'pane-close.mjs'))
+const quiet = { plansDone: true, menu: false, draft: false, request: false, dirty: false }
 check('끝났고 쉬고 · 안 보고 · 창 · 요청 · 미커밋 없음 → 닫아도 된다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet }) === '')
 check('뒤 셸만 돌면(agent_status working · foreground_status idle) 쉼으로 본다', paneIdle({ agent_status: 'working', foreground_status: 'idle' }) && closeBlock({ raw: { agent_status: 'working', foreground_status: 'idle' }, ...quiet }) === '')
 check('앞이 일하는 중 → 안 닫는다', closeBlock({ raw: { agent_status: 'working', foreground_status: 'working' }, ...quiet }) === 'working')
@@ -183,6 +183,15 @@ check('선택 창(waiting) → 안 닫는다', closeBlock({ raw: { agent_status:
 check('묶인 계획서가 안 끝남 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, plansDone: false }) === 'plan-open')
 check('사용자가 보고 있음 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle', focused: true }, ...quiet }) === 'focused')
 check('화면에 선택 창 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, menu: true }) === 'menu')
+check('입력칸에 보내지 않은 글 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, draft: true }) === 'draft')
+const box = (inner) => `일 끝\n────────\n${inner}\n────────\n  ? for shortcuts`
+check('빈 Claude 입력칸 → 초안 없음', inputOf('claude', box('❯ ')) === '' && !hasDraft('claude', box('❯ ')))
+check('Claude 입력칸에 쓰다 만 글 → 초안', inputOf('claude', box('❯ 아직 안 보낸 글')) === '아직 안 보낸 글' && hasDraft('claude', box('❯ 아직 안 보낸 글')))
+check('여러 줄 초안도 읽는다', inputOf('claude', box('❯ 첫 줄\n  둘째 줄')) === '첫 줄\n  둘째 줄')
+check('큐 안내(Press up…)는 초안이 아니다', !hasDraft('claude', `ctrl+x ctrl+s to send now\n${box('❯ Press up to edit queued messages')}`))
+check('Codex 입력칸(빈 줄로 끝남)', !hasDraft('codex', '일 끝\n› \n\n  ⏎ send') && hasDraft('codex', '› 쓰던 글\n\n'))
+check('화면을 못 읽음 → 모르니 초안으로 친다', hasDraft('claude', null))
+check('입력칸을 못 찾음 · 모르는 프로그램 → 초안으로 친다', hasDraft('claude', '첫 줄\n둘째 줄') && hasDraft('bash', box('❯ ')))
 check('열린 요청 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, request: true }) === 'request')
 check('미커밋 변경 → 안 닫는다', closeBlock({ raw: { agent_status: 'idle' }, ...quiet, dirty: true }) === 'dirty')
 check('pane 이 없음 → gone', closeBlock({ raw: undefined, ...quiet }) === 'gone')

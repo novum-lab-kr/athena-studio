@@ -65,7 +65,7 @@ import { codexMemorySources } from './codex-memory.mjs'
 import { createGithubIssueWatch, GITHUB_ISSUES_EVERY_MS, watchedRepos } from './github-issues.mjs'
 import { frontValue } from '../lib/front-value.mjs'
 import { cleanupWorktree, withCleanupLine, worktreePathsOf } from './worktree-cleanup.mjs'
-import { CLOSE_AFTER_MS, closeBlock, createCloseTimer } from './pane-close.mjs'
+import { CLOSE_AFTER_MS, closeBlock, createCloseTimer, hasDraft } from './pane-close.mjs'
 import { languageOf, readDictionaries, translate } from './i18n.mjs'
 import { autoDoneDone, autoReopenedFor, clearReopened, needsAutoReopen, reopenLines, boardPaneOf, boundPaneIds, checkpointOf, DONE_KEEP_DAYS, field, followUpDue, followUpIssue, hasOpenSteps, issueLinksOf, nextPaneWatch, plain, TEMPLATE_PLACEHOLDER_LINES, planFiles, planRefs, progressOf, PROTECTED_BRANCH, readPaneSessions, statusOf } from './plan-bind.mjs'
 
@@ -485,16 +485,19 @@ const closeFinishedPanes = async (plans, rawPanes) => {
     const raw = rawPanes.find((pane) => pane.id === paneId)
     const plansDone = bound.every((plan) => finished.get(plan.id))
     // 싼 판정부터 — 끝나지 않았거나 일하는 pane 은 화면 · git · 요청을 읽지 않는다
-    let block = closeBlock({ raw, plansDone, menu: false, request: false, dirty: false })
+    let block = closeBlock({ raw, plansDone, menu: false, draft: false, request: false, dirty: false })
     if (!block) {
       if (requests === null) {
         try { requests = listRequests(ROOT).requests } catch { requests = undefined }
       }
       const dirs = [raw.foreground_cwd, raw.cwd, ...bound.flatMap((plan) => worktreePathsOf(plan.workRefs || ''))].filter(Boolean)
+      const text = await screenText(['pane', 'read', paneId, '--lines', '40'])
       block = closeBlock({
         raw,
         plansDone,
-        menu: menuOpen(await screenText(['pane', 'read', paneId, '--lines', '40']), raw.agent_status),
+        menu: menuOpen(text, raw.agent_status),
+        // 입력칸에 보내지 않은 글 — 못 읽으면 모르니 닫지 않는다(쉼 시계도 처음부터)
+        draft: hasDraft(raw.agent, text),
         // 요청을 못 읽으면 모르니 닫지 않는다
         request: requests === undefined || requests.some((request) => request.pane === paneId && request.state === 'open'),
         dirty: (await Promise.all([...new Set(dirs)].map(gitDirty))).some(Boolean),

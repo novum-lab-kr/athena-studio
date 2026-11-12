@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # 끝난 에이전트 pane 자동 닫기 — 진짜 현황판 서버(scripts/board/server.mjs closeFinishedPanes · scripts/board/pane-close.mjs) 한 주기.
 # 판정 함수는 board-auto-test.sh 가 보고 여기서는 서버가 화면에 넣는 것(pane close · 아테나 알림)을 본다. 임시 코어 사본 · 가짜 gh · 가짜 화면 CLI · 몇 초
-#   닫음: PR 머지 + 쉼 · 뒤 셸만 돌고 앞은 쉼 / 안 닫음: 사용자가 봄 · 미커밋 · 앞이 일함 · PR 열림 · 남은 단계 칸 · 열린 요청 · 아테나 pane
+#   닫음: PR 머지 + 쉼 · 뒤 셸만 돌고 앞은 쉼 / 안 닫음: 사용자가 봄 · 미커밋 · 앞이 일함 · PR 열림 · 남은 단계 칸 · 열린 요청 · 입력칸 초안 · 화면 못 읽음 · 아테나 pane
 #
 # 사용: test/board-pane-close-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -33,7 +33,17 @@ esac
 SH
 chmod +x "$TMP/bin/gh"
 for name in claude codex; do printf '#!/bin/sh\nexit 1\n' > "$TMP/bin/$name"; chmod +x "$TMP/bin/$name"; done
-cp "$SRC/scripts/screen-check/fake-bin/athena-studio-cli" "$TMP/bin/"
+cp "$SRC/scripts/screen-check/fake-bin/athena-studio-cli" "$TMP/bin/fake-studio-cli"
+# pane 마다 다른 화면 — p14 는 입력칸에 쓰다 만 글 · p15 는 화면 읽기 실패 · 그 밖은 fixture(빈 입력칸)
+cat > "$TMP/bin/athena-studio-cli" <<SH
+#!/bin/sh
+case "\$*" in
+  'pane read p14 '*) printf '일 끝\\n────────\\n❯ 아직 안 보낸 글\\n────────\\n' ; exit 0 ;;
+  'pane read p15 '*) exit 1 ;;
+esac
+exec "$TMP/bin/fake-studio-cli" "\$@"
+SH
+chmod +x "$TMP/bin/athena-studio-cli"
 
 CORE="$TMP/core"
 mkdir -p "$CORE"
@@ -63,6 +73,8 @@ plan 20261112-working p10 7 '- [x] 구현'
 plan 20261112-open p11 9 '- [x] 구현'
 plan 20261112-step p12 7 '- [x] 1단계\n- [ ] 2단계 전환'
 plan 20261112-asked p13 7 '- [x] 구현'
+plan 20261112-draft p14 7 '- [x] 구현'
+plan 20261112-unread p15 7 '- [x] 구현'
 (cd "$CORE" && node --input-type=module -e "
 import { openRequest } from './scripts/lib/requests.mjs'
 openRequest(process.cwd(), { kind: 'question', title: '물음', links: { plan: 'plans/task/20261112-asked.md' }, pane: 'p13' })
@@ -70,6 +82,7 @@ openRequest(process.cwd(), { kind: 'question', title: '물음', links: { plan: '
 
 mkdir -p "$TMP/fixture"
 cp "$SRC/scripts/screen-check/fixtures/studio/"* "$TMP/fixture/"
+printf '일 끝\n────────\n❯ \n────────\n  ? for shortcuts\n' > "$TMP/fixture/pane_read.txt"   # 빈 Claude 입력칸
 node - "$TMP/fixture/pane_list.json" "$TMP" <<'FIXTURE'
 const fs = require('node:fs')
 const [file, tmp] = process.argv.slice(2)
@@ -84,6 +97,8 @@ add('p10', { agent_status: 'working', foreground_status: 'working' })
 add('p11', {})
 add('p12', {})
 add('p13', {})
+add('p14', {})
+add('p15', {})
 fs.writeFileSync(file, JSON.stringify(fixture))
 FIXTURE
 SCREEN_LOG="$TMP/screen.log"
@@ -114,7 +129,7 @@ const calls = read(join(tmp, 'screen.log')).trim().split('\n').filter(Boolean).m
 const closed = new Set(calls.filter((args) => args[1] === 'pane' && args[2] === 'close').map((args) => args[3]))
 check('PR 머지 + 쉼 → 닫음(scripts/screen pane close)', closed.has('p6'), log)
 check('뒤 셸만 돌고 앞은 쉼(foreground_status idle) → 닫음 · 일반 빈 칸은 막지 않는다', closed.has('p7'), log)
-for (const [pane, why] of [['p8', '사용자가 봄'], ['p9', '미커밋 변경'], ['p10', '앞이 일함'], ['p11', 'PR 열림'], ['p12', '남은 단계 칸'], ['p13', '열린 요청'], ['p1', '아테나 pane'], ['p2', '일하는 pane']]) {
+for (const [pane, why] of [['p8', '사용자가 봄'], ['p9', '미커밋 변경'], ['p10', '앞이 일함'], ['p11', 'PR 열림'], ['p12', '남은 단계 칸'], ['p13', '열린 요청'], ['p14', '입력칸에 보내지 않은 글'], ['p15', '화면을 못 읽음'], ['p1', '아테나 pane'], ['p2', '일하는 pane']]) {
   check(`${why} → 안 닫음(${pane})`, !closed.has(pane), [...closed].join(' '))
 }
 const notes = calls.filter((args) => args[1] === 'pane' && args[2] === 'run' && String(args[4]).includes('🚪'))
