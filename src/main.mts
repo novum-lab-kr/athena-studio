@@ -1184,6 +1184,10 @@ handle('mobile:login', () => {
   if (mobileDev) mobileDev.signIn()
   return mobileState()
 })
+handle('mobile:cancel-login', () => {
+  if (mobileDev) mobileDev.cancelSignIn()
+  return mobileState()
+})
 handle('mobile:logout', async () => {
   if (mobileDev) await mobileDev.signOut()
   return mobileState()

@@ -43,6 +43,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 모바일(개발용 길에서만 켜짐 — src/main/mobile-dev.mts) · 꺼져 있으면 mobileState 가 { enabled: false }
   mobileState: () => ipcRenderer.invoke('mobile:state'),
   mobileLogin: () => ipcRenderer.invoke('mobile:login'),
+  mobileCancelLogin: () => ipcRenderer.invoke('mobile:cancel-login'),
   mobileLogout: () => ipcRenderer.invoke('mobile:logout'),
   mobileOpenAccount: () => ipcRenderer.invoke('mobile:open-account'),
   mobileAnswer: (requestId, accept) => ipcRenderer.invoke('mobile:answer', requestId, accept),

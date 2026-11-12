@@ -205,7 +205,7 @@ declare global {
   type MobilePending = { requestId: string; from: string; label: string | null; code: string; at: string; expiresAt: string }
   type MobileState =
     | { enabled: false }
-    | { enabled: true; signedIn: boolean; signingIn: boolean; connected: boolean; name: string | null; devices: MobileDevice[]; pending: MobilePending[]; accountUrl: string }
+    | { enabled: true; signedIn: boolean; signingIn: boolean; signingUntil: string | null; connected: boolean; name: string | null; devices: MobileDevice[]; pending: MobilePending[]; accountUrl: string }
   type MobileFailure = 'expired' | 'invalid_grant' | 'device_limit' | 'busy' | 'network' | 'bad_reply' | 'expired_session' | 'account_deleted'
   type MobileReply = { ok: boolean; error?: string }
 
@@ -335,6 +335,7 @@ declare global {
     // 모바일(src/main.mts handle('mobile:…'))
     mobileState(): Promise<MobileState>
     mobileLogin(): Promise<MobileState>
+    mobileCancelLogin(): Promise<MobileState>
     mobileLogout(): Promise<MobileState>
     mobileOpenAccount(): Promise<unknown>
     mobileAnswer(requestId: string, accept: boolean): Promise<MobileReply>

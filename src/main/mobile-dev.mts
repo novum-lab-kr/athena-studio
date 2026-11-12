@@ -138,6 +138,7 @@ export type MobileView = {
   enabled: true
   signedIn: boolean
   signingIn: boolean
+  signingUntil: string | null // 로그인 시도가 끝나는 시각(ISO) — 로그인 중일 때만
   connected: boolean
   name: string | null
   devices: PeerView[]
@@ -298,6 +299,7 @@ export function startMobileDev(deps: DevDeps) {
       enabled: true,
       signedIn: status.signedIn,
       signingIn: !status.signedIn && login.pending(),
+      signingUntil: status.signedIn ? null : login.until(),
       connected: status.connected,
       name: displayName(status.name, status.account),
       devices: relay.devices(),
@@ -309,6 +311,8 @@ export function startMobileDev(deps: DevDeps) {
     relay,
     view,
     signIn: () => login.start(),
+    // 로그인 중 [취소] — 맥이 기다리기만 멈춘다(relay 쪽 시도는 그대로 두면 10분 뒤 저절로 끝난다 · 늦게 온 athena:// 는 state 가 없어 버린다)
+    cancelSignIn: () => login.cancel(),
     // 로그아웃 — relay 에 auth.logout 먼저(위 remoteLogout) → 답 · 4004 · 실패와 상관없이 로컬 토큰 · 허용 기기를 지운다
     signOut: async () => {
       login.cancel()

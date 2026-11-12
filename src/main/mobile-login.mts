@@ -202,5 +202,7 @@ export function createLoginFlow(deps: LoginDeps) {
       if (attempt) finish()
     },
     pending: () => Boolean(attempt),
+    // 로그인 중이면 시도가 끝나는 시각(화면의 "n분 남음") · 아니면 null
+    until: (): string | null => (attempt ? new Date(attempt.startedAt + LOGIN_TTL_MS).toISOString() : null),
   }
 }
