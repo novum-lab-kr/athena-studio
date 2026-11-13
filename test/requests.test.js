@@ -99,7 +99,7 @@ const makePermissionWork = () => {
   const panes = new Map(), intervals = new Map(), calls = [], sent = []
   class Clock extends Date { static now() { return now } }
   const { installWork } = vm.runInNewContext(source + '\n({installWork})', {
-    fs, path, Date: Clock, requestsModel: requests, screenModel, deliverAnswer: require('../src/lib/answer-delivery.mts').deliverAnswer,
+    fs, path, Date: Clock, requestsModel: requests, screenModel, workModel: require('../src/lib/work-model.mts'), deliverAnswer: require('../src/lib/answer-delivery.mts').deliverAnswer,
     pendingApprovals: async () => approvals, respondApproval: async (...args) => { calls.push(['approval', ...args]); return true },
     core: { checkAthenaDir: () => ({ ok: true }) },
     setInterval: (callback, ms) => { intervals.set(ms, callback); return ms }, clearInterval: (ms) => intervals.delete(ms),
