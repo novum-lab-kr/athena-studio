@@ -19,6 +19,7 @@ export type PaneView = {
   el: HTMLDivElement
   head: HTMLDivElement
   headLabel: HTMLSpanElement
+  headTokens: HTMLSpanElement
   headShells: HTMLSpanElement
   headShellCount: HTMLSpanElement
   detailButton: HTMLElement
@@ -35,6 +36,7 @@ export type PaneView = {
 // pane 은 데몬이 갖는다 — 앱을 닫았다 켜도 같은 배치·화면으로 다시 붙는다. 분할 트리는 StudioLayout(src/lib/layout.mts)
 export const PANE_GAP = 2
 export const HEAD_HEIGHT = 22 // pane 머리줄 높이(style.css .pane-head 와 같은 값)
+const HEAD_TOKENS_MIN = 24 // 머리줄 토큰 칸이 이보다 좁으면 숨긴다(px — "(…" 가 들어가는 폭)
 export const views = new Map<string, PaneView>() // paneId → { term, fit, el, head, shown, sent: {cols, rows} }
 
 function makeTerminal(): { term: Terminal; fit: FitAddon.FitAddon } {
@@ -69,6 +71,15 @@ export function ensureView(paneId: string): PaneView {
   head.className = 'pane-head'
   const headLabel = document.createElement('span')
   headLabel.className = 'pane-head-label'
+  // 이름표 바로 옆 괄호 — 그 pane 대화의 세션 누적 토큰(값이 없으면 숨김 · pane-layout.ts syncPaneTokens)
+  const headTokens = document.createElement('span')
+  headTokens.className = 'pane-head-tokens'
+  headTokens.hidden = true
+  // 좁아 말줄임표도 못 들어가는 폭이면 글자 조각만 보인다 — 그때는 안 보이게(폭은 그대로라 다시 재지 않는다 · 넓어지면 다시 보인다)
+  new ResizeObserver(() => headTokens.classList.toggle('tight', headTokens.clientWidth < HEAD_TOKENS_MIN)).observe(headTokens)
+  // 남는 자리 — 이름표 · 토큰은 왼쪽에 붙고 뒤 셸 개수 · 손잡이 · 상세는 오른쪽 끝으로
+  const headFill = document.createElement('span')
+  headFill.className = 'pane-head-fill'
   const headShells = document.createElement('span')
   headShells.className = 'pane-head-shells'
   headShells.hidden = true
@@ -80,7 +91,7 @@ export function ensureView(paneId: string): PaneView {
   dragHandle.setAttribute('aria-hidden', 'true')
   dragHandle.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="5" r="1"/><circle cx="15" cy="5" r="1"/><circle cx="9" cy="12" r="1"/><circle cx="15" cy="12" r="1"/><circle cx="9" cy="19" r="1"/><circle cx="15" cy="19" r="1"/></svg>'
   const detailButton = paneDetailButton(paneId)
-  head.append(headLabel, headShells, dragHandle, detailButton)
+  head.append(headLabel, headTokens, headFill, headShells, dragHandle, detailButton)
   const body = document.createElement('div')
   body.className = 'pane-body'
   el.append(head, body)
@@ -146,7 +157,7 @@ export function ensureView(paneId: string): PaneView {
     focusPane(paneId)
     if (text) views.get(paneId)?.term.paste(text)
   })
-  const view: PaneView = { term, fit, el, head, headLabel, headShells, headShellCount, detailButton, body, shown: false, sent: null }
+  const view: PaneView = { term, fit, el, head, headLabel, headTokens, headShells, headShellCount, detailButton, body, shown: false, sent: null }
   term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
   return view

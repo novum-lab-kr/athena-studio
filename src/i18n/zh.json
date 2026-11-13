@@ -1,5 +1,6 @@
 {
   "pane.backgroundShells": "{count} 个后台 shell",
+  "pane.tokensTitle": "此对话的累计 Token — 输入+输出 {io} · 缓存 {cache}",
   "meta.name": "中文",
   "meta.status": "draft",
   "meta.draftLabel": "未审校",

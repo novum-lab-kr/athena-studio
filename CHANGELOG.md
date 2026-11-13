@@ -40,6 +40,13 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 2026-11-10 부터: 사용자에게 보이는 PR(feat · fix)은 맨 위 절에 줄 하나씩 더한다. 줄마다 판 번호는 그 줄을 처음 넣은 main 커밋의 태그(git 기록 · scripts/changelog-versions.js) — 업데이트 창 · Release 본문은 이전 판 뒤 줄만 보인다. 이미 쓴 줄 글을 고치면 새 줄로 친다 -->
 
+<!-- 0.61: v0.60.31..main 에서 사용자에게 보이는 변경 — pane 제목 옆 괄호 토큰(세션 누적 입출력 · 캐시). 범위 끝은 열어 둔다 -->
+
+## 0.61 (v0.61.0 – · Nov 13, 2026)
+
+### New
+- Add session token totals beside the pane title — input/output and cache
+
 ## 0.60 (v0.60.0 – · Nov 8, 2026)
 
 ### Improved
