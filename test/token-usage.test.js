@@ -145,3 +145,9 @@ test('Codex: 계획서 → rollout — AGENTS.md 문맥 뒤 첫 지시로 찾고
   const usage = tokens.createTokenUsage({ projectsDir, codexSessionsDir })
   assert.deepEqual(await usage.planUsage(['/bodies/acme'], plan), { io: 100 + 60 + 10, cache: 5000 + 40 }, 'Claude + Codex 를 더한다')
 })
+
+test('화면 값(usageView): 줄인 숫자를 같이 · 기록이 없거나 합이 0 이면 null(화면에서 숨긴다)', () => {
+  assert.deepEqual(tokens.usageView({ io: 1200000, cache: 38000000 }), { io: 1200000, cache: 38000000, ioText: '1.2M', cacheText: '38M' })
+  assert.equal(tokens.usageView(null), null)
+  assert.equal(tokens.usageView({ io: 0, cache: 0 }), null)
+})

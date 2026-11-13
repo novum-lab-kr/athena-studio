@@ -5,7 +5,7 @@ import { $, currentTab, panels, say } from './core.ts'
 import { PANE_GAP, redrawAfterHidden, views } from './terminal.ts'
 import type { PaneView } from './terminal.ts'
 import { screen } from './screen.ts'
-import { paneBackgroundShells } from './main.ts'
+import { paneBackgroundShells, paneTokens } from './main.ts'
 import { activeTab, activeWorkspace, renamingTab } from './tabs.ts'
 import { renderDividers, reportTabSize } from './dividers.ts'
 import { PREVIEW_ID, layoutTree } from './preview-pane.ts'
@@ -28,6 +28,19 @@ export function syncPaneShells(): void {
   }
 }
 
+// pane 이름표 옆 괄호 토큰 — "(I/O 115k · cache 15M)"(4개 언어 모두 이 영문 약자 그대로 — 사용자 결정 · 풀어 쓴 말은 툴팁과 [상세]에). 값이 없는 pane(셸만 · 기록 없음 · 0)은 숨긴다. 토큰 알림과 언어 변경 때 갱신한다
+export function syncPaneTokens(): void {
+  for (const [paneId, view] of views) {
+    const tokens = paneTokens[paneId]
+    view.headTokens.hidden = !tokens
+    view.headTokens.textContent = tokens ? `(I/O ${tokens.ioText} · cache ${tokens.cacheText})` : ''
+    const tip = tokens ? say('pane.tokensTitle', { io: tokens.io.toLocaleString(document.documentElement.lang), cache: tokens.cache.toLocaleString(document.documentElement.lang) }) : ''
+    view.headTokens.dataset.tip = tip
+    if (tip) view.headTokens.setAttribute('aria-label', tip)
+    else view.headTokens.removeAttribute('aria-label')
+  }
+}
+
 // 크기를 비교할 pane 메타 — 데몬 상태의 pane(없으면 빈 것 · 답이 늦어 다시 볼 때는 null)
 type PaneSizeInfo = { cols?: number; rows?: number } | null | undefined
 
@@ -35,6 +48,7 @@ type PaneSizeInfo = { cols?: number; rows?: number } | null | undefined
 export function layoutPanes(): void {
   if (panels.work.hidden) return
   syncPaneShells()
+  syncPaneTokens()
   // 하단 칸(에이전트 모니터)은 작업 공간이 있으면 어느 공간이든 — 공간이 없으면 그 높이만큼 pane 이 길어진다. 높이를 재기 전에 정한다
   const showDock = Boolean(activeWorkspace())
   $('dock').hidden = !showDock

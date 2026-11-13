@@ -1,6 +1,6 @@
 // 모바일 relay 클라이언트(src/main/mobile-relay.mts) — 진짜 로컬 relay(athena-app `relay/` 의 startRelay)와 가짜 폰으로 끝까지 한 바퀴.
 // 로그인 → 연결 요청 → 맥 허용(확인 숫자) → hello → snapshot · pane.open · pane.input 왕복 → 해제 뒤 거절.
-// relay 는 고치지 않고 실행만 한다 — 자리는 ATHENA_RELAY_DIR(athena-app 의 relay 폴더 · npm install 된 것). 없으면 이 파일의 relay 시험은 건너뛴다.
+// relay 는 고치지 않고 실행만 한다 — 자리는 ATHENA_RELAY_DIR(athena-app 의 relay 폴더 · npm install 된 것). 없으면 이 파일의 relay 시험은 등록하지 않는다(skip 으로 세지 않는다 — Actions 넘기기 검사가 skip 0 을 요구한다).
 //   ATHENA_RELAY_DIR=<athena-app>/relay node --test test/mobile-relay.test.js
 // 데몬은 가짜(유닉스 소켓)로 — Electron · pty 없이 돈다. 출력 · 로그에 열쇠 · 토큰 · 본문을 찍지 않는다.
 const test = require('node:test')
@@ -18,7 +18,9 @@ const { createMobileBridge } = require('../src/main/mobile-bridge.mts')
 
 const RELAY_DIR = process.env.ATHENA_RELAY_DIR || ''
 const relayReady = RELAY_DIR && fs.existsSync(path.join(RELAY_DIR, 'src', 'server.ts')) && fs.existsSync(path.join(RELAY_DIR, 'node_modules', 'ws'))
-const skipRelay = relayReady ? false : 'ATHENA_RELAY_DIR(athena-app relay · npm install 된 것)가 없어 건너뜀'
+// relay 가 있을 때만 등록한다 — 없으면 왜 안 도는지 한 줄만 남긴다
+const relayTest = relayReady ? test : () => {}
+if (!relayReady) console.log('ℹ 로컬 relay 시험 3개는 돌지 않는다 — ATHENA_RELAY_DIR(athena-app relay · npm install 된 것)가 없다')
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
 async function waitFor(check, what, limitMs = 5000) {
@@ -198,7 +200,7 @@ test('맥 열쇠 파일 — 0600 으로 만들고 다시 켜도 같은 열쇠 ·
   }
 })
 
-test('로컬 relay — 웹 로그인 → 연결 요청 · 미리 약속 → 허용 → hello → snapshot · pane.open · pane.input → 해제 뒤 거절', { skip: skipRelay, timeout: 30_000 }, async () => {
+relayTest('로컬 relay — 웹 로그인 → 연결 요청 · 미리 약속 → 허용 → hello → snapshot · pane.open · pane.input → 해제 뒤 거절', { timeout: 30_000 }, async () => {
   const work = fs.mkdtempSync('/tmp/asd-mrel-')
   const stateDir = path.join(work, 'mobile')
   const daemon = await startFakeDaemon(path.join(work, 'd.sock'))
@@ -308,7 +310,7 @@ test('로컬 relay — 웹 로그인 → 연결 요청 · 미리 약속 → 허�
   }
 })
 
-test('로컬 relay — 연결 요청 거두기: 폰이 pair.cancel 하면 허용 창이 닫히고 · 약속 단계를 어기면 맥이 pair.cancel', { skip: skipRelay, timeout: 20_000 }, async () => {
+relayTest('로컬 relay — 연결 요청 거두기: 폰이 pair.cancel 하면 허용 창이 닫히고 · 약속 단계를 어기면 맥이 pair.cancel', { timeout: 20_000 }, async () => {
   const work = fs.mkdtempSync('/tmp/asd-mcan-')
   const relayServer = await startLocalRelay(work)
   const url = `ws://127.0.0.1:${relayServer.port}/ws`
@@ -347,7 +349,7 @@ test('로컬 relay — 연결 요청 거두기: 폰이 pair.cancel 하면 허용
   }
 })
 
-test('로컬 relay — 다시 켜면 저장한 토큰으로 resume · 같은 기기 id · 로그아웃은 relay 에서도 토큰을 지운다(auth.logout)', { skip: skipRelay, timeout: 20_000 }, async () => {
+relayTest('로컬 relay — 다시 켜면 저장한 토큰으로 resume · 같은 기기 id · 로그아웃은 relay 에서도 토큰을 지운다(auth.logout)', { timeout: 20_000 }, async () => {
   const work = fs.mkdtempSync('/tmp/asd-mres-')
   const relayServer = await startLocalRelay(work)
   const url = `ws://127.0.0.1:${relayServer.port}/ws`

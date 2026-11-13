@@ -1471,7 +1471,12 @@ body.pack-welcome-on .studio-tabs { display: none; }
 
 /* pane [상세] — 머리 줄 오른쪽 아이콘(계획서에 묶인 pane 만) */
 .pane-head { display: flex; align-items: center; gap: 6px; }
-.pane-head-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pane-head-label { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* 이름표 옆 괄호 토큰 — 좁아지면 토큰이 먼저 줄고(말줄임 → 말줄임표도 못 들어가면 .tight 로 숨김 — terminal.ts) 이름표는 끝까지 남는다(줄어드는 비율 1:1000000 — 작으면 이름표가 소수점 px 만큼 줄어 토큰이 남았는데도 말줄임이 걸린다). 토큰이 다 줄어든 뒤에야 이름표가 말줄임 된다 · 빈 자리는 fill 이 먹어 나머지는 오른쪽 끝 */
+.pane-head-tokens { flex: 0 1000000 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pane-head-tokens[hidden] { display: none; }
+.pane-head-tokens.tight { visibility: hidden; }
+.pane-head-fill { flex: 1; min-width: 0; }
 .pane-head-shells { flex: none; display: inline-flex; align-items: center; gap: 3px; color: var(--muted); white-space: nowrap; }
 .pane-head-shells[hidden] { display: none; }
 .pane-head-shells svg { width: 14px; height: 14px; }

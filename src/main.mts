@@ -137,6 +137,7 @@ type MainCalls = {
   diagramsReady(): Promise<boolean>
   workDetail(id: string): Promise<unknown>
   paneBound(): unknown
+  paneTokens(): unknown
   paneDetail(paneId: string): Promise<unknown>
   planDetail(id: string, title: string): Promise<unknown>
   pollPanes(): Promise<unknown>
@@ -1057,6 +1058,7 @@ handle('board:diagrams-ready', (ctx) => ctx.diagramsReady())
 handle('work:detail', (ctx, id: unknown) => ctx.workDetail(String(id || '')))
 // pane [상세] — 계획서에 묶인 pane(머리 줄 아이콘) · 그 pane 의 상세
 handle('pane:bound', (ctx) => ctx.paneBound())
+handle('pane:tokens', (ctx) => ctx.paneTokens())
 handle('pane:detail', (ctx, paneId: unknown) => ctx.paneDetail(String(paneId || '')))
 handle('pane:plan-detail', (ctx, id: unknown, title: unknown) => ctx.planDetail(String(id || ''), String(title || '').slice(0, 300)))
 listen('ui:tab', (ctx, tab: unknown) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))

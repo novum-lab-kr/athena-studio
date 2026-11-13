@@ -232,6 +232,9 @@ export function formatTokens(count: unknown): string {
   return `${trimZero((value / 1e9).toFixed(1))}B`
 }
 const trimZero = (text: string): string => text.replace(/\.0$/, '')
+// 화면에 보낼 값(pane 머리줄 · 상세) — 기록을 못 찾았거나 합이 0 이면 null(화면에서 숨긴다)
+export type UsageView = { io: number; cache: number; ioText: string; cacheText: string }
+export const usageView = (sum: Usage | null): UsageView | null => (sum && sum.io + sum.cache > 0 ? { io: sum.io, cache: sum.cache, ioText: formatTokens(sum.io), cacheText: formatTokens(sum.cache) } : null)
 
 // ── 묶음 — 기록 폴더 목록 · 파일 머리 · 파일별 합계를 기억한다 ───────────────────
 // peekPlan · peekSession 은 기다리지 않는다: 아는 값을 바로 돌려주고(처음엔 null) 뒤에서 새로 읽는다

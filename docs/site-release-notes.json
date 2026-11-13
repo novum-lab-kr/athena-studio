@@ -1,4 +1,13 @@
 {
+  "0.61": [
+    {
+      "tag": "new",
+      "en": "Add session token totals beside the pane title — input/output and cache",
+      "ko": "pane 제목 옆에 세션 누적 토큰 표시 추가 — 입출력 · 캐시",
+      "ja": "ペインタイトルの横にセッション累計トークンを表示 — 入出力とキャッシュ",
+      "zh": "窗格标题旁新增会话累计 Token 显示 — 输入输出与缓存"
+    }
+  ],
   "0.60": [
     {
       "tag": "improved",
