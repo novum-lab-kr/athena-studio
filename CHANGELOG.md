@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add session token totals beside the pane title — input/output and cache
+- Increase terminal scrollback — 5000 to 10000 lines
 
 ## 0.60 (v0.60.0 – · Nov 8, 2026)
 
