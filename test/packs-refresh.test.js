@@ -157,8 +157,8 @@ test('팩 열기: 옛 id 로 not-found 가 오면 모든 창의 목록을 다시
 })
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
-// 조건이 참이 될 때까지 기다린다(감시 디바운스 300ms)
-async function until(check, ms = 3000) {
+// 조건이 참이 될 때까지 기다린다(감시 디바운스 300ms). 맥 fs.watch 이벤트가 부하 13 쯤에서 1~10초 늦게 오는 것을 재 봤다(이벤트는 빠지지 않는다) — 넉넉히 30초
+async function until(check, ms = 30000) {
   const end = Date.now() + ms
   while (Date.now() < end) {
     if (check()) return true
