@@ -1,5 +1,6 @@
 {
   "pane.backgroundShells": "뒤에서 도는 셸 {count}개",
+  "pane.tokensTitle": "이 대화의 누적 토큰 — 입력+출력 {io} · 캐시 {cache}",
   "meta.name": "한국어",
   "meta.status": "reviewed",
   "meta.draftLabel": "검수 전",

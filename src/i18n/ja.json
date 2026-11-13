@@ -1,5 +1,6 @@
 {
   "pane.backgroundShells": "バックグラウンドのシェル {count}件",
+  "pane.tokensTitle": "この会話の累計トークン — 入力+出力 {io} · キャッシュ {cache}",
   "meta.name": "日本語",
   "meta.status": "draft",
   "meta.draftLabel": "レビュー前",

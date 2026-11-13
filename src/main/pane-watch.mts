@@ -9,7 +9,7 @@ import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
 import * as paneDetail from '../lib/pane-detail.mts'
 import * as tokenUsage from '../lib/token-usage.mts'
-import type { TokenUsage, Usage } from '../lib/token-usage.mts'
+import type { TokenUsage, UsageView } from '../lib/token-usage.mts'
 import { runGit } from './files.mts'
 import { fetchBoardJson } from './board.mts'
 import type { Monitor } from './monitor-logs.mts'
@@ -78,14 +78,31 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     historyCache = { at: Date.now(), items: history && Array.isArray(history.items) ? history.items : historyCache.items }
     return historyCache.items
   }
-  // 상세 토큰 — 대화 기록 usage 합계(파일만 읽음 · 파일마다 늘어난 부분만 · 기다리지 않고 아는 값). 기록을 못 찾으면 null → 화면에서 숨긴다
-  const tokenView = (sum: Usage | null) => (sum && sum.io + sum.cache > 0 ? { io: sum.io, cache: sum.cache, ioText: tokenUsage.formatTokens(sum.io), cacheText: tokenUsage.formatTokens(sum.cache) } : null)
   // 아테나 pane 의 지금 대화 — 훅 pane-session.py 가 적는 <팩 데이터>/state/pane-sessions/<pane>.json 의 session
   const paneSession = async (paneId: string) => {
     if (!ctx.athenaDir) return ''
     const record: { session?: unknown } | null = await fs.promises.readFile(path.join(core.realDir(path.join(ctx.athenaDir, '.pack-data')), 'state', 'pane-sessions', `${paneId.split(':').pop()}.json`), 'utf8').then(JSON.parse).catch(() => null)
     return record && typeof record.session === 'string' ? record.session : ''
   }
+  // 토큰(머리줄 · 상세) — 대화 기록 usage 합계(파일만 읽음 · 파일마다 늘어난 부분만 · 기다리지 않고 아는 값). 기록을 못 찾으면 null → 화면에서 숨긴다(token-usage usageView)
+  // pane 머리줄 토큰 — 에이전트(Claude · Codex)가 도는 pane 마다 그 pane 지금 대화의 세션 누적(대화 기록 usage 합계 · 모델을 부르지 않고 파일만 읽는다).
+  // peekSession 은 기다리지 않고 아는 값을 주고 뒤에서 늘어난 부분만 읽는다 — 그래서 pane 이 많아도 가볍고, 값은 한 주기 늦게 보인다.
+  // 셸만 도는 pane · 기록을 못 찾은 pane · 합이 0 인 pane 은 싣지 않는다(화면에서 숨김). 달라졌을 때만 보낸다
+  const PANE_TOKENS_MS = 5000
+  let paneTokensNow: Record<string, UsageView> = {}
+  let paneTokensAt = 0
+  const refreshPaneTokens = async (panes: DaemonPane[]) => {
+    const dir = ctx.athenaDir
+    const pairs = await Promise.all(panes.filter((pane) => pane.agent).map(async (pane) => [pane.id, tokenUsage.usageView(paneTokens.peekSession(await paneSession(pane.id)))] as const))
+    // 읽는 사이 팩을 바꿨으면 버린다(pane 기록 자리가 본체마다 다르다)
+    if (dir !== ctx.athenaDir) return
+    const next: Record<string, UsageView> = {}
+    for (const [id, view] of pairs) if (view) next[id] = view
+    if (JSON.stringify(next) === JSON.stringify(paneTokensNow)) return
+    paneTokensNow = next
+    send('screen:pane-tokens', paneTokensNow)
+  }
+  ctx.paneTokens = () => paneTokensNow
   // 상세 한 번 — 에이전트 pane 이면 그 계획서의 지금 · 결과 · 내가 할 일 · PR · 기록, 아테나 pane 이면 맡긴 일 목록.
   // 재료: 현황판 /api/state · /api/card(계획서 원문) · pane 화면 글(pane read) · 열린 요청. 요약용 모델은 부르지 않는다
   ctx.paneDetail = async (paneId: string) => {
@@ -104,7 +121,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     if (!plan) {
       const status = Object.fromEntries(panes.map((entry) => [entry.id, entry.agent ? entry.agent_status : null]))
       const rows = paneDetail.leadRows(state.cards, await recentHistory(), paneId, { panes: state.panes || [], since, status, waitingPlans: new Set(open.map((request) => request.plan).filter(Boolean)), now: Date.now() })
-      return { ok: true, mode: 'lead', paneId, label, rows, tokens: tokenView(paneTokens.peekSession(await paneSession(paneId))) }
+      return { ok: true, mode: 'lead', paneId, label, rows, tokens: tokenUsage.usageView(paneTokens.peekSession(await paneSession(paneId))) }
     }
     const [visible, recent, card] = await Promise.all([
       daemonCall<{ text?: unknown }>('pane read', { pane: paneId, lines: 40, source: 'visible' }),
@@ -133,7 +150,7 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
       report: digest.report,
       todo,
       // 이 계획서에 묶인 대화 기록 전부(작업 · 리뷰 세션) — 계획서 → 기록 찾기는 코어 learn-review.mjs findTranscripts 와 같은 규칙
-      tokens: tokenView(paneTokens.peekPlan([ctx.athenaDir, core.realDir(ctx.athenaDir as string)], plan.id)),
+      tokens: tokenUsage.usageView(paneTokens.peekPlan([ctx.athenaDir, core.realDir(ctx.athenaDir as string)], plan.id)),
       plan: paneDetail.detailPlan(plan, record, Boolean(card)),
     }
   }
@@ -169,6 +186,10 @@ export function installPaneWatch(ctx: PackCtx, { monitor, paneTokens }: { monito
     if (Date.now() - paneBoundAt > PANE_BOUND_MS) {
       paneBoundAt = Date.now()
       refreshPaneBound(listed.result ? listed.result.panes : null).catch(() => {})
+    }
+    if (listed.result && Date.now() - paneTokensAt > PANE_TOKENS_MS) {
+      paneTokensAt = Date.now()
+      refreshPaneTokens(listed.result.panes).catch(() => {})
     }
     const branches = await workspaceBranches()
     if (branches) send('screen:branches', branches)

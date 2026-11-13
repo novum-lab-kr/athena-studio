@@ -44,6 +44,8 @@ declare global {
 
   // main 의 ctx.paneDetail(src/main/pane-watch.mts) — 계획서 기록은 src/lib/pane-detail.mts planRecord · 맡긴 일 줄은 leadRows
   type PaneDetailTokens = { io: number; cache: number; ioText: string; cacheText: string }
+  // pane 머리줄 토큰(paneTokens) — 상세와 같은 모양
+  type PaneTokens = PaneDetailTokens
   type PaneDetailLeadRow = { id: string | undefined; title: string; paneId: string | null; who: string | undefined; what: string; sinceMs: number; state: 'wait' | 'now' | 'done'; archived?: boolean }
   type PaneDetailPlan = {
     id: string
@@ -366,6 +368,9 @@ declare global {
     // pane [상세] 아이콘을 달 pane(src/main/pane-watch.mts paneBound — lib/pane-detail.mts bindings)
     paneBound(): Promise<Record<string, 'agent' | 'lead'>>
     onPaneBound(callback: (next: Record<string, 'agent' | 'lead'>) => void): () => void
+    // pane 머리줄 토큰(src/main/pane-watch.mts paneTokens — 에이전트 pane 의 지금 대화 세션 누적 · 값이 있는 pane 만)
+    paneTokens(): Promise<Record<string, PaneTokens>>
+    onPaneTokens(callback: (next: Record<string, PaneTokens>) => void): () => void
     // ⚙ 앱 업데이트 상태(src/main/app-updater.mts appUpdateView) — 창이 없으면 { error }(main.mts handle)
     appUpdateStatus(): Promise<AppUpdateView & { error?: string }>
     onAppUpdate(callback: (next: AppUpdateView) => void): () => void

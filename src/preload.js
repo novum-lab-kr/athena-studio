@@ -132,6 +132,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   // 맡긴 일 줄의 계획서(pane 이 없는 줄) — 같은 상세 칸에서 읽기 전용
   planDetail: (id, title) => ipcRenderer.invoke('pane:plan-detail', id, title),
   onPaneBound: listen('screen:pane-bound'),
+  // pane 머리줄 토큰 — 에이전트 pane id → 그 대화의 세션 누적(값이 있는 pane 만 · 달라지면 다시 온다)
+  paneTokens: () => ipcRenderer.invoke('pane:tokens'),
+  onPaneTokens: listen('screen:pane-tokens'),
   onWorkRequests: listen('work:requests'),
   // 메뉴 막대 · 맥 알림에서 — 요청 id(없으면 [작업] 팝업만)
   onWorkOpen: listen('work:open'),

@@ -6,7 +6,7 @@ import { attached, attaching, reattachScreen, runCommand, screen, setAttached, s
 import { applyState, renderTabs, switchTab } from './tabs.ts'
 import { startPaneDrag } from './pane-drag.ts'
 import { PREVIEW_ID } from './preview-pane.ts'
-import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, sendPaneSize } from './pane-layout.ts'
+import { holdForRedraw, holdOutputArrived, initMonitor, layoutPanes, syncPaneShells, syncPaneTokens, sendPaneSize } from './pane-layout.ts'
 import { initEdgeResize } from './edge-resize.ts'
 import { packs, setPacks, showCoreUpdate, showOldPanes } from './pack-dialogs.ts'
 import { hasNoPacks, openNoPacks, packRailActions, refreshDiagramsReady, refreshPackList, renderPackRail, runPackCommand } from './pack-switch.ts'
@@ -19,6 +19,7 @@ import { StudioUi } from './ui/index.ts'
 
 export let branches: Record<string, string | null> = {} // 작업 공간 id → git 브랜치(없으면 null) — main 이 5초마다
 export let paneBackgroundShells: Record<string, number> = {}
+export let paneTokens: Record<string, PaneTokens> = {} // pane id → 그 대화의 세션 누적 토큰(값이 있는 에이전트 pane 만) — main 이 달라질 때
 export let paneStatus: Record<string, string | null> = {} // pane id → 에이전트 상태(working · idle · …, 에이전트 없으면 null) — main 이 2초마다
 
 // 이 창의 팩이 가져오기로 바뀌었다(교체) — 목록 · 현황판을 새로(창의 본체 · pane 은 그대로)
@@ -201,6 +202,12 @@ async function init(): Promise<void> {
     syncPaneShells()
     if (attached) renderSides()
   })
+  const takePaneTokens = (next: Record<string, PaneTokens>) => {
+    paneTokens = next && typeof next === 'object' ? next : {}
+    syncPaneTokens()
+  }
+  studio.onPaneTokens(takePaneTokens)
+  studio.paneTokens().then(takePaneTokens, () => {})
   StudioUi.spaces.setup($('spaces'), spacesActions())
   // 탭 줄 [서버] 버튼 · 서버 탐색기 칸 — 서버 목록은 refreshServers 가 넣는다 · 0개면 버튼 · 칸 [서버 추가] 가 등록 팝업
   StudioUi.serverStatus.mount($<HTMLButtonElement>('servers-open'), $('server-view'), () => void runPackCommand('add-server'))

@@ -1,5 +1,6 @@
 {
   "pane.backgroundShells": "{count} background shells",
+  "pane.tokensTitle": "Tokens in this conversation — input+output {io} · cache {cache}",
   "meta.name": "English",
   "meta.status": "reviewed",
   "meta.draftLabel": "Not reviewed",
