@@ -232,5 +232,6 @@
   "Fix security review not starting outside a pane — opens beside Athena, same-round merge": "修复在 pane 外无法启动安全审查的问题 — 在雅典娜旁打开，同一轮合并",
   "Fix Codex drafts starting with a blank line read as an empty input box": "修复以空行开头的 Codex 草稿被识别为空输入框的问题",
   "Add session token totals beside the pane title — input/output and cache": "窗格标题旁新增会话累计 Token 显示 — 输入输出与缓存",
-  "Increase terminal scrollback — 5000 to 10000 lines": "终端回滚缓冲增加 — 由 5000 行增至 10000 行"
+  "Increase terminal scrollback — 5000 to 10000 lines": "终端回滚缓冲增加 — 由 5000 行增至 10000 行",
+  "Restore terminal scrollback to 5000 lines": "终端回滚缓冲恢复为 5000 行"
 }

@@ -46,7 +46,7 @@ function makeTerminal(): { term: Terminal; fit: FitAddon.FitAddon } {
     fontFamily: '"D2Coding", "SF Mono", Menlo, "JetBrainsMono Nerd Font Mono", "JetBrainsMono Nerd Font", "Symbols Nerd Font Mono", monospace',
     fontSize: 13,
     cursorBlink: true,
-    scrollback: 10000,
+    scrollback: 5000,
     macOptionIsMeta: true,
     macOptionClickForcesSelection: true, // 안의 프로그램이 마우스를 잡아도 Option+드래그로 고를 수 있게
     theme: { background: '#16171a', foreground: '#e8e6e1' },
