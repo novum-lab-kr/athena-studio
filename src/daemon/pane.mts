@@ -11,7 +11,7 @@ const { Terminal }: typeof import('@xterm/headless') = require('@xterm/headless'
 const { SerializeAddon }: typeof import('@xterm/addon-serialize') = require('@xterm/addon-serialize')
 const { Unicode11Addon }: typeof import('@xterm/addon-unicode11') = require('@xterm/addon-unicode11')
 
-export const SCROLLBACK = 10000
+export const SCROLLBACK = 5000
 
 // wait-output 이 거는 것 — check() 가 true 면 끝 · fail 은 pane 이 끝났을 때
 export type Waiter = { check: () => boolean; fail: (code: string, text: string) => void }
