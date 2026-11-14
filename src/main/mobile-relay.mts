@@ -9,6 +9,10 @@ import path from 'node:path'
 import * as mobileCrypto from '../lib/mobile-crypto.mts'
 import type { KeyPair } from '../lib/mobile-crypto.mts'
 import type { Transport } from './mobile-bridge.mts'
+import { answerHello, createSecureChannel } from './mobile-session.mts'
+import type { BridgeHandle, SecureChannel } from './mobile-session.mts'
+
+export type { BridgeHandle }
 
 export const HEARTBEAT_MS = 30_000 // 살아 있나 — 30초마다 devices.list(브라우저식 WebSocket 은 ping 을 못 보내고 relay ping 에는 pong 을 저절로 한다)
 export const REPLY_TIMEOUT_MS = 10_000
@@ -19,7 +23,6 @@ const STATE_FILE = 'relay.json'
 const PENDING_FILE = 'pair-pending.json' // 개발용 허용 길 — 지금 기다리는 연결 요청(확인 숫자 포함)
 const ANSWER_FILE = 'pair-answer.json' // 개발용 허용 길 — scripts/mobile-pair.js 가 적는 답
 
-export type BridgeHandle = { stop(): Promise<void>; openPanes(): string[]; resyncPane(pane: string): Promise<void> }
 export type PendingPair = { requestId: string; from: string; code: string; at: string }
 type PeerRecord = { publicKey: string; addedAt: string }
 type SavedState = { token: string | null; deviceId: string | null; peers: Record<string, PeerRecord> }
@@ -40,6 +43,8 @@ export type RelayDeps = {
   dir: string // 상태 폴더
   createBridge: (transport: Transport, peer: string) => BridgeHandle
   onPairRequest?: (request: PendingPair) => void
+  onSessionOpen?: (peer: string, send: (message: object) => void) => void // 그 기기 relay 세션이 열림(hello 답 뒤) — 직접 길 닫기 · lan.info
+  onPeersChanged?: () => void // 허용 목록이 줄었다(해제 · 토큰 끝남) — 직접 길이 그 기기를 끊는다
   log?: (line: string) => void
   WebSocketImpl?: WebSocketCtor
   heartbeatMs?: number
@@ -104,10 +109,8 @@ function loadState(dir: string): SavedState {
 }
 
 type PeerSession = {
-  cipher: ReturnType<typeof mobileCrypto.createCipherSession>
-  assembler: ReturnType<typeof mobileCrypto.createAssembler>
+  channel: SecureChannel
   bridge: BridgeHandle | null
-  handler: ((message: unknown) => void) | null
   resyncTimer: NodeJS.Timeout | null
 }
 
@@ -128,7 +131,6 @@ export function createMobileRelay(deps: RelayDeps) {
   let reconnectTimer: NodeJS.Timeout | null = null
   let heartbeatTimer: NodeJS.Timeout | null = null
   let nextCallId = 1
-  let nextChunkId = 1
   const calls = new Map<number, { resolve: (value: unknown) => void; reject: (error: Error) => void; timer: NodeJS.Timeout }>()
   const sessions = new Map<string, PeerSession>()
   const pendingPairs = new Map<string, PendingPair & { publicKey: string }>()
@@ -161,17 +163,11 @@ export function createMobileRelay(deps: RelayDeps) {
   // 평문 핸드셰이크(hello 답 · reset) — base64 JSON 을 msg.data 에(Q1)
   const sendHandshake = (peer: string, message: mobileCrypto.Handshake) => rawSend({ op: 'msg', args: { to: peer, data: mobileCrypto.encodeHandshake(message) } })
 
-  // 안쪽 메시지 하나 → JSON → 2 MiB 조각(필요하면) → 조각마다 봉인해 msg 로
-  function sendInner(peer: string, session: PeerSession, message: object) {
-    if (sessions.get(peer) !== session) return
-    const pieces = mobileCrypto.splitMessage(JSON.stringify(message), `m${nextChunkId++}`)
-    for (const piece of pieces) rawSend({ op: 'msg', args: { to: peer, data: session.cipher.seal(piece) } })
-  }
-
   function stopSession(peer: string, why: string) {
     const session = sessions.get(peer)
     if (!session) return
     sessions.delete(peer)
+    session.channel.close()
     if (session.resyncTimer) clearTimeout(session.resyncTimer)
     if (session.bridge) session.bridge.stop().catch(() => {})
     log(`[mobile-relay] 세션 닫음 peer=${peer} 까닭=${why}`)
@@ -180,25 +176,22 @@ export function createMobileRelay(deps: RelayDeps) {
   // 앱 hello → 일회 열쇠로 답하고 새 세션(마지막 hello 가 이긴다 · 그 기기 브리지도 새로 — Q3)
   function onHello(peer: string, appStatic: Uint8Array, appEphemeral: Uint8Array) {
     if (!macKey) return
-    const ephemeralKey = mobileCrypto.newKeyPair()
-    let keys: mobileCrypto.SessionKeys
-    try {
-      keys = mobileCrypto.deriveSessionKeys({ role: 'mac', staticKey: macKey, ephemeralKey, peerStatic: appStatic, peerEphemeral: appEphemeral })
-    } catch {
+    const opened = answerHello(macKey, appStatic, appEphemeral)
+    if (!opened) {
       log(`[mobile-relay] hello 버림 peer=${peer} 까닭=bad_key`)
       return
     }
     stopSession(peer, 'new_hello')
-    const session: PeerSession = { cipher: mobileCrypto.createCipherSession(keys), assembler: mobileCrypto.createAssembler(), bridge: null, handler: null, resyncTimer: null }
+    // 봉인한 조각은 그 세션이 아직 그 기기의 세션일 때만 msg 로
+    const channel = createSecureChannel(opened.keys, (data) => {
+      if (sessions.get(peer) === session) rawSend({ op: 'msg', args: { to: peer, data } })
+    })
+    const session: PeerSession = { channel, bridge: null, resyncTimer: null }
     sessions.set(peer, session)
-    sendHandshake(peer, mobileCrypto.helloMessage(ephemeralKey.publicKey))
-    const transport: Transport = {
-      send: (message) => sendInner(peer, session, message),
-      onMessage: (handler) => void (session.handler = handler),
-      close: () => {},
-    }
-    session.bridge = deps.createBridge(transport, peer)
+    sendHandshake(peer, opened.reply)
+    session.bridge = deps.createBridge(channel.transport, peer)
     log(`[mobile-relay] 세션 열림 peer=${peer}`)
+    if (deps.onSessionOpen) deps.onSessionOpen(peer, channel.send)
   }
 
   function onPeerMessage(peer: string, data: unknown) {
@@ -214,21 +207,14 @@ export function createMobileRelay(deps: RelayDeps) {
       return
     }
     const session = sessions.get(peer)
-    const plain = session ? session.cipher.open(incoming.bytes) : null
-    if (!session || plain === null) {
+    const opened = session ? session.channel.open(incoming.bytes) : null
+    if (!session || opened === null) {
       // 세션이 없거나 복호화 실패 · 순번 역행 — 세션을 버리고 앱에 hello 부터 다시 하라고(Q3)
       stopSession(peer, session ? 'bad_cipher' : 'no_session')
       sendHandshake(peer, mobileCrypto.RESET)
       return
     }
-    let parsed: unknown
-    try {
-      parsed = JSON.parse(plain)
-    } catch {
-      return
-    }
-    const message = session.assembler.add(parsed)
-    if (message !== null && session.handler) session.handler(message)
+    session.channel.deliver(opened.message)
   }
 
   // 맥 → 앱 출력이 버려졌다 — 1초 뒤 그 기기의 열린 pane 을 한 번씩 다시 맞춘다(1초 안 여러 번은 한 번 · Q5)
@@ -276,6 +262,7 @@ export function createMobileRelay(deps: RelayDeps) {
         if (state.peers[peer]) {
           delete state.peers[peer]
           saveState()
+          if (deps.onPeersChanged) deps.onPeersChanged()
         }
         return log(`[mobile-relay] 기기 해제 peer=${peer}`)
       case 'pair.request':
@@ -322,6 +309,7 @@ export function createMobileRelay(deps: RelayDeps) {
         // 끝난 토큰 — relay 가 그 기기와 쌍을 지웠다. 새 기기로 다시 로그인하고 허용 목록도 비운다
         log('[mobile-relay] 세션이 끝나 새로 로그인해요 — 허용한 기기를 비워요')
         state = { token: null, deviceId: null, peers: {} }
+        if (deps.onPeersChanged) deps.onPeersChanged()
       }
     }
     const result = (await call('auth.login', { ...deps.login, kind: 'mac' })) as { token?: unknown; deviceId?: unknown }
@@ -441,12 +429,27 @@ export function createMobileRelay(deps: RelayDeps) {
       stopSession(peer, 'removed_here')
       delete state.peers[peer]
       saveState()
+      if (deps.onPeersChanged) deps.onPeersChanged()
       await call('pair.remove', { peer }).catch((error) => {
         if ((error as RelayCallError).code !== 'not_found') throw error
       })
     },
     pending: () => [...pendingPairs.values()].map(({ requestId, from, code, at }) => ({ requestId, from, code, at })),
     peers: () => Object.keys(state.peers),
+    // 직접 길 — hello 의 고정 공개 열쇠가 허용한 기기 것인지(그 기기 id · 없으면 null)
+    peerOfKey(publicKey: Uint8Array): string | null {
+      for (const [peer, record] of Object.entries(state.peers)) {
+        const saved = mobileCrypto.keyFrom(record.publicKey)
+        if (saved && Buffer.from(saved).equals(Buffer.from(publicKey))) return peer
+      }
+      return null
+    },
+    // 그 기기가 직접 길로 붙었다 — relay 세션은 쉰다(끊기면 앱이 relay 로 다시 hello)
+    pauseSession: (peer: string) => stopSession(peer, 'direct'),
+    // 열린 relay 세션 모두에 맥 알림 하나(lan.info — 주소가 바뀌었을 때)
+    broadcast(message: object) {
+      for (const session of sessions.values()) session.channel.send(message)
+    },
     status: () => ({ connected: authed, deviceId: state.deviceId, sessions: [...sessions.keys()] }),
   }
 }

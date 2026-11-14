@@ -4,11 +4,15 @@
 // 계정은 ATHENA_STUDIO_MOBILE_DEV_ACCOUNT(relay 개발 로그인 · RELAY_DEV_LOGIN=1 인 relay 에서만 받는다).
 // [허용]: 확인 숫자는 맥 로그(test-app.log)에 · 답은 `node scripts/mobile-pair.js --home <집> accept|reject [requestId]`.
 // 열쇠 · 세션 토큰은 <집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
+// 직접 길(mobile-lan.mts — 같은 Wi-Fi · Tailscale)도 같은 조건에서만 켠다. 한 기기는 한 번에 한 길 — 직접이 붙으면 그 기기 relay 세션은 쉬고,
+// relay 로 hello 가 오면 직접 연결을 닫는다(마지막 hello 가 이긴다). 받는 주소는 relay 세션 안 lan.info 로 알린다.
 import path from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createMobileBridge, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
-import type { EventRow, LogEvent, RequestAnswer, AnswerResult } from './mobile-bridge.mts'
-import { createMobileRelay, watchPairAnswers } from './mobile-relay.mts'
+import type { EventRow, LogEvent, RequestAnswer, AnswerResult, Transport } from './mobile-bridge.mts'
+import { createMobileRelay, watchPairAnswers, loadMacKey } from './mobile-relay.mts'
+import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
+import type { KeyPair } from '../lib/mobile-crypto.mts'
 
 const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 const DEV_ACCOUNT_RE = /^[A-Za-z0-9._@-]{1,64}$/ // relay protocol.ts devAccount 와 같은 모양
@@ -73,56 +77,84 @@ export function startMobileDev(deps: DevDeps) {
       if (ctx && ctx.athenaDir && events && typeof events.logEvent === 'function') events.logEvent(ctx.athenaDir, type, fields)
     })
   }
+  // 브리지는 두 길이 같다 — 출력 묶음만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS)
+  const makeBridge = (transport: Transport, flushMs?: number) =>
+    createMobileBridge({
+      daemonPaths: deps.daemonPaths,
+      transport,
+      ...(flushMs === undefined ? {} : { flushMs }),
+      inputAllowed: () => mobileInputAllowed(deps.config()),
+      requests: () => {
+        const ctx = front()
+        return ctx ? ctx.requestsNow().requests : []
+      },
+      servers: async () => {
+        const ctx = front()
+        if (!ctx || !ctx.serverStatus) return []
+        return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers
+      },
+      events: async () => {
+        const ctx = front()
+        const events = await eventsModule(ctx && ctx.athenaDir)
+        return ctx && ctx.athenaDir && events && typeof events.readEvents === 'function' ? events.readEvents(ctx.athenaDir) : []
+      },
+      answerRequest: async (id, answer) => {
+        const ctx = front()
+        if (!ctx) return { ok: false, error: 'no-window' }
+        return (await ctx.answerRequest(id, answer, 'mobile')) as AnswerResult
+      },
+      leadPaneOf: (plan) => {
+        const ctx = front()
+        return ctx && ctx.athenaDir ? readLeadPane(ctx.athenaDir, plan) : null
+      },
+      postDecision: async (body) => {
+        const ctx = front()
+        const token = ctx && ctx.athenaDir ? await deps.boardToken(ctx.athenaDir) : null
+        if (!ctx || !token) return { status: 503, body: { ok: false, error: 'board-unavailable' } }
+        return boardActionPoster({ port: ctx.boardPortNow(), token })(body)
+      },
+      logEvent,
+    })
+  let macKey: KeyPair | null = null
   const relay = createMobileRelay({
     url: deps.options.url,
     login: { provider: 'dev', account: deps.options.account },
     dir: deps.options.dir,
     log,
-    createBridge: (transport) =>
-      createMobileBridge({
-        daemonPaths: deps.daemonPaths,
-        transport,
-        inputAllowed: () => mobileInputAllowed(deps.config()),
-        requests: () => {
-          const ctx = front()
-          return ctx ? ctx.requestsNow().requests : []
-        },
-        servers: async () => {
-          const ctx = front()
-          if (!ctx || !ctx.serverStatus) return []
-          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers
-        },
-        events: async () => {
-          const ctx = front()
-          const events = await eventsModule(ctx && ctx.athenaDir)
-          return ctx && ctx.athenaDir && events && typeof events.readEvents === 'function' ? events.readEvents(ctx.athenaDir) : []
-        },
-        answerRequest: async (id, answer) => {
-          const ctx = front()
-          if (!ctx) return { ok: false, error: 'no-window' }
-          return (await ctx.answerRequest(id, answer, 'mobile')) as AnswerResult
-        },
-        leadPaneOf: (plan) => {
-          const ctx = front()
-          return ctx && ctx.athenaDir ? readLeadPane(ctx.athenaDir, plan) : null
-        },
-        postDecision: async (body) => {
-          const ctx = front()
-          const token = ctx && ctx.athenaDir ? await deps.boardToken(ctx.athenaDir) : null
-          if (!ctx || !token) return { status: 503, body: { ok: false, error: 'board-unavailable' } }
-          return boardActionPoster({ port: ctx.boardPortNow(), token })(body)
-        },
-        logEvent,
-      }),
+    createBridge: (transport) => makeBridge(transport),
+    onSessionOpen: (peer, send) => {
+      lan.dropPeer(peer)
+      send(lan.info())
+    },
+    onPeersChanged: () => lan.dropRemoved(),
+  })
+  const lan = createMobileLan({
+    port: lanPortOf(deps.config()),
+    macKey: () => macKey,
+    peerOfKey: (publicKey) => relay.peerOfKey(publicKey),
+    peerAllowed: (peer) => relay.peers().includes(peer),
+    createBridge: (transport) => makeBridge(transport, DIRECT_FLUSH_MS),
+    onDirectOpen: (peer) => relay.pauseSession(peer),
+    onAddressesChanged: (info) => relay.broadcast(info),
+    macId: () => relay.status().deviceId,
+    log,
   })
   const stopWatch = watchPairAnswers(relay, deps.options.dir)
   log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir} · 허용은 node scripts/mobile-pair.js --home <집> accept`)
-  void relay.start()
+  let stopped = false
+  // relay 가 맥 열쇠를 만들고(처음이면) 나서 직접 길을 연다 — 같은 열쇠 파일을 읽는다
+  void relay.start().then(() => {
+    if (stopped) return
+    macKey = loadMacKey(deps.options.dir)
+    return lan.start()
+  })
   return {
     relay,
+    lan,
     async stop() {
+      stopped = true
       stopWatch()
-      await relay.stop()
+      await Promise.all([relay.stop(), lan.stop()])
     },
   }
 }
