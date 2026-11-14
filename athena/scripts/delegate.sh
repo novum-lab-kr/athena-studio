@@ -568,6 +568,8 @@ PYEOF
   echo "export ATHENA_NOTIFY_BOOTSTRAP=$NOTIFY_BOOTSTRAP"
   # 다음 말 추천(입력 칸의 흐린 글)을 끈다 — 끝난 pane 의 추천 글을 아테나가 사용자가 쓰다 만 글로 봐 닫지 못했다(2026-10-30). Claude Code 공식 환경 변수(env-vars 문서). 사람이 쓰는 아테나 세션은 이 스크립트를 거치지 않아 그대로
   echo "export CLAUDE_CODE_ENABLE_PROMPT_SUGGESTION=false"
+  # Claude 는 일반 화면 방식(classic)으로 — 대체 화면(fullscreen)이면 터미널 기록이 0 이라 폰이 로컬로 스크롤하지 못한다. 사용자 설정의 tui 값과 관계없이 classic(공식 fullscreen 문서) · 앱 core.mts CLAUDE_CLASSIC_ENV 와 같은 값
+  [ "$ENGINE" = codex ] || echo "export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1"
   # 계획서 — pane ↔ 대화 기록 훅이 적는다(팩 백업이 되살릴 때 delegate.sh --plan 으로)
   echo "export ATHENA_PLAN=$(shq "$PLAN")"
   # 여러 팩 — 어느 팩·세대에서 띄웠는지(현황판·학습 검토가 이전 팩 작업을 가려낼 때 쓴다)
