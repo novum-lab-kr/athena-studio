@@ -1469,8 +1469,7 @@ const openHermesPane = async (issueId, text) => {
     '#!/usr/bin/env bash',
     `trap "rm -f '${promptFile}' '${runner}'" EXIT INT TERM`,
     `cd '${ROOT}' || exit 1`,
-    // Claude 는 일반 화면 방식(classic)으로 — 대체 화면이면 터미널 기록이 0 이라 폰이 로컬로 스크롤하지 못한다(delegate.sh 와 같은 값)
-    engine === 'codex' ? `python3 '${join(ROOT, 'scripts/codex-session.py')}' --no-daemon "$(cat '${promptFile}')"` : `CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 claude "$(cat '${promptFile}')"`,
+    engine === 'codex' ? `python3 '${join(ROOT, 'scripts/codex-session.py')}' --no-daemon "$(cat '${promptFile}')"` : `claude "$(cat '${promptFile}')"`,
   ].join('\n') + '\n', { mode: 0o755 })
   // pane run 은 한 줄로 친다 — 경로를 셸 작은따옴표로 감싼다(TMPDIR 에 띄어쓰기가 있어도 · 경로에 ' 는 없다)
   if ((await screen(['pane', 'run', pane, `'${runner}'`])) === null) return { error: say('srv.err.run', { pane }) }
