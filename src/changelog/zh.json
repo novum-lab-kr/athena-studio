@@ -235,5 +235,6 @@
   "Increase terminal scrollback — 5000 to 10000 lines": "终端回滚缓冲增加 — 由 5000 行增至 10000 行",
   "Restore terminal scrollback to 5000 lines": "终端回滚缓冲恢复为 5000 行",
   "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "修复手机上 Claude 窗格的滚动 — Studio 以经典画面模式启动 Claude",
-  "Restore full-screen mode in Claude panes — input box stays at the bottom": "Claude 窗格恢复全屏模式 — 输入框固定在底部"
+  "Restore full-screen mode in Claude panes — input box stays at the bottom": "Claude 窗格恢复全屏模式 — 输入框固定在底部",
+  "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "修复手机测试期间繁重命令一直等待的问题 — 同时 3 个 · Expo 开发服务器会让出名额"
 }

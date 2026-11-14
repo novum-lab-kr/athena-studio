@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# 무거운 명령을 동시에 2개까지(ATHENA_HEAVY_SLOTS), 컴퓨터가 버틸 때만 돌린다 — 앞에 붙이기만 하면 된다.
+# 무거운 명령을 동시에 3개까지(ATHENA_HEAVY_SLOTS), 컴퓨터가 버틸 때만 돌린다 — 앞에 붙이기만 하면 된다.
 #
 # 사용:  <athena>/scripts/heavy.sh pnpm install --frozen-lockfile
 #        <athena>/scripts/heavy.sh pnpm --filter plus-web build
@@ -9,8 +9,8 @@
 # 무거운 명령 = pnpm/npm/yarn install, next build·dev, tsc, test, 검증 스크립트(verify/*), relay·gen:relay, pkg:link·pkg:unlink, docker build.
 #
 # 하는 일
-#   1. 공용 잠금 자리(slot) — 기본 2자리(ATHENA_HEAVY_SLOTS · 1 이면 예전처럼 한 대에 하나). 1번은 /tmp/hermes-heavy.lock, 2번은 /tmp/hermes-heavy.lock.2.
-#      빈 자리를 잡고 둘 다 차면 기다린다(레포·워크트리 무관). 둘째 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 40) 이상이고
+#   1. 공용 잠금 자리(slot) — 기본 3자리(ATHENA_HEAVY_SLOTS · 1 이면 예전처럼 한 대에 하나). 1번은 /tmp/hermes-heavy.lock, 2번부터 /tmp/hermes-heavy.lock.2 · .3.
+#      빈 자리를 잡고 다 차면 기다린다(레포·워크트리 무관). 둘째 이후 자리는 메모리 여유가 ATHENA_HEAVY_SECOND_FREE %(기본 30) 이상이고
 #      1분 부하가 ATHENA_HEAVY_MAX_LOAD(기본 = 코어 수) 미만일 때만 잡는다 — 아니면(못 읽을 때도) 첫 자리를 기다린다(xcodebuild 처럼 코어를 다 쓰는 명령이 겹치면 부하가 폭주한다 — 2026-10-30)
 #   2. 부하 대기 — 1분 부하 평균이 코어 수 × ATHENA_HEAVY_LOAD(기본 1.2) 를 넘으면 내려갈 때까지 기다린다
 #      (다른 세션의 개발 서버·Spotlight·보안 프로그램처럼 잠금 밖의 부하도 같이 본다)
@@ -19,7 +19,7 @@
 #      메모리 여유가 ATHENA_HEAVY_MIN_FREE %(기본 15 — macOS memory_pressure · 리눅스 /proc/meminfo, 못 읽으면 한 번 알리고 끈다) 아래로 떨어지면 그 명령과 자식을 모두 끄고 137 로 끝난다
 #      (next dev 가 postcss 작업자를 1609개까지 띄워 메모리 70GB·부하 100 까지 간 일 뒤에 넣었다 — 2026-10-02)
 # 기다리는 동안 30초마다 "⏳ 대기 — 이유" 를 한 줄 찍는다. 최대 대기 ATHENA_HEAVY_WAIT 초(기본 1800) 넘으면 포기하고 75 로 끝난다.
-#   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite · storybook dev · node <…>/dev-app.js start)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
+#   5. 개발 서버(next dev · npm/pnpm/yarn run dev · vite · storybook dev · node <…>/dev-app.js start · expo start)는 시작하는 동안만 자리를 쓴다 — 포트를 열었거나(= 요청에 답할 수 있다) ATHENA_HEAVY_DEV_START 초(기본 60)가
 #      지나면 자리를 놓고 다음 차례를 돌린다. 감시(4)는 놓은 뒤에도 끝까지 간다.
 #      폭주(2026-10-02)는 시작할 때가 아니라 오래 도는 동안 자식이 늘어난 것이다. 놓고 싶지 않으면 ATHENA_HEAVY_DEV_RELEASE=0
 #   6. 기다린 시간·이유는 안쪽 명령에 환경으로 넘긴다(ATHENA_HEAVY_WAIT_SEC · ATHENA_HEAVY_WAIT_WHY) — 검증 스크립트가 결과·사건 기록에 남긴다
@@ -97,10 +97,10 @@ free_percent() {
   echo "$value"
 }
 # 둘째 자리부터는 메모리 여유가 넉넉할 때만(못 읽으면 보수적으로 안 잡는다)
-SLOTS="${ATHENA_HEAVY_SLOTS:-2}"
+SLOTS="${ATHENA_HEAVY_SLOTS:-3}"
 case "$SLOTS" in ''|*[!0-9]*) SLOTS=1 ;; esac
 [ "$SLOTS" -ge 1 ] || SLOTS=1
-SECOND_FREE="${ATHENA_HEAVY_SECOND_FREE:-40}"
+SECOND_FREE="${ATHENA_HEAVY_SECOND_FREE:-30}"
 MAX_LOAD="${ATHENA_HEAVY_MAX_LOAD:-$CORES}"
 # 둘째 자리를 못 잡는 이유를 EXTRA_WHY 에 남긴다(잡을 수 있으면 빈 값)
 EXTRA_WHY=""
@@ -183,13 +183,27 @@ descendants() {
 }
 # 개발 서버 명령인가 — 첫 낱말이 next·npm·pnpm·yarn·bun·npx·vite 이고, next 는 dev, 패키지 관리자는 낱말 dev(npm run dev · npm run start:dev · pnpm dev · pnpm --filter x dev), vite 는 build·optimize·preview 가 없을 때.
 # 그 밖의 서버형(아테나 결정 2026-11-03 — 코어 update 가 끝나지 않는 이 잠금 때문에 본체를 건너뛰지 않게): 맨 storybook dev · Athena Studio 개발 앱 node <…>/dev-app.js start.
-# npm/pnpm start · expo start 처럼 이름만으로 끝나는 명령인지 알 수 없는 것은 넣지 않는다.
+# Expo 개발 서버(Metro — 폰 시험 중 끝까지 자리를 쥐어 다른 명령이 막혔다 · 2026-11-14): expo start · npx/pnpx expo start,
+# 그리고 npm/pnpm/yarn/bun [run] start 중 지금 폴더 package.json 의 scripts.start 가 expo start 인 것(앞에 다른 옵션이 붙으면 폴더를 알 수 없어 넣지 않는다).
+# 그 밖의 npm start 처럼 이름만으로 끝나는 명령인지 알 수 없는 것은 넣지 않는다.
 # 모르면 개발 서버가 아니다(자리를 계속 쥔다 — 예전 그대로)
+# 지금 폴더 package.json 의 scripts.start 가 expo start 인가(node 가 없거나 못 읽으면 아니다)
+start_script_is_expo() {
+  local script
+  script="$(node -e 'try { process.stdout.write(String(require(process.cwd() + "/package.json").scripts?.start ?? "")) } catch {}' 2>/dev/null)"
+  printf '%s' "$script" | grep -Eq '^((npx|pnpx|bunx) +)?expo +start( |$)'
+}
 is_dev_server() {
   local first word has_dev=0 has_next=0 has_vite=0 has_other=0
   first="$(basename -- "$1")"
   if [ "$first" = node ] && [ "$#" -ge 3 ] && [ "$(basename -- "$2")" = dev-app.js ] && [ "$3" = start ]; then return 0; fi
   if [ "$first" = storybook ] && [ "${2:-}" = dev ]; then return 0; fi
+  if [ "$first" = expo ] && [ "${2:-}" = start ]; then return 0; fi
+  case "$first" in npx|pnpx) [ "${2:-}" = expo ] && [ "${3:-}" = start ] && return 0 ;; esac
+  case "$first" in
+    npm|pnpm|yarn|bun)
+      if [ "${2:-}" = start ] || { [ "${2:-}" = run ] && [ "${3:-}" = start ]; }; then start_script_is_expo && return 0; fi ;;
+  esac
   case "$first" in next|npm|pnpm|yarn|bun|npx|pnpx|vite) ;; *) return 1 ;; esac
   for word in "$@"; do
     case "$word" in
