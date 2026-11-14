@@ -11,9 +11,11 @@ import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
+import * as packModel from '../lib/pack.mts'
+import { createIconTokens } from './mobile-look.mts'
 import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { MergeRunner } from './mobile-bridge.mts'
-import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings } from './mobile-bridge.mts'
+import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings, LookSource } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
@@ -84,6 +86,23 @@ type FrontCtx = {
   mergeSettings(): Promise<unknown>
   setAutoMerge(repo: string, values: RepoChanges): Promise<unknown>
   packOpen(id: string): Promise<unknown>
+  // 맥 사이드바 이름 · 이미지(pack-repos.mts packRepos · server-status.mts serverList) — 없으면 빈 값
+  packRepos?: () => Promise<{ name: string; displayName?: unknown; iconPath?: unknown }[]>
+  serverList?: () => Promise<{ name: string }[]>
+}
+
+// 폰 스페이스 · 팩 이미지 원천 — 사이드바와 같은 packRepos · serverList · 팩 이미지는 마지막 pack list 의 iconPath(packModel.packIconPath — 화면 ctx.packIcon 과 같은 자리)
+export async function lookSource(ctx: Pick<FrontCtx, 'packState' | 'packRepos' | 'serverList'> | null): Promise<LookSource> {
+  if (!ctx) return { repos: [], servers: [], packIcons: {} }
+  const text = (value: unknown) => (typeof value === 'string' && value ? value : null)
+  const [repos, servers] = await Promise.all([ctx.packRepos ? ctx.packRepos().catch(() => []) : [], ctx.serverList ? ctx.serverList().catch(() => []) : []])
+  const packIcons: Record<string, string | null> = {}
+  for (const pack of packView(ctx.packState).packs) packIcons[pack.id] = packModel.packIconPath(ctx.packState, pack.id)
+  return {
+    repos: repos.filter((repo) => Boolean(repo) && typeof repo.name === 'string').map((repo) => ({ name: repo.name, displayName: text(repo.displayName), iconPath: text(repo.iconPath) })),
+    servers: servers.map((server) => (server && typeof server.name === 'string' ? server.name : '')).filter(Boolean),
+    packIcons,
+  }
 }
 
 // 팩 목록 — 폰에 넘길 칸만(본체 경로 · 아이콘 파일 경로는 넣지 않는다)
@@ -202,6 +221,8 @@ export function startMobileDev(deps: DevDeps) {
   const control = createPaneControl({ onPhoneTook: (pane) => deps.onPhoneControl(pane) })
   // 머지는 바뀌지 않으니 상세는 기기끼리 같이 쓴다(앞 창 본체가 바뀌면 키 — 레포#PR — 가 같아도 다른 레포일 수 있어 본체마다 따로)
   const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
+  // 팩 · 레포 이미지 토큰 — 기기끼리 같이 쓴다(같은 파일은 한 번만 읽는다)
+  const iconTokens = createIconTokens()
   const mergeDetails = () => {
     const dir = front()?.athenaDir || ''
     let cache = mergeCaches.get(dir)
@@ -253,6 +274,8 @@ export function startMobileDev(deps: DevDeps) {
           const ctx = front()
           return bodyPacks(ctx ? ctx.packState : null)
         },
+        look: () => lookSource(front()),
+        iconTokens,
         get mergeDetails() {
           return mergeDetails()
         },
