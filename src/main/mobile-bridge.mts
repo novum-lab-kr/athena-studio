@@ -1000,9 +1000,17 @@ export function createMobileBridge(deps: BridgeDeps) {
     const entries = await Promise.all(Object.entries(look.packIcons).map(async ([id, iconPath]) => [id, await iconTokens.tokenOf(iconPath)] as const))
     return Object.fromEntries(entries)
   }
+  // 앞 창 본체를 모르면(athenaDir 를 안 넘긴 옛 부르는 쪽 · 시험) 사이드바도 모른다 — 빈 목록 · 실패해도 snapshot 은 그대로
   async function spacesOf(state: StateWorkspaces, look: LookSource): Promise<MacSpace[]> {
-    const repos = await Promise.all(look.repos.map(async (repo) => ({ name: repo.name, displayName: repo.displayName, icon: await iconTokens.tokenOf(repo.iconPath) })))
-    return macSpaces(state, deps.athenaDir(), repos, look.servers)
+    try {
+      const athenaDir = typeof deps.athenaDir === 'function' ? deps.athenaDir() : null
+      if (!athenaDir) return []
+      const repos = await Promise.all(look.repos.map(async (repo) => ({ name: repo.name, displayName: repo.displayName, icon: await iconTokens.tokenOf(repo.iconPath) })))
+      return macSpaces(state, athenaDir, repos, look.servers)
+    } catch (error) {
+      mobileError('[mobile-bridge] 스페이스 목록 실패', 'snapshot', error)
+      return []
+    }
   }
   const withIcons = (packs: PackView['packs'], icons: Record<string, string | null>): PackRow[] => packs.map((pack) => ({ ...pack, icon: icons[pack.id] ?? null }))
 

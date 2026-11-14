@@ -1358,6 +1358,15 @@ test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이�
     await env.cleanup()
     fs.rmSync(dir, { recursive: true, force: true })
   }
+  // athenaDir 를 안 넘긴 옛 부르는 쪽 — spaces 는 빈 목록 · snapshot 은 그대로
+  const noDir = await setup({ athenaDir: undefined })
+  try {
+    const reply = await noDir.ask('snapshot')
+    assert.equal(reply.ok, true)
+    assert.deepEqual(reply.result.spaces, [])
+  } finally {
+    await noDir.cleanup()
+  }
   // 원천이 실패해도 snapshot 은 그대로(빈 목록 · icon null)
   const failing = await setup({ athenaDir: () => '/b/acme', look: async () => { throw new Error('읽기 실패') } })
   try {
