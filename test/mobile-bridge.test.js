@@ -328,6 +328,22 @@ test('pane.input 직후 — 그 pane 출력만 짧은 묶음으로(이미 걸린
   }
 })
 
+test('pane.input 직후 — 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력 없음)', async () => {
+  const env = await setup({ flushMs: 400, fastFlushMs: 20, fastHoldMs: 1000 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    await sleep(10)
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
+    assert.ok(Date.now() - started < 250, '원래 묶음(400ms)을 다 기다리지 않는다')
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'a' } }])
+  } finally {
+    await env.cleanup()
+  }
+})
+
 test('pane.input 직후 — 길의 묶음이 짧은 값보다 짧으면(직접 길) 그 묶음 그대로, 늘리지 않는다', async () => {
   const env = await setup({ flushMs: 40, fastFlushMs: 300 })
   try {

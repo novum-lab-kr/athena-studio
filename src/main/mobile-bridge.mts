@@ -412,6 +412,8 @@ export function createMobileBridge(deps: BridgeDeps) {
     const connection = await connectControl()
     // 이 입력에 대한 출력(쓸기 다시 그림 · 글자 되울림)은 짧은 묶음으로 — 답을 기다리기 전에 걸어 둔다(출력이 답보다 먼저 올 수 있다)
     fastUntil.set(pane, Date.now() + fastHoldMs)
+    // 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력이 없어도)
+    if (pending.has(pane)) scheduleFlush(pane)
     // 키 그대로(D2) — 붙여넣기 · 줄바꿈도 바꾸지 않는다
     await connection.call('input', { pane, data })
     // 내용은 적지 않는다(비밀값이 섞일 수 있다) — 누가 · 어느 pane · 크기만
