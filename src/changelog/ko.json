@@ -234,5 +234,7 @@
   "Add session token totals beside the pane title — input/output and cache": "pane 제목 옆에 세션 누적 토큰 표시 추가 — 입출력 · 캐시",
   "Increase terminal scrollback — 5000 to 10000 lines": "터미널 지난 출력 늘림 — 5000줄에서 10000줄로",
   "Restore terminal scrollback to 5000 lines": "터미널 지난 출력 5000줄로 되돌림",
-  "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "Claude pane 폰 스크롤 수정 — Studio 가 Claude 를 일반 화면 방식으로 켬"
+  "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "Claude pane 폰 스크롤 수정 — Studio 가 Claude 를 일반 화면 방식으로 켬",
+  "Restore full-screen mode in Claude panes — input box stays at the bottom": "Claude pane 전체 화면 방식 되돌림 — 입력칸 하단 고정",
+  "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "폰 시험 중 무거운 명령이 계속 기다리던 것 수정 — 동시 3개 · Expo 개발 서버는 자리 놓음"
 }
