@@ -3,8 +3,14 @@
 // 토큰은 파일 내용이 바뀔 때만 바뀐다 — 폰은 토큰이 같으면 저장해 둔 그림을 쓴다.
 // 읽는 규칙은 맥 화면과 같다(files.mts iconDataUrl — 일반 파일 · 1MiB 이하 · png · jpeg · webp 만). 경로는 폰에 넘기지 않는다.
 import fs from 'node:fs'
+import path from 'node:path'
 import { createHash } from 'node:crypto'
 import * as packModel from '../lib/pack.mts'
+
+// 아테나 작업 공간 줄 이미지 — 맥 사이드바(ui/spaces.tsx spaceImage)가 그 줄에 늘 그리는 우리 로고 화이트판.
+// 사이드바는 칸 크기에 맞춰 32 · 180 을 고르는데 폰은 한 장만 받으니 큰 쪽(180 · 약 10KB). 같은 파일을 배포판도 들고 간다
+// (scripts/package-mac.js FILES 'src/renderer/assets/logo/**' · asar 안 씀) — tray.mts TRAY_ICON_DIR 과 같은 자리 풀기
+export const ATHENA_LOGO = path.join(import.meta.dirname, '..', 'renderer', 'assets', 'logo', 'athena-white-180.png')
 
 export type IconFile = { token: string; mime: string; data: string }
 export type IconTokens = ReturnType<typeof createIconTokens>

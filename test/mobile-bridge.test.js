@@ -11,7 +11,7 @@ const bridgeModule = require('../src/main/mobile-bridge.mts')
 
 const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
 const { packView, bodyPacks, serverSummary, lookSource } = require('../src/main/mobile-dev.mts')
-const { createIconTokens, iconToken } = require('../src/main/mobile-look.mts')
+const { createIconTokens, iconToken, ATHENA_LOGO } = require('../src/main/mobile-look.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
 const workDir = () => fs.mkdtempSync('/tmp/asd-mob-')
@@ -1361,8 +1361,9 @@ test('macSpaces — 맥 사이드바 순서(아테나 → 작업 공간 → pane
       { name: 'web', displayName: null, icon: 'tok-web' },
       { name: 'athena', displayName: '같은 이름', icon: 'tok-x' },
     ]
-    assert.deepEqual(macSpaces(state, dir, repos, ['novum']), [
-      { workspace: 'athena', repo: null, displayName: null, icon: null },
+    assert.deepEqual(macSpaces(state, dir, repos, ['novum'], 'tok-athena'), [
+      // 아테나 작업 공간 — 맥 사이드바처럼 이름 athena · 아테나 로고(같은 이름 레포의 이름 · 이미지는 쓰지 않는다)
+      { workspace: 'athena', repo: null, displayName: 'athena', icon: 'tok-athena' },
       { workspace: 'web', repo: 'web', displayName: null, icon: 'tok-web' },
       { workspace: '셸', repo: null, displayName: null, icon: null },
       { workspace: 'api', repo: 'api', displayName: '백엔드', icon: 'tok-api' },
@@ -1370,6 +1371,10 @@ test('macSpaces — 맥 사이드바 순서(아테나 → 작업 공간 → pane
       { workspace: 'ssh-novum', repo: null, displayName: null, icon: null },
     ])
     assert.deepEqual(macSpaces(state, null, repos, []), [], '앞 창이 없으면 빈 목록')
+    assert.deepEqual(macSpaces(state, dir, repos, ['novum'])[0], { workspace: 'athena', repo: null, displayName: 'athena', icon: null }, '로고 토큰을 못 구하면 icon null')
+    // 옛 버그로 폴더 이름이 붙은 아테나 작업 공간도 보이는 이름은 athena(맥 workspaceName · displayLabel)
+    const old = { workspaces: [{ id: 'w1', label: path.basename(body), cwd: body, body }] }
+    assert.deepEqual(macSpaces(old, dir, [], [], 'tok-athena'), [{ workspace: path.basename(body), repo: null, displayName: 'athena', icon: 'tok-athena' }])
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
@@ -1432,8 +1437,9 @@ test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이�
     env.daemon.state.workspaces = [{ id: 'w1', label: 'athena', cwd: body, activeTab: 't1', body }, { id: 'w2', label: 'web', cwd: `${body}/repos/web`, activeTab: 't2', body }]
     const snap = (await env.ask('snapshot')).result
     const webToken = iconToken(ICON_PNG)
+    const logoToken = iconToken(fs.readFileSync(ATHENA_LOGO))
     assert.deepEqual(snap.spaces, [
-      { workspace: 'athena', repo: null, displayName: null, icon: null },
+      { workspace: 'athena', repo: null, displayName: 'athena', icon: logoToken },
       { workspace: 'web', repo: 'web', displayName: '웹', icon: webToken },
       { workspace: 'api', repo: 'api', displayName: null, icon: null },
     ])
@@ -1443,6 +1449,8 @@ test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이�
     assert.deepEqual(list.packs.map((pack) => [pack.id, pack.icon]), [['acme', null], ['globex', iconToken(ICON_JPG)]])
 
     assert.deepEqual((await env.ask('look.icon', { token: webToken })).result, { token: webToken, mime: 'image/png', data: ICON_PNG.toString('base64') })
+    // 아테나 로고도 같은 토큰 규칙으로 내려받는다 — 맥 사이드바가 그리는 그 파일(화이트판 180)
+    assert.deepEqual((await env.ask('look.icon', { token: logoToken })).result, { token: logoToken, mime: 'image/png', data: fs.readFileSync(ATHENA_LOGO).toString('base64') })
     const unknown = await env.ask('look.icon', { token: 'f'.repeat(32) })
     assert.equal(unknown.ok, true)
     assert.equal(unknown.result, null, '모르는 토큰은 null')
@@ -1464,11 +1472,22 @@ test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이�
   const failing = await setup({ athenaDir: () => '/b/acme', look: async () => { throw new Error('읽기 실패') } })
   try {
     const snap = (await failing.ask('snapshot')).result
-    assert.deepEqual(snap.spaces, [{ workspace: 'athena', repo: null, displayName: null, icon: null }])
+    assert.deepEqual(snap.spaces, [{ workspace: 'athena', repo: null, displayName: 'athena', icon: iconToken(fs.readFileSync(ATHENA_LOGO)) }], '아테나 로고는 원천과 따로')
     assert.equal(snap.otherPacks[0].icon, null)
   } finally {
     await failing.cleanup()
   }
+})
+
+test('아테나 로고 — 맥 사이드바(ui/spaces.tsx spaceImage)가 아테나 줄에 그리는 파일 · 배포판도 그 폴더를 들고 간다 · 토큰 규칙(png · 1MiB 이하) 안', () => {
+  const spaces = fs.readFileSync(path.join(__dirname, '..', 'src', 'renderer', 'ui', 'spaces.tsx'), 'utf8')
+  assert.match(spaces, /assets\/logo\/athena-white-\$\{size\}\.png/)
+  assert.match(spaces, /spaceImage\([^)]*, 180\)/, '사이드바가 쓰는 크기 중 하나(180)')
+  assert.equal(ATHENA_LOGO, path.join(__dirname, '..', 'src', 'renderer', 'assets', 'logo', 'athena-white-180.png'))
+  const bytes = fs.readFileSync(ATHENA_LOGO)
+  assert.ok(bytes.length <= 1024 * 1024)
+  assert.equal(bytes.subarray(1, 4).toString('latin1'), 'PNG')
+  assert.match(fs.readFileSync(path.join(__dirname, '..', 'scripts', 'package-mac.js'), 'utf8'), /'src\/renderer\/assets\/logo\/\*\*'/, '배포판 FILES 에 로고 폴더')
 })
 
 test('lookSource — 사이드바 packRepos · serverList · 팩 이미지 경로(pack list iconPath) · 앞 창 없음 · 읽기 실패는 빈 값', async () => {

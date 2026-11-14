@@ -20,7 +20,8 @@ import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 import { mobileError } from './mobile-log.mts'
 import * as core from '../lib/core.mts'
-import { createIconTokens } from './mobile-look.mts'
+import { displayLabel } from '../lib/athena-workspace.mts'
+import { ATHENA_LOGO, createIconTokens } from './mobile-look.mts'
 import type { IconTokens } from './mobile-look.mts'
 import { noMobileWork } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
@@ -217,9 +218,10 @@ export function otherPackCounts(panes: ReturnType<typeof livePanes>, packs: Pack
 // 맥 사이드바 줄 — 화면 renderSides(src/renderer/space-actions.ts)와 같은 순서:
 // 아테나 작업 공간 → 그 밖 작업 공간(데몬 순서) → 작업 공간이 없는 팩 레포(pack.json 순 · 흐린 줄) → 서버 작업 공간(<서버>-ops · ssh-<서버> · 서버 순).
 // 앞 창 본체(athenaDir) 것만 — 창이 보는 데몬 state(scope)와 같이 본체가 없는 작업 공간도 넣는다.
-// 레포 이름 · 이미지는 작업 공간 이름이 팩 레포 이름과 같을 때만(아테나 작업 공간은 같은 이름 레포가 있어도 쓰지 않는다)
+// 레포 이름 · 이미지는 작업 공간 이름이 팩 레포 이름과 같을 때만(아테나 작업 공간은 같은 이름 레포가 있어도 쓰지 않는다).
+// 아테나 작업 공간 줄은 맥 사이드바처럼 이름 athena(옛 폴더 이름 label 이어도 — displayLabel) · 이미지는 아테나 로고 토큰(athenaIcon)
 type SpaceWorkspace = { id: string; label: string; cwd?: string; body: string | null }
-export function macSpaces(state: StateWorkspaces, athenaDir: string | null, repos: { name: string; displayName: string | null; icon: string | null }[], servers: string[]): MacSpace[] {
+export function macSpaces(state: StateWorkspaces, athenaDir: string | null, repos: { name: string; displayName: string | null; icon: string | null }[], servers: string[], athenaIcon: string | null = null): MacSpace[] {
   if (!athenaDir) return []
   const body = core.realDir(athenaDir)
   const visible: SpaceWorkspace[] = []
@@ -232,7 +234,8 @@ export function macSpaces(state: StateWorkspaces, athenaDir: string | null, repo
   const athena = core.findAthenaWorkspace(visible, athenaDir)
   const byName = new Map(repos.map((repo) => [repo.name, repo]))
   const row = (workspace: SpaceWorkspace): MacSpace => {
-    const repo = workspace === athena ? undefined : byName.get(workspace.label)
+    if (workspace === athena) return { workspace: workspace.label, repo: null, displayName: displayLabel(workspace.label, true), icon: athenaIcon }
+    const repo = byName.get(workspace.label)
     return { workspace: workspace.label, repo: repo ? repo.name : null, displayName: repo ? repo.displayName : null, icon: repo ? repo.icon : null }
   }
   const serverOf = (workspace: SpaceWorkspace) => (workspace === athena ? -1 : servers.findIndex((name) => workspace.label === `${name}-ops` || workspace.label === `ssh-${name}`))
@@ -1050,8 +1053,11 @@ export function createMobileBridge(deps: BridgeDeps) {
     try {
       const athenaDir = typeof deps.athenaDir === 'function' ? deps.athenaDir() : null
       if (!athenaDir) return []
-      const repos = await Promise.all(look.repos.map(async (repo) => ({ name: repo.name, displayName: repo.displayName, icon: await iconTokens.tokenOf(repo.iconPath) })))
-      return macSpaces(state, athenaDir, repos, look.servers)
+      const [repos, athenaIcon] = await Promise.all([
+        Promise.all(look.repos.map(async (repo) => ({ name: repo.name, displayName: repo.displayName, icon: await iconTokens.tokenOf(repo.iconPath) }))),
+        iconTokens.tokenOf(ATHENA_LOGO),
+      ])
+      return macSpaces(state, athenaDir, repos, look.servers, athenaIcon)
     } catch (error) {
       mobileError('[mobile-bridge] 스페이스 목록 실패', 'snapshot', error)
       return []
