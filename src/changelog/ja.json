@@ -234,5 +234,8 @@
   "Add session token totals beside the pane title — input/output and cache": "ペインタイトルの横にセッション累計トークンを表示 — 入出力とキャッシュ",
   "Increase terminal scrollback — 5000 to 10000 lines": "ターミナルのスクロールバックを拡大 — 5000行から10000行へ",
   "Restore terminal scrollback to 5000 lines": "ターミナルのスクロールバックを5000行に戻す",
-  "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "Claude ペインのスマホスクロールを修正 — Studio が Claude を通常画面モードで起動"
+  "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "Claude ペインのスマホスクロールを修正 — Studio が Claude を通常画面モードで起動",
+  "Restore full-screen mode in Claude panes — input box stays at the bottom": "Claude ペインを全画面モードに戻す — 入力欄を下部に固定",
+  "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "スマホでのテスト中に重いコマンドが待ち続ける問題を修正 — 同時に3つ · Expo 開発サーバーは枠を解放",
+  "Fix the direct-connection server staying on when stopped while starting": "起動中に止めると直接接続サーバーが残る問題を修正"
 }

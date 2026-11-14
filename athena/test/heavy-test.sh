@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # 무거운 명령 줄서기(scripts/heavy.sh) 자리 시험 — 자리 2개가 동시에 잡히는지 · 셋째는 기다리는지 · 여유 부족 · 부하 높음 · 부하 못 읽음이면 둘째를 안 잡는지 ·
-# 낡은 잠금 정리 · SLOTS=1 이면 예전처럼 하나 · 임시 잠금 경로(ATHENA_HEAVY_LOCK) · 가짜 memory_pressure · 몇 초
+# 기본값(3자리 · 둘째 이후 여유 30%) · expo start 개발 서버 판정 · 낡은 잠금 정리 · SLOTS=1 이면 예전처럼 하나 · 임시 잠금 경로(ATHENA_HEAVY_LOCK) · 가짜 memory_pressure · 몇 초
 #
 # 사용: test/heavy-test.sh     → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -62,16 +62,26 @@ check "포기하면 stdout 마지막 줄에도 실패(75)가 남음 — stderr �
 check "대기 메시지에 두 자리 모두 보임" 'grep -q "자리1: .*sleep" "$TMP/a3.log" && grep -q "자리2: .*sleep" "$TMP/a3.log"'
 stop_bg
 
-echo "여유 부족이면 둘째를 안 잡음 (여유 20% < 40%)"
+echo "여유 부족이면 둘째를 안 잡음 (여유 20% < 기본 30%)"
 new_lock b; echo 20 > "$TMP/free"
 run_bg 30 "$TMP/b1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
 ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/b2.log" 2>&1; code=$?
 check "둘째를 안 잡고 기다리다 포기(75)" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.2" ]'
-check "보류 이유가 메시지에 나옴" 'grep -q "둘째 자리는 메모리 여유 20% < 40%" "$TMP/b2.log"'
+check "보류 이유가 메시지에 나옴" 'grep -q "둘째 자리는 메모리 여유 20% < 30%" "$TMP/b2.log"'
 echo 80 > "$TMP/free"
 ATHENA_HEAVY_WAIT=20 "$SRC/scripts/heavy.sh" true > "$TMP/b3.log" 2>&1; code=$?
 check "여유가 돌아오면 둘째 자리로 바로 돎" '[ "$code" = 0 ]'
 stop_bg
+
+echo "기본값 — 자리 3개 · 둘째 이후는 여유 30% 이상이면 잡음 (여유 35%)"
+new_lock q; unset ATHENA_HEAVY_SLOTS; echo 35 > "$TMP/free"
+run_bg 30 "$TMP/q1.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'
+run_bg 30 "$TMP/q2.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK.2/what" ]'
+run_bg 30 "$TMP/q3.log"; waitfor '[ -s "$ATHENA_HEAVY_LOCK.3/what" ]'
+check "세 자리를 동시에 잡음(여유 35% ≥ 30%)" '[ -s "$ATHENA_HEAVY_LOCK/pid" ] && [ -s "$ATHENA_HEAVY_LOCK.2/pid" ] && [ -s "$ATHENA_HEAVY_LOCK.3/pid" ]'
+ATHENA_HEAVY_WAIT=2 "$SRC/scripts/heavy.sh" true > "$TMP/q4.log" 2>&1; code=$?
+check "넷째는 기다리다 포기(75) · 넷째 자리 안 만듦" '[ "$code" = 75 ] && [ ! -e "$ATHENA_HEAVY_LOCK.4" ] && grep -q "자리3: .*sleep" "$TMP/q4.log"'
+stop_bg; export ATHENA_HEAVY_SLOTS=2; echo 80 > "$TMP/free"
 
 echo "부하가 높으면 둘째를 안 잡음 (부하 6.5 ≥ 코어 4)"
 new_lock f; echo 6.5 > "$LOAD_FILE"
@@ -179,6 +189,39 @@ new_lock n
 ( "$SRC/scripts/heavy.sh" node "$TMP/app/scripts/dev-app.js" start > "$TMP/n.log" 2>&1 ) &
 for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/n.log" 2>/dev/null && break; sleep 0.5; done
 check "node …/dev-app.js start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/n.log"'
+stop_bg
+
+# Expo 개발 서버(Metro — 2026-11-14 폰 시험 중 자리를 끝까지 쥐었다) — expo start · npx expo start · package.json start 가 expo start 인 npm start
+echo "expo start 도 개발 서버로 본다"
+for fake in expo npx; do
+  cat > "$TMP/bin/$fake" <<'FAKE'
+#!/bin/sh
+exec node -e "require('net').createServer().listen(0); setTimeout(() => {}, 120000)"
+FAKE
+  chmod +x "$TMP/bin/$fake"
+done
+mkdir -p "$TMP/expo-app" "$TMP/node-app"
+echo '{"scripts":{"start":"expo start"}}' > "$TMP/expo-app/package.json"
+echo '{"scripts":{"start":"node server.js"}}' > "$TMP/node-app/package.json"
+new_lock r
+( "$SRC/scripts/heavy.sh" expo start > "$TMP/r.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/r.log" 2>/dev/null && break; sleep 0.5; done
+check "expo start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/r.log"'
+stop_bg
+new_lock s
+( "$SRC/scripts/heavy.sh" npx expo start --lan --port 8082 > "$TMP/s.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/s.log" 2>/dev/null && break; sleep 0.5; done
+check "npx expo start --lan 은 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/s.log"'
+stop_bg
+new_lock t
+( cd "$TMP/expo-app" && exec "$SRC/scripts/heavy.sh" npm run start > "$TMP/t.log" 2>&1 ) &
+for _ in $(seq 1 40); do grep -q "개발 서버 시작 끝" "$TMP/t.log" 2>/dev/null && break; sleep 0.5; done
+check "start 가 expo start 인 폴더의 npm run start 는 포트를 연 뒤 자리를 놓음" '[ ! -e "$ATHENA_HEAVY_LOCK" ] && grep -q "개발 서버 시작 끝" "$TMP/t.log"'
+stop_bg
+new_lock u
+( cd "$TMP/node-app" && exec "$SRC/scripts/heavy.sh" npm start > "$TMP/u.log" 2>&1 ) &
+waitfor '[ -s "$ATHENA_HEAVY_LOCK/what" ]'; sleep 8
+check "start 가 expo 가 아닌 npm start 는 포트를 열어도 자리를 쥠" '[ -s "$ATHENA_HEAVY_LOCK/what" ] && ! grep -q "개발 서버 시작 끝" "$TMP/u.log"'
 stop_bg
 
 echo "대기 중 TERM 을 받으면 바로 끝난다 (자리 · 잠금을 남기지 않음)"
