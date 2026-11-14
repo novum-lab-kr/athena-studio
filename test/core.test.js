@@ -406,20 +406,18 @@ test('withToolPath: 앱이 찾은 도구 절대 경로로 켜고 도구 · node 
     const pathValue = `${tools}:${nodeDir}:/usr/bin`
     const quote = (value) => `'${value.replace(/'/g, `'\\''`)}'`
     const prefix = `PATH=${quote(`${tools}:${nodeDir}`)}:"$PATH" `
-    const classic = 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 '
-    assert.equal(core.withToolPath('claude', 'claude', pathValue), `${classic}${prefix}${quote(path.join(tools, 'claude'))}`)
+    assert.equal(core.withToolPath('claude', 'claude', pathValue), `${prefix}${quote(path.join(tools, 'claude'))}`)
     assert.equal(core.withToolPath('codex --no-daemon resume abc', 'codex', pathValue), `${prefix}${quote(path.join(tools, 'codex'))} --no-daemon resume abc`)
     // codex-session.py 로 켜면 앞 낱말은 그대로 — 그 안에서 codex 를 PATH 로 찾는다
     assert.equal(core.withToolPath("python3 '/b/scripts/codex-session.py' --no-daemon", 'codex', pathValue), `${prefix}python3 '/b/scripts/codex-session.py' --no-daemon`)
-    // claude-x 같은 다른 이름은 바꾸지 않는다 · 도구를 못 찾으면 명령 그대로(Claude 면 일반 화면 환경 변수만) · node 가 없으면 도구 폴더만
-    assert.equal(core.withToolPath('claudex', 'claude', pathValue), `${classic}${prefix}claudex`)
-    assert.equal(core.withToolPath('claude', 'claude', '/usr/bin'), `${classic}claude`)
-    assert.equal(core.withToolPath('codex', 'codex', '/usr/bin'), 'codex')
-    assert.equal(core.withToolPath('claude', 'claude', tools), `${classic}PATH=${quote(tools)}:"$PATH" ${quote(path.join(tools, 'claude'))}`)
-    // 실제 셸이 그대로 실행한다(따옴표 든 경로) · Claude 프로세스 환경에 일반 화면 변수가 들어간다
-    fs.writeFileSync(path.join(tools, 'claude'), '#!/bin/sh\necho ran "$@" "$CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN"\n', { mode: 0o755 })
+    // claude-x 같은 다른 이름은 바꾸지 않는다 · 도구를 못 찾으면 명령 그대로 · node 가 없으면 도구 폴더만
+    assert.equal(core.withToolPath('claudex', 'claude', pathValue), `${prefix}claudex`)
+    assert.equal(core.withToolPath('claude', 'claude', '/usr/bin'), 'claude')
+    assert.equal(core.withToolPath('claude', 'claude', tools), `PATH=${quote(tools)}:"$PATH" ${quote(path.join(tools, 'claude'))}`)
+    // 실제 셸이 그대로 실행한다(따옴표 든 경로)
+    fs.writeFileSync(path.join(tools, 'claude'), '#!/bin/sh\necho ran "$@"\n', { mode: 0o755 })
     const out = require('node:child_process').execFileSync('/bin/sh', ['-c', `${core.withToolPath('claude --resume x', 'claude', pathValue)}`], { encoding: 'utf8', env: { PATH: '/usr/bin:/bin' } })
-    assert.equal(out.trim(), 'ran --resume x 1')
+    assert.equal(out.trim(), 'ran --resume x')
   } finally {
     fs.rmSync(root, { recursive: true, force: true })
   }

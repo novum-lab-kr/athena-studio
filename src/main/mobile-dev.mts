@@ -4,6 +4,8 @@
 // 격리 집(ATHENA_STUDIO_HOME)은 없어도 된다 — 없으면 진짜 스튜디오 집(~/.athena-studio)에서 켠다(2026-11-12 결정 · 폰 실제 데이터 시험).
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <스튜디오 집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
+// 직접 길(mobile-lan.mts — 같은 Wi-Fi · Tailscale)도 같은 조건에서만 켠다. 한 기기는 한 번에 한 길 — 직접이 붙으면 그 기기 relay 세션은 쉬고,
+// relay 로 hello 가 오면 직접 연결을 닫는다(마지막 hello 가 이긴다). 받는 주소는 relay 세션 안 lan.info 로 알린다.
 import fs from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
@@ -15,8 +17,10 @@ import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackRes
 import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
-import { createMobileRelay } from './mobile-relay.mts'
+import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
+import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
+import type { KeyPair } from '../lib/mobile-crypto.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
 import type { FetchLike, LoginFailure } from './mobile-login.mts'
 import { mobileLog } from './mobile-log.mts'
@@ -188,6 +192,11 @@ export function startMobileDev(deps: DevDeps) {
     // 맥 로그아웃 — relay 에서 이 기기 · 토큰 · 쌍 · 연결 요청을 지운다(protocol.md auth.logout {} → {} · 답 뒤 close 4004). 실패해도 로컬은 지운다
     remoteLogout: (call) => call('auth.logout', {}),
     createBridge: (transport) => newBridge(transport),
+    onSessionOpen: (peer, send) => {
+      lan.dropPeer(peer)
+      send(lan.info())
+    },
+    onPeersChanged: () => lan.dropRemoved(),
   })
   // 제어 주인(D9) — 기기(브리지)끼리 · main 의 맥 입력 · 크기 요청과 같이 본다
   const control = createPaneControl({ onPhoneTook: (pane) => deps.onPhoneControl(pane) })
@@ -209,11 +218,13 @@ export function startMobileDev(deps: DevDeps) {
       return ctx ? ctx.workPeek({ launch: false }) : noMobileWork()
     },
   })
-  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport']) {
+  // 브리지는 두 길이 같다 — 출력 묶음만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS)
+  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], flushMs?: number) {
     const bridge = (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
+        ...(flushMs === undefined ? {} : { flushMs }),
         control,
         inputAllowed: () => mobileInputAllowed(deps.config()),
         requests: () => {
@@ -317,8 +328,26 @@ export function startMobileDev(deps: DevDeps) {
     deviceName: deps.macName,
     log,
   })
+  let macKey: KeyPair | null = null
+  const lan = createMobileLan({
+    port: lanPortOf(deps.config()),
+    macKey: () => macKey,
+    peerOfKey: (publicKey) => relay.peerOfKey(publicKey),
+    peerAllowed: (peer) => relay.peers().includes(peer),
+    createBridge: (transport) => newBridge(transport, DIRECT_FLUSH_MS),
+    onDirectOpen: (peer) => relay.pauseSession(peer),
+    onAddressesChanged: (info) => relay.broadcast(info),
+    macId: () => relay.status().deviceId,
+    log,
+  })
   log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir}`)
-  void relay.start() // 저장한 토큰이 있으면 붙는다 · 없으면 로그아웃 상태로 기다린다
+  let stopped = false
+  // 저장한 토큰이 있으면 붙는다 · 없으면 로그아웃 상태로 기다린다. relay 가 맥 열쇠를 만들고(처음이면) 나서 직접 길을 연다 — 같은 열쇠 파일을 읽는다
+  void relay.start().then(() => {
+    if (stopped) return
+    macKey = loadMacKey(deps.options.dir)
+    return lan.start()
+  })
   const view = (): MobileView => {
     const status = relay.status()
     return {
@@ -335,6 +364,7 @@ export function startMobileDev(deps: DevDeps) {
   }
   return {
     relay,
+    lan,
     view,
     signIn: () => login.start(),
     // 로그인 중 [취소] — 맥이 기다리기만 멈춘다(relay 쪽 시도는 그대로 두면 10분 뒤 저절로 끝난다 · 늦게 온 athena:// 는 state 가 없어 버린다)
@@ -355,8 +385,9 @@ export function startMobileDev(deps: DevDeps) {
     requestsChanged: () => workWatch.requestsChanged(),
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
+      stopped = true
       login.cancel()
-      await relay.stop()
+      await Promise.all([relay.stop(), lan.stop()])
     },
   }
 }

@@ -605,3 +605,86 @@ test('화면 이름 — 공급자 이름 · 이메일 먼저, 없으면 개발 �
   assert.equal(displayName(null, 'google:123'), null)
   assert.equal(displayName(null, null), null)
 })
+
+// relay 서버 없이 — 가짜 relay 소켓(WebSocketImpl)으로 공통 세션(mobile-session.mts)을 쓰는 relay 길과 직접 길용 훅을 본다
+test('relay 세션 — hello 답 · 봉인 그대로 · onSessionOpen(lan.info) · broadcast · peerOfKey · pauseSession · 해제 때 onPeersChanged', { timeout: 10_000 }, async () => {
+  await mobileCrypto.ready()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-mrhook-'))
+  const phoneKeys = mobileCrypto.newKeyPair()
+  // 로그인한 상태(저장한 토큰)와 허용 기기를 relay.json 저장 형식 그대로 미리 적어 둔다 — 맥은 저장한 토큰으로만 붙는다(auth.resume)
+  fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify({ token: 'fake-token', deviceId: 'dev-mac', account: 'dev:tester', name: null, peers: { 'dev-phone': { publicKey: mobileCrypto.toBase64(phoneKeys.publicKey), addedAt: '2026-11-14T00:00:00.000Z', label: '폰', lastSeen: null } } }))
+  const sockets = []
+  class FakeRelaySocket {
+    constructor() {
+      this.readyState = 0
+      this.sent = []
+      sockets.push(this)
+      setTimeout(() => {
+        this.readyState = 1
+        if (this.onopen) this.onopen({})
+      })
+    }
+    send(data) {
+      const message = JSON.parse(data)
+      this.sent.push(message)
+      if (message.op === 'auth.resume') setTimeout(() => this.onmessage({ data: JSON.stringify({ id: message.id, ok: true, result: { deviceId: 'dev-mac', account: 'dev:tester' } }) }))
+    }
+    close() {
+      this.readyState = 3
+    }
+  }
+  const opened = []
+  const stopped = []
+  let peersChanged = 0
+  const relay = createMobileRelay({
+    url: 'ws://127.0.0.1:1/ws',
+    dir,
+    log: () => {},
+    WebSocketImpl: FakeRelaySocket,
+    heartbeatMs: 60_000,
+    createBridge: (transport, peer) => ({ stop: async () => void stopped.push(peer), openPanes: () => [], resyncPane: async () => {} }),
+    onSessionOpen: (peer, send) => {
+      opened.push(peer)
+      send({ event: 'lan.info', addrs: ['192.168.0.2'], port: 47390, macId: 'dev-mac' })
+    },
+    onPeersChanged: () => (peersChanged += 1),
+  })
+  try {
+    await relay.start()
+    await waitFor(() => relay.status().connected, '가짜 relay 로그인')
+    const socket = sockets[0]
+    assert.equal(relay.peerOfKey(phoneKeys.publicKey), 'dev-phone')
+    assert.equal(relay.peerOfKey(mobileCrypto.newKeyPair().publicKey), null)
+
+    const ephemeral = mobileCrypto.newKeyPair()
+    socket.onmessage({ data: JSON.stringify({ event: 'msg', from: 'dev-phone', data: mobileCrypto.encodeHandshake(mobileCrypto.helloMessage(ephemeral.publicKey)) }) })
+    relay.broadcast({ event: 'lan.info', addrs: [], port: 47390, macId: 'dev-mac' })
+    const toPhone = socket.sent.filter((message) => message.op === 'msg' && message.args.to === 'dev-phone').map((message) => mobileCrypto.decodeData(message.args.data))
+    assert.equal(toPhone[0].kind, 'handshake', '첫 글은 맥 hello 답')
+    const macStatic = loadMacKey(dir).publicKey
+    const cipher = mobileCrypto.createCipherSession(mobileCrypto.deriveSessionKeys({ role: 'app', staticKey: phoneKeys, ephemeralKey: ephemeral, peerStatic: macStatic, peerEphemeral: mobileCrypto.helloEphemeral(toPhone[0].message) }))
+    const plain = toPhone.slice(1).map((entry) => JSON.parse(cipher.open(entry.bytes)))
+    assert.deepEqual(plain, [
+      { event: 'lan.info', addrs: ['192.168.0.2'], port: 47390, macId: 'dev-mac' },
+      { event: 'lan.info', addrs: [], port: 47390, macId: 'dev-mac' },
+    ])
+    assert.deepEqual(opened, ['dev-phone'])
+    assert.deepEqual(relay.status().sessions, ['dev-phone'])
+
+    // 직접 길이 붙었다 — relay 세션은 쉬고 그 브리지를 멈춘다. 그 뒤 relay 로 온 암호문에는 reset(앱이 hello 부터)
+    relay.pauseSession('dev-phone')
+    assert.deepEqual(relay.status().sessions, [])
+    assert.deepEqual(stopped, ['dev-phone'])
+    socket.sent.length = 0
+    socket.onmessage({ data: JSON.stringify({ event: 'msg', from: 'dev-phone', data: Buffer.alloc(40, 1).toString('base64') }) })
+    const reset = socket.sent.map((message) => mobileCrypto.decodeData(message.args.data))
+    assert.deepEqual(reset.map((entry) => entry.message), [{ hs: 'reset', v: 1 }])
+
+    socket.onmessage({ data: JSON.stringify({ event: 'pair.removed', peer: 'dev-phone' }) })
+    assert.equal(peersChanged, 1)
+    assert.deepEqual(relay.peers(), [])
+  } finally {
+    await relay.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
