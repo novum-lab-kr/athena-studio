@@ -276,14 +276,18 @@ export function agentCommand(engine: unknown): string {
 // 그래서 앱이 찾아 로그인까지 확인한 실행 파일을 절대 경로로 켜고, 그 도구 폴더 · node 폴더(npm 판은 `env node` 로 켜진다)를
 // 이 명령에만 PATH 앞에 붙인다 — rc 가 PATH 를 덮어도 상관없게. 앱 PATH 에서 못 찾으면 명령을 그대로 둔다
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'\\''`)}'`
+// Studio 가 띄우는 Claude 는 일반 화면 방식(classic)으로 — 대체 화면(fullscreen)이면 터미널 기록이 0 이라 폰이 로컬로 스크롤하지 못한다.
+// 이 환경 변수는 사용자 설정의 tui 값과 관계없이 classic 으로 켠다(https://code.claude.com/docs/en/fullscreen.md). 코어 delegate.sh · 현황판도 같이 넣는다
+export const CLAUDE_CLASSIC_ENV = 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1'
 export function withToolPath(command: string, engine: Tool, pathValue: string | null | undefined = process.env.PATH): string {
+  const screenEnv = engine === 'claude' ? `${CLAUDE_CLASSIC_ENV} ` : ''
   const executable = findExecutable(engine, pathValue)
-  if (!executable) return command
+  if (!executable) return screenEnv + command
   const node = findExecutable('node', pathValue)
   const dirs = [...new Set([path.dirname(executable), ...(node ? [path.dirname(node)] : [])])]
   // `codex --no-daemon` 처럼 도구 이름으로 시작하면 그 자리를 절대 경로로. codex-session.py 처럼 다른 것으로 켜면 PATH 만(그 안에서 codex 를 PATH 로 찾는다)
   const rest = command === engine || command.startsWith(`${engine} `) ? shellQuote(executable) + command.slice(engine.length) : command
-  return `PATH=${shellQuote(dirs.join(':'))}:"$PATH" ${rest}`
+  return `${screenEnv}PATH=${shellQuote(dirs.join(':'))}:"$PATH" ${rest}`
 }
 
 export function resumeCommand(session: unknown, engine: unknown = 'claude'): string {

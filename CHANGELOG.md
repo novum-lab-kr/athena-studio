@@ -46,6 +46,11 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add session token totals beside the pane title — input/output and cache
+- Increase terminal scrollback — 5000 to 10000 lines
+
+### Fixed
+- Restore terminal scrollback to 5000 lines
+- Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode
 
 ## 0.60 (v0.60.0 – · Nov 8, 2026)
 
