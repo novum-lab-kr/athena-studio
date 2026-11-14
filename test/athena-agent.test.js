@@ -59,8 +59,8 @@ function setup(t) {
 }
 
 const started = (daemon) => daemon.calls.filter((call) => call.op === 'pane run')
-// pane 셸 PATH 에 도구가 없어도 켜지게 — 앱이 찾은 절대 경로 + 그 폴더를 명령 앞 PATH 에(core.withToolPath)
-const launched = (tool, rest = '') => `PATH='${process.env.PATH}':"$PATH" '${path.join(process.env.PATH, tool)}'${rest}`
+// pane 셸 PATH 에 도구가 없어도 켜지게 — 앱이 찾은 절대 경로 + 그 폴더를 명령 앞 PATH 에(core.withToolPath) · Claude 는 일반 화면 방식 환경 변수도
+const launched = (tool, rest = '') => `${tool === 'claude' ? 'CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1 ' : ''}PATH='${process.env.PATH}':"$PATH" '${path.join(process.env.PATH, tool)}'${rest}`
 
 test('줄 세우기: 같은 열쇠는 앞 일이 끝난 뒤(실패해도) · 다른 열쇠는 따로', async () => {
   const queue = core.keyedQueue()
