@@ -309,3 +309,19 @@ test('작업 목록 알림(createWorkWatch): 폰이 붙어 있을 때만 주기�
   await settle()
   assert.equal(heard.length, 2)
 })
+
+test('사용량 알림(createWorkWatch parts): 달라졌을 때 넘긴 칸으로 알린다', async () => {
+  const settle = () => new Promise((resolve) => setImmediate(resolve))
+  let current = { boardUp: false, tools: [] }, tick = null
+  const watch = work.createWorkWatch({ read: async () => current, parts: ['usage'], setTimer: (run) => ((tick = run), 'timer'), clearTimer: () => {} })
+  const heard = []
+  watch.add({ changed: (parts) => heard.push(parts) })
+  await settle()
+  tick()
+  await settle()
+  assert.deepEqual(heard, [])
+  current = { boardUp: true, tools: [{ toolId: 'claude', tool: 'Claude', windows: [{ minutes: 300, label: '5시간', percent: 10, resetAt: null }] }] }
+  tick()
+  await settle()
+  assert.deepEqual(heard, [['usage']])
+})

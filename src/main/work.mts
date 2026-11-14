@@ -16,6 +16,8 @@ import type { CodexApproval } from '../lib/codex-approvals.mts'
 import * as packModel from '../lib/pack.mts'
 import * as requestsModel from '../lib/requests.mts'
 import * as workModel from '../lib/work-model.mts'
+import { mobileUsage, noMobileUsage } from '../lib/tray-model.mts'
+import type { MobileUsage } from '../lib/tray-model.mts'
 import { isBoardUp, queueBoard, boardOwner, boardJson, fetchBoardJson } from './board.mts'
 import type { BoardStart } from './board.mts'
 import type { PackResult, Say } from '../lib/pack.mts'
@@ -51,6 +53,7 @@ export type WorkCtx = {
   watchRequests?: () => void
   workState?: unknown
   workPeek?: (options?: { launch?: boolean }) => Promise<workModel.MobileWork>
+  usagePeek?: () => Promise<MobileUsage>
   answerRequest?: unknown
   redeliverRequest?: unknown
   approveRequest?: (id: string, generation: string, choice: number) => Promise<{ ok: boolean; error?: string }>
@@ -300,6 +303,13 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
     },
     requests: () => requestsState().requests,
   })
+  // 폰(모바일 브리지 snapshot.usage) — 맥 메뉴 막대(tray.mts)처럼 띄우지 않고 지금 떠 있는 현황판의 /api/state header.usage 만 읽는다.
+  // 꺼졌거나 못 읽었거나 읽는 사이 팩을 바꿨으면 boardUp:false(지난 값을 지금 값처럼 보이지 않게 — 트레이와 같다)
+  ctx.usagePeek = async () => {
+    const dir = ctx.athenaDir
+    const state = await fetchBoardJson(boardPortNow(), '/api/state').catch(() => null)
+    return state && dir === ctx.athenaDir ? mobileUsage(state) : noMobileUsage()
+  }
   // 답을 그 pane 에 넣는다 — 입력칸에 한 줄(에이전트는 [요청 <id>] 를 보고 ack), 같은 질문의 선택 창이 떠 있으면 그 창에서 고르고 ack 는 앱이.
   // 못 넣으면 이유(pane 없음 · 선택 창이 떠 있음 · 확인 못 함) — 답은 저장돼 있다(다시 보내기)
   const deliverToPane = (request: StudioRequest, answer: { choice?: unknown; text?: unknown }) => {

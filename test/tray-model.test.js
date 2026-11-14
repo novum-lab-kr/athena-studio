@@ -85,6 +85,36 @@ test('사용량 리셋 시각: 오늘은 시각만 · 내일 · 그 뒤는 요�
   assert.equal(tray.resetClock('읽을 수 없음', now), '')
 })
 
+test('폰 사용량(mobileUsage): header.usage 를 문구 없이 데이터로 · 메뉴 막대(usageItems)와 같은 창만 · 꺼짐은 boardUp:false', () => {
+  const reset = Date.parse('2026-11-15T09:30:00Z')
+  const state = {
+    header: {
+      usage: [
+        { id: 'claude', label: 'Claude', at: 1, windows: [{ label: '5시간', minutes: 300, percent: 37.6, resetsAt: reset }, { label: '주간', minutes: 10080, percent: 120, resetsAt: Math.floor(reset / 1000) }] },
+        // 옛 코어(minutes 없음 → label) · 날짜 글 · 못 읽는 시각 · 숫자 아닌 percent 는 빠진다
+        { id: 'codex', label: 'Codex', at: null, windows: [{ label: '주간', percent: -3, resetsAt: '2026-11-15T09:30:00Z' }, { label: '5시간', minutes: 300, percent: 5, resetsAt: '읽을 수 없음' }, { minutes: 300, percent: null }] },
+        // 창이 하나도 없는 도구(설치만 했고 아직 기록 없음)는 뺀다
+        { id: 'gemini', label: 'Gemini', at: null, windows: [] },
+      ],
+    },
+  }
+  assert.deepEqual(tray.mobileUsage(state), {
+    boardUp: true,
+    tools: [
+      { toolId: 'claude', tool: 'Claude', windows: [{ minutes: 300, label: '5시간', percent: 38, resetAt: reset }, { minutes: 10080, label: '주간', percent: 100, resetAt: reset }] },
+      { toolId: 'codex', tool: 'Codex', windows: [{ minutes: null, label: '주간', percent: 0, resetAt: reset }, { minutes: 300, label: '5시간', percent: 5, resetAt: null }] },
+    ],
+  })
+  // 메뉴 막대와 같은 창 수 · 같은 %
+  assert.deepEqual(tray.usageItems(state.header.usage, 0).map((item) => item.percent), [38, 100, 0, 5])
+  // 현황판은 떴는데 사용량이 없음(옛 현황판 · 도구 없음) → boardUp:true · 빈 목록 / 못 읽음 → boardUp:false
+  assert.deepEqual(tray.mobileUsage({ cards: [] }), { boardUp: true, tools: [] })
+  assert.deepEqual(tray.mobileUsage(null), { boardUp: false, tools: [] })
+  assert.deepEqual(tray.noMobileUsage(), { boardUp: false, tools: [] })
+  assert.equal(tray.resetTime(0), null)
+  assert.equal(tray.resetTime(new Date(reset)), reset)
+})
+
 test('일한 시간: 10분 칸마다 일하는 에이전트 수 × 4초를 분으로 더한다 · 3일치만 남긴다', () => {
   const at = (stamp) => new Date(stamp).getTime()
   assert.equal(tray.daySlot(at('2026-11-04T00:00:00')), 0)

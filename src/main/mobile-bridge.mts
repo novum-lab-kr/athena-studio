@@ -25,6 +25,8 @@ import { ATHENA_LOGO, createIconTokens } from './mobile-look.mts'
 import type { IconTokens } from './mobile-look.mts'
 import { noMobileWork } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
+import { noMobileUsage } from '../lib/tray-model.mts'
+import type { MobileUsage } from '../lib/tray-model.mts'
 
 type Connection = NonNullable<Awaited<ReturnType<typeof daemonClient.peekDaemon>>>
 type DaemonPaths = Parameters<typeof daemonClient.peekDaemon>[0]['paths']
@@ -90,6 +92,7 @@ export type BridgeDeps = {
   mergeDetails?: MergeDetails // 머지 상세 캐시(createMergeDetails)
   mac?: () => { name: string | null }
   work?: () => MobileWork | Promise<MobileWork> // 맥 [작업] 과 같은 작업 목록(doing · done · 현황판을 못 띄웠으면 boardUp:false + boardError)
+  usage?: () => MobileUsage | Promise<MobileUsage> // 맥 메뉴 막대와 같은 AI 사용량(현황판 header.usage · 꺼졌으면 boardUp:false) — work 다음에 읽는다
   devices?: () => DeviceView[]
   serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
   control?: PaneControl // 제어 주인(D9) — 기기끼리 나눠 쓴다. 없으면 이 브리지 혼자 쓰는 것
@@ -1033,6 +1036,15 @@ export function createMobileBridge(deps: BridgeDeps) {
     }
   }
 
+  // 사용량 — 안 넘긴 부르는 쪽 · 읽다 실패한 것은 빈 값(snapshot 전체를 실패시키지 않는다)
+  const readUsage = async (): Promise<MobileUsage> => {
+    try {
+      return deps.usage ? await deps.usage() : noMobileUsage()
+    } catch {
+      return noMobileUsage()
+    }
+  }
+
   // 이름 · 이미지 원천 — 안 넘긴 부르는 쪽 · 읽다 실패한 것은 빈 값(snapshot 전체를 실패시키지 않는다)
   const iconTokens = deps.iconTokens || createIconTokens()
   const noLook = (): LookSource => ({ repos: [], servers: [], packIcons: {} })
@@ -1076,7 +1088,9 @@ export function createMobileBridge(deps: BridgeDeps) {
     const listed = (await connection.call('pane list')) as { panes?: ListedPane[] } | null
     // 범위 없는 state — 작업 공간마다 본체(body)가 실려 pane 이 어느 팩 것인지 안다(못 읽으면 workspace · pack 만 null)
     const state = (await connection.call('state').catch(() => null)) as StateWorkspaces
-    const [requests, servers, events, work, look] = await Promise.all([deps.requests(), deps.servers(), deps.events(), readWork(), readLook()])
+    // 사용량은 작업 목록 다음 — 작업 목록이 현황판을 띄우니 처음 snapshot 에서도 떠 있는 현황판을 읽는다
+    const workThenUsage = readWork().then(async (work) => ({ work, usage: await readUsage() }))
+    const [requests, servers, events, { work, usage }, look] = await Promise.all([deps.requests(), deps.servers(), deps.events(), workThenUsage, readLook()])
     if (!sizeWatching) {
       sizeWatching = true
       void pollSizes()
@@ -1089,6 +1103,7 @@ export function createMobileBridge(deps: BridgeDeps) {
     return {
       requests,
       work,
+      usage,
       panes,
       spaces,
       otherPacks: otherPackCounts(panes, deps.packs(), icons),
@@ -1327,7 +1342,7 @@ export function createMobileBridge(deps: BridgeDeps) {
   transport.onMessage((message) => void handle(message))
 
   return {
-    // 맥 쪽에서 바뀐 칸을 알린다(요청 → ['requests', 'work'] · 작업 목록 → ['work'] — mobile-dev workWatch) — 폰은 다시 snapshot 한다
+    // 맥 쪽에서 바뀐 칸을 알린다(요청 → ['requests', 'work'] · 작업 목록 → ['work'] — mobile-dev workWatch · 사용량 → ['usage'] — usageWatch) — 폰은 다시 snapshot 한다
     changed(parts: string[]) {
       emit({ event: 'changed', parts })
     },

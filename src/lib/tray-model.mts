@@ -78,10 +78,17 @@ export function summarize({ panes = [], workspaces = [], usage = [], boardUp = f
 
 const HOUR_MS = 3600000
 
+// 리셋 시각(ms) — 현황판 resetsAt(초 · ms · 날짜 글)을 ms 로. 없거나 못 읽으면 null
+export function resetTime(resetsAt: ResetsAt): number | null {
+  const date = resetsAt ? new Date(typeof resetsAt === 'number' && resetsAt < 1e12 ? resetsAt * 1000 : resetsAt) : null
+  return date && !Number.isNaN(date.getTime()) ? date.getTime() : null
+}
+
 // 리셋 시각 — 오늘이면 'HH:MM', 내일이면 '내일 HH:MM', 그 뒤면 '월 HH:MM'(없거나 못 읽으면 '')
 export function resetClock(resetsAt: ResetsAt, now: number = Date.now(), say: Say = koreanSay): string {
-  const date = resetsAt ? new Date(typeof resetsAt === 'number' && resetsAt < 1e12 ? resetsAt * 1000 : resetsAt) : null
-  if (!date || Number.isNaN(date.getTime())) return ''
+  const at = resetTime(resetsAt)
+  if (at === null) return ''
+  const date = new Date(at)
   const time = `${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   const today = new Date(now)
   today.setHours(0, 0, 0, 0)
@@ -118,6 +125,31 @@ export function usageItems(usage: unknown, now: number = Date.now(), say: Say = 
   return items
 }
 
+// 폰(모바일 브리지 snapshot.usage) — usageItems 와 같은 header.usage 를 문구 없이 데이터로.
+// minutes = 창 길이(분 · 폰이 창 이름을 짓는다 — 옛 코어라 없으면 null · 그때 label 은 현황판이 준 한국어 이름) · resetAt = 초기화 시각 ms(모르면 null).
+// percent 가 숫자가 아닌 창은 빼고(usageItems 와 같다) 창이 하나도 없는 도구도 뺀다 — tools 가 비면 "정보 없음"
+export type MobileUsageWindow = { minutes: number | null; label: string | null; percent: number; resetAt: number | null }
+export type MobileUsageTool = { toolId: string; tool: string; windows: MobileUsageWindow[] }
+export type MobileUsage = { boardUp: boolean; tools: MobileUsageTool[] }
+export const noMobileUsage = (): MobileUsage => ({ boardUp: false, tools: [] })
+const windowMinutes = (minutes: unknown): number | null => (typeof minutes === 'number' && Number.isInteger(minutes) && minutes > 0 ? minutes : null)
+// state = 현황판 /api/state 응답(못 읽었으면 null → boardUp:false)
+export function mobileUsage(state: unknown): MobileUsage {
+  if (!state || typeof state !== 'object') return noMobileUsage()
+  const header = (state as { header?: { usage?: unknown } }).header
+  const tools: UsageTool[] = header && Array.isArray(header.usage) ? header.usage : []
+  const rows: MobileUsageTool[] = []
+  for (const tool of tools) {
+    if (!tool || typeof tool !== 'object') continue
+    const windows: MobileUsageWindow[] = []
+    for (const window of Array.isArray(tool.windows) ? tool.windows : []) {
+      if (!window || typeof window.percent !== 'number') continue
+      windows.push({ minutes: windowMinutes(window.minutes), label: typeof window.label === 'string' ? window.label : null, percent: Math.max(0, Math.min(100, Math.round(window.percent))), resetAt: resetTime(window.resetsAt) })
+    }
+    if (windows.length) rows.push({ toolId: String(tool.id || ''), tool: String(tool.label || tool.id || ''), windows })
+  }
+  return { boardUp: true, tools: rows }
+}
 
 // 일한 시간 — 날마다 10분 한 칸 144개(0시 0분 칸부터 · 현지 시각). 칸 값은 그 10분 동안 에이전트들이 일한 시간의 합(에이전트·분):
 // 4초마다 잴 때 일하는 에이전트 수 × 4초를 그 칸에 더한다(동시 최대가 아니다 — 사용자 2026-11-05).
