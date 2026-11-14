@@ -237,5 +237,6 @@
   "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "修复手机上 Claude 窗格的滚动 — Studio 以经典画面模式启动 Claude",
   "Restore full-screen mode in Claude panes — input box stays at the bottom": "Claude 窗格恢复全屏模式 — 输入框固定在底部",
   "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "修复手机测试期间繁重命令一直等待的问题 — 同时 3 个 · Expo 开发服务器会让出名额",
-  "Fix the direct-connection server staying on when stopped while starting": "修复启动过程中停止时直连服务器仍残留的问题"
+  "Fix the direct-connection server staying on when stopped while starting": "修复启动过程中停止时直连服务器仍残留的问题",
+  "Fix slow phone screen updates while scrolling — faster output right after phone input": "修复手机滚动时画面更新缓慢 — 手机输入后立即更快地发送输出"
 }

@@ -285,6 +285,79 @@ test('pane.input — 키 그대로 데몬 input · 기록은 by mobile 과 바�
   }
 })
 
+test('pane.input 직후 — 그 pane 출력만 짧은 묶음으로(이미 걸린 긴 묶음도 당긴다) · 유지 시간이 지나면 다시 원래 묶음', async () => {
+  const env = await setup({ flushMs: 300, fastFlushMs: 20, fastHoldMs: 200 })
+  const arrived = async (count) => {
+    const started = Date.now()
+    await waitFor(() => env.events('pane.data').length >= count, '묶인 출력')
+    return Date.now() - started
+  }
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.open', { pane: 'p2' })
+
+    // 다른 pane(p2)에 입력해도 p1 은 원래 묶음
+    await env.ask('pane.input', { pane: 'p2', data: 'x' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    await sleep(120)
+    assert.equal(env.events('pane.data').length, 0, '입력 없는 pane 은 원래 묶음 시간 전에 보내지 않는다')
+    await arrived(1)
+
+    // p1 에 입력 → p1 출력은 짧은 묶음
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[<64;1;1M' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    assert.ok((await arrived(2)) < 200, '입력 직후 출력은 짧은 묶음으로 온다')
+
+    // 원래 묶음으로 걸린 p2 출력(p2 입력은 유지 시간이 지났다) 뒤에 p1 출력이 오면 당겨서 같이 보낸다
+    env.daemon.emit({ event: 'data', pane: 'p2', data: 'c' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'd' })
+    assert.ok((await arrived(3)) < 200, '이미 걸린 긴 묶음을 당긴다')
+    assert.deepEqual(env.events('pane.data').slice(1), [
+      { event: 'pane.data', panes: { p1: 'b' } },
+      { event: 'pane.data', panes: { p2: 'c', p1: 'd' } },
+    ])
+
+    // 유지 시간이 지나면 원래 묶음
+    await sleep(250)
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'e' })
+    await sleep(120)
+    assert.equal(env.events('pane.data').length, 3, '유지 시간 뒤에는 원래 묶음 시간 전에 보내지 않는다')
+    await arrived(4)
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 직후 — 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력 없음)', async () => {
+  const env = await setup({ flushMs: 400, fastFlushMs: 20, fastHoldMs: 1000 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    await sleep(10)
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
+    assert.ok(Date.now() - started < 250, '원래 묶음(400ms)을 다 기다리지 않는다')
+    assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'a' } }])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 직후 — 길의 묶음이 짧은 값보다 짧으면(직접 길) 그 묶음 그대로, 늘리지 않는다', async () => {
+  const env = await setup({ flushMs: 40, fastFlushMs: 300 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    await waitFor(() => env.events('pane.data').length > 0, '묶인 출력')
+    assert.ok(Date.now() - started < 200, '입력 뒤에도 길의 묶음(40ms)으로 온다')
+  } finally {
+    await env.cleanup()
+  }
+})
+
 test('폰 입력 허용이 꺼지면 pane.input · request.answer · decision.answer 를 input-off 로 거절하고 아무것도 하지 않는다', async () => {
   const env = await setup()
   env.flags.input = false

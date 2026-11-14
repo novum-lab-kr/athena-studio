@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix the direct-connection server staying on when stopped while starting
+- Fix slow phone screen updates while scrolling — faster output right after phone input
 
 ## 0.61 (v0.61.0 – · Nov 13, 2026)
 
