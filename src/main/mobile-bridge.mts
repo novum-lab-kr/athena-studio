@@ -19,6 +19,9 @@ import crypto from 'node:crypto'
 import * as daemonClient from '../daemon-client.mts'
 import type { Reply } from '../daemon-client.mts'
 import { mobileError } from './mobile-log.mts'
+import * as core from '../lib/core.mts'
+import { createIconTokens } from './mobile-look.mts'
+import type { IconTokens } from './mobile-look.mts'
 import { noMobileWork } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 
@@ -50,6 +53,13 @@ export type DeviceView = { peer: string; label: string | null; online: boolean; 
 
 // 팩 탭 — 앞 창의 팩 목록(pack list 를 다듬은 ctx.packState 에서) · ⚙ 설정 팝업과 같은 레포 설정 칸
 export type PackView = { current: string | null; packs: { id: string; name: string | null; displayName: string | null }[] }
+// 폰에 보내는 팩 한 줄 — PackView 에 이미지 토큰(look.icon 으로 받는다 · 없으면 null)
+export type PackRow = PackView['packs'][number] & { icon: string | null }
+// 맥 사이드바 이름 · 이미지 원천 — 앞 창 본체 팩의 레포(pack.json 순 · 아이콘은 팩 안 실제 파일 경로) · 서버 이름 · 팩 이미지 경로(id → 경로).
+// 경로는 브리지 안에서 토큰으로만 바꾸고 폰에 넘기지 않는다
+export type LookSource = { repos: { name: string; displayName: string | null; iconPath: string | null }[]; servers: string[]; packIcons: Record<string, string | null> }
+// 폰 스페이스 한 줄 — 맥 사이드바 줄 하나(workspace 는 panes[].workspace 와 같은 작업 공간 이름 · pane 이 없는 레포는 그 레포 이름)
+export type MacSpace = { workspace: string; repo: string | null; displayName: string | null; icon: string | null }
 export type RepoSettings = { ok: boolean; repos: unknown[] }
 // ⚙ 설정 팝업이 바꾸는 값과 같다 — auto 는 팝업 스위치처럼 on(자동 PR) · direct(PR 끔)만
 export type RepoChanges = { auto: 'on' | 'direct' | null; review: boolean | null; merge: 'auto' | 'confirm' | 'manual' | null }
@@ -74,6 +84,8 @@ export type BridgeDeps = {
   logEvent: LogEvent
   // 아래는 없으면 빈 값(옛 부르는 쪽 · 시험) — 모르는 값을 지어내지 않는다
   bodyPacks?: () => Record<string, string> // 본체 실제 경로 → 팩 id(pack list packs[].body) — pane 이 어느 팩 것인지
+  look?: () => LookSource | Promise<LookSource> // 맥 사이드바 이름 · 이미지(snapshot.spaces · 팩 icon) — 없으면 spaces 빈 목록 · icon null
+  iconTokens?: IconTokens // 이미지 토큰(기기끼리 나눠 쓴다) — 없으면 이 브리지 혼자 쓰는 것
   mergeDetails?: MergeDetails // 머지 상세 캐시(createMergeDetails)
   mac?: () => { name: string | null }
   work?: () => MobileWork | Promise<MobileWork> // 맥 [작업] 과 같은 작업 목록(doing · done · 현황판을 못 띄웠으면 boardUp:false + boardError)
@@ -142,7 +154,7 @@ export function weekMerges(events: EventRow[], now: number) {
 // 폰에 필요한 칸만 넘긴다(cwd 등은 넘기지 않는다) · cols · rows 는 PC 크기(폰은 그대로 받는다 · D1)
 type ListedPane = { id?: unknown; label?: unknown; name?: unknown; title?: unknown; agent?: unknown; agent_status?: unknown; cols?: unknown; rows?: unknown; workspace_id?: unknown; cwd?: unknown }
 // 데몬 state(범위 없음)의 작업 공간 — id → 이름 · 본체(레포마다 하나 · body 는 본체 실제 경로)
-type StateWorkspaces = { workspaces?: { id?: unknown; label?: unknown; body?: unknown }[] } | null | undefined
+type StateWorkspaces = { workspaces?: { id?: unknown; label?: unknown; cwd?: unknown; body?: unknown }[] } | null | undefined
 export type PaneWhere = { workspaces: Map<string, { label: string | null; body: string | null }>; bodyPacks: Record<string, string> }
 export function paneWhere(state: StateWorkspaces, bodyPacks: Record<string, string> = {}): PaneWhere {
   const workspaces = new Map<string, { label: string | null; body: string | null }>()
@@ -184,13 +196,46 @@ export function livePanes(panes: ListedPane[], where: PaneWhere = paneWhere(null
 }
 
 // 지금 팩 밖 팩마다 일하는 · 질문 대기 pane 수(데몬 agent_status working · waiting) — 팩 목록 순서 · pane 이 없는 팩도 0 으로
-export function otherPackCounts(panes: ReturnType<typeof livePanes>, packs: PackView) {
+// icons 는 팩 id → 이미지 토큰(없으면 null)
+export function otherPackCounts(panes: ReturnType<typeof livePanes>, packs: PackView, icons: Record<string, string | null> = {}) {
   return packs.packs
     .filter((pack) => pack.id !== packs.current)
     .map((pack) => {
       const own = panes.filter((pane) => pane.pack === pack.id)
-      return { id: pack.id, name: pack.name, displayName: pack.displayName, working: own.filter((pane) => pane.status === 'working').length, question: own.filter((pane) => pane.status === 'waiting').length }
+      return { id: pack.id, name: pack.name, displayName: pack.displayName, icon: icons[pack.id] ?? null, working: own.filter((pane) => pane.status === 'working').length, question: own.filter((pane) => pane.status === 'waiting').length }
     })
+}
+
+// 맥 사이드바 줄 — 화면 renderSides(src/renderer/space-actions.ts)와 같은 순서:
+// 아테나 작업 공간 → 그 밖 작업 공간(데몬 순서) → 작업 공간이 없는 팩 레포(pack.json 순 · 흐린 줄) → 서버 작업 공간(<서버>-ops · ssh-<서버> · 서버 순).
+// 앞 창 본체(athenaDir) 것만 — 창이 보는 데몬 state(scope)와 같이 본체가 없는 작업 공간도 넣는다.
+// 레포 이름 · 이미지는 작업 공간 이름이 팩 레포 이름과 같을 때만(아테나 작업 공간은 같은 이름 레포가 있어도 쓰지 않는다)
+type SpaceWorkspace = { id: string; label: string; cwd?: string; body: string | null }
+export function macSpaces(state: StateWorkspaces, athenaDir: string | null, repos: { name: string; displayName: string | null; icon: string | null }[], servers: string[]): MacSpace[] {
+  if (!athenaDir) return []
+  const body = core.realDir(athenaDir)
+  const visible: SpaceWorkspace[] = []
+  for (const workspace of (state && state.workspaces) || []) {
+    if (typeof workspace.id !== 'string' || typeof workspace.label !== 'string') continue
+    const owner = typeof workspace.body === 'string' && workspace.body ? workspace.body : null
+    if (owner && owner !== body) continue
+    visible.push({ id: workspace.id, label: workspace.label, ...(typeof workspace.cwd === 'string' ? { cwd: workspace.cwd } : {}), body: owner })
+  }
+  const athena = core.findAthenaWorkspace(visible, athenaDir)
+  const byName = new Map(repos.map((repo) => [repo.name, repo]))
+  const row = (workspace: SpaceWorkspace): MacSpace => {
+    const repo = workspace === athena ? undefined : byName.get(workspace.label)
+    return { workspace: workspace.label, repo: repo ? repo.name : null, displayName: repo ? repo.displayName : null, icon: repo ? repo.icon : null }
+  }
+  const serverOf = (workspace: SpaceWorkspace) => (workspace === athena ? -1 : servers.findIndex((name) => workspace.label === `${name}-ops` || workspace.label === `ssh-${name}`))
+  const rest = visible.filter((workspace) => workspace !== athena)
+  const labels = new Set(visible.map((workspace) => workspace.label))
+  return [
+    ...(athena ? [row(athena)] : []),
+    ...rest.filter((workspace) => serverOf(workspace) < 0).map(row),
+    ...repos.filter((repo) => !labels.has(repo.name)).map((repo) => ({ workspace: repo.name, repo: repo.name, displayName: repo.displayName, icon: repo.icon })),
+    ...servers.flatMap((_name, index) => rest.filter((workspace) => serverOf(workspace) === index).map(row)),
+  ]
 }
 
 // ── 머지 상세 — PR 은 gh · 바로 머지는 git. 머지된 것은 바뀌지 않아 한 번 읽으면 둔다(실패는 10분 뒤 다시) ──
@@ -940,12 +985,47 @@ export function createMobileBridge(deps: BridgeDeps) {
     }
   }
 
+  // 이름 · 이미지 원천 — 안 넘긴 부르는 쪽 · 읽다 실패한 것은 빈 값(snapshot 전체를 실패시키지 않는다)
+  const iconTokens = deps.iconTokens || createIconTokens()
+  const noLook = (): LookSource => ({ repos: [], servers: [], packIcons: {} })
+  const readLook = async (): Promise<LookSource> => {
+    try {
+      return deps.look ? await deps.look() : noLook()
+    } catch {
+      return noLook()
+    }
+  }
+  // 팩 id → 이미지 토큰
+  async function packIconTokens(look: LookSource): Promise<Record<string, string | null>> {
+    const entries = await Promise.all(Object.entries(look.packIcons).map(async ([id, iconPath]) => [id, await iconTokens.tokenOf(iconPath)] as const))
+    return Object.fromEntries(entries)
+  }
+  // 앞 창 본체를 모르면(athenaDir 를 안 넘긴 옛 부르는 쪽 · 시험) 사이드바도 모른다 — 빈 목록 · 실패해도 snapshot 은 그대로
+  async function spacesOf(state: StateWorkspaces, look: LookSource): Promise<MacSpace[]> {
+    try {
+      const athenaDir = typeof deps.athenaDir === 'function' ? deps.athenaDir() : null
+      if (!athenaDir) return []
+      const repos = await Promise.all(look.repos.map(async (repo) => ({ name: repo.name, displayName: repo.displayName, icon: await iconTokens.tokenOf(repo.iconPath) })))
+      return macSpaces(state, athenaDir, repos, look.servers)
+    } catch (error) {
+      mobileError('[mobile-bridge] 스페이스 목록 실패', 'snapshot', error)
+      return []
+    }
+  }
+  const withIcons = (packs: PackView['packs'], icons: Record<string, string | null>): PackRow[] => packs.map((pack) => ({ ...pack, icon: icons[pack.id] ?? null }))
+
+  // 이미지 하나 — snapshot · pack.list 가 내준 토큰만. 모르는 토큰 · 지워졌거나 바뀐 파일은 null(오류 아님 — 폰은 색 점 그대로)
+  async function lookIcon(args: Record<string, unknown>) {
+    const token = text(args.token, 'token')
+    return iconTokens.read(token)
+  }
+
   async function snapshot() {
     const connection = await connectControl()
     const listed = (await connection.call('pane list')) as { panes?: ListedPane[] } | null
     // 범위 없는 state — 작업 공간마다 본체(body)가 실려 pane 이 어느 팩 것인지 안다(못 읽으면 workspace · pack 만 null)
     const state = (await connection.call('state').catch(() => null)) as StateWorkspaces
-    const [requests, servers, events, work] = await Promise.all([deps.requests(), deps.servers(), deps.events(), readWork()])
+    const [requests, servers, events, work, look] = await Promise.all([deps.requests(), deps.servers(), deps.events(), readWork(), readLook()])
     if (!sizeWatching) {
       sizeWatching = true
       void pollSizes()
@@ -954,11 +1034,13 @@ export function createMobileBridge(deps: BridgeDeps) {
     const merges = weekMerges(events, now())
     const details = deps.mergeDetails ? deps.mergeDetails.peek(merges, () => emit({ event: 'changed', parts: ['merges'] })) : merges.map(() => null)
     const feed = mergeFeed(merges, details, now())
+    const [spaces, icons] = await Promise.all([spacesOf(state, look), packIconTokens(look)])
     return {
       requests,
       work,
       panes,
-      otherPacks: otherPackCounts(panes, deps.packs()),
+      spaces,
+      otherPacks: otherPackCounts(panes, deps.packs(), icons),
       merges: feed.merges,
       todayTop: feed.todayTop,
       servers,
@@ -1096,9 +1178,9 @@ export function createMobileBridge(deps: BridgeDeps) {
   // ── 팩 탭 ──
   async function packList() {
     const view = deps.packs()
-    const settings = await deps.repoSettings()
-    // repos 는 ⚙ 설정 팝업과 같은 줄(main 직접 레포 빠짐) · 읽지 못하면 null
-    return { current: view.current, packs: view.packs, repos: settings.ok ? settings.repos : null }
+    const [settings, icons] = await Promise.all([deps.repoSettings(), readLook().then(packIconTokens)])
+    // repos 는 ⚙ 설정 팝업과 같은 줄(main 직접 레포 빠짐) · 읽지 못하면 null · packs[].icon 은 이미지 토큰
+    return { current: view.current, packs: withIcons(view.packs, icons), repos: settings.ok ? settings.repos : null }
   }
 
   async function repoSet(args: Record<string, unknown>) {
@@ -1160,6 +1242,8 @@ export function createMobileBridge(deps: BridgeDeps) {
         return packOpen(args)
       case 'server.detail':
         return serverDetail(args)
+      case 'look.icon':
+        return lookIcon(args)
       default:
         return fail('usage', `모르는 요청: ${String(op)}`)
     }

@@ -9,8 +9,9 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
-const { packView, bodyPacks, serverSummary } = require('../src/main/mobile-dev.mts')
+const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
+const { packView, bodyPacks, serverSummary, lookSource } = require('../src/main/mobile-dev.mts')
+const { createIconTokens, iconToken } = require('../src/main/mobile-look.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
 const workDir = () => fs.mkdtempSync('/tmp/asd-mob-')
@@ -191,7 +192,8 @@ test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · �
     assert.deepEqual(reply.result.mac, { name: null })
     assert.deepEqual(reply.result.devices, [])
     assert.deepEqual(reply.result.work, { boardUp: false, boardError: null, doing: [], done: [] }, '작업 목록을 안 넘기면 빈 값')
-    assert.deepEqual(reply.result.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', working: 0, question: 0 }])
+    assert.deepEqual(reply.result.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', icon: null, working: 0, question: 0 }])
+    assert.deepEqual(reply.result.spaces, [], '이름 · 이미지 원천(look)을 안 넘기면 빈 목록')
     assert.equal(env.daemon.attached().length, 0, '묻기만 해서는 붙은 앱이 되지 않는다(fitTab · open-url 에 섞이지 않게)')
   } finally {
     await env.cleanup()
@@ -770,7 +772,7 @@ test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일�
       ['p5', null, null, null],
     ])
     assert.ok(first.panes.every((pane) => !('cwd' in pane)), '경로는 넘기지 않는다')
-    assert.deepEqual(first.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', working: 1, question: 1 }])
+    assert.deepEqual(first.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', icon: null, working: 1, question: 1 }])
     assert.deepEqual(first.mac, { name: '민창의 MacBook' })
     assert.deepEqual(first.devices, [{ peer: 'dev-1', label: 'iPhone', online: true, lastSeen: '2026-11-11T14:59:00Z' }])
     // 처음에는 모른다 — null 로 보내고 뒤에서 읽는다(Actions 로 넘긴 것은 squash 커밋이 없어 읽지 않는다)
@@ -817,9 +819,10 @@ test('repoOfCwd · otherPackCounts — 워크트리 · repos 아래만 레포, �
   assert.equal(repoOfCwd(null), null)
   const panes = livePanes([{ id: 'p1', agent_status: 'working', workspace_id: 'w1' }, { id: 'p2', agent_status: 'waiting', workspace_id: 'w1' }], paneWhere({ workspaces: [{ id: 'w1', label: 'x', body: '/b/g' }] }, { '/b/g': 'globex' }))
   assert.deepEqual(otherPackCounts(panes, { current: 'acme', packs: [{ id: 'acme', name: 'acme', displayName: null }, { id: 'globex', name: 'globex', displayName: null }, { id: 'initech', name: null, displayName: null }] }), [
-    { id: 'globex', name: 'globex', displayName: null, working: 1, question: 1 },
-    { id: 'initech', name: null, displayName: null, working: 0, question: 0 },
+    { id: 'globex', name: 'globex', displayName: null, icon: null, working: 1, question: 1 },
+    { id: 'initech', name: null, displayName: null, icon: null, working: 0, question: 0 },
   ])
+  assert.equal(otherPackCounts(panes, { current: 'acme', packs: [{ id: 'globex', name: 'globex', displayName: null }] }, { globex: 'tok' })[0].icon, 'tok', '팩 이미지 토큰')
 })
 
 test('머지 상세 — 키(PR · squash 커밋만) · gh · shortstat 해석 · 실패는 10분 뒤 다시 · 오늘 가장 큰 변경은 상세를 아는 오늘 것만', async () => {
@@ -1239,4 +1242,153 @@ test('saveImage — 폴더가 링크면 쓰지 않는다', async () => {
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+// ── 폰 스페이스 · 팩 · 레포 이미지(계획서 20261114 5절) ──
+// 진짜 그림 머리(iconMime 이 12바이트 이상을 본다)
+const ICON_PNG = Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.from('png-그림-하나')])
+const ICON_JPG = Buffer.concat([Buffer.from([0xff, 0xd8, 0xff, 0xe0]), Buffer.from('jpeg-그림-둘-길게')])
+
+test('macSpaces — 맥 사이드바 순서(아테나 → 작업 공간 → pane 없는 레포 → 서버) · 앞 창 본체 것만 · 레포 이름이 같을 때만 이름 · 이미지', () => {
+  const dir = workDir()
+  try {
+    const body = fs.realpathSync(dir)
+    const state = {
+      workspaces: [
+        { id: 'w1', label: 'web', cwd: `${body}/repos/web`, body },
+        { id: 'w2', label: 'novum-ops', cwd: body, body },
+        { id: 'w3', label: 'athena', cwd: body, body },
+        { id: 'w4', label: 'globex-api', cwd: '/b/globex', body: '/b/globex' },
+        { id: 'w5', label: '셸', cwd: '/tmp', body: null },
+        { id: 'w6', label: 'ssh-novum', cwd: body, body },
+      ],
+    }
+    const repos = [
+      { name: 'api', displayName: '백엔드', icon: 'tok-api' },
+      { name: 'web', displayName: null, icon: 'tok-web' },
+      { name: 'athena', displayName: '같은 이름', icon: 'tok-x' },
+    ]
+    assert.deepEqual(macSpaces(state, dir, repos, ['novum']), [
+      { workspace: 'athena', repo: null, displayName: null, icon: null },
+      { workspace: 'web', repo: 'web', displayName: null, icon: 'tok-web' },
+      { workspace: '셸', repo: null, displayName: null, icon: null },
+      { workspace: 'api', repo: 'api', displayName: '백엔드', icon: 'tok-api' },
+      { workspace: 'novum-ops', repo: null, displayName: null, icon: null },
+      { workspace: 'ssh-novum', repo: null, displayName: null, icon: null },
+    ])
+    assert.deepEqual(macSpaces(state, null, repos, []), [], '앞 창이 없으면 빈 목록')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('이미지 토큰 — 내용 해시 · 같은 내용이면 같고 바뀌면 바뀐다 · 1MiB 넘음 · 그림 아님 · 없는 파일은 null · 내준 토큰만 읽는다', async () => {
+  const dir = workDir()
+  try {
+    const tokens = createIconTokens()
+    const file = path.join(dir, 'web.png')
+    fs.writeFileSync(file, ICON_PNG)
+    const first = await tokens.tokenOf(file)
+    assert.equal(first, iconToken(ICON_PNG))
+    assert.match(first, /^[0-9a-f]{32}$/)
+    assert.equal(await tokens.tokenOf(file), first, '같은 파일은 같은 토큰')
+    const copy = path.join(dir, 'copy.png')
+    fs.writeFileSync(copy, ICON_PNG)
+    assert.equal(await tokens.tokenOf(copy), first, '경로가 달라도 같은 내용이면 같은 토큰')
+    assert.deepEqual(await tokens.read(first), { token: first, mime: 'image/png', data: ICON_PNG.toString('base64') })
+
+    fs.writeFileSync(file, ICON_JPG)
+    fs.utimesSync(file, new Date(), new Date(Date.now() + 5000))
+    const second = await tokens.tokenOf(file)
+    assert.notEqual(second, first, '그림이 바뀌면 토큰이 바뀐다')
+    assert.equal((await tokens.read(second)).mime, 'image/jpeg')
+
+    const big = path.join(dir, 'big.png')
+    fs.writeFileSync(big, Buffer.concat([ICON_PNG, Buffer.alloc(1024 * 1024)]))
+    assert.equal(await tokens.tokenOf(big), null, '1MiB 넘음')
+    const svg = path.join(dir, 'x.webp')
+    fs.writeFileSync(svg, '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    assert.equal(await tokens.tokenOf(svg), null, '그림 머리가 아님')
+    assert.equal(await tokens.tokenOf(path.join(dir, 'none.png')), null)
+    assert.equal(await tokens.tokenOf(null), null)
+    assert.equal(await tokens.read('0'.repeat(32)), null, '내준 적 없는 토큰')
+    assert.equal(await createIconTokens().read(second), null, '다른 저장소가 내준 토큰은 모른다')
+    fs.rmSync(file)
+    assert.equal(await tokens.read(second), null, '그사이 지운 파일')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
+test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이미지는 토큰만(경로 없음) · 토큰으로 그림 · 모르는 토큰 null · 빈 토큰 usage', async () => {
+  const dir = workDir()
+  const body = fs.realpathSync(dir)
+  const repoIcon = path.join(dir, 'web.png')
+  const packIcon = path.join(dir, 'globex.jpg')
+  fs.writeFileSync(repoIcon, ICON_PNG)
+  fs.writeFileSync(packIcon, ICON_JPG)
+  const env = await setup({
+    athenaDir: () => dir,
+    look: async () => ({
+      repos: [{ name: 'web', displayName: '웹', iconPath: repoIcon }, { name: 'api', displayName: null, iconPath: null }],
+      servers: [],
+      packIcons: { acme: null, globex: packIcon },
+    }),
+  })
+  try {
+    env.daemon.state.workspaces = [{ id: 'w1', label: 'athena', cwd: body, activeTab: 't1', body }, { id: 'w2', label: 'web', cwd: `${body}/repos/web`, activeTab: 't2', body }]
+    const snap = (await env.ask('snapshot')).result
+    const webToken = iconToken(ICON_PNG)
+    assert.deepEqual(snap.spaces, [
+      { workspace: 'athena', repo: null, displayName: null, icon: null },
+      { workspace: 'web', repo: 'web', displayName: '웹', icon: webToken },
+      { workspace: 'api', repo: 'api', displayName: null, icon: null },
+    ])
+    assert.deepEqual(snap.otherPacks.map((pack) => [pack.id, pack.icon]), [['globex', iconToken(ICON_JPG)]])
+    assert.ok(!JSON.stringify(snap).includes(dir), '경로는 폰에 넘기지 않는다')
+    const list = (await env.ask('pack.list')).result
+    assert.deepEqual(list.packs.map((pack) => [pack.id, pack.icon]), [['acme', null], ['globex', iconToken(ICON_JPG)]])
+
+    assert.deepEqual((await env.ask('look.icon', { token: webToken })).result, { token: webToken, mime: 'image/png', data: ICON_PNG.toString('base64') })
+    const unknown = await env.ask('look.icon', { token: 'f'.repeat(32) })
+    assert.equal(unknown.ok, true)
+    assert.equal(unknown.result, null, '모르는 토큰은 null')
+    assert.equal((await env.ask('look.icon', {})).error.code, 'usage')
+  } finally {
+    await env.cleanup()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+  // athenaDir 를 안 넘긴 옛 부르는 쪽 — spaces 는 빈 목록 · snapshot 은 그대로
+  const noDir = await setup({ athenaDir: undefined })
+  try {
+    const reply = await noDir.ask('snapshot')
+    assert.equal(reply.ok, true)
+    assert.deepEqual(reply.result.spaces, [])
+  } finally {
+    await noDir.cleanup()
+  }
+  // 원천이 실패해도 snapshot 은 그대로(빈 목록 · icon null)
+  const failing = await setup({ athenaDir: () => '/b/acme', look: async () => { throw new Error('읽기 실패') } })
+  try {
+    const snap = (await failing.ask('snapshot')).result
+    assert.deepEqual(snap.spaces, [{ workspace: 'athena', repo: null, displayName: null, icon: null }])
+    assert.equal(snap.otherPacks[0].icon, null)
+  } finally {
+    await failing.cleanup()
+  }
+})
+
+test('lookSource — 사이드바 packRepos · serverList · 팩 이미지 경로(pack list iconPath) · 앞 창 없음 · 읽기 실패는 빈 값', async () => {
+  assert.deepEqual(await lookSource(null), { repos: [], servers: [], packIcons: {} })
+  const ctx = {
+    packState: { current: { id: 'acme' }, packs: [{ id: 'acme', name: 'acme', iconPath: '/p/acme/icon.png' }, { id: 'globex', name: 'globex', iconPath: 'relative.png' }, { id: 'initech', iconPath: '/p/i.svg' }] },
+    packRepos: async () => [{ name: 'web', displayName: '웹', iconPath: '/p/acme/assets/repos/web.png', agent: 'fe' }, { name: 'api', displayName: null, iconPath: null }],
+    serverList: async () => [{ name: 'novum', host: '1.2.3.4' }],
+  }
+  assert.deepEqual(await lookSource(ctx), {
+    repos: [{ name: 'web', displayName: '웹', iconPath: '/p/acme/assets/repos/web.png' }, { name: 'api', displayName: null, iconPath: null }],
+    servers: ['novum'],
+    packIcons: { acme: '/p/acme/icon.png', globex: null, initech: null },
+  })
+  assert.deepEqual(await lookSource({ packState: {}, packRepos: async () => { throw new Error('x') }, serverList: async () => { throw new Error('y') } }), { repos: [], servers: [], packIcons: {} })
 })
