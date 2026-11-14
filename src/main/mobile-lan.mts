@@ -281,6 +281,8 @@ export function createMobileLan(deps: LanDeps) {
       stopped = false
       lastKey = ''
       await reconcile()
+      // 맞추는 사이 꺼졌으면 타이머를 만들지 않는다
+      if (stopped) return
       pollTimer = setInterval(() => void reconcile(), deps.addressPollMs ?? ADDRESS_POLL_MS)
       pollTimer.unref()
       pingTimer = setInterval(ping, deps.pingMs ?? PING_MS)
@@ -292,6 +294,10 @@ export function createMobileLan(deps: LanDeps) {
       if (pingTimer) clearInterval(pingTimer)
       pollTimer = null
       pingTimer = null
+      // 도는 맞추기(서버 묶기)가 끝난 뒤 정리한다 — 먼저 정리하면 그 뒤 묶인 서버가 남는다
+      if (reconciling) await reconciling
+      // 기다리는 사이 다시 켜졌으면 새로 켠 쪽에 맡긴다
+      if (!stopped) return
       for (const conn of [...conns]) closeConn(conn, CLOSE.goingAway, 'stop')
       for (const address of [...servers.keys()]) closeServer(address)
       failed.clear()

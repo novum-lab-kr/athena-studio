@@ -259,3 +259,16 @@ test('hello 가 5초(여기선 짧게) 안에 없으면 4408', { timeout: 10_000
   const closed = await new Promise((resolve) => (socket.onclose = (event) => resolve(event.code)))
   assert.equal(closed, CLOSE.timeout)
 })
+
+test('켜는 중(서버 묶기 전)에 끄면 — 끈 뒤 받는 서버 · 타이머가 남지 않는다', { timeout: 10_000 }, async () => {
+  const logs = []
+  const lan = createMobileLan({ port: 0, addresses: () => ['127.0.0.1'], macKey: () => null, peerOfKey: () => null, peerAllowed: () => false, createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }), macId: () => null, log: (line) => logs.push(line), addressPollMs: 20 })
+  const starting = lan.start()
+  await lan.stop()
+  await starting
+  await sleep(80)
+  assert.deepEqual(lan.info().addrs, [], '끈 뒤 받는 주소가 없어야 한다')
+  const opened = logs.filter((line) => line.startsWith('[mobile-lan] 받음')).length
+  const closed = logs.filter((line) => line.startsWith('[mobile-lan] 닫음')).length
+  assert.equal(opened, closed, '연 서버는 모두 닫혀야 한다(타이머가 다시 열지 않음)')
+})

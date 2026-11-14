@@ -386,6 +386,99 @@ test('pane.input — 키 그대로 데몬 input · 기록은 by mobile 과 바�
   }
 })
 
+test('pane.input 직후 — 열린 묶음 창 안의 그 pane 출력은 짧은 묶음(창 끝을 당긴다) · 입력 없는 pane 은 원래 묶음 · 유지 시간이 지나면 다시 원래 묶음', async () => {
+  const env = await setup({ flushMs: 300, fastFlushMs: 20, fastHoldMs: 400 })
+  const count = () => env.events('pane.data').length
+  const arrived = async (want) => {
+    const started = Date.now()
+    await waitFor(() => count() >= want, '묶인 출력')
+    return Date.now() - started
+  }
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.open', { pane: 'p2' })
+
+    // 다른 pane(p2)에 입력해도 p1 은 원래 묶음 — 조용하다 첫 조각은 바로, 뒤따르는 것은 300ms
+    await env.ask('pane.input', { pane: 'p2', data: 'x' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    await arrived(1)
+    await sleep(120)
+    assert.equal(count(), 1, '입력 없는 pane 은 원래 묶음 시간 전에 보내지 않는다')
+    await arrived(2)
+    await sleep(350) // 창이 닫히고 p2 유지 시간도 지난다
+
+    // p1 에 입력 → 첫 조각은 바로 · 뒤따르는 것은 짧은 묶음
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[<64;1;1M' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'c' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'd' })
+    assert.ok((await arrived(4)) < 200, '입력 직후 뒤따르는 출력은 짧은 묶음으로 온다')
+    await sleep(60) // 짧은 창이 닫힌다
+
+    // 원래 묶음으로 걸린 p2 출력 뒤에 p1 출력이 오면 창 끝을 당겨 같이 보낸다
+    env.daemon.emit({ event: 'data', pane: 'p2', data: 'e' })
+    await arrived(5)
+    env.daemon.emit({ event: 'data', pane: 'p2', data: 'f' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'g' })
+    assert.ok((await arrived(6)) < 200, '이미 걸린 긴 묶음을 당긴다')
+    assert.deepEqual(env.events('pane.data'), [
+      { event: 'pane.data', panes: { p1: 'a' } },
+      { event: 'pane.data', panes: { p1: 'b' } },
+      { event: 'pane.data', panes: { p1: 'c' } },
+      { event: 'pane.data', panes: { p1: 'd' } },
+      { event: 'pane.data', panes: { p2: 'e' } },
+      { event: 'pane.data', panes: { p2: 'f', p1: 'g' } },
+    ])
+
+    // 유지 시간이 지나면 원래 묶음
+    await sleep(450)
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'h' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'i' })
+    await arrived(7)
+    await sleep(120)
+    assert.equal(count(), 7, '유지 시간 뒤에는 원래 묶음 시간 전에 보내지 않는다')
+    await arrived(8)
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 직후 — 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력 없음)', async () => {
+  const env = await setup({ flushMs: 400, fastFlushMs: 20, fastHoldMs: 1000 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    await waitFor(() => env.events('pane.data').length > 0, '첫 조각')
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    await sleep(10)
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
+    assert.ok(Date.now() - started < 250, '원래 묶음(400ms)을 다 기다리지 않는다')
+    assert.deepEqual(env.events('pane.data'), [
+      { event: 'pane.data', panes: { p1: 'a' } },
+      { event: 'pane.data', panes: { p1: 'b' } },
+    ])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 직후 — 길의 묶음이 짧은 값보다 짧으면(직접 길) 그 묶음 그대로, 늘리지 않는다', async () => {
+  const env = await setup({ flushMs: 40, fastFlushMs: 300 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
+    assert.ok(Date.now() - started < 200, '입력 뒤에도 길의 묶음(40ms)으로 온다')
+  } finally {
+    await env.cleanup()
+  }
+})
+
 test('폰 입력 허용이 꺼지면 pane.input · request.answer(권한 요청 포함) · decision.answer · repo.set · pack.open 을 input-off 로 거절하고 아무것도 하지 않는다', async () => {
   const env = await setup({ requests: () => [CODEX_REQUEST] })
   env.flags.input = false
