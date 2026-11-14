@@ -52,6 +52,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Restore terminal scrollback to 5000 lines
 - Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode
 - Restore full-screen mode in Claude panes — input box stays at the bottom
+- Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot
 
 ## 0.60 (v0.60.0 – · Nov 8, 2026)
 
