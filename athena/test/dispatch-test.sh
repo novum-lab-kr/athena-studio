@@ -214,6 +214,12 @@ elif a[:2] == ['pane','run']:
         for prompt, issue, bootstrap in ((None, False, '1'), (None, True, '0'), ('실제 요청', False, '0')):
             result, got, calls = run(engine, prompt=prompt, issue=issue)
             check(f'{engine} — {prompt=}, {issue=} → 시작 안내 표시 {bootstrap}', result.returncode == 0 and got and got['bootstrap'] == bootstrap)
+    # Claude 는 일반 화면 방식(classic) — 실행기가 대체 화면 끄기 변수를 내보낸다 · Codex 는 넣지 않는다
+    for engine in ('claude', 'codex'):
+        result, got, calls = run(engine, prompt=None)
+        runner = next((call['runner'] for call in calls if isinstance(call, dict)), '')
+        has = 'export CLAUDE_CODE_DISABLE_ALTERNATE_SCREEN=1' in runner.splitlines()
+        check(f'{engine} — 실행기 대체 화면 끄기 변수 ' + ('있음' if engine == 'claude' else '없음'), result.returncode == 0 and runner and has == (engine == 'claude'))
     # 묶음 — Issue 줄의 이슈 경로를 모두 지시문에 싣는다(한글 이름 · · , 구분 · 없는 파일은 뺀다)
     result, got, calls = run('claude', prompt=None, issue='issues/20261110-web-가나.md · issues/20261110-web-다라.md, issues/20261110-web-없음.md')
     text = got['args'][-1] if got else ''

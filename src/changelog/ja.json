@@ -231,5 +231,8 @@
   "Fix Athena's fresh-conversation notice closing an open question": "アテナの新しい会話の通知が開いている質問を閉じていた問題を修正",
   "Fix security review not starting outside a pane — opens beside Athena, same-round merge": "pane の外でセキュリティレビューを起動できなかった問題を修正 — アテナの横に開き、同じラウンドでマージ",
   "Fix Codex drafts starting with a blank line read as an empty input box": "空行で始まる Codex の下書きを空の入力欄と判定していた問題を修正",
-  "Add session token totals beside the pane title — input/output and cache": "ペインタイトルの横にセッション累計トークンを表示 — 入出力とキャッシュ"
+  "Add session token totals beside the pane title — input/output and cache": "ペインタイトルの横にセッション累計トークンを表示 — 入出力とキャッシュ",
+  "Increase terminal scrollback — 5000 to 10000 lines": "ターミナルのスクロールバックを拡大 — 5000行から10000行へ",
+  "Restore terminal scrollback to 5000 lines": "ターミナルのスクロールバックを5000行に戻す",
+  "Fix phone scrolling in Claude panes — Studio now starts Claude in the classic screen mode": "Claude ペインのスマホスクロールを修正 — Studio が Claude を通常画面モードで起動"
 }
