@@ -1,4 +1,13 @@
 {
+  "0.62": [
+    {
+      "tag": "fixed",
+      "en": "Fix the direct-connection server staying on when stopped while starting",
+      "ko": "켜는 중에 끄면 직접 연결 서버가 남던 것 수정",
+      "ja": "起動中に止めると直接接続サーバーが残る問題を修正",
+      "zh": "修复启动过程中停止时直连服务器仍残留的问题"
+    }
+  ],
   "0.61": [
     {
       "tag": "new",

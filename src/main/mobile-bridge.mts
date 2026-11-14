@@ -95,11 +95,19 @@ export type BridgeDeps = {
   imageDir?: () => string // 폰 이미지 저장 폴더 — 없으면 defaultImageDir()(맥 사용자 임시 폴더 아래)
   now?: () => number
   flushMs?: number
+  fastFlushMs?: number
+  fastHoldMs?: number
   sizePollMs?: number
   liveMs?: number
 }
 
 export const FLUSH_MS = 100 // 출력은 100ms(초당 ~10번)로 묶는다 — 4-7 "트래픽" · 조용하다 처음 나온 조각은 바로(앞쪽) 보내고 뒤따르는 것만 묶는다
+// relay 길 — 폰이 그 pane 에 입력(휠 포함)을 보낸 뒤 FAST_HOLD_MS 동안만 묶음을 FAST_FLUSH_MS 로 줄인다(fullscreen 쓸기 반응 · 2026-11-14).
+// 50ms 근거: relay 는 맥 연결 하나에 초당 msg 50개까지(athena-app relay RELAY_MAX_MSG_PER_SEC · 넘으면 msg.dropped → 1초 뒤 resync)이고,
+// 폰은 입력을 50ms 마다 하나씩 보내며(앱 SEND_GAP_MS · 휠 WHEEL_SEND_GAP_MS) 맥은 pane.input 마다 답을 하나 보낸다 — 출력 20 + 답 20 = 초당 ~40개로 상한 안.
+// 입력이 50ms 마다 오니 그보다 잘게 보내도 새로 보일 쓸기 단계가 없다. 1초 근거: 휠 뒤 Claude 첫 출력은 2~8ms(측정) · 관성 휠은 계속 입력으로 와서 늘어난다
+export const FAST_FLUSH_MS = 50
+export const FAST_HOLD_MS = 1000
 // PC 쪽 pane 크기가 바뀌었나 — 데몬은 resize 를 알리지 않아 묻기용 연결로 state(메모리에서 바로 답한다)를 1초마다 본다(Q8)
 export const SIZE_POLL_MS = 1000
 // resize · 주인 바뀜 뒤 이만큼은 묶지 않고 조각마다 바로 보낸다 — 다시 그림 첫 조각은 작은 머리(커서 · 지우기)라 본 그림이 묶음에 걸려 100ms 늦었다(2026-11-12 실측)
@@ -701,6 +709,9 @@ export function createMobileBridge(deps: BridgeDeps) {
   const flushMs = deps.flushMs ?? FLUSH_MS
   const liveMs = deps.liveMs ?? LIVE_AFTER_RESIZE_MS
   let liveUntil = 0 // 이 시각까지는 묶지 않는다(resize · 주인 바뀜 뒤)
+  // 짧은 묶음은 그 길의 묶음보다 길지 않게 — 직접 길(DIRECT_FLUSH_MS 16)은 늘 그 값 그대로
+  const fastFlushMs = Math.min(deps.fastFlushMs ?? FAST_FLUSH_MS, flushMs)
+  const fastHoldMs = deps.fastHoldMs ?? FAST_HOLD_MS
   let control: Connection | null = null // 묻기용
   let controlConnecting: Promise<Connection> | null = null
   let stream: Connection | null = null // 흘리기용(attach)
@@ -709,6 +720,8 @@ export function createMobileBridge(deps: BridgeDeps) {
   const opening = new Set<string>() // 스냅숏을 기다리는 pane — 그 전 출력은 스냅숏에 이미 들어 있다
   const pending = new Map<string, string>() // pane → 모아 둔 출력
   let flushTimer: NodeJS.Timeout | null = null
+  let flushDue = 0 // 걸린 flushTimer 가 도는 시각
+  const fastUntil = new Map<string, number>() // pane → 이 시각까지 짧은 묶음(폰 입력 뒤)
   let resyncing = false
   let stopped = false
   let sizeTimer: NodeJS.Timeout | null = null
@@ -731,16 +744,50 @@ export function createMobileBridge(deps: BridgeDeps) {
   function flush() {
     if (flushTimer) clearTimeout(flushTimer)
     flushTimer = null
-    // 기기 하나에 100ms 마다 메시지 하나 — 그사이 나온 pane 들을 한 번에(안쪽 약속 v1)
+    // 기기 하나에 묶음 시간(100ms · 입력 직후 50ms)마다 메시지 하나 — 그사이 나온 pane 들을 한 번에(안쪽 약속 v1)
     if (pending.size) emit({ event: 'pane.data', panes: Object.fromEntries(pending) })
     pending.clear()
   }
-  // 묶음 창 끝 — 그사이 쌓인 것이 있으면 보내고 창을 한 번 더(계속 나오는 동안은 100ms 마다 하나) · 없으면 닫아 다음 조각은 바로 보낸다
+  // 입력 직후(fastHoldMs 안) pane 인가 — 지난 것은 지운다.
+  // 시각은 setTimeout 과 같은 벽시계(Date.now) — deps.now 는 머지 피드 기준 시각이다
+  function isFast(pane: string, at: number) {
+    const until = fastUntil.get(pane)
+    if (until === undefined) return false
+    if (until > at) return true
+    fastUntil.delete(pane)
+    return false
+  }
+  // 묶음 창 길이 — 묶인 것 중 입력 직후 pane 이 있으면 짧게(100ms → 50ms · 직접 길은 그 길 묶음 그대로)
+  function windowMs(at: number) {
+    for (const pane of pending.keys()) if (isFast(pane, at)) return fastFlushMs
+    return flushMs
+  }
+  function openWindow(delay: number) {
+    flushDue = Date.now() + delay
+    flushTimer = setTimeout(flushWindowEnd, delay)
+  }
+  // 묶음 창 끝 — 그사이 쌓인 것이 있으면 보내고 창을 한 번 더(계속 나오는 동안은 묶음 시간마다 하나) · 없으면 닫아 다음 조각은 바로 보낸다
   function flushWindowEnd() {
     flushTimer = null
     if (!pending.size) return
+    const delay = windowMs(Date.now())
     flush()
-    flushTimer = setTimeout(flushWindowEnd, flushMs)
+    openWindow(delay)
+  }
+
+  // 출력이 묶음에 들어왔다 — 조용하던 참(묶음 창 없음 — 열기 · 닫기의 flush 뒤 포함)이면 바로 보내고 창을 연다(첫 조각이 늦지 않게).
+  // 창이 열려 있으면 입력 직후 pane 일 때만 창 끝을 짧은 묶음으로 당긴다(늦추지는 않는다)
+  function scheduleFlush(pane: string) {
+    const at = Date.now()
+    const delay = isFast(pane, at) ? fastFlushMs : flushMs
+    if (!flushTimer) {
+      flush()
+      openWindow(delay)
+      return
+    }
+    if (flushDue <= at + delay) return
+    clearTimeout(flushTimer)
+    openWindow(delay)
   }
 
   async function connectControl(): Promise<Connection> {
@@ -764,16 +811,13 @@ export function createMobileBridge(deps: BridgeDeps) {
         flush()
         return
       }
-      // 조용하던 참(묶음 창 없음 — 열기 · 닫기의 flush 뒤 포함)이면 바로 보내고 창을 연다 — 첫 조각이 100ms 늦지 않게
-      if (!flushTimer) {
-        flush()
-        flushTimer = setTimeout(flushWindowEnd, flushMs)
-      }
+      scheduleFlush(message.pane)
     } else if (message.event === 'exit' && typeof message.pane === 'string') {
       flush()
       open.delete(message.pane)
       phoneSizes.delete(message.pane)
       owners.paneGone(message.pane)
+      fastUntil.delete(message.pane)
       emit({ event: 'changed', parts: ['panes'] })
       if (!open.size) closeStream()
     } else if (message.event === 'state') {
@@ -945,6 +989,7 @@ export function createMobileBridge(deps: BridgeDeps) {
     flush()
     open.delete(pane)
     phoneSizes.delete(pane)
+    fastUntil.delete(pane)
     await owners.phoneRelease(holder, pane)
     if (!open.size) closeStream()
     return { pane }
@@ -1069,6 +1114,10 @@ export function createMobileBridge(deps: BridgeDeps) {
     requireInput()
     const pane = text(args.pane, 'pane')
     const data = text(args.data, 'data')
+    // 이 입력에 대한 출력(쓸기 다시 그림 · 글자 되울림)은 짧은 묶음으로 — 입력을 넣기 전에 걸어 둔다(출력이 답보다 먼저 올 수 있다)
+    fastUntil.set(pane, Date.now() + fastHoldMs)
+    // 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력이 없어도)
+    if (pending.has(pane)) scheduleFlush(pane)
     await writeInput(pane, data, sentSize(args))
     // 내용은 적지 않는다(비밀값이 섞일 수 있다) — 누가 · 어느 pane · 크기만
     deps.logEvent('mobile.input', { by: 'mobile', pane, bytes: Buffer.byteLength(data) })
