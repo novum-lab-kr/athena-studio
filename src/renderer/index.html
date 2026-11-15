@@ -110,7 +110,8 @@
       <div class="browser-bar"></div>
       <div id="browser-tabs" class="browser-tabs" hidden></div>
       <div id="browser-error" class="browser-error" hidden></div>
-      <div id="browser-slot" class="browser-slot"></div>
+      <!-- [시뮬레이터] 탭의 칸 — 안내 글 · Android 화면 그림(ui/sim-bar.tsx). iOS 화면은 main 의 serve-sim 페이지 뷰가 이 자리 위에 그린다 -->
+      <div id="browser-slot" class="browser-slot"><div id="sim-screen" class="sim-screen"></div></div>
     </aside>
     <!-- 서버 탐색기 — 왼쪽 서버 목록 · 오른쪽 고른 서버(ui/server-status.tsx). Esc · ✕ 로 닫는다 -->
     <section id="server-view" class="server-view" role="dialog" aria-label="서버" data-i18n-aria-label="server.title" tabindex="-1" hidden></section>

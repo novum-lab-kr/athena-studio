@@ -4,7 +4,7 @@ import { $, el, say } from './core.ts'
 import { POPUP_ICONS, refreshPackList } from './pack-switch.ts'
 import { spaceColor, spaceInitials } from './space-actions.ts'
 import { lineIcon } from './side-panels.ts'
-import { browserOpen, placeBrowserView } from './browser.ts'
+import { browserOpen, hideBrowserView, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 import type { PackItem } from './ui/pack-rail.tsx'
 import type { CoreUpdateView } from '../lib/release-notes.mts'
@@ -40,7 +40,7 @@ function syncModal(): void {
   const open = modalOpen()
   for (const node of document.querySelectorAll<HTMLElement>('body > header, body > main')) node.inert = open
   if (!browserOpen) return
-  if (open) studio.browserHide()
+  if (open) hideBrowserView()
   else placeBrowserView()
 }
 
