@@ -127,6 +127,7 @@ type MainCalls = {
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
   workPeek(options?: { launch?: boolean }): Promise<unknown>
+  usagePeek(): Promise<unknown>
   refreshRequests(): Promise<unknown>
   answerRequest(id: string, answer: { choice: string; text: string; rev?: unknown }, by?: 'app' | 'mobile'): Promise<unknown>
   redeliverRequest(id: string): Promise<unknown>

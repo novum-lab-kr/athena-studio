@@ -192,9 +192,43 @@ test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · �
     assert.deepEqual(reply.result.mac, { name: null })
     assert.deepEqual(reply.result.devices, [])
     assert.deepEqual(reply.result.work, { boardUp: false, boardError: null, doing: [], done: [] }, '작업 목록을 안 넘기면 빈 값')
+    assert.deepEqual(reply.result.usage, { boardUp: false, tools: [] }, '사용량을 안 넘기면(옛 부르는 쪽) 현황판 꺼짐과 같은 빈 값')
     assert.deepEqual(reply.result.otherPacks, [{ id: 'globex', name: 'globex', displayName: '글로벡스', icon: null, working: 0, question: 0 }])
     assert.deepEqual(reply.result.spaces, [], '이름 · 이미지 원천(look)을 안 넘기면 빈 목록')
     assert.equal(env.daemon.attached().length, 0, '묻기만 해서는 붙은 앱이 되지 않는다(fitTab · open-url 에 섞이지 않게)')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('snapshot.usage — 맥 메뉴 막대와 같은 사용량을 작업 목록을 읽은 다음에 싣는다 · 실패해도 snapshot 은 간다', async () => {
+  const claude = { toolId: 'claude', tool: 'Claude', windows: [{ minutes: 300, label: '5시간', percent: 42, resetAt: 1763199000000 }] }
+  let usage = { boardUp: true, tools: [claude] }
+  const order = []
+  const env = await setup({
+    work: async () => {
+      order.push('work')
+      await new Promise((resolve) => setTimeout(resolve, 20))
+      order.push('work done')
+      return { boardUp: true, boardError: null, doing: [], done: [] }
+    },
+    usage: async () => {
+      order.push('usage')
+      if (!usage) throw new Error('boom')
+      return usage
+    },
+  })
+  try {
+    const first = await env.ask('snapshot')
+    assert.deepEqual(first.result.usage, { boardUp: true, tools: [claude] })
+    assert.deepEqual(order, ['work', 'work done', 'usage'], '작업 목록(현황판 띄우기)이 끝난 뒤 읽는다')
+    usage = { boardUp: false, tools: [] }
+    assert.deepEqual((await env.ask('snapshot')).result.usage, { boardUp: false, tools: [] })
+    usage = null
+    const third = await env.ask('snapshot')
+    assert.equal(third.ok, true)
+    assert.deepEqual(third.result.usage, { boardUp: false, tools: [] })
+    assert.deepEqual(third.result.work, { boardUp: true, boardError: null, doing: [], done: [] })
   } finally {
     await env.cleanup()
   }

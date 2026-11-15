@@ -19,6 +19,8 @@ import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackRes
 import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
+import { noMobileUsage } from '../lib/tray-model.mts'
+import type { MobileUsage } from '../lib/tray-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
@@ -78,6 +80,7 @@ type FrontCtx = {
   athenaDir: string | null
   requestsNow(): { requests: unknown[] }
   workPeek(options?: { launch?: boolean }): Promise<MobileWork>
+  usagePeek(): Promise<MobileUsage>
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
   approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
@@ -239,6 +242,14 @@ export function startMobileDev(deps: DevDeps) {
       return ctx ? ctx.workPeek({ launch: false }) : noMobileWork()
     },
   })
+  // 사용량 실시간 갱신 — 맥 메뉴 막대처럼 15초마다 떠 있는 현황판 header.usage 를 읽어 달라졌을 때만 changed ['usage']
+  const usageWatch = createWorkWatch({
+    read: async () => {
+      const ctx = front()
+      return ctx ? ctx.usagePeek() : noMobileUsage()
+    },
+    parts: ['usage'],
+  })
   // 브리지는 두 길이 같다 — 출력 묶음만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS)
   function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], flushMs?: number) {
     const bridge = (
@@ -256,6 +267,11 @@ export function startMobileDev(deps: DevDeps) {
         work: async () => {
           const ctx = front()
           return ctx ? ctx.workPeek() : noMobileWork()
+        },
+        // 맥 메뉴 막대 사용량과 같은 원천(현황판 header.usage) — 띄우지 않고 읽는다(브리지가 work 다음에 부르니 work 가 띄운 현황판을 본다)
+        usage: async () => {
+          const ctx = front()
+          return ctx ? ctx.usagePeek() : noMobileUsage()
         },
         servers: async () => {
           const ctx = front()
@@ -333,10 +349,12 @@ export function startMobileDev(deps: DevDeps) {
       })
     )
     workWatch.add(bridge)
+    usageWatch.add(bridge)
     return {
       ...bridge,
       async stop() {
         workWatch.remove(bridge)
+        usageWatch.remove(bridge)
         await bridge.stop()
       },
     }

@@ -236,7 +236,8 @@ export function diagramIndexFile(language: string, exists: (file: string) => boo
 export const WORK_WATCH_MS = 15000
 type WorkListener = { changed(parts: string[]): void }
 type WorkWatchDeps = {
-  read: () => Promise<MobileWork> // 띄우지 않고 읽은 지금 목록
+  read: () => Promise<unknown> // 띄우지 않고 읽은 지금 값(작업 목록 · 사용량)
+  parts?: string[] // 달라졌을 때 알릴 칸 — 없으면 ['work'](사용량 감시는 ['usage'] — mobile-dev)
   everyMs?: number
   setTimer?: (run: () => void, ms: number) => unknown
   clearTimer?: (timer: unknown) => void
@@ -245,6 +246,7 @@ type WorkWatchDeps = {
 // 요청이 바뀐 것은 맥이 이미 아니(work.mts publishRequests) 타이머 없이 바로 ['requests', 'work']
 export function createWorkWatch(deps: WorkWatchDeps) {
   const everyMs = deps.everyMs ?? WORK_WATCH_MS
+  const parts = deps.parts || ['work']
   const setTimer = deps.setTimer || ((run, ms) => setInterval(run, ms))
   const clearTimer = deps.clearTimer || ((timer) => clearInterval(timer as NodeJS.Timeout))
   const listeners = new Set<WorkListener>()
@@ -269,7 +271,7 @@ export function createWorkWatch(deps: WorkWatchDeps) {
     try {
       const key = JSON.stringify(await deps.read())
       if (mine !== round || !listeners.size) return
-      if (!quiet && last !== null && key !== last) notify(['work'])
+      if (!quiet && last !== null && key !== last) notify(parts)
       last = key
     } catch {
       // 못 읽은 주기는 건너뛴다
