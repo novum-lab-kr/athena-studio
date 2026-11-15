@@ -3,7 +3,7 @@
 // iOS 는 sim.mjs serve 가 켠 serve-sim 미리보기 페이지(127.0.0.1:<포트> — 화면 스트림 · 누르기 · 쓸기를 페이지가 한다)를
 // 전용 WebContentsView(세션 따로 · sandbox · preload 없음 · 그 주소 밖 이동 막기)에 띄워 서랍 자리(#browser-slot)에 붙인다.
 // Android 는 화면을 그림으로 받아(simFrame — 화면이 1초마다 부른다) 화면 쪽 <img> 가 그리고, 누르기 · 쓸기는 sim.mjs tap · swipe.
-// 창이 닫히면(dropSim) 이 창이 켠 serve-sim 서버만 끈다 — 시뮬레이터 · 에뮬레이터는 끄지 않는다(계획서 지시 "보존")
+// 창이 닫히면(dropSim) 서버를 놓는다 — 앱이 켠 serve-sim 서버는 쓰는 창이 모두 놓은 뒤에만 끈다. 시뮬레이터 · 에뮬레이터는 끄지 않는다(계획서 지시 "보존")
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -41,6 +41,11 @@ const SIM_PARTITION = 'athena-simulator'
 // serve-sim 상태 파일 — 기기마다 하나(계획서 D5). 켜기 전에 있었으면 다른 쪽(에이전트 · 다른 창)이 켠 서버라 끄지 않는다
 const serveStateFile = (udid: string) => path.join(os.tmpdir(), 'serve-sim', `server-${udid}.json`)
 
+// serve-sim 서버를 쓰는 창(UDID → 창 표) · 앱이 켠 서버(UDID) — 창 여럿이 같은 기기를 열면 서버 하나를 같이 쓴다.
+// 앱이 켠 서버는 쓰는 창이 모두 놓은 뒤에만 끈다(main 프로세스에 하나 — 창마다 따로 두면 A 를 닫을 때 B 화면이 끊긴다)
+const serverUsers = new Map<string, Set<object>>()
+const appServers = new Set<string>()
+
 // sim.mjs 출력의 마지막 JSON 줄(heavy.sh 안내 줄이 앞에 섞일 수 있다)
 function lastJson(text: string): SimReply | null {
   const line = text.trim().split('\n').reverse().find((row) => row.startsWith('{'))
@@ -59,8 +64,10 @@ export function installSimulator(ctx: SimulatorCtx): void {
   let attached = false
   let lastBounds: Rect | null = null
   let frameCount = 0
-  // 이 창이 켠 serve-sim 서버(UDID) — 창이 닫히면 이것만 끈다
-  const startedServers = new Set<string>()
+  // 이 창의 표 · 쓰는 서버(UDID) · 창이 닫혔는지(켜기를 기다리는 중에 닫히면 뒤늦게 뷰 · 서버를 만들지 않는다)
+  const owner = {}
+  let usingServer = ''
+  let dropped = false
 
   const runSim = (args: string[], timeout = QUICK_TIMEOUT): Promise<SimReply> => new Promise((resolve) => {
     const script = path.join(ctx.athenaDir || '', 'scripts', 'sim.mjs')
@@ -76,6 +83,24 @@ export function installSimulator(ctx: SimulatorCtx): void {
       resolve({ ok: false, error: timedOut ? 'timeout' : reason || 'failed' })
     })
   })
+
+  // 이 창이 서버를 놓는다 — 아무 창도 안 쓰고 앱이 켠 서버면 끈다(다른 쪽 — 에이전트 · 밖에서 켠 서버는 그대로)
+  function releaseServer(udid: string): void {
+    const users = serverUsers.get(udid)
+    users?.delete(owner)
+    if (users && users.size > 0) return
+    serverUsers.delete(udid)
+    if (!appServers.delete(udid)) return
+    void runSim(['unserve', '--device', udid])
+  }
+
+  function useServer(udid: string): void {
+    if (usingServer && usingServer !== udid) releaseServer(usingServer)
+    usingServer = udid
+    const users = serverUsers.get(udid) || new Set<object>()
+    users.add(owner)
+    serverUsers.set(udid, users)
+  }
 
   function closeView(): void {
     if (!view) return
@@ -141,14 +166,24 @@ export function installSimulator(ctx: SimulatorCtx): void {
         deviceId = devices.find((item) => item.booted && item.avd === (device as { avd?: string }).avd)?.id || deviceId
       }
     }
+    if (dropped) return { ok: false, error: 'closed' }
     if (android) {
       closeView()
+      if (usingServer) releaseServer(usingServer)
+      usingServer = ''
       return { ok: true, platform: 'android', id: deviceId, name: device.name }
     }
     const before = fs.existsSync(serveStateFile(deviceId))
     const served = await runSim(['serve', '--device', deviceId], SERVE_TIMEOUT)
     if (!served.ok || typeof served.url !== 'string') return served.ok ? { ok: false, error: 'no-url' } : served
-    if (!before) startedServers.add(deviceId)
+    if (!before) appServers.add(deviceId)
+    useServer(deviceId)
+    // 서버를 기다리는 사이 창이 닫혔다 — 뷰는 만들지 않고 방금 잡은 서버를 놓는다
+    if (dropped) {
+      releaseServer(deviceId)
+      usingServer = ''
+      return { ok: false, error: 'closed' }
+    }
     showPage(served.url)
     return { ok: true, platform: 'ios', id: deviceId, name: device.name, url: served.url }
   }
@@ -197,10 +232,11 @@ export function installSimulator(ctx: SimulatorCtx): void {
   ctx.simTap = (id, x, y) => runSim(['tap', String(x), String(y), '--platform', 'android', '--device', id])
   ctx.simSwipe = (id, from, to) => runSim(['swipe', String(from.x), String(from.y), String(to.x), String(to.y), '--platform', 'android', '--device', id])
 
-  // 창이 닫혔다 — 떼어 둔 뷰를 닫고 이 창이 켠 serve-sim 서버만 끈다(시뮬레이터는 그대로)
+  // 창이 닫혔다 — 떼어 둔 뷰를 닫고 서버를 놓는다(앱이 켠 서버는 쓰는 창이 없을 때만 꺼진다 · 시뮬레이터는 그대로)
   ctx.dropSim = () => {
+    dropped = true
     closeView()
-    for (const udid of startedServers) void runSim(['unserve', '--device', udid])
-    startedServers.clear()
+    if (usingServer) releaseServer(usingServer)
+    usingServer = ''
   }
 }

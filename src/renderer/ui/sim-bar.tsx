@@ -95,6 +95,13 @@ async function loadList(autoStart: boolean): Promise<void> {
   const keep = devices.find((device) => device.id === state.selected)
   const booted = devices.find((device) => device.booted)
   const selected = keep?.id || state.running?.id || booted?.id || devices[0]?.id || ''
+  // 열어 둔 기기가 밖에서 꺼졌다(목록에 없거나 꺼짐) — 열림을 풀어 뷰를 떼고 [켜기] 로 돌린다
+  const stillRunning = state.running && devices.some((device) => device.id === state.running?.id && device.booted)
+  if (state.running && !stillRunning) {
+    commit({ busy: '', loaded: true, ios, android, selected, running: null, frame: '' })
+    actions.place()
+    return
+  }
   commit({ busy: '', loaded: true, ios, android, selected })
   if (autoStart && !state.running && booted && booted.id === selected) void start(booted.id)
 }
