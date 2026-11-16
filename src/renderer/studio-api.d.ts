@@ -292,6 +292,10 @@ declare global {
     simHide(): void
     simShot(id: string): Promise<import('./ui/sim-bar.tsx').SimReply>
     simFrame(id: string): Promise<import('./ui/sim-bar.tsx').SimReply>
+    simStream(id: string, token: number): Promise<import('./ui/sim-bar.tsx').SimReply>
+    simStreamStop(): void
+    onSimVideo(callback: (token: number, chunk: Uint8Array) => void): () => void
+    onSimVideoEnd(callback: (token: number, reason: string) => void): () => void
     simTap(id: string, x: number, y: number): Promise<import('./ui/sim-bar.tsx').SimReply>
     simSwipe(id: string, from: { x: number; y: number }, to: { x: number; y: number }): Promise<import('./ui/sim-bar.tsx').SimReply>
     // 왼쪽 작업 공간 목록 · Explorer 미리보기(R3c) — main.mts handle(pack:repos · repo:set-name · repo:set-icon · space:context-menu · workspace:close · pack:body-behind ·

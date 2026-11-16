@@ -239,5 +239,8 @@
   "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "폰 시험 중 무거운 명령이 계속 기다리던 것 수정 — 동시 3개 · Expo 개발 서버는 자리 놓음",
   "Fix the direct-connection server staying on when stopped while starting": "켜는 중에 끄면 직접 연결 서버가 남던 것 수정",
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "폰 쓸기 중 느린 화면 갱신 수정 — 폰 입력 직후 출력을 더 빨리 보냄",
-  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기"
+  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기",
+  "Add a live Android screen to the Simulator tab — video instead of 1-second snapshots": "시뮬레이터 탭 Android 화면 실시간 표시 — 1초 그림 대신 영상",
+  "Fix the Simulator tab showing “no devices” while the list loads and after ⟳": "시뮬레이터 탭이 목록을 읽는 동안 · ⟳ 뒤 \"기기 없음\" 으로 보이던 것 수정",
+  "Fix Android taps and swipes landing in the wrong place in landscape": "가로 화면에서 Android 누르기 · 쓸기 자리가 어긋나던 것 수정"
 }

@@ -344,6 +344,7 @@
   "sim.loading": "Finding devices…",
   "sim.starting": "Opening {name}… the first time takes longer while serve-sim downloads",
   "sim.noRunning": "No device is running — choose one and press Boot",
+  "sim.pickBooted": "A device is running (●) — choose it and press Open",
   "sim.noDevices": "No devices available",
   "sim.noXcode": "iOS: Xcode not found — install Xcode from the App Store",
   "sim.noSdk": "Android: Android SDK (adb) not found — install Android Studio",

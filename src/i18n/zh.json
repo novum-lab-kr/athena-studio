@@ -344,6 +344,7 @@
   "sim.loading": "正在查找设备…",
   "sim.starting": "正在打开 {name}… 首次需要下载 serve-sim，会比较慢",
   "sim.noRunning": "没有运行中的设备 — 选择后点 [启动]",
+  "sim.pickBooted": "有运行中的设备(●) — 选择后点 [打开]",
   "sim.noDevices": "没有可用设备",
   "sim.noXcode": "iOS: 未找到 Xcode — 请从 App Store 安装 Xcode",
   "sim.noSdk": "Android: 未找到 Android SDK(adb) — 请安装 Android Studio",

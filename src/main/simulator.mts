@@ -2,12 +2,14 @@
 // 기기 찾기 · 켜기 · 캡처 · 누르기는 모두 본체 코어 `scripts/sim.mjs … --json`(에이전트가 쓰는 것과 같은 길 · 셸 없이 execFile).
 // iOS 는 sim.mjs serve 가 켠 serve-sim 미리보기 페이지(127.0.0.1:<포트> — 화면 스트림 · 누르기 · 쓸기를 페이지가 한다)를
 // 전용 WebContentsView(세션 따로 · sandbox · preload 없음 · 그 주소 밖 이동 막기)에 띄워 서랍 자리(#browser-slot)에 붙인다.
-// Android 는 화면을 그림으로 받아(simFrame — 화면이 1초마다 부른다) 화면 쪽 <img> 가 그리고, 누르기 · 쓸기는 sim.mjs tap · swipe.
+// Android 는 화면 영상(sim.mjs stream — adb screenrecord H.264)을 창마다 하나 띄워 조각을 화면에 보내고(sim:video) 화면이 WebCodecs 로 푼다.
+// 옛 코어(stream 없음)면 그림 받기(simFrame — 화면이 1초마다 부른다)로. 누르기 · 쓸기는 sim.mjs tap · swipe.
 // 창이 닫히면(dropSim) 서버를 놓는다 — 앱이 켠 serve-sim 서버는 쓰는 창이 모두 놓은 뒤에만 끈다. 시뮬레이터 · 에뮬레이터는 끄지 않는다(계획서 지시 "보존")
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
+import type { ChildProcess } from 'node:child_process'
 import { app, session, WebContentsView } from 'electron'
 import type { BrowserWindow } from 'electron'
 import * as core from '../lib/core.mts'
@@ -26,9 +28,12 @@ export type SimulatorCtx = {
   simHide?: () => void
   simShot?: (id: string) => Promise<SimReply>
   simFrame?: (id: string) => Promise<SimReply>
+  simStream?: (id: string, token: number) => SimReply
+  simStreamStop?: () => void
   simTap?: (id: string, x: number, y: number) => Promise<SimReply>
   simSwipe?: (id: string, from: { x: number; y: number }, to: { x: number; y: number }) => Promise<SimReply>
   dropSim?: () => void
+  send(channel: string, ...values: unknown[]): void
 }
 
 // 켜기(boot — heavy.sh 자리 기다림 포함) · serve-sim 첫 내려받기는 오래 걸린다
@@ -37,6 +42,10 @@ const SERVE_TIMEOUT = 4 * 60_000
 const QUICK_TIMEOUT = 60_000
 const FRAME_TIMEOUT = 15_000
 const SIM_PARTITION = 'athena-simulator'
+// 영상 프로세스를 끄라고 한 뒤 이만큼 지나도 살아 있으면 강제로(기기 안 녹화를 끄는 adb 한 번을 기다린다)
+const STREAM_KILL_MS = 6_000
+// adb 일련번호 모양(emulator-5554 · 192.168.0.5:5555 · adb-…._adb-tls-connect._tcp) — 옵션으로 읽히지 않게 - 로 시작하면 안 된다
+const SERIAL = /^[\w.:-]{1,200}$/
 
 // serve-sim 상태 파일 — 기기마다 하나(계획서 D5). 켜기 전에 있었으면 다른 쪽(에이전트 · 다른 창)이 켠 서버라 끄지 않는다
 const serveStateFile = (udid: string) => path.join(os.tmpdir(), 'serve-sim', `server-${udid}.json`)
@@ -68,14 +77,22 @@ export function installSimulator(ctx: SimulatorCtx): void {
   const owner = {}
   let usingServer = ''
   let dropped = false
+  // Android 영상 — 이 창에 하나(다른 기기를 열거나 칸이 안 보이면 끈다)
+  let streamProc: ChildProcess | null = null
 
-  const runSim = (args: string[], timeout = QUICK_TIMEOUT): Promise<SimReply> => new Promise((resolve) => {
+  // sim.mjs 를 부를 node · 환경 — 옛 본체(코어 업데이트 전)는 도우미가 없다(null)
+  const simCommand = () => {
     const script = path.join(ctx.athenaDir || '', 'scripts', 'sim.mjs')
-    // 옛 본체(코어 업데이트 전)는 도우미가 없다
-    if (!ctx.athenaDir || !fs.existsSync(script)) return resolve({ ok: false, error: 'core-old' })
+    if (!ctx.athenaDir || !fs.existsSync(script)) return null
     const nodePath = core.findExecutable('node', process.env.PATH)
     const env = core.childEnv(process.env, nodePath ? {} : { ELECTRON_RUN_AS_NODE: '1' })
-    execFile(nodePath || process.execPath, [script, ...args, '--json'], { cwd: ctx.athenaDir, env, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
+    return { node: nodePath || process.execPath, script, cwd: ctx.athenaDir, env }
+  }
+
+  const runSim = (args: string[], timeout = QUICK_TIMEOUT): Promise<SimReply> => new Promise((resolve) => {
+    const command = simCommand()
+    if (!command) return resolve({ ok: false, error: 'core-old' })
+    execFile(command.node, [command.script, ...args, '--json'], { cwd: command.cwd, env: command.env, encoding: 'utf8', timeout, maxBuffer: 4 * 1024 * 1024 }, (error, stdout, stderr) => {
       const reply = lastJson(String(stdout || ''))
       if (reply) return resolve(reply)
       const timedOut = Boolean(error && (error as { killed?: boolean }).killed)
@@ -229,12 +246,58 @@ export function installSimulator(ctx: SimulatorCtx): void {
     }
   }
 
+  // 영상 끄기 — 표준 입력을 닫고 SIGTERM(sim.mjs 가 기기 안 녹화까지 끄고 끝난다) · 안 끝나면 강제로
+  function stopStream(): void {
+    const proc = streamProc
+    streamProc = null
+    if (!proc || proc.exitCode !== null || proc.signalCode !== null) return
+    proc.stdin?.end()
+    proc.kill('SIGTERM')
+    const force = setTimeout(() => {
+      if (proc.exitCode === null && proc.signalCode === null) proc.kill('SIGKILL')
+    }, STREAM_KILL_MS)
+    proc.once('exit', () => clearTimeout(force))
+  }
+
+  // Android 영상 켜기 — 조각은 sim:video(token, 바이트), 끝나면 sim:video-end(token, 이유). token 은 화면이 정해 옛 영상 조각을 가린다.
+  // 옛 코어(stream 명령 없음 — 인자 틀림 2 로 바로 끝)면 이유 'no-stream' → 화면이 그림 받기로 돌아간다
+  ctx.simStream = (id, token) => {
+    stopStream()
+    if (!SERIAL.test(id) || id.startsWith('-')) return { ok: false, error: 'not-found' }
+    const command = simCommand()
+    if (!command) return { ok: false, error: 'core-old' }
+    const proc = spawn(command.node, [command.script, 'stream', '--platform', 'android', '--device', id, '--watch-stdin'], { cwd: command.cwd, env: command.env, stdio: ['pipe', 'pipe', 'pipe'] })
+    streamProc = proc
+    let received = false
+    let reason = ''
+    proc.stdout?.on('data', (chunk: Buffer) => {
+      received = true
+      ctx.send('sim:video', token, chunk)
+    })
+    proc.stderr?.on('data', (chunk: Buffer) => {
+      const line = String(chunk).trim().split('\n').filter(Boolean).pop()
+      if (line) reason = line.replace(/^❌\s*/, '')
+    })
+    proc.on('error', (error) => {
+      reason = error.message
+    })
+    proc.on('close', (code) => {
+      // 끈 영상(다른 기기 · 칸 닫힘 · 창 닫힘)은 알리지 않는다
+      if (streamProc !== proc) return
+      streamProc = null
+      ctx.send('sim:video-end', token, code === 2 && !received ? 'no-stream' : reason)
+    })
+    return { ok: true }
+  }
+  ctx.simStreamStop = () => stopStream()
+
   ctx.simTap = (id, x, y) => runSim(['tap', String(x), String(y), '--platform', 'android', '--device', id])
   ctx.simSwipe = (id, from, to) => runSim(['swipe', String(from.x), String(from.y), String(to.x), String(to.y), '--platform', 'android', '--device', id])
 
   // 창이 닫혔다 — 떼어 둔 뷰를 닫고 서버를 놓는다(앱이 켠 서버는 쓰는 창이 없을 때만 꺼진다 · 시뮬레이터는 그대로)
   ctx.dropSim = () => {
     dropped = true
+    stopStream()
     closeView()
     if (usingServer) releaseServer(usingServer)
     usingServer = ''

@@ -344,6 +344,7 @@
   "sim.loading": "デバイスを探しています…",
   "sim.starting": "{name} を開いています… 初回は serve-sim のダウンロードで時間がかかります",
   "sim.noRunning": "起動中のデバイスがありません — 選んで [起動]",
+  "sim.pickBooted": "起動中のデバイス(●)があります — 選んで [開く]",
   "sim.noDevices": "使えるデバイスなし",
   "sim.noXcode": "iOS: Xcode がありません — App Store から Xcode をインストール",
   "sim.noSdk": "Android: Android SDK(adb)が見つかりません — Android Studio をインストール",

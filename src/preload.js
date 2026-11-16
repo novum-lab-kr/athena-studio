@@ -174,6 +174,11 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   simHide: () => ipcRenderer.send('sim:hide'),
   simShot: (id) => ipcRenderer.invoke('sim:shot', id),
   simFrame: (id) => ipcRenderer.invoke('sim:frame', id),
+  // Android 화면 영상 — 조각은 onSimVideo(token, 바이트) · 끝나면 onSimVideoEnd(token, 이유). token 은 화면이 정한다(옛 영상 조각을 가린다)
+  simStream: (id, token) => ipcRenderer.invoke('sim:stream', id, token),
+  simStreamStop: () => ipcRenderer.send('sim:stream-stop'),
+  onSimVideo: listen('sim:video'),
+  onSimVideoEnd: listen('sim:video-end'),
   simTap: (id, x, y) => ipcRenderer.invoke('sim:tap', id, x, y),
   simSwipe: (id, from, to) => ipcRenderer.invoke('sim:swipe', id, from, to),
   onBrowserOpen: listen('browser:open'),

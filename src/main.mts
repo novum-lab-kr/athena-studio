@@ -1080,6 +1080,8 @@ handle('sim:list', (ctx) => ctx.simList?.())
 handle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
 handle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
 handle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
+handle('sim:stream', (ctx, id: unknown, token: unknown) => (typeof token === 'number' && Number.isSafeInteger(token) ? ctx.simStream?.(simId(id), token) : { ok: false, error: 'bad-token' }))
+listen('sim:stream-stop', (ctx) => ctx.simStreamStop?.())
 handle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
   const point = simPoint({ x, y })
   return point ? ctx.simTap?.(simId(id), point.x, point.y) : { ok: false, error: 'bad-point' }
