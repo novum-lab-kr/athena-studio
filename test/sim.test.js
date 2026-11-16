@@ -44,6 +44,12 @@ test('화면 크기 · 비율 좌표', () => {
   assert.deepEqual(sim.parseWmSize('Physical size: 1080x2400\n'), { width: 1080, height: 2400 })
   assert.deepEqual(sim.parseWmSize('Physical size: 1080x2400\nOverride size: 720x1600\n'), { width: 720, height: 1600 })
   assert.equal(sim.parseWmSize('error'), null)
+  // 회전 · override 를 반영한 지금 크기(dumpsys window displays 의 cur=) — 가로면 2400x1080
+  assert.deepEqual(sim.parseDisplayCur('  init=1080x2400 420dpi base=1080x2400 cur=2400x1080 app=2400x1036 rng=1080x1036-2400x2356\n'), { width: 2400, height: 1080 })
+  assert.equal(sim.parseDisplayCur('Display: mDisplayId=0'), null)
+  // 기기 pid 를 첫 줄로(끊을 때 기기 안 녹화를 끄려고) · 무제한은 지원하는 기기만
+  assert.equal(sim.screenrecordCommand(true), 'echo $$; exec screenrecord --output-format=h264 --time-limit 0 -')
+  assert.equal(sim.screenrecordCommand(false), 'echo $$; exec screenrecord --output-format=h264 -')
   assert.equal(sim.toPixel(0.5, 1080), 540)
   assert.equal(sim.toPixel(1, 1080), 1079)
   assert.equal(sim.toPixel(-1, 1080), 0)

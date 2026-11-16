@@ -12,6 +12,8 @@
  *                                                               화면 캡처 — --plan 이면 계획서 옆 <이름>.shots/ 에 · --dir 이면 그 폴더에(이름은 시각-플랫폼-기기)
  *   node scripts/sim.mjs tap <x> <y> [--device <기기>]           0..1 비율 좌표 누르기
  *   node scripts/sim.mjs swipe <x1> <y1> <x2> <y2> [--device <기기>]   쓸기(Android 만 — iOS 는 serve-sim 칸에서 끈다)
+ *   node scripts/sim.mjs stream [--device <기기>] [--watch-stdin]  Android 화면 영상(H.264 Annex B)을 표준 출력으로 — 끊을 때까지.
+ *                                                               녹화 길이 제한 · 회전 · 해상도 바뀜이면 다시 켜 이어 준다 · --watch-stdin 이면 표준 입력이 닫힐 때 끝(Studio 칸)
  *   node scripts/sim.mjs serve [--device <기기>] [--json]        iOS 화면 · 입력 서버(serve-sim) 켜기 → 주소. 이미 켜졌으면 그것
  *   node scripts/sim.mjs unserve [--device <기기>]               이 기기의 serve-sim 서버만 끈다(시뮬레이터는 끄지 않는다)
  *
@@ -33,11 +35,13 @@ import {
   parseAdbDevices,
   parseAvdList,
   parseAvdName,
+  parseDisplayCur,
   parseSimctlDevices,
   parseWmSize,
   pickTarget,
   planShotsDir,
   readRatio,
+  screenrecordCommand,
   shotName,
   toPixel,
 } from './lib/sim.mjs'
@@ -264,13 +268,145 @@ async function tapOrSwipe() {
     if (swipe) throw new SimError('iOS 쓸기는 serve-sim 으로: npx -y ' + SERVE_SIM + " gesture '<json>' -d <UDID>", 2)
     await run('npx', ['-y', SERVE_SIM, 'tap', String(x1), String(y1), '-d', picked.device.id], { timeout: 120_000 })
   } else {
-    const size = parseWmSize(await run(adb, ['-s', picked.device.id, 'shell', 'wm', 'size']))
+    // 누르기 좌표는 지금 화면(회전 반영) 기준 — wm size 의 Physical 은 가로로 돌려도 세로 크기라 어긋난다
+    const size = await displaySize(adb, picked.device.id)
     if (!size) throw new SimError('화면 크기를 못 읽었다(adb shell wm size)')
     const point = (/** @type {number} */ rx, /** @type {number} */ ry) => [String(toPixel(rx, size.width)), String(toPixel(ry, size.height))]
     const args = swipe ? ['swipe', ...point(x1, y1), ...point(x2, y2), '250'] : ['tap', ...point(x1, y1)]
     await run(adb, ['-s', picked.device.id, 'shell', 'input', ...args])
   }
   return say(`${swipe ? '쓸었다' : '눌렀다'} → ${picked.device.name}`, { id: picked.device.id })
+}
+
+/**
+ * Android 지금 화면 크기(회전 · wm size 반영) — dumpsys 의 cur= 를 못 읽으면 wm size
+ * @param {string} adb
+ * @param {string} serial
+ */
+async function displaySize(adb, serial) {
+  const cur = parseDisplayCur(await run(adb, ['-s', serial, 'shell', 'dumpsys window displays | grep -m1 cur='], { timeout: 10_000 }).catch(() => ''))
+  return cur || parseWmSize(await run(adb, ['-s', serial, 'shell', 'wm', 'size']).catch(() => ''))
+}
+
+// ── 화면 영상(Android) ─────────────────────────────────────
+// 다시 켜기가 이만큼 안에 끝나면 "바로 끝남" — 연달아 이만큼 나면 포기(기기가 녹화를 못 한다)
+const QUICK_EXIT_MS = 2_000
+const QUICK_EXIT_LIMIT = 3
+// 회전 · 해상도 바뀜을 보는 사이(녹화 도중 회전하면 크기 그대로 옆으로 누운 그림이 된다 — 새로 켜야 맞는 크기)
+const SIZE_WATCH_MS = 1_500
+
+async function stream() {
+  const { target: picked, adb } = await target()
+  if (picked.platform !== 'android') throw new SimError('stream 은 Android 만 — iOS 는 serve', 2)
+  needBooted(picked)
+  const serial = picked.device.id
+  // 길이 제한 없애기는 v1.4 쯤부터 — 도움말로 가른다(없으면 180초마다 다시 켠다)
+  const help = await run(adb, ['-s', serial, 'shell', 'screenrecord --help 2>&1'], { timeout: 10_000 }).catch(() => '')
+  const command = screenrecordCommand(/Set to 0/.test(help))
+  /** @type {import('node:child_process').ChildProcess | null} */
+  let child = null
+  let devicePid = ''
+  let stopping = false
+  let size = JSON.stringify(await displaySize(adb, serial))
+
+  // 기기 안 녹화를 끈다(adb 를 끊는 것만으로는 남는다) — pid 는 숫자만
+  const stopDevice = async () => {
+    const pid = devicePid
+    devicePid = ''
+    if (/^\d+$/.test(pid)) await run(adb, ['-s', serial, 'shell', 'kill', pid], { timeout: 5_000 }).catch(() => '')
+  }
+  const restart = async () => {
+    await stopDevice()
+    child?.kill()
+  }
+  /** @param {number} code */
+  const finish = async (code) => {
+    if (stopping) return
+    stopping = true
+    await stopDevice()
+    child?.kill()
+    process.exit(code)
+  }
+  process.on('SIGTERM', () => void finish(0))
+  process.on('SIGINT', () => void finish(0))
+  // 읽는 쪽이 사라졌다(파이프 닫힘)
+  process.stdout.on('error', () => void finish(0))
+  if (flag('watch-stdin')) {
+    process.stdin.on('end', () => void finish(0))
+    process.stdin.on('close', () => void finish(0))
+    process.stdin.resume()
+  }
+
+  // 회전 · 해상도 감시 — 바뀌면 지금 녹화를 끊어 아래 반복이 새 크기로 다시 켠다
+  const watch = async () => {
+    while (!stopping) {
+      await sleep(SIZE_WATCH_MS)
+      const now = await displaySize(adb, serial).catch(() => null)
+      if (!now || stopping) continue
+      const next = JSON.stringify(now)
+      if (next === size) continue
+      size = next
+      await restart()
+    }
+  }
+  void watch()
+
+  let quickExits = 0
+  let lastError = ''
+  while (!stopping) {
+    const began = Date.now()
+    const exitCode = await new Promise((done) => {
+      const proc = spawn(adb, ['-s', serial, 'exec-out', command], { stdio: ['ignore', 'pipe', 'pipe'] })
+      child = proc
+      let head = Buffer.alloc(0)
+      let headDone = false
+      // 받는 쪽(main)이 늦으면 쌓이지 않게 — write 가 false 면 adb 출력을 멈추고 비워지면 다시 받는다
+      let paused = false
+      const forward = (/** @type {Buffer} */ bytes) => {
+        if (process.stdout.write(bytes) || paused) return
+        paused = true
+        proc.stdout?.pause()
+        process.stdout.once('drain', () => {
+          paused = false
+          proc.stdout?.resume()
+        })
+      }
+      proc.stdout?.on('data', (/** @type {Buffer} */ chunk) => {
+        if (headDone) {
+          forward(chunk)
+          return
+        }
+        // 첫 줄 = 기기 셸 pid(screenrecordCommand) · 그 뒤가 영상
+        head = Buffer.concat([head, chunk])
+        const newline = head.indexOf(10)
+        if (newline < 0) {
+          if (head.length > 64) headDone = true // pid 줄이 아니다 — 그대로 넘긴다
+          else return
+        } else {
+          devicePid = head.subarray(0, newline).toString('utf8').trim()
+          head = head.subarray(newline + 1)
+          headDone = true
+        }
+        if (head.length) forward(head)
+      })
+      proc.stderr?.on('data', (/** @type {Buffer} */ chunk) => {
+        lastError = String(chunk).trim().split('\n').find(Boolean) || lastError
+      })
+      proc.on('error', (error) => {
+        lastError = error.message
+        done(1)
+      })
+      proc.on('exit', (code) => done(code ?? 1))
+    })
+    child = null
+    devicePid = ''
+    if (stopping) break
+    quickExits = Date.now() - began < QUICK_EXIT_MS ? quickExits + 1 : 0
+    if (quickExits >= QUICK_EXIT_LIMIT) {
+      stopping = true
+      throw new SimError(`화면 녹화가 바로 끝났다(screenrecord ${exitCode}): ${lastError || '이유 모름'}`)
+    }
+  }
 }
 
 // ── serve-sim(iOS 화면 · 입력 서버) ───────────────────────
@@ -326,7 +462,7 @@ async function list() {
   }
 }
 
-const COMMANDS = /** @type {Record<string, () => Promise<unknown>>} */ ({ list, boot, open: openUrl, shot, tap: tapOrSwipe, swipe: tapOrSwipe, serve, unserve })
+const COMMANDS = /** @type {Record<string, () => Promise<unknown>>} */ ({ list, boot, open: openUrl, shot, tap: tapOrSwipe, swipe: tapOrSwipe, stream, serve, unserve })
 
 async function main() {
   if (command === '_boot') {
@@ -337,7 +473,7 @@ async function main() {
     return
   }
   const handler = COMMANDS[command]
-  if (!handler) throw new SimError('사용: node scripts/sim.mjs <list|boot|open|shot|tap|swipe|serve|unserve> … (자세히 파일 맨 위)', 2)
+  if (!handler) throw new SimError('사용: node scripts/sim.mjs <list|boot|open|shot|tap|swipe|stream|serve|unserve> … (자세히 파일 맨 위)', 2)
   await handler()
 }
 

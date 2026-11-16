@@ -106,6 +106,26 @@ export function parseWmSize(text) {
 }
 
 /**
+ * `adb shell dumpsys window displays` → 지금 화면 크기(첫 화면의 cur= — 회전 · wm size 를 반영한다. wm size 의 Physical 은 회전을 모른다)
+ * @param {string} text
+ * @returns {{ width: number, height: number } | null}
+ */
+export function parseDisplayCur(text) {
+  const match = /\bcur=(\d+)x(\d+)/.exec(text)
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : null
+}
+
+/**
+ * 기기 안에서 돌릴 화면 녹화 명령(adb exec-out 한 줄) — 첫 줄에 셸 pid 를 찍고 그 셸을 screenrecord 로 바꾼다(exec · 같은 pid).
+ * adb 를 끊어도 기기 안 screenrecord 는 다음 쓰기 때까지 남아서(2026-11-16 syung36 실측) 끝낼 때 이 pid 로 끈다.
+ * unlimited 면 길이 제한을 없앤다(--time-limit 0 — 도움말에 "Set to 0" 이 있는 판만) · 아니면 기본 180초 뒤 끝나니 부른 쪽이 다시 켠다
+ * @param {boolean} unlimited
+ */
+export function screenrecordCommand(unlimited) {
+  return `echo $$; exec screenrecord --output-format=h264${unlimited ? ' --time-limit 0' : ''} -`
+}
+
+/**
  * 0..1 비율 좌표 → 기기 픽셀(화면 안으로 자른다)
  * @param {number} ratio
  * @param {number} size
