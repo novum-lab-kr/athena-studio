@@ -95,3 +95,14 @@ Codex의 보호 훅은 명령을 처음 실행할 때만 검사한다. 실행 �
 - 검증 스크립트(`scripts/verify/*.sh`) · `commit.sh` 검증은 스스로 줄을 선다. 기다리는 동안은 코드 작업을 먼저 하고, `next dev` 는 확인이 끝나면 바로 끈다(잠금을 쥐고 있다)
 - 여러 에이전트를 동시에 띄워도 무거운 명령은 이걸로 자동 조절된다(2026-10-02 동시 빌드로 컴퓨터가 죽은 뒤)
 - 멈춘 명령은 TaskStop 이나 확인한 pid 의 `kill <pid>` 로만 끈다 — `pkill` · `killall` · 이름으로 찾아 죽이기 금지(macOS pkill 은 패턴 뒤 옵션을 패턴으로 읽고 `-f` 는 `/Applications` 경로까지 맞춘다 · GH #133). 모든 세션에 `scripts/hooks/process-guard.py` 가 걸려 막는다
+
+## 앱 화면 확인 (iOS 시뮬레이터 · Android 에뮬레이터 — `scripts/sim.mjs`)
+
+**읽을 때**: 모바일 앱(Expo · React Native · 네이티브) 화면을 고쳤을 때 — 사용자가 폰을 들지 않고 바뀐 화면을 보게. 폰(Expo Go · 터널 Metro) 흐름은 그대로 두고 그 옆에 쓴다.
+
+- 도구: `node <athena>/scripts/sim.mjs` — `list` · `boot <기기>` · `open <URL>` · `shot` · `tap <x> <y>` · `swipe`(Android) · `serve` · `unserve`(쓰는 법 파일 맨 위). 좌표는 화면 비율 0..1. iOS 는 `xcrun simctl` · 누르기는 `npx -y serve-sim@0.1.49`(판 고정 · 처음 한 번 내려받기), Android 는 `adb`(PATH → `ANDROID_HOME` → `ANDROID_SDK_ROOT` → `~/Library/Android/sdk`). 도구가 없으면 그 플랫폼만 `list` 에 이유가 나오고 종료 3 — 설치하지 말고 보고에 적는다
+- 순서: `list` → 켜진 기기가 있으면 그것을 쓴다(없을 때만 `boot` — `heavy.sh` 자리를 잡고 켠다) → Metro 가 떠 있는지 본다(없으면 `expo start` 를 `heavy.sh` 로 — 개발 서버라 시작만 자리를 쓴다) → `open exp://127.0.0.1:<포트>` 나 앱 딥링크(`<scheme>://…`)로 바뀐 화면까지 → `shot --plan <계획서>`(계획서 옆 `<이름>.shots/`) → 보고에 붙인다(`reporting.md` "앱 화면 캡처")
+- **켜져 있는 시뮬레이터 · 에뮬레이터 · Metro 는 끄지 않는다** — 사용자가 폰이나 Studio 시뮬레이터 칸에서 쓰는 중일 수 있다. 내가 켠 serve-sim 서버만 `unserve` 로 끈다(시뮬레이터는 그대로). 끝난 뒤 예상 못 한 종료를 보면 다시 켜기 전에 원인부터(`reporting.md`)
+- **루프백 포트는 시뮬레이터끼리 같이 쓴다** — 시뮬레이터 앱은 맥의 127.0.0.1 을 그대로 쓰니, 앱이 고정 포트로 서버를 여는 경우 두 시뮬레이터에 같은 앱을 켜면 둘째가 그 포트를 못 연다. 예: 슝(syung) 앱 지도 서버 `MAP_PORT` 38127(2026-10-30 learn). 하나만 켜서 보거나 그 포트를 쓰는 쪽을 먼저 닫게 사용자에게 알린다
+- 시뮬레이터로 확인하지 못하는 것: 푸시 알림(실기 토큰) · 카메라 · 생체 인증 · 실제 센서 · 성능 · 실기 전용 네이티브 모듈 · 앱스토어 빌드 서명. 이것들은 "실기에서만 확인 가능"으로 보고에 나눠 적는다
+- Studio 의 옆 브라우저 서랍(⌘⇧B) [시뮬레이터] 탭이 같은 `sim.mjs` 를 불러 사용자가 직접 누르며 본다 — 에이전트가 띄운 화면을 사용자가 이어서 볼 수 있다

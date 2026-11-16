@@ -934,6 +934,21 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 .browser-error[hidden] { display: none; }
 /* 페이지(WebContentsView)가 붙기 전 · 서랍이 나오는 동안 보이는 바탕 — 흰색이면 번쩍인다. 붙은 뒤엔 뷰가 덮는다 */
 .browser-slot { flex: 1; min-height: 0; background: var(--bg); }
+/* [웹 | 시뮬레이터] 전환(막대 맨 왼쪽) · 시뮬레이터 탭(ui/sim-bar.tsx) — 탭 줄 · 알림 줄은 웹 탭 것이라 감춘다 */
+.browser-mode { display: flex; flex: none; padding: 2px; border-radius: 6px; background: #121315; }
+.browser-bar .browser-mode button { width: auto; height: 20px; padding: 0 8px; font-size: 12px; }
+.browser-bar .browser-mode button.active { background: var(--line); color: var(--accent); }
+.browser.sim .browser-tabs, .browser.sim .browser-error { display: none; }
+.sim-device { flex: 1; min-width: 0; height: 24px; padding: 0 6px; border: 1px solid var(--line); border-radius: 5px; background: #121315; color: var(--text); font: 12px system-ui, sans-serif; }
+.browser-bar button.sim-action { width: auto; padding: 0 10px; border: 1px solid var(--line); color: var(--text); }
+.sim-gap { flex: none; width: 2px; }
+/* 칸 — iOS 는 main 의 serve-sim 페이지 뷰가 이 위를 덮는다. 그 뒤에 깔린 안내 글 · Android 화면 그림 */
+.sim-screen { display: none; height: 100%; flex-direction: column; align-items: center; justify-content: center; gap: 10px; padding: 16px; overflow: hidden; }
+.browser.sim .sim-screen { display: flex; }
+.sim-frame { max-width: 100%; max-height: 100%; min-height: 0; object-fit: contain; border-radius: 12px; cursor: pointer; touch-action: none; user-select: none; }
+.sim-message { margin: 0; color: var(--muted); font-size: 13px; text-align: center; }
+.sim-notes { margin: 0; padding: 0; list-style: none; color: var(--muted); font-size: 12px; text-align: center; }
+.sim-notes li + li { margin-top: 4px; }
 
 /* 팩 — 맨 왼쪽 세로 줄 · 대화상자 · 진행 표시 */
 .pack-rail { flex: none; display: flex; flex-direction: column; align-items: center; gap: 8px; width: 56px; padding: 8px 0; border-right: 1px solid var(--line); background: var(--bg); overflow-y: auto; }

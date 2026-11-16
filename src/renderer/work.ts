@@ -5,7 +5,7 @@ import { packDialog, packLabel, packs } from './pack-dialogs.ts'
 import type { PackDialogAction } from './pack-dialogs.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { backPaneDetail, closePaneDetail, detailPane, goToPane, openRequest, paneLive, setPaneBound, syncDetailButtons } from './detail.ts'
-import { browserOpen, placeBrowserView } from './browser.ts'
+import { browserOpen, hideBrowserView, placeBrowserView } from './browser.ts'
 import { StudioUi } from './ui/index.ts'
 
 // ── [작업] 팝업 · 현황판 페이지 메뉴 ────────────────────────────
@@ -35,7 +35,7 @@ let popBefore: Element | null = null
 export const popOpen = (): boolean => !$('work-pop').hidden || !$('board-menu').hidden || !$('settings-pop').hidden
 function syncPopBrowser(): void {
   if (!browserOpen) return
-  if (popOpen()) studio.browserHide()
+  if (popOpen()) hideBrowserView()
   else placeBrowserView() // 대화상자가 떠 있으면 placeBrowserView 가 붙이지 않는다(닫힐 때 syncModal 이 붙인다)
 }
 // 팝업만 닫는다 — 브라우저는 건드리지 않는다(팝업 → 팝업 · 팝업 → 대화상자로 넘어갈 때 번쩍이지 않게)
