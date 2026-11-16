@@ -53,6 +53,9 @@ function end(current: Session, reason: string): void {
   session = null
   clearTimeout(current.flushTimer ?? undefined)
   closeDecoder(current)
+  // 풀기 실패로 끝나면 main 의 스트림(코어 · 기기 녹화)은 아직 돈다 — 여기서 끈다. 이미 끝났으면 main 이 그냥 넘긴다.
+  // ended 가 바로 새 영상을 켤 수 있어 그보다 먼저 보낸다(같은 IPC 길이라 순서가 지켜진다)
+  studio.simStreamStop()
   current.events.ended(reason)
 }
 
