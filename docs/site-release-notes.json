@@ -1,4 +1,13 @@
 {
+  "0.63": [
+    {
+      "tag": "new",
+      "en": "Add a Simulator tab to the side browser — view and tap iOS · Android screens",
+      "ko": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기",
+      "ja": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
+      "zh": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕"
+    }
+  ],
   "0.62": [
     {
       "tag": "fixed",

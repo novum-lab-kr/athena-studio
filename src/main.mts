@@ -28,6 +28,7 @@ import { installWork } from './main/work.mts'
 import { installAthenaDir } from './main/athena-dir.mts'
 import { installPacks } from './main/packs.mts'
 import { installSideBrowser } from './main/side-browser.mts'
+import { installSimulator } from './main/simulator.mts'
 import { installPackWindow } from './main/pack-window.mts'
 import { APP_UPDATE_CHECK_MS, createAppUpdater } from './main/app-updater.mts'
 import { createCoreRunner, changelogFile, changelogVersionsFile } from './main/core-runner.mts'
@@ -53,6 +54,7 @@ import type { WorkCtx, RequestsState } from './main/work.mts'
 import type { AthenaDirCtx } from './main/athena-dir.mts'
 import type { PacksCtx } from './main/packs.mts'
 import type { SideBrowserCtx } from './main/side-browser.mts'
+import type { SimulatorCtx } from './main/simulator.mts'
 import type { PackWindowCtx } from './main/pack-window.mts'
 import type { TrayCtx } from './main/tray.mts'
 
@@ -151,7 +153,7 @@ type MainCalls = {
   hideBrowser(): void
   browserCommand(name: string, value: string): unknown
 }
-type PackWindow = PackCtx & ExplorerCtx & AthenaAgentCtx & PackReposCtx & WorkCtx & AthenaDirCtx & PacksCtx & SideBrowserCtx & PackWindowCtx & TrayCtx & MainCalls
+type PackWindow = PackCtx & ExplorerCtx & AthenaAgentCtx & PackReposCtx & WorkCtx & AthenaDirCtx & PacksCtx & SideBrowserCtx & SimulatorCtx & PackWindowCtx & TrayCtx & MainCalls
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -580,6 +582,8 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   })
   // 옆 브라우저 — 창마다 서랍 하나(탭 뷰는 그 안에 · 본체별 탭 주소 browserUrls 는 창끼리 같이 쓴다)
   installSideBrowser(ctx, { say, browserUrls, browserPartition: BROWSER_PARTITION, watchConsoleSends, appBackground: APP_BACKGROUND })
+  // 시뮬레이터 칸 — 서랍의 [시뮬레이터] 탭(본체 코어 scripts/sim.mjs 를 부른다)
+  installSimulator(ctx)
   // 창 — 만들고 focus · close · closed 를 건다
   installPackWindow(ctx, {
     packWindows,
@@ -1068,6 +1072,23 @@ handle('open:url', (ctx, url: unknown) => openUrl(ctx, String(url)))
 listen('browser:place', (ctx, rect: unknown) => ctx.placeBrowser(browserRect(rect)))
 listen('browser:hide', (ctx) => ctx.hideBrowser())
 handle('browser:command', (ctx, name: unknown, value: unknown) => ctx.browserCommand(String(name), typeof value === 'string' ? value : ''))
+// 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다
+const simId = (value: unknown) => (typeof value === 'string' ? value.slice(0, 200) : '')
+listen('sim:place', (ctx, rect: unknown) => ctx.simPlace?.(browserRect(rect)))
+listen('sim:hide', (ctx) => ctx.simHide?.())
+handle('sim:list', (ctx) => ctx.simList?.())
+handle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
+handle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
+handle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
+handle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
+  const point = simPoint({ x, y })
+  return point ? ctx.simTap?.(simId(id), point.x, point.y) : { ok: false, error: 'bad-point' }
+})
+handle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
+  const start = simPoint(from)
+  const end = simPoint(to)
+  return start && end ? ctx.simSwipe?.(simId(id), start, end) : { ok: false, error: 'bad-point' }
+})
 
 app.whenReady().then(async () => {
   // 배포판이 응용 프로그램 폴더 밖(디스크 이미지 창 · 다운로드 폴더)에서 켜졌으면 묻지 않고 옮긴다 — 그 자리에서는 업데이트를 설치하지 못한다.
@@ -1294,6 +1315,14 @@ function browserRect(rect: unknown): { x: number; y: number; width: number; heig
   if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0 || value > 100000)) return null
   const [x, y, width, height] = values as [number, number, number, number]
   return { x, y, width, height }
+}
+
+// 시뮬레이터 칸 좌표 — 0..1 비율 숫자가 아니면 버린다
+function simPoint(point: unknown): { x: number; y: number } | null {
+  if (!point || typeof point !== 'object') return null
+  const { x, y } = point as Record<string, unknown>
+  const ratio = (value: unknown) => typeof value === 'number' && Number.isFinite(value) && value >= 0 && value <= 1
+  return ratio(x) && ratio(y) ? { x: x as number, y: y as number } : null
 }
 
 // 화면이 준 크기(칸) — 숫자가 아니면 버린다(데몬 기본 크기를 쓴다)

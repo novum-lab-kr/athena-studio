@@ -41,7 +41,7 @@ export function closeBrowserPanel(): void {
   browserOpen = false
   clearTimeout(browserTimer as number | undefined)
   clearTimeout(urlFocusTimer as number | undefined)
-  studio.browserHide()
+  hideBrowserView()
   panel.classList.remove('open', 'resizing')
   $('browser-toggle').classList.remove('active')
   $('browser-toggle').setAttribute('aria-expanded', 'false')
@@ -61,7 +61,28 @@ export function placeBrowserView(): void {
   if (!browserOpen || browserTimer || $('browser').hidden || $('browser').classList.contains('resizing')) return
   const rect = $('browser-slot').getBoundingClientRect()
   if (rect.width < 1 || rect.height < 1) return
-  studio.browserPlace({ x: rect.left, y: rect.top, width: rect.width, height: rect.height })
+  const slot = { x: rect.left, y: rect.top, width: rect.width, height: rect.height }
+  // [시뮬레이터] 탭 — 웹 페이지는 떼고, iOS 기기가 열려 있으면 serve-sim 페이지 뷰를 붙인다(ui/sim-bar.tsx)
+  if (StudioUi.sim.mode.get() === 'sim') {
+    studio.browserHide()
+    if (StudioUi.sim.wantsView()) studio.simPlace(slot)
+    else studio.simHide()
+    StudioUi.sim.shown()
+    return
+  }
+  studio.simHide()
+  studio.browserPlace(slot)
+}
+
+// 서랍의 네이티브 뷰(웹 페이지 · 시뮬레이터 페이지)를 잠깐 뗀다 — 대화상자 · 팝업 · 너비 끌기 동안. 다시 붙이는 것은 placeBrowserView
+export function hideBrowserView(): void {
+  studio.browserHide()
+  studio.simHide()
+}
+
+// 모드에 따라 서랍 줄을 고친다 — 시뮬레이터면 탭 줄 · 알림 줄을 감춘다(CSS .browser.sim)
+function applyMode(): void {
+  $('browser').classList.toggle('sim', StudioUi.sim.mode.get() === 'sim')
 }
 
 function toggleBrowserPanel(): void {
@@ -69,7 +90,7 @@ function toggleBrowserPanel(): void {
   openBrowserPanel()
   // 처음이면 주소창부터 — 다 나온 뒤에, 스크롤 없이(나오는 중에 포커스를 주면 뒤 화면이 밀린다).
   // 그사이 닫았거나 다른 곳을 눌렀으면 하지 않는다
-  if (StudioUi.browser.url()) return
+  if (StudioUi.browser.url() || StudioUi.sim.mode.get() === 'sim') return
   clearTimeout(urlFocusTimer as number | undefined)
   const before = document.activeElement
   urlFocusTimer = setTimeout(() => {
@@ -118,7 +139,7 @@ function initBrowserResize(): void {
     dragging = true
     handle.setPointerCapture(event.pointerId)
     panel.classList.add('resizing')
-    studio.browserHide()
+    hideBrowserView()
     event.preventDefault()
   })
   handle.addEventListener('pointermove', (event) => {
@@ -154,8 +175,13 @@ function initBrowserResize(): void {
 export function initBrowser(): void {
   initBrowserResize()
   StudioUi.browser.mount($('browser').querySelector('.browser-bar') as HTMLElement, $('browser-error'), $('browser-tabs'), { close: closeBrowserPanel, place: placeBrowserView })
+  StudioUi.sim.mount($('sim-screen'), { close: closeBrowserPanel, place: placeBrowserView, isOpen: () => browserOpen })
+  applyMode()
+  StudioUi.sim.mode.subscribe(applyMode)
   $('browser-toggle').addEventListener('click', toggleBrowserPanel)
   studio.onBrowserOpen((url) => {
+    // 링크로 열면 웹 탭으로
+    StudioUi.sim.setMode('web')
     StudioUi.browser.setUrl(url)
     StudioUi.browser.showError('')
     openBrowserPanel()

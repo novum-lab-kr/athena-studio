@@ -3,7 +3,7 @@
 // 크기는 CSS 변수(--spaces-width · --side-width · --dock-height)로 넘긴다 — 접힘(.collapsed) 규칙이 그대로 이긴다.
 // pane(터미널) 크기는 #panes · #dock 의 ResizeObserver → layoutPanes 가 다시 맞춘다(main.ts)
 import { $ } from './core.ts'
-import { browserOpen, placeBrowserView } from './browser.ts'
+import { browserOpen, hideBrowserView, placeBrowserView } from './browser.ts'
 
 type Edge = {
   handle: HTMLElement
@@ -75,7 +75,7 @@ function bindEdge(edge: Edge): void {
     document.body.classList.add(axis === 'x' ? 'edge-resizing-x' : 'edge-resizing-y')
     handle.classList.add('dragging')
     // 끄는 동안은 옆 브라우저 페이지(화면 위에 떠 있는 뷰)를 떼어 둔다 — 마우스가 페이지 위로 지나가도 끌기가 이어지게
-    if (browserOpen) studio.browserHide()
+    if (browserOpen) hideBrowserView()
     event.preventDefault()
   })
   handle.addEventListener('pointermove', (event) => {

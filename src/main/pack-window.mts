@@ -18,6 +18,7 @@ export type PackWindowCtx = {
   stopRequests(): void
   stopPackWatch?: () => void
   dropBrowser(): void
+  dropSim?: () => void
   detachScreen(): void
   refreshPacks?: () => Promise<unknown>
   show?: (tab?: string) => void
@@ -110,6 +111,7 @@ export function installPackWindow(ctx: PackWindowCtx, deps: PackWindowDeps): voi
     if (ctx.stopPackWatch) ctx.stopPackWatch()
     // 서랍에서 떼어 둔 뷰는 창과 함께 정리되지 않는다 — 직접 닫는다
     ctx.dropBrowser()
+    ctx.dropSim?.()
     ctx.detachScreen()
     packWindows.delete(ctx)
     if (lastFocused() === ctx) setLastFocused(null)

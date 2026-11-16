@@ -1,9 +1,10 @@
-// 옆 브라우저 막대(.browser-bar — 뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 탭 줄(#browser-tabs) · 알림 줄(#browser-error)
+// 옆 브라우저 막대(.browser-bar — [웹 | 시뮬레이터] 전환 · 뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 탭 줄(#browser-tabs) · 알림 줄(#browser-error)
 // PR-R12. 서랍 껍데기(열기 · 닫기 · 스르륵 · 너비 끌기 · 페이지 자리 알리기 placeBrowserView · 탭 줄 열기 단추 · 서랍의 loading 클래스 · 제목)는 바닐라 browser.ts.
 // 실제 페이지는 main 의 WebContentsView(src/main/side-browser.mts)라 여기서는 막대 · 탭 줄 · 알림 줄만 그린다.
 // 다른 팝업과 달리 열고 닫지 않는다 — 켤 때 한 번 띄워 두고 계속 쓴다(서랍을 닫아도 주소 칸은 남는다)
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
+import { ModeSwitch, SimBar, mode } from './sim-bar.tsx'
 
 // main 이 보내는 browser:state(src/main/side-browser.mts sendBrowserState)
 export type BrowserState = { url?: string; title?: string; canGoBack?: boolean; canGoForward?: boolean; loading?: boolean }
@@ -86,8 +87,18 @@ async function navigate(): Promise<void> {
 function Bar() {
   const say = useSay()
   const { url: address, canGoBack, canGoForward, loading } = useStore(view)
+  // [시뮬레이터] 탭이면 막대를 시뮬레이터 막대로(ui/sim-bar.tsx)
+  if (useStore(mode) === 'sim') {
+    return (
+      <>
+        <ModeSwitch />
+        <SimBar />
+      </>
+    )
+  }
   return (
     <>
+      <ModeSwitch />
       <button id="browser-back" title={say('browser.back')} disabled={!canGoBack} onClick={() => studio.browserCommand('back')}>
         ◀
       </button>
