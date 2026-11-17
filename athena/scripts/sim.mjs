@@ -10,10 +10,12 @@
  *   node scripts/sim.mjs open <URL> [--device <기기>]            딥링크 · URL 열기(exp://… · myapp://… · https://…)
  *   node scripts/sim.mjs shot (--out <파일.png> | --plan <계획서> | --dir <폴더>) [--device <기기>] [--json]
  *                                                               화면 캡처 — --plan 이면 계획서 옆 <이름>.shots/ 에 · --dir 이면 그 폴더에(이름은 시각-플랫폼-기기)
- *   node scripts/sim.mjs tap <x> <y> [--device <기기>]           0..1 비율 좌표 누르기
- *   node scripts/sim.mjs swipe <x1> <y1> <x2> <y2> [--device <기기>]   쓸기(Android 만 — iOS 는 serve-sim 칸에서 끈다)
+ *   node scripts/sim.mjs tap <x> <y> [--device <기기>] [--size <너비>x<높이>]   0..1 비율 좌표 누르기
+ *                                                               --size(Android · 일련번호 --device 와 함께)면 목록 · 화면 크기 읽기를 건너뛴다(Studio 칸 — 영상이 아는 크기)
+ *   node scripts/sim.mjs swipe <x1> <y1> <x2> <y2> [--device <기기>] [--size …]   쓸기(Android 만 — iOS 는 serve-sim 칸에서 끈다)
  *   node scripts/sim.mjs stream [--device <기기>] [--watch-stdin]  Android 화면 영상(H.264 Annex B)을 표준 출력으로 — 끊을 때까지.
  *                                                               녹화 길이 제한 · 회전 · 해상도 바뀜이면 다시 켜 이어 준다 · --watch-stdin 이면 표준 입력이 닫힐 때 끝(Studio 칸)
+ *                                                               지금 화면 크기를 표준 오류에 "size <너비>x<높이>" 한 줄로(처음 · 바뀔 때) — 칸이 tap --size 로 넘긴다
  *   node scripts/sim.mjs serve [--device <기기>] [--json]        iOS 화면 · 입력 서버(serve-sim) 켜기 → 주소. 이미 켜졌으면 그것
  *   node scripts/sim.mjs unserve [--device <기기>]               이 기기의 serve-sim 서버만 끈다(시뮬레이터는 끄지 않는다)
  *
@@ -37,6 +39,7 @@ import {
   parseAvdName,
   parseDisplayCur,
   parseSimctlDevices,
+  parseSizeOption,
   parseWmSize,
   pickTarget,
   planShotsDir,
@@ -59,7 +62,7 @@ const option = (name) => {
 /** @param {string} name */
 const flag = (name) => argv.includes(`--${name}`)
 // 옵션 값이 아닌 위치 인자(명령 이름 뒤)
-const VALUE_OPTIONS = new Set(['--device', '--platform', '--out', '--plan', '--dir'])
+const VALUE_OPTIONS = new Set(['--device', '--platform', '--out', '--plan', '--dir', '--size'])
 const positional = argv.slice(1).filter((value, index, list) => !value.startsWith('--') && !VALUE_OPTIONS.has(list[index - 1] ?? ''))
 const asJson = flag('json')
 
@@ -262,20 +265,36 @@ async function tapOrSwipe() {
     throw new SimError(swipe ? '사용: node scripts/sim.mjs swipe <x1> <y1> <x2> <y2> (0..1)' : '사용: node scripts/sim.mjs tap <x> <y> (0..1)', 2)
   }
   const [x1 = 0, y1 = 0, x2 = 0, y2 = 0] = /** @type {number[]} */ (ratios)
-  const { target: picked, adb } = await target()
+  const known = await knownAndroid()
+  const { target: picked, adb } = known || (await target())
   needBooted(picked)
   if (picked.platform === 'ios') {
     if (swipe) throw new SimError('iOS 쓸기는 serve-sim 으로: npx -y ' + SERVE_SIM + " gesture '<json>' -d <UDID>", 2)
     await run('npx', ['-y', SERVE_SIM, 'tap', String(x1), String(y1), '-d', picked.device.id], { timeout: 120_000 })
   } else {
     // 누르기 좌표는 지금 화면(회전 반영) 기준 — wm size 의 Physical 은 가로로 돌려도 세로 크기라 어긋난다
-    const size = await displaySize(adb, picked.device.id)
+    const size = known ? known.size : await displaySize(adb, picked.device.id)
     if (!size) throw new SimError('화면 크기를 못 읽었다(adb shell wm size)')
     const point = (/** @type {number} */ rx, /** @type {number} */ ry) => [String(toPixel(rx, size.width)), String(toPixel(ry, size.height))]
     const args = swipe ? ['swipe', ...point(x1, y1), ...point(x2, y2), '250'] : ['tap', ...point(x1, y1)]
     await run(adb, ['-s', picked.device.id, 'shell', 'input', ...args])
   }
   return say(`${swipe ? '쓸었다' : '눌렀다'} → ${picked.device.name}`, { id: picked.device.id })
+}
+
+/**
+ * 부른 쪽이 기기 · 화면 크기를 이미 안다(--platform android · 일련번호 --device · --size — Studio 칸이 영상에서 받은 크기).
+ * 목록(adb 3번)과 화면 크기(dumpsys window — 부하 때 몇 초)를 건너뛴다. 기기가 없으면 adb input 이 실패로 끝난다
+ */
+async function knownAndroid() {
+  const size = parseSizeOption(option('size'))
+  const serial = option('device')
+  if (!size || option('platform') !== 'android' || !serial || serial.startsWith('-') || serial.startsWith('avd:')) return null
+  const { adb } = findAndroidTools(process.env)
+  if (!adb) return null
+  /** @type {import('./lib/sim.mjs').Target} */
+  const picked = { platform: 'android', device: { id: serial, name: serial, booted: true, avd: '' } }
+  return { target: picked, adb, size }
 }
 
 /**
@@ -307,7 +326,14 @@ async function stream() {
   let child = null
   let devicePid = ''
   let stopping = false
-  let size = JSON.stringify(await displaySize(adb, serial))
+  // 지금 크기를 칸에 알린다(tap --size 로 돌아온다) — 못 읽었으면 알리지 않는다(칸은 tap 이 스스로 읽게 둔다)
+  /** @param {{ width: number, height: number } | null} value */
+  const tellSize = (value) => {
+    if (value) process.stderr.write(`size ${value.width}x${value.height}\n`)
+  }
+  const first = await displaySize(adb, serial)
+  let size = JSON.stringify(first)
+  tellSize(first)
 
   // 기기 안 녹화를 끈다(adb 를 끊는 것만으로는 남는다) — pid 는 숫자만
   const stopDevice = async () => {
@@ -346,6 +372,7 @@ async function stream() {
       const next = JSON.stringify(now)
       if (next === size) continue
       size = next
+      tellSize(now)
       await restart()
     }
   }

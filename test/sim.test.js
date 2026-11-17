@@ -47,6 +47,10 @@ test('화면 크기 · 비율 좌표', () => {
   // 회전 · override 를 반영한 지금 크기(dumpsys window displays 의 cur=) — 가로면 2400x1080
   assert.deepEqual(sim.parseDisplayCur('  init=1080x2400 420dpi base=1080x2400 cur=2400x1080 app=2400x1036 rng=1080x1036-2400x2356\n'), { width: 2400, height: 1080 })
   assert.equal(sim.parseDisplayCur('Display: mDisplayId=0'), null)
+  assert.deepEqual(sim.parseSizeOption('2400x1080'), { width: 2400, height: 1080 })
+  assert.equal(sim.parseSizeOption('0x100'), null)
+  assert.equal(sim.parseSizeOption('1080x2400;id'), null)
+  assert.equal(sim.parseSizeOption(''), null)
   // 기기 pid 를 첫 줄로(끊을 때 기기 안 녹화를 끄려고) · 무제한은 지원하는 기기만
   assert.equal(sim.screenrecordCommand(true), 'echo $$; exec screenrecord --output-format=h264 --time-limit 0 -')
   assert.equal(sim.screenrecordCommand(false), 'echo $$; exec screenrecord --output-format=h264 -')
@@ -155,6 +159,27 @@ test('CLI(가짜 adb): list · tap 비율 → 픽셀 · shot --plan · Xcode 없
   assert.match(ios.stderr, /Xcode/)
   assert.equal(runCli(['tap', '3', '0'], bin, root).status, 2)
   assert.equal(runCli(['nope'], bin, root).status, 2)
+})
+
+test('CLI(가짜 adb): tap · swipe --size 면 목록 · 화면 크기 읽기 없이 그 크기로 누른다(칸 — 영상이 아는 크기)', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-size-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  const tapped = runCli(['tap', '0.5', '0.25', '--platform', 'android', '--device', 'emulator-5554', '--size', '2400x1080', '--json'], bin, root)
+  assert.equal(tapped.status, 0, tapped.stderr)
+  assert.equal(JSON.parse(tapped.stdout).id, 'emulator-5554')
+  const swiped = runCli(['swipe', '0', '0', '1', '1', '--platform', 'android', '--device', 'emulator-5554', '--size', '2400x1080'], bin, root)
+  assert.equal(swiped.status, 0, swiped.stderr)
+  // adb 는 누르기 · 쓸기 두 번만(devices · emu avd name · dumpsys · wm size 없음)
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    '-s emulator-5554 shell input tap 1200 270',
+    '-s emulator-5554 shell input swipe 0 0 2399 1079 250',
+  ])
+  // --size 모양이 틀렸거나 --platform 이 없으면 옛 길(목록 · 크기 읽기)
+  fs.writeFileSync(log, '')
+  assert.equal(runCli(['tap', '0.5', '0.25', '--device', 'emulator-5554', '--size', 'x'], bin, root).status, 0)
+  assert.match(fs.readFileSync(log, 'utf8'), /^devices -l$/m)
+  assert.match(fs.readFileSync(log, 'utf8'), /input tap 500 500$/m)
 })
 
 test('기기 셸 감싸기: URL 의 ; & | \' 가 기기 셸에서 명령이 되지 않는다(open)', (t) => {

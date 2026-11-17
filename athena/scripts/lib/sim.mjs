@@ -116,6 +116,19 @@ export function parseDisplayCur(text) {
 }
 
 /**
+ * `--size <너비>x<높이>`(tap · swipe — 부른 쪽이 이미 아는 지금 화면 크기) 읽기 — 모양이 틀리면 null
+ * @param {string} text
+ * @returns {{ width: number, height: number } | null}
+ */
+export function parseSizeOption(text) {
+  const match = /^(\d{1,5})x(\d{1,5})$/.exec(text)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  return width > 0 && height > 0 ? { width, height } : null
+}
+
+/**
  * 기기 안에서 돌릴 화면 녹화 명령(adb exec-out 한 줄) — 첫 줄에 셸 pid 를 찍고 그 셸을 screenrecord 로 바꾼다(exec · 같은 pid).
  * adb 를 끊어도 기기 안 screenrecord 는 다음 쓰기 때까지 남아서(2026-11-16 syung36 실측) 끝낼 때 이 pid 로 끈다.
  * unlimited 면 길이 제한을 없앤다(--time-limit 0 — 도움말에 "Set to 0" 이 있는 판만) · 아니면 기본 180초 뒤 끝나니 부른 쪽이 다시 켠다

@@ -3,7 +3,8 @@
 // iOS 는 sim.mjs serve 가 켠 serve-sim 미리보기 페이지(127.0.0.1:<포트> — 화면 스트림 · 누르기 · 쓸기를 페이지가 한다)를
 // 전용 WebContentsView(세션 따로 · sandbox · preload 없음 · 그 주소 밖 이동 막기)에 띄워 서랍 자리(#browser-slot)에 붙인다.
 // Android 는 화면 영상(sim.mjs stream — adb screenrecord H.264)을 창마다 하나 띄워 조각을 화면에 보내고(sim:video) 화면이 WebCodecs 로 푼다.
-// 옛 코어(stream 없음)면 그림 받기(simFrame — 화면이 1초마다 부른다)로. 누르기 · 쓸기는 sim.mjs tap · swipe.
+// 옛 코어(stream 없음)면 그림 받기(simFrame — 화면이 1초마다 부른다)로. 누르기 · 쓸기는 sim.mjs tap · swipe —
+// 영상이 알린 화면 크기(stderr "size WxH")가 있으면 --size 로 넘겨 목록 · 화면 크기 읽기(dumpsys — 부하 때 몇 초)를 건너뛴다.
 // 창이 닫히면(dropSim) 서버를 놓는다 — 앱이 켠 serve-sim 서버는 쓰는 창이 모두 놓은 뒤에만 끈다. 시뮬레이터 · 에뮬레이터는 끄지 않는다(계획서 지시 "보존")
 import fs from 'node:fs'
 import os from 'node:os'
@@ -46,6 +47,8 @@ const SIM_PARTITION = 'athena-simulator'
 const STREAM_KILL_MS = 6_000
 // adb 일련번호 모양(emulator-5554 · 192.168.0.5:5555 · adb-…._adb-tls-connect._tcp) — 옵션으로 읽히지 않게 - 로 시작하면 안 된다
 const SERIAL = /^[\w.:-]{1,200}$/
+// 영상(sim.mjs stream)이 표준 오류로 알리는 지금 화면 크기 한 줄
+const SIZE_LINE = /^size (\d{1,5}x\d{1,5})$/
 
 // serve-sim 상태 파일 — 기기마다 하나(계획서 D5). 켜기 전에 있었으면 다른 쪽(에이전트 · 다른 창)이 켠 서버라 끄지 않는다
 const serveStateFile = (udid: string) => path.join(os.tmpdir(), 'serve-sim', `server-${udid}.json`)
@@ -79,6 +82,8 @@ export function installSimulator(ctx: SimulatorCtx): void {
   let dropped = false
   // Android 영상 — 이 창에 하나(다른 기기를 열거나 칸이 안 보이면 끈다)
   let streamProc: ChildProcess | null = null
+  // 영상이 알린 그 기기의 지금 화면 크기(누르기 좌표용) — 영상을 끄면 비운다
+  let streamSize: { id: string; size: string } | null = null
 
   // sim.mjs 를 부를 node · 환경 — 옛 본체(코어 업데이트 전)는 도우미가 없다(null)
   const simCommand = () => {
@@ -250,6 +255,7 @@ export function installSimulator(ctx: SimulatorCtx): void {
   function stopStream(): void {
     const proc = streamProc
     streamProc = null
+    streamSize = null
     if (!proc || proc.exitCode !== null || proc.signalCode !== null) return
     proc.stdin?.end()
     proc.kill('SIGTERM')
@@ -274,25 +280,37 @@ export function installSimulator(ctx: SimulatorCtx): void {
       received = true
       ctx.send('sim:video', token, chunk)
     })
+    let pendingErr = ''
     proc.stderr?.on('data', (chunk: Buffer) => {
-      const line = String(chunk).trim().split('\n').filter(Boolean).pop()
-      if (line) reason = line.replace(/^❌\s*/, '')
+      const lines = (pendingErr + String(chunk)).split('\n')
+      pendingErr = lines.pop() || ''
+      for (const raw of lines) {
+        const line = raw.trim()
+        const size = SIZE_LINE.exec(line)
+        if (size?.[1]) {
+          if (streamProc === proc) streamSize = { id, size: size[1] }
+        } else if (line) reason = line.replace(/^❌\s*/, '')
+      }
     })
     proc.on('error', (error) => {
       reason = error.message
     })
     proc.on('close', (code) => {
+      if (pendingErr.trim()) reason = pendingErr.trim().replace(/^❌\s*/, '')
       // 끈 영상(다른 기기 · 칸 닫힘 · 창 닫힘)은 알리지 않는다
       if (streamProc !== proc) return
       streamProc = null
+      streamSize = null
       ctx.send('sim:video-end', token, code === 2 && !received ? 'no-stream' : reason)
     })
     return { ok: true }
   }
   ctx.simStreamStop = () => stopStream()
 
-  ctx.simTap = (id, x, y) => runSim(['tap', String(x), String(y), '--platform', 'android', '--device', id])
-  ctx.simSwipe = (id, from, to) => runSim(['swipe', String(from.x), String(from.y), String(to.x), String(to.y), '--platform', 'android', '--device', id])
+  // 그 기기 영상이 크기를 알렸으면 --size(목록 · 화면 크기 읽기 건너뛰기) · 아니면 sim.mjs 가 스스로 읽는다
+  const knownSize = (id: string) => (streamSize && streamSize.id === id ? ['--size', streamSize.size] : [])
+  ctx.simTap = (id, x, y) => runSim(['tap', String(x), String(y), '--platform', 'android', '--device', id, ...knownSize(id)])
+  ctx.simSwipe = (id, from, to) => runSim(['swipe', String(from.x), String(from.y), String(to.x), String(to.y), '--platform', 'android', '--device', id, ...knownSize(id)])
 
   // 창이 닫혔다 — 떼어 둔 뷰를 닫고 서버를 놓는다(앱이 켠 서버는 쓰는 창이 없을 때만 꺼진다 · 시뮬레이터는 그대로)
   ctx.dropSim = () => {

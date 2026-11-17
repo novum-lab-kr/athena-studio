@@ -242,5 +242,6 @@
   "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
   "Add a live Android screen to the Simulator tab — video instead of 1-second snapshots": "シミュレータタブで Android 画面をリアルタイム表示 — 1 秒ごとの画像の代わりに動画",
   "Fix the Simulator tab showing “no devices” while the list loads and after ⟳": "シミュレータタブで一覧の読み込み中 · ⟳ 後に「デバイスなし」と表示される問題を修正",
-  "Fix Android taps and swipes landing in the wrong place in landscape": "横向き画面で Android のタップ · スワイプ位置がずれる問題を修正"
+  "Fix Android taps and swipes landing in the wrong place in landscape": "横向き画面で Android のタップ · スワイプ位置がずれる問題を修正",
+  "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "シミュレータータブの Android タップ · スワイプが遅い問題を修正 — タップごとの端末検索を省略"
 }

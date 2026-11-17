@@ -56,6 +56,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### New
 - Add a Simulator tab to the side browser — view and tap iOS · Android screens
 
+### Fixed
+- Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap
+
 ## 0.62 (v0.62.0 – · Nov 14, 2026)
 
 ### Fixed
