@@ -50,6 +50,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Fixed
 - Fix the Simulator tab showing “no devices” while the list loads and after ⟳
 - Fix Android taps and swipes landing in the wrong place in landscape
+- Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap
 
 ## 0.63 (v0.63.0 – · Nov 15, 2026)
 
