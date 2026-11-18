@@ -103,9 +103,14 @@ check "다른 팩 실제 경로 → 그대로(거부됨)" 'case "$(plan_rel "$B"
 check "review-result 가 절대 경로 계획서를 받음" 'bash scripts/review-result.sh --plan "$B/$PLAN" --dir "$B/repos/acme-web" --verdict 승인 --note 시험 >/dev/null 2>&1 && grep -q "Review result: 승인" "$PLAN"'
 R="$(bash scripts/new-branch.sh T-9 acme-web 2>&1)"
 check "new-branch 워크트리는 팩 데이터 실제 경로" 'git -C repos/acme-web worktree list | grep -q "$ATHENA_DATA_DIR/packs/acme/worktrees/acme-web/feature-T-9"' "$R"
-# delegate.sh — 본체의 링크(pack · plans · issues)가 가리키는 데이터 폴더 실제 경로도 --add-dir 로(권한 질문으로 멈추지 않게 · 2026-10-25 시험)
-LD="$(ATHENA_DIR="$B" ATHENA_REAL="$(cd "$B" && pwd -P)" bash -c 'shq() { printf "%q" "$1"; }; eval "$(awk "/^LINK_DIRS=\"\"/{p=1} p{print} p && /^done\$/{exit}" scripts/delegate.sh)"; echo "$LINK_DIRS"')"
-check "delegate — 링크된 pack · plans · issues 의 실제 경로를 --add-dir 로" 'echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/pack" && pwd -P)" && echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/plans" && pwd -P)" && echo "$LD" | grep -qF -- "--add-dir $(cd "$ATHENA_DATA_DIR/packs/acme/issues" && pwd -P)"' "$LD"
+# delegate.sh — 본체의 링크(pack · plans · issues)가 가리키는 데이터 폴더 실제 경로도 허용 폴더로(권한 질문으로 멈추지 않게 · 2026-10-25 시험).
+# Claude 는 --add-dir 이 아니라 settings permissions.additionalDirectories 로(--add-dir 은 2.1.326 부터 폴더마다 확인 창 · 2026-11-18)
+LD="$(python3 scripts/lib/agent_hooks.py link-dirs "$B")"
+REAL_PACK="$(cd "$ATHENA_DATA_DIR/packs/acme/pack" && pwd -P)"; REAL_PLANS="$(cd "$ATHENA_DATA_DIR/packs/acme/plans" && pwd -P)"; REAL_ISSUES="$(cd "$ATHENA_DATA_DIR/packs/acme/issues" && pwd -P)"
+check "link-dirs — 링크된 pack · plans · issues 의 실제 경로" '[ "$LD" = "$(printf "%s\n%s\n%s" "$REAL_PACK" "$REAL_PLANS" "$REAL_ISSUES")" ]' "$LD"
+python3 scripts/lib/agent_hooks.py inline "$WORK/inline-settings.json" "$B" acme-web-fe
+check "inline settings — 링크 실제 경로를 additionalDirectories 로" 'python3 -c "import json,sys; d=json.load(open(sys.argv[1]))[\"permissions\"][\"additionalDirectories\"]; sys.exit(d != sys.argv[2:])" "$WORK/inline-settings.json" "$REAL_PACK" "$REAL_PLANS" "$REAL_ISSUES"' "$(cat "$WORK/inline-settings.json")"
+check "delegate — Claude 인자에 링크 폴더 --add-dir 없음(Codex 쓰기 자리에만)" '! grep -n "CLAUDE_ARGS=.*LINK_DIRS" scripts/delegate.sh && grep -q "WRITE_DIRS=\"--add-dir .*\$LINK_DIRS\"" scripts/delegate.sh'
 
 section "옛 pack backup·restore 는 여러 팩에서 멈춤"
 mkdir -p "$WORK/oldbk"

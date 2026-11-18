@@ -481,14 +481,16 @@ CLAUDE_ARGS="--agent $(shq "$AGENT")"
 EXTRA_FILES=""
 # 여러 팩 구조 — 본체의 pack · plans · issues 는 데이터 폴더(<데이터>/packs/<id>/…)로 가는 링크라 실제 경로가 본체 밖이다.
 # 그 실제 경로도 허용 폴더로 줘야 계획서 쓰기 · 지식(docs/knowledge/<레포> → pack/…) 읽기에서 권한을 묻고 멈추지 않는다(2026-10-25 시험).
-# 링크가 아니거나(옛 구조) 본체 안으로 풀리면 더하지 않는다
+# 목록은 scripts/lib/agent_hooks.py link_dirs 한 곳(링크가 아니거나 본체 안으로 풀리면 빠진다).
+# Claude 는 --add-dir 이 아니라 --settings 의 permissions.additionalDirectories 로 넘긴다(agent_hooks.add_link_dirs) —
+# Claude Code 2.1.326 부터 --add-dir 은 아직 안 믿은 폴더마다 확인 창을 띄워 멈춘다(2026-11-18 실측 3번 → 설정으로 0번).
+# 아래 LINK_DIRS 는 Codex 쓰기 자리(--add-dir · 확인 창 없음)에만 쓴다
 LINK_DIRS=""
-for name in pack plans issues; do
-  [ -L "$ATHENA_DIR/$name" ] || continue
-  real="$(cd "$ATHENA_DIR/$name" 2>/dev/null && pwd -P)" || continue
-  case "$real/" in "$ATHENA_REAL"/*) continue ;; esac
-  LINK_DIRS="$LINK_DIRS --add-dir $(shq "$real")"
-done
+while IFS= read -r real; do
+  [ -n "$real" ] && LINK_DIRS="$LINK_DIRS --add-dir $(shq "$real")"
+done <<EOF_LINK_DIRS
+$(python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" link-dirs "$ATHENA_DIR")
+EOF_LINK_DIRS
 # git 레포가 아닌 폴더도 본체 밖이면 같은 길로 — 그 폴더에서는 본체의 CLAUDE.md · AGENTS.md 가 자동으로 실리지 않아
 # 공통 규칙을 직접 넘기지 않으면 에이전트가 계획서 지시문만 보고 일한다(지시문은 공통 규칙에 있는 것을 다시 싣지 않는다 · 2026-10-29)
 CTX_TOP="$WORK_TOP"
@@ -502,7 +504,7 @@ if [ "$ENGINE" = codex ] || { [ -n "$CTX_TOP" ] && [ "$(cd "$CTX_TOP" && pwd -P)
     || { rm -f "$PROMPT_FILE" "$RUNNER" "${AGENTS_JSON:-}" "${CONTEXT_FILE:-}" "${SETTINGS_FILE:-}"; echo "에이전트 컨텍스트 생성 실패"; exit 1; }
   CONTEXT_CHARS="$(char_count "$CONTEXT_FILE")"
   EXTRA_FILES="$(shq "$AGENTS_JSON") $(shq "$CONTEXT_FILE") $(shq "$SETTINGS_FILE")"
-  CLAUDE_ARGS="--agents \"\$(cat $(shq "$AGENTS_JSON"))\" $CLAUDE_ARGS --add-dir $(shq "$ATHENA_DIR")$LINK_DIRS --append-system-prompt-file $(shq "$CONTEXT_FILE") --settings $(shq "$SETTINGS_FILE")"
+  CLAUDE_ARGS="--agents \"\$(cat $(shq "$AGENTS_JSON"))\" $CLAUDE_ARGS --add-dir $(shq "$ATHENA_DIR") --append-system-prompt-file $(shq "$CONTEXT_FILE") --settings $(shq "$SETTINGS_FILE")"
   [ "$CTX_TOP" = "$ATHENA_REAL" ] || REPO_DIR="$CTX_TOP"
 else
   # hermes 안에서 띄워도 보호 훅을 건다 — FE 는 commit-guard(git commit 직접·add -A → commit.sh, push·gh pr 차단) + secret-guard,
@@ -513,7 +515,7 @@ else
   python3 "$ATHENA_DIR/scripts/lib/agent_hooks.py" inline "$SETTINGS_FILE" "$ATHENA_DIR" "$HOOK_AGENT" \
     || { rm -f "$PROMPT_FILE" "$RUNNER" "$SETTINGS_FILE"; echo "에이전트 훅 설정 생성 실패"; exit 1; }
   EXTRA_FILES="$(shq "$SETTINGS_FILE")"
-  CLAUDE_ARGS="$CLAUDE_ARGS$LINK_DIRS --settings $(shq "$SETTINGS_FILE")"
+  CLAUDE_ARGS="$CLAUDE_ARGS --settings $(shq "$SETTINGS_FILE")"
 fi
 # 에이전트 창은 MCP 서버를 싣지 않는다(--mcp-config 없는 --strict-mcp-config = 사용자 전역 · 플러그인 · claude.ai 커넥터 MCP 모두 제외).
 # 창마다 도구 목록 · 서버 안내문이 매 답에 붙는 토큰을 줄인다. 아테나 본체 세션은 이 스크립트를 거치지 않아 그대로.

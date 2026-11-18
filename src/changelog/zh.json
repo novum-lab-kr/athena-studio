@@ -243,5 +243,6 @@
   "Add a live Android screen to the Simulator tab — video instead of 1-second snapshots": "模拟器标签实时显示 Android 屏幕 — 用视频代替每秒截图",
   "Fix the Simulator tab showing “no devices” while the list loads and after ⟳": "修复模拟器标签在读取列表时 · ⟳ 后显示“没有设备”",
   "Fix Android taps and swipes landing in the wrong place in landscape": "修复横屏时 Android 点按 · 滑动位置偏移",
-  "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "修复模拟器标签页 Android 点按 · 滑动缓慢 — 每次点按不再查找设备"
+  "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "修复模拟器标签页 Android 点按 · 滑动缓慢 — 每次点按不再查找设备",
+  "Fix agent panes stopping at folder trust prompts on start": "修复代理 pane 启动时停在文件夹确认提示"
 }
