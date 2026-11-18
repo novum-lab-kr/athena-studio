@@ -65,6 +65,34 @@ def permissions_allow(hermes, agent):
     return rules
 
 
+def link_dirs(hermes):
+    """본체의 pack · plans · issues 링크가 가리키는 본체 밖 실제 폴더(여러 팩 구조 — <데이터>/packs/<id>/…).
+    링크가 아니거나(옛 구조) 본체 안으로 풀리면 빼고, 못 풀면 건너뛴다"""
+    root = pathlib.Path(hermes).resolve()
+    found = []
+    for name in ("pack", "plans", "issues"):
+        link = root / name
+        if not link.is_symlink():
+            continue
+        try:
+            real = link.resolve(strict=True)
+        except OSError:
+            continue
+        if real.is_dir() and not real.is_relative_to(root):
+            found.append(str(real))
+    return found
+
+
+def add_link_dirs(settings, hermes):
+    """링크 폴더를 Claude Code 설정 permissions.additionalDirectories 로 — 계획서 쓰기 · 지식 읽기에서 권한을 묻고 멈추지 않게(2026-10-25 시험).
+    --add-dir 로 넘기면 Claude Code 2.1.326 부터 아직 안 믿은 폴더마다 폴더 확인 창이 떠 멈춘다(공식 CHANGELOG 2.1.326 · 2026-11-18 실측 3번).
+    설정 파일의 additionalDirectories 는 창 없이 파일 접근만 연다(공식 문서 permissions "Working directories" · 같은 날 실측 0번)"""
+    dirs = link_dirs(hermes)
+    if dirs:
+        settings.setdefault("permissions", {})["additionalDirectories"] = dirs
+    return settings
+
+
 def inline_settings(hermes, agent):
     """본체 안(hermes 프로젝트 설정이 실리는 곳)에서 띄울 때의 settings — 보호 훅 · pane 기록 · 끝 알림 · 자동 압축 · 팩이 허용한 권한만"""
     notify_prompt, notify_stop = done_notify(hermes, agent)
@@ -83,10 +111,14 @@ def inline_settings(hermes, agent):
     allow = permissions_allow(hermes, agent)
     if allow:
         settings["permissions"] = {"allow": allow}
-    return settings
+    return add_link_dirs(settings, hermes)
 
 
 if __name__ == "__main__":
+    if sys.argv[1:2] == ["link-dirs"]:
+        # Codex 의 --add-dir(쓰기 자리 · 확인 창 없음)에 같은 목록을 쓴다 — 한 줄에 하나
+        print("\n".join(link_dirs(sys.argv[2])))
+        sys.exit(0)
     mode, out, hermes_dir, agent_name = sys.argv[1:5]
     if mode != "inline":
         sys.exit(f"알 수 없는 모드: {mode}")

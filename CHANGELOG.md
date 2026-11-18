@@ -58,6 +58,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap
+- Fix agent panes stopping at folder trust prompts on start
 
 ## 0.62 (v0.62.0 – · Nov 14, 2026)
 
