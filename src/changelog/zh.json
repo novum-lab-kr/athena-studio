@@ -239,5 +239,6 @@
   "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "修复手机测试期间繁重命令一直等待的问题 — 同时 3 个 · Expo 开发服务器会让出名额",
   "Fix the direct-connection server staying on when stopped while starting": "修复启动过程中停止时直连服务器仍残留的问题",
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "修复手机滚动时画面更新缓慢 — 手机输入后立即更快地发送输出",
-  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕"
+  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕",
+  "Fix agent panes stopping at folder trust prompts on start": "修复代理 pane 启动时停在文件夹确认提示"
 }
