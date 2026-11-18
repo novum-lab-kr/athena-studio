@@ -114,4 +114,6 @@ if notify_stop:
 allow = agent_hooks.permissions_allow(hermes, agent)
 if allow:
     settings["permissions"] = {"allow": allow}
+# 본체 링크(pack · plans · issues)의 실제 폴더 — --add-dir 대신 설정으로(폴더 확인 창 없이 · agent_hooks.add_link_dirs)
+agent_hooks.add_link_dirs(settings, hermes)
 pathlib.Path(settings_out).write_text(json.dumps(settings), encoding="utf-8")

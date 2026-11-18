@@ -47,6 +47,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### New
 - Add a Simulator tab to the side browser — view and tap iOS · Android screens
 
+### Fixed
+- Fix agent panes stopping at folder trust prompts on start
+
 ## 0.62 (v0.62.0 – · Nov 14, 2026)
 
 ### Fixed

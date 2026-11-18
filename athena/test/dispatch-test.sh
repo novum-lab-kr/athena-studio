@@ -117,6 +117,11 @@ elif a[:2] == ['pane','run']:
         args = got['args']; prompt = args[-1]
         check(name+' → 같은 계획서·완료 순서·아테나 보고 지시', all(s in prompt for s in ['TASK_SENTINEL','plans/task/test.md','commit.sh','ship.sh','--direct-merge','lead1','묻지 않고']))
         check(name+' → 프로필 모델 전달', args[args.index('--model')+1] == ('sonnet' if expected=='claude' else 'gpt-test-profile'))
+        if expected=='claude':
+            # 링크 폴더(pack · plans · issues)는 --add-dir 이 아니라 settings 로 — --add-dir 은 Claude Code 2.1.326 부터 폴더마다 확인 창(2026-11-18)
+            dirs = [os.path.realpath(args[index+1]) for index, arg in enumerate(args[:-1]) if arg=='--add-dir']
+            if dirs != [os.path.realpath(core)]: print('    --add-dir:', dirs)
+            check(name+' → Claude --add-dir 은 본체 하나', dirs == [os.path.realpath(core)])
         if expected=='codex':
             profile = args[args.index('--profile')+1]
             check('Codex → 본체·역할별 프로필 이름 유지', not profiles or profiles.get('agent') == profile)

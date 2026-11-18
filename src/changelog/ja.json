@@ -239,5 +239,6 @@
   "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "スマホでのテスト中に重いコマンドが待ち続ける問題を修正 — 同時に3つ · Expo 開発サーバーは枠を解放",
   "Fix the direct-connection server staying on when stopped while starting": "起動中に止めると直接接続サーバーが残る問題を修正",
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "スマホでのスクロール中の画面更新の遅さを修正 — スマホ入力の直後は出力をより速く送信",
-  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ"
+  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
+  "Fix agent panes stopping at folder trust prompts on start": "エージェント pane が起動時にフォルダ確認画面で止まる問題を修正"
 }

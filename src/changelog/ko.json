@@ -239,5 +239,6 @@
   "Fix heavy commands stuck waiting during phone testing — 3 at once, Expo dev server releases its slot": "폰 시험 중 무거운 명령이 계속 기다리던 것 수정 — 동시 3개 · Expo 개발 서버는 자리 놓음",
   "Fix the direct-connection server staying on when stopped while starting": "켜는 중에 끄면 직접 연결 서버가 남던 것 수정",
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "폰 쓸기 중 느린 화면 갱신 수정 — 폰 입력 직후 출력을 더 빨리 보냄",
-  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기"
+  "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기",
+  "Fix agent panes stopping at folder trust prompts on start": "에이전트 pane 이 시작할 때 폴더 확인 창에서 멈추던 것 수정"
 }
