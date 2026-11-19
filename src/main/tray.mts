@@ -163,6 +163,9 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
       width: TRAY_WIDTH,
       height: 520,
       show: false,
+      // 숨은 채 만든 창도 화면이 '보임'으로 알고 계속 그리지 않게 — 기본(true)이면 한 번도 안 연 패널의 구름 · 별이
+      // 매 프레임 그려져 대기 CPU 를 먹었다(2026-11-19 측정 · tray.ts 의 document.hidden 멈춤이 안 걸림 · ready-to-show 는 안 쓴다)
+      paintWhenInitiallyHidden: false,
       frame: false,
       resizable: false,
       movable: false,

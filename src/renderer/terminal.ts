@@ -10,6 +10,8 @@ import { $ } from './core.ts'
 import { focusPane, paneMenu, reattach, reattachOnKey } from './screen.ts'
 import { paneDetailButton } from './detail.ts'
 import { startPaneDrag } from './pane-drag.ts'
+import { loadFind, openFind } from './pane-find.ts'
+import type { PaneFind } from './pane-find.ts'
 
 // 크기를 바꾸는 동안 옛 화면을 덮어 두는 틀(pane-layout.ts holdForRedraw)
 export type PaneHold = { still: HTMLElement; releasing?: boolean; start?: number; timer?: number }
@@ -24,6 +26,7 @@ export type PaneView = {
   headShellCount: HTMLSpanElement
   detailButton: HTMLElement
   body: HTMLDivElement
+  find: PaneFind
   shown: boolean
   sent: CellSize | null
   want?: CellSize
@@ -113,6 +116,14 @@ export function ensureView(paneId: string): PaneView {
   // keydown 에서만 보내고 keypress · keyup 의 같은 키도 막아 기본 신호가 새지 않게 한다
   term.attachCustomKeyEventHandler((event) => {
     if (event.isComposing && event.key === 'Meta') return false
+    // ⌘F — 이 pane 찾기 막대(pane-find.ts). 한글 자판이면 key 가 'ㄹ' 이라 자리(code)로 본다
+    if (isFindKey(event)) {
+      if (event.type === 'keydown') {
+        event.preventDefault()
+        openFind(paneId)
+      }
+      return false
+    }
     // 조합 중 Ctrl+X · Ctrl+S — 입력기가 조합을 확정하고 xterm 은 이 키를 버리니, 확정 글자 뒤에 신호를 보낸다(StudioPaneKeys.composingCtrlKey)
     const composingCtrl = event.isComposing ? StudioPaneKeys.composingCtrlKey(event) : null
     if (composingCtrl !== null) {
@@ -157,11 +168,13 @@ export function ensureView(paneId: string): PaneView {
     focusPane(paneId)
     if (text) views.get(paneId)?.term.paste(text)
   })
-  const view: PaneView = { term, fit, el, head, headLabel, headTokens, headShells, headShellCount, detailButton, body, shown: false, sent: null }
+  const view: PaneView = { term, fit, el, head, headLabel, headTokens, headShells, headShellCount, detailButton, body, find: loadFind({ term }), shown: false, sent: null }
   term.onWriteParsed(() => scheduleScreenAnchor(paneId, view))
   views.set(paneId, view)
   return view
 }
+
+export const isFindKey = (event: KeyboardEvent): boolean => event.code === 'KeyF' && event.metaKey && !event.shiftKey && !event.altKey && !event.ctrlKey
 
 // 칸 높이로 나누고 남는 몇 px 를 어디에 두나 — 화면이 차 있으면 위에 두고 글을 pane 아래에 붙인다(.pane-body.screen-bottom).
 // 셸 · Claude Code 처럼 마지막 줄(프롬프트 · 입력창)이 맨 아래에 있는 화면을 위에 붙여 두면, 위아래로 크기를 바꿀 때
