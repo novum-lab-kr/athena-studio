@@ -1,4 +1,13 @@
 {
+  "0.68": [
+    {
+      "tag": "new",
+      "en": "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap",
+      "ko": "암호화한 폰 푸시 알림에 보낸 pane 추가 — 폰 앱이 알림을 누르면 그 pane 을 열 수 있음",
+      "ja": "暗号化したスマホプッシュ通知に送信元ペインを追加 — スマホアプリが通知タップでそのペインを開ける",
+      "zh": "加密的手机推送通知新增发送窗格 — 手机应用可在点按通知时打开该窗格"
+    }
+  ],
   "0.67": [
     {
       "tag": "new",

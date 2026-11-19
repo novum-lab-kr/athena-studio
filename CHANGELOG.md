@@ -42,6 +42,11 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.61: v0.60.31..main 에서 사용자에게 보이는 변경 — pane 제목 옆 괄호 토큰(세션 누적 입출력 · 캐시). 범위 끝은 열어 둔다 -->
 
+## 0.68 (v0.68.0 – · Nov 20, 2026)
+
+### New
+- Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap
+
 ## 0.67 (v0.67.0 – · Nov 19, 2026)
 
 ### New

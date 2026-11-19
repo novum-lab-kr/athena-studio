@@ -8,6 +8,7 @@
 //   확인 요청을 알린 pane 이 곧 쉬어도(working → idle) 일 끝남을 또 보내지 않는다 · 그 pane 이 다시 일하기 시작하면 묶기가 풀린다 ·
 //   일 끝남 뒤의 확인 요청은 보낸다 · 같은 id 는 다시 보내지 않는다
 // 글(D1): 제목 '<에이전트> · 확인 요청|일 끝남' · 본문 = 요청 제목 / 일 끝남 · 입력 대기는 pane 이름표 — relay 고정 문구(풀기 실패 때 보임)와 같이 한국어
+// pane(사용자 요청 2026-11-20): 그 푸시를 낸 pane id — 확인 요청은 요청을 연 pane · 일 끝남 · 입력 대기는 그 pane. 암호 안에만 실어 폰이 알림을 누르면 그 pane 으로 간다(모르면 없음)
 // 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
 // 거른 것도 기억은 그대로 넘긴다(끄기가 풀려도 그 사이 것을 몰아 보내지 않는다 — 맥 알림과 같다)
 import crypto from 'node:crypto'
@@ -15,13 +16,14 @@ import { Notifier, agentName } from './tray-model.mts'
 import type { TrayPane } from './tray-model.mts'
 
 export type PushKind = 'request' | 'done'
-// 푸시 하나 — id 는 relay 중복 거르기 · 로그용(base64url 22자), title · body 는 암호화해 싣는 글
-export type PushEvent = { kind: PushKind; id: string; title: string; body: string }
+// 푸시 하나 — id 는 relay 중복 거르기 · 로그용(base64url 22자), title · body · pane 은 암호화해 싣는 것(pane 을 모르면 없음)
+export type PushEvent = { kind: PushKind; id: string; title: string; body: string; pane?: string }
 export const DONE_HOLD_MS = 60_000 // 같은 pane 끝남 묶기(아테나 정한 값 · 2026-11-19)
 export const ASK_HOLD_MS = 60_000 // 같은 pane 확인 요청 묶기 · 확인 요청 뒤 일 끝남 안 보내기(D3)
 export const SENT_KEEP_MS = 10 * 60_000 // 보낸 사건 id 를 기억하는 동안
 export const TITLE_MAX = 60 // 글자(코드포인트) — 계획서 5절
 export const BODY_MAX = 160
+export const PANE_MAX = 64 // pane id 글자(코드포인트) — 넘으면 싣지 않는다(enc 가 relay 상한을 넘지 않게)
 const ASK_TITLE = '확인 요청'
 const DONE_TITLE = '일 끝남'
 
@@ -54,6 +56,9 @@ const eventId = (...parts: (string | number)[]) => crypto.createHash('sha256').u
 // 에이전트 이름 — delegate 이름표 '🤖 에이전트 · 브랜치' 의 ' · ' 앞(이름표가 없으면 agent)
 const agentOf = (pane: TrayPane) => agentName(pane).split(' · ')[0] || agentName(pane)
 const titleOf = (pane: TrayPane | undefined, what: string) => clipText(pane ? `${agentOf(pane)} · ${what}` : what, TITLE_MAX)
+
+// 사건에 실을 pane 칸 — 모르거나 너무 길면 칸 자체를 뺀다
+const paneField = (pane: string | undefined): { pane?: string } => (pane && Array.from(pane).length <= PANE_MAX ? { pane } : {})
 
 type RequestLike = { id?: unknown; pane?: unknown }
 
@@ -94,7 +99,7 @@ export class PushWatch {
       }
       const shown = pane === undefined ? undefined : this.seen.get(pane)
       const body = clipText(notice.body, BODY_MAX) || (shown ? clipText(agentName(shown), BODY_MAX) : '')
-      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body }, now))
+      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body, ...paneField(pane) }, now))
     }
     return gate.muted || gate.active ? [] : found
   }
@@ -114,7 +119,7 @@ export class PushWatch {
       if (!id || gate.lookingAt(id) || this.memory.askedAt.has(id)) continue
       this.memory.askedAt.set(id, now)
       const pane = this.seen.get(id)
-      found.push(...this.take({ kind: 'request', id: eventId('waiting', id, now), title: titleOf(pane, ASK_TITLE), body: pane ? clipText(agentName(pane), BODY_MAX) : '' }, now))
+      found.push(...this.take({ kind: 'request', id: eventId('waiting', id, now), title: titleOf(pane, ASK_TITLE), body: pane ? clipText(agentName(pane), BODY_MAX) : '', ...paneField(id) }, now))
     }
     for (const id of seen) {
       const pane = this.seen.get(id) as TrayPane
@@ -129,7 +134,7 @@ export class PushWatch {
       this.memory.doneAt.set(id, now)
       // 방금 확인 요청을 알린 pane 이 쉬는 것은 같은 사건이다(D3)
       if (gate.lookingAt(id) || this.memory.askedAt.has(id)) continue
-      found.push(...this.take({ kind: 'done', id: eventId('done', id, now), title: titleOf(pane, DONE_TITLE), body: clipText(agentName(pane), BODY_MAX) }, now))
+      found.push(...this.take({ kind: 'done', id: eventId('done', id, now), title: titleOf(pane, DONE_TITLE), body: clipText(agentName(pane), BODY_MAX), ...paneField(id) }, now))
     }
     for (const id of [...this.status.keys()]) if (!seen.has(id)) this.status.delete(id)
     for (const id of [...this.seen.keys()]) if (!seen.has(id)) this.seen.delete(id)

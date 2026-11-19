@@ -36,6 +36,11 @@ const VECTOR = {
   plain: '{"t":"athena-studio-fe · 확인 요청","b":"배포 전에 relay 주소를 확인해 주세요 🚀","k":"request"}',
   enc: 'AUk-gvx0RkpZJogXYj0gU8XrjizEqYi0_uF57GsBDVMdoKGio6SlpqeoqaqrqTHf_BiTTbi7I4TGwPg6QFiUSMIqaUKrnHNo04GN1Es2aG5e3vb0TgDLE4030KXkXGBjWkJxmaXduj0ifIcUZymzG7RBGKydt4di9mkIOQDc3gT7NyLwb3JC-hOqAdR34TPRJCVsVg8ROIksc8cKpD0__FB2HjiO9a4f70A4W8Hn4zPV',
 }
+// pane 칸(p)이 든 벡터 — 열쇠 · nonce 는 위와 같고 평문만 다르다(시험용 고정 값이라 같은 nonce 를 또 쓴다 — 실제로는 매번 새로 뽑는다)
+const VECTOR_PANE = {
+  plain: '{"t":"athena-studio-fe · 일 끝남","b":"athena-studio-fe · feat/studio-push-pane","k":"done","p":"p1fl"}',
+  enc: 'AUk-gvx0RkpZJogXYj0gU8XrjizEqYi0_uF57GsBDVMdoKGio6SlpqeoqaqrqTHf_BiTTbi7I4TGwPg6QFiUSMIqaUKrnHNp16hBonKLb3ZiEGh7Dg7TU855mis6jaCfghf5UE4cS8gizFVYYDXygziOgF91NU3zpvHixMExB4cLoS4-p-yUXM8p9SV1PY47hj1iBFVVbokjZhUNiBF5Fyts_nrX981m4Q',
+}
 const hex = (text) => new Uint8Array(Buffer.from(text, 'hex'))
 
 test('교차 시험 벡터: 고정 열쇠 · 고정 nonce 로 봉인한 enc 가 정해 둔 값과 같고 폰 열쇠로 풀면 기대 평문', () => {
@@ -43,6 +48,15 @@ test('교차 시험 벡터: 고정 열쇠 · 고정 nonce 로 봉인한 enc 가 
   const enc = sealPush(hex(VECTOR.phonePublic), JSON.parse(VECTOR.plain), { ephemeralPrivate: hex(VECTOR.ephemeralPrivate), nonce: hex(VECTOR.nonce) })
   assert.equal(enc, VECTOR.enc)
   assert.equal(openPush(VECTOR.enc, hex(VECTOR.phonePrivate)), VECTOR.plain)
+})
+
+test('교차 시험 벡터(pane): p 가 있으면 평문 끝에 "p" 한 칸 · 없거나 비면 칸이 없다(앞 벡터와 같은 모양)', () => {
+  const fixed = { ephemeralPrivate: hex(VECTOR.ephemeralPrivate), nonce: hex(VECTOR.nonce) }
+  const enc = sealPush(hex(VECTOR.phonePublic), JSON.parse(VECTOR_PANE.plain), fixed)
+  assert.equal(enc, VECTOR_PANE.enc)
+  assert.equal(openPush(VECTOR_PANE.enc, hex(VECTOR.phonePrivate)), VECTOR_PANE.plain)
+  assert.equal(sealPush(hex(VECTOR.phonePublic), { ...JSON.parse(VECTOR.plain), p: '' }, fixed), VECTOR.enc)
+  assert.equal(sealPush(hex(VECTOR.phonePublic), { ...JSON.parse(VECTOR.plain), p: undefined }, fixed), VECTOR.enc)
 })
 
 test('봉인: 매번 새 일회 열쇠 · nonce — 같은 글도 enc 가 다르고 둘 다 풀린다 · base64url 글자만 · 상한 안', () => {
@@ -54,8 +68,8 @@ test('봉인: 매번 새 일회 열쇠 · nonce — 같은 글도 enc 가 다르
     assert.match(enc, /^[A-Za-z0-9_-]+$/)
     assert.deepEqual(JSON.parse(openPush(enc, hex(VECTOR.phonePrivate))), text)
   }
-  // 가장 긴 글(제목 60 · 본문 160 글자가 모두 4바이트 글자)도 relay 상한 안
-  const longest = sealPush(hex(VECTOR.phonePublic), { t: '🚀'.repeat(60), b: '🚀'.repeat(160), k: 'request' })
+  // 가장 긴 글(제목 60 · 본문 160 · pane 64 글자가 모두 4바이트 글자)도 relay 상한 안
+  const longest = sealPush(hex(VECTOR.phonePublic), { t: '🚀'.repeat(60), b: '🚀'.repeat(160), k: 'request', p: '🚀'.repeat(64) })
   assert.ok(longest && longest.length <= PUSH_ENC_MAX, `enc ${longest && longest.length}자`)
 })
 
