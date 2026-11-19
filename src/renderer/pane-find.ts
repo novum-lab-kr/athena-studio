@@ -86,16 +86,20 @@ function buildBar(paneId: string, view: PaneView): void {
     return showCount(find, -1, 0)
   })
   input.addEventListener('keydown', (event) => {
+    if (event.isComposing || event.key !== 'Enter') return
+    event.preventDefault()
+    search(find, event.shiftKey ? 'prev' : 'next')
+  })
+  // Esc · ⌘F 는 막대 전체에서 — 이전 · 다음 · 닫기 버튼을 눌러 포커스가 버튼에 있어도 닫히고 글자 칸으로 돌아간다
+  bar.addEventListener('keydown', (event) => {
     if (event.isComposing) return
-    if (event.key === 'Enter') {
-      event.preventDefault()
-      search(find, event.shiftKey ? 'prev' : 'next')
-    } else if (event.key === 'Escape') {
+    if (event.key === 'Escape') {
       event.preventDefault()
       event.stopPropagation()
       closeFind(paneId)
     } else if (isFindKey(event)) {
       event.preventDefault()
+      input.focus()
       input.select()
     }
   })
