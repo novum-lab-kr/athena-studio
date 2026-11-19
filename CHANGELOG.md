@@ -52,6 +52,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix idle CPU use from the menu bar panel animating while closed
 - Fix agent panes stopping at the folder trust prompt in a new repo's worktree
 - Fix server status running SSH on every phone refresh — one shared read every 3 minutes
+- Fix phone code change card missing hand merges and direct pushes — read from each repo's git history
 
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
 
