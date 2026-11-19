@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * PR 자동 리뷰 · 수정 · 머지 — 켠 레포(pack.json 레포 "autoMerge": true)의 레포 하나짜리 PR 을 LLM 리뷰어들이 보고,
- * 고칠 것은 작업 에이전트 pane 에 보내고, 합의가 되면 사람에게 한 번 물은 뒤(레포가 "autoMergeConfirm": false 면 묻지 않고) squash 머지한다(docs/pr-auto.md · 계획서 결정 D1~D5)
+ * 고칠 것은 작업 에이전트 pane 에 보내고, 합의가 되면 사람에게 한 번 물은 뒤(레포가 "autoMergeConfirm": false 면 묻지 않고) squash 머지한다 — PR 안에 merge 커밋이 있으면 merge 커밋으로(docs/pr-auto.md · 계획서 결정 D1~D5)
  *
  *   node scripts/pr-auto.mjs --plan <plans/…md> --pr <레포>#<번호> [--dry-run | --no-merge]
  *        한 번 돈다. --dry-run 은 리뷰어 답 · 만들 댓글 · 할 일만 보여 주고 아무것도 쓰거나 보내지 않는다(머지 · 댓글 · pane · 계획서 모두)
@@ -56,7 +56,7 @@ import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
-  DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, withDirectMergeLine,
+  DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
 } from './lib/pr-auto.mjs'
 
@@ -340,6 +340,17 @@ const headTree = (worktree, org, repo, sha) => {
   const remote = gh(['api', `repos/${org}/${repo}/commits/${sha}`, '--jq', '.commit.tree.sha'])
   return remote.ok && /^[0-9a-f]{40}$/.test(remote.out.trim()) ? remote.out.trim() : ''
 }
+// PR 머지 방식(merge · squash — lib prMergeMethod) — 검증한 워크트리(HEAD = PR HEAD)에서 origin/<base> 를 받아 <base>..<head> 전체 커밋의 부모 수로 정한다.
+// 못 정하면(워크트리 · HEAD 커밋이 없음 · base 를 못 받음) null — 부르는 쪽이 머지하지 않는다
+const mergeMethodOf = (worktree, base, sha) => {
+  if (!worktree || !existsSync(worktree) || !base) return null
+  if (git(worktree, ['cat-file', '-e', `${sha}^{commit}`]) === null) return null
+  if (git(worktree, ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`]) === null) return null
+  const listed = git(worktree, ['rev-list', '--parents', `refs/remotes/origin/${base}..${sha}`])
+  return listed === null ? null : prMergeMethod(listed)
+}
+// 결과 줄 · 요청 글의 방식 이름
+const mergeMethodLabel = (method) => (method === 'merge' ? 'merge 커밋' : 'squash')
 
 // PR 브랜치를 체크아웃한 워크트리 — 계획서 하나에 PR 이 여럿이면 Work ref 는 마지막 작업(다른 PR)의 워크트리를 가리킨다.
 // athena-studio#97(2026-10-28): Work ref 가 #99 의 워크트리(머지 뒤 지워짐)라 같은 HEAD 검증이 "워크트리 HEAD 가 PR HEAD 와 다름" 으로 멈추고,
@@ -927,7 +938,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   }
   const job = { plan: planFile, repo, number, sha, round, note, max, worktree: ref.worktree, base: pr.baseRefName, root: REAL_ROOT, packId: BOOT_PATHS.packId, ...(takeover ? { takeover: true, shortReviewed: sha } : {}), ...(reviewOff ? { reviewOff: true } : {}), ...(fast ? { fast: true } : {}) }
   if (skipsMergeConfirm(config, repo)) {
-    // 레포가 "autoMergeConfirm": false — 머지 확인 요청을 열지 않고, [머지] 를 고른 것과 같은 경로(다시 확인 → draft 풀기 → squash)로 바로.
+    // 레포가 "autoMergeConfirm": false — 머지 확인 요청을 열지 않고, [머지] 를 고른 것과 같은 경로(다시 확인 → draft 풀기 → squash · PR 안에 merge 커밋이 있으면 merge 커밋)로 바로.
     // 확인 대기와 같은 confirm/ 파일로 둔다 — GitHub 가 계산 중(UNKNOWN)이면 처리기가 30초마다 다시 본다(--kick 도 이 파일로 처리기를 띄운다)
     mkdirSync(CONFIRM_DIR, { recursive: true })
     writeFileSync(confirmFile(repo, number), JSON.stringify({ ...job, request: null, noConfirm: true }))
@@ -936,11 +947,14 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     await checkConfirms(confirmFile(repo, number))
     return
   }
+  // 요청 글의 방식 — 머지 직전에 워크트리의 <base>..<head> 로 다시 정한다(못 정하면 규칙만 적는다)
+  const method = mergeMethodOf(ref.worktree, pr.baseRefName, sha)
+  const methodText = method ? mergeMethodLabel(method) : 'squash(PR 안에 merge 커밋이 있으면 merge 커밋)'
   const request = ask(planFile, {
     key: `pr-auto-merge:${repo}#${number}`,
     title: `머지할까요? ${repo}#${number} → ${pr.baseRefName}`,
-    body: `${pr.title}\n${approvalReason} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 squash 머지한다(base ${pr.baseRefName}).`,
-    options: [{ label: '머지', desc: `squash 머지 → ${pr.baseRefName}`, recommended: true }, { label: '보류', desc: '머지하지 않는다 — 사람이 이어받는다' }],
+    body: `${pr.title}\n${approvalReason} 같은 HEAD @${sha.slice(0, 7)} 검증 통과 · 충돌 없음. 고르면 draft 를 풀고 ${methodText} 로 머지한다(base ${pr.baseRefName}).`,
+    options: [{ label: '머지', desc: `${methodText} 머지 → ${pr.baseRefName}`, recommended: true }, { label: '보류', desc: '머지하지 않는다 — 사람이 이어받는다' }],
   })
   if (!request) return
   mkdirSync(CONFIRM_DIR, { recursive: true })
@@ -1340,9 +1354,12 @@ export const checkConfirms = async (only = '') => {
     const baseChanged = Boolean(job.base) && pr.baseRefName !== job.base
     const stale = pr.state !== 'OPEN' || pr.headRefOid !== job.sha || settingChanged || baseChanged
     const staleLine = baseChanged ? `검증 대기 — 머지 전에 base 가 바뀜(${job.base} → ${pr.baseRefName})` : '검증 대기 — 머지 전에 설정이 바뀜(자동 머지 · 확인)'
-    const mergedResult = `머지됨 — squash → ${job.base}${unreviewedNote(job)}`
+    const mergedResultOf = (method) => `머지됨 — ${mergeMethodLabel(method)} → ${job.base}${unreviewedNote(job)}`
     // 머지까지 갔다가 결과를 적기 전에 끊겨 다시 보는 건 — 같은 HEAD 가 이미 머지됐으면 줄을 맞춘다(그대로 두면 "머지 확인 대기" 에 멈춘다)
     if (isSameHeadMerged(pr, job.sha) && (job.noConfirm || request.state === 'delivered')) {
+      // 방식은 머지 직전에 잡은 파일에 적어 둔 것 — 칸이 없는 파일은 이 판 전에 머지 단계로 간 것이라 늘 squash 였다
+      // (머지 뒤에는 head 가 base 에 들어 있어 <base>..<head> 로 다시 셀 수 없다)
+      const mergedResult = mergedResultOf(job.method || 'squash')
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: mergedResult })
       mergeEvent({ ok: true, ...(job.noConfirm ? { confirm: false } : {}) })
       startShadowVerify(job, config)
@@ -1409,6 +1426,20 @@ export const checkConfirms = async (only = '') => {
       await notifyResult(job, result)
       continue
     }
+    // PR 안에 merge 커밋이 있으면 --merge(squash 하면 그 merge 커밋이 base 기록에서 빠진다) — 검증한 워크트리에서 <base>..<head> 전체를 센다.
+    // 못 정하면 squash 로 넘어가지 않고 머지하지 않는다(검증 실패와 같은 처리 — 줄에 이유)
+    const method = mergeMethodOf(job.worktree, job.base || pr.baseRefName, job.sha)
+    if (!method) {
+      const result = '검증 대기 — 머지 직전 확인 실패(머지 방식을 정하지 못함 — 워크트리에서 base 를 받거나 커밋 목록을 읽지 못함)'
+      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
+      mergeEvent({ ok: false, reason: 'recheck' })
+      finish()
+      await notifyResult(job, result)
+      continue
+    }
+    const mergedResult = mergedResultOf(method)
+    // 머지 뒤 결과를 적기 전에 끊겨도 같은 방식 이름을 쓰게 잡은 파일에 적어 둔다
+    try { writeFileSync(`${current}.tmp`, JSON.stringify({ ...job, method })); renameSync(`${current}.tmp`, current) } catch { /* 옛 칸 없는 파일과 같이 squash 로 적힌다 */ }
     const target = ['--repo', `${org}/${job.repo}`]
     if (pr.isDraft) {
       const ready = gh(['pr', 'ready', String(job.number), ...target])
@@ -1422,7 +1453,7 @@ export const checkConfirms = async (only = '') => {
         continue
       }
     }
-    const merged = gh(['pr', 'merge', String(job.number), ...target, '--squash', '--match-head-commit', job.sha])
+    const merged = gh(['pr', 'merge', String(job.number), ...target, `--${method}`, '--match-head-commit', job.sha])
     // 실패해도 다시 본다 — 앞 처리기가 꺼질 때 남겨 둔 gh 가 먼저 머지했으면 실패가 아니다
     const landed = merged.ok || isSameHeadMerged(ghJson(['pr', 'view', String(job.number), ...target, '--json', 'state,headRefOid']), job.sha)
     const result = landed ? mergedResult : `검증 대기 — 머지 실패(${firstLine(merged.err)})`
