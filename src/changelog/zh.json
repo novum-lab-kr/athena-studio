@@ -241,5 +241,6 @@
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "修复手机滚动时画面更新缓慢 — 手机输入后立即更快地发送输出",
   "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕",
   "Fix agent panes stopping at folder trust prompts on start": "修复代理 pane 启动时停在文件夹确认提示",
-  "Fix the side browser covering terminals — panes now sit beside it and resize": "修复侧边浏览器遮挡终端的问题 — 终端并排停靠并重新调整大小"
+  "Fix the side browser covering terminals — panes now sit beside it and resize": "修复侧边浏览器遮挡终端的问题 — 终端并排停靠并重新调整大小",
+  "Add moving the side browser to its own window — tabs return to the side panel when it closes": "新增将侧边浏览器拆分为独立窗口 — 关闭后标签页回到侧边栏"
 }

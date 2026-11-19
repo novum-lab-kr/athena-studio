@@ -330,6 +330,8 @@
   "browser.stop": "中止",
   "browser.urlPlaceholder": "アドレス — localhost:3000・計画書リンク・https://…",
   "browser.external": "既定のブラウザで開く",
+  "browser.detach": "新しいウィンドウで開く",
+  "browser.attach": "サイドパネルに戻す",
   "sim.modeLabel": "表示切り替え",
   "sim.modeWeb": "Web",
   "sim.modeSim": "シミュレータ",

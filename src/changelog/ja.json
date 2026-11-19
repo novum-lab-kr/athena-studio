@@ -241,5 +241,6 @@
   "Fix slow phone screen updates while scrolling — faster output right after phone input": "スマホでのスクロール中の画面更新の遅さを修正 — スマホ入力の直後は出力をより速く送信",
   "Add a Simulator tab to the side browser — view and tap iOS · Android screens": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
   "Fix agent panes stopping at folder trust prompts on start": "エージェント pane が起動時にフォルダ確認画面で止まる問題を修正",
-  "Fix the side browser covering terminals — panes now sit beside it and resize": "サイドブラウザがターミナルを覆う問題を修正 — 横に並べてサイズを合わせ直す"
+  "Fix the side browser covering terminals — panes now sit beside it and resize": "サイドブラウザがターミナルを覆う問題を修正 — 横に並べてサイズを合わせ直す",
+  "Add moving the side browser to its own window — tabs return to the side panel when it closes": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る"
 }
