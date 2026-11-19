@@ -330,6 +330,8 @@
   "browser.stop": "停止",
   "browser.urlPlaceholder": "地址 — localhost:3000 · 计划书链接 · https://…",
   "browser.external": "在默认浏览器中打开",
+  "browser.detach": "在新窗口中打开",
+  "browser.attach": "放回侧边栏",
   "sim.modeLabel": "抽屉视图",
   "sim.modeWeb": "网页",
   "sim.modeSim": "模拟器",

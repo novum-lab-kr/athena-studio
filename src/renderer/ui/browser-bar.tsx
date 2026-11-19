@@ -9,8 +9,9 @@ import { ModeSwitch, SimBar, mode } from './sim-bar.tsx'
 // main 이 보내는 browser:state(src/main/side-browser.mts sendBrowserState)
 export type BrowserState = { url?: string; title?: string; canGoBack?: boolean; canGoForward?: boolean; loading?: boolean }
 
-// 바닐라가 넘긴다 — 서랍 닫기(Esc · ✕) · 페이지 자리 다시 알리기(알림 줄이 생기거나 없어지면 자리가 바뀐다)
-export type BrowserActions = { close: () => void; place: () => void }
+// 바닐라가 넘긴다 — 서랍 닫기(Esc · ✕) · 페이지 자리 다시 알리기(알림 줄이 생기거나 없어지면 자리가 바뀐다).
+// detached — 떼어 낸 창(browser-window.ts)의 막대: [웹 | 시뮬레이터] 전환 · ✕ 대신 [되돌리기]. 서랍 막대에는 [새 창으로]
+export type BrowserActions = { close: () => void; place: () => void; detached?: boolean }
 
 // main 이 보내는 browser:tabs(src/main/side-browser.mts sendTabs)
 export type BrowserTabView = { id: number; url: string; title: string; active: boolean }
@@ -88,7 +89,7 @@ function Bar() {
   const say = useSay()
   const { url: address, canGoBack, canGoForward, loading } = useStore(view)
   // [시뮬레이터] 탭이면 막대를 시뮬레이터 막대로(ui/sim-bar.tsx)
-  if (useStore(mode) === 'sim') {
+  if (useStore(mode) === 'sim' && !actions.detached) {
     return (
       <>
         <ModeSwitch />
@@ -98,7 +99,7 @@ function Bar() {
   }
   return (
     <>
-      <ModeSwitch />
+      {actions.detached ? null : <ModeSwitch />}
       <button id="browser-back" title={say('browser.back')} disabled={!canGoBack} onClick={() => studio.browserCommand('back')}>
         ◀
       </button>
@@ -128,9 +129,20 @@ function Bar() {
       <button id="browser-external" title={say('browser.external')} onClick={() => studio.browserCommand('external')}>
         ↗
       </button>
-      <button id="browser-close" title={say('common.close')} onClick={() => actions.close()}>
-        ✕
-      </button>
+      {actions.detached ? (
+        <button id="browser-attach" title={say('browser.attach')} aria-label={say('browser.attach')} onClick={() => studio.browserCommand('attach')}>
+          ◨
+        </button>
+      ) : (
+        <>
+          <button id="browser-detach" title={say('browser.detach')} aria-label={say('browser.detach')} onClick={() => studio.browserCommand('detach')}>
+            ⧉
+          </button>
+          <button id="browser-close" title={say('common.close')} onClick={() => actions.close()}>
+            ✕
+          </button>
+        </>
+      )}
     </>
   )
 }

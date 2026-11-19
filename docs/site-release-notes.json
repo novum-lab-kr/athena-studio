@@ -1,4 +1,13 @@
 {
+  "0.64": [
+    {
+      "tag": "new",
+      "en": "Add moving the side browser to its own window — tabs return to the side panel when it closes",
+      "ko": "옆 브라우저를 별도 창으로 떼어 내기 추가 — 창을 닫으면 탭이 옆 서랍으로 돌아옴",
+      "ja": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る",
+      "zh": "新增将侧边浏览器拆分为独立窗口 — 关闭后标签页回到侧边栏"
+    }
+  ],
   "0.63": [
     {
       "tag": "new",

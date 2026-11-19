@@ -56,6 +56,8 @@ function dockWork(docked: boolean): void {
   fitEdgeSizes() // 작업 창 폭이 바뀌면 양옆 칸이 쓸 수 있는 폭도 바뀐다
 }
 export let browserOpen = false
+// 탭들을 새 창으로 떼어 낸 동안(main browser:detached) — 서랍은 닫혀 있고 웹 버튼(⌘⇧B)은 그 창을 앞으로 가져온다
+let browserDetached = false
 let browserTimer: number | null = null
 let urlFocusTimer: number | null = null
 
@@ -129,6 +131,7 @@ function applyMode(): void {
 }
 
 function toggleBrowserPanel(): void {
+  if (browserDetached) return void studio.browserCommand('focus-detached')
   if (browserOpen) return closeBrowserPanel()
   openBrowserPanel()
   // 처음이면 주소창부터 — 다 나온 뒤에, 스크롤 없이(나오는 중에 포커스를 주면 뒤 화면이 밀린다).
@@ -243,6 +246,11 @@ export function initBrowser(): void {
   studio.onBrowserError(StudioUi.browser.showError)
   studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보내 남은 콘솔이 없을 때 · 마지막 탭을 닫았을 때(main 이 알린다)
   studio.onBrowserTabs(StudioUi.browser.applyTabs)
+  // 떼어 내면 서랍을 닫고 터미널이 원래 너비로(탭은 새 창으로 옮겨 감). 돌아올 때 서랍 열기는 main 이 browser:open 으로
+  studio.onBrowserDetached((detached) => {
+    browserDetached = detached
+    if (detached && browserOpen) closeBrowserPanel()
+  })
   // 창 크기가 바뀌면 서랍(너비 46%)도 바뀐다 — 다 나와 있을 때만 다시 붙인다
   new ResizeObserver(() => placeBrowserView()).observe($('browser-slot'))
 }

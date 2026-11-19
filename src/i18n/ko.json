@@ -330,6 +330,8 @@
   "browser.stop": "멈추기",
   "browser.urlPlaceholder": "주소 — localhost:3000 · 계획서 링크 · https://…",
   "browser.external": "기본 브라우저로 열기",
+  "browser.detach": "새 창으로",
+  "browser.attach": "되돌리기",
   "sim.modeLabel": "서랍 보기",
   "sim.modeWeb": "웹",
   "sim.modeSim": "시뮬레이터",

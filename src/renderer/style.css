@@ -899,6 +899,8 @@ main.browser-docked .browser-space { display: block; }
 /* 올려도 색은 안 바뀐다(커서만) — 끄는 중에만 표시 */
 .browser.resizing .browser-resize { background: var(--accent); opacity: 0.6; }
 .browser[hidden] { display: none; }
+/* 떼어 낸 옆 브라우저 창(browser-window.html) — 창 전체를 채운다 · 스르륵 · 너비 끌기 없음 */
+.browser.detached { position: absolute; inset: 0; width: auto; border-left: 0; transform: none; transition: none; }
 .browser-bar { display: flex; flex: none; align-items: center; gap: 4px; height: 36px; padding: 0 6px; border-bottom: 1px solid var(--line); }
 .browser.loading .browser-bar { box-shadow: inset 0 -2px 0 var(--accent); }
 .browser-bar button {

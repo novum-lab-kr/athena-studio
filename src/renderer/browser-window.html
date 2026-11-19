@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Athena</title>
+  <!-- 떼어 낸 옆 브라우저 창 — 진입점 하나(browser-window-entry.ts)로 Vite 가 묶는다 -->
+  <script type="module" src="browser-window-entry.ts"></script>
+</head>
+<body>
+  <!-- 막대 · 탭 줄 · 알림 줄은 React(ui/browser-bar.tsx) · 페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
+  <div id="browser" class="browser open detached">
+    <div class="browser-bar"></div>
+    <div id="browser-tabs" class="browser-tabs" hidden></div>
+    <div id="browser-error" class="browser-error" hidden></div>
+    <div id="browser-slot" class="browser-slot"></div>
+  </div>
+</body>
+</html>
