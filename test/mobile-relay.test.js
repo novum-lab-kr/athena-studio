@@ -738,7 +738,7 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
   const options = { url: 'ws://127.0.0.1:1/ws', dir, WebSocketImpl: FakeRelaySocket, heartbeatMs: 60_000, backoffMs: [60_000], createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) }
   const relay = createMobileRelay({ ...options, log: (line) => lines.push(line) })
   const asked = { kind: 'request', id: 'evt-request-0000000001', title: 'athena-studio-fe · 확인 요청', body: '배포해도 될까요? 비밀-본문' }
-  const done = { kind: 'done', id: 'evt-done-00000000000001', title: 'athena-studio-fe · 일 끝남', body: 'athena-studio-fe · feat/x' }
+  const done = { kind: 'done', id: 'evt-done-00000000000001', title: 'athena-studio-fe · 일 끝남', body: 'athena-studio-fe · feat/x', pane: 'p7' }
   let again = null
   try {
     // relay 에 안 붙었으면 보내지 않는다(쌓아 두지도 않는다)
@@ -773,7 +773,7 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     assert.deepEqual(Object.keys(toA).sort(), ['enc', 'id', 'kind', 'to'])
     assert.deepEqual([toA.to, toA.kind, toA.id], ['phone-a', 'done', done.id])
     assert.match(toA.enc, /^[A-Za-z0-9_-]{1,2048}$/)
-    assert.deepEqual(openEnc(toA.enc), { t: done.title, b: done.body, k: 'done' })
+    assert.deepEqual(openEnc(toA.enc), { t: done.title, b: done.body, k: 'done', p: 'p7' })
     assert.ok(lines.includes(`[mobile-relay] 푸시 보냄 peer=phone-a kind=done id=${done.id} enc`))
     // 로그에 토큰 · 알림 글 · enc · 푸시 열쇠가 없다
     await relay.push(asked)
@@ -790,7 +790,7 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     await again.push(done)
     const later = sockets[sockets.length - 1].sent.filter((message) => message.op === 'push.send').map((message) => message.args)
     assert.deepEqual(later.map((args) => [args.to, typeof args.enc]), [['phone-a', 'string'], ['phone-b', 'undefined'], ['phone-c', 'undefined']])
-    assert.deepEqual(openEnc(later[0].enc), { t: done.title, b: done.body, k: 'done' })
+    assert.deepEqual(openEnc(later[0].enc), { t: done.title, b: done.body, k: 'done', p: 'p7' })
   } finally {
     await relay.stop()
     if (again) await again.stop()

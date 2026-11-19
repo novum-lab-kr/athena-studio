@@ -264,5 +264,6 @@
   "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "スマホのコード変更量カードで dev マージの二重計上を修正 — 基準ブランチ外の PR を除外",
   "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "エージェントのターミナルリンクが警告だけで開かない問題を修正 — ブラウザで開く",
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "スマホプッシュ通知にエージェント名 · リクエストのタイトルを追加 — 暗号化して送り、iPhone でのみ読める",
-  "Fix repeated phone push alerts for one request — none while the Studio window is in front": "1 つのリクエストでスマホプッシュ通知が何度も届く問題を修正 — Studio ウィンドウが前面なら送らない"
+  "Fix repeated phone push alerts for one request — none while the Studio window is in front": "1 つのリクエストでスマホプッシュ通知が何度も届く問題を修正 — Studio ウィンドウが前面なら送らない",
+  "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "暗号化したスマホプッシュ通知に送信元ペインを追加 — スマホアプリが通知タップでそのペインを開ける"
 }
