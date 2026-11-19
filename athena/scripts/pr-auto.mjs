@@ -340,10 +340,14 @@ const headTree = (worktree, org, repo, sha) => {
   const remote = gh(['api', `repos/${org}/${repo}/commits/${sha}`, '--jq', '.commit.tree.sha'])
   return remote.ok && /^[0-9a-f]{40}$/.test(remote.out.trim()) ? remote.out.trim() : ''
 }
-// PR 머지 방식(merge · squash — lib prMergeMethod) · PR 커밋 목록을 못 읽으면 null(부르는 쪽이 다음 확인에 다시 본다)
-const mergeMethodOf = (org, repo, number) => {
-  const listed = gh(['api', '--paginate', `repos/${org}/${repo}/pulls/${number}/commits`, '--jq', '.[] | .parents | length'])
-  return listed.ok ? prMergeMethod(listed.out) : null
+// PR 머지 방식(merge · squash — lib prMergeMethod) — 검증한 워크트리(HEAD = PR HEAD)에서 origin/<base> 를 받아 <base>..<head> 전체 커밋의 부모 수로 정한다.
+// 못 정하면(워크트리 · HEAD 커밋이 없음 · base 를 못 받음) null — 부르는 쪽이 머지하지 않는다
+const mergeMethodOf = (worktree, base, sha) => {
+  if (!worktree || !existsSync(worktree) || !base) return null
+  if (git(worktree, ['cat-file', '-e', `${sha}^{commit}`]) === null) return null
+  if (git(worktree, ['fetch', '--quiet', 'origin', `+refs/heads/${base}:refs/remotes/origin/${base}`]) === null) return null
+  const listed = git(worktree, ['rev-list', '--parents', `refs/remotes/origin/${base}..${sha}`])
+  return listed === null ? null : prMergeMethod(listed)
 }
 // 결과 줄 · 요청 글의 방식 이름
 const mergeMethodLabel = (method) => (method === 'merge' ? 'merge 커밋' : 'squash')
@@ -943,8 +947,8 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
     await checkConfirms(confirmFile(repo, number))
     return
   }
-  // 요청 글의 방식 — 머지 직전에 PR 커밋 목록으로 다시 정한다(못 읽으면 규칙만 적는다)
-  const method = mergeMethodOf(org, repo, number)
+  // 요청 글의 방식 — 머지 직전에 워크트리의 <base>..<head> 로 다시 정한다(못 정하면 규칙만 적는다)
+  const method = mergeMethodOf(ref.worktree, pr.baseRefName, sha)
   const methodText = method ? mergeMethodLabel(method) : 'squash(PR 안에 merge 커밋이 있으면 merge 커밋)'
   const request = ask(planFile, {
     key: `pr-auto-merge:${repo}#${number}`,
@@ -1353,10 +1357,9 @@ export const checkConfirms = async (only = '') => {
     const mergedResultOf = (method) => `머지됨 — ${mergeMethodLabel(method)} → ${job.base}${unreviewedNote(job)}`
     // 머지까지 갔다가 결과를 적기 전에 끊겨 다시 보는 건 — 같은 HEAD 가 이미 머지됐으면 줄을 맞춘다(그대로 두면 "머지 확인 대기" 에 멈춘다)
     if (isSameHeadMerged(pr, job.sha) && (job.noConfirm || request.state === 'delivered')) {
-      // 방식은 머지 직전에 잡은 파일에 적어 둔 것 — 옛 파일이면 PR 커밋 목록으로 다시 본다(못 읽으면 다음 확인에)
-      const method = job.method || mergeMethodOf(org, job.repo, job.number)
-      if (!method) { release(); console.log(`  … ${job.repo}#${job.number} — PR 커밋 목록을 읽지 못해 머지 방식을 모름 · 다음 확인에 다시`); continue }
-      const mergedResult = mergedResultOf(method)
+      // 방식은 머지 직전에 잡은 파일에 적어 둔 것 — 칸이 없는 파일은 이 판 전에 머지 단계로 간 것이라 늘 squash 였다
+      // (머지 뒤에는 head 가 base 에 들어 있어 <base>..<head> 로 다시 셀 수 없다)
+      const mergedResult = mergedResultOf(job.method || 'squash')
       if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result: mergedResult })
       mergeEvent({ ok: true, ...(job.noConfirm ? { confirm: false } : {}) })
       startShadowVerify(job, config)
@@ -1413,12 +1416,6 @@ export const checkConfirms = async (only = '') => {
     // GitHub 가 아직 계산 중(UNKNOWN)이면 답을 받은 채로 두고 다음 확인(30초 뒤)에 다시 본다 — 여기서 닫으면 같은 HEAD 는 다시 돌 길이 없다
     pr.mergeable = await settledMergeable(org, job.repo, job.number, pr.mergeable)
     if (pr.mergeable === 'UNKNOWN') { release(); console.log(`  … ${job.repo}#${job.number} — GitHub 가 머지 가능 여부를 계산 중 · 다음 확인에 다시`); continue }
-    // PR 안에 merge 커밋이 있으면 --merge(squash 하면 그 merge 커밋이 base 기록에서 빠진다) · 커밋 목록을 못 읽으면 답을 받은 채로 다음 확인에
-    const method = mergeMethodOf(org, job.repo, job.number)
-    if (!method) { release(); console.log(`  … ${job.repo}#${job.number} — PR 커밋 목록을 읽지 못해 머지 방식을 모름 · 다음 확인에 다시`); continue }
-    const mergedResult = mergedResultOf(method)
-    // 머지 뒤 결과를 적기 전에 끊겨도 같은 방식 이름을 쓰게 잡은 파일에 적어 둔다
-    try { writeFileSync(`${current}.tmp`, JSON.stringify({ ...job, method })); renameSync(`${current}.tmp`, current) } catch { /* 줄을 맞출 때 커밋 목록을 다시 본다 */ }
     settle()
     const verify = pendingDecisions(job.plan, job.repo, job.number) ? { ok: false, why: '안 정한 결정' } : await readyToMerge(job.repo, job.worktree, job.sha, pr.title)
     if (pr.mergeable !== 'MERGEABLE' || !verify.ok) {
@@ -1429,6 +1426,20 @@ export const checkConfirms = async (only = '') => {
       await notifyResult(job, result)
       continue
     }
+    // PR 안에 merge 커밋이 있으면 --merge(squash 하면 그 merge 커밋이 base 기록에서 빠진다) — 검증한 워크트리에서 <base>..<head> 전체를 센다.
+    // 못 정하면 squash 로 넘어가지 않고 머지하지 않는다(검증 실패와 같은 처리 — 줄에 이유)
+    const method = mergeMethodOf(job.worktree, job.base || pr.baseRefName, job.sha)
+    if (!method) {
+      const result = '검증 대기 — 머지 직전 확인 실패(머지 방식을 정하지 못함 — 워크트리에서 base 를 받거나 커밋 목록을 읽지 못함)'
+      if (existsSync(planPath)) writeAutoLine(planPath, { ...line, result })
+      mergeEvent({ ok: false, reason: 'recheck' })
+      finish()
+      await notifyResult(job, result)
+      continue
+    }
+    const mergedResult = mergedResultOf(method)
+    // 머지 뒤 결과를 적기 전에 끊겨도 같은 방식 이름을 쓰게 잡은 파일에 적어 둔다
+    try { writeFileSync(`${current}.tmp`, JSON.stringify({ ...job, method })); renameSync(`${current}.tmp`, current) } catch { /* 옛 칸 없는 파일과 같이 squash 로 적힌다 */ }
     const target = ['--repo', `${org}/${job.repo}`]
     if (pr.isDraft) {
       const ready = gh(['pr', 'ready', String(job.number), ...target])

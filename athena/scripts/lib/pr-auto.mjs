@@ -1055,8 +1055,9 @@ export const directMergeStatus = (planText) => {
 export const prDoneHeldByDirect = (planText) => directMergeStatus(planText).state === 'wait'
 // PR 머지 방식 — PR 안에 merge 커밋(부모 2개 이상)이 하나라도 있으면 merge 커밋으로, 없으면 squash.
 // squash 하면 PR 의 merge 커밋이 base 기록에서 빠져 다음 합치기 때 같은 충돌이 다시 난다(athena-studio#324 — dev 에 main 붓기가 squash 로 들어감).
-// parentCounts = PR 커밋마다 부모 수 한 줄씩(GitHub PR commits API 의 parents 길이)
-export const prMergeMethod = (parentCounts) => String(parentCounts ?? '').split('\n').some((count) => Number(count) > 1) ? 'merge' : 'squash'
+// revList = `git rev-list --parents <base>..<head>` 출력(줄마다 "커밋 부모…" — 칸이 3개 이상이면 merge 커밋).
+// GitHub PR commits API 는 250개까지만 주어 그 뒤 merge 커밋을 놓친다 — 로컬 git 으로 전체를 본다
+export const prMergeMethod = (revList) => String(revList ?? '').split('\n').some((row) => row.trim().split(/\s+/).length > 2) ? 'merge' : 'squash'
 
 // 바로 머지 커밋 글 — squash 한 줄 제목(계획서 제목)과 브랜치
 export const directMergeMessage = ({ title, branch, base }) => `${oneLine(title || branch, 120)}\n\n${branch} → ${base} 바로 머지(PR 없음 · squash)`

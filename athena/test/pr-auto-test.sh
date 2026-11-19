@@ -147,7 +147,7 @@ const edited = withAutoLine(twice, { repo: 'web', number: '7', sha: '1234567', r
 check('본문 고침이면 같은 HEAD 도 다시 봄 · 라운드 하나 올림', needsReview(edited, 'web', '7', '1234567abcdef') && nextRound(autoLines(edited).get('web#7'), '1234567abcdef') === 3)
 check('라운드 — 새 HEAD 면 +1 · 같은 HEAD 면 그대로 · 처음이면 1', nextRound(autoLines(twice).get('web#7'), 'ffff000') === 3 && nextRound(autoLines(twice).get('web#7'), '1234567abc') === 2 && nextRound(undefined, 'abc') === 1)
 const notice = mergeNotice({ agent: 'web-fe', repo: 'web', number: '7', sha: '1234567abc', result: '머지됨 — squash → dev' })
-check('머지 방식 — 부모 2개 커밋이 있으면 merge · 없거나 빈 답이면 squash', prMergeMethod('1\n2\n1\n') === 'merge' && prMergeMethod('1\n1\n') === 'squash' && prMergeMethod('') === 'squash' && prMergeMethod('3') === 'merge')
+check('머지 방식 — rev-list --parents 줄에 부모 2개 커밋이 있으면 merge · 없거나 빈 답이면 squash', prMergeMethod('a p1\nm p1 p2\nb p3\n') === 'merge' && prMergeMethod('a p1\nb p2\n') === 'squash' && prMergeMethod('') === 'squash' && prMergeMethod('o p1 p2 p3') === 'merge')
 check('머지 결과 알림 — [자동 리뷰 → 에이전트] · PR · 결과 · 할 일 없음', notice.startsWith('[자동 리뷰 → web-fe] PR web#7 @1234567 — 머지됨 — squash → dev') && notice.includes('할 일은 없다'), notice)
 const ref = workRefOf(plan)
 check('Work ref 에서 워크트리 · 브랜치 · pane · 에이전트', ref.worktree === '/tmp/wt/web-x' && ref.branch === 'feat/x' && ref.pane === 'p3' && ref.agent === 'web-fe', JSON.stringify(ref))
@@ -623,7 +623,6 @@ case "$1 $2" in
   "pr view") printf '{"state":"OPEN","isDraft":false,"headRefOid":"%s","headRefName":"feat/x","mergeable":"%s","baseRefName":"dev"}\n' "$FAKE_HEAD" "${FAKE_MERGEABLE:-MERGEABLE}" ;;
   "pr diff") [ -n "${FAKE_DIFF:-}" ] && cat "$FAKE_DIFF" || exit 1 ;;
   "pr edit"|"pr merge"|"pr ready") ;;
-  "api --paginate") echo 1 ;;   # PR 커밋 목록 — 부모 하나뿐(squash)
   *) exit 1 ;;
 esac
 SH
@@ -880,9 +879,31 @@ chmod +x "$CORE/scripts/screen"
 # FAKE_VERIFY_KILL — 검증 도중 부른 쪽(node)을 죽인다(머지 직전 확인 중에 처리기가 꺼진 경우)
 # FAKE_VERIFY_LOG — 검증 시작 · 끝을 적는다(리뷰 ‖ 검증 순서 · 멈춤 확인) · FAKE_VERIFY_SLEEP — 검증이 그만큼 걸리는 것처럼
 printf '#!/bin/sh\n[ -n "$FAKE_VERIFY_KILL" ] && kill -9 $PPID && sleep 1\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-start >> "$FAKE_VERIFY_LOG"\n[ -n "$FAKE_VERIFY_SLEEP" ] && sleep "$FAKE_VERIFY_SLEEP"\n[ -n "$FAKE_VERIFY_LOG" ] && echo verify-end >> "$FAKE_VERIFY_LOG"\n[ -z "$FAKE_VERIFY_FAIL" ]\n' > "$CORE/scripts/verify/reuse.sh"; chmod +x "$CORE/scripts/verify/reuse.sh"
-WT="$TMP/wt-confirm"; mkdir -p "$WT"
-git -C "$WT" init -q && git -C "$WT" -c user.name=t -c user.email=t@t commit -q --allow-empty -m init
+# 워크트리 — origin(bare) 의 main 위에 커밋 하나(부모 하나 · squash). 머지 방식은 워크트리에서 origin/main..HEAD 의 부모 수로 정한다
+G init -q --bare "$TMP/origin-confirm.git"
+G clone -q "$TMP/origin-confirm.git" "$TMP/wt-confirm" 2>/dev/null
+WT="$(cd "$TMP/wt-confirm" && pwd -P)"
+G -C "$WT" commit -q --allow-empty -m init && G -C "$WT" push -q origin HEAD:main 2>/dev/null
+G -C "$WT" checkout -q -b feat/x && G -C "$WT" commit -q --allow-empty -m x
 SHA="$(git -C "$WT" rev-parse HEAD)"
+# merge 커밋이 든 PR — 갈래 하나를 merge 커밋으로 합친 뒤 일반 커밋 하나(merge 커밋이 맨 끝이 아니어도 잡는지)
+G clone -q "$TMP/origin-confirm.git" "$TMP/wt-merge" 2>/dev/null
+WT_MERGE="$(cd "$TMP/wt-merge" && pwd -P)"
+G -C "$WT_MERGE" checkout -q -b side && G -C "$WT_MERGE" commit -q --allow-empty -m side
+G -C "$WT_MERGE" checkout -q -b feat/m main && G -C "$WT_MERGE" commit -q --allow-empty -m a
+G -C "$WT_MERGE" merge -q --no-ff -m merge side && G -C "$WT_MERGE" commit -q --allow-empty -m b
+SHA_MERGE="$(git -C "$WT_MERGE" rev-parse HEAD)"
+# 위험한 수정 PR 워크트리 — 보안 판정은 워크트리의 origin/main...HEAD 를 먼저 읽는다(gh pr diff 는 못 읽을 때만)
+G clone -q "$TMP/origin-confirm.git" "$TMP/wt-risky" 2>/dev/null
+WT_RISKY="$(cd "$TMP/wt-risky" && pwd -P)"
+G -C "$WT_RISKY" checkout -q -b feat/x && printf 'export const run = (args) => spawnSync("git", args)\n' > "$WT_RISKY/run.mjs"
+G -C "$WT_RISKY" add run.mjs && G -C "$WT_RISKY" commit -q -m risky
+SHA_RISKY="$(git -C "$WT_RISKY" rev-parse HEAD)"
+# base 를 못 받는 워크트리 — origin 이 없는 자리(HEAD 는 그대로라 검증 · 워크트리 확인은 통과)
+G clone -q "$TMP/origin-confirm.git" "$TMP/wt-nofetch" 2>/dev/null
+WT_NOFETCH="$(cd "$TMP/wt-nofetch" && pwd -P)"
+G -C "$WT_NOFETCH" fetch -q "$WT" feat/x && G -C "$WT_NOFETCH" checkout -q -b feat/x FETCH_HEAD
+G -C "$WT_NOFETCH" remote set-url origin "$TMP/없는-origin.git"
 GH_LOG="$TMP/gh.log"
 cat > "$BIN/gh" <<'SH'
 #!/bin/sh
@@ -898,8 +919,6 @@ case "$1 $2" in
   "pr view") state="${FAKE_PR_STATE:-OPEN}"; [ -f "$GH_LOG.landed" ] && state=MERGED; printf '{"state":"%s","isDraft":true,"headRefOid":"%s","headRefName":"feat/x","baseRefName":"main","mergeable":"MERGEABLE","title":"t","body":""}\n' "$state" "$head" ;;
   "pr diff") if [ -n "${FAKE_PR_DIFF:-}" ]; then cat "$FAKE_PR_DIFF"; else echo "diff --git a/a.js b/a.js"; fi ;;
   "pr merge") [ -n "$FAKE_MERGE_LANDED" ] && : > "$GH_LOG.landed" && exit 1 ;;
-  # PR 커밋 목록(부모 수 한 줄씩) — FAKE_PARENTS(예 '1\n2' — 부모 2 = merge 커밋) · FAKE_COMMITS_FAIL 이면 못 읽음
-  "api --paginate") [ -n "$FAKE_COMMITS_FAIL" ] && exit 1; printf '%b\n' "${FAKE_PARENTS:-1}" ;;
 esac
 exit 0
 SH
@@ -1000,13 +1019,11 @@ for CHANGED_SETTING in '"autoMerge": false' '"autoMerge": true, "autoMergeManual
 done
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
 # PR 안에 merge 커밋(부모 2개)이 있으면 --merge — squash 하면 그 merge 커밋이 base 기록에서 빠져 다음 합치기에 같은 충돌(athena-studio#324)
-WANT_METHOD=merge merge_case "PR 안에 merge 커밋 → --merge 로 머지 · 줄에 merge 커밋" ', "autoMergeConfirm": false' yes '머지됨 — merge 커밋 → main' FAKE_PARENTS='1\n2\n1'
-grep -q "^api --paginate repos/acme/web/pulls/7/commits" "$GH_LOG" && ! grep -q -e "--squash" "$GH_LOG" \
-  && echo "  ✔ merge 커밋 PR — 커밋 목록을 읽고 squash 를 부르지 않음" || { echo "  ✖ merge 커밋 PR — gh 호출"; sed 's/^/      /' "$GH_LOG"; FAIL=1; }
-# 커밋 목록을 못 읽으면 머지하지 않고 파일을 되돌려 다음 확인에 다시(답은 받은 채로)
-merge_case "PR 커밋 목록을 못 읽음 → 머지 안 함 · 다음 확인에" ', "autoMergeConfirm": false' no '바로 머지\(확인 없음\)' FAKE_COMMITS_FAIL=1
-[ -f "$TMP/queue-confirm/confirm/web-7.json" ] && grep -q '머지 방식을 모름' "$TMP/merge.out" \
-  && echo "  ✔ 못 읽음 — 대기 파일이 남아 다음 확인에 다시" || { echo "  ✖ 못 읽음 — 대기 파일 · 출력"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
+WANT_METHOD=merge WT="$WT_MERGE" SHA="$SHA_MERGE" merge_case "PR 안에 merge 커밋(끝이 아님) → --merge 로 머지 · 줄에 merge 커밋" ', "autoMergeConfirm": false' yes '머지됨 — merge 커밋 → main'
+! grep -q -e "--squash" "$GH_LOG" && ! grep -q "^api " "$GH_LOG" \
+  && echo "  ✔ merge 커밋 PR — squash 를 부르지 않고 GitHub 커밋 목록(250개 상한)에 기대지 않음" || { echo "  ✖ merge 커밋 PR — gh 호출"; sed 's/^/      /' "$GH_LOG"; FAIL=1; }
+# base 를 못 받으면(전체 커밋을 못 셈) squash 로 넘어가지 않고 머지하지 않는다
+WT="$WT_NOFETCH" merge_case "base 를 못 받음 → 머지 안 함 · 줄에 이유" ', "autoMergeConfirm": false' no '머지 방식을 정하지 못함'
 # 보안 검토 문(PR 머지) — 위험한 수정 PR 이면 리뷰어와 함께 security-reviewer 를 띄우고, 이 HEAD 결과가 없으면 머지하지 않는다
 printf 'diff --git a/run.mjs b/run.mjs\n--- a/run.mjs\n+++ b/run.mjs\n@@ -0,0 +1 @@\n+export const run = (args) => spawnSync("git", args)\n' > "$TMP/risky.diff"
 cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.real"
@@ -1021,9 +1038,9 @@ printf -- '- Security review: /w · 📦 web · 🌿 feat/x · pane p8 (security
 exit 0
 SH
 chmod +x "$CORE/scripts/delegate.sh"; cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.fake"; PDLOG="$TMP/pr-delegate.log"
-: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 결과 없음 → 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+: > "$PDLOG"; FAKE_PANES='{"id":"p8"}' WT="$WT_RISKY" SHA="$SHA_RISKY" merge_case "보안 — 위험한 수정 PR · 결과 없음 → 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중 — 위험한 수정\(명령 실행\)' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
 [ "$(grep -c '^delegate security-reviewer --cwd .* --here --plan plans/task/x.md' "$PDLOG")" = 1 ] && echo "  ✔ 위험한 수정 PR — security-reviewer 를 한 번 띄웠다" || { echo "  ✖ PR 보안 띄우기 — $(cat "$PDLOG")"; FAIL=1; }
-: > "$PDLOG"; merge_case "보안 — 위험한 수정 PR · 이 HEAD 결과 높음 0 → 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" FAKE_SECURITY=clean ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+: > "$PDLOG"; WT="$WT_RISKY" SHA="$SHA_RISKY" merge_case "보안 — 위험한 수정 PR · 이 HEAD 결과 높음 0 → 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_SELF_PANE=p0 FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" FAKE_SECURITY=clean ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
 : > "$PDLOG"; merge_case "보안 — 위험하지 않은 PR → 띄우지 않고 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main' FAKE_DELEGATE_LOG="$PDLOG"
 [ ! -s "$PDLOG" ] && echo "  ✔ 위험하지 않은 PR — security-reviewer 안 띄움" || { echo "  ✖ 위험하지 않은데 띄움 — $(cat "$PDLOG")"; FAIL=1; }
 cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
@@ -1035,11 +1052,12 @@ cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.real"
 cp "$TMP/delegate.sh.fake" "$CORE/scripts/delegate.sh"
 # 화면 pane 밖(현황판의 pr-auto)에서도 띄운다 — 계획서 Lead pane 옆(delegate.sh --beside · 2026-11-12 PR #293 — "Athena Studio 밖입니다" 로 못 띄워 머지가 멈췄다)
 : > "$PDLOG"; EXTRA_PLAN="- Lead pane: p91
-" merge_case "보안 — pane 밖 · Lead pane 있음 → 그 옆에 띄우고 기다림" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
+" WT="$WT_RISKY" SHA="$SHA_RISKY" merge_case "보안 — pane 밖 · Lead pane 있음 → 그 옆에 띄우고 기다림" ', "autoMergeConfirm": false' no '보안 검토 기다리는 중' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG" ATHENA_DIRECT_REVIEW_POLL_MS=100 ATHENA_DIRECT_REVIEW_TIMEOUT_MS=1500
 grep -q '^delegate security-reviewer --cwd .* --beside p91 --plan plans/task/x.md' "$PDLOG" && echo "  ✔ pane 밖 — Lead pane(p91) 옆에 security-reviewer 를 띄웠다(--beside)" || { echo "  ✖ pane 밖 띄우기 — $(cat "$PDLOG")"; FAIL=1; }
-: > "$PDLOG"; merge_case "보안 — pane 밖 · Lead pane 없음 → 못 띄움 · 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 못 함 — security-reviewer 를 띄울 자리가 없음' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+: > "$PDLOG"; WT="$WT_RISKY" SHA="$SHA_RISKY" merge_case "보안 — pane 밖 · Lead pane 없음 → 못 띄움 · 머지 안 함" ', "autoMergeConfirm": false' no '보안 검토 못 함 — security-reviewer 를 띄울 자리가 없음' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
 [ ! -s "$PDLOG" ] && { grep -q '보안 검토 못 띄움' "$TMP/merge.out" || grep -rq '보안 검토 못 띄움' "$CORE/.requests" 2>/dev/null; } && echo "  ✔ 못 띄우면 아테나에 알린다(손으로 띄우면 이어서 머지)" || { echo "  ✖ 못 띄움 알림 — $(cat "$PDLOG")"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 보안 검토로 멈춘 같은 HEAD 에 결과(높음 0)가 그 뒤 남으면 — 리뷰를 다시 하지 않고 같은 라운드에서 머지(줄을 지우면 라운드 1 부터 다시 리뷰했다)
+WT_KEEP="$WT" SHA_KEEP="$SHA"; WT="$WT_RISKY" SHA="$SHA_RISKY"   # 아래 멈춘 HEAD 묶음은 위험한 수정 워크트리로
 STOP_LINE="- Auto review: web#7 @${SHA:0:7} · 보안 검토 때문에 멈춤 — 승인 1/1이지만 보안 검토 못 함 — x · 라운드 1/3 · $(date '+%Y-%m-%d') 00:00"
 : > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 0 · 중간 1 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 가짜
 " merge_case "보안 — 멈춘 HEAD 에 결과 높음 0 → 리뷰 없이 같은 라운드에서 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main.*라운드 1/3' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
@@ -1051,6 +1069,7 @@ grep -q '이미 봤거나' "$TMP/merge.out" && echo "  ✔ 높음이 남은 결�
 : > "$PDLOG"; AUTO_LINE="$STOP_LINE" EXTRA_PLAN="- Security result: 높음 0 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 옛 결과
 - Security result: 높음 1 · 중간 0 @$SHA · 📦 web · 🌿 feat/x · $(date '+%Y-%m-%d %H:%M') · 새 결과
 " merge_case "보안 — 같은 HEAD 옛 높음 0 · 새 높음 1 → 마지막 줄로 이어 가지 않음" ', "autoMergeConfirm": false' no '보안 검토 때문에 멈춤' FAKE_PR_DIFF="$TMP/risky.diff" FAKE_DELEGATE_LOG="$PDLOG"
+WT="$WT_KEEP" SHA="$SHA_KEEP"
 grep -q '이미 봤거나' "$TMP/merge.out" && ! grep -q '머지 단계를 이어 간다' "$TMP/merge.out" && echo "  ✔ 마지막 결과(높음 1)로 판정 — 옛 높음 0 을 고르지 않는다" || { echo "  ✖ 옛 결과로 이어 감"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 cp "$TMP/delegate.sh.real" "$CORE/scripts/delegate.sh"
 # 처리기가 잡은 채로 죽은 파일(<이름>.json.<죽은 pid>)은 원래 이름으로 돌려놓는다(산 pid 것은 그대로) — 처리기 시작 · --kick 이 부른다
