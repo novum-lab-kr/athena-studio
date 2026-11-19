@@ -198,8 +198,12 @@ export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[
   for (const merge of gitMerges) {
     if (!inWeek(merge.at, now)) continue
     const short = merge.full.slice(0, 7)
-    const keys = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), ...[merge.full, ...merge.parents.slice(1)].map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)]
-    const known = keys.map((key) => byKey.get(key)).find(Boolean)
+    const own = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), `${merge.repo}@${short}`]
+    const sideKeys = merge.parents.slice(1).map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)
+    const keys = [...own, ...sideKeys]
+    // PR 번호 · 커밋 자체로 맞으면 같은 머지. 둘째 부모로만 맞는 것은 PR 없는 사건(Actions 넘기기 브랜치 끝)뿐 —
+    // PR 사건이 둘째 부모로 맞으면 그 PR 은 다른 브랜치(dev)에 들어간 것이고 이 커밋은 그 브랜치를 prBase 로 합친 줄이다
+    const known = own.map((key) => byKey.get(key)).find(Boolean) || sideKeys.map((key) => byKey.get(key)).find((row) => row !== undefined && row.pr === null)
     if (known) {
       known.onBase = true
       if (known.merged === null && known.pr === null) known.merged = short

@@ -703,6 +703,16 @@ test('weekMerges + git 기록 — 손 머지 · 직접 push 를 더하고 사건
   assert.deepEqual(weekMerges(events, now).length, 5, 'git 기록이 없으면 사건만(예전 그대로)')
 })
 
+test('weekMerges — dev PR 사건(merged=D)이 main 합치기 커밋(부모 [A, D])의 둘째 부모로만 맞으면 합치기 줄을 대신하지 않는다', () => {
+  const now = Date.parse('2026-11-19T13:00:00Z')
+  const events = [{ type: 'auto.merge', ok: true, at: '2026-11-19T02:00:00Z', repo: 'web', plan: 'plans/dev.md', pr: '324', sha: '5fbc3db', merged: sha40('d324').slice(0, 7) }]
+  const gitRows = [{ repo: 'web', at: '2026-11-19T07:00:00Z', full: sha40('aa332'), parents: [sha40('a0'), sha40('d324')], pr: 332, branch: 'dev' }]
+  const rows = weekMerges(events, now, gitRows)
+  assert.deepEqual(rows.map((row) => [row.pr, row.onBase]), [[332, true], [324, false]], '합치기 줄은 따로 · dev PR 사건은 onBase 아님')
+  const detail = (base, additions) => ({ title: null, branch: null, additions, deletions: 0, files: 1, base })
+  assert.deepEqual(mergeFeed(rows, [detail('main', 6528), detail('dev', 395)], now, { web: 'main' }).merges.map((row) => row.pr), [332], 'dev PR 은 빠지고 합치기만 센다')
+})
+
 test('mergeFeed — prBase 가 아닌 브랜치(dev)로 머지된 PR 은 뺀다(dev → main 합치기에서 다시 세어 두 번 잡힘) · base · prBase 를 모르면 남긴다', () => {
   const now = Date.parse('2026-11-19T13:00:00Z')
   const row = (pr, repo = 'web', onBase = false) => ({ at: '2026-11-19T05:00:00Z', repo, plan: null, pr, sha: null, merged: null, direct: false, branch: null, onBase })
