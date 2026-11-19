@@ -18,7 +18,7 @@ import type { BrowserState } from './ui/browser-bar.tsx'
 // 움직이는 효과 없이 그 자리에서 바뀌고, 페이지(main 의 WebContentsView — 화면 위에 따로 떠 있다)도 같은 순간에 #browser-slot 자리에 붙인다.
 // 터미널 칸 폭이 바뀌면 #panes ResizeObserver → layoutPanes 가 pane 을 새 크기로 맞춘다(크기 요청은 pane 마다 하나씩만 — sendPaneSize)
 export let browserOpen = false
-// 탭들을 새 창으로 떼어 낸 동안(main browser:detached) — 서랍은 닫혀 있고 웹 버튼(⌘⇧B)은 그 창을 앞으로 가져온다
+// 서랍을 새 창으로 떼어 낸 동안(main drawer:detached — 웹 · 시뮬레이터 두 탭이 함께 간다) — 서랍은 닫혀 있고 웹 버튼(⌘⇧B)은 그 창을 앞으로 가져온다
 let browserDetached = false
 
 // 오른쪽 칸을 웹으로(열 때) · Explorer 로(닫을 때) — 칸 폭이 바뀌니 양옆 칸이 쓸 수 있는 폭도 다시 잰다
@@ -84,10 +84,8 @@ function applyMode(): void {
 }
 
 function toggleBrowserPanel(): void {
-  // 떼어 낸 창이 보는 탭이면 그 창을 앞으로(웹 · 시뮬레이터 따로)
-  const simMode = StudioUi.sim.mode.get() === 'sim'
-  if (simMode && StudioUi.sim.detachedStore.get()) return void studio.simCommand('focus-detached')
-  if (!simMode && browserDetached) return void studio.browserCommand('focus-detached')
+  // 떼어 낸 동안은 그 창을 앞으로
+  if (browserDetached) return void studio.browserCommand('focus-detached')
   if (browserOpen) return closeBrowserPanel()
   openBrowserPanel()
   // 처음이면 주소창부터(스크롤 없이)
@@ -125,20 +123,18 @@ export function initBrowser(): void {
   studio.onBrowserError(StudioUi.browser.showError)
   studio.onBrowserClose(closeBrowserPanel) // 결정 콘솔 [이대로 진행] 을 보내 남은 콘솔이 없을 때 · 마지막 탭을 닫았을 때(main 이 알린다)
   studio.onBrowserTabs(StudioUi.browser.applyTabs)
-  // 떼어 내면 서랍을 닫고 오른쪽 칸은 Explorer 로(탭은 새 창으로 옮겨 감). 돌아올 때 서랍 열기는 main 이 browser:open 으로
-  studio.onBrowserDetached((detached) => {
+  // 떼어 내면 서랍을 닫고 오른쪽 칸은 Explorer 로(웹 탭 · 시뮬레이터가 함께 새 창으로 옮겨 감).
+  // 그 창을 닫으면(되돌리기) 그 창에서 보던 탭 · 기기로 서랍을 연다 — 탭을 다 닫았거나 팩을 바꿨으면(reopen 거짓) 열지 않는다
+  studio.onDrawerDetached((detached, returnMode, reopen) => {
     browserDetached = detached
-    if (detached && browserOpen) closeBrowserPanel()
-  })
-  // 시뮬레이터를 떼어 내면 서랍이 그 탭을 보고 있었으면 닫는다. 그 창을 닫으면(되돌리기) 그 창에서 보던 기기로 서랍의 [시뮬레이터] 탭을 연다
-  studio.onSimDetached((detached) => {
     StudioUi.sim.detachedStore.set(detached)
     if (detached) {
-      if (browserOpen && StudioUi.sim.mode.get() === 'sim') closeBrowserPanel()
+      if (browserOpen) closeBrowserPanel()
       return
     }
     void StudioUi.sim.adopt().then(() => {
-      StudioUi.sim.setMode('sim')
+      if (!reopen) return
+      StudioUi.sim.setMode(returnMode === 'sim' ? 'sim' : 'web')
       openBrowserPanel()
     })
   })

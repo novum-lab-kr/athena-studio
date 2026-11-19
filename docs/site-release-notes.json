@@ -20,6 +20,13 @@
       "ko": "옆 브라우저가 터미널을 좁히던 것 수정 — Explorer 자리에 열림",
       "ja": "サイドブラウザがターミナルを狭めていた問題を修正 — Explorer の位置に開く",
       "zh": "修复侧边浏览器挤压终端的问题 — 改为在 Explorer 位置打开"
+    },
+    {
+      "tag": "fixed",
+      "en": "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device",
+      "ko": "떼어 낸 창에 웹 · 시뮬레이터 탭이 없던 것 수정 — 바꿔도 페이지 · 기기 그대로",
+      "ja": "切り離したウィンドウに Web · シミュレータタブがなかった問題を修正 — 切り替えてもページ · デバイスはそのまま",
+      "zh": "修复拆分窗口缺少 Web · 模拟器标签的问题 — 切换时页面和设备保持不变"
     }
   ],
   "0.63": [

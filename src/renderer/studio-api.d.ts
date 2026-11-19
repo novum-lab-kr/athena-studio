@@ -365,8 +365,10 @@ declare global {
     onBrowserClose(callback: () => void): () => void
     onBrowserTabs(callback: (tabs: import('./ui/browser-bar.tsx').BrowserTabView[]) => void): () => void
     // 탭들을 새 창으로 떼어 냈다(true) · 서랍으로 돌아왔다(false) — side-browser.mts detach · backToDrawer
-    onBrowserDetached(callback: (detached: boolean) => void): () => void
-    onSimDetached(callback: (detached: boolean) => void): () => void
+    // 떼어 낸 서랍 창(웹 · 시뮬레이터 두 탭 — main drawer-window.mts) — 떼어 냄 · 보던 탭 · 돌아와 서랍을 다시 열지
+    onDrawerDetached(callback: (detached: boolean, mode: 'web' | 'sim', reopen: boolean) => void): () => void
+    // 떼어 낸 서랍 창 화면만(preload-browser.js) — 보는 탭이 바뀌었다
+    drawerMode(mode: 'web' | 'sim'): void
     // [작업] 팝업 · 요청(src/main/work.mts) — 창이 없을 때의 { error } 는 이 창에서 부르면 오지 않는다
     workGet(): Promise<WorkView>
     workRequests(): Promise<WorkRequestsState>
