@@ -695,7 +695,8 @@ test('weekMerges + git 기록 — 손 머지 · 직접 push 를 더하고 사건
     ['web', null, 'plans/b.md', 'aaa0001', true],
     ['web', 330, 'plans/a.md', null, false],
   ])
-  assert.deepEqual(Object.keys(rows[0]).sort(), ['at', 'branch', 'direct', 'merged', 'plan', 'pr', 'repo', 'sha'], '폰이 받는 칸은 그대로')
+  assert.deepEqual(rows.map((row) => row.onBase), [true, true, true, false, true, true, true, true], 'prBase 기록에서 확인된 줄만 onBase(git 과 안 겹친 api 사건만 false)')
+  assert.deepEqual(Object.keys(mergeFeed(rows, [], now).merges[0]).filter((key) => !['title', 'additions', 'deletions', 'files'].includes(key)).sort(), ['at', 'branch', 'direct', 'merged', 'plan', 'pr', 'repo', 'sha'], '폰이 받는 칸은 그대로(onBase 는 떼어 낸다)')
   assert.equal(mergeKey(rows[7]), 'web#330', '문자열 번호도 숫자로 — PR 상세를 읽는다')
   assert.equal(mergeKey(rows[0]), 'web@abc0005', '직접 push 는 git show 로 상세')
   assert.equal(mergeKey(rows[4]), 'web@eee0004', 'Actions 넘기기도 맞은 git 커밋으로 상세')
@@ -704,13 +705,15 @@ test('weekMerges + git 기록 — 손 머지 · 직접 push 를 더하고 사건
 
 test('mergeFeed — prBase 가 아닌 브랜치(dev)로 머지된 PR 은 뺀다(dev → main 합치기에서 다시 세어 두 번 잡힘) · base · prBase 를 모르면 남긴다', () => {
   const now = Date.parse('2026-11-19T13:00:00Z')
-  const row = (pr, repo = 'web') => ({ at: '2026-11-19T05:00:00Z', repo, plan: null, pr, sha: null, merged: null, direct: false, branch: null })
+  const row = (pr, repo = 'web', onBase = false) => ({ at: '2026-11-19T05:00:00Z', repo, plan: null, pr, sha: null, merged: null, direct: false, branch: null, onBase })
   const detail = (base, additions) => ({ title: `t${additions}`, branch: null, additions, deletions: 0, files: 1, base })
   const merges = [row(324), row(332), row(5), row(6, 'api'), row(7)]
   const details = [detail('dev', 395), detail('main', 6528), null, detail('dev', 10), detail(null, 3)]
   const feed = mergeFeed(merges, details, now, { web: 'main' })
   assert.deepEqual(feed.merges.map((merge) => [merge.pr, merge.additions]), [[332, 6528], [5, null], [6, 10], [7, 3]], 'dev 로 머지된 #324 만 빠진다(상세 모름 · prBase 모르는 레포 · base 모름은 남김)')
-  assert.ok(feed.merges.every((merge) => !('base' in merge)), 'base 는 폰에 넘기지 않는다')
+  assert.ok(feed.merges.every((merge) => !('base' in merge) && !('onBase' in merge)), 'base · onBase 는 폰에 넘기지 않는다')
+  // dev 에 squash 머지 뒤 main 을 dev 로 빨리 감기(합치기 머지 없음) — main 기록에 있는 #324 는 base 가 dev 여도 남긴다
+  assert.deepEqual(mergeFeed([row(324, 'web', true)], [detail('dev', 395)], now, { web: 'main' }).merges.map((merge) => merge.pr), [324], 'prBase 기록에서 확인된 줄은 base 로 거르지 않는다')
   assert.equal(mergeFeed(merges, details, now).merges.length, 5, 'prBase 를 아직 못 읽었으면 거르지 않는다')
   assert.equal(mergeFeed([row(1, 'toString')], [detail('dev', 1)], now, { web: 'main' }).merges.length, 1, '객체 기본 이름 레포도 prBase 모름으로')
 })

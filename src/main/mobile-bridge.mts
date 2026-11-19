@@ -186,7 +186,8 @@ const inWeek = (at: string, now: number) => {
 export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[] = []) {
   const rows = events
     .filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.at === 'string' && inWeek(event.at, now))
-    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: prOf(event.pr), sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null }))
+    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: prOf(event.pr), sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null, onBase: false }))
+  // onBase — prBase 의 first-parent 기록에서 확인된 머지(그 브랜치에 실제로 들어간 것 · mergeFeed 가 base 로 거르지 않는다 · 폰에는 안 넘긴다)
   type Row = (typeof rows)[number]
   const byKey = new Map<string, Row>()
   for (const row of rows) {
@@ -200,10 +201,11 @@ export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[
     const keys = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), ...[merge.full, ...merge.parents.slice(1)].map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)]
     const known = keys.map((key) => byKey.get(key)).find(Boolean)
     if (known) {
+      known.onBase = true
       if (known.merged === null && known.pr === null) known.merged = short
       continue
     }
-    const row: Row = { at: merge.at, repo: merge.repo, plan: null, pr: merge.pr, sha: short, merged: short, direct: merge.pr === null, branch: merge.branch }
+    const row: Row = { at: merge.at, repo: merge.repo, plan: null, pr: merge.pr, sha: short, merged: short, direct: merge.pr === null, branch: merge.branch, onBase: true }
     rows.push(row)
     for (const key of keys) byKey.set(key, row)
   }
@@ -442,14 +444,16 @@ export function createGitMerges({ athenaDir, bases, run, now = Date.now }: { ath
 
 // 머지 줄 + 상세 · 오늘(이 맥 날짜) 가장 큰 변경(+ − 합) — 상세를 모르는 머지는 견주지 않는다.
 // prBase 가 아닌 브랜치(dev 등)로 머지된 PR 은 뺀다 — 그 변경은 나중에 prBase 로 합칠 때(git 기록의 합치기 머지) 다시 세어 두 번 잡힌다.
-// 사건에는 대상 브랜치가 없어 gh 상세의 base 로 본다(상세 · prBase 를 모르면 남긴다)
+// 사건에는 대상 브랜치가 없어 gh 상세의 base 로 본다(상세 · prBase 를 모르면 남긴다).
+// prBase 의 git 기록에서 확인된 줄(onBase)은 base 가 달라도 남긴다 — dev 에 머지한 뒤 main 을 dev 로 빨리 감은 경우 합치기 머지가 따로 없다
 export function mergeFeed(merges: MergeRow[], details: (MergeDetail | null)[], now: number, bases: Record<string, string> = {}) {
   const empty: MergeDetail = { title: null, branch: null, additions: null, deletions: null, files: null, base: null }
-  const offBase = (merge: MergeRow, detail: MergeDetail) => typeof merge.repo === 'string' && detail.base !== null && Object.hasOwn(bases, merge.repo) && detail.base !== bases[merge.repo]
+  const offBase = (merge: MergeRow, detail: MergeDetail) => !merge.onBase && typeof merge.repo === 'string' && detail.base !== null && Object.hasOwn(bases, merge.repo) && detail.base !== bases[merge.repo]
   const rows = merges.flatMap((merge, index) => {
     const detail = details[index] || empty
     if (offBase(merge, detail)) return []
-    return [{ ...merge, title: detail.title, branch: detail.branch ?? merge.branch, additions: detail.additions, deletions: detail.deletions, files: detail.files }]
+    const { onBase: _onBase, ...row } = merge
+    return [{ ...row, title: detail.title, branch: detail.branch ?? merge.branch, additions: detail.additions, deletions: detail.deletions, files: detail.files }]
   })
   const today = new Date(now).toDateString()
   let todayTop: (typeof rows)[number] | null = null
