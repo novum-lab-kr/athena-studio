@@ -44,6 +44,7 @@ import type { ServerStatusReply } from './main/server-status.mts'
 import type { ServerEntry } from './lib/server-status.mts'
 import { SSH_ALIAS } from './lib/server-status.mts'
 import { installAgentMonitor } from './main/agent-monitor.mts'
+import { mobileLog, relayMissingNote } from './main/mobile-log.mts'
 import { installPaneWatch } from './main/pane-watch.mts'
 import { installCatchUp } from './main/catch-up.mts'
 import { setupTray } from './main/tray.mts'
@@ -1243,7 +1244,12 @@ function computerName(): Promise<string | null> {
   })
 }
 async function startMobileDevIfAsked(): Promise<void> {
-  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) {
+    // 짝 지은 기기가 있는데 주소가 빠졌으면 한 줄 남긴다(값은 남기지 않는다 · 모듈은 여전히 싣지 않는다)
+    const note = relayMissingNote({ packaged: app.isPackaged, relay: process.env.ATHENA_STUDIO_MOBILE_RELAY, pairedFileExists: () => fs.existsSync(path.join(STUDIO.root, 'mobile', 'relay.json')) })
+    if (note) mobileLog(note)
+    return
+  }
   mobileDev = await loadMobileDev()
   if (!mobileDev) return
   // athena:// 를 이 앱으로 — 개발용 길이 켜질 때만(배포판 · 보통 개발 앱은 등록하지 않는다)

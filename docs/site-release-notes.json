@@ -1,4 +1,13 @@
 {
+  "0.66": [
+    {
+      "tag": "fixed",
+      "en": "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept",
+      "ko": "업데이트로 앱을 다시 켠 뒤 폰 · iPad 앱 연결이 끊기던 것 수정 — relay 주소 유지",
+      "ja": "アップデートでアプリを再起動したあとスマホ · iPad アプリの接続が切れる問題を修正 — relay アドレスを保持",
+      "zh": "修复更新后重启应用时手机 · iPad 应用断开连接的问题 — 保留 relay 地址"
+    }
+  ],
   "0.65": [
     {
       "tag": "new",
