@@ -23,7 +23,7 @@ import type { MobileWork } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage, TrayPane } from '../lib/tray-model.mts'
 import { PushWatch } from '../lib/push-model.mts'
-import type { PushKind } from '../lib/push-model.mts'
+import type { PushKind, PushGate } from '../lib/push-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
@@ -445,15 +445,16 @@ export function startMobileDev(deps: DevDeps) {
     // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
     macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
     // 앞 창의 요청이 바뀌었다(main — work.mts publishRequests) — 붙어 있는 폰에 changed ['requests', 'work']
-    requestsChanged: () => {
+    // gate — 메뉴 막대 [알림 끄기] · 지금 보고 있는 pane(tray.mts pushGate) · 폰 푸시도 맥 알림처럼 거른다
+    requestsChanged: (gate?: PushGate) => {
       workWatch.requestsChanged()
       const ctx = front()
-      if (ctx) sendPush(pushFor(ctx).requests(requestList(ctx)))
+      if (ctx) sendPush(pushFor(ctx).requests(requestList(ctx), gate))
     },
     // 메뉴 막대가 앞 창 pane 을 읽었다(tray.mts — 4초마다 · 입력 대기를 보탠 것) — 확인 요청 · 일 끝남이면 폰 푸시
-    panesPolled: (ctx: FrontCtx, panes: readonly TrayPane[]) => {
+    panesPolled: (ctx: FrontCtx, panes: readonly TrayPane[], gate?: PushGate) => {
       if (ctx !== front()) return
-      sendPush(pushFor(ctx).panes(panes, Date.now()))
+      sendPush(pushFor(ctx).panes(panes, Date.now(), gate))
     },
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
