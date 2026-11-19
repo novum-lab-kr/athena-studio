@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:">
+  <title>Athena</title>
+  <!-- 떼어 낸 시뮬레이터 창 — 진입점 하나(sim-window-entry.ts)로 Vite 가 묶는다 -->
+  <script type="module" src="sim-window-entry.ts"></script>
+</head>
+<body>
+  <!-- 막대 · 칸은 React(ui/sim-bar.tsx) · iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다 -->
+  <div id="browser" class="browser detached sim">
+    <div class="browser-bar"></div>
+    <div id="browser-slot" class="browser-slot"><div id="sim-screen" class="sim-screen"></div></div>
+  </div>
+</body>
+</html>

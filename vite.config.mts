@@ -48,6 +48,7 @@ export default defineConfig({
         tray: path.join(root, 'tray.html'),
         // 떼어 낸 옆 브라우저 창(src/main/side-browser.mts detach)
         'browser-window': path.join(root, 'browser-window.html'),
+        'sim-window': path.join(root, 'sim-window.html'),
       },
     },
   },

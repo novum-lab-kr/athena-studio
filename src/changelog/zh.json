@@ -243,5 +243,7 @@
   "Fix agent panes stopping at folder trust prompts on start": "修复代理 pane 启动时停在文件夹确认提示",
   "Fix the side browser covering terminals — panes now sit beside it and resize": "修复侧边浏览器遮挡终端的问题 — 终端并排停靠并重新调整大小",
   "Add moving the side browser to its own window — tabs return to the side panel when it closes": "新增将侧边浏览器拆分为独立窗口 — 关闭后标签页回到侧边栏",
-  "Fix auto-merge squashing branch-merge PRs — merge commits kept": "修复自动合并压缩分支合并 PR 的问题 — 改用合并提交合并"
+  "Fix auto-merge squashing branch-merge PRs — merge commits kept": "修复自动合并压缩分支合并 PR 的问题 — 改用合并提交合并",
+  "Add moving the Simulator tab to its own window — iOS · Android taps work there too": "新增将模拟器标签页拆分为独立窗口 — 可在其中点按 iOS · Android",
+  "Fix the side browser squeezing terminals — it now takes the Explorer column": "修复侧边浏览器挤压终端的问题 — 改为在 Explorer 位置打开"
 }
