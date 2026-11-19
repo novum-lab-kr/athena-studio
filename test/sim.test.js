@@ -315,7 +315,7 @@ test('CLI: input 은 Android 일련번호만 — 아니면 인자 틀림(2 · �
 })
 
 // stream — 가짜 adb: exec-out 은 pid 줄 뒤 영상 조각을 내다 기기 kill 표시가 생기면 끝난다 · 기기 kill 은 느리다(0.6초 —
-// 그사이 옛 adb 가 먼저 끝나 반복이 새 adb 를 띄운다) · 화면 크기는 파일에서
+// 그사이 옛 adb 가 먼저 끝나 반복이 새 adb 를 띄운다 · 끝나면 "killed <pid>") · 화면 크기는 파일에서(읽을 때마다 "size" 한 줄)
 function fakeStreamAdb(root) {
   const bin = path.join(root, 'bin')
   fs.mkdirSync(bin)
@@ -331,8 +331,8 @@ case "$*" in
   "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
   *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
   *"screenrecord --help"*) echo "Set to 0 for no limit" ;;
-  *dumpsys*) cat '${sizeFile}' ;;
-  *"shell kill "*) touch "${root}/killed-$5"; sleep 0.6 ;;
+  *dumpsys*) echo size >> '${log}'; cat '${sizeFile}' ;;
+  *"shell kill "*) touch "${root}/killed-$5"; sleep 0.6; echo "killed $5" >> '${log}' ;;
   *exec-out*)
     pid=$(($(cat '${count}') + 1)); echo $pid > '${count}'
     echo "start $pid" >> '${log}'
@@ -357,14 +357,30 @@ test('CLI(가짜 adb): stream — 회전으로 다시 켤 때 기기 kill 을 �
   let stderr = ''
   proc.stderr.on('data', (chunk) => (stderr += chunk))
   const closed = new Promise((resolve) => proc.on('close', resolve))
-  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms))
-  await sleep(500)
+  let video = false
+  proc.stdout.once('data', () => (video = true))
+  const readLog = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n') : [])
+  // 고정 시간 대신 일이 생길 때까지 기다린다(CLI 가 뜨는 시간은 기계 · 부하마다 다르다)
+  const waitFor = async (/** @type {() => boolean} */ ready, /** @type {string} */ what) => {
+    const deadline = Date.now() + 15_000
+    while (!ready()) {
+      if (Date.now() > deadline) throw new Error(`기다리다 시간 초과: ${what} · stderr ${JSON.stringify(stderr)} · ${readLog().join(' · ')}`)
+      await new Promise((resolve) => setTimeout(resolve, 20))
+    }
+  }
+  // 첫 크기를 알리고 첫 녹화의 영상이 흐른 뒤(기기 pid 를 받은 뒤)에 돌린다
+  await waitFor(() => stderr.includes('size 1000x2000\n') && video, '첫 크기 · 첫 영상')
   fs.writeFileSync(sizeFile, 'cur=2000x1000') // 회전 — 감시(1.5초)가 보고 다시 켠다
-  await sleep(3500)
+  // 다시 켜기(기기 kill)가 끝나고 새 녹화가 뜬 뒤, 감시가 한 번 더 크기를 읽을 때까지 — 그사이 새 adb 가 끊겼다면 이미 로그에 남는다
+  await waitFor(() => {
+    const lines = readLog()
+    const killed = lines.indexOf('killed 1001')
+    return killed >= 0 && lines.includes('start 1002') && lines.indexOf('size', killed) > killed
+  }, '다시 켜기 뒤 감시 한 번')
   proc.kill('SIGTERM')
   await closed
   assert.match(stderr, /size 1000x2000\nsize 2000x1000/)
-  const lines = fs.readFileSync(log, 'utf8').trim().split('\n')
+  const lines = readLog().filter((line) => /^(start|end|term) /.test(line))
   // 첫 녹화는 기기 kill 로 끝나고 · 두 번째 녹화는 끝낼 때까지 산다(끊겨 세 번째가 뜨지 않는다)
   assert.deepEqual(lines.slice(0, 3), ['start 1001', 'end 1001', 'start 1002'])
   assert.ok(!lines.includes('term 1002'), lines.join(' · '))

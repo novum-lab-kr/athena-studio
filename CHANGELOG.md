@@ -42,10 +42,19 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.61: v0.60.31..main 에서 사용자에게 보이는 변경 — pane 제목 옆 괄호 토큰(세션 누적 입출력 · 캐시). 범위 끝은 열어 둔다 -->
 
+## 0.65 (v0.65.0 – · Nov 19, 2026)
+
+### New
+- Add terminal search — ⌘F in a pane finds text in the screen and scrollback
+- Add phone push alerts for new requests and finished agents — only while the phone app is closed
+
+### Fixed
+- Fix idle CPU use from the menu bar panel animating while closed
+- Fix server status running SSH on every phone refresh — one shared read every 3 minutes
+
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
 
 ### New
-- Add phone push alerts for new requests and finished agents — only while the phone app is closed
 - Add a live Android screen to the Simulator tab — video instead of 1-second snapshots
 - Add moving the side browser to its own window — tabs return to the side panel when it closes
 - Add moving the Simulator tab to its own window — iOS · Android taps work there too
@@ -59,6 +68,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix auto review blocking PRs aimed at a non-default branch
 - Fix the side browser squeezing terminals — it now takes the Explorer column
 - Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device
+- Fix slow phone reconnects — server status answered from the last reading
 
 ## 0.63 (v0.63.0 – · Nov 15, 2026)
 

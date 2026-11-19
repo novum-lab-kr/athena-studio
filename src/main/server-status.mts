@@ -37,6 +37,9 @@ const SAR_EVERY = 10 * 60 * 1000
 const SAR_RETRY = 10 * 60 * 1000
 const SAR_TIMEOUT = 30000
 const SAR_BUFFER = 16 * 1024 * 1024
+// 한 번 읽은 값을 다시 쓰는 시간 — 맥 화면 주기(ui/server-status.tsx POLL_MS 3분)보다 조금 짧게.
+// 같으면 화면의 3분 타이머가 캐시 끝나기 직전에 와서 한 번 건너뛴다(사실상 6분). 시작 시각 기준
+const READ_FRESH = 3 * 60 * 1000 - 15_000
 
 // 이 맥에서 응답 확인 — 본문은 받지 않는다(머리만 보고 끊는다)
 function checkWeb(url: string): Promise<WebCheck> {
@@ -157,8 +160,7 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
   }
 
   // 서버마다 한 번씩(함께) — 서버가 없으면 빈 목록
-  ctx.serverStatus = async () => {
-    const targets = serverModel.packTargets(await readPack())
+  const readAll = async (targets: ReturnType<typeof serverModel.packTargets>): Promise<ServerStatusReply> => {
     const sar: Record<string, SarPoint[]> = {}
     const readings = await Promise.all(targets.map(async ({ health, ...server }): Promise<ServerReading> => {
       const [status, web, past] = await Promise.all([readOne(server), health ? checkWeb(health) : Promise.resolve(null), sarOf(server)])
@@ -183,5 +185,21 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
     }
     if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
     return { servers, history, sar }
+  }
+
+  // 맥 화면 · 폰 브리지가 같이 부른다 — 폰은 snapshot 마다(2초 남짓) 불러 그대로 두면 그때마다 ssh(2026-11-19 서버 load 29).
+  // 앞 읽기가 READ_FRESH 안이면 그 값을 · 읽는 중이면 그 읽기를 나눠 쓴다. 팩 서버 목록(주소 · health 포함)이 바뀌면 바로 새로 읽는다
+  let cached: { key: string; at: number; reply: Promise<ServerStatusReply> } | null = null
+  ctx.serverStatus = async () => {
+    const targets = serverModel.packTargets(await readPack())
+    const key = JSON.stringify(targets)
+    if (cached && cached.key === key && Date.now() - cached.at < READ_FRESH) return cached.reply
+    const entry = { key, at: Date.now(), reply: readAll(targets) }
+    cached = entry
+    // 실패한 읽기는 남기지 않는다 — 다음 부름이 다시 읽는다
+    entry.reply.catch(() => {
+      if (cached === entry) cached = null
+    })
+    return entry.reply
   }
 }
