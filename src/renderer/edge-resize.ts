@@ -17,6 +17,7 @@ type Edge = {
   max: number
   room: () => number // 지금 창에서 줄 수 있는 가장 큰 크기
   when?: () => boolean // 손잡이 하나를 칸 둘이 나눠 쓸 때 — 지금 이 칸 차례인지(오른쪽 손잡이: Explorer · 옆 브라우저)
+  varTarget?: HTMLElement // 크기 변수를 걸 곳(없으면 target) — 옆 브라우저는 main 에 걸어 화면 칸(.panel)도 같은 값으로 비운다
 }
 
 // 가운데(pane 칸)에 이만큼은 남긴다 — 창을 줄여도
@@ -25,16 +26,18 @@ const CENTER_MIN_HEIGHT = 200 // 가운데 탭 줄 + pane 칸
 
 const edges: Edge[] = []
 
-// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄 · 옆 브라우저)을 뺀 나머지.
-// 숨은 칸은 폭이 0 이라 Explorer 와 옆 브라우저는 서로를 빼지 않는다(한 번에 하나만 보인다)
+// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄)을 뺀 나머지.
+// 옆 브라우저는 #work 밖(main 오른쪽)이고 열리면 #work 가 그만큼 좁아지니, 옆 브라우저 자신은 main 너비에서 잰다.
+// 열려 있는 동안 Explorer · 접힌 줄은 숨어 폭이 0 이라 서로를 빼지 않는다(한 번에 하나만 보인다)
 function widthRoom(self: HTMLElement): number {
   const work = $('work')
+  const total = self === $('browser') ? (work.parentElement as HTMLElement).clientWidth : work.clientWidth
   let others = 0
   for (const child of work.children) {
     if (child === self || child.classList.contains('center')) continue
     others += (child as HTMLElement).getBoundingClientRect().width
   }
-  return work.clientWidth - CENTER_MIN_WIDTH - others
+  return total - CENTER_MIN_WIDTH - others
 }
 
 function heightRoom(): number {
@@ -56,8 +59,9 @@ function savedSize(edge: Edge): number {
 function applySize(edge: Edge): void {
   const saved = savedSize(edge)
   const size = clampSize(edge, saved || edge.defaultSize())
-  if (!saved && size === edge.defaultSize()) edge.target.style.removeProperty(edge.cssVar)
-  else edge.target.style.setProperty(edge.cssVar, `${size}px`)
+  const host = edge.varTarget ?? edge.target
+  if (!saved && size === edge.defaultSize()) host.style.removeProperty(edge.cssVar)
+  else host.style.setProperty(edge.cssVar, `${size}px`)
 }
 
 // 창 크기 · 접기가 바뀐 뒤 — 최소 · 최대 안으로 다시 맞춘다
@@ -83,7 +87,8 @@ function bindEdge(edge: Edge): void {
   handle.addEventListener('pointermove', (event) => {
     if (!drag || event.pointerId !== drag.pointerId) return
     const moved = (axis === 'x' ? event.clientX : event.clientY) - drag.start
-    target.style.setProperty(edge.cssVar, `${clampSize(edge, drag.startSize + edge.sign * moved)}px`)
+    const host = edge.varTarget ?? target
+    host.style.setProperty(edge.cssVar, `${clampSize(edge, drag.startSize + edge.sign * moved)}px`)
   })
   // 놓기 · 취소 · 캡처를 잃음 모두 여기로 — 끈 크기를 기억한다
   const finish = (event: PointerEvent) => {
@@ -134,15 +139,17 @@ export function initEdgeResize(): void {
     room: () => widthRoom($('side-panel')),
     when: () => !browserOpen,
   })
-  // 옆 브라우저가 열려 있으면 같은 손잡이가 웹 너비를 끈다 — 기본은 작업 창 폭의 46%(style.css .browser), 최대는 가운데 최소 폭까지
+  // 옆 브라우저가 열려 있으면 같은 손잡이가 웹 너비를 끈다 — 기본은 main 폭의 46%(style.css .browser), 최대는 가운데 최소 폭까지.
+  // 변수는 main 에 — #browser 너비와 화면 칸(.panel)의 오른쪽 비움이 같은 값을 읽는다
   bindEdge({
     handle: $('side-resize'),
     target: $('browser'),
+    varTarget: $('work').parentElement as HTMLElement,
     axis: 'x',
     sign: -1,
     cssVar: '--browser-width',
     storageKey: 'studio.browserWidth',
-    defaultSize: () => Math.round($('work').clientWidth * 0.46),
+    defaultSize: () => Math.round(($('work').parentElement as HTMLElement).clientWidth * 0.46),
     min: 320,
     max: Infinity,
     room: () => widthRoom($('browser')),

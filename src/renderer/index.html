@@ -94,16 +94,6 @@
       </div>
       <div id="side-resize" class="edge-resize x" title="끌어서 너비 바꾸기 · 더블클릭하면 기본 너비" data-i18n-title="side.resizeHint"></div>
       <aside id="side-panel" class="side-panel" aria-label="오른쪽 패널" data-i18n-aria-label="side.label"></aside>
-      <!-- 옆 브라우저 — 열려 있는 동안 오른쪽 칸(Explorer · 접힌 줄) 자리를 대신 쓴다(browser.ts · style.css #work.browser-docked). 너비 손잡이는 #side-resize.
-           페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
-      <aside id="browser" class="browser" hidden>
-        <!-- 막대(뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 탭 줄(탭이 2개 이상일 때) · 알림 줄은 React(ui/browser-bar.tsx)가 그린다 -->
-        <div class="browser-bar"></div>
-        <div id="browser-tabs" class="browser-tabs" hidden></div>
-        <div id="browser-error" class="browser-error" hidden></div>
-        <!-- [시뮬레이터] 탭의 칸 — 안내 글 · Android 화면 그림(ui/sim-bar.tsx). iOS 화면은 main 의 serve-sim 페이지 뷰가 이 자리 위에 그린다 -->
-        <div id="browser-slot" class="browser-slot"><div id="sim-screen" class="sim-screen"></div></div>
-      </aside>
       <!-- 오른쪽을 접으면 남는 좁은 줄 — 누르면 다시 편다 -->
       <aside id="side-rail" class="side-rail" hidden>
         <button id="side-open" class="rail-button" title="Explorer 펴기" data-i18n-title="side.open">
@@ -112,6 +102,17 @@
       </aside>
     </section>
 
+    <!-- 옆 브라우저 — 열려 있는 동안(main.browser-docked) 화면 칸 오른쪽을 웹 너비만큼 비우고 그 자리에 붙는다. 작업 창이면 오른쪽 칸(Explorer · 접힌 줄)을 숨겨
+         작업 공간 | 터미널 | 웹 이 된다(browser.ts · style.css). 작업 창 밖(처음 화면)에서도 보이게 #work 밖에 둔다. 너비 손잡이는 #side-resize.
+         페이지는 main 의 WebContentsView 가 #browser-slot 자리에 그린다 -->
+    <aside id="browser" class="browser" hidden>
+      <!-- 막대(뒤로 · 앞으로 · 새로고침 · 주소 칸 · 기본 브라우저 · 닫기) · 탭 줄(탭이 2개 이상일 때) · 알림 줄은 React(ui/browser-bar.tsx)가 그린다 -->
+      <div class="browser-bar"></div>
+      <div id="browser-tabs" class="browser-tabs" hidden></div>
+      <div id="browser-error" class="browser-error" hidden></div>
+      <!-- [시뮬레이터] 탭의 칸 — 안내 글 · Android 화면 그림(ui/sim-bar.tsx). iOS 화면은 main 의 serve-sim 페이지 뷰가 이 자리 위에 그린다 -->
+      <div id="browser-slot" class="browser-slot"><div id="sim-screen" class="sim-screen"></div></div>
+    </aside>
     <!-- 서버 탐색기 — 왼쪽 서버 목록 · 오른쪽 고른 서버(ui/server-status.tsx). Esc · ✕ 로 닫는다 -->
     <section id="server-view" class="server-view" role="dialog" aria-label="서버" data-i18n-aria-label="server.title" tabindex="-1" hidden></section>
   </main>

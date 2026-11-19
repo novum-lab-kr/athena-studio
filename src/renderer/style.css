@@ -869,11 +869,16 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
 .monitor-row.say .monitor-text { color: var(--muted); }
 .monitor-empty { padding: 6px 10px; color: var(--muted); }
 
-/* 옆 브라우저 — 열려 있는 동안(#work.browser-docked) 오른쪽 칸(Explorer · 접힌 줄) 자리를 대신 쓴다: 작업 공간 | 터미널 | 웹.
-   너비는 --browser-width(오른쪽 손잡이 #side-resize 로 끌어 정한 px · edge-resize.ts — 없으면 작업 창의 46%).
+/* 옆 브라우저 — 열려 있는 동안(main.browser-docked) 화면 칸(.panel)의 오른쪽을 웹 너비만큼 비우고 그 자리(main 오른쪽 끝)에 붙는다.
+   작업 창이면 오른쪽 칸(Explorer · 접힌 줄)을 숨겨 작업 공간 | 터미널 | 웹 · 처음 화면(#setup)이면 그 오른쪽에 — #browser 는 #work 밖이라 작업 창이 숨어도 보인다.
+   너비는 main 의 --browser-width(오른쪽 손잡이 #side-resize 로 끌어 정한 px · edge-resize.ts — 없으면 main 의 46%).
    페이지(WebContentsView)는 같은 순간에 #browser-slot 자리에 붙는다(browser.ts placeBrowserView) */
 .browser {
-  flex: none;
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   width: var(--browser-width, 46%);
@@ -881,9 +886,10 @@ body.edge-resizing-y, body.edge-resizing-y * { cursor: ns-resize !important; use
   border-left: 1px solid var(--line);
 }
 .browser[hidden] { display: none; }
-#work.browser-docked > .side-panel, #work.browser-docked > .side-rail { display: none; }
+main.browser-docked > .panel { right: var(--browser-width, 46%); }
+main.browser-docked #work > .side-panel, main.browser-docked #work > .side-rail { display: none; }
 /* Explorer 를 접어 두었어도 웹 너비 손잡이는 둔다(접힌 칸 손잡이 숨김 규칙보다 먼저) */
-#work.browser-docked > #side-resize { display: block; }
+main.browser-docked #work > #side-resize { display: block; }
 /* 떼어 낸 옆 브라우저 창(browser-window.html) — 창 전체를 채운다 · 너비 끌기 없음 */
 .browser.detached { position: absolute; inset: 0; width: auto; border-left: 0; }
 .browser-bar { display: flex; flex: none; align-items: center; gap: 4px; height: 36px; padding: 0 6px; border-bottom: 1px solid var(--line); }

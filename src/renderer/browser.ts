@@ -11,7 +11,8 @@ import { fitEdgeSizes } from './edge-resize.ts'
 import type { BrowserState } from './ui/browser-bar.tsx'
 
 // ── 옆 브라우저 ──────────────────────────────────────────
-// 열면 오른쪽 칸(Explorer · 접힌 줄) 자리를 웹이 대신 쓴다 — 배치는 작업 공간 | 터미널 | 웹(#work.browser-docked · style.css).
+// 열면 오른쪽 칸(Explorer · 접힌 줄) 자리를 웹이 대신 쓴다 — 배치는 작업 공간 | 터미널 | 웹(main.browser-docked · style.css).
+// #browser 는 #work 밖(main 오른쪽)이라 작업 창이 숨은 처음 화면(#setup)에서도 그 오른쪽에 보인다.
 // Explorer 는 가려질 뿐 접힘 설정은 그대로라 닫으면 원래대로(펴 있었으면 Explorer · 접혀 있었으면 접힌 줄) 돌아온다.
 // 너비는 웹과 Explorer 가 따로 기억하고 손잡이는 같은 #side-resize(edge-resize.ts — 열려 있으면 웹 너비 studio.browserWidth 를 끈다).
 // 움직이는 효과 없이 그 자리에서 바뀌고, 페이지(main 의 WebContentsView — 화면 위에 따로 떠 있다)도 같은 순간에 #browser-slot 자리에 붙인다.
@@ -23,7 +24,8 @@ let browserDetached = false
 // 오른쪽 칸을 웹으로(열 때) · Explorer 로(닫을 때) — 칸 폭이 바뀌니 양옆 칸이 쓸 수 있는 폭도 다시 잰다
 function dockWork(docked: boolean): void {
   $('browser').hidden = !docked
-  $('work').classList.toggle('browser-docked', docked)
+  const main = $('work').parentElement as HTMLElement
+  main.classList.toggle('browser-docked', docked)
   fitEdgeSizes()
 }
 
