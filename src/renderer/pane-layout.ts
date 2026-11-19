@@ -170,6 +170,8 @@ function releaseHold(paneId: string, view: PaneView): void {
 
 // 지금 pane 의 터미널로 입력을 돌려준다(작업 창이 보이고 옆 브라우저를 쓰지 않을 때)
 export function focusCurrentTerminal(): void {
+  // pane 찾기 막대(pane-find.ts)에 치는 중이면 뺏지 않는다 — 화면 상태가 바뀔 때마다 여기로 온다
+  if (document.activeElement?.closest('.pane-find')) return
   const focused = views.get(screen.focused as string)
   if (focused && !focused.el.hidden && currentTab === 'work' && !usingBrowser()) focused.term.focus()
 }

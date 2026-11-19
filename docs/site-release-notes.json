@@ -1,4 +1,20 @@
 {
+  "0.65": [
+    {
+      "tag": "new",
+      "en": "Add terminal search — ⌘F in a pane finds text in the screen and scrollback",
+      "ko": "터미널 찾기 추가 — pane 에서 ⌘F 로 화면 · 스크롤백 글 찾기",
+      "ja": "ターミナル検索を追加 — ペインで ⌘F を押すと画面 · スクロールバックの文字を検索",
+      "zh": "新增终端查找 — 在窗格中按 ⌘F 查找屏幕和回滚内容中的文字"
+    },
+    {
+      "tag": "fixed",
+      "en": "Fix idle CPU use from the menu bar panel animating while closed",
+      "ko": "메뉴 막대 패널이 닫혀 있어도 움직여 대기 CPU 를 쓰던 것 수정",
+      "ja": "メニューバーパネルが閉じていても動き続け、待機中に CPU を使っていた問題を修正",
+      "zh": "修复菜单栏面板关闭时仍在播放动画、空闲时占用 CPU 的问题"
+    }
+  ],
   "0.64": [
     {
       "tag": "new",
