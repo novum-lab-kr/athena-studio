@@ -300,7 +300,10 @@ test('pane.open — 없는 pane 은 not_found 이고 붙은 채로 남지 않는
 })
 
 test('pane.data — 조용하다 첫 조각은 바로 · 뒤따르는 100ms 안 여러 pane 출력은 기기당 메시지 하나 {panes:{…}} · 다시 조용해지면 다음 첫 조각도 바로', async () => {
-  const env = await setup()
+  // 묶음 창을 길게(600ms) — '바로'와 '묶음 끝까지 기다림'을 벽시계로 가를 때 부하에 흔들리지 않게(40ms 창 · 30ms 단정은 전체 검증 부하에서 한 번 넘었다 2026-11-19).
+  // 아래 sleep 은 창 닫기 타이머보다 뒤에 걸려 늘 그 뒤에 돈다(타이머 순서) — 시간 창에 기대는 것은 '바로' 단정 하나뿐
+  const windowMs = 600
+  const env = await setup({ flushMs: windowMs })
   try {
     await env.ask('pane.open', { pane: 'p1' })
     await env.ask('pane.open', { pane: 'p2' })
@@ -308,15 +311,15 @@ test('pane.data — 조용하다 첫 조각은 바로 · 뒤따르는 100ms 안 
     env.daemon.emit({ event: 'data', pane: 'p2', data: 'b' })
     env.daemon.emit({ event: 'data', pane: 'p1', data: 'c' })
     await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
-    await sleep(60)
+    // 다음 창이 끝나고(쌓인 것 없음 → 닫힘) 조용해질 때까지
+    await sleep(windowMs + 100)
     assert.deepEqual(env.events('pane.data'), [{ event: 'pane.data', panes: { p1: 'a' } }, { event: 'pane.data', panes: { p2: 'b', p1: 'c' } }])
-    // 창이 끝나고(쌓인 것 없음 → 닫힘) 조용하면 다음 첫 조각도 바로
-    await sleep(60)
+    // 조용하면 다음 첫 조각도 바로 — 묶였다면 창 끝(600ms)까지 기다린다. 절반 넘게 걸렸으면 묶인 것
     const before = env.events('pane.data').length
     const sentAt = Date.now()
     env.daemon.emit({ event: 'data', pane: 'p2', data: 'd' })
     await waitFor(() => env.events('pane.data').length > before, '다음 첫 조각')
-    assert.ok(Date.now() - sentAt < 30, '묶음 시간(40ms)을 기다리지 않는다')
+    assert.ok(Date.now() - sentAt < windowMs / 2, `묶음 시간(${windowMs}ms)을 기다리지 않는다`)
     assert.deepEqual(env.events('pane.data').at(-1), { event: 'pane.data', panes: { p2: 'd' } })
   } finally {
     await env.cleanup()
