@@ -1473,6 +1473,26 @@ test('이미지 토큰 — 내용 해시 · 같은 내용이면 같고 바뀌면
   }
 })
 
+test('이미지 토큰 — 같은 내용의 두 파일 중 뒤에 본 쪽만 바뀌어도 앞 파일 그림을 토큰으로 내준다', async () => {
+  const dir = workDir()
+  try {
+    const tokens = createIconTokens()
+    const first = path.join(dir, 'a.png')
+    const later = path.join(dir, 'b.png')
+    fs.writeFileSync(first, ICON_PNG)
+    fs.writeFileSync(later, ICON_PNG)
+    const token = await tokens.tokenOf(first)
+    assert.equal(await tokens.tokenOf(later), token)
+    fs.writeFileSync(later, ICON_JPG)
+    fs.utimesSync(later, new Date(), new Date(Date.now() + 5000))
+    assert.notEqual(await tokens.tokenOf(later), token)
+    assert.equal(await tokens.tokenOf(first), token, '앞 파일은 그대로')
+    assert.deepEqual(await tokens.read(token), { token, mime: 'image/png', data: ICON_PNG.toString('base64') })
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('snapshot.spaces · 팩 icon · look.icon — pane 없는 레포도 · 이미지는 토큰만(경로 없음) · 토큰으로 그림 · 모르는 토큰 null · 빈 토큰 usage', async () => {
   const dir = workDir()
   const body = fs.realpathSync(dir)

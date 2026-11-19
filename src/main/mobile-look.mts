@@ -37,7 +37,9 @@ async function readIcon(iconPath: string): Promise<{ bytes: Buffer; mime: string
 
 export function createIconTokens() {
   const seen = new Map<string, Seen>() // 경로 → 마지막으로 본 파일
-  const paths = new Map<string, string>() // 토큰 → 경로(내준 토큰만 look.icon 이 읽는다)
+  // 토큰 → 그 토큰을 낸 경로들(내준 토큰만 look.icon 이 읽는다). 다른 파일이 같은 내용일 수 있어 경로를 모두 둔다 —
+  // 하나만 두면 그 파일만 바뀌었을 때 남은 파일의 그림을 못 내준다
+  const paths = new Map<string, Set<string>>()
 
   // 경로의 토큰 — 없는 파일 · 규칙 밖이면 null
   async function tokenOf(iconPath: string | null | undefined): Promise<string | null> {
@@ -54,17 +56,24 @@ export function createIconTokens() {
     const icon = await readIcon(iconPath)
     const token = icon ? iconToken(icon.bytes) : null
     seen.set(iconPath, { size: stat.size, mtimeMs: stat.mtimeMs, token })
-    if (token) paths.set(token, iconPath)
+    if (token) {
+      const known = paths.get(token)
+      if (known) known.add(iconPath)
+      else paths.set(token, new Set([iconPath]))
+    }
     return token
   }
 
   // 토큰의 그림 — 내준 적 없는 토큰 · 그사이 지워졌거나 내용이 바뀐 파일(토큰이 안 맞음)은 null
   async function read(token: string): Promise<IconFile | null> {
-    const iconPath = paths.get(token)
-    if (!iconPath) return null
-    const icon = await readIcon(iconPath)
-    if (!icon || iconToken(icon.bytes) !== token) return null
-    return { token, mime: icon.mime, data: icon.bytes.toString('base64') }
+    const known = paths.get(token)
+    if (!known) return null
+    // 후보를 차례로 읽어 내용이 토큰과 맞는 첫 파일(그사이 바뀐 파일은 건너뛴다)
+    for (const iconPath of known) {
+      const icon = await readIcon(iconPath)
+      if (icon && iconToken(icon.bytes) === token) return { token, mime: icon.mime, data: icon.bytes.toString('base64') }
+    }
+    return null
   }
 
   return { tokenOf, read }

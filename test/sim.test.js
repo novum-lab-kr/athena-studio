@@ -313,3 +313,60 @@ test('CLI: input 은 Android 일련번호만 — 아니면 인자 틀림(2 · �
   }
   assert.equal(runCli(['input', '--device', 'emulator-5554'], bin, root).status, 2)
 })
+
+// stream — 가짜 adb: exec-out 은 pid 줄 뒤 영상 조각을 내다 기기 kill 표시가 생기면 끝난다 · 기기 kill 은 느리다(0.6초 —
+// 그사이 옛 adb 가 먼저 끝나 반복이 새 adb 를 띄운다) · 화면 크기는 파일에서
+function fakeStreamAdb(root) {
+  const bin = path.join(root, 'bin')
+  fs.mkdirSync(bin)
+  const log = path.join(root, 'calls')
+  const sizeFile = path.join(root, 'size')
+  const count = path.join(root, 'count')
+  fs.writeFileSync(sizeFile, 'cur=1000x2000')
+  fs.writeFileSync(count, '1000')
+  fs.writeFileSync(
+    path.join(bin, 'adb'),
+    `#!/bin/sh
+case "$*" in
+  "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
+  *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
+  *"screenrecord --help"*) echo "Set to 0 for no limit" ;;
+  *dumpsys*) cat '${sizeFile}' ;;
+  *"shell kill "*) touch "${root}/killed-$5"; sleep 0.6 ;;
+  *exec-out*)
+    pid=$(($(cat '${count}') + 1)); echo $pid > '${count}'
+    echo "start $pid" >> '${log}'
+    trap 'echo "term $pid" >> "${log}"; exit 143' TERM
+    echo $pid
+    while [ ! -f "${root}/killed-$pid" ]; do printf x; sleep 0.1; done
+    echo "end $pid" >> '${log}' ;;
+esac
+`,
+    { mode: 0o755 },
+  )
+  return { bin, log, sizeFile }
+}
+
+test('CLI(가짜 adb): stream — 회전으로 다시 켤 때 기기 kill 을 기다리는 사이 새로 띄운 adb 를 끊지 않는다', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-stream-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log, sizeFile } = fakeStreamAdb(root)
+  const { spawn } = require('node:child_process')
+  const proc = spawn(process.execPath, [CLI, 'stream', '--platform', 'android', '--device', 'emulator-5554'], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: root, TMPDIR: os.tmpdir() } })
+  proc.stdout.resume()
+  let stderr = ''
+  proc.stderr.on('data', (chunk) => (stderr += chunk))
+  const closed = new Promise((resolve) => proc.on('close', resolve))
+  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  await sleep(500)
+  fs.writeFileSync(sizeFile, 'cur=2000x1000') // 회전 — 감시(1.5초)가 보고 다시 켠다
+  await sleep(3500)
+  proc.kill('SIGTERM')
+  await closed
+  assert.match(stderr, /size 1000x2000\nsize 2000x1000/)
+  const lines = fs.readFileSync(log, 'utf8').trim().split('\n')
+  // 첫 녹화는 기기 kill 로 끝나고 · 두 번째 녹화는 끝낼 때까지 산다(끊겨 세 번째가 뜨지 않는다)
+  assert.deepEqual(lines.slice(0, 3), ['start 1001', 'end 1001', 'start 1002'])
+  assert.ok(!lines.includes('term 1002'), lines.join(' · '))
+  assert.ok(!lines.includes('start 1003'), lines.join(' · '))
+})

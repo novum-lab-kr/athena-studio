@@ -469,9 +469,17 @@ async function stream() {
     devicePid = ''
     if (/^\d+$/.test(pid)) await run(adb, ['-s', serial, 'shell', 'kill', pid], { timeout: 5_000 }).catch(() => '')
   }
-  const restart = async () => {
-    await stopDevice()
-    child?.kill()
+  // 다시 켜기 — 끊을 adb 는 부른 때의 것으로 고정한다(기기 kill 을 기다리는 사이 반복이 새 adb 를 띄우면 그것을 끊게 된다).
+  // 반복은 이 약속이 끝난 뒤에만 다음 녹화를 켠다(아래 await restarting)
+  /** @type {Promise<void>} */
+  let restarting = Promise.resolve()
+  const restart = () => {
+    const proc = child
+    restarting = restarting.then(async () => {
+      await stopDevice()
+      proc?.kill()
+    })
+    return restarting
   }
   /** @param {number} code */
   const finish = async (code) => {
@@ -554,6 +562,8 @@ async function stream() {
       proc.on('exit', (code) => done(code ?? 1))
     })
     child = null
+    // 다시 켜기가 도는 중이면 기기 녹화 끄기 · 옛 adb 끊기가 끝난 뒤에 다음 녹화를 켠다
+    await restarting
     devicePid = ''
     if (stopping) break
     quickExits = Date.now() - began < QUICK_EXIT_MS ? quickExits + 1 : 0
