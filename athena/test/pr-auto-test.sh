@@ -426,6 +426,7 @@ const partialComment = reviewComment({ sha: 'abcdef1', round: 1, results: [ok('c
 check('PR 댓글 — 다 넣지 못한 파일 수 · 이 승인은 머지 승인으로 세지 않는다 · 다 넣었으면 그 줄 없음', partialComment.includes(`코드 파일 ${partialCount(over)}개를 다 넣지 못했다`) && partialComment.includes('머지 승인으로 세지 않고') && !reviewComment({ sha: 'a', round: 1, results: [ok('claude', approve), ok('codex', approve)], summary: both }).includes('다 넣지 못했다'), partialComment)
 const pr = { baseRefName: 'dev', title: '시험', body: '본문' }
 const prompt = buildPrompt({ repo: 'syung', number: '23', pr, planFile: 'plans/task/x.md', planText: '계획', packed })
+check('프롬프트 — PR 대상 브랜치(dev · 레포 규칙의 prBase 와 다름)는 올린 사람이 정한 것 · 지적하지 않는다고 알린다(#328)', prompt.includes('→ dev —') && prompt.includes('PR 대상 브랜치') && prompt.includes('올린 사람이 정한 것'), prompt.slice(0, 2500))
 check('프롬프트 — 코드 diff · "리뷰에 넣지 못한 것" 절에 생성물 목록 · 생성물 본문 없음', prompt.includes('src/fare.mjs') && prompt.includes('## 리뷰에 넣지 못한 것') && prompt.includes('bus_km.json` · +1/−0줄 · 생성물이라 생략') && !prompt.includes('100100') && !prompt.includes('길어서 일부만'), prompt.slice(-1500))
 const overPrompt = buildPrompt({ repo: 'syung', number: '23', pr, planFile: 'plans/task/x.md', planText: '계획', packed: over })
 check('프롬프트 — 넘치면 제목에 "길어서 일부만" · 잘린 파일 목록', overPrompt.includes('길어서 일부만') && overPrompt.includes('⚠️ 길어서 다 넣지 못한 코드 파일'))
