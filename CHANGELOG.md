@@ -49,6 +49,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix idle CPU use from the menu bar panel animating while closed
+- Fix server status running SSH on every phone refresh — one shared read every 3 minutes
 
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
 
