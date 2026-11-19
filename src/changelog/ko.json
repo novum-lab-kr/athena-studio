@@ -257,5 +257,8 @@
   "Fix slow phone reconnects — server status answered from the last reading": "폰 다시 연결이 느리던 것 수정 — 서버 상태는 지난 값으로 바로 답함",
   "Add terminal search — ⌘F in a pane finds text in the screen and scrollback": "터미널 찾기 추가 — pane 에서 ⌘F 로 화면 · 스크롤백 글 찾기",
   "Fix idle CPU use from the menu bar panel animating while closed": "메뉴 막대 패널이 닫혀 있어도 움직여 대기 CPU 를 쓰던 것 수정",
+  "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "새 레포 워크트리에서 에이전트 pane 이 폴더 확인 창에서 멈추던 것 수정",
+  "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "확인 요청 · 에이전트 일 끝남 폰 푸시 알림 추가 — 폰 앱이 닫혀 있을 때만",
+  "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "폰 코드 변화량 카드가 손 머지 · 직접 push 를 빼던 것 수정 — 레포마다 git 기록에서 읽음",
   "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept": "업데이트로 앱을 다시 켠 뒤 폰 · iPad 앱 연결이 끊기던 것 수정 — relay 주소 유지"
 }

@@ -45,15 +45,18 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ## 0.66 (v0.66.0 – · Nov 19, 2026)
 
 ### Fixed
+- Fix phone code change card missing hand merges and direct pushes — read from each repo's git history
 - Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept
 
 ## 0.65 (v0.65.0 – · Nov 19, 2026)
 
 ### New
 - Add terminal search — ⌘F in a pane finds text in the screen and scrollback
+- Add phone push alerts for new requests and finished agents — only while the phone app is closed
 
 ### Fixed
 - Fix idle CPU use from the menu bar panel animating while closed
+- Fix agent panes stopping at the folder trust prompt in a new repo's worktree
 - Fix server status running SSH on every phone refresh — one shared read every 3 minutes
 
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
