@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
-const { quietStream, mobileLog, mobileError } = require('../src/main/mobile-log.mts')
+const { quietStream, mobileLog, mobileError, relayMissingNote, MOBILE_RELAY_MISSING } = require('../src/main/mobile-log.mts')
 
 const writeFailure = () => Object.assign(new Error('write EIO'), { code: 'EIO' })
 
@@ -31,4 +31,13 @@ test('mobileLog · mobileError 는 쓰기 전에 stdout · stderr 에 건다', (
   assert.equal(process.stderr.listenerCount('error'), before.err + 1)
   assert.equal(logged.mock.callCount(), 2)
   assert.equal(errored.mock.callCount(), 1)
+})
+
+test('relay 주소 없이 켜졌고 짝 지은 기록이 있으면 한 줄 · 개발판에서만', () => {
+  const paired = () => true
+  assert.equal(relayMissingNote({ packaged: false, relay: undefined, pairedFileExists: paired }), MOBILE_RELAY_MISSING)
+  assert.equal(relayMissingNote({ packaged: false, relay: '', pairedFileExists: paired }), MOBILE_RELAY_MISSING)
+  assert.equal(relayMissingNote({ packaged: false, relay: 'ws://127.0.0.1:8787/ws', pairedFileExists: paired }), null)
+  assert.equal(relayMissingNote({ packaged: true, relay: undefined, pairedFileExists: paired }), null)
+  assert.equal(relayMissingNote({ packaged: false, relay: undefined, pairedFileExists: () => false }), null)
 })

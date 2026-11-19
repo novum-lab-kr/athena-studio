@@ -317,6 +317,12 @@ test('다시 켜기 환경: childEnv 로 걷어 내고 켤 때 읽는 값(스튜
   assert.equal('ATHENA_STUDIO_HOME' in core.relaunchEnv({ PATH: '/bin', ATHENA_STUDIO_HOME: '' }), false)
 })
 
+test('다시 켜기 환경: 모바일 relay 주소를 싣는다 — 빠지면 개발판 모바일 길이 안 켜져 짝 기기가 모두 끊긴다', () => {
+  const relay = 'wss://relay.example.test/ws'
+  assert.equal(core.relaunchEnv({ PATH: '/bin', ATHENA_STUDIO_MOBILE_RELAY: relay }).ATHENA_STUDIO_MOBILE_RELAY, relay)
+  assert.equal('ATHENA_STUDIO_MOBILE_RELAY' in core.relaunchEnv({ PATH: '/bin' }), false)
+})
+
 
 test('아테나 작업 공간 규칙(화면과 같이 쓰는 athena-workspace.mts): 글자로 폴더 맞추기 · 푼 경로의 폴더 이름도', () => {
   const rule = require('../src/lib/athena-workspace.mts')
