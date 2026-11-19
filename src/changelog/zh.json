@@ -265,5 +265,6 @@
   "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "修复智能体终端链接只弹出警告而无法打开的问题 — 在浏览器中打开",
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "手机推送通知新增智能体名称 · 请求标题 — 加密发送，仅 iPhone 可读",
   "Fix repeated phone push alerts for one request — none while the Studio window is in front": "修复一个请求重复收到手机推送通知的问题 — Studio 窗口在前台时不发送",
-  "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "加密的手机推送通知新增发送窗格 — 手机应用可在点按通知时打开该窗格"
+  "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "加密的手机推送通知新增发送窗格 — 手机应用可在点按通知时打开该窗格",
+  "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "修复手机推送通知只显示固定文案的问题 — 应用内加密总是失败"
 }
