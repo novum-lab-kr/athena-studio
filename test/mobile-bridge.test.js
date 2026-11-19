@@ -175,6 +175,23 @@ async function setup(overrides = {}) {
   return { daemon, daemonPaths, phone, bridge, ask, events, logged, answered, posted, approved, repoSets, opened, flags, cleanup }
 }
 
+test('push.key — 폰 푸시 공개 열쇠를 그 기기 기록에 넘긴다 · 못 받으면(모양 틀림 · 받을 곳 없음) usage', async () => {
+  const got = []
+  const env = await setup({ pushKey: (publicKey) => (got.push(publicKey), typeof publicKey === 'string' && publicKey.length === 44) })
+  const bare = await setup()
+  try {
+    const key = Buffer.alloc(32, 7).toString('base64')
+    assert.deepEqual(await env.ask('push.key', { publicKey: key }), { id: 1, ok: true, result: {} })
+    assert.deepEqual(got, [key])
+    assert.equal((await env.ask('push.key', { publicKey: 'short' })).error.code, 'usage')
+    assert.equal((await env.ask('push.key', {})).error.code, 'usage')
+    assert.equal((await bare.ask('push.key', { publicKey: key })).error.code, 'usage')
+  } finally {
+    await env.cleanup()
+    await bare.cleanup()
+  }
+})
+
 test('snapshot — 확인 요청 · 살아 있는 pane 전부(쉬는 것도 · 필요한 칸 · PC 크기) · 서버 · 7일 머지를 한 번에, attach 하지 않는다', async () => {
   const env = await setup()
   try {

@@ -8,7 +8,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import { Worker } from 'node:worker_threads'
-import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme } from 'electron'
+import { app, BrowserWindow, Menu, Notification, Tray, ipcMain, nativeImage, nativeTheme, powerMonitor } from 'electron'
 import type { IpcMainEvent, MenuItemConstructorOptions, NativeImage } from 'electron'
 import * as core from '../lib/core.mts'
 import * as trayModel from '../lib/tray-model.mts'
@@ -72,6 +72,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
   }
   let trayNotifier = new trayModel.Notifier()
   let tray: Tray | null = null
+  let screenLocked = false // 맥 화면 잠금 — 잠긴 동안은 창이 앞이어도 보고 있는 것이 아니다(폰 푸시 pushGate)
   let trayWindow: BrowserWindow | null = null
   let trayActivity: trayModel.ActivityLog | null = null // 오늘 · 어제 · 그저께 10분 칸마다 일한 시간(에이전트·분) — 패널 산 그림
   let savedSlot = -1 // 마지막으로 파일에 쓴 때의 칸 — 칸이 바뀔 때만 쓴다
@@ -133,6 +134,8 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
       trayWorking = null
       setTrayIcon(working)
     })
+    powerMonitor.on('lock-screen', () => (screenLocked = true))
+    powerMonitor.on('unlock-screen', () => (screenLocked = false))
     loadDay()
     app.on('will-quit', () => saveDay(true))
     const created = new Tray(statusIcon(false))
@@ -438,9 +441,12 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
     return ctx.win.isVisible() && ctx.win.isFocused() && ctx.uiTab === 'work' && trayState.focused === pane
   }
 
-  // 폰 푸시도 맥 알림과 같이 거른다(사용자 결정 2026-11-19) — [알림 끄기] 동안 · 지금 보고 있는 pane
+  // 폰 푸시도 맥 알림과 같이 거른다(사용자 결정 2026-11-19) — [알림 끄기] 동안 · 지금 보고 있는 pane.
+  // Studio 팩 창이 앞(보임 · 포커스)이면 아무것도 보내지 않는다(active — 사용자 메모 2026-11-19 · 계획서 20261119-폰-알림-내용-암호화-A3 D4).
+  // 화면이 잠겼으면 포커스가 남아 있어도 보고 있는 것이 아니다 — 다 보낸다
   function pushGate(): PushGate {
-    return { muted: trayState.pausedUntil > Date.now(), lookingAt: lookingAtPane }
+    const active = !screenLocked && [...packWindows].some((ctx) => Boolean(ctx.win && !ctx.win.isDestroyed() && ctx.win.isVisible() && ctx.win.isFocused()))
+    return { muted: trayState.pausedUntil > Date.now(), active, lookingAt: (pane) => !screenLocked && lookingAtPane(pane) }
   }
 
   function notify(item: TrayNotice) {

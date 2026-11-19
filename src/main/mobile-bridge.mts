@@ -96,6 +96,7 @@ export type BridgeDeps = {
   work?: () => MobileWork | Promise<MobileWork> // 맥 [작업] 과 같은 작업 목록(doing · done · 현황판을 못 띄웠으면 boardUp:false + boardError)
   usage?: () => MobileUsage | Promise<MobileUsage> // 맥 메뉴 막대와 같은 AI 사용량(현황판 header.usage · 꺼졌으면 boardUp:false) — work 다음에 읽는다
   devices?: () => DeviceView[]
+  pushKey?: (publicKey: unknown) => boolean // 폰 푸시 공개 열쇠(push.key) — 그 기기 기록에 저장(mobile-relay setPushKey) · 못 받으면 false
   serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
   control?: PaneControl // 제어 주인(D9) — 기기끼리 나눠 쓴다. 없으면 이 브리지 혼자 쓰는 것
   imageDir?: () => string // 폰 이미지 저장 폴더 — 없으면 defaultImageDir()(맥 사용자 임시 폴더 아래)
@@ -1446,6 +1447,10 @@ export function createMobileBridge(deps: BridgeDeps) {
         return serverDetail(args)
       case 'look.icon':
         return lookIcon(args)
+      case 'push.key':
+        // 알림 내용 암호화(athena-push v1)에 쓸 폰 푸시 공개 열쇠 — X25519 raw 32B 를 base64 로
+        if (!deps.pushKey || !deps.pushKey(args.publicKey)) fail('usage', 'publicKey 가 필요해요')
+        return {}
       default:
         return fail('usage', `모르는 요청: ${String(op)}`)
     }

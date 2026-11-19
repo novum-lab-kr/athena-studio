@@ -1,55 +1,139 @@
-// 폰 푸시 — 맥이 언제 relay push.send 를 부를지(계획서 plans/feature/20261119-폰-푸시-알림-답-필요-일-끝남.md 결정 B1 · C2).
-// Electron 없이 돌아 `npm test` 로 검사한다. 보낼지 말지(폰이 붙어 있는지)는 부르는 쪽(mobile-dev · mobile-relay)이 정한다.
+// 폰 푸시 — 맥이 언제 · 무슨 글로 relay push.send 를 부를지(계획서 plans/feature/20261119-폰-푸시-알림-답-필요-일-끝남.md 결정 B1 · C2 ·
+// plans/feature/20261119-폰-알림-내용-암호화-A3.md 결정 D1 · D3 · D4).
+// Electron 없이 돌아 `npm test` 로 검사한다. 보낼지 말지(폰이 붙어 있는지) · 암호화는 부르는 쪽(mobile-dev · mobile-relay)이 한다.
 // request = 새로 열린 확인 요청 · pane 입력 대기 — 메뉴 막대 알림과 같은 판정(tray-model Notifier: 켤 때 본 것은 빼고 · 같은 건은 한 번 · 허락 한 건은 pane 마다 한 번)
 // done = 에이전트 pane 이 working → idle(아테나 · 직접 켠 pane 포함) — 같은 pane 은 알린 뒤 DONE_HOLD_MS 안에 또 끝나도 한 번만
-// 한 번 볼 때 같은 종류가 여러 건이어도 하나로 — relay 알림 글이 종류마다 고정 문구라 여러 번 보내도 같은 글이다
-// 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안은 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
+// 사건 하나에 푸시 하나(D3) — 사건마다 글(제목 · 본문)과 id 가 있다:
+//   같은 pane 의 확인 요청은 ASK_HOLD_MS 안에 한 번(요청 목록 · 입력 대기 · 같은 건을 다른 id 로 받은 요청이 겹쳐도) ·
+//   확인 요청을 알린 pane 이 곧 쉬어도(working → idle) 일 끝남을 또 보내지 않는다 · 그 pane 이 다시 일하기 시작하면 묶기가 풀린다 ·
+//   일 끝남 뒤의 확인 요청은 보낸다 · 같은 id 는 다시 보내지 않는다
+// 글(D1): 제목 '<에이전트> · 확인 요청|일 끝남' · 본문 = 요청 제목 / 일 끝남 · 입력 대기는 pane 이름표 — relay 고정 문구(풀기 실패 때 보임)와 같이 한국어
+// 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
 // 거른 것도 기억은 그대로 넘긴다(끄기가 풀려도 그 사이 것을 몰아 보내지 않는다 — 맥 알림과 같다)
-import { Notifier } from './tray-model.mts'
+import crypto from 'node:crypto'
+import { Notifier, agentName } from './tray-model.mts'
 import type { TrayPane } from './tray-model.mts'
 
 export type PushKind = 'request' | 'done'
+// 푸시 하나 — id 는 relay 중복 거르기 · 로그용(base64url 22자), title · body 는 암호화해 싣는 글
+export type PushEvent = { kind: PushKind; id: string; title: string; body: string }
 export const DONE_HOLD_MS = 60_000 // 같은 pane 끝남 묶기(아테나 정한 값 · 2026-11-19)
+export const ASK_HOLD_MS = 60_000 // 같은 pane 확인 요청 묶기 · 확인 요청 뒤 일 끝남 안 보내기(D3)
+export const SENT_KEEP_MS = 10 * 60_000 // 보낸 사건 id 를 기억하는 동안
+export const TITLE_MAX = 60 // 글자(코드포인트) — 계획서 5절
+export const BODY_MAX = 160
+const ASK_TITLE = '확인 요청'
+const DONE_TITLE = '일 끝남'
 
-// 메뉴 막대가 주는 거르기(tray.mts pushGate) — 없으면 거르지 않는다
-export type PushGate = { muted: boolean; lookingAt: (pane: string) => boolean }
+// 메뉴 막대가 주는 거르기(tray.mts pushGate) — 없으면 거르지 않는다. active = Studio 창이 앞(포커스)이고 화면이 잠기지 않음(D4)
+export type PushGate = { muted: boolean; active?: boolean; lookingAt: (pane: string) => boolean }
 const openGate: PushGate = { muted: false, lookingAt: () => false }
+
+// 보낸 것의 기억 — PushWatch 를 새로 만들어도(앞 창 · 본체가 바뀜) 부르는 쪽이 들고 있어 묶기가 풀리지 않는다.
+// pane 목록에 안 보인다고 지우지 않고(창마다 목록이 다를 수 있다) 시간이 지난 것만 지운다
+export class PushMemory {
+  doneAt = new Map<string, number>() // pane → 끝남을 알린 시각
+  askedAt = new Map<string, number>() // pane → 확인 요청을 알린 시각
+  sent = new Map<string, number>() // 사건 id → 보낸 시각
+
+  prune(now: number) {
+    for (const [pane, at] of this.doneAt) if (now - at >= DONE_HOLD_MS) this.doneAt.delete(pane)
+    for (const [pane, at] of this.askedAt) if (now - at >= ASK_HOLD_MS) this.askedAt.delete(pane)
+    for (const [id, at] of this.sent) if (now - at >= SENT_KEEP_MS) this.sent.delete(id)
+  }
+}
+
+// 제어 글자를 빼고 max 글자(코드포인트)에서 자른다
+export function clipText(value: unknown, max: number): string {
+  const chars = Array.from(String(value ?? '').replace(/[\u0000-\u001f\u007f]/g, ' ').trim())
+  return chars.slice(0, max).join('')
+}
+
+// 사건 id — relay 가 알 수 있는 것은 해시뿐(요청 id · pane 이름을 그대로 싣지 않는다)
+const eventId = (...parts: (string | number)[]) => crypto.createHash('sha256').update(parts.join('\n')).digest('base64url').slice(0, 22)
+// 에이전트 이름 — delegate 이름표 '🤖 에이전트 · 브랜치' 의 ' · ' 앞(이름표가 없으면 agent)
+const agentOf = (pane: TrayPane) => agentName(pane).split(' · ')[0] || agentName(pane)
+const titleOf = (pane: TrayPane | undefined, what: string) => clipText(pane ? `${agentOf(pane)} · ${what}` : what, TITLE_MAX)
+
+type RequestLike = { id?: unknown; pane?: unknown }
 
 export class PushWatch {
   notifier = new Notifier()
+  memory: PushMemory
   status = new Map<string, string>() // pane → 지난번 상태
-  doneAt = new Map<string, number>() // pane → 끝남을 알린 시각
+  seen = new Map<string, TrayPane>() // pane → 마지막으로 본 모습(요청 알림의 에이전트 이름)
   ready = false
 
-  // 요청 목록이 바뀜 — 새로 열린 것이 있으면 ['request']. 못 읽었으면(null) 기억 그대로 · 처음 본 목록은 기준만
-  // pane 이 붙은 요청은 허락 창 요청뿐이다(메뉴 막대와 같이 그것만 보고 있는 pane 이면 뺀다)
-  requests(list: unknown, gate: PushGate = openGate): PushKind[] {
-    const found = this.notifier.updateRequests(list).filter((notice) => !notice.target.pane || !gate.lookingAt(notice.target.pane))
-    return found.length && !gate.muted ? ['request'] : []
+  constructor(memory: PushMemory = new PushMemory()) {
+    this.memory = memory
   }
 
-  // pane 목록(메뉴 막대가 입력 대기를 보탠 것) — 이번에 보낼 종류
-  panes(panes: readonly (TrayPane | null | undefined)[], now: number, gate: PushGate = openGate): PushKind[] {
-    const kinds = new Set<PushKind>()
-    const waiting = this.notifier.update({ panes: [...panes] }, now)
-    if (waiting.some((notice) => !notice.target.pane || !gate.lookingAt(notice.target.pane))) kinds.add('request')
+  // 같은 id 는 한 번만 — 보내기로 한 것을 기억에 적는다
+  private take(event: PushEvent, now: number): PushEvent[] {
+    if (this.memory.sent.has(event.id)) return []
+    this.memory.sent.set(event.id, now)
+    return [event]
+  }
+
+  // 요청 목록이 바뀜 — 새로 열린 것마다 사건 하나. 못 읽었으면(null) 기억 그대로 · 처음 본 목록은 기준만
+  // 보고 있는 pane 이면 빼는 것은 허락 창 요청뿐(메뉴 막대와 같다) · 같은 pane 묶기(D3)는 pane 이 붙은 요청 모두
+  requests(list: unknown, gate: PushGate = openGate, now: number = Date.now()): PushEvent[] {
+    this.memory.prune(now)
+    const paneOf = new Map<string, string>()
+    for (const request of Array.isArray(list) ? (list as (RequestLike | null | undefined)[]) : []) {
+      if (request && typeof request.id === 'string' && typeof request.pane === 'string' && request.pane) paneOf.set(request.id, request.pane)
+    }
+    const found: PushEvent[] = []
+    for (const notice of this.notifier.updateRequests(list)) {
+      if (notice.target.pane && gate.lookingAt(notice.target.pane)) continue
+      const request = notice.target.request || ''
+      const pane = paneOf.get(request)
+      if (pane !== undefined) {
+        if (this.memory.askedAt.has(pane)) continue
+        this.memory.askedAt.set(pane, now)
+      }
+      const shown = pane === undefined ? undefined : this.seen.get(pane)
+      const body = clipText(notice.body, BODY_MAX) || (shown ? clipText(agentName(shown), BODY_MAX) : '')
+      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body }, now))
+    }
+    return gate.muted || gate.active ? [] : found
+  }
+
+  // pane 목록(메뉴 막대가 입력 대기를 보탠 것) — 이번에 보낼 사건
+  panes(panes: readonly (TrayPane | null | undefined)[], now: number, gate: PushGate = openGate): PushEvent[] {
+    this.memory.prune(now)
+    const found: PushEvent[] = []
     const seen = new Set<string>()
     for (const pane of panes) {
       if (!pane || !pane.agent) continue
       seen.add(pane.id)
+      this.seen.set(pane.id, pane)
+    }
+    for (const notice of this.notifier.update({ panes: [...panes] }, now)) {
+      const id = notice.target.pane
+      if (!id || gate.lookingAt(id) || this.memory.askedAt.has(id)) continue
+      this.memory.askedAt.set(id, now)
+      const pane = this.seen.get(id)
+      found.push(...this.take({ kind: 'request', id: eventId('waiting', id, now), title: titleOf(pane, ASK_TITLE), body: pane ? clipText(agentName(pane), BODY_MAX) : '' }, now))
+    }
+    for (const id of seen) {
+      const pane = this.seen.get(id) as TrayPane
       const status = pane.agent_status || 'idle'
-      const before = this.status.get(pane.id)
-      this.status.set(pane.id, status)
+      const before = this.status.get(id)
+      this.status.set(id, status)
+      // 다시 일하기 시작했다 — 앞 확인 요청은 끝난 사건이다(그 뒤의 일 끝남 · 새 확인 요청은 따로 보낸다)
+      if (before !== undefined && before !== 'working' && status === 'working') this.memory.askedAt.delete(id)
       // 처음 본 pane · 켤 때는 기준만
       if (!this.ready || before !== 'working' || status !== 'idle') continue
-      const last = this.doneAt.get(pane.id)
-      if (last !== undefined && now - last < DONE_HOLD_MS) continue
-      this.doneAt.set(pane.id, now)
-      if (!gate.lookingAt(pane.id)) kinds.add('done')
+      if (this.memory.doneAt.has(id)) continue
+      this.memory.doneAt.set(id, now)
+      // 방금 확인 요청을 알린 pane 이 쉬는 것은 같은 사건이다(D3)
+      if (gate.lookingAt(id) || this.memory.askedAt.has(id)) continue
+      found.push(...this.take({ kind: 'done', id: eventId('done', id, now), title: titleOf(pane, DONE_TITLE), body: clipText(agentName(pane), BODY_MAX) }, now))
     }
     for (const id of [...this.status.keys()]) if (!seen.has(id)) this.status.delete(id)
-    for (const id of [...this.doneAt.keys()]) if (!seen.has(id)) this.doneAt.delete(id)
+    for (const id of [...this.seen.keys()]) if (!seen.has(id)) this.seen.delete(id)
     this.ready = true
-    return gate.muted ? [] : [...kinds]
+    return gate.muted || gate.active ? [] : found
   }
 }

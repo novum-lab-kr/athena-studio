@@ -1,4 +1,13 @@
 {
+  "0.67": [
+    {
+      "tag": "new",
+      "en": "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone",
+      "ko": "폰 푸시 알림에 에이전트 이름 · 요청 제목 추가 — 암호화해 보내고 iPhone 에서만 읽힘",
+      "ja": "スマホプッシュ通知にエージェント名 · リクエストのタイトルを追加 — 暗号化して送り、iPhone でのみ読める",
+      "zh": "手机推送通知新增智能体名称 · 请求标题 — 加密发送，仅 iPhone 可读"
+    }
+  ],
   "0.66": [
     {
       "tag": "fixed",
