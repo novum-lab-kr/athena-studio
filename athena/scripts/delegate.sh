@@ -522,6 +522,9 @@ fi
 # reviewer 는 Jira · Confluence(Atlassian 커넥터)를 읽을 수 있어야 해서 제외한다(.claude/agents/reviewer.md tools)
 [ "$ROLE" != reviewer ] && CLAUDE_ARGS="$CLAUDE_ARGS --strict-mcp-config"
 [ -n "${RESUME:-}" ] && CLAUDE_ARGS="$CLAUDE_ARGS --resume $(shq "$RESUME")"
+# 처음 쓰는 레포의 새 워크트리면 Claude 가 "이 폴더를 믿을까요?" 창으로 멈춘다 — 띄우기 전에 ~/.claude.json 에 그 워크트리 믿음을 적어 둔다.
+# 지금 팩 worktrees 자리 안의 워크트리만 · 파일이 없거나 깨졌으면 건드리지 않는다(창이 뜬다) · 실패해도 띄우기는 그대로(scripts/lib/claude_trust.py)
+[ "$ENGINE" = codex ] || python3 "$ATHENA_DIR/scripts/lib/claude_trust.py" "$ATHENA_DIR" "$WORKDIR" >/dev/null 2>&1 || true
 
 # Codex 는 Claude 전용 인자를 받지 않는다. 동일 컨텍스트·프로필을 개발자 지시로,
 # 보호 훅·pane 기록을 CLI 설정으로 넘기고 프로젝트의 리드 AGENTS 자동 로드는 끈다.
