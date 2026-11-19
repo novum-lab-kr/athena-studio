@@ -7,7 +7,10 @@ Claude Code 는 projects.<폴더 실제 경로>.hasTrustDialogAccepted 가 true 
 
 지키는 것
 - 아테나가 만든 워크트리(지금 팩의 worktrees 자리 안 · .git 이 파일인 연결 워크트리 맨 위)만 — 다른 폴더는 믿음 표시하지 않는다
-- ~/.claude.json 은 다른 Claude 세션이 같이 쓰는 파일 — 그 칸만 고쳐 같은 폴더의 임시 파일 → rename 으로 바꾸고, 쓰기 직전에 파일이 바뀌었으면 다시 읽는다
+- ~/.claude.json 은 다른 Claude 세션이 같이 쓰는 파일 — Claude 가 설정을 쓸 때 잡는 잠금(~/.claude.json.lock 폴더 ·
+  proper-lockfile 방식 mkdir — 2.1.328 실행 파일에서 확인)을 같이 잡고 읽기부터 rename 까지 한다. 잠금 안에서 그 칸만 고쳐
+  같은 폴더의 임시 파일 → rename 으로 바꾸고, 잠금 없이 쓰는 경우(Claude 의 잠금 실패 대비 길)를 위해 쓰기 직전에 파일이 바뀌었으면 다시 읽는다
+- 잠금을 못 잡으면(다른 세션이 오래 쥠 · 오래된 잠금) 쓰지 않는다 — 남의 잠금을 지우지 않는다
 - 파일이 없거나 JSON 이 깨졌거나 모양이 다르면 쓰지 않는다(지금처럼 창이 뜬다)
 - 파일 내용은 어디에도 찍지 않는다 — 결과 낱말 하나만
 
@@ -17,16 +20,36 @@ import json
 import os
 import sys
 import tempfile
+import time
 
 import athena_config
 
 KEY = 'hasTrustDialogAccepted'
 RETRIES = 3
+LOCK_WAIT = 3.0  # 초 — Claude 는 설정을 쓰는 동안만 잠금을 쥔다(오래된 잠금 기준 10초)
+
+
+def config_link():
+    """Claude 가 여는 전역 설정 파일 자리 — 잠금 폴더는 이 이름 뒤에 .lock(Claude 와 같은 자리)"""
+    return os.path.join(os.path.expanduser('~'), '.claude.json')
 
 
 def config_path():
     """Claude 전역 설정 파일 — 링크면 가리키는 실제 파일(rename 이 링크를 파일로 바꾸지 않게)"""
-    return os.path.realpath(os.path.join(os.path.expanduser('~'), '.claude.json'))
+    return os.path.realpath(config_link())
+
+
+def acquire(lock, wait=LOCK_WAIT):
+    """Claude 와 같은 잠금 폴더를 mkdir 로 잡는다 — 잡으면 True · 기다려도 못 잡으면 False(남의 잠금은 지우지 않는다)"""
+    deadline = time.monotonic() + wait
+    while True:
+        try:
+            os.mkdir(lock)
+            return True
+        except FileExistsError:
+            if time.monotonic() >= deadline:
+                return False
+            time.sleep(0.05)
 
 
 def worktree_of(athena_dir, workdir):
@@ -49,9 +72,29 @@ def _stamp(path):
     return (info.st_ino, info.st_size, info.st_mtime_ns)
 
 
-def mark(target, path=None):
+def mark(target, path=None, lock=None):
     """target 칸에 믿음을 적는다 — 결과 낱말(marked · already · skip:<이유>)"""
     path = path or config_path()
+    lock = lock or config_link() + '.lock'
+    if not os.path.exists(path):
+        return 'skip:no-config'
+    try:
+        held = acquire(lock)
+    except OSError:
+        return 'skip:unwritable'
+    if not held:
+        return 'skip:busy'
+    try:
+        return _write_locked(target, path)
+    finally:
+        try:
+            os.rmdir(lock)
+        except OSError:
+            pass
+
+
+def _write_locked(target, path):
+    """잠금을 쥔 채로 읽고 → 그 칸만 고쳐 → rename"""
     for _ in range(RETRIES):
         try:
             before = _stamp(path)
@@ -83,7 +126,7 @@ def mark(target, path=None):
                 handle.flush()
                 os.fsync(handle.fileno())
             os.chmod(temp, os.stat(path).st_mode & 0o777)
-            # 읽은 뒤 다른 세션이 썼으면 그 내용을 덮지 않게 처음부터 다시
+            # 잠금 없이 쓴 세션(Claude 의 잠금 실패 대비 길)이 있었으면 그 내용을 덮지 않게 처음부터 다시
             if _stamp(path) != before:
                 os.unlink(temp)
                 continue

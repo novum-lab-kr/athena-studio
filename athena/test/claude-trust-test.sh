@@ -2,6 +2,7 @@
 # 위임 에이전트 워크트리 믿음 미리 적기 시험 — scripts/lib/claude_trust.py(delegate.sh 가 Claude 를 띄우기 전에 부른다) · 몇 초
 # 가짜 HOME 의 ~/.claude.json 만 건드린다(진짜 claude 를 부르지 않는다).
 #   없음 → 적음 · 이미 있음 → 그대로 · 깨진 JSON → 안 건드림 · 팩 밖 경로 → 안 함 · 파일 없음 → 만들지 않음 · 링크 파일 → 링크 유지
+#   동시 쓰기 — Claude 잠금(~/.claude.json.lock)을 다른 세션이 쥔 동안 쓴 내용 보존 · 오래 쥐면 skip:busy
 #
 # 사용: test/claude-trust-test.sh    → 항목마다 ✔/✖, 하나라도 ✖ 면 1
 . "$(dirname "$0")/_lib.sh"   # 통과 줄 숨기기 — ATHENA_TEST_VERBOSE=1 이면 전부
@@ -11,7 +12,7 @@ TMP="$(mktemp -d)"; trap 'rm -rf "$TMP"' EXIT
 TMP="$(cd "$TMP" && pwd -P)"
 
 python3 - "$SRC" "$TMP" <<'PY'
-import json, os, stat, subprocess, sys
+import json, os, stat, subprocess, sys, time
 src, tmp = sys.argv[1:3]
 fail = 0
 def check(label, ok, detail=""):
@@ -122,6 +123,33 @@ code2, out2, _ = run(body, other_pack)
 projects = json.loads(read())['projects']
 check('여러 팩 — 지금 팩 워크트리 marked · 다른 팩 워크트리 skip:outside', out == 'marked' and out2 == 'skip:outside'
       and list(projects) == [os.path.realpath(mine)], (out, out2, list(projects)))
+
+# 7-1. 동시 쓰기 — 다른 Claude 세션이 같은 잠금(~/.claude.json.lock 폴더)을 쥐고 쓰는 중에 도우미가 불림
+lock = config + '.lock'
+write(json.dumps({'numStartups': 1, 'projects': {}}))
+check('평소 실행 뒤 잠금 폴더가 남지 않는다', not os.path.lexists(lock), os.listdir(home))
+os.mkdir(lock)  # 다른 세션이 잠금을 잡음
+helper = subprocess.Popen(['python3', f'{src}/scripts/lib/claude_trust.py', legacy, inside], env=env, stdout=subprocess.PIPE, text=True)
+time.sleep(0.5)
+# 다른 세션이 잠금 안에서 파일을 바꾸고(같은 방식 — 임시 파일 → rename) 잠금을 놓는다
+with open(config + '.other', 'w') as handle: json.dump({'numStartups': 2, 'otherSession': True, 'projects': {'/x': {'a': 1}}}, handle)
+os.replace(config + '.other', config)
+mid = helper.poll()
+os.rmdir(lock)
+out = helper.communicate(timeout=10)[0].strip()
+data = json.loads(read())
+check('잠금을 쥔 동안은 기다린다', mid is None, mid)
+check('다른 세션이 쓴 내용과 믿음이 둘 다 남는다', out == 'marked' and data.get('otherSession') is True and data['numStartups'] == 2
+      and data['projects'].get('/x') == {'a': 1} and data['projects'].get(os.path.realpath(inside)) == {'hasTrustDialogAccepted': True}, (out, list(data)))
+check('도우미가 끝난 뒤 잠금 폴더가 남지 않는다', not os.path.lexists(lock), os.listdir(home))
+# 잠금을 오래 쥐면(다른 세션 · 오래된 잠금) 쓰지 않고 남의 잠금도 지우지 않는다
+write('{"projects": {}}')
+os.mkdir(lock)
+started = time.monotonic()
+code, out, _ = run(legacy, inside)
+check('잠금을 못 잡으면 skip:busy · 파일 그대로 · 잠금 그대로', out == 'skip:busy' and read() == '{"projects": {}}' and os.path.isdir(lock)
+      and time.monotonic() - started < 10, out)
+os.rmdir(lock)
 
 # 8. delegate.sh 가 Claude 엔진에서 실행기를 만들기 전에 부른다(Codex 는 부르지 않는다)
 text = open(f'{src}/scripts/delegate.sh', encoding='utf-8').read()
