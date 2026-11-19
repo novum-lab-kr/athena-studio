@@ -1053,6 +1053,11 @@ export const directMergeStatus = (planText) => {
 // PR 과 "- Auto merge:" 기록이 함께 있는 계획서 — PR 이 모두 머지됐어도 바로 머지 쪽이 아직 끝나지 않았으면(머지 확인 대기 등) 완료로 보지 않는다.
 // Auto merge 줄이 없는 계획서(directMergeStatus none)는 건드리지 않는다. 현황판 autoDonePlans 의 PR 갈래가 부른다
 export const prDoneHeldByDirect = (planText) => directMergeStatus(planText).state === 'wait'
+// PR 머지 방식 — PR 안에 merge 커밋(부모 2개 이상)이 하나라도 있으면 merge 커밋으로, 없으면 squash.
+// squash 하면 PR 의 merge 커밋이 base 기록에서 빠져 다음 합치기 때 같은 충돌이 다시 난다(athena-studio#324 — dev 에 main 붓기가 squash 로 들어감).
+// parentCounts = PR 커밋마다 부모 수 한 줄씩(GitHub PR commits API 의 parents 길이)
+export const prMergeMethod = (parentCounts) => String(parentCounts ?? '').split('\n').some((count) => Number(count) > 1) ? 'merge' : 'squash'
+
 // 바로 머지 커밋 글 — squash 한 줄 제목(계획서 제목)과 브랜치
 export const directMergeMessage = ({ title, branch, base }) => `${oneLine(title || branch, 120)}\n\n${branch} → ${base} 바로 머지(PR 없음 · squash)`
 // 바로 머지 결과를 작업 pane 에 — 알림만

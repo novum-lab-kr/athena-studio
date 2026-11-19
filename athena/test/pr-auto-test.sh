@@ -22,7 +22,7 @@ TMP="$(mktemp -d "${TMPDIR:-/tmp}/athena-pr-auto-test.XXXXXX")"
 FAIL=0
 
 node --input-type=module - <<'EOF' || FAIL=1
-import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_REVIEWS, FAST_SECOND, takeoverLabel, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine, advisoryIssue, ADVISORY_ISSUE_SUFFIX } from './scripts/lib/pr-auto.mjs'
+import { codexModelArgs, codexUserSettings, aggregate, autoReviewAction, claimAutoReview, planStatusOf, reopenedPlan, reopenNote, REOPEN_STATUS, baseMergeRound, BASE_MERGED, autoLines, autoMergeRepos, prFlow, directMergeRepos, inheritedResult, inheritedSlotIndex, CLAUDE_LIMIT_REASON, lineupNote, mergeNotice, needsReview, nextRound, priorApproval, reviewComment, reviewerBrief, reviewerSlot, singleRepoPlan, skipsMergeConfirm, validReview, withAutoLine, workRefOf, BODY_EDITED, PR_REVIEWERS, autoDecisionLine, conflictNotice, fixInstruction, grantsTakeover, isTakeoverRound, pendingDecisionLine, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, SHORT_REVIEW, SHORT_REVIEWERS, shortReviewOutcome, shortStopResult, withDecisionLines, MAX_ROUNDS, TAKEOVER, FAST_PATH, FAST_MAX_ROUNDS, FAST_REVIEWS, FAST_SECOND, takeoverLabel, FAST_PATH_MAX_FILES, FAST_PATH_CONFIG_RE, planFastPathFlags, repoFastPath, fastPathVerdict, planFastPath, fastPathLineText, withFastPathLine, advisoryIssue, ADVISORY_ISSUE_SUFFIX, prMergeMethod } from './scripts/lib/pr-auto.mjs'
 import { maskSecrets } from './scripts/lib/mask.mjs'
 import { claudeLimited, CLAUDE_LIMIT_ERROR } from './scripts/lib/review-cli.mjs'
 import { readFileSync } from 'node:fs'
@@ -147,6 +147,7 @@ const edited = withAutoLine(twice, { repo: 'web', number: '7', sha: '1234567', r
 check('본문 고침이면 같은 HEAD 도 다시 봄 · 라운드 하나 올림', needsReview(edited, 'web', '7', '1234567abcdef') && nextRound(autoLines(edited).get('web#7'), '1234567abcdef') === 3)
 check('라운드 — 새 HEAD 면 +1 · 같은 HEAD 면 그대로 · 처음이면 1', nextRound(autoLines(twice).get('web#7'), 'ffff000') === 3 && nextRound(autoLines(twice).get('web#7'), '1234567abc') === 2 && nextRound(undefined, 'abc') === 1)
 const notice = mergeNotice({ agent: 'web-fe', repo: 'web', number: '7', sha: '1234567abc', result: '머지됨 — squash → dev' })
+check('머지 방식 — 부모 2개 커밋이 있으면 merge · 없거나 빈 답이면 squash', prMergeMethod('1\n2\n1\n') === 'merge' && prMergeMethod('1\n1\n') === 'squash' && prMergeMethod('') === 'squash' && prMergeMethod('3') === 'merge')
 check('머지 결과 알림 — [자동 리뷰 → 에이전트] · PR · 결과 · 할 일 없음', notice.startsWith('[자동 리뷰 → web-fe] PR web#7 @1234567 — 머지됨 — squash → dev') && notice.includes('할 일은 없다'), notice)
 const ref = workRefOf(plan)
 check('Work ref 에서 워크트리 · 브랜치 · pane · 에이전트', ref.worktree === '/tmp/wt/web-x' && ref.branch === 'feat/x' && ref.pane === 'p3' && ref.agent === 'web-fe', JSON.stringify(ref))
@@ -622,6 +623,7 @@ case "$1 $2" in
   "pr view") printf '{"state":"OPEN","isDraft":false,"headRefOid":"%s","headRefName":"feat/x","mergeable":"%s","baseRefName":"dev"}\n' "$FAKE_HEAD" "${FAKE_MERGEABLE:-MERGEABLE}" ;;
   "pr diff") [ -n "${FAKE_DIFF:-}" ] && cat "$FAKE_DIFF" || exit 1 ;;
   "pr edit"|"pr merge"|"pr ready") ;;
+  "api --paginate") echo 1 ;;   # PR 커밋 목록 — 부모 하나뿐(squash)
   *) exit 1 ;;
 esac
 SH
@@ -896,6 +898,8 @@ case "$1 $2" in
   "pr view") state="${FAKE_PR_STATE:-OPEN}"; [ -f "$GH_LOG.landed" ] && state=MERGED; printf '{"state":"%s","isDraft":true,"headRefOid":"%s","headRefName":"feat/x","baseRefName":"main","mergeable":"MERGEABLE","title":"t","body":""}\n' "$state" "$head" ;;
   "pr diff") if [ -n "${FAKE_PR_DIFF:-}" ]; then cat "$FAKE_PR_DIFF"; else echo "diff --git a/a.js b/a.js"; fi ;;
   "pr merge") [ -n "$FAKE_MERGE_LANDED" ] && : > "$GH_LOG.landed" && exit 1 ;;
+  # PR 커밋 목록(부모 수 한 줄씩) — FAKE_PARENTS(예 '1\n2' — 부모 2 = merge 커밋) · FAKE_COMMITS_FAIL 이면 못 읽음
+  "api --paginate") [ -n "$FAKE_COMMITS_FAIL" ] && exit 1; printf '%b\n' "${FAKE_PARENTS:-1}" ;;
 esac
 exit 0
 SH
@@ -918,7 +922,7 @@ merge_case() {   # <이름> <autoMergeConfirm JSON 조각> <머지 기대 yes|no
     openRequest('.', { kind: 'decision', title: 'x', body: '- R1', links: { plan: 'plans/task/x.md' }, pane: null, dedupeKey: 'plan:plans/task/x.md' })" >/dev/null)
   env PATH="$BIN:/usr/bin:/bin" ATHENA_DATA_DIR="$TMP/data" ATHENA_PR_AUTO_QUEUE="$TMP/queue-confirm" FAKE_SHA="$SHA" FAKE_CODEX=ok GH_LOG="$GH_LOG" "$@" \
     "$(command -v node)" "$CORE/scripts/pr-auto.mjs" --plan plans/task/x.md --pr web#7 ${PR_AUTO_FLAG:-} > "$TMP/merge.out" 2>&1
-  local merged=no; grep -q "^pr merge 7 --repo acme/web --squash --match-head-commit $SHA" "$GH_LOG" && merged=yes
+  local merged=no; grep -q "^pr merge 7 --repo acme/web --${WANT_METHOD:-squash} --match-head-commit $SHA" "$GH_LOG" && merged=yes
   local got; got="$(grep -o '^- Auto review: .*' "$CORE/plans/task/x.md")"
   if [ "$merged" = "$want" ] && printf '%s' "$got" | grep -Eq "$line"; then echo "  ✔ $name — ${got#- Auto review: }"
   else echo "  ✖ $name — 머지 기대 $want · 실제 $merged · 줄: $got"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; fi
@@ -995,6 +999,14 @@ for CHANGED_SETTING in '"autoMerge": false' '"autoMerge": true, "autoMergeManual
   expect "실행 시 최신 설정 재확인: $CHANGED_SETTING" '! grep -q "^pr merge" "$GH_LOG" && grep -q "검증 대기 — 머지 전에 설정이 바뀜" "$CORE/plans/task/x.md" && [ ! -f "$TMP/queue-confirm/confirm/web-7.json" ]' "$(cat "$TMP/merge.out")"
 done
 merge_case "autoMergeConfirm: false → 요청 없이 draft 풀고 squash 머지" ', "autoMergeConfirm": false' yes '머지됨 — squash → main'
+# PR 안에 merge 커밋(부모 2개)이 있으면 --merge — squash 하면 그 merge 커밋이 base 기록에서 빠져 다음 합치기에 같은 충돌(athena-studio#324)
+WANT_METHOD=merge merge_case "PR 안에 merge 커밋 → --merge 로 머지 · 줄에 merge 커밋" ', "autoMergeConfirm": false' yes '머지됨 — merge 커밋 → main' FAKE_PARENTS='1\n2\n1'
+grep -q "^api --paginate repos/acme/web/pulls/7/commits" "$GH_LOG" && ! grep -q -e "--squash" "$GH_LOG" \
+  && echo "  ✔ merge 커밋 PR — 커밋 목록을 읽고 squash 를 부르지 않음" || { echo "  ✖ merge 커밋 PR — gh 호출"; sed 's/^/      /' "$GH_LOG"; FAIL=1; }
+# 커밋 목록을 못 읽으면 머지하지 않고 파일을 되돌려 다음 확인에 다시(답은 받은 채로)
+merge_case "PR 커밋 목록을 못 읽음 → 머지 안 함 · 다음 확인에" ', "autoMergeConfirm": false' no '바로 머지\(확인 없음\)' FAKE_COMMITS_FAIL=1
+[ -f "$TMP/queue-confirm/confirm/web-7.json" ] && grep -q '머지 방식을 모름' "$TMP/merge.out" \
+  && echo "  ✔ 못 읽음 — 대기 파일이 남아 다음 확인에 다시" || { echo "  ✖ 못 읽음 — 대기 파일 · 출력"; sed 's/^/      /' "$TMP/merge.out"; FAIL=1; }
 # 보안 검토 문(PR 머지) — 위험한 수정 PR 이면 리뷰어와 함께 security-reviewer 를 띄우고, 이 HEAD 결과가 없으면 머지하지 않는다
 printf 'diff --git a/run.mjs b/run.mjs\n--- a/run.mjs\n+++ b/run.mjs\n@@ -0,0 +1 @@\n+export const run = (args) => spawnSync("git", args)\n' > "$TMP/risky.diff"
 cp "$CORE/scripts/delegate.sh" "$TMP/delegate.sh.real"
