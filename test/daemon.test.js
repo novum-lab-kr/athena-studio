@@ -89,9 +89,13 @@ function connect(socket) {
   })
 }
 
+// 바깥 환경의 ATHENA_STUDIO* 는 걷어 낸다 — 현황판이 띄운 검증(pr-auto → reuse.sh)은 ATHENA_STUDIO_BODY(그 본체)를,
+// pane 안 실행은 ATHENA_STUDIO_PANE_ID 를 물려받아 CLI 가 시험 데몬에서 그 본체 · pane 것만 보게 된다(앱 core.childEnv 와 같은 규칙)
+const outerEnv = Object.fromEntries(Object.entries(process.env).filter(([key]) => key !== 'ATHENA_STUDIO' && !key.startsWith('ATHENA_STUDIO_')))
+
 function cli(socket, args, extraEnv = {}) {
   return new Promise((resolve) => {
-    execFile(CLI, args, { env: { ...process.env, ATHENA_STUDIO_SOCKET: socket, ATHENA_STUDIO_NODE: process.execPath, ...extraEnv } }, (error, stdout, stderr) => {
+    execFile(CLI, args, { env: { ...outerEnv, ATHENA_STUDIO_SOCKET: socket, ATHENA_STUDIO_NODE: process.execPath, ...extraEnv } }, (error, stdout, stderr) => {
       resolve({ code: error ? error.code : 0, stdout, stderr })
     })
   })
@@ -134,7 +138,7 @@ test('send-text --enter: 실제 pty 의 첫 Enter 무시 재시도 · 실패 종
     await waitFor(async () => JSON.parse((await cli(daemon.socket, ['pane', 'get', pane])).stdout).pane.agent === 'codex', '가짜 Codex 시작')
     const send = (text) => new Promise((resolve) => {
       execFile(path.join(ROOT, 'athena', 'scripts', 'screen'), ['pane', 'send-text', pane, text, '--enter'], {
-        env: { ...process.env, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
+        env: { ...outerEnv, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
       }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stdout, stderr }))
     })
     assert.equal((await send('retry')).code, 0)
@@ -166,7 +170,7 @@ test('send-text --enter: 실제 pty 의 첫 Enter 무시 재시도 · 실패 종
     await cli(daemon.socket, ['pane', 'run', claudePane, `'${process.execPath}' '${fakeClaude}'`])
     await waitFor(async () => JSON.parse((await cli(daemon.socket, ['pane', 'get', claudePane])).stdout).pane.agent === 'claude', '가짜 Claude 시작')
     const queued = await new Promise((resolve) => execFile(path.join(ROOT, 'athena', 'scripts', 'screen'), ['pane', 'send-text', claudePane, 'working 전송', '--enter'], {
-      env: { ...process.env, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
+      env: { ...outerEnv, ATHENA_SCREEN: 'studio', ATHENA_STUDIO_SOCKET: daemon.socket, ATHENA_STUDIO_CLI: CLI, ATHENA_STUDIO_NODE: process.execPath },
     }, (error, stdout, stderr) => resolve({ code: error ? error.code : 0, stderr })))
     assert.equal(queued.code, 0, queued.stderr)
     assert.match((await cli(daemon.socket, ['pane', 'read', claudePane, '--source', 'visible'])).stdout, /Press up to edit queued messages/)

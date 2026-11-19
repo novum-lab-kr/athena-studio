@@ -66,6 +66,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix auto review blocking PRs aimed at a non-default branch
 - Fix the side browser squeezing terminals — it now takes the Explorer column
 - Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device
+- Fix slow phone reconnects — server status answered from the last reading
 
 ## 0.63 (v0.63.0 – · Nov 15, 2026)
 
