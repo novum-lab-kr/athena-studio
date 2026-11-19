@@ -617,6 +617,21 @@ export function createMobileRelay(deps: RelayDeps) {
     broadcast(message: object) {
       for (const session of sessions.values()) session.channel.send(message)
     },
+    // 폰 푸시(protocol.md "푸시" · push.send {to, kind}) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
+    // relay 에 붙어 있지 않으면 보내지 않는다 · 실패(no_push_token · not_paired · rate_limited · push_failed …)는 코드만 남기고 다시 보내지 않는다(같은 건은 한 번)
+    async push(kind: 'request' | 'done', busy: readonly string[] = []): Promise<void> {
+      const targets = Object.keys(state.peers).filter((peer) => !sessions.has(peer) && !busy.includes(peer))
+      if (!targets.length) return
+      if (!authed) return log(`[mobile-relay] 푸시 안 보냄 kind=${kind} 까닭=offline`)
+      await Promise.all(
+        targets.map((peer) =>
+          call('push.send', { to: peer, kind }).then(
+            () => log(`[mobile-relay] 푸시 보냄 peer=${peer} kind=${kind}`),
+            (error) => log(`[mobile-relay] 푸시 실패 peer=${peer} kind=${kind} code=${(error as RelayCallError).code}`),
+          ),
+        ),
+      )
+    },
     status: () => ({ connected: authed, signedIn: Boolean(state.token), deviceId: state.deviceId, account: state.account, name: state.name, sessions: [...sessions.keys()] }),
   }
 }

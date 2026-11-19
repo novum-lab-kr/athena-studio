@@ -257,5 +257,6 @@
   "Fix slow phone reconnects — server status answered from the last reading": "修复手机重新连接缓慢 — 服务器状态先用上次的值立即返回",
   "Add terminal search — ⌘F in a pane finds text in the screen and scrollback": "新增终端查找 — 在窗格中按 ⌘F 查找屏幕和回滚内容中的文字",
   "Fix idle CPU use from the menu bar panel animating while closed": "修复菜单栏面板关闭时仍在播放动画、空闲时占用 CPU 的问题",
-  "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "修复新仓库工作树中代理 pane 停在文件夹信任确认窗口的问题"
+  "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "修复新仓库工作树中代理 pane 停在文件夹信任确认窗口的问题",
+  "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "新增确认请求 · 智能体完成工作的手机推送通知 — 仅在手机应用关闭时"
 }

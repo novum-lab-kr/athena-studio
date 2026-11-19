@@ -15,6 +15,7 @@ import * as trayModel from '../lib/tray-model.mts'
 import * as trayBadge from '../lib/tray-icon.mts'
 import { fetchBoardJson } from './board.mts'
 import type { Say, TrayPane, Notice } from '../lib/tray-model.mts'
+import type { PushGate } from '../lib/push-model.mts'
 
 // screen-model 은 JS — main 과 같은 require 캐시의 것을 쓴다. electron.screen 은 앱이 준비된 뒤에만 읽을 수 있어 쓸 때 꺼낸다(옛 main.js 와 같다)
 const require = createRequire(import.meta.url)
@@ -49,12 +50,13 @@ export type TrayCtx = {
 }
 
 // claudeProjects · codexSessions — 대화 기록 자리(main.mts 가 pane [상세] 토큰과 같은 것을 준다)
-type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void; claudeProjects: string; codexSessions: string }
+// onPanes — 앞 창 pane 을 읽을 때마다(입력 대기를 보탠 것) 한 번 · 폰 푸시 판정(mobile-dev.mts panesPolled) — 맥 알림과 같은 거르기(pushGate)를 같이 넘긴다
+type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void; claudeProjects: string; codexSessions: string; onPanes?: (ctx: TrayCtx, panes: TrayPane[], gate: PushGate) => void }
 
 const TRAY_ICON_DIR = path.join(import.meta.dirname, '..', 'renderer', 'assets', 'logo')
 const TRAY_WIDTH = 309 // 안쪽 285px — 산 그림(tray-mountain.ts WIDTH)이 이 폭에 맞춘다
 
-export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects, codexSessions }: TrayDeps) {
+export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects, codexSessions, onPanes }: TrayDeps) {
   const trayState = {
     ctx: null as TrayCtx | null,
     dir: null as string | null,
@@ -301,6 +303,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
         const due = trayNotifier.update({ panes: trayState.panes, names: trayNames(), say }, Date.now())
         // 지금 보고 있는 pane 은 빼고 묶는다
         for (const item of trayModel.bundle(due.filter((entry) => !lookingAt(entry)), say)) notify(item)
+        if (onPanes) onPanes(ctx, trayState.panes, pushGate())
       }
       if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
     } catch {
@@ -427,9 +430,17 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
 
   // 지금 보고 있는 pane 이면(그 창이 앞에 있고 작업 창 탭 · 그 pane 포커스) 알리지 않는다
   function lookingAt(item: Notice) {
+    return item.target.pane ? lookingAtPane(item.target.pane) : false
+  }
+  function lookingAtPane(pane: string) {
     const ctx = trayState.ctx
-    if (!item.target.pane || !ctx || !ctx.win) return false
-    return ctx.win.isVisible() && ctx.win.isFocused() && ctx.uiTab === 'work' && trayState.focused === item.target.pane
+    if (!ctx || !ctx.win) return false
+    return ctx.win.isVisible() && ctx.win.isFocused() && ctx.uiTab === 'work' && trayState.focused === pane
+  }
+
+  // 폰 푸시도 맥 알림과 같이 거른다(사용자 결정 2026-11-19) — [알림 끄기] 동안 · 지금 보고 있는 pane
+  function pushGate(): PushGate {
+    return { muted: trayState.pausedUntil > Date.now(), lookingAt: lookingAtPane }
   }
 
   function notify(item: TrayNotice) {
@@ -450,6 +461,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
     sendTrayUpdate,
     pollTray,
     trayRequestsChanged,
+    pushGate,
     showWindow,
     hasTray: () => Boolean(tray),
     trayPanel: () => trayWindow,

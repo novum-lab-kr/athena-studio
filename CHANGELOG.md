@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add terminal search — ⌘F in a pane finds text in the screen and scrollback
+- Add phone push alerts for new requests and finished agents — only while the phone app is closed
 
 ### Fixed
 - Fix idle CPU use from the menu bar panel animating while closed

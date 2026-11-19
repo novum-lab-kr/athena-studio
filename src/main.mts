@@ -529,7 +529,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     trayRequestsChanged: (target) => {
       trayRequestsChanged(target as PackWindow)
       // 폰은 앞 창의 요청을 본다 — 앞 창 것이 바뀌었을 때만 알린다(src/main/mobile-dev.mts requestsChanged)
-      if (mobileDev && target === frontCtx()) mobileDev.requestsChanged()
+      if (mobileDev && target === frontCtx()) mobileDev.requestsChanged(pushGate())
     },
     appConfig: () => config,
     saveAppConfig: (next) => {
@@ -683,7 +683,19 @@ function startPanesPolling(): void {
 
 // ── 메뉴 막대(Tray) — 앞에 있는 창의 팩만 — src/main/tray.mts ───────────────────
 // 쓰는 것(화면 문구 · 앞 창 찾기 · 열린 팩 창 · 지난 창 다시 열기)은 인자로 넘긴다. tray · 패널 창은 바뀌는 값이라 hasTray() · trayPanel() 로 읽는다
-const { createTray, refreshTray, sendTrayUpdate, pollTray, trayRequestsChanged, showWindow, hasTray, trayPanel } = setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects: CLAUDE_PROJECTS, codexSessions: CODEX_SESSIONS })
+const { createTray, refreshTray, sendTrayUpdate, pollTray, trayRequestsChanged, pushGate, showWindow, hasTray, trayPanel } = setupTray({
+  say,
+  frontCtx,
+  packWindows,
+  openSavedWindows,
+  claudeProjects: CLAUDE_PROJECTS,
+  codexSessions: CODEX_SESSIONS,
+  // 폰 푸시(확인 요청 · 일 끝남) — 메뉴 막대가 읽은 pane 을 모바일 길에 넘긴다(켜졌을 때만 · src/main/mobile-dev.mts panesPolled)
+  // 맥 알림과 같은 거르기([알림 끄기] · 지금 보는 pane)를 같이 넘긴다
+  onPanes: (ctx, panes, gate) => {
+    if (mobileDev) mobileDev.panesPolled(ctx as unknown as Parameters<NonNullable<MobileDev>['panesPolled']>[0], panes, gate)
+  },
+})
 
 // ── 창 · 메뉴 ─────────────────────────────────────────────
 // 지난번에 열려 있던 팩 창들을 다시 연다 — 첫 창만 시작 화면 규칙을 본다. 본체가 없으면 처음 화면(아테나 폴더 고르기) 창 하나.
