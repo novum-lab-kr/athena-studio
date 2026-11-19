@@ -301,6 +301,9 @@ declare global {
     simSwipe(id: string, from: { x: number; y: number }, to: { x: number; y: number }): Promise<import('./ui/sim-bar.tsx').SimReply>
     // 끄는 손가락 한 동작 — main 이 열어 둔 adb shell 로 그때그때(안 되면 뗄 때 swipe 한 번)
     simTouch(id: string, phase: 'down' | 'move' | 'up', x: number, y: number): void
+    // 지금 연 기기(main 이 기억 — 떼어 낸 창 · 돌아온 서랍이 이어 본다) · 떼어 내기 detach · 되돌리기 attach · 떼어 낸 창 앞으로 focus-detached
+    simCurrent(): Promise<{ platform: 'ios' | 'android'; id: string; name: string } | null>
+    simCommand(name: 'detach' | 'attach' | 'focus-detached'): void
     // 왼쪽 작업 공간 목록 · Explorer 미리보기(R3c) — main.mts handle(pack:repos · repo:set-name · repo:set-icon · space:context-menu · workspace:close · pack:body-behind ·
     // pack:remove-repo · pack:add-repo · workspace:open-dir · pack:call-info · pack:call-start · explorer:open)
     packRepos(): Promise<import('./ui/spaces.tsx').SpaceRepo[]>
@@ -390,7 +393,10 @@ declare global {
     onBrowserClose(callback: () => void): () => void
     onBrowserTabs(callback: (tabs: import('./ui/browser-bar.tsx').BrowserTabView[]) => void): () => void
     // 탭들을 새 창으로 떼어 냈다(true) · 서랍으로 돌아왔다(false) — side-browser.mts detach · backToDrawer
-    onBrowserDetached(callback: (detached: boolean) => void): () => void
+    // 떼어 낸 서랍 창(웹 · 시뮬레이터 두 탭 — main drawer-window.mts) — 떼어 냄 · 보던 탭 · 돌아와 서랍을 다시 열지
+    onDrawerDetached(callback: (detached: boolean, mode: 'web' | 'sim', reopen: boolean) => void): () => void
+    // 떼어 낸 서랍 창 화면만(preload-browser.js) — 보는 탭이 바뀌었다
+    drawerMode(mode: 'web' | 'sim'): void
     // [작업] 팝업 · 요청(src/main/work.mts) — 창이 없을 때의 { error } 는 이 창에서 부르면 오지 않는다
     workGet(): Promise<WorkView>
     workRequests(): Promise<WorkRequestsState>

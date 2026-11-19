@@ -248,5 +248,9 @@
   "Fix agent panes stopping at folder trust prompts on start": "에이전트 pane 이 시작할 때 폴더 확인 창에서 멈추던 것 수정",
   "Fix the side browser covering terminals — panes now sit beside it and resize": "옆 브라우저가 터미널을 덮던 것 수정 — 터미널 옆에 나란히 붙고 크기를 다시 맞춤",
   "Add moving the side browser to its own window — tabs return to the side panel when it closes": "옆 브라우저를 별도 창으로 떼어 내기 추가 — 창을 닫으면 탭이 옆 서랍으로 돌아옴",
-  "Fix auto-merge squashing branch-merge PRs — merge commits kept": "자동 머지가 브랜치 합치기 PR 을 squash 하던 것 수정 — merge 커밋으로 머지"
+  "Fix auto-merge squashing branch-merge PRs — merge commits kept": "자동 머지가 브랜치 합치기 PR 을 squash 하던 것 수정 — merge 커밋으로 머지",
+  "Add moving the Simulator tab to its own window — iOS · Android taps work there too": "시뮬레이터 탭을 별도 창으로 떼어 내기 추가 — 그 창에서도 iOS · Android 누르기",
+  "Fix the side browser squeezing terminals — it now takes the Explorer column": "옆 브라우저가 터미널을 좁히던 것 수정 — Explorer 자리에 열림",
+  "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device": "떼어 낸 창에 웹 · 시뮬레이터 탭이 없던 것 수정 — 바꿔도 페이지 · 기기 그대로",
+  "Fix auto review blocking PRs aimed at a non-default branch": "자동 리뷰가 기본이 아닌 브랜치로 가는 PR 을 막던 것 수정"
 }

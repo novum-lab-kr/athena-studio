@@ -182,6 +182,8 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   simTap: (id, x, y) => ipcRenderer.invoke('sim:tap', id, x, y),
   simSwipe: (id, from, to) => ipcRenderer.invoke('sim:swipe', id, from, to),
   simTouch: (id, phase, x, y) => ipcRenderer.send('sim:touch', id, phase, x, y),
+  simCurrent: () => ipcRenderer.invoke('sim:current'),
+  simCommand: (name) => ipcRenderer.send('sim:command', name),
   onBrowserOpen: listen('browser:open'),
   onBrowserReset: listen('browser:reset'),
   onBrowserToggle: listen('browser:toggle'),
@@ -189,7 +191,8 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   onBrowserError: listen('browser:error'),
   onBrowserClose: listen('browser:close'),
   onBrowserTabs: listen('browser:tabs'),
-  onBrowserDetached: listen('browser:detached'),
+  // 떼어 낸 서랍 창(웹 · 시뮬레이터 두 탭) — (떼어 냄, 보던 탭, 돌아와 서랍을 다시 열지)
+  onDrawerDetached: listen('drawer:detached'),
   onPaneData: listen('pane:data'),
   onPaneResized: listen('pane:resized'),
   onPaneExit: listen('pane:exit'),

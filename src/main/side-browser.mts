@@ -3,14 +3,15 @@
 // 결정 콘솔 감시(watchConsoleSends) · 빈 페이지 바탕색(appBackground)은 인자로 받고,
 // ctx 에 같은 이름(rememberBrowser · isBrowserContents · openInBrowser · closeSentConsole · placeBrowser · hideBrowser · browserCommand)으로 붙인다.
 // 탭 뷰들(tabs)과 붙어 있는지(browserAttached)는 이 창 것이라 이 안에 둔다 — 창이 닫힐 때 정리는 dropBrowser
-// 떼어 내기 — 막대의 [새 창으로] 를 누르면 탭 뷰들을 새 창(detachedWin)으로 옮겨 붙인다(다시 불러오지 않음 · 같은 세션이라 로그인 유지).
-// 그동안 서랍은 닫히고 열리는 페이지는 그 창 탭으로 간다. 그 창을 닫으면(또는 [되돌리기]) 탭들이 서랍으로 돌아온다
-import path from 'node:path'
-import { BrowserWindow, session, shell, WebContentsView } from 'electron'
+// 떼어 내기 — 막대의 [새 창으로] 를 누르면 탭 뷰들을 떼어 낸 서랍 창(drawer-window.mts — [웹] · [시뮬레이터] 두 탭)으로 옮겨 붙인다(다시 불러오지 않음 · 같은 세션이라 로그인 유지).
+// 그동안 서랍은 닫히고 열리는 페이지는 그 창 [웹] 탭으로 간다. 그 창을 닫으면(또는 [되돌리기]) 탭들이 서랍으로 돌아온다
+import { session, shell, WebContentsView } from 'electron'
+import type { BrowserWindow } from 'electron'
 import type { Session, WebContents } from 'electron'
 import * as core from '../lib/core.mts'
 import { afterClose, planOpen } from '../lib/browser-tabs.mts'
 import type { Say } from '../lib/pack.mts'
+import type { DrawerWindowCtx } from './drawer-window.mts'
 
 // 화면이 알려 주는 서랍 자리(CSS 픽셀 — main.mts browserRect 가 숫자로 걸렀다)
 type Rect = { x: number; y: number; width: number; height: number }
@@ -30,7 +31,6 @@ export type SideBrowserCtx = {
   closeSentConsole?: (contents: WebContents) => void
   placeBrowser?: (rect: Rect | null, fromDetached?: boolean) => void
   hideBrowser?: (fromDetached?: boolean) => void
-  isDetachedBrowser?: (contents: WebContents) => boolean
   boardPortNow?: () => number
   browserCommand?: (name: string, value: string) => { url?: string; error?: string }
 }
@@ -43,7 +43,7 @@ type SideBrowserDeps = {
   appBackground: string
 }
 
-export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, browserPartition, watchConsoleSends, appBackground }: SideBrowserDeps): void {
+export function installSideBrowser(ctx: SideBrowserCtx & DrawerWindowCtx, { say, browserUrls, browserPartition, watchConsoleSends, appBackground }: SideBrowserDeps): void {
   const send = ctx.send
   // 탭마다 뷰 하나 · 화면에는 보는 탭(activeId) 뷰만 붙인다. 뒤 탭 페이지는 떼어 둔 채 살아 있어 고르던 것이 남는다
   let tabs: Tab[] = []
@@ -51,14 +51,16 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
   let nextTabId = 1
   let browserAttached = false
   let lastBounds: Rect | null = null
-  let detachedWin: BrowserWindow | null = null // 떼어 낸 창 — 있으면 탭 뷰는 이 창에 붙는다
+  // 떼어 낸 서랍 창 — 있으면 탭 뷰는 이 창에 붙는다
+  const detachedWin = (): BrowserWindow | null => ctx.drawerWin?.() ?? null
 
   // 탭 뷰가 붙는 창 — 떼어 낸 동안은 그 창, 아니면 팩 창
-  const host = (): BrowserWindow | null => detachedWin || ctx.win
+  const host = (): BrowserWindow | null => detachedWin() || ctx.win
   // 막대(주소 · 탭 줄 · 알림 줄)에 보내는 알림 — 떼어 낸 동안은 그 창 화면으로
   const sendBar = (channel: string, ...values: unknown[]): void => {
-    if (!detachedWin) return send(channel, ...values)
-    if (!detachedWin.isDestroyed()) detachedWin.webContents.send(channel, ...values)
+    const win = detachedWin()
+    if (!win) return send(channel, ...values)
+    win.webContents.send(channel, ...values)
   }
 
   const activeTab = () => tabs.find((tab) => tab.id === activeId) || null
@@ -77,8 +79,8 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
     tabs = []
     activeId = null
     browserAttached = false
-    // 떼어 낸 창도 닫는다 — 탭이 없으니 서랍으로 돌려줄 것도 없다
-    if (detachedWin && !detachedWin.isDestroyed()) detachedWin.close()
+    // 떼어 낸 창도 닫는다 — 탭이 없으니 서랍을 다시 열지 않는다
+    ctx.closeDrawer?.(false)
   }
 
   // 옆 브라우저 — 지금 본체에서 열어 둔 탭 주소를 기억하고 뷰를 닫는다(돌아오면 그 탭들로 · restoreTabs)
@@ -167,6 +169,7 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
   }
 
   ctx.isBrowserContents = (contents) => tabs.some((tab) => tab.view.webContents === contents)
+  ctx.hasBrowserTabs = () => tabs.some((tab) => !tab.view.webContents.isDestroyed())
 
   function sendBrowserState(): void {
     const tab = activeTab()
@@ -229,8 +232,8 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
     }
     // 서랍 닫기를 먼저 — 알림 줄을 지우며 잡힌 자리 알리기(browser:place)가 빈 탭을 새로 만들지 않게.
     // 떼어 낸 창은 남은 탭이 없을 때만 닫는다(콘솔을 보내도 남은 페이지는 그 창에 그대로)
-    if (next.closeDrawer && !detachedWin) send('browser:close')
-    if (detachedWin && !tabs.length && !detachedWin.isDestroyed()) detachedWin.close()
+    if (next.closeDrawer && !detachedWin()) send('browser:close')
+    if (detachedWin() && !tabs.length) ctx.closeDrawer?.(false)
     sendBrowserState()
     sendTabs()
   }
@@ -252,12 +255,13 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
 
   // 화면이 서랍을 열고, 다 나오면 browser:place 로 자리를 알려 준다.
   // background — 에이전트가 연 것(새 콘솔이 보던 화면을 뺏지 않는다). 주소 칸은 보는 탭 주소로
-  // 떼어 낸 동안은 서랍 대신 그 창 탭으로 열고 그 창을 보인다
+  // 떼어 낸 동안은 서랍 대신 그 창 탭으로 열고 그 창을 [웹] 탭으로 보인다(서랍이 링크로 열면 웹 탭으로 바꾸는 것과 같게)
   ctx.openInBrowser = (url, options = {}) => {
     openPage(url, !options.background)
-    if (detachedWin && !detachedWin.isDestroyed()) {
-      ensureActiveTab()
-      detachedWin.show()
+    const win = detachedWin()
+    if (win) {
+      sendBar('browser:open', tabUrl(ensureActiveTab()))
+      win.show()
       return
     }
     send('browser:open', tabUrl(ensureActiveTab()))
@@ -268,7 +272,7 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
   // fromDetached — 떼어 낸 창 화면이 보낸 것. 떼어 낸 동안 팩 창 서랍이 보낸 것(또는 그 반대)은 무시한다
   ctx.placeBrowser = (rect, fromDetached = false) => {
     const win = host()
-    if (!win || win.isDestroyed() || !rect || fromDetached !== Boolean(detachedWin)) return
+    if (!win || win.isDestroyed() || !rect || fromDetached !== Boolean(detachedWin())) return
     const tab = ensureActiveTab()
     const zoom = win.webContents.getZoomFactor()
     const [contentWidth = 0, contentHeight = 0] = win.getContentSize()
@@ -290,64 +294,29 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
   ctx.hideBrowser = (fromDetached = false) => {
     const tab = activeTab()
     const win = host()
-    if (!win || win.isDestroyed() || !tab || !browserAttached || fromDetached !== Boolean(detachedWin)) return
+    if (!win || win.isDestroyed() || !tab || !browserAttached || fromDetached !== Boolean(detachedWin())) return
     win.contentView.removeChildView(tab.view)
     browserAttached = false
   }
 
-  ctx.isDetachedBrowser = (contents) => Boolean(detachedWin && !detachedWin.isDestroyed() && detachedWin.webContents === contents)
-
-  // 떼어 낸 창을 닫는다 — 붙어 있던 뷰를 먼저 떼고(창과 함께 정리되지 않게) 탭들을 서랍으로 돌려준다
-  function backToDrawer(win: BrowserWindow): void {
+  // 떼어 낸 서랍 창으로 옮기기 · 돌아오기 — 붙어 있던 뷰를 옛 창에서 먼저 뗀다(창과 함께 정리되지 않게). 다음 자리 알리기(browser:place)가 새 host 에 붙인다
+  ctx.onDrawerMove?.((win, detached) => {
     const tab = activeTab()
-    if (browserAttached && tab && !tab.view.webContents.isDestroyed()) win.contentView.removeChildView(tab.view)
+    const from = detached ? ctx.win : win
+    if (browserAttached && tab && from && !from.isDestroyed() && !tab.view.webContents.isDestroyed()) from.contentView.removeChildView(tab.view)
     browserAttached = false
-    detachedWin = null
-    if (!ctx.win || ctx.win.isDestroyed()) return
-    send('browser:detached', false)
+    if (detached) {
+      // 창 화면이 (다시) 읽히면 지금 상태부터
+      win.webContents.on('did-finish-load', () => {
+        sendBrowserState()
+        sendTabs()
+      })
+      return
+    }
+    // 돌아왔다 — 서랍 막대를 지금 탭 상태로(서랍을 다시 열지는 drawer-window.mts 가 정한다)
     sendBrowserState()
     sendTabs()
-    if (!tabs.length) return
-    send('browser:open', tabUrl(ensureActiveTab()))
-    ctx.win.show()
-  }
-
-  // [새 창으로] — 서랍에 붙은 뷰를 떼고 새 창을 띄운다. 그 창 화면이 자리를 알리면(browser:place) 거기 붙는다
-  function detach(): void {
-    if (detachedWin && !detachedWin.isDestroyed()) return void detachedWin.focus()
-    if (!ctx.win || ctx.win.isDestroyed()) return
-    const tab = ensureActiveTab()
-    if (browserAttached) ctx.win.contentView.removeChildView(tab.view)
-    browserAttached = false
-    const win = new BrowserWindow({
-      width: 1100,
-      height: 800,
-      minWidth: 480,
-      minHeight: 320,
-      title: 'Athena',
-      backgroundColor: appBackground,
-      webPreferences: {
-        preload: path.join(import.meta.dirname, '..', 'preload-browser.js'),
-        contextIsolation: true,
-        sandbox: true,
-        nodeIntegration: false,
-      },
-    })
-    detachedWin = win
-    // 서랍은 닫는다(탭은 새 창으로 옮겨 감 · 두 곳에 동시에 있지 않음)
-    send('browser:detached', true)
-    win.loadFile(path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'browser-window.html'))
-    // 맨 위 페이지(막대 화면)는 벗어나지 않는다
-    win.webContents.on('will-navigate', (event) => event.preventDefault())
-    // 화면이 (다시) 읽히면 지금 상태부터
-    win.webContents.on('did-finish-load', () => {
-      sendBrowserState()
-      sendTabs()
-    })
-    win.on('close', () => {
-      if (detachedWin === win) backToDrawer(win)
-    })
-  }
+  })
 
   ctx.browserCommand = (name, value) => {
     if (name === 'navigate') {
@@ -364,22 +333,19 @@ export function installSideBrowser(ctx: SideBrowserCtx, { say, browserUrls, brow
       closeTab(Number(value), false)
       return {}
     }
+    // [새 창으로] — 웹 탭을 보던 채로 떼어 낸다
     if (name === 'detach') {
-      detach()
+      ctx.detachDrawer?.('web')
       return {}
     }
-    // [되돌리기] — 떼어 낸 창을 닫으면 close 에서 서랍으로 돌아온다
+    // [되돌리기] — 떼어 낸 창을 닫으면 서랍이 그 창에서 보던 탭으로 열린다
     if (name === 'attach') {
-      if (detachedWin && !detachedWin.isDestroyed()) detachedWin.close()
+      ctx.closeDrawer?.(true)
       return {}
     }
     // 떼어 낸 동안 웹 버튼(⌘⇧B) — 그 창을 앞으로
     if (name === 'focus-detached') {
-      if (detachedWin && !detachedWin.isDestroyed()) {
-        if (detachedWin.isMinimized()) detachedWin.restore()
-        detachedWin.show()
-        detachedWin.focus()
-      }
+      ctx.focusDrawer?.()
       return {}
     }
     const tab = activeTab()

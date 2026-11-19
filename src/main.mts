@@ -29,6 +29,7 @@ import { installAthenaDir } from './main/athena-dir.mts'
 import { installPacks } from './main/packs.mts'
 import { installSideBrowser } from './main/side-browser.mts'
 import { installSimulator } from './main/simulator.mts'
+import { installDrawerWindow } from './main/drawer-window.mts'
 import { installPackWindow } from './main/pack-window.mts'
 import { APP_UPDATE_CHECK_MS, createAppUpdater } from './main/app-updater.mts'
 import { createCoreRunner, changelogFile, changelogVersionsFile } from './main/core-runner.mts'
@@ -55,6 +56,7 @@ import type { AthenaDirCtx } from './main/athena-dir.mts'
 import type { PacksCtx } from './main/packs.mts'
 import type { SideBrowserCtx } from './main/side-browser.mts'
 import type { SimulatorCtx } from './main/simulator.mts'
+import type { DrawerWindowCtx } from './main/drawer-window.mts'
 import type { PackWindowCtx } from './main/pack-window.mts'
 import type { TrayCtx } from './main/tray.mts'
 
@@ -151,10 +153,9 @@ type MainCalls = {
   closeSentConsole(contents: WebContents): void
   placeBrowser(rect: { x: number; y: number; width: number; height: number } | null, fromDetached?: boolean): void
   hideBrowser(fromDetached?: boolean): void
-  isDetachedBrowser(contents: WebContents): boolean
   browserCommand(name: string, value: string): unknown
 }
-type PackWindow = PackCtx & ExplorerCtx & AthenaAgentCtx & PackReposCtx & WorkCtx & AthenaDirCtx & PacksCtx & SideBrowserCtx & SimulatorCtx & PackWindowCtx & TrayCtx & MainCalls
+type PackWindow = PackCtx & ExplorerCtx & AthenaAgentCtx & PackReposCtx & WorkCtx & AthenaDirCtx & PacksCtx & SideBrowserCtx & SimulatorCtx & DrawerWindowCtx & PackWindowCtx & TrayCtx & MainCalls
 
 const isMac = process.platform === 'darwin'
 // 앱 신원 — 개발 앱(npm start)과 배포판이 앱 데이터(설정 · 데몬 소켓) · 데몬 접속 파일을 같이 쓰지 않는다.
@@ -581,6 +582,8 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     launchWelcome: () => launchWelcome,
     setLaunchWelcome: (value) => (launchWelcome = value),
   })
+  // 떼어 낸 서랍 창 — [새 창으로] 를 누르면 웹 · 시뮬레이터 두 탭이 함께 옮겨 가는 창(옆 브라우저 · 시뮬레이터보다 먼저 — 둘이 그 창을 host 로 쓴다)
+  installDrawerWindow(ctx, { appBackground: APP_BACKGROUND })
   // 옆 브라우저 — 창마다 서랍 하나(탭 뷰는 그 안에 · 본체별 탭 주소 browserUrls 는 창끼리 같이 쓴다)
   installSideBrowser(ctx, { say, browserUrls, browserPartition: BROWSER_PARTITION, watchConsoleSends, appBackground: APP_BACKGROUND })
   // 시뮬레이터 칸 — 서랍의 [시뮬레이터] 탭(본체 코어 scripts/sim.mjs 를 부른다)
@@ -1070,50 +1073,83 @@ handle('pane:plan-detail', (ctx, id: unknown, title: unknown) => ctx.planDetail(
 listen('ui:tab', (ctx, tab: unknown) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url: unknown) => openUrl(ctx, String(url)))
 // 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다).
-// 떼어 낸 브라우저 창(side-browser.mts detach)의 막대 화면도 이 세 채널만 — 그 창은 팩 창 문맥(ctxOf)을 얻지 못한다
-function browserCtxOf(event: IpcMainEvent | IpcMainInvokeEvent): { ctx: PackWindow; fromDetached: boolean } | null {
+// 떼어 낸 서랍 창(drawer-window.mts)의 막대 화면도 이 채널들 · 아래 시뮬레이터 채널 · drawer:mode 만 — 그 창은 팩 창 문맥(ctxOf)을 얻지 못하니 주인 창을 찾는다(맨 위 프레임만)
+function drawerCtxOf(event: IpcMainEvent | IpcMainInvokeEvent): { ctx: PackWindow; fromDetached: boolean } | null {
   const ctx = ctxOf(event)
   if (ctx) return { ctx, fromDetached: false }
   if (event.senderFrame !== event.sender.mainFrame) return null
-  const owner = [...packWindows].find((each) => each.isDetachedBrowser(event.sender))
+  const owner = [...packWindows].find((each) => each.isDrawerWindow?.(event.sender))
   return owner ? { ctx: owner, fromDetached: true } : null
 }
+// 떼어 낸 서랍 창이 보는 탭 — 그 창을 닫으면 서랍이 이 탭으로 열린다
+ipcMain.on('drawer:mode', (event, mode: unknown) => {
+  const from = drawerCtxOf(event)
+  if (from?.fromDetached) from.ctx.setDrawerMode?.(mode === 'sim' ? 'sim' : 'web')
+})
 ipcMain.on('browser:place', (event, rect: unknown) => {
-  const from = browserCtxOf(event)
+  const from = drawerCtxOf(event)
   if (from) from.ctx.placeBrowser(browserRect(rect), from.fromDetached)
 })
 ipcMain.on('browser:hide', (event) => {
-  const from = browserCtxOf(event)
+  const from = drawerCtxOf(event)
   if (from) from.ctx.hideBrowser(from.fromDetached)
 })
 ipcMain.handle('browser:command', (event, name: unknown, value: unknown) => {
-  const from = browserCtxOf(event)
+  const from = drawerCtxOf(event)
   if (!from) return { error: say('ipc.noWindow') }
   return from.ctx.browserCommand(String(name), typeof value === 'string' ? value : '')
 })
-// 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다
+// 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다.
+// 떼어 낸 서랍 창의 화면도 같은 채널을 부른다(drawerCtxOf)
+function simHandle<Args extends unknown[]>(channel: string, work: (ctx: PackWindow, ...args: Args) => unknown): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    const from = drawerCtxOf(event)
+    if (!from) return { ok: false, error: say('ipc.noWindow') }
+    return work(from.ctx, ...(args as Args))
+  })
+}
 const simId = (value: unknown) => (typeof value === 'string' ? value.slice(0, 200) : '')
-listen('sim:place', (ctx, rect: unknown) => ctx.simPlace?.(browserRect(rect)))
-listen('sim:hide', (ctx) => ctx.simHide?.())
-handle('sim:list', (ctx) => ctx.simList?.())
-handle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
-handle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
-handle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
-handle('sim:stream', (ctx, id: unknown, token: unknown) => (typeof token === 'number' && Number.isSafeInteger(token) ? ctx.simStream?.(simId(id), token) : { ok: false, error: 'bad-token' }))
-listen('sim:stream-stop', (ctx) => ctx.simStreamStop?.())
-handle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
+ipcMain.on('sim:place', (event, rect: unknown) => {
+  const from = drawerCtxOf(event)
+  if (from) from.ctx.simPlace?.(browserRect(rect), from.fromDetached)
+})
+ipcMain.on('sim:hide', (event) => {
+  const from = drawerCtxOf(event)
+  if (from) from.ctx.simHide?.(from.fromDetached)
+})
+ipcMain.on('sim:command', (event, name: unknown) => {
+  const from = drawerCtxOf(event)
+  if (from) from.ctx.simCommand?.(String(name))
+})
+simHandle('sim:current', (ctx) => ctx.simCurrent?.() ?? null)
+simHandle('sim:list', (ctx) => ctx.simList?.())
+simHandle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
+simHandle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
+simHandle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
+// Android 영상 — 켠 창(서랍 · 떼어 낸 창)에 조각을 보내고, 끄기는 켠 창이 보낸 것만 받는다(simulator.mts simStream)
+ipcMain.handle('sim:stream', (event, id: unknown, token: unknown) => {
+  const from = drawerCtxOf(event)
+  if (!from) return { ok: false, error: say('ipc.noWindow') }
+  return typeof token === 'number' && Number.isSafeInteger(token) ? from.ctx.simStream?.(simId(id), token, from.fromDetached) : { ok: false, error: 'bad-token' }
+})
+ipcMain.on('sim:stream-stop', (event) => {
+  const from = drawerCtxOf(event)
+  if (from) from.ctx.simStreamStop?.(from.fromDetached)
+})
+simHandle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
   const point = simPoint({ x, y })
   return point ? ctx.simTap?.(simId(id), point.x, point.y) : { ok: false, error: 'bad-point' }
 })
-handle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
+simHandle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
   const start = simPoint(from)
   const end = simPoint(to)
   return start && end ? ctx.simSwipe?.(simId(id), start, end) : { ok: false, error: 'bad-point' }
 })
 // 끄는 손가락 한 동작(누름 · 움직임 · 뗌) — 답을 기다리지 않는다(움직임마다 오니까)
-listen('sim:touch', (ctx, id: unknown, phase: unknown, x: unknown, y: unknown) => {
+ipcMain.on('sim:touch', (event, id: unknown, phase: unknown, x: unknown, y: unknown) => {
+  const from = drawerCtxOf(event)
   const point = simPoint({ x, y })
-  if (point && (phase === 'down' || phase === 'move' || phase === 'up')) ctx.simTouch?.(simId(id), phase, point.x, point.y)
+  if (from && point && (phase === 'down' || phase === 'move' || phase === 'up')) from.ctx.simTouch?.(simId(id), phase, point.x, point.y)
 })
 
 app.whenReady().then(async () => {

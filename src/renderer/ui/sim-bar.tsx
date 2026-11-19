@@ -3,7 +3,8 @@
 // iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다(누르기 · 쓸기도 그 페이지) — 여기는 그 뒤에 깔린 안내 글만.
 // Android 는 칸이 보일 때만 화면 영상(H.264 — ui/sim-video.ts)을 canvas 에 그리고, 누르기 · 끌기를 비율 좌표로 보낸다
 // (끌기는 움직이는 동안 그때그때 — main 이 열어 둔 adb shell 로 손가락을 따라가게 한다).
-// 옛 코어(영상 명령 없음) · 영상을 못 풀면 1초마다 화면 그림을 받아 <img> 로 그린다
+// 옛 코어(영상 명령 없음) · 영상을 못 풀면 1초마다 화면 그림을 받아 <img> 로 그린다.
+// [새 창으로] ⧉ 를 누르면 떼어 낸 서랍 창(browser-window.ts — detached · 서랍과 같은 [웹 | 시뮬레이터] 탭)이 같은 막대 · 칸을 띄운다. 그 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로 가져온다
 import { useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -17,7 +18,8 @@ type Device = { id: string; name: string; booted: boolean; os?: string; platform
 type Running = { platform: 'ios' | 'android'; id: string; name: string }
 type Platform = { ok: boolean; reason: string; devices: Device[] }
 
-export type SimActions = { place: () => void; close: () => void; isOpen: () => boolean }
+// detached — 떼어 낸 창의 막대: ✕ 대신 [되돌리기]. 서랍 막대에는 [새 창으로]
+export type SimActions = { place: () => void; close: () => void; isOpen: () => boolean; detached?: boolean }
 export type DrawerMode = 'web' | 'sim'
 
 type SimView = {
@@ -46,6 +48,8 @@ let framesOnly = false // 영상을 못 쓴다(옛 코어 · 풀기 실패 반�
 let videoId = '' // 영상을 띄운 기기
 let videoGuard: number | null = null
 let decodeFailures = 0
+// 서랍을 새 창으로 떼어 낸 동안(main drawer:detached) — 서랍 쪽만 쓴다
+export const detachedStore = createStore(false)
 
 function commit(next: Partial<SimView>): void {
   flushSync(() => view.set({ ...view.get(), ...next }))
@@ -59,9 +63,26 @@ export function mount(screen: HTMLElement, next: SimActions): void {
   mountIsland(screen, <SimScreen />)
 }
 
+// 떼어 낸 서랍 창 — 칸을 띄우고 처음 볼 탭으로(막대는 browser-bar.tsx 의 Bar 가 탭에 따라 SimBar 를 그린다 · 서랍의 탭 기억은 건드리지 않는다)
+export function mountWindow(screen: HTMLElement, place: () => void, first: DrawerMode): void {
+  actions = { place, close: () => {}, isOpen: () => true, detached: true }
+  flushSync(() => mode.set(first))
+  mountIsland(screen, <SimScreen />)
+}
+
+// main 이 기억하는 지금 기기(마지막으로 연 것)로 맞춘다 — 떼어 낸 창이 뜰 때 · 서랍으로 돌아올 때
+export async function adopt(): Promise<void> {
+  const running = (await studio.simCurrent()) as Running | null
+  // 창을 옮기면 main 이 옛 창의 Android 영상을 끈다 — 이 창의 영상 기억도 비워 칸이 보이면(shown) 새로 켜게
+  stopAndroidVideo()
+  if (running) commit({ running, selected: running.id, frame: '', error: '' })
+}
+
 export function setMode(next: DrawerMode): void {
+  // 떼어 낸 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로
+  if (next === 'sim' && detachedStore.get() && !actions.detached) return void studio.simCommand('focus-detached')
   if (mode.get() === next) return
-  localStorage.setItem(MODE_KEY, next)
+  if (!actions.detached) localStorage.setItem(MODE_KEY, next)
   flushSync(() => mode.set(next))
   if (next === 'web') stopAndroidVideo()
   actions.place()
@@ -290,9 +311,20 @@ export function SimBar() {
         </button>
       )}
       <span className="sim-gap" />
-      <button title={say('common.close')} onClick={() => actions.close()}>
-        ✕
-      </button>
+      {actions.detached ? (
+        <button id="sim-attach" title={say('browser.attach')} aria-label={say('browser.attach')} onClick={() => studio.simCommand('attach')}>
+          ◨
+        </button>
+      ) : (
+        <>
+          <button id="sim-detach" title={say('browser.detach')} aria-label={say('browser.detach')} onClick={() => studio.simCommand('detach')}>
+            ⧉
+          </button>
+          <button title={say('common.close')} onClick={() => actions.close()}>
+            ✕
+          </button>
+        </>
+      )}
     </>
   )
 }
