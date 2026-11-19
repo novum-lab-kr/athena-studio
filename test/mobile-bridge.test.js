@@ -695,11 +695,37 @@ test('weekMerges + git 기록 — 손 머지 · 직접 push 를 더하고 사건
     ['web', null, 'plans/b.md', 'aaa0001', true],
     ['web', 330, 'plans/a.md', null, false],
   ])
-  assert.deepEqual(Object.keys(rows[0]).sort(), ['at', 'branch', 'direct', 'merged', 'plan', 'pr', 'repo', 'sha'], '폰이 받는 칸은 그대로')
+  assert.deepEqual(rows.map((row) => row.onBase), [true, true, true, false, true, true, true, true], 'prBase 기록에서 확인된 줄만 onBase(git 과 안 겹친 api 사건만 false)')
+  assert.deepEqual(Object.keys(mergeFeed(rows, [], now).merges[0]).filter((key) => !['title', 'additions', 'deletions', 'files'].includes(key)).sort(), ['at', 'branch', 'direct', 'merged', 'plan', 'pr', 'repo', 'sha'], '폰이 받는 칸은 그대로(onBase 는 떼어 낸다)')
   assert.equal(mergeKey(rows[7]), 'web#330', '문자열 번호도 숫자로 — PR 상세를 읽는다')
   assert.equal(mergeKey(rows[0]), 'web@abc0005', '직접 push 는 git show 로 상세')
   assert.equal(mergeKey(rows[4]), 'web@eee0004', 'Actions 넘기기도 맞은 git 커밋으로 상세')
   assert.deepEqual(weekMerges(events, now).length, 5, 'git 기록이 없으면 사건만(예전 그대로)')
+})
+
+test('weekMerges — dev PR 사건(merged=D)이 main 합치기 커밋(부모 [A, D])의 둘째 부모로만 맞으면 합치기 줄을 대신하지 않는다', () => {
+  const now = Date.parse('2026-11-19T13:00:00Z')
+  const events = [{ type: 'auto.merge', ok: true, at: '2026-11-19T02:00:00Z', repo: 'web', plan: 'plans/dev.md', pr: '324', sha: '5fbc3db', merged: sha40('d324').slice(0, 7) }]
+  const gitRows = [{ repo: 'web', at: '2026-11-19T07:00:00Z', full: sha40('aa332'), parents: [sha40('a0'), sha40('d324')], pr: 332, branch: 'dev' }]
+  const rows = weekMerges(events, now, gitRows)
+  assert.deepEqual(rows.map((row) => [row.pr, row.onBase]), [[332, true], [324, false]], '합치기 줄은 따로 · dev PR 사건은 onBase 아님')
+  const detail = (base, additions) => ({ title: null, branch: null, additions, deletions: 0, files: 1, base })
+  assert.deepEqual(mergeFeed(rows, [detail('main', 6528), detail('dev', 395)], now, { web: 'main' }).merges.map((row) => row.pr), [332], 'dev PR 은 빠지고 합치기만 센다')
+})
+
+test('mergeFeed — prBase 가 아닌 브랜치(dev)로 머지된 PR 은 뺀다(dev → main 합치기에서 다시 세어 두 번 잡힘) · base · prBase 를 모르면 남긴다', () => {
+  const now = Date.parse('2026-11-19T13:00:00Z')
+  const row = (pr, repo = 'web', onBase = false) => ({ at: '2026-11-19T05:00:00Z', repo, plan: null, pr, sha: null, merged: null, direct: false, branch: null, onBase })
+  const detail = (base, additions) => ({ title: `t${additions}`, branch: null, additions, deletions: 0, files: 1, base })
+  const merges = [row(324), row(332), row(5), row(6, 'api'), row(7)]
+  const details = [detail('dev', 395), detail('main', 6528), null, detail('dev', 10), detail(null, 3)]
+  const feed = mergeFeed(merges, details, now, { web: 'main' })
+  assert.deepEqual(feed.merges.map((merge) => [merge.pr, merge.additions]), [[332, 6528], [5, null], [6, 10], [7, 3]], 'dev 로 머지된 #324 만 빠진다(상세 모름 · prBase 모르는 레포 · base 모름은 남김)')
+  assert.ok(feed.merges.every((merge) => !('base' in merge) && !('onBase' in merge)), 'base · onBase 는 폰에 넘기지 않는다')
+  // dev 에 squash 머지 뒤 main 을 dev 로 빨리 감기(합치기 머지 없음) — main 기록에 있는 #324 는 base 가 dev 여도 남긴다
+  assert.deepEqual(mergeFeed([row(324, 'web', true)], [detail('dev', 395)], now, { web: 'main' }).merges.map((merge) => merge.pr), [324], 'prBase 기록에서 확인된 줄은 base 로 거르지 않는다')
+  assert.equal(mergeFeed(merges, details, now).merges.length, 5, 'prBase 를 아직 못 읽었으면 거르지 않는다')
+  assert.equal(mergeFeed([row(1, 'toString')], [detail('dev', 1)], now, { web: 'main' }).merges.length, 1, '객체 기본 이름 레포도 prBase 모름으로')
 })
 
 test('createGitMerges — 지난 값으로 바로 답하고 뒤에서 log → fetch → log, log 는 1분 · fetch 는 10분마다, 달라졌을 때만 onReady', async () => {
@@ -727,6 +753,7 @@ test('createGitMerges — 지난 값으로 바로 답하고 뒤에서 log → fe
   await sleep(5)
   assert.equal(ready, 2)
   assert.deepEqual(cache.peek(() => ready++).map((merge) => merge.pr), [1, null])
+  assert.deepEqual(cache.bases(), { web: 'dev' }, '거른 뒤 레포마다 prBase')
   await sleep(5)
   assert.equal(runs.length, 3, '1분 안에는 다시 읽지 않는다')
   clock += GIT_LOG_MS
@@ -1039,7 +1066,7 @@ test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일�
     assert.equal(first.todayTop, null)
     await waitFor(() => env.events('changed').some((event) => event.parts.includes('merges')), '머지 상세 changed')
     assert.deepEqual(runs.map((run) => [run.command, run.args.join(' '), run.cwd]).sort(), [
-      ['gh', 'pr view 12 --json title,headRefName,additions,deletions,changedFiles', path.join('/b/acme', 'repos', 'web')],
+      ['gh', 'pr view 12 --json title,headRefName,baseRefName,additions,deletions,changedFiles', path.join('/b/acme', 'repos', 'web')],
       ['git', 'show --diff-merges=first-parent --shortstat --format=%s bbb2222 --', path.join('/b/acme', 'repos', 'api')],
     ])
     const second = (await env.ask('snapshot')).result
@@ -1089,9 +1116,9 @@ test('머지 상세 — 키(PR · squash 커밋만) · gh · shortstat 해석 ·
   assert.equal(mergeKey({ repo: 'web', direct: true, sha: 'abc1234' }), null, 'Actions 로 넘긴 것(merged 없음)')
   assert.equal(mergeKey({ repo: '../x', pr: 3 }), null)
   assert.equal(mergeKey({ repo: 'web', direct: true, merged: '--output=x' }), null)
-  assert.deepEqual(parsePrView('{"title":"t","headRefName":"b","additions":1,"deletions":2,"changedFiles":3}'), { title: 't', branch: 'b', additions: 1, deletions: 2, files: 3 })
+  assert.deepEqual(parsePrView('{"title":"t","headRefName":"b","baseRefName":"dev","additions":1,"deletions":2,"changedFiles":3}'), { title: 't', branch: 'b', additions: 1, deletions: 2, files: 3, base: 'dev' })
   assert.equal(parsePrView('없음'), null)
-  assert.deepEqual(parseShortstat('제목\n\n 1 file changed, 5 insertions(+)\n', 'b'), { title: '제목', branch: 'b', additions: 5, deletions: 0, files: 1 })
+  assert.deepEqual(parseShortstat('제목\n\n 1 file changed, 5 insertions(+)\n', 'b'), { title: '제목', branch: 'b', additions: 5, deletions: 0, files: 1, base: null })
   assert.equal(parseShortstat('', null), null)
 
   let clock = 0
