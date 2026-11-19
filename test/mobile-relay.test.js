@@ -689,13 +689,28 @@ test('relay 세션 — hello 답 · 봉인 그대로 · onSessionOpen(lan.info) 
   }
 })
 
-// 폰 푸시(protocol.md "푸시") — 붙어 있지 않은 허용 기기에만 push.send {to, kind} · 실패는 다시 보내지 않는다 · relay 에 안 붙었으면 안 보낸다
-test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send · 실패 코드만 로그 · 다시 보내지 않음', { timeout: 10_000 }, async () => {
+// 폰 푸시(protocol.md "푸시") — 붙어 있지 않은 허용 기기에만 push.send {to, kind, id, enc?} · 실패는 다시 보내지 않는다 · relay 에 안 붙었으면 안 보낸다
+// 푸시 열쇠(push.key)를 받은 기기는 글을 봉인해 enc 에(athena-push v1) · 없는 기기는 enc 없이(relay 고정 문구)
+test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send · 푸시 열쇠가 있으면 enc · 실패 코드만 로그 · 다시 보내지 않음', { timeout: 10_000 }, async () => {
   await mobileCrypto.ready()
+  const nodeCrypto = require('node:crypto')
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-mrpush-'))
   const keyOf = () => mobileCrypto.toBase64(mobileCrypto.newKeyPair().publicKey)
   const phone = mobileCrypto.newKeyPair()
   const peer = (publicKey) => ({ publicKey, addedAt: '2026-11-19T00:00:00.000Z', label: null, lastSeen: null })
+  // phone-a 의 푸시 열쇠 쌍(앱이 따로 만든 것 — 세션 열쇠와 다르다)
+  const pushPair = nodeCrypto.generateKeyPairSync('x25519')
+  const pushPublic = Buffer.from(pushPair.publicKey.export({ format: 'jwk' }).x, 'base64url')
+  const openEnc = (enc) => {
+    const bytes = Buffer.from(enc, 'base64url')
+    const ephemeralPublic = bytes.subarray(1, 33)
+    const shared = nodeCrypto.diffieHellman({ privateKey: pushPair.privateKey, publicKey: nodeCrypto.createPublicKey({ key: { kty: 'OKP', crv: 'X25519', x: ephemeralPublic.toString('base64url') }, format: 'jwk' }) })
+    const key = Buffer.from(nodeCrypto.hkdfSync('sha256', shared, Buffer.concat([ephemeralPublic, pushPublic]), 'athena-push v1', 32))
+    const decipher = nodeCrypto.createDecipheriv('chacha20-poly1305', key, bytes.subarray(33, 45), { authTagLength: 16 })
+    decipher.setAAD(Buffer.from('athena-push v1'))
+    decipher.setAuthTag(bytes.subarray(bytes.length - 16))
+    return JSON.parse(Buffer.concat([decipher.update(bytes.subarray(45, bytes.length - 16)), decipher.final()]).toString('utf8'))
+  }
   fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify({ token: 'fake-token', deviceId: 'dev-mac', account: 'dev:tester', name: null, peers: { 'phone-a': peer(mobileCrypto.toBase64(phone.publicKey)), 'phone-b': peer(keyOf()), 'phone-c': peer(keyOf()) } }))
   const sockets = []
   class FakeRelaySocket {
@@ -720,10 +735,14 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     }
   }
   const lines = []
-  const relay = createMobileRelay({ url: 'ws://127.0.0.1:1/ws', dir, log: (line) => lines.push(line), WebSocketImpl: FakeRelaySocket, heartbeatMs: 60_000, backoffMs: [60_000], createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) })
+  const options = { url: 'ws://127.0.0.1:1/ws', dir, WebSocketImpl: FakeRelaySocket, heartbeatMs: 60_000, backoffMs: [60_000], createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) }
+  const relay = createMobileRelay({ ...options, log: (line) => lines.push(line) })
+  const asked = { kind: 'request', id: 'evt-request-0000000001', title: 'athena-studio-fe · 확인 요청', body: '배포해도 될까요? 비밀-본문' }
+  const done = { kind: 'done', id: 'evt-done-00000000000001', title: 'athena-studio-fe · 일 끝남', body: 'athena-studio-fe · feat/x' }
+  let again = null
   try {
     // relay 에 안 붙었으면 보내지 않는다(쌓아 두지도 않는다)
-    await relay.push('done')
+    await relay.push(done)
     assert.ok(lines.some((line) => line.includes('푸시 안 보냄 kind=done 까닭=offline')))
     await relay.start()
     await waitFor(() => relay.status().connected, '가짜 relay 로그인')
@@ -731,21 +750,50 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     // phone-a 는 relay 세션이 열렸다(hello) — 붙어 있다
     socket.onmessage({ data: JSON.stringify({ event: 'msg', from: 'phone-a', data: mobileCrypto.encodeHandshake(mobileCrypto.helloMessage(mobileCrypto.newKeyPair().publicKey)) }) })
     assert.deepEqual(relay.status().sessions, ['phone-a'])
-    // phone-b 는 직접 길로 붙었다(busy) → phone-c 에만
-    await relay.push('request', ['phone-b'])
+    // 푸시 열쇠 — 허용한 기기 · 32B 만 받는다(모르는 기기 · 틀린 모양은 버린다) · relay.json 에 남는다
+    assert.equal(relay.setPushKey('phone-x', pushPublic.toString('base64')), false)
+    assert.equal(relay.setPushKey('phone-a', 'AAAA'), false)
+    assert.equal(relay.setPushKey('phone-a', undefined), false)
+    assert.equal(relay.setPushKey('phone-a', pushPublic.toString('base64')), true)
+    assert.equal(relay.setPushKey('phone-a', pushPublic.toString('base64url')), true, '같은 열쇠를 다시 — base64url 도 받는다')
+    assert.equal(lines.filter((line) => line === '[mobile-relay] 푸시 열쇠 받음 peer=phone-a').length, 1, '바뀌었을 때만 쓴다')
+    assert.equal(JSON.parse(fs.readFileSync(path.join(dir, 'relay.json'), 'utf8')).peers['phone-a'].pushKey, pushPublic.toString('base64'))
+    // phone-b 는 직접 길로 붙었다(busy) → phone-c 에만 · 푸시 열쇠가 없는 기기는 enc 없이
+    await relay.push(asked, ['phone-b'])
     const pushes = () => socket.sent.filter((message) => message.op === 'push.send').map((message) => message.args)
-    assert.deepEqual(pushes(), [{ to: 'phone-c', kind: 'request' }])
-    assert.ok(lines.some((line) => line === '[mobile-relay] 푸시 실패 peer=phone-c kind=request code=no_push_token'))
+    assert.deepEqual(pushes(), [{ to: 'phone-c', kind: 'request', id: asked.id }])
+    assert.ok(lines.some((line) => line === `[mobile-relay] 푸시 실패 peer=phone-c kind=request id=${asked.id} plain code=no_push_token`))
     // 폰이 꺼지면(peer.offline) 맥 relay 연결은 그대로 — 그 기기에도 보낸다 · 실패한 것을 다시 보내지 않는다
     socket.onmessage({ data: JSON.stringify({ event: 'peer.offline', peer: 'phone-a' }) })
     assert.equal(relay.status().connected, true)
-    await relay.push('done')
-    assert.deepEqual(pushes().slice(1), [{ to: 'phone-a', kind: 'done' }, { to: 'phone-b', kind: 'done' }, { to: 'phone-c', kind: 'done' }])
-    assert.ok(lines.includes('[mobile-relay] 푸시 보냄 peer=phone-a kind=done'))
-    // 로그에 토큰 · 본문이 없다
-    assert.ok(!lines.some((line) => line.includes('fake-token')))
+    await relay.push(done)
+    const [toA, toB, toC] = pushes().slice(1)
+    assert.deepEqual([toB, toC], [{ to: 'phone-b', kind: 'done', id: done.id }, { to: 'phone-c', kind: 'done', id: done.id }])
+    // 푸시 열쇠가 있는 phone-a 는 enc — relay 계약 모양(base64url · 2048자 안) · 폰 열쇠로 풀면 글
+    assert.deepEqual(Object.keys(toA).sort(), ['enc', 'id', 'kind', 'to'])
+    assert.deepEqual([toA.to, toA.kind, toA.id], ['phone-a', 'done', done.id])
+    assert.match(toA.enc, /^[A-Za-z0-9_-]{1,2048}$/)
+    assert.deepEqual(openEnc(toA.enc), { t: done.title, b: done.body, k: 'done' })
+    assert.ok(lines.includes(`[mobile-relay] 푸시 보냄 peer=phone-a kind=done id=${done.id} enc`))
+    // 로그에 토큰 · 알림 글 · enc · 푸시 열쇠가 없다
+    await relay.push(asked)
+    const text = lines.join('\n')
+    for (const secret of ['fake-token', '비밀-본문', asked.title, done.body, toA.enc, pushPublic.toString('base64')]) assert.ok(!text.includes(secret))
+    // 다시 켜도 푸시 열쇠가 남는다 — 모양이 틀린 것은 읽을 때 버린다
+    await relay.stop()
+    const saved = JSON.parse(fs.readFileSync(path.join(dir, 'relay.json'), 'utf8'))
+    saved.peers['phone-b'].pushKey = 'not-a-key'
+    fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify(saved))
+    again = createMobileRelay({ ...options, log: () => {} })
+    await again.start()
+    await waitFor(() => again.status().connected, '다시 켠 relay 로그인')
+    await again.push(done)
+    const later = sockets[sockets.length - 1].sent.filter((message) => message.op === 'push.send').map((message) => message.args)
+    assert.deepEqual(later.map((args) => [args.to, typeof args.enc]), [['phone-a', 'string'], ['phone-b', 'undefined'], ['phone-c', 'undefined']])
+    assert.deepEqual(openEnc(later[0].enc), { t: done.title, b: done.body, k: 'done' })
   } finally {
     await relay.stop()
+    if (again) await again.stop()
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })

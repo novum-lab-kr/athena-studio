@@ -4,11 +4,13 @@
 // 로그인: 웹 로그인(mobile-login.mts)으로 받은 세션 토큰을 signIn 으로 넘기면 /ws 에 auth.resume 으로 붙는다. 토큰이 없으면 붙지 않는다(로그아웃 상태).
 // 연결 허용: 인증번호 미리 약속 v1(계획서 4-7) — pair.key 뒤 약속 → 앱 난수 → 열기가 끝나야 [허용] 창에 번호가 뜬다.
 //
-// 남기는 것: 상태 폴더(0700) 안 mac-key.json(맥 고정 X25519 열쇠) · relay.json(세션 토큰 · 기기 id · 계정 · 이름 · 허용한 기기의 공개 열쇠 · 이름 · 마지막 접속) — 모두 0600.
-// 로그에는 기기 id · 크기 · 개수 · 오류 코드만(세션 토큰 · 비밀 열쇠 · 난수 · 인증번호 · 메시지 본문은 남기지 않는다).
+// 남기는 것: 상태 폴더(0700) 안 mac-key.json(맥 고정 X25519 열쇠) · relay.json(세션 토큰 · 기기 id · 계정 · 이름 · 허용한 기기의 공개 열쇠 · 푸시 공개 열쇠 · 이름 · 마지막 접속) — 모두 0600.
+// 로그에는 기기 id · 크기 · 개수 · 오류 코드만(세션 토큰 · 비밀 열쇠 · 난수 · 인증번호 · 메시지 본문 · 푸시 알림 글은 남기지 않는다).
 import fs from 'node:fs'
 import path from 'node:path'
 import * as mobileCrypto from '../lib/mobile-crypto.mts'
+import { sealPush } from '../lib/push-crypto.mts'
+import type { PushEvent } from '../lib/push-model.mts'
 import type { KeyPair } from '../lib/mobile-crypto.mts'
 import type { Transport } from './mobile-bridge.mts'
 import { mobileLog } from './mobile-log.mts'
@@ -32,7 +34,8 @@ export const LOGOUT_WAIT_MS = 3000 // 맥 로그아웃 때 relay 답을 기다�
 // [허용] 창에 보일 것 — 번호는 열기(reveal)를 보낸 뒤에만 생긴다
 export type PendingPair = { requestId: string; from: string; label: string | null; code: string; at: string; expiresAt: string }
 export type PeerView = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
-type PeerRecord = { publicKey: string; addedAt: string; label: string | null; lastSeen: string | null }
+// pushKey — 폰 푸시 공개 열쇠(X25519 raw 32B · base64). 폰이 암호 세션 안에서 push.key 로 보낸 것(relay 는 모른다) · 없으면 알림 글을 싣지 않는다
+type PeerRecord = { publicKey: string; addedAt: string; label: string | null; lastSeen: string | null; pushKey?: string }
 type SavedState = { token: string | null; deviceId: string | null; account: string | null; name: string | null; peers: Record<string, PeerRecord> }
 // 웹 로그인 교환 결과(relay POST /api/login/token) 중 맥이 쓰는 칸
 export type SignInResult = { token: string; deviceId: string; account: string; name: string | null }
@@ -128,7 +131,9 @@ function loadState(dir: string): SavedState {
   const rawPeers = saved.peers && typeof saved.peers === 'object' ? (saved.peers as Record<string, unknown>) : {}
   for (const [peer, record] of Object.entries(rawPeers)) {
     const value = record as Record<string, unknown> | null
-    if (value && mobileCrypto.keyFrom(value.publicKey)) peers[peer] = { publicKey: String(value.publicKey), addedAt: String(value.addedAt || ''), label: cleanLabel(value.label), lastSeen: textOrNull(value.lastSeen) }
+    if (!value || !mobileCrypto.keyFrom(value.publicKey)) continue
+    const pushKey = mobileCrypto.keyFrom(value.pushKey)
+    peers[peer] = { publicKey: String(value.publicKey), addedAt: String(value.addedAt || ''), label: cleanLabel(value.label), lastSeen: textOrNull(value.lastSeen), ...(pushKey ? { pushKey: mobileCrypto.toBase64(pushKey) } : {}) }
   }
   return { token: textOrNull(saved.token), deviceId: textOrNull(saved.deviceId), account: textOrNull(saved.account), name: cleanLabel(saved.name), peers }
 }
@@ -617,19 +622,37 @@ export function createMobileRelay(deps: RelayDeps) {
     broadcast(message: object) {
       for (const session of sessions.values()) session.channel.send(message)
     },
-    // 폰 푸시(protocol.md "푸시" · push.send {to, kind}) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
+    // 폰이 암호 세션 안에서 보낸 푸시 공개 열쇠(push.key) — 허용한 기기 것만 · 32B 가 아니면 버린다 · 바뀌었을 때만 쓴다
+    setPushKey(peer: string, publicKey: unknown): boolean {
+      const record = state.peers[peer]
+      const key = mobileCrypto.keyFrom(publicKey)
+      if (!record || !key) return false
+      const text = mobileCrypto.toBase64(key)
+      if (record.pushKey !== text) {
+        record.pushKey = text
+        saveState()
+        log(`[mobile-relay] 푸시 열쇠 받음 peer=${peer}`)
+      }
+      return true
+    },
+    // 폰 푸시(protocol.md "푸시" · push.send {to, kind, enc?, id}) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
+    // 글(제목 · 본문)은 그 기기 푸시 열쇠로 봉인해 enc 에(athena-push v1 · push-crypto.mts) — 열쇠가 없는 기기 · 봉인 실패는 enc 없이(relay 고정 문구).
     // relay 에 붙어 있지 않으면 보내지 않는다 · 실패(no_push_token · not_paired · rate_limited · push_failed …)는 코드만 남기고 다시 보내지 않는다(같은 건은 한 번)
-    async push(kind: 'request' | 'done', busy: readonly string[] = []): Promise<void> {
+    async push(event: PushEvent, busy: readonly string[] = []): Promise<void> {
+      const { kind, id } = event
       const targets = Object.keys(state.peers).filter((peer) => !sessions.has(peer) && !busy.includes(peer))
       if (!targets.length) return
       if (!authed) return log(`[mobile-relay] 푸시 안 보냄 kind=${kind} 까닭=offline`)
       await Promise.all(
-        targets.map((peer) =>
-          call('push.send', { to: peer, kind }).then(
-            () => log(`[mobile-relay] 푸시 보냄 peer=${peer} kind=${kind}`),
-            (error) => log(`[mobile-relay] 푸시 실패 peer=${peer} kind=${kind} code=${(error as RelayCallError).code}`),
-          ),
-        ),
+        targets.map((peer) => {
+          const pushKey = mobileCrypto.keyFrom(state.peers[peer]?.pushKey)
+          const enc = pushKey ? sealPush(pushKey, { t: event.title, b: event.body, k: kind }) : null
+          const sealed = enc ? 'enc' : 'plain'
+          return call('push.send', { to: peer, kind, id, ...(enc ? { enc } : {}) }).then(
+            () => log(`[mobile-relay] 푸시 보냄 peer=${peer} kind=${kind} id=${id} ${sealed}`),
+            (error) => log(`[mobile-relay] 푸시 실패 peer=${peer} kind=${kind} id=${id} ${sealed} code=${(error as RelayCallError).code}`),
+          )
+        }),
       )
     },
     status: () => ({ connected: authed, signedIn: Boolean(state.token), deviceId: state.deviceId, account: state.account, name: state.name, sessions: [...sessions.keys()] }),

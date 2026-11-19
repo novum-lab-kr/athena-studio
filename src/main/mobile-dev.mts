@@ -23,8 +23,8 @@ import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage, TrayPane } from '../lib/tray-model.mts'
-import { PushWatch } from '../lib/push-model.mts'
-import type { PushKind, PushGate } from '../lib/push-model.mts'
+import { PushMemory, PushWatch } from '../lib/push-model.mts'
+import type { PushEvent, PushGate } from '../lib/push-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
@@ -217,7 +217,7 @@ export function startMobileDev(deps: DevDeps) {
     onSignedOut: (why) => deps.onLoginFailed(why === 'expired' ? 'expired_session' : 'account_deleted'),
     // 맥 로그아웃 — relay 에서 이 기기 · 토큰 · 쌍 · 연결 요청을 지운다(protocol.md auth.logout {} → {} · 답 뒤 close 4004). 실패해도 로컬은 지운다
     remoteLogout: (call) => call('auth.logout', {}),
-    createBridge: (transport) => newBridge(transport),
+    createBridge: (transport, peer) => newBridge(transport, peer),
     onSessionOpen: (peer, send) => {
       lan.dropPeer(peer)
       send(lan.info())
@@ -257,7 +257,7 @@ export function startMobileDev(deps: DevDeps) {
     parts: ['usage'],
   })
   // 브리지는 두 길이 같다 — 출력 묶음만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS)
-  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], flushMs?: number) {
+  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], peer: string, flushMs?: number) {
     const bridge = (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
@@ -307,6 +307,8 @@ export function startMobileDev(deps: DevDeps) {
         },
         mac: () => ({ name: deps.macName() }),
         devices: () => relay.devices(),
+        // 폰 푸시 공개 열쇠(push.key) — 그 기기 기록에(relay.json peers[].pushKey)
+        pushKey: (publicKey) => relay.setPushKey(peer, publicKey),
         events: async () => {
           const ctx = front()
           const events = await eventsModule(ctx && ctx.athenaDir)
@@ -385,15 +387,17 @@ export function startMobileDev(deps: DevDeps) {
     macKey: () => macKey,
     peerOfKey: (publicKey) => relay.peerOfKey(publicKey),
     peerAllowed: (peer) => relay.peers().includes(peer),
-    createBridge: (transport) => newBridge(transport, DIRECT_FLUSH_MS),
+    createBridge: (transport, peer) => newBridge(transport, peer, DIRECT_FLUSH_MS),
     onDirectOpen: (peer) => relay.pauseSession(peer),
     onAddressesChanged: (info) => relay.broadcast(info),
     macId: () => relay.status().deviceId,
     log,
   })
-  // 폰 푸시 판정 — 앞 창(본체)이 바뀌면 처음부터(메뉴 막대 알림과 같다 · 요청은 그때 목록을 기준으로)
+  // 폰 푸시 판정 — 앞 창(본체)이 바뀌면 처음부터(메뉴 막대 알림과 같다 · 요청은 그때 목록을 기준으로).
+  // 보낸 것의 기억(같은 pane 60초 묶기 · 보낸 사건 id)은 판정을 새로 만들어도 이어 간다
+  const pushMemory = new PushMemory()
   let pushCtx: { ctx: FrontCtx; dir: string | null } | null = null
-  let pushWatch = new PushWatch()
+  let pushWatch = new PushWatch(pushMemory)
   const requestList = (ctx: FrontCtx) => {
     const now = ctx.requestsNow()
     return now.supported === false ? null : now.requests
@@ -401,14 +405,14 @@ export function startMobileDev(deps: DevDeps) {
   function pushFor(ctx: FrontCtx): PushWatch {
     if (!pushCtx || pushCtx.ctx !== ctx || pushCtx.dir !== ctx.athenaDir) {
       pushCtx = { ctx, dir: ctx.athenaDir }
-      pushWatch = new PushWatch()
+      pushWatch = new PushWatch(pushMemory)
       pushWatch.requests(requestList(ctx))
     }
     return pushWatch
   }
   // 직접 길로 붙은 기기도 붙은 것(결정 B1 — 폰 앱이 붙어 있지 않을 때만)
-  const sendPush = (kinds: PushKind[]) => {
-    for (const kind of kinds) void relay.push(kind, lan.status().peers)
+  const sendPush = (events: PushEvent[]) => {
+    for (const event of events) void relay.push(event, lan.status().peers)
   }
   log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir}`)
   let stopped = false
@@ -452,7 +456,7 @@ export function startMobileDev(deps: DevDeps) {
     // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
     macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
     // 앞 창의 요청이 바뀌었다(main — work.mts publishRequests) — 붙어 있는 폰에 changed ['requests', 'work']
-    // gate — 메뉴 막대 [알림 끄기] · 지금 보고 있는 pane(tray.mts pushGate) · 폰 푸시도 맥 알림처럼 거른다
+    // gate — 메뉴 막대 [알림 끄기] · Studio 창이 앞 · 지금 보고 있는 pane(tray.mts pushGate) · 폰 푸시도 맥 알림처럼 거른다
     requestsChanged: (gate?: PushGate) => {
       workWatch.requestsChanged()
       const ctx = front()

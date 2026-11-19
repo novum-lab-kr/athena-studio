@@ -258,5 +258,7 @@
   "Add terminal search — ⌘F in a pane finds text in the screen and scrollback": "터미널 찾기 추가 — pane 에서 ⌘F 로 화면 · 스크롤백 글 찾기",
   "Fix idle CPU use from the menu bar panel animating while closed": "메뉴 막대 패널이 닫혀 있어도 움직여 대기 CPU 를 쓰던 것 수정",
   "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "새 레포 워크트리에서 에이전트 pane 이 폴더 확인 창에서 멈추던 것 수정",
-  "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "확인 요청 · 에이전트 일 끝남 폰 푸시 알림 추가 — 폰 앱이 닫혀 있을 때만"
+  "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "확인 요청 · 에이전트 일 끝남 폰 푸시 알림 추가 — 폰 앱이 닫혀 있을 때만",
+  "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "폰 푸시 알림에 에이전트 이름 · 요청 제목 추가 — 암호화해 보내고 iPhone 에서만 읽힘",
+  "Fix repeated phone push alerts for one request — none while the Studio window is in front": "요청 하나에 폰 푸시 알림이 여러 번 오던 것 수정 — Studio 창이 앞이면 보내지 않음"
 }
