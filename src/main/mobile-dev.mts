@@ -280,8 +280,10 @@ export function startMobileDev(deps: DevDeps) {
           const ctx = front()
           const serverStatus = ctx && ctx.serverStatus
           if (!ctx || !serverStatus) return []
-          const read = async () => (await serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
-          return serverPeek(ctx.athenaDir || '', read, () => bridge.changed(['servers']))
+          // 실패는 serverPeek 까지 넘긴다 — 뒤에서 다시 읽다 실패하면 지난 목록을 그대로 두고 다음 부름에 다시(빈 목록으로 덮지 않는다)
+          const read = async () => (await serverStatus()).servers.map(serverSummary)
+          // 지난 값이 없을 때 못 읽었으면 지금처럼 빈 목록
+          return serverPeek(ctx.athenaDir || '', read, () => bridge.changed(['servers'])).catch(() => [])
         },
         serverDetail: async (name) => {
           const ctx = front()
