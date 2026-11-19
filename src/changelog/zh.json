@@ -252,5 +252,6 @@
   "Add moving the Simulator tab to its own window — iOS · Android taps work there too": "新增将模拟器标签页拆分为独立窗口 — 可在其中点按 iOS · Android",
   "Fix the side browser squeezing terminals — it now takes the Explorer column": "修复侧边浏览器挤压终端的问题 — 改为在 Explorer 位置打开",
   "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device": "修复拆分窗口缺少 Web · 模拟器标签的问题 — 切换时页面和设备保持不变",
-  "Fix auto review blocking PRs aimed at a non-default branch": "修复自动审查阻止目标为非默认分支的 PR 的问题"
+  "Fix auto review blocking PRs aimed at a non-default branch": "修复自动审查阻止目标为非默认分支的 PR 的问题",
+  "Fix slow phone reconnects — server status answered from the last reading": "修复手机重新连接缓慢 — 服务器状态先用上次的值立即返回"
 }

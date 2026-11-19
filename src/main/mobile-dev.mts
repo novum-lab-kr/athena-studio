@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
+import { createServerPeek } from '../lib/server-status.mts'
 import { createIconTokens } from './mobile-look.mts'
 import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { MergeRunner } from './mobile-bridge.mts'
@@ -226,6 +227,8 @@ export function startMobileDev(deps: DevDeps) {
   const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
   // 팩 · 레포 이미지 토큰 — 기기끼리 같이 쓴다(같은 파일은 한 번만 읽는다)
   const iconTokens = createIconTokens()
+  // 서버 상태 — 기기끼리 같이 쓴다. 지난 값으로 바로 답하고 오래됐으면 뒤에서 다시 읽는다(달라지면 그 기기에 changed ['servers'] · createServerPeek)
+  const serverPeek = createServerPeek<unknown[]>()
   const mergeDetails = () => {
     const dir = front()?.athenaDir || ''
     let cache = mergeCaches.get(dir)
@@ -275,8 +278,10 @@ export function startMobileDev(deps: DevDeps) {
         },
         servers: async () => {
           const ctx = front()
-          if (!ctx || !ctx.serverStatus) return []
-          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
+          const serverStatus = ctx && ctx.serverStatus
+          if (!ctx || !serverStatus) return []
+          const read = async () => (await serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
+          return serverPeek(ctx.athenaDir || '', read, () => bridge.changed(['servers']))
         },
         serverDetail: async (name) => {
           const ctx = front()
