@@ -646,3 +646,77 @@ test('서버 상세: 칸이 없는 옛 코어는 null · 칸만 있고 비었으
   assert.equal(status.parseStatus('==ufw\nStatus: inactive\n==monarx\ninactive\n==end\n').ufw, 'inactive')
   assert.equal(status.parseStatus('==monarx\ninactive\n==end\n').monarx, null, '유닛 줄이 없으면 설치 안 됨')
 })
+
+// 폰 snapshot 서버 상태 — 읽기마다 값 · 부른 수를 세는 가짜(손으로 끝낸다)
+function fakeReads() {
+  const calls = []
+  const read = () => new Promise((resolve, reject) => calls.push({ resolve, reject }))
+  return { calls, read }
+}
+const settle = () => new Promise((resolve) => setImmediate(resolve))
+
+test('서버 상태 재사용: 처음은 읽을 때까지 기다리고 · 재사용 시간 안에는 다시 읽지 않는다', async () => {
+  let clock = 0
+  const peek = status.createServerPeek({ now: () => clock, reuseMs: 30000 })
+  const { calls, read } = fakeReads()
+  const changed = []
+  const first = peek('/body', read, () => changed.push('first'))
+  assert.equal(calls.length, 1)
+  calls[0].resolve([{ name: 'web', at: 1 }])
+  assert.deepEqual(await first, [{ name: 'web', at: 1 }])
+  clock = 29999
+  assert.deepEqual(await peek('/body', read, () => changed.push('second')), [{ name: 'web', at: 1 }])
+  assert.equal(calls.length, 1, '재사용 시간 안에는 ssh 를 다시 돌리지 않는다')
+  assert.deepEqual(changed, [])
+})
+
+test('서버 상태 재사용: 오래됐으면 지난 값으로 바로 답하고 뒤에서 읽어 달라졌을 때만 알린다', async () => {
+  let clock = 0
+  const peek = status.createServerPeek({ now: () => clock, reuseMs: 30000 })
+  const { calls, read } = fakeReads()
+  const first = peek('/body', read, () => {})
+  calls[0].resolve([{ name: 'web', cpu: 1 }])
+  await first
+  clock = 30000
+  const changed = []
+  assert.deepEqual(await peek('/body', read, () => changed.push('a')), [{ name: 'web', cpu: 1 }], '기다리지 않고 지난 값')
+  assert.deepEqual(await peek('/body', read, () => changed.push('b')), [{ name: 'web', cpu: 1 }], '읽는 중에 또 불러도 지난 값')
+  assert.equal(calls.length, 2, '겹친 읽기는 하나')
+  calls[1].resolve([{ name: 'web', cpu: 2 }])
+  await settle()
+  assert.deepEqual(changed, ['a', 'b'], '그 사이 부른 기기 모두에 알린다')
+  assert.deepEqual(await peek('/body', read, () => changed.push('c')), [{ name: 'web', cpu: 2 }])
+  clock = 60000
+  await peek('/body', read, () => changed.push('d'))
+  calls[2].resolve([{ name: 'web', cpu: 2 }])
+  await settle()
+  assert.deepEqual(changed, ['a', 'b'], '같은 값이면 알리지 않는다')
+})
+
+test('서버 상태 재사용: 못 읽으면 지난 값을 그대로 두고 · 본체가 바뀌면 다른 본체 값을 내주지 않고 기다린다', async () => {
+  let clock = 0
+  const peek = status.createServerPeek({ now: () => clock, reuseMs: 30000 })
+  const { calls, read } = fakeReads()
+  const first = peek('/a', read, () => {})
+  calls[0].resolve(['a1'])
+  await first
+  clock = 30000
+  const changed = []
+  assert.deepEqual(await peek('/a', read, () => changed.push('a')), ['a1'])
+  calls[1].reject(new Error('ssh'))
+  await settle()
+  assert.deepEqual(changed, [])
+  assert.deepEqual(await peek('/a', read, () => {}), ['a1'], '못 읽었으면 지난 값')
+  assert.equal(calls.length, 3, '못 읽은 뒤에는 다음 부름에 다시 읽는다')
+  calls[2].resolve(['a1'])
+  const other = peek('/b', read, () => {})
+  assert.equal(calls.length, 4, '다른 본체는 새로 읽는다')
+  let done = false
+  void other.then(() => {
+    done = true
+  })
+  await settle()
+  assert.equal(done, false, '다른 본체 값을 기다린다')
+  calls[3].resolve(['b1'])
+  assert.deepEqual(await other, ['b1'])
+})
