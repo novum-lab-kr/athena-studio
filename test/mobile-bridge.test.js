@@ -750,6 +750,27 @@ test('readPlanData · openDecisionPlans — 결정 콘솔 PLAN 블록에서, 남
   }
 })
 
+test('openDecisionPlans — md Status 가 blocked · done 인 계획서는 남은 결정이 있어도 뺀다(보류 · 끝) · Status 줄이 없거나 다른 값이면 그대로', () => {
+  const dir = workDir()
+  try {
+    const statusOf = (rel, line) => fs.writeFileSync(path.join(dir, rel), `# 계획서\n\n## Checkpoint\n${line}\n`)
+    writePlanHtml(dir, 'plans/feature/blocked.md', SAMPLE_PLAN)
+    statusOf('plans/feature/blocked.md', '- Status: blocked')
+    writePlanHtml(dir, 'plans/feature/done.md', SAMPLE_PLAN)
+    statusOf('plans/feature/done.md', '- Status: **done**')
+    writePlanHtml(dir, 'plans/feature/doing.md', SAMPLE_PLAN)
+    statusOf('plans/feature/doing.md', '- Status: in_progress')
+    // Status 줄이 없는 것(writePlanHtml 기본 md)
+    writePlanHtml(dir, 'plans/feature/none.md', SAMPLE_PLAN)
+    // 본문에 같은 글이 있어도 Status 줄이 아니면 보지 않는다
+    writePlanHtml(dir, 'plans/feature/mention.md', SAMPLE_PLAN)
+    statusOf('plans/feature/mention.md', '- Status: planned\n- 메모: Status: blocked 로 두지 않는다')
+    assert.deepEqual(openDecisionPlans(dir).map((entry) => entry.plan), ['plans/feature/doing.md', 'plans/feature/mention.md', 'plans/feature/none.md'])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('decisionPrompt — 결정 콘솔 [이대로 진행] 과 같은 글 · 확정값은 그대로 · 틀린 고르기는 usage', () => {
   const data = { title: '모바일 앱', mdFile: 'plans/feature/a.md', decisions: SAMPLE_PLAN.decisions.map((entry) => ({ desc: '', ...entry, decided: entry.decided ? [entry.decided] : null })) }
   assert.equal(

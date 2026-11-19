@@ -430,7 +430,16 @@ export function hasOpenDecisions(data: PlanData): boolean {
   return targets.length > 0 && !targets.every((decision) => decision.decided !== null)
 }
 
-// 남은 결정이 있는 계획서 — plans/<폴더>/<이름>.html 중 같은 이름 .md 가 있는 것(artifacts 같은 그림 폴더는 md 가 없어 빠진다)
+// 계획서 md 의 Checkpoint "- Status:" 첫 낱말(** · ` 는 걷는다) — 줄이 없으면 ''
+function planStatus(mdText: string): string {
+  const value = /^- Status:(.*)$/m.exec(mdText)?.[1] ?? ''
+  return value.replace(/\*\*/g, '').replace(/`/g, '').trim().split(/\s+/)[0] ?? ''
+}
+
+// 폰 결정 목록에서 빼는 Status — 보류(blocked)는 사용자가 결정을 미뤄 둔 것 · done 은 끝난 것
+const CLOSED_PLAN_STATUS = new Set(['blocked', 'done'])
+
+// 남은 결정이 있는 계획서 — plans/<폴더>/<이름>.html 중 같은 이름 .md 가 있는 것(artifacts 같은 그림 폴더는 md 가 없어 빠진다) · md Status 가 blocked · done 이면 뺀다
 export function openDecisionPlans(athenaDir: string): { plan: string; data: PlanData }[] {
   const root = path.join(athenaDir, 'plans')
   const found: { plan: string; data: PlanData }[] = []
@@ -450,7 +459,13 @@ export function openDecisionPlans(athenaDir: string): { plan: string; data: Plan
     for (const file of files) {
       if (!file.endsWith('.html')) continue
       const plan = `plans/${folder}/${file.replace(/\.html$/, '.md')}`
-      if (!fs.existsSync(path.join(athenaDir, plan))) continue
+      let mdText = ''
+      try {
+        mdText = fs.readFileSync(path.join(athenaDir, plan), 'utf8')
+      } catch {
+        continue
+      }
+      if (CLOSED_PLAN_STATUS.has(planStatus(mdText))) continue
       const data = readPlanData(athenaDir, plan)
       if (data && hasOpenDecisions(data)) found.push({ plan, data })
     }
