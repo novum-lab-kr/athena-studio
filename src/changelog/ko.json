@@ -261,6 +261,8 @@
   "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "확인 요청 · 에이전트 일 끝남 폰 푸시 알림 추가 — 폰 앱이 닫혀 있을 때만",
   "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "폰 코드 변화량 카드가 손 머지 · 직접 push 를 빼던 것 수정 — 레포마다 git 기록에서 읽음",
   "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept": "업데이트로 앱을 다시 켠 뒤 폰 · iPad 앱 연결이 끊기던 것 수정 — relay 주소 유지",
+  "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "폰 코드 변화량 카드가 dev 머지를 두 번 세던 것 수정 — 기준 브랜치 밖 PR 제외",
+  "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "에이전트가 준 터미널 링크가 경고만 뜨고 안 열리던 것 수정 — 브라우저로 열기",
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "폰 푸시 알림에 에이전트 이름 · 요청 제목 추가 — 암호화해 보내고 iPhone 에서만 읽힘",
   "Fix repeated phone push alerts for one request — none while the Studio window is in front": "요청 하나에 폰 푸시 알림이 여러 번 오던 것 수정 — Studio 창이 앞이면 보내지 않음"
 }

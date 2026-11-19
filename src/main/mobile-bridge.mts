@@ -49,7 +49,8 @@ export type LogEvent = (type: string, fields: Record<string, unknown>) => void
 // 머지 피드 원천 — 코어 사건 기록(events.jsonl)의 줄(읽는 칸만)
 export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown; branch?: unknown }
 // 머지 하나의 상세 — PR 은 gh pr view · 바로 머지는 git show --shortstat(머지 커밋)에서. 읽지 못한 칸은 null
-export type MergeDetail = { title: string | null; branch: string | null; additions: number | null; deletions: number | null; files: number | null }
+// base 는 PR 이 머지된 브랜치(gh baseRefName — 사건에는 없다) · 폰에 넘기지 않고 prBase 밖 머지를 거를 때만 쓴다
+export type MergeDetail = { title: string | null; branch: string | null; additions: number | null; deletions: number | null; files: number | null; base: string | null }
 export type MergeRow = ReturnType<typeof weekMerges>[number]
 // 이 맥 · 짝 기기(연결된 폰) — 폰 화면 머리에 보인다
 export type DeviceView = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
@@ -186,7 +187,8 @@ const inWeek = (at: string, now: number) => {
 export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[] = []) {
   const rows = events
     .filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.at === 'string' && inWeek(event.at, now))
-    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: prOf(event.pr), sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null }))
+    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: prOf(event.pr), sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null, onBase: false }))
+  // onBase — prBase 의 first-parent 기록에서 확인된 머지(그 브랜치에 실제로 들어간 것 · mergeFeed 가 base 로 거르지 않는다 · 폰에는 안 넘긴다)
   type Row = (typeof rows)[number]
   const byKey = new Map<string, Row>()
   for (const row of rows) {
@@ -197,13 +199,18 @@ export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[
   for (const merge of gitMerges) {
     if (!inWeek(merge.at, now)) continue
     const short = merge.full.slice(0, 7)
-    const keys = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), ...[merge.full, ...merge.parents.slice(1)].map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)]
-    const known = keys.map((key) => byKey.get(key)).find(Boolean)
+    const own = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), `${merge.repo}@${short}`]
+    const sideKeys = merge.parents.slice(1).map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)
+    const keys = [...own, ...sideKeys]
+    // PR 번호 · 커밋 자체로 맞으면 같은 머지. 둘째 부모로만 맞는 것은 PR 없는 사건(Actions 넘기기 브랜치 끝)뿐 —
+    // PR 사건이 둘째 부모로 맞으면 그 PR 은 다른 브랜치(dev)에 들어간 것이고 이 커밋은 그 브랜치를 prBase 로 합친 줄이다
+    const known = own.map((key) => byKey.get(key)).find(Boolean) || sideKeys.map((key) => byKey.get(key)).find((row) => row !== undefined && row.pr === null)
     if (known) {
+      known.onBase = true
       if (known.merged === null && known.pr === null) known.merged = short
       continue
     }
-    const row: Row = { at: merge.at, repo: merge.repo, plan: null, pr: merge.pr, sha: short, merged: short, direct: merge.pr === null, branch: merge.branch }
+    const row: Row = { at: merge.at, repo: merge.repo, plan: null, pr: merge.pr, sha: short, merged: short, direct: merge.pr === null, branch: merge.branch, onBase: true }
     rows.push(row)
     for (const key of keys) byKey.set(key, row)
   }
@@ -314,11 +321,11 @@ export function mergeKey(merge: MergeRow): string | null {
   return merge.direct && typeof merge.merged === 'string' && SHA.test(merge.merged) ? `${merge.repo}@${merge.merged}` : null
 }
 const countOf = (value: unknown): number | null => (Number.isInteger(value) && (value as number) >= 0 ? (value as number) : null)
-// gh pr view --json title,headRefName,additions,deletions,changedFiles
+// gh pr view --json title,headRefName,baseRefName,additions,deletions,changedFiles
 export function parsePrView(text: string): MergeDetail | null {
   try {
-    const data = JSON.parse(text) as { title?: unknown; headRefName?: unknown; additions?: unknown; deletions?: unknown; changedFiles?: unknown }
-    return { title: typeof data.title === 'string' ? data.title : null, branch: typeof data.headRefName === 'string' ? data.headRefName : null, additions: countOf(data.additions), deletions: countOf(data.deletions), files: countOf(data.changedFiles) }
+    const data = JSON.parse(text) as { title?: unknown; headRefName?: unknown; baseRefName?: unknown; additions?: unknown; deletions?: unknown; changedFiles?: unknown }
+    return { title: typeof data.title === 'string' ? data.title : null, branch: typeof data.headRefName === 'string' ? data.headRefName : null, additions: countOf(data.additions), deletions: countOf(data.deletions), files: countOf(data.changedFiles), base: typeof data.baseRefName === 'string' && data.baseRefName ? data.baseRefName : null }
   } catch {
     return null
   }
@@ -329,7 +336,7 @@ export function parseShortstat(text: string, branch: string | null): MergeDetail
   if (!lines.length) return null
   const stat = lines.find((line) => /\bfiles? changed\b/.test(line)) || ''
   const number = (pattern: RegExp) => Number(pattern.exec(stat)?.[1] ?? 0)
-  return { title: lines[0]!.trim(), branch, additions: number(/(\d+) insertions?\(\+\)/), deletions: number(/(\d+) deletions?\(-\)/), files: number(/(\d+) files? changed/) }
+  return { title: lines[0]!.trim(), branch, additions: number(/(\d+) insertions?\(\+\)/), deletions: number(/(\d+) deletions?\(-\)/), files: number(/(\d+) files? changed/), base: null }
 }
 export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaDir: () => string | null; run: MergeRunner; now?: () => number }) {
   const done = new Map<string, MergeDetail>()
@@ -340,7 +347,7 @@ export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaD
     if (!dir) return null
     const cwd = path.join(dir, 'repos', merge.repo as string)
     if (key.includes('#')) {
-      const out = await run('gh', ['pr', 'view', String(merge.pr), '--json', 'title,headRefName,additions,deletions,changedFiles'], cwd)
+      const out = await run('gh', ['pr', 'view', String(merge.pr), '--json', 'title,headRefName,baseRefName,additions,deletions,changedFiles'], cwd)
       return out === null ? null : parsePrView(out)
     }
     const sha = key.slice(key.indexOf('@') + 1)
@@ -393,6 +400,7 @@ export const GIT_FETCH_MS = 10 * 60 * 1000
 const BRANCH = /^\w[\w./-]*$/
 export function createGitMerges({ athenaDir, bases, run, now = Date.now }: { athenaDir: () => string | null; bases: () => Promise<MergeBase[]>; run: MergeRunner; now?: () => number }) {
   let merges: GitMerge[] = []
+  let baseOf: Record<string, string> = {} // 레포 → prBase(마지막으로 읽은 팩 설정)
   let readAt: number | null = null
   let reading = false
   const fetchedAt = new Map<string, number>() // 레포 → fetch 한 때(실패도 — 네트워크가 없을 때 1분마다 두드리지 않는다)
@@ -405,6 +413,7 @@ export function createGitMerges({ athenaDir, bases, run, now = Date.now }: { ath
     const dir = athenaDir()
     if (!dir) return
     const list = (await bases().catch(() => [])).filter((item) => /^[\w.-]+$/.test(item.repo) && BRANCH.test(item.base))
+    baseOf = Object.fromEntries(list.map((item) => [item.repo, item.base]))
     const read = async () => (await Promise.all(list.map((item) => logOf(dir, item.repo, item.base).catch(() => null)))).flatMap((rows) => rows || [])
     const publish = (next: GitMerge[]) => {
       const same = next.length === merges.length && next.every((merge, index) => merge.full === merges[index]!.full)
@@ -431,15 +440,25 @@ export function createGitMerges({ athenaDir, bases, run, now = Date.now }: { ath
       }
       return merges
     },
+    // 레포마다 prBase — mergeFeed 가 prBase 밖(dev 등)으로 머지된 PR 을 거른다. 아직 못 읽었으면 빈 값(거르지 않는다)
+    bases(): Record<string, string> {
+      return baseOf
+    },
   }
 }
 
-// 머지 줄 + 상세 · 오늘(이 맥 날짜) 가장 큰 변경(+ − 합) — 상세를 모르는 머지는 견주지 않는다
-export function mergeFeed(merges: MergeRow[], details: (MergeDetail | null)[], now: number) {
-  const empty: MergeDetail = { title: null, branch: null, additions: null, deletions: null, files: null }
-  const rows = merges.map((merge, index) => {
+// 머지 줄 + 상세 · 오늘(이 맥 날짜) 가장 큰 변경(+ − 합) — 상세를 모르는 머지는 견주지 않는다.
+// prBase 가 아닌 브랜치(dev 등)로 머지된 PR 은 뺀다 — 그 변경은 나중에 prBase 로 합칠 때(git 기록의 합치기 머지) 다시 세어 두 번 잡힌다.
+// 사건에는 대상 브랜치가 없어 gh 상세의 base 로 본다(상세 · prBase 를 모르면 남긴다).
+// prBase 의 git 기록에서 확인된 줄(onBase)은 base 가 달라도 남긴다 — dev 에 머지한 뒤 main 을 dev 로 빨리 감은 경우 합치기 머지가 따로 없다
+export function mergeFeed(merges: MergeRow[], details: (MergeDetail | null)[], now: number, bases: Record<string, string> = {}) {
+  const empty: MergeDetail = { title: null, branch: null, additions: null, deletions: null, files: null, base: null }
+  const offBase = (merge: MergeRow, detail: MergeDetail) => !merge.onBase && typeof merge.repo === 'string' && detail.base !== null && Object.hasOwn(bases, merge.repo) && detail.base !== bases[merge.repo]
+  const rows = merges.flatMap((merge, index) => {
     const detail = details[index] || empty
-    return { ...merge, title: detail.title, branch: detail.branch ?? merge.branch, additions: detail.additions, deletions: detail.deletions, files: detail.files }
+    if (offBase(merge, detail)) return []
+    const { onBase: _onBase, ...row } = merge
+    return [{ ...row, title: detail.title, branch: detail.branch ?? merge.branch, additions: detail.additions, deletions: detail.deletions, files: detail.files }]
   })
   const today = new Date(now).toDateString()
   let todayTop: (typeof rows)[number] | null = null
@@ -1212,7 +1231,7 @@ export function createMobileBridge(deps: BridgeDeps) {
     const panes = livePanes((listed && listed.panes) || [], paneWhere(state, deps.bodyPacks ? deps.bodyPacks() : {}))
     const merges = weekMerges(events, now(), deps.gitMerges ? deps.gitMerges.peek(() => emit({ event: 'changed', parts: ['merges'] })) : [])
     const details = deps.mergeDetails ? deps.mergeDetails.peek(merges, () => emit({ event: 'changed', parts: ['merges'] })) : merges.map(() => null)
-    const feed = mergeFeed(merges, details, now())
+    const feed = mergeFeed(merges, details, now(), deps.gitMerges ? deps.gitMerges.bases() : {})
     const [spaces, icons] = await Promise.all([spacesOf(state, look), packIconTokens(look)])
     return {
       requests,

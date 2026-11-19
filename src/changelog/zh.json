@@ -261,6 +261,8 @@
   "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "新增确认请求 · 智能体完成工作的手机推送通知 — 仅在手机应用关闭时",
   "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "修复手机代码变化量卡片漏掉手动合并 · 直接 push 的问题 — 从每个仓库的 git 记录读取",
   "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept": "修复更新后重启应用时手机 · iPad 应用断开连接的问题 — 保留 relay 地址",
+  "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "修复手机代码变化量卡片重复计算 dev 合并的问题 — 排除基准分支以外的 PR",
+  "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "修复智能体终端链接只弹出警告而无法打开的问题 — 在浏览器中打开",
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "手机推送通知新增智能体名称 · 请求标题 — 加密发送，仅 iPhone 可读",
   "Fix repeated phone push alerts for one request — none while the Studio window is in front": "修复一个请求重复收到手机推送通知的问题 — Studio 窗口在前台时不发送"
 }
