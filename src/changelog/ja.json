@@ -253,6 +253,7 @@
   "Fix the side browser squeezing terminals — it now takes the Explorer column": "サイドブラウザがターミナルを狭めていた問題を修正 — Explorer の位置に開く",
   "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device": "切り離したウィンドウに Web · シミュレータタブがなかった問題を修正 — 切り替えてもページ · デバイスはそのまま",
   "Fix auto review blocking PRs aimed at a non-default branch": "自動レビューが既定以外のブランチ宛て PR を止める問題を修正",
+  "Fix server status running SSH on every phone refresh — one shared read every 3 minutes": "スマホの更新ごとにサーバー状態を SSH で読んでいた問題を修正 — 3分に1回読んで共有",
   "Fix slow phone reconnects — server status answered from the last reading": "スマホの再接続の遅さを修正 — サーバー状態は前回の値ですぐに返答",
   "Add terminal search — ⌘F in a pane finds text in the screen and scrollback": "ターミナル検索を追加 — ペインで ⌘F を押すと画面 · スクロールバックの文字を検索",
   "Fix idle CPU use from the menu bar panel animating while closed": "メニューバーパネルが閉じていても動き続け、待機中に CPU を使っていた問題を修正",

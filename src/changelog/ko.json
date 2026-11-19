@@ -253,6 +253,7 @@
   "Fix the side browser squeezing terminals — it now takes the Explorer column": "옆 브라우저가 터미널을 좁히던 것 수정 — Explorer 자리에 열림",
   "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device": "떼어 낸 창에 웹 · 시뮬레이터 탭이 없던 것 수정 — 바꿔도 페이지 · 기기 그대로",
   "Fix auto review blocking PRs aimed at a non-default branch": "자동 리뷰가 기본이 아닌 브랜치로 가는 PR 을 막던 것 수정",
+  "Fix server status running SSH on every phone refresh — one shared read every 3 minutes": "폰 새로고침마다 서버 상태를 SSH 로 읽던 것 수정 — 3분에 한 번 읽어 같이 씀",
   "Fix slow phone reconnects — server status answered from the last reading": "폰 다시 연결이 느리던 것 수정 — 서버 상태는 지난 값으로 바로 답함",
   "Add terminal search — ⌘F in a pane finds text in the screen and scrollback": "터미널 찾기 추가 — pane 에서 ⌘F 로 화면 · 스크롤백 글 찾기",
   "Fix idle CPU use from the menu bar panel animating while closed": "메뉴 막대 패널이 닫혀 있어도 움직여 대기 CPU 를 쓰던 것 수정",
