@@ -261,5 +261,6 @@
   "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "確認リクエスト · エージェント作業完了のスマホプッシュ通知を追加 — スマホアプリが閉じているときのみ",
   "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "スマホのコード変更量カードで手動マージ · 直接 push が抜ける問題を修正 — git 履歴から読む",
   "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept": "アップデートでアプリを再起動したあとスマホ · iPad アプリの接続が切れる問題を修正 — relay アドレスを保持",
-  "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "スマホのコード変更量カードで dev マージの二重計上を修正 — 基準ブランチ外の PR を除外"
+  "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "スマホのコード変更量カードで dev マージの二重計上を修正 — 基準ブランチ外の PR を除外",
+  "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "エージェントのターミナルリンクが警告だけで開かない問題を修正 — ブラウザで開く"
 }

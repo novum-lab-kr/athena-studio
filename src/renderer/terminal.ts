@@ -53,6 +53,9 @@ function makeTerminal(): { term: Terminal; fit: FitAddon.FitAddon } {
     macOptionIsMeta: true,
     macOptionClickForcesSelection: true, // 안의 프로그램이 마우스를 잡아도 Option+드래그로 고를 수 있게
     theme: { background: '#16171a', foreground: '#e8e6e1' },
+    // OSC 8 링크(Claude Code 등이 내보내는 링크)도 글자 URL 과 같은 길로 연다 — 없으면 xterm 기본 처리기가
+    // confirm 창을 띄운 뒤 빈 window.open() 을 부르는데 앱이 about:blank 를 막아 아무것도 열리지 않는다
+    linkHandler: { activate: (_event: MouseEvent, uri: string) => studio.openUrl(uri) },
   })
   const fit = new FitAddon.FitAddon()
   term.loadAddon(fit)
