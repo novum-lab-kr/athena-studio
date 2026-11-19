@@ -688,3 +688,64 @@ test('relay 세션 — hello 답 · 봉인 그대로 · onSessionOpen(lan.info) 
     fs.rmSync(dir, { recursive: true, force: true })
   }
 })
+
+// 폰 푸시(protocol.md "푸시") — 붙어 있지 않은 허용 기기에만 push.send {to, kind} · 실패는 다시 보내지 않는다 · relay 에 안 붙었으면 안 보낸다
+test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send · 실패 코드만 로그 · 다시 보내지 않음', { timeout: 10_000 }, async () => {
+  await mobileCrypto.ready()
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'asd-mrpush-'))
+  const keyOf = () => mobileCrypto.toBase64(mobileCrypto.newKeyPair().publicKey)
+  const phone = mobileCrypto.newKeyPair()
+  const peer = (publicKey) => ({ publicKey, addedAt: '2026-11-19T00:00:00.000Z', label: null, lastSeen: null })
+  fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify({ token: 'fake-token', deviceId: 'dev-mac', account: 'dev:tester', name: null, peers: { 'phone-a': peer(mobileCrypto.toBase64(phone.publicKey)), 'phone-b': peer(keyOf()), 'phone-c': peer(keyOf()) } }))
+  const sockets = []
+  class FakeRelaySocket {
+    constructor() {
+      this.readyState = 0
+      this.sent = []
+      sockets.push(this)
+      setTimeout(() => {
+        this.readyState = 1
+        if (this.onopen) this.onopen({})
+      })
+    }
+    send(data) {
+      const message = JSON.parse(data)
+      this.sent.push(message)
+      const reply = (body) => setTimeout(() => this.onmessage({ data: JSON.stringify({ id: message.id, ...body }) }))
+      if (message.op === 'auth.resume') reply({ ok: true, result: { deviceId: 'dev-mac', account: 'dev:tester' } })
+      if (message.op === 'push.send') reply(message.args.to === 'phone-c' ? { ok: false, error: { code: 'no_push_token', message: '' } } : { ok: true, result: {} })
+    }
+    close() {
+      this.readyState = 3
+    }
+  }
+  const lines = []
+  const relay = createMobileRelay({ url: 'ws://127.0.0.1:1/ws', dir, log: (line) => lines.push(line), WebSocketImpl: FakeRelaySocket, heartbeatMs: 60_000, backoffMs: [60_000], createBridge: () => ({ stop: async () => {}, openPanes: () => [], resyncPane: async () => {} }) })
+  try {
+    // relay 에 안 붙었으면 보내지 않는다(쌓아 두지도 않는다)
+    await relay.push('done')
+    assert.ok(lines.some((line) => line.includes('푸시 안 보냄 kind=done 까닭=offline')))
+    await relay.start()
+    await waitFor(() => relay.status().connected, '가짜 relay 로그인')
+    const socket = sockets[0]
+    // phone-a 는 relay 세션이 열렸다(hello) — 붙어 있다
+    socket.onmessage({ data: JSON.stringify({ event: 'msg', from: 'phone-a', data: mobileCrypto.encodeHandshake(mobileCrypto.helloMessage(mobileCrypto.newKeyPair().publicKey)) }) })
+    assert.deepEqual(relay.status().sessions, ['phone-a'])
+    // phone-b 는 직접 길로 붙었다(busy) → phone-c 에만
+    await relay.push('request', ['phone-b'])
+    const pushes = () => socket.sent.filter((message) => message.op === 'push.send').map((message) => message.args)
+    assert.deepEqual(pushes(), [{ to: 'phone-c', kind: 'request' }])
+    assert.ok(lines.some((line) => line === '[mobile-relay] 푸시 실패 peer=phone-c kind=request code=no_push_token'))
+    // 폰이 꺼지면(peer.offline) 맥 relay 연결은 그대로 — 그 기기에도 보낸다 · 실패한 것을 다시 보내지 않는다
+    socket.onmessage({ data: JSON.stringify({ event: 'peer.offline', peer: 'phone-a' }) })
+    assert.equal(relay.status().connected, true)
+    await relay.push('done')
+    assert.deepEqual(pushes().slice(1), [{ to: 'phone-a', kind: 'done' }, { to: 'phone-b', kind: 'done' }, { to: 'phone-c', kind: 'done' }])
+    assert.ok(lines.includes('[mobile-relay] 푸시 보냄 peer=phone-a kind=done'))
+    // 로그에 토큰 · 본문이 없다
+    assert.ok(!lines.some((line) => line.includes('fake-token')))
+  } finally {
+    await relay.stop()
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})

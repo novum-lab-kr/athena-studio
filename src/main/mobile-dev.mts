@@ -4,6 +4,7 @@
 // 격리 집(ATHENA_STUDIO_HOME)은 없어도 된다 — 없으면 진짜 스튜디오 집(~/.athena-studio)에서 켠다(2026-11-12 결정 · 폰 실제 데이터 시험).
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <스튜디오 집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
+// 폰 푸시(계획서 plans/feature/20261119-폰-푸시-알림-답-필요-일-끝남.md) — 메뉴 막대가 본 pane · 앞 창 요청으로 판정(push-model.mts)하고 붙어 있지 않은 짝 기기에만 relay push.send.
 // 직접 길(mobile-lan.mts — 같은 Wi-Fi · Tailscale)도 같은 조건에서만 켠다. 한 기기는 한 번에 한 길 — 직접이 붙으면 그 기기 relay 세션은 쉬고,
 // relay 로 hello 가 오면 직접 연결을 닫는다(마지막 hello 가 이긴다). 받는 주소는 relay 세션 안 lan.info 로 알린다.
 import fs from 'node:fs'
@@ -20,7 +21,9 @@ import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
-import type { MobileUsage } from '../lib/tray-model.mts'
+import type { MobileUsage, TrayPane } from '../lib/tray-model.mts'
+import { PushWatch } from '../lib/push-model.mts'
+import type { PushKind } from '../lib/push-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
 import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
@@ -78,7 +81,7 @@ export const mobileStateDir = (home: string) => path.join(path.resolve(home), 'm
 // main 이 넘기는 것 — 지금 앞에 있는 팩 창의 문맥(본체 · 요청 · 현황판)과 앱 설정
 type FrontCtx = {
   athenaDir: string | null
-  requestsNow(): { requests: unknown[] }
+  requestsNow(): { supported?: boolean; requests: unknown[] }
   workPeek(options?: { launch?: boolean }): Promise<MobileWork>
   usagePeek(): Promise<MobileUsage>
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
@@ -381,6 +384,25 @@ export function startMobileDev(deps: DevDeps) {
     macId: () => relay.status().deviceId,
     log,
   })
+  // 폰 푸시 판정 — 앞 창(본체)이 바뀌면 처음부터(메뉴 막대 알림과 같다 · 요청은 그때 목록을 기준으로)
+  let pushCtx: { ctx: FrontCtx; dir: string | null } | null = null
+  let pushWatch = new PushWatch()
+  const requestList = (ctx: FrontCtx) => {
+    const now = ctx.requestsNow()
+    return now.supported === false ? null : now.requests
+  }
+  function pushFor(ctx: FrontCtx): PushWatch {
+    if (!pushCtx || pushCtx.ctx !== ctx || pushCtx.dir !== ctx.athenaDir) {
+      pushCtx = { ctx, dir: ctx.athenaDir }
+      pushWatch = new PushWatch()
+      pushWatch.requests(requestList(ctx))
+    }
+    return pushWatch
+  }
+  // 직접 길로 붙은 기기도 붙은 것(결정 B1 — 폰 앱이 붙어 있지 않을 때만)
+  const sendPush = (kinds: PushKind[]) => {
+    for (const kind of kinds) void relay.push(kind, lan.status().peers)
+  }
   log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir}`)
   let stopped = false
   // 저장한 토큰이 있으면 붙는다 · 없으면 로그아웃 상태로 기다린다. relay 가 맥 열쇠를 만들고(처음이면) 나서 직접 길을 연다 — 같은 열쇠 파일을 읽는다
@@ -423,7 +445,16 @@ export function startMobileDev(deps: DevDeps) {
     // 맥 화면 크기 요청(main pane:resize) — 폰이 가진 pane 이면 true(데몬에 보내지 않고 기억만 · 부르는 쪽이 받은 것처럼 답한다)
     macResize: (pane: string, cols: number, rows: number) => control.macResize(pane, { cols, rows }),
     // 앞 창의 요청이 바뀌었다(main — work.mts publishRequests) — 붙어 있는 폰에 changed ['requests', 'work']
-    requestsChanged: () => workWatch.requestsChanged(),
+    requestsChanged: () => {
+      workWatch.requestsChanged()
+      const ctx = front()
+      if (ctx) sendPush(pushFor(ctx).requests(requestList(ctx)))
+    },
+    // 메뉴 막대가 앞 창 pane 을 읽었다(tray.mts — 4초마다 · 입력 대기를 보탠 것) — 확인 요청 · 일 끝남이면 폰 푸시
+    panesPolled: (ctx: FrontCtx, panes: readonly TrayPane[]) => {
+      if (ctx !== front()) return
+      sendPush(pushFor(ctx).panes(panes, Date.now()))
+    },
     openAccount: () => deps.openBrowser(`${deps.options.base}/account`),
     async stop() {
       stopped = true

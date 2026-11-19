@@ -252,5 +252,6 @@
   "Add moving the Simulator tab to its own window — iOS · Android taps work there too": "シミュレータタブを別ウィンドウに切り離す機能を追加 — iOS · Android 操作も可",
   "Fix the side browser squeezing terminals — it now takes the Explorer column": "サイドブラウザがターミナルを狭めていた問題を修正 — Explorer の位置に開く",
   "Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device": "切り離したウィンドウに Web · シミュレータタブがなかった問題を修正 — 切り替えてもページ · デバイスはそのまま",
-  "Fix auto review blocking PRs aimed at a non-default branch": "自動レビューが既定以外のブランチ宛て PR を止める問題を修正"
+  "Fix auto review blocking PRs aimed at a non-default branch": "自動レビューが既定以外のブランチ宛て PR を止める問題を修正",
+  "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "確認リクエスト · エージェント作業完了のスマホプッシュ通知を追加 — スマホアプリが閉じているときのみ"
 }

@@ -45,6 +45,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
 
 ### New
+- Add phone push alerts for new requests and finished agents — only while the phone app is closed
 - Add a live Android screen to the Simulator tab — video instead of 1-second snapshots
 - Add moving the side browser to its own window — tabs return to the side panel when it closes
 - Add moving the Simulator tab to its own window — iOS · Android taps work there too

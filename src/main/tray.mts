@@ -49,12 +49,13 @@ export type TrayCtx = {
 }
 
 // claudeProjects · codexSessions — 대화 기록 자리(main.mts 가 pane [상세] 토큰과 같은 것을 준다)
-type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void; claudeProjects: string; codexSessions: string }
+// onPanes — 앞 창 pane 을 읽을 때마다(입력 대기를 보탠 것) 한 번 · 폰 푸시 판정(mobile-dev.mts panesPolled)
+type TrayDeps = { say: Say; frontCtx: () => TrayCtx | null; packWindows: Set<TrayCtx>; openSavedWindows: () => void; claudeProjects: string; codexSessions: string; onPanes?: (ctx: TrayCtx, panes: TrayPane[]) => void }
 
 const TRAY_ICON_DIR = path.join(import.meta.dirname, '..', 'renderer', 'assets', 'logo')
 const TRAY_WIDTH = 309 // 안쪽 285px — 산 그림(tray-mountain.ts WIDTH)이 이 폭에 맞춘다
 
-export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects, codexSessions }: TrayDeps) {
+export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claudeProjects, codexSessions, onPanes }: TrayDeps) {
   const trayState = {
     ctx: null as TrayCtx | null,
     dir: null as string | null,
@@ -298,6 +299,7 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
         const due = trayNotifier.update({ panes: trayState.panes, names: trayNames(), say }, Date.now())
         // 지금 보고 있는 pane 은 빼고 묶는다
         for (const item of trayModel.bundle(due.filter((entry) => !lookingAt(entry)), say)) notify(item)
+        if (onPanes) onPanes(ctx, trayState.panes)
       }
       if (trayWindow && trayWindow.isVisible()) sendTrayUpdate()
     } catch {
