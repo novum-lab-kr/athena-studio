@@ -24,12 +24,13 @@ const CENTER_MIN_HEIGHT = 200 // 가운데 탭 줄 + pane 칸
 
 const edges: Edge[] = []
 
-// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄)을 뺀 나머지
+// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄)을 뺀 나머지.
+// 옆 브라우저 자리 칸(#browser-space)은 빼지 않는다 — 서랍이 열려도 양옆 칸 크기는 그대로, 서랍 너비가 남는 폭에 맞춰 준다(browser.ts)
 function widthRoom(self: HTMLElement): number {
   const work = $('work')
   let others = 0
   for (const child of work.children) {
-    if (child === self || child.classList.contains('center')) continue
+    if (child === self || child.classList.contains('center') || child.id === 'browser-space') continue
     others += (child as HTMLElement).getBoundingClientRect().width
   }
   return work.clientWidth - CENTER_MIN_WIDTH - others
