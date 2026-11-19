@@ -323,7 +323,6 @@
   "board.logLine": "Log: {log}",
   "browser.toggle": "Toggle Side Browser",
   "browser.toggleTitle": "Toggle Side Browser ({key}⇧B)",
-  "browser.resizeHint": "Drag to resize · double-click for default width",
   "browser.tabs": "Open pages",
   "browser.back": "Back",
   "browser.forward": "Forward",

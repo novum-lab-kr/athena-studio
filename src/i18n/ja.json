@@ -323,7 +323,6 @@
   "board.logLine": "ログ: {log}",
   "browser.toggle": "サイドブラウザを開く・閉じる",
   "browser.toggleTitle": "サイドブラウザを開く・閉じる ({key}⇧B)",
-  "browser.resizeHint": "ドラッグで幅を変更・ダブルクリックで既定の幅",
   "browser.tabs": "開いているページ",
   "browser.back": "戻る",
   "browser.forward": "進む",

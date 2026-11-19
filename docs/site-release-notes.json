@@ -6,6 +6,20 @@
       "ko": "옆 브라우저를 별도 창으로 떼어 내기 추가 — 창을 닫으면 탭이 옆 서랍으로 돌아옴",
       "ja": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る",
       "zh": "新增将侧边浏览器拆分为独立窗口 — 关闭后标签页回到侧边栏"
+    },
+    {
+      "tag": "new",
+      "en": "Add moving the Simulator tab to its own window — iOS · Android taps work there too",
+      "ko": "시뮬레이터 탭을 별도 창으로 떼어 내기 추가 — 그 창에서도 iOS · Android 누르기",
+      "ja": "シミュレータタブを別ウィンドウに切り離す機能を追加 — iOS · Android 操作も可",
+      "zh": "新增将模拟器标签页拆分为独立窗口 — 可在其中点按 iOS · Android"
+    },
+    {
+      "tag": "fixed",
+      "en": "Fix the side browser squeezing terminals — it now takes the Explorer column",
+      "ko": "옆 브라우저가 터미널을 좁히던 것 수정 — Explorer 자리에 열림",
+      "ja": "サイドブラウザがターミナルを狭めていた問題を修正 — Explorer の位置に開く",
+      "zh": "修复侧边浏览器挤压终端的问题 — 改为在 Explorer 位置打开"
     }
   ],
   "0.63": [
@@ -15,8 +29,7 @@
       "ko": "옆 브라우저에 시뮬레이터 탭 추가 — iOS · Android 화면 보기 · 누르기",
       "ja": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
       "zh": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕"
-    }
- ,
+    },
     {
       "tag": "fixed",
       "en": "Fix the side browser covering terminals — panes now sit beside it and resize",

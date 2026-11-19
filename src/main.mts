@@ -578,7 +578,7 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
   // 옆 브라우저 — 창마다 서랍 하나(탭 뷰는 그 안에 · 본체별 탭 주소 browserUrls 는 창끼리 같이 쓴다)
   installSideBrowser(ctx, { say, browserUrls, browserPartition: BROWSER_PARTITION, watchConsoleSends, appBackground: APP_BACKGROUND })
   // 시뮬레이터 칸 — 서랍의 [시뮬레이터] 탭(본체 코어 scripts/sim.mjs 를 부른다)
-  installSimulator(ctx)
+  installSimulator(ctx, { appBackground: APP_BACKGROUND })
   // 창 — 만들고 focus · close · closed 를 건다
   installPackWindow(ctx, {
     packWindows,
@@ -1075,19 +1075,45 @@ ipcMain.handle('browser:command', (event, name: unknown, value: unknown) => {
   if (!from) return { error: say('ipc.noWindow') }
   return from.ctx.browserCommand(String(name), typeof value === 'string' ? value : '')
 })
-// 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다
+// 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다.
+// 떼어 낸 시뮬레이터 창(simulator.mts detach)의 화면도 같은 채널을 부른다 — 그 창은 팩 창 문맥(ctxOf)을 얻지 못하니 주인 창을 찾는다(맨 위 프레임만)
+function simCtxOf(event: IpcMainEvent | IpcMainInvokeEvent): { ctx: PackWindow; fromDetached: boolean } | null {
+  const ctx = ctxOf(event)
+  if (ctx) return { ctx, fromDetached: false }
+  if (event.senderFrame !== event.sender.mainFrame) return null
+  const owner = [...packWindows].find((each) => each.isDetachedSim?.(event.sender))
+  return owner ? { ctx: owner, fromDetached: true } : null
+}
+function simHandle<Args extends unknown[]>(channel: string, work: (ctx: PackWindow, ...args: Args) => unknown): void {
+  ipcMain.handle(channel, (event, ...args) => {
+    const from = simCtxOf(event)
+    if (!from) return { ok: false, error: say('ipc.noWindow') }
+    return work(from.ctx, ...(args as Args))
+  })
+}
 const simId = (value: unknown) => (typeof value === 'string' ? value.slice(0, 200) : '')
-listen('sim:place', (ctx, rect: unknown) => ctx.simPlace?.(browserRect(rect)))
-listen('sim:hide', (ctx) => ctx.simHide?.())
-handle('sim:list', (ctx) => ctx.simList?.())
-handle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
-handle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
-handle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
-handle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
+ipcMain.on('sim:place', (event, rect: unknown) => {
+  const from = simCtxOf(event)
+  if (from) from.ctx.simPlace?.(browserRect(rect), from.fromDetached)
+})
+ipcMain.on('sim:hide', (event) => {
+  const from = simCtxOf(event)
+  if (from) from.ctx.simHide?.(from.fromDetached)
+})
+ipcMain.on('sim:command', (event, name: unknown) => {
+  const from = simCtxOf(event)
+  if (from) from.ctx.simCommand?.(String(name))
+})
+simHandle('sim:current', (ctx) => ctx.simCurrent?.() ?? null)
+simHandle('sim:list', (ctx) => ctx.simList?.())
+simHandle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
+simHandle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
+simHandle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
+simHandle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
   const point = simPoint({ x, y })
   return point ? ctx.simTap?.(simId(id), point.x, point.y) : { ok: false, error: 'bad-point' }
 })
-handle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
+simHandle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
   const start = simPoint(from)
   const end = simPoint(to)
   return start && end ? ctx.simSwipe?.(simId(id), start, end) : { ok: false, error: 'bad-point' }

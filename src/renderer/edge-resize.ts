@@ -1,5 +1,5 @@
-// 칸 크기 끌기 — 왼쪽 작업 공간 너비 · 오른쪽 Explorer 너비 · 아래 에이전트 모니터 높이
-// 옆 브라우저 너비 끌기(browser.ts initBrowserResize)와 같은 방식: 손잡이를 끌면 바뀌고 · 놓으면 localStorage 에 기억 · 더블클릭하면 기본 크기.
+// 칸 크기 끌기 — 왼쪽 작업 공간 너비 · 오른쪽 Explorer(옆 브라우저가 열려 있으면 웹) 너비 · 아래 에이전트 모니터 높이
+// 손잡이를 끌면 바뀌고 · 놓으면 localStorage 에 기억 · 더블클릭하면 기본 크기.
 // 크기는 CSS 변수(--spaces-width · --side-width · --dock-height)로 넘긴다 — 접힘(.collapsed) 규칙이 그대로 이긴다.
 // pane(터미널) 크기는 #panes · #dock 의 ResizeObserver → layoutPanes 가 다시 맞춘다(main.ts)
 import { $ } from './core.ts'
@@ -12,10 +12,11 @@ type Edge = {
   sign: 1 | -1 // 손잡이를 오른쪽(아래)으로 끌 때 크기가 커지면 1
   cssVar: string
   storageKey: string
-  defaultSize: number // style.css 의 var() 기본값과 같게
+  defaultSize: () => number // style.css 의 var() 기본값과 같게
   min: number
   max: number
   room: () => number // 지금 창에서 줄 수 있는 가장 큰 크기
+  when?: () => boolean // 손잡이 하나를 칸 둘이 나눠 쓸 때 — 지금 이 칸 차례인지(오른쪽 손잡이: Explorer · 옆 브라우저)
 }
 
 // 가운데(pane 칸)에 이만큼은 남긴다 — 창을 줄여도
@@ -24,13 +25,13 @@ const CENTER_MIN_HEIGHT = 200 // 가운데 탭 줄 + pane 칸
 
 const edges: Edge[] = []
 
-// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄)을 뺀 나머지.
-// 옆 브라우저 자리 칸(#browser-space)은 빼지 않는다 — 서랍이 열려도 양옆 칸 크기는 그대로, 서랍 너비가 남는 폭에 맞춰 준다(browser.ts)
+// #work 너비에서 가운데 최소 폭과 자기 · 가운데를 뺀 다른 칸(팩 줄 · 반대쪽 칸 · 접힌 줄 · 옆 브라우저)을 뺀 나머지.
+// 숨은 칸은 폭이 0 이라 Explorer 와 옆 브라우저는 서로를 빼지 않는다(한 번에 하나만 보인다)
 function widthRoom(self: HTMLElement): number {
   const work = $('work')
   let others = 0
   for (const child of work.children) {
-    if (child === self || child.classList.contains('center') || child.id === 'browser-space') continue
+    if (child === self || child.classList.contains('center')) continue
     others += (child as HTMLElement).getBoundingClientRect().width
   }
   return work.clientWidth - CENTER_MIN_WIDTH - others
@@ -54,8 +55,8 @@ function savedSize(edge: Edge): number {
 // 기억한 크기(없으면 기본)를 지금 창에 맞춰 입힌다 — 기본 크기가 그대로 들어가면 변수를 지워 CSS 기본값을 쓴다
 function applySize(edge: Edge): void {
   const saved = savedSize(edge)
-  const size = clampSize(edge, saved || edge.defaultSize)
-  if (!saved && size === edge.defaultSize) edge.target.style.removeProperty(edge.cssVar)
+  const size = clampSize(edge, saved || edge.defaultSize())
+  if (!saved && size === edge.defaultSize()) edge.target.style.removeProperty(edge.cssVar)
   else edge.target.style.setProperty(edge.cssVar, `${size}px`)
 }
 
@@ -69,7 +70,7 @@ function bindEdge(edge: Edge): void {
   const { handle, target, axis } = edge
   let drag: { pointerId: number; start: number; startSize: number } | null = null
   handle.addEventListener('pointerdown', (event) => {
-    if (event.button !== 0 || drag) return
+    if (event.button !== 0 || drag || (edge.when && !edge.when())) return
     const rect = target.getBoundingClientRect()
     drag = { pointerId: event.pointerId, start: axis === 'x' ? event.clientX : event.clientY, startSize: axis === 'x' ? rect.width : rect.height }
     handle.setPointerCapture(event.pointerId)
@@ -100,8 +101,10 @@ function bindEdge(edge: Edge): void {
   handle.addEventListener('pointercancel', finish)
   handle.addEventListener('lostpointercapture', finish)
   handle.addEventListener('dblclick', () => {
+    if (edge.when && !edge.when()) return
     localStorage.removeItem(edge.storageKey)
     applySize(edge)
+    if (browserOpen) requestAnimationFrame(placeBrowserView)
   })
 }
 
@@ -113,7 +116,7 @@ export function initEdgeResize(): void {
     sign: 1,
     cssVar: '--spaces-width',
     storageKey: 'studio.spacesWidth',
-    defaultSize: 224,
+    defaultSize: () => 224,
     min: 160,
     max: 480,
     room: () => widthRoom($('spaces')),
@@ -125,10 +128,25 @@ export function initEdgeResize(): void {
     sign: -1,
     cssVar: '--side-width',
     storageKey: 'studio.panelWidth',
-    defaultSize: 248,
+    defaultSize: () => 248,
     min: 180,
     max: 560,
     room: () => widthRoom($('side-panel')),
+    when: () => !browserOpen,
+  })
+  // 옆 브라우저가 열려 있으면 같은 손잡이가 웹 너비를 끈다 — 기본은 작업 창 폭의 46%(style.css .browser), 최대는 가운데 최소 폭까지
+  bindEdge({
+    handle: $('side-resize'),
+    target: $('browser'),
+    axis: 'x',
+    sign: -1,
+    cssVar: '--browser-width',
+    storageKey: 'studio.browserWidth',
+    defaultSize: () => Math.round($('work').clientWidth * 0.46),
+    min: 320,
+    max: Infinity,
+    room: () => widthRoom($('browser')),
+    when: () => browserOpen,
   })
   bindEdge({
     handle: $('dock-resize'),
@@ -137,7 +155,7 @@ export function initEdgeResize(): void {
     sign: -1,
     cssVar: '--dock-height',
     storageKey: 'studio.monitorHeight',
-    defaultSize: 170,
+    defaultSize: () => 170,
     min: 80,
     max: 560,
     room: heightRoom,

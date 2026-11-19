@@ -4,15 +4,20 @@
 // 전용 WebContentsView(세션 따로 · sandbox · preload 없음 · 그 주소 밖 이동 막기)에 띄워 서랍 자리(#browser-slot)에 붙인다.
 // Android 는 화면을 그림으로 받아(simFrame — 화면이 1초마다 부른다) 화면 쪽 <img> 가 그리고, 누르기 · 쓸기는 sim.mjs tap · swipe.
 // 창이 닫히면(dropSim) 서버를 놓는다 — 앱이 켠 serve-sim 서버는 쓰는 창이 모두 놓은 뒤에만 끈다. 시뮬레이터 · 에뮬레이터는 끄지 않는다(계획서 지시 "보존")
+// 떼어 내기 — 막대의 [새 창으로] 를 누르면 시뮬레이터 칸을 새 창(detachedWin · sim-window.html)으로 옮긴다. iOS 페이지 뷰는 그 창에 붙고(다시 불러오지 않음),
+// Android 화면 그림 · 누르기 · 쓸기는 그 창 화면이 같은 sim:* 채널로 부른다. 그 창을 닫으면(또는 [되돌리기]) 서랍의 [시뮬레이터] 탭으로 돌아온다
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
-import { app, session, WebContentsView } from 'electron'
-import type { BrowserWindow } from 'electron'
+import { app, BrowserWindow, session, WebContentsView } from 'electron'
+import type { WebContents } from 'electron'
 import * as core from '../lib/core.mts'
 
 type Rect = { x: number; y: number; width: number; height: number }
+
+// 지금 연 기기(마지막으로 연 것) — 떼어 낸 창 · 돌아온 서랍이 이 기기로 이어 본다
+export type SimRunning = { platform: 'ios' | 'android'; id: string; name: string }
 
 // sim.mjs --json 의 답 — ok 가 거짓이면 error(이유 한 줄) · code(1 실패 · 2 인자 · 3 도구 없음). 칸이 따로 아는 이유는 error 에 이름으로(core-old)
 export type SimReply = { ok: boolean; error?: string; code?: number; [key: string]: unknown }
@@ -20,10 +25,15 @@ export type SimReply = { ok: boolean; error?: string; code?: number; [key: strin
 export type SimulatorCtx = {
   athenaDir: string | null
   win: BrowserWindow | null
+  send(channel: string, ...values: unknown[]): void
   simList?: () => Promise<SimReply>
   simStart?: (id: string) => Promise<SimReply>
-  simPlace?: (rect: Rect | null) => void
-  simHide?: () => void
+  simCurrent?: () => SimRunning | null
+  // fromDetached — 떼어 낸 창 화면이 보낸 것. 떼어 낸 동안 서랍이 보낸 것(또는 그 반대)은 무시한다
+  simPlace?: (rect: Rect | null, fromDetached?: boolean) => void
+  simHide?: (fromDetached?: boolean) => void
+  simCommand?: (name: string) => void
+  isDetachedSim?: (contents: WebContents) => boolean
   simShot?: (id: string) => Promise<SimReply>
   simFrame?: (id: string) => Promise<SimReply>
   simTap?: (id: string, x: number, y: number) => Promise<SimReply>
@@ -58,12 +68,16 @@ function lastJson(text: string): SimReply | null {
   }
 }
 
-export function installSimulator(ctx: SimulatorCtx): void {
+export function installSimulator(ctx: SimulatorCtx, { appBackground }: { appBackground: string }): void {
   let view: WebContentsView | null = null
   let viewUrl = ''
   let attached = false
   let lastBounds: Rect | null = null
   let frameCount = 0
+  let current: SimRunning | null = null
+  let detachedWin: BrowserWindow | null = null // 떼어 낸 창 — 있으면 iOS 페이지 뷰는 이 창에 붙는다
+  // iOS 페이지 뷰가 붙는 창 — 떼어 낸 동안은 그 창, 아니면 팩 창
+  const host = (): BrowserWindow | null => detachedWin || ctx.win
   // 이 창의 표 · 쓰는 서버(UDID) · 창이 닫혔는지(켜기를 기다리는 중에 닫히면 뒤늦게 뷰 · 서버를 만들지 않는다)
   const owner = {}
   let usingServer = ''
@@ -104,7 +118,8 @@ export function installSimulator(ctx: SimulatorCtx): void {
 
   function closeView(): void {
     if (!view) return
-    if (attached && ctx.win) ctx.win.contentView.removeChildView(view)
+    const win = host()
+    if (attached && win && !win.isDestroyed()) win.contentView.removeChildView(view)
     if (!view.webContents.isDestroyed()) view.webContents.close()
     view = null
     viewUrl = ''
@@ -171,6 +186,7 @@ export function installSimulator(ctx: SimulatorCtx): void {
       closeView()
       if (usingServer) releaseServer(usingServer)
       usingServer = ''
+      current = { platform: 'android', id: deviceId, name: device.name }
       return { ok: true, platform: 'android', id: deviceId, name: device.name }
     }
     const before = fs.existsSync(serveStateFile(deviceId))
@@ -185,14 +201,18 @@ export function installSimulator(ctx: SimulatorCtx): void {
       return { ok: false, error: 'closed' }
     }
     showPage(served.url)
+    current = { platform: 'ios', id: deviceId, name: device.name }
     return { ok: true, platform: 'ios', id: deviceId, name: device.name, url: served.url }
   }
 
   // 화면 좌표(CSS 픽셀) × 확대 비율 = 창 좌표 · 창 안으로 자른다(옆 브라우저 placeBrowser 와 같은 셈)
-  ctx.simPlace = (rect) => {
-    if (!ctx.win || !rect || !view) return
-    const zoom = ctx.win.webContents.getZoomFactor()
-    const [contentWidth = 0, contentHeight = 0] = ctx.win.getContentSize()
+  ctx.simCurrent = () => current
+
+  ctx.simPlace = (rect, fromDetached = false) => {
+    const win = host()
+    if (!win || win.isDestroyed() || !rect || !view || fromDetached !== Boolean(detachedWin)) return
+    const zoom = win.webContents.getZoomFactor()
+    const [contentWidth = 0, contentHeight = 0] = win.getContentSize()
     const x = Math.min(Math.max(0, Math.round(rect.x * zoom)), contentWidth)
     const y = Math.min(Math.max(0, Math.round(rect.y * zoom)), contentHeight)
     const width = Math.min(Math.max(0, Math.round(rect.width * zoom)), contentWidth - x)
@@ -200,16 +220,72 @@ export function installSimulator(ctx: SimulatorCtx): void {
     lastBounds = { x, y, width, height }
     view.setBounds(lastBounds)
     if (!attached) {
-      ctx.win.contentView.addChildView(view)
+      win.contentView.addChildView(view)
       attached = true
     }
   }
 
   // 서랍을 닫거나 [웹] 탭 · 대화상자 — 떼기만(페이지는 살려 두어 다시 열면 바로)
-  ctx.simHide = () => {
-    if (!ctx.win || !view || !attached) return
-    ctx.win.contentView.removeChildView(view)
+  ctx.simHide = (fromDetached = false) => {
+    const win = host()
+    if (!win || win.isDestroyed() || !view || !attached || fromDetached !== Boolean(detachedWin)) return
+    win.contentView.removeChildView(view)
     attached = false
+  }
+
+  ctx.isDetachedSim = (contents) => Boolean(detachedWin && !detachedWin.isDestroyed() && detachedWin.webContents === contents)
+
+  // 떼어 낸 창이 닫힌다 — 붙어 있던 뷰를 먼저 떼고(창과 함께 정리되지 않게) 서랍의 [시뮬레이터] 탭으로 돌려준다
+  function backToDrawer(win: BrowserWindow): void {
+    if (attached && view && !view.webContents.isDestroyed()) win.contentView.removeChildView(view)
+    attached = false
+    detachedWin = null
+    if (dropped || !ctx.win || ctx.win.isDestroyed()) return
+    ctx.send('sim:detached', false)
+    ctx.win.show()
+  }
+
+  // [새 창으로] — 서랍에 붙은 뷰를 떼고 새 창을 띄운다. 그 창 화면이 자리를 알리면(sim:place) 거기 붙는다
+  function detach(): void {
+    if (detachedWin && !detachedWin.isDestroyed()) return void detachedWin.focus()
+    if (!ctx.win || ctx.win.isDestroyed()) return
+    if (attached && view) ctx.win.contentView.removeChildView(view)
+    attached = false
+    const win = new BrowserWindow({
+      width: 480,
+      height: 860,
+      minWidth: 320,
+      minHeight: 320,
+      title: 'Athena',
+      backgroundColor: appBackground,
+      webPreferences: {
+        preload: path.join(import.meta.dirname, '..', 'preload-sim.js'),
+        contextIsolation: true,
+        sandbox: true,
+        nodeIntegration: false,
+      },
+    })
+    detachedWin = win
+    // 서랍은 닫는다(시뮬레이터 칸은 새 창으로 옮겨 감 · 두 곳에 동시에 있지 않음)
+    ctx.send('sim:detached', true)
+    win.loadFile(path.join(import.meta.dirname, '..', '..', 'dist', 'renderer', 'sim-window.html'))
+    // 맨 위 페이지(막대 화면)는 벗어나지 않는다
+    win.webContents.on('will-navigate', (event) => event.preventDefault())
+    win.on('close', () => {
+      if (detachedWin === win) backToDrawer(win)
+    })
+  }
+
+  // 막대 단추 — detach [새 창으로] · attach [되돌리기](떼어 낸 창을 닫으면 close 에서 서랍으로) · focus-detached(떼어 낸 동안 웹 버튼 ⌘⇧B)
+  ctx.simCommand = (name) => {
+    if (name === 'detach') return detach()
+    if (!detachedWin || detachedWin.isDestroyed()) return
+    if (name === 'attach') return detachedWin.close()
+    if (name === 'focus-detached') {
+      if (detachedWin.isMinimized()) detachedWin.restore()
+      detachedWin.show()
+      detachedWin.focus()
+    }
   }
 
   // 칸 [캡처] — 데스크톱에(Simulator.app ⌘S 기본과 같은 자리 · 계획서 D8)
@@ -236,6 +312,8 @@ export function installSimulator(ctx: SimulatorCtx): void {
   ctx.dropSim = () => {
     dropped = true
     closeView()
+    if (detachedWin && !detachedWin.isDestroyed()) detachedWin.close()
+    detachedWin = null
     if (usingServer) releaseServer(usingServer)
     usingServer = ''
   }

@@ -46,9 +46,11 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add moving the side browser to its own window — tabs return to the side panel when it closes
+- Add moving the Simulator tab to its own window — iOS · Android taps work there too
 
 ### Fixed
 - Fix auto-merge squashing branch-merge PRs — merge commits kept
+- Fix the side browser squeezing terminals — it now takes the Explorer column
 
 ## 0.63 (v0.63.0 – · Nov 15, 2026)
 

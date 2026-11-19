@@ -1,7 +1,8 @@
 // 옆 브라우저 서랍의 [웹 | 시뮬레이터] 전환 · 시뮬레이터 막대(기기 고르기 · 켜기 · 캡처 · 닫기) · 칸(#sim-screen — 안내 글 · Android 화면 그림)
 // 서랍 껍데기와 자리 알리기(placeBrowserView)는 바닐라 browser.ts. 명령은 main 이 본체 scripts/sim.mjs 로(src/main/simulator.mts).
 // iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다(누르기 · 쓸기도 그 페이지) — 여기는 그 뒤에 깔린 안내 글만.
-// Android 는 칸이 보일 때만 1초마다 화면 그림을 받아 <img> 로 그리고, 누르기 · 끌기를 비율 좌표로 보낸다
+// Android 는 칸이 보일 때만 1초마다 화면 그림을 받아 <img> 로 그리고, 누르기 · 끌기를 비율 좌표로 보낸다.
+// [새 창으로] ⧉ 를 누르면 같은 막대 · 칸을 떼어 낸 창(sim-window.ts — detached)이 띄운다. 그 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로 가져온다
 import { useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -13,7 +14,8 @@ type Device = { id: string; name: string; booted: boolean; os?: string; platform
 type Running = { platform: 'ios' | 'android'; id: string; name: string }
 type Platform = { ok: boolean; reason: string; devices: Device[] }
 
-export type SimActions = { place: () => void; close: () => void; isOpen: () => boolean }
+// detached — 떼어 낸 창의 막대: ✕ 대신 [되돌리기]. 서랍 막대에는 [새 창으로]
+export type SimActions = { place: () => void; close: () => void; isOpen: () => boolean; detached?: boolean }
 export type DrawerMode = 'web' | 'sim'
 
 type SimView = {
@@ -35,6 +37,8 @@ export const mode = createStore<DrawerMode>(localStorage.getItem(MODE_KEY) === '
 const view = createStore<SimView>({ loaded: false, busy: '', ios: null, android: null, selected: '', running: null, error: '', frame: '' })
 let actions: SimActions = { place: () => {}, close: () => {}, isOpen: () => false }
 let frameLoop = false
+// 시뮬레이터를 새 창으로 떼어 낸 동안(main sim:detached) — 서랍 쪽만 쓴다
+export const detachedStore = createStore(false)
 
 function commit(next: Partial<SimView>): void {
   flushSync(() => view.set({ ...view.get(), ...next }))
@@ -48,7 +52,23 @@ export function mount(screen: HTMLElement, next: SimActions): void {
   mountIsland(screen, <SimScreen />)
 }
 
+// 떼어 낸 창 — 막대 · 칸을 띄우고 모드는 시뮬레이터로 고정(서랍의 모드 기억은 건드리지 않는다)
+export function mountWindow(bar: HTMLElement, screen: HTMLElement, place: () => void): void {
+  actions = { place, close: () => {}, isOpen: () => true, detached: true }
+  flushSync(() => mode.set('sim'))
+  mountIsland(bar, <SimBar />)
+  mountIsland(screen, <SimScreen />)
+}
+
+// main 이 기억하는 지금 기기(마지막으로 연 것)로 맞춘다 — 떼어 낸 창이 뜰 때 · 서랍으로 돌아올 때
+export async function adopt(): Promise<void> {
+  const running = (await studio.simCurrent()) as Running | null
+  if (running) commit({ running, selected: running.id, frame: '', error: '' })
+}
+
 export function setMode(next: DrawerMode): void {
+  // 떼어 낸 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로
+  if (next === 'sim' && detachedStore.get() && !actions.detached) return void studio.simCommand('focus-detached')
   if (mode.get() === next) return
   localStorage.setItem(MODE_KEY, next)
   flushSync(() => mode.set(next))
@@ -222,9 +242,20 @@ export function SimBar() {
         </button>
       )}
       <span className="sim-gap" />
-      <button title={say('common.close')} onClick={() => actions.close()}>
-        ✕
-      </button>
+      {actions.detached ? (
+        <button id="sim-attach" title={say('browser.attach')} aria-label={say('browser.attach')} onClick={() => studio.simCommand('attach')}>
+          ◨
+        </button>
+      ) : (
+        <>
+          <button id="sim-detach" title={say('browser.detach')} aria-label={say('browser.detach')} onClick={() => studio.simCommand('detach')}>
+            ⧉
+          </button>
+          <button title={say('common.close')} onClick={() => actions.close()}>
+            ✕
+          </button>
+        </>
+      )}
     </>
   )
 }
