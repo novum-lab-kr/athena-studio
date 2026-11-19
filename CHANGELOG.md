@@ -49,6 +49,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix agent panes stopping at folder trust prompts on start
+- Fix the side browser covering terminals — panes now sit beside it and resize
 
 ## 0.62 (v0.62.0 – · Nov 14, 2026)
 

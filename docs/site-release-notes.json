@@ -7,6 +7,14 @@
       "ja": "サイドブラウザにシミュレータタブを追加 — iOS · Android 画面の表示 · タップ",
       "zh": "侧边浏览器新增模拟器标签 — 查看并点按 iOS · Android 屏幕"
     }
+ ,
+    {
+      "tag": "fixed",
+      "en": "Fix the side browser covering terminals — panes now sit beside it and resize",
+      "ko": "옆 브라우저가 터미널을 덮던 것 수정 — 터미널 옆에 나란히 붙고 크기를 다시 맞춤",
+      "ja": "サイドブラウザがターミナルを覆う問題を修正 — 横に並べてサイズを合わせ直す",
+      "zh": "修复侧边浏览器遮挡终端的问题 — 终端并排停靠并重新调整大小"
+    }
   ],
   "0.62": [
     {
