@@ -932,3 +932,60 @@ export function webFailReason(code: string | undefined): 'unreachable' | 'cert' 
   if (['ENOTFOUND', 'EAI_AGAIN', 'ECONNREFUSED', 'EHOSTUNREACH', 'ENETUNREACH', 'ECONNRESET'].includes(code)) return 'unreachable'
   return 'failed'
 }
+
+// ── 폰 snapshot 의 서버 상태 — 지난 값으로 바로 답하고 뒤에서 다시 읽기 ──
+// 서버마다 ssh-run.sh --status 라 한 번 읽는 데 수 초(2026-11-19 실측 5.8~6.4초)가 걸려 폰이 다시 붙을 때 snapshot 이 그만큼 늦었다.
+// 같은 본체(key)의 지난 값이 있으면 그것으로 바로 답하고, reuseMs 가 지났으면 뒤에서 다시 읽어 값이 달라졌을 때만
+// 그 사이 부른 쪽의 onChanged(브리지 changed ['servers'] → 폰이 다시 snapshot)를 부른다. 지난 값이 없거나 본체가 바뀌었으면 읽을 때까지 기다린다.
+// 겹친 읽기는 하나로 묶는다. 재사용 시간은 작업 목록 재사용(work-model WORK_PEEK_REUSE_MS)과 같게
+export const SERVER_PEEK_REUSE_MS = 30000
+type ServerPeekDeps = { now?: () => number; reuseMs?: number }
+export function createServerPeek<T>(deps: ServerPeekDeps = {}) {
+  const now = deps.now || (() => Date.now())
+  const reuseMs = deps.reuseMs ?? SERVER_PEEK_REUSE_MS
+  let last: { key: string; value: T; text: string; at: number } | null = null
+  let busy: { key: string; promise: Promise<T>; waiting: Set<() => void> } | null = null
+  function refresh(key: string, read: () => Promise<T>) {
+    if (busy && busy.key === key) return busy
+    const before = last
+    const waiting = new Set<() => void>()
+    // 끝나는 그 자리에서 busy 를 비운다 — 바로 이어 부른 쪽이 끝난 읽기에 묶이지 않게(entry 는 아래에서 곧바로 만든다 · 이 함수들은 그 뒤에 돈다)
+    const promise = read().then(
+      (value) => {
+        // 그 사이 다른 본체를 읽기 시작했으면 이 값은 기억하지 않는다
+        if (busy !== entry) return value
+        busy = null
+        const text = JSON.stringify(value)
+        last = { key, value, text, at: now() }
+        if (before && before.key === key && before.text !== text) {
+          for (const onChanged of waiting) {
+            try {
+              onChanged()
+            } catch {
+              // 한 기기에 못 알려도 다른 기기는 받는다
+            }
+          }
+        }
+        return value
+      },
+      (error: unknown) => {
+        // 못 읽었으면 지난 값을 그대로 두고 다음 부름에 다시
+        if (busy === entry) busy = null
+        throw error
+      },
+    )
+    const entry = { key, promise, waiting }
+    busy = entry
+    // 뒤에서 읽은 것은 기다리는 쪽이 없을 수 있다
+    promise.catch(() => {})
+    return entry
+  }
+  return (key: string, read: () => Promise<T>, onChanged: () => void): Promise<T> => {
+    if (last && last.key === key) {
+      if (busy && busy.key === key) busy.waiting.add(onChanged)
+      else if (now() - last.at >= reuseMs) refresh(key, read).waiting.add(onChanged)
+      return Promise.resolve(last.value)
+    }
+    return refresh(key, read).promise
+  }
+}

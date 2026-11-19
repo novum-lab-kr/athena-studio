@@ -12,6 +12,7 @@ import { execFile } from 'node:child_process'
 import { pathToFileURL } from 'node:url'
 import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
+import { createServerPeek } from '../lib/server-status.mts'
 import { createIconTokens } from './mobile-look.mts'
 import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { MergeRunner } from './mobile-bridge.mts'
@@ -226,6 +227,8 @@ export function startMobileDev(deps: DevDeps) {
   const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
   // 팩 · 레포 이미지 토큰 — 기기끼리 같이 쓴다(같은 파일은 한 번만 읽는다)
   const iconTokens = createIconTokens()
+  // 서버 상태 — 기기끼리 같이 쓴다. 지난 값으로 바로 답하고 오래됐으면 뒤에서 다시 읽는다(달라지면 그 기기에 changed ['servers'] · createServerPeek)
+  const serverPeek = createServerPeek<unknown[]>()
   const mergeDetails = () => {
     const dir = front()?.athenaDir || ''
     let cache = mergeCaches.get(dir)
@@ -275,8 +278,12 @@ export function startMobileDev(deps: DevDeps) {
         },
         servers: async () => {
           const ctx = front()
-          if (!ctx || !ctx.serverStatus) return []
-          return (await ctx.serverStatus().catch(() => ({ servers: [] }))).servers.map(serverSummary)
+          const serverStatus = ctx && ctx.serverStatus
+          if (!ctx || !serverStatus) return []
+          // 실패는 serverPeek 까지 넘긴다 — 뒤에서 다시 읽다 실패하면 지난 목록을 그대로 두고 다음 부름에 다시(빈 목록으로 덮지 않는다)
+          const read = async () => (await serverStatus()).servers.map(serverSummary)
+          // 지난 값이 없을 때 못 읽었으면 지금처럼 빈 목록
+          return serverPeek(ctx.athenaDir || '', read, () => bridge.changed(['servers'])).catch(() => [])
         },
         serverDetail: async (name) => {
           const ctx = front()

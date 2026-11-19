@@ -59,6 +59,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Fix the side browser squeezing terminals — it now takes the Explorer column
 - Fix the detached window lacking Web · Simulator tabs — switching keeps the page and device
 - Fix server status running SSH on every phone refresh — one shared read every 3 minutes
+- Fix slow phone reconnects — server status answered from the last reading
 
 ## 0.63 (v0.63.0 – · Nov 15, 2026)
 
