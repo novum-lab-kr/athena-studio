@@ -334,12 +334,16 @@ async function input() {
   let ready = false
   let fingerDown = false
   let lastPoint = { x: 0, y: 0 }
-  let closing = false
+  let closing = false // 끝내기 시작 — 새 줄은 받지 않는다
+  let drained = false // 받은 줄을 다 처리했다 — 큐가 비면 셸을 닫는다
   let lastError = ''
+  // 받은 줄은 이 순서대로 하나씩 처리한다(크기 읽기를 기다리는 동안 다음 줄 · 끝내기가 앞지르지 않게)
+  /** @type {Promise<unknown>} */
+  let handled = Promise.resolve()
 
   const pump = () => {
     if (busy || !queue.length) {
-      if (!busy && closing) shell.stdin?.end()
+      if (!busy && drained) shell.stdin?.end()
       return
     }
     busy = true
@@ -369,14 +373,18 @@ async function input() {
   const finish = (code) => {
     if (closing) return
     closing = true
-    // 누른 채로 끝나면 손가락을 뗀다(기기에 눌림이 남지 않게)
-    if (fingerDown && size) queue.push(touchCommand('up', lastPoint.x, lastPoint.y, size))
-    fingerDown = false
-    pump()
-    setTimeout(() => {
-      shell.kill()
-      process.exit(code)
-    }, INPUT_CLOSE_MS).unref()
+    // 처리 중인 줄(크기 읽기 포함)이 끝난 뒤에 손가락을 떼고 큐를 비운 다음 셸을 닫는다
+    void handled.then(() => {
+      // 누른 채로 끝나면 손가락을 뗀다(기기에 눌림이 남지 않게)
+      if (fingerDown && size) queue.push(touchCommand('up', lastPoint.x, lastPoint.y, size))
+      fingerDown = false
+      drained = true
+      pump()
+      setTimeout(() => {
+        shell.kill()
+        process.exit(code)
+      }, INPUT_CLOSE_MS).unref()
+    })
   }
 
   let pendingOut = ''
@@ -415,7 +423,7 @@ async function input() {
     for (const raw of lines) {
       if (!raw.trim() || closing) continue
       const event = parseTouchLine(raw)
-      if (event) void handle(event)
+      if (event) handled = handled.then(() => handle(event)).catch(() => {})
       else process.stderr.write(`모르는 줄: ${raw.slice(0, 80)}\n`)
     }
   })

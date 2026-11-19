@@ -111,7 +111,7 @@ case "$*" in
   "-s emulator-5554 shell") exec /bin/sh ;;
   "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
   *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
-  *"wm size"*) echo "Physical size: 1000x2000" ;;
+  *"wm size"*) sleep 0.3; echo "Physical size: 1000x2000" ;;
   *"screencap -p"*) printf 'PNGDATA' ;;
 esac
 `,
@@ -291,6 +291,17 @@ test('CLI(가짜 adb): input — 열어 둔 셸 하나로 누르기 · 손가락
     'input motionevent MOVE 400 200',
     'input motionevent UP 400 200',
   ])
+})
+
+test('CLI(가짜 adb): input — 크기를 읽는 동안 입력이 닫혀도 받은 순서대로 다 보내고 손가락을 뗀 뒤 닫는다', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  // --size 없음 — 첫 줄에서 wm size 를 읽는다(가짜는 0.3초 걸림)
+  const done = await runInput(['--platform', 'android', '--device', 'emulator-5554', '--watch-stdin'], ['down 0.5 0.5', 'move 0.5 0.4'], bin, root)
+  assert.equal(done.status, 0, done.stderr)
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n').filter((line) => line.startsWith('input '))
+  assert.deepEqual(calls, ['input motionevent DOWN 500 1000', 'input motionevent MOVE 500 800', 'input motionevent UP 500 800'])
 })
 
 test('CLI: input 은 Android 일련번호만 — 아니면 인자 틀림(2 · 칸은 지금 방식으로)', (t) => {
