@@ -181,6 +181,7 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   onSimVideoEnd: listen('sim:video-end'),
   simTap: (id, x, y) => ipcRenderer.invoke('sim:tap', id, x, y),
   simSwipe: (id, from, to) => ipcRenderer.invoke('sim:swipe', id, from, to),
+  simTouch: (id, phase, x, y) => ipcRenderer.send('sim:touch', id, phase, x, y),
   onBrowserOpen: listen('browser:open'),
   onBrowserReset: listen('browser:reset'),
   onBrowserToggle: listen('browser:toggle'),

@@ -299,6 +299,8 @@ declare global {
     onSimVideoEnd(callback: (token: number, reason: string) => void): () => void
     simTap(id: string, x: number, y: number): Promise<import('./ui/sim-bar.tsx').SimReply>
     simSwipe(id: string, from: { x: number; y: number }, to: { x: number; y: number }): Promise<import('./ui/sim-bar.tsx').SimReply>
+    // 끄는 손가락 한 동작 — main 이 열어 둔 adb shell 로 그때그때(안 되면 뗄 때 swipe 한 번)
+    simTouch(id: string, phase: 'down' | 'move' | 'up', x: number, y: number): void
     // 왼쪽 작업 공간 목록 · Explorer 미리보기(R3c) — main.mts handle(pack:repos · repo:set-name · repo:set-icon · space:context-menu · workspace:close · pack:body-behind ·
     // pack:remove-repo · pack:add-repo · workspace:open-dir · pack:call-info · pack:call-start · explorer:open)
     packRepos(): Promise<import('./ui/spaces.tsx').SpaceRepo[]>

@@ -244,6 +244,7 @@
   "Fix the Simulator tab showing “no devices” while the list loads and after ⟳": "シミュレータタブで一覧の読み込み中 · ⟳ 後に「デバイスなし」と表示される問題を修正",
   "Fix Android taps and swipes landing in the wrong place in landscape": "横向き画面で Android のタップ · スワイプ位置がずれる問題を修正",
   "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "シミュレータータブの Android タップ · スワイプが遅い問題を修正 — タップごとの端末検索を省略",
+  "Fix laggy Android swipes in the Simulator tab — the finger is sent live while dragging": "シミュレータータブの Android スワイプの遅れを修正 — ドラッグ中の指の動きをそのまま送信",
   "Fix agent panes stopping at folder trust prompts on start": "エージェント pane が起動時にフォルダ確認画面で止まる問題を修正",
   "Fix the side browser covering terminals — panes now sit beside it and resize": "サイドブラウザがターミナルを覆う問題を修正 — 横に並べてサイズを合わせ直す",
   "Add moving the side browser to its own window — tabs return to the side panel when it closes": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る",

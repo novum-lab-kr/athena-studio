@@ -244,6 +244,7 @@
   "Fix the Simulator tab showing “no devices” while the list loads and after ⟳": "修复模拟器标签在读取列表时 · ⟳ 后显示“没有设备”",
   "Fix Android taps and swipes landing in the wrong place in landscape": "修复横屏时 Android 点按 · 滑动位置偏移",
   "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "修复模拟器标签页 Android 点按 · 滑动缓慢 — 每次点按不再查找设备",
+  "Fix laggy Android swipes in the Simulator tab — the finger is sent live while dragging": "修复模拟器标签页 Android 滑动延迟 — 拖动时实时发送手指动作",
   "Fix agent panes stopping at folder trust prompts on start": "修复代理 pane 启动时停在文件夹确认提示",
   "Fix the side browser covering terminals — panes now sit beside it and resize": "修复侧边浏览器遮挡终端的问题 — 终端并排停靠并重新调整大小",
   "Add moving the side browser to its own window — tabs return to the side panel when it closes": "新增将侧边浏览器拆分为独立窗口 — 关闭后标签页回到侧边栏",

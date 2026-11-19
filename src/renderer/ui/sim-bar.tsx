@@ -1,7 +1,8 @@
 // 옆 브라우저 서랍의 [웹 | 시뮬레이터] 전환 · 시뮬레이터 막대(기기 고르기 · 켜기 · 캡처 · 닫기) · 칸(#sim-screen — 안내 글 · Android 화면 그림)
 // 서랍 껍데기와 자리 알리기(placeBrowserView)는 바닐라 browser.ts. 명령은 main 이 본체 scripts/sim.mjs 로(src/main/simulator.mts).
 // iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다(누르기 · 쓸기도 그 페이지) — 여기는 그 뒤에 깔린 안내 글만.
-// Android 는 칸이 보일 때만 화면 영상(H.264 — ui/sim-video.ts)을 canvas 에 그리고, 누르기 · 끌기를 비율 좌표로 보낸다.
+// Android 는 칸이 보일 때만 화면 영상(H.264 — ui/sim-video.ts)을 canvas 에 그리고, 누르기 · 끌기를 비율 좌표로 보낸다
+// (끌기는 움직이는 동안 그때그때 — main 이 열어 둔 adb shell 로 손가락을 따라가게 한다).
 // 옛 코어(영상 명령 없음) · 영상을 못 풀면 1초마다 화면 그림을 받아 <img> 로 그린다
 import { useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
@@ -302,25 +303,47 @@ const NOTE_KEYS = { loading: 'sim.loading', noDevices: 'sim.noDevices', noRunnin
 function SimScreen() {
   const say = useSay()
   const state = useStore(view)
-  const press = useRef<{ x: number; y: number } | null>(null)
+  // 누른 자리 · 쓸기로 넘어갔는지(TAP_MOVE 를 넘으면 그때부터 손가락을 기기로 보낸다)
+  const press = useRef<{ x: number; y: number; dragging: boolean; last: { x: number; y: number } } | null>(null)
   const ratioOf = (event: ReactPointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
     return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) }
   }
-  // 누르기 · 끌기 — 놓은 자리가 거의 같으면 누르기, 아니면 쓸기(휠은 보내지 않는다)
+  // 누르기 · 끌기 — 거의 안 움직이고 놓으면 누르기, 움직이면 그때부터 손가락(누름 · 움직임 · 뗌)을 그대로 보낸다(휠은 보내지 않는다)
   const pointer = (id: string) => ({
     onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
       event.currentTarget.setPointerCapture(event.pointerId)
-      press.current = ratioOf(event)
+      const at = ratioOf(event)
+      press.current = { ...at, dragging: false, last: at }
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+      const from = press.current
+      if (!from) return
+      const at = ratioOf(event)
+      from.last = at
+      if (!from.dragging) {
+        if (Math.hypot(at.x - from.x, at.y - from.y) < TAP_MOVE) return
+        from.dragging = true
+        studio.simTouch(id, 'down', from.x, from.y)
+      }
+      studio.simTouch(id, 'move', at.x, at.y)
     },
     onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
       const from = press.current
       press.current = null
       if (!from) return
       const to = ratioOf(event)
-      if (Math.hypot(to.x - from.x, to.y - from.y) < TAP_MOVE) void studio.simTap(id, from.x, from.y)
+      if (from.dragging) studio.simTouch(id, 'up', to.x, to.y)
+      else if (Math.hypot(to.x - from.x, to.y - from.y) < TAP_MOVE) void studio.simTap(id, from.x, from.y)
+      // 움직임 없이 멀리서 놓았다(포인터 이동이 안 온 경우) — 한 번에 쓸기
       else void studio.simSwipe(id, from, to)
+    },
+    // 포인터를 잃었다(창 전환 등) — 끄는 중이면 마지막 자리에서 뗀다
+    onPointerCancel: () => {
+      const from = press.current
+      press.current = null
+      if (from?.dragging) studio.simTouch(id, 'up', from.last.x, from.last.y)
     },
   })
   const running = state.running
