@@ -9,8 +9,8 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
-const { packView, bodyPacks, serverSummary, lookSource } = require('../src/main/mobile-dev.mts')
+const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
+const { packView, bodyPacks, serverSummary, lookSource, mergeBases } = require('../src/main/mobile-dev.mts')
 const { createIconTokens, iconToken, ATHENA_LOGO } = require('../src/main/mobile-look.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
@@ -664,6 +664,113 @@ test('weekMerges — 성공한 auto.merge 중 지난 7일만 새것부터', () =
   assert.equal(weekMerges(rows, now)[0].direct, true)
 })
 
+const sha40 = (head) => head.padEnd(40, '0')
+test('parseFirstParentLog — squash (#N) · Merge pull request #N from <org>/<브랜치> · 그 밖은 PR 없는 직접 push · 깨진 줄은 버린다', () => {
+  const text = [
+    `${sha40('aaa1111')}\t${sha40('p1')}\t2026-11-19T21:12:56+09:00\tfeat(mobile): 폰 푸시 (#337)`,
+    `${sha40('bbb2222')}\t${sha40('p2')} ${sha40('ccc3333')}\t2026-11-19T15:15:33+09:00\tMerge pull request #332 from novum-lab-kr/chore/merge-dev-into-main`,
+    `${sha40('ddd4444')}\t${sha40('p3')}\t2026-11-19T10:00:00+09:00\tchore: 직접 push — 탭\t든 제목`,
+    'abc\tx\t2026-11-19T10:00:00+09:00\t짧은 sha',
+    `${sha40('eee5555')}\t\t시각아님\t제목`,
+    '',
+  ].join('\n')
+  assert.deepEqual(parseFirstParentLog(text, 'web'), [
+    { repo: 'web', at: '2026-11-19T12:12:56.000Z', full: sha40('aaa1111'), parents: [sha40('p1')], pr: 337, branch: null },
+    { repo: 'web', at: '2026-11-19T06:15:33.000Z', full: sha40('bbb2222'), parents: [sha40('p2'), sha40('ccc3333')], pr: 332, branch: 'chore/merge-dev-into-main' },
+    { repo: 'web', at: '2026-11-19T01:00:00.000Z', full: sha40('ddd4444'), parents: [sha40('p3')], pr: null, branch: null },
+  ])
+})
+
+test('weekMerges + git 기록 — 손 머지 · 직접 push 를 더하고 사건과 같은 머지(PR · merged · 빨리 감기 sha · 머지 커밋 둘째 부모)는 한 줄로', () => {
+  const now = Date.parse('2026-11-19T13:00:00Z')
+  const git = (head, at, pr, parents = [sha40('f0')], repo = 'web') => ({ repo, at, full: sha40(head), parents, pr, branch: null })
+  const events = [
+    { type: 'auto.merge', ok: true, at: '2026-11-19T03:00:00Z', repo: 'web', plan: 'plans/a.md', pr: '330', sha: '1112222' }, // 코어가 번호를 문자열로 적기도 한다
+    { type: 'auto.merge', ok: true, at: '2026-11-19T04:00:00Z', repo: 'web', plan: 'plans/b.md', direct: true, sha: '3334444', merged: 'aaa0001' },
+    { type: 'auto.merge', ok: true, at: '2026-11-19T05:00:00Z', repo: 'web', plan: 'plans/c.md', direct: true, handoff: true, sha: 'bbb0002' },
+    { type: 'auto.merge', ok: true, at: '2026-11-19T06:00:00Z', repo: 'web', plan: 'plans/d.md', direct: true, handoff: true, sha: 'ccc0003' },
+    { type: 'auto.merge', ok: true, at: '2026-11-19T06:30:00Z', repo: 'api', plan: 'plans/e.md', pr: 9, sha: '9990009' },
+  ]
+  const gitRows = [
+    git('ddd0330', '2026-11-19T03:00:05Z', 330), // 오토 머지 PR — 사건과 PR 번호로 겹침
+    git('aaa0001', '2026-11-19T04:00:05Z', null), // 바로 머지 squash — 사건 merged 와 겹침
+    git('bbb0002', '2026-11-19T05:00:05Z', null), // Actions 넘기기 빨리 감기 — 사건 sha 와 겹침
+    git('eee0004', '2026-11-19T06:00:05Z', null, [sha40('f1'), sha40('ccc0003')]), // Actions 넘기기 머지 커밋 — 둘째 부모가 사건 sha
+    git('fff0332', '2026-11-19T07:00:00Z', 332), // 손 머지 PR
+    git('abc0005', '2026-11-19T08:00:00Z', null), // 직접 push
+    git('abc0006', '2026-11-10T08:00:00Z', 300), // 7일 밖
+    git('abc0007', '2026-11-19T06:30:05Z', 9, undefined, 'web'), // 같은 번호 · 다른 레포 — 겹치지 않음
+  ]
+  const rows = weekMerges(events, now, gitRows)
+  assert.deepEqual(rows.map((row) => [row.repo, row.pr, row.plan, row.merged, row.direct]), [
+    ['web', null, null, 'abc0005', true],
+    ['web', 332, null, 'fff0332', false],
+    ['web', 9, null, 'abc0007', false],
+    ['api', 9, 'plans/e.md', null, false],
+    ['web', null, 'plans/d.md', 'eee0004', true],
+    ['web', null, 'plans/c.md', 'bbb0002', true],
+    ['web', null, 'plans/b.md', 'aaa0001', true],
+    ['web', 330, 'plans/a.md', null, false],
+  ])
+  assert.deepEqual(Object.keys(rows[0]).sort(), ['at', 'branch', 'direct', 'merged', 'plan', 'pr', 'repo', 'sha'], '폰이 받는 칸은 그대로')
+  assert.equal(mergeKey(rows[7]), 'web#330', '문자열 번호도 숫자로 — PR 상세를 읽는다')
+  assert.equal(mergeKey(rows[0]), 'web@abc0005', '직접 push 는 git show 로 상세')
+  assert.equal(mergeKey(rows[4]), 'web@eee0004', 'Actions 넘기기도 맞은 git 커밋으로 상세')
+  assert.deepEqual(weekMerges(events, now).length, 5, 'git 기록이 없으면 사건만(예전 그대로)')
+})
+
+test('createGitMerges — 지난 값으로 바로 답하고 뒤에서 log → fetch → log, log 는 1분 · fetch 는 10분마다, 달라졌을 때만 onReady', async () => {
+  let clock = Date.parse('2026-11-19T13:00:00Z')
+  const runs = []
+  let remote = `${sha40('aaa0001')}\t${sha40('f0')}\t2026-11-19T12:00:00Z\tfix: 하나 (#1)\n`
+  const cache = createGitMerges({
+    athenaDir: () => '/b/acme',
+    now: () => clock,
+    bases: async () => [{ repo: 'web', base: 'dev' }, { repo: '../x', base: 'main' }, { repo: 'api', base: '--upload-pack=x' }],
+    run: async (command, args, cwd) => {
+      runs.push([command, args[0], cwd])
+      if (args[0] === 'fetch') {
+        remote += `${sha40('bbb0002')}\t${sha40('aaa0001')}\t2026-11-19T12:30:00Z\tchore: 직접\n`
+        return ''
+      }
+      assert.deepEqual(args, ['log', 'origin/dev', '--first-parent', `--since=${new Date(clock - 7 * 24 * 3600 * 1000).toISOString()}`, `--format=${GIT_LOG_FORMAT}`, '--'])
+      return remote
+    },
+  })
+  let ready = 0
+  assert.deepEqual(cache.peek(() => ready++), [], '처음에는 빈 값으로 바로')
+  await waitFor(() => runs.length === 3, 'log · fetch · log')
+  assert.deepEqual(runs, [['git', 'log', '/b/acme/repos/web'], ['git', 'fetch', '/b/acme/repos/web'], ['git', 'log', '/b/acme/repos/web']], '이상한 레포 이름 · 브랜치는 부르지 않는다')
+  await sleep(5)
+  assert.equal(ready, 2)
+  assert.deepEqual(cache.peek(() => ready++).map((merge) => merge.pr), [1, null])
+  await sleep(5)
+  assert.equal(runs.length, 3, '1분 안에는 다시 읽지 않는다')
+  clock += GIT_LOG_MS
+  cache.peek(() => ready++)
+  await waitFor(() => runs.length === 4, '1분 뒤 log 만')
+  await sleep(5)
+  assert.equal(runs[3][1], 'log')
+  assert.equal(ready, 2, '같으면 onReady 없음')
+  clock += GIT_FETCH_MS
+  cache.peek(() => ready++)
+  await waitFor(() => runs.length === 7, '10분 뒤 log · fetch · log')
+  assert.deepEqual(runs.slice(4).map((run) => run[1]), ['log', 'fetch', 'log'])
+})
+
+test('mergeBases — pack.json repos[] 의 prBase(없으면 branch) · 이름 · 브랜치 없는 줄은 빼고, 못 읽으면 빈 목록', async () => {
+  const dir = workDir()
+  try {
+    fs.mkdirSync(path.join(dir, 'pack'))
+    fs.writeFileSync(path.join(dir, 'pack', 'pack.json'), JSON.stringify({ repos: [{ name: 'web', branch: 'prd', prBase: 'dev' }, { name: 'api', branch: 'main' }, { name: 'x' }, null, { branch: 'main' }] }))
+    assert.deepEqual(await mergeBases(dir), [{ repo: 'web', base: 'dev' }, { repo: 'api', base: 'main' }])
+    assert.deepEqual(await mergeBases(path.join(dir, '없음')), [])
+    assert.deepEqual(await mergeBases(null), [])
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
+})
+
 test('livePanes · paneSizes · mobileInputAllowed — 쉬는 pane 도 넣고 running 으로 가르기, 입력 허용은 true 일 때만', () => {
   const listed = livePanes([{ id: 'p1', agent_status: 'idle' }, { id: 'p2' }, { id: 'p3', agent_status: 'question', cols: 100, rows: 0 }, { label: 'id 없음' }])
   assert.deepEqual(listed.map((pane) => [pane.id, pane.status, pane.running, pane.cols, pane.rows]), [
@@ -950,7 +1057,7 @@ test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일�
     await waitFor(() => env.events('changed').some((event) => event.parts.includes('merges')), '머지 상세 changed')
     assert.deepEqual(runs.map((run) => [run.command, run.args.join(' '), run.cwd]).sort(), [
       ['gh', 'pr view 12 --json title,headRefName,additions,deletions,changedFiles', path.join('/b/acme', 'repos', 'web')],
-      ['git', 'show --shortstat --format=%s bbb2222 --', path.join('/b/acme', 'repos', 'api')],
+      ['git', 'show --diff-merges=first-parent --shortstat --format=%s bbb2222 --', path.join('/b/acme', 'repos', 'api')],
     ])
     const second = (await env.ask('snapshot')).result
     const web = second.merges.find((merge) => merge.repo === 'web')
