@@ -6,6 +6,13 @@
       "ko": "폰 코드 변화량 카드가 손 머지 · 직접 push 를 빼던 것 수정 — 레포마다 git 기록에서 읽음",
       "ja": "スマホのコード変更量カードで手動マージ · 直接 push が抜ける問題を修正 — git 履歴から読む",
       "zh": "修复手机代码变化量卡片漏掉手动合并 · 直接 push 的问题 — 从每个仓库的 git 记录读取"
+    },
+    {
+      "tag": "fixed",
+      "en": "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch",
+      "ko": "폰 코드 변화량 카드가 dev 머지를 두 번 세던 것 수정 — 기준 브랜치 밖 PR 제외",
+      "ja": "スマホのコード変更量カードで dev マージの二重計上を修正 — 基準ブランチ外の PR を除外",
+      "zh": "修复手机代码变化量卡片重复计算 dev 合并的问题 — 排除基准分支以外的 PR"
     }
   ],
   "0.65": [

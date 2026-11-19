@@ -259,5 +259,6 @@
   "Fix idle CPU use from the menu bar panel animating while closed": "修复菜单栏面板关闭时仍在播放动画、空闲时占用 CPU 的问题",
   "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "修复新仓库工作树中代理 pane 停在文件夹信任确认窗口的问题",
   "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "新增确认请求 · 智能体完成工作的手机推送通知 — 仅在手机应用关闭时",
-  "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "修复手机代码变化量卡片漏掉手动合并 · 直接 push 的问题 — 从每个仓库的 git 记录读取"
+  "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "修复手机代码变化量卡片漏掉手动合并 · 直接 push 的问题 — 从每个仓库的 git 记录读取",
+  "Fix phone code change card counting dev merges twice — skip PRs merged outside the base branch": "修复手机代码变化量卡片重复计算 dev 合并的问题 — 排除基准分支以外的 PR"
 }
