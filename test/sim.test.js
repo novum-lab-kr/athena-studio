@@ -44,6 +44,16 @@ test('화면 크기 · 비율 좌표', () => {
   assert.deepEqual(sim.parseWmSize('Physical size: 1080x2400\n'), { width: 1080, height: 2400 })
   assert.deepEqual(sim.parseWmSize('Physical size: 1080x2400\nOverride size: 720x1600\n'), { width: 720, height: 1600 })
   assert.equal(sim.parseWmSize('error'), null)
+  // 회전 · override 를 반영한 지금 크기(dumpsys window displays 의 cur=) — 가로면 2400x1080
+  assert.deepEqual(sim.parseDisplayCur('  init=1080x2400 420dpi base=1080x2400 cur=2400x1080 app=2400x1036 rng=1080x1036-2400x2356\n'), { width: 2400, height: 1080 })
+  assert.equal(sim.parseDisplayCur('Display: mDisplayId=0'), null)
+  assert.deepEqual(sim.parseSizeOption('2400x1080'), { width: 2400, height: 1080 })
+  assert.equal(sim.parseSizeOption('0x100'), null)
+  assert.equal(sim.parseSizeOption('1080x2400;id'), null)
+  assert.equal(sim.parseSizeOption(''), null)
+  // 기기 pid 를 첫 줄로(끊을 때 기기 안 녹화를 끄려고) · 무제한은 지원하는 기기만
+  assert.equal(sim.screenrecordCommand(true), 'echo $$; exec screenrecord --output-format=h264 --time-limit 0 -')
+  assert.equal(sim.screenrecordCommand(false), 'echo $$; exec screenrecord --output-format=h264 -')
   assert.equal(sim.toPixel(0.5, 1080), 540)
   assert.equal(sim.toPixel(1, 1080), 1079)
   assert.equal(sim.toPixel(-1, 1080), 0)
@@ -98,14 +108,17 @@ function fakeTools(root) {
     `#!/bin/sh
 echo "$*" >> '${log}'
 case "$*" in
+  "-s emulator-5554 shell") exec /bin/sh ;;
   "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
   *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
-  *"wm size"*) echo "Physical size: 1000x2000" ;;
+  *"wm size"*) sleep 0.3; echo "Physical size: 1000x2000" ;;
   *"screencap -p"*) printf 'PNGDATA' ;;
 esac
 `,
     { mode: 0o755 },
   )
+  // 기기 셸의 input — 받은 인자를 적는다(sim.mjs input 이 열어 둔 셸로 부른다)
+  fs.writeFileSync(path.join(bin, 'input'), `#!/bin/sh\necho "input $*" >> '${log}'\n`, { mode: 0o755 })
   return { bin, log }
 }
 
@@ -149,6 +162,27 @@ test('CLI(가짜 adb): list · tap 비율 → 픽셀 · shot --plan · Xcode 없
   assert.match(ios.stderr, /Xcode/)
   assert.equal(runCli(['tap', '3', '0'], bin, root).status, 2)
   assert.equal(runCli(['nope'], bin, root).status, 2)
+})
+
+test('CLI(가짜 adb): tap · swipe --size 면 목록 · 화면 크기 읽기 없이 그 크기로 누른다(칸 — 영상이 아는 크기)', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-size-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  const tapped = runCli(['tap', '0.5', '0.25', '--platform', 'android', '--device', 'emulator-5554', '--size', '2400x1080', '--json'], bin, root)
+  assert.equal(tapped.status, 0, tapped.stderr)
+  assert.equal(JSON.parse(tapped.stdout).id, 'emulator-5554')
+  const swiped = runCli(['swipe', '0', '0', '1', '1', '--platform', 'android', '--device', 'emulator-5554', '--size', '2400x1080'], bin, root)
+  assert.equal(swiped.status, 0, swiped.stderr)
+  // adb 는 누르기 · 쓸기 두 번만(devices · emu avd name · dumpsys · wm size 없음)
+  assert.deepEqual(fs.readFileSync(log, 'utf8').trim().split('\n'), [
+    '-s emulator-5554 shell input tap 1200 270',
+    '-s emulator-5554 shell input swipe 0 0 2399 1079 250',
+  ])
+  // --size 모양이 틀렸거나 --platform 이 없으면 옛 길(목록 · 크기 읽기)
+  fs.writeFileSync(log, '')
+  assert.equal(runCli(['tap', '0.5', '0.25', '--device', 'emulator-5554', '--size', 'x'], bin, root).status, 0)
+  assert.match(fs.readFileSync(log, 'utf8'), /^devices -l$/m)
+  assert.match(fs.readFileSync(log, 'utf8'), /input tap 500 500$/m)
 })
 
 test('기기 셸 감싸기: URL 의 ; & | \' 가 기기 셸에서 명령이 되지 않는다(open)', (t) => {
@@ -202,4 +236,137 @@ esac
   assert.equal(booted.status, 1, booted.stderr)
   assert.match(JSON.parse(booted.stdout).error, /켜지다 꺼졌다: FATAL \| Cannot find AVD system path/)
   assert.ok(Date.now() - started < 30_000)
+})
+
+test('이어 누르기 줄 읽기 · 기기 명령(정수 픽셀만)', () => {
+  assert.deepEqual(sim.parseTouchLine('tap 0.5 0.25'), { kind: 'tap', x: 0.5, y: 0.25 })
+  assert.deepEqual(sim.parseTouchLine(' move 1 0 '), { kind: 'move', x: 1, y: 0 })
+  assert.deepEqual(sim.parseTouchLine('size 1080x2400'), { kind: 'size', width: 1080, height: 2400 })
+  for (const bad of ['tap 0.5', 'tap 2 0', 'tap 0.5 0.5;reboot', 'tap 0.5 0.5 x', 'drag 0 0', 'size 1080x2400;id', '']) assert.equal(sim.parseTouchLine(bad), null, bad)
+  const size = { width: 1000, height: 2000 }
+  assert.equal(sim.touchCommand('tap', 0.5, 0.25, size), 'input tap 500 500')
+  assert.equal(sim.touchCommand('down', 0, 1, size), 'input motionevent DOWN 0 1999')
+  assert.equal(sim.touchCommand('move', 0.1, 0.1, size), 'input motionevent MOVE 100 200')
+  assert.equal(sim.touchCommand('up', 0.1, 0.1, size), 'input motionevent UP 100 200')
+})
+
+// 이어 누르기 CLI 를 띄워 줄을 넣고(ready 뒤) 표준 입력을 닫는다 — 끝 코드 · 출력
+function runInput(/** @type {string[]} */ args, /** @type {string[]} */ lines, /** @type {string} */ bin, /** @type {string} */ home) {
+  const { spawn } = require('node:child_process')
+  return new Promise((resolve) => {
+    const proc = spawn(process.execPath, [CLI, 'input', ...args], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TMPDIR: os.tmpdir() } })
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (chunk) => {
+      const first = !stdout.includes('ready')
+      stdout += chunk
+      if (first && stdout.includes('ready')) {
+        proc.stdin.write(lines.map((line) => `${line}\n`).join(''))
+        proc.stdin.end()
+      }
+    })
+    proc.stderr.on('data', (chunk) => (stderr += chunk))
+    proc.on('close', (status) => resolve({ status, stdout, stderr }))
+  })
+}
+
+test('CLI(가짜 adb): input — 열어 둔 셸 하나로 누르기 · 손가락 · 끝날 때 눌린 손가락 떼기 · 틀린 줄은 버림', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  const args = ['--platform', 'android', '--device', 'emulator-5554', '--size', '1000x2000', '--watch-stdin']
+  const done = await runInput(args, ['tap 0.5 0.25', 'down 0.5 0.5', 'move 0.5 0.4', 'move 0.5 0.3;reboot', 'up 0.5 0.3', 'size 2000x1000', 'down 0.1 0.1', 'move 0.2 0.2'], bin, root)
+  assert.equal(done.status, 0, done.stderr)
+  assert.match(done.stdout, /^ready$/m)
+  assert.match(done.stderr, /모르는 줄: move 0\.5 0\.3;reboot/)
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n')
+  // adb 는 셸 한 번만 연다 · 손가락이 눌린 채 끝나면 마지막 자리에서 뗀다(새 크기로)
+  assert.deepEqual(calls, [
+    '-s emulator-5554 shell',
+    'input tap 500 500',
+    'input motionevent DOWN 500 1000',
+    'input motionevent MOVE 500 800',
+    'input motionevent UP 500 600',
+    'input motionevent DOWN 200 100',
+    'input motionevent MOVE 400 200',
+    'input motionevent UP 400 200',
+  ])
+})
+
+test('CLI(가짜 adb): input — 크기를 읽는 동안 입력이 닫혀도 받은 순서대로 다 보내고 손가락을 뗀 뒤 닫는다', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  // --size 없음 — 첫 줄에서 wm size 를 읽는다(가짜는 0.3초 걸림)
+  const done = await runInput(['--platform', 'android', '--device', 'emulator-5554', '--watch-stdin'], ['down 0.5 0.5', 'move 0.5 0.4'], bin, root)
+  assert.equal(done.status, 0, done.stderr)
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n').filter((line) => line.startsWith('input '))
+  assert.deepEqual(calls, ['input motionevent DOWN 500 1000', 'input motionevent MOVE 500 800', 'input motionevent UP 500 800'])
+})
+
+test('CLI: input 은 Android 일련번호만 — 아니면 인자 틀림(2 · 칸은 지금 방식으로)', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin } = fakeTools(root)
+  for (const device of ['-x', 'avd:Pixel', 'a b', '']) {
+    assert.equal(runCli(['input', '--platform', 'android', '--device', device], bin, root).status, 2, device)
+  }
+  assert.equal(runCli(['input', '--device', 'emulator-5554'], bin, root).status, 2)
+})
+
+// stream — 가짜 adb: exec-out 은 pid 줄 뒤 영상 조각을 내다 기기 kill 표시가 생기면 끝난다 · 기기 kill 은 느리다(0.6초 —
+// 그사이 옛 adb 가 먼저 끝나 반복이 새 adb 를 띄운다) · 화면 크기는 파일에서
+function fakeStreamAdb(root) {
+  const bin = path.join(root, 'bin')
+  fs.mkdirSync(bin)
+  const log = path.join(root, 'calls')
+  const sizeFile = path.join(root, 'size')
+  const count = path.join(root, 'count')
+  fs.writeFileSync(sizeFile, 'cur=1000x2000')
+  fs.writeFileSync(count, '1000')
+  fs.writeFileSync(
+    path.join(bin, 'adb'),
+    `#!/bin/sh
+case "$*" in
+  "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
+  *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
+  *"screenrecord --help"*) echo "Set to 0 for no limit" ;;
+  *dumpsys*) cat '${sizeFile}' ;;
+  *"shell kill "*) touch "${root}/killed-$5"; sleep 0.6 ;;
+  *exec-out*)
+    pid=$(($(cat '${count}') + 1)); echo $pid > '${count}'
+    echo "start $pid" >> '${log}'
+    trap 'echo "term $pid" >> "${log}"; exit 143' TERM
+    echo $pid
+    while [ ! -f "${root}/killed-$pid" ]; do printf x; sleep 0.1; done
+    echo "end $pid" >> '${log}' ;;
+esac
+`,
+    { mode: 0o755 },
+  )
+  return { bin, log, sizeFile }
+}
+
+test('CLI(가짜 adb): stream — 회전으로 다시 켤 때 기기 kill 을 기다리는 사이 새로 띄운 adb 를 끊지 않는다', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-stream-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log, sizeFile } = fakeStreamAdb(root)
+  const { spawn } = require('node:child_process')
+  const proc = spawn(process.execPath, [CLI, 'stream', '--platform', 'android', '--device', 'emulator-5554'], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: root, TMPDIR: os.tmpdir() } })
+  proc.stdout.resume()
+  let stderr = ''
+  proc.stderr.on('data', (chunk) => (stderr += chunk))
+  const closed = new Promise((resolve) => proc.on('close', resolve))
+  const sleep = (/** @type {number} */ ms) => new Promise((resolve) => setTimeout(resolve, ms))
+  await sleep(500)
+  fs.writeFileSync(sizeFile, 'cur=2000x1000') // 회전 — 감시(1.5초)가 보고 다시 켠다
+  await sleep(3500)
+  proc.kill('SIGTERM')
+  await closed
+  assert.match(stderr, /size 1000x2000\nsize 2000x1000/)
+  const lines = fs.readFileSync(log, 'utf8').trim().split('\n')
+  // 첫 녹화는 기기 kill 로 끝나고 · 두 번째 녹화는 끝낼 때까지 산다(끊겨 세 번째가 뜨지 않는다)
+  assert.deepEqual(lines.slice(0, 3), ['start 1001', 'end 1001', 'start 1002'])
+  assert.ok(!lines.includes('term 1002'), lines.join(' · '))
+  assert.ok(!lines.includes('start 1003'), lines.join(' · '))
 })

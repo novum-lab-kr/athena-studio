@@ -32,6 +32,11 @@ contextBridge.exposeInMainWorld('studio', /** @type {Record<string, (...values: 
   simHide: () => ipcRenderer.send('sim:hide'),
   simShot: (id) => ipcRenderer.invoke('sim:shot', id),
   simFrame: (id) => ipcRenderer.invoke('sim:frame', id),
+  simStream: (id, token) => ipcRenderer.invoke('sim:stream', id, token),
+  simStreamStop: () => ipcRenderer.send('sim:stream-stop'),
+  onSimVideo: listen('sim:video'),
+  onSimVideoEnd: listen('sim:video-end'),
   simTap: (id, x, y) => ipcRenderer.invoke('sim:tap', id, x, y),
   simSwipe: (id, from, to) => ipcRenderer.invoke('sim:swipe', id, from, to),
+  simTouch: (id, phase, x, y) => ipcRenderer.send('sim:touch', id, phase, x, y),
 }))

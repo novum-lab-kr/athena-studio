@@ -45,10 +45,15 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ## 0.64 (v0.64.0 – · Nov 19, 2026)
 
 ### New
+- Add a live Android screen to the Simulator tab — video instead of 1-second snapshots
 - Add moving the side browser to its own window — tabs return to the side panel when it closes
 - Add moving the Simulator tab to its own window — iOS · Android taps work there too
 
 ### Fixed
+- Fix the Simulator tab showing “no devices” while the list loads and after ⟳
+- Fix Android taps and swipes landing in the wrong place in landscape
+- Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap
+- Fix laggy Android swipes in the Simulator tab — the finger is sent live while dragging
 - Fix auto-merge squashing branch-merge PRs — merge commits kept
 - Fix auto review blocking PRs aimed at a non-default branch
 - Fix the side browser squeezing terminals — it now takes the Explorer column

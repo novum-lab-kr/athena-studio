@@ -41,10 +41,47 @@ export function keyFrom(text: unknown): Uint8Array | null {
   return bytes && bytes.length === KEY_BYTES ? bytes : null
 }
 
-// 확인 숫자: SHA-256(맥 공개 32B ‖ 앱 공개 32B) 앞 4바이트 big-endian % 1000000 → 6자리
-export function confirmCode(macPublic: Uint8Array, appPublic: Uint8Array): string {
-  const digest = crypto.createHash('sha256').update(macPublic).update(appPublic).digest()
-  return String(digest.readUInt32BE(0) % 1_000_000).padStart(6, '0')
+// ── 인증번호 미리 약속 v1(계획서 4-7 "인증번호 미리 약속 v1") ──
+// 맥이 새 난수 Nm 에 먼저 약속(commit) → 앱 난수 Na → 맥이 Nm 을 연다(reveal) → 양쪽이 같은 6자리를 보인다.
+// 앞 글귀는 UTF-8 바이트 그대로 · 뒤 칸은 모두 32B 고정이라 구분 바이트가 없다
+export const PAIR_COMMIT_LABEL = 'athena-mobile pair v1 commit'
+export const PAIR_CODE_LABEL = 'athena-mobile pair v1 code'
+export const PAIR_DATA_MAX = 512 // relay pair.data 글자 상한(계약 제안과 같게)
+
+export const newPairNonce = (): Uint8Array => new Uint8Array(crypto.randomBytes(KEY_BYTES))
+
+const sha256 = (...parts: (string | Uint8Array)[]): Buffer => {
+  const hash = crypto.createHash('sha256')
+  for (const part of parts) hash.update(part)
+  return hash.digest()
+}
+
+// 약속 C = SHA-256(글귀 ‖ 맥 공개 ‖ 앱 공개 ‖ Nm)
+export const pairCommit = (macPublic: Uint8Array, appPublic: Uint8Array, macNonce: Uint8Array): Uint8Array => new Uint8Array(sha256(PAIR_COMMIT_LABEL, macPublic, appPublic, macNonce))
+
+// 인증번호 = SHA-256(글귀 ‖ 맥 공개 ‖ 앱 공개 ‖ Na ‖ Nm) 앞 4바이트 big-endian % 1000000 → 6자리
+export function pairCode(macPublic: Uint8Array, appPublic: Uint8Array, appNonce: Uint8Array, macNonce: Uint8Array): string {
+  return String(sha256(PAIR_CODE_LABEL, macPublic, appPublic, appNonce, macNonce).readUInt32BE(0) % 1_000_000).padStart(6, '0')
+}
+
+// pair.data 안 — 약속 · 앱 난수 · 열기. 값 칸은 32B 만
+export type PairData = { pc: 'commit'; v: 1; c: string } | { pc: 'nonce'; v: 1; n: string } | { pc: 'reveal'; v: 1; n: string }
+export const encodePairData = (message: PairData): string => Buffer.from(JSON.stringify(message), 'utf8').toString('base64')
+export function decodePairData(data: unknown): { kind: 'commit' | 'nonce' | 'reveal'; value: Uint8Array } | null {
+  if (typeof data !== 'string' || data.length > PAIR_DATA_MAX) return null
+  const bytes = fromBase64(data)
+  if (!bytes || bytes[0] !== OPEN_BRACE) return null
+  let parsed: Record<string, unknown>
+  try {
+    parsed = JSON.parse(Buffer.from(bytes).toString('utf8'))
+  } catch {
+    return null
+  }
+  if (!parsed || typeof parsed !== 'object' || parsed.v !== 1) return null
+  const kind = parsed.pc
+  if (kind !== 'commit' && kind !== 'nonce' && kind !== 'reveal') return null
+  const value = keyFrom(kind === 'commit' ? parsed.c : parsed.n)
+  return value ? { kind, value } : null
 }
 
 // 4DH → HKDF-SHA256. ikm = DH(맥 고정, 앱 고정) ‖ DH(맥 일회, 앱 일회) ‖ DH(맥 고정, 앱 일회) ‖ DH(맥 일회, 앱 고정)

@@ -106,6 +106,39 @@ export function parseWmSize(text) {
 }
 
 /**
+ * `adb shell dumpsys window displays` → 지금 화면 크기(첫 화면의 cur= — 회전 · wm size 를 반영한다. wm size 의 Physical 은 회전을 모른다)
+ * @param {string} text
+ * @returns {{ width: number, height: number } | null}
+ */
+export function parseDisplayCur(text) {
+  const match = /\bcur=(\d+)x(\d+)/.exec(text)
+  return match ? { width: Number(match[1]), height: Number(match[2]) } : null
+}
+
+/**
+ * `--size <너비>x<높이>`(tap · swipe — 부른 쪽이 이미 아는 지금 화면 크기) 읽기 — 모양이 틀리면 null
+ * @param {string} text
+ * @returns {{ width: number, height: number } | null}
+ */
+export function parseSizeOption(text) {
+  const match = /^(\d{1,5})x(\d{1,5})$/.exec(text)
+  if (!match) return null
+  const width = Number(match[1])
+  const height = Number(match[2])
+  return width > 0 && height > 0 ? { width, height } : null
+}
+
+/**
+ * 기기 안에서 돌릴 화면 녹화 명령(adb exec-out 한 줄) — 첫 줄에 셸 pid 를 찍고 그 셸을 screenrecord 로 바꾼다(exec · 같은 pid).
+ * adb 를 끊어도 기기 안 screenrecord 는 다음 쓰기 때까지 남아서(2026-11-16 syung36 실측) 끝낼 때 이 pid 로 끈다.
+ * unlimited 면 길이 제한을 없앤다(--time-limit 0 — 도움말에 "Set to 0" 이 있는 판만) · 아니면 기본 180초 뒤 끝나니 부른 쪽이 다시 켠다
+ * @param {boolean} unlimited
+ */
+export function screenrecordCommand(unlimited) {
+  return `echo $$; exec screenrecord --output-format=h264${unlimited ? ' --time-limit 0' : ''} -`
+}
+
+/**
  * 0..1 비율 좌표 → 기기 픽셀(화면 안으로 자른다)
  * @param {number} ratio
  * @param {number} size
@@ -196,4 +229,36 @@ export function planShotsDir(planFile) {
  */
 export function deviceShellQuote(text) {
   return `'${text.replace(/'/g, `'\\''`)}'`
+}
+
+/** @typedef {{ kind: 'size', width: number, height: number } | { kind: 'tap' | 'down' | 'move' | 'up', x: number, y: number }} TouchLine */
+
+/**
+ * `sim.mjs input` 표준 입력 한 줄 읽기 — `size <너비>x<높이>` 또는 `tap|down|move|up <x> <y>`(0..1 비율). 모양이 틀리면 null
+ * @param {string} line
+ * @returns {TouchLine | null}
+ */
+export function parseTouchLine(line) {
+  const parts = line.trim().split(/\s+/)
+  if (parts[0] === 'size' && parts.length === 2) {
+    const size = parseSizeOption(parts[1] ?? '')
+    return size ? { kind: 'size', ...size } : null
+  }
+  const kind = parts[0]
+  if ((kind !== 'tap' && kind !== 'down' && kind !== 'move' && kind !== 'up') || parts.length !== 3) return null
+  const x = readRatio(parts[1])
+  const y = readRatio(parts[2])
+  return x === null || y === null ? null : { kind, x, y }
+}
+
+/**
+ * 누르기 · 손가락 한 동작 → 기기 셸 명령(픽셀은 정수만 — 화면에서 온 글자는 들어가지 않는다)
+ * @param {'tap' | 'down' | 'move' | 'up'} kind
+ * @param {number} x 0..1
+ * @param {number} y 0..1
+ * @param {{ width: number, height: number }} size
+ */
+export function touchCommand(kind, x, y, size) {
+  const point = `${toPixel(x, size.width)} ${toPixel(y, size.height)}`
+  return kind === 'tap' ? `input tap ${point}` : `input motionevent ${kind.toUpperCase()} ${point}`
 }

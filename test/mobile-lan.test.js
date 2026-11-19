@@ -116,6 +116,7 @@ async function setup(t) {
         answerRequest: async () => ({ ok: true }),
         leadPaneOf: () => null,
         postDecision: async () => ({ status: 200, body: {} }),
+        packs: () => ({ current: null, packs: [] }), // 브리지 필수 칸(snapshot 의 otherPacks)
         logEvent: () => {},
         flushMs: 16,
         sizePollMs: 60_000,

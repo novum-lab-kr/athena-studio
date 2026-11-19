@@ -25,6 +25,11 @@ test('이름 · 번들 ID · 최소 macOS(Electron 44 = 13.0)', () => {
   assert.equal(config.mac.minimumSystemVersion, '13.0')
 })
 
+test('athena:// 를 Info.plist 에 등록 — 맥 웹 로그인 복귀 주소(개발 앱 dev-app.js URL_SCHEMES 와 같은 이름)', () => {
+  const config = pkg.builderConfig(base)
+  assert.deepEqual(config.mac.protocols, [{ name: 'Athena Login', schemes: ['athena'] }])
+})
+
 test('코어 번들은 배포판 coreBundlePath 자리(resourcesPath/athena-core.bundle) · 제3자 고지는 resourcesPath/THIRD_PARTY_NOTICES.txt 로 들어간다', () => {
   const config = pkg.builderConfig(base)
   assert.deepEqual(config.extraResources, [

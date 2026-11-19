@@ -4,7 +4,7 @@
 // Electron main 진입점(package.json main) — ES 모듈(.mts · 빌드 없음 · Electron 44 가 타입만 지우고 읽는다).
 // Electron 은 이 파일을 끝까지 읽은 뒤에 ready 를 낸다(2026-10-27 실측 — 맨 위 await 1.5초를 넣어도 ready 전) — 아래 app.setName · setPath 는 그대로 ready 전이다.
 // 가져온 모듈은 이 파일 본문보다 먼저 돈다 — src/main/*.mts 는 맨 위에서 함수 · 상수만 만든다(app 자리를 읽지 않는다)
-import { app, autoUpdater, BrowserWindow, Menu, dialog, globalShortcut, ipcMain, shell } from 'electron'
+import { app, autoUpdater, BrowserWindow, Menu, Notification, dialog, globalShortcut, ipcMain, shell } from 'electron'
 import type { IpcMainEvent, IpcMainInvokeEvent, MenuItemConstructorOptions, Session, WebContents } from 'electron'
 import { execFile } from 'node:child_process'
 import fs from 'node:fs'
@@ -130,6 +130,8 @@ type MainCalls = {
   paneContextMenu(point: Point, title?: string): Promise<unknown>
   openBoardExternal(): Promise<unknown>
   workState(): Promise<unknown>
+  workPeek(options?: { launch?: boolean }): Promise<unknown>
+  usagePeek(): Promise<unknown>
   refreshRequests(): Promise<unknown>
   answerRequest(id: string, answer: { choice: string; text: string; rev?: unknown }, by?: 'app' | 'mobile'): Promise<unknown>
   redeliverRequest(id: string): Promise<unknown>
@@ -524,7 +526,11 @@ function createPackWindow(athenaDir: string | null, { welcome = false }: { welco
     reloadKey,
     language: () => language,
     requestsPollMs: REQUESTS_POLL_MS,
-    trayRequestsChanged: (target) => trayRequestsChanged(target as PackWindow),
+    trayRequestsChanged: (target) => {
+      trayRequestsChanged(target as PackWindow)
+      // 폰은 앞 창의 요청을 본다 — 앞 창 것이 바뀌었을 때만 알린다(src/main/mobile-dev.mts requestsChanged)
+      if (mobileDev && target === frontCtx()) mobileDev.requestsChanged()
+    },
     appConfig: () => config,
     saveAppConfig: (next) => {
       config = next as AppConfig
@@ -726,7 +732,7 @@ function appMenu(): MenuItemConstructorOptions {
     role: 'appMenu',
     submenu: [
       { role: 'about', label: say('menu.app.about', { name }) },
-      // 제3자 고지 — 배포판에만 있다(scripts/package-mac.js 가 Resources 에 넣는다 · 약관 EULA 5절이 가리킨다)
+      // 제3자 고지 — 배포판에만 있다(scripts/package-mac.js 가 Resources 에 넣는다 · 약관 EULA 제10조가 가리킨다)
       ...(app.isPackaged ? [{ label: say('menu.app.notices'), click: () => openThirdPartyNotices() }] : []),
       { type: 'separator' },
       { role: 'services', label: say('menu.app.services') },
@@ -1012,12 +1018,22 @@ handle('explorer:open', (ctx, workspaceId: unknown, relative: unknown, paneId: u
 handle('pane:split', (ctx, paneId: unknown, direction: unknown) => ctx.daemonCall('pane split', { target: String(paneId), direction: direction === 'down' ? 'down' : 'right' }))
 handle('pane:close', (ctx, paneId: unknown) => ctx.closePane(String(paneId)))
 handle('pane:context-menu', (ctx, point: unknown, title: unknown) => ctx.paneContextMenu(point && typeof point === 'object' ? (point as Point) : null, typeof title === 'string' ? title.slice(0, 200) : ''))
-listen('pane:focus', (ctx, paneId: unknown) => ctx.notifyDaemon('focus', { pane: String(paneId) }))
+listen('pane:focus', (ctx, paneId: unknown) => {
+  // 맥에서 포커스(누르기 · 창이 앞으로)하면 폰이 가진 pane 을 맥 크기로 되찾는다(D9 보완 · 모바일 길이 켜졌을 때만)
+  if (mobileDev) mobileDev.macFocus(String(paneId))
+  ctx.notifyDaemon('focus', { pane: String(paneId) })
+})
 listen('pane:input', (ctx, paneId: unknown, data: unknown) => {
-  if (typeof data === 'string') ctx.notifyDaemon('input', { pane: String(paneId), data })
+  if (typeof data !== 'string') return
+  // 폰이 제어 중인 pane 이면 맥 크기로 되돌린다(D9 · 모바일 길이 켜졌을 때만)
+  if (mobileDev) mobileDev.macInput(String(paneId), data)
+  ctx.notifyDaemon('input', { pane: String(paneId), data })
 })
 listen('pane:resize', (ctx, paneId: unknown, cols: number, rows: number) => {
-  if (cols > 1 && rows > 1) ctx.resizePane(String(paneId), cols | 0, rows | 0)
+  if (!(cols > 1 && rows > 1)) return
+  // 폰이 제어 중이면 폰 크기를 지킨다 — 맥 크기는 기억만(맥에서 입력하면 그 크기로) · 화면에는 적용된 것처럼 답해 다시 요청하지 않게
+  if (mobileDev && mobileDev.macResize(String(paneId), cols | 0, rows | 0)) return ctx.send('pane:resized', String(paneId), cols | 0, rows | 0)
+  ctx.resizePane(String(paneId), cols | 0, rows | 0)
 })
 listen('tab:size', (ctx, tabId: unknown, size: Loose) => {
   const cells = cellSize(size)
@@ -1110,6 +1126,16 @@ simHandle('sim:list', (ctx) => ctx.simList?.())
 simHandle('sim:start', (ctx, id: unknown) => ctx.simStart?.(simId(id)))
 simHandle('sim:shot', (ctx, id: unknown) => ctx.simShot?.(simId(id)))
 simHandle('sim:frame', (ctx, id: unknown) => ctx.simFrame?.(simId(id)))
+// Android 영상 — 켠 창(서랍 · 떼어 낸 창)에 조각을 보내고, 끄기는 켠 창이 보낸 것만 받는다(simulator.mts simStream)
+ipcMain.handle('sim:stream', (event, id: unknown, token: unknown) => {
+  const from = drawerCtxOf(event)
+  if (!from) return { ok: false, error: say('ipc.noWindow') }
+  return typeof token === 'number' && Number.isSafeInteger(token) ? from.ctx.simStream?.(simId(id), token, from.fromDetached) : { ok: false, error: 'bad-token' }
+})
+ipcMain.on('sim:stream-stop', (event) => {
+  const from = drawerCtxOf(event)
+  if (from) from.ctx.simStreamStop?.(from.fromDetached)
+})
 simHandle('sim:tap', (ctx, id: unknown, x: unknown, y: unknown) => {
   const point = simPoint({ x, y })
   return point ? ctx.simTap?.(simId(id), point.x, point.y) : { ok: false, error: 'bad-point' }
@@ -1118,6 +1144,12 @@ simHandle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
   const start = simPoint(from)
   const end = simPoint(to)
   return start && end ? ctx.simSwipe?.(simId(id), start, end) : { ok: false, error: 'bad-point' }
+})
+// 끄는 손가락 한 동작(누름 · 움직임 · 뗌) — 답을 기다리지 않는다(움직임마다 오니까)
+ipcMain.on('sim:touch', (event, id: unknown, phase: unknown, x: unknown, y: unknown) => {
+  const from = drawerCtxOf(event)
+  const point = simPoint({ x, y })
+  if (from && point && (phase === 'down' || phase === 'move' || phase === 'up')) from.ctx.simTouch?.(simId(id), phase, point.x, point.y)
 })
 
 app.whenReady().then(async () => {
@@ -1168,15 +1200,21 @@ app.whenReady().then(async () => {
   void startMobileDevIfAsked()
 })
 
-// 모바일 시험 2 — 격리 시험 앱에서 relay 주소를 줬을 때만(src/main/mobile-dev.mts). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐)
-let mobileDev: { stop(): Promise<void> } | null = null
-async function startMobileDevIfAsked(): Promise<void> {
-  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+// 모바일 — 개발판에 relay 주소를 줬을 때만(src/main/mobile-dev.mts · 격리 집이든 진짜 스튜디오 집이든). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐 · 프로필도 숨김)
+type MobileDev = Awaited<ReturnType<typeof loadMobileDev>>
+let mobileDev: NonNullable<MobileDev> | null = null
+const mobileLinks: unknown[] = [] // 길이 켜지기 전에 온 athena:// — 켜지면 넘긴다(그때까지 값은 로그에 남기지 않는다)
+async function loadMobileDev() {
   const { mobileDevOptions, startMobileDev, MOBILE_DEV_SKIPPED } = await import('./main/mobile-dev.mts')
-  const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, homeOverride: STUDIO_HOME_OVERRIDE })
-  if (!options) return console.log(MOBILE_DEV_SKIPPED)
-  mobileDev = startMobileDev({
+  const options = mobileDevOptions({ env: process.env, packaged: app.isPackaged, home: STUDIO.root })
+  if (!options) {
+    console.log(MOBILE_DEV_SKIPPED)
+    return null
+  }
+  const macName = await computerName()
+  return startMobileDev({
     options,
+    macName: () => macName,
     daemonPaths,
     frontCtx: () => frontCtx() as unknown as ReturnType<Parameters<typeof startMobileDev>[0]['frontCtx']>,
     config: () => config as unknown as Record<string, unknown> | null,
@@ -1184,8 +1222,104 @@ async function startMobileDevIfAsked(): Promise<void> {
       const reply = (await runPack(['board-token'], { dir: athenaDir })) as { ok?: boolean; token?: unknown }
       return reply.ok && typeof reply.token === 'string' ? reply.token : null
     },
+    openBrowser: (url) => shell.openExternal(url),
+    fetch: (url, init) => fetch(url, init),
+    onChange: () => sendMobileState(),
+    onPairRequest: (request) => notifyPairRequest(request.label),
+    onLoginFailed: (why) => {
+      for (const ctx of packWindows) ctx.send('mobile:failed', why)
+    },
+    // 폰이 pane 제어를 가져감 — 화면은 그 pane 을 보고 있을 때만 잠깐 알림
+    onPhoneControl: (pane) => {
+      for (const ctx of packWindows) ctx.send('mobile:phone-control', pane)
+    },
   })
 }
+// 사용자에게 보이는 컴퓨터 이름(시스템 설정 → 일반 → 공유) — 맥에서만 · 못 읽으면 null(호스트 이름으로 대신하지 않는다)
+function computerName(): Promise<string | null> {
+  if (!isMac) return Promise.resolve(null)
+  return new Promise((resolve) => {
+    execFile('/usr/sbin/scutil', ['--get', 'ComputerName'], { timeout: 3000 }, (error, stdout) => resolve(error ? null : String(stdout).trim() || null))
+  })
+}
+async function startMobileDevIfAsked(): Promise<void> {
+  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) return
+  mobileDev = await loadMobileDev()
+  if (!mobileDev) return
+  // athena:// 를 이 앱으로 — 개발용 길이 켜질 때만(배포판 · 보통 개발 앱은 등록하지 않는다)
+  if (isMac) app.setAsDefaultProtocolClient('athena')
+  for (const link of mobileLinks.splice(0)) mobileDev.handleLink(link)
+  sendMobileState()
+}
+const mobileState = () => (mobileDev ? mobileDev.view() : { enabled: false })
+function sendMobileState(): void {
+  const view = mobileState()
+  for (const ctx of packWindows) ctx.send('mobile:state', view)
+}
+// 새 디바이스 연결 요청 — 앞에 있는 창이 없으면 맥 알림(번호는 넣지 않는다 · 누르면 창을 앞으로)
+function notifyPairRequest(label: string | null): void {
+  if (BrowserWindow.getFocusedWindow() || !Notification.isSupported()) return
+  const note = new Notification({ title: say('mobile.pair.notifyTitle'), body: say('mobile.pair.notifyBody', { device: label || say('mobile.device.unknown') }) })
+  note.on('click', () => showWindow())
+  note.show()
+}
+// 맥은 athena:// 를 open-url 로 준다(ready 전에도 올 수 있어 맨 위에서 건다). 값은 로그에 남기지 않는다(mobile-login describeLink)
+app.on('open-url', (event, link) => {
+  event.preventDefault()
+  if (mobileDev) mobileDev.handleLink(link)
+  else if (process.env.ATHENA_STUDIO_MOBILE_RELAY && mobileLinks.length < 4) mobileLinks.push(link)
+})
+
+handle('mobile:state', () => mobileState())
+handle('mobile:login', () => {
+  if (mobileDev) mobileDev.signIn()
+  return mobileState()
+})
+handle('mobile:cancel-login', () => {
+  if (mobileDev) mobileDev.cancelSignIn()
+  return mobileState()
+})
+handle('mobile:logout', async () => {
+  if (mobileDev) await mobileDev.signOut()
+  return mobileState()
+})
+handle('mobile:open-account', () => {
+  if (mobileDev) void mobileDev.openAccount()
+  return { ok: true }
+})
+// [허용] · [거절] — 기다리는 요청 id 만(번호는 맥이 들고 있다)
+handle('mobile:answer', async (_ctx, requestId: unknown, accept: unknown) => {
+  if (!mobileDev || typeof requestId !== 'string') return { ok: false }
+  try {
+    if (accept === true) await mobileDev.relay.accept(requestId)
+    else await mobileDev.relay.reject(requestId)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String((error as { code?: unknown }).code || 'failed') }
+  } finally {
+    sendMobileState()
+  }
+})
+handle('mobile:remove-device', async (_ctx, peer: unknown) => {
+  if (!mobileDev || typeof peer !== 'string' || !mobileDev.relay.peers().includes(peer)) return { ok: false }
+  try {
+    await mobileDev.relay.removePeer(peer)
+    return { ok: true }
+  } catch (error) {
+    return { ok: false, error: String((error as { code?: unknown }).code || 'failed') }
+  } finally {
+    sendMobileState()
+  }
+})
+// 디바이스에서 입력 허용 — 앱 설정 mobileInput(브리지가 메시지마다 다시 읽는다 · 기본 꺼짐)
+handle('mobile:set-input', (_ctx, allowed: unknown) => {
+  // 개발용 길이 꺼져 있으면 바꾸지 않는다(배포판 · 보통 개발 앱에서 허용이 몰래 켜지지 않게)
+  if (!mobileDev) return { ok: false, allowed: config.mobileInput === true }
+  config = { ...config, mobileInput: allowed === true }
+  core.saveConfig(configFile(), config)
+  return { ok: true, allowed: allowed === true }
+})
+handle('mobile:input', () => ({ allowed: config.mobileInput === true }))
 
 // 창을 연 뒤 코어 업데이트 — 문이 닫혀 있는 동안 팩 명령 · 현황판 · 새 에이전트 시작은 기다린다(core-runner.mts updateGate)
 async function runCoreUpdateInBackground(): Promise<void> {

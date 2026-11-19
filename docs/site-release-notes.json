@@ -2,6 +2,13 @@
   "0.64": [
     {
       "tag": "new",
+      "en": "Add a live Android screen to the Simulator tab — video instead of 1-second snapshots",
+      "ko": "시뮬레이터 탭 Android 화면 실시간 표시 — 1초 그림 대신 영상",
+      "ja": "シミュレータタブで Android 画面をリアルタイム表示 — 1 秒ごとの画像の代わりに動画",
+      "zh": "模拟器标签实时显示 Android 屏幕 — 用视频代替每秒截图"
+    },
+    {
+      "tag": "new",
       "en": "Add moving the side browser to its own window — tabs return to the side panel when it closes",
       "ko": "옆 브라우저를 별도 창으로 떼어 내기 추가 — 창을 닫으면 탭이 옆 서랍으로 돌아옴",
       "ja": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る",

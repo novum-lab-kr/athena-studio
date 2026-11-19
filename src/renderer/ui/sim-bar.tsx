@@ -1,12 +1,16 @@
 // 옆 브라우저 서랍의 [웹 | 시뮬레이터] 전환 · 시뮬레이터 막대(기기 고르기 · 켜기 · 캡처 · 닫기) · 칸(#sim-screen — 안내 글 · Android 화면 그림)
 // 서랍 껍데기와 자리 알리기(placeBrowserView)는 바닐라 browser.ts. 명령은 main 이 본체 scripts/sim.mjs 로(src/main/simulator.mts).
 // iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다(누르기 · 쓸기도 그 페이지) — 여기는 그 뒤에 깔린 안내 글만.
-// Android 는 칸이 보일 때만 1초마다 화면 그림을 받아 <img> 로 그리고, 누르기 · 끌기를 비율 좌표로 보낸다.
+// Android 는 칸이 보일 때만 화면 영상(H.264 — ui/sim-video.ts)을 canvas 에 그리고, 누르기 · 끌기를 비율 좌표로 보낸다
+// (끌기는 움직이는 동안 그때그때 — main 이 열어 둔 adb shell 로 손가락을 따라가게 한다).
+// 옛 코어(영상 명령 없음) · 영상을 못 풀면 1초마다 화면 그림을 받아 <img> 로 그린다.
 // [새 창으로] ⧉ 를 누르면 떼어 낸 서랍 창(browser-window.ts — detached · 서랍과 같은 [웹 | 시뮬레이터] 탭)이 같은 막대 · 칸을 띄운다. 그 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로 가져온다
 import { useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { flushSync } from 'react-dom'
 import { createStore, mountIsland, say as sayNow, showToast, useSay, useStore } from './bridge.ts'
+import { pickSelected, screenNote } from '../../lib/sim-view.mts'
+import { setCanvas, startVideo, stopVideo, videoRunning, videoSupported } from './sim-video.ts'
 
 // main 의 답(scripts/sim.mjs --json 그대로)
 export type SimReply = { ok: boolean; error?: string; code?: number; [key: string]: unknown }
@@ -26,17 +30,24 @@ type SimView = {
   selected: string
   running: Running | null
   error: string // 화면에 보일 이유(문구 키 또는 sim.mjs 의 한 줄)
-  frame: string // Android 화면 그림(data URL)
+  frame: string // Android 화면 그림(data URL — 그림 받기로 돌아갔을 때만)
+  videoReady: boolean // Android 영상의 첫 장을 그렸다
 }
 
 const MODE_KEY = 'studio.browserMode'
 const FRAME_GAP_MS = 1000
 const TAP_MOVE = 0.02 // 이보다 덜 움직이면 누르기 · 넘으면 쓸기(비율)
+const VIDEO_GUARD_MS = 1000 // 영상이 도는 동안 칸이 아직 보이는지 보는 간격(서랍 닫기 · 웹 탭 · 다른 기기 → 끈다)
+const DECODE_RETRIES = 3 // 풀기 실패면 영상을 다시 켠다 — 이만큼 넘으면 그림 받기로
 
 export const mode = createStore<DrawerMode>(localStorage.getItem(MODE_KEY) === 'sim' ? 'sim' : 'web')
-const view = createStore<SimView>({ loaded: false, busy: '', ios: null, android: null, selected: '', running: null, error: '', frame: '' })
+const view = createStore<SimView>({ loaded: false, busy: '', ios: null, android: null, selected: '', running: null, error: '', frame: '', videoReady: false })
 let actions: SimActions = { place: () => {}, close: () => {}, isOpen: () => false }
 let frameLoop = false
+let framesOnly = false // 영상을 못 쓴다(옛 코어 · 풀기 실패 반복) — 이 창에서는 그림 받기로
+let videoId = '' // 영상을 띄운 기기
+let videoGuard: number | null = null
+let decodeFailures = 0
 // 서랍을 새 창으로 떼어 낸 동안(main drawer:detached) — 서랍 쪽만 쓴다
 export const detachedStore = createStore(false)
 
@@ -62,6 +73,8 @@ export function mountWindow(screen: HTMLElement, place: () => void, first: Drawe
 // main 이 기억하는 지금 기기(마지막으로 연 것)로 맞춘다 — 떼어 낸 창이 뜰 때 · 서랍으로 돌아올 때
 export async function adopt(): Promise<void> {
   const running = (await studio.simCurrent()) as Running | null
+  // 창을 옮기면 main 이 옛 창의 Android 영상을 끈다 — 이 창의 영상 기억도 비워 칸이 보이면(shown) 새로 켜게
+  stopAndroidVideo()
   if (running) commit({ running, selected: running.id, frame: '', error: '' })
 }
 
@@ -71,6 +84,7 @@ export function setMode(next: DrawerMode): void {
   if (mode.get() === next) return
   if (!actions.detached) localStorage.setItem(MODE_KEY, next)
   flushSync(() => mode.set(next))
+  if (next === 'web') stopAndroidVideo()
   actions.place()
 }
 
@@ -84,7 +98,7 @@ export function wantsView(): boolean {
 export function shown(): void {
   const state = view.get()
   if (!state.loaded && !state.busy) void loadList(true)
-  if (state.running?.platform === 'android') runFrames()
+  if (state.running?.platform === 'android') runAndroid()
 }
 
 function platformOf(reply: SimReply, key: 'ios' | 'android'): Platform {
@@ -111,13 +125,14 @@ async function loadList(autoStart: boolean): Promise<void> {
   const android = platformOf(reply, 'android')
   const state = view.get()
   const devices = [...ios.devices, ...android.devices]
-  const keep = devices.find((device) => device.id === state.selected)
   const booted = devices.find((device) => device.booted)
-  const selected = keep?.id || state.running?.id || booted?.id || devices[0]?.id || ''
-  // 열어 둔 기기가 밖에서 꺼졌다(목록에 없거나 꺼짐) — 열림을 풀어 뷰를 떼고 [켜기] 로 돌린다
+  // 열어 둔 기기가 밖에서 꺼졌다(목록에 없거나 꺼짐) — 열림을 풀어 뷰를 떼고 [켜기] 로 돌린다.
+  // 목록을 읽는 사이 그 기기의 마지막 그림 받기가 남긴 오류도 지운다(사라진 기기 이야기라 안내를 가린다)
   const stillRunning = state.running && devices.some((device) => device.id === state.running?.id && device.booted)
+  const selected = pickSelected(devices, state.selected, stillRunning ? state.running?.id || '' : '')
   if (state.running && !stillRunning) {
-    commit({ busy: '', loaded: true, ios, android, selected, running: null, frame: '' })
+    stopAndroidVideo()
+    commit({ busy: '', loaded: true, ios, android, selected, running: null, frame: '', videoReady: false, error: '' })
     actions.place()
     return
   }
@@ -128,7 +143,8 @@ async function loadList(autoStart: boolean): Promise<void> {
 async function start(id: string): Promise<void> {
   const device = allDevices(view.get()).find((item) => item.id === id)
   if (!device) return
-  commit({ busy: 'start', selected: id, error: '', frame: '' })
+  stopAndroidVideo()
+  commit({ busy: 'start', selected: id, error: '', frame: '', videoReady: false })
   actions.place() // 여는 동안 옛 iOS 페이지를 뗀다(wantsView 가 거짓)
   const reply = await studio.simStart(id)
   if (!reply.ok) {
@@ -141,7 +157,7 @@ async function start(id: string): Promise<void> {
   // 꺼져 있던 기기를 켰으면 목록의 ●/○ 도 바꾼다
   if (!device.booted) void loadList(false)
   actions.place()
-  if (running.platform === 'android') runFrames()
+  if (running.platform === 'android') runAndroid()
 }
 
 async function shot(): Promise<void> {
@@ -154,7 +170,61 @@ async function shot(): Promise<void> {
   else showToast(sayNow('sim.shotFailed', { reason: reasonText(reply.error) }), 'error')
 }
 
-// Android 화면 받기 — 서랍이 열려 있고 · 시뮬레이터 모드이고 · Android 가 열려 있을 때만 돈다(하나만)
+// 칸에 Android 화면을 그릴 때인지 — 서랍이 열려 있고 · 시뮬레이터 모드이고 · Android 가 열려 있다
+function androidShown(): Running | null {
+  const { running } = view.get()
+  return running?.platform === 'android' && mode.get() === 'sim' && actions.isOpen() ? running : null
+}
+
+function stopAndroidVideo(): void {
+  clearInterval(videoGuard ?? undefined)
+  videoGuard = null
+  videoId = ''
+  stopVideo()
+  // 다시 보일 때 끈 동안의 마지막 장이 잠깐 보이지 않게 — 새 첫 장을 그리면 다시 켠다
+  if (view.get().videoReady) commit({ videoReady: false })
+}
+
+// Android 화면 — 영상을 하나 띄운다(이미 그 기기 영상이면 그대로). 칸이 안 보이면 끈다 · 영상을 못 쓰면 그림 받기
+function runAndroid(): void {
+  const running = androidShown()
+  if (!running) return stopAndroidVideo()
+  if (framesOnly || !videoSupported()) return runFrames()
+  if (videoId === running.id && videoRunning()) return
+  videoId = running.id
+  commit({ videoReady: false })
+  startVideo(running.id, {
+    drawn: () => {
+      decodeFailures = 0
+      if (view.get().running?.id === running.id) commit({ videoReady: true, error: '' })
+    },
+    ended: (reason) => videoEnded(running.id, reason),
+  })
+  if (videoGuard) return
+  videoGuard = setInterval(() => {
+    if (androidShown()?.id !== videoId) stopAndroidVideo()
+  }, VIDEO_GUARD_MS)
+}
+
+// 영상이 저절로 끝났다(끈 것은 오지 않는다) — 옛 코어면 그림 받기 · 풀기 실패면 다시 · 나머지는 이유를 보인다
+function videoEnded(id: string, reason: string): void {
+  clearInterval(videoGuard ?? undefined)
+  videoGuard = null
+  videoId = ''
+  if (view.get().running?.id !== id) return
+  if (reason === 'decode' && decodeFailures < DECODE_RETRIES) {
+    decodeFailures += 1
+    return runAndroid()
+  }
+  if (reason === 'no-stream' || reason === 'decode') {
+    framesOnly = true
+    commit({ videoReady: false })
+    return runFrames()
+  }
+  commit({ videoReady: false, error: reasonText(reason) })
+}
+
+// Android 화면 받기(그림 — 영상을 못 쓸 때) — 서랍이 열려 있고 · 시뮬레이터 모드이고 · Android 가 열려 있을 때만 돈다(하나만)
 function runFrames(): void {
   if (frameLoop) return
   frameLoop = true
@@ -224,7 +294,7 @@ export function SimBar() {
           if (devices.find((device) => device.id === id)?.booted) void start(id)
         }}
       >
-        {devices.length === 0 ? <option value="">{say('sim.noDevices')}</option> : null}
+        {devices.length === 0 ? <option value="">{state.loaded ? say('sim.noDevices') : say('sim.loading')}</option> : null}
         {group(state.ios, 'iOS')}
         {group(state.android, 'Android')}
       </select>
@@ -260,47 +330,70 @@ export function SimBar() {
 }
 
 // ── 칸 ───────────────────────────────────────────────────
+// 판정(src/lib/sim-view.mts) → 문구 키 — 키를 글자 그대로 둬 문구 시험(i18n-usage)이 본다
+const NOTE_KEYS = { loading: 'sim.loading', noDevices: 'sim.noDevices', noRunning: 'sim.noRunning', pickBooted: 'sim.pickBooted' } as const
 function SimScreen() {
   const say = useSay()
   const state = useStore(view)
-  const press = useRef<{ x: number; y: number } | null>(null)
-  const ratioOf = (event: ReactPointerEvent<HTMLImageElement>) => {
+  // 누른 자리 · 쓸기로 넘어갔는지(TAP_MOVE 를 넘으면 그때부터 손가락을 기기로 보낸다)
+  const press = useRef<{ x: number; y: number; dragging: boolean; last: { x: number; y: number } } | null>(null)
+  const ratioOf = (event: ReactPointerEvent<HTMLElement>) => {
     const rect = event.currentTarget.getBoundingClientRect()
     const clamp = (value: number) => Math.min(Math.max(value, 0), 1)
     return { x: clamp((event.clientX - rect.left) / rect.width), y: clamp((event.clientY - rect.top) / rect.height) }
   }
+  // 누르기 · 끌기 — 거의 안 움직이고 놓으면 누르기, 움직이면 그때부터 손가락(누름 · 움직임 · 뗌)을 그대로 보낸다(휠은 보내지 않는다)
+  const pointer = (id: string) => ({
+    onPointerDown: (event: ReactPointerEvent<HTMLElement>) => {
+      event.currentTarget.setPointerCapture(event.pointerId)
+      const at = ratioOf(event)
+      press.current = { ...at, dragging: false, last: at }
+    },
+    onPointerMove: (event: ReactPointerEvent<HTMLElement>) => {
+      const from = press.current
+      if (!from) return
+      const at = ratioOf(event)
+      from.last = at
+      if (!from.dragging) {
+        if (Math.hypot(at.x - from.x, at.y - from.y) < TAP_MOVE) return
+        from.dragging = true
+        studio.simTouch(id, 'down', from.x, from.y)
+      }
+      studio.simTouch(id, 'move', at.x, at.y)
+    },
+    onPointerUp: (event: ReactPointerEvent<HTMLElement>) => {
+      const from = press.current
+      press.current = null
+      if (!from) return
+      const to = ratioOf(event)
+      if (from.dragging) studio.simTouch(id, 'up', to.x, to.y)
+      else if (Math.hypot(to.x - from.x, to.y - from.y) < TAP_MOVE) void studio.simTap(id, from.x, from.y)
+      // 움직임 없이 멀리서 놓았다(포인터 이동이 안 온 경우) — 한 번에 쓸기
+      else void studio.simSwipe(id, from, to)
+    },
+    // 포인터를 잃었다(창 전환 등) — 끄는 중이면 마지막 자리에서 뗀다
+    onPointerCancel: () => {
+      const from = press.current
+      press.current = null
+      if (from?.dragging) studio.simTouch(id, 'up', from.last.x, from.last.y)
+    },
+  })
   const running = state.running
   const notes: string[] = []
   if (state.ios && !state.ios.ok && state.ios.reason === 'no-xcode') notes.push(say('sim.noXcode'))
   if (state.android && !state.android.ok && state.android.reason === 'no-sdk') notes.push(say('sim.noSdk'))
+  const devices = allDevices(state)
+  const note = screenNote({ loaded: state.loaded, busy: state.busy, error: state.error, running: Boolean(running), frameMissing: running?.platform === 'android' && !state.frame && !state.videoReady, devices })
   let message = ''
-  if (state.busy === 'list' && !state.loaded) message = say('sim.loading')
-  else if (state.busy === 'start') message = say('sim.starting', { name: allDevices(state).find((device) => device.id === state.selected)?.name || '' })
-  else if (state.error) message = state.error
-  else if (!running) message = allDevices(state).length ? say('sim.noRunning') : say('sim.noDevices')
-  else if (running.platform === 'android' && !state.frame) message = say('sim.loading')
+  if (note === 'starting') message = say('sim.starting', { name: devices.find((device) => device.id === state.selected)?.name || '' })
+  else if (note === 'error') message = state.error
+  else if (note) message = say(NOTE_KEYS[note])
   return (
     <>
-      {running?.platform === 'android' && state.frame && state.busy !== 'start' ? (
-        <img
-          className="sim-frame"
-          src={state.frame}
-          alt={running.name}
-          draggable={false}
-          onPointerDown={(event) => {
-            event.currentTarget.setPointerCapture(event.pointerId)
-            press.current = ratioOf(event)
-          }}
-          onPointerUp={(event) => {
-            const from = press.current
-            press.current = null
-            if (!from) return
-            const to = ratioOf(event)
-            if (Math.hypot(to.x - from.x, to.y - from.y) < TAP_MOVE) void studio.simTap(running.id, from.x, from.y)
-            else void studio.simSwipe(running.id, from, to)
-          }}
-        />
+      {running?.platform === 'android' && !state.frame ? (
+        <canvas ref={setCanvas} className="sim-frame" hidden={!state.videoReady || state.busy === 'start'} aria-label={running.name} {...pointer(running.id)} />
       ) : null}
+      {running?.platform === 'android' && state.frame && state.busy !== 'start' ? <img className="sim-frame" src={state.frame} alt={running.name} draggable={false} {...pointer(running.id)} /> : null}
       {message ? <p className="sim-message">{message}</p> : null}
       {notes.length && (!running || state.error) ? (
         <ul className="sim-notes">
