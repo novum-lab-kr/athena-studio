@@ -6,6 +6,13 @@
       "ko": "폰 코드 변화량 카드가 손 머지 · 직접 push 를 빼던 것 수정 — 레포마다 git 기록에서 읽음",
       "ja": "スマホのコード変更量カードで手動マージ · 直接 push が抜ける問題を修正 — git 履歴から読む",
       "zh": "修复手机代码变化量卡片漏掉手动合并 · 直接 push 的问题 — 从每个仓库的 git 记录读取"
+    },
+    {
+      "tag": "fixed",
+      "en": "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept",
+      "ko": "업데이트로 앱을 다시 켠 뒤 폰 · iPad 앱 연결이 끊기던 것 수정 — relay 주소 유지",
+      "ja": "アップデートでアプリを再起動したあとスマホ · iPad アプリの接続が切れる問題を修正 — relay アドレスを保持",
+      "zh": "修复更新后重启应用时手机 · iPad 应用断开连接的问题 — 保留 relay 地址"
     }
   ],
   "0.65": [

@@ -259,5 +259,6 @@
   "Fix idle CPU use from the menu bar panel animating while closed": "メニューバーパネルが閉じていても動き続け、待機中に CPU を使っていた問題を修正",
   "Fix agent panes stopping at the folder trust prompt in a new repo's worktree": "新しいリポジトリのワークツリーでエージェント pane がフォルダー確認画面で止まる問題を修正",
   "Add phone push alerts for new requests and finished agents — only while the phone app is closed": "確認リクエスト · エージェント作業完了のスマホプッシュ通知を追加 — スマホアプリが閉じているときのみ",
-  "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "スマホのコード変更量カードで手動マージ · 直接 push が抜ける問題を修正 — git 履歴から読む"
+  "Fix phone code change card missing hand merges and direct pushes — read from each repo's git history": "スマホのコード変更量カードで手動マージ · 直接 push が抜ける問題を修正 — git 履歴から読む",
+  "Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept": "アップデートでアプリを再起動したあとスマホ · iPad アプリの接続が切れる問題を修正 — relay アドレスを保持"
 }

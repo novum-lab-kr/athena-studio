@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix phone code change card missing hand merges and direct pushes — read from each repo's git history
+- Fix phone and iPad apps disconnecting after an app update restart — the relay address is kept
 
 ## 0.65 (v0.65.0 – · Nov 19, 2026)
 
