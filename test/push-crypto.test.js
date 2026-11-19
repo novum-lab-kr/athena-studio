@@ -3,7 +3,11 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const crypto = require('node:crypto')
-const { sealPush, PUSH_INFO, PUSH_ENC_MAX } = require('../src/lib/push-crypto.mts')
+const path = require('node:path')
+const { spawnSync } = require('node:child_process')
+const { sealPush, pushCryptoReady, PUSH_INFO, PUSH_ENC_MAX } = require('../src/lib/push-crypto.mts')
+
+test.before(() => pushCryptoReady())
 
 const PKCS8_X25519 = Buffer.from('302e020100300506032b656e04220420', 'hex')
 const privateKeyOf = (raw) => crypto.createPrivateKey({ key: Buffer.concat([PKCS8_X25519, Buffer.from(raw)]), format: 'der', type: 'pkcs8' })
@@ -82,4 +86,37 @@ test('봉인: 글 · AAD · 열쇠가 다르면 풀리지 않는다 · 열쇠 �
   assert.equal(sealPush(new Uint8Array(31), { t: 'a', b: 'b', k: 'done' }), null)
   assert.equal(sealPush(new Uint8Array(32), { t: 'a', b: 'b', k: 'done' }), null, '낮은 차수 점(모두 0)')
   assert.equal(sealPush(hex(VECTOR.phonePublic), { t: 'a', b: '가'.repeat(2000), k: 'done' }), null, 'enc 2048자 넘음')
+})
+
+// 앱 메인은 Electron 안에서 돈다 — Electron(BoringSSL)의 node:crypto 는 시스템 node 와 지원 암호가 달라
+// 시스템 node 로만 시험하면 '앱에서는 늘 null' 을 놓친다(2026-11-20 — chacha20-poly1305 없음). 창 없이 node 모드로 한 번 봉인해 본다
+const electronBinary = () => {
+  try {
+    const found = require('electron')
+    return typeof found === 'string' ? found : null
+  } catch {
+    return null
+  }
+}
+
+test('Electron 실행기에서도 봉인된다: 같은 벡터 · null 아님 · 새 열쇠 · nonce 로도', (context) => {
+  const binary = electronBinary()
+  if (!binary) return context.skip('Electron 실행 파일이 없다(npm ci --ignore-scripts 등)')
+  const script = `
+    const { sealPush, pushCryptoReady } = require(${JSON.stringify(path.join(__dirname, '../src/lib/push-crypto.mts'))})
+    const hex = (text) => new Uint8Array(Buffer.from(text, 'hex'))
+    const input = JSON.parse(process.argv.at(-1))
+    pushCryptoReady().then(() => {
+      const text = JSON.parse(input.plain)
+      const fixed = sealPush(hex(input.phonePublic), text, { ephemeralPrivate: hex(input.ephemeralPrivate), nonce: hex(input.nonce) })
+      process.stdout.write(JSON.stringify({ electron: process.versions.electron || null, fixed, fresh: sealPush(hex(input.phonePublic), text) }))
+    })
+  `
+  const result = spawnSync(binary, ['-e', script, '--', JSON.stringify(VECTOR)], { env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, encoding: 'utf8', timeout: 60_000 })
+  assert.equal(result.status, 0, result.stderr || String(result.error))
+  const seen = JSON.parse(result.stdout)
+  assert.ok(seen.electron, 'Electron 으로 돌았다')
+  assert.equal(seen.fixed, VECTOR.enc)
+  assert.ok(seen.fresh, '고정 값 없이도 null 이 아니다')
+  assert.equal(openPush(seen.fresh, hex(VECTOR.phonePrivate)), VECTOR.plain)
 })

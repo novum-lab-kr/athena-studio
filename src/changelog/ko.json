@@ -265,5 +265,6 @@
   "Fix AI agent terminal links showing a warning and not opening — open in the side or default browser": "에이전트가 준 터미널 링크가 경고만 뜨고 안 열리던 것 수정 — 브라우저로 열기",
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "폰 푸시 알림에 에이전트 이름 · 요청 제목 추가 — 암호화해 보내고 iPhone 에서만 읽힘",
   "Fix repeated phone push alerts for one request — none while the Studio window is in front": "요청 하나에 폰 푸시 알림이 여러 번 오던 것 수정 — Studio 창이 앞이면 보내지 않음",
-  "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "암호화한 폰 푸시 알림에 보낸 pane 추가 — 폰 앱이 알림을 누르면 그 pane 을 열 수 있음"
+  "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "암호화한 폰 푸시 알림에 보낸 pane 추가 — 폰 앱이 알림을 누르면 그 pane 을 열 수 있음",
+  "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "폰 푸시 알림이 고정 문구로만 오던 것 수정 — 앱 안에서 암호화가 늘 실패함"
 }

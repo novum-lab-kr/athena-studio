@@ -762,7 +762,7 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     await relay.push(asked, ['phone-b'])
     const pushes = () => socket.sent.filter((message) => message.op === 'push.send').map((message) => message.args)
     assert.deepEqual(pushes(), [{ to: 'phone-c', kind: 'request', id: asked.id }])
-    assert.ok(lines.some((line) => line === `[mobile-relay] 푸시 실패 peer=phone-c kind=request id=${asked.id} plain code=no_push_token`))
+    assert.ok(lines.some((line) => line === `[mobile-relay] 푸시 실패 peer=phone-c kind=request id=${asked.id} plain:no_key code=no_push_token`))
     // 폰이 꺼지면(peer.offline) 맥 relay 연결은 그대로 — 그 기기에도 보낸다 · 실패한 것을 다시 보내지 않는다
     socket.onmessage({ data: JSON.stringify({ event: 'peer.offline', peer: 'phone-a' }) })
     assert.equal(relay.status().connected, true)
@@ -783,14 +783,19 @@ test('relay 푸시 — 세션 · 직접 길로 붙은 기기는 빼고 push.send
     await relay.stop()
     const saved = JSON.parse(fs.readFileSync(path.join(dir, 'relay.json'), 'utf8'))
     saved.peers['phone-b'].pushKey = 'not-a-key'
+    // phone-c 는 모양(32B)은 맞지만 봉인할 수 없는 열쇠(낮은 차수 점) — enc 없이 보내고 로그에 까닭을 가른다
+    saved.peers['phone-c'].pushKey = Buffer.alloc(32).toString('base64')
     fs.writeFileSync(path.join(dir, 'relay.json'), JSON.stringify(saved))
-    again = createMobileRelay({ ...options, log: () => {} })
+    const againLines = []
+    again = createMobileRelay({ ...options, log: (line) => againLines.push(line) })
     await again.start()
     await waitFor(() => again.status().connected, '다시 켠 relay 로그인')
     await again.push(done)
     const later = sockets[sockets.length - 1].sent.filter((message) => message.op === 'push.send').map((message) => message.args)
     assert.deepEqual(later.map((args) => [args.to, typeof args.enc]), [['phone-a', 'string'], ['phone-b', 'undefined'], ['phone-c', 'undefined']])
     assert.deepEqual(openEnc(later[0].enc), { t: done.title, b: done.body, k: 'done', p: 'p7' })
+    assert.ok(againLines.includes(`[mobile-relay] 푸시 보냄 peer=phone-b kind=done id=${done.id} plain:no_key`))
+    assert.ok(againLines.includes(`[mobile-relay] 푸시 실패 peer=phone-c kind=done id=${done.id} plain:seal_failed code=no_push_token`))
   } finally {
     await relay.stop()
     if (again) await again.stop()
