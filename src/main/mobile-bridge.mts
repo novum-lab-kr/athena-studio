@@ -90,6 +90,7 @@ export type BridgeDeps = {
   look?: () => LookSource | Promise<LookSource> // 맥 사이드바 이름 · 이미지(snapshot.spaces · 팩 icon) — 없으면 spaces 빈 목록 · icon null
   iconTokens?: IconTokens // 이미지 토큰(기기끼리 나눠 쓴다) — 없으면 이 브리지 혼자 쓰는 것
   mergeDetails?: MergeDetails // 머지 상세 캐시(createMergeDetails)
+  gitMerges?: GitMerges // 팩 레포 git 기록 머지(createGitMerges) — 없으면 auto.merge 사건만
   mac?: () => { name: string | null }
   work?: () => MobileWork | Promise<MobileWork> // 맥 [작업] 과 같은 작업 목록(doing · done · 현황판을 못 띄웠으면 boardUp:false + boardError)
   usage?: () => MobileUsage | Promise<MobileUsage> // 맥 메뉴 막대와 같은 AI 사용량(현황판 header.usage · 꺼졌으면 boardUp:false) — work 다음에 읽는다
@@ -150,16 +151,62 @@ export function mobileInputAllowed(config: { [key: string]: unknown } | null | u
   return Boolean(config && config.mobileInput === true)
 }
 
-// 지난 7일 머지 — 코어 auto.merge 사건 중 성공(ok true)만 새것부터
-export function weekMerges(events: EventRow[], now: number) {
-  return events
-    .filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.at === 'string')
-    .filter((event) => {
-      const at = Date.parse(event.at as string)
-      return !Number.isNaN(at) && at <= now && now - at <= WEEK_MS
-    })
-    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: event.pr ?? null, sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null }))
-    .sort((left, right) => right.at.localeCompare(left.at))
+// git 기록의 머지 한 줄 — 팩 레포 prBase 의 first-parent 커밋 하나(오토 · 손 머지 · 직접 push 모두). full · parents 는 사건과 겹치는지 볼 때만 쓰고 폰에 넘기지 않는다
+export type GitMerge = { repo: string; at: string; full: string; parents: string[]; pr: number | null; branch: string | null }
+export const GIT_LOG_FORMAT = '%H%x09%P%x09%cI%x09%s'
+const FULL_SHA = /^[0-9a-f]{40}$/
+// git log --first-parent --format=GIT_LOG_FORMAT 출력 → 머지 줄. PR 번호는 GitHub 가 붙이는 제목에서만:
+// squash · rebase 는 끝의 "(#N)" · 머지 커밋은 "Merge pull request #N from <org>/<브랜치>"(브랜치도 여기서) — 그 밖은 PR 없는 직접 push
+export function parseFirstParentLog(text: string, repo: string): GitMerge[] {
+  const merges: GitMerge[] = []
+  for (const line of text.split('\n')) {
+    const [full, parents, committed, ...rest] = line.split('\t')
+    if (!full || !FULL_SHA.test(full) || parents === undefined || !committed) continue
+    const time = Date.parse(committed)
+    if (Number.isNaN(time)) continue
+    const subject = rest.join('\t')
+    const merged = /^Merge pull request #(\d+) from [^/\s]+\/(\S+)/.exec(subject)
+    const squashed = /\(#(\d+)\)\s*$/.exec(subject)
+    const number = Number((merged || squashed)?.[1] ?? 0)
+    merges.push({ repo, at: new Date(time).toISOString(), full, parents: parents.split(' ').filter(Boolean), pr: number > 0 ? number : null, branch: merged ? merged[2]! : null })
+  }
+  return merges
+}
+
+// 사건의 PR 번호 — 코어가 문자열("322")로 적기도 해서 숫자로 맞춘다(git 줄과 겹침 비교 · mergeKey). 숫자 모양이 아니면 그대로
+const prOf = (value: unknown): unknown => (typeof value === 'string' && /^[1-9]\d*$/.test(value) ? Number(value) : (value ?? null))
+const inWeek = (at: string, now: number) => {
+  const time = Date.parse(at)
+  return !Number.isNaN(time) && time <= now && now - time <= WEEK_MS
+}
+// 지난 7일 머지 새것부터 — 코어 auto.merge 사건 중 성공(ok true) + 팩 레포 git 기록(gitMerges). 같은 머지는 사건 줄 하나로 합친다:
+// 같은 레포의 PR 번호 · 사건의 merged(바로 머지 squash 커밋) · sha(브랜치 끝 — 빨리 감기면 그 커밋 · 머지 커밋이면 둘째 부모)가 git 커밋과 맞으면.
+// 사건에 merged 가 없으면(Actions 로 넘긴 것) 맞은 git 커밋을 merged 로 채워 상세를 읽게 한다
+export function weekMerges(events: EventRow[], now: number, gitMerges: GitMerge[] = []) {
+  const rows = events
+    .filter((event) => event.type === 'auto.merge' && event.ok === true && typeof event.at === 'string' && inWeek(event.at, now))
+    .map((event) => ({ at: event.at as string, repo: event.repo ?? null, plan: event.plan ?? null, pr: prOf(event.pr), sha: event.sha ?? null, merged: event.merged ?? null, direct: event.direct === true, branch: typeof event.branch === 'string' ? event.branch : null }))
+  type Row = (typeof rows)[number]
+  const byKey = new Map<string, Row>()
+  for (const row of rows) {
+    if (typeof row.repo !== 'string') continue
+    if (Number.isInteger(row.pr)) byKey.set(`${row.repo}#${row.pr}`, row)
+    for (const sha of [row.merged, row.sha]) if (typeof sha === 'string' && SHA.test(sha)) byKey.set(`${row.repo}@${sha.slice(0, 7)}`, row)
+  }
+  for (const merge of gitMerges) {
+    if (!inWeek(merge.at, now)) continue
+    const short = merge.full.slice(0, 7)
+    const keys = [...(merge.pr === null ? [] : [`${merge.repo}#${merge.pr}`]), ...[merge.full, ...merge.parents.slice(1)].map((sha) => `${merge.repo}@${sha.slice(0, 7)}`)]
+    const known = keys.map((key) => byKey.get(key)).find(Boolean)
+    if (known) {
+      if (known.merged === null && known.pr === null) known.merged = short
+      continue
+    }
+    const row: Row = { at: merge.at, repo: merge.repo, plan: null, pr: merge.pr, sha: short, merged: short, direct: merge.pr === null, branch: merge.branch }
+    rows.push(row)
+    for (const key of keys) byKey.set(key, row)
+  }
+  return rows.sort((left, right) => right.at.localeCompare(left.at))
 }
 
 // 살아 있는 pane 전부 — 쉬는 pane 도(Pane 탭에서 쉬는 아테나 pane 에 지시 · Q8). 진행 중인지는 status · running 으로 가른다.
@@ -296,7 +343,8 @@ export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaD
       return out === null ? null : parsePrView(out)
     }
     const sha = key.slice(key.indexOf('@') + 1)
-    const out = await run('git', ['show', '--shortstat', '--format=%s', sha, '--'], cwd)
+    // 머지 커밋(PR 없는 손 머지)은 첫 부모 대비 — prBase 에 들어온 변경 전부
+    const out = await run('git', ['show', '--diff-merges=first-parent', '--shortstat', '--format=%s', sha, '--'], cwd)
     return out === null ? null : parseShortstat(out, merge.branch)
   }
   return {
@@ -331,6 +379,56 @@ export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaD
         })
       }
       return found
+    },
+  }
+}
+
+// ── git 기록 머지 — 팩 레포마다 origin/<prBase> 지난 7일 first-parent. 손 머지 · 직접 push 는 auto.merge 사건이 없어 여기서만 보인다 ──
+// snapshot 은 지난 값으로 바로 답하고 오래됐으면 뒤에서 읽는다(다 읽어 달라졌으면 onReady). 로그는 로컬이라 1분마다 · fetch 는 네트워크라 10분마다
+export type GitMerges = ReturnType<typeof createGitMerges>
+export type MergeBase = { repo: string; base: string }
+export const GIT_LOG_MS = 60 * 1000
+export const GIT_FETCH_MS = 10 * 60 * 1000
+const BRANCH = /^\w[\w./-]*$/
+export function createGitMerges({ athenaDir, bases, run, now = Date.now }: { athenaDir: () => string | null; bases: () => Promise<MergeBase[]>; run: MergeRunner; now?: () => number }) {
+  let merges: GitMerge[] = []
+  let readAt: number | null = null
+  let reading = false
+  const fetchedAt = new Map<string, number>() // 레포 → fetch 한 때(실패도 — 네트워크가 없을 때 1분마다 두드리지 않는다)
+  const logOf = async (dir: string, repo: string, base: string): Promise<GitMerge[] | null> => {
+    const since = new Date(now() - WEEK_MS).toISOString()
+    const out = await run('git', ['log', `origin/${base}`, '--first-parent', `--since=${since}`, `--format=${GIT_LOG_FORMAT}`, '--'], path.join(dir, 'repos', repo))
+    return out === null ? null : parseFirstParentLog(out, repo)
+  }
+  const refresh = async (onReady: () => void) => {
+    const dir = athenaDir()
+    if (!dir) return
+    const list = (await bases().catch(() => [])).filter((item) => /^[\w.-]+$/.test(item.repo) && BRANCH.test(item.base))
+    const read = async () => (await Promise.all(list.map((item) => logOf(dir, item.repo, item.base).catch(() => null)))).flatMap((rows) => rows || [])
+    const publish = (next: GitMerge[]) => {
+      const same = next.length === merges.length && next.every((merge, index) => merge.full === merges[index]!.full)
+      merges = next
+      if (!same) onReady()
+    }
+    // 먼저 지금 있는 원격 ref 로(빠르다) — 그다음 fetch 할 때가 된 레포만 fetch 하고 다시
+    publish(await read())
+    const due = list.filter((item) => now() - (fetchedAt.get(item.repo) ?? -Infinity) >= GIT_FETCH_MS)
+    if (!due.length) return
+    for (const item of due) fetchedAt.set(item.repo, now())
+    await Promise.all(due.map((item) => run('git', ['fetch', '--quiet', 'origin', item.base], path.join(dir, 'repos', item.repo)).catch(() => null)))
+    publish(await read())
+  }
+  return {
+    // 지금 아는 git 머지 — 오래됐으면 뒤에서 다시 읽기 시작
+    peek(onReady: () => void): GitMerge[] {
+      if (!reading && (readAt === null || now() - readAt >= GIT_LOG_MS)) {
+        reading = true
+        readAt = now()
+        void refresh(onReady).finally(() => {
+          reading = false
+        })
+      }
+      return merges
     },
   }
 }
@@ -1111,7 +1209,7 @@ export function createMobileBridge(deps: BridgeDeps) {
       void pollSizes()
     }
     const panes = livePanes((listed && listed.panes) || [], paneWhere(state, deps.bodyPacks ? deps.bodyPacks() : {}))
-    const merges = weekMerges(events, now())
+    const merges = weekMerges(events, now(), deps.gitMerges ? deps.gitMerges.peek(() => emit({ event: 'changed', parts: ['merges'] })) : [])
     const details = deps.mergeDetails ? deps.mergeDetails.peek(merges, () => emit({ event: 'changed', parts: ['merges'] })) : merges.map(() => null)
     const feed = mergeFeed(merges, details, now())
     const [spaces, icons] = await Promise.all([spacesOf(state, look), packIconTokens(look)])

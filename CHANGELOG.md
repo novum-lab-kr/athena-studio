@@ -42,6 +42,11 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.61: v0.60.31..main 에서 사용자에게 보이는 변경 — pane 제목 옆 괄호 토큰(세션 누적 입출력 · 캐시). 범위 끝은 열어 둔다 -->
 
+## 0.66 (v0.66.0 – · Nov 19, 2026)
+
+### Fixed
+- Fix phone code change card missing hand merges and direct pushes — read from each repo's git history
+
 ## 0.65 (v0.65.0 – · Nov 19, 2026)
 
 ### New

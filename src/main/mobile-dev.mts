@@ -15,8 +15,8 @@ import * as core from '../lib/core.mts'
 import * as packModel from '../lib/pack.mts'
 import { createServerPeek } from '../lib/server-status.mts'
 import { createIconTokens } from './mobile-look.mts'
-import { createMobileBridge, createMergeDetails, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
-import type { MergeRunner } from './mobile-bridge.mts'
+import { createMobileBridge, createMergeDetails, createGitMerges, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
+import type { MergeRunner, MergeBase } from './mobile-bridge.mts'
 import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings, LookSource } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
@@ -163,11 +163,24 @@ export function serverSummary(reading: unknown): unknown {
   return { ...(reading as object), status: light }
 }
 
-// 머지 상세 읽기 — 셸 없이 인자로만 · 20초 · 실패는 null(gh 로그인 안 됨 · 커밋 없음 등)
+// 머지 상세 · git 기록 읽기 — 셸 없이 인자로만 · 20초 · 실패는 null(gh 로그인 안 됨 · 커밋 없음 · 네트워크 없음 등).
+// fetch 가 인증을 물으며 붙잡지 않게 GIT_TERMINAL_PROMPT=0
 const runMergeCommand: MergeRunner = (command, args, cwd) =>
   new Promise((resolve) => {
-    execFile(command, args, { cwd, env: core.childEnv(process.env), encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout))
+    execFile(command, args, { cwd, env: { ...core.childEnv(process.env), GIT_TERMINAL_PROMPT: '0' }, encoding: 'utf8', timeout: 20000, maxBuffer: 1024 * 1024 }, (error, stdout) => resolve(error ? null : stdout))
   })
+
+// 머지를 읽을 레포 · 브랜치 — 본체 팩 pack.json repos[] 의 prBase(없으면 branch · 코어 plan-check 와 같은 순서). 못 읽으면 빈 목록
+export async function mergeBases(athenaDir: string | null): Promise<MergeBase[]> {
+  if (!athenaDir) return []
+  const pack: { repos?: unknown } | null = await fs.promises.readFile(path.join(athenaDir, 'pack', 'pack.json'), 'utf8').then(JSON.parse, () => null)
+  const repos: unknown[] = pack && Array.isArray(pack.repos) ? pack.repos : []
+  return repos.flatMap((repo) => {
+    const row = (repo && typeof repo === 'object' ? repo : {}) as { name?: unknown; prBase?: unknown; branch?: unknown }
+    const base = typeof row.prBase === 'string' && row.prBase ? row.prBase : row.branch
+    return typeof row.name === 'string' && row.name && typeof base === 'string' && base ? [{ repo: row.name, base }] : []
+  })
+}
 
 // 화면(팩 레일 프로필 · 메뉴 · 디바이스 창 · [허용] 창)에 넘기는 것 — 토큰 · 열쇠 · 계정 id 는 넣지 않는다
 export type MobileView = {
@@ -228,6 +241,8 @@ export function startMobileDev(deps: DevDeps) {
   const control = createPaneControl({ onPhoneTook: (pane) => deps.onPhoneControl(pane) })
   // 머지는 바뀌지 않으니 상세는 기기끼리 같이 쓴다(앞 창 본체가 바뀌면 키 — 레포#PR — 가 같아도 다른 레포일 수 있어 본체마다 따로)
   const mergeCaches = new Map<string, ReturnType<typeof createMergeDetails>>()
+  // git 기록 머지(손 머지 · 직접 push 포함)도 기기끼리 · 본체마다 — fetch 를 기기 수만큼 하지 않는다
+  const gitMergeCaches = new Map<string, ReturnType<typeof createGitMerges>>()
   // 팩 · 레포 이미지 토큰 — 기기끼리 같이 쓴다(같은 파일은 한 번만 읽는다)
   const iconTokens = createIconTokens()
   // 서버 상태 — 기기끼리 같이 쓴다. 지난 값으로 바로 답하고 오래됐으면 뒤에서 다시 읽는다(달라지면 그 기기에 changed ['servers'] · createServerPeek)
@@ -238,6 +253,15 @@ export function startMobileDev(deps: DevDeps) {
     if (!cache) {
       cache = createMergeDetails({ athenaDir: () => dir || null, run: runMergeCommand })
       mergeCaches.set(dir, cache)
+    }
+    return cache
+  }
+  const gitMerges = () => {
+    const dir = front()?.athenaDir || ''
+    let cache = gitMergeCaches.get(dir)
+    if (!cache) {
+      cache = createGitMerges({ athenaDir: () => dir || null, bases: () => mergeBases(dir || null), run: runMergeCommand })
+      gitMergeCaches.set(dir, cache)
     }
     return cache
   }
@@ -304,6 +328,9 @@ export function startMobileDev(deps: DevDeps) {
         iconTokens,
         get mergeDetails() {
           return mergeDetails()
+        },
+        get gitMerges() {
+          return gitMerges()
         },
         mac: () => ({ name: deps.macName() }),
         devices: () => relay.devices(),
