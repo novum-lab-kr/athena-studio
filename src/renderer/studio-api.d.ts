@@ -266,8 +266,9 @@ declare global {
     coreUpdateReveal(dir: string): Promise<boolean>
     // main 의 ctx.repoIcon(src/main/packs.mts → files.mts iconDataUrl)
     repoIcon(name: string): Promise<{ dataUrl: string | null } | undefined>
-    // main 의 browserCommand(src/main/side-browser.mts) — navigate 는 { url } 또는 { error }, 나머지는 {}
-    browserCommand(name: 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'tab-select' | 'tab-close', value?: string): Promise<{ url?: string; error?: string }>
+    // main 의 browserCommand(src/main/side-browser.mts) — navigate 는 { url } 또는 { error }, 나머지는 {}.
+    // detach · attach · focus-detached — 새 창으로 떼어 내기 · 서랍으로 되돌리기 · 떼어 낸 창 앞으로
+    browserCommand(name: 'navigate' | 'back' | 'forward' | 'reload' | 'stop' | 'external' | 'tab-select' | 'tab-close' | 'detach' | 'attach' | 'focus-detached', value?: string): Promise<{ url?: string; error?: string }>
     // main 의 ctx.packIcon(src/main/packs.mts → files.mts iconDataUrl) · pack:cancel(도는 팩 명령 멈추기)
     packIcon(id: string): Promise<{ dataUrl: string | null } | undefined>
     packCancel(): Promise<unknown>
@@ -386,6 +387,8 @@ declare global {
     onBrowserError(callback: (message: string) => void): () => void
     onBrowserClose(callback: () => void): () => void
     onBrowserTabs(callback: (tabs: import('./ui/browser-bar.tsx').BrowserTabView[]) => void): () => void
+    // 탭들을 새 창으로 떼어 냈다(true) · 서랍으로 돌아왔다(false) — side-browser.mts detach · backToDrawer
+    onBrowserDetached(callback: (detached: boolean) => void): () => void
     // [작업] 팝업 · 요청(src/main/work.mts) — 창이 없을 때의 { error } 는 이 창에서 부르면 오지 않는다
     workGet(): Promise<WorkView>
     workRequests(): Promise<WorkRequestsState>

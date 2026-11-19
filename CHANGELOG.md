@@ -42,10 +42,11 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 <!-- 0.61: v0.60.31..main 에서 사용자에게 보이는 변경 — pane 제목 옆 괄호 토큰(세션 누적 입출력 · 캐시). 범위 끝은 열어 둔다 -->
 
-## 0.64 (v0.64.0 – · Nov 16, 2026)
+## 0.64 (v0.64.0 – · Nov 19, 2026)
 
 ### New
 - Add a live Android screen to the Simulator tab — video instead of 1-second snapshots
+- Add moving the side browser to its own window — tabs return to the side panel when it closes
 
 ### Fixed
 - Fix the Simulator tab showing “no devices” while the list loads and after ⟳
@@ -59,6 +60,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Fixed
 - Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap
 - Fix agent panes stopping at folder trust prompts on start
+- Fix the side browser covering terminals — panes now sit beside it and resize
 
 ## 0.62 (v0.62.0 – · Nov 14, 2026)
 

@@ -149,8 +149,9 @@ type MainCalls = {
   isBrowserContents(contents: WebContents): boolean
   openInBrowser(url: string, options?: { background?: boolean }): void
   closeSentConsole(contents: WebContents): void
-  placeBrowser(rect: { x: number; y: number; width: number; height: number } | null): void
-  hideBrowser(): void
+  placeBrowser(rect: { x: number; y: number; width: number; height: number } | null, fromDetached?: boolean): void
+  hideBrowser(fromDetached?: boolean): void
+  isDetachedBrowser(contents: WebContents): boolean
   browserCommand(name: string, value: string): unknown
 }
 type PackWindow = PackCtx & ExplorerCtx & AthenaAgentCtx & PackReposCtx & WorkCtx & AthenaDirCtx & PacksCtx & SideBrowserCtx & SimulatorCtx & PackWindowCtx & TrayCtx & MainCalls
@@ -1068,10 +1069,28 @@ handle('pane:detail', (ctx, paneId: unknown) => ctx.paneDetail(String(paneId || 
 handle('pane:plan-detail', (ctx, id: unknown, title: unknown) => ctx.planDetail(String(id || ''), String(title || '').slice(0, 300)))
 listen('ui:tab', (ctx, tab: unknown) => (ctx.uiTab = tab === 'board' ? 'board' : 'work'))
 handle('open:url', (ctx, url: unknown) => openUrl(ctx, String(url)))
-// 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다)
-listen('browser:place', (ctx, rect: unknown) => ctx.placeBrowser(browserRect(rect)))
-listen('browser:hide', (ctx) => ctx.hideBrowser())
-handle('browser:command', (ctx, name: unknown, value: unknown) => ctx.browserCommand(String(name), typeof value === 'string' ? value : ''))
+// 옆 브라우저 IPC 도 그 창 앱 화면(맨 위 프레임)에서 온 것만 — 하위 프레임 · 서랍 안 페이지는 못 부른다(ctxOf 가 가린다).
+// 떼어 낸 브라우저 창(side-browser.mts detach)의 막대 화면도 이 세 채널만 — 그 창은 팩 창 문맥(ctxOf)을 얻지 못한다
+function browserCtxOf(event: IpcMainEvent | IpcMainInvokeEvent): { ctx: PackWindow; fromDetached: boolean } | null {
+  const ctx = ctxOf(event)
+  if (ctx) return { ctx, fromDetached: false }
+  if (event.senderFrame !== event.sender.mainFrame) return null
+  const owner = [...packWindows].find((each) => each.isDetachedBrowser(event.sender))
+  return owner ? { ctx: owner, fromDetached: true } : null
+}
+ipcMain.on('browser:place', (event, rect: unknown) => {
+  const from = browserCtxOf(event)
+  if (from) from.ctx.placeBrowser(browserRect(rect), from.fromDetached)
+})
+ipcMain.on('browser:hide', (event) => {
+  const from = browserCtxOf(event)
+  if (from) from.ctx.hideBrowser(from.fromDetached)
+})
+ipcMain.handle('browser:command', (event, name: unknown, value: unknown) => {
+  const from = browserCtxOf(event)
+  if (!from) return { error: say('ipc.noWindow') }
+  return from.ctx.browserCommand(String(name), typeof value === 'string' ? value : '')
+})
 // 시뮬레이터 칸 — 기기 id 는 글자만 · 좌표는 0..1 숫자만(simRatio) 넘긴다. 명령은 sim.mjs 가 셸 없이 돈다
 const simId = (value: unknown) => (typeof value === 'string' ? value.slice(0, 200) : '')
 listen('sim:place', (ctx, rect: unknown) => ctx.simPlace?.(browserRect(rect)))
