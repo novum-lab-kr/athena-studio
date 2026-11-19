@@ -172,8 +172,8 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   onBrowserError: listen('browser:error'),
   onBrowserClose: listen('browser:close'),
   onBrowserTabs: listen('browser:tabs'),
-  onBrowserDetached: listen('browser:detached'),
-  onSimDetached: listen('sim:detached'),
+  // 떼어 낸 서랍 창(웹 · 시뮬레이터 두 탭) — (떼어 냄, 보던 탭, 돌아와 서랍을 다시 열지)
+  onDrawerDetached: listen('drawer:detached'),
   onPaneData: listen('pane:data'),
   onPaneResized: listen('pane:resized'),
   onPaneExit: listen('pane:exit'),

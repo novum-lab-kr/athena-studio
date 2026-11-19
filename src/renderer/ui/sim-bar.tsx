@@ -2,7 +2,7 @@
 // 서랍 껍데기와 자리 알리기(placeBrowserView)는 바닐라 browser.ts. 명령은 main 이 본체 scripts/sim.mjs 로(src/main/simulator.mts).
 // iOS 화면은 main 의 serve-sim 페이지 뷰가 #browser-slot 자리에 그린다(누르기 · 쓸기도 그 페이지) — 여기는 그 뒤에 깔린 안내 글만.
 // Android 는 칸이 보일 때만 1초마다 화면 그림을 받아 <img> 로 그리고, 누르기 · 끌기를 비율 좌표로 보낸다.
-// [새 창으로] ⧉ 를 누르면 같은 막대 · 칸을 떼어 낸 창(sim-window.ts — detached)이 띄운다. 그 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로 가져온다
+// [새 창으로] ⧉ 를 누르면 떼어 낸 서랍 창(browser-window.ts — detached · 서랍과 같은 [웹 | 시뮬레이터] 탭)이 같은 막대 · 칸을 띄운다. 그 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로 가져온다
 import { useRef } from 'react'
 import type { PointerEvent as ReactPointerEvent } from 'react'
 import { flushSync } from 'react-dom'
@@ -37,7 +37,7 @@ export const mode = createStore<DrawerMode>(localStorage.getItem(MODE_KEY) === '
 const view = createStore<SimView>({ loaded: false, busy: '', ios: null, android: null, selected: '', running: null, error: '', frame: '' })
 let actions: SimActions = { place: () => {}, close: () => {}, isOpen: () => false }
 let frameLoop = false
-// 시뮬레이터를 새 창으로 떼어 낸 동안(main sim:detached) — 서랍 쪽만 쓴다
+// 서랍을 새 창으로 떼어 낸 동안(main drawer:detached) — 서랍 쪽만 쓴다
 export const detachedStore = createStore(false)
 
 function commit(next: Partial<SimView>): void {
@@ -52,11 +52,10 @@ export function mount(screen: HTMLElement, next: SimActions): void {
   mountIsland(screen, <SimScreen />)
 }
 
-// 떼어 낸 창 — 막대 · 칸을 띄우고 모드는 시뮬레이터로 고정(서랍의 모드 기억은 건드리지 않는다)
-export function mountWindow(bar: HTMLElement, screen: HTMLElement, place: () => void): void {
+// 떼어 낸 서랍 창 — 칸을 띄우고 처음 볼 탭으로(막대는 browser-bar.tsx 의 Bar 가 탭에 따라 SimBar 를 그린다 · 서랍의 탭 기억은 건드리지 않는다)
+export function mountWindow(screen: HTMLElement, place: () => void, first: DrawerMode): void {
   actions = { place, close: () => {}, isOpen: () => true, detached: true }
-  flushSync(() => mode.set('sim'))
-  mountIsland(bar, <SimBar />)
+  flushSync(() => mode.set(first))
   mountIsland(screen, <SimScreen />)
 }
 
@@ -70,7 +69,7 @@ export function setMode(next: DrawerMode): void {
   // 떼어 낸 동안 서랍의 [시뮬레이터] 는 그 창을 앞으로
   if (next === 'sim' && detachedStore.get() && !actions.detached) return void studio.simCommand('focus-detached')
   if (mode.get() === next) return
-  localStorage.setItem(MODE_KEY, next)
+  if (!actions.detached) localStorage.setItem(MODE_KEY, next)
   flushSync(() => mode.set(next))
   actions.place()
 }

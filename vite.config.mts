@@ -46,9 +46,8 @@ export default defineConfig({
       input: {
         index: path.join(root, 'index.html'),
         tray: path.join(root, 'tray.html'),
-        // 떼어 낸 옆 브라우저 창(src/main/side-browser.mts detach)
+        // 떼어 낸 서랍 창 — 웹 · 시뮬레이터 두 탭(src/main/drawer-window.mts)
         'browser-window': path.join(root, 'browser-window.html'),
-        'sim-window': path.join(root, 'sim-window.html'),
       },
     },
   },
