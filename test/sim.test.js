@@ -108,6 +108,7 @@ function fakeTools(root) {
     `#!/bin/sh
 echo "$*" >> '${log}'
 case "$*" in
+  "-s emulator-5554 shell") exec /bin/sh ;;
   "devices -l") printf 'List of devices attached\\nemulator-5554 device model:Pixel_8\\n' ;;
   *"emu avd name"*) printf 'Pixel_8_API_35\\nOK\\n' ;;
   *"wm size"*) echo "Physical size: 1000x2000" ;;
@@ -116,6 +117,8 @@ esac
 `,
     { mode: 0o755 },
   )
+  // 기기 셸의 input — 받은 인자를 적는다(sim.mjs input 이 열어 둔 셸로 부른다)
+  fs.writeFileSync(path.join(bin, 'input'), `#!/bin/sh\necho "input $*" >> '${log}'\n`, { mode: 0o755 })
   return { bin, log }
 }
 
@@ -233,4 +236,69 @@ esac
   assert.equal(booted.status, 1, booted.stderr)
   assert.match(JSON.parse(booted.stdout).error, /켜지다 꺼졌다: FATAL \| Cannot find AVD system path/)
   assert.ok(Date.now() - started < 30_000)
+})
+
+test('이어 누르기 줄 읽기 · 기기 명령(정수 픽셀만)', () => {
+  assert.deepEqual(sim.parseTouchLine('tap 0.5 0.25'), { kind: 'tap', x: 0.5, y: 0.25 })
+  assert.deepEqual(sim.parseTouchLine(' move 1 0 '), { kind: 'move', x: 1, y: 0 })
+  assert.deepEqual(sim.parseTouchLine('size 1080x2400'), { kind: 'size', width: 1080, height: 2400 })
+  for (const bad of ['tap 0.5', 'tap 2 0', 'tap 0.5 0.5;reboot', 'tap 0.5 0.5 x', 'drag 0 0', 'size 1080x2400;id', '']) assert.equal(sim.parseTouchLine(bad), null, bad)
+  const size = { width: 1000, height: 2000 }
+  assert.equal(sim.touchCommand('tap', 0.5, 0.25, size), 'input tap 500 500')
+  assert.equal(sim.touchCommand('down', 0, 1, size), 'input motionevent DOWN 0 1999')
+  assert.equal(sim.touchCommand('move', 0.1, 0.1, size), 'input motionevent MOVE 100 200')
+  assert.equal(sim.touchCommand('up', 0.1, 0.1, size), 'input motionevent UP 100 200')
+})
+
+// 이어 누르기 CLI 를 띄워 줄을 넣고(ready 뒤) 표준 입력을 닫는다 — 끝 코드 · 출력
+function runInput(/** @type {string[]} */ args, /** @type {string[]} */ lines, /** @type {string} */ bin, /** @type {string} */ home) {
+  const { spawn } = require('node:child_process')
+  return new Promise((resolve) => {
+    const proc = spawn(process.execPath, [CLI, 'input', ...args], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: home, TMPDIR: os.tmpdir() } })
+    let stdout = ''
+    let stderr = ''
+    proc.stdout.on('data', (chunk) => {
+      const first = !stdout.includes('ready')
+      stdout += chunk
+      if (first && stdout.includes('ready')) {
+        proc.stdin.write(lines.map((line) => `${line}\n`).join(''))
+        proc.stdin.end()
+      }
+    })
+    proc.stderr.on('data', (chunk) => (stderr += chunk))
+    proc.on('close', (status) => resolve({ status, stdout, stderr }))
+  })
+}
+
+test('CLI(가짜 adb): input — 열어 둔 셸 하나로 누르기 · 손가락 · 끝날 때 눌린 손가락 떼기 · 틀린 줄은 버림', async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin, log } = fakeTools(root)
+  const args = ['--platform', 'android', '--device', 'emulator-5554', '--size', '1000x2000', '--watch-stdin']
+  const done = await runInput(args, ['tap 0.5 0.25', 'down 0.5 0.5', 'move 0.5 0.4', 'move 0.5 0.3;reboot', 'up 0.5 0.3', 'size 2000x1000', 'down 0.1 0.1', 'move 0.2 0.2'], bin, root)
+  assert.equal(done.status, 0, done.stderr)
+  assert.match(done.stdout, /^ready$/m)
+  assert.match(done.stderr, /모르는 줄: move 0\.5 0\.3;reboot/)
+  const calls = fs.readFileSync(log, 'utf8').trim().split('\n')
+  // adb 는 셸 한 번만 연다 · 손가락이 눌린 채 끝나면 마지막 자리에서 뗀다(새 크기로)
+  assert.deepEqual(calls, [
+    '-s emulator-5554 shell',
+    'input tap 500 500',
+    'input motionevent DOWN 500 1000',
+    'input motionevent MOVE 500 800',
+    'input motionevent UP 500 600',
+    'input motionevent DOWN 200 100',
+    'input motionevent MOVE 400 200',
+    'input motionevent UP 400 200',
+  ])
+})
+
+test('CLI: input 은 Android 일련번호만 — 아니면 인자 틀림(2 · 칸은 지금 방식으로)', (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'sim-input-'))
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }))
+  const { bin } = fakeTools(root)
+  for (const device of ['-x', 'avd:Pixel', 'a b', '']) {
+    assert.equal(runCli(['input', '--platform', 'android', '--device', device], bin, root).status, 2, device)
+  }
+  assert.equal(runCli(['input', '--device', 'emulator-5554'], bin, root).status, 2)
 })

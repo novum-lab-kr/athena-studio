@@ -230,3 +230,35 @@ export function planShotsDir(planFile) {
 export function deviceShellQuote(text) {
   return `'${text.replace(/'/g, `'\\''`)}'`
 }
+
+/** @typedef {{ kind: 'size', width: number, height: number } | { kind: 'tap' | 'down' | 'move' | 'up', x: number, y: number }} TouchLine */
+
+/**
+ * `sim.mjs input` 표준 입력 한 줄 읽기 — `size <너비>x<높이>` 또는 `tap|down|move|up <x> <y>`(0..1 비율). 모양이 틀리면 null
+ * @param {string} line
+ * @returns {TouchLine | null}
+ */
+export function parseTouchLine(line) {
+  const parts = line.trim().split(/\s+/)
+  if (parts[0] === 'size' && parts.length === 2) {
+    const size = parseSizeOption(parts[1] ?? '')
+    return size ? { kind: 'size', ...size } : null
+  }
+  const kind = parts[0]
+  if ((kind !== 'tap' && kind !== 'down' && kind !== 'move' && kind !== 'up') || parts.length !== 3) return null
+  const x = readRatio(parts[1])
+  const y = readRatio(parts[2])
+  return x === null || y === null ? null : { kind, x, y }
+}
+
+/**
+ * 누르기 · 손가락 한 동작 → 기기 셸 명령(픽셀은 정수만 — 화면에서 온 글자는 들어가지 않는다)
+ * @param {'tap' | 'down' | 'move' | 'up'} kind
+ * @param {number} x 0..1
+ * @param {number} y 0..1
+ * @param {{ width: number, height: number }} size
+ */
+export function touchCommand(kind, x, y, size) {
+  const point = `${toPixel(x, size.width)} ${toPixel(y, size.height)}`
+  return kind === 'tap' ? `input tap ${point}` : `input motionevent ${kind.toUpperCase()} ${point}`
+}

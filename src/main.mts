@@ -1110,6 +1110,11 @@ handle('sim:swipe', (ctx, id: unknown, from: unknown, to: unknown) => {
   const end = simPoint(to)
   return start && end ? ctx.simSwipe?.(simId(id), start, end) : { ok: false, error: 'bad-point' }
 })
+// 끄는 손가락 한 동작(누름 · 움직임 · 뗌) — 답을 기다리지 않는다(움직임마다 오니까)
+listen('sim:touch', (ctx, id: unknown, phase: unknown, x: unknown, y: unknown) => {
+  const point = simPoint({ x, y })
+  if (point && (phase === 'down' || phase === 'move' || phase === 'up')) ctx.simTouch?.(simId(id), phase, point.x, point.y)
+})
 
 app.whenReady().then(async () => {
   // 배포판이 응용 프로그램 폴더 밖(디스크 이미지 창 · 다운로드 폴더)에서 켜졌으면 묻지 않고 옮긴다 — 그 자리에서는 업데이트를 설치하지 못한다.
