@@ -60,7 +60,7 @@ const FILES = [
   '!src/renderer/**',
   'src/renderer/assets/logo/**',
   '!node_modules/{react,react-dom,scheduler,shiki,@shikijs}/**',
-  '!node_modules/@xterm/{xterm,addon-fit,addon-web-links}/**',
+  '!node_modules/@xterm/{xterm,addon-fit,addon-search,addon-web-links}/**',
   '!node_modules/node-pty/{deps,third_party,src,scripts,binding.gyp}',
   '!node_modules/node-pty/{deps,third_party,src,scripts}/**',
   '!node_modules/node-pty/prebuilds/win32-*/**',
