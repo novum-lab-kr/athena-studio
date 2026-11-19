@@ -246,5 +246,6 @@
   "Fix slow Android taps and swipes in the Simulator tab — no device lookup per tap": "シミュレータータブの Android タップ · スワイプが遅い問題を修正 — タップごとの端末検索を省略",
   "Fix agent panes stopping at folder trust prompts on start": "エージェント pane が起動時にフォルダ確認画面で止まる問題を修正",
   "Fix the side browser covering terminals — panes now sit beside it and resize": "サイドブラウザがターミナルを覆う問題を修正 — 横に並べてサイズを合わせ直す",
-  "Add moving the side browser to its own window — tabs return to the side panel when it closes": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る"
+  "Add moving the side browser to its own window — tabs return to the side panel when it closes": "サイドブラウザを別ウィンドウに切り離す機能を追加 — 閉じるとタブがサイドパネルに戻る",
+  "Fix auto-merge squashing branch-merge PRs — merge commits kept": "自動マージがブランチ統合 PR を squash していた問題を修正 — マージコミットでマージ"
 }
