@@ -27,6 +27,7 @@ import { noMobileWork } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage } from '../lib/tray-model.mts'
+import { splitWheel, spreadOffsets } from '../lib/wheel-spread.mts'
 
 type Connection = NonNullable<Awaited<ReturnType<typeof daemonClient.peekDaemon>>>
 type DaemonPaths = Parameters<typeof daemonClient.peekDaemon>[0]['paths']
@@ -106,6 +107,7 @@ export type BridgeDeps = {
   fastHoldMs?: number
   sizePollMs?: number
   liveMs?: number
+  wheelSpreadMs?: number // 폰 휠 묶음을 나눠 넣을 간격 — 폰이 그 길에서 휠 msg 를 보내는 간격(relay WHEEL_SPREAD_MS · 직접 mobile-lan DIRECT_WHEEL_SPREAD_MS)
 }
 
 export const FLUSH_MS = 100 // 출력은 100ms(초당 ~10번)로 묶는다 — 4-7 "트래픽" · 조용하다 처음 나온 조각은 바로(앞쪽) 보내고 뒤따르는 것만 묶는다
@@ -119,6 +121,10 @@ export const FAST_HOLD_MS = 1000
 export const SIZE_POLL_MS = 1000
 // resize · 주인 바뀜 뒤 이만큼은 묶지 않고 조각마다 바로 보낸다 — 다시 그림 첫 조각은 작은 머리(커서 · 지우기)라 본 그림이 묶음에 걸려 100ms 늦었다(2026-11-12 실측)
 export const LIVE_AFTER_RESIZE_MS = 300
+// relay 길 휠 나눠 넣기 — 폰은 relay 길에서 휠을 120ms 마다 한 msg 로 묶는다(athena-app wheel.ts RELAY_WHEEL_SEND_GAP_MS).
+// 한 msg 의 휠(최대 32번)을 이 시간 안에 고르게 PTY 로 써서 Claude 가 중간 위치도 그리게 한다(src/lib/wheel-spread.mts).
+// 출력 msg 는 늘어도 묶음 창(입력 뒤 FAST_FLUSH_MS)마다 하나라 초당 20 + 답(120ms 마다 하나) ~8 = ~28개로 relay 상한 50 안
+export const WHEEL_SPREAD_MS = 120
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000
 // 진행 중 pane — 데몬 pane list 의 agent_status(working · 질문 · 멈춤)
 const IDLE_STATUSES = new Set(['', 'idle', 'unknown', 'none'])
@@ -847,6 +853,11 @@ export function createMobileBridge(deps: BridgeDeps) {
   const now = deps.now || Date.now
   const flushMs = deps.flushMs ?? FLUSH_MS
   const liveMs = deps.liveMs ?? LIVE_AFTER_RESIZE_MS
+  const wheelSpreadMs = deps.wheelSpreadMs ?? WHEEL_SPREAD_MS
+  // pane → 나눠 넣는 중인 휠(units 중 next 부터 아직 안 씀 · start 는 msg 가 온 시각)
+  const spreads = new Map<string, { units: string[]; next: number; start: number; offsets: number[]; timer: NodeJS.Timeout | null }>()
+  // pane → 그 pane 입력 쓰기 줄(앞 쓰기가 크기 가져가기를 기다리는 동안 뒤 입력이 앞지르지 않게)
+  const inputChains = new Map<string, Promise<void>>()
   let liveUntil = 0 // 이 시각까지는 묶지 않는다(resize · 주인 바뀜 뒤)
   // 짧은 묶음은 그 길의 묶음보다 길지 않게 — 직접 길(DIRECT_FLUSH_MS 16)은 늘 그 값 그대로
   const fastFlushMs = Math.min(deps.fastFlushMs ?? FAST_FLUSH_MS, flushMs)
@@ -957,6 +968,7 @@ export function createMobileBridge(deps: BridgeDeps) {
       phoneSizes.delete(message.pane)
       owners.paneGone(message.pane)
       fastUntil.delete(message.pane)
+      takeSpread(message.pane)
       emit({ event: 'changed', parts: ['panes'] })
       if (!open.size) closeStream()
     } else if (message.event === 'state') {
@@ -1272,7 +1284,14 @@ export function createMobileBridge(deps: BridgeDeps) {
     fastUntil.set(pane, Date.now() + fastHoldMs)
     // 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력이 없어도)
     if (pending.has(pane)) scheduleFlush(pane)
-    await writeInput(pane, data, sentSize(args))
+    const sent = sentSize(args)
+    // 휠 · 화살표 반복 묶음이면 첫 번만 지금 쓰고 나머지는 다음 msg 가 올 간격 안에 고르게(splitWheel) — 다른 입력은 그대로 한 번에
+    const units = splitWheel(data)
+    const arrived = Date.now()
+    await inOrder(pane, async () => {
+      await writeNow(pane, units ? (units[0] ?? data) : data, sent)
+      if (units) startSpread(pane, units, arrived)
+    })
     // 내용은 적지 않는다(비밀값이 섞일 수 있다) — 누가 · 어느 pane · 크기만
     deps.logEvent('mobile.input', { by: 'mobile', pane, bytes: Buffer.byteLength(data) })
     return null
@@ -1298,8 +1317,58 @@ export function createMobileBridge(deps: BridgeDeps) {
     return { path: file, type, bytes: bytes.length }
   }
 
-  async function writeInput(pane: string, data: string, sent: CellSize | null) {
+  const writeInput = (pane: string, data: string, sent: CellSize | null) => inOrder(pane, () => writeNow(pane, data, sent))
+
+  // 같은 pane 입력은 온 차례대로 — 앞 쓰기가 실패해도 다음은 쓴다
+  function inOrder(pane: string, work: () => Promise<void>): Promise<void> {
+    const run = (inputChains.get(pane) || Promise.resolve()).then(work)
+    const tail = run.catch(() => {})
+    inputChains.set(pane, tail)
+    void tail.then(() => {
+      if (inputChains.get(pane) === tail) inputChains.delete(pane)
+    })
+    return run
+  }
+
+  // 나머지 휠을 msg 가 온 시각부터 간격 안에 고르게 — 늦게 시작했으면 지난 몫은 바로
+  function startSpread(pane: string, units: string[], start: number) {
+    if (units.length < 2 || stopped) return
+    spreads.set(pane, { units, next: 1, start, offsets: spreadOffsets(units.length, wheelSpreadMs), timer: null })
+    scheduleSpread(pane)
+  }
+  function scheduleSpread(pane: string) {
+    const spread = spreads.get(pane)
+    if (!spread) return
+    const offset = spread.offsets[spread.next] ?? 0
+    spread.timer = setTimeout(() => spreadStep(pane), Math.max(0, spread.start + offset - Date.now()))
+  }
+  function spreadStep(pane: string) {
+    const spread = spreads.get(pane)
+    if (!spread) return
+    spread.timer = null
+    const unit = spread.units[spread.next] ?? ''
+    spread.next += 1
+    if (spread.next >= spread.units.length) spreads.delete(pane)
+    else scheduleSpread(pane)
+    // 크기 · 주인은 첫 번에 이미 맞췄다 — 키 그대로
+    void connectControl()
+      .then((connection) => connection.call('input', { pane, data: unit }))
+      .catch((error) => mobileError('[mobile-bridge] 휠 나눠 넣기 실패', pane, error))
+  }
+  // 아직 안 쓴 휠을 거둔다 — 다른 입력 앞에서는 바로 다 쓰고(순서 그대로) · pane 이 끝났으면 버린다
+  function takeSpread(pane: string): string {
+    const spread = spreads.get(pane)
+    if (!spread) return ''
+    if (spread.timer) clearTimeout(spread.timer)
+    spreads.delete(pane)
+    return spread.units.slice(spread.next).join('')
+  }
+
+  async function writeNow(pane: string, data: string, sent: CellSize | null) {
     const connection = await connectControl()
+    // 나눠 넣던 휠이 남았으면 이 입력보다 먼저 다 쓴다
+    const rest = takeSpread(pane)
+    if (rest) await connection.call('input', { pane, data: rest })
     // 사람이 친 입력이면 폰 크기로 가져간 뒤 넣는다(터미널 자동 답은 주인을 바꾸지 않는다) — 크기를 모르면(열 때 · 입력 때 안 보냄) 가져가지 않는다
     const size = sent || phoneSizes.get(pane) || null
     if (size && !isTerminalReply(data)) await take(pane, size)
@@ -1488,6 +1557,11 @@ export function createMobileBridge(deps: BridgeDeps) {
     async stop() {
       if (stopped) return
       flush()
+      // 나눠 넣던 휠은 끊기기 전에 마저 쓴다(받은 입력은 다 넣는다)
+      for (const pane of [...spreads.keys()]) {
+        const rest = takeSpread(pane)
+        if (rest && control) await control.call('input', { pane, data: rest }).catch((error: unknown) => mobileError('[mobile-bridge] 휠 나눠 넣기 실패', pane, error))
+      }
       // 연결이 끊겼다 — 이 폰이 가진 pane 은 맥 크기로(맥 알림 없음 · 이 폰에는 보내지 않는다)
       open.clear()
       for (const pane of owners.heldBy(holder)) await owners.phoneRelease(holder, pane)
