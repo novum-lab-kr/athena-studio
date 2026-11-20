@@ -874,6 +874,7 @@ export function createMobileBridge(deps: BridgeDeps) {
   const fastUntil = new Map<string, number>() // pane → 이 시각까지 짧은 묶음(폰 입력 뒤)
   let resyncing = false
   let stopped = false
+  let stopping = false // stop() 이 시작됐다 — 새 입력은 받지 않고 이미 받은 입력 · 남은 휠만 마저 쓴다
   let sizeTimer: NodeJS.Timeout | null = null
   let lastSizes: string | null = null
   let sizeWatching = false // 크기 보기는 브리지(기기)마다 한 번만 시작 — 첫 state 가 진행 중이거나 실패해도 다시 켜지 않는다
@@ -1321,6 +1322,7 @@ export function createMobileBridge(deps: BridgeDeps) {
 
   // 같은 pane 입력은 온 차례대로 — 앞 쓰기가 실패해도 다음은 쓴다
   function inOrder(pane: string, work: () => Promise<void>): Promise<void> {
+    if (stopping) return Promise.reject(new BridgeError('stopped', '연결을 닫는 중이에요'))
     const run = (inputChains.get(pane) || Promise.resolve()).then(work)
     const tail = run.catch(() => {})
     inputChains.set(pane, tail)
@@ -1555,8 +1557,11 @@ export function createMobileBridge(deps: BridgeDeps) {
     openPanes: () => [...open],
     resyncPane,
     async stop() {
-      if (stopped) return
+      if (stopped || stopping) return
+      stopping = true
       flush()
+      // 이미 받은 입력의 쓰기(크기 가져가기 · 첫 휠 뒤 나머지 등록)가 끝나기를 기다린다 — 그사이 등록된 휠도 아래에서 마저 쓴다
+      while (inputChains.size) await Promise.all([...inputChains.values()])
       // 나눠 넣던 휠은 끊기기 전에 마저 쓴다(받은 입력은 다 넣는다)
       for (const pane of [...spreads.keys()]) {
         const rest = takeSpread(pane)
