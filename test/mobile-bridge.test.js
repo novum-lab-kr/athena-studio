@@ -31,6 +31,7 @@ function startFakeDaemon(socketPath) {
     // 데몬 state.panes 의 크기(attach · state 가 같이 준다)
     sizes: { p1: { cols: 120, rows: 40 }, p2: { cols: 80, rows: 24 } },
     failState: false, // true 면 state 요청에 실패로 답한다(크기 보기 실패)
+    resizeDelayMs: 0, // 0 보다 크면 resize 답을 그만큼 늦춘다(크기 가져가는 동안 stop)
     beforeResize: null, // 문자열이면 resize 답 앞에 그 pane 출력을 같은 소켓으로 먼저 보낸다(답보다 앞선 출력)
   }
   const daemonState = () => ({ workspaces: state.workspaces, panes: Object.entries(state.sizes).map(([id, size]) => ({ id, tab: 't1', ...size })) })
@@ -53,6 +54,7 @@ function startFakeDaemon(socketPath) {
         state.sizes[message.args.pane] = { cols: message.args.cols, rows: message.args.rows }
       }
       if (message.op === 'state' && state.failState) return void socket.write(protocol.encode({ id: message.id, ok: false, error: { code: 'busy', message: '시험용 실패' } }))
+      if (message.op === 'resize' && state.resizeDelayMs > 0) return void setTimeout(() => socket.write(protocol.encode({ id: message.id, ok: true, result })), state.resizeDelayMs)
       socket.write(protocol.encode({ id: message.id, ok: true, result }))
     }))
     socket.on('error', () => {})
@@ -435,6 +437,84 @@ test('pane.input — 키 그대로 데몬 input · 기록은 by mobile 과 바�
     assert.deepEqual(input.args, { pane: 'p1', data: '비밀\r' })
     assert.deepEqual(env.logged, [{ type: 'mobile.input', fields: { by: 'mobile', pane: 'p1', bytes: Buffer.byteLength('비밀\r') } }])
     assert.ok(!JSON.stringify(env.logged).includes('비밀'))
+  } finally {
+    await env.cleanup()
+  }
+})
+
+// 데몬이 받은 input 들(차례대로)
+const inputs = (env) => env.daemon.state.ops.filter((entry) => entry.op === 'input').map((entry) => entry.args.data)
+
+test('pane.input 휠 묶음 — 첫 번은 바로 · 나머지는 간격(wheelSpreadMs) 안에 고르게 하나씩 · 답은 첫 번 뒤 · 기록은 한 줄', async () => {
+  const env = await setup({ wheelSpreadMs: 160 })
+  const wheel = '\x1b[<64;40;15M'
+  try {
+    const started = Date.now()
+    const reply = await env.ask('pane.input', { pane: 'p1', data: wheel.repeat(8) })
+    assert.equal(reply.ok, true)
+    assert.ok(inputs(env).length < 8, '답은 다 쓰기 전에 온다')
+    await waitFor(() => inputs(env).length >= 4, '절반')
+    assert.ok(Date.now() - started >= 50, '고르게 — 절반은 간격의 3/8(60ms) 뒤')
+    await waitFor(() => inputs(env).length === 8, '모두')
+    const took = Date.now() - started
+    assert.ok(took >= 120 && took < 400, `간격 안에 퍼진다(${took}ms)`)
+    assert.deepEqual(inputs(env), Array(8).fill(wheel))
+    assert.deepEqual(env.logged, [{ type: 'mobile.input', fields: { by: 'mobile', pane: 'p1', bytes: wheel.length * 8 } }])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 휠 묶음 — 다른 입력이 오면 남은 휠을 바로 다 쓰고(한 번에) 그 입력을 지연 없이 · 다른 pane 휠은 따로', async () => {
+  const env = await setup({ wheelSpreadMs: 400 })
+  const up = '\x1b[<64;1;1M'
+  const arrow = '\x1bOB'
+  try {
+    await env.ask('pane.input', { pane: 'p1', data: up.repeat(4) })
+    await env.ask('pane.input', { pane: 'p2', data: arrow.repeat(2) })
+    const started = Date.now()
+    await env.ask('pane.input', { pane: 'p1', data: 'q' })
+    assert.ok(Date.now() - started < 100, '휠이 아닌 입력은 기다리지 않는다')
+    assert.deepEqual(inputs(env), [up, arrow, up.repeat(3), 'q'])
+    // 새 휠 묶음이 남은 휠 뒤에 오면 남은 것 먼저
+    await env.ask('pane.input', { pane: 'p1', data: up.repeat(2) })
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[A'.repeat(2) })
+    assert.deepEqual(inputs(env).slice(4), [up, up, '\x1b[A'])
+    // 남은 것 — p2 화살표 하나 · p1 화살표 하나(pane 마다 따로 간격 안에)
+    await waitFor(() => inputs(env).length === 9, '남은 것')
+    assert.deepEqual(inputs(env).slice(7).sort(), [arrow, '\x1b[A'].sort())
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 휠 묶음 — 연결이 끊기면(stop) 남은 휠을 마저 쓴다 · 한 번 · 섞인 입력은 나누지 않는다', async () => {
+  const env = await setup({ wheelSpreadMs: 5000 })
+  const down = '\x1b[<65;2;3M'
+  try {
+    await env.ask('pane.input', { pane: 'p1', data: `${down}${down}x` })
+    assert.deepEqual(inputs(env), [`${down}${down}x`])
+    await env.ask('pane.input', { pane: 'p1', data: down.repeat(5) })
+    assert.deepEqual(inputs(env).slice(1), [down])
+    await env.bridge.stop()
+    assert.deepEqual(inputs(env).slice(1), [down, down.repeat(4)])
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 휠 묶음 — 첫 번을 쓰는 중(크기 가져가기 대기)에 stop 해도 나머지를 버리지 않는다 · stop 뒤 새 입력은 거절', async () => {
+  const env = await setup({ wheelSpreadMs: 5000 })
+  const up = '\x1b[<64;5;5M'
+  try {
+    env.daemon.state.resizeDelayMs = 150
+    const asked = env.ask('pane.input', { pane: 'p1', data: up.repeat(8), cols: 40, rows: 20 })
+    await waitFor(() => env.daemon.state.ops.some((entry) => entry.op === 'resize'), '크기 가져가기 시작')
+    const stopping = env.bridge.stop()
+    assert.equal((await env.ask('pane.input', { pane: 'p1', data: 'late' })).error.code, 'stopped')
+    await stopping
+    assert.equal((await asked).ok, true)
+    assert.deepEqual(inputs(env), [up, up.repeat(7)], '받은 휠 8번이 모두 들어간다')
   } finally {
     await env.cleanup()
   }

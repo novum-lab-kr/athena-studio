@@ -50,6 +50,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### Fixed
 - Fix phone push alerts showing only the fixed text — encryption always failed inside the app
 - Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops
+- Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out
 
 ## 0.67 (v0.67.0 – · Nov 19, 2026)
 

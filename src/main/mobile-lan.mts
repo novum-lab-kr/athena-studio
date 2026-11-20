@@ -25,6 +25,7 @@ export const PING_MS = 15_000 // 살아 있나 — 다음 ping 때까지 pong �
 export const ADDRESS_POLL_MS = 5000 // 맥 주소가 바뀌었나(노드에는 바뀜 알림이 없다)
 export const MAX_FRAME_BYTES = 4 * 1024 * 1024 // 조각 하나(JSON 2 MiB) 봉인 · base64 의 넉넉한 위
 export const DIRECT_FLUSH_MS = 16 // 직접 길 출력 묶음 — relay 의 초당 msg 상한이 없다(relay 길은 mobile-bridge FLUSH_MS 그대로)
+export const DIRECT_WHEEL_SPREAD_MS = 50 // 직접 길 휠 나눠 넣기 — 폰이 직접 길에서 휠을 묶는 간격(athena-app wheel.ts WHEEL_SEND_GAP_MS · relay 길은 mobile-bridge WHEEL_SPREAD_MS)
 
 // 닫힘 코드 — 앱이 고른다(바꾸면 앱도)
 export const CLOSE = {

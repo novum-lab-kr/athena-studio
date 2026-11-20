@@ -27,7 +27,7 @@ import { PushMemory, PushMissed, PushWatch, openRequestIds } from '../lib/push-m
 import type { PushEvent, PushGate } from '../lib/push-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
-import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS } from './mobile-lan.mts'
+import { createMobileLan, lanPortOf, DIRECT_FLUSH_MS, DIRECT_WHEEL_SPREAD_MS } from './mobile-lan.mts'
 import type { KeyPair } from '../lib/mobile-crypto.mts'
 import { createLoginFlow, relayWebBase } from './mobile-login.mts'
 import type { FetchLike, LoginFailure } from './mobile-login.mts'
@@ -281,13 +281,14 @@ export function startMobileDev(deps: DevDeps) {
     },
     parts: ['usage'],
   })
-  // 브리지는 두 길이 같다 — 출력 묶음만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS)
-  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], peer: string, flushMs?: number) {
+  // 브리지는 두 길이 같다 — 출력 묶음 · 휠 나눠 넣기 간격만 길마다(relay 는 mobile-bridge 기본값 · 직접은 DIRECT_FLUSH_MS · DIRECT_WHEEL_SPREAD_MS)
+  function newBridge(transport: Parameters<typeof createMobileBridge>[0]['transport'], peer: string, flushMs?: number, wheelSpreadMs?: number) {
     const bridge = (
       createMobileBridge({
         daemonPaths: deps.daemonPaths,
         transport,
         ...(flushMs === undefined ? {} : { flushMs }),
+        ...(wheelSpreadMs === undefined ? {} : { wheelSpreadMs }),
         control,
         inputAllowed: () => mobileInputAllowed(deps.config()),
         requests: () => {
@@ -415,7 +416,7 @@ export function startMobileDev(deps: DevDeps) {
     macKey: () => macKey,
     peerOfKey: (publicKey) => relay.peerOfKey(publicKey),
     peerAllowed: (peer) => relay.peers().includes(peer),
-    createBridge: (transport, peer) => newBridge(transport, peer, DIRECT_FLUSH_MS),
+    createBridge: (transport, peer) => newBridge(transport, peer, DIRECT_FLUSH_MS, DIRECT_WHEEL_SPREAD_MS),
     onDirectOpen: (peer) => relay.pauseSession(peer),
     // 직접 길이 닫혔다 — 붙어 있는 동안 그 기기 몫에서 빠진 푸시를 그 기기에만 다시(끊기기 전 60초 안 · 아직 열려 있는 요청만 · 지금 거르기(알림 끔 · 창이 앞)를 한 번 더 — push-model PushMissed)
     onDirectClose: (peer) => {
