@@ -266,5 +266,6 @@
   "Add agent name and request title to phone push alerts — encrypted, readable only on the iPhone": "スマホプッシュ通知にエージェント名 · リクエストのタイトルを追加 — 暗号化して送り、iPhone でのみ読める",
   "Fix repeated phone push alerts for one request — none while the Studio window is in front": "1 つのリクエストでスマホプッシュ通知が何度も届く問題を修正 — Studio ウィンドウが前面なら送らない",
   "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "暗号化したスマホプッシュ通知に送信元ペインを追加 — スマホアプリが通知タップでそのペインを開ける",
-  "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "スマホプッシュ通知が固定文言のみで届く問題を修正 — アプリ内で暗号化が常に失敗"
+  "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "スマホプッシュ通知が固定文言のみで届く問題を修正 — アプリ内で暗号化が常に失敗",
+  "Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops": "スマホが Wi-Fi 接続中に届かなかったプッシュ通知を修正 — その接続が切れたときに再送"
 }
