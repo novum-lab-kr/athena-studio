@@ -16,14 +16,20 @@ function quietTerminal(): void {
   quietStream(process.stderr)
 }
 
+// 줄 맨 앞에 붙는 로컬 시각 HH:MM:SS.mmm
+export function logClock(date: Date = new Date()): string {
+  const two = (value: number) => String(value).padStart(2, '0')
+  return `${two(date.getHours())}:${two(date.getMinutes())}:${two(date.getSeconds())}.${String(date.getMilliseconds()).padStart(3, '0')}`
+}
+
 export function mobileLog(line: string): void {
   quietTerminal()
-  console.log(line)
+  console.log(`${logClock()} ${line}`)
 }
 
 export function mobileError(...parts: unknown[]): void {
   quietTerminal()
-  console.error(...parts)
+  console.error(logClock(), ...parts)
 }
 
 // relay 주소 없이 켜졌는데 짝 지은 기록(<스튜디오 집>/mobile/relay.json)이 있을 때의 맥 로그 — 개발판에서만.

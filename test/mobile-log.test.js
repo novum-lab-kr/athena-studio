@@ -3,7 +3,7 @@
 const test = require('node:test')
 const assert = require('node:assert/strict')
 const { EventEmitter } = require('node:events')
-const { quietStream, mobileLog, mobileError, relayMissingNote, MOBILE_RELAY_MISSING } = require('../src/main/mobile-log.mts')
+const { quietStream, logClock, mobileLog, mobileError, relayMissingNote, MOBILE_RELAY_MISSING } = require('../src/main/mobile-log.mts')
 
 const writeFailure = () => Object.assign(new Error('write EIO'), { code: 'EIO' })
 
@@ -31,6 +31,13 @@ test('mobileLog · mobileError 는 쓰기 전에 stdout · stderr 에 건다', (
   assert.equal(process.stderr.listenerCount('error'), before.err + 1)
   assert.equal(logged.mock.callCount(), 2)
   assert.equal(errored.mock.callCount(), 1)
+  assert.match(String(logged.mock.calls[0].arguments[0]), /^\d{2}:\d{2}:\d{2}\.\d{3} \[mobile-relay\] 시험$/)
+  assert.match(String(errored.mock.calls[0].arguments[0]), /^\d{2}:\d{2}:\d{2}\.\d{3}$/)
+  assert.equal(errored.mock.calls[0].arguments[1], '[mobile-bridge] 시험')
+})
+
+test('logClock 은 로컬 시각 HH:MM:SS.mmm', () => {
+  assert.equal(logClock(new Date(2026, 10, 20, 9, 0, 44, 123)), '09:00:44.123')
 })
 
 test('relay 주소 없이 켜졌고 짝 지은 기록이 있으면 한 줄 · 개발판에서만', () => {
