@@ -1242,6 +1242,7 @@ async function loadMobileDev() {
     onLoginFailed: (why) => {
       for (const ctx of packWindows) ctx.send('mobile:failed', why)
     },
+    pushGate: () => pushGate(),
     // 폰이 pane 제어를 가져감 — 화면은 그 pane 을 보고 있을 때만 잠깐 알림
     onPhoneControl: (pane) => {
       for (const ctx of packWindows) ctx.send('mobile:phone-control', pane)

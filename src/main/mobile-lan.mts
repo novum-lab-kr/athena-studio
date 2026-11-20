@@ -89,6 +89,7 @@ export type LanDeps = {
   peerAllowed: (peer: string) => boolean
   createBridge: (transport: Transport, peer: string) => BridgeHandle
   onDirectOpen?: (peer: string) => void // 첫 암호문이 열렸다 — 그 기기 relay 세션을 쉬게
+  onDirectClose?: (peer: string) => void // 붙었던 직접 연결이 닫혔다(새 직접 연결로 바뀐 것은 빼고) — 그 기기에 빠진 푸시를 다시 보내게
   onAddressesChanged?: (info: LanInfo) => void // 받는 주소가 바뀌었다 — relay 세션에도 lan.info
   macId: () => string | null
   addresses?: () => string[]
@@ -130,7 +131,9 @@ export function createMobileLan(deps: LanDeps) {
     if (conn.timer) clearTimeout(conn.timer)
     conn.timer = null
     if (conn.channel) conn.channel.close()
-    if (conn.peer && active.get(conn.peer) === conn) active.delete(conn.peer)
+    // 이 연결이 그 기기의 길이었나 — 새 직접 연결에 자리를 내준 옛 연결은 아니다(confirm 이 먼저 바꿔 둔다)
+    const wasActive = conn.peer !== null && active.get(conn.peer) === conn
+    if (conn.peer && wasActive) active.delete(conn.peer)
     if (conn.bridge) conn.bridge.stop().catch(() => {})
     try {
       conn.socket.close(code)
@@ -138,6 +141,7 @@ export function createMobileLan(deps: LanDeps) {
       conn.socket.terminate()
     }
     if (conn.peer) log(`[mobile-lan] 끊음 peer=${conn.peer} code=${code} 까닭=${why}`)
+    if (conn.peer && wasActive && deps.onDirectClose) deps.onDirectClose(conn.peer)
   }
 
   function info(): LanInfo {
@@ -173,8 +177,9 @@ export function createMobileLan(deps: LanDeps) {
     if (conn.timer) clearTimeout(conn.timer)
     conn.timer = null
     const previous = active.get(peer)
-    if (previous && previous !== conn) closeConn(previous, CLOSE.replaced, 'new_direct')
+    // 새 연결을 먼저 그 기기의 길로 — 옛 연결이 닫혀도 기기는 붙어 있다(onDirectClose 를 부르지 않는다)
     active.set(peer, conn)
+    if (previous && previous !== conn) closeConn(previous, CLOSE.replaced, 'new_direct')
     if (deps.onDirectOpen) deps.onDirectOpen(peer)
     conn.bridge = deps.createBridge(channel.transport, peer)
     channel.send(info())

@@ -11,16 +11,21 @@
 // pane(사용자 요청 2026-11-20): 그 푸시를 낸 pane id — 확인 요청은 요청을 연 pane · 일 끝남 · 입력 대기는 그 pane. 암호 안에만 실어 폰이 알림을 누르면 그 pane 으로 간다(모르면 없음)
 // 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
 // 거른 것도 기억은 그대로 넘긴다(끄기가 풀려도 그 사이 것을 몰아 보내지 않는다 — 맥 알림과 같다)
+// 끊길 때 다시 보내기(사용자 결정 2026-11-20): 폰이 직접(lan) 길로 붙어 있어 푸시 대상에서 빠진 사건은 PushMissed 가 기기마다 적어 두고,
+//   그 기기 직접 길이 닫힐 때 그 기기에만 다시 보낸다 — 끊기기 전 RESEND_WINDOW_MS 안 것 · 아직 열려 있는 요청만 · 한 번만
 import crypto from 'node:crypto'
 import { Notifier, agentName } from './tray-model.mts'
 import type { TrayPane } from './tray-model.mts'
 
 export type PushKind = 'request' | 'done'
 // 푸시 하나 — id 는 relay 중복 거르기 · 로그용(base64url 22자), title · body · pane 은 암호화해 싣는 것(pane 을 모르면 없음)
-export type PushEvent = { kind: PushKind; id: string; title: string; body: string; pane?: string }
+// request = 요청 목록에서 온 확인 요청의 요청 id — 맥 안에서만 쓴다(다시 보낼 때 아직 열려 있는지 · relay 로는 나가지 않는다)
+export type PushEvent = { kind: PushKind; id: string; title: string; body: string; pane?: string; request?: string }
 export const DONE_HOLD_MS = 60_000 // 같은 pane 끝남 묶기(아테나 정한 값 · 2026-11-19)
 export const ASK_HOLD_MS = 60_000 // 같은 pane 확인 요청 묶기 · 확인 요청 뒤 일 끝남 안 보내기(D3)
 export const SENT_KEEP_MS = 10 * 60_000 // 보낸 사건 id 를 기억하는 동안
+export const RESEND_WINDOW_MS = 60_000 // 직접 길이 닫힐 때 다시 보내는 것 — 끊기기 전 이 안에 생긴 사건만(사용자 결정 2026-11-20)
+export const MISSED_MAX = 20 // 기기마다 기억하는 빠진 사건 수(넘으면 오래된 것부터 버린다)
 export const TITLE_MAX = 60 // 글자(코드포인트) — 계획서 5절
 export const BODY_MAX = 160
 export const PANE_MAX = 64 // pane id 글자(코드포인트) — 넘으면 싣지 않는다(enc 가 relay 상한을 넘지 않게)
@@ -43,6 +48,55 @@ export class PushMemory {
     for (const [pane, at] of this.askedAt) if (now - at >= ASK_HOLD_MS) this.askedAt.delete(pane)
     for (const [id, at] of this.sent) if (now - at >= SENT_KEEP_MS) this.sent.delete(id)
   }
+}
+
+// 지금 열려 있는 요청 id — 목록을 못 읽었으면 null(모른다)
+export function openRequestIds(list: unknown): Set<string> | null {
+  if (!Array.isArray(list)) return null
+  const open = new Set<string>()
+  for (const request of list as ({ id?: unknown; state?: unknown } | null | undefined)[]) {
+    if (request && typeof request.id === 'string' && request.state === 'open') open.add(request.id)
+  }
+  return open
+}
+
+// 직접 길로 붙어 있어 푸시 대상에서 빠진 사건 — 기기마다 작게 적어 두었다가 그 기기 직접 길이 닫힐 때 꺼낸다
+export class PushMissed {
+  private missed = new Map<string, { event: PushEvent; at: number }[]>() // 기기 → 빠진 사건(오래된 것부터)
+
+  // 이 사건이 peers(직접 길로 붙은 기기) 때문에 빠졌다 — 오래된 것은 이때 버린다
+  note(peers: readonly string[], event: PushEvent, now: number) {
+    for (const [peer, list] of this.missed) {
+      const fresh = list.filter((item) => now - item.at < RESEND_WINDOW_MS)
+      if (fresh.length) this.missed.set(peer, fresh)
+      else this.missed.delete(peer)
+    }
+    for (const peer of peers) {
+      const list = this.missed.get(peer) || []
+      if (list.some((item) => item.event.id === event.id)) continue
+      list.push({ event, at: now })
+      this.missed.set(peer, list.slice(-MISSED_MAX))
+    }
+  }
+
+  // 그 기기 직접 길이 닫혔다 — 다시 보낼 사건(끊기기 전 RESEND_WINDOW_MS 안 · 요청이면 아직 열려 있는 것만). 꺼낸 기기의 기억은 비운다(두 번 보내지 않는다)
+  // openRequests 가 null(요청 목록을 못 읽음)이면 답했는지 알 수 없는 확인 요청은 보내지 않는다
+  // gate — 처음 보낼 때와 같은 거르기를 지금 한 번 더: [알림 끄기] · Studio 창이 앞(D4)이면 아무것도(몰아 보내지 않게 기억도 비운다) · 지금 보고 있는 pane 것은 뺀다
+  take(peer: string, now: number, openRequests: ReadonlySet<string> | null, gate: PushGate = openGate): PushEvent[] {
+    const list = this.missed.get(peer) || []
+    this.missed.delete(peer)
+    if (gate.muted || gate.active) return []
+    const found: PushEvent[] = []
+    for (const { event, at } of list) {
+      if (now - at >= RESEND_WINDOW_MS) continue
+      if (event.request !== undefined && !(openRequests && openRequests.has(event.request))) continue
+      if (event.pane && gate.lookingAt(event.pane)) continue
+      found.push(event)
+    }
+    return found
+  }
+
+  peers = (): string[] => [...this.missed.keys()]
 }
 
 // 제어 글자를 빼고 max 글자(코드포인트)에서 자른다
@@ -99,7 +153,7 @@ export class PushWatch {
       }
       const shown = pane === undefined ? undefined : this.seen.get(pane)
       const body = clipText(notice.body, BODY_MAX) || (shown ? clipText(agentName(shown), BODY_MAX) : '')
-      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body, ...paneField(pane) }, now))
+      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body, ...paneField(pane), ...(request ? { request } : {}) }, now))
     }
     return gate.muted || gate.active ? [] : found
   }

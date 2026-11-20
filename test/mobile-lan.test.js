@@ -94,6 +94,7 @@ async function setup(t) {
   const phoneKeys = mobileCrypto.newKeyPair()
   const peers = new Map([['dev-phone', phoneKeys.publicKey]])
   const direct = []
+  const directClosed = []
   const bridges = []
   const lines = []
   const lan = createMobileLan({
@@ -103,6 +104,7 @@ async function setup(t) {
     peerOfKey: (publicKey) => [...peers].find(([, key]) => Buffer.from(key).equals(Buffer.from(publicKey)))?.[0] ?? null,
     peerAllowed: (peer) => peers.has(peer),
     onDirectOpen: (peer) => direct.push(peer),
+    onDirectClose: (peer) => directClosed.push(peer),
     macId: () => 'dev-mac',
     log: (line) => lines.push(line),
     createBridge: (transport) => {
@@ -140,7 +142,7 @@ async function setup(t) {
     await daemon.close()
     fs.rmSync(work, { recursive: true, force: true })
   })
-  return { lan, info, macKey, phoneKeys, peers, direct, lines, phone, daemon }
+  return { lan, info, macKey, phoneKeys, peers, direct, directClosed, lines, phone, daemon }
 }
 
 test('받을 주소 — 사설 IPv4 · Tailscale 100.64/10 만(루프백 · 링크 로컬 · 공인 · IPv6 빼고)', () => {
@@ -248,6 +250,34 @@ test('한 기기 한 길 — 새 직접 연결이 붙으면 옛 것 4409 · rela
   peers.delete('dev-phone')
   lan.dropRemoved()
   assert.equal((await waitFor(() => third.closed(), '해제로 끊김')).code, CLOSE.removed)
+})
+
+// 붙었던 직접 길이 닫히면 알린다(onDirectClose — 그 기기에 빠진 푸시를 다시 보낸다) · 새 직접 연결로 바뀐 것 · 붙기 전에 끊긴 것은 알리지 않는다
+test('직접 길 닫힘 알림 — 붙었던 연결이 닫힐 때 그 기기로 한 번 · 새 직접 연결로 바뀔 때 · hello 만 한 연결은 아님', { timeout: 15_000 }, async (t) => {
+  const { lan, macKey, directClosed, phone } = await setup(t)
+  const helloOnly = phone()
+  await helloOnly.hello(macKey.publicKey)
+  helloOnly.close()
+  const first = phone()
+  await first.hello(macKey.publicKey)
+  await first.ask(1, 'snapshot')
+  const second = phone()
+  await second.hello(macKey.publicKey)
+  await second.ask(1, 'snapshot')
+  await waitFor(() => first.closed(), '옛 연결 끊김')
+  assert.deepEqual(lan.status().peers, ['dev-phone'])
+  assert.deepEqual(directClosed, [], '아직 붙어 있다')
+  // 폰이 끊었다(앱이 꺼짐 · 망이 바뀜)
+  second.close()
+  await waitFor(() => directClosed.length, '닫힘 알림')
+  assert.deepEqual(directClosed, ['dev-phone'])
+  assert.deepEqual(lan.status().peers, [], '알릴 때는 이미 붙은 목록에서 빠져 있다')
+  // relay hello(dropPeer)로 닫혀도 알린다 — 다시 보낼지는 받는 쪽이 정한다
+  const third = phone()
+  await third.hello(macKey.publicKey)
+  await third.ask(1, 'snapshot')
+  lan.dropPeer('dev-phone')
+  assert.deepEqual(directClosed, ['dev-phone', 'dev-phone'])
 })
 
 test('hello 가 5초(여기선 짧게) 안에 없으면 4408', { timeout: 10_000 }, async (t) => {

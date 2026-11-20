@@ -23,7 +23,7 @@ import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage, TrayPane } from '../lib/tray-model.mts'
-import { PushMemory, PushWatch } from '../lib/push-model.mts'
+import { PushMemory, PushMissed, PushWatch, openRequestIds } from '../lib/push-model.mts'
 import type { PushEvent, PushGate } from '../lib/push-model.mts'
 import { createMobileRelay, loadMacKey } from './mobile-relay.mts'
 import type { PendingPair, PeerView } from './mobile-relay.mts'
@@ -133,6 +133,7 @@ type DevDeps = {
   onChange: () => void // 화면에 보일 것이 바뀜(view 다시 보내기)
   onPairRequest: (request: PendingPair) => void // [허용] 창 · 창이 뒤면 맥 알림
   onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
+  pushGate: () => PushGate // 메뉴 막대의 지금 거르기(tray.mts pushGate) — 끊길 때 다시 보내기 직전에 한 번 더 본다
   onPhoneControl: (pane: string) => void // 맥 → 폰으로 제어가 넘어감(D9) — 그 pane 을 보는 맥 창에 잠깐 알림
   log?: (line: string) => void
 }
@@ -416,6 +417,12 @@ export function startMobileDev(deps: DevDeps) {
     peerAllowed: (peer) => relay.peers().includes(peer),
     createBridge: (transport, peer) => newBridge(transport, peer, DIRECT_FLUSH_MS),
     onDirectOpen: (peer) => relay.pauseSession(peer),
+    // 직접 길이 닫혔다 — 붙어 있는 동안 그 기기 몫에서 빠진 푸시를 그 기기에만 다시(끊기기 전 60초 안 · 아직 열려 있는 요청만 · 지금 거르기(알림 끔 · 창이 앞)를 한 번 더 — push-model PushMissed)
+    onDirectClose: (peer) => {
+      if (stopped) return
+      const ctx = front()
+      for (const event of pushMissed.take(peer, Date.now(), ctx ? openRequestIds(requestList(ctx)) : null, deps.pushGate())) void relay.resend(peer, event)
+    },
     onAddressesChanged: (info) => relay.broadcast(info),
     macId: () => relay.status().deviceId,
     log,
@@ -437,9 +444,15 @@ export function startMobileDev(deps: DevDeps) {
     }
     return pushWatch
   }
-  // 직접 길로 붙은 기기도 붙은 것(결정 B1 — 폰 앱이 붙어 있지 않을 때만)
+  // 직접 길로 붙은 기기도 붙은 것(결정 B1 — 폰 앱이 붙어 있지 않을 때만) — 그래서 빠진 것은 기기마다 적어 두었다가 그 길이 닫힐 때 다시 보낸다(위 onDirectClose)
+  const pushMissed = new PushMissed()
   const sendPush = (events: PushEvent[]) => {
-    for (const event of events) void relay.push(event, lan.status().peers)
+    const busy = lan.status().peers
+    const now = Date.now()
+    for (const event of events) {
+      pushMissed.note(busy, event, now)
+      void relay.push(event, busy)
+    }
   }
   log(`[mobile-relay] 개발용 길 켬 — 상태 폴더 ${deps.options.dir}`)
   let stopped = false

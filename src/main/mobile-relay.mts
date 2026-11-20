@@ -195,6 +195,27 @@ export function createMobileRelay(deps: RelayDeps) {
     })
   }
 
+  // 푸시 하나를 targets 기기마다 push.send — push · resend 가 같이 쓴다(again = 다시 보내기 · 로그만 다르다)
+  async function sendPush(event: PushEvent, targets: readonly string[], again: boolean): Promise<void> {
+    const { kind, id } = event
+    if (!targets.length) return
+    if (!authed) return log(`[mobile-relay] 푸시 안 보냄 kind=${kind} 까닭=offline`)
+    const sent = again ? '푸시 다시 보냄' : '푸시 보냄'
+    const failed = again ? '푸시 다시 보냄 실패' : '푸시 실패'
+    await pushCryptoReady()
+    await Promise.all(
+      targets.map((peer) => {
+        const pushKey = mobileCrypto.keyFrom(state.peers[peer]?.pushKey)
+        const enc = pushKey ? sealPush(pushKey, { t: event.title, b: event.body, k: kind, ...(event.pane ? { p: event.pane } : {}) }) : null
+        const sealed = enc ? 'enc' : `plain:${pushKey ? 'seal_failed' : 'no_key'}`
+        return call('push.send', { to: peer, kind, id, ...(enc ? { enc } : {}) }).then(
+          () => log(`[mobile-relay] ${sent} peer=${peer} kind=${kind} id=${id} ${sealed}`),
+          (error) => log(`[mobile-relay] ${failed} peer=${peer} kind=${kind} id=${id} ${sealed} code=${(error as RelayCallError).code}`),
+        )
+      }),
+    )
+  }
+
   // 평문 핸드셰이크(hello 답 · reset) — base64 JSON 을 msg.data 에(Q1)
   const sendHandshake = (peer: string, message: mobileCrypto.Handshake) => rawSend({ op: 'msg', args: { to: peer, data: mobileCrypto.encodeHandshake(message) } })
 
@@ -638,24 +659,11 @@ export function createMobileRelay(deps: RelayDeps) {
     // 폰 푸시(protocol.md "푸시" · push.send {to, kind, enc?, id}) — 허용한 기기 중 지금 붙어 있지 않은 것(relay 세션 없음 · busy 에 없음 — 직접 길)마다 한 번.
     // 글(제목 · 본문)과 그 푸시를 낸 pane id(알 때만)는 그 기기 푸시 열쇠로 봉인해 enc 에(athena-push v1 · push-crypto.mts — relay 는 pane 을 모른다) — 열쇠가 없는 기기 · 봉인 실패는 enc 없이(relay 고정 문구) · 로그에 까닭을 가른다(plain:no_key · plain:seal_failed).
     // relay 에 붙어 있지 않으면 보내지 않는다 · 실패(no_push_token · not_paired · rate_limited · push_failed …)는 코드만 남기고 다시 보내지 않는다(같은 건은 한 번)
-    async push(event: PushEvent, busy: readonly string[] = []): Promise<void> {
-      const { kind, id } = event
-      const targets = Object.keys(state.peers).filter((peer) => !sessions.has(peer) && !busy.includes(peer))
-      if (!targets.length) return
-      if (!authed) return log(`[mobile-relay] 푸시 안 보냄 kind=${kind} 까닭=offline`)
-      await pushCryptoReady()
-      await Promise.all(
-        targets.map((peer) => {
-          const pushKey = mobileCrypto.keyFrom(state.peers[peer]?.pushKey)
-          const enc = pushKey ? sealPush(pushKey, { t: event.title, b: event.body, k: kind, ...(event.pane ? { p: event.pane } : {}) }) : null
-          const sealed = enc ? 'enc' : `plain:${pushKey ? 'seal_failed' : 'no_key'}`
-          return call('push.send', { to: peer, kind, id, ...(enc ? { enc } : {}) }).then(
-            () => log(`[mobile-relay] 푸시 보냄 peer=${peer} kind=${kind} id=${id} ${sealed}`),
-            (error) => log(`[mobile-relay] 푸시 실패 peer=${peer} kind=${kind} id=${id} ${sealed} code=${(error as RelayCallError).code}`),
-          )
-        }),
-      )
-    },
+    push: (event: PushEvent, busy: readonly string[] = []): Promise<void> =>
+      sendPush(event, Object.keys(state.peers).filter((peer) => !sessions.has(peer) && !busy.includes(peer)), false),
+    // 다시 보내기(사용자 결정 2026-11-20) — 직접 길로 붙어 있어 push 에서 빠졌던 사건을 그 길이 닫힌 뒤 그 기기에만(무엇을 보낼지는 push-model PushMissed).
+    // 허용한 기기이고 relay 세션으로 붙어 있지 않을 때만(직접 길이 relay hello 로 닫혔으면 앱이 붙어 있다) · 로그에 '다시 보냄'
+    resend: (peer: string, event: PushEvent): Promise<void> => sendPush(event, state.peers[peer] && !sessions.has(peer) ? [peer] : [], true),
     status: () => ({ connected: authed, signedIn: Boolean(state.token), deviceId: state.deviceId, account: state.account, name: state.name, sessions: [...sessions.keys()] }),
   }
 }
