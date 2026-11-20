@@ -51,7 +51,7 @@ test('확인 요청: 처음 본 목록은 기준만 · 새로 열린 것마다 �
   assert.deepEqual(watch.requests(null, open, 0), [])
   assert.deepEqual(watch.requests([{ id: 'r1', title: '옛 질문', state: 'open' }], open, 0), [])
   const found = watch.requests([{ id: 'r1', title: '옛 질문', state: 'open' }, { id: 'r2', title: 'a', state: 'open' }, { id: 'r3', title: 'b', state: 'open' }], open, 0)
-  assert.deepEqual(found.map((event) => [event.kind, event.title, event.body]), [['request', '확인 요청', 'a'], ['request', '확인 요청', 'b']])
+  assert.deepEqual(found.map((event) => [event.kind, event.title, event.body]), [['request', 'question', 'a'], ['request', 'question', 'b']])
   assert.deepEqual(watch.requests([{ id: 'r4', title: '닫힘', state: 'answered' }], open, 0), [])
 })
 
@@ -64,7 +64,7 @@ test('확인 요청: 허락 창 요청을 알린 pane 이 이어 입력 대기�
   assert.deepEqual(watch.panes([pane('p1', 'waiting')], 1000 + WAIT_HOLD_MS), [])
 })
 
-test('글(D1): 제목 = 에이전트 · 확인 요청|일 끝남 · 본문 = 요청 제목 / pane 이름표 · id 는 base64url 22자', () => {
+test('글(D1): 제목 = 에이전트 · question|decision|input required|done · 본문 = 요청 제목 / pane 이름표 · id 는 base64url 22자', () => {
   const watch = new PushWatch()
   const labeled = (status) => pane('p1', status, 'claude', '🤖 athena-studio-fe · feat/studio-push-enc')
   watch.requests([], open, 0)
@@ -72,24 +72,31 @@ test('글(D1): 제목 = 에이전트 · 확인 요청|일 끝남 · 본문 = 요
   // 일 끝남 — 이름표가 있으면 ' · ' 앞이 에이전트 · 없으면 agent
   const done = watch.panes([labeled('idle'), pane('p2', 'idle', 'codex')], 1000)
   assert.deepEqual(done.map((event) => [event.kind, event.title, event.body]), [
-    ['done', 'athena-studio-fe · 일 끝남', 'athena-studio-fe · feat/studio-push-enc'],
-    ['done', 'codex · 일 끝남', 'codex'],
+    ['done', 'athena-studio-fe · done', 'athena-studio-fe · feat/studio-push-enc'],
+    ['done', 'codex · done', 'codex'],
   ])
   for (const event of done) assert.match(event.id, /^[A-Za-z0-9_-]{22}$/)
   // 그 푸시를 낸 pane — 일 끝남은 끝난 pane
   assert.deepEqual(done.map((event) => event.pane), ['p1', 'p2'])
-  // 요청 — pane 이 붙었으면 그 에이전트 · 본문은 요청 제목(없으면 이름표) · pane 을 모르면 '확인 요청'
+  // 요청 — pane 이 붙었으면 그 에이전트 · 본문은 요청 제목(없으면 이름표) · pane 을 모르면 종류만
   const asked = watch.requests([{ id: 'r1', title: '배포해도 될까요?', state: 'open', pane: 'p2' }, { id: 'r2', title: '', state: 'open', pane: 'p1' }, { id: 'r3', title: '질문', state: 'open', pane: 'gone' }], open, DONE_HOLD_MS + 2000)
-  assert.deepEqual(asked.map((event) => [event.title, event.body]), [['codex · 확인 요청', '배포해도 될까요?'], ['athena-studio-fe · 확인 요청', 'athena-studio-fe · feat/studio-push-enc'], ['확인 요청', '질문']])
+  assert.deepEqual(asked.map((event) => [event.title, event.body]), [['codex · question', '배포해도 될까요?'], ['athena-studio-fe · question', 'athena-studio-fe · feat/studio-push-enc'], ['question', '질문']])
   // 확인 요청은 요청을 연 pane(목록에 안 보여도 요청에 적힌 그대로) · pane 이 없는 요청 · 너무 긴 pane id 는 칸 자체가 없다
   assert.deepEqual(asked.map((event) => event.pane), ['p2', 'p1', 'gone'])
   const loose = watch.requests([{ id: 'r4', title: 'pane 모름', state: 'open' }, { id: 'r5', title: '긴 pane', state: 'open', pane: 'p'.repeat(PANE_MAX + 1) }, { id: 'r6', title: '딱 맞는 pane', state: 'open', pane: 'p'.repeat(PANE_MAX) }], open, DONE_HOLD_MS + 3000)
   assert.deepEqual(loose.map((event) => ['pane' in event, event.pane]), [[false, undefined], [false, undefined], [true, 'p'.repeat(PANE_MAX)]])
+  // decision 요청 · 아테나 pane(이름표가 🤖 가 아님 — 계획서 제목) 은 앞이 athena
+  const lead = pane('p9', 'working', 'claude', '폰 푸시 · 맥 알림 문구를 개발 용어로')
+  watch.panes([lead], 500)
+  const mixed = watch.requests([{ id: 'r7', kind: 'decision', title: '고르기', state: 'open', pane: 'p9' }], open, DONE_HOLD_MS + 4000)
+  assert.deepEqual(mixed.map((event) => event.title), ['athena · decision'])
+  const leadDone = watch.panes([pane('p9', 'idle', 'claude', '폰 푸시 · 맥 알림 문구를 개발 용어로')], DONE_HOLD_MS * 3)
+  assert.deepEqual(leadDone.map((event) => event.title), ['athena · done'])
   // 입력 대기 — 본문은 이름표
   const other = new PushWatch()
   other.panes([labeled('working')], 0)
   other.panes([labeled('waiting')], 1000)
-  assert.deepEqual(other.panes([labeled('waiting')], 1000 + WAIT_HOLD_MS).map((event) => [event.kind, event.title, event.body, event.pane]), [['request', 'athena-studio-fe · 확인 요청', 'athena-studio-fe · feat/studio-push-enc', 'p1']])
+  assert.deepEqual(other.panes([labeled('waiting')], 1000 + WAIT_HOLD_MS).map((event) => [event.kind, event.title, event.body, event.pane]), [['request', 'athena-studio-fe · input required', 'athena-studio-fe · feat/studio-push-enc', 'p1']])
 })
 
 test('글 자르기: 제목 60 · 본문 160 글자(코드포인트)에서 자르고 제어 글자는 뺀다', () => {

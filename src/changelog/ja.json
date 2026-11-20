@@ -1,4 +1,5 @@
 {
+  "Shorten phone push and menu bar alert titles to dev terms": "スマホ通知とメニューバー通知のタイトルを開発用語に短縮",
   "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "SSH サーバー登録を簡素化 — [登録] ひとつ、編集メニューから、既存 Host を選択",
   "Registered servers in the sidebar repo list — analysis right after registering is optional": "登録したサーバーをサイドバーのリポジトリ一覧に表示 — 登録直後の分析は任意",
   "Add SSH server registration from the sidebar — key auth only, host key check on first connect": "サイドバーから SSH サーバー登録 — 鍵認証のみ、初回接続時にホスト鍵を確認",
