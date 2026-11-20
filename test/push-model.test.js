@@ -254,3 +254,19 @@ test('끊길 때 다시 보내기: 답한 요청은 60초 안이어도 안 감 �
   assert.equal(kept.length, MISSED_MAX)
   assert.equal(kept[0], 'e5')
 })
+
+// 보안 검토 낮음(2026-11-20) — 다시 보내는 순간의 거르기를 처음 보낼 때처럼 한 번 더
+test('끊길 때 다시 보내기: 그 순간 [알림 끄기] · Studio 창이 앞이면 안 보내고 몰아 보내지도 않는다 · 보고 있는 pane 것은 뺀다', () => {
+  const event = (id, paneId) => ({ kind: 'done', id, title: 't', body: 'b', ...(paneId ? { pane: paneId } : {}) })
+  for (const gate of [{ muted: true, lookingAt: () => false }, { muted: false, active: true, lookingAt: () => false }]) {
+    const missed = new PushMissed()
+    missed.note(['phone-a'], event('e1', 'p1'), 0)
+    assert.deepEqual(missed.take('phone-a', 1000, null, gate), [])
+    assert.deepEqual(missed.take('phone-a', 2000, null, open), [], '거르기가 풀려도 그 사이 것을 몰아 보내지 않는다')
+  }
+  const missed = new PushMissed()
+  missed.note(['phone-a'], event('e1', 'p1'), 0)
+  missed.note(['phone-a'], event('e2', 'p2'), 0)
+  missed.note(['phone-a'], event('e3'), 0)
+  assert.deepEqual(missed.take('phone-a', 1000, null, { muted: false, lookingAt: (id) => id === 'p1' }).map((item) => item.id), ['e2', 'e3'])
+})

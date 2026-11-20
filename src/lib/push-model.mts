@@ -81,13 +81,16 @@ export class PushMissed {
 
   // 그 기기 직접 길이 닫혔다 — 다시 보낼 사건(끊기기 전 RESEND_WINDOW_MS 안 · 요청이면 아직 열려 있는 것만). 꺼낸 기기의 기억은 비운다(두 번 보내지 않는다)
   // openRequests 가 null(요청 목록을 못 읽음)이면 답했는지 알 수 없는 확인 요청은 보내지 않는다
-  take(peer: string, now: number, openRequests: ReadonlySet<string> | null): PushEvent[] {
+  // gate — 처음 보낼 때와 같은 거르기를 지금 한 번 더: [알림 끄기] · Studio 창이 앞(D4)이면 아무것도(몰아 보내지 않게 기억도 비운다) · 지금 보고 있는 pane 것은 뺀다
+  take(peer: string, now: number, openRequests: ReadonlySet<string> | null, gate: PushGate = openGate): PushEvent[] {
     const list = this.missed.get(peer) || []
     this.missed.delete(peer)
+    if (gate.muted || gate.active) return []
     const found: PushEvent[] = []
     for (const { event, at } of list) {
       if (now - at >= RESEND_WINDOW_MS) continue
       if (event.request !== undefined && !(openRequests && openRequests.has(event.request))) continue
+      if (event.pane && gate.lookingAt(event.pane)) continue
       found.push(event)
     }
     return found

@@ -195,7 +195,6 @@ export function createMobileRelay(deps: RelayDeps) {
     })
   }
 
-  // 평문 핸드셰이크(hello 답 · reset) — base64 JSON 을 msg.data 에(Q1)
   // 푸시 하나를 targets 기기마다 push.send — push · resend 가 같이 쓴다(again = 다시 보내기 · 로그만 다르다)
   async function sendPush(event: PushEvent, targets: readonly string[], again: boolean): Promise<void> {
     const { kind, id } = event
@@ -217,6 +216,7 @@ export function createMobileRelay(deps: RelayDeps) {
     )
   }
 
+  // 평문 핸드셰이크(hello 답 · reset) — base64 JSON 을 msg.data 에(Q1)
   const sendHandshake = (peer: string, message: mobileCrypto.Handshake) => rawSend({ op: 'msg', args: { to: peer, data: mobileCrypto.encodeHandshake(message) } })
 
   function stopSession(peer: string, why: string) {

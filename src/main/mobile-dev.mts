@@ -133,6 +133,7 @@ type DevDeps = {
   onChange: () => void // 화면에 보일 것이 바뀜(view 다시 보내기)
   onPairRequest: (request: PendingPair) => void // [허용] 창 · 창이 뒤면 맥 알림
   onLoginFailed: (why: LoginFailure | 'expired_session' | 'account_deleted') => void
+  pushGate: () => PushGate // 메뉴 막대의 지금 거르기(tray.mts pushGate) — 끊길 때 다시 보내기 직전에 한 번 더 본다
   onPhoneControl: (pane: string) => void // 맥 → 폰으로 제어가 넘어감(D9) — 그 pane 을 보는 맥 창에 잠깐 알림
   log?: (line: string) => void
 }
@@ -416,11 +417,11 @@ export function startMobileDev(deps: DevDeps) {
     peerAllowed: (peer) => relay.peers().includes(peer),
     createBridge: (transport, peer) => newBridge(transport, peer, DIRECT_FLUSH_MS),
     onDirectOpen: (peer) => relay.pauseSession(peer),
-    // 직접 길이 닫혔다 — 붙어 있는 동안 그 기기 몫에서 빠진 푸시를 그 기기에만 다시(끊기기 전 60초 안 · 아직 열려 있는 요청만 — push-model PushMissed)
+    // 직접 길이 닫혔다 — 붙어 있는 동안 그 기기 몫에서 빠진 푸시를 그 기기에만 다시(끊기기 전 60초 안 · 아직 열려 있는 요청만 · 지금 거르기(알림 끔 · 창이 앞)를 한 번 더 — push-model PushMissed)
     onDirectClose: (peer) => {
       if (stopped) return
       const ctx = front()
-      for (const event of pushMissed.take(peer, Date.now(), ctx ? openRequestIds(requestList(ctx)) : null)) void relay.resend(peer, event)
+      for (const event of pushMissed.take(peer, Date.now(), ctx ? openRequestIds(requestList(ctx)) : null, deps.pushGate())) void relay.resend(peer, event)
     },
     onAddressesChanged: (info) => relay.broadcast(info),
     macId: () => relay.status().deviceId,
