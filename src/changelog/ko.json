@@ -1,4 +1,5 @@
 {
+  "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "맥을 쓰는 중에도 폰 푸시가 오던 문제 수정 — 최근 60초 안에 키보드 · 마우스 입력이 있으면 안 보냄",
   "Shorten phone push and menu bar alert titles to dev terms": "폰 푸시 · 메뉴 막대 알림 제목을 개발 용어로 단축",
   "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "SSH 서버 등록 간소화 — [등록] 하나, 편집 메뉴 입구, 기존 Host 고르기",
   "Registered servers in the sidebar repo list — analysis right after registering is optional": "등록한 서버를 사이드바 레포 목록에 표시 — 등록 직후 분석은 선택",

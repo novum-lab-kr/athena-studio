@@ -15,6 +15,7 @@ import * as trayModel from '../lib/tray-model.mts'
 import * as trayBadge from '../lib/tray-icon.mts'
 import { fetchBoardJson } from './board.mts'
 import type { Say, TrayPane, Notice } from '../lib/tray-model.mts'
+import { macActive } from '../lib/push-model.mts'
 import type { PushGate } from '../lib/push-model.mts'
 
 // screen-model 은 JS — main 과 같은 require 캐시의 것을 쓴다. electron.screen 은 앱이 준비된 뒤에만 읽을 수 있어 쓸 때 꺼낸다(옛 main.js 와 같다)
@@ -443,9 +444,11 @@ export function setupTray({ say, frontCtx, packWindows, openSavedWindows, claude
 
   // 폰 푸시도 맥 알림과 같이 거른다(사용자 결정 2026-11-19) — [알림 끄기] 동안 · 지금 보고 있는 pane.
   // Studio 팩 창이 앞(보임 · 포커스)이면 아무것도 보내지 않는다(active — 사용자 메모 2026-11-19 · 계획서 20261119-폰-알림-내용-암호화-A3 D4).
+  // 어느 앱이 앞이든 맥에서 최근 60초 안에 키보드 · 마우스 입력이 있어도 보내지 않는다(사용자 결정 B 2026-11-20 — push-model macActive).
   // 화면이 잠겼으면 포커스가 남아 있어도 보고 있는 것이 아니다 — 다 보낸다
   function pushGate(): PushGate {
-    const active = !screenLocked && [...packWindows].some((ctx) => Boolean(ctx.win && !ctx.win.isDestroyed() && ctx.win.isVisible() && ctx.win.isFocused()))
+    const studioFront = [...packWindows].some((ctx) => Boolean(ctx.win && !ctx.win.isDestroyed() && ctx.win.isVisible() && ctx.win.isFocused()))
+    const active = macActive({ locked: screenLocked, studioFront, idleSeconds: powerMonitor.getSystemIdleTime() })
     return { muted: trayState.pausedUntil > Date.now(), active, lookingAt: (pane) => !screenLocked && lookingAtPane(pane) }
   }
 

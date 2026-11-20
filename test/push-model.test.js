@@ -2,7 +2,7 @@
 // 사건마다 글(제목 · 본문) · id — 한 사건은 한 번(계획서 plans/feature/20261119-폰-알림-내용-암호화-A3.md D1 · D3 · D4)
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { PushWatch, PushMemory, PushMissed, openRequestIds, DONE_HOLD_MS, ASK_HOLD_MS, RESEND_WINDOW_MS, MISSED_MAX, TITLE_MAX, BODY_MAX, PANE_MAX, clipText } = require('../src/lib/push-model.mts')
+const { PushWatch, PushMemory, PushMissed, openRequestIds, DONE_HOLD_MS, ASK_HOLD_MS, RESEND_WINDOW_MS, MISSED_MAX, TITLE_MAX, BODY_MAX, PANE_MAX, PRESENT_IDLE_SECONDS, macActive, clipText } = require('../src/lib/push-model.mts')
 const { WAIT_HOLD_MS } = require('../src/lib/tray-model.mts')
 
 const pane = (id, status, agent = 'claude', label) => ({ id, agent, agent_status: status, workspace_id: 'w1', ...(label ? { label } : {}) })
@@ -195,6 +195,19 @@ test('거르기(D4): Studio 창이 앞(active)이면 아무것도 안 보낸다 
   assert.deepEqual(watch.requests([{ id: 'r1', title: 'a', state: 'open' }], away, 2000), [])
   assert.deepEqual(kinds(watch.panes([pane('p1', 'idle'), pane('p2', 'idle')], 3000, away)), ['done'])
   assert.deepEqual(kinds(watch.requests([{ id: 'r1', title: 'a', state: 'open' }, { id: 'r2', title: 'b', state: 'open' }], away, 3000)), ['request'])
+})
+
+test('거르기(B): 맥에서 최근 60초 안에 입력이 있으면 어느 앱이 앞이든 active · 자리 비우면 60초 뒤부터 아님 · 잠기면 아님', () => {
+  assert.equal(PRESENT_IDLE_SECONDS, 60)
+  // Studio 창이 앞(D4)이면 입력이 없어도 active
+  assert.equal(macActive({ locked: false, studioFront: true, idleSeconds: 600 }), true)
+  // 다른 앱이 앞이어도 방금 입력이 있었다 — active(사용자 결정 B 2026-11-20)
+  assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: 0 }), true)
+  assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: PRESENT_IDLE_SECONDS - 1 }), true)
+  // 60초 넘게 입력이 없다 — 보낸다
+  assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: PRESENT_IDLE_SECONDS }), false)
+  // 화면이 잠겼으면 창이 앞이어도 · 방금 입력이 있어도 보낸다
+  assert.equal(macActive({ locked: true, studioFront: true, idleSeconds: 0 }), false)
 })
 
 test('거르기: 지금 보고 있는 pane 의 일 끝남 · 입력 대기 · 허락 창 요청은 빼고 다른 pane · pane 없는 요청은 보낸다', () => {
