@@ -49,6 +49,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds
+- Change phone push idle window from 60 seconds to 10 minutes
 - Shorten phone push and menu bar alert titles to dev terms
 - Fix phone push alerts showing only the fixed text — encryption always failed inside the app
 - Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops
