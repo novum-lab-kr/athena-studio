@@ -1,7 +1,7 @@
 // 폰 휠 묶음 나눠 넣기 판정 · 일정(src/lib/wheel-spread.mts) — 폰 앱 wheel.ts wheelInput 이 만드는 모양
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { splitWheel, spreadOffsets } = require('../src/lib/wheel-spread.mts')
+const { isWheelInput, splitWheel, spreadOffsets } = require('../src/lib/wheel-spread.mts')
 
 test('splitWheel — 같은 휠 보고 · 화살표 반복이면 한 번씩 나눈다(SGR · 픽셀 · 옛 모양 · 일반 · 응용 커서)', () => {
   const up = '\x1b[<64;40;15M'
@@ -33,4 +33,12 @@ test('spreadOffsets — 첫 것은 바로 · 간격 안에 고르게 · 마지�
   const offsets = spreadOffsets(32, 50)
   assert.equal(offsets.length, 32)
   assert.ok((offsets.at(-1) ?? 0) < 50)
+})
+
+test('isWheelInput — 휠 · 화살표만으로 된 입력이면 한 번짜리도 쓸기 · 글자나 다른 마우스가 섞이면 아니다', () => {
+  for (const unit of ['\x1b[<64;1;1M', '\x1b[<65;300;420M', '\x1b[M`!!', '\x1b[A', '\x1bOB']) {
+    assert.equal(isWheelInput(unit), true, '한 번')
+    assert.equal(isWheelInput(unit.repeat(5)), true, '반복')
+  }
+  for (const other of ['x', '\r', '\x1b[C', '\x1b[<0;1;1M', '\x1b[A\x1b[B', '\x1b[Ax', 'x\x1b[A', '']) assert.equal(isWheelInput(other), false, JSON.stringify(other))
 })

@@ -268,5 +268,6 @@
   "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "暗号化したスマホプッシュ通知に送信元ペインを追加 — スマホアプリが通知タップでそのペインを開ける",
   "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "スマホプッシュ通知が固定文言のみで届く問題を修正 — アプリ内で暗号化が常に失敗",
   "Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops": "スマホが Wi-Fi 接続中に届かなかったプッシュ通知を修正 — その接続が切れたときに再送",
-  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "全画面エージェントペインでのスマホスクロールのカクつきを修正 — スクロール入力を分けて渡す"
+  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "全画面エージェントペインでのスマホスクロールのカクつきを修正 — スクロール入力を分けて渡す",
+  "Fix slow phone scrolling over the relay — screen updates sent faster while scrolling": "リレー経由でスマホのスクロールが遅れていた問題を修正 — スクロール中は画面をより頻繁に送信"
 }
