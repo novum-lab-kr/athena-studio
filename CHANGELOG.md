@@ -48,6 +48,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap
 
 ### Fixed
+- Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)
 - Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans
 - Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds
 - Change phone push idle window from 60 seconds to 10 minutes

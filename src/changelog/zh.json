@@ -1,4 +1,5 @@
 {
+  "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "修复重新连接后终端链接无法打开 — 在 pane 快照中保留链接(手机 · Mac)",
   "Change phone push idle window from 60 seconds to 10 minutes": "将跳过手机推送的无输入时间从 60 秒改为 10 分钟 — 10 分钟无输入后恢复发送",
   "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "修复使用 Mac 时仍收到手机推送的问题 — 最近 60 秒内有键盘或鼠标输入时不发送",
   "Shorten phone push and menu bar alert titles to dev terms": "手机推送和菜单栏通知标题缩短为开发术语",

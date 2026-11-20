@@ -8,10 +8,176 @@ import type { IPty } from 'node-pty'
 const require = createRequire(import.meta.url)
 const pty: typeof import('node-pty') = require('node-pty')
 const { Terminal }: typeof import('@xterm/headless') = require('@xterm/headless')
-const { SerializeAddon }: typeof import('@xterm/addon-serialize') = require('@xterm/addon-serialize')
+// HTMLSerializeHandler 는 내보내지만 타입 선언에 없다 — 문자열 직렬화 클래스를 찾는 데만 쓴다(아래 findStringHandler)
+const { SerializeAddon, HTMLSerializeHandler }: typeof import('@xterm/addon-serialize') & { HTMLSerializeHandler?: object } =
+  require('@xterm/addon-serialize')
 const { Unicode11Addon }: typeof import('@xterm/addon-unicode11') = require('@xterm/addon-unicode11')
 
 export const SCROLLBACK = 5000
+
+// ── 스냅숏에 OSC 8 링크 싣기 ──
+// @xterm/addon-serialize(0.14.0 · 0.15 베타까지)는 칸의 링크(OSC 8)를 버리고 밑줄만 남긴다 — 다시 붙은 화면(맥 · 폰)에서 링크가 죽는다.
+// 애드온의 문자열 직렬화 클래스(내보내지 않는다)를 상속해 칸의 링크 번호가 바뀌는 곳에 OSC 8 을 끼운다.
+// 내부 이름(_nextCell · _currentRow · _serializeString · _serializeBufferByRange · _oscLinkService)은 고정 판(package.json)에 맞춘 것 —
+// 못 찾으면 원래 직렬화로 돌아간다(링크만 빠진다). 판을 올리면 test/pane-snapshot-links.test.js 가 링크 복원을 본다
+type LinkExtended = { urlId: number; clone(): LinkExtended }
+type LinkCell = { fg: number; bg: number; getWidth(): number; hasExtendedAttrs(): number | boolean; extended?: LinkExtended }
+type LinkData = { id?: string; uri: string }
+type LinkCore = {
+  _oscLinkService?: { getLinkData(linkId: number): LinkData | undefined }
+  _inputHandler?: { _curAttrData?: LinkCell }
+}
+type HandlerBase = {
+  _currentRow: string
+  _nextCell(cell: LinkCell, oldCell: unknown, row: number, col: number): void
+  _diffStyle(cell: LinkCell, oldCell: LinkCell): number[]
+  _serializeString(excludeFinalCursorPosition?: boolean): string
+  serialize(range: unknown, excludeFinalCursorPosition?: boolean): string
+}
+type HandlerClass = new (buffer: unknown, terminal: unknown) => HandlerBase
+type RangeSerializer = (terminal: unknown, buffer: unknown, range: unknown, excludeFinalCursorPosition: boolean) => string
+
+const OSC8_CLOSE = '\x1b]8;;\x1b\\'
+
+// 링크를 여는 OSC 8 — 원래 id 가 있으면 그대로(여러 줄 링크를 하나로 묶는 값)
+function osc8Open(link: LinkData): string {
+  return `\x1b]8;${link.id ? `id=${link.id}` : ''};${link.uri}\x1b\\`
+}
+
+// 칸의 링크 번호 — 확장 속성이 없는 칸은 extended 가 앞 칸 것으로 남아 있을 수 있어 먼저 본다
+function linkIdOf(cell: LinkCell | undefined): number {
+  if (!cell || !cell.hasExtendedAttrs()) return 0
+  return cell.extended?.urlId ?? 0
+}
+
+// 링크 번호만 0 으로 본 칸 — 링크가 없는 칸은 그대로(대부분의 칸이라 복사하지 않는다).
+// 같은 클래스의 빈 칸(scratch)에 글자 속성(fg · bg · extended)만 옮기고 extended 는 링크를 뺀 복사본으로 —
+// 밑줄 판정은 xterm 의 isUnderline 그대로 쓴다(Object.create 로 가리면 링크가 많은 화면에서 직렬화가 8배 느려졌다)
+function withoutLink(cell: LinkCell, scratch: LinkCell): LinkCell {
+  if (!linkIdOf(cell) || !cell.extended?.clone) return cell
+  const extended = cell.extended.clone()
+  extended.urlId = 0
+  scratch.fg = cell.fg
+  scratch.bg = cell.bg
+  scratch.extended = extended
+  return scratch
+}
+
+// 내보내지 않는 문자열 직렬화 클래스 찾기 — 공통 부모(HTMLSerializeHandler 의 부모)의 serialize 를 잠깐 바꿔 끼워
+// 빈 터미널을 한 번 직렬화하면 그 this 가 문자열 직렬화 인스턴스다. 바로 원래대로 돌린다
+function findStringHandler(): HandlerClass | null {
+  const base = HTMLSerializeHandler ? (Object.getPrototypeOf(HTMLSerializeHandler) as { prototype?: HandlerBase }) : null
+  const original = base?.prototype?.serialize
+  if (!base?.prototype || typeof original !== 'function') return null
+  // 콜백 안에서 채우는 값이라 객체 칸에 둔다(지역 변수면 타입 좁히기가 null 로 굳는다)
+  const seen: { handler: HandlerClass | null } = { handler: null }
+  const probe = new Terminal({ cols: 2, rows: 2, allowProposedApi: true })
+  try {
+    base.prototype.serialize = function (this: HandlerBase) {
+      seen.handler = (Object.getPrototypeOf(this) as { constructor: HandlerClass }).constructor
+      return ''
+    }
+    const addon = new SerializeAddon()
+    probe.loadAddon(addon)
+    addon.serialize({ excludeAltBuffer: true, excludeModes: true })
+  } catch {
+    seen.handler = null
+  } finally {
+    base.prototype.serialize = original
+    probe.dispose()
+  }
+  const handler = seen.handler
+  const proto = handler?.prototype
+  if (!handler || !proto || [proto._nextCell, proto._diffStyle, proto._serializeString].some((method) => typeof method !== 'function')) return null
+  return handler
+}
+
+function makeLinkHandler(): HandlerClass | null {
+  const StringHandler = findStringHandler()
+  if (!StringHandler) return null
+  return class LinkSerializeHandler extends StringHandler {
+    declare linkTerminal: InstanceType<typeof Terminal>
+    declare linkBuffer: unknown
+    declare openLink: number
+    declare wroteLink: boolean
+    declare scratchCell: LinkCell
+    declare scratchOld: LinkCell
+
+    constructor(buffer: unknown, terminal: unknown) {
+      super(buffer, terminal)
+      this.linkTerminal = terminal as InstanceType<typeof Terminal>
+      this.linkBuffer = buffer
+      this.openLink = 0
+      this.wroteLink = false
+      const nullCell = () => (buffer as { getNullCell(): LinkCell }).getNullCell()
+      this.scratchCell = nullCell()
+      this.scratchOld = nullCell()
+    }
+
+    linkData(linkId: number): LinkData | undefined {
+      return (this.linkTerminal as unknown as { _core?: LinkCore })._core?._oscLinkService?.getLinkData(linkId)
+    }
+
+    // 칸을 쓰기 전에 링크가 바뀌었으면 닫고 · 연다(두 칸 글자의 빈 뒤 칸은 건너뛴다 — 원래 _nextCell 도 그 칸은 쓰지 않는다)
+    _nextCell(cell: LinkCell, oldCell: unknown, row: number, col: number): void {
+      if (cell.getWidth() !== 0) {
+        let linkId = linkIdOf(cell)
+        const link = linkId ? this.linkData(linkId) : undefined
+        if (!link) linkId = 0
+        if (linkId !== this.openLink) {
+          if (this.openLink) this._currentRow += OSC8_CLOSE
+          if (link) this._currentRow += osc8Open(link)
+          this.openLink = linkId
+          this.wroteLink = true
+        }
+      }
+      super._nextCell(cell, oldCell, row, col)
+    }
+
+    // xterm 은 링크 칸의 밑줄을 점선(링크 표시)으로 보고하는데 애드온은 그것을 SGR 4(실선 밑줄)로 옮겨 쓴다 —
+    // 되살린 칸에 진짜 밑줄이 붙어 링크를 닫은 뒤에도 남는다. 비교에는 링크를 뺀 칸을 넘겨 프로그램이 준 밑줄만 쓴다
+    _diffStyle(cell: LinkCell, oldCell: LinkCell): number[] {
+      return super._diffStyle(withoutLink(cell, this.scratchCell), withoutLink(oldCell, this.scratchOld))
+    }
+
+    // 끝에서 링크를 닫아 이어지는 출력이 링크로 붙지 않게 한다(뒤 빈 줄을 잘라 닫는 글이 빠졌을 수 있어 한 번이라도 썼으면 닫는다).
+    // 지금 보이는 버퍼면 프로그램이 링크를 연 채인지까지 되살린다(애드온이 글자 속성을 되살리는 것과 같은 자리)
+    _serializeString(excludeFinalCursorPosition?: boolean): string {
+      let content = super._serializeString(excludeFinalCursorPosition)
+      if (this.wroteLink) content += OSC8_CLOSE
+      if (this.linkBuffer === this.linkTerminal.buffer.active) {
+        const core = (this.linkTerminal as unknown as { _core?: LinkCore })._core
+        const current = linkIdOf(core?._inputHandler?._curAttrData)
+        const link = current ? this.linkData(current) : undefined
+        if (link) content += osc8Open(link)
+      }
+      return content
+    }
+  }
+}
+
+const LinkHandler = makeLinkHandler()
+
+// 애드온이 버퍼 하나를 직렬화하는 자리 — 원래 것과 같고 만드는 클래스만 링크를 아는 쪽이다
+const serializeRangeWithLinks: RangeSerializer = (terminal, buffer, range, excludeFinalCursorPosition) => {
+  const cols = (terminal as { cols: number }).cols
+  const { start, end } = range as { start: number | { line: number }; end: number | { line: number } }
+  const handler = new (LinkHandler as HandlerClass)(buffer, terminal)
+  return handler.serialize(
+    {
+      start: { x: 0, y: typeof start === 'number' ? start : start.line },
+      end: { x: cols, y: typeof end === 'number' ? end : end.line },
+    },
+    excludeFinalCursorPosition,
+  )
+}
+
+// 링크까지 실은 직렬화. 코드 교체 전부터 있던 pane 의 애드온 인스턴스에도 그 자리에서 끼운다(새 코드가 늘 이긴다)
+export function serializeWithLinks(serializer: InstanceType<typeof SerializeAddon>, scrollback: number): string {
+  const addon = serializer as unknown as { _serializeBufferByRange?: RangeSerializer }
+  if (LinkHandler && typeof addon._serializeBufferByRange === 'function') addon._serializeBufferByRange = serializeRangeWithLinks
+  return serializer.serialize({ scrollback })
+}
 
 // wait-output 이 거는 것 — check() 가 true 면 끝 · fail 은 pane 이 끝났을 때
 export type Waiter = { check: () => boolean; fail: (code: string, text: string) => void }
@@ -197,10 +363,10 @@ export class Pane {
     return this.mouseEncodingReady
   }
 
-  // 앱이 다시 붙을 때 보낼 화면(색·커서·대체 화면 포함)
+  // 앱이 다시 붙을 때 보낼 화면(색·커서·대체 화면·OSC 8 링크 포함)
   snapshot(): string {
     const encoding = this.mouseEncoding ? `\x1b[?${this.mouseEncoding}h` : ''
-    return this.serializer.serialize({ scrollback: SCROLLBACK }) + encoding
+    return serializeWithLinks(this.serializer, SCROLLBACK) + encoding
   }
 
   // 버퍼 줄들 — recent 는 scrollback 포함 전부, visible 은 지금 화면
