@@ -84,13 +84,21 @@ export const planRefs = (path, checkpoint) => ({
 })
 
 /** 현황판에 올리는 계획서 파일 — archive 는 치운 것, plans/setup/ 은 첫 실행 고르기 콘솔(scripts/setup-pick.mjs — 작업 계획서가 아니다)
+ * 숨은 폴더(`.profile` 등 — 화면 찍기 도구가 계획서 옆에 남긴 크롬 프로필)는 들어가지 않고, stat 이 안 되는 것(깨진 심볼릭 링크 ·
+ * 훑는 사이 지워진 `.md.lock`)은 건너뛴다 — 하나가 던지면 수집 전체가 실패해 현황판 · [작업] 이 그 자리에 굳었다(2026-11-20 · 크롬 RunningChromeVersion 링크)
  * @param {string} dir 본체 plans 폴더
  * @returns {string[]} */
 export const planFiles = (dir) => {
   if (!existsSync(dir)) return []
   return readdirSync(dir).flatMap((name) => {
     const full = join(dir, name)
-    if (statSync(full).isDirectory()) return planFiles(full)
+    let isDirectory
+    try {
+      isDirectory = statSync(full).isDirectory()
+    } catch {
+      return []
+    }
+    if (isDirectory) return name.startsWith('.') ? [] : planFiles(full)
     return full.endsWith('.md') && !full.includes('/plans/archive/') && !full.includes('/plans/setup/') ? [full] : []
   })
 }

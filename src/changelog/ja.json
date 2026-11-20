@@ -273,5 +273,6 @@
   "Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops": "スマホが Wi-Fi 接続中に届かなかったプッシュ通知を修正 — その接続が切れたときに再送",
   "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "全画面エージェントペインでのスマホスクロールのカクつきを修正 — スクロール入力を分けて渡す",
   "Fix slow phone scrolling over the relay — screen updates sent faster while scrolling": "リレー経由でスマホのスクロールが遅れていた問題を修正 — スクロール中は画面をより頻繁に送信",
-  "Use \"device\" wording consistently in Korean simulator and phone connection text": "韓国語画面の「기기」を「디바이스」に統一 — シミュレーター · スマホ接続"
+  "Use \"device\" wording consistently in Korean simulator and phone connection text": "韓国語画面の「기기」を「디바이스」に統一 — シミュレーター · スマホ接続",
+  "Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans": "[作業] リストに閉じた pane が残る問題を修正 — plans の壊れたリンクで更新停止"
 }
