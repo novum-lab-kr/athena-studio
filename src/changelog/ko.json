@@ -1,4 +1,5 @@
 {
+  "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "다시 붙은 터미널에서 링크가 안 열리던 문제 수정 — pane 스냅숏에 링크 유지(폰 · 맥)",
   "Change phone push idle window from 60 seconds to 10 minutes": "폰 푸시를 건너뛰는 입력 없음 기준을 60초에서 10분으로 변경 — 10분 동안 입력이 없으면 다시 보냄",
   "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "맥을 쓰는 중에도 폰 푸시가 오던 문제 수정 — 최근 60초 안에 키보드 · 마우스 입력이 있으면 안 보냄",
   "Shorten phone push and menu bar alert titles to dev terms": "폰 푸시 · 메뉴 막대 알림 제목을 개발 용어로 단축",

@@ -38,7 +38,8 @@ const PROTOCOL = 7
 // 15 — Codex 입력칸 읽기가 맨 아래 단축키 줄 · 상태줄까지(빈 줄로 시작하는 여러 줄 초안을 빈 입력칸으로 읽지 않게 · pane-submit.mts)
 // 16 — 터미널 지난 출력(scrollback) 5000 → 10000줄(src/daemon/pane.mts SCROLLBACK)
 // 17 — scrollback 되돌림 5000줄(16 의 10000 은 Claude Code 전체 화면 모드에서 쓸모가 없었다 · 이미 16 인 데몬도 5000 으로 교체)
-const DAEMON_CODE = 17
+// 18 — 다시 붙을 때 스냅숏에 OSC 8 링크를 싣는다(src/daemon/pane.mts serializeWithLinks — 폰 · 맥 화면에서 링크가 죽던 것)
+const DAEMON_CODE = 18
 
 const ERROR_CODES = ['usage', 'not_found', 'timeout', 'unavailable', 'internal']
 

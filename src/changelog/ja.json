@@ -1,4 +1,5 @@
 {
+  "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "再接続したターミナルでリンクが開けない問題を修正 — pane スナップショットにリンクを保持(スマホ・Mac)",
   "Change phone push idle window from 60 seconds to 10 minutes": "スマホへのプッシュを止める無操作の基準を 60 秒から 10 分に変更 — 10 分間入力がなければ再び送る",
   "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "Mac を使用中でもスマホにプッシュ通知が届く問題を修正 — 直近 60 秒以内にキーボード・マウス入力があれば送らない",
   "Shorten phone push and menu bar alert titles to dev terms": "スマホ通知とメニューバー通知のタイトルを開発用語に短縮",
