@@ -9,7 +9,7 @@
 //   일 끝남 뒤의 확인 요청은 보낸다 · 같은 id 는 다시 보내지 않는다
 // 글(D1): 제목 '<에이전트> · question|decision|input required|done'(아테나 pane 은 '<에이전트>' 자리가 athena) · 본문 = 요청 제목 / 일 끝남 · 입력 대기는 pane 이름표
 // pane(사용자 요청 2026-11-20): 그 푸시를 낸 pane id — 확인 요청은 요청을 연 pane · 일 끝남 · 입력 대기는 그 pane. 암호 안에만 실어 폰이 알림을 누르면 그 pane 으로 간다(모르면 없음)
-// 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
+// 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4) · 맥에서 최근 60초 안에 입력이 있을 때(결정 B 2026-11-20)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
 // 거른 것도 기억은 그대로 넘긴다(끄기가 풀려도 그 사이 것을 몰아 보내지 않는다 — 맥 알림과 같다)
 // 끊길 때 다시 보내기(사용자 결정 2026-11-20): 폰이 직접(lan) 길로 붙어 있어 푸시 대상에서 빠진 사건은 PushMissed 가 기기마다 적어 두고,
 //   그 기기 직접 길이 닫힐 때 그 기기에만 다시 보낸다 — 끊기기 전 RESEND_WINDOW_MS 안 것 · 아직 열려 있는 요청만 · 한 번만
@@ -34,9 +34,18 @@ const INPUT_TITLE = 'input required'
 const DONE_TITLE = 'done'
 const LEAD_TITLE = 'athena'
 
-// 메뉴 막대가 주는 거르기(tray.mts pushGate) — 없으면 거르지 않는다. active = Studio 창이 앞(포커스)이고 화면이 잠기지 않음(D4)
+// 메뉴 막대가 주는 거르기(tray.mts pushGate) — 없으면 거르지 않는다. active = 맥 앞에 사람이 있음(아래 macActive — D4 · 결정 B)
 export type PushGate = { muted: boolean; active?: boolean; lookingAt: (pane: string) => boolean }
 const openGate: PushGate = { muted: false, lookingAt: () => false }
+
+// 맥에서 최근 이만큼(초) 안에 키보드 · 마우스 입력이 있으면 맥 앞에 있는 것(사용자 결정 B 2026-11-20 — 자리 비우면 이 뒤부터 다시 보낸다)
+export const PRESENT_IDLE_SECONDS = 60
+// 폰 푸시 active — 화면이 잠겼으면 아니다 · Studio 창이 앞(D4)이거나 어느 앱이든 최근 입력이 있으면(B) 맥 앞에 있는 것.
+// idleSeconds = powerMonitor.getSystemIdleTime()(마지막 입력 뒤 초)
+export function macActive({ locked, studioFront, idleSeconds }: { locked: boolean; studioFront: boolean; idleSeconds: number }): boolean {
+  if (locked) return false
+  return studioFront || idleSeconds < PRESENT_IDLE_SECONDS
+}
 
 // 보낸 것의 기억 — PushWatch 를 새로 만들어도(앞 창 · 본체가 바뀜) 부르는 쪽이 들고 있어 묶기가 풀리지 않는다.
 // pane 목록에 안 보인다고 지우지 않고(창마다 목록이 다를 수 있다) 시간이 지난 것만 지운다

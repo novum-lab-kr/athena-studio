@@ -1,4 +1,5 @@
 {
+  "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "Mac を使用中でもスマホにプッシュ通知が届く問題を修正 — 直近 60 秒以内にキーボード・マウス入力があれば送らない",
   "Shorten phone push and menu bar alert titles to dev terms": "スマホ通知とメニューバー通知のタイトルを開発用語に短縮",
   "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "SSH サーバー登録を簡素化 — [登録] ひとつ、編集メニューから、既存 Host を選択",
   "Registered servers in the sidebar repo list — analysis right after registering is optional": "登録したサーバーをサイドバーのリポジトリ一覧に表示 — 登録直後の分析は任意",

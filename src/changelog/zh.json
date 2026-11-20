@@ -1,4 +1,5 @@
 {
+  "Fix phone push alerts arriving while using the Mac — skipped after any input in the last 60 seconds": "修复使用 Mac 时仍收到手机推送的问题 — 最近 60 秒内有键盘或鼠标输入时不发送",
   "Shorten phone push and menu bar alert titles to dev terms": "手机推送和菜单栏通知标题缩短为开发术语",
   "Simpler SSH server registration — one Register button, Edit menu entry, pick existing Hosts": "简化 SSH 服务器注册 — 一个 [注册]，编辑菜单入口，可选现有 Host",
   "Registered servers in the sidebar repo list — analysis right after registering is optional": "已注册服务器显示在侧边栏仓库列表 — 注册后立即分析为可选",
