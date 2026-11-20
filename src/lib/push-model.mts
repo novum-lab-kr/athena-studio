@@ -7,7 +7,7 @@
 //   같은 pane 의 확인 요청은 ASK_HOLD_MS 안에 한 번(요청 목록 · 입력 대기 · 같은 건을 다른 id 로 받은 요청이 겹쳐도) ·
 //   확인 요청을 알린 pane 이 곧 쉬어도(working → idle) 일 끝남을 또 보내지 않는다 · 그 pane 이 다시 일하기 시작하면 묶기가 풀린다 ·
 //   일 끝남 뒤의 확인 요청은 보낸다 · 같은 id 는 다시 보내지 않는다
-// 글(D1): 제목 '<에이전트> · 확인 요청|일 끝남' · 본문 = 요청 제목 / 일 끝남 · 입력 대기는 pane 이름표 — relay 고정 문구(풀기 실패 때 보임)와 같이 한국어
+// 글(D1): 제목 '<에이전트> · question|decision|input required|done'(아테나 pane 은 '<에이전트>' 자리가 athena) · 본문 = 요청 제목 / 일 끝남 · 입력 대기는 pane 이름표
 // pane(사용자 요청 2026-11-20): 그 푸시를 낸 pane id — 확인 요청은 요청을 연 pane · 일 끝남 · 입력 대기는 그 pane. 암호 안에만 실어 폰이 알림을 누르면 그 pane 으로 간다(모르면 없음)
 // 맥 알림과 같은 거르기(사용자 결정 2026-11-19) — 메뉴 막대 [알림 끄기] 동안 · Studio 창이 앞(포커스)일 때(D4)는 아무것도 · 지금 보고 있는 pane 의 확인 요청 · 일 끝남은 빼고.
 // 거른 것도 기억은 그대로 넘긴다(끄기가 풀려도 그 사이 것을 몰아 보내지 않는다 — 맥 알림과 같다)
@@ -29,8 +29,10 @@ export const MISSED_MAX = 20 // 기기마다 기억하는 빠진 사건 수(넘�
 export const TITLE_MAX = 60 // 글자(코드포인트) — 계획서 5절
 export const BODY_MAX = 160
 export const PANE_MAX = 64 // pane id 글자(코드포인트) — 넘으면 싣지 않는다(enc 가 relay 상한을 넘지 않게)
-const ASK_TITLE = '확인 요청'
-const DONE_TITLE = '일 끝남'
+// 제목 종류 — 개발 용어 영어(사용자 결정 2026-11-20): 확인 요청은 요청 종류(question · decision) · 입력 대기 · 일 끝남
+const INPUT_TITLE = 'input required'
+const DONE_TITLE = 'done'
+const LEAD_TITLE = 'athena'
 
 // 메뉴 막대가 주는 거르기(tray.mts pushGate) — 없으면 거르지 않는다. active = Studio 창이 앞(포커스)이고 화면이 잠기지 않음(D4)
 export type PushGate = { muted: boolean; active?: boolean; lookingAt: (pane: string) => boolean }
@@ -109,12 +111,14 @@ export function clipText(value: unknown, max: number): string {
 const eventId = (...parts: (string | number)[]) => crypto.createHash('sha256').update(parts.join('\n')).digest('base64url').slice(0, 22)
 // 에이전트 이름 — delegate 이름표 '🤖 에이전트 · 브랜치' 의 ' · ' 앞(이름표가 없으면 agent)
 const agentOf = (pane: TrayPane) => agentName(pane).split(' · ')[0] || agentName(pane)
-const titleOf = (pane: TrayPane | undefined, what: string) => clipText(pane ? `${agentOf(pane)} · ${what}` : what, TITLE_MAX)
+// 아테나(리드) pane — delegate 이름표는 늘 '🤖' 로 시작하고, 아테나 pane 은 이름표가 계획서 제목 · 대화 주제라 ' · ' 가 없어 제목 전체가 들어갔다. 이름표가 있고 🤖 가 아니면 아테나
+const isLead = (pane: TrayPane) => Boolean(String(pane.label || '').trim()) && !String(pane.label).trim().startsWith('🤖')
+const titleOf = (pane: TrayPane | undefined, what: string) => clipText(pane ? `${isLead(pane) ? LEAD_TITLE : agentOf(pane)} · ${what}` : what, TITLE_MAX)
 
 // 사건에 실을 pane 칸 — 모르거나 너무 길면 칸 자체를 뺀다
 const paneField = (pane: string | undefined): { pane?: string } => (pane && Array.from(pane).length <= PANE_MAX ? { pane } : {})
 
-type RequestLike = { id?: unknown; pane?: unknown }
+type RequestLike = { id?: unknown; pane?: unknown; kind?: unknown }
 
 export class PushWatch {
   notifier = new Notifier()
@@ -139,8 +143,11 @@ export class PushWatch {
   requests(list: unknown, gate: PushGate = openGate, now: number = Date.now()): PushEvent[] {
     this.memory.prune(now)
     const paneOf = new Map<string, string>()
+    const kindOf = new Map<string, string>() // 요청 id → decision | question
     for (const request of Array.isArray(list) ? (list as (RequestLike | null | undefined)[]) : []) {
-      if (request && typeof request.id === 'string' && typeof request.pane === 'string' && request.pane) paneOf.set(request.id, request.pane)
+      if (!request || typeof request.id !== 'string') continue
+      kindOf.set(request.id, request.kind === 'decision' ? 'decision' : 'question')
+      if (typeof request.pane === 'string' && request.pane) paneOf.set(request.id, request.pane)
     }
     const found: PushEvent[] = []
     for (const notice of this.notifier.updateRequests(list)) {
@@ -153,7 +160,7 @@ export class PushWatch {
       }
       const shown = pane === undefined ? undefined : this.seen.get(pane)
       const body = clipText(notice.body, BODY_MAX) || (shown ? clipText(agentName(shown), BODY_MAX) : '')
-      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, ASK_TITLE), body, ...paneField(pane), ...(request ? { request } : {}) }, now))
+      found.push(...this.take({ kind: 'request', id: eventId('request', request), title: titleOf(shown, kindOf.get(request) || 'question'), body, ...paneField(pane), ...(request ? { request } : {}) }, now))
     }
     return gate.muted || gate.active ? [] : found
   }
@@ -173,7 +180,7 @@ export class PushWatch {
       if (!id || gate.lookingAt(id) || this.memory.askedAt.has(id)) continue
       this.memory.askedAt.set(id, now)
       const pane = this.seen.get(id)
-      found.push(...this.take({ kind: 'request', id: eventId('waiting', id, now), title: titleOf(pane, ASK_TITLE), body: pane ? clipText(agentName(pane), BODY_MAX) : '', ...paneField(id) }, now))
+      found.push(...this.take({ kind: 'request', id: eventId('waiting', id, now), title: titleOf(pane, INPUT_TITLE), body: pane ? clipText(agentName(pane), BODY_MAX) : '', ...paneField(id) }, now))
     }
     for (const id of seen) {
       const pane = this.seen.get(id) as TrayPane

@@ -48,6 +48,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 - Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap
 
 ### Fixed
+- Shorten phone push and menu bar alert titles to dev terms
 - Fix phone push alerts showing only the fixed text — encryption always failed inside the app
 - Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops
 - Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out
