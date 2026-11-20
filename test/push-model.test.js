@@ -197,14 +197,14 @@ test('거르기(D4): Studio 창이 앞(active)이면 아무것도 안 보낸다 
   assert.deepEqual(kinds(watch.requests([{ id: 'r1', title: 'a', state: 'open' }, { id: 'r2', title: 'b', state: 'open' }], away, 3000)), ['request'])
 })
 
-test('거르기(B): 맥에서 최근 60초 안에 입력이 있으면 어느 앱이 앞이든 active · 자리 비우면 60초 뒤부터 아님 · 잠기면 아님', () => {
-  assert.equal(PRESENT_IDLE_SECONDS, 60)
+test('거르기(B): 맥에서 최근 10분 안에 입력이 있으면 어느 앱이 앞이든 active · 자리 비우면 10분 뒤부터 아님 · 잠기면 아님', () => {
+  assert.equal(PRESENT_IDLE_SECONDS, 600)
   // Studio 창이 앞(D4)이면 입력이 없어도 active
   assert.equal(macActive({ locked: false, studioFront: true, idleSeconds: 600 }), true)
   // 다른 앱이 앞이어도 방금 입력이 있었다 — active(사용자 결정 B 2026-11-20)
   assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: 0 }), true)
   assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: PRESENT_IDLE_SECONDS - 1 }), true)
-  // 60초 넘게 입력이 없다 — 보낸다
+  // 10분 넘게 입력이 없다 — 보낸다
   assert.equal(macActive({ locked: false, studioFront: false, idleSeconds: PRESENT_IDLE_SECONDS }), false)
   // 화면이 잠겼으면 창이 앞이어도 · 방금 입력이 있어도 보낸다
   assert.equal(macActive({ locked: true, studioFront: true, idleSeconds: 0 }), false)
