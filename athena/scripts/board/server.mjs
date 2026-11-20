@@ -132,12 +132,18 @@ const firstAuthor = async (path) => {
 }
 const ownerOf = async (declared, path) => declared || (await firstAuthor(path)) || LOCAL_USER
 
+// 숨은 폴더는 들어가지 않고 stat 이 안 되는 것(깨진 심볼릭 링크 · 훑는 사이 지워진 파일)은 건너뛴다 — 하나가 던지면 수집 전체가 실패한다(plan-bind.mjs planFiles 와 같이)
 const listFiles = (dir, predicate) => {
   if (!existsSync(dir)) return []
   return readdirSync(dir).flatMap((name) => {
     const full = join(dir, name)
-    const stat = statSync(full)
-    if (stat.isDirectory()) return listFiles(full, predicate)
+    let stat
+    try {
+      stat = statSync(full)
+    } catch {
+      return []
+    }
+    if (stat.isDirectory()) return name.startsWith('.') ? [] : listFiles(full, predicate)
     return predicate(full) ? [full] : []
   })
 }
@@ -171,10 +177,17 @@ const readPlan = (path) => {
   const progress = progressOf(section(checkpoint, 'Progress'))
   const blocked = plain(section(checkpoint, 'Blocked').split('\n')[0] ?? '').replace(/^-\s*/, '')
   const next = plain(section(checkpoint, 'Next').split('\n').find((line) => line.trim()) ?? '').replace(/^\d+\.\s*/, '')
-  const mtime = statSync(path).mtimeMs
+  // 읽은 뒤 옮겨졌으면(보관 · 이름 바꾸기) 이번 수집에서 뺀다 — 던지면 수집 전체가 실패한다
+  let mtime, created
+  try {
+    mtime = statSync(path).mtimeMs
+    created = createdAt(path)
+  } catch {
+    return null
+  }
   return {
     kind: 'plan',
-    created: createdAt(path),
+    created,
     id: relative(ROOT, path),
     title: plain(text.match(/^#\s+(.+)$/m)?.[1] ?? basename(path, '.md')),
     type: path.split('/').at(archived ? -2 : -2),
@@ -268,6 +281,14 @@ const readIssue = (path) => {
   )
   const body = text.slice(front ? text.indexOf('---', 3) + 3 : 0).trim()
   const status = meta.status || 'open'
+  // 읽은 뒤 옮겨졌으면 이번 수집에서 뺀다(readPlan 과 같이)
+  let mtime, created
+  try {
+    mtime = statSync(path).mtimeMs
+    created = createdAt(path)
+  } catch {
+    return null
+  }
   return {
     kind: 'issue',
     id: relative(ROOT, path),
@@ -288,8 +309,8 @@ const readIssue = (path) => {
     reason: meta.reason || '',
     body,
     summary: plain(body.split('\n').find((line) => line.trim() && !line.startsWith('#')) ?? ''),
-    created: createdAt(path),
-    mtime: statSync(path).mtimeMs,
+    created,
+    mtime,
   }
 }
 

@@ -209,5 +209,24 @@ check('막히면 처음부터 다시 센다', timer.due('p9', true, 1200) === fa
 timer.keep(new Set())
 check('이번 수집에 안 본 pane 은 잊는다', timer.due('p9', true, 5000) === false)
 
+// ── 계획서 훑기 — 깨진 심볼릭 링크 · 숨은 폴더가 있어도 던지지 않음(2026-11-20 · 화면 찍기 도구의 크롬 프로필이 수집 전체를 멈췄다) ──
+const { planFiles } = await import(modPath)
+const { mkdirSync, mkdtempSync, symlinkSync, writeFileSync, rmSync } = await import('node:fs')
+const { join } = await import('node:path')
+const { tmpdir } = await import('node:os')
+const plansRoot = join(mkdtempSync(join(tmpdir(), 'athena-plan-files-')), 'plans')
+mkdirSync(join(plansRoot, 'task/x-screens/cards/.profile/Default'), { recursive: true })
+mkdirSync(join(plansRoot, 'archive/old'), { recursive: true })
+writeFileSync(join(plansRoot, 'task/a.md'), '# a\n')
+writeFileSync(join(plansRoot, 'task/x-screens/cards/.profile/Default/notes.md'), '# 프로필 안\n')
+writeFileSync(join(plansRoot, 'archive/old/plan.md'), '# 보관\n')
+symlinkSync('157.0.8103.80:1', join(plansRoot, 'task/x-screens/cards/.profile/RunningChromeVersion'))
+symlinkSync('없는-파일.md', join(plansRoot, 'task/broken.md'))
+let found = null
+let thrown = ''
+try { found = planFiles(plansRoot) } catch (error) { thrown = String(error) }
+check('planFiles — 깨진 링크 · 숨은 폴더 · archive 를 건너뛰고 던지지 않음', !thrown && same(found?.map((path) => path.slice(plansRoot.length)), ['/task/a.md']), thrown || JSON.stringify(found))
+rmSync(join(plansRoot, '..'), { recursive: true, force: true })
+
 process.exit(fail)
 EOF
