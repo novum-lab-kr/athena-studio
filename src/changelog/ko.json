@@ -268,5 +268,6 @@
   "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "암호화한 폰 푸시 알림에 보낸 pane 추가 — 폰 앱이 알림을 누르면 그 pane 을 열 수 있음",
   "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "폰 푸시 알림이 고정 문구로만 오던 것 수정 — 앱 안에서 암호화가 늘 실패함",
   "Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops": "폰이 Wi-Fi 로 붙어 있는 동안 빠진 폰 푸시 알림 수정 — 그 연결이 끊길 때 다시 보냄",
-  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "전체 화면 에이전트 pane 의 폰 스크롤 끊김 수정 — 스크롤 입력을 나눠 넣음"
+  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "전체 화면 에이전트 pane 의 폰 스크롤 끊김 수정 — 스크롤 입력을 나눠 넣음",
+  "Fix slow phone scrolling over the relay — screen updates sent faster while scrolling": "relay 연결에서 폰 스크롤이 늦던 것 수정 — 쓰는 동안 화면을 더 자주 보냄"
 }

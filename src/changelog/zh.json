@@ -268,5 +268,6 @@
   "Add the sending pane to encrypted phone push alerts — lets the phone app open that pane on tap": "加密的手机推送通知新增发送窗格 — 手机应用可在点按通知时打开该窗格",
   "Fix phone push alerts showing only the fixed text — encryption always failed inside the app": "修复手机推送通知只显示固定文案的问题 — 应用内加密总是失败",
   "Fix phone push alerts missed while the phone was on Wi-Fi — resent when that link drops": "修复手机通过 Wi-Fi 连接期间漏发的推送通知 — 该连接断开时重新发送",
-  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "修复全屏智能体窗格中手机滚动卡顿 — 分开写入滚动输入"
+  "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "修复全屏智能体窗格中手机滚动卡顿 — 分开写入滚动输入",
+  "Fix slow phone scrolling over the relay — screen updates sent faster while scrolling": "修复通过中继连接时手机滚动迟缓的问题 — 滚动时更频繁地发送屏幕更新"
 }

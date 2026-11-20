@@ -577,6 +577,53 @@ test('pane.input 직후 — 열린 묶음 창 안의 그 pane 출력은 짧은 �
   }
 })
 
+test('pane.input 쓸기(휠 · 화살표만) 직후 — 그 pane 출력은 쓸기 묶음으로 더 짧게 · 글자 입력은 짧은 묶음 그대로 · 쓸기 유지 시간이 지나면 짧은 묶음', async () => {
+  const env = await setup({ flushMs: 600, fastFlushMs: 300, fastHoldMs: 5000, wheelFlushMs: 20, wheelHoldMs: 400 })
+  const count = () => env.events('pane.data').length
+  // 묶인(둘째) 조각이 오기까지 — 첫 조각은 조용하던 참이라 바로 간다
+  const second = async (want) => {
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    await waitFor(() => count() >= want, '묶인 출력')
+    return Date.now() - started
+  }
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+
+    await env.ask('pane.input', { pane: 'p1', data: 'x' })
+    assert.ok((await second(2)) >= 250, '글자 입력 뒤에는 짧은 묶음(300ms)')
+    await sleep(350) // 창이 닫힌다
+
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[<64;1;1M' })
+    assert.ok((await second(4)) < 150, '휠 한 번 뒤에는 쓸기 묶음(20ms)')
+    await sleep(60)
+
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[A'.repeat(3) })
+    assert.ok((await second(6)) < 150, '화살표 쓸기 뒤에도 쓸기 묶음')
+
+    await sleep(450) // 쓸기 유지 시간이 지난다 · 짧은 묶음(5초)은 남는다
+    assert.ok((await second(8)) >= 250, '쓸기 유지 시간 뒤에는 짧은 묶음으로 돌아간다')
+  } finally {
+    await env.cleanup()
+  }
+})
+
+test('pane.input 쓸기 직후 — 쓸기 묶음은 길의 짧은 묶음보다 길어지지 않는다(직접 길)', async () => {
+  const env = await setup({ flushMs: 40, wheelFlushMs: 300 })
+  try {
+    await env.ask('pane.open', { pane: 'p1' })
+    await env.ask('pane.input', { pane: 'p1', data: '\x1b[<65;1;1M' })
+    const started = Date.now()
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'a' })
+    env.daemon.emit({ event: 'data', pane: 'p1', data: 'b' })
+    await waitFor(() => env.events('pane.data').length > 1, '묶인 출력')
+    assert.ok(Date.now() - started < 200, '쓸기 뒤에도 길의 묶음(40ms)으로 온다')
+  } finally {
+    await env.cleanup()
+  }
+})
+
 test('pane.input 직후 — 입력 전에 원래 묶음으로 기다리던 그 pane 출력도 앞당긴다(입력 뒤 새 출력 없음)', async () => {
   const env = await setup({ flushMs: 400, fastFlushMs: 20, fastHoldMs: 1000 })
   try {

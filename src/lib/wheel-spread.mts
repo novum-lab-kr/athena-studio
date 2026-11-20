@@ -20,6 +20,12 @@ export function splitWheel(data: string): string[] | null {
   return null
 }
 
+// 휠 · 화살표 한 번 이상으로만 된 입력인가 — 쓸기 입력(한 번짜리 포함). 출력 묶음을 더 짧게 할지 고를 때 쓴다(mobile-bridge WHEEL_FLUSH_MS)
+export function isWheelInput(data: string): boolean {
+  if (splitWheel(data)) return true
+  return UNIT_PATTERNS.some((pattern) => pattern.exec(data)?.[0] === data)
+}
+
 // count 개를 windowMs 안에 고르게 — 첫 것은 바로(0) · 마지막은 다음 msg 가 오기 전(windowMs 보다 앞)
 export function spreadOffsets(count: number, windowMs: number): number[] {
   return Array.from({ length: count }, (_unused, index) => (index * windowMs) / count)
