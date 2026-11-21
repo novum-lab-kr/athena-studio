@@ -1,4 +1,13 @@
 {
+  "0.69": [
+    {
+      "tag": "new",
+      "en": "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button",
+      "ko": "[작업] 목록에 디자인된 계획서 화면 추가 — 줄을 누르면 열림 · md 원문은 아이콘 버튼으로",
+      "ja": "[作業] リストにデザインされた計画書画面を追加 — 行をクリックで開く・md 原文はアイコンボタンから",
+      "zh": "在 [工作] 列表中新增设计过的计划书画面 — 点击行即可打开 · md 原文通过图标按钮查看"
+    }
+  ],
   "0.68": [
     {
       "tag": "new",

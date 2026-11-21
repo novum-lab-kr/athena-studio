@@ -16,6 +16,7 @@ import type { CodexApproval } from '../lib/codex-approvals.mts'
 import * as packModel from '../lib/pack.mts'
 import * as requestsModel from '../lib/requests.mts'
 import * as workModel from '../lib/work-model.mts'
+import { planSteps } from '../lib/plan-doc.mts'
 import { mobileUsage, noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage } from '../lib/tray-model.mts'
 import { isBoardUp, queueBoard, boardOwner, boardJson, fetchBoardJson } from './board.mts'
@@ -409,12 +410,13 @@ export function installWork(ctx: WorkCtx, deps: WorkDeps): void {
   // 서비스 그림이 없어도 비지 않는다(athena/scripts/build-diagram-index.mjs). 화면이 팩을 바꿀 때 · 3초마다 묻는다(파일 하나 보기)
   ctx.diagramsReady = async () => !!ctx.athenaDir && fs.existsSync(path.join(ctx.athenaDir, 'docs', 'diagrams', 'index.html'))
 
-  // 작업 상세 — 계획서 원문(현황판 /api/card)에서 몇 줄만. plans/ 안의 .md 만
+  // 작업 상세 — 계획서 원문(현황판 /api/card) 전문(text) · 진행 칸(steps) · 거기서 뽑은 요약 칸. plans/ 안의 .md 만
   ctx.workDetail = async (id: string) => {
     if (!/^plans\/[^\0]+\.md$/.test(id) || id.split('/').includes('..')) return { ok: false, error: 'bad-id' }
     const card = (await fetchBoardJson(boardPortNow(), `/api/card?id=${encodeURIComponent(id)}`)) as BoardCard | null
     if (!card || typeof card.text !== 'string') return { ok: false, error: 'not-found' }
-    return { ok: true, id, ...workModel.planDetail(card.text, Array.isArray(card.templateLines) ? card.templateLines.filter((line): line is string => typeof line === 'string') : []) }
+    const templateLines = Array.isArray(card.templateLines) ? card.templateLines.filter((line): line is string => typeof line === 'string') : []
+    return { ok: true, id, text: card.text, steps: planSteps(card.text, templateLines), ...workModel.planDetail(card.text, templateLines) }
   }
 
   // 현황판은 띄우지 않고 포트만 미리 정해 적는다(창을 열 때 · 아테나 폴더를 정할 때) — 현황판 탭을 열기 전에도 아테나가 콘솔을 맞는 포트로 띄우게.

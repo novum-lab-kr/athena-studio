@@ -17,7 +17,7 @@ import { createServerPeek } from '../lib/server-status.mts'
 import { createIconTokens } from './mobile-look.mts'
 import { createMobileBridge, createMergeDetails, createGitMerges, createPaneControl, mobileInputAllowed, readLeadPane, boardActionPoster } from './mobile-bridge.mts'
 import type { MergeRunner, MergeBase } from './mobile-bridge.mts'
-import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings, LookSource } from './mobile-bridge.mts'
+import type { EventRow, LogEvent, RequestAnswer, AnswerResult, PackView, PackResultLike, RepoChanges, RepoSettings, LookSource, PlanView } from './mobile-bridge.mts'
 import { setMergeFromScreen } from './pack-repos.mts'
 import { noMobileWork, createWorkWatch } from '../lib/work-model.mts'
 import type { MobileWork } from '../lib/work-model.mts'
@@ -85,6 +85,7 @@ type FrontCtx = {
   requestsNow(): { supported?: boolean; requests: unknown[] }
   workPeek(options?: { launch?: boolean }): Promise<MobileWork>
   usagePeek(): Promise<MobileUsage>
+  workDetail(id: string): Promise<unknown>
   answerRequest(id: string, answer: RequestAnswer, by: 'mobile'): Promise<unknown>
   approveRequest(id: string, generation: string, choice: number): Promise<unknown>
   boardPortNow(): number
@@ -321,6 +322,12 @@ export function startMobileDev(deps: DevDeps) {
           const server = all ? all.servers.find((reading) => Boolean(reading) && (reading as { name?: unknown }).name === name) : undefined
           if (!all || !server) return null
           return { server, history: (all.history && all.history[name]) || [], sar: (all.sar && all.sar[name]) || [] }
+        },
+        // 계획서 하나 — 맥 [작업] 계획서 화면과 같은 길(앞 창 현황판 /api/card · work.mts workDetail). 앞 창이 없거나 못 읽으면 null
+        planDetail: async (id) => {
+          const ctx = front()
+          const found = ctx ? ((await ctx.workDetail(id).catch(() => null)) as ({ ok?: unknown } & Partial<PlanView>) | null) : null
+          return found && found.ok === true && typeof found.text === 'string' ? (found as PlanView) : null
         },
         bodyPacks: () => {
           const ctx = front()

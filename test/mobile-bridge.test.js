@@ -1225,6 +1225,34 @@ test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일�
   }
 })
 
+test('plan.detail — 계획서 md 전문 + 요약 칸 · 틀린 id · .. 는 bad_id(읽으러 가지 않는다) · 못 읽으면 not_found', async () => {
+  const asked = []
+  const summary = { why: '왜', decided: ['D1 하나로'], progress: { checked: 1, total: 3, now: '2단계' }, validation: '통과', results: ['https://github.com/a/b/pull/1'], next: '다음', blocked: '' }
+  const env = await setup({
+    planDetail: async (id) => {
+      asked.push(id)
+      return id === 'plans/feature/a.md' ? { text: '# 제목\n\n본문', ...summary, extra: '폰에 안 넘기는 칸' } : null
+    },
+  })
+  const bare = await setup()
+  try {
+    const found = await env.ask('plan.detail', { id: 'plans/feature/a.md' })
+    assert.deepEqual(found.result, { id: 'plans/feature/a.md', text: '# 제목\n\n본문', ...summary })
+    assert.equal((await env.ask('plan.detail', { id: 'plans/feature/없음.md' })).error.code, 'not_found')
+    for (const id of ['plans/../secret.md', 'plans/feature/../../etc/passwd.md', 'issues/a.md', 'plans/feature/a.html', '/etc/passwd', 'plans/a\0.md']) {
+      assert.equal((await env.ask('plan.detail', { id })).error.code, 'bad_id', id)
+    }
+    assert.equal((await env.ask('plan.detail', {})).error.code, 'usage')
+    assert.equal((await env.ask('plan.detail', { id: 7 })).error.code, 'usage')
+    assert.deepEqual(asked, ['plans/feature/a.md', 'plans/feature/없음.md'], '틀린 id 는 읽는 쪽을 부르지 않는다')
+    // 읽는 길이 없는 부르는 쪽(옛 배선)은 not_found
+    assert.equal((await bare.ask('plan.detail', { id: 'plans/feature/a.md' })).error.code, 'not_found')
+  } finally {
+    await env.cleanup()
+    await bare.cleanup()
+  }
+})
+
 test('server.detail — 서버 하나의 읽기 · 이력 · sar 에 lastDeploy null(원천 없음) · 없는 서버 not_found', async () => {
   const env = await setup({
     serverDetail: async (name) => (name === 'novum' ? { server: { name: 'novum', status: { ok: true, cpuModel: 'EPYC' } }, history: [{ t: 1 }], sar: [] } : null),
