@@ -828,6 +828,7 @@
   "work.detail.validation": "验证",
   "work.detail.results": "结果",
   "work.detail.next": "下一步",
+  "work.detail.now": "当前",
   "work.detail.unreadable": "没能读取计划 — 待办可能已关闭",
   "work.detail.openPlan": "打开 md 原文",
   "work.detail.commits": "提交",

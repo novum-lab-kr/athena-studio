@@ -1472,55 +1472,104 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .work-steps i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
 .work-steps i.done { background: var(--success); }
 .work-steps i.now { background: var(--accent); }
-/* [작업] 계획서 화면(ui/plan-view.tsx) — packDialog 몸통 안. 머리(상태 · 진행 수 · 아이콘 버튼) · 진행 카드 · 요약 카드 · 접는 본문 절 */
+/* [작업] 계획서 화면(ui/plan-view.tsx) — packDialog 몸통 안. 폰 계획서 화면과 같은 느낌(D7): 머리(상태 칩 · 경로 · 아이콘 버튼) · 진행 상자 · 상자 없는 요약 줄 · 여백 본문 절
+   글자 단계 15 절 머리 · 13.5 소제목 · 13 본문 · 12 코드 · 11.5 이름표 · 큰 진행 수만 34 / 간격 4 · 8 · 12 · 16 · 24 / 강조색은 상태 칩 · 막힌 것 · 링크만 */
 .pack-box:has(.plan-view) { width: min(720px, 100%); }
 .pack-box:has(.plan-view) .pack-subtitle { display: none; }
-.plan-view { display: flex; flex-direction: column; gap: 12px; }
-.plan-head { display: flex; align-items: center; gap: 10px; }
-.plan-head .work-state { color: var(--popup-text); font-size: 12.5px; }
-.plan-count { color: var(--popup-muted); font: 12px/1 var(--font-mono); }
-.plan-tools { display: flex; gap: 4px; margin-left: auto; }
+.plan-view { --plan-state: var(--muted); display: flex; flex-direction: column; gap: 24px; }
+.plan-head { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.plan-chip { display: inline-flex; flex: none; align-items: center; gap: 6px; padding: 4px 8px; border-radius: 999px; background: color-mix(in srgb, var(--plan-state) 14%, transparent); color: var(--plan-state); font-size: 11.5px; font-weight: 600; line-height: 14px; white-space: nowrap; }
+.plan-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.plan-chip[data-state="work"] { --plan-state: var(--success); }
+.plan-chip[data-state="wait"] { --plan-state: var(--accent); }
+.plan-chip[data-state="blocked"] { --plan-state: var(--error); }
+.plan-chip[data-state="done"] { --plan-state: #6e8f7d; }
+.plan-path { flex: 1; min-width: 0; overflow: hidden; color: var(--popup-muted); font: 11px var(--font-mono); text-overflow: ellipsis; white-space: nowrap; }
+.plan-tools { display: flex; flex: none; gap: 4px; margin-left: auto; }
 .pack-box .plan-tool { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--popup-line); border-radius: 8px; background: rgb(255 255 255 / 3%); color: var(--popup-muted); cursor: pointer; transition: background-color var(--motion), border-color var(--motion), color var(--motion); }
 .pack-box .plan-tool:hover { border-color: rgb(255 255 255 / 16%); background: var(--popup-hover); color: var(--popup-text); }
 .pack-box .plan-tool.accent { border-color: var(--popup-gold-line); background: var(--popup-gold-bg); color: var(--accent); }
 .plan-tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.plan-card { padding: 12px 14px; border: 1px solid var(--popup-line); border-radius: 10px; background: var(--popup-inset); }
-.plan-card h3 { margin: 0 0 8px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
-.plan-card .work-steps { margin: 0 0 10px; }
+/* 진행 — 화면의 주인공 · 상자 하나 */
+.plan-progress { padding: 12px 16px 4px; border: 1px solid var(--popup-line); border-radius: 12px; background: var(--popup-inset); }
+.plan-now { display: flex; align-items: baseline; gap: 8px; min-width: 0; padding-bottom: 8px; font-size: 13px; line-height: 20px; }
+.plan-now + .plan-count { margin-top: 4px; }
+.plan-now-key { flex: none; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
+.plan-now > b { flex: none; color: var(--popup-title); font-weight: 600; }
+.plan-now-next { flex: 1; min-width: 0; overflow: hidden; color: var(--popup-muted); text-overflow: ellipsis; white-space: nowrap; }
+.plan-now.blocked .plan-now-key, .plan-now.blocked .plan-now-next { color: var(--error); }
+.plan-count { display: flex; align-items: baseline; gap: 6px; font-variant-numeric: tabular-nums; }
+.plan-count b { color: var(--popup-title); font-size: 34px; font-weight: 700; line-height: 40px; }
+.plan-count span { color: var(--popup-muted); font-size: 17px; }
+.plan-cells { display: flex; gap: 4px; margin: 8px 0; }
+.plan-cells i { flex: 1; height: 4px; border-radius: 2px; background: var(--surface-active); }
+.plan-cells i.done { background: var(--success); }
+.plan-cells i.now { background: var(--accent); }
+.plan-steps { margin: 0; padding: 0; list-style: none; }
+.plan-steps li { display: flex; gap: 10px; align-items: flex-start; padding: 5px 0; color: var(--popup-muted); font-size: 13px; line-height: 20px; }
+.plan-steps li.now { color: var(--popup-title); font-weight: 600; }
+.plan-step-mark, .plan-item-mark { flex: none; display: grid; place-items: center; box-sizing: border-box; border: 1.5px solid var(--surface-active); }
+/* 단계 점(09:23 첫 판) — 끝 = 초록 점 · 지금 = 금색 고리 · 남음 = 흐린 고리 */
+.plan-step-mark { width: 12px; height: 12px; margin-top: 4px; border-color: var(--line); border-radius: 50%; }
+.plan-steps li.now .plan-step-mark { border-color: var(--accent); background: var(--accent); box-shadow: inset 0 0 0 3px var(--popup-inset); }
+.plan-steps li.done .plan-step-mark { border-color: var(--success); background: var(--success); box-shadow: inset 0 0 0 2px var(--popup-inset); }
+.plan-list li.checked .plan-item-mark { border-color: var(--success); background: var(--success); }
+.plan-list li.checked .plan-item-mark::after { content: "✓"; color: var(--bg); font-size: 11px; font-weight: 800; line-height: 1; }
+/* 요약 — 상자 없이 줄만 */
+.pack-box .plan-fold { display: inline; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.pack-box .plan-fold:hover { color: var(--popup-title); }
+.plan-steps li .plan-fold { flex: 1; min-width: 0; }
+.plan-step-title { color: inherit; }
+.plan-steps li.now .plan-step-title { color: var(--popup-title); }
+/* 요약 "결정" — 한 줄에 상자 하나(D9) · 누른 상자는 제목 아래에 전체 글을 보인다 */
+.plan-decs { display: flex; flex-direction: column; gap: 6px; }
+.pack-box .plan-dec { display: flex; flex-direction: column; gap: 6px; min-width: 0; padding: 8px 10px; border: 1px solid var(--popup-line); border-radius: 8px; background: var(--popup-inset); color: var(--popup-text); font: inherit; font-size: 12.5px; line-height: 18px; text-align: left; cursor: pointer; }
+.pack-box .plan-dec:hover { background: var(--popup-hover); }
+.pack-box .plan-dec[aria-expanded="true"] { border-color: rgb(255 255 255 / 18%); }
+.plan-dec-title { display: flex; gap: 8px; align-items: center; justify-content: space-between; }
+.plan-dec-title > span { min-width: 0; overflow-wrap: anywhere; }
+.plan-dec[aria-expanded="true"] .plan-dec-title { color: var(--popup-title); }
+.plan-dec[aria-expanded="true"] .plan-chevron { transform: rotate(90deg); }
+.plan-dec-full { color: var(--popup-muted); font-size: 12.5px; line-height: 19px; overflow-wrap: anywhere; }
+.plan-fields { display: flex; flex-direction: column; gap: 12px; padding: 0 4px; }
 .plan-fields:not(:has(.work-field)) { display: none; }
-.plan-fields .work-field { grid-template-columns: 72px 1fr; }
+.plan-fields .work-field { grid-template-columns: 64px 1fr; gap: 12px; padding: 0; border: 0; line-height: 20px; }
+.plan-fields .work-field-key { padding: 0; font-size: 11.5px; font-weight: 600; }
+.plan-fields .work-field-value { gap: 4px; color: var(--popup-text); }
 .plan-fields .work-field[data-tone="blocked"] .work-field-key { color: var(--error); }
-.plan-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
-.plan-steps li { display: flex; gap: 8px; align-items: baseline; color: var(--popup-text); }
-.plan-steps li.done { color: var(--popup-muted); }
-.plan-steps li.now { color: var(--popup-title); font-weight: 500; }
-.plan-step-mark, .plan-item-mark { flex: none; position: relative; top: 2px; width: 12px; height: 12px; border: 1.5px solid var(--line); border-radius: 50%; }
-.plan-steps li.done .plan-step-mark, .plan-list li.checked .plan-item-mark { border-color: var(--success); background: var(--success); box-shadow: inset 0 0 0 2px var(--popup-inset); }
-.plan-steps li.now .plan-step-mark { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--popup-inset); background: var(--accent); }
 .plan-link { display: inline; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
 .plan-link:hover { text-decoration: underline; }
+/* 본문 절 — 상자 없이 가는 선으로만 나눈 줄 · 머리를 누르면 접힘 */
+.plan-secs { display: flex; flex-direction: column; margin-top: -8px; }
+.plan-secs:empty { display: none; }
 .plan-sec { border-top: 1px solid var(--popup-line); }
-.plan-sec > summary { display: flex; align-items: center; gap: 8px; padding: 9px 2px; color: var(--popup-text); font-size: 13px; font-weight: 600; list-style: none; cursor: pointer; }
+.plan-sec > summary { display: flex; align-items: center; gap: 12px; min-height: 48px; padding: 12px 4px; box-sizing: border-box; color: var(--popup-text); font-size: 15px; font-weight: 500; line-height: 22px; list-style: none; cursor: pointer; }
+.plan-sec[open] > summary { color: var(--popup-title); font-weight: 700; }
 .plan-sec > summary::-webkit-details-marker { display: none; }
-.plan-sec > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--popup-muted); border-bottom: 1.5px solid var(--popup-muted); transform: rotate(-45deg); transition: transform var(--motion); }
-.plan-sec[open] > summary::before { transform: rotate(45deg); }
-.plan-sec > summary:hover { color: var(--popup-title); }
-.plan-md { padding: 0 2px 12px 16px; font-size: 13px; line-height: 1.65; }
-.plan-md > :last-child { margin-bottom: 0; }
-.pack-body .plan-md p { margin: 0 0 8px; }
-.plan-md h4 { margin: 12px 0 6px; color: var(--popup-title); font-size: 12.5px; font-weight: 600; }
-.plan-md code, .plan-fields code { padding: 0 4px; border-radius: 4px; background: rgb(255 255 255 / 6%); font: 12px var(--font-mono); }
-.plan-md pre { margin: 0 0 8px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--popup-line); border-radius: 8px; background: var(--popup-inset); font: 12px/1.55 var(--font-mono); white-space: pre; }
-.pack-body .plan-md .plan-quote { padding-left: 10px; border-left: 2px solid var(--popup-gold-line); color: var(--popup-muted); }
-.plan-list { display: flex; flex-direction: column; gap: 3px; margin: 0 0 8px; padding: 0; list-style: none; }
-.plan-list li { display: flex; gap: 8px; align-items: baseline; }
-.plan-list li.dot .plan-item-mark { top: -2px; width: 4px; height: 4px; margin: 0 4px; border: 0; background: var(--popup-muted); }
+.plan-sec > summary > span { flex: 1; min-width: 0; }
+.plan-sec > summary:hover { background: var(--popup-hover); }
+.plan-chevron { flex: none; width: 10px; height: 10px; fill: none; stroke: var(--popup-muted); stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; transition: transform var(--motion); }
+.plan-sec[open] .plan-chevron { transform: rotate(90deg); }
+.plan-md { display: flex; flex-direction: column; gap: 12px; padding: 8px 4px 20px; color: var(--popup-text); font-size: 13px; line-height: 20px; }
+.plan-view > .plan-md { padding-top: 0; }
+.pack-body .plan-md p { margin: 0; }
+.plan-md h4 { margin: 8px 0 0; color: var(--popup-title); font-size: 13.5px; font-weight: 700; line-height: 19px; }
+.plan-md b, .plan-fields b { color: var(--popup-title); }
+.plan-md code, .plan-fields code { padding: 0 3px; border-radius: 4px; background: var(--popup-hover); color: var(--popup-title); font: 11.5px var(--font-mono); }
+.plan-md pre { margin: 0; padding: 12px; overflow-x: auto; border-radius: var(--radius-lg); background: var(--popup-inset); font: 12px/18px var(--font-mono); white-space: pre; }
+.pack-body .plan-md .plan-quote { padding: 2px 0 2px 12px; border-left: 3px solid var(--surface-active); color: var(--popup-muted); }
+.plan-list { display: flex; flex-direction: column; gap: 6px; margin: 0; padding: 0; list-style: none; }
+.plan-list li { display: flex; gap: 8px; align-items: flex-start; }
+.plan-item-mark { width: 16px; height: 16px; margin-top: 2px; border-color: var(--popup-muted); border-radius: 4px; }
+.plan-list li.dot .plan-item-mark { width: 16px; height: 20px; margin: 0; border: 0; border-radius: 0; background: radial-gradient(circle, var(--popup-muted) 2px, transparent 2.5px); }
+.plan-item-number { flex: none; min-width: 16px; color: var(--popup-muted); font-variant-numeric: tabular-nums; }
 .plan-list li.checked { color: var(--popup-muted); }
-.plan-item-mark { border-radius: 3px; }
-.plan-table { margin: 0 0 8px; overflow-x: auto; }
-.plan-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
-.plan-table :is(th, td) { padding: 6px 8px; border: 1px solid var(--popup-line); text-align: left; vertical-align: top; }
-.plan-table th { background: rgb(255 255 255 / 3%); color: var(--popup-title); font-weight: 600; }
+.plan-table { overflow-x: auto; border: 1px solid var(--popup-line); border-radius: var(--radius-lg); }
+.plan-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; line-height: 18px; }
+.plan-table :is(th, td) { padding: 8px 12px; border-left: 1px solid var(--popup-line); text-align: left; vertical-align: top; }
+.plan-table :is(th, td):first-child { border-left: 0; }
+.plan-table tr + tr td, .plan-table tbody tr:first-child td { border-top: 1px solid var(--popup-line); }
+.plan-table th { background: var(--popup-inset); color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
 .work-request-body { color: var(--popup-text); font-size: 13px; }
 .work-options { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .work-option { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 9px 11px; border: 1px solid var(--popup-line); border-radius: 8px; background: transparent; color: var(--popup-text); font: 13px var(--font-ui); text-align: left; cursor: pointer; }

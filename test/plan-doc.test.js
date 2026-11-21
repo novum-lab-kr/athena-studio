@@ -1,7 +1,7 @@
 // 계획서 md → 화면 조각(src/lib/plan-doc.mts) — [작업] 계획서 화면이 그리는 절 · 목록 · 표 · 코드 · 꾸밈
 const test = require('node:test')
 const assert = require('node:assert/strict')
-const { planSteps, planCommits, planBlocks, planSections, inlineParts } = require('../src/lib/plan-doc.mts')
+const { planSteps, planCommits, planBlocks, planSections, inlineParts, stepTitle, stepBrief, decisionBrief } = require('../src/lib/plan-doc.mts')
 const { planDetail } = require('../src/lib/work-model.mts')
 
 const PLAN = [
@@ -115,4 +115,35 @@ test('inlineParts — 코드 · 굵게 · 링크 · 맨 주소 · 코드 안 꾸
   ])
   assert.deepEqual(inlineParts('[위험](javascript:alert(1)) [파일](file:///etc/passwd)'), [{ kind: 'text', text: '[위험](javascript:alert(1)) [파일](file:///etc/passwd)' }])
   assert.deepEqual(inlineParts(''), [])
+})
+
+test('stepTitle · stepBrief — " — " 앞 머리 · 그 뒤 " → 확인:" 앞 할 일 · " — " 가 없으면 줄 전체가 머리(D8 · 폰 stepParts 와 같음)', () => {
+  assert.equal(stepTitle('4단계 reviewer — 계획서 대비 검증 + 브리지 계약 교차 확인'), '4단계 reviewer')
+  assert.equal(stepTitle('2단계 화면'), '2단계 화면')
+  assert.deepEqual(stepBrief('3단계 athena-app — 작업 탭 줄을 누르면 계획서 전체를 새 화면으로 → 확인: 시뮬레이터 실화면 → 성공 조건: 진행 중'), {
+    title: '3단계 athena-app',
+    gist: '작업 탭 줄을 누르면 계획서 전체를 새 화면으로',
+  })
+  assert.deepEqual(stepBrief('1단계 브리지 → 확인: 시험'), { title: '1단계 브리지 → 확인: 시험', gist: '' })
+  assert.deepEqual(stepBrief('단계 하나'), { title: '단계 하나', gist: '' })
+})
+
+test('decisionBrief — 번호는 쓰지 않는다 · 제목 = 날짜 꼬리 뗀 글의 첫 ": " 앞 · 없으면 괄호 밖 첫 " · " 앞 · full = 번호만 뗀 전체(D8 · 폰 decisionParts 와 같음)', () => {
+  assert.deepEqual(decisionBrief('D1 PC 화면: 줄을 누르면 디자인된 계획서 화면 하나 · md 원문은 그 안 작은 버튼 (2026-11-21 사용자)'), {
+    title: 'PC 화면',
+    full: 'PC 화면: 줄을 누르면 디자인된 계획서 화면 하나 · md 원문은 그 안 작은 버튼 (2026-11-21 사용자)',
+  })
+  assert.deepEqual(decisionBrief('D2 폰에서 보여 줄 범위: 계획서 전체 (2026-11-21 사용자)'), {
+    title: '폰에서 보여 줄 범위',
+    full: '폰에서 보여 줄 범위: 계획서 전체 (2026-11-21 사용자)',
+  })
+  assert.equal(decisionBrief('D8 "지금 뭐 하는지" 보이기: 진행 상자 맨 위에 지금 단계 (2026-11-21 사용자)').title, '"지금 뭐 하는지" 보이기')
+  assert.deepEqual(decisionBrief('D9: 표시: 짧게 (확정 전)'), { title: '표시', full: '표시: 짧게 (확정 전)' })
+  // ": " 가 없으면 괄호 밖 첫 " · " 앞(괄호 안 " · " 는 자르지 않는다)
+  assert.deepEqual(decisionBrief('D6 위는 진행 중심(큰 n/m · 단계 체크 목록) · 시안 B + E 합침 (2026-11-21 사용자)'), {
+    title: '위는 진행 중심(큰 n/m · 단계 체크 목록)',
+    full: '위는 진행 중심(큰 n/m · 단계 체크 목록) · 시안 B + E 합침 (2026-11-21 사용자)',
+  })
+  // 번호 없는 결정 · 주소의 ":" 는 구분자가 아니다
+  assert.deepEqual(decisionBrief('https://example.com 을 쓴다'), { title: 'https://example.com 을 쓴다', full: 'https://example.com 을 쓴다' })
 })

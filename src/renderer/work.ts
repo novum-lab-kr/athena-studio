@@ -98,7 +98,7 @@ async function openWorkDetail(item: WorkItemView): Promise<void> {
   const detail = await studio.workDetail(item.id as string)
   const pane = item.agents.find(paneLive)
   const body = el('div', 'plan-view-root')
-  StudioUi.planView.open(body, { state: item.state, detail, showConsole: Boolean(item.html), showPane: Boolean(pane) })
+  StudioUi.planView.open(body, { id: item.id as string, state: item.state, detail, showConsole: Boolean(item.html), showPane: Boolean(pane) })
   hidePops() // 대화상자를 여는 같은 동기 구간에서 팝업을 내린다 — 대화상자가 바로 브라우저를 뗀다(닫히면 syncModal 이 붙인다)
   const choice = await packDialog({ title: item.title, body: [body], close: true })
   StudioUi.planView.close()
