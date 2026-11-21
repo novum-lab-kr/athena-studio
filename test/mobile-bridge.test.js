@@ -1237,7 +1237,8 @@ test('plan.detail — 계획서 md 전문 + 요약 칸 · 틀린 id · .. 는 ba
   const bare = await setup()
   try {
     const found = await env.ask('plan.detail', { id: 'plans/feature/a.md' })
-    assert.deepEqual(found.result, { id: 'plans/feature/a.md', text: '# 제목\n\n본문', ...summary })
+    // 읽는 쪽이 templateLines 를 안 주면(옛 코어 현황판) 빈 목록
+    assert.deepEqual(found.result, { id: 'plans/feature/a.md', text: '# 제목\n\n본문', ...summary, templateLines: [] })
     assert.equal((await env.ask('plan.detail', { id: 'plans/feature/없음.md' })).error.code, 'not_found')
     for (const id of ['plans/../secret.md', 'plans/feature/../../etc/passwd.md', 'issues/a.md', 'plans/feature/a.html', '/etc/passwd', 'plans/a\0.md']) {
       assert.equal((await env.ask('plan.detail', { id })).error.code, 'bad_id', id)
@@ -1250,6 +1251,21 @@ test('plan.detail — 계획서 md 전문 + 요약 칸 · 틀린 id · .. 는 ba
   } finally {
     await env.cleanup()
     await bare.cleanup()
+  }
+})
+
+test('plan.detail — 템플릿 자리 줄(templateLines)을 코어 plan-bind.mjs 목록 그대로 싣는다 · 글자가 아닌 칸은 뺀다', async () => {
+  const { TEMPLATE_PLACEHOLDER_LINES } = await import('../athena/scripts/board/plan-bind.mjs')
+  const summary = { why: '', decided: [], progress: { checked: 0, total: 0, now: '' }, validation: '', results: [], next: '', blocked: '' }
+  const env = await setup({
+    planDetail: async (id) => ({ text: '# 제목', ...summary, templateLines: id === 'plans/task/b.md' ? [...TEMPLATE_PLACEHOLDER_LINES, 7, null] : [...TEMPLATE_PLACEHOLDER_LINES] }),
+  })
+  try {
+    assert.ok(TEMPLATE_PLACEHOLDER_LINES.length > 0)
+    assert.deepEqual((await env.ask('plan.detail', { id: 'plans/task/a.md' })).result.templateLines, TEMPLATE_PLACEHOLDER_LINES)
+    assert.deepEqual((await env.ask('plan.detail', { id: 'plans/task/b.md' })).result.templateLines, TEMPLATE_PLACEHOLDER_LINES)
+  } finally {
+    await env.cleanup()
   }
 })
 
