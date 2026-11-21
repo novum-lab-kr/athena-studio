@@ -48,11 +48,16 @@ export type BoardReply = { status: number; body: unknown }
 // 사건 기록 한 줄(코어 events.mjs logEvent 와 같은 모양 — 종류 · 칸)
 export type LogEvent = (type: string, fields: Record<string, unknown>) => void
 // 머지 피드 원천 — 코어 사건 기록(events.jsonl)의 줄(읽는 칸만)
-export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown; branch?: unknown }
+export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unknown; plan?: unknown; pr?: unknown; sha?: unknown; merged?: unknown; direct?: unknown; branch?: unknown; verdict?: unknown; reviewers?: unknown; confirm?: unknown; mergedAt?: unknown }
 // 머지 하나의 상세 — PR 은 gh pr view · 바로 머지는 git show --shortstat(머지 커밋)에서. 읽지 못한 칸은 null
 // base 는 PR 이 머지된 브랜치(gh baseRefName — 사건에는 없다) · 폰에 넘기지 않고 prBase 밖 머지를 거를 때만 쓴다
 export type MergeDetail = { title: string | null; branch: string | null; additions: number | null; deletions: number | null; files: number | null; base: string | null }
 export type MergeRow = ReturnType<typeof weekMerges>[number]
+// 머지 하나를 열었을 때(merge.detail) — PR 은 gh pr view(url · commits · files) · 바로 머지는 git(numstat · rev-list). 바이너리 파일은 줄 수 null
+export type MergeFile = { path: string; additions: number | null; deletions: number | null }
+export type MergeFull = { url: string | null; commits: number | null; files: MergeFile[] }
+// 머지 흐름 한 단계 — 코어 사건(docs/events.md) 그대로. 그 종류에 없는 칸은 null · 빈 목록
+export type MergeStep = { type: string; at: string; verdict: string | null; reviewers: { name: string; result: string }[]; ok: boolean | null; confirm: boolean | null; mergedAt: string | null }
 // 이 맥 · 짝 기기(연결된 폰) — 폰 화면 머리에 보인다
 export type DeviceView = { peer: string; label: string | null; online: boolean; lastSeen: string | null }
 
@@ -335,7 +340,8 @@ const RETRY_MS = 10 * 60 * 1000
 const MERGE_READS = 3 // 한꺼번에 도는 gh · git 수
 const SHA = /^[0-9a-f]{7,40}$/
 export function mergeKey(merge: MergeRow): string | null {
-  if (typeof merge.repo !== 'string' || !/^[\w.-]+$/.test(merge.repo)) return null
+  // '.' · '..' 은 repos/ 밖(본체 폴더)을 가리키니 레포 이름이 아니다
+  if (typeof merge.repo !== 'string' || !/^[\w.-]+$/.test(merge.repo) || /^\.+$/.test(merge.repo)) return null
   if (Number.isInteger(merge.pr) && (merge.pr as number) > 0) return `${merge.repo}#${merge.pr}`
   // 바로 머지는 squash 커밋(merged — 부모 하나라 shortstat 가 바뀐 것 전부). Actions 로 넘긴 것은 merged 가 없어 읽지 않는다(sha 는 브랜치 끝 커밋 하나뿐)
   return merge.direct && typeof merge.merged === 'string' && SHA.test(merge.merged) ? `${merge.repo}@${merge.merged}` : null
@@ -358,21 +364,121 @@ export function parseShortstat(text: string, branch: string | null): MergeDetail
   const number = (pattern: RegExp) => Number(pattern.exec(stat)?.[1] ?? 0)
   return { title: lines[0]!.trim(), branch, additions: number(/(\d+) insertions?\(\+\)/), deletions: number(/(\d+) deletions?\(-\)/), files: number(/(\d+) files? changed/), base: null }
 }
+const lineCount = (value: string): number | null => (/^\d+$/.test(value) ? Number(value) : null)
+// gh pr view --json url,commits,files — files 는 { path, additions, deletions }[]
+export function parsePrFull(text: string): MergeFull | null {
+  try {
+    const data = JSON.parse(text) as { url?: unknown; commits?: unknown; files?: unknown }
+    const files = Array.isArray(data.files) ? data.files : []
+    return {
+      url: typeof data.url === 'string' && /^https:\/\//.test(data.url) ? data.url : null,
+      commits: Array.isArray(data.commits) ? data.commits.length : null,
+      files: files.flatMap((file: unknown) => {
+        const row = (file && typeof file === 'object' ? file : {}) as { path?: unknown; additions?: unknown; deletions?: unknown }
+        return typeof row.path === 'string' && row.path ? [{ path: row.path, additions: countOf(row.additions), deletions: countOf(row.deletions) }] : []
+      }),
+    }
+  } catch {
+    return null
+  }
+}
+// git show --numstat --format= : "10\t2\t경로" · 바이너리는 "-\t-\t경로"(줄 수 null) · 이름 바뀜은 git 이 적은 그대로("a => b")
+export function parseNumstat(text: string): MergeFile[] {
+  return text.split('\n').flatMap((line) => {
+    const [added, deleted, ...rest] = line.split('\t')
+    const file = rest.join('\t')
+    return added !== undefined && deleted !== undefined && file ? [{ path: file, additions: lineCount(added), deletions: lineCount(deleted) }] : []
+  })
+}
+// 머지 흐름 — 사건 기록에서 그 머지의 pr.open · review · auto.fix · auto.merge 를 시간순으로.
+// PR 은 같은 레포 · PR 번호. 바로 머지(PR 없음)는 같은 레포의 PR 없는 사건 중 sha · merged 가 그 커밋과 맞는 것 —
+// auto.merge 의 merged(squash 커밋)로 찾은 뒤 그 사건의 sha(브랜치 끝 — 리뷰 사건이 보는 HEAD)도 같이 본다
+const FLOW_TYPES = new Set(['pr.open', 'review', 'auto.fix', 'auto.merge'])
+const short7 = (value: unknown): string | null => (typeof value === 'string' && SHA.test(value) ? value.slice(0, 7) : null)
+export function reviewersOf(value: unknown): { name: string; result: string }[] {
+  if (typeof value !== 'string') return []
+  return value.split(',').flatMap((part) => {
+    const cut = part.lastIndexOf(':')
+    return cut > 0 ? [{ name: part.slice(0, cut).trim(), result: part.slice(cut + 1).trim() }] : []
+  })
+}
+export function mergeFlow(events: EventRow[], target: { repo: string; pr: number | null; sha: string | null }): MergeStep[] {
+  const mine = events.filter((event) => FLOW_TYPES.has(event.type as string) && event.repo === target.repo && typeof event.at === 'string')
+  let picked: EventRow[]
+  if (target.pr !== null) picked = mine.filter((event) => prOf(event.pr) === target.pr)
+  else {
+    const shas = new Set([short7(target.sha)].filter((sha): sha is string => sha !== null))
+    const direct = mine.filter((event) => event.pr === undefined || event.pr === null)
+    for (const event of direct) {
+      const merged = short7(event.merged)
+      const tip = short7(event.sha)
+      if (event.type === 'auto.merge' && merged !== null && shas.has(merged) && tip !== null) shas.add(tip)
+    }
+    picked = direct.filter((event) => [short7(event.sha), short7(event.merged)].some((sha) => sha !== null && shas.has(sha)))
+  }
+  return picked
+    .map((event) => ({
+      type: event.type as string,
+      at: event.at as string,
+      verdict: event.type === 'review' && typeof event.verdict === 'string' ? event.verdict : null,
+      reviewers: reviewersOf(event.reviewers),
+      ok: typeof event.ok === 'boolean' ? event.ok : null,
+      confirm: typeof event.confirm === 'boolean' ? event.confirm : null,
+      mergedAt: typeof event.mergedAt === 'string' ? event.mergedAt : null,
+    }))
+    .sort((left, right) => left.at.localeCompare(right.at))
+}
 export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaDir: () => string | null; run: MergeRunner; now?: () => number }) {
   const done = new Map<string, MergeDetail>()
   const failed = new Map<string, number>() // 키 → 실패한 때
   const reading = new Set<string>()
-  const read = async (merge: MergeRow, key: string): Promise<MergeDetail | null> => {
+  // 열어 본 머지(full) — 같은 방식(한 번 읽으면 둔다 · 실패는 10분 뒤 다시) · 같은 키를 동시에 열면 한 번만 읽는다
+  const fullDone = new Map<string, MergeFull>()
+  const fullFailed = new Map<string, number>()
+  const fullReading = new Map<string, Promise<MergeFull | null>>()
+  // gh · git 은 요약 · 열어 본 것 합쳐 한꺼번에 MERGE_READS 개까지
+  let active = 0
+  const waiting: (() => void)[] = []
+  const limited = async <T,>(work: () => Promise<T>): Promise<T> => {
+    while (active >= MERGE_READS) await new Promise<void>((resolve) => waiting.push(resolve))
+    active++
+    try {
+      return await work()
+    } finally {
+      active--
+      waiting.shift()?.()
+    }
+  }
+  const repoDir = (merge: MergeRow): string | null => {
     const dir = athenaDir()
-    if (!dir) return null
-    const cwd = path.join(dir, 'repos', merge.repo as string)
+    return dir ? path.join(dir, 'repos', merge.repo as string) : null
+  }
+  const readFull = async (merge: MergeRow, key: string): Promise<MergeFull | null> => {
+    const cwd = repoDir(merge)
+    if (!cwd) return null
     if (key.includes('#')) {
-      const out = await run('gh', ['pr', 'view', String(merge.pr), '--json', 'title,headRefName,baseRefName,additions,deletions,changedFiles'], cwd)
+      const out = await limited(() => run('gh', ['pr', 'view', String(merge.pr), '--json', 'url,commits,files'], cwd))
+      return out === null ? null : parsePrFull(out)
+    }
+    const sha = key.slice(key.indexOf('@') + 1)
+    // 손 머지 커밋이면 첫 부모 대비(요약과 같은 기준) · 커밋 수는 첫 부모 뒤로 들어온 머지 아닌 커밋(squash · 빨리 감기 한 커밋은 1)
+    const [stat, count] = await Promise.all([
+      limited(() => run('git', ['show', '--diff-merges=first-parent', '--numstat', '--format=', sha, '--'], cwd)),
+      limited(() => run('git', ['rev-list', '--count', '--no-merges', `${sha}^1..${sha}`, '--'], cwd)),
+    ])
+    if (stat === null) return null
+    return { url: null, commits: count !== null && /^\d+\s*$/.test(count) ? Number(count.trim()) : null, files: parseNumstat(stat) }
+  }
+  const read = async (merge: MergeRow, key: string): Promise<MergeDetail | null> => {
+    const cwd = repoDir(merge)
+    if (!cwd) return null
+    if (key.includes('#')) {
+      const out = await limited(() => run('gh', ['pr', 'view', String(merge.pr), '--json', 'title,headRefName,baseRefName,additions,deletions,changedFiles'], cwd))
       return out === null ? null : parsePrView(out)
     }
     const sha = key.slice(key.indexOf('@') + 1)
     // 머지 커밋(PR 없는 손 머지)은 첫 부모 대비 — prBase 에 들어온 변경 전부
-    const out = await run('git', ['show', '--diff-merges=first-parent', '--shortstat', '--format=%s', sha, '--'], cwd)
+    const out = await limited(() => run('git', ['show', '--diff-merges=first-parent', '--shortstat', '--format=%s', sha, '--'], cwd))
     return out === null ? null : parseShortstat(out, merge.branch)
   }
   return {
@@ -391,22 +497,43 @@ export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaD
       if (queue.length) {
         for (const item of queue) reading.add(item.key)
         let added = false
-        const worker = async () => {
-          for (let item = queue.shift(); item; item = queue.shift()) {
-            const detail = await read(item.merge, item.key).catch(() => null)
-            reading.delete(item.key)
-            if (detail) {
-              done.set(item.key, detail)
-              failed.delete(item.key)
-              added = true
-            } else failed.set(item.key, now())
-          }
+        const readOne = async (item: (typeof queue)[number]) => {
+          const detail = await read(item.merge, item.key).catch(() => null)
+          reading.delete(item.key)
+          if (detail) {
+            done.set(item.key, detail)
+            failed.delete(item.key)
+            added = true
+          } else failed.set(item.key, now())
         }
-        void Promise.all(Array.from({ length: Math.min(MERGE_READS, queue.length) }, worker)).then(() => {
+        void Promise.all(queue.map(readOne)).then(() => {
           if (added) onReady()
         })
       }
       return found
+    },
+    // 열어 본 머지 하나 — 아는 것은 바로 · 모르면 읽고 기다린다. 못 읽었거나 10분 안에 실패했으면 null
+    async full(merge: MergeRow): Promise<MergeFull | null> {
+      const key = mergeKey(merge)
+      if (!key) return null
+      const known = fullDone.get(key)
+      if (known) return known
+      const pending = fullReading.get(key)
+      if (pending) return pending
+      const failedAt = fullFailed.get(key)
+      if (failedAt !== undefined && now() - failedAt < RETRY_MS) return null
+      const started = readFull(merge, key)
+        .catch(() => null)
+        .then((found) => {
+          fullReading.delete(key)
+          if (found) {
+            fullDone.set(key, found)
+            fullFailed.delete(key)
+          } else fullFailed.set(key, now())
+          return found
+        })
+      fullReading.set(key, started)
+      return started
     },
   }
 }
@@ -1305,8 +1432,25 @@ export function createMobileBridge(deps: BridgeDeps) {
     return { id, text: found.text, why: found.why, decided: found.decided, progress: found.progress, validation: found.validation, results: found.results, next: found.next, blocked: found.blocked }
   }
 
+  // 머지 하나 — 머지 줄(snapshot.merges)을 눌렀을 때. 열쇠는 그 줄의 repo + pr(PR 머지) 또는 repo + sha(바로 머지 · 줄의 merged).
+  // 파일 · 커밋 · url 을 못 읽으면 그 칸만 null(흐름은 사건 기록에서 그대로) — 흐름 사건이 없으면 빈 목록
+  async function mergeDetail(args: Record<string, unknown>) {
+    const repo = text(args.repo, 'repo')
+    const pr = args.pr === undefined || args.pr === null ? null : prArg(args.pr)
+    const sha = pr !== null ? null : typeof args.sha === 'string' ? args.sha : fail('usage', 'pr 또는 sha 가 필요해요')
+    const merge = { repo, pr, direct: pr === null, merged: sha } as unknown as MergeRow
+    if (!mergeKey(merge)) fail('usage', '머지 열쇠가 아니에요')
+    const [full, events] = await Promise.all([deps.mergeDetails ? deps.mergeDetails.full(merge) : Promise.resolve(null), Promise.resolve(deps.events()).catch(() => [] as EventRow[])])
+    return { repo, pr, sha, url: full ? full.url : null, commits: full ? full.commits : null, files: full ? full.files : null, flow: mergeFlow(events, { repo, pr, sha }) }
+  }
+
   const requireInput = () => {
     if (!deps.inputAllowed()) fail('input-off', '폰 입력 허용이 꺼져 있어요')
+  }
+  // 폰은 PR 번호를 글자로 들고 있기도 한다("12") — 사건과 같이 prOf 로 맞춘다
+  const prArg = (value: unknown): number => {
+    const number = prOf(value)
+    return Number.isInteger(number) && (number as number) > 0 ? (number as number) : fail('usage', 'pr 는 양의 정수')
   }
   const text = (value: unknown, name: string): string => (typeof value === 'string' && value ? value : fail('usage', `${name} 가 필요해요`))
 
@@ -1556,6 +1700,8 @@ export function createMobileBridge(deps: BridgeDeps) {
         return serverDetail(args)
       case 'plan.detail':
         return planDetail(args)
+      case 'merge.detail':
+        return mergeDetail(args)
       case 'look.icon':
         return lookIcon(args)
       case 'push.key':
