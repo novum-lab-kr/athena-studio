@@ -1,4 +1,5 @@
 {
+  "Fix phone merge details stopping at 100 changed files — now lists them all": "スマホのマージ詳細で変更ファイルが 100 件で切れる問題を修正 — すべて表示",
   "Add Athena lead approval for server command confirmations — delegated agents still blocked": "サーバーコマンド確認リクエストをアテナリードが承認・クローズする機能を追加 — 委任エージェントは引き続きブロック",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "[作業] リストにデザインされた計画書画面を追加 — 行をクリックで開く・md 原文はアイコンボタンから",
   "Add merge details to the phone connection — changed files, commit count, GitHub link and merge flow": "スマホ接続にマージ詳細を追加 — 変更ファイル・コミット数・GitHub リンク・マージの流れ",

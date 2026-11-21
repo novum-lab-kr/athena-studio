@@ -1,4 +1,13 @@
 {
+  "0.71": [
+    {
+      "tag": "fixed",
+      "en": "Fix phone merge details stopping at 100 changed files — now lists them all",
+      "ko": "폰 머지 상세의 바뀐 파일이 100개에서 잘리던 것 수정 — 전부 보임",
+      "ja": "スマホのマージ詳細で変更ファイルが 100 件で切れる問題を修正 — すべて表示",
+      "zh": "修复手机合并详情的变更文件在 100 个处被截断 — 现在全部显示"
+    }
+  ],
   "0.70": [
     {
       "tag": "new",
