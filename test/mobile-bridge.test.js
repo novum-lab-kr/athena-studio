@@ -9,7 +9,7 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, parsePrFull, parseNumstat, mergeFlow, reviewersOf, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
+const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, parsePrFull, parsePrFiles, PR_FILES_JQ, parseNumstat, mergeFlow, reviewersOf, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
 const { packView, bodyPacks, serverSummary, lookSource, mergeBases } = require('../src/main/mobile-dev.mts')
 const { createIconTokens, iconToken, ATHENA_LOGO } = require('../src/main/mobile-look.mts')
 
@@ -1233,6 +1233,12 @@ test('merge.detail 파서 — gh url · commits · files · numstat(바이너리
   })
   assert.deepEqual(parsePrFull('{"url":"javascript:x"}'), { url: null, commits: null, files: [] })
   assert.equal(parsePrFull('없음'), null)
+  assert.deepEqual(parsePrFiles('{"path":"a.ts","additions":3,"deletions":1}\n\n{"path":""}\nnull\n{"path":"img.png","additions":0,"deletions":0}\n'), [
+    { path: 'a.ts', additions: 3, deletions: 1 },
+    { path: 'img.png', additions: 0, deletions: 0 },
+  ])
+  assert.deepEqual(parsePrFiles(''), [])
+  assert.equal(parsePrFiles('{"path":'), null)
   assert.deepEqual(parseNumstat('10\t2\tsrc/a.ts\n-\t-\timg.png\n\n3\t0\tsrc/{a => b}.ts\n'), [
     { path: 'src/a.ts', additions: 10, deletions: 2 },
     { path: 'img.png', additions: null, deletions: null },
@@ -1278,6 +1284,9 @@ test('merge.detail — PR 은 gh · 바로 머지는 git, 한 번 읽으면 두�
   let active = 0
   let most = 0
   let ghOk = true
+  let filesOk = true
+  // PR 파일 149개(gh pr view --json files 는 100개에서 잘리던 것) — gh api --paginate 가 페이지를 이어 한 줄씩 낸다
+  const many = Array.from({ length: 149 }, (unused, index) => ({ path: `f${index}.ts`, additions: index, deletions: 0 }))
   const details = createMergeDetails({
     athenaDir: () => '/b/acme',
     now: () => clock,
@@ -1287,7 +1296,12 @@ test('merge.detail — PR 은 gh · 바로 머지는 git, 한 번 읽으면 두�
       most = Math.max(most, active)
       await sleep(5)
       active--
-      if (command === 'gh') return ghOk ? JSON.stringify({ url: `https://github.com/o/web/pull/${args[2]}`, commits: [{}, {}, {}], files: [{ path: 'a.ts', additions: 1, deletions: 0 }] }) : null
+      if (command === 'gh' && args[0] === 'api') {
+        if (!ghOk || !filesOk) return null
+        const rows = args[2].includes('/pulls/30/') ? many : [{ path: 'a.ts', additions: 1, deletions: 0 }]
+        return rows.map((row) => JSON.stringify(row)).join('\n') + '\n'
+      }
+      if (command === 'gh') return ghOk ? JSON.stringify({ url: `https://github.com/o/web/pull/${args[2]}`, commits: [{}, {}, {}] }) : null
       if (args[0] === 'rev-list') return '1\n'
       return '4\t1\tsrc/b.ts\n'
     },
@@ -1314,14 +1328,22 @@ test('merge.detail — PR 은 gh · 바로 머지는 git, 한 번 읽으면 두�
         { type: 'auto.merge', at: '2026-11-11T10:00:00', verdict: null, reviewers: [], ok: true, confirm: null, mergedAt: null },
       ],
     })
-    assert.deepEqual(runs[0], { command: 'gh', args: ['pr', 'view', '12', '--json', 'url,commits,files'], cwd: path.join('/b/acme', 'repos', 'web') })
+    const cwd = path.join('/b/acme', 'repos', 'web')
+    assert.deepEqual(runs.slice(0, 2), [
+      { command: 'gh', args: ['pr', 'view', '12', '--json', 'url,commits'], cwd },
+      { command: 'gh', args: ['api', '--paginate', 'repos/{owner}/{repo}/pulls/12/files?per_page=100', '--jq', PR_FILES_JQ], cwd },
+    ])
     assert.equal((await env.ask('merge.detail', { repo: 'web', pr: '12' })).result.pr, 12, '글자 PR 번호도 같은 머지')
-    assert.equal(runs.length, 1, '읽은 것은 다시 읽지 않는다')
+    assert.equal(runs.length, 2, '읽은 것은 다시 읽지 않는다')
+
+    // 100개 넘는 PR 도 받은 파일 전부
+    assert.deepEqual((await env.ask('merge.detail', { repo: 'web', pr: 30 })).result.files, many)
+    runs.splice(2)
 
     const direct = (await env.ask('merge.detail', { repo: 'api', sha: 'bbb2222' })).result
     assert.deepEqual([direct.url, direct.commits, direct.files, direct.flow], [null, 1, [{ path: 'src/b.ts', additions: 4, deletions: 1 }], []])
     assert.deepEqual(
-      runs.slice(1).map((run) => run.args),
+      runs.slice(2).map((run) => run.args),
       [
         ['show', '--diff-merges=first-parent', '--numstat', '--format=', 'bbb2222', '--'],
         ['rev-list', '--count', '--no-merges', 'bbb2222^1..bbb2222', '--'],
@@ -1334,16 +1356,20 @@ test('merge.detail — PR 은 gh · 바로 머지는 git, 한 번 읽으면 두�
     const failed = (await env.ask('merge.detail', { repo: 'web', pr: 13 })).result
     assert.deepEqual([failed.url, failed.commits, failed.files, failed.flow], [null, null, null, []])
     await env.ask('merge.detail', { repo: 'web', pr: 13 })
-    assert.equal(runs.length, 1)
+    assert.equal(runs.length, 2)
     clock = 10 * 60 * 1000
     ghOk = true
     assert.equal((await env.ask('merge.detail', { repo: 'web', pr: 13 })).result.commits, 3, '10분 뒤 다시')
+    // 파일 목록만 못 읽어도 실패(잘린 목록 · 빈 목록을 내지 않는다)
+    filesOk = false
+    assert.deepEqual((await env.ask('merge.detail', { repo: 'web', pr: 14 })).result.files, null)
+    filesOk = true
 
     // 동시에 여러 개 열어도 gh · git 은 한꺼번에 3개까지 · 같은 머지는 한 번만
     runs.length = 0
     most = 0
     await Promise.all([20, 21, 22, 23, 24, 24].map((number) => env.ask('merge.detail', { repo: 'web', pr: number })))
-    assert.equal(runs.length, 5)
+    assert.equal(runs.length, 10, '머지 하나에 gh 두 번(pr view · api 파일)')
     assert.equal(most, 3)
 
     for (const args of [{}, { repo: 'web' }, { repo: 'web', pr: 0 }, { repo: 'web', pr: '012' }, { repo: 'web', pr: 1.5 }, { repo: '../x', pr: 1 }, { repo: '..', pr: 1 }, { repo: '.', sha: 'bbb2222' }, { repo: 'web', sha: '--output=x' }, { repo: 'web', sha: 7 }]) {

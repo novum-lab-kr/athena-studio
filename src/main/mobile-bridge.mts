@@ -53,7 +53,7 @@ export type EventRow = { type?: unknown; at?: unknown; ok?: unknown; repo?: unkn
 // base 는 PR 이 머지된 브랜치(gh baseRefName — 사건에는 없다) · 폰에 넘기지 않고 prBase 밖 머지를 거를 때만 쓴다
 export type MergeDetail = { title: string | null; branch: string | null; additions: number | null; deletions: number | null; files: number | null; base: string | null }
 export type MergeRow = ReturnType<typeof weekMerges>[number]
-// 머지 하나를 열었을 때(merge.detail) — PR 은 gh pr view(url · commits · files) · 바로 머지는 git(numstat · rev-list). 바이너리 파일은 줄 수 null
+// 머지 하나를 열었을 때(merge.detail) — PR 은 gh pr view(url · commits) + gh api 파일 목록(페이지 끝까지) · 바로 머지는 git(numstat · rev-list). 바이너리 파일은 줄 수 null
 export type MergeFile = { path: string; additions: number | null; deletions: number | null }
 export type MergeFull = { url: string | null; commits: number | null; files: MergeFile[] }
 // 머지 흐름 한 단계 — 코어 사건(docs/events.md) 그대로. 그 종류에 없는 칸은 null · 빈 목록
@@ -365,7 +365,7 @@ export function parseShortstat(text: string, branch: string | null): MergeDetail
   return { title: lines[0]!.trim(), branch, additions: number(/(\d+) insertions?\(\+\)/), deletions: number(/(\d+) deletions?\(-\)/), files: number(/(\d+) files? changed/), base: null }
 }
 const lineCount = (value: string): number | null => (/^\d+$/.test(value) ? Number(value) : null)
-// gh pr view --json url,commits,files — files 는 { path, additions, deletions }[]
+// gh pr view --json url,commits(파일은 parsePrFiles 로 따로) — files 가 오면 { path, additions, deletions }[]
 export function parsePrFull(text: string): MergeFull | null {
   try {
     const data = JSON.parse(text) as { url?: unknown; commits?: unknown; files?: unknown }
@@ -378,6 +378,20 @@ export function parsePrFull(text: string): MergeFull | null {
         return typeof row.path === 'string' && row.path ? [{ path: row.path, additions: countOf(row.additions), deletions: countOf(row.deletions) }] : []
       }),
     }
+  } catch {
+    return null
+  }
+}
+// PR 파일 목록 — gh api --paginate …/pulls/<n>/files 의 --jq PR_FILES_JQ 출력(한 줄에 { path, additions, deletions } 하나).
+// gh pr view --json files 는 100개에서 잘려 REST 로 끝까지 받는다. GitHub REST 도 이 목록은 최대 3000개까지만 준다 — 넘으면 받은 만큼
+export const PR_FILES_JQ = '.[] | {path: .filename, additions, deletions}'
+export function parsePrFiles(text: string): MergeFile[] | null {
+  try {
+    return text.split('\n').flatMap((line) => {
+      if (!line.trim()) return []
+      const row = JSON.parse(line) as { path?: unknown; additions?: unknown; deletions?: unknown } | null
+      return row && typeof row.path === 'string' && row.path ? [{ path: row.path, additions: countOf(row.additions), deletions: countOf(row.deletions) }] : []
+    })
   } catch {
     return null
   }
@@ -457,8 +471,14 @@ export function createMergeDetails({ athenaDir, run, now = Date.now }: { athenaD
     const cwd = repoDir(merge)
     if (!cwd) return null
     if (key.includes('#')) {
-      const out = await limited(() => run('gh', ['pr', 'view', String(merge.pr), '--json', 'url,commits,files'], cwd))
-      return out === null ? null : parsePrFull(out)
+      // url · 커밋 수는 gh pr view, 파일은 REST 페이지로 끝까지({owner}/{repo} 는 gh 가 cwd 레포로 채운다) — 둘 중 하나라도 못 읽으면 실패
+      const [out, list] = await Promise.all([
+        limited(() => run('gh', ['pr', 'view', String(merge.pr), '--json', 'url,commits'], cwd)),
+        limited(() => run('gh', ['api', '--paginate', `repos/{owner}/{repo}/pulls/${merge.pr}/files?per_page=100`, '--jq', PR_FILES_JQ], cwd)),
+      ])
+      const full = out === null ? null : parsePrFull(out)
+      const files = list === null ? null : parsePrFiles(list)
+      return full && files ? { ...full, files } : null
     }
     const sha = key.slice(key.indexOf('@') + 1)
     // 손 머지 커밋이면 첫 부모 대비(요약과 같은 기준) · 커밋 수는 첫 부모 뒤로 들어온 머지 아닌 커밋(squash · 빨리 감기 한 커밋은 1)
