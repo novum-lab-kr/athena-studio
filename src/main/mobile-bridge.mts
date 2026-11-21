@@ -24,7 +24,7 @@ import { displayLabel } from '../lib/athena-workspace.mts'
 import { ATHENA_LOGO, createIconTokens } from './mobile-look.mts'
 import type { IconTokens } from './mobile-look.mts'
 import { noMobileWork } from '../lib/work-model.mts'
-import type { MobileWork } from '../lib/work-model.mts'
+import type { MobileWork, PlanDetail } from '../lib/work-model.mts'
 import { noMobileUsage } from '../lib/tray-model.mts'
 import type { MobileUsage } from '../lib/tray-model.mts'
 import { isWheelInput, splitWheel, spreadOffsets } from '../lib/wheel-spread.mts'
@@ -68,6 +68,8 @@ export type MacSpace = { workspace: string; repo: string | null; displayName: st
 export type RepoSettings = { ok: boolean; repos: unknown[] }
 // ⚙ 설정 팝업이 바꾸는 값과 같다 — auto 는 팝업 스위치처럼 on(자동 PR) · direct(PR 끔)만
 export type RepoChanges = { auto: 'on' | 'direct' | null; review: boolean | null; merge: 'auto' | 'confirm' | 'manual' | null }
+// 계획서 하나 — text 는 md 전문 · 나머지는 맥 계획서 화면과 같은 요약(src/lib/work-model.mts planDetail)
+export type PlanView = { text: string } & PlanDetail
 export type PackResultLike = { ok?: unknown; error?: unknown; switched?: unknown; same?: unknown }
 
 export type BridgeDeps = {
@@ -99,6 +101,7 @@ export type BridgeDeps = {
   devices?: () => DeviceView[]
   pushKey?: (publicKey: unknown) => boolean // 폰 푸시 공개 열쇠(push.key) — 그 기기 기록에 저장(mobile-relay setPushKey) · 못 받으면 false
   serverDetail?: (name: string) => Promise<unknown | null> // 서버 하나의 상세 · 이력(server.detail) — 없는 서버면 null
+  planDetail?: (id: string) => Promise<PlanView | null> // 계획서 하나(plan.detail) — md 전문 + 맥 [작업] 계획서 화면과 같은 요약 칸 · 못 읽으면 null
   control?: PaneControl // 제어 주인(D9) — 기기끼리 나눠 쓴다. 없으면 이 브리지 혼자 쓰는 것
   imageDir?: () => string // 폰 이미지 저장 폴더 — 없으면 defaultImageDir()(맥 사용자 임시 폴더 아래)
   now?: () => number
@@ -1293,6 +1296,15 @@ export function createMobileBridge(deps: BridgeDeps) {
     return { ...(found as object), lastDeploy: null }
   }
 
+  // 계획서 하나 — 작업 탭 줄(snapshot.work 의 id)을 눌렀을 때. id 는 plans/…md 만 · '..' 는 막는다(맥 work.mts workDetail 과 같은 검사)
+  async function planDetail(args: Record<string, unknown>) {
+    const id = text(args.id, 'id')
+    if (!PLAN_ID.test(id) || id.split('/').includes('..')) fail('bad_id', '계획서 id 가 아니에요')
+    const found = deps.planDetail ? await deps.planDetail(id) : null
+    if (!found) return fail('not_found', '계획서를 읽지 못했어요')
+    return { id, text: found.text, why: found.why, decided: found.decided, progress: found.progress, validation: found.validation, results: found.results, next: found.next, blocked: found.blocked }
+  }
+
   const requireInput = () => {
     if (!deps.inputAllowed()) fail('input-off', '폰 입력 허용이 꺼져 있어요')
   }
@@ -1542,6 +1554,8 @@ export function createMobileBridge(deps: BridgeDeps) {
         return packOpen(args)
       case 'server.detail':
         return serverDetail(args)
+      case 'plan.detail':
+        return planDetail(args)
       case 'look.icon':
         return lookIcon(args)
       case 'push.key':

@@ -1472,6 +1472,55 @@ body.pack-welcome-on .studio-tabs { display: none; }
 .work-steps i { flex: 1; height: 5px; border-radius: 3px; background: var(--line); }
 .work-steps i.done { background: var(--success); }
 .work-steps i.now { background: var(--accent); }
+/* [작업] 계획서 화면(ui/plan-view.tsx) — packDialog 몸통 안. 머리(상태 · 진행 수 · 아이콘 버튼) · 진행 카드 · 요약 카드 · 접는 본문 절 */
+.pack-box:has(.plan-view) { width: min(720px, 100%); }
+.pack-box:has(.plan-view) .pack-subtitle { display: none; }
+.plan-view { display: flex; flex-direction: column; gap: 12px; }
+.plan-head { display: flex; align-items: center; gap: 10px; }
+.plan-head .work-state { color: var(--popup-text); font-size: 12.5px; }
+.plan-count { color: var(--popup-muted); font: 12px/1 var(--font-mono); }
+.plan-tools { display: flex; gap: 4px; margin-left: auto; }
+.pack-box .plan-tool { display: grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--popup-line); border-radius: 8px; background: rgb(255 255 255 / 3%); color: var(--popup-muted); cursor: pointer; transition: background-color var(--motion), border-color var(--motion), color var(--motion); }
+.pack-box .plan-tool:hover { border-color: rgb(255 255 255 / 16%); background: var(--popup-hover); color: var(--popup-text); }
+.pack-box .plan-tool.accent { border-color: var(--popup-gold-line); background: var(--popup-gold-bg); color: var(--accent); }
+.plan-tool svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.plan-card { padding: 12px 14px; border: 1px solid var(--popup-line); border-radius: 10px; background: var(--popup-inset); }
+.plan-card h3 { margin: 0 0 8px; color: var(--popup-muted); font-size: 11.5px; font-weight: 600; }
+.plan-card .work-steps { margin: 0 0 10px; }
+.plan-fields:not(:has(.work-field)) { display: none; }
+.plan-fields .work-field { grid-template-columns: 72px 1fr; }
+.plan-fields .work-field[data-tone="blocked"] .work-field-key { color: var(--error); }
+.plan-steps { display: flex; flex-direction: column; gap: 4px; margin: 0; padding: 0; list-style: none; font-size: 13px; }
+.plan-steps li { display: flex; gap: 8px; align-items: baseline; color: var(--popup-text); }
+.plan-steps li.done { color: var(--popup-muted); }
+.plan-steps li.now { color: var(--popup-title); font-weight: 500; }
+.plan-step-mark, .plan-item-mark { flex: none; position: relative; top: 2px; width: 12px; height: 12px; border: 1.5px solid var(--line); border-radius: 50%; }
+.plan-steps li.done .plan-step-mark, .plan-list li.checked .plan-item-mark { border-color: var(--success); background: var(--success); box-shadow: inset 0 0 0 2px var(--popup-inset); }
+.plan-steps li.now .plan-step-mark { border-color: var(--accent); box-shadow: inset 0 0 0 3px var(--popup-inset); background: var(--accent); }
+.plan-link { display: inline; padding: 0; border: 0; background: transparent; color: var(--accent); font: inherit; text-align: left; overflow-wrap: anywhere; cursor: pointer; }
+.plan-link:hover { text-decoration: underline; }
+.plan-sec { border-top: 1px solid var(--popup-line); }
+.plan-sec > summary { display: flex; align-items: center; gap: 8px; padding: 9px 2px; color: var(--popup-text); font-size: 13px; font-weight: 600; list-style: none; cursor: pointer; }
+.plan-sec > summary::-webkit-details-marker { display: none; }
+.plan-sec > summary::before { content: ""; width: 6px; height: 6px; border-right: 1.5px solid var(--popup-muted); border-bottom: 1.5px solid var(--popup-muted); transform: rotate(-45deg); transition: transform var(--motion); }
+.plan-sec[open] > summary::before { transform: rotate(45deg); }
+.plan-sec > summary:hover { color: var(--popup-title); }
+.plan-md { padding: 0 2px 12px 16px; font-size: 13px; line-height: 1.65; }
+.plan-md > :last-child { margin-bottom: 0; }
+.pack-body .plan-md p { margin: 0 0 8px; }
+.plan-md h4 { margin: 12px 0 6px; color: var(--popup-title); font-size: 12.5px; font-weight: 600; }
+.plan-md code, .plan-fields code { padding: 0 4px; border-radius: 4px; background: rgb(255 255 255 / 6%); font: 12px var(--font-mono); }
+.plan-md pre { margin: 0 0 8px; padding: 10px 12px; overflow-x: auto; border: 1px solid var(--popup-line); border-radius: 8px; background: var(--popup-inset); font: 12px/1.55 var(--font-mono); white-space: pre; }
+.pack-body .plan-md .plan-quote { padding-left: 10px; border-left: 2px solid var(--popup-gold-line); color: var(--popup-muted); }
+.plan-list { display: flex; flex-direction: column; gap: 3px; margin: 0 0 8px; padding: 0; list-style: none; }
+.plan-list li { display: flex; gap: 8px; align-items: baseline; }
+.plan-list li.dot .plan-item-mark { top: -2px; width: 4px; height: 4px; margin: 0 4px; border: 0; background: var(--popup-muted); }
+.plan-list li.checked { color: var(--popup-muted); }
+.plan-item-mark { border-radius: 3px; }
+.plan-table { margin: 0 0 8px; overflow-x: auto; }
+.plan-table table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+.plan-table :is(th, td) { padding: 6px 8px; border: 1px solid var(--popup-line); text-align: left; vertical-align: top; }
+.plan-table th { background: rgb(255 255 255 / 3%); color: var(--popup-title); font-weight: 600; }
 .work-request-body { color: var(--popup-text); font-size: 13px; }
 .work-options { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 10px; }
 .work-option { display: flex; gap: 10px; align-items: flex-start; width: 100%; padding: 9px 11px; border: 1px solid var(--popup-line); border-radius: 8px; background: transparent; color: var(--popup-text); font: 13px var(--font-ui); text-align: left; cursor: pointer; }

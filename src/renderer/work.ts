@@ -2,7 +2,6 @@
 // renderer.js 에서 옮김(R3d · 계획서 "R3 나누기") — 이름 · 동작 그대로, 타입만. 몸통은 React(ui/work-pop.tsx · ui/settings-pop.tsx)
 import { $, el, say, showToast, state } from './core.ts'
 import { packDialog, packLabel, packs } from './pack-dialogs.ts'
-import type { PackDialogAction } from './pack-dialogs.ts'
 import { welcomeShown } from './pack-switch.ts'
 import { backPaneDetail, closePaneDetail, detailPane, goToPane, openRequest, paneLive, setPaneBound, syncDetailButtons } from './detail.ts'
 import { browserOpen, hideBrowserView, placeBrowserView } from './browser.ts'
@@ -93,46 +92,16 @@ function toggleBoardMenu(): void {
   $('board-menu').querySelector('button')!.focus({ preventScroll: true })
 }
 
-// 작업 상세 — 계획서에서 왜 · 정한 것 · 진행 · 검증 · 결과 · 다음
+// 작업 상세 — 계획서 화면 하나(몸통은 React ui/plan-view.tsx · 껍데기는 packDialog). md 원문 · 결정 콘솔 · pane 으로 가기는 그 안의 아이콘 버튼
 async function openWorkDetail(item: WorkItemView): Promise<void> {
   // 조회를 기다리는 동안 팝업을 둔다 — 브라우저를 뗀 채로 유지(팝업 · 대화상자 어느 쪽도 없는 틈이 생기면 크기 감시가 다시 붙인다)
   const detail = await studio.workDetail(item.id as string)
-  const body = []
-  if (!detail || !detail.ok) body.push(el('p', 'muted', say('work.detail.unreadable')))
-  else {
-    const field = (key: string, value: string | string[]) => {
-      if (!value || (Array.isArray(value) && !value.length)) return
-      const row = el('div', 'work-field')
-      row.append(el('span', 'work-field-key', say(`work.detail.${key}`)))
-      const text = el('span', 'work-field-value')
-      if (Array.isArray(value)) text.append(...value.map((line) => el('span', 'work-field-line', line)))
-      else text.textContent = value
-      row.append(text)
-      body.push(row)
-    }
-    field('why', detail.why)
-    field('blocked', detail.blocked)
-    field('decided', detail.decided)
-    if (detail.progress.total) {
-      const row = el('div', 'work-field')
-      row.append(el('span', 'work-field-key', say('work.detail.progress')))
-      const value = el('span', 'work-field-value', `${detail.progress.checked}/${detail.progress.total}${detail.progress.now ? ` · ${detail.progress.now}` : ''}`)
-      const bar = el('span', 'work-steps')
-      for (let index = 0; index < detail.progress.total; index += 1) bar.append(el('i', index < detail.progress.checked ? 'done' : index === detail.progress.checked ? 'now' : ''))
-      value.append(bar)
-      row.append(value)
-      body.push(row)
-    }
-    field('validation', detail.validation)
-    field('results', detail.results)
-    field('next', detail.next)
-  }
-  hidePops() // 대화상자를 여는 같은 동기 구간에서 팝업을 내린다 — 대화상자가 바로 브라우저를 뗀다(닫히면 syncModal 이 붙인다)
-  const actions: PackDialogAction[] = [{ label: say('work.detail.openPlan'), value: 'plan' }]
-  if (item.html) actions.push({ label: say('work.detail.console'), value: 'console' })
   const pane = item.agents.find(paneLive)
-  if (pane) actions.push({ label: say('work.detail.goPane'), value: 'pane', kind: 'primary' })
-  const choice = await packDialog({ title: item.title, subtitle: say(`work.state.${item.state}`), body, actions, close: true })
+  const body = el('div', 'plan-view-root')
+  StudioUi.planView.open(body, { state: item.state, detail, showConsole: Boolean(item.html), showPane: Boolean(pane) })
+  hidePops() // 대화상자를 여는 같은 동기 구간에서 팝업을 내린다 — 대화상자가 바로 브라우저를 뗀다(닫히면 syncModal 이 붙인다)
+  const choice = await packDialog({ title: item.title, body: [body], close: true })
+  StudioUi.planView.close()
   if (choice === 'plan') studio.workOpenPlan(item.id as string, null)
   else if (choice === 'console') studio.workOpenPlan(item.id as string, item.html)
   else if (choice === 'pane') goToPane(pane)

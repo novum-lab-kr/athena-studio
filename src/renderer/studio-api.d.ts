@@ -195,10 +195,10 @@ declare global {
   }
   // [작업] 팝업 목록(src/main/work.mts ctx.workState — 요청 + work-model.mts workList)
   type WorkView = { supported: boolean; requestsError: string | null; requests: WorkRequestView[]; boardUp: boolean; boardError: string | null; doing: WorkItemView[]; done: WorkItemView[]; counts: { doing: number } }
-  // 작업 상세(work.mts ctx.workDetail — 계획서 원문에서 몇 줄 · work-model.mts planDetail)
+  // 작업 상세(work.mts ctx.workDetail — 계획서 md 전문 text · 진행 칸 steps(lib/plan-doc.mts planSteps) · 요약 칸(work-model.mts planDetail))
   type WorkDetailReply =
     | { ok: false; error: string }
-    | { ok: true; id: string; why: string; decided: string[]; progress: { checked: number; total: number; now: string }; validation: string; results: string[]; next: string; blocked: string }
+    | { ok: true; id: string; text: string; steps: { done: boolean; text: string }[]; why: string; decided: string[]; progress: { checked: number; total: number; now: string }; validation: string; results: string[]; next: string; blocked: string }
   // 앱에서 답하기 · 다시 보내기(work.mts answerRequest · redeliverRequest) — delivered: 그 pane 에 넣었는지(못 넣으면 답만 저장 · reason 이 이유 — src/lib/answer-delivery.mts)
   type WorkAnswerReply = { ok: boolean; error?: string; message?: string; delivered?: boolean; reason?: 'no-pane' | 'prompt-open' | 'unconfirmed' }
 
