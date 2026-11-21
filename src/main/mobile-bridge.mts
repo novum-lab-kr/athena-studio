@@ -73,8 +73,9 @@ export type MacSpace = { workspace: string; repo: string | null; displayName: st
 export type RepoSettings = { ok: boolean; repos: unknown[] }
 // ⚙ 설정 팝업이 바꾸는 값과 같다 — auto 는 팝업 스위치처럼 on(자동 PR) · direct(PR 끔)만
 export type RepoChanges = { auto: 'on' | 'direct' | null; review: boolean | null; merge: 'auto' | 'confirm' | 'manual' | null }
-// 계획서 하나 — text 는 md 전문 · 나머지는 맥 계획서 화면과 같은 요약(src/lib/work-model.mts planDetail)
-export type PlanView = { text: string } & PlanDetail
+// 계획서 하나 — text 는 md 전문 · 나머지는 맥 계획서 화면과 같은 요약(src/lib/work-model.mts planDetail).
+// templateLines — 고치지 않은 템플릿 자리 줄(코어 plan-bind.mjs TEMPLATE_PLACEHOLDER_LINES · 현황판 /api/card 가 싣는다). 옛 코어면 빈 목록
+export type PlanView = { text: string; templateLines?: string[] } & PlanDetail
 export type PackResultLike = { ok?: unknown; error?: unknown; switched?: unknown; same?: unknown }
 
 export type BridgeDeps = {
@@ -1449,7 +1450,9 @@ export function createMobileBridge(deps: BridgeDeps) {
     if (!PLAN_ID.test(id) || id.split('/').includes('..')) fail('bad_id', '계획서 id 가 아니에요')
     const found = deps.planDetail ? await deps.planDetail(id) : null
     if (!found) return fail('not_found', '계획서를 읽지 못했어요')
-    return { id, text: found.text, why: found.why, decided: found.decided, progress: found.progress, validation: found.validation, results: found.results, next: found.next, blocked: found.blocked }
+    // templateLines 는 폰이 진행 칸을 거를 때 쓰는 코어 목록 — 맥이 실어 줘 폰에 복사본을 두지 않는다(없으면 빈 목록)
+    const templateLines = Array.isArray(found.templateLines) ? found.templateLines.filter((line): line is string => typeof line === 'string') : []
+    return { id, text: found.text, why: found.why, decided: found.decided, progress: found.progress, validation: found.validation, results: found.results, next: found.next, blocked: found.blocked, templateLines }
   }
 
   // 머지 하나 — 머지 줄(snapshot.merges)을 눌렀을 때. 열쇠는 그 줄의 repo + pr(PR 머지) 또는 repo + sha(바로 머지 · 줄의 merged).
