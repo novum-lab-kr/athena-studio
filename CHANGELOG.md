@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### Fixed
 - Fix phone merge details stopping at 100 changed files — now lists them all
+- Fix slow phone server details — last reading shown at once, refreshed in the background
 
 ## 0.70 (v0.70.0 – · Nov 21, 2026)
 

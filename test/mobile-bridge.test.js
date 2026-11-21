@@ -10,7 +10,8 @@ const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
 const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, parsePrFull, parsePrFiles, PR_FILES_JQ, parseNumstat, mergeFlow, reviewersOf, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
-const { packView, bodyPacks, serverSummary, lookSource, mergeBases } = require('../src/main/mobile-dev.mts')
+const { packView, bodyPacks, serverSummary, lookSource, mergeBases, createMobileServers } = require('../src/main/mobile-dev.mts')
+const { createServerPeek } = require('../src/lib/server-status.mts')
 const { createIconTokens, iconToken, ATHENA_LOGO } = require('../src/main/mobile-look.mts')
 
 // 소켓 경로 104바이트 제한 — /tmp 아래 짧게
@@ -1502,6 +1503,79 @@ test('bodyPacks · serverSummary — 본체 경로 → 팩 id, snapshot 서버�
   const reading = { name: 'novum', status: { ok: true, load1: 1, ports: [], cpuModel: 'EPYC', serviceInfo: [], timers: [], cron: [], ufw: 'active', monarx: 'active', sites: [] }, web: null, at: 1 }
   assert.deepEqual(serverSummary(reading), { name: 'novum', status: { ok: true, load1: 1 }, web: null, at: 1 })
   assert.deepEqual(serverSummary({ name: 'down', status: { ok: false, reason: 'timeout' } }), { name: 'down', status: { ok: false, reason: 'timeout' } })
+})
+
+// 폰 서버 목록 · 상세 — 같은 읽기를 나눠 쓴다(읽기마다 손으로 끝내는 가짜 serverStatus)
+function fakeServerStatus() {
+  const calls = []
+  const read = () => new Promise((resolve, reject) => calls.push({ resolve, reject }))
+  return { calls, read }
+}
+const serverReply = (cpu) => ({ servers: [{ name: 'web', status: { ok: true, cpu, ports: [] }, at: cpu }], history: { web: [{ t: cpu }] }, sar: { web: [{ t: cpu, cpu }] } })
+const settleOnce = () => new Promise((resolve) => setImmediate(resolve))
+// 끝났는지만 본다(기다리지 않는다)
+function track(promise) {
+  const state = { done: false, value: undefined }
+  void promise.then((value) => {
+    state.done = true
+    state.value = value
+  })
+  return state
+}
+
+test('폰 서버 상세: 지난 값이 없으면 읽을 때까지 기다리고 · 목록과 겹친 읽기는 하나', async () => {
+  const servers = createMobileServers(createServerPeek({ now: () => 0, reuseMs: 30000 }))
+  const { calls, read } = fakeServerStatus()
+  const list = track(servers.list('/body', read, () => {}))
+  const detail = track(servers.detail('/body', 'web', read, () => {}))
+  await settleOnce()
+  assert.equal(calls.length, 1, '목록 · 상세가 같은 읽기를 쓴다')
+  assert.equal(detail.done, false, '지난 값이 없으면 기다린다')
+  calls[0].resolve(serverReply(1))
+  await settleOnce()
+  assert.deepEqual(detail.value, { server: serverReply(1).servers[0], history: [{ t: 1 }], sar: [{ t: 1, cpu: 1 }] }, '답 모양 server · history · sar 그대로')
+  assert.deepEqual(list.value, [{ name: 'web', status: { ok: true, cpu: 1 }, at: 1 }])
+  assert.equal(await servers.detail('/body', 'none', read, () => {}), null, '없는 서버는 null')
+  assert.equal(calls.length, 1)
+})
+
+test('폰 서버 상세: 지난 값이 있으면 기다리지 않고 · 뒤에서 읽어 달라지면 알린다 · 못 읽으면 지난 값', async () => {
+  let clock = 0
+  const servers = createMobileServers(createServerPeek({ now: () => clock, reuseMs: 30000 }))
+  const { calls, read } = fakeServerStatus()
+  const first = servers.list('/body', read, () => {})
+  calls[0].resolve(serverReply(1))
+  await first
+  clock = 30000
+  const changed = []
+  const stale = track(servers.detail('/body', 'web', read, () => changed.push('detail')))
+  await settleOnce()
+  assert.equal(stale.done, true, '읽기가 안 끝나도 바로 답한다')
+  assert.deepEqual(stale.value.sar, [{ t: 1, cpu: 1 }], '지난 값')
+  assert.equal(calls.length, 2, '뒤에서 한 번 다시 읽는다')
+  await servers.list('/body', read, () => changed.push('list'))
+  assert.equal(calls.length, 2, '읽는 중에 목록이 불러도 또 띄우지 않는다')
+  calls[1].resolve(serverReply(2))
+  await settleOnce()
+  assert.deepEqual(changed, ['detail', 'list'], '달라졌으면 servers 를 알린다')
+  assert.deepEqual((await servers.detail('/body', 'web', read, () => {})).sar, [{ t: 2, cpu: 2 }])
+  clock = 60000
+  const again = await servers.detail('/body', 'web', read, () => changed.push('fail'))
+  assert.deepEqual(again.sar, [{ t: 2, cpu: 2 }])
+  calls[2].reject(new Error('ssh'))
+  await settleOnce()
+  assert.deepEqual((await servers.detail('/body', 'web', read, () => {})).sar, [{ t: 2, cpu: 2 }], '못 읽었으면 지난 값을 그대로')
+  assert.deepEqual(changed, ['detail', 'list'], '실패는 알리지 않는다')
+})
+
+test('폰 서버 상세: 지난 값 없이 못 읽으면 null · 목록은 빈 목록', async () => {
+  const servers = createMobileServers(createServerPeek({ now: () => 0 }))
+  const { calls, read } = fakeServerStatus()
+  const detail = servers.detail('/body', 'web', read, () => {})
+  const list = servers.list('/body', read, () => {})
+  calls[0].reject(new Error('ssh'))
+  assert.equal(await detail, null)
+  assert.deepEqual(await list, [])
 })
 
 // ── 제어 주인(D9) — 제어하는 쪽 크기로 pane 크기를 맞춘다 ──
