@@ -21,7 +21,8 @@ export const REQUEST_FORMAT = 1
 export const KINDS = ['decision', 'question']
 export const STATES = ['open', 'answered', 'delivered', 'cancelled', 'expired']
 const LIVE = ['open', 'answered']
-const ANSWER_BY = ['board', 'app', 'chat', 'mobile']
+// lead = 아테나(리드)가 답함 — 서버 명령 확인 요청(key server-cmd:* · server-put:*)을 리드가 승인할 때(2026-11-21 사용자 결정 · hooks/server-guard.py)
+const ANSWER_BY = ['board', 'app', 'chat', 'mobile', 'lead']
 const ID_PATTERN = /^r-\d{8}-\d{6}-[0-9a-f]{4}$/
 
 export const requestsDir = (root) => {

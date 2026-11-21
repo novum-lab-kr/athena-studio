@@ -46,6 +46,7 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 
 ### New
 - Add merge details to the phone connection — changed files, commit count, GitHub link and merge flow
+- Add Athena lead approval for server command confirmations — delegated agents still blocked
 
 ## 0.69 (v0.69.0 – · Nov 21, 2026)
 

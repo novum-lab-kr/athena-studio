@@ -112,6 +112,17 @@ QG="$(A request open --kind question --title 닫힌pane --pane pgone | field req
 R="$(AS pg1 request answer "$QG" --by chat --text 있다)"
 check "묻던 pane 에 못 보내면 answered 로 남고 sent false(앱에서 다시 보내기)" '[ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = False ]' "$R"
 A request cancel "$QG" > /dev/null
+# 아테나(리드)가 서버 명령 확인 요청을 승인(--by lead · 2026-11-21) — 답한 사람이 lead 로 남고, 묻던 에이전트 pane 에 한 줄 · answered(에이전트 ack · ssh-run.sh 승인 확인은 answered 도 받는다)
+: > "$FAKE_LOG"
+QL="$(A request open --kind decision --title '서버 명령 확인' --option 실행 --option 취소 --key server-cmd:abc --pane p5 | field request.id)"
+R="$(AS pg1 request answer "$QL" --by lead --choice 실행)"
+check "리드가 답 → by lead · answered · 묻던 pane 에 보냄" '[ "$(echo "$R" | field request.answer.by)" = lead ] && [ "$(echo "$R" | field request.state)" = answered ] && [ "$(echo "$R" | field sent)" = True ] && grep -q "^pane run p5 \[요청 $QL\] 서버 명령 확인 — 답: 실행" "$FAKE_LOG"' "$R | $(cat "$FAKE_LOG")"
+: > "$FAKE_LOG"
+QM="$(A request open --kind decision --title '리드 자기 확인' --option 실행 --key server-cmd:def --pane pg1 | field request.id)"
+R="$(AS pg1 request answer "$QM" --by lead --choice 실행)"
+check "리드가 자기 pane 요청에 답 → answered · 보내지 않음" '[ "$(echo "$R" | field request.state)" = answered ] && [ ! -s "$FAKE_LOG" ]' "$R | $(cat "$FAKE_LOG")"
+node scripts/athena.mjs request answer "$QM" --by leader --choice 실행 --json > /dev/null 2>&1; check "모르는 --by 는 사용법 오류(2)" '[ $? -eq 2 ]'
+A request cancel "$QM" > /dev/null
 
 section "묻던 pane 이 닫힌 요청"
 # 가짜 화면: 살아 있는 pane 은 p5 · pg1. 요청에는 연 곳의 데몬(소켓 /x)이 적힌다 — 다른 데몬(/y)의 pane 번호로는 판정하지 않는다

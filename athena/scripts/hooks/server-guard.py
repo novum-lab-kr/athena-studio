@@ -8,7 +8,10 @@
   - 등록한 ssh 별칭으로 바로 가는 ssh · scp · rsync · sftp(확인을 건너뛴다 · ssh -G 는 주소를 찍는다)
   - 명령 안에서 ssh-run.sh 의 시험용 값(ATHENA_SSH_BIN · ATHENA_SCP_BIN · ATHENA_REQUEST_BIN · ATHENA_GUARD_*)을 정하기(승인을 흉내 낸다)
   - `request answer` · `request cancel`(bin/athena · scripts/athena.mjs) 중 **ssh-run.sh 의 확인 요청(key server-cmd:* · server-put:*)** 에 닿는 것 — 에이전트가 자기 확인 요청에
-    스스로 "실행" 을 답하는 길(2026-11-08 PR 리뷰 2). 어느 세션이든 막고, 다른 요청(질문 · 결정)의 대화 답 흐름은 그대로 둔다(계획서 R1).
+    스스로 "실행" 을 답하는 길(2026-11-08 PR 리뷰 2). 위임 에이전트 세션(ATHENA_AGENT 있음 · reviewer 포함)은 막고, 아테나(리드 — ATHENA_AGENT 없는
+    본체 세션 · compact-checkpoint.py is_lead 와 같은 규칙)는 통과시킨다 — answer 는 `--by lead` 일 때만(누가 답했는지 남게) · cancel 은 그대로
+    (2026-11-21 사용자 결정 "아테나만 승인 가능하게"). 판정은 이 훅 프로세스의 환경(세션을 띄울 때 받은 것)으로 하니 명령 안의 unset · env -u 로는
+    바뀌지 않는다. 다른 요청(질문 · 결정)의 대화 답 흐름은 그대로 둔다(계획서 R1).
     요청 id 를 글자로 못 읽거나(변수 등) 요청을 읽다 실패하면 막는다 · 없는 요청이면 통과
 ssh-run.sh 로 가는 것은 명령 첫 낱말(VAR=값 앞붙임 뒤)이 ssh-run.sh 로 끝나는 경로일 때만 — 글자가 섞여 있기만 한 것(ssh -o x=ssh-run.sh …)은 아니다.
 모든 검사는 맨 위에서 한 번 만든 **정규화한 사본**(views)만 본다 — 셸이 지우는 따옴표 · 백슬래시로 낱말을 가르는 우회
@@ -104,6 +107,10 @@ ANSWER = re.compile(r'\brequest\s+(answer|cancel)\b')
 ANSWER_ID = re.compile(r'\brequest\s+(answer|cancel)(?:\s+(\S+))?')
 # 막는 요청 key — ssh-run.sh 의 명령 확인(server-cmd:*) · 파일 올리기 확인(server-put:* — 계획서 R1 확정 2026-11-08)
 SERVER_KEYS = ('server-cmd:', 'server-put:')
+# 아테나(리드) 세션 — 위임 에이전트는 delegate.sh 가 ATHENA_AGENT 를 넘긴다(reviewer 포함 · compact-checkpoint.py is_lead 와 같은 규칙)
+LEAD = not os.environ.get('ATHENA_AGENT')
+# 리드가 서버 확인 요청에 답할 때 붙이는 답한 사람 표시(scripts/lib/requests.mjs ANSWER_BY 의 lead)
+BY_LEAD = re.compile(r'(?:^|\s)--by\s+lead(?=\s|$)')
 # 한 명령의 첫 낱말 — 앞의 VAR=값 은 건너뛴다(사본에는 따옴표가 없다)
 FIRST_WORD = re.compile(r'^\s*(?:\w+=\S*\s+)*(\S+)')
 
@@ -178,11 +185,15 @@ def answer_blocked(view):
         # 첫 낱말 + 같은 명령 조각 안의 요청 id 꼴 낱말 모두 — 중괄호를 펼친 사본은 낱말이 늘어난다(can{c,}el r-1 → cancel cael r-1)
         rest = re.split(r'[\n;|&]', view[match.end():])[0]
         ids = [first] + [word for word in rest.split() if re.match(r'^r-[\w-]+$', word) and word != first]
+        # 리드는 닫기(cancel)와 --by lead 답만 통과 — 같은 명령 조각 안에서 본다
+        lead_ok = LEAD and (action == 'cancel' or BY_LEAD.search(rest) is not None)
         for request_id in ids:
             key = request_key(request_id)
             if key is None:
                 return action, f'요청 {request_id} 를 읽지 못했다'
-            if key.startswith(SERVER_KEYS):
+            if key.startswith(SERVER_KEYS) and not lead_ok:
+                if LEAD:
+                    return action, f'요청 {request_id} 는 서버 확인 요청이다 — 아테나는 --by lead 로 답한다'
                 return action, f'요청 {request_id} 는 서버 확인 요청이다'
     return None
 
@@ -196,7 +207,8 @@ def blocked(view):
     found = answer_blocked(view)
     if found:
         return (f'⛔ 서버 명령 확인 요청에는 request {found[0]} 를 부르지 않는다 — {found[1]}. 스스로 "실행" 을 답하는 길이다.\n'
-                '   답은 사람이 [작업] 탭에서 한다. 요청 id 는 글자로 바로 쓴다(다른 질문 · 결정 요청의 대화 답은 그대로 된다).')
+                '   답은 사람이 [작업] 탭에서 하거나 아테나(리드)가 --by lead 로 한다 · 위임 에이전트는 아테나에 맡긴다.\n'
+                '   요청 id 는 글자로 바로 쓴다(다른 질문 · 결정 요청의 대화 답은 그대로 된다).')
     for match in HOST.finditer(view):
         # 조각은 ; | & 줄바꿈 · ( · 백틱에서 나눈다 — $( ) · `…` · <( ) 안의 ssh 는 이 맥에서 돈다(2026-11-08 PR 재리뷰)
         tail = re.split(r'[\n;|&(`]', view[:match.start()])[-1]

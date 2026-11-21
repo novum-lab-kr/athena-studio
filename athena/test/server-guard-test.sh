@@ -479,9 +479,24 @@ esac
 FAKE
 chmod +x "$GUARD_REQ"
 export ATHENA_GUARD_REQUEST_BIN="$GUARD_REQ"
-run_hook() {   # <명령 글자> → 훅 종료 코드
-  CMD="$1" python3 -c 'import json,os,sys; json.dump({"tool_input":{"command":os.environ["CMD"]}}, sys.stdout)' | python3 "$HOOK" >/dev/null 2>&1
+run_hook() {   # <명령 글자> → 훅 종료 코드. 세션은 HOOK_AGENT(기본 위임 에이전트 athena-studio-fe · '' 이면 아테나 리드 — ATHENA_AGENT 없음)
+  local agent="${HOOK_AGENT-athena-studio-fe}"
+  if [ -n "$agent" ]; then
+    CMD="$1" python3 -c 'import json,os,sys; json.dump({"tool_input":{"command":os.environ["CMD"]}}, sys.stdout)' | ATHENA_AGENT="$agent" python3 "$HOOK" >/dev/null 2>&1
+  else
+    CMD="$1" python3 -c 'import json,os,sys; json.dump({"tool_input":{"command":os.environ["CMD"]}}, sys.stdout)' | env -u ATHENA_AGENT python3 "$HOOK" >/dev/null 2>&1
+  fi
   echo $?
+}
+lead_hook() {   # <기대: pass|block> <명령> — 아테나(리드) 세션에서
+  local want=0 got; [ "$1" = block ] && want=2
+  got="$(HOOK_AGENT='' run_hook "$2")"
+  if [ "$got" = "$want" ]; then ok "[리드 $1] $2"; else no "[리드 $1] $2 (종료 코드 $got)"; fi
+}
+reviewer_hook() {   # <기대: pass|block> <명령> — reviewer 세션에서
+  local want=0 got; [ "$1" = block ] && want=2
+  got="$(HOOK_AGENT=reviewer run_hook "$2")"
+  if [ "$got" = "$want" ]; then ok "[reviewer $1] $2"; else no "[reviewer $1] $2 (종료 코드 $got)"; fi
 }
 hook() {   # <기대: pass|block> <명령>
   local want=0 got; [ "$1" = block ] && want=2
@@ -539,6 +554,31 @@ hook block 'scripts/ssh-run.sh dukbae -- diff <(ssh dukbae-server cat /etc/x) f'
 hook pass "bin/athena request show r-1 --json"
 hook pass "bin/athena request ack r-1"
 hook pass "/abs/athena/scripts/ssh-run.sh dukbae -- uptime"
+echo "④ 훅 — 서버 확인 요청의 답 · 닫기는 아테나(리드)만 · answer 는 --by lead(2026-11-21 사용자 결정)"
+lead_hook pass "bin/athena request answer r-1 --by lead --choice 실행"
+lead_hook pass "bin/athena request answer r-p1 --by lead --choice 실행 --text 확인함"
+lead_hook pass "bin/athena request cancel r-1 --reason 필요 없음"
+lead_hook pass "bin/athena request cancel r-p1"
+lead_hook pass "node scripts/athena.mjs request answer r-1 --choice 실행 --by lead"
+lead_hook pass "bin/athena request answer r-q1 --by chat --text 네"
+lead_hook block "bin/athena request answer r-1 --by app --choice 실행"
+lead_hook block "bin/athena request answer r-1 --by chat --text 실행"
+lead_hook block "bin/athena request answer r-1 --choice 실행"
+lead_hook block "bin/athena request answer r-1 --by leader --choice 실행"
+lead_hook block "bin/athena request answer r-1 --choice 실행; echo --by lead"
+lead_hook block 'bin/athena request answer $ID --by lead --choice 실행'
+lead_hook block "bin/athena request answer r-err --by lead --choice 실행"
+lead_hook block "ssh dukbae-server uptime"
+lead_hook block "ATHENA_SSH_BIN=/bin/sh scripts/ssh-run.sh dukbae -- 'rm x'"
+# 위임 에이전트 · reviewer 는 --by lead 를 붙여도 · 환경 값을 지워도 막힌다(훅은 세션 환경으로 판정한다)
+hook block "bin/athena request answer r-1 --by lead --choice 실행"
+hook block "bin/athena request cancel r-1 --reason x"
+hook block "env -u ATHENA_AGENT bin/athena request answer r-1 --by lead --choice 실행"
+hook block "unset ATHENA_AGENT; bin/athena request answer r-1 --by lead --choice 실행"
+hook block "ATHENA_AGENT= bin/athena request cancel r-p1"
+reviewer_hook block "bin/athena request answer r-1 --by lead --choice 실행"
+reviewer_hook block "bin/athena request cancel r-p1 --reason x"
+reviewer_hook pass "bin/athena request answer r-q1 --by chat --text 네"
 echo "④ 훅 — 같은 우회를 모든 검사에(따옴표 · 백슬래시 · 백슬래시-줄바꿈 · \$' · 빈 치환 · 중괄호 — 2026-11-08 PR 세 번째 리뷰)"
 # ⏎ 는 백슬래시-줄바꿈으로 바꿔 넣는다
 while IFS= read -r line; do line="${line//⏎/$'\\\n'}"; hook block "$line"; done <<'LIST'
