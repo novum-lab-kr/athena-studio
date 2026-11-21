@@ -165,6 +165,30 @@ export function serverSummary(reading: unknown): unknown {
   return { ...(reading as object), status: light }
 }
 
+type ServerReply = Awaited<ReturnType<NonNullable<FrontCtx['serverStatus']>>>
+type ServerRead = () => Promise<ServerReply>
+// 서버 하나의 상세 · 이력(server.detail 답) — 읽은 답에 그 서버가 없으면 null
+export function serverDetailOf(all: ServerReply, name: string): { server: unknown; history: unknown[]; sar: unknown[] } | null {
+  const server = all.servers.find((reading) => Boolean(reading) && (reading as { name?: unknown }).name === name)
+  if (!server) return null
+  return { server, history: (all.history && all.history[name]) || [], sar: (all.sar && all.sar[name]) || [] }
+}
+
+// 폰 서버 목록(snapshot servers) · 서버 상세(server.detail)는 같은 읽기를 나눠 쓴다 — 지난 답으로 바로 답하고
+// 오래됐으면 뒤에서 한 번만 다시 읽어 달라졌을 때 onChanged(브리지 changed ['servers']). 지난 답이 없을 때만 읽을 때까지 기다린다.
+// 상세가 ctx.serverStatus 를 바로 기다리면 캐시가 지난 뒤 ssh 상태(25초) · sar(30초)가 끝날 때까지 답이 없어 폰이 15초에 포기했다(2026-11-21)
+// 실패는 peek 까지 넘긴다 — 뒤에서 다시 읽다 실패하면 지난 답을 그대로 두고 다음 부름에 다시(빈 값으로 덮지 않는다)
+export function createMobileServers(peek: (key: string, read: ServerRead, onChanged: () => void) => Promise<ServerReply> = createServerPeek<ServerReply>()) {
+  return {
+    // 지난 답이 없을 때 못 읽었으면 빈 목록
+    list: (key: string, serverStatus: ServerRead, onChanged: () => void) =>
+      peek(key, serverStatus, onChanged).then((all) => all.servers.map(serverSummary), () => [] as unknown[]),
+    // 지난 답이 없을 때 못 읽었거나 없는 서버면 null
+    detail: (key: string, name: string, serverStatus: ServerRead, onChanged: () => void) =>
+      peek(key, serverStatus, onChanged).then((all) => serverDetailOf(all, name), () => null),
+  }
+}
+
 // 머지 상세 · git 기록 읽기 — 셸 없이 인자로만 · 20초 · 실패는 null(gh 로그인 안 됨 · 커밋 없음 · 네트워크 없음 등).
 // fetch 가 인증을 물으며 붙잡지 않게 GIT_TERMINAL_PROMPT=0
 const runMergeCommand: MergeRunner = (command, args, cwd) =>
@@ -247,8 +271,8 @@ export function startMobileDev(deps: DevDeps) {
   const gitMergeCaches = new Map<string, ReturnType<typeof createGitMerges>>()
   // 팩 · 레포 이미지 토큰 — 기기끼리 같이 쓴다(같은 파일은 한 번만 읽는다)
   const iconTokens = createIconTokens()
-  // 서버 상태 — 기기끼리 같이 쓴다. 지난 값으로 바로 답하고 오래됐으면 뒤에서 다시 읽는다(달라지면 그 기기에 changed ['servers'] · createServerPeek)
-  const serverPeek = createServerPeek<unknown[]>()
+  // 서버 상태 — 기기끼리 · 목록과 상세가 같이 쓴다. 지난 값으로 바로 답하고 오래됐으면 뒤에서 다시 읽는다(달라지면 그 기기에 changed ['servers'] · createMobileServers)
+  const mobileServers = createMobileServers()
   const mergeDetails = () => {
     const dir = front()?.athenaDir || ''
     let cache = mergeCaches.get(dir)
@@ -310,18 +334,13 @@ export function startMobileDev(deps: DevDeps) {
           const ctx = front()
           const serverStatus = ctx && ctx.serverStatus
           if (!ctx || !serverStatus) return []
-          // 실패는 serverPeek 까지 넘긴다 — 뒤에서 다시 읽다 실패하면 지난 목록을 그대로 두고 다음 부름에 다시(빈 목록으로 덮지 않는다)
-          const read = async () => (await serverStatus()).servers.map(serverSummary)
-          // 지난 값이 없을 때 못 읽었으면 지금처럼 빈 목록
-          return serverPeek(ctx.athenaDir || '', read, () => bridge.changed(['servers'])).catch(() => [])
+          return mobileServers.list(ctx.athenaDir || '', serverStatus, () => bridge.changed(['servers']))
         },
         serverDetail: async (name) => {
           const ctx = front()
-          if (!ctx || !ctx.serverStatus) return null
-          const all = await ctx.serverStatus().catch(() => null)
-          const server = all ? all.servers.find((reading) => Boolean(reading) && (reading as { name?: unknown }).name === name) : undefined
-          if (!all || !server) return null
-          return { server, history: (all.history && all.history[name]) || [], sar: (all.sar && all.sar[name]) || [] }
+          const serverStatus = ctx && ctx.serverStatus
+          if (!ctx || !serverStatus) return null
+          return mobileServers.detail(ctx.athenaDir || '', name, serverStatus, () => bridge.changed(['servers']))
         },
         // 계획서 하나 — 맥 [작업] 계획서 화면과 같은 길(앞 창 현황판 /api/card · work.mts workDetail). 앞 창이 없거나 못 읽으면 null
         planDetail: async (id) => {

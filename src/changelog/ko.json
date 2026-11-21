@@ -1,4 +1,5 @@
 {
+  "Fix slow phone server details — last reading shown at once, refreshed in the background": "폰 서버 상세가 늦게 뜨던 것 수정 — 마지막 값을 바로 보이고 뒤에서 새로 읽음",
   "Fix phone merge details stopping at 100 changed files — now lists them all": "폰 머지 상세의 바뀐 파일이 100개에서 잘리던 것 수정 — 전부 보임",
   "Add Athena lead approval for server command confirmations — delegated agents still blocked": "서버 명령 확인 요청을 아테나 리드가 승인 · 닫기 추가 — 위임 에이전트는 그대로 막힘",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "[작업] 목록에 디자인된 계획서 화면 추가 — 줄을 누르면 열림 · md 원문은 아이콘 버튼으로",

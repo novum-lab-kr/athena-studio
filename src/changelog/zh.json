@@ -1,4 +1,5 @@
 {
+  "Fix slow phone server details — last reading shown at once, refreshed in the background": "修复手机服务器详情加载缓慢 — 立即显示上次的值并在后台刷新",
   "Fix phone merge details stopping at 100 changed files — now lists them all": "修复手机合并详情的变更文件在 100 个处被截断 — 现在全部显示",
   "Add Athena lead approval for server command confirmations — delegated agents still blocked": "新增 Athena 负责人批准・关闭服务器命令确认请求 — 委派代理仍被阻止",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "在 [工作] 列表中新增设计过的计划书画面 — 点击行即可打开 · md 原文通过图标按钮查看",
