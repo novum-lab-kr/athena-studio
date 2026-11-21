@@ -1,4 +1,13 @@
 {
+  "0.70": [
+    {
+      "tag": "new",
+      "en": "Add Athena lead approval for server command confirmations — delegated agents still blocked",
+      "ko": "서버 명령 확인 요청을 아테나 리드가 승인 · 닫기 추가 — 위임 에이전트는 그대로 막힘",
+      "ja": "サーバーコマンド確認リクエストをアテナリードが承認・クローズする機能を追加 — 委任エージェントは引き続きブロック",
+      "zh": "新增 Athena 负责人批准・关闭服务器命令确认请求 — 委派代理仍被阻止"
+    }
+  ],
   "0.69": [
     {
       "tag": "new",

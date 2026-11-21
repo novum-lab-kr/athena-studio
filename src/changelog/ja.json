@@ -1,4 +1,5 @@
 {
+  "Add Athena lead approval for server command confirmations — delegated agents still blocked": "サーバーコマンド確認リクエストをアテナリードが承認・クローズする機能を追加 — 委任エージェントは引き続きブロック",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "[作業] リストにデザインされた計画書画面を追加 — 行をクリックで開く・md 原文はアイコンボタンから",
   "Add plan reading to the phone connection — lets the phone app open a plan from the Work tab": "スマホ接続に計画書の読み込みを追加 — スマホアプリの作業タブから計画書を開ける",
   "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "再接続したターミナルでリンクが開けない問題を修正 — pane スナップショットにリンクを保持(スマホ・Mac)",

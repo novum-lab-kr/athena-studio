@@ -1,4 +1,5 @@
 {
+  "Add Athena lead approval for server command confirmations — delegated agents still blocked": "新增 Athena 负责人批准・关闭服务器命令确认请求 — 委派代理仍被阻止",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "在 [工作] 列表中新增设计过的计划书画面 — 点击行即可打开 · md 原文通过图标按钮查看",
   "Add plan reading to the phone connection — lets the phone app open a plan from the Work tab": "手机连接新增计划书读取 — 手机应用可在工作标签中打开计划书",
   "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "修复重新连接后终端链接无法打开 — 在 pane 快照中保留链接(手机 · Mac)",
