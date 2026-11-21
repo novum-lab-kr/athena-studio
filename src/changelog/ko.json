@@ -1,5 +1,6 @@
 {
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "[작업] 목록에 디자인된 계획서 화면 추가 — 줄을 누르면 열림 · md 원문은 아이콘 버튼으로",
+  "Add merge details to the phone connection — changed files, commit count, GitHub link and merge flow": "폰 연결에 머지 상세 추가 — 바뀐 파일 · 커밋 수 · GitHub 링크 · 머지 흐름",
   "Add plan reading to the phone connection — lets the phone app open a plan from the Work tab": "폰 연결에 계획서 읽기 추가 — 폰 앱 작업 탭에서 계획서를 열 수 있음",
   "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "다시 붙은 터미널에서 링크가 안 열리던 문제 수정 — pane 스냅숏에 링크 유지(폰 · 맥)",
   "Change phone push idle window from 60 seconds to 10 minutes": "폰 푸시를 건너뛰는 입력 없음 기준을 60초에서 10분으로 변경 — 10분 동안 입력이 없으면 다시 보냄",
