@@ -9,7 +9,7 @@ const path = require('path')
 const protocol = require('../src/lib/protocol')
 const bridgeModule = require('../src/main/mobile-bridge.mts')
 
-const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
+const { createMobileBridge, createMemoryTransport, macSpaces, weekMerges, livePanes, paneSizes, readLeadPane, boardActionPoster, mobileInputAllowed, readPlanData, openDecisionPlans, decisionPrompt, repoOfCwd, paneWhere, otherPackCounts, mergeKey, parsePrView, parseShortstat, parsePrFull, parseNumstat, mergeFlow, reviewersOf, createMergeDetails, mergeFeed, parseFirstParentLog, createGitMerges, GIT_LOG_FORMAT, GIT_LOG_MS, GIT_FETCH_MS, createPaneControl, isTerminalReply, isPointerHover, cellSize, imageType, decodeImage, imageFileName, saveImage, IMAGE_MAX_BYTES, IMAGE_KEEP_MS } = bridgeModule
 const { packView, bodyPacks, serverSummary, lookSource, mergeBases } = require('../src/main/mobile-dev.mts')
 const { createIconTokens, iconToken, ATHENA_LOGO } = require('../src/main/mobile-look.mts')
 
@@ -1222,6 +1222,138 @@ test('snapshot 새 칸 — pane 레포 · 작업 공간 · 팩, 다른 팩 일�
     assert.equal(runs.length, 2, '읽은 상세는 다시 읽지 않는다')
   } finally {
     await env.cleanup()
+  }
+})
+
+test('merge.detail 파서 — gh url · commits · files · numstat(바이너리 null) · 리뷰어 · 흐름(PR · 바로 머지)', () => {
+  assert.deepEqual(parsePrFull(JSON.stringify({ url: 'https://github.com/o/web/pull/12', commits: [{}, {}], files: [{ path: 'a.ts', additions: 3, deletions: 1 }, { path: '' }, null] })), {
+    url: 'https://github.com/o/web/pull/12',
+    commits: 2,
+    files: [{ path: 'a.ts', additions: 3, deletions: 1 }],
+  })
+  assert.deepEqual(parsePrFull('{"url":"javascript:x"}'), { url: null, commits: null, files: [] })
+  assert.equal(parsePrFull('없음'), null)
+  assert.deepEqual(parseNumstat('10\t2\tsrc/a.ts\n-\t-\timg.png\n\n3\t0\tsrc/{a => b}.ts\n'), [
+    { path: 'src/a.ts', additions: 10, deletions: 2 },
+    { path: 'img.png', additions: null, deletions: null },
+    { path: 'src/{a => b}.ts', additions: 3, deletions: 0 },
+  ])
+  assert.deepEqual(reviewersOf('claude:approve,codex:changes,claude-opus:inherited'), [
+    { name: 'claude', result: 'approve' },
+    { name: 'codex', result: 'changes' },
+    { name: 'claude-opus', result: 'inherited' },
+  ])
+  assert.deepEqual(reviewersOf(undefined), [])
+  const events = [
+    { type: 'auto.merge', at: '2026-11-11T10:30:00', repo: 'web', pr: '12', ok: true, confirm: false },
+    { type: 'pr.open', at: '2026-11-11T09:00:00', repo: 'web', pr: '12', sha: 'abc1234' },
+    { type: 'review', at: '2026-11-11T09:20:00', repo: 'web', pr: 12, verdict: '수정 필요', reviewers: 'claude:changes' },
+    { type: 'auto.fix', at: '2026-11-11T09:21:00', repo: 'web', pr: 12, reviewers: 'claude:changes' },
+    { type: 'verify', at: '2026-11-11T09:25:00', repo: 'web', pr: 12 },
+    { type: 'review', at: '2026-11-11T09:40:00', repo: 'api', pr: 12, verdict: '승인' },
+    // 바로 머지 — 리뷰는 브랜치 끝(sha) · 머지는 squash 커밋(merged)
+    { type: 'review', at: '2026-11-11T11:00:00', repo: 'api', sha: 'aaa1111', verdict: '승인', reviewers: 'codex:approve' },
+    { type: 'auto.merge', at: '2026-11-11T11:05:00', repo: 'api', sha: 'aaa1111', merged: 'bbb2222', direct: true, ok: true, mergedAt: '2026-11-11T11:04:00Z' },
+    { type: 'review', at: '2026-11-11T11:06:00', repo: 'api', sha: 'ccc3333', verdict: '승인' },
+  ]
+  assert.deepEqual(
+    mergeFlow(events, { repo: 'web', pr: 12, sha: null }).map((step) => [step.type, step.verdict, step.reviewers.length, step.ok, step.confirm]),
+    [
+      ['pr.open', null, 0, null, null],
+      ['review', '수정 필요', 1, null, null],
+      ['auto.fix', null, 1, null, null],
+      ['auto.merge', null, 0, true, false],
+    ],
+  )
+  assert.deepEqual(mergeFlow(events, { repo: 'api', pr: null, sha: 'bbb2222' }), [
+    { type: 'review', at: '2026-11-11T11:00:00', verdict: '승인', reviewers: [{ name: 'codex', result: 'approve' }], ok: null, confirm: null, mergedAt: null },
+    { type: 'auto.merge', at: '2026-11-11T11:05:00', verdict: null, reviewers: [], ok: true, confirm: null, mergedAt: '2026-11-11T11:04:00Z' },
+  ])
+  assert.deepEqual(mergeFlow(events, { repo: 'web', pr: 99, sha: null }), [])
+})
+
+test('merge.detail — PR 은 gh · 바로 머지는 git, 한 번 읽으면 두고 실패는 10분 뒤 · 동시 3개 · 틀린 열쇠는 usage', async () => {
+  let clock = 0
+  const runs = []
+  let active = 0
+  let most = 0
+  let ghOk = true
+  const details = createMergeDetails({
+    athenaDir: () => '/b/acme',
+    now: () => clock,
+    run: async (command, args, cwd) => {
+      runs.push({ command, args, cwd })
+      active++
+      most = Math.max(most, active)
+      await sleep(5)
+      active--
+      if (command === 'gh') return ghOk ? JSON.stringify({ url: `https://github.com/o/web/pull/${args[2]}`, commits: [{}, {}, {}], files: [{ path: 'a.ts', additions: 1, deletions: 0 }] }) : null
+      if (args[0] === 'rev-list') return '1\n'
+      return '4\t1\tsrc/b.ts\n'
+    },
+  })
+  const env = await setup({
+    mergeDetails: details,
+    events: () => [
+      { type: 'pr.open', at: '2026-11-11T09:00:00', repo: 'web', pr: 12 },
+      { type: 'auto.merge', at: '2026-11-11T10:00:00', repo: 'web', pr: 12, ok: true },
+    ],
+  })
+  const bare = await setup()
+  try {
+    const pr = (await env.ask('merge.detail', { repo: 'web', pr: 12 })).result
+    assert.deepEqual(pr, {
+      repo: 'web',
+      pr: 12,
+      sha: null,
+      url: 'https://github.com/o/web/pull/12',
+      commits: 3,
+      files: [{ path: 'a.ts', additions: 1, deletions: 0 }],
+      flow: [
+        { type: 'pr.open', at: '2026-11-11T09:00:00', verdict: null, reviewers: [], ok: null, confirm: null, mergedAt: null },
+        { type: 'auto.merge', at: '2026-11-11T10:00:00', verdict: null, reviewers: [], ok: true, confirm: null, mergedAt: null },
+      ],
+    })
+    assert.deepEqual(runs[0], { command: 'gh', args: ['pr', 'view', '12', '--json', 'url,commits,files'], cwd: path.join('/b/acme', 'repos', 'web') })
+    assert.equal((await env.ask('merge.detail', { repo: 'web', pr: '12' })).result.pr, 12, '글자 PR 번호도 같은 머지')
+    assert.equal(runs.length, 1, '읽은 것은 다시 읽지 않는다')
+
+    const direct = (await env.ask('merge.detail', { repo: 'api', sha: 'bbb2222' })).result
+    assert.deepEqual([direct.url, direct.commits, direct.files, direct.flow], [null, 1, [{ path: 'src/b.ts', additions: 4, deletions: 1 }], []])
+    assert.deepEqual(
+      runs.slice(1).map((run) => run.args),
+      [
+        ['show', '--diff-merges=first-parent', '--numstat', '--format=', 'bbb2222', '--'],
+        ['rev-list', '--count', '--no-merges', 'bbb2222^1..bbb2222', '--'],
+      ],
+    )
+
+    // 실패 — 파일 · 커밋 · url 만 null(흐름은 그대로) · 10분 안에는 다시 부르지 않는다
+    ghOk = false
+    runs.length = 0
+    const failed = (await env.ask('merge.detail', { repo: 'web', pr: 13 })).result
+    assert.deepEqual([failed.url, failed.commits, failed.files, failed.flow], [null, null, null, []])
+    await env.ask('merge.detail', { repo: 'web', pr: 13 })
+    assert.equal(runs.length, 1)
+    clock = 10 * 60 * 1000
+    ghOk = true
+    assert.equal((await env.ask('merge.detail', { repo: 'web', pr: 13 })).result.commits, 3, '10분 뒤 다시')
+
+    // 동시에 여러 개 열어도 gh · git 은 한꺼번에 3개까지 · 같은 머지는 한 번만
+    runs.length = 0
+    most = 0
+    await Promise.all([20, 21, 22, 23, 24, 24].map((number) => env.ask('merge.detail', { repo: 'web', pr: number })))
+    assert.equal(runs.length, 5)
+    assert.equal(most, 3)
+
+    for (const args of [{}, { repo: 'web' }, { repo: 'web', pr: 0 }, { repo: 'web', pr: '012' }, { repo: 'web', pr: 1.5 }, { repo: '../x', pr: 1 }, { repo: '..', pr: 1 }, { repo: '.', sha: 'bbb2222' }, { repo: 'web', sha: '--output=x' }, { repo: 'web', sha: 7 }]) {
+      assert.equal((await env.ask('merge.detail', args)).error.code, 'usage', JSON.stringify(args))
+    }
+    // 상세를 읽는 길이 없는 부르는 쪽(옛 배선)은 흐름만
+    assert.deepEqual((await bare.ask('merge.detail', { repo: 'web', pr: 12 })).result, { repo: 'web', pr: 12, sha: null, url: null, commits: null, files: null, flow: [] })
+  } finally {
+    await env.cleanup()
+    await bare.cleanup()
   }
 })
 

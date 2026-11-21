@@ -1,6 +1,7 @@
 {
   "Add Athena lead approval for server command confirmations — delegated agents still blocked": "新增 Athena 负责人批准・关闭服务器命令确认请求 — 委派代理仍被阻止",
   "Add a designed plan screen to the Work list — opens on row click, md source behind an icon button": "在 [工作] 列表中新增设计过的计划书画面 — 点击行即可打开 · md 原文通过图标按钮查看",
+  "Add merge details to the phone connection — changed files, commit count, GitHub link and merge flow": "手机连接新增合并详情 — 变更文件 · 提交数 · GitHub 链接 · 合并流程",
   "Add plan reading to the phone connection — lets the phone app open a plan from the Work tab": "手机连接新增计划书读取 — 手机应用可在工作标签中打开计划书",
   "Fix terminal links dead after reattach — kept in the pane snapshot (phone and Mac)": "修复重新连接后终端链接无法打开 — 在 pane 快照中保留链接(手机 · Mac)",
   "Change phone push idle window from 60 seconds to 10 minutes": "将跳过手机推送的无输入时间从 60 秒改为 10 分钟 — 10 分钟无输入后恢复发送",

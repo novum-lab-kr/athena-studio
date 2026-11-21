@@ -2,6 +2,13 @@
   "0.70": [
     {
       "tag": "new",
+      "en": "Add merge details to the phone connection — changed files, commit count, GitHub link and merge flow",
+      "ko": "폰 연결에 머지 상세 추가 — 바뀐 파일 · 커밋 수 · GitHub 링크 · 머지 흐름",
+      "ja": "スマホ接続にマージ詳細を追加 — 変更ファイル・コミット数・GitHub リンク・マージの流れ",
+      "zh": "手机连接新增合并详情 — 变更文件 · 提交数 · GitHub 链接 · 合并流程"
+    },
+    {
+      "tag": "new",
       "en": "Add Athena lead approval for server command confirmations — delegated agents still blocked",
       "ko": "서버 명령 확인 요청을 아테나 리드가 승인 · 닫기 추가 — 위임 에이전트는 그대로 막힘",
       "ja": "サーバーコマンド確認リクエストをアテナリードが承認・クローズする機能を追加 — 委任エージェントは引き続きブロック",
