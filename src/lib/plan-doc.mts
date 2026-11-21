@@ -176,29 +176,34 @@ export function inlineParts(text: string): InlinePart[] {
 }
 
 // ── 사람이 보는 짧은 말(D8) — 계획서 글을 자르기만 한다(새 말을 만들지 않는다).
-// 폰 athena-app app/src/features/work/planView.ts stepParts · decisionParts 와 같은 규칙 — 한쪽을 바꾸면 다른 쪽도
+// 폰 athena-app app/src/features/work/planView.ts stepBrief · decisionBrief 와 같은 규칙(같은 입력 표를 두 쪽 시험에 둔다) — 한쪽을 바꾸면 다른 쪽도
 const DASH = ' — '
 const CHECK = ' → 확인:'
 
-// 괄호 밖 첫 " · " 앞 — "B 그대로(제목 · 상태 칩)" 의 괄호 안에서는 자르지 않는다
-function cutDot(text: string): string {
+// 괄호 밖 첫 mark 자리(없으면 -1) — "x(a — b)" · "(제목: 값)" 의 괄호 안에서는 자르지 않는다
+function topIndex(text: string, mark: string): number {
   let depth = 0
   for (let index = 0; index < text.length; index += 1) {
     const char = text[index]
     if (char === '(') depth += 1
     else if (char === ')' && depth > 0) depth -= 1
-    else if (depth === 0 && text.startsWith(' · ', index)) return text.slice(0, index)
+    else if (depth === 0 && text.startsWith(mark, index)) return index
   }
-  return text
+  return -1
 }
 
-// 단계 한 줄 — 머리(title) = 첫 " — " 앞 · 할 일(gist) = 그 뒤 ~ 첫 " → 확인:" 앞. " — " 가 없으면 줄 전체가 머리
+// 괄호 밖 첫 mark 앞(없으면 통째)
+function cutBefore(text: string, mark: string): string {
+  const at = topIndex(text, mark)
+  return at < 0 ? text : text.slice(0, at)
+}
+
+// 단계 한 줄 — 머리(title) = 괄호 밖 첫 " — " 앞 · 할 일(gist) = 그 뒤 ~ 괄호 밖 첫 " → 확인:" 앞.
+// " — " 가 없으면 " → 확인:" 앞이 머리
 export function stepBrief(text: string): { title: string; gist: string } {
-  const at = text.indexOf(DASH)
-  if (at < 0) return { title: text.trim(), gist: '' }
-  const rest = text.slice(at + DASH.length)
-  const check = rest.indexOf(CHECK)
-  return { title: text.slice(0, at).trim(), gist: (check < 0 ? rest : rest.slice(0, check)).trim() }
+  const at = topIndex(text, DASH)
+  if (at < 0) return { title: cutBefore(text, CHECK).trim(), gist: '' }
+  return { title: text.slice(0, at).trim(), gist: cutBefore(text.slice(at + DASH.length), CHECK).trim() }
 }
 
 // 지금 단계 짧은 제목 — progress.now 의 머리(단계 번호 · 담당, 예 "4단계 reviewer")
@@ -206,12 +211,13 @@ export function stepTitle(text: string): string {
   return stepBrief(text).title
 }
 
-// 결정 한 줄 — 맨 앞 번호("D1 ")는 화면에 쓰지 않는다. full = 번호만 뗀 전체(날짜 꼬리 그대로 · 누르면 보인다).
-// title = 끝 괄호 꼬리("(2026-11-21 사용자)")를 뗀 글의 첫 ": " 앞(무엇에 대한 결정인지) · ": " 가 없으면 괄호 밖 첫 " · " 앞 · 비면 그 글
+// 결정 한 줄 — 맨 앞 번호("D1 " · "D1. " · "D1: ")는 화면에 쓰지 않는다. full = 번호만 뗀 전체(날짜 꼬리 그대로 · 누르면 보인다).
+// title = 끝 날짜 괄호("(2026-11-21 사용자)")만 뗀 글의 괄호 밖 첫 ": " 앞 · 없으면 괄호 밖 첫 " · " 앞 · 비면 그 글.
+// 날짜가 아닌 끝 괄호("(참고)")는 남긴다
 export function decisionBrief(text: string): { title: string; full: string } {
   const full = text.replace(/^D\d+\b[\s.:)]*/, '').trim()
-  const body = full.replace(/\s*\([^()]*\)\s*$/, '')
-  const colon = body.indexOf(': ')
-  const title = colon < 0 ? cutDot(body) : body.slice(0, colon)
+  const body = full.replace(/\s*\(\d{4}-\d{2}-\d{2}[^()]*\)\s*$/, '').trim()
+  const colon = topIndex(body, ': ')
+  const title = colon < 0 ? cutBefore(body, ' · ') : body.slice(0, colon)
   return { title: title.trim() || body, full }
 }

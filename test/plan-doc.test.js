@@ -117,14 +117,14 @@ test('inlineParts — 코드 · 굵게 · 링크 · 맨 주소 · 코드 안 꾸
   assert.deepEqual(inlineParts(''), [])
 })
 
-test('stepTitle · stepBrief — " — " 앞 머리 · 그 뒤 " → 확인:" 앞 할 일 · " — " 가 없으면 줄 전체가 머리(D8 · 폰 stepParts 와 같음)', () => {
+test('stepTitle · stepBrief — 괄호 밖 " — " 앞 머리 · 그 뒤 " → 확인:" 앞 할 일 · " — " 가 없으면 " → 확인:" 앞이 머리(D8 · 폰 stepBrief 와 같음)', () => {
   assert.equal(stepTitle('4단계 reviewer — 계획서 대비 검증 + 브리지 계약 교차 확인'), '4단계 reviewer')
   assert.equal(stepTitle('2단계 화면'), '2단계 화면')
   assert.deepEqual(stepBrief('3단계 athena-app — 작업 탭 줄을 누르면 계획서 전체를 새 화면으로 → 확인: 시뮬레이터 실화면 → 성공 조건: 진행 중'), {
     title: '3단계 athena-app',
     gist: '작업 탭 줄을 누르면 계획서 전체를 새 화면으로',
   })
-  assert.deepEqual(stepBrief('1단계 브리지 → 확인: 시험'), { title: '1단계 브리지 → 확인: 시험', gist: '' })
+  assert.deepEqual(stepBrief('1단계 브리지 → 확인: 시험'), { title: '1단계 브리지', gist: '' })
   assert.deepEqual(stepBrief('단계 하나'), { title: '단계 하나', gist: '' })
 })
 
@@ -146,4 +146,14 @@ test('decisionBrief — 번호는 쓰지 않는다 · 제목 = 날짜 꼬리 뗀
   })
   // 번호 없는 결정 · 주소의 ":" 는 구분자가 아니다
   assert.deepEqual(decisionBrief('https://example.com 을 쓴다'), { title: 'https://example.com 을 쓴다', full: 'https://example.com 을 쓴다' })
+})
+
+// 맥 · 폰 공통 입력 표 — 폰 athena-app app/tests/planView.test.mts 에 같은 표가 있다(한쪽을 바꾸면 다른 쪽도)
+test('맥 · 폰 공통 자르기 표 — 괄호 밖에서만 자름 · 날짜 괄호만 뗌 · 번호 D1 · D1. · D1: · " — " 없으면 " → 확인:" 앞', () => {
+  assert.deepEqual(decisionBrief('D5 결정 (제목: 값) · 뒤'), { title: '결정 (제목: 값)', full: '결정 (제목: 값) · 뒤' })
+  assert.deepEqual(decisionBrief('D7 본문 절 처리 (참고)'), { title: '본문 절 처리 (참고)', full: '본문 절 처리 (참고)' })
+  assert.deepEqual(decisionBrief('D1. 점 번호 글'), { title: '점 번호 글', full: '점 번호 글' })
+  assert.deepEqual(stepBrief('3단계 athena-app → 확인: 화면'), { title: '3단계 athena-app', gist: '' })
+  assert.deepEqual(stepBrief('1단계 x(a — b) — 할 일 → 확인: y'), { title: '1단계 x(a — b)', gist: '할 일' })
+  assert.deepEqual(decisionBrief('D2 폰 범위: 계획서 전체 (2026-11-21 사용자)'), { title: '폰 범위', full: '폰 범위: 계획서 전체 (2026-11-21 사용자)' })
 })
