@@ -1213,7 +1213,7 @@ app.whenReady().then(async () => {
   void startMobileDevIfAsked()
 })
 
-// 모바일 — 개발판에 relay 주소를 줬을 때만(src/main/mobile-dev.mts · 격리 집이든 진짜 스튜디오 집이든). 그 밖에는 모듈도 싣지 않는다(브리지 기본 꺼짐 · 프로필도 숨김)
+// 모바일 — 배포판은 늘 운영 relay 로 · 개발판은 relay 주소를 줬을 때만(src/main/mobile-dev.mts · 격리 집이든 진짜 스튜디오 집이든). 개발판에 주소가 없으면 모듈도 싣지 않는다(프로필도 숨김)
 type MobileDev = Awaited<ReturnType<typeof loadMobileDev>>
 let mobileDev: NonNullable<MobileDev> | null = null
 const mobileLinks: unknown[] = [] // 길이 켜지기 전에 온 athena:// — 켜지면 넘긴다(그때까지 값은 로그에 남기지 않는다)
@@ -1256,8 +1256,10 @@ function computerName(): Promise<string | null> {
     execFile('/usr/sbin/scutil', ['--get', 'ComputerName'], { timeout: 3000 }, (error, stdout) => resolve(error ? null : String(stdout).trim() || null))
   })
 }
+// 모바일 길을 켤 차례인가 — 배포판은 늘(주소는 mobileDevOptions 가 운영 relay 로 고정) · 개발판은 relay 주소를 줬을 때
+const mobileAsked = () => app.isPackaged || Boolean(process.env.ATHENA_STUDIO_MOBILE_RELAY)
 async function startMobileDevIfAsked(): Promise<void> {
-  if (!process.env.ATHENA_STUDIO_MOBILE_RELAY) {
+  if (!mobileAsked()) {
     // 짝 지은 기기가 있는데 주소가 빠졌으면 한 줄 남긴다(값은 남기지 않는다 · 모듈은 여전히 싣지 않는다)
     const note = relayMissingNote({ packaged: app.isPackaged, relay: process.env.ATHENA_STUDIO_MOBILE_RELAY, pairedFileExists: () => fs.existsSync(path.join(STUDIO.root, 'mobile', 'relay.json')) })
     if (note) mobileLog(note)
@@ -1265,7 +1267,7 @@ async function startMobileDevIfAsked(): Promise<void> {
   }
   mobileDev = await loadMobileDev()
   if (!mobileDev) return
-  // athena:// 를 이 앱으로 — 개발용 길이 켜질 때만(배포판 · 보통 개발 앱은 등록하지 않는다)
+  // athena:// 를 이 앱으로 — 모바일 길이 켜질 때만(주소 없이 켠 개발 앱은 등록하지 않는다)
   if (isMac) app.setAsDefaultProtocolClient('athena')
   for (const link of mobileLinks.splice(0)) mobileDev.handleLink(link)
   sendMobileState()
@@ -1286,7 +1288,7 @@ function notifyPairRequest(label: string | null): void {
 app.on('open-url', (event, link) => {
   event.preventDefault()
   if (mobileDev) mobileDev.handleLink(link)
-  else if (process.env.ATHENA_STUDIO_MOBILE_RELAY && mobileLinks.length < 4) mobileLinks.push(link)
+  else if (mobileAsked() && mobileLinks.length < 4) mobileLinks.push(link)
 })
 
 handle('mobile:state', () => mobileState())

@@ -541,7 +541,7 @@ test('맥 로그아웃 — remoteLogout 이 없거나 relay 에 안 붙어 있�
   }
 })
 
-test('개발용 길 문 — 개발판 · 허용 relay 주소가 모두 있을 때만 켠다(격리 집 없이 진짜 스튜디오 집에서도)', async () => {
+test('모바일 길 문 — 개발판은 허용 relay 주소가 있을 때만 · 배포판은 늘 운영 relay 로(격리 집 없이 진짜 스튜디오 집에서도)', async () => {
   const { mobileDevOptions } = require('../src/main/mobile-dev.mts')
   const studioHome = require('../src/lib/studio-home.js')
   const env = { ATHENA_STUDIO_MOBILE_RELAY: 'ws://127.0.0.1:3131/ws' }
@@ -551,18 +551,23 @@ test('개발용 길 문 — 개발판 · 허용 relay 주소가 모두 있을 �
   const realHome = studioHome.studioLayout({ home: '/Users/someone', override: null, identity: studioHome.appIdentity({ packaged: false }) }).root
   assert.equal(realHome, path.join('/Users/someone', '.athena-studio'))
   assert.deepEqual(mobileDevOptions({ env, packaged: false, home: realHome }), { url: 'ws://127.0.0.1:3131/ws', base: 'http://127.0.0.1:3131', dir: path.join('/Users/someone', '.athena-studio', 'mobile') })
-  assert.equal(mobileDevOptions({ env, packaged: true, home: '/tmp/iso' }), null, '배포판')
-  assert.equal(mobileDevOptions({ env, packaged: true, home: realHome }), null, '배포판 · 진짜 집')
+  // 배포판 — env 의 루프백 주소는 무시하고 운영 relay 로(주소가 없어도 켠다)
+  const release = (home) => ({ url: 'wss://relay.athena.novum-lab.com/ws', base: 'https://relay.athena.novum-lab.com', dir: path.join(home, 'mobile') })
+  assert.deepEqual(mobileDevOptions({ env, packaged: true, home: '/tmp/iso' }), release('/tmp/iso'), '배포판 · 루프백 env 무시')
+  assert.deepEqual(mobileDevOptions({ env, packaged: true, home: realHome }), release(realHome), '배포판 · 진짜 집')
+  assert.deepEqual(mobileDevOptions({ env: {}, packaged: true, home: realHome }), release(realHome), '배포판 · 주소 없음')
+  assert.equal(mobileDevOptions({ env: {}, packaged: true, home: '' }), null, '배포판 · 집 자리 없음')
   assert.equal(mobileDevOptions({ env: {}, packaged: false, home: '/tmp/iso' }), null, '주소 없음')
   assert.equal(mobileDevOptions({ env: {}, packaged: false, home: realHome }), null, '주소 없음 · 진짜 집')
   assert.equal(mobileDevOptions({ env, packaged: false, home: '' }), null, '집 자리 없음')
   for (const relay of ['wss://relay.example.com/ws', 'ws://10.0.0.5:3131/ws', 'http://127.0.0.1:3131/ws', '깨진 주소']) {
     assert.equal(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_RELAY: relay }, packaged: false, home: '/tmp/iso' }), null, relay)
     assert.equal(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_RELAY: relay }, packaged: false, home: realHome }), null, `${relay} · 진짜 집`)
+    assert.deepEqual(mobileDevOptions({ env: { ...env, ATHENA_STUDIO_MOBILE_RELAY: relay }, packaged: true, home: realHome }), release(realHome), `${relay} · 배포판은 env 무시`)
   }
 })
 
-test('relay 허용 — 루프백 ws 또는 운영 relay 와 칸마다 정확히 같은 것만 · 배포판은 운영 주소여도 끈다', () => {
+test('relay 허용 — 루프백 ws 또는 운영 relay 와 칸마다 정확히 같은 것만 · 배포판은 운영 주소로 켠다', () => {
   const { allowedRelay, mobileDevOptions, RELEASE_RELAY } = require('../src/main/mobile-dev.mts')
   assert.equal(RELEASE_RELAY, 'wss://relay.athena.novum-lab.com/ws')
   for (const ok of [RELEASE_RELAY, 'ws://127.0.0.1:3131/ws', 'ws://localhost:3131/ws', 'ws://[::1]:3131/ws']) {
@@ -593,10 +598,10 @@ test('relay 허용 — 루프백 ws 또는 운영 relay 와 칸마다 정확히 
   assert.ok(allowedRelay('wss://relay.athena.novum-lab.com:443/ws'))
   const env = { ATHENA_STUDIO_MOBILE_RELAY: RELEASE_RELAY }
   assert.deepEqual(mobileDevOptions({ env, packaged: false, home: '/tmp/iso' }), { url: RELEASE_RELAY, base: 'https://relay.athena.novum-lab.com', dir: path.join('/tmp/iso', 'mobile') })
-  assert.equal(mobileDevOptions({ env, packaged: true, home: '/tmp/iso' }), null, '배포판은 운영 주소여도')
-  // 격리 집 없이 진짜 스튜디오 집에서도 운영 relay 로 켠다(개발판만)
+  assert.deepEqual(mobileDevOptions({ env, packaged: true, home: '/tmp/iso' }), { url: RELEASE_RELAY, base: 'https://relay.athena.novum-lab.com', dir: path.join('/tmp/iso', 'mobile') }, '배포판은 운영 주소')
+  // 격리 집 없이 진짜 스튜디오 집에서도 운영 relay 로 켠다
   assert.deepEqual(mobileDevOptions({ env, packaged: false, home: '/Users/someone/.athena-studio' }), { url: RELEASE_RELAY, base: 'https://relay.athena.novum-lab.com', dir: path.join('/Users/someone/.athena-studio', 'mobile') })
-  assert.equal(mobileDevOptions({ env, packaged: true, home: '/Users/someone/.athena-studio' }), null, '배포판은 진짜 집 · 운영 주소여도')
+  assert.deepEqual(mobileDevOptions({ env, packaged: true, home: '/Users/someone/.athena-studio' }), { url: RELEASE_RELAY, base: 'https://relay.athena.novum-lab.com', dir: path.join('/Users/someone/.athena-studio', 'mobile') }, '배포판 · 진짜 집')
 })
 
 test('화면 이름 — 공급자 이름 · 이메일 먼저, 없으면 개발 계정 이름만(apple · google sub 은 안 보인다)', () => {

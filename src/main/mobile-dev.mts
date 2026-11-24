@@ -1,6 +1,6 @@
-// ── 모바일 개발용 길 — 개발판에서만 relay 에 붙고 짝 기기마다 브리지를 둔다 ──
+// ── 모바일 길 — relay 에 붙고 짝 기기마다 브리지를 둔다(배포판은 늘 · 개발판은 relay 주소를 줬을 때) ──
 // 계획서 plans/feature/20261110-아테나-모바일-앱.md 4-7 · 4-8(시험 3). 브리지는 여전히 기본 꺼짐 — 이 길이 켜질 때만 팩 레일 프로필 · [허용] 창이 보인다.
-// 켜지는 조건(둘 다): 개발판(배포판 아님) · ATHENA_STUDIO_MOBILE_RELAY 가 허용 주소(루프백 ws 또는 운영 RELEASE_RELAY 정확히 — allowedRelay).
+// 켜지는 조건: 배포판은 늘(운영 RELEASE_RELAY 고정 · env 무시) · 개발판은 ATHENA_STUDIO_MOBILE_RELAY 가 허용 주소일 때(루프백 ws 또는 운영 RELEASE_RELAY 정확히 — allowedRelay).
 // 격리 집(ATHENA_STUDIO_HOME)은 없어도 된다 — 없으면 진짜 스튜디오 집(~/.athena-studio)에서 켠다(2026-11-12 결정 · 폰 실제 데이터 시험).
 // 로그인은 웹(mobile-login.mts — relay 를 RELAY_DEV_LOGIN=1 로 띄우면 로그인 페이지에 개발 계정 칸) · 연결 허용은 맥 [허용] 창.
 // 열쇠 · 세션 토큰은 <스튜디오 집>/mobile/ 아래 0600 파일에만(mobile-relay.mts) — 로그에 남기지 않는다.
@@ -37,8 +37,8 @@ const LOOPBACK_HOSTS = new Set(['127.0.0.1', 'localhost', '[::1]', '::1'])
 // 운영 relay — 경로는 athena-app relay/src/server.ts WS_PATH('/ws' · WebSocketServer path) · 호스트는 relay/deploy/relay.caddy
 export const RELEASE_RELAY = 'wss://relay.athena.novum-lab.com/ws'
 
-// 조건이 빠졌을 때 맥 로그(화면 문구 아님 — 개발판 전용)
-export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 개발판 · 허용한 relay 주소(루프백 ws 또는 운영 relay)가 모두 있어야 해요'
+// 조건이 빠졌을 때 맥 로그(화면 문구 아님 — 개발판에서만 나온다 · 배포판은 운영 주소로 늘 켠다)
+export const MOBILE_DEV_SKIPPED = '[mobile-relay] 개발용 길을 켜지 않아요 — 허용한 relay 주소(루프백 ws 또는 운영 relay)가 있어야 해요'
 
 // 붙어도 되는 relay 주소인지 — 루프백 ws(포트 아무거나) 또는 RELEASE_RELAY 와 칸마다 정확히 같은 것만(문자열 앞부분 비교 X).
 // 운영 주소는 계정 · 비밀번호 · 포트 · 쿼리 · 조각이 하나라도 붙으면 거절한다 — env 하나로 세션 토큰이 남의 서버로 가지 않게
@@ -67,9 +67,11 @@ export type MobileDevOptions = { url: string; base: string; dir: string }
 
 // 켜도 되는지 · 무엇으로 — 조건이 하나라도 빠지면 null(아무것도 만들지 않는다)
 // home = 스튜디오 집(main 의 STUDIO.root — ATHENA_STUDIO_HOME 을 줬으면 그 격리 집 · 아니면 ~/.athena-studio)
+// 배포판은 늘 운영 RELEASE_RELAY 로 켠다(2026-11-24 결정 — 폰 앱 심사 전제) · env 는 읽지 않는다(루프백 · 개발용 주소가 배포판에 들어가지 않게)
+// 개발판은 그대로 — ATHENA_STUDIO_MOBILE_RELAY 가 허용 주소일 때만
 export function mobileDevOptions({ env, packaged, home }: { env: NodeJS.ProcessEnv; packaged: boolean; home: string }): MobileDevOptions | null {
-  const raw = env.ATHENA_STUDIO_MOBILE_RELAY
-  if (packaged || !home || !raw) return null
+  const raw = packaged ? RELEASE_RELAY : env.ATHENA_STUDIO_MOBILE_RELAY
+  if (!home || !raw) return null
   const url = allowedRelay(raw)
   if (!url) return null
   const base = relayWebBase(url.href)

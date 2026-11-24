@@ -1,4 +1,13 @@
 {
+  "0.72": [
+    {
+      "tag": "new",
+      "en": "Add phone connection to the released Mac app — production relay only",
+      "ko": "배포판 맥 앱에 폰 연결 추가 — 운영 relay 전용",
+      "ja": "配布版 Mac アプリにスマホ接続を追加 — 本番 relay のみ",
+      "zh": "发布版 Mac 应用新增手机连接 — 仅限正式 relay"
+    }
+  ],
   "0.71": [
     {
       "tag": "fixed",
