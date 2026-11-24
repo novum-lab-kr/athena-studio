@@ -20,7 +20,8 @@
 #   --no-review-ok       리뷰 승인이 없거나 지금 커밋된 내용과 달라도 올린다(리뷰는 선택이다). PR 은 묻지 않고 붙이고
 #                        본문 "확인 필요" · 보고에 "리뷰 승인 전" 을 적는다. main 직접 레포의 push 는 사용자가 확인했을 때만
 #   --repo-agent <이름>  (아테나 전용) 여러 에이전트가 붙은 계획서에서 이 에이전트의 레포 몫만 올린다.
-#                        FE 세션에서는 보호 훅이 이 옵션을 막는다 — 순서 조율은 아테나가 한다
+#                        PR 끔 레포면 --direct-merge 와 같이 써서 그 레포 몫을 바로 머지 · Actions 로 넘긴다(리뷰 문 · 보안 문 · 같은 HEAD 검증 · 충돌 검사는 그대로).
+#                        FE 세션에서는 보호 훅이 이 옵션을 막는다(ship.sh · pr-auto.mjs 모두) — 순서 조율은 아테나가 한다
 #   --yes                실제로 보낸다. 없으면 미리보기만
 #   --auto-push          (자동 흐름을 켠 레포 — docs/pr-auto.md) 이 계획서의 열린 PR 브랜치에 고친 커밋만 빨리 감기로 push 한다(자동 리뷰 · 옆 reviewer · 아테나 지시로 고친 것).
 #                        사용자 "PR 올려줘" 없이 되는 push — 미리보기 · 제목 · base · 새 PR 없음. 조건: 레포 "autoMerge": true ·
@@ -343,17 +344,18 @@ fi
 # ── PR 끔 바로 머지 — PR 없이 prBase 에 squash 로 합쳐 push 한다(scripts/pr-auto.mjs --direct-merge · 팩 "autoPr": false) ──────────
 if [ $DIRECT_MERGE = 1 ]; then
   [ -z "$DIRECT" ] || fail "main 직접 레포는 바로 머지 대상이 아니다(이미 PR 없이 push 한다)"
-  [ -z "$REPO_AGENT" ] || fail "바로 머지는 레포 하나짜리 작업을 그 에이전트가 올린다 — 아테나의 --repo-agent 와 같이 쓰지 않는다"
+  # 여러 에이전트 계획서는 아테나가 --repo-agent 로 그 레포 몫만 넘긴다(위에서 계획서 에이전트 · 레포를 확인했다) — pr-auto.mjs 에도 넘겨 같은 판정으로 받게 한다
+  REPO_AGENT_ARGS=(); [ -z "$REPO_AGENT" ] || REPO_AGENT_ARGS=(--repo-agent "$REPO_AGENT")
   DIRECT_MODE="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, direct_merge_mode; print(direct_merge_mode(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(바로 머지 확인)"
   [ -n "$DIRECT_MODE" ] || fail "$REPO 는 PR 끔 + 자동 머지 레포가 아니다(pack.json 레포 \"autoMerge\": true + \"autoPr\": false) — \"PR 올려줘\" 면 --direct-merge 없이"
   HANDOFF_ON="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, actions_handoff; print(1 if actions_handoff(load(sys.argv[1]), sys.argv[2]) else "")' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(Actions 넘기기 확인)"
   if [ -n "$HANDOFF_ON" ]; then
     echo "── Actions 로 넘기기: $REPO · 🌿 $BRANCH @ $HEAD_SHA"
-    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --handoff --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "넘기지 못했다 — 위 이유를 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
+    (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --handoff --plan "$PLAN" --repo "$REPO" --dir "$TOP" ${REPO_AGENT_ARGS[@]+"${REPO_AGENT_ARGS[@]}"}) || fail "넘기지 못했다 — 위 이유를 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
     exit 0
   fi
   echo "── 바로 머지: $REPO · 🌿 $BRANCH @ $HEAD_SHA → PR 없이 prBase (머지 설정 $DIRECT_MODE)"
-  (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP") || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
+  (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --direct-merge --plan "$PLAN" --repo "$REPO" --dir "$TOP" ${REPO_AGENT_ARGS[@]+"${REPO_AGENT_ARGS[@]}"}) || fail "바로 머지가 끝나지 않았다 — 위 이유와 계획서 \"- Auto merge:\" 줄을 본다(리뷰 때문에 멈췄으면 지적을 고쳐 커밋하고 같은 명령으로 다시)"
   exit 0
 fi
 

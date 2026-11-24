@@ -282,5 +282,6 @@
   "Fix choppy phone scrolling in fullscreen agent panes — scroll input spread out": "修复全屏智能体窗格中手机滚动卡顿 — 分开写入滚动输入",
   "Fix slow phone scrolling over the relay — screen updates sent faster while scrolling": "修复通过中继连接时手机滚动迟缓的问题 — 滚动时更频繁地发送屏幕更新",
   "Use \"device\" wording consistently in Korean simulator and phone connection text": "统一韩语界面中的“기기”为“디바이스” — 模拟器 · 手机连接",
-  "Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans": "修复 [工作] 列表残留已关闭 pane — plans 中的失效链接导致看板停止刷新"
+  "Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans": "修复 [工作] 列表残留已关闭 pane — plans 中的失效链接导致看板停止刷新",
+  "Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent": "修复多代理计划中雅典娜无法合并关闭 PR 的仓库部分的问题"
 }

@@ -47,6 +47,9 @@ All notable user-facing changes to Athena Studio. Internal refactors and tests a
 ### New
 - Add phone connection to the released Mac app — production relay only
 
+### Fixed
+- Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent
+
 ## 0.71 (v0.71.0 – · Nov 21, 2026)
 
 ### Fixed

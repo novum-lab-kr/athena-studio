@@ -16,7 +16,7 @@
       PR 자동 리뷰의 고친 커밋 push 도 ship.sh --auto-push 로 이 통과 길을 쓴다 — 조건(켠 레포 · 열린 PR · 기록된 커밋)은 ship.sh 가 본다(docs/pr-auto.md).
       PR 끔 레포의 바로 머지도 ship.sh --direct-merge 로 같은 길이다 — 실제 push 는 ship.sh 가 띄운 pr-auto.mjs 가 하므로 이 훅이 걸리지 않는다(다른 경로의 git push · commit-tree · update-ref 는 그대로 막는다).
       자동 머지는 FE 세션이 아니라 scripts/pr-auto.mjs(현황판이 띄우는 처리기)가 하므로 이 훅이 걸리지 않는다.
-그 밖에 막는 것: ship.sh --repo-agent(아테나 전용 — 여러 레포 순서 조율), gh api 쓰기(-X POST 등 · -f/-F 필드 · --input, 붙여 쓴 꼴 포함).
+그 밖에 막는 것: ship.sh --repo-agent · pr-auto.mjs --repo-agent(아테나 전용 — 여러 레포 순서 조율), gh api 쓰기(-X POST 등 · -f/-F 필드 · --input, 붙여 쓴 꼴 포함).
 경로는 페이로드 cwd 기준으로 푼다 — 워크트리에서는 절대 경로로 부른다(에이전트 지시문이 그렇게 한다).
 한계(보안 경계가 아니다): FE 세션은 아테나 레포에 쓰기 권한이 있어 scripts 자체나 계획서 기록(Review result 등)을 고칠 수 있고,
 git -c alias.… · send-pack · eval · xargs 로 감싼 push 는 보지 않는다.
@@ -506,6 +506,10 @@ def check(text, depth=0):
             if name == 'ship.sh' and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
                 return 'ship.sh --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'
             continue
+        # pr-auto.mjs --repo-agent — ship.sh --repo-agent 와 같은 아테나 전용 길(여러 에이전트 계획서의 레포 몫 바로 머지 · 넘기기). node 로 직접 불러 우회하지 않게
+        if (name == 'pr-auto.mjs' or (name == 'node' and any(os.path.basename(token) == 'pr-auto.mjs' for token in tokens[1:]))) \
+                and any(token == '--repo-agent' or token.startswith('--repo-agent=') for token in tokens[1:]):
+            return 'pr-auto.mjs --repo-agent 는 아테나 전용이다(여러 레포 작업의 순서 조율). 사용자에게 아테나에게 PR 을 요청해 달라고 알린다'
         # -c 는 -lc · -ec 처럼 다른 옵션과 묶여 올 수 있다
         flag = next((position for position, token in enumerate(tokens[1:], 1) if re.match(r'^-[A-Za-z]*c[A-Za-z]*$', token)), None) if name in SHELLS else None
         if flag is not None:
