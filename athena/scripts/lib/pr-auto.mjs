@@ -641,6 +641,12 @@ export const singleRepoPlan = (planText, config, repoName) => {
   const found = [...planAgents(planText, config)]
   return found.length === 1 && repoAgents(repo).includes(found[0])
 }
+// 여러 에이전트 계획서에서 아테나가 고른 에이전트(ship.sh --repo-agent)의 레포 몫인가 — 그 에이전트가 계획서에 붙어 있고 이 레포 것.
+// 바로 머지 · Actions 넘기기(--direct-merge · --handoff)만 쓴다. 여러 레포 PR 자동 리뷰(singleRepoPlan)는 그대로 사람이
+export const repoAgentShare = (planText, config, repoName, agent) => {
+  const repo = (config?.repos ?? []).find((entry) => entry.name === repoName)
+  return Boolean(repo && agent) && repoAgents(repo).includes(agent) && planAgents(planText, config).has(agent)
+}
 
 // 계획서 Work ref 줄 — 워크트리 경로 · pane
 export const workRefOf = (planText) => {

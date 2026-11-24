@@ -111,6 +111,39 @@ out="$(ship)"; rc=$?
 out="$(commit '안 켠 레포 변경' f.txt)"; rc=$?
 [ $rc = 0 ] && [ -s "$COUNT" ] && ok "안 켠 레포는 workflow 가 있어도 commit.sh 가 검증을 돌린다" || bad "안 켠 레포 커밋(rc=$rc): $out"
 
+# 2026-11-24 이슈 — 여러 에이전트 계획서의 PR 끔 레포 몫을 아무도 못 넘겼다(에이전트는 "아테나가 올린다", 아테나 --repo-agent 는 "같이 쓰지 않는다" · pr-auto 는 "레포 하나짜리 아님")
+echo; echo "여러 에이전트 계획서 — 아테나가 --repo-agent 로 그 레포 몫만 넘기기 · 바로 머지"
+multi_config() { printf '{ "github": { "org": "acme" }, "repos": [ { "name": "web", "agents": ["web-fe"], "branch": "main", "prBase": "main", "autoMerge": true, "autoPr": false, "autoMergeConfirm": false%s }, { "name": "api", "agents": ["api-be"], "branch": "main", "prBase": "main" } ] }\n' "$1" > "$ATH/athena.config.json"; }
+multi_config ', "actionsHandoff": true'
+G fetch -q origin; G worktree add -q "$TMP/wt2" -b feat/y origin/main
+git -C "$TMP/wt2" config user.name t; git -C "$TMP/wt2" config user.email t@t
+printf '# 여러\n\n## Checkpoint\n- Status: in_progress\n- Agent: web-fe, api-be\n- Work ref: %s · 🌿 feat/y · pane p2 (web-fe)\n\n### Validation\n- 아직 실행 안 함\n\n## Commits\n' "$TMP/wt2" > "$ATH/plans/task/p2.md"
+commit2() { "$ATH/scripts/commit.sh" --plan plans/task/p2.md --dir "$TMP/wt2" -m "$1" -- "${@:2}" 2>&1; }
+ship2() { "$ATH/scripts/ship.sh" --plan plans/task/p2.md --dir "$TMP/wt2" --direct-merge "$@" 2>&1; }
+pr_auto2() { (cd "$ATH" && node scripts/pr-auto.mjs "$@" --plan plans/task/p2.md --repo web --dir "$TMP/wt2" 2>&1); }
+echo multi > "$TMP/wt2/f.txt"
+out="$(commit2 '여러 에이전트 변경' f.txt)"; rc=$?
+[ $rc = 0 ] || bad "여러 에이전트 계획서 커밋(rc=$rc): $out"
+out="$(ship2)"; rc=$?
+[ $rc != 0 ] && ! remote_has handoff/feat/y && printf '%s' "$out" | grep -q '여러 에이전트가 붙은 작업이다' && ok "에이전트(--repo-agent 없음)는 그대로 막힌다 — 아테나가 올린다" || bad "에이전트 넘기기(rc=$rc): $out"
+out="$(pr_auto2 --handoff)"; rc=$?
+[ $rc != 0 ] && ! remote_has handoff/feat/y && printf '%s' "$out" | grep -q '레포 하나짜리 작업이 아니다' && ok "pr-auto.mjs --handoff 를 --repo-agent 없이 부르면 그대로 건너뛴다" || bad "pr-auto 직접 넘기기(rc=$rc): $out"
+out="$(pr_auto2 --handoff --repo-agent api-be)"; rc=$?
+[ $rc != 0 ] && ! remote_has handoff/feat/y && ok "pr-auto.mjs --repo-agent 가 이 레포 에이전트가 아니면 건너뛴다" || bad "다른 레포 에이전트(rc=$rc): $out"
+out="$(ship2 --repo-agent api-be)"; rc=$?
+[ $rc != 0 ] && ! remote_has handoff/feat/y && printf '%s' "$out" | grep -q '레포(api)와 --dir 의 레포(web)가 다르다' && ok "ship.sh --repo-agent 가 다른 레포 에이전트면 막힌다" || bad "ship 다른 레포 에이전트(rc=$rc): $out"
+SHA_Y="$(git -C "$TMP/wt2" rev-parse HEAD)"
+out="$(ship2 --repo-agent web-fe)"; rc=$?
+[ $rc = 0 ] && remote_has handoff/feat/y && [ "$(git -C "$TMP/origin.git" rev-parse refs/heads/handoff/feat/y^)" = "$SHA_Y" ] && grep -q '^- Auto merge: web feat/y @.* · Actions 대기 — 넘김' "$ATH/plans/task/p2.md" && ok "아테나 --repo-agent web-fe --direct-merge → web 몫을 Actions 로 넘긴다" || bad "아테나 넘기기(rc=$rc): $out"
+rm -f "$ATH"/.board-handoffs/web-*.json   # 아래 현황판 감시 시험이 넘김 작업 파일 수를 센다
+multi_config ''
+echo multi2 > "$TMP/wt2/f.txt"
+out="$(commit2 '여러 에이전트 바로 머지' f.txt)"; rc=$?
+[ $rc = 0 ] || bad "바로 머지 커밋(rc=$rc): $out"
+out="$(ship2 --repo-agent web-fe)"; rc=$?
+[ $rc = 0 ] && [ "$(git -C "$TMP/origin.git" rev-parse 'refs/heads/main^{tree}')" = "$(git -C "$TMP/wt2" rev-parse 'HEAD^{tree}')" ] && grep -q '^- Auto merge: web feat/y .*머지됨' "$ATH/plans/task/p2.md" && ok "안 켠 레포 — 아테나 --repo-agent web-fe --direct-merge → 맥에서 바로 머지" || bad "아테나 바로 머지(rc=$rc): $out"
+config ''   # 아래 시험은 레포 web 하나짜리 설정을 본다
+
 echo; echo "workflow 틀 — 머지 단계(진짜 git)"
 python3 - "$SRC/docs/templates/actions/athena-handoff.yml" "$TMP/merge-step.sh" <<'PY'
 import sys, re, textwrap

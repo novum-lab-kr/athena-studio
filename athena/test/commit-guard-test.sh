@@ -129,6 +129,10 @@ check block "git push origin HEAD:main (직접 push)" "git push origin HEAD:main
 check block "git commit-tree (직접 커밋 만들기)" "git commit-tree abc -p origin/main -m x"
 check block "git update-ref (직접 브랜치 옮기기)" "git update-ref refs/heads/main abc"
 check block "--direct-merge 를 붙인 --repo-agent" "$ROOT/scripts/ship.sh --repo-agent x --direct-merge"
+# 여러 에이전트 계획서의 레포 몫(2026-11-24) — pr-auto.mjs 도 --repo-agent 를 받으니 node 로 직접 부르는 길도 아테나 전용
+check block "node pr-auto.mjs --handoff --repo-agent" "node $ROOT/scripts/pr-auto.mjs --handoff --plan p --repo r --dir d --repo-agent x"
+check block "pr-auto.mjs --direct-merge --repo-agent=x" "cd $ROOT && node scripts/pr-auto.mjs --direct-merge --repo-agent=x"
+check pass "node pr-auto.mjs --handoff (--repo-agent 없음)" "node $ROOT/scripts/pr-auto.mjs --handoff --plan p --repo r --dir d"
 
 # 도움말만 보는 명령(2026-11-04) — 통과. 도움말 플래그를 옵션 값 · `--` 뒤에 끼운 쓰기는 그대로 막는다
 check pass "gh pr merge --help" "gh pr merge --help"

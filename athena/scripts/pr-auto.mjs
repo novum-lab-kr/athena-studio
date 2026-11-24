@@ -54,7 +54,7 @@ import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
   BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
-  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, singleRepoPlan, skipsMergeConfirm,
+  PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
   DIRECT_REVIEW_MAX, REVIEW_STOPPED, REVIEW_WAITING, directReviewPrompt, directReviewRounds, latestReviewResult, securityDiffParts, securityGate, securityPending, securityResultFor, securityRiskVerdict, planFastPathFlags, planWideMark, wideChangeVerdict,
@@ -1175,14 +1175,26 @@ const performDirectMerge = async (job) => {
   return { ok: true }
 }
 
+// --direct-merge 와 --handoff 가 받는 계획서 — 레포 하나짜리이거나, 아테나가 ship.sh --repo-agent 로 고른 에이전트의 레포 몫(여러 에이전트 계획서)
+const planShareOk = (planText, config, repo, planFile, repoAgent) => {
+  if (repoAgent) {
+    if (repoAgentShare(planText, config, repo, repoAgent)) return true
+    console.log(`⏭  ${planFile} — --repo-agent ${repoAgent} 가 이 계획서에 붙은 ${repo} 에이전트가 아니다`)
+    return false
+  }
+  if (singleRepoPlan(planText, config, repo)) return true
+  console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(여러 레포는 아테나가 ship.sh --repo-agent 로)`)
+  return false
+}
+
 // --direct-merge: ship.sh 가 부른다(커밋된 작업 브랜치 · 워크트리). 결과가 실패 · 막힘이면 종료 1
-const directMerge = async (planArg, repo, dir) => {
+const directMerge = async (planArg, repo, dir, repoAgent = '') => {
   const { path: planPath, file: planFile } = planPathOf(planArg)
   const config = loadConfig(ROOT)
   const flow = repoFlow(config, repo)
   if (!flow.direct) { console.log(`⏭  ${repo} 는 PR 끔 + 자동 머지가 아니다(pack.json 레포 "autoMerge": true + "autoPr": false)`); return false }
   const planText = readFileSync(planPath, 'utf8')
-  if (!singleRepoPlan(planText, config, repo)) { console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(여러 레포는 사람이)`); return false }
+  if (!planShareOk(planText, config, repo, planFile, repoAgent)) return false
   const worktree = resolve(dir)
   const branch = git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])
   const sha = git(worktree, ['rev-parse', 'HEAD'])
@@ -1235,12 +1247,12 @@ const handoffHead = (worktree, sha, title) => {
 }
 
 // --handoff: ship.sh 가 부른다 — 넓은 수정이면 리뷰 문(directReviewGate)을 먼저 지나고, 커밋을 handoff/<브랜치> 로 push 하고 바로 끝난다. 검증 · 머지는 Actions, 결과 읽기는 현황판(lib/handoff.mjs)
-const handOff = async (planArg, repo, dir) => {
+const handOff = async (planArg, repo, dir, repoAgent = '') => {
   const { path: planPath, file: planFile } = planPathOf(planArg)
   const config = loadConfig(ROOT)
   if (!handoffOn(config, repo)) { console.log(`⏭  ${repo} 는 Actions 넘기기를 켜지 않았다(pack.json 레포 "actionsHandoff": true · 확인 없는 바로 머지)`); return false }
   const planText = readFileSync(planPath, 'utf8')
-  if (!singleRepoPlan(planText, config, repo)) { console.log(`⏭  ${planFile} — 레포 하나짜리 작업이 아니다(여러 레포는 사람이)`); return false }
+  if (!planShareOk(planText, config, repo, planFile, repoAgent)) return false
   const worktree = resolve(dir)
   const branch = git(worktree, ['symbolic-ref', '--short', '-q', 'HEAD'])
   const sha = git(worktree, ['rev-parse', 'HEAD'])
@@ -1598,9 +1610,9 @@ if (!isMain) {
 } else if (flag('watch')) await watch()
 else if (flag('kick')) kick()
 else if (flag('direct-merge')) {
-  const done = await directMerge(option('plan'), option('repo'), option('dir'))
+  const done = await directMerge(option('plan'), option('repo'), option('dir'), option('repo-agent'))
   process.exit(done ? 0 : 1)
-} else if (flag('handoff')) process.exit((await handOff(option('plan'), option('repo'), option('dir'))) ? 0 : 1)
+} else if (flag('handoff')) process.exit((await handOff(option('plan'), option('repo'), option('dir'), option('repo-agent'))) ? 0 : 1)
 else if (flag('enqueue')) enqueue(option('plan'), option('pr'), option('head'))
 else if (option('plan') && option('pr')) await handle(option('plan'), option('pr'), { dryRun: flag('dry-run') })
 else {
