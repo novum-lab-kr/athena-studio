@@ -1,6 +1,7 @@
 // 회사 팩 — Electron 없이 도는 순수 로직(npm test). 실제 일(잠금 · 링크 · 되돌리기 · 검사)은 아테나 본체 명령이 한다.
 // 약속: 코어 `pack … --json` 출력(코어는 athena/)
 //   node scripts/athena.mjs pack <명령> … --json → `progress: <단계ID> <설명>` 줄들 + 마지막 줄 JSON · 실패 종료 1 + { ok:false, error, message }
+import fs from 'node:fs'
 import path from 'node:path'
 import { createRequire } from 'node:module'
 import * as i18n from './i18n.mts'
@@ -176,6 +177,34 @@ export function normalizePackList(result: PackResult | null | undefined): PackLi
   const reported = result.current as { id?: unknown } | null | undefined
   const current = reported && typeof reported.id === 'string' ? (reported as PackEntry) : null
   return { supported: true, legacy: result.legacy === true, switching: result.switching === true, current, packs }
+}
+
+// 마지막으로 읽은 팩 목록 — 본체마다 하나(앱 데이터 pack-lists.json · { <본체 경로>: PackList }).
+// 켤 때 코어 업데이트 중이면 pack list 가 업데이트 문에서 기다린다 — 그동안 팩 줄을 이 목록으로 그린다(main/packs.mts refreshPacks)
+function readPackLists(file: string): Record<string, unknown> {
+  try {
+    const saved: unknown = JSON.parse(fs.readFileSync(file, 'utf8'))
+    return saved && typeof saved === 'object' && !Array.isArray(saved) ? (saved as Record<string, unknown>) : {}
+  } catch {
+    return {}
+  }
+}
+
+export function savedPackList(file: string, body: string): PackList | null {
+  const list = readPackLists(file)[body] as { supported?: unknown; packs?: unknown } | undefined
+  return list && list.supported === true && Array.isArray(list.packs) ? (list as PackList) : null
+}
+
+// 읽기에 성공한 목록만 남긴다 · 지금 없는 본체 칸은 지운다(팩을 지우면 본체 폴더도 없어진다)
+export function savePackList(file: string, body: string, list: PackList): void {
+  if (!list.supported) return
+  const lists = readPackLists(file)
+  for (const key of Object.keys(lists)) if (key !== body && !fs.existsSync(key)) delete lists[key]
+  lists[body] = list
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  const tmp = `${file}.tmp`
+  fs.writeFileSync(tmp, `${JSON.stringify(lists)}\n`)
+  fs.renameSync(tmp, file)
 }
 
 // 스튜디오가 아는 코어 약속 번호(2 = 팩마다 본체 · 3 = pack set-auto-merge · 오류 코드 not-applicable · 4 = 도구별 대화 복원)

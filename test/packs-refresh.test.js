@@ -17,10 +17,11 @@ function fakeBody(root, name) {
   return dir
 }
 
-function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false, refreshAllPacks = () => {}, withData = true } = {}) {
+function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }), welcome = false, refreshAllPacks = () => {}, withData = true, updating = () => false } = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'packs-refresh-'))
   t.after(() => fs.rmSync(root, { recursive: true, force: true }))
   const bodies = { acme: fakeBody(root, 'acme'), globex: fakeBody(root, 'globex') }
+  const listFile = path.join(root, 'app', 'pack-lists.json') // 앱 데이터의 마지막 팩 목록(main.mts 는 userData)
   if (withData) fs.mkdirSync(path.join(root, 'data'), { recursive: true }) // 감시는 설치 때 데이터 폴더가 있어야 바로 걸린다(없으면 5초 주기 재시도)
   const sent = []
   const ctx = {
@@ -59,9 +60,11 @@ function setup(t, runPack, { daemonCall = async () => ({ result: { panes: [] } }
     setLastPackFile: () => {},
     launchWelcome: () => welcome,
     setLaunchWelcome: (value) => (welcome = value),
+    updating,
+    packListFile: () => listFile,
   })
   t.after(() => ctx.stopPackWatch && ctx.stopPackWatch())
-  return { ctx, bodies, sent, data: path.join(root, 'data') }
+  return { ctx, bodies, sent, data: path.join(root, 'data'), listFile }
 }
 
 // pack list 흉내 — current 는 부른 본체의 팩
@@ -154,6 +157,78 @@ test('팩 열기: 옛 id 로 not-found 가 오면 모든 창의 목록을 다시
   assert.equal(result.ok, false)
   assert.equal(result.error, 'not-found')
   assert.equal(refreshed, 1)
+})
+
+// 켤 때 코어 업데이트 중에는 pack list 가 업데이트 문(updateGate)에서 끝날 때까지 기다린다 — 그동안 팩 줄이 숨던 것(2026-11-25).
+// 마지막으로 읽은 목록을 앱 데이터에 남겨 두고, 업데이트 중이면 기다리기 전에 그 목록으로 팩 줄을 그린다
+test('팩 목록: 코어 업데이트 중이면 기다리는 동안 마지막으로 읽은 목록을 먼저 보낸다', async (t) => {
+  let updatingNow = false
+  let releaseGate
+  const gate = new Promise((resolve) => (releaseGate = resolve))
+  const { ctx, bodies, sent, listFile } = setup(
+    t,
+    async (args, options, all) => {
+      if (updatingNow) await gate // runCore 의 updateGate.wait() 흉내
+      return listOf(all, options.dir)
+    },
+    { updating: () => updatingNow },
+  )
+  // 지난번 켰을 때 — 업데이트 없이 읽은 목록이 남는다
+  await ctx.refreshPacks()
+  assert.ok(fs.existsSync(listFile))
+  // 앱을 다시 켠 것처럼 — 창의 팩 상태는 처음 값, 업데이트가 도는 중
+  ctx.packState = { supported: false }
+  sent.length = 0
+  updatingNow = true
+  const waiting = ctx.refreshPacks()
+  await new Promise((resolve) => setImmediate(resolve))
+  const early = sent.filter((item) => item.channel === 'pack:state')
+  assert.equal(early.length, 1, '업데이트를 기다리는 동안 저장한 목록을 보내지 않았다')
+  assert.equal(early[0].value.supported, true)
+  assert.equal(early[0].value.current.id, 'acme')
+  assert.deepEqual(early[0].value.packs.map((pack) => pack.id), ['acme', 'globex'])
+  assert.equal(early[0].value.welcome, false) // 저장한 목록으로는 시작 화면을 띄우지 않는다
+  assert.equal(early[0].value.launchWelcome, false)
+  // 화면이 다 읽기 전에 보낸 것(창 focus 의 새로 읽기)은 놓친다 — 화면이 다시 물으면 또 보낸다
+  const again = ctx.refreshPacks()
+  await new Promise((resolve) => setImmediate(resolve))
+  assert.equal(sent.filter((item) => item.channel === 'pack:state').length, 2, '두 번째 읽기에서 저장 목록을 다시 보내지 않았다')
+  // 업데이트가 끝나면 실제 목록으로 바뀐다
+  updatingNow = false
+  releaseGate()
+  const done = await waiting
+  await again
+  assert.equal(done.current.id, 'acme')
+  assert.equal(sent.filter((item) => item.channel === 'pack:state').length, 4)
+  assert.equal(ctx.packState.body, bodies.acme)
+})
+
+test('팩 목록: 업데이트 중이어도 저장한 목록이 없으면(처음) 먼저 보내지 않는다 · 다른 본체 목록도 쓰지 않는다', async (t) => {
+  let updatingNow = false
+  let releaseGate = () => {}
+  const { ctx, bodies, sent } = setup(
+    t,
+    async (args, options, all) => {
+      if (updatingNow) await new Promise((resolve) => (releaseGate = resolve))
+      return listOf(all, options.dir)
+    },
+    { updating: () => updatingNow },
+  )
+  const waitAndCheck = async () => {
+    updatingNow = true
+    const waiting = ctx.refreshPacks()
+    await new Promise((resolve) => setImmediate(resolve))
+    assert.equal(sent.length, 0, '보낼 저장 목록이 없는데 팩 상태를 보냈다')
+    updatingNow = false
+    releaseGate()
+    await waiting
+  }
+  await waitAndCheck() // 아주 처음 — 남은 목록이 없다
+  // acme 목록만 남았다 — globex 본체로 묶인 창은 그것을 쓰지 않는다
+  ctx.athenaDir = bodies.globex
+  ctx.packState = { supported: false }
+  sent.length = 0
+  await waitAndCheck()
 })
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms))
