@@ -150,6 +150,27 @@ $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO
 idle
 --- stderr
 --- screen
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 [a → b] 지시 --enter --wait-start
+--- exit 0
+--- stdout
+queued
+--- stderr
+--- screen
+["@studio", "pane", "run", "p2", "[a → b] 지시"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 [a → b] 지시 --enter --wait-start
+--- exit 0
+--- stdout
+queued
+--- stderr
+--- screen
+["@studio", "pane", "run", "p2", "[a → b] 지시"]
+$ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-text p2 [a → b] 지시 --enter
+--- exit 1
+--- stdout
+--- stderr
+{"error": "timeout", "message": "studio pane run: 3000ms 안에 입력칸이 비워지지 않았다"}
+--- screen
+["@studio", "pane", "run", "p2", "[a → b] 지시"]
 $ ATHENA_STUDIO=1 ATHENA_STUDIO_PANE_ID=p1 ATHENA_STUDIO_TAB_ID=t1 ATHENA_STUDIO_WORKSPACE_ID=w1 ATHENA_STUDIO_SOCKET=/tmp/athena-studio.sock ATHENA_STUDIO_CLI=<WORK>/bin/athena-studio-cli scripts/screen pane send-keys p2 C-c Enter
 --- exit 0
 --- stdout

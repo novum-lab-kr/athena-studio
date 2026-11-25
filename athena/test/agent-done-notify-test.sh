@@ -425,9 +425,22 @@ check "에이전트가 띄운 보안 검토도 높음이 있으면 아테나로"
 sed -i.bak 's/^- Security result: 높음 1.*/- Security result: 높음 0 · 중간 1 @abc/' "$BODY/$PLAN"
 AGENT=security-reviewer hook prompt '{"prompt":"보안 2"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 중간 1"}'
 check "높음이 없는 보안 검토 끝은 넣지 않는다(C2)" "$(sent)" "$((before + 9))"
+# G(2026-11-26) — 이번 검토를 띄운 시각 뒤 · 같은 레포 · 브랜치 결과 줄만 본다(옛 검토의 높음 · 다른 레포 결과로 판정하지 않는다)
 sed -i.bak '/^- Security result:/d' "$BODY/$PLAN"
+{ echo '- Security review: /w · 📦 app · 🌿 feat-x · pane p9 (security-reviewer) · 띄움 2026-11-26 10:00'
+  echo '- Security result: 높음 1 · 중간 0 @old · tree 1 · 📦 app · 🌿 feat-x · 2026-11-26 09:00'; } >> "$BODY/$PLAN"
+AGENT=security-reviewer hook prompt '{"prompt":"보안 3"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 결과 줄 아직"}'
+check "띄운 시각 전 옛 결과의 높음은 이번 검토로 치지 않는다" "$(sent)" "$((before + 9))"
+{ echo '- Security result: 높음 0 · 중간 1 @new · tree 2 · 📦 app · 🌿 feat-x · 2026-11-26 10:30'
+  echo '- Security result: 높음 2 · 중간 0 @x · tree 3 · 📦 other · 🌿 feat-x · 2026-11-26 10:40'; } >> "$BODY/$PLAN"
+AGENT=security-reviewer hook prompt '{"prompt":"보안 4"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 중간 1"}'
+check "마지막 줄이 다른 레포 결과의 높음이어도 이번 검토(높음 0)로 판정" "$(sent)" "$((before + 9))"
+sed -i.bak 's/^- Security result: 높음 0 · 중간 1 @new/- Security result: 높음 1 · 중간 1 @new/' "$BODY/$PLAN"
+AGENT=security-reviewer hook prompt '{"prompt":"보안 5"}'; AGENT=security-reviewer ATHENA_REVIEW_FROM_AGENT=1 hook stop '{"last_assistant_message":"보안 검토 끝: 높음 1"}'
+check "띄운 뒤 같은 레포 · 브랜치 결과가 높음이면 아테나로" "$(sent) $(last_sent | grep -c '\[security-reviewer → 아테나\] 끝 · p9')" "$((before + 10)) 1"
+sed -i.bak '/^- Security result:/d; /^- Security review:/d' "$BODY/$PLAN"
 hook prompt '{"prompt":"조용 8"}'; hook stop '{"last_assistant_message":"고쳤어요. 배포 순서는 정해 주세요."}'
-check "형식 없이 답을 기다리는 끝은 아테나로(H1)" "$(sent) $(last_sent | grep -c '\] 끝 · p9') $(done_notice id)" "$((before + 10)) 1 None"
+check "형식 없이 답을 기다리는 끝은 아테나로(H1)" "$(sent) $(last_sent | grep -c '\] 끝 · p9') $(done_notice id)" "$((before + 11)) 1 None"
 hook prompt '{"prompt":"조용 9"}'; CLOSED="p1" hook stop '{"last_assistant_message":"담당이 닫힌 뒤 끝냈어요."}'
 check "담당 아테나가 닫혔으면 조용한 끝으로 돌리지 않는다(H2 — lead-send 로)" "$(done_notice id) $(ls "$DATA/state/lead-send" 2>/dev/null | grep -c '^p1-.*json$')" "None 1"
 rm -rf "$DATA/state/lead-send"   # 처리기는 폴더가 없어지면 끝난다

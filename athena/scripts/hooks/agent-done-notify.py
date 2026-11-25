@@ -241,10 +241,26 @@ def board_up() -> bool:
         return False
 
 
-def security_high(plan_text: str) -> bool:
-    """계획서의 마지막 "- Security result:" 줄이 높음 1 이상인가"""
-    lines = [line for line in plan_text.splitlines() if line.startswith('- Security result:')]
-    found = re.search(r'높음\s*(\d+)', lines[-1]) if lines else None
+STAMP = re.compile(r'\d{4}-\d{2}-\d{2} \d{2}:\d{2}')
+
+
+def security_high(plan_text: str, pane: str = '') -> bool:
+    """이번 보안 검토의 결과 줄이 높음 1 이상인가 — 이 pane 을 띄운 "- Security review: … · 띄움 <시각>" 줄(없으면 마지막 띄운 줄)과
+    같은 레포 · 브랜치이고 띄운 시각 뒤에 적힌 "- Security result:" 줄만 본다(옛 검토 · 다른 레포 결과로 판정하지 않게).
+    띄운 줄이 없는 옛 계획서는 마지막 결과 줄로"""
+    lines = plan_text.splitlines()
+    launches = [line for line in lines if line.startswith('- Security review:')]
+    results = [line for line in lines if line.startswith('- Security result:')]
+    mine = [line for line in launches if pane and f' pane {pane} ' in line]
+    launch = (mine or launches or [''])[-1]
+    launched = re.search(r'띄움 (\d{4}-\d{2}-\d{2} \d{2}:\d{2})', launch)
+    if launched:
+        where = re.search(r'📦 \S+ · 🌿 \S+ ', launch)
+        def fresh(line: str) -> bool:
+            stamp = STAMP.search(line)
+            return bool(stamp) and stamp.group(0) >= launched.group(1) and (not where or where.group(0) in line)
+        results = [line for line in results if fresh(line)]
+    found = re.search(r'높음\s*(\d+)', results[-1]) if results else None
     return bool(found) and int(found.group(1)) > 0
 
 
@@ -522,7 +538,7 @@ def main() -> None:
     if agent in REVIEWERS and not stop and not question and os.environ.get('ATHENA_REVIEW_FROM_AGENT') == '1':
         # 에이전트 pane 이 띄운 reviewer 의 끝 줄(C2) — 결론은 계획서 줄 · 띄운 작업자가 review-wait.sh 로 받는다.
         # 예외: 보안 검토가 높음 1 이상이면 아테나로 보낸다
-        if not (agent == 'security-reviewer' and security_high(plan_text)):
+        if not (agent == 'security-reviewer' and security_high(plan_text, pane)):
             return
     fields = plan_fields(plan_text)
     lead = fields['lead']

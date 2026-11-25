@@ -57,6 +57,7 @@ npm test          # test/*.test.js (node:test) — 순수 로직 + 데몬 통합
   - 지문 생성(`athena/scripts/sync-fingerprint.mjs` — 기준 ref 없는 레포 건너뛰기 · pending 정리)을 고쳤으면 `test/sync-fingerprint-test.sh`(몇 초 · 임시 레포 · 네트워크 없음)
   - 역할마다 모델(`scripts/lib/models.mjs` · `athena_config.py` `model_of` · `delegate.sh` `--model` · 팩 `models`)을 고쳤으면 `test/models-test.sh`(몇 초 · 진짜 claude 를 부르지 않는다)
   - red-check(`scripts/red-check.mjs` · `scripts/lib/red-check.mjs` · `scripts/verify/red-check.sh` · `ship.sh` 의 red-check 연결)를 고쳤으면 `test/red-check-test.sh`(몇 초 · 가짜 레포 · 가짜 gh)
+  - 토큰 사용량 측정(`scripts/token-usage.mjs` — 역할별 턴 · 토큰 · 단독 턴 · 받은 글 · 예상 절감)을 고쳤으면 `test/token-usage-test.sh`(몇 초 · 가짜 대화 기록 · 진짜 `~/.claude` 를 읽지 않는다)
   - 검증 범위 판정(`athena/scripts/verify/_lib.sh` `verify_scope_*` · `verify_key` · `scope-tests.mjs`)을 고쳤으면 `test/verify-scope-test.sh`(몇 초 · 임시 git 레포 · 문서만 고친 수정 판정 `verify_scope_docs_only` · `docs-check.mjs` · 대기 칸 `wait_ms`)
   - Actions 로 넘기기(`scripts/lib/handoff.mjs` · `pr-auto.mjs --handoff` · `commit.sh` · `ship.sh` 의 넘기기 갈래 · `docs/templates/actions/athena-handoff.yml`)를 고쳤으면 `test/handoff-test.sh`(몇 초 · 임시 레포 · 가짜 gh 응답 · 틀의 머지 단계를 진짜 git 으로)
   - git 없는 프로젝트의 맥 실행기(`scripts/local-finish.mjs` · `_lib.sh` `resolve_repo_dir` 의 `ATHENA_VERIFY_GITLESS` · `delegate.sh` 의 안내 줄)를 고쳤으면 `test/local-finish-test.sh`(몇 초 · 임시 코어 사본 · 가짜 화면)

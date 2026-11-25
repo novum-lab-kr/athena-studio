@@ -64,6 +64,14 @@ sc_studio_ops() {
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 지시" --enter --wait-start
   step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 글 --wait-start
   step studio "${IN_STUDIO[@]}" -- $S pane wait-start p2 --timeout 0
+  # 일하는 중(차례 상태 working)인 pane — 기다리지 않고 queued · 대기열에 들어가 데몬 전송 확인이 timeout 이어도 오류 아닌 queued(H5)
+  mkdir -p "$WORK/pack-data/state/agent-turn"
+  printf '{"state": "working", "turn": "t1"}\n' > "$WORK/pack-data/state/agent-turn/p2.json"
+  ln -s "$WORK/pack-data" "$COPY/.pack-data"
+  step studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 지시" --enter --wait-start
+  step studio-runtimeout,studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 지시" --enter --wait-start
+  step studio-runtimeout,studio "${IN_STUDIO[@]}" -- $S pane send-text p2 "[a → b] 지시" --enter
+  rm -f "$COPY/.pack-data"
   step studio "${IN_STUDIO[@]}" -- $S pane send-keys p2 C-c Enter
   step studio "${IN_STUDIO[@]}" -- $S pane rename p9 "📋 현황판"
   step studio "${IN_STUDIO[@]}" -- $S pane close p9
