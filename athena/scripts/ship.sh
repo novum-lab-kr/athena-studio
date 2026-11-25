@@ -109,6 +109,7 @@ DIRECT="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib
 # 자동 흐름(리뷰 · 머지)이 할 일이 있는 레포인가(docs/pr-auto.md "켜기" — PR 끔 · 리뷰 끔 + 사람이 직접은 없다 · main 직접 레포는 대상 아님)
 AUTO_ON=0
 AUTO_FLOW=off
+AUTO_SKIPPED=0   # 레포 하나짜리가 아니라 자동 리뷰에 넣지 않은 PR 이 있다(auto_review_now)
 if [ -z "$DIRECT" ]; then
   AUTO_FLOW="$(python3 -c 'import sys; sys.path.insert(0, sys.argv[1] + "/scripts/lib"); from athena_config import load, auto_flow; print(auto_flow(load(sys.argv[1]), sys.argv[2]))' "$ATHENA_DIR" "$REPO")" || fail "설정을 읽지 못했다(자동 흐름 확인)"
   [ "$AUTO_FLOW" = off ] || AUTO_ON=1
@@ -119,25 +120,32 @@ fi
 # 같은 HEAD 는 한 번만 — pr-auto.mjs --enqueue 가 대기 · 처리 중인 같은 일을 막고, 끝난 HEAD 는 처리기가 계획서 "- Auto review:" 줄로 건너뛴다
 auto_review_now() {   # <PR 번호>
   [ "$AUTO_ON" = 1 ] && [ -z "$REPO_AGENT" ] || return 0
-  # 잠금 안에서 Status 를 읽고 필요하면 되돌린다 — review · reopened · skip 을 출력
+  # 잠금 안에서 Status 를 읽고 필요하면 되돌린다 — review · reopened · skip · not-single <이유> 를 출력.
+  # 레포 하나짜리 판정은 처리기 · 현황판과 같은 함수(singleRepoSkipReason) — 아니면 넣지 않고 계획서 "- Auto skip:" 줄에 이유를 남긴다(2026-11-21 PR #357 — 에이전트 0개)
   local action
   action="$(node --input-type=module -e '
-    const [lib, update, plan, repo, number, stamp] = process.argv.slice(1)
-    const { autoReviewAction, planStatusOf, reopenedPlan, reopenNote } = await import(lib)
+    const [lib, update, config, root, plan, repo, number, stamp, sha] = process.argv.slice(1)
+    const { autoReviewAction, planStatusOf, reopenedPlan, reopenNote, singleRepoSkipReason, withAutoSkipLine } = await import(lib)
     const { updatePlan } = await import(update)
+    const { loadConfig } = await import(config)
+    const settings = loadConfig(root)
     let action = "skip"
     updatePlan(plan, (text) => {
       action = autoReviewAction(planStatusOf(text))
+      if (action === "skip") return text
+      const why = singleRepoSkipReason(text, settings, repo)
+      if (why) { action = `not-single ${why}`; return withAutoSkipLine(text, { repo, number, sha, reason: why, stamp }) }
       if (action !== "reopen") return text
       action = "reopened"
       return reopenedPlan(text, { note: reopenNote(repo, number), stamp, by: "ship.sh(이어 올린 PR)" })
     })
     console.log(action)
-  ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/$PLAN" "$REPO" "$1" "$(date '+%Y-%m-%d %H:%M')")" \
+  ' "$ATHENA_DIR/scripts/lib/pr-auto.mjs" "$ATHENA_DIR/scripts/lib/plan-update.mjs" "$ATHENA_DIR/scripts/lib/config.mjs" "$ATHENA_DIR" "$ATHENA_DIR/$PLAN" "$REPO" "$1" "$(date '+%Y-%m-%d %H:%M')" "$HEAD_FULL")" \
     || { echo "⚠️ PR #$1 — 계획서 Status 를 읽지 못해 자동 리뷰 대기열에 넣지 않았다 — 현황판이 5분 안에 잡는다" >&2; return 0; }
   case "$action" in
     review) ;;
     reopened) echo "↩️ 계획서가 완료 · 계획 상태였다 — 이어 올린 PR #$1 이라 Status 를 ready_for_review 로 되돌렸다(자동 리뷰 대상)" ;;
+    not-single*) AUTO_SKIPPED=1; echo "⏭ PR #$1 — 자동 리뷰 안 함: 레포 하나짜리 작업이 아니다(${action#not-single }) — 계획서 \"- Auto skip:\" 줄에 남겼다 · 리뷰 · 머지는 사람이"; return 0 ;;
     *) return 0 ;;
   esac
   (cd "$ATHENA_DIR" && node scripts/pr-auto.mjs --enqueue --plan "$PLAN" --pr "$REPO#$1" --head "$HEAD_FULL") \
@@ -690,7 +698,9 @@ if [ -n "$PR_FAILED" ]; then
   echo "⚠️ push 는 됐고${PR_LINES:+ 연 PR 은 계획서에 적었지만,} base${PR_FAILED} 의 PR 을 만들지 못했다 — 사용자에게 알린다(같은 명령을 다시 돌리면 열린 PR 은 건너뛰고 나머지만 만든다)" >&2
   exit 1
 fi
-if [ "$AUTO_FLOW" = manual ]; then
+if [ "$AUTO_SKIPPED" = 1 ]; then
+  echo "   draft 다. 자동 리뷰 · 머지는 돌지 않는다(레포 하나짜리 작업이 아님) — 리뷰 · 머지는 사람이"
+elif [ "$AUTO_FLOW" = manual ]; then
   echo "   draft 다. 자동 리뷰가 돈다 — 머지는 사람이 직접 한다"
 elif [ "$AUTO_ON" = 1 ]; then
   echo "   draft 다. 자동 흐름이 승인 · 검증하면 머지까지 한다 — 사용자에게 머지를 부탁하지 않는다."
