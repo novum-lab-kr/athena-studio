@@ -289,5 +289,6 @@
   "Fix answered requests staying in Work — server confirmations, unread answers after 24h": "修复已回答请求滞留在[工作]的问题 — 服务器确认 · 24小时未接收的回答",
   "Fix more server read commands needing confirmation — loginctl show · list, git remote -v": "进一步修复服务器只读命令仍需确认的问题 — loginctl show · list · git remote -v",
   "Fix PR auto review stopping after 2 reviews — up to 3 reviews for every PR": "修复 PR 自动评审 2 次就停止 — 所有 PR 最多 3 次",
-  "Fix the pack bar hiding during a core update — shows the last pack list": "修复核心更新期间包栏被隐藏 — 显示上次的包列表"
+  "Fix the pack bar hiding during a core update — shows the last pack list": "修复核心更新期间包栏被隐藏 — 显示上次的包列表",
+  "Fix lightweight plans breaking when the title or instructions contain $ — written as typed": "修复标题或指令含 $ 时轻量计划书损坏的问题 — 按原文写入"
 }
