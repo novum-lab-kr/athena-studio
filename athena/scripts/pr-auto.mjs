@@ -26,8 +26,9 @@
  *   - 같은 PR · 같은 HEAD 는 한 번만(계획서 "- Auto review:" 줄) · 리뷰는 상한(MAX_ROUNDS)까지 — 상한 라운드에도 승인이 아니면 남은 지적을 보내고,
  *     고친 새 HEAD 는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰해 승인이면 ②③(+④)로 머지 단계, 막는 지적 · 리뷰어 실패면 멈추고 아테나에
  *     (상한 뒤 이어받음 · 2026-10-26 사용자 결정 C → 2026-11-03 계획서 "자동 리뷰 상한 뒤 마지막 수정도 짧게 리뷰" 결정 1)
- *   - ⚡ 빠른 길(리뷰를 켠 PR 모두) — 리뷰어는 평소와 같은 하나 · 상한 1(FAST_MAX_ROUNDS). 1라운드 수정 필요면 고친 HEAD 는
- *     상한 뒤 이어받음과 같은 길로 짧은 리뷰 → 승인이면 머지 단계(auto.takeover) · 그 뒤 또 커밋이면 멈춤(auto.stop rounds — 아테나가 이어받는다)(2026-10-31 계획서 D1 · D2 · 2026-11-25 fastPath 옵션 없앰)
+ *   - ⚡ 빠른 길(리뷰를 켠 PR 모두 · 크기 무관) — 리뷰어는 평소와 같은 하나 · 상한 2(FAST_MAX_ROUNDS) · 리뷰는 최대 3번. 1차 전체 → 수정 필요면 고친 HEAD 를 2차(증분) →
+ *     2차도 수정 필요면 고친 HEAD 는 상한 뒤 이어받음과 같은 길로 3차 짧은 리뷰 → 승인이면 머지 단계(auto.takeover) · 그 뒤 또 커밋이면 멈춤(auto.stop rounds — 아테나가 이어받는다)
+ *     (2026-10-31 계획서 D1 · D2 · 2026-11-25 fastPath 옵션 없앰 · 2026-11-25 리뷰 3번)
  *   - 결정 필요여도 수정 지적은 같은 라운드에 보낸다(결정 A) · 구현 세부 결정은 추천안으로 자동 확정(결정 B) · 사람이 정할 결정이 결정 콘솔에 남아 있으면 머지하지 않는다
  *   - 지적은 한 번에(결정 D) — 1라운드는 찾을 수 있는 것을 모두, 2라운드부터는 지난 지적이 고쳐졌는지 + 지난 리뷰 HEAD 이후 바뀐 diff 만(지난 지적은 history/ 에)
  *   - 막는 지적만 막는다(결정 E) — 지적마다 blocking · advisory. 권장(advisory)만 남으면 승인으로 보고 PR 댓글에만 남긴다
@@ -53,7 +54,7 @@ import { readMainTool } from './lib/main-tool.mjs'
 import { shadowOn } from './lib/full-verify.mjs'
 import { HANDOFF_PREFIX, HANDOFF_WORKFLOW, WAITING as HANDOFF_WAITING, handoffFile, handoffOn } from './lib/handoff.mjs'
 import {
-  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
+  BASE_MERGED, FAST_MAX_ROUNDS, FAST_PATH, FAST_REVIEWS, shownMax, takeoverLabel, MAX_ROUNDS, PR_REVIEWERS, REVIEW_OFF, SHORT_REVIEW, SHORT_REVIEWERS, SHORT_REVIEW_LABEL, shortReviewOutcome, shortStopResult, repoFlow, REVIEW_SCHEMA, TAKEOVER, aggregate, autoDecisionLine, baseMergeRound, autoLines, autoMergeRepos, conflictNotice, decisionNotice, decisionsForConsole,
   PARTIAL_APPROVAL, ADVISORY_ISSUE_SUFFIX, advisoryIssue, fixInstruction, mergePartResults, packDiffParts, partForPrompt, grantsTakeover, omittedSection, partialApproval, partialCount, repoGeneratedPatterns, linguistGeneratedRules, missedFiles, inheritedResult, inheritedSlotIndex, isTakeoverRound, lineupNote, pendingDecisionLine, priorApproval, reviewerSlot, CLAUDE_LIMIT_REASON, takeoverEligible, withPendingDecisionLine, withoutPendingDecisionLine, mergeNotice, needsReview, nextRound, reviewComment, securityResumable, securityResumeOf, reviewerBrief, repoAgentShare, singleRepoPlan, skipsMergeConfirm,
   validReview, withAutoLine, withDecisionLines, workRefOf,
   DIRECT_MERGED, directMergeDone, directMergeMessage, directMergeNotice, planTitleOf, prBaseOf, prMergeMethod, withDirectMergeLine,
@@ -524,11 +525,11 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const baseMerge = Boolean(known) && !String(sha).startsWith(known.sha) && isBaseMerge(ref.worktree, known.sha, sha, pr.baseRefName)
   const round = baseMergeRound(known, nextRound(known, sha), baseMerge)
   const flow = repoFlow(config, repo)
-  // ⚡ 빠른 길 — 리뷰를 켠 모든 PR(2026-11-08 #267 46분 — 리뷰는 PR 마다 최대 2번: 1차 전체 → 고친 커밋 2차 짧은 리뷰 → 남으면 멈춤).
+  // ⚡ 빠른 길 — 리뷰를 켠 모든 PR(2026-11-08 #267 46분 · 2026-11-25 사용자 지시로 PR 크기와 상관없이 최대 3번: 1차 전체 → 고친 커밋 2차 · 3차 바뀐 부분 리뷰 → 남으면 멈춤).
   // 레포 "fastPath" 키 · 계획서 "- Fast path:" 줄은 읽지 않는다(2026-11-25 옵션 없앰 — 옛 팩에 있어도 무시). 리뷰 끔 레포는 어차피 리뷰어를 부르지 않는다
   const fast = flow.review
   const limits = { max: fast ? FAST_MAX_ROUNDS : MAX_ROUNDS, reviewers: PR_REVIEWERS }
-  console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${limits.max}${fast ? ` · ${FAST_PATH}` : ''}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
+  console.log(`🤖 ${planFile} · ${repo}#${number} @${sha.slice(0, 7)} · 라운드 ${round}/${shownMax(limits.max, fast)}${fast ? ` · ${FAST_PATH}` : ''}${baseMerge ? ` · ${BASE_MERGED}(라운드 그대로 · 한 번 리뷰)` : ''}`)
   const base = { plan: planFile, repo, branch: pr.headRefName, sha: sha.slice(0, 7), pr: number, by: 'auto', ...(fast ? { fast: true } : {}) }
 
   // 보안 검토로 멈춘 같은 HEAD 에 결과(높음 0)가 남았다 — 리뷰를 다시 하지 않고 같은 라운드에서 머지 단계를 이어 간다(lib securityResumable)
@@ -548,14 +549,14 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // base 합침은 상한을 넘은 라운드여도 멈추거나 이어받지 않고 한 번 리뷰한다
   if (isTakeoverRound(round, limits.max) && !baseMerge && !grantsTakeover(known?.result)) {
     // 상한을 넘었는데 직전 줄이 이어받기가 아니다(상한 라운드가 리뷰어 부족 · 이어받은 커밋의 검증 실패 뒤 또 커밋 등) — 리뷰 없이 머지하지 않고 아테나에(notify)
-    // 빠른 길은 2차 커밋(라운드 2/2 — 옛 줄 2/1) 뒤 또 커밋이 여기로 온다 — 두 번째 수정이 필요한 PR 은 아테나가 이어받는다
+    // 빠른 길은 3차 커밋(라운드 3/3) 뒤 또 커밋이 여기로 온다 — 세 번째 리뷰에도 지적이 남은 PR 은 아테나가 이어받는다
     if (dryRun) return console.log(`── 할 일: 멈춤 — 라운드 상한 ${limits.max}(직전이 ${TAKEOVER}가 아님) · 아테나에 알림`)
     writeAutoLine(planPath, { repo, number, sha, round, max: limits.max, fast, result: '멈춤 — 라운드 상한(이어받을 수정 없음)' })
     logEvent(ROOT, 'auto.stop', { ...base, reason: 'rounds' })
     await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 상한(${limits.max}) 넘음 — ${repo}#${number}`, body: `직전 결과(${known?.result ?? '없음'})가 ${TAKEOVER}가 아니라 리뷰 없이 머지하지 않는다. 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).` })
     return
   }
-  // 상한 뒤 이어받음(결정 C) — 직전 줄이 이어받기를 준 HEAD 는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰한다(빠른 길은 1라운드 수정 뒤 고친 HEAD 가 여기).
+  // 상한 뒤 이어받음(결정 C) — 직전 줄이 이어받기를 준 HEAD 는 같은 리뷰어 하나가 바뀐 부분만 짧게 리뷰한다(빠른 길은 2라운드 수정 뒤 고친 HEAD 가 여기 — 3차).
   // 아래 평소 리뷰와 같은 길(증분 diff · 지난 지적)을 쓰고, 결과만 승인 → 머지 단계 · 막음 · 실패 → 멈춤으로 가른다
   const short = isTakeoverRound(round, limits.max) && !baseMerge
 
@@ -564,7 +565,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   const prior = short ? null : priorApproval(planText, { repo, branch: pr.headRefName, sha, tree: headTree(ref.worktree, org, repo, sha) })
   const inherited = prior ? [inheritedResult(prior, sha)] : []
   // 리뷰어 구성(주 도구 반대쪽 하나 · 하나만 쓸 수 있으면 그것 — lib reviewerSlot)과 이어받음을 계획서 줄 · PR 댓글에 남긴다.
-  // 평소 · 빠른 길 · 짧은 리뷰 모두 같은 리뷰어 하나(라운드 상한 max 만 다르다 — 줄 · 댓글의 라운드 4/3 · 2/1)
+  // 평소 · 빠른 길 · 짧은 리뷰 모두 같은 리뷰어 하나(라운드 상한 max 만 다르다 — 줄 · 댓글의 라운드 4/3 · 빠른 길 3/3)
   let lineup = planReviewers(config)
   let slots = lineup.slots
   const needed = PR_REVIEWERS
@@ -706,7 +707,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
   // 수정 필요(결정이 같이 있어도 — 결정 A) — 작업 에이전트에 지시. pane 이 없으면 아테나에(notify)
   const instruction = masked(fixInstruction({
     agent: ref.agent || '작업 에이전트', org, repo, number, sha, round, findings: summary.findings, autoDecisions: summary.autoDecisions,
-    humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT, max: limits.max,
+    humanDecisions: summary.verdict === 'decision' ? summary.decisions.length : 0, takeover, plan: planFile, worktree: ref.worktree, athenaDir: ROOT, max: limits.max, fast,
   })) + (verifyFailed ? `\n\n같은 HEAD 전체 검증도 실패했다(${verifyFailed.why}) — 고치면서 ATHENA_VERIFY_DIR=${ref.worktree} ${join(ROOT, 'scripts/verify/reuse.sh')} ${repo} 로 원문을 보고 같이 고친다.` : '')
   // pane 이 있어도 전송이 확인되지 않으면 아테나에 — 'pane 없음' 과 '보내지 못함' 을 나눠 알린다(submitToPane 결과 그대로)
   const sent = pane ? await submitToPane(pane, instruction) : ''
@@ -723,7 +724,7 @@ const handle = async (planArg, prArg, { dryRun = false, head = '' } = {}) => {
 }
 
 // 리뷰 뒤 계획서 줄 결과 — ship.sh --auto-push 는 "수정 필요" · "결정 필요" 로 시작하는 줄에만 올린다.
-// 이어받기를 주는 줄은 grantsTakeover 가 알아보는 모양('<머리> — 상한 뒤 이어받음…' · 빠른 길은 '<머리> — 2차…')으로만 쓴다
+// 이어받기를 주는 줄은 grantsTakeover 가 알아보는 모양('<머리> — 상한 뒤 이어받음…' · 빠른 길은 '<머리> — 3차…')으로만 쓴다
 const autoResult = (verdict, takeover, atLimit, fast = false) => {
   const head = verdict === 'decision' ? '결정 필요' : '수정 필요'
   if (takeover) return `${head} — ${takeoverLabel(fast)}(다음 커밋은 바뀐 부분 ${SHORT_REVIEW} 후 머지)`
@@ -764,7 +765,7 @@ const finishShortReview = async ({ planPath, planFile, repo, number, sha, round,
   const detail = outcome === 'failed'
     ? results.filter((item) => item.status !== 'ok').map((item) => `- ${item.name}: ${item.reason}`).join('\n')
     : [...summary.findings.map((item) => `- ${item.file}${item.line ? `:${item.line}` : ''} ${masked(item.problem)} → ${masked(item.fix)}`), ...[...summary.autoDecisions, ...summary.decisions].map((item) => `- 결정: ${masked(item.title)}`)].join('\n')
-  await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 상한 뒤 ${SHORT_REVIEW} ${SHORT_REVIEW_LABEL[outcome]} — ${repo}#${number}`, body: `리뷰 상한(${limits.max}) 뒤 고친 커밋(라운드 ${round}/${limits.max})을 바뀐 부분만 짧게 리뷰했는데 ${outcome === 'failed' ? '리뷰어가 답하지 못했다' : '막는 지적이 남았다'}. 머지하지 않았고 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).\n${detail}` })
+  await notify(planFile, { key: `pr-auto:${repo}#${number}`, sha, title: `자동 리뷰 상한 뒤 ${SHORT_REVIEW} ${SHORT_REVIEW_LABEL[outcome]} — ${repo}#${number}`, body: `리뷰 상한(${limits.max}) 뒤 고친 커밋(라운드 ${round}/${shownMax(limits.max, fast)})을 바뀐 부분만 짧게 리뷰했는데 ${outcome === 'failed' ? '리뷰어가 답하지 못했다' : '막는 지적이 남았다'}. 머지하지 않았고 자동 흐름은 이 PR 에서 멈췄다 — 사람이 이어받는다(gh pr view ${number} --repo ${org}/${repo} --comments).\n${detail}` })
 }
 
 // 짧은 리뷰 표식(shortReviewed)이 없는 옛 이어받음 대기를 짧은 리뷰로 돌린다 — 상한 라운드 기록(지난 리뷰 HEAD · 지적)이 그대로면 상한 줄을 되살리고
@@ -886,7 +887,7 @@ const prepareMerge = async ({ planPath, planFile, repo, number, sha, round, note
   if (pendingDecisions(planFile, repo, number)) {
     // 사람이 정할 결정이 결정 콘솔에 남아 있다(결정 A 로 수정이 먼저 올라온 경우) — 묻지도 머지하지도 않는다. 확정 지시를 반영한 커밋이 오면 다시 본다
     // 상한 라운드 승인이나 이어받은 HEAD 면 결정을 반영한 다음 커밋도 이어받는다(바뀐 부분 짧은 리뷰) — grantsTakeover 가 알아보는 '결정 필요 — 상한 뒤 이어받음…' 으로
-    // ⚡ 빠른 길은 수정 1회만 — 이미 이어받은 HEAD 에는 다시 주지 않는다(줄이 grantsTakeover 모양이 아니라 다음 커밋은 라운드 상한 멈춤 → 아테나 · PR #200 자동 리뷰 지적)
+    // ⚡ 빠른 길은 3차가 마지막 — 이미 이어받은 HEAD 에는 다시 주지 않는다(줄이 grantsTakeover 모양이 아니라 다음 커밋은 라운드 상한 멈춤 → 아테나 · PR #200 자동 리뷰 지적)
     const regrant = takeover ? !fast : round >= max
     const pendingResult = () => {
       if (regrant) return `결정 필요 — ${TAKEOVER}(다음 커밋은 바뀐 부분 ${SHORT_REVIEW} 후 머지) · ${takeover ? '이어받은 HEAD' : passed}이지만 결정 콘솔에 안 정한 결정이 있어 머지 대기`
