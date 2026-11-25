@@ -1,4 +1,5 @@
 {
+  "Add server problem alerts — Mac notification and phone push, checked every 5 minutes": "서버 문제 알림 추가 — 맥 알림 · 폰 푸시 · 5분마다 확인",
   "Add phone connection to the released Mac app — production relay only": "배포판 맥 앱에 폰 연결 추가 — 운영 relay 전용",
   "Fix slow phone server details — last reading shown at once, refreshed in the background": "폰 서버 상세가 늦게 뜨던 것 수정 — 마지막 값을 바로 보이고 뒤에서 새로 읽음",
   "Fix phone merge details stopping at 100 changed files — now lists them all": "폰 머지 상세의 바뀐 파일이 100개에서 잘리던 것 수정 — 전부 보임",

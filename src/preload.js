@@ -99,6 +99,9 @@ contextBridge.exposeInMainWorld('studio', /** @type {Bridge} */ ({
   serverOpen: (name, size) => ipcRenderer.invoke('server:open', name, size),
   serverContextMenu: (point) => ipcRenderer.invoke('server:context-menu', point),
   serverStatus: () => ipcRenderer.invoke('server:status'),
+  // 뒤에서 읽은 서버 상태(src/main/server-alert.mts — 칸이 닫혀 있어도 5분마다) · 서버 알림을 눌렀다(서버 이름)
+  onServerRead: listen('server:read'),
+  onServerOpen: listen('server:open'),
   // 서버 등록 팝업(src/main/ssh-setup.mts) — ~/.ssh 키 파일 이름 · 찾아보기 · [등록](검사 → 접속 → 등록) · 진행 단계 · 지문 믿기 · 키 올리기 터미널 · 등록 뒤 분석(체크)
   serverKeys: () => ipcRenderer.invoke('server:keys'),
   serverKeyBrowse: () => ipcRenderer.invoke('server:key-browse'),
