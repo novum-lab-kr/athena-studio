@@ -1,5 +1,5 @@
 // ── 서버 탐색기 — 팩 창 ─────────────────────────────────
-// 탭 줄 [서버] 버튼 · 서버 탐색기(화면 ui/server-status.tsx)가 몇 분마다 부른다 — 칸이 닫혀 있어도(버튼 점). 팩 pack.json servers[] 를 읽고
+// 서버 탐색기(화면 ui/server-status.tsx)가 칸이 열려 있으면 3분마다, 서버 문제 알림(src/main/server-alert.mts)이 칸과 상관없이 5분마다 부른다(결정 D3 2026-11-25). 팩 pack.json servers[] 를 읽고
 // 서버마다 코어 `scripts/ssh-run.sh <서버> --status`(고정 읽기 명령 · BatchMode · 묻지 않는다)를 한 번씩,
 // servers[].health 주소가 있으면 이 맥에서 응답 코드 · 걸린 시간 · (https 면) 인증서 만료일을 본다.
 // 읽을 때마다 숫자만 서버별 기록 파일에 한 줄(<본체>/.pack-data/state/server-history/<이름>.jsonl · 7일) — 주소 · 원문 · 비밀값은 쓰지 않는다.
@@ -76,7 +76,8 @@ function checkWeb(url: string): Promise<WebCheck> {
   })
 }
 
-export function installServerStatus(ctx: ServerStatusCtx): void {
+// onRead — 실제로 읽은 때마다 한 번(캐시 답은 부르지 않는다) · 서버 문제 알림 판정과 다른 창 화면 갱신(main.mts)
+export function installServerStatus(ctx: ServerStatusCtx, deps: { onRead?: (reply: ServerStatusReply) => void } = {}): void {
   const readPack = (): Promise<unknown> => fs.promises.readFile(path.join(ctx.athenaDir || '', 'pack', 'pack.json'), 'utf8').then(JSON.parse).catch(() => null)
   // 이 창 본체 팩의 서버 목록 — pack.json 을 바로 읽는다(팩 레포 목록 pack-repos.mts 와 같은 자리)
   ctx.serverList = async () => serverModel.packServers(await readPack())
@@ -184,7 +185,13 @@ export function installServerStatus(ctx: ServerStatusCtx): void {
       history[reading.name] = serverModel.withLive(saved, sarBacked ? recent : [])
     }
     if (dir) await dropStale(dir, new Set(servers.map((server) => server.name)))
-    return { servers, history, sar }
+    const reply = { servers, history, sar }
+    try {
+      deps.onRead?.(reply)
+    } catch {
+      // 알림 쪽 실패로 화면 읽기를 망치지 않는다
+    }
+    return reply
   }
 
   // 맥 화면 · 폰 브리지가 같이 부른다 — 폰은 snapshot 마다(2초 남짓) 불러 그대로 두면 그때마다 ssh(2026-11-19 서버 load 29).

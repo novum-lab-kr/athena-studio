@@ -17,10 +17,12 @@ import crypto from 'node:crypto'
 import { Notifier, agentName } from './tray-model.mts'
 import type { TrayPane } from './tray-model.mts'
 
-export type PushKind = 'request' | 'done'
+// server = 서버 문제 · 회복(src/main/server-alert.mts 가 만든다 — 이 파일의 판정을 거치지 않는다)
+export type PushKind = 'request' | 'done' | 'server'
 // 푸시 하나 — id 는 relay 중복 거르기 · 로그용(base64url 22자), title · body · pane 은 암호화해 싣는 것(pane 을 모르면 없음)
 // request = 요청 목록에서 온 확인 요청의 요청 id — 맥 안에서만 쓴다(다시 보낼 때 아직 열려 있는지 · relay 로는 나가지 않는다)
-export type PushEvent = { kind: PushKind; id: string; title: string; body: string; pane?: string; request?: string }
+// server · collapse — 서버 알림만: 서버 이름(암호 안에만 · 폰이 누르면 그 서버로) · 바꿔 끼울 묶음(relay collapse — 같은 서버 같은 문제의 문제 · 회복이 폰에서 한 장으로)
+export type PushEvent = { kind: PushKind; id: string; title: string; body: string; pane?: string; request?: string; server?: string; collapse?: string }
 export const DONE_HOLD_MS = 60_000 // 같은 pane 끝남 묶기(아테나 정한 값 · 2026-11-19)
 export const ASK_HOLD_MS = 60_000 // 같은 pane 확인 요청 묶기 · 확인 요청 뒤 일 끝남 안 보내기(D3)
 export const SENT_KEEP_MS = 10 * 60_000 // 보낸 사건 id 를 기억하는 동안

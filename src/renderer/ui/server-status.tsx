@@ -1,7 +1,8 @@
 // 서버 탐색기 — 탭 줄 [서버] 버튼(늘 보임 · 상태 점 · 서버가 0개면 누를 때 등록 팝업)과 누르면 뜨는 앱 안 전체 화면 칸.
 // 왼쪽 서버 목록(상태 점 · 이름 · 응답 · CPU/MEM/SWAP/DISK · 1시간 추이선) / 오른쪽 고른 서버의 경고 줄 · 2×2 그래프 · 상세.
 // 읽기는 main(src/main/server-status.mts)이 코어 `ssh-run.sh <서버> --status`(고정 읽기 명령)와 이 맥의 응답 확인으로 — 여기서는 몇 분마다 부르고 그리기만.
-// 칸을 닫아도 읽기는 계속 돈다(버튼 점이 맞게 바뀌도록). 서버 목록이 바뀌면 바닐라 space-actions.ts refreshServers 가 setServers 를 부른다
+// 칸이 닫혀 있으면 main(src/main/server-alert.mts)이 5분마다 읽어 server:read 로 넘긴다(버튼 점이 맞게 · 서버 문제 알림). 서버 알림을 누르면 server:open 으로 그 서버 칸을 연다.
+// 서버 목록이 바뀌면 바닐라 space-actions.ts refreshServers 가 setServers 를 부른다
 import { useState } from 'react'
 import type { MouseEvent, ReactNode } from 'react'
 import { createStore, mountIsland, useSay, useStore } from './bridge.ts'
@@ -17,8 +18,8 @@ type View = { rows: Row[]; history: Record<string, HistoryPoint[]>; sar: Record<
 const view = createStore<View>({ rows: [], history: {}, sar: {}, reading: false, selected: '' })
 const rangeStore = createStore<{ range: HistoryRange }>({ range: '1h' })
 
-// 칸이 열려 있을 때만 몇 분마다(사용자 결정 2026-11-09) — ssh 를 서버마다 한 번씩 여니 자주 돌리지 않는다.
-// 닫혀 있으면 켤 때 · 서버 목록이 바뀔 때 한 번만 읽는다(버튼 점은 그 읽기 기준)
+// 칸이 열려 있으면 이 화면이 3분마다 — ssh 를 서버마다 한 번씩 여니 자주 돌리지 않는다.
+// 닫혀 있으면 main 이 5분마다 읽어 넘긴다(결정 D3 2026-11-25 — 2026-11-09 '열려 있을 때만' 결정을 바꿈 · 서버 문제 알림). 켤 때 · 서버 목록이 바뀔 때는 곧바로 한 번
 const POLL_MS = 3 * 60 * 1000
 
 let button: HTMLButtonElement | null = null
@@ -49,6 +50,13 @@ export function mount(openButton: HTMLButtonElement, box: HTMLElement, add: () =
     close()
   })
   view.subscribe(paintDot)
+  studio.onServerRead(applyReply)
+  // 서버 알림을 눌렀다 — 그 서버를 골라 칸을 연다(이미 열려 있으면 고르기만)
+  studio.onServerOpen((name) => {
+    if (!view.get().rows.some((row) => row.name === name)) return
+    view.set({ ...view.get(), selected: name })
+    open()
+  })
 }
 
 function open(): void {
@@ -107,19 +115,25 @@ function stopPolling(): void {
   timer = null
 }
 
+// 읽은 값 그리기 — 이 화면이 부른 것 · main 이 뒤에서 읽어 넘긴 것(server:read) 같이
+function applyReply(reply: ServerStatusReply): void {
+  readAt = Date.now()
+  const found = new Map(reply.servers.map((server) => [server.name, server]))
+  view.set({ ...view.get(), history: reply.history, sar: reply.sar ?? {}, rows: view.get().rows.map((row) => found.get(row.name) || row) })
+}
+
 async function readNow(): Promise<void> {
   if (reading) return
   reading = true
   readAt = Date.now()
   view.set({ ...view.get(), reading: true })
   try {
-    const reply = await studio.serverStatus()
-    const found = new Map(reply.servers.map((server) => [server.name, server]))
-    view.set({ ...view.get(), reading: false, history: reply.history, sar: reply.sar ?? {}, rows: view.get().rows.map((row) => found.get(row.name) || row) })
+    applyReply(await studio.serverStatus())
   } catch {
-    view.set({ ...view.get(), reading: false })
+    // 못 읽었으면 지난 값 그대로
   } finally {
     reading = false
+    view.set({ ...view.get(), reading: false })
   }
 }
 

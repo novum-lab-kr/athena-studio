@@ -1,4 +1,5 @@
 {
+  "Add server problem alerts — Mac notification and phone push, checked every 5 minutes": "新增服务器问题通知 — Mac 通知和手机推送 · 每 5 分钟检查",
   "Add phone connection to the released Mac app — production relay only": "发布版 Mac 应用新增手机连接 — 仅限正式 relay",
   "Fix slow phone server details — last reading shown at once, refreshed in the background": "修复手机服务器详情加载缓慢 — 立即显示上次的值并在后台刷新",
   "Fix phone merge details stopping at 100 changed files — now lists them all": "修复手机合并详情的变更文件在 100 个处被截断 — 现在全部显示",
