@@ -99,11 +99,8 @@ allow deny "echo hi >> ~/.bashrc"
 allow deny "cat \$(which ls)"
 allow deny 'cat `id`'
 allow deny "echo \$HOME"
-# 홑따옴표 밖의 $ 는 그대로 막힌다 — 쌍따옴표 안 · 백슬래시 뒤 · 홑따옴표 사이 · 백슬래시로 연 척한 홑따옴표 · 백틱은 홑따옴표 안도
-allow deny "echo \"\$HOME\""
-allow deny "echo \"'\$HOME'\""
-allow deny "echo \\\$HOME"
-allow deny "echo \"\\\$HOME\""
+# 따옴표 밖 변수 · 홑따옴표 사이에 끼운 $' · 백슬래시로 연 척한 홑따옴표 · 백틱(홑따옴표 안도)은 그대로 막힌다.
+# 큰따옴표 안 "$HOME" · \$ 는 2026-11-25 부터 된다(아래 ① "셸 문법대로 읽기")
 allow deny "echo '\$(id)'x\$(id)"
 allow deny "echo 'a'\$'b'"
 allow deny "echo \\'\$HOME'"
@@ -203,7 +200,6 @@ cat /srv/app/.{env,x}
 cut -d= -f1 /srv/app/.en?
 jq . /srv/app/.e*
 column -t .env
-wc -l ~/.bashrc
 cat -- /srv/app/.env
 grep -f/srv/app/.env x y
 sudo -n jq . a
@@ -503,6 +499,116 @@ hook() {   # <기대: pass|block> <명령>
   got="$(run_hook "$2")"
   if [ "$got" = "$want" ]; then ok "[$1] $2"; else no "[$1] $2 (종료 코드 $got)"; fi
 }
+echo "① 바로 — 2026-11-25 셸 문법대로 읽기(요청 폴더의 실제 확인 요청 — 고치기 전에는 모두 확인으로 떴다)"
+while IFS= read -r line; do allow allow "$line"; done <<'LIST'
+systemctl --failed --no-pager
+df -h / && free -h && systemctl --failed --no-pager
+systemctl --version
+systemctl list-units --user --type=service --no-pager --no-legend
+systemctl show subway-live -p EnvironmentFiles -p WorkingDirectory
+journalctl --namespace=athena-relay -u athena-relay -n 30 --no-pager
+journalctl --namespace=athena-relay -u athena-relay --since '2026-11-19 14:50:00' --no-pager -o short-iso
+journalctl --version
+journalctl --user -n 5 --no-pager
+ps -eo pid=,unit= 2>/dev/null | grep "\.service$"
+grep -c -e "^$USER=." /etc/passwd
+echo "exit=$?"
+echo "home=$HOME"
+echo "$HOME"
+echo "'$HOME'"
+echo "${HOME}x"
+echo "$1"
+echo "price \$5"
+echo price\$5
+echo \$HOME
+echo "\$HOME"
+echo "a $ b"
+ls "$HOME"
+tail -n 5 "$HOME/x.log"
+cat < "$HOME/x"
+docker ps -a --no-trunc --format {{.Names}}\t{{.Status}}
+curl -s -o /dev/null -w %{http_code} -m 10 http://127.0.0.1:3113/api/health
+grep -F caddy[ /var/log/syslog
+grep -n -i -e auth -e token -e secret -e key -e password /etc/caddy/Caddyfile -c
+grep --regexp=secret /etc/hosts
+sar -W -s 08:50:00 -e 09:40:00
+test -f /etc/athena-relay/apple-signin.p8
+ls ~/.athena-backups
+ls ~
+wc -l ~/.bashrc
+git log --oneline HEAD~3
+LIST
+echo "② 확인 — 2026-11-25 넓힌 뒤에도 그대로(치환 · 정한 밖 변수 · 변수 쓰기 · 비밀값 · 펼침 · 서비스 바꾸기)"
+while IFS= read -r line; do allow deny "$line"; done <<'LIST'
+rm -rf /tmp/x
+systemctl restart caddy
+systemctl --user restart app
+systemctl --user start x
+systemctl edit x
+cat $(echo /etc/passwd)
+cat "$(id)"
+echo "`id`"
+echo "\`id\`"
+echo `id`
+cat <(id)
+echo x > /etc/passwd
+echo x > .env
+echo x > ~/.bashrc
+echo x > "$HOME/.bashrc"
+echo x > "$SHELL"
+tee "$HOME/x"
+cd "$HOME"; tee x
+cat /root/.env
+cat ~/.env
+cat "$HOME/.env"
+cat "$HOME"/.env
+cat "${HOME}"/.ssh/id_rsa
+cat < "$HOME/.env"
+sudo cat "$HOME/.env"
+ls /root/.ssh/; cat "$_"id_rsa
+echo "${HOME:-/x}"
+echo "${!HOME}"
+echo "$HOMEX"
+echo "$AWS_SECRET_ACCESS_KEY"
+echo "$$"
+echo "$@"
+echo $'\x2eenv'
+cat $HOME/x
+"$SHELL" -c id
+printf -v x "%s" a
+grep -e secret /root/.env
+systemctl show x -p Environment
+systemctl show x -p environment
+systemctl show x -p Environment,ExecStart
+systemctl show x -p EnvironmentFiles,Environment
+systemctl show x -p SetCredential
+systemctl show x -p LoadCredentialEncrypted
+systemctl show x -p '*Environment'
+systemctl show x -p 'Environ*'
+systemctl show x -p 'ExecStart,[E]nvironment'
+cat .e"$1"nv
+cat .e"$OLDPWD"nv
+cat .e"$?"nv
+cat id_"$1"rsa
+cat "$HOME"/.e"$1"nv
+wc -l < .e"$1"nv
+cd ~/.kube; cat "$PWD/config"
+cd ~/.kube && cat "$OLDPWD/config"
+cat "$PWD"/x
+cd ~/.kube; cat config
+cd /home/x/.kube; cat config
+cd .kube; cat config
+cd ~/.docker; cat config.json
+cd ~/.kube; wc -l < config
+echo {a,b}
+echo a{1..3}
+grep -n ^[a-z] /etc/caddy/Caddyfile
+ls ~root/.ssh
+ls ~+/x
+echo a=~/x
+journalctl --namespace=x -f
+echo  x
+LIST
 echo "④ 훅 — 등록한 서버는 ssh-run.sh 로만"
 hook pass "scripts/ssh-run.sh dukbae -- systemctl status caddy"
 hook pass "scripts/ssh-run.sh dukbae -- 'rm -rf /tmp/x'"
@@ -680,11 +786,12 @@ cat >"$WORK/athena" <<'SH'
 # 가짜 bin/athena request open — 받은 키 · 본문을 남기고 같은 모양으로 답한다
 if [ "${1:-}" = request ] && [ "${2:-}" = show ]; then echo "${FAKE_ANSWER:-null}"; exit 0; fi
 if [ "${1:-}" = request ] && [ "${2:-}" = cancel ]; then echo "cancel ${3:-}" >>"$FAKE_LOG"; exit 0; fi
-key=""; body=""
-while [ $# -gt 0 ]; do case "$1" in --key) key="$2"; shift ;; --body-file) body="$2"; shift ;; esac; shift; done
+key=""; body=""; json=""
+while [ $# -gt 0 ]; do case "$1" in --key) key="$2"; shift ;; --body-file) body="$2"; shift ;; --json) json=1 ;; esac; shift; done
 echo "request $key" >>"$FAKE_LOG"
 cp "$body" "$FAKE_BODY"
-echo '{"ok":true,"request":{"id":"r-fake"}}'
+# 진짜 bin/athena 처럼 --json 이 있을 때만 JSON — 없으면 사람용 줄(ssh-run.sh 가 id 를 못 읽던 것을 잡는다)
+if [ -n "$json" ]; then echo '{"ok":true,"request":{"id":"r-fake"}}'; else echo "✅ 요청 r-fake 를 열었다"; fi
 SH
 chmod +x "$WORK/ssh" "$WORK/scp" "$WORK/athena"
 export ATHENA_SSH_BIN="$WORK/ssh" ATHENA_SCP_BIN="$WORK/scp" ATHENA_REQUEST_BIN="$WORK/athena" FAKE_LOG="$LOG" FAKE_BODY="$WORK/body.md" ATHENA_GUARD_USED_FILE="$WORK/used"
@@ -723,6 +830,10 @@ lacks "여러 인자의 ';' — 확인 전에는 ssh 를 부르지 않는다" "$
 has "인자 하나 — 글자 그대로 보냈다" "$LOG" "ssh grep -F 'caddy[' /var/log/syslog"
 
 : >"$LOG"; bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>&1; expect "sh -c 는 확인 요청(3)" 3 $?
+# 요청 id 는 request open --json 의 JSON 에서 읽는다 — --json 이 빠지면 사람용 줄이라 "?" 로 찍혔다(2026-11-25)
+bash "$RUN" dukbae -- sh -c 'rm -rf /tmp/x' >/dev/null 2>"$WORK/ask.err"
+has "확인 요청 안내에 요청 id(r-fake)" "$WORK/ask.err" "요청 r-fake 을 열었다"
+has "승인 안내에 같은 id" "$WORK/ask.err" "ATHENA_SERVER_APPROVED=r-fake"
 lacks "확인 전에는 ssh 를 부르지 않는다" "$LOG" "ssh "
 has "요청 키 server-cmd" "$LOG" "request server-cmd:"
 has "요청 본문에 보내는 글자 그대로(따옴표 포함)" "$WORK/body.md" "sh -c 'rm -rf /tmp/x'"

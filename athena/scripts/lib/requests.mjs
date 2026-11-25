@@ -149,11 +149,19 @@ export const openRequest = (root, input) => {
 //    null(화면을 못 읽음 · 데몬 꺼짐 · 시간 초과) · 다른 데몬의 pane · 데몬을 모르는 옛 요청은 닫지 않는다(모르면 남긴다)
 // 2) 계획서가 없어졌거나 done 이 된 결정 콘솔. 단 질문(question)은 계획서 상태만으로 닫지 않는다 — 답 없이(open) 또는 받기 전에(answered)
 //    사라지면 에이전트가 영원히 기다린다(docs/requests.md). 계획서가 done 이거나 없어도 에이전트가 ack 하거나 사람이 취소할 때까지 남는다
+// 3) 답한 지 STALE_ANSWER_HOURS 가 지나도 ack 가 없는 answered — 묻던 pane 이 다른 일로 넘어가 다시 받지 않는다(2026-11-24 r-…-0112).
+//    답(answer)은 파일에 그대로 남고 상태만 expired — [작업] 에서 "못 감" 으로 영원히 남지 않게(2026-11-25 추가 요청)
+const STALE_ANSWER_HOURS = 24
+const answeredLongAgo = (request) => {
+  const at = Date.parse(request.answer?.at ?? request.updatedAt ?? '')
+  return Number.isFinite(at) && Date.now() - at > STALE_ANSWER_HOURS * 3600 * 1000
+}
 const close = (root, dir, request, closedReason) => {
   Object.assign(request, { state: 'expired', closedReason, rev: request.rev + 1, updatedAt: now() })
   save(dir, request)
   logState(root, request)
 }
+const SERVER_KEY = /^server-(cmd|put):/
 export const listRequests = (root, { all = false, panes = null } = {}) => withLock(root, (dir) => {
   const requests = readAll(dir)
   let live
@@ -163,6 +171,10 @@ export const listRequests = (root, { all = false, panes = null } = {}) => withLo
   }
   for (const request of requests) {
     if (!LIVE.includes(request.state)) continue
+    if (request.state === 'answered' && answeredLongAgo(request)) {
+      close(root, dir, request, `답한 지 ${STALE_ANSWER_HOURS}시간이 지나도 받지 않았다`)
+      continue
+    }
     if (request.pane && request.screen && panes) {
       const seen = liveOf()
       if (seen && seen.screen === request.screen && !seen.ids.has(request.pane)) {
@@ -186,6 +198,9 @@ export const showRequest = (root, id) => withLock(root, (dir) => ({ ok: true, re
 
 // 답하기 — { choice?, text?, by, rev?, relayed? }. 대화로 받은 답(by chat)은 바로 delivered.
 // relayed = 묻던 pane 이 아닌 곳에서 대화로 답했다 — 묻던 pane 에 보내야 하니 answered 로 둔다(athena.mjs request answer)
+// 서버 확인 요청(키 server-cmd: · server-put:)은 누가 답하든 바로 delivered — 답을 쓰는 것은 ack 가 아니라 ssh-run.sh 의 다시 실행
+// (ATHENA_SERVER_APPROVED · server_allow.py approved() 가 delivered 도 받고 60분 · 한 번만). 취소 답은 받을 에이전트가 없어
+// answered 로 영원히 남았다(2026-11-24 r-…-2c6e · r-…-738f — 아테나가 --by lead 로 "취소")
 export const answerRequest = (root, id, { choice = '', text = '', by = '', rev = null, relayed = false } = {}) => {
   if (!ANSWER_BY.includes(by)) throw new PackError('usage', `--by 는 ${ANSWER_BY.join(' · ')} 중 하나다`)
   if (!String(choice).trim() && !String(text).trim()) throw new PackError('usage', '답(--choice 또는 --text)이 필요하다')
@@ -199,7 +214,7 @@ export const answerRequest = (root, id, { choice = '', text = '', by = '', rev =
     }
     const at = now()
     const answer = { choice: String(choice).trim() || null, text: String(text).trim() || null, by, at }
-    const delivered = by === 'chat' && !relayed
+    const delivered = (by === 'chat' && !relayed) || SERVER_KEY.test(request.dedupeKey ?? '')
     Object.assign(request, { state: delivered ? 'delivered' : 'answered', answer, deliveredAt: delivered ? at : null, rev: request.rev + 1, updatedAt: at })
     save(dir, request)
     logState(root, request)

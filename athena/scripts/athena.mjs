@@ -46,13 +46,14 @@
  *   athena request open --kind decision|question --title <글> [--body <글>|--body-file <파일>] [--option '<라벨>[ :: <설명>]' …]
  *                       [--recommend <라벨>] [--plan <plans/…md>] [--html <…html>] [--issue <issues/…md>] [--pane <id>] [--key <중복 방지 키>] [--json]
  *                                                  요청을 연다(같은 --key 로 열린 것이 있으면 고친다). pane 을 안 주면 지금 pane
- *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지거나 묻던 pane 이 닫히면 expired 로 닫는다
+ *   athena request list [--all] [--json]           열린 요청(open · answered) — --all 이면 닫힌 것까지. 계획서가 done · 없어지거나 묻던 pane 이 닫히거나 답한 지 24시간 넘게 ack 가 없으면 expired 로 닫는다
  *   athena request show <id> [--json]
  *   athena request answer <id> --by board|app|chat|mobile|lead [--choice <라벨>] [--text <글>] [--rev <n>] [--json]
  *                                                  사람의 답. --by chat(대화로 받음)이면 바로 delivered —
  *                                                  묻던 pane 이 아닌 곳(아테나 pane 등)에서 부르면 그 pane 에 답 한 줄을 넣고 answered(ack 를 기다린다 · 못 넣으면 sent false)
  *                                                  --by lead 는 아테나(리드)의 답(서버 명령 확인 요청 승인 — 위임 에이전트는 훅 server-guard.py 가 막는다) ·
  *                                                  묻던 pane 이 다르면 chat 처럼 그 pane 에 한 줄을 넣는다 · 상태는 answered
+ *                                                  서버 확인 요청(키 server-cmd: · server-put:)은 누가 답하든 바로 delivered(ack 없음)
  *   athena request ack <id> [--json]               에이전트가 답을 받았다(answered → delivered · 두 번 불러도 된다)
  *   athena request cancel <id> [--reason <글>] [--json]
  *
@@ -416,7 +417,7 @@ const requestCommands = {
     const answer = { choice: flag('choice'), text: flag('text'), by, rev: flag('rev') === '' ? null : Number(flag('rev')) }
     // 대화로 답(by chat)인데 부른 곳이 묻던 pane 이 아니면 — 다른 pane(아테나)이 대신 답한 것이라 묻던 pane 은 답을 못 봤다.
     // 그때는 answered 로 적고 앱과 같은 한 줄을 그 pane 에 넣는다(2026-11-02 — delivered 로만 바뀌고 쉬던 pm5 에 아무것도 안 들어갔다)
-    // 아테나가 답함(by lead — 서버 명령 확인 요청 승인)도 같다 — 묻던 에이전트 pane 에 답 한 줄을 넣고 answered(에이전트가 ack)
+    // 아테나가 답함(by lead — 서버 명령 확인 요청 승인)도 같다 — 묻던 에이전트 pane 에 답 한 줄을 넣는다(서버 확인은 바로 delivered — lib/requests.mjs)
     const askedPane = by === 'chat' || by === 'lead' ? showRequest(ROOT, id).request.pane : null
     if (!askedPane || selfPane() === askedPane) return answerRequest(ROOT, id, answer)
     const result = answerRequest(ROOT, id, { ...answer, relayed: true })
