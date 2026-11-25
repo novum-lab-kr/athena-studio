@@ -592,6 +592,14 @@ cat .e"$?"nv
 cat id_"$1"rsa
 cat "$HOME"/.e"$1"nv
 wc -l < .e"$1"nv
+cd ~/.kube; cat "$PWD/config"
+cd ~/.kube && cat "$OLDPWD/config"
+cat "$PWD"/x
+cd ~/.kube; cat config
+cd /home/x/.kube; cat config
+cd .kube; cat config
+cd ~/.docker; cat config.json
+cd ~/.kube; wc -l < config
 echo {a,b}
 echo a{1..3}
 grep -n ^[a-z] /etc/caddy/Caddyfile

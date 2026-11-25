@@ -50,11 +50,14 @@ SECRET_NAME = re.compile(
 EXAMPLE_NAME = re.compile(r"^\.env\.(example|sample|template)$")
 # 이름만으로는 흔한 파일(config.json · config)이라 폴더까지 보는 것 — 도커 · kubectl 로그인 정보
 SECRET_PATH = re.compile(r"(^|/)(\.docker/config\.json|\.kube/config)$", re.IGNORECASE)
+# SECRET_PATH 의 폴더 — cd 로 간 곳을 모를 때 상대 경로를 이 아래로 넣어 본다(SECRET_PATH 와 같이 고친다)
+SECRET_DIRS = ('.docker', '.kube')
 # 따옴표 밖이면 원격 셸이 펼치는 글자 — 글롭 * ? [ · 중괄호 펼침 { } · 홈 ~(어느 꼴이 펼쳐지는지는 unquoted_expansion)
 SHELL_EXPANDS = set('*?[{}~')
 # 큰따옴표 안에서 읽어도 되는 변수 — 시스템이 정하는 값이라 비밀값이 아닌 것만(그 밖 $이름 은 환경 변수의 비밀값이 나올 수 있다).
-# 숫자(위치 인자 — ssh 원격 셸에서는 비었다) · ? 종료 코드 · # 인자 수. $_ 는 앞 명령의 마지막 인자라 이름 검사를 비켜 가니 없다
-SHELL_VARS = {'HOME', 'USER', 'LOGNAME', 'SHELL', 'PWD', 'OLDPWD', 'HOSTNAME', 'HOSTTYPE', 'OSTYPE', 'MACHTYPE', 'PATH', 'LANG',
+# 숫자(위치 인자 — ssh 원격 셸에서는 비었다) · ? 종료 코드 · # 인자 수. $_ 는 앞 명령의 마지막 인자라 이름 검사를 비켜 가니 없다.
+# PWD · OLDPWD 는 cd 에 따라 값이 바뀌어("cd ~/.kube; cat "$PWD/config"") 이름 검사로 볼 수 없으니 없다(2026-11-25 PR 리뷰)
+SHELL_VARS = {'HOME', 'USER', 'LOGNAME', 'SHELL', 'HOSTNAME', 'HOSTTYPE', 'OSTYPE', 'MACHTYPE', 'PATH', 'LANG',
               'TERM', 'UID', 'EUID', 'PPID', 'SHLVL', 'TMPDIR', 'XDG_RUNTIME_DIR', 'BASH_VERSION'}
 SIMPLE_VAR = re.compile(r'\{([A-Za-z_]\w*)\}|([A-Za-z_]\w*)|([0-9?#])')
 # 셸이 변수를 펼치기 시작하는 글자 — $ 뒤가 이 밖이면 $ 는 글자 그대로
@@ -319,10 +322,26 @@ def check_exact(name, args):
     return f'{name} {" ".join(args)}'.strip() + '(읽기 꼴이 아니다)'
 
 
-def var_secret(arg):
+def var_secret(arg, cwds=None):
     """변수(VAR) 자리를 / 로도 · 빈 글자로도 넣어 비밀 이름을 본다 — "$HOME"/.env 는 / 로, .e"$1"nv · id_"$1"rsa 는
-    값이 비면 .env · id_rsa 가 된다($1 · $? · OLDPWD 는 빌 수 있다 — 2026-11-25 보안 검토)"""
-    return secret_piece(arg.replace(VAR, '/')) or secret_piece(arg.replace(VAR, ''))
+    값이 비면 .env · id_rsa 가 된다($1 · $? 는 빌 수 있다 — 2026-11-25 보안 검토). 상대 경로는 cd 한 곳에 붙여서도 본다"""
+    for filled in (arg.replace(VAR, '/'), arg.replace(VAR, '')):
+        bad = secret_piece(filled) or cwd_secret(filled, cwds)
+        if bad:
+            return bad
+    return None
+
+
+def cwd_secret(arg, cwds):
+    """상대 경로를 cd 로 갈 수 있는 곳(cwds)마다 붙여 비밀 경로를 본다 — cd ~/.kube; cat config(2026-11-25 PR 리뷰).
+    간 곳을 모르면('?') SECRET_DIRS 아래로 넣어 본다 — 비밀 이름이면 그 조각 · 아니면 None"""
+    if not arg or arg.startswith(('/', '~', '-')):
+        return None
+    for base in cwds or ():
+        for prefix in SECRET_DIRS if base == '?' else (base,):
+            if secret_arg(posixpath.join(prefix, arg)):
+                return posixpath.join(prefix, arg)
+    return None
 
 
 def secret_piece(arg):
@@ -911,7 +930,7 @@ def check_one(words, cwds=None, under_sudo=False):
     patterns = grep_patterns(name, args)
     for position, arg in enumerate(args):
         # 변수 자리는 무엇이든 될 수 있다 — / 로도 빈 글자로도 넣어 이름을 본다("$HOME/.env" · .e"$1"nv)
-        bad = None if position in patterns else var_secret(arg)
+        bad = None if position in patterns else var_secret(arg, cwds)
         if bad:
             return f'비밀값이 들 수 있는 파일({bad})'
     hazard = danger(name, args)
@@ -1257,7 +1276,7 @@ def check(command):
             continue
         if token == '<':
             target = tokens[index + 1] if index + 1 < len(tokens) else ''
-            if not target or secret_arg(target.replace(VAR, '/')) or secret_arg(target.replace(VAR, '')):
+            if not target or var_secret(target, cwds):
                 return f'읽기 리다이렉트 {target.replace(VAR, "$…")}'.strip()
             index += 2
             continue
