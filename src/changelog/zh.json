@@ -285,5 +285,6 @@
   "Fix Work list stuck with closed panes — board refresh stopped on a broken link in plans": "修复 [工作] 列表残留已关闭 pane — plans 中的失效链接导致看板停止刷新",
   "Fix Athena unable to merge a PR-off repo's part of a multi-agent plan — ship.sh --repo-agent": "修复多代理计划中雅典娜无法合并关闭 PR 的仓库部分的问题",
   "Fix server read commands needing confirmation — quoted variables, systemctl --failed": "修复服务器只读命令仍需确认的问题 — 引号内变量 · systemctl --failed",
-  "Fix answered requests staying in Work — server confirmations, unread answers after 24h": "修复已回答请求滞留在[工作]的问题 — 服务器确认 · 24小时未接收的回答"
+  "Fix answered requests staying in Work — server confirmations, unread answers after 24h": "修复已回答请求滞留在[工作]的问题 — 服务器确认 · 24小时未接收的回答",
+  "Fix more server read commands needing confirmation — loginctl show · list, git remote -v": "进一步修复服务器只读命令仍需确认的问题 — loginctl show · list · git remote -v"
 }

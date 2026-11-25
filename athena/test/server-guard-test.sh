@@ -609,6 +609,46 @@ echo a=~/x
 journalctl --namespace=x -f
 echo  x
 LIST
+echo "① 바로 — 2026-11-25 loginctl 보기 · git remote 목록(머지 뒤에도 확인으로 뜬 실제 명령 — 고치기 전에는 확인)"
+while IFS= read -r line; do allow allow "$line"; done <<'LIST'
+loginctl show-user dukbae -p Linger
+loginctl show-user dukbae --property=Linger --value
+loginctl show-session 3
+loginctl list-users --no-legend
+loginctl list-sessions
+loginctl
+loginctl user-status dukbae --no-pager
+loginctl session-status 3 -n 10
+git -C /home/dukbae/services/x remote -v
+git remote
+git remote --verbose
+git remote get-url origin
+git remote get-url --push origin
+git remote show -n origin
+git remote -v show origin
+LIST
+echo "② 확인 — 2026-11-25 loginctl · git remote 의 쓰기 · 다른 기계는 그대로"
+while IFS= read -r line; do allow deny "$line"; done <<'LIST'
+loginctl enable-linger dukbae
+loginctl disable-linger dukbae
+loginctl terminate-user dukbae
+loginctl terminate-session 3
+loginctl kill-user dukbae
+loginctl lock-sessions
+loginctl -H other list-users
+loginctl -M box list-users
+loginctl --host=other list-users
+git remote add x https://example.com/x.git
+git remote remove origin
+git remote rm origin
+git remote rename origin up
+git remote set-url origin https://example.com/y.git
+git remote set-head origin -a
+git remote prune origin
+git remote update
+git remote get-url
+git -c core.sshCommand=x remote show origin
+LIST
 echo "④ 훅 — 등록한 서버는 ssh-run.sh 로만"
 hook pass "scripts/ssh-run.sh dukbae -- systemctl status caddy"
 hook pass "scripts/ssh-run.sh dukbae -- 'rm -rf /tmp/x'"

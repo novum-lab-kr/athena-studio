@@ -100,6 +100,9 @@ SPECS = {
     # -p · -P · --property 는 show 의 칸 고르기(Environment 는 check_sub 가 막는다) · -H/--host · -M 은 없다(다른 기계)
     # --user 는 내 사용자 서비스 관리자(같은 기계 · 하위 명령 판정은 그대로) · --version 은 판만
     'systemctl': spec('alq', 'tnopP', '--no-pager --no-legend --plain --all --failed --full --quiet --value --user --version --type= --state= --lines= --output= --property='),
+    # loginctl — 사용자 · 세션 보기만(2026-11-25 사용자 결정 · show-user -p Linger 가 확인으로 떴다) · -H/--host · -M 은 없다(다른 기계)
+    # show 칸에는 Environment 같은 비밀값 칸이 없다 · *-status 는 systemctl status 처럼 프로세스 줄을 보인다(같은 수준)
+    'loginctl': spec('al', 'pPno', '--no-pager --no-legend --all --full --value --property= --lines= --output= --version'),
     'docker': spec('aqsltv', 'np', '--all --quiet --no-trunc --no-stream --timestamps --digests --size --latest --verbose --format= --filter= --tail= --since= --until= --project-name='),
     'pm2': spec(long='--nostream --raw --err --out --no-color --lines='),
     'apt': spec('a', long='--installed --upgradable --all-versions'),
@@ -119,6 +122,8 @@ SUBCOMMANDS = {
     'podman': {'ps', 'stats', 'images', 'version', 'info', 'top', 'port', 'container', 'image', 'system', 'network', 'volume'},
     'hostnamectl': {'status'},
     'timedatectl': {'status'},
+    # enable-linger · terminate-* · kill-* · lock-* · attach · flush-devices 같은 쓰기는 이 밖이라 확인
+    'loginctl': {'list-users', 'list-sessions', 'list-seats', 'show-user', 'show-session', 'show-seat', 'user-status', 'session-status', 'seat-status'},
 }
 # docker 의 둘째 단 — compose ps · network ls …
 DOCKER_SECOND = {
@@ -241,7 +246,10 @@ RUNNERS = set('''sh bash zsh dash ksh fish csh tcsh eval exec source . xargs env
 
 # git — 읽기 하위 명령만 · 옵션은 자유이되 파일 쓰기 · 바깥 명령 돌리기 옵션은 막는다(GNU 줄임까지)
 GIT_READ = {'status', 'log', 'branch', 'rev-parse', 'describe', 'show', 'tag', 'ls-files', 'diff', 'merge-base', 'rev-list', 'show-ref',
-            'blame', 'shortlog', 'cat-file', 'ls-tree', 'grep', 'reflog', 'stash', 'worktree', 'count-objects', 'for-each-ref', 'name-rev', 'cherry'}
+            'blame', 'shortlog', 'cat-file', 'ls-tree', 'grep', 'reflog', 'stash', 'worktree', 'count-objects', 'for-each-ref', 'name-rev', 'cherry',
+            'remote'}
+# git remote — 목록 · get-url · show 만(2026-11-25 사용자 결정 · remote -v 가 확인으로 떴다). add · remove · rename · set-url · prune 은 확인
+GIT_REMOTE = {'get-url': {'--push', '--all'}, 'show': {'-n'}}
 GIT_BANS = ('--output', '--open-files-in-pager', '--upload-pack', '--receive-pack', '--exec', '--ext-diff', '--textconv', '--config-env')
 # branch · tag 는 목록만 — 이 옵션 밖(-d · -m · -f · 만들기)은 확인
 GIT_LIST = {
@@ -560,7 +568,8 @@ def check_sub(name, plain, values, args):
     """하위 명령 · 그 뒤 인자 — parse 를 지난 뒤"""
     first = plain[0] if plain else None
     # systemctl 은 하위 명령이 없으면 list-units(--failed · --version 만 주는 꼴)
-    if name in ('hostnamectl', 'timedatectl', 'systemctl') and first is None:
+    # loginctl 은 하위 명령이 없으면 list-sessions
+    if name in ('hostnamectl', 'timedatectl', 'systemctl', 'loginctl') and first is None:
         return None
     if first not in SUBCOMMANDS[name]:
         return f'{name} {first or ""}'.strip() + ' (읽기 하위 명령이 아니다)'
@@ -625,10 +634,29 @@ def check_git(args):
     if sub == 'stash' and rest[:1] not in (['list'], ['show']):
         # 하위 명령 없는 git stash(옵션만 줘도)는 push 와 같다 — 작업트리를 치운다(2026-11-11 자동 리뷰 #287)
         return f'git stash {(rest or ["(하위 명령 없음 = push)"])[0]}(list · show 만)'
+    if sub == 'remote':
+        return check_git_remote(rest)
     if sub == 'worktree' and plain[:1] != ['list']:
         return f'git worktree {(plain or [""])[0]}'.strip() + '(list 만)'
     if sub == 'reflog' and plain[:1] and plain[0] in ('expire', 'delete', 'drop'):
         return f'git reflog {plain[0]}(지우기)'
+    return None
+
+
+def check_git_remote(rest):
+    """git remote [-v] · get-url [--push] [--all] <이름> · show [-n] <이름…> — 그 밖의 하위 명령 · 옵션은 확인"""
+    words = [arg for arg in rest if arg not in ('-v', '--verbose')]
+    if not words:
+        return None
+    sub, tail = words[0], words[1:]
+    if sub not in GIT_REMOTE:
+        return f'git remote {sub}(목록 · get-url · show 만)'
+    names = [arg for arg in tail if not arg.startswith('-')]
+    bad = next((arg for arg in tail if arg.startswith('-') and arg not in GIT_REMOTE[sub]), None)
+    if bad:
+        return f'git remote {sub} {bad}(허용 옵션이 아니다)'
+    if not names or sub == 'get-url' and len(names) != 1:
+        return f'git remote {sub} 이름 인자'
     return None
 
 
